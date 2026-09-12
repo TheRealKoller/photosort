@@ -26,6 +26,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from tests.event_rows import event_id_of_run
 
 
 class TestDiffCategoryAssignments:
@@ -166,7 +167,7 @@ async def _add_ranking(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
-            cluster_key="cluster-0",
+            event_id=await event_id_of_run(session, run),
             category_key=category_key,
             rank_score=0.5,
             rank_position=1,

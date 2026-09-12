@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import atan2, cos, radians, sin, sqrt
@@ -245,62 +244,4 @@ def assign_clusters(
 
         result[candidate.photo_id] = f"cluster-{cluster_index}"
         previous_taken_at = candidate.taken_at
-    return result
-
-
-def refine_clusters_by_landmark(
-    base_cluster_key_by_photo: Mapping[int, str],
-    landmark_name_by_photo: Mapping[int, str | None],
-) -> dict[int, str]:
-    """Phase-2-Verfeinerung der Cluster anhand erkannter Sehenswürdigkeiten.
-
-    REIN und DB-FREI: die Namen kommen als einfaches `dict` herein, die Funktion kennt ihre
-    Datenherkunft nicht. Das ist Absicht - so bleibt die Schluesselvergabe ohne Cloud-Fixture
-    pruefbar, und der Aufrufer entscheidet, ob er sie aus `photo_landmark_detections` oder aus
-    einer Testtabelle speist.
-
-    Enthaelt ein Basis-Cluster ZWEI ODER MEHR verschiedene, nicht-leere Namen, bekommt jeder Name
-    ein eigenes Cluster: `cluster-3-1`, `cluster-3-2`, ... - 1-basiert, in ALPHABETISCHER
-    Reihenfolge der Namen vergeben (Python-Standardsortierung, also Codepunkt-Reihenfolge; keine
-    locale-abhaengige Kollation, die die Schluessel zwischen zwei Laeufen umnummerieren koennte).
-    Fotos OHNE Namen behalten den unveraenderten Basis-Schluessel - ein Cluster mit zwei Namen und
-    namenlosen Fotos ergibt also genau DREI Schluessel. Bei genau einem Namen findet KEINE
-    Verfeinerung statt (sonst waeren `cluster-3` und `cluster-3-1` beide belegt, ohne jeden
-    Nutzen).
-
-    SICHERHEIT - kein Name im Schlüssel: `cluster_key` ist ein Partitionsschlüssel, der als
-    Query-Parameter an `GET /projects/{id}/curation-candidates` zurueckwandert und im Frontend als
-    React-Key dient - freier, extern erzeugter LLM-Text hat dort nichts zu suchen.
-
-    Exakter Zeichenkettenvergleich, KEIN Fuzzy-Matching (bewusste Vereinfachung): zwei
-    Schreibweisen-Varianten desselben Orts splitten.
-
-    Das Ergebnis geht ausschliesslich nach `PhotoRanking.cluster_key`; `PhotoScore.cluster_key`
-    wird NIE mutiert (Ownership-Grenze). Die Divergenz beider Felder ist gewollt.
-
-    SICHERHEIT - OBERE SCHRANKE der Wirkung, Muss-Kriterium für jede steuernde Verwendung eines
-    Fremdwerts: der Name stammt aus einem Vision-Modell und steuert hier Kontrollfluss.
-    Die Zahl der Teil-Cluster eines Basis-Clusters ist durch die Zahl der Fotos IN DIESEM Cluster
-    absolut begrenzt (Extremfall: jedes Foto ein eigenes Cluster) - der Kuratierungsmodus liefert
-    dann höchstens den vollen Bildvorrat des Projekts aus, also genau die Antwortgröße, die
-    `GET /projects/{id}/curation-candidates` ohnehin als zulässig gesetzt hat."""
-    names_by_cluster: dict[str, set[str]] = {}
-    for photo_id, base_key in base_cluster_key_by_photo.items():
-        name = (landmark_name_by_photo.get(photo_id) or "").strip()
-        if name:
-            names_by_cluster.setdefault(base_key, set()).add(name)
-
-    # Nur Cluster mit MEHR ALS EINEM verschiedenen Namen werden ueberhaupt aufgeteilt.
-    index_by_cluster_and_name = {
-        (base_key, name): index
-        for base_key, names in names_by_cluster.items()
-        if len(names) > 1
-        for index, name in enumerate(sorted(names), start=1)
-    }
-
-    result: dict[int, str] = {}
-    for photo_id, base_key in base_cluster_key_by_photo.items():
-        name = (landmark_name_by_photo.get(photo_id) or "").strip()
-        index = index_by_cluster_and_name.get((base_key, name))
-        result[photo_id] = base_key if index is None else f"{base_key}-{index}"
     return result

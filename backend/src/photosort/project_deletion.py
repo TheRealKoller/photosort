@@ -34,6 +34,7 @@ from sqlalchemy.sql.dml import Delete
 
 from photosort.models import (
     CriterionScoringRun,
+    Event,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
@@ -104,6 +105,10 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
             )
         ),
     )
+    # NACH photo_rankings (die zeigen auf events), VOR criterion_scoring_runs (darauf zeigen
+    # events). Beide Kanten sind echte Fremdschluessel - unter Postgres bleibt sonst eine verwaiste
+    # Zeile zurueck.
+    await _run("events", delete(Event).where(Event.criterion_scoring_run_id.in_(criterion_run_ids)))
     await _run("ratings", delete(Rating).where(Rating.photo_id.in_(photo_ids)))
     await _run("photo_scores", delete(PhotoScore).where(PhotoScore.photo_id.in_(photo_ids)))
     await _run(

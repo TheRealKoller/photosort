@@ -37,6 +37,7 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    Event,
     FineLabel,
     Photo,
     PhotoCategoryClassification,
@@ -66,7 +67,14 @@ async def _make_project(session: AsyncSession, *, name: str = "Costa Rica") -> P
 
 
 async def _add_photo(
-    session: AsyncSession, project: Project, path: str, etag: str, taken_at: datetime
+    session: AsyncSession,
+    project: Project,
+    path: str,
+    etag: str,
+    taken_at: datetime,
+    *,
+    gps_lat: float | None = None,
+    gps_lon: float | None = None,
 ) -> Photo:
     photo = Photo(
         project_id=project.id,
@@ -75,6 +83,8 @@ async def _add_photo(
         content_length=100,
         taken_at=taken_at,
         last_modified=taken_at,
+        gps_lat=gps_lat,
+        gps_lon=gps_lon,
     )
     session.add(photo)
     await session.commit()
@@ -1253,7 +1263,7 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
         .all()
     )
     # Voller Pool (nicht nur Top-N) - alle 3 Fotos landen ausserdem in derselben Partition
-    # (gleicher cluster_key, keines erfuellt ein aktives Kriterium -> Catch-all). Seit
+    # (gleiches Event, keines erfuellt ein aktives Kriterium -> Catch-all). Seit
     # specs/features/0217 ist das der Auffangkorb statt der frueheren Kategorie "landscape" (seit
     # specs/features/0289-feste-kategorien.md heisst er `nicht_erkannt`, nicht mehr "unerkannt"):
     # ein
@@ -1261,29 +1271,31 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
     assert len(rankings) == 3
     by_photo = {r.photo_id: r for r in rankings}
     assert {by_photo[p.id].category_key for p in photos} == {CATEGORY_NOT_RECOGNIZED}
-    assert {by_photo[p.id].cluster_key for p in photos} == {"cluster-0"}
+    assert len({by_photo[p.id].event_id for p in photos}) == 1
     positions = sorted(r.rank_position for r in rankings)
     assert positions == [1, 2, 3]
     # Hoehere Schaerfe -> hoeherer rank_score -> rank_position 1.
     assert by_photo[photos[2].id].rank_position == 1
 
 
-async def test_partitions_are_isolated_by_cluster_and_category(
+async def test_partitions_are_isolated_by_event_and_category(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
+    """Einen Tag auseinander - Zeitluecke UND Kalendertagsgrenze trennen die beiden Fotos in zwei
+    Events, und jedes ist Erstplatziertes seiner eigenen Partition."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    cluster_a = await _add_photo(
+    first = await _add_photo(
         db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
     )
-    await _add_score(db_session, cluster_a, cluster_key="cluster-a")
-    _write_display_variant(tmp_path, cluster_a, _flat_image())
+    await _add_score(db_session, first, cluster_key="cluster-a")
+    _write_display_variant(tmp_path, first, _flat_image())
 
-    cluster_b = await _add_photo(
+    second = await _add_photo(
         db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 2, tzinfo=UTC)
     )
-    await _add_score(db_session, cluster_b, cluster_key="cluster-b")
-    _write_display_variant(tmp_path, cluster_b, _flat_image())
+    await _add_score(db_session, second, cluster_key="cluster-b")
+    _write_display_variant(tmp_path, second, _flat_image())
 
     run = await run_criterion_scoring(
         db_session,
@@ -1306,9 +1318,9 @@ async def test_partitions_are_isolated_by_cluster_and_category(
         .scalars()
         .all()
     )
-    # Beide Cluster haben je genau 1 Foto -> je rank_position 1, unabhaengig voneinander.
+    # Beide Events haben je genau 1 Foto -> je rank_position 1, unabhaengig voneinander.
     assert {r.rank_position for r in rankings} == {1}
-    assert {r.cluster_key for r in rankings} == {"cluster-a", "cluster-b"}
+    assert len({r.event_id for r in rankings}) == 2
 
 
 async def test_progress_is_committed_periodically(
@@ -4538,8 +4550,7 @@ class TestSecondaryCategoryRows:
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         """Akzeptanzkriterium 2: je Kategorie mit einer Zahl >= der Schwelle entsteht GENAU EINE
-        Zeile mit `is_primary = false`, in der Partition `(cluster_key des Fotos, diese
-        Kategorie)`."""
+        Zeile mit `is_primary = false`, in der Partition `(Event des Fotos, diese Kategorie)`."""
         project = await _make_project(db_session)
         scoring_run = await _add_successful_scoring_run(db_session, project)
         photo = await _photo_ready_for_ranking(db_session, project, tmp_path)
@@ -4553,9 +4564,9 @@ class TestSecondaryCategoryRows:
         rows = await _run_and_collect_rankings(db_session, project, scoring_run.id, tmp_path)
 
         assert _memberships(rows, photo) == {"menschen": True, "tier": False}
-        # Beide Zeilen liegen im Cluster DES FOTOS - eine Nebenkategorie wandert nicht in einen
+        # Beide Zeilen liegen im Event DES FOTOS - eine Nebenkategorie wandert nicht in einen
         # anderen Zeitraum.
-        assert {row.cluster_key for row in rows} == {"cluster-0"}
+        assert len({row.event_id for row in rows}) == 1
         # `rank_score` ist ueber alle Zugehoerigkeiten identisch (ADR 0069 Punkt 4).
         assert len({row.rank_score for row in rows}) == 1
 
@@ -5093,10 +5104,9 @@ class TestLogCloudVisionThrottling:
         assert "anbieterweit" in caplog.records[0].getMessage()
 
 
-# ---------------------------------------------------------------------------------------------
-# specs/features/0051-gps-landmark-cluster-bildung.md, ADR 0072 Entscheidung 2: die
-# Landmark-Verfeinerung liest die Namen aus `photo_landmark_detections`, NICHT aus einer
-# laufinternen Abbildung der Cloud-Antworten. Sie wirkt damit auch in einem Lauf ohne Cloud-Phase.
+# ADR 0087 Punkt 3: die Sehenswuerdigkeit ist ein TRENNSIGNAL, kein Gruppierungsmerkmal. Die
+# Namen kommen aus `photo_landmark_detections`, NICHT aus einer laufinternen Abbildung der
+# Cloud-Antworten - das Signal wirkt damit auch in einem Lauf ohne Cloud-Phase.
 
 
 async def _add_landmark_detection(
@@ -5132,25 +5142,39 @@ async def _run_without_cloud(
     )
 
 
-async def _ranking_keys_by_photo(session: AsyncSession, run_id: int) -> dict[int, set[str]]:
+async def _event_ids_by_photo(session: AsyncSession, run_id: int) -> dict[int, set[int]]:
     rows = (
         await session.execute(
             select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run_id)
         )
     ).scalars()
-    keys: dict[int, set[str]] = {}
+    event_ids: dict[int, set[int]] = {}
     for row in rows:
-        keys.setdefault(row.photo_id, set()).add(row.cluster_key)
-    return keys
+        event_ids.setdefault(row.photo_id, set()).add(row.event_id)
+    return event_ids
 
 
-async def test_the_landmark_split_works_in_a_run_without_any_cloud_phase(
+async def _events_of_run(session: AsyncSession, run_id: int) -> list[Event]:
+    return list(
+        (
+            await session.execute(
+                select(Event)
+                .where(Event.criterion_scoring_run_id == run_id)
+                .order_by(Event.position)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def test_the_landmark_signal_works_in_a_run_without_any_cloud_phase(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """DER ROT-ANKER dieser Sektion (Teststrategie der Spec): Einwilligung aus, keine Cloud-Phase,
-    die Namen liegen NUR aus einem frueheren Lauf in `photo_landmark_detections`. Die Aufteilung
-    muss trotzdem vollstaendig greifen. Eine Umsetzung, die die Namen aus einer laufinternen
-    Abbildung der Cloud-Antworten liest, ist hier rot und sonst nirgends."""
+    """DER ROT-ANKER dieser Sektion: Einwilligung aus, keine Cloud-Phase, die Namen liegen NUR aus
+    einem frueheren Lauf in `photo_landmark_detections`. Das Trennsignal muss trotzdem greifen.
+    Eine Umsetzung, die die Namen aus einer laufinternen Abbildung der Cloud-Antworten liest, ist
+    hier rot und sonst nirgends."""
     project = await _make_project(db_session)
     assert project.cloud_vision_detection_enabled is False
     scoring_run = await _add_successful_scoring_run(db_session, project)
@@ -5169,19 +5193,21 @@ async def test_the_landmark_split_works_in_a_run_without_any_cloud_phase(
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
     assert run.status == ScanStatus.SUCCESS
-    keys = await _ranking_keys_by_photo(db_session, run.id)
-    # Alphabetisch: "Eiffelturm" vor "Trocadero".
-    assert keys[eiffel.id] == {"cluster-0-1"}
-    assert keys[trocadero.id] == {"cluster-0-2"}
+    event_ids = await _event_ids_by_photo(db_session, run.id)
+    assert event_ids[eiffel.id] != event_ids[trocadero.id]
+    events = await _events_of_run(db_session, run.id)
+    assert [(e.position, e.landmark_name) for e in events] == [
+        (1, "Eiffelturm"),
+        (2, "Trocadero"),
+    ]
 
 
-async def test_the_landmark_split_never_mutates_photo_score_cluster_key(
+async def test_the_event_building_never_mutates_photo_score_cluster_key(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """DIVERGENZ-REGRESSIONSTEST (ADR 0021 Ownership-Grenze, ADR 0029 Punkt 2): `PhotoRanking`
-    weicht nach dem Split ab UND `PhotoScore` wird in derselben Pruefung explizit als unveraendert
-    nachgewiesen. Verhindert ein versehentliches Zurueckschreiben durch einen kuenftigen
-    Refactor."""
+    """DIVERGENZ-REGRESSIONSTEST (Ownership-Grenze): `PhotoRanking.event_id` weicht von der
+    Phase-A-Gliederung ab UND `PhotoScore.cluster_key` wird in derselben Pruefung explizit als
+    unveraendert nachgewiesen. Die Divergenz beider Felder ist gewollt."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     eiffel = await _add_photo(
@@ -5198,17 +5224,18 @@ async def test_the_landmark_split_never_mutates_photo_score_cluster_key(
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
-    keys = await _ranking_keys_by_photo(db_session, run.id)
-    assert keys[eiffel.id] != keys[trocadero.id]
+    event_ids = await _event_ids_by_photo(db_session, run.id)
+    assert event_ids[eiffel.id] != event_ids[trocadero.id]
     scores = {s.photo_id: s for s in (await db_session.execute(select(PhotoScore))).scalars()}
     assert scores[eiffel.id].cluster_key == "cluster-0"
     assert scores[trocadero.id].cluster_key == "cluster-0"
 
 
-async def test_without_any_landmark_row_the_ranking_key_equals_the_score_key(
+async def test_without_any_landmark_row_all_photos_share_one_event(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """BACKWARD COMPATIBILITY: reiner Passthrough."""
+    """BACKWARD COMPATIBILITY: ohne Namen, ohne Koordinaten und ohne Zeitluecke bleibt es bei
+    einem einzigen Event."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_photo(
@@ -5219,16 +5246,17 @@ async def test_without_any_landmark_row_the_ranking_key_equals_the_score_key(
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
-    keys = await _ranking_keys_by_photo(db_session, run.id)
-    assert keys[photo.id] == {"cluster-0"}
+    events = await _events_of_run(db_session, run.id)
+    assert [e.position for e in events] == [1]
+    assert events[0].landmark_name is None
+    assert events[0].place_kind is None
 
 
 async def test_a_landmark_row_for_a_photo_without_a_candidate_row_has_no_effect(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Eine Zeile zu einem Foto, das im Bezugslauf am Ausschuss-Gate haengengeblieben ist, erzeugt
-    keinen Schluessel und keinen Split - sonst zerfiele ein Cluster anhand eines Fotos, das gar
-    nicht in ihm liegt."""
+    """Eine Zeile zu einem Foto, das am Ausschuss-Gate haengengeblieben ist, trennt nichts - es
+    liegt gar nicht in der Kandidatenmenge."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     survivor = await _add_photo(
@@ -5248,9 +5276,9 @@ async def test_a_landmark_row_for_a_photo_without_a_candidate_row_has_no_effect(
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
-    keys = await _ranking_keys_by_photo(db_session, run.id)
-    assert keys[survivor.id] == {"cluster-0"}
-    assert rejected.id not in keys
+    event_ids = await _event_ids_by_photo(db_session, run.id)
+    assert len(await _events_of_run(db_session, run.id)) == 1
+    assert rejected.id not in event_ids
 
 
 async def test_landmark_rows_of_mixed_origin_both_take_effect_in_one_run(
@@ -5274,7 +5302,6 @@ async def test_landmark_rows_of_mixed_origin_both_take_effect_in_one_run(
         _write_display_variant(tmp_path, photo, _flat_image())
     # A: Ergebnis aus einem FRUEHEREN Lauf - Detection-Zeile plus die zugehoerige
     # `landmark`-Kriterienzeile, denn genau an ihr haengt das Skip-Verhalten aus ADR 0025 Punkt 3.
-    # Fuer dieses Foto findet in DIESEM Lauf kein Cloud-Aufruf statt.
     await _add_landmark_detection(db_session, older, "Alexanderplatz")
     db_session.add(
         PhotoCriterionScore(
@@ -5305,17 +5332,19 @@ async def test_landmark_rows_of_mixed_origin_both_take_effect_in_one_run(
     assert run.status == ScanStatus.SUCCESS
     # Nur B geht in die Cloud - A wird wegen seiner Bestandszeile uebersprungen (ADR 0025 Punkt 3).
     assert len(client.calls) == 1
-    keys = await _ranking_keys_by_photo(db_session, run.id)
-    assert keys[older.id] == {"cluster-0-1"}
-    assert keys[fresh.id] == {"cluster-0-2"}
+    events = await _events_of_run(db_session, run.id)
+    assert [(e.position, e.landmark_name) for e in events] == [
+        (1, "Alexanderplatz"),
+        (2, "Zugspitze"),
+    ]
 
 
-async def test_the_partition_ranking_uses_the_refined_key(
+async def test_the_partition_ranking_uses_the_event(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Nachweis, dass die PARTITIONSBILDUNG den verfeinerten Schluessel nutzt: ohne den Split
-    laegen beide Fotos in derselben Partition und truegen die Positionen 1 und 2; mit ihm ist
-    jedes Foto Erstplatziertes seiner eigenen Partition."""
+    """Nachweis, dass die PARTITIONSBILDUNG das Event nutzt: ohne die Trennung laegen beide Fotos
+    in derselben Partition und truegen die Positionen 1 und 2; mit ihr ist jedes Foto
+    Erstplatziertes seiner eigenen Partition."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     eiffel = await _add_photo(
@@ -5346,12 +5375,211 @@ async def test_the_partition_ranking_uses_the_refined_key(
     assert positions == {eiffel.id: 1, trocadero.id: 1}
 
 
+async def test_partitions_are_formed_over_event_and_category(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der Partitionsschluessel ist `(event_id, category_key)` - zwei Fotos DESSELBEN Events und
+    derselben Kategorie bilden eine Partition und tragen die Positionen 1 und 2."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photos = [
+        await _add_photo(
+            db_session,
+            project,
+            f"{index}.jpg",
+            f"etag-{index}",
+            datetime(2023, 1, 1, 10, index, tzinfo=UTC),
+        )
+        for index in range(2)
+    ]
+    for photo in photos:
+        await _add_score(db_session, photo, cluster_key="cluster-0")
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
+
+    rows = list(
+        (
+            await db_session.execute(
+                select(PhotoRanking).where(
+                    PhotoRanking.criterion_scoring_run_id == run.id,
+                    PhotoRanking.is_primary.is_(True),
+                )
+            )
+        ).scalars()
+    )
+    assert len({row.event_id for row in rows}) == 1
+    assert sorted(row.rank_position for row in rows) == [1, 2]
+
+
+async def test_the_run_persists_its_events_with_position_and_time_span(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    first = await _add_photo(
+        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    )
+    second = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 30, tzinfo=UTC)
+    )
+    # Zwei Stunden spaeter: eigenes Event ueber die Zeitluecke.
+    third = await _add_photo(
+        db_session, project, "c.jpg", "etag-c", datetime(2023, 1, 1, 13, 0, tzinfo=UTC)
+    )
+    for photo in (first, second, third):
+        await _add_score(db_session, photo, cluster_key="cluster-0")
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
+
+    events = await _events_of_run(db_session, run.id)
+    assert [e.position for e in events] == [1, 2]
+    assert (events[0].started_at, events[0].ended_at) == (first.taken_at, second.taken_at)
+    assert (events[1].started_at, events[1].ended_at) == (third.taken_at, third.taken_at)
+    assert events[0].ended_at <= events[1].started_at
+
+
+async def test_the_event_place_comes_from_measured_coordinates(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session,
+        project,
+        "a.jpg",
+        "etag-a",
+        datetime(2023, 1, 1, 10, 0, tzinfo=UTC),
+        gps_lat=48.858370,
+        gps_lon=2.294481,
+    )
+    await _add_score(db_session, photo, cluster_key="cluster-0")
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
+
+    [event] = await _events_of_run(db_session, run.id)
+    assert event.place_kind == "coordinate"
+    # GERUNDET geschrieben, nie in voller Praezision.
+    assert (event.place_lat, event.place_lon) == (48.86, 2.29)
+
+
+async def test_an_event_without_any_measured_coordinate_has_no_place(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die uebernommenen Orte bestimmen die Grenzen mit, speisen den Ortsbezug aber nie."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    anchor = await _add_photo(
+        db_session,
+        project,
+        "anchor.jpg",
+        "etag-anchor",
+        datetime(2023, 1, 1, 10, 0, tzinfo=UTC),
+        gps_lat=48.85,
+        gps_lon=2.29,
+    )
+    await _add_score(
+        db_session, anchor, cluster_key="cluster-0", suggested_status=RatingStatus.REJECTED
+    )
+    candidate = await _add_photo(
+        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, candidate, cluster_key="cluster-0")
+    for photo in (anchor, candidate):
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
+
+    [event] = await _events_of_run(db_session, run.id)
+    assert event.place_kind is None
+    assert (event.place_lat, event.place_lon) == (None, None)
+
+
+async def test_a_rejected_photo_anchors_the_inherited_location(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die Inferenzbasis ist das GANZE Projekt, nicht die Kandidatenmenge: zwei weit
+    auseinanderliegende, AUSSORTIERTE Anker trennen die beiden koordinatenlosen Kandidaten. Ohne
+    die projektweite Bezugsmenge waeren beide ortslos und laegen in einem Event."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    for index, (lat, minute) in enumerate(((48.0, 0), (49.0, 2))):
+        anchor = await _add_photo(
+            db_session,
+            project,
+            f"anchor-{index}.jpg",
+            f"etag-anchor-{index}",
+            datetime(2023, 1, 1, 10, minute, tzinfo=UTC),
+            gps_lat=lat,
+            gps_lon=2.0,
+        )
+        await _add_score(
+            db_session, anchor, cluster_key="cluster-0", suggested_status=RatingStatus.REJECTED
+        )
+        _write_display_variant(tmp_path, anchor, _flat_image())
+    candidates = [
+        await _add_photo(
+            db_session,
+            project,
+            f"{index}.jpg",
+            f"etag-{index}",
+            datetime(2023, 1, 1, 10, minute, tzinfo=UTC),
+        )
+        for index, minute in enumerate((0, 2))
+    ]
+    for photo in candidates:
+        await _add_score(db_session, photo, cluster_key="cluster-0")
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
+
+    assert len(await _events_of_run(db_session, run.id)) == 2
+
+
+async def test_the_inference_base_is_bound_to_the_project(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """SICHERHEIT (M5): die Bindung an `Photo.project_id` steht im Worker ausgeschrieben. Ohne sie
+    erbte ein Foto Koordinaten aus einem FREMDEN Projekt und die Event-Grenzen in Projekt A
+    haengten an Fotos aus Projekt B."""
+    foreign = await _make_project(db_session, name="Fremd")
+    for index, lat in enumerate((48.0, 49.0)):
+        await _add_photo(
+            db_session,
+            foreign,
+            f"f-{index}.jpg",
+            f"etag-f-{index}",
+            datetime(2023, 1, 1, 10, index * 2, tzinfo=UTC),
+            gps_lat=lat,
+            gps_lon=2.0,
+        )
+
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    for index, minute in enumerate((0, 2)):
+        photo = await _add_photo(
+            db_session,
+            project,
+            f"{index}.jpg",
+            f"etag-{index}",
+            datetime(2023, 1, 1, 10, minute, tzinfo=UTC),
+        )
+        await _add_score(db_session, photo, cluster_key="cluster-0")
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+    run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
+
+    assert len(await _events_of_run(db_session, run.id)) == 1
+
+
 async def test_an_unsanitised_legacy_name_does_not_split_against_its_sanitised_twin(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     """Altbestand aus Spec 0047: eine Zeile traegt unsanierten Rohtext (Zero-Width-Zeichen), eine
     zweite denselben Namen sauber. Ohne Sanitisierung im LESEPFAD waeren das zwei verschiedene
-    Namen und der Cluster zerfiele in zwei Teile, die dieselbe Sehenswuerdigkeit meinen."""
+    Namen und das Event zerfiele in zwei Teile, die dieselbe Sehenswuerdigkeit meinen."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     legacy = await _add_photo(
@@ -5368,15 +5596,15 @@ async def test_an_unsanitised_legacy_name_does_not_split_against_its_sanitised_t
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
-    keys = await _ranking_keys_by_photo(db_session, run.id)
-    assert keys[legacy.id] == keys[clean.id] == {"cluster-0"}
+    events = await _events_of_run(db_session, run.id)
+    assert [(e.position, e.landmark_name) for e in events] == [(1, "Eiffelturm")]
 
 
 async def test_an_overlong_legacy_name_is_discarded_and_causes_no_split(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Verworfen statt abgeschnitten: der Cluster gilt fuer dieses Foto als ohne Sehenswuerdigkeit
-    - und weil dann nur noch EIN Name im Cluster steht, findet gar keine Verfeinerung statt."""
+    """Verworfen statt abgeschnitten: fuer dieses Foto gilt "kein Name", es loest keine Grenze aus
+    und der Name landet nicht in `events.landmark_name`."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     overlong = await _add_photo(
@@ -5393,5 +5621,5 @@ async def test_an_overlong_legacy_name_is_discarded_and_causes_no_split(
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
-    keys = await _ranking_keys_by_photo(db_session, run.id)
-    assert keys[overlong.id] == keys[normal.id] == {"cluster-0"}
+    events = await _events_of_run(db_session, run.id)
+    assert [(e.position, e.landmark_name) for e in events] == [(1, "Eiffelturm")]

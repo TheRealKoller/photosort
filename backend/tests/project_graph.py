@@ -22,6 +22,7 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    Event,
     FineLabel,
     Photo,
     PhotoCategoryClassification,
@@ -55,6 +56,7 @@ class ProjectGraph:
     criterion_scoring_run_id: int
     remote_run_id: int
     fine_label_id: int
+    event_id: int
 
 
 async def get_or_create_user(session: AsyncSession, username: str = "graph-user") -> User:
@@ -90,7 +92,7 @@ async def get_or_create_fine_label(
 async def build_project_graph(
     session: AsyncSession, name: str, *, fine_label_key: str = "strand"
 ) -> ProjectGraph:
-    """Legt ein Projekt mit genau einer Zeile in jeder der dreizehn abhaengigen Tabellen an."""
+    """Legt ein Projekt mit genau einer Zeile in jeder der vierzehn abhaengigen Tabellen an."""
     now = datetime.now(UTC).replace(tzinfo=None)
     user = await get_or_create_user(session)
     fine_label = await get_or_create_fine_label(session, fine_label_key)
@@ -127,6 +129,20 @@ async def build_project_graph(
     session.add(criterion_run)
     await session.flush()
 
+    # Das Event steht ZWISCHEN Lauf und Rangzeile und wird deshalb vor ihr angelegt und von ihr
+    # referenziert - ohne diese Verknuepfung pruefte kein Vollstaendigkeitstest der Suite die neue
+    # Kante `photo_rankings -> events -> criterion_scoring_runs`.
+    event = Event(
+        criterion_scoring_run_id=criterion_run.id,
+        position=1,
+        started_at=now,
+        ended_at=now,
+        landmark_name="Eiffelturm",
+        place_kind="landmark",
+    )
+    session.add(event)
+    await session.flush()
+
     session.add_all(
         [
             Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.FAVORITE),
@@ -141,7 +157,7 @@ async def build_project_graph(
             PhotoRanking(
                 criterion_scoring_run_id=criterion_run.id,
                 photo_id=photo.id,
-                cluster_key="cluster-0",
+                event_id=event.id,
                 category_key="landschaft",
                 rank_score=0.9,
                 rank_position=1,
@@ -185,6 +201,7 @@ async def build_project_graph(
         criterion_scoring_run_id=criterion_run.id,
         remote_run_id=remote_run.id,
         fine_label_id=fine_label.id,
+        event_id=event.id,
     )
 
 

@@ -61,6 +61,7 @@ from photosort.models import (
     ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
+    Event,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
@@ -209,18 +210,21 @@ _DEMO_LANDMARK_OUTPUT_TOKENS = 540
 _DEMO_LANDMARK_COST_USD = 0.11
 _DEMO_ESTIMATED_COST_USD = 0.52
 
-# Der "bewertet"-Zustand muss ALLE VIER Anzeigezustaende der Cluster-Ueberschrift hergeben -
+# Der "bewertet"-Zustand muss ALLE VIER Anzeigezustaende der Event-Ueberschrift hergeben -
 # Sehenswuerdigkeit, eine Koordinate, mehrere Orte und gar kein Ort. Sonst ist die Sichtpruefung
 # ueber den `browse-app`-Skill fuer drei davon blind, und sie ist die einzige nicht automatisierte
-# Kontrollinstanz dieses Features.
+# Kontrollinstanz dieses Features. Genau eines der vier traegt einen Namen, drei tragen keinen.
 #
-# Dafuer verteilt der Seeder die Fotos auf VIER statt bisher drei Cluster (`index % 4`), und jedes
-# Cluster steht fuer genau einen Zustand.
-_DEMO_CLUSTER_COUNT = 4
-_DEMO_LANDMARK_CLUSTER = 0
-_DEMO_SINGLE_COORDINATE_CLUSTER = 1
-_DEMO_MULTIPLE_PLACES_CLUSTER = 2
-_DEMO_NO_LOCATION_CLUSTER = 3
+# Die Fotos fallen in ZUSAMMENHAENGENDE Bloecke statt im Wechsel (`index % 4`): Events eines Laufs
+# sind ueberschneidungsfrei, und `demo_taken_at` waechst streng mit dem Index. Ein Reissverschluss
+# erzeugte einen Zustand, den die Anwendung selbst nie schriebe.
+_DEMO_EVENT_COUNT = 4
+_DEMO_LANDMARK_EVENT = 0
+_DEMO_SINGLE_COORDINATE_EVENT = 1
+_DEMO_MULTIPLE_PLACES_EVENT = 2
+_DEMO_NO_LOCATION_EVENT = 3
+# Das Foto, an dem die eine Sehenswuerdigkeit-Zeile haengt - das erste des Landmark-Events.
+_DEMO_LANDMARK_PHOTO_INDEX = 0
 
 # Frei erfundene, aber plausible Koordinaten rund um den Eiffelturm (ausschliesslich synthetische
 # Demo-Daten - das Repository ist oeffentlich, und Standortdaten der Familie duerfen es nie
@@ -237,21 +241,40 @@ _DEMO_LANDMARK_NAME = "Eiffelturm"
 _DEMO_LANDMARK_CONFIDENCE = 0.91
 
 
-def _demo_gps(index: int) -> tuple[float, float] | None:
+def _demo_event_index(index: int, photo_count: int) -> int:
+    """Das Event des Demo-Fotos `index` - zusammenhaengende Bloecke ueber die nach `taken_at`
+    aufsteigende Fotoliste, damit die vier Events ueberschneidungsfrei aufeinanderfolgen."""
+    return min(index * _DEMO_EVENT_COUNT // photo_count, _DEMO_EVENT_COUNT - 1)
+
+
+def _demo_event_offset(index: int, photo_count: int) -> int:
+    """Der Platz des Fotos INNERHALB seines Events, 0-basiert.
+
+    Die Streuung rechnet gegen diesen Offset, nicht gegen den Gesamtindex: sonst waechst der
+    Abstand zur Basiskoordinate ueber die Events hinweg weiter, und das "eine Zelle"-Event faellt
+    ab einem bestimmten Index still ueber eine Zellgrenze."""
+    own_event = _demo_event_index(index, photo_count)
+    first = next(i for i in range(photo_count) if _demo_event_index(i, photo_count) == own_event)
+    return index - first
+
+
+def _demo_gps(index: int, photo_count: int) -> tuple[float, float] | None:
     """Die Koordinate des Demo-Fotos `index` - deterministisch, ohne Zufall, damit zwei
     Seeder-Laeufe byte-gleiche Werte liefern.
 
-    Die Zuordnung folgt dem Cluster: das Landmark- und das Koordinaten-Cluster streuen INNERHALB
-    einer gerundeten Zelle, das "Mehrere Orte"-Cluster ueber Zellgrenzen hinweg, und das vierte
-    Cluster bekommt gar keine Koordinate. `None` heisst hier wie ueberall "kein Ort" - nie eine
-    halbe Koordinate."""
-    cluster = index % _DEMO_CLUSTER_COUNT
-    if cluster == _DEMO_NO_LOCATION_CLUSTER:
+    Die Zuordnung folgt dem Event: das Landmark- und das Koordinaten-Event streuen INNERHALB einer
+    gerundeten Zelle, das "Mehrere Orte"-Event ueber Zellgrenzen hinweg, und das vierte Event
+    bekommt gar keine Koordinate. `None` heisst hier wie ueberall "kein Ort" - nie eine halbe
+    Koordinate."""
+    event_index = _demo_event_index(index, photo_count)
+    if event_index == _DEMO_NO_LOCATION_EVENT:
         return None
-    step = index // _DEMO_CLUSTER_COUNT
     spread = (
-        _DEMO_OTHER_CELL_STEP if cluster == _DEMO_MULTIPLE_PLACES_CLUSTER else _DEMO_SAME_CELL_STEP
+        _DEMO_OTHER_CELL_STEP
+        if event_index == _DEMO_MULTIPLE_PLACES_EVENT
+        else _DEMO_SAME_CELL_STEP
     )
+    step = _demo_event_offset(index, photo_count)
     return (
         round(_DEMO_BASE_LAT + spread * step, 6),
         round(_DEMO_BASE_LON + spread * step, 6),
@@ -591,6 +614,53 @@ def _demo_category_confidences(slug: str, index: int, category_key: str) -> dict
     return confidences | _DEMO_EXTRA_CONFIDENCES.get(index, {})
 
 
+async def _create_demo_events(
+    session: AsyncSession, criterion_scoring_run_id: int, photos: list[Photo], photo_count: int
+) -> dict[int, int]:
+    """Die vier Events des "bewertet"-Laufs - Rueckgabe `Event-Index -> events.id`.
+
+    Zeitspanne und Ortsfelder entstehen aus den MITGLIEDERN, nicht aus freien Werten: `place_kind`
+    folgt derselben Rangfolge wie `events.py::_place_of` (Name -> genau eine gerundete Zelle ->
+    mehrere Orte -> kein Ortsbezug), und `'multiple'` traegt strukturell keine Koordinate. Der
+    Seeder darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe."""
+    members: dict[int, list[Photo]] = {}
+    for index, photo in enumerate(photos):
+        members.setdefault(_demo_event_index(index, photo_count), []).append(photo)
+
+    event_by_index: dict[int, int] = {}
+    for position, event_index in enumerate(sorted(members), start=1):
+        group = members[event_index]
+        cells = {
+            (round(photo.gps_lat, 2) + 0.0, round(photo.gps_lon, 2) + 0.0)
+            for photo in group
+            if photo.gps_lat is not None and photo.gps_lon is not None
+        }
+        is_landmark = event_index == _DEMO_LANDMARK_EVENT
+        if is_landmark:
+            place_kind, place_lat, place_lon = "landmark", None, None
+        elif not cells:
+            place_kind, place_lat, place_lon = None, None, None
+        elif len(cells) > 1:
+            place_kind, place_lat, place_lon = "multiple", None, None
+        else:
+            [(lat, lon)] = cells
+            place_kind, place_lat, place_lon = "coordinate", lat, lon
+        event = Event(
+            criterion_scoring_run_id=criterion_scoring_run_id,
+            position=position,
+            started_at=group[0].taken_at,
+            ended_at=group[-1].taken_at,
+            landmark_name=_DEMO_LANDMARK_NAME if is_landmark else None,
+            place_kind=place_kind,
+            place_lat=place_lat,
+            place_lon=place_lon,
+        )
+        session.add(event)
+        await session.flush()
+        event_by_index[event_index] = event.id
+    return event_by_index
+
+
 async def _seed_empty_project(
     session: AsyncSession, spec: DemoProjectSpec, cache_dir: Path
 ) -> list[Photo]:
@@ -636,7 +706,13 @@ async def _seed_rated_project(
 
     Rueckgabe: die Fotos und die Anzahl der Nutzer, fuer die Bewertungen geschrieben wurden."""
     project = await _create_project(session, spec)
-    photos = await _create_photos(session, project, spec, cache_dir, location_of=_demo_gps)
+    photos = await _create_photos(
+        session,
+        project,
+        spec,
+        cache_dir,
+        location_of=lambda index: _demo_gps(index, spec.photo_count),
+    )
     session.add(
         _scan_run(
             project,
@@ -720,16 +796,23 @@ async def _seed_rated_project(
     # Die Zugehoerigkeiten werden erst GESAMMELT und dann partitionsweise geschrieben - ein Foto
     # kann in mehreren Partitionen stehen, und `rank_position` ist innerhalb einer Partition
     # lueckenlos 1..n (dieselbe Zusage wie im produktiven Schreibpfad).
-    memberships: list[tuple[tuple[str, str], Photo, float, bool]] = []
+    # ECHTE `events`-Zeilen, eine je Anzeigezustand. Die Ortsfelder werden nicht frei gesetzt,
+    # sondern aus den GEMESSENEN Koordinaten der Mitglieder abgeleitet - die Demo darf keinen
+    # Zustand erzeugen, den die Anwendung selbst nie schriebe (Feldkombination M7).
+    event_by_index = await _create_demo_events(session, criterion_run.id, photos, spec.photo_count)
+
+    memberships: list[tuple[tuple[int, str], Photo, float, bool]] = []
     for index, (photo, category_key) in enumerate(zip(photos, CATEGORY_REGISTRY, strict=True)):
-        cluster_key = f"{spec.slug}-cluster-{index % _DEMO_CLUSTER_COUNT}"
+        event_id = event_by_index[_demo_event_index(index, spec.photo_count)]
         category_override = _DEMO_OVERRIDE_CATEGORY_KEY if index == _DEMO_OVERRIDE_INDEX else None
         session.add(
             PhotoScore(
                 photo_id=photo.id,
                 sharpness=_deterministic_unit_value(spec.slug, index, "sharpness"),
                 exposure=_deterministic_unit_value(spec.slug, index, "exposure"),
-                cluster_key=cluster_key,
+                # Phase A, unberuehrt von der Event-Bildung - die Divergenz zu
+                # `PhotoRanking.event_id` ist gewollt.
+                cluster_key=f"{spec.slug}-cluster-{index % _DEMO_EVENT_COUNT}",
                 # Genau ein offener Ausschuss-Vorschlag: ein Foto mit Vorschlag "Ausschuss", das
                 # bewusst KEINE Bewertung traegt - sonst waere der Vorschlag bereits entschieden.
                 suggested_status=(
@@ -765,12 +848,12 @@ async def _seed_rated_project(
                 computed_at=_BASE_SCORING_AT,
             )
         )
-        # GENAU EIN erkannter Name im Landmark-Cluster. Genau einer, nicht mehrere -
-        # `refine_clusters_by_landmark` teilt erst ab ZWEI verschiedenen Namen auf, und der
-        # Demo-Zustand soll den ungeteilten Cluster mit `kind="landmark"` zeigen, nicht seine
-        # Aufteilung. Die uebrigen Fotos des Clusters bekommen den Namen ueber `cluster_place` mit -
-        # genau das ist der Zustand, den die Sichtpruefung sehen soll.
-        if index == _DEMO_LANDMARK_CLUSTER:
+        # GENAU EIN erkannter Name im Landmark-Event. Genau einer, nicht mehrere: ein zweiter
+        # Name im selben Event traennte es (LandmarkChangeSignal), und der Demo-Zustand soll das
+        # ungeteilte Event mit `kind="landmark"` zeigen, nicht seine Trennung. Die uebrigen Fotos
+        # des Events tragen den Namen ueber `PhotoOut.event.place` mit - genau das ist der Zustand,
+        # den die Sichtpruefung sehen soll.
+        if index == _DEMO_LANDMARK_PHOTO_INDEX:
             session.add(
                 PhotoLandmarkDetection(
                     photo_id=photo.id,
@@ -782,9 +865,9 @@ async def _seed_rated_project(
             )
         rank_score = _deterministic_unit_value(spec.slug, index, "rank")
         primary_key = category_override or category_key
-        memberships.append(((cluster_key, primary_key), photo, rank_score, True))
+        memberships.append(((event_id, primary_key), photo, rank_score, True))
         for secondary_key in secondary_categories(confidences or {}, primary_key):
-            memberships.append(((cluster_key, secondary_key), photo, rank_score, False))
+            memberships.append(((event_id, secondary_key), photo, rank_score, False))
         for criterion_key, definition in CRITERIA_REGISTRY.items():
             session.add(
                 PhotoCriterionScore(
@@ -796,10 +879,10 @@ async def _seed_rated_project(
                 )
             )
 
-    partitions: dict[tuple[str, str], list[tuple[Photo, float, bool]]] = {}
+    partitions: dict[tuple[int, str], list[tuple[Photo, float, bool]]] = {}
     for partition_key, photo, rank_score, is_primary in memberships:
         partitions.setdefault(partition_key, []).append((photo, rank_score, is_primary))
-    for (cluster_key, partition_category_key), rows in partitions.items():
+    for (partition_event_id, partition_category_key), rows in partitions.items():
         # Absteigend nach Rang-Score, Tie-Break ueber die Foto-Id - dieselbe Ordnung wie
         # ranking.py::rank_photos. Die Konfidenz-Daempfung wird hier bewusst NICHT nachgebaut: die
         # Demo soll einen plausiblen Zustand zeigen, nicht den Algorithmus ein zweites Mal
@@ -810,7 +893,7 @@ async def _seed_rated_project(
                 PhotoRanking(
                     criterion_scoring_run_id=criterion_run.id,
                     photo_id=photo.id,
-                    cluster_key=cluster_key,
+                    event_id=partition_event_id,
                     category_key=partition_category_key,
                     rank_score=rank_score,
                     rank_position=position,

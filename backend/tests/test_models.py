@@ -30,6 +30,7 @@ from photosort.models import (
     ScoringRun,
     User,
 )
+from tests.event_rows import event_id_of_run
 
 
 async def test_create_project(db_session: AsyncSession) -> None:
@@ -471,7 +472,7 @@ async def test_create_photo_ranking(db_session: AsyncSession) -> None:
     ranking = PhotoRanking(
         criterion_scoring_run_id=run.id,
         photo_id=photo.id,
-        cluster_key="cluster-0",
+        event_id=await event_id_of_run(db_session, run),
         category_key="landscape",
         rank_score=0.9,
         rank_position=1,
@@ -511,7 +512,7 @@ async def _make_ranked_photo(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
-            cluster_key="cluster-0",
+            event_id=await event_id_of_run(db_session, run),
             category_key="menschen",
             rank_score=0.9,
             rank_position=1,
@@ -534,7 +535,7 @@ async def test_photo_ranking_unique_per_run_photo_and_category(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
-            cluster_key="cluster-0",
+            event_id=await event_id_of_run(db_session, run),
             category_key="menschen",
             rank_score=0.1,
             rank_position=2,
@@ -556,7 +557,7 @@ async def test_the_same_photo_may_appear_in_a_second_category_of_the_same_run(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
-            cluster_key="cluster-0",
+            event_id=await event_id_of_run(db_session, run),
             category_key="tier",
             rank_score=0.9,
             rank_position=1,
@@ -593,7 +594,7 @@ async def test_photo_ranking_requires_an_explicit_is_primary(db_session: AsyncSe
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
-            cluster_key="cluster-0",
+            event_id=await event_id_of_run(db_session, run),
             category_key="tier",
             rank_score=0.9,
             rank_position=1,
@@ -622,7 +623,7 @@ async def _make_ranking_graph(db_session: AsyncSession) -> tuple[CriterionScorin
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
-            cluster_key="cluster-0",
+            event_id=await event_id_of_run(db_session, run),
             category_key="landscape",
             rank_score=0.9,
             rank_position=1,

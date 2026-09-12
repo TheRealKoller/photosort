@@ -21,6 +21,7 @@ from photosort.models import (
 )
 from photosort.ranking import confidence_ordering_score
 from photosort.worker import reassign_photo_category
+from tests.event_rows import event_id_of_run
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, ADR 0032 Punkt 7:
 # sofortige Wirkung des Overrides - gezielte Partitions-Neusortierung statt vollem Re-Scoring.
@@ -86,7 +87,6 @@ async def _add_ranking(
     run: CriterionScoringRun,
     photo: Photo,
     *,
-    cluster_key: str,
     category_key: str,
     rank_score: float,
     rank_position: int,
@@ -98,7 +98,7 @@ async def _add_ranking(
     ranking = PhotoRanking(
         criterion_scoring_run_id=run.id,
         photo_id=photo.id,
-        cluster_key=cluster_key,
+        event_id=await event_id_of_run(session, run),
         category_key=category_key,
         rank_score=rank_score,
         rank_position=rank_position,
@@ -163,9 +163,9 @@ async def _assert_positions_are_gapless(session: AsyncSession, run: CriterionSco
         .scalars()
         .all()
     )
-    positions: dict[tuple[str, str], list[int]] = {}
+    positions: dict[tuple[int, str], list[int]] = {}
     for row in rows:
-        positions.setdefault((row.cluster_key, row.category_key), []).append(row.rank_position)
+        positions.setdefault((row.event_id, row.category_key), []).append(row.rank_position)
     for partition, found in positions.items():
         assert sorted(found) == list(range(1, len(found) + 1)), partition
 
@@ -192,7 +192,6 @@ async def test_an_unchanged_target_set_still_reranks_but_changes_nothing(
         db_session,
         run,
         photo,
-        cluster_key="c1",
         category_key="people",
         rank_score=0.9,
         rank_position=1,
@@ -206,7 +205,9 @@ async def test_an_unchanged_target_set_still_reranks_but_changes_nothing(
         return original_rank_photos(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(worker, "rank_photos", spy)
-    await reassign_photo_category(db_session, run.id, photo.id, "c1", "people")
+    await reassign_photo_category(
+        db_session, run.id, photo.id, await event_id_of_run(db_session, run), "people"
+    )
 
     assert len(calls) == 1
     ranking = (
@@ -231,7 +232,6 @@ async def test_moving_a_photo_recomputes_rank_in_both_partitions(
         db_session,
         run,
         photo_a1,
-        cluster_key="c1",
         category_key="people",
         rank_score=0.9,
         rank_position=1,
@@ -242,7 +242,6 @@ async def test_moving_a_photo_recomputes_rank_in_both_partitions(
         db_session,
         run,
         photo_a2,
-        cluster_key="c1",
         category_key="people",
         rank_score=0.5,
         rank_position=2,
@@ -255,13 +254,14 @@ async def test_moving_a_photo_recomputes_rank_in_both_partitions(
         db_session,
         run,
         photo_b1,
-        cluster_key="c1",
         category_key="landscape",
         rank_score=0.3,
         rank_position=1,
     )
 
-    await reassign_photo_category(db_session, run.id, photo_a2.id, "c1", "landscape")
+    await reassign_photo_category(
+        db_session, run.id, photo_a2.id, await event_id_of_run(db_session, run), "landscape"
+    )
 
     # Neu ABGEFRAGT statt ueber die gehaltenen Instanzen aufgefrischt: seit
     # specs/features/0300-nebenkategorien.md stellt die Funktion die gesamte
@@ -286,7 +286,9 @@ async def test_no_matching_ranking_row_is_a_safe_no_op(db_session: AsyncSession)
     run = await _add_criterion_scoring_run(db_session, project)
     # Kein PhotoRanking fuer photo_id=999 im Lauf - defensiver No-op statt Exception (die
     # eigentliche 404/409-Validierung lebt am API-Endpunkt, nicht hier).
-    await reassign_photo_category(db_session, run.id, 999, "c1", "people")
+    await reassign_photo_category(
+        db_session, run.id, 999, await event_id_of_run(db_session, run), "people"
+    )
 
 
 # ---------------------------------------------------------------------------------------------
@@ -319,7 +321,6 @@ async def _add_score(
         photo_id=photo.id,
         sharpness=0.5,
         exposure=0.5,
-        cluster_key="c1",
         category_override=category_override,
         computed_at=datetime(2023, 1, 1, tzinfo=UTC),
     )
@@ -343,7 +344,6 @@ async def _photo_with_two_memberships(
         session,
         run,
         photo,
-        cluster_key="c1",
         category_key="menschen",
         rank_score=0.9,
         rank_position=1,
@@ -354,7 +354,6 @@ async def _photo_with_two_memberships(
             session,
             run,
             photo,
-            cluster_key="c1",
             category_key="tier",
             rank_score=0.9,
             rank_position=1,
@@ -376,7 +375,9 @@ async def test_an_override_onto_an_existing_secondary_merges_both_rows(
     )
     await _add_score(db_session, photo, category_override="tier")
 
-    await reassign_photo_category(db_session, run.id, photo.id, "c1", "tier")
+    await reassign_photo_category(
+        db_session, run.id, photo.id, await event_id_of_run(db_session, run), "tier"
+    )
 
     rows = await _rankings_of(db_session, run)
     assert {key[1]: row.is_primary for key, row in rows.items()} == {
@@ -397,7 +398,9 @@ async def test_the_previous_primary_stays_as_a_secondary_when_it_reaches_the_thr
     photo = await _photo_with_two_memberships(db_session, run, project, {"menschen": 0.9})
     await _add_score(db_session, photo, category_override="fahrzeug")
 
-    await reassign_photo_category(db_session, run.id, photo.id, "c1", "fahrzeug")
+    await reassign_photo_category(
+        db_session, run.id, photo.id, await event_id_of_run(db_session, run), "fahrzeug"
+    )
 
     rows = await _rankings_of(db_session, run)
     assert {key[1]: row.is_primary for key, row in rows.items()} == {
@@ -417,7 +420,9 @@ async def test_the_previous_primary_disappears_without_a_number(
     photo = await _photo_with_two_memberships(db_session, run, project, {})
     await _add_score(db_session, photo, category_override="fahrzeug")
 
-    await reassign_photo_category(db_session, run.id, photo.id, "c1", "fahrzeug")
+    await reassign_photo_category(
+        db_session, run.id, photo.id, await event_id_of_run(db_session, run), "fahrzeug"
+    )
 
     rows = await _rankings_of(db_session, run)
     assert {key[1]: row.is_primary for key, row in rows.items()} == {"fahrzeug": True}
@@ -434,7 +439,9 @@ async def test_an_override_onto_a_never_candidate_category_keeps_both_secondarie
     )
     await _add_score(db_session, photo, category_override="dokument_screenshot")
 
-    await reassign_photo_category(db_session, run.id, photo.id, "c1", "dokument_screenshot")
+    await reassign_photo_category(
+        db_session, run.id, photo.id, await event_id_of_run(db_session, run), "dokument_screenshot"
+    )
 
     rows = await _rankings_of(db_session, run)
     assert {key[1]: row.is_primary for key, row in rows.items()} == {
@@ -458,11 +465,15 @@ async def test_taking_the_override_back_restores_the_membership_set_of_the_autom
     before = {key[1]: row.is_primary for key, row in (await _rankings_of(db_session, run)).items()}
 
     score = await _add_score(db_session, photo, category_override="tier")
-    await reassign_photo_category(db_session, run.id, photo.id, "c1", "tier")
+    await reassign_photo_category(
+        db_session, run.id, photo.id, await event_id_of_run(db_session, run), "tier"
+    )
 
     score.category_override = None
     await db_session.commit()
-    await reassign_photo_category(db_session, run.id, photo.id, "c1", "menschen")
+    await reassign_photo_category(
+        db_session, run.id, photo.id, await event_id_of_run(db_session, run), "menschen"
+    )
 
     after = {key[1]: row.is_primary for key, row in (await _rankings_of(db_session, run)).items()}
     assert after == before
@@ -487,7 +498,6 @@ async def test_a_manually_set_primary_row_is_not_dampened(db_session: AsyncSessi
         db_session,
         run,
         other,
-        cluster_key="c1",
         category_key="tier",
         rank_score=0.5,
         rank_position=1,
@@ -500,14 +510,15 @@ async def test_a_manually_set_primary_row_is_not_dampened(db_session: AsyncSessi
         db_session,
         run,
         overridden,
-        cluster_key="c1",
         category_key="menschen",
         rank_score=0.6,
         rank_position=1,
     )
     await _add_score(db_session, overridden, category_override="tier")
 
-    await reassign_photo_category(db_session, run.id, overridden.id, "c1", "tier")
+    await reassign_photo_category(
+        db_session, run.id, overridden.id, await event_id_of_run(db_session, run), "tier"
+    )
 
     rows = await _rankings_of(db_session, run)
     assert rows[(overridden.id, "tier")].rank_position == 1
