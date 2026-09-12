@@ -216,6 +216,16 @@ die Plugin-Daten `ansicht`/`breite`. Für `verify.js` ist ein laufender Entwurf 
 vorhanden: Er kann den Abgleich weder rot färben noch Zählwerte verschieben. Weggeworfen wird eine
 Arbeitsseite von Daniel in Penpot; kein Skript entfernt sie.
 
+**Die Registerseite `Bausteine — Zustände` steht ebenfalls nicht in `views.json`** — und das ist
+eine Festlegung, kein Versäumnis, das nachzutragen wäre. Sie ist keine Ansicht, sondern das von
+Hand aufgebaute Nachschlagewerk der Bausteine; *was* darauf zu zeigen ist, steht abzählbar in
+`components.json` und `icons.json`, *wie* es angeordnet ist, in der Rastertabelle ihrer Spec. Eine
+Soll-Struktur hier wiederholte `components.json` in anderer Sortierung. Ihre Objekte tragen
+ausdrücklich **nicht** die Plugin-Daten `schluessel`/`ansicht`/`breite`, womit sie für `verify.js`
+weder eine Kardinalität heben noch den Abgleich rot färben können; die Zählwerte über zusätzlich
+vorhandene Objekte steigen dagegen legitim. Ein Wiederaufbau der Datei kostet die Seite — sie
+kommt allein durch erneute Handarbeit zurück.
+
 **Die Bildexporte werden nicht eingecheckt.** Je Ansichtsbrett ein Export über `export_shape` auf
 die **Form** (nie ein Fensterabzug — ein Bildschirmfoto trüge die Adresszeile).
 
