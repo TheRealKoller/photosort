@@ -25,7 +25,9 @@ from photosort.criteria import (
     LANDSCHAFT_LABEL_MIN_CONFIDENCE,
     VEHICLE_CATEGORIES,
     CriterionDefinition,
+    allow_listed_area_fraction,
     animal_detections,
+    bounding_box_area_fraction,
     compute_content_landscape,
     compute_content_people,
     compute_essen_trinken_score,
@@ -711,3 +713,131 @@ class TestIsLandmarkCandidate:
 # compute_golden_ratio_score selbst ist eine reine Funktion ohne eigenen detect()-Aufruf (siehe
 # Docstring in criteria.py), ein Spy-Test dagegen wuerde nur die Aufrufliste der Testfunktion
 # selbst zaehlen, nicht die tatsaechliche Produktions-Verdrahtung.
+
+
+# specs/features/0427-motive-mit-staerke.md, PR 1 Schritt 4: die Flaechenanteile je Allow-Liste.
+# Sie entstehen aus den BEREITS VORHANDENEN Detektionen - kein zweiter Detektoraufruf, keine neue
+# Kriterien-Spalte, keine persistierte Box. Vier Grenzfaelle gehen der Umsetzung sonst durch:
+# ueberlappende Boxen desselben Typs, eine ueber den Bildrand hinausreichende Box, eine Box der
+# Flaeche 0 und eine Objektklasse, die zu zwei Motiven beitraegt.
+
+
+def _sized_object(
+    category: str, *, width: float, height: float, x_center: float = 0.5, y_center: float = 0.5
+) -> ObjectDetection:
+    return ObjectDetection(
+        category=category,
+        confidence=0.9,
+        x_center=x_center,
+        y_center=y_center,
+        width=width,
+        height=height,
+    )
+
+
+def _sized_face(*, width: float, height: float) -> FaceBoundingBox:
+    return FaceBoundingBox(x_center=0.5, y_center=0.5, width=width, height=height, confidence=0.9)
+
+
+class TestBoundingBoxAreaFraction:
+    def test_without_any_box_the_fraction_is_zero(self) -> None:
+        assert bounding_box_area_fraction([]) == 0.0
+
+    def test_a_single_box_contributes_its_own_area(self) -> None:
+        assert bounding_box_area_fraction([_sized_face(width=0.5, height=0.4)]) == pytest.approx(
+            0.2
+        )
+
+    def test_a_full_frame_box_saturates_the_fraction(self) -> None:
+        assert bounding_box_area_fraction([_sized_face(width=1.0, height=1.0)]) == 1.0
+
+    def test_several_boxes_are_summed_not_maximised(self) -> None:
+        """Fuenf kleine Personen sind ein Personenbild - deshalb die Summe, nicht das Maximum."""
+        boxes = [_sized_face(width=0.2, height=0.2) for _ in range(5)]
+
+        assert bounding_box_area_fraction(boxes) == pytest.approx(0.2)
+
+    def test_overlapping_boxes_count_twice_and_the_result_stays_clamped(self) -> None:
+        """Bewusst hingenommener Effekt: die Summe unterscheidet Ueberlappung nicht. Getragen wird
+        das allein von der Klemmung - ohne sie entstuende eine Staerke groesser 1 und damit ein
+        Wert, den die `[0, 1]`-Zusage der Spalte nicht deckt."""
+        boxes = [
+            _sized_object("dog", width=1.0, height=1.0),
+            _sized_object("cat", width=1.0, height=1.0),
+        ]
+
+        assert bounding_box_area_fraction(boxes) == 1.0
+
+    def test_a_box_reaching_beyond_the_image_border_stays_within_the_range(self) -> None:
+        """Eine Detektion, deren Box ueber den Bildrand hinausreicht, liefert normiert einen Wert
+        groesser 1 - er darf die Skala nicht sprengen."""
+        assert bounding_box_area_fraction([_sized_face(width=1.4, height=1.2)]) == 1.0
+
+    def test_a_box_of_zero_area_contributes_nothing(self) -> None:
+        assert bounding_box_area_fraction([_sized_face(width=0.0, height=0.5)]) == 0.0
+        assert bounding_box_area_fraction([_sized_face(width=0.5, height=0.0)]) == 0.0
+
+    def test_a_negative_extent_contributes_nothing_instead_of_subtracting(self) -> None:
+        """Eine entartete Box darf keinen NEGATIVEN Beitrag leisten - sonst hoebe sie die Flaeche
+        einer echten Detektion daneben auf."""
+        boxes = [_sized_face(width=-0.5, height=0.5), _sized_face(width=0.4, height=0.5)]
+
+        assert bounding_box_area_fraction(boxes) == pytest.approx(0.2)
+
+    def test_the_input_sequence_is_not_mutated(self) -> None:
+        boxes = [_sized_face(width=0.2, height=0.2)]
+
+        bounding_box_area_fraction(boxes)
+
+        assert len(boxes) == 1
+
+
+class TestAllowListedAreaFraction:
+    def test_only_the_allow_listed_classes_contribute(self) -> None:
+        objects = [
+            _sized_object("dog", width=0.4, height=0.5),
+            _sized_object("car", width=1.0, height=1.0),
+        ]
+
+        assert allow_listed_area_fraction(objects, ANIMAL_CATEGORIES) == pytest.approx(0.2)
+
+    def test_a_class_outside_every_allow_list_contributes_nowhere(self) -> None:
+        objects = [_sized_object("laptop", width=1.0, height=1.0)]
+
+        for allowed in (ANIMAL_CATEGORIES, VEHICLE_CATEGORIES, FOOD_CATEGORIES):
+            assert allow_listed_area_fraction(objects, allowed) == 0.0
+
+    def test_a_class_contributing_to_two_allow_lists_stays_within_the_range_in_both(self) -> None:
+        """Der vierte Grenzfall: die drei Allow-Listen sind heute disjunkt, aber die Zusage darf
+        daran nicht haengen - jede Auswertung bleibt fuer sich in [0, 1]."""
+        objects = [
+            _sized_object("wine glass", width=1.0, height=1.0),
+            _sized_object("dog", width=1.0, height=1.0),
+        ]
+
+        assert 0.0 <= allow_listed_area_fraction(objects, FOOD_CATEGORIES) <= 1.0
+        assert 0.0 <= allow_listed_area_fraction(objects, ANIMAL_CATEGORIES) <= 1.0
+
+    def test_it_uses_the_same_allow_lists_as_the_confidence_scores(self) -> None:
+        """Dieselbe Liste, zwei Auswertungen: der Flaechenanteil und der Konfidenz-Score eines
+        Kriteriums duerfen nicht auf unterschiedliche Klassenmengen sehen."""
+        objects = [_sized_object("dog", width=0.5, height=0.5)]
+
+        assert allow_listed_area_fraction(objects, ANIMAL_CATEGORIES) > 0.0
+        assert compute_tier_score(objects) > 0.0
+        assert allow_listed_area_fraction(objects, VEHICLE_CATEGORIES) == 0.0
+        assert compute_fahrzeug_score(objects) == 0.0
+
+    def test_the_area_fraction_is_independent_of_the_confidence(self) -> None:
+        """Der Kern der Aenderung: ein Objekt wirkt nach seinem ANTEIL am Bild, nicht nach seiner
+        Anwesenheit oder der Sicherheit der Erkennung."""
+        small_but_certain = [
+            dataclasses.replace(_sized_object("dog", width=0.1, height=0.1), confidence=0.99)
+        ]
+        large_but_unsure = [
+            dataclasses.replace(_sized_object("dog", width=0.8, height=0.8), confidence=0.51)
+        ]
+
+        assert allow_listed_area_fraction(small_but_certain, ANIMAL_CATEGORIES) < (
+            allow_listed_area_fraction(large_but_unsure, ANIMAL_CATEGORIES)
+        )

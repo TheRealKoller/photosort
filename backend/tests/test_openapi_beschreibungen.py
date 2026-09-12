@@ -28,6 +28,11 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     ("get", "/projects/{project_id}/cameras"),
     ("put", "/projects/{project_id}/cameras/{camera_id}/time-offset"),
     ("get", "/projects/{project_id}/camera-time-offset-suggestion"),
+    # specs/features/0427-motive-mit-staerke.md, PR 1: ein nicht eingetragener Endpunkt faellt
+    # ohne roten Test aus der Beschreibungspflicht.
+    ("get", "/motifs"),
+    ("put", "/photos/{photo_id}/motif-corrections/{motif_key}"),
+    ("delete", "/photos/{photo_id}/motif-corrections/{motif_key}"),
 )
 
 

@@ -322,6 +322,44 @@ def animal_detections(objects: Sequence[ObjectDetection]) -> list[ObjectDetectio
     return [detection for detection in objects if detection.category in ANIMAL_CATEGORIES]
 
 
+def bounding_box_area_fraction(boxes: Sequence[SubjectBoxLike]) -> float:
+    """Der Anteil der Bildflaeche, den die uebergebenen Bounding-Boxen zusammen einnehmen -
+    Grundlage der flaechengewichteten Motivstaerken (motifs.py::local_motif_strengths).
+
+    SUMMIERT, nicht das Maximum: fuenf kleine Personen sind ein Personenbild. Ueberlappende Boxen
+    zaehlen dabei DOPPELT - der Effekt ist bewusst hingenommen, und getragen wird er allein von
+    der Klemmung auf [0, 1]: ohne sie entstuende ein Wert, den die `[0, 1]`-Zusage der
+    Staerkespalte nicht deckt. Je Box wird die Ausdehnung ebenfalls geklemmt; eine ueber den
+    Bildrand hinausreichende Box liefert normiert einen Wert groesser 1, und eine entartete Box
+    mit negativer Ausdehnung darf keinen negativen Beitrag leisten, der die Flaeche einer echten
+    Detektion daneben aufhoebe.
+
+    Reine Funktion ohne eigenen detect()-Aufruf und ohne Bildzugriff - sie arbeitet auf den
+    BEREITS VORHANDENEN Detektionen desselben Laufs. Die Boxen selbst werden nicht persistiert;
+    die Staerke ist das Ergebnis, das die Anwendung braucht."""
+    total = 0.0
+    for box in boxes:
+        width = max(0.0, min(1.0, box.width))
+        height = max(0.0, min(1.0, box.height))
+        total += width * height
+    return max(0.0, min(1.0, total))
+
+
+def allow_listed_area_fraction(
+    objects: Sequence[ObjectDetection], allowed: frozenset[str]
+) -> float:
+    """`bounding_box_area_fraction` ueber genau den Erkennungen EINER Allow-Liste - dieselben
+    Klassenmengen, die auch die Konfidenz-Scores auswerten (VEHICLE_CATEGORIES/FOOD_CATEGORIES/
+    ANIMAL_CATEGORIES).
+
+    Eine Klasse, die in zwei Allow-Listen stuende, traegt zu beiden bei; jede Auswertung bleibt
+    fuer sich in [0, 1]. Die drei Listen sind heute disjunkt, aber die Zusage haengt nicht
+    daran."""
+    return bounding_box_area_fraction(
+        [detection for detection in objects if detection.category in allowed]
+    )
+
+
 def compute_tier_score(objects: Sequence[ObjectDetection]) -> float:
     """`tier`-Kriterium: Score = Konfidenz des PROMINENTESTEN erkannten Tieres (bereits in
     [0, 1], da detect_objects nur oberhalb von OBJECT_DETECTION_CONFIDENCE_THRESHOLD

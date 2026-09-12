@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NoReturn
+from uuid import uuid4
 
 import httpx
 import numpy as np
@@ -26,6 +27,7 @@ from photosort.cloud_vision import (
     TokenUsage,
     default_vision_model_for_provider,
 )
+from photosort.criteria import CRITERIA_REGISTRY
 from photosort.landmark import (
     MAX_LANDMARK_NAME_LENGTH,
     AnthropicLandmarkClient,
@@ -39,19 +41,26 @@ from photosort.models import (
     CriterionSource,
     Event,
     FineLabel,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
+    PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
     RatingStatus,
     ScanStatus,
     ScoringRun,
+    User,
 )
+from photosort.motif_strengths import load_effective_strengths, upsert_assessment
+from photosort.motifs import MOTIF_REGISTRY
 from photosort.pricing import compute_cost_usd
 from photosort.thumbnails import display_path
 from photosort.worker import _select_landmark_candidates, run_criterion_scoring, run_project_scoring
@@ -5624,3 +5633,501 @@ async def test_an_overlong_legacy_name_is_discarded_and_causes_no_split(
 
     events = await _events_of_run(db_session, run.id)
     assert [(e.position, e.landmark_name) for e in events] == [(1, "Eiffelturm")]
+
+
+# specs/features/0427-motive-mit-staerke.md, PR 1 Schritt 4: der Kriterien-Lauf schreibt je Foto
+# eine LOKALE Kopfzeile samt Stärkevektor. Rein additiv - die bestehende Kategorieableitung läuft
+# unverändert daneben weiter (Ablösung erst in PR 3).
+#
+# Der tragende Fall dieses Abschnitts ist
+# `test_a_small_face_weakens_the_people_motif_without_touching_content_people`: getrennt
+# geschrieben bestünden beide Assertions auch dann, wenn die alte Präsenz-Berechnung
+# stillschweigend zur neuen geworden ist - und damit wären Rangfolge und
+# Landmark-Kandidatenwahl mitverändert.
+
+_MOTIF_TEST_IMAGE_SIZE = 160
+
+
+class SizedFaceDetector:
+    """Faket den mediapipe FaceDetector so, dass GENAU EIN Gesicht mit konfigurierbarer
+    Boxgroesse (in Pixeln des 160x160-Testbilds) gefunden wird - analog AnimalDetectorStub, aber
+    mit steuerbarer FLAECHE: die Flaechengewichtung der Motivstaerken ist genau daran zu messen."""
+
+    def __init__(self, size_px: int) -> None:
+        self._size_px = size_px
+
+    def detect(self, image: object) -> object:
+        return SimpleNamespace(
+            detections=[
+                SimpleNamespace(
+                    categories=[SimpleNamespace(score=0.9)],
+                    bounding_box=SimpleNamespace(
+                        origin_x=0, origin_y=0, width=self._size_px, height=self._size_px
+                    ),
+                )
+            ]
+        )
+
+
+class SizedAnimalDetector:
+    """Wie AnimalDetectorStub, aber mit konfigurierbarer Boxgroesse - fuer den
+    Monotonie-Nachweis der Flaechengewichtung."""
+
+    def __init__(self, size_px: int) -> None:
+        self._size_px = size_px
+
+    def detect(self, image: object) -> object:
+        return SimpleNamespace(
+            detections=[
+                SimpleNamespace(
+                    categories=[SimpleNamespace(category_name="dog", score=0.9)],
+                    bounding_box=SimpleNamespace(
+                        origin_x=0, origin_y=0, width=self._size_px, height=self._size_px
+                    ),
+                )
+            ]
+        )
+
+
+async def _motif_strengths_of(session: AsyncSession, photo: Photo) -> dict[str, float]:
+    rows = (
+        await session.execute(
+            select(PhotoMotifStrength).where(PhotoMotifStrength.photo_id == photo.id)
+        )
+    ).scalars()
+    return {row.motif_key: row.strength for row in rows}
+
+
+async def _criterion_values_of(session: AsyncSession, photo: Photo) -> dict[str, float]:
+    rows = (
+        await session.execute(
+            select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+        )
+    ).scalars()
+    return {row.criterion_key: row.value for row in rows}
+
+
+async def _one_photo_run(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    *,
+    build_detector: object = _no_face_detector,
+    build_animal_detector: object = _no_animal_detector,
+    build_classifier: object = _no_scene_classifier,
+) -> tuple[CriterionScoringRun, Photo]:
+    project = await _make_project(db_session, name=f"Projekt {uuid4()}")
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", f"etag-{uuid4()}", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=build_detector,  # type: ignore[arg-type]
+        build_animal_detector=build_animal_detector,  # type: ignore[arg-type]
+        build_classifier=build_classifier,  # type: ignore[arg-type]
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+    )
+    return run, photo
+
+
+async def test_a_criterion_run_writes_a_local_motif_assessment_header(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    run, photo = await _one_photo_run(db_session, tmp_path)
+
+    assert run.status == ScanStatus.SUCCESS
+    header = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert header is not None
+    assert header.source == MotifAssessmentSource.LOCAL
+    assert header.provider is None
+    assert header.excluded_document is False
+    assert header.computed_at is not None
+
+
+async def test_the_local_header_carries_all_eight_motifs(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    _run, photo = await _one_photo_run(db_session, tmp_path)
+
+    assert set(await _motif_strengths_of(db_session, photo)) == set(MOTIF_REGISTRY)
+
+
+async def test_a_photo_without_any_detection_still_gets_a_header_with_eight_zeroes(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Sonst gilt das Foto als „noch nicht klassifiziert", obwohl es beurteilt wurde - und die
+    Oberflaeche zeigte einen Satz statt der Liste."""
+    _run, photo = await _one_photo_run(db_session, tmp_path)
+
+    assert set((await _motif_strengths_of(db_session, photo)).values()) == {0.0}
+    assert await db_session.get(PhotoMotifAssessment, photo.id) is not None
+
+
+async def test_the_two_locally_unassessable_motifs_stay_at_zero_after_a_real_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """`aktivitaet` und `detail_stimmung` sind ohne Cloud-Aussage strukturell nicht erreichbar -
+    die bewusst akzeptierte Grenze der lokalen Grundlage, kein Fehlerfall."""
+    _run, photo = await _one_photo_run(
+        db_session,
+        tmp_path,
+        build_detector=lambda: SizedFaceDetector(size_px=120),
+        build_animal_detector=lambda: SizedAnimalDetector(size_px=140),
+        build_classifier=_landscape_scene_classifier,
+    )
+
+    strengths = await _motif_strengths_of(db_session, photo)
+
+    assert strengths["aktivitaet"] == 0.0
+    assert strengths["detail_stimmung"] == 0.0
+
+
+async def test_a_small_face_weakens_the_people_motif_without_touching_content_people(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """DER Fall, der die Flaechengewichtung von der bestehenden Praesenz-Berechnung trennt: EIN
+    Aufbau, ZWEI Assertions. Ein kleines Gesicht ergibt eine Menschen-Staerke < 1.0, und
+    `content_people` desselben Fotos ist weiter GENAU 1.0.
+
+    Getrennt geschrieben bestuenden beide Assertions auch dann, wenn die alte Praesenz-Berechnung
+    stillschweigend zur neuen geworden ist - und damit waeren Rangfolge (rank_score ueber
+    `content_people`) und Landmark-Kandidatenwahl mitveraendert, ohne dass ein Test darueber
+    brach."""
+    # 16 von 160 Pixeln Kantenlaenge -> 1 % der Bildflaeche, deutlich unter dem
+    # Saettigungsanteil von `menschen`.
+    _run, photo = await _one_photo_run(
+        db_session, tmp_path, build_detector=lambda: SizedFaceDetector(size_px=16)
+    )
+
+    strengths = await _motif_strengths_of(db_session, photo)
+    criteria = await _criterion_values_of(db_session, photo)
+
+    assert 0.0 < strengths["menschen"] < 1.0
+    assert criteria["content_people"] == 1.0
+
+
+async def test_a_full_frame_face_saturates_the_people_motif(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Gegenprobe zum Fall oben - ohne sie bestuende auch eine Berechnung, die nie 1.0
+    erreicht."""
+    _run, photo = await _one_photo_run(
+        db_session,
+        tmp_path,
+        build_detector=lambda: SizedFaceDetector(size_px=_MOTIF_TEST_IMAGE_SIZE),
+    )
+
+    assert (await _motif_strengths_of(db_session, photo))["menschen"] == 1.0
+
+
+@pytest.mark.parametrize(("smaller_px", "larger_px"), [(16, 40), (40, 60)])
+async def test_a_larger_animal_yields_a_higher_animal_motif_strength(
+    db_session: AsyncSession, tmp_path: Path, smaller_px: int, larger_px: int
+) -> None:
+    """Ein bildfuellender Hund ergibt eine hohe Tier-Staerke, ein Hund am Bildrand eine niedrige -
+    gemessen am LAUF, nicht nur an der reinen Funktion."""
+    _run, small_photo = await _one_photo_run(
+        db_session, tmp_path, build_animal_detector=lambda: SizedAnimalDetector(smaller_px)
+    )
+    small = (await _motif_strengths_of(db_session, small_photo))["tiere"]
+
+    _run2, large_photo = await _one_photo_run(
+        db_session, tmp_path, build_animal_detector=lambda: SizedAnimalDetector(larger_px)
+    )
+    large = (await _motif_strengths_of(db_session, large_photo))["tiere"]
+
+    assert 0.0 < small < large
+
+
+async def test_the_animal_confidence_alone_does_not_raise_the_animal_motif(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Gegenprobe zur Monotonie: die bloße Anwesenheit wirkt nicht. Das `tier`-KRITERIUM traegt
+    weiter die Konfidenz - die MOTIVSTAERKE die Flaeche."""
+    _run, photo = await _one_photo_run(
+        db_session, tmp_path, build_animal_detector=lambda: SizedAnimalDetector(size_px=8)
+    )
+
+    criteria = await _criterion_values_of(db_session, photo)
+    strengths = await _motif_strengths_of(db_session, photo)
+
+    assert criteria["tier"] == 0.9
+    assert strengths["tiere"] < 0.1
+
+
+async def test_the_scene_confidence_feeds_the_landscape_motif_unweighted(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die Szenen-Klassifikation liefert keine Boxen - ihre Konfidenz ist bereits eine Aussage
+    ueber das ganze Bild, und es gibt dort keine Flaechengewichtung zu berechnen."""
+    _run, photo = await _one_photo_run(
+        db_session, tmp_path, build_classifier=_landscape_scene_classifier
+    )
+
+    assert (await _motif_strengths_of(db_session, photo))["landschaft"] == pytest.approx(0.8)
+
+
+async def test_the_architecture_confidence_feeds_the_building_motif(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    _run, photo = await _one_photo_run(
+        db_session, tmp_path, build_classifier=_scene_classifier_stub
+    )
+
+    strengths = await _motif_strengths_of(db_session, photo)
+
+    assert strengths["bauwerk_sehenswuerdigkeit"] == pytest.approx(0.8)
+
+
+async def test_a_recognised_landmark_strengthens_the_building_motif(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Eine erkannte Sehenswuerdigkeit ist kein eigenes Motiv: sie VERSTAERKT „Bauwerk und
+    Sehenswuerdigkeit". Der Wert entsteht erst in der Landmark-Phase - die lokale Kopfzeile muss
+    also NACH ihr geschrieben werden, sonst fehlte der gerade bezahlte Beitrag."""
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+    client = RecordingLandmarkClient(LandmarkDetection(name="Tal-Kapelle", confidence=0.95))
+
+    run = await _run_with_landmark_client(db_session, project, scoring_run, tmp_path, client)
+
+    assert run.status == ScanStatus.SUCCESS
+    assert client.calls, (
+        "der Landmark-Aufruf muss stattgefunden haben, sonst prueft der Fall nichts"
+    )
+    criteria = await _criterion_values_of(db_session, photo)
+    strengths = await _motif_strengths_of(db_session, photo)
+    # Der Szenen-Stub liefert `valley` (0.8) fuer `landschaft`, `gebaeude` bleibt 0.0 - der
+    # Bauwerk-Wert kann also nur aus der Sehenswuerdigkeit kommen.
+    assert criteria["landmark"] == pytest.approx(0.95)
+    assert criteria.get("gebaeude", 0.0) == 0.0
+    assert strengths["bauwerk_sehenswuerdigkeit"] == pytest.approx(0.95)
+
+
+async def test_a_local_run_does_not_overwrite_an_existing_cloud_header(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Liegt eine Modellaussage vor, bestimmt allein sie die Motivstaerken - Herkunft,
+    Zeitstempel und alle acht Werte bleiben unveraendert. Ohne diesen Fall bestuende auch ein
+    bedingungsloses Ueberschreiben."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+    cloud_time = datetime(2026, 9, 1, 8, 0, 0)
+    cloud_vector = dict.fromkeys(MOTIF_REGISTRY, 0.0) | {"aktivitaet": 0.77, "menschen": 0.33}
+    await upsert_assessment(
+        db_session,
+        photo.id,
+        source=MotifAssessmentSource.CLOUD,
+        strengths=cloud_vector,
+        excluded_document=False,
+        provider="anthropic",
+        computed_at=cloud_time,
+    )
+    await db_session.commit()
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=lambda: SizedFaceDetector(size_px=_MOTIF_TEST_IMAGE_SIZE),
+        build_animal_detector=lambda: SizedAnimalDetector(size_px=_MOTIF_TEST_IMAGE_SIZE),
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+    )
+
+    header = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert header is not None
+    assert header.source == MotifAssessmentSource.CLOUD
+    assert header.provider == "anthropic"
+    assert header.computed_at == cloud_time
+    assert await _motif_strengths_of(db_session, photo) == cloud_vector
+
+
+async def test_a_correction_survives_the_criterion_run_and_still_wins(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Korrigieren, danach klassifizieren: die Korrekturzeile haengt an keinem Lauf und greift
+    bereits im ersten."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+    user = User(username="daniel", password_hash="hashed-value")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        PhotoMotifCorrection(photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=True)
+    )
+    await db_session.commit()
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+    )
+
+    assert len((await db_session.execute(select(PhotoMotifCorrection))).scalars().all()) == 1
+    effective = (await load_effective_strengths(db_session, [photo.id]))[photo.id]
+    assert effective["menschen"].strength == 1.0
+    assert effective["menschen"].correction is True
+    # Die gespeicherte Zahl bleibt die Beurteilung des Laufs - die Korrektur wirkt im Lesepfad.
+    assert (await _motif_strengths_of(db_session, photo))["menschen"] == 0.0
+
+
+async def test_the_area_fractions_never_become_a_criterion_row(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Keine neue Kriterien-Spalte und keine persistierte Box: die Flaechenanteile leben
+    ausschliesslich im Lauf und gehen in die Staerke ein."""
+    _run, photo = await _one_photo_run(
+        db_session,
+        tmp_path,
+        build_detector=lambda: SizedFaceDetector(size_px=40),
+        build_animal_detector=lambda: SizedAnimalDetector(size_px=40),
+        build_classifier=_landscape_scene_classifier,
+    )
+
+    written = set(await _criterion_values_of(db_session, photo))
+
+    assert written <= set(CRITERIA_REGISTRY), f"unbekannte Kriterien-Schluessel: {written}"
+
+
+async def test_the_existing_category_derivation_runs_unchanged_alongside(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """PR 1 ist rein additiv: die Kategorie-Welt bleibt vollstaendig funktionsfaehig. Ohne diesen
+    Fall waere eine versehentlich mitgenommene Abloesung erst in PR 3 aufgefallen."""
+    _run, photo = await _one_photo_run(
+        db_session, tmp_path, build_animal_detector=_animal_detector_stub
+    )
+
+    ranking = (
+        await db_session.execute(select(PhotoRanking).where(PhotoRanking.photo_id == photo.id))
+    ).scalar_one()
+
+    assert ranking.category_key == "tier"
+    assert ranking.is_primary is True
+    assert is_known_category(ranking.category_key)
+
+
+async def test_a_photo_whose_display_variant_is_missing_still_gets_a_header(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Best-effort wie ueberall im Lauf: ohne Bilddatei gibt es keine Detektion, aber das Foto ist
+    beurteilt - acht Nullen, kein fehlender Vektor."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert await db_session.get(PhotoMotifAssessment, photo.id) is not None
+    assert set((await _motif_strengths_of(db_session, photo)).values()) == {0.0}
+
+
+async def test_a_second_run_replaces_the_local_vector_without_duplicating_rows(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+
+    for detector_size in (16, _MOTIF_TEST_IMAGE_SIZE):
+        await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=lambda size=detector_size: SizedFaceDetector(size),  # type: ignore[misc]
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+        )
+
+    strengths = await _motif_strengths_of(db_session, photo)
+
+    assert len(strengths) == len(MOTIF_REGISTRY)
+    assert strengths["menschen"] == 1.0
+
+
+async def test_an_ausschuss_photo_gets_no_motif_header(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der Lauf beurteilt genau die Ausschuss-Ueberlebenden - ein aussortiertes Foto bleibt ohne
+    Kopfzeile und damit „noch nicht klassifiziert"."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    survivor = await _add_photo(
+        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    rejected = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 0, 5, tzinfo=UTC)
+    )
+    await _add_score(db_session, survivor)
+    await _add_score(db_session, rejected, suggested_status=RatingStatus.REJECTED)
+    for photo in (survivor, rejected):
+        _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+
+    await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+    )
+
+    assert await db_session.get(PhotoMotifAssessment, survivor.id) is not None
+    assert await db_session.get(PhotoMotifAssessment, rejected.id) is None

@@ -16,12 +16,16 @@ from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     FineLabel,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
+    PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -1667,3 +1671,228 @@ def test_the_guard_ignores_reading_the_column() -> None:
     Regelfall und darf nie als Schreibstelle zaehlen."""
     assert not _writes_taken_at("select(Photo.id).order_by(Photo.taken_at)")
     assert not _writes_taken_at("if photo.taken_at == other.taken_at_original: pass")
+
+
+# specs/features/0427-motive-mit-staerke.md, PR 1 Schritt 2: die drei Motiv-Tabellen. Vier
+# Aussagen brechen ohne eigenen Fall stillschweigend - die Lauf-Unabhaengigkeit der Korrektur, das
+# fehlende Default am Ausschluss-Flag, die Richtung des Staerke-Fremdschluessels und die beiden
+# Kaskaden am Foto.
+
+
+async def _make_assessed_photo(
+    db_session: AsyncSession, *, strength: float = 0.9
+) -> tuple[Photo, User]:
+    photo, user = await _make_photo_and_user(db_session)
+    db_session.add(
+        PhotoMotifAssessment(
+            photo_id=photo.id,
+            source=MotifAssessmentSource.CLOUD,
+            excluded_document=False,
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.flush()
+    db_session.add(PhotoMotifStrength(photo_id=photo.id, motif_key="menschen", strength=strength))
+    await db_session.flush()
+    return photo, user
+
+
+async def test_create_photo_motif_assessment(db_session: AsyncSession) -> None:
+    photo, _user = await _make_assessed_photo(db_session)
+    await db_session.commit()
+
+    stored = (
+        await db_session.execute(
+            select(PhotoMotifAssessment).where(PhotoMotifAssessment.photo_id == photo.id)
+        )
+    ).scalar_one()
+
+    assert stored.source == MotifAssessmentSource.CLOUD
+    assert stored.provider == "anthropic"
+    assert stored.excluded_document is False
+
+
+async def test_photo_motif_assessment_is_one_to_one_with_photo(db_session: AsyncSession) -> None:
+    photo, _user = await _make_assessed_photo(db_session)
+    await db_session.commit()
+
+    db_session.add(
+        PhotoMotifAssessment(
+            photo_id=photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            excluded_document=False,
+            computed_at=datetime.now(UTC),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_photo_motif_assessment_requires_an_explicit_exclusion_flag(
+    db_session: AsyncSession,
+) -> None:
+    """`excluded_document` ist NOT NULL und traegt bewusst KEINEN Default: ein Schreibpfad, der
+    die Spalte vergisst, soll laut scheitern statt still ein Foto aus JEDER Motivauswahl zu
+    nehmen - und von Hand ist der Ausschluss nicht korrigierbar."""
+    photo = await _make_photo(db_session)
+
+    db_session.add(
+        PhotoMotifAssessment(
+            photo_id=photo.id,
+            source=MotifAssessmentSource.CLOUD,
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+def test_the_exclusion_flag_carries_neither_a_python_nor_a_server_default() -> None:
+    """Die Gegenprobe zur Verhaltensprobe oben, und die eigentliche Zusage: ein spaeter
+    ergaenztes `default=False` machte den Fall oben gruen, ohne dass etwas anderes brach - und
+    jeder Schreibpfad, der die Spalte vergisst, schloesse das Foto dann still aus."""
+    column = PhotoMotifAssessment.__table__.c.excluded_document
+
+    assert column.nullable is False
+    assert column.default is None
+    assert column.server_default is None
+
+
+async def test_deleting_photo_cascades_to_motif_assessment_and_strengths(
+    db_session: AsyncSession,
+) -> None:
+    photo, _user = await _make_assessed_photo(db_session)
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    assert (await db_session.execute(select(PhotoMotifAssessment))).scalars().all() == []
+    assert (await db_session.execute(select(PhotoMotifStrength))).scalars().all() == []
+
+
+async def test_photo_motif_strength_unique_per_photo_and_motif_key(
+    db_session: AsyncSession,
+) -> None:
+    photo, _user = await _make_assessed_photo(db_session)
+    await db_session.commit()
+
+    db_session.add(PhotoMotifStrength(photo_id=photo.id, motif_key="menschen", strength=0.1))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+def test_a_motif_strength_hangs_on_the_assessment_and_not_on_the_photo() -> None:
+    """Eine Staerke kann ohne Kopfzeile nicht existieren - der Fremdschluessel zeigt deshalb auf
+    `photo_motif_assessments.photo_id` und NICHT auf `photos.id`. Unter SQLite ohne
+    `PRAGMA foreign_keys=ON` faellt die falsche Richtung zur Laufzeit nicht auf."""
+    targets = {
+        foreign_key.column.table.name for foreign_key in PhotoMotifStrength.__table__.foreign_keys
+    }
+
+    assert targets == {"photo_motif_assessments"}
+
+
+async def test_create_photo_motif_correction(db_session: AsyncSession) -> None:
+    photo, user = await _make_assessed_photo(db_session)
+
+    db_session.add(
+        PhotoMotifCorrection(
+            photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=False
+        )
+    )
+    await db_session.commit()
+
+    stored = (await db_session.execute(select(PhotoMotifCorrection))).scalar_one()
+
+    assert stored.applies is False
+    assert stored.user_id == user.id
+    assert stored.updated_at is not None
+
+
+async def test_photo_motif_correction_unique_per_photo_and_motif_key_without_the_user(
+    db_session: AsyncSession,
+) -> None:
+    """Der Unique-Constraint lautet `(photo_id, motif_key)` OHNE `user_id`: die Korrektur ist eine
+    Aussage ueber das FOTO. Mit `user_id` im Constraint entstuenden zwei widersprueckliche Zeilen
+    fuer dasselbe Paar, und welche gilt, entschiede die Sortierung."""
+    photo, user = await _make_assessed_photo(db_session)
+    other = User(username="partnerin", password_hash="hashed-value")
+    db_session.add(other)
+    await db_session.flush()
+    db_session.add(
+        PhotoMotifCorrection(photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=True)
+    )
+    await db_session.commit()
+
+    db_session.add(
+        PhotoMotifCorrection(
+            photo_id=photo.id, user_id=other.id, motif_key="menschen", applies=False
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+def test_a_motif_correction_references_no_run_at_all() -> None:
+    """Maschinell statt als Behauptung: die Korrektur haengt AUSSCHLIESSLICH an `photos` und
+    `users`. Ein Fremdschluessel auf einen Lauf machte sie zu einem Lauf-Artefakt, und sie ginge
+    beim naechsten Klassifizierungslauf verloren - die Feedback-Story haette dann kein Signal."""
+    targets = {
+        foreign_key.column.table.name for foreign_key in PhotoMotifCorrection.__table__.foreign_keys
+    }
+
+    assert targets == {"photos", "users"}
+
+
+async def test_deleting_photo_cascades_to_motif_corrections_but_keeps_the_user(
+    db_session: AsyncSession,
+) -> None:
+    photo, user = await _make_assessed_photo(db_session)
+    db_session.add(
+        PhotoMotifCorrection(photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=True)
+    )
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    assert (await db_session.execute(select(PhotoMotifCorrection))).scalars().all() == []
+    assert (await db_session.execute(select(User))).scalars().all() != []
+
+
+async def test_a_classification_run_does_not_remove_a_correction(db_session: AsyncSession) -> None:
+    """Das `cascade` haengt am FOTO, nicht an der Kopfzeile: verschwindet die Kopfzeile (neue
+    Grundlage), bleibt die Korrektur."""
+    photo, user = await _make_assessed_photo(db_session)
+    db_session.add(
+        PhotoMotifCorrection(photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=True)
+    )
+    await db_session.commit()
+
+    assessment = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert assessment is not None
+    await db_session.delete(assessment)
+    await db_session.commit()
+
+    assert len((await db_session.execute(select(PhotoMotifCorrection))).scalars().all()) == 1
+
+
+def test_both_motif_unique_constraints_carry_an_explicit_name() -> None:
+    """Ohne expliziten Namen ist der Constraint unter Postgres nicht droppbar, und
+    `Base.metadata` traegt keine `naming_convention`, aus der einer entstuende."""
+    strength_names = {
+        constraint.name
+        for constraint in PhotoMotifStrength.__table__.constraints
+        if constraint.name is not None and constraint.name.startswith("uq_")
+    }
+    correction_names = {
+        constraint.name
+        for constraint in PhotoMotifCorrection.__table__.constraints
+        if constraint.name is not None and constraint.name.startswith("uq_")
+    }
+
+    assert strength_names == {"uq_motif_strength_photo_key"}
+    assert correction_names == {"uq_motif_correction_photo_key"}

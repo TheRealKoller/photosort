@@ -44,6 +44,7 @@ from photosort.demo_state import (
     demo_relative_path,
     is_demo_project_name,
     main,
+    purge_demo_state,
     rebuild_demo_state,
     render_demo_image,
 )
@@ -51,11 +52,15 @@ from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
     CriterionScoringRun,
     Event,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
+    PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -67,6 +72,7 @@ from photosort.models import (
     ScanStatus,
     User,
 )
+from photosort.motifs import MOTIF_REGISTRY, is_motif_key
 from photosort.thumbnails import display_path, generate_variants, thumbnail_path
 from tests.time_offset_invariant import assert_time_offset_invariant
 
@@ -1502,3 +1508,141 @@ class TestDemoStateCoversEveryCameraState:
         assert project_ids
         for project_id in project_ids:
             await assert_time_offset_invariant(db_session, project_id)
+
+
+class TestTheDemoStateShowsEveryMotifState:
+    """specs/features/0427-motive-mit-staerke.md, PR 1 Schritt 6: der Seeder erzeugt Kopfzeilen,
+    Staerken und eine Korrektur.
+
+    Geprueft wird, dass ALLE VIER Fotozustaende im Bestand vorkommen - sonst sieht die
+    Sichtpruefung im Browser nur den Regelfall, und die drei Sonderdarstellungen (Satz statt
+    Liste, lokale Grundlage, Ausschluss) bleiben ungesehen."""
+
+    async def test_every_assessed_photo_carries_a_full_eight_entry_vector(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        for photo in await _photos_of(db_session, RATED_PROJECT_NAME):
+            header = await db_session.get(PhotoMotifAssessment, photo.id)
+            if header is None:
+                continue
+            keys = (
+                (
+                    await db_session.execute(
+                        select(PhotoMotifStrength.motif_key).where(
+                            PhotoMotifStrength.photo_id == photo.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert set(keys) == set(MOTIF_REGISTRY), photo.relative_path
+
+    async def test_exactly_one_photo_has_no_assessment_at_all(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Zustand „noch nicht klassifiziert" - ohne ihn zeigt die Oberflaeche den Satz statt
+        der Liste nie."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        photos = await _photos_of(db_session, RATED_PROJECT_NAME)
+        without = [
+            photo
+            for photo in photos
+            if await db_session.get(PhotoMotifAssessment, photo.id) is None
+        ]
+
+        assert len(without) == 1
+
+    async def test_both_bases_occur_and_the_local_one_carries_no_provider(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        headers = [
+            header
+            for photo in await _photos_of(db_session, RATED_PROJECT_NAME)
+            if (header := await db_session.get(PhotoMotifAssessment, photo.id)) is not None
+        ]
+
+        assert {header.source for header in headers} == set(MotifAssessmentSource)
+        for header in headers:
+            assert (header.provider is None) == (header.source == MotifAssessmentSource.LOCAL)
+
+    async def test_exactly_one_photo_is_excluded_as_a_document(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Ausschluss-Zustand - mit vorhandenen Staerken daneben, denn sie werden nicht auf 0
+        gesetzt."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        excluded = [
+            header
+            for photo in await _photos_of(db_session, RATED_PROJECT_NAME)
+            if (header := await db_session.get(PhotoMotifAssessment, photo.id)) is not None
+            and header.excluded_document
+        ]
+
+        assert len(excluded) == 1
+
+    async def test_there_is_exactly_one_correction_and_it_names_a_real_user(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Seeder legt selbst NIE ein Konto an - die Korrektur haengt an einem vorhandenen
+        Nutzer, wie die Bewertungen."""
+        await _make_user(db_session, "daniel")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        corrections = (await db_session.execute(select(PhotoMotifCorrection))).scalars().all()
+        user_ids = set((await db_session.execute(select(User.id))).scalars().all())
+
+        assert len(corrections) == 1
+        assert corrections[0].user_id in user_ids
+        assert is_motif_key(corrections[0].motif_key)
+
+    async def test_without_any_user_no_correction_is_written(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Gegenprobe zur Nutzerbindung: ohne Konto gibt es keine Korrektur, und der Seeder
+        scheitert nicht daran."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        assert (await db_session.execute(select(PhotoMotifCorrection))).scalars().all() == []
+
+    async def test_every_strength_lies_within_the_range(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        strengths = (await db_session.execute(select(PhotoMotifStrength.strength))).scalars().all()
+
+        assert strengths
+        for strength in strengths:
+            assert 0.0 <= strength <= 1.0
+
+    async def test_every_written_motif_key_belongs_to_the_fixed_set(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        keys = (await db_session.execute(select(PhotoMotifStrength.motif_key))).scalars().all()
+
+        assert keys
+        for key in keys:
+            assert is_motif_key(key), key
+
+    async def test_the_project_deletion_removes_the_motif_rows_too(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Seeder raeumt ueber `project_deletion` auf - Auflage S16, hier am Demo-Bestand."""
+        await _make_user(db_session, "daniel")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        await purge_demo_state(db_session, tmp_path)
+        await db_session.commit()
+
+        for model in (PhotoMotifAssessment, PhotoMotifStrength, PhotoMotifCorrection):
+            assert (await db_session.execute(select(model))).scalars().all() == []
+        assert (await db_session.execute(select(User))).scalars().all() != []
