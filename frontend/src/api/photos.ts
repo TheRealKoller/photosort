@@ -2,6 +2,8 @@ import { apiFetch, apiFetchBlob } from './client'
 import type {
   CategoryKey,
   CategoryOverrideOut,
+  MotifCorrectionOut,
+  MotifKey,
   PhotoListOut,
   PhotoVariant,
   RatingFilter,
@@ -108,4 +110,30 @@ export function setCategoryOverride(
 
 export function deleteCategoryOverride(photoId: number): Promise<void> {
   return apiFetch<void>(`/photos/${photoId}/category-override`, { method: 'DELETE' })
+}
+
+/**
+ * Markiert ein Motiv fuer dieses Foto als zutreffend oder als nicht zutreffend (Spec 0427).
+ *
+ * Der Body traegt AUSSCHLIESSLICH `applies` - der Nutzer schaetzt nie eine Zahl ein. Weder
+ * `user_id` noch `motif_key` noch eine Staerke gehen mit; der Schluessel steht im Pfad, der Nutzer
+ * kommt serverseitig aus dem Token. `encodeURIComponent` haelt einen Altwert mit Sonderzeichen aus
+ * der Pfadstruktur heraus - der Server weist ihn danach ohnehin mit `422` ab.
+ */
+export function setMotifCorrection(
+  photoId: number,
+  motifKey: MotifKey,
+  applies: boolean,
+): Promise<MotifCorrectionOut> {
+  return apiFetch<MotifCorrectionOut>(
+    `/photos/${photoId}/motif-corrections/${encodeURIComponent(motifKey)}`,
+    { method: 'PUT', body: { applies } },
+  )
+}
+
+/** Nimmt die Korrektur eines Motivs zurueck - idempotent, ohne Body. */
+export function deleteMotifCorrection(photoId: number, motifKey: MotifKey): Promise<void> {
+  return apiFetch<void>(`/photos/${photoId}/motif-corrections/${encodeURIComponent(motifKey)}`, {
+    method: 'DELETE',
+  })
 }

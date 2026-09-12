@@ -277,6 +277,19 @@ const separatorRows: ContrastRow[] = [
  */
 const SEPARATOR_INFORMATIONAL_SURFACES = ['--elevated', '--overlay'] as const
 
+/**
+ * Die FUELLUNG der Fortschritts-/Staerkeanzeige gegen ihre SPUR (Spec 0427). Beide Toene stehen
+ * hier, nicht nur der neue: die Spur ist in beiden `--separator`, und ohne den Akzent-Eintrag
+ * waere der bestehende Ton der ungeprueften Haelfte eines Paars.
+ *
+ * Grafische Schwelle (3:1): der Balken ist ein Bedienelement-/Grafikumriss, kein Text - er traegt
+ * `aria-hidden`, und der eigentliche Text ist die Prozentzahl daneben.
+ */
+const progressFillRows: ContrastRow[] = [
+  { foreground: '--accent', background: '--separator', threshold: GRAPHIC_THRESHOLD },
+  { foreground: '--text-h', background: '--separator', threshold: GRAPHIC_THRESHOLD },
+]
+
 const inkRows: ContrastRow[] = [
   { foreground: '--accent-fg', background: '--accent', threshold: TEXT_THRESHOLD },
   { foreground: '--status-success-fg', background: '--status-success', threshold: TEXT_THRESHOLD },
@@ -308,6 +321,7 @@ const contrastRows: ContrastRow[] = [
   ...graphicRows('--status-success'),
   ...graphicRows('--status-failed'),
   ...inkRows,
+  ...progressFillRows,
   ...separatorRows,
   ...stateSurfaceRows,
   ...ratingRows,

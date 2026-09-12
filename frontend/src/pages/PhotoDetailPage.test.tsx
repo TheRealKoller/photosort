@@ -9,21 +9,28 @@ import { ApiError } from '../api/client'
 import * as categoriesApi from '../api/categories'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
+import * as motifsApi from '../api/motifs'
 import type {
   CloudVisionStatusOut,
   CriterionScoreOut,
+  MotifAssessmentOut,
+  MotifStrengthOut,
   PhotoListOut,
   PhotoOut,
   SuggestionOut,
 } from '../api/types'
 import { setToken } from '../auth/token'
 import { CATEGORY_SET } from '../test/categorySetFixture'
+import { MOTIF_KEYS, MOTIF_SET } from '../test/motifSetFixture'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
 // specs/features/0289-feste-kategorien.md: die Seite laedt das Kategorien-Set zur Laufzeit
 // (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
 // stuende dauerhaft im Fallback-Zustand, statt in einem bewusst gewaehlten.
 vi.mock('../api/categories')
+// specs/features/0427-motive-mit-staerke.md: dasselbe fuer das Motivset (`useMotifsQuery`) - ohne
+// Mock stuende die Staerkeliste dauerhaft im Skeleton-Zustand.
+vi.mock('../api/motifs')
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
 
@@ -82,6 +89,26 @@ function suggestion(overrides: Partial<SuggestionOut> = {}): SuggestionOut {
   }
 }
 
+// specs/features/0427-motive-mit-staerke.md: die Kopfzeile des Regelfalls (Cloud-Grundlage, nicht
+// ausgeschlossen) und ein vollbesetzter Achter-Vektor.
+const CLOUD_ASSESSMENT: MotifAssessmentOut = {
+  source: 'cloud',
+  provider: 'anthropic',
+  excluded_document: false,
+  computed_at: '2026-09-12T10:00:00',
+}
+
+function motifStrengths(
+  overrides: Record<string, Partial<MotifStrengthOut>> = {},
+): MotifStrengthOut[] {
+  return MOTIF_KEYS.map((key) => ({
+    motif_key: key,
+    strength: 0,
+    correction: null,
+    ...(overrides[key] ?? {}),
+  }))
+}
+
 function cloudVisionStatusEntry(
   overrides: Partial<CloudVisionStatusOut> = {},
 ): CloudVisionStatusOut {
@@ -123,6 +150,10 @@ describe('PhotoDetailPage', () => {
     vi.mocked(ratingsApi.setRating).mockReset()
     vi.mocked(categoriesApi.listCategories).mockReset()
     vi.mocked(categoriesApi.listCategories).mockResolvedValue(CATEGORY_SET)
+    vi.mocked(motifsApi.listMotifs).mockReset()
+    vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
+    vi.mocked(photosApi.setMotifCorrection).mockReset()
+    vi.mocked(photosApi.deleteMotifCorrection).mockReset()
     vi.mocked(ratingsApi.deleteRating).mockReset()
     setToken(makeToken({ sub: '1', username: 'testuser' }))
   })
@@ -1171,6 +1202,185 @@ describe('PhotoDetailPage', () => {
         within(takenAtSection()).getByText('Die Kamera dieses Fotos ist nicht bestimmbar.'),
       ).toBeInTheDocument()
       expect(within(takenAtSection()).queryByRole('alert')).toBeNull()
+    })
+  })
+
+  // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Einzelbildansicht": eine NEUE
+  // permanente Sektion "Motive", nach dem Vorschlagskasten und VOR der Trennlinie. Die bestehende
+  // Kategorie-Sektion bleibt in PR 1 unberuehrt daneben stehen.
+  describe('Sektion "Motive"', () => {
+    function motifSection(): HTMLElement {
+      return screen.getByTestId('motifs-section')
+    }
+
+    it('zeigt die Sektion permanent, auch ohne Kopfzeile', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1 })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(within(motifSection()).getByRole('heading', { name: 'Motive' })).toBeInTheDocument()
+    })
+
+    it('zeigt den Satz statt der Liste, solange das Foto keinen Lauf gesehen hat', async () => {
+      // Die KARDINALITAET Null, nicht eine Textsuche: der Satz kann ueber acht Nullzeilen stehen.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, motif_assessment: null, motifs: [] })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(motifSection().querySelectorAll('[data-motif-key]')).toHaveLength(0)
+      expect(within(motifSection()).getByText(/Noch nicht klassifiziert/)).toBeInTheDocument()
+    })
+
+    it('zeigt die acht Zeilen in Registry-Reihenfolge, sobald eine Kopfzeile vorliegt', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, motif_assessment: CLOUD_ASSESSMENT, motifs: motifStrengths() })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      const keys = [...motifSection().querySelectorAll('[data-motif-key]')].map((node) =>
+        node.getAttribute('data-motif-key'),
+      )
+      expect(keys).toEqual(MOTIF_KEYS)
+    })
+
+    it('steht nach dem Vorschlagskasten und vor der Trennlinie', async () => {
+      // Letzter Bedienblock vor dem Informationsteil - damit Bewertungsleiste und Zurueck/Weiter
+      // ohne Scrollen erreichbar bleiben.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            suggestion: suggestion(),
+            motif_assessment: CLOUD_ASSESSMENT,
+            motifs: motifStrengths(),
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      const suggestionBox = screen.getByText(/Automatischer Vorschlag/)
+      const takenAt = screen.getByTestId('taken-at-section')
+      const section = motifSection()
+      expect(suggestionBox.compareDocumentPosition(section)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+      expect(section.compareDocumentPosition(takenAt)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    })
+
+    it('ist bedienbar: eine Korrektur geht an den Endpunkt', async () => {
+      const user = userEvent.setup()
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, motif_assessment: CLOUD_ASSESSMENT, motifs: motifStrengths() })],
+        total: 1,
+      })
+      vi.mocked(photosApi.setMotifCorrection).mockResolvedValue({
+        photo_id: 1,
+        motif_key: 'menschen',
+        applies: false,
+      })
+
+      renderPage('/projects/1/photos/1')
+      await screen.findByAltText('a.jpg')
+      await user.click(
+        within(motifSection()).getByRole('button', { name: 'Trifft nicht zu: Menschen' }),
+      )
+
+      await waitFor(() =>
+        expect(photosApi.setMotifCorrection).toHaveBeenCalledWith(1, 'menschen', false),
+      )
+    })
+
+    it('nimmt eine bestehende Korrektur zurueck', async () => {
+      const user = userEvent.setup()
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            motif_assessment: CLOUD_ASSESSMENT,
+            motifs: motifStrengths({ menschen: { strength: 0, correction: false } }),
+          }),
+        ],
+        total: 1,
+      })
+      vi.mocked(photosApi.deleteMotifCorrection).mockResolvedValue(undefined)
+
+      renderPage('/projects/1/photos/1')
+      await screen.findByAltText('a.jpg')
+      await user.click(
+        within(motifSection()).getByRole('button', { name: 'Zurücknehmen: Menschen' }),
+      )
+
+      await waitFor(() =>
+        expect(photosApi.deleteMotifCorrection).toHaveBeenCalledWith(1, 'menschen'),
+      )
+    })
+
+    it('bietet fuer ein ausgeschlossenes Foto keinen Korrekturschalter an', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            motif_assessment: { ...CLOUD_ASSESSMENT, excluded_document: true },
+            motifs: motifStrengths(),
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(
+        within(motifSection()).getByText(/Als Dokument oder Bildschirmabbildung erkannt/),
+      ).toBeInTheDocument()
+      expect(within(motifSection()).queryByRole('button', { name: /Trifft/ })).toBeNull()
+    })
+
+    it('laesst die bestehende Kategorie-Sektion unberuehrt daneben stehen', async () => {
+      // PR 1 ist rein additiv - die Abloesung ist PR 3.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            motif_assessment: CLOUD_ASSESSMENT,
+            motifs: motifStrengths(),
+            remote_category: 'landschaft',
+            criterion_scores: [
+              criterionScore({ criterion_key: 'landschaft', category_eligible: true }),
+            ],
+            rankings: [
+              {
+                event_id: 1,
+                category_key: 'landschaft',
+                rank_score: 0.8,
+                rank_position: 1,
+                partition_size: 3,
+                is_primary: true,
+                curation_position: null,
+              },
+            ],
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      await screen.findByAltText('a.jpg')
+      expect(screen.getByTestId('category-controls-section')).toBeInTheDocument()
+      expect(motifSection()).toBeInTheDocument()
     })
   })
 })
