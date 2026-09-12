@@ -179,8 +179,11 @@ der Symbolname unter der Zelle. Lücken-Block bei (0, −700), 2400 × 320. Seit
 Bestandsüberschrift steht bei (0, 420) und bleibt außerhalb des Rahmens.
 
 **Alles Übrige liegt in einem Rahmen-Board `Bausteine — Zustände: Register`** bei (−60, −2680),
-6760 × 2360, ohne Fläche. Es hält die Register-Zone im Ebenenbaum zusammen, ist die Form, auf
-die ein Gesamtexport geht, und trägt **keine** Plugin-Daten.
+6760 × 2360, Fläche an `color.bg` gebunden. Es hält die Register-Zone im Ebenenbaum zusammen,
+ist die Form, auf die ein Gesamtexport geht, und trägt **keine** Plugin-Daten. Die gebundene
+Fläche ist kein Schmuck: Ohne sie exportiert der Rahmen auf transparentem Grund, der Export
+zeigt weiß statt des tatsächlichen Seitengrunds, und die hellen Prüffelder verschmelzen mit dem
+Nichts — die Sichtprüfung beurteilte dann einen Untergrund, den die Seite nicht hat.
 
 **Symbolblock:** die zwölf Symbole aus `icons.json` als eigener beschrifteter Block, je Symbol
 sein Name darunter; Strichfarbe kommt aus der Bibliotheksinstanz (`color.text-h`).
