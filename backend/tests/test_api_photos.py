@@ -1777,25 +1777,17 @@ class TestCloudVisionStatus:
         )
         assert entry["status"] == "not_run"
 
-    async def test_remote_category_result_comes_from_the_classification_row(
+    async def test_remote_category_result_comes_from_the_cloud_header(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # specs/features/0289-feste-kategorien.md: das Erfolgssignal der Remote-Phase ist seit
-        # dieser Spec die PRAESENZ der 1:1-Klassifikations-Zeile (vorher: mindestens eine
-        # Feinlabel-Zeile, deren computed_at defensiv per max() gewaehlt wurde) - `attempted_at`
-        # ist damit eindeutig, ohne Aggregation ueber mehrere Zeilen.
+        # Spec 0427, PR 2 Schritt 2: das Erfolgssignal der Remote-Phase ist ab hier die
+        # Kopfzeile mit `source='cloud'` - der Marker ist mit dem Schreibpfad umgezogen.
+        # `attempted_at` bleibt eindeutig, ohne Aggregation ueber mehrere Zeilen.
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        db_session.add(
-            PhotoCategoryClassification(
-                photo_id=photo.id,
-                category_key="tier",
-                detected_categories=["tier"],
-                provider="anthropic",
-                computed_at=datetime(2023, 6, 1, tzinfo=UTC),
-            )
+        await _assess_photo(
+            db_session, photo, computed_at=datetime(2023, 6, 1, 12, 0, 0), strengths={"tiere": 0.8}
         )
-        await db_session.commit()
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -1807,23 +1799,15 @@ class TestCloudVisionStatus:
         assert entry["status"] == "result"
         assert entry["attempted_at"].startswith("2023-06-01")
 
-    async def test_remote_category_result_also_for_a_photo_without_any_fine_label(
+    async def test_remote_category_result_also_for_a_photo_where_nothing_was_recognized(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        # Ein Foto, fuer das das Modell nichts Bekanntes nennen konnte, ist trotzdem erfolgreich
-        # verarbeitet - es darf nicht weiterhin als "noch nicht gelaufen" erscheinen.
+        # Ein Foto, auf dem das Modell nichts deutlich erkannt hat, ist trotzdem erfolgreich
+        # verarbeitet - es darf nicht weiterhin als "noch nicht gelaufen" erscheinen. Acht Nullen
+        # sind eine BEURTEILUNG und nicht die Abwesenheit einer.
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        db_session.add(
-            PhotoCategoryClassification(
-                photo_id=photo.id,
-                category_key="nicht_erkannt",
-                detected_categories=[],
-                provider="anthropic",
-                computed_at=datetime(2023, 6, 1, tzinfo=UTC),
-            )
-        )
-        await db_session.commit()
+        await _assess_photo(db_session, photo)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -1833,6 +1817,37 @@ class TestCloudVisionStatus:
             if e["phase"] == "remote_category"
         )
         assert entry["status"] == "result"
+
+    async def test_a_local_header_alone_is_not_a_remote_category_result(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sicherheitsauflage S14 auf dem LESEpfad: der Kriterien-Lauf schreibt lokale
+        Kopfzeilen. Sie sind kein Erfolgssignal der Cloud-Phase - ein Foto mit lokaler Grundlage
+        hat noch keinen Cloud-Aufruf gesehen und ist weiterhin Kandidat."""
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoScore(
+                photo_id=photo.id,
+                sharpness=100.0,
+                exposure=0.0,
+                cluster_key="c",
+                suggested_status=None,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+        await _assess_photo(db_session, photo, source=MotifAssessmentSource.LOCAL, provider=None)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "remote_category"
+        )
+        assert entry["status"] == "not_run"
 
     async def test_remote_category_result_persists_even_after_consent_is_disabled_again(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1844,16 +1859,7 @@ class TestCloudVisionStatus:
         project = await _make_project(db_session)
         assert project.cloud_vision_detection_enabled is False
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        db_session.add(
-            PhotoCategoryClassification(
-                photo_id=photo.id,
-                category_key="tier",
-                detected_categories=["tier"],
-                provider="anthropic",
-                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
-            )
-        )
-        await db_session.commit()
+        await _assess_photo(db_session, photo, strengths={"tiere": 0.8})
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 

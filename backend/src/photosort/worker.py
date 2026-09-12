@@ -95,6 +95,7 @@ from photosort.models import (
     PhotoCriterionScore,
     PhotoFineLabel,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -2448,12 +2449,22 @@ async def _classify_photo_for_remote_category(
 async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
     """Kandidatenmenge für die Remote-Kategorie-Klassifizierung: der KOMPLETTE
     Ausschuss-Überlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter
-    (anders als landmark), abzüglich bereits klassifizierter Fotos (vorhandene
-    `photo_category_classifications`-Zeile - die 1:1-Klassifikations-Zeile ist das
-    Skip-Kriterium, nicht eine Feinlabel-Zeile: ein Foto mit
-    Kategorie, aber ohne Feinlabel, gilt als erledigt). Von `run_remote_category_classification` UND
-    `GET .../classify/estimate` (api/projects.py) genutzt - "ermittelt ueber
-    dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
+    (anders als landmark), abzüglich bereits von der Cloud beurteilter Fotos.
+
+    DAS SKIP-KRITERIUM IST EINE KOPFZEILE MIT `source='cloud'`, nicht das bloße Vorhandensein
+    einer Kopfzeile (Sicherheitsauflage S14). Der Kriterien-Lauf schreibt für JEDES beurteilte
+    Foto eine LOKALE Kopfzeile; ein reiner Existenztest machte damit jedes lokal beurteilte Foto
+    dauerhaft zum Nicht-Kandidaten - die Cloud-Klassifizierung wäre ein stilles No-op und die
+    Kostenschätzung zeigte `0`. Der Fehler in die andere Richtung (ein zu weites Kriterium)
+    schickte bereits klassifizierte Fotos erneut an den Anbieter, also Kosten und wiederholte
+    Datenexposition.
+
+    `photo_category_classifications` ist ausdrücklich NICHT mehr Teil des Kriteriums: die Tabelle
+    wird seit Spec 0427 (PR 2) nicht mehr geschrieben, und ein Foto mit bloßer Altzeile trägt
+    keine Motivstärken. Es ist damit wieder Kandidat.
+
+    Von `run_remote_category_classification` UND `GET .../classify/estimate` (api/projects.py)
+    genutzt - "ermittelt ueber dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
     rows = (
         (
             await session.execute(
@@ -2469,16 +2480,17 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
     if not rows:
         return []
 
-    already_classified_ids = set(
+    cloud_assessed_ids = set(
         (
             await session.execute(
-                select(PhotoCategoryClassification.photo_id).where(
-                    PhotoCategoryClassification.photo_id.in_([photo.id for photo in rows])
+                select(PhotoMotifAssessment.photo_id).where(
+                    PhotoMotifAssessment.photo_id.in_([photo.id for photo in rows]),
+                    PhotoMotifAssessment.source == MotifAssessmentSource.CLOUD,
                 )
             )
         ).scalars()
     )
-    return [photo for photo in rows if photo.id not in already_classified_ids]
+    return [photo for photo in rows if photo.id not in cloud_assessed_ids]
 
 
 async def run_remote_category_classification(
@@ -2641,33 +2653,32 @@ async def run_remote_category_classification(
                         input_tokens += classification.usage.input_tokens
                         output_tokens += classification.usage.output_tokens
 
-                    # Pro Foto genau EINE Klassifikations-Zeile. `category_key` ist bereits
-                    # über die feste Vorrangreihenfolge aufgelöst, `detected_categories` hält
-                    # die VALIDIERTE Kandidatenliste - SICHERHEIT: nie die Rohliste des
-                    # Modells, sonst wanderte unvalidierter Fremdtext über einen zweiten
-                    # Kanal in API-Antwort und UI.
+                    # Pro Foto genau EINE Kopfzeile (`source='cloud'`) samt vollstaendigem
+                    # Achter-Staerkevektor. Der Vektor kommt VALIDIERT aus dem Parser -
+                    # SICHERHEIT: nie die Rohabbildung des Modells, sonst wanderte
+                    # unvalidierter Fremdtext über einen zweiten Kanal in API-Antwort und UI
+                    # (S8/S9), und ein entarteter Zahlenwert legte über Starlettes
+                    # `allow_nan=False` die gesamte Fotoliste des Projekts auf 500.
                     #
-                    # `resolve_category` ist die alleinige Quelle des Schlüssels - die
-                    # Konfidenz geht in KEINE Auswahl ein. Der Skalar entsteht
-                    # per LOOKUP aus der bereits gebauten Abbildung, nicht durch eine zweite
-                    # Berechnung: eine zweite Berechnung driftet, und die Invariante
-                    # `category_confidence == detected_category_confidences.get(category_key)` ist
-                    # die einzige Rechtfertigung der redundanten Spiegelspalte. `None` heisst
-                    # "keine Angabe", nie `0.0` - eine fehlende oder unplausible Konfidenz ist nie
-                    # ein Grund, ein Foto zu ueberspringen oder den Lauf scheitern zu lassen.
-                    category_key = resolve_category(classification.categories)
-                    session.add(
-                        PhotoCategoryClassification(
-                            photo_id=photo.id,
-                            category_key=category_key,
-                            detected_categories=list(classification.categories),
-                            detected_category_confidences=dict(classification.category_confidences),
-                            category_confidence=classification.category_confidences.get(
-                                category_key
-                            ),
-                            provider=settings.landmark_provider,
-                            computed_at=now,
-                        )
+                    # `upsert_assessment` setzt die Regel durch, die beide Grundlagen
+                    # auseinanderhaelt: eine Cloud-Grundlage schreibt immer und ersetzt eine
+                    # vorhandene lokale VOLLSTAENDIG. Die Korrekturzeilen bleiben unangetastet -
+                    # sie haengen am Foto und nicht an der Kopfzeile.
+                    #
+                    # `photo_category_classifications` wird ab hier NICHT MEHR geschrieben (die
+                    # Tabelle faellt erst in PR 3). Die alte Hauptkategorie eines neu
+                    # klassifizierten Fotos entsteht dadurch nur noch aus lokalen Signalen -
+                    # bewusster Zwischenzustand von genau einer PR Laenge. Doppelte Cloud-Kosten
+                    # entstehen nicht, weil der Erledigt-Marker in
+                    # `select_remote_category_candidates` gleichzeitig mit umgezogen ist.
+                    await upsert_assessment(
+                        session,
+                        photo.id,
+                        source=MotifAssessmentSource.CLOUD,
+                        strengths=classification.motif_strengths,
+                        excluded_document=classification.excluded,
+                        provider=settings.landmark_provider,
+                        computed_at=now,
                     )
 
                     # Feinlabels sind reine Zusatzinformation und werden AUCH DANN geschrieben,

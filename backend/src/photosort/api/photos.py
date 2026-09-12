@@ -30,6 +30,7 @@ from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Event,
+    MotifAssessmentSource,
     Photo,
     PhotoCloudVisionError,
     PhotoCriterionScore,
@@ -630,7 +631,7 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     """Read-time abgeleiteter Cloud-Vision-Status für beide Phasen,
     IMMER genau 2 Eintraege in fester Reihenfolge [landmark, remote_category] (unabhaengig von
     DB-/Insert-Reihenfolge von photo.cloud_vision_errors). Erwartet, dass `photo` bereits ueber
-    selectinload(Photo.criterion_scores/landmark_detection/category_classification/
+    selectinload(Photo.criterion_scores/landmark_detection/motif_assessment/
     cloud_vision_errors) eager geladen ist (siehe _photos_by_id) - kein Lazy-Load hier."""
     errors_by_phase = {row.phase: row for row in photo.cloud_vision_errors}
 
@@ -647,16 +648,21 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     elif landmark_score is not None:
         landmark_success = (CloudVisionStatus.NO_RESULT, landmark_score.computed_at)
 
-    # Remote-Kategorie: kein "nichts gefunden"-Fall - ein Erfolg schreibt GENAU EINE
-    # Klassifikations-Zeile, auch wenn die Kategorie `nicht_erkannt` lautet und keine Feinlabels
-    # entstanden sind. Die PRAESENZ dieser Zeile ist damit das Erfolgssignal, nicht die Existenz
-    # einer Feinlabel-Zeile.
+    # Remote-Kategorie: kein "nichts gefunden"-Fall - ein Erfolg schreibt GENAU EINE Kopfzeile
+    # samt Staerkevektor, auch wenn alle acht Staerken 0 sind und keine Feinlabels entstanden
+    # sind. Die PRAESENZ dieser Kopfzeile ist damit das Erfolgssignal, nicht die Existenz einer
+    # Feinlabel-Zeile.
+    #
+    # SICHERHEITSAUFLAGE S14, auch hier: gepruaft wird auf `source='cloud'`, nicht auf das bloße
+    # Vorhandensein der Kopfzeile. Der Kriterien-Lauf schreibt fuer jedes beurteilte Foto eine
+    # LOKALE Kopfzeile; ein reiner Existenztest meldete jedes lokal beurteilte Foto als
+    # erfolgreich cloud-klassifiziert, obwohl nie ein Cloud-Aufruf stattfand. Dieselbe Bedingung
+    # steht in worker.py::select_remote_category_candidates und
+    # api/projects.py::_count_remote_category_candidates.
     remote_category_success: tuple[CloudVisionStatus, datetime] | None = None
-    if photo.category_classification is not None:
-        remote_category_success = (
-            CloudVisionStatus.RESULT,
-            photo.category_classification.computed_at,
-        )
+    assessment = photo.motif_assessment
+    if assessment is not None and assessment.source == MotifAssessmentSource.CLOUD:
+        remote_category_success = (CloudVisionStatus.RESULT, assessment.computed_at)
 
     return [
         _cloud_vision_status_for_phase(
