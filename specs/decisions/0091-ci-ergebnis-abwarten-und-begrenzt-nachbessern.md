@@ -62,9 +62,15 @@ Operationen:
   Ergebniswert; die Ausgabe wird verworfen**, nicht gelesen und nicht gemeldet. Die Ausgabe von
   `--watch` ist darstellungsabhängig; jede Auswertung an ihr wäre eine Annahme über ein Terminal.
 - **`pr-pruefstand-lesen`** — nicht blockierend, `--json`. Auswertungsgrenze `bucket`, `name`,
-  `state`, `workflow`. Ein Check-Name ist fremdbeschreibbar (jede installierte App darf einen
-  Check-Run mit beliebigem Namen anlegen): Er geht in den Chat-Bericht, nie in ein
-  GitHub-Artefakt (Härtungsregel 4.3) und nie in einen Aufruf (4.2).
+  `state`, `workflow`. Steuernd sind allein `bucket` und `state`, beides geschlossene
+  Wertemengen. `name` und `workflow` sind fremdbeschreibbar (jede installierte App darf einen
+  Check-Run mit beliebigem Namen anlegen) und damit reine Anzeigewerte: Chat-Bericht ja;
+  PR-Body, Issue-Kommentar, Spec-Datei und **Commit-Nachricht** nein. Die Commit-Nachricht steht
+  ausdrücklich dabei, weil das Repository mit `COMMIT_MESSAGES` squasht — jeder Commit-Body
+  wandert in den Merge-Commit auf `main`, ins Changelog und in den release-please-Pull-Request,
+  wo ein `Closes #NNN` im Namen eines Checks scharf wäre. Vor der Anzeige werden `Cc`/`Cf`-Zeichen
+  entfernt und auf 200 Zeichen gekürzt; bleibt nichts übrig, lautet die Meldung „Check ohne
+  darstellbaren Namen".
 
 Beide tragen `gh` als einzigen Weg. `pr-pruefstand-abwarten` hat **strukturell** keinen
 `mcp`-Weg: Ein MCP-Werkzeug ist ein einzelner Aufruf mit einer Antwort und kann nicht warten; ein
@@ -77,7 +83,7 @@ Der Ergebniswert ist wegunabhängig und vierwertig:
 |---|---|---|
 | `gruen` | Exit `0`, **und sonst nichts** | Ablauf schließt regulär ab |
 | `rot` | Exit ≠ 0 **und** `pr-pruefstand-lesen` zeigt mindestens ein `bucket == fail` | Nachbesserung (Abschnitt 5) |
-| `laeuft-noch` | Zeitfenster abgelaufen ohne Endstand, oder Exit `8` | Fenster erneut, bis die Obergrenze steht |
+| `laeuft-noch` | Exit `124` des `timeout`-Aufrufs, oder Exit `8` | Fenster erneut, bis die Obergrenze steht |
 | `unbestimmt` | alles andere | **Ablauf hält an und meldet** |
 
 `unbestimmt` umfasst namentlich: Exit `2` bzw. `bucket == cancel` (ein abgebrochener Lauf ist kein
@@ -88,6 +94,16 @@ Exit-Code allein geschlossen, sondern nur mit Beleg aus `pr-pruefstand-lesen` �
 Auflösung der in „Kontext" gemessenen Zweideutigkeit von Exit `1`.
 
 `bucket == skipping` ist kein Fehlschlag und wird toleriert.
+
+Der Ergebniswert entsteht am Exit-Code des `gh`-Prozesses selbst. Die Ausgabe wird mit
+`>/dev/null 2>&1` verworfen, **nie** in eine Pipe geleitet: Hinter einer Pipe stünde der
+Exit-Code des letzten Glieds, und ein Fehlschlag ginge als Erfolg durch.
+
+Beide Operationen bekommen die Pull-Request-Nummer aus `pr-erstellen` dieses Laufs, gegen
+`^[0-9]+$` geprüft. Die argumentlose Form von `gh pr checks` — Auflösung über den aktuellen
+Branch — wird nie benutzt: Sie kann in einem Worktree oder nach einem Branch-Wechsel einen
+anderen Pull Request treffen, und der Fix-Push ginge an einen Stand, den der Ablauf nie gemessen
+hat.
 
 ### 4. Genau ein Wartepunkt, am Ende des Laufs
 
@@ -110,9 +126,32 @@ Menge in den Kontext zieht, und die Klasse von Fehlschlägen, die nur in der CI-
 Fix.
 
 Zulässig ist ausschließlich die Klasse, die `scripts/check.sh` und der Testlauf abdecken:
-Formatierung, Lint, Typen, fehlschlagende Tests. **Nicht** zulässig sind eine fachliche Änderung,
-eine Änderung an der Spec und jede Änderung an `.github/workflows/**` — den Prüfer anzupassen,
-damit er besteht, ist kein Fix, sondern das Abschalten der Zusage.
+Formatierung, Lint, Typen, fehlschlagende Tests — und davon nur, was an Pfaden liegt, die dieser
+Branch ohnehin schon geändert hat (`git diff --name-only origin/main...HEAD`). Ein Fehlschlag in
+einer Datei, die der Branch nicht angefasst hat, ist kein Fix-Fall, sondern ein Befund: anhalten
+und melden. Reine Formatierung entsteht ausschließlich aus dem Lauf von `scripts/format.sh`, ohne
+eine von Hand geschriebene Zeile.
+
+**Eine Nachbesserung schwächt nie eine bestehende Zusicherung ab.** Keine Assertion wird entfernt
+oder aufgeweicht, keine Erwartungskonstante eines Tests geändert, damit er besteht. Ist die
+Änderung an der Erwartung der einzige Weg zu Grün, hält der Ablauf an und meldet. Der Prüfer
+dieses Repositories ist nur zur Hälfte eine Workflow-Datei; die andere Hälfte ist eine Assertion
+unter `scripts/tests/` oder `backend/tests/`, die der Job `demo-scripts` bzw. `backend` fährt.
+Ein roter Wächtertest fällt damit unter „fehlschlagender Test" und reproduziert sich lokal
+einwandfrei — der kürzeste Weg zu Grün wäre, den Wächter selbst zu ändern. Betroffen wären
+namentlich das Verbot von `pull_request_target`, die SHA-Pinnung der `release-please`-Action, die
+Signaturprüfung je npm-Paketsatz und die Erlaubnisstufen des Operationskatalogs.
+
+**Nicht** zulässig sind deshalb eine fachliche Änderung, eine Änderung an der Spec und jede
+Änderung an diesen Pfaden, auch wenn der Branch sie selbst angefasst hat: `.github/**` (nicht nur
+`workflows/`), `scripts/tests/**`, `.claude/**` und `CLAUDE.md`, `design/penpot/**` samt
+`frontend/penpot/payload.test.ts`, sowie Abhängigkeits- und Fixierungsdateien (`package.json`,
+`package-lock.json`, `pyproject.toml`, `uv.lock`, `Dockerfile*`, `docker-compose*.yml`,
+`.env.example`). Formatierung nach dem Absatz oben bleibt auch dort zulässig, weil `ruff format`
+und Prettier die Bedeutung nicht ändern.
+
+**Gemessen wird vor dem Push, nicht in der Absicht:** Der Ablauf misst den Diff des Fix-Commits
+selbst und hält bei einem Treffer aus der Liste an.
 
 Je Runde entsteht **ein** Commit und **ein** Push. Der bestehende Grundsatz, keine zusätzlichen
 CI-Läufe zu erzeugen, bleibt damit gewahrt: Eine Runde kostet genau einen weiteren Lauf.
@@ -120,8 +159,14 @@ CI-Läufe zu erzeugen, bleibt damit gewahrt: Eine Runde kostet genau einen weite
 Wer korrigiert, ergibt sich aus der Rollenteilung des jeweiligen Ablaufs. In `ship-feature` der
 weiterhin offene `developer`-Subagent per `SendMessage` — Code und Tests bleiben bei ihm, der
 Orchestrator führt keinen eigenen Testlauf. In `ship-entwurf` die Hauptsession selbst; dort gibt
-es keinen Subagenten, und der Fix-Commit wird gegen dieselbe geschlossene Pfad-Zulassungsmenge
-gemessen wie jeder andere Commit dieses Ablaufs.
+es keinen Subagenten, und der Fix-Commit durchläuft **Schritt 1 und Schritt 2 vollständig** —
+Pfad-Zulassungsmenge, Wächter-Halt, Bilddatei-Halt, Beispieldaten-Prüfung —, nicht nur die
+Pfadmenge. Ein rotes `frontend/penpot/payload.test.ts` wäre sonst durch eine zusätzliche
+`BEZEICHNER_FREIGABEN`-Zeile grün zu bekommen: Die Datei, die die Aufweichung verhindern soll,
+läge im selben Diff, und die Nutzlast läuft in Daniels angemeldeter Penpot-Sitzung.
+
+Ein Fix-Diff stößt **keine** erneute Review-Runde an. Getragen wird das von der engen Klasse
+oben, der Messung vor dem Push und Daniels Merge.
 
 ### 6. Die Obergrenzen als Zahlen
 
@@ -146,13 +191,25 @@ einen Stelle im Katalogeintrag erhöht, nicht je Ablauf.
 
 Neuer Test unter `scripts/tests/`, gefahren vom Job `demo-scripts`, nach dem Vorbild von
 `test_main_abgleich_verdrahtung.py`. Zugesichert wird ausschließlich **Nachweisbares**: dass beide
-Operationen im Katalog stehen und ihre Form halten, dass beide Ablauf-Skills sie an der in
-Abschnitt 4 festgelegten Stelle aufrufen (Reihenfolge über Zeichenoffsets), dass beide dieselbe
-Rundenzahl führen, und dass kein Ablaufschritt ein eigenes Warteskript nennt.
+Operationen im Katalog stehen und ihre Form halten; dass jedes Ablauf-Skill den Wartepunkt genau
+einmal und an der in Abschnitt 4 festgelegten Stelle nennt (Reihenfolge über Zeichenoffsets); dass
+die eine `gh pr checks`-Befehlszeile des Katalogs `--watch`, `--fail-fast`, `--interval 30` und
+`timeout 540` trägt und `--required` **nicht**; dass das Ergebnisvokabular als Whitelist-Gleichheit
+über die Wertespalte der Tabelle oben genau `{gruen, rot, laeuft-noch, unbestimmt}` ist; dass jede
+Betriebszahl aus Abschnitt 6 im Suchraum `.claude/**` **genau einmal** vorkommt; und dass die
+Auswertungsgrenze von `pr-pruefstand-lesen` exakt die vier Felder nennt, die von
+`pr-pruefstand-abwarten` **keines**.
+
+Die Zahl kommt einmal vor, statt dass zwei Vorkommen auf Gleichheit geprüft werden: Was es nur
+einmal gibt, kann nicht driften.
 
 **Was ausdrücklich nicht gebaut wird:** ein Prüfer, der aus dem Prosatext herausliest, dass ein
 unbestimmtes Ergebnis anhält. Er wäre grün, weil ein Satz dasteht, und fröre nebenbei die
-Formulierung ein.
+Formulierung ein. Ebenso wenig eine Abwesenheitsprüfung auf Prosa („nirgends steht *Warteskript*"
+o.ä.): In Markdown ist der erklärende Satz nicht vom anweisenden zu trennen, ein solcher Prüfer
+färbte die Dokumentation rot, die er erzwingen soll. Abwesenheit wird nur auf Befehls- und
+Formzeilen geprüft; dass kein Wegwerf-Skript entsteht, ist über die **Anwesenheit** des einen Wegs
+zugesichert.
 
 ## Begründung
 
