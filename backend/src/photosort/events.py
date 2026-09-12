@@ -349,19 +349,33 @@ def _rounded(value: float) -> float:
     return round(value, _EVENT_PLACE_COORDINATE_DIGITS) + 0.0
 
 
-def _place_of(members: Sequence[EventCandidate]) -> tuple[str | None, float | None, float | None]:
-    """Die Stufenentscheidung ueber das VOLLSTAENDIGE Event, ausschliesslich aus GEMESSENEN Werten.
-
-    Rangfolge: erkannte Sehenswuerdigkeit -> genau eine gerundete Koordinatenzelle -> mehrere Orte
-    -> kein Ortsbezug. Der Name hat Vorrang auch dann, wenn zusaetzlich abweichende Koordinaten
-    vorliegen.
+def _name_of(members: Sequence[EventCandidate]) -> str | None:
+    """Der eine Name eines Events, oder `None`.
 
     `members` ist nach `(taken_at, photo_id)` sortiert: ein Event traegt hoechstens EINEN Namen
     (dafuer sorgt `LandmarkChangeSignal`) - defensiv gewinnt der des fruehesten Fotos."""
     for member in members:
         name = _usable_name(member.landmark_name)
         if name is not None:
-            return "landmark", None, None
+            return name
+    return None
+
+
+def _place_of(
+    members: Sequence[EventCandidate], landmark_name: str | None
+) -> tuple[str | None, float | None, float | None]:
+    """Die Stufenentscheidung ueber das VOLLSTAENDIGE Event, ausschliesslich aus GEMESSENEN Werten.
+
+    Rangfolge: erkannte Sehenswuerdigkeit -> genau eine gerundete Koordinatenzelle -> mehrere Orte
+    -> kein Ortsbezug. Der Name hat Vorrang auch dann, wenn zusaetzlich abweichende Koordinaten
+    vorliegen.
+
+    `landmark_name` kommt als Parameter herein statt hier ein zweites Mal gesucht zu werden: so
+    gibt es EINE Stelle, die "gibt es einen verwendbaren Namen" beantwortet, und die Invariante
+    `place_kind='landmark'` ⇒ `landmark_name` gesetzt kann an der einen Aufrufstelle gar nicht
+    auseinanderlaufen."""
+    if landmark_name is not None:
+        return "landmark", None, None
 
     # VERGLICHEN WIRD DIE GERUNDETE Zelle, nicht der Rohwert: ein Vergleich der ungerundeten Werte
     # schluege schon bei zwei 40 m auseinanderliegenden Aufnahmen zu und machte aus einem einzelnen
@@ -379,22 +393,15 @@ def _place_of(members: Sequence[EventCandidate]) -> tuple[str | None, float | No
     return "coordinate", lat, lon
 
 
-def _name_of(members: Sequence[EventCandidate]) -> str | None:
-    for member in members:
-        name = _usable_name(member.landmark_name)
-        if name is not None:
-            return name
-    return None
-
-
 def _built(position: int, members: Sequence[EventCandidate]) -> BuiltEvent:
-    place_kind, place_lat, place_lon = _place_of(members)
+    landmark_name = _name_of(members)
+    place_kind, place_lat, place_lon = _place_of(members, landmark_name)
     return BuiltEvent(
         position=position,
         photo_ids=tuple(member.photo_id for member in members),
         started_at=members[0].taken_at,
         ended_at=members[-1].taken_at,
-        landmark_name=_name_of(members),
+        landmark_name=landmark_name,
         place_kind=place_kind,
         place_lat=place_lat,
         place_lon=place_lon,

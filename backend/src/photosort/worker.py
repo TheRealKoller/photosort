@@ -1196,13 +1196,13 @@ async def _landmark_names(
 
     Dies ist zugleich die EINZIGE Quelle von `events.landmark_name` (Sicherheitsauflage M9).
 
-    SANITISIERUNG IM LESEPFAD (Muss-Kriterium des Sicherheitskonzepts, Abschnitt
-    "Standortdaten"): `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl
-    `_landmark_detection_from_json` sie bereits an der Quelle anwendet. Sie ist die einzige
-    Deckung des Altbestands: es gibt reale Zeilen mit unsaniertem Rohtext und fuer sie keinen
-    Migrationsweg. Bitte nicht als vermeintliche Dopplung entfernen. Fachlich wirkt sie hier
-    zusaetzlich als Zusammenfuehrung: ein unsanierter Altname und sein sauberer Zwilling meinen
-    dieselbe Sehenswuerdigkeit und duerfen ihren Cluster nicht zerteilen."""
+    SANITISIERUNG BEIM LESEN DER PERSISTIERTEN ZEILEN (Muss-Kriterium des Sicherheitskonzepts,
+    Abschnitt "Standortdaten"): `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl
+    `landmark.py::_landmark_detection_from_json` sie bereits an der Quelle anwendet. Sie ist die
+    einzige Deckung des Altbestands: es gibt reale Zeilen mit unsaniertem Rohtext und fuer sie
+    keinen Migrationsweg. Bitte nicht als vermeintliche Dopplung entfernen. Fachlich wirkt sie
+    hier zusaetzlich als Zusammenfuehrung: ein unsanierter Altname und sein sauberer Zwilling
+    meinen dieselbe Sehenswuerdigkeit und duerfen ihr Event nicht zerteilen."""
     if not photo_ids:
         return {}
 

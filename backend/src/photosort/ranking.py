@@ -5,9 +5,9 @@ from dataclasses import dataclass
 
 from photosort.categories import usable_confidence
 
-# Reine, DB-freie Rangfolgen-Funktion, analog scoring.py::assign_time_clusters. Operiert auf EINER
-# Partition (cluster_key x category_key) pro Aufruf - der Worker ruft sie je Partition auf und
-# ergaenzt cluster_key/category_key erst beim Persistieren der PhotoRanking-Zeilen (siehe
+# Reine, DB-freie Rangfolgen-Funktion, analog scoring.py::assign_clusters. Operiert auf EINER
+# Partition (event_id x category_key) pro Aufruf - der Worker ruft sie je Partition auf und
+# ergaenzt event_id/category_key erst beim Persistieren der PhotoRanking-Zeilen (siehe
 # worker.py::run_criterion_scoring). Die konkrete Default-Gewichtung ist austauschbar.
 #
 # `usable_confidence` kommt aus categories.py und wird hier NICHT ein zweites Mal geschrieben

@@ -573,10 +573,10 @@ export function CurateCategoriesPage() {
                       <section key={eventKey} className="flex flex-col gap-4">
                         {/* Die Zahl steht NEBEN der Ueberschrift in einem eigenen Element, nicht
                             in ihr (Akzeptanzkriterium 4): der von `formatEventHeading()`
-                            gelieferte Text (Tageszeit + Zeitraum) bleibt unveraendert, und die
-                            fuer einen spaeteren Ausbau vorgesehene Ortsangabe behaelt ihren
-                            Platz. Gleiche Formsprache wie die `(N Fotos)`-Kurzinfo der
-                            Tages-Kopfzeile. */}
+                            gelieferte Text (Name oder Position, dazu die Zeitspanne) bleibt
+                            unveraendert, und die fuer einen spaeteren Ausbau vorgesehene
+                            Ortsangabe behaelt ihren Platz. Gleiche Formsprache wie die
+                            `(N Fotos)`-Kurzinfo der Tages-Kopfzeile. */}
                         <div className="flex flex-wrap items-baseline gap-2">
                           <h3 className="text-base">{heading}</h3>
                           {eventCandidateCount > 0 && (

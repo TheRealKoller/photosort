@@ -130,47 +130,47 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
 }
 
 describe('countPhotosInDay', () => {
-  it('returns 0 for a day with no clusters', () => {
+  it('returns 0 for a day with no events', () => {
     expect(countPhotosInDay({})).toBe(0)
   })
 
-  it('sums photos across every cluster and category of the day', () => {
-    const clustersForDay = {
-      'cluster-a': {
+  it('sums photos across every event and category of the day', () => {
+    const eventsForDay = {
+      '1': {
         landscape: [entry({ id: 1 }), entry({ id: 2 })],
         people: [entry({ id: 3 })],
       },
-      'cluster-b': {
+      '2': {
         landscape: [entry({ id: 4 })],
       },
     }
 
-    expect(countPhotosInDay(clustersForDay)).toBe(4)
+    expect(countPhotosInDay(eventsForDay)).toBe(4)
   })
 
   it('ignores categories whose pool is already exhausted (no entries)', () => {
-    const clustersForDay = {
-      'cluster-a': {
+    const eventsForDay = {
+      '1': {
         landscape: [],
         people: [entry({ id: 1 })],
       },
     }
 
-    expect(countPhotosInDay(clustersForDay)).toBe(1)
+    expect(countPhotosInDay(eventsForDay)).toBe(1)
   })
 
   it('counts a photo that appears in two categories of the day only once', () => {
     /* specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 26: die Beschriftung lautet
      * "N Fotos" - gezaehlt werden EINDEUTIGE FOTOS, nicht Zugehoerigkeiten. Ohne diese Zusage
      * stuende an einem Tag mit einem einzigen, doppelt gezeigten Foto "2 Fotos". */
-    const clustersForDay = {
-      'cluster-a': {
+    const eventsForDay = {
+      '1': {
         landscape: [entry({ id: 1 }, { category_key: 'landscape' })],
         people: [entry({ id: 1 }, { category_key: 'people', is_primary: false })],
       },
     }
 
-    expect(countPhotosInDay(clustersForDay)).toBe(1)
+    expect(countPhotosInDay(eventsForDay)).toBe(1)
   })
 })
 
@@ -277,7 +277,7 @@ describe('CurateCategoriesPage', () => {
     )
   })
 
-  it('groups photos by day, then cluster, then category, showing day/cluster headings and the category chip/name', async () => {
+  it('groups photos by day, then event, then category, showing day/event headings and the category chip/name', async () => {
     const list: PhotoListOut = {
       items: [
         photo({
@@ -293,10 +293,14 @@ describe('CurateCategoriesPage', () => {
     renderPage()
 
     // Beide Fotos sind am 20.07.2026 (Montag) um 10:00 Uhr entstanden (Fixture-Default) - ein
-    // Tag-Abschnitt, ein Cluster mit Tageszeit-Ueberschrift statt der technischen cluster_key-ID.
+    // Tag-Abschnitt, ein Event mit sprechender Ueberschrift statt der technischen Event-Id.
     expect(await screen.findByText('Montag 20.07.2026')).toBeInTheDocument()
     expect(screen.getByText('Position 1 (10:00 Uhr)')).toBeInTheDocument()
-    expect(screen.queryByText('cluster-0')).not.toBeInTheDocument()
+    // Die nackte Event-Id ist der Rueckfall, wenn die Meta-Info fehlt (`?? eventKey`) - im
+    // Normalfall darf sie nie als Ueberschrift erscheinen.
+    expect(
+      screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent),
+    ).not.toContain('1')
     expect(screen.getByText('Landscape')).toBeInTheDocument()
     expect(screen.getByText('People')).toBeInTheDocument()
     expect(screen.getAllByRole('listitem').length).toBeGreaterThanOrEqual(2)
@@ -533,7 +537,7 @@ describe('CurateCategoriesPage', () => {
   })
 
   it(
-    'keeps the day and cluster sections visible when a category override empties their only ' +
+    'keeps the day and event sections visible when a category override empties their only ' +
       'partition (Akzeptanzkriterium 7 der Spec 0043, umgehaengt auf den einzigen verbliebenen ' +
       'Ausloeser)',
     async () => {
@@ -544,7 +548,7 @@ describe('CurateCategoriesPage', () => {
        * Kategorie-Override, der die Partition eines Fotos tatsaechlich noch wechselt.
        *
        * Ausdruecklich mit erfasst: Ein TAG kann seit dieser Story gar nicht mehr leerlaufen - der
-       * Override verschiebt das Foto innerhalb desselben Clusters. Die Negativ-Assertion auf
+       * Override verschiebt das Foto innerhalb desselben Events. Die Negativ-Assertion auf
        * "Keine Fotos für diesen Tag" haelt genau das fest, statt es stillschweigend zu lassen. */
       vi.mocked(photosApi.listPhotos)
         .mockResolvedValueOnce({
@@ -600,7 +604,7 @@ describe('CurateCategoriesPage', () => {
 
   it(
     'keeps a category section visible with the unchanged empty-pool placeholder once a category ' +
-      'override empties it, while a sibling category in the same cluster still has photos ' +
+      'override empties it, while a sibling category in the same event still has photos ' +
       '(Akzeptanzkriterium 7, Kategorie-Ebene)',
     async () => {
       // Zweiter der drei auf den Kategorie-Override umgehaengten Faelle - siehe die Begruendung
@@ -668,11 +672,11 @@ describe('CurateCategoriesPage', () => {
   )
 
   it(
-    'keeps every cluster heading of the day intact after a category override, including the one ' +
+    'keeps every event heading of the day intact after a category override, including the one ' +
       'whose category ran empty (Regressionstest laut Architektur-Abschnitt der Spec)',
     async () => {
-      // Dritter der drei umgehaengten Faelle. Die Cluster-Ueberschriften bleiben vollstaendig und
-      // in chronologischer Reihenfolge - ein Cluster selbst kann seit dieser Story nicht mehr
+      // Dritter der drei umgehaengten Faelle. Die Event-Ueberschriften bleiben vollstaendig und
+      // in chronologischer Reihenfolge - ein Event selbst kann seit dieser Story nicht mehr
       // leerlaufen (der Override verschiebt nur die Kategorie), sein Abschnitt darf aber auch
       // durch die Umsortierung der Kategorien nicht verlorengehen.
       vi.mocked(photosApi.listPhotos)
@@ -734,8 +738,8 @@ describe('CurateCategoriesPage', () => {
       await waitFor(() => expect(screen.getByText('Tier')).toBeInTheDocument())
       expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
 
-      const clusterHeadings = screen.getAllByRole('heading', { level: 3 })
-      expect(clusterHeadings.map((heading) => heading.textContent)).toEqual([
+      const eventHeadings = screen.getAllByRole('heading', { level: 3 })
+      expect(eventHeadings.map((heading) => heading.textContent)).toEqual([
         'Position 1 (09:00 Uhr)',
         'Position 2 (14:00 Uhr)',
       ])
@@ -831,7 +835,7 @@ describe('CurateCategoriesPage', () => {
       expect(trigger).toHaveAttribute('aria-expanded', 'true')
       // Kein Kurzinfo-Text im aufgeklappten Zustand (Akzeptanzkriterium 5).
       expect(screen.queryByText(/\(\d+ Fotos\)/)).not.toBeInTheDocument()
-      // Cluster-/Kategorie-Teilbaum ist sichtbar.
+      // Event-/Kategorie-Teilbaum ist sichtbar.
       expect(screen.getByText('Landscape')).toBeInTheDocument()
     })
 
@@ -1123,7 +1127,7 @@ describe('CurateCategoriesPage', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
 
-    it('places the catch-all section after the regular categories of the same cluster', async () => {
+    it('places the catch-all section after the regular categories of the same event', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [
           photo({
@@ -1350,7 +1354,7 @@ describe('CurateCategoriesPage: Filter "Nur unsichere Zuordnungen"', () => {
     expect(screen.queryByText(LOW_CONFIDENCE_EMPTY_TEXT)).not.toBeInTheDocument()
   })
 
-  it('laesst die Gruppierung nach Tag/Cluster/Kategorie unveraendert', async () => {
+  it('laesst die Gruppierung nach Tag/Event/Kategorie unveraendert', async () => {
     const user = userEvent.setup()
     vi.mocked(photosApi.listPhotos).mockResolvedValue(LIST)
 
@@ -1503,7 +1507,7 @@ describe('CurateCategoriesPage — Nebenkategorien', () => {
     expect(screen.getAllByText('a.jpg')).toHaveLength(1)
   })
 
-  it('zaehlt ein doppelt gezeigtes Foto in der Tagesueberschrift einmal, in der Cluster-Zahl zweimal', async () => {
+  it('zaehlt ein doppelt gezeigtes Foto in der Tagesueberschrift einmal, in der Event-Zahl zweimal', async () => {
     // Akzeptanzkriterium 26 der Spec 0300, hier durch die gerenderte Seite hindurch statt nur an
     // der Funktion - und seit specs/features/0357-voller-bildvorrat-kuratierung.md zusammen mit
     // der GEGENSAETZLICHEN Zaehlweise eine Ebene tiefer, in DEMSELBEN Testfall (Akzeptanzkriterium
@@ -1516,9 +1520,9 @@ describe('CurateCategoriesPage — Nebenkategorien', () => {
     renderPage()
     await screen.findByText('Landscape')
 
-    // Cluster-Zahl: zwei Zugehoerigkeiten desselben Fotos -> 2 Kandidaten.
+    // Event-Zahl: zwei Zugehoerigkeiten desselben Fotos -> 2 Kandidaten.
     expect(screen.getByText('(2 Kandidaten)')).toBeInTheDocument()
-    // Invariante statt abgeschriebener Zahlen: Cluster-Zahl == Summe der Kategorie-Zahlen.
+    // Invariante statt abgeschriebener Zahlen: Event-Zahl == Summe der Kategorie-Zahlen.
     const categoryCounts = screen
       .getAllByRole('heading', { level: 4 })
       .map((heading) => Number(/(\d+) Kandidat/.exec(heading.textContent ?? '')?.[1] ?? 0))
@@ -1531,11 +1535,11 @@ describe('CurateCategoriesPage — Nebenkategorien', () => {
   })
 })
 
-describe('candidateCountOfCategory / candidateCountOfCluster', () => {
+describe('candidateCountOfCategory / candidateCountOfEvent', () => {
   /* specs/features/0357-voller-bildvorrat-kuratierung.md, Akzeptanzkriterium 5: die Zahl einer
    * Kategorie ist ihre `partition_size` (alle Eintraege einer Partition tragen denselben Wert),
-   * die Zahl eines Clusters die SUMME seiner Kategorie-Zahlen - ein Foto in zwei Kategorien
-   * desselben Clusters zaehlt darin zweimal. */
+   * die Zahl eines Events die SUMME seiner Kategorie-Zahlen - ein Foto in zwei Kategorien
+   * desselben Events zaehlt darin zweimal. */
 
   it('liest die Kategorie-Zahl aus der partition_size des ersten Eintrags', () => {
     expect(candidateCountOfCategory([entry({ id: 1 }, { partition_size: 7 })])).toBe(7)
@@ -1546,7 +1550,7 @@ describe('candidateCountOfCategory / candidateCountOfCluster', () => {
     expect(candidateCountOfCategory([])).toBe(0)
   })
 
-  it('summiert die Kategorie-Zahlen eines Clusters', () => {
+  it('summiert die Kategorie-Zahlen eines Events', () => {
     expect(
       candidateCountOfEvent({
         landscape: [entry({ id: 1 }, { category_key: 'landscape', partition_size: 3 })],
@@ -1555,7 +1559,7 @@ describe('candidateCountOfCategory / candidateCountOfCluster', () => {
     ).toBe(5)
   })
 
-  it('zaehlt ein Foto in zwei Kategorien desselben Clusters zweimal', () => {
+  it('zaehlt ein Foto in zwei Kategorien desselben Events zweimal', () => {
     // Bewusste Produktentscheidung (ADR 0071 Entscheidung 4) - deshalb heisst die Zahl
     // "Kandidaten" und nicht "Fotos".
     expect(
@@ -1640,17 +1644,17 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
     expect(heading).toHaveTextContent('2 Kandidaten')
   })
 
-  it('zeigt die Cluster-Zahl NEBEN der unveraenderten Cluster-Ueberschrift', async () => {
-    // Akzeptanzkriterium 4 samt Negativ-Nachweis: der von formatClusterHeading() erzeugte Text
-    // (Tageszeit + Zeitraum) steht UNVERAENDERT im Baum - die Zahl verdraengt ihn nicht und nimmt
-    // der spaeter vorgesehenen Ortsangabe ihren Platz nicht weg.
+  it('zeigt die Kandidatenzahl NEBEN der unveraenderten Event-Ueberschrift', async () => {
+    // Akzeptanzkriterium 4 samt Negativ-Nachweis: der von formatEventHeading() erzeugte Text
+    // (Name oder Position, dazu die Zeitspanne) steht UNVERAENDERT im Baum - die Zahl verdraengt
+    // ihn nicht und nimmt der spaeter vorgesehenen Ortsangabe ihren Platz nicht weg.
     vi.mocked(photosApi.listPhotos).mockResolvedValue(EXACTLY_FULL)
 
     renderPage()
     await screen.findByText('Landscape')
 
-    const clusterHeading = screen.getByRole('heading', { level: 3 })
-    expect(clusterHeading.textContent).toBe('Position 1 (10:00 Uhr)')
+    const eventHeading = screen.getByRole('heading', { level: 3 })
+    expect(eventHeading.textContent).toBe('Position 1 (10:00 Uhr)')
     expect(screen.getByText('(2 Kandidaten)')).toBeInTheDocument()
   })
 
@@ -1767,7 +1771,7 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
     await user.click(screen.getByRole('checkbox', { name: /nur unsichere zuordnungen/i }))
 
     // Die Kategorie ist leer gefiltert - die Zahlen beschreiben trotzdem weiter den vollen
-    // Bestand, und die Cluster-Summe verliert die weggefilterte Kategorie nicht.
+    // Bestand, und die Event-Summe verliert die weggefilterte Kategorie nicht.
     expect(screen.getByText(LOW_CONFIDENCE_EMPTY_TEXT)).toBeInTheDocument()
     expect(screen.getByText('(3 Kandidaten)')).toBeInTheDocument()
     expect(screen.getByText('Landscape').closest('h4')).toHaveTextContent('2 Kandidaten')

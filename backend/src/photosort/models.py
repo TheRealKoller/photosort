@@ -83,7 +83,8 @@ class Photo(Base):
     # Ort bekannt" - es gibt NIE eine halbe Koordinate: scheitert eine Komponente, sind beide
     # Felder `None` (Paar-Invariante von extract_gps). Volle EXIF-Präzision, keine Rundung beim
     # Speichern; die Anzeigerundung auf zwei Nachkommastellen liegt allein in
-    # api/photos.py::cluster_place.
+    # events.py::_rounded (`_EVENT_PLACE_COORDINATE_DIGITS`) und trifft ausschließlich
+    # `events.place_lat`/`place_lon`, nie diese Spalten hier.
     #
     # KEIN server_default und kein Backfill: `0.0` ist eine gültige Koordinate, kein
     # Abwesenheitswert. Bereits gescannte Fotos bleiben ohne Koordinate, bis sich die Datei auf
