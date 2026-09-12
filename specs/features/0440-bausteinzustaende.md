@@ -99,7 +99,7 @@ steht in der Rastertabelle unten.
 | `specs/features/0440-bausteinzustaende.md` | diese Spec |
 | `specs/decisions/0088-...md` | neue ADR |
 | `.claude/skills/penpot-design/SKILL.md` | ein Block „Das Ablagemuster für das Register" neben dem für Ansichten |
-| `design/penpot/README.md` | ein Satz im `views.json`-Abschnitt: das Register steht bewusst nicht darin |
+| `design/penpot/README.md` | ein Absatz im `views.json`-Abschnitt (das Register steht bewusst nicht darin) und ein Unterabschnitt mit den drei beim Bau gemessenen API-Befunden |
 | `specs/architecture/0004-design-system.md` | ein Punkt unter „Bekannte Lücken": das Register wird von Hand nachgezogen |
 | `specs/architecture/0002-testkonzept.md` | zwei Punkte unter „Bekannte Lücken" und ein Satz zum Suchraum der Wächter |
 
@@ -137,6 +137,34 @@ Leerzelle** stehen statt gefüllt zu werden — sie ist der sichtbare Beleg eine
 Ein Baustein ohne Ausprägungsachse bekommt genau **eine** Spalte (mit dem Bausteinnamen
 beschriftet), einer ohne Zustandsachse genau **eine** Zeile — die Leserichtung „Spalten =
 Ausprägungen, Zeilen = Zustände" bleibt dadurch über alle zwölf Raster dieselbe.
+
+### Maße und Lage — damit der Wiederaufbau maßhaltig ist
+
+Diese Werte gehören in die Spec, weil das Register nach einem Instanzverlust allein aus ihr
+entsteht: Ohne sie wäre der zugesagte Wiederaufbau zwar inhaltlich vollständig, aber nicht
+maßgleich. Beschriftungsspalte 170, Kopfhöhe 56, Innenabstand der Zelle 12; das Zellbrett ist je
+Raster 16 schmaler und 16 niedriger als das Rasterfeld.
+
+| Raster | Rasterfeld (Breite × Höhe) | Spalte, Ursprung (x, y) |
+|---|---|---|
+| Schaltfläche | 200 × 64 | Bedienelemente, (0, −2400) |
+| Schaltfläche — Größen | 200 × 64 | Bedienelemente, (0, −1984) |
+| Eingabefeld | 260 × 64 | Bedienelemente, (0, −1824) |
+| Auswahlkästchen | 260 × 56 | Bedienelemente, (0, −1408) |
+| Schalter | 260 × 56 | Bedienelemente, (0, −1144) |
+| Hinweis | 240 × 88 | Anzeigen, (2600, −2400) |
+| Kennzeichen | 200 × 56 | Anzeigen, (2600, −2216) |
+| Fortschrittsanzeige | 260 × 56 | Anzeigen, (2600, −2008) |
+| Kategorie-Chip | 200 × 56 | Anzeigen, (2600, −1800) |
+| Karte | 220 × 72 | Behälter und Verlauf, (5600, −2400) |
+| Dialog | 300 × 104 | Behälter und Verlauf, (5600, −2160) |
+| Schrittmarke | 180 × 64 | Behälter und Verlauf, (5600, −1872) |
+| Platzhalter | 220 × 88 | Behälter und Verlauf, (5600, −1584) |
+
+Darunter, jeweils an x = 0: Symbolblock bei y = −880 (zwölf Zellen à 104 × 80 im Abstand 120) und
+der Lücken-Block bei y = −680 (1440 × 250). Seitentitel bei (0, −2600), Zonenüberschrift bei
+(0, −2520), Gruppenüberschriften bei y = −2470. Die Bestandsüberschrift steht bei (0, 420), also
+oberhalb der Symbolreihe des Bestands und außerhalb jeder Bestandsfläche.
 
 **Symbolblock:** die zwölf Symbole aus `icons.json` als eigener beschrifteter Block, je Symbol
 sein Name darunter; Strichfarbe kommt aus der Bibliotheksinstanz (`color.text-h`).
