@@ -1,6 +1,13 @@
 # 0029 - GPS- und Landmark-basierte Cluster-Bildung: zweiphasige Verfeinerung statt Pipeline-Umbau
 
 **Status:** Accepted
+**Teilweise abgelöst:** der Verfeinerungs-Mechanismus der zweiten Phase (Punkt 1, zweiter Absatz —
+`refine_clusters_by_landmark` als nachträgliche Umgruppierung nach Namen) und die clusterweite
+Herleitung des Anzeige-Orts (Punkt 3, zweiter Aufzählungspunkt) durch ADR
+[`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md). Unverändert weiter
+gelten die Zweiphasigkeit ohne neuen Job, die Divergenz `PhotoScore.cluster_key` ≠ der Gliederung
+des Kriterien-Laufs, Haversine aus der Stdlib, Schwellen als Modulkonstanten und Reverse-Geocoding
+als Out-of-Scope.
 **Datum:** 2026-08-20
 **Bezug:** [`decisions/0006-local-scoring-datamodel.md`](./0006-local-scoring-datamodel.md) (`assign_time_clusters`, Ursprung), [`decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md`](./0021-kriterien-datenmodell-kuratierungs-pipeline.md) (Kriterien-/Rangfolgen-Datenmodell, Ownership-Grenze `PhotoScore` vs. `PhotoRanking`), [`decisions/0023-dynamische-kategorie-ableitung-aus-kriterien-haeufigkeit.md`](./0023-dynamische-kategorie-ableitung-aus-kriterien-haeufigkeit.md) (Präzedenzfall für eine In-Memory-Nachbearbeitung am Ende der Kandidaten-Schleife in `run_criterion_scoring`), [`features/0039-kuratierung-tage-und-benannte-cluster.md`](../features/0039-kuratierung-tage-und-benannte-cluster.md) (bisherige, rein clientseitige Cluster-Anzeigebenennung; markierte eine Änderung der Cluster-Bildungslogik selbst explizit als Out-of-Scope — diese ADR hebt genau das jetzt bewusst auf), [`features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md`](../features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) (Accepted, noch nicht implementiert — Quelle des `landmark`-Kriteriums/`photo_landmark_detections`, GPS dort explizit Out-of-Scope). Architektur-Konsultation für die künftige Feature-Spec `specs/features/0051-gps-zeit-sehenswuerdigkeit-clusterbildung.md` (Inbox-Idee 0022), 2026-08-20.
 

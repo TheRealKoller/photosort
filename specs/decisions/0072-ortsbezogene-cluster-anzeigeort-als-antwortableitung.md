@@ -1,6 +1,13 @@
 # 0072 - Ortsbezogene Cluster: der Cluster-Ort als Server-Aggregat, Sehenswürdigkeit aus der Persistenz, 500 m Trennabstand
 
 **Status:** Accepted
+**Teilweise abgelöst:** das Antwortfeld `cluster_place` (Entscheidung 1, geht in `PhotoOut.event`
+auf) und die indexbasierte Schlüsselform `cluster-<n>-<i>` (Entscheidung 3, entfällt mit der
+Sehenswürdigkeit als Trennsignal) durch ADR
+[`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md). Unverändert weiter
+gelten die Trennung von Foto-Ort und Gruppen-Ort, die Herkunft der Namen aus
+`photo_landmark_detections`, die 500 m, der Bezug auf das letzte koordinatentragende Foto, die
+beiden Verwerfungsregeln in `extract_gps` und die Pflicht zur ausgeschriebenen Laufbindung.
 **Datum:** 2026-09-09
 **Bezug:** [`decisions/0029-gps-landmark-cluster-bildung.md`](./0029-gps-landmark-cluster-bildung.md) (die zweiphasige Cluster-Bildung selbst — gilt unverändert weiter, siehe Abgrenzung unten), [`decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md`](./0021-kriterien-datenmodell-kuratierungs-pipeline.md) (Ownership-Grenze `PhotoScore` vs. `PhotoRanking`), [`decisions/0049-festes-kategorien-set-mit-vorrangreihenfolge-und-freien-feinlabels.md`](./0049-festes-kategorien-set-mit-vorrangreihenfolge-und-freien-feinlabels.md)/[`decisions/0069-nebenkategorien-mehrfachzugehoerigkeit-und-konfidenzgewichtete-rangfolge.md`](./0069-nebenkategorien-mehrfachzugehoerigkeit-und-konfidenzgewichtete-rangfolge.md) (die Stelle, an der ADR 0029 die Landmark-Verfeinerung verorten wollte, ist seither eine andere), [`decisions/0071-kuratierung-stabile-auswahl-ohne-backfill-und-einsehbarer-vorrat.md`](./0071-kuratierung-stabile-auswahl-ohne-backfill-und-einsehbarer-vorrat.md) (Top-N-Auswahl + Nachladen in einer eigenen Abfrage — der Grund, warum der Cluster-Ort nicht im Frontend entstehen kann), [`features/0039-kuratierung-tage-und-benannte-cluster.md`](../features/0039-kuratierung-tage-und-benannte-cluster.md) (die bestehende, rein clientseitige Cluster-Überschrift), [`features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md`](../features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) (Quelle der Namen, inzwischen umgesetzt), [`features/0051-gps-landmark-cluster-bildung.md`](../features/0051-gps-landmark-cluster-bildung.md) (Accepted, Issue #169).
 
