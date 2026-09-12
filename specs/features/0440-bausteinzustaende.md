@@ -1,6 +1,6 @@
 # 0440 - Alle Bausteinzustände auf einen Blick
 
-**Status:** Accepted
+**Status:** Implemented
 **Erstellt:** 2026-09-12
 **Bezug:** [GitHub-Issue #440](https://github.com/TheRealKoller/photosort/issues/440)
 
