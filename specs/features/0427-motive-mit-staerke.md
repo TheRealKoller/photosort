@@ -1,6 +1,6 @@
 # 0427 - Motive mit Stärke statt einer Hauptkategorie
 
-**Status:** Accepted
+**Status:** Implemented ([PR #446](https://github.com/TheRealKoller/photosort/pull/446), [PR #447](https://github.com/TheRealKoller/photosort/pull/447), [PR #450](https://github.com/TheRealKoller/photosort/pull/450))
 **Erstellt:** 2026-09-12
 **Bezug:** [Issue #427](https://github.com/TheRealKoller/photosort/issues/427) (Story unter dem Zielbild [#424](https://github.com/TheRealKoller/photosort/issues/424))
 
