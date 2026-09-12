@@ -18,11 +18,15 @@ from photosort.models import (
     CriterionSource,
     Event,
     FineLabel,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCriterionScore,
     PhotoFineLabel,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
+    PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -33,6 +37,8 @@ from photosort.models import (
     ScoringRun,
     User,
 )
+from photosort.motif_strengths import upsert_assessment
+from photosort.motifs import MOTIF_REGISTRY
 from photosort.security import create_access_token, hash_password
 from photosort.thumbnails import display_path, thumbnail_path
 
@@ -4129,3 +4135,276 @@ class TestTheCameraFilter:
         assert response.status_code == 200
         camera_selects = [s for s in statements if "project_cameras" in s.lower()]
         assert len(camera_selects) == 1, camera_selects
+
+
+# specs/features/0427-motive-mit-staerke.md, PR 1 Schritt 5: die beiden ADDITIVEN Felder
+# `motif_assessment` und `motifs`. Die Kategoriefelder bleiben in dieser PR unberuehrt daneben
+# stehen.
+#
+# Der tragende Nachweis ist das PAAR in `TestTheFourPhotoStates`: derselbe Aufbau ohne Kopfzeile
+# und mit einer Kopfzeile, deren acht Staerken alle 0.0 sind, mit einer Assertion darauf, dass die
+# beiden Antworten VERSCHIEDEN sind. Der Fehlerpfad ist ein `?? 0` oder eine leere Standardliste:
+# acht Nullzeilen statt eines Satzes.
+
+
+async def _assess_photo(
+    session: AsyncSession,
+    photo: Photo,
+    *,
+    source: MotifAssessmentSource = MotifAssessmentSource.CLOUD,
+    provider: str | None = "anthropic",
+    excluded_document: bool = False,
+    strengths: dict[str, float] | None = None,
+    computed_at: datetime | None = None,
+) -> None:
+    vector = dict.fromkeys(MOTIF_REGISTRY, 0.0)
+    if strengths is not None:
+        vector.update(strengths)
+    await upsert_assessment(
+        session,
+        photo.id,
+        source=source,
+        strengths=vector,
+        excluded_document=excluded_document,
+        provider=provider,
+        computed_at=computed_at or datetime(2026, 9, 12, 10, 0, 0),
+    )
+    await session.commit()
+
+
+async def _first_photo_out(client: httpx.AsyncClient, project: Project) -> dict[str, Any]:
+    response = await client.get(f"/projects/{project.id}/photos")
+    assert response.status_code == 200
+    items: list[dict[str, Any]] = response.json()["items"]
+    assert len(items) == 1
+    return items[0]
+
+
+class TestTheAdditiveMotifFields:
+    async def test_a_photo_with_an_assessment_carries_the_header(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo, computed_at=datetime(2026, 9, 12, 10, 0, 0))
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["motif_assessment"] == {
+            "source": "cloud",
+            "provider": "anthropic",
+            "excluded_document": False,
+            "computed_at": "2026-09-12T10:00:00",
+        }
+
+    async def test_a_local_assessment_reports_its_basis_without_a_provider(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Dass eine Auswahl auf der schwaecheren Grundlage beruht, ist erkennbar: die Antwort
+        nennt die Grundlage."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo, source=MotifAssessmentSource.LOCAL, provider=None)
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["motif_assessment"]["source"] == "local"
+        assert item["motif_assessment"]["provider"] is None
+
+    async def test_the_list_carries_all_eight_motifs_in_registry_order(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo)
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert [entry["motif_key"] for entry in item["motifs"]] == list(MOTIF_REGISTRY)
+
+    async def test_the_list_carries_eight_entries_even_with_incomplete_strength_rows(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Ein halb gefuellter Vektor darf die Liste nicht verkuerzen - sonst wechselten die
+        Zeilen von Foto zu Foto ihre Position, und acht gleichnamige Korrekturschalter laden zum
+        Fehlklick ein."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        db_session.add(
+            PhotoMotifAssessment(
+                photo_id=photo.id,
+                source=MotifAssessmentSource.CLOUD,
+                excluded_document=False,
+                provider="anthropic",
+                computed_at=datetime(2026, 9, 12, 10, 0, 0),
+            )
+        )
+        await db_session.flush()
+        db_session.add(PhotoMotifStrength(photo_id=photo.id, motif_key="menschen", strength=0.6))
+        await db_session.commit()
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert [entry["motif_key"] for entry in item["motifs"]] == list(MOTIF_REGISTRY)
+        by_key = {entry["motif_key"]: entry for entry in item["motifs"]}
+        assert by_key["menschen"]["strength"] == pytest.approx(0.6)
+        assert by_key["tiere"]["strength"] == 0.0
+        assert by_key["tiere"]["correction"] is None
+
+    async def test_a_building_is_strong_and_people_are_weak_and_not_the_other_way_round(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sichtbar im Ergebnis: ein Foto, auf dem das Modell ein Bauwerk deutlich und Menschen
+        nur schwach erkennt, wird als Bauwerk stark und als Menschen schwach GEFUEHRT."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(
+            db_session,
+            photo,
+            strengths={"bauwerk_sehenswuerdigkeit": 0.9, "menschen": 0.2},
+        )
+
+        by_key = {
+            entry["motif_key"]: entry["strength"]
+            for entry in (await _first_photo_out(authenticated_api_client, project))["motifs"]
+        }
+
+        assert by_key["bauwerk_sehenswuerdigkeit"] == pytest.approx(0.9)
+        assert by_key["menschen"] == pytest.approx(0.2)
+        assert by_key["bauwerk_sehenswuerdigkeit"] > by_key["menschen"]
+
+    async def test_a_correction_wins_over_the_model_number_in_the_response(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Antwort traegt die WIRKSAME Staerke - das Frontend rechnet nichts nach."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo, strengths={"menschen": 0.9})
+        user = (await db_session.execute(select(User))).scalars().first()
+        assert user is not None
+        db_session.add(
+            PhotoMotifCorrection(
+                photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=False
+            )
+        )
+        await db_session.commit()
+
+        by_key = {
+            entry["motif_key"]: entry
+            for entry in (await _first_photo_out(authenticated_api_client, project))["motifs"]
+        }
+
+        assert by_key["menschen"]["strength"] == 0.0
+        assert by_key["menschen"]["correction"] is False
+
+    async def test_an_excluded_photo_keeps_its_strengths_in_the_response(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Ausschluss gewinnt, die Staerken bleiben gespeichert und werden nicht auf 0
+        gesetzt - der Lesehelfer weist das Foto ueber `excluded_document` als ausgeschlossen
+        aus."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo, excluded_document=True, strengths={"menschen": 0.9})
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["motif_assessment"]["excluded_document"] is True
+        by_key = {entry["motif_key"]: entry["strength"] for entry in item["motifs"]}
+        assert by_key["menschen"] == pytest.approx(0.9)
+
+    async def test_the_category_fields_are_untouched(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """PR 1 ist rein additiv - die vier Kategoriefelder bleiben in der Antwort."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo)
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        for field in (
+            "remote_category",
+            "category_confidence",
+            "category_override",
+            "category_candidates",
+        ):
+            assert field in item, field
+
+
+class TestTheFourPhotoStates:
+    async def test_a_photo_without_an_assessment_carries_no_motif_entry_at_all(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die KARDINALITAET Null, nicht eine Textsuche: der Hinweissatz kann ueber acht
+        Nullzeilen stehen, und dann ist er gruen und falsch."""
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["motif_assessment"] is None
+        assert item["motifs"] == []
+
+    async def test_not_yet_classified_and_nothing_recognised_are_different_responses(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """DAS PAAR. Derselbe Aufbau, einmal ohne Kopfzeile und einmal mit einer Kopfzeile, deren
+        acht Staerken alle 0.0 sind - und die Assertion darauf, dass die beiden Antworten
+        VERSCHIEDEN sind. Ohne sie machte ein `?? 0` im Lesepfad aus "noch nicht klassifiziert"
+        acht Nullzeilen, und kein anderer Test brach."""
+        unassessed_project = await _make_project(db_session, name="Ohne Kopfzeile")
+        await _make_photo(db_session, unassessed_project, "a.jpg", datetime(2023, 1, 1))
+        assessed_project = await _make_project(db_session, name="Mit Kopfzeile")
+        assessed = await _make_photo(db_session, assessed_project, "b.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, assessed, source=MotifAssessmentSource.LOCAL, provider=None)
+
+        unassessed_item = await _first_photo_out(authenticated_api_client, unassessed_project)
+        assessed_item = await _first_photo_out(authenticated_api_client, assessed_project)
+
+        assert unassessed_item["motif_assessment"] is None
+        assert assessed_item["motif_assessment"] is not None
+        assert len(unassessed_item["motifs"]) == 0
+        assert len(assessed_item["motifs"]) == len(MOTIF_REGISTRY)
+        assert {entry["strength"] for entry in assessed_item["motifs"]} == {0.0}
+        assert unassessed_item["motifs"] != assessed_item["motifs"]
+
+    async def test_a_correction_on_a_photo_without_an_assessment_stays_invisible_in_the_list(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Korrektur ist gespeichert, aber es gibt noch keine Zeile, an der sie haengen
+        koennte - die Liste bleibt leer, statt eine einzelne Zeile zu erfinden."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        user = (await db_session.execute(select(User))).scalars().first()
+        assert user is not None
+        db_session.add(
+            PhotoMotifCorrection(
+                photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=True
+            )
+        )
+        await db_session.commit()
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["motifs"] == []
+
+
+class TestTheMotifStrengthsAreLoadedInOneQuery:
+    async def test_one_strength_query_regardless_of_the_photo_count(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Kein Query je Foto: dieselbe Auflage wie bei `camera`/`criterion_scores`."""
+        project = await _make_project(db_session)
+        for index in range(6):
+            photo = await _make_photo(
+                db_session, project, f"p{index}.jpg", datetime(2023, 1, 1) + timedelta(hours=index)
+            )
+            await _assess_photo(db_session, photo)
+
+        with _recorded_select_statements() as statements:
+            response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.status_code == 200
+        strength_selects = [s for s in statements if "photo_motif_strengths" in s.lower()]
+        assert len(strength_selects) == 1, strength_selects

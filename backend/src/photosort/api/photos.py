@@ -10,7 +10,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
@@ -34,6 +34,7 @@ from photosort.models import (
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
+    PhotoMotifCorrection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -42,6 +43,8 @@ from photosort.models import (
     ScanStatus,
     User,
 )
+from photosort.motif_strengths import EffectiveStrength, load_effective_strengths
+from photosort.motifs import MOTIF_REGISTRY, is_motif_key
 from photosort.thumbnails import variant_path
 from photosort.worker import (
     NO_REMOTE_CATEGORY_EVIDENCE,
@@ -286,6 +289,36 @@ class CameraOut(BaseModel):
     label: str
 
 
+class MotifAssessmentOut(BaseModel):
+    """Die Kopfzeile des Motiv-Staerkevektors eines Fotos - `null` heisst "noch nicht
+    klassifiziert" und ist damit unterscheidbar von "nichts erkannt" (Kopfzeile vorhanden, alle
+    acht Staerken niedrig). Genau dafuer gibt es dieses Feld getrennt von `motifs`: acht Nullzeilen
+    sind von "nichts erkannt" nicht zu unterscheiden.
+
+    `provider` ist `null` bei `source == "local"`. `excluded_document` ist von Hand NICHT
+    korrigierbar - der Rueckweg ist allein ein erneuter Klassifizierungslauf, und die Oberflaeche
+    benennt das, statt einen Schalter anzubieten."""
+
+    source: Literal["cloud", "local"]
+    provider: str | None
+    excluded_document: bool
+    computed_at: datetime
+
+
+class MotifStrengthOut(BaseModel):
+    """Die WIRKSAME Staerke eines Motivs an einem Foto samt ihrem Korrekturzustand.
+
+    `strength` traegt die Korrektur bereits eingerechnet (motif_strengths.py::
+    effective_strength_expression) - das Frontend rechnet nichts nach und kennt die Regel nicht.
+    `correction` ist `null` ohne Korrekturzeile, sonst die Aussage des Nutzers; ohne dieses Feld
+    waere eine Modellaussage von genau `1.0` von einer Korrektur nicht zu unterscheiden, und die
+    Oberflaeche koennte das Korrekturwort nicht statt der Prozentzahl setzen."""
+
+    motif_key: str
+    strength: float
+    correction: bool | None
+
+
 class PhotoOut(BaseModel):
     id: int
     relative_path: str
@@ -346,6 +379,18 @@ class PhotoOut(BaseModel):
     # oben warnt.
     location: PhotoLocationOut | None = None
     event: EventOut | None = None
+    # ADDITIV (Spec 0427, PR 1): die Kategoriefelder oben bleiben in dieser PR unberuehrt daneben
+    # stehen, ihre Abloesung ist PR 3.
+    #
+    # `motif_assessment` ist `null`, solange das Foto keinen Klassifizierungslauf gesehen hat -
+    # dann ist `motifs` LEER und traegt ausdruecklich NICHT acht Eintraege mit Wert 0. Die
+    # Oberflaeche zeigt an ihrer Stelle einen Satz; ein `?? 0` oder eine leere Standardliste im
+    # Lesepfad machte "noch nicht klassifiziert" von "nichts erkannt" ununterscheidbar.
+    motif_assessment: MotifAssessmentOut | None = None
+    # Immer eine Liste, nie `null` (analog `ratings`): leer ohne Kopfzeile, sonst GENAU acht
+    # Eintraege in Registry-Reihenfolge - auch bei unvollstaendigen Staerkezeilen. Die Reihenfolge
+    # ist auf jedem Foto dieselbe; das Frontend schlaegt je Schluessel nach und nie ueber den Index.
+    motifs: list[MotifStrengthOut]
 
 
 class PhotoListOut(BaseModel):
@@ -434,6 +479,12 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
             # Fotoanzahl - ohne sie loeste `photo.camera` einen Lazy-Load aus und schluege im
             # Async-Kontext mit MissingGreenlet fehl.
             selectinload(Photo.camera),
+            # Grundlage von `PhotoOut.motif_assessment`. Ohne dieses selectinload loeste
+            # `photo.motif_assessment` einen Lazy-Load aus und schluege im Async-Kontext mit
+            # MissingGreenlet fehl. Die STAERKEN kommen bewusst nicht ueber die Relationship,
+            # sondern ueber `load_effective_strengths` - sonst muesste die Korrektur zweimal
+            # ausgewertet werden.
+            selectinload(Photo.motif_assessment),
         )
     )
     return {photo.id: photo for photo in result.scalars()}
@@ -753,6 +804,47 @@ async def _event_and_location_by_photo_id(
     }
 
 
+def _motif_assessment_out(photo: Photo) -> MotifAssessmentOut | None:
+    assessment = photo.motif_assessment
+    if assessment is None:
+        return None
+    return MotifAssessmentOut(
+        # `.value` und nicht das Enum selbst: das Antwortfeld ist ein `Literal["cloud", "local"]`,
+        # damit der erzeugte OpenAPI-Typ zwei Zeichenketten nennt und nicht einen Enum-Namen, den
+        # das Frontend nachbilden muesste.
+        source=assessment.source.value,
+        provider=assessment.provider,
+        excluded_document=assessment.excluded_document,
+        computed_at=assessment.computed_at,
+    )
+
+
+def _motifs_out(
+    photo: Photo, effective: Mapping[str, EffectiveStrength] | None
+) -> list[MotifStrengthOut]:
+    """Die acht Motive eines Fotos in Registry-Reihenfolge - oder eine LEERE Liste, wenn das Foto
+    keine Kopfzeile hat.
+
+    Die Iteration laeuft ueber `MOTIF_REGISTRY` und nicht ueber die geladenen Zeilen: das liefert
+    die Anzeigereihenfolge ohne Nachsortieren, ergaenzt eine fehlende Staerkezeile mit `0.0` (der
+    Vektor ist dann trotzdem vollstaendig) und ist zugleich die Verteidigung gegen einen
+    Altschluessel ausserhalb des Sets - er kann hier nicht durchfallen.
+
+    Die leere Liste OHNE Kopfzeile ist die eigentliche Zusage: acht Eintraege mit Wert 0 waeren von
+    "nichts erkannt" nicht zu unterscheiden."""
+    if photo.motif_assessment is None:
+        return []
+    strengths = effective or {}
+    return [
+        MotifStrengthOut(
+            motif_key=motif_key,
+            strength=strengths[motif_key].strength if motif_key in strengths else 0.0,
+            correction=strengths[motif_key].correction if motif_key in strengths else None,
+        )
+        for motif_key in MOTIF_REGISTRY
+    ]
+
+
 def _to_photo_out(
     photo: Photo,
     current_user_id: int,
@@ -761,6 +853,7 @@ def _to_photo_out(
     partition_sizes: Mapping[tuple[int, str], int] | None = None,
     curation_positions: Mapping[tuple[int, str], int] | None = None,
     place: PhotoPlace = NO_PLACE,
+    motifs: Mapping[str, EffectiveStrength] | None = None,
 ) -> PhotoOut:
     """Baut die Antwortdarstellung EINES Fotos.
 
@@ -849,6 +942,8 @@ def _to_photo_out(
         # nie einen falschen Ort.
         location=place.location,
         event=place.event,
+        motif_assessment=_motif_assessment_out(photo),
+        motifs=_motifs_out(photo, motifs),
     )
 
 
@@ -1046,6 +1141,7 @@ async def list_photos(
         place_by_id = await _event_and_location_by_photo_id(
             session, project_id, criterion_scoring_run_id, photos_by_id, rankings_by_id
         )
+        motifs_by_id = await load_effective_strengths(session, ids)
         items = [
             _to_photo_out(
                 photos_by_id[photo_id],
@@ -1055,6 +1151,7 @@ async def list_photos(
                 partition_sizes,
                 curation_positions,
                 place_by_id.get(photo_id, NO_PLACE),
+                motifs_by_id.get(photo_id),
             )
             for photo_id in ids
         ]
@@ -1079,6 +1176,7 @@ async def list_photos(
     place_by_id = await _event_and_location_by_photo_id(
         session, project_id, latest_run_id, photos_by_id, rankings_by_id
     )
+    motifs_by_id = await load_effective_strengths(session, ids)
     items = [
         _to_photo_out(
             photos_by_id[photo_id],
@@ -1090,6 +1188,7 @@ async def list_photos(
             # gibt in diesem Modus keine Auswahl, zu der sie eine Position haben koennte.
             None,
             place_by_id.get(photo_id, NO_PLACE),
+            motifs_by_id.get(photo_id),
         )
         for photo_id in ids
     ]
@@ -1180,6 +1279,7 @@ async def curation_candidates(
     place_by_id = await _event_and_location_by_photo_id(
         session, project_id, latest_run_id, photos_by_id, rankings_by_id
     )
+    motifs_by_id = await load_effective_strengths(session, ids)
     items = [
         _to_photo_out(
             photos_by_id[photo_id],
@@ -1189,6 +1289,7 @@ async def curation_candidates(
             partition_sizes,
             curation_positions,
             place_by_id.get(photo_id, NO_PLACE),
+            motifs_by_id.get(photo_id),
         )
         for photo_id in ids
     ]
@@ -1436,4 +1537,149 @@ async def delete_category_override(
     # Festlegung und liesse sie ungedaempft.
     score.category_override = None
     await _reassign_or_conflict(session, run_id, photo_id, ranking.event_id, new_category_key)
+    await session.commit()
+
+
+class MotifCorrectionIn(BaseModel):
+    """SICHERHEIT (S5): der Body traegt AUSSCHLIESSLICH `applies`.
+
+    Kein `user_id`, `photo_id`, `motif_key`, `strength` oder `updated_at` im Eingabeschema -
+    Massenzuweisung ist strukturell ausgeschlossen statt im Handler herausgefiltert. Ein Feld,
+    ueber das ein Client eine Staerke setzen koennte, hebt die Unterscheidung zwischen
+    Modellaussage und Korrektur auf, und ein `user_id` im Body liesse Nutzer A unter dem Namen von
+    B schreiben. Ein spaeter ergaenztes Feld bricht in
+    tests/test_api_motif_corrections.py::TestTheRequestBody."""
+
+    applies: bool
+
+
+class MotifCorrectionOut(BaseModel):
+    photo_id: int
+    motif_key: str
+    applies: bool
+
+
+def _validated_motif_key(motif_key: str) -> str:
+    """SICHERHEIT (S4): reine Mitgliedschaftspruefung im geschlossenen Achter-Schluesselraum, VOR
+    jeder Schreib- und Loeschaktion, fuer `PUT` UND `DELETE`.
+
+    Kein `startswith`, kein Regex, keine Normalisierung des Eingabewerts - der Client schickt den
+    Schluessel exakt so zurueck, wie `GET /motifs` ihn geliefert hat. `EXCLUSION_KEY` ist kein
+    gueltiger Wert und kann ueber diese Pruefung nicht hereinkommen: `is_motif_key` sieht
+    ausschliesslich in `MOTIF_REGISTRY`, und dort steht er nicht.
+
+    Angriffsmodell: ein erratener oder aus der Laufhistorie bekannter Schluessel. Untersagte
+    Alternative ist eine auf die vorhandenen Staerkezeilen DIESES Fotos skopierte Existenzpruefung
+    - sie haengt an Daten statt am Vokabular und wiese das Korrigieren eines nie erkannten Motivs
+    zu Unrecht ab."""
+    if not is_motif_key(motif_key):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="motif_key gehoert nicht zum festen Motivset.",
+        )
+    return motif_key
+
+
+@router.put("/photos/{photo_id}/motif-corrections/{motif_key}", response_model=MotifCorrectionOut)
+async def set_motif_correction(
+    photo_id: int,
+    motif_key: str,
+    payload: MotifCorrectionIn,
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (S2): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # Router-weite `dependencies`-Liste und hat deshalb auch keinen Vollstaendigkeitstest - ein
+    # hier vergessener Parameter waere STILL OEFFENTLICH: kein Fehler, keine 401, nur Daten.
+    current_user: User = Depends(get_current_user),
+) -> MotifCorrectionOut:
+    """Markiert ein Motiv fuer dieses Foto als zutreffend oder als nicht zutreffend: `404` bei
+    fehlendem Foto, `422` bei einem `motif_key` ausserhalb des festen Achter-Sets (auch fuer
+    `dokument_screenshot` und fuer einen entfallenen Kategorieschluessel), `409` bei einem
+    gleichzeitigen Schreibversuch auf dasselbe Paar.
+
+    Die Korrektur traegt nie eine Zahl - der Nutzer schaetzt nichts ein, er waehlt ein Motiv ab
+    oder zu. Die WIRKSAME Staerke entsteht erst im Lesepfad und wird nicht in die Staerkezeile
+    materialisiert; sie ueberlebt damit jeden weiteren Klassifizierungslauf ohne Sonderfallcode.
+
+    AUSDRUECKLICH ERLAUBT ist ein Motiv, das fuer dieses Foto nie erkannt wurde, und ein Foto ohne
+    Kopfzeile: die Tabelle ist lauf-unabhaengig, und die Korrektur greift dann beim ersten Lauf.
+
+    Eine Korrektur je Foto und Motiv, letzter Zugriff gewinnt: korrigiert der zweite Nutzer
+    dasselbe Paar, UEBERSCHREIBT er die Aussage des ersten. `user_id` haelt fest, wer zuletzt
+    geschrieben hat - es gibt keine Historie und keinen Hinweis an die erste Person. Eine
+    wirkungslose Korrektur (`applies=false` auf einem Motiv, dessen Staerke schon 0 ist) wird
+    trotzdem gespeichert; sie ist eine Nutzeraussage, keine Zwischenspeicherung."""
+    await _get_photo_or_404(photo_id, session)
+    _validated_motif_key(motif_key)
+
+    # SICHERHEIT (S6): die Aufsuch-Bedingung lautet `(photo_id, motif_key)` und filtert BEWUSST
+    # NICHT zusaetzlich auf `user_id`. Mit dem Nutzer im Filter entstuenden zwei widersprueckliche
+    # Zeilen fuer dasselbe Paar, und welche gilt, entschiede die Sortierung.
+    existing = (
+        await session.execute(
+            select(PhotoMotifCorrection).where(
+                PhotoMotifCorrection.photo_id == photo_id,
+                PhotoMotifCorrection.motif_key == motif_key,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if existing is None:
+        # SICHERHEIT (S6): `user_id` stammt AUSSCHLIESSLICH aus `current_user.id` - nie aus Body
+        # oder Query. Es ist ein Auditfeld und kein Zugriffsschluessel.
+        session.add(
+            PhotoMotifCorrection(
+                photo_id=photo_id,
+                user_id=current_user.id,
+                motif_key=motif_key,
+                applies=payload.applies,
+            )
+        )
+    else:
+        existing.applies = payload.applies
+        existing.user_id = current_user.id
+        # `updated_at` traegt `onupdate=func.now()` und wird nie von Hand gesetzt.
+
+    # SICHERHEIT (S7): der `flush` VOR dem `commit` bringt den Unique-Constraint hier zum Tragen,
+    # damit ein gleichzeitiger Schreibversuch beider Nutzer als `409` herauskommt und nie als
+    # `500`. Eine Sperre (`with_for_update()`) ist nicht noetig und ausdruecklich nicht
+    # vorzusehen: die Korrektur schreibt eine Zeile und leitet nichts ab, sie hat keinen
+    # Schreibzugriff auf die Rangfolge.
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Die Korrektur dieses Motivs wurde gerade veraendert. Bitte erneut versuchen.",
+        ) from exc
+    await session.commit()
+
+    return MotifCorrectionOut(photo_id=photo_id, motif_key=motif_key, applies=payload.applies)
+
+
+@router.delete(
+    "/photos/{photo_id}/motif-corrections/{motif_key}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_motif_correction(
+    photo_id: int,
+    motif_key: str,
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (S2): siehe set_motif_correction - der 401-Nachweis ist fuer BEIDE Endpunkte
+    # Pflicht, weil dieser Router keinen Vollstaendigkeitstest hat.
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Nimmt die Korrektur eines Motivs zurueck - die wirksame Staerke ist danach wieder die der
+    Grundlage. `404` bei fehlendem Foto, `422` bei einem `motif_key` ausserhalb des festen Sets.
+
+    IDEMPOTENT (`204` auch ohne bestehende Zeile) und ohne Body. Auch die jeweils andere Person
+    darf eine Korrektur zuruecknehmen: die Aussage gehoert zum Foto, nicht zu einem Geschmack."""
+    await _get_photo_or_404(photo_id, session)
+    _validated_motif_key(motif_key)
+
+    await session.execute(
+        delete(PhotoMotifCorrection).where(
+            PhotoMotifCorrection.photo_id == photo_id,
+            PhotoMotifCorrection.motif_key == motif_key,
+        )
+    )
     await session.commit()

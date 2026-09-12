@@ -6,7 +6,7 @@ import jwt
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api import cameras, opencloud, projects, stats
+from photosort.api import cameras, motifs, opencloud, projects, stats
 from photosort.config import settings
 from photosort.models import User
 from photosort.security import ALGORITHM, create_access_token, hash_password
@@ -134,7 +134,16 @@ def _protected_router_operations() -> list[tuple[str, str]]:
     # eines kuenftigen zweiten Stats-Endpunkts haenge allein daran, dass niemand die Dependency
     # vergisst. specs/features/0426-zeitversatz-je-kamera.md: dasselbe fuer `cameras.router` -
     # DIESE Liste ist eine der zwei Registerstellen, die einen neuen Router still uebergehen.
-    for router in (projects.router, opencloud.router, stats.router, cameras.router):
+    # specs/features/0427-motive-mit-staerke.md, Auflage S1: dasselbe fuer `motifs.router` - ohne
+    # diesen Eintrag waere ein spaeter ergaenzter zweiter Endpunkt jenes Routers von keinem
+    # Vollstaendigkeitstest erfasst.
+    for router in (
+        projects.router,
+        opencloud.router,
+        stats.router,
+        cameras.router,
+        motifs.router,
+    ):
         for route in router.routes:
             path = getattr(route, "path", "")
             # Platzhalter durch einen harmlosen konkreten Wert ersetzen, damit die Anfrage
