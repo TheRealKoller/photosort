@@ -1,48 +1,51 @@
 import { useRef, useState } from 'react'
 
 import type {
-  CategoryCandidateOut,
-  CategoryKey,
   CriterionScoreOut,
   FineLabelOut,
+  MotifAssessmentOut,
+  MotifSetOut,
+  MotifStrengthOut,
   RankingOut,
   SuggestionOut,
 } from '../api/types'
 import { cn } from '../lib/utils'
-import type { CategorySet } from '../utils/categoryLabels'
 import { Button } from './ui/button'
 import { CriterionDetailsList } from './CriterionDetailsList'
+import { MotifStrengthList } from './MotifStrengthList'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popover'
+
+/**
+ * Der Verweis unter der schreibgeschützten Motivliste. 24 Bedienelemente in einem Popover sind
+ * am Telefon nicht bedienbar, und die Kachel führt ohnehin in die Einzelbildansicht - der Satz
+ * benennt deshalb den Ort, statt einen deaktivierten Schalter anzubieten.
+ */
+export const MOTIF_CORRECTION_HINT = 'Korrigieren in der Einzelbildansicht.'
 
 interface CriterionDetailsPopoverProps {
   criterionScores: CriterionScoreOut[]
-  /** Die Zugehoerigkeit, zu der dieses Popover gehoert - in der Kuratierung die der gerenderten
-   * Kachel, sonst die Hauptzugehoerigkeit des Fotos. `null`, solange kein erfolgreicher Lauf
-   * existiert. */
+  /** Die Rangzeile des Fotos. `null`, solange kein erfolgreicher Lauf existiert. */
   ranking: RankingOut | null
-  /** ALLE Zugehoerigkeiten des Fotos - reine Durchreichung an die Rollen-Sektion in
-   * CriterionDetailsList.tsx. */
-  rankings?: RankingOut[]
   suggestion: SuggestionOut | null
   className?: string
   // Reine Durchreichung an CriterionDetailsList.tsx (siehe dortige Props-Dokumentation) - dieselben
   // neutralen Defaults, kein eigenes Verhalten hier.
-  categoryCandidates?: CategoryCandidateOut[]
   fineLabels?: FineLabelOut[]
-  categories?: CategorySet
-  categoriesLoading?: boolean
-  categoriesError?: boolean
-  onRetryCategories?: () => void
-  categoryOverride?: CategoryKey | null
-  onOverrideCategory?: (categoryKey: CategoryKey) => void
-  onResetOverride?: () => void
-  pendingOverrideKey?: CategoryKey | null
-  resetPending?: boolean
+  /** Das geladene Motivset. `undefined` während des Ladens bzw. nach einem Fehlschlag - die Liste
+   * stellt beide Zustände selbst dar. Ohne jede der drei Motiv-Props bleibt der Motivteil
+   * weg. */
+  motifSet?: MotifSetOut
+  motifSetLoading?: boolean
+  motifSetError?: string
+  onMotifSetRetry?: () => void
+  assessment?: MotifAssessmentOut | null
+  motifs?: readonly MotifStrengthOut[]
 }
 
 /**
  * Info-Popover mit den berechneten Bewertungsdetails eines Fotos - feature-spezifische Komposition
- * auf ui/popover.tsx, analog zum bestehenden Muster ui/badge.tsx -> CategoryBadge.tsx. Rendert
+ * auf ui/popover.tsx, analog zum bestehenden Muster ui/progress.tsx -> MotifStrengthList.tsx.
+ * Rendert
  * bewusst nichts, wenn criterionScores leer ist - EINE Stelle entscheidet das statt jeder der drei
  * Einbindungsstellen einzeln. Die eigentliche `<dl>`-Darstellung des Inhalts lebt in der
  * wiederverwendbaren Praesentationskomponente CriterionDetailsList.tsx (hier mit
@@ -92,20 +95,15 @@ interface CriterionDetailsPopoverProps {
 export function CriterionDetailsPopover({
   criterionScores,
   ranking,
-  rankings = [],
   suggestion,
   className,
-  categoryCandidates,
   fineLabels,
-  categories,
-  categoriesLoading,
-  categoriesError,
-  onRetryCategories,
-  categoryOverride,
-  onOverrideCategory,
-  onResetOverride,
-  pendingOverrideKey,
-  resetPending,
+  motifSet,
+  motifSetLoading,
+  motifSetError,
+  onMotifSetRetry,
+  assessment,
+  motifs,
 }: CriterionDetailsPopoverProps) {
   const [open, setOpen] = useState(false)
   const justOpenedByHoverRef = useRef(false)
@@ -193,21 +191,28 @@ export function CriterionDetailsPopover({
         <CriterionDetailsList
           criterionScores={criterionScores}
           ranking={ranking}
-          rankings={rankings}
           suggestion={suggestion}
           showSuggestion={true}
-          categoryCandidates={categoryCandidates}
           fineLabels={fineLabels}
-          categories={categories}
-          categoriesLoading={categoriesLoading}
-          categoriesError={categoriesError}
-          onRetryCategories={onRetryCategories}
-          categoryOverride={categoryOverride}
-          onOverrideCategory={onOverrideCategory}
-          onResetOverride={onResetOverride}
-          pendingOverrideKey={pendingOverrideKey}
-          resetPending={resetPending}
         />
+        {/* Die Motivstärken SCHREIBGESCHÜTZT (`editable={false}`) - einsehbar bleibt einsehbar,
+            aber ohne die 24 Korrektur-Schaltflächen. Darunter der Verweis auf den Ort, an dem
+            korrigiert wird. */}
+        {assessment !== undefined && (
+          <div className="mt-4 flex flex-col gap-2 border-t border-separator pt-4">
+            <h3 className="text-xs font-medium text-text-h">Motive</h3>
+            <MotifStrengthList
+              motifSet={motifSet}
+              motifSetLoading={motifSetLoading}
+              motifSetError={motifSetError}
+              onMotifSetRetry={onMotifSetRetry}
+              assessment={assessment}
+              motifs={motifs}
+              editable={false}
+            />
+            <p className="text-xs text-text">{MOTIF_CORRECTION_HINT}</p>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   )

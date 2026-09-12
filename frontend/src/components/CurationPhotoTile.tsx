@@ -1,38 +1,20 @@
-import type { CategoryKey, CategoryOut, PhotoOut, RankingOut, RatingStatus } from '../api/types'
+import type { MotifSetOut, PhotoOut, RatingStatus } from '../api/types'
 import { qualityLevel } from '../utils/qualityLevel'
-import { CategoryOverrideMarker } from './CategoryOverrideMarker'
 import { CriterionDetailsPopover } from './CriterionDetailsPopover'
+import { MotifAssessmentMarker } from './MotifAssessmentMarker'
 import { PhotoCard } from './PhotoCard'
 import { PhotoImage } from './PhotoImage'
 import { QualityMeter } from './QualityMeter'
-import { SecondaryCategoryMarker } from './SecondaryCategoryMarker'
 import { Button } from './ui/button'
-
-/**
- * Strukturell die Rueckgabe von `hooks/useCategoryOverrideControls.ts` - hier als eigener Typ
- * ausgeschrieben, damit die Kachel nicht an den Hook gebunden ist (und im Test mit einfachen
- * Attrappen versorgt werden kann).
- */
-export interface CategoryOverrideControls {
-  overrideCategory: (photoId: number, categoryKey: CategoryKey) => void
-  resetOverride: (photoId: number) => void
-  pendingOverrideKeyFor: (photoId: number) => CategoryKey | null
-  isResetPendingFor: (photoId: number) => boolean
-}
 
 export interface CurationPhotoTileProps {
   photo: PhotoOut
-  /**
-   * Die Zugehoerigkeit, unter der dieses Vorkommen steht. Die Kachel ist NICHT durch das Foto
-   * allein bestimmt: dasselbe Foto kann in zwei Kategorien stehen und traegt dort verschiedene
-   * Rollen.
-   */
-  ranking: RankingOut
-  categories: CategoryOut[]
-  categoriesLoading: boolean
-  categoriesError: boolean
-  onRetryCategories: () => void
-  categoryOverrideControls: CategoryOverrideControls
+  /** Das geladene Motivset - reine Durchreichung an das Info-Popover, das die Motivstärken
+   * schreibgeschützt zeigt. `undefined` während des Ladens bzw. nach einem Fehlschlag. */
+  motifSet: MotifSetOut | undefined
+  motifSetLoading: boolean
+  motifSetError: string | undefined
+  onMotifSetRetry: () => void
   /**
    * Die EIGENE Bewertung des anfragenden Nutzers (`utils/ownRating.ts::ownRatingStatus`), nie
    * eine zweite Ableitung aus `photo.ratings[]` - sonst stellte die Kachel die Bewertung des
@@ -45,29 +27,28 @@ export interface CurationPhotoTileProps {
 }
 
 /**
- * EINE Kachel der Kuratierungsansicht: `PhotoCard` samt Info-Popover, Ecken-Markern,
+ * EINE Kachel der Kuratierungsansicht: `PhotoCard` samt Info-Popover, Ecken-Marker,
  * Qualitaetsstufe und Verwerfen-Aktion.
  *
- * Sie lag zuvor als rund 100 Zeilen JSX inline in `CurateCategoriesPage`. Mit dieser Story wird
- * sie an ZWEI Stellen gebraucht - fuer die Top-Auswahl und fuer die eingeblendeten weiteren
+ * Sie wird an ZWEI Stellen gebraucht - fuer die Top-Auswahl und fuer die eingeblendeten weiteren
  * Kandidaten -, und eine zweite Kopie waere die zweite Stelle, an der eine kuenftige Aenderung
  * vergessen wird.
+ *
+ * MOTIVNAMEN UND STAERKEN ERSCHEINEN NICHT AUF DER KACHEL: acht Werte haben bei 158px
+ * Kachelbreite keinen Platz, und der staerkste allein behauptete wieder eine Hauptkategorie. Sie
+ * stehen im Info-Popover (schreibgeschuetzt) und in der Einzelbildansicht.
  */
 export function CurationPhotoTile({
   photo,
-  ranking,
-  categories,
-  categoriesLoading,
-  categoriesError,
-  onRetryCategories,
-  categoryOverrideControls,
+  motifSet,
+  motifSetLoading,
+  motifSetError,
+  onMotifSetRetry,
   ownStatus,
   rejecting,
   onReject,
 }: CurationPhotoTileProps) {
-  // `rank_score` ist ueber alle Zugehoerigkeiten eines Fotos identisch - dieselbe Kachel zeigt in
-  // zwei Kategorien dieselbe Qualitaetsstufe.
-  const level = qualityLevel(ranking.rank_score)
+  const level = photo.ranking ? qualityLevel(photo.ranking.rank_score) : null
   const isRejected = ownStatus === 'rejected'
 
   return (
@@ -87,37 +68,23 @@ export function CurationPhotoTile({
          traegt keinen Zustand" und haelt die bestehende Entscheidung aufrecht, dass in der
          Kuratierung nicht auf jeder Kachel "Neu" steht. */
       status={isRejected ? 'rejected' : undefined}
-      /* Zwei Marker koennen zugleich noetig sein: ein uebersteuertes Foto, das anderswo als
-         Nebenkategorie steht. Sie stehen
-         NEBENEINANDER - kein Stapeln, kein Verdraengen; zwei size-6-Kreise passen auch im
-         360px-Viewport in die Ecke. */
-      topLeft={
-        photo.category_override !== null || !ranking.is_primary ? (
-          <div className="flex gap-1">
-            {photo.category_override !== null && <CategoryOverrideMarker />}
-            {!ranking.is_primary && <SecondaryCategoryMarker />}
-          </div>
-        ) : undefined
-      }
+      /* DER EINZIGE Motiv-Marker der Kachel. Lokale Grundlage und Dokument-Ausschluss stehen im
+         Info-Popover und in der Einzelansicht, nicht als weitere Ecken-Glyphen. `=== null`
+         geprueft und nicht auf Falsyness: `undefined` (Feld nicht durchgereicht) ist keine
+         Aussage ueber den Klassifizierungsstand. */
+      topLeft={photo.motif_assessment === null ? <MotifAssessmentMarker /> : undefined}
       topRight={
         <CriterionDetailsPopover
           criterionScores={photo.criterion_scores}
-          ranking={ranking}
-          rankings={photo.rankings}
+          ranking={photo.ranking ?? null}
           suggestion={photo.suggestion}
-          categoryCandidates={photo.category_candidates}
           fineLabels={photo.fine_labels}
-          categories={categories}
-          categoriesLoading={categoriesLoading}
-          categoriesError={categoriesError}
-          onRetryCategories={onRetryCategories}
-          categoryOverride={photo.category_override}
-          onOverrideCategory={(categoryKey) =>
-            categoryOverrideControls.overrideCategory(photo.id, categoryKey)
-          }
-          onResetOverride={() => categoryOverrideControls.resetOverride(photo.id)}
-          pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(photo.id)}
-          resetPending={categoryOverrideControls.isResetPendingFor(photo.id)}
+          motifSet={motifSet}
+          motifSetLoading={motifSetLoading}
+          motifSetError={motifSetError}
+          onMotifSetRetry={onMotifSetRetry}
+          assessment={photo.motif_assessment ?? null}
+          motifs={photo.motifs}
         />
       }
       footer={
@@ -127,8 +94,7 @@ export function CurationPhotoTile({
               deaktivierten Zustand. Der zugaengliche Name traegt den Dateinamen, sonst hiessen
               auf einer Seite mit vielen Kacheln alle Schaltflaechen gleich. Waehrend einer
               laufenden Mutation wird NUR die Schaltflaeche busy; Bild, Ecken-Marker und
-              Info-Trigger bleiben stehen (ein Skeleton ueberbrueckte frueher den Tausch auf ein
-              ANDERES Foto und waere jetzt ein Flackern ohne Zweck). */}
+              Info-Trigger bleiben stehen. */}
           <Button
             type="button"
             variant="outline"

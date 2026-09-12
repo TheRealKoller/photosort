@@ -2,18 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { CategoryKey, RatingStatus } from '../api/types'
+import type { RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CloudVisionStatusList } from '../components/CloudVisionStatusList'
-import { CriterionDetailsList, hasCategoryControls } from '../components/CriterionDetailsList'
+import { CriterionDetailsList } from '../components/CriterionDetailsList'
 import { MotifStrengthList } from '../components/MotifStrengthList'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
-import { useCategoriesQuery } from '../hooks/useCategories'
-import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
 import { useMotifCorrectionControls } from '../hooks/useMotifCorrection'
 import { useMotifsQuery } from '../hooks/useMotifs'
 import {
@@ -24,7 +22,6 @@ import {
 import { formatDateTime } from '../utils/formatStats'
 import { findOwnRating, ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
-import { primaryRanking } from '../utils/rankings'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 import { formatTimeOffset } from '../utils/timeOffset'
 
@@ -68,12 +65,7 @@ export function PhotoDetailPage() {
   const query = usePhotoSequenceQuery(id, ratingStatus)
   const setMutation = useSetRatingMutation(id)
   const deleteMutation = useDeleteRatingMutation(id)
-  const categoryOverrideControls = useCategoryOverrideControls(id)
-  // Das feste Set kommt vom Server (langlebiger Cache) - Grundlage der Anzeigenamen und der "Alle
-  // Kategorien"-Override-Auswahl.
-  const categoriesQuery = useCategoriesQuery()
-  const categorySet = categoriesQuery.data ?? []
-  // Das feste Motivset kommt ebenfalls vom Server (langlebiger Cache) - Anzeigenamen,
+  // Das feste Motivset kommt vom Server (langlebiger Cache) - Anzeigenamen,
   // Reihenfolge und Erklaertexte der Staerkeliste stammen ausschliesslich daraus.
   const motifsQuery = useMotifsQuery()
   // EIN Mutation-Paar fuer diese Seite - `pendingMotifKeyFor` sperrt nur die Zeile, deren
@@ -281,39 +273,19 @@ export function PhotoDetailPage() {
 
   const isMutating = setMutation.isPending || deleteMutation.isPending
 
-  /* Beide Einbindungen der Aufschluesselung teilen EIN Props-Objekt: Bedienteil oben und
-     Informationsteil unten
-     sind zwei Ausschnitte derselben Darstellung und duerfen nicht auseinanderlaufen - zwei
-     getrennt gepflegte Prop-Listen taeten genau das beim naechsten neuen Prop.
-     showSuggestion={false} - die Ausschuss-Gruppe bleibt exklusiv im "Automatischer
-     Vorschlag"-Kasten, suggestion wird hier bewusst nicht durchgereicht (kein Feld-/Logik-Merge
-     zwischen beiden Bereichen). */
-  /* Die Detailansicht zeigt EIN Foto - gemeint ist immer seine Hauptzugehoerigkeit.
-     `rankings[0]` waere hier die falsche Abkuerzung,
-     die Rolle kommt aus `is_primary`. Einmal gebildet, weil sie an zwei Stellen gebraucht wird:
-     im Sichtbarkeitsgate des Bedienteils und in den Props beider Einbindungen. */
-  const ranking = primaryRanking(currentPhoto)
+  /* `showSuggestion={false}` - die Ausschuss-Gruppe bleibt exklusiv im "Automatischer
+     Vorschlag"-Kasten, `suggestion` wird hier bewusst nicht durchgereicht (kein Feld-/Logik-Merge
+     zwischen beiden Bereichen).
 
+     Die Aufschluesselung hat seit Spec 0427 nur noch EINE Einbindung: mit der Kategorie-Welt sind
+     die Bedienelemente aus ihr verschwunden, und ohne Bedienteil gibt es keinen Grund mehr, sie
+     in zwei Ausschnitte zu zerlegen. Die Motivkorrektur ist ihr eigener Abschnitt weiter unten. */
   const detailsProps = {
     criterionScores: currentPhoto.criterion_scores,
-    ranking,
-    rankings: currentPhoto.rankings,
+    ranking: currentPhoto.ranking ?? null,
     suggestion: null,
     showSuggestion: false,
-    categoryCandidates: currentPhoto.category_candidates,
     fineLabels: currentPhoto.fine_labels,
-    categories: categorySet,
-    categoriesLoading: categoriesQuery.isLoading,
-    categoriesError: categoriesQuery.isError,
-    onRetryCategories: () => {
-      void categoriesQuery.refetch()
-    },
-    categoryOverride: currentPhoto.category_override,
-    onOverrideCategory: (categoryKey: CategoryKey) =>
-      categoryOverrideControls.overrideCategory(currentPhoto.id, categoryKey),
-    onResetOverride: () => categoryOverrideControls.resetOverride(currentPhoto.id),
-    pendingOverrideKey: categoryOverrideControls.pendingOverrideKeyFor(currentPhoto.id),
-    resetPending: categoryOverrideControls.isResetPendingFor(currentPhoto.id),
   }
 
   return (
@@ -349,19 +321,6 @@ export function PhotoDetailPage() {
         disabled={isMutating}
         busy={isMutating}
       />
-
-      {/* Bedienteil der Bewertungsdetails (Akzeptanzkriterium 1b): Kandidatenliste bzw. die
-          einzeilige "Kategorie"-Anzeige, der Konfidenz-Erklaerhinweis und die "Alle
-          Kategorien"-Auswahl. Die reinen Informationsanzeigen derselben Komponente stehen weiter
-          unten (`part="info"`). Der Wrapper haengt an derselben exportierten Vorbedingung, die
-          auch die Komponente prueft - sonst verbrauchte ein leerer Bereich im `gap-4` dieser
-          Seite einen sichtbaren Abstand. Bewusst kein Card-Rahmen/Schatten wie das Popover
-          (Designprinzip "Die Fotos sind der Star"). */}
-      {hasCategoryControls(currentPhoto.criterion_scores, ranking) && (
-        <div className="text-sm text-text" data-testid="category-controls-section">
-          <CriterionDetailsList {...detailsProps} part="controls" />
-        </div>
-      )}
 
       <div className="flex justify-between gap-3">
         <Button
@@ -417,9 +376,9 @@ export function PhotoDetailPage() {
           Bewertungsleiste und Zurueck/Weiter unter den Bildschirmrand, weiter unten stuende ein
           Bedienelement im Informationsteil.
 
-          Sie steht PERMANENT, auch ohne Kopfzeile - dann zeigt sie an Stelle der Liste einen Satz.
-          Die bestehende Kategorie-Sektion bleibt in dieser PR unberuehrt daneben stehen (die
-          Abloesung ist PR 3). */}
+          Sie steht PERMANENT, auch ohne Kopfzeile - dann zeigt sie an Stelle der Liste einen
+          Satz. Sie ist seit PR 3 der EINZIGE Bedienblock der Bewertungsdetails: die
+          Kategorie-Bedienelemente sind mit den Kategorien entfallen. */}
       <section
         className="flex flex-col gap-2 text-sm"
         aria-labelledby="motifs-heading"
@@ -463,7 +422,7 @@ export function PhotoDetailPage() {
         <h2 className="text-xs font-semibold tracking-wide text-text-h uppercase">Aufnahmezeit</h2>
         <p className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-text">{formatDateTime(currentPhoto.taken_at)}</span>
-          {/* Die Marke NUR im Korrekturfall, im Ton von `CategoryOverrideMarker`: eine Korrektur
+          {/* Die Marke NUR im Korrekturfall, im zurueckhaltenden Metadatenton: eine Korrektur
               ist der GEWOLLTE Zustand, kein Alarm. */}
           {currentPhoto.time_offset_minutes !== 0 && (
             <span className="text-xs text-text-muted" data-corrected="true">
@@ -498,13 +457,13 @@ export function PhotoDetailPage() {
         <CloudVisionStatusList cloudVisionStatus={currentPhoto.cloud_vision_status} />
       </div>
 
-      {/* Informationsteil der permanenten Sektion - permanent statt Info-Popover; die fruehere
-          Platzierungsvorgabe "vor den Navigationsbuttons" ist abgeloest, die permanente
-          Sichtbarkeit selbst gilt weiter. Gleiche Sichtbarkeitsregel wie die bisherige
-          Icon-Sichtbarkeit: kein leerer Bereich bei leerer Liste. */}
+      {/* Die Aufschluesselung - permanent statt Info-Popover; die fruehere Platzierungsvorgabe
+          "vor den Navigationsbuttons" ist abgeloest, die permanente Sichtbarkeit selbst gilt
+          weiter. Gleiche Sichtbarkeitsregel wie die bisherige Icon-Sichtbarkeit: kein leerer
+          Bereich bei leerer Liste. */}
       {currentPhoto.criterion_scores.length > 0 && (
         <div className="text-sm text-text" data-testid="criterion-details-section">
-          <CriterionDetailsList {...detailsProps} part="info" />
+          <CriterionDetailsList {...detailsProps} />
         </div>
       )}
 

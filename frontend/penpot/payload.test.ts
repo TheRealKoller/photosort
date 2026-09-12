@@ -585,7 +585,7 @@ describe('Referentielle Integritaet', () => {
     const pfade = tokenSlots().map((slot) => slot.pfad)
     expect(pfade.length).toBeGreaterThanOrEqual(50)
     expect(pfade.some((pfad) => pfad === 'button.tokens.radius')).toBe(true)
-    expect(pfade.some((pfad) => pfad === 'chip.kategorie.menschen.flaeche')).toBe(true)
+    expect(pfade.some((pfad) => pfad === 'step-marker.tokens.radius')).toBe(true)
   })
 
   /*
@@ -627,15 +627,15 @@ describe('Referentielle Integritaet', () => {
   })
 })
 
-describe('Die zwoelf Bausteine', () => {
+describe('Die elf Bausteine', () => {
   /*
-   * GESCHLOSSENE NAMENSMENGE, nicht Kardinalitaet: "genau zwoelf" bestuenden auch zwoelf beliebige. Die
+   * GESCHLOSSENE NAMENSMENGE, nicht Kardinalitaet: "genau elf" bestuenden auch elf beliebige. Die
    * Menge ist seit der Aufnahme des Platzhalters nicht mehr eingefroren, sondern REGELGEBUNDEN
    * OFFEN - fortgeschrieben wird trotzdem die Namensliste samt REIHENFOLGE, nicht die Anzahl: die
-   * Bausteine aus `components/ui/` stehen zusammen, der Kategorie-Chip als einziger aus
+   * Bausteine aus `components/ui/` stehen zusammen, die Schrittmarke als einzige aus
    * `components/` am Ende. Ein Anhaengen ans Ende zerrisse diese Ordnung still.
    */
-  it('traegt genau die zwoelf maschinellen Schluessel', () => {
+  it('traegt genau die elf maschinellen Schluessel', () => {
     expect(komponenten.bausteine.map((baustein) => baustein.schluessel)).toEqual([
       'button',
       'input',
@@ -647,7 +647,6 @@ describe('Die zwoelf Bausteine', () => {
       'progress',
       'dialog',
       'skeleton',
-      'chip',
       'step-marker',
     ])
   })
@@ -664,7 +663,6 @@ describe('Die zwoelf Bausteine', () => {
       'Fortschrittsanzeige',
       'Dialog',
       'Platzhalter',
-      'Kategorie-Chip',
       'Schrittmarke',
     ])
   })
@@ -694,12 +692,12 @@ describe('Die zwoelf Bausteine', () => {
     expect(schrittmarke!.quellen).toEqual(['src/components/StepMarker.tsx'])
   })
 
-  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der zwoelf liegen unter
-     `src/components/ui/`, Kategorie-Chip und Schrittmarke unmittelbar unter `src/components/`.
-     Wer nur `ui/` aufzaehlt, verliert die beiden still. */
+  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der elf liegen unter
+     `src/components/ui/`, die Schrittmarke unmittelbar unter `src/components/`. Wer nur `ui/`
+     aufzaehlt, verliert sie still. */
   it('spannt beide Verzeichnisse auf', () => {
     const quellen = komponenten.bausteine.flatMap((baustein) => baustein.quellen)
-    expect(quellen).toContain('src/components/CategoryBadge.tsx')
+    expect(quellen).toContain('src/components/StepMarker.tsx')
     expect(
       quellen.filter((quelle) => quelle.startsWith('src/components/ui/')).length,
     ).toBeGreaterThan(0)
@@ -839,16 +837,16 @@ describe('Die Achsen der Bausteine', () => {
   /*
    * Die Zahl der Varianten, die `seed-components.js` aufbaut: das Kreuzprodukt der Achsen je
    * Baustein. Eingefroren, weil eine versehentlich hinzugefuegte Achse sie sprunghaft vervielfacht
-   * und das sonst niemandem auffiele. 90 + 5 + 9 + 8 + 7 + 3 + 3 + 2 + 4 + 2 + 13 + 12.
+   * und das sonst niemandem auffiele. 90 + 5 + 9 + 8 + 7 + 3 + 3 + 2 + 4 + 2 + 12.
    */
-  it('baut genau 158 Varianten auf', () => {
+  it('baut genau 145 Varianten auf', () => {
     const gesamt = komponenten.bausteine.reduce(
       (summe, baustein) =>
         summe +
         Object.values(baustein.varianten).reduce((produkt, werte) => produkt * werte.length, 1),
       0,
     )
-    expect(gesamt).toBe(158)
+    expect(gesamt).toBe(145)
   })
 })
 
@@ -930,37 +928,6 @@ describe('Zustandsabdeckung gegen den Produktcode', () => {
     )
     expect(new Set(gesehen).size).toBeGreaterThanOrEqual(4)
     expect(gesehen.length).toBeGreaterThanOrEqual(6)
-  })
-})
-
-// ---------------------------------------------------------------------------------------------
-// Der Kategorie-Chip
-// ---------------------------------------------------------------------------------------------
-
-describe('Der Kategorie-Chip', () => {
-  /* ERZEUGT, NICHT GETIPPT: die Sollmenge entsteht aus der erzeugten tokens.json und damit
-     mittelbar aus index.css - dieselbe Kette, die der Design-Vertragstest gegen das
-     Kategorien-Set des Backends bindet. */
-  const chipSchluessel = tokens
-    .map((token) => /^color\.chip-(.+)-bg$/.exec(token.name))
-    .filter((treffer) => treffer !== null)
-    .map((treffer) => treffer![1])
-
-  it('traegt dreizehn Auspraegungen, deckungsgleich mit dem Kategorien-Set', () => {
-    expect(chipSchluessel).toHaveLength(13)
-    const chip = komponenten.bausteine.find((baustein) => baustein.schluessel === 'chip')
-    expect(chip).toBeDefined()
-    expect(chip!.varianten.kategorie).toEqual(chipSchluessel)
-  })
-
-  it('bindet je Auspraegung das Flaechen- und das Schrifttoken der Kategorie', () => {
-    const chip = komponenten.bausteine.find((baustein) => baustein.schluessel === 'chip')!
-    for (const schluessel of chipSchluessel) {
-      const paar = chip.tokensProAuspraegung?.kategorie?.[schluessel]
-      expect(paar, schluessel).toBeDefined()
-      expect(paar!.flaeche, schluessel).toBe(`color.chip-${schluessel}-bg`)
-      expect(paar!.schrift, schluessel).toBe(`color.chip-${schluessel}-fg`)
-    }
   })
 })
 
@@ -2128,7 +2095,7 @@ const GETEILTE_TABELLENREIHENFOLGE = [
  * Fuenfter geteilter Block: woran ein Varianten-BEHAELTER erkannt wird.
  *
  * ⚠ GEMESSEN AM ERSTEN ECHTEN KORREKTURLAUF (2026-09-11): `penpot.library.local.components`
- * liefert je Baustein GENAU EINE Komponente, nicht ihre Varianten - 12 statt 158. Die
+ * liefert je Baustein GENAU EINE Komponente, nicht ihre Varianten - 11 statt 145. Die
  * Variantenkomponenten haengen am Behaelter (`behaelter.variants.variantComponents()`), und der
  * ist ein Board und steht deshalb gar nicht in dieser Liste. Ein Korrekturlauf, der ueber
  * `penpot.library.local.components` iteriert, erreicht ein Zwoelftel des Bestandes und meldet
@@ -2238,9 +2205,9 @@ describe('Die geteilten Erkennungen', () => {
  * ⚠ DIESE ZUSICHERUNG STAMMT AUS EINEM FEHLGESCHLAGENEN ECHTEN LAUF, nicht aus einer Ueberlegung.
  * Am 2026-09-11 lief `fix-flaechen.js` zum ersten Mal gegen die bespielte Datei und meldete
  * 2 geaendert / 9 bereits richtig / 1 strukturabweichend - zusammen ZWOELF. Das ist die Zahl der
- * Bausteine, nicht die der 158 Varianten. Gemessen in derselben Sitzung:
+ * Bausteine, nicht die der 145 Varianten. Gemessen in derselben Sitzung:
  * `penpot.library.local.components` traegt 12 Eintraege mit `schluessel`, die 12 Behaelter tragen
- * zusammen 158 Variantenkomponenten, und alle 158 tragen den `schluessel` ebenfalls.
+ * zusammen 145 Variantenkomponenten, und alle 145 tragen den `schluessel` ebenfalls.
  *
  * Der Lauf war damit kein Fehlschlag, den man gesehen haette: Er lief durch, meldete Erfolg und
  * liess fuenf Sechstel des Bestandes unberuehrt. Kein statischer Test konnte das fangen - die
@@ -2867,7 +2834,7 @@ describe('Binden oder leeren: die Flaeche jeder Variante', () => {
     expect(rollen.flaeche).toEqual(['fill'])
     expect(rollen.schrift).toEqual(['fill'])
     expect(textRollenTabelle()).toContain('schrift')
-    expect(alleBindungen()).toHaveLength(158)
+    expect(alleBindungen()).toHaveLength(145)
   })
 
   it('zaehlt die Eigenschaften des BRETTS, nicht die vorgekommenen Rollen', () => {
@@ -2925,12 +2892,12 @@ describe('Binden oder leeren: die Flaeche jeder Variante', () => {
     expect(offen).toEqual([])
   })
 
-  /* AKZEPTANZKRITERIUM 1, zweite Haelfte: 133 gebunden, 25 ausdruecklich geleert. Beide Zahlen
+  /* AKZEPTANZKRITERIUM 1, zweite Haelfte: 120 gebunden, 25 ausdruecklich geleert. Beide Zahlen
      entstehen aus der Simulation, nicht aus der Liste - sonst pruefte sie sich selbst. */
-  it('bindet 133 Flaechen und leert 25', () => {
+  it('bindet 120 Flaechen und leert 25', () => {
     const bindungen = alleBindungen()
     const gebunden = bindungen.filter(({ bindung }) => bindung.flaeche !== null)
-    expect(gebunden).toHaveLength(133)
+    expect(gebunden).toHaveLength(120)
     expect(bindungen.length - gebunden.length).toBe(25)
   })
 

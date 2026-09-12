@@ -117,7 +117,7 @@ describe('Stepper', () => {
     expect(items).toHaveLength(5)
     expect(within(nav).getByRole('link', { name: /schritt 1 von 5: scan/i })).toBeInTheDocument()
     expect(
-      within(nav).getByLabelText(/^schritt 5 von 5: kategorie-kuratierung/i),
+      within(nav).getByLabelText(/^schritt 5 von 5: kuratierung/i),
     ).toBeInTheDocument()
   })
 
@@ -254,7 +254,7 @@ describe('Stepper', () => {
     const user = userEvent.setup()
     renderStepper()
 
-    await user.click(gesperrterSchritt('Schritt 5 von 5: Kategorie-Kuratierung, blockiert'))
+    await user.click(gesperrterSchritt('Schritt 5 von 5: Kuratierung, blockiert'))
 
     const panel = await screen.findByRole('dialog')
     expect(

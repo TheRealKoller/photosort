@@ -7,14 +7,12 @@ import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { useProjectStatsQuery } from '../hooks/useProjects'
-import { CONFIDENCE_EXPLANATION, CONFIDENCE_EXPLANATION_LABEL } from '../utils/confidenceLabels'
 import {
   formatBytes,
   formatCount,
   formatCriterionPercent,
   formatDate,
   formatDateTime,
-  formatPercent,
   formatUsd,
   NOT_AVAILABLE,
 } from '../utils/formatStats'
@@ -188,8 +186,8 @@ function formatMoment(value: string | null, fallback: string): string {
 function StatsContent({ stats }: { stats: ProjectStatsOut }) {
   const {
     storage,
-    categories,
-    category_confidence: categoryConfidence,
+    motifs,
+    strength_bands: strengthBands,
     cost,
     progress,
     ratings,
@@ -274,7 +272,10 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
           <DetailRow term="Thumbnails erzeugt">{outOf(progress.thumbnails_ready)}</DetailRow>
           <DetailRow term="Lokal bewertet">{outOf(progress.ausschuss_scored)}</DetailRow>
           <DetailRow term="Eingeordnet">{outOf(progress.ranked)}</DetailRow>
-          <DetailRow term="Remote klassifiziert">{outOf(progress.remote_classified)}</DetailRow>
+          {/* "Cloud-klassifiziert" statt des frueheren "Remote klassifiziert": gezaehlt werden
+              Fotos mit einer Motiv-Kopfzeile aus der Cloud. Die lokale Kopfzeile des
+              Kriterien-Laufs zaehlt hier ausdruecklich nicht mit. */}
+          <DetailRow term="Cloud-klassifiziert">{outOf(progress.remote_classified)}</DetailRow>
         </dl>
         <p className="text-sm text-text">Deine Bewertungen (nur deine eigenen)</p>
         <MetricRow>
@@ -285,120 +286,104 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
         </MetricRow>
       </Section>
 
-      <Section id="stats-categories" title="Kategorienverteilung">
+      {/* EIN Abschnitt statt der beiden Kategorie-Bloecke (Spec 0427, PR 3). */}
+      <Section id="stats-motifs" title="Motivverteilung">
+        {/* DAUERHAFT SICHTBAR, nicht hinter einem Info-Auslöser: eine Summe, die nicht aufgeht,
+            wird sonst als Fehler gelesen - und dieser Effekt tritt beim ersten Blick ein. */}
+        <p className="text-sm text-text">
+          Jedes Foto trägt alle acht Motive mit unterschiedlicher Stärke und zählt deshalb in
+          mehreren Zeilen — die Summe der Zahlen ist größer als die Zahl der Fotos.
+        </p>
         <table className="w-full table-fixed text-sm">
           <thead>
             {/* Tabellenkopf in der Board-Rolle "Beschriftung". */}
             <tr className="border-b border-separator text-left text-xs font-semibold uppercase tracking-wide text-text">
               <th scope="col" className="py-2">
-                Kategorie
+                Motiv
               </th>
               <th scope="col" className="py-2 text-right">
-                Anzahl
+                <span className="inline-flex items-center gap-1">
+                  stark
+                  {/* Die Grenzen werden aus `strength_bands` FORMATIERT, nicht im Frontend
+                      hinterlegt: `0.67` hier und `2/3` im Backend verschöben die Grenze um einen
+                      Betrag, den kein Fall trifft. */}
+                  <InfoPopover label="Bedeutung der Stärkebänder">
+                    {`Stark ab ${formatCriterionPercent(strengthBands.strong)}, mittel ab ` +
+                      `${formatCriterionPercent(strengthBands.medium)}. Die Grenzen sind eine ` +
+                      'Anzeigehilfe dieser Tabelle. Sie entscheiden nicht, ob ein Foto zu einem ' +
+                      'Motiv gehört — dafür gibt es keine Schwelle.'}
+                  </InfoPopover>
+                </span>
               </th>
               <th scope="col" className="py-2 text-right">
-                Anteil
+                mittel
+              </th>
+              <th scope="col" className="py-2 text-right">
+                schwach
+              </th>
+              <th scope="col" className="py-2 text-right">
+                Ø Stärke
               </th>
             </tr>
           </thead>
           <tbody>
-            {categories.entries.map((entry) => (
-              <tr key={entry.category_key} className="border-b border-separator">
+            {motifs.map((entry) => (
+              <tr key={entry.motif_key} className="border-b border-separator">
                 {/* Anzeigename AUSSCHLIESSLICH vom Server - es gibt bewusst keine
-                    Uebersetzungstabelle fuer Set-Keys im Frontend. */}
-                <th scope="row" className="break-words py-2 text-left font-normal text-text-h">
+                    Uebersetzungstabelle fuer Motivschluessel im Frontend. */}
+                <th
+                  scope="row"
+                  data-motif-key={entry.motif_key}
+                  className="break-words py-2 text-left font-normal text-text-h"
+                >
                   {entry.display_name}
                 </th>
                 <td className="py-2 text-right font-mono text-text-h">
-                  {formatCount(entry.photo_count)}
+                  {formatCount(entry.strong_photo_count)}
                 </td>
                 <td className="py-2 text-right font-mono text-text">
-                  {formatPercent(entry.share)}
+                  {formatCount(entry.medium_photo_count)}
                 </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <MetricRow>
-          <Metric
-            value={formatCount(categories.unclassified_photo_count)}
-            label="Nicht klassifiziert"
-            info={
-              <InfoPopover label="nicht erkannt und nicht klassifiziert">
-                „Nicht klassifiziert" heißt: für dieses Foto liegt noch kein Ergebnis eines
-                Klassifizierungslaufs vor. Die Kategorie „Nicht erkannt" ist dagegen ein Ergebnis —
-                der Lauf hat das Foto angesehen und kein sicher bestimmbares Motiv gefunden. Die
-                Anteile in der Tabelle beziehen sich auf die klassifizierten Fotos.
-              </InfoPopover>
-            }
-          />
-          <Metric
-            value={formatCount(stats.manual_category_override_count)}
-            label="Manuell korrigiert"
-          />
-        </MetricRow>
-      </Section>
-
-      {/* EIGENER Abschnitt unmittelbar nach der Kategorienverteilung - und ausdruecklich keine
-          weitere Spalte dort. Beide Bloecke gruppieren ueber verschiedene Mengen: die Verteilung
-          ueber die
-          WIRKSAME Kategorie (lokal + remote + Override), dieser Block ueber die MODELL-Kategorie.
-          In eine Zeile gemischt staenden zwei richtige Zahlen nebeneinander und eine falsche
-          Aussage dazwischen. */}
-      <Section id="stats-category-confidence" title="Konfidenz der Kategorie-Erkennung">
-        <table className="w-full table-fixed text-sm">
-          <thead>
-            <tr className="border-b border-separator text-left text-xs font-semibold uppercase tracking-wide text-text">
-              <th scope="col" className="py-2">
-                Kategorie
-              </th>
-              <th scope="col" className="py-2 text-right">
-                Fotos mit Angabe
-              </th>
-              <th scope="col" className="py-2 text-right">
-                Ø Sicherheit
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {categoryConfidence.entries.map((entry) => (
-              <tr key={entry.category_key} className="border-b border-separator">
-                <th scope="row" className="break-words py-2 text-left font-normal text-text-h">
-                  {entry.display_name}
-                </th>
                 <td className="py-2 text-right font-mono text-text">
-                  {formatCount(entry.photo_count)}
+                  {formatCount(entry.weak_photo_count)}
                 </td>
-                {/* Eine Kategorie ohne eine einzige Angabe zeigt KEINEN Prozentwert - `0 %` waere
-                    die Aussage "das Modell war sich durchweg zu 0 % sicher". Deshalb der Strich
-                    aus `NOT_AVAILABLE` ("nicht ermittelbar") und die Pruefung auf `=== null`
-                    statt auf Falsyness: `0` ist ein gueltiger Mittelwert. */}
+                {/* Ein Motiv ohne ein einziges beurteiltes Foto zeigt KEINEN Prozentwert - `0 %`
+                    waere die Aussage "das Modell sieht das Motiv durchweg nicht". Deshalb der
+                    Strich aus `NOT_AVAILABLE` ("nicht ermittelbar") und die Pruefung auf
+                    `=== null` statt auf Falsyness: `0` ist ein gueltiger Mittelwert. */}
                 <td className="py-2 text-right font-mono text-text-h">
-                  {entry.average_confidence === null
+                  {entry.average_strength === null
                     ? NOT_AVAILABLE
-                    : formatCriterionPercent(entry.average_confidence)}
+                    : formatCriterionPercent(entry.average_strength)}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {/* Die BEZUGSBASIS ist Pflichtbestandteil, nicht Beiwerk: ein Mittelwert ohne
-            Bezugsmenge ist eine Zahl ohne Aussage. Beide Zaehler beziehen sich auf die
-            klassifizierten Fotos - Fotos ganz ohne Klassifizierungslauf stehen im Block darueber
-            als "Nicht klassifiziert". */}
         <MetricRow>
           <Metric
-            value={formatCount(categoryConfidence.photos_with_confidence)}
-            label="Klassifizierte Fotos mit Angabe"
+            value={formatCount(stats.unassessed_photo_count)}
+            label="Noch nicht klassifiziert"
             info={
-              <InfoPopover label={CONFIDENCE_EXPLANATION_LABEL}>
-                {CONFIDENCE_EXPLANATION}
+              <InfoPopover label="noch nicht klassifiziert">
+                Diese Fotos fehlen in jeder Zahl der Tabelle. Sie erhalten Motive erst bei einem
+                Klassifizierungslauf, den du selbst auslöst.
               </InfoPopover>
             }
           />
           <Metric
-            value={formatCount(categoryConfidence.photos_without_confidence)}
-            label="Klassifizierte Fotos ohne Angabe"
+            value={formatCount(stats.motif_correction_count)}
+            label="Von Hand korrigiert"
+          />
+          <Metric
+            value={formatCount(stats.excluded_photo_count)}
+            label="Als Dokument ausgeschlossen"
+            info={
+              <InfoPopover label="als Dokument ausgeschlossen">
+                Diese Fotos erscheinen in keiner Motivauswahl. Die Einstufung lässt sich nicht von
+                Hand ändern.
+              </InfoPopover>
+            }
           />
         </MetricRow>
       </Section>

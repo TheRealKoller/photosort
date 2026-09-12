@@ -74,12 +74,12 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
    * Stufe wird beim Entwerfen ohnehin in einem Zug angewandt.
    */
   it('erzeugt genau die eingefrorenen Kardinalitaeten je Gruppe', () => {
-    expect(countByGroup('color')).toBe(64)
+    expect(countByGroup('color')).toBe(38)
     expect(countByGroup('radius')).toBe(5)
     expect(countByGroup('space')).toBe(8)
     expect(countByGroup('font-family')).toBe(2)
     expect(countByGroup('text')).toBe(7)
-    expect(tokens).toHaveLength(64 + 5 + 8 + 2 + 7)
+    expect(tokens).toHaveLength(38 + 5 + 8 + 2 + 7)
   })
 
   it('legt fuer Zeilenhoehe, Schnitt und Laufweite kein eigenes Token an', () => {
@@ -417,8 +417,12 @@ describe('Penpot-Tokenliste: Erzeugung aus index.css', () => {
       }
     })
 
-    it('traegt die Chip-Schrift "Gebaeude/Bauwerk" mit #FF44A1 statt dem Board-Wert #FF007F', () => {
-      expect(valueOf('color.chip-gebaeude-bauwerk-fg').toUpperCase()).toBe('#FF44A1')
+    it('erzeugt kein einziges Kategorie-Chip-Token mehr', () => {
+      /* Die dreizehn Chip-Farbpaare fallen mit den Kategorien (Spec 0427, PR 3) - und mit ihnen
+       * die frueher hier festgehaltene Wertabweichung der Schriftfarbe "Gebaeude/Bauwerk"
+       * (#FF44A1 statt des Board-Werts #FF007F). Der Board-Wert darf damit auch nirgends sonst
+       * auftauchen. */
+      expect(tokens.filter((token) => token.name.startsWith('color.chip-'))).toEqual([])
       expect(serializeTokens(tokens).toUpperCase()).not.toContain('#FF007F')
     })
   })

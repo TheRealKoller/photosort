@@ -148,54 +148,12 @@
   --status-idle-tint: #1e2230;
   --status-idle-strong: #a0a5b5;
 
-  /* --- Die dreizehn Kategorie-Chip-Farbpaare. ---
-     Fuenf stammen aus dem Board, acht sind nach dessen eigener Regel abgeleitet (Flaeche = Ton
-     bei S 46% / L 18%, Schrift = Ton bei S 100%, Helligkeit angehoben bis >= 4.75:1), "Nicht
-     erkannt" bleibt bewusst neutral - die Kategorie drueckt kein Erkennungsergebnis aus, sondern
-     dessen Fehlen. Alle dreizehn erreichen nachgerechnet >= 4.5:1.
-
-     Die Tokennamen tragen Bindestriche statt der Unterstriche des `category_key`, damit die daraus
-     erzeugten Tailwind-Utilities regulaere Utility-Namen bleiben.
-
-     Kategorie-Chips sind bewusst GETOENTE Flaechen mit heller, bunter Schrift; Bewertungs-Badges
-     sind VOLL GEFUELLTE Flaechen mit dunkler Tinte. Dieser strukturelle Gegensatz - zusammen mit
-     Radius 16px vs. 6px und der Gegenecken-Platzierung auf der Kachel - faengt auf, dass
-     "Menschen" (#FFC107) farblich praktisch auf dem Favorit-Amber liegt und "Landschaft"
-     (#00B4D8) 2 Grad vom Info-Cyan. Die drei Regeln sind Bedienmerkmale, keine Kosmetik. */
-  --chip-menschen-bg: #4d3814;
-  --chip-menschen-fg: #ffc107;
-  --chip-tier-bg: #163e3c;
-  --chip-tier-fg: #00f5d4;
-  --chip-pflanze-bg: #194321;
-  --chip-pflanze-fg: #00d627;
-  --chip-landschaft-bg: #1f2b49;
-  --chip-landschaft-fg: #00b4d8;
-  /* Board-Schrift #FF007F erreicht auf dieser Flaeche nur 3.80 - korrigiert. */
-  --chip-gebaeude-bauwerk-bg: #3b1f43;
-  --chip-gebaeude-bauwerk-fg: #ff44a1;
-  --chip-innenraum-bg: #1e1943;
-  --chip-innenraum-fg: #8c7aff;
-  --chip-essen-trinken-bg: #143c22;
-  --chip-essen-trinken-fg: #70e000;
-  --chip-fahrzeug-bg: #192743;
-  --chip-fahrzeug-fg: #578fff;
-  --chip-gegenstand-bg: #43191c;
-  --chip-gegenstand-fg: #ff5260;
-  --chip-dokument-screenshot-bg: #424319;
-  --chip-dokument-screenshot-fg: #cfd600;
-  --chip-kunst-kreatives-bg: #431940;
-  --chip-kunst-kreatives-fg: #ff2ef1;
-  --chip-sport-aktivitaet-bg: #321943;
-  --chip-sport-aktivitaet-fg: #c266ff;
-  --chip-nicht-erkannt-bg: #262b3d;
-  --chip-nicht-erkannt-fg: #a0a5b5;
-
   --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
 }
 
 /* Tailwind-Theme: ordnet die obigen Roh-Tokens den generierten Utility-Klassen zu
-   (bg-bg/bg-elevated/text-text/border-border-control/text-chip-menschen-fg/... - siehe
+   (bg-bg/bg-elevated/text-text/border-border-control/bg-accent/... - siehe
    .claude/skills/design-system/SKILL.md fuer die Kurzreferenz). */
 @theme {
   --color-bg: var(--bg);
@@ -243,32 +201,6 @@
   --color-status-idle-tint: var(--status-idle-tint);
   --color-status-idle-strong: var(--status-idle-strong);
 
-  --color-chip-menschen: var(--chip-menschen-bg);
-  --color-chip-menschen-fg: var(--chip-menschen-fg);
-  --color-chip-tier: var(--chip-tier-bg);
-  --color-chip-tier-fg: var(--chip-tier-fg);
-  --color-chip-pflanze: var(--chip-pflanze-bg);
-  --color-chip-pflanze-fg: var(--chip-pflanze-fg);
-  --color-chip-landschaft: var(--chip-landschaft-bg);
-  --color-chip-landschaft-fg: var(--chip-landschaft-fg);
-  --color-chip-gebaeude-bauwerk: var(--chip-gebaeude-bauwerk-bg);
-  --color-chip-gebaeude-bauwerk-fg: var(--chip-gebaeude-bauwerk-fg);
-  --color-chip-innenraum: var(--chip-innenraum-bg);
-  --color-chip-innenraum-fg: var(--chip-innenraum-fg);
-  --color-chip-essen-trinken: var(--chip-essen-trinken-bg);
-  --color-chip-essen-trinken-fg: var(--chip-essen-trinken-fg);
-  --color-chip-fahrzeug: var(--chip-fahrzeug-bg);
-  --color-chip-fahrzeug-fg: var(--chip-fahrzeug-fg);
-  --color-chip-gegenstand: var(--chip-gegenstand-bg);
-  --color-chip-gegenstand-fg: var(--chip-gegenstand-fg);
-  --color-chip-dokument-screenshot: var(--chip-dokument-screenshot-bg);
-  --color-chip-dokument-screenshot-fg: var(--chip-dokument-screenshot-fg);
-  --color-chip-kunst-kreatives: var(--chip-kunst-kreatives-bg);
-  --color-chip-kunst-kreatives-fg: var(--chip-kunst-kreatives-fg);
-  --color-chip-sport-aktivitaet: var(--chip-sport-aktivitaet-bg);
-  --color-chip-sport-aktivitaet-fg: var(--chip-sport-aktivitaet-fg);
-  --color-chip-nicht-erkannt: var(--chip-nicht-erkannt-bg);
-  --color-chip-nicht-erkannt-fg: var(--chip-nicht-erkannt-fg);
 
   --font-sans: var(--sans);
   --font-mono: var(--mono);
@@ -295,7 +227,7 @@
    *   sm 6px  Buttons, Eingabefelder, Bewertungs-Pillen, Karten-Badge
    *   md 8px  Toast, Popover, Icon-Kachel, Bildflaeche in der Karte
    *   lg 12px Panels, Foto-Karten
-   *   xl 16px Modal-Dialog, Kategorie-Chips (die einzige verbleibende Pillenform)
+   *   xl 16px Modal-Dialog
    */
   --radius-xs: 4px;
   --radius-sm: 6px;

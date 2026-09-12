@@ -63,7 +63,7 @@ export interface CloudPhaseSummaryOut {
 }
 
 // Bewusst kein top_n_per_cluster/candidates_total/suggestions_found: N wird erst beim Lesen
-// angewendet (GET /photos?top_n_per_category=N), der Job berechnet immer den vollen
+// angewendet (GET /photos?top_n_per_event=N), der Job berechnet immer den vollen
 // Rangfolge-Pool je Partition statt eine Top-N-Auswahl zu treffen.
 export interface CriterionScoringRunSummary {
   status: ScanStatus
@@ -174,7 +174,7 @@ export type SuggestionReason = 'duplicate' | 'low_quality'
 // Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] - ein
 // Vorschlag ist strukturell nie eine Bewertung, sondern wird erst durch aktive Bestätigung
 // (PUT /photos/{id}/rating) zu einer. Der Kontext der Rangfolge lebt im eigenständigen
-// `PhotoOut.rankings`-Feld, nicht hier.
+// `PhotoOut.ranking`-Feld, nicht hier.
 export interface SuggestionOut {
   status: RatingStatus
   reason: SuggestionReason
@@ -185,27 +185,11 @@ export interface SuggestionOut {
   computed_at: string
 }
 
-// Kategorie-Schlüssel. Die Menge ist fachlich GESCHLOSSEN (13 Einträge, backend
-// categories.py::CATEGORY_REGISTRY), der TypeScript-Typ bleibt aber bewusst `string`: das
-// Set kommt zur Laufzeit über `GET /categories` vom Server, eine hier gespiegelte Union wäre
-// eine dauerhaft driftende zweite Liste. Zusätzlich können aus der LAUFHISTORIE
-// (`PhotoRanking.category_key` früherer Läufe) Altwerte außerhalb des Sets auftauchen
-// ("unerkannt", "landscape", "people") - das Frontend muss sie über den generischen Fallback
-// darstellen können, ohne Absturz.
-export type CategoryKey = string
-
-// Ein Eintrag des festen Sets, wie ihn GET /categories liefert - in ANZEIGEREIHENFOLGE der
-// Server-Registry (nicht alphabetisch). `locally_available` markiert die sechs ohne
-// Remote-Lauf erreichbaren Kategorien.
-export interface CategoryOut {
-  key: CategoryKey
-  display_name: string
-  definition: string
-  locally_available: boolean
-}
-
-// Ab hier das Motivset (specs/features/0427-motive-mit-staerke.md). Es tritt in PR 1 ADDITIV
-// neben die Kategoriefelder; deren Ablösung ist PR 3.
+// Das Motivset (specs/features/0427-motive-mit-staerke.md). Die Menge ist fachlich
+// GESCHLOSSEN (acht Einträge, backend motifs.py::MOTIF_REGISTRY), der TypeScript-Typ bleibt
+// aber bewusst `string`: das Set kommt zur Laufzeit über `GET /motifs` vom Server, eine hier
+// gespiegelte Union wäre eine dauerhaft driftende zweite Liste. Ein unbekannter Schlüssel wird
+// über den generischen Fallback von `utils/motifLabels.ts` dargestellt, ohne Absturz.
 export type MotifKey = string
 
 // Ein Eintrag des festen Achter-Sets, wie ihn GET /motifs liefert - in ANZEIGEREIHENFOLGE der
@@ -264,24 +248,19 @@ export interface MotifCorrectionOut {
   applies: boolean
 }
 
-// EINE Zugehörigkeit eines Fotos zu einer Kategorie aus der Kriterien-/Rangfolgen-Pipeline.
-// Ein Foto hat mehrere davon - siehe `PhotoOut.rankings`.
+// Die Rangzeile eines Fotos aus der Kriterien-/Rangfolgen-Pipeline. Ein Foto hat je Lauf
+// GENAU EINE davon - die Partition ist allein das Event.
 export interface RankingOut {
   event_id: number
-  category_key: CategoryKey
   rank_score: number
   rank_position: number
-  // Größe der GESAMTEN Event x Kategorie-Partition (nicht nur der angeforderten top_n),
-  // für "Rang M von N" im Info-Popover. Zählt Haupt- UND Nebenzeilen der Partition.
+  // Größe der GESAMTEN Event-Partition (nicht nur der angeforderten top_n), für "Rang M von N"
+  // im Info-Popover.
   partition_size: number
-  /** Ob dies die HAUPTkategorie des Fotos ist. Genau eine Zugehörigkeit je Foto trägt
-   * `true`. Die Rolle kommt ausschließlich aus diesem Feld - im Frontend wird KEINE
-   * Konfidenz-Schwelle nachgebildet. */
-  is_primary: boolean
-  /** Der Platz dieser Zugehoerigkeit in der um die eigenen Ablehnungen bereinigten Auswahl ihrer
-   * Kategorie. `null` heisst: gehoert nicht zur angeforderten Auswahl, oder es wurde gar keine
-   * angefordert. AUSDRUECKLICH NICHT `rank_position` - jene ist die lauf-globale, ungefilterte
-   * Rangaussage des Info-Popovers. Auf `!== null` pruefen, nie auf Falsyness. */
+  /** Der Platz dieses Fotos in der angezeigten Auswahl seines Events. `null` heisst: gehoert
+   * nicht zur angeforderten Auswahl, oder es wurde gar keine angefordert. AUSDRUECKLICH NICHT
+   * `rank_position` - jene ist die lauf-globale Rangaussage des Info-Popovers. Auf `!== null`
+   * pruefen, nie auf Falsyness. */
   curation_position: number | null
 }
 
@@ -297,10 +276,11 @@ export interface CriterionScoreOut {
   display_name: string
   value: number
   source: CriterionSource
-  // Spiegelt `CriterionDefinition.category_eligible` der Backend-Registry und ist die ALLEINIGE
-  // Grundlage der Gliederung in die Blöcke "Qualität" (false) / "Kategorien" (true) - im
-  // Frontend wird dazu bewusst keine Merkmalsliste gepflegt.
-  category_eligible: boolean
+  // `presence_threshold is not None` der Backend-Registry und die ALLEINIGE Grundlage der
+  // Gliederung in die Blöcke "Qualität" (false) / "Bildinhalt" (true) - im Frontend wird dazu
+  // bewusst keine Merkmalsliste gepflegt. Die Schwelle selbst kommt nicht mit: sie ist die
+  // Vorfilter-Grenze des Cloud-Aufrufs und hat in der Oberfläche nichts zu entscheiden.
+  has_presence_threshold: boolean
 }
 
 // Ein frei formuliertes, auf einen kanonischen Eintrag aufgelöstes Feinlabel - immer eine
@@ -323,28 +303,6 @@ export interface FineLabelCountOut {
   canonical_key: string
   display_name: string
   photo_count: number
-}
-
-// Die für DIESES Foto tatsächlich gültige Kategorie-Kandidatenmenge (lokal qualifizierende
-// Kriterien + Remote-Erkennungen zusammen) - verhindert, dass das Frontend die
-// Präsenz-Schwellenlogik (backend criteria.py::CRITERIA_REGISTRY) selbst nachbilden muss.
-// `category_key` ist IMMER ein Key des festen Sets; die Auswahl entscheidet die feste
-// Vorrangreihenfolge im Backend, nicht ein Zahlenvergleich. `provider` ist nur bei
-// `origin === 'remote'` gesetzt. Die Liste ist reine ERKLÄRUNG ("das hat das System
-// erkannt") - sie beschränkt NICHT, was manuell übersteuert werden darf.
-export interface CategoryCandidateOut {
-  category_key: CategoryKey
-  origin: 'local' | 'remote'
-  provider: string | null
-  /** Die Selbsteinschätzung des Erkennungsmodells zu DIESEM Schlüssel, ein Bruchteil
-   * zwischen 0 und 1 - keine gemessene Trefferquote. Die Zahl beeinflusst weder Auswahl
-   * noch Sortierung.
-   *
-   * `null` heißt "keine Modellaussage" (z.B. ein rein lokal erkannter Kandidat oder eine
-   * Klassifizierungszeile aus der Zeit vor der Migration) - NIE als `0` behandeln und immer
-   * explizit `=== null` prüfen: `0` ist ein gültiger Wert und heißt "das Modell war sich zu
-   * 0 % sicher". Fehlt die Zahl, wird KEIN Platzhalter gerendert. */
-  confidence: number | null
 }
 
 // Die beiden unabhängigen Cloud-Vision-Läufe, für die pro Foto genau einer von sechs Zuständen
@@ -462,30 +420,16 @@ export interface PhotoOut {
   camera: CameraOut | null
   ratings: RatingOut[]
   suggestion: SuggestionOut | null
-  /** ALLE Zugehörigkeiten des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi.
-   * Immer eine Liste, nie `null` - leer, solange kein erfolgreicher Lauf existiert.
-   * Reihenfolge: Hauptzeile zuerst, danach die Nebenzeilen in Registry-Anzeigereihenfolge.
+  /** Die Rangzeile des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi - `null`,
+   * solange kein erfolgreicher Lauf existiert oder das Foto darin keine Zeile hat.
    *
-   * Nie `rankings[0]` als "die Hauptzeile" lesen - dafür gibt es
-   * `utils/rankings.ts::primaryRanking`. */
-  rankings: RankingOut[]
+   * EIN Feld und keine Liste: ein Foto steht je Lauf in genau einer Zeile, seit die Partition
+   * allein das Event ist. Optional deklariert wie `location`/`event`: `undefined` und `null`
+   * bedeuten an jeder Lesestelle dasselbe. */
+  ranking?: RankingOut | null
   criterion_scores: CriterionScoreOut[]
   // Immer eine Liste (0-2 Einträge), nie null.
   fine_labels: FineLabelOut[]
-  // Die remote ermittelte Kategorie dieses Fotos, null ohne Remote-Klassifizierung. Bewusst
-  // getrennt von `rankings[].category_key` (dort steht die im Lauf tatsaechlich vergebene
-  // Kategorie).
-  remote_category: CategoryKey | null
-  /** Die Konfidenz zu `remote_category`. Nicht aus `category_candidates` ableiten -
-   * `remote_category` kann `nicht_erkannt` sein und steht dann gar nicht in der Kandidatenliste.
-   * Trägt den Kuratierungsfilter "Nur unsichere Zuordnungen". `null` heißt "keine Angabe",
-   * nie 0. */
-  category_confidence: number | null
-  // Dauerhafte manuelle Uebersteuerung (PhotoScore.category_override), null ohne aktiven
-  // Override.
-  category_override: CategoryKey | null
-  // Sortiert in Registry-Anzeigereihenfolge (dieselbe Reihenfolge wie GET /categories).
-  category_candidates: CategoryCandidateOut[]
   // Immer genau 2 Einträge, feste Reihenfolge [landmark, remote_category].
   cloud_vision_status: CloudVisionStatusOut[]
   /** Beide Felder liefert die API IMMER (auf allen Lesepfaden, `null` ohne Ortsinformation).
@@ -493,9 +437,7 @@ export interface PhotoOut {
    * dasselbe - kein Ort. */
   location?: PhotoLocation | null
   event?: EventOut | null
-  /** ADDITIV (Spec 0427, PR 1) - die Kategoriefelder oben bleiben unberührt daneben stehen.
-   *
-   * `null` heißt „noch nicht klassifiziert": dann ist `motifs` LEER und trägt ausdrücklich NICHT
+  /** `null` heißt „noch nicht klassifiziert": dann ist `motifs` LEER und trägt ausdrücklich NICHT
    * acht Einträge mit Wert 0. Auf `=== null` prüfen und an der Stelle der Liste einen Satz
    * zeigen - acht Nullzeilen sind von „nichts erkannt" nicht zu unterscheiden. */
   motif_assessment?: MotifAssessmentOut | null
@@ -513,13 +455,6 @@ export interface PhotoListOut {
   total: number
 }
 
-// Antwort von PUT /photos/{id}/category-override - der gesetzte Wert wird direkt
-// zurückgegeben, analog PUT /photos/{id}/rating.
-export interface CategoryOverrideOut {
-  photo_id: number
-  category_key: CategoryKey
-}
-
 // Ab hier: die Momentaufnahme eines Projekts (GET /projects/{id}/stats). Reine Anzeigedaten -
 // die Seite löst nichts aus und schreibt nichts.
 
@@ -531,48 +466,26 @@ export interface ProjectStatsStorage {
   local_database_bytes_estimate: number | null
 }
 
-export interface ProjectStatsCategoryEntry {
-  category_key: string
-  // Der Anzeigename kommt vom Server - es gibt bewusst KEINE Übersetzungstabelle für
-  // Set-Keys im Frontend, sonst liefen beide Listen auseinander.
-  display_name: string
-  photo_count: number
-  /** Bruchteil zwischen 0 und 1, bezogen auf die KLASSIFIZIERTEN Fotos. */
-  share: number
-}
-
-export interface ProjectStatsCategories {
-  classified_photo_count: number
-  unclassified_photo_count: number
-  /** Immer alle Kategorien des festen Sets inkl. `nicht_erkannt`, in Anzeigereihenfolge. */
-  entries: ProjectStatsCategoryEntry[]
-}
-
-/** Ein Eintrag des Konfidenzblocks. */
-export interface ProjectStatsCategoryConfidenceEntry {
-  category_key: string
-  /** Anzeigename vom Server, wie bei `ProjectStatsCategoryEntry`. */
-  display_name: string
-  /** Fotos DIESER Modell-Kategorie mit einer Angabe - nicht alle Fotos der Kategorie. */
-  photo_count: number
-  /** Arithmetisches Mittel genau dieser Angaben, Bruchteil zwischen 0 und 1. `null` bei
-   * `photo_count === 0` - immer explizit `=== null` pruefen, nie truthy: `0` ist ein gueltiger
-   * Mittelwert und eine voellig andere Aussage als "keine Angabe". */
-  average_confidence: number | null
-}
-
-/** Gruppiert über die MODELL-Kategorie, ausdrücklich nicht über die wirksame Kategorie der
- * Rangfolge - ein übersteuertes Foto zählt hier weiterhin zu seiner Modell-Kategorie. Die Zahlen
- * dieses Blocks und die aus `ProjectStatsCategories` beziehen sich deshalb auf verschiedene
- * Mengen.
+/** Eine Zeile der Motivverteilung. Der Anzeigename kommt vom Server - es gibt bewusst KEINE
+ * Übersetzungstabelle für Motivschlüssel im Frontend, sonst liefen beide Listen auseinander.
  *
- * Die beiden Zähler sind die BEZUGSBASIS und beziehen sich auf die klassifizierten Fotos des
- * Projekts; ihre Summe ist die Zahl der Klassifizierungszeilen, nicht die Fotoanzahl. */
-export interface ProjectStatsCategoryConfidence {
-  /** Immer alle Kategorien des festen Sets inkl. `nicht_erkannt`, in Anzeigereihenfolge. */
-  entries: ProjectStatsCategoryConfidenceEntry[]
-  photos_with_confidence: number
-  photos_without_confidence: number
+ * Die drei Bandzahlen sind DISJUNKT und ERSCHÖPFEND: ihre Summe je Motiv ist die Zahl der
+ * beurteilten Fotos. Über alle Motive summiert übersteigt sie die Fotoanzahl - ein Foto trägt
+ * alle acht Motive mit unterschiedlicher Stärke und zählt in mehreren Zeilen. Genau das ist der
+ * Grund für den dauerhaft sichtbaren Erklärsatz über der Tabelle.
+ *
+ * Es gibt bewusst KEIN `share`-Feld: ein Anteil setzte eine Grundmenge voraus, zu der die Zahlen
+ * sich summieren. */
+export interface ProjectStatsMotifEntry {
+  motif_key: string
+  display_name: string
+  strong_photo_count: number
+  medium_photo_count: number
+  weak_photo_count: number
+  /** Arithmetisches Mittel der WIRKSAMEN Stärken, Bruchteil zwischen 0 und 1. `null` ohne ein
+   * einziges beurteiltes Foto - immer explizit `=== null` prüfen, nie truthy: `0` ist ein
+   * gültiger Mittelwert und eine völlig andere Aussage als „nicht erhoben". */
+  average_strength: number | null
 }
 
 /** Die beiden Cloud-Zwecke (backend models.py::CloudVisionPhase) - immer beide, auch mit 0. */
@@ -638,9 +551,20 @@ export interface ProjectStatsOut {
   /** null bei leerem Projekt; bei genau einem Foto ist Anfang gleich Ende. */
   taken_at_earliest: string | null
   taken_at_latest: string | null
-  categories: ProjectStatsCategories
-  category_confidence: ProjectStatsCategoryConfidence
-  manual_category_override_count: number
+  /** Immer alle acht Motive in Registry-Anzeigereihenfolge, auch mit drei Nullen. */
+  motifs: ProjectStatsMotifEntry[]
+  /** Die Anzeigebänder der Tabelle - sie kommen vom Server, damit das Frontend sie nicht
+   * hinterlegt. Sie sind KEINE Zugehörigkeitsschwelle, und außerhalb dieser Tabelle erscheint
+   * kein Bandwort. */
+  strength_bands: MotifStrengthBandsOut
+  /** Fotos ganz ohne Kopfzeile. Sie fehlen in JEDER Zahl der Tabelle und stehen deshalb als
+   * eigene Kennzahl daneben, nicht als achtes Nullband. */
+  unassessed_photo_count: number
+  /** Als Dokument/Screenshot ausgeschlossene Fotos - projektweit, weil das die einzige Stelle
+   * ist, an der ein systematisch überschießendes Modell auffällt. */
+  excluded_photo_count: number
+  /** Korrektur-ZEILEN, nicht Fotos: ein Foto kann bis zu acht tragen. */
+  motif_correction_count: number
   cost: ProjectStatsCost
   progress: ProjectStatsProgress
   ratings: ProjectStatsRatings
