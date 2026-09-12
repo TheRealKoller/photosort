@@ -4220,7 +4220,7 @@ class TestTheAdditiveMotifFields:
 
         item = await _first_photo_out(authenticated_api_client, project)
 
-        assert [entry["motif_key"] for entry in item["motifs"]] == list(MOTIF_REGISTRY)
+        assert [entry["key"] for entry in item["motifs"]] == list(MOTIF_REGISTRY)
 
     async def test_the_list_carries_eight_entries_even_with_incomplete_strength_rows(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -4245,8 +4245,8 @@ class TestTheAdditiveMotifFields:
 
         item = await _first_photo_out(authenticated_api_client, project)
 
-        assert [entry["motif_key"] for entry in item["motifs"]] == list(MOTIF_REGISTRY)
-        by_key = {entry["motif_key"]: entry for entry in item["motifs"]}
+        assert [entry["key"] for entry in item["motifs"]] == list(MOTIF_REGISTRY)
+        by_key = {entry["key"]: entry for entry in item["motifs"]}
         assert by_key["menschen"]["strength"] == pytest.approx(0.6)
         assert by_key["tiere"]["strength"] == 0.0
         assert by_key["tiere"]["correction"] is None
@@ -4265,7 +4265,7 @@ class TestTheAdditiveMotifFields:
         )
 
         by_key = {
-            entry["motif_key"]: entry["strength"]
+            entry["key"]: entry["strength"]
             for entry in (await _first_photo_out(authenticated_api_client, project))["motifs"]
         }
 
@@ -4290,7 +4290,7 @@ class TestTheAdditiveMotifFields:
         await db_session.commit()
 
         by_key = {
-            entry["motif_key"]: entry
+            entry["key"]: entry
             for entry in (await _first_photo_out(authenticated_api_client, project))["motifs"]
         }
 
@@ -4310,7 +4310,7 @@ class TestTheAdditiveMotifFields:
         item = await _first_photo_out(authenticated_api_client, project)
 
         assert item["motif_assessment"]["excluded_document"] is True
-        by_key = {entry["motif_key"]: entry["strength"] for entry in item["motifs"]}
+        by_key = {entry["key"]: entry["strength"] for entry in item["motifs"]}
         assert by_key["menschen"] == pytest.approx(0.9)
 
     async def test_the_category_fields_are_untouched(

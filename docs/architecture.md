@@ -134,14 +134,18 @@ Verarbeitungs-Cache (Thumbnails).
     lokale Erkennung dieses Motiv überhaupt beurteilen) — das Frontend spiegelt nichts davon. `PUT`/`DELETE
     /photos/{id}/motif-corrections/{motif_key}` (Body `{"applies": bool}`) ersetzt
     `PUT`/`DELETE /photos/{id}/category-override`; der Schlüssel wird gegen
-    `motifs.py::is_motif_key` validiert (`422` sonst), es gibt **kein** `409` mehr — eine
-    Korrektur hängt am Foto, nicht am Lauf. `PhotoOut` trägt statt
+    `motifs.py::is_motif_key` validiert (`422` sonst), und das `409` der fehlenden
+    `PhotoRanking`-Zeile entfällt — eine Korrektur hängt am Foto, nicht am Lauf. `409` bleibt
+    ausschließlich die Abbildung eines `IntegrityError` aus dem Unique-Constraint, damit ein
+    gleichzeitiger `PUT` beider Nutzer auf dasselbe Paar nicht als `500` herauskommt; eine Sperre
+    gibt es dafür nicht. `PhotoOut` trägt statt
     `remote_category`/`category_confidence`/`category_candidates`/`category_override` die Felder
     `motif_assessment: MotifAssessmentOut | None` (`source`, `excluded_document`, `provider`,
     `computed_at`; `None` heißt „noch nicht klassifiziert") und `motifs: list[MotifStrengthOut]`
-    (acht Einträge in Registry-Reihenfolge mit `key`, `strength` als **wirksamer** Stärke,
-    `base_strength` als Wert der Grundlage und `correction: bool | None`; leer, solange keine
-    Kopfzeile existiert). Der Kuratierungsparameter heißt `top_n_per_event`, und `GET
+    (acht Einträge in Registry-Reihenfolge mit `key`, `strength` als **wirksamer** Stärke und
+    `correction: bool | None`; leer, solange keine Kopfzeile existiert). Die überstimmte
+    Modellzahl geht bewusst **nicht** mit: die Oberfläche darf sie neben dem Korrekturwort nicht
+    zeigen, und ein Feld ohne Leser verschiebt nur die Frage, was es bedeutet. Der Kuratierungsparameter heißt `top_n_per_event`, und `GET
     /projects/{id}/curation-candidates` verliert `category_key` — die Partition ist allein das
     Event. `GET /projects/{id}/stats` liefert `motifs` (je Motiv `strong_count`/`medium_count`/
     `weak_count`/`average_strength`), `strength_bands`, `motif_correction_count`,

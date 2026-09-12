@@ -256,7 +256,7 @@ export function MotifStrengthList({
   // Eine ausgeschlossene Einstufung ist nicht von Hand korrigierbar: die Liste bleibt EINSEHBAR,
   // aber ohne Bedienelemente. Kein deaktivierter Schalter, nach dem niemand suchen soll.
   const rowsEditable = editable && !excluded
-  const byKey = new Map((motifs ?? []).map((entry) => [entry.motif_key, entry]))
+  const byKey = new Map((motifs ?? []).map((entry) => [entry.key, entry]))
 
   return (
     <div className="flex flex-col gap-3">

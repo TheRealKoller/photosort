@@ -34,7 +34,7 @@ const LOCAL_ASSESSMENT: MotifAssessmentOut = {
 
 function strengths(overrides: Record<string, Partial<MotifStrengthOut>> = {}): MotifStrengthOut[] {
   return MOTIF_KEYS.map((key) => ({
-    motif_key: key,
+    key,
     strength: 0,
     correction: null,
     ...(overrides[key] ?? {}),
@@ -112,8 +112,8 @@ describe('MotifStrengthList: die Liste', () => {
     // durchfallen, und die Reihenfolge bleibt auf jedem Foto dieselbe.
     renderList({
       motifs: [
-        { motif_key: 'menschen', strength: 0.5, correction: null },
-        { motif_key: 'unerkannt', strength: 0.9, correction: null },
+        { key: 'menschen', strength: 0.5, correction: null },
+        { key: 'unerkannt', strength: 0.9, correction: null },
       ],
     })
 
@@ -127,7 +127,7 @@ describe('MotifStrengthList: die Liste', () => {
 
   it('shows zero for a motif whose strength row is missing entirely', () => {
     // Der Vektor kann unvollstaendig sein - die Liste bleibt achtzeilig.
-    renderList({ motifs: [{ motif_key: 'menschen', strength: 0.5, correction: null }] })
+    renderList({ motifs: [{ key: 'menschen', strength: 0.5, correction: null }] })
 
     expect(within(rowOf('tiere')).getByText('0%')).toBeTruthy()
     expect(rowOf('tiere').hasAttribute('data-motif-corrected')).toBe(false)
@@ -523,7 +523,7 @@ describe('MotifStrengthList: das Glossar', () => {
           },
         ],
       },
-      motifs: [{ motif_key: 'menschen', strength: 0.5, correction: null }],
+      motifs: [{ key: 'menschen', strength: 0.5, correction: null }],
     })
 
     expect(document.querySelector('img')).toBeNull()

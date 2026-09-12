@@ -102,7 +102,7 @@ function motifStrengths(
   overrides: Record<string, Partial<MotifStrengthOut>> = {},
 ): MotifStrengthOut[] {
   return MOTIF_KEYS.map((key) => ({
-    motif_key: key,
+    key,
     strength: 0,
     correction: null,
     ...(overrides[key] ?? {}),

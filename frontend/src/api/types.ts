@@ -250,7 +250,8 @@ export interface MotifAssessmentOut {
  * eingerechnet - das Frontend rechnet nichts nach. `correction` ist `null` ohne Korrekturzeile;
  * auf `!== null` prüfen, nie auf Falsyness (`false` ist eine Aussage). */
 export interface MotifStrengthOut {
-  motif_key: MotifKey
+  /** `key` wie in `MotifOut` - dieselbe Sache heißt an beiden Stellen gleich. */
+  key: MotifKey
   strength: number
   correction: boolean | null
 }

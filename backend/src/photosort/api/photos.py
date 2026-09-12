@@ -314,7 +314,9 @@ class MotifStrengthOut(BaseModel):
     waere eine Modellaussage von genau `1.0` von einer Korrektur nicht zu unterscheiden, und die
     Oberflaeche koennte das Korrekturwort nicht statt der Prozentzahl setzen."""
 
-    motif_key: str
+    # `key` wie in `MotifOut` von `GET /motifs` - dieselbe Sache heisst an beiden Stellen gleich,
+    # und das Frontend schlaegt je Schluessel nach.
+    key: str
     strength: float
     correction: bool | None
 
@@ -837,7 +839,7 @@ def _motifs_out(
     strengths = effective or {}
     return [
         MotifStrengthOut(
-            motif_key=motif_key,
+            key=motif_key,
             strength=strengths[motif_key].strength if motif_key in strengths else 0.0,
             correction=strengths[motif_key].correction if motif_key in strengths else None,
         )
