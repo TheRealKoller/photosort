@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.44.0](https://github.com/TheRealKoller/photosort/compare/v0.43.0...v0.44.0) (2026-09-12)
+
+
+### Features
+
+* **backend:** Events statt Zeitcluster gliedern das Album (Spec 0425) ([#439](https://github.com/TheRealKoller/photosort/issues/439)) ([fbe19c0](https://github.com/TheRealKoller/photosort/commit/fbe19c035ae6a60e84e4ea6177981d3e4e05e6a1))
+* Zeitversatz je Kamera und Projekt korrigieren (Spec 0426) ([#445](https://github.com/TheRealKoller/photosort/issues/445)) ([115beec](https://github.com/TheRealKoller/photosort/commit/115beec599da010c2fd995f2d7fc6a4521f59ef1))
+
 ## [0.43.0](https://github.com/TheRealKoller/photosort/compare/v0.42.0...v0.43.0) (2026-09-11)
 
 
