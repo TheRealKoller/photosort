@@ -77,6 +77,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Lieferkette - Registry-Signaturen pruefen
+        run: npm audit signatures
       # Liest denselben Geltungsbereich aus derselben Konfiguration wie der lokale `npm run
       # format` (/.prettierrc.json, /.prettierignore ueber --ignore-path) - lokaler Befehl und
       # CI-Pruefung koennen nicht auseinanderlaufen. Behebung lokal: scripts/format.sh.
