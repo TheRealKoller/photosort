@@ -14,7 +14,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -1697,6 +1697,77 @@ async def _build_grouping_and_rankings(
                     is_primary=primary_flags[(*partition_key, ranked_photo.photo_id)],
                 )
             )
+
+
+async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
+    """Baut Gliederung und Rangzeilen des LETZTEN ERFOLGREICHEN Kriterien-Laufs neu auf -
+    ausschliesslich aus bereits persistierten Werten, ohne Cloud-Aufruf und ohne Bildverarbeitung.
+
+    Aufgerufen vom Versatz-Endpunkt: Reihenfolge, Anzeige und Ortsherleitung sind mit der
+    Bedeutungsumkehr von `taken_at` sofort richtig, die EVENTS sind dagegen persistierte
+    Lauf-Artefakte (ADR 0087) und waeren es nicht.
+
+    LOESCHEN UND NEUSCHREIBEN statt Umhaengen: `UniqueConstraint(criterion_scoring_run_id,
+    position)` laesst alte und neue Events desselben Laufs nicht gleichzeitig zu.
+
+    Kein erfolgreicher Lauf oder keine einzige Rangzeile: nichts zu tun. Weder `commit` noch
+    eigene Transaktionsgrenze - die gehoert dem Aufrufer, der genau EINMAL committet (Muster
+    `project_deletion`)."""
+    run = (
+        await session.execute(
+            select(CriterionScoringRun)
+            .where(
+                CriterionScoringRun.project_id == project_id,
+                CriterionScoringRun.status == ScanStatus.SUCCESS,
+            )
+            .order_by(CriterionScoringRun.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if run is None:
+        return
+
+    # Die Kandidatenmenge des Laufs sind genau die Fotos seiner Rangzeilen - nicht die aktuellen
+    # Ausschuss-Ueberlebenden: ein zwischenzeitliches Re-Scoring darf die Zusammensetzung dieses
+    # Laufs nicht nachtraeglich veraendern.
+    candidate_ids = set(
+        (
+            await session.execute(
+                select(PhotoRanking.photo_id).where(PhotoRanking.criterion_scoring_run_id == run.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not candidate_ids:
+        return
+
+    values_by_photo_id: dict[int, dict[str, float]] = {}
+    criterion_rows = (
+        await session.execute(
+            select(
+                PhotoCriterionScore.photo_id,
+                PhotoCriterionScore.criterion_key,
+                PhotoCriterionScore.value,
+            ).where(PhotoCriterionScore.photo_id.in_(candidate_ids))
+        )
+    ).all()
+    for photo_id, criterion_key, value in criterion_rows:
+        values_by_photo_id.setdefault(photo_id, {})[criterion_key] = value
+    # Ein Kandidat ohne einen einzigen Kriterien-Wert bleibt Kandidat: er stand in einer Rangzeile
+    # des Laufs und muss auch danach in einer stehen.
+    for photo_id in sorted(candidate_ids):
+        values_by_photo_id.setdefault(photo_id, {})
+
+    await session.execute(
+        delete(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+    )
+    await session.execute(delete(Event).where(Event.criterion_scoring_run_id == run.id))
+    # Das `flush` VOR dem Neuaufbau: sonst kollidieren die neuen Events mit den alten am
+    # Unique-Constraint ueber `(Lauf, position)`.
+    await session.flush()
+
+    await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id)
 
 
 async def run_criterion_scoring(
