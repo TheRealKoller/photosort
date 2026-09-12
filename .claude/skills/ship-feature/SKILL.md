@@ -1,6 +1,6 @@
 ---
 name: ship-feature
-description: Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nachbereitung eines `developer`-Subagenten-Laufs — den `review`-Orchestrator-Skill aufrufen, Findings per SendMessage zurückspielen, Pull Request eröffnen, Copilot-Review anfordern/auswerten. Nutze diesen Skill IMMER, wenn eine `developer`-Subagenten-Antwort mit dem wörtlichen Anker `## Blockiert: Architektur-Konsultation nötig` oder `## Abschlussbericht` zurückkommt (auch `## Abschlussbericht (Folgeauftrag: Findings behoben)`) — das ist der verbindliche Übergabepunkt, an dem `developer` selbst keine weitere Verschachtelungsebene an Subagenten und keinen GitHub-Zugriff hat. Nicht nutzen für die Umsetzung selbst (dafür `developer`) oder das Schärfen einer Idee zur Spec (dafür `spec-writer`).
+description: Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nachbereitung eines `developer`-Subagenten-Laufs — den `review`-Orchestrator-Skill aufrufen, Findings per SendMessage zurückspielen, Pull Request eröffnen, Copilot-Review anfordern/auswerten, nach dem letzten Push auf das CI-Ergebnis warten und bei Rot begrenzt nachbessern lassen. Nutze diesen Skill IMMER, wenn eine `developer`-Subagenten-Antwort mit dem wörtlichen Anker `## Blockiert: Architektur-Konsultation nötig` oder `## Abschlussbericht` zurückkommt (auch `## Abschlussbericht (Folgeauftrag: Findings behoben)` und `## Abschlussbericht (Folgeauftrag: CI-Fehlschlag behoben)`) — das ist der verbindliche Übergabepunkt, an dem `developer` selbst keine weitere Verschachtelungsebene an Subagenten und keinen GitHub-Zugriff hat. Nicht nutzen für die Umsetzung selbst (dafür `developer`) oder das Schärfen einer Idee zur Spec (dafür `spec-writer`).
 
 ---
 
@@ -8,7 +8,7 @@ description: Koordiniert auf oberster Ebene (Orchestrator/Hauptsession) die Nach
 
 **GitHub-Erlaubnisstufe:** lesend und schreibend
 
-**Umfang:** über dem Richtwert von rund 120 Zeilen, weil der Ablauf acht Schritte mit je eigener Bedingung und eigenem Fehlerpfad trägt.
+**Umfang:** über dem Richtwert von rund 120 Zeilen, weil der Ablauf neun Schritte mit je eigener Bedingung und eigenem Fehlerpfad trägt.
 
 Übernimmt genau die Verantwortung, die ein per Agent-Tool gestarteter `developer`-Subagent strukturell nicht selbst wahrnehmen kann: eine weitere Verschachtelungsebene an Subagenten (`architect` bei einer Planungslücke) und GitHub-Schreibzugriff (Push, PR-Erstellung, Copilot-Review). Die eigentliche Review-Prüfung übernimmt der Skill `review` (`.claude/skills/review/SKILL.md`) — dieser Skill hier ruft ihn nur auf und kümmert sich um alles davor und danach. `developer` bleibt für die Dauer dieses gesamten Ablaufs als offener Subagent ansprechbar (SendMessage), es wird für Folgeaufträge kein neuer Lauf gestartet, solange der Subagent noch erreichbar ist.
 
@@ -23,6 +23,8 @@ Eine `developer`-Antwort löst diesen Skill aus, wenn sie einen der folgenden w�
 - `## Abschlussbericht (Folgeauftrag: Findings behoben)` (nach einem SendMessage-Fix-Auftrag) → Schritt 5.
 - `## Abschlussbericht (Folgeauftrag: main-Abgleich)` (nach einem SendMessage-Abgleichsauftrag) → weiter an der Stelle, an der der Abgleich angestoßen wurde: Schritt 6.2 bzw. Schritt 8.1.
 - `## Blockiert: main-Abgleich fehlgeschlagen` → Ablauf anhalten, **nichts pushen**, an Daniel melden (siehe Schritt 6.2).
+- `## Abschlussbericht (Folgeauftrag: CI-Fehlschlag behoben)` (nach einem SendMessage-Fix-Auftrag aus dem Wartepunkt) → zurück nach Schritt 9: Fix-Commit pushen, dann erneut warten.
+- `## Blockiert: CI-Fehlschlag außerhalb der zulässigen Klasse` → Ablauf anhalten, **nichts weiter pushen**, an Daniel melden (siehe Schritt 9).
 
 **Kein exakter Match, aber erkennbar gemeinter Abschluss** (z.B. Tippfehler, abweichende Formatierung, fehlendes Feld): nicht stillschweigend als "fertig, bereit für Review" werten. Lies den Bericht inhaltlich vollständig — wirkt er wie ein vollständiger Abschluss, frag beim `developer`-Subagenten per SendMessage kurz nach, ob es sich um den finalen Bericht handelt und bitte um die Korrektur des Ankers (kostet eine Nachricht, verhindert aber ein falsch interpretiertes Signal); wirkt er unvollständig oder unklar, frag stattdessen inhaltlich nach, was fehlt. Nie raten.
 
@@ -148,6 +150,22 @@ Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetz
 
 **Ausnahmefall (nicht Regelweg):** Wurde ein PR ohne Schritt 8 gemergt (Merge außerhalb des üblichen Ablaufs, abgebrochene Session), ist am Board nichts zu tun — Issue und Karte haben ihren Endzustand über das Keyword und den `Item closed`-Workflow bereits erreicht. Offen bleibt allein die `**Status:**`-Zeile der Spec-Datei in `main`; sie braucht dann doch ein kleines Folge-PR. Genau das soll dieser Schritt vermeiden.
 
+## Schritt 9: Auf das CI-Ergebnis warten — der eine Wartepunkt dieses Ablaufs
+
+Gewartet wird **genau einmal je Lauf**, und zwar hier: nach dem letzten Push (Schritt 8.4) und vor dem Abschlussbericht. Auf einen früheren Push zu warten kostete Wartezeit für ein Ergebnis, das der nächste Push ohnehin überschreibt; der Stand, auf den es ankommt, ist der, den Daniel merged. `CLAUDE.md` verlangt eine grüne CI vor dem Merge — dieser Schritt ist die Stelle, an der der Ablauf das selbst feststellt, statt es Daniel nachverfolgen zu lassen.
+
+1. **Warten:** `pr-pruefstand-abwarten` mit der Pull-Request-Nummer aus Schritt 6. Die Operation liefert einen der vier Ergebniswerte; ihre Zuordnung, die Betriebszahlen und die Ausgangslagen stehen vollständig im Katalogeintrag und werden hier nicht wiederholt.
+2. **`gruen`:** nichts weiter zu tun, weiter zum Abschlussbericht.
+3. **`laeuft-noch`:** dasselbe Warten erneut, bis die Obergrenze des Wartefensters steht; danach ist das Ergebnis `unbestimmt`.
+4. **`unbestimmt`:** Ablauf anhalten, **nichts weiter pushen**, an Daniel melden. Ein unbestimmtes Ergebnis gilt nie als grün.
+5. **`rot`:** Erst den Beleg holen — `pr-pruefstand-lesen` muss mindestens ein `bucket == fail` zeigen. Ohne diesen Beleg ist das Ergebnis nicht `rot`, sondern `unbestimmt` (Punkt 4). Liegt er vor: per `SendMessage` an denselben, weiterhin offenen `developer`-Subagenten, Folgeauftrag „CI-Fehlschlag beheben" (Format und die beiden Anker ausschließlich in `.claude/agents/developer.md` definiert, hier keine Kopie). Er reproduziert den Fehlschlag lokal, bessert nur in der dort beschriebenen Klasse nach, misst den Diff seines Fix-Commits und committet — gepusht wird nicht von ihm.
+
+   Kommt `## Abschlussbericht (Folgeauftrag: CI-Fehlschlag behoben)` zurück: Branch/Status/Diff mechanisch verifizieren wie in Schritt 2, dann den Fix-Commit pushen (`git push`, derselbe Branch, kein neuer PR) und diesen Schritt von vorn beginnen. **Je Runde entsteht so genau ein Commit und genau ein Push**, also genau ein weiterer CI-Lauf. Ein Fix-Diff stößt **keine** erneute Review-Runde an; getragen wird das von der engen Klasse im Folgeauftrag, der Selbstmessung des Subagenten vor dem Commit und Daniels Merge.
+
+   Kommt `## Blockiert: CI-Fehlschlag außerhalb der zulässigen Klasse` zurück, oder ist die im Katalogeintrag festgelegte Zahl der Nachbesserungsrunden erschöpft: anhalten, nichts weiter pushen, an Daniel melden. Nie weiterversuchen. Schlägt `SendMessage` fehl: siehe Abschnitt „Recovery" unten.
+
+Führt der Check pr-titel zum Fehlschlag, ist das kein Fall für den Subagenten: Der Titel wird am offenen Pull Request geändert (Schritt 6.4), die Prüfung läuft danach von selbst erneut.
+
 ## Recovery: `SendMessage` schlägt fehl
 
 Ist das Subagenten-Fenster des `developer`-Laufs bereits geschlossen (z.B. Timeout, Sitzung beendet) und `SendMessage` liefert keine Antwort/schlägt sichtbar fehl — insbesondere relevant bei der ggf. längeren Wartezeit bis zum Copilot-Review in Schritt 7 —, nicht stillschweigend scheitern lassen und nicht die gesammelten Findings verwerfen:
@@ -161,7 +179,9 @@ Schlug `SendMessage` nach einem Abgleich mit Exit `20` fehl, steht das Repositor
 
 ## Abschlussbericht an den Nutzer
 
-Nach Abschluss (PR eröffnet, Copilot-Review ausgewertet oder aus genanntem Grund übersprungen, Spec im PR finalisiert) fasse für den Nutzer zusammen: PR-Link, Ergebnis der Finalisierung aus Schritt 8 (Statuszeile bzw. Fehlermeldung), das vom `review`-Skill gelieferte Protokoll (alle fünf Perspektiven, gelaufen ja/nein mit Begründung, Findings-Kurzfassung inkl. behobener/bewusst nicht behobener), Copilot-Ergebnis (falls gelaufen), sowie jede Stelle, an der du selbst eine technische Detailentscheidung getroffen hast (z.B. bei einem nicht-exakten Anker-Match oder einem SendMessage-Recovery-Fall).
+Nach Abschluss (PR eröffnet, Copilot-Review ausgewertet oder aus genanntem Grund übersprungen, Spec im PR finalisiert, CI-Ergebnis festgestellt) fasse für den Nutzer zusammen: PR-Link, Ergebnis der Finalisierung aus Schritt 8 (Statuszeile bzw. Fehlermeldung), das vom `review`-Skill gelieferte Protokoll (alle fünf Perspektiven, gelaufen ja/nein mit Begründung, Findings-Kurzfassung inkl. behobener/bewusst nicht behobener), Copilot-Ergebnis (falls gelaufen), sowie jede Stelle, an der du selbst eine technische Detailentscheidung getroffen hast (z.B. bei einem nicht-exakten Anker-Match oder einem SendMessage-Recovery-Fall).
+
+Der Bericht führt zusätzlich den Block `## CI-Ergebnis` aus Schritt 9 — Form und Feldnamen im Skill `github-access`, Abschnitt „Das CI-Ergebnis im Bericht"; hier keine Kopie. Er steht auch dann da, wenn der Ablauf in Schritt 9 angehalten hat: Dann trägt er den Endstand, der zum Halt geführt hat.
 
 Blieb ein nativer Übergang aus oder schlug eine Board-Operation fehl, trägt der Bericht zusätzlich denselben Abschnitt, der auch im PR-Body steht — je Zeile die Operations-ID und die Nachhol-Zeile aus ihrem Katalogeintrag:
 

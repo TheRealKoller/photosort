@@ -1562,6 +1562,53 @@ unabsichtliche Einführung eines ungeprüften Paketsatzes, nicht deren Verschlei
 **Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne
 Gate; die Story fasst keine Zeile Anwendungscode an.
 
+### Erweiterung für Spec [`0405`](../features/0405-einheitliches-warten-auf-ci.md) / ADR [`0092`](../decisions/0092-ci-ergebnis-abwarten-und-begrenzt-nachbessern.md) (das CI-Ergebnis wird abgewartet und begrenzt nachgebessert): eine Auswertungsgrenze, deren Zusage die leere Menge ist, und Whitelist-Gleichheit über eine Tabellenspalte
+
+Achte Story auf der Ebene der Repo-Konsistenztests
+(`scripts/tests/test_ci_warten_verankert.py`, Job `demo-scripts`). Zwei Prüfformen entstehen hier
+zum ersten Mal; alles Übrige ist bekanntes Handwerk (Kardinalität, Zeichenoffsets, Einmaligkeit
+einer Konstante im Suchraum, Definitionsstelle über Code-Zäune).
+
+**1. Eine Auswertungsgrenze, deren Zusage die *leere* Feldmenge ist.** Der Katalog führt seit
+ADR 0061 je lesender Operation eine `**Auswertungsgrenze:**`-Zeile mit ihren Feldern. Neu ist eine
+Operation, die ausdrücklich **kein** Feld auswertet — sie blockiert, und ihre Ausgabe wird
+verworfen. Die naheliegende Umsetzung wäre gewesen, die Zeile wegzulassen; dann wäre „wertet
+nichts aus" von „hat keine Auswertungsgrenze angegeben" nicht mehr zu unterscheiden, und der
+Wächter wäre für genau diese Operation leer wahr. Stattdessen steht die Zeile da und trägt null
+Feldnamen: Der Leser liefert das leere Tupel als **Ergebnis**, und eine *fehlende* Zeile ist ein
+**lauter** Fehler mit eigener Meldung. **Regel, allgemein:** Wo die Abwesenheit eines Werts selbst
+die Zusage ist, braucht sie eine eigene Form — sonst ist sie vom Fehlen der Zusage nicht zu
+trennen, und ein Nullbefund entsteht aus dem falschen Grund. Das ist dieselbe Lehre wie bei der
+`**Kein `mcp`-Weg:**`-Zeile, eine Ebene tiefer: nicht „steht irgendwo im Block", sondern „steht als
+Zeile an fester Stelle".
+
+**2. Whitelist-Gleichheit über eine Markdown-Tabellenspalte statt über eine ID-Menge.** Die
+bisherigen Gleichheitszusagen des Repositoriums (`ERWARTETE_OPERATIONEN` im Katalog-Wächter, die
+Operations-IDs in `test_ship_entwurf_skill.py`) lesen Backtick-Token aus **Fließtext**. Hier ist
+der Gegenstand eine Tabelle, und gelesen wird ausschließlich ihre **erste Zelle** je Zeile. Die
+Verengung ist nicht Kosmetik: Die zweite Spalte führt selbst Backticks (Operations-IDs,
+Vergleichsausdrücke), und ein Leser ohne Spaltengrenze zöge jedes davon in das Vokabular — dieselbe
+Falle wie beim Gedankenstrich in der Auswertungsgrenze, nur eine Spalte weiter. Gelesen wird bis
+zur ersten Zeile, die nicht mehr mit `|` beginnt; ein fehlender Tabellenkopf ist ein lauter
+Fehler, kein leeres Vokabular. **Regel, allgemein:** Ein Leser über eine Tabelle bindet sich an
+Kopfzeile *und* Spaltenindex, nie an „irgendwo in der Zeile" — sonst wächst seine Ausbeute mit
+jedem erläuternden Wort, das jemand in eine Nachbarspalte schreibt.
+
+**Was hier bewusst nicht gebaut wird, und warum das eine Regel ist:** keine Abwesenheitsprüfung
+auf **Prosa**. Ein Prüfer, der aus dem Fließtext herausliest, dass ein unbestimmtes Ergebnis den
+Ablauf anhält, wäre grün, weil ein Satz dasteht — er belegt über den anderen Zweig nichts und
+friert nebenbei die Formulierung ein. Ein Prüfer, der „nirgends steht *Warteskript*" verlangt,
+färbte die Dokumentation rot, die er erzwingen soll: In Markdown ist der erklärende Satz nicht vom
+anweisenden zu trennen. Abwesenheit wird deshalb ausschließlich auf **Befehls- und Formzeilen**
+geprüft (eine Option, die auf einer Befehlszeile nicht stehen darf; ein Feldname, der in einer
+Formzeile nicht stehen darf), und die Gegenrichtung — „es entsteht kein Wegwerf-Skript" — über die
+**Anwesenheit** des einen dokumentierten Wegs. Dieselbe Entscheidung wie in
+`test_ship_entwurf_skill.py`, dort für „beim Abbruch wird nicht gefragt".
+
+**Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne
+Gate; die Story fasst keine Zeile Anwendungscode an. Der Abdeckungsanspruch ist die Liste der
+Zusicherungen im Modul-Docstring, keine Prozentzahl.
+
 ## Reine Bash-Wrapper-Skripte ohne Testframework (`scripts/*.sh`)
 
 **Neu seit der Diagramm-Tooling-Richtlinie** ([ADR `0013`](../decisions/0013-diagram-tooling-d2.md)/Spec [`0018`](../features/0018-diagram-tooling-migration.md)) — erstes Bash-Skript im Projekt, `scripts/render-diagrams.sh`. Anders als `scripts/seed-opencloud-demo.py` (Spec 0009, Python mit echter Retry-/Idempotenz-Verzweigung, eigene `pytest`-Suite trotz Lage außerhalb des Coverage-Gates) ist die Verzweigungslogik hier bewusst minimal (ein PATH-Check, eine Schleife über `*.d2`, ein `d2`-Aufruf pro Datei) — genau der Unterschied, der hier eine andere Verifikationsebene rechtfertigt statt automatisch das Python-Muster zu kopieren:

@@ -1,6 +1,6 @@
 ---
 name: ship-entwurf
-description: Liefert aus, was ein abgeschlossener Penpot-Entwurfsrundenlauf im Repository verändert hat — misst den Diff selbst, prüft ihn gegen eine geschlossene Pfad-Zulassungsmenge, committet pfadgenau, gleicht mit `main` ab, pusht und eröffnet einen Pull Request. Nutze diesen Skill, wenn ein Rundenlauf mit der Zeile `## Entwurfslauf abgeschlossen: Pull Request erwünscht` endet, oder wenn Daniel direkt danach fragt ("mach aus dem Entwurfslauf einen Pull Request"). Nicht nutzen für die Nachbereitung eines `developer`-Laufs (dafür `ship-feature`) und nicht, um einen Entwurf selbst zu bauen (dafür `penpot-entwurfsrunden`).
+description: Liefert aus, was ein abgeschlossener Penpot-Entwurfsrundenlauf im Repository verändert hat — misst den Diff selbst, prüft ihn gegen eine geschlossene Pfad-Zulassungsmenge, committet pfadgenau, gleicht mit `main` ab, pusht, eröffnet einen Pull Request und wartet danach auf das Ergebnis des CI-Laufs. Nutze diesen Skill, wenn ein Rundenlauf mit der Zeile `## Entwurfslauf abgeschlossen: Pull Request erwünscht` endet, oder wenn Daniel direkt danach fragt ("mach aus dem Entwurfslauf einen Pull Request"). Nicht nutzen für die Nachbereitung eines `developer`-Laufs (dafür `ship-feature`) und nicht, um einen Entwurf selbst zu bauen (dafür `penpot-entwurfsrunden`).
 ---
 
 # Ship Entwurf — ein Entwurfsrundenlauf endet im Pull Request
@@ -22,8 +22,10 @@ weiterhin hier.
 **Dieser Skill wiederholt aus `ship-feature` nichts, was er nicht selbst ausführt.** Es gibt hier
 keinen offenen Subagenten, an den Findings oder ein Merge-Konflikt zurückgingen, keine
 Perspektivenrunde, kein angefordertes Copilot-Review, keine Spec-Finalisierung und keine
-Recovery — diese Schritte haben in einem Entwurfslauf keinen Gegenstand. Die einzige bewusst
-zugestandene Dopplung ist das Zurücklesen des Board-Werts in Schritt 7.
+Recovery — diese Schritte haben in einem Entwurfslauf keinen Gegenstand. Zwei Schritte führt er
+bewusst doppelt aus, weil er sie selbst ausführt: das Zurücklesen des Board-Werts in Schritt 7 und
+den Wartepunkt in Schritt 8. Beim Wartepunkt liegt der Unterschied in der Zuständigkeit — die
+Nachbesserung passiert hier in der Hauptsession, nicht in einem Subagenten.
 
 ## Schritt 0: Auslöser erkennen
 
@@ -251,6 +253,47 @@ ausgelöst durch die Closing-Zeile aus Schritt 6.
   sichtbar machen soll. Stattdessen `board-status-setzen` mit Wert `Review` in den Abschnitt
   `## Lokal nachzuholen`. Form und Inhalt dieses Abschnitts stehen vollständig im Katalog.
 
+## Schritt 8: Auf das CI-Ergebnis warten
+
+Der Wartepunkt steht hier, als letzter Schritt: nach dem Push aus Schritt 6 — das Board-Rücklesen
+aus Schritt 7 pusht nichts — und vor dem Bericht. Gewartet wird **genau einmal je Lauf**.
+
+1. **Warten:** `pr-pruefstand-abwarten` mit der Nummer des in Schritt 6 eröffneten Pull Requests.
+   Die Operation liefert einen der vier Ergebniswerte; ihre Zuordnung, die Betriebszahlen und die
+   Ausgangslagen stehen vollständig im Katalogeintrag und werden hier nicht wiederholt.
+2. **`gruen`:** nichts weiter zu tun.
+3. **`laeuft-noch`:** dasselbe Warten erneut, bis die Obergrenze des Wartefensters steht; danach
+   ist das Ergebnis `unbestimmt`.
+4. **`unbestimmt`:** anhalten, nichts weiter pushen, an Daniel melden. Ein unbestimmtes Ergebnis
+   gilt nie als grün.
+5. **`rot`:** Erst den Beleg holen — `pr-pruefstand-lesen` muss mindestens ein `bucket == fail`
+   zeigen. Ohne ihn ist das Ergebnis nicht `rot`, sondern `unbestimmt`.
+
+Nachgebessert wird **hier in der Hauptsession**: Es gibt keinen Subagenten, an den das ginge.
+Zulässig ist ausschließlich, was sich lokal mit `./scripts/check.sh` und dem Testlauf
+reproduzieren lässt, und nur an Pfaden, die dieser Branch ohnehin geändert hat. Ein Fehlschlag,
+der sich lokal nicht reproduziert — Image-Bau, Registry-Störung, der `e2e`-Job —, ist kein
+Fix-Fall, sondern ein Befund: anhalten und melden. **Eine Nachbesserung schwächt nie eine
+bestehende Zusicherung ab:** keine Assertion entfernt oder aufgeweicht, keine Erwartungskonstante
+eines Tests geändert, um ihn grün zu bekommen. Ist die Änderung an einer Erwartung der einzige Weg
+zu Grün, hält der Ablauf an und meldet.
+
+Ausgeschlossen bleiben — auch wenn der Branch sie selbst geändert hat — `.github/**`,
+`scripts/tests/**`, `.claude/**` und `CLAUDE.md`, `design/penpot/**` samt
+`frontend/penpot/payload.test.ts`, die Abhängigkeits- und Fixierungsdateien sowie `specs/**`.
+Reine Formatierung aus dem Lauf von `scripts/format.sh` bleibt dort zulässig, weil sie die
+Bedeutung nicht ändert.
+
+**Der Fix-Commit durchläuft Schritt 1 und Schritt 2 vollständig** — gemessene Pfadmenge,
+Zulassungsmenge, Wächter-Halt, Bilddatei-Halt und Beispieldaten-Prüfung —, nicht nur die
+Pfad-Zulassungsmenge. Ohne das wäre ein rotes `frontend/penpot/payload.test.ts` durch eine
+zusätzliche `BEZEICHNER_FREIGABEN`-Zeile grün zu bekommen: Dieselbe Datei, die die Aufweichung
+verhindern soll, läge im selben Diff, und die Nutzlast läuft in Daniels angemeldeter Sitzung.
+
+Je Runde entsteht **ein** Commit und **ein** Push, also genau ein weiterer CI-Lauf; danach beginnt
+dieser Schritt von vorn. Ist die im Katalogeintrag festgelegte Zahl der Nachbesserungsrunden
+erschöpft, heißt das anhalten und melden, nie weiterversuchen.
+
 ## Was dieser Pfad ausdrücklich nicht tut
 
 - **Keine Perspektivenrunde und kein angefordertes Copilot-Review.** Ein Entwurf wird durch
@@ -264,7 +307,7 @@ ausgelöst durch die Closing-Zeile aus Schritt 6.
   einem Entwurfslauf besteht, setzt ihre Statuszeile als gewöhnliche lokale Textänderung in den
   Commits des Laufs.
 - **Kein Merge, kein Schließen eines Issues, kein `Done`.** Der Pfad endet am eröffneten Pull
-  Request.
+  Request und dem festgestellten CI-Ergebnis; die Freigabe bleibt bei Daniel.
 - **Kein Löschen, kein Zugriff auf die Penpot-Datei.** Dieser Pfad berührt das Repository, nicht
   die Design-Datei.
 
@@ -278,7 +321,10 @@ Am Ende im Chat, in Worten:
 - eine etwaige Abweichung zwischen der Zeile des Übergabeblocks und der Messung;
 - die Zeile zum Abgleich mit `main`, falls er etwas übernommen hat, bzw. die Konfliktpfade
   einzeln, falls er angehalten hat;
-- der zurückgelesene Board-Wert, falls es eine Story gab.
+- der zurückgelesene Board-Wert, falls es eine Story gab;
+- der Block `## CI-Ergebnis` aus Schritt 8 — Form und Feldnamen im Skill `github-access`,
+  Abschnitt „Das CI-Ergebnis im Bericht"; hier keine Kopie. Er steht auch dann da, wenn der
+  Ablauf in Schritt 8 angehalten hat, und trägt dann den Endstand, der zum Halt geführt hat.
 
 Blieb ein nativer Übergang aus oder schlug eine Board-Operation fehl, trägt der Bericht
 zusätzlich denselben Abschnitt, der auch im Pull-Request-Body steht — je Zeile die Operations-ID

@@ -503,6 +503,96 @@ ausschließlich gegen den eigenen, selbst eröffneten Pull Request.
 gh pr view <MMM> --repo TheRealKoller/photosort --json closingIssuesReferences,baseRefName
 ```
 
+### `pr-pruefstand-abwarten` — blockierend auf das Ergebnis des CI-Laufs warten
+
+**Wege:** `gh`
+**Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
+**Auswertungsgrenze:** keine Felder — ausgewertet wird ausschließlich der Ergebniswert aus der
+Tabelle unten. Die Ausgabe wird verworfen, nicht gelesen und nicht gemeldet: Ihre Form ist
+darstellungsabhängig, jede Auswertung an ihr wäre eine Annahme über ein Terminal, und aus einem
+Aufruf, der nichts liest, gelangt weder Fremdtext noch ein Credential in Kontext oder Protokoll.
+**Kein `mcp`-Weg:** Ein MCP-Werkzeug ist ein einzelner Aufruf mit einer Antwort und kann nicht
+warten; ein aus MCP-Aufrufen gebautes Wiederholverfahren wäre genau die Eigenentwicklung, die
+ADR 0092 ausschließt.
+**`gh`:**
+
+```bash
+timeout 540 gh pr checks <MMM> --repo TheRealKoller/photosort --watch --fail-fast --interval 30 >/dev/null 2>&1
+```
+
+`--required` wird **nicht** gesetzt: Solange kein Check in der Branch Protection als erforderlich
+eingetragen ist, filtert die Option alles weg, und die Prüfung wäre leer wahr.
+
+Die Ausgabe wird umgeleitet und verworfen, **nie** in eine Pipe geleitet — hinter einer Pipe
+stünde der Exit-Code des letzten Glieds, und ein Fehlschlag ginge als Erfolg durch. Der
+Ergebniswert entsteht am Exit-Code des `gh`-Prozesses selbst:
+
+| Ergebniswert | Entsteht aus | Folge |
+|---|---|---|
+| `gruen` | Exit `0`, und sonst nichts | der Ablauf schließt regulär ab |
+| `rot` | Exit ≠ 0 **und** `pr-pruefstand-lesen` zeigt mindestens ein `bucket == fail` | Nachbesserung im Ablauf-Skill |
+| `laeuft-noch` | Exit `124` des `timeout`-Aufrufs, oder Exit `8` | Wartefenster erneut, bis seine Obergrenze steht |
+| `unbestimmt` | alles andere | der Ablauf hält an und meldet |
+
+`unbestimmt` umfasst namentlich: Exit `2` bzw. `bucket == cancel` (ein abgebrochener Lauf ist kein
+bestandener), Exit `4`, jeden unbekannten Exit-Code, „kein Check am Head-Commit" nach Ablauf der
+Anlaufschonfrist, ein nicht verfügbares `gh` und eine Operation, die auf allen ihren Wegen
+gescheitert ist. **Ein unbestimmtes Ergebnis gilt nie als grün**, und `rot` wird nie aus einem
+Exit-Code allein geschlossen — Exit `1` ist zweideutig und steht auch für „noch kein Check
+gemeldet". `bucket == skipping` ist kein Fehlschlag und wird toleriert. Ein `unbestimmt`, das aus
+einem nicht tragenden Zugang entsteht, wird **nicht** durch ein zusätzlich beschafftes Credential
+behoben.
+
+**Die Betriebszahlen, jede an genau dieser einen Stelle** — was es nur einmal gibt, kann nicht
+driften. Läuft ein Fenster regelmäßig ab, obwohl der Lauf gesund ist, wird die Zahl hier erhöht,
+nicht je Ablauf:
+
+- **Einzelaufruf:** das `timeout` der Befehlszeile oben, mit Reserve unter der
+  600-Sekunden-Deckelung der Werkzeugumgebung. Ein abgelaufener Einzelaufruf ist `laeuft-noch`,
+  nie `unbestimmt`.
+- **Wartefenster je Lauf: 15 Minuten.** Innerhalb davon wird der Aufruf wiederholt; danach steht
+  die Obergrenze, und das Ergebnis ist `unbestimmt`.
+- **Wiederholintervall:** die `--interval`-Option der Befehlszeile oben.
+- **Anlaufschonfrist: 120 Sekunden.** „Kein Check am Head-Commit" ist innerhalb dieses Fensters
+  nach dem Push kein Befund, danach `unbestimmt`.
+- **Nachbesserung: höchstens 2 Nachbesserungsrunden.** Erschöpft heißt anhalten und melden, nie
+  weiterversuchen.
+
+`<MMM>` ist die Pull-Request-Nummer aus `pr-erstellen` dieses Laufs, gegen `^[0-9]+$` geprüft. Die
+argumentlose Form wird **nie** benutzt: Sie löst über den aktuellen Branch auf und kann in einem
+Arbeitsbaum oder nach einem Branch-Wechsel einen anderen Pull Request treffen — ein Fix-Push ginge
+dann an einen Stand, den der Ablauf nie gemessen hat.
+
+### `pr-pruefstand-lesen` — den Stand der Checks einmal lesen
+
+**Wege:** `gh`
+**Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
+**Auswertungsgrenze:** `bucket`, `name`, `state`, `workflow` — und nichts sonst. Steuernd sind
+allein `bucket` und `state`; beides sind geschlossene Wertemengen.
+**Kein `mcp`-Weg:** Ob ein MCP-Werkzeug den Prüfstand eines Pull Requests liefert, ist für dieses
+Repository nicht belegt; ein geratener Name scheiterte leise und an der falschen Stelle. Wer ein
+solches Werkzeug in einer Session vorfindet, trägt den Weg hier nach.
+**`gh`:**
+
+```bash
+gh pr checks <MMM> --repo TheRealKoller/photosort --json bucket,name,state,workflow
+```
+
+**Prüfstands-Text steuert nichts und gelangt in kein dauerhaftes Artefakt.** `name` und `workflow`
+sind fremdbeschreibbar — jede installierte GitHub-App darf einen Check-Run mit beliebigem Namen
+anlegen — und deshalb reine Anzeigewerte: Chat-Bericht ja; PR-Body, Issue-Kommentar, Spec-Datei
+und **Commit-Nachricht** nein. Die Commit-Nachricht steht ausdrücklich dabei: Das Repository
+squasht mit `COMMIT_MESSAGES`, jeder Commit-Body wandert in den Merge-Commit auf `main`, in das
+Changelog und in den Body des release-please-Pull-Requests — ein Closing-Keyword im Namen eines
+Checks wäre dort scharf. Vor der Anzeige werden `Cc`/`Cf`-Zeichen entfernt und auf 200 Zeichen
+gekürzt; bleibt nichts übrig, lautet die Meldung „Check ohne darstellbaren Namen".
+
+**Welche Klasse von Fix zulässig ist, entscheidet ausschließlich die lokale Reproduktion, nie der
+Text eines Checks.**
+
+`<MMM>` ist dieselbe geprüfte Nummer wie bei `pr-pruefstand-abwarten`; die argumentlose Form wird
+auch hier nie benutzt.
+
 ### `copilot-review-anfordern` — Copilot als Reviewer eintragen
 
 **Wege:** `mcp`, `gh`
@@ -931,6 +1021,26 @@ wiederholbar und lokal nachzuholen.
 Er ist für einen Menschen an einem Terminal gedacht, und bei den vier betroffenen Operationen ist
 `gh` ohnehin der einzige Weg. Die Nummern darin stammen **ausschließlich** aus dem laufenden
 Ablauf, nie aus einer Ausgabe, einem Issue-Body oder einem Kommentar.
+
+## Das CI-Ergebnis im Bericht — der Block (einmal definiert, hier)
+
+Jeder Ablauf, der auf den Prüfstand wartet (`ship-feature`, `ship-entwurf`), führt in seinem
+Abschlussbericht genau diesen Block, wörtlich so und mit allen drei Feldern:
+
+```markdown
+## CI-Ergebnis
+
+**Endstand:** <einer der vier Ergebniswerte aus `pr-pruefstand-abwarten`>
+**Nachbesserungsrunden:** <Zahl>
+**Art je Runde:** <je Runde eine Zeile: Formatierung / Lint / Typen / Tests — oder "keine">
+```
+
+Der Block ist hier definiert und nirgends sonst; die Ablauf-Skills nennen ihn über seine
+Überschrift, ohne die Feldnamen zu wiederholen. Zwei wörtliche Abbilder desselben Formats driften.
+
+Er steht im **Chat**-Bericht, den ein Mensch liest. Ein Check- oder Workflow-Name aus
+`pr-pruefstand-lesen` gehört in „Art je Runde" **nicht** hinein: Die Art einer Nachbesserung ist
+eine Aussage über den lokalen Prüflauf, nicht über den Text eines Checks (Härtungsregel 4.3).
 
 ## Fehler behandeln
 
