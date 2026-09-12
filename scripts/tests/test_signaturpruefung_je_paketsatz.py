@@ -660,6 +660,11 @@ def ohne_schritte_nach_der_installation(text: str, job_name: str) -> str:
     return _zeilen_ersetzen(text, installation.ende + 1, letzter.ende, [])
 
 
+# Der Teilstring, der die Befundklasse "Job-Grenze" von der Klasse "falscher Nachfolger"
+# unterscheidet. Eine Gegenprobe, die nur auf "irgendein Befund" prueft, waere auch dann gruen,
+# wenn ihre Mutation an einer zweiten Stelle anschlaegt.
+BEFUND_JOB_GRENZE = "letzte Schritt des Jobs"
+
 SIGNATURSCHRITT_ZEILEN = (
     "      - name: Lieferkette - Registry-Signaturen pruefen",
     f"        run: {SIGNATUR_NUTZLAST}",
@@ -935,15 +940,42 @@ def test_npm_ci_als_letzter_schritt_eines_jobs_ist_ein_befund_und_kein_indexerro
     assert job.schritte[-1].ist_installation
     befunde = nachbarschafts_befunde([job])
 
-    assert befunde and "letzte Schritt des Jobs" in befunde[0], befunde
+    assert befunde and BEFUND_JOB_GRENZE in befunde[0], befunde
 
 
 def test_ein_signaturschritt_am_anfang_des_folgejobs_wird_gemeldet() -> None:
-    """Die Job-Grenze bricht die Nachbarschaft, auch wenn der Schritt textlich unmittelbar folgt."""
-    ohne = ohne_schritt(ci_text(), "frontend", signatur=True)
-    mutiert = mit_zeilen_vor_dem_ersten_schritt(ohne, "demo-scripts", SIGNATURSCHRITT_ZEILEN)
+    """Die Job-Grenze bricht die Nachbarschaft, auch wenn KEIN Schritt dazwischen liegt.
 
-    assert nachbarschafts_befunde(jobs_aus_text(mutiert))
+    Die Mutation stellt genau diese Lage her: `npm ci` wird der letzte Schritt des
+    `frontend`-Jobs, und der Signaturschritt wird der erste des Folgejobs. In der Schrittfolge
+    des Workflows sind beide damit unmittelbare Nachbarn - zwischen ihnen steht nur die
+    Job-Kopfzeile. Bliebe der Rest des `frontend`-Jobs stehen, meldete der Befund die
+    dazwischenliegenden Schritte, und der Test belegte die Job-Grenze gerade nicht.
+    """
+    ohne_signatur = ohne_schritt(ci_text(), "frontend", signatur=True)
+    gekuerzt = ohne_schritte_nach_der_installation(ohne_signatur, "frontend")
+    mutiert = mit_zeilen_vor_dem_ersten_schritt(gekuerzt, "demo-scripts", SIGNATURSCHRITT_ZEILEN)
+
+    # Die Mutation hat getan, was sie behauptet - sonst belegte die Assertion unten etwas anderes.
+    schrittfolge = [
+        (job.name, schritt) for job in jobs_aus_text(mutiert) for schritt in job.schritte
+    ]
+    installation = next(
+        index
+        for index, (name, schritt) in enumerate(schrittfolge)
+        if name == "frontend" and schritt.ist_installation
+    )
+    signatur = next(
+        index
+        for index, (name, schritt) in enumerate(schrittfolge)
+        if name == "demo-scripts" and schritt.ist_signaturpruefung
+    )
+    assert signatur == installation + 1, "kein unmittelbares Nachbarpaar in der Schrittfolge"
+    assert schrittfolge[installation][0] != schrittfolge[signatur][0], "keine Job-Grenze dazwischen"
+
+    befunde = nachbarschafts_befunde([_job(mutiert, "frontend")])
+
+    assert len(befunde) == 1 and BEFUND_JOB_GRENZE in befunde[0], befunde
 
 
 def test_ein_fiktiver_dritter_paketsatz_wird_als_fehlend_gemeldet() -> None:
