@@ -543,6 +543,7 @@ async def _create_photos(
             etag=demo_etag(spec.slug, index),
             content_length=len(image_bytes),
             taken_at=demo_taken_at(index),
+            taken_at_original=demo_taken_at(index),
             # Beide Felder oder keines - nie eine halbe Koordinate (Paar-Invariante von
             # `extract_gps`; die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie
             # schriebe).

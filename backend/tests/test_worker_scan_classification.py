@@ -31,6 +31,7 @@ def _existing_photo(relative_path: str, etag: str) -> Photo:
         etag=etag,
         content_length=10,
         taken_at=MODIFIED,
+        taken_at_original=MODIFIED,
         last_modified=MODIFIED,
     )
 

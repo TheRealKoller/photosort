@@ -350,6 +350,7 @@ async def _make_foreign_project(
         etag="echt-0001",
         content_length=1234,
         taken_at=datetime(2019, 7, 1, 12, 0, 0),
+        taken_at_original=datetime(2019, 7, 1, 12, 0, 0),
         last_modified=datetime(2019, 7, 1, 12, 0, 0),
     )
     session.add(photo)
@@ -833,6 +834,7 @@ def _write_rows(database_url: str, cache_dir: Path, project_names: list[str]) ->
                     etag=f"vorzustand-{offset}",
                     content_length=len(image_bytes),
                     taken_at=datetime(2020, 1, 1, 12, 0, 0),
+                    taken_at_original=datetime(2020, 1, 1, 12, 0, 0),
                     last_modified=datetime(2020, 1, 1, 12, 0, 0),
                 )
                 session.add(photo)

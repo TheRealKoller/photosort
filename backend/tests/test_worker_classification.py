@@ -86,6 +86,7 @@ async def _add_candidate_photo(
         etag=f"etag-{path}",
         content_length=100,
         taken_at=now,
+        taken_at_original=now,
         last_modified=now,
     )
     session.add(photo)

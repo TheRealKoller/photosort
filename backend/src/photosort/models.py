@@ -51,6 +51,9 @@ class Project(Base):
     remote_category_classification_runs: Mapped[list[RemoteCategoryClassificationRun]] = (
         relationship(back_populates="project", cascade="all, delete-orphan")
     )
+    cameras: Mapped[list[ProjectCamera]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 class RatingStatus(enum.StrEnum):
@@ -67,6 +70,44 @@ class CriterionSource(enum.StrEnum):
     CLOUD = "cloud"
 
 
+class ProjectCamera(Base):
+    """Eine Kamera, wie sie in GENAU DIESEM Projekt vorkommt, samt ihrem Zeitversatz.
+
+    PROJEKTEIGEN, nicht projektuebergreifend (ADR 0088, Punkt 2): "der Versatz gilt nur in diesem
+    Projekt" ist damit STRUKTURELL wahr - es gibt keine Zeile, die zwei Projekte sehen koennten,
+    und kein Prädikat, das in jeder Abfrage ausgeschrieben stehen muesste. Dieselbe Kamera in zwei
+    Projekten sind zwei Zeilen mit getrennten Versaetzen.
+
+    Die Zeilen entstehen ausschliesslich beim Scan aus den Fotos selbst; der Nutzer traegt keine
+    Kamera ein. Identitaet ist Hersteller UND Modell, zeichengenau und OHNE Seriennummer - zwei
+    baugleiche Gehaeuse im selben Projekt sind eine Kamera und teilen einen Versatz.
+
+    `offset_minutes` ist eine vorzeichenbehaftete Ganzzahl Minuten, kein `timedelta` und keine
+    Zeitzonenzugehoerigkeit: abgebildet wird eine feste Zeitspanne, keine Regel mit Sommer-/
+    Winterzeit. Ober- und Untergrenze werden am Endpunkt durchgesetzt
+    (`cameras.py::MAX_TIME_OFFSET_MINUTES`), nicht hier.
+
+    KEHRSEITE, die der eine Schreibpfad haelt und ein Test prueft: `Photo.camera_id` muss auf eine
+    Zeile DESSELBEN Projekts zeigen - der Scan loest die Kamera innerhalb des Projekts des Fotos
+    auf."""
+
+    __tablename__ = "project_cameras"
+    __table_args__ = (
+        UniqueConstraint("project_id", "make", "model", name="uq_project_camera_make_model"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    # Beide bereits normalisiert (cameras.py::camera_identity): getrimmt, innere Leerraumfolgen
+    # zusammengezogen, ohne Zeichen der Unicode-Kategorien Cc/Cf. Ein LEERER String heisst "dieses
+    # Feld war nicht vorhanden"; beide leer gibt es nicht - dann bleibt `Photo.camera_id` NULL.
+    make: Mapped[str]
+    model: Mapped[str]
+    offset_minutes: Mapped[int] = mapped_column(default=0, server_default="0")
+
+    project: Mapped[Project] = relationship(back_populates="cameras")
+
+
 class Photo(Base):
     __tablename__ = "photos"
     __table_args__ = (
@@ -78,7 +119,54 @@ class Photo(Base):
     relative_path: Mapped[str]
     etag: Mapped[str]
     content_length: Mapped[int]
+    # DIE KORRIGIERTE ZEIT - "die Zeit, mit der die Anwendung arbeitet" (ADR 0088, Punkt 1). Der
+    # Name und die Rolle sind unveraendert, der INHALT hat sich mit Spec 0426 gedreht: hier steht
+    # seither die um den Kamera-Versatz verschobene Zeit, nicht mehr die aufgezeichnete.
+    #
+    # INVARIANTE, im Schreibpfad gehalten: `taken_at == taken_at_original + offset_minutes` der
+    # Kamera dieses Fotos in genau diesem Projekt; ohne Kamera oder bei `offset_minutes = 0` sind
+    # beide Werte gleich. Es gibt GENAU ZWEI Schreibstellen - `worker.py::_process_scan_block` und
+    # `api/cameras.py` -, beide ueber die eine reine Funktion `cameras.py::shifted`. Eine dritte
+    # gibt es nicht; ein struktureller Waechtertest in test_models.py haelt das fest, weil eine
+    # dritte Schreibstelle keinen Verhaltenstest roeten wuerde, solange sie den Wert irgendwie
+    # setzt.
+    #
+    # Deshalb aendert sich an KEINER Lesestelle etwas: `assign_clusters`, `build_events`,
+    # `infer_locations`, die SQL-Sortierung der Fotoliste und `min`/`max` der Statistik rechnen
+    # ohne eine Zeile Aenderung mit dem korrigierten Wert. Gruppierung, Reihenfolge und
+    # Ortsuebernahme haben KEINE eigene Korrekturlogik.
     taken_at: Mapped[datetime]
+    # Die AUFGEZEICHNETE Zeit: EXIF `DateTimeOriginal`, sonst der Rueckfall auf `last_modified`.
+    #
+    # NOT NULL und BEWUSST OHNE jeden Default, weder Python- noch server-seitig: dies ist die
+    # einzige Kopie der aufgezeichneten Zeit, und ein unveraendertes, bereits geprueftes Foto wird
+    # nie wieder aus EXIF gelesen - ein Schreibpfad, der die Spalte vergisst, soll LAUT an der
+    # NOT-NULL-Bedingung scheitern statt still einen falschen Wert zu erben. Geschrieben wird
+    # ausschliesslich aus der QUELLE, NIE aus `taken_at`, und nach dem Setzen nie verschoben.
+    taken_at_original: Mapped[datetime]
+    # Die Kamera dieses Fotos innerhalb DIESES Projekts. `NULL` heisst "Kamera nicht bestimmbar"
+    # und ist ein regulaerer Zustand ohne Versatz, kein Fehler: die wirksame Zeit ist dann gleich
+    # der aufgezeichneten, das Foto erscheint in keiner Kameraliste, und jeder Lesepfad antwortet
+    # fuer es fehlerfrei.
+    #
+    # Der Fremdschluessel ist EXPLIZIT BENANNT: ein per `batch_alter_table` unbenannt angelegter
+    # Fremdschluessel ist im `downgrade()` unter SQLite nicht droppbar, und `Base.metadata` traegt
+    # keine `naming_convention`, aus der ein Name entstuende.
+    camera_id: Mapped[int | None] = mapped_column(
+        ForeignKey("project_cameras.id", name="fk_photos_camera_id"), default=None
+    )
+    # Der Merker "EXIF dieses Fotos wurde auf die Kamera-Angabe geprueft". Ein Foto ohne ihn wird
+    # beim naechsten Scan trotz unveraenderten Etags erneut gelesen - nur das EXIF-Fenster, ohne
+    # Voll-Download und ohne Thumbnail-Neuerzeugung. Das ist die einmalige Nachhol-Runde fuer
+    # Bestandsfotos; ohne sie bliebe die Kameraliste in bestehenden Projekten leer.
+    #
+    # Gesetzt wird er AUCH OHNE FUND (die Datei nennt keine Kamera) - sonst laese jeder weitere
+    # Scan den gesamten Bestand erneut.
+    #
+    # `server_default` in Migration UND Modell, damit beide dieselbe DDL lesen: fehlt die
+    # Modellseite, bleibt alles gruen und der erste Schreibpfad, der die Spalte nicht nennt,
+    # bricht produktiv.
+    camera_probed: Mapped[bool] = mapped_column(default=False, server_default="false")
     # Dezimalgrad aus dem EXIF-GPSInfo-IFD (opencloud/exif.py::extract_gps). `None` heißt "kein
     # Ort bekannt" - es gibt NIE eine halbe Koordinate: scheitert eine Komponente, sind beide
     # Felder `None` (Paar-Invariante von extract_gps). Volle EXIF-Präzision, keine Rundung beim
@@ -96,6 +184,10 @@ class Photo(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     project: Mapped[Project] = relationship(back_populates="photos")
+    # Ohne `back_populates`: die Gegenrichtung (alle Fotos einer Kamera) wird nirgends gebraucht,
+    # und eine Sammlung an `ProjectCamera` verleitete dazu, die Fotoanzahl im Python zu zaehlen
+    # statt in der einen `group_by`-Abfrage der Kameraliste.
+    camera: Mapped[ProjectCamera | None] = relationship()
     ratings: Mapped[list[Rating]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )

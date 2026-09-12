@@ -154,6 +154,7 @@ async def _add_photo(
         etag=f"etag-{project.id}-{path}",
         content_length=content_length,
         taken_at=moment,
+        taken_at_original=moment,
         last_modified=moment,
     )
     session.add(photo)

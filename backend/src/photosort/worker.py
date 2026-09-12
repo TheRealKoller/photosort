@@ -417,7 +417,11 @@ async def _process_scan_block(
                 relative_path=item.relative_path,
                 etag=item.entry.etag or "",
                 content_length=item.entry.content_length or 0,
-                taken_at=last_modified,  # vorlaeufig, wird unten nach dem gather() ersetzt
+                # Beide vorlaeufig, beide werden unten nach dem gather() ersetzt - erst dort
+                # steht der EXIF-Wert fest. `taken_at_original` ist NOT NULL ohne Default und
+                # muss deshalb schon hier einen Wert tragen.
+                taken_at=last_modified,
+                taken_at_original=last_modified,
                 last_modified=last_modified,
             )
             session.add(photo)

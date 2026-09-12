@@ -53,6 +53,7 @@ async def _make_photo(
         etag="etag-1",
         content_length=100,
         taken_at=taken_at,
+        taken_at_original=taken_at,
         last_modified=taken_at,
     )
     session.add(photo)
@@ -2869,6 +2870,7 @@ async def _make_photo_at(
         etag=f"etag-{path}",
         content_length=100,
         taken_at=taken_at,
+        taken_at_original=taken_at,
         last_modified=taken_at,
         gps_lat=None if gps is None else gps[0],
         gps_lon=None if gps is None else gps[1],

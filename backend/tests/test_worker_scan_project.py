@@ -222,6 +222,7 @@ async def test_scan_updates_photo_on_etag_change(db_session: AsyncSession, tmp_p
             etag="old-etag",
             content_length=10,
             taken_at=modified,
+            taken_at_original=modified,
             last_modified=modified,
         )
     )
@@ -254,6 +255,7 @@ async def test_scan_skips_photo_with_unchanged_etag(
             etag="same-etag",
             content_length=10,
             taken_at=modified,
+            taken_at_original=modified,
             last_modified=modified,
         )
     )
@@ -285,6 +287,7 @@ async def test_scan_removes_photos_no_longer_present(
             etag="etag",
             content_length=10,
             taken_at=modified,
+            taken_at_original=modified,
             last_modified=modified,
         )
     )
@@ -590,6 +593,7 @@ async def test_scan_regenerates_thumbnails_when_etag_changes(
             etag="old-etag",
             content_length=10,
             taken_at=modified,
+            taken_at_original=modified,
             last_modified=modified,
         )
     )
@@ -1013,6 +1017,7 @@ async def test_scan_resets_a_stored_coordinate_when_the_changed_file_no_longer_c
             etag="old-etag",
             content_length=10,
             taken_at=modified.replace(tzinfo=None),
+            taken_at_original=modified.replace(tzinfo=None),
             gps_lat=48.858080555555556,
             gps_lon=2.2946944444444446,
             last_modified=modified.replace(tzinfo=None),
@@ -1048,6 +1053,7 @@ async def test_scan_replaces_a_stored_coordinate_when_the_changed_file_carries_a
             etag="old-etag",
             content_length=10,
             taken_at=modified.replace(tzinfo=None),
+            taken_at_original=modified.replace(tzinfo=None),
             gps_lat=-33.8568,
             gps_lon=151.2153,
             last_modified=modified.replace(tzinfo=None),
@@ -1170,6 +1176,7 @@ async def _make_second_project_with_photo(
         etag="etag-b",
         content_length=10,
         taken_at=moment,
+        taken_at_original=moment,
         last_modified=moment,
     )
     session.add(photo)
@@ -1234,6 +1241,7 @@ async def test_cache_files_of_a_photo_removed_during_the_scan_go_in_the_same_run
         etag="etag-weg",
         content_length=10,
         taken_at=modified,
+        taken_at_original=modified,
         last_modified=modified,
     )
     db_session.add(photo)
@@ -1263,6 +1271,7 @@ async def test_cache_files_under_the_previous_etag_go_after_an_etag_change(
         etag="old-etag",
         content_length=10,
         taken_at=modified,
+        taken_at_original=modified,
         last_modified=modified,
     )
     db_session.add(photo)
