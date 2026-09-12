@@ -11,7 +11,8 @@ ersetzt die Soll-Struktur-Datei, die ADR
 Abschnitt 2 bewusst nicht anlegt; ohne sie wäre das Register nach einem Instanzverlust nicht
 wieder aufbaubar. Und die Wächtertabelle samt Sichtprüfungsliste tritt an die Stelle
 automatisierter Deckung, die es hier nicht geben kann: Kein Test dieses Repositoriums kann die
-Design-Datei lesen.
+Design-Datei lesen. Dazu kommen die beim Bau gemessenen Eigenheiten der Plugin-API — sie stehen
+hier, weil das Register nach einem Instanzverlust allein aus dieser Spec wieder entsteht.
 
 ## Ziel
 
@@ -217,6 +218,12 @@ Die Schaltfläche steht oben links: Sie ist mit 30 Zellen plus Größenreihe das
 der häufigste Nachschlagefall. Symbolblock und Lücken-Block stehen unter den drei Spalten, in
 dieser Reihenfolge.
 
+**Die Register-Zone liegt oberhalb des Bestands, nicht rechts davon.** Der Bestand reicht bis
+x ≈ 18.830 — allein das Variantenbrett der Schaltfläche ist rund 17.960 px breit. Rechts daneben
+wäre das Register nur nach einem sehr weiten Weg erreichbar und als „ein Ort, zwei Zonen" nicht
+mehr wahrnehmbar. Beide Zonen bleiben getrennt und je mit Überschrift versehen; am Bestand ändert
+sich dadurch nichts.
+
 ### Beschriftungshierarchie: fünf getrennte Größenstufen
 
 Die Hierarchie trägt über die **Schriftgröße**, nicht über die Textfarbstufen — `color.text` und
@@ -226,10 +233,15 @@ ihnen nicht allein aufbauen.
 | Ebene | Token | Farbe |
 |---|---|---|
 | Seitentitel „Bausteine — Zustände" | `text.2xl` | `color.text-h` |
-| Zonenüberschrift („Bestand …" / „Register …") | `text.xl` | `color.text-h` |
+| Zonenüberschrift („Bestand …" / „Register …") und Gruppenüberschrift („Bedienelemente", „Anzeigen", „Behälter und Verlauf") | `text.xl` | `color.text-h` |
 | Rasterüberschrift (Bausteinname) | `text.lg` | `color.text-h` |
 | Spalten- und Zeilenbeschriftung | `text.sm` | `color.text-muted` |
 | Leerzellen-Vermerk, Bewegungsvermerk, Symbolname | `text.xs` | `color.text-muted` |
+
+Zonen- und Gruppenüberschrift teilen bewusst **eine** Stufe: Vier durch die Schriftgröße klar
+getrennte Ebenen (40 · 24 · 20 · 14 · 12 px) sind lesbarer als fünf, von denen zwei sich nur in
+der Textfarbe unterschieden — und genau diese Unterscheidung trägt laut Design-System nicht. Die
+Gruppenüberschrift ist durch ihre Stellung über ihrer Spalte eindeutig.
 
 Die Verbundtokens tragen Schriftfamilie, Größe, Zeilenhöhe und Gewicht bereits — es wird kein
 Gewicht, keine Kapitälchen- und keine Kursivstellung zusätzlich gesetzt.
@@ -248,6 +260,11 @@ Kontrast-Vorfall und zugleich die Bedingung, unter der ein transparenter Baustei
 - Der Zellstrich ist von einem Bedienelement-Umriss unterscheidbar: `color.separator` (#474E68)
   gegen `color.border-control` (#727891). Die Ausprägung `outline` bleibt dadurch als solche
   erkennbar und wird nicht mit der Zellgrenze verwechselt.
+
+**Die Instanz sitzt linksbündig mit festem Innenabstand**, nicht zentriert. Zentrieren bräuchte
+die tatsächliche Instanzbreite, und die steht im bauenden Aufruf noch nicht fest — ein dort
+gelesenes Maß wäre falsch. Linksbündig ist für alle Zellen dieselbe Ausrichtung und erfüllt
+„gleich ausgerichtet", ohne von einem noch nicht gerechneten Wert abzuhängen.
 
 ### Leerzelle: eine Aussage, kein Versäumnis
 
@@ -390,6 +407,14 @@ Daniel beurteilt das in der geöffneten Datei. **Ein Bildbeleg am Pull Request i
 Deckung** (die Kommandozeile hängt keine Bilder an); die Sichtprüfung selbst ist Pflicht und wird
 in der PR-Beschreibung als offener Handgriff benannt, nicht als erledigt gemeldet.
 
+**Ein Formexport einer Registerzelle taugt für die Kontrastbeurteilung nicht** und ist dafür auch
+nicht zu verwenden: `export_shape` gibt ein Zellbrett **ohne den Seitengrund** aus, weil das Brett
+selbst keine Fläche trägt. Eine transparente Zelle erscheint dort als leerer Rahmen, und ein
+heller Text darin wird unsichtbar — beim ersten Lauf sah die Zelle `button/ghost` deshalb leer
+aus, obwohl ihre Beschriftung vorhanden und an `color.text` gebunden war. Wer den Kontrast
+beurteilen will, sieht in der geöffneten Datei hin oder exportiert einen Block **mit** Fläche
+(etwa den Lücken-Block auf `color.surface`).
+
 - [ ] Zwölf Raster mit Überschrift; Leserichtung überall Spalten = Ausprägungen, Zeilen = Zustände.
 - [ ] Zeilen und Spalten sind beschriftet und ohne Vorwissen lesbar.
 - [ ] Kein Feld ist eine weiße Fläche; `button/ghost`, `button/link` und `badge/neutral` stehen
@@ -421,6 +446,14 @@ in der PR-Beschreibung als offener Handgriff benannt, nicht als erledigt gemelde
   dem Raster zu nehmen verfehlte das Kriterium „jeder Zustand mindestens einmal".
 - **Instanz-Beschriftungen werden überschrieben**, Herkunft ausschließlich Demo-Bestand oder
   erkennbar erfunden.
+- **Die Register-Zone liegt oberhalb des Bestands**, weil der Bestand rund 18.830 px breit ist.
+- **Der Kategorie-Chip steht in einer ungebrochenen Reihe.** Der Umbruch aus der Rastertabelle
+  ist nur für zu knappe Breite vorgesehen; die Fläche ist unbegrenzt, und dreizehn Chips in einer
+  Reihe sind ablesbarer als eine Reihe plus Fortsetzungszeile.
+- **Die Zusicherung „kein Objekt des Registers trägt Plugin-Daten" ist per Bauart erfüllt, nicht
+  durch Aufräumen:** `komponente.instance()` kopiert die Plugin-Daten der Hauptinstanz **nicht**
+  mit (am 2026-09-12 an der Schaltfläche gemessen: leere Schlüsselliste an Instanz und Kind). Es
+  muss also nichts entfernt werden, damit die eingefrorenen Kardinalitäten unberührt bleiben.
 - **`specs/architecture/0004-design-system.md` wird um einen Punkt ergänzt** — die stille Alterung
   des Registers ist eine geltende Pflegepflicht, die dort gesucht wird.
 - **`specs/architecture/0002-testkonzept.md` wird um zwei Punkte ergänzt** (stille Alterung; die

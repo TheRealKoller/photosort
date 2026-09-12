@@ -402,3 +402,21 @@ Im Entwurfsrundenlauf zur Fotoansicht gemessen. Wie die Punkte darüber scheiter
   ohne jedes Kopierrisiko und in voller Auflösung weiterverwendbar. Die acht Beispielbilder aus
   `assets/beispielbilder/` liegen so auf der Seite `Material — Beispielbilder`, jede Fläche mit
   Herkunftsdatei, Seitenverhältnis und Lage in den Plugin-Daten.
+
+### Instanzen und Formexport (2026-09-12 gemessen)
+
+- **`komponente.instance()` kopiert die Plugin-Daten der Hauptinstanz NICHT mit.** An der
+  Schaltfläche gemessen: Die neue Instanz und ihr Textkind liefern beide eine leere
+  Schlüsselliste, `schluessel` ist `null`. Wer Instanzen außerhalb der Bausteinliste ablegt — das
+  Register tut das — hebt damit keine der eingefrorenen Kardinalitäten, und es ist nichts
+  nachträglich zu entfernen. Umgekehrt heißt das: Plugin-Daten an einer Instanz entstehen nur,
+  wenn sie ausdrücklich gesetzt werden.
+- **`switchVariant(pos, wert)` behält die Form-Id.** Die Instanz wird nicht ersetzt; Fläche,
+  Beschriftung und Tokenbindung wechseln mit (gemessen: Fläche von `color.accent` auf
+  `color.surface`, als der Zustand auf `disabled` ging). Eine vorher gemerkte Id bleibt also
+  gültig.
+- **`export_shape` gibt eine Form OHNE den Seitengrund aus.** Ein Brett ohne eigene Fläche
+  erscheint im Export als leerer Rahmen, und ein heller Text darin ist unsichtbar — nicht weil er
+  fehlt, sondern weil `color.bg` nicht mitexportiert wird. Für eine Kontrastbeurteilung ist ein
+  solcher Export **untauglich**: Sie gehört in die geöffnete Datei, oder der Export nimmt einen
+  Block, der selbst eine Fläche bindet.
