@@ -82,12 +82,10 @@ describe('KuratierungStepPage', () => {
   it('shows the explanation line and links to /curate with the shared default top-N', () => {
     renderPage(project())
 
-    expect(
-      screen.getByText(/zeigt pro foto-moment und kategorie die besten n fotos/i),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/zeigt pro foto-moment die besten n fotos/i)).toBeInTheDocument()
     const link = screen.getByRole('link', { name: 'Kuratierung öffnen' })
     expect(link).toHaveAttribute('href', `/projects/1/curate?topN=${DEFAULT_TOP_N}`)
-    expect((screen.getByLabelText(/top-fotos pro kategorie/i) as HTMLInputElement).value).toBe(
+    expect((screen.getByLabelText(/top-fotos pro foto-moment/i) as HTMLInputElement).value).toBe(
       String(DEFAULT_TOP_N),
     )
   })
@@ -110,7 +108,7 @@ describe('KuratierungStepPage', () => {
     const user = userEvent.setup()
     renderPage(project())
 
-    const input = screen.getByLabelText(/top-fotos pro kategorie/i)
+    const input = screen.getByLabelText(/top-fotos pro foto-moment/i)
     await user.clear(input)
     await user.type(input, '5')
 
@@ -124,7 +122,7 @@ describe('KuratierungStepPage', () => {
     const user = userEvent.setup()
     renderPage(project())
 
-    const input = screen.getByLabelText(/top-fotos pro kategorie/i)
+    const input = screen.getByLabelText(/top-fotos pro foto-moment/i)
     await user.clear(input)
     await user.type(input, '20')
 
@@ -138,7 +136,7 @@ describe('KuratierungStepPage', () => {
     const user = userEvent.setup()
     renderPage(project())
 
-    const input = screen.getByLabelText(/top-fotos pro kategorie/i)
+    const input = screen.getByLabelText(/top-fotos pro foto-moment/i)
     await user.clear(input)
 
     expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(

@@ -1,6 +1,5 @@
 import type { ClassificationEstimateOut, ClassificationEstimatePartOut } from '../api/types'
-import { formatProviderLabel } from '../utils/categoryLabels'
-import { formatUsd } from '../utils/formatStats'
+import { formatProviderLabel, formatUsd } from '../utils/formatStats'
 
 /**
  * Die aufgeschlüsselte Kostenvorschau vor dem Start.

@@ -5,20 +5,18 @@ import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
-import { CategoryOverrideMarker } from '../components/CategoryOverrideMarker'
 import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
+import { MotifAssessmentMarker } from '../components/MotifAssessmentMarker'
 import { PhotoCard } from '../components/PhotoCard'
 import { PhotoImage } from '../components/PhotoImage'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
-import { useCategoriesQuery } from '../hooks/useCategories'
-import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
+import { useMotifsQuery } from '../hooks/useMotifs'
 import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
-import { primaryRanking } from '../utils/rankings'
 
 // Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln" statt
 // eines vollflaechigen Spinners - Anzahl ist nur eine plausible Annaeherung an einen typischen
@@ -50,11 +48,14 @@ export function PhotoGridPage() {
   const query = usePhotoSequenceQuery(id, ratingStatus)
   const setRatingMutation = useSetRatingMutation(id)
   const gateMutation = useConfirmAusschussGateMutation(id)
-  const categoryOverrideControls = useCategoryOverrideControls(id)
-  // Das feste Set kommt vom Server (langlebiger Cache) - Grundlage der Anzeigenamen und der "Alle
-  // Kategorien"-Override-Auswahl.
-  const categoriesQuery = useCategoriesQuery()
-  const categorySet = categoriesQuery.data ?? []
+  // Das Motivset kommt vom Server (langlebiger Cache) - Grundlage der schreibgeschuetzten
+  // Motivliste im Info-Popover. EIN Request fuer alle Kacheln.
+  const motifsQuery = useMotifsQuery()
+  const motifSetError = motifsQuery.isError
+    ? motifsQuery.error instanceof ApiError
+      ? motifsQuery.error.detail
+      : 'Fehler beim Laden der Motive.'
+    : undefined
   const photos = query.data?.pages.flatMap((page) => page.items) ?? []
   const totalSuggested = query.data?.pages[0]?.total ?? 0
 
@@ -211,37 +212,28 @@ export function PhotoGridPage() {
                     className="size-full object-cover"
                   />
                 }
-                /* Uebersteuerungs-Marker in der Ecke oben links, Info-Trigger oben rechts. Beide
-                   sind Geschwister der Bildflaeche und liegen nie in ihr - die
-                   Bildflaeche beschneidet, und eine aufgespannte Trefferflaeche in einem
-                   beschneidenden Container wuerde still abgeschnitten.
-                   Der frueher noetige `pointer-events-none`-Kniff entfaellt ersatzlos: Das
-                   Zustandskennzeichen liegt nicht mehr ueber der Kachel, sondern im Kartenkoerper,
-                   und faengt deshalb keine Klicks mehr ab, die zum Kachel-Link durchsollen. */
-                topLeft={photo.category_override !== null ? <CategoryOverrideMarker /> : undefined}
+                /* Motiv-Marker in der Ecke oben links, Info-Trigger oben rechts. Beide sind
+                   Geschwister der Bildflaeche und liegen nie in ihr - die Bildflaeche
+                   beschneidet, und eine aufgespannte Trefferflaeche in einem beschneidenden
+                   Container wuerde still abgeschnitten.
+                   Der `MotifAssessmentMarker` ist der EINZIGE Motiv-Marker der Kachel; `=== null`
+                   geprueft und nicht auf Falsyness, denn `undefined` (Feld nicht durchgereicht)
+                   ist keine Aussage ueber den Klassifizierungsstand. */
+                topLeft={photo.motif_assessment === null ? <MotifAssessmentMarker /> : undefined}
                 topRight={
                   <CriterionDetailsPopover
                     criterionScores={photo.criterion_scores}
-                    /* Das Raster zeigt jedes Foto genau einmal - gemeint ist seine
-                       Hauptzugehoerigkeit. */
-                    ranking={primaryRanking(photo)}
-                    rankings={photo.rankings}
+                    ranking={photo.ranking ?? null}
                     suggestion={photo.suggestion}
-                    categoryCandidates={photo.category_candidates}
                     fineLabels={photo.fine_labels}
-                    categories={categorySet}
-                    categoriesLoading={categoriesQuery.isLoading}
-                    categoriesError={categoriesQuery.isError}
-                    onRetryCategories={() => {
-                      void categoriesQuery.refetch()
+                    motifSet={motifsQuery.data}
+                    motifSetLoading={motifsQuery.isLoading}
+                    motifSetError={motifSetError}
+                    onMotifSetRetry={() => {
+                      void motifsQuery.refetch()
                     }}
-                    categoryOverride={photo.category_override}
-                    onOverrideCategory={(categoryKey) =>
-                      categoryOverrideControls.overrideCategory(photo.id, categoryKey)
-                    }
-                    onResetOverride={() => categoryOverrideControls.resetOverride(photo.id)}
-                    pendingOverrideKey={categoryOverrideControls.pendingOverrideKeyFor(photo.id)}
-                    resetPending={categoryOverrideControls.isResetPendingFor(photo.id)}
+                    assessment={photo.motif_assessment ?? null}
+                    motifs={photo.motifs}
                   />
                 }
                 /* Separates Tap-Ziel ausserhalb des Kachel-Links (UI/UX-Abschnitt der Spec): die

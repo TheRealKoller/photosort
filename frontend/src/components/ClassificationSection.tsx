@@ -9,7 +9,7 @@ import {
   useTriggerClassificationMutation,
 } from '../hooks/useProjects'
 import { useTriggerConfirmation } from '../hooks/useTriggerConfirmation'
-import { formatProviderLabel } from '../utils/categoryLabels'
+import { formatProviderLabel } from '../utils/formatStats'
 import { ClassificationBalance } from './ClassificationBalance'
 import { ClassificationEstimate } from './ClassificationEstimate'
 import { ClassificationProgress } from './ClassificationProgress'

@@ -1,6 +1,6 @@
 # 0300 - Nebenkategorien: ein Foto gehört mehreren Kategorien an
 
-**Status:** Implemented ([PR #373](https://github.com/TheRealKoller/photosort/pull/373))
+**Status:** Superseded — abgelöst durch Spec [`0427`](./0427-motive-mit-staerke.md) (Motive mit Stärke statt einer Hauptkategorie). Die Unterscheidung, die diese Spec trifft, gibt es nicht mehr: ohne Hauptkategorie gibt es keine Nebenkategorie. Mit ihr fallen `photo_rankings.is_primary`, die Konfidenzschwelle der Zugehörigkeit, die konfidenzgewichtete Dämpfung des Sortierschlüssels und die Kategorie-Ebene des Partitionsschlüssels — die Partition ist seither allein das Event, und ein Foto steht pro Lauf wieder in genau einer Rangzeile. **Weiter gilt** — dort übernommen und tragend: eine Mehrfachaussage über ein Foto gehört in persistierte Zeilen und nicht in eine zur Lesezeit expandierte Struktur. Umgesetzt wurde diese Spec mit [PR #373](https://github.com/TheRealKoller/photosort/pull/373).
 **Erstellt:** 2026-09-09
 **Bezug:** [GitHub-Issue #300](https://github.com/TheRealKoller/photosort/issues/300) (Refinement vor dieser Spec-Erstellung abgeschlossen, Story-Inhalt unverändert übernommen und auf Testbarkeit geschärft). Setzt Spec [`0299`](./0299-kategorie-konfidenz-anzeigen.md) voraus (umgesetzt, [PR #362](https://github.com/TheRealKoller/photosort/pull/362)).
 

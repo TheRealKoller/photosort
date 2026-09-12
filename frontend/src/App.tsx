@@ -16,7 +16,7 @@ import { clearToken, getToken } from './auth/token'
 import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
 import { ProjectNav } from './components/ProjectNav'
 import { Button } from './components/ui/button'
-import { CurateCategoriesPage } from './pages/CurateCategoriesPage'
+import { CuratePage } from './pages/CuratePage'
 import { LoginPage } from './pages/LoginPage'
 import { PhotoComparePage } from './pages/PhotoComparePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
@@ -162,7 +162,7 @@ function App() {
           <Route path={PROJECT_ROUTE_PATHS.pipelineBase} element={<ProjectPipelineLayout />}>
             <Route path=":step" element={<PipelineStepView />} />
           </Route>
-          <Route path={PROJECT_ROUTE_PATHS.curate} element={<CurateCategoriesPage />} />
+          <Route path={PROJECT_ROUTE_PATHS.curate} element={<CuratePage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

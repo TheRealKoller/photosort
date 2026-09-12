@@ -1,13 +1,8 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import {
-  deleteCategoryOverride,
-  listCurationCandidates,
-  listPhotos,
-  setCategoryOverride,
-} from '../api/photos'
+import { listCurationCandidates, listPhotos } from '../api/photos'
 import { deleteRating, setRating } from '../api/ratings'
-import type { CategoryKey, PhotoListOut, RatingFilter, RatingStatus } from '../api/types'
+import type { PhotoListOut, RatingFilter, RatingStatus } from '../api/types'
 
 /**
  * Batch-Groesse fuer das Foto-Listing: Fotos werden paginiert geladen (Batches statt Gesamt-Reload
@@ -21,7 +16,7 @@ function photosQueryKey(projectId: number, ratingStatus?: RatingFilter) {
   return ['photos', projectId, ratingStatus ?? null] as const
 }
 
-// Kategorie-Kuratierung: bewusst unter demselben ['photos', projectId, ...]-Praefix wie
+// Kuratierung: bewusst unter demselben ['photos', projectId, ...]-Praefix wie
 // photosQueryKey oben - die bestehende, breite Invalidierung in
 // useSetRatingMutation/useDeleteRatingMutation (queryKey: ['photos', projectId], ohne exact)
 // invalidiert React-Query-seitig automatisch auch diese Query, ohne dass die Kuratierungs-Ansicht
@@ -33,7 +28,7 @@ function curationQueryKey(projectId: number, topN: number) {
 export function useCurationQuery(projectId: number, topN: number) {
   return useQuery({
     queryKey: curationQueryKey(projectId, topN),
-    queryFn: () => listPhotos(projectId, { topNPerCategory: topN }),
+    queryFn: () => listPhotos(projectId, { topNPerEvent: topN }),
   })
 }
 
@@ -42,18 +37,12 @@ export function useCurationQuery(projectId: number, topN: number) {
 // demselben Bildschirm. Dasselbe Foto kann in beiden Listen stehen; wird es in der einen verworfen,
 // muss die andere denselben Zustand zeigen. Genau das leistet die bestehende breite Invalidierung -
 // ohne den Praefix stuenden zwei Wahrheiten ueber dasselbe Foto nebeneinander.
-function curationCandidatesQueryKey(
-  projectId: number,
-  eventId: number,
-  categoryKey: string,
-  afterRank: number,
-) {
-  return ['photos', projectId, 'curate', 'candidates', eventId, categoryKey, afterRank] as const
+function curationCandidatesQueryKey(projectId: number, eventId: number, afterRank: number) {
+  return ['photos', projectId, 'curate', 'candidates', eventId, afterRank] as const
 }
 
 export interface CurationCandidatesQueryParams {
   eventId: number
-  categoryKey: string
   afterRank: number
   /** Der Request laeuft ausschliesslich im AUFGEKLAPPTEN Zustand. */
   enabled: boolean
@@ -62,20 +51,13 @@ export interface CurationCandidatesQueryParams {
 
 export function useCurationCandidatesQuery(
   projectId: number,
-  {
-    eventId,
-    categoryKey,
-    afterRank,
-    enabled,
-    pageSize = PHOTOS_PAGE_SIZE,
-  }: CurationCandidatesQueryParams,
+  { eventId, afterRank, enabled, pageSize = PHOTOS_PAGE_SIZE }: CurationCandidatesQueryParams,
 ) {
   return useInfiniteQuery({
-    queryKey: curationCandidatesQueryKey(projectId, eventId, categoryKey, afterRank),
+    queryKey: curationCandidatesQueryKey(projectId, eventId, afterRank),
     queryFn: ({ pageParam }: { pageParam: number }) =>
       listCurationCandidates(projectId, {
         eventId,
-        categoryKey,
         afterRank,
         limit: pageSize,
         offset: pageParam,
@@ -126,30 +108,6 @@ export function useDeleteRatingMutation(projectId: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (photoId: number) => deleteRating(photoId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['photos', projectId] })
-    },
-  })
-}
-
-// Wirkt sofort (worker.py::reassign_photo_category im selben API-Request) - dieselbe breite
-// Invalidierung wie useSetRatingMutation genuegt, das Foto wechselt dadurch sichtbar in seine neue
-// Cluster x Kategorie-Sektion, sobald die Kuratierungs-Query neu geladen wird.
-export function useSetCategoryOverrideMutation(projectId: number) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ photoId, categoryKey }: { photoId: number; categoryKey: CategoryKey }) =>
-      setCategoryOverride(photoId, categoryKey),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['photos', projectId] })
-    },
-  })
-}
-
-export function useDeleteCategoryOverrideMutation(projectId: number) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (photoId: number) => deleteCategoryOverride(photoId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['photos', projectId] })
     },

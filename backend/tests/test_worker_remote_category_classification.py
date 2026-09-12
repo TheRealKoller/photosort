@@ -26,7 +26,6 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoFineLabel,
     PhotoMotifAssessment,
@@ -416,44 +415,6 @@ async def test_a_locally_assessed_photo_is_still_a_candidate(
     assert [call[2] for call in client.calls] == [locally_assessed.id]
 
 
-async def test_a_photo_with_only_an_old_category_row_is_a_candidate_again(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """Der bewusste Zwischenzustand nach PR 2: `photo_category_classifications` wird nicht mehr
-    geschrieben und ist kein Erledigt-Marker mehr. Ein Foto mit bloss dieser Altzeile hat noch
-    keine Motivstaerken und ist deshalb wieder Kandidat."""
-    project = await _make_project(db_session)
-    project.cloud_vision_detection_enabled = True
-    await db_session.commit()
-    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
-    await _add_score(db_session, photo)
-    _write_display_variant(tmp_path, photo)
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="tier",
-            detected_categories=["tier"],
-            provider="anthropic",
-            computed_at=datetime.now(UTC),
-        )
-    )
-    await db_session.commit()
-
-    client = RecordingCategoryClient()
-
-    run = await run_remote_category_classification(
-        db_session,
-        project,
-        cache_dir=tmp_path,
-        build_client=lambda _model: client,
-        build_embedder=_fake_embedder,
-    )
-
-    assert run.status == ScanStatus.SUCCESS
-    assert run.photos_total == 1
-    assert [call[2] for call in client.calls] == [photo.id]
-
-
 async def _run_for_one_photo(
     db_session: AsyncSession,
     tmp_path: Path,
@@ -500,32 +461,6 @@ async def test_a_successful_call_writes_a_cloud_header_and_the_strength_vector(
     assert await _strengths_of(db_session, photo.id) == _vector(
         bauwerk_sehenswuerdigkeit=0.9, menschen=0.2
     )
-
-
-async def test_the_old_classification_table_is_no_longer_written(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """Der bewusste Zwischenzustand nach PR 2: `photo_category_classifications` wird nicht mehr
-    geschrieben (und in dieser PR noch nicht geloescht). Die alte Hauptkategorie eines NEU
-    klassifizierten Fotos entsteht dadurch nur noch aus lokalen Signalen."""
-    photo, _ = await _run_for_one_photo(
-        db_session,
-        tmp_path,
-        RemoteClassification(motif_strengths=_vector(tiere=0.7), fine_labels=()),
-    )
-
-    rows = (
-        (
-            await db_session.execute(
-                select(PhotoCategoryClassification).where(
-                    PhotoCategoryClassification.photo_id == photo.id
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert rows == []
 
 
 async def test_a_strong_building_and_weak_people_answer_persists_that_relation(

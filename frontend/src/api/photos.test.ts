@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch, apiFetchBlob } from './client'
-import {
-  deleteCategoryOverride,
-  fetchPhotoImageBlobUrl,
-  listCurationCandidates,
-  listPhotos,
-  setCategoryOverride,
-} from './photos'
+import { fetchPhotoImageBlobUrl, listCurationCandidates, listPhotos } from './photos'
 import type { PhotoListOut } from './types'
 
 vi.mock('./client', () => ({
@@ -26,14 +20,10 @@ const PHOTO_LIST: PhotoListOut = {
       camera: null,
       ratings: [],
       suggestion: null,
-      rankings: [],
+      ranking: null,
       criterion_scores: [],
       fine_labels: [],
-      remote_category: null,
       // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Angabe".
-      category_confidence: null,
-      category_override: null,
-      category_candidates: [],
       cloud_vision_status: [],
     },
   ],
@@ -60,12 +50,12 @@ describe('api/photos', () => {
     )
   })
 
-  it('encodes top_n_per_category as a query param', async () => {
+  it('encodes top_n_per_event as a query param', async () => {
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
-    await listPhotos(1, { topNPerCategory: 3 })
+    await listPhotos(1, { topNPerEvent: 3 })
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?top_n_per_category=3')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?top_n_per_event=3')
   })
 
   it('requests further curation candidates of one partition', async () => {
@@ -73,32 +63,27 @@ describe('api/photos', () => {
 
     const result = await listCurationCandidates(1, {
       eventId: 42,
-      categoryKey: 'landschaft',
       afterRank: 10,
       limit: 60,
       offset: 60,
     })
 
     expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/curation-candidates?event_id=42&category_key=landschaft&after_rank=10&limit=60&offset=60',
+      '/projects/1/curation-candidates?event_id=42&after_rank=10&limit=60&offset=60',
     )
     expect(result).toEqual(PHOTO_LIST)
   })
 
-  it('escapes the remaining free partition key when it is not URL-safe', async () => {
-    // `event_id` ist seit Spec 0425 eine Zahl und kann nichts mehr einschleusen; `category_key`
-    // bleibt ein freier String und wird weiterhin kodiert.
+  it('addresses the partition by event id alone, with no free key left', async () => {
+    /* Seit Spec 0427 tragen ALLE drei Query-Parameter dieses Endpunkts Zahlen - es gibt keinen
+     * freien Schlüssel mehr, der etwas einschleusen könnte. Als eigener Fall, weil ein
+     * stehengebliebener Schlüsselparameter in der Abfrage serverseitig schlicht ignoriert würde
+     * und damit von jedem Positivtest unbemerkt bliebe. */
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
-    await listCurationCandidates(1, {
-      eventId: 7,
-      categoryKey: 'a/b&x=1',
-      afterRank: 0,
-    })
+    await listCurationCandidates(1, { eventId: 7, afterRank: 0 })
 
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/curation-candidates?event_id=7&category_key=a%2Fb%26x%3D1&after_rank=0',
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/curation-candidates?event_id=7&after_rank=0')
   })
 
   it('fetchPhotoImageBlobUrl requests the image and returns an object URL', async () => {
@@ -114,25 +99,5 @@ describe('api/photos', () => {
     expect(result).toBe('blob:fake-url')
 
     vi.unstubAllGlobals()
-  })
-
-  it('sets the category override via PUT /photos/{id}/category-override', async () => {
-    vi.mocked(apiFetch).mockResolvedValue({ photo_id: 1, category_key: 'hund' })
-
-    const result = await setCategoryOverride(1, 'hund')
-
-    expect(apiFetch).toHaveBeenCalledWith('/photos/1/category-override', {
-      method: 'PUT',
-      body: { category_key: 'hund' },
-    })
-    expect(result).toEqual({ photo_id: 1, category_key: 'hund' })
-  })
-
-  it('deletes the category override via DELETE /photos/{id}/category-override', async () => {
-    vi.mocked(apiFetch).mockResolvedValue(undefined)
-
-    await deleteCategoryOverride(1)
-
-    expect(apiFetch).toHaveBeenCalledWith('/photos/1/category-override', { method: 'DELETE' })
   })
 })

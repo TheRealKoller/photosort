@@ -752,3 +752,124 @@ def test_the_upgrade_touches_no_existing_table() -> None:
     assert "ALTER TABLE" not in rendered
     assert "UPDATE " not in rendered
     assert "DELETE " not in rendered
+
+
+# specs/features/0427-motive-mit-staerke.md, PR 3 Schritt 2 samt Sicherheitsauflage S17: die
+# Loeschung der ueberzaehligen Rangzeilen muss dem Constraint-Tausch VORAUSGEHEN, sonst ist der
+# Weg an einer nicht-leeren Datenbank nicht ausfuehrbar.
+#
+# Genau diese Zusage ist ueber die SQLite-Probe NICHT haltbar: dort entsteht der Constraint-Tausch
+# ausschliesslich ueber den Tabellen-Neuaufbau von `batch_alter_table`, der die falsche Reihenfolge
+# verzeiht - der Test waere dort unerfuellbar rot oder dauerhaft gruen. Unter Postgres stehen die
+# Anweisungen einzeln und in ihrer echten Reihenfolge. Die DATENWIRKUNG derselben Anweisung bleibt
+# der SQLite-Probe in test_migration_kategorien_abloesung.py.
+
+_CATEGORY_COLUMNS_REVISION = "c3d4e5f6a7b8_kategoriespalten_entfallen.py"
+_CATEGORY_TABLE_REVISION = "c4d5e6f7a8b9_kategorietabelle_entfaellt.py"
+
+
+@pytest.fixture(scope="module")
+def category_columns_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_CATEGORY_COLUMNS_REVISION)
+
+
+def test_the_row_deletion_precedes_the_constraint_swap(
+    category_columns_upgrade_ddl: list[str],
+) -> None:
+    """DIE Aussage dieser Revision (S17): Index-Vergleich zweier Anweisungen. Das `DELETE` auf
+    `photo_rankings` steht VOR dem `DROP CONSTRAINT`/`ADD CONSTRAINT`-Paar."""
+    rendered = [statement.upper() for statement in category_columns_upgrade_ddl]
+
+    delete_index = next(
+        (i for i, s in enumerate(rendered) if "DELETE FROM PHOTO_RANKINGS" in s), None
+    )
+    swap_index = next(
+        (
+            i
+            for i, s in enumerate(rendered)
+            if "ADD CONSTRAINT UQ_PHOTO_RANKING_RUN_PHOTO " in s
+            or "ADD CONSTRAINT UQ_PHOTO_RANKING_RUN_PHOTO(" in s
+        ),
+        None,
+    )
+    assert delete_index is not None, rendered
+    assert swap_index is not None, rendered
+
+    assert delete_index < swap_index
+
+
+def test_the_deletion_does_not_merely_drop_the_secondary_rows(
+    category_columns_upgrade_ddl: list[str],
+) -> None:
+    """Die zweite Haelfte von S17: `WHERE is_primary = false` allein SETZT die Nachbedingung
+    VORAUS, statt sie herzustellen. Die Anweisung muss je (Lauf, Foto) auswaehlen, welche eine
+    Zeile bleibt - erkennbar an der Partitionierung ueber genau dieses Paar."""
+    deletes = [
+        statement
+        for statement in category_columns_upgrade_ddl
+        if "DELETE FROM photo_rankings" in statement
+    ]
+    assert len(deletes) == 1, category_columns_upgrade_ddl
+    statement = deletes[0]
+
+    assert "PARTITION BY criterion_scoring_run_id, photo_id" in statement
+    assert statement.upper().count("WHERE IS_PRIMARY = FALSE") == 0
+
+
+def test_both_unique_constraints_are_named_in_the_swap_back(
+    category_columns_upgrade_ddl: list[str],
+) -> None:
+    rendered = " ".join(category_columns_upgrade_ddl)
+
+    assert "DROP CONSTRAINT uq_photo_ranking_run_photo_category" in rendered
+    assert "ADD CONSTRAINT uq_photo_ranking_run_photo " in rendered
+
+
+def test_all_three_columns_are_dropped_for_postgres(
+    category_columns_upgrade_ddl: list[str],
+) -> None:
+    rendered = " ".join(category_columns_upgrade_ddl)
+
+    assert "DROP COLUMN category_key" in rendered
+    assert "DROP COLUMN is_primary" in rendered
+    assert "DROP COLUMN category_override" in rendered
+
+
+def test_the_restored_boolean_default_of_the_downgrade_is_a_boolean_literal() -> None:
+    """Derselbe Dialektfehler wie bei `cloud_requested`/`is_primary`: ein `DEFAULT 1` auf einer
+    BOOLEAN-Spalte laeuft unter SQLite durch und laesst den Backend-Container auf Postgres beim
+    `alembic upgrade head` sterben - hier im RUECKWEG, den nur dieser Renderpfad sieht."""
+    statement = _add_column_statement(
+        _render_postgres_ddl(_CATEGORY_COLUMNS_REVISION, direction="downgrade"), "is_primary"
+    )
+
+    assert "BOOLEAN" in statement.upper()
+    assert "DEFAULT true" in statement
+    assert "DEFAULT 1" not in statement
+
+
+def test_the_downgrade_drops_both_temporary_server_defaults_again() -> None:
+    """Die Defaults versorgen die NOT-NULL-Bedingung des Altbestands und duerfen sie nicht
+    ueberleben (S18: Struktur, nie Daten)."""
+    rendered = " ".join(
+        _render_postgres_ddl(_CATEGORY_COLUMNS_REVISION, direction="downgrade")
+    ).upper()
+
+    assert "ALTER COLUMN IS_PRIMARY DROP DEFAULT" in rendered
+    assert "ALTER COLUMN CATEGORY_KEY DROP DEFAULT" in rendered
+
+
+def test_the_table_revision_drops_the_classification_table() -> None:
+    rendered = " ".join(_render_postgres_ddl(_CATEGORY_TABLE_REVISION)).upper()
+
+    assert "DROP TABLE PHOTO_CATEGORY_CLASSIFICATIONS" in rendered
+
+
+def test_the_table_revision_downgrade_renders_for_postgres_too() -> None:
+    """Der Rueckweg legt die Tabelle LEER wieder an - kein `INSERT`, keine Rekonstruktion."""
+    statements = _render_postgres_ddl(_CATEGORY_TABLE_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements).upper()
+    assert "CREATE TABLE PHOTO_CATEGORY_CLASSIFICATIONS" in rendered
+    assert "JSON" in rendered
+    assert "INSERT " not in rendered

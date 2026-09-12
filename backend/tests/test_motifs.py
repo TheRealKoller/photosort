@@ -19,7 +19,6 @@ from dataclasses import fields
 
 import pytest
 
-from photosort.categories import CATEGORY_REGISTRY
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.motifs import (
     EXCLUSION_KEY,
@@ -48,7 +47,26 @@ _EXPECTED_MOTIF_KEYS = (
 # bewusst akzeptierte Grenze, kein Fehlerfall.
 _LOCALLY_UNASSESSABLE = ("aktivitaet", "detail_stimmung")
 
-# Die Abbildung der dreizehn heutigen Kategorieschlüssel auf das Motivset (ADR 0091 Punkt 1).
+# Die dreizehn Schlüssel des abgelösten Kategorien-Sets, in seiner damaligen
+# Anzeigereihenfolge. Eingefrorener historischer Stand: `categories.py` ist seit PR 3 gelöscht,
+# und diese Liste wächst nie wieder.
+_THIRTEEN_LEGACY_CATEGORY_KEYS: tuple[str, ...] = (
+    "menschen",
+    "tier",
+    "landschaft",
+    "gebaeude_bauwerk",
+    "essen_trinken",
+    "sport_aktivitaet",
+    "fahrzeug",
+    "pflanze",
+    "gegenstand",
+    "kunst_kreatives",
+    "innenraum",
+    "dokument_screenshot",
+    "nicht_erkannt",
+)
+
+# Die Abbildung dieser dreizehn Kategorieschlüssel auf das Motivset (ADR 0091 Punkt 1).
 # `None` heißt "entfällt"; die Begründung steht je Eintrag daneben. Dass jeder Schlüssel GENAU
 # EINMAL vorkommt, ist eine Eigenschaft des Dicts; dass keiner fehlt, prüft der Test unten.
 _LEGACY_CATEGORY_TO_MOTIF: dict[str, str | None] = {
@@ -151,10 +169,15 @@ class TestIsMotifKey:
 
 class TestTheLegacyCategoryMapping:
     def test_the_table_lists_every_one_of_the_thirteen_category_keys_exactly_once(self) -> None:
-        """Vollständigkeit gegen die tatsächliche Kategorie-Registry, nicht gegen eine Zahl:
-        keine heutige Kategorie verschwindet unbemerkt."""
-        assert set(_LEGACY_CATEGORY_TO_MOTIF) == set(CATEGORY_REGISTRY)
-        assert len(_LEGACY_CATEGORY_TO_MOTIF) == len(CATEGORY_REGISTRY)
+        """Vollständigkeit gegen die dreizehn Schlüssel, die das abgelöste Set TATSÄCHLICH trug.
+
+        Seit PR 3 ist `categories.py` gelöscht; die Liste steht deshalb hier als eingefrorener
+        historischer Stand statt als Ableitung aus einer Registry, die es nicht mehr gibt. Sie
+        wird nie wieder wachsen - die Abbildungstabelle ist die Buchführung eines einmaligen
+        Übergangs (Akzeptanzkriterium "keine verschwindet unbemerkt"), kein lebendes Register."""
+        assert set(_LEGACY_CATEGORY_TO_MOTIF) == set(_THIRTEEN_LEGACY_CATEGORY_KEYS)
+        assert len(_LEGACY_CATEGORY_TO_MOTIF) == 13
+        assert len(set(_THIRTEEN_LEGACY_CATEGORY_KEYS)) == 13
 
     def test_every_target_is_either_a_real_motif_or_an_explicit_omission(self) -> None:
         for category_key, motif_key in _LEGACY_CATEGORY_TO_MOTIF.items():
@@ -168,7 +191,7 @@ class TestTheLegacyCategoryMapping:
     def test_the_document_category_becomes_the_exclusion_signal(self) -> None:
         """Es entfällt nicht ersatzlos: derselbe Schlüssel ist ab hier das Ausschluss-Signal."""
         assert _LEGACY_CATEGORY_TO_MOTIF[EXCLUSION_KEY] is None
-        assert EXCLUSION_KEY in CATEGORY_REGISTRY
+        assert EXCLUSION_KEY in _THIRTEEN_LEGACY_CATEGORY_KEYS
 
 
 class TestTheLocalSignalRegistry:

@@ -65,17 +65,6 @@ export function formatUsd(amountUsd: number): string {
 }
 
 /**
- * Anteil als Prozentwert. Eingabe ist ein Bruch zwischen 0 und 1 (so liefert ihn der Server),
- * nicht bereits ein Prozentwert. Exakt 0 ohne Nachkommastelle - analog `formatBytes`.
- */
-export function formatPercent(share: number): string {
-  if (share === 0) {
-    return '0 %'
-  }
-  return `${DECIMAL_ONE.format(share * 100)} %`
-}
-
-/**
  * Kaufmaennisch gerundete Prozentzahl OHNE Nachkommastelle und ohne Leerzeichen vor dem
  * Prozentzeichen (`92%`) - vermeidet eine Scheingenauigkeit, die die zugrundeliegenden, teils
  * heuristischen Werte nicht hergeben.
@@ -83,9 +72,9 @@ export function formatPercent(share: number): string {
  * Kandidatenliste und Konfidenzblock der Statistikseite teilen sich diese eine Darstellung; eine
  * zweite Kopie liefe unweigerlich auseinander.
  *
- * BEWUSST NICHT `formatPercent` (eine Nachkommastelle, Leerzeichen, deutsches Dezimalkomma): der
- * Konfidenzblock folgt hier der Kategorie-Anzeige statt der Statistik-Hausformatierung, damit
- * dieselbe Zahl am Foto und in der Statistik nicht in zwei Formen erscheint.
+ * BEWUSST OHNE Nachkommastelle, Leerzeichen und deutsches Dezimalkomma (anders als die Betrags-
+ * und Speicherangaben dieser Seite): dieselbe Zahl erscheint am Foto und in der Statistik, und
+ * zwei Formen fuer eine Zahl liesse den Leser nach dem Unterschied suchen.
  *
  * Und bewusst OHNE die `< 0,01`-Sonderregel von `formatUsd`: ein kleiner Wert ungleich null wird
  * als `0%` gezeigt. Bei einem Geldbetrag darf ein tatsaechlich angefallener Betrag nicht als
@@ -126,4 +115,23 @@ export function formatDate(isoDate: string): string {
 /** Datum mit Uhrzeit (fuer Lauf-Zeitpunkte - dort ist die Uhrzeit die eigentliche Information). */
 export function formatDateTime(isoDate: string): string {
   return DATE_TIME.format(new Date(isoDate))
+}
+
+// Anzeigename eines Cloud-Vision-Providers (backend `provider`-Feld, aktuell "anthropic"/
+// "mistral") - geteilt zwischen der Klassifizierungs-Sektion, der Fortschrittsanzeige, der
+// Kostenschaetzung und der Grundlagenzeile der Motivstaerken. Fallback auf den rohen Wert fuer
+// einen kuenftigen, hier noch nicht gepflegten Provider - kein Absturz.
+//
+// Liegt seit Spec 0427 hier und nicht mehr in `categoryLabels.ts`: ein Anbietername ist keine
+// Kategorie, und jene Datei ist mit der Kategorie-Welt entfallen.
+const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  anthropic: 'Anthropic',
+  mistral: 'Mistral',
+}
+
+export function formatProviderLabel(provider: string): string {
+  if (Object.hasOwn(PROVIDER_DISPLAY_NAMES, provider)) {
+    return PROVIDER_DISPLAY_NAMES[provider]
+  }
+  return provider
 }

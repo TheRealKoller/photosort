@@ -69,7 +69,7 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       heading: DEMO_PROJECTS.error,
     },
     { label: 'Statistik', path: `/projects/${ratedId}/stats`, heading: 'Statistik' },
-    { label: 'Kuratierung', path: `/projects/${ratedId}/curate`, heading: 'Kategorie-Kuratierung' },
+    { label: 'Kuratierung', path: `/projects/${ratedId}/curate`, heading: 'Kuratierung' },
     {
       label: 'Einstellungen',
       path: `/projects/${ratedId}/settings`,

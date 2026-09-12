@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,16 +17,18 @@ from photosort.api.stats import (
     _local_database_bytes_estimate,
     database_share_bytes,
 )
-from photosort.categories import CATEGORY_REGISTRY
 from photosort.config import settings
 from photosort.models import (
     ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
+    MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
+    PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -37,6 +40,11 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
     User,
+)
+from photosort.motifs import (
+    MOTIF_REGISTRY,
+    MOTIF_STRENGTH_BAND_MEDIUM,
+    MOTIF_STRENGTH_BAND_STRONG,
 )
 from photosort.security import hash_password
 from photosort.thumbnails import display_path, thumbnail_path
@@ -168,7 +176,6 @@ async def _add_score(
     session: AsyncSession,
     photo: Photo,
     *,
-    category_override: str | None = None,
     duplicate_of: int | None = None,
 ) -> PhotoScore:
     score = PhotoScore(
@@ -176,7 +183,6 @@ async def _add_score(
         sharpness=1.0,
         exposure=0.5,
         computed_at=datetime(2023, 6, 2, 12, 0),
-        category_override=category_override,
         duplicate_of=duplicate_of,
     )
     session.add(score)
@@ -239,22 +245,61 @@ async def _add_ranking(
     session: AsyncSession,
     run: CriterionScoringRun,
     photo: Photo,
-    category_key: str,
     *,
-    is_primary: bool = True,
+    rank_position: int = 1,
 ) -> None:
-    """specs/features/0300-nebenkategorien.md: `is_primary` ist pflichtig - der Default `True`
-    haelt alle bestehenden Aufrufe bei ihrer bisherigen Bedeutung (eine Zugehoerigkeit je Foto,
-    und die ist die Hauptzeile)."""
+    """Ein Foto steht je Lauf in genau EINER Rangzeile - die Partition ist allein das Event
+    (Spec 0427, PR 3)."""
     session.add(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
             event_id=await event_id_of_run(session, run),
-            category_key=category_key,
             rank_score=0.5,
-            rank_position=1,
-            is_primary=is_primary,
+            rank_position=rank_position,
+        )
+    )
+    await session.commit()
+
+
+async def _add_assessment(
+    session: AsyncSession,
+    photo: Photo,
+    *,
+    source: MotifAssessmentSource = MotifAssessmentSource.CLOUD,
+    strengths: dict[str, float] | None = None,
+    excluded_document: bool = False,
+) -> None:
+    """Kopfzeile plus Staerkevektor eines Fotos. Ohne `strengths` entstehen ACHT Nullen - so wie
+    der Schreibpfad sie anlegt; ein unvollstaendiger Vektor ist kein Zustand, den das Produkt
+    erzeugt."""
+    values = {key: 0.0 for key in MOTIF_REGISTRY}
+    values.update(strengths or {})
+    session.add(
+        PhotoMotifAssessment(
+            photo_id=photo.id,
+            source=source,
+            excluded_document=excluded_document,
+            provider="anthropic" if source == MotifAssessmentSource.CLOUD else None,
+            computed_at=datetime(2023, 6, 3, 12, 0),
+        )
+    )
+    await session.flush()
+    session.add_all(
+        [
+            PhotoMotifStrength(photo_id=photo.id, motif_key=key, strength=strength)
+            for key, strength in values.items()
+        ]
+    )
+    await session.commit()
+
+
+async def _add_correction(
+    session: AsyncSession, photo: Photo, motif_key: str, *, applies: bool, user: User
+) -> None:
+    session.add(
+        PhotoMotifCorrection(
+            photo_id=photo.id, motif_key=motif_key, applies=applies, user_id=user.id
         )
     )
     await session.commit()
@@ -296,7 +341,7 @@ async def _noise_project(session: AsyncSession, tmp_path: Path) -> Project:
     await session.commit()
     photo_a = await _add_photo(session, other, "n1.jpg", content_length=99_999)
     photo_b = await _add_photo(session, other, "n2.jpg", content_length=99_999)
-    await _add_score(session, photo_a, category_override="tier")
+    await _add_score(session, photo_a)
     await _add_score(session, photo_b, duplicate_of=photo_a.id)
     run = await _add_criterion_scoring_run(
         session,
@@ -306,17 +351,12 @@ async def _noise_project(session: AsyncSession, tmp_path: Path) -> Project:
         landmark_api_calls=99,
         landmark_cost_usd=99.0,
     )
-    await _add_ranking(session, run, photo_a, "tier")
-    await _add_ranking(session, run, photo_b, "menschen")
-    session.add(
-        PhotoCategoryClassification(
-            photo_id=photo_a.id,
-            category_key="tier",
-            detected_categories=["tier"],
-            provider="anthropic",
-            computed_at=datetime(2024, 1, 1),
-        )
-    )
+    await _add_ranking(session, run, photo_a)
+    await _add_ranking(session, run, photo_b, rank_position=2)
+    await _add_assessment(session, photo_a, strengths={"tier": 0.9})
+    await _add_assessment(session, photo_b, excluded_document=True)
+    user_for_correction = await _current_user(session)
+    await _add_correction(session, photo_a, "menschen", applies=True, user=user_for_correction)
     session.add(
         PhotoLandmarkDetection(
             photo_id=photo_a.id,
@@ -403,7 +443,9 @@ class TestEmptyProject:
 
     async def test_all_counters_are_zero(self, payload: dict[str, Any]) -> None:
         assert payload["photo_count"] == 0
-        assert payload["manual_category_override_count"] == 0
+        assert payload["motif_correction_count"] == 0
+        assert payload["unassessed_photo_count"] == 0
+        assert payload["excluded_photo_count"] == 0
         assert payload["progress"] == {
             "scanned": 0,
             "thumbnails_ready": 0,
@@ -432,18 +474,20 @@ class TestEmptyProject:
         assert payload["taken_at_earliest"] is None
         assert payload["taken_at_latest"] is None
 
-    async def test_every_category_is_listed_with_zero_and_no_share(
+    async def test_every_motif_is_listed_with_three_zeros_and_no_average(
         self, payload: dict[str, Any]
     ) -> None:
-        """Edge Case 3: bei 0 klassifizierten Fotos ist jeder Anteil 0 - die Eintraege existieren
-        trotzdem, sonst waere die Tabelle leer statt vollstaendig."""
-        entries = payload["categories"]["entries"]
+        """Bei null beurteilten Fotos existieren die Eintraege trotzdem (sonst waere die Tabelle
+        leer statt vollstaendig), tragen drei Nullen und den Mittelwert `None` - keine Division.
 
-        assert [entry["category_key"] for entry in entries] == list(CATEGORY_REGISTRY)
-        assert all(entry["photo_count"] == 0 for entry in entries)
-        assert all(entry["share"] == 0 for entry in entries)
-        assert payload["categories"]["classified_photo_count"] == 0
-        assert payload["categories"]["unclassified_photo_count"] == 0
+        Nachsatz wie in jedem Statistikfall: die drei Baender sind disjunkt und erschoepfend."""
+        entries = payload["motifs"]
+
+        assert [entry["motif_key"] for entry in entries] == list(MOTIF_REGISTRY)
+        assert all(entry["strong_photo_count"] == 0 for entry in entries)
+        assert all(entry["medium_photo_count"] == 0 for entry in entries)
+        assert all(entry["weak_photo_count"] == 0 for entry in entries)
+        assert all(entry["average_strength"] is None for entry in entries)
 
     async def test_costs_are_zero_without_an_incompleteness_hint(
         self, payload: dict[str, Any]
@@ -562,48 +606,316 @@ class TestScopeAndStorage:
         assert payload["progress"]["scanned"] == 3
 
 
-class TestCategories:
-    async def test_the_distribution_counts_the_primary_category_while_the_partition_counts_all(
+class TestTheMotifDistribution:
+    """specs/features/0427-motive-mit-staerke.md, PR 3 Schritt 4/6: EIN Abschnitt "Motivverteilung"
+    statt "Kategorienverteilung" und "Konfidenz der Kategorie-Erkennung".
+
+    Zwei Zusagen tragen hier mehr als eine Werteprüfung, und beide stehen als NACHSATZ JEDES
+    Falls (nicht als eigener Test, sonst deckten sie genau den einen Aufbau ab):
+
+    * die drei Bänder je Motiv sind disjunkt und erschöpfend - ihre Summe je Motiv ist die Zahl
+      der beurteilten Fotos;
+    * die Summe der starken Bandzahlen über alle Motive darf die Fotozahl übersteigen. Genau das
+      ist der Grund für den dauerhaft sichtbaren Erklärsatz der Oberfläche.
+    """
+
+    @staticmethod
+    def _assert_bands_are_disjoint_and_exhaustive(
+        payload: dict[str, Any], assessed_photo_count: int
+    ) -> None:
+        for entry in payload["motifs"]:
+            total = (
+                entry["strong_photo_count"]
+                + entry["medium_photo_count"]
+                + entry["weak_photo_count"]
+            )
+            assert total == assessed_photo_count, entry
+
+    async def test_every_motif_is_listed_in_registry_order_with_its_display_name(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assert [entry["motif_key"] for entry in payload["motifs"]] == list(MOTIF_REGISTRY)
+        assert [entry["display_name"] for entry in payload["motifs"]] == [
+            definition.display_name for definition in MOTIF_REGISTRY.values()
+        ]
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 0)
+
+    async def test_a_photo_strong_in_three_motifs_makes_the_band_sums_exceed_the_photo_count(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """DER tragende Aufbau der neuen Zählweise: ein Foto zählt in mehreren Zeilen, die Summe
+        über alle Motive ist deshalb größer als die Zahl der Fotos."""
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_assessment(
+            db_session,
+            photo,
+            strengths={"menschen": 0.9, "landschaft": 0.8, "stadt_strasse": 0.95},
+        )
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        strong_total = sum(entry["strong_photo_count"] for entry in payload["motifs"])
+        assert strong_total == 3
+        assert strong_total > payload["photo_count"]
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 1)
+
+    async def test_the_three_bands_split_by_the_registry_boundaries(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_assessment(
+            db_session,
+            photo,
+            strengths={"menschen": 0.9, "landschaft": 0.5, "tiere": 0.1},
+        )
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_key = {entry["motif_key"]: entry for entry in payload["motifs"]}
+        assert by_key["menschen"]["strong_photo_count"] == 1
+        assert by_key["landschaft"]["medium_photo_count"] == 1
+        assert by_key["tiere"]["weak_photo_count"] == 1
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 1)
+
+    @pytest.mark.parametrize(
+        ("strength", "expected_band"),
+        [
+            (MOTIF_STRENGTH_BAND_STRONG, "strong_photo_count"),
+            (math.nextafter(MOTIF_STRENGTH_BAND_STRONG, 0.0), "medium_photo_count"),
+            (MOTIF_STRENGTH_BAND_MEDIUM, "medium_photo_count"),
+            (math.nextafter(MOTIF_STRENGTH_BAND_MEDIUM, 0.0), "weak_photo_count"),
+        ],
+    )
+    async def test_both_boundaries_are_inclusive(
         self,
         authenticated_api_client: httpx.AsyncClient,
         db_session: AsyncSession,
+        strength: float,
+        expected_band: str,
     ) -> None:
-        """specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 16 / ADR 0069 Punkt 8: ZWEI
-        Zaehlweisen, zwei Fragen - und deshalb bewusst in EINEM Testfall mit DERSELBEN Fixture
-        gegeneinander gestellt. Getrennte Positivtests blieben beide gruen, wenn der
-        `is_primary`-Filter an der falschen Stelle saesse.
-
-        * Die Kategorienverteilung zaehlt die HAUPTkategorie: die Summe ueber alle Kategorien
-          bleibt gleich der Fotoanzahl.
-        * Die Partitionsgroesse ("von N" im Popover) zaehlt ALLE Zeilen der Partition - dort steht
-          das Gastfoto tatsaechlich."""
+        """Inklusivität als PAAR je Grenze (`>=`), mit dem nächstkleineren darstellbaren Wert als
+        Gegenprobe - einzeln bestünde die Assertion auch bei einer verschobenen Grenze."""
         project = await _make_project(db_session, "Costa Rica")
-        owner = await _add_photo(db_session, project, "a.jpg")
-        guest = await _add_photo(db_session, project, "b.jpg")
-        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 2, 1))
-        await _add_ranking(db_session, run, owner, "landschaft")
-        await _add_ranking(db_session, run, guest, "tier")
-        await _add_ranking(db_session, run, guest, "landschaft", is_primary=False)
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_assessment(db_session, photo, strengths={"menschen": strength})
 
-        stats = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-        photos = (await authenticated_api_client.get(f"/projects/{project.id}/photos")).json()
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
-        by_key = {entry["category_key"]: entry for entry in stats["categories"]["entries"]}
-        assert by_key["landschaft"]["photo_count"] == 1
-        assert by_key["tier"]["photo_count"] == 1
-        assert sum(entry["photo_count"] for entry in stats["categories"]["entries"]) == 2
-        assert stats["photo_count"] == 2
+        by_key = {entry["motif_key"]: entry for entry in payload["motifs"]}
+        assert by_key["menschen"][expected_band] == 1
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 1)
 
-        partition_sizes = {
-            (item["id"], ranking["category_key"]): ranking["partition_size"]
-            for item in photos["items"]
-            for ranking in item["rankings"]
+    async def test_the_bands_count_the_effective_strength_not_the_stored_one(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die eine Zusage, die nur dieser Aufbau von der falschen Implementierung unterscheidet:
+        ein Foto mit gespeicherter Stärke 0.9 und `applies=false` zählt ins SCHWACHE Band. Eine
+        Aggregation direkt auf `photo_motif_strengths` liefert überall sonst dieselben Zahlen."""
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_assessment(db_session, photo, strengths={"menschen": 0.9})
+        await _add_correction(
+            db_session, photo, "menschen", applies=False, user=await _current_user(db_session)
+        )
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_key = {entry["motif_key"]: entry for entry in payload["motifs"]}
+        assert by_key["menschen"]["strong_photo_count"] == 0
+        assert by_key["menschen"]["weak_photo_count"] == 1
+        assert by_key["menschen"]["average_strength"] == pytest.approx(0.0)
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 1)
+
+    async def test_a_positive_correction_lifts_a_weak_strength_into_the_strong_band(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Gegenrichtung desselben Paares."""
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_assessment(db_session, photo, strengths={"menschen": 0.05})
+        await _add_correction(
+            db_session, photo, "menschen", applies=True, user=await _current_user(db_session)
+        )
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_key = {entry["motif_key"]: entry for entry in payload["motifs"]}
+        assert by_key["menschen"]["strong_photo_count"] == 1
+        assert by_key["menschen"]["average_strength"] == pytest.approx(1.0)
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 1)
+
+    async def test_the_average_is_the_arithmetic_mean_of_the_effective_strengths(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        photo_a = await _add_photo(db_session, project, "a.jpg")
+        photo_b = await _add_photo(db_session, project, "b.jpg")
+        await _add_assessment(db_session, photo_a, strengths={"menschen": 0.8})
+        await _add_assessment(db_session, photo_b, strengths={"menschen": 0.2})
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_key = {entry["motif_key"]: entry for entry in payload["motifs"]}
+        assert by_key["menschen"]["average_strength"] == pytest.approx(0.5)
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 2)
+
+    async def test_without_a_single_assessed_photo_the_average_is_none_and_never_zero(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ "Nicht erhoben" ist keine Null: ein `0.0` behauptete, das Modell habe sich zu 0 %
+        geäußert. Keine Division bei null Fotos."""
+        project = await _make_project(db_session, "Costa Rica")
+        await _add_photo(db_session, project, "a.jpg")
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assert len(payload["motifs"]) == len(MOTIF_REGISTRY)
+        assert all(entry["average_strength"] is None for entry in payload["motifs"])
+        assert all(entry["strong_photo_count"] == 0 for entry in payload["motifs"])
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 0)
+
+    async def test_the_strength_bands_come_from_the_registry(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Grenzen gehen mit, damit das Frontend sie nicht hinterlegt - `0.67` dort und `2/3`
+        hier verschöben die Grenze um einen Betrag, den kein Fall trifft."""
+        project = await _make_project(db_session, "Costa Rica")
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assert payload["strength_bands"] == {
+            "strong": MOTIF_STRENGTH_BAND_STRONG,
+            "medium": MOTIF_STRENGTH_BAND_MEDIUM,
         }
-        assert partition_sizes[(guest.id, "landschaft")] == 2
-        assert partition_sizes[(owner.id, "landschaft")] == 2
-        assert partition_sizes[(guest.id, "tier")] == 1
 
-    async def test_the_distribution_comes_from_the_latest_successful_run(
+    async def test_a_photo_without_a_header_is_unassessed_and_counted_in_no_band(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ "Noch nicht klassifiziert" ist etwas anderes als "nichts erkannt" - das Foto fehlt in
+        JEDER Zahl der Tabelle und steht als eigene Kennzahl daneben."""
+        project = await _make_project(db_session, "Costa Rica")
+        assessed = await _add_photo(db_session, project, "a.jpg")
+        await _add_photo(db_session, project, "b.jpg")
+        await _add_assessment(db_session, assessed, strengths={"menschen": 0.9})
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assert payload["unassessed_photo_count"] == 1
+        assert payload["photo_count"] == 2
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 1)
+
+    async def test_an_excluded_photo_is_counted_in_no_band_but_in_its_own_number(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium: die Statistik zählt ein als Dokument/Screenshot ausgeschlossenes
+        Foto in keinem Band. Seine Stärken bleiben gespeichert und werden nicht auf 0 gesetzt -
+        sie dürfen hier trotzdem in keiner Bandzahl auftauchen."""
+        project = await _make_project(db_session, "Costa Rica")
+        regular = await _add_photo(db_session, project, "a.jpg")
+        excluded = await _add_photo(db_session, project, "b.jpg")
+        await _add_assessment(db_session, regular, strengths={"menschen": 0.9})
+        await _add_assessment(
+            db_session, excluded, strengths={"menschen": 0.95}, excluded_document=True
+        )
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_key = {entry["motif_key"]: entry for entry in payload["motifs"]}
+        assert by_key["menschen"]["strong_photo_count"] == 1
+        assert payload["excluded_photo_count"] == 1
+        assert payload["unassessed_photo_count"] == 0
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 1)
+
+    async def test_the_correction_count_counts_rows_not_photos(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_assessment(db_session, photo, strengths={"menschen": 0.9})
+        user = await _current_user(db_session)
+        await _add_correction(db_session, photo, "menschen", applies=False, user=user)
+        await _add_correction(db_session, photo, "tiere", applies=True, user=user)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assert payload["motif_correction_count"] == 2
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 1)
+
+    async def test_a_correction_on_a_photo_without_a_header_is_still_counted(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Korrekturtabelle ist lauf-UNABHÄNGIG: eine Korrektur auf einem noch nicht
+        klassifizierten Foto ist gespeichert und zählt, auch wenn keine Bandzahl sie zeigt."""
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_correction(
+            db_session, photo, "menschen", applies=True, user=await _current_user(db_session)
+        )
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assert payload["motif_correction_count"] == 1
+        assert payload["unassessed_photo_count"] == 1
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 0)
+
+    async def test_no_number_of_the_block_leaks_across_projects(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        tmp_path: Path,
+    ) -> None:
+        """Projekt-Skopierung als Muss-Kriterium: keine der drei Motiv-Tabellen trägt eine eigene
+        `project_id`, die Einschränkung über `photos` ist die einzige Trennung zwischen zwei
+        Projekten."""
+        await _noise_project(db_session, tmp_path)
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_assessment(db_session, photo, strengths={"menschen": 0.9})
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        by_key = {entry["motif_key"]: entry for entry in payload["motifs"]}
+        assert by_key["menschen"]["strong_photo_count"] == 1
+        assert by_key["tiere"]["strong_photo_count"] == 0
+        assert payload["motif_correction_count"] == 0
+        assert payload["excluded_photo_count"] == 0
+        assert payload["unassessed_photo_count"] == 0
+        self._assert_bands_are_disjoint_and_exhaustive(payload, 1)
+
+    async def test_assessed_plus_unassessed_plus_excluded_always_equals_the_photo_count(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        tmp_path: Path,
+    ) -> None:
+        await _noise_project(db_session, tmp_path)
+        project = await _make_project(db_session, "Costa Rica")
+        assessed = await _add_photo(db_session, project, "a.jpg")
+        excluded = await _add_photo(db_session, project, "b.jpg")
+        await _add_photo(db_session, project, "c.jpg")
+        await _add_assessment(db_session, assessed, strengths={"menschen": 0.9})
+        await _add_assessment(db_session, excluded, excluded_document=True)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assessed_count = sum(
+            payload["motifs"][0][band]
+            for band in ("strong_photo_count", "medium_photo_count", "weak_photo_count")
+        )
+        assert (
+            assessed_count + payload["unassessed_photo_count"] + payload["excluded_photo_count"]
+            == payload["photo_count"]
+        )
+
+
+class TestTheRanking:
+    async def test_the_processing_state_counts_the_rows_of_the_latest_successful_run(
         self,
         authenticated_api_client: httpx.AsyncClient,
         db_session: AsyncSession,
@@ -613,40 +925,31 @@ class TestCategories:
         project = await _make_project(db_session, "Costa Rica")
         photo_a = await _add_photo(db_session, project, "a.jpg")
         photo_b = await _add_photo(db_session, project, "b.jpg")
-        photo_c = await _add_photo(db_session, project, "c.jpg")
         old_run = await _add_criterion_scoring_run(
             db_session, project, started_at=datetime(2023, 1, 1)
         )
-        await _add_ranking(db_session, old_run, photo_a, "menschen")
+        await _add_ranking(db_session, old_run, photo_a)
         new_run = await _add_criterion_scoring_run(
             db_session, project, started_at=datetime(2023, 2, 1)
         )
-        await _add_ranking(db_session, new_run, photo_a, "tier")
-        await _add_ranking(db_session, new_run, photo_b, "tier")
-        await _add_ranking(db_session, new_run, photo_c, "landschaft")
+        await _add_ranking(db_session, new_run, photo_a)
+        await _add_ranking(db_session, new_run, photo_b, rank_position=2)
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
-        by_key = {entry["category_key"]: entry for entry in payload["categories"]["entries"]}
-        assert by_key["tier"]["photo_count"] == 2
-        assert by_key["landschaft"]["photo_count"] == 1
-        assert by_key["menschen"]["photo_count"] == 0
-        assert by_key["tier"]["share"] == pytest.approx(2 / 3)
-        assert by_key["landschaft"]["share"] == pytest.approx(1 / 3)
-        assert payload["categories"]["classified_photo_count"] == 3
-        assert payload["categories"]["unclassified_photo_count"] == 0
+        assert payload["progress"]["ranked"] == 2
 
     async def test_a_newer_failed_run_does_not_displace_the_older_successful_one(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         """Edge Case 4: nur ERFOLGREICHE Laeufe zaehlen - ein spaeter fehlgeschlagener Lauf hat
-        keine (oder eine unvollstaendige) Rangfolge und wuerde die Verteilung leeren."""
+        keine (oder eine unvollstaendige) Rangfolge und wuerde den Bearbeitungsstand leeren."""
         project = await _make_project(db_session, "Costa Rica")
         photo = await _add_photo(db_session, project, "a.jpg")
         good_run = await _add_criterion_scoring_run(
             db_session, project, started_at=datetime(2023, 1, 1)
         )
-        await _add_ranking(db_session, good_run, photo, "tier")
+        await _add_ranking(db_session, good_run, photo)
         await _add_criterion_scoring_run(
             db_session,
             project,
@@ -656,103 +959,23 @@ class TestCategories:
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
-        by_key = {entry["category_key"]: entry for entry in payload["categories"]["entries"]}
-        assert by_key["tier"]["photo_count"] == 1
-        assert payload["categories"]["classified_photo_count"] == 1
+        assert payload["progress"]["ranked"] == 1
 
-    async def test_photos_without_a_successful_run_are_unclassified_not_unrecognised(
+    async def test_the_partition_size_of_a_photo_is_the_size_of_its_event(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Edge Case 5: "noch nicht klassifiziert" ist etwas anderes als die Kategorie "nicht
-        erkannt" - sonst behauptete die Seite "nicht_erkannt = 100 %"."""
-        project = await _make_project(db_session, "Costa Rica")
-        await _add_photo(db_session, project, "a.jpg")
-        await _add_photo(db_session, project, "b.jpg")
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        by_key = {entry["category_key"]: entry for entry in payload["categories"]["entries"]}
-        assert by_key["nicht_erkannt"]["photo_count"] == 0
-        assert payload["categories"]["classified_photo_count"] == 0
-        assert payload["categories"]["unclassified_photo_count"] == 2
-
-    async def test_a_ranking_value_outside_the_set_adds_no_row_and_counts_as_unclassified(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Edge Case 8: Altbestand mit einem Kategoriewert ausserhalb des festen Sets - kein 500,
-        keine zusaetzliche Tabellenzeile mit einem Schluessel, den die Oberflaeche nicht benennen
-        kann."""
+        """Die Partition ist allein das Event - ein Foto steht je Lauf in genau einer Zeile, und
+        "Rang M von N" bezieht sich auf den Foto-Moment."""
         project = await _make_project(db_session, "Costa Rica")
         photo_a = await _add_photo(db_session, project, "a.jpg")
         photo_b = await _add_photo(db_session, project, "b.jpg")
-        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
-        await _add_ranking(db_session, run, photo_a, "tier")
-        await _add_ranking(db_session, run, photo_b, "ein-alter-freitext-key")
+        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 2, 1))
+        await _add_ranking(db_session, run, photo_a)
+        await _add_ranking(db_session, run, photo_b, rank_position=2)
 
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+        photos = (await authenticated_api_client.get(f"/projects/{project.id}/photos")).json()
 
-        keys = [entry["category_key"] for entry in payload["categories"]["entries"]]
-        assert keys == list(CATEGORY_REGISTRY)
-        assert payload["categories"]["classified_photo_count"] == 1
-        assert payload["categories"]["unclassified_photo_count"] == 1
-        # Der Bearbeitungsstand zaehlt dagegen BEIDE Fotos: eingeordnet worden sind sie, nur ist
-        # die Kategorie des zweiten kein benennbarer Wert des heutigen Sets.
-        assert payload["progress"]["ranked"] == 2
-
-    async def test_an_override_is_counted_and_appears_regularly_in_the_distribution(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Edge Case 7 / Akzeptanzkriterium K2: `category_override` wirkt bereits im Worker und
-        steckt in `photo_rankings.category_key` - das Foto erscheint genau einmal unter der
-        ueberschriebenen Kategorie UND im Override-Zaehler."""
-        project = await _make_project(db_session, "Costa Rica")
-        photo = await _add_photo(db_session, project, "a.jpg")
-        await _add_score(db_session, photo, category_override="tier")
-        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
-        await _add_ranking(db_session, run, photo, "tier")
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        by_key = {entry["category_key"]: entry for entry in payload["categories"]["entries"]}
-        assert by_key["tier"]["photo_count"] == 1
-        assert payload["manual_category_override_count"] == 1
-
-    async def test_an_override_outside_the_current_set_is_still_counted(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """K2: gezaehlt wird JEDER gesetzte Override, unabhaengig davon, ob der gespeicherte Wert
-        noch zum aktuellen Set gehoert."""
-        project = await _make_project(db_session, "Costa Rica")
-        photo = await _add_photo(db_session, project, "a.jpg")
-        await _add_score(db_session, photo, category_override="ein-alter-freitext-key")
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        assert payload["manual_category_override_count"] == 1
-
-    async def test_classified_plus_unclassified_always_equals_the_photo_count(
-        self,
-        authenticated_api_client: httpx.AsyncClient,
-        db_session: AsyncSession,
-        tmp_path: Path,
-    ) -> None:
-        """Edge Case 6: Ausschuss-/Duplikat-Fotos landen nicht in `photo_rankings` - die
-        Invariante muss trotzdem halten."""
-        await _noise_project(db_session, tmp_path)
-        project = await _make_project(db_session, "Costa Rica")
-        ranked_photo = await _add_photo(db_session, project, "a.jpg")
-        rejected_photo = await _add_photo(db_session, project, "b.jpg")
-        await _add_score(db_session, rejected_photo, duplicate_of=ranked_photo.id)
-        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
-        await _add_ranking(db_session, run, ranked_photo, "tier")
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        categories = payload["categories"]
-        assert (
-            categories["classified_photo_count"] + categories["unclassified_photo_count"]
-            == payload["photo_count"]
-        )
+        assert [item["ranking"]["partition_size"] for item in photos["items"]] == [2, 2]
 
 
 async def _add_landmark_detection(session: AsyncSession, photo: Photo) -> None:
@@ -761,19 +984,6 @@ async def _add_landmark_detection(session: AsyncSession, photo: Photo) -> None:
             photo_id=photo.id,
             name="Eiffelturm",
             confidence=0.9,
-            computed_at=datetime(2023, 6, 3, 12, 0),
-        )
-    )
-    await session.commit()
-
-
-async def _add_category_classification(session: AsyncSession, photo: Photo) -> None:
-    session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="tier",
-            detected_categories=["tier"],
-            provider="anthropic",
             computed_at=datetime(2023, 6, 3, 12, 0),
         )
     )
@@ -933,7 +1143,7 @@ class TestCosts:
     ) -> None:
         project = await _make_project(db_session, "Costa Rica")
         photo = await _add_photo(db_session, project, "a.jpg")
-        await _add_category_classification(db_session, photo)
+        await _add_assessment(db_session, photo)
         await _add_remote_category_run(
             db_session,
             project,
@@ -1076,9 +1286,9 @@ class TestProgress:
         await _add_photo(db_session, project, "c.jpg")
         await _add_score(db_session, photo_a)
         await _add_score(db_session, photo_b)
-        await _add_category_classification(db_session, photo_a)
+        await _add_assessment(db_session, photo_a)
         run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
-        await _add_ranking(db_session, run, photo_a, "tier")
+        await _add_ranking(db_session, run, photo_a)
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
@@ -1098,11 +1308,11 @@ class TestProgress:
         old_run = await _add_criterion_scoring_run(
             db_session, project, started_at=datetime(2023, 1, 1)
         )
-        await _add_ranking(db_session, old_run, photo, "tier")
+        await _add_ranking(db_session, old_run, photo)
         new_run = await _add_criterion_scoring_run(
             db_session, project, started_at=datetime(2023, 2, 1)
         )
-        await _add_ranking(db_session, new_run, photo, "tier")
+        await _add_ranking(db_session, new_run, photo)
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
@@ -1391,196 +1601,6 @@ class TestDiagnostics:
 # --- specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 5 -----------------
 
 
-async def _add_classification(
-    session: AsyncSession,
-    photo: Photo,
-    category_key: str,
-    *,
-    confidence: float | None = None,
-    detected: list[str] | None = None,
-) -> None:
-    session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key=category_key,
-            detected_categories=detected if detected is not None else [category_key],
-            detected_category_confidences=(
-                None if confidence is None else {category_key: confidence}
-            ),
-            category_confidence=confidence,
-            provider="anthropic",
-            computed_at=datetime(2023, 6, 3, 12, 0),
-        )
-    )
-    await session.commit()
-
-
-class TestCategoryConfidence:
-    """Akzeptanzkriterium 6 / ADR 0067 Punkt 5: eigener Block mit EIGENER Grundmenge - gruppiert
-    ueber die MODELL-Kategorie (`photo_category_classifications.category_key`), ausdruecklich nicht
-    ueber die wirksame Kategorie der Rangfolge."""
-
-    async def test_the_average_is_the_arithmetic_mean_per_model_category(
-        self,
-        authenticated_api_client: httpx.AsyncClient,
-        db_session: AsyncSession,
-        tmp_path: Path,
-    ) -> None:
-        await _noise_project(db_session, tmp_path)
-        project = await _make_project(db_session, "Costa Rica")
-        photo_a = await _add_photo(db_session, project, "a.jpg")
-        photo_b = await _add_photo(db_session, project, "b.jpg")
-        photo_c = await _add_photo(db_session, project, "c.jpg")
-        await _add_classification(db_session, photo_a, "tier", confidence=0.8)
-        await _add_classification(db_session, photo_b, "tier", confidence=0.6)
-        await _add_classification(db_session, photo_c, "landschaft", confidence=0.5)
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        block = payload["category_confidence"]
-        by_key = {entry["category_key"]: entry for entry in block["entries"]}
-        assert by_key["tier"]["photo_count"] == 2
-        assert by_key["tier"]["average_confidence"] == pytest.approx(0.7)
-        assert by_key["landschaft"]["photo_count"] == 1
-        assert by_key["landschaft"]["average_confidence"] == pytest.approx(0.5)
-        assert block["photos_with_confidence"] == 3
-        assert block["photos_without_confidence"] == 0
-
-    async def test_a_category_without_a_single_number_shows_none_not_zero(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Assertion auf `is None`, NICHT auf Falsyness - `0.0` ist ebenfalls falsy und waere eine
-        voellig andere Aussage."""
-        project = await _make_project(db_session, "Costa Rica")
-        photo = await _add_photo(db_session, project, "a.jpg")
-        await _add_classification(db_session, photo, "tier", confidence=0.4)
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        by_key = {
-            entry["category_key"]: entry for entry in payload["category_confidence"]["entries"]
-        }
-        assert by_key["menschen"]["photo_count"] == 0
-        assert by_key["menschen"]["average_confidence"] is None
-
-    async def test_a_zero_confidence_is_an_average_of_zero_not_a_missing_value(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        project = await _make_project(db_session, "Costa Rica")
-        photo = await _add_photo(db_session, project, "a.jpg")
-        await _add_classification(db_session, photo, "tier", confidence=0.0)
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        by_key = {
-            entry["category_key"]: entry for entry in payload["category_confidence"]["entries"]
-        }
-        assert by_key["tier"]["photo_count"] == 1
-        assert by_key["tier"]["average_confidence"] == 0.0
-        assert by_key["tier"]["average_confidence"] is not None
-
-    async def test_classified_photos_without_a_number_land_in_the_basis_not_in_the_average(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Akzeptanzkriterium 9: eine Altzeile mit `NULL` zaehlt zur Bezugsbasis, verfaelscht den
-        Mittelwert aber nicht (kein `0.0`-Beitrag)."""
-        project = await _make_project(db_session, "Costa Rica")
-        photo_a = await _add_photo(db_session, project, "a.jpg")
-        photo_b = await _add_photo(db_session, project, "b.jpg")
-        await _add_classification(db_session, photo_a, "tier", confidence=0.6)
-        await _add_classification(db_session, photo_b, "tier")
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        block = payload["category_confidence"]
-        by_key = {entry["category_key"]: entry for entry in block["entries"]}
-        assert by_key["tier"]["photo_count"] == 1
-        assert by_key["tier"]["average_confidence"] == pytest.approx(0.6)
-        assert block["photos_with_confidence"] == 1
-        assert block["photos_without_confidence"] == 1
-
-    async def test_the_entries_cover_all_registry_keys_in_display_order(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        project = await _make_project(db_session, "Costa Rica")
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        block = payload["category_confidence"]
-        assert [entry["category_key"] for entry in block["entries"]] == list(CATEGORY_REGISTRY)
-        assert [entry["display_name"] for entry in block["entries"]] == [
-            definition.display_name for definition in CATEGORY_REGISTRY.values()
-        ]
-        assert block["photos_with_confidence"] == 0
-        assert block["photos_without_confidence"] == 0
-        assert all(entry["average_confidence"] is None for entry in block["entries"])
-
-    async def test_an_overridden_photo_still_counts_towards_its_model_category(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """DIE Abgrenzung zur Kategorienverteilung (ADR 0067 Punkt 5): der vorhandene Block nimmt
-        die WIRKSAME Kategorie (inkl. Override), dieser Block die Aussage des Modells ueber sich
-        selbst. Ein uebersteuertes Foto zaehlt hier weiterhin zu `tier`."""
-        project = await _make_project(db_session, "Costa Rica")
-        photo = await _add_photo(db_session, project, "a.jpg")
-        await _add_score(db_session, photo, category_override="menschen")
-        await _add_classification(db_session, photo, "tier", confidence=0.9)
-        run = await _add_criterion_scoring_run(db_session, project, started_at=datetime(2023, 1, 1))
-        await _add_ranking(db_session, run, photo, "menschen")
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        confidence_by_key = {
-            entry["category_key"]: entry for entry in payload["category_confidence"]["entries"]
-        }
-        distribution_by_key = {
-            entry["category_key"]: entry for entry in payload["categories"]["entries"]
-        }
-        assert confidence_by_key["tier"]["photo_count"] == 1
-        assert confidence_by_key["tier"]["average_confidence"] == pytest.approx(0.9)
-        assert confidence_by_key["menschen"]["photo_count"] == 0
-        # Die Verteilung sieht dasselbe Foto unter `menschen` - beide Zahlen stimmen, weil sie
-        # verschiedene Fragen beantworten.
-        assert distribution_by_key["menschen"]["photo_count"] == 1
-        assert distribution_by_key["tier"]["photo_count"] == 0
-
-    async def test_a_second_project_never_leaks_into_the_aggregate(
-        self,
-        authenticated_api_client: httpx.AsyncClient,
-        db_session: AsyncSession,
-        tmp_path: Path,
-    ) -> None:
-        """Projekt-Skopierung ueber `_photos_of_project` - Muss-Kriterium mit eigenem Test
-        (`photo_category_classifications` hat keine eigene `project_id`)."""
-        other = await _make_project(db_session, "Nachbarprojekt")
-        other_photo = await _add_photo(db_session, other, "n.jpg")
-        await _add_classification(db_session, other_photo, "tier", confidence=1.0)
-        project = await _make_project(db_session, "Costa Rica")
-        photo = await _add_photo(db_session, project, "a.jpg")
-        await _add_classification(db_session, photo, "tier", confidence=0.2)
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        block = payload["category_confidence"]
-        by_key = {entry["category_key"]: entry for entry in block["entries"]}
-        assert by_key["tier"]["photo_count"] == 1
-        assert by_key["tier"]["average_confidence"] == pytest.approx(0.2)
-        assert block["photos_with_confidence"] == 1
-
-    async def test_a_project_without_any_classification_reports_an_empty_basis(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        project = await _make_project(db_session, "Costa Rica")
-        await _add_photo(db_session, project, "a.jpg")
-
-        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
-
-        block = payload["category_confidence"]
-        assert block["photos_with_confidence"] == 0
-        assert block["photos_without_confidence"] == 0
-        assert all(entry["photo_count"] == 0 for entry in block["entries"])
-
-
 class TestTheLiveCountersNeverTriggerTheIncompletenessHint:
     """specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-
     vier-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 2/8.
@@ -1626,7 +1646,7 @@ class TestTheLiveCountersNeverTriggerTheIncompletenessHint:
     ) -> None:
         project = await _make_project(db_session, "Costa Rica")
         photo = await _add_photo(db_session, project, "a.jpg")
-        await _add_classification(db_session, photo, "tier")
+        await _add_assessment(db_session, photo)
         run = await _add_remote_category_run(
             db_session,
             project,

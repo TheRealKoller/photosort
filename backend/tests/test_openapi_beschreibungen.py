@@ -11,7 +11,6 @@ from photosort.main import create_app
 # Eingefrorene Liste der heute beschriebenen Routen. Sie ist Gegenstand der Zusage, nicht ihr
 # Nebenprodukt: Wächst sie aus `app.openapi()` heraus, prüft der Test nur noch sich selbst.
 DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
-    ("get", "/categories"),
     ("delete", "/projects/{project_id}"),
     ("post", "/projects/{project_id}/confirm-ausschuss-gate"),
     ("post", "/projects/{project_id}/classify"),
@@ -19,8 +18,6 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     ("get", "/projects/{project_id}/classify/estimate"),
     ("get", "/projects/{project_id}/fine-labels"),
     ("get", "/projects/{project_id}/curation-candidates"),
-    ("put", "/photos/{photo_id}/category-override"),
-    ("delete", "/photos/{photo_id}/category-override"),
     ("get", "/projects/{project_id}/stats"),
     # specs/features/0426-zeitversatz-je-kamera.md: die zweite der zwei Registerstellen, die
     # einen neuen Router still uebergehen - ein nicht eingetragener Endpunkt faellt ohne roten

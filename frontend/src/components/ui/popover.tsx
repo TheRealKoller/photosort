@@ -9,7 +9,7 @@ import { cn } from '../../lib/utils'
 // Radix Popover hat einen echten Button-Trigger, der nativ per Tap funktioniert. Enthaelt selbst
 // KEINE geraetespezifische Hover-Logik - die lebt feature-spezifisch in
 // components/CriterionDetailsPopover.tsx, das diese generische Primitive nutzt (analog zum
-// bestehenden Muster ui/badge.tsx -> CategoryBadge.tsx).
+// bestehenden Muster ui/badge.tsx -> components/RatingBadge.tsx).
 export const Popover = PopoverPrimitive.Root
 export const PopoverTrigger = PopoverPrimitive.Trigger
 export const PopoverClose = PopoverPrimitive.Close

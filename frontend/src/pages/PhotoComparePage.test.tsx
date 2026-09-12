@@ -29,14 +29,10 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     camera: null,
     ratings: [],
     suggestion: null,
-    rankings: [],
+    ranking: null,
     criterion_scores: [],
     fine_labels: [],
-    remote_category: null,
     // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Angabe".
-    category_confidence: null,
-    category_override: null,
-    category_candidates: [],
     cloud_vision_status: [],
     ...overrides,
   }

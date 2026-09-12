@@ -53,7 +53,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.cameras import shifted
-from photosort.categories import CATEGORY_REGISTRY, secondary_categories
 from photosort.cloud_vision import default_vision_model_for_provider
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
@@ -65,7 +64,6 @@ from photosort.models import (
     Event,
     MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
@@ -141,63 +139,25 @@ _BASE_SCORING_AT = datetime(2024, 6, 1, 11, 0, 0)
 # waere bereits entschieden und zeigte den Zustand nicht mehr).
 _OPEN_SUGGESTION_INDEX = 3
 
-# Zwei Fotos des bewerteten Projekts tragen eine ABSICHTLICH gesetzte Konfidenz-Sonderform, damit
-# beide leicht falsch gebauten Faelle im Browser tatsaechlich sichtbar sind.
-#
-#   _CONFIDENCE_GAP_INDEX  - gar keine Angabe (beide Spalten `NULL`): die Luecke IST die
-#                            Darstellung, es darf dort kein Platzhalter und kein "0 %" stehen.
-#   _LOW_CONFIDENCE_INDEX  - eine Angabe ECHT unter der Kuratierungsschwelle von 60 %, damit der
-#                            Filter "Nur unsichere Zuordnungen" in der Demo nicht leer laeuft.
-#
-# Bewusst zwei VERSCHIEDENE Fotos und beide ausserhalb von `_OPEN_SUGGESTION_INDEX`, damit sich
-# die Sonderfaelle nicht gegenseitig verdecken.
-_CONFIDENCE_GAP_INDEX = 0
-_LOW_CONFIDENCE_INDEX = 1
-
-# Faktor, mit dem der deterministische Basiswert fuer `_LOW_CONFIDENCE_INDEX` in die untere
-# Bandhaelfte gezogen wird: `_deterministic_unit_value` liefert [0.05, 0.98], halbiert also
-# hoechstens 0.49 - garantiert unter 0.6, ohne den Wert fest zu verdrahten.
-_LOW_CONFIDENCE_FACTOR = 0.5
-
-# FESTE Zusatzkonfidenzen fuer drei Fotos des bewerteten Projekts, damit die Mehrfachzugehoerigkeit
-# in `browse-app` und im e2e-Prueflauf tatsaechlich zu sehen ist. Bewusst literale Zahlen statt des
-# deterministischen Zufallswerts: die Faelle sollen an der Schwelle nicht kippen, wenn sich der
-# Generator aendert.
-#
-#   Index 4  - ein Foto mit ZWEI Zugehoerigkeiten (Haupt + eine Nebenkategorie); `tier` gehoert
-#              Foto 1, das im selben Cluster liegt - die Partition zeigt damit zwei Fotos.
-#   Index 5  - ein Foto mit DREI Zugehoerigkeiten (Haupt + zwei Nebenkategorien).
-#   Index 6  - das Foto mit Override UND Nebenkategorien: hier stehen beide Ecken-Marker
-#              nebeneinander auf derselben Kachel (Marker-Kollision, UI/UX-Abschnitt der Spec).
-#              Seine automatische Kategorie (`essen_trinken`) traegt eine Zahl ueber der Schwelle
-#              und wird nach dem Uebersteuern zur Nebenkategorie - das Foto verschwindet also
-#              nicht aus der Kategorie, aus der es umgehaengt wurde.
-#
-# Alle uebrigen Fotos behalten GENAU EINE Zugehoerigkeit - der haeufigste Fall muss in der Demo
-# der haeufigste bleiben. Index 0 (`_CONFIDENCE_GAP_INDEX`) traegt weiterhin gar keine Angabe und
-# bekommt daher auch keine Nebenkategorie.
-_DEMO_EXTRA_CONFIDENCES: dict[int, dict[str, float]] = {
-    4: {"tier": 0.86},
-    5: {"menschen": 0.91, "essen_trinken": 0.74},
-    6: {"menschen": 0.88, "essen_trinken": 0.93},
-}
-
-# Das Foto mit dem manuellen Override (Index 6, automatisch `essen_trinken`).
-_DEMO_OVERRIDE_INDEX = 6
-_DEMO_OVERRIDE_CATEGORY_KEY = "kunst_kreatives"
-
 # Die vier Motiv-Fotozustaende (specs/features/0427-motive-mit-staerke.md). Bewusst VIER
 # verschiedene Indizes, keiner davon derselbe: fielen zwei Sonderzustaende auf dasselbe Foto,
 # zeigte die Sichtpruefung im Browser einen von beiden nie.
 #
-# Kein Index kollidiert mit `_DEMO_OVERRIDE_INDEX` (6) oder `_OPEN_SUGGESTION_INDEX` (3) - das
-# uebersteuerte Foto und das Foto mit offenem Ausschuss-Vorschlag sollen ihren eigenen Zustand
-# ungestoert zeigen.
-_DEMO_UNASSESSED_INDEX = 9
-_DEMO_LOCAL_BASIS_INDEX = 10
-_DEMO_EXCLUDED_INDEX = 11
+# Kein Index kollidiert mit `_OPEN_SUGGESTION_INDEX` (3) - das Foto mit offenem
+# Ausschuss-Vorschlag soll seinen eigenen Zustand ungestoert zeigen. Alle vier liegen innerhalb
+# der Fotoanzahl des bewerteten Projekts (der Groesse des Motivregisters); ein Waechtertest in
+# tests/test_demo_state.py haelt das fest, sonst fiele ein Zustand bei einer Registry-Aenderung
+# still aus dem Bestand.
+_DEMO_UNASSESSED_INDEX = 5
+_DEMO_LOCAL_BASIS_INDEX = 6
+_DEMO_EXCLUDED_INDEX = 7
 _DEMO_CORRECTED_INDEX = 1
 _DEMO_CORRECTED_MOTIF_KEY = "menschen"
+
+# Die Spitzenstaerke, die das i-te Foto in seinem i-ten Motiv traegt. Literal und deutlich
+# oberhalb der oberen Bandgrenze (2/3) statt aus dem deterministischen Generator: der Fall soll
+# nicht kippen, wenn sich der Generator aendert.
+_DEMO_PEAK_STRENGTH = 0.92
 
 # Reihenfolge, in der die drei Bewertungsstatus auf die ersten Fotos des bewerteten Projekts
 # verteilt werden - ueber das Enum gebildet, damit ein vierter Status nicht stillschweigend
@@ -395,9 +355,10 @@ def demo_project_specs(
 
     Die Fotoanzahl der grossen Sammlung ist ein Parameter mit der Produktionskonstante als Default
     (Edge Case E6): die Masse der Tests laeuft klein, genau ein Test faehrt die echte Groesse.
-    Die Anzahl des bewerteten Projekts leitet sich dagegen aus dem festen Kategorien-Set ab - jedes
-    Foto traegt genau einen Kategorie-Schluessel, damit ALLE Schluessel belegt sind, ohne dass
-    irgendwo eine abgeschriebene Liste gepflegt werden muesste."""
+    Die Anzahl des bewerteten Projekts leitet sich dagegen aus dem festen MOTIVSET ab: acht
+    Fotos, eines je Motiv, jedes mit einer Spitzenstaerke in genau einem Motiv - so ist jedes
+    Motiv im Demo-Bestand mindestens einmal stark, ohne dass irgendwo eine abgeschriebene Liste
+    gepflegt werden muesste."""
     return (
         DemoProjectSpec(name=EMPTY_PROJECT_NAME, slug="leeres-projekt", photo_count=0),
         DemoProjectSpec(
@@ -405,9 +366,7 @@ def demo_project_specs(
             slug="grosse-sammlung",
             photo_count=large_collection_photo_count,
         ),
-        DemoProjectSpec(
-            name=RATED_PROJECT_NAME, slug="bewertet", photo_count=len(CATEGORY_REGISTRY)
-        ),
+        DemoProjectSpec(name=RATED_PROJECT_NAME, slug="bewertet", photo_count=len(MOTIF_REGISTRY)),
         DemoProjectSpec(
             name=ERROR_PROJECT_NAME,
             slug="fehlerzustand",
@@ -657,27 +616,6 @@ def _deterministic_unit_value(slug: str, index: int, salt: str) -> float:
     return round(rng.uniform(0.05, 0.98), 3)
 
 
-def _demo_category_confidences(slug: str, index: int, category_key: str) -> dict[str, float] | None:
-    """Die Konfidenz-Abbildung EINES Demo-Fotos - `None` heisst "nicht erhoben" und ist genau der
-    Fall, den die Oberflaeche als Luecke darstellen muss.
-
-    Reine Funktion ueber demselben deterministischen Zufallsgenerator wie die uebrigen Demo-Werte:
-    zwei Laeufe liefern identische Zahlen, ein Screenshot bleibt vergleichbar.
-
-    Drei Fotos bekommen zusaetzlich feste Zahlen zu WEITEREN Schluesseln
-    (`_DEMO_EXTRA_CONFIDENCES`) - daraus entstehen die Nebenkategorien, und
-    zwar ueber dieselbe Ableitung wie im produktiven Schreibpfad (`secondary_categories`), damit
-    die Demo keinen Zustand erzeugt, den die Anwendung selbst nie schriebe."""
-    if index == _CONFIDENCE_GAP_INDEX:
-        return None
-    base = _deterministic_unit_value(slug, index, "category_confidence")
-    if index == _LOW_CONFIDENCE_INDEX:
-        confidences = {category_key: round(base * _LOW_CONFIDENCE_FACTOR, 3)}
-    else:
-        confidences = {category_key: base}
-    return confidences | _DEMO_EXTRA_CONFIDENCES.get(index, {})
-
-
 async def _seed_motif_assessments(
     session: AsyncSession, slug: str, photos: list[Photo], user_ids: Sequence[int]
 ) -> None:
@@ -699,17 +637,27 @@ async def _seed_motif_assessments(
     die uebrigen Demo-Werte und liegen damit in [0, 1] - die Demo darf keinen Zustand erzeugen,
     den die Anwendung selbst nie schriebe.
 
+    Das i-te Foto bekommt zusaetzlich im i-ten Motiv der Registry eine SPITZENstaerke
+    (`_DEMO_PEAK_STRENGTH`). Damit ist jedes Motiv im Demo-Bestand mindestens einmal im starken
+    Band - sonst koennte die Statistiktabelle eine Zeile zeigen, die nie etwas anderes als
+    Nullen enthaelt, und die Bandgrenzen blieben in der Sichtpruefung unsichtbar. Der Ueberhang
+    bei mehr Fotos als Motiven laeuft ueber den Modulo zurueck auf den Anfang.
+
     Die Korrektur haengt an einem VORHANDENEN Nutzer; der Seeder legt selbst nie ein Konto an
     (ein Konto mit bekannten Zugangsdaten waere genau das Sicherheitsproblem, gegen das die Sperre
     antritt). Ohne Nutzer entsteht keine Korrektur, und der Seeder scheitert nicht daran."""
+    registry_keys = list(MOTIF_REGISTRY)
     for index, photo in enumerate(photos):
         if index == _DEMO_UNASSESSED_INDEX:
             continue
         local = index == _DEMO_LOCAL_BASIS_INDEX
+        peak_key = registry_keys[index % len(registry_keys)]
         strengths = {
             motif_key: (
                 0.0
                 if local and motif_key not in LOCAL_MOTIF_SIGNALS
+                else _DEMO_PEAK_STRENGTH
+                if motif_key == peak_key
                 else _deterministic_unit_value(slug, index, f"motif:{motif_key}")
             )
             for motif_key in MOTIF_REGISTRY
@@ -937,21 +885,17 @@ async def _seed_rated_project(
     session.add(criterion_run)
     await session.flush()
 
-    # Ein Foto je Kategorie-Schluessel des FESTEN Sets - ueber die Registry iteriert, damit eine
-    # vierzehnte Kategorie automatisch mit abgedeckt ist statt durchzurutschen.
-    #
-    # Die Zugehoerigkeiten werden erst GESAMMELT und dann partitionsweise geschrieben - ein Foto
-    # kann in mehreren Partitionen stehen, und `rank_position` ist innerhalb einer Partition
-    # lueckenlos 1..n (dieselbe Zusage wie im produktiven Schreibpfad).
+    # Die Rangzeilen werden erst GESAMMELT und dann partitionsweise geschrieben: `rank_position`
+    # ist innerhalb einer Partition lueckenlos 1..n (dieselbe Zusage wie im produktiven
+    # Schreibpfad), und die Position steht erst fest, wenn die Partition vollstaendig ist.
     # ECHTE `events`-Zeilen, eine je Anzeigezustand. Die Ortsfelder werden nicht frei gesetzt,
     # sondern aus den GEMESSENEN Koordinaten der Mitglieder abgeleitet - die Demo darf keinen
     # Zustand erzeugen, den die Anwendung selbst nie schriebe (Feldkombination M7).
     event_by_index = await _create_demo_events(session, criterion_run.id, photos, spec.photo_count)
 
-    memberships: list[tuple[tuple[int, str], Photo, float, bool]] = []
-    for index, (photo, category_key) in enumerate(zip(photos, CATEGORY_REGISTRY, strict=True)):
+    rankings: list[tuple[int, Photo, float]] = []
+    for index, photo in enumerate(photos):
         event_id = event_by_index[_demo_event_index(index, spec.photo_count)]
-        category_override = _DEMO_OVERRIDE_CATEGORY_KEY if index == _DEMO_OVERRIDE_INDEX else None
         session.add(
             PhotoScore(
                 photo_id=photo.id,
@@ -965,33 +909,6 @@ async def _seed_rated_project(
                 suggested_status=(
                     RatingStatus.REJECTED if index == _OPEN_SUGGESTION_INDEX else None
                 ),
-                # Genau ein uebersteuertes Foto - und zwar dasjenige, das zugleich
-                # Nebenkategorien hat: nur so ist die Marker-Kollision (zwei Ecken-Marker
-                # nebeneinander) im Browser ueberhaupt sichtbar.
-                category_override=category_override,
-                computed_at=_BASE_SCORING_AT,
-            )
-        )
-        # Deterministische Konfidenz je Foto ueber dasselbe `_deterministic_unit_value`-Muster wie
-        # die uebrigen Demo-Werte - zwei Fotos tragen die Sonderformen (keine Angabe / unterhalb der
-        # Kuratierungsschwelle), siehe die Konstanten oben. Der Skalar entsteht wie im produktiven
-        # Schreibpfad per LOOKUP aus der Abbildung, damit die Demo keinen Zustand erzeugt, den die
-        # Anwendung selbst nie schriebe (Invariante des Schreibpfads).
-        confidences = _demo_category_confidences(spec.slug, index, category_key)
-        session.add(
-            PhotoCategoryClassification(
-                photo_id=photo.id,
-                category_key=category_key,
-                # Die Kandidatenliste enthaelt genau die Schluessel der Konfidenz-Abbildung -
-                # `set(detected_category_confidences) <= set(detected_categories)` ist die am Parser
-                # erzwungene Invariante, und die Demo darf keinen Zustand erzeugen, den die
-                # Anwendung selbst nie schriebe.
-                detected_categories=([category_key] if confidences is None else list(confidences)),
-                detected_category_confidences=confidences,
-                category_confidence=(
-                    None if confidences is None else confidences.get(category_key)
-                ),
-                provider="demo-state",
                 computed_at=_BASE_SCORING_AT,
             )
         )
@@ -1010,11 +927,7 @@ async def _seed_rated_project(
                     computed_at=_BASE_SCORING_AT,
                 )
             )
-        rank_score = _deterministic_unit_value(spec.slug, index, "rank")
-        primary_key = category_override or category_key
-        memberships.append(((event_id, primary_key), photo, rank_score, True))
-        for secondary_key in secondary_categories(confidences or {}, primary_key):
-            memberships.append(((event_id, secondary_key), photo, rank_score, False))
+        rankings.append((event_id, photo, _deterministic_unit_value(spec.slug, index, "rank")))
         for criterion_key, definition in CRITERIA_REGISTRY.items():
             session.add(
                 PhotoCriterionScore(
@@ -1026,25 +939,22 @@ async def _seed_rated_project(
                 )
             )
 
-    partitions: dict[tuple[int, str], list[tuple[Photo, float, bool]]] = {}
-    for partition_key, photo, rank_score, is_primary in memberships:
-        partitions.setdefault(partition_key, []).append((photo, rank_score, is_primary))
-    for (partition_event_id, partition_category_key), rows in partitions.items():
+    # Eine Partition je Event, ein Foto in genau einer davon.
+    partitions: dict[int, list[tuple[Photo, float]]] = {}
+    for event_id, photo, rank_score in rankings:
+        partitions.setdefault(event_id, []).append((photo, rank_score))
+    for partition_event_id, rows in partitions.items():
         # Absteigend nach Rang-Score, Tie-Break ueber die Foto-Id - dieselbe Ordnung wie
-        # ranking.py::rank_photos. Die Konfidenz-Daempfung wird hier bewusst NICHT nachgebaut: die
-        # Demo soll einen plausiblen Zustand zeigen, nicht den Algorithmus ein zweites Mal
-        # implementieren.
+        # ranking.py::rank_photos.
         ordered = sorted(rows, key=lambda row: (-row[1], row[0].id))
-        for position, (photo, rank_score, is_primary) in enumerate(ordered, start=1):
+        for position, (photo, rank_score) in enumerate(ordered, start=1):
             session.add(
                 PhotoRanking(
                     criterion_scoring_run_id=criterion_run.id,
                     photo_id=photo.id,
                     event_id=partition_event_id,
-                    category_key=partition_category_key,
                     rank_score=rank_score,
                     rank_position=position,
-                    is_primary=is_primary,
                 )
             )
 
@@ -1272,7 +1182,7 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
         return 1
     except SQLAlchemyError as exc:
         # Nur der Fehlertyp, NIE str(exc)/Traceback - die SQLAlchemy-Meldung kann die
-        # DATABASE_URL inklusive Zugangsdaten enthalten (Muster aus category_diff.py).
+        # DATABASE_URL inklusive Zugangsdaten enthalten (Muster analog OpenCloudError).
         print(f"Fehler: Datenbankzugriff fehlgeschlagen ({type(exc).__name__}).", file=sys.stderr)
         return 1
     print(render_summary(summary))

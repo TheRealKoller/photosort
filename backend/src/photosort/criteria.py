@@ -31,21 +31,23 @@ class CriterionDefinition:
     key: str
     display_name: str
     source: CriterionSource
-    # Kategorie-Fähigkeit ist ein reines Registry-Attribut statt einer im Code gepflegten
-    # Prioritätskette. Invariante, durch einen eigenen Registry-Test erzwungen:
-    # category_eligible == (category_presence_threshold is not None) - reine
-    # Qualitätskriterien (sharpness/exposure/goldener_schnitt/aesthetics) behalten den
-    # Default False/None und können nie eine Kategorie bilden.
-    category_eligible: bool = False
-    category_presence_threshold: float | None = None
-    # KEIN zweites Prioritätsattribut hier: welche Kategorie bei mehreren Kandidaten
-    # gewinnt, entscheidet ausschließlich die feste Vorrangreihenfolge in
-    # categories.py::CATEGORY_REGISTRY - ein Attribut daneben wäre eine konkurrierende,
-    # driftende Quelle derselben Aussage.
+    # Ab welchem Wert dieses Kriterium als "auf dem Foto ist das zu sehen" gilt - `None` heißt
+    # "trifft keine Inhaltsaussage" (reine Qualitäts-/Kompositionskriterien:
+    # sharpness/exposure/goldener_schnitt/aesthetics/symmetrie/horizont/freiraum/
+    # content_landscape).
+    #
+    # Es gibt KEIN zweites Attribut daneben, das dasselbe in Boolescher Form wiederholt: ein
+    # `category_eligible` war genau `presence_threshold is not None` und damit eine zweite,
+    # driftende Quelle derselben Aussage. Wer die Frage "trifft dieses Kriterium eine
+    # Inhaltsaussage" braucht, prüft `presence_threshold is not None`.
+    #
+    # KEIN Prioritäts-/Vorrangattribut: welches Motiv ein Foto trägt, entscheidet seit Spec 0427
+    # eine Stärke je Motiv und keine Rangliste.
+    presence_threshold: float | None = None
 
 
 # Schwelle, ab der content_people als "Gesicht erkannt" gilt (compute_content_people liefert
-# nur 0.0/1.0, 0.5 trennt beide Fälle eindeutig) - zugleich die category_presence_threshold
+# nur 0.0/1.0, 0.5 trennt beide Fälle eindeutig) - zugleich die presence_threshold
 # dieses Kriteriums: Wiederverwendung einer bestehenden Konstante, keine neue Kalibrierung.
 _CONTENT_PEOPLE_DETECTED_THRESHOLD = 0.5
 
@@ -53,19 +55,19 @@ _CONTENT_PEOPLE_DETECTED_THRESHOLD = 0.5
 # oder liegen bereits oberhalb der jeweiligen detektoreigenen Konfidenzschwelle
 # (classification.py) - diese Konstanten trennen nur "nichts erkannt" von "irgendetwas
 # erkannt", sie sind keine zweite inhaltliche Kalibrierung.
-_TIER_CATEGORY_PRESENCE_THRESHOLD = 0.01
-_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD = 0.01
+_TIER_PRESENCE_THRESHOLD = 0.01
+_GEBAEUDE_PRESENCE_THRESHOLD = 0.01
 
 # Dieselbe Konstanten-Klasse wie oben - compute_fahrzeug_score/compute_essen_trinken_score
 # liefern entweder exakt 0.0 (kein Allow-Listen-Treffer) oder einen Wert oberhalb von
 # OBJECT_DETECTION_CONFIDENCE_THRESHOLD.
-_FAHRZEUG_CATEGORY_PRESENCE_THRESHOLD = 0.01
-_ESSEN_TRINKEN_CATEGORY_PRESENCE_THRESHOLD = 0.01
+_FAHRZEUG_PRESENCE_THRESHOLD = 0.01
+_ESSEN_TRINKEN_PRESENCE_THRESHOLD = 0.01
 
 # Dieselbe Konstanten-Klasse wie oben - compute_landschaft_score liefert entweder exakt 0.0
 # (kein Allow-Listen-Treffer über LANDSCHAFT_LABEL_MIN_CONFIDENCE) oder einen Wert oberhalb
 # dieser Konfidenzschwelle.
-_LANDSCHAFT_CATEGORY_PRESENCE_THRESHOLD = 0.01
+_LANDSCHAFT_PRESENCE_THRESHOLD = 0.01
 
 # Confidence-Schwelle des Vision-LLM, ab der ein Foto als "Sehenswürdigkeit erkannt" gilt -
 # zugleich Vorfilterungs-Schwelle für content_landscape/gebaeude in
@@ -74,7 +76,7 @@ _LANDSCHAFT_CATEGORY_PRESENCE_THRESHOLD = 0.01
 # im Repo zur Kalibrierung). Gegen das bekannte, beobachtete Überidentifikations-Risiko des
 # Vision-LLM ist diese Schwelle die strukturelle, aber womöglich nicht ausreichende
 # Gegenmaßnahme.
-_LANDMARK_CATEGORY_PRESENCE_THRESHOLD = 0.5
+_LANDMARK_PRESENCE_THRESHOLD = 0.5
 
 CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     "sharpness": CriterionDefinition("sharpness", "Schärfe", CriterionSource.LOCAL_HEURISTIC),
@@ -83,10 +85,9 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         "content_people",
         "Menschen erkannt",
         CriterionSource.LOCAL_ML,
-        category_eligible=True,
-        category_presence_threshold=_CONTENT_PEOPLE_DETECTED_THRESHOLD,
+        presence_threshold=_CONTENT_PEOPLE_DETECTED_THRESHOLD,
     ),
-    # Reines Ranking-Signal, NICHT kategoriefähig - compute_uniform_area_fraction misst
+    # Reines Ranking-Signal ohne Inhaltsaussage - compute_uniform_area_fraction misst
     # Texturarmut ("Flächigkeit"), keine Landschaft. Die echte, inhaltsbasierte
     # Landschafts-Erkennung liegt im Kriterium "landschaft" unten.
     "content_landscape": CriterionDefinition(
@@ -98,8 +99,7 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         "tier",
         "Tier erkannt",
         CriterionSource.LOCAL_ML,
-        category_eligible=True,
-        category_presence_threshold=_TIER_CATEGORY_PRESENCE_THRESHOLD,
+        presence_threshold=_TIER_PRESENCE_THRESHOLD,
     ),
     "goldener_schnitt": CriterionDefinition(
         "goldener_schnitt", "Goldener Schnitt", CriterionSource.LOCAL_HEURISTIC
@@ -108,8 +108,7 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         "gebaeude",
         "Gebäude erkannt",
         CriterionSource.LOCAL_ML,
-        category_eligible=True,
-        category_presence_threshold=_GEBAEUDE_CATEGORY_PRESENCE_THRESHOLD,
+        presence_threshold=_GEBAEUDE_PRESENCE_THRESHOLD,
     ),
     "aesthetics": CriterionDefinition("aesthetics", "Ästhetik", CriterionSource.LOCAL_ML),
     # Echte, inhaltsbasierte Landschafts-Erkennung aus DERSELBEN Szenen-Klassifikation wie
@@ -118,12 +117,11 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         "landschaft",
         "Landschaft erkannt",
         CriterionSource.LOCAL_ML,
-        category_eligible=True,
-        category_presence_threshold=_LANDSCHAFT_CATEGORY_PRESENCE_THRESHOLD,
+        presence_threshold=_LANDSCHAFT_PRESENCE_THRESHOLD,
     ),
     # Drei weitere, voneinander unabhängige Kompositions-Ranking-Signale (analog
-    # goldener_schnitt/aesthetics) - alle drei category_eligible=False, also reine
-    # Ranking-Signale und keine Kuratierungs-Kategorien.
+    # goldener_schnitt/aesthetics) - alle drei ohne `presence_threshold`, also reine
+    # Ranking-Signale ohne Inhaltsaussage.
     "symmetrie": CriterionDefinition("symmetrie", "Symmetrie", CriterionSource.LOCAL_HEURISTIC),
     "horizont": CriterionDefinition(
         "horizont", "Horizont-Neigung", CriterionSource.LOCAL_HEURISTIC
@@ -136,8 +134,7 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         "landmark",
         "Sehenswürdigkeit",
         CriterionSource.CLOUD,
-        category_eligible=True,
-        category_presence_threshold=_LANDMARK_CATEGORY_PRESENCE_THRESHOLD,
+        presence_threshold=_LANDMARK_PRESENCE_THRESHOLD,
     ),
     # Zwei weitere lokale Inhalts-Kriterien aus DERSELBEN COCO-Detektorausgabe wie `tier` -
     # keine zusätzliche Inferenz, kein neues Modell-Asset.
@@ -145,15 +142,13 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         "fahrzeug",
         "Fahrzeug erkannt",
         CriterionSource.LOCAL_ML,
-        category_eligible=True,
-        category_presence_threshold=_FAHRZEUG_CATEGORY_PRESENCE_THRESHOLD,
+        presence_threshold=_FAHRZEUG_PRESENCE_THRESHOLD,
     ),
     "essen_trinken": CriterionDefinition(
         "essen_trinken",
         "Essen erkannt",
         CriterionSource.LOCAL_ML,
-        category_eligible=True,
-        category_presence_threshold=_ESSEN_TRINKEN_CATEGORY_PRESENCE_THRESHOLD,
+        presence_threshold=_ESSEN_TRINKEN_PRESENCE_THRESHOLD,
     ),
 }
 
@@ -573,7 +568,7 @@ def is_landmark_candidate(values: dict[str, float]) -> bool:
     """Reine Schwellenwert-Prüfung für die landmark-Vorfilterung.
 
     Ein Foto ist Kandidat, wenn `landschaft` ODER `gebaeude` die jeweils registrierte
-    category_presence_threshold erreicht (`>=`, inklusiv, dieselben Registry-Werte wie die
+    presence_threshold erreicht (`>=`, inklusiv, dieselben Registry-Werte wie die
     übrige Presence-Auswertung). Fehlende Werte gelten als 0.0, kein Sonderfall. Von
     worker.py::_select_landmark_candidates (Live-Lauf) UND
     api/photos.py::_cloud_vision_status_out (Read-Time-Ableitung) gemeinsam genutzt -
@@ -585,8 +580,8 @@ def is_landmark_candidate(values: dict[str, float]) -> bool:
     `content_landscape`: inhaltlich das, was der Filter ausdrücken soll ("auf dem Foto ist
     eine Landschaft oder ein Gebäude zu sehen"); die beiden Kandidatenmengen stehen in
     KEINEM Teilmengen-Verhältnis zueinander."""
-    landschaft_threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
-    gebaeude_threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
+    landschaft_threshold = CRITERIA_REGISTRY["landschaft"].presence_threshold
+    gebaeude_threshold = CRITERIA_REGISTRY["gebaeude"].presence_threshold
     assert landschaft_threshold is not None
     assert gebaeude_threshold is not None
     return (

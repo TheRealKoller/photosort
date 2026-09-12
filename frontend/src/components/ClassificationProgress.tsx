@@ -1,10 +1,10 @@
 import type { CloudPhaseSummaryOut, CriterionScoringRunSummary } from '../api/types'
-import { formatProviderLabel } from '../utils/categoryLabels'
 import {
   deriveClassificationSteps,
   type ClassificationStep,
   type ClassificationStepState,
 } from '../utils/classificationSteps'
+import { formatProviderLabel } from '../utils/formatStats'
 import { StatusDot } from './StatusDot'
 import { Icon } from './ui/icon'
 import { Progress } from './ui/progress'

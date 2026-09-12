@@ -36,7 +36,6 @@ from photosort.models import (
     CriterionScoringRun,
     Event,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
@@ -146,12 +145,6 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     await _run(
         "photo_cloud_vision_errors",
         delete(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id.in_(photo_ids)),
-    )
-    await _run(
-        "photo_category_classifications",
-        delete(PhotoCategoryClassification).where(
-            PhotoCategoryClassification.photo_id.in_(photo_ids)
-        ),
     )
     # NACH photo_rankings (die zeigen auf events), VOR criterion_scoring_runs (darauf zeigen
     # events). Beide Kanten sind echte Fremdschluessel - unter Postgres bleibt sonst eine verwaiste

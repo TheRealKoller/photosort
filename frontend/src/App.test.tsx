@@ -40,13 +40,11 @@ function emptyStats(): ProjectStatsOut {
     storage: { opencloud_bytes: 0, local_cache_bytes: 0, local_database_bytes_estimate: null },
     taken_at_earliest: null,
     taken_at_latest: null,
-    categories: { classified_photo_count: 0, unclassified_photo_count: 0, entries: [] },
-    category_confidence: {
-      entries: [],
-      photos_with_confidence: 0,
-      photos_without_confidence: 0,
-    },
-    manual_category_override_count: 0,
+    motifs: [],
+    strength_bands: { strong: 2 / 3, medium: 1 / 3 },
+    unassessed_photo_count: 0,
+    excluded_photo_count: 0,
+    motif_correction_count: 0,
     cost: { currency: 'USD', total_usd: 0, by_purpose: [] },
     progress: {
       scanned: 0,

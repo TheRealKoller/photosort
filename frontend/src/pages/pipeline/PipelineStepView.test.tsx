@@ -56,7 +56,7 @@ const EXPECTED_MARKERS: Record<StepId, RegExp> = {
   ausschuss: /erkennt automatisch unscharfe/i,
   gate: /bestätige einmalig/i,
   kriterien: /bewertet jedes verbleibende foto/i,
-  kuratierung: /zeigt pro foto-moment und kategorie/i,
+  kuratierung: /zeigt pro foto-moment die besten n fotos/i,
 }
 
 describe('PipelineStepView', () => {

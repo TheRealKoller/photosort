@@ -1,19 +1,11 @@
 import type { ReactNode } from 'react'
 
 import { ApiError } from '../api/client'
-import type { PhotoOut, RankingOut } from '../api/types'
+import type { PhotoOut } from '../api/types'
 import { useCurationCandidatesQuery } from '../hooks/usePhotos'
-import { curatedRankings } from '../utils/rankings'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 import { Skeleton } from './ui/skeleton'
-
-/**
- * Der Bereich hat geladen, aber der Konfidenzfilter hat alles herausgenommen - bewusst ein
- * anderer Text als der Leerzustand "hier ist nichts angekommen".
- */
-export const CANDIDATES_ALL_FILTERED_TEXT =
-  'Keine der weiteren Kandidaten liegt unter der eingestellten Sicherheit.'
 
 /** Der Server hat zu dieser Partition nichts weiter geliefert. */
 export const CANDIDATES_NONE_TEXT = 'Keine weiteren Kandidaten vorhanden.'
@@ -27,22 +19,15 @@ const TILE_GRID_CLASS = 'grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4'
 export interface CurationCandidatesProps {
   projectId: number
   eventId: number
-  categoryKey: string
-  /** Es werden die Zugehoerigkeiten mit `rank_position > afterRank` geladen. */
+  /** Es werden die Fotos mit `rank_position > afterRank` geladen. */
   afterRank: number
-  /** Die UNGEFILTERTE Restmenge - sie steht auch bei aktivem Konfidenzfilter in der Beschriftung. */
+  /** Die Restmenge der Partition - sie steht in der Beschriftung des Auslösers. */
   remainingCount: number
   panelId: string
   expanded: boolean
   onToggle: () => void
-  /**
-   * Der Konfidenzfilter der Seite, auf die nachgeladenen Fotos angewendet (`filterLowConfidence`
-   * aus der Seite hereingereicht) - der Filter hat EINE Bedeutung in der ganzen Ansicht.
-   * `undefined`, wenn er ausgeschaltet ist.
-   */
-  filterPhotos?: (items: PhotoOut[]) => PhotoOut[]
-  /** Baut die Kachel - die Seite besitzt Verwerfen-Zustand und Override-Steuerung. */
-  renderTile: (photo: PhotoOut, ranking: RankingOut) => ReactNode
+  /** Baut die Kachel - die Seite besitzt den Verwerfen-Zustand und das Motivset. */
+  renderTile: (photo: PhotoOut) => ReactNode
 }
 
 /**
@@ -58,24 +43,20 @@ export interface CurationCandidatesProps {
 export function CurationCandidates({
   projectId,
   eventId,
-  categoryKey,
   afterRank,
   remainingCount,
   panelId,
   expanded,
   onToggle,
-  filterPhotos,
   renderTile,
 }: CurationCandidatesProps) {
   const query = useCurationCandidatesQuery(projectId, {
     eventId,
-    categoryKey,
     afterRank,
     enabled: expanded,
   })
 
-  const loaded = query.data?.pages.flatMap((page) => page.items) ?? []
-  const visible = filterPhotos ? filterPhotos(loaded) : loaded
+  const visible = query.data?.pages.flatMap((page) => page.items) ?? []
 
   return (
     <>
@@ -116,24 +97,13 @@ export function CurationCandidates({
             </Alert>
           )}
 
+          {/* Die Rangfolge kommt vom Server und wird nicht nachsortiert. */}
           {query.isSuccess && visible.length > 0 && (
-            <ul className={TILE_GRID_CLASS}>
-              {visible.map((photo) =>
-                // Die Rangfolge kommt vom Server und wird nicht nachsortiert. `curatedRankings`
-                // liefert hier genau EINE Zugehoerigkeit: der Endpunkt setzt `curation_position`
-                // ausschliesslich fuer die angefragte Partition.
-                curatedRankings(photo).map((ranking) => renderTile(photo, ranking)),
-              )}
-            </ul>
+            <ul className={TILE_GRID_CLASS}>{visible.map((photo) => renderTile(photo))}</ul>
           )}
 
-          {/* Zwei UNTERSCHEIDBARE Zustaende (Akzeptanzkriterium 24): "hier ist alles
-              weggefiltert" ist etwas anderes als "hier ist noch nichts geladen" - derselbe
-              Anblick fuer beide liesse den Nutzer glauben, der Vorrat sei leer. */}
           {query.isSuccess && visible.length === 0 && (
-            <p className="text-sm text-text">
-              {loaded.length > 0 ? CANDIDATES_ALL_FILTERED_TEXT : CANDIDATES_NONE_TEXT}
-            </p>
+            <p className="text-sm text-text">{CANDIDATES_NONE_TEXT}</p>
           )}
 
           {query.hasNextPage && (

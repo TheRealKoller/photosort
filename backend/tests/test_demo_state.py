@@ -21,7 +21,7 @@ from PIL import Image
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.categories import CATEGORY_REGISTRY
+from photosort import demo_state
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.db import Base, make_engine, make_session_factory
@@ -54,7 +54,6 @@ from photosort.models import (
     Event,
     MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
@@ -72,7 +71,7 @@ from photosort.models import (
     ScanStatus,
     User,
 )
-from photosort.motifs import MOTIF_REGISTRY, is_motif_key
+from photosort.motifs import MOTIF_REGISTRY, MOTIF_STRENGTH_BAND_STRONG, is_motif_key
 from photosort.thumbnails import display_path, generate_variants, thumbnail_path
 from tests.time_offset_invariant import assert_time_offset_invariant
 
@@ -255,9 +254,25 @@ class TestDemoProjectSpecs:
         large = demo_project_specs(large_collection_photo_count=3)[1]
         assert large.photo_count == 3
 
-    def test_rated_project_has_one_photo_per_category_key_of_the_fixed_set(self) -> None:
+    def test_rated_project_has_one_photo_per_motif_of_the_fixed_set(self) -> None:
         rated = demo_project_specs()[2]
-        assert rated.photo_count == len(CATEGORY_REGISTRY)
+        assert rated.photo_count == len(MOTIF_REGISTRY)
+
+    def test_every_motif_state_index_lies_inside_the_rated_project(self) -> None:
+        """Die vier Motiv-Sonderzustaende haengen an festen Indizes, die Fotoanzahl an der
+        Registrygroesse - ohne diesen Waechter fiele bei einer schrumpfenden Registry ein Zustand
+        still aus dem Demo-Bestand, und die Sichtpruefung zeigte ihn nie wieder."""
+        rated = demo_project_specs()[2]
+        indices = (
+            demo_state._DEMO_UNASSESSED_INDEX,
+            demo_state._DEMO_LOCAL_BASIS_INDEX,
+            demo_state._DEMO_EXCLUDED_INDEX,
+            demo_state._DEMO_CORRECTED_INDEX,
+        )
+
+        assert len(set(indices)) == len(indices)
+        for index in indices:
+            assert 0 <= index < rated.photo_count, index
 
     def test_error_state_has_at_least_one_photo_without_cache_files(self) -> None:
         error = demo_project_specs()[3]
@@ -485,18 +500,30 @@ class TestRebuildDemoStateProducesTheFourStates:
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
         assert len(await _photos_of(db_session, LARGE_PROJECT_NAME)) == 3
 
-    async def test_rated_project_covers_every_category_key_of_the_fixed_set(
+    async def test_every_motif_is_strong_on_at_least_one_photo_of_the_rated_project(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
-        # Ueber das Set aus categories.py iteriert, nie als abgeschriebene 13er-Liste: eine
-        # vierzehnte Kategorie darf nicht ungeprueft durchrutschen.
+        """Ueber `MOTIF_REGISTRY` iteriert, nie als abgeschriebene Achterliste: ein neuntes Motiv
+        darf nicht ungeprueft durchrutschen.
+
+        Geprueft wird die STAERKE ueber der oberen Bandgrenze, nicht das blosse Vorhandensein
+        einer Zeile: acht Zeilen entstehen fuer jedes beurteilte Foto ohnehin, und eine
+        Statistiktabelle, in der eine Zeile nie etwas anderes als Nullen zeigt, laesst die
+        Bandgrenzen in der Sichtpruefung unsichtbar."""
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
-        keys = set()
-        for photo in await _photos_of(db_session, RATED_PROJECT_NAME):
-            classification = await db_session.get(PhotoCategoryClassification, photo.id)
-            assert classification is not None
-            keys.add(classification.category_key)
-        assert keys == set(CATEGORY_REGISTRY)
+        photo_ids = [photo.id for photo in await _photos_of(db_session, RATED_PROJECT_NAME)]
+        strong_keys = set(
+            (
+                await db_session.execute(
+                    select(PhotoMotifStrength.motif_key).where(
+                        PhotoMotifStrength.photo_id.in_(photo_ids),
+                        PhotoMotifStrength.strength >= MOTIF_STRENGTH_BAND_STRONG,
+                    )
+                )
+            ).scalars()
+        )
+
+        assert strong_keys == set(MOTIF_REGISTRY)
 
     async def test_rated_project_has_all_three_rating_statuses_for_every_user(
         self, db_session: AsyncSession, tmp_path: Path
@@ -608,79 +635,6 @@ class TestRebuildDemoStateProducesTheFourStates:
         assert len(errors) >= 1
         assert all(error.error_message.strip() != "" for error in errors)
 
-    # --- specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 7 -------------
-
-    async def _rated_classifications(
-        self, db_session: AsyncSession, tmp_path: Path
-    ) -> list[PhotoCategoryClassification]:
-        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
-        rows = []
-        for photo in await _photos_of(db_session, RATED_PROJECT_NAME):
-            classification = await db_session.get(PhotoCategoryClassification, photo.id)
-            assert classification is not None
-            rows.append(classification)
-        return rows
-
-    async def test_rated_project_has_at_least_one_photo_without_any_confidence(
-        self, db_session: AsyncSession, tmp_path: Path
-    ) -> None:
-        """Damit die LUECKENdarstellung im Browser ueberhaupt sichtbar ist - eine Demo, in der
-        jedes Foto eine Zahl traegt, zeigt genau den Fall nicht, der am leichtesten falsch
-        gebaut wird."""
-        rows = await self._rated_classifications(db_session, tmp_path)
-
-        assert any(row.category_confidence is None for row in rows)
-
-    async def test_rated_project_has_at_least_one_photo_below_the_curation_threshold(
-        self, db_session: AsyncSession, tmp_path: Path
-    ) -> None:
-        """Der Kuratierungsfilter greift bei echt unter 60 % - ohne ein solches Foto liefe er in
-        der Demo immer leer."""
-        rows = await self._rated_classifications(db_session, tmp_path)
-
-        assert any(
-            row.category_confidence is not None and row.category_confidence < 0.6 for row in rows
-        )
-
-    async def test_rated_project_has_at_least_one_photo_with_a_confidence(
-        self, db_session: AsyncSession, tmp_path: Path
-    ) -> None:
-        rows = await self._rated_classifications(db_session, tmp_path)
-
-        assert any(row.category_confidence is not None for row in rows)
-
-    async def test_the_demo_rows_satisfy_the_confidence_invariant(
-        self, db_session: AsyncSession, tmp_path: Path
-    ) -> None:
-        """Dieselbe Invariante wie im produktiven Schreibpfad (ADR 0067 Punkt 4) - die Demo-Daten
-        duerfen keinen Zustand erzeugen, den die Anwendung selbst nie schreiben wuerde."""
-        rows = await self._rated_classifications(db_session, tmp_path)
-
-        for row in rows:
-            mapping = row.detected_category_confidences
-            if mapping is None:
-                assert row.category_confidence is None
-                continue
-            assert set(mapping) <= set(row.detected_categories)
-            assert row.category_confidence == mapping.get(row.category_key)
-
-    async def test_the_confidences_are_deterministic_across_two_rebuilds(
-        self, db_session: AsyncSession, tmp_path: Path
-    ) -> None:
-        first = {
-            row.category_key: row.category_confidence
-            for row in await self._rated_classifications(db_session, tmp_path)
-        }
-        # Zweiter vollstaendiger Neuaufbau derselben Datenbank - `photo_id` aendert sich dabei,
-        # der Kategorieschluessel nicht, deshalb ist er hier der Vergleichsanker.
-        second = {
-            row.category_key: row.category_confidence
-            for row in await self._rated_classifications(db_session, tmp_path)
-        }
-
-        assert len(first) == len(CATEGORY_REGISTRY)
-        assert first == second
-
 
 class TestRebuildDemoStateWritesRealThumbnails:
     """Bindung an die ECHTE thumbnails.py-Logik, gegen Drift getestet statt vorausgesetzt."""
@@ -784,7 +738,7 @@ class TestRebuildDemoStateTouchesNothingElse:
     ) -> None:
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
         assert (await db_session.execute(select(Rating))).scalars().all() == []
-        assert len(await _photos_of(db_session, RATED_PROJECT_NAME)) == len(CATEGORY_REGISTRY)
+        assert len(await _photos_of(db_session, RATED_PROJECT_NAME)) == len(MOTIF_REGISTRY)
 
 
 class TestRebuildDemoStateAtProductionSize:
@@ -800,7 +754,7 @@ class TestRebuildDemoStateAtProductionSize:
             assert thumbnail_path(tmp_path, photo.id, photo.etag).is_file()
             assert display_path(tmp_path, photo.id, photo.etag).is_file()
         assert summary.photo_count == (
-            LARGE_COLLECTION_PHOTO_COUNT + len(CATEGORY_REGISTRY) + ERROR_STATE_PHOTO_COUNT
+            LARGE_COLLECTION_PHOTO_COUNT + len(MOTIF_REGISTRY) + ERROR_STATE_PHOTO_COUNT
         )
 
 

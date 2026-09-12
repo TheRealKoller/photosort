@@ -6,7 +6,6 @@ import {
   formatCriterionPercent,
   formatDate,
   formatDateTime,
-  formatPercent,
   formatUsd,
 } from './formatStats'
 
@@ -78,22 +77,6 @@ describe('formatUsd', () => {
   })
 })
 
-describe('formatPercent', () => {
-  it('erwartet einen Bruch zwischen 0 und 1', () => {
-    expect(formatPercent(0.0829)).toBe('8,3 %')
-    expect(formatPercent(1)).toBe('100,0 %')
-  })
-
-  it('stellt 0 ohne Nachkommastelle dar', () => {
-    expect(formatPercent(0)).toBe('0 %')
-  })
-
-  it('rundet auf eine Nachkommastelle', () => {
-    expect(formatPercent(1 / 3)).toBe('33,3 %')
-    expect(formatPercent(2 / 3)).toBe('66,7 %')
-  })
-})
-
 describe('formatCount', () => {
   it('setzt den deutschen Tausenderpunkt', () => {
     expect(formatCount(12043)).toBe('12.043')
@@ -134,10 +117,10 @@ describe('formatCriterionPercent', () => {
     expect(formatCriterionPercent(0.995)).toBe('100%')
   })
 
-  it('ist bewusst nicht dieselbe Darstellung wie der Statistik-Hausformatierer', () => {
-    // `formatPercent` traegt eine Nachkommastelle und ein Leerzeichen vor dem Prozentzeichen -
-    // der Konfidenzblock folgt hier der Kategorie-Anzeige, nicht der Statistik-Hausformatierung.
-    expect(formatPercent(0.925)).toBe('92,5 %')
+  it('traegt weder Nachkommastelle noch Leerzeichen vor dem Prozentzeichen', () => {
+    // Bewusst anders als die Betrags- und Speicherangaben derselben Seite: dieselbe Zahl
+    // erscheint am Foto und in der Statistik, und zwei Formen fuer eine Zahl liessen den Leser
+    // nach dem Unterschied suchen.
     expect(formatCriterionPercent(0.925)).toBe('93%')
   })
 })

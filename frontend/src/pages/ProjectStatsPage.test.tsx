@@ -7,7 +7,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
 import type { ProjectStatsOut } from '../api/types'
-import { CONFIDENCE_EXPLANATION } from '../utils/confidenceLabels'
 import { ProjectStatsPage } from './ProjectStatsPage'
 
 vi.mock('../api/projects')
@@ -23,20 +22,16 @@ const INCOMPLETE_EXPLANATION =
   'Für mindestens einen Lauf dieses Zwecks liegen keine Verbrauchsdaten vor. Es wird bewusst ' +
   'nichts geschätzt — der angezeigte Betrag ist die Summe des tatsächlich Erfassten.'
 
-const CATEGORY_KEYS = [
+/** Die acht Motivschlüssel in Registry-Anzeigereihenfolge, wie sie der Server liefert. */
+const MOTIF_KEYS = [
   'menschen',
-  'tier',
-  'pflanze',
   'landschaft',
-  'gebaeude_bauwerk',
-  'innenraum',
+  'bauwerk_sehenswuerdigkeit',
+  'stadt_strasse',
+  'tiere',
   'essen_trinken',
-  'fahrzeug',
-  'gegenstand',
-  'dokument_screenshot',
-  'kunst_kreatives',
-  'sport_aktivitaet',
-  'nicht_erkannt',
+  'aktivitaet',
+  'detail_stimmung',
 ]
 
 function emptyStats(): ProjectStatsOut {
@@ -45,27 +40,18 @@ function emptyStats(): ProjectStatsOut {
     storage: { opencloud_bytes: 0, local_cache_bytes: 0, local_database_bytes_estimate: null },
     taken_at_earliest: null,
     taken_at_latest: null,
-    categories: {
-      classified_photo_count: 0,
-      unclassified_photo_count: 0,
-      entries: CATEGORY_KEYS.map((key) => ({
-        category_key: key,
-        display_name: `Server-Name ${key}`,
-        photo_count: 0,
-        share: 0,
-      })),
-    },
-    category_confidence: {
-      entries: CATEGORY_KEYS.map((key) => ({
-        category_key: key,
-        display_name: key,
-        photo_count: 0,
-        average_confidence: null,
-      })),
-      photos_with_confidence: 0,
-      photos_without_confidence: 0,
-    },
-    manual_category_override_count: 0,
+    motifs: MOTIF_KEYS.map((key) => ({
+      motif_key: key,
+      display_name: `Server-Name ${key}`,
+      strong_photo_count: 0,
+      medium_photo_count: 0,
+      weak_photo_count: 0,
+      average_strength: null,
+    })),
+    strength_bands: { strong: 2 / 3, medium: 1 / 3 },
+    unassessed_photo_count: 0,
+    excluded_photo_count: 0,
+    motif_correction_count: 0,
     cost: {
       currency: 'USD',
       total_usd: 0,
@@ -111,14 +97,8 @@ function fullStats(): ProjectStatsOut {
     },
     taken_at_earliest: '2019-04-02T10:12:00',
     taken_at_latest: '2019-04-19T18:44:00',
-    categories: {
-      classified_photo_count: 9800,
-      unclassified_photo_count: 2243,
-      entries: base.categories.entries.map((entry) =>
-        entry.category_key === 'landschaft' ? { ...entry, photo_count: 9800, share: 1 } : entry,
-      ),
-    },
-    manual_category_override_count: 37,
+    unassessed_photo_count: 2243,
+    motif_correction_count: 37,
     cost: {
       currency: 'USD',
       total_usd: 42.13,
@@ -240,17 +220,15 @@ describe('ProjectStatsPage', () => {
       expect(await screen.findByText('noch nie gescannt')).toBeInTheDocument()
     })
 
-    it('listet trotzdem alle Kategorien mit 0 und Anteil 0 %', async () => {
+    it('listet trotzdem alle Motive mit drei Nullen', async () => {
       renderPage()
 
-      // Zwei Tabellen auf der Seite, seit specs/features/0299-kategorie-konfidenz-anzeigen.md
-      // den Konfidenzblock ergaenzt - die Abfrage wird deshalb auf den Abschnitt eingegrenzt.
       const table = within(
-        await screen.findByRole('region', { name: 'Kategorienverteilung' }),
+        await screen.findByRole('region', { name: 'Motivverteilung' }),
       ).getByRole('table')
       const rows = within(table).getAllByRole('row').slice(1)
-      expect(rows).toHaveLength(CATEGORY_KEYS.length)
-      expect(within(table).getAllByText('0 %')).toHaveLength(CATEGORY_KEYS.length)
+      expect(rows).toHaveLength(MOTIF_KEYS.length)
+      expect(within(table).getAllByText('0')).toHaveLength(MOTIF_KEYS.length * 3)
     })
 
     it('zeigt eine Kostensumme von 0,00 USD ohne Unvollstaendigkeits-Hinweis', async () => {
@@ -298,50 +276,6 @@ describe('ProjectStatsPage', () => {
       renderPage()
 
       expect(await screen.findByText(/02\.04\.2019.*19\.04\.2019/)).toBeInTheDocument()
-    })
-
-    it('rendert die Kategorientabelle mit allen Set-Keys in Server-Reihenfolge', async () => {
-      renderPage()
-
-      // Zwei Tabellen auf der Seite, seit specs/features/0299-kategorie-konfidenz-anzeigen.md
-      // den Konfidenzblock ergaenzt - die Abfrage wird deshalb auf den Abschnitt eingegrenzt.
-      const table = within(
-        await screen.findByRole('region', { name: 'Kategorienverteilung' }),
-      ).getByRole('table')
-      const rowHeaders = within(table)
-        .getAllByRole('rowheader')
-        .map((cell) => cell.textContent)
-      expect(rowHeaders).toEqual(CATEGORY_KEYS.map((key) => `Server-Name ${key}`))
-    })
-
-    it('nutzt ausschliesslich die vom Server gelieferten Anzeigenamen', async () => {
-      renderPage()
-
-      // Zwei Tabellen auf der Seite, seit specs/features/0299-kategorie-konfidenz-anzeigen.md
-      // den Konfidenzblock ergaenzt - die Abfrage wird deshalb auf den Abschnitt eingegrenzt.
-      const table = within(
-        await screen.findByRole('region', { name: 'Kategorienverteilung' }),
-      ).getByRole('table')
-      // Regressionsschutz gegen eine zweite Label-Tabelle im Client (ADR 0049): stuende im
-      // Frontend eine eigene Uebersetzung, erschiene hier "Landschaft" statt des Servernamens.
-      expect(within(table).queryByText('Landschaft')).not.toBeInTheDocument()
-      expect(within(table).getByText('Server-Name landschaft')).toBeInTheDocument()
-    })
-
-    it('weist "nicht klassifiziert" getrennt von der Kategorie "nicht erkannt" aus', async () => {
-      renderPage()
-
-      const scope = await screen.findByRole('region', { name: 'Kategorienverteilung' })
-      expect(within(scope).getByText('Nicht klassifiziert')).toBeInTheDocument()
-      expect(within(scope).getByText('2.243')).toBeInTheDocument()
-    })
-
-    it('zeigt die Zahl der manuell korrigierten Kategorien unter der Tabelle', async () => {
-      renderPage()
-
-      const scope = await screen.findByRole('region', { name: 'Kategorienverteilung' })
-      expect(within(scope).getByText('Manuell korrigiert')).toBeInTheDocument()
-      expect(within(scope).getByText('37')).toBeInTheDocument()
     })
 
     it('zeigt die Kosten je Zweck und die Gesamtsumme', async () => {
@@ -503,123 +437,169 @@ describe('ProjectStatsPage', () => {
   })
 })
 
-// specs/features/0299-kategorie-konfidenz-anzeigen.md, Akzeptanzkriterien 6/7
-describe('ProjectStatsPage: Konfidenz der Kategorie-Erkennung', () => {
+// specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Statistikseite": EIN Abschnitt
+// "Motivverteilung" statt der beiden Kategorie-Blöcke.
+describe('ProjectStatsPage: Motivverteilung', () => {
   beforeEach(() => {
     vi.mocked(projectsApi.getProjectStats).mockReset()
   })
 
-  function statsWithConfidence(): ProjectStatsOut {
+  function statsWithMotifs(): ProjectStatsOut {
     const base = fullStats()
     return {
       ...base,
-      category_confidence: {
-        entries: base.category_confidence.entries.map((entry) => {
-          if (entry.category_key === 'landschaft') {
-            return {
-              ...entry,
-              display_name: 'Landschaft',
-              photo_count: 42,
-              average_confidence: 0.78,
-            }
+      motifs: base.motifs.map((entry) => {
+        if (entry.motif_key === 'menschen') {
+          return {
+            ...entry,
+            strong_photo_count: 9800,
+            medium_photo_count: 2000,
+            weak_photo_count: 243,
+            average_strength: 0.78,
           }
-          if (entry.category_key === 'tier') {
-            return { ...entry, display_name: 'Tier', photo_count: 0, average_confidence: null }
+        }
+        if (entry.motif_key === 'tiere') {
+          return {
+            ...entry,
+            strong_photo_count: 5000,
+            medium_photo_count: 3000,
+            weak_photo_count: 4043,
+            average_strength: null,
           }
-          return entry
-        }),
-        photos_with_confidence: 42,
-        photos_without_confidence: 8,
-      },
+        }
+        return entry
+      }),
+      unassessed_photo_count: 2243,
+      excluded_photo_count: 11,
+      motif_correction_count: 37,
     }
   }
 
-  it('zeigt Mittelwert und Fotoanzahl je Modell-Kategorie', async () => {
-    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
+  it('shows one row per motif, in the order the server delivered', async () => {
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithMotifs())
 
     renderPage()
 
-    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
-    const row = within(scope).getByText('Landschaft').closest('tr')
-    expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByText('78%')).toBeInTheDocument()
-    expect(within(row as HTMLElement).getByText('42')).toBeInTheDocument()
-  })
-
-  it('zeigt fuer eine Kategorie ganz ohne Angabe KEINEN Prozentwert', async () => {
-    // Akzeptanzkriterium 6: keine Zahl, ausdruecklich nicht "0 %".
-    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
-
-    renderPage()
-
-    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
-    const row = within(scope).getByText('Tier').closest('tr')
-    expect(row).not.toBeNull()
-    expect(row).not.toHaveTextContent('0%')
-    expect(row).not.toHaveTextContent('%')
-  })
-
-  it('weist die Bezugsbasis aus', async () => {
-    // Ein Mittelwert ohne Bezugsmenge ist eine Zahl ohne Aussage - die Basis ist deshalb
-    // Pflichtbestandteil, nicht Beiwerk.
-    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
-
-    renderPage()
-
-    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
-    // Die 42 steht zweimal im Abschnitt (Tabellenzeile und Basiskennzahl) - deshalb ueber das
-    // Label eingegrenzt statt ueber die blosse Zahl.
-    expect(
-      within(scope).getByText('Klassifizierte Fotos mit Angabe').closest('div'),
-    ).toHaveTextContent('42')
-    expect(
-      within(scope).getByText('Klassifizierte Fotos ohne Angabe').closest('div'),
-    ).toHaveTextContent('8')
-  })
-
-  it('haelt die Registry-Anzeigereihenfolge ein, nicht die alphabetische', async () => {
-    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
-
-    renderPage()
-
-    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
+    const scope = await screen.findByRole('region', { name: 'Motivverteilung' })
     const rowHeaders = within(scope)
       .getAllByRole('rowheader')
       .map((cell) => cell.textContent)
-    expect(rowHeaders).toHaveLength(CATEGORY_KEYS.length)
-    expect(rowHeaders[0]).toBe(statsWithConfidence().category_confidence.entries[0].display_name)
+    expect(rowHeaders).toEqual(MOTIF_KEYS.map((key) => `Server-Name ${key}`))
   })
 
-  it('weist die Zahl ueber denselben festen Hinweis als Selbsteinschaetzung aus', async () => {
+  it('uses only the display names delivered by the server', async () => {
+    /* Regressionsschutz gegen eine zweite Label-Tabelle im Client: stünde im Frontend eine
+     * eigene Übersetzung, erschiene hier "Menschen" statt des Servernamens. */
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithMotifs())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Motivverteilung' })
+    expect(within(scope).queryByText('Menschen')).not.toBeInTheDocument()
+    expect(within(scope).getByText('Server-Name menschen')).toBeInTheDocument()
+  })
+
+  it('shows the three band counts and the average of a motif', async () => {
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithMotifs())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Motivverteilung' })
+    const row = within(scope).getByText('Server-Name menschen').closest('tr')
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('9.800')).toBeInTheDocument()
+    expect(within(row as HTMLElement).getByText('2.000')).toBeInTheDocument()
+    expect(within(row as HTMLElement).getByText('243')).toBeInTheDocument()
+    expect(within(row as HTMLElement).getByText('78%')).toBeInTheDocument()
+  })
+
+  it('shows no percentage at all for a motif without a single assessed photo', async () => {
+    /* `0 %` wäre die Aussage "das Modell sieht das Motiv durchweg nicht" - eine ganz andere als
+     * "nicht erhoben". Geprüft wird auf die ABWESENHEIT des Prozentzeichens in der Zeile, nicht
+     * auf den Strich: ein `0%` an anderer Stelle derselben Zeile bliebe sonst unbemerkt. */
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithMotifs())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Motivverteilung' })
+    const row = within(scope).getByText('Server-Name tiere').closest('tr')
+    expect(row).not.toBeNull()
+    expect(row).not.toHaveTextContent('%')
+    expect(within(row as HTMLElement).getByText('—')).toBeInTheDocument()
+  })
+
+  it('explains the counting rule WITHOUT any interaction', async () => {
+    /* DIE tragende Zusage des Abschnitts: eine Summe, die nicht aufgeht, wird sonst als Fehler
+     * gelesen - und dieser Effekt tritt beim ersten Blick ein. Der Satz darf deshalb nicht in
+     * einem `<details>` und nicht hinter einem Info-Auslöser stehen. */
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithMotifs())
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Motivverteilung' })
+    const sentence = within(scope).getByText(/zählt deshalb in mehreren Zeilen/)
+    expect(sentence).toBeInTheDocument()
+    expect(sentence.closest('details')).toBeNull()
+    expect(sentence.closest('[role="dialog"]')).toBeNull()
+  })
+
+  it('names the band boundaries from the response and calls them a display aid', async () => {
+    /* Die Grenzen kommen aus `strength_bands` und werden FORMATIERT - `0.67` im Frontend und
+     * `2/3` im Backend verschöben die Grenze um einen Betrag, den kein Fall trifft. */
     const user = userEvent.setup()
-    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithMotifs())
 
     renderPage()
 
-    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
-    await user.click(within(scope).getByRole('button', { name: /Modell-Selbsteinschätzung/i }))
+    const scope = await screen.findByRole('region', { name: 'Motivverteilung' })
+    await user.click(within(scope).getByRole('button', { name: /Stärkebänder/i }))
 
-    expect(await screen.findByText(CONFIDENCE_EXPLANATION)).toBeInTheDocument()
+    const explanation = await screen.findByText(/Anzeigehilfe dieser Tabelle/)
+    expect(explanation).toHaveTextContent('Stark ab 67%')
+    expect(explanation).toHaveTextContent('mittel ab 33%')
+    expect(explanation).toHaveTextContent('dafür gibt es keine Schwelle')
   })
 
-  it('nennt den Block nirgends Trefferquote, Genauigkeit oder korrekt', async () => {
-    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithConfidence())
+  it('shows the unassessed, corrected and excluded counts below the table', async () => {
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithMotifs())
 
     renderPage()
 
-    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
-    const text = scope.textContent ?? ''
-    expect(text).not.toMatch(/Trefferquote/i)
-    expect(text).not.toMatch(/Genauigkeit/i)
-    expect(text).not.toMatch(/korrekt/i)
+    const scope = await screen.findByRole('region', { name: 'Motivverteilung' })
+    expect(within(scope).getByText('Noch nicht klassifiziert').closest('div')).toHaveTextContent(
+      '2.243',
+    )
+    expect(within(scope).getByText('Von Hand korrigiert').closest('div')).toHaveTextContent('37')
+    expect(within(scope).getByText('Als Dokument ausgeschlossen').closest('div')).toHaveTextContent(
+      '11',
+    )
   })
 
-  it('bleibt bei einem Projekt ganz ohne Angaben sichtbar und leer', async () => {
+  it('uses no band word outside this table', async () => {
+    /* Ein Bandwort neben dem Einzelwert eines Fotos lehrte den Nutzer genau die
+     * Zugehörigkeitsschwelle, die diese Story abschafft. Auf der Statistikseite gibt es kein
+     * Einzelfoto - geprüft wird deshalb, dass die Wörter die Tabelle nicht verlassen. */
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue(statsWithMotifs())
+
+    const { container } = renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Motivverteilung' })
+    const table = within(scope).getByRole('table')
+    for (const word of ['stark', 'mittel', 'schwach']) {
+      expect(within(table).getByText(word)).toBeInTheDocument()
+    }
+    const outside = (container.textContent ?? '').replace(table.textContent ?? '', '')
+    expect(outside).not.toMatch(/\bschwach\b/)
+  })
+
+  it('stays visible and empty for a project without a single assessed photo', async () => {
     vi.mocked(projectsApi.getProjectStats).mockResolvedValue(emptyStats())
 
     renderPage()
 
-    const scope = await screen.findByRole('region', { name: 'Konfidenz der Kategorie-Erkennung' })
-    expect(scope).not.toHaveTextContent('%')
+    const scope = await screen.findByRole('region', { name: 'Motivverteilung' })
+    const table = within(scope).getByRole('table')
+    expect(within(table).getAllByRole('rowheader')).toHaveLength(MOTIF_KEYS.length)
+    expect(within(table).getAllByText('—')).toHaveLength(MOTIF_KEYS.length)
   })
 })
