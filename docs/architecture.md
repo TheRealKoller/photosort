@@ -41,12 +41,18 @@ Verarbeitungs-Cache (Thumbnails).
     [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md)):**
     `CategoryBadge`/`CategorySelect`/`SecondaryCategoryMarker`/`CategoryOverrideMarker`,
     `utils/categoryLabels.ts`, `hooks/useCategories.ts` und `hooks/useCategoryOverrideControls.ts`
-    entfallen und werden durch `MotifStrengthList` (alle acht Motive mit Stärke, Band und
-    Korrekturschalter in der Detailansicht), `MotifBadge` (Kachel) sowie
-    `hooks/useMotifs.ts`/`hooks/useMotifCorrection.ts` und `utils/motifLabels.ts` ersetzt. Die
-    Kuratierung gruppiert nur noch nach Tag und Foto-Moment — die Kategorie-Ebene der Gruppierung
-    fällt weg. Anzeigenamen, Reihenfolge und Bandgrenzen kommen aus `GET /motifs`; das Frontend
-    spiegelt sie nicht.
+    entfallen — ebenso `api/categories.ts`, `utils/confidenceLabels.ts`,
+    `components/CurationPhotoTile`s Kategorie-Anteil und `pages/CurateCategoriesPage.tsx` — und
+    werden durch `MotifStrengthList` (alle acht Motive mit Stärke und Korrekturschaltern, bedienbar
+    in der Detailansicht, schreibgeschützt im Kachel-Popover), `pages/CuratePage.tsx` sowie
+    `hooks/useMotifs.ts`/`hooks/useMotifCorrection.ts` und `utils/motifLabels.ts` ersetzt. **Auf der
+    Kachel steht kein Motiv**: acht Werte haben dort keinen Platz, und der stärkste allein
+    behauptete wieder die Zuordnung, die diese Spec ablöst — der einzige neue Kachelmarker ist
+    `components/MotifAssessmentMarker.tsx` („Motive noch nicht bestimmt"). **Am Einzelwert erscheint
+    kein Bandwort** (Bänder gibt es nur in der aggregierten Statistiktabelle). Die Kuratierung
+    gruppiert nur noch nach Tag und Foto-Moment — die Kategorie-Ebene der Gruppierung fällt weg.
+    Anzeigenamen, Reihenfolge und Bandgrenzen kommen aus `GET /motifs`; das Frontend spiegelt sie
+    nicht.
   - die Projektnavigation liegt in der Kopfzeile der `AppShell` statt am Seitenende — neues
     `utils/projectRoutes.ts` als einzige Quelle der Wahrheit für "welcher Pfad hat Projektkontext"
     (speist die `<Route>`-Erzeugung in `App.tsx`, die `projectId`-Ermittlung der Kopfzeile und die
@@ -497,6 +503,22 @@ Verarbeitungs-Cache (Thumbnails).
     Foto-Zeile, in diesem Fenster ist die Datei da und die Zeile unsichtbar — Jugend schützt, und
     unmittelbar vor dem `unlink` werden `lstat()` (nie `stat()`, das einem untergeschobenen Symlink
     folgte), `S_ISREG` und die Änderungszeit **erneut** geprüft.
+  - **Die Kategorieableitung entfällt aus dem Lauf** *(Spec
+    [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR
+    [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md))*:
+    **Gelöschte Module:** `categories.py` (samt `CATEGORY_REGISTRY`, `resolve_category`,
+    `secondary_categories`, `usable_confidence`, `is_known_category`,
+    `build_classification_prompt`, `MAX_REMOTE_CATEGORIES_PER_PHOTO`), `category_diff.py` und der
+    Router `api/categories.py`. `MAX_FINE_LABELS_PER_PHOTO` zieht dabei nach
+    `remote_classification.py` um — die Zahl begrenzt, was aus **einer Anbieterantwort** übernommen
+    wird, und gehört damit zum Parser, nicht zur Motiv-Registry. `run_criterion_scoring` leitet
+    keine Kategorie mehr ab und bildet die Partitionen allein über `event_id`;
+    `reassign_photo_category` ist ersatzlos entfallen, weil eine Motivkorrektur keine Rangzeile
+    verschiebt (sie hängt am Foto, nicht am Lauf) — damit fällt die **einzige** Stelle des Projekts,
+    an der ein API-Request `rank_photos` erneut aufrief. Die acht Motive und die beiden
+    Anzeige-Bandgrenzen stehen in `motifs.py`; die Bandgrenzen haben **keinen Leser im Auswahl- oder
+    Rangfolgepfad** und keinen im Frontend (`scripts/tests/test_kategorien_restlos_entfernt.py`
+    hält beides fest).
 - **Postgres**: Metadaten (Projekte, Fotos, Bewertungen, Nutzer), keine Bilddaten.
 - **Redis**: Job-Queue für den Worker.
 - **Lokaler Cache**: Docker-Volume für Thumbnails/Zwischenergebnisse, kein Ersatz für OpenCloud als
@@ -743,6 +765,16 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Szenen-Klassifikation wie `gebaeude`) — wieder ohne Migration, reine Erweiterung des generischen
     Wertebereichs. `content_landscape` bleibt unverändert als Zeile bestehen, ist aber nicht mehr
     kategorie-fähig (reines Ranking-Signal).
+  - **Die Registry-Metadaten schrumpfen auf ein Feld** *(Spec
+    [`0427`](../specs/features/0427-motive-mit-staerke.md))*: `CriterionDefinition` ist
+    `key`/`display_name`/`source`/`presence_threshold`. `category_eligible` **entfällt** — es war
+    genau `presence_threshold is not None` und damit eine zweite, driftende Quelle derselben
+    Aussage; `category_presence_threshold` heißt nur noch `presence_threshold`. Weiterhin gibt es
+    **kein Prioritäts-, Rang- oder Gewichtsfeld**: welches Motiv ein Foto trägt, entscheidet eine
+    Stärke je Motiv und keine Rangliste. Nach außen tritt die Aussage als
+    `CriterionScoreOut.has_presence_threshold` (ein `bool` aus der Registry, nicht die Schwelle
+    selbst — die Zahl ist eine Kalibrierung und keine API-Zusage). Wieder keine
+    Tabellen-/Spaltenänderung.
 - **PhotoLandmarkDetection** *(implementiert, Spec
   [`0047`](../specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md), `models.py`, ADR
   [`decisions/0025-cloud-landmark-erkennung.md`](../specs/decisions/0025-cloud-landmark-erkennung.md))*:
@@ -918,8 +950,19 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     der reine `rank_score` — `ranking.py::confidence_ordering_score` samt
     `CONFIDENCE_RANK_PENALTY` entfällt, weil es die Partition nicht mehr gibt, innerhalb derer er
     verglich. `PhotoOut.rankings` wird wieder `PhotoOut.ranking: RankingOut | None`, `RankingOut`
-    verliert `is_primary`. Die Migration **löscht die Nebenzeilen** (`WHERE is_primary = false`)
-    **vor** dem Constraint-Tausch; sonst ist sie an einer echten Datenbank nicht ausführbar.
+    verliert `is_primary`. **Die Migration (`c3d4e5f6a7b8`) dünnt `photo_rankings` auf eine Zeile je
+    `(criterion_scoring_run_id, photo_id)` aus — und zwar VOR dem Constraint-Tausch**, sonst ist sie
+    an einer echten Datenbank nicht ausführbar. Sie tut das nicht über `WHERE is_primary = false`:
+    Das setzte voraus, dass je Gruppe genau eine Zeile `is_primary = true` trägt, und ein Bestand mit
+    zwei solchen Zeilen (oder mit keiner) überlebte die Löschung und brächte den neuen Constraint zum
+    Scheitern. Stattdessen behält ein einziges portables `DELETE` über
+    `ROW_NUMBER() OVER (PARTITION BY criterion_scoring_run_id, photo_id ORDER BY is_primary DESC,
+    id ASC)` je Gruppe genau die erste Zeile — die frühere Hauptzeile, wenn es eine gibt, sonst die
+    älteste. Die Reihenfolge der beiden Schritte ist am gerenderten Postgres-DDL geprüft
+    (`test_postgres_ddl_compatibility.py`), die Datenwirkung am SQLite-Lauf
+    (`test_migration_kategorien_abloesung.py`) — einschließlich des Falls zweier Hauptzeilen.
+    `downgrade()` stellt die **Struktur** wieder her, **nie die Daten**: `category_key` kommt als
+    Leerstring zurück, `category_override` als `NULL`.
 - **Event** *(implementiert, Spec
   [`0425`](../specs/features/0425-events-statt-zeitcluster.md), `models.py`, Tabelle `events`, ADR
   [`decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md`](../specs/decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md),
@@ -1016,6 +1059,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Skip-Kriterium des Cloud-Teilschritts und Erfolgs-Ableitung seines Status — übernimmt
     `photo_motif_assessments`. Kein Backfill: die gespeicherten Konfidenzen werden **nicht** in
     Motivstärken umgerechnet (das wäre eine Modellaussage, die das Modell nie getroffen hat).
+    Migration `c4d5e6f7a8b9` (eigene Revision **nach** dem Spaltenabbau `c3d4e5f6a7b8`, damit ein
+    Tabellenabbau und ein Spaltenumbau nicht in einer Revision vermischt sind); `downgrade()` legt
+    sie leer wieder an.
 - **PhotoMotifAssessment** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR
   [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md),
   `models.py`, Tabelle `photo_motif_assessments`)*: die **Grundlage** der Motivbeurteilung eines
