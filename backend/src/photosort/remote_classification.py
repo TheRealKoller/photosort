@@ -115,9 +115,11 @@ class RemoteClassification:
     `fine_labels` enthaelt die zeichensanierten, freien Feinlabels, hoechstens
     MAX_FINE_LABELS_PER_PHOTO - der einzige verbliebene Fremdtext-Kanal dieser Antwort."""
 
-    # `MappingProxyType` statt eines gewoehnlichen `dict`: die Zusage von `frozen=True` gilt sonst
-    # nur fuer die REFERENZ, nicht fuer den Inhalt - genau wie beim Tupel-Feld darunter soll auch
-    # diese Struktur nach dem Bau unveraenderlich sein.
+    # `Mapping` statt `dict` als Annotation UND `MappingProxyType` als das, was der Parser
+    # hineingibt: die Zusage von `frozen=True` gilt sonst nur fuer die REFERENZ, nicht fuer den
+    # Inhalt - genau wie beim Tupel-Feld darunter soll auch diese Struktur nach dem Bau
+    # unveraenderlich sein. Die Annotation allein deckt nur den Typecheck; den Laufzeitschutz
+    # liefert `_motif_strengths_from_json`.
     motif_strengths: Mapping[str, float]
     fine_labels: tuple[str, ...]
     excluded: bool = False
