@@ -9,9 +9,11 @@ UND Event-Zeilen.
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -20,6 +22,7 @@ from sqlalchemy import event, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import photosort
 from photosort.cameras import MAX_TIME_OFFSET_MINUTES
 from photosort.models import (
     CriterionScoringRun,
@@ -727,3 +730,37 @@ class TestTheOffsetSuggestion:
         ).scalar_one() == 0
         assert (await _reloaded_photo(db_session, camera_photo_id)).taken_at == _BASE
         await assert_time_offset_invariant(db_session, project_id)
+
+
+# Module, die einen OpenCloud- oder Cloud-Vision-Zugriff ueberhaupt erst moeglich machen.
+_NETWORK_MODULES = ("opencloud", "cloud_vision", "landmark", "remote_classification")
+
+
+def test_the_camera_module_reaches_neither_opencloud_nor_a_cloud_provider() -> None:
+    """Akzeptanzkriterium 9: Ein gesetzter Versatz wirkt unmittelbar, OHNE dass die Fotos erneut
+    eingelesen werden - ohne jeden OpenCloud-Zugriff und ohne jeden Cloud-Aufruf.
+
+    STRUKTURELL geprueft statt ueber einen Aufrufzaehler: das Modul importiert nichts, womit ein
+    solcher Zugriff moeglich waere, und ein Zaehler auf einem nie gebauten Client ist keine
+    Zusage. Ein kuenftiger Import wuerde hier auffallen, bevor er einen Aufruf absetzt.
+
+    `rebuild_run_grouping` bleibt erlaubt (und ist der einzige worker-Import): es rechnet
+    ausschliesslich aus bereits persistierten Werten."""
+    source = (Path(photosort.__file__).resolve().parent / "api" / "cameras.py").read_text(
+        encoding="utf-8"
+    )
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            imported.add(node.module)
+
+    offenders = sorted(
+        name for name in imported for forbidden in _NETWORK_MODULES if f".{forbidden}" in f".{name}"
+    )
+
+    assert not offenders, (
+        "api/cameras.py erreicht ueber diese Importe einen Netzwerk-/Cloud-Pfad, obwohl der "
+        f"Versatz ohne jeden solchen Zugriff wirken muss: {offenders}"
+    )
