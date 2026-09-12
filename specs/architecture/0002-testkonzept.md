@@ -1488,6 +1488,58 @@ unabhängig vom tatsächlichen Verhalten des Wegs.
 **Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne
 Gate; die Story fasst keine Zeile Anwendungscode an.
 
+### Erweiterung für Spec [`0404`](../features/0404-signaturpruefung-alle-npm-paketsaetze.md) / ADR [`0088`](../decisions/0088-signaturpruefung-haengt-am-paketsatz-nicht-am-installationsaufruf.md) (die Signaturprüfung hängt am Paketsatz, nicht am Installationsaufruf): der erste Leser, der Schrittstruktur liest, und „blockierend" als Form
+
+Siebte Story auf der Ebene der Repo-Konsistenztests
+(`scripts/tests/test_signaturpruefung_je_paketsatz.py`, Job `demo-scripts`). Vier Regeln gelten
+über diesen Branch hinaus.
+
+**1. Eine Zusicherung über einen Workflow-Schritt hängt am wirksamen Arbeitsverzeichnis, nie am
+Schrittnamen.** Der Name ist frei wählbar und im Bestand schon uneinheitlich (die beiden `npm
+ci`-Schritte heißen verschieden); geprüft wird deshalb die `run:`-Nutzlast. Das wirksame
+Verzeichnis hat zwei legitime Quellen — `working-directory` am Schritt (`e2e`) oder
+`defaults.run.working-directory` am Job (`frontend`) —, und beide Formen kommen vor, der Leser
+muss also rechnen statt vergleichen. GitHub kennt eine dritte Quelle, `defaults:` auf
+Workflow-Ebene; die wird **nicht** unterstützt, sondern ihre Abwesenheit wird zugesichert.
+**Regel:** Was ein Leser voraussetzt, sagt er als eigene Assertion, statt es stillschweigend
+anzunehmen — sonst rechnet er nach einer Umstellung weiter und liefert ein Ergebnis, das niemand
+mehr als falsch erkennt. Gleichrangig dazu: Pfadschreibweisen werden normalisiert (`./frontend`,
+`frontend/` und `frontend` sind dasselbe Verzeichnis), sonst färbt der Wächter bei einer
+redaktionellen Änderung rot und wird beim Reparieren gelockert.
+
+**2. „Unmittelbarer Nachfolger" ist eine Aussage über Schritte, nicht über Zeilen.** Kommentar- und
+Leerzeilen zwischen zwei Schritten brechen die Nachbarschaft nicht; `ci.yml` führt solche
+Kommentarblöcke bereits zwischen Schritten, eine zeilenbasierte Lesung startet also rot aus einem
+Grund, der mit ihrem Gegenstand nichts zu tun hat. Die Job-Grenze bricht sie dagegen sehr wohl:
+Eine flache Schrittliste über die ganze Datei ließe ein `npm ci` als letzten Schritt eines Jobs
+vom ersten Schritt des Folgejobs „bedienen". Damit ist das hier der erste textbasierte Leser des
+Repositoriums, der **Struktur** (Jobs, Schritte, deren Schlüssel) aufbaut statt Zeilen zu filtern
+— und der bekommt Positiv-Assertions über das, was er gelesen hat: Zahl der Jobs, `frontend` und
+`e2e` darunter, Schrittzahl je Job, die Position des Signaturschritts. **Regel:** Ein Leser, der
+bei einem Defekt *nichts* zurückgibt, macht jede Abwesenheits-Assertion leer-grün; ein lauter
+Fehlerfall bei leerem Ertrag fängt nur den Totalausfall, die gelesene Struktur selbst braucht eine
+eigene Zusicherung.
+
+**3. „Blockierend" ist mechanisch genau zweierlei: kein `continue-on-error` und kein `if:`.** Das
+zweite ist die Hälfte, an die niemand denkt — ein `if:` am Schritt lässt den Job grün melden,
+während der Schritt nie läuft, und das ist derselbe Schaden wie eine nicht blockierende Prüfung,
+nur unauffälliger. Gilt für jeden Schritt, der eine Zusage trägt. Was daran **nicht** prüfbar ist
+und deshalb als Fremdverhalten gilt: dass `npm audit signatures` bei einer *fehlenden* Signatur
+genauso mit Exit ≠ 0 endet wie bei einer falschen. Einmal gemessen, nicht zugesichert.
+
+**4. Die Menge wird am Artefakt abgeleitet, das die Sache definiert — nicht am Aufrufort.** Ein
+Paketsatz ist ein von Git verwaltetes `package-lock.json`; die Menge kommt aus `git ls-files` (nie
+`rglob`, siehe Regel der 0400-Sektion) und hat keine Ausnahmeliste, auch keine leere. Der Gewinn
+ist, dass die **Existenz**hälfte der Regel nicht zu umgehen ist: Wer `npm ci` in `npm install`
+umschreibt, erfüllt die Zusicherung für seinen Paketsatz nicht mehr und wird rot, statt aus dem
+Suchraum zu fallen. Die **Abwesenheits**hälfte („kein Installationsaufruf außerhalb der Menge")
+leistet das nicht — `cd frontend && npm ci` oder eine über Zeilenfortsetzung zerlegte Befehlszeile
+entgehen ihr. Als Lücke vermerkt und bewusst nicht verfolgt: Der Bedrohungsraum ist die
+unabsichtliche Einführung eines ungeprüften Paketsatzes, nicht deren Verschleierung.
+
+**Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne
+Gate; die Story fasst keine Zeile Anwendungscode an.
+
 ## Reine Bash-Wrapper-Skripte ohne Testframework (`scripts/*.sh`)
 
 **Neu seit der Diagramm-Tooling-Richtlinie** ([ADR `0013`](../decisions/0013-diagram-tooling-d2.md)/Spec [`0018`](../features/0018-diagram-tooling-migration.md)) — erstes Bash-Skript im Projekt, `scripts/render-diagrams.sh`. Anders als `scripts/seed-opencloud-demo.py` (Spec 0009, Python mit echter Retry-/Idempotenz-Verzweigung, eigene `pytest`-Suite trotz Lage außerhalb des Coverage-Gates) ist die Verzweigungslogik hier bewusst minimal (ein PATH-Check, eine Schleife über `*.d2`, ein `d2`-Aufruf pro Datei) — genau der Unterschied, der hier eine andere Verifikationsebene rechtfertigt statt automatisch das Python-Muster zu kopieren:
@@ -1785,7 +1837,7 @@ Kein neues Testframework, kein CI-Gate — konsistent mit den übrigen reinen Pr
   - **Der schlimmste Fall ist für die VOREINSTELLUNGEN ausgerechnet, nicht für jede Konfiguration.** Die Invariante hält `5 × 60 s` Antwort-Zeitüberschreitung plus `120 s` Wartebudget gegen `STALL_THRESHOLD`; sie kennt weder eine sehr niedrig gesetzte `CLOUD_VISION_REQUESTS_PER_MINUTE` noch eine hochgedrehte `*_CONCURRENCY`, deren Zusammenspiel die Einreihung eines Blocks über die 15-Minuten-Schwelle heben kann (ADR 0074, Konsequenzen). Mit einem einzigen zusätzlichen Blockglied lässt sich das für die Voreinstellungen mitprüfen — für beliebige Betriebswerte bleibt es eine dokumentierte Warnung in `docs/setup.md`, keine Zusicherung.
   - **Der Sonderfall „`429` wegen erreichter Ausgabenobergrenze" wird bewusst nicht erkannt und folglich auch nicht getestet** (ausdrücklich Out of Scope der Story). Im Test ist er von jeder anderen Drosselung nicht unterscheidbar; sichtbar wird er nur am Gesamtbild eines Laufs, in dem *jeder* Cloud-Aufruf mit `429` endet.
 
-- **Neu mit Spec [`0400`](../features/0400-einheitliche-code-formatierung.md) / ADR [`0080`](../decisions/0080-maschinelle-formatierung-ruff-format-und-prettier.md) (2026-09-11), die Signaturlage der beiden Formatierer:** `npm audit signatures` läuft ausschließlich im `e2e`-Job, nicht im `frontend`-Job — die Prettier-Kopie unter `frontend/` ist damit **nicht** signaturgeprüft. Das ist keine von dieser Story geschaffene Lücke (sie besteht für sämtliche 30+ Frontend-Pakete), aber die Story vergrößert den ungeprüften Satz um eines; die Schließung ist bewusst eine eigene Story, weil der Schritt auf dem bestehenden Paketsatz sofort rot werden und dann eine reine Formatierungsstory blockieren könnte. Und **auch im `e2e`-Job prüft der Schritt für Prettier nur die Registry-Signatur, keine Provenance**: Gemessen trägt `prettier@3.9.6` zwar `dist.signatures`, die Attestierungs-Abfrage der Registry antwortet aber `Not found` — anders als bei `@playwright/test`. Der Nachweis lautet also „npm hat dieses Tarball signiert", nicht „dieses Tarball stammt aus dem Prettier-Repository"; gegen ein Kontoübernahme- oder Release-Pipeline-Szenario schützt er nicht. Für `ruff` gibt es kein Lockfile — die exakte Angabe in beiden `pyproject.toml` **ist** die Fixierung, ohne Integritäts-Hash.
+- **Neu mit Spec [`0400`](../features/0400-einheitliche-code-formatierung.md) / ADR [`0080`](../decisions/0080-maschinelle-formatierung-ruff-format-und-prettier.md) (2026-09-11), fortgeschrieben mit Spec [`0404`](../features/0404-signaturpruefung-alle-npm-paketsaetze.md) / ADR [`0088`](../decisions/0088-signaturpruefung-haengt-am-paketsatz-nicht-am-installationsaufruf.md) (2026-09-12): `npm audit signatures` belegt „npm hat dieses Tarball signiert", nicht „dieses Tarball stammt aus dem Quell-Repository".** Die Prüfung läuft seit Spec 0404 über **jeden** npm-Paketsatz, eine Provenance-Attestierung wird dabei aber bewusst **nicht** gefordert — und könnte auf dem Frontend-Satz auch nicht gefordert werden: gemessen tragen 496 von 496 Paketen eine Registry-Signatur, aber nur 188 von 496 eine Attestierung (`prettier@3.9.6` trägt `dist.signatures`, die Attestierungs-Abfrage der Registry antwortet `Not found`; `@playwright/test` trägt beides). Gegen eine Kontoübernahme beim Paketautor oder eine kompromittierte Release-Pipeline tragen deshalb weiterhin allein Lockfile-Integritätshash und `npm ci`. Für den Python-Baum gibt es gar kein Lockfile — die exakte Angabe in beiden `pyproject.toml` **ist** die Fixierung, ohne Integritäts-Hash und ohne jede Signaturprüfung.
 
 ## Werkzeuge im Überblick
 
@@ -1795,6 +1847,7 @@ Kein neues Testframework, kein CI-Gate — konsistent mit den übrigen reinen Pr
 | Integration | `pytest` + `httpx.ASGITransport` + In-Memory-SQLite + Fake-Clients | `vitest` + Testing Library + `MemoryRouter` + `QueryClientProvider` + `vi.mock` auf API-Modulebene |
 | E2E/Smoke | `@playwright/test` (Chromium) aus `e2e/` gegen den real laufenden Stack, CI-Job `e2e` (seit ADR 0058); funktionaler Docker-Netzwerk-Check in CI (seit Spec 0010); funktionaler Migrations-Race-Check in CI (seit Spec 0013); manueller Smoke-Test vor Merge nur noch für das, was der E2E-Stack bewusst nicht enthält (echte OpenCloud-Instanz, Worker, echtes Postgres-Migrationsverhalten) | `@playwright/test` (Chromium), zwei Viewport-Projekte `mobile` 360×740 / `desktop` 1280×800 (seit ADR 0058); funktionaler SPA-Fallback-Check in CI (seit Spec 0016); manueller Smoke-Test vor Merge nur noch für gestalterisches Urteil, nicht für Layout-Zusagen |
 | Formatierung | `ruff format` 0.16.4, exakt gepinnt in beiden `pyproject.toml`; CI-Schritt `ruff format --check --output-format=github .` in den Jobs `backend` und `demo-scripts` (seit ADR [`0080`](../decisions/0080-maschinelle-formatierung-ruff-format-und-prettier.md)) | Prettier 3.9.6, exakt gepinnt in beiden `package.json` samt Lockfile-Auflösung; CI-Schritt `npm run format:check` in den Jobs `frontend` und `e2e`. Konfiguration für **beide** TypeScript-Bäume in `/.prettierrc.json` + `/.prettierignore`, letztere über `--ignore-path` |
+| Lieferkette | kein Lockfile und keine Signaturprüfung — die exakte Versionsangabe in beiden `pyproject.toml` ist die Fixierung, `uv pip install` prüft keinen Integritäts-Hash | `npm audit signatures` als erster Schritt hinter **jedem** `npm ci`, je Paketsatz (heute `frontend`, `e2e`), blockierend ohne `continue-on-error`/`if:`; mechanisch gehalten von `scripts/tests/test_signaturpruefung_je_paketsatz.py` (seit ADR [`0088`](../decisions/0088-signaturpruefung-haengt-am-paketsatz-nicht-am-installationsaufruf.md)) |
 | Coverage-Gate | `--cov-fail-under=80` (Pflicht, CI) | keins (bekannte Lücke) |
 
 - **Kein Coverage-Gate für das Frontend** (bestandsaufnehmend festgehalten mit Spec [`0320`](../features/0320-dark-utility-register.md), 2026-09-05). `.github/workflows/ci.yml` fährt `--cov-fail-under=80` ausschließlich im `backend`-Job; der `frontend`-Job läuft Lint/Typecheck/Test/Build ohne Coverage-Messung. Es wird auch bewusst **keines eingeführt**: Bei einer Umgestaltung wird eine umgekleidete Komponente von den bestehenden Tests weiterhin zu 100 % *ausgeführt*, ohne dass eine einzige Assertion die Umkleidung berührt — die Zeilenabdeckung bliebe unverändert hoch und erzeugte exakt die falsche Sicherheit, plus Druck, Assertions zu erfinden. Ersatzmaß sind die benannten Vertragstests oben.
