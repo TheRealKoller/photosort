@@ -13,9 +13,11 @@ from photosort.main import app
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCriterionScore,
+    PhotoMotifAssessment,
     PhotoScore,
     RatingStatus,
     ScanStatus,
@@ -31,6 +33,16 @@ from photosort.pricing import estimate_usd_per_image
 # Checkbox am Auslöser freigibt — Kategorie-Klassifizierung UND Sehenswürdigkeits-Erkennung.
 # Die Auslöse-Tests leben seit derselben Spec in test_api_criterion_scoring.py::TestClassify —
 # es gibt nur noch einen Auslöser.
+
+
+def _assessment(photo: Photo, source: MotifAssessmentSource) -> PhotoMotifAssessment:
+    return PhotoMotifAssessment(
+        photo_id=photo.id,
+        source=source,
+        excluded_document=False,
+        provider="anthropic" if source is MotifAssessmentSource.CLOUD else None,
+        computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+    )
 
 
 class FakeOpenCloudClient:
@@ -185,7 +197,7 @@ class TestEstimateEndpoint:
         assert body["price_per_image_usd"] == price
         assert body["estimated_cost_usd"] == 2 * price
 
-    async def test_excludes_already_classified_photos_from_the_candidate_count(
+    async def test_excludes_cloud_assessed_photos_from_the_candidate_count(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         # Review-Fund (test-engineer): der "bereits klassifiziert"-Ausschluss
@@ -193,13 +205,54 @@ class TestEstimateEndpoint:
         # Worker-Unit-Test (select_remote_category_candidates) abgedeckt, nicht auf API-Ebene.
         project_id = await _create_project(authenticated_api_client)
         candidate = await _add_photo_candidate(db_session, project_id, "a.jpg")
-        already_classified = await _add_photo_candidate(db_session, project_id, "b.jpg")
+        cloud_assessed = await _add_photo_candidate(db_session, project_id, "b.jpg")
 
-        # specs/features/0289-feste-kategorien.md: "bereits klassifiziert" haengt seit dieser
-        # Spec an der 1:1-Klassifikations-Zeile, nicht mehr an einer Feinlabel-Zeile.
+        # Sicherheitsauflage S14: "bereits klassifiziert" haengt seit Spec 0427 (PR 2) an einer
+        # Kopfzeile mit `source='cloud'`.
+        db_session.add(_assessment(cloud_assessed, MotifAssessmentSource.CLOUD))
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+
+        assert response.status_code == 200
+        assert response.json()["candidate_count"] == 1
+        # Nur der noch nicht klassifizierte Kandidat zaehlt mit - reine Regressionsabsicherung
+        # gegen ein versehentlich vertauschtes Filterkriterium.
+        assert candidate.id != cloud_assessed.id
+
+    async def test_a_locally_assessed_photo_is_still_counted(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sicherheitsauflagen S14/S15 an einem Bestand, in dem die BEIDEN denkbaren Bedingungen
+        verschiedene Zahlen liefern: der reine Existenztest auf die Kopfzeile zaehlte hier `1`,
+        richtig ist `2`.
+
+        Eine Schaetzung, die eine andere Menge zaehlt als der Lauf sendet, ist eine falsche
+        Grundlage fuer die Freigabe einer kostenpflichtigen Aktion - hier waere sie der stille
+        Weg zu einer Cloud-Klassifizierung, die scheinbar `0` kostet und nie laeuft."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_photo_candidate(db_session, project_id, "a.jpg")
+        locally_assessed = await _add_photo_candidate(db_session, project_id, "b.jpg")
+        cloud_assessed = await _add_photo_candidate(db_session, project_id, "c.jpg")
+        db_session.add(_assessment(locally_assessed, MotifAssessmentSource.LOCAL))
+        db_session.add(_assessment(cloud_assessed, MotifAssessmentSource.CLOUD))
+        await db_session.commit()
+
+        response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+
+        assert response.status_code == 200
+        assert response.json()["remote_categories"]["candidate_count"] == 2
+
+    async def test_an_old_category_row_alone_does_not_exclude_a_photo(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der bewusste Zwischenzustand nach PR 2: `photo_category_classifications` ist kein
+        Erledigt-Marker mehr, weder im Lauf noch in der Schaetzung."""
+        project_id = await _create_project(authenticated_api_client)
+        photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
         db_session.add(
             PhotoCategoryClassification(
-                photo_id=already_classified.id,
+                photo_id=photo.id,
                 category_key="tier",
                 detected_categories=["tier"],
                 provider="anthropic",
@@ -211,10 +264,7 @@ class TestEstimateEndpoint:
         response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
 
         assert response.status_code == 200
-        assert response.json()["candidate_count"] == 1
-        # Nur der noch nicht klassifizierte Kandidat zaehlt mit - reine Regressionsabsicherung
-        # gegen ein versehentlich vertauschtes Filterkriterium.
-        assert candidate.id != already_classified.id
+        assert response.json()["remote_categories"]["candidate_count"] == 1
 
 
 class TestLandmarkShareOfTheEstimate:
@@ -317,12 +367,15 @@ class TestTheEstimateFollowsTheConfiguredModel:
     """specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 3/4: die
     Schaetzung haengt am eingestellten MODELL, nicht mehr am Anbieter."""
 
-    async def test_the_default_estimate_still_matches_the_previous_constant(
+    async def test_the_default_estimate_is_pinned_to_its_literal_amount(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Akzeptanzkriterium "ohne gesetzte Einstellung exakt wie bisher", auf API-Ebene gegen den
-        LITERALEN Altwert der abgeloesten `COST_PER_IMAGE_USD["anthropic"]` gepinnt - ohne diesen
-        Anker prueft die API-Ebene nach dem Umbau nur noch sich selbst."""
+        """Der Betrag des Regelbetriebs, auf API-Ebene LITERAL gepinnt - ohne diesen Anker prueft
+        die API-Ebene nur noch sich selbst.
+
+        Seit Spec 0427 (PR 2, Auflage S12) sind das $0,0055 statt $0,0052: die Ausgabe-Annahme
+        ist von 120 auf 180 Tokens angehoben, weil die Motiv-Antwort acht Zahlen plus das
+        Ausschluss-Feld traegt. Die Verschiebung geht in die SICHERE Richtung."""
         project_id = await _create_project(authenticated_api_client)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
 
@@ -331,8 +384,8 @@ class TestTheEstimateFollowsTheConfiguredModel:
         ).json()
 
         assert body["model"] == "claude-haiku-4-5"
-        assert body["price_per_image_usd"] == pytest.approx(0.0052, abs=1e-9)
-        assert body["estimated_cost_usd"] == pytest.approx(0.0052, abs=1e-9)
+        assert body["price_per_image_usd"] == pytest.approx(0.0055, abs=1e-9)
+        assert body["estimated_cost_usd"] == pytest.approx(0.0055, abs=1e-9)
 
     async def test_a_configured_non_default_model_changes_the_price(
         self,

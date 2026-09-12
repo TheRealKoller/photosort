@@ -58,9 +58,9 @@ _TOKENS_PER_MTOK = 1_000_000
 # das Vierfache des Eingabepreises, beide Ministral-Einträge sind symmetrisch. Ein vertauschtes
 # oder versehentlich symmetrisch übernommenes Paar fällt durch KEINEN der Ordnungstests
 # ("stärker => teurer"), weil auch $0,00045 und $0,0017 über der Voreinstellung $0,0003 liegen;
-# dagegen steht allein der Literal-Pin auf $0,000504 je Bild in tests/test_pricing.py. Die
-# Ausgabeseite ist zusätzlich durch `_MAX_RESPONSE_TOKENS = 256` in BEIDEN Clients hart gedeckelt
-# (höchstens $0,00015 Ausgabekosten je Aufruf) - wer den Deckel anhebt, stellt diese Rechnung neu.
+# dagegen steht allein der Literal-Pin auf $0,00054 je Bild in tests/test_pricing.py. Die
+# Ausgabeseite ist zusätzlich durch `_MAX_RESPONSE_TOKENS = 384` in BEIDEN Clients hart gedeckelt
+# (höchstens $0,00023 Ausgabekosten je Aufruf) - wer den Deckel anhebt, stellt diese Rechnung neu.
 #
 # Bekannte Grenze, bewusst nicht automatisiert abgesichert: die inhaltliche RICHTIGKEIT dieser
 # Werte gegen echte Anbieter-Abrechnungen ist nicht testbar. Ersatzverfahren: Abgleich der ersten
@@ -123,31 +123,38 @@ class AssumedImageUsage:
     output_tokens: int
 
 
-# Beide Annahmen sind so kalibriert, dass die abgeleitete Schätzung für das jeweilige
-# VOREINSTELLUNGS-Modell $0,0052 anthropic bzw. $0,0003 mistral exakt reproduziert - beide Beträge
-# sind in tests/test_pricing.py gepinnt. Jede Änderung hier verschiebt genau diese Pins.
+# Die abgeleitete Schätzung für das jeweilige VOREINSTELLUNGS-Modell liegt bei $0,0055 anthropic
+# bzw. $0,000306 mistral - beide Beträge sind in tests/test_pricing.py gepinnt. Jede Änderung hier
+# verschiebt genau diese Pins.
 #
 # anthropic: 4600 Input-Tokens = ~3900 Bild- + ~700 Prompt-Tokens, der Bildanteil nach der
 #   offiziellen Anthropic-Formel `tokens ~= breite_px * hoehe_px / 750`, gerechnet auf die real
-#   versendete `display`-Variante (DISPLAY_MAX_SIZE=2048px lange Kante). Ausgabe: der Wert 120
-#   deckt die heute vollbesetzte Antwort ab; bei einer weiteren Erweiterung des Antwortschemas ist
-#   die Marge erneut zu prüfen - sie beträgt nur noch etwa das Anderthalbfache, und die Schätzung
-#   ist die einzige Absicherung vor der kostenpflichtigen Aktion.
+#   versendete `display`-Variante (DISPLAY_MAX_SIZE=2048px lange Kante).
 # mistral: 2880 Input-Tokens = ~2030 Bild- + ~850 Prompt-Tokens.
 #   Mistral veröffentlicht KEINE offizielle Bild-Token-Formel (anders als Anthropic) - dieser
 #   Anteil bleibt ausdrücklich DOKUMENTIERT-UNKALIBRIERT. Der Eintrag deckt zwei Modellfamilien
 #   ab: `mistral-small-2603` erbt die Annahme über eine Familiengrenze hinweg und ist damit
 #   ebenfalls unkalibriert, die gefährliche Abweichungsrichtung ist die Unterschätzung. Zeigt die
-#   erste reale Rechnung deutlich mehr als 120 Ausgabe-Tokens je Bild, ist das der Anlass für eine
+#   erste reale Rechnung deutlich mehr als 180 Ausgabe-Tokens je Bild, ist das der Anlass für eine
 #   eigene Story (Verbrauchsannahme je MODELL statt je Anbieter) - nie für eine stille Korrektur
 #   hier.
 #
+# AUSGABESEITE, beide Anbieter: 180 Tokens, hergeleitet gegen die vollbesetzte Motiv-Antwort
+# (`{"motifs": {acht Schlüssel-Zahl-Paare}, "excluded": false, "fine_labels": [zwei kurze]}`, rund
+# 257 Zeichen und damit überschlägig 110 Tokens kompakt bzw. 145 bei einer eingerückten Antwort).
+# 180 hält denselben Sicherheitsabstand zur gemessenen Obergrenze wie der abgelöste Wert 120 zu
+# seinen 100 und bewahrt zugleich die Reserve-Invariante
+# `remote_classification.py::_MAX_RESPONSE_TOKENS >= 2 x Annahme` (384 >= 360). Wird die Schranke
+# erneut angehoben, ist dieser Wert erneut herzuleiten - nicht umgekehrt die Invariante an ihn
+# anzupassen.
+#
 # Bewusst grob und eher über- als unterschätzend: EIN Preis je Bild für BEIDE Cloud-Anteile,
-# obwohl der Landmark-Prompt kürzer ist als der Kategorie-Prompt. Die Schätzung soll nicht zu
-# niedrig ausfallen. Bekannte Grenze und Ersatzverfahren wie bei MODEL_PRICING oben.
+# obwohl der Landmark-Prompt kürzer ist als der Motiv-Prompt. Die Schätzung soll nicht zu
+# niedrig ausfallen - sie ist die einzige Absicherung vor der kostenpflichtigen Aktion. Bekannte
+# Grenze und Ersatzverfahren wie bei MODEL_PRICING oben.
 ASSUMED_USAGE_BY_PROVIDER: dict[str, AssumedImageUsage] = {
-    "anthropic": AssumedImageUsage(input_tokens=4_600, output_tokens=120),
-    "mistral": AssumedImageUsage(input_tokens=2_880, output_tokens=120),
+    "anthropic": AssumedImageUsage(input_tokens=4_600, output_tokens=180),
+    "mistral": AssumedImageUsage(input_tokens=2_880, output_tokens=180),
 }
 
 

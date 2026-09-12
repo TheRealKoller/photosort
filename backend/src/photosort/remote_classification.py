@@ -12,12 +12,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from photosort.categories import (
-    MAX_FINE_LABELS_PER_PHOTO,
-    MAX_REMOTE_CATEGORIES_PER_PHOTO,
-    build_classification_prompt,
-    is_known_category,
-)
+from photosort.categories import MAX_FINE_LABELS_PER_PHOTO
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
     ANTHROPIC_ENDPOINT,
@@ -35,23 +30,30 @@ from photosort.cloud_vision import (
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.label_embedding import LabelEmbedderLike
+from photosort.motifs import MOTIF_REGISTRY, build_motif_prompt, is_motif_key
 
-# Strukturell analog landmark.py. Das Antwortschema ist GESCHLOSSEN: das Modell nennt bis zu drei
-# KANDIDATEN aus dem festen Set (categories.py), die endgueltige Auswahl trifft der Code
-# (resolve_category). Frei formulierte Feinlabels bleiben als reine Zusatzinformation erhalten.
+# Strukturell analog landmark.py. Das Antwortschema ist GESCHLOSSEN: das Modell nennt fuer JEDEN
+# der acht Motivschluessel (motifs.py::MOTIF_REGISTRY) eine Staerke in [0, 1] plus einen
+# Wahrheitswert fuer den Dokument-/Screenshot-Ausschluss. Es waehlt kein Motiv aus und ordnet
+# keines - es gibt keine Kandidatenliste und keine Vorrangreihenfolge mehr. Frei formulierte
+# Feinlabels bleiben als reine Zusatzinformation erhalten.
 
 logger = logging.getLogger(__name__)
 
 # Das Modell kommt als Konstruktor-Parameter herein, nie aus einer Modulkonstante.
 
-# Kurze, reine Klassifikationsantwort: eine vollbesetzte Antwort (drei Kategorie-Objekte mit
-# Konfidenz plus zwei kurze deutsche Feinlabels und das JSON-Geruest) liegt ueberschlaegig bei
-# 80-100 Ausgabe-Tokens; der deutlich groessere Prompt waechst ausschliesslich auf der
-# EINGABEseite. 256 behaelt damit klare Reserve und ist ausdruecklich NICHT anzuheben - die Grenze
-# ist keine reine Kostenschranke, sie begrenzt zugleich die Menge an Fremdtext, die je Foto
-# geparst und potenziell geloggt werden kann. Beide Groessen sind in
-# tests/test_remote_classification.py festgehalten.
-_MAX_RESPONSE_TOKENS = 256
+# Kurze, reine Klassifikationsantwort: eine vollbesetzte Antwort (acht Schluessel-Zahl-Paare plus
+# das Ausschluss-Feld, zwei kurze deutsche Feinlabels und das JSON-Geruest) liegt bei rund 257
+# Zeichen und damit ueberschlaegig bei 110 Ausgabe-Tokens kompakt bzw. 145 bei einer
+# eingerueckten Antwort; der deutlich groessere Prompt waechst ausschliesslich auf der
+# EINGABEseite. 384 behaelt damit klare Reserve - die Grenze ist keine reine Kostenschranke, sie
+# begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und potenziell geloggt werden
+# kann. Beim Anheben gehoeren drei Dinge zusammen nachgezogen: dieser Kommentar, der Waechtertest
+# in tests/test_remote_classification.py und
+# pricing.py::ASSUMED_USAGE_BY_PROVIDER.output_tokens, das gegen die vollbesetzte Antwort neu
+# herzuleiten ist. Die Reserve-Invariante `Schranke >= 2 x Annahme` ist dabei einzuhalten, nicht
+# der Annahme anzupassen.
+_MAX_RESPONSE_TOKENS = 384
 
 # Defensive Obergrenze gegen eine entartete Modellantwort - verhindert einen uebermaessig langen
 # canonical_key/display_name, BEVOR resolve_canonical_label/_slugify aufgerufen wird
@@ -66,19 +68,22 @@ MAX_FINE_LABEL_LENGTH = 60
 # gegen Log-Injection durch eine entartete Modellantwort.
 _MAX_LOGGED_RAW_VALUE_LENGTH = 60
 
-# Sicherheits-Muss-Kriterium: FESTE Grund-Tokens statt des Rohwerts. Fuer einen verworfenen
-# Kategorieschluessel traegt der Rohwert echten Diagnosewert (er zeigt ein Vokabular, das der
-# Prompt nicht gesetzt hat) - fuer eine verworfene Konfidenz liegt er praktisch vollstaendig in der
-# FEHLERKLASSE: "kein Zahlentyp" bzw. "ausserhalb [0,1]" sagt alles fuer eine
-# Prompt-/Schemakorrektur Noetige, die konkrete `1.7` nichts darueber hinaus. Damit enthaelt die
-# Zeile ueberhaupt keinen Fremdtext und die Log-Injection-Frage stellt sich nicht.
-_CONFIDENCE_REASON_NOT_NUMERIC = "nicht_numerisch"
-_CONFIDENCE_REASON_OUT_OF_RANGE = "ausserhalb_intervall"
+# Sicherheitsauflage S11: FESTE Grund-Tokens statt des Rohwerts. Fuer einen verworfenen
+# MOTIVSCHLUESSEL traegt der Rohwert echten Diagnosewert (er zeigt ein Vokabular, das der Prompt
+# nicht gesetzt hat) - fuer eine verworfene Staerke und fuer ein verworfenes `excluded` liegt er
+# praktisch vollstaendig in der FEHLERKLASSE: "kein Zahlentyp" bzw. "ausserhalb [0,1]" bzw. "kein
+# Wahrheitswert" sagt alles fuer eine Prompt-/Schemakorrektur Noetige, die konkrete `1.7` nichts
+# darueber hinaus. Damit enthaelt die Zeile ueberhaupt keinen Fremdtext und die
+# Log-Injection-Frage stellt sich nicht.
+_STRENGTH_REASON_NOT_NUMERIC = "nicht_numerisch"
+_STRENGTH_REASON_OUT_OF_RANGE = "ausserhalb_intervall"
+_EXCLUDED_REASON_NOT_BOOL = "kein_wahrheitswert"
 
-# Sentinel fuer "das Antwort-Objekt nennt gar kein `confidence`-Feld" - unterscheidbar von einem
-# geliefertem `null`. `None` taugt dafuer nicht: es ist selbst ein moeglicher (und dann verworfener)
-# Modellwert.
-_NO_CONFIDENCE = object()
+# Sentinel fuer "das Antwort-Objekt nennt gar kein `excluded`-Feld" - unterscheidbar von einem
+# gelieferten `null`. `None` taugt dafuer nicht: es ist selbst ein moeglicher (und dann
+# verworfener) Modellwert. Ein FEHLENDES Feld wird still zu `false`, ein geliefertes, aber
+# unbrauchbares einmal protokolliert.
+_NO_VALUE = object()
 
 
 class RemoteCategoryClassificationApiError(Exception):
@@ -91,32 +96,36 @@ class RemoteCategoryClassificationApiError(Exception):
 class RemoteClassification:
     """Die validierte Antwort des Vision-LLM fuer EIN Foto.
 
-    `categories` enthaelt ausschliesslich bekannte Set-Keys (categories.py::CATEGORY_REGISTRY) in
-    Erstnennungs-Reihenfolge, hoechstens MAX_REMOTE_CATEGORIES_PER_PHOTO - unbekannte Rohwerte
-    sind bereits verworfen. Ein leeres Tupel ist ein GUELTIGES Ergebnis (das Modell hat nichts
-    Bekanntes genannt) und wird ueber `resolve_category` zu `nicht_erkannt`, kein Fehler.
+    `motif_strengths` ist der STAERKEVEKTOR: eine Abbildung `motif_key -> Wert in [0, 1]` mit
+    GENAU den acht Schluesseln von `motifs.py::MOTIF_REGISTRY`, in Registry-Reihenfolge. Der
+    Vektor ist vollstaendig oder er existiert nicht - ein Motiv, das die Antwort nicht nennt oder
+    fuer das sie keine brauchbare Zahl liefert, steht mit `0.0` darin. Acht Nullen sind ein
+    GUELTIGES Ergebnis ("nichts deutlich erkannt") und kein Fehler; sie unterscheiden sich vom
+    Zustand "noch nicht klassifiziert" dadurch, dass dieser gar keine Kopfzeile hat.
+
+    Kein positionsparalleles Array: der Wert haengt am Schluessel und ueberlebt jede Umsortierung.
+    Unbekannte Rohschluessel sind bereits verworfen - hier landet kein unvalidierter Fremdtext,
+    denn die Schluessel sind ein zweiter Persistenzkanal in API-Antwort und UI.
+
+    `excluded` ist die Antwort des Modells auf die Frage, ob das Foto eine Dokument-, Text- oder
+    Bildschirmabbildung ist. Nur ein echter `bool` wird uebernommen, sonst `False`. Der Ausschluss
+    nimmt ein Foto aus JEDER Motivauswahl und ist von Hand nicht korrigierbar; die Staerken
+    bleiben daneben unveraendert gespeichert.
 
     `fine_labels` enthaelt die zeichensanierten, freien Feinlabels, hoechstens
-    MAX_FINE_LABELS_PER_PHOTO.
+    MAX_FINE_LABELS_PER_PHOTO - der einzige verbliebene Fremdtext-Kanal dieser Antwort."""
 
-    `category_confidences` ist die Selbsteinschaetzung des Modells je Kandidat - eine ABBILDUNG
-    `category_key -> Wert in [0, 1]`, kein positionsparalleles Array: der Wert haengt am Schluessel
-    und ueberlebt jede Umsortierung. Sie ist eine TEILmenge von `categories` (Invariante
-    `set(category_confidences) <= set(categories)`), darf leer sein, und ihr Fehlen an einem
-    Schluessel heisst "keine Angabe", nie `0.0`. Sie beeinflusst die Kategorieauswahl an keiner
-    Stelle."""
-
-    categories: tuple[str, ...]
+    # `Mapping` statt `dict` als Annotation UND `MappingProxyType` als das, was der Parser
+    # hineingibt: die Zusage von `frozen=True` gilt sonst nur fuer die REFERENZ, nicht fuer den
+    # Inhalt - genau wie beim Tupel-Feld darunter soll auch diese Struktur nach dem Bau
+    # unveraenderlich sein. Die Annotation allein deckt nur den Typecheck; den Laufzeitschutz
+    # liefert `_motif_strengths_from_json`.
+    motif_strengths: Mapping[str, float]
     fine_labels: tuple[str, ...]
+    excluded: bool = False
     # Der reale Token-Verbrauch DIESES Aufrufs (analog LandmarkDetection.usage). `None` heisst
     # "nicht ermittelbar", nicht "keine Kosten".
     usage: TokenUsage | None = None
-    # `MappingProxyType({})` statt `field(default_factory=dict)`: die Zusage von `frozen=True` gilt
-    # sonst nur fuer die REFERENZ, nicht fuer den Inhalt - genau wie bei den beiden Tupel-Feldern
-    # oben soll auch diese Struktur nach dem Bau unveraenderlich sein. Als Default unbedenklich,
-    # weil ein `MappingProxyType` (anders als ein `{}`) gar nicht mutierbar ist und deshalb nicht
-    # die klassische Falle des veraenderlichen Default-Arguments traegt.
-    category_confidences: Mapping[str, float] = MappingProxyType({})
 
 
 class CategoryDetectionClientLike(Protocol):
@@ -132,130 +141,120 @@ class CategoryDetectionClientLike(Protocol):
     ) -> RemoteClassification: ...
 
 
-def _log_discarded_category(photo_id: int, raw: object) -> None:
-    """Ein verworfener, unbekannter Kategoriewert (eine Zeile, WARNING, kein exc_info/Traceback -
+def _log_discarded_motif_key(photo_id: int, raw: object) -> None:
+    """Ein verworfener, unbekannter Motivschluessel (eine Zeile, WARNING, kein exc_info/Traceback -
     der Lauf bleibt erfolgreich, das ist erwartetes Best-effort-Verhalten).
 
     Security-Muss-Kriterien: geloggt wird AUSSCHLIESSLICH der einzelne verworfene Wert plus
     photo_id - nie die vollstaendige API-Antwort, nie der Request-Body, nie Base64-Bilddaten, nie
     der API-Key. Der Rohwert geht laengenbegrenzt und ueber %r (repr) ins Log, nie roh ueber %s:
     ein mehrzeiliger Modellwert koennte sonst gefaelschte Logzeilen erzeugen. Kein Log-Flooding
-    moeglich - pro Foto koennen hoechstens so viele Werte verworfen werden, wie die Antwortliste
-    Eintraege hat."""
+    moeglich - pro Foto koennen hoechstens so viele Werte verworfen werden, wie die Antwort
+    Eintraege hat (und die ist ueber `_MAX_RESPONSE_TOKENS` begrenzt)."""
     text = raw if isinstance(raw, str) else repr(raw)
     if len(text) > _MAX_LOGGED_RAW_VALUE_LENGTH:
         text = text[:_MAX_LOGGED_RAW_VALUE_LENGTH] + "..."
     logger.warning(
-        "remote_category: unbekannter Kategoriewert verworfen photo_id=%s wert=%r", photo_id, text
+        "remote_category: unbekannter Motivschluessel verworfen photo_id=%s wert=%r",
+        photo_id,
+        text,
     )
 
 
-def _log_discarded_confidence(photo_id: int, reason: str) -> None:
-    """Schwesterfunktion zu `_log_discarded_category` fuer einen verworfenen KONFIDENZwert
-    (Sicherheits-Muss-Kriterium) - eine Zeile, WARNING, kein exc_info: der Lauf bleibt
-    erfolgreich, das Foto behaelt seine Kategorie.
+def _log_discarded_strength(photo_id: int, reason: str) -> None:
+    """Schwesterfunktion zu `_log_discarded_motif_key` fuer eine verworfene STAERKE
+    (Sicherheitsauflage S11) - eine Zeile, WARNING, kein exc_info: der Lauf bleibt erfolgreich,
+    das Motiv steht mit `0.0` im Vektor.
 
     Geloggt werden ausschliesslich `photo_id` und eines der beiden festen Grund-Tokens, NIE der
-    Rohwert, nie die vollstaendige Antwort, nie der Kategorie-Key, nie Bilddaten. Kein
-    Log-Flooding moeglich: je Foto koennen hoechstens so viele Werte verworfen werden, wie die
-    Antwortliste Eintraege hat (und die ist ueber `_MAX_RESPONSE_TOKENS` begrenzt)."""
+    Rohwert, nie die vollstaendige Antwort, nie der Motivschluessel, nie Bilddaten."""
+    logger.warning("remote_category: Motivstaerke verworfen photo_id=%s grund=%s", photo_id, reason)
+
+
+def _log_discarded_exclusion(photo_id: int) -> None:
+    """Dieselbe Form fuer ein geliefertes, aber nicht als Wahrheitswert brauchbares `excluded`
+    (Sicherheitsauflage S11). Ein FEHLENDES Feld ist keine entartete Aussage und wird nicht
+    protokolliert."""
     logger.warning(
-        "remote_category: Konfidenzwert verworfen photo_id=%s grund=%s", photo_id, reason
+        "remote_category: Ausschluss-Angabe verworfen photo_id=%s grund=%s",
+        photo_id,
+        _EXCLUDED_REASON_NOT_BOOL,
     )
 
 
-def _confidence_from_raw(raw: object, photo_id: int) -> float | None:
-    """Die Selbsteinschaetzung des Modells zu EINEM Kandidaten - `None` heisst "keine brauchbare
-    Zahl".
+def _strength_from_raw(raw: object, photo_id: int) -> float | None:
+    """Die Staerke EINES Motivs - `None` heisst "keine brauchbare Zahl", der Aufrufer setzt dann
+    `0.0`.
 
-    Uebernommen wird ausschliesslich ein echter Zahlentyp im Band `0.0 <= v <= 1.0`. Drei
-    Feinheiten, jede mit einer konkreten Ausfallfolge:
+    Uebernommen wird ausschliesslich ein echter Zahlentyp im Band `0.0 <= v <= 1.0`
+    (Sicherheitsauflage S9). Drei Feinheiten, jede mit einer konkreten Ausfallfolge:
 
     - `isinstance(raw, bool)` wird EXPLIZIT ausgeschlossen, bevor auf `int` geprueft wird:
-      `isinstance(True, int)` ist `True`, `"confidence": true` erschiene sonst als "100 % sicher" -
-      die staerkste Aussage, die das Produkt kennt, erfunden aus einem Nicht-Wert.
+      `isinstance(True, int)` ist `True`, `"menschen": true` erschiene sonst als die staerkste
+      Aussage, die das Produkt kennt, erfunden aus einem Nicht-Wert.
     - Die Bereichspruefung ist als Vergleich geschrieben, damit `NaN`/`±Infinity` DURCHFALLEN
       (`0.0 <= nan <= 1.0` ist `False`). Pythons `json` parst beide Literale standardmaessig, und
       beide Provider-Pfade nutzen `json.loads` mit Standardeinstellungen. Ein durchgelassenes
-      `NaN` liesse ueber Starlettes `allow_nan=False` die GESAMTE Listenantwort mit `ValueError`
-      scheitern (nicht nur den einen Eintrag), und PostgreSQL lehnt dasselbe Literal bereits beim
-      Schreiben der JSON-Spalte ab - verfuegbarkeitswirksam, nicht nur unsauber.
+      `NaN` legte die GESAMTE Fotoliste des Projekts auf `500`: `strength` ist eine
+      `double precision`-Spalte (PostgreSQL nimmt `NaN` an) und Starlette rendert mit
+      `allow_nan=False`. Die Pruefung gehoert deshalb HIER an den Parser, nicht an die
+      Datenbankschicht.
     - VERWORFEN, nicht geklemmt - bewusst anders als `landmark.py::_landmark_detection_from_json`.
       `1.4 -> 1.0` waere eine Aussage, die das Modell nie getroffen hat; und ein spaeteres Klemmen
       (`if v > 1.0: v = 1.0`) liesse `NaN` wieder durch, weil der Vergleich `False` ergibt.
     """
     if isinstance(raw, bool) or not isinstance(raw, int | float):
-        _log_discarded_confidence(photo_id, _CONFIDENCE_REASON_NOT_NUMERIC)
+        _log_discarded_strength(photo_id, _STRENGTH_REASON_NOT_NUMERIC)
         return None
     value = float(raw)
     if not 0.0 <= value <= 1.0:
-        _log_discarded_confidence(photo_id, _CONFIDENCE_REASON_OUT_OF_RANGE)
+        _log_discarded_strength(photo_id, _STRENGTH_REASON_OUT_OF_RANGE)
         return None
     return value
 
 
-def _categories_from_json(
-    raw_categories: list[Any], photo_id: int
-) -> tuple[tuple[str, ...], Mapping[str, float]]:
-    """Verbindliche Verarbeitungsreihenfolge: trimmen -> leere Werte verwerfen -> unbekannte Werte
-    verwerfen (+ genau ein WARNING je Wert) -> deduplizieren unter Erhalt der
-    Erstnennungs-Reihenfolge -> ZULETZT kuerzen. Zuerst zu kuerzen wuerde gueltige Werte hinter
-    ungueltigen verlieren.
+def _motif_strengths_from_json(raw_motifs: dict[Any, Any], photo_id: int) -> Mapping[str, float]:
+    """Der vollstaendige Achter-Vektor aus der Roh-Abbildung der Antwort.
 
-    Der EINE Durchlauf liefert ein PAAR (Kandidaten + Konfidenz-Abbildung) statt nur der
-    Kandidaten, und nie zwei getrennte Funktionen: Dedup und Kappung koennten sonst zwischen beiden
-    Rueckgaben auseinanderlaufen.
+    Verbindliche Verarbeitungsreihenfolge: unbekannten Schluessel verwerfen (+ genau ein WARNING,
+    die Zahl wird dann gar nicht erst bewertet) -> Zahl pruefen (+ genau ein WARNING je verworfener
+    Zahl) -> ZULETZT den Vektor in Registry-Reihenfolge aufbauen und nicht genannte Motive mit
+    `0.0` fuellen.
 
-    Ein Eintrag darf ein Objekt mit `key` (optional `confidence`) ODER ein blanker String sein -
-    der String-Fall liefert eine Kategorie OHNE Zahl. Alles andere geht durch denselben
-    Verwerfen-Pfad, kein stiller Zweig daneben.
+    Der Aufbau laeuft ueber `MOTIF_REGISTRY`, nicht ueber die Schluessel der Antwort: das ist die
+    Stelle, an der die Reihenfolge des Vektors vom Modell UNABHAENGIG wird und an der unmoeglich
+    ein unvalidierter Fremdschluessel in die Ausgabe geraet. Die Schluessel sind ein zweiter
+    Persistenzkanal in API-Antwort und UI (Sicherheitsauflage S8/S9).
 
-    Security-Muss-Kriterium: die Konfidenz-Abbildung wird ERST NACH Schluesselvalidierung, Dedup
-    und Kappung auf die verbliebenen Schluessel gefiltert. Ihre Schluessel sind ein zweiter
-    Persistenzkanal - entstuende sie vor oder unabhaengig von der Validierung, wanderte
-    unvalidierter Fremdtext ueber sie in API-Antwort und UI. Invariante:
-    `set(confidences) <= set(categories)`."""
-    accepted: list[str] = []
-    confidences: dict[str, float] = {}
-    for raw in raw_categories:
-        if isinstance(raw, str):
-            raw_key: object = raw
-            raw_confidence: object = _NO_CONFIDENCE
-        elif isinstance(raw, dict):
-            raw_key = raw.get("key")
-            # `_NO_CONFIDENCE` statt `None`: ein FEHLENDER Schluessel ist der erwartete Regelfall
-            # (das Modell kann sich nicht einschaetzen) und wird still hingenommen, ein explizites
-            # `"confidence": null` ist dagegen ein gelieferter, unbrauchbarer Wert und wird wie
-            # jeder andere verworfene Wert einmal protokolliert.
-            raw_confidence = raw.get("confidence", _NO_CONFIDENCE)
-        else:
-            _log_discarded_category(photo_id, raw)
+    Kein Trimmen und keine Normalisierung des Eingabeschluessels - `is_motif_key` ist eine reine
+    Mitgliedschaftspruefung im geschlossenen Achter-Schluesselraum, und `EXCLUSION_KEY` ist
+    ausdruecklich kein gueltiger Wert."""
+    accepted: dict[str, float] = {}
+    for raw_key, raw_value in raw_motifs.items():
+        if not isinstance(raw_key, str) or not is_motif_key(raw_key):
+            _log_discarded_motif_key(photo_id, raw_key)
             continue
+        strength = _strength_from_raw(raw_value, photo_id)
+        if strength is None:
+            continue
+        accepted[raw_key] = strength
+    return MappingProxyType({key: accepted.get(key, 0.0) for key in MOTIF_REGISTRY})
 
-        if not isinstance(raw_key, str):
-            # Nur der KEY-Anteil ins Log, nie der ganze Eintrag: der Konfidenzwert gehoert nicht
-            # in eine Logzeile.
-            _log_discarded_category(photo_id, raw_key)
-            continue
-        trimmed = raw_key.strip()
-        if not trimmed or not is_known_category(trimmed):
-            _log_discarded_category(photo_id, raw_key)
-            continue
-        if trimmed in accepted:
-            # Erstnennung gewinnt - fuer den Schluessel UND fuer die Zahl. Die Konfidenz der
-            # Zweitnennung wird gar nicht erst bewertet (also auch nicht protokolliert): der
-            # Eintrag als Ganzes ist bereits verworfen.
-            continue
-        accepted.append(trimmed)
-        if raw_confidence is not _NO_CONFIDENCE:
-            confidence = _confidence_from_raw(raw_confidence, photo_id)
-            if confidence is not None:
-                confidences[trimmed] = confidence
 
-    categories = tuple(accepted[:MAX_REMOTE_CATEGORIES_PER_PHOTO])
-    return categories, MappingProxyType(
-        {key: confidences[key] for key in categories if key in confidences}
-    )
+def _excluded_from_json(raw: object, photo_id: int) -> bool:
+    """Der Ausschluss-Wahrheitswert (Sicherheitsauflage S10).
+
+    Uebernommen wird NUR ein echter `bool`, sonst `False`. Kein `bool(...)` auf einen Fremdwert
+    und keine Umdeutung von `1`, `"true"` oder `"ja"` - jeder nicht-leere Fremdwert fuehrte sonst
+    zum Ausschluss. Das ist die Stelle mit dem groessten Hebel dieses Parsers: ein einziger Wert
+    nimmt ein Foto aus JEDER Motivauswahl, und von Hand korrigierbar ist das nicht - der Rueckweg
+    ist allein ein erneuter, kostenpflichtiger Lauf."""
+    if raw is _NO_VALUE:
+        return False
+    if isinstance(raw, bool):
+        return raw
+    _log_discarded_exclusion(photo_id)
+    return False
 
 
 def _fine_labels_from_json(raw_labels: list[Any]) -> tuple[str, ...]:
@@ -284,31 +283,30 @@ def _classification_from_json(
     """Providerneutrale Validierung der Roh-Antwort - **strukturell hart, inhaltlich tolerant**:
 
     STRUKTURELL HART (jeweils RemoteCategoryClassificationApiError, das Foto wird auf Worker-Ebene
-    best-effort uebersprungen): die Antwort ist kein JSON-Objekt, `categories` fehlt, `categories`
-    ist keine Liste, oder `fine_labels` ist vorhanden aber keine Liste. Eine durch
+    best-effort uebersprungen): die Antwort ist kein JSON-Objekt, `motifs` fehlt, `motifs` ist
+    kein JSON-Objekt, oder `fine_labels` ist vorhanden aber keine Liste. Eine durch
     _MAX_RESPONSE_TOKENS abgeschnittene Antwort landet ueber denselben Pfad hier - nie bei einem
     teilweise geparsten Datensatz.
 
-    INHALTLICH TOLERANT: unbekannte Kategoriewerte und entartete Feinlabels werden VERWORFEN statt
-    abgelehnt. Der wichtigste Grenzfall: sind ALLE Kategoriewerte
-    unbekannt, ist das KEIN Fehler - das Ergebnis ist ein leeres Kategorien-Tupel, das ueber
-    `resolve_category` zu `nicht_erkannt` wird, und die Feinlabels desselben Fotos bleiben
-    erhalten. `fine_labels` ist optional (fehlender Schluessel -> leeres Tupel), `categories`
-    nicht."""
+    INHALTLICH TOLERANT: unbekannte Motivschluessel, unbrauchbare Zahlen, ein unbrauchbares
+    `excluded` und entartete Feinlabels werden VERWORFEN statt abgelehnt. Der wichtigste
+    Grenzfall: sind ALLE Schluessel unbekannt, ist das KEIN Fehler - das Ergebnis ist der
+    Achter-Vektor mit acht Nullen, und die Feinlabels desselben Fotos bleiben erhalten.
+    `fine_labels` und `excluded` sind optional, `motifs` nicht."""
     if not isinstance(parsed, dict):
         raise RemoteCategoryClassificationApiError(
             "Unerwartete Antwortstruktur der Vision-API-Antwort (kein JSON-Objekt)."
         )
 
     try:
-        raw_categories = parsed["categories"]
+        raw_motifs = parsed["motifs"]
     except KeyError as exc:
         raise RemoteCategoryClassificationApiError(
-            "Unerwartete Antwortstruktur der Vision-API-Antwort (fehlendes 'categories'-Feld)."
+            "Unerwartete Antwortstruktur der Vision-API-Antwort (fehlendes 'motifs'-Feld)."
         ) from exc
-    if not isinstance(raw_categories, list):
+    if not isinstance(raw_motifs, dict):
         raise RemoteCategoryClassificationApiError(
-            "Unerwartete Antwortstruktur der Vision-API-Antwort ('categories' ist keine Liste)."
+            "Unerwartete Antwortstruktur der Vision-API-Antwort ('motifs' ist kein Objekt)."
         )
 
     raw_fine_labels = parsed.get("fine_labels", [])
@@ -317,12 +315,11 @@ def _classification_from_json(
             "Unerwartete Antwortstruktur der Vision-API-Antwort ('fine_labels' ist keine Liste)."
         )
 
-    categories, category_confidences = _categories_from_json(raw_categories, photo_id)
     return RemoteClassification(
-        categories=categories,
+        motif_strengths=_motif_strengths_from_json(raw_motifs, photo_id),
         fine_labels=_fine_labels_from_json(raw_fine_labels),
+        excluded=_excluded_from_json(parsed.get("excluded", _NO_VALUE), photo_id),
         usage=usage,
-        category_confidences=category_confidences,
     )
 
 
@@ -378,7 +375,10 @@ class AnthropicCategoryClient:
                                 "data": base64.b64encode(image_bytes).decode(),
                             },
                         },
-                        {"type": "text", "text": build_classification_prompt()},
+                        {
+                            "type": "text",
+                            "text": build_motif_prompt(max_fine_labels=MAX_FINE_LABELS_PER_PHOTO),
+                        },
                     ],
                 }
             ],
@@ -443,7 +443,10 @@ class MistralCategoryClient:
                                 f"data:{mime_type};base64,{base64.b64encode(image_bytes).decode()}"
                             ),
                         },
-                        {"type": "text", "text": build_classification_prompt()},
+                        {
+                            "type": "text",
+                            "text": build_motif_prompt(max_fine_labels=MAX_FINE_LABELS_PER_PHOTO),
+                        },
                     ],
                 }
             ],

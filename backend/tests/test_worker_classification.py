@@ -23,9 +23,11 @@ from photosort.models import (
     ClassificationPhase,
     CriterionScoringRun,
     CriterionSource,
+    MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCriterionScore,
+    PhotoMotifAssessment,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -33,6 +35,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from photosort.motifs import MOTIF_REGISTRY
 from photosort.remote_classification import RemoteClassification
 from photosort.thumbnails import display_path
 from photosort.worker import run_classification
@@ -155,10 +158,16 @@ def _fake_embedder() -> LabelEmbedderLike:
     return _FakeLabelEmbedder()
 
 
+def _vector(**overrides: float) -> dict[str, float]:
+    """Der VOLLSTAENDIGE Achter-Vektor in Registry-Reihenfolge, nicht genannte Motive bei `0.0` -
+    aus `MOTIF_REGISTRY` abgeleitet, nie als zweite Liste geschrieben."""
+    return {key: overrides.get(key, 0.0) for key in MOTIF_REGISTRY}
+
+
 class RecordingCategoryClient:
     def __init__(self, classification: RemoteClassification | None = None) -> None:
         self._classification = classification or RemoteClassification(
-            categories=("tier",), fine_labels=("Hund",)
+            motif_strengths=_vector(tiere=0.8), fine_labels=("Hund",)
         )
         self.calls: list[int] = []
 
@@ -244,16 +253,21 @@ async def _run(
 # --------------------------------------------------------------------------------------------
 
 
-async def test_remote_results_reach_the_category_of_the_same_run(
+async def test_remote_results_reach_the_motif_strengths_of_the_same_run(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     """DAS Kern-Akzeptanzkriterium (Spec 0296, "Ein Ausloeser"): die Cloud-Anteile laufen so
-    frueh, dass ihre Ergebnisse noch im selben Durchlauf in die Kategorie-Vorschlaege einfliessen -
-    ein zweiter, manuell angestossener Lauf ist dafuer nicht mehr noetig.
+    frueh, dass ihre Ergebnisse noch im selben Durchlauf im Ergebnis stehen - ein zweiter, manuell
+    angestossener Lauf ist dafuer nicht mehr noetig.
 
-    Geprueft wird das am ERGEBNIS (die PhotoRanking-Zeile dieses Laufs traegt die remote ermittelte
-    Kategorie), nicht an einer Aufrufreihenfolge: die lokalen Signale erkennen hier nichts
-    ("nicht_erkannt" waere das Ergebnis ohne die Remote-Phase)."""
+    Geprueft wird das am ERGEBNIS, nicht an einer Aufrufreihenfolge. Seit Spec 0427 (PR 2) ist das
+    Ergebnis die KOPFZEILE mit `source='cloud'` samt Staerkevektor statt der Kategorie der
+    PhotoRanking-Zeile: der Cloud-Teilschritt schreibt `photo_category_classifications` nicht mehr,
+    und die Erwartung ist mit dem Schreibpfad umgezogen statt von Hand grün gehalten zu werden.
+
+    Die lokalen Signale erkennen hier nichts - ohne die Remote-Phase blieben es acht Nullen und
+    eine LOKALE Kopfzeile, die der Kriterien-Teilschritt danach schreibt. Beides zusammen
+    unterscheidet den Fall von jeder Implementierung, die die Cloud-Antwort verliert."""
     project = await _make_project(db_session, cloud_consent=True)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
@@ -268,13 +282,24 @@ async def test_remote_results_reach_the_category_of_the_same_run(
     )
 
     assert run.status == ScanStatus.SUCCESS
-    ranking = (
-        await db_session.execute(
-            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+    assessment = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert assessment is not None
+    # Die Cloud-Grundlage steht noch da: der DANACH laufende Kriterien-Teilschritt hat sie nicht
+    # durch seine lokale ersetzt.
+    assert assessment.source == MotifAssessmentSource.CLOUD
+    strengths = {
+        row.motif_key: row.strength
+        for row in (
+            (
+                await db_session.execute(
+                    select(PhotoMotifStrength).where(PhotoMotifStrength.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
         )
-    ).scalar_one()
-    assert ranking.photo_id == photo.id
-    assert ranking.category_key == "tier"
+    }
+    assert strengths == _vector(tiere=0.8)
 
 
 async def test_a_single_trigger_produces_both_run_records(
@@ -467,7 +492,7 @@ async def test_the_landmark_phase_runs_when_the_checkbox_is_checked(
         tmp_path,
         use_cloud=True,
         build_category_client=lambda _model: RecordingCategoryClient(
-            RemoteClassification(categories=("landschaft",), fine_labels=())
+            RemoteClassification(motif_strengths=_vector(landschaft=0.7), fine_labels=())
         ),
         build_landmark_client=lambda _model: landmark_client,
         build_classifier=_LandscapeSceneLabels,
@@ -580,7 +605,7 @@ async def test_failing_landmark_calls_are_summarised_not_listed(
         tmp_path,
         use_cloud=True,
         build_category_client=lambda _model: RecordingCategoryClient(
-            RemoteClassification(categories=("landschaft",), fine_labels=())
+            RemoteClassification(motif_strengths=_vector(landschaft=0.7), fine_labels=())
         ),
         build_landmark_client=lambda _model: RecordingLandmarkClient(raise_error=True),
         build_classifier=_LandscapeSceneLabels,
@@ -617,11 +642,18 @@ async def test_a_clean_cloud_run_reports_no_cloud_error(
     assert run.cloud_error_message is None
 
 
-async def test_remote_classification_rows_are_written_before_the_criteria_phase(
+async def test_the_cloud_header_survives_the_later_criteria_phase(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Regressionsschutz fuer die Reihenfolge selbst: waere die Kriterien-Phase zuerst gelaufen,
-    gaebe es zum Zeitpunkt von _remote_category_candidates noch keine Klassifikations-Zeile."""
+    """Regressionsschutz fuer die Reihenfolge selbst, mit dem Schreibpfad umgezogen (Spec 0427,
+    PR 2): der Kriterien-Teilschritt laeuft NACH der Remote-Phase und schreibt fuer jedes Foto
+    eine LOKALE Kopfzeile. Sie darf die gerade bezahlte Cloud-Grundlage nicht ersetzen - die
+    Regel steht in `motif_strengths.py::upsert_assessment`, und hier wirkt sie in der echten
+    Abfolge beider Teilschritte.
+
+    Ohne diese Assertion waere die Reihenfolgenzusage nach der Umstellung unbelegt: eine
+    Implementierung, die die lokale Grundlage bedingungslos schreibt, verlor die Cloud-Antwort
+    genau hier und liesse jeden Einzelphasen-Test gruen."""
     project = await _make_project(db_session, cloud_consent=True)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     photo = await _add_candidate_photo(db_session, project, "a.jpg", tmp_path)
@@ -635,14 +667,10 @@ async def test_remote_classification_rows_are_written_before_the_criteria_phase(
         build_category_client=lambda _model: RecordingCategoryClient(),
     )
 
-    classification = (
-        await db_session.execute(
-            select(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id == photo.id
-            )
-        )
-    ).scalar_one()
-    assert classification.category_key == "tier"
+    assessment = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert assessment is not None
+    assert assessment.source == MotifAssessmentSource.CLOUD
+    assert assessment.provider == "anthropic"
 
 
 async def test_a_cancelled_remote_phase_fails_the_whole_run_immediately(
@@ -826,7 +854,7 @@ async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
         tmp_path,
         use_cloud=True,
         build_category_client=lambda _model: _PhaseObservingCategoryClient(
-            RemoteClassification(categories=("landschaft",), fine_labels=())
+            RemoteClassification(motif_strengths=_vector(landschaft=0.7), fine_labels=())
         ),
         build_landmark_client=lambda _model: _PhaseObservingLandmarkClient(),
         build_classifier=lambda: _phase_observing_scene_classifier(db_session, recorder),
@@ -899,7 +927,7 @@ async def test_the_ranking_step_no_longer_reports_the_landmark_phase(
         tmp_path,
         use_cloud=True,
         build_category_client=lambda _model: RecordingCategoryClient(
-            RemoteClassification(categories=("landschaft",), fine_labels=())
+            RemoteClassification(motif_strengths=_vector(landschaft=0.7), fine_labels=())
         ),
         build_landmark_client=lambda _model: RecordingLandmarkClient(),
         build_classifier=_LandscapeSceneLabels,
