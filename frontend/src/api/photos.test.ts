@@ -69,7 +69,7 @@ describe('api/photos', () => {
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
     const result = await listCurationCandidates(1, {
-      clusterKey: 'cluster-0',
+      eventId: 42,
       categoryKey: 'landschaft',
       afterRank: 10,
       limit: 60,
@@ -77,22 +77,24 @@ describe('api/photos', () => {
     })
 
     expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/curation-candidates?cluster_key=cluster-0&category_key=landschaft&after_rank=10&limit=60&offset=60',
+      '/projects/1/curation-candidates?event_id=42&category_key=landschaft&after_rank=10&limit=60&offset=60',
     )
     expect(result).toEqual(PHOTO_LIST)
   })
 
-  it('escapes partition keys that are not URL-safe', async () => {
+  it('escapes the remaining free partition key when it is not URL-safe', async () => {
+    // `event_id` ist seit Spec 0425 eine Zahl und kann nichts mehr einschleusen; `category_key`
+    // bleibt ein freier String und wird weiterhin kodiert.
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
     await listCurationCandidates(1, {
-      clusterKey: 'cluster 0&x=1',
-      categoryKey: 'a/b',
+      eventId: 7,
+      categoryKey: 'a/b&x=1',
       afterRank: 0,
     })
 
     expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/curation-candidates?cluster_key=cluster+0%26x%3D1&category_key=a%2Fb&after_rank=0',
+      '/projects/1/curation-candidates?event_id=7&category_key=a%2Fb%26x%3D1&after_rank=0',
     )
   })
 

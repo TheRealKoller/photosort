@@ -207,11 +207,11 @@ export interface CategoryOut {
 // EINE Zugehörigkeit eines Fotos zu einer Kategorie aus der Kriterien-/Rangfolgen-Pipeline.
 // Ein Foto hat mehrere davon - siehe `PhotoOut.rankings`.
 export interface RankingOut {
-  cluster_key: string
+  event_id: number
   category_key: CategoryKey
   rank_score: number
   rank_position: number
-  // Größe der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten top_n),
+  // Größe der GESAMTEN Event x Kategorie-Partition (nicht nur der angeforderten top_n),
   // für "Rang M von N" im Info-Popover. Zählt Haupt- UND Nebenzeilen der Partition.
   partition_size: number
   /** Ob dies die HAUPTkategorie des Fotos ist. Genau eine Zugehörigkeit je Foto trägt
@@ -323,24 +323,39 @@ export interface PhotoLocation {
   source: 'exif' | 'derived'
 }
 
-/** Der bereits AUFGELÖSTE Ort des CLUSTERS - auf jedem Foto desselben Clusters identisch,
- * `null` ohne jede Ortsinformation.
+/** Der bereits AUFGELÖSTE Ort des EVENTS - auf jedem Foto desselben Events identisch, `null`
+ * ohne jede Ortsinformation.
  *
  * Der Server liefert den fertigen ZUSTAND, nicht die Rohdaten für eine Rangfolge. Das
- * Frontend bildet die Rangfolge (Sehenswürdigkeit -> Koordinate -> mehrere Orte) NICHT nach,
- * es verzweigt über `kind` und formatiert - denn der Cluster reicht über die geladenen Fotos
- * hinaus (Top-N-Auswahl), und eine Aggregation hier wäre dauerhaft eine Aussage über die
- * Top-N. `kind: 'multiple'` trägt strukturell keine Koordinate.
+ * Frontend bildet die Rangfolge (Sehenswürdigkeit -> Koordinate -> mehrere Orte) NICHT nach.
+ * `kind: 'multiple'` trägt strukturell keine Koordinate.
+ *
+ * In der Überschrift erscheint allein `kind: 'landmark'`; Koordinate und "mehrere Orte" fallen
+ * auf "Position N" zurück. Die Werte bleiben trotzdem in der Antwort - aus ihnen wird mit
+ * Reverse-Geocoding später wieder ein Name.
  *
  * `landmark_name` ist freier, extern erzeugter LLM-Text: ausschließlich als regulärer
  * React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in
  * `href`/`src`/`style`, nie als React-`key` (dieselbe Auflage wie bei
  * `FineLabelOut.raw_label`). */
-export interface ClusterPlace {
+export interface EventPlace {
   kind: 'landmark' | 'coordinate' | 'multiple'
   landmark_name: string | null
   lat: number | null
   lon: number | null
+}
+
+/** Das Event, zu dem dieses Foto im letzten erfolgreichen Lauf gehört.
+ *
+ * Nummer und Zeitspanne stehen in der Zeile des Events und hängen damit NICHT davon ab, welche
+ * Fotos eine Antwort gerade enthält - anders als bei der früheren Cluster-Überschrift, die aus
+ * den sichtbaren Fotos aggregiert wurde. */
+export interface EventOut {
+  id: number
+  position: number
+  started_at: string
+  ended_at: string
+  place: EventPlace | null
 }
 
 export interface PhotoOut {
@@ -379,7 +394,7 @@ export interface PhotoOut {
    * Hier trotzdem OPTIONAL deklariert: `undefined` und `null` bedeuten an jeder Lesestelle
    * dasselbe - kein Ort. */
   location?: PhotoLocation | null
-  cluster_place?: ClusterPlace | null
+  event?: EventOut | null
 }
 
 export interface PhotoListOut {

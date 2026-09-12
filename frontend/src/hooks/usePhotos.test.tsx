@@ -81,7 +81,7 @@ describe('usePhotoSequenceQuery', () => {
 })
 
 describe('useCurationCandidatesQuery', () => {
-  const partition = { clusterKey: 'cluster-0', categoryKey: 'landschaft', afterRank: 3 }
+  const partition = { eventId: 42, categoryKey: 'landschaft', afterRank: 3 }
 
   // Die Datei laeuft ohne `clearMocks`; Aufrufzaehler und `…Once`-Warteschlange wandern sonst von
   // Testfall zu Testfall. Diese Gruppe zaehlt Aufrufe (statt nur ihre Argumente zu pruefen) und
@@ -112,7 +112,7 @@ describe('useCurationCandidatesQuery', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(photosApi.listCurationCandidates).toHaveBeenCalledWith(1, {
-      clusterKey: 'cluster-0',
+      eventId: 42,
       categoryKey: 'landschaft',
       afterRank: 3,
       limit: PHOTOS_PAGE_SIZE,
@@ -138,7 +138,7 @@ describe('useCurationCandidatesQuery', () => {
 
     await waitFor(() => expect(result.current.hasNextPage).toBe(false))
     expect(photosApi.listCurationCandidates).toHaveBeenLastCalledWith(1, {
-      clusterKey: 'cluster-0',
+      eventId: 42,
       categoryKey: 'landschaft',
       afterRank: 3,
       limit: 2,

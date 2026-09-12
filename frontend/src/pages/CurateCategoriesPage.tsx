@@ -23,16 +23,15 @@ import {
 import { parseTopN } from '../utils/curationTopN'
 import { ownRatingStatus } from '../utils/ownRating'
 import { curatedRankings } from '../utils/rankings'
-import { formatClusterHeading, formatDayHeading } from '../utils/timeOfDay'
+import { formatDayHeading, formatEventHeading } from '../utils/timeOfDay'
 
-interface ClusterMeta {
+interface EventMeta {
   dayKey: string
   heading: string
-  // Nur fuer die chronologische Cluster-Sortierung innerhalb eines Tages (Akzeptanzkriterium 2) -
-  // 1:1 aus `formatClusterHeading()`s `earliestIso`-Rueckgabewert uebernommen (siehe
-  // frontend/src/utils/timeOfDay.ts), damit der rohe Zeitstempel nicht ein zweites Mal separat
-  // berechnet werden muss.
-  earliestTakenAt: string
+  // Die chronologische Reihenfolge innerhalb eines Tages kommt aus der Nummer des Events
+  // (lueckenlos ab 1, ueberschneidungsfrei) - kein zweiter Sortierschluessel und kein
+  // Zeitstempelvergleich.
+  position: number
 }
 
 /**
@@ -47,63 +46,72 @@ export interface CurationEntry {
 
 interface GroupedPhotos {
   [dayKey: string]: {
-    [clusterKey: string]: {
+    [eventKey: string]: {
       [categoryKey: string]: CurationEntry[]
     }
   }
 }
 
 /**
- * Erster Durchlauf sammelt pro `cluster_key` alle zugehoerigen Fotos (kategorieuebergreifend) und
- * berechnet einmal die Cluster-Meta-Info (Tag + Ueberschrift), zweiter Durchlauf sortiert die
- * Zugehoerigkeiten in die dreistufige {Tag: {Cluster: {Kategorie: Eintraege}}}-Struktur ein.
+ * Der Schluessel eines Events in den Gruppierungsobjekten. Die `event_id` ist eine ZAHL, ein
+ * Objektschluessel ist immer ein String - die Umwandlung passiert an genau dieser einen Stelle,
+ * statt an jeder Lesestelle erneut.
+ */
+function eventKeyOf(eventId: number): string {
+  return String(eventId)
+}
+
+/**
+ * Erster Durchlauf sammelt die Event-Meta-Info (Tag, Ueberschrift, Nummer) je `event_id`, zweiter
+ * Durchlauf sortiert die Zugehoerigkeiten in die dreistufige
+ * {Tag: {Event: {Kategorie: Eintraege}}}-Struktur ein.
+ *
+ * Die Meta-Info entsteht aus `photo.event` - EINER Zeile, nicht aus einer Aggregation ueber die
+ * sichtbaren Fotos. Der Server sichert zu, dass sie auf jedem Foto desselben Events feldgleich
+ * ist; deshalb genuegt ein beliebiges.
  *
  * Iteriert je Foto ueber `curatedRankings(photo)` - ein Foto kann damit in MEHREREN Kategorien
  * erscheinen. Welche das sind, entscheidet ausschliesslich der Server (`curation_position !==
  * null`); das Frontend bildet weder die Auswahl noch eine Schwelle nach.
  */
-function groupByClusterAndCategory(items: PhotoOut[]): {
+function groupByEventAndCategory(items: PhotoOut[]): {
   groups: GroupedPhotos
-  clusterMeta: Map<string, ClusterMeta>
+  eventMeta: Map<string, EventMeta>
 } {
-  const photosByCluster = new Map<string, PhotoOut[]>()
+  const eventMeta = new Map<string, EventMeta>()
   for (const photo of items) {
-    // Ein Foto zaehlt je Cluster nur EINMAL in die Meta-Berechnung, auch wenn es dort in zwei
-    // Kategorien steht - `formatClusterHeading` bildet den Zeitraum, nicht die Kachelanzahl.
-    for (const clusterKey of new Set(curatedRankings(photo).map((r) => r.cluster_key))) {
-      const clusterPhotos = photosByCluster.get(clusterKey) ?? []
-      clusterPhotos.push(photo)
-      photosByCluster.set(clusterKey, clusterPhotos)
+    if (!photo.event) {
+      continue
     }
-  }
-
-  const clusterMeta = new Map<string, ClusterMeta>()
-  for (const [clusterKey, photos] of photosByCluster) {
-    const { dayKey, heading, earliestIso } = formatClusterHeading(photos)
-    clusterMeta.set(clusterKey, { dayKey, heading, earliestTakenAt: earliestIso })
+    const { dayKey, heading } = formatEventHeading(photo.event)
+    eventMeta.set(eventKeyOf(photo.event.id), {
+      dayKey,
+      heading,
+      position: photo.event.position,
+    })
   }
 
   const groups: GroupedPhotos = {}
   for (const photo of items) {
     for (const ranking of curatedRankings(photo)) {
-      const { cluster_key: clusterKey, category_key: categoryKey } = ranking
-      const meta = clusterMeta.get(clusterKey)
+      const eventKey = eventKeyOf(ranking.event_id)
+      const categoryKey = ranking.category_key
+      const meta = eventMeta.get(eventKey)
       if (meta === undefined) {
-        // Unerreichbar: photosByCluster wurde aus denselben `items` gebaut, jeder hier
-        // auftauchende clusterKey hat also zwingend einen Eintrag. Defensive Absicherung statt
-        // einer Non-Null-Assertion.
+        // Erreichbar nur, wenn ein Foto eine Rangzeile ohne zugehoeriges `event` traegt - der
+        // Server liefert das nicht. Defensive Absicherung statt einer Non-Null-Assertion.
         continue
       }
       groups[meta.dayKey] ??= {}
-      groups[meta.dayKey][clusterKey] ??= {}
-      groups[meta.dayKey][clusterKey][categoryKey] ??= []
-      groups[meta.dayKey][clusterKey][categoryKey].push({ photo, ranking })
+      groups[meta.dayKey][eventKey] ??= {}
+      groups[meta.dayKey][eventKey][categoryKey] ??= []
+      groups[meta.dayKey][eventKey][categoryKey].push({ photo, ranking })
     }
   }
-  return { groups, clusterMeta }
+  return { groups, eventMeta }
 }
 
-/** Ob mindestens eine Kategorie in dieser Cluster-Ebene noch (sichtbare) Fotos hat. */
+/** Ob mindestens eine Kategorie in dieser Event-Ebene noch (sichtbare) Fotos hat. */
 function categoriesHavePhotos(categories: { [categoryKey: string]: CurationEntry[] }): boolean {
   return Object.values(categories).some((entries) => entries.length > 0)
 }
@@ -115,11 +123,11 @@ function categoriesHavePhotos(categories: { [categoryKey: string]: CurationEntry
  * Zaehlt EINDEUTIGE FOTOS, nicht Zugehoerigkeiten: die Beschriftung lautet "N Fotos" - ein Foto,
  * das an diesem Tag in zwei Kategorien erscheint, erhoeht die Zahl um eins.
  */
-export function countPhotosInDay(clustersForDay: {
-  [clusterKey: string]: { [categoryKey: string]: CurationEntry[] }
+export function countPhotosInDay(eventsForDay: {
+  [eventKey: string]: { [categoryKey: string]: CurationEntry[] }
 }): number {
   const photoIds = new Set<number>()
-  for (const categories of Object.values(clustersForDay)) {
+  for (const categories of Object.values(eventsForDay)) {
     for (const entries of Object.values(categories)) {
       for (const entry of entries) {
         photoIds.add(entry.photo.id)
@@ -130,8 +138,8 @@ export function countPhotosInDay(clustersForDay: {
 }
 
 /**
- * Kandidatenzahl EINER Kategorie eines Clusters: schlicht die `partition_size` - alle Eintraege
- * einer Partition tragen denselben Wert, weil er lauf-global je (cluster_key, category_key)
+ * Kandidatenzahl EINER Kategorie eines Events: schlicht die `partition_size` - alle Eintraege
+ * einer Partition tragen denselben Wert, weil er lauf-global je (event_id, category_key)
  * berechnet wird und nicht nutzerspezifisch gefiltert ist.
  *
  * `0` fuer eine leergelaufene Kategorie (nur noch ueber `knownGroupKeysRef` bekannt, nach einem
@@ -143,8 +151,8 @@ export function candidateCountOfCategory(entries: CurationEntry[]): number {
 }
 
 /**
- * Kandidatenzahl eines Clusters: die SUMME der Kategorie-Zahlen darunter. Ein Foto, das im selben
- * Cluster in zwei Kategorien steht, zaehlt darin ZWEIMAL - bewusste Produktentscheidung Daniels:
+ * Kandidatenzahl eines Events: die SUMME der Kategorie-Zahlen darunter. Ein Foto, das im selben
+ * Event in zwei Kategorien steht, zaehlt darin ZWEIMAL - bewusste Produktentscheidung Daniels:
  * die Zahl beschreibt, was tatsaechlich zu sichten ist (die Kachel erscheint zweimal und ist
  * zweimal einzeln zu beurteilen), nicht wie viele verschiedene Fotos es sind.
  *
@@ -153,7 +161,7 @@ export function candidateCountOfCategory(entries: CurationEntry[]): number {
  * verschiedene Woerter; das ist die einzige Stelle, an der diese Entscheidung fuer den Nutzer
  * lesbar bleibt.
  */
-export function candidateCountOfCluster(photosByCategory: {
+export function candidateCountOfEvent(photosByCategory: {
   [categoryKey: string]: CurationEntry[]
 }): number {
   return Object.values(photosByCategory).reduce(
@@ -215,15 +223,36 @@ const LOW_CONFIDENCE_EMPTY_DAY_TEXT = `Keine Fotos mit einer Sicherheit unter ${
   LOW_CONFIDENCE_THRESHOLD * 100
 } % an diesem Tag.`
 
-const LOW_CONFIDENCE_EMPTY_CLUSTER_TEXT = `Keine Fotos mit einer Sicherheit unter ${
+const LOW_CONFIDENCE_EMPTY_EVENT_TEXT = `Keine Fotos mit einer Sicherheit unter ${
   LOW_CONFIDENCE_THRESHOLD * 100
-} % in dieser Tageszeit.`
+} % in dieser Gruppe.`
+
+/**
+ * Leertext einer erschoepften Gruppe. Frueher war er an die Tageszeit gebunden ("Keine Fotos in
+ * dieser Tageszeit") - die Ueberschrift traegt seit Spec 0425 keine Tageszeit mehr, und der Text
+ * traefe schlicht nicht mehr zu.
+ */
+const EMPTY_EVENT_TEXT = 'Keine Fotos in dieser Gruppe'
+
+/**
+ * Der Leerzustand der ganzen Ansicht. Er traegt ZWEI Faelle, die das Frontend nicht
+ * unterscheiden kann - beide liefern eine leere Liste:
+ *
+ * 1. Es gab noch nie einen erfolgreichen Kriterien-Lauf.
+ * 2. Der letzte erfolgreiche Lauf stammt von VOR der Umstellung auf Events; seine Rangzeilen sind
+ *    mit der Migration entfallen. Ein erfolgreicher Lauf OHNE Rangzeilen ist neu.
+ *
+ * Beide Male hilft dieselbe Handlung weiter, deshalb ein Text statt zweier: neu berechnen.
+ */
+export const CURATION_EMPTY_TEXT =
+  'Noch keine Kategorie-Kuratierung verfügbar — führe eine Kriterien-Bewertung aus. ' +
+  'Ein Lauf von vor der Umstellung auf Events muss einmal neu berechnet werden.'
 
 const LOW_CONFIDENCE_FILTER_LABEL = 'Nur unsichere Zuordnungen'
 
 /**
  * Reine Filterfunktion ueber den bereits geladenen Fotos (Akzeptanzkriterium 5) - laeuft VOR
- * `groupByClusterAndCategory`, damit die Gruppierung selbst unveraendert bleibt.
+ * `groupByEventAndCategory`, damit die Gruppierung selbst unveraendert bleibt.
  *
  * Ein Foto OHNE Angabe faellt heraus (Produktentscheidung Daniels): es ist keine unsichere
  * Zuordnung, sondern eine unbekannte. Deshalb die Pruefung auf `!== null` und nicht auf
@@ -291,7 +320,7 @@ export function CurateCategoriesPage() {
 
   // Aufgeklappte Kandidatenbereiche, Schluessel je Partition. Dieselbe kollisionssichere
   // Schluesselbildung wie `knownGroupKeysRef` (JSON.stringify eines 3-Tupels), damit ein
-  // cluster_key/category_key mit Trennzeichen keine zwei Bereiche verschmelzen laesst.
+  // category_key mit Trennzeichen keine zwei Bereiche verschmelzen laesst.
   // Standardmaessig ist alles zugeklappt (Akzeptanzkriterium 20) - der Kandidaten-Request laeuft
   // ausschliesslich im aufgeklappten Zustand.
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set())
@@ -315,42 +344,42 @@ export function CurateCategoriesPage() {
   // Abschnitt (mit eigenem Leerzustand statt kommentarlosem Verschwinden) sichtbar bleibt.
   // Schluessel via JSON.stringify() statt eines zusammengesetzten Strings mit Trennzeichen
   // (Review-Fund test-engineer/security-engineer/architect): ein einzelnes Trennzeichen waere
-  // anfaellig fuer eine Kollision, sollte ein kuenftiger cluster_key/category_key es selbst
-  // enthalten - JSON.stringify(["a","b","c"]) ist immer eindeutig umkehrbar. 3-Tupel [dayKey,
-  // clusterKey, categoryKey], nicht 2-Tupel.
+  // anfaellig fuer eine Kollision, sollte ein kuenftiger category_key es selbst enthalten -
+  // JSON.stringify(["a","b","c"]) ist immer eindeutig umkehrbar. 3-Tupel [dayKey, eventKey,
+  // categoryKey], nicht 2-Tupel.
   const knownGroupKeysRef = useRef<Set<string>>(new Set())
-  // Cache fuer die Cluster-Meta-Info (Tag + Ueberschrift + Sortier-Zeitstempel): sobald das
-  // letzte Foto eines Clusters abgelehnt wird, verschwindet der cluster_key komplett aus `items`
-  // - formatClusterHeading() laesst sich dann nicht mehr aus aktuellen Daten neu berechnen. Wird
-  // bei jedem Render fuer alle in `items` noch vorhandenen Cluster ueberschrieben, liefert fuer
-  // erschoepfte Cluster weiterhin die zuletzt bekannte Meta-Info.
-  const clusterMetaRef = useRef<Map<string, ClusterMeta>>(new Map())
+  // Cache fuer die Event-Meta-Info (Tag + Ueberschrift + Nummer): sobald das letzte Foto eines
+  // Events abgelehnt wird, verschwindet seine `event_id` komplett aus `items` - die Ueberschrift
+  // laesst sich dann nicht mehr aus aktuellen Daten bilden. Wird bei jedem Render fuer alle in
+  // `items` noch vorhandenen Events ueberschrieben und liefert fuer erschoepfte weiterhin die
+  // zuletzt bekannte Meta-Info.
+  const eventMetaRef = useRef<Map<string, EventMeta>>(new Map())
 
   // ZWEI Gruppierungen, wenn der Filter aktiv ist - das ist kein Versehen: die Merkliste gesehener
-  // Partitionen und der Cluster-Meta-Cache werden weiterhin aus den UNGEFILTERTEN `items` gespeist.
+  // Partitionen und der Event-Meta-Cache werden weiterhin aus den UNGEFILTERTEN `items` gespeist.
   // Speiste man sie aus der gefilterten Sicht, verschwaenden Partitionen beim Einschalten des
   // Filters DAUERHAFT: sie waeren nach dem Ausschalten nicht mehr in der Merkliste und ihre
-  // Cluster-Ueberschrift nicht mehr berechenbar.
-  const unfiltered = groupByClusterAndCategory(items)
+  // Event-Ueberschrift nicht mehr bildbar.
+  const unfiltered = groupByEventAndCategory(items)
   const groups = lowConfidenceOnly
-    ? groupByClusterAndCategory(filterLowConfidence(items)).groups
+    ? groupByEventAndCategory(filterLowConfidence(items)).groups
     : unfiltered.groups
-  for (const [clusterKey, meta] of unfiltered.clusterMeta) {
-    clusterMetaRef.current.set(clusterKey, meta)
+  for (const [eventKey, meta] of unfiltered.eventMeta) {
+    eventMetaRef.current.set(eventKey, meta)
   }
 
   for (const dayKey of Object.keys(unfiltered.groups)) {
-    for (const clusterKey of Object.keys(unfiltered.groups[dayKey])) {
-      for (const categoryKey of Object.keys(unfiltered.groups[dayKey][clusterKey])) {
-        knownGroupKeysRef.current.add(JSON.stringify([dayKey, clusterKey, categoryKey]))
+    for (const eventKey of Object.keys(unfiltered.groups[dayKey])) {
+      for (const categoryKey of Object.keys(unfiltered.groups[dayKey][eventKey])) {
+        knownGroupKeysRef.current.add(JSON.stringify([dayKey, eventKey, categoryKey]))
       }
     }
   }
   for (const key of knownGroupKeysRef.current) {
-    const [dayKey, clusterKey, categoryKey] = JSON.parse(key) as [string, string, string]
+    const [dayKey, eventKey, categoryKey] = JSON.parse(key) as [string, string, string]
     groups[dayKey] ??= {}
-    groups[dayKey][clusterKey] ??= {}
-    groups[dayKey][clusterKey][categoryKey] ??= []
+    groups[dayKey][eventKey] ??= {}
+    groups[dayKey][eventKey][categoryKey] ??= []
   }
 
   function handleReject(photo: PhotoOut): void {
@@ -420,9 +449,7 @@ export function CurateCategoriesPage() {
       )}
 
       {query.isSuccess && dayKeys.length === 0 && (
-        <p className="text-sm text-text">
-          Noch keine Kategorie-Kuratierung verfügbar — führe zuerst eine Kriterien-Bewertung aus.
-        </p>
+        <p className="text-sm text-text">{CURATION_EMPTY_TEXT}</p>
       )}
 
       {dayKeys.length > 0 && (
@@ -460,18 +487,16 @@ export function CurateCategoriesPage() {
       )}
 
       {dayKeys.map((dayKey) => {
-        const clustersForDay = groups[dayKey]
-        // Chronologisch nach dem fruehesten taken_at im Cluster sortiert, nicht lexikographisch
-        // nach cluster_key (Akzeptanzkriterium 2, behebt den latenten Sortier-Bug
-        // "cluster-10" < "cluster-2").
-        const clusterKeysForDay = Object.keys(clustersForDay).sort((a, b) => {
-          const earliestA = clusterMetaRef.current.get(a)?.earliestTakenAt ?? ''
-          const earliestB = clusterMetaRef.current.get(b)?.earliestTakenAt ?? ''
-          if (earliestA < earliestB) return -1
-          if (earliestA > earliestB) return 1
-          return 0
-        })
-        const dayIsEmpty = !Object.values(clustersForDay).some(categoriesHavePhotos)
+        const eventsForDay = groups[dayKey]
+        // Chronologisch nach der NUMMER des Events sortiert, nicht nach seiner Id: die Nummer ist
+        // je Lauf lueckenlos ab 1 und chronologisch vergeben, die Id ist ein Surrogatschluessel
+        // ohne zugesicherte Ordnung.
+        const eventKeysForDay = Object.keys(eventsForDay).sort(
+          (a, b) =>
+            (eventMetaRef.current.get(a)?.position ?? 0) -
+            (eventMetaRef.current.get(b)?.position ?? 0),
+        )
+        const dayIsEmpty = !Object.values(eventsForDay).some(categoriesHavePhotos)
         // dayKey (Format YYYY-MM-DD) ist bereits ID-sicher.
         const panelId = `day-panel-${dayKey}`
         const isCollapsed = collapsedDayKeys.has(dayKey)
@@ -479,8 +504,8 @@ export function CurateCategoriesPage() {
           // UI/UX-Abschnitt der Spec: gap-6 (24px) gilt zwischen Tagen - das liefert bereits der
           // aeussere Seiten-Wrapper (naechste Zeile im JSX-Baum, `flex flex-col gap-6`), da jede
           // Tag-<section> dort ein direktes Geschwisterelement ist. Innerhalb eines Tages gilt
-          // stattdessen gap-4 (16px) zwischen den Clustern (Review-Fund ux-ui-designer: gap-6
-          // hier haette faelschlich auch zwischen Clustern 24px statt 16px erzeugt).
+          // stattdessen gap-4 (16px) zwischen den Events (Review-Fund ux-ui-designer: gap-6
+          // hier haette faelschlich auch zwischen ihnen 24px statt 16px erzeugt).
           <section key={dayKey} className="flex flex-col gap-4">
             <h2 className="text-lg">
               {/* Gesamte Kopfzeile als Trigger (Akzeptanzkriterium 1) - kein separates Icon als
@@ -511,14 +536,14 @@ export function CurateCategoriesPage() {
                   <>
                     {' '}
                     <span className="font-normal text-text">
-                      {`(${countPhotosInDay(clustersForDay)} Fotos)`}
+                      {`(${countPhotosInDay(eventsForDay)} Fotos)`}
                     </span>
                   </>
                 )}
               </Button>
             </h2>
             {!isCollapsed && (
-              // Kompletter Cluster-Teilbaum wird bei Zugeklapptheit per conditional JSX gar nicht
+              // Kompletter Event-Teilbaum wird bei Zugeklapptheit per conditional JSX gar nicht
               // gerendert statt nur CSS-versteckt (Akzeptanzkriterium 4) - spart bei grossen
               // Projekten auch tatsaechliche Render-Arbeit (Architektur-Abschnitt der Spec).
               <div id={panelId} className="flex flex-col gap-4">
@@ -530,44 +555,42 @@ export function CurateCategoriesPage() {
                   </p>
                 )}
                 {!dayIsEmpty &&
-                  clusterKeysForDay.map((clusterKey) => {
-                    const photosByCategory = clustersForDay[clusterKey]
+                  eventKeysForDay.map((eventKey) => {
+                    const photosByCategory = eventsForDay[eventKey]
                     const categoryKeys = sortCategoryKeys(
                       Object.keys(photosByCategory),
                       categorySet,
                     )
-                    const clusterIsEmpty = !categoriesHavePhotos(photosByCategory)
-                    const heading = clusterMetaRef.current.get(clusterKey)?.heading ?? clusterKey
+                    const eventIsEmpty = !categoriesHavePhotos(photosByCategory)
+                    const heading = eventMetaRef.current.get(eventKey)?.heading ?? eventKey
                     // Die Zahlen kommen AUSSCHLIESSLICH aus der ungefilterten Gruppierung
                     // (Akzeptanzkriterium 7): sonst verschwaenden sie genau dort, wo der
                     // Konfidenzfilter eine Gruppe leer raeumt, obwohl der Bestand unveraendert
-                    // ist - und die Cluster-Summe verloere die weggefilterten Kategorien.
-                    const unfilteredCategories = unfiltered.groups[dayKey]?.[clusterKey] ?? {}
-                    const clusterCandidateCount = candidateCountOfCluster(unfilteredCategories)
+                    // ist - und die Event-Summe verloere die weggefilterten Kategorien.
+                    const unfilteredCategories = unfiltered.groups[dayKey]?.[eventKey] ?? {}
+                    const eventCandidateCount = candidateCountOfEvent(unfilteredCategories)
                     return (
-                      <section key={clusterKey} className="flex flex-col gap-4">
+                      <section key={eventKey} className="flex flex-col gap-4">
                         {/* Die Zahl steht NEBEN der Ueberschrift in einem eigenen Element, nicht
-                            in ihr (Akzeptanzkriterium 4): der von `formatClusterHeading()`
+                            in ihr (Akzeptanzkriterium 4): der von `formatEventHeading()`
                             gelieferte Text (Tageszeit + Zeitraum) bleibt unveraendert, und die
                             fuer einen spaeteren Ausbau vorgesehene Ortsangabe behaelt ihren
                             Platz. Gleiche Formsprache wie die `(N Fotos)`-Kurzinfo der
                             Tages-Kopfzeile. */}
                         <div className="flex flex-wrap items-baseline gap-2">
                           <h3 className="text-base">{heading}</h3>
-                          {clusterCandidateCount > 0 && (
+                          {eventCandidateCount > 0 && (
                             <span className="text-sm text-text">
-                              {`(${formatCandidateCount(clusterCandidateCount)})`}
+                              {`(${formatCandidateCount(eventCandidateCount)})`}
                             </span>
                           )}
                         </div>
-                        {clusterIsEmpty && (
+                        {eventIsEmpty && (
                           <p className="text-sm text-text">
-                            {lowConfidenceOnly
-                              ? LOW_CONFIDENCE_EMPTY_CLUSTER_TEXT
-                              : 'Keine Fotos in dieser Tageszeit'}
+                            {lowConfidenceOnly ? LOW_CONFIDENCE_EMPTY_EVENT_TEXT : EMPTY_EVENT_TEXT}
                           </p>
                         )}
-                        {!clusterIsEmpty &&
+                        {!eventIsEmpty &&
                           categoryKeys.map((categoryKey) => {
                             const entries = photosByCategory[categoryKey]
                             const unfilteredEntries = unfilteredCategories[categoryKey] ?? []
@@ -579,7 +602,7 @@ export function CurateCategoriesPage() {
                             // Eintraege ist damit zugleich der hoechste bereits gezeigte Rang.
                             const remainingCandidateCount =
                               categoryCandidateCount - unfilteredEntries.length
-                            const groupKey = JSON.stringify([dayKey, clusterKey, categoryKey])
+                            const groupKey = JSON.stringify([dayKey, eventKey, categoryKey])
                             return (
                               <div key={categoryKey} className="flex flex-col gap-2">
                                 <h4 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
@@ -649,7 +672,7 @@ export function CurateCategoriesPage() {
                                 {remainingCandidateCount > 0 && (
                                   <CurationCandidates
                                     projectId={id}
-                                    clusterKey={clusterKey}
+                                    eventId={Number(eventKey)}
                                     categoryKey={categoryKey}
                                     afterRank={unfilteredEntries.length}
                                     remainingCount={remainingCandidateCount}

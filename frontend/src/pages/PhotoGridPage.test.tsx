@@ -586,7 +586,7 @@ describe('PhotoGridPage', () => {
             criterion_scores: [criterionScore()],
             rankings: [
               {
-                cluster_key: 'cluster-0',
+                event_id: 1,
                 category_key: 'people',
                 rank_score: 0.5,
                 rank_position: 1,

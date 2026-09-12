@@ -9,7 +9,7 @@ import * as categoriesApi from '../api/categories'
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
-import type { CriterionScoreOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
+import type { CriterionScoreOut, EventOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { CANDIDATES_ALL_FILTERED_TEXT } from '../components/CurationCandidates'
 import { CATEGORY_SET } from '../test/categorySetFixture'
@@ -17,9 +17,10 @@ import { DEFAULT_TOP_N } from '../utils/curationTopN'
 import { PHOTOS_PAGE_SIZE } from '../hooks/usePhotos'
 import {
   candidateCountOfCategory,
-  candidateCountOfCluster,
+  candidateCountOfEvent,
   countPhotosInDay,
   CurateCategoriesPage,
+  CURATION_EMPTY_TEXT,
   filterLowConfidence,
   formatCandidateCount,
   LOW_CONFIDENCE_EMPTY_TEXT,
@@ -46,7 +47,7 @@ function makeToken(payload: unknown): string {
  * Hauptzugehoerigkeit, in der Auswahl). */
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
   return {
-    cluster_key: 'cluster-0',
+    event_id: 1,
     category_key: 'landscape',
     rank_score: 0.8,
     rank_position: 1,
@@ -75,8 +76,19 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
   }
 }
 
-function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
+function eventOut(overrides: Partial<EventOut> = {}): EventOut {
   return {
+    id: 1,
+    position: 1,
+    started_at: '2026-07-20T10:00:00',
+    ended_at: '2026-07-20T10:00:00',
+    place: null,
+    ...overrides,
+  }
+}
+
+function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
+  const base = {
     id: 1,
     relative_path: 'a.jpg',
     // taken_at ist ein naives, zeitzonenloses Backend-Datetime ohne `Z`-Suffix (Spec 0039,
@@ -95,6 +107,25 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     category_candidates: [],
     cloud_vision_status: [],
     ...overrides,
+  }
+  // Das Event folgt der Zugehoerigkeit, solange ein Testfall es nicht ausdruecklich setzt: der
+  // Server liefert es auf jedem Foto desselben Events feldgleich, und `position` ist je Lauf
+  // lueckenlos vergeben. Zeitspanne = Aufnahmezeitpunkt, solange nichts anderes gesagt ist.
+  if ('event' in overrides) {
+    return base
+  }
+  const eventId = base.rankings[0]?.event_id
+  return {
+    ...base,
+    event:
+      eventId === undefined
+        ? null
+        : eventOut({
+            id: eventId,
+            position: eventId,
+            started_at: base.taken_at,
+            ended_at: base.taken_at,
+          }),
   }
 }
 
@@ -251,9 +282,9 @@ describe('CurateCategoriesPage', () => {
       items: [
         photo({
           id: 1,
-          rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
+          rankings: [ranking({ event_id: 1, category_key: 'landscape' })],
         }),
-        photo({ id: 2, rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })] }),
+        photo({ id: 2, rankings: [ranking({ event_id: 1, category_key: 'people' })] }),
       ],
       total: 2,
     }
@@ -264,7 +295,7 @@ describe('CurateCategoriesPage', () => {
     // Beide Fotos sind am 20.07.2026 (Montag) um 10:00 Uhr entstanden (Fixture-Default) - ein
     // Tag-Abschnitt, ein Cluster mit Tageszeit-Ueberschrift statt der technischen cluster_key-ID.
     expect(await screen.findByText('Montag 20.07.2026')).toBeInTheDocument()
-    expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
+    expect(screen.getByText('Position 1 (10:00 Uhr)')).toBeInTheDocument()
     expect(screen.queryByText('cluster-0')).not.toBeInTheDocument()
     expect(screen.getByText('Landscape')).toBeInTheDocument()
     expect(screen.getByText('People')).toBeInTheDocument()
@@ -277,12 +308,12 @@ describe('CurateCategoriesPage', () => {
         photo({
           id: 1,
           taken_at: '2026-07-21T10:00:00',
-          rankings: [ranking({ cluster_key: 'cluster-b', category_key: 'landscape' })],
+          rankings: [ranking({ event_id: 2, category_key: 'landscape' })],
         }),
         photo({
           id: 2,
           taken_at: '2026-07-20T10:00:00',
-          rankings: [ranking({ cluster_key: 'cluster-a', category_key: 'landscape' })],
+          rankings: [ranking({ event_id: 1, category_key: 'landscape' })],
         }),
       ],
       total: 2,
@@ -303,20 +334,35 @@ describe('CurateCategoriesPage', () => {
   })
 
   it(
-    'sorts clusters within a day chronologically by earliest taken_at, not lexicographically ' +
-      'by cluster_key (Akzeptanzkriterium 2, behebt "cluster-10" < "cluster-2")',
+    'sortiert die Events eines Tages nach ihrer POSITION, nicht nach ihrer Id - ROT-ANKER: die ' +
+      'Id-Reihenfolge widerspricht hier der Positions-Reihenfolge',
     async () => {
+      // Die Id des SPAETEREN Events ist die KLEINERE - nach `event_id` sortiert stuende es
+      // vorne, nach `position` hinten. Ohne diesen Widerspruch bestuende der Testfall auch bei
+      // einer Sortierung nach der Id.
       const list: PhotoListOut = {
         items: [
           photo({
             id: 1,
             taken_at: '2026-07-20T14:00:00',
-            rankings: [ranking({ cluster_key: 'cluster-10', category_key: 'landscape' })],
+            rankings: [ranking({ event_id: 2, category_key: 'landscape' })],
+            event: eventOut({
+              id: 2,
+              position: 2,
+              started_at: '2026-07-20T14:00:00',
+              ended_at: '2026-07-20T14:00:00',
+            }),
           }),
           photo({
             id: 2,
             taken_at: '2026-07-20T09:00:00',
-            rankings: [ranking({ cluster_key: 'cluster-2', category_key: 'landscape' })],
+            rankings: [ranking({ event_id: 10, category_key: 'landscape' })],
+            event: eventOut({
+              id: 10,
+              position: 1,
+              started_at: '2026-07-20T09:00:00',
+              ended_at: '2026-07-20T09:00:00',
+            }),
           }),
         ],
         total: 2,
@@ -327,39 +373,87 @@ describe('CurateCategoriesPage', () => {
 
       const headings = await screen.findAllByRole('heading', { level: 3 })
       expect(headings.map((heading) => heading.textContent)).toEqual([
-        'Vormittags (09:00 Uhr)',
-        'Nachmittags (14:00 Uhr)',
+        'Position 1 (09:00 Uhr)',
+        'Position 2 (14:00 Uhr)',
       ])
     },
   )
 
-  it(
-    'derives day and time-of-day bucket from the earliest photo for a midnight-spanning ' +
-      'cluster, while the displayed range covers all visible photos (Akzeptanzkriterium 6)',
-    async () => {
-      const list: PhotoListOut = {
-        items: [
-          photo({
-            id: 1,
-            taken_at: '2026-07-21T00:10:00',
-            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
-          }),
-          photo({
-            id: 2,
-            taken_at: '2026-07-20T23:50:00',
-            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
-          }),
-        ],
-        total: 2,
-      }
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+  it('bildet Tagesgruppe, Zeitspanne und Nummer aus dem EVENT, nicht aus den sichtbaren Fotos', async () => {
+    // Die Zeitspanne des Events reicht ueber die Aufnahmezeitpunkte der beiden sichtbaren
+    // Fotos hinaus - das Event kennt auch die nicht gezeigten. Eine Aggregation ueber `items`
+    // lieferte hier "10:05-10:15" statt "10:00-11:30".
+    const spanning = eventOut({
+      id: 1,
+      position: 4,
+      started_at: '2026-07-20T10:00:00',
+      ended_at: '2026-07-20T11:30:00',
+    })
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          taken_at: '2026-07-20T10:15:00',
+          rankings: [ranking({ event_id: 1, category_key: 'landscape' })],
+          event: spanning,
+        }),
+        photo({
+          id: 2,
+          taken_at: '2026-07-20T10:05:00',
+          rankings: [ranking({ event_id: 1, category_key: 'people' })],
+          event: spanning,
+        }),
+      ],
+      total: 2,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
 
-      renderPage()
+    renderPage()
 
-      expect(await screen.findByText('Montag 20.07.2026')).toBeInTheDocument()
-      expect(screen.getByText('Nachts (23:50–00:10 Uhr)')).toBeInTheDocument()
-    },
-  )
+    expect(await screen.findByText('Montag 20.07.2026')).toBeInTheDocument()
+    expect(screen.getByText('Position 4 (10:00–11:30 Uhr)')).toBeInTheDocument()
+  })
+
+  it('gruppiert nach der `event_id` der Zugehoerigkeit, nicht nach dem Foto', async () => {
+    // Zwei Fotos DESSELBEN Tages in ZWEI Events - zwei Abschnitte mit eigener Ueberschrift.
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          taken_at: '2026-07-20T09:00:00',
+          rankings: [ranking({ event_id: 1, category_key: 'landscape' })],
+        }),
+        photo({
+          id: 2,
+          taken_at: '2026-07-20T14:00:00',
+          rankings: [ranking({ event_id: 2, category_key: 'landscape' })],
+        }),
+      ],
+      total: 2,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage()
+
+    const headings = await screen.findAllByRole('heading', { level: 3 })
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      'Position 1 (09:00 Uhr)',
+      'Position 2 (14:00 Uhr)',
+    ])
+  })
+
+  it('traegt im Leerzustand auch den Fall "erfolgreicher Lauf ohne Rangzeilen"', async () => {
+    // Ein Lauf von VOR der Umstellung auf Events hat keine Rangzeilen mehr (die Migration hat sie
+    // geloescht) und liefert dieselbe leere Liste wie "noch nie gelaufen". Das Frontend kann die
+    // beiden Faelle nicht unterscheiden - der eine Text muss deshalb beide tragen, sonst schickt
+    // er den Nutzer bei einem Altlauf auf die falsche Faehrte.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
+
+    renderPage()
+
+    expect(await screen.findByText(CURATION_EMPTY_TEXT)).toBeInTheDocument()
+    expect(CURATION_EMPTY_TEXT).toContain('neu berechnet')
+  })
 
   it('shows an empty-pool placeholder when a category has fewer than N photos', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
@@ -458,7 +552,7 @@ describe('CurateCategoriesPage', () => {
             photo({
               id: 1,
               criterion_scores: [criterionScore()],
-              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
+              rankings: [ranking({ event_id: 1, category_key: 'landscape' })],
               category_candidates: [
                 { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
                 { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
@@ -473,7 +567,7 @@ describe('CurateCategoriesPage', () => {
               id: 1,
               category_override: 'tier',
               criterion_scores: [criterionScore()],
-              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'tier' })],
+              rankings: [ranking({ event_id: 1, category_key: 'tier' })],
               category_candidates: [
                 { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
                 { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
@@ -496,7 +590,7 @@ describe('CurateCategoriesPage', () => {
 
       await waitFor(() => expect(screen.getByText('Tier')).toBeInTheDocument())
       expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
-      expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
+      expect(screen.getByText('Position 1 (10:00 Uhr)')).toBeInTheDocument()
       // Die leergelaufene Kategorie bleibt sichtbar, statt spurlos zu verschwinden.
       expect(screen.getByText('Landscape')).toBeInTheDocument()
       expect(screen.getByText('Kein weiteres Foto verfügbar')).toBeInTheDocument()
@@ -517,7 +611,7 @@ describe('CurateCategoriesPage', () => {
             photo({
               id: 1,
               criterion_scores: [criterionScore()],
-              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
+              rankings: [ranking({ event_id: 1, category_key: 'landscape' })],
               category_candidates: [
                 { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
                 { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
@@ -526,7 +620,7 @@ describe('CurateCategoriesPage', () => {
             photo({
               id: 2,
               relative_path: 'b.jpg',
-              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
+              rankings: [ranking({ event_id: 1, category_key: 'people' })],
             }),
           ],
           total: 2,
@@ -537,7 +631,7 @@ describe('CurateCategoriesPage', () => {
               id: 1,
               category_override: 'tier',
               criterion_scores: [criterionScore()],
-              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'tier' })],
+              rankings: [ranking({ event_id: 1, category_key: 'tier' })],
               category_candidates: [
                 { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
                 { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
@@ -546,7 +640,7 @@ describe('CurateCategoriesPage', () => {
             photo({
               id: 2,
               relative_path: 'b.jpg',
-              rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
+              rankings: [ranking({ event_id: 1, category_key: 'people' })],
             }),
           ],
           total: 2,
@@ -565,11 +659,11 @@ describe('CurateCategoriesPage', () => {
 
       await waitFor(() => expect(screen.getByText('Tier')).toBeInTheDocument())
       expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
-      expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
+      expect(screen.getByText('Position 1 (10:00 Uhr)')).toBeInTheDocument()
       expect(screen.getByText('Landscape')).toBeInTheDocument()
       expect(screen.getByText('People')).toBeInTheDocument()
       expect(screen.getByText('Kein weiteres Foto verfügbar')).toBeInTheDocument()
-      expect(screen.queryByText('Keine Fotos in dieser Tageszeit')).not.toBeInTheDocument()
+      expect(screen.queryByText('Keine Fotos in dieser Gruppe')).not.toBeInTheDocument()
     },
   )
 
@@ -588,7 +682,7 @@ describe('CurateCategoriesPage', () => {
               id: 1,
               taken_at: '2026-07-20T09:00:00',
               criterion_scores: [criterionScore()],
-              rankings: [ranking({ cluster_key: 'cluster-a', category_key: 'landscape' })],
+              rankings: [ranking({ event_id: 1, category_key: 'landscape' })],
               category_candidates: [
                 { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
                 { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
@@ -598,7 +692,7 @@ describe('CurateCategoriesPage', () => {
               id: 2,
               relative_path: 'b.jpg',
               taken_at: '2026-07-20T14:00:00',
-              rankings: [ranking({ cluster_key: 'cluster-b', category_key: 'landscape' })],
+              rankings: [ranking({ event_id: 2, category_key: 'landscape' })],
             }),
           ],
           total: 2,
@@ -610,7 +704,7 @@ describe('CurateCategoriesPage', () => {
               taken_at: '2026-07-20T09:00:00',
               category_override: 'tier',
               criterion_scores: [criterionScore()],
-              rankings: [ranking({ cluster_key: 'cluster-a', category_key: 'tier' })],
+              rankings: [ranking({ event_id: 1, category_key: 'tier' })],
               category_candidates: [
                 { category_key: 'tier', origin: 'remote', provider: 'anthropic', confidence: null },
                 { category_key: 'menschen', origin: 'local', provider: null, confidence: null },
@@ -620,7 +714,7 @@ describe('CurateCategoriesPage', () => {
               id: 2,
               relative_path: 'b.jpg',
               taken_at: '2026-07-20T14:00:00',
-              rankings: [ranking({ cluster_key: 'cluster-b', category_key: 'landscape' })],
+              rankings: [ranking({ event_id: 2, category_key: 'landscape' })],
             }),
           ],
           total: 2,
@@ -642,8 +736,8 @@ describe('CurateCategoriesPage', () => {
 
       const clusterHeadings = screen.getAllByRole('heading', { level: 3 })
       expect(clusterHeadings.map((heading) => heading.textContent)).toEqual([
-        'Vormittags (09:00 Uhr)',
-        'Nachmittags (14:00 Uhr)',
+        'Position 1 (09:00 Uhr)',
+        'Position 2 (14:00 Uhr)',
       ])
     },
   )
@@ -717,11 +811,11 @@ describe('CurateCategoriesPage', () => {
         items: [
           photo({
             id: 1,
-            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
+            rankings: [ranking({ event_id: 1, category_key: 'landscape' })],
           }),
           photo({
             id: 2,
-            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
+            rankings: [ranking({ event_id: 1, category_key: 'people' })],
           }),
         ],
         total: 2,
@@ -748,14 +842,13 @@ describe('CurateCategoriesPage', () => {
         const list: PhotoListOut = {
           items: [
             ...twoCategoryDayList().items,
-            // Bewusst ein anderer Zeitstempel/Bucket (Nachmittags statt Vormittags) als der
-            // Montags-Cluster, damit sich die beiden Tage per eindeutiger Cluster-Ueberschrift
-            // unterscheiden lassen statt ueber die (in beiden Tagen gleich benannte)
-            // Kategorie "Landscape".
+            // Bewusst ein anderes Event mit anderer Nummer und Uhrzeit als am Montag, damit
+            // sich die beiden Tage per eindeutiger Event-Ueberschrift unterscheiden lassen statt
+            // ueber die (in beiden Tagen gleich benannte) Kategorie "Landscape".
             photo({
               id: 3,
               taken_at: '2026-07-21T14:00:00',
-              rankings: [ranking({ cluster_key: 'cluster-1', category_key: 'landscape' })],
+              rankings: [ranking({ event_id: 2, category_key: 'landscape' })],
             }),
           ],
           total: 3,
@@ -766,8 +859,8 @@ describe('CurateCategoriesPage', () => {
         renderPage()
         const mondayTrigger = await screen.findByRole('button', { name: 'Montag 20.07.2026' })
         const tuesdayTrigger = screen.getByRole('button', { name: 'Dienstag 21.07.2026' })
-        expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
-        expect(screen.getByText('Nachmittags (14:00 Uhr)')).toBeInTheDocument()
+        expect(screen.getByText('Position 1 (10:00 Uhr)')).toBeInTheDocument()
+        expect(screen.getByText('Position 2 (14:00 Uhr)')).toBeInTheDocument()
 
         await user.click(mondayTrigger)
 
@@ -776,11 +869,11 @@ describe('CurateCategoriesPage', () => {
           mondayTrigger,
         )
         // Teilbaum ist nicht nur CSS-versteckt, sondern per conditional JSX gar nicht gerendert.
-        expect(screen.queryByText('Vormittags (10:00 Uhr)')).not.toBeInTheDocument()
+        expect(screen.queryByText('Position 1 (10:00 Uhr)')).not.toBeInTheDocument()
         expect(screen.queryByText('People')).not.toBeInTheDocument()
         // Der andere Tag bleibt unveraendert aufgeklappt.
         expect(tuesdayTrigger).toHaveAttribute('aria-expanded', 'true')
-        expect(screen.getByText('Nachmittags (14:00 Uhr)')).toBeInTheDocument()
+        expect(screen.getByText('Position 2 (14:00 Uhr)')).toBeInTheDocument()
       },
     )
 
@@ -790,7 +883,7 @@ describe('CurateCategoriesPage', () => {
       async () => {
         vi.mocked(photosApi.listPhotos)
           .mockResolvedValueOnce({
-            items: [photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0' })] })],
+            items: [photo({ id: 1, rankings: [ranking({ event_id: 1 })] })],
             total: 1,
           })
           .mockResolvedValueOnce({ items: [], total: 0 })
@@ -865,16 +958,16 @@ describe('CurateCategoriesPage', () => {
       async () => {
         vi.mocked(photosApi.listPhotos)
           .mockResolvedValueOnce({
-            items: [photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0' })] })],
+            items: [photo({ id: 1, rankings: [ranking({ event_id: 1 })] })],
             total: 1,
           })
           .mockResolvedValueOnce({
             items: [
-              photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0' })] }),
+              photo({ id: 1, rankings: [ranking({ event_id: 1 })] }),
               photo({
                 id: 2,
                 taken_at: '2026-07-21T10:00:00',
-                rankings: [ranking({ cluster_key: 'cluster-1' })],
+                rankings: [ranking({ event_id: 2 })],
               }),
             ],
             total: 2,
@@ -918,7 +1011,7 @@ describe('CurateCategoriesPage', () => {
         let resolveRefetch: (value: PhotoListOut) => void = () => {}
         vi.mocked(photosApi.listPhotos)
           .mockResolvedValueOnce({
-            items: [photo({ id: 1, rankings: [ranking({ cluster_key: 'cluster-0' })] })],
+            items: [photo({ id: 1, rankings: [ranking({ event_id: 1 })] })],
             total: 1,
           })
           .mockReturnValueOnce(
@@ -1035,11 +1128,11 @@ describe('CurateCategoriesPage', () => {
         items: [
           photo({
             id: 1,
-            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'nicht_erkannt' })],
+            rankings: [ranking({ event_id: 1, category_key: 'nicht_erkannt' })],
           }),
           photo({
             id: 2,
-            rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'tier' })],
+            rankings: [ranking({ event_id: 1, category_key: 'tier' })],
           }),
         ],
         total: 2,
@@ -1178,13 +1271,13 @@ describe('CurateCategoriesPage: Filter "Nur unsichere Zuordnungen"', () => {
         id: 1,
         relative_path: 'sicher.jpg',
         category_confidence: 0.9,
-        rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'landscape' })],
+        rankings: [ranking({ event_id: 1, category_key: 'landscape' })],
       }),
       photo({
         id: 2,
         relative_path: 'wacklig.jpg',
         category_confidence: 0.3,
-        rankings: [ranking({ cluster_key: 'cluster-0', category_key: 'people' })],
+        rankings: [ranking({ event_id: 1, category_key: 'people' })],
       }),
     ],
     total: 2,
@@ -1265,7 +1358,7 @@ describe('CurateCategoriesPage: Filter "Nur unsichere Zuordnungen"', () => {
     await user.click(await screen.findByRole('checkbox', { name: /nur unsichere zuordnungen/i }))
 
     expect(screen.getByText('Montag 20.07.2026')).toBeInTheDocument()
-    expect(screen.getByText('Vormittags (10:00 Uhr)')).toBeInTheDocument()
+    expect(screen.getByText('Position 1 (10:00 Uhr)')).toBeInTheDocument()
   })
 
   it('gibt dem Kategorie-Chip der Gruppenueberschrift KEINE Zahl', async () => {
@@ -1455,7 +1548,7 @@ describe('candidateCountOfCategory / candidateCountOfCluster', () => {
 
   it('summiert die Kategorie-Zahlen eines Clusters', () => {
     expect(
-      candidateCountOfCluster({
+      candidateCountOfEvent({
         landscape: [entry({ id: 1 }, { category_key: 'landscape', partition_size: 3 })],
         people: [entry({ id: 2 }, { category_key: 'people', partition_size: 2 })],
       }),
@@ -1466,7 +1559,7 @@ describe('candidateCountOfCategory / candidateCountOfCluster', () => {
     // Bewusste Produktentscheidung (ADR 0071 Entscheidung 4) - deshalb heisst die Zahl
     // "Kandidaten" und nicht "Fotos".
     expect(
-      candidateCountOfCluster({
+      candidateCountOfEvent({
         landscape: [entry({ id: 1 }, { category_key: 'landscape', partition_size: 1 })],
         people: [entry({ id: 1 }, { category_key: 'people', partition_size: 1 })],
       }),
@@ -1475,7 +1568,7 @@ describe('candidateCountOfCategory / candidateCountOfCluster', () => {
 
   it('ueberspringt leergelaufene Kategorien in der Summe', () => {
     expect(
-      candidateCountOfCluster({
+      candidateCountOfEvent({
         landscape: [entry({ id: 1 }, { partition_size: 4 })],
         people: [],
       }),
@@ -1557,25 +1650,19 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
     await screen.findByText('Landscape')
 
     const clusterHeading = screen.getByRole('heading', { level: 3 })
-    expect(clusterHeading.textContent).toBe('Vormittags (10:00 Uhr)')
+    expect(clusterHeading.textContent).toBe('Position 1 (10:00 Uhr)')
     expect(screen.getByText('(2 Kandidaten)')).toBeInTheDocument()
   })
 
-  it('zeigt den Ortsteil vor der Tageszeit in derselben Ueberschrift', async () => {
-    // specs/features/0051-gps-landmark-cluster-bildung.md: der Ort ERGAENZT die Tageszeit, er
-    // ersetzt sie nicht. `CurateCategoriesPage.tsx` selbst bleibt unveraendert - es reicht die
-    // vollen PhotoOut-Objekte bereits an formatClusterHeading() durch.
+  it('zeigt den erkannten Namen statt der Nummer', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
       items: [
         photo({
           id: 1,
           rankings: [ranking({ category_key: 'landscape' })],
-          cluster_place: {
-            kind: 'landmark',
-            landmark_name: 'Eiffelturm',
-            lat: null,
-            lon: null,
-          },
+          event: eventOut({
+            place: { kind: 'landmark', landmark_name: 'Eiffelturm', lat: null, lon: null },
+          }),
         }),
       ],
       total: 1,
@@ -1584,25 +1671,27 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
     renderPage()
     await screen.findByText('Landscape')
 
-    const clusterHeading = screen.getByRole('heading', { level: 3 })
-    expect(clusterHeading.textContent).toBe('Eiffelturm · Vormittags (10:00 Uhr)')
+    const eventHeading = screen.getByRole('heading', { level: 3 })
+    expect(eventHeading.textContent).toBe('Eiffelturm (10:00 Uhr)')
   })
 
   it('rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup', async () => {
-    // Sicherheits-Muss-Kriterium der Spec 0051 (wortgleich aus dem Feinlabel-Fall uebernommen):
-    // `landmark_name` ist der Rohausgabe-Text eines externen Modells und darf ausschliesslich als
-    // regulaerer React-Textknoten erscheinen. Analog CloudVisionStatusList.test.tsx.
+    // Sicherheits-Muss-Kriterium (wortgleich aus dem Feinlabel-Fall uebernommen): `landmark_name`
+    // ist der Rohausgabe-Text eines externen Modells und darf ausschliesslich als regulaerer
+    // React-Textknoten erscheinen. Wandert mit dem Feld von `cluster_place` nach `event.place`.
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
       items: [
         photo({
           id: 1,
           rankings: [ranking({ category_key: 'landscape' })],
-          cluster_place: {
-            kind: 'landmark',
-            landmark_name: '<img src=x onerror="window.__pwned = true">',
-            lat: null,
-            lon: null,
-          },
+          event: eventOut({
+            place: {
+              kind: 'landmark',
+              landmark_name: '<img src=x onerror="window.__pwned = true">',
+              lat: null,
+              lon: null,
+            },
+          }),
         }),
       ],
       total: 1,
@@ -1611,14 +1700,12 @@ describe('CurateCategoriesPage — Mengenangaben', () => {
     renderPage()
     await screen.findByText('Landscape')
 
-    const clusterHeading = screen.getByRole('heading', { level: 3 })
-    expect(clusterHeading.textContent).toBe(
-      '<img src=x onerror="window.__pwned = true"> · Vormittags (10:00 Uhr)',
-    )
+    const eventHeading = screen.getByRole('heading', { level: 3 })
+    expect(eventHeading.textContent).toBe('<img src=x onerror="window.__pwned = true"> (10:00 Uhr)')
     // Auf die Ueberschrift eingegrenzt: die Seite enthaelt legitime <img>-Kacheln, ein
     // dokumentweites querySelector('img') pruefte hier gar nichts.
-    expect(clusterHeading.querySelector('img')).toBeNull()
-    expect(clusterHeading.innerHTML).not.toContain('<img')
+    expect(eventHeading.querySelector('img')).toBeNull()
+    expect(eventHeading.innerHTML).not.toContain('<img')
   })
 
   it('beschriftet genau einen Kandidaten in der Einzahl', async () => {
@@ -2170,7 +2257,7 @@ describe('CurateCategoriesPage — weitere Kandidaten einsehen', () => {
     expect(panelId).not.toBeNull()
     await waitFor(() => expect(document.getElementById(panelId as string)).toBeInTheDocument())
     expect(photosApi.listCurationCandidates).toHaveBeenCalledWith(1, {
-      clusterKey: 'cluster-0',
+      eventId: 1,
       categoryKey: 'landscape',
       afterRank: 1,
       limit: PHOTOS_PAGE_SIZE,
@@ -2349,7 +2436,7 @@ describe('CurateCategoriesPage — weitere Kandidaten einsehen', () => {
 
     await screen.findByText('k3.jpg')
     expect(photosApi.listCurationCandidates).toHaveBeenLastCalledWith(1, {
-      clusterKey: 'cluster-0',
+      eventId: 1,
       categoryKey: 'landscape',
       afterRank: 1,
       limit: PHOTOS_PAGE_SIZE,
