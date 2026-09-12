@@ -2,7 +2,8 @@
 
 **Status:** Implemented
 **Erstellt:** 2026-09-12
-**Bezug:** [GitHub-Issue #440](https://github.com/TheRealKoller/photosort/issues/440)
+**Bezug:** [GitHub-Issue #440](https://github.com/TheRealKoller/photosort/issues/440),
+[PR #443](https://github.com/TheRealKoller/photosort/pull/443)
 
 **Umfang:** über dem Richtwert von rund 200 Zeilen, und zwar aus zwei Gründen, die beide in der
 Bauart dieser Story liegen. Die Rastertabelle je Baustein **ist** die Umsetzungsvorlage — sie
