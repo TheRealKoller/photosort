@@ -2,12 +2,112 @@ import { useState } from 'react'
 import { useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
+import type { ProjectCameraOut } from '../api/types'
+import { CameraTimeOffsetDialog } from '../components/CameraTimeOffsetDialog'
 import { DeleteProjectDialog } from '../components/DeleteProjectDialog'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../components/ui/popover'
+import { Skeleton } from '../components/ui/skeleton'
 import { Switch } from '../components/ui/switch'
+import { useCamerasQuery } from '../hooks/useCameras'
 import { useProjectQuery, useSetCloudVisionConsentMutation } from '../hooks/useProjects'
+import { formatTimeOffset } from '../utils/timeOffset'
+
+/**
+ * Der Abschnitt „Kameras und Zeitversatz" - je Kamera eine RUHIGE Zeile: Bezeichnung,
+ * Fotoanzahl, geltender Versatz und eine Schaltfläche.
+ *
+ * Die Bearbeitung liegt AUSDRÜCKLICH NICHT in der Zeile, sondern im Dialog: vier Eingabefelder
+ * je Kamera nebeneinander wären bei mehreren Kameras unlesbar, und der Vorschlagsfluss braucht
+ * ohnehin Platz.
+ */
+function CameraSection({ projectId }: { projectId: number }) {
+  const query = useCamerasQuery(projectId)
+  const [editing, setEditing] = useState<ProjectCameraOut | null>(null)
+
+  return (
+    <section className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4">
+      <div>
+        <h2 className="text-lg text-text-h">Kameras und Zeitversatz</h2>
+        <p className="text-sm text-text">
+          Geht die Uhr einer Kamera falsch, lässt sich die Abweichung hier einmal für dieses Projekt
+          benennen. Die Originalfotos bleiben unverändert.
+        </p>
+      </div>
+
+      {query.isLoading && (
+        <div role="status" aria-label="Kameras werden geladen" className="flex flex-col gap-3">
+          <Skeleton className="h-11 w-full rounded-lg" />
+          <Skeleton className="h-11 w-full rounded-lg" />
+        </div>
+      )}
+
+      {query.isError && (
+        <Alert variant="error">
+          {query.error instanceof ApiError
+            ? query.error.detail
+            : 'Die Kameraliste konnte nicht geladen werden.'}
+        </Alert>
+      )}
+
+      {/* LEERZUSTAND: erklärender Text, kein Fehlerton - dass ein Projekt noch keine Kamera
+          kennt, ist der Normalfall vor dem ersten Scan. Die Aussage ist die Hauptaussage des
+          Abschnitts und steht deshalb in `--text`, nicht in `--text-muted`. */}
+      {query.isSuccess && query.data.length === 0 && (
+        <p className="text-sm text-text">
+          Für dieses Projekt ist noch keine Kamera bekannt. Die Zuordnung entsteht beim Scan aus den
+          Fotos selbst.
+        </p>
+      )}
+
+      {query.isSuccess && query.data.length > 0 && (
+        <ul className="flex flex-col">
+          {query.data.map((entry) => (
+            <li
+              key={entry.id}
+              data-camera-id={entry.id}
+              className="flex min-h-11 flex-wrap items-center justify-between gap-3 border-b border-separator py-2 last:border-b-0"
+            >
+              <div className="flex min-w-0 flex-col">
+                {/* Die Bezeichnung ist extern entstandener Text (Kamera-Firmware) und steht
+                    ausschließlich als regulärer React-Textknoten. */}
+                <span className="truncate font-medium text-text-h">{entry.label}</span>
+                <span className="text-xs text-text-muted">
+                  {entry.photo_count} {entry.photo_count === 1 ? 'Foto' : 'Fotos'} ·{' '}
+                  {formatTimeOffset(entry.offset_minutes)}
+                </span>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setEditing(entry)
+                }}
+              >
+                Versatz ändern
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Nur gerendert, solange er offen ist - dasselbe Unmount-Muster wie beim Löschdialog:
+          es erfasst jeden künftig hinzukommenden Zustand des Dialogs automatisch mit, statt
+          eine Reset-Liste zu führen, die beim nächsten `useState` still unvollständig wird. */}
+      {editing !== null && query.isSuccess && (
+        <CameraTimeOffsetDialog
+          open
+          onClose={() => {
+            setEditing(null)
+          }}
+          projectId={projectId}
+          camera={editing}
+          cameras={query.data}
+        />
+      )}
+    </section>
+  )
+}
 
 /**
  * Erste dedizierte Projekteinstellungs-Seite im Projekt - Toggle-Switch fuer die projektweite
@@ -116,6 +216,10 @@ export function ProjectSettingsPage() {
           />
         </div>
       </div>
+
+      {/* UNTERHALB der Cloud-Vision-Einstellung, OBERHALB der Gefahrenzone: die Gefahrenzone
+          bleibt das letzte Kind des gap-6-Containers. */}
+      <CameraSection projectId={id} />
 
       {/* GEFAHRENZONE, letztes Kind des gap-6-Containers. Bewusst hier und nicht in der
           Projektliste: die Namenseingabe als Huerde

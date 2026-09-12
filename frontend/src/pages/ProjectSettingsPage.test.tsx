@@ -4,12 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as camerasApi from '../api/cameras'
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
-import type { ProjectOut } from '../api/types'
+import type { ProjectCameraOut, ProjectOut } from '../api/types'
 import { ProjectSettingsPage } from './ProjectSettingsPage'
 
 vi.mock('../api/projects')
+vi.mock('../api/cameras')
 
 // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: erste dedizierte
 // Projekteinstellungs-UI im Projekt - Toggle-Switch fuer die Cloud-Landmark-Einwilligung +
@@ -50,10 +52,16 @@ function renderPage() {
   )
 }
 
+function camera(overrides: Partial<ProjectCameraOut> = {}): ProjectCameraOut {
+  return { id: 7, label: 'Canon EOS 5D', photo_count: 3, offset_minutes: 0, ...overrides }
+}
+
 describe('ProjectSettingsPage', () => {
   beforeEach(() => {
     vi.mocked(projectsApi.getProject).mockReset()
     vi.mocked(projectsApi.setCloudVisionConsent).mockReset()
+    vi.mocked(camerasApi.listCameras).mockReset()
+    vi.mocked(camerasApi.listCameras).mockResolvedValue([])
   })
 
   it('shows a loading state while the project is being fetched', () => {
@@ -227,5 +235,87 @@ describe('ProjectSettingsPage', () => {
     expect(reopened.getByLabelText(/Projektnamen zur Bestätigung eintippen/)).toHaveValue('')
     expect(reopened.getByRole('button', { name: 'Projekt löschen' })).toBeDisabled()
     expect(projectsApi.deleteProject).not.toHaveBeenCalled()
+  })
+
+  // specs/features/0426-zeitversatz-je-kamera.md, UI/UX Punkt 1.
+  describe('Abschnitt "Kameras und Zeitversatz"', () => {
+    it('zeigt je Kamera Bezeichnung, Fotoanzahl und geltenden Versatz', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+      vi.mocked(camerasApi.listCameras).mockResolvedValue([
+        camera(),
+        camera({ id: 9, label: 'Apple iPhone 15', photo_count: 1, offset_minutes: -120 }),
+      ])
+      renderPage()
+
+      const canon = within((await screen.findByText('Canon EOS 5D')).closest('li') as HTMLElement)
+      expect(canon.getByText(/3 Fotos/)).toBeInTheDocument()
+      // Eine "0:00" liest sich wie ein gesetzter Wert - die Liste nennt das Wort.
+      expect(canon.getByText(/kein Versatz/)).toBeInTheDocument()
+
+      const phone = within(
+        (await screen.findByText('Apple iPhone 15')).closest('li') as HTMLElement,
+      )
+      expect(phone.getByText(/1 Foto\b/)).toBeInTheDocument()
+      expect(phone.getByText(/−2:00/)).toBeInTheDocument()
+    })
+
+    it('haelt die Reihenfolge des Servers', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+      vi.mocked(camerasApi.listCameras).mockResolvedValue([
+        camera({ id: 9, label: 'Apple iPhone 15' }),
+        camera({ id: 7, label: 'Canon EOS 5D' }),
+      ])
+      renderPage()
+
+      await screen.findByText('Apple iPhone 15')
+      const labels = screen
+        .getAllByRole('listitem')
+        .map((item) => item.querySelector('span')?.textContent)
+
+      expect(labels).toEqual(['Apple iPhone 15', 'Canon EOS 5D'])
+    })
+
+    it('zeigt einen Ladezustand, solange die Kameras geladen werden', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+      vi.mocked(camerasApi.listCameras).mockReturnValue(new Promise(() => {}))
+      renderPage()
+
+      expect(
+        await screen.findByRole('status', { name: 'Kameras werden geladen' }),
+      ).toBeInTheDocument()
+    })
+
+    it('erklaert den leeren Zustand ohne Fehlerton', async () => {
+      // Dass ein Projekt noch keine Kamera kennt, ist der Normalfall vor dem ersten Scan - kein
+      // `Alert`, kein `role="alert"`.
+      vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+      vi.mocked(camerasApi.listCameras).mockResolvedValue([])
+      renderPage()
+
+      expect(await screen.findByText(/noch keine Kamera bekannt/)).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.queryByRole('listitem')).toBeNull()
+    })
+
+    it('oeffnet den Versatz-Dialog fuer genau diese Kamera', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+      vi.mocked(camerasApi.listCameras).mockResolvedValue([camera()])
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(await screen.findByRole('button', { name: 'Versatz ändern' }))
+
+      expect(await screen.findByRole('dialog')).toHaveAccessibleName(
+        expect.stringContaining('Canon EOS 5D'),
+      )
+    })
+
+    it('meldet einen Ladefehler der Kameraliste', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+      vi.mocked(camerasApi.listCameras).mockRejectedValue(new ApiError(500, 'Serverfehler.'))
+      renderPage()
+
+      expect(await screen.findByText('Serverfehler.')).toBeInTheDocument()
+    })
   })
 })
