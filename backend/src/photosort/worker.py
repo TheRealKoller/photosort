@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
 from photosort.cache_cleanup import cleanup_orphaned_cache
+from photosort.cameras import CameraIdentity, shifted
 from photosort.categories import LOCAL_CATEGORY_SIGNALS, resolve_category, secondary_categories
 from photosort.classification import (
     FaceBoundingBox,
@@ -91,6 +92,7 @@ from photosort.models import (
     PhotoRanking,
     PhotoScore,
     Project,
+    ProjectCamera,
     RatingStatus,
     RemoteCategoryClassificationRun,
     ScanRun,
@@ -98,7 +100,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
-from photosort.opencloud.exif import extract_gps, extract_taken_at
+from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.pricing import compute_cost_usd
 from photosort.ranking import rank_photos
@@ -128,6 +130,11 @@ logger = logging.getLogger(__name__)
 
 _EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg"}
 _EXIF_RANGE_BYTES = 131_072
+
+# FESTES Grund-Token fuer den einen Fall, in dem der Scan den Versatz eines Fotos nicht anwenden
+# kann (das Ergebnis laege ausserhalb des darstellbaren Datumsbereichs) - Muster der
+# Grund-Tokens in `opencloud/exif.py`. Kein Rohwert, kein Zeitstempel, kein Fremdtext.
+_OFFSET_REASON_OUT_OF_RANGE = "ausserhalb_darstellbarem_bereich"
 
 # Wie oft ScoringRun.photos_processed waehrend der Verarbeitung zwischen-committet wird ("mind. alle
 # 25 Fotos", damit ein pollender Client echten, monoton wachsenden Fortschritt sieht statt nur
@@ -200,13 +207,18 @@ class SkipReason(enum.Enum):
 
 @dataclass
 class ScanWorkItem:
-    """Ein Eintrag aus Phase 1, der in Phase 2b tatsaechlich verarbeitet werden muss (neue Datei
-    oder geaenderter Etag) - `existing_photo` ist `None` fuer neue Dateien, sonst die zu
-    aktualisierende Zeile."""
+    """Ein Eintrag aus Phase 1, der in Phase 2b tatsaechlich verarbeitet werden muss (neue Datei,
+    geaenderter Etag, oder die einmalige Kamera-Nachhol-Runde) - `existing_photo` ist `None` fuer
+    neue Dateien, sonst die zu aktualisierende Zeile.
+
+    `probe_only` heisst: die Datei ist UNVERAENDERT, gelesen wird nur ihr EXIF-Fenster, um die
+    Kamera-Angabe nachzutragen. Die Thumbnails existieren bereits und waeren identisch - ihre
+    Neuerzeugung waere ein Voll-Download je Bestandsfoto."""
 
     relative_path: str
     entry: DavEntry
     existing_photo: Photo | None
+    probe_only: bool = False
 
 
 @dataclass
@@ -238,8 +250,14 @@ def _classify_scan_entries(
 ) -> ScanClassification:
     """Phase 2a: reine Funktion, keine Session-/DB-Zugriffe - isoliert unit-testbar (siehe
     test_worker_scan_classification.py). Entscheidungslogik: unsupported extension -> Skip +
-    files_skipped; unveraenderter Etag -> Skip ohne files_skipped; sonst -> Arbeitsposten. Die
-    Verarbeitung selbst gehoert nicht hierher."""
+    files_skipped; unveraenderter Etag UND Kamera bereits geprueft -> Skip ohne files_skipped;
+    unveraenderter Etag UND noch nicht geprueft -> Arbeitsposten mit `probe_only=True`; sonst ->
+    voller Arbeitsposten. Die Verarbeitung selbst gehoert nicht hierher.
+
+    Der `probe_only`-Zweig ist die EINMALIGE Nachhol-Runde fuer Bestandsfotos (ADR 0088,
+    Konsequenzen): Ohne sie bliebe die Kameraliste in bereits gescannten Projekten leer, denn ein
+    unveraendertes Foto wird nie wieder gelesen. Sie laeuft genau einmal je Foto - danach steht
+    der Merker, AUCH wenn die Datei keine Kamera nennt."""
     classification = ScanClassification()
     for relative_path, entry in entries:
         extension = _extension(relative_path)
@@ -251,13 +269,14 @@ def _classify_scan_entries(
 
         classification.seen_paths.add(relative_path)
         existing_photo = existing_photos.get(relative_path)
-        if existing_photo is not None and existing_photo.etag == entry.etag:
+        unchanged = existing_photo is not None and existing_photo.etag == entry.etag
+        if unchanged and existing_photo is not None and existing_photo.camera_probed:
             classification.decisions.append(
                 ScanEntryDecision(relative_path, SkipReason.UNCHANGED_ETAG, None)
             )
             continue
 
-        work_item = ScanWorkItem(relative_path, entry, existing_photo)
+        work_item = ScanWorkItem(relative_path, entry, existing_photo, probe_only=unchanged)
         classification.decisions.append(ScanEntryDecision(relative_path, None, work_item))
         classification.work_items.append(work_item)
 
@@ -343,10 +362,15 @@ class ScanExifResult:
     `CancelledError` einer Kind-Coroutine NICHT ab) darf nicht in die Felder entpackt werden.
 
     `gps` ist ein Paar oder `None` - nie eine halbe Koordinate (Paar-Invariante von
-    `extract_gps`)."""
+    `extract_gps`).
+
+    `taken_at` ist hier die AUFGEZEICHNETE Zeit (EXIF `DateTimeOriginal`, sonst der Rueckfall auf
+    `last_modified`) - die Korrektur um den Kamera-Versatz passiert erst im sequentiellen Teil von
+    `_process_scan_block`, wo die Kamerazeile und damit der Versatz bekannt sind."""
 
     taken_at: datetime
     gps: tuple[float, float] | None
+    camera: CameraIdentity | None
 
 
 async def _fetch_and_thumbnail(
@@ -358,28 +382,77 @@ async def _fetch_and_thumbnail(
     photo_id: int,
     etag: str,
     cache_dir: Path,
+    *,
+    probe_only: bool = False,
 ) -> ScanExifResult:
     """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b: EXIF-Range-Read
-    (nur für JPEG-Kandidaten) für `taken_at` UND die
-    GPS-Koordinate, danach best-effort Download + Thumbnail-Erzeugung -
+    (nur für JPEG-Kandidaten) für `taken_at`, die
+    GPS-Koordinate UND die Kamera-Angabe, danach best-effort Download + Thumbnail-Erzeugung -
     bewusst OHNE jeglichen Session-Zugriff, damit mehrere Aufrufe sicher parallel per
     asyncio.gather laufen koennen (_process_scan_block unten). Ein EXIF-Lesefehler wird NICHT
     abgefangen: ein einzelner OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen.
 
-    Beide EXIF-Werte stammen aus DEMSELBEN bereits geladenen Byte-Fenster - kein zusaetzlicher
-    Netzwerkzugriff fuer die Koordinate. Fuer Nicht-JPEG-Posten wird gar kein EXIF gelesen: der
-    Zeitpunkt faellt auf `fallback_taken_at` zurueck, die Koordinate bleibt `None`."""
+    Alle DREI EXIF-Werte stammen aus DEMSELBEN bereits geladenen Byte-Fenster - kein zusaetzlicher
+    Netzwerkzugriff fuer Koordinate oder Kamera. Fuer Nicht-JPEG-Posten wird gar kein EXIF
+    gelesen: der Zeitpunkt faellt auf `fallback_taken_at` zurueck, Koordinate und Kamera bleiben
+    `None`.
+
+    `probe_only` ueberspringt AUSSCHLIESSLICH die Thumbnail-Erzeugung (die Nachhol-Runde der
+    Kamera-Angabe an einer unveraenderten Datei - die Thumbnails existieren und waeren identisch).
+    Das EXIF-Fenster wird weiterhin gelesen; genau darum geht es."""
     taken_at = fallback_taken_at
     gps: tuple[float, float] | None = None
+    camera: CameraIdentity | None = None
     if extension in _EXIF_CANDIDATE_EXTENSIONS:
         content = await client.get_range(webdav_url, relative_path, _EXIF_RANGE_BYTES)
         exif_taken_at = extract_taken_at(content)
         if exif_taken_at is not None:
             taken_at = exif_taken_at
         gps = extract_gps(content, photo_id=photo_id)
+        camera = extract_camera(content, photo_id=photo_id)
 
-    await _generate_thumbnails(client, webdav_url, relative_path, photo_id, etag, cache_dir)
-    return ScanExifResult(taken_at=taken_at, gps=gps)
+    if not probe_only:
+        await _generate_thumbnails(client, webdav_url, relative_path, photo_id, etag, cache_dir)
+    return ScanExifResult(taken_at=taken_at, gps=gps, camera=camera)
+
+
+async def _resolve_project_camera(
+    session: AsyncSession,
+    project_id: int,
+    identity: CameraIdentity,
+    cache: dict[tuple[str, str], ProjectCamera],
+) -> ProjectCamera:
+    """Die Kamerazeile DIESES Projekts zur uebergebenen Identitaet - angelegt, falls es sie noch
+    nicht gibt, mit `offset_minutes = 0`.
+
+    Der `cache` wird von `run_project_scan` ueber alle Bloecke eines Laufs durchgereicht: ohne ihn
+    entstuende eine Abfrage JE FOTO statt je Kamera, und ein Projekt hat typischerweise zwei
+    Kameras und tausende Fotos.
+
+    SICHERHEIT (Projektgrenze): `project_id` steht in derselben Anweisung, die die Zeile
+    aufloest - `Photo.camera_id` zeigt damit ausschliesslich auf eine Zeile desselben Projekts."""
+    key = (identity.make, identity.model)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    existing = (
+        await session.execute(
+            select(ProjectCamera).where(
+                ProjectCamera.project_id == project_id,
+                ProjectCamera.make == identity.make,
+                ProjectCamera.model == identity.model,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = ProjectCamera(
+            project_id=project_id, make=identity.make, model=identity.model, offset_minutes=0
+        )
+        session.add(existing)
+        await session.flush()
+    cache[key] = existing
+    return existing
 
 
 async def _process_scan_block(
@@ -389,6 +462,7 @@ async def _process_scan_block(
     cache_dir: Path,
     project_id: int,
     block: list[ScanWorkItem],
+    camera_cache: dict[tuple[str, str], ProjectCamera] | None = None,
 ) -> tuple[int, int]:
     """Verarbeitet einen einzelnen Block von Arbeitsposten, Blockgröße
     settings.scan_download_concurrency: zunächst sequentiell Photo-Zeilen
@@ -444,6 +518,7 @@ async def _process_scan_block(
                 photos[index].id,
                 photos[index].etag,
                 cache_dir,
+                probe_only=item.probe_only,
             )
             for index, item in enumerate(block)
         ],
@@ -466,11 +541,41 @@ async def _process_scan_block(
         if isinstance(result, BaseException):
             raise result
 
+    cache = {} if camera_cache is None else camera_cache
     for photo, exif_result in zip(photos, results, strict=True):
         # Die Typzusicherung nagelt die FORM fest: ohne sie entpackte eine durchgereichte
         # BaseException ihre Attribute in die Foto-Felder, statt oben als Fehler erkannt zu werden.
         assert isinstance(exif_result, ScanExifResult)  # bereits oben auf Exceptions geprueft
-        photo.taken_at = exif_result.taken_at
+
+        # UNBEDINGT schreiben, auch zurueck auf None - dieselbe Begruendung wie bei `gps_lat`
+        # unten: verliert eine Datei ihre Kamera-Angabe, verliert das Foto sie auch. Der Merker
+        # wird AUCH OHNE FUND gesetzt, sonst liest jeder weitere Scan den Bestand erneut.
+        camera = (
+            None
+            if exif_result.camera is None
+            else await _resolve_project_camera(session, project_id, exif_result.camera, cache)
+        )
+        photo.camera_id = None if camera is None else camera.id
+        photo.camera_probed = True
+
+        # DIE ERSTE der zwei Schreibstellen der Invariante (ADR 0088, Punkt 1; die zweite ist
+        # `api/cameras.py`), und beide rechnen ueber `cameras.py::shifted` aus
+        # `taken_at_original` - NIE aus dem bestehenden `taken_at`. Eine Differenz auf den
+        # bestehenden Wert zu addieren kumulierte bei jedem weiteren Lauf.
+        photo.taken_at_original = exif_result.taken_at
+        offset_minutes = 0 if camera is None else camera.offset_minutes
+        corrected = shifted(exif_result.taken_at, offset_minutes)
+        if corrected is None:
+            # Ausfallrichtung fuer dieses EINE Foto: die unkorrigierte Zeit plus eine Warnzeile
+            # mit festem Token - kein Laufabbruch und kein Datum ausserhalb des darstellbaren
+            # Bereichs. Die Invariante ist fuer dieses Foto damit bewusst verletzt; ein Versatz,
+            # der das ausloest, ist am Endpunkt gar nicht setzbar (dort 422).
+            logger.warning(
+                "_process_scan_block: Versatz nicht anwendbar photo_id=%s grund=%s",
+                photo.id,
+                _OFFSET_REASON_OUT_OF_RANGE,
+            )
+        photo.taken_at = exif_result.taken_at if corrected is None else corrected
         # SICHERHEIT: UNBEDINGT beide Felder schreiben, auch zurück auf None. Das ist eine
         # DATENSCHUTZBEDINGUNG, keine Aufräum-Kosmetik - dies ist der einzige Pfad, über den
         # das ENTFERNEN von GPS aus einer Quelldatei in PhotoSort ankommt, also genau die
@@ -578,10 +683,14 @@ async def run_project_scan(
         # Laufzeit-Clamp hier nötig.
         concurrency = settings.scan_download_concurrency
         work_items = classification.work_items
+        # EIN Cache ueber alle Bloecke des Laufs: sonst eine Kamera-Abfrage je Foto statt je
+        # Kamera. Er haelt ORM-Objekte derselben Sitzung, die der Lauf ohnehin durchgaengig
+        # benutzt.
+        camera_cache: dict[tuple[str, str], ProjectCamera] = {}
         for start in range(0, len(work_items), concurrency):
             block = work_items[start : start + concurrency]
             added, updated = await _process_scan_block(
-                session, client, drive.webdav_url, cache_dir, project.id, block
+                session, client, drive.webdav_url, cache_dir, project.id, block, camera_cache
             )
             photos_added += added
             photos_updated += updated

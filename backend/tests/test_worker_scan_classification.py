@@ -23,7 +23,10 @@ def _entry(name: str, etag: str, content_length: int = 100) -> DavEntry:
     )
 
 
-def _existing_photo(relative_path: str, etag: str) -> Photo:
+def _existing_photo(relative_path: str, etag: str, *, camera_probed: bool = True) -> Photo:
+    """`camera_probed` steht AUSDRUECKLICH da, nie als Vorgabewert des Modells: ein transientes
+    `Photo` traegt den Python-Default noch nicht (der greift erst beim `flush`), und die
+    Entscheidung unten haengt genau an diesem Wert."""
     return Photo(
         id=1,
         project_id=1,
@@ -32,6 +35,7 @@ def _existing_photo(relative_path: str, etag: str) -> Photo:
         content_length=10,
         taken_at=MODIFIED,
         taken_at_original=MODIFIED,
+        camera_probed=camera_probed,
         last_modified=MODIFIED,
     )
 
@@ -49,7 +53,7 @@ def test_unsupported_extension_is_skipped_and_excluded_from_seen_paths() -> None
     assert classification.seen_paths == set()
 
 
-def test_unchanged_etag_is_skipped_but_counted_as_seen() -> None:
+def test_unchanged_etag_of_an_already_probed_photo_is_skipped_but_counted_as_seen() -> None:
     entries = [("CostaRica/img.jpg", _entry("img.jpg", "same-etag"))]
     existing = {"CostaRica/img.jpg": _existing_photo("CostaRica/img.jpg", "same-etag")}
 
@@ -60,6 +64,50 @@ def test_unchanged_etag_is_skipped_but_counted_as_seen() -> None:
     assert decision.work_item is None
     assert classification.work_items == []
     assert classification.seen_paths == {"CostaRica/img.jpg"}
+
+
+def test_unchanged_etag_of_an_unprobed_photo_becomes_a_probe_only_work_item() -> None:
+    """specs/features/0426, Umsetzungsschritt 4: die einmalige NACHHOL-RUNDE fuer Bestandsfotos.
+    Ohne sie bliebe die Kameraliste in bestehenden Projekten leer, weil ein unveraendertes Foto
+    nie wieder gelesen wird."""
+    entries = [("CostaRica/img.jpg", _entry("img.jpg", "same-etag"))]
+    existing_photo = _existing_photo("CostaRica/img.jpg", "same-etag", camera_probed=False)
+    existing = {"CostaRica/img.jpg": existing_photo}
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    decision = classification.decisions[0]
+    assert decision.skip_reason is None
+    assert decision.work_item is not None
+    assert decision.work_item.probe_only is True
+    assert decision.work_item.existing_photo is existing_photo
+    assert classification.work_items == [decision.work_item]
+    assert classification.seen_paths == {"CostaRica/img.jpg"}
+
+
+def test_a_changed_etag_stays_a_full_work_item_even_when_unprobed() -> None:
+    """Die Nachhol-Runde ist die AUSNAHME fuer unveraenderte Dateien - eine geaenderte Datei
+    braucht den vollen Posten samt Thumbnails."""
+    entries = [("CostaRica/img.jpg", _entry("img.jpg", "new-etag"))]
+    existing = {
+        "CostaRica/img.jpg": _existing_photo("CostaRica/img.jpg", "old-etag", camera_probed=False)
+    }
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    decision = classification.decisions[0]
+    assert decision.work_item is not None
+    assert decision.work_item.probe_only is False
+
+
+def test_a_new_file_is_never_probe_only() -> None:
+    entries = [("CostaRica/img.jpg", _entry("img.jpg", "etag-1"))]
+
+    classification = _classify_scan_entries(entries, existing_photos={})
+
+    decision = classification.decisions[0]
+    assert decision.work_item is not None
+    assert decision.work_item.probe_only is False
 
 
 def test_new_file_becomes_a_work_item_without_existing_photo() -> None:
@@ -117,6 +165,31 @@ def test_decisions_preserve_input_order_for_a_mixed_batch() -> None:
     ]
     assert [item.relative_path for item in classification.work_items] == ["CostaRica/new.jpg"]
     assert classification.seen_paths == {"CostaRica/unchanged.jpg", "CostaRica/new.jpg"}
+
+
+def test_a_mixed_batch_keeps_the_probe_only_item_in_input_order() -> None:
+    """Die Nachhol-Runde darf die Reihenfolge der Entscheidungen nicht stoeren - sie traegt die
+    Checkpoint-Kadenz von files_found/files_skipped."""
+    entries = [
+        ("CostaRica/notes.txt", _entry("notes.txt", "etag-notes")),
+        ("CostaRica/unprobed.jpg", _entry("unprobed.jpg", "same-etag")),
+        ("CostaRica/probed.jpg", _entry("probed.jpg", "same-etag")),
+    ]
+    existing = {
+        "CostaRica/unprobed.jpg": _existing_photo(
+            "CostaRica/unprobed.jpg", "same-etag", camera_probed=False
+        ),
+        "CostaRica/probed.jpg": _existing_photo("CostaRica/probed.jpg", "same-etag"),
+    }
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    assert [decision.skip_reason for decision in classification.decisions] == [
+        SkipReason.UNSUPPORTED_EXTENSION,
+        None,
+        SkipReason.UNCHANGED_ETAG,
+    ]
+    assert [item.relative_path for item in classification.work_items] == ["CostaRica/unprobed.jpg"]
 
 
 def test_empty_entries_produce_empty_classification() -> None:
