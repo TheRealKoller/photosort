@@ -241,8 +241,20 @@ VERBRAUCHER_ZUSAGEN: tuple[tuple[str, str], ...] = (
 # Geschlossene Whitelist. **Gleichheit**, nicht Teilmenge: Eine vergessene ID faellt damit ebenso
 # auf wie eine hinzugekommene - und „kein Copilot, keine Perspektivenrunde" ist damit belegt,
 # ohne dass irgendwo eine Verbotsliste gepflegt wird, die nur verbietet, was sie kennt.
+#
+# Die beiden Pruefstands-Operationen (ADR 0091) sind der Wartepunkt aus Schritt 8: `…-abwarten`
+# blockiert auf dem Ergebnis, `…-lesen` holt den Beleg, ohne den `rot` aus einem Exit-Code allein
+# entstuende. Sie erweitern die Whitelist, sie weichen sie nicht auf - dass ein Entwurfs-Pull-
+# Request weiterhin kein angefordertes Copilot-Review durchlaeuft, bleibt als Gleichheit
+# gesichert.
 ERWARTETE_OPERATIONEN = frozenset(
-    {"pr-erstellen", "board-status-und-prioritaet-lesen", "board-status-setzen"}
+    {
+        "pr-erstellen",
+        "pr-pruefstand-abwarten",
+        "pr-pruefstand-lesen",
+        "board-status-und-prioritaet-lesen",
+        "board-status-setzen",
+    }
 )
 
 # Erkennungsraum sind dieselben vier geschlossenen Praefixe wie im Katalogtest.
@@ -674,7 +686,7 @@ def test_der_abgleich_steht_zwischen_commit_und_push() -> None:
 # --- 5. Operations-IDs als Whitelist-Gleichheit ------------------------------------------------
 
 
-def test_der_auslieferpfad_nennt_genau_die_drei_erwarteten_operationen() -> None:
+def test_der_auslieferpfad_nennt_genau_die_erwarteten_operationen() -> None:
     genannt = operations_ids(verbrauchertext())
 
     assert genannt == set(ERWARTETE_OPERATIONEN), (
@@ -690,7 +702,8 @@ def test_der_auslieferpfad_nennt_genau_die_drei_erwarteten_operationen() -> None
     ("probe", "erwartet"),
     [
         (
-            "Ruf `pr-erstellen` auf, lies mit `board-status-und-prioritaet-lesen` zurueck und "
+            "Ruf `pr-erstellen` auf, warte mit `pr-pruefstand-abwarten`, hol den Beleg mit "
+            "`pr-pruefstand-lesen`, lies mit `board-status-und-prioritaet-lesen` zurueck und "
             "nimm `board-status-setzen` in den Bericht.",
             ERWARTETE_OPERATIONEN,
         ),

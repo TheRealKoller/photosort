@@ -81,8 +81,9 @@ BEKANNTE_UNTERBEFEHLE = frozenset({"issue", "pr", "project", "api", "auth"})
 
 # --- Der Operationskatalog ---------------------------------------------------------------
 
-# Die 19 Operations-IDs als geschlossene Menge - 17 aus ADR 0061, Abschnitt 2, dazu
-# `issue-bereich-setzen` und `issue-liste-lesen` aus ADR 0085. Der Buchhaltungs-Vorbehalt gegen
+# Die 21 Operations-IDs als geschlossene Menge - 17 aus ADR 0061, Abschnitt 2, dazu
+# `issue-bereich-setzen` und `issue-liste-lesen` aus ADR 0085 sowie `pr-pruefstand-abwarten` und
+# `pr-pruefstand-lesen` aus ADR 0091. Der Buchhaltungs-Vorbehalt gegen
 # Konstantenvergleiche gilt hier ausdruecklich nicht: Die Menge selbst *ist* die Zusage ("keine
 # heute vorhandene Operation geht verloren"), und ihr stiller Verlust beim Umzug der sechs
 # PR-Operationen aus `ship-feature` ist genau der Fehler, den die Story riskiert.
@@ -99,6 +100,8 @@ ERWARTETE_OPERATIONEN = frozenset(
         "pr-erstellen",
         "pr-body-schreiben",
         "pr-verknuepfung-lesen",
+        "pr-pruefstand-abwarten",
+        "pr-pruefstand-lesen",
         "copilot-review-anfordern",
         "pr-reviewstand-lesen",
         "pr-reviewkommentare-lesen",
@@ -132,6 +135,7 @@ LESENDE_OPERATIONEN = frozenset(
         "issue-lesen",
         "issue-liste-lesen",
         "pr-verknuepfung-lesen",
+        "pr-pruefstand-lesen",
         "pr-reviewstand-lesen",
         "pr-reviewkommentare-lesen",
         "board-status-und-prioritaet-lesen",
@@ -178,11 +182,20 @@ AUSWERTUNGSGRENZE = "**Auswertungsgrenze:**"
 # Markierung fremder Autorschaft vor dem Stapelschreiben daran haengt. Beides waere lautlos zu
 # verlieren. Deshalb hier **exakt**, nicht "mindestens".
 #
-# Bewusst nur diese eine Operation: Bei den uebrigen lesenden ist die Feldmenge eine
+# Bewusst nur diese beiden Operationen: Bei den uebrigen lesenden ist die Feldmenge eine
 # Sparsamkeitsfrage; eine eingefrorene Tabelle ueber alle waere die Buchhaltungskonstante, gegen
 # die der Vorbehalt aus der ADR-0056-Sektion gerichtet ist.
+#
+# `pr-pruefstand-lesen` (ADR 0091) steht aus demselben Grund hier wie `issue-liste-lesen`: Ihre
+# Feldmenge **ist** ihre Sicherheitszusage. `bucket` und `state` sind geschlossene Wertemengen und
+# steuern; `name` und `workflow` sind fremdbeschreibbar - jede installierte GitHub-App darf einen
+# Check-Run mit beliebigem Namen anlegen - und sind deshalb reine Anzeigewerte. Ein fuenftes Feld
+# zoege weiteren Fremdtext in einen Kontext, der unmittelbar danach Code aendert und pusht; ein
+# fehlendes `bucket` naehme dem Ergebniswert `rot` seinen Beleg, und `rot` entstuende wieder aus
+# einem Exit-Code allein.
 ERWARTETE_AUSWERTUNGSGRENZE: dict[str, tuple[str, ...]] = {
     "issue-liste-lesen": ("number", "labels", "state", "author"),
+    "pr-pruefstand-lesen": ("bucket", "name", "state", "workflow"),
 }
 
 # Eine API-Antwort ist strukturiert, nicht flach: `author` ist ein Objekt mit `login`, `id`,
@@ -751,7 +764,7 @@ def test_der_katalog_fuehrt_genau_die_erwarteten_operationen() -> None:
         f"unerwartet: {sorted(set(ids) - ERWARTETE_OPERATIONEN)}. Der Katalog ist geschlossen - "
         "keine heute vorhandene Operation geht verloren, und keine kommt unbemerkt dazu."
     )
-    assert len(ids) == 19
+    assert len(ids) == 21
 
 
 def test_jede_operation_haelt_die_verbindliche_form() -> None:
@@ -805,10 +818,11 @@ def test_die_feldmenge_der_listenden_leseoperation_ist_exakt_festgelegt() -> Non
         felder = ausgewertete_felder(eintraege[operation].block)
 
         assert felder == erwartet, (
-            f"{operation}: Auswertungsgrenze {list(felder)} statt {list(erwartet)}. `title` ist "
-            "das einzige fremdbeschreibbare Feld dieser Antwort und darf nicht dazukommen; "
-            "`author` traegt die Markierung fremder Autorschaft vor dem Stapelschreiben und darf "
-            "nicht wegfallen. Beides ohne diese Zusicherung lautlos."
+            f"{operation}: Auswertungsgrenze {list(felder)} statt {list(erwartet)}. Bei diesen "
+            "Operationen ist die Feldmenge selbst die Zusage: Ein zusaetzliches Feld holt "
+            "fremdbeschreibbaren Text (`title` bei `issue-liste-lesen`), ein fehlendes nimmt "
+            "einer Entscheidung ihre Grundlage (`author` der Markierung fremder Autorschaft, "
+            "`bucket` dem Ergebniswert `rot` seinen Beleg). Beides ohne diese Zusicherung lautlos."
         )
 
 
