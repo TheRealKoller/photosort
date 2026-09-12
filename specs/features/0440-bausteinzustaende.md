@@ -245,7 +245,7 @@ unterschieden; die Größenachse trägt keine eigenen Maße. Die vier weiteren i
 5. **Zwei Zonen anlegen:** Überschrift über dem Bestand („Bestand — Variantenbretter der
    Bibliothek") und über dem freien Bereich daneben („Register — kuratierte Raster"). Am Bestand
    wird nichts gelöscht, verschoben, umbenannt, in der Größe geändert oder in seinen Plugin-Daten
-   verändert — auch nicht am von Hand entstandenen Brett `Entwurf: Sichtungsleiste`. Kollidiert
+   verändert. Kollidiert
    die Fläche, weicht das Register aus.
 6. **Ein Aufruf je Raster**, in der Reihenfolge der Tabelle oben, danach die Größenreihe der
    Schaltfläche, der Symbolblock, der Lücken-Block. Ein Fehlschlag bleibt dadurch lokal und der
@@ -542,8 +542,17 @@ beurteilen will, sieht in der geöffneten Datei hin oder exportiert einen Block 
       Strichfarbe für dunklen Grund gedacht ist.
 - [ ] Lücken-Block als Textliste auf `color.surface`, kein Eintrag nachgezeichnet, nicht als
       dreizehntes Raster lesbar.
-- [ ] Der Bestand ist unverändert: Variantenbretter, Symbole und das Brett
-      `Entwurf: Sichtungsleiste` liegen an ihrer Stelle, in ihrer Größe, unter ihrem Namen.
+- [ ] Der Bestand ist unverändert: die zwölf Variantenbretter und die zwölf Symbole liegen an
+      ihrer Stelle, in ihrer Größe, unter ihrem Namen.
+
+**Der Bestand zählt seit dem 2026-09-12 vierundzwanzig Objekte, nicht siebenundzwanzig.** Daniel
+hat nach der ersten Sichtprüfung drei Altlasten in Penpot entfernt: die als verworfen benannte
+Schrittmarken-Fassung (zwölf Varianten, aber nirgends instanziert und mit leerem `schluessel`),
+das Testobjekt `Probe` und das Brett `Entwurf: Sichtungsleiste`. Nachgemessen: Alle
+Kardinalitäten sind unberührt (zwölf Bausteine, zwölf Symbole, 86 Tokens, dreißig
+Ansichtsbretter, sechs Ansichtsbehälter), die Bibliothek führt einen Eintrag weniger. Gelöscht
+hat **Daniel im Browser** — kein Lauf dieses Projekts entfernt ein Objekt, das er nicht selbst
+angelegt hat.
 
 ## Entscheidungen
 
