@@ -50,6 +50,7 @@ from photosort.demo_state import (
 from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
     CriterionScoringRun,
+    Event,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
@@ -1200,8 +1201,8 @@ class TestTheDemoStateCarriesACloudBalance:
 
 
 # ---------------------------------------------------------------------------------------------
-# specs/features/0051-gps-landmark-cluster-bildung.md, Teststrategie: der Seeder MUSS alle vier
-# Anzeigezustaende der Cluster-Ueberschrift erzeugen - sonst ist die Sichtpruefung ueber
+# Teststrategie der Spec 0425: der Seeder MUSS alle vier
+# Anzeigezustaende der Event-Ueberschrift erzeugen - sonst ist die Sichtpruefung ueber
 # `browse-app` fuer drei davon blind, und das ist die einzige nicht automatisierte
 # Kontrollinstanz dieses Features.
 
@@ -1209,10 +1210,9 @@ class TestTheDemoStateCarriesACloudBalance:
 class TestDemoStateCoversAllFourHeadingStates:
     async def _rated_state(
         self, db_session: AsyncSession, tmp_path: Path
-    ) -> tuple[dict[str, list[Photo]], dict[int, str]]:
-        """Die Fotos des "bewertet"-Projekts, nach ihrem `PhotoRanking.cluster_key` gruppiert,
-        plus die Landmark-Namen je Foto-Id - also genau die beiden Eingaben, aus denen
-        `api/photos.py::_place_by_photo_id` den Ortsteil der Ueberschrift bildet."""
+    ) -> tuple[dict[int, list[Photo]], dict[int, Event], dict[int, str]]:
+        """Die Fotos des "bewertet"-Projekts nach ihrem Event gruppiert, die `events`-Zeilen
+        selbst und die Landmark-Namen je Foto-Id."""
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
         photos = {photo.id: photo for photo in await _photos_of(db_session, RATED_PROJECT_NAME)}
         rankings = (
@@ -1224,11 +1224,19 @@ class TestDemoStateCoversAllFourHeadingStates:
             .scalars()
             .all()
         )
-        by_cluster: dict[str, list[Photo]] = {}
+        by_event: dict[int, list[Photo]] = {}
         for ranking in rankings:
-            members = by_cluster.setdefault(ranking.cluster_key, [])
+            members = by_event.setdefault(ranking.event_id, [])
             if photos[ranking.photo_id] not in members:
                 members.append(photos[ranking.photo_id])
+        events = {
+            row.id: row
+            for row in (
+                (await db_session.execute(select(Event).where(Event.id.in_(by_event))))
+                .scalars()
+                .all()
+            )
+        }
         names = {
             row.photo_id: row.name
             for row in (
@@ -1243,13 +1251,13 @@ class TestDemoStateCoversAllFourHeadingStates:
                 .all()
             )
         }
-        return by_cluster, names
+        return by_event, events, names
 
     @staticmethod
-    def _heading_kind(members: list[Photo], names: dict[int, str]) -> str:
-        """Bildet die Stufenentscheidung aus `api/photos.py` nach - bewusst hier im Test und nicht
-        durch einen Aufruf der Produktionsfunktion: geprueft gehoert, dass die DATEN alle vier
-        Zustaende hergeben, nicht dass die Funktion sich selbst gleicht."""
+    def _derived_kind(members: list[Photo], names: dict[int, str]) -> str | None:
+        """Bildet die Stufenentscheidung aus `events.py::_place_of` nach - bewusst hier im Test
+        und nicht durch einen Aufruf der Produktionsfunktion: geprueft gehoert, dass die DATEN
+        alle vier Zustaende hergeben, nicht dass die Funktion sich selbst gleicht."""
         if any(photo.id in names for photo in members):
             return "landmark"
         cells = {
@@ -1258,25 +1266,77 @@ class TestDemoStateCoversAllFourHeadingStates:
             if photo.gps_lat is not None and photo.gps_lon is not None
         }
         if not cells:
-            return "null"
+            return None
         return "coordinate" if len(cells) == 1 else "multiple"
 
     async def test_the_rated_project_produces_every_heading_state_at_least_once(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
-        by_cluster, names = await self._rated_state(db_session, tmp_path)
+        _by_event, events, _names = await self._rated_state(db_session, tmp_path)
 
-        kinds = {self._heading_kind(members, names) for members in by_cluster.values()}
+        assert {event.place_kind for event in events.values()} == {
+            "landmark",
+            "coordinate",
+            "multiple",
+            None,
+        }
 
-        assert kinds == {"landmark", "coordinate", "multiple", "null"}
+    async def test_exactly_one_event_carries_a_name_and_the_others_do_not(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Beide Ueberschriftenformen muessen in der Sichtpruefung vorkommen: der Name und der
+        Rueckfall auf "Position N"."""
+        _by_event, events, _names = await self._rated_state(db_session, tmp_path)
+
+        named = [event for event in events.values() if event.landmark_name is not None]
+        assert len(named) == 1
+        assert len(events) > 1
+
+    async def test_the_stored_place_matches_what_its_members_imply(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Seeder darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe: die
+        persistierten Ortsfelder muessen zur Rangfolge ueber die GEMESSENEN Koordinaten der
+        Mitglieder passen."""
+        by_event, events, names = await self._rated_state(db_session, tmp_path)
+
+        for event_id, members in by_event.items():
+            assert events[event_id].place_kind == self._derived_kind(members, names), event_id
+
+    async def test_the_stored_field_combination_holds(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Invariante M7, an den tatsaechlich geschriebenen Zeilen geprueft."""
+        _by_event, events, _names = await self._rated_state(db_session, tmp_path)
+
+        for event in events.values():
+            if event.place_kind == "landmark":
+                assert event.landmark_name is not None
+            elif event.place_kind == "coordinate":
+                assert event.place_lat is not None and event.place_lon is not None
+            elif event.place_kind == "multiple":
+                assert (event.place_lat, event.place_lon) == (None, None)
+            else:
+                assert event.place_kind is None
+                assert (event.place_lat, event.place_lon) == (None, None)
+
+    async def test_the_events_of_the_run_are_chronological_and_non_overlapping(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        _by_event, events, _names = await self._rated_state(db_session, tmp_path)
+
+        ordered = sorted(events.values(), key=lambda event: event.position)
+        assert [event.position for event in ordered] == list(range(1, len(ordered) + 1))
+        for earlier, later in zip(ordered, ordered[1:], strict=False):
+            assert earlier.ended_at <= later.started_at
 
     async def test_at_least_one_photo_carries_no_coordinate_at_all(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         """Der haeufigste reale Fall (kein GPS im EXIF) muss in der Demo vorkommen - sonst zeigt
         sie ausgerechnet den Normalzustand nicht."""
-        by_cluster, _names = await self._rated_state(db_session, tmp_path)
-        photos = [photo for members in by_cluster.values() for photo in members]
+        by_event, _events, _names = await self._rated_state(db_session, tmp_path)
+        photos = [photo for members in by_event.values() for photo in members]
 
         assert any(photo.gps_lat is None and photo.gps_lon is None for photo in photos)
 
@@ -1285,8 +1345,8 @@ class TestDemoStateCoversAllFourHeadingStates:
     ) -> None:
         """Paar-Invariante: die Demo darf keinen Zustand erzeugen, den `extract_gps` selbst nie
         schriebe."""
-        by_cluster, _names = await self._rated_state(db_session, tmp_path)
-        photos = [photo for members in by_cluster.values() for photo in members]
+        by_event, _events, _names = await self._rated_state(db_session, tmp_path)
+        photos = [photo for members in by_event.values() for photo in members]
 
         for photo in photos:
             assert (photo.gps_lat is None) == (photo.gps_lon is None), photo.relative_path
@@ -1294,8 +1354,8 @@ class TestDemoStateCoversAllFourHeadingStates:
     async def test_every_demo_coordinate_lies_inside_the_valid_range(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
-        by_cluster, _names = await self._rated_state(db_session, tmp_path)
-        photos = [photo for members in by_cluster.values() for photo in members]
+        by_event, _events, _names = await self._rated_state(db_session, tmp_path)
+        photos = [photo for members in by_event.values() for photo in members]
 
         for photo in photos:
             if photo.gps_lat is None or photo.gps_lon is None:
@@ -1307,10 +1367,10 @@ class TestDemoStateCoversAllFourHeadingStates:
     async def test_the_landmark_name_survives_the_sanitisation_of_the_read_path(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
-        """Ein Demo-Name, den der Lesepfad verwuerfe (zu lang oder nach der Sanitisierung leer),
-        liesse den Cluster still auf die Koordinatenstufe zurueckfallen - die Sichtpruefung saehe
-        dann den falschen Zustand."""
-        _by_cluster, names = await self._rated_state(db_session, tmp_path)
+        """Ein Demo-Name, den die Sanitisierung verwuerfe (zu lang oder danach leer), liesse das
+        Event still auf die Koordinatenstufe zurueckfallen - die Sichtpruefung saehe dann den
+        falschen Zustand."""
+        _by_event, _events, names = await self._rated_state(db_session, tmp_path)
 
         assert names
         for name in names.values():

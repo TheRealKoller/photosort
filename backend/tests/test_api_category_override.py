@@ -20,6 +20,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from tests.event_rows import event_id_of_run
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterium
 # "Manuelle Übernahme (Override) mit sofortiger Wirkung" - mit specs/features/0289-feste-
@@ -91,7 +92,7 @@ async def _add_ranking(
     run: CriterionScoringRun,
     photo: Photo,
     *,
-    cluster_key: str = "cluster-0",
+    event_position: int = 1,
     category_key: str = CATEGORY_NOT_RECOGNIZED,
     rank_score: float = 0.5,
     rank_position: int = 1,
@@ -103,7 +104,7 @@ async def _add_ranking(
     ranking = PhotoRanking(
         criterion_scoring_run_id=run.id,
         photo_id=photo.id,
-        cluster_key=cluster_key,
+        event_id=await event_id_of_run(session, run, position=event_position),
         category_key=category_key,
         rank_score=rank_score,
         rank_position=rank_position,

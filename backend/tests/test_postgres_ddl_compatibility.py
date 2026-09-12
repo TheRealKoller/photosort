@@ -445,3 +445,111 @@ def test_the_gps_downgrade_renders_for_postgres_too() -> None:
 
     rendered = " ".join(statements).upper()
     assert rendered.count("DROP COLUMN") == 2
+
+
+# specs/features/0425-events-statt-zeitcluster.md, decisions/0087-event-als-persistierte-einheit-
+# und-trennsignale-als-liste.md: neue Tabelle `events` mit ECHTEM Fremdschluessel und
+# `UniqueConstraint(run, position)`, dazu der Spaltentausch an `photo_rankings`.
+#
+# Unter SQLite entstehen Fremdschluessel und Unique-Constraint ausschliesslich ueber den
+# Tabellen-Neuaufbau von `batch_alter_table` und sind dort von einer reinen Spaltenpruefung nicht
+# zu unterscheiden. Unter Postgres steht beides im gerenderten DDL.
+
+_EVENTS_REVISION = "f5a6b7c8d9e0_events.py"
+
+
+@pytest.fixture(scope="module")
+def events_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_EVENTS_REVISION)
+
+
+def test_the_events_table_is_created_for_postgres(events_upgrade_ddl: list[str]) -> None:
+    create = [s for s in events_upgrade_ddl if "CREATE TABLE EVENTS" in s.upper()]
+
+    assert create, "kein CREATE TABLE events im gerenderten DDL gefunden"
+    rendered = create[0].upper()
+    for column in ("POSITION", "STARTED_AT", "ENDED_AT", "LANDMARK_NAME", "PLACE_KIND"):
+        assert column in rendered, column
+
+
+def test_the_event_coordinates_render_as_a_floating_point_type(
+    events_upgrade_ddl: list[str],
+) -> None:
+    """Ein ganzzahliger Typ machte aus 48.86 die Zahl 48 - eine Ortsverschiebung von rund 95 km,
+    die SQLite nicht sichtbar machen koennte."""
+    [create] = [s for s in events_upgrade_ddl if "CREATE TABLE EVENTS" in s.upper()]
+
+    for line in create.splitlines():
+        if "place_lat" in line or "place_lon" in line:
+            assert "DOUBLE PRECISION" in line.upper() or "FLOAT" in line.upper(), line
+            assert "INTEGER" not in line.upper(), line
+
+
+def test_the_event_run_binding_is_a_real_foreign_key(events_upgrade_ddl: list[str]) -> None:
+    """Eine bloss logische Spalte fiele still aus der Erreichbarkeitspruefung der Projektloeschung
+    heraus, und unter Postgres entstuenden verwaiste Zeilen."""
+    [create] = [s for s in events_upgrade_ddl if "CREATE TABLE EVENTS" in s.upper()]
+
+    assert "FOREIGN KEY(criterion_scoring_run_id) REFERENCES criterion_scoring_runs (id)" in create
+    assert "fk_events_criterion_scoring_run_id" in create
+
+
+def test_the_event_position_is_unique_per_run(events_upgrade_ddl: list[str]) -> None:
+    [create] = [s for s in events_upgrade_ddl if "CREATE TABLE EVENTS" in s.upper()]
+
+    assert "CONSTRAINT uq_event_run_position UNIQUE (criterion_scoring_run_id, position)" in create
+
+
+def test_the_ranking_rows_are_deleted_before_the_not_null_column_arrives(
+    events_upgrade_ddl: list[str],
+) -> None:
+    """Die Reihenfolge ist die Migration: eine NOT-NULL-Spalte laesst sich einer nicht-leeren
+    Tabelle nur mit einem Ersatzwert hinzufuegen, und jede Event-Id waere erfunden."""
+    rendered = [s.upper() for s in events_upgrade_ddl]
+    delete_index = next(i for i, s in enumerate(rendered) if "DELETE FROM PHOTO_RANKINGS" in s)
+    add_index = next(i for i, s in enumerate(rendered) if "ADD COLUMN EVENT_ID" in s)
+
+    assert delete_index < add_index
+
+
+def test_the_new_ranking_column_is_not_null_and_a_real_foreign_key(
+    events_upgrade_ddl: list[str],
+) -> None:
+    rendered = " ".join(events_upgrade_ddl)
+
+    assert "ADD COLUMN event_id INTEGER NOT NULL" in rendered
+    assert "fk_photo_rankings_event_id" in rendered
+    assert "FOREIGN KEY(event_id) REFERENCES events (id)" in rendered
+
+
+def test_the_old_partition_column_is_dropped(events_upgrade_ddl: list[str]) -> None:
+    rendered = " ".join(events_upgrade_ddl).upper()
+
+    assert "DROP COLUMN CLUSTER_KEY" in rendered
+
+
+def test_the_events_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_EVENTS_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements).upper()
+    assert "DROP TABLE EVENTS" in rendered
+    assert "ADD COLUMN CLUSTER_KEY" in rendered
+    assert "DROP COLUMN EVENT_ID" in rendered
+
+
+def test_the_events_downgrade_drops_the_temporary_default_again() -> None:
+    """Der `server_default` beim Wiederanlegen ist VORUEBERGEHEND - er fuellt unter SQLite beim
+    Tabellen-Neuaufbau die Zeilen, die nach dem `upgrade` entstanden sind. Unter Postgres gibt es
+    keinen Neuaufbau: dort ist sein Entfernen eine eigene `ALTER COLUMN ... DROP DEFAULT`, und nur
+    sie trennt den Endzustand vom Ausgangszustand aus `c1d2e3f4a5b6`.
+
+    Die Reihenfolge ist Teil der Aussage: ein `DROP DEFAULT` VOR dem `ADD COLUMN` liefe ins
+    Leere."""
+    rendered = [s.upper() for s in _render_postgres_ddl(_EVENTS_REVISION, direction="downgrade")]
+
+    add_index = next(i for i, s in enumerate(rendered) if "ADD COLUMN CLUSTER_KEY" in s)
+    drop_default_index = next(
+        i for i, s in enumerate(rendered) if "ALTER COLUMN CLUSTER_KEY DROP DEFAULT" in s
+    )
+
+    assert add_index < drop_default_index

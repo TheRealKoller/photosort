@@ -83,7 +83,8 @@ class Photo(Base):
     # Ort bekannt" - es gibt NIE eine halbe Koordinate: scheitert eine Komponente, sind beide
     # Felder `None` (Paar-Invariante von extract_gps). Volle EXIF-Präzision, keine Rundung beim
     # Speichern; die Anzeigerundung auf zwei Nachkommastellen liegt allein in
-    # api/photos.py::cluster_place.
+    # events.py::_rounded (`_EVENT_PLACE_COORDINATE_DIGITS`) und trifft ausschließlich
+    # `events.place_lat`/`place_lon`, nie diese Spalten hier.
     #
     # KEIN server_default und kein Backfill: `0.0` ist eine gültige Koordinate, kein
     # Abwesenheitswert. Bereits gescannte Fotos bleiben ohne Koordinate, bis sich die Datei auf
@@ -446,8 +447,56 @@ class CriterionScoringRun(Base):
     rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
 
 
+class Event(Base):
+    """Ein Abschnitt der Reise: eine zusammenhängende Folge von Kandidatenfotos EINES
+    CriterionScoringRun, mit Anfang, Ende, Ort und ggf. Namen.
+
+    Die Events eines Laufs sind chronologisch geordnet und überschneidungsfrei; `position` läuft
+    lückenlos von 1 bis n. Träger ist der LAUF, nicht das Projekt - ein Projekt hat mehrere
+    Lauf-Artefakte nebeneinander.
+
+    Persistiert und nicht abgeleitet, weil Nummer und Zeitspanne Bestandteil des NAMENS sind und
+    deshalb unabhängig davon feststehen müssen, welche Fotos eine Antwort gerade enthält. Ein
+    Event ist ein Lauf-Artefakt wie PhotoRanking, kein reiner Funktionswert über `photos`; der
+    Ortswert eines einzelnen Fotos bleibt weiterhin unpersistiert.
+
+    FELDKOMBINATION (geprüfte Invariante, events.py::_place_of ist die einzige Schreibstelle):
+    `place_kind='landmark'` ⇒ `landmark_name` gesetzt; `'coordinate'` ⇒ beide Koordinaten gesetzt;
+    `'multiple'` ⇒ beide Koordinaten NULL - den einen Ort, den sie vertreten müssten, gibt es
+    gerade nicht. `place_kind IS NULL` heißt "kein Ortsbezug".
+
+    Die Koordinaten stehen GERUNDET (zwei Nachkommastellen, rund 1,1 km), nie in voller Präzision
+    "für später", und entstehen ausschließlich aus GEMESSENEN Koordinaten - ein übernommener Ort
+    speist sie nie.
+
+    `landmark_name` ist freier, extern erzeugter LLM-Text und kommt ausschließlich über
+    `worker.py::_landmark_names` (also durch `sanitize_landmark_name`) hierher - kein direkter
+    Zugriff auf `PhotoLandmarkDetection.name` an der Schreibstelle, kein Abschneiden. Beim Rendern
+    gilt dieselbe Auflage wie für `FineLabel.raw_label`: ausschließlich als regulärer
+    React-Textknoten."""
+
+    __tablename__ = "events"
+    __table_args__ = (
+        UniqueConstraint("criterion_scoring_run_id", "position", name="uq_event_run_position"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    criterion_scoring_run_id: Mapped[int] = mapped_column(ForeignKey("criterion_scoring_runs.id"))
+    # 1-basiert, chronologisch je Lauf.
+    position: Mapped[int]
+    started_at: Mapped[datetime]
+    ended_at: Mapped[datetime]
+    landmark_name: Mapped[str | None] = mapped_column(default=None)
+    # "landmark" | "coordinate" | "multiple" (events.py::PLACE_KINDS). Freier String ohne Enum wie
+    # `category_key`: der Lesepfad prüft die Mitgliedschaft und liefert bei einem unbekannten Wert
+    # "kein Ortsbezug" statt einer 500.
+    place_kind: Mapped[str | None] = mapped_column(default=None)
+    place_lat: Mapped[float | None] = mapped_column(default=None)
+    place_lon: Mapped[float | None] = mapped_column(default=None)
+
+
 class PhotoRanking(Base):
-    """Der volle, sortierte Kandidatenpool einer Partition (cluster_key x category_key) für einen
+    """Der volle, sortierte Kandidatenpool einer Partition (event_id x category_key) für einen
     CriterionScoringRun - NICHT nur die Top-N. "Zeig die besten X pro Kategorie" ist damit eine
     reine Lese-Query (GET /projects/{id}/photos?top_n_per_category=N), kein Job-Parameter, und
     Backfill ein Nebeneffekt eines erneuten Abrufs nach einer Rating-Änderung; kein Server-Code
@@ -482,7 +531,12 @@ class PhotoRanking(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     criterion_scoring_run_id: Mapped[int] = mapped_column(ForeignKey("criterion_scoring_runs.id"))
     photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
-    cluster_key: Mapped[str]
+    # ECHTER Fremdschlüssel und NOT NULL: die Löschzusage prüft Erreichbarkeit über die Kanten in
+    # `Base.metadata`, eine bloß logische Spalte fiele still heraus. Nullbarkeit ist keine
+    # Testfrage, sondern eine fachliche Festlegung - die Migration entwertet die Altläufe, damit
+    # "jedes Kandidatenfoto gehört zu genau einem Event" ausnahmslos gilt und weder Lesepfad noch
+    # Spec einen Ausnahmezweig für einen Zustand tragen, den die Anwendung selbst nie erzeugt.
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
     category_key: Mapped[str]
     rank_score: Mapped[float]
     rank_position: Mapped[int]

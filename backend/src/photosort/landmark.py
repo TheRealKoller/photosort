@@ -41,9 +41,9 @@ _MAX_RESPONSE_TOKENS = 256
 
 # Sicherheits-Muss-Kriterium: Obergrenze eines verwendbaren Sehenswuerdigkeit-Namens. Wie
 # `MAX_FINE_LABEL_LENGTH` eine DEGENERATIONSGRENZE, keine Sanitisierungsmassnahme - und wie dort
-# wird VERWORFEN statt abgeschnitten: `scoring.py::refine_clusters_by_landmark` vergleicht exakt,
-# ein abgeschnittener Name fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Cluster zusammen.
-# Der Cluster faellt dann auf die Koordinatenstufe zurueck.
+# wird VERWORFEN statt abgeschnitten: `events.py::LandmarkChangeSignal` vergleicht exakt, ein
+# abgeschnittener Name fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Event zusammen.
+# Das Event faellt dann auf die Koordinatenstufe zurueck.
 #
 # 80 statt der 60 des Feinlabel-Pfads: Sehenswuerdigkeitsnamen sind laenger.
 MAX_LANDMARK_NAME_LENGTH = 80
@@ -97,9 +97,10 @@ def sanitize_landmark_name(raw: object) -> str | None:
     Sanitisierung, oder laenger als `MAX_LANDMARK_NAME_LENGTH`.
 
     Die Funktion wird an ZWEI Stellen angewandt: an der Quelle in `_landmark_detection_from_json`
-    unten UND im Lesepfad, der `PhotoOut.cluster_place.landmark_name` befuellt. Die Begruendung
-    fuer die doppelte Anwendung steht an der Lesestelle in `api/photos.py` - sie deckt den
-    unsanierten Altbestand, fuer den es keinen kostenlosen Migrationsweg gibt."""
+    unten UND beim Lesen der bereits persistierten Zeilen in `worker.py::_landmark_names`, aus dem
+    `events.landmark_name` entsteht. Die Begruendung fuer die doppelte Anwendung steht dort - sie
+    deckt den unsanierten Altbestand in `photo_landmark_detections`, fuer den es keinen
+    kostenlosen Migrationsweg gibt."""
     if not isinstance(raw, str):
         return None
     sanitized = _sanitize_label_text(raw)
@@ -125,9 +126,9 @@ def _landmark_detection_from_json(
         raise LandmarkApiError("Unerwartete Antwortstruktur der Vision-API-Antwort.")
     # Sicherheits-Muss-Kriterium: Sanitisierung und Laengengrenze AN DER QUELLE. Solange der Name
     # nirgends gerendert wurde, ging er als Rohwert in die Datenbank - mit dem Rendern in der
-    # Cluster-Ueberschrift faellt dieser Schutz weg. Ein zu langer Name wird GANZ verworfen, nie
-    # abgeschnitten: `scoring.py::refine_clusters_by_landmark` vergleicht exakt, ein
-    # abgeschnittener Name fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Cluster zusammen.
+    # Event-Ueberschrift faellt dieser Schutz weg. Ein zu langer Name wird GANZ verworfen, nie
+    # abgeschnitten: `events.py::LandmarkChangeSignal` vergleicht exakt, ein abgeschnittener Name
+    # fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Event zusammen.
     name = sanitize_landmark_name(name)
     # Das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt - geklemmt bereits HIER (an der
     # Quelle), nicht erst in criteria.py::compute_landmark_score.

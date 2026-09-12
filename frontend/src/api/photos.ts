@@ -18,7 +18,7 @@ export interface ListPhotosParams {
 }
 
 export interface ListCurationCandidatesParams {
-  clusterKey: string
+  eventId: number
   categoryKey: string
   /** Es werden nur Zugehoerigkeiten mit `rank_position > afterRank` geliefert. */
   afterRank: number
@@ -62,7 +62,7 @@ export function listCurationCandidates(
   params: ListCurationCandidatesParams,
 ): Promise<PhotoListOut> {
   const query = new URLSearchParams({
-    cluster_key: params.clusterKey,
+    event_id: String(params.eventId),
     category_key: params.categoryKey,
     after_rank: String(params.afterRank),
   })

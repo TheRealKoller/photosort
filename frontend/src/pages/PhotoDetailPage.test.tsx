@@ -460,7 +460,7 @@ describe('PhotoDetailPage', () => {
             criterion_scores: [criterionScore({ display_name: 'Schärfe', value: 0.734 })],
             rankings: [
               {
-                cluster_key: 'cluster-0',
+                event_id: 1,
                 category_key: 'landscape',
                 rank_score: 0.8,
                 rank_position: 2,
@@ -641,7 +641,7 @@ describe('PhotoDetailPage', () => {
             criterion_scores: [criterionScore()],
             rankings: [
               {
-                cluster_key: 'cluster-0',
+                event_id: 1,
                 category_key: 'people',
                 rank_score: 0.5,
                 rank_position: 1,
@@ -696,7 +696,7 @@ describe('PhotoDetailPage', () => {
         ],
         rankings: [
           {
-            cluster_key: 'cluster-0',
+            event_id: 1,
             category_key: 'tier',
             rank_score: 0.8,
             rank_position: 2,
@@ -872,7 +872,7 @@ describe('PhotoDetailPage', () => {
         criterion_scores: [criterionScore()],
         rankings: [
           {
-            cluster_key: 'cluster-0',
+            event_id: 1,
             category_key: 'tier',
             rank_score: 0.5,
             rank_position: 1,
@@ -933,7 +933,7 @@ describe('PhotoDetailPage', () => {
         criterion_scores: [criterionScore()],
         rankings: [
           {
-            cluster_key: 'cluster-0',
+            event_id: 1,
             category_key: 'tier',
             rank_score: 0.5,
             rank_position: 1,

@@ -44,15 +44,15 @@ export function useCurationQuery(projectId: number, topN: number) {
 // ohne den Praefix stuenden zwei Wahrheiten ueber dasselbe Foto nebeneinander.
 function curationCandidatesQueryKey(
   projectId: number,
-  clusterKey: string,
+  eventId: number,
   categoryKey: string,
   afterRank: number,
 ) {
-  return ['photos', projectId, 'curate', 'candidates', clusterKey, categoryKey, afterRank] as const
+  return ['photos', projectId, 'curate', 'candidates', eventId, categoryKey, afterRank] as const
 }
 
 export interface CurationCandidatesQueryParams {
-  clusterKey: string
+  eventId: number
   categoryKey: string
   afterRank: number
   /** Der Request laeuft ausschliesslich im AUFGEKLAPPTEN Zustand. */
@@ -63,7 +63,7 @@ export interface CurationCandidatesQueryParams {
 export function useCurationCandidatesQuery(
   projectId: number,
   {
-    clusterKey,
+    eventId,
     categoryKey,
     afterRank,
     enabled,
@@ -71,10 +71,10 @@ export function useCurationCandidatesQuery(
   }: CurationCandidatesQueryParams,
 ) {
   return useInfiniteQuery({
-    queryKey: curationCandidatesQueryKey(projectId, clusterKey, categoryKey, afterRank),
+    queryKey: curationCandidatesQueryKey(projectId, eventId, categoryKey, afterRank),
     queryFn: ({ pageParam }: { pageParam: number }) =>
       listCurationCandidates(projectId, {
-        clusterKey,
+        eventId,
         categoryKey,
         afterRank,
         limit: pageSize,

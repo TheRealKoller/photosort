@@ -37,7 +37,7 @@ function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionSc
 
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
   return {
-    cluster_key: 'cluster-0',
+    event_id: 1,
     category_key: 'landscape',
     rank_score: 0.8,
     rank_position: 2,

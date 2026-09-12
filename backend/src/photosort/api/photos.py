@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import enum
-from bisect import bisect_left
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,16 +23,16 @@ from photosort.categories import (
 )
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
-from photosort.landmark import sanitize_landmark_name
+from photosort.events import EffectiveLocation, LocationEntry, infer_locations
 from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    Event,
     Photo,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
-    PhotoLandmarkDetection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -109,14 +108,14 @@ class RankingOut(BaseModel):
     Ein Foto hat pro Lauf eine solche Zeile JE KATEGORIE, zu der es gehört - siehe
     `PhotoOut.rankings`."""
 
-    cluster_key: str
+    event_id: int
     category_key: str
     rank_score: float
     rank_position: int
-    # Größe der GESAMTEN Cluster x Kategorie-Partition (nicht nur der angeforderten top_n), für
+    # Größe der GESAMTEN Event x Kategorie-Partition (nicht nur der angeforderten top_n), für
     # "Rang M von N" im Info-Popover - lauf-global berechnet (siehe _partition_sizes), nicht
     # nutzerspezifisch gefiltert. Zählt ALLE Zeilen der Partition, Haupt- wie Nebenzeilen: die
-    # Frage lautet "wie viele Fotos stehen in dieser Kategorie dieses Clusters".
+    # Frage lautet "wie viele Fotos stehen in dieser Kategorie dieses Events".
     partition_size: int
     # Ob dies die HAUPTkategorie des Fotos ist. Genau eine
     # Zugehoerigkeit je Foto und Lauf traegt `true`. Die Oberflaeche liest die Rolle ausschliesslich
@@ -238,9 +237,8 @@ class PhotoLocationOut(BaseModel):
     source: Literal["exif", "derived"]
 
 
-class ClusterPlaceOut(BaseModel):
-    """Der bereits AUFGELÖSTE Ort des CLUSTERS - auf jedem Foto desselben Clusters
-    identisch, `null`
+class EventPlaceOut(BaseModel):
+    """Der bereits AUFGELÖSTE Ort des EVENTS - auf jedem Foto desselben Events identisch, `null`
     ohne jede Ortsinformation.
 
     Der Server liefert den fertigen ZUSTAND, nicht die Rohdaten fuer eine Rangfolge: `kind` benennt,
@@ -250,19 +248,32 @@ class ClusterPlaceOut(BaseModel):
     `kind="multiple"` traegt STRUKTURELL keine Koordinate: es gibt den einen Ort, den sie
     repraesentieren muesste, gerade nicht.
 
-    `landmark_name` ist freier, extern erzeugter LLM-Text (`PhotoLandmarkDetection.name`) -
-    dieselbe Auflage wie bei `FineLabelOut.raw_label`: ausschliesslich als regulaerer
-    React-Textknoten rendern, nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in
-    `href`/`src`/`style`, nie als React-`key`. Bricht in
+    `landmark_name` ist freier, extern erzeugter LLM-Text (`Event.landmark_name`, ueber
+    `sanitize_landmark_name` entstanden) - dieselbe Auflage wie bei `FineLabelOut.raw_label`:
+    ausschliesslich als regulaerer React-Textknoten rendern, nie `dangerouslySetInnerHTML`, nie als
+    HTML-String-Prop, nie in `href`/`src`/`style`, nie als React-`key`. Bricht in
     `frontend/src/pages/CurateCategoriesPage.test.tsx`, Fall
-    `rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup`.
-
-    Wird NIRGENDS persistiert."""
+    `rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup`."""
 
     kind: Literal["landmark", "coordinate", "multiple"]
     landmark_name: str | None = None
     lat: float | None = None
     lon: float | None = None
+
+
+class EventOut(BaseModel):
+    """Das Event, zu dem dieses Foto im letzten erfolgreichen Lauf gehoert.
+
+    Der Server liefert weiterhin KEINE fertige Ueberschrift, sondern ihre Teile: Nummer,
+    Zeitspanne und den aufgeloesten Ort. Anders als die frueheren Cluster-Angaben haengt hier
+    nichts mehr davon ab, welche Fotos eine Antwort gerade enthaelt - alle vier Werte stehen in
+    der `events`-Zeile."""
+
+    id: int
+    position: int
+    started_at: datetime
+    ended_at: datetime
+    place: EventPlaceOut | None = None
 
 
 class PhotoOut(BaseModel):
@@ -313,7 +324,7 @@ class PhotoOut(BaseModel):
     # `PhotoOut` waere genau die "zweite, driftende Abbildung", vor der der `rankings`-Kommentar
     # oben warnt.
     location: PhotoLocationOut | None = None
-    cluster_place: ClusterPlaceOut | None = None
+    event: EventOut | None = None
 
 
 class PhotoListOut(BaseModel):
@@ -585,220 +596,129 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     ]
 
 
-# Anzeigerundung der Cluster-Koordinate: zwei Nachkommastellen entsprechen rund 1,1 km (Vorgabe
-# "grob, ~1 km"). Die Rundung liegt im BACKEND, nie im Frontend - dieselbe Zahl entscheidet hier
-# ueber `"coordinate"` vs. `"multiple"`, und diese Stufe ist ohne den vollstaendigen Cluster nicht
-# bestimmbar. Das Frontend formatiert den bereits gerundeten Wert nur noch.
-_CLUSTER_PLACE_COORDINATE_DIGITS = 2
-
-
-def _rounded(value: float) -> float:
-    """Auf die Anzeigegenauigkeit gerundet, mit `-0.0` normalisiert auf `0.0`.
-
-    `-0.0` waere im JSON `-0.0` und im Frontend `"-0.00"` - eine Himmelsrichtung, die es nicht
-    gibt. Die Addition von `0.0` erledigt das nach IEEE 754 ohne Sonderfallzweig
-    (`-0.0 + 0.0 == +0.0`) und laesst jeden anderen Wert unveraendert."""
-    return round(value, _CLUSTER_PLACE_COORDINATE_DIGITS) + 0.0
-
-
-@dataclass(frozen=True)
-class _ClusterMember:
-    """Ein Foto des vollstaendigen Clusters, soweit es zur Ortsaussage beitraegt."""
-
-    photo_id: int
-    taken_at: datetime
-    gps_lat: float | None
-    gps_lon: float | None
-    landmark_name: str | None
-
-
 @dataclass(frozen=True)
 class PhotoPlace:
-    """Das Ergebnis der Ortsherleitung fuer EIN Foto - beide Antwortfelder aus derselben
-    Cluster-Abfrage. `NO_PLACE` ist der Zustand "kein Ort bekannt"; er ist auch die
-    AUSFALLRICHTUNG, wenn kein Bezugslauf existiert oder ein Foto keine Kandidatenzeile hat."""
+    """Die beiden Ortsfelder EINES Fotos. `NO_PLACE` ist der Zustand "nichts bekannt" und zugleich
+    die AUSFALLRICHTUNG, wenn kein Bezugslauf existiert oder ein Foto keine Rangzeile hat."""
 
     location: PhotoLocationOut | None = None
-    cluster_place: ClusterPlaceOut | None = None
+    event: EventOut | None = None
 
 
 NO_PLACE = PhotoPlace()
 
 
-def _cluster_place_of(members: list[_ClusterMember]) -> ClusterPlaceOut | None:
-    """Die Stufenentscheidung ueber den VOLLSTAENDIGEN Cluster.
+def _event_place_out(event: Event) -> EventPlaceOut | None:
+    """Der Ortsteil einer `events`-Zeile - `None` bei unbekanntem oder fehlendem `place_kind`.
 
-    Rangfolge: erkannte Sehenswuerdigkeit -> genau eine gerundete Koordinate -> mehrere Orte ->
-    `None`. Der Name hat Vorrang auch dann, wenn zusaetzlich abweichende Koordinaten vorliegen.
+    SICHERHEIT (M8): MITGLIEDSCHAFTSPRUEFUNG statt blindem Cast, sonst legt ein einzelner Wert
+    ausserhalb des Vorrats die gesamte Listenantwort auf 500. Die drei Zweige sind einzeln
+    ausgeschrieben und setzen dabei die Feldkombination ein zweites Mal durch: eine driftende
+    Zeile kann so keine Koordinate unter `"multiple"` ausliefern."""
+    if event.place_kind == "landmark":
+        return EventPlaceOut(kind="landmark", landmark_name=event.landmark_name)
+    if event.place_kind == "coordinate":
+        return EventPlaceOut(kind="coordinate", lat=event.place_lat, lon=event.place_lon)
+    if event.place_kind == "multiple":
+        return EventPlaceOut(kind="multiple")
+    return None
 
-    `members` ist bereits nach `(taken_at, photo_id)` sortiert: nach der Verfeinerung traegt ein
-    Cluster hoechstens EINEN Namen - defensiv gewinnt der des chronologisch fruehesten Fotos, damit
-    die Anzeige auch bei einem Altbestand deterministisch bleibt."""
-    for member in members:
-        if member.landmark_name is not None:
-            return ClusterPlaceOut(kind="landmark", landmark_name=member.landmark_name)
 
-    # VERGLICHEN WIRD DIE GERUNDETE Stelle, nicht der Rohwert: ein Vergleich der ungerundeten
-    # Werte schluege schon bei zwei 40 m auseinanderliegenden Aufnahmen zu und machte aus einem
-    # einzelnen Ortsbesuch "Mehrere Orte".
-    cells = {
-        (_rounded(member.gps_lat), _rounded(member.gps_lon))
-        for member in members
-        if member.gps_lat is not None and member.gps_lon is not None
-    }
-    if not cells:
+def _event_out(event: Event) -> EventOut:
+    return EventOut(
+        id=event.id,
+        position=event.position,
+        started_at=event.started_at,
+        ended_at=event.ended_at,
+        place=_event_place_out(event),
+    )
+
+
+def _location_out(location: EffectiveLocation | None) -> PhotoLocationOut | None:
+    """`source` ist ein SICHERHEITSMERKMAL, kein Anzeigedetail: es entsteht ausschliesslich aus
+    `EffectiveLocation.inferred` und wird nie aus einem anderen Signal nachgebildet."""
+    if location is None:
         return None
-    if len(cells) > 1:
-        # Strukturell ohne Koordinate, siehe ClusterPlaceOut.
-        return ClusterPlaceOut(kind="multiple")
-    [(lat, lon)] = cells
-    return ClusterPlaceOut(kind="coordinate", lat=lat, lon=lon)
+    return PhotoLocationOut(
+        lat=location.lat, lon=location.lon, source="derived" if location.inferred else "exif"
+    )
 
 
-def _derived_location_of(photo: Photo, anchors: list[_ClusterMember]) -> PhotoLocationOut | None:
-    """Der Ort EINES Fotos: die eigene Koordinate in voller Praezision, sonst die des zeitlich
-    naechstgelegenen Fotos MIT Koordinate im selben Cluster.
-
-    `anchors` sind die koordinatentragenden Mitglieder, aufsteigend nach `(taken_at, photo_id)`.
-    Tie-Break (deterministisch, sonst haenge die angezeigte Koordinate an der Zeilenreihenfolge der
-    Datenbank): bei gleichem Abstand gewinnt der FRUEHERE Zeitpunkt, bei identischem `taken_at` die
-    kleinere `photo_id` - beides ergibt sich aus der Sortierung plus dem `<=`-Vergleich unten.
-
-    Die Suche läuft über `key=` DIREKT auf `anchors`: KEINE vorgeschaltete Hilfsliste aller
-    Zeitstempel - die waere bereits linear, und zwar einmal JE FOTO der Antwort (O(N x M)), und
-    machte den `bisect` zur Zierde."""
-    if photo.gps_lat is not None and photo.gps_lon is not None:
-        return PhotoLocationOut(lat=photo.gps_lat, lon=photo.gps_lon, source="exif")
-    if not anchors:
-        return None
-
-    index = bisect_left(anchors, photo.taken_at, key=lambda anchor: anchor.taken_at)
-    nearest = anchors[min(index, len(anchors) - 1)]
-    if index > 0:
-        earlier = anchors[index - 1]
-        if index >= len(anchors) or (photo.taken_at - earlier.taken_at) <= (
-            nearest.taken_at - photo.taken_at
-        ):
-            nearest = earlier
-
-    assert nearest.gps_lat is not None and nearest.gps_lon is not None
-    return PhotoLocationOut(lat=nearest.gps_lat, lon=nearest.gps_lon, source="derived")
-
-
-async def _place_by_photo_id(
+async def _event_and_location_by_photo_id(
     session: AsyncSession,
+    project_id: int,
     criterion_scoring_run_id: int | None,
     photos_by_id: Mapping[int, Photo],
     rankings_by_photo_id: Mapping[int, Sequence[PhotoRanking]],
 ) -> dict[int, PhotoPlace]:
-    """Beide Ortsfelder aller Fotos einer Antwort - aus EINER Abfrage ueber den VOLLSTAENDIGEN
-    Cluster des Bezugslaufs.
+    """Beide Ortsfelder aller Fotos einer Antwort aus ZWEI Abfragen - ihre Zahl ist fest und
+    unabhaengig von der Zahl der Fotos.
 
-    Die Bezugsmenge ist ausdruecklich NICHT die Antwort: die Kuratierungsansicht liefert je
-    Partition nur `rank_position <= topN`, und die nachgeladenen Kandidaten fliessen nie in `items`
-    zurueck (eigene Abfrage in `CurationCandidates.tsx`). Ueber die Fotos der Antwort hergeleitet
-    waere der Cluster-Ort deshalb nicht "springend", sondern DAUERHAFT eine Aussage ueber die
-    Top-N - und `topN` ist zusaetzlich ein Suchparameter der Seite (1-10).
+    (a) Alle Fotos DIESES Projekts als Inferenzbasis von `events.py::infer_locations`. Die
+    Bezugsmenge ist ausdruecklich nicht die Antwort und auch nicht die Kandidatenmenge: ein
+    aussortiertes Foto traegt eine ebenso gueltige Koordinate. Dieselbe Funktion speist den
+    Worker - zwei Herleitungen derselben Sache liefen an dem Tag auseinander, an dem eine ihre
+    Bezugsmenge aendert.
 
-    SICHERHEIT - Laufbindung (Muss-Kriterium der Spec, gilt fuer BEIDE Felder): `cluster_key` ist
-    `cluster-<n>`, je Lauf neu vergeben und IN JEDEM PROJEKT DERSELBE STRING; `photo_rankings`
-    traegt keine `project_id`. Die einzige Bindung eines Clusters an sein Projekt ist
-    `criterion_scoring_run_id` aus `_latest_successful_criterion_scoring_run_id(session,
-    project_id)`. Dieses Praedikat steht deshalb AUSGESCHRIEBEN in der Abfrage unten - ohne es
-    ordnete die Herleitung SYSTEMATISCH (nicht im Grenzfall) Koordinaten aus fremden Projekten zu
-    und benennte ein Cluster nach einer Sehenswuerdigkeit aus einem fremden Projekt, weil die
-    Schluesselkollision garantiert ist. `_photos_by_id` filtert nur nach Id und ist ausdruecklich
-    KEINE zweite Verteidigungslinie.
+    (b) Die Events der Rangzeilen dieser Antwort.
 
-    Die Lauf-Id wird EINMAL PRO REQUEST aufgeloest und hierher durchgereicht, nie innerhalb dieser
-    Funktion neu bestimmt - sonst traefen Rangzeilen aus Lauf A auf Cluster-Mitgliedschaften aus
-    Lauf B, sobald zwischen zwei Queries ein Lauf fertig wird. Fehlt sie, bleibt es bei der EIGENEN
-    EXIF-Koordinate: die Ausfallrichtung ist "nichts anzeigen", nie "aus irgendeinem Lauf
-    herleiten".
+    SICHERHEIT - zwei GETRENNTE Bindungen, beide ausgeschrieben:
 
-    Gelesen wird `PhotoRanking.cluster_key` (der landmark-VERFEINERTE Schluessel), nicht
-    `PhotoScore.cluster_key` - der groebere fuehrte den Ort ueber genau die Landmark-Grenze hinweg,
-    die dieses Feature gerade zieht.
+    * (M5) Die Inferenzbasis haengt an `Photo.project_id`. Ohne sie erbte ein Foto Koordinaten aus
+      einem fremden Projekt.
+    * (M1) Die Event-Abfrage haengt an `Event.criterion_scoring_run_id` - `event_id` ist ein
+      GLOBALER Surrogatschluessel, und eine Id aus Projekt B identifiziert unter `/projects/A/...`
+      eindeutig ein fremdes Event. Die Lauf-Id wird EINMAL PRO REQUEST aufgeloest und hierher
+      durchgereicht, nie in dieser Funktion neu bestimmt; fehlt sie, bleibt `event` `None`. Die
+      Ausfallrichtung ist "nichts anzeigen", nie "aus irgendeinem Lauf herleiten".
 
-    VERFUEGBARKEIT: EIN Query pro Request, nicht einer pro Foto; die Ergebnismenge ist durch die
-    Projektgroesse begrenzt."""
-    # Alle Rangzeilen EINES Fotos tragen denselben cluster_key (die Partitionen sind
-    # cluster x kategorie, die Cluster-Zugehoerigkeit ist pro Foto eindeutig) - die erste genuegt.
-    cluster_key_by_photo_id = {
-        photo_id: rankings[0].cluster_key
+    `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie."""
+    if not photos_by_id:
+        return {}
+
+    location_rows = (
+        await session.execute(
+            select(Photo.id, Photo.taken_at, Photo.gps_lat, Photo.gps_lon).where(
+                Photo.project_id == project_id
+            )
+        )
+    ).all()
+    effective_locations = infer_locations(
+        LocationEntry(photo_id=photo_id, taken_at=taken_at, gps_lat=gps_lat, gps_lon=gps_lon)
+        for photo_id, taken_at, gps_lat, gps_lon in location_rows
+    )
+
+    # Alle Rangzeilen EINES Fotos tragen dieselbe `event_id` (die Partitionen sind
+    # Event x Kategorie, die Event-Zugehoerigkeit ist pro Foto eindeutig) - die erste genuegt.
+    event_id_by_photo_id = {
+        photo_id: rankings[0].event_id
         for photo_id, rankings in rankings_by_photo_id.items()
         if rankings
     }
-    cluster_keys = set(cluster_key_by_photo_id.values())
-    if criterion_scoring_run_id is None or not cluster_keys:
-        return {
-            photo_id: PhotoPlace(location=_derived_location_of(photo, []))
-            for photo_id, photo in photos_by_id.items()
+    events_by_id: dict[int, EventOut] = {}
+    if criterion_scoring_run_id is not None and event_id_by_photo_id:
+        events_by_id = {
+            event.id: _event_out(event)
+            for event in (
+                await session.execute(
+                    select(Event).where(
+                        # SICHERHEIT: das Pflichtpraedikat, siehe Docstring. Nie die Id allein.
+                        Event.criterion_scoring_run_id == criterion_scoring_run_id,
+                        Event.id.in_(set(event_id_by_photo_id.values())),
+                    )
+                )
+            )
+            .scalars()
+            .all()
         }
 
-    landmark = aliased(PhotoLandmarkDetection)
-    rows = (
-        await session.execute(
-            select(
-                PhotoRanking.cluster_key,
-                Photo.id,
-                Photo.taken_at,
-                Photo.gps_lat,
-                Photo.gps_lon,
-                landmark.name,
-            )
-            .join(Photo, Photo.id == PhotoRanking.photo_id)
-            .join(landmark, landmark.photo_id == Photo.id, isouter=True)
-            .where(
-                # SICHERHEIT: das Pflichtpraedikat, siehe Docstring. Nie `cluster_key` allein.
-                PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
-                PhotoRanking.cluster_key.in_(cluster_keys),
-                # Nur Zeilen, die ueberhaupt etwas zur Ortsaussage beitragen - die Ergebnismenge
-                # bleibt damit deutlich unter der Partitionsgroesse.
-                (Photo.gps_lat.is_not(None)) | (landmark.name.is_not(None)),
-            )
-            # Ein Foto hat je Kategorie eine eigene Rangzeile - ohne `distinct` erschiene es
-            # mehrfach im selben Cluster und verzerrte den Tie-Break der Herleitung.
-            .distinct()
+    return {
+        photo_id: PhotoPlace(
+            location=_location_out(effective_locations.get(photo_id)),
+            event=events_by_id.get(event_id_by_photo_id.get(photo_id, 0)),
         )
-    ).all()
-
-    members_by_cluster: dict[str, list[_ClusterMember]] = {}
-    for cluster_key, photo_id, taken_at, gps_lat, gps_lon, landmark_name in rows:
-        members_by_cluster.setdefault(cluster_key, []).append(
-            _ClusterMember(
-                photo_id=photo_id,
-                taken_at=taken_at,
-                gps_lat=gps_lat,
-                gps_lon=gps_lon,
-                # SANITISIERUNG IM LESEPFAD (Muss-Kriterium des Sicherheitskonzepts, Abschnitt
-                # "Standortdaten"): `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl
-                # `landmark.py::_landmark_detection_from_json` sie bereits an der Quelle anwendet.
-                # Sie ist die einzige Deckung des Altbestands: es gibt reale Zeilen mit
-                # unsaniertem Rohtext und fuer sie keinen Migrationsweg.
-                # BITTE NICHT als vermeintliche Dopplung entfernen.
-                landmark_name=sanitize_landmark_name(landmark_name),
-            )
-        )
-
-    place_by_cluster: dict[str, tuple[ClusterPlaceOut | None, list[_ClusterMember]]] = {}
-    for cluster_key, members in members_by_cluster.items():
-        members.sort(key=lambda member: (member.taken_at, member.photo_id))
-        anchors = [
-            member
-            for member in members
-            if member.gps_lat is not None and member.gps_lon is not None
-        ]
-        place_by_cluster[cluster_key] = (_cluster_place_of(members), anchors)
-
-    result: dict[int, PhotoPlace] = {}
-    for photo_id, photo in photos_by_id.items():
-        cluster_key = cluster_key_by_photo_id.get(photo_id)
-        cluster_place, anchors = place_by_cluster.get(cluster_key or "", (None, []))
-        result[photo_id] = PhotoPlace(
-            location=_derived_location_of(photo, anchors), cluster_place=cluster_place
-        )
-    return result
+        for photo_id in photos_by_id
+    }
 
 
 def _to_photo_out(
@@ -806,7 +726,7 @@ def _to_photo_out(
     current_user_id: int,
     project: Project,
     rankings: Sequence[PhotoRanking] = (),
-    partition_sizes: Mapping[tuple[str, str], int] | None = None,
+    partition_sizes: Mapping[tuple[int, str], int] | None = None,
     curation_positions: Mapping[tuple[int, str], int] | None = None,
     place: PhotoPlace = NO_PLACE,
 ) -> PhotoOut:
@@ -849,12 +769,12 @@ def _to_photo_out(
         suggestion=suggestion,
         rankings=[
             RankingOut(
-                cluster_key=ranking.cluster_key,
+                event_id=ranking.event_id,
                 category_key=ranking.category_key,
                 rank_score=ranking.rank_score,
                 rank_position=ranking.rank_position,
                 partition_size=(partition_sizes or {}).get(
-                    (ranking.cluster_key, ranking.category_key), 0
+                    (ranking.event_id, ranking.category_key), 0
                 ),
                 is_primary=ranking.is_primary,
                 curation_position=(curation_positions or {}).get(
@@ -878,11 +798,11 @@ def _to_photo_out(
         category_override=photo.score.category_override if photo.score is not None else None,
         category_candidates=_category_candidates_out(photo),
         cloud_vision_status=_cloud_vision_status_out(photo, project),
-        # Beide Felder kommen fertig aus `_place_by_photo_id`. Der Vorgabewert `NO_PLACE` haelt
-        # die Ausfallrichtung fest: eine vergessene Durchreichung ergibt `null`, nie einen
-        # falschen Ort.
+        # Beide Felder kommen fertig aus `_event_and_location_by_photo_id`. Der Vorgabewert
+        # `NO_PLACE` haelt die Ausfallrichtung fest: eine vergessene Durchreichung ergibt `null`,
+        # nie einen falschen Ort.
         location=place.location,
-        cluster_place=place.cluster_place,
+        event=place.event,
     )
 
 
@@ -905,7 +825,7 @@ async def _latest_successful_criterion_scoring_run_id(
 async def _top_n_per_category_photo_ids(
     session: AsyncSession, project_id: int, top_n: int
 ) -> tuple[list[int], dict[tuple[int, str], int], int | None]:
-    """Kategorie-Kuratierung, ohne Backfill: liefert je Partition (cluster_key x category_key)
+    """Kategorie-Kuratierung, ohne Backfill: liefert je Partition (event_id x category_key)
     des LETZTEN erfolgreichen CriterionScoringRun die Zugehörigkeiten mit
     `rank_position <= top_n`.
 
@@ -944,7 +864,7 @@ async def _top_n_per_category_photo_ids(
             PhotoRanking.criterion_scoring_run_id == latest_run_id,
             PhotoRanking.rank_position <= top_n,
         )
-        .order_by(PhotoRanking.cluster_key, PhotoRanking.category_key, PhotoRanking.rank_position)
+        .order_by(PhotoRanking.event_id, PhotoRanking.category_key, PhotoRanking.rank_position)
     )
     ordered_ids: list[int] = []
     seen: set[int] = set()
@@ -959,23 +879,26 @@ async def _top_n_per_category_photo_ids(
 
 async def _partition_sizes(
     session: AsyncSession, criterion_scoring_run_id: int
-) -> dict[tuple[str, str], int]:
-    """Größe jeder Cluster x Kategorie-Partition eines Laufs, für "Rang M von N" im
+) -> dict[tuple[int, str], int]:
+    """Größe jeder Event x Kategorie-Partition eines Laufs, für "Rang M von N" im
     Info-Popover - ein einzelner GROUP BY-Query pro list_photos-Aufruf (nicht pro Foto).
     Bewusst lauf-global, nicht
     nutzerspezifisch gefiltert - siehe RankingOut.partition_size-Docstring.
 
+    SICHERHEIT (M1): das Lauf-Prädikat steht auch HIER - diese Zählabfrage liegt hinter `total`
+    des Kandidaten-Endpunkts und ist damit eine Abfrage dieses Endpunkts wie jede andere.
+
     Zählt AUSDRÜCKLICH ALLE Zeilen der Partition, Haupt- wie Nebenzeilen - anders als die
     Kategorienverteilung der Statistikseite
     und `category_diff.py`, die auf `is_primary` filtern. Zwei Zaehlweisen, zwei Fragen: hier "wie
-    viele Fotos stehen in dieser Kategorie dieses Clusters", dort "welche Kategorie hat dieses
+    viele Fotos stehen in dieser Kategorie dieses Events", dort "welche Kategorie hat dieses
     Foto"."""
     result = await session.execute(
-        select(PhotoRanking.cluster_key, PhotoRanking.category_key, func.count())
+        select(PhotoRanking.event_id, PhotoRanking.category_key, func.count())
         .where(PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id)
-        .group_by(PhotoRanking.cluster_key, PhotoRanking.category_key)
+        .group_by(PhotoRanking.event_id, PhotoRanking.category_key)
     )
-    return {(cluster_key, category_key): count for cluster_key, category_key, count in result.all()}
+    return {(event_id, category_key): count for event_id, category_key, count in result.all()}
 
 
 # Registry-Anzeigereihenfolge als Rang - dieselbe Reihenfolge wie `GET /categories` und die
@@ -1050,8 +973,8 @@ async def list_photos(
             if criterion_scoring_run_id is not None
             else {}
         )
-        place_by_id = await _place_by_photo_id(
-            session, criterion_scoring_run_id, photos_by_id, rankings_by_id
+        place_by_id = await _event_and_location_by_photo_id(
+            session, project_id, criterion_scoring_run_id, photos_by_id, rankings_by_id
         )
         items = [
             _to_photo_out(
@@ -1083,7 +1006,9 @@ async def list_photos(
     partition_sizes = (
         await _partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
     )
-    place_by_id = await _place_by_photo_id(session, latest_run_id, photos_by_id, rankings_by_id)
+    place_by_id = await _event_and_location_by_photo_id(
+        session, project_id, latest_run_id, photos_by_id, rankings_by_id
+    )
     items = [
         _to_photo_out(
             photos_by_id[photo_id],
@@ -1101,11 +1026,12 @@ async def list_photos(
     return PhotoListOut(items=items, total=total)
 
 
-# SICHERHEIT - Obergrenze der beiden freien Partitionsschlüssel: `cluster_key`/`category_key`
-# werden bewusst NICHT gegen CATEGORY_REGISTRY geprüft - der Lesepfad ist tolerant gegenüber
-# Altbestand, und eine Allowlist waere hier ein Produkt-, kein Sicherheitsentscheid (422 statt
-# leerer Liste). Die Laengengrenze ist Verteidigung in der Tiefe, damit ein entarteter Wert gar
-# nicht erst bis zum Datenbankvergleich kommt.
+# SICHERHEIT - Obergrenze des verbliebenen freien Partitionsschlüssels: `category_key` wird
+# bewusst NICHT gegen CATEGORY_REGISTRY geprüft - der Lesepfad ist tolerant gegenüber Altbestand,
+# und eine Allowlist waere hier ein Produkt-, kein Sicherheitsentscheid (422 statt leerer Liste).
+# Die Laengengrenze ist Verteidigung in der Tiefe, damit ein entarteter Wert gar nicht erst bis
+# zum Datenbankvergleich kommt. Der zweite Teil des Schlüssels ist seit Spec 0425 eine Objekt-Id
+# und braucht sie nicht mehr: `ge`/`le` plus Typprüfung sind enger.
 _MAX_PARTITION_KEY_LENGTH = 200
 
 # SICHERHEIT - Obergrenze von `after_rank`/`offset`: ein Pydantic-`int` ist
@@ -1119,7 +1045,12 @@ _MAX_QUERY_POSITION = 1_000_000_000
 @router.get("/projects/{project_id}/curation-candidates", response_model=PhotoListOut)
 async def curation_candidates(
     project_id: int,
-    cluster_key: str = Query(..., max_length=_MAX_PARTITION_KEY_LENGTH),
+    # SICHERHEIT (M3): eine Objekt-Id statt eines Freitextschlüssels. `ge=1` schließt `0` und
+    # negative Werte aus, `le` verhindert, dass ein Wert jenseits von 2^63 unter SQLite einen
+    # `OverflowError` und damit eine 500 statt einer leeren Liste erzeugt. FastAPI spiegelt bei
+    # `422` den Rohwert im `input`-Feld zurück - er wird ausschließlich als React-Textknoten
+    # gerendert, nie geloggt.
+    event_id: int = Query(..., ge=1, le=_MAX_QUERY_POSITION),
     category_key: str = Query(..., max_length=_MAX_PARTITION_KEY_LENGTH),
     after_rank: int = Query(0, ge=0, le=_MAX_QUERY_POSITION),
     limit: int = Query(60, ge=1, le=200),
@@ -1145,18 +1076,21 @@ async def curation_candidates(
     gesetzt - sonst erschiene ein nachgeladenes Foto zusaetzlich unter seinen anderen Kategorien,
     in denen niemand aufgeklappt hat.
 
-    Kein erfolgreicher Lauf, unbekannter `cluster_key`/`category_key` oder ein `after_rank`
-    jenseits der Partitionsgroesse liefern `200` mit leerem `PhotoListOut` - kein Fehler und
-    ausdruecklich keine Rueckspiegelung der uebergebenen Schluessel in einer Fehlermeldung.
+    Kein erfolgreicher Lauf, ein `event_id` aus einem anderen Projekt oder einem aelteren Lauf,
+    ein unbekannter `category_key` oder ein `after_rank` jenseits der Partitionsgroesse liefern
+    `200` mit leerem `PhotoListOut` (`items: []` UND `total: 0`) - kein Fehler und ausdruecklich
+    keine Rueckspiegelung der uebergebenen Werte in einer Fehlermeldung.
 
-    SICHERHEIT - Projektbindung (Muss-Kriterium 2 der Spec): `PhotoRanking` traegt KEINE
-    `project_id`; `cluster_key` ist `cluster-<n>`, je Lauf neu vergeben und in jedem Projekt
-    derselbe String, `category_key` stammt aus einem global gleichen Set. Die einzige Bindung an
-    das Projekt des Pfadparameters ist `criterion_scoring_run_id` aus
-    `_latest_successful_criterion_scoring_run_id(session, project_id)`. Dieses Praedikat steht
-    deshalb in JEDER Abfrage dieses Endpunkts - der Zaehlabfrage hinter `total` (ueber
-    `_partition_sizes`) eingeschlossen - und wird nie aus einem Query-Parameter abgeleitet.
-    `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie."""
+    SICHERHEIT - Projektbindung (M1): `PhotoRanking` traegt KEINE `project_id`, und `event_id` ist
+    ein GLOBALER Surrogatschluessel - eine Id aus Projekt B identifiziert hier eindeutig FREMDE
+    Rangzeilen. Ohne das Lauf-Praedikat liefe der Endpunkt nicht in eine erkennbar falsche
+    Kollisionsmenge, sondern lieferte KOHAERENTE Fotos eines fremden Projekts: die Ausfallrichtung
+    wird unauffaelliger, nicht harmloser. Die einzige Bindung an das Projekt des Pfadparameters ist
+    `criterion_scoring_run_id` aus `_latest_successful_criterion_scoring_run_id(session,
+    project_id)`. Dieses Praedikat steht deshalb in JEDER Abfrage dieses Endpunkts - der
+    Zaehlabfrage hinter `total` (ueber `_partition_sizes`) eingeschlossen - und wird nie aus einem
+    Query-Parameter abgeleitet. `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE
+    zweite Verteidigungslinie."""
     project = await _get_project_or_404(project_id, session)
 
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
@@ -1164,14 +1098,14 @@ async def curation_candidates(
         return PhotoListOut(items=[], total=0)
 
     partition_sizes = await _partition_sizes(session, latest_run_id)
-    total = max(partition_sizes.get((cluster_key, category_key), 0) - after_rank, 0)
+    total = max(partition_sizes.get((event_id, category_key), 0) - after_rank, 0)
 
     rows = (
         await session.execute(
             select(PhotoRanking.photo_id, PhotoRanking.rank_position)
             .where(
                 PhotoRanking.criterion_scoring_run_id == latest_run_id,
-                PhotoRanking.cluster_key == cluster_key,
+                PhotoRanking.event_id == event_id,
                 PhotoRanking.category_key == category_key,
                 PhotoRanking.rank_position > after_rank,
             )
@@ -1189,7 +1123,9 @@ async def curation_candidates(
     }
     photos_by_id = await _photos_by_id(session, ids)
     rankings_by_id = await _rankings_by_photo_id(session, latest_run_id, ids)
-    place_by_id = await _place_by_photo_id(session, latest_run_id, photos_by_id, rankings_by_id)
+    place_by_id = await _event_and_location_by_photo_id(
+        session, project_id, latest_run_id, photos_by_id, rankings_by_id
+    )
     items = [
         _to_photo_out(
             photos_by_id[photo_id],
@@ -1289,7 +1225,7 @@ async def _reassign_or_conflict(
     session: AsyncSession,
     run_id: int,
     photo_id: int,
-    cluster_key: str,
+    event_id: int,
     new_category_key: str,
 ) -> None:
     """SICHERHEIT: führt die Neuableitung aus und bildet einen `IntegrityError` aus dem
@@ -1300,7 +1236,7 @@ async def _reassign_or_conflict(
     Diese Abbildung deckt den Rest ab - insbesondere zwei tatsaechlich gleichzeitige Schreibversuche
     fuer dasselbe Foto, bei denen die Sperre nicht greifen konnte."""
     try:
-        await reassign_photo_category(session, run_id, photo_id, cluster_key, new_category_key)
+        await reassign_photo_category(session, run_id, photo_id, event_id, new_category_key)
     except IntegrityError as exc:
         await session.rollback()
         raise HTTPException(
@@ -1318,8 +1254,9 @@ async def _current_ranking_for_photo(
 
     Der `is_primary`-Filter ist nicht optional: `scalar_one_or_none()` wirft ab der zweiten
     Zeile, und ein Foto hat bis zu vier.
-    Gemeint ist hier ausschliesslich die Hauptzeile - aus ihr kommt der `cluster_key` fuer die
-    Neuableitung."""
+    Gemeint ist hier ausschliesslich die Hauptzeile - aus ihr kommt die `event_id` fuer die
+    Neuableitung. SICHERHEIT (M4): SERVERSEITIG aus der Zeile des aufgeloesten Laufs, nie aus
+    Body oder Query."""
     run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if run_id is None:
         return None
@@ -1385,9 +1322,7 @@ async def set_category_override(
     if score is not None:
         score.category_override = payload.category_key
 
-    await _reassign_or_conflict(
-        session, run_id, photo_id, ranking.cluster_key, payload.category_key
-    )
+    await _reassign_or_conflict(session, run_id, photo_id, ranking.event_id, payload.category_key)
     # Zweites `commit()` fuer den Fall, dass die Neuableitung ein No-op war (Override auf die
     # bereits geltende Hauptkategorie, ohne Aenderung an den Nebenzeilen): der Override selbst ist
     # trotzdem eine Festlegung des Nutzers und muss persistiert werden - er ueberlebt damit auch
@@ -1446,5 +1381,5 @@ async def delete_category_override(
     # `reassign_photo_category` die rekonstruierte Hauptzeile faelschlich fuer eine manuelle
     # Festlegung und liesse sie ungedaempft.
     score.category_override = None
-    await _reassign_or_conflict(session, run_id, photo_id, ranking.cluster_key, new_category_key)
+    await _reassign_or_conflict(session, run_id, photo_id, ranking.event_id, new_category_key)
     await session.commit()

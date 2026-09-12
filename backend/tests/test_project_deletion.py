@@ -146,6 +146,7 @@ async def test_delete_projects_returns_deleted_row_counts_per_table(
     assert deleted["projects"] == 1
     assert deleted["photos"] == 1
     assert deleted["photo_rankings"] == 1
+    assert deleted["events"] == 1
     assert set(deleted) == tables_reachable_from_projects() | {"projects"}
 
 

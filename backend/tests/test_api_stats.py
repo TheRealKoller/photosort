@@ -39,6 +39,7 @@ from photosort.models import (
 )
 from photosort.security import hash_password
 from photosort.thumbnails import display_path, thumbnail_path
+from tests.event_rows import event_id_of_run
 
 # specs/features/0207-projekt-statistikseite.md: ein einziger, aggregierender Nur-Lese-Endpunkt
 # ueber Bestandsdaten. Schwerpunkt der Teststrategie ist die Integrationsebene (echte In-Memory-
@@ -247,7 +248,7 @@ async def _add_ranking(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
-            cluster_key="cluster-0",
+            event_id=await event_id_of_run(session, run),
             category_key=category_key,
             rank_score=0.5,
             rank_position=1,

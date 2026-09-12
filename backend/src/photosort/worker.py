@@ -60,6 +60,12 @@ from photosort.criteria import (
     normalize_sharpness,
 )
 from photosort.db import async_session_factory
+from photosort.events import (
+    EventCandidate,
+    LocationEntry,
+    build_events,
+    infer_locations,
+)
 from photosort.horizon import compute_horizon_tilt_score
 from photosort.label_embedding import LabelEmbedderLike, build_label_embedder
 from photosort.landmark import (
@@ -74,6 +80,7 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    Event,
     FineLabel,
     Photo,
     PhotoCategoryClassification,
@@ -111,7 +118,6 @@ from photosort.scoring import (
     compute_dhash,
     compute_exposure,
     compute_sharpness,
-    refine_clusters_by_landmark,
 )
 from photosort.thumbnails import generate_variants, variant_path
 
@@ -1182,19 +1188,21 @@ async def _landmark_names(
     dasselbe Muster wie `_remote_category_evidence` oben, ein einzelner Lesezugriff, KEIN
     Cloud-Aufruf.
 
-    Gelesen wird die TABELLE, NIE eine laufinterne Abbildung der Cloud-Antworten: die Verfeinerung
+    Gelesen wird die TABELLE, NIE eine laufinterne Abbildung der Cloud-Antworten: das Trennsignal
     wirkt damit auch in einem Lauf, in dem die Cloud-Phase gar nicht lief (Einwilligung aus,
     Cloud-Haekchen abgewaehlt, oder alle Fotos bereits in einem frueheren Lauf erkannt), und ein
-    erneuter Kriterien-Lauf teilt dieselben Cluster wieder gleich auf. Eine In-Memory-Variante
-    koppelte die Aufteilung still an die Frage, ob im SELBEN Lauf Geld ausgegeben wurde.
+    erneuter Kriterien-Lauf zieht dieselben Grenzen wieder. Eine In-Memory-Variante koppelte die
+    Gliederung still an die Frage, ob im SELBEN Lauf Geld ausgegeben wurde.
 
-    SANITISIERUNG IM LESEPFAD (Muss-Kriterium des Sicherheitskonzepts, Abschnitt
-    "Standortdaten"): `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl
-    `_landmark_detection_from_json` sie bereits an der Quelle anwendet. Sie ist die einzige
-    Deckung des Altbestands: es gibt reale Zeilen mit unsaniertem Rohtext und fuer sie keinen
-    Migrationsweg. Bitte nicht als vermeintliche Dopplung entfernen. Fachlich wirkt sie hier
-    zusaetzlich als Zusammenfuehrung: ein unsanierter Altname und sein sauberer Zwilling meinen
-    dieselbe Sehenswuerdigkeit und duerfen ihren Cluster nicht zerteilen."""
+    Dies ist zugleich die EINZIGE Quelle von `events.landmark_name` (Sicherheitsauflage M9).
+
+    SANITISIERUNG BEIM LESEN DER PERSISTIERTEN ZEILEN (Muss-Kriterium des Sicherheitskonzepts,
+    Abschnitt "Standortdaten"): `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl
+    `landmark.py::_landmark_detection_from_json` sie bereits an der Quelle anwendet. Sie ist die
+    einzige Deckung des Altbestands: es gibt reale Zeilen mit unsaniertem Rohtext und fuer sie
+    keinen Migrationsweg. Bitte nicht als vermeintliche Dopplung entfernen. Fachlich wirkt sie
+    hier zusaetzlich als Zusammenfuehrung: ein unsanierter Altname und sein sauberer Zwilling
+    meinen dieselbe Sehenswuerdigkeit und duerfen ihr Event nicht zerteilen."""
     if not photo_ids:
         return {}
 
@@ -1411,7 +1419,7 @@ async def run_criterion_scoring(
     use_cloud: bool = False,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
-    abgeleitete Rangfolge je Partition (cluster_key x category_key). Ablauf:
+    abgeleitete Rangfolge je Partition (event_id x category_key). Ablauf:
     CriterionScoringRun
     anlegen -> Guard (scoring_run_id muss der aktuell neueste erfolgreiche ScoringRun sein) ->
     Kriterien je Foto berechnen (sharpness/exposure immer, Inhalts-Kriterien best-effort, periodisch
@@ -1533,7 +1541,6 @@ async def run_criterion_scoring(
         # photo_id -> {criterion_key: value}, nur die in DIESEM Lauf erfolgreich berechneten
         # Werte (reine In-Memory-Grundlage fuer rank_photos unten, kein erneutes DB-Read noetig).
         candidate_values: dict[int, dict[str, float]] = {}
-        cluster_by_photo: dict[int, str] = {}
         processed = 0
         for photo, score in rows:
             values: dict[str, float] = {}
@@ -1569,7 +1576,6 @@ async def run_criterion_scoring(
                     values[criterion_key] = content_values[criterion_key]
 
             candidate_values[photo.id] = values
-            cluster_by_photo[photo.id] = score.cluster_key or ""
 
             processed += 1
             if processed % CRITERION_SCORING_COMMIT_BATCH_SIZE == 0:
@@ -1808,28 +1814,80 @@ async def run_criterion_scoring(
         # REMOTE-Haelfte der Kandidatenmenge; die lokale Haelfte steckt in candidate_values.
         evidence_by_photo_id = await _remote_category_evidence(session, candidate_values.keys())
 
-        # Die Landmark-Verfeinerung ERSETZT `cluster_by_photo` als Ganzes - bis hierhin steht dort
-        # der reine Passthrough aus `PhotoScore.cluster_key`. Die Stelle ist bewusst NACH dem
-        # `finally` der Landmark-Phase (sonst fehlten die Namen, die dieser Lauf gerade erst
-        # erzeugt hat) und VOR dem Aufbau von `partitions` unten (die Partitionsbildung und damit
-        # `PhotoRanking.cluster_key` sollen den verfeinerten Wert nutzen).
+        # DIE EVENT-BILDUNG. Die Stelle ist bewusst NACH dem `finally` der Landmark-Phase (sonst
+        # fehlten die Namen, die dieser Lauf gerade erst erzeugt hat) und VOR dem Aufbau von
+        # `partitions` unten (der Partitionsschluessel ist `(event_id, category_key)`).
         #
-        # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze): der dort
-        # stehende Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-
-        # Scoring laeuft. Die Divergenz beider Felder ist gewollt und dokumentiert.
-        cluster_by_photo = refine_clusters_by_landmark(
-            cluster_by_photo, await _landmark_names(session, candidate_values.keys())
+        # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze): der dort stehende
+        # Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-Scoring
+        # laeuft. Die Divergenz zu `PhotoRanking.event_id` ist gewollt.
+        #
+        # SICHERHEIT (M5): die Inferenzbasis ist JEDES Foto DIESES Projekts - die Bindung an
+        # `Photo.project_id` steht ausgeschrieben und wird aus `CriterionScoringRun.project_id`
+        # abgeleitet. Ohne sie erbte ein Foto Koordinaten aus einem fremden Projekt, und die
+        # Event-Grenzen in Projekt A haengten an Fotos aus Projekt B. Ausdruecklich NICHT auf die
+        # Kandidatenmenge eingeschraenkt: ein aussortiertes Foto traegt eine ebenso gueltige
+        # Koordinate.
+        location_rows = (
+            await session.execute(
+                select(Photo.id, Photo.taken_at, Photo.gps_lat, Photo.gps_lon).where(
+                    Photo.project_id == project.id
+                )
+            )
+        ).all()
+        effective_locations = infer_locations(
+            LocationEntry(photo_id=photo_id, taken_at=taken_at, gps_lat=gps_lat, gps_lon=gps_lon)
+            for photo_id, taken_at, gps_lat, gps_lon in location_rows
         )
+        # `_landmark_names` ist die EINZIGE Quelle fuer `events.landmark_name` (Sicherheitsauflage
+        # M9): kein direkter Zugriff auf `PhotoLandmarkDetection.name` an der Schreibstelle, kein
+        # Abschneiden.
+        landmark_name_by_photo = await _landmark_names(session, candidate_values.keys())
+        photos_by_id = {photo.id: photo for photo, _score in rows}
+        built_events = build_events(
+            EventCandidate(
+                photo_id=photo_id,
+                taken_at=photos_by_id[photo_id].taken_at,
+                location=effective_locations.get(photo_id),
+                gps_lat=photos_by_id[photo_id].gps_lat,
+                gps_lon=photos_by_id[photo_id].gps_lon,
+                landmark_name=landmark_name_by_photo.get(photo_id),
+            )
+            for photo_id in candidate_values
+        )
+
+        event_rows = [
+            Event(
+                criterion_scoring_run_id=run.id,
+                position=built.position,
+                started_at=built.started_at,
+                ended_at=built.ended_at,
+                landmark_name=built.landmark_name,
+                place_kind=built.place_kind,
+                place_lat=built.place_lat,
+                place_lon=built.place_lon,
+            )
+            for built in built_events
+        ]
+        session.add_all(event_rows)
+        # EIN `flush` fuer alle Events, nicht einer je Event: die Ids werden unten als
+        # Partitionsschluessel gebraucht und stehen erst nach dem Schreiben fest.
+        await session.flush()
+        event_id_by_photo = {
+            photo_id: event.id
+            for built, event in zip(built_events, event_rows, strict=True)
+            for photo_id in built.photo_ids
+        }
 
         scores_by_photo_id = {photo.id: score for photo, score in rows}
 
-        partitions: dict[tuple[str, str], dict[int, dict[str, float]]] = {}
+        partitions: dict[tuple[int, str], dict[int, dict[str, float]]] = {}
         # Die Konfidenz je Partition UND Foto - immer die zum Schluessel GENAU DIESER Partition.
         # Dasselbe Foto geht damit in zwei Partitionen mit zwei verschiedenen Zahlen ein; zwei
         # Kategorien werden an keiner Stelle anhand ihrer Zahlen gegeneinander abgewogen.
-        partition_confidences: dict[tuple[str, str], dict[int, object]] = {}
+        partition_confidences: dict[tuple[int, str], dict[int, object]] = {}
         # Ob dieses Foto in dieser Partition die Haupt- oder eine Nebenzeile bekommt.
-        primary_flags: dict[tuple[str, str, int], bool] = {}
+        primary_flags: dict[tuple[int, str, int], bool] = {}
         for photo_id, values in candidate_values.items():
             evidence = evidence_by_photo_id.get(photo_id, NO_REMOTE_CATEGORY_EVIDENCE)
             # Die HAUPTkategorie ist eine reine PRO-FOTO-Funktion über einem geschlossenen Set -
@@ -1849,7 +1907,7 @@ async def run_criterion_scoring(
                 (key, False) for key in secondary_categories(evidence.confidences, primary_key)
             ]
             for category_key, is_primary in memberships:
-                partition_key = (cluster_by_photo[photo_id], category_key)
+                partition_key = (event_id_by_photo[photo_id], category_key)
                 partitions.setdefault(partition_key, {})[photo_id] = values
                 # Eine MANUELL gesetzte Hauptzeile wird NICHT gedaempft: eine menschliche
                 # Festlegung mit einer Modellzahl abzuwerten hiesse, den Nutzer fuer die
@@ -1863,7 +1921,7 @@ async def run_criterion_scoring(
                 primary_flags[(*partition_key, photo_id)] = is_primary
 
         for partition_key, partition_candidates in partitions.items():
-            cluster_key, category_key = partition_key
+            event_id, category_key = partition_key
             ranked_photos = rank_photos(
                 partition_candidates,
                 DEFAULT_CRITERION_WEIGHTS,
@@ -1874,7 +1932,7 @@ async def run_criterion_scoring(
                     PhotoRanking(
                         criterion_scoring_run_id=run.id,
                         photo_id=ranked_photo.photo_id,
-                        cluster_key=cluster_key,
+                        event_id=event_id,
                         category_key=category_key,
                         rank_score=ranked_photo.rank_score,
                         rank_position=ranked_photo.rank_position,
@@ -2381,7 +2439,7 @@ async def reassign_photo_category(
     session: AsyncSession,
     criterion_scoring_run_id: int,
     photo_id: int,
-    cluster_key: str,
+    event_id: int,
     new_category_key: str,
 ) -> None:
     """Sofortige Wirkung eines manuellen Kategorie-Overrides - stellt die GESAMTE
@@ -2416,7 +2474,12 @@ async def reassign_photo_category(
     Zeilen im Request-Pfad. Der Unique-Constraint traegt davon nur die halbe Invariante - er
     verhindert die doppelte Zugehoerigkeitszeile, nicht das Wettrennen um "genau eine Hauptzeile".
     Die Aufrufer (api/photos.py::set_category_override/delete_category_override) sperren deshalb
-    VOR dem Lesen der Ranking-Zeilen die `photo_scores`-Zeile des Fotos (`with_for_update()`)."""
+    VOR dem Lesen der Ranking-Zeilen die `photo_scores`-Zeile des Fotos (`with_for_update()`).
+
+    SICHERHEIT (M4): `event_id` kommt SERVERSEITIG aus `ranking.event_id` der Zeile des bereits
+    aufgeloesten Laufs, nie aus Body oder Query. Die Partitionsabfrage unten traegt neben
+    `event_id` weiterhin das Lauf-Praedikat: `event_id` ist ein GLOBALER Surrogatschluessel, und
+    ohne das Praedikat sortierte die Neuvergabe der Raenge Zeilen eines fremden Laufs um."""
     existing_rows = list(
         (
             await session.execute(
@@ -2456,7 +2519,7 @@ async def reassign_photo_category(
             PhotoRanking(
                 criterion_scoring_run_id=criterion_scoring_run_id,
                 photo_id=photo_id,
-                cluster_key=cluster_key,
+                event_id=event_id,
                 category_key=category_key,
                 rank_score=0.0,
                 rank_position=1,
@@ -2472,8 +2535,9 @@ async def reassign_photo_category(
         (
             await session.execute(
                 select(PhotoRanking).where(
+                    # SICHERHEIT: das Lauf-Praedikat steht NEBEN `event_id`, nie an seiner Stelle.
                     PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
-                    PhotoRanking.cluster_key == cluster_key,
+                    PhotoRanking.event_id == event_id,
                     PhotoRanking.category_key.in_(touched_categories),
                 )
             )

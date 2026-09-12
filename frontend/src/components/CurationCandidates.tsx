@@ -26,7 +26,7 @@ const TILE_GRID_CLASS = 'grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4'
 
 export interface CurationCandidatesProps {
   projectId: number
-  clusterKey: string
+  eventId: number
   categoryKey: string
   /** Es werden die Zugehoerigkeiten mit `rank_position > afterRank` geladen. */
   afterRank: number
@@ -57,7 +57,7 @@ export interface CurationCandidatesProps {
  */
 export function CurationCandidates({
   projectId,
-  clusterKey,
+  eventId,
   categoryKey,
   afterRank,
   remainingCount,
@@ -68,7 +68,7 @@ export function CurationCandidates({
   renderTile,
 }: CurationCandidatesProps) {
   const query = useCurationCandidatesQuery(projectId, {
-    clusterKey,
+    eventId,
     categoryKey,
     afterRank,
     enabled: expanded,

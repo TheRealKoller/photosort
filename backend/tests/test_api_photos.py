@@ -13,10 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.categories import CATEGORY_NOT_RECOGNIZED
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
-from photosort.landmark import MAX_LANDMARK_NAME_LENGTH
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
+    Event,
     FineLabel,
     Photo,
     PhotoCategoryClassification,
@@ -538,12 +538,63 @@ async def _make_criterion_scoring_run(
     return run
 
 
+async def _make_event(
+    session: AsyncSession,
+    run: CriterionScoringRun,
+    *,
+    position: int = 1,
+    started_at: datetime | None = None,
+    ended_at: datetime | None = None,
+    landmark_name: str | None = None,
+    place_kind: str | None = None,
+    place_lat: float | None = None,
+    place_lon: float | None = None,
+) -> Event:
+    """Ein Event eines Laufs. Die Zeitgrenzen sind zonenlos wie `Photo.taken_at` selbst."""
+    default = datetime(2023, 1, 1, 10, 0)
+    event_row = Event(
+        criterion_scoring_run_id=run.id,
+        position=position,
+        started_at=default if started_at is None else started_at,
+        ended_at=default if ended_at is None else ended_at,
+        landmark_name=landmark_name,
+        place_kind=place_kind,
+        place_lat=place_lat,
+        place_lon=place_lon,
+    )
+    session.add(event_row)
+    await session.commit()
+    await session.refresh(event_row)
+    return event_row
+
+
+_DEFAULT_EVENT_POSITION = 1
+
+
+async def _default_event(
+    session: AsyncSession, run: CriterionScoringRun, *, position: int = _DEFAULT_EVENT_POSITION
+) -> Event:
+    """Das Event, in das jede Rangzeile ohne ausdrueckliche Angabe faellt - angelegt beim ersten
+    Bedarf, danach wiederverwendet (`UniqueConstraint(run, position)` wiese eine zweite Anlage
+    ab)."""
+    existing = (
+        await session.execute(
+            select(Event).where(
+                Event.criterion_scoring_run_id == run.id, Event.position == position
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    return await _make_event(session, run, position=position)
+
+
 async def _add_ranking(
     session: AsyncSession,
     run: CriterionScoringRun,
     photo: Photo,
     *,
-    cluster_key: str = "cluster-0",
+    event: Event | None = None,
     category_key: str = "landscape",
     rank_score: float,
     rank_position: int,
@@ -551,12 +602,16 @@ async def _add_ranking(
 ) -> None:
     """specs/features/0300-nebenkategorien.md: `is_primary` ist pflichtig - der Default `True`
     haelt alle bestehenden Aufrufe bei ihrer bisherigen Bedeutung (eine Zugehoerigkeit je Foto,
-    und die ist die Hauptzeile)."""
+    und die ist die Hauptzeile).
+
+    Ohne `event` faellt die Zeile in das eine Vorgabe-Event des Laufs - dieselbe Rolle, die frueher
+    der Vorgabewert `cluster_key="cluster-0"` hatte."""
+    event_row = await _default_event(session, run) if event is None else event
     session.add(
         PhotoRanking(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
-            cluster_key=cluster_key,
+            event_id=event_row.id,
             category_key=category_key,
             rank_score=rank_score,
             rank_position=rank_position,
@@ -595,7 +650,7 @@ class TestTopNPerCategory:
         # angeforderte top_n_per_category=2 - "Rang M von N" soll immer den vollen Pool zeigen
         # (Architektur-Abschnitt der Spec 0040).
         assert ranking == {
-            "cluster_key": "cluster-0",
+            "event_id": (await _default_event(db_session, run)).id,
             "category_key": "landscape",
             "rank_score": 0.9,
             "rank_position": 1,
@@ -833,7 +888,7 @@ class TestCurationCandidates:
         run: CriterionScoringRun,
         size: int,
         *,
-        cluster_key: str = "cluster-0",
+        event_position: int = 1,
         category_key: str = "landschaft",
     ) -> list[Photo]:
         photos = []
@@ -845,7 +900,7 @@ class TestCurationCandidates:
                 session,
                 run,
                 photo,
-                cluster_key=cluster_key,
+                event=await _default_event(session, run, position=event_position),
                 category_key=category_key,
                 rank_score=1.0 - index / 100,
                 rank_position=index + 1,
@@ -863,7 +918,11 @@ class TestCurationCandidates:
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 2},
+            params={
+                "event_id": (await _default_event(db_session, run)).id,
+                "category_key": "landschaft",
+                "after_rank": 2,
+            },
         )
 
         assert response.status_code == 200
@@ -881,12 +940,13 @@ class TestCurationCandidates:
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photos = await self._partition(db_session, project, run, 5)
+        event_id = (await _default_event(db_session, run)).id
 
         async def page(limit: int, offset: int) -> tuple[list[int], int]:
             response = await authenticated_api_client.get(
                 f"/projects/{project.id}/curation-candidates",
                 params={
-                    "cluster_key": "cluster-0",
+                    "event_id": event_id,
                     "category_key": "landschaft",
                     "after_rank": 1,
                     "limit": limit,
@@ -917,7 +977,11 @@ class TestCurationCandidates:
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 1},
+            params={
+                "event_id": (await _default_event(db_session, run)).id,
+                "category_key": "landschaft",
+                "after_rank": 1,
+            },
         )
 
         items = response.json()["items"]
@@ -951,7 +1015,11 @@ class TestCurationCandidates:
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 1},
+            params={
+                "event_id": (await _default_event(db_session, run)).id,
+                "category_key": "landschaft",
+                "after_rank": 1,
+            },
         )
 
         [item] = response.json()["items"]
@@ -970,30 +1038,34 @@ class TestCurationCandidates:
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 0},
+            params={
+                "event_id": (await _default_event(db_session, run)).id,
+                "category_key": "landschaft",
+                "after_rank": 0,
+            },
         )
 
         assert response.status_code == 200
         assert response.json() == {"items": [], "total": 0}
 
     @pytest.mark.parametrize(
-        ("cluster_key", "category_key", "after_rank"),
+        ("event_id_offset", "category_key", "after_rank"),
         [
-            pytest.param("cluster-42", "landschaft", 0, id="unbekannter-cluster-key"),
-            pytest.param("cluster-0", "gibtsnicht", 0, id="unbekannter-category-key"),
-            pytest.param("cluster-0", "landschaft", 3, id="after_rank-gleich-partitionsgroesse"),
-            pytest.param("cluster-0", "landschaft", 99, id="after_rank-jenseits-der-partition"),
+            pytest.param(4200, "landschaft", 0, id="unbekannte-event-id"),
+            pytest.param(0, "gibtsnicht", 0, id="unbekannter-category-key"),
+            pytest.param(0, "landschaft", 3, id="after_rank-gleich-partitionsgroesse"),
+            pytest.param(0, "landschaft", 99, id="after_rank-jenseits-der-partition"),
         ],
     )
     async def test_empty_at_the_silent_edges(
         self,
         authenticated_api_client: httpx.AsyncClient,
         db_session: AsyncSession,
-        cluster_key: str,
+        event_id_offset: int,
         category_key: str,
         after_rank: int,
     ) -> None:
-        """Akzeptanzkriterium 31: unbekannter `cluster_key`, unbekannter `category_key` und
+        """Akzeptanzkriterium 31: unbekannte `event_id`, unbekannter `category_key` und
         `after_rank >= partition_size` sind allesamt 200 mit leerer Liste, kein Fehler - und
         deshalb genau die Faelle, die ohne eigenen Testfall auch dann "bestehen", wenn der
         Endpunkt aus einem ganz anderen Grund nichts findet. Die Gegenprobe steht im ersten
@@ -1005,7 +1077,7 @@ class TestCurationCandidates:
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/curation-candidates",
             params={
-                "cluster_key": cluster_key,
+                "event_id": (await _default_event(db_session, run)).id + event_id_offset,
                 "category_key": category_key,
                 "after_rank": after_rank,
             },
@@ -1020,7 +1092,7 @@ class TestCurationCandidates:
         """Akzeptanzkriterium 32, erster Teil."""
         response = await authenticated_api_client.get(
             "/projects/9999/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landschaft"},
+            params={"event_id": 1, "category_key": "landschaft"},
         )
 
         assert response.status_code == 404
@@ -1036,7 +1108,7 @@ class TestCurationCandidates:
 
         response = await api_client.get(
             f"/projects/{project.id}/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landschaft"},
+            params={"event_id": 1, "category_key": "landschaft"},
         )
 
         assert response.status_code == 401
@@ -1045,28 +1117,32 @@ class TestCurationCandidates:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         """Akzeptanzkriterium 32, dritter Teil, und Security-Muss-Kriterium 2 der Spec:
-        `PhotoRanking` traegt keine `project_id`, und `cluster_key` (`cluster-<n>`) ist in JEDEM
-        Projekt derselbe String. Die einzige Projektbindung ist `criterion_scoring_run_id`,
-        abgeleitet aus dem PFADPARAMETER. Ohne dieses Praedikat lieferte derselbe
-        Schluesselstring Fotos des Fremdprojekts."""
+        `PhotoRanking` traegt keine `project_id`. Die einzige Projektbindung ist
+        `criterion_scoring_run_id`, abgeleitet aus dem PFADPARAMETER."""
         own = await _make_project(db_session, name="Eigenes")
         foreign = await _make_project(db_session, name="Fremdes")
         own_run = await _make_criterion_scoring_run(db_session, own)
         foreign_run = await _make_criterion_scoring_run(db_session, foreign)
-        # Beide Projekte tragen DIESELBEN Partitionsschluessel.
+        # Beide Projekte tragen denselben `category_key`.
         await self._partition(db_session, own, own_run, 2)
         foreign_photos = await self._partition(db_session, foreign, foreign_run, 4)
 
+        # Bewusst die Event-Id des FREMDEN Laufs: sie ist ein globaler Surrogatschluessel und
+        # identifiziert unter `/projects/{eigenes}/...` eindeutig fremde Rangzeilen.
         response = await authenticated_api_client.get(
             f"/projects/{own.id}/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 1},
+            params={
+                "event_id": (await _default_event(db_session, foreign_run)).id,
+                "category_key": "landschaft",
+                "after_rank": 1,
+            },
         )
 
         body = response.json()
         assert {item["id"] for item in body["items"]}.isdisjoint({p.id for p in foreign_photos})
-        # Die Zaehlabfrage hinter `total` traegt dasselbe Praedikat: die groessere Fremdpartition
-        # darf sie nicht aufblaehen (2 eigene Zeilen, `after_rank=1` -> 1).
-        assert body["total"] == 1
+        # Die Zaehlabfrage hinter `total` traegt dasselbe Praedikat - sonst spiegelte sie die
+        # Groesse der Fremdpartition zurueck.
+        assert body == {"items": [], "total": 0}
 
     async def test_only_the_latest_successful_run_is_the_reference(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1099,7 +1175,11 @@ class TestCurationCandidates:
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landschaft", "after_rank": 1},
+            params={
+                "event_id": (await _default_event(db_session, run)).id,
+                "category_key": "landschaft",
+                "after_rank": 1,
+            },
         )
 
         body = response.json()
@@ -1116,7 +1196,8 @@ class TestCurationCandidates:
             pytest.param({"offset": 2**63}, id="offset-jenseits-der-obergrenze"),
             pytest.param({"limit": 0}, id="limit-unter-der-untergrenze"),
             pytest.param({"limit": 201}, id="limit-ueber-der-obergrenze"),
-            pytest.param({"cluster_key": "x" * 300}, id="cluster_key-zu-lang"),
+            pytest.param({"event_id": 0}, id="event_id-unter-der-untergrenze"),
+            pytest.param({"event_id": 2**63}, id="event_id-jenseits-der-obergrenze"),
             pytest.param({"category_key": "x" * 300}, id="category_key-zu-lang"),
         ],
     )
@@ -1127,15 +1208,15 @@ class TestCurationCandidates:
         params: dict[str, object],
     ) -> None:
         """Security-Punkte 3 und 4 der Spec: `limit` wie im Standard-Listing (`ge=1, le=200`),
-        `after_rank`/`offset` mit `ge=0` UND einer Obergrenze (ein Pydantic-`int` ist unbeschraenkt
-        und landet direkt im SQL-Vergleich; unter SQLite wirft ein Wert jenseits von 2^63 einen
-        `OverflowError` und damit eine 500 statt einer leeren Liste), dazu eine `max_length` auf
-        beiden freien Schluesselparametern."""
+        `after_rank`/`offset`/`event_id` mit Unter- UND Obergrenze (ein Pydantic-`int` ist
+        unbeschraenkt und landet direkt im SQL-Vergleich; unter SQLite wirft ein Wert jenseits von
+        2^63 einen `OverflowError` und damit eine 500 statt einer leeren Liste), dazu eine
+        `max_length` auf dem verbliebenen freien Schluesselparameter."""
         project = await _make_project(db_session)
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landschaft", **params},
+            params={"event_id": 1, "category_key": "landschaft", **params},
         )
 
         assert response.status_code == 422
@@ -2165,7 +2246,7 @@ class TestDefaultListingRanking:
         items = {item["id"]: item for item in response.json()["items"]}
         assert items[first.id]["rankings"] == [
             {
-                "cluster_key": "cluster-0",
+                "event_id": (await _default_event(db_session, run)).id,
                 "category_key": "landscape",
                 "rank_score": 0.9,
                 "rank_position": 1,
@@ -2195,7 +2276,7 @@ class TestDefaultListingRanking:
     ) -> None:
         # Security-Review-Fund: kein dedizierter Cross-Project-Isolationstest fuer den neuen,
         # im Default-Listing-Zweig befuellten partition_size/RankingOut-Pfad - beide Projekte
-        # nutzen absichtlich dieselben cluster_key/category_key-Werte ("cluster-0"/"landscape"),
+        # nutzen absichtlich denselben `category_key` ("landscape"),
         # damit ein etwaiges fehlendes project_id-Scoping in _partition_sizes/
         # _latest_successful_criterion_scoring_run_id sichtbar wuerde (Partition-Groesse 3 statt 1).
         other_project = await _make_project(db_session, name="Other Trip")
@@ -3051,11 +3132,10 @@ class TestPhotoLocationAndClusterPlace:
             "source": "derived",
         }
 
-    async def test_both_fields_are_null_when_the_cluster_carries_no_location_at_all(
+    async def test_both_fields_are_null_when_nothing_carries_a_location_at_all(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """KEIN Objekt aus lauter `null`-Feldern - `null` heisst "kein Ort", und die Ueberschrift
-        sieht dann zeichengleich aus wie heute."""
+        """KEIN Objekt aus lauter `null`-Feldern - `null` heisst "kein Ort"."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photo = await _make_photo_at(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
@@ -3065,175 +3145,90 @@ class TestPhotoLocationAndClusterPlace:
 
         [item] = response.json()["items"]
         assert item["location"] is None
-        assert item["cluster_place"] is None
+        assert item["event"]["place"] is None
 
-    async def test_location_is_null_while_cluster_place_is_set_for_a_name_only_cluster(
+    async def test_location_is_null_while_the_event_place_is_set_for_a_name_only_event(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Die `null`-Abgrenzung getrennt fuer BEIDE Felder: ein Cluster mit einem Namen, aber
-        ohne jede Koordinate, hat einen Ort - aber kein Foto hat eine Koordinate."""
+        """Die `null`-Abgrenzung getrennt fuer BEIDE Felder: ein Event mit einem Namen, aber ohne
+        jede Koordinate, hat einen Ort - kein Foto hat trotzdem einen."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(
+            db_session, run, position=1, landmark_name="Eiffelturm", place_kind="landmark"
+        )
         photo = await _make_photo_at(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
-        await _add_landmark(db_session, photo, "Eiffelturm")
+        await _add_ranking(db_session, run, photo, event=event_row, rank_score=0.9, rank_position=1)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         [item] = response.json()["items"]
         assert item["location"] is None
-        assert item["cluster_place"] == {
+        assert item["event"]["place"] == {
             "kind": "landmark",
             "landmark_name": "Eiffelturm",
             "lat": None,
             "lon": None,
         }
 
-
-class TestClusterPlaceKind:
-    async def test_a_detected_landmark_wins_over_diverging_coordinates(
+    async def test_the_only_anchor_may_be_a_rejected_photo_without_a_ranking_row(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Der Name hat Vorrang - auch dann, wenn zusaetzlich abweichende Koordinaten vorliegen."""
+        """VERSCHAERFTER ROT-ANKER: die Bezugsmenge der Ortsherleitung ist das GANZE PROJEKT, nicht
+        die Kandidatenmenge. Der einzige Anker ist hier ein am Ausschuss-Gate haengengebliebenes
+        Foto ohne jede Rangzeile - unter der frueheren, clusterweiten Herleitung blieb das
+        koordinatenlose Foto `null`."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
-        named = await _make_photo_at(
+        gated = await _make_photo_at(
             db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
         )
-        other = await _make_photo_at(
-            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), gps=_TROCADERO
+        blind = await _make_photo_at(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
         )
-        for index, photo in enumerate((named, other), start=1):
-            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
-        await _add_landmark(db_session, named, "Eiffelturm")
+        await _add_ranking(db_session, run, blind, rank_score=0.5, rank_position=1)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
-        for item in response.json()["items"]:
-            assert item["cluster_place"]["kind"] == "landmark"
-            assert item["cluster_place"]["landmark_name"] == "Eiffelturm"
-
-    async def test_two_coordinates_on_the_same_rounded_cell_are_one_coordinate(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Der naheliegende Fehler ist ein Vergleich der UNGERUNDETEN Werte - der schluege schon
-        bei zwei 40 m auseinanderliegenden Aufnahmen zu und machte aus einem Ortsbesuch "Mehrere
-        Orte"."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        first = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
-        )
-        second = await _make_photo_at(
-            db_session,
-            project,
-            "b.jpg",
-            datetime(2023, 1, 1, 10, 5, tzinfo=UTC),
-            gps=_EIFFEL_40_M,
-        )
-        assert _EIFFEL != _EIFFEL_40_M
-        for index, photo in enumerate((first, second), start=1):
-            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
-
-        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-        for item in response.json()["items"]:
-            assert item["cluster_place"] == {
-                "kind": "coordinate",
-                "landmark_name": None,
-                "lat": 48.86,
-                "lon": 2.29,
-            }
-
-    async def test_diverging_rounded_coordinates_produce_multiple_without_a_coordinate(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """`kind="multiple"` fuehrt NIE `lat`/`lon` - strukturell geprueft, nicht nur "die Anzeige
-        zeigt sie nicht". Sonst entstuende eine zweite, stille Wahrheit ueber den Ort eines
-        Clusters, den es als EINZELNEN Ort gerade nicht gibt."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        first = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
-        )
-        second = await _make_photo_at(
-            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), gps=_LOUVRE
-        )
-        for index, photo in enumerate((first, second), start=1):
-            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
-
-        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-        for item in response.json()["items"]:
-            assert item["cluster_place"] == {
-                "kind": "multiple",
-                "landmark_name": None,
-                "lat": None,
-                "lon": None,
-            }
-
-    async def test_the_rounding_convention_lives_in_the_backend(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Die Rundung entscheidet ueber die STUFE ("coordinate" vs. "multiple") und gehoert
-        deshalb dorthin, wo diese Entscheidung faellt. Das Frontend formatiert nur noch."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo_at(
-            db_session,
-            project,
-            "a.jpg",
-            datetime(2023, 1, 1, tzinfo=UTC),
-            gps=(-33.856789, 151.215432),
-        )
-        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
-
-        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-        [item] = response.json()["items"]
-        assert item["cluster_place"]["lat"] == -33.86
-        assert item["cluster_place"]["lon"] == 151.22
-        # Die volle Praezision steht unveraendert daneben.
-        assert item["location"]["lat"] == -33.856789
-
-    async def test_a_coordinate_rounding_to_zero_never_reports_negative_zero(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """`-0.0` waere im JSON `-0.0` und im Frontend `"-0.00"` - eine Himmelsrichtung, die es
-        nicht gibt."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo_at(
-            db_session,
-            project,
-            "a.jpg",
-            datetime(2023, 1, 1, tzinfo=UTC),
-            gps=(-0.001, -0.002),
-        )
-        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
-
-        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-        [item] = response.json()["items"]
-        place = item["cluster_place"]
-        assert place["kind"] == "coordinate"
-        assert str(place["lat"]) == "0.0"
-        assert str(place["lon"]) == "0.0"
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[gated.id]["location"]["source"] == "exif"
+        # Das aussortierte Foto hat keine Rangzeile und damit kein Event - seinen ORT vererbt es
+        # trotzdem.
+        assert items[gated.id]["event"] is None
+        assert items[blind.id]["location"] == {
+            "lat": _EIFFEL[0],
+            "lon": _EIFFEL[1],
+            "source": "derived",
+        }
 
 
-class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
-    async def _seed_cluster_with_a_deep_anchor(
+# Die Stufenentscheidung selbst (Name -> eine gerundete Zelle -> mehrere Orte -> kein Ortsbezug),
+# die Rundung und die `-0.0`-Normalisierung leben seit Spec 0425 in `events.py` und werden dort
+# DB-frei geprueft (tests/test_events.py::TestEventPlace). Die Namenshaertung liegt an der
+# Schreibstelle (tests/test_worker_criterion_scoring.py, unsanierter und zu langer Altname). Hier
+# bleibt, was nur der Endpunkt zeigen kann.
+
+
+class TestEventIsNotAnAnswerStatement:
+    async def _seed_event_with_a_deep_anchor(
         self,
         db_session: AsyncSession,
         *,
         anchor_gps: tuple[float, float] | None = None,
-        anchor_landmark: str | None = None,
         shallow_gps: tuple[float, float] | None = None,
+        landmark_name: str | None = None,
     ) -> tuple[Project, CriterionScoringRun, Photo]:
-        """Ein Cluster mit 11 Fotos, dessen tragendes Foto auf `rank_position` 11 liegt - also
+        """Ein Event mit 11 Fotos, dessen tragendes Foto auf `rank_position` 11 liegt - also
         ausserhalb jeder realistischen Top-N-Antwort."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(
+            db_session,
+            run,
+            position=1,
+            landmark_name=landmark_name,
+            place_kind=None if landmark_name is None else "landmark",
+        )
         base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
         for index in range(1, 11):
             shallow = await _make_photo_at(
@@ -3244,22 +3239,27 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
                 gps=shallow_gps,
             )
             await _add_ranking(
-                db_session, run, shallow, rank_score=1.0 / index, rank_position=index
+                db_session,
+                run,
+                shallow,
+                event=event_row,
+                rank_score=1.0 / index,
+                rank_position=index,
             )
         anchor = await _make_photo_at(
             db_session, project, "anchor.jpg", base + timedelta(minutes=11), gps=anchor_gps
         )
-        await _add_ranking(db_session, run, anchor, rank_score=0.01, rank_position=11)
-        if anchor_landmark is not None:
-            await _add_landmark(db_session, anchor, anchor_landmark)
+        await _add_ranking(
+            db_session, run, anchor, event=event_row, rank_score=0.01, rank_position=11
+        )
         return project, run, anchor
 
-    async def test_the_only_coordinate_of_a_cluster_reaches_photos_that_outrank_it(
+    async def test_the_only_coordinate_reaches_photos_that_outrank_it(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """ROT-ANKER 1: das EINZIGE koordinatentragende Foto liegt auf Rang 11, abgefragt wird mit
+        """ROT-ANKER: das EINZIGE koordinatentragende Foto liegt auf Rang 11, abgefragt wird mit
         `top_n_per_category=3`. Eine Herleitung ueber die Fotos der Antwort lieferte hier `null`."""
-        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
+        project, _run, _anchor = await self._seed_event_with_a_deep_anchor(
             db_session, anchor_gps=_EIFFEL
         )
 
@@ -3276,68 +3276,11 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
                 "source": "derived",
             }
 
-    async def test_the_only_landmark_of_a_cluster_names_photos_that_outrank_it(
+    async def test_the_event_does_not_change_between_limit_one_and_sixty(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """ROT-ANKER 2a: ohne diesen Fall bliebe ein erkannter Cluster DAUERHAFT unbenannt - die
-        nachgeladenen Kandidaten fliessen nie in `items` zurueck."""
-        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
-            db_session, anchor_landmark="Eiffelturm"
-        )
-
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_category": 3}
-        )
-
-        items = response.json()["items"]
-        assert len(items) == 3
-        for item in items:
-            assert item["cluster_place"]["kind"] == "landmark"
-            assert item["cluster_place"]["landmark_name"] == "Eiffelturm"
-
-    async def test_a_deviating_coordinate_outside_the_answer_still_produces_multiple(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """ROT-ANKER 2b: ohne diesen Fall waere die Stufe "Mehrere Orte" fuer einen Cluster,
-        dessen Vielfalt erst ab Rang 11 beginnt, dauerhaft unerreichbar."""
-        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
-            db_session, anchor_gps=_LOUVRE, shallow_gps=_EIFFEL
-        )
-
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_category": 3}
-        )
-
-        items = response.json()["items"]
-        assert len(items) == 3
-        for item in items:
-            assert item["cluster_place"]["kind"] == "multiple"
-
-    async def test_cluster_place_does_not_change_between_top_n_one_and_ten(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """`top_n` ist ein Suchparameter der Seite (1-10) - der Ortsteil der Ueberschrift darf sich
-        beim Verstellen nicht aendern."""
-        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
-            db_session, anchor_gps=_LOUVRE, shallow_gps=_EIFFEL
-        )
-
-        narrow = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
-        )
-        wide = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_category": 10}
-        )
-
-        assert (
-            narrow.json()["items"][0]["cluster_place"] == (wide.json()["items"][0]["cluster_place"])
-        )
-
-    async def test_cluster_place_does_not_change_between_limit_one_and_sixty(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        project, _run, _anchor = await self._seed_cluster_with_a_deep_anchor(
-            db_session, anchor_gps=_LOUVRE, shallow_gps=_EIFFEL
+        project, _run, _anchor = await self._seed_event_with_a_deep_anchor(
+            db_session, anchor_gps=_LOUVRE, shallow_gps=_EIFFEL, landmark_name="Eiffelturm"
         )
 
         narrow = await authenticated_api_client.get(
@@ -3347,23 +3290,26 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
             f"/projects/{project.id}/photos", params={"limit": 60}
         )
 
-        assert (
-            narrow.json()["items"][0]["cluster_place"] == (wide.json()["items"][0]["cluster_place"])
-        )
+        assert narrow.json()["items"][0]["event"] == wide.json()["items"][0]["event"]
 
     async def test_both_fields_are_field_equal_across_photos_and_curation_candidates(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         """Der direkte "springt nicht"-Nachweis: dasselbe Foto einmal ueber das Standard-Listing
         und einmal ueber den Nachlade-Endpunkt."""
-        project, _run, anchor = await self._seed_cluster_with_a_deep_anchor(
+        project, run, anchor = await self._seed_event_with_a_deep_anchor(
             db_session, anchor_gps=_LOUVRE, shallow_gps=_EIFFEL
         )
+        event_row = await _default_event(db_session, run)
 
         listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
         candidates = await authenticated_api_client.get(
             f"/projects/{project.id}/curation-candidates",
-            params={"cluster_key": "cluster-0", "category_key": "landscape", "after_rank": 10},
+            params={
+                "event_id": event_row.id,
+                "category_key": "landscape",
+                "after_rank": 10,
+            },
         )
 
         assert candidates.status_code == 200
@@ -3371,19 +3317,22 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
         [from_candidates] = candidates.json()["items"]
         assert from_candidates["id"] == anchor.id
         assert from_candidates["location"] == from_listing["location"]
-        assert from_candidates["cluster_place"] == from_listing["cluster_place"]
+        assert from_candidates["event"] == from_listing["event"]
 
-    async def test_cluster_place_is_identical_on_every_photo_of_a_cluster(
+    async def test_the_event_is_identical_on_every_photo_of_an_event(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Gruppiert nach `cluster_key` geprueft, nicht stichprobenweise an einem Foto: das ist die
+        """Nach `event_id` gruppiert geprueft, nicht stichprobenweise an einem Foto: das ist die
         Zusicherung, aus der die Frontend-Seite ihre Berechtigung zieht, den Wert aus einem
-        BELIEBIGEN Foto des Clusters zu lesen. `location` DARF je Foto verschieden sein,
-        `cluster_place` nicht."""
+        BELIEBIGEN Foto des Events zu lesen. `location` DARF je Foto verschieden sein, `event`
+        nicht."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
+        first_event = await _make_event(db_session, run, position=1, place_kind="multiple")
+        second_event = await _make_event(
+            db_session, run, position=2, landmark_name="Trocadero", place_kind="landmark"
+        )
         base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-        first_cluster = []
         for index in range(1, 4):
             photo = await _make_photo_at(
                 db_session,
@@ -3396,11 +3345,10 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
                 db_session,
                 run,
                 photo,
-                cluster_key="cluster-0",
+                event=first_event,
                 rank_score=1.0 / index,
                 rank_position=index,
             )
-            first_cluster.append(photo)
         for index in range(1, 3):
             photo = await _make_photo_at(
                 db_session,
@@ -3413,62 +3361,61 @@ class TestClusterPlaceIsAClusterStatementNotAnAnswerStatement:
                 db_session,
                 run,
                 photo,
-                cluster_key="cluster-1",
+                event=second_event,
                 rank_score=1.0 / index,
                 rank_position=index,
             )
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
-        places_by_cluster: dict[str, list[object]] = {}
+        events_by_id: dict[int, list[object]] = {}
         for item in response.json()["items"]:
             for ranking in item["rankings"]:
-                places_by_cluster.setdefault(ranking["cluster_key"], []).append(
-                    item["cluster_place"]
-                )
-        assert set(places_by_cluster) == {"cluster-0", "cluster-1"}
-        for cluster_key, places in places_by_cluster.items():
-            assert len(places) > 1, cluster_key
-            assert all(place == places[0] for place in places), cluster_key
+                events_by_id.setdefault(ranking["event_id"], []).append(item["event"])
+        assert set(events_by_id) == {first_event.id, second_event.id}
+        for event_id, seen in events_by_id.items():
+            assert len(seen) > 1, event_id
+            assert all(entry == seen[0] for entry in seen), event_id
 
 
 class TestPlaceRunBinding:
-    async def test_a_foreign_project_with_the_same_cluster_key_contributes_nothing(
+    async def test_a_foreign_project_contributes_neither_location_nor_event(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """SICHERHEIT, Pflichtfall (Muss-Kriterium der Spec): `cluster_key` ist `cluster-<n>`, je
-        Lauf neu vergeben und in JEDEM Projekt derselbe String; `photo_rankings` traegt keine
-        `project_id`. Ohne das `criterion_scoring_run_id`-Praedikat zieht die Herleitung
-        Koordinaten UND Namen aus einem fremden Projekt - systematisch, nicht im Grenzfall."""
+        """SICHERHEIT, Pflichtfall (M1 und M5 in EINEM Aufbau): die Ortsherleitung haengt an
+        `Photo.project_id`, die Event-Abfrage am Lauf-Praedikat. Faellt eine der beiden Bindungen
+        weg, erbt das Foto eine fremde Koordinate bzw. bekommt ein fremdes Event."""
         project_a = await _make_project(db_session, name="A")
         project_b = await _make_project(db_session, name="B")
         run_a = await _make_criterion_scoring_run(db_session, project_a)
         run_b = await _make_criterion_scoring_run(db_session, project_b)
+        event_a = await _make_event(db_session, run_a, position=1)
+        event_b = await _make_event(
+            db_session, run_b, position=1, landmark_name="Eiffelturm", place_kind="landmark"
+        )
         blind = await _make_photo_at(
             db_session, project_a, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
         )
-        await _add_ranking(
-            db_session, run_a, blind, cluster_key="cluster-0", rank_score=0.9, rank_position=1
-        )
+        await _add_ranking(db_session, run_a, blind, event=event_a, rank_score=0.9, rank_position=1)
         foreign = await _make_photo_at(
             db_session, project_b, "b.jpg", datetime(2023, 1, 1, 10, 1, tzinfo=UTC), gps=_EIFFEL
         )
         await _add_ranking(
-            db_session, run_b, foreign, cluster_key="cluster-0", rank_score=0.9, rank_position=1
+            db_session, run_b, foreign, event=event_b, rank_score=0.9, rank_position=1
         )
-        await _add_landmark(db_session, foreign, "Eiffelturm")
 
         response = await authenticated_api_client.get(f"/projects/{project_a.id}/photos")
 
         [item] = response.json()["items"]
         assert item["location"] is None
-        assert item["cluster_place"] is None
+        assert item["event"]["place"] is None
+        assert item["event"]["id"] == event_a.id
 
-    async def test_an_older_run_of_the_same_project_contributes_nothing(
+    async def test_an_older_run_of_the_same_project_contributes_no_event(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Dieselbe Bindung greift auch INNERHALB eines Projekts: `cluster-0` ist in jedem Lauf
-        neu vergeben, ein aelterer Lauf beschreibt eine andere Cluster-Zusammensetzung."""
+        """Dieselbe Bindung greift auch INNERHALB eines Projekts: Rangzeilen eines aelteren Laufs
+        beschreiben eine andere Gliederung."""
         project = await _make_project(db_session)
         old_run = await _make_criterion_scoring_run(
             db_session, project, started_at=datetime(2023, 1, 1, tzinfo=UTC)
@@ -3476,35 +3423,31 @@ class TestPlaceRunBinding:
         new_run = await _make_criterion_scoring_run(
             db_session, project, started_at=datetime(2023, 6, 1, tzinfo=UTC)
         )
-        anchor = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
+        old_event = await _make_event(
+            db_session, old_run, position=1, landmark_name="Eiffelturm", place_kind="landmark"
         )
-        blind = await _make_photo_at(
-            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
-        )
-        # Nur im ALTEN Lauf liegen beide im selben Cluster.
-        await _add_ranking(
-            db_session, old_run, anchor, cluster_key="cluster-0", rank_score=0.9, rank_position=1
+        new_event = await _make_event(db_session, new_run, position=1)
+        photo = await _make_photo_at(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
         )
         await _add_ranking(
-            db_session, old_run, blind, cluster_key="cluster-0", rank_score=0.5, rank_position=2
+            db_session, old_run, photo, event=old_event, rank_score=0.5, rank_position=1
         )
-        # Im NEUEN Lauf ist `blind` allein in `cluster-0`, `anchor` gar nicht dabei.
         await _add_ranking(
-            db_session, new_run, blind, cluster_key="cluster-0", rank_score=0.5, rank_position=1
+            db_session, new_run, photo, event=new_event, rank_score=0.5, rank_position=1
         )
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
-        items = {item["id"]: item for item in response.json()["items"]}
-        assert items[blind.id]["location"] is None
-        assert items[blind.id]["cluster_place"] is None
+        [item] = response.json()["items"]
+        assert item["event"]["id"] == new_event.id
+        assert item["event"]["place"] is None
 
     async def test_without_a_successful_run_only_the_own_coordinate_remains(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         """Ausfallrichtung "nichts anzeigen", nie "aus irgendeinem Lauf herleiten": ohne Bezugslauf
-        gibt es keinen Cluster - was bleibt, ist die EIGENE EXIF-Koordinate."""
+        gibt es kein Event. Der ORT bleibt - er haengt am Projekt, nicht am Lauf."""
         project = await _make_project(db_session)
         photo = await _make_photo_at(
             db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC), gps=_EIFFEL
@@ -3519,118 +3462,15 @@ class TestPlaceRunBinding:
             "lon": _EIFFEL[1],
             "source": "exif",
         }
-        assert items[photo.id]["cluster_place"] is None
-
-    async def test_a_photo_without_a_candidate_row_keeps_its_own_coordinate_only(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Und es traegt seine Koordinate NICHT in den Cluster ein - das pinnt die Definition
-        "vollstaendiger Cluster = Kandidatenzeilen des Bezugslaufs"."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        gated = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), gps=_EIFFEL
-        )
-        blind = await _make_photo_at(
-            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
-        )
-        await _add_ranking(db_session, run, blind, rank_score=0.5, rank_position=1)
-
-        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-        items = {item["id"]: item for item in response.json()["items"]}
-        assert items[gated.id]["location"]["source"] == "exif"
-        assert items[gated.id]["cluster_place"] is None
-        assert items[blind.id]["location"] is None
-        assert items[blind.id]["cluster_place"] is None
-
-
-class TestClusterPlaceNameHardening:
-    async def test_an_unsanitised_legacy_name_is_sanitised_on_the_read_path(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Pflichtfall mit einer BESTANDSZEILE: unter Spec 0047 sind bereits reale, kostenpflichtig
-        erzeugte Zeilen mit unsaniertem Rohtext entstanden, und es gibt keinen kostenlosen
-        Migrationsweg. Ein Test nur an der Quelle bewiese fuer sie nichts."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo_at(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
-        await _add_landmark(db_session, photo, "Eiffel‮turm​")
-
-        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-        [item] = response.json()["items"]
-        assert item["cluster_place"]["landmark_name"] == "Eiffelturm"
-
-    async def test_an_overlong_legacy_name_falls_back_to_the_coordinate_step(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Der RUECKFALL ist der Testgegenstand, nicht das Verwerfen: "Name wird verworfen" allein
-        liesse offen, ob die Stufe darunter noch erreicht wird."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC), gps=_EIFFEL
-        )
-        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
-        await _add_landmark(db_session, photo, "A" * (MAX_LANDMARK_NAME_LENGTH + 1))
-
-        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-        [item] = response.json()["items"]
-        assert item["cluster_place"] == {
-            "kind": "coordinate",
-            "landmark_name": None,
-            "lat": 48.86,
-            "lon": 2.29,
-        }
-
-    async def test_a_name_that_is_empty_after_sanitisation_falls_back_to_null(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo_at(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
-        await _add_landmark(db_session, photo, "​‮")
-
-        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-        [item] = response.json()["items"]
-        assert item["cluster_place"] is None
-
-    async def test_the_name_of_the_chronologically_earliest_photo_wins(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Nach der Verfeinerung traegt ein Cluster hoechstens EINEN Namen - defensiv wird der des
-        chronologisch fruehesten Fotos genommen, damit die Anzeige auch bei einem Altbestand
-        deterministisch bleibt."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        earlier = await _make_photo_at(
-            db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-        )
-        later = await _make_photo_at(
-            db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
-        )
-        for index, photo in enumerate((earlier, later), start=1):
-            await _add_ranking(db_session, run, photo, rank_score=1.0 / index, rank_position=index)
-        await _add_landmark(db_session, earlier, "Zugspitze")
-        await _add_landmark(db_session, later, "Alexanderplatz")
-
-        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-
-        for item in response.json()["items"]:
-            assert item["cluster_place"]["landmark_name"] == "Zugspitze"
+        assert items[photo.id]["event"] is None
 
 
 class TestPlaceQueryCount:
     async def test_the_place_derivation_costs_a_fixed_number_of_queries(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """EIN Query pro Anfrage, nicht einer pro Foto (Verfuegbarkeits-Muss der Spec, Praezedenz
-        `_partition_sizes`): die Abfrageanzahl muss zwischen 2 und 20 Fotos GLEICH bleiben."""
+        """Eine FESTE Zahl Abfragen pro Anfrage, nicht eine pro Foto: die Abfrageanzahl muss
+        zwischen 2 und 20 Fotos GLEICH bleiben."""
         small = await _make_project(db_session, name="klein")
         large = await _make_project(db_session, name="gross")
         base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
@@ -3657,3 +3497,378 @@ class TestPlaceQueryCount:
         assert len(small_response.json()["items"]) == 2
         assert len(large_response.json()["items"]) == 20
         assert len(small_statements) == len(large_statements)
+
+
+# ---------------------------------------------------------------------------------------------
+# specs/features/0425-events-statt-zeitcluster.md, ADR 0087 Entscheidung 6: `PhotoOut.event`
+# ersetzt `cluster_place`, `RankingOut.event_id` ersetzt `cluster_key`, und der Query-Parameter
+# der Kuratierung wird von einem Freitextschluessel zu einer Objekt-Id.
+
+
+class TestPhotoEvent:
+    """Das Event in der Antwort - auf jedem Foto desselben Events FELDGLEICH."""
+
+    async def test_every_photo_of_one_event_carries_the_identical_event_object(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(
+            db_session,
+            run,
+            position=3,
+            started_at=datetime(2023, 1, 1, 10, 30),
+            ended_at=datetime(2023, 1, 1, 11, 45),
+            landmark_name="Eiffelturm",
+            place_kind="landmark",
+        )
+        for index in range(3):
+            photo = await _make_photo(
+                db_session, project, f"{index}.jpg", datetime(2023, 1, 1, 10, index, tzinfo=UTC)
+            )
+            await _add_ranking(
+                db_session, run, photo, event=event_row, rank_score=0.9, rank_position=index + 1
+            )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        events = [item["event"] for item in response.json()["items"]]
+        assert len(events) == 3
+        assert all(event == events[0] for event in events)
+        assert events[0] == {
+            "id": event_row.id,
+            "position": 3,
+            "started_at": "2023-01-01T10:30:00",
+            "ended_at": "2023-01-01T11:45:00",
+            "place": {"kind": "landmark", "landmark_name": "Eiffelturm", "lat": None, "lon": None},
+        }
+
+    async def test_the_event_is_identical_across_both_read_paths(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Ein je Query-Modus divergierendes `PhotoOut` waere die zweite, driftende Abbildung."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(db_session, run, position=1)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, event=event_row, rank_score=0.9, rank_position=1)
+
+        listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+        curation = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+
+        assert listing.json()["items"][0]["event"] == curation.json()["items"][0]["event"]
+
+    async def test_the_event_does_not_depend_on_the_requested_top_n(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Nummer und Zeitspanne stehen im Event, nicht in einer Aggregation ueber die sichtbaren
+        Fotos - `top_n_per_category=1` und `=10` liefern denselben Wert."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(
+            db_session,
+            run,
+            position=1,
+            started_at=datetime(2023, 1, 1, 8, 0),
+            ended_at=datetime(2023, 1, 1, 18, 0),
+        )
+        for index in range(3):
+            photo = await _make_photo(
+                db_session, project, f"{index}.jpg", datetime(2023, 1, 1, 10, index, tzinfo=UTC)
+            )
+            await _add_ranking(
+                db_session, run, photo, event=event_row, rank_score=0.9, rank_position=index + 1
+            )
+
+        narrow = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 1}
+        )
+        wide = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_category": 10}
+        )
+
+        assert narrow.json()["items"][0]["event"] == wide.json()["items"][0]["event"]
+
+    async def test_a_photo_without_a_ranking_row_has_no_event(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["event"] is None
+
+    async def test_the_ranking_carries_the_event_id(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(db_session, run, position=1)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, event=event_row, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        [ranking] = response.json()["items"][0]["rankings"]
+        assert ranking["event_id"] == event_row.id
+        assert "cluster_key" not in ranking
+
+    @pytest.mark.parametrize(
+        ("place_kind", "landmark_name", "lat", "lon", "expected"),
+        [
+            pytest.param(
+                "coordinate",
+                None,
+                48.86,
+                2.29,
+                {"kind": "coordinate", "landmark_name": None, "lat": 48.86, "lon": 2.29},
+                id="koordinate",
+            ),
+            pytest.param(
+                "multiple",
+                None,
+                None,
+                None,
+                {"kind": "multiple", "landmark_name": None, "lat": None, "lon": None},
+                id="mehrere-orte",
+            ),
+            pytest.param(None, None, None, None, None, id="kein-ortsbezug"),
+        ],
+    )
+    async def test_the_place_mirrors_the_stored_kind(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        place_kind: str | None,
+        landmark_name: str | None,
+        lat: float | None,
+        lon: float | None,
+        expected: dict[str, Any] | None,
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(
+            db_session,
+            run,
+            position=1,
+            landmark_name=landmark_name,
+            place_kind=place_kind,
+            place_lat=lat,
+            place_lon=lon,
+        )
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, event=event_row, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["event"]["place"] == expected
+
+    async def test_an_unknown_place_kind_does_not_break_the_answer(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEIT (M8): Mitgliedschaftspruefung statt blindem Cast - sonst legt ein einzelner
+        Datenfehler die gesamte Listenantwort auf 500."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(db_session, run, position=1, place_kind="galaxie")
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, event=event_row, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.status_code == 200
+        assert response.json()["items"][0]["event"]["place"] is None
+
+    async def test_the_event_of_a_foreign_run_is_never_attached(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEIT (M1): `event_id` ist ein GLOBALER Surrogatschluessel; die Event-Abfrage
+        traegt das Lauf-Praedikat ausgeschrieben."""
+        foreign_project = await _make_project(db_session, name="Fremd")
+        foreign_run = await _make_criterion_scoring_run(db_session, foreign_project)
+        foreign_event = await _make_event(
+            db_session, foreign_run, position=1, landmark_name="Geheim", place_kind="landmark"
+        )
+
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(
+            db_session, run, photo, event=foreign_event, rank_score=0.9, rank_position=1
+        )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.status_code == 200
+        assert response.json()["items"][0]["event"] is None
+
+
+class TestCurationCandidatesEventId:
+    """Der Query-Parameter wird von einem Freitextschluessel zu einer Objekt-Id."""
+
+    async def _setup(
+        self, db_session: AsyncSession, *, photos: int = 3
+    ) -> tuple[Project, CriterionScoringRun, Event]:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(db_session, run, position=1)
+        for index in range(photos):
+            photo = await _make_photo(
+                db_session, project, f"{index}.jpg", datetime(2023, 1, 1, 10, index, tzinfo=UTC)
+            )
+            await _add_ranking(
+                db_session,
+                run,
+                photo,
+                event=event_row,
+                category_key="landschaft",
+                rank_score=1.0 - index / 10,
+                rank_position=index + 1,
+            )
+        return project, run, event_row
+
+    async def test_the_partition_is_addressed_by_event_id(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _run, event_row = await self._setup(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={
+                "event_id": event_row.id,
+                "category_key": "landschaft",
+                "after_rank": 1,
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 2
+        assert len(body["items"]) == 2
+
+    @pytest.mark.parametrize(
+        "event_id",
+        [pytest.param(0, id="null"), pytest.param(-1, id="negativ")],
+    )
+    async def test_an_event_id_below_one_is_rejected(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        event_id: int,
+    ) -> None:
+        """SICHERHEIT (M3): `ge=1` plus Typpruefung ist enger als die frueheren `max_length=200`
+        eines Freitextschluessels."""
+        project, _run, _event = await self._setup(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"event_id": event_id, "category_key": "landschaft"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_a_non_numeric_event_id_is_rejected(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _run, _event = await self._setup(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"event_id": "cluster-0", "category_key": "landschaft"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_an_event_id_beyond_the_upper_bound_is_rejected(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEIT (M3): ohne Obergrenze erzeugte ein Wert jenseits von 2^63 unter SQLite einen
+        `OverflowError` und damit eine 500 statt einer leeren Liste."""
+        project, _run, _event = await self._setup(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"event_id": 2**63 + 1, "category_key": "landschaft"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_an_event_id_of_a_foreign_project_yields_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEIT (M1): Akzeptanzkriterium der Spec - `items: []` UND `total: 0`, und keine
+        Rueckspiegelung des uebergebenen Werts."""
+        foreign_project = await _make_project(db_session, name="Fremd")
+        foreign_run = await _make_criterion_scoring_run(db_session, foreign_project)
+        foreign_event = await _make_event(db_session, foreign_run, position=1)
+        for index in range(3):
+            photo = await _make_photo(
+                db_session,
+                foreign_project,
+                f"f{index}.jpg",
+                datetime(2023, 1, 1, 10, index, tzinfo=UTC),
+            )
+            await _add_ranking(
+                db_session,
+                foreign_run,
+                photo,
+                event=foreign_event,
+                category_key="landschaft",
+                rank_score=0.9,
+                rank_position=index + 1,
+            )
+        project, _run, _event = await self._setup(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"event_id": foreign_event.id, "category_key": "landschaft"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "total": 0}
+
+    async def test_an_event_id_of_an_older_run_yields_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        older_run = await _make_criterion_scoring_run(
+            db_session, project, started_at=datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        older_event = await _make_event(db_session, older_run, position=1)
+        photo = await _make_photo(db_session, project, "old.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(
+            db_session,
+            older_run,
+            photo,
+            event=older_event,
+            category_key="landschaft",
+            rank_score=0.9,
+            rank_position=1,
+        )
+        newer_run = await _make_criterion_scoring_run(
+            db_session, project, started_at=datetime(2024, 1, 1, tzinfo=UTC)
+        )
+        newer_event = await _make_event(db_session, newer_run, position=1)
+        newer_photo = await _make_photo(
+            db_session, project, "new.jpg", datetime(2024, 1, 1, tzinfo=UTC)
+        )
+        await _add_ranking(
+            db_session,
+            newer_run,
+            newer_photo,
+            event=newer_event,
+            category_key="landschaft",
+            rank_score=0.9,
+            rank_position=1,
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"event_id": older_event.id, "category_key": "landschaft"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "total": 0}

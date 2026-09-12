@@ -174,7 +174,7 @@ Verarbeitungs-Cache (Thumbnails).
     Backend:** weder API noch Datenbank kennen einen Begriff von "unsicher" — der 60-%-Filter der
     Kuratierung ist eine Konstante der Oberfläche.
   - ein neuer Lese-Endpunkt `GET
-    /projects/{id}/curation-candidates?cluster_key=…&category_key=…&after_rank=N&limit=…&offset=…`
+    /projects/{id}/curation-candidates?event_id=N&category_key=…&after_rank=N&limit=…&offset=…`
     (`api/photos.py`) liefert die Zugehörigkeiten **einer** Partition mit `rank_position >
     after_rank`, aufsteigend, als `PhotoListOut`; `total` ist die Restmenge der Partition
     (`max(partition_size - after_rank, 0)`) und damit unabhängig von `limit`/`offset`. Kein
@@ -185,39 +185,38 @@ Verarbeitungs-Cache (Thumbnails).
     eine Router-weite `dependencies`-Liste — ein vergessener Parameter ergäbe dort einen still
     öffentlichen Endpunkt), und `criterion_scoring_run_id` aus dem **Pfadparameter** steht in jeder
     Abfrage inklusive der Zählabfrage hinter `total`, weil `photo_rankings` keine `project_id` trägt
-    und `cluster_key` (`cluster-<n>`) in jedem Projekt derselbe String ist. Gleichzeitig entfällt
+    und `event_id` ein **globaler** Surrogatschlüssel ist (bis Spec 0425: `cluster_key`, in jedem
+    Projekt derselbe String — die Ausfallrichtung ohne Prädikat ist seither unauffälliger, nicht
+    harmloser: kohärente Fotos eines fremden Projekts statt einer erkennbaren Kollisionsmenge).
+    Gleichzeitig entfällt
     der Ablehnungsfilter aus dem bestehenden Kuratierungszweig (siehe **PhotoRanking** oben) — kein
     neues Antwortfeld, keine Migration.
-  - `PhotoOut` bekommt **zwei** additive, optionale und **nirgends persistierte** Felder, beide zur
-    Anfragezeit aus **einer** Abfrage über den **vollständigen** Cluster des Bezugslaufs berechnet
-    (`api/photos.py::_place_by_photo_id`, Präzedenz `_partition_sizes` — ein Query je Anfrage, nicht
-    einer je Foto): `location` (`lat`/`lon` in **voller** EXIF-Präzision, `source: "exif" |
-    "derived"` — die eigene Koordinate oder die des zeitlich nächstgelegenen Fotos mit Koordinate im
-    selben Cluster, Tie-Break: früherer Zeitpunkt, dann kleinere `photo_id`) und `cluster_place`
-    (`kind: "landmark" | "coordinate" | "multiple"` plus `landmark_name` bzw. **auf zwei
-    Nachkommastellen gerundete** `lat`/`lon`; `"multiple"` trägt strukturell keine Koordinate).
-    `cluster_place` ist auf jedem Foto desselben Clusters identisch; beide Felder werden
-    **einheitlich auf allen drei Lesepfaden** ausgeliefert (`list_photos` in beiden Modi,
-    `curation_candidates`), nicht nur im Kuratierungsmodus. **Warum im Backend und nicht im
-    Frontend:** die Kuratierung sieht je Partition nur `rank_position <= topN` und lädt den Rest
-    über eine eigene Abfrage nach, die nie in `items` zurückfließt — im Frontend gebildet wäre der
-    Cluster-Ort deshalb *dauerhaft* eine Aussage über die Top-N, für „Mehrere Orte" wie für den
-    Sehenswürdigkeit-Namen. Die Rundung liegt aus demselben Grund im Backend: dieselbe Zahl
-    entscheidet dort über `"coordinate"` vs. `"multiple"`. **Zwei Muss-Kriterien:**
-    `criterion_scoring_run_id` steht ausgeschrieben in der Ortsabfrage (dieselbe Begründung wie bei
-    `curation-candidates`, und sie gilt für **beide** Felder — ohne das Prädikat zöge die Herleitung
-    Koordinaten *und* Namen aus fremden Projekten), und die Lauf-Id wird **einmal pro Request**
-    aufgelöst und durchgereicht; fehlt sie, bleiben beide Felder `null` (Ausfallrichtung „nichts
-    anzeigen", nie „aus irgendeinem Lauf herleiten"). `cluster_place.landmark_name` wird an der
-    Lesestelle **erneut** saniert (`landmark.py::sanitize_landmark_name` →
-    `cloud_vision.py::_sanitize_label_text`, dorthin aus `remote_classification.py` verschoben),
-    obwohl `_landmark_detection_from_json` das seit dieser Spec bereits an der Quelle tut — die
-    doppelte Anwendung ist die einzige Deckung des unsanierten, kostenpflichtig erzeugten
-    Altbestands aus Spec 0047. Ein Name über `MAX_LANDMARK_NAME_LENGTH` (80) wird **verworfen, nie
-    abgeschnitten**; der Cluster fällt dann auf die Koordinatenstufe zurück. Im Frontend setzt
-    `utils/timeOfDay.ts::formatClusterHeading()` den Ortsteil vor die unveränderte Tageszeit-Angabe
-    (`"<Ort> · <Tageszeit> (<Zeitspanne>)"`) und verzweigt dafür nur über `kind` — die Rangfolge
-    wird dort **nicht** nachgebildet.
+  - `PhotoOut` trägt **zwei** Ortsfelder, beide auf **allen drei Lesepfaden** ausgeliefert
+    (`list_photos` in beiden Modi, `curation_candidates`), nie nur im Kuratierungsmodus:
+    - `location` (`lat`/`lon` in **voller** EXIF-Präzision, `source: "exif" | "derived"`) — die
+      eigene Koordinate oder die des zeitlich nächstgelegenen Fotos **des Projekts** mit
+      Koordinate, Tie-Break: früherer Zeitpunkt, dann kleinere `photo_id`. Nirgends persistiert.
+      Seit Spec 0425 ist die Bezugsmenge das **ganze Projekt** statt des Clusters (auch
+      aussortierte Fotos ankern), und dieselbe reine Funktion `events.py::infer_locations` speist
+      **beide** Aufrufer — Lesepfad und Worker. Die Bindung an `Photo.project_id` steht in beiden
+      ausgeschrieben; ohne sie erbt ein Foto Koordinaten aus einem fremden Projekt.
+    - `event` (`EventOut`: `id`, `position`, `started_at`, `ended_at`, `place`) — seit Spec 0425
+      an der Stelle des früheren, zur Anfragezeit berechneten `cluster_place`. Nummer, Zeitspanne
+      und Ort stehen jetzt in der `events`-**Zeile** und hängen damit strukturell nicht mehr davon
+      ab, welche Fotos eine Antwort gerade enthält — genau die Teilmengen-Abhängigkeit, die den
+      alten Wert eine Aussage über die Top-N sein ließ. `place` ist `null`, wenn `place_kind` NULL
+      **oder nicht aus dem Vorrat** ist (Mitgliedschaftsprüfung statt Cast — ein einzelner
+      driftender Wert legte sonst die gesamte Listenantwort auf 500).
+    Die Lauf-Id wird **einmal pro Request** aufgelöst und durchgereicht; fehlt sie, bleibt `event`
+    `null` (Ausfallrichtung „nichts anzeigen", nie „aus irgendeinem Lauf herleiten"). Die
+    Event-Abfrage trägt `Event.criterion_scoring_run_id` ausgeschrieben. Die Ortsrundung auf zwei
+    Nachkommastellen liegt unverändert im Backend, seit Spec 0425 aber an der **Schreib**stelle
+    (`events.py`): dieselbe Zahl entscheidet dort über `"coordinate"` vs. `"multiple"`. Ein
+    Sehenswürdigkeit-Name über `MAX_LANDMARK_NAME_LENGTH` (80) wird **verworfen, nie
+    abgeschnitten**; das Event fällt dann auf die Koordinatenstufe zurück. Im Frontend bildet
+    `utils/timeOfDay.ts::formatEventHeading()` daraus zwei Formen — `"<Name> (<Zeitspanne>)"` oder
+    `"Position <n> (<Zeitspanne>)"`; Tageszeit-Kategorien und die Koordinate als Name entfallen mit
+    Spec 0425.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
@@ -340,7 +339,7 @@ Verarbeitungs-Cache (Thumbnails).
     einen neuen, optionalen `dynamic_keys: frozenset[str]`-Parameter (Default `frozenset()`,
     bestehende Aufrufer bleiben unverändert). Neue Funktion `worker.py::reassign_photo_category`
     verschiebt ein Foto bei einem manuellen Override sofort im selben API-Request zwischen zwei
-    `(cluster_key, category_key)`-Partitionen (`ranking.py::rank_photos` nur für diese zwei
+    `(event_id, category_key)`-Partitionen (`ranking.py::rank_photos` nur für diese zwei
     Partitionen erneut aufgerufen, kein neuer Ranking-Algorithmus, kein voller Re-Scoring-Lauf).
     `reap_stalled_runs` bekommt einen vierten, eigenständigen Tabellen-Block für
     `remote_category_classification_runs`.
@@ -502,7 +501,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller dreizehn am Projekt
     hängenden Tabellen (`photos`, `scan_runs`, `scoring_runs`, `criterion_scoring_runs`,
     `remote_category_classification_runs`, `ratings`, `photo_scores`, `photo_criterion_scores`,
-    `photo_rankings`, `photo_landmark_detections`, `photo_fine_labels`,
+    `photo_rankings`, `events`, `photo_landmark_detections`, `photo_fine_labels`,
     `photo_category_classifications`, `photo_cloud_vision_errors`) sowie das Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
@@ -583,9 +582,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `GPS_CLUSTER_SPLIT_DISTANCE_METERS` (500,0) zum letzten koordinatentragenden Foto des laufenden
     Clusters; die Bezugskoordinate wird an jeder Cluster-Grenze zurückgesetzt. Ohne jede Koordinate
     im Lauf ist das Ergebnis `dict`-identisch mit dem bisherigen Zeitfensterverhalten.
-    `PhotoScore.cluster_key` bleibt der **Phase-A-Basiswert** und wird von der späteren
-    Landmark-Verfeinerung **nie** mutiert (Ownership-Grenze ADR 0021) — siehe die dokumentierte
-    Divergenz beim `PhotoRanking`-Eintrag unten.
+    `PhotoScore.cluster_key` bleibt der **Phase-A-Basiswert** und wird von der Phase 2 **nie**
+    mutiert (Ownership-Grenze ADR 0021) — seit Spec 0425 ist die Phase 2 die Event-Bildung, und die
+    Divergenz zu `PhotoRanking.event_id` ist unverändert gewollt (siehe dortigen Eintrag).
 - **PhotoCriterionScore** *(implementiert, Spec
   [`0037`](../specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md), `models.py`, ADR
   [`decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md`](../specs/decisions/0021-kriterien-datenmodell-kuratierungs-pipeline.md))*:
@@ -714,8 +713,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Phasenanfang geschrieben statt erst im `finally`.
 - **PhotoRanking** *(implementiert, Spec
   [`0037`](../specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md), `models.py`, ADR
-  0021)*: der volle, sortierte Kandidatenpool einer Partition (`cluster_key`×`category_key`) für
-  einen `CriterionScoringRun` — NICHT nur die Top-N. `category_key: str` (freier String wie
+  0021)*: der volle, sortierte Kandidatenpool einer Partition für einen `CriterionScoringRun` —
+  NICHT nur die Top-N. Die Partition ist seit Spec 0425 `event_id`×`category_key`, davor
+  `cluster_key`×`category_key`. `category_key: str` (freier String wie
   `criterion_key`, kein `PhotoCategory`-Enum mehr), `rank_score: float`, `rank_position: int`
   (1-basiert je Partition). `UniqueConstraint(criterion_scoring_run_id, photo_id)`. Macht "zeig die
   besten N pro Kategorie" (`GET /projects/{id}/photos?top_n_per_category=N`) zu einer reinen
@@ -766,20 +766,55 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     (`_to_photo_out`/`list_photos`) und hängt dort an `PhotoOut.suggestion`. Der bisher
     unerreichbare Rest einer Partition wird über den neuen Lese-Endpunkt `GET
     /projects/{id}/curation-candidates` einsehbar.
-  - kein Schema-Eingriff — `cluster_key` kann hier seither **feiner unterteilt sein als
-    `PhotoScore.cluster_key`**. `scoring.py::refine_clusters_by_landmark` teilt am Ende von
-    `run_criterion_scoring` (nach der Landmark-Phase, vor dem Aufbau der Partitionen) ein
-    Basis-Cluster mit ≥2 verschiedenen, nicht-leeren Sehenswürdigkeit-Namen in `cluster-<n>-<i>` auf
-    — 1-basiert, in alphabetischer Reihenfolge der Namen vergeben, **kein Name im Schlüssel** (er
-    läuft als Query-Parameter an `curation-candidates` zurück und dient im Frontend als React-Key);
-    Fotos ohne Namen behalten den Basis-Schlüssel. Die Namen kommen aus einem einzelnen Lesezugriff
-    auf `photo_landmark_detections` (`worker.py::_landmark_names`, Muster
-    `_remote_category_evidence`), **nicht** aus einer laufinternen Abbildung der Cloud-Antworten —
-    die Aufteilung wirkt damit auch in einem Lauf ganz ohne Cloud-Phase. **Die Divergenz beider
-    `cluster_key`-Felder ist beabsichtigt und dokumentiert** (analog `category_key`, ADR 0021):
-    `PhotoScore` trägt den Phase-A-Basiswert (Zeit + Ort), `PhotoRanking` den pro Lauf tatsächlich
-    für Kuratierung und Anzeige verwendeten, ggf. landmark-verfeinerten Wert. Jeder Lesepfad, der
-    einen Cluster meint, liest deshalb `PhotoRanking.cluster_key`.
+  - **Spaltentausch** *(Spec [`0425`](../specs/features/0425-events-statt-zeitcluster.md), ADR
+    0087, Migration `f5a6b7c8d9e0`)*: `cluster_key: str` wird durch `event_id: int` **ersetzt**
+    (echter Fremdschlüssel, NOT NULL), nicht ergänzt — zwei Träger derselben Zugehörigkeit
+    nebeneinander wären eine zweite, driftende Abbildung. Die nachträgliche Landmark-Verfeinerung
+    (`scoring.py::refine_clusters_by_landmark`, Schlüsselform `cluster-<n>-<i>`) entfällt
+    **ersatzlos**: sie erzeugte zeitlich zerrissene Gruppen, in denen „überschneidungsfrei" gar
+    nicht herstellbar war. Die Sehenswürdigkeit wirkt seither als **Trennsignal** im einen
+    Durchlauf der Event-Bildung. **Die Migration löscht alle Zeilen dieser Tabelle** und legt für
+    Altläufe keine Events an (die Lauf-Zeilen selbst bleiben unangetastet — sie tragen die nicht
+    wiederherstellbaren Ist-Kosten der Cloud-Aufrufe). Ein Lauf von vor dieser Änderung **muss
+    einmal neu berechnet werden**; bis dahin zeigt die Kuratierung für ihn nichts, und der
+    Leerzustand der Ansicht trägt diesen Fall. **Die Divergenz zu `PhotoScore.cluster_key` bleibt
+    beabsichtigt** (analog `category_key`, ADR 0021): dort steht weiterhin der Phase-A-Basiswert,
+    hier die pro Lauf tatsächlich für Kuratierung und Anzeige verwendete Gliederung.
+- **Event** *(implementiert, Spec
+  [`0425`](../specs/features/0425-events-statt-zeitcluster.md), `models.py`, Tabelle `events`, ADR
+  [`decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md`](../specs/decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md),
+  Migration `f5a6b7c8d9e0`)*: ein Abschnitt der Reise — eine zusammenhängende Folge von
+  Kandidatenfotos **eines** `CriterionScoringRun`, mit `position` (1-basiert, chronologisch),
+  `started_at`/`ended_at`, `landmark_name` und `place_kind`/`place_lat`/`place_lon`.
+  `UniqueConstraint(criterion_scoring_run_id, position)`, echter Fremdschlüssel auf den Lauf.
+  - **Warum persistiert:** Nummer und Zeitspanne sind Bestandteil des *Namens* und müssen deshalb
+    unabhängig davon feststehen, welche Fotos eine Antwort gerade enthält. Ein Event ist ein
+    Lauf-Artefakt wie `PhotoRanking`, kein reiner Funktionswert über `photos`; der Ortswert eines
+    einzelnen Fotos bleibt unpersistiert.
+  - **Gebildet wird in EINEM sortierten Durchlauf** (`events.py::build_events`, aufgerufen in
+    `worker.py::run_criterion_scoring` an der Stelle der früheren Landmark-Verfeinerung — nach der
+    Cloud-Phase, vor dem Aufbau der Partitionen). Die Grenzen entstehen aus einer **Liste
+    gleichrangiger Trennsignale**: Zeitlücke (`TIME_CLUSTER_GAP`), Kalendertag (Vergleich der
+    ersten zehn Zeichen des zonenlosen Zeitstempels — neu, eine Nacht ohne Zeitlücke trennt
+    seither), Schrittabstand (`GPS_CLUSTER_SPLIT_DISTANCE_METERS`), **Ausdehnung**
+    (`EVENT_EXTENT_MAX_METERS`, 1000,0 — Diagonale der umschließenden Box **einschließlich** des
+    betrachteten Fotos; unkalibriert und durch keinen Test gepinnt) und Sehenswürdigkeit-Wechsel.
+    Der Durchlauf fragt **alle** Signale bei jedem Kandidaten (`any` über eine gebaute Liste,
+    ausdrücklich nicht kurzgeschlossen) und ruft danach genau eine der schreibenden Methoden auf
+    allen auf. Nur diese Trennung von reiner Frage (`is_boundary`) und Fortschreibung
+    (`begin`/`advance`) erlaubt ein zustandsbehaftetes Signal neben einem paarweisen, ohne dass die
+    Auswertungsreihenfolge zum Bestandteil des Ergebnisses wird — ein weiteres Signal ist danach
+    eine Klasse und ein Listeneintrag.
+  - **Die Ausdehnung ist der fachliche Kern:** die bisherige Schwelle begrenzte den *Schritt*, nicht
+    den Durchmesser — ein Spaziergang in 400-m-Schritten trennte nie und überspannte Kilometer.
+  - **Der Ortsbezug entsteht ausschließlich aus GEMESSENEN Koordinaten und Namen** (Rangfolge
+    Sehenswürdigkeit → eine gerundete Koordinatenzelle → `multiple` → kein Ortsbezug). Ein
+    übernommener Ort speist ihn nie: eine Ortsaussage über eine Einheit darf nicht aus Schätzungen
+    entstehen. Geprüfte Feldkombination: `'landmark'` ⇒ `landmark_name` gesetzt; `'coordinate'` ⇒
+    beide Koordinaten gesetzt; `'multiple'` ⇒ beide Koordinaten NULL.
+  - `events.landmark_name` entsteht **ausschließlich** über `worker.py::_landmark_names` (und damit
+    `sanitize_landmark_name`) — kein direkter Zugriff auf `PhotoLandmarkDetection.name` an der
+    Schreibstelle, kein Abschneiden, und die Migration kopiert **keine** Namen.
 - **Rating** *(implementiert, Spec 0002, `models.py`)*: Bewertung eines Photos durch einen User
   (`favorite` / `album_worthy` / `rejected`), pro User getrennt gespeichert; Unique-Constraint
   `(photo_id, user_id)`, "unbewertet" = fehlende Zeile (kein Enum-Wert). Bleibt mit Spec 0003
