@@ -23,6 +23,7 @@ from photosort.cache_cleanup import cleanup_orphaned_cache
 from photosort.cameras import CameraIdentity, shifted
 from photosort.categories import LOCAL_CATEGORY_SIGNALS, resolve_category, secondary_categories
 from photosort.classification import (
+    ANIMAL_CATEGORIES,
     FaceBoundingBox,
     FaceDetectorLike,
     FaceLandmarkerLike,
@@ -44,7 +45,11 @@ from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.criteria import (
     CRITERIA_REGISTRY,
+    FOOD_CATEGORIES,
+    VEHICLE_CATEGORIES,
+    allow_listed_area_fraction,
     animal_detections,
+    bounding_box_area_fraction,
     compute_content_landscape,
     compute_essen_trinken_score,
     compute_fahrzeug_score,
@@ -83,6 +88,7 @@ from photosort.models import (
     CriterionSource,
     Event,
     FineLabel,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
@@ -99,6 +105,8 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from photosort.motif_strengths import upsert_assessment
+from photosort.motifs import local_motif_strengths
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
@@ -1356,6 +1364,24 @@ def derive_photo_category(
     return resolve_category(candidates)
 
 
+@dataclass(frozen=True)
+class ContentCriteria:
+    """Das Ergebnis der bildbasierten Analyse EINES Fotos: die Kriterien-Werte und die
+    Flaechenanteile je Allow-Liste.
+
+    Die Flaechenanteile sind KEIN Kriterium: sie bekommen keine Registry-Zeile, keine
+    Datenbankspalte und keinen Eintrag in `_IMAGE_ANALYSIS_CRITERION_KEYS`. Sie sind eine
+    Zwischengroesse auf dem Weg zur Motivstaerke (motifs.py::local_motif_strengths) und leben nur
+    fuer die Dauer des Laufs - die Bounding-Boxen selbst werden nirgends persistiert.
+
+    Geschluesselt sind sie mit dem KRITERIEN-Schluessel, dessen Allow-Liste sie ausgemessen haben
+    (`content_people`, `tier`, `fahrzeug`, `essen_trinken`) - so gibt es keine zweite
+    Schluesselmenge, die gegen `criteria.py` driften koennte."""
+
+    values: dict[str, float]
+    area_fractions: dict[str, float]
+
+
 def _compute_content_criteria(
     cache_dir: Path,
     photo: Photo,
@@ -1364,7 +1390,7 @@ def _compute_content_criteria(
     scene_classifier: SceneClassifierLike | None,
     aesthetics_model: AestheticsModelLike | None,
     face_landmarker: FaceLandmarkerLike | None,
-) -> dict[str, float]:
+) -> ContentCriteria:
     """Best-effort wie scoring.py::_compute_photo_metrics: JEDES hier berechnete Kriterium
     hat sein EIGENES try/except - ein einzelner fehlgeschlagener Berechnungsversuch
     (fehlende/defekte display-Cache-Datei, Modell-Ladefehler in genau einem Detektor) darf
@@ -1386,7 +1412,7 @@ def _compute_content_criteria(
     werden, das waere ein unentdeckter Fehler statt eines ungeschriebenen Kriteriums."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     if not path.is_file():
-        return {}
+        return ContentCriteria(values={}, area_fractions={})
     try:
         with Image.open(path) as opened:
             opened.load()
@@ -1394,9 +1420,14 @@ def _compute_content_criteria(
             if image.mode not in ("RGB", "L"):
                 image = image.convert("RGB")
     except Exception:
-        return {}
+        return ContentCriteria(values={}, area_fractions={})
 
     values: dict[str, float] = {}
+    # Die Flaechenanteile je Allow-Liste, aus DENSELBEN Detektionen wie die Scores darunter - kein
+    # zweiter Detektoraufruf. Jede Berechnung hat ihr eigenes try/except wie die Scores: ein
+    # Fehlschlag laesst genau diesen Anteil ungeschrieben (das Motiv bleibt bei 0), statt den
+    # gesamten Lauf oder die uebrigen Anteile mitzureissen.
+    area_fractions: dict[str, float] = {}
 
     faces: list[FaceBoundingBox] | None = None
     if face_detector is not None:
@@ -1405,6 +1436,14 @@ def _compute_content_criteria(
             values["content_people"] = content_people_from_faces(faces)
         except Exception:
             faces = None
+        if faces is not None:
+            try:
+                # AUSDRUECKLICH getrennt von `content_people`: das Kriterium bleibt die
+                # 0.0/1.0-Praesenz (Rangfolge und Landmark-Kandidatenwahl haengen daran), der
+                # Anteil ist die zusaetzliche Groesse fuer die Motivstaerke.
+                area_fractions["content_people"] = bounding_box_area_fraction(faces)
+            except Exception:
+                pass
 
     # EIN detect_objects-Aufruf speist drei Kriterien plus goldener_schnitt. Die Objekt-Erkennung
     # und JEDE der drei Score-Berechnungen haben ein EIGENES try/except - ein Fehler in einer
@@ -1428,6 +1467,17 @@ def _compute_content_criteria(
                 values["essen_trinken"] = compute_essen_trinken_score(objects)
             except Exception:
                 pass
+            # Dieselbe eine Detektorausgabe, drei Allow-Listen, drei Flaechenanteile - dieselben
+            # Klassenmengen wie die drei Scores darueber.
+            for criterion_key, allowed in (
+                ("tier", ANIMAL_CATEGORIES),
+                ("fahrzeug", VEHICLE_CATEGORIES),
+                ("essen_trinken", FOOD_CATEGORIES),
+            ):
+                try:
+                    area_fractions[criterion_key] = allow_listed_area_fraction(objects, allowed)
+                except Exception:
+                    pass
 
     try:
         values["content_landscape"] = compute_content_landscape(image)
@@ -1494,7 +1544,7 @@ def _compute_content_criteria(
         except Exception:
             pass
 
-    return values
+    return ContentCriteria(values=values, area_fractions=area_fractions)
 
 
 # Defensive Obergrenze fuer die zusammengesetzte laufweite Cloud-Fehlermeldung - analog
@@ -1908,6 +1958,11 @@ async def run_criterion_scoring(
         # photo_id -> {criterion_key: value}, nur die in DIESEM Lauf erfolgreich berechneten
         # Werte (reine In-Memory-Grundlage fuer rank_photos unten, kein erneutes DB-Read noetig).
         candidate_values: dict[int, dict[str, float]] = {}
+        # photo_id -> {criterion_key: Flaechenanteil}. Ebenfalls rein in-memory und ebenfalls
+        # AUSSCHLIESSLICH fuer diesen Lauf: die Anteile werden nirgends persistiert, und ohne sie
+        # koennte die Kopfzeile unten nicht entstehen (ein spaeterer Neuaufbau der Gliederung hat
+        # sie deshalb nicht und schreibt auch keine Kopfzelle).
+        area_fractions_by_photo_id: dict[int, dict[str, float]] = {}
         processed = 0
         for photo, score in rows:
             values: dict[str, float] = {}
@@ -1926,7 +1981,7 @@ async def run_criterion_scoring(
             # best-effort abgesichert und kann legitim None sein - _compute_content_criteria
             # ueberspringt die davon abhaengigen Kriterien dann selbst, statt dass ein
             # fehlgeschlagener Builder den gesamten Lauf abbricht.
-            content_values = _compute_content_criteria(
+            content = _compute_content_criteria(
                 cache_dir,
                 photo,
                 detector,
@@ -1936,13 +1991,14 @@ async def run_criterion_scoring(
                 face_landmarker,
             )
             for criterion_key, source in _IMAGE_ANALYSIS_CRITERION_SOURCES.items():
-                if criterion_key in content_values:
+                if criterion_key in content.values:
                     _upsert_criterion(
-                        photo.id, criterion_key, content_values[criterion_key], source
+                        photo.id, criterion_key, content.values[criterion_key], source
                     )
-                    values[criterion_key] = content_values[criterion_key]
+                    values[criterion_key] = content.values[criterion_key]
 
             candidate_values[photo.id] = values
+            area_fractions_by_photo_id[photo.id] = content.area_fractions
 
             processed += 1
             if processed % CRITERION_SCORING_COMMIT_BATCH_SIZE == 0:
@@ -2167,6 +2223,28 @@ async def run_criterion_scoring(
                         f"Sehenswuerdigkeits-Erkennung: {landmark_failures} von "
                         f"{landmark_attempts} Fotos fehlgeschlagen.",
                     )
+
+        # DIE LOKALE MOTIV-KOPFZEILE. Ihre Stelle ist NACH der Landmark-Phase, und das ist keine
+        # Kosmetik: `bauwerk_sehenswuerdigkeit` ist lokal `max(Szenen-Konfidenz,
+        # Sehenswuerdigkeits-Konfidenz)`, und der zweite Wert entsteht erst dort. Vor der Phase
+        # geschrieben fehlte der gerade bezahlte Beitrag im Vektor.
+        #
+        # `upsert_assessment` setzt die Regel selbst durch: eine vorhandene Cloud-Grundlage bleibt
+        # unberuehrt, eine lokale wird ersetzt. `excluded_document` ist hier immer `False` - den
+        # Ausschluss beantwortet allein das Modell, die lokale Erkennung hat dazu keine Aussage.
+        for photo_id, criterion_values in candidate_values.items():
+            await upsert_assessment(
+                session,
+                photo_id,
+                source=MotifAssessmentSource.LOCAL,
+                strengths=local_motif_strengths(
+                    criterion_values, area_fractions_by_photo_id.get(photo_id, {})
+                ),
+                excluded_document=False,
+                provider=None,
+                computed_at=now,
+            )
+        await session.commit()
 
         # Der RANKING-Teilschritt (Kategorieableitung + rank_photos je Partition + Schreiben der
         # PhotoRanking-Zeilen). Er gehoert fachlich zur Kriterien-Phase, laeuft aber NACH der
