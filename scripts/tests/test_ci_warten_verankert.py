@@ -46,6 +46,39 @@ nicht das Verhalten der Schleife im Fehlerfall.
 `gh project`. Ein Muster ohne Wortgrenze etikettierte jeden Board-Befehl als Pruefstands-Befehl -
 die Fundstellen-Meldung und mit ihr die Kardinalitaet der Befehlszeilen wuerde falsch.
 
+**Mutationsprobe am echten Bestand, nach Gruen gefuehrt (2026-09-12).** Der Bestand ist nach der
+Umsetzung sauber, der Test startet also gruen - ein Rot-Lauf davor belegt nichts, er faerbte rot,
+weil der Text noch fehlt. Tragend ist allein die Probe danach; jede Mutation wurde gesetzt, der
+Lauf beobachtet und die Mutation zurueckgenommen. **22 von 22 rot**, je Musterfamilie mindestens
+einmal:
+
+* *Befehlsform* (6): `--watch`, `--fail-fast` und das `timeout` je einzeln entfernt; das
+  Wiederholintervall auf den Vorgabewert zurueckgedreht; `--required` ergaenzt; ein fuenftes Feld
+  an die `--json`-Auswahl angehaengt. Der letzte ist der billigste hochwertige Nachweis der
+  Praefix-Falle: `…,workflow,link` **enthaelt** die erwartete Zeichenkette und waere unter einem
+  Substring-Vergleich gruen geblieben - deshalb der Vergleich des ganzen Optionswerts.
+* *Vokabular* (2): `unbestimmt` geloescht; `laeuft-noch` in `pending` umbenannt.
+* *Feldmengen* (2): `bucket` aus der Auswertungsgrenze von `pr-pruefstand-lesen` entfernt; ein
+  Feldname in die **leere** Grenze von `pr-pruefstand-abwarten` eingesetzt.
+* *Betriebszahlen* (2): `15 Minuten` ein zweites Mal in `ship-feature`, `timeout 540` ein zweites
+  Mal in `developer.md` - beide faerbten genau ihren eigenen Parametrisierungsfall rot.
+* *Kardinalitaet und Platzierung* (4): ein zweiter Wartepunkt in `ship-feature`; der Wartepunkt
+  aus `ship-entwurf` entfernt; `pr-pruefstand-lesen` aus `ship-feature` entfernt; der ganze
+  Schritt 9 vor Schritt 8 gezogen (die Offsetzusage, nicht der Wortlaut).
+* *Definitionsstellen* (5): eine zweite umzaeunte Kopie des Berichtsblocks in `ship-entwurf`; das
+  Feld „Art je Runde" aus der Definition entfernt; die Ueberschrift in `ship-entwurf` umbenannt;
+  der „behoben"-Anker aus `developer.md` entfernt; der „blockiert"-Anker aus der Ausloeseliste von
+  `ship-feature` entfernt.
+* *Ein Ort fuer den Befehl* (1): die Befehlszeile zusaetzlich in einen Codeblock von
+  `ship-feature` gesetzt.
+
+**Die beiden geforderten Nicht-Reaktionen, die genauso zaehlen - beide blieben gruen:** eine
+erklaerende Erwaehnung von ``gh pr checks`` im Fliesstext des Katalogs (der Katalog darf ueber
+seinen eigenen Befehl reden, ohne einen zweiten abzusetzen), und eine **dritte** Datei, die den
+Berichtsblock als Inline-Code *zitiert*, statt ihn umzaeunt zu definieren (der Pruefer friert
+keine Dateiliste ein, er verbietet eine zweite Definition). Wer ein Muster aendert, wiederholt
+diese Probe, statt sie zu glauben.
+
 **Selbstschutz** wie bei den uebrigen Repo-Konsistenztests, weil die Haelfte der Zusagen hier
 Mengen- und Formaussagen ueber gelesenen Text sind: Untergrenze fuer den Suchraum, Nachweis der
 vier tragenden Dateien **im** Suchraum, plausible Mindestlaenge je Datei, Existenz jeder
