@@ -535,3 +535,21 @@ def test_the_events_downgrade_renders_for_postgres_too() -> None:
     assert "DROP TABLE EVENTS" in rendered
     assert "ADD COLUMN CLUSTER_KEY" in rendered
     assert "DROP COLUMN EVENT_ID" in rendered
+
+
+def test_the_events_downgrade_drops_the_temporary_default_again() -> None:
+    """Der `server_default` beim Wiederanlegen ist VORUEBERGEHEND - er fuellt unter SQLite beim
+    Tabellen-Neuaufbau die Zeilen, die nach dem `upgrade` entstanden sind. Unter Postgres gibt es
+    keinen Neuaufbau: dort ist sein Entfernen eine eigene `ALTER COLUMN ... DROP DEFAULT`, und nur
+    sie trennt den Endzustand vom Ausgangszustand aus `c1d2e3f4a5b6`.
+
+    Die Reihenfolge ist Teil der Aussage: ein `DROP DEFAULT` VOR dem `ADD COLUMN` liefe ins
+    Leere."""
+    rendered = [s.upper() for s in _render_postgres_ddl(_EVENTS_REVISION, direction="downgrade")]
+
+    add_index = next(i for i, s in enumerate(rendered) if "ADD COLUMN CLUSTER_KEY" in s)
+    drop_default_index = next(
+        i for i, s in enumerate(rendered) if "ALTER COLUMN CLUSTER_KEY DROP DEFAULT" in s
+    )
+
+    assert add_index < drop_default_index

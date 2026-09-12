@@ -241,6 +241,74 @@ def test_downgrade_restores_the_old_column_shape(tmp_path: Path) -> None:
     assert "event_id" not in columns
 
 
+def _insert_post_upgrade_ranking(connection: Connection, *, run_id: int) -> None:
+    """Eine Rangzeile, wie sie ein Kriterien-Lauf NACH der Migration schreibt - mitsamt ihrem
+    Event. Genau dieser Zustand macht den Rueckweg pruefbar: zum Zeitpunkt des `downgrade` ist
+    `photo_rankings` dann NICHT leer."""
+    connection.execute(
+        text(
+            "INSERT INTO events (id, criterion_scoring_run_id, position, started_at, ended_at) "
+            f"VALUES (1, {run_id}, 1, '2026-07-20 10:00:00', '2026-07-20 11:00:00')"
+        )
+    )
+    connection.execute(
+        text(
+            "INSERT INTO photo_rankings (criterion_scoring_run_id, photo_id, event_id, "
+            "category_key, rank_score, rank_position, is_primary) VALUES "
+            f"({run_id}, 1, 1, 'landschaft', 0.9, 1, 1)"
+        )
+    )
+
+
+def test_downgrade_survives_rows_written_after_the_upgrade(tmp_path: Path) -> None:
+    """DER eigentliche Rueckweg-Fall: nach dem `upgrade` hat ein neuer Kriterien-Lauf laengst
+    Zeilen geschrieben. `batch_alter_table` baut die Tabelle unter SQLite neu und uebernimmt den
+    Bestand per `INSERT ... SELECT` - fuer das wiederhergestellte, NOT-NULL-Feld `cluster_key`
+    gibt es dabei keinen Wert.
+
+    Genau deshalb stehen `add_column` (mit voruebergehendem Default) und das Entfernen des
+    Defaults in ZWEI Bloecken: im selben Block haette die neu gebaute Tabelle von vornherein
+    keinen Default, und die Uebernahme des Bestands schluege an der NOT-NULL-Bedingung fehl. An
+    einer LEEREN Tabelle faellt dieser Unterschied nicht auf - deshalb schreibt dieser Fall
+    ausdruecklich eine Zeile."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    with engine.begin() as connection:
+        _create_pre_migration_schema(connection)
+        _insert_legacy_run(connection, run_id=1, ranking_rows=2)
+        _apply(connection, "upgrade")
+        _insert_post_upgrade_ranking(connection, run_id=1)
+        _apply(connection, "downgrade")
+
+    with engine.connect() as connection:
+        rows = connection.execute(text("SELECT photo_id, cluster_key FROM photo_rankings")).all()
+
+    # Die nach dem Upgrade geschriebene Zeile ueberlebt den Rueckweg; ihr `cluster_key` ist der
+    # voruebergehende Default, denn einen echten Wert gibt es fuer sie nicht mehr.
+    assert rows == [(1, "")]
+
+
+def test_downgrade_leaves_no_server_default_on_the_restored_column(tmp_path: Path) -> None:
+    """Der Rueckweg stellt den AUSGANGSZUSTAND her, nicht nur die Spaltenform: `cluster_key`
+    entstand in `c1d2e3f4a5b6` als `nullable=False` OHNE `server_default`.
+
+    Ein zurueckbleibender Default macht aus jedem Schreibpfad, der die Spalte vergisst, ein
+    stilles `''` statt eines lauten NOT-NULL-Fehlers - genau die Ausfallrichtung, die diese
+    Tabelle zwei Spalten weiter bei `is_primary` ausdruecklich ablehnt. Der Default wird beim
+    Hinzufuegen nur voruebergehend gebraucht (der Tabellen-Neuaufbau von `batch_alter_table`
+    fuellt damit den Altbestand) und gehoert danach entfernt."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    with engine.begin() as connection:
+        _create_pre_migration_schema(connection)
+        _apply(connection, "upgrade")
+        _apply(connection, "downgrade")
+
+    with engine.connect() as connection:
+        columns = {c["name"]: c for c in inspect(connection).get_columns("photo_rankings")}
+
+    assert columns["cluster_key"]["default"] is None
+    assert not columns["cluster_key"]["nullable"]
+
+
 def test_downgrade_does_not_bring_the_deleted_rows_back(tmp_path: Path) -> None:
     """FESTGESCHRIEBENES Verhalten, kein Versehen: die Loeschung ist nicht rueckholbar. Der
     Rueckwaertsweg stellt die SPALTENFORM wieder her, nicht die Daten."""

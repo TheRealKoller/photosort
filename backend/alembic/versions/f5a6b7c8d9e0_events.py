@@ -91,11 +91,26 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema.
 
-    Stellt die Spaltenform wieder her. Die in `upgrade()` geloeschten Rangzeilen kommen NICHT
-    zurueck - sie sind unwiederbringlich fort, und ein erneuter Kriterien-Lauf ist der einzige Weg
-    zu neuen."""
+    Stellt den AUSGANGSZUSTAND wieder her, nicht nur die Spaltenform: `cluster_key` entstand in
+    `c1d2e3f4a5b6` als `nullable=False` OHNE `server_default`, und genau so steht sie danach
+    wieder da. Ein zurueckbliebener Default machte aus jedem Schreibpfad, der die Spalte vergisst,
+    ein stilles `''` statt eines lauten NOT-NULL-Fehlers - dieselbe Ausfallrichtung, die
+    `PhotoRanking.is_primary` zwei Spalten weiter ausdruecklich ablehnt.
+
+    Die in `upgrade()` geloeschten Rangzeilen kommen NICHT zurueck - sie sind unwiederbringlich
+    fort, und ein erneuter Kriterien-Lauf ist der einzige Weg zu neuen."""
+    # ZWEI Batch-Bloecke, nie einer (Muster aus `c9d0e1f2a3b4_nebenkategorien.py`):
+    # `batch_alter_table` fasst unter SQLite alle Operationen eines Blocks zu EINEM
+    # Tabellen-Neuaufbau zusammen. Stuenden `add_column` und das Entfernen des Defaults im selben
+    # Block, haette die neu gebaute Tabelle von vornherein keinen Default - und das
+    # `INSERT ... SELECT` des Altbestands scheiterte an der NOT-NULL-Bedingung. Der Default muss
+    # beim ersten Aufbau existieren und beim zweiten verschwinden.
     with op.batch_alter_table("photo_rankings") as batch:
         batch.add_column(sa.Column("cluster_key", sa.String(), nullable=False, server_default=""))
         batch.drop_constraint(_RANKING_EVENT_FK, type_="foreignkey")
         batch.drop_column("event_id")
+
+    with op.batch_alter_table("photo_rankings") as batch:
+        batch.alter_column("cluster_key", existing_type=sa.String(), server_default=None)
+
     op.drop_table("events")
