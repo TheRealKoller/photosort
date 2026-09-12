@@ -1,6 +1,6 @@
 # 0425 - Events statt Zeitcluster: Zeit, Ort und Sehenswürdigkeit gliedern das Album
 
-**Status:** Accepted
+**Status:** Implemented ([PR #439](https://github.com/TheRealKoller/photosort/pull/439))
 **Erstellt:** 2026-09-12
 **Bezug:** [Issue #425](https://github.com/TheRealKoller/photosort/issues/425), Teil des Zielbilds
 [#424](https://github.com/TheRealKoller/photosort/issues/424); ADR
