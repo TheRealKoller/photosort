@@ -3949,7 +3949,7 @@ class TestCurationCandidatesEventId:
 # ---------------------------------------------------------------------------------------------
 # specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 7: die drei neuen
 # PhotoOut-Felder und der camera_id-Filter. `taken_at` liefert ab hier die KORRIGIERTE Zeit -
-# derselbe Feldname, neue Bedeutung (ADR 0089, Punkt 1).
+# derselbe Feldname, neue Bedeutung (ADR 0090, Punkt 1).
 
 
 async def _make_camera(

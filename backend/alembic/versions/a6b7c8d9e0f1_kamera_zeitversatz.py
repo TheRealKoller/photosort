@@ -13,7 +13,7 @@ d) KEIN Backfill der Kamera: das erledigt der naechste Scan ueber `camera_probed
 Die Kopie in b) entsteht zu einem Zeitpunkt, an dem es noch keinen Versatz gibt - `taken_at` ist
 hier also beweisbar noch die AUFGEZEICHNETE Zeit, und die Kopie ist damit der richtige Wert. Ab
 dieser Migration dreht sich die Bedeutung von `photos.taken_at`: es traegt danach die KORRIGIERTE
-Zeit (ADR 0089, Punkt 1).
+Zeit (ADR 0090, Punkt 1).
 
 ACHTUNG - `downgrade()` VERLIERT DIE VERSAETZE UNUMKEHRBAR.
 

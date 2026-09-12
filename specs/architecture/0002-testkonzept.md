@@ -603,7 +603,7 @@ Gilt als Vorlage für jeden künftigen Constraint-Tausch, jeden verlustbehaftete
 
 Gilt als Vorlage für jeden künftigen Aufräumvorgang, der seine Menge aus dem Dateisystem statt aus der Datenbank bildet (Paar-Assertion, Muster gegen die Pfadbildung statt gegen Beispielnamen, Nicht-Treffer als eigene Fallgruppe), und für jede künftige Korrektheitsaussage über Datei-Zeitstempel (`os.utime` statt Warten, Grenze als Parameter).
 
-### Eine Spalte kehrt ihre Bedeutung um: der Nachweis liegt an den Lesestellen, die sich nicht ändern — und eine Zusage über die ANZAHL der Schreibstellen braucht einen strukturellen Wächter (`cameras.py`/`worker.py`/`api/cameras.py`) — neu für ADR [`0089`](../decisions/0089-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md) / Spec [`0426`](../features/0426-zeitversatz-je-kamera.md)
+### Eine Spalte kehrt ihre Bedeutung um: der Nachweis liegt an den Lesestellen, die sich nicht ändern — und eine Zusage über die ANZAHL der Schreibstellen braucht einen strukturellen Wächter (`cameras.py`/`worker.py`/`api/cameras.py`) — neu für ADR [`0090`](../decisions/0090-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md) / Spec [`0426`](../features/0426-zeitversatz-je-kamera.md)
 
 Erster Fall im Projekt, in dem eine bestehende Spalte ihre **Bedeutung** wechselt, ohne ihren Namen, ihren Typ oder eine einzige Lesestelle zu ändern. Acht Muster, die über dieses Feature hinaus gelten:
 
@@ -1734,7 +1734,7 @@ Kein neues Testframework, kein CI-Gate — konsistent mit den übrigen reinen Pr
 
 ## Bekannte Lücken (Stand 2026-08-03)
 
-- **Neu mit Spec [`0426`](../features/0426-zeitversatz-je-kamera.md) / ADR [`0089`](../decisions/0089-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md) (2026-09-12), drei benannte Lücken des Zeitversatzes:**
+- **Neu mit Spec [`0426`](../features/0426-zeitversatz-je-kamera.md) / ADR [`0090`](../decisions/0090-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md) (2026-09-12), drei benannte Lücken des Zeitversatzes:**
   - **Dass zwei Dateien derselben Kamera ihren Modellnamen byte-gleich schreiben, prüft nichts und kann hier nichts prüfen.** Die Identität vergleicht zeichengenau; in der Suite entstehen beide Werte im Test selbst. Schreibt eine Firmware-Version den Namen anders, erscheint dieselbe Kamera zweimal in der Liste, und der Nutzer setzt den Versatz zweimal — sichtbar im Produkt, grün in der Suite. Gleiche Klasse wie der exakte Namensvergleich der Landmark-Verfeinerung.
   - **Die Nachhol-Runde des Scans erbt die Ausfallbreite eines Erstscans, einmalig und für den gesamten Bestand.** Ein Lesefehler an einer einzigen Datei setzt den Lauf auf `FAILED`; abgearbeitete Blöcke behalten ihren Merker, der nächste Lauf liest nur den Rest. Geprüft wird genau diese Fortsetzbarkeit — **nicht**, dass ein dauerhaft unlesbares Bestandsfoto den Nachholvorgang nicht dauerhaft rot hält. Erkennungsweg: die Fehlermeldung des Laufs.
   - **„Dieselben zwei Fotos zeigen denselben Moment" ist eine Beurteilung des Nutzers und bleibt es.** Der Vorschlag rechnet, was ihm gegeben wird; ein um Minuten falsch gewähltes Paar erzeugt einen um Minuten falschen Versatz, und nichts daran ist von einem richtigen Paar zu unterscheiden. Getestet ist die Rechnung samt ihren Verwerfungsfällen, nicht die Auswahl. Tragende Maßnahme ist die Vorschau am echten Foto, und die ist Sichtprüfung.

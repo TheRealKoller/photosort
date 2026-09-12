@@ -516,7 +516,7 @@ class TestScopeAndStorage:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         """specs/features/0426-zeitversatz-je-kamera.md: `min`/`max` laufen in SQL ueber
-        `Photo.taken_at`, und das traegt seit ADR 0089 die KORRIGIERTE Zeit - der
+        `Photo.taken_at`, und das traegt seit ADR 0090 die KORRIGIERTE Zeit - der
         Aufnahmezeitraum folgt dem Versatz ohne eine Zeile Codeaenderung. Der Datensatz ist so
         gewaehlt, dass das Ergebnis mit der aufgezeichneten Zeit ANDERS ausfaellt: ohne Versatz
         begaenne der Zeitraum um 10:00, mit ihm um 08:00."""

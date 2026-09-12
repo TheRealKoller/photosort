@@ -555,7 +555,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   [`features/0001-opencloud-project-connection.md`](../specs/features/0001-opencloud-project-connection.md).
 - **ProjectCamera** *(implementiert, Spec
   [`0426`](../specs/features/0426-zeitversatz-je-kamera.md), ADR
-  [`decisions/0089-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md`](../specs/decisions/0089-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md),
+  [`decisions/0090-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md`](../specs/decisions/0090-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md),
   `models.py`)*: eine Kamera, wie sie in **genau diesem** Projekt vorkommt, samt ihrem Zeitversatz
   — `project_id` (echter Fremdschlüssel), `make`, `model`, `offset_minutes` (NOT NULL, Vorgabe
   `0`), `UniqueConstraint(project_id, make, model)`. Projekteigen statt projektübergreifend: "der

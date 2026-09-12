@@ -254,7 +254,7 @@ def _classify_scan_entries(
     unveraenderter Etag UND noch nicht geprueft -> Arbeitsposten mit `probe_only=True`; sonst ->
     voller Arbeitsposten. Die Verarbeitung selbst gehoert nicht hierher.
 
-    Der `probe_only`-Zweig ist die EINMALIGE Nachhol-Runde fuer Bestandsfotos (ADR 0089,
+    Der `probe_only`-Zweig ist die EINMALIGE Nachhol-Runde fuer Bestandsfotos (ADR 0090,
     Konsequenzen): Ohne sie bliebe die Kameraliste in bereits gescannten Projekten leer, denn ein
     unveraendertes Foto wird nie wieder gelesen. Sie laeuft genau einmal je Foto - danach steht
     der Merker, AUCH wenn die Datei keine Kamera nennt."""
@@ -558,7 +558,7 @@ async def _process_scan_block(
         photo.camera_id = None if camera is None else camera.id
         photo.camera_probed = True
 
-        # DIE ERSTE der zwei Schreibstellen der Invariante (ADR 0089, Punkt 1; die zweite ist
+        # DIE ERSTE der zwei Schreibstellen der Invariante (ADR 0090, Punkt 1; die zweite ist
         # `api/cameras.py`), und beide rechnen ueber `cameras.py::shifted` aus
         # `taken_at_original` - NIE aus dem bestehenden `taken_at`. Eine Differenz auf den
         # bestehenden Wert zu addieren kumulierte bei jedem weiteren Lauf.

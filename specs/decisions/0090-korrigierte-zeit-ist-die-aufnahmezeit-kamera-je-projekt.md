@@ -1,7 +1,11 @@
-# 0089 - Die korrigierte Zeit **ist** die Aufnahmezeit der Anwendung, die Kamera ist eine projekteigene Entität
+# 0090 - Die korrigierte Zeit **ist** die Aufnahmezeit der Anwendung, die Kamera ist eine projekteigene Entität
 
 **Status:** Accepted
 **Datum:** 2026-09-12
+**Frühere Nummer:** 0088 (bis 2026-09-12), aufgelöste Dublette mit
+`0088-signaturpruefung-haengt-am-paketsatz-nicht-am-installationsaufruf.md`.
+**Frühere Nummer:** 0089 (bis 2026-09-12), aufgelöste Dublette mit
+`0089-bausteinregister-handarbeit-ohne-soll-struktur-seite-umbenannt.md`.
 **Bezug:** Spec `specs/features/0426-*.md`, ADR
 [`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md) (Event als
 Lauf-Artefakt, projektweite Ortsherleitung), ADR

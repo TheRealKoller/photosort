@@ -596,7 +596,7 @@ class TestTheOffsetSuggestion:
     async def test_the_same_pair_suggests_the_same_value_even_with_an_offset_in_place(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Gerechnet wird auf der AUFGEZEICHNETEN Zeit des Kamerafotos (ADR 0089, Punkt 6) -
+        """Gerechnet wird auf der AUFGEZEICHNETEN Zeit des Kamerafotos (ADR 0090, Punkt 6) -
         rechnete der Vorschlag auf ihrer korrigierten Zeit, haenge er vom bereits gesetzten
         Versatz ab und ein zweiter Aufruf schluege etwas anderes vor."""
         project = await _make_project(db_session)

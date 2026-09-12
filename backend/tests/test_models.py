@@ -1414,7 +1414,7 @@ def test_every_classification_phase_value_fits_the_column_length() -> None:
     assert max(len(phase.value) for phase in ClassificationPhase) <= column_length
 
 
-# specs/features/0426-zeitversatz-je-kamera.md / decisions/0089 - die projekteigene Kamerazeile
+# specs/features/0426-zeitversatz-je-kamera.md / decisions/0090 - die projekteigene Kamerazeile
 # und die drei neuen photos-Spalten.
 
 
@@ -1450,7 +1450,7 @@ async def test_the_same_make_and_model_may_not_repeat_within_one_project(
 
 
 async def test_the_same_camera_may_exist_once_per_project(db_session: AsyncSession) -> None:
-    """Der Kern von ADR 0089, Punkt 2: dieselbe Kamera in zwei Projekten sind ZWEI Zeilen mit
+    """Der Kern von ADR 0090, Punkt 2: dieselbe Kamera in zwei Projekten sind ZWEI Zeilen mit
     getrennten Versaetzen - "der Versatz gilt nur in diesem Projekt" ist damit strukturell wahr."""
     first = await _project(db_session, "Costa Rica")
     second = await _project(db_session, "Norwegen")
@@ -1566,7 +1566,7 @@ async def test_the_recorded_time_has_no_default_and_must_be_written_explicitly(
         )
 
 
-# Die beiden - und nur die beiden - Schreibstellen auf `Photo.taken_at` (ADR 0089, Punkt 1).
+# Die beiden - und nur die beiden - Schreibstellen auf `Photo.taken_at` (ADR 0090, Punkt 1).
 _ALLOWED_TAKEN_AT_WRITERS = frozenset({"worker.py", "api/cameras.py"})
 
 _TAKEN_AT = "taken_at"

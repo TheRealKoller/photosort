@@ -1467,7 +1467,7 @@ async def test_the_directory_matches_the_reported_storage_after_a_scan(
 # ---------------------------------------------------------------------------------------------
 # specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 4: der Scan ist die ERSTE der
 # zwei Schreibstellen der Invariante `taken_at == taken_at_original + offset_minutes`
-# (ADR 0089, Punkt 1). `assert_time_offset_invariant` laeuft als Nachsatz jedes Falls, der hier
+# (ADR 0090, Punkt 1). `assert_time_offset_invariant` laeuft als Nachsatz jedes Falls, der hier
 # Fotos schreibt.
 
 
@@ -1617,7 +1617,7 @@ async def test_scan_clears_the_camera_when_the_changed_file_no_longer_names_one(
 async def test_the_same_camera_in_two_projects_gets_two_rows(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """ADR 0089, Punkt 2: projekteigene Zeilen. Jedes Foto zeigt auf die seines EIGENEN
+    """ADR 0090, Punkt 2: projekteigene Zeilen. Jedes Foto zeigt auf die seines EIGENEN
     Projekts - der Fall, der eine fehlende Projektbedingung in `_resolve_project_camera` roetet."""
     first = await _make_project(db_session)
     second = Project(name="Norwegen", opencloud_drive_id="drive-1", opencloud_path="Norwegen")
