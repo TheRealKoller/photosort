@@ -4,7 +4,7 @@ Gliederung des letzten erfolgreichen Kriterien-Laufs nach einer Versatz-Aenderun
 Die staerkste Zusage der Story steht hier: ein Neuaufbau mit Versatz `0` erzeugt DENSELBEN
 Zustand wie der Lauf selbst. Sie ist der Nachweis, dass Neuaufbau und Lauf denselben Code gehen -
 ohne sie gaebe es zwei Wege zur Gliederung und zur Hauptkategorie, und ein zwischenzeitlich
-gesetzter Override koennte still verloren gehen (ADR 0088, Punkt 5).
+gesetzter Override koennte still verloren gehen (ADR 0089, Punkt 5).
 """
 
 from __future__ import annotations

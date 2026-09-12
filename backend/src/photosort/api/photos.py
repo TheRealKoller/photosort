@@ -289,7 +289,7 @@ class CameraOut(BaseModel):
 class PhotoOut(BaseModel):
     id: int
     relative_path: str
-    # Behaelt Namen und Form und liefert seit Spec 0426 die KORRIGIERTE Zeit (ADR 0088, Punkt 1).
+    # Behaelt Namen und Form und liefert seit Spec 0426 die KORRIGIERTE Zeit (ADR 0089, Punkt 1).
     # Der brechende Bedeutungswechsel ist beabsichtigt; die beiden Felder darunter treten daneben,
     # damit eine korrigierte Anzeige als korrigiert erkennbar bleibt.
     taken_at: datetime

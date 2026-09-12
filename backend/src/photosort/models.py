@@ -73,7 +73,7 @@ class CriterionSource(enum.StrEnum):
 class ProjectCamera(Base):
     """Eine Kamera, wie sie in GENAU DIESEM Projekt vorkommt, samt ihrem Zeitversatz.
 
-    PROJEKTEIGEN, nicht projektuebergreifend (ADR 0088, Punkt 2): "der Versatz gilt nur in diesem
+    PROJEKTEIGEN, nicht projektuebergreifend (ADR 0089, Punkt 2): "der Versatz gilt nur in diesem
     Projekt" ist damit STRUKTURELL wahr - es gibt keine Zeile, die zwei Projekte sehen koennten,
     und kein Prädikat, das in jeder Abfrage ausgeschrieben stehen muesste. Dieselbe Kamera in zwei
     Projekten sind zwei Zeilen mit getrennten Versaetzen.
@@ -119,7 +119,7 @@ class Photo(Base):
     relative_path: Mapped[str]
     etag: Mapped[str]
     content_length: Mapped[int]
-    # DIE KORRIGIERTE ZEIT - "die Zeit, mit der die Anwendung arbeitet" (ADR 0088, Punkt 1). Der
+    # DIE KORRIGIERTE ZEIT - "die Zeit, mit der die Anwendung arbeitet" (ADR 0089, Punkt 1). Der
     # Name und die Rolle sind unveraendert, der INHALT hat sich mit Spec 0426 gedreht: hier steht
     # seither die um den Kamera-Versatz verschobene Zeit, nicht mehr die aufgezeichnete.
     #

@@ -1,4 +1,4 @@
-# 0088 - Die korrigierte Zeit **ist** die Aufnahmezeit der Anwendung, die Kamera ist eine projekteigene Entität
+# 0089 - Die korrigierte Zeit **ist** die Aufnahmezeit der Anwendung, die Kamera ist eine projekteigene Entität
 
 **Status:** Accepted
 **Datum:** 2026-09-12

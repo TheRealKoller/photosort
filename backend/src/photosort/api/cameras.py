@@ -1,6 +1,6 @@
 """Die Kameras eines Projekts und ihr Zeitversatz - Liste, Setzen, Vorschlag.
 
-Die ZWEITE der zwei Schreibstellen auf `Photo.taken_at` (ADR 0088, Punkt 1; die erste ist
+Die ZWEITE der zwei Schreibstellen auf `Photo.taken_at` (ADR 0089, Punkt 1; die erste ist
 `worker.py::_process_scan_block`), und beide rechnen ueber `cameras.py::shifted` aus
 `taken_at_original`.
 
@@ -312,7 +312,7 @@ async def suggest_camera_time_offset(
 
     `photo_id` ist das Foto der betroffenen Kamera, `reference_photo_id` eines von einer ANDEREN
     Kamera. Gerechnet wird auf der AUFGEZEICHNETEN Zeit des Kamerafotos und der KORRIGIERTEN des
-    Referenzfotos (ADR 0088, Punkt 6): rechnete der Vorschlag auf der korrigierten Zeit des
+    Referenzfotos (ADR 0089, Punkt 6): rechnete der Vorschlag auf der korrigierten Zeit des
     Kamerafotos, haenge er vom bereits gesetzten Versatz ab und derselbe Aufruf mit demselben
     Fotopaar schluege spaeter etwas anderes vor.
 

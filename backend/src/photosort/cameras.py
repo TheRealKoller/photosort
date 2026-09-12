@@ -4,7 +4,7 @@ Zeitversatz je Kamera.
 REIN und DB-FREI, Muster `events.py`. Die eine Stelle, die `taken_at` aus `taken_at_original`
 errechnet: `shifted` ist die Funktion, ueber die BEIDE Schreibstellen (`worker.py`-Scan und
 `api/cameras.py`) laufen - eine dritte Schreibstelle auf `Photo.taken_at` gibt es nicht
-(ADR 0088, Punkt 1).
+(ADR 0089, Punkt 1).
 
 LOGGING-AUFLAGE: `make`/`model` sind Fremdtext aus einer Kamera-Firmware und gehoeren NIE in eine
 Logzeile - nur ein festes Grund-Token plus `photo_id`.
@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 
 # Laengengrenze je Feld, nicht an der zusammengesetzten Beschriftung: ein laengerer Wert gilt als
 # nicht vorhanden. VERWORFEN, nie abgeschnitten - ein gekuerztes Modell waere eine andere Kamera
-# (ADR 0088, Punkt 3).
+# (ADR 0089, Punkt 3).
 MAX_CAMERA_FIELD_LENGTH = 80
 
 # +/-100 Jahre in Minuten. Die Grenze wird am Endpunkt durchgesetzt (`api/cameras.py`), nicht
@@ -43,7 +43,7 @@ class CameraIdentity:
     """Hersteller und Modell einer Kamera, beide bereits normalisiert.
 
     Ein LEERER String heisst "dieses Feld ist nicht vorhanden"; beide leer gibt es nicht - dann
-    liefert `camera_identity` `None`. Ohne Seriennummer (ADR 0088, Punkt 3): zwei baugleiche
+    liefert `camera_identity` `None`. Ohne Seriennummer (ADR 0089, Punkt 3): zwei baugleiche
     Gehaeuse im selben Projekt sind EINE Kamera und teilen einen Versatz."""
 
     make: str
@@ -106,7 +106,7 @@ def camera_label(identity: CameraIdentity) -> str:
 def shifted(original: datetime, offset_minutes: int) -> datetime | None:
     """Die wirksame Aufnahmezeit: aufgezeichnete Zeit plus Versatz.
 
-    DIE EINE Stelle, die `taken_at` aus `taken_at_original` errechnet (ADR 0088, Punkt 1).
+    DIE EINE Stelle, die `taken_at` aus `taken_at_original` errechnet (ADR 0089, Punkt 1).
 
     `None` statt einer Ausnahme, wenn das Ergebnis ausserhalb des darstellbaren Bereichs liegt:
     der Versatz-Endpunkt weist den Versatz dann zurueck (kein Teilschreiben), der Scan schreibt
@@ -122,7 +122,7 @@ def suggested_offset_minutes(camera_original: datetime, reference_effective: dat
     """Der aus einem Fotopaar errechnete Versatzvorschlag in ganzen Minuten.
 
     Bezug ist die AUFGEZEICHNETE Zeit des Kamerafotos und die KORRIGIERTE des Referenzfotos
-    (ADR 0088, Punkt 6): rechnete der Vorschlag auf der korrigierten Zeit des Kamerafotos, haenge
+    (ADR 0089, Punkt 6): rechnete der Vorschlag auf der korrigierten Zeit des Kamerafotos, haenge
     er vom bereits gesetzten Versatz ab und ein zweiter Aufruf schluege etwas anderes vor.
 
     Gerundet wird auf die naechste Minute, HAELFTEN VOM NULL WEG, ueber ganzzahlige

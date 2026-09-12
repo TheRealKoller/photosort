@@ -275,7 +275,7 @@ class TestHaversineMeters:
 
 
 class TestTheCorrectedTimeFeedsTheClustering:
-    """specs/features/0426-zeitversatz-je-kamera.md: `assign_clusters` bekommt seit ADR 0088 die
+    """specs/features/0426-zeitversatz-je-kamera.md: `assign_clusters` bekommt seit ADR 0089 die
     KORRIGIERTE Zeit uebergeben und braucht deshalb KEINE eigene Korrekturlogik.
 
     Der Nachweis ist ein Datensatz, dessen Gruppierung mit dem Versatz ANDERS ausfaellt als mit

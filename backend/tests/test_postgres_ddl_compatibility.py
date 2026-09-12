@@ -587,7 +587,7 @@ def test_the_probed_marker_default_is_rendered_as_a_boolean_literal(
 def test_the_recorded_time_is_a_timestamp_without_zone_and_not_null(
     camera_upgrade_ddl: list[str],
 ) -> None:
-    """`taken_at_original` muss dieselbe Form haben wie `taken_at` - zonenlos (ADR 0088, Punkt 4)
+    """`taken_at_original` muss dieselbe Form haben wie `taken_at` - zonenlos (ADR 0089, Punkt 4)
     und am Ende NOT NULL."""
     add_column = [s for s in camera_upgrade_ddl if "taken_at_original" in s and "ADD COLUMN" in s]
     assert add_column, "kein ADD COLUMN fuer taken_at_original im gerenderten DDL gefunden"

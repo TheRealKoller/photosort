@@ -380,7 +380,7 @@ def test_the_null_island_pair_logs_its_own_reason_token(
 
 
 # ---------------------------------------------------------------------------------------------
-# specs/features/0426-zeitversatz-je-kamera.md, decisions/0088 Punkt 3: extract_camera liest
+# specs/features/0426-zeitversatz-je-kamera.md, decisions/0089 Punkt 3: extract_camera liest
 # `Make` (271) und `Model` (272) aus DEMSELBEN Range-Read-Fenster wie Zeit und Koordinate - kein
 # zusaetzlicher Netzwerkzugriff. Best-effort wie die beiden Nachbarn: kein Lesefehler bricht
 # einen Scan ab.

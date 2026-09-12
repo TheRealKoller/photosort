@@ -764,7 +764,7 @@ class TestDefaultSignals:
 
 
 class TestTheCorrectedTimeFeedsTheEventBoundaries:
-    """specs/features/0426-zeitversatz-je-kamera.md: `build_events` bekommt seit ADR 0088 die
+    """specs/features/0426-zeitversatz-je-kamera.md: `build_events` bekommt seit ADR 0089 die
     KORRIGIERTE Zeit uebergeben und braucht deshalb KEINE eigene Korrekturlogik.
 
     Der Nachweis ist ein Datensatz, dessen Gliederung mit dem Versatz ANDERS ausfaellt als mit dem

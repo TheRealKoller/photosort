@@ -4,7 +4,7 @@
 **Erstellt:** 2026-09-12
 **Bezug:** [Issue #426](https://github.com/TheRealKoller/photosort/issues/426), Story 2 des Zielbilds
 [#424](https://github.com/TheRealKoller/photosort/issues/424); ADR
-[`0088`](../decisions/0088-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md)
+[`0089`](../decisions/0089-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md)
 
 **Umfang:** rund das Dreifache des Richtwerts von 200 Zeilen. Getragen wird das von drei
 Abschnitten, deren Inhalt nirgends sonst steht: die Umsetzung über zehn Schritte von Backend,
@@ -84,7 +84,7 @@ Bedeutung zur korrigierten Zeit. Nachzutragen in
 
 ## Architektur / Umsetzung
 
-**Grundlage:** ADR [`0088`](../decisions/0088-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md).
+**Grundlage:** ADR [`0089`](../decisions/0089-korrigierte-zeit-ist-die-aufnahmezeit-kamera-je-projekt.md).
 Die dortigen sechs Entscheidungen sind bindend; hier steht ihre Umsetzung.
 
 **Die eine Wahrheitsquelle:** `Photo.taken_at` trägt ab jetzt die **korrigierte** Zeit und bleibt
@@ -553,7 +553,7 @@ Korrekturfall, ruhiger Satz ohne bestimmbare Kamera).
 
 ## Entscheidungen
 
-- **Die korrigierte Zeit lebt in `Photo.taken_at`**, `taken_at_original` tritt daneben (ADR 0088,
+- **Die korrigierte Zeit lebt in `Photo.taken_at`**, `taken_at_original` tritt daneben (ADR 0089,
   Punkt 1). Die Gegenrichtung hätte jede der fünf Lesestellen umgestellt und wäre bei einer
   übersehenen still mit der falschen Uhr weitergelaufen — genau der Defekt dieser Story.
 - **Ein Versatzwechsel gliedert den letzten erfolgreichen Kriterien-Lauf sofort neu**, in derselben
