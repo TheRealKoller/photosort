@@ -242,7 +242,7 @@ VERBRAUCHER_ZUSAGEN: tuple[tuple[str, str], ...] = (
 # auf wie eine hinzugekommene - und „kein Copilot, keine Perspektivenrunde" ist damit belegt,
 # ohne dass irgendwo eine Verbotsliste gepflegt wird, die nur verbietet, was sie kennt.
 #
-# Die beiden Pruefstands-Operationen (ADR 0091) sind der Wartepunkt aus Schritt 8: `…-abwarten`
+# Die beiden Pruefstands-Operationen (ADR 0092) sind der Wartepunkt aus Schritt 8: `…-abwarten`
 # blockiert auf dem Ergebnis, `…-lesen` holt den Beleg, ohne den `rot` aus einem Exit-Code allein
 # entstuende. Sie erweitern die Whitelist, sie weichen sie nicht auf - dass ein Entwurfs-Pull-
 # Request weiterhin kein angefordertes Copilot-Review durchlaeuft, bleibt als Gleichheit

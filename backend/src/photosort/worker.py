@@ -23,6 +23,7 @@ from photosort.cache_cleanup import cleanup_orphaned_cache
 from photosort.cameras import CameraIdentity, shifted
 from photosort.categories import LOCAL_CATEGORY_SIGNALS, resolve_category, secondary_categories
 from photosort.classification import (
+    ANIMAL_CATEGORIES,
     FaceBoundingBox,
     FaceDetectorLike,
     FaceLandmarkerLike,
@@ -44,7 +45,11 @@ from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.criteria import (
     CRITERIA_REGISTRY,
+    FOOD_CATEGORIES,
+    VEHICLE_CATEGORIES,
+    allow_listed_area_fraction,
     animal_detections,
+    bounding_box_area_fraction,
     compute_content_landscape,
     compute_essen_trinken_score,
     compute_fahrzeug_score,
@@ -83,12 +88,14 @@ from photosort.models import (
     CriterionSource,
     Event,
     FineLabel,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -99,6 +106,8 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from photosort.motif_strengths import upsert_assessment
+from photosort.motifs import local_motif_strengths
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
@@ -1356,6 +1365,24 @@ def derive_photo_category(
     return resolve_category(candidates)
 
 
+@dataclass(frozen=True)
+class ContentCriteria:
+    """Das Ergebnis der bildbasierten Analyse EINES Fotos: die Kriterien-Werte und die
+    Flaechenanteile je Allow-Liste.
+
+    Die Flaechenanteile sind KEIN Kriterium: sie bekommen keine Registry-Zeile, keine
+    Datenbankspalte und keinen Eintrag in `_IMAGE_ANALYSIS_CRITERION_KEYS`. Sie sind eine
+    Zwischengroesse auf dem Weg zur Motivstaerke (motifs.py::local_motif_strengths) und leben nur
+    fuer die Dauer des Laufs - die Bounding-Boxen selbst werden nirgends persistiert.
+
+    Geschluesselt sind sie mit dem KRITERIEN-Schluessel, dessen Allow-Liste sie ausgemessen haben
+    (`content_people`, `tier`, `fahrzeug`, `essen_trinken`) - so gibt es keine zweite
+    Schluesselmenge, die gegen `criteria.py` driften koennte."""
+
+    values: dict[str, float]
+    area_fractions: dict[str, float]
+
+
 def _compute_content_criteria(
     cache_dir: Path,
     photo: Photo,
@@ -1364,7 +1391,7 @@ def _compute_content_criteria(
     scene_classifier: SceneClassifierLike | None,
     aesthetics_model: AestheticsModelLike | None,
     face_landmarker: FaceLandmarkerLike | None,
-) -> dict[str, float]:
+) -> ContentCriteria:
     """Best-effort wie scoring.py::_compute_photo_metrics: JEDES hier berechnete Kriterium
     hat sein EIGENES try/except - ein einzelner fehlgeschlagener Berechnungsversuch
     (fehlende/defekte display-Cache-Datei, Modell-Ladefehler in genau einem Detektor) darf
@@ -1386,7 +1413,7 @@ def _compute_content_criteria(
     werden, das waere ein unentdeckter Fehler statt eines ungeschriebenen Kriteriums."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     if not path.is_file():
-        return {}
+        return ContentCriteria(values={}, area_fractions={})
     try:
         with Image.open(path) as opened:
             opened.load()
@@ -1394,9 +1421,14 @@ def _compute_content_criteria(
             if image.mode not in ("RGB", "L"):
                 image = image.convert("RGB")
     except Exception:
-        return {}
+        return ContentCriteria(values={}, area_fractions={})
 
     values: dict[str, float] = {}
+    # Die Flaechenanteile je Allow-Liste, aus DENSELBEN Detektionen wie die Scores darunter - kein
+    # zweiter Detektoraufruf. Jede Berechnung hat ihr eigenes try/except wie die Scores: ein
+    # Fehlschlag laesst genau diesen Anteil ungeschrieben (das Motiv bleibt bei 0), statt den
+    # gesamten Lauf oder die uebrigen Anteile mitzureissen.
+    area_fractions: dict[str, float] = {}
 
     faces: list[FaceBoundingBox] | None = None
     if face_detector is not None:
@@ -1405,6 +1437,14 @@ def _compute_content_criteria(
             values["content_people"] = content_people_from_faces(faces)
         except Exception:
             faces = None
+        if faces is not None:
+            try:
+                # AUSDRUECKLICH getrennt von `content_people`: das Kriterium bleibt die
+                # 0.0/1.0-Praesenz (Rangfolge und Landmark-Kandidatenwahl haengen daran), der
+                # Anteil ist die zusaetzliche Groesse fuer die Motivstaerke.
+                area_fractions["content_people"] = bounding_box_area_fraction(faces)
+            except Exception:
+                pass
 
     # EIN detect_objects-Aufruf speist drei Kriterien plus goldener_schnitt. Die Objekt-Erkennung
     # und JEDE der drei Score-Berechnungen haben ein EIGENES try/except - ein Fehler in einer
@@ -1428,6 +1468,17 @@ def _compute_content_criteria(
                 values["essen_trinken"] = compute_essen_trinken_score(objects)
             except Exception:
                 pass
+            # Dieselbe eine Detektorausgabe, drei Allow-Listen, drei Flaechenanteile - dieselben
+            # Klassenmengen wie die drei Scores darueber.
+            for criterion_key, allowed in (
+                ("tier", ANIMAL_CATEGORIES),
+                ("fahrzeug", VEHICLE_CATEGORIES),
+                ("essen_trinken", FOOD_CATEGORIES),
+            ):
+                try:
+                    area_fractions[criterion_key] = allow_listed_area_fraction(objects, allowed)
+                except Exception:
+                    pass
 
     try:
         values["content_landscape"] = compute_content_landscape(image)
@@ -1494,7 +1545,7 @@ def _compute_content_criteria(
         except Exception:
             pass
 
-    return values
+    return ContentCriteria(values=values, area_fractions=area_fractions)
 
 
 # Defensive Obergrenze fuer die zusammengesetzte laufweite Cloud-Fehlermeldung - analog
@@ -1908,6 +1959,11 @@ async def run_criterion_scoring(
         # photo_id -> {criterion_key: value}, nur die in DIESEM Lauf erfolgreich berechneten
         # Werte (reine In-Memory-Grundlage fuer rank_photos unten, kein erneutes DB-Read noetig).
         candidate_values: dict[int, dict[str, float]] = {}
+        # photo_id -> {criterion_key: Flaechenanteil}. Ebenfalls rein in-memory und ebenfalls
+        # AUSSCHLIESSLICH fuer diesen Lauf: die Anteile werden nirgends persistiert, und ohne sie
+        # koennte die Kopfzeile unten nicht entstehen (ein spaeterer Neuaufbau der Gliederung hat
+        # sie deshalb nicht und schreibt auch keine Kopfzelle).
+        area_fractions_by_photo_id: dict[int, dict[str, float]] = {}
         processed = 0
         for photo, score in rows:
             values: dict[str, float] = {}
@@ -1926,7 +1982,7 @@ async def run_criterion_scoring(
             # best-effort abgesichert und kann legitim None sein - _compute_content_criteria
             # ueberspringt die davon abhaengigen Kriterien dann selbst, statt dass ein
             # fehlgeschlagener Builder den gesamten Lauf abbricht.
-            content_values = _compute_content_criteria(
+            content = _compute_content_criteria(
                 cache_dir,
                 photo,
                 detector,
@@ -1936,13 +1992,14 @@ async def run_criterion_scoring(
                 face_landmarker,
             )
             for criterion_key, source in _IMAGE_ANALYSIS_CRITERION_SOURCES.items():
-                if criterion_key in content_values:
+                if criterion_key in content.values:
                     _upsert_criterion(
-                        photo.id, criterion_key, content_values[criterion_key], source
+                        photo.id, criterion_key, content.values[criterion_key], source
                     )
-                    values[criterion_key] = content_values[criterion_key]
+                    values[criterion_key] = content.values[criterion_key]
 
             candidate_values[photo.id] = values
+            area_fractions_by_photo_id[photo.id] = content.area_fractions
 
             processed += 1
             if processed % CRITERION_SCORING_COMMIT_BATCH_SIZE == 0:
@@ -2168,6 +2225,28 @@ async def run_criterion_scoring(
                         f"{landmark_attempts} Fotos fehlgeschlagen.",
                     )
 
+        # DIE LOKALE MOTIV-KOPFZEILE. Ihre Stelle ist NACH der Landmark-Phase, und das ist keine
+        # Kosmetik: `bauwerk_sehenswuerdigkeit` ist lokal `max(Szenen-Konfidenz,
+        # Sehenswuerdigkeits-Konfidenz)`, und der zweite Wert entsteht erst dort. Vor der Phase
+        # geschrieben fehlte der gerade bezahlte Beitrag im Vektor.
+        #
+        # `upsert_assessment` setzt die Regel selbst durch: eine vorhandene Cloud-Grundlage bleibt
+        # unberuehrt, eine lokale wird ersetzt. `excluded_document` ist hier immer `False` - den
+        # Ausschluss beantwortet allein das Modell, die lokale Erkennung hat dazu keine Aussage.
+        for photo_id, criterion_values in candidate_values.items():
+            await upsert_assessment(
+                session,
+                photo_id,
+                source=MotifAssessmentSource.LOCAL,
+                strengths=local_motif_strengths(
+                    criterion_values, area_fractions_by_photo_id.get(photo_id, {})
+                ),
+                excluded_document=False,
+                provider=None,
+                computed_at=now,
+            )
+        await session.commit()
+
         # Der RANKING-Teilschritt (Kategorieableitung + rank_photos je Partition + Schreiben der
         # PhotoRanking-Zeilen). Er gehoert fachlich zur Kriterien-Phase, laeuft aber NACH der
         # Landmark-Phase und braucht deshalb einen eigenen Namen: sonst bliebe `phase` hier auf
@@ -2370,12 +2449,22 @@ async def _classify_photo_for_remote_category(
 async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
     """Kandidatenmenge für die Remote-Kategorie-Klassifizierung: der KOMPLETTE
     Ausschuss-Überlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter
-    (anders als landmark), abzüglich bereits klassifizierter Fotos (vorhandene
-    `photo_category_classifications`-Zeile - die 1:1-Klassifikations-Zeile ist das
-    Skip-Kriterium, nicht eine Feinlabel-Zeile: ein Foto mit
-    Kategorie, aber ohne Feinlabel, gilt als erledigt). Von `run_remote_category_classification` UND
-    `GET .../classify/estimate` (api/projects.py) genutzt - "ermittelt ueber
-    dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
+    (anders als landmark), abzüglich bereits von der Cloud beurteilter Fotos.
+
+    DAS SKIP-KRITERIUM IST EINE KOPFZEILE MIT `source='cloud'`, nicht das bloße Vorhandensein
+    einer Kopfzeile (Sicherheitsauflage S14). Der Kriterien-Lauf schreibt für JEDES beurteilte
+    Foto eine LOKALE Kopfzeile; ein reiner Existenztest machte damit jedes lokal beurteilte Foto
+    dauerhaft zum Nicht-Kandidaten - die Cloud-Klassifizierung wäre ein stilles No-op und die
+    Kostenschätzung zeigte `0`. Der Fehler in die andere Richtung (ein zu weites Kriterium)
+    schickte bereits klassifizierte Fotos erneut an den Anbieter, also Kosten und wiederholte
+    Datenexposition.
+
+    `photo_category_classifications` ist ausdrücklich NICHT mehr Teil des Kriteriums: die Tabelle
+    wird seit Spec 0427 (PR 2) nicht mehr geschrieben, und ein Foto mit bloßer Altzeile trägt
+    keine Motivstärken. Es ist damit wieder Kandidat.
+
+    Von `run_remote_category_classification` UND `GET .../classify/estimate` (api/projects.py)
+    genutzt - "ermittelt ueber dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
     rows = (
         (
             await session.execute(
@@ -2391,16 +2480,17 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
     if not rows:
         return []
 
-    already_classified_ids = set(
+    cloud_assessed_ids = set(
         (
             await session.execute(
-                select(PhotoCategoryClassification.photo_id).where(
-                    PhotoCategoryClassification.photo_id.in_([photo.id for photo in rows])
+                select(PhotoMotifAssessment.photo_id).where(
+                    PhotoMotifAssessment.photo_id.in_([photo.id for photo in rows]),
+                    PhotoMotifAssessment.source == MotifAssessmentSource.CLOUD,
                 )
             )
         ).scalars()
     )
-    return [photo for photo in rows if photo.id not in already_classified_ids]
+    return [photo for photo in rows if photo.id not in cloud_assessed_ids]
 
 
 async def run_remote_category_classification(
@@ -2563,33 +2653,32 @@ async def run_remote_category_classification(
                         input_tokens += classification.usage.input_tokens
                         output_tokens += classification.usage.output_tokens
 
-                    # Pro Foto genau EINE Klassifikations-Zeile. `category_key` ist bereits
-                    # über die feste Vorrangreihenfolge aufgelöst, `detected_categories` hält
-                    # die VALIDIERTE Kandidatenliste - SICHERHEIT: nie die Rohliste des
-                    # Modells, sonst wanderte unvalidierter Fremdtext über einen zweiten
-                    # Kanal in API-Antwort und UI.
+                    # Pro Foto genau EINE Kopfzeile (`source='cloud'`) samt vollstaendigem
+                    # Achter-Staerkevektor. Der Vektor kommt VALIDIERT aus dem Parser -
+                    # SICHERHEIT: nie die Rohabbildung des Modells, sonst wanderte
+                    # unvalidierter Fremdtext über einen zweiten Kanal in API-Antwort und UI
+                    # (S8/S9), und ein entarteter Zahlenwert legte über Starlettes
+                    # `allow_nan=False` die gesamte Fotoliste des Projekts auf 500.
                     #
-                    # `resolve_category` ist die alleinige Quelle des Schlüssels - die
-                    # Konfidenz geht in KEINE Auswahl ein. Der Skalar entsteht
-                    # per LOOKUP aus der bereits gebauten Abbildung, nicht durch eine zweite
-                    # Berechnung: eine zweite Berechnung driftet, und die Invariante
-                    # `category_confidence == detected_category_confidences.get(category_key)` ist
-                    # die einzige Rechtfertigung der redundanten Spiegelspalte. `None` heisst
-                    # "keine Angabe", nie `0.0` - eine fehlende oder unplausible Konfidenz ist nie
-                    # ein Grund, ein Foto zu ueberspringen oder den Lauf scheitern zu lassen.
-                    category_key = resolve_category(classification.categories)
-                    session.add(
-                        PhotoCategoryClassification(
-                            photo_id=photo.id,
-                            category_key=category_key,
-                            detected_categories=list(classification.categories),
-                            detected_category_confidences=dict(classification.category_confidences),
-                            category_confidence=classification.category_confidences.get(
-                                category_key
-                            ),
-                            provider=settings.landmark_provider,
-                            computed_at=now,
-                        )
+                    # `upsert_assessment` setzt die Regel durch, die beide Grundlagen
+                    # auseinanderhaelt: eine Cloud-Grundlage schreibt immer und ersetzt eine
+                    # vorhandene lokale VOLLSTAENDIG. Die Korrekturzeilen bleiben unangetastet -
+                    # sie haengen am Foto und nicht an der Kopfzeile.
+                    #
+                    # `photo_category_classifications` wird ab hier NICHT MEHR geschrieben (die
+                    # Tabelle faellt erst in PR 3). Die alte Hauptkategorie eines neu
+                    # klassifizierten Fotos entsteht dadurch nur noch aus lokalen Signalen -
+                    # bewusster Zwischenzustand von genau einer PR Laenge. Doppelte Cloud-Kosten
+                    # entstehen nicht, weil der Erledigt-Marker in
+                    # `select_remote_category_candidates` gleichzeitig mit umgezogen ist.
+                    await upsert_assessment(
+                        session,
+                        photo.id,
+                        source=MotifAssessmentSource.CLOUD,
+                        strengths=classification.motif_strengths,
+                        excluded_document=classification.excluded,
+                        provider=settings.landmark_provider,
+                        computed_at=now,
                     )
 
                     # Feinlabels sind reine Zusatzinformation und werden AUCH DANN geschrieben,

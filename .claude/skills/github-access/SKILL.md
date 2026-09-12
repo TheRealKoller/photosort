@@ -513,7 +513,7 @@ darstellungsabhängig, jede Auswertung an ihr wäre eine Annahme über ein Termi
 Aufruf, der nichts liest, gelangt weder Fremdtext noch ein Credential in Kontext oder Protokoll.
 **Kein `mcp`-Weg:** Ein MCP-Werkzeug ist ein einzelner Aufruf mit einer Antwort und kann nicht
 warten; ein aus MCP-Aufrufen gebautes Wiederholverfahren wäre genau die Eigenentwicklung, die
-ADR 0091 ausschließt.
+ADR 0092 ausschließt.
 **`gh`:**
 
 ```bash

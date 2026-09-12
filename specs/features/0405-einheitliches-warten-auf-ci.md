@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Erstellt:** 2026-09-12
-**Bezug:** [GitHub-Issue #405](https://github.com/TheRealKoller/photosort/issues/405), ADR [`0091`](../decisions/0091-ci-ergebnis-abwarten-und-begrenzt-nachbessern.md)
+**Bezug:** [GitHub-Issue #405](https://github.com/TheRealKoller/photosort/issues/405), ADR [`0092`](../decisions/0092-ci-ergebnis-abwarten-und-begrenzt-nachbessern.md)
 
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil der Security-Abschnitt eine Fähigkeit
 absichert, die als erste im Ablauf nach jedem Prüferblick selbstständig Code schreibt — die
@@ -34,7 +34,7 @@ ein eigenes Skript ausdenkt.
 - [ ] Es gibt dafür genau einen benannten, dokumentierten Weg: zwei Operationen im Katalog
       `github-access`. Kein Ablauf-Skill nennt die Befehlsform, nur die Operations-ID.
 - [ ] Eine Eigenentwicklung entsteht nur, wenn belegt ist, dass die vorhandene Werkzeugausstattung
-      das Warten nicht abdeckt. Der Beleg ist die Messung in ADR 0091.
+      das Warten nicht abdeckt. Der Beleg ist die Messung in ADR 0092.
 - [ ] Ist der Lauf grün, folgt auf den Wartepunkt kein weiterer Ablaufschritt außer dem
       Abschlussbericht, und dieser führt den Ergebniswert.
 - [ ] Ist der Lauf rot, bessert der Ablauf nach — ausschließlich was sich lokal mit
@@ -64,7 +64,7 @@ unverändert.
 
 ## Architektur / Umsetzung
 
-Vollständig in ADR [`0091`](../decisions/0091-ci-ergebnis-abwarten-und-begrenzt-nachbessern.md) —
+Vollständig in ADR [`0092`](../decisions/0092-ci-ergebnis-abwarten-und-begrenzt-nachbessern.md) —
 dort stehen die Messung, die Wegwahl, die Ergebnistabelle, die Klassengrenze der Nachbesserung und
 die Zahlen. Hier nur, was für die Umsetzung zu tun ist.
 
@@ -106,7 +106,7 @@ Wiederholverfahren wäre genau die ausgeschlossene Eigenentwicklung.
 1. In `ship-entwurf` wird der Wartepunkt als **neuer letzter Schritt hinter dem Board-Rücklesen**
    eingehängt, nicht davor. Eine Einfügung davor verschöbe die Nummerierung und machte
    `UEBERSCHRIFT_BOARD` in `test_ship_entwurf_skill.py` rot — Kollateralschaden ohne Gegenwert.
-   Die Zusage aus ADR 0091 („nach dem letzten Push") bleibt gewahrt, weil das Board-Rücklesen
+   Die Zusage aus ADR 0092 („nach dem letzten Push") bleibt gewahrt, weil das Board-Rücklesen
    nichts pusht.
 2. Ein Fix-Diff stößt **keine** erneute Review-Runde an, auch wenn er mehr als Formatierung
    enthält. Getragen wird das von der engen Klasse in AK 5, den Pfadsperren aus M-S2, der
@@ -185,7 +185,7 @@ nichts zu härten; der Punkt steht, damit er nicht erneut aufgemacht wird.
   `workflows/`), `scripts/tests/**`, `.claude/**` und `CLAUDE.md`, `design/penpot/**` samt
   `frontend/penpot/payload.test.ts`, sowie Abhängigkeits- und Fixierungsdateien (`package.json`,
   `package-lock.json`, `pyproject.toml`, `uv.lock`, `Dockerfile*`, `docker-compose*.yml`,
-  `.env.example`); `specs/**` bleibt ausgeschlossen wie in ADR 0091. Ein roter Wächtertest ist eine
+  `.env.example`); `specs/**` bleibt ausgeschlossen wie in ADR 0092. Ein roter Wächtertest ist eine
   Aussage über den Arbeitsstand, nie ein zu reparierender Test. Formatierung nach M-S1 bleibt auch
   hier zulässig, weil `ruff format` und Prettier die Bedeutung nicht ändern.
 - **M-S3 — Die Selbstmessung steht vor dem Push, nicht in der Absicht.** Vor jedem Fix-Push misst
@@ -275,16 +275,16 @@ die Fehlerklasse, gegen die diese Datei gebaut ist. Ebenso: der Kommentar „19 
 0404. Sie führt die zwei neuen Prüfformen, die dort noch nirgends stehen: eine Auswertungsgrenze,
 deren Zusage eine **leere** Feldmenge ist, und Whitelist-Gleichheit über eine
 Markdown-Tabellenspalte statt über eine ID-Menge. Nicht hinein gehört eine Wiederholung der Zahlen
-aus ADR 0091 — das wäre genau die Drift, gegen die AK 6 gebaut ist.
+aus ADR 0092 — das wäre genau die Drift, gegen die AK 6 gebaut ist.
 
 ## Entscheidungen
 
-- `architect` konsultiert (Schritt 1): ADR 0091 angelegt, Messung von `gh` durchgeführt.
+- `architect` konsultiert (Schritt 1): ADR 0092 angelegt, Messung von `gh` durchgeführt.
 - `ux-ui-designer` nicht konsultiert (Schritt 2): Die Story berührt keine sichtbare Oberfläche —
   kein Anzeige- oder Eingabeort, keine Frontend-Komponente, keine darzustellenden Daten.
 - `test-engineer` konsultiert (Schritt 3): Teststrategie und geschärfte Akzeptanzkriterien oben.
 - `security-engineer` konsultiert (Schritt 3): Security-Abschnitt oben.
-- Die Ausschlussliste aus ADR 0091 wurde nach beiden Konsultationen erweitert: Sie verbot nur
+- Die Ausschlussliste aus ADR 0092 wurde nach beiden Konsultationen erweitert: Sie verbot nur
   `.github/workflows/**`, während in diesem Repository die halbe Prüferwirkung an Assertions unter
   `scripts/tests/` hängt. `test-engineer` und `security-engineer` fanden die Lücke unabhängig
   voneinander.

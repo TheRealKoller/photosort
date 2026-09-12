@@ -41,6 +41,9 @@ from photosort.models import (
     PhotoCriterionScore,
     PhotoFineLabel,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
+    PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -106,8 +109,28 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
             )
         ),
     )
+    # Die drei Motiv-Tabellen, in Fremdschluessel-Reihenfolge: `photo_motif_strengths` haengt an
+    # `photo_motif_assessments` und muss VOR ihr fallen. Ohne diese drei Anweisungen ueberleben
+    # Aussagen ueber den Bildinhalt geloeschter Familienfotos die Projektloeschung. Die Testsuite
+    # laeuft ohne `PRAGMA foreign_keys=ON` - eine falsche Reihenfolge faellt dort strukturell nicht
+    # auf, dafuer gibt es die beiden Waechtertests dieses Moduls.
+    await _run(
+        "photo_motif_strengths",
+        delete(PhotoMotifStrength).where(PhotoMotifStrength.photo_id.in_(photo_ids)),
+    )
     await _run("ratings", delete(Rating).where(Rating.photo_id.in_(photo_ids)))
     await _run("photo_scores", delete(PhotoScore).where(PhotoScore.photo_id.in_(photo_ids)))
+    # `photo_motif_corrections` haengt zugleich an `users` - der Nutzer wird dabei NICHT
+    # mitgeloescht (er ist Fremdschluessel-ELTERN und faellt aus der Erreichbarkeitspruefung
+    # heraus).
+    await _run(
+        "photo_motif_corrections",
+        delete(PhotoMotifCorrection).where(PhotoMotifCorrection.photo_id.in_(photo_ids)),
+    )
+    await _run(
+        "photo_motif_assessments",
+        delete(PhotoMotifAssessment).where(PhotoMotifAssessment.photo_id.in_(photo_ids)),
+    )
     await _run(
         "photo_landmark_detections",
         delete(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id.in_(photo_ids)),

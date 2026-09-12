@@ -7,12 +7,15 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CloudVisionStatusList } from '../components/CloudVisionStatusList'
 import { CriterionDetailsList, hasCategoryControls } from '../components/CriterionDetailsList'
+import { MotifStrengthList } from '../components/MotifStrengthList'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { useCategoriesQuery } from '../hooks/useCategories'
 import { useCategoryOverrideControls } from '../hooks/useCategoryOverrideControls'
+import { useMotifCorrectionControls } from '../hooks/useMotifCorrection'
+import { useMotifsQuery } from '../hooks/useMotifs'
 import {
   useDeleteRatingMutation,
   usePhotoSequenceQuery,
@@ -31,6 +34,12 @@ import { formatTimeOffset } from '../utils/timeOffset'
 const MAX_AUTO_ADVANCE_PAGE_FETCHES = 80
 
 const SWIPE_THRESHOLD_PX = 50
+
+// Der Text der Meldung bei fehlgeschlagenem `GET /motifs`. Er steht HIER und nicht in der
+// Staerkeliste: der Baustein bekommt den Text durchgereicht und entscheidet nicht selbst, wie ein
+// Ladefehler heisst - so kann das Info-Popover der Kachel (PR 3) denselben Baustein mit einem
+// eigenen Text verwenden.
+const MOTIF_SET_ERROR_TEXT = 'Die Motive konnten nicht geladen werden.'
 
 function isTextInputFocused(): boolean {
   const active = document.activeElement
@@ -64,6 +73,12 @@ export function PhotoDetailPage() {
   // Kategorien"-Override-Auswahl.
   const categoriesQuery = useCategoriesQuery()
   const categorySet = categoriesQuery.data ?? []
+  // Das feste Motivset kommt ebenfalls vom Server (langlebiger Cache) - Anzeigenamen,
+  // Reihenfolge und Erklaertexte der Staerkeliste stammen ausschliesslich daraus.
+  const motifsQuery = useMotifsQuery()
+  // EIN Mutation-Paar fuer diese Seite - `pendingMotifKeyFor` sperrt nur die Zeile, deren
+  // Korrektur laeuft.
+  const motifCorrectionControls = useMotifCorrectionControls(id)
 
   const [completed, setCompleted] = useState(false)
 
@@ -396,6 +411,44 @@ export function PhotoDetailPage() {
           </Button>
         </div>
       )}
+
+      {/* MOTIVE - eine NEUE permanente Sektion, letzter Bedienblock vor dem Informationsteil:
+          nach dem Vorschlagskasten und VOR der Trennlinie. Weiter oben verdraengte sie
+          Bewertungsleiste und Zurueck/Weiter unter den Bildschirmrand, weiter unten stuende ein
+          Bedienelement im Informationsteil.
+
+          Sie steht PERMANENT, auch ohne Kopfzeile - dann zeigt sie an Stelle der Liste einen Satz.
+          Die bestehende Kategorie-Sektion bleibt in dieser PR unberuehrt daneben stehen (die
+          Abloesung ist PR 3). */}
+      <section
+        className="flex flex-col gap-2 text-sm"
+        aria-labelledby="motifs-heading"
+        data-testid="motifs-section"
+      >
+        <h2
+          id="motifs-heading"
+          className="text-xs font-semibold tracking-wide text-text-h uppercase"
+        >
+          Motive
+        </h2>
+        <MotifStrengthList
+          motifSet={motifsQuery.data}
+          motifSetLoading={motifsQuery.isPending}
+          motifSetError={motifsQuery.isError ? MOTIF_SET_ERROR_TEXT : undefined}
+          onMotifSetRetry={() => void motifsQuery.refetch()}
+          assessment={currentPhoto.motif_assessment ?? null}
+          motifs={currentPhoto.motifs ?? []}
+          editable
+          onCorrect={(motifKey, applies) =>
+            motifCorrectionControls.correctMotif(currentPhoto.id, motifKey, applies)
+          }
+          onWithdraw={(motifKey) =>
+            motifCorrectionControls.withdrawCorrection(currentPhoto.id, motifKey)
+          }
+          pendingMotifKey={motifCorrectionControls.pendingMotifKeyFor(currentPhoto.id)}
+          error={motifCorrectionControls.error}
+        />
+      </section>
 
       {/* Trennlinie zwischen Bedien- und Informationsteil: ohne sie
           stiessen Vorschlagskasten und Informationsblöcke unvermittelt aneinander, und der

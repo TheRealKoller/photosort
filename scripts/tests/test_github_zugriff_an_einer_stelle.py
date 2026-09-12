@@ -83,7 +83,7 @@ BEKANNTE_UNTERBEFEHLE = frozenset({"issue", "pr", "project", "api", "auth"})
 
 # Die 21 Operations-IDs als geschlossene Menge - 17 aus ADR 0061, Abschnitt 2, dazu
 # `issue-bereich-setzen` und `issue-liste-lesen` aus ADR 0085 sowie `pr-pruefstand-abwarten` und
-# `pr-pruefstand-lesen` aus ADR 0091. Der Buchhaltungs-Vorbehalt gegen
+# `pr-pruefstand-lesen` aus ADR 0092. Der Buchhaltungs-Vorbehalt gegen
 # Konstantenvergleiche gilt hier ausdruecklich nicht: Die Menge selbst *ist* die Zusage ("keine
 # heute vorhandene Operation geht verloren"), und ihr stiller Verlust beim Umzug der sechs
 # PR-Operationen aus `ship-feature` ist genau der Fehler, den die Story riskiert.
@@ -194,7 +194,7 @@ AUSWERTUNGSGRENZE = "**Auswertungsgrenze:**"
 # Sparsamkeitsfrage; eine eingefrorene Tabelle ueber alle waere die Buchhaltungskonstante, gegen
 # die der Vorbehalt aus der ADR-0056-Sektion gerichtet ist.
 #
-# `pr-pruefstand-lesen` (ADR 0091) steht aus demselben Grund hier wie `issue-liste-lesen`: Ihre
+# `pr-pruefstand-lesen` (ADR 0092) steht aus demselben Grund hier wie `issue-liste-lesen`: Ihre
 # Feldmenge **ist** ihre Sicherheitszusage. `bucket` und `state` sind geschlossene Wertemengen und
 # steuern; `name` und `workflow` sind fremdbeschreibbar - jede installierte GitHub-App darf einen
 # Check-Run mit beliebigem Namen anlegen - und sind deshalb reine Anzeigewerte. Ein fuenftes Feld

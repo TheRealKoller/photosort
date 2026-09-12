@@ -36,6 +36,17 @@ Verarbeitungs-Cache (Thumbnails).
     `CurateCategoriesPage.tsx::sortCategoryKeys` sortiert nach Registry-Reihenfolge statt
     alphabetisch (`nicht_erkannt` immer zuletzt), die Override-Auswahl bietet das vollständige Set
     statt der erkannten Kandidaten, Feinlabels erscheinen als Chips am Foto.
+  - **Motive statt Kategorien im Frontend (Spec
+    [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR
+    [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md)):**
+    `CategoryBadge`/`CategorySelect`/`SecondaryCategoryMarker`/`CategoryOverrideMarker`,
+    `utils/categoryLabels.ts`, `hooks/useCategories.ts` und `hooks/useCategoryOverrideControls.ts`
+    entfallen und werden durch `MotifStrengthList` (alle acht Motive mit Stärke, Band und
+    Korrekturschalter in der Detailansicht), `MotifBadge` (Kachel) sowie
+    `hooks/useMotifs.ts`/`hooks/useMotifCorrection.ts` und `utils/motifLabels.ts` ersetzt. Die
+    Kuratierung gruppiert nur noch nach Tag und Foto-Moment — die Kategorie-Ebene der Gruppierung
+    fällt weg. Anzeigenamen, Reihenfolge und Bandgrenzen kommen aus `GET /motifs`; das Frontend
+    spiegelt sie nicht.
   - die Projektnavigation liegt in der Kopfzeile der `AppShell` statt am Seitenende — neues
     `utils/projectRoutes.ts` als einzige Quelle der Wahrheit für "welcher Pfad hat Projektkontext"
     (speist die `<Route>`-Erzeugung in `App.tsx`, die `projectId`-Ermittlung der Kopfzeile und die
@@ -115,6 +126,31 @@ Verarbeitungs-Cache (Thumbnails).
     `PhotoRanking`-Zeile im aktuellen Lauf); `_photo_category_candidate_keys` entfällt. `PhotoOut`
     trägt `fine_labels: list[FineLabelOut]`, `remote_category: str | None` und `category_candidates`
     (nur Set-Keys mit `origin`, ohne `score`).
+  - **Motive statt Kategorien (Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR
+    [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md)):**
+    `GET /categories` wird `GET /motifs` (neuer Router `api/motifs.py`, gleicher Router-Level-Auth)
+    und liefert die acht Motive in Registry-Anzeigereihenfolge samt der beiden Bandgrenzen der
+    Statistik und je Motiv `locally_assessable` (aus `LOCAL_MOTIF_SIGNALS` abgeleitet: kann die
+    lokale Erkennung dieses Motiv überhaupt beurteilen) — das Frontend spiegelt nichts davon. `PUT`/`DELETE
+    /photos/{id}/motif-corrections/{motif_key}` (Body `{"applies": bool}`) ersetzt
+    `PUT`/`DELETE /photos/{id}/category-override`; der Schlüssel wird gegen
+    `motifs.py::is_motif_key` validiert (`422` sonst), und das `409` der fehlenden
+    `PhotoRanking`-Zeile entfällt — eine Korrektur hängt am Foto, nicht am Lauf. `409` bleibt
+    ausschließlich die Abbildung eines `IntegrityError` aus dem Unique-Constraint, damit ein
+    gleichzeitiger `PUT` beider Nutzer auf dasselbe Paar nicht als `500` herauskommt; eine Sperre
+    gibt es dafür nicht. `PhotoOut` trägt statt
+    `remote_category`/`category_confidence`/`category_candidates`/`category_override` die Felder
+    `motif_assessment: MotifAssessmentOut | None` (`source`, `excluded_document`, `provider`,
+    `computed_at`; `None` heißt „noch nicht klassifiziert") und `motifs: list[MotifStrengthOut]`
+    (acht Einträge in Registry-Reihenfolge mit `key`, `strength` als **wirksamer** Stärke und
+    `correction: bool | None`; leer, solange keine Kopfzeile existiert). Die überstimmte
+    Modellzahl geht bewusst **nicht** mit: die Oberfläche darf sie neben dem Korrekturwort nicht
+    zeigen, und ein Feld ohne Leser verschiebt nur die Frage, was es bedeutet. Der Kuratierungsparameter heißt `top_n_per_event`, und `GET
+    /projects/{id}/curation-candidates` verliert `category_key` — die Partition ist allein das
+    Event. `GET /projects/{id}/stats` liefert `motifs` (je Motiv `strong_count`/`medium_count`/
+    `weak_count`/`average_strength`), `strength_bands`, `motif_correction_count`,
+    `unassessed_photo_count` und `excluded_photo_count` statt `categories`/`category_confidence`/
+    `manual_category_override_count`.
   - `POST /projects/{id}/classify` (Body `{scoring_run_id: int, use_cloud: bool}`, kein Default für
     `use_cloud`) ist der EINE Auslöser der Klassifizierung — Vorbedingungen unverändert von
     `score-criteria` übernommen (`403` Feature-Flag, `404` unbekanntes Projekt, `409` ohne
@@ -533,11 +569,12 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     auch die neue Remote-Kategorie-Klassifizierung. **Löschumfang (Spec
     [`0044`](../specs/features/0044-projekte-loeschen.md), ADR
     [`decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md`](../specs/decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md)):**
-    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller fünfzehn am Projekt
+    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller siebzehn am Projekt
     hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
     `criterion_scoring_runs`, `remote_category_classification_runs`, `ratings`, `photo_scores`,
     `photo_criterion_scores`, `photo_rankings`, `events`, `photo_landmark_detections`,
-    `photo_fine_labels`, `photo_category_classifications`, `photo_cloud_vision_errors`) sowie das
+    `photo_fine_labels`, `photo_motif_assessments`, `photo_motif_strengths`,
+    `photo_motif_corrections`, `photo_cloud_vision_errors`) sowie das
     Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
@@ -662,6 +699,12 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     dreizehn Werte) statt eines offenen Vokabulars; die Ableitung ist
     `categories.py::resolve_category(...)`. Die Migration setzt alle Bestandswerte auf `NULL`, da
     sie außerhalb des neuen Sets liegen.
+  - **`category_override` entfällt ersatzlos (Spec
+    [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR
+    [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md)):**
+    „ein Foto umhängen" ist keine Handlung mehr, die das Datenmodell kennt. Seine Aufgabe übernimmt
+    die Motivkorrektur (`photo_motif_corrections`), die keinen Schreibzugriff auf die Rangfolge und
+    damit keine Sperre braucht.
   - kein Schema-Eingriff — `cluster_key` entsteht seither aus Zeit **und** Ort
     (`scoring.py::assign_clusters`, vormals `assign_time_clusters`): ein neues Cluster beginnt bei
     einer Zeitlücke über `TIME_CLUSTER_GAP` **oder** einer Haversine-Distanz über
@@ -866,6 +909,17 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Leerzustand der Ansicht trägt diesen Fall. **Die Divergenz zu `PhotoScore.cluster_key` bleibt
     beabsichtigt** (analog `category_key`, ADR 0021): dort steht weiterhin der Phase-A-Basiswert,
     hier die pro Lauf tatsächlich für Kuratierung und Anzeige verwendete Gliederung.
+  - **Die Partition verliert die Kategorie-Dimension** *(Spec
+    [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR
+    [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md))*:
+    `category_key` und `is_primary` entfallen, der Unique-Constraint geht auf
+    `uq_photo_ranking_run_photo(criterion_scoring_run_id, photo_id)` zurück. Die Partition ist allein
+    das Event, ein Foto steht pro Lauf in **genau einer** Zeile, und der Sortierschlüssel ist wieder
+    der reine `rank_score` — `ranking.py::confidence_ordering_score` samt
+    `CONFIDENCE_RANK_PENALTY` entfällt, weil es die Partition nicht mehr gibt, innerhalb derer er
+    verglich. `PhotoOut.rankings` wird wieder `PhotoOut.ranking: RankingOut | None`, `RankingOut`
+    verliert `is_primary`. Die Migration **löscht die Nebenzeilen** (`WHERE is_primary = false`)
+    **vor** dem Constraint-Tausch; sonst ist sie an einer echten Datenbank nicht ausführbar.
 - **Event** *(implementiert, Spec
   [`0425`](../specs/features/0425-events-statt-zeitcluster.md), `models.py`, Tabelle `events`, ADR
   [`decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md`](../specs/decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md),
@@ -954,6 +1008,49 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Klassifizierungszeile). **KEIN Codepfad, der eine Kategorie bestimmt, liest diese Spalten** (ADR
     0067 Punkt 1) — sie werden ausschließlich von der API-Ausgabe, der Statistik-Aggregation und dem
     Frontend gelesen.
+  - **Die Tabelle entfällt vollständig** *(Spec
+    [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR
+    [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md))*:
+    mit der Hauptkategorie fällt ihr Inhalt, und eine Tabelle ohne Leser stehen zu lassen verschiebt
+    nur die Frage, was sie bedeutet, auf die nächste Änderung. Ihre beiden anderen Rollen —
+    Skip-Kriterium des Cloud-Teilschritts und Erfolgs-Ableitung seines Status — übernimmt
+    `photo_motif_assessments`. Kein Backfill: die gespeicherten Konfidenzen werden **nicht** in
+    Motivstärken umgerechnet (das wäre eine Modellaussage, die das Modell nie getroffen hat).
+- **PhotoMotifAssessment** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR
+  [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md),
+  `models.py`, Tabelle `photo_motif_assessments`)*: die **Grundlage** der Motivbeurteilung eines
+  Fotos, **1:1 zu `Photo`** (`photo_id` als Primary Key und Fremdschlüssel,
+  `cascade="all, delete-orphan"`). `source` (`cloud` | `local`, `SQLEnum(native_enum=False)`),
+  `excluded_document: bool` (NOT NULL, **ohne jeden Default** — ein Schreibpfad, der die Spalte
+  vergisst, soll laut scheitern statt still ein Foto aus jeder Motivauswahl zu entfernen),
+  `provider: str | None` (`NULL` bei lokaler Grundlage), `computed_at`. **Die Abwesenheit dieser
+  Zeile ist der Zustand „noch nicht klassifiziert"** und damit unterscheidbar von „nichts erkannt"
+  (Zeile vorhanden, Stärken durchgehend niedrig). Eine Cloud-Grundlage wird von einem lokalen Lauf
+  **nie** überschrieben; der Kriterien-Lauf schreibt nur, wenn keine Zeile existiert oder die
+  vorhandene `source='local'` trägt.
+- **PhotoMotifStrength** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR 0091,
+  `models.py`, Tabelle `photo_motif_strengths`)*: **1:N** zur Kopfzeile (Fremdschlüssel auf
+  `photo_motif_assessments.photo_id`, `UniqueConstraint(photo_id, motif_key)`) — `motif_key: str`
+  (freier String wie `criterion_key`, der Lesepfad prüft die Mitgliedschaft in
+  `motifs.py::MOTIF_REGISTRY`), `strength: float` in `[0, 1]`. Zeilen statt einer JSON-Abbildung,
+  weil je Motiv sortiert und geschwellt wird und eine JSON-Struktur zu Zeilen zu expandieren in
+  SQLite und PostgreSQL unterschiedlich zu schreiben ist. Eine Stärke kann ohne Kopfzeile nicht
+  existieren; eine neue Grundlage ersetzt den **gesamten** Vektor eines Fotos. Eine in einer
+  Cloud-Antwort nicht genannte Stärke wird als `0.0` geschrieben, nicht als „keine Angabe": der
+  Prompt verlangt alle acht Zahlen, Schweigen ist dort die Aussage „nicht zu sehen".
+- **PhotoMotifCorrection** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR 0091,
+  `models.py`, Tabelle `photo_motif_corrections`)*: die menschliche Korrektur **einer** Motivaussage
+  — `photo_id` (Fremdschlüssel auf `photos`, Kaskade), `user_id`, `motif_key`, `applies: bool`,
+  `updated_at`, `UniqueConstraint(photo_id, motif_key)`. Bewusst **nicht** am Lauf und nicht an der
+  Kopfzeile: deshalb überlebt sie jede erneute Klassifizierung ohne Sonderfallcode. Fehlende Zeile
+  heißt „nicht korrigiert" (Muster wie `Rating`), Entfernen ist Löschen. `user_id` hält fest, wer
+  zuletzt korrigiert hat, steht aber **nicht** im Unique-Constraint — die Korrektur ist eine Aussage
+  über das Foto, nicht über einen Geschmack. Der Schlüsselraum sind **ausschließlich die acht
+  Motive**: `dokument_screenshot` ist nicht korrigierbar, ein fälschlich ausgeschlossenes Foto kommt
+  allein über einen erneuten Klassifizierungslauf zurück. Die **wirksame** Stärke entsteht im
+  Lesepfad (`applies=true` → `1.0`, `applies=false` → `0.0`, keine Zeile → Wert der Grundlage) und
+  wird nie in die Stärkezeile materialisiert; der SQL-Ausdruck dafür lebt an genau einer Stelle
+  (`motif_strengths.py`), gehalten von einem Wächtertest.
 - **FineLabel** *(implementiert, Spec
   [`0055`](../specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md),
   `models.py`; Tabelle `fine_labels`, bis Spec 0289 `category_labels`/`CategoryLabel`, ADR

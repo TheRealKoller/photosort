@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import pricing, worker
-from photosort.categories import CATEGORY_NOT_RECOGNIZED
 from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
     CloudRequestThrottle,
@@ -25,16 +24,20 @@ from photosort.label_embedding import LabelEmbedderLike
 from photosort.models import (
     CloudVisionPhase,
     FineLabel,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoFineLabel,
+    PhotoMotifAssessment,
+    PhotoMotifStrength,
     PhotoScore,
     Project,
     RatingStatus,
     RemoteCategoryClassificationRun,
     ScanStatus,
 )
+from photosort.motifs import MOTIF_REGISTRY
 from photosort.pricing import compute_cost_usd
 from photosort.remote_classification import (
     AnthropicCategoryClient,
@@ -125,7 +128,57 @@ def _failing_embedder_builder() -> NoReturn:
     raise RuntimeError("simulierter Modell-Ladefehler")
 
 
-_DEFAULT_CLASSIFICATION = RemoteClassification(categories=("tier",), fine_labels=("Hund",))
+def _vector(**overrides: float) -> dict[str, float]:
+    """Der VOLLSTAENDIGE Achter-Vektor in Registry-Reihenfolge, nicht genannte Motive bei `0.0` -
+    aus `MOTIF_REGISTRY` abgeleitet, nie als zweite Liste geschrieben."""
+    return {key: overrides.get(key, 0.0) for key in MOTIF_REGISTRY}
+
+
+async def _strengths_of(session: AsyncSession, photo_id: int) -> dict[str, float]:
+    rows = (
+        (
+            await session.execute(
+                select(PhotoMotifStrength).where(PhotoMotifStrength.photo_id == photo_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {row.motif_key: row.strength for row in rows}
+
+
+async def _add_cloud_assessment(session: AsyncSession, photo: Photo) -> PhotoMotifAssessment:
+    """Eine CLOUD-Kopfzeile - das Skip-Kriterium des Cloud-Teilschritts (Sicherheitsauflage S14)."""
+    assessment = PhotoMotifAssessment(
+        photo_id=photo.id,
+        source=MotifAssessmentSource.CLOUD,
+        excluded_document=False,
+        provider="anthropic",
+        computed_at=datetime.now(UTC),
+    )
+    session.add(assessment)
+    await session.commit()
+    return assessment
+
+
+async def _add_local_assessment(session: AsyncSession, photo: Photo) -> PhotoMotifAssessment:
+    """Eine LOKALE Kopfzeile, wie der Kriterien-Lauf sie fuer JEDES beurteilte Foto schreibt. Sie
+    darf das Foto NICHT vom Cloud-Teilschritt ausnehmen (Sicherheitsauflage S14)."""
+    assessment = PhotoMotifAssessment(
+        photo_id=photo.id,
+        source=MotifAssessmentSource.LOCAL,
+        excluded_document=False,
+        provider=None,
+        computed_at=datetime.now(UTC),
+    )
+    session.add(assessment)
+    await session.commit()
+    return assessment
+
+
+_DEFAULT_CLASSIFICATION = RemoteClassification(
+    motif_strengths=_vector(tiere=0.8), fine_labels=("Hund",)
+)
 
 
 class RecordingCategoryClient:
@@ -302,24 +355,15 @@ async def test_rejected_photos_are_not_candidates(db_session: AsyncSession, tmp_
 async def test_already_classified_photos_are_skipped_on_a_repeat_run(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
+    """Sicherheitsauflage S14: das Skip-Kriterium ist seit Spec 0427 (PR 2) eine Kopfzeile mit
+    `source='cloud'` - der Erledigt-Marker ist mit dem Schreibpfad umgezogen."""
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
     await db_session.commit()
     already_classified = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, already_classified)
     _write_display_variant(tmp_path, already_classified)
-    # specs/features/0289-feste-kategorien.md: das Skip-Kriterium ist seit dieser Spec die
-    # 1:1-Klassifikations-Zeile, nicht mehr eine Feinlabel-Zeile - ein Foto mit Kategorie, aber
-    # ohne Feinlabel, gilt als erledigt.
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=already_classified.id,
-            category_key="tier",
-            detected_categories=["tier"],
-            provider="anthropic",
-            computed_at=datetime.now(UTC),
-        )
-    )
+    await _add_cloud_assessment(db_session, already_classified)
     new_candidate = await _add_photo(db_session, project, "b.jpg", "etag-2")
     await _add_score(db_session, new_candidate)
     _write_display_variant(tmp_path, new_candidate)
@@ -338,6 +382,76 @@ async def test_already_classified_photos_are_skipped_on_a_repeat_run(
     assert run.status == ScanStatus.SUCCESS
     assert run.photos_total == 1
     assert len(client.calls) == 1
+    assert client.calls[0][2] == new_candidate.id
+
+
+async def test_a_locally_assessed_photo_is_still_a_candidate(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Sicherheitsauflage S14, der gefaehrlichste Uebersetzungsfehler dieser Story: der
+    Kriterien-Lauf schreibt ab PR 1 fuer JEDES beurteilte Foto eine LOKALE Kopfzeile. Ein reiner
+    Existenztest auf die Kopfzeile machte damit jedes lokal beurteilte Foto dauerhaft zum
+    Nicht-Kandidaten - die Cloud-Klassifizierung waere ein stilles No-op und die Kostenschaetzung
+    zeigte seelenruhig `0`."""
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    locally_assessed = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, locally_assessed)
+    _write_display_variant(tmp_path, locally_assessed)
+    await _add_local_assessment(db_session, locally_assessed)
+
+    client = RecordingCategoryClient()
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.photos_total == 1
+    assert [call[2] for call in client.calls] == [locally_assessed.id]
+
+
+async def test_a_photo_with_only_an_old_category_row_is_a_candidate_again(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der bewusste Zwischenzustand nach PR 2: `photo_category_classifications` wird nicht mehr
+    geschrieben und ist kein Erledigt-Marker mehr. Ein Foto mit bloss dieser Altzeile hat noch
+    keine Motivstaerken und ist deshalb wieder Kandidat."""
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+    db_session.add(
+        PhotoCategoryClassification(
+            photo_id=photo.id,
+            category_key="tier",
+            detected_categories=["tier"],
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    client = RecordingCategoryClient()
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda _model: client,
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.photos_total == 1
+    assert [call[2] for call in client.calls] == [photo.id]
 
 
 async def _run_for_one_photo(
@@ -362,17 +476,44 @@ async def _run_for_one_photo(
     return photo, run
 
 
-async def test_a_successful_call_writes_exactly_one_classification_row(
+async def test_a_successful_call_writes_a_cloud_header_and_the_strength_vector(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
+    """Spec 0427, PR 2 Schritt 2: statt einer `photo_category_classifications`-Zeile entstehen
+    eine Kopfzeile mit `source='cloud'` und die acht Staerkezeilen."""
     photo, run = await _run_for_one_photo(
         db_session,
         tmp_path,
-        RemoteClassification(categories=("landschaft", "menschen"), fine_labels=("Hund",)),
+        RemoteClassification(
+            motif_strengths=_vector(bauwerk_sehenswuerdigkeit=0.9, menschen=0.2),
+            fine_labels=("Hund",),
+        ),
     )
 
     assert run.status == ScanStatus.SUCCESS
     assert run.photos_processed == 1
+    assessment = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert assessment is not None
+    assert assessment.source == MotifAssessmentSource.CLOUD
+    assert assessment.provider == "anthropic"
+    assert assessment.excluded_document is False
+    assert await _strengths_of(db_session, photo.id) == _vector(
+        bauwerk_sehenswuerdigkeit=0.9, menschen=0.2
+    )
+
+
+async def test_the_old_classification_table_is_no_longer_written(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der bewusste Zwischenzustand nach PR 2: `photo_category_classifications` wird nicht mehr
+    geschrieben (und in dieser PR noch nicht geloescht). Die alte Hauptkategorie eines NEU
+    klassifizierten Fotos entsteht dadurch nur noch aus lokalen Signalen."""
+    photo, _ = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(motif_strengths=_vector(tiere=0.7), fine_labels=()),
+    )
+
     rows = (
         (
             await db_session.execute(
@@ -384,13 +525,95 @@ async def test_a_successful_call_writes_exactly_one_classification_row(
         .scalars()
         .all()
     )
-    assert len(rows) == 1
-    # `menschen` gewinnt gegen `landschaft` (kleinere precedence) - die Zeile haelt das bereits
-    # AUFGELOESTE Ergebnis, nicht die Rohantwort.
-    assert rows[0].category_key == "menschen"
-    # `detected_categories` haelt die VALIDIERTE Kandidatenliste (Security-Muss-Kriterium: nie die
-    # Rohliste des Modells).
-    assert rows[0].detected_categories == ["landschaft", "menschen"]
+    assert rows == []
+
+
+async def test_a_strong_building_and_weak_people_answer_persists_that_relation(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Akzeptanzkriterium "Bauwerk stark, Menschen schwach - nicht umgekehrt", gepruaft an den
+    PERSISTIERTEN Zeilen. Die Gegenprobe mit getauschten Zahlen steht darunter; der Fall mit
+    gleichen Zahlen gehoert ausdruecklich nicht dazu."""
+    photo, _ = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(
+            motif_strengths=_vector(bauwerk_sehenswuerdigkeit=0.9, menschen=0.2), fine_labels=()
+        ),
+    )
+
+    strengths = await _strengths_of(db_session, photo.id)
+    assert strengths["bauwerk_sehenswuerdigkeit"] == 0.9
+    assert strengths["menschen"] == 0.2
+    assert strengths["bauwerk_sehenswuerdigkeit"] > strengths["menschen"]
+
+
+async def test_the_swapped_answer_persists_the_swapped_relation(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    photo, _ = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(
+            motif_strengths=_vector(bauwerk_sehenswuerdigkeit=0.2, menschen=0.9), fine_labels=()
+        ),
+    )
+
+    strengths = await _strengths_of(db_session, photo.id)
+    assert strengths["menschen"] > strengths["bauwerk_sehenswuerdigkeit"]
+
+
+async def test_an_excluded_photo_keeps_its_strengths_and_carries_the_flag(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Sicherheitsauflage S10: der Ausschluss gewinnt in der Auswahl, loescht aber keine Zahl -
+    die Staerken bleiben gespeichert und werden nicht auf 0 gesetzt."""
+    photo, _ = await _run_for_one_photo(
+        db_session,
+        tmp_path,
+        RemoteClassification(motif_strengths=_vector(menschen=0.9), fine_labels=(), excluded=True),
+    )
+
+    assessment = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert assessment is not None
+    assert assessment.excluded_document is True
+    assert (await _strengths_of(db_session, photo.id))["menschen"] == 0.9
+
+
+async def test_a_cloud_header_replaces_an_existing_local_one(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die Cloud-Grundlage ersetzt die lokale vollstaendig - Herkunft, Anbieter und alle acht
+    Werte. Beide treten nie als Gegenkandidat an."""
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+    await _add_local_assessment(db_session, photo)
+    db_session.add(PhotoMotifStrength(photo_id=photo.id, motif_key="landschaft", strength=0.4))
+    await db_session.commit()
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda _model: RecordingCategoryClient(
+            RemoteClassification(motif_strengths=_vector(tiere=0.6), fine_labels=())
+        ),
+        build_embedder=_fake_embedder,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    photo_id = photo.id
+    assessment = await db_session.get(PhotoMotifAssessment, photo_id)
+    assert assessment is not None
+    await db_session.refresh(assessment)
+    assert assessment.source == MotifAssessmentSource.CLOUD
+    # Der GESAMTE Vektor ist ersetzt: die alte `landschaft`-Zeile steht nicht mit ihrem alten
+    # Wert daneben.
+    assert await _strengths_of(db_session, photo_id) == _vector(tiere=0.6)
 
 
 async def test_a_successful_call_writes_up_to_two_fine_label_rows(
@@ -399,7 +622,7 @@ async def test_a_successful_call_writes_up_to_two_fine_label_rows(
     photo, run = await _run_for_one_photo(
         db_session,
         tmp_path,
-        RemoteClassification(categories=("tier",), fine_labels=("Hund", "Strand")),
+        RemoteClassification(motif_strengths=_vector(tiere=0.8), fine_labels=("Hund", "Strand")),
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -415,32 +638,24 @@ async def test_a_successful_call_writes_up_to_two_fine_label_rows(
     assert {row.raw_label for row in rows} == {"Hund", "Strand"}
 
 
-async def test_fine_labels_are_written_even_when_the_category_is_not_recognized(
+async def test_fine_labels_are_written_even_when_nothing_was_recognized(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Direktes Akzeptanzkriterium der Spec 0289: Feinlabels werden AUCH DANN festgehalten, wenn
-    die Kategorie "Nicht erkannt" lautet - sie sind eigenstaendige Zusatzinformation, keine
-    Beigabe zu einer erfolgreichen Kategorisierung."""
+    """Feinlabels werden AUCH DANN festgehalten, wenn kein Motiv deutlich erkannt wurde - sie sind
+    eigenstaendige Zusatzinformation, keine Beigabe zu einer erfolgreichen Einordnung. Die
+    Kopfzeile entsteht trotzdem: acht Nullen sind eine BEURTEILUNG und nicht die Abwesenheit
+    einer."""
     photo, run = await _run_for_one_photo(
         db_session,
         tmp_path,
-        RemoteClassification(categories=(), fine_labels=("Fabelwesen",)),
+        RemoteClassification(motif_strengths=_vector(), fine_labels=("Fabelwesen",)),
     )
 
     assert run.status == ScanStatus.SUCCESS
-    classification = (
-        (
-            await db_session.execute(
-                select(PhotoCategoryClassification).where(
-                    PhotoCategoryClassification.photo_id == photo.id
-                )
-            )
-        )
-        .scalars()
-        .one()
-    )
-    assert classification.category_key == "nicht_erkannt"
-    assert classification.detected_categories == []
+    assessment = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert assessment is not None
+    assert assessment.source == MotifAssessmentSource.CLOUD
+    assert await _strengths_of(db_session, photo.id) == _vector()
 
     fine_labels = (
         (
@@ -454,23 +669,21 @@ async def test_fine_labels_are_written_even_when_the_category_is_not_recognized(
     assert [row.raw_label for row in fine_labels] == ["Fabelwesen"]
 
 
-async def test_a_photo_without_fine_labels_gets_a_classification_row_anyway(
+async def test_a_photo_without_fine_labels_gets_a_header_anyway(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     photo, _ = await _run_for_one_photo(
-        db_session, tmp_path, RemoteClassification(categories=("tier",), fine_labels=())
+        db_session,
+        tmp_path,
+        RemoteClassification(motif_strengths=_vector(tiere=0.8), fine_labels=()),
     )
 
     assert (
         await db_session.execute(select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id))
     ).scalars().all() == []
-    assert (
-        await db_session.execute(
-            select(PhotoCategoryClassification).where(
-                PhotoCategoryClassification.photo_id == photo.id
-            )
-        )
-    ).scalars().one().category_key == "tier"
+    assessment = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert assessment is not None
+    assert (await _strengths_of(db_session, photo.id))["tiere"] == 0.8
 
 
 async def test_two_fine_labels_with_the_same_canonical_key_write_only_one_row(
@@ -481,7 +694,7 @@ async def test_two_fine_labels_with_the_same_canonical_key_write_only_one_row(
     photo, run = await _run_for_one_photo(
         db_session,
         tmp_path,
-        RemoteClassification(categories=("tier",), fine_labels=("Hund", "hund")),
+        RemoteClassification(motif_strengths=_vector(tiere=0.8), fine_labels=("Hund", "hund")),
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -514,7 +727,10 @@ async def test_best_effort_error_isolation_does_not_abort_the_run(
     _write_display_variant(tmp_path, succeeding_photo)
 
     client = PerPhotoCategoryClient(
-        [RuntimeError("boom"), RemoteClassification(categories=("tier",), fine_labels=("Hund",))]
+        [
+            RuntimeError("boom"),
+            RemoteClassification(motif_strengths=_vector(tiere=0.8), fine_labels=("Hund",)),
+        ]
     )
 
     # Spec 0056/ADR 0034: genau ein WARNING-Record fuer das fehlgeschlagene Foto, keiner fuer das
@@ -845,33 +1061,32 @@ async def test_a_new_canonical_label_is_reused_across_two_projects(
     assert {row.photo_id for row in rows} == {photo_a.id, photo_b.id}
 
 
-async def test_select_remote_category_candidates_excludes_rejected_and_already_classified(
+async def test_select_remote_category_candidates_excludes_rejected_and_cloud_assessed(
     db_session: AsyncSession,
 ) -> None:
     """Dediziert getestete, wiederverwendbare Kandidaten-Selektion (auch von GET .../estimate
     genutzt, api/projects.py) - identisch zu der bereits ueber run_remote_category_classification
-    indirekt getesteten Logik, hier isoliert."""
+    indirekt getesteten Logik, hier isoliert.
+
+    Ein Bestand, in dem ein reiner Existenztest auf die Kopfzeile eine ANDERE Zahl liefern wuerde
+    (Sicherheitsauflage S14): das lokal beurteilte Foto bleibt Kandidat, nur das mit der
+    Cloud-Kopfzeile fliegt heraus."""
     project = await _make_project(db_session)
     survivor = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, survivor)
     rejected = await _add_photo(db_session, project, "b.jpg", "etag-2")
     await _add_score(db_session, rejected, suggested_status=RatingStatus.REJECTED)
-    already_classified = await _add_photo(db_session, project, "c.jpg", "etag-3")
-    await _add_score(db_session, already_classified)
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=already_classified.id,
-            category_key="tier",
-            detected_categories=["tier"],
-            provider="anthropic",
-            computed_at=datetime.now(UTC),
-        )
-    )
+    cloud_assessed = await _add_photo(db_session, project, "c.jpg", "etag-3")
+    await _add_score(db_session, cloud_assessed)
+    await _add_cloud_assessment(db_session, cloud_assessed)
+    locally_assessed = await _add_photo(db_session, project, "d.jpg", "etag-4")
+    await _add_score(db_session, locally_assessed)
+    await _add_local_assessment(db_session, locally_assessed)
     await db_session.commit()
 
     candidates = await select_remote_category_candidates(db_session, project.id)
 
-    assert [photo.id for photo in candidates] == [survivor.id]
+    assert {photo.id for photo in candidates} == {survivor.id, locally_assessed.id}
 
 
 async def test_select_remote_category_candidates_returns_empty_list_for_no_photos(
@@ -884,11 +1099,10 @@ async def test_select_remote_category_candidates_returns_empty_list_for_no_photo
 async def test_a_structurally_invalid_response_skips_only_that_photo(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """specs/features/0289-feste-kategorien.md, Teststrategie 7: eine strukturell ungueltige
-    Antwort (fehlendes/nicht-listenfoermiges `categories`, kein JSON-Objekt, abgeschnittene
-    Antwort) laeuft ueber den bestehenden RemoteCategoryClassificationApiError-Pfad - das Foto
-    wird best-effort uebersprungen, die uebrigen Fotos werden weiterverarbeitet, der Lauf endet
-    regulaer."""
+    """Eine strukturell ungueltige Antwort (fehlendes `motifs`, `motifs` kein Objekt, kein
+    JSON-Objekt, abgeschnittene Antwort) laeuft ueber den bestehenden
+    RemoteCategoryClassificationApiError-Pfad - das Foto wird best-effort uebersprungen, die
+    uebrigen Fotos werden weiterverarbeitet, der Lauf endet regulaer."""
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
     await db_session.commit()
@@ -901,8 +1115,8 @@ async def test_a_structurally_invalid_response_skips_only_that_photo(
 
     client = PerPhotoCategoryClient(
         [
-            RemoteCategoryClassificationApiError("fehlendes 'categories'-Feld"),
-            RemoteClassification(categories=("tier",), fine_labels=()),
+            RemoteCategoryClassificationApiError("fehlendes 'motifs'-Feld"),
+            RemoteClassification(motif_strengths=_vector(tiere=0.8), fine_labels=()),
         ]
     )
 
@@ -915,11 +1129,14 @@ async def test_a_structurally_invalid_response_skips_only_that_photo(
     )
 
     assert run.status == ScanStatus.SUCCESS
-    rows = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
+    rows = (await db_session.execute(select(PhotoMotifAssessment))).scalars().all()
     assert [row.photo_id for row in rows] == [intact.id]
+    # Das uebersprungene Foto bleibt OHNE Kopfzeile - "noch nicht klassifiziert", nicht "nichts
+    # erkannt" - und ist beim naechsten Lauf erneut Kandidat.
+    assert await _strengths_of(db_session, broken.id) == {}
 
 
-async def test_a_second_run_does_not_create_a_second_classification_row(
+async def test_a_second_run_does_not_create_a_second_header(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
@@ -939,8 +1156,9 @@ async def test_a_second_run_does_not_create_a_second_classification_row(
         )
         assert run.status == ScanStatus.SUCCESS
 
-    rows = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
+    rows = (await db_session.execute(select(PhotoMotifAssessment))).scalars().all()
     assert len(rows) == 1
+    assert len(await _strengths_of(db_session, photo.id)) == len(MOTIF_REGISTRY)
 
 
 # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
@@ -950,7 +1168,7 @@ async def test_a_second_run_does_not_create_a_second_classification_row(
 
 def _classification_with_usage(input_tokens: int, output_tokens: int) -> RemoteClassification:
     return RemoteClassification(
-        categories=("tier",),
+        motif_strengths=_vector(tiere=0.8),
         fine_labels=("Hund",),
         usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
     )
@@ -1036,7 +1254,7 @@ async def test_a_classification_without_usage_still_counts_as_an_api_call(
     project = await _cost_setup(db_session, tmp_path, photo_count=2)
     client = PerPhotoCategoryClient(
         [
-            RemoteClassification(categories=("tier",), fine_labels=()),  # ohne usage
+            RemoteClassification(motif_strengths=_vector(tiere=0.8), fine_labels=()),  # ohne usage
             _classification_with_usage(1_000, 10),
         ]
     )
@@ -1304,179 +1522,28 @@ async def test_an_earlier_run_keeps_its_model_when_a_later_run_uses_another(
     assert second.model == _STRONGER_ANTHROPIC_MODEL
 
 
-# --- specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 3 -----------------
+# --- specs/features/0427-motive-mit-staerke.md, PR 2 Schritt 2 -------------------------------
 
 
-async def test_the_classification_row_persists_the_confidence_mapping(
+async def test_every_written_header_carries_the_full_eight_row_vector(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    photo, run = await _run_for_one_photo(
-        db_session,
-        tmp_path,
-        RemoteClassification(
-            categories=("landschaft", "menschen"),
-            fine_labels=(),
-            category_confidences={"landschaft": 0.31, "menschen": 0.87},
-        ),
-    )
-
-    assert run.status == ScanStatus.SUCCESS
-    row = (
-        (
-            await db_session.execute(
-                select(PhotoCategoryClassification).where(
-                    PhotoCategoryClassification.photo_id == photo.id
-                )
-            )
-        )
-        .scalars()
-        .one()
-    )
-    assert row.detected_category_confidences == {"landschaft": 0.31, "menschen": 0.87}
-
-
-async def test_the_scalar_follows_the_resolved_category_not_the_highest_number(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """DER aufdeckende Fall (Teststrategie der Spec 0299): die Vorrangreihenfolge waehlt einen
-    ANDEREN Kandidaten als den mit der hoechsten Konfidenz. `menschen` (precedence 3) gewinnt gegen
-    `landschaft` (precedence 10), obwohl `landschaft` die groessere Zahl traegt - der Skalar muss
-    dem aufgeloesten Schluessel folgen, nicht dem Maximum."""
-    photo, _ = await _run_for_one_photo(
-        db_session,
-        tmp_path,
-        RemoteClassification(
-            categories=("landschaft", "menschen"),
-            fine_labels=(),
-            category_confidences={"landschaft": 0.99, "menschen": 0.12},
-        ),
-    )
-
-    row = (
-        (
-            await db_session.execute(
-                select(PhotoCategoryClassification).where(
-                    PhotoCategoryClassification.photo_id == photo.id
-                )
-            )
-        )
-        .scalars()
-        .one()
-    )
-    assert row.category_key == "menschen"
-    assert row.category_confidence == 0.12
-
-
-async def test_the_scalar_is_none_when_the_resolved_category_has_no_number(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """Eine nicht leere Abbildung ohne Eintrag fuer die aufgeloeste Kategorie: der Skalar bleibt
-    `None`, nie `0.0`."""
-    photo, _ = await _run_for_one_photo(
-        db_session,
-        tmp_path,
-        RemoteClassification(
-            categories=("landschaft", "menschen"),
-            fine_labels=(),
-            category_confidences={"landschaft": 0.7},
-        ),
-    )
-
-    row = (
-        (
-            await db_session.execute(
-                select(PhotoCategoryClassification).where(
-                    PhotoCategoryClassification.photo_id == photo.id
-                )
-            )
-        )
-        .scalars()
-        .one()
-    )
-    assert row.category_key == "menschen"
-    assert row.category_confidence is None
-    assert row.detected_category_confidences == {"landschaft": 0.7}
-
-
-async def test_a_not_recognized_photo_has_no_number_on_either_side(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """`nicht_erkannt` steht gar nicht in `detected_categories` - beide Seiten bleiben leer bzw.
-    `None`, und die Zeile entsteht trotzdem (Erfolgssignal der Remote-Phase)."""
-    photo, run = await _run_for_one_photo(
-        db_session, tmp_path, RemoteClassification(categories=(), fine_labels=())
-    )
-
-    assert run.status == ScanStatus.SUCCESS
-    row = (
-        (
-            await db_session.execute(
-                select(PhotoCategoryClassification).where(
-                    PhotoCategoryClassification.photo_id == photo.id
-                )
-            )
-        )
-        .scalars()
-        .one()
-    )
-    assert row.category_key == CATEGORY_NOT_RECOGNIZED
-    assert row.detected_category_confidences == {}
-    assert row.category_confidence is None
-
-
-async def test_a_classification_without_any_confidence_writes_an_empty_mapping(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """Ein Modell, das die neue Anweisung ignoriert: die Kategorie bleibt gueltig, die Abbildung ist
-    leer (`{}` = "erhoben, keine brauchbare Zahl"), der Skalar `None`. Der Lauf scheitert nicht und
-    das Foto wird nicht uebersprungen (Best-effort, Akzeptanzkriterium 10)."""
-    photo, run = await _run_for_one_photo(
-        db_session, tmp_path, RemoteClassification(categories=("tier",), fine_labels=("Hund",))
-    )
-
-    assert run.status == ScanStatus.SUCCESS
-    assert run.photos_processed == 1
-    row = (
-        (
-            await db_session.execute(
-                select(PhotoCategoryClassification).where(
-                    PhotoCategoryClassification.photo_id == photo.id
-                )
-            )
-        )
-        .scalars()
-        .one()
-    )
-    assert row.detected_category_confidences == {}
-    assert row.category_confidence is None
-
-
-async def test_the_invariant_holds_for_every_written_row(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """ADR 0067 Punkt 4: `category_confidence == detected_category_confidences.get(category_key)`
-    - die einzige Rechtfertigung der bewusst redundanten Spiegelspalte. Ueber ALLE im Lauf
-    erzeugten Zeilen geprueft, nicht nur ueber eine."""
+    """Invariante ueber ALLEN geschriebenen Zeilen: je Kopfzeile genau acht Staerkezeilen, und
+    ihre Schluesselmenge ist die Registry. Ein Vektor, dem ein Motiv fehlt, waere von "0 weil
+    nicht zu sehen" nicht zu unterscheiden."""
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
     await db_session.commit()
-    for index in range(3):
-        photo = await _add_photo(db_session, project, f"{index}.jpg", f"etag-{index}")
+    for index, path in enumerate(("a.jpg", "b.jpg", "c.jpg")):
+        photo = await _add_photo(db_session, project, path, f"etag-{index}")
         await _add_score(db_session, photo)
         _write_display_variant(tmp_path, photo)
-    await db_session.commit()
 
     client = PerPhotoCategoryClient(
         [
-            RemoteClassification(
-                categories=("tier",), fine_labels=(), category_confidences={"tier": 0.55}
-            ),
-            RemoteClassification(
-                categories=("landschaft", "menschen"),
-                fine_labels=(),
-                category_confidences={"landschaft": 0.9},
-            ),
-            RemoteClassification(categories=("menschen",), fine_labels=()),
+            RemoteClassification(motif_strengths=_vector(menschen=0.9), fine_labels=()),
+            RemoteClassification(motif_strengths=_vector(), fine_labels=()),
+            RemoteClassification(motif_strengths=_vector(tiere=1.0), fine_labels=(), excluded=True),
         ]
     )
 
@@ -1489,55 +1556,39 @@ async def test_the_invariant_holds_for_every_written_row(
     )
 
     assert run.status == ScanStatus.SUCCESS
-    rows = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
-    assert len(rows) == 3
-    for row in rows:
-        mapping = row.detected_category_confidences or {}
-        assert row.category_confidence == mapping.get(row.category_key)
-        # Die Abbildung traegt nie einen Schluessel ausserhalb der Kandidatenliste.
-        assert set(mapping) <= set(row.detected_categories)
+    assessments = (await db_session.execute(select(PhotoMotifAssessment))).scalars().all()
+    assert len(assessments) == 3
+    for assessment in assessments:
+        strengths = await _strengths_of(db_session, assessment.photo_id)
+        assert set(strengths) == set(MOTIF_REGISTRY)
+        assert all(0.0 <= value <= 1.0 for value in strengths.values())
 
 
-async def test_a_repeat_run_leaves_an_old_row_without_confidences_untouched(
+async def test_a_failed_photo_gets_no_header_and_stays_a_candidate(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Akzeptanzkriterium 9: auch ein erneuter Lauf fuellt den Altbestand nicht nach - der Worker
-    ueberspringt jedes Foto mit vorhandener Klassifizierungszeile (Kostenschutz)."""
+    """Best-effort je Foto: ein fehlgeschlagener Aufruf laesst KEINE Kopfzeile entstehen - sonst
+    waere das Foto ab sofort "beurteilt" und zugleich vom naechsten Lauf ausgenommen."""
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
     await db_session.commit()
     photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, photo)
     _write_display_variant(tmp_path, photo)
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="tier",
-            detected_categories=["tier"],
-            provider="anthropic",
-            computed_at=datetime.now(UTC),
-        )
-    )
-    await db_session.commit()
 
-    client = RecordingCategoryClient(
-        RemoteClassification(
-            categories=("tier",), fine_labels=(), category_confidences={"tier": 0.9}
-        )
-    )
     run = await run_remote_category_classification(
         db_session,
         project,
         cache_dir=tmp_path,
-        build_client=lambda _model: client,
+        build_client=lambda _model: RecordingCategoryClient(raise_error=True),
         build_embedder=_fake_embedder,
     )
 
     assert run.status == ScanStatus.SUCCESS
-    assert client.calls == []
-    row = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
-    assert row.detected_category_confidences is None
-    assert row.category_confidence is None
+    assert await db_session.get(PhotoMotifAssessment, photo.id) is None
+    assert [p.id for p in await select_remote_category_candidates(db_session, project.id)] == [
+        photo.id
+    ]
 
 
 # --------------------------------------------------------------------------------------------
@@ -1851,7 +1902,13 @@ def _category_ok() -> httpx.Response:
             "content": [
                 {
                     "type": "text",
-                    "text": json.dumps({"categories": ["tier"], "fine_labels": ["Hund"]}),
+                    "text": json.dumps(
+                        {
+                            "motifs": {"tiere": 0.8},
+                            "excluded": False,
+                            "fine_labels": ["Hund"],
+                        }
+                    ),
                 }
             ]
         },
@@ -1901,18 +1958,8 @@ class TestTheRemoteCategoryPhaseSitsOutARateLimit:
 
         assert run.status == ScanStatus.SUCCESS
         assert run.failed_calls == 0
-        rows = (
-            (
-                await db_session.execute(
-                    select(PhotoCategoryClassification).where(
-                        PhotoCategoryClassification.photo_id == photo.id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert len(rows) == 1
+        assert await db_session.get(PhotoMotifAssessment, photo.id) is not None
+        assert (await _strengths_of(db_session, photo.id))["tiere"] == 0.8
         errors = (
             (
                 await db_session.execute(
@@ -1938,18 +1985,7 @@ class TestTheRemoteCategoryPhaseSitsOutARateLimit:
 
         assert run.status == ScanStatus.SUCCESS
         assert run.failed_calls == 1
-        rows = (
-            (
-                await db_session.execute(
-                    select(PhotoCategoryClassification).where(
-                        PhotoCategoryClassification.photo_id == photo.id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert rows == []
+        assert await db_session.get(PhotoMotifAssessment, photo.id) is None
         error_row = (
             await db_session.execute(
                 select(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id == photo.id)
@@ -1976,7 +2012,7 @@ class TestTheRemoteCategoryPhaseSummarisesItsThrottling:
         await _add_score(db_session, photo)
         _write_display_variant(tmp_path, photo)
         client = PerPhotoCategoryClient(
-            [RemoteClassification(categories=("tier",), fine_labels=("Hund",))]
+            [RemoteClassification(motif_strengths=_vector(tiere=0.8), fine_labels=("Hund",))]
         )
 
         with caplog.at_level(logging.WARNING, logger="photosort.worker"):

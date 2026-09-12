@@ -26,10 +26,11 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     FineLabel,
+    MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCriterionScore,
     PhotoFineLabel,
+    PhotoMotifAssessment,
     PhotoScore,
     Project,
     RemoteCategoryClassificationRun,
@@ -464,8 +465,18 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
     aus. `api/photos.py` ist die eine bewusste Ausnahme davon.
 
     Ein einzelnes `COUNT` mit `NOT EXISTS`, komplett serverseitig ausgewertet - keine Zeile
-    verlaesst die Datenbank, auch nicht bei einem grossen Projekt."""
-    already_classified = exists().where(PhotoCategoryClassification.photo_id == Photo.id)
+    verlaesst die Datenbank, auch nicht bei einem grossen Projekt.
+
+    SICHERHEITSAUFLAGE S15: eine bewusste DUPLIKATION derselben Bedingung, und deshalb aendern
+    sich beide Stellen in derselben PR. Das Kriterium ist eine Kopfzeile mit `source='cloud'` -
+    nicht das bloße Vorhandensein einer Kopfzeile (der Kriterien-Lauf schreibt lokale) und nicht
+    mehr die Altzeile in `photo_category_classifications` (sie wird nicht mehr geschrieben). Eine
+    Schaetzung, die eine andere Menge zaehlt als der Lauf sendet, ist eine falsche Grundlage fuer
+    die Freigabe einer kostenpflichtigen Aktion."""
+    cloud_assessed = exists().where(
+        PhotoMotifAssessment.photo_id == Photo.id,
+        PhotoMotifAssessment.source == MotifAssessmentSource.CLOUD,
+    )
     result = await session.execute(
         select(func.count())
         .select_from(Photo)
@@ -473,7 +484,7 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
         .where(
             Photo.project_id == project_id,
             PhotoScore.suggested_status.is_(None),
-            ~already_classified,
+            ~cloud_assessed,
         )
     )
     return result.scalar_one()

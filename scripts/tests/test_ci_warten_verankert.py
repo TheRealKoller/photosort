@@ -1,4 +1,4 @@
-"""Haelt die Verdrahtung des CI-Wartepunkts fest (Spec 0405, ADR 0091).
+"""Haelt die Verdrahtung des CI-Wartepunkts fest (Spec 0405, ADR 0092).
 
 Der Ablauf wartet nach seinem letzten Push selbst auf das Ergebnis des CI-Laufs und bessert bei
 Rot in engem Rahmen nach. Umgesetzt ist das **ausschliesslich als Text**: zwei Operationen im

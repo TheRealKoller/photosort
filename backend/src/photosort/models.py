@@ -220,6 +220,18 @@ class Photo(Base):
     cloud_vision_errors: Mapped[list[PhotoCloudVisionError]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
+    # 1:1 wie score/landmark_detection, optional - ihre ABWESENHEIT ist der Zustand "noch nicht
+    # klassifiziert". Die acht Stärkezeilen hängen an der Kopfzeile, nicht am Foto: sie fallen mit
+    # ihr über deren eigene Kaskade.
+    motif_assessment: Mapped[PhotoMotifAssessment | None] = relationship(
+        back_populates="photo", uselist=False, cascade="all, delete-orphan"
+    )
+    # 1:N (0-8 Zeilen pro Foto, eine je korrigiertem Motiv). Ausdrücklich NICHT an der Kopfzeile:
+    # eine Korrektur überlebt jeden weiteren Klassifizierungslauf. Die Kaskade hängt am FOTO -
+    # verschwindet das Foto, verschwindet auch seine Korrektur; der Nutzer bleibt unberührt.
+    motif_corrections: Mapped[list[PhotoMotifCorrection]] = relationship(
+        back_populates="photo", cascade="all, delete-orphan"
+    )
     # Die Foto-Seite derselben Kaskade wie bei CriterionScoringRun.rankings. Ohne sie scheitert
     # der Re-Scan unter echtem Postgres an einer Fremdschlüsselverletzung, sobald
     # worker.py::run_project_scan ein auf OpenCloud verschwundenes Foto löscht, das noch in einem
@@ -854,3 +866,107 @@ class PhotoCloudVisionError(Base):
     attempted_at: Mapped[datetime]
 
     photo: Mapped[Photo] = relationship(back_populates="cloud_vision_errors")
+
+
+class MotifAssessmentSource(enum.StrEnum):
+    """Welche Grundlage die Motivstaerken eines Fotos beurteilt hat.
+
+    Die beiden treten NIE gegeneinander an und werden nie gemischt: liegt eine Cloud-Aussage vor,
+    bestimmt allein sie alle acht Staerken. Der Kriterien-Lauf schreibt eine lokale Kopfzeile nur,
+    wenn keine Zeile existiert oder die vorhandene `local` traegt (motif_strengths.py::
+    upsert_assessment) - eine Cloud-Grundlage wird von einem lokalen Lauf nie ueberschrieben."""
+
+    CLOUD = "cloud"
+    LOCAL = "local"
+
+
+class PhotoMotifAssessment(Base):
+    """Die Kopfzeile des Motiv-Staerkevektors eines Fotos - 1:1 zu Photo, `photo_id` ist Primary
+    Key: strukturell nie mehrere Zeilen pro Foto.
+
+    Die ABWESENHEIT dieser Zeile ist der Zustand "noch nicht klassifiziert" und damit
+    unterscheidbar von "nichts erkannt" (Vektor vorhanden, alle acht Staerken niedrig). Die
+    Oberflaeche zeigt dafuer einen Satz statt acht Nullzeilen.
+
+    `provider` ist `NULL` bei einer lokalen Grundlage und traegt bei `cloud` den Anbieter, dessen
+    Aussage im Vektor steht."""
+
+    __tablename__ = "photo_motif_assessments"
+
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
+    source: Mapped[MotifAssessmentSource] = mapped_column(
+        SQLEnum(MotifAssessmentSource, native_enum=False, length=20)
+    )
+    # NOT NULL und BEWUSST OHNE jeden Default, weder Python- noch server-seitig: ein Schreibpfad,
+    # der die Spalte vergisst, soll LAUT an der NOT-NULL-Bedingung scheitern statt still ein Foto
+    # aus JEDER Motivauswahl zu nehmen. Der Ausschluss ist von Hand nicht korrigierbar - der
+    # Rueckweg ist allein ein erneuter, kostenpflichtiger Klassifizierungslauf.
+    excluded_document: Mapped[bool]
+    provider: Mapped[str | None] = mapped_column(default=None)
+    computed_at: Mapped[datetime]
+
+    photo: Mapped[Photo] = relationship(back_populates="motif_assessment")
+    strengths: Mapped[list[PhotoMotifStrength]] = relationship(
+        back_populates="assessment", cascade="all, delete-orphan"
+    )
+
+
+class PhotoMotifStrength(Base):
+    """Eine Motivstaerke eines Fotos - acht Zeilen je Kopfzeile, `strength` in [0, 1].
+
+    Der Fremdschluessel zeigt auf `photo_motif_assessments.photo_id` und NICHT auf `photos.id`:
+    eine Staerke kann ohne Kopfzeile nicht existieren, und eine neue Grundlage ersetzt den
+    gesamten Vektor eines Fotos.
+
+    `motif_key` ist ein freier String ohne Fremdschluessel - der zulaessige Wertebereich ist das
+    geschlossene Achter-Set aus `motifs.py::MOTIF_REGISTRY`, und die Pruefung lebt am Parser bzw.
+    am Endpunkt. Der Lesepfad bleibt tolerant gegenueber einem Altwert ausserhalb des Sets."""
+
+    __tablename__ = "photo_motif_strengths"
+    __table_args__ = (
+        UniqueConstraint("photo_id", "motif_key", name="uq_motif_strength_photo_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photo_motif_assessments.photo_id"))
+    motif_key: Mapped[str]
+    strength: Mapped[float]
+
+    assessment: Mapped[PhotoMotifAssessment] = relationship(back_populates="strengths")
+
+
+class PhotoMotifCorrection(Base):
+    """Die Aussage eines Nutzers, dass ein Motiv auf ein Foto zutrifft oder nicht zutrifft.
+
+    Haengt AUSSCHLIESSLICH an `photos` und `users`, an KEINEM Lauf und an keiner Kopfzeile -
+    deshalb ueberlebt sie jede erneute Klassifizierung ohne Sonderfallcode, und kein Lauf loescht
+    oder ueberschreibt sie. Ein Invariantentest haelt das an den Fremdschluesseln fest. Eine
+    fehlende Zeile heisst "nicht korrigiert" (dasselbe Muster wie bei `Rating`), das Entfernen
+    einer Korrektur ist das Loeschen der Zeile.
+
+    Die Korrektur traegt NIE eine Zahl: die WIRKSAME Staerke entsteht im Lesepfad
+    (`motif_strengths.py::effective_strength_expression`) und wird nicht in die Staerkezeile
+    materialisiert - eine materialisierte Korrektur muesste nach jedem Lauf erneut angewendet
+    werden, und genau dieses Nachziehen ist die Stelle, an der sie verloren geht.
+
+    `user_id` ist ein AUDITFELD und kein Zugriffsschluessel: der Unique-Constraint lautet bewusst
+    `(photo_id, motif_key)` OHNE `user_id`, weil die Korrektur eine Aussage ueber das FOTO ist und
+    nicht ueber einen Geschmack. Korrigiert der zweite Nutzer dasselbe Paar, ueberschreibt er die
+    Aussage des ersten; `user_id`/`updated_at` halten fest, wer zuletzt geschrieben hat. Mit
+    `user_id` im Constraint entstuenden zwei widersprueckliche Zeilen fuer dasselbe Paar, und
+    welche gilt, entschiede die Sortierung."""
+
+    __tablename__ = "photo_motif_corrections"
+    __table_args__ = (
+        UniqueConstraint("photo_id", "motif_key", name="uq_motif_correction_photo_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    motif_key: Mapped[str]
+    applies: Mapped[bool]
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+    photo: Mapped[Photo] = relationship(back_populates="motif_corrections")
+    user: Mapped[User] = relationship()

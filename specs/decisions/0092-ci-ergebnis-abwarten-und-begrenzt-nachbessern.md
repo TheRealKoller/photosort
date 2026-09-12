@@ -1,4 +1,4 @@
-# 0091 - Das CI-Ergebnis wird über den vorhandenen `gh`-Weg abgewartet und begrenzt nachgebessert
+# 0092 - Das CI-Ergebnis wird über den vorhandenen `gh`-Weg abgewartet und begrenzt nachgebessert
 
 **Status:** Accepted
 **Datum:** 2026-09-12

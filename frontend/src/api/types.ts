@@ -204,6 +204,66 @@ export interface CategoryOut {
   locally_available: boolean
 }
 
+// Ab hier das Motivset (specs/features/0427-motive-mit-staerke.md). Es tritt in PR 1 ADDITIV
+// neben die Kategoriefelder; deren Ablösung ist PR 3.
+export type MotifKey = string
+
+// Ein Eintrag des festen Achter-Sets, wie ihn GET /motifs liefert - in ANZEIGEREIHENFOLGE der
+// Server-Registry, auf jedem Foto dieselbe. KEIN Ordnungsfeld: eine Zahl daneben wäre die
+// abgeschaffte Vorrangreihenfolge zurück.
+export interface MotifOut {
+  key: MotifKey
+  display_name: string
+  definition: string
+  delimitation: string
+  /** Ob dieses Motiv OHNE Cloud-Aussage überhaupt beurteilbar ist. Kommt vom Server, damit die
+   * Oberfläche „0 weil nicht zu sehen" von „0 weil nicht angesehen" unterscheiden kann, ohne die
+   * Signalliste des Backends zu spiegeln. */
+  locally_assessable: boolean
+}
+
+/** Die beiden Anzeigebänder der STATISTIK, inklusiv verglichen. Kommen vom Server, damit das
+ * Frontend sie nicht hinterlegt. Ausdrücklich KEINE Zugehörigkeitsschwelle - außerhalb der
+ * Statistiktabelle erscheint kein Bandwort. */
+export interface MotifStrengthBandsOut {
+  strong: number
+  medium: number
+}
+
+export interface MotifSetOut {
+  items: MotifOut[]
+  strength_bands: MotifStrengthBandsOut
+}
+
+/** Die Kopfzeile des Stärkevektors eines Fotos. `null` an `PhotoOut.motif_assessment` heißt „noch
+ * nicht klassifiziert" - unterscheidbar von „nichts erkannt" (Kopfzeile vorhanden, alle acht
+ * Stärken niedrig). `provider` ist `null` bei `source === 'local'`. `excluded_document` lässt sich
+ * von Hand NICHT korrigieren. */
+export interface MotifAssessmentOut {
+  source: 'cloud' | 'local'
+  provider: string | null
+  excluded_document: boolean
+  computed_at: string
+}
+
+/** Die WIRKSAME Stärke eines Motivs samt Korrekturzustand. `strength` trägt die Korrektur bereits
+ * eingerechnet - das Frontend rechnet nichts nach. `correction` ist `null` ohne Korrekturzeile;
+ * auf `!== null` prüfen, nie auf Falsyness (`false` ist eine Aussage). */
+export interface MotifStrengthOut {
+  /** `key` wie in `MotifOut` - dieselbe Sache heißt an beiden Stellen gleich. */
+  key: MotifKey
+  strength: number
+  correction: boolean | null
+}
+
+// Antwort von PUT /photos/{id}/motif-corrections/{motif_key} - der gesetzte Wert wird direkt
+// zurückgegeben, analog PUT /photos/{id}/rating.
+export interface MotifCorrectionOut {
+  photo_id: number
+  motif_key: MotifKey
+  applies: boolean
+}
+
 // EINE Zugehörigkeit eines Fotos zu einer Kategorie aus der Kriterien-/Rangfolgen-Pipeline.
 // Ein Foto hat mehrere davon - siehe `PhotoOut.rankings`.
 export interface RankingOut {
@@ -433,6 +493,19 @@ export interface PhotoOut {
    * dasselbe - kein Ort. */
   location?: PhotoLocation | null
   event?: EventOut | null
+  /** ADDITIV (Spec 0427, PR 1) - die Kategoriefelder oben bleiben unberührt daneben stehen.
+   *
+   * `null` heißt „noch nicht klassifiziert": dann ist `motifs` LEER und trägt ausdrücklich NICHT
+   * acht Einträge mit Wert 0. Auf `=== null` prüfen und an der Stelle der Liste einen Satz
+   * zeigen - acht Nullzeilen sind von „nichts erkannt" nicht zu unterscheiden. */
+  motif_assessment?: MotifAssessmentOut | null
+  /** Immer eine Liste, nie `null` (analog `ratings`): leer ohne Kopfzeile, sonst genau acht
+   * Einträge in Registry-Reihenfolge - auch bei unvollständigen Stärkezeilen. Die Stärke wird je
+   * Schlüssel nachgeschlagen, NIE über den Index der Antwortliste.
+   *
+   * Optional deklariert wie `location`/`event`: `undefined` und `[]` bedeuten an jeder Lesestelle
+   * dasselbe. */
+  motifs?: MotifStrengthOut[]
 }
 
 export interface PhotoListOut {

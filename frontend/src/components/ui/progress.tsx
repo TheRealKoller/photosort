@@ -29,15 +29,39 @@ import { cn } from '../../lib/utils'
  * Tailwind-Lauf, dass die Varianten ueberhaupt eine Regel erzeugen, die Darstellung selbst ist
  * Sichtpruefung.
  */
-export function Progress({ className, ...props }: ProgressHTMLAttributes<HTMLProgressElement>) {
+/**
+ * `tone` waehlt die FUELLUNG, nie die Spur - die bleibt in beiden Toenen `--separator`.
+ *
+ * `accent` ist die Vorgabe und traegt FORTSCHRITT (die drei bestehenden Aufrufstellen bleiben
+ * unveraendert). `neutral` traegt eine MESSGROESSE (`--text-h`, Spec 0427): acht Amber-Balken je
+ * Foto stuenden in der Favoritenfarbe und laesen sich als Bewertung. Beide Paare
+ * (Fuellung gegen Spur) stehen in der Kontrastmatrix von `designSystem.contract.test.ts`.
+ *
+ * Der unbestimmte Zustand bleibt dem Akzent vorbehalten: eine Messgroesse ist entweder da oder
+ * nicht, sie "laeuft" nicht.
+ */
+const TONE_CLASSES = {
+  accent: [
+    '[&::-webkit-progress-value]:bg-accent [&::-moz-progress-bar]:bg-accent',
+    'indeterminate:bg-accent indeterminate:animate-pulse motion-reduce:animate-none',
+    'indeterminate:[&::-webkit-progress-bar]:bg-accent indeterminate:[&::-moz-progress-bar]:bg-transparent',
+  ].join(' '),
+  neutral: '[&::-webkit-progress-value]:bg-text-h [&::-moz-progress-bar]:bg-text-h',
+} as const
+
+export type ProgressTone = keyof typeof TONE_CLASSES
+
+export function Progress({
+  className,
+  tone = 'accent',
+  ...props
+}: ProgressHTMLAttributes<HTMLProgressElement> & { tone?: ProgressTone }) {
   return (
     <progress
       className={cn(
         'h-2 w-full appearance-none overflow-hidden rounded-xs bg-separator',
-        '[&::-webkit-progress-bar]:bg-separator [&::-webkit-progress-value]:bg-accent',
-        '[&::-moz-progress-bar]:bg-accent',
-        'indeterminate:bg-accent indeterminate:animate-pulse motion-reduce:animate-none',
-        'indeterminate:[&::-webkit-progress-bar]:bg-accent indeterminate:[&::-moz-progress-bar]:bg-transparent',
+        '[&::-webkit-progress-bar]:bg-separator',
+        TONE_CLASSES[tone],
         className,
       )}
       {...props}

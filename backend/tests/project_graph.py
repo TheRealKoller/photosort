@@ -24,12 +24,16 @@ from photosort.models import (
     CriterionSource,
     Event,
     FineLabel,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
+    PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -200,8 +204,27 @@ async def build_project_graph(
                 error_message="zu langsam",
                 attempted_at=now,
             ),
+            # specs/features/0427-motive-mit-staerke.md, Auflage S16: der Graph legt in ALLEN DREI
+            # Motiv-Tabellen je eine Zeile an. Der Verhaltenstest der Projektloeschung zaehlt
+            # Zeilen und bestuende mit null Zeilen stillschweigend - ohne diese Zeilen prueft die
+            # Loeschung der Motivdaten nichts.
+            PhotoMotifAssessment(
+                photo_id=photo.id,
+                source=MotifAssessmentSource.CLOUD,
+                excluded_document=False,
+                provider="anthropic",
+                computed_at=now,
+            ),
+            PhotoMotifCorrection(
+                photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=True
+            ),
         ]
     )
+    await session.flush()
+
+    # NACH dem `flush` der Kopfzeile: der Fremdschluessel der Staerkezeile zeigt auf
+    # `photo_motif_assessments.photo_id`, nicht auf `photos.id`.
+    session.add(PhotoMotifStrength(photo_id=photo.id, motif_key="menschen", strength=0.9))
     await session.flush()
 
     return ProjectGraph(
