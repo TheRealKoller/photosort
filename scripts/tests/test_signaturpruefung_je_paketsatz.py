@@ -6,9 +6,11 @@ mindestens ein Schritt mit `npm ci` in seinem wirksamen Arbeitsverzeichnis, und 
 Schritt hat als unmittelbaren Nachfolger im **selben Job** einen Schritt mit der `run:`-Nutzlast
 genau `npm audit signatures` im **selben** wirksamen Arbeitsverzeichnis, ohne `if:`, ohne
 `continue-on-error` und ohne `|| true` - alle drei liessen den Job gruen melden, obwohl die
-Pruefung nicht greift. Dazu traegt jeder Lockfile-Eintrag ausser dem Wurzeleintrag ein `resolved`
-unter `https://registry.npmjs.org/` und ein `integrity`: Ein `file:`- oder `git+https:`-Eintrag
-waere ein ungeprueftes Paket innerhalb eines geprueften Paketsatzes, denn `npm audit signatures`
+Pruefung nicht greift. Die ersten beiden gelten auf **beiden** Ebenen, Schritt und Job: `if:` am
+Job ueberspringt ihn ("skipped" statt rot), `continue-on-error` am Job entschaerft ihn. Dazu
+traegt jeder Lockfile-Eintrag ausser dem Wurzeleintrag ein `resolved` unter
+`https://registry.npmjs.org/` und ein `integrity`: Ein `file:`- oder `git+https:`-Eintrag waere
+ein ungeprueftes Paket innerhalb eines geprueften Paketsatzes, denn `npm audit signatures`
 ueberspringt ihn **still** und meldet Exit 0.
 
 **Wofuer.** Die Paketsatzmenge wird abgeleitet (`git ls-files -z`), nicht gepflegt; es gibt keine
@@ -233,6 +235,7 @@ class Job:
     beginn: int
     defaults_working_directory: str | None
     schritte: tuple[Schritt, ...]
+    schluessel: tuple[str, ...]
 
     def wirksames_verzeichnis(self, schritt: Schritt) -> str:
         """Schritt-`working-directory`, sonst `defaults.run.working-directory`, sonst Repo-Wurzel."""
@@ -311,6 +314,7 @@ def jobs_aus_text(text: str) -> tuple[Job, ...]:
 
     jobs: list[Job] = []
     for eintrag in _eintraege(jobs_eintrag.unterblock):
+        job_schluessel = tuple(unter.name for unter in _eintraege(eintrag.unterblock))
         defaults = _eintrag(eintrag.unterblock, "defaults")
         laufvorgaben = _eintrag(defaults.unterblock, "run") if defaults is not None else None
         verzeichnis = (
@@ -327,6 +331,7 @@ def jobs_aus_text(text: str) -> tuple[Job, ...]:
                     _skalar(verzeichnis.wert) if verzeichnis is not None else None
                 ),
                 schritte=_schritte_aus_block(schritte.unterblock) if schritte is not None else (),
+                schluessel=job_schluessel,
             )
         )
     return tuple(jobs)
@@ -450,17 +455,34 @@ def nachbarschafts_befunde(jobs: Sequence[Job], nur_verzeichnis: str | None = No
     return befunde
 
 
+ENTSCHAERFENDE_SCHLUESSEL = ("if", "continue-on-error")
+
+
 def wirkungs_befunde(jobs: Sequence[Job]) -> list[str]:
-    """Jeder Signaturschritt kann den Job rot machen und prueft ungemindert."""
+    """Jeder Signaturschritt kann den Job rot machen und prueft ungemindert.
+
+    Geprueft auf **beiden** Ebenen: `if:` und `continue-on-error` kennt GitHub Actions am Schritt
+    wie am Job. `jobs.<id>.if` ueberspringt den ganzen Job - der Lauf meldet dann "skipped" statt
+    rot -, `jobs.<id>.continue-on-error` entschaerft ihn. In beiden Faellen laeuft die
+    Signaturpruefung nie.
+    """
     _pruefe_nicht_leer(jobs, "Jobs")
 
     befunde: list[str] = []
     for job in jobs:
+        if any(schritt.ist_signaturpruefung for schritt in job.schritte):
+            befunde.extend(
+                f"{CI_WORKFLOW_NAME}:{job.beginn}: Job {job.name!r} traegt `{schluessel}:` auf "
+                "Job-Ebene und enthaelt einen Signaturschritt. Der Job wird dann uebersprungen "
+                "oder entschaerft, die Pruefung laeuft nie, und der Lauf meldet nicht rot."
+                for schluessel in ENTSCHAERFENDE_SCHLUESSEL
+                if schluessel in job.schluessel
+            )
         for schritt in job.schritte:
             if not schritt.ist_signaturpruefung:
                 continue
             ort = f"{CI_WORKFLOW_NAME}:{schritt.beginn}: Job {job.name!r}, Signaturschritt"
-            for schluessel in ("if", "continue-on-error"):
+            for schluessel in ENTSCHAERFENDE_SCHLUESSEL:
                 if schluessel in schritt.schluessel:
                     befunde.append(
                         f"{ort}: traegt `{schluessel}:`. Damit meldet der Job gruen, obwohl die "
@@ -601,6 +623,12 @@ def mit_zeilen_hinter_dem_schritt(
     return _zeilen_ersetzen(text, schritt.ende + 1, schritt.ende, zeilen)
 
 
+def mit_zeilen_im_job(text: str, job_name: str, zeilen: Sequence[str]) -> str:
+    """Ergaenzt Schluesselzeilen auf Job-Ebene, unmittelbar hinter der Job-Kopfzeile."""
+    job = _job(text, job_name)
+    return _zeilen_ersetzen(text, job.beginn + 1, job.beginn, zeilen)
+
+
 def mit_zeilen_vor_dem_ersten_schritt(text: str, job_name: str, zeilen: Sequence[str]) -> str:
     erster = _job(text, job_name).schritte[0]
     return _zeilen_ersetzen(text, erster.beginn, erster.beginn - 1, zeilen)
@@ -670,6 +698,10 @@ def test_der_leser_findet_die_schritte_jedes_jobs(job_name: str) -> None:
     assert all(schritt.schluessel for schritt in job.schritte), (
         f"Job {job_name!r}: ein gelesener Schritt hat keinen einzigen Schluessel - die "
         "Gruppierung der Listeneintraege stimmt nicht."
+    )
+    assert {"runs-on", "steps"} <= set(job.schluessel), (
+        f"Job {job_name!r}: gelesene Schluessel {job.schluessel}. Sieht der Leser die Schluessel "
+        "der Job-Ebene nicht, bliebe die Pruefung auf `if:`/`continue-on-error` dort leer-gruen."
     )
 
 
@@ -955,6 +987,34 @@ def test_ein_nicht_blockierender_signaturschritt_wird_gemeldet(zeile: str) -> No
     mutiert = mit_zeilen_hinter_dem_schritt(ci_text(), "e2e", (zeile,), signatur=True)
 
     assert wirkungs_befunde([_job(mutiert, "e2e")])
+
+
+@pytest.mark.parametrize(
+    ("zeile", "erwarteter_teil"),
+    [
+        ("    continue-on-error: true", "continue-on-error"),
+        ("    if: github.event_name == 'push'", "if"),
+        ("    if: always()", "if"),
+    ],
+)
+def test_ein_nicht_blockierender_job_wird_gemeldet(zeile: str, erwarteter_teil: str) -> None:
+    """Beide Schluessel kennt Actions auch auf JOB-Ebene, mit derselben Wirkung.
+
+    `jobs.<id>.if` uebersprungen den ganzen Job - der Lauf meldet "skipped", nicht rot;
+    `jobs.<id>.continue-on-error` entschaerft ihn. In beiden Faellen laeuft die Signaturpruefung
+    nie, und ein Wächter, der nur die Schritt-Ebene liest, bliebe gruen.
+    """
+    mutiert = mit_zeilen_im_job(ci_text(), "frontend", (zeile,))
+
+    befunde = wirkungs_befunde([_job(mutiert, "frontend")])
+
+    assert befunde and any(erwarteter_teil in befund for befund in befunde), befunde
+
+
+@pytest.mark.parametrize("job_name", PFLICHT_PAKETSAETZE)
+def test_ein_job_ohne_diese_schluessel_ist_kein_befund(job_name: str) -> None:
+    """Gegenprobe zur Job-Ebene: am unveraenderten Workflow darf sie nichts melden."""
+    assert wirkungs_befunde([_job(ci_text(), job_name)]) == []
 
 
 @pytest.mark.parametrize(
