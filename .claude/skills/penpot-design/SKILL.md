@@ -116,6 +116,14 @@ Neues wird in Penpot **nicht „zur Vorsorge"** angelegt: Was das Produkt nicht 
 - **Wiedererkannt wird an Plugin-Daten, nie am Namen:** jedes Ansichtsbrett trägt `ansicht` und `breite` — wortgleich das Muster der Bausteine (`schluessel`).
 - **Die Soll-Struktur steht in `design/penpot/views.json`** (Schlüssel, Anzeigename, Seitenname, Produktdateien, Breiten, Zustände, Bausteinschlüssel, Lücken). Sie ist **keine Nutzlast**, wird nie ausgeführt und trägt per Bauart keine Zahl. Wo eine Eigenschaft kein Token hat, wird der Wert gesetzt **und die Stelle dort als Lücke geführt** — mit Stelle und Grund, in Worten, ohne den Wert.
 
+### Das Ablagemuster für das Register (verbindlich für die Registerseite)
+
+- **Genau eine Seite, `Bausteine — Zustände`**, von Hand aufgebaut. Es entsteht keine Nutzlast, die sie erzeugt, und keine Soll-Struktur-Datei: *Was* zu zeigen ist, steht abzählbar in `components.json` und `icons.json`, *wie* es angeordnet ist, in der Rastertabelle der zugehörigen Spec. Die Seite steht deshalb auch **nicht** in `views.json` — sie ist keine Ansicht.
+- **Zwei Zonen auf einer Seite:** der Bestand (die Variantenbretter der Bibliothek) und das Register daneben, beide mit Überschrift. Am Bestand wird nichts gelöscht, verschoben, umbenannt, in der Größe geändert oder in seinen Plugin-Daten verändert. Kollidiert die Fläche, weicht das Register aus, nicht der Bestand.
+- **Kein Objekt des Registers trägt die Plugin-Daten `schluessel`, `ansicht` oder `breite`.** Andernfalls zählt `verify.js` es als Baustein bzw. Ansichtsbrett, und der Abgleich wird rot, ohne dass etwas fehlt. Die mitgemeldeten Zählwerte über zusätzlich vorhandene Objekte steigen dagegen legitim.
+- **Jede Zelle ist ein Brett fester, je Raster gleicher Größe** mit einer Bibliotheks-Instanz darin, auf die Kombination geschaltet über `switchVariant` — nie eine nachgezeichnete Form. Jedes Brett bindet eine Fläche oder wird ausdrücklich geleert; ein neu erzeugtes Board ist deckend weiß.
+- **Das Register überlebt einen Wiederaufbau der Datei nicht** und kommt nach einem Instanzverlust ausschließlich durch erneute Handarbeit zurück, dann mit der Rastertabelle als Vorlage. Wer einen Baustein, eine Ausprägung oder einen Zustand ergänzt, ergänzt das Register von Hand — sonst ist es ab dann unvollständig, ohne dass irgendwo etwas rot wird.
+
 ### Beispieldaten sind eine Veröffentlichung, kein Layoutdetail (Muss)
 
 Ein Formexport zeigt **jeden Text, der in den Entwurf getippt wurde**, und geht anschließend als Anhang an einen öffentlichen Pull Request. Projektname, Cloud-Ordnerpfad und Aufnahmedatum sind projektweit als Familiendaten eingestuft.
