@@ -63,11 +63,13 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     Event,
+    MotifAssessmentSource,
     Photo,
     PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
+    PhotoMotifCorrection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -80,6 +82,8 @@ from photosort.models import (
     ScoringRun,
     User,
 )
+from photosort.motif_strengths import upsert_assessment
+from photosort.motifs import LOCAL_MOTIF_SIGNALS, MOTIF_REGISTRY
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
 from photosort.thumbnails import (
     delete_cached_variants,
@@ -181,6 +185,19 @@ _DEMO_EXTRA_CONFIDENCES: dict[int, dict[str, float]] = {
 # Das Foto mit dem manuellen Override (Index 6, automatisch `essen_trinken`).
 _DEMO_OVERRIDE_INDEX = 6
 _DEMO_OVERRIDE_CATEGORY_KEY = "kunst_kreatives"
+
+# Die vier Motiv-Fotozustaende (specs/features/0427-motive-mit-staerke.md). Bewusst VIER
+# verschiedene Indizes, keiner davon derselbe: fielen zwei Sonderzustaende auf dasselbe Foto,
+# zeigte die Sichtpruefung im Browser einen von beiden nie.
+#
+# Kein Index kollidiert mit `_DEMO_OVERRIDE_INDEX` (6) oder `_OPEN_SUGGESTION_INDEX` (3) - das
+# uebersteuerte Foto und das Foto mit offenem Ausschuss-Vorschlag sollen ihren eigenen Zustand
+# ungestoert zeigen.
+_DEMO_UNASSESSED_INDEX = 9
+_DEMO_LOCAL_BASIS_INDEX = 10
+_DEMO_EXCLUDED_INDEX = 11
+_DEMO_CORRECTED_INDEX = 1
+_DEMO_CORRECTED_MOTIF_KEY = "menschen"
 
 # Reihenfolge, in der die drei Bewertungsstatus auf die ersten Fotos des bewerteten Projekts
 # verteilt werden - ueber das Enum gebildet, damit ein vierter Status nicht stillschweigend
@@ -661,6 +678,65 @@ def _demo_category_confidences(slug: str, index: int, category_key: str) -> dict
     return confidences | _DEMO_EXTRA_CONFIDENCES.get(index, {})
 
 
+async def _seed_motif_assessments(
+    session: AsyncSession, slug: str, photos: list[Photo], user_ids: Sequence[int]
+) -> None:
+    """Kopfzeilen, Staerkevektoren und GENAU EINE Korrektur - je Foto so, dass alle vier
+    Fotozustaende im Demo-Bestand vorkommen (specs/features/0427-motive-mit-staerke.md).
+
+    Ohne diese vier Zustaende sieht eine Sichtpruefung im Browser nur den Regelfall, und die drei
+    Sonderdarstellungen (Satz statt Liste, lokale Grundlage mit nicht beurteilbaren Zeilen,
+    Ausschluss ohne Korrekturschalter) bleiben ungesehen:
+
+    * `_DEMO_UNASSESSED_INDEX` bekommt GAR KEINE Kopfzeile - "noch nicht klassifiziert".
+    * `_DEMO_LOCAL_BASIS_INDEX` bekommt eine lokale Grundlage ohne Anbieter, und die beiden lokal
+      nicht beurteilbaren Motive stehen dort auf 0.
+    * `_DEMO_EXCLUDED_INDEX` ist als Dokument ausgeschlossen - mit erhaltenen Staerken daneben,
+      denn der Ausschluss setzt sie nicht auf 0.
+    * Alle uebrigen tragen eine Cloud-Grundlage.
+
+    Die Staerken entstehen ueber dasselbe deterministische `_deterministic_unit_value`-Muster wie
+    die uebrigen Demo-Werte und liegen damit in [0, 1] - die Demo darf keinen Zustand erzeugen,
+    den die Anwendung selbst nie schriebe.
+
+    Die Korrektur haengt an einem VORHANDENEN Nutzer; der Seeder legt selbst nie ein Konto an
+    (ein Konto mit bekannten Zugangsdaten waere genau das Sicherheitsproblem, gegen das die Sperre
+    antritt). Ohne Nutzer entsteht keine Korrektur, und der Seeder scheitert nicht daran."""
+    for index, photo in enumerate(photos):
+        if index == _DEMO_UNASSESSED_INDEX:
+            continue
+        local = index == _DEMO_LOCAL_BASIS_INDEX
+        strengths = {
+            motif_key: (
+                0.0
+                if local and motif_key not in LOCAL_MOTIF_SIGNALS
+                else _deterministic_unit_value(slug, index, f"motif:{motif_key}")
+            )
+            for motif_key in MOTIF_REGISTRY
+        }
+        await upsert_assessment(
+            session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL if local else MotifAssessmentSource.CLOUD,
+            strengths=strengths,
+            excluded_document=index == _DEMO_EXCLUDED_INDEX,
+            provider=None if local else "demo-state",
+            computed_at=_BASE_SCORING_AT,
+        )
+
+    if user_ids and len(photos) > _DEMO_CORRECTED_INDEX:
+        session.add(
+            PhotoMotifCorrection(
+                photo_id=photos[_DEMO_CORRECTED_INDEX].id,
+                user_id=user_ids[0],
+                motif_key=_DEMO_CORRECTED_MOTIF_KEY,
+                applies=False,
+                updated_at=_BASE_SCORING_AT,
+            )
+        )
+    await session.flush()
+
+
 async def _create_demo_events(
     session: AsyncSession, criterion_scoring_run_id: int, photos: list[Photo], photo_count: int
 ) -> dict[int, int]:
@@ -988,6 +1064,10 @@ async def _seed_rated_project(
                 )
             )
     await session.flush()
+
+    # NACH dem `flush` der Bewertungen und ueber denselben Nutzerbestand: die Korrektur haengt an
+    # einem vorhandenen Konto, genau wie sie.
+    await _seed_motif_assessments(session, spec.slug, photos, [user.id for user in users])
     return photos, len(users)
 
 
