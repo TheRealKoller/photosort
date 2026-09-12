@@ -673,6 +673,9 @@ async def _event_and_location_by_photo_id(
       Ausfallrichtung ist "nichts anzeigen", nie "aus irgendeinem Lauf herleiten".
 
     `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie."""
+    if not photos_by_id:
+        return {}
+
     location_rows = (
         await session.execute(
             select(Photo.id, Photo.taken_at, Photo.gps_lat, Photo.gps_lon).where(

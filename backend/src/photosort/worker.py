@@ -1856,9 +1856,8 @@ async def run_criterion_scoring(
             for photo_id in candidate_values
         )
 
-        event_id_by_photo: dict[int, int] = {}
-        for built in built_events:
-            event = Event(
+        event_rows = [
+            Event(
                 criterion_scoring_run_id=run.id,
                 position=built.position,
                 started_at=built.started_at,
@@ -1868,12 +1867,17 @@ async def run_criterion_scoring(
                 place_lat=built.place_lat,
                 place_lon=built.place_lon,
             )
-            session.add(event)
-            # `flush` je Event statt einmal am Ende: die Ids werden unten als Partitionsschluessel
-            # gebraucht, und `event.id` steht erst nach dem Schreiben fest.
-            await session.flush()
-            for photo_id in built.photo_ids:
-                event_id_by_photo[photo_id] = event.id
+            for built in built_events
+        ]
+        session.add_all(event_rows)
+        # EIN `flush` fuer alle Events, nicht einer je Event: die Ids werden unten als
+        # Partitionsschluessel gebraucht und stehen erst nach dem Schreiben fest.
+        await session.flush()
+        event_id_by_photo = {
+            photo_id: event.id
+            for built, event in zip(built_events, event_rows, strict=True)
+            for photo_id in built.photo_ids
+        }
 
         scores_by_photo_id = {photo.id: score for photo, score in rows}
 
