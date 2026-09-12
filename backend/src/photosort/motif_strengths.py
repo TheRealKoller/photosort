@@ -136,9 +136,9 @@ async def upsert_assessment(
     DIE REGEL, die beide Grundlagen auseinanderhaelt: eine LOKALE Grundlage schreibt nur, wenn
     fuer das Foto keine Zeile existiert ODER die vorhandene `source='local'` traegt. Eine
     Cloud-Grundlage schreibt immer. Liegt eine Cloud-Aussage vor, bleibt sie also unberuehrt -
-    Herkunft, Anbieter, Zeitstempel, Ausschluss-Flag und alle acht Werte. Die Reihenfolge im
-    verketteten Lauf (Cloud-Teilschritt vor Kriterien-Bewertung, ADR 0068) macht das ohne
-    Zusatzzustand richtig.
+    Herkunft, Anbieter, Zeitstempel, Ausschluss-Flag und alle acht Werte. Die Regel haengt dabei
+    NICHT an der Reihenfolge der beiden Teilschritte: sie steht vollstaendig in dieser Funktion,
+    und in beiden Reihenfolgen gewinnt am Ende die Cloud-Grundlage.
 
     Der GESAMTE Vektor wird ersetzt, nicht zeilenweise gemischt: ein halb gefuellter
     Zwischenzustand aus zwei Grundlagen gibt es nicht. Die Korrekturzeilen bleiben dabei

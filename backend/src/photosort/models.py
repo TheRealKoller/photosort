@@ -918,10 +918,6 @@ class PhotoMotifStrength(Base):
     eine Staerke kann ohne Kopfzeile nicht existieren, und eine neue Grundlage ersetzt den
     gesamten Vektor eines Fotos.
 
-    Persistierte Zeilen statt einer JSON-Abbildung `motif_key -> Staerke`: die Albumauswahl wird je
-    Motiv sortieren und schwellen, und eine JSON-Struktur zu Zeilen zu expandieren ist in SQLite
-    und PostgreSQL unterschiedlich zu schreiben (ADR 0091 Punkt 2).
-
     `motif_key` ist ein freier String ohne Fremdschluessel - der zulaessige Wertebereich ist das
     geschlossene Achter-Set aus `motifs.py::MOTIF_REGISTRY`, und die Pruefung lebt am Parser bzw.
     am Endpunkt. Der Lesepfad bleibt tolerant gegenueber einem Altwert ausserhalb des Sets."""
