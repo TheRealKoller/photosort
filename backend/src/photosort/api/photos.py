@@ -973,9 +973,7 @@ async def list_photos(
     # koennen, unabhaengig vom top_n_per_event-Kuratierungsmodus.
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     rankings_by_id = (
-        await _ranking_by_photo_id(session, latest_run_id, ids)
-        if latest_run_id is not None
-        else {}
+        await _ranking_by_photo_id(session, latest_run_id, ids) if latest_run_id is not None else {}
     )
     partition_sizes = (
         await _partition_sizes(session, latest_run_id) if latest_run_id is not None else {}

@@ -635,6 +635,7 @@ class TestRebuildDemoStateProducesTheFourStates:
         assert len(errors) >= 1
         assert all(error.error_message.strip() != "" for error in errors)
 
+
 class TestRebuildDemoStateWritesRealThumbnails:
     """Bindung an die ECHTE thumbnails.py-Logik, gegen Drift getestet statt vorausgesetzt."""
 

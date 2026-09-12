@@ -768,7 +768,7 @@ class TestTheMotifDistribution:
     async def test_without_a_single_assessed_photo_the_average_is_none_and_never_zero(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """"Nicht erhoben" ist keine Null: ein `0.0` behauptete, das Modell habe sich zu 0 %
+        """ "Nicht erhoben" ist keine Null: ein `0.0` behauptete, das Modell habe sich zu 0 %
         geäußert. Keine Division bei null Fotos."""
         project = await _make_project(db_session, "Costa Rica")
         await _add_photo(db_session, project, "a.jpg")
@@ -797,7 +797,7 @@ class TestTheMotifDistribution:
     async def test_a_photo_without_a_header_is_unassessed_and_counted_in_no_band(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """"Noch nicht klassifiziert" ist etwas anderes als "nichts erkannt" - das Foto fehlt in
+        """ "Noch nicht klassifiziert" ist etwas anderes als "nichts erkannt" - das Foto fehlt in
         JEDER Zahl der Tabelle und steht als eigene Kennzahl daneben."""
         project = await _make_project(db_session, "Costa Rica")
         assessed = await _add_photo(db_session, project, "a.jpg")

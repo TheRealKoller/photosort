@@ -23,7 +23,7 @@ export const DEMO_PROJECTS = {
   empty: 'Demo — Leeres Projekt',
   /** 60-80 Fotos - genug fuer Scrollen, Grid-Zeilen und Listendichte. */
   large: 'Demo — Große Sammlung',
-  /** Alle Bewertungsstatus, Kriterien-Lauf, alle Kategorie-Schluessel. */
+  /** Alle Bewertungsstatus, Kriterien-Lauf, alle Motive samt Sonderzustaenden. */
   rated: 'Demo — Bewertet',
   /** Fehlgeschlagener Lauf, Foto ohne Cache-Datei, Cloud-Vision-Fehlerzeile. */
   error: 'Demo — Fehlerzustand',

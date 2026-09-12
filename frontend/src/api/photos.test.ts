@@ -83,9 +83,7 @@ describe('api/photos', () => {
 
     await listCurationCandidates(1, { eventId: 7, afterRank: 0 })
 
-    expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/curation-candidates?event_id=7&after_rank=0',
-    )
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/curation-candidates?event_id=7&after_rank=0')
   })
 
   it('fetchPhotoImageBlobUrl requests the image and returns an object URL', async () => {

@@ -570,9 +570,9 @@ describe('ProjectStatsPage: Motivverteilung', () => {
       '2.243',
     )
     expect(within(scope).getByText('Von Hand korrigiert').closest('div')).toHaveTextContent('37')
-    expect(
-      within(scope).getByText('Als Dokument ausgeschlossen').closest('div'),
-    ).toHaveTextContent('11')
+    expect(within(scope).getByText('Als Dokument ausgeschlossen').closest('div')).toHaveTextContent(
+      '11',
+    )
   })
 
   it('uses no band word outside this table', async () => {

@@ -242,6 +242,7 @@ class TestEstimateEndpoint:
         assert response.status_code == 200
         assert response.json()["remote_categories"]["candidate_count"] == 2
 
+
 class TestLandmarkShareOfTheEstimate:
     """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, Akzeptanzkriterium
     "Die Schätzung umfasst alle Cloud-Anteile, die die Checkbox freigibt — nicht nur die

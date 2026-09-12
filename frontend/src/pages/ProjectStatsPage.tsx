@@ -371,10 +371,7 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
               </InfoPopover>
             }
           />
-          <Metric
-            value={formatCount(stats.motif_correction_count)}
-            label="Von Hand korrigiert"
-          />
+          <Metric value={formatCount(stats.motif_correction_count)} label="Von Hand korrigiert" />
           <Metric
             value={formatCount(stats.excluded_photo_count)}
             label="Als Dokument ausgeschlossen"

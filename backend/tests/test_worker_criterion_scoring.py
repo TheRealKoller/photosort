@@ -39,12 +39,10 @@ from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Event,
-    FineLabel,
     MotifAssessmentSource,
     Photo,
     PhotoCloudVisionError,
     PhotoCriterionScore,
-    PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
@@ -1280,9 +1278,7 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
     assert by_photo[photos[2].id].rank_position == 1
 
 
-async def test_partitions_are_isolated_by_event(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_partitions_are_isolated_by_event(db_session: AsyncSession, tmp_path: Path) -> None:
     """Einen Tag auseinander - Zeitluecke UND Kalendertagsgrenze trennen die beiden Fotos in zwei
     Events, und jedes ist Erstplatziertes seiner eigenen Partition."""
     project = await _make_project(db_session)

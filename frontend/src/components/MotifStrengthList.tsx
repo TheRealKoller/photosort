@@ -3,11 +3,7 @@ import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 import { Progress } from './ui/progress'
 import { Skeleton } from './ui/skeleton'
-import {
-  formatCriterionPercent,
-  formatDateTime,
-  formatProviderLabel,
-} from '../utils/formatStats'
+import { formatCriterionPercent, formatDateTime, formatProviderLabel } from '../utils/formatStats'
 import { formatMotifKey, isLocallyAssessable } from '../utils/motifLabels'
 import type { MotifCorrectionError } from '../hooks/useMotifCorrection'
 

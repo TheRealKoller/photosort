@@ -271,9 +271,7 @@ class TestTheColumnsUpgrade:
                 _apply(connection, _COLUMNS_REVISION, "upgrade")
 
             with engine.connect() as connection:
-                rows = connection.execute(
-                    text("SELECT id FROM photo_rankings ORDER BY id")
-                ).all()
+                rows = connection.execute(text("SELECT id FROM photo_rankings ORDER BY id")).all()
         finally:
             engine.dispose()
 
@@ -334,9 +332,7 @@ class TestTheColumnsDowngrade:
         try:
             with engine.begin() as connection:
                 _create_pre_migration_schema(connection)
-                _insert_ranking(
-                    connection, row_id=1, category_key="menschen", is_primary=True
-                )
+                _insert_ranking(connection, row_id=1, category_key="menschen", is_primary=True)
                 connection.execute(
                     text(
                         "INSERT INTO photo_scores (photo_id, sharpness, exposure, computed_at, "
@@ -432,7 +428,9 @@ class TestTheTableRevision:
                 _apply(connection, _TABLE_REVISION, "upgrade")
                 _apply(connection, _TABLE_REVISION, "downgrade")
 
-            columns = {c["name"] for c in inspect(engine).get_columns("photo_category_classifications")}
+            columns = {
+                c["name"] for c in inspect(engine).get_columns("photo_category_classifications")
+            }
             with engine.connect() as connection:
                 count = connection.execute(
                     text("SELECT count(*) FROM photo_category_classifications")

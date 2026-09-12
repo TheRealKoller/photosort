@@ -1,7 +1,6 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -10,17 +9,14 @@ from sqlalchemy import event, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Event,
-    FineLabel,
     MotifAssessmentSource,
     Photo,
     PhotoCriterionScore,
-    PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
@@ -38,7 +34,6 @@ from photosort.models import (
 from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.security import create_access_token, hash_password
-from photosort.thumbnails import display_path, thumbnail_path
 
 
 async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:

@@ -1,8 +1,8 @@
 """Die drei Kategorie-Specs und die drei Kategorie-ADRs tragen den Status `Superseded`.
 
 „Die bisherigen Festlegungen sind ausdrücklich abgelöst und nicht stillschweigend umgangen" ist
-ein Akzeptanzkriterium von [`specs/features/0427-motive-mit-staerke.md`](../../specs/features/0427-motive-mit-staerke.md).
-Ohne diesen Test ist es eine Behauptung im Pull-Request-Text: der Code kann vollständig abgelöst
+ein Akzeptanzkriterium von `specs/features/0427-motive-mit-staerke.md`. Ohne diesen Test ist es
+eine Behauptung im Pull-Request-Text: der Code kann vollständig abgelöst
 sein, während die Specs weiter `Implemented` melden - und der nächste Leser findet dort eine
 Festlegung, die das Produkt nicht mehr trägt, ohne jeden Hinweis darauf.
 
@@ -13,8 +13,6 @@ Dokument - getrennt bestünde jede auch dann, wenn die andere fehlte.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 from conftest import REPO_WURZEL

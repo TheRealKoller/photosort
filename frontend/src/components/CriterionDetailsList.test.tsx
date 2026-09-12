@@ -186,14 +186,16 @@ describe('CriterionDetailsList — Blöcke Qualität/Bildinhalt', () => {
 
     const quality = screen.getByRole('group', { name: 'Qualität' })
     const content = screen.getByRole('group', { name: 'Bildinhalt' })
-    expect(within(quality).getAllByRole('term').map((row) => row.textContent)).toEqual([
-      'Schärfe',
-      'Belichtung',
-    ])
-    expect(within(content).getAllByRole('term').map((row) => row.textContent)).toEqual([
-      'Tier erkannt',
-      'Gebäude erkannt',
-    ])
+    expect(
+      within(quality)
+        .getAllByRole('term')
+        .map((row) => row.textContent),
+    ).toEqual(['Schärfe', 'Belichtung'])
+    expect(
+      within(content)
+        .getAllByRole('term')
+        .map((row) => row.textContent),
+    ).toEqual(['Tier erkannt', 'Gebäude erkannt'])
   })
 
   it('omits the quality block entirely when no criterion is quality-related', () => {

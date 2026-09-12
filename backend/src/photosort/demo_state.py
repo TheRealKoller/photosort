@@ -366,9 +366,7 @@ def demo_project_specs(
             slug="grosse-sammlung",
             photo_count=large_collection_photo_count,
         ),
-        DemoProjectSpec(
-            name=RATED_PROJECT_NAME, slug="bewertet", photo_count=len(MOTIF_REGISTRY)
-        ),
+        DemoProjectSpec(name=RATED_PROJECT_NAME, slug="bewertet", photo_count=len(MOTIF_REGISTRY)),
         DemoProjectSpec(
             name=ERROR_PROJECT_NAME,
             slug="fehlerzustand",

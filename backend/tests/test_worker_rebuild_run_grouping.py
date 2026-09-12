@@ -428,9 +428,7 @@ async def test_every_candidate_photo_has_exactly_one_ranking_row_after_the_rebui
     photo_ids = list(
         (
             await db_session.execute(
-                select(PhotoRanking.photo_id).where(
-                    PhotoRanking.criterion_scoring_run_id == run.id
-                )
+                select(PhotoRanking.photo_id).where(PhotoRanking.criterion_scoring_run_id == run.id)
             )
         ).scalars()
     )

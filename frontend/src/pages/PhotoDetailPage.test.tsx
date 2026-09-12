@@ -1008,7 +1008,6 @@ describe('PhotoDetailPage', () => {
   // permanente Sektion "Motive", nach dem Vorschlagskasten und VOR der Trennlinie. Seit PR 3 ist
   // sie der EINZIGE Bedienblock der Bewertungsdetails.
   describe('Sektion "Motive"', () => {
-
     it('zeigt die Sektion permanent, auch ohne Kopfzeile', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 1 })],

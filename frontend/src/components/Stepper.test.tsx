@@ -116,9 +116,7 @@ describe('Stepper', () => {
     const items = within(nav).getAllByRole('listitem')
     expect(items).toHaveLength(5)
     expect(within(nav).getByRole('link', { name: /schritt 1 von 5: scan/i })).toBeInTheDocument()
-    expect(
-      within(nav).getByLabelText(/^schritt 5 von 5: kuratierung/i),
-    ).toBeInTheDocument()
+    expect(within(nav).getByLabelText(/^schritt 5 von 5: kuratierung/i)).toBeInTheDocument()
   })
 
   it('renders a reachable, not-yet-done step as a clickable link with the pending status in its label', () => {

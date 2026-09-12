@@ -82,9 +82,7 @@ describe('KuratierungStepPage', () => {
   it('shows the explanation line and links to /curate with the shared default top-N', () => {
     renderPage(project())
 
-    expect(
-      screen.getByText(/zeigt pro foto-moment die besten n fotos/i),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/zeigt pro foto-moment die besten n fotos/i)).toBeInTheDocument()
     const link = screen.getByRole('link', { name: 'Kuratierung öffnen' })
     expect(link).toHaveAttribute('href', `/projects/1/curate?topN=${DEFAULT_TOP_N}`)
     expect((screen.getByLabelText(/top-fotos pro foto-moment/i) as HTMLInputElement).value).toBe(
