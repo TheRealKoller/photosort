@@ -18,7 +18,6 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
@@ -485,10 +484,8 @@ async def test_create_photo_ranking(db_session: AsyncSession) -> None:
         criterion_scoring_run_id=run.id,
         photo_id=photo.id,
         event_id=await event_id_of_run(db_session, run),
-        category_key="landscape",
         rank_score=0.9,
         rank_position=1,
-        is_primary=True,
     )
     db_session.add(ranking)
     await db_session.commit()
@@ -498,16 +495,13 @@ async def test_create_photo_ranking(db_session: AsyncSession) -> None:
     )
     stored = result.scalar_one()
     assert stored.photo_id == photo.id
-    assert stored.category_key == "landscape"
     assert stored.rank_position == 1
-    assert stored.is_primary is True
 
 
 async def _make_ranked_photo(
     db_session: AsyncSession,
 ) -> tuple[CriterionScoringRun, Photo]:
-    """Ein Lauf mit einem Foto und dessen HAUPTZEILE - die Vorbedingung aller
-    Mehrfachzugehoerigkeits-Faelle."""
+    """Ein Lauf mit einem Foto und dessen EINER Rangzeile."""
     project = Project(name=f"Project {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
     db_session.add(project)
     await db_session.flush()
@@ -525,22 +519,22 @@ async def _make_ranked_photo(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
             event_id=await event_id_of_run(db_session, run),
-            category_key="menschen",
             rank_score=0.9,
             rank_position=1,
-            is_primary=True,
         )
     )
     await db_session.commit()
     return run, photo
 
 
-async def test_photo_ranking_unique_per_run_photo_and_category(
-    db_session: AsyncSession,
-) -> None:
-    """specs/features/0300-nebenkategorien.md, Akzeptanzkriterium 20: der Constraint ist von
-    `(Lauf, Foto)` auf `(Lauf, Foto, Kategorie)` gewandert - eine zweite Zeile mit gleichem
-    Tripel wird weiterhin abgewiesen."""
+async def test_photo_ranking_unique_per_run_and_photo(db_session: AsyncSession) -> None:
+    """specs/features/0427-motive-mit-staerke.md, PR 3: der Constraint ist von
+    `(Lauf, Foto, Kategorie)` zurueck auf `(Lauf, Foto)` gewandert - ein Foto steht pro Lauf in
+    GENAU EINER Zeile, und eine zweite wird von der Datenbank abgewiesen.
+
+    Das ist die Datenmodell-Haelfte der Aussage "die Partition ist allein das Event": ohne den
+    Constraint koennte ein Schreibpfad wieder mehrere Zeilen je Foto anlegen, und `PhotoOut.ranking`
+    (ein Feld, keine Liste) zeigte stillschweigend eine beliebige davon."""
     run, photo = await _make_ranked_photo(db_session)
 
     db_session.add(
@@ -548,68 +542,8 @@ async def test_photo_ranking_unique_per_run_photo_and_category(
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
             event_id=await event_id_of_run(db_session, run),
-            category_key="menschen",
             rank_score=0.1,
             rank_position=2,
-            is_primary=False,
-        )
-    )
-    with pytest.raises(IntegrityError):
-        await db_session.commit()
-
-
-async def test_the_same_photo_may_appear_in_a_second_category_of_the_same_run(
-    db_session: AsyncSession,
-) -> None:
-    """Die Kernaussage der Spec 0300 auf Datenmodell-Ebene: ein Foto steht pro Lauf hoechstens
-    einmal JE KATEGORIE - aber in mehreren Kategorien."""
-    run, photo = await _make_ranked_photo(db_session)
-
-    db_session.add(
-        PhotoRanking(
-            criterion_scoring_run_id=run.id,
-            photo_id=photo.id,
-            event_id=await event_id_of_run(db_session, run),
-            category_key="tier",
-            rank_score=0.9,
-            rank_position=1,
-            is_primary=False,
-        )
-    )
-    await db_session.commit()
-
-    rows = (
-        (
-            await db_session.execute(
-                select(PhotoRanking)
-                .where(PhotoRanking.photo_id == photo.id)
-                .order_by(PhotoRanking.category_key)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert [(row.category_key, row.is_primary) for row in rows] == [
-        ("menschen", True),
-        ("tier", False),
-    ]
-    # `rank_score` ist ueber alle Zugehoerigkeitszeilen eines Fotos identisch (ADR 0069 Punkt 4).
-    assert {row.rank_score for row in rows} == {0.9}
-
-
-async def test_photo_ranking_requires_an_explicit_is_primary(db_session: AsyncSession) -> None:
-    """Akzeptanzkriterium 25: die Spalte hat weder Python- noch Server-Default - ein Schreibpfad,
-    der sie vergisst, faellt auf, statt still eine zweite Hauptkategorie zu erzeugen."""
-    run, photo = await _make_ranked_photo(db_session)
-
-    db_session.add(
-        PhotoRanking(
-            criterion_scoring_run_id=run.id,
-            photo_id=photo.id,
-            event_id=await event_id_of_run(db_session, run),
-            category_key="tier",
-            rank_score=0.9,
-            rank_position=1,
         )
     )
     with pytest.raises(IntegrityError):
@@ -636,10 +570,8 @@ async def _make_ranking_graph(db_session: AsyncSession) -> tuple[CriterionScorin
             criterion_scoring_run_id=run.id,
             photo_id=photo.id,
             event_id=await event_id_of_run(db_session, run),
-            category_key="landscape",
             rank_score=0.9,
             rank_position=1,
-            is_primary=True,
         )
     )
     await db_session.commit()
@@ -1108,90 +1040,6 @@ async def test_photo_cloud_vision_error_has_the_expected_columns(
     assert columns == {"photo_id", "phase", "error_type", "error_message", "attempted_at"}
 
 
-# specs/features/0289-feste-kategorien.md, Umsetzungsschritt 3a ab hier: die neue 1:1-Tabelle
-# photo_category_classifications - haelt die remote ermittelte Kategorie samt VALIDIERTER
-# Kandidatenliste und ist zugleich das Erfolgssignal der Remote-Phase.
-
-
-async def test_photo_category_classification_is_one_to_one_and_round_trips(
-    db_session: AsyncSession,
-) -> None:
-    photo = await _make_photo(db_session)
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="menschen",
-            detected_categories=["menschen", "landschaft"],
-            provider="anthropic",
-            computed_at=datetime.now(UTC),
-        )
-    )
-    await db_session.commit()
-    db_session.expunge_all()
-
-    stored = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
-    assert stored.photo_id == photo.id
-    assert stored.category_key == "menschen"
-    assert stored.detected_categories == ["menschen", "landschaft"]
-    assert stored.provider == "anthropic"
-
-
-async def test_a_second_classification_row_for_the_same_photo_is_rejected(
-    db_session: AsyncSession,
-) -> None:
-    # photo_id ist Primary Key (kein separates id+Unique-Paar) - ein zweiter Lauf ueber dasselbe
-    # Foto darf strukturell keine zweite Zeile erzeugen.
-    photo = await _make_photo(db_session)
-    now = datetime.now(UTC)
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="tier",
-            detected_categories=["tier"],
-            provider="anthropic",
-            computed_at=now,
-        )
-    )
-    await db_session.commit()
-
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="menschen",
-            detected_categories=["menschen"],
-            provider="anthropic",
-            computed_at=now,
-        )
-    )
-    with pytest.raises(IntegrityError):
-        await db_session.commit()
-    await db_session.rollback()
-
-
-async def test_deleting_photo_cascades_to_its_category_classification(
-    db_session: AsyncSession,
-) -> None:
-    # Realer Codepfad: worker.py::run_project_scan loescht Photo-Zeilen bei Rescan fuer entfernte
-    # Dateien - ein bereits remote-klassifiziertes Foto durchlaeuft diesen Pfad tatsaechlich.
-    photo = await _make_photo(db_session)
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="nicht_erkannt",
-            detected_categories=[],
-            provider="mistral",
-            computed_at=datetime.now(UTC),
-        )
-    )
-    await db_session.commit()
-
-    await db_session.delete(photo)
-    await db_session.commit()
-
-    remaining = (await db_session.execute(select(PhotoCategoryClassification))).scalars().all()
-    assert remaining == []
-
-
 # specs/features/0207-projekt-statistikseite.md, decisions/0051-ist-kostenerfassung-remote-
 # laeufe.md Punkt 3: je vier additive Kostenspalten an den beiden Run-Tabellen. Alle acht sind
 # NULLABLE mit Python-seitigem Default `0` - exakt das `ScanRun.total_files`-Idiom: `NULL` heisst
@@ -1316,106 +1164,6 @@ async def test_remote_category_classification_run_cost_columns_stay_nullable(
 
     for column in _REMOTE_CATEGORY_COST_COLUMNS:
         assert getattr(run, column) is None, column
-
-
-# --- specs/features/0299-kategorie-konfidenz-anzeigen.md, ADR 0067 Punkt 4 --------------------
-
-
-async def test_a_classification_row_persists_both_confidence_columns(
-    db_session: AsyncSession,
-) -> None:
-    photo = await _make_photo(db_session)
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="menschen",
-            detected_categories=["menschen", "landschaft"],
-            detected_category_confidences={"menschen": 0.92, "landschaft": 0.41},
-            category_confidence=0.92,
-            provider="anthropic",
-            computed_at=datetime.now(UTC),
-        )
-    )
-    await db_session.commit()
-    db_session.expunge_all()
-
-    stored = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
-    assert stored.detected_category_confidences == {"menschen": 0.92, "landschaft": 0.41}
-    assert stored.category_confidence == 0.92
-
-
-async def test_both_confidence_columns_default_to_none_without_a_backfill(
-    db_session: AsyncSession,
-) -> None:
-    """Akzeptanzkriterium 9: `NULL` heisst "nicht erhoben", `0.0` hiesse "das Modell war sich zu
-    0 % sicher". Eine Zeile ohne Angabe muss ohne Zutun `NULL` bleiben - deshalb kein
-    Python-Default `{}`/`0.0` und (siehe Migration) kein `server_default`."""
-    photo = await _make_photo(db_session)
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="menschen",
-            detected_categories=["menschen"],
-            provider="anthropic",
-            computed_at=datetime.now(UTC),
-        )
-    )
-    await db_session.commit()
-    db_session.expunge_all()
-
-    stored = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
-    assert stored.detected_category_confidences is None
-    assert stored.category_confidence is None
-
-
-async def test_an_empty_confidence_mapping_is_distinguishable_from_none(
-    db_session: AsyncSession,
-) -> None:
-    """`{}` heisst "erhoben, das Modell hat keine brauchbare Zahl geliefert" - ein anderer Zustand
-    als "nicht erhoben"."""
-    photo = await _make_photo(db_session)
-    db_session.add(
-        PhotoCategoryClassification(
-            photo_id=photo.id,
-            category_key="menschen",
-            detected_categories=["menschen"],
-            detected_category_confidences={},
-            category_confidence=None,
-            provider="anthropic",
-            computed_at=datetime.now(UTC),
-        )
-    )
-    await db_session.commit()
-    db_session.expunge_all()
-
-    stored = (await db_session.execute(select(PhotoCategoryClassification))).scalars().one()
-    assert stored.detected_category_confidences == {}
-    assert stored.detected_category_confidences is not None
-    assert stored.category_confidence is None
-
-
-def test_classification_phase_lists_the_four_steps_in_execution_order() -> None:
-    """specs/features/0348-klassifizierungs-transparenz.md, decisions/0068-klassifizierungslauf-
-    vier-teilschritte-und-laufeigene-cloud-bilanz.md Punkt 1: die REIHENFOLGE traegt die Aussage,
-    nicht nur die Menge - deshalb ein Tupelvergleich statt einer Mengengleichheit. Ein Umsortieren
-    (z.B. `landmark` nach `ranking`) liesse die Fortschrittsanzeige rueckwaerts laufen, ohne dass
-    eine Mengenpruefung das saehe."""
-    assert tuple(phase.value for phase in ClassificationPhase) == (
-        "remote_categories",
-        "criteria",
-        "landmark",
-        "ranking",
-    )
-
-
-def test_every_classification_phase_value_fits_the_column_length() -> None:
-    """Die Spalte ist ein `VARCHAR(20)` ohne DB-seitige Pruefeinschraenkung (ADR 0068 Punkt 1:
-    deshalb braucht ein neuer Enum-Wert KEINE Migration). Genau deshalb ist die Laengengrenze die
-    einzige verbliebene Schranke - ein laengerer Wert wuerde unter Postgres beim Schreiben
-    abbrechen, waehrend SQLite ihn stillschweigend annaehme."""
-    column_length = CriterionScoringRun.__table__.c.phase.type.length
-    assert column_length == 20
-    assert max(len(phase.value) for phase in ClassificationPhase) <= column_length
 
 
 # specs/features/0426-zeitversatz-je-kamera.md / decisions/0090 - die projekteigene Kamerazeile

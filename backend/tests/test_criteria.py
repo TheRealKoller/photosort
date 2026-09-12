@@ -106,34 +106,24 @@ class TestCriteriaRegistry:
         self,
     ) -> None:
         # specs/features/0048: symmetrie/horizont = local_heuristic (keine trainierten Gewichte),
-        # freiraum = local_ml (mediapipe FaceLandmarker) - alle drei category_eligible=False.
+        # freiraum = local_ml (mediapipe FaceLandmarker) - alle drei ohne presence_threshold.
         assert CRITERIA_REGISTRY["symmetrie"].source == CriterionSource.LOCAL_HEURISTIC
         assert CRITERIA_REGISTRY["horizont"].source == CriterionSource.LOCAL_HEURISTIC
         assert CRITERIA_REGISTRY["freiraum"].source == CriterionSource.LOCAL_ML
         for key in ("symmetrie", "horizont", "freiraum"):
-            assert CRITERIA_REGISTRY[key].category_eligible is False
             assert CRITERIA_REGISTRY[key].presence_threshold is None
 
-    def test_category_eligible_and_presence_threshold_are_set_together_or_not_at_all(
-        self,
-    ) -> None:
-        # Registry-Invariante (Akzeptanzkriterium der Spec 0045): category_eligible == (threshold
-        # is not None), fuer JEDEN Eintrag der Registry - kein Eintrag darf nur eines von beiden
-        # setzen.
-        for key, definition in CRITERIA_REGISTRY.items():
-            assert definition.category_eligible == (
-                definition.presence_threshold is not None
-            ), f"{key}: category_eligible und presence_threshold widersprechen sich"
-
-    def test_exactly_these_seven_content_criteria_are_category_eligible(self) -> None:
+    def test_exactly_these_seven_content_criteria_carry_a_presence_threshold(self) -> None:
         # Akzeptanzkriterium der Spec 0045, erweitert um landmark (specs/features/0047) und seit
         # specs/features/0217/ADR 0047 Punkt 1 mit `landschaft` STATT `content_landscape`.
         # specs/features/0289-feste-kategorien.md, Umsetzungsschritt 2: zusaetzlich `fahrzeug` und
         # `essen_trinken` - beide aus der COCO-Detektorausgabe, die bisher berechnet und verworfen
         # wurde (keine zusaetzliche Laufzeit, keine Cloud-Kosten). Bewusst weiterhin eine
         # MENGEN-Assertion (nicht auf einen Anzahl-Vergleich abgeschwaecht).
-        eligible = {key for key, d in CRITERIA_REGISTRY.items() if d.category_eligible}
-        assert eligible == {
+        with_threshold = {
+            key for key, d in CRITERIA_REGISTRY.items() if d.presence_threshold is not None
+        }
+        assert with_threshold == {
             "content_people",
             "landschaft",
             "tier",
@@ -154,7 +144,6 @@ class TestCriteriaRegistry:
             definition = CRITERIA_REGISTRY[key]
             assert definition.display_name == display_name
             assert definition.source == CriterionSource.LOCAL_ML
-            assert definition.category_eligible is True
             assert definition.presence_threshold == 0.01
 
     def test_registry_contains_landschaft_with_the_correct_source_and_threshold(self) -> None:
@@ -165,32 +154,32 @@ class TestCriteriaRegistry:
         definition = CRITERIA_REGISTRY["landschaft"]
         assert definition.display_name == "Landschaft erkannt"
         assert definition.source == CriterionSource.LOCAL_ML
-        assert definition.category_eligible is True
         assert definition.presence_threshold == 0.01
 
-    def test_content_landscape_is_a_pure_ranking_signal_without_category_eligibility(
+    def test_content_landscape_is_a_pure_ranking_signal_without_a_presence_threshold(
         self,
     ) -> None:
         # ADR 0047 Punkt 1: compute_uniform_area_fraction misst Texturarmut, keine Landschaft -
-        # das Kriterium bleibt als Ranking-Signal erhalten, darf aber keine Kategorie mehr bilden.
+        # das Kriterium bleibt als Ranking-Signal erhalten, trifft aber keine Inhaltsaussage.
         # Der Anzeigename behauptet entsprechend keine Inhaltsaussage mehr.
         definition = CRITERIA_REGISTRY["content_landscape"]
         assert definition.display_name == "Flächigkeit"
-        assert definition.category_eligible is False
         assert definition.presence_threshold is None
 
-    def test_category_specificity_is_removed_from_the_definition(self) -> None:
-        """specs/features/0289-feste-kategorien.md, Teststrategie 2 Punkt 7: `category_specificity`
-        ist RESTLOS entfernt - die Vorrangentscheidung liegt seit dieser Spec ausschliesslich in
-        `categories.py::CATEGORY_REGISTRY.precedence`, ein zweites, konkurrierendes
-        Prioritaetsattribut an den Kriterien waere genau die Doppelpflege, die ADR 0049 abschafft.
-        Feld-Set-Assertion statt eines blossen `hasattr`-Checks, damit auch ein versehentlich neu
-        eingefuehrtes Prioritaetsfeld auffaellt."""
+    def test_the_definition_carries_neither_a_priority_nor_a_second_eligibility_field(
+        self,
+    ) -> None:
+        """Feld-Set-Assertion statt eines blossen `hasattr`-Checks, damit ein versehentlich neu
+        eingefuehrtes Feld auffaellt. Zwei Felder sind hier ausdruecklich unerwuenscht:
+
+        * ein Prioritaets-/Vorrangattribut - welches Motiv ein Foto traegt, entscheidet seit Spec
+          0427 eine Staerke je Motiv und keine Rangliste;
+        * ein `category_eligible`, das genau `presence_threshold is not None` wiederholte und
+          damit eine zweite, driftende Quelle derselben Aussage waere."""
         assert {field.name for field in dataclasses.fields(CriterionDefinition)} == {
             "key",
             "display_name",
             "source",
-            "category_eligible",
             "presence_threshold",
         }
 
@@ -201,12 +190,10 @@ class TestCriteriaRegistry:
         definition = CRITERIA_REGISTRY["landmark"]
         assert definition.display_name == "Sehenswürdigkeit"
         assert definition.source == CriterionSource.CLOUD
-        assert definition.category_eligible is True
         assert definition.presence_threshold == 0.5
 
-    def test_quality_criteria_are_never_category_eligible(self) -> None:
+    def test_quality_criteria_never_carry_a_presence_threshold(self) -> None:
         for key in ("sharpness", "exposure", "goldener_schnitt", "aesthetics"):
-            assert CRITERIA_REGISTRY[key].category_eligible is False
             assert CRITERIA_REGISTRY[key].presence_threshold is None
 
 

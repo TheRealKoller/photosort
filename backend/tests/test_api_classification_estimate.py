@@ -15,7 +15,6 @@ from photosort.models import (
     CriterionSource,
     MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCriterionScore,
     PhotoMotifAssessment,
     PhotoScore,
@@ -242,30 +241,6 @@ class TestEstimateEndpoint:
 
         assert response.status_code == 200
         assert response.json()["remote_categories"]["candidate_count"] == 2
-
-    async def test_an_old_category_row_alone_does_not_exclude_a_photo(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """Der bewusste Zwischenzustand nach PR 2: `photo_category_classifications` ist kein
-        Erledigt-Marker mehr, weder im Lauf noch in der Schaetzung."""
-        project_id = await _create_project(authenticated_api_client)
-        photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
-        db_session.add(
-            PhotoCategoryClassification(
-                photo_id=photo.id,
-                category_key="tier",
-                detected_categories=["tier"],
-                provider="anthropic",
-                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
-            )
-        )
-        await db_session.commit()
-
-        response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
-
-        assert response.status_code == 200
-        assert response.json()["remote_categories"]["candidate_count"] == 1
-
 
 class TestLandmarkShareOfTheEstimate:
     """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, Akzeptanzkriterium

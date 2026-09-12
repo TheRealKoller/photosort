@@ -26,7 +26,6 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
@@ -175,10 +174,8 @@ async def build_project_graph(
                 criterion_scoring_run_id=criterion_run.id,
                 photo_id=photo.id,
                 event_id=event.id,
-                category_key="landschaft",
                 rank_score=0.9,
                 rank_position=1,
-                is_primary=True,
             ),
             PhotoLandmarkDetection(
                 photo_id=photo.id, name="Eiffelturm", confidence=0.9, computed_at=now
@@ -187,13 +184,6 @@ async def build_project_graph(
                 photo_id=photo.id,
                 fine_label_id=fine_label.id,
                 raw_label=fine_label.display_name,
-                provider="anthropic",
-                computed_at=now,
-            ),
-            PhotoCategoryClassification(
-                photo_id=photo.id,
-                category_key="landschaft",
-                detected_categories=["landschaft"],
                 provider="anthropic",
                 computed_at=now,
             ),

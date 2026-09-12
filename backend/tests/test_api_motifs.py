@@ -136,12 +136,16 @@ async def test_the_route_keeps_its_openapi_description(
     assert response.json()["paths"]["/motifs"]["get"].get("description", "").strip()
 
 
-async def test_the_category_endpoint_is_untouched(
+async def test_the_category_endpoint_is_gone(
     authenticated_api_client: httpx.AsyncClient,
 ) -> None:
-    """PR 1 ist rein additiv: `GET /categories` bleibt stehen und funktionsfaehig. Die Abloesung
-    ist PR 3."""
+    """Die NEGATIVE Haelfte der Abloesung (Spec 0427, PR 3): `GET /categories` existiert nicht
+    mehr.
+
+    Ein stehengebliebener Router waere von jedem Positivtest des Motiv-Endpunkts unsichtbar - er
+    lieferte weiter ein vollstaendiges Kategorien-Set und laedt jeden kuenftigen Leser dazu ein,
+    es wieder zu benutzen. Als `404` gepruaft und nicht ueber die Router-Liste der App: die
+    Aussage ist "von aussen nicht erreichbar"."""
     response = await authenticated_api_client.get("/categories")
 
-    assert response.status_code == 200
-    assert len(response.json()) == 13
+    assert response.status_code == 404

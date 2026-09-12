@@ -44,8 +44,10 @@ class MotifDefinition:
     Motivs - sie sind zugleich Prompt-Grundlage (`build_motif_prompt`) und UI-Erklaerung
     (`GET /motifs`); eine zweite Pflegestelle gibt es nicht.
 
-    KEIN Ordnungsattribut (kein `precedence`, kein `rank`, kein `weight`): die Reihenfolge dieses
-    Dict ist reine ANZEIGEreihenfolge, keine Auswahlregel."""
+    KEIN Ordnungsattribut - kein Vorrang-, Rang- oder Gewichtsfeld: die Reihenfolge dieses Dict
+    ist reine ANZEIGEreihenfolge, keine Auswahlregel. Ein Zahlenfeld daneben waere die feste
+    Vorrangreihenfolge zurueck, die dieses Motivset abschafft; ein Invariantentest in
+    tests/test_motifs.py prueft die Felder des Eintrags und nicht ihre Namen."""
 
     key: str
     display_name: str

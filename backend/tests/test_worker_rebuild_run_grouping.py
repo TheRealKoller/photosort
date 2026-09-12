@@ -21,7 +21,6 @@ from photosort.models import (
     CriterionScoringRun,
     Event,
     Photo,
-    PhotoCategoryClassification,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -56,8 +55,6 @@ async def _add_photo(
     camera: ProjectCamera | None = None,
     gps: tuple[float, float] | None = None,
     suggested_status: RatingStatus | None = None,
-    category_override: str | None = None,
-    remote_category: str | None = None,
     cache_dir: Path | None = None,
 ) -> Photo:
     """Ein Foto samt `PhotoScore` - und, falls `cache_dir` gegeben, seiner display-Variante, damit
@@ -87,22 +84,9 @@ async def _add_photo(
             exposure=0.0,
             cluster_key="cluster-0",
             suggested_status=suggested_status,
-            category_override=category_override,
             computed_at=datetime.now(UTC).replace(tzinfo=None),
         )
     )
-    if remote_category is not None:
-        session.add(
-            PhotoCategoryClassification(
-                photo_id=photo.id,
-                category_key=remote_category,
-                detected_categories=[remote_category],
-                detected_category_confidences={remote_category: 0.9},
-                category_confidence=0.9,
-                provider="anthropic",
-                computed_at=datetime.now(UTC).replace(tzinfo=None),
-            )
-        )
     await session.commit()
     await session.refresh(photo)
     if cache_dir is not None:
@@ -190,7 +174,7 @@ async def _build_full_fixture(
     await session.commit()
     await session.refresh(camera)
 
-    # Abschnitt 1: zwei Fotos der Kamera, eines davon mit Koordinate und mit Override.
+    # Abschnitt 1: zwei Fotos der Kamera, eines davon mit Koordinate.
     await _add_photo(
         session,
         project,
@@ -198,7 +182,6 @@ async def _build_full_fixture(
         _BASE,
         camera=camera,
         gps=_EIFFEL,
-        category_override="landschaft",
         cache_dir=cache_dir,
     )
     await _add_photo(
@@ -207,7 +190,6 @@ async def _build_full_fixture(
         "a2.jpg",
         _BASE + timedelta(minutes=5),
         camera=camera,
-        remote_category="menschen",
         cache_dir=cache_dir,
     )
     # Abschnitt 2: hinter einer Zeitluecke, ein Foto OHNE Kamera (damit ein Versatz die Grenze
@@ -217,7 +199,6 @@ async def _build_full_fixture(
         project,
         "b1.jpg",
         _BASE + TIME_CLUSTER_GAP + timedelta(minutes=30),
-        remote_category="menschen",
         cache_dir=cache_dir,
     )
     # Am Ausschuss-Gate aussortiert: gehoert NICHT in die Kandidatenmenge, traegt aber eine
@@ -242,8 +223,7 @@ async def _snapshot(
     session: AsyncSession, run_id: int
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
     """Events und Rangzeilen als Tupel OHNE Ids - Events nach `position`, Rangzeilen nach
-    `(Event-position, category_key, rank_position)`. Die Ids MUESSEN heraus: ein Neuaufbau
-    vergibt neue.
+    `(Event-position, rank_position)`. Die Ids MUESSEN heraus: ein Neuaufbau vergibt neue.
 
     `run_id` als `int`, nicht als ORM-Objekt: nach einem `rollback` sind ORM-Objekte expired, und
     ein Attributzugriff liefe in einen Lazy-Load ausserhalb des greenlet-Kontexts."""
@@ -284,11 +264,9 @@ async def _snapshot(
     ranking_tuples = sorted(
         (
             position_by_event_id[ranking.event_id],
-            ranking.category_key,
             ranking.rank_position,
             ranking.photo_id,
             ranking.rank_score,
-            ranking.is_primary,
         )
         for ranking in rankings
     )
@@ -435,30 +413,30 @@ async def test_an_offset_that_pushes_a_photo_across_a_time_gap_changes_the_group
     assert len(events_after) < len(events_before)
 
 
-async def test_a_category_override_survives_the_rebuild(
+async def test_every_candidate_photo_has_exactly_one_ranking_row_after_the_rebuild(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Die Kategorie-Zugehoerigkeiten werden NEU ABGELEITET, nicht aus den alten Zeilen
-    uebernommen - genau deshalb muss der Override, der in `photo_scores` steht, danach wieder die
-    Hauptzeile bestimmen."""
+    """Die Rangzeilen werden NEU AUFGEBAUT, nicht aus den alten uebernommen - und danach gilt
+    wieder "ein Foto je Lauf in genau einer Zeile". Ein Neuaufbau, der die alten Zeilen stehen
+    liesse, fiele in den Unique-Constraint; einer, der sie doppelt anlegte, ebenso. GEZAEHLT
+    statt nur der Constraint geprueft: die Aussage ist "GENAU eine", nicht "hoechstens eine"."""
     project, _camera, run = await _build_full_fixture(db_session, tmp_path)
-    overridden = (
-        await db_session.execute(select(Photo).where(Photo.relative_path == "a1.jpg"))
-    ).scalar_one()
 
     await rebuild_run_grouping(db_session, project.id)
     await db_session.commit()
 
-    primary = (
-        await db_session.execute(
-            select(PhotoRanking).where(
-                PhotoRanking.criterion_scoring_run_id == run.id,
-                PhotoRanking.photo_id == overridden.id,
-                PhotoRanking.is_primary.is_(True),
+    photo_ids = list(
+        (
+            await db_session.execute(
+                select(PhotoRanking.photo_id).where(
+                    PhotoRanking.criterion_scoring_run_id == run.id
+                )
             )
-        )
-    ).scalar_one()
-    assert primary.category_key == "landschaft"
+        ).scalars()
+    )
+
+    assert len(photo_ids) == len(set(photo_ids))
+    assert len(photo_ids) == 3
 
 
 async def test_the_rebuild_does_not_commit(db_session: AsyncSession, tmp_path: Path) -> None:
