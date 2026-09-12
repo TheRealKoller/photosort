@@ -8,7 +8,7 @@
 **Umfang:** über dem Richtwert von rund 200 Zeilen, und zwar aus zwei Gründen, die beide in der
 Bauart dieser Story liegen. Die Rastertabelle je Baustein **ist** die Umsetzungsvorlage — sie
 ersetzt die Soll-Struktur-Datei, die ADR
-[`0088`](../decisions/0088-bausteinregister-handarbeit-ohne-soll-struktur-seite-umbenannt.md)
+[`0089`](../decisions/0089-bausteinregister-handarbeit-ohne-soll-struktur-seite-umbenannt.md)
 Abschnitt 2 bewusst nicht anlegt; ohne sie wäre das Register nach einem Instanzverlust nicht
 wieder aufbaubar. Und die Wächtertabelle samt Sichtprüfungsliste tritt an die Stelle
 automatisierter Deckung, die es hier nicht geben kann: Kein Test dieses Repositoriums kann die
@@ -58,7 +58,8 @@ Design-System beim Hinsehen bemerke statt erst, wenn jemand gezielt danach sucht
       Ein einheitliches Zeilenschema wird nicht erzwungen.
 - [ ] Alle Felder eines Rasters sind gleich groß und gleich ausgerichtet, sodass der Vergleich
       zweier Felder nur den Unterschied zeigt, den er zeigen soll. Nachgewiesen wird das
-      gemessen: Breite und Höhe aller Zellbretter eines Rasters sind paarweise gleich.
+      gemessen: Breite und Höhe aller Prüffelder eines Rasters sind paarweise gleich, und keine
+      Instanz ragt aus ihrer Zelle.
 - [ ] Zeilen und Spalten sind beschriftet. Ohne Vorwissen ist ablesbar, welchen Zustand und
       welche Ausprägung ein Feld zeigt.
 - [ ] Die Bausteine erscheinen so, wie sie in der Anwendung tatsächlich aussehen — mit Fläche,
@@ -83,12 +84,12 @@ Design-System beim Hinsehen bemerke statt erst, wenn jemand gezielt danach sucht
 
 Nicht relevant. Es entsteht keine Entität, keine Migration und keine Änderung an
 [`docs/architecture.md`](../../docs/architecture.md) — die Arbeit liegt in der Penpot-Datei, das
-Repository sieht davon nur Spec, ADR und zwei Doku-Stellen.
+Repository sieht davon nur Spec, ADR und vier Doku-Stellen.
 
 ## Architektur / Umsetzung
 
 Entscheidung und Begründung: ADR
-[`0088`](../decisions/0088-bausteinregister-handarbeit-ohne-soll-struktur-seite-umbenannt.md).
+[`0089`](../decisions/0089-bausteinregister-handarbeit-ohne-soll-struktur-seite-umbenannt.md).
 Kurzfassung: Die Seite ist eine **dritte Seitenklasse** („Register") neben Ansichtsseite (ADR
 0082) und Arbeitsseite (ADR 0073). Sie entsteht von Hand über `penpot-design` Schritt 3 in der
 Hauptsession — kein `seed-register.js`, keine fünfte Zeile in der Schritttabelle, kein Eintrag in
@@ -101,7 +102,7 @@ steht in der Rastertabelle unten.
 | Datei | Änderung |
 |---|---|
 | `specs/features/0440-bausteinzustaende.md` | diese Spec |
-| `specs/decisions/0088-...md` | neue ADR |
+| `specs/decisions/0089-...md` | neue ADR |
 | `.claude/skills/penpot-design/SKILL.md` | ein Block „Das Ablagemuster für das Register" neben dem für Ansichten |
 | `design/penpot/README.md` | ein Absatz im `views.json`-Abschnitt (das Register steht bewusst nicht darin) und ein Unterabschnitt mit den drei beim Bau gemessenen API-Befunden |
 | `specs/architecture/0004-design-system.md` | zwei Punkte unter „Bekannte Lücken": die Bausteine sind Token-Träger statt Abbilder, und das Register wird von Hand nachgezogen |
@@ -518,7 +519,7 @@ beurteilen will, sieht in der geöffneten Datei hin oder exportiert einen Block 
 ## Entscheidungen
 
 - **Dritte Seitenklasse „Register", von Hand, ohne Generator und ohne Soll-Struktur-Datei** — ADR
-  [`0088`](../decisions/0088-bausteinregister-handarbeit-ohne-soll-struktur-seite-umbenannt.md).
+  [`0089`](../decisions/0089-bausteinregister-handarbeit-ohne-soll-struktur-seite-umbenannt.md).
 - **Umbenennen statt neu anlegen.** Die Hauptinstanzen von 158 Varianten liegen nur einmal; ein
   Seitenname ist billig. Ist `page.name` über die API nicht schreibbar, wird das gemeldet und
   Daniel benennt die Seite im Browser um — es wird kein Ersatzweg über Neuanlegen gewählt.

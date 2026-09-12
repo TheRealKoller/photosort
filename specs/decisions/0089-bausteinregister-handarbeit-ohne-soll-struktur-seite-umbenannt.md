@@ -1,4 +1,4 @@
-# 0088 - Das Bausteinregister ist Handarbeit ohne eigene Soll-Struktur; die Standardseite wird umbenannt
+# 0089 - Das Bausteinregister ist Handarbeit ohne eigene Soll-Struktur; die Standardseite wird umbenannt
 
 **Status:** Accepted
 **Datum:** 2026-09-12
