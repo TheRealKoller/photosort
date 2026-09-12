@@ -190,7 +190,8 @@ Nichts — die Sichtprüfung beurteilte dann einen Untergrund, den die Seite nic
 sein Name darunter; Strichfarbe kommt aus der Bibliotheksinstanz (`color.text-h`).
 
 **Block „Benannte Lücken — was die Bibliothek nicht zeigt":** eine Textliste auf
-`color.surface`, nicht als nachgezeichneter Baustein, mit sieben Einträgen. Die ersten drei sind
+`color.surface`, nicht als nachgezeichneter Baustein, mit acht Einträgen (der achte ist die
+ungebundene Beschriftung des Platzhalters). Die ersten drei sind
 beim Bau gemessen (siehe „Was die Bibliothek nicht hergibt") und in `color.text` hervorgehoben:
 kein Baustein ist ausmodelliert; die Zustände einer Schaltfläche sind nur teilweise
 unterschieden; die Größenachse trägt keine eigenen Maße. Die vier weiteren in
@@ -379,6 +380,34 @@ Differenz — beim Schaltflächen-Raster und bei der Größenreihe als Befundzei
 direkt unter dem Raster, alles Weitere im Lücken-Block. Ein nachgezeichnetes Kästchen wäre eine
 freie Form und würde die Dauerregel brechen; er wäre außerdem eine zweite Wahrheit neben dem
 Produkt.
+
+### Der vierte Befund war ein Kontrastfehler — und er wurde behoben
+
+**Bei 13 von 158 Varianten war die Textfarbe an kein Token gebunden** und stand deshalb auf
+Penpots Standardschwarz: die drei `hinweis-*`-Ausprägungen und alle acht Karten-Varianten mit
+**1,33:1** gegen `color.elevated`, beide Platzhalter mit 2,11:1. Das Soll stand die ganze Zeit in
+`components.json` — nur trägt es dort die Schlüssel `beitext` und `dateiname-schrift`, während
+das Aufbauskript ausschließlich `schrift` an die Beschriftung bindet.
+
+Das ist **die eine Ausnahme der Rangfolge** (`penpot-design`, „Die Datei und die Rangfolge"): Ein
+Penpot-Wert, der WCAG-AA gegen seine Fläche verfehlt, wird korrigiert — die Fläche bleibt, die
+Schriftfarbe wird angepasst, und die Korrektur wird nach Penpot zurückgeschrieben. Gebunden wurde
+genau auf das vorhandene Soll: `color.text` für Hinweis-Erfolg und -Warnung, `color.danger-text`
+für Hinweis-Fehler, `color.text` bzw. `color.text-muted` (bei `rejected`) für die Karte. Danach
+gemessen: 5,08 bis 6,44:1.
+
+**Nicht korrigiert, mit Grund:** Die 21 Varianten im Zustand `disabled` liegen bei 1,81:1
+(`color.text-disabled` auf `color.surface`). WCAG nimmt deaktivierte Bedienelemente ausdrücklich
+aus, und das Design-System führt diese Farbe bewusst für genau diesen Fall. Und der
+**Platzhalter** bleibt bei 2,11:1, weil das Soll für ihn kein Schrift-Token führt — er trägt im
+Produkt keinen Text; seine Beschriftung gehört ausgeblendet, und das entscheidet eine eigene
+Story.
+
+**Die Korrektur fasst die Hauptinstanzen an, also den Bestand.** Das ist mit ADR 0089 Abschnitt 5
+vereinbar: Verboten sind dort Löschen, Verschieben, Umbenennen, Größenänderung und das Verändern
+von Plugin-Daten — nicht das Binden einer Farbe an das Token, das das Soll ohnehin nennt. Der
+Nebeneffekt ist der erwünschte: Die 37 Hinweis- und 18 Karten-Instanzen im übrigen Projekt haben
+die Korrektur mit übernommen, ohne dass eine davon angefasst wurde.
 
 ### Zustände, die stillstehend nicht zu zeigen sind
 
