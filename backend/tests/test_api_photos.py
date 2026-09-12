@@ -1727,7 +1727,7 @@ class TestCloudVisionStatus:
         project = await _make_project(db_session)
         project.cloud_vision_detection_enabled = True
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
+        threshold = CRITERIA_REGISTRY["landschaft"].presence_threshold
         assert threshold is not None
         db_session.add(
             PhotoCriterionScore(
@@ -1755,7 +1755,7 @@ class TestCloudVisionStatus:
         project = await _make_project(db_session)
         project.cloud_vision_detection_enabled = True
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
+        threshold = CRITERIA_REGISTRY["gebaeude"].presence_threshold
         assert threshold is not None
         db_session.add(
             PhotoCriterionScore(

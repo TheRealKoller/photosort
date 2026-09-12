@@ -4618,7 +4618,7 @@ class TestSecondaryCategoryRows:
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         """Akzeptanzkriterium 19: ein rein LOKAL erkanntes Signal erzeugt nie eine Nebenzeile, auch
-        wenn sein Kriterium die `category_presence_threshold` deutlich ueberschreitet - lokale
+        wenn sein Kriterium die `presence_threshold` deutlich ueberschreitet - lokale
         Signale tragen keine mit der Modellaussage vergleichbare Zahl (ADR 0069 Punkt 2).
 
         Aufbau: das Bild traegt einen erkannten Tier-Marker (lokales Signal `tier`), die

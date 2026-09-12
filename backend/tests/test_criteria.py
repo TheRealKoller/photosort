@@ -112,7 +112,7 @@ class TestCriteriaRegistry:
         assert CRITERIA_REGISTRY["freiraum"].source == CriterionSource.LOCAL_ML
         for key in ("symmetrie", "horizont", "freiraum"):
             assert CRITERIA_REGISTRY[key].category_eligible is False
-            assert CRITERIA_REGISTRY[key].category_presence_threshold is None
+            assert CRITERIA_REGISTRY[key].presence_threshold is None
 
     def test_category_eligible_and_presence_threshold_are_set_together_or_not_at_all(
         self,
@@ -122,8 +122,8 @@ class TestCriteriaRegistry:
         # setzen.
         for key, definition in CRITERIA_REGISTRY.items():
             assert definition.category_eligible == (
-                definition.category_presence_threshold is not None
-            ), f"{key}: category_eligible und category_presence_threshold widersprechen sich"
+                definition.presence_threshold is not None
+            ), f"{key}: category_eligible und presence_threshold widersprechen sich"
 
     def test_exactly_these_seven_content_criteria_are_category_eligible(self) -> None:
         # Akzeptanzkriterium der Spec 0045, erweitert um landmark (specs/features/0047) und seit
@@ -155,7 +155,7 @@ class TestCriteriaRegistry:
             assert definition.display_name == display_name
             assert definition.source == CriterionSource.LOCAL_ML
             assert definition.category_eligible is True
-            assert definition.category_presence_threshold == 0.01
+            assert definition.presence_threshold == 0.01
 
     def test_registry_contains_landschaft_with_the_correct_source_and_threshold(self) -> None:
         # specs/features/0217, ADR 0047 Punkt 1: neues, echtes Inhalts-Kriterium aus derselben
@@ -166,7 +166,7 @@ class TestCriteriaRegistry:
         assert definition.display_name == "Landschaft erkannt"
         assert definition.source == CriterionSource.LOCAL_ML
         assert definition.category_eligible is True
-        assert definition.category_presence_threshold == 0.01
+        assert definition.presence_threshold == 0.01
 
     def test_content_landscape_is_a_pure_ranking_signal_without_category_eligibility(
         self,
@@ -177,7 +177,7 @@ class TestCriteriaRegistry:
         definition = CRITERIA_REGISTRY["content_landscape"]
         assert definition.display_name == "Flächigkeit"
         assert definition.category_eligible is False
-        assert definition.category_presence_threshold is None
+        assert definition.presence_threshold is None
 
     def test_category_specificity_is_removed_from_the_definition(self) -> None:
         """specs/features/0289-feste-kategorien.md, Teststrategie 2 Punkt 7: `category_specificity`
@@ -191,7 +191,7 @@ class TestCriteriaRegistry:
             "display_name",
             "source",
             "category_eligible",
-            "category_presence_threshold",
+            "presence_threshold",
         }
 
     def test_registry_contains_landmark_with_the_correct_source_and_threshold(self) -> None:
@@ -202,12 +202,12 @@ class TestCriteriaRegistry:
         assert definition.display_name == "Sehenswürdigkeit"
         assert definition.source == CriterionSource.CLOUD
         assert definition.category_eligible is True
-        assert definition.category_presence_threshold == 0.5
+        assert definition.presence_threshold == 0.5
 
     def test_quality_criteria_are_never_category_eligible(self) -> None:
         for key in ("sharpness", "exposure", "goldener_schnitt", "aesthetics"):
             assert CRITERIA_REGISTRY[key].category_eligible is False
-            assert CRITERIA_REGISTRY[key].category_presence_threshold is None
+            assert CRITERIA_REGISTRY[key].presence_threshold is None
 
 
 class TestComputeSymmetrieScore:
@@ -658,35 +658,35 @@ class TestIsLandmarkCandidate:
     def test_landschaft_below_threshold_and_gebaeude_absent_is_not_a_candidate(
         self,
     ) -> None:
-        threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
+        threshold = CRITERIA_REGISTRY["landschaft"].presence_threshold
         assert threshold is not None
         assert is_landmark_candidate({"landschaft": threshold - 0.001}) is False
 
     def test_landschaft_at_threshold_is_a_candidate(self) -> None:
         # Inklusiver Vergleich (`>=`), analog der uebrigen Presence-Schwellen dieses Moduls.
-        threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
+        threshold = CRITERIA_REGISTRY["landschaft"].presence_threshold
         assert threshold is not None
         assert is_landmark_candidate({"landschaft": threshold}) is True
 
     def test_landschaft_above_threshold_is_a_candidate(self) -> None:
-        threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
+        threshold = CRITERIA_REGISTRY["landschaft"].presence_threshold
         assert threshold is not None
         assert is_landmark_candidate({"landschaft": threshold + 0.1}) is True
 
     def test_gebaeude_at_threshold_is_a_candidate(self) -> None:
-        threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
+        threshold = CRITERIA_REGISTRY["gebaeude"].presence_threshold
         assert threshold is not None
         assert is_landmark_candidate({"gebaeude": threshold}) is True
 
     def test_gebaeude_below_threshold_and_landschaft_absent_is_not_a_candidate(
         self,
     ) -> None:
-        threshold = CRITERIA_REGISTRY["gebaeude"].category_presence_threshold
+        threshold = CRITERIA_REGISTRY["gebaeude"].presence_threshold
         assert threshold is not None
         assert is_landmark_candidate({"gebaeude": threshold - 0.001}) is False
 
     def test_either_criterion_reaching_its_threshold_is_sufficient(self) -> None:
-        landschaft_threshold = CRITERIA_REGISTRY["landschaft"].category_presence_threshold
+        landschaft_threshold = CRITERIA_REGISTRY["landschaft"].presence_threshold
         assert landschaft_threshold is not None
         assert is_landmark_candidate({"landschaft": 0.0, "gebaeude": 0.0}) is False
         assert is_landmark_candidate({"landschaft": landschaft_threshold, "gebaeude": 0.0}) is True

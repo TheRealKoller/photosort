@@ -127,7 +127,7 @@ class _NoSceneLabels:
 
 
 class _LandscapeSceneLabels:
-    """Liefert eine Landschafts-Szene, damit `landschaft` die category_presence_threshold erreicht
+    """Liefert eine Landschafts-Szene, damit `landschaft` die presence_threshold erreicht
     und das Foto damit ueberhaupt Landmark-Kandidat wird (criteria.py::is_landmark_candidate) -
     ohne das laeuft die Landmark-Phase mangels Kandidaten leer, unabhaengig vom Cloud-Gate."""
 

@@ -10,15 +10,18 @@ from sqlalchemy import Select, and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_current_user, get_session
-from photosort.categories import CATEGORY_REGISTRY
+from photosort.api.motifs import StrengthBandsOut
 from photosort.config import settings
 from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
+    MotifAssessmentSource,
     Photo,
-    PhotoCategoryClassification,
     PhotoCloudVisionError,
     PhotoLandmarkDetection,
+    PhotoMotifAssessment,
+    PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -29,6 +32,12 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
     User,
+)
+from photosort.motif_strengths import effective_strength_expression
+from photosort.motifs import (
+    MOTIF_REGISTRY,
+    MOTIF_STRENGTH_BAND_MEDIUM,
+    MOTIF_STRENGTH_BAND_STRONG,
 )
 from photosort.thumbnails import measure_cache_usage
 
@@ -54,63 +63,29 @@ class StorageOut(BaseModel):
     local_database_bytes_estimate: int | None
 
 
-class CategoryEntryOut(BaseModel):
-    """`display_name` kommt vom Server: es gibt bewusst KEINE TypeScript-Spiegelung des
-    Sets im Frontend. `share` ist ein Bruchteil zwischen 0 und 1, bezogen auf die KLASSIFIZIERTEN
-    Fotos - formatiert wird erst im Frontend."""
+class MotifEntryOut(BaseModel):
+    """Eine Zeile der Motivverteilung: drei Bandzahlen und der Mittelwert.
 
-    category_key: str
+    `display_name` kommt vom Server - es gibt bewusst KEINE TypeScript-Spiegelung des Motivsets im
+    Frontend.
+
+    Die drei Bandzahlen sind DISJUNKT und ERSCHOEPFEND: ihre Summe je Motiv ist die Zahl der
+    beurteilten Fotos. Gezaehlt wird ueber der WIRKSAMEN Staerke (Korrektur schlaegt Modellaussage,
+    motif_strengths.py::effective_strength_expression), nicht ueber der gespeicherten.
+
+    `average_strength` ist das arithmetische Mittel genau dieser wirksamen Staerken und `None`
+    ohne ein einziges beurteiltes Foto, NIE `0.0`: "nicht erhoben" und "das Modell sieht das Motiv
+    nicht" sind verschiedene Aussagen. Ueberall mit `is None` statt truthy zu pruefen.
+
+    KEIN `share`-Feld: ein Anteil setzte eine Grundmenge voraus, zu der die Zahlen sich summieren -
+    und genau das tun sie seit diesem Motivset nicht mehr."""
+
+    motif_key: str
     display_name: str
-    photo_count: int
-    share: float
-
-
-class CategoriesOut(BaseModel):
-    """`entries` enthaelt IMMER alle Set-Keys inklusive `nicht_erkannt` in Registry-Anzeige-
-    reihenfolge, auch mit `photo_count: 0`. Es gilt `classified + unclassified == photo_count`."""
-
-    classified_photo_count: int
-    unclassified_photo_count: int
-    entries: list[CategoryEntryOut]
-
-
-class CategoryConfidenceEntryOut(BaseModel):
-    """Ein Eintrag des Konfidenzblocks.
-
-    `photo_count` zaehlt die Fotos DIESER Modell-Kategorie, die tatsaechlich eine Angabe tragen -
-    nicht alle Fotos der Kategorie. `average_confidence` ist das arithmetische Mittel genau dieser
-    Angaben und ist `None` bei `photo_count == 0`, NIE `0.0`: "keine Angabe" und "das Modell war
-    sich zu 0 % sicher" sind verschiedene Aussagen. Ueberall mit `is None` statt truthy zu
-    pruefen."""
-
-    category_key: str
-    display_name: str
-    photo_count: int
-    average_confidence: float | None
-
-
-class CategoryConfidenceOut(BaseModel):
-    """Der Konfidenzblock als Ganzes - eigener Block mit EIGENER Grundmenge.
-
-    Gruppiert wird ueber die MODELL-Kategorie (`photo_category_classifications.category_key`),
-    ausdruecklich nicht ueber `photo_rankings.category_key` wie `_categories_out`: der vorhandene
-    Block beantwortet "wie ist mein Bestand verteilt" und braucht dafuer die WIRKSAME Kategorie
-    (lokal + remote + Override), dieser hier beantwortet "wie gut arbeitet die Erkennung" und
-    braucht die Aussage des Modells ueber sich selbst. Ein uebersteuertes Foto zaehlt hier
-    weiterhin zu seiner Modell-Kategorie.
-
-    `entries` enthaelt IMMER alle Set-Keys inklusive `nicht_erkannt` in Registry-Anzeigereihenfolge,
-    auch mit `photo_count: 0` (analog `CategoriesOut`).
-
-    Die BEZUGSBASIS wird mit ausgewiesen, statt einen Mittelwert ohne Bezugsmenge zu zeigen. Beide
-    Zaehler beziehen sich auf die KLASSIFIZIERTEN Fotos des Projekts (die Grundmenge dieses
-    Blocks): `photos_with_confidence + photos_without_confidence` ist die Zahl der
-    Klassifizierungszeilen, nicht die Fotoanzahl. Fotos ganz ohne Klassifizierungszeile stehen im
-    vorhandenen Block als `unclassified_photo_count`."""
-
-    entries: list[CategoryConfidenceEntryOut]
-    photos_with_confidence: int
-    photos_without_confidence: int
+    strong_photo_count: int
+    medium_photo_count: int
+    weak_photo_count: int
+    average_strength: float | None
 
 
 class CostByPurposeOut(BaseModel):
@@ -195,11 +170,23 @@ class ProjectStatsOut(BaseModel):
     storage: StorageOut
     taken_at_earliest: datetime | None
     taken_at_latest: datetime | None
-    categories: CategoriesOut
-    # Eigener Block NEBEN `categories`, mit anderer Grundmenge (siehe
-    # CategoryConfidenceOut-Docstring).
-    category_confidence: CategoryConfidenceOut
-    manual_category_override_count: int
+    # EIN Block statt der beiden Kategorie-Bloecke: eine Zeile je Motiv in Registry-Reihenfolge,
+    # immer alle acht. Die Summe ueber alle Zeilen ist ausdruecklich NICHT die Fotoanzahl - ein
+    # Foto traegt alle acht Motive mit unterschiedlicher Staerke und zaehlt in mehreren Zeilen.
+    motifs: list[MotifEntryOut]
+    # Die Anzeigebaender der Tabelle gehen mit, damit das Frontend sie nicht hinterlegt. Sie sind
+    # KEINE Zugehoerigkeitsschwelle.
+    strength_bands: StrengthBandsOut
+    # Fotos ganz ohne Kopfzeile - sie fehlen in JEDER Zahl der Tabelle und stehen deshalb als
+    # eigene Kennzahl daneben, nicht als achtes Nullband.
+    unassessed_photo_count: int
+    # Als Dokument/Screenshot ausgeschlossene Fotos. Projektweit, weil das die einzige Stelle ist,
+    # an der ein systematisch ueberschiessendes Modell auffaellt statt fotoweise entdeckt zu
+    # werden; der Ausschluss hat keinen Korrekturpfad.
+    excluded_photo_count: int
+    # Korrektur-ZEILEN, nicht Fotos: ein Foto kann bis zu acht tragen. Gezaehlt werden auch
+    # Korrekturen auf einem Foto ohne Kopfzeile - die Tabelle ist lauf-unabhaengig.
+    motif_correction_count: int
     cost: CostOut
     progress: ProgressOut
     ratings: RatingsOut
@@ -277,129 +264,107 @@ async def _latest_successful_criterion_scoring_run_id(
     ).scalar_one_or_none()
 
 
-async def _ranking_counts_by_category(
-    session: AsyncSession, latest_run_id: int | None
-) -> dict[str, int]:
-    """Fotos je `category_key` im letzten erfolgreichen Lauf - EINE GROUP-BY-Abfrage, ausdruecklich
-    kein Query je Kategorie. Die Rangfolge-Zeilen eines Laufs gehoeren strukturell zu den Fotos
-    genau dieses Projekts, eine zusaetzliche Projekt-Einschraenkung waere redundant.
+async def _ranked_photo_count(session: AsyncSession, latest_run_id: int | None) -> int:
+    """Wie viele Fotos im letzten erfolgreichen Kriterien-Lauf eine Rangzeile haben - eine Zaehlung
+    statt einer Gruppierung, weil ein Foto je Lauf in genau EINER Zeile steht.
 
-    Enthaelt auch Schluessel AUSSERHALB des festen Sets (Altbestand) - der Aufrufer entscheidet,
-    was damit geschieht: sie zaehlen zum Bearbeitungsstand (`ranked`), aber nicht zur
-    Kategorienverteilung.
-
-    Zaehlt AUSSCHLIESSLICH die HAUPTkategorie (`is_primary`): nur so bleibt die Summe ueber alle
-    Kategorien die Fotoanzahl - die Zusage, die die Verteilung ueberhaupt lesbar macht. Die
-    Partitionsgroesse im Info-Popover (`api/photos.py::_partition_sizes`) zaehlt dagegen bewusst
-    ALLE Zeilen. Zwei
-    Zaehlweisen, zwei Fragen."""
+    Die Rangfolge-Zeilen eines Laufs gehoeren strukturell zu den Fotos genau dieses Projekts, eine
+    zusaetzliche Projekt-Einschraenkung waere redundant."""
     if latest_run_id is None:
-        return {}
-    rows = await session.execute(
-        select(PhotoRanking.category_key, func.count())
-        .where(
-            PhotoRanking.criterion_scoring_run_id == latest_run_id,
-            PhotoRanking.is_primary.is_(True),
-        )
-        .group_by(PhotoRanking.category_key)
-    )
-    return {key: count for key, count in rows.all()}
-
-
-def _categories_out(counts_by_key: dict[str, int], photo_count: int) -> CategoriesOut:
-    """Massgeblich fuer die Kategorie eines Fotos ist `photo_rankings.category_key` des letzten
-    erfolgreichen Laufs - nur das ist die WIRKSAME Kategorie (lokale Signale + Remote-Kandidaten +
-    manueller Override zusammengefuehrt), nicht `photo_category_classifications.category_key`.
-
-    Ein Ranking-Wert ausserhalb des festen Sets (Altbestand; der Lesepfad ist bewusst tolerant)
-    erzeugt KEINE zusaetzliche Zeile in der Verteilung und faellt in
-    `unclassified_photo_count` - er ist keine Kategorie, die die Oberflaeche benennen koennte."""
-    classified_photo_count = sum(
-        count for key, count in counts_by_key.items() if key in CATEGORY_REGISTRY
-    )
-    entries = [
-        CategoryEntryOut(
-            category_key=definition.key,
-            display_name=definition.display_name,
-            photo_count=counts_by_key.get(definition.key, 0),
-            share=(
-                counts_by_key.get(definition.key, 0) / classified_photo_count
-                if classified_photo_count
-                else 0.0
-            ),
-        )
-        for definition in CATEGORY_REGISTRY.values()
-    ]
-    return CategoriesOut(
-        classified_photo_count=classified_photo_count,
-        unclassified_photo_count=photo_count - classified_photo_count,
-        entries=entries,
+        return 0
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(PhotoRanking)
+                .where(PhotoRanking.criterion_scoring_run_id == latest_run_id)
+            )
+        ).scalar_one()
     )
 
 
-async def _category_confidence_stats(
+def _assessed_photo_ids(project_id: int) -> Select[tuple[int]]:
+    """Die BEURTEILTEN Fotos eines Projekts: Kopfzeile vorhanden UND nicht als Dokument/
+    Screenshot ausgeschlossen.
+
+    Der Ausschluss ist hier eine Einschraenkung der GRUNDMENGE und keine Nachfilterung einzelner
+    Staerken: ein ausgeschlossenes Foto zaehlt in keinem Band, seine Staerken bleiben aber
+    gespeichert und werden nicht auf 0 gesetzt."""
+    return select(PhotoMotifAssessment.photo_id).where(
+        PhotoMotifAssessment.photo_id.in_(_photos_of_project(project_id)),
+        PhotoMotifAssessment.excluded_document.is_(False),
+    )
+
+
+async def _motif_band_stats(
     session: AsyncSession, project_id: int
-) -> dict[str, tuple[int, float | None, int]]:
-    """Je Modell-Kategorie: (Fotos MIT Angabe, Mittelwert dieser Angaben, Klassifizierungszeilen
-    insgesamt) - EINE GROUP-BY-Abfrage, ausdruecklich kein Query je Kategorie.
+) -> dict[str, tuple[int, int, int, float | None]]:
+    """Je Motiv: (stark, mittel, schwach, Mittelwert) - EINE GROUP-BY-Abfrage, ausdruecklich kein
+    Query je Motiv und keine Zeile, die nach Python geladen wird.
 
-    Projekt-Skopierung ueber `_photos_of_project` ist Muss-Kriterium mit eigenem Test:
-    `photo_category_classifications` traegt keine eigene `project_id`, die Einschraenkung ist die
-    einzige Trennung zwischen zwei Projekten.
+    GERECHNET WIRD UEBER DER WIRKSAMEN STAERKE, nicht ueber der gespeicherten: der `CASE` aus
+    `motif_strengths.py::effective_strength_expression` steht genau einmal im Repository, und die
+    Aggregation bezieht ihn von dort. Der LEFT JOIN auf die Korrekturzeile laeuft ueber BEIDE
+    Spalten `(photo_id, motif_key)` - allein ueber `motif_key` liefe die Korrektur eines Fotos in
+    die Staerken aller anderen.
 
-    `func.avg` ignoriert `NULL`-Werte (SQL-Semantik) und liefert `NULL`, wenn es keinen einzigen
-    Wert gibt - eine Zeile ohne Angabe verfaelscht den Mittelwert also nicht mit einem `0.0`-
-    Beitrag. Defensiv nach `float` gecastet: SQLite und PostgreSQL liefern hier unterschiedliche
-    Python-Typen (u.a. `Decimal`).
+    Die drei Baender sind als `>=`-Kette formuliert und damit disjunkt und erschoepfend: jede
+    Staerkezeile faellt in genau eines. Beide Grenzen inklusiv, und die Konstanten stehen nur in
+    `motifs.py`.
 
-    Enthaelt auch Schluessel AUSSERHALB des festen Sets (Altbestand) - der Aufrufer entscheidet,
-    was damit geschieht."""
+    Projekt-Skopierung ueber `_assessed_photo_ids` ist Muss-Kriterium mit eigenem Test: keine der
+    drei Motiv-Tabellen traegt eine eigene `project_id`, die Einschraenkung ist die einzige
+    Trennung zwischen zwei Projekten.
+
+    `func.avg` liefert `NULL`, wenn es keine Zeile gibt - daraus wird `None` und nie `0.0`.
+    Defensiv nach `float` gecastet: SQLite und PostgreSQL liefern hier unterschiedliche
+    Python-Typen (u.a. `Decimal`)."""
+    effective = effective_strength_expression()
     rows = await session.execute(
         select(
-            PhotoCategoryClassification.category_key,
-            func.count().filter(PhotoCategoryClassification.category_confidence.is_not(None)),
-            func.avg(PhotoCategoryClassification.category_confidence),
-            func.count(),
+            PhotoMotifStrength.motif_key,
+            func.count().filter(effective >= MOTIF_STRENGTH_BAND_STRONG),
+            func.count().filter(
+                and_(
+                    effective >= MOTIF_STRENGTH_BAND_MEDIUM,
+                    effective < MOTIF_STRENGTH_BAND_STRONG,
+                )
+            ),
+            func.count().filter(effective < MOTIF_STRENGTH_BAND_MEDIUM),
+            func.avg(effective),
         )
-        .where(PhotoCategoryClassification.photo_id.in_(_photos_of_project(project_id)))
-        .group_by(PhotoCategoryClassification.category_key)
+        .select_from(PhotoMotifStrength)
+        .outerjoin(
+            PhotoMotifCorrection,
+            (PhotoMotifCorrection.photo_id == PhotoMotifStrength.photo_id)
+            & (PhotoMotifCorrection.motif_key == PhotoMotifStrength.motif_key),
+        )
+        .where(PhotoMotifStrength.photo_id.in_(_assessed_photo_ids(project_id)))
+        .group_by(PhotoMotifStrength.motif_key)
     )
     return {
-        key: (
-            int(with_confidence),
-            None if average is None else float(average),
-            int(total),
-        )
-        for key, with_confidence, average, total in rows.all()
+        key: (int(strong), int(medium), int(weak), None if average is None else float(average))
+        for key, strong, medium, weak, average in rows.all()
     }
 
 
-def _category_confidence_out(
-    stats_by_key: dict[str, tuple[int, float | None, int]],
-) -> CategoryConfidenceOut:
-    """Reine Funktion ueber dem Aggregatergebnis (analog `_categories_out`) - die Registry gibt
-    Reihenfolge und Anzeigenamen vor, das Aggregat nur die Zahlen.
-
-    Die Bezugsbasis summiert ueber ALLE Klassifizierungszeilen des Projekts, auch ueber solche mit
-    einem Kategorieschluessel ausserhalb des festen Sets (Altbestand): sie ist eine Aussage ueber
-    die Grundmenge, nicht ueber die angezeigten Zeilen. Solche Altzeilen tragen ohnehin `NULL` und
-    landen damit in `photos_without_confidence`."""
-    entries = [
-        CategoryConfidenceEntryOut(
-            category_key=definition.key,
+def _motifs_out(
+    stats_by_key: dict[str, tuple[int, int, int, float | None]],
+) -> list[MotifEntryOut]:
+    """Reine Funktion ueber dem Aggregatergebnis - die Registry gibt Reihenfolge und Anzeigenamen
+    vor, das Aggregat nur die Zahlen. Es entsteht IMMER ein Eintrag je Motiv, auch mit drei Nullen:
+    eine fehlende Zeile machte die Tabelle unvollstaendig statt leer."""
+    return [
+        MotifEntryOut(
+            motif_key=definition.key,
             display_name=definition.display_name,
-            photo_count=stats_by_key.get(definition.key, (0, None, 0))[0],
-            average_confidence=stats_by_key.get(definition.key, (0, None, 0))[1],
+            strong_photo_count=stats_by_key.get(definition.key, (0, 0, 0, None))[0],
+            medium_photo_count=stats_by_key.get(definition.key, (0, 0, 0, None))[1],
+            weak_photo_count=stats_by_key.get(definition.key, (0, 0, 0, None))[2],
+            average_strength=stats_by_key.get(definition.key, (0, 0, 0, None))[3],
         )
-        for definition in CATEGORY_REGISTRY.values()
+        for definition in MOTIF_REGISTRY.values()
     ]
-    photos_with_confidence = sum(with_confidence for with_confidence, _, _ in stats_by_key.values())
-    photos_total = sum(total for _, _, total in stats_by_key.values())
-    return CategoryConfidenceOut(
-        entries=entries,
-        photos_with_confidence=photos_with_confidence,
-        photos_without_confidence=photos_total - photos_with_confidence,
-    )
 
 
 async def _cost_out(
@@ -579,7 +544,6 @@ async def get_project_stats(
         taken_at_earliest,
         taken_at_latest,
         ausschuss_scored,
-        manual_category_override_count,
         duplicate_photo_count,
     ) = (
         await session.execute(
@@ -590,7 +554,6 @@ async def get_project_stats(
                 func.min(Photo.taken_at),
                 func.max(Photo.taken_at),
                 func.count().filter(PhotoScore.photo_id.is_not(None)),
-                func.count().filter(PhotoScore.category_override.is_not(None)),
                 func.count().filter(PhotoScore.duplicate_of.is_not(None)),
             )
             .select_from(Photo)
@@ -604,16 +567,44 @@ async def get_project_stats(
     # zusaetzliche Rundreisen. `last_scan_files_skipped` bezieht sich auf den zuletzt GESTARTETEN
     # Scan-Lauf, unabhaengig von dessen Status (Akzeptanzkriterium D2); `id` als Zweitkriterium
     # loest zwei Laeufe mit identischem Zeitstempel deterministisch auf.
-    landmark_results, remote_classified, last_scan_files_skipped = (
+    (
+        landmark_results,
+        remote_classified,
+        assessment_count,
+        excluded_photo_count,
+        motif_correction_count,
+        last_scan_files_skipped,
+    ) = (
         await session.execute(
             select(
                 select(func.count())
                 .select_from(PhotoLandmarkDetection)
                 .where(PhotoLandmarkDetection.photo_id.in_(_photos_of_project(project_id)))
                 .scalar_subquery(),
+                # "Von der Cloud beurteilt" ist eine Kopfzeile MIT `source='cloud'`, nicht das
+                # bloesse Vorhandensein einer Kopfzeile: der Kriterien-Lauf schreibt fuer jedes
+                # beurteilte Foto eine LOKALE Kopfzeile, und die ist kein Cloud-Ergebnis.
                 select(func.count())
-                .select_from(PhotoCategoryClassification)
-                .where(PhotoCategoryClassification.photo_id.in_(_photos_of_project(project_id)))
+                .select_from(PhotoMotifAssessment)
+                .where(
+                    PhotoMotifAssessment.photo_id.in_(_photos_of_project(project_id)),
+                    PhotoMotifAssessment.source == MotifAssessmentSource.CLOUD,
+                )
+                .scalar_subquery(),
+                select(func.count())
+                .select_from(PhotoMotifAssessment)
+                .where(PhotoMotifAssessment.photo_id.in_(_photos_of_project(project_id)))
+                .scalar_subquery(),
+                select(func.count())
+                .select_from(PhotoMotifAssessment)
+                .where(
+                    PhotoMotifAssessment.photo_id.in_(_photos_of_project(project_id)),
+                    PhotoMotifAssessment.excluded_document.is_(True),
+                )
+                .scalar_subquery(),
+                select(func.count())
+                .select_from(PhotoMotifCorrection)
+                .where(PhotoMotifCorrection.photo_id.in_(_photos_of_project(project_id)))
                 .scalar_subquery(),
                 select(ScanRun.files_skipped)
                 .where(ScanRun.project_id == project_id)
@@ -625,7 +616,7 @@ async def get_project_stats(
     ).one()
 
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
-    ranking_counts = await _ranking_counts_by_category(session, latest_run_id)
+    ranked_photo_count = await _ranked_photo_count(session, latest_run_id)
 
     cache_entries = (
         await session.execute(select(Photo.id, Photo.etag).where(Photo.project_id == project_id))
@@ -650,20 +641,20 @@ async def get_project_stats(
         ),
         taken_at_earliest=taken_at_earliest,
         taken_at_latest=taken_at_latest,
-        categories=_categories_out(ranking_counts, photo_count),
-        category_confidence=_category_confidence_out(
-            await _category_confidence_stats(session, project_id)
+        motifs=_motifs_out(await _motif_band_stats(session, project_id)),
+        strength_bands=StrengthBandsOut(
+            strong=MOTIF_STRENGTH_BAND_STRONG, medium=MOTIF_STRENGTH_BAND_MEDIUM
         ),
-        manual_category_override_count=manual_category_override_count,
+        unassessed_photo_count=photo_count - assessment_count,
+        excluded_photo_count=excluded_photo_count,
+        motif_correction_count=motif_correction_count,
         cost=await _cost_out(session, project_id, landmark_results, remote_classified),
         progress=ProgressOut(
             scanned=photo_count,
             thumbnails_ready=cache_usage.complete_photo_count,
             ausschuss_scored=ausschuss_scored,
-            # `ranked` zaehlt ALLE Rangfolge-Zeilen des letzten erfolgreichen Laufs, auch die mit
-            # einem Kategorieschluessel ausserhalb des festen Sets: das Foto IST eingeordnet
-            # worden. `classified_photo_count` zaehlt bewusst enger (siehe _categories_out).
-            ranked=sum(ranking_counts.values()),
+            # `ranked` zaehlt die Rangzeilen des letzten erfolgreichen Laufs - eine je Foto.
+            ranked=ranked_photo_count,
             remote_classified=remote_classified,
         ),
         ratings=await _ratings_out(session, project_id, current_user.id, photo_count),
