@@ -179,6 +179,10 @@ def _quotas(events: Sequence[SelectionEvent], target: int) -> dict[int, int]:
             allocation[event_id] += give
             placed += give
         if placed == 0:
+            # Unerreichbar: das Groesste-Reste-Verfahren vergibt alle `remaining` Plaetze auf die
+            # offenen Events, und ein offenes Event nimmt mindestens einen an. Die Bremse steht
+            # trotzdem hier, weil die Alternative eine Endlosschleife in einem synchronen Endpunkt
+            # waere.
             break
         remaining -= placed
 
@@ -210,6 +214,8 @@ def _assign_event(candidates: Sequence[SelectionCandidate], seats: int) -> dict[
 
     for place in range(1, seats + 1):
         if not remaining:
+            # Unerreichbar: `seats` ist durch die Obergrenze auf `n_i` begrenzt, es gibt also nie
+            # mehr Plaetze als Kandidaten.
             break
         unrepresented = present - represented
 
