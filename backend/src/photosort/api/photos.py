@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
+from photosort.album_selection import selection_state
 from photosort.api.deps import get_current_user, get_session
 from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
@@ -31,6 +32,7 @@ from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Event,
+    FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
     PhotoCloudVisionError,
@@ -389,6 +391,26 @@ class PhotoOut(BaseModel):
     motifs: list[MotifStrengthOut]
     # `null` heisst "noch nicht bewertet" - kein Meter-Glyph, keine Stufe, kein Platzhalter.
     album_suitability: AlbumSuitabilityOut | None = None
+    # DIE DREI FELDER DER ENDAUSWAHL (ADR 0099 Punkt 4), auf ALLEN Lesepfaden befuellt - Muster
+    # `RankingOut.proposed`: ein je Query-Modus verschiedenes `PhotoOut` waere die zweite,
+    # driftende Abbildung. Alle drei sind PROJEKTAUSSAGEN und tragen kein nutzerbezogenes Datum.
+    #
+    # Die persistierte gemeinsame Entscheidung, `null` = keine. AUSDRUECKLICH NICHT
+    # `album_decision` benannt: so heisst bereits `ratings[].status`, die Entscheidung eines
+    # NUTZERS - und die beiden zu verwechseln ist genau der Fehler, den diese Story ausschliesst.
+    #
+    # ALLE DREI OHNE VORGABEWERT, anders als `location`/`event`/`ranking` darueber (Auflage S9):
+    # Ein `= False` waere die stille Ausfallrichtung "nicht im Album" - plausibel, ohne Ausnahme
+    # und ohne Fehlercode, und der Fehler zeigte sich erst an einem leeren Album statt an der
+    # Stelle, an der er entsteht. Zusammen mit den pflichtigen `_to_photo_out`-Parametern
+    # scheitert ein vergessener Aufrufer damit VOR der Laufzeit.
+    final_selection_decision: bool | None
+    # Gehoert das Foto zur Endauswahl? `album_selection.py::selection_state(...).included`. Das
+    # Frontend leitet die Zugehoerigkeit NIE selbst her; sie kommt vom Server.
+    in_final_selection: bool
+    # Sind sich die Nutzer uneins und ist noch nicht gemeinsam entschieden?
+    # `album_selection.py::selection_state(...).contested`.
+    contested: bool
 
 
 class PhotoListOut(BaseModel):
@@ -847,6 +869,39 @@ def _motifs_out(
     return entries
 
 
+async def _final_selection_decisions(
+    session: AsyncSession, photo_ids: list[int]
+) -> dict[int, bool]:
+    """Die gemeinsame Entscheidung je Foto - EINE Abfrage je Anfrage, nie eine je Foto (Muster
+    `_ranking_by_photo_id`).
+
+    Ein fehlender Eintrag heisst "unentschieden"; es gibt keinen dritten Zustand."""
+    if not photo_ids:
+        return {}
+    result = await session.execute(
+        select(FinalSelectionDecision.photo_id, FinalSelectionDecision.included).where(
+            FinalSelectionDecision.photo_id.in_(photo_ids)
+        )
+    )
+    return {photo_id: included for photo_id, included in result.all()}
+
+
+async def _user_count(session: AsyncSession) -> int:
+    """Der NENNER der Einigkeitsregel: die Zahl der Konten im Bestand.
+
+    Eine einzelne Zahl statt der Nutzerliste, weil die drei Bestands-Lesepfade (Listing, Entwurf,
+    Alternativen) von der Nutzermenge nichts anderes brauchen. Der neue Endpunkt zaehlt bewusst
+    NICHT hierueber: Er liefert `participants` mit aus, und sein Nenner stammt aus DERSELBEN
+    Leseoperation (Auflage S8) - gingen beide auseinander, behauptete die Ansicht Einigkeit ueber
+    zwei Teilnehmer, waehrend die Regel ueber drei rechnet, und kein Feld der Antwort saehe dabei
+    widerspruechlich aus.
+
+    RESTRISIKO, bewusst getragen und in der Spec benannt: Der Nenner ist die GLOBALE Nutzerzahl.
+    Ein drittes, administrativ angelegtes Konto aendert die Endauswahl jedes Projekts, ohne dass
+    ein Schreibzugriff stattfindet."""
+    return (await session.execute(select(func.count()).select_from(User))).scalar_one()
+
+
 def _to_photo_out(
     photo: Photo,
     current_user_id: int,
@@ -856,13 +911,16 @@ def _to_photo_out(
     curation_positions: Mapping[int, int] | None = None,
     place: PhotoPlace = NO_PLACE,
     motifs: Mapping[str, EffectiveStrength] | None = None,
+    *,
+    decisions: Mapping[int, bool],
+    user_count: int,
 ) -> PhotoOut:
     """Baut die Antwortdarstellung EINES Fotos.
 
     SICHERHEIT - die Antwort ist eine Funktion des ANFRAGENDEN Nutzers:
 
-    Bekommen `GET /projects/{id}/photos` (in BEIDEN Modi) oder
-    `GET /projects/{id}/draft-alternatives` je eine Antwort-Zwischenspeicherung, ein `ETag` oder
+    Bekommen `GET /projects/{id}/photos` (in BEIDEN Modi), `GET /projects/{id}/draft-alternatives`
+    oder `GET /projects/{id}/album-selection` je eine Antwort-Zwischenspeicherung, ein `ETag` oder
     ein `Cache-Control` ueber `no-store` hinaus, MUSS der Schluessel den Nutzer enthalten. Dafuer
     gibt es seit ADR 0098 ZWEI UNABHAENGIGE URSACHEN; der Wegfall der einen hebt die Auflage nicht
     auf:
@@ -884,8 +942,22 @@ def _to_photo_out(
     Bewertungen und ist fuer beide Anfragenden identisch - sichtbare Fremdbewertung ist gewollt.
     `RankingOut.proposed` ebenso wenig: es ist lauf-global.
 
+    Auf `GET /projects/{id}/album-selection` trifft von den beiden Ursachen nur die erste zu: Die
+    MENGE ist dort nutzerunabhaengig, `PhotoOut.suggestion` bleibt es nicht. EINE Ursache genuegt;
+    die Abwesenheit der anderen ist keine Erlaubnis (Auflage S7).
+
     `curation_position` traegt keinen Ablehnungsfilter; sie numeriert die gelieferte Reihenfolge
-    und haengt damit an der Menge, nicht an einer Bewertung."""
+    und haengt damit an der Menge, nicht an einer Bewertung.
+
+    `decisions` und `user_count` sind PFLICHTIGE Schluesselwortparameter ohne Vorgabewert (Auflage
+    S9). Ein vergessener Aufrufer wirft keine Ausnahme und liefert keinen Fehlercode - er
+    antwortete `in_final_selection: false` fuer jedes Foto, plausibel und still. Das ist die
+    Menge, die als Album gilt und die der Export nimmt; der Fehler zeigte sich erst an einem
+    leeren Album, nicht an der Stelle, an der er entsteht. `mypy --strict` ist die einzige
+    Pruefung, die ihn vor der Laufzeit faengt.
+
+    Die drei Felder sind PROJEKTAUSSAGEN und tragen die Cache-Auflage ausdruecklich NICHT - genau
+    wie `ratings[]` und `RankingOut.proposed`."""
     # Anzeigeregel: ein Vorschlag ist nur sichtbar, wenn (a) PhotoScore.suggested_status gesetzt
     # ist UND (b) der anfragende Nutzer noch KEINE eigene ALBUMENTSCHEIDUNG fuer dieses Foto hat -
     # unabhaengig davon, ob eine ANDERE Person das Foto schon bewertet hat; die eigene Bewertung
@@ -904,6 +976,18 @@ def _to_photo_out(
         and not has_own_album_decision
     )
     suggestion = _to_suggestion_out(photo.score) if has_suggestion and photo.score else None
+    # DIE REGEL LEBT IN `album_selection.py` UND NUR DORT. Hier steht ausschliesslich die
+    # Beschaffung ihrer Eingaenge - und die beiden Zaehlungen laufen ueber `Rating.status`, nie
+    # ueber das Vorhandensein der Zeile: seit ADR 0098 kann eine Zeile allein den Favoriten
+    # tragen, und ein Existenztest machte aus einer Auszeichnung eine Streichung.
+    decision = decisions.get(photo.id)
+    state = selection_state(
+        taken=sum(1 for r in photo.ratings if r.status is RatingStatus.ALBUM_WORTHY),
+        rejected=sum(1 for r in photo.ratings if r.status is RatingStatus.REJECTED),
+        user_count=user_count,
+        proposed=ranking is not None and ranking.selection_position is not None,
+        decision=decision,
+    )
     return PhotoOut(
         id=photo.id,
         relative_path=photo.relative_path,
@@ -958,6 +1042,9 @@ def _to_photo_out(
         motif_assessment=_motif_assessment_out(photo),
         motifs=_motifs_out(photo, motifs),
         album_suitability=_album_suitability_out(photo),
+        final_selection_decision=decision,
+        in_final_selection=state.included,
+        contested=state.contested,
     )
 
 
@@ -978,26 +1065,106 @@ async def _latest_successful_criterion_scoring_run_id(
 
 
 @dataclass(frozen=True)
-class DraftContent:
-    """Das Ergebnis von `_draft_photo_ids` - vier zusammengehoerige Teile EINER Herleitung.
+class PlacedPhotos:
+    """Eine Fotomenge, in die Events eines Laufs EINGEORDNET und darin numeriert - drei
+    zusammengehoerige Teile EINER Herleitung.
 
-    `event_id_by_photo_id` steht hier und nicht beim Aufrufer: Fuer ein aufgenommenes Foto ohne
-    Rangzeile ist die Zuordnung ueber die Aufnahmezeit entstanden, und sie ist zugleich der
-    Sortierschluessel gewesen. Zweimal hergeleitet liefe sie an dem Tag auseinander, an dem eine
-    der beiden Stellen sich aendert."""
+    Nicht mehr `DraftContent`: Die Einordnung traegt seit Spec 0431 ZWEI Zweige, den Album-Entwurf
+    eines Nutzers und die gemeinsame Endauswahl des Projekts. Ein Name, der nur den einen nennt,
+    laedt dazu ein, sie fuer den anderen ein zweites Mal zu schreiben.
+
+    `event_id_by_photo_id` steht hier und nicht beim Aufrufer: Fuer ein Foto ohne Rangzeile ist die
+    Zuordnung ueber die Aufnahmezeit entstanden, und sie ist zugleich der Sortierschluessel
+    gewesen. Zweimal hergeleitet liefe sie an dem Tag auseinander, an dem eine der beiden Stellen
+    sich aendert.
+
+    Die Lauf-Id gehoert AUSDRUECKLICH NICHT hierher: Jeder der beiden Zweige loest sie selbst auf,
+    und sie ist keine Eigenschaft der Einordnung."""
 
     ordered_ids: list[int]
     curation_positions: dict[int, int]
-    criterion_scoring_run_id: int | None
     event_id_by_photo_id: dict[int, int]
 
 
-EMPTY_DRAFT = DraftContent(
-    ordered_ids=[], curation_positions={}, criterion_scoring_run_id=None, event_id_by_photo_id={}
-)
+EMPTY_PLACEMENT = PlacedPhotos(ordered_ids=[], curation_positions={}, event_id_by_photo_id={})
 
 
-async def _draft_photo_ids(session: AsyncSession, project_id: int, user_id: int) -> DraftContent:
+def _place_in_events(
+    rows: Sequence[tuple[int, datetime, int | None]],
+    spans: Sequence[EventSpan],
+    position_by_event_id: Mapping[int, int],
+) -> PlacedPhotos:
+    """Die EINE Einordnung einer Fotomenge in die Events eines Laufs - von BEIDEN Zweigen
+    aufgerufen (Entwurf und Endauswahl), nie zweimal geschrieben.
+
+    Zweimal geschrieben ordneten Entwurf und Endauswahl dieselben Fotos verschieden - sichtbar,
+    ohne dass eine Pruefung rot wuerde.
+
+    DIE RANGZEILE HAT VORRANG. Ordnet der Lauf ein aufgenommenes Foto einem anderen Event zu, steht
+    es dort - nicht dort, wohin seine Zeit zeigte. Ein Foto, dessen Zeit in keine Eventspanne
+    faellt und das keine Rangzeile hat, faellt HERAUS: die Ausfallrichtung ist "nicht zeigen", nie
+    eine erfundene Gruppe.
+
+    REIHENFOLGE `(events.position, photos.taken_at, photos.id)` - innerhalb eines Events also
+    CHRONOLOGISCH nach der korrigierten Aufnahmezeit, ausdruecklich nicht nach
+    `selection_position`. Der Schluessel ist damit TOTAL und fuer vorgeschlagene wie aufgenommene
+    Fotos derselbe.
+
+    `curation_positions` ist der Platz in der ANGEZEIGTEN Auswahl des Events - lueckenlos ab 1
+    ueber die gelieferte Reihenfolge vergeben, nicht die `selection_position`: ein aufgenommenes
+    Foto hat keine, und eine Luecke waere eine Aussage ueber einen Platz, den es nicht gibt.
+
+    Die Komplexitaetsklasse ist verbindlich (Auflage S14): ein Durchgang ueber die Zeilen, nie eine
+    Abfrage je Foto. Die Eventliste kommt FERTIG herein."""
+    placed: list[tuple[int, int, datetime, int]] = []
+    event_id_by_photo_id: dict[int, int] = {}
+    for photo_id, taken_at, ranked_event_id in rows:
+        event_id = (
+            ranked_event_id if ranked_event_id is not None else event_for_time(spans, taken_at)
+        )
+        if event_id is None or event_id not in position_by_event_id:
+            continue
+        event_id_by_photo_id[photo_id] = event_id
+        placed.append((position_by_event_id[event_id], photo_id, taken_at, event_id))
+
+    placed.sort(key=lambda entry: (entry[0], entry[2], entry[1]))
+
+    ordered_ids: list[int] = []
+    curation_positions: dict[int, int] = {}
+    seen_per_event: dict[int, int] = {}
+    for _, photo_id, _, event_id in placed:
+        seen_per_event[event_id] = seen_per_event.get(event_id, 0) + 1
+        curation_positions[photo_id] = seen_per_event[event_id]
+        ordered_ids.append(photo_id)
+    return PlacedPhotos(
+        ordered_ids=ordered_ids,
+        curation_positions=curation_positions,
+        event_id_by_photo_id=event_id_by_photo_id,
+    )
+
+
+async def _event_spans_and_positions(
+    session: AsyncSession, criterion_scoring_run_id: int
+) -> tuple[list[EventSpan], dict[int, int]]:
+    """Die Events eines Laufs - EINMAL geladen, als Spannenliste und als Positionsabbildung. Die
+    Eingabe von `_place_in_events`, ebenfalls von beiden Zweigen geteilt."""
+    event_rows = (
+        await session.execute(
+            select(Event.id, Event.position, Event.started_at, Event.ended_at).where(
+                Event.criterion_scoring_run_id == criterion_scoring_run_id
+            )
+        )
+    ).all()
+    spans = [
+        EventSpan(event_id=event_id, started_at=started_at, ended_at=ended_at)
+        for event_id, _, started_at, ended_at in event_rows
+    ]
+    return spans, {event_id: position for event_id, position, _, _ in event_rows}
+
+
+async def _draft_photo_ids(
+    session: AsyncSession, project_id: int, user_id: int
+) -> tuple[PlacedPhotos, int | None]:
     """Der Album-Entwurf DIESES Nutzers (ADR 0098):
     `Vorschlag(letzter erfolgreicher Lauf) ∪ Aufgenommen(u)`.
 
@@ -1030,24 +1197,16 @@ async def _draft_photo_ids(session: AsyncSession, project_id: int, user_id: int)
     AUFLAGE S14 - die Komplexitaetsklasse ist verbindlich, nicht die Eingabegrenze: Die Menge
     waechst mit den eigenen Aufnahmen, bis hin zu jedem Foto des Projekts. Die Eventliste wird
     deshalb EINMAL geladen und die Zuordnung laeuft in einem Durchgang darueber, nie als Abfrage
-    je Foto."""
+    je Foto.
+
+    Rueckgabe: die Einordnung UND die Lauf-Id - jene gehoert nicht in `PlacedPhotos`, weil sie
+    keine Eigenschaft der Einordnung ist und der zweite Zweig sie selbst aufloest."""
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
-        return EMPTY_DRAFT
+        return EMPTY_PLACEMENT, None
 
     # (1) Die Events des Laufs - EINMAL, als Spannenliste und als Positionsabbildung.
-    event_rows = (
-        await session.execute(
-            select(Event.id, Event.position, Event.started_at, Event.ended_at).where(
-                Event.criterion_scoring_run_id == latest_run_id
-            )
-        )
-    ).all()
-    spans = [
-        EventSpan(event_id=event_id, started_at=started_at, ended_at=ended_at)
-        for event_id, _, started_at, ended_at in event_rows
-    ]
-    position_by_event_id = {event_id: position for event_id, position, _, _ in event_rows}
+    spans, position_by_event_id = await _event_spans_and_positions(session, latest_run_id)
 
     # (2) Die Vereinigung selbst. Der `outerjoin` auf die Rangzeile traegt beides: das Praedikat
     # des Vorschlags UND die Event-Zuordnung der vorgeschlagenen Fotos.
@@ -1077,38 +1236,11 @@ async def _draft_photo_ids(session: AsyncSession, project_id: int, user_id: int)
         )
     ).all()
 
-    # (3) Die Event-Zuordnung: die RANGZEILE HAT VORRANG. Ordnet der Lauf ein aufgenommenes Foto
-    # einem anderen Event zu, steht es dort - nicht dort, wohin seine Zeit zeigte.
-    placed: list[tuple[int, int, datetime, int]] = []
-    event_id_by_photo_id: dict[int, int] = {}
-    for photo_id, taken_at, ranked_event_id in rows:
-        event_id = (
-            ranked_event_id if ranked_event_id is not None else event_for_time(spans, taken_at)
-        )
-        if event_id is None or event_id not in position_by_event_id:
-            continue
-        event_id_by_photo_id[photo_id] = event_id
-        placed.append((position_by_event_id[event_id], photo_id, taken_at, event_id))
-
-    placed.sort(key=lambda entry: (entry[0], entry[2], entry[1]))
-
-    # (4) `curation_position` ist der Platz in der ANGEZEIGTEN Auswahl des Events - lueckenlos ab
-    # 1 ueber die gelieferte Reihenfolge vergeben, nicht die `selection_position`: ein
-    # aufgenommenes Foto hat keine, und eine Luecke waere eine Aussage ueber einen Platz, den es
-    # nicht gibt.
-    ordered_ids: list[int] = []
-    curation_positions: dict[int, int] = {}
-    seen_per_event: dict[int, int] = {}
-    for _, photo_id, _, event_id in placed:
-        seen_per_event[event_id] = seen_per_event.get(event_id, 0) + 1
-        curation_positions[photo_id] = seen_per_event[event_id]
-        ordered_ids.append(photo_id)
-    return DraftContent(
-        ordered_ids=ordered_ids,
-        curation_positions=curation_positions,
-        criterion_scoring_run_id=latest_run_id,
-        event_id_by_photo_id=event_id_by_photo_id,
-    )
+    # (3) Einordnung und Numerierung - dieselbe Funktion, die auch die Endauswahl benutzt. Die
+    # Zeilen werden dabei ausgepackt: ein `Row` ist fuer den Typpruefer kein `tuple`, und die reine
+    # Funktion soll ausdruecklich keine SQLAlchemy-Form in ihrer Signatur tragen.
+    placement_rows = [(photo_id, taken_at, event_id) for photo_id, taken_at, event_id in rows]
+    return _place_in_events(placement_rows, spans, position_by_event_id), latest_run_id
 
 
 async def _partition_sizes(session: AsyncSession, criterion_scoring_run_id: int) -> dict[int, int]:
@@ -1206,9 +1338,10 @@ async def list_photos(
     project = await _get_project_or_404(project_id, session)
 
     if draft:
-        content = await _draft_photo_ids(session, project_id, current_user.id)
+        content, criterion_scoring_run_id = await _draft_photo_ids(
+            session, project_id, current_user.id
+        )
         ids = content.ordered_ids
-        criterion_scoring_run_id = content.criterion_scoring_run_id
         photos_by_id = await _photos_by_id(session, ids)
         rankings_by_id = (
             await _ranking_by_photo_id(session, criterion_scoring_run_id, ids)
@@ -1231,6 +1364,8 @@ async def list_photos(
             content.event_id_by_photo_id,
         )
         motifs_by_id = await load_effective_strengths(session, ids)
+        decisions = await _final_selection_decisions(session, ids)
+        user_count = await _user_count(session)
         items = [
             _to_photo_out(
                 photos_by_id[photo_id],
@@ -1241,6 +1376,8 @@ async def list_photos(
                 content.curation_positions,
                 place_by_id.get(photo_id, NO_PLACE),
                 motifs_by_id.get(photo_id),
+                decisions=decisions,
+                user_count=user_count,
             )
             for photo_id in ids
         ]
@@ -1264,6 +1401,8 @@ async def list_photos(
         session, project_id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
     )
     motifs_by_id = await load_effective_strengths(session, ids)
+    decisions = await _final_selection_decisions(session, ids)
+    user_count = await _user_count(session)
     items = [
         _to_photo_out(
             photos_by_id[photo_id],
@@ -1276,6 +1415,8 @@ async def list_photos(
             None,
             place_by_id.get(photo_id, NO_PLACE),
             motifs_by_id.get(photo_id),
+            decisions=decisions,
+            user_count=user_count,
         )
         for photo_id in ids
     ]
@@ -1446,6 +1587,8 @@ async def draft_alternatives(
     place_by_id = await _event_and_location_by_photo_id(
         session, project_id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
     )
+    decisions = await _final_selection_decisions(session, ids)
+    user_count = await _user_count(session)
     items = [
         _to_photo_out(
             photos_by_id[alternative_id],
@@ -1459,6 +1602,8 @@ async def draft_alternatives(
             None,
             place_by_id.get(alternative_id, NO_PLACE),
             strengths_by_id.get(alternative_id),
+            decisions=decisions,
+            user_count=user_count,
         )
         # Eigener Name, nicht `photo_id`: der Query-Parameter gleichen Namens ist das BEZUGSBILD
         # und wird oben gebraucht; eine Ueberdeckung hier waere an keiner Stelle sichtbar.

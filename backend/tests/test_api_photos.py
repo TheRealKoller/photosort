@@ -14,6 +14,7 @@ from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Event,
+    FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
@@ -4769,3 +4770,273 @@ class TestTheMotifStrengthsAreLoadedInOneQuery:
         assert response.status_code == 200
         strength_selects = [s for s in statements if "photo_motif_strengths" in s.lower()]
         assert len(strength_selects) == 1, strength_selects
+
+
+# specs/features/0431-endauswahl-gemeinsam.md: die drei additiven `PhotoOut`-Felder der
+# Endauswahl und der neue Leseendpunkt.
+#
+# DIE FIXTURE-FALLE DIESER STORY: `conftest.py::authenticated_api_client` seedet genau EINEN
+# Nutzer. Bei einem Nutzer ist jedes vorgeschlagene, unangefasste Foto in der Endauswahl und
+# NICHTS ist strittig. Jeder Fall, dessen Aussage "alle einig" oder "strittig" lautet, legt den
+# zweiten Nutzer deshalb AUSDRUECKLICH ueber `_make_second_user` an - sonst ist er inhaltsleer und
+# trotzdem gruen.
+
+
+async def _rate(
+    session: AsyncSession,
+    photo: Photo,
+    user: User,
+    status: RatingStatus | None,
+    *,
+    favorite: bool = False,
+) -> None:
+    """Die Albumentscheidung EINES Nutzers. `status=None` mit `favorite=True` ist die reine
+    Favoritenzeile - eine Zeile OHNE Aussage ueber die Albumzugehoerigkeit (Zusicherung 5)."""
+    existing = (
+        await session.execute(
+            select(Rating).where(Rating.photo_id == photo.id, Rating.user_id == user.id)
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        session.add(Rating(photo_id=photo.id, user_id=user.id, status=status, favorite=favorite))
+    else:
+        existing.status = status
+        existing.favorite = favorite
+    await session.commit()
+
+
+async def _decide(session: AsyncSession, photo: Photo, included: bool) -> None:
+    """Die gemeinsame Entscheidung des Projekts - ohne jeden Nutzerbezug."""
+    existing = await session.get(FinalSelectionDecision, photo.id)
+    if existing is None:
+        session.add(FinalSelectionDecision(photo_id=photo.id, included=included))
+    else:
+        existing.included = included
+    await session.commit()
+
+
+def assert_selection_invariants(item: dict[str, Any]) -> None:
+    """Zusicherung 3, als NACHSATZ JEDES Falls und nicht nur dort, wo jemand daran gedacht hat.
+
+    Drei Aussagen: nie `contested` und `in_final_selection` zugleich; `contested` impliziert, dass
+    keine Entscheidung vorliegt; liegt eine vor, ist sie die Zugehoerigkeit. Der Bruch zeigt sich
+    typischerweise in einem ANDEREN Aufbau als dem, der ihn verursacht hat."""
+    decision = item["final_selection_decision"]
+
+    assert not (item["contested"] and item["in_final_selection"]), item["id"]
+    if item["contested"]:
+        assert decision is None, item["id"]
+    if decision is not None:
+        assert item["in_final_selection"] is decision, item["id"]
+
+
+def assert_invariants_everywhere(items: list[dict[str, Any]]) -> None:
+    for item in items:
+        assert_selection_invariants(item)
+
+
+async def _listing(client: httpx.AsyncClient, project: Project) -> list[dict[str, Any]]:
+    response = await client.get(f"/projects/{project.id}/photos")
+    assert response.status_code == 200
+    items: list[dict[str, Any]] = response.json()["items"]
+    assert_invariants_everywhere(items)
+    return items
+
+
+async def _draft(client: httpx.AsyncClient, project: Project) -> list[dict[str, Any]]:
+    response = await client.get(f"/projects/{project.id}/photos", params={"draft": "true"})
+    assert response.status_code == 200
+    items: list[dict[str, Any]] = response.json()["items"]
+    assert_invariants_everywhere(items)
+    return items
+
+
+def _selection_fields(item: dict[str, Any]) -> tuple[bool | None, bool, bool]:
+    return (item["final_selection_decision"], item["in_final_selection"], item["contested"])
+
+
+def _by_id(items: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    return {item["id"]: item for item in items}
+
+
+class TestTheThreeFinalSelectionFieldsOnTheListing:
+    """Die Regel aus ADR 0099, beobachtet am Standard-Listing. Sie lebt in genau einer reinen
+    Funktion; hier wird geprueft, dass der Lesepfad sie mit den RICHTIGEN Eingaengen fuettert."""
+
+    async def test_an_untouched_proposed_photo_is_in_the_final_selection_for_both_users(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ "Bilder, die in beiden Entwuerfen stehen, sind OHNE ZUTUN Teil der Endauswahl." Der
+        zweite Nutzer ist ausdruecklich angelegt - ohne ihn saesse die Aussage im Leeren."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        await _make_second_user(db_session)
+
+        items = await _listing(authenticated_api_client, project)
+
+        assert _selection_fields(items[0]) == (None, True, False)
+
+    async def test_a_photo_struck_by_one_of_two_users_is_contested_and_not_in_the_selection(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ "Ein strittiges Bild, ueber das noch nicht gemeinsam entschieden wurde, gehoert NICHT
+        zur Endauswahl." Automatische Zugehoerigkeit gibt es allein bei Einigkeit."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        other = await _make_second_user(db_session)
+        await _rate(db_session, photo, other, RatingStatus.REJECTED)
+
+        items = await _listing(authenticated_api_client, project)
+
+        assert _selection_fields(items[0]) == (None, False, True)
+
+    async def test_a_proposed_photo_taken_by_one_and_untouched_by_the_other_stays_agreed(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 4 am Lesepfad: Bei einem VORGESCHLAGENEN Foto zaehlen die STREICHUNGEN.
+        Eine Umsetzung, die hier `taken` zaehlt, liest "strittig" - und das Foto verschwaende aus
+        der Endauswahl, ohne dass jemand es angefasst haette."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        other = await _make_second_user(db_session)
+        await _rate(db_session, photo, other, RatingStatus.ALBUM_WORTHY)
+
+        items = await _listing(authenticated_api_client, project)
+
+        assert _selection_fields(items[0]) == (None, True, False)
+
+    async def test_an_unproposed_photo_taken_by_only_one_user_is_contested(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die andere Haelfte von Zusicherung 4: Bei einem NICHT vorgeschlagenen Foto zaehlen die
+        AUFNAHMEN. Eine Umsetzung, die hier `user_count - rejected` zaehlt, liest "einig drin"."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(
+            db_session, run, photo, rank_score=0.9, rank_position=1, selection_position=None
+        )
+        other = await _make_second_user(db_session)
+        await _rate(db_session, photo, other, RatingStatus.ALBUM_WORTHY)
+
+        items = await _listing(authenticated_api_client, project)
+
+        assert _selection_fields(items[0]) == (None, False, True)
+
+    async def test_a_pure_favorite_row_of_the_other_user_leaves_a_proposed_photo_agreed(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 5: ZEILENVORHANDENSEIN IST KEINE AUSSAGE. Seit ADR 0098 kann eine Zeile
+        allein den Favoriten tragen; wer ueber die Existenz der Zeile zaehlt statt ueber
+        `Rating.status`, macht aus einer Auszeichnung eine Streichung."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        other = await _make_second_user(db_session)
+        await _rate(db_session, photo, other, None, favorite=True)
+
+        items = await _listing(authenticated_api_client, project)
+
+        assert _selection_fields(items[0]) == (None, True, False)
+
+    async def test_with_a_single_user_every_proposed_photo_is_in_and_nothing_is_contested(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 6: `n` ist der NUTZERBESTAND, und der Beweis dafuer ist `n = 1`. Ein
+        hartkodiertes `== 2` liefert hier flaechendeckend `in_final_selection: false`."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+
+        items = await _listing(authenticated_api_client, project)
+
+        assert _selection_fields(items[0]) == (None, True, False)
+
+    async def test_a_decision_overrides_the_consensus_in_both_directions(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 1: EINIGKEIT IST EINE VORBELEGUNG, KEINE SPERRE. Eine Umsetzung, die den
+        Konsenszweig VOR die Entscheidung stellt, besteht jeden anderen Fall."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        await _make_second_user(db_session)
+
+        await _decide(db_session, photo, False)
+        removed = await _listing(authenticated_api_client, project)
+        await _decide(db_session, photo, True)
+        restored = await _listing(authenticated_api_client, project)
+
+        assert _selection_fields(removed[0]) == (False, False, False)
+        assert _selection_fields(restored[0]) == (True, True, False)
+
+
+class TestTheThreeFieldsStandOnEveryReadPath:
+    async def test_listing_and_draft_report_the_same_three_values(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 11 (Muster `test_present_is_identical_in_the_listing_and_in_the_draft`):
+        Ein je Query-Modus getrennt gesetztes Feld liefe genau hier auseinander - und die eine
+        Ansicht naennte ein Foto als Teil des Albums, das die andere weglaesst."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        other = await _make_second_user(db_session)
+        await _rate(db_session, photo, other, RatingStatus.REJECTED)
+
+        listing = await _listing(authenticated_api_client, project)
+        draft = await _draft(authenticated_api_client, project)
+
+        assert _selection_fields(listing[0]) == _selection_fields(draft[0])
+        assert _selection_fields(draft[0]) == (None, False, True)
+
+    async def test_the_alternatives_endpoint_reports_them_too(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der dritte Lesepfad. Ein hier vergessener Aufrufer wirft keine Ausnahme und liefert
+        keinen Fehlercode - er antwortet `in_final_selection: false` fuer jedes Foto, plausibel
+        und still (Auflage S9)."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event = await _default_event(db_session, run)
+        reference = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        alternative = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2))
+        await _add_ranking(db_session, run, reference, rank_score=0.9, rank_position=1)
+        await _add_ranking(
+            db_session, run, alternative, rank_score=0.5, rank_position=2, selection_position=None
+        )
+        await _decide(db_session, alternative, True)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/draft-alternatives",
+            params={"event_id": event.id, "photo_id": reference.id},
+        )
+
+        assert response.status_code == 200
+        items = response.json()["items"]
+        assert_invariants_everywhere(items)
+        assert _selection_fields(items[0]) == (True, True, False)
+
+    async def test_a_photo_without_any_run_still_carries_the_three_fields(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Ohne erfolgreichen Lauf gibt es keinen Vorschlag - die Felder stehen trotzdem, und ein
+        von niemandem angefasstes Foto ist dann in keinem Entwurf und damit nicht in der
+        Endauswahl."""
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _make_second_user(db_session)
+
+        items = await _listing(authenticated_api_client, project)
+
+        assert _selection_fields(items[0]) == (None, False, False)
