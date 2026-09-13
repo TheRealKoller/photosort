@@ -1719,3 +1719,79 @@ class TestTheDemoStateCarriesTheAlbumSuitability:
         await db_session.commit()
 
         assert (await db_session.execute(select(PhotoAlbumSuitability))).scalars().all() == []
+
+
+class TestTheDemoStateCarriesAnAlbumDraft:
+    """specs/features/0429-auswahl-richtwert-und-mischung.md: der EINZIGE automatisierte Traeger
+    der Aussage "die Demo-Instanz zeigt einen Vorschlag".
+
+    Ein neuer E2E-Spec entsteht fuer diese Story nicht - das Aufnahmekriterium ist nicht erfuellt.
+    Der Bestandssatz ist aber nicht folgenlos: setzt `demo_state.py` den Vorschlag nicht, zeigt
+    `/curate` auf der Demo-Instanz eine leere Liste, und die dortigen Spezifikationen bleiben
+    trotzdem gruen - ihre Vorbedingungen haengen an Ueberschrift und Scrollhoehe, nicht an
+    Kacheln."""
+
+    @staticmethod
+    async def _rankings_of_the_rated_project(session: AsyncSession) -> list[PhotoRanking]:
+        photo_ids = [photo.id for photo in await _photos_of(session, RATED_PROJECT_NAME)]
+        return list(
+            (
+                await session.execute(
+                    select(PhotoRanking).where(PhotoRanking.photo_id.in_(photo_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def test_the_rated_project_carries_a_non_empty_draft(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        rankings = await self._rankings_of_the_rated_project(db_session)
+
+        assert rankings
+        assert [row for row in rankings if row.selection_position is not None]
+
+    async def test_every_event_of_the_rated_project_is_represented(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Abdeckung ist die zugesagte Eigenschaft des Verfahrens - und der Demo-Zustand zeigt
+        sie nur, wenn sie ueber ALLE Events des Laufs gilt."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        rankings = await self._rankings_of_the_rated_project(db_session)
+        events_with_candidates = {row.event_id for row in rankings if row.rank_score is not None}
+        events_in_the_draft = {
+            row.event_id for row in rankings if row.selection_position is not None
+        }
+
+        assert events_with_candidates
+        assert events_in_the_draft == events_with_candidates
+
+    async def test_the_places_of_every_event_are_gapless_from_one(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe - der
+        Vorschlag kommt deshalb ueber dieselbe Worker-Funktion und nicht aus einer zweiten
+        Vergaberegel im Seeder."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        places: dict[int, list[int]] = {}
+        for row in await self._rankings_of_the_rated_project(db_session):
+            if row.selection_position is not None:
+                places.setdefault(row.event_id, []).append(row.selection_position)
+
+        assert places
+        for event_id, event_places in places.items():
+            assert sorted(event_places) == list(range(1, len(event_places) + 1)), event_id
+
+    async def test_no_photo_without_a_quality_score_is_in_the_draft(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        for row in await self._rankings_of_the_rated_project(db_session):
+            if row.selection_position is not None:
+                assert row.rank_score is not None, row.photo_id
