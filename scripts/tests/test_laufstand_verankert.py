@@ -6,6 +6,69 @@ ihn von aussen. Kein Mechanismus dieses Repositoriums konsumiert diesen Block - 
 vergeht in einem Ausgabefenster. Zugesichert wird hier deshalb ausschliesslich **Nachweisbares**:
 dass die Anweisung dasteht, an welcher Stelle sie dasteht, und dass sie nur an einer Stelle steht.
 
+Neun Zusicherungen, je Akzeptanzkriterium der Spec getrennt, damit ein Ausfall benennt, *welche*
+verschwunden ist:
+
+1. **Der Block ist definiert** - eingezaeunt in `developer.md`, genau einmal in dieser Form.
+2. **Drei Zustaende als geschlossene Menge** (Gleichheit, nicht Teilmenge) plus die
+   Kardinalitaetszusage im Block selbst.
+3. **Die drei Ausgabezeitpunkte abschnittsgebunden**, nicht dateiweit: zwei Fundstellen in
+   Schritt 2, mindestens eine in **jedem** `## Folgeauftrag:`-Abschnitt - plus die **Zahl** dieser
+   Abschnitte, sonst entzieht sich ein kuenftiger Abschnitt der Pflicht, indem ihn niemand
+   eintraegt.
+4. **Die Erstausgabe steht vor dem Rot-Schritt** - ueber Zeichenoffsets, nicht ueber eine
+   Formulierung.
+5. **Einmaligkeit der Definition** ueber den Suchraum `.claude/**` + `docs/**` + `specs/**`.
+6. **Keine Ausgabepflicht in einer anderen Agenten-Datei** - der Geltungsbereich ist der
+   Umsetzungslauf.
+7. **Jeder `git`-Aufruf der Auskunft stammt aus einer geschlossenen Menge** von drei lesenden
+   Formen, mit dem gemessenen Pfad als **einem** gequoteten Argument.
+8. **Das `SendMessage`-Verbot** als Anwesenheit plus Ort jedes Vorkommens des Tokens.
+9. **Die vier Saetze fuer den Fall ohne abrufbaren Stand**, die Auswahl ueber die `branch`-Zeile,
+   beide Arbeitsort-Faelle, die Verweigerung fuer fremde Laeufe, und die eine echte
+   Datenabhaengigkeit `ListAgents` -> `TaskOutput`.
+
+**Was hier bewusst NICHT gebaut wird:** ein Pruefer, der aus Prosa herausliest, dass der Lauf den
+Block tatsaechlich ausgibt, und eine Heuristik ueber Sitzungsprotokolle. Beide waeren gruen, ohne
+etwas zu wissen - schaedlicher als kein Test, weil sie die benannte offene Flanke zudeckten. Dass
+der Block zur Laufzeit erscheint und im endlichen Ausgabefenster ankommt, zeigt allein der erste
+reale Umsetzungslauf nach dem Merge (`specs/architecture/0002-testkonzept.md`, Punkt 11 und
+"Bekannte Luecken").
+
+**Zwei Zusicherungen haben konstruktionsbedingt keinen Rot-Schritt.** Die Einmaligkeit (5) und die
+Abwesenheit in den uebrigen Agenten-Dateien (6) sind vom ersten Lauf an gruen, weil es die zweite
+Stelle nie gab. Ein kuenstlich herbeigefuehrtes Rot belegte dort nichts; der Nachweis laeuft
+ueber die Gegenprobe in **beide** Richtungen an synthetischem Text und ueber die Mutation unten.
+
+**Mutationsprobe am echten Bestand, nach Gruen gefuehrt (2026-09-13), jede Mutation danach
+zurueckgenommen.** 17 gesetzt, 17 rot - je die erwartete Zusicherung:
+
+* Anker im Codeblock umbenannt; ein vierter Zustand `[blockiert]` ergaenzt; der
+  Kardinalitaetssatz entfernt - **3 von 3 rot** (1, 2).
+* Der Erstausgabe-Absatz samt Codefence hinter die Rot-Grün-Refactor-Liste verschoben, Zahl der
+  Fundstellen unveraendert - **rot** (4). Genau der Fall, den eine Zaehlung allein nicht faengt.
+* Die Ausgabe-Anweisung aus einem der drei Folgeauftraege entfernt; ein vierter
+  Folgeauftrags-Abschnitt ergaenzt - **2 von 2 rot** (3).
+* `## Laufstand` in `architect.md` einmal als Prosa und einmal als Codeblock ergaenzt - **2 von 2
+  rot**, und **je die richtige** Zusicherung: die Prosa-Fundstelle roetet (6), die eingezaeunte
+  (5). Die Trennung ist der Beleg, dass die Codefence-Behandlung greift statt pauschal zu leeren.
+* `--porcelain` an einer Fundstelle entfernt; `git add -A` in den Befehlsblock gesetzt; die
+  Anfuehrungszeichen um `<Arbeitsort>` entfernt - **3 von 3 rot** (7). Die dritte ist die
+  teuerste: Sie sieht wie Kosmetik aus und gibt die Quoting-Auflage des Sicherheitskonzepts auf.
+* `SendMessage` in Schritt 1 erwaehnt, Verbotsabschnitt unberuehrt - **rot** (8). Eine reine
+  Anwesenheitspruefung des Verbots waere hier **gruen** geblieben.
+* Einen der vier Saetze aus `## Kein abrufbarer Schrittstand` entfernt; `branch refs/heads/`
+  durch die `worktree`-Zeile ersetzt; einen Zustand aus der Antwortvorlage entfernt; `TaskOutput`
+  vor `ListAgents` gezogen; ein Schreibwerkzeug genannt - **5 von 5 rot** (9, 2, 7).
+
+**Und die beiden Nicht-Reaktionen, die genauso zaehlen** (sie duerfen **nicht** rot werden):
+eine dritte Prosa-Erwaehnung von `## Laufstand` in einer Doku-Datei - der Pruefer verbietet eine
+zweite *Definition*, keine Erwaehnung; ein Codefence mit einer Zustandszeile ohne Anker in
+`architect.md` - ein Formatzitat ist keine Ausgabepflicht. Ohne diese Gegenrichtung waere nicht
+belegt, dass die Pruefer ihren Gegenstand treffen statt jede Datei, die das Wort kennt.
+
+Wer ein Muster aendert, wiederholt diese Probe, statt sie zu glauben.
+
 Kein Netzwerk, kein GitHub, kein echtes git ausser `git ls-files`: gelesen werden ausschliesslich
 die von Git verwalteten Dateien dieses Repositoriums.
 """
