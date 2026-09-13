@@ -33,7 +33,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 11
+const EXPECTED_CONTROL_COUNT = 13
 
 async function assertTappable(
   control: Locator,
@@ -134,6 +134,24 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   const appliesButton = motifList.getByRole('button', { name: /^Trifft zu:/ }).first()
   await assertTappable(appliesButton, 'Trifft zu (Motivkorrektur)')
   checked.push('Trifft zu')
+
+  // --- Die beiden Flaechen der Entwurfskachel (specs/features/0430-...) ----------------------
+  // Heisser Pfad nach derselben Begruendung wie die Bewertungsleiste: Beim Durchgehen des Album-
+  // Entwurfs wird hier viele Male hintereinander gedrueckt, und ein Fehlgriff schreibt einen
+  // falschen Datenwert. Die zwei Flaechen liegen unmittelbar NEBENEINANDER - das ist genau die
+  // Fehlerklasse "ueberlappende aufgespannte Trefferflaechen benachbarter Bedienelemente", die
+  // der Treffertest mit abdeckt: er meldete dann das Nachbarelement.
+  await page.goto(`/projects/${projectId}/album`)
+  const albumToggle = page.getByRole('button', { name: /^(Im Album|Gestrichen): / }).first()
+  await expect(albumToggle, 'erste Entwurfskachel').toBeVisible()
+  await assertTappable(albumToggle, 'Albumentscheidung (Entwurfskachel)')
+  checked.push('Albumentscheidung der Entwurfskachel')
+
+  await assertTappable(
+    page.getByRole('button', { name: /^Alternativen: / }).first(),
+    'Alternativen (Entwurfskachel)',
+  )
+  checked.push('Alternativen der Entwurfskachel')
 
   // --- Projekt-Navigationsgruppe in der Kopfzeile (Spec 0298, AK11c) -------------------------
   // Bei 360 px ist ausschliesslich der Menue-Ausloeser sichtbar; er ist ein `size="icon"`-Button

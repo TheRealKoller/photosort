@@ -159,3 +159,63 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     ).toBeLessThanOrEqual(metrics.clientWidth + TOLERANCE)
   }
 })
+
+/**
+ * Der GEOEFFNETE Alternativen-Dialog bei 360 px - ein eigener Testfall, weil er nur ueber eine
+ * Interaktion entsteht und die Routenschleife oben ausschliesslich Seiten im Ruhezustand misst.
+ *
+ * Er ist der engste Fall des Produkts: ein Bildraster mit zwei Spalten, Qualitaetsbeschriftung und
+ * Abzeichen liegt in einem Dialog, der selbst schon Rand und Polsterung traegt. Genau dafuer ist
+ * es ein Dialog und kein Popover geworden - die Zusage gehoert deshalb gemessen, nicht behauptet.
+ */
+test('der geoeffnete Alternativen-Dialog erzeugt kein horizontales Scrollen bei 360 px', async ({
+  page,
+}) => {
+  const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.goto(`/projects/${ratedId}/album`)
+
+  const trigger = page.getByRole('button', { name: /^Alternativen: / }).first()
+  await expect(trigger, 'Zugang zu den Alternativen auf der ersten Entwurfskachel').toBeVisible()
+  await trigger.click()
+
+  const dialog = page.getByRole('dialog')
+  await expect(dialog, 'geoeffneter Alternativen-Dialog').toBeVisible()
+  // Vorbedingung: der Dialog traegt WIRKLICH ein Raster. Ohne sie bestuende der Fall auch dann,
+  // wenn das Event nichts weiter haelt und nur der Leerzustandstext dasteht - also genau dann,
+  // wenn nichts ueberstehen koennte.
+  await expect(
+    dialog.getByRole('button', { name: /^Austauschen gegen: / }).first(),
+    'mindestens eine Alternative im Raster',
+  ).toBeVisible()
+
+  const metrics: PageMetrics = await page.evaluate(() => {
+    const root = document.documentElement
+    const clientWidth = root.clientWidth
+    const open = document.querySelector('dialog[open]')
+    const overflowing = Array.from(document.querySelectorAll('body *'))
+      .filter((element) => element.getBoundingClientRect().right > clientWidth + 1)
+      .slice(0, 5)
+      .map((element) => {
+        const rect = element.getBoundingClientRect()
+        return `<${element.tagName.toLowerCase()}> bis x=${Math.round(rect.right)}: ${(
+          element.textContent ?? ''
+        )
+          .trim()
+          .slice(0, 40)}`
+      })
+    return {
+      scrollWidth: root.scrollWidth,
+      clientWidth,
+      contentHeight: open?.getBoundingClientRect().height ?? 0,
+      overflowing,
+    }
+  })
+
+  expect(metrics.contentHeight, 'Hoehe des Dialogs').toBeGreaterThan(MIN_CONTENT_HEIGHT)
+  expect(
+    metrics.scrollWidth,
+    `Dokumentbreite bei geoeffnetem Alternativen-Dialog (ueberstehende Elemente: ${
+      metrics.overflowing.length === 0 ? 'keine gefunden' : metrics.overflowing.join(' | ')
+    })`,
+  ).toBeLessThanOrEqual(metrics.clientWidth + TOLERANCE)
+})

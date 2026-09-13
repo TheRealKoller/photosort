@@ -378,6 +378,43 @@ Verarbeitungs-Cache (Thumbnails).
     `utils/rankings.ts::curatedRanking` und die Route `/projects/:id/curate` entfallen
     **ersatzlos, ohne Weiterleitung**: Ein stillschweigend umgeleiteter Altlink verdeckte, dass
     sich die Ansicht geändert hat.
+  - **Der Vorrats-Endpunkt wird der Alternativen-Endpunkt** *(dieselbe Spec, ADR 0098 Punkt 5)*:
+    `GET /projects/{id}/curation-candidates` entfällt **ersatzlos** (`404`), an seine Stelle tritt
+    `GET /projects/{id}/draft-alternatives?event_id=N&photo_id=N&limit=…&offset=…`. Er liefert die
+    Fotos **eines** Events des letzten erfolgreichen Laufs abzüglich des Entwurfs des anfragenden
+    Nutzers; ein von ihm **gestrichenes** Foto ist enthalten — genau daraus folgt, dass ein
+    Austausch umkehrbar ist, ohne dass es einen Rückgängig-Knopf oder einen Verlauf gäbe. Ein
+    Foto ohne Rangzeile (im Ausschuss-Schritt aussortiert) erscheint nicht. `total` ist die
+    Restmenge und damit unabhängig von `limit`/`offset`; `curation_position` ist hier `null` — die
+    Alternativen sind keine Auswahl, zu der ein Bild einen Platz hätte.
+    - Die Reihenfolge entsteht in der **reinen** Funktion `selection.py::order_alternatives` mit
+      dem Schlüssel `(0 wenn geteiltes Motiv sonst 1, -quality, photo_id)`: erst die Träger eines
+      Motivs des Bezugsbildes nach Qualität absteigend, dann die übrigen; `quality is None`
+      sortiert **innerhalb seiner Gruppe** ans Ende, und `0.0` ist kein fehlender Wert. Die
+      Motivgruppe ist **binär** (drei geteilte Motive schlagen ein geteiltes nicht) und die
+      Grenze dieselbe wie in der Auswahl (`carried_motifs`/`motif_is_present`). **Zeitliche Nähe
+      ist kein Kriterium** — `AlternativeCandidate` trägt dafür bewusst keine Aufnahmezeit.
+      Sortiert wird deshalb in Python und nicht im `ORDER BY`; `limit`/`offset` schneiden danach
+      die Seite heraus, und nur sie wird hydratisiert.
+    - **Vier Muss-Kriterien:** die Auth-Dependency ist ausgeschrieben (dieser Router hat kein
+      Vollständigkeitsnetz in `test_auth_guard.py` — ein vergessener Parameter ergäbe einen still
+      öffentlichen Endpunkt); `criterion_scoring_run_id` aus dem **Pfadparameter** steht in jeder
+      Abfrage, weil `photo_rankings` keine `project_id` trägt und `event_id` ein **globaler**
+      Surrogatschlüssel ist; `photo_id` wird **ausschließlich** über eine Rangzeile desselben
+      Laufs und desselben Events aufgelöst, nie über `session.get(Photo, …)`, und scheitert das,
+      ist die Antwort `200` mit leerer Liste und `total: 0` — ein `404` wäre ein Existenz-Orakel
+      über fremde Ids, und die Sortierung hängt allein an diesem Bild, also liefe sonst ein
+      fremdes Motivprofil über die beobachtete Reihenfolge ab; alle vier Query-Parameter tragen
+      deklarative Grenzen.
+    - Oberfläche: Der Austausch läuft in `components/DraftAlternativesDialog.tsx` (`ui/dialog`,
+      **kein** Popover — ein Bildraster mit eigenem Blätterweg braucht auf 360px die volle Fläche,
+      und der Vorgang verlangt Fokusfang). Geladen wird **erst beim Öffnen**: eine Abfrage je
+      geöffnetem Bild, nie eine je Kachel. Ein Tippen führt **zwei** Schreibvorgänge aus
+      (streichen, dann aufnehmen), schließt den Dialog und setzt den Fokus auf die nun an dieser
+      Stelle stehende Kachel; die Entwurfsliste wird dabei **nicht** neu geladen
+      (`useDraftExchangeMutation` schreibt sie über `utils/albumDraft.ts::insertDraftPhoto` mit
+      dem Sortierschlüssel des Servers fort). `components/CurationCandidates.tsx`,
+      `useCurationCandidatesQuery` und `listCurationCandidates` entfallen.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
