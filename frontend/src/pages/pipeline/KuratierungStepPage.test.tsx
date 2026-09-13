@@ -255,6 +255,33 @@ describe('KuratierungStepPage', () => {
     expect((screen.getByLabelText(FIELD) as HTMLInputElement).value).toBe('150')
   })
 
+  it('takes the error back once the field holds the stored value again', async () => {
+    /* Ohne diesen Fall bliebe "Richtwert nicht gespeichert" über einem Feld stehen, an dem nichts
+     * mehr zu speichern ist: `commit()` kehrt bei unverändertem Wert früh zurück und ließe den
+     * Fehlerzustand der Mutation sonst unberührt. Die Meldung behauptete dann etwas über eine
+     * Eingabe, die es nicht mehr gibt. */
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.setSelectionTarget).mockRejectedValue(
+      new ApiError(409, 'Fuer dieses Projekt laeuft gerade eine Kriterien-Bewertung.'),
+    )
+    renderPage(project({ selection_target: 150, effective_selection_target: 150 }))
+
+    const input = screen.getByLabelText(FIELD)
+    await user.clear(input)
+    await user.type(input, '200')
+    await user.tab()
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    await user.clear(input)
+    await user.type(input, '150')
+    await user.tab()
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+    expect(projectsApi.setSelectionTarget).toHaveBeenCalledTimes(1)
+  })
+
   it('does not clamp a typed value - the endpoint decides', async () => {
     /* Der Nachfolger des früheren Klemm-Falls: das Frontend kennt die Grenze nicht mehr. Es setzt
      * `min={1}` am Feld, durchgesetzt wird sie allein serverseitig. Ein clientseitiges Klemmen

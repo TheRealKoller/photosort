@@ -8,6 +8,14 @@ import { Input } from '../../components/ui/input'
 import { useSetSelectionTargetMutation } from '../../hooks/useProjects'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 
+/** Wie lange die Bestätigung "Vorschlag neu berechnet" stehen bleibt. */
+export const SAVED_HINT_MS = 4000
+
+/** `null` ("nicht selbst eingestellt") ist das LEERE Feld, nie die vorbelegte Zahl. */
+function fieldValueOf(target: number | null): string {
+  return target === null ? '' : String(target)
+}
+
 /**
  * Kuratierungs-Schritt der Pipeline: die Richtwert-Einstellung und der Weg in die Ansicht.
  *
@@ -23,14 +31,6 @@ import type { PipelineOutletContext } from './ProjectPipelineLayout'
  * DAS FELD KLEMMT NICHT. Es setzt `min={1}` als Hinweis, die Grenze durchsetzen tut allein der
  * Endpunkt - eine clientseitige Obergrenze wäre eine zweite Wahrheit darüber.
  */
-/** Wie lange die Bestätigung "Vorschlag neu berechnet" stehen bleibt. */
-export const SAVED_HINT_MS = 4000
-
-/** `null` ("nicht selbst eingestellt") ist das LEERE Feld, nie die vorbelegte Zahl. */
-function fieldValueOf(target: number | null): string {
-  return target === null ? '' : String(target)
-}
-
 export function KuratierungStepPage() {
   const { project } = useOutletContext<PipelineOutletContext>()
   const hintId = useId()
@@ -69,6 +69,10 @@ export function KuratierungStepPage() {
       return
     }
     if (next === project.selection_target) {
+      // Nichts zu speichern - und deshalb auch nichts mehr zu melden: eine stehengebliebene
+      // Fehlermeldung behauptete sonst etwas über eine Eingabe, die der Nutzer gerade
+      // zurückgenommen hat.
+      save.reset()
       return
     }
     setSaved(false)

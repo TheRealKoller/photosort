@@ -396,15 +396,21 @@ export function CuratePage() {
       {/* Der Hinweis gilt allein dem Fall "Vorschlag KLEINER als der wirksame Richtwert" - dann
           hat der Bildbestand für mehr nicht gereicht, und beide Zahlen liegen bereits vor. Ist
           der Vorschlag GRÖSSER, sagt die Oberfläche nichts: dass jeder Foto-Moment vorkommt, ist
-          die zugesagte Eigenschaft und kein Überraschungsfall. */}
+          die zugesagte Eigenschaft und kein Überraschungsfall.
+
+          KEIN `Alert`, kein `role="alert"`, keine Warnfarbe, kein Symbol - schlichter Absatz in
+          Sekundärtext, wie beim Auffangkorb und bei der fehlenden Einwilligung. Der Richtwert ist
+          ein ZIEL und keine Obergrenze; ein kleinerer Vorschlag ist damit das zugesagte
+          Normalverhalten und kein Warnfall. Eine Warnoptik suggerierte Handlungsdruck, den es
+          nicht gibt - mehr Bilder gibt es schlicht nicht. */}
       {query.isSuccess &&
         projectQuery.isSuccess &&
         cloudConsentGiven &&
         items.length > 0 &&
         items.length < effectiveSelectionTarget && (
-          <Alert variant="warning" title="Weniger Bilder als angestrebt">
+          <p className="text-sm text-text">
             {shortDraftText(items.length, effectiveSelectionTarget)}
-          </Alert>
+          </p>
         )}
 
       {dayKeys.length > 0 && (

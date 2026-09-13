@@ -278,9 +278,14 @@ größer werden.
 - **Die Bedingung `photos.length < topN && remainingCandidateCount <= 0` entfällt ersatzlos.** Sie
   beantwortete die Frage „warum sind es weniger als N?" und setzt einen Leseparameter voraus, den es
   nicht mehr gibt. An ihre Stelle tritt ein Hinweis allein für den Fall, dass der Vorschlag **kleiner
-  als der wirksame Richtwert** ist: eine knappe `Alert`-Meldung (`variant="info"`) über der
-  Fotoliste, die sagt, wie viele Bilder der Vorschlag umfasst und dass der Bildbestand für mehr
-  nicht reicht. Beide Zahlen liegen vor (`photos.length`, `effective_selection_target`).
+  als der wirksame Richtwert** ist: ein knapper Satz über der Fotoliste, der sagt, wie viele Bilder
+  der Vorschlag umfasst und dass der Bildbestand für mehr nicht reicht. Beide Zahlen liegen vor
+  (`photos.length`, `effective_selection_target`).
+  **Keine Fehler- oder Warnoptik:** schlichter Absatz in Sekundärtext, **kein** `Alert`, kein
+  `role="alert"`, keine Warnfarbe, kein Symbol — dasselbe Muster wie bei der Auffangkorb-Gruppe und
+  bei der fehlenden Cloud-Einwilligung. Der Richtwert ist ein Ziel und keine Obergrenze; ein
+  kleinerer Vorschlag ist damit das zugesagte Normalverhalten und kein Warnfall, und eine Warnoptik
+  suggerierte Handlungsdruck, den es nicht gibt — mehr Bilder gibt es schlicht nicht.
 - Ist der Vorschlag **größer** als der Richtwert, sagt die Oberfläche nichts: Die Abdeckung aller
   Foto-Momente ist die zugesagte Eigenschaft, kein Überraschungsfall.
 - Der aufklappbare Kandidatenvorrat je Event bleibt unverändert — er zeigt weiterhin den vollen
@@ -610,8 +615,9 @@ dieser Aussage.
 - **`frontend/src/pages/CuratePage.test.tsx`** — `renderPage()` verliert `?topN=3`; **ein** Fall
   behält die alte URL und sichert zu, dass der Parameter ignoriert wird statt zu stören. Die Fälle
   um `photos.length < topN && remainingCandidateCount <= 0` werden zum Paar „Vorschlag kleiner als
-  der wirksame Richtwert → `Alert variant="info"` mit beiden Zahlen" / „Vorschlag größer → **kein**
-  Hinweis".
+  der wirksame Richtwert → Hinweistext mit beiden Zahlen" / „Vorschlag größer → **kein** Hinweis",
+  dazu ein eigener Fall auf die **Abwesenheit** der Fehler-/Warnoptik (kein `role="alert"`, kein
+  Symbol) — ein Positivtest auf den Text allein bestünde jede Hülle.
 - **`frontend/src/pages/pipeline/KuratierungStepPage.test.tsx`** — die vier Top-N-Fälle werden zu
   Richtwert-Fällen: Link ohne Suchparameter; Speichern bei `onBlur` und bei `Enter`; **kein** Aufruf
   bei unverändertem Wert; Feld leeren sendet `{"target": null}`; Feld während des `PUT` deaktiviert;

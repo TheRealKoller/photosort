@@ -539,10 +539,26 @@ describe('CuratePage', () => {
 
       renderPage()
 
-      const alert = await screen.findByRole('alert')
-      expect(alert).toHaveTextContent('1')
-      expect(alert).toHaveTextContent('10')
-      expect(alert).toHaveTextContent(/reicht der bildbestand nicht/i)
+      const hint = await screen.findByText(/reicht der bildbestand nicht/i)
+      expect(hint).toHaveTextContent('1')
+      expect(hint).toHaveTextContent('10')
+    })
+
+    it('gives the short-draft hint no error optics', async () => {
+      /* Der Richtwert ist ein ZIEL und keine Obergrenze - ein kleinerer Vorschlag ist das
+       * zugesagte Normalverhalten, kein Warnfall. Eine Warnoptik suggerierte Handlungsdruck, den
+       * es nicht gibt. Als eigener Fall, weil der Positivtest darüber jede Hülle bestünde. */
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        projectOut({ selection_target: 10, effective_selection_target: 10 }),
+      )
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([photo({ id: 1 })]))
+
+      renderPage()
+
+      const hint = await screen.findByText(/reicht der bildbestand nicht/i)
+      expect(hint.closest('[role="alert"]')).toBeNull()
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(hint.querySelector('[data-icon]')).toBeNull()
     })
 
     it('says nothing when the draft is larger than the target', async () => {
@@ -562,7 +578,7 @@ describe('CuratePage', () => {
       renderPage()
 
       await screen.findByRole('heading', { level: 2 })
-      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.queryByText(/reicht der bildbestand nicht/i)).toBeNull()
     })
 
     it('says nothing about a short draft while the draft is empty', async () => {
@@ -576,7 +592,7 @@ describe('CuratePage', () => {
       renderPage()
 
       expect(await screen.findByText(CURATION_EMPTY_TEXT)).toBeInTheDocument()
-      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.queryByText(/reicht der bildbestand nicht/i)).toBeNull()
     })
   })
 })

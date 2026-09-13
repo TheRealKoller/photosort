@@ -115,7 +115,12 @@ def assert_selection_invariants(
 
 
 def _draft(events: Sequence[SelectionEvent], target: int) -> dict[int, int]:
-    """Ein Aufruf samt Invariantenpruefung - der Regelweg jedes Falls dieser Datei."""
+    """Ein Aufruf samt Invariantenpruefung - der Regelweg dieser Datei.
+
+    GENAU EINE benannte Ausnahme: `TestTheOverloadBoundary` ruft `select_album_draft` direkt. Die
+    Invariantenpruefung laeuft ueber alle Kandidaten jedes Events und waere bei 2000 Kandidaten
+    selbst der teuerste Teil des Falls - sie machte die Laufzeitaussage unlesbar, die dort die
+    eigentliche Zusage ist."""
     result = select_album_draft(events, target)
     assert_selection_invariants(events, target, result)
     return result
@@ -409,6 +414,40 @@ class TestTheMotifGuidedAssignment:
         result = _draft(events, target=2)
 
         assert result == {1: 1, 3: 2}
+
+    def test_with_fewer_seats_than_motifs_the_value_decides_which_are_represented(self) -> None:
+        """Hat ein Event WENIGER Plaetze als vorkommende Motive, entscheidet der Wert, welche
+        Motive vertreten sind - und zwar OHNE dass irgendwo eine Rangfolge zwischen Motiven
+        entstuende.
+
+        Der Aufbau ist der einzige der Datei, in dem ein vorkommendes Motiv am Ende UNVERTRETEN
+        bleibt: drei Motive, je ein eigener Traeger, klar getrennte Qualitaeten, zwei Plaetze. Die
+        beiden Faelle darueber und darunter enden mit allen bzw. beiden Motiven vertreten und
+        koennten diese Aussage deshalb nicht tragen.
+
+        Qualitaet und `photo_id` laufen dabei GEGENLAEUFIG, und die Eingabereihenfolge folgt
+        keiner von beiden: eine Implementierung, die bei Motivknappheit den zuerst gesehenen oder
+        den kleinstnummerierten Traeger nimmt statt den wertvollsten, faellt hier auf. Die
+        Permutationsinvarianz ueber die Motivschluessel faengt nur eine Rangfolge ueber die
+        SCHLUESSEL, nicht eine ueber die Reihenfolge der Kandidaten."""
+        candidates = [
+            _candidate(2, 0.7, motifs={"b": _FULL}),
+            _candidate(1, 0.5, motifs={"c": _FULL}),
+            _candidate(3, 0.9, motifs={"a": _FULL}),
+        ]
+        events = [_event(1, 1, candidates)]
+
+        result = _draft(events, target=2)
+
+        assert result == {3: 1, 2: 2}
+        represented = {
+            motif_key
+            for candidate in candidates
+            if candidate.photo_id in result
+            for motif_key, strength in candidate.motif_strengths.items()
+            if strength >= MOTIF_PRESENCE_THRESHOLD
+        }
+        assert represented == {"a", "b"}
 
     def test_the_motif_obligation_beats_the_higher_value(self) -> None:
         """Das wertvollste verbliebene Bild traegt ausschliesslich ein bereits vertretenes Motiv
@@ -747,4 +786,6 @@ class TestTheOverloadBoundary:
 
         result = select_album_draft([_event(1, 1, candidates)], target=size)
 
+        # Der eine Fall ohne `_draft`: die Invariantenpruefung ueber 2000 Kandidaten waere selbst
+        # der teuerste Teil und verdeckte die Laufzeitaussage (siehe `_draft`).
         assert len(result) == size
