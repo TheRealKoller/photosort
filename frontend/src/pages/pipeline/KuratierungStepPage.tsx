@@ -117,7 +117,7 @@ export function KuratierungStepPage() {
             />
           </label>
           <Button asChild variant="secondary">
-            <Link to={`/projects/${project.id}/curate`}>Kuratierung öffnen</Link>
+            <Link to={`/projects/${project.id}/album`}>Album-Entwurf öffnen</Link>
           </Button>
         </div>
 

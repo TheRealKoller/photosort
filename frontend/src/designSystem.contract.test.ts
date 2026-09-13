@@ -1652,9 +1652,16 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Kamerazeile: Zeilenhoehe einer zeilenweisen Liste',
     },
     {
-      file: 'src/pages/CuratePage.tsx',
+      file: 'src/pages/AlbumDraftPage.tsx',
       snippet: 'h-auto min-h-11 w-full justify-start',
-      reason: 'Aufklapp-Zeile der Kuratierung: Zeilenhoehe einer zeilenweisen Liste',
+      reason: 'Aufklapp-Zeile des Album-Entwurfs: Zeilenhoehe einer zeilenweisen Liste',
+    },
+    {
+      file: 'src/components/CurationPhotoTile.tsx',
+      snippet: 'className="h-11 sm:h-8"',
+      reason:
+        'heisser Pfad: der Zweizustand der Entwurfskachel wird viele Male hintereinander ' +
+        'gedrueckt, und ein Fehlgriff schreibt hier einen falschen Datenwert',
     },
     {
       file: 'src/pages/ProjectListPage.tsx',

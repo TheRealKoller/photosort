@@ -16,7 +16,7 @@ import { clearToken, getToken } from './auth/token'
 import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
 import { ProjectNav } from './components/ProjectNav'
 import { Button } from './components/ui/button'
-import { CuratePage } from './pages/CuratePage'
+import { AlbumDraftPage } from './pages/AlbumDraftPage'
 import { LoginPage } from './pages/LoginPage'
 import { PhotoComparePage } from './pages/PhotoComparePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
@@ -61,6 +61,10 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   // Querschnittsansicht wie die Einstellungsseite, bewusst ausserhalb der Pipeline-Schritt-Routen
   // (sie ist kein Schritt des Ablaufs).
   { path: PROJECT_ROUTE_PATHS.stats, element: <ProjectStatsPage /> },
+  // Der eine Ort, an dem die Auswahl entsteht und nachgearbeitet wird. Die frühere
+  // Kuratierungsroute ist mit Spec 0430 ERSATZLOS entfallen - ohne Weiterleitung, damit ein alter
+  // Link erkennbar ins Leere läuft statt still eine andere Ansicht zu zeigen.
+  { path: PROJECT_ROUTE_PATHS.album, element: <AlbumDraftPage /> },
 ]
 
 function useProjectIdFromRoute(): string | null {
@@ -162,7 +166,6 @@ function App() {
           <Route path={PROJECT_ROUTE_PATHS.pipelineBase} element={<ProjectPipelineLayout />}>
             <Route path=":step" element={<PipelineStepView />} />
           </Route>
-          <Route path={PROJECT_ROUTE_PATHS.curate} element={<CuratePage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

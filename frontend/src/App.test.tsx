@@ -231,6 +231,31 @@ describe('App', () => {
     expect(screen.getByText('PhotoSort')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Projekteinstellungen' })).toBeInTheDocument()
   })
+
+  it('routes /projects/:id/album to the album draft page within the app shell', async () => {
+    // specs/features/0430: der eine Ort, an dem die Auswahl entsteht und nachgearbeitet wird.
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+
+    renderApp(['/projects/1/album'])
+
+    expect(screen.getByText('PhotoSort')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Album-Entwurf' })).toBeInTheDocument()
+  })
+
+  it('does not resolve the abolished /curate route - and redirects it nowhere', async () => {
+    /* Zusicherung 25: Die bisherige Kuratierungsroute entfaellt ERSATZLOS. Ohne diesen Fall waere
+     * sowohl ein vergessener Wegfall (die alte Seite steht noch) als auch ein eingeschlichener
+     * Redirect auf /album unsichtbar - beides sieht in der Oberflaeche wie "funktioniert" aus,
+     * und ein stillschweigend umgeleiteter Altlink verdeckt, dass sich die Ansicht geaendert
+     * hat. */
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+
+    renderApp(['/projects/1/curate'])
+
+    expect(await screen.findByRole('heading', { name: 'Projekte' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Album-Entwurf' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Kuratierung' })).not.toBeInTheDocument()
+  })
 })
 
 /*
@@ -280,8 +305,9 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     '/projects/1/settings',
     '/projects/1/stats',
     // specs/features/0298 (AK2): zum ersten Mal ueberhaupt Projektkontext in der Kopfzeile -
-    // Umkehrung der ausdruecklichen Gegenfestlegung aus Spec 0033.
-    '/projects/1/curate',
+    // Umkehrung der ausdruecklichen Gegenfestlegung aus Spec 0033. Seit Spec 0430 ist das der
+    // Album-Entwurf an der Stelle der abgeloesten Kuratierungsroute.
+    '/projects/1/album',
   ]
 
   /** Die drei Hauptziele der Leiste (specs/features/0347: "Einstellungen" ist herausgewandert). */
@@ -408,7 +434,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
    *
    * BEWUSST ALS EIGENER POSITIVFALL und nicht bloss aus der frueheren "kein Ziel aktiv"-Tabelle
    * gestrichen: beim blossen Streichen waere die Zusage lautlos verschwunden (Edge Case 2 der
-   * Spec). /curate steht unveraendert als Negativfall daneben.
+   * Spec). /album steht unveraendert als Negativfall daneben.
    */
   it.each(['/projects/1/settings', '/projects/1/stats'])(
     'markiert auf %s den geschlossenen Ausloeser statt eines Leistenziels (AK6)',
@@ -423,8 +449,8 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     },
   )
 
-  it('zeigt die Gruppe auf /projects/1/curate vollstaendig, aber ohne jede Markierung (AK6/AK8b)', async () => {
-    renderApp(['/projects/1/curate'])
+  it('zeigt die Gruppe auf /projects/1/album vollstaendig, aber ohne jede Markierung (AK6/AK8b)', async () => {
+    renderApp(['/projects/1/album'])
 
     await screen.findByRole('navigation', { name: 'Projektbereiche' })
     const links = within(group()).getAllByRole('link')

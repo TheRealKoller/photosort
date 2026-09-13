@@ -1,10 +1,11 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
 
-import type { PhotoOut, RankingOut } from '../api/types'
+import type { PhotoOut, RankingOut, RatingStatus } from '../api/types'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { ALBUM_SUITABILITY_NOT_RATED_TEXT } from '../utils/albumSuitability'
-import { CurationPhotoTile } from './CurationPhotoTile'
+import { CurationPhotoTile, NOT_PROPOSED_BADGE_TEXT } from './CurationPhotoTile'
 
 /**
  * specs/features/0428-albumtauglichkeit-vom-modell.md: die Kachel trägt ab hier die
@@ -53,7 +54,10 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
   }
 }
 
-function renderTile(overrides: Partial<PhotoOut> = {}) {
+function renderTile(
+  overrides: Partial<PhotoOut> = {},
+  tile: { ownStatus?: RatingStatus | null; deciding?: boolean; onDecide?: () => void } = {},
+) {
   return render(
     <CurationPhotoTile
       photo={photo(overrides)}
@@ -61,9 +65,9 @@ function renderTile(overrides: Partial<PhotoOut> = {}) {
       motifSetLoading={false}
       motifSetError={undefined}
       onMotifSetRetry={() => {}}
-      ownStatus={null}
-      rejecting={false}
-      onReject={() => {}}
+      ownStatus={tile.ownStatus ?? null}
+      deciding={tile.deciding ?? false}
+      onDecide={tile.onDecide ?? (() => {})}
     />,
   )
 }
@@ -157,14 +161,97 @@ describe('CurationPhotoTile: die Begründung', () => {
     expect(screen.getByText(payload)).toBeInTheDocument()
   })
 
-  it('adds no second hit area to the tile footer', () => {
-    /* Kein Ausklapp-Bedienelement je Kachel: die Fußzeile behält GENAU EINE Trefferfläche
-     * (Verwerfen). Der Info-Trigger liegt im Kartenkörper, nicht in der Fußzeile. */
+  it('adds no expand control to the tile footer', () => {
+    /* Kein Ausklapp-Bedienelement je Kachel - die Begründung steht vollständig im DOM und wird
+     * rein visuell gekürzt. */
     renderTile({
       album_suitability: { level: 2, reason: 'Eine ziemlich lange Begründung des Modells.' },
     })
 
-    expect(screen.getByRole('button', { name: 'Verwerfen: a.jpg' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Im Album: a.jpg' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /mehr|ausklappen|weiterlesen/i })).toBeNull()
+  })
+})
+
+describe('CurationPhotoTile: der Zweizustand Im Album ⇄ Gestrichen', () => {
+  it('is pressed for a photo of the album and carries the file name in its name', () => {
+    renderTile({}, { ownStatus: null })
+
+    const toggle = screen.getByRole('button', { name: 'Im Album: a.jpg' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('is not pressed for a struck photo and says so', () => {
+    renderTile({}, { ownStatus: 'rejected' })
+
+    const toggle = screen.getByRole('button', { name: 'Gestrichen: a.jpg' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('strikes a photo of the album on the first press', async () => {
+    const onDecide = vi.fn()
+    const user = userEvent.setup()
+    renderTile({}, { ownStatus: 'album_worthy', onDecide })
+
+    await user.click(screen.getByRole('button', { name: 'Im Album: a.jpg' }))
+
+    expect(onDecide).toHaveBeenCalledWith('rejected')
+  })
+
+  it('takes a struck photo back into the album on the next press', async () => {
+    const onDecide = vi.fn()
+    const user = userEvent.setup()
+    renderTile({}, { ownStatus: 'rejected', onDecide })
+
+    await user.click(screen.getByRole('button', { name: 'Gestrichen: a.jpg' }))
+
+    expect(onDecide).toHaveBeenCalledWith('album_worthy')
+  })
+
+  it('stays enabled while its own decision is running and takes no second press', async () => {
+    /* Ohne Bestätigungsschritt und ohne Dialog - aber ein zweiter Druck auf DASSELBE Foto während
+     * der laufenden Mutation liefe in den Unique-Constraint der Bewertungszeile. */
+    const onDecide = vi.fn()
+    const user = userEvent.setup()
+    renderTile({}, { ownStatus: null, deciding: true, onDecide })
+
+    await user.click(screen.getByRole('button', { name: /a\.jpg/ }))
+
+    expect(onDecide).not.toHaveBeenCalled()
+  })
+
+  it('keeps the struck photo in its dimmed display state', () => {
+    /* Ein gestrichenes Foto verschwindet nicht und nichts rückt nach - es behält den bestehenden
+     * Anzeigezustand der `PhotoCard`. */
+    const { container } = renderTile({}, { ownStatus: 'rejected' })
+
+    expect(container.querySelector('[data-rating-status="rejected"]')).not.toBeNull()
+  })
+})
+
+describe('CurationPhotoTile: aufgenommen, vom Vorschlag nicht getragen', () => {
+  it('marks a taken photo the run dropped from the candidate pool', () => {
+    renderTile({ ranking: null }, { ownStatus: 'album_worthy' })
+
+    expect(screen.getByText(NOT_PROPOSED_BADGE_TEXT)).toBeInTheDocument()
+  })
+
+  it('marks a taken candidate the run did not propose IDENTICALLY', () => {
+    // Zusicherung 23: zwei Datenformen, EIN Anzeigezustand - geprueft ueber dieselbe Beschriftung.
+    renderTile({ ranking: ranking({ proposed: false }) }, { ownStatus: 'album_worthy' })
+
+    expect(screen.getByText(NOT_PROPOSED_BADGE_TEXT)).toBeInTheDocument()
+  })
+
+  it('marks nothing on a photo the run proposes', () => {
+    renderTile({ ranking: ranking({ proposed: true }) }, { ownStatus: 'album_worthy' })
+
+    expect(screen.queryByText(NOT_PROPOSED_BADGE_TEXT)).toBeNull()
+  })
+
+  it('marks nothing without an own decision', () => {
+    renderTile({ ranking: ranking({ proposed: false }) }, { ownStatus: null })
+
+    expect(screen.queryByText(NOT_PROPOSED_BADGE_TEXT)).toBeNull()
   })
 })
