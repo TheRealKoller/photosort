@@ -32,6 +32,14 @@ class Project(Base):
     # Zeitstempel, gesetzt beim Aktivieren, auf NULL zurückgesetzt beim Deaktivieren - kein
     # voller Audit-Log.
     cloud_vision_consent_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Der Richtwert des Auswahlvorschlags, als absolute Anzahl Bilder. `NULL` heißt NICHT "kein
+    # Richtwert", sondern "nicht selbst eingestellt" - wirksam ist dann ein Zehntel der
+    # Bilderzahl des Projekts (`selection.py::effective_target`), und diese Vorbelegung wird NIE
+    # in die Spalte geschrieben: ein eingeschriebener Vorgabewert wäre von einer Nutzereingabe
+    # nicht mehr zu unterscheiden, und der Wert wüchse mit dem Bestand nicht mehr mit. Ober- und
+    # Untergrenze werden am Endpunkt durchgesetzt (`api/projects.py`), nicht hier. Projektweit,
+    # ohne user_id-Bezug.
+    selection_target: Mapped[int | None] = mapped_column(default=None)
 
     photos: Mapped[list[Photo]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
@@ -593,10 +601,10 @@ class Event(Base):
 
 class PhotoRanking(Base):
     """Der volle, sortierte Kandidatenpool einer Partition (`event_id`) für einen
-    CriterionScoringRun - NICHT nur die Top-N. "Zeig die besten X pro Foto-Moment" ist damit eine
-    reine Lese-Query (GET /projects/{id}/photos?top_n_per_event=N), kein Job-Parameter, und
-    Backfill ein Nebeneffekt eines erneuten Abrufs nach einer Rating-Änderung; kein Server-Code
-    "rückt" je aktiv nach. `rank_position` ist 1-basiert innerhalb der Partition.
+    CriterionScoringRun - NICHT nur die ausgewählten. Welche Fotos der Auswahlvorschlag zeigt,
+    steht in `selection_position` und ist ein persistiertes Artefakt DIESES Laufs, kein
+    Leseparameter; kein Server-Code "rückt" je aktiv nach. `rank_position` ist 1-basiert
+    innerhalb der Partition.
 
     EIN FOTO STEHT PRO LAUF IN GENAU EINER ZEILE. Daher der Unique-Constraint über
     `(run, photo)`. Die Partition ist allein das Event; eine Kategorie-Ebene gibt es seit Spec
@@ -632,6 +640,19 @@ class PhotoRanking(Base):
     # seine `event_id`, bleibt im einsehbaren Vorrat und erscheint nicht im Entwurf.
     rank_score: Mapped[float | None] = mapped_column(default=None)
     rank_position: Mapped[int | None] = mapped_column(default=None)
+    # Der 1-basierte Platz dieses Fotos im Auswahlvorschlag INNERHALB SEINES EVENTS, in der
+    # Reihenfolge, in der das Verfahren die Plätze vergeben hat. `NULL` heißt "gehört nicht zum
+    # Vorschlag" - der Regelfall, und der Zustand jeder Rangzeile aus der Zeit vor dieser Spalte.
+    #
+    # LAUF-GLOBAL und ausdrücklich ohne Nutzerbezug: `user_id` fließt in keine Abfrage und in
+    # keine Schreibanweisung des Neuaufbaus, es gibt keine je Nutzer verschiedene Position. Wäre
+    # der Wert nutzerbezogen, fiele die Antwort unter dieselbe Cache-Schlüssel-Auflage wie
+    # `PhotoOut.suggestion` (siehe `api/photos.py::_to_photo_out`).
+    #
+    # GESCHRIEBEN wird die Spalte an genau einer Stelle (`worker.py`); ein struktureller Wächter
+    # in tests/test_models.py hält das fest. Eine zweite Vergaberegel daneben sähe im Ergebnis
+    # genauso aus und röte keinen Verhaltenstest.
+    selection_position: Mapped[int | None] = mapped_column(default=None)
 
 
 class PhotoLandmarkDetection(Base):

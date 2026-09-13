@@ -926,3 +926,54 @@ def test_the_upgrade_touches_no_data_at_all(album_suitability_upgrade_ddl: list[
     assert "INSERT " not in rendered
     assert "UPDATE " not in rendered
     assert "DELETE " not in rendered
+
+
+# specs/features/0429-auswahl-richtwert-und-mischung.md: die zwei additiven Spalten des
+# Auswahlvorschlags. `NULL` traegt in beiden Bedeutung ("nicht selbst eingestellt" /
+# "gehoert nicht zum Vorschlag") - ein `server_default` machte daraus stillschweigend eine
+# Aussage, und SQLite koennte den Unterschied nicht sichtbar machen.
+
+_SELECTION_REVISION = "e7f8a9b0c1d2_auswahlvorschlag.py"
+
+
+@pytest.fixture(scope="module")
+def selection_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_SELECTION_REVISION)
+
+
+def test_both_selection_columns_render_as_nullable_integers(
+    selection_upgrade_ddl: list[str],
+) -> None:
+    for table, column in (
+        ("projects", "selection_target"),
+        ("photo_rankings", "selection_position"),
+    ):
+        statement = _add_column_statement(selection_upgrade_ddl, column)
+        assert table in statement, column
+        assert "INTEGER" in statement.upper(), column
+        assert "NOT NULL" not in statement.upper(), column
+
+
+def test_neither_selection_column_gets_a_server_default(
+    selection_upgrade_ddl: list[str],
+) -> None:
+    for column in ("selection_target", "selection_position"):
+        assert "DEFAULT" not in _add_column_statement(selection_upgrade_ddl, column).upper()
+
+
+def test_the_selection_upgrade_touches_no_data_at_all(selection_upgrade_ddl: list[str]) -> None:
+    """Kein Backfill: es gibt keine Migration, die den Vorschlag rueckwirkend berechnet."""
+    rendered = " ".join(selection_upgrade_ddl).upper()
+
+    assert "INSERT " not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered
+
+
+def test_the_selection_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_SELECTION_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements)
+    assert rendered.upper().count("DROP COLUMN") == 2
+    assert "selection_position" in rendered
+    assert "selection_target" in rendered
