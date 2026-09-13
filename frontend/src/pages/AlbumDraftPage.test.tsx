@@ -12,6 +12,7 @@ import * as projectsApi from '../api/projects'
 import * as ratingsApi from '../api/ratings'
 import type { EventOut, PhotoListOut, PhotoOut, ProjectOut, RankingOut } from '../api/types'
 import { NOT_PROPOSED_BADGE_TEXT } from '../components/CurationPhotoTile'
+import { PREVIOUSLY_IN_ALBUM_BADGE_TEXT } from '../components/DraftAlternativesDialog'
 import { setToken } from '../auth/token'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import {
@@ -403,6 +404,129 @@ describe('AlbumDraftPage', () => {
       await userEvent.click(screen.getByLabelText('Im Album: b.jpg'))
 
       await waitFor(() => expect(ratingsApi.setRating).toHaveBeenCalledWith(2, 'rejected'))
+    })
+  })
+
+  describe('der Austausch', () => {
+    /** Die Bewertungsantwort des Servers zu einem der beiden Schreibvorgänge. */
+    function written(photoId: number, status: 'album_worthy' | 'rejected') {
+      return {
+        photo_id: photoId,
+        user_id: 7,
+        status,
+        favorite: false,
+        updated_at: '2026-09-13T10:00:00',
+      }
+    }
+
+    it('asks for alternatives only once the dialog is opened - never one query per tile', async () => {
+      // Die Durchsatz-Zusage der Ansicht: Bei hundert Kacheln liefe sonst hundertmal derselbe
+      // Endpunkt, bevor jemand auch nur einen Austausch angefangen hat.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([
+          photo({ id: 1, relative_path: 'a.jpg' }),
+          photo({ id: 2, relative_path: 'b.jpg' }),
+        ]),
+      )
+      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(listOut([]))
+
+      renderPage()
+      await screen.findByLabelText('Alternativen: a.jpg')
+      expect(photosApi.listDraftAlternatives).not.toHaveBeenCalled()
+
+      await userEvent.click(screen.getByLabelText('Alternativen: a.jpg'))
+
+      await waitFor(() => expect(photosApi.listDraftAlternatives).toHaveBeenCalledTimes(1))
+      expect(photosApi.listDraftAlternatives).toHaveBeenCalledWith(1, {
+        eventId: 1,
+        photoId: 1,
+        limit: expect.any(Number) as number,
+        offset: 0,
+      })
+    })
+
+    it('exchanges in two writes, closes the dialog and shows BOTH photos', async () => {
+      // Das Akzeptanzkriterium des Austauschs: das neue Bild als „Im Album", das ersetzte an
+      // seiner Stelle als „Gestrichen". Es rückt nichts nach und es entsteht keine Lücke - und
+      // die Entwurfsliste wird dabei NICHT neu geladen.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([photo({ id: 1, relative_path: 'a.jpg', taken_at: '2026-07-20T10:00:00' })]),
+      )
+      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+        listOut([photo({ id: 2, relative_path: 'b.jpg', taken_at: '2026-07-20T10:30:00' })]),
+      )
+      vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
+        Promise.resolve(written(photoId, photoId === 1 ? 'rejected' : 'album_worthy')),
+      )
+
+      renderPage()
+      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
+      const callsBefore = draftCalls()
+
+      await userEvent.click(await screen.findByLabelText('Austauschen gegen: b.jpg'))
+
+      await waitFor(() =>
+        expect(vi.mocked(ratingsApi.setRating).mock.calls).toEqual([
+          [1, 'rejected'],
+          [2, 'album_worthy'],
+        ]),
+      )
+      expect(await screen.findByLabelText('Gestrichen: a.jpg')).toBeInTheDocument()
+      expect(screen.getByLabelText('Im Album: b.jpg')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Austauschen gegen: b.jpg')).toBeNull()
+      expect(draftCalls()).toBe(callsBefore)
+    })
+
+    it('puts the focus onto the tile that now stands in that place', async () => {
+      // Nicht zurück auf die auslösende Schaltfläche: Das Bild, das dort stand, ist gerade
+      // gestrichen worden, und die Arbeit geht an der neuen Kachel weiter.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([photo({ id: 1, relative_path: 'a.jpg' })]),
+      )
+      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+        listOut([photo({ id: 2, relative_path: 'b.jpg', taken_at: '2026-07-20T10:30:00' })]),
+      )
+      vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
+        Promise.resolve(written(photoId, photoId === 1 ? 'rejected' : 'album_worthy')),
+      )
+
+      renderPage()
+      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
+      await userEvent.click(await screen.findByLabelText('Austauschen gegen: b.jpg'))
+
+      await waitFor(() => expect(screen.getByLabelText('Im Album: b.jpg')).toHaveFocus())
+    })
+
+    it('is reversible: the replaced photo returns as "zuvor im Album" and both rows go back', async () => {
+      // Kein eigener Rückgängig-Knopf und kein Verlauf: Das ersetzte Bild steht wieder unter den
+      // Alternativen, und ein Druck darauf ist derselbe Austausch in die andere Richtung.
+      const replaced = photo({ id: 1, relative_path: 'a.jpg', taken_at: '2026-07-20T10:00:00' })
+      const chosen = photo({ id: 2, relative_path: 'b.jpg', taken_at: '2026-07-20T10:30:00' })
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([replaced]))
+      vi.mocked(photosApi.listDraftAlternatives)
+        .mockResolvedValueOnce(listOut([chosen]))
+        .mockResolvedValue(listOut([{ ...replaced, ratings: [ownRating('rejected')] }]))
+      vi.mocked(ratingsApi.setRating).mockImplementation((photoId, status) =>
+        Promise.resolve(written(photoId, status)),
+      )
+
+      renderPage()
+      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
+      await userEvent.click(await screen.findByLabelText('Austauschen gegen: b.jpg'))
+      await screen.findByLabelText('Im Album: b.jpg')
+
+      await userEvent.click(screen.getByLabelText('Alternativen: b.jpg'))
+      expect(await screen.findByText(PREVIOUSLY_IN_ALBUM_BADGE_TEXT)).toBeInTheDocument()
+      await userEvent.click(screen.getByLabelText('Austauschen gegen: a.jpg'))
+
+      // Beide Zeilen zurück: das zurückgeholte Bild ist wieder im Album, das eingewechselte
+      // gestrichen.
+      expect(await screen.findByLabelText('Im Album: a.jpg')).toBeInTheDocument()
+      expect(screen.getByLabelText('Gestrichen: b.jpg')).toBeInTheDocument()
+      expect(vi.mocked(ratingsApi.setRating).mock.calls.slice(-2)).toEqual([
+        [2, 'rejected'],
+        [1, 'album_worthy'],
+      ])
     })
   })
 

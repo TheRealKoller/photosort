@@ -6,11 +6,16 @@ import type { PhotoOut, RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CurationPhotoTile } from '../components/CurationPhotoTile'
+import { DraftAlternativesDialog } from '../components/DraftAlternativesDialog'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { useMotifsQuery } from '../hooks/useMotifs'
-import { useDraftDecisionMutation, useDraftQuery } from '../hooks/usePhotos'
+import {
+  useDraftDecisionMutation,
+  useDraftExchangeMutation,
+  useDraftQuery,
+} from '../hooks/usePhotos'
 import { useProjectQuery } from '../hooks/useProjects'
 import type { DraftEventGroup } from '../utils/albumDraft'
 import {
@@ -87,7 +92,15 @@ export function AlbumDraftPage() {
   // ausserdem den wirksamen Richtwert des Kopfbereichs.
   const projectQuery = useProjectQuery(id)
   const decisionMutation = useDraftDecisionMutation(id, username)
+  const exchangeMutation = useDraftExchangeMutation(id, username)
   const items = useMemo(() => query.data?.items ?? [], [query.data])
+
+  // Das Bild, dessen Alternativen gerade offen stehen - EIN Dialog fuer die ganze Seite, nicht
+  // einer je Kachel: sonst liefe beim Laden eine Abfrage je Kachel (Durchsatz-Zusage der Story).
+  const [alternativesPhotoId, setAlternativesPhotoId] = useState<number | null>(null)
+  // Die Kachel, die den Fokus bekommt: nach einem Austausch die NEU an dieser Stelle stehende.
+  // Der Dialog gaebe den Fokus sonst an die Schaltflaeche des gerade gestrichenen Bildes zurueck.
+  const [focusPhotoId, setFocusPhotoId] = useState<number | null>(null)
 
   // Die Fotos mit gerade LAUFENDER Entscheidung - eine MENGE, nicht eine einzelne Id: verschiedene
   // Fotos entscheiden unabhaengig voneinander, ein ZWEITER Vorgang fuer DASSELBE Foto wird
@@ -158,6 +171,21 @@ export function AlbumDraftPage() {
     )
   }
 
+  function handleExchange(replaced: PhotoOut, chosen: PhotoOut): void {
+    exchangeMutation.mutate(
+      { replaced, chosen },
+      {
+        onSuccess: () => {
+          // Erst schliessen, dann den Fokus umlenken: Die Aufraeumfunktion des Dialogs gibt ihn
+          // an das ausloesende Element zurueck, und React fuehrt ALLE Aufraeumfunktionen vor
+          // allen neuen Effekten aus - die Fokusnahme der Kachel gewinnt deshalb.
+          setAlternativesPhotoId(null)
+          setFocusPhotoId(chosen.id)
+        },
+      },
+    )
+  }
+
   // Auf `=== true` gepruueft statt auf Falsyness: waehrend des Ladens ist das Feld `undefined`,
   // und das ist keine Aussage ueber die Freigabe.
   const cloudConsentGiven = projectQuery.data?.cloud_vision_detection_enabled === true
@@ -184,6 +212,8 @@ export function AlbumDraftPage() {
         ownStatus={ownRatingStatus(photo.ratings, username)}
         deciding={decidingPhotoIds.has(photo.id)}
         onDecide={(status) => handleDecide(photo, status)}
+        onOpenAlternatives={() => setAlternativesPhotoId(photo.id)}
+        focusDecision={focusPhotoId === photo.id}
       />
     )
   }
@@ -215,6 +245,9 @@ export function AlbumDraftPage() {
   }
 
   const dayKeys = days.map((day) => day.dayKey)
+  // Das Bezugsbild kommt aus der GELADENEN Liste, nicht aus einer Kopie im Zustand: Bewertet es
+  // jemand zwischendurch, zeigte eine Kopie den Stand von vorhin.
+  const alternativesPhoto = items.find((item) => item.id === alternativesPhotoId)
 
   return (
     <div className="flex flex-col gap-6">
@@ -339,6 +372,20 @@ export function AlbumDraftPage() {
           </section>
         )
       })}
+
+      {/* EIN Dialog fuer die ganze Seite, erst ab dem Oeffnen im Baum: So laeuft die Abfrage der
+          Alternativen genau einmal je geoeffnetem Bild, nie einmal je Kachel. */}
+      {alternativesPhoto !== undefined && (
+        <DraftAlternativesDialog
+          projectId={id}
+          photo={alternativesPhoto}
+          username={username}
+          open
+          onClose={() => setAlternativesPhotoId(null)}
+          onChoose={(alternative) => handleExchange(alternativesPhoto, alternative)}
+          exchanging={exchangeMutation.isPending}
+        />
+      )}
     </div>
   )
 }

@@ -16,8 +16,10 @@ import {
   draftSizeText,
   formatDraftPhotoCount,
   groupDraftByDay,
+  insertDraftPhoto,
   isInAlbum,
   isTakenWithoutProposal,
+  wasInAlbum,
 } from './albumDraft'
 
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
@@ -305,5 +307,88 @@ describe('draftMotifText', () => {
     const items = [assessed({ id: 1, motifs: motifs({ menschen: true }) })]
 
     expect(draftMotifText(items, USERNAME, [])).toBe('Menschen')
+  })
+})
+
+describe('wasInAlbum', () => {
+  const cases: { ownStatus: RatingStatus | null; expected: boolean }[] = [
+    { ownStatus: 'rejected', expected: true },
+    { ownStatus: 'album_worthy', expected: false },
+    { ownStatus: null, expected: false },
+  ]
+
+  it.each(cases)('is $expected for the own status $ownStatus', ({ ownStatus, expected }) => {
+    // Das Abzeichen „zuvor im Album" hängt an der EIGENEN Streichung. Ein nie bewertetes Foto
+    // unter den Alternativen war nie im Album - es trägt kein Abzeichen.
+    expect(wasInAlbum(ownStatus)).toBe(expected)
+  })
+})
+
+describe('insertDraftPhoto', () => {
+  function list(items: PhotoOut[]) {
+    return { items, total: items.length }
+  }
+
+  it('inserts by (event position, taken_at, id) - the sort key of the server', () => {
+    // Nicht ans Ende und nicht neben das ersetzte Bild: derselbe Schlüssel wie der Server, damit
+    // die Liste nach dem nächsten vollständigen Laden dieselbe Reihenfolge hat.
+    const first = photo({ id: 1, taken_at: '2026-07-20T10:00:00' })
+    const third = photo({ id: 3, taken_at: '2026-07-20T12:00:00' })
+    const second = photo({ id: 2, taken_at: '2026-07-20T11:00:00' })
+
+    const result = insertDraftPhoto(list([first, third]), second)
+
+    expect(result.items.map((item) => item.id)).toEqual([1, 2, 3])
+    expect(result.total).toBe(3)
+  })
+
+  it('sorts a later event behind an earlier one, regardless of the time', () => {
+    // Die Eventposition schlägt die Zeit: ein Foto mit früherer Aufnahmezeit gehört trotzdem in
+    // seine eigene Eventgruppe, nicht vor die erste.
+    const early = photo({ id: 1, taken_at: '2026-07-20T10:00:00', event: event({ position: 1 }) })
+    const late = photo({
+      id: 2,
+      taken_at: '2026-07-19T08:00:00',
+      event: event({ id: 2, position: 2 }),
+    })
+
+    expect(insertDraftPhoto(list([early]), late).items.map((item) => item.id)).toEqual([1, 2])
+  })
+
+  it('breaks a tie in taken_at over the smaller id', () => {
+    const existing = photo({ id: 5, taken_at: '2026-07-20T10:00:00' })
+    const inserted = photo({ id: 2, taken_at: '2026-07-20T10:00:00' })
+
+    expect(insertDraftPhoto(list([existing]), inserted).items.map((item) => item.id)).toEqual([
+      2, 5,
+    ])
+  })
+
+  it('leaves the list untouched when the photo already stands in it', () => {
+    // Ein zweites Vorkommen desselben Fotos wäre eine Kachel, die zweimal dasteht und deren beide
+    // Hälften auseinanderlaufen.
+    const existing = photo({ id: 1 })
+    const before = list([existing])
+
+    expect(insertDraftPhoto(before, photo({ id: 1 }))).toBe(before)
+  })
+
+  it('leaves the list untouched for a photo without an event', () => {
+    // Ausfallrichtung „nicht zeigen": ohne Event gehört das Foto in keine Gruppe, und
+    // `groupDraftByDay` übergeht es ohnehin - sichtbar wäre allein die falsche Ist-Anzahl.
+    const before = list([photo({ id: 1 })])
+
+    expect(insertDraftPhoto(before, photo({ id: 2, event: null }))).toBe(before)
+  })
+
+  it('keeps the object reference of every untouched photo', () => {
+    // Wie `applyWrittenRating`: unberührte Kacheln rendern dadurch nicht neu.
+    const first = photo({ id: 1, taken_at: '2026-07-20T10:00:00' })
+    const result = insertDraftPhoto(
+      list([first]),
+      photo({ id: 2, taken_at: '2026-07-20T11:00:00' }),
+    )
+
+    expect(result.items[0]).toBe(first)
   })
 })

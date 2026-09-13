@@ -53,6 +53,17 @@ def motif_is_present(strength: float) -> bool:
     return strength >= MOTIF_PRESENCE_THRESHOLD
 
 
+def carried_motifs(motif_strengths: Mapping[str, float]) -> frozenset[str]:
+    """Die Motive, die ein Bild traegt - die EINE Herleitung fuer Auswahl und Alternativen.
+
+    Sie nimmt die Staerkeabbildung und nicht einen Kandidaten entgegen, weil beide Aufrufer eigene
+    Kandidatentypen haben (`SelectionCandidate` mit Zeit und Pflichtqualitaet,
+    `AlternativeCandidate` ohne beides): eine zweite Herleitung fuer den zweiten Typ liefe an dem
+    Tag auseinander, an dem die Grenze sich aendert. Ein hier fehlendes Motiv zaehlt als nicht
+    getragen."""
+    return frozenset(key for key, strength in motif_strengths.items() if motif_is_present(strength))
+
+
 # Womit der Wert eines Bildes je bereits gewaehltem, vollstaendig aehnlichem Bild multipliziert
 # wird.
 SIMILARITY_DECAY = 0.5
@@ -96,6 +107,65 @@ class SelectionEvent:
     candidates: Sequence[SelectionCandidate]
 
 
+@dataclass(frozen=True)
+class AlternativeCandidate:
+    """Ein Bild im Alternativenraster eines Austauschs - Bezugsbild wie Kandidat.
+
+    Zwei bewusste Unterschiede zu `SelectionCandidate`:
+
+    * KEINE `taken_at`. Zeitliche Naehe ist kein Sortierkriterium der Alternativen (ADR 0098
+      Punkt 5); ohne das Feld ist das strukturell wahr statt bloss unbenutzt.
+    * `quality` ist `float | None`. Ein Kandidat ohne Qualitaetsbewertung ist ein gueltiger,
+      waehlbarer Zustand - er sortiert ans Ende SEINER Gruppe, nie global."""
+
+    photo_id: int
+    quality: float | None
+    motif_strengths: Mapping[str, float]
+
+
+def order_alternatives(
+    reference: AlternativeCandidate, candidates: Iterable[AlternativeCandidate]
+) -> list[int]:
+    """Die Reihenfolge der Alternativen zu EINEM Bild (ADR 0098 Punkt 5), als `photo_id`-Folge.
+
+    Sortierschluessel `(0 wenn geteiltes Motiv sonst 1, -quality, photo_id)`:
+
+    1. Bilder, die mit dem Bezugsbild mindestens EIN Motiv teilen, nach Qualitaet absteigend;
+    2. danach die uebrigen, ebenso.
+
+    Die Gruppe ist BINAER - drei geteilte Motive schlagen ein geteiltes nicht, und die Grenze ist
+    fuer alle Motive dieselbe (`carried_motifs`). Es wird nie eine Motivstaerke mit einer anderen
+    verglichen (ADR 0091 Punkt 1 und 8).
+
+    `quality is None` sortiert INNERHALB seiner Gruppe ans Ende, ausgedrueckt als eigenes
+    Schluesselglied: `quality or 0.0` machte aus einer `0.0` lautlos einen fehlenden Wert, und
+    `None` global ans Ende zu schieben stellte ein Bild ohne Bewertung hinter jedes fremde Motiv.
+    Gleichstand bricht ueber die kleinere `photo_id` - ausgeschrieben, nie der Eingabereihenfolge
+    ueberlassen.
+
+    Das Bezugsbild selbst faellt heraus: es ist der Ausgangspunkt des Austauschs, nicht sein
+    Ziel."""
+    reference_motifs = carried_motifs(reference.motif_strengths)
+
+    def key(candidate: AlternativeCandidate) -> tuple[int, int, float, int]:
+        shares = bool(carried_motifs(candidate.motif_strengths) & reference_motifs)
+        quality = candidate.quality
+        return (
+            0 if shares else 1,
+            1 if quality is None else 0,
+            0.0 if quality is None else -quality,
+            candidate.photo_id,
+        )
+
+    return [
+        candidate.photo_id
+        for candidate in sorted(
+            (candidate for candidate in candidates if candidate.photo_id != reference.photo_id),
+            key=key,
+        )
+    ]
+
+
 def effective_target(configured: int | None, photo_count: int) -> int:
     """Der wirksame Richtwert eines Projekts.
 
@@ -108,12 +178,6 @@ def effective_target(configured: int | None, photo_count: int) -> int:
     if configured is not None:
         return configured
     return max(1, -(-photo_count // DEFAULT_TARGET_DIVISOR))
-
-
-def _carried_motifs(candidate: SelectionCandidate) -> frozenset[str]:
-    return frozenset(
-        key for key, strength in candidate.motif_strengths.items() if motif_is_present(strength)
-    )
 
 
 def _similarity(
@@ -219,7 +283,9 @@ def _assign_event(candidates: Sequence[SelectionCandidate], seats: int) -> dict[
     vollem Kontingent ist das der Unterschied zwischen rund 10⁶ und rund 10⁹ Bewertungen synchron
     im Request."""
     remaining = sorted(candidates, key=lambda candidate: candidate.photo_id)
-    motifs_of = {candidate.photo_id: _carried_motifs(candidate) for candidate in remaining}
+    motifs_of = {
+        candidate.photo_id: carried_motifs(candidate.motif_strengths) for candidate in remaining
+    }
     present = frozenset().union(*motifs_of.values()) if motifs_of else frozenset()
     decay: dict[int, float] = {candidate.photo_id: 0.0 for candidate in remaining}
 

@@ -9,9 +9,10 @@ import type { PhotoListOut } from '../api/types'
 import {
   applyWrittenRating,
   PHOTOS_PAGE_SIZE,
-  useCurationCandidatesQuery,
   useDeleteRatingMutation,
+  useDraftAlternativesQuery,
   useDraftDecisionMutation,
+  useDraftExchangeMutation,
   useDraftQuery,
   usePhotoSequenceQuery,
   useSetFavoriteMutation,
@@ -80,54 +81,56 @@ describe('usePhotoSequenceQuery', () => {
   })
 })
 
-describe('useCurationCandidatesQuery', () => {
-  const partition = { eventId: 42, afterRank: 3 }
+describe('useDraftAlternativesQuery', () => {
+  const reference = { eventId: 42, photoId: 7 }
 
   // Die Datei laeuft ohne `clearMocks`; Aufrufzaehler und `…Once`-Warteschlange wandern sonst von
   // Testfall zu Testfall. Diese Gruppe zaehlt Aufrufe (statt nur ihre Argumente zu pruefen) und
   // braucht deshalb einen sauberen Ausgangszustand.
   beforeEach(() => {
-    vi.mocked(photosApi.listCurationCandidates).mockReset()
+    vi.mocked(photosApi.listDraftAlternatives).mockReset()
   })
 
-  it('does not fetch while the section is collapsed', async () => {
-    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue(page([4], 4))
+  it('does not fetch while the dialog is closed', async () => {
+    // EINE Abfrage je GEOEFFNETEM Bild, nie eine je Kachel: ohne diese Zusage liefe auf einer
+    // Seite mit hundert Kacheln beim Laden hundertmal derselbe Endpunkt.
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(page([4], 4))
 
     const { result } = renderHook(
-      () => useCurationCandidatesQuery(1, { ...partition, enabled: false }),
+      () => useDraftAlternativesQuery(1, { ...reference, enabled: false }),
       { wrapper },
     )
 
     await waitFor(() => expect(result.current.fetchStatus).toBe('idle'))
-    expect(photosApi.listCurationCandidates).not.toHaveBeenCalled()
+    expect(photosApi.listDraftAlternatives).not.toHaveBeenCalled()
   })
 
-  it('fetches the first page once expanded', async () => {
-    vi.mocked(photosApi.listCurationCandidates).mockResolvedValue(page([4], 1))
+  it('fetches the first page once opened', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(page([4], 1))
 
     const { result } = renderHook(
-      () => useCurationCandidatesQuery(1, { ...partition, enabled: true }),
+      () => useDraftAlternativesQuery(1, { ...reference, enabled: true }),
       { wrapper },
     )
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(photosApi.listCurationCandidates).toHaveBeenCalledWith(1, {
+    expect(photosApi.listDraftAlternatives).toHaveBeenCalledWith(1, {
       eventId: 42,
-      afterRank: 3,
+      photoId: 7,
       limit: PHOTOS_PAGE_SIZE,
       offset: 0,
     })
   })
 
   it('fetchNextPage requests the SECOND page with the right offset and stops at total', async () => {
-    // Die zweite Seite ist der Pflichtfall (Testkonzept, Sektion zu Spec 0357): die erste
-    // bestuende auch bei einem fest verdrahteten `offset: 0`.
-    vi.mocked(photosApi.listCurationCandidates)
+    // Die zweite Seite ist der Pflichtfall: die erste bestuende auch bei einem fest verdrahteten
+    // `offset: 0`.
+    vi.mocked(photosApi.listDraftAlternatives)
       .mockResolvedValueOnce(page([4, 5], 3))
       .mockResolvedValueOnce(page([6], 3))
 
     const { result } = renderHook(
-      () => useCurationCandidatesQuery(1, { ...partition, enabled: true, pageSize: 2 }),
+      () => useDraftAlternativesQuery(1, { ...reference, enabled: true, pageSize: 2 }),
       { wrapper },
     )
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
@@ -136,19 +139,41 @@ describe('useCurationCandidatesQuery', () => {
     await result.current.fetchNextPage()
 
     await waitFor(() => expect(result.current.hasNextPage).toBe(false))
-    expect(photosApi.listCurationCandidates).toHaveBeenLastCalledWith(1, {
+    expect(photosApi.listDraftAlternatives).toHaveBeenLastCalledWith(1, {
       eventId: 42,
-      afterRank: 3,
+      photoId: 7,
       limit: 2,
       offset: 2,
     })
   })
 
+  it('keys the query by the reference photo, so a second photo is a second query', async () => {
+    // Die Menge UND die Reihenfolge haengen am Bezugsbild. Stuenden beide unter demselben
+    // Schluessel, zeigte der zweite geoeffnete Dialog die Alternativen des ersten.
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(page([4], 1))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const sharedWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    const first = renderHook(() => useDraftAlternativesQuery(1, { ...reference, enabled: true }), {
+      wrapper: sharedWrapper,
+    })
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true))
+    const second = renderHook(
+      () => useDraftAlternativesQuery(1, { eventId: 42, photoId: 8, enabled: true }),
+      { wrapper: sharedWrapper },
+    )
+    await waitFor(() => expect(second.result.current.isSuccess).toBe(true))
+
+    expect(photosApi.listDraftAlternatives).toHaveBeenCalledTimes(2)
+  })
+
   it('lives under the ["photos", projectId] prefix so a rating invalidates it too', async () => {
-    // Zwei Queries ueber demselben Datensatz auf einem Bildschirm (Testkonzept, Sektion zu Spec
-    // 0357): wird in der EINEN Liste bewertet, muss die ANDERE denselben Zustand zeigen. Der
-    // Testgegenstand ist deshalb die Invalidierung, nicht der Ladepfad.
-    vi.mocked(photosApi.listCurationCandidates)
+    // Zwei Queries ueber demselben Datensatz auf einem Bildschirm: wird in der EINEN Liste
+    // bewertet, muss die ANDERE denselben Zustand zeigen. Der Testgegenstand ist deshalb die
+    // Invalidierung, nicht der Ladepfad.
+    vi.mocked(photosApi.listDraftAlternatives)
       .mockResolvedValueOnce(page([4], 1))
       .mockResolvedValueOnce(page([4], 1))
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
@@ -162,16 +187,101 @@ describe('useCurationCandidatesQuery', () => {
     const sharedWrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     )
-    const candidates = renderHook(
-      () => useCurationCandidatesQuery(1, { ...partition, enabled: true }),
+    const alternatives = renderHook(
+      () => useDraftAlternativesQuery(1, { ...reference, enabled: true }),
       { wrapper: sharedWrapper },
     )
-    await waitFor(() => expect(candidates.result.current.isSuccess).toBe(true))
+    await waitFor(() => expect(alternatives.result.current.isSuccess).toBe(true))
 
     const { result } = renderHook(() => useSetRatingMutation(1), { wrapper: sharedWrapper })
     await result.current.mutateAsync({ photoId: 4, status: 'rejected' })
 
-    await waitFor(() => expect(photosApi.listCurationCandidates).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(photosApi.listDraftAlternatives).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('useDraftExchangeMutation', () => {
+  const written = (photoId: number, status: 'album_worthy' | 'rejected') => ({
+    photo_id: photoId,
+    user_id: 1,
+    status,
+    favorite: false,
+    updated_at: '2026-09-13T10:00:00',
+  })
+
+  beforeEach(() => {
+    vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(ratingsApi.setRating).mockReset()
+  })
+
+  function draftPhoto(id: number, takenAt: string) {
+    const [item] = page([id], 1).items
+    return {
+      ...item,
+      taken_at: takenAt,
+      event: {
+        id: 42,
+        position: 1,
+        started_at: '2026-07-20T09:00:00',
+        ended_at: '2026-07-20T13:00:00',
+        place: null,
+      },
+    }
+  }
+
+  it('writes TWO ratings - first the strike, then the take', async () => {
+    // Die Reihenfolge steht in ADR 0098: streichen des Bezugsbilds, dann aufnehmen der
+    // Alternative. Umgekehrt stuende zwischendurch ein Bild zu viel im Entwurf.
+    vi.mocked(ratingsApi.setRating)
+      .mockResolvedValueOnce(written(1, 'rejected'))
+      .mockResolvedValueOnce(written(2, 'album_worthy'))
+    const { result } = renderHook(() => useDraftExchangeMutation(1, 'testuser'), { wrapper })
+
+    await result.current.mutateAsync({
+      replaced: draftPhoto(1, '2026-07-20T10:00:00'),
+      chosen: draftPhoto(2, '2026-07-20T11:00:00'),
+    })
+
+    expect(vi.mocked(ratingsApi.setRating).mock.calls).toEqual([
+      [1, 'rejected'],
+      [2, 'album_worthy'],
+    ])
+  })
+
+  it('writes both photos into the draft cache without reloading the list', async () => {
+    // Der ganze Zweck der eigenen Mutation (ADR 0098 Punkt 6): Das ersetzte Bild bleibt an seiner
+    // Stelle und traegt „gestrichen", das neue kommt an seinen chronologischen Platz - und
+    // `listPhotos` laeuft dabei KEIN zweites Mal.
+    const replaced = draftPhoto(1, '2026-07-20T10:00:00')
+    const chosen = draftPhoto(2, '2026-07-20T11:00:00')
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [replaced], total: 1 })
+    vi.mocked(ratingsApi.setRating)
+      .mockResolvedValueOnce(written(1, 'rejected'))
+      .mockResolvedValueOnce(written(2, 'album_worthy'))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const sharedWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const draft = renderHook(() => useDraftQuery(1), { wrapper: sharedWrapper })
+    await waitFor(() => expect(draft.result.current.isSuccess).toBe(true))
+
+    const { result } = renderHook(() => useDraftExchangeMutation(1, 'testuser'), {
+      wrapper: sharedWrapper,
+    })
+    await result.current.mutateAsync({ replaced, chosen })
+
+    // Gelesen wird der CACHE, nicht der Render-Schnappschuss des Hooks: Gegenstand der Zusage ist
+    // der fortgeschriebene Stand, und genau er entscheidet, was die Ansicht ohne neue Antwort
+    // zeigt.
+    const cached = queryClient.getQueryData<PhotoListOut>(['photos', 1, 'draft'])
+    expect(cached?.items.map((item) => item.id)).toEqual([1, 2])
+    expect(cached?.items.map((item) => item.ratings[0]?.status)).toEqual([
+      'rejected',
+      'album_worthy',
+    ])
+    expect(cached?.total).toBe(2)
+    // Kein Neuladen der Entwurfsliste - der eine Aufruf ist der des ersten Ladens.
+    expect(photosApi.listPhotos).toHaveBeenCalledTimes(1)
   })
 })
 

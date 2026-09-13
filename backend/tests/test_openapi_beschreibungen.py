@@ -17,7 +17,6 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     ("put", "/projects/{project_id}/cloud-vision-consent"),
     ("get", "/projects/{project_id}/classify/estimate"),
     ("get", "/projects/{project_id}/fine-labels"),
-    ("get", "/projects/{project_id}/curation-candidates"),
     ("get", "/projects/{project_id}/stats"),
     # specs/features/0426-zeitversatz-je-kamera.md: die zweite der zwei Registerstellen, die
     # einen neuen Router still uebergehen - ein nicht eingetragener Endpunkt faellt ohne roten
@@ -39,6 +38,12 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     ("put", "/photos/{photo_id}/rating"),
     ("delete", "/photos/{photo_id}/rating"),
     ("put", "/photos/{photo_id}/favorite"),
+    # specs/features/0430-album-entwurf-je-nutzer.md, PR 3: der Alternativen-Endpunkt tritt an die
+    # Stelle von `/projects/{project_id}/curation-candidates`. Seine Beschreibung traegt die
+    # beiden Aussagen, die der Antwort sonst nirgends anzusehen sind: WELCHE Menge geliefert wird
+    # (das Event abzueglich des eigenen Entwurfs, gestrichene eingeschlossen) und WORAN die
+    # Reihenfolge haengt (den Motiven des Bezugsbildes).
+    ("get", "/projects/{project_id}/draft-alternatives"),
 )
 
 

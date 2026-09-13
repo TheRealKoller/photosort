@@ -57,7 +57,13 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
 
 function renderTile(
   overrides: Partial<PhotoOut> = {},
-  tile: { ownStatus?: RatingStatus | null; deciding?: boolean; onDecide?: () => void } = {},
+  tile: {
+    ownStatus?: RatingStatus | null
+    deciding?: boolean
+    onDecide?: () => void
+    onOpenAlternatives?: () => void
+    focusDecision?: boolean
+  } = {},
 ) {
   return render(
     <CurationPhotoTile
@@ -69,6 +75,8 @@ function renderTile(
       ownStatus={tile.ownStatus ?? null}
       deciding={tile.deciding ?? false}
       onDecide={tile.onDecide ?? (() => {})}
+      onOpenAlternatives={tile.onOpenAlternatives ?? (() => {})}
+      focusDecision={tile.focusDecision ?? false}
     />,
   )
 }
@@ -216,7 +224,9 @@ describe('CurationPhotoTile: der Zweizustand Im Album ⇄ Gestrichen', () => {
     const user = userEvent.setup()
     renderTile({}, { ownStatus: null, deciding: true, onDecide })
 
-    await user.click(screen.getByRole('button', { name: /a\.jpg/ }))
+    // Namentlich der Zweizustand: die Fußzeile trägt seit dem Austausch ZWEI Trefferflächen, und
+    // gesperrt ist ausschließlich die schreibende.
+    await user.click(screen.getByRole('button', { name: 'Im Album: a.jpg' }))
 
     expect(onDecide).not.toHaveBeenCalled()
   })
@@ -254,5 +264,60 @@ describe('CurationPhotoTile: aufgenommen, vom Vorschlag nicht getragen', () => {
     renderTile({ ranking: ranking({ proposed: false }) }, { ownStatus: null })
 
     expect(screen.queryByText(NOT_PROPOSED_BADGE_TEXT)).toBeNull()
+  })
+})
+
+describe('CurationPhotoTile: der Zugang zu den Alternativen', () => {
+  it('offers a SECOND hit area next to the toggle, with the file name in its name', () => {
+    // Die Fußzeile verliert hier bewusst ihre bisherige Ein-Trefferflächen-Regel. Der Dateiname
+    // steht im zugänglichen Namen, sonst hießen auf einer Seite mit vielen Kacheln alle
+    // Schaltflächen gleich.
+    renderTile()
+
+    expect(screen.getByRole('button', { name: 'Alternativen: a.jpg' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Im Album: a.jpg' })).toBeInTheDocument()
+  })
+
+  it('opens the alternatives on the first press - no confirmation step', async () => {
+    const onOpenAlternatives = vi.fn()
+    const user = userEvent.setup()
+    renderTile({}, { onOpenAlternatives })
+
+    await user.click(screen.getByRole('button', { name: 'Alternativen: a.jpg' }))
+
+    expect(onOpenAlternatives).toHaveBeenCalledTimes(1)
+  })
+
+  it('stays reachable for a struck photo - the exchange is reversible from both sides', () => {
+    renderTile({}, { ownStatus: 'rejected' })
+
+    expect(screen.getByRole('button', { name: 'Alternativen: a.jpg' })).toBeEnabled()
+  })
+
+  it('keeps both hit areas at least 44px tall on the phone', () => {
+    // `h-11 sm:h-8` wie die Bewertungsleiste. Beide Flächen gehören zum heißen Pfad und werden
+    // auf dem Telefon mit dem Daumen getroffen.
+    renderTile()
+
+    for (const name of ['Im Album: a.jpg', 'Alternativen: a.jpg']) {
+      expect(screen.getByRole('button', { name }).className).toContain('h-11')
+    }
+  })
+})
+
+describe('CurationPhotoTile: der Fokus nach einem Austausch', () => {
+  it('takes the focus onto its album toggle when asked for it', () => {
+    // Nach einem Austausch schließt der Dialog, und der Fokus gehört auf die Kachel, die nun an
+    // dieser Stelle steht - nicht zurück auf eine Schaltfläche eines Bildes, das gerade den Platz
+    // gewechselt hat.
+    renderTile({}, { focusDecision: true })
+
+    expect(screen.getByRole('button', { name: 'Im Album: a.jpg' })).toHaveFocus()
+  })
+
+  it('leaves the focus alone otherwise', () => {
+    renderTile({}, { focusDecision: false })
+
+    expect(screen.getByRole('button', { name: 'Im Album: a.jpg' })).not.toHaveFocus()
   })
 })

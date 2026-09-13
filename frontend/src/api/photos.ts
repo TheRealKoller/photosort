@@ -21,10 +21,10 @@ export interface ListPhotosParams {
   cameraId?: number
 }
 
-export interface ListCurationCandidatesParams {
+export interface ListDraftAlternativesParams {
   eventId: number
-  /** Es werden nur Fotos mit `rank_position > afterRank` geliefert. */
-  afterRank: number
+  /** Das Bezugsbild des Austauschs. Es steuert allein die Reihenfolge und ist nie selbst dabei. */
+  photoId: number
   limit?: number
   offset?: number
 }
@@ -56,20 +56,23 @@ export function listPhotos(
 }
 
 /**
- * Die weiteren Kandidaten EINER Partition - alles jenseits von `afterRank`, aufsteigend nach
- * `rank_position`, seitenweise. `total` der Antwort ist die RESTMENGE der Partition und damit
- * unabhaengig von `limit`/`offset`.
+ * Die Alternativen zu EINEM Bild des Entwurfs: die Fotos seines Events abzueglich des eigenen
+ * Entwurfs, seitenweise. Gestrichene sind darunter - daraus folgt die Umkehrbarkeit des
+ * Austauschs. `total` der Antwort ist die RESTMENGE und damit unabhaengig von `limit`/`offset`.
+ *
+ * Die REIHENFOLGE KOMMT VOM SERVER und wird nie nachsortiert: sie haengt an den Motiven des
+ * Bezugsbildes, und die Grenze, ab der ein Motiv getragen ist, wohnt im Backend.
  *
  * Bewusst ein eigener Endpunkt statt einer Erweiterung von `listPhotos`: dort gilt die Zusage,
- * dass `limit`/`offset` im Kuratierungsmodus nicht wirken.
+ * dass `limit`/`offset` im Entwurfsmodus nicht wirken.
  */
-export function listCurationCandidates(
+export function listDraftAlternatives(
   projectId: number,
-  params: ListCurationCandidatesParams,
+  params: ListDraftAlternativesParams,
 ): Promise<PhotoListOut> {
   const query = new URLSearchParams({
     event_id: String(params.eventId),
-    after_rank: String(params.afterRank),
+    photo_id: String(params.photoId),
   })
   if (params.limit !== undefined) {
     query.set('limit', String(params.limit))
@@ -77,7 +80,7 @@ export function listCurationCandidates(
   if (params.offset !== undefined) {
     query.set('offset', String(params.offset))
   }
-  return apiFetch<PhotoListOut>(`/projects/${projectId}/curation-candidates?${query.toString()}`)
+  return apiFetch<PhotoListOut>(`/projects/${projectId}/draft-alternatives?${query.toString()}`)
 }
 
 /**

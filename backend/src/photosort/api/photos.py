@@ -48,8 +48,10 @@ from photosort.motif_strengths import EffectiveStrength, load_effective_strength
 from photosort.motifs import MOTIF_REGISTRY, is_motif_key
 
 # AUSSCHLIESSLICH das Praedikat, nie die Konstante: Die Praesenzgrenze steht an genau einer Stelle,
-# und der inklusive Vergleich gehoert dort ebenso hin (Zusicherung 26).
-from photosort.selection import motif_is_present
+# und der inklusive Vergleich gehoert dort ebenso hin (Zusicherung 26). Dasselbe gilt fuer die
+# Reihenfolge der Alternativen: sie ist eine REINE Funktion in `selection.py`, hier steht nur die
+# Beschaffung ihrer Eingabe.
+from photosort.selection import AlternativeCandidate, motif_is_present, order_alternatives
 from photosort.thumbnails import variant_path
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
@@ -860,7 +862,7 @@ def _to_photo_out(
     SICHERHEIT - die Antwort ist eine Funktion des ANFRAGENDEN Nutzers:
 
     Bekommen `GET /projects/{id}/photos` (in BEIDEN Modi) oder
-    `GET /projects/{id}/curation-candidates` je eine Antwort-Zwischenspeicherung, ein `ETag` oder
+    `GET /projects/{id}/draft-alternatives` je eine Antwort-Zwischenspeicherung, ein `ETag` oder
     ein `Cache-Control` ueber `no-store` hinaus, MUSS der Schluessel den Nutzer enthalten. Dafuer
     gibt es seit ADR 0098 ZWEI UNABHAENGIGE URSACHEN; der Wegfall der einen hebt die Auflage nicht
     auf:
@@ -869,7 +871,8 @@ def _to_photo_out(
       Nutzer noch keine eigene Albumentscheidung fuer dieses Foto hat (`has_own_album_decision`) -
       zwei Nutzer bekommen fuer dasselbe Foto verschiedene Antwortkoerper.
     * die MENGE: Der Entwurfszweig liefert `Vorschlag ∪ eigene Aufnahmen` und ist damit je Nutzer
-      eine ANDERE Liste. Bei Verletzung saehe der eine den Entwurf des anderen als seinen eigenen,
+      eine ANDERE Liste; `total` des Alternativen-Endpunkts ist die Restmenge nach Abzug des
+      EIGENEN Entwurfs. Bei Verletzung saehe der eine den Entwurf des anderen als seinen eigenen,
       ohne dass irgendeine Anzeige das als falsch ausweist.
 
     Nicht theoretisch: das Frontend ist eine PWA mit Workbox
@@ -1118,8 +1121,9 @@ async def _partition_sizes(session: AsyncSession, criterion_scoring_run_id: int)
     einer Partition mit genau einem einsehbaren Foto. Die Zahl an der Event-Überschrift und der
     tatsächlich einsehbare Vorrat müssen dieselbe Menge beschreiben.
 
-    SICHERHEIT (M1): das Lauf-Prädikat steht auch HIER - diese Zählabfrage liegt hinter `total`
-    des Kandidaten-Endpunkts und ist damit eine Abfrage dieses Endpunkts wie jede andere."""
+    SICHERHEIT (S2): das Lauf-Prädikat steht auch HIER - diese Zählabfrage speist `partition_size`
+    auf jedem Lesepfad, den Alternativen-Endpunkt eingeschlossen, und ist damit eine Abfrage
+    dieser Endpunkte wie jede andere."""
     result = await session.execute(
         select(PhotoRanking.event_id, func.count())
         .where(
@@ -1149,13 +1153,13 @@ async def _ranking_by_photo_id(
     return {row.photo_id: row for row in result.scalars()}
 
 
-# SICHERHEIT - Obergrenze von `after_rank`/`offset`/`camera_id`: ein Pydantic-`int` ist
+# SICHERHEIT - Obergrenze von `offset`/`camera_id`/`event_id`/`photo_id`: ein Pydantic-`int` ist
 # unbeschraenkt und landet direkt im SQL-Vergleich; unter SQLite (Testlauf und lokale Entwicklung)
 # wirft ein Wert jenseits von 2^63 einen `OverflowError` und damit eine 500 statt einer leeren
 # Liste. Der Wert liegt weit ueber jeder realistischen Partitionsgroesse - er begrenzt einen
 # Missbrauchsfall, nicht die Benutzung.
 #
-# Steht VOR `list_photos`, nicht erst vor dem Kandidaten-Endpunkt: `Query(...)`-Vorgabewerte
+# Steht VOR `list_photos`, nicht erst vor dem Alternativen-Endpunkt: `Query(...)`-Vorgabewerte
 # werden zur DEFINITIONSZEIT ausgewertet, eine spaeter definierte Konstante bricht den Import.
 _MAX_QUERY_POSITION = 1_000_000_000
 
@@ -1278,93 +1282,187 @@ async def list_photos(
     return PhotoListOut(items=items, total=total)
 
 
-@router.get("/projects/{project_id}/curation-candidates", response_model=PhotoListOut)
-async def curation_candidates(
+def _strength_values(effective: Mapping[str, EffectiveStrength] | None) -> dict[str, float]:
+    """Die wirksamen Staerken als nackte Zahlen fuer `selection.py`.
+
+    Die Auswahlseite kennt weder `EffectiveStrength` noch die Herkunft eines Werts: ob eine
+    Korrektur im Spiel war, aendert die Staerke bereits IN `effective_strength_expression()` und
+    ist danach keine zweite Eingabe mehr."""
+    return {} if effective is None else {key: entry.strength for key, entry in effective.items()}
+
+
+@router.get("/projects/{project_id}/draft-alternatives", response_model=PhotoListOut)
+async def draft_alternatives(
     project_id: int,
-    # SICHERHEIT (M3): eine Objekt-Id statt eines Freitextschlüssels. `ge=1` schließt `0` und
-    # negative Werte aus, `le` verhindert, dass ein Wert jenseits von 2^63 unter SQLite einen
-    # `OverflowError` und damit eine 500 statt einer leeren Liste erzeugt. FastAPI spiegelt bei
-    # `422` den Rohwert im `input`-Feld zurück - er wird ausschließlich als React-Textknoten
-    # gerendert, nie geloggt.
+    # SICHERHEIT (S4): zwei fremdgesteuerte Objekt-Ids, deklarativ begrenzt VOR jeder Verwendung.
+    # `ge=1` schliesst `0` und negative Werte aus, `le` verhindert, dass ein Wert jenseits von
+    # 2^63 unter SQLite einen `OverflowError` und damit eine 500 statt einer leeren Liste erzeugt.
+    # FastAPI spiegelt bei `422` den Rohwert im `input`-Feld zurueck - er wird ausschliesslich als
+    # React-Textknoten gerendert, nie geloggt.
     event_id: int = Query(..., ge=1, le=_MAX_QUERY_POSITION),
-    after_rank: int = Query(0, ge=0, le=_MAX_QUERY_POSITION),
+    photo_id: int = Query(..., ge=1, le=_MAX_QUERY_POSITION),
+    # `limit <= 200` deckelt zugleich die schwere Hydratation ueber `_photos_by_id` mit ihren
+    # `selectinload`s - sie laeuft ausschliesslich ueber die angeforderte Seite, nie ueber die
+    # ganze Restmenge.
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0, le=_MAX_QUERY_POSITION),
     session: AsyncSession = Depends(get_session),
-    # SICHERHEIT: ausgeschriebene Auth-Dependency. Dieser Router trägt bewusst KEINE
-    # Router-weite
-    # `dependencies`-Liste (siehe Kopfkommentar der Datei) - ein Endpunkt, der diesen Parameter
-    # vergisst, waere hier STILL OEFFENTLICH: kein Fehler, keine 401, nur Daten. `current_user.id`
-    # geht unveraendert an `_to_photo_out` (nie ein Platzhalter wie `0` - der liesse
-    # `PhotoOut.suggestion` auch fuer laengst bewertete Fotos wieder aufblitzen).
+    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei), und
+    # `_protected_router_operations()` in `test_auth_guard.py` fuehrt ihn nicht - fuer ihn gibt es
+    # KEIN Vollstaendigkeitsnetz. Ein Endpunkt, der diesen Parameter vergisst, waere STILL
+    # OEFFENTLICH: kein Fehler, keine 401, nur Daten. `current_user.id` geht unveraendert an
+    # `_to_photo_out` (nie ein Platzhalter wie `0` - der liesse `PhotoOut.suggestion` auch fuer
+    # laengst bewertete Fotos wieder aufblitzen).
     current_user: User = Depends(get_current_user),
 ) -> PhotoListOut:
-    """Die weiteren Kandidaten EINER Partition, auf Abruf: die Zugehörigkeiten mit
-    `rank_position > after_rank`, aufsteigend nach `rank_position`, seitenweise ueber
-    `limit`/`offset`. `total` ist die RESTMENGE der Partition (`max(partition_size - after_rank,
-    0)`) und damit unabhaengig von `limit`/`offset` - sonst waere der Vorrat bei einer grossen
-    Kategorie wieder nur teilweise einsehbar.
+    """Die Alternativen zu EINEM Bild des Entwurfs (ADR 0098 Punkt 5).
 
-    Bezugslauf ist derselbe wie in der Hauptabfrage (letzter erfolgreicher CriterionScoringRun);
-    verworfene Fotos sind enthalten und tragen ihren Zustand in `ratings[]`.
-    Kein erfolgreicher Lauf, ein `event_id` aus einem anderen Projekt oder einem aelteren Lauf,
-    oder ein `after_rank` jenseits der Partitionsgroesse liefern
-    `200` mit leerem `PhotoListOut` (`items: []` UND `total: 0`) - kein Fehler und ausdruecklich
-    keine Rueckspiegelung der uebergebenen Werte in einer Fehlermeldung.
+    Inhalt: die Fotos DIESES Events im letzten erfolgreichen Lauf ABZUEGLICH des Entwurfs des
+    anfragenden Nutzers (`Vorschlag ∪ eigene Aufnahmen`). Ein von ihm GESTRICHENES Foto ist damit
+    enthalten - genau daraus folgt, dass ein Austausch umkehrbar ist. Ein im Ausschuss-Schritt
+    aussortiertes Foto hat keine Rangzeile und erscheint hier nicht.
 
-    SICHERHEIT - Projektbindung (M1): `PhotoRanking` traegt KEINE `project_id`, und `event_id` ist
-    ein GLOBALER Surrogatschluessel - eine Id aus Projekt B identifiziert hier eindeutig FREMDE
-    Rangzeilen. Ohne das Lauf-Praedikat liefe der Endpunkt nicht in eine erkennbar falsche
-    Kollisionsmenge, sondern lieferte KOHAERENTE Fotos eines fremden Projekts: die Ausfallrichtung
-    wird unauffaelliger, nicht harmloser. Die einzige Bindung an das Projekt des Pfadparameters ist
-    `criterion_scoring_run_id` aus `_latest_successful_criterion_scoring_run_id(session,
-    project_id)`. Dieses Praedikat steht deshalb in JEDER Abfrage dieses Endpunkts - der
-    Zaehlabfrage hinter `total` (ueber `_partition_sizes`) eingeschlossen - und wird nie aus einem
-    Query-Parameter abgeleitet. `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE
-    zweite Verteidigungslinie."""
+    Reihenfolge und Seitenweise: `selection.py::order_alternatives` ordnet die volle Restmenge,
+    danach schneidet `limit`/`offset` die Seite heraus. `total` ist die RESTMENGE und damit
+    unabhaengig von beiden - ein aus `len(items)` gebildetes `total` waere auf der ersten Seite
+    nicht davon zu unterscheiden. Die Ordnung entsteht in Python und nicht im `ORDER BY`, weil sie
+    an den Motiven des BEZUGSBILDES haengt; die Menge ist die eines Events.
+
+    SICHERHEIT - Projektbindung (S2): `PhotoRanking` traegt KEINE `project_id`, und `event_id` ist
+    ein GLOBALER Surrogatschluessel - eine Id aus Projekt B identifiziert unter `/projects/A/…`
+    eindeutig FREMDE Rangzeilen. Ohne das Lauf-Praedikat liefe der Endpunkt nicht in eine
+    erkennbar falsche Kollisionsmenge, sondern lieferte KOHAERENTE Fotos eines fremden Projekts:
+    die Ausfallrichtung wird unauffaelliger, nicht harmloser. Die einzige Bindung an das Projekt
+    des Pfadparameters ist `criterion_scoring_run_id` aus
+    `_latest_successful_criterion_scoring_run_id(session, project_id)`; sie steht AUSGESCHRIEBEN
+    in der Aufloesung des Bezugsfotos, in der Kandidatenabfrage und in `_partition_sizes`. `total`
+    entsteht aus der Kandidatenabfrage selbst und damit aus derselben Bindung - eine eigene
+    Zaehlabfrage ohne das Praedikat lieferte eine plausible Zahl zu einer leeren Liste, und nichts
+    wuerde rot. Die Motivabfrage (`load_effective_strengths`) bekommt ausschliesslich Ids aus
+    diesen beiden Abfragen; sie fuegt der Menge keine Zeile hinzu. `_photos_by_id` filtert nur
+    nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
+
+    SICHERHEIT - das Bezugsbild (S3): `photo_id` wird AUSSCHLIESSLICH ueber eine Rangzeile
+    desselben Laufs UND desselben Events aufgeloest, nie ueber `session.get(Photo, …)`. Scheitert
+    das, endet die Anfrage vor jeder weiteren Abfrage mit `200`, `items: []` und `total: 0` - auf
+    demselben Antwortpfad wie eine leere Trefferliste, ohne Fehlertext und ohne Rueckspiegelung
+    der uebergebenen Werte. `photo_id` steuert allein die SORTIERUNG: die Motive des Bezugsbildes
+    bestimmen, welche Fotos vorn stehen. Ohne das Praedikat ordnete ein fremdes Foto die eigene
+    Antwort, und aus der beobachteten Reihenfolge liesse sich das Motivprofil eines Bildes
+    ablesen, das der Anfragende nie sehen darf - ein Leck ueber die Sortierung, das keine
+    Antwortzeile benennt. Ein abweichender Statuscode waere daneben ein Existenz-Orakel ueber
+    fremde Ids."""
     project = await _get_project_or_404(project_id, session)
 
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
         return PhotoListOut(items=[], total=0)
 
-    partition_sizes = await _partition_sizes(session, latest_run_id)
-    total = max(partition_sizes.get(event_id, 0) - after_rank, 0)
-
-    rows = (
+    # (1) Das Bezugsbild - beide Praedikate ausgeschrieben, siehe Docstring (S3).
+    reference_row = (
         await session.execute(
-            select(PhotoRanking.photo_id, PhotoRanking.rank_position)
-            .where(
+            select(PhotoRanking.photo_id, PhotoRanking.rank_score).where(
                 PhotoRanking.criterion_scoring_run_id == latest_run_id,
                 PhotoRanking.event_id == event_id,
-                PhotoRanking.rank_position > after_rank,
+                PhotoRanking.photo_id == photo_id,
             )
-            .order_by(PhotoRanking.rank_position)
-            .offset(offset)
-            .limit(limit)
+        )
+    ).first()
+    if reference_row is None:
+        return PhotoListOut(items=[], total=0)
+
+    # (2) Die Kandidaten: die Rangzeilen dieses Events ABZUEGLICH des eigenen Entwurfs.
+    #
+    # Der Entwurf ist `(Vorschlag ∪ Aufgenommen) \ Gestrichen` (ADR 0098 Punkt 1); hier steht
+    # dessen Verneinung, ausgeschrieben als zwei Bedingungen:
+    #
+    #   (a) nicht selbst aufgenommen, und
+    #   (b) nicht vorgeschlagen ODER selbst gestrichen.
+    #
+    # Der zweite Halbsatz von (b) ist die Umkehrbarkeit des Austauschs: ein GESTRICHENES Foto des
+    # Vorschlags gehoert nicht mehr zum Entwurf und steht deshalb wieder unter den Alternativen -
+    # ohne ihn liesse sich ein Austausch nicht zuruecknehmen. Er ist zugleich der Unterschied zum
+    # Entwurfs-LESEPFAD, der gestrichene Fotos bewusst stehen laesst: dort sind sie ein
+    # Anzeigezustand, hier gehoeren sie zur Restmenge (Zusicherung 2).
+    #
+    # `or_(… is_(None), … != …)` und nicht `!=` allein: ohne eigene Bewertungszeile ist `status`
+    # `NULL`, und ein blosser Ungleichheitsvergleich ergaebe in SQL `NULL` - jedes unbewertete
+    # Foto fiele still aus der Antwort.
+    own_rating = aliased(Rating)
+    candidate_rows = (
+        await session.execute(
+            select(PhotoRanking.photo_id, PhotoRanking.rank_score)
+            .outerjoin(
+                own_rating,
+                and_(
+                    own_rating.photo_id == PhotoRanking.photo_id,
+                    own_rating.user_id == current_user.id,
+                ),
+            )
+            .where(
+                # SICHERHEIT: das Pflichtpraedikat, siehe Docstring. Nie die Event-Id allein.
+                PhotoRanking.criterion_scoring_run_id == latest_run_id,
+                PhotoRanking.event_id == event_id,
+                or_(
+                    own_rating.status.is_(None),
+                    own_rating.status != RatingStatus.ALBUM_WORTHY,
+                ),
+                or_(
+                    PhotoRanking.selection_position.is_(None),
+                    own_rating.status == RatingStatus.REJECTED,
+                ),
+            )
         )
     ).all()
 
-    ids = [photo_id for photo_id, _ in rows]
-    curation_positions = {photo_id: rank_position for photo_id, rank_position in rows}
+    # (3) Die Motive beider Seiten in EINER Abfrage - nie eine je Kandidat.
+    strengths_by_id = await load_effective_strengths(
+        session, [photo_id, *(row.photo_id for row in candidate_rows)]
+    )
+    reference = AlternativeCandidate(
+        photo_id=photo_id,
+        quality=reference_row.rank_score,
+        motif_strengths=_strength_values(strengths_by_id.get(photo_id)),
+    )
+    ordered_ids = order_alternatives(
+        reference,
+        [
+            AlternativeCandidate(
+                photo_id=row.photo_id,
+                quality=row.rank_score,
+                motif_strengths=_strength_values(strengths_by_id.get(row.photo_id)),
+            )
+            for row in candidate_rows
+        ],
+    )
+
+    # (4) `total` ist die volle Restmenge, die Hydratation laeuft ueber die Seite.
+    total = len(ordered_ids)
+    ids = ordered_ids[offset : offset + limit]
     photos_by_id = await _photos_by_id(session, ids)
     rankings_by_id = await _ranking_by_photo_id(session, latest_run_id, ids)
+    partition_sizes = await _partition_sizes(session, latest_run_id)
     place_by_id = await _event_and_location_by_photo_id(
         session, project_id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
     )
-    motifs_by_id = await load_effective_strengths(session, ids)
     items = [
         _to_photo_out(
-            photos_by_id[photo_id],
+            photos_by_id[alternative_id],
             current_user.id,
             project,
-            rankings_by_id.get(photo_id),
+            rankings_by_id.get(alternative_id),
             partition_sizes,
-            curation_positions,
-            place_by_id.get(photo_id, NO_PLACE),
-            motifs_by_id.get(photo_id),
+            # KEINE `curation_position`: die Alternativen sind keine Auswahl, zu der ein Bild
+            # einen Platz haette. Eine Zahl hier waere eine Rangaussage ueber eine Reihenfolge,
+            # die allein am gerade betrachteten Bezugsbild haengt.
+            None,
+            place_by_id.get(alternative_id, NO_PLACE),
+            strengths_by_id.get(alternative_id),
         )
-        for photo_id in ids
+        # Eigener Name, nicht `photo_id`: der Query-Parameter gleichen Namens ist das BEZUGSBILD
+        # und wird oben gebraucht; eine Ueberdeckung hier waere an keiner Stelle sichtbar.
+        for alternative_id in ids
     ]
     return PhotoListOut(items=items, total=total)
 
