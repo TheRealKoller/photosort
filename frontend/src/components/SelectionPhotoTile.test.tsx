@@ -186,6 +186,59 @@ describe('SelectionPhotoTile - die Trefferfläche', () => {
       expect(control.className).toMatch(/\btap-target\b/)
     }
   })
+
+  /*
+   * DIE BEIDEN ENTSCHEIDUNGEN STEHEN UNTEREINANDER, AUF JEDER BREITE.
+   *
+   * Geprüft wird die KLASSENSTRUKTUR und keine Pixelbreite: jsdom hat keine Layout-Engine, dort
+   * ist jede Breite 0. Der Nachweis, dass die Beschriftungen nebeneinander auf keiner
+   * Rasterbreite Platz haben, ist eine Messung im Browser und gehört nicht in diese Ebene - hier
+   * steht der Wächter gegen den Rückfall, und der greift genau an der Anordnung.
+   *
+   * Ein `sm:flex-row` (oder irgendein anderer Umschlag zurück in eine Zeile) macht den Fall rot.
+   */
+  it('stacks the two decisions vertically and never falls back to one row', () => {
+    renderTile({ contested: true })
+
+    const take = screen.getByRole('button', { name: 'Aufnehmen: reise/a.jpg' })
+    const drop = screen.getByRole('button', { name: 'Nicht aufnehmen: reise/a.jpg' })
+    const row = take.parentElement
+    expect(row, 'gemeinsamer Container der beiden Entscheidungen').not.toBeNull()
+    expect(row).toBe(drop.parentElement)
+
+    expect(row!.className).toMatch(/\bflex-col\b/)
+    // Auch als Breakpoint-Variante nicht - `sm:flex-row`, `md:flex-row`, … sind alle gemeint.
+    expect(row!.className).not.toMatch(/flex-row\b/)
+
+    // Volle Kachelbreite je Schaltfläche statt `flex-1`: In einer SPALTE wirkt `flex-1` auf die
+    // Höhe und ließe die Schaltflächen auf ihre Textzeile zusammenfallen.
+    for (const control of [take, drop]) {
+      expect(control.className).toMatch(/\bw-full\b/)
+      expect(control.className).not.toMatch(/\bflex-1\b/)
+    }
+  })
+
+  /*
+   * ABSTAND DER GESTAPELTEN ENTSCHEIDUNGEN: mindestens 16px.
+   *
+   * Das Design-System nennt 12px als Untergrenze zwischen zwei aufgespannten Bedienelementen
+   * (Regel 2 am `tap-target`, die Aufspannung ragt je 6px über das Sichtbare hinaus). Hier gilt
+   * der nächsthöhere Wert, und das ist kein Vorsichtsaufschlag: `tap-targets.spec.ts` tastet die
+   * Ecken bei 21.5px ab der Mitte ab, während die aufgespannte Fläche 22px weit reicht. Bei
+   * genau 12px Abstand beginnt die Fläche des NACHBARN exakt an dieser Abtaststelle - die
+   * Entscheidung fiele dann in die Rundung des Browsers. Bei Überlappung gewinnt das
+   * obenliegende Element, und das wäre hier eine falsch geschriebene Entscheidung über die
+   * Bildmenge des Albums.
+   */
+  it('keeps the stacked decisions far enough apart for their expanded tap targets', () => {
+    renderTile({ contested: true })
+
+    const row = screen.getByRole('button', { name: 'Aufnehmen: reise/a.jpg' }).parentElement
+    const gap = row!.className.match(/\bgap-(\d+)\b/)
+    expect(gap, 'Abstandsklasse der Entscheidungsspalte').not.toBeNull()
+    // Tailwind-Skala: 1 Einheit = 4px.
+    expect(Number(gap![1]) * 4).toBeGreaterThanOrEqual(16)
+  })
 })
 
 describe('SelectionPhotoTile - die drei Anzeigezustände', () => {

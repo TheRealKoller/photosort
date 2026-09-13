@@ -91,7 +91,10 @@ export function SelectionPhotoTile({
         type="button"
         variant={included ? 'default' : 'secondary'}
         size="sm"
-        className="flex-1"
+        // Volle Kachelbreite, NICHT `flex-1`: In einer Spalte wirkt `flex-1` auf die Hauptachse,
+        // also auf die Höhe - die Schaltfläche fiele auf ihre Textzeile zusammen und verlöre die
+        // sichtbaren 32px, auf denen die Trefferflächen-Aufspannung aufsetzt.
+        className="w-full"
         busy={decidingIncluded === included}
         // Der zugängliche Name trägt den Dateinamen - sonst hießen auf einer Seite mit vielen
         // Kacheln alle Schaltflächen gleich.
@@ -148,8 +151,22 @@ export function SelectionPhotoTile({
 
           {/* Ein Druck schreibt die Entscheidung SOFORT - kein Dialog, kein Bestätigungsschritt,
               keine Abstimmung. Die Aufspannung auf 44px bringt `Button` über `tap-target` selbst
-              mit; eine eigene Höhenklasse baute sie daneben noch einmal nach. */}
-          <div className="flex gap-3">
+              mit; eine eigene Höhenklasse baute sie daneben noch einmal nach.
+
+              DIE ENTSCHEIDUNGEN STEHEN UNTEREINANDER, AUF JEDER BREITE - auch auf dem großen
+              Schirm, und das ist kein Zugeständnis an das Telefon: Die Kachel ist auf jeder
+              Rasterstufe schmaler als „Nicht aufnehmen" nebeneinander braucht (das Raster wird mit
+              der Bildschirmbreite spaltenreicher, die Kachel dadurch nicht breiter). `Button`
+              trägt `whitespace-nowrap` und über `size="sm"` ein `min-w-8`, das die inhaltsbasierte
+              Mindestbreite des Flex-Kindes aushebelt - nebeneinander wird die Beschriftung
+              deshalb nicht umbrochen, sondern beschnitten, ohne dass die Seite waagerecht
+              scrollte. Ein Rückfall auf eine Zeile ist damit nicht an einem Überlauf erkennbar,
+              sondern nur an der halb abgeschnittenen Gegenaussage.
+
+              16px Abstand statt der 12px, die das Design-System als Untergrenze nennt: Die
+              aufgespannten Trefferflächen reichen 22px ab der Mitte, und der Eckentest tastet bei
+              21.5px ab - bei 12px begänne die Fläche des Nachbarn genau dort. */}
+          <div className="flex flex-col gap-4">
             {photo.contested ? (
               <>
                 {decisionButton(true, 'Aufnehmen')}
