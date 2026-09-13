@@ -15,10 +15,11 @@ import httpx
 import numpy as np
 import pytest
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import pricing, worker
+from photosort.album_suitability import normalize_level
 from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
     CloudRequestThrottle,
@@ -41,6 +42,7 @@ from photosort.models import (
     Event,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
@@ -58,6 +60,7 @@ from photosort.models import (
 from photosort.motif_strengths import load_effective_strengths, upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.pricing import compute_cost_usd
+from photosort.quality import LOCAL_CORRECTION_SPAN
 from photosort.thumbnails import display_path
 from photosort.worker import _select_landmark_candidates, run_criterion_scoring, run_project_scoring
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
@@ -1255,6 +1258,10 @@ async def test_photo_rankings_contain_the_full_candidate_pool_per_partition(
         )
         await _add_score(db_session, photo, sharpness=float(50 + i * 20), exposure=0.0)
         _write_display_variant(tmp_path, photo, _flat_image())
+        # Seit Spec 0428 traegt nur ein Foto MIT Modellbewertung einen Qualitaetswert - ohne sie
+        # stuende in beiden Rangspalten `NULL`, und dieser Fall pruefte die Partitionierung nicht
+        # mehr.
+        await _add_album_suitability(db_session, photo)
         photos.append(photo)
 
     run = await run_criterion_scoring(
@@ -1300,12 +1307,14 @@ async def test_partitions_are_isolated_by_event(db_session: AsyncSession, tmp_pa
     )
     await _add_score(db_session, first, cluster_key="cluster-a")
     _write_display_variant(tmp_path, first, _flat_image())
+    await _add_album_suitability(db_session, first)
 
     second = await _add_photo(
         db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 2, tzinfo=UTC)
     )
     await _add_score(db_session, second, cluster_key="cluster-b")
     _write_display_variant(tmp_path, second, _flat_image())
+    await _add_album_suitability(db_session, second)
 
     run = await run_criterion_scoring(
         db_session,
@@ -4420,6 +4429,7 @@ async def test_the_partition_ranking_uses_the_event(
     for photo in (eiffel, trocadero):
         await _add_score(db_session, photo, cluster_key="cluster-0")
         _write_display_variant(tmp_path, photo, _flat_image())
+        await _add_album_suitability(db_session, photo)
     await _add_landmark_detection(db_session, eiffel, "Eiffelturm")
     await _add_landmark_detection(db_session, trocadero, "Trocadero")
 
@@ -4459,6 +4469,7 @@ async def test_partitions_are_formed_over_the_event_alone(
     for photo in photos:
         await _add_score(db_session, photo, cluster_key="cluster-0")
         _write_display_variant(tmp_path, photo, _flat_image())
+        await _add_album_suitability(db_session, photo)
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
@@ -4773,6 +4784,9 @@ async def _one_photo_run(
     )
     await _add_score(db_session, photo)
     _write_display_variant(tmp_path, photo, _flat_image(size=_MOTIF_TEST_IMAGE_SIZE))
+    # Der Regelfall seit Spec 0428: ein Ausschuss-Ueberlebender traegt die Modellbewertung aus
+    # dem Cloud-Teilschritt, und erst damit entsteht ueberhaupt ein Qualitaetswert.
+    await _add_album_suitability(db_session, photo)
 
     run = await run_criterion_scoring(
         db_session,
@@ -5204,6 +5218,48 @@ class BrokenLandmarkerForContent:
         raise RuntimeError("simulierter Landmarker-Fehler")
 
 
+async def _add_album_suitability(
+    session: AsyncSession, photo: Photo, *, level: int = 4
+) -> PhotoAlbumSuitability:
+    """Die Zeile, die der (hier nicht laufende) Cloud-Teilschritt geschrieben haette - Grundlage
+    des Qualitaetswerts."""
+    row = PhotoAlbumSuitability(
+        photo_id=photo.id,
+        level=level,
+        reason="Modellbegruendung",
+        provider="anthropic",
+        computed_at=datetime.now(UTC),
+    )
+    session.add(row)
+    await session.commit()
+    return row
+
+
+async def _criterion_row(
+    session: AsyncSession, photo: Photo, criterion_key: str
+) -> PhotoCriterionScore | None:
+    return (
+        await session.execute(
+            select(PhotoCriterionScore).where(
+                PhotoCriterionScore.photo_id == photo.id,
+                PhotoCriterionScore.criterion_key == criterion_key,
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def _rankings_of(session: AsyncSession, run_id: int) -> list[PhotoRanking]:
+    return list(
+        (
+            await session.execute(
+                select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 class TestWhatIsNotMeasurable:
     def _content(
         self,
@@ -5331,3 +5387,297 @@ class TestWhatIsNotMeasurable:
 
             assert content.values == {}
             assert content.not_measurable == frozenset(), photo.relative_path
+
+
+# specs/features/0428-albumtauglichkeit-vom-modell.md, Schritt 9: der Ranking-Teilschritt bildet
+# den Qualitaetswert aus Modellstufe und lokaler Korrektur, schreibt `NULL` fuer ein Foto ohne
+# Modellbewertung - und der Kriterien-Lauf LOESCHT eine Altzeile, die nicht mehr messbar ist.
+
+
+async def _prepare_photo(
+    session: AsyncSession, tmp_path: Path, *, image: Image.Image | None = None
+) -> tuple[Project, ScoringRun, Photo]:
+    project = await _make_project(session)
+    scoring_run = await _add_successful_scoring_run(session, project)
+    photo = await _add_photo(session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC))
+    await _add_score(session, photo)
+    _write_display_variant(tmp_path, photo, image if image is not None else _flat_image())
+    return project, scoring_run, photo
+
+
+async def _add_stale_criterion(
+    session: AsyncSession, photo: Photo, criterion_key: str
+) -> PhotoCriterionScore:
+    """Eine Altzeile aus einem frueheren Lauf - genau der Wert, den die abgeloeste
+    `0.0`-Setzung hinterlassen hat."""
+    row = PhotoCriterionScore(
+        photo_id=photo.id,
+        criterion_key=criterion_key,
+        value=0.0,
+        source=CriterionSource.LOCAL_HEURISTIC,
+        computed_at=datetime(2020, 1, 1, tzinfo=UTC).replace(tzinfo=None),
+    )
+    session.add(row)
+    await session.commit()
+    return row
+
+
+class TestTheStaleRowOfANoLongerMeasurableCriterion:
+    """Der gefaehrlichste Umbau dieser Story: "nicht messbar" LOESCHT eine Altzeile, "nicht
+    berechenbar" laesst sie unberuehrt. Beide Haelften stehen bewusst in EINEM Fall mit einer
+    Assertion darauf, dass sich die beiden Datenbankzustaende UNTERSCHEIDEN muessen - getrennt
+    geschrieben bestuenden sie auch ein `_delete_criterion`, das immer oder nie loescht, und genau
+    das ist der naheliegende Fehler."""
+
+    async def _run(
+        self,
+        session: AsyncSession,
+        project: Project,
+        scoring_run: ScoringRun,
+        tmp_path: Path,
+        *,
+        detector: object,
+        landmarker: object,
+    ) -> None:
+        await run_criterion_scoring(
+            session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=lambda: detector,  # type: ignore[arg-type,return-value]
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=lambda: landmarker,  # type: ignore[arg-type,return-value]
+        )
+
+    @pytest.mark.parametrize(
+        ("criterion_key", "detector", "landmarker"),
+        [
+            ("goldener_schnitt", NoFaceDetector(), NoFaceLandmarker()),
+            ("freiraum", NoFaceDetector(), NoFaceLandmarker()),
+        ],
+    )
+    async def test_not_measurable_deletes_the_stale_row_while_not_computable_keeps_it(
+        self,
+        db_session: AsyncSession,
+        tmp_path: Path,
+        criterion_key: str,
+        detector: object,
+        landmarker: object,
+    ) -> None:
+        measurable_project, measurable_run, measured_photo = await _prepare_photo(
+            db_session, tmp_path
+        )
+        await _add_stale_criterion(db_session, measured_photo, criterion_key)
+        broken_project = await _make_project(db_session, name="Zweitprojekt")
+        broken_run = await _add_successful_scoring_run(db_session, broken_project)
+        broken_photo = await _add_photo(
+            db_session, broken_project, "b.jpg", "etag-2", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, broken_photo)
+        _write_display_variant(tmp_path, broken_photo, _flat_image())
+        stale_of_broken = await _add_stale_criterion(db_session, broken_photo, criterion_key)
+        stale_value, stale_source, stale_time = (
+            stale_of_broken.value,
+            stale_of_broken.source,
+            stale_of_broken.computed_at,
+        )
+
+        # (1) NICHT MESSBAR: die Detektion lief, das Merkmal fehlt.
+        await self._run(
+            db_session,
+            measurable_project,
+            measurable_run,
+            tmp_path,
+            detector=detector,
+            landmarker=landmarker,
+        )
+        # (2) NICHT BERECHENBAR: der Detektor stand gar nicht zur Verfuegung.
+        await self._run(
+            db_session,
+            broken_project,
+            broken_run,
+            tmp_path,
+            detector=BrokenFaceDetectorForContent(),
+            landmarker=BrokenLandmarkerForContent(),
+        )
+
+        deleted = await _criterion_row(db_session, measured_photo, criterion_key)
+        kept = await _criterion_row(db_session, broken_photo, criterion_key)
+        # DIE tragende Assertion: die beiden Zustaende muessen sich unterscheiden.
+        assert (deleted is None) != (kept is None), criterion_key
+        assert deleted is None, criterion_key
+        assert kept is not None, criterion_key
+        assert (kept.value, kept.source, kept.computed_at) == (
+            stale_value,
+            stale_source,
+            stale_time,
+        ), "Ein Infrastrukturproblem darf keinen gueltigen Messwert veraendern."
+
+    async def test_a_measurable_feature_writes_a_value_and_deletes_nothing(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project, scoring_run, photo = await _prepare_photo(db_session, tmp_path)
+        await _add_stale_criterion(db_session, photo, "goldener_schnitt")
+
+        await self._run(
+            db_session,
+            project,
+            scoring_run,
+            tmp_path,
+            detector=SingleFaceDetector(),
+            landmarker=FaceLandmarkerStub(matrix=_rotation_matrix_y(30.0)),
+        )
+
+        for criterion_key in ("goldener_schnitt", "freiraum"):
+            row = await _criterion_row(db_session, photo, criterion_key)
+            assert row is not None, criterion_key
+
+    async def test_two_consecutive_runs_leave_no_resurrected_row_behind(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """`_delete_criterion` raeumt die Zeile UND den In-Memory-Cache ab: ein spaeteres
+        `_upsert_criterion` im selben Lauf darf kein verwaistes ORM-Objekt wiederbeleben, und der
+        zweite Lauf darf die Zeile nicht aus dem Cache heraus neu anlegen."""
+        project, scoring_run, photo = await _prepare_photo(db_session, tmp_path)
+        await _add_stale_criterion(db_session, photo, "goldener_schnitt")
+        await _add_stale_criterion(db_session, photo, "freiraum")
+
+        for _ in range(2):
+            await self._run(
+                db_session,
+                project,
+                scoring_run,
+                tmp_path,
+                detector=NoFaceDetector(),
+                landmarker=NoFaceLandmarker(),
+            )
+
+        assert await _criterion_row(db_session, photo, "goldener_schnitt") is None
+        assert await _criterion_row(db_session, photo, "freiraum") is None
+        # Der Lauf hat trotzdem gearbeitet - sonst bestuende dieser Fall auch ein No-op.
+        assert await _criterion_row(db_session, photo, "sharpness") is not None
+
+
+class TestTheQualityScoreOfTheRankingStep:
+    async def _run(
+        self, session: AsyncSession, project: Project, scoring_run: ScoringRun, tmp_path: Path
+    ) -> CriterionScoringRun:
+        return await run_criterion_scoring(
+            session,
+            project,
+            scoring_run.id,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+        )
+
+    async def test_a_photo_with_a_model_level_gets_a_score_inside_its_level_band(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project, scoring_run, photo = await _prepare_photo(db_session, tmp_path)
+        await _add_album_suitability(db_session, photo, level=4)
+
+        run = await self._run(db_session, project, scoring_run, tmp_path)
+
+        rankings = await _rankings_of(db_session, run.id)
+        assert len(rankings) == 1
+        score = rankings[0].rank_score
+        assert score is not None
+        assert abs(score - normalize_level(4)) <= LOCAL_CORRECTION_SPAN
+        assert rankings[0].rank_position == 1
+
+    async def test_a_photo_without_a_model_level_carries_null_but_keeps_its_event(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Kein stiller Rueckfall auf einen lokal gebildeten Wert - und trotzdem faellt das Foto
+        nicht aus der Gliederung: es behaelt seine Event-Zugehoerigkeit und bleibt im einsehbaren
+        Vorrat."""
+        project, scoring_run, photo = await _prepare_photo(db_session, tmp_path)
+
+        run = await self._run(db_session, project, scoring_run, tmp_path)
+
+        rankings = await _rankings_of(db_session, run.id)
+        assert [entry.photo_id for entry in rankings] == [photo.id]
+        assert rankings[0].rank_score is None
+        assert rankings[0].rank_position is None
+        assert rankings[0].event_id is not None
+
+    async def test_the_rank_positions_are_gapless_over_the_rated_subset(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die unbewerteten Fotos stehen mit `NULL` daneben und verschieben die Zaehlung der
+        bewerteten nicht - sonst entstuende eine Rangfolge mit Luecken."""
+        project = await _make_project(db_session)
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photos = []
+        for index in range(4):
+            photo = await _add_photo(
+                db_session,
+                project,
+                f"{index}.jpg",
+                f"etag-{index}",
+                datetime(2023, 1, 1, 0, index, tzinfo=UTC),
+            )
+            await _add_score(db_session, photo)
+            _write_display_variant(tmp_path, photo, _flat_image())
+            photos.append(photo)
+        await _add_album_suitability(db_session, photos[0], level=5)
+        await _add_album_suitability(db_session, photos[2], level=2)
+
+        run = await self._run(db_session, project, scoring_run, tmp_path)
+
+        rankings = await _rankings_of(db_session, run.id)
+        rated = {
+            entry.photo_id: entry.rank_position
+            for entry in rankings
+            if entry.rank_position is not None
+        }
+        unrated = [entry for entry in rankings if entry.rank_position is None]
+        assert sorted(rated.values()) == [1, 2]
+        assert rated[photos[0].id] == 1
+        assert rated[photos[2].id] == 2
+        assert {entry.photo_id for entry in unrated} == {photos[1].id, photos[3].id}
+        assert all(entry.rank_score is None for entry in unrated)
+
+    async def test_without_cloud_approval_nothing_is_rated_and_the_local_values_are_identical(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """ "Kein stiller Rueckfall": eine Assertion NUR auf `NULL` bestuende auch, wenn der lokale
+        Pfad nebenbei etwas anderes gerechnet haette. Deshalb die Gleichheit der lokalen
+        Kriterienwerte gegen denselben Bestand MIT Bewertung - und dazu, dass ohne Freigabe keine
+        einzige Albumtauglichkeitszeile entsteht."""
+        without = await _prepare_photo(db_session, tmp_path)
+        assert without[0].cloud_vision_detection_enabled is False
+        with_project = await _make_project(db_session, name="Mit Freigabe")
+        with_project.cloud_vision_detection_enabled = True
+        await db_session.commit()
+        with_run = await _add_successful_scoring_run(db_session, with_project)
+        with_photo = await _add_photo(
+            db_session, with_project, "a.jpg", "etag-2", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        await _add_score(db_session, with_photo)
+        _write_display_variant(tmp_path, with_photo, _flat_image())
+        await _add_album_suitability(db_session, with_photo, level=3)
+
+        run_without = await self._run(db_session, without[0], without[1], tmp_path)
+        await self._run(db_session, with_project, with_run, tmp_path)
+
+        rankings_without = await _rankings_of(db_session, run_without.id)
+        assert all(entry.rank_score is None for entry in rankings_without)
+        assert all(entry.rank_position is None for entry in rankings_without)
+        assert all(entry.event_id is not None for entry in rankings_without)
+        assert (
+            await db_session.execute(
+                select(func.count())
+                .select_from(PhotoAlbumSuitability.__table__)
+                .where(PhotoAlbumSuitability.photo_id == without[2].id)
+            )
+        ).scalar_one() == 0
+        assert await _criteria_of(db_session, without[2]) == await _criteria_of(
+            db_session, with_photo
+        )

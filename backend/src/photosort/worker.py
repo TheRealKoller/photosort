@@ -112,6 +112,7 @@ from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCl
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.pricing import compute_cost_usd
+from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.ranking import rank_photos
 from photosort.remote_classification import (
     CategoryDetectionClientLike,
@@ -179,12 +180,6 @@ CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
 # thumbnails.py::generate_variants immer als JPEG schreibt - fester Wert statt einer
 # Format-Erkennung. Das Bildquellen-Muss-Kriterium gilt für BEIDE Cloud-Vision-Pfade.
 _CLOUD_VISION_IMAGE_MIME_TYPE = "image/jpeg"
-
-# Default-Gewichtung für ranking.py::rank_photos: die Gleichgewichtung aller im Register
-# bekannten Kriterien ist ein bewusst austauschbarer Platzhalter, keine kalibrierte Formel.
-# Eine spätere Gewichtungs-/Formel-Entscheidung ändert nur diesen
-# Aufrufer-Default, nie das Datenmodell oder rank_photos selbst.
-DEFAULT_CRITERION_WEIGHTS: dict[str, float] = {key: 1.0 for key in CRITERIA_REGISTRY}
 
 
 class OpenCloudScanClient(Protocol):
@@ -1620,20 +1615,49 @@ async def _build_grouping_and_rankings(
         for photo_id in built.photo_ids
     }
 
+    # DIE MODELLBEWERTUNG als Grundlage des Qualitaetswerts - gelesen aus der TABELLE, nie aus
+    # einer laufinternen Abbildung: der Cloud-Teilschritt ist ein eigener Lauf, und diese Funktion
+    # hat auch den zweiten Aufrufer (`rebuild_run_grouping`), der gar keine Cloud-Phase kennt.
+    # Ohne Freigabe gibt es keine einzige Zeile, und JEDER Qualitaetswert wird `NULL` - es gibt
+    # keinen Rueckfall auf einen lokal gebildeten Wert (ADR 0093, Abschnitt 1).
+    level_by_photo_id: dict[int, int] = {
+        photo_id: level
+        for photo_id, level in (
+            await session.execute(
+                select(PhotoAlbumSuitability.photo_id, PhotoAlbumSuitability.level).where(
+                    PhotoAlbumSuitability.photo_id.in_(values_by_photo_id.keys())
+                )
+            )
+        ).all()
+    }
+
     # Eine Partition je Event, ein Foto in genau einer davon.
     partitions: dict[int, dict[int, dict[str, float]]] = {}
     for photo_id, values in values_by_photo_id.items():
         partitions.setdefault(event_id_by_photo[photo_id], {})[photo_id] = values
 
     for event_id, partition_candidates in partitions.items():
-        for ranked_photo in rank_photos(partition_candidates, DEFAULT_CRITERION_WEIGHTS):
+        # `rank_photos` laeuft NUR ueber die bewertete Teilmenge - `rank_position` bleibt dort
+        # lueckenlos ab 1. Die uebrigen Fotos der Partition bekommen ihre Zeile unten mit `NULL`
+        # in beiden Spalten: sie behalten ihre `event_id`, bleiben im einsehbaren Vorrat und
+        # erscheinen nicht im Entwurf.
+        quality_scores = {
+            photo_id: compute_quality_score(
+                level_by_photo_id[photo_id], values, QUALITY_CRITERION_WEIGHTS
+            )
+            for photo_id, values in partition_candidates.items()
+            if photo_id in level_by_photo_id
+        }
+        ranked_by_photo_id = {ranked.photo_id: ranked for ranked in rank_photos(quality_scores)}
+        for photo_id in partition_candidates:
+            ranked = ranked_by_photo_id.get(photo_id)
             session.add(
                 PhotoRanking(
                     criterion_scoring_run_id=run.id,
-                    photo_id=ranked_photo.photo_id,
+                    photo_id=photo_id,
                     event_id=event_id,
-                    rank_score=ranked_photo.rank_score,
-                    rank_position=ranked_photo.rank_position,
+                    rank_score=None if ranked is None else ranked.rank_score,
+                    rank_position=None if ranked is None else ranked.rank_position,
                 )
             )
 
@@ -1844,6 +1868,22 @@ async def run_criterion_scoring(
             existing.source = source
             existing.computed_at = now
 
+        async def _delete_criterion(photo_id: int, criterion_key: str) -> None:
+            """Loescht die Zeile eines NICHT MESSBAREN Kriteriums - ausschliesslich fuer
+            `ContentCriteria.not_measurable`, nie fuer ein mangels Detektor oder wegen einer
+            Ausnahme unberechnetes.
+
+            Ohne dieses Loeschen liefe die Entscheidung "ein nicht messbares Kriterium wird
+            weggelassen" fuer den BESTAND ins Leere: `_upsert_criterion` loescht nie, und die
+            Altzeile mit ihrem alten `0.0` bliebe wirksam.
+
+            Der In-Memory-Cache wird MITgeraeumt: bliebe das ORM-Objekt darin stehen, belebte ein
+            spaeteres `_upsert_criterion` im selben Lauf eine geloeschte Zeile wieder, und der
+            naechste Lauf faende einen Eintrag vor, den es in der Datenbank nicht mehr gibt."""
+            existing = existing_criterion_scores.pop((photo_id, criterion_key), None)
+            if existing is not None:
+                await session.delete(existing)
+
         # photo_id -> {criterion_key: value}, nur die in DIESEM Lauf erfolgreich berechneten
         # Werte (reine In-Memory-Grundlage fuer rank_photos unten, kein erneutes DB-Read noetig).
         candidate_values: dict[int, dict[str, float]] = {}
@@ -1885,6 +1925,12 @@ async def run_criterion_scoring(
                         photo.id, criterion_key, content.values[criterion_key], source
                     )
                     values[criterion_key] = content.values[criterion_key]
+
+            # NUR `not_measurable` - "die Detektion lief, das Merkmal fehlt". Ein mangels
+            # Detektor oder wegen einer Ausnahme unberechnetes Kriterium steht dort nicht und
+            # behaelt seine Altzeile.
+            for criterion_key in content.not_measurable:
+                await _delete_criterion(photo.id, criterion_key)
 
             candidate_values[photo.id] = values
             area_fractions_by_photo_id[photo.id] = content.area_fractions
