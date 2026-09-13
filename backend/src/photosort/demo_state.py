@@ -52,6 +52,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.album_suitability import (
+    ALBUM_SUITABILITY_MAX_LEVEL,
+    MAX_ALBUM_SUITABILITY_REASON_LENGTH,
+)
 from photosort.cameras import shifted
 from photosort.cloud_vision import default_vision_model_for_provider
 from photosort.config import settings
@@ -64,6 +68,7 @@ from photosort.models import (
     Event,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
@@ -83,6 +88,7 @@ from photosort.models import (
 from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import LOCAL_MOTIF_SIGNALS, MOTIF_REGISTRY
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
+from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.thumbnails import (
     delete_cached_variants,
     generate_variants,
@@ -188,6 +194,26 @@ _DEMO_LANDMARK_INPUT_TOKENS = 6_200
 _DEMO_LANDMARK_OUTPUT_TOKENS = 540
 _DEMO_LANDMARK_COST_USD = 0.11
 _DEMO_ESTIMATED_COST_USD = 0.52
+
+# Die Albumtauglichkeit des "bewertet"-Zustands. Zwei Fotos tragen einen Sonderfall der
+# BEGRUENDUNG, damit die Sichtpruefung im Browser beide Extreme sieht - und damit die bestehenden
+# Pruefstack-Spezifikationen (`no-horizontal-scroll`, `popover-position`) die Kuratierungsroute
+# mit dem Extremfall besuchen, ohne dafuer einen eigenen Spec zu brauchen:
+#
+# * `_DEMO_MAX_REASON_INDEX` bekommt eine Begruendung in MAXIMALLAENGE - die einzige echte
+#   Layoutfrage dieses Features (sprengt eine sehr lange Begruendung die 158px-Kachel?).
+# * `_DEMO_NULL_REASON_INDEX` bekommt gar keine - die Zeile muss dort ersatzlos entfallen.
+#
+# Beide Indizes kollidieren mit keinem der Motiv-Sonderzustaende und nicht mit
+# `_OPEN_SUGGESTION_INDEX`: fielen zwei Sonderfaelle auf dasselbe Foto, zeigte die Sichtpruefung
+# einen von beiden nie.
+_DEMO_MAX_REASON_INDEX = 2
+_DEMO_NULL_REASON_INDEX = 4
+# Frei erfundener Begruendungstext, auf die Zeichengrenze aufgefuellt - nie ein echter Modelltext.
+_DEMO_ALBUM_SUITABILITY_REASON = (
+    "Die Personen stehen mittig im Bild, der Moment ist getroffen und der Hintergrund bleibt "
+    "ruhig genug, um nicht vom Motiv abzulenken."
+)
 
 # Der "bewertet"-Zustand muss ALLE VIER Anzeigezustaende der Event-Ueberschrift hergeben -
 # Sehenswuerdigkeit, eine Koordinate, mehrere Orte und gar kein Ort. Sonst ist die Sichtpruefung
@@ -616,6 +642,21 @@ def _deterministic_unit_value(slug: str, index: int, salt: str) -> float:
     return round(rng.uniform(0.05, 0.98), 3)
 
 
+def _demo_album_suitability_reason(index: int) -> str | None:
+    """Die Begruendung des i-ten Fotos: einmal in MAXIMALLAENGE, einmal gar keine, sonst der
+    Regelfall.
+
+    Die Maximallaenge entsteht aus der Kappungsgrenze selbst und nicht aus einem abgezaehlten
+    Literal - waechst die Grenze, waechst dieser Text mit, und die Layoutfrage bleibt am
+    tatsaechlichen Extremfall gestellt."""
+    if index == _DEMO_NULL_REASON_INDEX:
+        return None
+    if index == _DEMO_MAX_REASON_INDEX:
+        padded = _DEMO_ALBUM_SUITABILITY_REASON.ljust(MAX_ALBUM_SUITABILITY_REASON_LENGTH, "x")
+        return padded[:MAX_ALBUM_SUITABILITY_REASON_LENGTH]
+    return _DEMO_ALBUM_SUITABILITY_REASON
+
+
 async def _seed_motif_assessments(
     session: AsyncSession, slug: str, photos: list[Photo], user_ids: Sequence[int]
 ) -> None:
@@ -927,17 +968,40 @@ async def _seed_rated_project(
                     computed_at=_BASE_SCORING_AT,
                 )
             )
-        rankings.append((event_id, photo, _deterministic_unit_value(spec.slug, index, "rank")))
+        criterion_values: dict[str, float] = {}
         for criterion_key, definition in CRITERIA_REGISTRY.items():
+            value = _deterministic_unit_value(spec.slug, index, criterion_key)
+            criterion_values[criterion_key] = value
             session.add(
                 PhotoCriterionScore(
                     photo_id=photo.id,
                     criterion_key=criterion_key,
-                    value=_deterministic_unit_value(spec.slug, index, criterion_key),
+                    value=value,
                     source=definition.source,
                     computed_at=_BASE_SCORING_AT,
                 )
             )
+
+        # Die Modellbewertung und der daraus GERECHNETE Qualitaetswert - nicht zwei unabhaengige
+        # Zufallszahlen: die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie
+        # schriebe, und `rank_score` ist seit Spec 0428 genau diese Rechnung.
+        level = index % ALBUM_SUITABILITY_MAX_LEVEL + 1
+        session.add(
+            PhotoAlbumSuitability(
+                photo_id=photo.id,
+                level=level,
+                reason=_demo_album_suitability_reason(index),
+                provider="demo-state",
+                computed_at=_BASE_SCORING_AT,
+            )
+        )
+        rankings.append(
+            (
+                event_id,
+                photo,
+                compute_quality_score(level, criterion_values, QUALITY_CRITERION_WEIGHTS),
+            )
+        )
 
     # Eine Partition je Event, ein Foto in genau einer davon.
     partitions: dict[int, list[tuple[Photo, float]]] = {}

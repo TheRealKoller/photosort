@@ -22,6 +22,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import demo_state
+from photosort.album_suitability import (
+    ALBUM_SUITABILITY_MAX_LEVEL,
+    MAX_ALBUM_SUITABILITY_REASON_LENGTH,
+)
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.db import Base, make_engine, make_session_factory
@@ -54,6 +58,7 @@ from photosort.models import (
     Event,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
@@ -72,6 +77,7 @@ from photosort.models import (
     User,
 )
 from photosort.motifs import MOTIF_REGISTRY, MOTIF_STRENGTH_BAND_STRONG, is_motif_key
+from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.thumbnails import display_path, generate_variants, thumbnail_path
 from tests.time_offset_invariant import assert_time_offset_invariant
 
@@ -1600,3 +1606,101 @@ class TestTheDemoStateShowsEveryMotifState:
         for model in (PhotoMotifAssessment, PhotoMotifStrength, PhotoMotifCorrection):
             assert (await db_session.execute(select(model))).scalars().all() == []
         assert (await db_session.execute(select(User))).scalars().all() != []
+
+
+class TestTheDemoStateCarriesTheAlbumSuitability:
+    """specs/features/0428-albumtauglichkeit-vom-modell.md: der Seeder traegt die Modellbewertung
+    und BEIDE Extreme der Begruendung.
+
+    Ohne sie besucht keine Pruefstack-Spezifikation die Kuratierungsroute mit dem Extremfall, und
+    die einzige echte Layoutfrage des Features (sprengt eine sehr lange Begruendung die Kachel?)
+    bliebe ungestellt - ein eigener E2E-Spec dafuer entfaellt genau deshalb."""
+
+    async def _suitabilities(self, session: AsyncSession) -> list[PhotoAlbumSuitability]:
+        photo_ids = [photo.id for photo in await _photos_of(session, RATED_PROJECT_NAME)]
+        return list(
+            (
+                await session.execute(
+                    select(PhotoAlbumSuitability).where(
+                        PhotoAlbumSuitability.photo_id.in_(photo_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def test_every_rated_photo_carries_a_level_inside_the_scale(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        rows = await self._suitabilities(db_session)
+
+        assert rows
+        for row in rows:
+            assert 1 <= row.level <= ALBUM_SUITABILITY_MAX_LEVEL, row.photo_id
+
+    async def test_one_reason_sits_exactly_on_the_length_limit_and_one_is_absent(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """BEIDE Extreme in einem Fall: nur zusammen sind sie die Aussage "die Sichtpruefung
+        sieht den laengsten und den fehlenden Text"."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        rows = await self._suitabilities(db_session)
+
+        lengths = {len(row.reason) for row in rows if row.reason is not None}
+        assert MAX_ALBUM_SUITABILITY_REASON_LENGTH in lengths
+        assert sum(1 for row in rows if row.reason is None) == 1
+
+    async def test_no_reason_exceeds_the_limit(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        for row in await self._suitabilities(db_session):
+            assert row.reason is None or len(row.reason) <= MAX_ALBUM_SUITABILITY_REASON_LENGTH
+
+    async def test_every_quality_score_matches_the_formula_over_the_seeded_values(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """`rank_score` ist GERECHNET, nicht gewuerfelt - sonst zeigte die Demo eine Stufe neben
+        einem Wert, der nicht zu ihr gehoert."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        photos = await _photos_of(db_session, RATED_PROJECT_NAME)
+
+        for photo in photos:
+            suitability = await db_session.get(PhotoAlbumSuitability, photo.id)
+            ranking = (
+                await db_session.execute(
+                    select(PhotoRanking).where(PhotoRanking.photo_id == photo.id)
+                )
+            ).scalar_one_or_none()
+            if suitability is None or ranking is None:
+                continue
+            values = {
+                row.criterion_key: row.value
+                for row in (
+                    await db_session.execute(
+                        select(PhotoCriterionScore).where(PhotoCriterionScore.photo_id == photo.id)
+                    )
+                )
+                .scalars()
+                .all()
+            }
+
+            assert ranking.rank_score == pytest.approx(
+                compute_quality_score(suitability.level, values, QUALITY_CRITERION_WEIGHTS)
+            ), photo.relative_path
+
+    async def test_the_project_deletion_removes_the_suitability_rows_too(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await _make_user(db_session, "daniel")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        await purge_demo_state(db_session, tmp_path)
+        await db_session.commit()
+
+        assert (await db_session.execute(select(PhotoAlbumSuitability))).scalars().all() == []

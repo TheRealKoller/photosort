@@ -356,7 +356,14 @@ Verarbeitungs-Cache (Thumbnails).
     `select_top_photos`/`run_top_selection`) mit der Kriterien-Registry `criteria.py` (bewusst
     getrennt von `scoring.py` — die `mediapipe`-Abhängigkeit soll nicht in den Phase-A-Importpfad
     einsickern, wie schon zu Spec-0024-Zeiten) und der reinen Rangfolgen-Funktion
-    `ranking.py::rank_photos`. `classification.py`s mediapipe Face Detector Task-API (gepinntes
+    `ranking.py::rank_photos`. Seit Spec
+    [`0428`](../specs/features/0428-albumtauglichkeit-vom-modell.md) ist `rank_photos` eine **reine
+    Sortierung**: der Qualitätswert selbst entsteht in `quality.py` — dort stehen die Gewichte
+    (`QUALITY_CRITERION_WEIGHTS`) und `LOCAL_CORRECTION_SPAN` an genau einer Stelle, und
+    `album_suitability.py` hält Stufenband, Ankertexte und den Parser der Modellaussage. Der
+    Klassifizierungs-Prompt lebt in `classification_prompt.py` (Motivblock plus
+    Albumtauglichkeits-Block); `motifs.py` bleibt reines Registermodul und weiß nichts über die
+    Antwortform des Anbieters. `classification.py`s mediapipe Face Detector Task-API (gepinntes
     `.tflite`-Binärasset) und Pillow-Laplace-Kachel-Heuristik werden weiterhin genutzt, jetzt über
     `criteria.py::compute_content_people`/`compute_content_landscape`. Läuft auf ALLEN
     Ausschuss-Überlebenden (nicht mehr nur einem vorgefilterten Kandidatenpool pro Cluster — der
@@ -591,12 +598,12 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     auch die neue Remote-Kategorie-Klassifizierung. **Löschumfang (Spec
     [`0044`](../specs/features/0044-projekte-loeschen.md), ADR
     [`decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md`](../specs/decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md)):**
-    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller siebzehn am Projekt
+    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller achtzehn am Projekt
     hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
     `criterion_scoring_runs`, `remote_category_classification_runs`, `ratings`, `photo_scores`,
     `photo_criterion_scores`, `photo_rankings`, `events`, `photo_landmark_detections`,
     `photo_fine_labels`, `photo_motif_assessments`, `photo_motif_strengths`,
-    `photo_motif_corrections`, `photo_cloud_vision_errors`) sowie das
+    `photo_motif_corrections`, `photo_album_suitability`, `photo_cloud_vision_errors`) sowie das
     Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
