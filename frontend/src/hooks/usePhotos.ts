@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { listCurationCandidates, listPhotos } from '../api/photos'
-import { deleteRating, setRating } from '../api/ratings'
+import { deleteRating, setFavorite, setRating } from '../api/ratings'
 import type { PhotoListOut, RatingFilter, RatingStatus } from '../api/types'
 
 /**
@@ -113,6 +113,24 @@ export function useDeleteRatingMutation(projectId: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (photoId: number) => deleteRating(photoId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['photos', projectId] })
+    },
+  })
+}
+
+/**
+ * Das Favoriten-Kennzeichen - eigene Mutation auf einem eigenen Endpunkt, damit die
+ * Albumentscheidung dabei unberührt bleibt.
+ *
+ * Dieselbe breite Invalidierung wie bei der Albumentscheidung: Das Kennzeichen entscheidet über
+ * die Zugehörigkeit zum Filter "Favorit", und der Filter steckt im Query-Key.
+ */
+export function useSetFavoriteMutation(projectId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ photoId, favorite }: { photoId: number; favorite: boolean }) =>
+      setFavorite(photoId, favorite),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['photos', projectId] })
     },

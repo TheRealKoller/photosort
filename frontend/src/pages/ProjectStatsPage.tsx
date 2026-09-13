@@ -279,11 +279,23 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
         </dl>
         <p className="text-sm text-text">Deine Bewertungen (nur deine eigenen)</p>
         <MetricRow>
-          <Metric value={formatCount(ratings.favorite)} label="Favorit" />
           <Metric value={formatCount(ratings.album_worthy)} label="Albumwürdig" />
           <Metric value={formatCount(ratings.rejected)} label="Aussortiert" />
-          <Metric value={formatCount(ratings.unrated)} label="Noch nicht bewertet" />
+          <Metric value={formatCount(ratings.unrated)} label="Noch nicht entschieden" />
+          <Metric value={formatCount(ratings.favorite)} label="Favorit" />
         </MetricRow>
+        {/* DAUERHAFT SICHTBAR, nicht hinter einem Info-Auslöser - dieselbe Begründung wie bei der
+            Motivverteilung unten: eine Summe, die nicht aufgeht, wird sonst als Fehler gelesen,
+            und dieser Effekt tritt beim ersten Blick ein.
+            Seit ADR 0098 steht der Favorit NEBEN der Albumentscheidung: dasselbe Foto zählt in
+            "Favorit" und in "Albumwürdig". Die Anzeige darf keine Aufteilung des Bestands über
+            alle vier Zahlen behaupten - deshalb steht "Favorit" hinter den drei Zahlen der
+            Albumentscheidung, nicht zwischen ihnen. */}
+        <p className="text-sm text-text">
+          Die ersten drei Zahlen teilen alle Fotos unter sich auf. „Favorit“ ist eine eigene
+          Auszeichnung daneben und zählt deshalb zusätzlich mit — dasselbe Foto kann albumwürdig und
+          Favorit sein.
+        </p>
       </Section>
 
       {/* EIN Abschnitt statt der beiden Kategorie-Bloecke (Spec 0427, PR 3). */}

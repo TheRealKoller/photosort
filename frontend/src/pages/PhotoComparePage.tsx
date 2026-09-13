@@ -53,10 +53,15 @@ export function PhotoComparePage() {
             const mine = findOwnRating(photo.ratings, username)
             const others = photo.ratings.filter((rating) => rating.username !== username)
             // Der Vorschlag ersetzt innerhalb der bestehenden "Ich"-Position nur die bisherige
-            // "–"-Darstellung, solange keine eigene Bewertung vorliegt - kein dritter
+            // "–"-Darstellung, solange keine eigene ALBUMENTSCHEIDUNG vorliegt - kein dritter
             // Spalten-/Personen-Slot neben "Ich"/"Andere".
+            //
+            // Beide Zeilen fragen dieselbe Bedingung (`mine?.status`), nicht die eine das
+            // Vorhandensein der Zeile und die andere ihren Inhalt: Sonst zeigte eine reine
+            // Favoritenzeile den Vorschlag als BESTAETIGTE Bewertung an - ohne Zahnrad, ohne
+            // "Vorschlag:"-Praefix, nicht als falsch erkennbar.
             const myStatus = mine?.status ?? photo.suggestion?.status ?? null
-            const myStatusIsSuggested = mine === undefined && photo.suggestion !== null
+            const myStatusIsSuggested = (mine?.status ?? null) === null && photo.suggestion !== null
             return (
               <PhotoCard
                 key={photo.id}
@@ -80,7 +85,12 @@ export function PhotoComparePage() {
                 footer={
                   <div className="flex flex-col gap-2">
                     <span className="flex items-center gap-2 text-sm text-text">
-                      Ich: <RatingBadge status={myStatus} suggested={myStatusIsSuggested} />
+                      Ich:{' '}
+                      <RatingBadge
+                        status={myStatus}
+                        favorite={mine?.favorite ?? false}
+                        suggested={myStatusIsSuggested}
+                      />
                     </span>
                     {others.length > 0 ? (
                       others.map((rating) => (
@@ -88,7 +98,8 @@ export function PhotoComparePage() {
                           key={rating.user_id}
                           className="flex items-center gap-2 text-sm text-text"
                         >
-                          {rating.username}: <RatingBadge status={rating.status} />
+                          {rating.username}:{' '}
+                          <RatingBadge status={rating.status} favorite={rating.favorite} />
                         </span>
                       ))
                     ) : (
