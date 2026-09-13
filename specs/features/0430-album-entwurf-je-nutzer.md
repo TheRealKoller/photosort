@@ -128,8 +128,10 @@ Der Entwurfs-Lesepfad bildet **keine** zweite Auswahlebene ab und schreibt nicht
   heißt „keine Albumentscheidung". Der Docstring fasst die Bedeutung neu: die Zeile sagt, ob das
   Bild ins Album soll, und ist **keine** Aussage über die Bildgüte (die steht in
   `PhotoAlbumSuitability`).
-- `favorite: Mapped[bool]`, `default=False`, `server_default="false"` (Modell **und** Migration,
-  sonst lesen beide verschiedene DDL).
+- `favorite: Mapped[bool]`, `default=False`, `server_default=sa.false()` in Modell **und**
+  Migration — nie die Zeichenkette `"false"`: die rendert wörtlich `DEFAULT 'false'`, ein
+  Textliteral. Postgres wandelt es still um, SQLite legt den String `'false'` ab, der sich beim
+  Lesen als **wahr** liest. Ein eigener Fall hält das an beiden Artefakten fest.
 - `RatingStatus.FAVORITE` entfällt aus dem Enum. **`PhotoScore.suggested_status` benutzt dieselbe
   Enum-Klasse** und wird deshalb in derselben Migration mitgeführt — entweder eigener Wertevorrat
   oder Konvertierung der Bestandszeilen (Auflage S11).
@@ -167,9 +169,11 @@ Durchlauf von `test_postgres_ddl_compatibility.py`:
   `{user_id, username, status: RatingStatus|null, favorite: bool}`.
 - `RatingFilter`: `unrated` heißt künftig „keine Albumentscheidung"
   (`own_rating.id IS NULL OR own_rating.status IS NULL`); `favorite` filtert auf die Spalte;
-  `album_worthy`/`rejected` unverändert auf `status`. Der `suggested`-Zweig prüft weiterhin „keine
-  eigene Zeile"; dass eine reine Favoritenzeile dort künftig als bewertet gilt, ist der bewusste
-  Preis und wird als Fall geprüft.
+  `album_worthy`/`rejected` unverändert auf `status`. **Auch der `suggested`-Zweig und
+  `_to_photo_out::has_own_rating` stellen auf „keine eigene Albumentscheidung" um**, nicht auf
+  „keine eigene Zeile": Ein nur als Favorit markiertes Bild behält damit seinen Ausschuss-Vorschlag.
+  Beide gemeinsam, sonst bricht der bestehende Paritätsfall
+  `test_list_photos_suggested_filter_matches_has_suggestion_parity`.
 - `RankingOut` bekommt **ein** neues Feld `proposed: bool` (`selection_position IS NOT NULL`),
   lauf-global und auf **allen** Lesepfaden befüllt, nicht nur im Entwurfsmodus.
 - **Entwurfsmodus:** `selection: bool` wird zu `draft: bool`. `selection` bleibt als
@@ -686,9 +690,11 @@ beiden Entscheidungen gilt. Wiederholte identische Aufrufe bleiben folgenlos (au
 `DELETE` antwortet `204`, ob eine Zeile bestand oder nicht.
 
 **S10 — Die Migration vorwärts erzeugt keine Zeile außerhalb des neuen Vorrats und keine, die die
-Invariante verletzt.** Reihenfolge: `favorite` mit `server_default='0'` und `nullable=False`
-anlegen, `UPDATE ratings SET favorite = 1, status = NULL WHERE status = 'favorite'`, dann `status`
-über `batch_alter_table` nullable stellen (SQLite kennt kein `ALTER COLUMN`). Angriffsmodell: Ohne
+Invariante verletzt.** Reihenfolge: `favorite` anlegen **und** `status` nullable stellen in
+**einem** `batch_alter_table` (SQLite kennt kein `ALTER COLUMN`), **danach**
+`UPDATE ratings SET favorite = 1, status = NULL WHERE status = 'favorite'`. Die Konvertierung muss
+nach dem Nullable-Stellen laufen — davor bricht sie an der noch bestehenden `NOT NULL`-Bedingung
+ab. Angriffsmodell: Ohne
 `server_default` bzw. Backfill tragen die Bestandszeilen `NULL` in einer nicht-nullable
 Bool-Spalte; der erste Lesepfad, der sie anfasst, scheitert bei der Modellvalidierung mit einer
 `500` auf **jeder** Fotoliste, die eine solche Zeile enthält — behebbar dann nur noch an der
@@ -707,8 +713,10 @@ einen eigenen Wertevorrat oder wird in derselben Migration auf `NULL` konvertier
 wirft für `rating_status=favorite` einen `ValueError` (`500` auf einem nutzererreichbaren
 Query-Parameter) und muss auf die neue Spalte prüfen. Die Statistikzahl bricht dagegen **nicht** —
 sie liest still `0` und behauptet damit, es gebe keine Favoriten; sie zählt künftig über
-`favorite IS TRUE`, während `unrated` weiterhin die Abwesenheit der Zeile zählt, nicht die
-Abwesenheit eines Status.
+`favorite IS TRUE`, und `unrated` zählt — wie an allen drei Lesestellen — die Abwesenheit einer
+**Albumentscheidung**, nicht die Abwesenheit der Zeile. Folge, bewusst getragen: Die vier Zahlen
+zerlegen den Bestand nicht mehr überschneidungsfrei, und die Statistikseite darf das nicht
+behaupten.
 
 **S12 — Die Migration rückwärts stellt die Struktur wieder her, nie die Daten — und benennt, was
 sie verwirft.** `UPDATE ratings SET status = 'favorite' WHERE favorite = 1 AND status IS NULL`,
