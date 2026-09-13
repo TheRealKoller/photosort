@@ -37,7 +37,7 @@ Die Manifest-Datei (`.release-please-manifest.json`, vom Tool selbst gepflegt) i
 // release-please-config.json
 {
   "release-type": "simple",
-  "bump-minor-pre-major": false,       // feat bumpt MINOR auch < 1.0.0 (Punkt 2 der Vorgabe)
+  "bump-minor-pre-major": false,       // FALSCH BESCHRIEBEN, siehe Korrektur unter der Klammer
   "bump-patch-for-minor-pre-major": false, // fix bumpt PATCH auch < 1.0.0
   "include-component-in-tag": false,   // Tag wird "vX.Y.Z", kein Präfix
   "extra-files": [
@@ -55,6 +55,8 @@ Die Manifest-Datei (`.release-please-manifest.json`, vom Tool selbst gepflegt) i
 ```
 
 `bump-minor-pre-major`/`bump-patch-for-minor-pre-major` entsprechen zwar bereits den Tool-Defaults, werden aber explizit gesetzt statt implizit auf Default-Verhalten vertraut — falls sich Tool-Defaults künftig ändern, bleibt das hier geforderte Bump-Verhalten (Punkt 2) stabil dokumentiert.
+
+**Richtigstellung (2026-09-13), siehe ADR [`0096`](./0096-erste-hauptversion-ist-eine-produktentscheidung.md):** Der Kommentar am ersten Flag war falsch. `bump-minor-pre-major` steuert **nicht** das Verhalten bei `feat:`, sondern ausschließlich das bei **Breaking Changes**; das Konfigurationsschema sagt dazu „Breaking changes only bump semver minor if version < 1.0.0". Auf `false` bumpt ein Breaking Change die Major-Version also auch unterhalb von 1.0 — genau das ist am 2026-09-12 beim Merge von PR #450 (`feat!: …`) eingetreten. Die in Punkt 2 der Vorgabe gemeinte Wirkung („feat bumpt MINOR, fix bumpt PATCH, auch vor 1.0") kommt allein vom zweiten Flag, das unverändert auf `false` steht. Der Wert des ersten Flags ist mit ADR 0096 auf `true` geändert; die JSON-Blöcke dieser ADR zeigen weiterhin den damals umgesetzten Stand.
 
 Requirement 3 ("nur releasable Changes lösen ein Release aus") ist natives Default-Verhalten von `release-please`: Commit-Typen `docs`, `chore`, `test`, `ci`, `build`, `style`, `refactor` lösen weder einen Versions-Bump noch einen sichtbaren Changelog-Eintrag aus; nur `feat`/`fix`/`perf` sowie `!`/`BREAKING CHANGE`-Footer (unabhängig vom Typ) tun das. Keine zusätzliche Konfiguration nötig.
 
