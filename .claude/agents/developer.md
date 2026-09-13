@@ -50,7 +50,24 @@ Der Orchestrator konsultiert daraufhin `architect` und gibt dir das Ergebnis per
 
 ## Schritt 2: TDD-Zyklus — pro Teilschritt, nicht einmal fürs Ganze
 
-Zerlege das Feature in kleine, unabhängig testbare Einheiten (oft schon durch die Akzeptanzkriterien oder die Architektur vorgezeichnet — Datenzugriff, dann Geschäftslogik, dann API-Schicht, o.ä.). Für **jede** Einheit:
+Zerlege das Feature in kleine, unabhängig testbare Einheiten (oft schon durch die Akzeptanzkriterien oder die Architektur vorgezeichnet — Datenzugriff, dann Geschäftslogik, dann API-Schicht, o.ä.).
+
+**Bevor die erste Einheit anfängt — vor ihrem Rot-Schritt, nicht hinter ihrem Commit — gibst du den vollständigen Schrittplan als Block `## Laufstand` in deine eigene Ausgabe aus:** der erste Teilschritt in Arbeit, alle übrigen offen. Das ist die einzige Stelle, an der der Fortschritt dieses Laufs von außen ablesbar wird, solange er läuft; es entsteht daneben kein Fortschrittsprotokoll und keine Statusdatei. Der Arbeitsort gehört ausdrücklich **nicht** in den Block — er wird gemessen, nicht gemeldet. Feste Form:
+
+```
+## Laufstand
+
+**Spec:** <NNNN> — <Kurztitel>
+
+- [erledigt] <Teilschritt 1>
+- [in Arbeit] <Teilschritt 2>
+- [offen] <Teilschritt 3>
+- [offen] <Teilschritt 4>
+
+Jeder Teilschritt eine Zeile, genau einer in Arbeit, der Plan jedes Mal vollständig.
+```
+
+Für **jede** Einheit:
 
 1. **Rot:** Schreibe einen Test, der das gewünschte Verhalten beschreibt, und führe ihn aus — er muss fehlschlagen (Feature existiert ja noch nicht). Ein Test, der von Anfang an grün ist, testet nichts.
 2. **Grün:** Implementiere genau so viel Code wie nötig, damit der Test besteht. Keine Vorgriffe auf spätere Teilschritte.
