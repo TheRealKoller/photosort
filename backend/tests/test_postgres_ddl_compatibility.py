@@ -977,3 +977,84 @@ def test_the_selection_downgrade_renders_for_postgres_too() -> None:
     assert rendered.upper().count("DROP COLUMN") == 2
     assert "selection_position" in rendered
     assert "selection_target" in rendered
+
+
+# specs/features/0430-album-entwurf-je-nutzer.md: `ratings.status` wird nullable, `favorite` zieht
+# als eigene Boolean-Spalte daneben. Zwei Dinge, die SQLite strukturell nicht sehen kann: der
+# Boolean-Default (dort kein eigener Typ) und ein `ALTER COLUMN`, das SQLite gar nicht kennt und
+# das `batch_alter_table` dort durch einen Tabellenneuaufbau ersetzt - auf Postgres muss daraus
+# echtes `ALTER ... ALTER COLUMN ... DROP NOT NULL` werden.
+
+_ALBUM_DECISION_REVISION = "f6a7b8c9d0e1_albumentscheidung.py"
+
+
+@pytest.fixture(scope="module")
+def album_decision_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_ALBUM_DECISION_REVISION)
+
+
+def test_the_favorite_column_renders_as_not_null_boolean_with_a_boolean_default(
+    album_decision_upgrade_ddl: list[str],
+) -> None:
+    statement = _add_column_statement(album_decision_upgrade_ddl, "favorite")
+
+    assert "ratings" in statement
+    assert "BOOLEAN" in statement.upper()
+    assert "NOT NULL" in statement.upper()
+    assert "DEFAULT false" in statement
+    # Die eigentliche Aussage: kein Integer-Literal als Boolean-Default.
+    assert "DEFAULT 0" not in statement
+
+
+def test_the_status_column_loses_its_not_null_for_postgres(
+    album_decision_upgrade_ddl: list[str],
+) -> None:
+    """`NULL` heisst "keine Albumentscheidung" - ohne diese Anweisung traegt Postgres die alte
+    `NOT NULL`-Bedingung weiter, und jedes `DELETE .../rating` auf eine Favoritenzeile endete in
+    einer 500."""
+    rendered = " ".join(album_decision_upgrade_ddl).upper()
+
+    assert "ALTER COLUMN STATUS DROP NOT NULL" in rendered
+
+
+def test_the_album_decision_upgrade_converts_both_coupled_columns(
+    album_decision_upgrade_ddl: list[str],
+) -> None:
+    """Die Konvertierung ist der Zweck dieser Migration und muss auch auf Postgres ankommen -
+    beide Spalten, `ratings.status` UND die ueber dieselbe Enum-Klasse gekoppelte
+    `photo_scores.suggested_status` (Auflage S11).
+
+    GEPRUEFT WIRD AUSDRUECKLICH DIE SCHREIBWEISE: Die Spalten tragen den Enum-NAMEN
+    (`'FAVORITE'`). Ein `WHERE` auf den kleingeschriebenen `.value` traefe keine Zeile - die
+    Migration liefe fehlerfrei durch und konvertierte nichts."""
+    rendered = " ".join(album_decision_upgrade_ddl)
+
+    assert (
+        "UPDATE ratings SET favorite = true, status = NULL WHERE upper(status) = 'FAVORITE'"
+        in rendered
+    )
+    assert (
+        "UPDATE photo_scores SET suggested_status = NULL "
+        "WHERE upper(suggested_status) = 'FAVORITE'" in rendered
+    )
+    assert "'favorite'" not in rendered
+
+
+def test_the_album_decision_downgrade_renders_for_postgres_too() -> None:
+    """Der Rueckwaertsweg traegt hier mehr als ein `DROP COLUMN`: zwei Datenschritte und ein
+    `SET NOT NULL`. Die REIHENFOLGE ist tragend - wird die Spalte vor der Ruecksicherung
+    entfernt, ist der Favorit fort, und ohne das vorangehende `DELETE` scheitert der
+    `NOT NULL`-Aufbau."""
+    statements = _render_postgres_ddl(_ALBUM_DECISION_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements)
+    # Der Rueckweg schreibt einen Wert, den das WIEDERHERGESTELLTE alte Enum lesen koennen muss.
+    assert "'favorite'" not in rendered
+    positions = [
+        rendered.index("UPDATE ratings SET status = 'FAVORITE'"),
+        rendered.index("DELETE FROM ratings WHERE status IS NULL"),
+        rendered.upper().index("ALTER COLUMN STATUS SET NOT NULL"),
+        rendered.upper().index("DROP COLUMN FAVORITE"),
+    ]
+
+    assert positions == sorted(positions)

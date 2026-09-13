@@ -17,10 +17,11 @@ import { useMotifsQuery } from '../hooks/useMotifs'
 import {
   useDeleteRatingMutation,
   usePhotoSequenceQuery,
+  useSetFavoriteMutation,
   useSetRatingMutation,
 } from '../hooks/usePhotos'
 import { formatDateTime } from '../utils/formatStats'
-import { findOwnRating, ownRatingStatus } from '../utils/ownRating'
+import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 import { formatTimeOffset } from '../utils/timeOffset'
@@ -65,6 +66,7 @@ export function PhotoDetailPage() {
   const query = usePhotoSequenceQuery(id, ratingStatus)
   const setMutation = useSetRatingMutation(id)
   const deleteMutation = useDeleteRatingMutation(id)
+  const favoriteMutation = useSetFavoriteMutation(id)
   // Das feste Motivset kommt vom Server (langlebiger Cache) - Anzeigenamen,
   // Reihenfolge und Erklaertexte der Staerkeliste stammen ausschliesslich daraus.
   const motifsQuery = useMotifsQuery()
@@ -124,7 +126,9 @@ export function PhotoDetailPage() {
     for (;;) {
       while (i < currentPhotos.length) {
         const candidate = currentPhotos[i]
-        if (findOwnRating(candidate.ratings, username) === undefined) {
+        // "Noch offen" ist die fehlende ALBUMENTSCHEIDUNG, nicht die fehlende Zeile: ein nur als
+        // Favorit markiertes Foto ist unentschieden und darf nicht uebersprungen werden.
+        if (ownRatingStatus(candidate.ratings, username) === null) {
           goTo(candidate.id)
           return
         }
@@ -141,13 +145,19 @@ export function PhotoDetailPage() {
   }
 
   const currentOwnStatus = ownRatingStatus(currentPhoto?.ratings ?? [], username)
+  const currentOwnFavorite = ownFavorite(currentPhoto?.ratings ?? [], username)
   // Anzeigeregel (Akzeptanzkriterium der Spec): eigene Bewertung hat immer Vorrang - der Server
   // liefert suggestion in diesem Fall ohnehin bereits als null, currentOwnStatus wird hier
   // trotzdem zusaetzlich geprueft (defensiv, gleiche Regel wie Grid-/Vergleichsansicht).
   const suggestion = currentOwnStatus === null ? (currentPhoto?.suggestion ?? null) : null
 
   function handleToggleRating(status: RatingStatus): void {
-    if (!currentPhoto || setMutation.isPending || deleteMutation.isPending) {
+    if (
+      !currentPhoto ||
+      setMutation.isPending ||
+      deleteMutation.isPending ||
+      favoriteMutation.isPending
+    ) {
       return
     }
     // Auto-Advance gilt laut Spec nur "nach dem Setzen einer Bewertung" - ein Toggle zurueck auf
@@ -164,10 +174,29 @@ export function PhotoDetailPage() {
     }
   }
 
+  /**
+   * Das Favoriten-Kennzeichen umschalten - eigener Handler auf einem eigenen Endpunkt.
+   *
+   * KEIN Auto-Advance: Die Auszeichnung ist keine Entscheidung über dieses Foto ("fertig damit"),
+   * sondern eine Notiz daneben; weiterzuspringen nähme dem Nutzer die Möglichkeit, im selben
+   * Atemzug noch die Albumentscheidung zu treffen.
+   */
+  function handleToggleFavorite(): void {
+    if (
+      !currentPhoto ||
+      setMutation.isPending ||
+      deleteMutation.isPending ||
+      favoriteMutation.isPending
+    ) {
+      return
+    }
+    favoriteMutation.mutate({ photoId: currentPhoto.id, favorite: !currentOwnFavorite })
+  }
+
   // Ref-Indirektion (wie ProjectDetailPage.tsx::refetchRef): der Listener wird nur EINMAL
   // registriert, liest aber bei jedem Tastendruck die jeweils aktuellen Handler.
-  const handlersRef = useRef({ handlePrev, handleNext, handleToggleRating })
-  handlersRef.current = { handlePrev, handleNext, handleToggleRating }
+  const handlersRef = useRef({ handlePrev, handleNext, handleToggleRating, handleToggleFavorite })
+  handlersRef.current = { handlePrev, handleNext, handleToggleRating, handleToggleFavorite }
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent): void {
@@ -181,8 +210,10 @@ export function PhotoDetailPage() {
         case 'ArrowRight':
           void handlersRef.current.handleNext()
           break
+        // Die Belegung 1 / 2 / 3 bleibt; Taste 1 schaltet seit ADR 0098 das UNABHAENGIGE
+        // Favoriten-Kennzeichen und laesst die Albumentscheidung unberuehrt (und umgekehrt).
         case '1':
-          handlersRef.current.handleToggleRating('favorite')
+          handlersRef.current.handleToggleFavorite()
           break
         case '2':
           handlersRef.current.handleToggleRating('album_worthy')
@@ -271,7 +302,7 @@ export function PhotoDetailPage() {
     )
   }
 
-  const isMutating = setMutation.isPending || deleteMutation.isPending
+  const isMutating = setMutation.isPending || deleteMutation.isPending || favoriteMutation.isPending
 
   /* `showSuggestion={false}` - die Ausschuss-Gruppe bleibt exklusiv im "Automatischer
      Vorschlag"-Kasten, `suggestion` wird hier bewusst nicht durchgereicht (kein Feld-/Logik-Merge
@@ -320,7 +351,9 @@ export function PhotoDetailPage() {
           aria-label="Bewertung" bleibt unveraendert - die Leiste wandert nur nach oben. */}
       <RatingButtons
         currentStatus={currentOwnStatus}
+        favorite={currentOwnFavorite}
         onToggle={handleToggleRating}
+        onToggleFavorite={handleToggleFavorite}
         disabled={isMutating}
         busy={isMutating}
       />

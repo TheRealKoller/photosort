@@ -15,7 +15,7 @@ import { Skeleton } from '../components/ui/skeleton'
 import { useMotifsQuery } from '../hooks/useMotifs'
 import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
-import { ownRatingStatus } from '../utils/ownRating'
+import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
 
 // Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln" statt
@@ -23,6 +23,15 @@ import { parseRatingFilter } from '../utils/ratingFilter'
 // Batch, keine harte Vorgabe.
 const SKELETON_TILE_COUNT = 6
 
+/*
+ * Die Einträge bleiben unverändert, ihre Bedeutung ändert sich an zwei Stellen (ADR 0098):
+ *
+ * - "Unbewertet" heißt KEINE ALBUMENTSCHEIDUNG, nicht mehr "keine Bewertungszeile". Ein nur als
+ *   Favorit markiertes Bild bleibt darin und behält seinen Vorschlag.
+ * - "Favorit" filtert auf das eigene Kennzeichen, nicht auf einen Bewertungsstatus. Die Einträge
+ *   schließen einander damit nicht mehr aus: ein Foto kann in "Favorit" UND in "Album-würdig"
+ *   erscheinen.
+ */
 const FILTERS: { value: RatingFilter | ''; label: string }[] = [
   { value: '', label: 'Alle' },
   { value: 'unrated', label: 'Unbewertet' },
@@ -169,6 +178,10 @@ export function PhotoGridPage() {
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {photos.map((photo) => {
             const ownStatus = ownRatingStatus(photo.ratings, username)
+            // SICHERHEIT (Auflage S6): das EIGENE Kennzeichen, ueber `utils/ownRating.ts` -
+            // nie `photo.ratings.some(r => r.favorite)`, das zeigte die Auszeichnung der
+            // anderen Person als die eigene.
+            const isFavorite = ownFavorite(photo.ratings, username)
             // Anzeigeregel (Akzeptanzkriterium der Spec): eigene Bewertung hat immer Vorrang -
             // eine Vorschlags-Badge erscheint nur, solange keine eigene Bewertung existiert.
             // Der Server garantiert bereits, dass photo.suggestion in diesem Fall null ist, aber
@@ -203,6 +216,7 @@ export function PhotoGridPage() {
                 to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
                 relativePath={photo.relative_path}
                 status={badgeStatus}
+                favorite={isFavorite}
                 suggested={isSuggested}
                 image={
                   <PhotoImage

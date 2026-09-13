@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import JSON as SQLJSON
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import ForeignKey, UniqueConstraint, func
+from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from photosort.db import Base
@@ -65,7 +66,12 @@ class Project(Base):
 
 
 class RatingStatus(enum.StrEnum):
-    FAVORITE = "favorite"
+    """Die ALBUMENTSCHEIDUNG eines Nutzers zu einem Foto - zwei Werte, kein dritter.
+
+    `favorite` gehoert ausdruecklich NICHT mehr hierher: die Auszeichnung ist eine eigene,
+    unabhaengige Angabe (`Rating.favorite`) und wirkt nicht auf den Album-Entwurf (ADR 0098
+    Punkt 2)."""
+
     ALBUM_WORTHY = "album_worthy"
     REJECTED = "rejected"
 
@@ -285,10 +291,23 @@ class User(Base):
 
 
 class Rating(Base):
-    """Bewertung eines Photos durch einen User.
+    """Die Aussage EINES Nutzers zu EINEM Foto: gehoert es ins Album, und ist es ein Favorit.
 
-    "Unbewertet" ist kein Enum-Wert, sondern das Fehlen einer Zeile für (photo_id, user_id);
-    Toggle und Überschreiben laufen als Upsert über den Unique-Constraint (api/ratings.py).
+    `status` sagt, ob das Bild ins Album soll, und ist KEINE Aussage ueber die Bildguete: ein
+    bewusst aufgenommener schlechter Schnappschuss (`ALBUM_WORTHY`) und ein gestrichenes gutes
+    Bild (`REJECTED`) sind widerspruchsfreie, gewollte Zustaende. Die Bildguete steht allein in
+    `PhotoAlbumSuitability`.
+
+    `status IS NULL` heisst "keine Albumentscheidung" - dasselbe wie das Fehlen der Zeile. Beide
+    Formen kommen vor, weil `favorite` eine Zeile ohne Albumentscheidung tragen kann; aus dem
+    VORHANDENSEIN einer Zeile folgt deshalb nichts mehr ueber den Bewertungsstand.
+
+    INVARIANTE, an genau einer Stelle durchgesetzt (`api/ratings.py::_drop_when_empty`) und ueber
+    allen Faellen von `tests/test_api_ratings.py` geprueft: Es gibt keine Zeile mit
+    `status IS NULL AND favorite IS FALSE` - sie wird geloescht. Eine solche Zeile waere auf
+    keinem Lesepfad als Fehler erkennbar, unterdrueckte aber dauerhaft `PhotoOut.suggestion`.
+
+    Toggle und Ueberschreiben laufen als Upsert ueber den Unique-Constraint (api/ratings.py).
     """
 
     __tablename__ = "ratings"
@@ -297,9 +316,19 @@ class Rating(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    status: Mapped[RatingStatus] = mapped_column(
-        SQLEnum(RatingStatus, native_enum=False, length=20)
+    status: Mapped[RatingStatus | None] = mapped_column(
+        SQLEnum(RatingStatus, native_enum=False, length=20), default=None
     )
+    # `server_default` in Migration UND Modell, damit beide dieselbe DDL lesen: fehlt er am
+    # Modell, traegt eine ueber das ORM angelegte Zeile keinen Wert, wo die migrierte Tabelle
+    # einen erzwingt.
+    #
+    # `sa.false()` und NICHT die Zeichenkette `"false"`: letztere rendert woertlich
+    # `DEFAULT 'false'` - ein TEXTliteral. Postgres wandelt das still in den Boolean um, SQLite
+    # legt die Zeichenkette `'false'` ab, und die liest sich beim naechsten Zugriff als wahr.
+    # Modell und Migration muessen dieselbe DDL lesen; gesichert in
+    # tests/test_migration_albumentscheidung.py.
+    favorite: Mapped[bool] = mapped_column(default=False, server_default=sa_false())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     photo: Mapped[Photo] = relationship(back_populates="ratings")
@@ -359,6 +388,14 @@ class PhotoScore(Base):
     cluster_key: Mapped[str | None] = mapped_column(default=None)
     # Gesetzt wird praktisch nur REJECTED; Positivempfehlungen sind über dasselbe Enum ohne
     # erneute Migration möglich.
+    #
+    # GETEILTER WERTEVORRAT mit `Rating.status` - eine Kopplung ohne Fremdschlüsselbeziehung
+    # (Auflage S11). Bewusst KEIN eigenes Enum für diese Spalte: Der Vorschlag ist derselbe
+    # Sprachraum wie die Albumentscheidung, und zwei Vorräte liefen auseinander. Der Preis ist
+    # eine Mitführung je Enum-Änderung: Der Wegfall von `favorite` konvertiert deshalb in
+    # derselben Migration (f6a7b8c9d0e1) auch diese Spalte auf `NULL`, sonst wirft eine
+    # Bestandszeile beim Lesen einen `LookupError` - eine 500 auf jeder Fotoliste, die das Foto
+    # enthält.
     suggested_status: Mapped[RatingStatus | None] = mapped_column(
         SQLEnum(RatingStatus, native_enum=False, length=20), default=None
     )

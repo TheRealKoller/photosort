@@ -435,9 +435,10 @@ describe('CuratePage', () => {
   it('rejects a photo and keeps it in place', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([photo({ id: 1 })]))
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      user_id: 1,
-      username: 'daniel',
+      photo_id: 1,
       status: 'rejected',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
     })
 
     renderPage()

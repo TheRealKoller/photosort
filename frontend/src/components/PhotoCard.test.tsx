@@ -39,9 +39,16 @@ describe('PhotoCard', () => {
    * mehreren, nicht-farblichen Merkmalen zugleich.
    */
   it('keeps the four card states pairwise distinguishable without colour perception', () => {
-    const states: (RatingStatus | null)[] = [null, 'favorite', 'album_worthy', 'rejected']
+    // Vier Zustaende wie bisher - seit ADR 0098 aber aus ZWEI Feldern gebildet: der Favorit ist
+    // kein Wert von `status` mehr, sondern das Kennzeichen ohne Albumentscheidung.
+    const states: { status: RatingStatus | null; favorite?: boolean }[] = [
+      { status: null },
+      { status: null, favorite: true },
+      { status: 'album_worthy' },
+      { status: 'rejected' },
+    ]
 
-    const signatures = states.map((status) => {
+    const signatures = states.map(({ status, favorite }) => {
       const { container, unmount } = render(
         <MemoryRouter>
           <ul>
@@ -49,6 +56,7 @@ describe('PhotoCard', () => {
               to="/projects/1/photos/42"
               relativePath="2024/07/IMG_0042.jpg"
               status={status}
+              favorite={favorite}
               image={<img alt="2024/07/IMG_0042.jpg" src="blob:x" />}
             />
           </ul>
@@ -56,7 +64,9 @@ describe('PhotoCard', () => {
       )
       const item = container.querySelector('li')!
       const signature = [
-        item.getAttribute('data-rating-status'),
+        // BEIDE Felder, nicht nur `status`: "unbewertet" und "nur Favorit" tragen dasselbe
+        // `data-rating-status` und waeren allein daran nicht auseinanderzuhalten.
+        `${item.getAttribute('data-rating-status')}/${item.getAttribute('data-rating-favorite') ?? 'kein Favorit'}`,
         item.textContent?.replace('IMG_0042.jpg', '').trim(),
         item.querySelector('[data-icon]')?.getAttribute('data-icon') ?? 'kein Symbol',
       ].join('|')
@@ -74,11 +84,14 @@ describe('PhotoCard', () => {
   })
 
   it('marks only the rejected state with the struck-through file name', () => {
-    for (const status of [null, 'favorite', 'album_worthy'] as const) {
+    for (const status of [null, 'album_worthy'] as const) {
       const { container, unmount } = renderCard({ status })
       expect(container.querySelector('[data-struck]'), `${status}`).toBeNull()
       unmount()
     }
+    const favoriteOnly = renderCard({ status: null, favorite: true })
+    expect(favoriteOnly.container.querySelector('[data-struck]')).toBeNull()
+    favoriteOnly.unmount()
 
     // Im aussortierten Zustand traegt der Dateiname die Durchstreichung als DOM-Merkmal. Das
     // Kennzeichen selbst fuehrt `data-struck` seit Stufe 1 ebenfalls (es benennt den Zustand,
@@ -194,7 +207,7 @@ describe('PhotoCard', () => {
   // Entscheidung 5, von Daniel zurueckgestellt: der fuenfte Board-Zustand wird weder gebaut noch
   // vorbereitet. Diese Zusicherung haelt fest, dass keine stille Vorbereitung entstanden ist.
   it('does not build the board state "selected"', () => {
-    const { container } = renderCard({ status: 'favorite' })
+    const { container } = renderCard({ status: 'album_worthy', favorite: true })
 
     expect(container.querySelector('[data-selected]')).toBeNull()
   })

@@ -314,9 +314,14 @@ async def _add_second_user(session: AsyncSession, username: str = "zweitnutzer")
 
 
 async def _add_rating(
-    session: AsyncSession, photo: Photo, user: User, status_value: RatingStatus
+    session: AsyncSession,
+    photo: Photo,
+    user: User,
+    status_value: RatingStatus | None = None,
+    *,
+    favorite: bool = False,
 ) -> None:
-    session.add(Rating(photo_id=photo.id, user_id=user.id, status=status_value))
+    session.add(Rating(photo_id=photo.id, user_id=user.id, status=status_value, favorite=favorite))
     await session.commit()
 
 
@@ -392,7 +397,7 @@ async def _noise_project(session: AsyncSession, tmp_path: Path) -> Project:
         )
     )
     user = await _current_user(session)
-    await _add_rating(session, photo_a, user, RatingStatus.FAVORITE)
+    await _add_rating(session, photo_a, user, RatingStatus.ALBUM_WORTHY)
     await session.commit()
     return other
 
@@ -1321,7 +1326,11 @@ class TestProgress:
 
 class TestRatings:
     """Akzeptanzkriterium F2 und Security-Abschnitt Punkt 2: ausschliesslich die Bewertungen des
-    ANGEMELDETEN Nutzers."""
+    ANGEMELDETEN Nutzers.
+
+    Seit ADR 0098 zerlegen die vier Zahlen den Bestand NICHT mehr ueberschneidungsfrei:
+    `favorite` kommt aus einer eigenen Spalte und steht neben der Albumentscheidung, `unrated`
+    zaehlt die Abwesenheit einer Albumentscheidung."""
 
     async def test_only_the_own_ratings_are_counted(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1332,7 +1341,7 @@ class TestRatings:
         photo_c = await _add_photo(db_session, project, "c.jpg")
         await _add_photo(db_session, project, "d.jpg")
         me = await _current_user(db_session)
-        await _add_rating(db_session, photo_a, me, RatingStatus.FAVORITE)
+        await _add_rating(db_session, photo_a, me, favorite=True)
         await _add_rating(db_session, photo_b, me, RatingStatus.ALBUM_WORTHY)
         await _add_rating(db_session, photo_c, me, RatingStatus.REJECTED)
 
@@ -1342,8 +1351,52 @@ class TestRatings:
             "favorite": 1,
             "album_worthy": 1,
             "rejected": 1,
+            # Das nur als Favorit markierte Foto UND das voellig unberuehrte: beide tragen keine
+            # Albumentscheidung.
+            "unrated": 2,
+        }
+
+    async def test_the_favorite_count_comes_from_the_column_not_from_the_status(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 17, dritte der drei Lesestellen, und Auflage S11: Diese Zahl bricht
+        NICHT laut, wenn sie den entfallenen Statuswert weiterzaehlt - sie liest still `0` und
+        behauptet damit, es gebe keine Favoriten.
+
+        Das Foto mit BEIDEM ist der tragende Teil des Aufbaus: Es zaehlt in `favorite` UND in
+        `album_worthy`, was eine Umsetzung ueber sich ausschliessende Statuswerte nicht kann."""
+        project = await _make_project(db_session, "Costa Rica")
+        only_favorite = await _add_photo(db_session, project, "a.jpg")
+        both = await _add_photo(db_session, project, "b.jpg")
+        me = await _current_user(db_session)
+        await _add_rating(db_session, only_favorite, me, favorite=True)
+        await _add_rating(db_session, both, me, RatingStatus.ALBUM_WORTHY, favorite=True)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assert payload["ratings"] == {
+            "favorite": 2,
+            "album_worthy": 1,
+            "rejected": 0,
             "unrated": 1,
         }
+
+    async def test_a_row_without_an_album_decision_still_counts_as_unrated(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 18: `group_by(Rating.status)` haette jetzt eine `NULL`-Gruppe, und ein
+        `sum(counts.values())` zaehlte sie als "bewertet" mit - `unrated` waere zu klein, ohne
+        dass irgendetwas rot wuerde. Der Aufbau hat GENAU EIN Foto, damit die Zahl nicht
+        zufaellig stimmt."""
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        me = await _current_user(db_session)
+        await _add_rating(db_session, photo, me, favorite=True)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        assert payload["ratings"]["unrated"] == 1
+        assert payload["ratings"]["favorite"] == 1
 
     async def test_ratings_of_the_second_user_alone_leave_everything_unrated(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1354,7 +1407,7 @@ class TestRatings:
         photo_a = await _add_photo(db_session, project, "a.jpg")
         photo_b = await _add_photo(db_session, project, "b.jpg")
         other = await _add_second_user(db_session)
-        await _add_rating(db_session, photo_a, other, RatingStatus.FAVORITE)
+        await _add_rating(db_session, photo_a, other, RatingStatus.ALBUM_WORTHY, favorite=True)
         await _add_rating(db_session, photo_b, other, RatingStatus.REJECTED)
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
@@ -1373,37 +1426,45 @@ class TestRatings:
         photo = await _add_photo(db_session, project, "a.jpg")
         me = await _current_user(db_session)
         other = await _add_second_user(db_session)
-        await _add_rating(db_session, photo, me, RatingStatus.FAVORITE)
+        await _add_rating(db_session, photo, me, RatingStatus.ALBUM_WORTHY)
         await _add_rating(db_session, photo, other, RatingStatus.REJECTED)
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
         assert payload["ratings"] == {
-            "favorite": 1,
-            "album_worthy": 0,
+            "favorite": 0,
+            "album_worthy": 1,
             "rejected": 0,
             "unrated": 0,
         }
 
-    async def test_the_four_values_always_sum_to_the_photo_count(
+    async def test_the_album_decisions_and_unrated_partition_the_photo_count(
         self,
         authenticated_api_client: httpx.AsyncClient,
         db_session: AsyncSession,
         tmp_path: Path,
     ) -> None:
+        """Was von der alten Zusage "die vier Werte summieren sich zu `photo_count`" bleibt:
+        Die ALBUMENTSCHEIDUNG ist dreiwertig und erschoepfend (`album_worthy`, `rejected`,
+        keine). `favorite` steht daneben und darf in dieser Summe nicht vorkommen - hier traegt
+        ein Foto es zusaetzlich zu seiner Albumentscheidung."""
         await _noise_project(db_session, tmp_path)
         project = await _make_project(db_session, "Costa Rica")
         photo_a = await _add_photo(db_session, project, "a.jpg")
         await _add_photo(db_session, project, "b.jpg")
         me = await _current_user(db_session)
         other = await _add_second_user(db_session)
-        await _add_rating(db_session, photo_a, me, RatingStatus.FAVORITE)
+        await _add_rating(db_session, photo_a, me, RatingStatus.ALBUM_WORTHY, favorite=True)
         await _add_rating(db_session, photo_a, other, RatingStatus.REJECTED)
 
         payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
 
         ratings = payload["ratings"]
-        assert sum(ratings.values()) == payload["photo_count"]
+        assert (
+            ratings["album_worthy"] + ratings["rejected"] + ratings["unrated"]
+            == payload["photo_count"]
+        )
+        assert ratings["favorite"] == 1
 
     async def test_the_answer_never_names_another_user(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1413,7 +1474,7 @@ class TestRatings:
         project = await _make_project(db_session, "Costa Rica")
         photo = await _add_photo(db_session, project, "a.jpg")
         other = await _add_second_user(db_session, username="ehefrau")
-        await _add_rating(db_session, photo, other, RatingStatus.FAVORITE)
+        await _add_rating(db_session, photo, other, RatingStatus.ALBUM_WORTHY, favorite=True)
 
         raw = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).text
 

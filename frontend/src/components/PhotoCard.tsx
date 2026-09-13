@@ -15,6 +15,11 @@ export interface PhotoCardProps {
    * und Kuratierung zeigen ihn woanders bzw. gar nicht), `null` ist der Board-Zustand "neu".
    */
   status?: RatingStatus | null
+  /**
+   * Das EIGENE Favoriten-Kennzeichen - seit ADR 0098 unabhaengig von `status` und deshalb eine
+   * eigene Prop statt eines dritten Werts darin.
+   */
+  favorite?: boolean
   /** true fuer einen unbestaetigten automatischen Vorschlag statt einer echten Bewertung. */
   suggested?: boolean
   /** Inhalt der Bildflaeche - `PhotoImage` oder ein Platzhalter. */
@@ -52,6 +57,7 @@ export function PhotoCard({
   to,
   relativePath,
   status,
+  favorite = false,
   suggested = false,
   image,
   topLeft,
@@ -85,6 +91,7 @@ export function PhotoCard({
   return (
     <li
       data-rating-status={status === undefined ? undefined : (status ?? 'unrated')}
+      data-rating-favorite={favorite ? 'true' : undefined}
       // Board-Karte: Radius 12px, Flaeche `--elevated`, Rand `--border`. Die Polsterung ist am
       // Telefon bewusst 8px statt der 12px des Boards - bei 360px und zwei Spalten misst die
       // Kachel 158px, 12px Polsterung schruempfen die Bildflaeche um 16 %, und die Bildflaeche ist
@@ -104,14 +111,23 @@ export function PhotoCard({
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        {status === null && (
+        {status === null && !favorite && (
           // Der Zustand "neu" traegt das WORT, nicht das neutrale "–"-Badge. Reiner Text, kein
           // `aria-label`, kein `RatingBadge` - das "–" bleibt seinen uebrigen Aufrufstellen
           // (Vergleichsansicht) vorbehalten, wo es "hat nicht bewertet" heisst.
+          //
+          // Traegt die Karte das Favoriten-Kennzeichen, steht dort dessen Badge statt "Neu":
+          // "Favorit" ohne Albumkennzeichen daneben IST die Aussage "noch nicht entschieden",
+          // und beides nebeneinander laese sich wie ein Widerspruch.
           <span className="shrink-0 text-xs text-text-muted">Neu</span>
         )}
-        {status !== undefined && status !== null && (
-          <RatingBadge status={status} suggested={suggested} className="shrink-0" />
+        {status !== undefined && (status !== null || favorite) && (
+          <RatingBadge
+            status={status}
+            favorite={favorite}
+            suggested={suggested}
+            className="shrink-0"
+          />
         )}
         {/* SICHERHEIT: Der Dateiname stammt aus dem WebDAV-Walk der OpenCloud und ist damit extern
             entstandener Text. Er wird ausschliesslich als regulaerer React-Textknoten gerendert -

@@ -165,14 +165,39 @@ export interface FolderCountOut {
   error: boolean
 }
 
-export type RatingStatus = 'favorite' | 'album_worthy' | 'rejected'
-export type RatingFilter = 'unrated' | 'suggested' | RatingStatus
+/**
+ * Die ALBUMENTSCHEIDUNG eines Nutzers - zwei Werte, kein dritter. Sie sagt, ob das Bild ins
+ * Album soll, und ist keine Aussage über seine Güte.
+ *
+ * `favorite` gehört ausdrücklich nicht mehr dazu (ADR 0098): Die Auszeichnung ist eine eigene,
+ * unabhängige Angabe und kann gleichzeitig mit einer Albumentscheidung gesetzt sein.
+ */
+export type RatingStatus = 'album_worthy' | 'rejected'
+/** Die Einträge des Rasterfilters. `favorite` filtert auf das eigene Kennzeichen, nicht auf
+ * einen Status; `unrated` heißt "keine Albumentscheidung". */
+export type RatingFilter = 'unrated' | 'suggested' | 'favorite' | RatingStatus
 export type PhotoVariant = 'thumbnail' | 'display'
 
 export interface RatingOut {
   user_id: number
   username: string
-  status: RatingStatus
+  /** `null` heißt "keine Albumentscheidung" - auch bei vorhandener Zeile, die nur das
+   * Favoriten-Kennzeichen trägt. */
+  status: RatingStatus | null
+  favorite: boolean
+}
+
+/**
+ * Die Antwort der beiden schreibenden Bewertungs-Endpunkte - der Zustand der EIGENEN Zeile nach
+ * dem Schreibvorgang, nicht ein Eintrag aus `PhotoOut.ratings[]`.
+ *
+ * `updated_at` ist `null`, wenn die Zeile dabei geleert und damit gelöscht wurde.
+ */
+export interface RatingWriteOut {
+  photo_id: number
+  status: RatingStatus | null
+  favorite: boolean
+  updated_at: string | null
 }
 
 export type SuggestionReason = 'duplicate' | 'low_quality'
@@ -548,8 +573,14 @@ export interface ProjectStatsProgress {
   remote_classified: number
 }
 
-/** Ausschliesslich die Bewertungen des ANGEMELDETEN Nutzers; die vier Werte summieren sich exakt
- * zur Fotoanzahl. */
+/**
+ * Ausschliesslich die Bewertungen des ANGEMELDETEN Nutzers.
+ *
+ * DIE VIER WERTE ZERLEGEN DEN BESTAND NICHT: `favorite` steht seit ADR 0098 NEBEN der
+ * Albumentscheidung - dasselbe Foto zählt in `favorite` und in `album_worthy`. Erschöpfend und
+ * überschneidungsfrei sind allein `album_worthy + rejected + unrated`. Die Anzeige darf keine
+ * Aufteilung des Bestands über alle vier behaupten.
+ */
 export interface ProjectStatsRatings {
   favorite: number
   album_worthy: number

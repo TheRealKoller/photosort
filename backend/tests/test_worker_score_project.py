@@ -370,7 +370,9 @@ async def test_rescoring_overwrites_existing_photo_scores_without_touching_ratin
     user = User(username="testuser", password_hash=hash_password("irrelevant"))
     db_session.add(user)
     await db_session.flush()
-    db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.FAVORITE))
+    db_session.add(
+        Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.ALBUM_WORTHY, favorite=True)
+    )
     await db_session.commit()
 
     _write_display_variant(tmp_path, photo, _blurry_photo_image())
@@ -396,7 +398,8 @@ async def test_rescoring_overwrites_existing_photo_scores_without_touching_ratin
 
     ratings = (await db_session.execute(select(Rating))).scalars().all()
     assert len(ratings) == 1
-    assert ratings[0].status == RatingStatus.FAVORITE
+    assert ratings[0].status == RatingStatus.ALBUM_WORTHY
+    assert ratings[0].favorite is True
 
 
 async def test_scoring_run_marked_failed_leaves_committed_progress_untouched(

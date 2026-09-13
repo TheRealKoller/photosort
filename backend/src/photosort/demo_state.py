@@ -166,10 +166,24 @@ _DEMO_CORRECTED_MOTIF_KEY = "menschen"
 # nicht kippen, wenn sich der Generator aendert.
 _DEMO_PEAK_STRENGTH = 0.92
 
-# Reihenfolge, in der die drei Bewertungsstatus auf die ersten Fotos des bewerteten Projekts
-# verteilt werden - ueber das Enum gebildet, damit ein vierter Status nicht stillschweigend
+# Reihenfolge, in der die Albumentscheidungen auf die ersten Fotos des bewerteten Projekts
+# verteilt werden - ueber das Enum gebildet, damit ein weiterer Status nicht stillschweigend
 # unbewertet bliebe.
 _RATED_STATUS_ORDER = tuple(RatingStatus)
+
+# Die Bewertungszeilen der Demo-Instanz, je Eintrag ein Foto: (Albumentscheidung, Favorit).
+#
+# DREI Zustaende, und alle drei werden gebraucht: der erste traegt BEIDES - genau die Lage, die
+# ADR 0098 neu ermoeglicht und die die Sichtpruefung sonst nirgends zu sehen bekaeme; der letzte
+# traegt AUSSCHLIESSLICH das Kennzeichen und ist damit zugleich der Zustand "keine
+# Albumentscheidung trotz vorhandener Zeile".
+#
+# Die Anzahl bleibt damit bei drei bewerteten Fotos (Index 0 bis 2) und kollidiert weiterhin
+# nicht mit `_OPEN_SUGGESTION_INDEX` (3).
+_DEMO_RATINGS: tuple[tuple[RatingStatus | None, bool], ...] = (
+    *((status, index == 0) for index, status in enumerate(_RATED_STATUS_ORDER)),
+    (None, True),
+)
 
 # Das Foto des Fehlerzustands-Projekts, das eine Cloud-Vision-Fehlerzeile traegt (nicht dasselbe
 # wie das Foto ohne Cache-Datei - die Oberflaeche soll beide Fehlerbilder nebeneinander zeigen).
@@ -1040,12 +1054,13 @@ async def _seed_rated_project(
     # unabhaengig davon sichtbar ist, wer sich anmeldet.
     users = (await session.execute(select(User).order_by(User.id))).scalars().all()
     for user in users:
-        for offset, status in enumerate(_RATED_STATUS_ORDER):
+        for offset, (status, favorite) in enumerate(_DEMO_RATINGS):
             session.add(
                 Rating(
                     photo_id=photos[offset].id,
                     user_id=user.id,
                     status=status,
+                    favorite=favorite,
                     updated_at=_BASE_SCORING_AT,
                 )
             )

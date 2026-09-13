@@ -95,7 +95,9 @@ async def test_list_photos_includes_ratings_of_all_users(
 
     # Der eigene Nutzer der authenticated_api_client-Fixture ist "testuser".
     me = (await db_session.execute(select(User).where(User.username == "testuser"))).scalar_one()
-    db_session.add(Rating(photo_id=photo.id, user_id=me.id, status=RatingStatus.FAVORITE))
+    db_session.add(
+        Rating(photo_id=photo.id, user_id=me.id, status=RatingStatus.ALBUM_WORTHY, favorite=True)
+    )
     db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.REJECTED))
     await db_session.commit()
 
@@ -103,8 +105,30 @@ async def test_list_photos_includes_ratings_of_all_users(
 
     assert response.status_code == 200
     ratings = response.json()["items"][0]["ratings"]
-    by_username = {r["username"]: r["status"] for r in ratings}
-    assert by_username == {"testuser": "favorite", "other-user": "rejected"}
+    by_username = {r["username"]: (r["status"], r["favorite"]) for r in ratings}
+    assert by_username == {
+        "testuser": ("album_worthy", True),
+        "other-user": ("rejected", False),
+    }
+
+
+async def test_list_photos_reports_a_rating_row_that_carries_only_the_favorite_marker(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`status` ist in `ratings[]` nullable geworden: eine reine Favoritenzeile traegt `null`
+    als Albumentscheidung und trotzdem `favorite: true`."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    me = (await db_session.execute(select(User).where(User.username == "testuser"))).scalar_one()
+    db_session.add(Rating(photo_id=photo.id, user_id=me.id, status=None, favorite=True))
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["ratings"] == [
+        {"user_id": me.id, "username": "testuser", "status": None, "favorite": True}
+    ]
 
 
 async def test_list_photos_includes_suggestion_when_no_own_rating_exists(
@@ -212,7 +236,9 @@ async def test_list_photos_filters_by_own_unrated(
     project = await _make_project(db_session)
     rated = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
     unrated = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
-    await authenticated_api_client.put(f"/photos/{rated.id}/rating", json={"status": "favorite"})
+    await authenticated_api_client.put(
+        f"/photos/{rated.id}/rating", json={"status": "album_worthy"}
+    )
 
     response = await authenticated_api_client.get(
         f"/projects/{project.id}/photos", params={"rating_status": "unrated"}
@@ -224,14 +250,74 @@ async def test_list_photos_filters_by_own_unrated(
     assert body["total"] == 1
 
 
+async def test_unrated_keeps_a_photo_that_carries_only_the_favorite_marker(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Zusicherung 17, zweite der drei Lesestellen: "unbewertet" heisst ab jetzt "KEINE
+    ALBUMENTSCHEIDUNG", nicht "keine Zeile". Kodiert als Zeilenvorhandensein fiele das nur als
+    Favorit markierte Foto still aus dem Filter."""
+    project = await _make_project(db_session)
+    only_favorite = await _make_photo(
+        db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    decided = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+    await authenticated_api_client.put(
+        f"/photos/{only_favorite.id}/favorite", json={"favorite": True}
+    )
+    await authenticated_api_client.put(
+        f"/photos/{decided.id}/rating", json={"status": "album_worthy"}
+    )
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "unrated"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["items"]] == [only_favorite.id]
+    assert body["total"] == 1
+
+
 async def test_list_photos_filters_by_own_rating_status(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     project = await _make_project(db_session)
-    favorite = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    album_worthy = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
     rejected = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
-    await authenticated_api_client.put(f"/photos/{favorite.id}/rating", json={"status": "favorite"})
+    await authenticated_api_client.put(
+        f"/photos/{album_worthy.id}/rating", json={"status": "album_worthy"}
+    )
     await authenticated_api_client.put(f"/photos/{rejected.id}/rating", json={"status": "rejected"})
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "album_worthy"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["items"]] == [album_worthy.id]
+
+
+async def test_the_favorite_filter_reads_the_column_not_the_status(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Der Filtereintrag bleibt, seine Quelle wechselt: `favorite` ist kein Status mehr. Der
+    Aufbau enthaelt bewusst ein Foto, das BEIDES traegt - eine Abbildung, die weiterhin ueber
+    `status` filtert, liefert es hier nicht."""
+    project = await _make_project(db_session)
+    only_favorite = await _make_photo(
+        db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    both = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+    only_album = await _make_photo(db_session, project, "c.jpg", datetime(2023, 1, 3, tzinfo=UTC))
+    await authenticated_api_client.put(
+        f"/photos/{only_favorite.id}/favorite", json={"favorite": True}
+    )
+    await authenticated_api_client.put(f"/photos/{both.id}/favorite", json={"favorite": True})
+    await authenticated_api_client.put(f"/photos/{both.id}/rating", json={"status": "rejected"})
+    await authenticated_api_client.put(
+        f"/photos/{only_album.id}/rating", json={"status": "album_worthy"}
+    )
 
     response = await authenticated_api_client.get(
         f"/projects/{project.id}/photos", params={"rating_status": "favorite"}
@@ -239,7 +325,7 @@ async def test_list_photos_filters_by_own_rating_status(
 
     assert response.status_code == 200
     body = response.json()
-    assert [item["id"] for item in body["items"]] == [favorite.id]
+    assert [item["id"] for item in body["items"]] == [only_favorite.id, both.id]
 
 
 async def test_list_photos_filter_is_scoped_to_own_rating_not_others(
@@ -251,7 +337,14 @@ async def test_list_photos_filter_is_scoped_to_own_rating_not_others(
     project = await _make_project(db_session)
     photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
     other_user = await _make_second_user(db_session)
-    db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.FAVORITE))
+    db_session.add(
+        Rating(
+            photo_id=photo.id,
+            user_id=other_user.id,
+            status=RatingStatus.ALBUM_WORTHY,
+            favorite=True,
+        )
+    )
     await db_session.commit()
 
     response = await authenticated_api_client.get(
@@ -260,6 +353,25 @@ async def test_list_photos_filter_is_scoped_to_own_rating_not_others(
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["items"]] == [photo.id]
+
+
+async def test_the_favorite_filter_is_scoped_to_the_own_marker_not_the_others(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Auflage S6 am Filter: Das Kennzeichen des ANDEREN Nutzers ist sichtbar, aber nie das
+    eigene."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    other_user = await _make_second_user(db_session)
+    db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, favorite=True))
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "favorite"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0}
 
 
 async def test_list_photos_pagination(
@@ -390,7 +502,9 @@ async def test_list_photos_filters_by_suggested_includes_photo_with_other_users_
     project = await _make_project(db_session)
     photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
     other_user = await _make_second_user(db_session)
-    db_session.add(Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.FAVORITE))
+    db_session.add(
+        Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.ALBUM_WORTHY)
+    )
     db_session.add(
         PhotoScore(
             photo_id=photo.id,
@@ -408,6 +522,68 @@ async def test_list_photos_filters_by_suggested_includes_photo_with_other_users_
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["items"]] == [photo.id]
+
+
+async def test_the_suggestion_survives_a_rating_row_that_carries_only_the_favorite_marker(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Zusicherung 17, erste der drei Lesestellen: `has_own_rating` in `_to_photo_out` liest
+    kuenftig die eigene ALBUMENTSCHEIDUNG, nicht das Vorhandensein der Zeile. Kodiert als
+    Zeilenvorhandensein verschwaende der Ausschuss-Vorschlag, sobald jemand das Foto als
+    Favorit markiert - ohne Meldung und ohne Weg zurueck.
+
+    Geprueft wird BEIDES in einem Fall: die Anzeige (`PhotoOut.suggestion`) und der Filterzweig
+    `rating_status=suggested`. Sie sind bewusst doppelt implementiert (Python-Praedikat vs.
+    SQL-WHERE); eine nur halb nachgezogene Aenderung liesse den Paritaetsfall reissen."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            suggested_status=RatingStatus.REJECTED,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+    await authenticated_api_client.put(f"/photos/{photo.id}/favorite", json={"favorite": True})
+
+    unfiltered = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+    filtered = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+    )
+
+    assert unfiltered.json()["items"][0]["suggestion"] is not None
+    assert [item["id"] for item in filtered.json()["items"]] == [photo.id]
+
+
+async def test_the_suggestion_disappears_once_an_album_decision_exists(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Die Kehrseite des Falls darueber - sonst bestuende er auch bei einer Umsetzung, die den
+    Vorschlag nie unterdrueckt."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+    db_session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=1.0,
+            exposure=0.2,
+            suggested_status=RatingStatus.REJECTED,
+            computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+    await authenticated_api_client.put(f"/photos/{photo.id}/rating", json={"status": "rejected"})
+
+    unfiltered = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+    filtered = await authenticated_api_client.get(
+        f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+    )
+
+    assert unfiltered.json()["items"][0]["suggestion"] is None
+    assert filtered.json() == {"items": [], "total": 0}
 
 
 async def test_list_photos_filters_by_suggested_mixes_reasons_without_split(

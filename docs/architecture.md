@@ -762,7 +762,11 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   1:1 zu `Photo` (`photo_id` als Primary Key). Ergebnis der lokalen Heuristiken aus Phase A:
   `sharpness`, `exposure`, `phash` (dHash, ohne neue Abhängigkeit direkt mit Pillow berechnet),
   `duplicate_of` (selbstreferenzierender FK auf `photos.id`), `cluster_key`, `suggested_status`
-  (wiederverwendet `RatingStatus`, praktisch nur noch `REJECTED`), `computed_at`. Bewusst getrennt
+  (wiederverwendet `RatingStatus`, praktisch nur noch `REJECTED`), `computed_at`. Der geteilte
+  Wertevorrat ist eine **Kopplung ohne Fremdschlüsselbeziehung**: Verliert `RatingStatus` einen
+  Wert, muss diese Spalte in derselben Migration mitgeführt werden, sonst wirft eine Bestandszeile
+  beim Lesen einen `LookupError` — eine 500 auf jeder Fotoliste, die das Foto enthält. Bewusst
+  getrennt
   von `Rating` — ein automatischer Vorschlag ist nie eine `Rating`-Zeile, sondern wird der API/dem
   Frontend als eigenes Feld `PhotoOut.suggestion` neben `ratings` angeboten; erst eine explizite
   Nutzerbestätigung erzeugt eine echte `Rating`-Zeile über den bestehenden `PUT
@@ -1105,10 +1109,33 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   - `events.landmark_name` entsteht **ausschließlich** über `worker.py::_landmark_names` (und damit
     `sanitize_landmark_name`) — kein direkter Zugriff auf `PhotoLandmarkDetection.name` an der
     Schreibstelle, kein Abschneiden, und die Migration kopiert **keine** Namen.
-- **Rating** *(implementiert, Spec 0002, `models.py`)*: Bewertung eines Photos durch einen User
-  (`favorite` / `album_worthy` / `rejected`), pro User getrennt gespeichert; Unique-Constraint
-  `(photo_id, user_id)`, "unbewertet" = fehlende Zeile (kein Enum-Wert). Bleibt mit Spec 0003
-  unverändert (keine neue Spalte, keine Migration bestehender Daten) — siehe ADR 0006.
+- **Rating** *(implementiert, Spec 0002, `models.py`; Neufassung mit Spec
+  [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md) / ADR
+  [`0098`](../specs/decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md))*: Die
+  Aussage **eines** Users zu **einem** Photo, pro User getrennt gespeichert; Unique-Constraint
+  `(photo_id, user_id)`. Zwei unabhängige Felder:
+  - `status: RatingStatus | None` — die **Albumentscheidung**, `album_worthy` („gehört ins Album")
+    oder `rejected` („gehört nicht ins Album"). Sie ist **keine Aussage über die Bildgüte**; die
+    steht allein in `PhotoAlbumSuitability`. `NULL` heißt „keine Albumentscheidung" und ist
+    gleichbedeutend mit dem Fehlen der Zeile.
+  - `favorite: bool` (`server_default` in Modell **und** Migration) — die Auszeichnung als Favorit.
+    Unabhängig von `status`, beide können zugleich gesetzt sein, und sie wirkt nicht auf den
+    Album-Entwurf.
+
+  **Aus dem Vorhandensein einer Zeile folgt damit nichts mehr** über den Bewertungsstand: Eine
+  Zeile kann allein wegen `favorite` existieren. Jede Lesestelle, die „bewertet" meint, prüft
+  `status IS NOT NULL` — der Rasterfilter `unrated`, die Statistikzahl `unrated` und die Bedingung,
+  unter der `PhotoOut.suggestion` erscheint.
+
+  **Invariante, an genau einer Stelle durchgesetzt** (`api/ratings.py::_write_own_rating`, über die
+  alle drei Schreibendpunkte laufen): Es gibt keine Zeile mit `status IS NULL AND favorite IS
+  FALSE` — sie wird gelöscht. Eine solche Zeile wäre auf keinem Lesepfad als Fehler erkennbar,
+  unterdrückte aber dauerhaft den Ausschuss-Vorschlag.
+
+  Die drei Schreibendpunkte schreiben je genau ihr Feld, `user_id` stammt überall ausschließlich
+  aus `current_user`: `PUT /photos/{id}/rating` (nur `status`, `null` ist kein zulässiger
+  Body-Wert), `DELETE /photos/{id}/rating` (nimmt nur `status` zurück und behält eine Zeile mit
+  Kennzeichen), `PUT /photos/{id}/favorite` (nur `favorite`).
 - **PhotoCategoryClassification** *(implementiert, Spec
   [`0289`](../specs/features/0289-feste-kategorien.md), `models.py`, Tabelle
   `photo_category_classifications`, ADR

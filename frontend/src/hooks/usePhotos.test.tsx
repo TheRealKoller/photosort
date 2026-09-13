@@ -11,6 +11,7 @@ import {
   useCurationCandidatesQuery,
   useDeleteRatingMutation,
   usePhotoSequenceQuery,
+  useSetFavoriteMutation,
   useSetRatingMutation,
 } from './usePhotos'
 
@@ -148,9 +149,10 @@ describe('useCurationCandidatesQuery', () => {
       .mockResolvedValueOnce(page([4], 1))
       .mockResolvedValueOnce(page([4], 1))
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      user_id: 1,
-      username: 'daniel',
+      photo_id: 4,
       status: 'rejected',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
     })
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const sharedWrapper = ({ children }: { children: ReactNode }) => (
@@ -173,9 +175,10 @@ describe('useSetRatingMutation', () => {
   it('sets the rating and invalidates all photo queries of the project', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(page([1], 1))
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      user_id: 1,
-      username: 'daniel',
-      status: 'favorite',
+      photo_id: 1,
+      status: 'album_worthy',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
     })
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const listWrapper = ({ children }: { children: ReactNode }) => (
@@ -186,9 +189,38 @@ describe('useSetRatingMutation', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
     const { result } = renderHook(() => useSetRatingMutation(1), { wrapper: listWrapper })
-    await result.current.mutateAsync({ photoId: 1, status: 'favorite' })
+    await result.current.mutateAsync({ photoId: 1, status: 'album_worthy' })
 
-    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'favorite')
+    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'album_worthy')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['photos', 1] })
+  })
+})
+
+describe('useSetFavoriteMutation', () => {
+  it('writes through the favorite endpoint, never through the rating one', async () => {
+    // Die Trennung der beiden Schreibwege ist der Zweck der Story: ein gemeinsamer Pfad setzte
+    // die Albumentscheidung beim Markieren als Favorit still zurueck. Die Aufrufzaehler sind
+    // datei-global; ohne diesen Reset traegt die Abwesenheits-Zusicherung unten nichts.
+    vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
+      photo_id: 1,
+      status: 'album_worthy',
+      favorite: true,
+      updated_at: '2026-09-13T10:00:00',
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const listWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useSetFavoriteMutation(1), { wrapper: listWrapper })
+    await result.current.mutateAsync({ photoId: 1, favorite: true })
+
+    expect(ratingsApi.setFavorite).toHaveBeenCalledWith(1, true)
+    expect(ratingsApi.setRating).not.toHaveBeenCalled()
+    // Dieselbe breite Invalidierung: das Kennzeichen entscheidet ueber den Filter "Favorit",
+    // und der Filter steckt im Query-Key.
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['photos', 1] })
   })
 })

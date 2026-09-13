@@ -4,37 +4,93 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { RatingButtons } from './RatingButtons'
 
+function renderBar(
+  props: Partial<React.ComponentProps<typeof RatingButtons>> = {},
+): React.ComponentProps<typeof RatingButtons> {
+  const merged: React.ComponentProps<typeof RatingButtons> = {
+    currentStatus: null,
+    favorite: false,
+    onToggle: vi.fn(),
+    onToggleFavorite: vi.fn(),
+    ...props,
+  }
+  render(<RatingButtons {...merged} />)
+  return merged
+}
+
 describe('RatingButtons', () => {
-  it('renders one button per rating stage with an aria-label', () => {
-    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
+  it('renders one button per entry with an aria-label', () => {
+    renderBar()
 
     expect(screen.getByRole('button', { name: /favorit/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /album-würdig/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /verwerfen/i })).toBeInTheDocument()
   })
 
-  it('marks the currently active status as pressed', () => {
-    render(<RatingButtons currentStatus="favorite" onToggle={vi.fn()} />)
+  it('marks the currently active album decision as pressed', () => {
+    renderBar({ currentStatus: 'album_worthy' })
 
-    expect(screen.getByRole('button', { name: /favorit/i })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /album-würdig/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
     expect(screen.getByRole('button', { name: /verwerfen/i })).toHaveAttribute(
       'aria-pressed',
       'false',
     )
   })
 
-  it('calls onToggle with the clicked status', async () => {
-    const onToggle = vi.fn()
-    const user = userEvent.setup()
+  /*
+   * DER KERN DER TRENNUNG (ADR 0098 Punkt 2): Favorit ist ein UNABHAENGIGER Zweizustand. Vor
+   * dieser Story waren die drei Eintraege einander ausschliessend - das Markieren als Favorit
+   * setzte eine bestehende Albumentscheidung still zurueck.
+   */
+  it('shows the favorite marker pressed at the same time as an album decision', () => {
+    renderBar({ currentStatus: 'album_worthy', favorite: true })
 
-    render(<RatingButtons currentStatus={null} onToggle={onToggle} />)
+    expect(screen.getByRole('button', { name: /favorit/i })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /album-würdig/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('shows the favorite marker pressed while no album decision exists', () => {
+    renderBar({ currentStatus: null, favorite: true })
+
+    expect(screen.getByRole('button', { name: /favorit/i })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /album-würdig/i })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(screen.getByRole('button', { name: /verwerfen/i })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+  })
+
+  it('calls onToggle with the clicked album decision and never onToggleFavorite', async () => {
+    const user = userEvent.setup()
+    const props = renderBar()
+
+    await user.click(screen.getByRole('button', { name: /album-würdig/i }))
+
+    expect(props.onToggle).toHaveBeenCalledWith('album_worthy')
+    expect(props.onToggleFavorite).not.toHaveBeenCalled()
+  })
+
+  it('calls onToggleFavorite for the favorite entry and never onToggle', async () => {
+    const user = userEvent.setup()
+    const props = renderBar()
+
     await user.click(screen.getByRole('button', { name: /favorit/i }))
 
-    expect(onToggle).toHaveBeenCalledWith('favorite')
+    expect(props.onToggleFavorite).toHaveBeenCalledTimes(1)
+    expect(props.onToggle).not.toHaveBeenCalled()
   })
 
   it('disables all buttons when disabled is set', () => {
-    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} disabled />)
+    renderBar({ disabled: true })
 
     expect(screen.getByRole('button', { name: /favorit/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /album-würdig/i })).toBeDisabled()
@@ -42,13 +98,13 @@ describe('RatingButtons', () => {
   })
 
   it('shows an inline busy indicator while a rating request is in flight', () => {
-    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} disabled busy />)
+    renderBar({ disabled: true, busy: true })
 
     expect(screen.getByRole('status')).toHaveTextContent(/speichert/i)
   })
 
   it('shows no busy indicator when not busy', () => {
-    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
+    renderBar()
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
@@ -66,22 +122,34 @@ describe('RatingButtons', () => {
     (label) => {
       // Ein String als `name` ist in Testing Library eine EXAKTE Uebereinstimmung des ganzen
       // zugaenglichen Namens - "Favorit 1" wuerde hier nicht mehr gefunden.
-      render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
+      renderBar()
 
       expect(screen.getAllByRole('button', { name: label })).toHaveLength(1)
     },
   )
 
   it('keeps exactly three buttons in the group - the key box is not a control', () => {
-    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
+    renderBar()
 
     expect(
       within(screen.getByRole('group', { name: 'Bewertung' })).getAllByRole('button'),
     ).toHaveLength(3)
   })
 
+  it('keeps the key assignment 1 / 2 / 3 in the order favorite, album, reject', () => {
+    // Die Ziffern stehen hier, die Belegung in `PhotoDetailPage` - beide koennen auseinander
+    // laufen, deshalb prueft `PhotoDetailPage.test.tsx` sie tabellengetrieben gegeneinander.
+    renderBar()
+
+    const boxes = within(screen.getByRole('group', { name: 'Bewertung' }))
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+
+    expect(boxes).toEqual(['Favorit1', 'Album-würdig2', 'Verwerfen3'])
+  })
+
   it('shows the label of every entry visibly', () => {
-    render(<RatingButtons currentStatus={null} onToggle={vi.fn()} />)
+    renderBar()
 
     for (const label of ['Favorit', 'Album-würdig', 'Verwerfen']) {
       expect(screen.getByRole('button', { name: label })).toHaveTextContent(label)
@@ -93,15 +161,13 @@ describe('RatingButtons', () => {
   // dass der Aufrufer zusaetzlich disabled setzt) muss trotzdem tatsaechlich deaktivieren, nicht
   // nur den Inline-Indikator zeigen.
   it('disables all buttons and ignores clicks while busy is true, even without an explicit disabled prop', async () => {
-    const onToggle = vi.fn()
     const user = userEvent.setup()
-
-    render(<RatingButtons currentStatus={null} onToggle={onToggle} busy />)
+    const props = renderBar({ busy: true })
     const button = screen.getByRole('button', { name: /favorit/i })
 
     expect(button).toBeDisabled()
     await user.click(button)
 
-    expect(onToggle).not.toHaveBeenCalled()
+    expect(props.onToggleFavorite).not.toHaveBeenCalled()
   })
 })

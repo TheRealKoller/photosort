@@ -128,7 +128,13 @@ class RatingsOut(BaseModel):
     """AUSSCHLIESSLICH die Bewertungen des angemeldeten Nutzers (Security-Abschnitt der Spec,
     Punkt 2). `unrated` ist die Differenz zur Fotoanzahl, NIE `photos_total - COUNT(ratings)` -
     letzteres zaehlte die Bewertungen der anderen Person mit und machte deren Fortschritt aus der
-    Differenz rekonstruierbar. Die vier Werte summieren sich exakt zu `photo_count`."""
+    Differenz rekonstruierbar.
+
+    DIE VIER WERTE ZERLEGEN DEN BESTAND NICHT: `favorite` ist seit ADR 0098 eine eigene Spalte
+    und steht NEBEN der Albumentscheidung - dasselbe Foto kann in `favorite` und in
+    `album_worthy` zaehlen. Erschoepfend und ueberschneidungsfrei sind allein die drei Zahlen der
+    Albumentscheidung: `album_worthy + rejected + unrated == photo_count`. Die Oberflaeche darf
+    keine Aufteilung des Bestands ueber alle vier behaupten."""
 
     favorite: int
     album_worthy: int
@@ -451,21 +457,33 @@ async def _ratings_out(
 ) -> RatingsOut:
     """Ausschliesslich ueber `Rating.user_id == current_user.id` (Security-Muss-Kriterium): die
     `user_id` stammt allein aus dem JWT, der Endpunkt hat keinen `user_id`-Parameter in Pfad,
-    Query oder Body."""
-    rows = await session.execute(
-        select(Rating.status, func.count())
-        .where(Rating.photo_id.in_(_photos_of_project(project_id)), Rating.user_id == user_id)
-        .group_by(Rating.status)
-    )
-    counts = {status_value: count for status_value, count in rows.all()}
-    rated_total = sum(counts.values())
+    Query oder Body.
+
+    DREI GEFILTERTE ZAEHLUNGEN STATT EINES `group_by(Rating.status)`, und das ist keine
+    Kosmetik: Seit `status` nullable ist, haette die Gruppierung eine `NULL`-Gruppe, und ein
+    `sum(counts.values())` darueber zaehlte eine reine Favoritenzeile als "bewertet" mit -
+    `unrated` waere zu klein, ohne dass irgendetwas bricht. `favorite` kommt aus der SPALTE, nie
+    aus dem Status: der entfallene Statuswert liest sich sonst still als `0` und behauptet, es
+    gebe keine Favoriten."""
+    album_worthy, rejected, favorite = (
+        await session.execute(
+            select(
+                func.count().filter(Rating.status == RatingStatus.ALBUM_WORTHY),
+                func.count().filter(Rating.status == RatingStatus.REJECTED),
+                func.count().filter(Rating.favorite.is_(True)),
+            )
+            .select_from(Rating)
+            .where(Rating.photo_id.in_(_photos_of_project(project_id)), Rating.user_id == user_id)
+        )
+    ).one()
     return RatingsOut(
-        favorite=counts.get(RatingStatus.FAVORITE, 0),
-        album_worthy=counts.get(RatingStatus.ALBUM_WORTHY, 0),
-        rejected=counts.get(RatingStatus.REJECTED, 0),
-        # Differenz zur Fotoanzahl der EIGENEN Bewertungen - nie ueber COUNT(ratings) ohne
-        # User-Filter (das zaehlte die andere Person mit).
-        unrated=photo_count - rated_total,
+        favorite=int(favorite),
+        album_worthy=int(album_worthy),
+        rejected=int(rejected),
+        # Abwesenheit einer eigenen ALBUMENTSCHEIDUNG - nicht Abwesenheit der Zeile. Differenz
+        # zur Fotoanzahl und nie ueber COUNT(ratings) ohne User-Filter (das zaehlte die andere
+        # Person mit).
+        unrated=photo_count - int(album_worthy) - int(rejected),
     )
 
 

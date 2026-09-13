@@ -1,6 +1,7 @@
 # 0097 - Auswahl mit Richtwert: Kontingente je Event, motivgeführte Vergabe mit Ähnlichkeitsabwertung
 
 **Status:** Accepted
+**Teilweise abgelöst:** ausschließlich Punkt 6 — der Query-Parameter `selection: bool` und seine Zusage, der Modus liefere genau die Fotos mit `selection_position IS NOT NULL` —, durch ADR [`0098`](./0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md). An seine Stelle tritt der nutzerabhängige Entwurfsmodus. Punkte 1-5 und 7 (Richtwert, persistierter Vorschlag, beide Verfahrensstufen, Determinismus, die drei Auslöser) gelten unverändert; `selection_position` bleibt lauf-global und ohne Nutzerbezug.
 **Datum:** 2026-09-13
 **Bezug:** Spec `specs/features/0429-*.md`, ADR
 [`0091`](./0091-motive-mit-staerke-statt-hauptkategorie.md) (Stärkevektor als Datengrundlage; die

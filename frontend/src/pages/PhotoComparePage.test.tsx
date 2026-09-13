@@ -98,8 +98,8 @@ describe('PhotoComparePage', () => {
         photo({
           id: 1,
           ratings: [
-            { user_id: 1, username: 'testuser', status: 'favorite' },
-            { user_id: 2, username: 'other-user', status: 'rejected' },
+            { user_id: 1, username: 'testuser', status: 'album_worthy', favorite: false },
+            { user_id: 2, username: 'other-user', status: 'rejected', favorite: false },
           ],
         }),
       ],
@@ -109,8 +109,51 @@ describe('PhotoComparePage', () => {
 
     renderPage()
 
-    expect(await screen.findByLabelText('Favorit')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Album-würdig')).toBeInTheDocument()
     expect(screen.getByLabelText('Verworfen')).toBeInTheDocument()
+  })
+
+  it('shows the favorite marker of each person next to their album decision', async () => {
+    // Beide Angaben je Person, nicht eine statt der anderen: vor ADR 0098 konnte eine Zeile nur
+    // EINES von beidem tragen, und genau das ist jetzt nicht mehr so.
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          ratings: [
+            { user_id: 1, username: 'testuser', status: 'album_worthy', favorite: true },
+            { user_id: 2, username: 'other-user', status: null, favorite: true },
+          ],
+        }),
+      ],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Album-würdig')).toBeInTheDocument()
+    expect(screen.getAllByLabelText('Favorit')).toHaveLength(2)
+  })
+
+  it('shows the suggestion for a row that carries only the favorite marker', async () => {
+    // Das Vorhandensein der eigenen Zeile ist keine Aussage mehr: ohne diese Unterscheidung
+    // erschiene der Vorschlag hier als BESTAETIGTE Bewertung - ohne Zahnrad, ohne Praefix.
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: null, favorite: true }],
+          suggestion: suggestion({ status: 'rejected' }),
+        }),
+      ],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Vorschlag: Verworfen')).toBeInTheDocument()
   })
 
   it('loads the display resolution, not the thumbnail (spec: Vergleichsansicht Display-Auflösung)', async () => {
@@ -167,7 +210,7 @@ describe('PhotoComparePage', () => {
       items: [
         photo({
           id: 1,
-          ratings: [{ user_id: 2, username: 'other-user', status: 'favorite' }],
+          ratings: [{ user_id: 2, username: 'other-user', status: 'album_worthy', favorite: true }],
           suggestion: suggestion({ status: 'rejected' }),
         }),
       ],
@@ -189,7 +232,7 @@ describe('PhotoComparePage', () => {
       items: [
         photo({
           id: 1,
-          ratings: [{ user_id: 1, username: 'testuser', status: 'favorite' }],
+          ratings: [{ user_id: 1, username: 'testuser', status: 'album_worthy', favorite: false }],
           suggestion: null,
         }),
       ],
@@ -199,7 +242,7 @@ describe('PhotoComparePage', () => {
 
     renderPage()
 
-    expect(await screen.findByLabelText('Favorit')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Album-würdig')).toBeInTheDocument()
     expect(screen.queryByLabelText(/^Vorschlag:/)).not.toBeInTheDocument()
   })
 })

@@ -1,5 +1,6 @@
 import type { RatingStatus } from '../api/types'
 import { cn } from '../lib/utils'
+import type { RatingControl } from '../utils/ratingLabels'
 import { Button } from './ui/button'
 import { Icon } from './ui/icon'
 import type { IconName } from './ui/icon'
@@ -7,6 +8,12 @@ import type { IconName } from './ui/icon'
 /*
  * Ein Eintrag der Board-Bewertungsleiste: Symbol, sichtbare Beschriftung und die Ziffer der
  * Taste, die ihn tatsächlich auslöst.
+ *
+ * DREI EINTRÄGE, ABER NICHT DREI STUFEN EINER SKALA: "Favorit" ist seit ADR 0098 ein
+ * UNABHÄNGIGER Zweizustand neben der zweiwertigen Albumentscheidung. Ein- und Ausschalten lässt
+ * "Album-würdig"/"Verwerfen" unberührt und umgekehrt; Favorit kann gleichzeitig mit einem der
+ * beiden gefüllt sein. Vor dieser Trennung setzte das Markieren als Favorit eine bestehende
+ * Entscheidung STILL zurück - kein Fehler, keine Meldung, die Entscheidung war fort.
  *
  * DIE BELEGUNG BLEIBT 1 / 2 / 3: Übernommen wird die FORM des Kästchens, nicht die
  * Board-Beschriftung F/A/X. Die Ziffern stehen hier, die Belegung in `PhotoDetailPage` -
@@ -17,28 +24,28 @@ import type { IconName } from './ui/icon'
  * `--rating-rejected`: der Board-Ton erreicht auf `--overlay` nur 3.96:1 und ist hier TEXT.
  */
 const OPTIONS: {
-  status: RatingStatus
+  control: RatingControl
   label: string
   icon: IconName
   key: string
   keyClass: string
 }[] = [
   {
-    status: 'favorite',
+    control: 'favorite',
     label: 'Favorit',
     icon: 'star',
     key: '1',
     keyClass: 'text-rating-favorite',
   },
   {
-    status: 'album_worthy',
+    control: 'album_worthy',
     label: 'Album-würdig',
     icon: 'book',
     key: '2',
     keyClass: 'text-rating-album-worthy',
   },
   {
-    status: 'rejected',
+    control: 'rejected',
     label: 'Verwerfen',
     icon: 'x-circle',
     key: '3',
@@ -55,7 +62,7 @@ const OPTIONS: {
 // `active:` ist Pflicht: Tailwind bindet `hover:` an `@media (hover: hover)`, am Telefon
 // fällt der Zustand ersatzlos weg - und das Bewerten ist genau die Handlung, die dort
 // stattfindet.
-const ACTIVE_TONE_CLASSES: Record<RatingStatus, string> = {
+const ACTIVE_TONE_CLASSES: Record<RatingControl, string> = {
   favorite: 'bg-rating-favorite text-rating-favorite-fg hover:opacity-85 active:opacity-70',
   album_worthy:
     'bg-rating-album-worthy text-rating-album-worthy-fg hover:opacity-85 active:opacity-70',
@@ -83,7 +90,10 @@ const HOT_PATH_HEIGHT = 'h-11 sm:h-8'
 const ENTRY_LAYOUT = 'w-full justify-start sm:w-auto'
 
 interface RatingButtonsProps {
+  /** Die eigene Albumentscheidung; `null` heißt "keine" - auch bei gesetztem Favoriten. */
   currentStatus: RatingStatus | null
+  /** Das eigene Favoriten-Kennzeichen, unabhängig von `currentStatus`. */
+  favorite: boolean
   /**
    * Die Toggle-Entscheidung (erneutes Klicken derselben Bewertung setzt zurück auf
    * unbewertet) liegt bewusst beim Aufrufer, nicht hier in der Komponente - so kann
@@ -91,6 +101,13 @@ interface RatingButtonsProps {
    * wiederverwendet werden, statt sie zu duplizieren.
    */
   onToggle: (status: RatingStatus) => void
+  /**
+   * Eigener Handler statt eines dritten Werts in `onToggle`: Die beiden schreiben auf
+   * VERSCHIEDENE Endpunkte (`PUT .../rating` bzw. `PUT .../favorite`), und genau deren Trennung
+   * ist der Zweck der Story. Ein gemeinsamer Handler lüde dazu ein, beide Felder aus einem
+   * teilbefüllten Zustand zu schreiben.
+   */
+  onToggleFavorite: () => void
   disabled?: boolean
   /**
    * Busy-Button-Muster - zeigt einen Inline-Indikator, solange die auslösende
@@ -101,7 +118,9 @@ interface RatingButtonsProps {
 
 export function RatingButtons({
   currentStatus,
+  favorite,
   onToggle,
+  onToggleFavorite,
   disabled = false,
   busy = false,
 }: RatingButtonsProps) {
@@ -124,10 +143,10 @@ export function RatingButtons({
       className="flex flex-col items-stretch gap-3 rounded-md bg-surface p-2 sm:flex-row sm:flex-wrap sm:items-center"
     >
       {OPTIONS.map((option) => {
-        const isActive = currentStatus === option.status
+        const isActive = option.control === 'favorite' ? favorite : currentStatus === option.control
         return (
           <Button
-            key={option.status}
+            key={option.control}
             type="button"
             variant={isActive ? 'default' : 'secondary'}
             aria-label={option.label}
@@ -137,9 +156,11 @@ export function RatingButtons({
               HOT_PATH_HEIGHT,
               ENTRY_LAYOUT,
               'gap-1 px-3',
-              isActive && ACTIVE_TONE_CLASSES[option.status],
+              isActive && ACTIVE_TONE_CLASSES[option.control],
             )}
-            onClick={() => onToggle(option.status)}
+            onClick={() =>
+              option.control === 'favorite' ? onToggleFavorite() : onToggle(option.control)
+            }
           >
             <Icon name={option.icon} size={16} />
             {option.label}

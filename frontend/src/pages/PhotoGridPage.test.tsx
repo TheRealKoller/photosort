@@ -151,7 +151,7 @@ describe('PhotoGridPage', () => {
         photo({
           id: 1,
           relative_path: 'a.jpg',
-          ratings: [{ user_id: 1, username: 'testuser', status: 'favorite' }],
+          ratings: [{ user_id: 1, username: 'testuser', status: 'album_worthy', favorite: false }],
         }),
         photo({ id: 2, relative_path: 'b.jpg', ratings: [] }),
       ],
@@ -162,7 +162,7 @@ describe('PhotoGridPage', () => {
     renderPage()
 
     expect(await screen.findAllByRole('listitem')).toHaveLength(2)
-    expect(screen.getByLabelText('Favorit')).toBeInTheDocument()
+    expect(screen.getByLabelText('Album-würdig')).toBeInTheDocument()
     // Spec 0321, Entscheidung 3: Auf der Karte steht fuer "unbewertet" das WORT "Neu" statt des
     // neutralen "–"-Badges. Die Aussage des Falls bleibt dieselbe - "nicht bewertet" ist von
     // "Badge noch nicht geladen" unterscheidbar -, sie haengt jetzt am Wort statt am Strich.
@@ -174,7 +174,7 @@ describe('PhotoGridPage', () => {
       items: [
         photo({
           id: 1,
-          ratings: [{ user_id: 2, username: 'other-user', status: 'rejected' }],
+          ratings: [{ user_id: 2, username: 'other-user', status: 'rejected', favorite: true }],
         }),
       ],
       total: 1,
@@ -186,6 +186,45 @@ describe('PhotoGridPage', () => {
     // Spec 0321, Entscheidung 3: "unbewertet" heisst auf der Karte "Neu" (siehe oben).
     expect(await screen.findByText('Neu')).toBeInTheDocument()
     expect(screen.queryByLabelText('Verworfen')).not.toBeInTheDocument()
+    // Auflage S6: auch das KENNZEICHEN der anderen Person erscheint nicht als eigenes -
+    // `ratings.some(r => r.favorite)` waere hier wahr.
+    expect(screen.queryByLabelText('Favorit')).not.toBeInTheDocument()
+  })
+
+  it('shows the own favorite marker next to the own album decision', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: 'album_worthy', favorite: true }],
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Favorit')).toBeInTheDocument()
+    expect(screen.getByLabelText('Album-würdig')).toBeInTheDocument()
+  })
+
+  it('replaces the word "Neu" with the favorite marker when only the marker is set', async () => {
+    // "Favorit" ohne Albumkennzeichen daneben IST die Aussage "noch nicht entschieden"; beides
+    // zugleich laese sich wie ein Widerspruch.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: null, favorite: true }],
+        }),
+      ],
+      total: 1,
+    })
+
+    renderPage()
+
+    expect(await screen.findByLabelText('Favorit')).toBeInTheDocument()
+    expect(screen.queryByText('Neu')).not.toBeInTheDocument()
   })
 
   it('links a tile to the detail view, preserving the active filter', async () => {
@@ -369,7 +408,12 @@ describe('PhotoGridPage', () => {
     vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
       photoId === 1
         ? new Promise(() => {})
-        : Promise.resolve({ user_id: 1, username: 'testuser', status: 'rejected' }),
+        : Promise.resolve({
+            photo_id: photoId,
+            status: 'rejected' as const,
+            favorite: false,
+            updated_at: '2026-09-13T10:00:00',
+          }),
     )
     const user = userEvent.setup()
 
@@ -389,9 +433,10 @@ describe('PhotoGridPage', () => {
       total: 1,
     })
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      user_id: 1,
-      username: 'testuser',
+      photo_id: 7,
       status: 'rejected',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
     })
     const user = userEvent.setup()
 
@@ -458,7 +503,9 @@ describe('PhotoGridPage', () => {
             id: 1,
             relative_path: 'a.jpg',
             criterion_scores: [criterionScore()],
-            ratings: [{ user_id: 1, username: 'testuser', status: 'favorite' }],
+            ratings: [
+              { user_id: 1, username: 'testuser', status: 'album_worthy', favorite: false },
+            ],
           }),
         ],
         total: 1,
@@ -472,7 +519,7 @@ describe('PhotoGridPage', () => {
 
       expect(link.contains(trigger)).toBe(false)
       expect(item.contains(trigger)).toBe(true)
-      expect(link.contains(screen.getByLabelText('Favorit'))).toBe(false)
+      expect(link.contains(screen.getByLabelText('Album-würdig'))).toBe(false)
       expect(link.contains(screen.getByText('a.jpg'))).toBe(false)
     })
 

@@ -144,6 +144,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(ratingsApi.setFavorite).mockReset()
     vi.mocked(motifsApi.listMotifs).mockReset()
     vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
     vi.mocked(photosApi.setMotifCorrection).mockReset()
@@ -167,7 +168,10 @@ describe('PhotoDetailPage', () => {
   it('renders the photo with progress "index/total" and the own rating highlighted', async () => {
     const list: PhotoListOut = {
       items: [
-        photo({ id: 1, ratings: [{ user_id: 1, username: 'testuser', status: 'favorite' }] }),
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: 'album_worthy', favorite: true }],
+        }),
         photo({ id: 2 }),
       ],
       total: 2,
@@ -177,6 +181,11 @@ describe('PhotoDetailPage', () => {
     renderPage('/projects/1/photos/1')
 
     expect(await screen.findByText('1/2')).toBeInTheDocument()
+    // BEIDE gedrueckt zugleich - der sichtbare Beweis der Trennung (ADR 0098 Punkt 2).
+    expect(screen.getByRole('button', { name: /album-würdig/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
     expect(screen.getByRole('button', { name: /favorit/i })).toHaveAttribute('aria-pressed', 'true')
     expect(photosApi.fetchPhotoImageBlobUrl).toHaveBeenCalledWith(1, 'display')
   })
@@ -238,18 +247,104 @@ describe('PhotoDetailPage', () => {
     }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      user_id: 1,
-      username: 'testuser',
-      status: 'favorite',
+      photo_id: 1,
+      status: 'album_worthy',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
     })
     const user = userEvent.setup()
 
     renderPage('/projects/1/photos/1')
     await screen.findByText('1/3')
 
+    await user.click(screen.getByRole('button', { name: /album-würdig/i }))
+
+    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'album_worthy')
+    await screen.findByText('2/3')
+  })
+
+  it('does not auto-advance and does not touch the album decision when the favorite is set', async () => {
+    // Die Auszeichnung ist keine Entscheidung UEBER dieses Foto, sondern eine Notiz daneben -
+    // weiterzuspringen naehme dem Nutzer die Moeglichkeit, im selben Atemzug noch zu
+    // entscheiden. Und sie geht ueber den EIGENEN Endpunkt: ein gemeinsamer Schreibweg setzte
+    // die Albumentscheidung hier still zurueck.
+    const list: PhotoListOut = { items: [photo({ id: 1 }), photo({ id: 2 })], total: 2 }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+    vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
+      photo_id: 1,
+      status: null,
+      favorite: true,
+      updated_at: '2026-09-13T10:00:00',
+    })
+    const user = userEvent.setup()
+
+    renderPage('/projects/1/photos/1')
+    await screen.findByText('1/2')
+
     await user.click(screen.getByRole('button', { name: /favorit/i }))
 
-    expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'favorite')
+    expect(ratingsApi.setFavorite).toHaveBeenCalledWith(1, true)
+    expect(ratingsApi.setRating).not.toHaveBeenCalled()
+    expect(ratingsApi.deleteRating).not.toHaveBeenCalled()
+    expect(screen.getByText('1/2')).toBeInTheDocument()
+  })
+
+  it('clears the favorite marker on a second press without touching the album decision', async () => {
+    const list: PhotoListOut = {
+      items: [
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: 'rejected', favorite: true }],
+        }),
+      ],
+      total: 1,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+    vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
+      photo_id: 1,
+      status: 'rejected',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
+    })
+    const user = userEvent.setup()
+
+    renderPage('/projects/1/photos/1')
+    await screen.findByText('1/1')
+
+    await user.click(screen.getByRole('button', { name: /favorit/i }))
+
+    expect(ratingsApi.setFavorite).toHaveBeenCalledWith(1, false)
+    expect(ratingsApi.deleteRating).not.toHaveBeenCalled()
+  })
+
+  it('still treats a photo that carries only the favorite marker as undecided', async () => {
+    // Auto-Advance sucht das naechste Foto OHNE Albumentscheidung. Auf das Vorhandensein der
+    // Zeile gepruefte Abwesenheit uebersprAenge ein nur als Favorit markiertes Foto still.
+    const list: PhotoListOut = {
+      items: [
+        photo({ id: 1 }),
+        photo({
+          id: 2,
+          ratings: [{ user_id: 1, username: 'testuser', status: null, favorite: true }],
+        }),
+        photo({ id: 3 }),
+      ],
+      total: 3,
+    }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+    vi.mocked(ratingsApi.setRating).mockResolvedValue({
+      photo_id: 1,
+      status: 'album_worthy',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
+    })
+    const user = userEvent.setup()
+
+    renderPage('/projects/1/photos/1')
+    await screen.findByText('1/3')
+
+    await user.click(screen.getByRole('button', { name: /album-würdig/i }))
+
     await screen.findByText('2/3')
   })
 
@@ -264,7 +359,6 @@ describe('PhotoDetailPage', () => {
    * Anwesenheit der Ziffern prueft, erfuellt das nicht.
    */
   it.each([
-    ['1', 'favorite', 'Favorit'],
     ['2', 'album_worthy', 'Album-würdig'],
     ['3', 'rejected', 'Verwerfen'],
   ] as const)(
@@ -273,9 +367,10 @@ describe('PhotoDetailPage', () => {
       const list: PhotoListOut = { items: [photo({ id: 1 }), photo({ id: 2 })], total: 2 }
       vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
       vi.mocked(ratingsApi.setRating).mockResolvedValue({
-        user_id: 1,
-        username: 'testuser',
+        photo_id: 1,
         status,
+        favorite: false,
+        updated_at: '2026-09-13T10:00:00',
       })
       const user = userEvent.setup()
 
@@ -285,14 +380,44 @@ describe('PhotoDetailPage', () => {
       await user.keyboard(key)
 
       expect(ratingsApi.setRating).toHaveBeenCalledWith(1, status)
+      // Das Kennzeichen bleibt unberuehrt - die Taste schreibt genau ihr Feld.
+      expect(ratingsApi.setFavorite).not.toHaveBeenCalled()
       expect(screen.getByRole('button', { name: label })).toHaveTextContent(key)
     },
   )
 
+  it('routes key "1" to the favorite endpoint and shows that very key on its button', async () => {
+    // Die dritte Zeile derselben Tabelle, aber mit ANDEREM Ziel: Die Belegung 1/2/3 bleibt, Taste
+    // 1 schreibt seit ADR 0098 das unabhaengige Kennzeichen. Getrennt geschrieben, weil sonst
+    // genau die Zusage "die Taste fasst das jeweils andere Feld nicht an" im Rauschen unterginge.
+    const list: PhotoListOut = { items: [photo({ id: 1 }), photo({ id: 2 })], total: 2 }
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
+    vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
+      photo_id: 1,
+      status: null,
+      favorite: true,
+      updated_at: '2026-09-13T10:00:00',
+    })
+    const user = userEvent.setup()
+
+    renderPage('/projects/1/photos/1')
+    await screen.findByText('1/2')
+
+    await user.keyboard('1')
+
+    expect(ratingsApi.setFavorite).toHaveBeenCalledWith(1, true)
+    expect(ratingsApi.setRating).not.toHaveBeenCalled()
+    expect(ratingsApi.deleteRating).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Favorit' })).toHaveTextContent('1')
+  })
+
   it('toggles an existing rating back to unrated when the same button is clicked again', async () => {
     const list: PhotoListOut = {
       items: [
-        photo({ id: 1, ratings: [{ user_id: 1, username: 'testuser', status: 'favorite' }] }),
+        photo({
+          id: 1,
+          ratings: [{ user_id: 1, username: 'testuser', status: 'album_worthy', favorite: false }],
+        }),
         photo({ id: 2 }),
       ],
       total: 2,
@@ -304,7 +429,7 @@ describe('PhotoDetailPage', () => {
     renderPage('/projects/1/photos/1')
     await screen.findByText('1/2')
 
-    await user.click(screen.getByRole('button', { name: /favorit/i }))
+    await user.click(screen.getByRole('button', { name: /album-würdig/i }))
 
     expect(ratingsApi.deleteRating).toHaveBeenCalledWith(1)
     expect(ratingsApi.setRating).not.toHaveBeenCalled()
@@ -320,16 +445,17 @@ describe('PhotoDetailPage', () => {
     const list: PhotoListOut = { items: [photo({ id: 1 })], total: 1 }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      user_id: 1,
-      username: 'testuser',
-      status: 'favorite',
+      photo_id: 1,
+      status: 'album_worthy',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
     })
     const user = userEvent.setup()
 
     renderPage('/projects/1/photos/1')
     await screen.findByText('1/1')
 
-    await user.click(screen.getByRole('button', { name: /favorit/i }))
+    await user.click(screen.getByRole('button', { name: /album-würdig/i }))
 
     expect(await screen.findByRole('status')).toHaveTextContent(
       /keine weiteren unbewerteten fotos/i,
@@ -348,16 +474,17 @@ describe('PhotoDetailPage', () => {
     const list: PhotoListOut = { items: [photo({ id: 1 })], total: 1 }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      user_id: 1,
-      username: 'testuser',
-      status: 'favorite',
+      photo_id: 1,
+      status: 'album_worthy',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
     })
     const user = userEvent.setup()
 
     renderPage('/projects/1/photos/1?filter=unrated')
     await screen.findByText('1/1')
 
-    await user.click(screen.getByRole('button', { name: /favorit/i }))
+    await user.click(screen.getByRole('button', { name: /album-würdig/i }))
     expect(await screen.findByRole('status')).toHaveTextContent(
       /keine weiteren unbewerteten fotos/i,
     )
@@ -440,7 +567,7 @@ describe('PhotoDetailPage', () => {
       items: [
         photo({
           id: 1,
-          ratings: [{ user_id: 1, username: 'testuser', status: 'rejected' }],
+          ratings: [{ user_id: 1, username: 'testuser', status: 'rejected', favorite: false }],
           suggestion: null,
         }),
       ],
@@ -464,9 +591,10 @@ describe('PhotoDetailPage', () => {
     }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      user_id: 1,
-      username: 'testuser',
+      photo_id: 1,
       status: 'rejected',
+      favorite: false,
+      updated_at: '2026-09-13T10:00:00',
     })
     const user = userEvent.setup()
 
