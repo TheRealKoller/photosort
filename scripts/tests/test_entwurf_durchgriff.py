@@ -88,9 +88,22 @@ WUNSCH_MARKER = "**Nur auf ausdrücklichen Wunsch.**"
 # Die Marke der Uebergabe am Ende von Schritt 6. Sie steht hinter dem Statuswechsel-Versuch.
 UEBERGABE_MARKER = "**Übergabe an den gemeinsamen Nachlauf:**"
 STATUS_OPERATION = "board-status-setzen"
+SCHREIBOPERATION = "issue-body-schreiben"
 
 NACHLAUF_SKILL = "story-entwurf"
 RUNDEN_SKILL = "penpot-entwurfsrunden"
+
+# Die Marke, an der der Vergleichsstand der Drift-Pruefung haengt. Auf diesem Weg entfaellt
+# Schritt 0 des Nachlaufs und damit die Lesung, die den Vergleichsstand sonst liefert - ohne die
+# Benennung stuende die Drift-Pruefung des Nachlaufs ohne Bezugspunkt da, und eine Auflage, die
+# sich nicht ausfuehren laesst, ist keine.
+VERGLEICHSSTAND_MARKER = "**Vergleichsstand der Drift-Prüfung:**"
+
+# Die Auflage im Nachlauf, die den Vergleichsstand definiert. Ihr erster Absatz muss **beide**
+# Einstiegspunkte nennen, sonst setzt sie stillschweigend voraus, dass Schritt 0 gelaufen ist.
+STORY_ENTWURF_AUFLAGEN = "## Die zwölf Sicherheitsauflagen"
+DRIFT_AUFLAGE = "**M-S12 — "
+EINSTIEGE_IN_DER_AUFLAGE = ("Schritt 0", "`refinement`")
 
 # --- 2. Abschnittsgebundenheit in `spec-writer` --------------------------------------------------
 
@@ -412,6 +425,71 @@ def test_die_uebergabe_steht_hinter_dem_statuswechsel_versuch() -> None:
     assert status < uebergabe, (
         f"Statuswechsel bei {status}, Uebergabe bei {uebergabe}. Erwartet ist aufsteigend."
     )
+
+
+def test_die_uebergabe_benennt_den_vergleichsstand_der_drift_pruefung() -> None:
+    """Die Luecke, die `Schritte 0 bis 2 entfallen` aufreisst.
+
+    Der Nachlauf liest den Body unmittelbar vor jedem Schreibzugriff neu und vergleicht ihn gegen
+    den Stand vom Laufbeginn - auf dem eigenstaendigen Weg ist das die Lesung aus seinem Schritt 0.
+    Aus der Schaerfung heraus laeuft Schritt 0 nicht, und damit gaebe es keinen Bezugspunkt: Die
+    Drift-Pruefung stuende ohne Vergleichsstand da, waehrend zwischen dem Schreibzugriff hier und
+    dem Anheften der vollstaendige Ausarbeitungslauf liegt - genau das Zeitfenster, fuer das die
+    Auflage geschrieben ist.
+    """
+    rumpf = abschnitt(dateitext(REFINEMENT_PFAD), REFINEMENT_SCHRITT_6)
+
+    uebergabe = offset(rumpf, UEBERGABE_MARKER)
+    vergleichsstand = offset(rumpf, VERGLEICHSSTAND_MARKER)
+
+    assert vergleichsstand != -1, (
+        f"In {REFINEMENT_SCHRITT_6!r} steht keine Zeile {VERGLEICHSSTAND_MARKER!r}. Ohne sie "
+        "uebergibt dieser Ablauf einen Auftrag, dessen Drift-Schranke keinen Bezugspunkt hat."
+    )
+    assert uebergabe < vergleichsstand, (
+        f"Uebergabe bei {uebergabe}, Vergleichsstand bei {vergleichsstand}. Der Vergleichsstand "
+        "gehoert zur Uebergabe; davor stehend haengt er an keinem Auftrag."
+    )
+    assert f"`{SCHREIBOPERATION}`" in absatz(rumpf, VERGLEICHSSTAND_MARKER), (
+        f"Der Absatz nennt `{SCHREIBOPERATION}` nicht. Der Vergleichsstand ist kein beliebiger "
+        "Stand, sondern genau der Body, den dieser Schritt selbst geschrieben hat - ohne die "
+        "Quelle bliebe offen, wogegen der Nachlauf vergleicht."
+    )
+
+
+def test_die_drift_auflage_des_nachlaufs_kennt_beide_einstiegspunkte() -> None:
+    """Die Gegenseite derselben Zusage, im Nachlauf.
+
+    Eine Auflage, die ihren Vergleichsstand nur fuer einen von zwei Einstiegspunkten definiert,
+    laesst sich auf dem anderen nicht ausfuehren - und eine Auflage, die sich nicht ausfuehren
+    laesst, ist keine. Geprueft wird der **erste Absatz** der Auflage: Dort steht, was gilt.
+    """
+    auflagen = abschnitt(dateitext(STORY_ENTWURF_PFAD), STORY_ENTWURF_AUFLAGEN)
+    erster_absatz = absatz(auflagen, DRIFT_AUFLAGE)
+
+    assert erster_absatz, (
+        f"In {STORY_ENTWURF_AUFLAGEN!r} steht keine Auflage {DRIFT_AUFLAGE!r} mehr - dann ist "
+        "diese Zusage eine Aussage ueber nichts."
+    )
+
+    fehlend = [marke for marke in EINSTIEGE_IN_DER_AUFLAGE if marke not in erster_absatz]
+
+    assert not fehlend, (
+        f"Der erste Absatz der Drift-Auflage nennt {fehlend} nicht: {erster_absatz!r}. Er muss "
+        "beide Einstiegspunkte benennen - die eigene Lesung aus Schritt 0 und den vom aufrufenden "
+        "Ablauf zuletzt geschriebenen Body -, statt Schritt 0 stillschweigend vorauszusetzen."
+    )
+
+
+def test_der_auflagenabsatz_zaehlt_nur_den_ersten_absatz_der_auflage() -> None:
+    """Probe und Gegenprobe: Was zwei Absaetze spaeter steht, ist Erlaeuterung, nicht die Regel."""
+    probe = (
+        f"{DRIFT_AUFLAGE}Der Vergleichsstand ist definiert.**\n\n"
+        "Zweiter Absatz, in dem `refinement` nur beilaeufig vorkommt.\n"
+    )
+
+    assert "`refinement`" not in absatz(probe, DRIFT_AUFLAGE)
+    assert "`refinement`" in absatz(probe.replace("\n\n", " "), DRIFT_AUFLAGE)
 
 
 def test_die_uebergabe_nennt_den_gemeinsamen_nachlauf() -> None:

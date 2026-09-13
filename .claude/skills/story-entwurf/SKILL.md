@@ -16,6 +16,12 @@ Entwurf für eine bereits geschärfte Story **und** der gemeinsame Nachlauf, den
 einer design-unterstützten Schärfung aufruft. Der Nachlauf existiert genau einmal, hier: Freigabe
 feststellen, bei Freigabe ausarbeiten und ausliefern, den Verweis an das Issue heften.
 
+**Aus `refinement` heraus beginnt der Ablauf bei Schritt 3**, weil Vorbedingungen und Rundenlauf
+dort bereits gelaufen sind. Der aufrufende Ablauf übergibt dabei die Issue-Nummer und den Body,
+den er zuletzt selbst geschrieben hat; dieser Body tritt an die Stelle der Lesung aus Schritt 0
+und ist der Vergleichsstand jeder Drift-Prüfung dieses Laufs (M-S12). Beim eigenständigen Aufruf
+läuft der Ablauf unverändert ab Schritt 0.
+
 **Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`.** Lade ihn einmal über
 das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (das ist Schritt 0), und arbeite danach
 mit dem geladenen Katalog. Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik
@@ -124,9 +130,10 @@ Dieselbe Reihenfolge wie in Schritt 2 — erst lesen, dann vergleichen, dann sch
 
 1. `issue-lesen` erneut, mit derselben Nummer. Seit Schritt 0 liegen der gesamte Rundenlauf und
    die Ausarbeitung dazwischen; das sind Stunden, keine Sekunden.
-2. **Drift-Prüfung am Body:** Vergleich der frischen Fassung gegen den Vergleichsstand aus
-   Schritt 0 — bzw. gegen die Fassung, die Schritt 2 selbst geschrieben hat, falls er lief.
-   Weichen sie ab, **hält der Lauf an und meldet**; kein Nachziehen im selben Durchgang.
+2. **Drift-Prüfung am Body:** Vergleich der frischen Fassung gegen den Vergleichsstand — die
+   Lesung aus Schritt 0 bzw., aus `refinement` heraus, der dort übergebene Body; und gegen die
+   Fassung, die Schritt 2 selbst geschrieben hat, falls er lief. Weichen sie ab, **hält der Lauf
+   an und meldet**; kein Nachziehen im selben Durchgang.
 3. Der neue Body entsteht **mechanisch** aus der frisch gelesenen Fassung, nicht aus dem
    Kontextverständnis heraus: ihr Inhalt bis zur ersten Zeile der Design-Überschrift, dahinter der
    selbst erzeugte Block. Ein vorhandener Abschnitt wird ab seiner Überschrift vollständig
@@ -261,12 +268,15 @@ als Operations-ID:** Die Zusage ist die Gleichheit der genannten Menge mit den d
 in Backticks gesetzte Verbotsliste zöge jede darin genannte ID in eben diese Menge.
 
 **M-S12 — Vor jedem Schreibzugriff auf den Body wird er frisch gelesen und gegen den
-Vergleichsstand geprüft.** Zwischen der Lesung in Schritt 0 und einem Schreibzugriff liegen ein
-vollständiger Rundenlauf mit mehreren Rückmeldezyklen und die Ausarbeitung — Stunden, nicht
-Sekunden; ein Lauf ist kein Moment, derselbe Grund wie bei M-S7. Fortgeschrieben wird deshalb
-ausschließlich die **frisch** gelesene Fassung. Weicht sie vom Vergleichsstand ab, **hält der Lauf
-an und meldet**: kein Nachziehen mit dem aktualisierten Stand im selben Durchgang, keine
-Zusammenführung, kein Raten, welche der beiden Fassungen gemeint war.
+Vergleichsstand geprüft.** Der Vergleichsstand ist in **beiden** Einstiegsfällen definiert und
+wird nie stillschweigend vorausgesetzt: beim eigenständigen Aufruf die Lesung aus Schritt 0, beim
+Einstieg aus `refinement` der Body, den jener Ablauf zuletzt selbst geschrieben hat und der dieser
+Übergabe beiliegt. Zwischen ihm und einem Schreibzugriff liegen ein vollständiger Rundenlauf mit
+mehreren Rückmeldezyklen und die Ausarbeitung — Stunden, nicht Sekunden; ein Lauf ist kein Moment,
+derselbe Grund wie bei M-S7. Fortgeschrieben wird deshalb ausschließlich die **frisch** gelesene
+Fassung. Weicht sie vom Vergleichsstand ab, **hält der Lauf an und meldet**: kein Nachziehen mit
+dem aktualisierten Stand im selben Durchgang, keine Zusammenführung, kein Raten, welche der beiden
+Fassungen gemeint war.
 
 **Die Selbstprüfung (M-S2) kann diesen Fall strukturell nicht fangen** — sie vergleicht den
 erzeugten gegen den *gelesenen* Body, und ein veralteter gelesener Body ist genau ihr Maßstab: Sie
