@@ -605,6 +605,14 @@ Auflagen sind nummeriert, damit Umsetzung und Review sie einzeln abhaken können
   benutze dieselbe Funktion und folge automatisch, ist am Bestand widerlegt worden:
   `_count_remote_category_candidates` ist eine bewusst duplizierte Query. Alle drei Stellen ändern
   sich in derselben PR.
+- **Die Feinlabel-Zeilen eines Fotos werden vor dem Neuschreiben gelöscht** (`worker.py`,
+  `run_remote_category_classification`). Das ist die zwingende Folge der Nachbewertung und bei der
+  Umsetzung aufgefallen: Die geweitete Auswahl schickt bereits klassifizierte Fotos erneut, der
+  zweite Einfügeversuch desselben Labels verletzte `UniqueConstraint(photo_id, fine_label_id)`, und
+  die `IntegrityError` rollte den **gesamten** Lauf zurück. Die Zeilen der vorherigen Antwort fallen
+  damit vollständig — dieselbe Regel wie beim Stärkevektor.
+- **`provider` in `photo_album_suitability` ist `NOT NULL` und ohne Default:** die Zeile entsteht
+  ausschließlich aus einer Cloud-Antwort, ihr Anbieter ist damit immer bekannt.
 - **ADR 0067 muss nicht geändert werden:** sie ist bereits durch ADR 0091 abgelöst, und dort ist die
   Zusage „Modellzahl steuert die Auswahl nicht" für Motivstärken bewusst aufgegeben. ADR 0091s
   tragende Grenze (Stärken nur innerhalb eines Motivs vergleichen) bleibt unberührt, weil die
