@@ -1,6 +1,14 @@
 # 0002 - Hybrides KI-Scoring für die Fotoauswahl
 
 **Status:** Accepted
+**Teilweise abgelöst:** der **letzte Aufzählungspunkt unter „Konsequenzen"** in seiner Reichweite
+(„darf nie Voraussetzung für die Kernfunktion sein"), durch ADR
+[`0093`](./0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md), Abschnitt 1. Er
+gilt dort unverändert für Scan, Ausschuss-Gate und die lokale Bewertung; allein der Album-Entwurf
+setzt die Cloud-Freigabe voraus. Alles Übrige — insbesondere das zweiphasige Scoring selbst
+(Phase A lokal und immer aktiv, Phase B optional und abschaltbar), der Vorrang manueller
+Bewertungen und der konfigurierbare API-Key — bleibt unverändert in Kraft; die Abstufung ist in
+[`../README.md`](../README.md) beschrieben.
 **Datum:** 2026-07-19
 
 ## Kontext

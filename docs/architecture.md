@@ -963,6 +963,17 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     (`test_migration_kategorien_abloesung.py`) — einschließlich des Falls zweier Hauptzeilen.
     `downgrade()` stellt die **Struktur** wieder her, **nie die Daten**: `category_key` kommt als
     Leerstring zurück, `category_override` als `NULL`.
+  - **`rank_score` und `rank_position` werden nullable, und `rank_score` ist ab hier der
+    Qualitätswert** *(Spec [`0428`](../specs/features/0428-albumtauglichkeit-vom-modell.md), ADR
+    [`decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md))*:
+    er entsteht nicht mehr aus der Gleichgewichtung aller Kriterien, sondern aus
+    `quality.py::compute_quality_score` — der Modellstufe der Albumtauglichkeit, korrigiert um
+    höchstens `±LOCAL_CORRECTION_SPAN` durch die lokalen Qualitäts-/Kompositionskriterien;
+    Inhaltssignale gehen nicht mehr ein. `NULL` in beiden Spalten heißt **„kein Qualitätswert, weil
+    keine Modellbewertung"** (Cloud nicht freigegeben, oder der Aufruf für dieses Foto ist
+    fehlgeschlagen); ein solches Foto erscheint nicht im Album-Entwurf, bleibt aber im einsehbaren
+    Vorrat. `event_id` bleibt `NOT NULL` — die Gliederung nach Events ist keine Cloud-Leistung und
+    entsteht auch ohne Freigabe.
 - **Event** *(implementiert, Spec
   [`0425`](../specs/features/0425-events-statt-zeitcluster.md), `models.py`, Tabelle `events`, ADR
   [`decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md`](../specs/decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md),
@@ -1084,6 +1095,20 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   existieren; eine neue Grundlage ersetzt den **gesamten** Vektor eines Fotos. Eine in einer
   Cloud-Antwort nicht genannte Stärke wird als `0.0` geschrieben, nicht als „keine Angabe": der
   Prompt verlangt alle acht Zahlen, Schweigen ist dort die Aussage „nicht zu sehen".
+- **PhotoAlbumSuitability** *(Spec [`0428`](../specs/features/0428-albumtauglichkeit-vom-modell.md),
+  ADR
+  [`decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md),
+  `models.py`, Tabelle `photo_album_suitability`)*: das Urteil des Vision-Modells darüber, wie
+  brauchbar ein Foto für ein Album ist — **1:1 zu `Photo`** (`photo_id` als Primary Key und
+  Fremdschlüssel). `level: int` (die Modellstufe `1..5`, normiert über
+  `album_suitability.py::normalize_level` auf `[0, 1]`; der normierte Wert bekommt **keine** zweite
+  Spalte), `reason: str | None` (zeichensanierte, längenbegrenzte Modellbegründung; `NULL` heißt
+  „keine brauchbare Begründung", nie eine leere Zeichenkette), `provider: str`, `computed_at`.
+  Bewusst **nicht** an `photo_motif_assessments` gehängt, obwohl beide aus demselben Modellaufruf
+  entstehen: die Kopfzeile ist eine Aussage über den Bildinhalt und existiert auch auf lokaler
+  Grundlage, diese Zeile ist eine Aussage über die Bildgüte und existiert nur mit Cloud-Grundlage.
+  Die Abwesenheit der Zeile ist der Zustand „nicht beurteilt" und macht das Foto erneut zum
+  Kandidaten des Modellaufrufs, ohne dass das Projekt neu eingelesen werden muss.
 - **PhotoMotifCorrection** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR 0091,
   `models.py`, Tabelle `photo_motif_corrections`)*: die menschliche Korrektur **einer** Motivaussage
   — `photo_id` (Fremdschlüssel auf `photos`, Kaskade), `user_id`, `motif_key`, `applies: bool`,
@@ -1187,7 +1212,13 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
 - Kein eingebauter Reverse Proxy/TLS in `docker-compose.yml` — das Homeserver-Setup von Daniel
   übernimmt das.
 - CPU-only-Betrieb: alle lokalen KI-Heuristiken müssen ohne GPU praktikabel laufen.
-- Cloud-KI-Aufrufe sind immer optional/on-demand, nie Voraussetzung für die Kernfunktion — mit Spec
+- Cloud-KI-Aufrufe sind optional/on-demand und nie Voraussetzung für die Kernfunktion — **die
+  Kernfunktion ist dabei seit Spec [`0428`](../specs/features/0428-albumtauglichkeit-vom-modell.md)
+  ausdrücklich abgegrenzt** (ADR
+  [`decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md),
+  Abschnitt 1): Scan, Ausschuss-Gate und lokale Bewertung laufen vollständig ohne Cloud, der
+  Album-Entwurf dagegen setzt die Freigabe voraus und entsteht ohne sie gar nicht — ohne stillen
+  Rückfall auf einen rein lokal gebildeten Qualitätswert. Mit Spec
   [`0047`](../specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) (ADR
   [`decisions/0025-cloud-landmark-erkennung.md`](../specs/decisions/0025-cloud-landmark-erkennung.md))
   erstmals tatsächlich eingelöst statt nur vorgesehen: das `landmark`-Kriterium ist die **erste
