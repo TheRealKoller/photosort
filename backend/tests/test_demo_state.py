@@ -57,6 +57,8 @@ from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
     CriterionScoringRun,
     Event,
+    FeedbackEvent,
+    FeedbackEventKind,
     FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
@@ -1991,3 +1993,170 @@ class TestTheDemoStateCarriesTheFinalSelection:
 
         assert (await db_session.execute(select(FinalSelectionDecision))).scalars().all() == []
         assert (await db_session.execute(select(User))).scalars().all() != []
+
+
+class TestTheDemoStateCarriesTheReworkLog:
+    """specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md: das Ereignis-Log.
+
+    OHNE SUBSTANZ zeigt der Diagnoseabschnitt auf der Demo-Instanz dauerhaft seinen Nullzustand,
+    und KEIN Test wuerde rot - die Pruefstack-Spezifikation misst die Statistik-Route bereits und
+    maesse dann dauerhaft den Leerzustand. Das ist keine Kosmetik, sondern die einzige Stelle, an
+    der die Abwesenheit auffaellt."""
+
+    async def _events(self, session: AsyncSession) -> list[FeedbackEvent]:
+        return list(
+            (await session.execute(select(FeedbackEvent).order_by(FeedbackEvent.id)))
+            .scalars()
+            .all()
+        )
+
+    async def _seed_two_users(self, session: AsyncSession, tmp_path: Path) -> None:
+        await _make_user(session, "daniel")
+        await _make_user(session, "zweiter-nutzer")
+        await rebuild_demo_state(session, tmp_path, large_collection_photo_count=3)
+
+    async def test_all_three_exchange_classes_are_present(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Diagnose weist die drei Tauscharten GETRENNT aus und summiert sie nie. Geprueft
+        wird ueber die eingefrorenen Stufenpaare und nicht ueber eine abgezaehlte Anzahl: Die
+        unbestimmte Klasse entsteht allein daraus, dass eine der beiden Stufen fehlt, und genau
+        das ist die Eigenschaft, die still verschwinden koennte."""
+        await self._seed_two_users(db_session, tmp_path)
+
+        exchanges = [
+            row for row in await self._events(db_session) if row.kind is FeedbackEventKind.EXCHANGED
+        ]
+
+        assert len(exchanges) == 3
+        assert any(
+            row.level is not None and row.level == row.replaced_level for row in exchanges
+        ), "keine gleichstufige Tauschart im Demo-Bestand"
+        assert any(
+            row.level is not None
+            and row.replaced_level is not None
+            and row.level != row.replaced_level
+            for row in exchanges
+        ), "keine stufenuebergreifende Tauschart im Demo-Bestand"
+        assert any(row.level is None or row.replaced_level is None for row in exchanges), (
+            "keine unbestimmte Tauschart im Demo-Bestand"
+        )
+
+    async def test_every_exchange_names_two_different_photos_of_the_same_event(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe: Der
+        Endpunkt weist ein Paar aus verschiedenen Ereignissen und ein Bild gegen sich selbst
+        ausdruecklich ab."""
+        await self._seed_two_users(db_session, tmp_path)
+        events_by_photo = {
+            photo_id: event_id
+            for photo_id, event_id in (
+                await db_session.execute(select(PhotoRanking.photo_id, PhotoRanking.event_id))
+            ).all()
+        }
+
+        for row in await self._events(db_session):
+            if row.kind is not FeedbackEventKind.EXCHANGED:
+                continue
+            assert row.replaced_photo_id is not None
+            assert row.photo_id != row.replaced_photo_id
+            assert row.event_id == events_by_photo[row.photo_id]
+            assert row.event_id == events_by_photo[row.replaced_photo_id]
+
+    async def test_a_motif_error_case_is_present_with_its_frozen_model_strength(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Ein `motif_dropped` auf ein Motiv, das das Modell mit Staerke genannt hat, ist der
+        Fehlerfall "vom Modell genannt und von uns weggenommen". Ohne eingefrorene Staerke waere
+        er nach dem naechsten Lauf nicht mehr von "zu schwach" zu unterscheiden."""
+        await self._seed_two_users(db_session, tmp_path)
+
+        dropped = [
+            row
+            for row in await self._events(db_session)
+            if row.kind is FeedbackEventKind.MOTIF_DROPPED
+        ]
+
+        assert dropped
+        assert all(row.motif_key in MOTIF_REGISTRY for row in dropped)
+        assert any(row.motif_strength is not None for row in dropped)
+
+    async def test_a_withdrawn_correction_leaves_its_two_events_and_no_state_row(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """DIE Aussage, fuer die es das Log ueberhaupt gibt: Der Bestand zeigt eine
+        zurueckgenommene Korrektur nicht mehr - das Log schon, und beide Ereignisse stehen
+        nebeneinander."""
+        await self._seed_two_users(db_session, tmp_path)
+
+        rows = await self._events(db_session)
+        added = [row for row in rows if row.kind is FeedbackEventKind.MOTIF_ADDED]
+        withdrawn = [
+            row for row in rows if row.kind is FeedbackEventKind.MOTIF_CORRECTION_WITHDRAWN
+        ]
+
+        assert len(added) == len(withdrawn) == 1
+        assert (added[0].photo_id, added[0].motif_key) == (
+            withdrawn[0].photo_id,
+            withdrawn[0].motif_key,
+        )
+        assert added[0].id < withdrawn[0].id
+        corrections = (
+            (
+                await db_session.execute(
+                    select(PhotoMotifCorrection).where(
+                        PhotoMotifCorrection.photo_id == added[0].photo_id,
+                        PhotoMotifCorrection.motif_key == added[0].motif_key,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert corrections == []
+
+    async def test_every_joint_decision_has_its_event_and_none_of_them_names_a_user(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """S9 am Demo-Bestand, beide Richtungen in einem Fall: Die Ereignisse der gemeinsamen
+        Entscheidung tragen keinen Nutzer, alle uebrigen tragen einen."""
+        await self._seed_two_users(db_session, tmp_path)
+        decisions = (await db_session.execute(select(FinalSelectionDecision))).scalars().all()
+        assert decisions
+
+        rows = await self._events(db_session)
+        final = [
+            row
+            for row in rows
+            if row.kind
+            in {FeedbackEventKind.FINAL_DECISION_IN, FeedbackEventKind.FINAL_DECISION_OUT}
+        ]
+
+        assert len(final) == len(decisions)
+        assert all(row.user_id is None for row in final)
+        assert all(row.user_id is not None for row in rows if row not in final)
+
+    async def test_the_log_stays_empty_without_a_user_except_for_the_joint_decisions(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Ohne Nutzerkonto legt der Seeder keines an (ein Konto mit bekannten Zugangsdaten waere
+        genau das Sicherheitsproblem, gegen das die Sperre antritt) - und ohne Nutzer gibt es
+        weder Austausche noch Motivkorrekturen. Der Dissens-Block schreibt bei `n < 2` ebenfalls
+        nichts, also bleibt das Log hier vollstaendig leer."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        assert await self._events(db_session) == []
+
+    async def test_the_project_deletion_removes_the_log_too(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """S13: Ohne die Anweisung ueberleben Aussagen ueber geloeschte Familienfotos ihr
+        Projekt."""
+        await self._seed_two_users(db_session, tmp_path)
+        assert await self._events(db_session) != []
+
+        await purge_demo_state(db_session, tmp_path)
+        await db_session.commit()
+
+        assert await self._events(db_session) == []

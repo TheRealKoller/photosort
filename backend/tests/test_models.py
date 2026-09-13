@@ -1977,6 +1977,11 @@ _ALLOWED_DECISION_MODEL_READERS = frozenset(
         # Der Dissens-Block des Demo-Seeders. Er schreibt Entscheidungszeilen und ist damit ein
         # erlaubter Leser - er beruehrt den Einzelentwurf nicht, sondern die Ebene darueber.
         "demo_state.py::_seed_final_selection_dissent",
+        # Der Ereignis-Log-Block des Demo-Seeders (Spec 0432). Er LIEST die geschriebenen
+        # Entscheidungen, um je Zeile ein Ereignis abzulegen - aus dem tatsaechlichen Bestand statt
+        # aus einer zweiten Indexliste daneben, die mit dem Vorschlag driften wuerde. Er aendert
+        # keine Entscheidungszeile und beruehrt den Einzelentwurf nicht.
+        "demo_state.py::_seed_feedback_events",
     }
 )
 
