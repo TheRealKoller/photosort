@@ -504,6 +504,75 @@ export interface PhotoOut {
   /** Die Albumtauglichkeit des Modells - `null` heißt „noch nicht bewertet" und ist von der
    * niedrigsten Stufe unterscheidbar. Auf `=== null` prüfen, nie auf Falsyness. */
   album_suitability?: AlbumSuitabilityOut | null
+  /**
+   * Die persistierte GEMEINSAME Entscheidung des Projekts über dieses Foto; `null` = keine
+   * getroffen. Sie ist keine Aussage eines Nutzers - `ratings[].status` heißt bereits
+   * „album_decision", und die beiden zu verwechseln ist der Fehler, den diese Ansicht
+   * ausschließt.
+   */
+  final_selection_decision: boolean | null
+  /**
+   * Gehört das Foto zur Endauswahl? DIE AUSSAGE DES SERVERS
+   * (`backend album_selection.py::selection_state`). Die Oberfläche leitet die Zugehörigkeit
+   * NIE selbst her - insbesondere nicht über `utils/albumDraft.ts::isInAlbum`, dessen Aussage
+   * nur innerhalb der Antwortmenge des Entwurfszweigs gilt.
+   */
+  in_final_selection: boolean
+  /** Sind sich die Nutzer über dieses Foto uneins und ist noch nicht gemeinsam entschieden? */
+  contested: boolean
+}
+
+/*
+ * DIE DREI FELDER OBEN SIND PFLICHTIG DEKLARIERT, anders als `ranking`/`location`/`event`
+ * daneben - und das ist keine Stiltreue, sondern die Frontend-Hälfte der Auflage S9. Bei
+ * `location` bedeuten `undefined` und `null` dasselbe; bei `in_final_selection` und `contested`
+ * läse `undefined` sich als `false`, also als „gehört nicht zur Endauswahl" bzw. „ist nicht
+ * strittig". Beides ist plausibel, wirft nichts und erscheint an keiner Stelle als Fehler; die
+ * Endauswahl ist die Menge, die als Album gilt und die der Export nimmt. Ein optionales Feld
+ * machte daraus ein leeres Album statt einen Typfehler.
+ */
+
+/**
+ * EIN Teilnehmer der Endauswahl - genau `user_id` und `username`, mehr liefert der Server nicht
+ * (Auflage S8). Die Länge der Liste ist zugleich der Nenner der Einigkeitsregel.
+ *
+ * SICHERHEIT: `username` ist fremdbestimmter Text und wird ausschließlich als regulärer
+ * React-Textknoten gerendert - nie über `dangerouslySetInnerHTML`, nie in `href`, `src` oder
+ * `style`, nie in eine URL (Auflage S10).
+ */
+export interface AlbumParticipantOut {
+  user_id: number
+  username: string
+}
+
+/**
+ * Die Antwort von `GET /projects/{id}/album-selection` - die gemeinsame Endauswahl als GANZES.
+ *
+ * KEIN `total` und keine Seitenweise, wie beim Entwurfszweig: Die Menge wird vollständig
+ * geliefert, und aus ihr entstehen LOKAL beide Sichten (Arbeitssicht `contested`, Ergebnissicht
+ * `in_final_selection` samt der ausdrücklich Herausgenommenen). Der Umschalter lädt nichts nach.
+ */
+export interface AlbumSelectionOut {
+  /** ALLE Nutzer, nach `user_id` sortiert - auch der, der noch nie etwas angefasst hat. */
+  participants: AlbumParticipantOut[]
+  /**
+   * „Mindestens eine Rangzeile des letzten erfolgreichen Laufs trägt `selection_position`."
+   * Trennt die beiden Leerzustände, die verschiedene Handlungen verlangen: „kein
+   * Auswahlvorschlag" (einen Lauf starten) gegen „keine Unterschiede offen" (nichts tun).
+   */
+  has_proposal: boolean
+  items: PhotoOut[]
+}
+
+/**
+ * Die Antwort von `PUT /photos/{id}/album-decision` - der PERSISTIERTE Zustand nach dem
+ * Schreibvorgang, nie die Rückspiegelung des Bodys (Auflage S5). `utils/albumSelection.ts::
+ * applyAlbumDecision` schreibt genau diesen Wert fort, nie den lokal beabsichtigten.
+ */
+export interface AlbumDecisionOut {
+  photo_id: number
+  included: boolean
+  updated_at: string
 }
 
 /** Die fünfstufige Modellaussage über die Albumtauglichkeit eines Fotos samt Begründung.
