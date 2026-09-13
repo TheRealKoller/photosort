@@ -1,6 +1,16 @@
 import { useId } from 'react'
 
-import type { CriterionScoreOut, FineLabelOut, RankingOut, SuggestionOut } from '../api/types'
+import type {
+  AlbumSuitabilityOut,
+  CriterionScoreOut,
+  FineLabelOut,
+  RankingOut,
+  SuggestionOut,
+} from '../api/types'
+import {
+  ALBUM_SUITABILITY_NOT_RATED_TEXT,
+  formatAlbumSuitabilityLevel,
+} from '../utils/albumSuitability'
 import { formatCriterionPercent } from '../utils/formatStats'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 import { Badge } from './ui/badge'
@@ -25,6 +35,14 @@ interface CriterionDetailsListProps {
    * dass das Session-Token in `localStorage` liegen darf. Bricht in
    * `CriterionDetailsList.test.tsx > never renders a fine label via dangerouslySetInnerHTML`. */
   fineLabels?: FineLabelOut[]
+  /** Die Albumtauglichkeit des Modells. `null` heisst „noch nicht bewertet" - dann trägt die
+   * Zeile den Satz statt einer Stufe, und es erscheint KEINE Begründungszeile. `undefined`
+   * heisst „diese Einbindungsstelle reicht das Feld nicht durch" und lässt die Zeile ganz weg.
+   *
+   * SICHERHEITSHINWEIS wie bei `fineLabels`: `reason` ist freier, extern erzeugter LLM-Text -
+   * ausschliesslich als regulärer React-Textknoten rendern. Bricht in
+   * `CriterionDetailsList.test.tsx > never renders the reason via dangerouslySetInnerHTML`. */
+  albumSuitability?: AlbumSuitabilityOut | null
 }
 
 // Die Block-Zuordnung folgt AUSSCHLIESSLICH dem Registry-Flag `has_presence_threshold` aus der
@@ -78,13 +96,19 @@ export function CriterionDetailsList({
   suggestion,
   showSuggestion,
   fineLabels = [],
+  albumSuitability,
 }: CriterionDetailsListProps) {
   const { quality: qualityScores, content: contentScores } =
     partitionByPresenceThreshold(criterionScores)
   // "Rang" gehoert fachlich zum Bildinhalt-Block - er erscheint deshalb auch ohne ein einziges
-  // Inhalts-Kriterium, sobald eine Rangzeile vorliegt.
-  const showContentBlock = contentScores.length > 0 || ranking !== null
-  const showQualityBlock = qualityScores.length > 0
+  // Inhalts-Kriterium, sobald eine Rangzeile MIT Rang vorliegt. Auf `!== null` geprueft, nie auf
+  // Falsyness: "Rang - von 12" waere eine Rangaussage ueber ein Foto ohne Rang.
+  const showRankRow = ranking !== null && ranking.rank_position !== null
+  const showContentBlock = contentScores.length > 0 || showRankRow
+  // Die Albumtauglichkeit gehoert in den Qualitaetsblock - sie IST der Qualitaetswert des Fotos.
+  // `undefined` laesst die Zeile weg, `null` traegt den Satz "Noch nicht bewertet".
+  const showAlbumSuitability = albumSuitability !== undefined
+  const showQualityBlock = qualityScores.length > 0 || showAlbumSuitability
   const showSuggestionGroup = showSuggestion && suggestion !== null
   // Ein einzelnes useId() mit Suffixen statt zweier Aufrufe (React-Doku-Muster fuer mehrere
   // zusammengehoerige Ids) - noetig, weil zwei Instanzen gleichzeitig im DOM stehen koennen
@@ -104,10 +128,30 @@ export function CriterionDetailsList({
             Qualität
           </h3>
           <dl className="flex flex-col gap-2">
+            {/* Die Modellstufe steht VOR den lokalen Messungen: sie führt, die Messungen
+                korrigieren sie nur innerhalb ihrer Stufe. */}
+            {showAlbumSuitability && (
+              <div className="flex items-baseline justify-between gap-3">
+                <dt className="text-text">Albumtauglichkeit</dt>
+                <dd className="font-medium text-text-h">
+                  {albumSuitability === null
+                    ? ALBUM_SUITABILITY_NOT_RATED_TEXT
+                    : formatAlbumSuitabilityLevel(albumSuitability.level)}
+                </dd>
+              </div>
+            )}
             {qualityScores.map((score) => (
               <CriterionRow key={score.criterion_key} score={score} />
             ))}
           </dl>
+          {/* Die Begründung des Modells über die VOLLE Breite und UNGEKÜRZT - das Popover ist
+              288px breit und scrollt bereits. Reiner React-Textknoten: freier LLM-Text, nie als
+              HTML. Ohne Begründung entfällt der Träger ersatzlos, kein Platzhalter. */}
+          {albumSuitability != null && albumSuitability.reason !== null && (
+            <p data-album-suitability-reason="" className="text-xs text-text">
+              {albumSuitability.reason}
+            </p>
+          )}
         </div>
       )}
       {showContentBlock && (
@@ -123,7 +167,7 @@ export function CriterionDetailsList({
             {contentScores.map((score) => (
               <CriterionRow key={score.criterion_key} score={score} />
             ))}
-            {ranking !== null && (
+            {showRankRow && ranking !== null && (
               <div className="flex items-baseline justify-between gap-3">
                 <dt className="text-text">Rang</dt>
                 <dd className="font-medium text-text-h">

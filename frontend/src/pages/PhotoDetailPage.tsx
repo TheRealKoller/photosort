@@ -286,6 +286,9 @@ export function PhotoDetailPage() {
     suggestion: null,
     showSuggestion: false,
     fineLabels: currentPhoto.fine_labels,
+    // `?? null` heisst hier "noch nicht bewertet" und nicht "Feld nicht durchgereicht": diese
+    // Ansicht zeigt die Zeile immer, mit Stufe oder mit dem Satz.
+    albumSuitability: currentPhoto.album_suitability ?? null,
   }
 
   return (

@@ -8,13 +8,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import * as motifsApi from '../api/motifs'
 import * as photosApi from '../api/photos'
+import * as projectsApi from '../api/projects'
 import * as ratingsApi from '../api/ratings'
-import type { EventOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
+import type { EventOut, PhotoListOut, PhotoOut, ProjectOut, RankingOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import {
   candidateCountOfEvent,
   countPhotosInDay,
+  CURATION_CLOUD_CONSENT_TEXT,
   CURATION_EMPTY_TEXT,
   CuratePage,
   formatCandidateCount,
@@ -22,8 +24,27 @@ import {
 } from './CuratePage'
 
 vi.mock('../api/photos')
+vi.mock('../api/projects')
 vi.mock('../api/ratings')
 vi.mock('../api/motifs')
+
+/** Der Regelfall der Bestandstests: Cloud freigegeben - sonst traegt jede Ansicht den Hinweis. */
+function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
+  return {
+    id: 1,
+    name: 'Costa Rica',
+    opencloud_drive_id: 'drive-1',
+    opencloud_path: '/CostaRica',
+    created_at: '2026-07-01T10:00:00',
+    last_scan: null,
+    last_scoring_run: null,
+    last_criterion_scoring_run: null,
+    category_selection_enabled: false,
+    cloud_vision_detection_enabled: true,
+    cloud_vision_consent_at: '2026-07-01T10:00:00',
+    ...overrides,
+  }
+}
 
 function makeToken(payload: unknown): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -191,6 +212,7 @@ describe('CuratePage', () => {
     // `undefined`, und `PhotoImage` bricht beim `.then(...)` ab, bevor irgendetwas gerendert ist.
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
+    vi.mocked(projectsApi.getProject).mockResolvedValue(projectOut())
     vi.mocked(photosApi.listCurationCandidates).mockResolvedValue(listOut([], 0))
     // Das Info-Popover fragt `matchMedia` zur Interaktionszeit ab; jsdom kennt es nicht.
     vi.stubGlobal(
@@ -274,6 +296,96 @@ describe('CuratePage', () => {
     const text = await screen.findByText(CURATION_EMPTY_TEXT)
     expect(text).toBeInTheDocument()
     expect(CURATION_EMPTY_TEXT).not.toContain('Kategorie')
+  })
+
+  describe('ohne Cloud-Freigabe', () => {
+    it('names the missing approval and offers the way to it, with an empty photo list', async () => {
+      /* BEIDES in einem Fall: der Hinweis erscheint UND die Liste ist leer. Ein Hinweis über
+       * einer gefüllten Liste wäre eine Aussage, die der Rest der Seite widerlegt. */
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        projectOut({ cloud_vision_detection_enabled: false }),
+      )
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
+
+      renderPage()
+
+      expect(await screen.findByText(CURATION_CLOUD_CONSENT_TEXT)).toBeInTheDocument()
+      const link = screen.getByRole('link', { name: 'Zu den Projekteinstellungen' })
+      expect(link).toHaveAttribute('href', '/projects/1/settings')
+      expect(screen.queryByLabelText(/^Verwerfen:/)).toBeNull()
+    })
+
+    it('takes precedence over the ordinary empty text', async () => {
+      /* „führe eine Kriterien-Bewertung aus" wäre hier ein Rat, der nicht hilft. */
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        projectOut({ cloud_vision_detection_enabled: false }),
+      )
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
+
+      renderPage()
+
+      await screen.findByText(CURATION_CLOUD_CONSENT_TEXT)
+      expect(screen.queryByText(CURATION_EMPTY_TEXT)).toBeNull()
+    })
+
+    it('is neither an alert nor an error', async () => {
+      /* Eine fehlende Einwilligung ist kein Fehler: kein `Alert`, kein `role="alert"`, keine
+       * Fehlerfarbe, kein Symbol. Geprüft über den Fehlerton der Design-Tokens, ohne den
+       * Klassennamen als Literal zu schreiben - genau den hält der Design-Vertrag aus dem
+       * Quelltext heraus. */
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        projectOut({ cloud_vision_detection_enabled: false }),
+      )
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
+
+      const { container } = renderPage()
+
+      const hint = await screen.findByText(CURATION_CLOUD_CONSENT_TEXT)
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(hint.className).not.toMatch(/danger|status-failed/)
+      expect(container.querySelectorAll('[class*="danger"]')).toHaveLength(0)
+      // Kein Symbol: der Hinweis ist ruhiger Text mit einem Weg, keine Meldung.
+      expect(hint.querySelector('svg')).toBeNull()
+    })
+
+    it('does not repeat the consent text of the project settings', async () => {
+      /* Der Zustimmungstext steht an genau EINER Stelle - zwei Fassungen driften, und eine
+       * Einwilligung, die an zwei Orten verschieden beschrieben ist, ist keine. */
+      expect(CURATION_CLOUD_CONSENT_TEXT).not.toMatch(/Bilddaten|übertragen|Anbieter/i)
+    })
+
+    it('stays away when the approval is given', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        projectOut({ cloud_vision_detection_enabled: true }),
+      )
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
+
+      renderPage()
+
+      await screen.findByText(CURATION_EMPTY_TEXT)
+      expect(screen.queryByText(CURATION_CLOUD_CONSENT_TEXT)).toBeNull()
+    })
+
+    it('does not flash while the project is still loading', async () => {
+      /* Der Hinweis erscheint erst, wenn Projekt UND Kuratierungsantwort geladen sind - sonst
+       * blitzt er beim Laden eines freigegebenen Projekts kurz auf. */
+      let resolveProject: ((value: ProjectOut) => void) | undefined
+      vi.mocked(projectsApi.getProject).mockReturnValue(
+        new Promise<ProjectOut>((resolve) => {
+          resolveProject = resolve
+        }),
+      )
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
+
+      renderPage()
+
+      await waitFor(() => expect(resolveProject).toBeDefined())
+      expect(screen.queryByText(CURATION_CLOUD_CONSENT_TEXT)).toBeNull()
+      expect(screen.queryByText(CURATION_EMPTY_TEXT)).toBeNull()
+
+      resolveProject?.(projectOut({ cloud_vision_detection_enabled: true }))
+      await screen.findByText(CURATION_EMPTY_TEXT)
+    })
   })
 
   it('marks an unassessed photo on the tile and leaves an assessed one unmarked', async () => {
