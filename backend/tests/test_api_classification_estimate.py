@@ -15,6 +15,7 @@ from photosort.models import (
     CriterionSource,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCriterionScore,
     PhotoMotifAssessment,
     PhotoScore,
@@ -40,6 +41,18 @@ def _assessment(photo: Photo, source: MotifAssessmentSource) -> PhotoMotifAssess
         source=source,
         excluded_document=False,
         provider="anthropic" if source is MotifAssessmentSource.CLOUD else None,
+        computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+    )
+
+
+def _album_suitability(photo: Photo) -> PhotoAlbumSuitability:
+    """Die zweite Haelfte des zusammengesetzten Skip-Kriteriums (S6): erst mit ihr ist ein Foto
+    fertig bewertet und faellt aus der Schaetzung."""
+    return PhotoAlbumSuitability(
+        photo_id=photo.id,
+        level=4,
+        reason=None,
+        provider="anthropic",
         computed_at=datetime(2023, 1, 1, tzinfo=UTC),
     )
 
@@ -207,8 +220,10 @@ class TestEstimateEndpoint:
         cloud_assessed = await _add_photo_candidate(db_session, project_id, "b.jpg")
 
         # Sicherheitsauflage S14: "bereits klassifiziert" haengt seit Spec 0427 (PR 2) an einer
-        # Kopfzeile mit `source='cloud'`.
+        # Kopfzeile mit `source='cloud'` - und seit Spec 0428 (S6) zusaetzlich an einer
+        # Albumtauglichkeitszeile.
         db_session.add(_assessment(cloud_assessed, MotifAssessmentSource.CLOUD))
+        db_session.add(_album_suitability(cloud_assessed))
         await db_session.commit()
 
         response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
@@ -235,6 +250,7 @@ class TestEstimateEndpoint:
         cloud_assessed = await _add_photo_candidate(db_session, project_id, "c.jpg")
         db_session.add(_assessment(locally_assessed, MotifAssessmentSource.LOCAL))
         db_session.add(_assessment(cloud_assessed, MotifAssessmentSource.CLOUD))
+        db_session.add(_album_suitability(cloud_assessed))
         await db_session.commit()
 
         response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")

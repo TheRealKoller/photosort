@@ -16,6 +16,7 @@ from photosort.models import (
     Event,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
@@ -1748,11 +1749,14 @@ class TestCloudVisionStatus:
         # Spec 0427, PR 2 Schritt 2: das Erfolgssignal der Remote-Phase ist ab hier die
         # Kopfzeile mit `source='cloud'` - der Marker ist mit dem Schreibpfad umgezogen.
         # `attempted_at` bleibt eindeutig, ohne Aggregation ueber mehrere Zeilen.
+        # Spec 0428, S6: dazu gehoert ab hier die Albumtauglichkeitszeile - dieselbe Bedingung wie
+        # in Auswahl und Schaetzung.
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _assess_photo(
             db_session, photo, computed_at=datetime(2023, 6, 1, 12, 0, 0), strengths={"tiere": 0.8}
         )
+        await _rate_album_suitability(db_session, photo)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -1773,6 +1777,7 @@ class TestCloudVisionStatus:
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _assess_photo(db_session, photo)
+        await _rate_album_suitability(db_session, photo)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -1782,6 +1787,39 @@ class TestCloudVisionStatus:
             if e["phase"] == "remote_category"
         )
         assert entry["status"] == "result"
+
+    async def test_a_cloud_header_without_a_level_stays_an_open_candidate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sicherheitsauflage S6 auf dem LESEpfad: das Skip-Kriterium ist zusammengesetzt, und
+        dieser Status macht es sichtbar. Meldete er hier `result`, waere ein Foto, das seine Stufe
+        wiederholt unbrauchbar liefert und deshalb bei JEDEM Lauf erneut gesendet wird, in der
+        Oberflaeche als erledigt ausgewiesen - waehrend dasselbe Foto in Auswahl und Schaetzung
+        wieder Kandidat ist."""
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        db_session.add(
+            PhotoScore(
+                photo_id=photo.id,
+                sharpness=100.0,
+                exposure=0.0,
+                cluster_key="c",
+                suggested_status=None,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            )
+        )
+        await db_session.commit()
+        await _assess_photo(db_session, photo)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        entry = next(
+            e
+            for e in response.json()["items"][0]["cloud_vision_status"]
+            if e["phase"] == "remote_category"
+        )
+        assert entry["status"] == "not_run"
 
     async def test_a_local_header_alone_is_not_a_remote_category_result(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1825,6 +1863,7 @@ class TestCloudVisionStatus:
         assert project.cloud_vision_detection_enabled is False
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _assess_photo(db_session, photo, strengths={"tiere": 0.8})
+        await _rate_album_suitability(db_session, photo)
 
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
@@ -3288,6 +3327,26 @@ async def _assess_photo(
         excluded_document=excluded_document,
         provider=provider,
         computed_at=computed_at or datetime(2026, 9, 12, 10, 0, 0),
+    )
+    await session.commit()
+
+
+async def _rate_album_suitability(
+    session: AsyncSession,
+    photo: Photo,
+    *,
+    level: int = 4,
+    reason: str | None = "Alle schauen in die Kamera.",
+    computed_at: datetime | None = None,
+) -> None:
+    session.add(
+        PhotoAlbumSuitability(
+            photo_id=photo.id,
+            level=level,
+            reason=reason,
+            provider="anthropic",
+            computed_at=computed_at or datetime(2026, 9, 13, 10, 0, 0),
+        )
     )
     await session.commit()
 

@@ -413,6 +413,11 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
             # sondern ueber `load_effective_strengths` - sonst muesste die Korrektur zweimal
             # ausgewertet werden.
             selectinload(Photo.motif_assessment),
+            # Grundlage von `PhotoOut.album_suitability` UND der zweiten Haelfte des
+            # Erfolgssignals in `_cloud_vision_status_out`. Ohne dieses selectinload loeste
+            # `photo.album_suitability` einen Lazy-Load aus und schluege im Async-Kontext mit
+            # MissingGreenlet fehl.
+            selectinload(Photo.album_suitability),
         )
     )
     return {photo.id: photo for photo in result.scalars()}
@@ -511,7 +516,7 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     """Read-time abgeleiteter Cloud-Vision-Status für beide Phasen,
     IMMER genau 2 Eintraege in fester Reihenfolge [landmark, remote_category] (unabhaengig von
     DB-/Insert-Reihenfolge von photo.cloud_vision_errors). Erwartet, dass `photo` bereits ueber
-    selectinload(Photo.criterion_scores/landmark_detection/motif_assessment/
+    selectinload(Photo.criterion_scores/landmark_detection/motif_assessment/album_suitability/
     cloud_vision_errors) eager geladen ist (siehe _photos_by_id) - kein Lazy-Load hier."""
     errors_by_phase = {row.phase: row for row in photo.cloud_vision_errors}
 
@@ -539,9 +544,18 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
     # erfolgreich cloud-klassifiziert, obwohl nie ein Cloud-Aufruf stattfand. Dieselbe Bedingung
     # steht in worker.py::select_remote_category_candidates und
     # api/projects.py::_count_remote_category_candidates.
+    # SICHERHEITSAUFLAGE S6: das Erfolgssignal ist ZUSAMMENGESETZT, genau wie das Skip-Kriterium
+    # der Auswahl - Cloud-Kopfzeile UND Albumtauglichkeitszeile. Ohne die zweite Haelfte meldete
+    # diese Stelle fuer jedes Bestandsfoto `RESULT`, waehrend dasselbe Foto in Auswahl und
+    # Schaetzung wieder Kandidat ist; und ein Foto, das seine Stufe wiederholt unbrauchbar liefert,
+    # bliebe als erledigt ausgewiesen, obwohl es bei jedem Lauf erneut gesendet wird.
     remote_category_success: tuple[CloudVisionStatus, datetime] | None = None
     assessment = photo.motif_assessment
-    if assessment is not None and assessment.source == MotifAssessmentSource.CLOUD:
+    if (
+        assessment is not None
+        and assessment.source == MotifAssessmentSource.CLOUD
+        and photo.album_suitability is not None
+    ):
         remote_category_success = (CloudVisionStatus.RESULT, assessment.computed_at)
 
     return [

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,7 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCriterionScore,
     PhotoFineLabel,
     PhotoMotifAssessment,
@@ -467,16 +468,22 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
     Ein einzelnes `COUNT` mit `NOT EXISTS`, komplett serverseitig ausgewertet - keine Zeile
     verlaesst die Datenbank, auch nicht bei einem grossen Projekt.
 
-    SICHERHEITSAUFLAGE S15: eine bewusste DUPLIKATION derselben Bedingung, und deshalb aendern
-    sich beide Stellen in derselben PR. Das Kriterium ist eine Kopfzeile mit `source='cloud'` -
-    nicht das bloße Vorhandensein einer Kopfzeile (der Kriterien-Lauf schreibt lokale) und nicht
-    mehr die Altzeile in `photo_category_classifications` (sie wird nicht mehr geschrieben). Eine
-    Schaetzung, die eine andere Menge zaehlt als der Lauf sendet, ist eine falsche Grundlage fuer
-    die Freigabe einer kostenpflichtigen Aktion."""
+    SICHERHEITSAUFLAGE S15/S7: eine bewusste DUPLIKATION derselben Bedingung, und deshalb aendern
+    sich beide Stellen in derselben PR. Das Kriterium ist ZUSAMMENGESETZT - eine Kopfzeile mit
+    `source='cloud'` UND eine Albumtauglichkeitszeile; nicht das bloße Vorhandensein einer
+    Kopfzeile (der Kriterien-Lauf schreibt lokale). Eine Schaetzung, die eine andere Menge zaehlt
+    als der Lauf sendet, ist eine falsche Grundlage fuer die Freigabe einer kostenpflichtigen
+    Aktion.
+
+    Die Negation der KONJUNKTION wird per De Morgan zur DISJUNKTION: Kandidat ist, wem eines von
+    beiden fehlt. Eine falsch geklammerte Negation (`~(a & b)` als `~a & ~b` gelesen) zaehlt still
+    eine andere Menge - der Test prueft deshalb MENGENGLEICHHEIT gegen den Worker-Pfad ueber
+    demselben Datenbestand, nicht zwei getrennt hingeschriebene Erwartungswerte."""
     cloud_assessed = exists().where(
         PhotoMotifAssessment.photo_id == Photo.id,
         PhotoMotifAssessment.source == MotifAssessmentSource.CLOUD,
     )
+    album_rated = exists().where(PhotoAlbumSuitability.photo_id == Photo.id)
     result = await session.execute(
         select(func.count())
         .select_from(Photo)
@@ -484,7 +491,7 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
         .where(
             Photo.project_id == project_id,
             PhotoScore.suggested_status.is_(None),
-            ~cloud_assessed,
+            or_(~cloud_assessed, ~album_rated),
         )
     )
     return result.scalar_one()

@@ -19,6 +19,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
+from photosort.album_suitability import AlbumSuitability
 from photosort.cache_cleanup import cleanup_orphaned_cache
 from photosort.cameras import CameraIdentity, shifted
 from photosort.classification import (
@@ -89,6 +90,7 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
@@ -1237,6 +1239,32 @@ async def _upsert_landmark_detection(
     existing.provider = provider
 
 
+async def _upsert_album_suitability(
+    session: AsyncSession,
+    photo_id: int,
+    suitability: AlbumSuitability,
+    now: datetime,
+    provider: str,
+) -> None:
+    """Schreibt bzw. ersetzt die Albumtauglichkeitszeile eines Fotos - GENAU EINE je Foto, auch
+    nach beliebig vielen Laeufen.
+
+    Stufe, Begruendung, Anbieter und Zeitstempel werden gemeinsam gesetzt: die Zeile stammt
+    immer vollstaendig aus EINER Antwort, ein gemischter Zustand aus zwei Aufrufen entsteht nicht.
+    Aufgerufen wird sie nur mit einer bereits validierten Aussage (`album_suitability.py`) - ohne
+    brauchbare Stufe entsteht gar keine Zeile, und das Foto bleibt Kandidat des naechsten Laufs.
+
+    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
+    existing = await session.get(PhotoAlbumSuitability, photo_id)
+    if existing is None:
+        existing = PhotoAlbumSuitability(photo_id=photo_id)
+        session.add(existing)
+    existing.level = suitability.level
+    existing.reason = suitability.reason
+    existing.provider = provider
+    existing.computed_at = now
+
+
 async def _landmark_names(
     session: AsyncSession, photo_ids: Collection[int]
 ) -> dict[int, str | None]:
@@ -2285,15 +2313,25 @@ async def _classify_photo_for_remote_category(
 async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
     """Kandidatenmenge für die Remote-Kategorie-Klassifizierung: der KOMPLETTE
     Ausschuss-Überlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter
-    (anders als landmark), abzüglich bereits von der Cloud beurteilter Fotos.
+    (anders als landmark), abzüglich der bereits VOLLSTÄNDIG von der Cloud beurteilten Fotos.
 
-    DAS SKIP-KRITERIUM IST EINE KOPFZEILE MIT `source='cloud'`, nicht das bloße Vorhandensein
-    einer Kopfzeile (Sicherheitsauflage S14). Der Kriterien-Lauf schreibt für JEDES beurteilte
-    Foto eine LOKALE Kopfzeile; ein reiner Existenztest machte damit jedes lokal beurteilte Foto
-    dauerhaft zum Nicht-Kandidaten - die Cloud-Klassifizierung wäre ein stilles No-op und die
-    Kostenschätzung zeigte `0`. Der Fehler in die andere Richtung (ein zu weites Kriterium)
-    schickte bereits klassifizierte Fotos erneut an den Anbieter, also Kosten und wiederholte
-    Datenexposition.
+    DAS SKIP-KRITERIUM IST ZUSAMMENGESETZT (Sicherheitsauflage S6): eine Kopfzeile mit
+    `source='cloud'` UND eine Albumtauglichkeitszeile. Beide Hälften tragen je einen eigenen
+    Fehler:
+
+    - Ein reiner Existenztest auf die Kopfzeile (statt auf `source='cloud'`) machte jedes lokal
+      beurteilte Foto dauerhaft zum Nicht-Kandidaten - der Kriterien-Lauf schreibt für JEDES
+      beurteilte Foto eine LOKALE Kopfzeile. Die Cloud-Klassifizierung wäre ein stilles No-op.
+    - Eine Lockerung auf nur EINES der beiden Merkmale schickt fertig bewertete Fotos erneut an
+      den Anbieter: Kosten und wiederholte Datenexposition.
+
+    Die zweite Hälfte ist zugleich die NACHBEWERTUNG: ein Foto aus einem früheren Lauf, das eine
+    Cloud-Kopfzeile, aber noch keine Albumtauglichkeit trägt, wird wieder Kandidat - ohne Re-Scan
+    und ohne zweiten Auslöser.
+
+    Das lokale Ausschuss-Gate bleibt dabei unberührt und steht ausgeschrieben in DERSELBEN
+    Anweisung wie der Skip-Term (S8): `join(PhotoScore)` plus `suggested_status IS NULL` begrenzen
+    weiterhin, welche Fotos den Homeserver überhaupt verlassen dürfen.
 
     Von `run_remote_category_classification` UND `GET .../classify/estimate` (api/projects.py)
     genutzt - "ermittelt ueber dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
@@ -2312,17 +2350,31 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
     if not rows:
         return []
 
+    photo_ids = [photo.id for photo in rows]
     cloud_assessed_ids = set(
         (
             await session.execute(
                 select(PhotoMotifAssessment.photo_id).where(
-                    PhotoMotifAssessment.photo_id.in_([photo.id for photo in rows]),
+                    PhotoMotifAssessment.photo_id.in_(photo_ids),
                     PhotoMotifAssessment.source == MotifAssessmentSource.CLOUD,
                 )
             )
         ).scalars()
     )
-    return [photo for photo in rows if photo.id not in cloud_assessed_ids]
+    suitability_ids = set(
+        (
+            await session.execute(
+                select(PhotoAlbumSuitability.photo_id).where(
+                    PhotoAlbumSuitability.photo_id.in_(photo_ids)
+                )
+            )
+        ).scalars()
+    )
+    return [
+        photo
+        for photo in rows
+        if not (photo.id in cloud_assessed_ids and photo.id in suitability_ids)
+    ]
 
 
 async def run_remote_category_classification(
@@ -2506,6 +2558,19 @@ async def run_remote_category_classification(
                         computed_at=now,
                     )
 
+                    # Die Albumtauglichkeit derselben Antwort, im SELBEN Schleifendurchlauf und mit
+                    # demselben `now` - und nach derselben Best-effort-Regel: ohne brauchbare Stufe
+                    # entsteht keine Zeile, kein Fehler, kein Laufabbruch. Das Foto bleibt dann
+                    # Kandidat des naechsten Laufs (die Auswahl unten verlangt BEIDE Zeilen).
+                    if classification.album_suitability is not None:
+                        await _upsert_album_suitability(
+                            session,
+                            photo.id,
+                            classification.album_suitability,
+                            now,
+                            settings.landmark_provider,
+                        )
+
                     # Feinlabels sind reine Zusatzinformation und werden AUCH DANN geschrieben,
                     # wenn das Modell kein Motiv deutlich erkennt. Loesen beide
                     # Labels auf denselben canonical_key auf, entsteht nur eine Zeile - kein
@@ -2515,6 +2580,20 @@ async def run_remote_category_classification(
                     for raw_label in classification.fine_labels:
                         entry = resolve_canonical_label(raw_label, snapshot, embedder)
                         entries_by_canonical.setdefault(entry.canonical_key, (entry, raw_label))
+
+                    # Die Feinlabel-Zeilen der VORHERIGEN Antwort fallen VOLLSTAENDIG, bevor die
+                    # neuen entstehen - dieselbe Regel wie beim Staerkevektor: eine Antwort ist
+                    # vollstaendig oder sie existiert nicht, ein Gemisch aus zwei Antworten gibt es
+                    # nicht. Seit der geweiteten Kandidatenauswahl ist das keine Kosmetik: ein
+                    # erneut gesendetes Foto traegt seine alten Zeilen noch, und ein zweiter
+                    # INSERT desselben Labels verletzte `UniqueConstraint(photo_id,
+                    # fine_label_id)` - die IntegrityError rollt die Transaktion zurueck und laesst
+                    # den GESAMTEN Lauf scheitern, nicht nur dieses eine Foto. Die
+                    # `fine_labels`-Registry selbst bleibt unberuehrt (projektuebergreifendes
+                    # Vokabular).
+                    await session.execute(
+                        delete(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+                    )
 
                     for entry, raw_label in entries_by_canonical.values():
                         if entry.id is None:

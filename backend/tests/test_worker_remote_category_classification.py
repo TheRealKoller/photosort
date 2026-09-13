@@ -14,6 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import pricing, worker
+from photosort.album_suitability import AlbumSuitability
+from photosort.api.projects import _count_remote_category_candidates
 from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
     CloudRequestThrottle,
@@ -26,6 +28,7 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoFineLabel,
     PhotoMotifAssessment,
@@ -354,8 +357,9 @@ async def test_rejected_photos_are_not_candidates(db_session: AsyncSession, tmp_
 async def test_already_classified_photos_are_skipped_on_a_repeat_run(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Sicherheitsauflage S14: das Skip-Kriterium ist seit Spec 0427 (PR 2) eine Kopfzeile mit
-    `source='cloud'` - der Erledigt-Marker ist mit dem Schreibpfad umgezogen."""
+    """Sicherheitsauflage S14/S6: das Skip-Kriterium ist seit Spec 0427 (PR 2) eine Kopfzeile mit
+    `source='cloud'` und seit Spec 0428 zusaetzlich eine Albumtauglichkeitszeile - das fertig
+    bewertete Foto traegt hier deshalb BEIDE."""
     project = await _make_project(db_session)
     project.cloud_vision_detection_enabled = True
     await db_session.commit()
@@ -363,6 +367,7 @@ async def test_already_classified_photos_are_skipped_on_a_repeat_run(
     await _add_score(db_session, already_classified)
     _write_display_variant(tmp_path, already_classified)
     await _add_cloud_assessment(db_session, already_classified)
+    await _add_album_suitability(db_session, already_classified)
     new_candidate = await _add_photo(db_session, project, "b.jpg", "etag-2")
     await _add_score(db_session, new_candidate)
     _write_display_variant(tmp_path, new_candidate)
@@ -1004,8 +1009,8 @@ async def test_select_remote_category_candidates_excludes_rejected_and_cloud_ass
     indirekt getesteten Logik, hier isoliert.
 
     Ein Bestand, in dem ein reiner Existenztest auf die Kopfzeile eine ANDERE Zahl liefern wuerde
-    (Sicherheitsauflage S14): das lokal beurteilte Foto bleibt Kandidat, nur das mit der
-    Cloud-Kopfzeile fliegt heraus."""
+    (Sicherheitsauflage S14): das lokal beurteilte Foto bleibt Kandidat, nur das VOLLSTAENDIG
+    beurteilte (Cloud-Kopfzeile UND Albumtauglichkeitszeile, S6) fliegt heraus."""
     project = await _make_project(db_session)
     survivor = await _add_photo(db_session, project, "a.jpg", "etag-1")
     await _add_score(db_session, survivor)
@@ -1014,6 +1019,7 @@ async def test_select_remote_category_candidates_excludes_rejected_and_cloud_ass
     cloud_assessed = await _add_photo(db_session, project, "c.jpg", "etag-3")
     await _add_score(db_session, cloud_assessed)
     await _add_cloud_assessment(db_session, cloud_assessed)
+    await _add_album_suitability(db_session, cloud_assessed)
     locally_assessed = await _add_photo(db_session, project, "d.jpg", "etag-4")
     await _add_score(db_session, locally_assessed)
     await _add_local_assessment(db_session, locally_assessed)
@@ -1029,6 +1035,278 @@ async def test_select_remote_category_candidates_returns_empty_list_for_no_photo
 ) -> None:
     project = await _make_project(db_session)
     assert await select_remote_category_candidates(db_session, project.id) == []
+
+
+# specs/features/0428-albumtauglichkeit-vom-modell.md ab hier: derselbe Aufruf traegt die
+# Albumtauglichkeit, und das Skip-Kriterium wird ZUSAMMENGESETZT (Cloud-Kopfzeile UND
+# Albumtauglichkeitszeile) - das ist die Nachbewertung des Bestands.
+
+
+async def _add_album_suitability(session: AsyncSession, photo: Photo) -> PhotoAlbumSuitability:
+    row = PhotoAlbumSuitability(
+        photo_id=photo.id,
+        level=4,
+        reason="Bestandszeile",
+        provider="anthropic",
+        computed_at=datetime.now(UTC),
+    )
+    session.add(row)
+    await session.commit()
+    return row
+
+
+class TestTheAlbumSuitabilityIsPersisted:
+    async def test_a_successful_call_writes_the_level_and_the_reason(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        photo, run = await _run_for_one_photo(
+            db_session,
+            tmp_path,
+            RemoteClassification(
+                motif_strengths=_vector(menschen=0.7),
+                fine_labels=(),
+                album_suitability=AlbumSuitability(level=4, reason="Alle schauen in die Kamera."),
+            ),
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        stored = await db_session.get(PhotoAlbumSuitability, photo.id)
+        assert stored is not None
+        assert stored.level == 4
+        assert stored.reason == "Alle schauen in die Kamera."
+        assert stored.provider == "anthropic"
+
+    async def test_the_suitability_shares_the_timestamp_of_the_motif_header(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Beide Zeilen entstehen im SELBEN Schleifendurchlauf aus derselben Antwort - ein zweiter
+        Zeitstempel daneben behauptete zwei Aussagen aus zwei Aufrufen."""
+        photo, _run = await _run_for_one_photo(
+            db_session,
+            tmp_path,
+            RemoteClassification(
+                motif_strengths=_vector(menschen=0.7),
+                fine_labels=(),
+                album_suitability=AlbumSuitability(level=2, reason="Augen geschlossen."),
+            ),
+        )
+
+        assessment = await db_session.get(PhotoMotifAssessment, photo.id)
+        suitability = await db_session.get(PhotoAlbumSuitability, photo.id)
+        assert assessment is not None and suitability is not None
+        assert suitability.computed_at == assessment.computed_at
+
+    async def test_a_suitability_without_a_reason_is_stored_with_null(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        photo, _run = await _run_for_one_photo(
+            db_session,
+            tmp_path,
+            RemoteClassification(
+                motif_strengths=_vector(),
+                fine_labels=(),
+                album_suitability=AlbumSuitability(level=5, reason=None),
+            ),
+        )
+
+        stored = await db_session.get(PhotoAlbumSuitability, photo.id)
+        assert stored is not None
+        assert stored.reason is None
+
+    async def test_an_answer_without_a_usable_suitability_writes_no_row_but_keeps_the_header(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Best-effort wie die uebrigen Teile der Antwort: ohne brauchbare Stufe entsteht keine
+        Zeile, die Motiv-Kopfzeile steht trotzdem - und das Foto bleibt Kandidat des naechsten
+        Laufs."""
+        photo, run = await _run_for_one_photo(
+            db_session,
+            tmp_path,
+            RemoteClassification(
+                motif_strengths=_vector(menschen=0.7), fine_labels=(), album_suitability=None
+            ),
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert await db_session.get(PhotoAlbumSuitability, photo.id) is None
+        assert await db_session.get(PhotoMotifAssessment, photo.id) is not None
+
+    async def test_a_second_run_over_the_same_photo_keeps_exactly_one_row(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Nachbewertung schickt ein Foto ohne Albumtauglichkeitszeile erneut - danach steht
+        genau EINE Zeile da, nicht zwei."""
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        await db_session.commit()
+        photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo)
+        await _add_cloud_assessment(db_session, photo)
+
+        classification = RemoteClassification(
+            motif_strengths=_vector(menschen=0.7),
+            fine_labels=(),
+            album_suitability=AlbumSuitability(level=3, reason="Solide."),
+        )
+        for _ in range(2):
+            await run_remote_category_classification(
+                db_session,
+                project,
+                cache_dir=tmp_path,
+                build_client=lambda _model: RecordingCategoryClient(classification),
+                build_embedder=_fake_embedder,
+            )
+
+        rows = (
+            (
+                await db_session.execute(
+                    select(PhotoAlbumSuitability).where(PhotoAlbumSuitability.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].level == 3
+
+
+class TestTheWidenedCandidateSelection:
+    """Sicherheitsauflagen S6/S7: das Uebersprungen-Kriterium ist ZUSAMMENGESETZT - Cloud-Kopfzeile
+    UND Albumtauglichkeitszeile. Jede Lockerung auf nur eines der beiden schickt fertig bewertete
+    Fotos erneut an den Anbieter.
+
+    Die Fixture traegt alle VIER Kombinationen plus ein am Gate aussortiertes Foto, und beide
+    Assertions laufen ueber DERSELBEN Fixture: die Kandidatenliste des Worker-Pfads und die Zahl
+    der duplizierten Zaehl-Query muessen dieselbe Menge beschreiben."""
+
+    async def _fixture(self, db_session: AsyncSession) -> tuple[Project, dict[str, Photo]]:
+        project = await _make_project(db_session)
+        photos: dict[str, Photo] = {}
+
+        photos["nichts"] = await _add_photo(db_session, project, "a.jpg", "etag-1")
+        await _add_score(db_session, photos["nichts"])
+
+        photos["nur_kopfzeile"] = await _add_photo(db_session, project, "b.jpg", "etag-2")
+        await _add_score(db_session, photos["nur_kopfzeile"])
+        await _add_cloud_assessment(db_session, photos["nur_kopfzeile"])
+
+        photos["nur_stufe"] = await _add_photo(db_session, project, "c.jpg", "etag-3")
+        await _add_score(db_session, photos["nur_stufe"])
+        await _add_album_suitability(db_session, photos["nur_stufe"])
+
+        photos["beides"] = await _add_photo(db_session, project, "d.jpg", "etag-4")
+        await _add_score(db_session, photos["beides"])
+        await _add_cloud_assessment(db_session, photos["beides"])
+        await _add_album_suitability(db_session, photos["beides"])
+
+        photos["aussortiert"] = await _add_photo(db_session, project, "e.jpg", "etag-5")
+        await _add_score(db_session, photos["aussortiert"], suggested_status=RatingStatus.REJECTED)
+
+        await db_session.commit()
+        return project, photos
+
+    async def test_only_a_photo_with_both_rows_is_skipped(self, db_session: AsyncSession) -> None:
+        """Der Fall "Albumtauglichkeit vorhanden, Cloud-Kopfzeile fehlt" ergibt KANDIDAT - er ist
+        die einzige Stelle, an der eine Lockerung auf nur eines der beiden Merkmale auffaellt."""
+        project, photos = await self._fixture(db_session)
+
+        candidates = await select_remote_category_candidates(db_session, project.id)
+
+        assert {photo.id for photo in candidates} == {
+            photos["nichts"].id,
+            photos["nur_kopfzeile"].id,
+            photos["nur_stufe"].id,
+        }
+
+    async def test_the_estimate_counts_exactly_the_set_the_run_sends(
+        self, db_session: AsyncSession
+    ) -> None:
+        """S7: die Zaehl-Query in `api/projects.py` ist eine bewusste Duplikation derselben
+        Bedingung. Die Negation eines `exists()` wird per De Morgan zur Disjunktion, und eine
+        falsch geklammerte Negation zaehlt still eine ANDERE Menge - deshalb Mengengleichheit
+        gegen den Worker-Pfad statt zweier getrennt hingeschriebener Erwartungswerte."""
+        project, _photos = await self._fixture(db_session)
+
+        candidates = await select_remote_category_candidates(db_session, project.id)
+        counted = await _count_remote_category_candidates(db_session, project.id)
+
+        assert counted == len(candidates)
+
+    async def test_a_resent_photo_does_not_collide_with_its_own_earlier_fine_labels(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Weitung schickt den bereits klassifizierten Bestand erneut - und JEDES dieser Fotos
+        traegt bereits Feinlabel-Zeilen. Ohne das Ersetzen scheitert der zweite Schreibversuch an
+        `UniqueConstraint(photo_id, fine_label_id)`, und der GESAMTE Lauf faellt um (die
+        IntegrityError laesst die Transaktion zurueckrollen, nicht nur dieses eine Foto).
+
+        Der Bestand bleibt eine Antwort: die Zeilen der vorherigen Antwort fallen, die der neuen
+        entstehen - nie ein Gemisch aus zweien."""
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        await db_session.commit()
+        photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo)
+
+        answers = [
+            RemoteClassification(motif_strengths=_vector(), fine_labels=("Hund", "Wiese")),
+            RemoteClassification(motif_strengths=_vector(), fine_labels=("Hund", "Strand")),
+        ]
+        for answer in answers:
+            run = await run_remote_category_classification(
+                db_session,
+                project,
+                cache_dir=tmp_path,
+                build_client=lambda _model, answer=answer: RecordingCategoryClient(answer),  # type: ignore[misc]
+                build_embedder=_fake_embedder,
+            )
+            assert run.status == ScanStatus.SUCCESS
+
+        rows = (
+            (
+                await db_session.execute(
+                    select(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert sorted(row.raw_label for row in rows) == ["Hund", "Strand"]
+
+    async def test_a_photo_that_lost_its_level_is_sent_again(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Nachbewertung: ein Foto aus einem frueheren Lauf OHNE Albumtauglichkeit wird erneut
+        gesendet, ohne dass das Projekt neu eingelesen werden muss."""
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        await db_session.commit()
+        photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo)
+        await _add_cloud_assessment(db_session, photo)
+        client = RecordingCategoryClient(
+            RemoteClassification(
+                motif_strengths=_vector(),
+                fine_labels=(),
+                album_suitability=AlbumSuitability(level=4, reason="Nachbewertet."),
+            )
+        )
+
+        run = await run_remote_category_classification(
+            db_session,
+            project,
+            cache_dir=tmp_path,
+            build_client=lambda _model: client,
+            build_embedder=_fake_embedder,
+        )
+
+        assert run.photos_total == 1
+        assert [call[2] for call in client.calls] == [photo.id]
+        stored = await db_session.get(PhotoAlbumSuitability, photo.id)
+        assert stored is not None and stored.level == 4
 
 
 async def test_a_structurally_invalid_response_skips_only_that_photo(
