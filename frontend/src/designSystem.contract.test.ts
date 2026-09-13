@@ -1593,10 +1593,13 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/components/PhotoCard.tsx',
-      snippet: "isRejected && 'opacity-40'",
+      snippet: "stepsBack && 'opacity-40'",
       reason:
-        'gedaempfte BILDFLAECHE der aussortierten Karte - der Ausschnitt zeigt bewusst das Element, ' +
-        'das den Kachel-Link traegt; am Kartenkoerper waere dieselbe Utility ein Kontrastverlust',
+        'gedaempfte BILDFLAECHE der zurueckgetretenen Karte - der Ausschnitt zeigt bewusst das ' +
+        'Element, das den Kachel-Link traegt; am Kartenkoerper waere dieselbe Utility ein ' +
+        'Kontrastverlust. `stepsBack` deckt zwei Faelle mit derselben Darstellung: die eigene ' +
+        'Streichung (`status="rejected"`) und die gemeinsame Herausnahme aus der Endauswahl ' +
+        '(`setAside`)',
     },
   ]
 

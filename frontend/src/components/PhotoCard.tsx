@@ -22,6 +22,18 @@ export interface PhotoCardProps {
   favorite?: boolean
   /** true fuer einen unbestaetigten automatischen Vorschlag statt einer echten Bewertung. */
   suggested?: boolean
+  /**
+   * Der Gegenstand dieser Karte ist BEISEITEGELEGT - die Bildflaeche tritt zurueck und der
+   * Dateiname wird durchgestrichen, OHNE dass die Karte damit einen Bewertungszustand behauptet.
+   *
+   * Getrennt von `status='rejected'`, weil die beiden verschiedene Dinge sagen: jenes ist die
+   * Streichung EINES Nutzers und traegt deshalb das Kennzeichen "Verworfen", dieses die
+   * gemeinsame Herausnahme des PROJEKTS aus der Endauswahl. Auf einer Ansicht, die je Teilnehmer
+   * ein benanntes Bewertungs-Kennzeichen zeigt, waere ein unbenanntes "Verworfen" am
+   * Kartenkoerper als Haltung einer Person lesbar - genau die Verwechslung, die die Trennung von
+   * `ratings[].status` und `final_selection_decision` ausschliesst.
+   */
+  setAside?: boolean
   /** Inhalt der Bildflaeche - `PhotoImage` oder ein Platzhalter. */
   image: ReactNode
   /** Ecken-Overlay oben links (heute: `CategoryOverrideMarker`). */
@@ -59,12 +71,16 @@ export function PhotoCard({
   status,
   favorite = false,
   suggested = false,
+  setAside = false,
   image,
   topLeft,
   topRight,
   footer,
 }: PhotoCardProps) {
-  const isRejected = status === 'rejected'
+  // BEIDE Faelle treten optisch zurueck, und nur einer traegt zusaetzlich ein Kennzeichen: die
+  // eigene Streichung (Bewertung eines Nutzers) und die gemeinsame Herausnahme aus der Endauswahl
+  // (Entscheidung des Projekts).
+  const stepsBack = status === 'rejected' || setAside
 
   /*
    * AUSSORTIERT: Nur die BILDFLAECHE tritt zurueck, die Bedeutungstraeger nicht.
@@ -81,7 +97,7 @@ export function PhotoCard({
    */
   const imageAreaClassName = cn(
     'block aspect-square overflow-hidden rounded-md',
-    isRejected && 'opacity-40',
+    stepsBack && 'opacity-40',
   )
 
   // Nur der Basisname: Der Ordnerteil ist auf ~60px ohnehin unlesbar und steht bereits im `alt`
@@ -140,10 +156,10 @@ export function PhotoCard({
             einer Rasterzeile gleichen sich die Kartenhoehen aus, ein zweizeiliger Name auf EINER
             Karte machte alle Karten der Zeile hoeher. */}
         <span
-          data-struck={isRejected ? 'true' : undefined}
+          data-struck={stepsBack ? 'true' : undefined}
           className={cn(
             'min-w-6 truncate font-mono text-xs',
-            isRejected ? 'text-text-muted line-through' : 'text-text',
+            stepsBack ? 'text-text-muted line-through' : 'text-text',
           )}
         >
           {fileName}
