@@ -29,7 +29,6 @@ from photosort.models import (
     CriterionScoringRun,
     FeedbackEvent,
     FeedbackEventKind,
-    Photo,
     PhotoAlbumSuitability,
     PhotoRanking,
     ScanStatus,
@@ -120,7 +119,9 @@ async def _latest_successful_criterion_scoring_run_id(
     ).scalar_one_or_none()
 
 
-async def load_frozen_context(session: AsyncSession, photo: Photo) -> FrozenContext:
+async def load_frozen_context(
+    session: AsyncSession, *, project_id: int, photo_id: int
+) -> FrozenContext:
     """Erhebt die Entscheidungslage, die das Ereignis mitschreibt.
 
     EINGEFROREN wird, was ein spaeterer Lauf UEBERSCHREIBT: die Modellstufe
@@ -129,8 +130,14 @@ async def load_frozen_context(session: AsyncSession, photo: Photo) -> FrozenCont
     heutigen Stand - und genau das schliesst die Story aus.
 
     Die lokalen Kriterienwerte werden hier ausdruecklich NICHT gelesen: Sie sind eine
-    deterministische Messung an denselben Pixeln und werden zur Auswertungszeit gejoint."""
-    run_id = await _latest_successful_criterion_scoring_run_id(session, photo.project_id)
+    deterministische Messung an denselben Pixeln und werden zur Auswertungszeit gejoint.
+
+    IDS STATT EINES `Photo`-OBJEKTS, und das ist kein Geschmack: Die Aufrufer stehen hinter einem
+    `flush`, der in einen `rollback` laufen kann (der `409`-Zweig der Bewertungs- und der
+    Entscheidungsschreibstelle). Ein danach angefasstes ORM-Objekt ist expired, und der
+    Nachladeversuch bricht unter `asyncio` mit `MissingGreenlet` ab - in einem Zweig, der
+    ausgerechnet den Wettlauf-Fall behandelt."""
+    run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     event_id: int | None = None
     quality: float | None = None
     if run_id is not None:
@@ -138,7 +145,7 @@ async def load_frozen_context(session: AsyncSession, photo: Photo) -> FrozenCont
             await session.execute(
                 select(PhotoRanking.event_id, PhotoRanking.rank_score).where(
                     PhotoRanking.criterion_scoring_run_id == run_id,
-                    PhotoRanking.photo_id == photo.id,
+                    PhotoRanking.photo_id == photo_id,
                 )
             )
         ).one_or_none()
@@ -151,7 +158,7 @@ async def load_frozen_context(session: AsyncSession, photo: Photo) -> FrozenCont
             run_id = None
     level = (
         await session.execute(
-            select(PhotoAlbumSuitability.level).where(PhotoAlbumSuitability.photo_id == photo.id)
+            select(PhotoAlbumSuitability.level).where(PhotoAlbumSuitability.photo_id == photo_id)
         )
     ).scalar_one_or_none()
     return FrozenContext(
@@ -221,7 +228,8 @@ def _append(
 async def record_album_decision(
     session: AsyncSession,
     *,
-    photo: Photo,
+    project_id: int,
+    photo_id: int,
     user_id: int,
     kind: FeedbackEventKind,
     context: FrozenContext,
@@ -233,8 +241,8 @@ async def record_album_decision(
     return _append(
         session,
         kind=kind,
-        project_id=photo.project_id,
-        photo_id=photo.id,
+        project_id=project_id,
+        photo_id=photo_id,
         user_id=user_id,
         criterion_scoring_run_id=context.criterion_scoring_run_id,
         event_id=context.event_id,
@@ -246,7 +254,8 @@ async def record_album_decision(
 async def record_motif_correction(
     session: AsyncSession,
     *,
-    photo: Photo,
+    project_id: int,
+    photo_id: int,
     user_id: int,
     kind: FeedbackEventKind,
     motif_key: str,
@@ -263,8 +272,8 @@ async def record_motif_correction(
     return _append(
         session,
         kind=kind,
-        project_id=photo.project_id,
-        photo_id=photo.id,
+        project_id=project_id,
+        photo_id=photo_id,
         user_id=user_id,
         motif_key=motif_key,
         motif_strength=motif_strength,
@@ -278,7 +287,8 @@ async def record_motif_correction(
 async def record_final_decision(
     session: AsyncSession,
     *,
-    photo: Photo,
+    project_id: int,
+    photo_id: int,
     kind: FeedbackEventKind,
     context: FrozenContext,
     user_id: int | None = None,
@@ -291,8 +301,8 @@ async def record_final_decision(
     return _append(
         session,
         kind=kind,
-        project_id=photo.project_id,
-        photo_id=photo.id,
+        project_id=project_id,
+        photo_id=photo_id,
         user_id=user_id,
         weight=FINAL_DECISION_WEIGHT,
         criterion_scoring_run_id=context.criterion_scoring_run_id,

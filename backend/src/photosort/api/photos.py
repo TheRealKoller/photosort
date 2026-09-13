@@ -5,12 +5,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import CursorResult, and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
@@ -27,17 +27,20 @@ from photosort.events import (
     event_for_time,
     infer_locations,
 )
+from photosort.feedback_log import load_frozen_context, record_motif_correction
 from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
     Event,
+    FeedbackEventKind,
     FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
     PhotoCloudVisionError,
     PhotoFineLabel,
     PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -1888,6 +1891,28 @@ class MotifCorrectionOut(BaseModel):
     applies: bool
 
 
+async def _stored_motif_strength(
+    session: AsyncSession, photo_id: int, motif_key: str
+) -> float | None:
+    """Die GESPEICHERTE Modellstaerke dieses Paares, `None` ohne Staerkezeile.
+
+    AUSDRUECKLICH NICHT `motif_strengths.py::effective_strength_expression` (ADR 0100 Punkt 2):
+    Die wirksame Staerke traegt bereits eine fruehere Korrektur desselben Paares. Eingefroren
+    zeigte die ZWEITE Korrektur eines Motivs nie einen Modellfehler an - sie beantwortete die
+    Frage nach der Modellaussage mit der Korrektur.
+
+    `None` ist ein gewoehnlicher, haeufiger Fall und kein Fehler: Die Korrektur eines nie
+    erkannten Motivs ist ausdruecklich erlaubt und fuer die Diagnose der interessanteste Fall."""
+    return (
+        await session.execute(
+            select(PhotoMotifStrength.strength).where(
+                PhotoMotifStrength.photo_id == photo_id,
+                PhotoMotifStrength.motif_key == motif_key,
+            )
+        )
+    ).scalar_one_or_none()
+
+
 def _validated_motif_key(motif_key: str) -> str:
     """SICHERHEIT (S4): reine Mitgliedschaftspruefung im geschlossenen Achter-Schluesselraum, VOR
     jeder Schreib- und Loeschaktion, fuer `PUT` UND `DELETE`.
@@ -1937,7 +1962,10 @@ async def set_motif_correction(
     geschrieben hat - es gibt keine Historie und keinen Hinweis an die erste Person. Eine
     wirkungslose Korrektur (`applies=false` auf einem Motiv, dessen Staerke schon 0 ist) wird
     trotzdem gespeichert; sie ist eine Nutzeraussage, keine Zwischenspeicherung."""
-    await _get_photo_or_404(photo_id, session)
+    # Die `project_id` VOR dem `flush` festhalten: Dessen `rollback`-Zweig laesst jedes geladene
+    # Objekt expired zurueck, und ein danach angefasstes Attribut braeche unter `asyncio` mit
+    # `MissingGreenlet`.
+    project_id = (await _get_photo_or_404(photo_id, session)).project_id
     _validated_motif_key(motif_key)
 
     # SICHERHEIT (S6): die Aufsuch-Bedingung lautet `(photo_id, motif_key)` und filtert BEWUSST
@@ -1951,6 +1979,11 @@ async def set_motif_correction(
             )
         )
     ).scalar_one_or_none()
+
+    # NUR BEI TATSAECHLICHER AENDERUNG (Spec 0432, L1): Dieselbe Korrektur erneut geschrieben ist
+    # keine Korrektur - auch dann nicht, wenn die Zeile dabei den Nutzer wechselt. Der
+    # Bestandszustand des FOTOS bewegt sich nicht, und die Story misst Korrekturen.
+    changed = existing is None or existing.applies != payload.applies
 
     if existing is None:
         # SICHERHEIT (S6): `user_id` stammt AUSSCHLIESSLICH aus `current_user.id` - nie aus Body
@@ -1981,6 +2014,23 @@ async def set_motif_correction(
             status_code=status.HTTP_409_CONFLICT,
             detail="Die Korrektur dieses Motivs wurde gerade veraendert. Bitte erneut versuchen.",
         ) from exc
+
+    if changed:
+        await record_motif_correction(
+            session,
+            project_id=project_id,
+            photo_id=photo_id,
+            user_id=current_user.id,
+            kind=(
+                FeedbackEventKind.MOTIF_ADDED
+                if payload.applies
+                else FeedbackEventKind.MOTIF_DROPPED
+            ),
+            motif_key=motif_key,
+            motif_strength=await _stored_motif_strength(session, photo_id, motif_key),
+            context=await load_frozen_context(session, project_id=project_id, photo_id=photo_id),
+        )
+    # Der EINE Commit: Korrekturzeile und etwaiges Ereignis gehen gemeinsam oder gar nicht.
     await session.commit()
 
     return MotifCorrectionOut(photo_id=photo_id, motif_key=motif_key, applies=payload.applies)
@@ -2001,14 +2051,32 @@ async def delete_motif_correction(
     Grundlage. `404` bei fehlendem Foto, `422` bei einem `motif_key` ausserhalb des festen Sets.
 
     IDEMPOTENT (`204` auch ohne bestehende Zeile) und ohne Body. Auch die jeweils andere Person
-    darf eine Korrektur zuruecknehmen: die Aussage gehoert zum Foto, nicht zu einem Geschmack."""
-    await _get_photo_or_404(photo_id, session)
+    darf eine Korrektur zuruecknehmen: die Aussage gehoert zum Foto, nicht zu einem Geschmack.
+
+    Ein Aufruf auf ein NIE korrigiertes Motiv erzeugt kein Ereignis der Nacharbeit (Spec 0432,
+    L1): Er nimmt nichts zurueck. Die Ruecknahme einer bestehenden Korrektur dagegen erzeugt ein
+    ZUSAETZLICHES Ereignis - das urspruengliche bleibt unveraendert stehen (L6)."""
+    project_id = (await _get_photo_or_404(photo_id, session)).project_id
     _validated_motif_key(motif_key)
 
-    await session.execute(
+    # Die Staerke VOR der Loeschung lesen - danach ist die Korrekturzeile fort, und die
+    # eingefrorene Modellaussage steht in einer anderen Tabelle, die den Zeitpunkt nicht kennt.
+    motif_strength = await _stored_motif_strength(session, photo_id, motif_key)
+    deleted = await session.execute(
         delete(PhotoMotifCorrection).where(
             PhotoMotifCorrection.photo_id == photo_id,
             PhotoMotifCorrection.motif_key == motif_key,
         )
     )
+    if cast("CursorResult[Any]", deleted).rowcount:
+        await record_motif_correction(
+            session,
+            project_id=project_id,
+            photo_id=photo_id,
+            user_id=current_user.id,
+            kind=FeedbackEventKind.MOTIF_CORRECTION_WITHDRAWN,
+            motif_key=motif_key,
+            motif_strength=motif_strength,
+            context=await load_frozen_context(session, project_id=project_id, photo_id=photo_id),
+        )
     await session.commit()

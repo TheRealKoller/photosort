@@ -202,15 +202,23 @@ async def _write_one(session: AsyncSession, graph: _Graph, kind: FeedbackEventKi
 
     Die Verzweigung liegt hier und nicht in den Faellen: Sie bildet ab, welche `record_*`-Funktion
     fuer welchen `kind` zustaendig ist, und ein `kind` ohne Zustaendige faellt beim Aufruf auf."""
-    context = await load_frozen_context(session, graph.photo)
+    context = await load_frozen_context(
+        session, project_id=graph.project_id, photo_id=graph.photo.id
+    )
     if kind in _ALBUM_DECISION_KINDS:
         await record_album_decision(
-            session, photo=graph.photo, user_id=graph.user_id, kind=kind, context=context
+            session,
+            project_id=graph.project_id,
+            photo_id=graph.photo.id,
+            user_id=graph.user_id,
+            kind=kind,
+            context=context,
         )
     elif kind in _MOTIF_KINDS:
         await record_motif_correction(
             session,
-            photo=graph.photo,
+            project_id=graph.project_id,
+            photo_id=graph.photo.id,
             user_id=graph.user_id,
             kind=kind,
             motif_key="menschen",
@@ -218,7 +226,13 @@ async def _write_one(session: AsyncSession, graph: _Graph, kind: FeedbackEventKi
             context=context,
         )
     elif kind in _FINAL_KINDS:
-        await record_final_decision(session, photo=graph.photo, kind=kind, context=context)
+        await record_final_decision(
+            session,
+            project_id=graph.project_id,
+            photo_id=graph.photo.id,
+            kind=kind,
+            context=context,
+        )
     else:
         assert kind is FeedbackEventKind.EXCHANGED
         await record_exchange(
@@ -333,12 +347,15 @@ async def test_a_joint_decision_with_a_user_is_refused_at_the_write_place(
     Hintertuer ein. Es bricht hier LAUT, statt eine Zeile zu hinterlassen, die niemand mehr von
     einer richtigen unterscheidet."""
     graph = await _build_graph(db_session)
-    context = await load_frozen_context(db_session, graph.photo)
+    context = await load_frozen_context(
+        db_session, project_id=graph.project_id, photo_id=graph.photo.id
+    )
 
     with pytest.raises(ValueError, match="user_id"):
         await record_final_decision(
             db_session,
-            photo=graph.photo,
+            project_id=graph.project_id,
+            photo_id=graph.photo.id,
             kind=FeedbackEventKind.FINAL_DECISION_IN,
             context=context,
             user_id=graph.user_id,
@@ -351,12 +368,15 @@ async def test_a_motif_event_without_a_motif_key_is_refused_at_the_write_place(
     """Die Gegenrichtung derselben Durchsetzung: ein PFLICHTIGES Feld, das fehlt. Ohne diesen
     Zweig bestuende die Matrix-Pruefung auch gegen eine Schreibstelle, die gar nichts prueft."""
     graph = await _build_graph(db_session)
-    context = await load_frozen_context(db_session, graph.photo)
+    context = await load_frozen_context(
+        db_session, project_id=graph.project_id, photo_id=graph.photo.id
+    )
 
     with pytest.raises(ValueError, match="motif_key"):
         await record_motif_correction(
             session=db_session,
-            photo=graph.photo,
+            project_id=graph.project_id,
+            photo_id=graph.photo.id,
             user_id=graph.user_id,
             kind=FeedbackEventKind.MOTIF_ADDED,
             motif_key=None,  # type: ignore[arg-type]
@@ -373,7 +393,9 @@ async def test_the_frozen_context_comes_from_the_latest_successful_run(
 ) -> None:
     graph = await _build_graph(db_session)
 
-    context = await load_frozen_context(db_session, graph.photo)
+    context = await load_frozen_context(
+        db_session, project_id=graph.project_id, photo_id=graph.photo.id
+    )
 
     assert context.criterion_scoring_run_id == graph.run_id
     assert context.event_id == graph.event_id
@@ -404,10 +426,11 @@ async def test_a_photo_without_any_model_assessment_still_yields_an_event(
     db_session.add(photo)
     await db_session.flush()
 
-    context = await load_frozen_context(db_session, photo)
+    context = await load_frozen_context(db_session, project_id=project.id, photo_id=photo.id)
     await record_album_decision(
         db_session,
-        photo=photo,
+        project_id=project.id,
+        photo_id=photo.id,
         user_id=user.id,
         kind=FeedbackEventKind.PHOTO_REMOVED,
         context=context,
@@ -432,7 +455,9 @@ async def test_an_unfinished_run_is_not_the_frozen_context(db_session: AsyncSess
     db_session.add(running)
     await db_session.flush()
 
-    context = await load_frozen_context(db_session, graph.photo)
+    context = await load_frozen_context(
+        db_session, project_id=graph.project_id, photo_id=graph.photo.id
+    )
 
     assert context.criterion_scoring_run_id == graph.run_id
 

@@ -29,7 +29,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.models import FinalSelectionDecision, Photo, Project, User
+from photosort.feedback_log import FINAL_DECISION_WEIGHT
+from photosort.models import (
+    FeedbackEvent,
+    FeedbackEventKind,
+    FinalSelectionDecision,
+    Photo,
+    Project,
+    User,
+)
 from photosort.security import create_access_token, hash_password
 
 
@@ -352,3 +360,73 @@ class TestTheConcurrencyMapping:
 
         assert response.status_code == 409
         assert response.json()["detail"]
+
+
+class TestTheRecordedJointDecision:
+    """Spec 0432: Auch die gemeinsame Entscheidung ist eine Korrektur am Vorschlag - und die
+    einzige, deren Ereignis KEINEN Nutzer traegt (S9)."""
+
+    async def test_each_change_records_one_event_without_a_user(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Das Ereignis traegt `user_id IS NULL`, und das ist strukturell getragen: Dieser Router
+        kennt kein `current_user`. Sich fuer das Log eines zu besorgen, fuehrte das in ADR 0099
+        verworfene `decided_by` durch die Hintertuer ein - und das Log waere der Ort, an dem man
+        nachsieht, wer wollte, was das Projekt entschieden hat."""
+        photo = await _make_photo(db_session)
+        photo_id, project_id = photo.id, photo.project_id
+
+        await authenticated_api_client.put(_url(photo_id), json={"included": True})
+        await authenticated_api_client.put(_url(photo_id), json={"included": False})
+
+        db_session.expire_all()
+        rows = (
+            (await db_session.execute(select(FeedbackEvent).order_by(FeedbackEvent.id)))
+            .scalars()
+            .all()
+        )
+        assert [row.kind for row in rows] == [
+            FeedbackEventKind.FINAL_DECISION_IN,
+            FeedbackEventKind.FINAL_DECISION_OUT,
+        ]
+        assert [row.user_id for row in rows] == [None, None]
+        assert [row.project_id for row in rows] == [project_id, project_id]
+        assert [row.weight for row in rows] == [FINAL_DECISION_WEIGHT, FINAL_DECISION_WEIGHT]
+
+    async def test_the_same_decision_written_again_records_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Endpunkt ist ein Upsert, und ein wiederholtes identisches `included` ist keine
+        Korrektur (ADR 0100 Punkt 4). Die Arbeitssicht laedt zum schnellen Durchklicken ein - ohne
+        diese Bedingung fuellte sich das Log mit Handgriffen, die nichts bewegt haben."""
+        photo = await _make_photo(db_session)
+        photo_id = photo.id
+        await authenticated_api_client.put(_url(photo_id), json={"included": True})
+
+        await authenticated_api_client.put(_url(photo_id), json={"included": True})
+        await authenticated_api_client.put(_url(photo_id), json={"included": True})
+
+        db_session.expire_all()
+        kinds = [
+            kind
+            for kind in (
+                await db_session.execute(select(FeedbackEvent.kind).order_by(FeedbackEvent.id))
+            ).scalars()
+        ]
+        assert kinds == [FeedbackEventKind.FINAL_DECISION_IN]
+
+    async def test_a_rejected_write_leaves_no_event_behind(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Ein unbekanntes Foto und ein Body ohne `included` erzeugen kein Ereignis. Der Eintrag
+        steht hinter beiden Pruefungen - ein davor geschriebenes Ereignis behauptete eine
+        Entscheidung, die es nie gab, und waere append-only nicht mehr zu entfernen."""
+        photo = await _make_photo(db_session)
+        photo_id = photo.id
+
+        unknown = await authenticated_api_client.put(_url(999999), json={"included": True})
+        empty_body = await authenticated_api_client.put(_url(photo_id), json={})
+
+        assert (unknown.status_code, empty_body.status_code) == (404, 422)
+        db_session.expire_all()
+        assert (await db_session.execute(select(FeedbackEvent))).scalars().all() == []

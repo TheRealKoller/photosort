@@ -674,7 +674,7 @@ async def _stored_kinds(session: AsyncSession) -> list[FeedbackEventKind]:
 
 def test_the_transition_rule_maps_every_status_change_to_exactly_one_kind() -> None:
     """Die Uebergangsregel als REINE Funktion, DB-frei geprueft. Sie liegt neben
-    `_write_own_rating` und nicht im Endpunkt: Drei Endpunkte durchlaufen sie, und eine je
+    `write_own_rating` und nicht im Endpunkt: Drei Endpunkte durchlaufen sie, und eine je
     Endpunkt wiederholte Abbildung waere drei Stellen, die auseinanderlaufen koennen."""
     assert album_decision_kind(None, RatingStatus.ALBUM_WORTHY) is FeedbackEventKind.PHOTO_INCLUDED
     assert album_decision_kind(None, RatingStatus.REJECTED) is FeedbackEventKind.PHOTO_REMOVED
@@ -799,7 +799,7 @@ async def test_the_withdrawal_that_deletes_the_row_still_records_its_event(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """Der Zweig, in dem die Bewertungszeile dabei VERSCHWINDET (kein Favorit daneben). Er kehrt
-    in `_write_own_rating` frueher zurueck als der gewoehnliche - eine Aufzeichnung, die erst nach
+    in `write_own_rating` frueher zurueck als der gewoehnliche - eine Aufzeichnung, die erst nach
     dem `flush` steht, faellt hier lautlos aus, und ausgerechnet die Ruecknahme ist der Handgriff,
     den der Bestand danach nicht mehr zeigt."""
     project = await _make_project(db_session)

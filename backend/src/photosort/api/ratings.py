@@ -88,7 +88,7 @@ def album_decision_kind(
 ) -> FeedbackEventKind | None:
     """Die Uebergangsregel: welche Art von Ereignis aus welchem Zustandswechsel entsteht.
 
-    REIN und DB-FREI, und sie liegt hier neben `_write_own_rating` statt in den Endpunkten: Drei
+    REIN und DB-FREI, und sie liegt hier neben `write_own_rating` statt in den Endpunkten: Drei
     Endpunkte durchlaufen dieselbe Schreibstelle, und eine je Endpunkt wiederholte Abbildung waere
     drei Stellen, die auseinanderlaufen koennen.
 
@@ -111,12 +111,13 @@ def album_decision_kind(
     return FeedbackEventKind.PHOTO_REMOVED
 
 
-async def _write_own_rating(
+async def write_own_rating(
     session: AsyncSession,
-    photo: Photo,
+    *,
+    project_id: int,
+    photo_id: int,
     user_id: int,
     next_state: _NextState,
-    *,
     record: bool = True,
 ) -> RatingWriteOut:
     """DIE EINE Schreibstelle, die alle drei Endpunkte durchlaufen.
@@ -142,8 +143,13 @@ async def _write_own_rating(
 
     `record=False` unterdrueckt die Aufzeichnung: Der Austausch ruft zweimal hierher und legt
     danach EIN `exchanged`-Ereignis ab. Ohne die Unterdrueckung zaehlte jeder Austausch
-    dreifach."""
-    rating = await _get_own_rating(session, photo.id, user_id)
+    dreifach.
+
+    IDS STATT EINES `Photo`-OBJEKTS: Der `rollback` des `409`-Zweigs laesst jedes geladene Objekt
+    expired zurueck, und ein danach angefasstes Attribut braeche unter `asyncio` mit
+    `MissingGreenlet`. Der Austausch-Endpunkt loest seine beiden Fotos zudem ausschliesslich ueber
+    ihre Rangzeile auf (S2) und haette hier gar kein `Photo` anzubieten."""
+    rating = await _get_own_rating(session, photo_id, user_id)
     current = (None, False) if rating is None else (rating.status, rating.favorite)
     new_status, new_favorite = next_state(*current)
     kind = album_decision_kind(current[0], new_status) if record else None
@@ -156,18 +162,21 @@ async def _write_own_rating(
         if kind is not None:
             await record_album_decision(
                 session,
-                photo=photo,
+                project_id=project_id,
+                photo_id=photo_id,
                 user_id=user_id,
                 kind=kind,
-                context=await load_frozen_context(session, photo),
+                context=await load_frozen_context(
+                    session, project_id=project_id, photo_id=photo_id
+                ),
             )
         return RatingWriteOut(
-            photo_id=photo.id, user_id=user_id, status=None, favorite=False, updated_at=None
+            photo_id=photo_id, user_id=user_id, status=None, favorite=False, updated_at=None
         )
 
     if rating is None:
         rating = Rating(
-            photo_id=photo.id, user_id=user_id, status=new_status, favorite=new_favorite
+            photo_id=photo_id, user_id=user_id, status=new_status, favorite=new_favorite
         )
         session.add(rating)
     else:
@@ -190,13 +199,14 @@ async def _write_own_rating(
     if kind is not None:
         await record_album_decision(
             session,
-            photo=photo,
+            project_id=project_id,
+            photo_id=photo_id,
             user_id=user_id,
             kind=kind,
-            context=await load_frozen_context(session, photo),
+            context=await load_frozen_context(session, project_id=project_id, photo_id=photo_id),
         )
     return RatingWriteOut(
-        photo_id=photo.id,
+        photo_id=photo_id,
         user_id=user_id,
         status=rating.status,
         favorite=rating.favorite,
@@ -221,11 +231,12 @@ async def set_rating(
     `favorite` bleibt UNBERUEHRT (Auflage S7)."""
     photo = await _get_photo_or_404(photo_id, session)
 
-    written = await _write_own_rating(
+    written = await write_own_rating(
         session,
-        photo,
-        current_user.id,
-        lambda _status, favorite: (payload.status, favorite),
+        project_id=photo.project_id,
+        photo_id=photo.id,
+        user_id=current_user.id,
+        next_state=lambda _status, favorite: (payload.status, favorite),
     )
     # Der EINE Commit dieses Endpunkts: Bewertungszeile und etwaiges Ereignis gehen gemeinsam
     # oder gar nicht (Auflage S5).
@@ -249,11 +260,12 @@ async def delete_rating(
     wurde."""
     photo = await _get_photo_or_404(photo_id, session)
 
-    await _write_own_rating(
+    await write_own_rating(
         session,
-        photo,
-        current_user.id,
-        lambda _status, favorite: (None, favorite),
+        project_id=photo.project_id,
+        photo_id=photo.id,
+        user_id=current_user.id,
+        next_state=lambda _status, favorite: (None, favorite),
     )
     await session.commit()
 
@@ -277,11 +289,12 @@ async def set_favorite(
     dass dieser Endpunkt `status` unberuehrt laesst (Spec 0432, L1)."""
     photo = await _get_photo_or_404(photo_id, session)
 
-    written = await _write_own_rating(
+    written = await write_own_rating(
         session,
-        photo,
-        current_user.id,
-        lambda status_value, _favorite: (status_value, payload.favorite),
+        project_id=photo.project_id,
+        photo_id=photo.id,
+        user_id=current_user.id,
+        next_state=lambda status_value, _favorite: (status_value, payload.favorite),
     )
     await session.commit()
     return written

@@ -26,6 +26,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import (
+    FeedbackEvent,
+    FeedbackEventKind,
     MotifAssessmentSource,
     Photo,
     PhotoMotifCorrection,
@@ -93,6 +95,17 @@ async def _second_user_token(session: AsyncSession, username: str = "partnerin")
 
 async def _corrections(session: AsyncSession) -> list[PhotoMotifCorrection]:
     return list((await session.execute(select(PhotoMotifCorrection))).scalars().all())
+
+
+async def _recorded_kinds(session: AsyncSession) -> list[FeedbackEventKind]:
+    """Die aufgezeichneten Arten in ihrer Reihenfolge - und die ist die aufsteigende `id`."""
+    session.expire_all()
+    return [
+        kind
+        for kind in (
+            await session.execute(select(FeedbackEvent.kind).order_by(FeedbackEvent.id))
+        ).scalars()
+    ]
 
 
 class TestAuth:
@@ -588,3 +601,138 @@ class TestTheConcurrencyMapping:
         """Selbstschutz: der Waechter oben prueft auf den Methodenaufruf - dieser Fall haelt fest,
         dass er die Form trifft, in der eine Sperre tatsaechlich geschrieben waere."""
         assert ".with_for_update(" in "select(X).where(Y).with_for_update()"
+
+
+class TestTheRecordedCorrection:
+    """Spec 0432: Jede Motivkorrektur ist eine Aussage darueber, wo das Modell danebenlag - und
+    genau diese Aussage haelt das Ereignis-Log fest, weil die Korrekturzeile selbst nur den
+    heutigen Stand zeigt."""
+
+    async def test_a_new_correction_records_its_direction(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        photo = await _make_photo(db_session)
+        await _assess(db_session, photo, menschen=0.9)
+        photo_id = photo.id
+
+        await authenticated_api_client.put(_url(photo_id, "menschen"), json={"applies": True})
+        await authenticated_api_client.put(_url(photo_id, "tiere"), json={"applies": False})
+
+        assert await _recorded_kinds(db_session) == [
+            FeedbackEventKind.MOTIF_ADDED,
+            FeedbackEventKind.MOTIF_DROPPED,
+        ]
+
+    async def test_the_event_freezes_the_stored_model_strength_not_the_effective_one(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ADR 0100 Punkt 2, und das ist die Stelle, an der sich ein plausibler Fehler versteckt:
+        Die WIRKSAME Staerke traegt bereits eine fruehere Korrektur desselben Paares. Wuerde sie
+        eingefroren, zeigte die ZWEITE Korrektur eines Motivs nie einen Modellfehler an - sie
+        beantwortete die Frage nach der Modellaussage mit der Korrektur.
+
+        Der Nachweis ist genau das: zwei Korrekturen nacheinander, und BEIDE Ereignisse tragen
+        denselben Wert - den des Modells."""
+        photo = await _make_photo(db_session)
+        await _assess(db_session, photo, menschen=0.25)
+        photo_id = photo.id
+
+        await authenticated_api_client.put(_url(photo_id, "menschen"), json={"applies": True})
+        await authenticated_api_client.put(_url(photo_id, "menschen"), json={"applies": False})
+
+        db_session.expire_all()
+        rows = (
+            (await db_session.execute(select(FeedbackEvent).order_by(FeedbackEvent.id)))
+            .scalars()
+            .all()
+        )
+        assert [row.kind for row in rows] == [
+            FeedbackEventKind.MOTIF_ADDED,
+            FeedbackEventKind.MOTIF_DROPPED,
+        ]
+        assert [row.motif_strength for row in rows] == [pytest.approx(0.25), pytest.approx(0.25)]
+        assert {row.motif_key for row in rows} == {"menschen"}
+
+    async def test_writing_the_same_correction_again_records_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Eine Wiederholung ist keine Korrektur (ADR 0100 Punkt 4) - auch dann nicht, wenn die
+        Zeile dabei den Nutzer wechselt: Der Bestandszustand des FOTOS bewegt sich nicht."""
+        photo = await _make_photo(db_session)
+        photo_id = photo.id
+        await authenticated_api_client.put(_url(photo_id, "menschen"), json={"applies": True})
+        other = await _second_user_token(db_session)
+
+        await authenticated_api_client.put(_url(photo_id, "menschen"), json={"applies": True})
+        await authenticated_api_client.put(
+            _url(photo_id, "menschen"),
+            json={"applies": True},
+            headers={"Authorization": f"Bearer {other}"},
+        )
+
+        assert await _recorded_kinds(db_session) == [FeedbackEventKind.MOTIF_ADDED]
+
+    async def test_a_motif_without_a_model_strength_still_records(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Korrektur eines nie erkannten Motivs ist der INTERESSANTESTE Fall der Diagnose
+        ("gar nicht genannt") - sie darf nicht daran scheitern, dass es keine Staerkezeile
+        gibt."""
+        photo = await _make_photo(db_session)
+        photo_id = photo.id
+
+        await authenticated_api_client.put(_url(photo_id, "menschen"), json={"applies": True})
+
+        db_session.expire_all()
+        stored = (await db_session.execute(select(FeedbackEvent))).scalar_one()
+        assert stored.kind is FeedbackEventKind.MOTIF_ADDED
+        assert stored.motif_key == "menschen"
+        assert stored.motif_strength is None
+
+    async def test_the_withdrawal_records_a_third_event_and_keeps_the_first_two(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        photo = await _make_photo(db_session)
+        photo_id = photo.id
+        await authenticated_api_client.put(_url(photo_id, "menschen"), json={"applies": True})
+        await authenticated_api_client.put(_url(photo_id, "menschen"), json={"applies": False})
+
+        await authenticated_api_client.delete(_url(photo_id, "menschen"))
+
+        assert await _recorded_kinds(db_session) == [
+            FeedbackEventKind.MOTIF_ADDED,
+            FeedbackEventKind.MOTIF_DROPPED,
+            FeedbackEventKind.MOTIF_CORRECTION_WITHDRAWN,
+        ]
+
+    async def test_a_withdrawal_without_an_existing_correction_records_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Endpunkt ist idempotent, und genau daraus entsteht die Gefahr: Ein Aufruf auf ein
+        nie korrigiertes Motiv ist kein Handgriff der Nacharbeit. Ohne diesen Fall erzeugte eine
+        durchklickende Oberflaeche Ereignisse, hinter denen niemand steht."""
+        photo = await _make_photo(db_session)
+        photo_id = photo.id
+
+        response = await authenticated_api_client.delete(_url(photo_id, "menschen"))
+
+        assert response.status_code == 204
+        assert await _recorded_kinds(db_session) == []
+
+    async def test_an_invalid_motif_key_never_reaches_the_log(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """S11: Der Eintrag steht HINTER der Schluesselpruefung. Sonst gelangte eine beliebige,
+        vom Aufrufer gewaehlte Zeichenkette in die Persistenz und von dort in die nach Motiv
+        gruppierte Diagnoseantwort - und die Pruefung gegen das geschlossene Motivset waere fuer
+        genau den einen Pfad umgangen, der sie nicht nachholt."""
+        photo = await _make_photo(db_session)
+        photo_id = photo.id
+
+        written = await authenticated_api_client.put(
+            _url(photo_id, "nicht-im-set"), json={"applies": True}
+        )
+        withdrawn = await authenticated_api_client.delete(_url(photo_id, "nicht-im-set"))
+
+        assert (written.status_code, withdrawn.status_code) == (422, 422)
+        assert await _recorded_kinds(db_session) == []

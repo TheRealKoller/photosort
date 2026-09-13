@@ -17,7 +17,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_current_user, get_session
-from photosort.models import FinalSelectionDecision, Photo
+from photosort.feedback_log import load_frozen_context, record_final_decision
+from photosort.models import FeedbackEventKind, FinalSelectionDecision, Photo
 
 # SICHERHEIT (S1): Der Torwaechter haengt am ROUTER, nicht am Endpunkt - und genau das ist hier
 # moeglich, weil kein Endpunkt dieses Routers das `User`-Objekt selbst braucht.
@@ -122,10 +123,22 @@ async def set_album_decision(
     SICHERHEIT (S3): Die Bindung laeuft ausschliesslich ueber die globale `photo_id` - keine
     Projektaufloesung, keine Mitgliedschaftspruefung, Muster `PUT /photos/{id}/rating`. Beide
     Nutzer sehen alle Projekte; es gibt keine Grenze, die hier zu ziehen waere. Der uebergebene
-    Wert wird nicht zurueckgespiegelt."""
-    await _get_photo_or_404(photo_id, session)
+    Wert wird nicht zurueckgespiegelt.
+
+    Jede tatsaechliche AENDERUNG wird im Ereignis-Log der Nacharbeit festgehalten (Spec 0432) -
+    OHNE Nutzer (S9), weil die Entscheidung dem Projekt gehoert, und mit hoeherem Gewicht, weil
+    sie das Urteil beider Personen ist. Ein wiederholtes identisches `included` ist keine
+    Korrektur und erzeugt nichts."""
+    # Die `project_id` VOR dem `flush` festhalten: Dessen `rollback`-Zweig laesst jedes geladene
+    # Objekt expired zurueck, und ein danach angefasstes Attribut braeche unter `asyncio` mit
+    # `MissingGreenlet` - ausgerechnet im Zweig, der den Wettlauf-Fall behandelt.
+    project_id = (await _get_photo_or_404(photo_id, session)).project_id
 
     decision = await _existing_decision(session, photo_id)
+    # NUR BEI TATSAECHLICHER AENDERUNG (ADR 0100 Punkt 4). Die Abwesenheit der Zeile heisst
+    # "unentschieden" und ist damit selbst ein Vorzustand, von dem aus jede Richtung ein Wechsel
+    # ist.
+    changed = decision is None or decision.included != payload.included
     if decision is None:
         decision = FinalSelectionDecision(photo_id=photo_id, included=payload.included)
         session.add(decision)
@@ -160,6 +173,20 @@ async def set_album_decision(
         decision.included = payload.included
         await session.flush()
 
+    if changed:
+        # KEIN `user_id` (S9) - und der Endpunkt koennte gar keines liefern: Dieser Router nimmt
+        # bewusst kein `current_user` entgegen, und ein struktureller Waechter haelt das fest.
+        await record_final_decision(
+            session,
+            project_id=project_id,
+            photo_id=photo_id,
+            kind=(
+                FeedbackEventKind.FINAL_DECISION_IN
+                if payload.included
+                else FeedbackEventKind.FINAL_DECISION_OUT
+            ),
+            context=await load_frozen_context(session, project_id=project_id, photo_id=photo_id),
+        )
     await session.commit()
     await session.refresh(decision)
     return AlbumDecisionOut(
