@@ -1,6 +1,6 @@
 # 0428 - Albumtauglichkeit vom Modell bewerten lassen und Qualität vom Inhalt im Score trennen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #457](https://github.com/TheRealKoller/photosort/pull/457))
 **Erstellt:** 2026-09-13
 **Bezug:** [Issue #428](https://github.com/TheRealKoller/photosort/issues/428), Story 4 des Zielbilds [#424](https://github.com/TheRealKoller/photosort/issues/424)
 
