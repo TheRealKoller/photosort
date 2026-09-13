@@ -873,3 +873,56 @@ def test_the_table_revision_downgrade_renders_for_postgres_too() -> None:
     assert "CREATE TABLE PHOTO_CATEGORY_CLASSIFICATIONS" in rendered
     assert "JSON" in rendered
     assert "INSERT " not in rendered
+
+
+# specs/features/0428-albumtauglichkeit-vom-modell.md: eine neue Tabelle plus zwei Spalten, die
+# nullable werden. Die Nullbarkeit ist genau die Klasse von Aussage, die SQLite nicht traegt: dort
+# baut `batch_alter_table` die Tabelle nach, unter Postgres muss ein `DROP NOT NULL` entstehen.
+# Nur der `upgrade()` wird gerendert - der `downgrade()` traegt einen DATENschritt (`DELETE`), und
+# ein reiner Renderpfad kann den nicht ausfuehren (siehe `_render_postgres_ddl`).
+
+_ALBUM_SUITABILITY_REVISION = "d6e7f8a9b0c1_albumtauglichkeit.py"
+
+
+@pytest.fixture(scope="module")
+def album_suitability_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_ALBUM_SUITABILITY_REVISION)
+
+
+def test_the_album_suitability_table_renders_with_its_key_and_nullability(
+    album_suitability_upgrade_ddl: list[str],
+) -> None:
+    create = [
+        statement
+        for statement in album_suitability_upgrade_ddl
+        if "CREATE TABLE" in statement.upper() and "photo_album_suitability" in statement
+    ]
+    assert create, "kein CREATE TABLE fuer photo_album_suitability gefunden"
+    statement = create[0]
+
+    assert "PRIMARY KEY (photo_id)" in statement
+    assert "FOREIGN KEY(photo_id) REFERENCES photos (id)" in statement
+    assert "level INTEGER NOT NULL" in statement
+    assert "provider VARCHAR NOT NULL" in statement
+    assert "computed_at TIMESTAMP WITHOUT TIME ZONE NOT NULL" in statement
+    # Die eigentliche Aussage der Spalte: ohne brauchbare Begruendung steht dort `NULL`.
+    assert "reason VARCHAR, " in statement
+
+
+def test_both_ranking_columns_get_a_drop_not_null_and_the_event_does_not(
+    album_suitability_upgrade_ddl: list[str],
+) -> None:
+    rendered = " ".join(album_suitability_upgrade_ddl).upper()
+
+    assert "ALTER TABLE PHOTO_RANKINGS ALTER COLUMN RANK_SCORE DROP NOT NULL" in rendered
+    assert "ALTER TABLE PHOTO_RANKINGS ALTER COLUMN RANK_POSITION DROP NOT NULL" in rendered
+    assert "EVENT_ID" not in rendered
+
+
+def test_the_upgrade_touches_no_data_at_all(album_suitability_upgrade_ddl: list[str]) -> None:
+    """Reine Strukturaenderung: kein Backfill, keine Ruecksetzung der Bestandswerte."""
+    rendered = " ".join(album_suitability_upgrade_ddl).upper()
+
+    assert "INSERT " not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered

@@ -27,7 +27,6 @@ from photosort.motifs import (
     MOTIF_STRENGTH_BAND_MEDIUM,
     MOTIF_STRENGTH_BAND_STRONG,
     MotifDefinition,
-    build_motif_prompt,
     is_motif_key,
     local_motif_strengths,
 )
@@ -382,65 +381,3 @@ class TestTheStrengthBands:
 
     def test_both_limits_lie_inside_the_strength_range(self) -> None:
         assert 0.0 < MOTIF_STRENGTH_BAND_MEDIUM < MOTIF_STRENGTH_BAND_STRONG < 1.0
-
-
-class TestBuildMotifPrompt:
-    def test_the_prompt_names_every_motif_with_key_definition_and_delimitation(self) -> None:
-        prompt = build_motif_prompt(max_fine_labels=2)
-
-        for definition in MOTIF_REGISTRY.values():
-            assert f'"{definition.key}"' in prompt
-            assert definition.display_name in prompt
-            assert definition.definition in prompt
-            assert definition.delimitation in prompt
-
-    def test_the_prompt_is_generated_from_the_registry_not_a_literal(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """SICHERHEIT (S8): eine veränderte Registry MUSS den Prompt verändern - sonst steht das
-        Motivset ein zweites Mal in einem Literal."""
-        monkeypatch.setitem(
-            MOTIF_REGISTRY,
-            "menschen",
-            MotifDefinition(
-                key="menschen",
-                display_name="Voelklein",
-                definition="Testdefinition.",
-                delimitation="Testabgrenzung.",
-            ),
-        )
-
-        prompt = build_motif_prompt(max_fine_labels=2)
-
-        assert "Voelklein" in prompt
-        assert "Testdefinition." in prompt
-        assert "Testabgrenzung." in prompt
-
-    def test_the_prompt_asks_for_a_number_for_every_motif(self) -> None:
-        prompt = build_motif_prompt(max_fine_labels=2)
-
-        assert '"motifs"' in prompt
-        assert "zwischen 0 und 1" in prompt
-
-    def test_the_prompt_asks_for_the_exclusion_flag_as_a_real_boolean(self) -> None:
-        prompt = build_motif_prompt(max_fine_labels=2)
-
-        assert '"excluded"' in prompt
-        assert "true oder false" in prompt
-
-    def test_the_prompt_carries_the_fine_label_limit_it_was_given(self) -> None:
-        assert "hoechstens 2 kurze" in build_motif_prompt(max_fine_labels=2)
-        assert "hoechstens 5 kurze" in build_motif_prompt(max_fine_labels=5)
-
-    def test_the_prompt_never_names_a_main_category_or_a_precedence(self) -> None:
-        """Die abgeschaffte Mechanik darf nicht über den Prompt zurückkommen."""
-        prompt = build_motif_prompt(max_fine_labels=2).lower()
-
-        assert "hauptkategorie" not in prompt
-        assert "vorrang" not in prompt
-        assert "nicht_erkannt" not in prompt
-
-    def test_the_prompt_does_not_offer_the_exclusion_key_as_a_motif(self) -> None:
-        prompt = build_motif_prompt(max_fine_labels=2)
-
-        assert f'"{EXCLUSION_KEY}"' not in prompt

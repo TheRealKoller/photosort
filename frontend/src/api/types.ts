@@ -252,8 +252,16 @@ export interface MotifCorrectionOut {
 // GENAU EINE davon - die Partition ist allein das Event.
 export interface RankingOut {
   event_id: number
-  rank_score: number
-  rank_position: number
+  /** Der QUALITÄTSWERT des Fotos auf [0, 1] - `null` heißt „kein Modellurteil, also kein Wert"
+   * (Cloud-Freigabe fehlt projektweit, oder der Aufruf für dieses Foto ist fehlgeschlagen). Auf
+   * `!== null` prüfen, NIE auf Falsyness: `0` ist ein gültiger Wert, und ein `?? 0` oder ein
+   * Falsyness-Filter verliert ihn lautlos. Es gibt keinen Rückfall auf einen lokal gebildeten
+   * Wert. */
+  rank_score: number | null
+  /** `null` gemeinsam mit `rank_score` - ein Foto ohne Qualitätswert hat keinen Rang. Die Zeile
+   * „Rang M von N" entfällt dann vollständig; „Rang – von 12" wäre eine Rangaussage über ein
+   * Foto ohne Rang. */
+  rank_position: number | null
   // Größe der GESAMTEN Event-Partition (nicht nur der angeforderten top_n), für "Rang M von N"
   // im Info-Popover.
   partition_size: number
@@ -448,6 +456,25 @@ export interface PhotoOut {
    * Optional deklariert wie `location`/`event`: `undefined` und `[]` bedeuten an jeder Lesestelle
    * dasselbe. */
   motifs?: MotifStrengthOut[]
+  /** Die Albumtauglichkeit des Modells - `null` heißt „noch nicht bewertet" und ist von der
+   * niedrigsten Stufe unterscheidbar. Auf `=== null` prüfen, nie auf Falsyness. */
+  album_suitability?: AlbumSuitabilityOut | null
+}
+
+/** Die fünfstufige Modellaussage über die Albumtauglichkeit eines Fotos samt Begründung.
+ *
+ * SICHERHEITSHINWEIS: `reason` ist freier, extern erzeugter LLM-Text - ausschliesslich als
+ * regulärer React-Textknoten rendern (nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop,
+ * nie als Markdown, nie in `href`/`src`/`style`). Das ist keine bloße Konvention, sondern die
+ * tragende Voraussetzung dafür, dass das Session-Token in `localStorage` liegen darf. Er ist
+ * erkennbar als Aussage des MODELLS auszuweisen, nicht als Aussage von PhotoSort: er stammt aus
+ * einem Bild, das Text enthalten kann.
+ *
+ * `reason === null` heißt „keine Begründung" - die Zeile entfällt dann ersatzlos, kein
+ * Platzhalter, kein „—". */
+export interface AlbumSuitabilityOut {
+  level: number
+  reason: string | null
 }
 
 export interface PhotoListOut {

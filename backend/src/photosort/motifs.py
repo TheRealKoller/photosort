@@ -41,7 +41,7 @@ MOTIF_STRENGTH_BAND_MEDIUM = 1 / 3
 @dataclass(frozen=True)
 class MotifDefinition:
     """Ein Eintrag des festen Motivsets. `definition` und `delimitation` sind fachlich Teil des
-    Motivs - sie sind zugleich Prompt-Grundlage (`build_motif_prompt`) und UI-Erklaerung
+    Motivs - sie sind zugleich Prompt-Grundlage (`classification_prompt.py`) und UI-Erklaerung
     (`GET /motifs`); eine zweite Pflegestelle gibt es nicht.
 
     KEIN Ordnungsattribut - kein Vorrang-, Rang- oder Gewichtsfeld: die Reihenfolge dieses Dict
@@ -275,66 +275,3 @@ def local_motif_strengths(
         covered = sum(_usable_fraction(area_fractions.get(key)) for key in signal.criterion_keys)
         strengths[motif_key] = min(1.0, covered / saturation)
     return strengths
-
-
-def build_motif_prompt(*, max_fine_labels: int) -> str:
-    """Erzeugt den Klassifizierungs-Prompt AUSSCHLIESSLICH aus `MOTIF_REGISTRY` - Prompt und
-    Motivset koennen damit nicht auseinanderlaufen, eine zweite gepflegte Liste im Prompt-Literal
-    gibt es nicht.
-
-    `max_fine_labels` kommt als Parameter vom Aufrufer statt aus einem Import: die Feinlabel-Grenze
-    gehoert nicht zum Motivset, und dieses Modul bleibt damit frei von jedem Import aus der
-    Kategorie-Welt.
-
-    SICHERHEIT: der Prompt entsteht nie aus einem Literal daneben, nie aus Datenbankinhalten und
-    nie aus einer frueheren Modellantwort - es gibt keinen Rueckkopplungspfad, ueber den eine
-    Antwort den naechsten Prompt beeinflussen koennte. Bricht in
-    tests/test_motifs.py::TestBuildMotifPrompt, Fall
-    `test_the_prompt_is_generated_from_the_registry_not_a_literal`."""
-    lines = [
-        "Analysiere dieses Foto und bewerte, wie deutlich jedes der folgenden Motive darauf zu "
-        "sehen ist.",
-        "",
-        # Ausdruecklich OHNE das Wort "Hauptkategorie" und ohne das Wort "Vorrang", auch nicht
-        # verneint: der Prompt soll den abgeschafften Mechanismus nicht erst einfuehren, um ihn
-        # dann auszuschliessen. Ein Waechtertest haelt beide Woerter aus dem Prompt heraus.
-        "Leitfrage je Motiv: Wie stark ist dieses Motiv im Bild vertreten? Bewerte jedes Motiv "
-        "FUER SICH - ein Foto kann mehrere Motive zugleich stark zeigen. Waehle kein einzelnes "
-        "Motiv aus und ordne die Motive nicht.",
-        "",
-        "Die Motive (verwende ausschliesslich den jeweiligen Schluessel):",
-    ]
-    for definition in MOTIF_REGISTRY.values():
-        lines.append(
-            f'- "{definition.key}" ({definition.display_name}): {definition.definition} '
-            f"Abgrenzung: {definition.delimitation}"
-        )
-    motif_example = ", ".join(f'"{key}": <Zahl>' for key in MOTIF_REGISTRY)
-    lines.extend(
-        [
-            "",
-            "Nenne zu JEDEM der oben genannten Schluessel eine Zahl zwischen 0 und 1 "
-            "(0 = nicht zu sehen, 1 = bildbestimmend). Lasse keinen Schluessel weg und erfinde "
-            "keinen weiteren.",
-            "",
-            "Anlass- und Ereignisbegriffe (Geburtstag, Urlaub, Weihnachten, Hochzeit) sind KEIN "
-            "Motiv - vergib sie ausschliesslich als Feinlabel.",
-            "",
-            # Ein Wahrheitswert und bewusst KEINE Staerke mit Schwelle: das Modell beantwortet die
-            # Frage selbst, und eine Schwelle waere genau die Zugehoerigkeitsgrenze, die dieses
-            # Motivset abschafft.
-            'Gib zusaetzlich im Feld "excluded" an, ob das Foto eine Text-, Bildschirm- oder '
-            "Dokumentabbildung ist (Screenshot, abfotografiertes Dokument, Formular, Beleg, "
-            "Ticket, QR-Code, Schild, dessen Text der Bildzweck ist) - als echten Wahrheitswert "
-            "true oder false, nicht als Zahl und nicht als Text.",
-            "",
-            f"Nenne zusaetzlich hoechstens {max_fine_labels} kurze, frei formulierte deutsche "
-            "Feinlabels, die das Foto naeher beschreiben (Anlass, Ort, konkretes Motiv).",
-            "",
-            "Antworte AUSSCHLIESSLICH mit einem einzigen validen JSON-Objekt, ohne "
-            "Markdown-Codeblock, ohne weiteren Text, exakt in dieser Form: "
-            '{"motifs": {' + motif_example + '}, "excluded": <true|false>, '
-            '"fine_labels": ["<Feinlabel>", ...]}',
-        ]
-    )
-    return "\n".join(lines)

@@ -273,7 +273,7 @@ def _select_primary_subject(
 
 def compute_golden_ratio_score(
     faces: list[FaceBoundingBox], animals: Sequence[SubjectBoxLike] = ()
-) -> float:
+) -> float | None:
     """`goldener_schnitt`-Kriterium: reine geometrische Heuristik ohne eigenes ML-Modell,
     wiederverwendet ausschließlich Positionsdaten aus bereits vorhandenen Detektionen - kein
     neuer Bildverarbeitungsschritt. Bewertet, wie nah das primäre Subjekt (siehe
@@ -293,11 +293,13 @@ def compute_golden_ratio_score(
     Kompositions-Subjekt wird."""
     subject = _select_primary_subject(faces, animals)
     if subject is None:
-        # Dokumentierter, niedriger (nicht neutraler) Fallback-Wert: ohne erkennbares Subjekt
-        # gibt es kein Kompositions-Signal. 0.0 statt eines "neutralen" 0.5 vermeidet, ein
-        # diesbezüglich nicht messbares Foto positiv zu werten. Bewusst kein Fehler und
-        # bewusst kein nachgerüsteter Bildverarbeitungsschritt.
-        return 0.0
+        # KEIN Wert, nicht `0.0` (ADR 0095, Abschnitt 5): ohne erkennbares Subjekt ist dieses
+        # Kriterium für dieses Foto NICHT MESSBAR, und ein nicht messbares Kriterium wird
+        # weggelassen statt als schlechter Wert gewertet. Der `0.0`-Fallback wertete ein Foto
+        # ohne Personen doppelt ab - für das, was ihm fehlt, und für das, was es nicht ist.
+        # Der Aufrufer trägt das Kriterium dafür in `ContentCriteria.not_measurable` ein; eine
+        # Altzeile aus einem früheren Lauf wird daraufhin gelöscht.
+        return None
     distance = min(
         math.sqrt((subject.x_center - tx) ** 2 + (subject.y_center - ty) ** 2)
         for tx, ty in _GOLDEN_RATIO_THIRD_POINTS
@@ -609,18 +611,21 @@ def compute_landmark_score(detection: LandmarkDetection) -> float:
 FREIRAUM_YAW_DEADZONE_DEGREES = 10.0
 
 
-def compute_freiraum_score(orientation: FaceOrientation | None) -> float:
+def compute_freiraum_score(orientation: FaceOrientation | None) -> float | None:
     """`freiraum`-Kriterium: reine Score-Berechnung aus einer bereits vorhandenen
     FaceOrientation, OHNE eigenen detect_face_orientation-Aufruf (Trennung analog
     compute_tier_score/compute_gebaeude_score) - worker.py::_compute_content_criteria ruft
     detect_face_orientation genau einmal auf und reicht das Ergebnis hier durch.
 
-    Drei bewusst UNTERSCHIEDLICHE Fallback-Werte, jeder Fall einzeln beantwortet statt nach
+    Drei bewusst UNTERSCHIEDLICHE Antworten, jeder Fall einzeln beantwortet statt nach
     einem einheitlichen Schema - bedeutet die Abwesenheit eines Signals ein schlechtes Foto
     oder nur ein nicht messbares?
-    1. Kein Gesicht erkannt (`orientation is None`) -> 0.0 (niedrig, NICHT neutral) - analog
-       goldener_schnitt: dieses Kriterium bewertet die Rahmung eines Subjekts, ohne jedes
-       Subjekt gibt es keinen positiven Kompositionswert.
+    1. Kein Gesicht erkannt (`orientation is None`) -> KEIN Wert (`None`), nicht `0.0` - analog
+       goldener_schnitt und aus demselben Grund (ADR 0095, Abschnitt 5): dieses Kriterium
+       bewertet die Rahmung eines GESICHTS, ohne erkanntes Gesicht ist es für dieses Foto nicht
+       messbar. Der Aufrufer trägt es in `ContentCriteria.not_measurable` ein, eine Altzeile
+       wird gelöscht. Die beiden folgenden Fallbacks bleiben Werte: sie sind messbar und
+       neutral.
     2. Nahezu frontaler Blick (`|yaw| < FREIRAUM_YAW_DEADZONE_DEGREES`) -> 0.5 (neutral) -
        kein klares Richtungssignal. Der Vergleich ist bewusst `<`, NICHT `<=`: ein Yaw EXAKT
        an der Deadzone-Grenze zählt als AUSSERHALB, nicht als neutral.
@@ -633,7 +638,7 @@ def compute_freiraum_score(orientation: FaceOrientation | None) -> float:
        Deadzone: füllt das Gesicht die VOLLE Bildbreite (`min_x == 0`, `max_x == 1`), sind
        beide Räume 0 - neutraler Fallback 0.5 statt ZeroDivisionError."""
     if orientation is None:
-        return 0.0
+        return None
     if abs(orientation.yaw_degrees) < FREIRAUM_YAW_DEADZONE_DEGREES:
         return 0.5
 

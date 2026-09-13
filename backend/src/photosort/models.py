@@ -227,6 +227,12 @@ class Photo(Base):
     motif_corrections: Mapped[list[PhotoMotifCorrection]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
+    # 1:1 und optional wie die Motiv-Kopfzeile, aber an einer EIGENEN Tabelle: die
+    # Albumtauglichkeit ist eine Aussage über die Bildgüte und gibt es nur mit Cloud-Grundlage,
+    # die Motiv-Kopfzeile ist eine über den Bildinhalt und existiert auch lokal (ADR 0095).
+    album_suitability: Mapped[PhotoAlbumSuitability | None] = relationship(
+        back_populates="photo", uselist=False, cascade="all, delete-orphan"
+    )
     # Die Foto-Seite derselben Kaskade wie bei CriterionScoringRun.rankings. Ohne sie scheitert
     # der Re-Scan unter echtem Postgres an einer Fremdschlüsselverletzung, sobald
     # worker.py::run_project_scan ein auf OpenCloud verschwundenes Foto löscht, das noch in einem
@@ -598,7 +604,9 @@ class PhotoRanking(Base):
     acht Zahlen, keine Zugehörigkeit, und keine Schwelle macht daraus eine.
 
     `rank_position` ist innerhalb einer Partition monoton in `rank_score` (Tie-Break: niedrigere
-    `photo_id`) - es gibt keinen zweiten, gedämpften Sortierschlüssel mehr."""
+    `photo_id`) - es gibt keinen zweiten, gedämpften Sortierschlüssel mehr. Gezählt wird dabei
+    ausschließlich über die BEWERTETE Teilmenge: `rank_position` bleibt dort lückenlos ab 1, die
+    Zeilen ohne Modellbewertung stehen mit `NULL` daneben."""
 
     __tablename__ = "photo_rankings"
     __table_args__ = (
@@ -618,8 +626,12 @@ class PhotoRanking(Base):
     # "jedes Kandidatenfoto gehört zu genau einem Event" ausnahmslos gilt und weder Lesepfad noch
     # Spec einen Ausnahmezweig für einen Zustand tragen, den die Anwendung selbst nie erzeugt.
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
-    rank_score: Mapped[float]
-    rank_position: Mapped[int]
+    # NULLABLE und `NULL` heisst GENAU EINES: "kein Qualitätswert, weil keine Modellbewertung" -
+    # projektweit ohne Cloud-Freigabe, je Foto bei einem fehlgeschlagenen Aufruf. Es gibt keinen
+    # Rückfall auf einen lokal gebildeten Wert (ADR 0095, Abschnitt 1); ein solches Foto behält
+    # seine `event_id`, bleibt im einsehbaren Vorrat und erscheint nicht im Entwurf.
+    rank_score: Mapped[float | None] = mapped_column(default=None)
+    rank_position: Mapped[int | None] = mapped_column(default=None)
 
 
 class PhotoLandmarkDetection(Base):
@@ -892,3 +904,33 @@ class PhotoMotifCorrection(Base):
 
     photo: Mapped[Photo] = relationship(back_populates="motif_corrections")
     user: Mapped[User] = relationship()
+
+
+class PhotoAlbumSuitability(Base):
+    """Die Albumtauglichkeit eines Fotos: eine fünfstufige Modellaussage über die BILDGÜTE samt
+    kurzer Begründung, 1:1 zu Photo (`photo_id` ist Primary Key).
+
+    Sie hängt an `photos` und NICHT an `photo_motif_assessments`: die Motiv-Kopfzeile ist eine
+    Aussage über den Bildinhalt und existiert auch auf lokaler Grundlage, die Albumtauglichkeit
+    gibt es nur mit Cloud-Grundlage. Genau diese Trennung ist der Gegenstand von ADR 0095,
+    Abschnitt 4 - sie im Datenmodell zusammenzulegen hieße, sie aufzugeben.
+
+    Persistiert wird die STUFE `1..5`, nicht zusätzlich der normierte Wert: die Normierung ist
+    eine reine Funktion (`album_suitability.py::normalize_level`), eine zweite Spalte daneben wäre
+    ein zweiter Ort für dieselbe Aussage.
+
+    `reason` ist der zeichensanierte, auf MAX_ALBUM_SUITABILITY_REASON_LENGTH gekappte Fremdtext
+    des Modells - oder `NULL`, nie eine leere Zeichenkette. Die ABWESENHEIT der Zeile ist der
+    Zustand "noch nicht bewertet" und unterscheidbar von einer niedrigen Stufe."""
+
+    __tablename__ = "photo_album_suitability"
+
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
+    level: Mapped[int]
+    reason: Mapped[str | None] = mapped_column(default=None)
+    # NOT NULL und ohne Default: diese Zeile entsteht ausschließlich aus einer Cloud-Antwort, ihr
+    # Anbieter ist damit immer bekannt.
+    provider: Mapped[str]
+    computed_at: Mapped[datetime]
+
+    photo: Mapped[Photo] = relationship(back_populates="album_suitability")
