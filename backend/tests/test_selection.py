@@ -12,6 +12,7 @@ Testwelle auszuloesen.
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
@@ -26,9 +27,12 @@ from photosort.selection import (
     MOTIF_PRESENCE_THRESHOLD,
     SIMILARITY_DECAY,
     SIMILARITY_TIME_WINDOW,
+    AlternativeCandidate,
     SelectionCandidate,
     SelectionEvent,
+    carried_motifs,
     effective_target,
+    order_alternatives,
     select_album_draft,
 )
 
@@ -664,6 +668,156 @@ class TestTheMotifsAreEqualInRank:
         assert _draft([_event(1, 1, originals)], target=3) == _draft(
             [_event(1, 1, swapped)], target=3
         )
+
+
+def _alternative(
+    photo_id: int, quality: float | None, *, motifs: Mapping[str, float] | None = None
+) -> AlternativeCandidate:
+    return AlternativeCandidate(
+        photo_id=photo_id, quality=quality, motif_strengths=dict(motifs or {})
+    )
+
+
+class TestTheCarriedMotifsArePublic:
+    """`carried_motifs` ist die eine Stelle, an der "dieses Bild traegt dieses Motiv" entsteht -
+    fuer die Auswahl wie fuer die Alternativen. Sie ruft `motif_is_present` und vergleicht nie
+    selbst."""
+
+    def test_exactly_the_motifs_at_or_above_the_threshold_are_carried(self) -> None:
+        carried = carried_motifs({"a": _FULL, "b": MOTIF_PRESENCE_THRESHOLD, "c": _BELOW})
+
+        assert carried == frozenset({"a", "b"})
+
+    def test_a_candidate_without_strengths_carries_nothing(self) -> None:
+        assert carried_motifs({}) == frozenset()
+
+
+class TestTheOrderOfTheAlternatives:
+    """Der Sortierschluessel `(0 wenn geteiltes Motiv sonst 1, -quality, photo_id)`.
+
+    Ein Fehler hier wirft nichts - er liefert eine andere, plausibel aussehende Reihenfolge. Jede
+    Aussage des ADR 0098 Punkt 5 hat deshalb einen Fall."""
+
+    def test_a_shared_motif_comes_before_a_better_picture_without_one(self) -> None:
+        reference = _alternative(1, 0.5, motifs={"a": _FULL})
+
+        assert order_alternatives(
+            reference,
+            [_alternative(2, 0.1, motifs={"a": _FULL}), _alternative(3, 0.9, motifs={"b": _FULL})],
+        ) == [2, 3]
+
+    def test_a_candidate_without_quality_and_with_a_shared_motif_beats_every_stranger(self) -> None:
+        """Zusicherung 5: `None` sortiert INNERHALB seiner Gruppe ans Ende, nie global. Eine
+        Implementierung, die alle `None` global ans Ende schiebt, besteht jeden Aufbau ohne einen
+        Kandidaten dieser Art."""
+        reference = _alternative(1, 0.5, motifs={"a": _FULL})
+
+        assert order_alternatives(
+            reference,
+            [
+                _alternative(2, 0.9, motifs={"b": _FULL}),
+                _alternative(3, None, motifs={"a": _FULL}),
+                _alternative(4, 0.8, motifs={"a": _FULL}),
+                _alternative(5, None, motifs={"b": _FULL}),
+            ],
+        ) == [4, 3, 2, 5]
+
+    def test_a_quality_of_zero_is_not_a_missing_quality(self) -> None:
+        """Zusicherung 6: `0.0` steht vor jedem `None` derselben Gruppe. `quality or 0` verliert
+        die Unterscheidung lautlos - und zwar in beiden Gruppen."""
+        reference = _alternative(1, 0.5, motifs={"a": _FULL})
+
+        assert order_alternatives(
+            reference,
+            [
+                _alternative(2, None, motifs={"a": _FULL}),
+                _alternative(3, 0.0, motifs={"a": _FULL}),
+                _alternative(4, None, motifs={"b": _FULL}),
+                _alternative(5, 0.0, motifs={"b": _FULL}),
+            ],
+        ) == [3, 2, 5, 4]
+
+    def test_three_shared_motifs_do_not_beat_one(self) -> None:
+        """Zusicherung 7, erste Haelfte: die Motivgruppe ist BINAER. Entschieden wird allein
+        "mindestens eines"; innerhalb der Gruppe ordnet die Qualitaet."""
+        reference = _alternative(1, 0.5, motifs={"a": _FULL, "b": _FULL, "c": _FULL})
+
+        assert order_alternatives(
+            reference,
+            [
+                _alternative(2, 0.2, motifs={"a": _FULL, "b": _FULL, "c": _FULL}),
+                _alternative(3, 0.9, motifs={"a": _FULL}),
+            ],
+        ) == [3, 2]
+
+    def test_the_motif_boundary_of_the_grouping_is_inclusive(self) -> None:
+        """Zusicherung 7, zweite Haelfte: die Grenze ist INKLUSIV und fuer alle Motive dieselbe -
+        auf BEIDEN Seiten, Bezugsbild wie Kandidat. Genau an der Grenze teilt das Paar ein Motiv,
+        einen Gleitkommaschritt darunter nicht mehr."""
+
+        def order(reference_strength: float, candidate_strength: float) -> list[int]:
+            return order_alternatives(
+                _alternative(1, 0.5, motifs={"a": reference_strength}),
+                [
+                    _alternative(2, 0.1, motifs={"a": candidate_strength}),
+                    _alternative(3, 0.9, motifs={"b": _FULL}),
+                ],
+            )
+
+        assert order(MOTIF_PRESENCE_THRESHOLD, MOTIF_PRESENCE_THRESHOLD) == [2, 3]
+        assert order(MOTIF_PRESENCE_THRESHOLD, _BELOW) == [3, 2]
+        assert order(_BELOW, MOTIF_PRESENCE_THRESHOLD) == [3, 2]
+
+    def test_the_input_carries_no_time_at_all(self) -> None:
+        """Zusicherung 8: zeitliche Naehe ist KEIN Sortierkriterium - hier strukturell, nicht bloss
+        unbenutzt. `AlternativeCandidate` traegt anders als `SelectionCandidate` kein `taken_at`;
+        eine spaetere Sortierung nach Zeit muesste erst das Eingabeformat aendern. Der Gegenprobe
+        am Endpunkt (zeitlich benachbart, schlechter) steht das nicht entgegen - sie liegt in
+        `test_api_photos.py`."""
+        assert "taken_at" not in AlternativeCandidate.__dataclass_fields__
+        assert "taken_at" in SelectionCandidate.__dataclass_fields__
+
+    def test_a_tie_breaks_over_the_smaller_photo_id_in_every_permutation(self) -> None:
+        """Zusicherung 9: der Aufbau traegt ECHTEN Gleichstand (gleiche Gruppe, gleiche Qualitaet;
+        einmal mit Wert, einmal ohne), sonst ist der Fall leer. Geprueft ueber ALLE Permutationen
+        der Eingabe - eine Implementierung, die die Eingabereihenfolge durchreicht, faellt erst
+        dadurch auf."""
+        reference = _alternative(1, 0.5, motifs={"a": _FULL})
+        candidates = [
+            _alternative(5, 0.7, motifs={"a": _FULL}),
+            _alternative(3, 0.7, motifs={"a": _FULL}),
+            _alternative(4, None, motifs={"a": _FULL}),
+            _alternative(2, None, motifs={"a": _FULL}),
+        ]
+
+        for permutation in itertools.permutations(candidates):
+            assert order_alternatives(reference, permutation) == [3, 5, 2, 4]
+
+    def test_an_empty_candidate_list_stays_empty(self) -> None:
+        assert order_alternatives(_alternative(1, 0.5, motifs={"a": _FULL}), []) == []
+
+    def test_a_reference_without_a_carried_motif_leaves_a_plain_quality_order(self) -> None:
+        """Traegt das Bezugsbild kein Motiv, teilt niemand eines mit ihm: alle Kandidaten stehen in
+        derselben Gruppe, und es bleibt bei Qualitaet absteigend, `None` zuletzt."""
+        reference = _alternative(1, 0.5, motifs={"a": _BELOW})
+
+        assert order_alternatives(
+            reference,
+            [
+                _alternative(2, 0.3, motifs={"a": _FULL}),
+                _alternative(3, None, motifs={"a": _FULL}),
+                _alternative(4, 0.8, motifs={"b": _FULL}),
+            ],
+        ) == [4, 2, 3]
+
+    def test_the_reference_is_never_among_its_own_alternatives(self) -> None:
+        """Das Bezugsbild ist der Ausgangspunkt des Austauschs, nicht sein Ziel - es faellt hier
+        heraus und nicht erst in der Anzeige."""
+        reference = _alternative(1, 0.5, motifs={"a": _FULL})
+
+        assert order_alternatives(
+            reference, [_alternative(1, 0.5, motifs={"a": _FULL}), _alternative(2, 0.1)]
+        ) == [2]
 
 
 class TestTheStructuralGuardAgainstReadingTheDisplayBands:
