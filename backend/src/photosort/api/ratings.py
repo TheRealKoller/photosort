@@ -10,7 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_current_user, get_session
-from photosort.models import Photo, Rating, RatingStatus, User
+from photosort.feedback_log import load_frozen_context, record_album_decision
+from photosort.models import FeedbackEventKind, Photo, Rating, RatingStatus, User
 
 # Siehe photos.py fuer die Begruendung: current_user als Depends()-Parameter statt Router-Level
 # dependencies=[...], da jeder Endpunkt hier das User-Objekt selbst braucht (user_id fuer die
@@ -82,8 +83,41 @@ async def _get_own_rating(session: AsyncSession, photo_id: int, user_id: int) ->
     return result.scalar_one_or_none()
 
 
+def album_decision_kind(
+    previous: RatingStatus | None, new: RatingStatus | None
+) -> FeedbackEventKind | None:
+    """Die Uebergangsregel: welche Art von Ereignis aus welchem Zustandswechsel entsteht.
+
+    REIN und DB-FREI, und sie liegt hier neben `_write_own_rating` statt in den Endpunkten: Drei
+    Endpunkte durchlaufen dieselbe Schreibstelle, und eine je Endpunkt wiederholte Abbildung waere
+    drei Stellen, die auseinanderlaufen koennen.
+
+    `None` heisst AUSDRUECKLICH "kein Ereignis" und ist der Rueckgabewert fuer jeden
+    Schreibvorgang, der den Status NICHT bewegt - dieselbe Entscheidung erneut gesetzt, eine nicht
+    vorhandene zurueckgenommen (L1, ADR 0100 Punkt 4). Eine Wiederholung ist keine Korrektur, und
+    die Story misst Korrekturen.
+
+    Daraus faellt OHNE SONDERFALL heraus, dass `PUT /photos/{id}/favorite` kein Ereignis erzeugt:
+    Der Endpunkt laesst `status` unberuehrt, also ist `previous == new`. Das entscheidende
+    Praedikat ist der WECHSEL DES STATUS, nicht der Schreibvorgang an der Zeile - mit `record=True`
+    als Vorgabewert zeichnete die Auszeichnung als Favorit sonst eine Korrektur auf, die niemand
+    vorgenommen hat."""
+    if previous == new:
+        return None
+    if new is None:
+        return FeedbackEventKind.DECISION_WITHDRAWN
+    if new is RatingStatus.ALBUM_WORTHY:
+        return FeedbackEventKind.PHOTO_INCLUDED
+    return FeedbackEventKind.PHOTO_REMOVED
+
+
 async def _write_own_rating(
-    session: AsyncSession, photo_id: int, user_id: int, next_state: _NextState
+    session: AsyncSession,
+    photo: Photo,
+    user_id: int,
+    next_state: _NextState,
+    *,
+    record: bool = True,
 ) -> RatingWriteOut:
     """DIE EINE Schreibstelle, die alle drei Endpunkte durchlaufen.
 
@@ -97,32 +131,53 @@ async def _write_own_rating(
     stammt ausschliesslich aus `current_user` - nie aus Body oder Query. Ohne das koennte Nutzer
     A die Zeile von Nutzer B ueberschreiben (Broken Object-Level Authorization). Welches FELD ein
     Endpunkt aendert, entscheidet allein sein `next_state`; der jeweils andere Wert wird aus dem
-    Bestand uebernommen und nie aus einem teilbefuellten Modell neu geschrieben."""
-    rating = await _get_own_rating(session, photo_id, user_id)
+    Bestand uebernommen und nie aus einem teilbefuellten Modell neu geschrieben.
+
+    SIE COMMITTET NICHT (Auflage S5, Spec 0432): Die Transaktionsgrenze gehoert dem Aufrufer, der
+    genau EINMAL committet. Ein `record`-Parameter allein machte den Austausch nicht atomar - der
+    erste der beiden Aufrufe waere nach seinem eigenen Commit unwiderruflich geschrieben, und ein
+    Fehlschlag des zweiten hinterliesse einen halb ausgefuehrten Austausch. Der `flush` bleibt
+    hier, weil er den `409`-Fall traegt; sein `rollback` nimmt dann beide Schreibvorgaenge
+    zurueck, und genau das ist die Zusage.
+
+    `record=False` unterdrueckt die Aufzeichnung: Der Austausch ruft zweimal hierher und legt
+    danach EIN `exchanged`-Ereignis ab. Ohne die Unterdrueckung zaehlte jeder Austausch
+    dreifach."""
+    rating = await _get_own_rating(session, photo.id, user_id)
     current = (None, False) if rating is None else (rating.status, rating.favorite)
     new_status, new_favorite = next_state(*current)
+    kind = album_decision_kind(current[0], new_status) if record else None
 
     if new_status is None and not new_favorite:
         if rating is not None:
             await session.delete(rating)
-            await session.commit()
+        # VOR dem `return`: Dieser Zweig kehrt frueher zurueck als der gewoehnliche, und
+        # ausgerechnet die Ruecknahme ist der Handgriff, den der Bestand danach nicht mehr zeigt.
+        if kind is not None:
+            await record_album_decision(
+                session,
+                photo=photo,
+                user_id=user_id,
+                kind=kind,
+                context=await load_frozen_context(session, photo),
+            )
         return RatingWriteOut(
-            photo_id=photo_id, user_id=user_id, status=None, favorite=False, updated_at=None
+            photo_id=photo.id, user_id=user_id, status=None, favorite=False, updated_at=None
         )
 
     if rating is None:
         rating = Rating(
-            photo_id=photo_id, user_id=user_id, status=new_status, favorite=new_favorite
+            photo_id=photo.id, user_id=user_id, status=new_status, favorite=new_favorite
         )
         session.add(rating)
     else:
         rating.status = new_status
         rating.favorite = new_favorite
 
-    # SICHERHEIT (S9): der `flush` VOR dem `commit` bringt `uq_rating_photo_user` hier zum
-    # Tragen. Drei Endpunkte schreiben auf dieselbe Zeile, und die Oberflaeche loest zwei davon
-    # aus derselben Tastenbelegung aus; ohne diese Behandlung waere ein alltaeglicher
-    # Doppelklick eine `500` statt einer `409`.
+    # SICHERHEIT (S9): der `flush` bringt `uq_rating_photo_user` hier zum Tragen. Drei Endpunkte
+    # schreiben auf dieselbe Zeile, und die Oberflaeche loest zwei davon aus derselben
+    # Tastenbelegung aus; ohne diese Behandlung waere ein alltaeglicher Doppelklick eine `500`
+    # statt einer `409`.
     try:
         await session.flush()
     except IntegrityError as exc:
@@ -131,10 +186,17 @@ async def _write_own_rating(
             status_code=status.HTTP_409_CONFLICT,
             detail="Die Bewertung dieses Fotos wurde gerade veraendert. Bitte erneut versuchen.",
         ) from exc
-    await session.commit()
     await session.refresh(rating)
+    if kind is not None:
+        await record_album_decision(
+            session,
+            photo=photo,
+            user_id=user_id,
+            kind=kind,
+            context=await load_frozen_context(session, photo),
+        )
     return RatingWriteOut(
-        photo_id=photo_id,
+        photo_id=photo.id,
         user_id=user_id,
         status=rating.status,
         favorite=rating.favorite,
@@ -157,14 +219,18 @@ async def set_rating(
     Schnappschuss und ein gestrichenes gutes Bild sind gewollte, widerspruchsfreie Zustaende.
 
     `favorite` bleibt UNBERUEHRT (Auflage S7)."""
-    await _get_photo_or_404(photo_id, session)
+    photo = await _get_photo_or_404(photo_id, session)
 
-    return await _write_own_rating(
+    written = await _write_own_rating(
         session,
-        photo_id,
+        photo,
         current_user.id,
         lambda _status, favorite: (payload.status, favorite),
     )
+    # Der EINE Commit dieses Endpunkts: Bewertungszeile und etwaiges Ereignis gehen gemeinsam
+    # oder gar nicht (Auflage S5).
+    await session.commit()
+    return written
 
 
 @router.delete("/photos/{photo_id}/rating", status_code=status.HTTP_204_NO_CONTENT)
@@ -178,15 +244,18 @@ async def delete_rating(
 
     Die Zeile BLEIBT stehen, solange `favorite` gesetzt ist; sonst wird sie geloescht. Eine
     pauschale Zeilenloeschung verloere die Auszeichnung mit der Ruecknahme der Albumentscheidung,
-    ohne jede Meldung (Auflage S7). Idempotent: `204`, ob eine Zeile bestand oder nicht."""
-    await _get_photo_or_404(photo_id, session)
+    ohne jede Meldung (Auflage S7). Idempotent: `204`, ob eine Zeile bestand oder nicht - und
+    ohne bestehende Albumentscheidung entsteht dabei KEIN Ereignis, weil nichts zurueckgenommen
+    wurde."""
+    photo = await _get_photo_or_404(photo_id, session)
 
     await _write_own_rating(
         session,
-        photo_id,
+        photo,
         current_user.id,
         lambda _status, favorite: (None, favorite),
     )
+    await session.commit()
 
 
 @router.put("/photos/{photo_id}/favorite", response_model=RatingWriteOut)
@@ -201,12 +270,18 @@ async def set_favorite(
     UNABHAENGIGE Angabe (ADR 0098 Punkt 2). Sie wirkt nicht auf den Album-Entwurf.
 
     Legt die Zeile bei Bedarf an und loescht sie, wenn danach beides leer ist. `status` bleibt
-    unberuehrt (Auflage S7)."""
-    await _get_photo_or_404(photo_id, session)
+    unberuehrt (Auflage S7).
 
-    return await _write_own_rating(
+    ES ENTSTEHT KEIN EREIGNIS DER NACHARBEIT: Der Favorit wirkt nicht auf den Album-Entwurf und
+    ist damit keine Aussage ueber einen Modellfehler. Das faellt ohne Sonderfall daraus heraus,
+    dass dieser Endpunkt `status` unberuehrt laesst (Spec 0432, L1)."""
+    photo = await _get_photo_or_404(photo_id, session)
+
+    written = await _write_own_rating(
         session,
-        photo_id,
+        photo,
         current_user.id,
         lambda status_value, _favorite: (status_value, payload.favorite),
     )
+    await session.commit()
+    return written

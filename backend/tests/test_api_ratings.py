@@ -14,7 +14,16 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.models import Photo, Project, Rating, RatingStatus, User
+from photosort.api.ratings import album_decision_kind
+from photosort.models import (
+    FeedbackEvent,
+    FeedbackEventKind,
+    Photo,
+    Project,
+    Rating,
+    RatingStatus,
+    User,
+)
 from photosort.security import create_access_token, hash_password
 
 
@@ -639,5 +648,199 @@ async def test_the_write_answer_of_the_other_user_names_the_other_user(
 
     assert response.json()["user_id"] == other_user.id
     assert response.json()["user_id"] != await _own_user_id(db_session)
+
+    await assert_no_empty_rating_rows(db_session)
+
+
+# --- Das Ereignis-Log (Spec 0432) ---------------------------------------------------------------
+#
+# Diese drei Endpunkte laufen durch DIESELBE Schreibstelle, und genau daraus entsteht die
+# gefaehrliche Lage: Mit `record=True` als Vorgabewert zeichnete `PUT /photos/{id}/favorite` die
+# Auszeichnung als Favorit als Korrektur auf. Das entscheidende Praedikat ist der WECHSEL DES
+# STATUS, nicht der Schreibvorgang an der Zeile.
+
+
+async def _stored_kinds(session: AsyncSession) -> list[FeedbackEventKind]:
+    """Die aufgezeichneten Arten in ihrer Reihenfolge - und die ist die aufsteigende `id`, nie
+    `occurred_at`."""
+    session.expire_all()
+    return [
+        kind
+        for kind in (
+            await session.execute(select(FeedbackEvent.kind).order_by(FeedbackEvent.id))
+        ).scalars()
+    ]
+
+
+def test_the_transition_rule_maps_every_status_change_to_exactly_one_kind() -> None:
+    """Die Uebergangsregel als REINE Funktion, DB-frei geprueft. Sie liegt neben
+    `_write_own_rating` und nicht im Endpunkt: Drei Endpunkte durchlaufen sie, und eine je
+    Endpunkt wiederholte Abbildung waere drei Stellen, die auseinanderlaufen koennen."""
+    assert album_decision_kind(None, RatingStatus.ALBUM_WORTHY) is FeedbackEventKind.PHOTO_INCLUDED
+    assert album_decision_kind(None, RatingStatus.REJECTED) is FeedbackEventKind.PHOTO_REMOVED
+    assert (
+        album_decision_kind(RatingStatus.ALBUM_WORTHY, RatingStatus.REJECTED)
+        is FeedbackEventKind.PHOTO_REMOVED
+    )
+    assert album_decision_kind(RatingStatus.REJECTED, None) is FeedbackEventKind.DECISION_WITHDRAWN
+
+
+def test_the_transition_rule_yields_nothing_when_the_status_does_not_move() -> None:
+    """DIE tragende Haelfte: Eine Wiederholung ist keine Korrektur, und die Story misst
+    Korrekturen. Auch "nichts zurueckgenommen" (`None` -> `None`) ist keine."""
+    assert album_decision_kind(None, None) is None
+    assert album_decision_kind(RatingStatus.REJECTED, RatingStatus.REJECTED) is None
+    assert album_decision_kind(RatingStatus.ALBUM_WORTHY, RatingStatus.ALBUM_WORTHY) is None
+
+
+async def test_no_event_without_a_real_status_change(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """DREI HAELFTEN IN EINEM FALL, und die mittlere ist die gefaehrliche.
+
+    Getrennt geschrieben bestuende jede Haelfte auch bei einer Umsetzung, die IMMER oder NIE
+    aufzeichnet - erst nebeneinander schliessen sie beide aus."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project)
+    # Die Ids VOR der ersten `expire_all()`-Messung festhalten: danach loeste jeder
+    # Attributzugriff am ORM-Objekt ein Nachladen aus.
+    photo_id = photo.id
+
+    # (1) Erster Schreibvorgang: ein echter Wechsel -> genau ein Ereignis.
+    await authenticated_api_client.put(
+        f"/photos/{photo_id}/rating", json={"status": "album_worthy"}
+    )
+    assert await _stored_kinds(db_session) == [FeedbackEventKind.PHOTO_INCLUDED]
+
+    # (2) Derselbe Status erneut gesetzt -> KEIN weiteres Ereignis.
+    await authenticated_api_client.put(
+        f"/photos/{photo_id}/rating", json={"status": "album_worthy"}
+    )
+    assert await _stored_kinds(db_session) == [FeedbackEventKind.PHOTO_INCLUDED]
+
+    # (3) Nur das Favoriten-Kennzeichen umgeschaltet -> KEIN Ereignis. Der Favorit wirkt nach ADR
+    # 0098 nicht auf den Entwurf und ist damit keine Aussage ueber einen Modellfehler.
+    await authenticated_api_client.put(f"/photos/{photo_id}/favorite", json={"favorite": True})
+    await authenticated_api_client.put(f"/photos/{photo_id}/favorite", json={"favorite": False})
+    assert await _stored_kinds(db_session) == [FeedbackEventKind.PHOTO_INCLUDED]
+
+    # (4) Ein ANDERER Status -> genau ein weiteres Ereignis.
+    await authenticated_api_client.put(f"/photos/{photo_id}/rating", json={"status": "rejected"})
+    assert await _stored_kinds(db_session) == [
+        FeedbackEventKind.PHOTO_INCLUDED,
+        FeedbackEventKind.PHOTO_REMOVED,
+    ]
+
+    await assert_no_empty_rating_rows(db_session)
+
+
+async def test_a_withdrawn_decision_adds_an_event_and_leaves_the_first_one_untouched(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """L6: Das Ruecknahme-Ereignis kommt HINZU, das urspruengliche bleibt wortgleich stehen, und
+    die Fallzahl verringert sich dadurch NICHT.
+
+    Die beiden naheliegenden Fehler - das erste Ereignis loeschen, oder die Ruecknahme abziehen -
+    liefern beide eine plausible Zahl, und keiner von beiden roetet einen Fall, der nur das
+    Vorhandensein des Ruecknahme-Ereignisses prueft."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project)
+    # Die Ids VOR der ersten `expire_all()`-Messung festhalten: danach loeste jeder
+    # Attributzugriff am ORM-Objekt ein Nachladen aus.
+    photo_id = photo.id
+
+    await authenticated_api_client.put(f"/photos/{photo_id}/rating", json={"status": "rejected"})
+    db_session.expire_all()
+    first = (await db_session.execute(select(FeedbackEvent))).scalar_one()
+    first_snapshot = (first.id, first.kind, first.photo_id, first.user_id, first.occurred_at)
+
+    await authenticated_api_client.delete(f"/photos/{photo_id}/rating")
+
+    db_session.expire_all()
+    rows = (
+        (await db_session.execute(select(FeedbackEvent).order_by(FeedbackEvent.id))).scalars().all()
+    )
+    assert [row.kind for row in rows] == [
+        FeedbackEventKind.PHOTO_REMOVED,
+        FeedbackEventKind.DECISION_WITHDRAWN,
+    ]
+    assert (
+        rows[0].id,
+        rows[0].kind,
+        rows[0].photo_id,
+        rows[0].user_id,
+        rows[0].occurred_at,
+    ) == first_snapshot
+    assert len(rows) == 2
+
+    await assert_no_empty_rating_rows(db_session)
+
+
+async def test_withdrawing_a_decision_that_never_existed_records_nothing(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Eine nicht vorhandene Entscheidung zurueckzunehmen ist keine Korrektur (L1). Der Endpunkt
+    ist idempotent und antwortet weiterhin `204`."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project)
+    # Die Ids VOR der ersten `expire_all()`-Messung festhalten: danach loeste jeder
+    # Attributzugriff am ORM-Objekt ein Nachladen aus.
+    photo_id = photo.id
+
+    response = await authenticated_api_client.delete(f"/photos/{photo_id}/rating")
+
+    assert response.status_code == 204
+    assert await _stored_kinds(db_session) == []
+
+    await assert_no_empty_rating_rows(db_session)
+
+
+async def test_the_withdrawal_that_deletes_the_row_still_records_its_event(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Der Zweig, in dem die Bewertungszeile dabei VERSCHWINDET (kein Favorit daneben). Er kehrt
+    in `_write_own_rating` frueher zurueck als der gewoehnliche - eine Aufzeichnung, die erst nach
+    dem `flush` steht, faellt hier lautlos aus, und ausgerechnet die Ruecknahme ist der Handgriff,
+    den der Bestand danach nicht mehr zeigt."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project)
+    # Die Ids VOR der ersten `expire_all()`-Messung festhalten: danach loeste jeder
+    # Attributzugriff am ORM-Objekt ein Nachladen aus.
+    photo_id = photo.id
+    await authenticated_api_client.put(
+        f"/photos/{photo_id}/rating", json={"status": "album_worthy"}
+    )
+
+    await authenticated_api_client.delete(f"/photos/{photo_id}/rating")
+
+    assert await _stored_rating(db_session, photo_id, await _own_user_id(db_session)) is None
+    assert await _stored_kinds(db_session) == [
+        FeedbackEventKind.PHOTO_INCLUDED,
+        FeedbackEventKind.DECISION_WITHDRAWN,
+    ]
+
+    await assert_no_empty_rating_rows(db_session)
+
+
+async def test_the_event_carries_the_project_and_the_writing_user(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`project_id` kommt aus dem bereits geladenen `Photo`, `user_id` ausschliesslich aus
+    `current_user` - nie aus Body oder Query (dieselbe Auflage wie fuer die Bewertungszeile
+    selbst)."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project)
+    # Die Ids VOR der ersten `expire_all()`-Messung festhalten: danach loeste jeder
+    # Attributzugriff am ORM-Objekt ein Nachladen aus.
+    project_id, photo_id = project.id, photo.id
+    own_user_id = await _own_user_id(db_session)
+
+    await authenticated_api_client.put(f"/photos/{photo_id}/rating", json={"status": "rejected"})
+
+    db_session.expire_all()
+    stored = (await db_session.execute(select(FeedbackEvent))).scalar_one()
+    assert stored.project_id == project_id
+    assert stored.photo_id == photo_id
+    assert stored.user_id == own_user_id
 
     await assert_no_empty_rating_rows(db_session)
