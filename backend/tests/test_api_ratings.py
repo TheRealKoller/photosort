@@ -588,3 +588,56 @@ async def test_put_favorite_never_overwrites_another_users_row(
     assert other_rating.favorite is True
 
     await assert_no_empty_rating_rows(db_session)
+
+
+# --- Die Antwort benennt den Nutzer der Zeile ---------------------------------------------------
+
+
+async def test_the_write_answer_names_the_user_of_the_row(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`user_id` steht in der Antwort, weil die Entwurfsansicht den geschriebenen Zustand in ihre
+    bereits geladene Liste einsetzt, statt sie neu zu laden (Spec 0430): Ein Eintrag von
+    `PhotoOut.ratings[]` traegt `user_id`, und die Alternative waere eine im Client ERFUNDENE Id
+    in einer zwischengespeicherten Antwort.
+
+    Der Wert stammt ausschliesslich aus `current_user`, nie aus Body oder Query (Auflage S7)."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project)
+    own_user_id = await _own_user_id(db_session)
+
+    written = await authenticated_api_client.put(
+        f"/photos/{photo.id}/rating", json={"status": "album_worthy"}
+    )
+    assert written.json()["user_id"] == own_user_id
+
+    favorited = await authenticated_api_client.put(
+        f"/photos/{photo.id}/favorite", json={"favorite": True}
+    )
+    assert favorited.json()["user_id"] == own_user_id
+
+    await assert_no_empty_rating_rows(db_session)
+
+
+async def test_the_write_answer_of_the_other_user_names_the_other_user(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Die Gegenprobe: Derselbe Aufruf unter einem anderen Token nennt die ANDERE Id - ein fest
+    verdrahteter Wert bestuende den Fall darueber."""
+    project = await _make_project(db_session)
+    photo = await _make_photo(db_session, project)
+    other_user, other_token = await _make_second_user(db_session)
+
+    own_authorization = authenticated_api_client.headers["Authorization"]
+    authenticated_api_client.headers["Authorization"] = f"Bearer {other_token}"
+    try:
+        response = await authenticated_api_client.put(
+            f"/photos/{photo.id}/rating", json={"status": "rejected"}
+        )
+    finally:
+        authenticated_api_client.headers["Authorization"] = own_authorization
+
+    assert response.json()["user_id"] == other_user.id
+    assert response.json()["user_id"] != await _own_user_id(db_session)
+
+    await assert_no_empty_rating_rows(db_session)

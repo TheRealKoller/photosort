@@ -11,11 +11,11 @@ export interface ListPhotosParams {
   ratingStatus?: RatingFilter
   limit?: number
   offset?: number
-  // Auswahlmodus - gesetzt, ersetzt er ratingStatus/limit/offset vollstaendig (eigenstaendige
-  // Kuratierungs-Ansicht, siehe backend api/photos.py::list_photos-Kommentar). Welche Fotos er
-  // liefert, entscheidet allein der Lauf; das Frontend kennt weder eine Anzahl noch eine
-  // Schwelle.
-  selection?: boolean
+  /** Entwurfsmodus - gesetzt, ersetzt er ratingStatus/limit/offset vollständig (eigenständige
+   * Entwurfsansicht, siehe backend api/photos.py::list_photos-Kommentar). Die Antwort ist der
+   * Album-Entwurf des ANFRAGENDEN Nutzers: Vorschlag des Laufs vereinigt mit seinen eigenen
+   * Aufnahmen. Das Frontend kennt weder eine Anzahl noch eine Schwelle und sortiert nicht nach. */
+  draft?: boolean
   /** Nur die Fotos DIESER Kamera. Traegt die Fotoauswahl des Versatz-Vorschlags - ohne den
    * Filter kann die Oberflaeche die beiden Fotos desselben Moments nicht anbieten. */
   cameraId?: number
@@ -43,8 +43,8 @@ export function listPhotos(
   if (params.offset !== undefined) {
     query.set('offset', String(params.offset))
   }
-  if (params.selection) {
-    query.set('selection', 'true')
+  if (params.draft) {
+    query.set('draft', 'true')
   }
   if (params.cameraId !== undefined) {
     query.set('camera_id', String(params.cameraId))

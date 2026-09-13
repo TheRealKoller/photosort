@@ -195,6 +195,11 @@ export interface RatingOut {
  */
 export interface RatingWriteOut {
   photo_id: number
+  /** Der Nutzer, für den geschrieben wurde — serverseitig aus dem Token, nie aus der Anfrage.
+   * Er trägt das Fortschreiben des betroffenen Eintrags im Cache der Entwurfsabfrage: ein
+   * Eintrag von `PhotoOut.ratings[]` trägt `user_id`, und ohne dieses Feld müsste der Client
+   * eine Id erfinden. */
+  user_id: number
   status: RatingStatus | null
   favorite: boolean
   updated_at: string | null

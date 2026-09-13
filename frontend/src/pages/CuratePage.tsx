@@ -11,7 +11,7 @@ import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { useMotifsQuery } from '../hooks/useMotifs'
-import { useCurationQuery, useSetRatingMutation } from '../hooks/usePhotos'
+import { useDraftQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { useProjectQuery } from '../hooks/useProjects'
 import { ownRatingStatus } from '../utils/ownRating'
 import { curatedRanking } from '../utils/rankings'
@@ -207,7 +207,7 @@ export function CuratePage() {
   const token = getToken()
   const username = token ? decodeUsername(token) : null
 
-  const query = useCurationQuery(id)
+  const query = useDraftQuery(id)
   // Die Cloud-Freigabe ist eine PROJEKTeinstellung und steht nicht am Foto - ohne sie entsteht
   // kein Album-Entwurf, und die Ansicht sagt das, statt eine leere Liste zu zeigen.
   const projectQuery = useProjectQuery(id)

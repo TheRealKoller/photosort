@@ -248,6 +248,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'album_worthy',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -272,6 +273,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: null,
       favorite: true,
       updated_at: '2026-09-13T10:00:00',
@@ -302,6 +304,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'rejected',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -334,6 +337,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'album_worthy',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -368,6 +372,7 @@ describe('PhotoDetailPage', () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
       vi.mocked(ratingsApi.setRating).mockResolvedValue({
         photo_id: 1,
+        user_id: 1,
         status,
         favorite: false,
         updated_at: '2026-09-13T10:00:00',
@@ -394,6 +399,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: null,
       favorite: true,
       updated_at: '2026-09-13T10:00:00',
@@ -446,6 +452,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'album_worthy',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -475,6 +482,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'album_worthy',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -592,6 +600,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'rejected',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',

@@ -410,6 +410,7 @@ describe('PhotoGridPage', () => {
         ? new Promise(() => {})
         : Promise.resolve({
             photo_id: photoId,
+            user_id: 1,
             status: 'rejected' as const,
             favorite: false,
             updated_at: '2026-09-13T10:00:00',
@@ -434,6 +435,7 @@ describe('PhotoGridPage', () => {
     })
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 7,
+      user_id: 1,
       status: 'rejected',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',

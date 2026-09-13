@@ -48,9 +48,16 @@ class RatingWriteOut(BaseModel):
     Aenderung an der Beschreibung eines Endpunkts, der gar nicht angefasst wurde.
 
     `updated_at` ist `None`, wenn die Zeile dabei geleert und damit geloescht wurde - ein dann
-    ersatzweise gesetzter Zeitstempel behauptete eine Zeile, die es nicht mehr gibt."""
+    ersatzweise gesetzter Zeitstempel behauptete eine Zeile, die es nicht mehr gibt.
+
+    `user_id` stammt AUSSCHLIESSLICH aus `current_user` (Auflage S7) und benennt den Nutzer, fuer
+    den geschrieben wurde. Es steht hier, weil die Entwurfsansicht den geschriebenen Zustand in
+    ihre bereits geladene Liste einsetzt, statt sie neu zu laden (Spec 0430): Ein Eintrag von
+    `PhotoOut.ratings[]` traegt `user_id`, und ohne dieses Feld muesste der Client eine Id
+    ERFINDEN und in seiner zwischengespeicherten Antwort ablegen."""
 
     photo_id: int
+    user_id: int
     status: RatingStatus | None
     favorite: bool
     updated_at: datetime | None
@@ -99,7 +106,9 @@ async def _write_own_rating(
         if rating is not None:
             await session.delete(rating)
             await session.commit()
-        return RatingWriteOut(photo_id=photo_id, status=None, favorite=False, updated_at=None)
+        return RatingWriteOut(
+            photo_id=photo_id, user_id=user_id, status=None, favorite=False, updated_at=None
+        )
 
     if rating is None:
         rating = Rating(
@@ -126,6 +135,7 @@ async def _write_own_rating(
     await session.refresh(rating)
     return RatingWriteOut(
         photo_id=photo_id,
+        user_id=user_id,
         status=rating.status,
         favorite=rating.favorite,
         updated_at=rating.updated_at,

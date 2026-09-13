@@ -437,6 +437,7 @@ describe('CuratePage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([photo({ id: 1 })]))
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'rejected',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -516,7 +517,7 @@ describe('CuratePage', () => {
       renderPage()
 
       await waitFor(() => {
-        expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { selection: true })
+        expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { draft: true })
       })
     })
 
@@ -529,7 +530,7 @@ describe('CuratePage', () => {
 
       expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Kuratierung')
       await waitFor(() => {
-        expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { selection: true })
+        expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { draft: true })
       })
     })
 
