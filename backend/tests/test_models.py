@@ -1422,6 +1422,101 @@ def test_the_guard_ignores_reading_the_column() -> None:
     assert not _writes_taken_at("if photo.taken_at == other.taken_at_original: pass")
 
 
+# specs/features/0429-auswahl-richtwert-und-mischung.md: die EINE Schreibstelle auf
+# `PhotoRanking.selection_position`.
+_ALLOWED_SELECTION_POSITION_WRITERS = frozenset({"worker.py"})
+
+_SELECTION_POSITION = "selection_position"
+
+
+def _writes_selection_position(source: str) -> bool:
+    """Ob dieses Modul `selection_position` setzt - ueber den Syntaxbaum, nicht ueber ein
+    Suchmuster.
+
+    VIER Schreibformen, eine mehr als beim `taken_at`-Waechter: Attributzuweisung, Dict-Schluessel,
+    `.values(...)`-Schluesselwort und das KONSTRUKTOR-Schluesselwort `PhotoRanking(
+    selection_position=…)`.
+
+    Die vierte Form ist hier eine BEWUSSTE Abweichung. Beim `taken_at`-Waechter zaehlt das
+    Anlegen einer Zeile ausdruecklich nicht, weil es harmlos ist; hier ist es die gefaehrliche
+    Handlung. `demo_state.py` legt `PhotoRanking`-Zeilen selbst an, und ein dort gesetzter Platz
+    waere eine ZWEITE Vergaberegel neben dem Verfahren - mit demselben Ergebnis-Aussehen und ohne
+    roten Test."""
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Attribute) and target.attr == _SELECTION_POSITION:
+                    return True
+        elif isinstance(node, ast.Dict):
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and key.value == _SELECTION_POSITION:
+                    return True
+        elif isinstance(node, ast.Call):
+            if any(keyword.arg == _SELECTION_POSITION for keyword in node.keywords):
+                return True
+    return False
+
+
+def test_exactly_the_one_known_module_writes_selection_position() -> None:
+    """STRUKTURELLER Waechter: Der Auswahlvorschlag entsteht an GENAU EINER Stelle. Eine zweite
+    Vergaberegel roetet keinen Verhaltenstest - sie liefert eine andere, plausibel aussehende
+    Auswahl, und genau das ist die Fehlerklasse dieses Verfahrens.
+
+    Geprueft wird GLEICHHEIT, nicht Teilmenge: findet der Waechter die erlaubte Stelle nicht mehr,
+    prueft er fuer sie nichts."""
+    source_root = Path(photosort.__file__).resolve().parent
+    writers = {
+        str(path.relative_to(source_root))
+        for path in source_root.rglob("*.py")
+        if _writes_selection_position(path.read_text(encoding="utf-8"))
+    }
+
+    assert writers == set(_ALLOWED_SELECTION_POSITION_WRITERS), (
+        "Die Menge der Module, die `PhotoRanking.selection_position` schreiben, weicht von der "
+        f"genau einen erlaubten ab ({sorted(_ALLOWED_SELECTION_POSITION_WRITERS)}). Zu viel: "
+        f"{sorted(writers - set(_ALLOWED_SELECTION_POSITION_WRITERS))}; nicht mehr gefunden: "
+        f"{sorted(set(_ALLOWED_SELECTION_POSITION_WRITERS) - writers)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        pytest.param("row.selection_position = place", id="attributzuweisung"),
+        pytest.param('rows.append({"id": 1, "selection_position": 2})', id="dict-schluessel"),
+        pytest.param(
+            "session.execute(update(PhotoRanking).values(selection_position=place))",
+            id="values-aufruf",
+        ),
+        pytest.param(
+            "session.add(PhotoRanking(photo_id=1, selection_position=2))",
+            id="konstruktor-schluesselwort",
+        ),
+    ],
+)
+def test_the_selection_guard_sees_every_write_form_it_claims_to_cover(snippet: str) -> None:
+    """Der Waechter ist nur so gut wie die Formen, die er tatsaechlich erkennt - jede der vier
+    wird hier einzeln nachgewiesen, statt sich darauf zu verlassen, dass der Bestand sie alle
+    enthaelt."""
+    assert _writes_selection_position(snippet)
+
+
+def test_the_selection_guard_ignores_reading_and_comparing() -> None:
+    """Zwei Gegenproben: Lesen und Vergleichen zaehlen nie. Ohne sie waere jeder Lesepfad
+    (api/photos.py) ein Befund."""
+    assert not _writes_selection_position(
+        "select(PhotoRanking.photo_id).order_by(PhotoRanking.selection_position)"
+    )
+    assert not _writes_selection_position("if ranking.selection_position is not None: pass")
+
+
+def test_the_selection_guard_finds_nothing_in_a_module_without_the_column() -> None:
+    """Positiv-Gegenprobe gegen die LEERE Fundmenge: ein Waechter, der nie etwas findet, bestuende
+    jede Zusage."""
+    assert not _writes_selection_position("x = 1\ndef f(a): return a\n")
+
+
 # specs/features/0427-motive-mit-staerke.md, PR 1 Schritt 2: die drei Motiv-Tabellen. Vier
 # Aussagen brechen ohne eigenen Fall stillschweigend - die Lauf-Unabhaengigkeit der Korrektur, das
 # fehlende Default am Ausschluss-Flag, die Richtung des Staerke-Fremdschluessels und die beiden
