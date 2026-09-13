@@ -415,6 +415,60 @@ Verarbeitungs-Cache (Thumbnails).
       (`useDraftExchangeMutation` schreibt sie über `utils/albumDraft.ts::insertDraftPhoto` mit
       dem Sortierschlüssel des Servers fort). `components/CurationCandidates.tsx`,
       `useCurationCandidatesQuery` und `listCurationCandidates` entfallen.
+  - **Die Endauswahl des Projekts, eine Ebene über beiden Entwürfen** *(Spec
+    [`0431`](../specs/features/0431-endauswahl-gemeinsam.md), ADR
+    [`decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md`](../specs/decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md))*:
+    zwei neue Endpunkte und drei additive `PhotoOut`-Felder. Gespeichert wird ausschließlich die
+    **ausdrückliche** gemeinsame Entscheidung (`FinalSelectionDecision`); die Endauswahl selbst ist
+    **abgeleitet** und entsteht in der reinen, DB-freien Funktion
+    `album_selection.py::selection_state` — sie lebt dort und **nur** dort, die Oberfläche bildet
+    sie nirgends nach. Daraus folgen **ohne durchsetzenden Code** beide Zusagen zugleich: Einigkeit
+    ist eine **Vorbelegung** (sie wirkt nur im Zweig ohne Entscheidung), und eine getroffene
+    Entscheidung überlebt jede spätere Entwurfsänderung und jeden neuen Vorschlagslauf. Ein
+    strittiges, **unentschiedenes** Bild gehört **nicht** zur Endauswahl. Die Zahl **zwei** steht an
+    keiner Stelle im Code — der Nenner ist die Nutzerzahl.
+    - `PUT /photos/{photo_id}/album-decision` (`api/album_decisions.py`, Body `{"included": bool}`,
+      Antwort `AlbumDecisionOut`) — **eigener Router mit router-weiter Auth-Dependency**, weil der
+      Endpunkt als einziger Schreibendpunkt des Projekts **kein** `current_user` entgegennimmt: Die
+      Entscheidung gehört dem Projekt, nicht einem Nutzer. Genau deshalb ist seine
+      Authentifizierung an der Signatur unsichtbar, und er trägt drei Sicherungen statt einer
+      (Router-Dependency, Eintrag in `test_auth_guard.py::_protected_router_operations()`, eigener
+      pfadbenannter 401-Fall). `included` ist pflichtig und ohne Vorgabewert — genau wie die
+      Spalte. **Kein `DELETE`:** „wieder strittig werden" ist kein Zustand des Produkts, ändern
+      heißt den anderen Wert schreiben.
+    - `GET /projects/{project_id}/album-selection` (`api/photos.py`, Antwort `AlbumSelectionOut`
+      mit `participants`, `has_proposal`, `items`) — **ohne `total` und ohne Seitenweise**, wie der
+      Entwurfszweig. Die Antwortmenge ist **additiv**: `strittig ∪ Endauswahl ∪ entschieden`. Der
+      dritte Teil ist keine Redundanz — ein ausdrücklich **herausgenommenes** Bild gehört nicht zur
+      Endauswahl und verschwände sonst aus beiden Sichten, die Entscheidung ließe sich dann nicht
+      mehr ändern. Ein Bild, das **beide** gestrichen haben, erscheint nicht; der Weg zurück führt
+      über den Einzelentwurf. `curation_position` ist hier `null`. `participants` führt **alle**
+      Konten nach `user_id` sortiert (auch das ohne jede Bewertung) und trägt genau `user_id` und
+      `username`; seine **Länge ist der Nenner** der Regel und stammt damit aus derselben
+      Leseoperation wie die Anzeige. `has_proposal` trennt die beiden Leerzustände („kein
+      Auswahlvorschlag" gegen „keine Unterschiede offen"), die verschiedene Handlungen verlangen.
+    - **Projektbindung (Muss-Kriterium):** Die Kandidatenmenge entsteht aus einem ODER **dreier**
+      Quellen, von denen zwei projektblind sind (`final_selection_decisions` hat nur `photo_id`,
+      `Rating` nur `(photo_id, user_id)`). `Photo.project_id == project_id` ist deshalb eine
+      **UND-Bedingung über die gesamte Menge** und steht außerhalb der ODER-Verknüpfung; der
+      Rangzweig hängt zusätzlich am Lauf dieses Projekts. Ein hineingerutschtes Projektprädikat ist
+      syntaktisch unauffällig und lieferte kohärent aussehende Fotos eines **fremden** Projekts.
+    - `PhotoOut` bekommt `final_selection_decision: bool | null`, `in_final_selection: bool` und
+      `contested: bool` — **auf allen vier Lesepfaden befüllt** (Muster `RankingOut.proposed`), alle
+      drei **ohne Vorgabewert**. `_to_photo_out` bekommt `decisions` und `user_count` als
+      **pflichtige** Schlüsselwortparameter: Ein vergessener Aufrufer wirft keine Ausnahme, er
+      antwortet still `in_final_selection: false` für jedes Foto, und der Fehler zeigte sich erst
+      an einem leeren Album. `mypy --strict` ist die einzige Prüfung, die ihn vor der Laufzeit
+      fängt. **Nicht** `album_decision` benannt — so heißt bereits `ratings[].status`.
+    - **Der Einzelentwurf bleibt unberührt**, und das ist strukturell geprüft: `ratings` bekommt
+      keine Spalte und `RatingStatus` keinen Wert, die neue Tabelle hat keinen Nutzerbezug, und ein
+      AST-Wächter hält fest, dass weder `_draft_photo_ids` noch `draft_alternatives` die
+      Entscheidungstabelle nennt. Die Einheit dieses Wächters ist der **Funktionsrumpf**, nicht die
+      Datei: `album_selection` liegt im selben Modul, ein Wächter auf Dateiebene wäre dauerhaft rot.
+    - Die Einordnung in Events teilen beide Zweige: `_place_in_events` (vormals die Schritte 3 und
+      4 von `_draft_photo_ids`, das Ergebnis heißt `PlacedPhotos` statt `DraftContent`). Zweimal
+      geschrieben ordneten Entwurf und Endauswahl dieselben Fotos verschieden — sichtbar, ohne dass
+      eine Prüfung rot würde.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
@@ -732,13 +786,13 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     auch die neue Remote-Kategorie-Klassifizierung. **Löschumfang (Spec
     [`0044`](../specs/features/0044-projekte-loeschen.md), ADR
     [`decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md`](../specs/decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md)):**
-    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller achtzehn am Projekt
+    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller neunzehn am Projekt
     hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
     `criterion_scoring_runs`, `remote_category_classification_runs`, `ratings`, `photo_scores`,
     `photo_criterion_scores`, `photo_rankings`, `events`, `photo_landmark_detections`,
     `photo_fine_labels`, `photo_motif_assessments`, `photo_motif_strengths`,
-    `photo_motif_corrections`, `photo_album_suitability`, `photo_cloud_vision_errors`) sowie das
-    Projekt selbst, dazu
+    `photo_motif_corrections`, `photo_album_suitability`, `photo_cloud_vision_errors`,
+    `final_selection_decisions`) sowie das Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
     Erreichbarkeitsprüfung automatisch heraus, ohne eigene Ausnahmeliste; ein `fine_labels`-Eintrag,
@@ -1309,6 +1363,21 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   Grundlage, diese Zeile ist eine Aussage über die Bildgüte und existiert nur mit Cloud-Grundlage.
   Die Abwesenheit der Zeile ist der Zustand „nicht beurteilt" und macht das Foto erneut zum
   Kandidaten des Modellaufrufs, ohne dass das Projekt neu eingelesen werden muss.
+- **FinalSelectionDecision** *(Spec [`0431`](../specs/features/0431-endauswahl-gemeinsam.md), ADR
+  [`decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md`](../specs/decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md),
+  `models.py`, Tabelle `final_selection_decisions`)*: die **gemeinsame Entscheidung des Projekts**
+  über ein Foto — `photo_id` als Primary Key **und** Fremdschlüssel auf `photos` (Muster
+  `PhotoAlbumSuitability`; „höchstens eine Entscheidung je Foto" ist damit strukturell wahr, ohne
+  eigenen Unique-Constraint), `included: bool` **NOT NULL ohne jeden Default**, `updated_at`.
+  **Kein `user_id`, kein `decided_by`, keine Lauf-Bindung:** Die Entscheidung gehört dem Projekt,
+  nicht einem Nutzer — wer angemeldet ist, spielt für ihre Wirkung keine Rolle, und es gibt keine
+  Spalte, in der ein Nutzerbezug stehen könnte. Weil die Zeile am **Foto** hängt und an keinem Lauf,
+  überlebt sie jeden neuen Vorschlagslauf. Die **Abwesenheit** der Zeile heißt „unentschieden", und
+  es gibt keinen Weg zurück in diesen Zustand (kein `DELETE`-Endpunkt); genau deshalb trägt
+  `included` keinen Vorgabewert — ein solcher erfände eine Entscheidung, die niemand getroffen hat,
+  und der so entstandene Zustand wäre nicht korrigierbar, nur überschreibbar. Die Endauswahl selbst
+  wird **nicht** materialisiert. Zuordenbarkeit, wer was wollte, bleibt unangetastet in den
+  `Rating`-Zeilen.
 - **PhotoMotifCorrection** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR 0091,
   `models.py`, Tabelle `photo_motif_corrections`)*: die menschliche Korrektur **einer** Motivaussage
   — `photo_id` (Fremdschlüssel auf `photos`, Kaskade), `user_id`, `motif_key`, `applies: bool`,
