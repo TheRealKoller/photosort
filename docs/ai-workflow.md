@@ -26,16 +26,18 @@ festgehalten, bevor sie umgesetzt werden.
 Bei Unklarheiten fragt die KI aktiv nach, statt zu raten — im Chat oder als Kommentar in einem
 GitHub Issue. Erst wenn eine Spezifikation akzeptiert ist, beginnt die Implementierung.
 
-## Der Workflow Schritte 2–8 als eine Tabelle
+## Der Workflow als eine Tabelle
 
-Von einer akzeptierten Story (Schritt 1: `refinement`, unverändert, siehe unten) bis zum Merge
-läuft jedes Feature dieselbe Schritt-Kette. Diese Tabelle ist die **einzige Stelle für den
-Gesamtüberblick** — jeder Schritt ist entweder ein isolierter Subagenten-Aufruf (eigener,
-kontext-getrennter Lauf, gestartet über das `Agent`-Tool) oder läuft in der Hauptsession
-(gemeinsamer Kontext mit dem, was Daniel gerade sieht):
+Von einer akzeptierten Story (Schritt 1: `refinement`, siehe unten) bis zum Merge läuft jedes
+Feature dieselbe Schritt-Kette; davor liegt mit dem Designentwurf (1b) der einzige optionale
+Schritt. Diese Tabelle ist die **einzige Stelle für den Gesamtüberblick** — jeder Schritt ist
+entweder ein isolierter Subagenten-Aufruf (eigener, kontext-getrennter Lauf, gestartet über das
+`Agent`-Tool) oder läuft in der Hauptsession (gemeinsamer Kontext mit dem, was Daniel gerade
+sieht):
 
 | # | Schritt | Auslöser | Zuständigkeit | Subagent / Hauptsession | Modell | Bedingung |
 |---|---|---|---|---|---|---|
+| 1b | Designentwurf zur Story (optional) | Daniels ausdrücklicher Wunsch — in `refinement` Schritt 3b (Weg A) oder eigenständig zu einer bereits geschärften Story (Weg B) | Skill `story-entwurf`, der dafür `penpot-entwurfsrunden` fährt | Hauptsession (GitHub-Zugriff) | — | nur auf ausdrücklichen Wunsch; ausgearbeitet und ausgeliefert wird nur bei Board-Wert `Ready`, sonst wird allein der Arbeitsstand angeheftet |
 | 2 | Spec schreiben | Story-Issue Status `Ready`, Umsetzungswunsch | Skill `spec-writer` | Hauptsession (koordiniert Konsultations-Subagenten) | Standard; Konsultationen kalibriert (siehe „Kosteneffiziente Agenten-Nutzung" unten) | immer, wenn eine `Ready`-Story umgesetzt werden soll |
 | 3 | Board-Status `In Progress` | direkt vor `developer`-Start | Skill `ship-feature` (bzw. Aufrufer von `developer`) | Hauptsession (GitHub-Zugriff) | — | immer; Fehler nicht blockierend |
 | 4 | Implementieren (TDD) | Feature-Spec `Accepted` | Agent `developer` | **Subagent** (Kontext-Isolation) | Standard, nie herabgestuft | immer; TDD-Pflicht nur bei Code, reine Doku ohne |
@@ -78,6 +80,7 @@ wo sie ausgeführt wird:
 | `architect` — **Umsetzungsplanung** bei „Blockiert" | Agent | Subagent | seltener Sonderpfad, echtes Entwurfsurteil, Isolation sinnvoll. |
 | `ship-feature` | Skill | Hauptsession | Nachbereitungs-Orchestrierung: Board-Status, `review` aufrufen, Findings-Loop per `SendMessage` an `developer`, PR-Erstellung, Copilot-Review. Der Auslieferpfad des **Story-Wegs** — und der einzige mit Review-Phase und Copilot-Review. |
 | `ship-entwurf` | Skill | Hauptsession | Auslieferpfad eines Penpot-Entwurfsrundenlaufs: ausgelöst durch dessen Übergabeanker, misst den Diff selbst, prüft ihn gegen eine geschlossene Pfad-Zulassungsmenge, committet pfadgenau, gleicht mit `main` ab, pusht, eröffnet den Pull Request. Zweite Stelle mit GitHub-Schreibzugriff; bewusst **ohne** Perspektivenrunde und ohne Copilot-Review (siehe `CLAUDE.md`). |
+| `story-entwurf` | Skill | Hauptsession | Designentwurf einer Story: Rundenlauf, Freigabe am Board, Verweis in den Issue-Body. Zwei Einstiegspunkte — aus `refinement` Schritt 3b heraus (Weg A) und eigenständig zu einer Story mit Board-Wert `Ready` (Weg B); der gemeinsame Nachlauf beider Wege existiert genau einmal, hier. Dritte Stelle mit GitHub-Schreibzugriff, begrenzt auf drei Operationen. |
 | `laufstand` | Skill | Hauptsession | keine Stufe der Kette, sondern eine Nachfrage daneben: liest den Stand eines gerade laufenden Umsetzungslaufs, ohne ihn anzufassen. Eigener Auslöser (Daniel fragt), kein Vorgänger- und kein Nachfolgeschritt. |
 | `research-engineer` | Agent | Subagent | Standard-Modell, immer; Tool-Isolation (kein `Bash`/`Write`/`Edit`/`Agent`) — Quellenbewertung ist echtes fachliches Abwägen, kein Kandidat für eine günstigere Modellstufe. |
 
@@ -94,7 +97,7 @@ jeweiligen `review-<x>`-Skill (`.claude/skills/review-<x>/SKILL.md`).
 | `review-architecture` | Architektur-Entscheidungstreue aus drei Blickwinkeln (Pragmatiker / Senior-Entwickler / Pedant) | ADRs, `docs/architecture.md`, Spec-Abschnitt „Architektur / Umsetzung" |
 | `review-ux` | Design-System-Konsistenz, Usability, Zustände (leer/ladend/Fehler), Barrierefreiheit, Responsivität | `specs/architecture/0004-design-system.md` |
 
-Eine Idee durchläuft vor Schritt 2 zwei getrennte, unveränderte Skills: `capture` hält sie
+Eine Idee durchläuft vor Schritt 2 zwei getrennte Skills: `capture` hält sie
 sofort ungefiltert als GitHub-Issue fest und nimmt es ins Board auf — den Status `Unrefined`
 setzt daraufhin GitHub selbst —, `refinement` übernimmt danach die
 rein fachliche Schärfung (Verständnis, Prioritäts-/Reihenfolge-Einordnung über
@@ -104,6 +107,15 @@ schärft dabei den Issue-Titel nach, wenn er das geschärfte Ergebnis nicht mehr
 technische Details und ohne lokale Zwischendatei. Im selben Zug vergibt `refinement` über die
 Operation `issue-bereich-setzen` die Bereiche des Issues, damit das Board zeigt, woran eine Story
 rührt; beim bloßen Erfassen bleiben sie leer, weil `capture` keine inhaltliche Frage stellt.
+
+Auf ausdrücklichen Wunsch schiebt `refinement` dabei Schritt 3b ein: Entwurfsrunden in Penpot,
+nach der Code-/Spec-Recherche und vor dem Lohnenswert-Gate, damit das Gate über die Idee urteilt,
+die die Entwürfe gezeigt haben. Am Ende der Schärfung übernimmt der gemeinsame Nachlauf in
+`story-entwurf`, der denselben Weg auch eigenständig für eine schon geschärfte Story anbietet.
+Beide Wege enden gleich: Die Story trägt als letzten Abschnitt ihres Bodys einen Verweis auf den
+Entwurf, `spec-writer` reicht ihn beim Anlegen der Spec an `ux-ui-designer` durch, und der
+Umsetzungslauf findet ihn dort vor, ohne das Issue zu lesen (ADR
+[`decisions/0094-entwurf-haengt-an-der-story-ausarbeitung-am-ready-gate.md`](../specs/decisions/0094-entwurf-haengt-an-der-story-ausarbeitung-am-ready-gate.md)).
 
 ## Der Lebenszyklus einer Story auf dem Board
 
