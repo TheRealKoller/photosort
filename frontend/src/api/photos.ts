@@ -11,10 +11,11 @@ export interface ListPhotosParams {
   ratingStatus?: RatingFilter
   limit?: number
   offset?: number
-  // Kuratierung (ohne Backfill) - wenn gesetzt, ersetzt dieser Query-Modus
-  // ratingStatus/limit/offset vollstaendig (eigenstaendige Kuratierungs-Ansicht, siehe backend
-  // api/photos.py::list_photos-Kommentar).
-  topNPerEvent?: number
+  // Auswahlmodus - gesetzt, ersetzt er ratingStatus/limit/offset vollstaendig (eigenstaendige
+  // Kuratierungs-Ansicht, siehe backend api/photos.py::list_photos-Kommentar). Welche Fotos er
+  // liefert, entscheidet allein der Lauf; das Frontend kennt weder eine Anzahl noch eine
+  // Schwelle.
+  selection?: boolean
   /** Nur die Fotos DIESER Kamera. Traegt die Fotoauswahl des Versatz-Vorschlags - ohne den
    * Filter kann die Oberflaeche die beiden Fotos desselben Moments nicht anbieten. */
   cameraId?: number
@@ -42,8 +43,8 @@ export function listPhotos(
   if (params.offset !== undefined) {
     query.set('offset', String(params.offset))
   }
-  if (params.topNPerEvent !== undefined) {
-    query.set('top_n_per_event', String(params.topNPerEvent))
+  if (params.selection) {
+    query.set('selection', 'true')
   }
   if (params.cameraId !== undefined) {
     query.set('camera_id', String(params.cameraId))

@@ -1,7 +1,7 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-09-12
+**Letzte Aktualisierung:** 2026-09-13
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil das Dokument je Testgegenstand das
 Muster führt, das beim nächsten gleichartigen Fall wiederverwendet wird — und die benannten
 Lücken, die nirgends sonst stehen.
@@ -683,6 +683,85 @@ zementierte ein Verhalten, das die nächste Änderung folgenlos brechen dürfte.
 Gilt als Vorlage für jede künftige Unterscheidung zweier Ursachen derselben Abwesenheit, für jede
 Löschung in einem Schreibpfad mit Zeilen-Cache, für jede Ordnungszusage zwischen zwei Zahlenräumen
 und für jede Vergröberung eines Wertebereichs auf weniger Anzeigestufen.
+
+### Ein mehrstufiges Verteilungsverfahren, dessen Fehler kein Fehlerbild hat: Invarianten als Nachsatz, Permutationen als Determinismusnachweis und eine Größenzusage als Eigenschaft (`selection.py`) — neu für ADR [`0097`](../decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md) / Spec [`0429`](../features/0429-auswahl-richtwert-und-mischung.md)
+
+Erster Testgegenstand des Projekts, dessen Fehlverhalten **weder eine Ausnahme wirft noch ein Schema
+verletzt noch auffällig aussieht**: Eine falsche Auswahl ist eine andere plausible Auswahl. Sieben
+Muster, die über dieses Feature hinaus gelten:
+
+1. **Zu einem Verfahren mit mehreren Stufen gehört ein Invariantenhelfer, der als Nachsatz JEDES
+   Falls läuft** (Muster `assert_event_invariants`). Er trägt die Aussagen, an die ein einzeln
+   geschriebener Fall nicht denkt: Abdeckung jeder Partition, Obergrenze je Partition, Plätze
+   lückenlos ab 1, kein Gegenstand zweimal. Einzelfälle prüfen diese nur dort, wo jemand sie
+   hingeschrieben hat — und ein Verteilungsfehler zeigt sich typischerweise in einem *anderen*
+   Aufbau als dem, für den der Fall gedacht war.
+2. **Determinismus wird über Permutationen der Eingabe geprüft, und der Aufbau muss nicht-trivial
+   sein.** Verglichen wird die vollständige Abbildung samt Plätzen, nicht die Ergebnismenge; die
+   Eingabe wird auf **beiden** Ebenen umgestellt (Reihenfolge der Partitionen und Reihenfolge der
+   Gegenstände darin). Über einem Aufbau ohne echten Gleichstand und ohne zwei gleich große
+   Partitionen besteht der Fall auch bei einer Implementierung, die über ein `set` iteriert — der
+   Nachweis wäre dann leer, ohne je rot zu werden.
+3. **Eine Größenzusage wird als Eigenschaft über eine Matrix geschrieben, nicht an Beispielen.**
+   „Die Anteilskappe verkleinert das Ergebnis nie, nur fehlende Kandidaten tun das" ist als
+   `|Ergebnis| == max(T, m)` über eine parametrisierte Matrix von `m` und `T` prüfbar und deckt
+   damit den Überlauf-, den Normal- und den Randfall in einer Form ab. Ein `pytest.mark.parametrize`
+   über zwei Achsen leistet das ohne neue Abhängigkeit; eine Bibliothek für eigenschaftsbasiertes
+   Testen wird dafür ausdrücklich nicht eingeführt.
+4. **Ein `max(a, b)` in einer Formel braucht je einen Aufbau, in dem der jeweils andere Term
+   gewinnt.** Sonst ist die Formel von jeder ihrer beiden Hälften allein ununterscheidbar, und die
+   fehlende Hälfte fällt erst bei einer Partitionszahl auf, die im Testsatz nie vorkam.
+5. **Eine Schleife, die „wiederholt, bis nichts mehr geht", braucht einen Terminierungsnachweis über
+   einen Rundenzähler — nicht über eine Zeitgrenze.** Der Aufbau dafür ist derjenige, in dem noch
+   etwas zu vergeben ist und niemand es aufnehmen kann. Ein Test, der auf einen Timeout wartet, ist
+   in CI entweder sprunghaft oder unbrauchbar langsam.
+6. **„Es gibt keine Rangfolge zwischen den Schlüsseln X" ist eine Permutationsinvarianz über die
+   Schlüssel, keine Anwesenheitsprüfung.** Werden zwei Schlüssel in der gesamten Eingabe konsistent
+   vertauscht, muss das Ergebnis identisch sein. Ein Fall, der nur „beide kommen vor" prüft, besteht
+   auch bei einer festen Vorrangliste — und genau die soll ausgeschlossen sein.
+7. **Ein Grenzwert, dessen naheliegende Fehlimplementierung das Vorzeichen umkehrt, braucht den
+   Fall JENSEITS der Grenze.** Eine linear auslaufende Gewichtung ohne ihr `max(0, …)` wird jenseits
+   des Fensters negativ; im Exponenten wird daraus eine Aufwertung statt einer Abwertung. Der Fall
+   auf der Grenze und der Fall innerhalb bestehen beide, der Fall dahinter ist der einzige, der
+   trennt.
+
+**Schreibstellen-Wächter, zweiter Fall — und er zählt das Konstruktor-Schlüsselwort MIT.** Der
+Wächter auf `Photo.taken_at` (ADR 0090) schließt das Anlegen einer Zeile ausdrücklich aus, weil dort
+das *Verschieben* die gefährliche Handlung ist. Wo dagegen die Spalte ein **Ergebnis genau eines
+Verfahrens** trägt, ist das Anlegen mit gesetztem Wert selbst die zweite Vergaberegel: Der Seeder,
+der seine Zeilen ohnehin von Hand erzeugt, schreibt sie im Konstruktor und umginge einen Wächter,
+der nur Zuweisungen zählt. Die Regel daraus: **Der Wächter zählt das Konstruktor-Schlüsselwort genau
+dann mit, wenn der Spaltenwert das Ergebnis eines Verfahrens ist und nicht eine Eigenschaft des
+Gegenstands.** Unverändert gilt das Übrige des Musters — Gleichheit statt Teilmenge, je erkannte
+Schreibform ein eigener Mikrotest gegen ein literales Schnipsel, Gegenproben für Lesen und
+Vergleichen, und eine Positiv-Gegenprobe gegen die leere Fundmenge.
+
+**Migration.** Abgrenzung zur Regel aus Spec 0428 („eine Migration ohne Datenwirkung bekommt keinen
+Bestandsfall"): Sie gilt nur, solange die Datenlosigkeit **unausgesprochen** ist. Sagt die Spec sie
+zu — hier: „Bestandsläufe tragen `NULL` und zeigen einen leeren Vorschlag" —, ist sie eine Zusage wie
+jede andere und bekommt Bestandszeilen. Dazu, für eine Spalte, deren `NULL` **Bedeutung trägt**: die
+Abwesenheit eines `server_default` wird an **beiden** Artefakten geprüft, in der gerenderten
+Postgres-DDL der Revision und über ein `INSERT` ohne die Spalte gegen das aus `Base.metadata`
+erzeugte Schema. Ein Default macht aus „nicht gesetzt" stillschweigend eine Aussage, und die
+Modellseite allein zu vergessen fällt erst produktiv auf.
+
+**Ein abgeschaffter Leseparameter: der alte Grenzwert-Fall wird zum Abwesenheits-Fall.** Fällt ein
+Query-Parameter ersatzlos weg, ist der Test, der bisher seinen ungültigen Bereich abwies, der einzige
+Ort, an dem der Breaking Change auffällt. Er wird **umgewidmet** (ein Aufruf mit dem alten Parameter
+endet in `422`), nicht umbenannt und nicht gelöscht. Fälle, die den Parameter nur als **Vehikel**
+benutzten, um an eine andere Zusicherung heranzukommen, wechseln den Parameter und behalten ihre
+Erwartung — eine dort geänderte Erwartung ist ein Finding.
+
+**Eine strukturelle Prüfung, die dieses Dokument führt, ist damit noch nicht gebaut.** Der für ADR
+0091 Punkt 4 beschriebene Nachweis „keine Datei des Auswahl- oder Rangfolgepfads liest die
+Anzeigebänder" existierte im Bestand nicht; er entsteht mit Spec 0429, weil dort die erste Datei
+angelegt wird, die ihn verletzen könnte. Regel daraus: Ein hier beschriebenes Muster ist eine
+Vorlage, kein Bestandsnachweis — wer sich auf eines beruft, prüft am Bestand nach, ob es tatsächlich
+irgendwo läuft.
+
+Gilt als Vorlage für jedes künftige mehrstufige Rechen- oder Verteilungsverfahren als reine Funktion,
+für jede Zusage der Form „zwischen X gibt es keine Rangfolge", für jeden weiteren
+Schreibstellen-Wächter und für jeden ersatzlos entfallenden Leseparameter.
 
 ## Frontend (`frontend/`, `vitest` + Testing Library)
 
@@ -1871,6 +1950,10 @@ Kein neues Testframework, kein neues CI-Gate; der Job `demo-scripts` fährt die 
 - Echte OpenCloud-Instanz/echtes Redis/echter Worker-Container im automatisierten Testlauf — dafür kein Docker-Compose-Testsetup, ersetzt durch manuellen Smoke-Test vor Merge (etabliert mit Spec 0002: "Touch/Swipe-Gefühl wird als manueller Smoke-Test vor Merge geprüft", gilt analog für neue externe Integrationen).
 
 ## Bekannte Lücken (Stand 2026-08-03)
+
+- **Neu mit Spec [`0429`](../features/0429-auswahl-richtwert-und-mischung.md) / ADR [`0097`](../decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md) (2026-09-13), zwei benannte Lücken der Albumauswahl:**
+  - **Ob der Vorschlag eine gute Auswahl ist, prüft nichts und kann hier nichts prüfen.** Geprüft ist das Verfahren: Kontingente, Kappe, Abdeckung, Motivpflicht, Abwertung, Determinismus. Ob ein Viertel der richtige Deckel ist, ob Halbieren je ähnlichem Bild zu stark oder zu schwach dosiert und ob 15 Minuten das Fenster treffen, in dem Menschen zwei Aufnahmen als „dasselbe" empfinden, ist Kalibrierung gegen einen Fotokorpus, den das Repository nach der Bilddaten-Regel nicht haben kann. Gleiche Klasse wie Motivstärken und Albumtauglichkeit. Erkennungsweg: Daniels Blick auf den ersten Vorschlag über echten Bildern.
+  - **Dass der Vorschlag im Browser als Liste ankommt, hängt am Demo-Seeder und nicht an einer E2E-Zusicherung.** Das Aufnahmekriterium der E2E-Ebene ist nicht erfüllt (keine Geometrie, kein CSS), und die bestehenden Specs auf `/curate` bleiben grün, wenn die Auswahl leer ist — ihre Vorbedingungen hängen an Überschrift und Scrollhöhe, nicht an Kacheln. Tragend ist stattdessen der Kardinalitätsfall in `test_demo_state.py`. Fällt er weg oder wird er auf „≥ 0" aufgeweicht, prüft auf dieser Ebene niemand mehr, dass die Demo-Instanz überhaupt etwas zeigt.
 
 - **Neu mit Spec [`0452`](../features/0452-story-traegt-entwurf.md) / ADR [`0094`](../decisions/0094-entwurf-haengt-an-der-story-ausarbeitung-am-ready-gate.md) (2026-09-13), zwei benannte Lücken des storygebundenen Entwurfs:**
   - **`Stand` und `Penpot-Seite` sind gegen Penpot unbelegt.** Kein Test und kein Werkzeug dieses Repositoriums kann feststellen, ob die genannte Seite in der Design-Datei existiert, ob sie den behaupteten Stand hat und ob der Präfixabgleich (`Ansicht — ` / `Entwurf — `) die Wahrheit trifft. Geprüft ist allein die **Form**: geschlossener Vorrat für `Stand`, Zeichenprüfung für beide Werte, und bei `ausgearbeitet` die Auflösbarkeit des `Schlüssel` in `design/penpot/views.json`. Bei `Arbeitsstand` entfällt selbst das — dort existiert der Gegenstand ausschließlich in der Design-Datei. Erkennungsweg im Fehlerfall: Daniels Blick in die geöffnete Datei. Dieselbe Klasse wie „ob ein Aufruf der Penpot-Plugin-API tatsächlich funktioniert".

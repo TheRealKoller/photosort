@@ -50,12 +50,22 @@ describe('api/photos', () => {
     )
   })
 
-  it('encodes top_n_per_event as a query param', async () => {
+  it('encodes the selection mode as a query param', async () => {
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
-    await listPhotos(1, { topNPerEvent: 3 })
+    await listPhotos(1, { selection: true })
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?top_n_per_event=3')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?selection=true')
+  })
+
+  it('sends no selection parameter without the selection mode', async () => {
+    /* Der Gegenfall: `selection=false` ist der serverseitige Vorgabewert, und ein mitgesendeter
+     * `false`-Parameter wäre eine zweite Schreibweise für denselben Zustand. */
+    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+
+    await listPhotos(1, { limit: 30 })
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?limit=30')
   })
 
   it('requests further curation candidates of one partition', async () => {

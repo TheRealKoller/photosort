@@ -14,7 +14,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -106,7 +106,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
-from photosort.motif_strengths import upsert_assessment
+from photosort.motif_strengths import load_effective_strengths, upsert_assessment
 from photosort.motifs import local_motif_strengths
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
@@ -130,6 +130,12 @@ from photosort.scoring import (
     compute_dhash,
     compute_exposure,
     compute_sharpness,
+)
+from photosort.selection import (
+    SelectionCandidate,
+    SelectionEvent,
+    effective_target,
+    select_album_draft,
 )
 from photosort.thumbnails import generate_variants, variant_path
 
@@ -1661,6 +1667,179 @@ async def _build_grouping_and_rankings(
                 )
             )
 
+    # DER AUSWAHLVORSCHLAG ist die FORTSETZUNG dieses Schritts, kein eigener Teilschritt: er
+    # haengt unmittelbar hinter den Rangzeilen und innerhalb der bestehenden Phase `RANKING` -
+    # kein neuer `ClassificationPhase`-Wert, keine neue Fortschrittsstufe in der Oberflaeche.
+    # Damit sind beide Aufrufer dieser Funktion abgedeckt (Kriterien-Lauf und Neuaufbau nach
+    # einer Versatz-Aenderung).
+    #
+    # Das `flush` davor: `_apply_run_selection` liest die Rangzeilen aus der Datenbank, und die
+    # eben hinzugefuegten stehen dort erst danach.
+    await session.flush()
+    await _apply_run_selection(session, run, project_id)
+
+
+async def _apply_run_selection(
+    session: AsyncSession, run: CriterionScoringRun, project_id: int
+) -> None:
+    """Der Auswahlvorschlag DIESES Laufs: auswahlfaehige Kandidaten laden, die reine Funktion
+    rufen, `selection_position` schreiben.
+
+    DIE EINE Rechenstelle fuer alle drei Ausloeser (Kriterien-Lauf, Neuaufbau nach einer
+    Versatz-Aenderung, Aenderung des Richtwerts). Ein zweiter Rechenweg liefe auseinander.
+
+    AUSWAHLFAEHIG ist eine Rangzeile dieses Laufs mit `rank_score IS NOT NULL` und ohne
+    `excluded_document` am Foto. Der zweite Teil ist die fortgeschriebene Zusage aus ADR 0091
+    Punkt 2: ein als Dokument oder Bildschirmabbild erkanntes Foto erscheint in keiner
+    Motivauswahl, und der Vorschlag ist eine - es zaehlt deshalb auch nicht als Motivtraeger und
+    lenkt die Vergabe nicht um.
+
+    SICHERHEIT (S2): `PhotoRanking` traegt keine `project_id` - die Lauf-Id ist die einzige
+    Projektbindung. `criterion_scoring_run_id == run.id` steht deshalb AUSGESCHRIEBEN in jeder
+    lesenden und jeder schreibenden Anweisung hier. Fehlte es auch nur in der Schreibanweisung,
+    setzte ein Aufruf unter Projekt A `selection_position` auf Rangzeilen eines fremden Laufs -
+    ein kohaerenter, aber fremder Vorschlag, dem die Antwort nichts ansieht.
+
+    SICHERHEIT (S8): `user_id` fliesst in keine Abfrage und in keine Schreibanweisung. Der
+    Vorschlag ist lauf-global; eine je Nutzer verschiedene Position entsteht nicht.
+
+    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
+    project = await session.get(Project, project_id)
+    if project is None:
+        return
+
+    # ZURUECKSETZEN ZUERST, und zwar ueber den gesamten Lauf: ein Foto, das im vorigen Vorschlag
+    # stand und im neuen nicht mehr, behielte sonst seinen alten Platz.
+    await session.execute(
+        update(PhotoRanking)
+        .where(PhotoRanking.criterion_scoring_run_id == run.id)
+        .values(selection_position=None)
+    )
+
+    rows = (
+        await session.execute(
+            select(
+                PhotoRanking.photo_id,
+                PhotoRanking.event_id,
+                PhotoRanking.rank_score,
+                Event.position,
+                Photo.taken_at,
+            )
+            .join(Event, Event.id == PhotoRanking.event_id)
+            .join(Photo, Photo.id == PhotoRanking.photo_id)
+            .where(
+                PhotoRanking.criterion_scoring_run_id == run.id,
+                Event.criterion_scoring_run_id == run.id,
+                Photo.project_id == project_id,
+                PhotoRanking.rank_score.is_not(None),
+            )
+        )
+    ).all()
+    if not rows:
+        return
+
+    candidate_ids = [photo_id for photo_id, _event_id, _score, _position, _taken_at in rows]
+    excluded = set(
+        (
+            await session.execute(
+                select(PhotoMotifAssessment.photo_id).where(
+                    PhotoMotifAssessment.photo_id.in_(candidate_ids),
+                    PhotoMotifAssessment.excluded_document.is_(True),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    eligible_ids = [photo_id for photo_id in candidate_ids if photo_id not in excluded]
+    # Die WIRKSAMEN Staerken, Korrekturen inbegriffen - nie die rohe Staerkezeile.
+    strengths_by_photo_id = await load_effective_strengths(session, eligible_ids)
+
+    candidates_by_event: dict[int, list[SelectionCandidate]] = {}
+    position_by_event: dict[int, int] = {}
+    for photo_id, event_id, rank_score, position, taken_at in rows:
+        if photo_id in excluded:
+            continue
+        position_by_event[event_id] = position
+        candidates_by_event.setdefault(event_id, []).append(
+            SelectionCandidate(
+                photo_id=photo_id,
+                taken_at=taken_at,
+                quality=rank_score,
+                motif_strengths={
+                    motif_key: effective.strength
+                    for motif_key, effective in strengths_by_photo_id.get(photo_id, {}).items()
+                },
+            )
+        )
+
+    photo_count = (
+        await session.execute(
+            select(func.count()).select_from(Photo).where(Photo.project_id == project_id)
+        )
+    ).scalar_one()
+
+    draft = select_album_draft(
+        [
+            SelectionEvent(
+                event_id=event_id,
+                position=position_by_event[event_id],
+                candidates=candidates,
+            )
+            for event_id, candidates in candidates_by_event.items()
+        ],
+        effective_target(project.selection_target, photo_count),
+    )
+    if not draft:
+        return
+
+    # Je PLATZ eine Anweisung statt je Foto: die Zahl der Anweisungen ist damit die groesste
+    # Platzzahl eines Events und nicht die Groesse des Vorschlags.
+    photo_ids_by_place: dict[int, list[int]] = {}
+    for photo_id, place in draft.items():
+        photo_ids_by_place.setdefault(place, []).append(photo_id)
+    for place, photo_ids in sorted(photo_ids_by_place.items()):
+        await session.execute(
+            update(PhotoRanking)
+            .where(
+                PhotoRanking.criterion_scoring_run_id == run.id,
+                PhotoRanking.photo_id.in_(sorted(photo_ids)),
+            )
+            .values(selection_position=place)
+        )
+
+
+async def _latest_successful_criterion_run(
+    session: AsyncSession, project_id: int
+) -> CriterionScoringRun | None:
+    return (
+        await session.execute(
+            select(CriterionScoringRun)
+            .where(
+                CriterionScoringRun.project_id == project_id,
+                CriterionScoringRun.status == ScanStatus.SUCCESS,
+            )
+            .order_by(CriterionScoringRun.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def rebuild_run_selection(session: AsyncSession, project_id: int) -> None:
+    """Rechnet NUR den Auswahlvorschlag des letzten erfolgreichen Kriterien-Laufs neu - aus
+    persistierten Zeilen, ohne Cloud-Aufruf und ohne Bildverarbeitung.
+
+    Aufgerufen vom Richtwert-Endpunkt. Events und Rangzeilen bleiben dabei unangetastet: der
+    Richtwert aendert, wie viele Plaetze wohin gehen, nicht die Gliederung und nicht die
+    Rangfolge.
+
+    Kein erfolgreicher Lauf: nichts zu tun. Weder `commit` noch eigene Transaktionsgrenze - die
+    gehoert dem Aufrufer (Muster `rebuild_run_grouping`)."""
+    run = await _latest_successful_criterion_run(session, project_id)
+    if run is None:
+        return
+    await _apply_run_selection(session, run, project_id)
+
 
 async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
     """Baut Gliederung und Rangzeilen des LETZTEN ERFOLGREICHEN Kriterien-Laufs neu auf -
@@ -1676,17 +1855,7 @@ async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
     Kein erfolgreicher Lauf oder keine einzige Rangzeile: nichts zu tun. Weder `commit` noch
     eigene Transaktionsgrenze - die gehoert dem Aufrufer, der genau EINMAL committet (Muster
     `project_deletion`)."""
-    run = (
-        await session.execute(
-            select(CriterionScoringRun)
-            .where(
-                CriterionScoringRun.project_id == project_id,
-                CriterionScoringRun.status == ScanStatus.SUCCESS,
-            )
-            .order_by(CriterionScoringRun.started_at.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    run = await _latest_successful_criterion_run(session, project_id)
     if run is None:
         return
 

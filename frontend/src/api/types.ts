@@ -62,9 +62,9 @@ export interface CloudPhaseSummaryOut {
   provider: string | null
 }
 
-// Bewusst kein top_n_per_cluster/candidates_total/suggestions_found: N wird erst beim Lesen
-// angewendet (GET /photos?top_n_per_event=N), der Job berechnet immer den vollen
-// Rangfolge-Pool je Partition statt eine Top-N-Auswahl zu treffen.
+// Bewusst kein candidates_total/suggestions_found: der Job berechnet immer den vollen
+// Rangfolge-Pool je Partition, und welche Fotos davon im Vorschlag stehen, sagt
+// `selection_position` an der Rangzeile.
 export interface CriterionScoringRunSummary {
   status: ScanStatus
   started_at: string
@@ -115,6 +115,12 @@ export interface ProjectOut {
   // false, consent_at null solange nicht aktiviert. Er gated BEIDE Cloud-Anteile.
   cloud_vision_detection_enabled: boolean
   cloud_vision_consent_at: string | null
+  // Der Richtwert des Auswahlvorschlags. `null` heißt "nicht selbst eingestellt", NICHT "kein
+  // Richtwert" - wirksam ist dann `effective_selection_target`. Das Frontend leitet die wirksame
+  // Zahl nie selbst ab; sie kommt fertig vom Server, weil die Ableitung dort an genau einer
+  // Stelle lebt und mit dem Bildbestand mitwächst.
+  selection_target: number | null
+  effective_selection_target: number
 }
 
 // Kostenschätzung vor dem Lauf, über ALLE Cloud-Anteile, die die Checkbox am Auslöser
@@ -262,7 +268,7 @@ export interface RankingOut {
    * „Rang M von N" entfällt dann vollständig; „Rang – von 12" wäre eine Rangaussage über ein
    * Foto ohne Rang. */
   rank_position: number | null
-  // Größe der GESAMTEN Event-Partition (nicht nur der angeforderten top_n), für "Rang M von N"
+  // Größe der GESAMTEN Event-Partition (nicht nur des Vorschlags), für "Rang M von N"
   // im Info-Popover.
   partition_size: number
   /** Der Platz dieses Fotos in der angezeigten Auswahl seines Events. `null` heisst: gehoert

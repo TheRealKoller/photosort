@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from photosort.main import app
 from photosort.models import (
     ClassificationPhase,
     CriterionScoringRun,
+    Event,
     Photo,
     PhotoRanking,
     PhotoScore,
@@ -1528,3 +1529,242 @@ class TestTheRunEstimateReachesTheJob:
 
         assert response.status_code == 202
         assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, True, expected))]
+
+
+# specs/features/0429-auswahl-richtwert-und-mischung.md: der Richtwert des Auswahlvorschlags -
+# zwei additive `ProjectOut`-Felder und ein neuer Schreib-Endpunkt.
+
+
+class TestTheSelectionTarget:
+    @staticmethod
+    async def _project_with_a_draft(
+        client: httpx.AsyncClient, session: AsyncSession, *, photo_count: int = 20
+    ) -> int:
+        """Ein Projekt mit einem erfolgreichen Kriterien-Lauf, einem Event und `photo_count`
+        bewerteten Rangzeilen - der Zustand, in dem eine Richtwert-Aenderung tatsaechlich etwas
+        umrechnet."""
+        project_id = await _create_project(client)
+        scoring_run = ScoringRun(
+            project_id=project_id, status=ScanStatus.SUCCESS, started_at=datetime(2026, 8, 12, 9)
+        )
+        session.add(scoring_run)
+        await session.flush()
+        run = CriterionScoringRun(
+            project_id=project_id,
+            scoring_run_id=scoring_run.id,
+            status=ScanStatus.SUCCESS,
+            started_at=datetime(2026, 8, 12, 9, 30),
+        )
+        session.add(run)
+        await session.flush()
+        event = Event(
+            criterion_scoring_run_id=run.id,
+            position=1,
+            started_at=datetime(2026, 8, 12, 10),
+            ended_at=datetime(2026, 8, 12, 18),
+        )
+        session.add(event)
+        await session.flush()
+        for index in range(photo_count):
+            photo = Photo(
+                project_id=project_id,
+                relative_path=f"Costa Rica/{index}.jpg",
+                etag=f"etag-{index}",
+                content_length=100,
+                taken_at=datetime(2026, 8, 12, 10) + timedelta(hours=index),
+                taken_at_original=datetime(2026, 8, 12, 10) + timedelta(hours=index),
+                camera_probed=True,
+                last_modified=datetime(2026, 8, 12, 10),
+            )
+            session.add(photo)
+            await session.flush()
+            session.add(
+                PhotoRanking(
+                    criterion_scoring_run_id=run.id,
+                    photo_id=photo.id,
+                    event_id=event.id,
+                    rank_score=0.9 - index / 100,
+                    rank_position=index + 1,
+                )
+            )
+        await session.commit()
+        return project_id
+
+    @staticmethod
+    async def _drafted_photo_count(session: AsyncSession, project_id: int) -> int:
+        return (
+            await session.execute(
+                select(func.count())
+                .select_from(PhotoRanking)
+                .join(CriterionScoringRun)
+                .where(
+                    CriterionScoringRun.project_id == project_id,
+                    PhotoRanking.selection_position.is_not(None),
+                )
+            )
+        ).scalar_one()
+
+    @staticmethod
+    async def _stored_target(session: AsyncSession, project_id: int) -> int | None:
+        return (
+            await session.execute(select(Project.selection_target).where(Project.id == project_id))
+        ).scalar_one()
+
+    async def test_a_fresh_project_reports_no_own_target_and_a_derived_one(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        """`selection_target === null` heisst "nicht selbst eingestellt", nicht "kein Richtwert" -
+        `effective_selection_target` traegt daneben die wirksame Zahl. Das Frontend leitet sie
+        nicht selbst ab."""
+        project_id = await _create_project(authenticated_api_client)
+
+        body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+
+        assert body["selection_target"] is None
+        assert body["effective_selection_target"] == 1
+
+    async def test_the_derived_target_is_a_tenth_of_the_photo_count(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await self._project_with_a_draft(
+            authenticated_api_client, db_session, photo_count=20
+        )
+
+        body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+
+        assert body["selection_target"] is None
+        assert body["effective_selection_target"] == 2
+
+    async def test_setting_a_target_answers_with_the_project_and_recomputes_the_draft(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await self._project_with_a_draft(
+            authenticated_api_client, db_session, photo_count=20
+        )
+
+        response = await authenticated_api_client.put(
+            f"/projects/{project_id}/selection-target", json={"target": 7}
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == project_id
+        assert body["selection_target"] == 7
+        assert body["effective_selection_target"] == 7
+        assert await self._drafted_photo_count(db_session, project_id) == 7
+
+    async def test_clearing_the_target_returns_to_the_default_and_writes_null(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Assertion steht auf der SPALTE, nicht nur auf dem Statuscode: die Vorbelegung darf
+        nie eingeschrieben werden, sonst waere "vom System vorbelegt" von "selbst eingestellt"
+        nicht mehr zu unterscheiden."""
+        project_id = await self._project_with_a_draft(
+            authenticated_api_client, db_session, photo_count=20
+        )
+        await authenticated_api_client.put(
+            f"/projects/{project_id}/selection-target", json={"target": 7}
+        )
+
+        response = await authenticated_api_client.put(
+            f"/projects/{project_id}/selection-target", json={"target": None}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["selection_target"] is None
+        assert response.json()["effective_selection_target"] == 2
+        assert await self._stored_target(db_session, project_id) is None
+        assert await self._drafted_photo_count(db_session, project_id) == 2
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            pytest.param({"target": 1}, 200, id="untergrenze"),
+            pytest.param({"target": 0}, 422, id="null-ist-kein-weg-zur-vorbelegung"),
+            pytest.param({"target": -1}, 422, id="negativ"),
+            pytest.param({"target": projects_api.MAX_SELECTION_TARGET}, 200, id="deckel"),
+            pytest.param({"target": projects_api.MAX_SELECTION_TARGET + 1}, 422, id="ueber-deckel"),
+            pytest.param({"target": None}, 200, id="zuruecksetzen"),
+            pytest.param({"target": 1.5}, 422, id="keine-ganze-zahl"),
+            pytest.param({"target": "viele"}, 422, id="keine-zahl"),
+            pytest.param({}, 422, id="feld-fehlt"),
+        ],
+    )
+    async def test_the_bounds_are_enforced_declaratively(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        payload: dict[str, Any],
+        expected: int,
+    ) -> None:
+        """Der Deckel begrenzt einen Missbrauchsfall, nicht die Benutzung: ein Pydantic-`int` ist
+        unbeschraenkt, und ein Wert jenseits von 2^63 ergibt unter SQLite einen `OverflowError`
+        und damit eine 500 statt einer 422. "Feld fehlt" ist von `null` zu unterscheiden - nur
+        `null` ist der Rueckweg zur Vorbelegung."""
+        project_id = await self._project_with_a_draft(
+            authenticated_api_client, db_session, photo_count=20
+        )
+
+        response = await authenticated_api_client.put(
+            f"/projects/{project_id}/selection-target", json=payload
+        )
+
+        assert response.status_code == expected
+
+    async def test_an_unknown_project_is_a_404(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        response = await authenticated_api_client.put(
+            "/projects/9999/selection-target", json={"target": 5}
+        )
+
+        assert response.status_code == 404
+
+    async def test_a_running_criterion_run_blocks_the_change_with_409(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sicherheitsauflage S6: der laufende Lauf liest den Richtwert am Ende seiner Phase
+        `RANKING`. Ohne den Waechter entstuende ein Vorschlag nach altem Richtwert unter einer
+        Oberflaeche, die den neuen anzeigt - eine Abweichung, die erst beim naechsten Ausloeser
+        heilt und bis dahin nirgends als Fehler sichtbar ist."""
+        project_id = await self._project_with_a_draft(
+            authenticated_api_client, db_session, photo_count=20
+        )
+        scoring_run = (
+            await db_session.execute(select(ScoringRun).where(ScoringRun.project_id == project_id))
+        ).scalar_one()
+        db_session.add(
+            CriterionScoringRun(
+                project_id=project_id,
+                scoring_run_id=scoring_run.id,
+                status=ScanStatus.RUNNING,
+                started_at=datetime(2026, 8, 13, 9),
+            )
+        )
+        await db_session.commit()
+        drafted_before = await self._drafted_photo_count(db_session, project_id)
+
+        response = await authenticated_api_client.put(
+            f"/projects/{project_id}/selection-target", json={"target": 7}
+        )
+
+        assert response.status_code == 409
+        assert await self._stored_target(db_session, project_id) is None
+        assert await self._drafted_photo_count(db_session, project_id) == drafted_before
+
+    async def test_the_endpoint_rejects_a_request_without_a_token(
+        self, api_client: httpx.AsyncClient
+    ) -> None:
+        """Sicherheitsauflage S1, Verhaltenshaelfte. Die strukturelle Haelfte steht darunter."""
+        response = await api_client.put("/projects/1/selection-target", json={"target": 5})
+
+        assert response.status_code == 401
+
+    def test_the_endpoint_hangs_on_the_router_wide_gatekeeper(self) -> None:
+        """Sicherheitsauflage S1, strukturelle Haelfte: registriert an `projects.router` (der
+        traegt `dependencies=[Depends(get_current_user)]`), nie an `photos.router`. Dort setzt
+        jeder Endpunkt den Torwaechter selbst, und fuer diesen Weg gibt es keinen
+        Vollstaendigkeitstest - ein vergessener Parameter waere still oeffentlich."""
+        paths = {getattr(route, "path", "") for route in projects_api.router.routes}
+
+        assert "/projects/{project_id}/selection-target" in paths

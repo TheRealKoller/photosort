@@ -21,14 +21,19 @@ function photosQueryKey(projectId: number, ratingStatus?: RatingFilter) {
 // useSetRatingMutation/useDeleteRatingMutation (queryKey: ['photos', projectId], ohne exact)
 // invalidiert React-Query-seitig automatisch auch diese Query, ohne dass die Kuratierungs-Ansicht
 // einen eigenen Invalidierungs-Pfad braucht.
-function curationQueryKey(projectId: number, topN: number) {
-  return ['photos', projectId, 'curate', topN] as const
+function curationQueryKey(projectId: number) {
+  return ['photos', projectId, 'curate'] as const
 }
 
-export function useCurationQuery(projectId: number, topN: number) {
+/**
+ * Der Auswahlvorschlag des Projekts. KEIN Leseparameter mehr im Schluessel: welche Fotos der
+ * Vorschlag umfasst, ist eine Eigenschaft des Laufs und keine der Anfrage - eine zweite Variante
+ * desselben Projekts kann es nicht geben.
+ */
+export function useCurationQuery(projectId: number) {
   return useQuery({
-    queryKey: curationQueryKey(projectId, topN),
-    queryFn: () => listPhotos(projectId, { topNPerEvent: topN }),
+    queryKey: curationQueryKey(projectId),
+    queryFn: () => listPhotos(projectId, { selection: true }),
   })
 }
 

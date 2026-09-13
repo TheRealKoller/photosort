@@ -93,6 +93,21 @@ export function setCloudVisionConsent(
   })
 }
 
+/**
+ * Setzt den Richtwert des Auswahlvorschlags und liefert das Projekt samt neuem wirksamem Wert
+ * zurueck. `null` setzt auf die Vorbelegung zurueck - ein `0` gibt es dafuer nicht, der Server
+ * weist ihn mit `422` ab.
+ *
+ * Der Aufruf rechnet serverseitig den gesamten Vorschlag neu; er gehoert deshalb an das Verlassen
+ * des Feldes, nicht an jeden Tastendruck.
+ */
+export function setSelectionTarget(id: number, target: number | null): Promise<ProjectOut> {
+  return apiFetch<ProjectOut>(`/projects/${id}/selection-target`, {
+    method: 'PUT',
+    body: { target },
+  })
+}
+
 // Die Schaetzung deckt beide Cloud-Anteile ab. Funktioniert unabhaengig vom Consent-Schalter (auch
 // bei deaktiviertem Consent 200) - die Kosten sollen vor einer Consent-Entscheidung sichtbar sein.
 export function getClassificationEstimate(id: number): Promise<ClassificationEstimateOut> {

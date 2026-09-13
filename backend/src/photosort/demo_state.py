@@ -93,6 +93,7 @@ from photosort.thumbnails import (
     delete_cached_variants,
     generate_variants,
 )
+from photosort.worker import rebuild_run_selection
 
 # --- Namen, Konstanten, Sperr-Literale -------------------------------------------------------
 
@@ -1053,6 +1054,16 @@ async def _seed_rated_project(
     # NACH dem `flush` der Bewertungen und ueber denselben Nutzerbestand: die Korrektur haengt an
     # einem vorhandenen Konto, genau wie sie.
     await _seed_motif_assessments(session, spec.slug, photos, [user.id for user in users])
+
+    # DER AUSWAHLVORSCHLAG ueber DIESELBE Worker-Funktion, nie ueber eine zweite Vergaberegel
+    # hier: eine solche saehe im Ergebnis genauso aus und roetete keinen Test. Ohne diesen Aufruf
+    # zeigt `/curate` auf der Demo-Instanz eine leere Liste, und die Pruefstack-Spezifikationen
+    # bleiben trotzdem gruen - ihre Vorbedingungen haengen an Ueberschrift und Scrollhoehe.
+    #
+    # Die Stelle ist NACH den Motivkopfzeilen: der Vorschlag liest die wirksamen Staerken, und
+    # davor gaebe es keine.
+    await rebuild_run_selection(session, project.id)
+    await session.flush()
     return photos, len(users)
 
 

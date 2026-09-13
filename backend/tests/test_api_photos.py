@@ -591,6 +591,12 @@ async def _default_event(
     return await _make_event(session, run, position=position)
 
 
+# Sentinel fuer `_add_ranking(selection_position=…)`: "der Vorschlag spiegelt die Rangfolge".
+# `None` ist dort ein eigener, bedeutungstragender Wert ("gehoert nicht zum Vorschlag") und taugt
+# deshalb nicht als Vorgabewert.
+_MIRRORS_RANK = object()
+
+
 async def _add_ranking(
     session: AsyncSession,
     run: CriterionScoringRun,
@@ -599,11 +605,16 @@ async def _add_ranking(
     event: Event | None = None,
     rank_score: float | None,
     rank_position: int | None,
+    selection_position: int | None | object = _MIRRORS_RANK,
 ) -> None:
     """Ein Foto steht je Lauf in GENAU EINER Rangzeile - die Partition ist allein das Event
     (Spec 0427, PR 3).
 
-    Ohne `event` faellt die Zeile in das eine Vorgabe-Event des Laufs."""
+    Ohne `event` faellt die Zeile in das eine Vorgabe-Event des Laufs.
+
+    `selection_position` spiegelt ohne Angabe die Rangfolge: die meisten Faelle brauchen bloss
+    IRGENDEINEN Vorschlag als Vehikel. Jeder Aufbau, in dem Platz und Rang auseinanderfallen oder
+    in dem ein Foto ausdruecklich NICHT zum Vorschlag gehoert, sagt es ausgeschrieben."""
     event_row = await _default_event(session, run) if event is None else event
     session.add(
         PhotoRanking(
@@ -612,16 +623,20 @@ async def _add_ranking(
             event_id=event_row.id,
             rank_score=rank_score,
             rank_position=rank_position,
+            selection_position=(
+                rank_position if selection_position is _MIRRORS_RANK else selection_position
+            ),
         )
     )
     await session.commit()
 
 
-class TestTopNPerEvent:
-    """Kategorie-Kuratierung + Backfill (specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-
-    backfill.md)."""
+class TestTheSelection:
+    """Der Auswahlmodus `selection=true` (ADR 0097): der Endpunkt liefert genau die Fotos mit
+    `selection_position` des letzten erfolgreichen Laufs. Die Auswahlregel selbst ist ein
+    LAUF-ARTEFAKT und wird hier nicht wiederholt (tests/test_selection.py)."""
 
-    async def test_returns_top_n_per_partition_with_ranking_details(
+    async def test_returns_the_drafted_photos_with_ranking_details(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project = await _make_project(db_session)
@@ -631,10 +646,13 @@ class TestTopNPerEvent:
         third = await _make_photo(db_session, project, "c.jpg", datetime(2023, 1, 3, tzinfo=UTC))
         await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
         await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
-        await _add_ranking(db_session, run, third, rank_score=0.1, rank_position=3)
+        # Bewertet, im einsehbaren Vorrat - aber nicht im Vorschlag.
+        await _add_ranking(
+            db_session, run, third, rank_score=0.1, rank_position=3, selection_position=None
+        )
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 2}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
         assert response.status_code == 200
@@ -642,22 +660,105 @@ class TestTopNPerEvent:
         assert body["total"] == 2
         assert [item["id"] for item in body["items"]] == [first.id, second.id]
         ranking = body["items"][0]["ranking"]
-        # partition_size ist die GROESSE DER GESAMTEN Partition (hier 3 Fotos), nicht die
-        # angeforderte top_n_per_event=2 - "Rang M von N" soll immer den vollen Pool zeigen
-        # (Architektur-Abschnitt der Spec 0040).
+        # partition_size ist die GROESSE DER GESAMTEN Partition (hier 3 Fotos), nicht die des
+        # Vorschlags - "Rang M von N" soll immer den vollen Pool zeigen (Spec 0040).
         assert ranking == {
             "event_id": (await _default_event(db_session, run)).id,
             "rank_score": 0.9,
             "rank_position": 1,
             "partition_size": 3,
-            # Im Kuratierungsmodus traegt jedes ausgewaehlte Foto seinen Platz in der Auswahl.
+            # Im Auswahlmodus traegt jedes gelieferte Foto seinen Platz im Vorschlag.
             "curation_position": 1,
         }
 
-    async def test_partitions_are_independent(
+    async def test_the_curation_position_carries_the_selection_and_not_the_rank(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """`top_n` wirkt JE EVENT: zwei Events liefern bei `top_n=1` zwei Fotos, nicht eines."""
+        """Der Aufbau laesst die beiden AUSEINANDERFALLEN: das Foto auf Rang 4 steht auf Platz 1
+        des Vorschlags. Faellt die Motivmischung weg, ist der Unterschied unsichtbar - und ein
+        Aufbau, in dem beide gleich sind, bestuende auch bei der falschen Spalte."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        deep = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        top = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(
+            db_session, run, deep, rank_score=0.2, rank_position=4, selection_position=1
+        )
+        await _add_ranking(
+            db_session, run, top, rank_score=0.9, rank_position=1, selection_position=2
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"selection": "true"}
+        )
+
+        positions = {
+            item["id"]: (item["ranking"]["rank_position"], item["ranking"]["curation_position"])
+            for item in response.json()["items"]
+        }
+        assert positions == {deep.id: (4, 1), top.id: (1, 2)}
+
+    async def test_the_order_follows_the_event_position_and_the_selection_position(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Aufbau widerspricht bewusst der `photo_id`- UND der `event_id`-Reihenfolge: das
+        spaeter angelegte Event steht chronologisch VOR dem frueher angelegten."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        later_event = await _make_event(db_session, run, position=2)
+        earlier_event = await _make_event(db_session, run, position=1)
+        first_photo = await _make_photo(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        second_photo = await _make_photo(
+            db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC)
+        )
+        third_photo = await _make_photo(
+            db_session, project, "c.jpg", datetime(2023, 1, 3, tzinfo=UTC)
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            first_photo,
+            event=later_event,
+            rank_score=0.9,
+            rank_position=1,
+            selection_position=1,
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            second_photo,
+            event=earlier_event,
+            rank_score=0.5,
+            rank_position=1,
+            selection_position=2,
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            third_photo,
+            event=earlier_event,
+            rank_score=0.8,
+            rank_position=2,
+            selection_position=1,
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"selection": "true"}
+        )
+
+        assert [item["id"] for item in response.json()["items"]] == [
+            third_photo.id,
+            second_photo.id,
+            first_photo.id,
+        ]
+
+    async def test_every_event_of_the_draft_is_represented(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Vorschlag spannt ueber die Events: zwei Events mit je einem Platz liefern zwei
+        Fotos, nicht eines."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         first_event = await _make_event(db_session, run, position=1)
@@ -676,7 +777,7 @@ class TestTopNPerEvent:
         )
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 1}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
         assert {item["id"] for item in response.json()["items"]} == {
@@ -684,7 +785,7 @@ class TestTopNPerEvent:
             second_photo.id,
         }
 
-    async def test_fewer_than_n_candidates_returns_fewer_without_error(
+    async def test_a_small_draft_returns_fewer_without_error(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project = await _make_project(db_session)
@@ -693,13 +794,71 @@ class TestTopNPerEvent:
         await _add_ranking(db_session, run, only, rank_score=0.9, rank_position=1)
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 5}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
         assert response.status_code == 200
         body = response.json()
         assert body["total"] == 1
         assert body["items"][0]["id"] == only.id
+
+    async def test_a_run_without_a_draft_answers_empty(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Bestandslauf: seine Rangzeilen tragen ueberall `NULL`, es gibt keine Migration, die
+        den Vorschlag rueckwirkend berechnet. Die Ansicht zeigt denselben Leer-Text wie vor dem
+        ersten Lauf."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(
+            db_session, run, photo, rank_score=0.9, rank_position=1, selection_position=None
+        )
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"selection": "true"}
+        )
+
+        assert response.json() == {"items": [], "total": 0}
+
+    async def test_limit_and_offset_stay_without_effect_in_the_selection_mode(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sicherheitsauflage S4: `limit`/`offset` duerfen in diesem Zweig nicht HALB wirken. Ein
+        abgeschnittener Vorschlag, den die Ansicht als vollstaendig ausweist, ist ein Zustand, den
+        keine Anzeige als fehlerhaft erkennt - und der Hinweis "der Bildbestand reicht fuer mehr
+        nicht" sagte dann etwas Falsches."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        for index in range(4):
+            photo = await _make_photo(
+                db_session, project, f"{index}.jpg", datetime(2023, 1, 1 + index, tzinfo=UTC)
+            )
+            await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=index + 1)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos",
+            params={"selection": "true", "limit": 1, "offset": 2},
+        )
+
+        assert response.json()["total"] == 4
+        assert len(response.json()["items"]) == 4
+
+    async def test_without_the_selection_mode_the_default_listing_answers(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """`selection=false` ist der Vorgabewert und kein zweiter Auswahlmodus: die Antwort ist
+        das gewoehnliche Listing, und `curation_position` traegt dort `null`."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"selection": "false"}
+        )
+
+        assert response.json()["items"][0]["ranking"]["curation_position"] is None
 
     async def test_rejecting_a_photo_does_not_change_the_selection(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -717,10 +876,13 @@ class TestTopNPerEvent:
         first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
         await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
-        await _add_ranking(db_session, run, second, rank_score=0.5, rank_position=2)
+        # Im Vorrat, aber nicht im Vorschlag - das ist das Foto, das frueher nachgerueckt waere.
+        await _add_ranking(
+            db_session, run, second, rank_score=0.5, rank_position=2, selection_position=None
+        )
 
         before = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 1}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
         assert [item["id"] for item in before.json()["items"]] == [first.id]
 
@@ -729,7 +891,7 @@ class TestTopNPerEvent:
         )
 
         after = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 1}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
         assert [item["id"] for item in after.json()["items"]] == [first.id]
         [item] = after.json()["items"]
@@ -753,7 +915,7 @@ class TestTopNPerEvent:
         )
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 1}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
         [item] = response.json()["items"]
@@ -788,7 +950,7 @@ class TestTopNPerEvent:
 
         async def selection(client: httpx.AsyncClient) -> tuple[list[int], dict[int, int | None]]:
             response = await client.get(
-                f"/projects/{project.id}/photos", params={"top_n_per_event": 2}
+                f"/projects/{project.id}/photos", params={"selection": "true"}
             )
             assert response.status_code == 200
             items = response.json()["items"]
@@ -819,19 +981,24 @@ class TestTopNPerEvent:
         project = await _make_project(db_session)
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 3}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
         assert response.status_code == 200
         assert response.json() == {"items": [], "total": 0}
 
-    async def test_rejects_top_n_per_event_outside_valid_range(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    @pytest.mark.parametrize("value", [2, 11])
+    async def test_the_old_top_n_parameter_does_not_exist_any_more(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession, value: int
     ) -> None:
+        """Der Nachfolger von `test_rejects_top_n_per_event_outside_valid_range`, und bewusst
+        keine blosse Umbenennung: geprueft wird, dass der Parameter GAR NICHT MEHR existiert -
+        auch ein frueher gueltiger Wert endet in `422`. Ein Uebergangsweg mit beiden Parametern
+        waere eine zweite Auswahlregel."""
         project = await _make_project(db_session)
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 11}
+            f"/projects/{project.id}/photos", params={"top_n_per_event": value}
         )
 
         assert response.status_code == 422
@@ -840,7 +1007,7 @@ class TestTopNPerEvent:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         # Test-Review-Fund: criterion_scores und ranking wurden bisher nur je einzeln getestet,
-        # nie im selben (top_n_per_event-)Zweig kombiniert - _to_photo_out setzt aber beide in
+        # nie im selben Auswahlzweig kombiniert - _to_photo_out setzt aber beide in
         # derselben Funktion.
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
@@ -858,7 +1025,7 @@ class TestTopNPerEvent:
         await db_session.commit()
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 1}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
         item = response.json()["items"][0]
@@ -1957,7 +2124,7 @@ class TestCloudVisionStatus:
 
 class TestDefaultListingRanking:
     """Bewertungsdetails-Info-Popover (specs/features/0040): `RankingOut` wird auch im
-    Standard-Listing-Zweig befuellt (nicht nur bei `top_n_per_event`), damit Grid-/
+    Standard-Listing-Zweig befuellt (nicht nur im Auswahlmodus), damit Grid-/
     Detailansicht ebenfalls Rang-Score/-Position zeigen koennen."""
 
     async def test_default_listing_includes_ranking_and_partition_size(
@@ -2462,8 +2629,9 @@ class TestEventIsNotAnAnswerStatement:
         shallow_gps: tuple[float, float] | None = None,
         landmark_name: str | None = None,
     ) -> tuple[Project, CriterionScoringRun, Photo]:
-        """Ein Event mit 11 Fotos, dessen tragendes Foto auf `rank_position` 11 liegt - also
-        ausserhalb jeder realistischen Top-N-Antwort."""
+        """Ein Event mit 11 Fotos, dessen tragendes Foto auf `rank_position` 11 liegt und NICHT
+        zum Vorschlag gehoert - also ausserhalb der Auswahl-Antwort. Der Vorschlag umfasst die
+        drei bestplatzierten Fotos."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         event_row = await _make_event(
@@ -2489,26 +2657,33 @@ class TestEventIsNotAnAnswerStatement:
                 event=event_row,
                 rank_score=1.0 / index,
                 rank_position=index,
+                selection_position=index if index <= 3 else None,
             )
         anchor = await _make_photo_at(
             db_session, project, "anchor.jpg", base + timedelta(minutes=11), gps=anchor_gps
         )
         await _add_ranking(
-            db_session, run, anchor, event=event_row, rank_score=0.01, rank_position=11
+            db_session,
+            run,
+            anchor,
+            event=event_row,
+            rank_score=0.01,
+            rank_position=11,
+            selection_position=None,
         )
         return project, run, anchor
 
     async def test_the_only_coordinate_reaches_photos_that_outrank_it(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """ROT-ANKER: das EINZIGE koordinatentragende Foto liegt auf Rang 11, abgefragt wird mit
-        `top_n_per_category=3`. Eine Herleitung ueber die Fotos der Antwort lieferte hier `null`."""
+        """ROT-ANKER: das EINZIGE koordinatentragende Foto liegt auf Rang 11 und steht nicht im
+        Vorschlag. Eine Herleitung ueber die Fotos der Antwort lieferte hier `null`."""
         project, _run, _anchor = await self._seed_event_with_a_deep_anchor(
             db_session, anchor_gps=_EIFFEL
         )
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 3}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
         items = response.json()["items"]
@@ -2797,16 +2972,19 @@ class TestPhotoEvent:
 
         listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
         curation = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 1}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
         assert listing.json()["items"][0]["event"] == curation.json()["items"][0]["event"]
 
-    async def test_the_event_does_not_depend_on_the_requested_top_n(
+    async def test_the_event_is_the_same_with_and_without_the_selection_mode(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Nummer und Zeitspanne stehen im Event, nicht in einer Aggregation ueber die sichtbaren
-        Fotos - `top_n_per_category=1` und `=10` liefern denselben Wert."""
+        """Der Nachfolger von `test_the_event_does_not_depend_on_the_requested_top_n`: den
+        Leseparameter, dessen Einfluss jener Fall ausschloss, gibt es nicht mehr. Nummer und
+        Zeitspanne stehen weiterhin im Event, nicht in einer Aggregation ueber die sichtbaren
+        Fotos - und der Aufbau sorgt dafuer, dass die beiden Antworten VERSCHIEDEN viele Fotos
+        enthalten."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         event_row = await _make_event(
@@ -2821,17 +2999,23 @@ class TestPhotoEvent:
                 db_session, project, f"{index}.jpg", datetime(2023, 1, 1, 10, index, tzinfo=UTC)
             )
             await _add_ranking(
-                db_session, run, photo, event=event_row, rank_score=0.9, rank_position=index + 1
+                db_session,
+                run,
+                photo,
+                event=event_row,
+                rank_score=0.9,
+                rank_position=index + 1,
+                selection_position=1 if index == 0 else None,
             )
 
-        narrow = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 1}
-        )
-        wide = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 10}
+        listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+        selection = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
-        assert narrow.json()["items"][0]["event"] == wide.json()["items"][0]["event"]
+        assert len(listing.json()["items"]) == 3
+        assert len(selection.json()["items"]) == 1
+        assert listing.json()["items"][0]["event"] == selection.json()["items"][0]["event"]
 
     async def test_a_photo_without_a_ranking_row_has_no_event(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -3429,7 +3613,7 @@ class TestARankingRowWithoutAModelVerdict:
         await _add_ranking(db_session, run, unrated, rank_score=None, rank_position=None)
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"top_n_per_event": 5}
+            f"/projects/{project.id}/photos", params={"selection": "true"}
         )
 
         body = response.json()
