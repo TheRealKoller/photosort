@@ -1,4 +1,6 @@
-# 0093 - Albumtauglichkeit vom Modell: der Qualitätswert trennt sich vom Bildinhalt, die Modellstufe führt
+# 0095 - Albumtauglichkeit vom Modell: der Qualitätswert trennt sich vom Bildinhalt, die Modellstufe führt
+
+**Frühere Nummer:** 0093 (bis 2026-09-13), aufgelöste Dublette mit 0093-laufstand-in-der-ausgabe-des-laufs-gelesen-nicht-erfragt.md.
 
 **Status:** Accepted
 **Datum:** 2026-09-13

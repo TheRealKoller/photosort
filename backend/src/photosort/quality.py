@@ -63,7 +63,7 @@ def local_correction(values: Mapping[str, float], weights: Mapping[str, float]) 
 
     RENORMIERT auf die tatsächlich vorhandene Teilmenge: ein fehlendes Kriterium senkt den Wert
     nicht. Das ist die Rechenhälfte der Entscheidung "ein nicht messbares Kriterium wird
-    weggelassen statt als schlechter Wert gewertet" (ADR 0093, Abschnitt 5) - ohne die
+    weggelassen statt als schlechter Wert gewertet" (ADR 0095, Abschnitt 5) - ohne die
     Renormierung wäre das Weglassen dasselbe wie eine 0.
 
     Ein Wert außerhalb der Gewichtstabelle wird ignoriert; ein Gewicht ohne zugehörigen Wert wirkt

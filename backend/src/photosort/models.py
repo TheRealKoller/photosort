@@ -229,7 +229,7 @@ class Photo(Base):
     )
     # 1:1 und optional wie die Motiv-Kopfzeile, aber an einer EIGENEN Tabelle: die
     # Albumtauglichkeit ist eine Aussage über die Bildgüte und gibt es nur mit Cloud-Grundlage,
-    # die Motiv-Kopfzeile ist eine über den Bildinhalt und existiert auch lokal (ADR 0093).
+    # die Motiv-Kopfzeile ist eine über den Bildinhalt und existiert auch lokal (ADR 0095).
     album_suitability: Mapped[PhotoAlbumSuitability | None] = relationship(
         back_populates="photo", uselist=False, cascade="all, delete-orphan"
     )
@@ -628,7 +628,7 @@ class PhotoRanking(Base):
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
     # NULLABLE und `NULL` heisst GENAU EINES: "kein Qualitätswert, weil keine Modellbewertung" -
     # projektweit ohne Cloud-Freigabe, je Foto bei einem fehlgeschlagenen Aufruf. Es gibt keinen
-    # Rückfall auf einen lokal gebildeten Wert (ADR 0093, Abschnitt 1); ein solches Foto behält
+    # Rückfall auf einen lokal gebildeten Wert (ADR 0095, Abschnitt 1); ein solches Foto behält
     # seine `event_id`, bleibt im einsehbaren Vorrat und erscheint nicht im Entwurf.
     rank_score: Mapped[float | None] = mapped_column(default=None)
     rank_position: Mapped[int | None] = mapped_column(default=None)
@@ -912,7 +912,7 @@ class PhotoAlbumSuitability(Base):
 
     Sie hängt an `photos` und NICHT an `photo_motif_assessments`: die Motiv-Kopfzeile ist eine
     Aussage über den Bildinhalt und existiert auch auf lokaler Grundlage, die Albumtauglichkeit
-    gibt es nur mit Cloud-Grundlage. Genau diese Trennung ist der Gegenstand von ADR 0093,
+    gibt es nur mit Cloud-Grundlage. Genau diese Trennung ist der Gegenstand von ADR 0095,
     Abschnitt 4 - sie im Datenmodell zusammenzulegen hieße, sie aufzugeben.
 
     Persistiert wird die STUFE `1..5`, nicht zusätzlich der normierte Wert: die Normierung ist

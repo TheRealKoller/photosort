@@ -1619,7 +1619,7 @@ async def _build_grouping_and_rankings(
     # einer laufinternen Abbildung: der Cloud-Teilschritt ist ein eigener Lauf, und diese Funktion
     # hat auch den zweiten Aufrufer (`rebuild_run_grouping`), der gar keine Cloud-Phase kennt.
     # Ohne Freigabe gibt es keine einzige Zeile, und JEDER Qualitaetswert wird `NULL` - es gibt
-    # keinen Rueckfall auf einen lokal gebildeten Wert (ADR 0093, Abschnitt 1).
+    # keinen Rueckfall auf einen lokal gebildeten Wert (ADR 0095, Abschnitt 1).
     level_by_photo_id: dict[int, int] = {
         photo_id: level
         for photo_id, level in (

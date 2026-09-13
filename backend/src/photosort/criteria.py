@@ -293,7 +293,7 @@ def compute_golden_ratio_score(
     Kompositions-Subjekt wird."""
     subject = _select_primary_subject(faces, animals)
     if subject is None:
-        # KEIN Wert, nicht `0.0` (ADR 0093, Abschnitt 5): ohne erkennbares Subjekt ist dieses
+        # KEIN Wert, nicht `0.0` (ADR 0095, Abschnitt 5): ohne erkennbares Subjekt ist dieses
         # Kriterium für dieses Foto NICHT MESSBAR, und ein nicht messbares Kriterium wird
         # weggelassen statt als schlechter Wert gewertet. Der `0.0`-Fallback wertete ein Foto
         # ohne Personen doppelt ab - für das, was ihm fehlt, und für das, was es nicht ist.
@@ -621,7 +621,7 @@ def compute_freiraum_score(orientation: FaceOrientation | None) -> float | None:
     einem einheitlichen Schema - bedeutet die Abwesenheit eines Signals ein schlechtes Foto
     oder nur ein nicht messbares?
     1. Kein Gesicht erkannt (`orientation is None`) -> KEIN Wert (`None`), nicht `0.0` - analog
-       goldener_schnitt und aus demselben Grund (ADR 0093, Abschnitt 5): dieses Kriterium
+       goldener_schnitt und aus demselben Grund (ADR 0095, Abschnitt 5): dieses Kriterium
        bewertet die Rahmung eines GESICHTS, ohne erkanntes Gesicht ist es für dieses Foto nicht
        messbar. Der Aufrufer trägt es in `ContentCriteria.not_measurable` ein, eine Altzeile
        wird gelöscht. Die beiden folgenden Fallbacks bleiben Werte: sie sind messbar und

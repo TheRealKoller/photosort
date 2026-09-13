@@ -68,7 +68,7 @@ korrigieren muss.
 
 Neu: `photo_album_suitability` (`photo_id` als Primärschlüssel und Fremdschlüssel auf `photos`,
 `level`, `reason`, `provider`, `computed_at`). Die Tabelle hängt an `photos`, nicht an
-`photo_motif_assessments` — Begründung in ADR 0093, Abschnitt 6.
+`photo_motif_assessments` — Begründung in ADR 0095, Abschnitt 6.
 
 Geändert: `photo_rankings.rank_score` und `rank_position` werden nullable; `event_id` bleibt
 `NOT NULL`. `PhotoCriterionScore.value` bleibt `NOT NULL` — ein nicht messbares Kriterium wird
@@ -78,7 +78,7 @@ Siehe [`docs/architecture.md`](../../docs/architecture.md).
 
 ## Architektur / Umsetzung
 
-Grundlage: ADR [`0093`](../decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md).
+Grundlage: ADR [`0095`](../decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md).
 Sie grenzt zugleich ADR [`0002`](../decisions/0002-hybrid-ai-scoring.md) ein: Scan, Ausschuss-Gate
 und lokale Bewertung bleiben cloudfrei, allein der Album-Entwurf setzt die Freigabe voraus. ADR 0091
 (Motivstärken nur innerhalb eines Motivs vergleichen) bleibt unberührt — die Albumtauglichkeit ist

@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Teilweise abgelöst:** der **letzte Aufzählungspunkt unter „Konsequenzen"** in seiner Reichweite
 („darf nie Voraussetzung für die Kernfunktion sein"), durch ADR
-[`0093`](./0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md), Abschnitt 1. Er
+[`0095`](./0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md), Abschnitt 1. Er
 gilt dort unverändert für Scan, Ausschuss-Gate und die lokale Bewertung; allein der Album-Entwurf
 setzt die Cloud-Freigabe voraus. Alles Übrige — insbesondere das zweiphasige Scoring selbst
 (Phase A lokal und immer aktiv, Phase B optional und abschaltbar), der Vorrang manueller

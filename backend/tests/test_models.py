@@ -1648,7 +1648,7 @@ def test_both_motif_unique_constraints_carry_an_explicit_name() -> None:
 
 
 # specs/features/0428-albumtauglichkeit-vom-modell.md ab hier: die Albumtauglichkeit haengt an
-# `photos` und nicht an der Motiv-Kopfzeile (ADR 0093, Abschnitt 6), und `photo_rankings` traegt
+# `photos` und nicht an der Motiv-Kopfzeile (ADR 0095, Abschnitt 6), und `photo_rankings` traegt
 # ab hier `NULL` fuer ein Foto ohne Modellurteil.
 
 

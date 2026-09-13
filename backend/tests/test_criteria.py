@@ -282,7 +282,7 @@ class TestComputeGoldenRatioScore:
         assert score > 0.9
 
     def test_returns_no_value_at_all_when_neither_face_nor_animal_detected(self) -> None:
-        """ADR 0093, Abschnitt 5: ohne erkennbares Subjekt ist das Kriterium NICHT MESSBAR und
+        """ADR 0095, Abschnitt 5: ohne erkennbares Subjekt ist das Kriterium NICHT MESSBAR und
         liefert KEINEN Wert - nie `0.0`. Der abgeloeste niedrige Fallback wertete ein Foto ohne
         Personen doppelt ab, und die Anzeige seiner Qualitaetsstufe war entsprechend verfaelscht.
         Die explizite Gegenprobe auf `0.0` gehoert dazu: `None == 0.0` ist falsch, aber ein
@@ -463,7 +463,7 @@ class TestObjectAllowLists:
 
 class TestComputeFreiraumScore:
     def test_no_face_detected_yields_no_value_at_all(self) -> None:
-        # Spec 0428/ADR 0093, Abschnitt 5: "Kein Gesicht erkannt" heisst ab hier NICHT MESSBAR -
+        # Spec 0428/ADR 0095, Abschnitt 5: "Kein Gesicht erkannt" heisst ab hier NICHT MESSBAR -
         # kein Wert statt des abgeloesten `0.0` (analog goldener_schnitt). Die beiden uebrigen
         # Fallbacks (0.5) bleiben Werte: sie sind messbar und neutral.
         score = compute_freiraum_score(None)

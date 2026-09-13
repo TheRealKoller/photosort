@@ -972,7 +972,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Leerstring zurück, `category_override` als `NULL`.
   - **`rank_score` und `rank_position` werden nullable, und `rank_score` ist ab hier der
     Qualitätswert** *(Spec [`0428`](../specs/features/0428-albumtauglichkeit-vom-modell.md), ADR
-    [`decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md))*:
+    [`decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md))*:
     er entsteht nicht mehr aus der Gleichgewichtung aller Kriterien, sondern aus
     `quality.py::compute_quality_score` — der Modellstufe der Albumtauglichkeit, korrigiert um
     höchstens `±LOCAL_CORRECTION_SPAN` durch die lokalen Qualitäts-/Kompositionskriterien;
@@ -1104,7 +1104,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   Prompt verlangt alle acht Zahlen, Schweigen ist dort die Aussage „nicht zu sehen".
 - **PhotoAlbumSuitability** *(Spec [`0428`](../specs/features/0428-albumtauglichkeit-vom-modell.md),
   ADR
-  [`decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md),
+  [`decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md),
   `models.py`, Tabelle `photo_album_suitability`)*: das Urteil des Vision-Modells darüber, wie
   brauchbar ein Foto für ein Album ist — **1:1 zu `Photo`** (`photo_id` als Primary Key und
   Fremdschlüssel). `level: int` (die Modellstufe `1..5`, normiert über
@@ -1222,7 +1222,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
 - Cloud-KI-Aufrufe sind optional/on-demand und nie Voraussetzung für die Kernfunktion — **die
   Kernfunktion ist dabei seit Spec [`0428`](../specs/features/0428-albumtauglichkeit-vom-modell.md)
   ausdrücklich abgegrenzt** (ADR
-  [`decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0093-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md),
+  [`decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md),
   Abschnitt 1): Scan, Ausschuss-Gate und lokale Bewertung laufen vollständig ohne Cloud, der
   Album-Entwurf dagegen setzt die Freigabe voraus und entsteht ohne sie gar nicht — ohne stillen
   Rückfall auf einen rein lokal gebildeten Qualitätswert. Mit Spec
