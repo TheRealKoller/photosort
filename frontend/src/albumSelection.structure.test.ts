@@ -21,8 +21,6 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { DRAFT_EMPTY_TEXT } from './pages/AlbumDraftPage'
-
 const SRC_DIR = fileURLToPath(new URL('.', import.meta.url))
 
 function read(relativePath: string): string {
@@ -96,8 +94,21 @@ describe('Die Endauswahl leitet die Zugehörigkeit nie selbst her', () => {
 describe('Ein Textbaustein, der an zwei Orten gilt, steht nur an einem', () => {
   it('führt den Satz des fehlenden Auswahlvorschlags genau einmal als Literal', () => {
     // Zusicherung 26: Eine Zeichenkettengleichheit bestünde auch gegen eine Kopie - deshalb wird
-    // die Anzahl der Fundstellen gezählt und nicht der angezeigte Text verglichen. Diese Datei
-    // kennt den Satz ausschließlich als importierte Konstante und zählt damit nicht mit.
+    // die Anzahl der Fundstellen gezählt und nicht der angezeigte Text verglichen.
+    //
+    // Der Suchbegriff wird aus der DEFINITIONSSTELLE gelesen, nicht hier hingeschrieben: Ein
+    // eigenes Literal wäre selbst die zweite Kopie, die der Fall verbietet, und dieser Test
+    // zählte sich fortan selbst mit. Läuft die Anwendung in der Browser-Umgebung, dieser Scan in
+    // der Node-Umgebung, gibt es dafür auch keinen gemeinsamen Import.
+    const declaration = read('pages/AlbumDraftPage.tsx').match(
+      /export const DRAFT_EMPTY_TEXT = '([^']*)'/,
+    )
+    // Ohne diese Gegenprobe bestünde der Fall auch dann, wenn die Konstante umbenannt wäre und
+    // der Scan über einen leeren Suchbegriff liefe.
+    expect(declaration, 'Deklaration von DRAFT_EMPTY_TEXT').not.toBeNull()
+    const DRAFT_EMPTY_TEXT = declaration![1]
+    expect(DRAFT_EMPTY_TEXT.length).toBeGreaterThan(10)
+
     const occurrences = walk(SRC_DIR)
       .filter((path) => path.endsWith('.ts') || path.endsWith('.tsx'))
       .filter((path) => readFileSync(path, 'utf8').includes(DRAFT_EMPTY_TEXT))

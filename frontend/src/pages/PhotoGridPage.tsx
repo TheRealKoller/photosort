@@ -186,7 +186,7 @@ export function PhotoGridPage() {
             // eine Vorschlags-Badge erscheint nur, solange keine eigene Bewertung existiert.
             // Der Server garantiert bereits, dass photo.suggestion in diesem Fall null ist, aber
             // ownStatus wird hier zusaetzlich geprueft statt sich blind auf suggestion zu
-            // verlassen (defensiv, gleiche Anzeigeregel wie Detail-/Vergleichsansicht).
+            // verlassen (defensiv, gleiche Anzeigeregel wie die Detailansicht).
             const isSuggested = ownStatus === null && photo.suggestion !== null
             const badgeStatus = ownStatus ?? photo.suggestion?.status ?? null
             const isConfirming = confirmingPhotoIds.has(photo.id)

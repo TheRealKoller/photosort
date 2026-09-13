@@ -25,7 +25,7 @@ const PATHS_WITH_PROJECT_CONTEXT = [
   '/projects/1/pipeline/scan',
   '/projects/1/photos',
   '/projects/1/photos/42',
-  '/projects/1/compare',
+  '/projects/1/selection',
   '/projects/1/settings',
   '/projects/1/stats',
   '/projects/1/album',
@@ -39,7 +39,7 @@ describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
       [
         '/projects/:projectId',
         '/projects/:projectId/album',
-        '/projects/:projectId/compare',
+        '/projects/:projectId/selection',
         '/projects/:projectId/photos',
         '/projects/:projectId/photos/:photoId',
         '/projects/:projectId/pipeline',
@@ -124,12 +124,12 @@ describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
     expect(PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.id)).toEqual([
       'pipeline',
       'photos',
-      'compare',
+      'selection',
     ])
     expect(PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.label)).toEqual([
       'Projekt',
       'Fotos',
-      'Vergleich',
+      'Endauswahl',
     ])
   })
 
@@ -171,7 +171,7 @@ describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
   it.each([
     ['pipeline', '/projects/1/pipeline'],
     ['photos', '/projects/1/photos'],
-    ['compare', '/projects/1/compare'],
+    ['selection', '/projects/1/selection'],
     ['settings', '/projects/1/settings'],
     ['stats', '/projects/1/stats'],
   ])('baut fuer %s den Pfad %s', (id, expected) => {
@@ -221,7 +221,7 @@ describe('projectRoutes - resolveActiveNavTargetId', () => {
     ['/projects/1/pipeline/kriterien', 'pipeline'],
     ['/projects/1/photos', 'photos'],
     ['/projects/1/photos/42', 'photos'],
-    ['/projects/1/compare', 'compare'],
+    ['/projects/1/selection', 'selection'],
     ['/projects/1/settings', 'settings'],
     // specs/features/0347 (AK2): /stats ist mit dem Nebenbereich ein echtes Navigationsziel
     // geworden. Bewusst HIER als eigener Positivfall und nicht nur aus der Negativtabelle unten

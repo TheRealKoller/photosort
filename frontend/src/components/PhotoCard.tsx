@@ -45,8 +45,8 @@ export interface PhotoCardProps {
 }
 
 /**
- * Die Foto-Karte des Boards. Sie lebt GENAU EINMAL - `PhotoGridPage`, `CurateCategoriesPage` und
- * `PhotoComparePage` bauen keine eigene Kachel.
+ * Die Foto-Karte des Boards. Sie lebt GENAU EINMAL - `PhotoGridPage`, `CurationPhotoTile` und
+ * `SelectionPhotoTile` bauen keine eigene Kachel.
  *
  * AUFBAU (zugleich DOM- und Fokusreihenfolge): Bildbereich mit den beiden Ecken-Overlays,
  * darunter die Statuszeile (Kennzeichen links, Dateiname rechts), darunter die Fusszeile.
@@ -130,7 +130,7 @@ export function PhotoCard({
         {status === null && !favorite && (
           // Der Zustand "neu" traegt das WORT, nicht das neutrale "–"-Badge. Reiner Text, kein
           // `aria-label`, kein `RatingBadge` - das "–" bleibt seinen uebrigen Aufrufstellen
-          // (Vergleichsansicht) vorbehalten, wo es "hat nicht bewertet" heisst.
+          // (Haltungszeilen der Endauswahl) vorbehalten, wo es "hat nicht bewertet" heisst.
           //
           // Traegt die Karte das Favoriten-Kennzeichen, steht dort dessen Badge statt "Neu":
           // "Favorit" ohne Albumkennzeichen daneben IST die Aussage "noch nicht entschieden",

@@ -20,7 +20,7 @@ export const PROJECT_ROUTE_PATHS = {
   pipelineStep: '/projects/:projectId/pipeline/:step',
   photos: '/projects/:projectId/photos',
   photoDetail: '/projects/:projectId/photos/:photoId',
-  compare: '/projects/:projectId/compare',
+  selection: '/projects/:projectId/selection',
   settings: '/projects/:projectId/settings',
   stats: '/projects/:projectId/stats',
   album: '/projects/:projectId/album',
@@ -62,7 +62,7 @@ export function matchProjectId(pathname: string): string | null {
   return null
 }
 
-export type ProjectNavTargetId = 'pipeline' | 'photos' | 'compare' | 'settings' | 'stats'
+export type ProjectNavTargetId = 'pipeline' | 'photos' | 'selection' | 'settings' | 'stats'
 
 export interface ProjectNavTarget {
   id: ProjectNavTargetId
@@ -106,10 +106,10 @@ export const PROJECT_NAV_PRIMARY_TARGETS: readonly ProjectNavTarget[] = [
     activeRoutePaths: [PROJECT_ROUTE_PATHS.photos, PROJECT_ROUTE_PATHS.photoDetail],
   },
   {
-    id: 'compare',
-    label: 'Vergleich',
-    buildPath: (projectId) => `/projects/${projectId}/compare`,
-    activeRoutePaths: [PROJECT_ROUTE_PATHS.compare],
+    id: 'selection',
+    label: 'Endauswahl',
+    buildPath: (projectId) => `/projects/${projectId}/selection`,
+    activeRoutePaths: [PROJECT_ROUTE_PATHS.selection],
   },
 ]
 

@@ -23,5 +23,9 @@
   /* Das Projekt der Node-Umgebungs-Tests unter src/ - nicht nur des Design-Vertrags. Beide
      Dateien pruefen Eigenschaften des Repositoriums statt Anwendungsverhalten und brauchen dafuer
      Dateisystem- und Werkzeugzugriff. */
-  "include": ["src/designSystem.contract.test.ts", "src/prettierSupportInfo.test.ts"]
+  "include": [
+    "src/albumSelection.structure.test.ts",
+    "src/designSystem.contract.test.ts",
+    "src/prettierSupportInfo.test.ts"
+  ]
 }

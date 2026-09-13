@@ -2,7 +2,7 @@ import type { RatingOut, RatingStatus } from '../api/types'
 
 /**
  * Ermittelt die eigene Bewertung anhand des `username`-Claims aus dem JWT (siehe auth/jwt.ts) -
- * gemeinsame Hilfsfunktion statt der zuvor in PhotoGridPage/PhotoDetailPage/PhotoComparePage
+ * gemeinsame Hilfsfunktion statt der zuvor in Raster-, Einzelbild- und Vergleichsansicht
  * dreifach fast identisch dupliziert vorhandenen Logik (Architektur-Review-Fund).
  */
 export function findOwnRating(

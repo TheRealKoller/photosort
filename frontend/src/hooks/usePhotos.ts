@@ -26,7 +26,7 @@ function photosQueryKey(projectId: number, ratingStatus?: RatingFilter) {
 /**
  * Der Album-Entwurf: bewusst unter demselben ['photos', projectId, ...]-Praefix wie
  * photosQueryKey oben - die breite Invalidierung der Bewertungsmutationen trifft ihn damit mit,
- * wenn anderswo bewertet wird (Raster, Einzelbild, Vergleich).
+ * wenn anderswo bewertet wird (Raster, Einzelbild, Endauswahl).
  *
  * Die Entwurfsansicht selbst benutzt genau deshalb NICHT jene Mutationen, sondern
  * `useDraftDecisionMutation`: ein Neuladen der Entwurfsliste bei jeder Entscheidung risse die

@@ -80,7 +80,7 @@ function renderPage() {
 
 /** Die Schaltflächen des Umschalters - sie tragen ihren Zustand über `aria-pressed`. */
 function viewSwitch(label: 'Unterschiede' | 'Endauswahl') {
-  return screen.getByRole('button', { name: label, exact: true })
+  return screen.getByRole('button', { name: label })
 }
 
 /**
