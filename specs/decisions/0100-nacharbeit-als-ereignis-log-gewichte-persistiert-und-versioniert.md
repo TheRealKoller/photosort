@@ -45,9 +45,15 @@ Zustandsmodell bleibt unverändert.
 Ein Ereignis trägt die Angaben, die zum Zeitpunkt der Korrektur galten und **später überschrieben
 werden**: die Modellstufe (`PhotoAlbumSuitability.level`) der beteiligten Fotos, deren Qualitätswert
 (`PhotoRanking.rank_score` des damals letzten erfolgreichen Laufs) und bei einer Motivkorrektur die
-damals wirksame Motivstärke. Ohne das Einfrieren wäre nach dem nächsten Klassifizierungslauf nicht
-mehr entscheidbar, ob das Modell ein Motiv *zu schwach* oder *gar nicht* genannt hatte — die Aussage
-des Ereignisses hinge am heutigen Stand, und genau das schließt die Story aus.
+damals gespeicherte Motivstärke. Ohne das Einfrieren wäre nach dem nächsten Klassifizierungslauf
+nicht mehr entscheidbar, ob das Modell ein Motiv *zu schwach* oder *gar nicht* genannt hatte — die
+Aussage des Ereignisses hinge am heutigen Stand, und genau das schließt die Story aus.
+
+Festgehalten wird dabei die **gespeicherte Stärke des Modells** (`PhotoMotifStrength.strength`),
+ausdrücklich **nie die wirksame** aus `motif_strengths.py::effective_strength_expression`: Letztere
+trägt bereits eine frühere Korrektur desselben Paares und beantwortete die Frage nach dem
+Modellfehler mit der Korrektur statt mit der Modellaussage. Die zweite Korrektur eines Motivs
+zeigte dann nie einen Fehler an.
 
 **Die lokalen Kriterienwerte werden dagegen zur Auswertungszeit gelesen**, nicht eingefroren: Sie
 sind eine deterministische Messung an denselben Pixeln, während die Modellstufe eine je Lauf neu
