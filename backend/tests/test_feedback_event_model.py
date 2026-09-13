@@ -184,10 +184,9 @@ def test_the_event_id_carries_no_foreign_key_while_the_photo_id_does() -> None:
 def _joins_feedback_event_id_against_event_id(source: str) -> bool:
     """Findet jede Verbindung von `FeedbackEvent.event_id` gegen `Event.id` im Syntaxbaum.
 
-    Erkannt werden die drei Formen, in denen eine solche Verbindung im Bestand geschrieben
-    wuerde: der Gleichheitsvergleich der beiden Attributzugriffe in beliebiger Reihenfolge, das
-    `onclause`-Argument eines `join(...)`-Aufrufs (das ebenfalls ein Vergleich ist) und ein
-    `relationship(...)` mit `Event` als Ziel innerhalb der Modellklasse.
+    Beide Schreibformen, in denen eine solche Verbindung in SQLAlchemy entsteht, sind im Baum
+    DERSELBE Knoten: das `where`-Praedikat und das `onclause` eines `join(...)` sind beide ein
+    `ast.Compare` der zwei Attributzugriffe. Erkannt wird er in beiden Reihenfolgen.
 
     BEKANNTE GRENZE: eine ueber rohes SQL (`text(...)`) geschriebene Verbindung ist statisch
     nicht erkennbar. Dagegen steht der Verhaltensfall ueber `rebuild_run_grouping`."""
@@ -356,3 +355,94 @@ def test_the_append_only_guard_finds_every_written_form(snippet: str) -> None:
 )
 def test_the_append_only_guard_stays_silent_on_the_legitimate_forms(snippet: str) -> None:
     assert not _mutates_feedback_events(snippet)
+
+
+# --- Invariante 2, strukturelle Haelfte: die Endauswahl kennt keinen Nutzer -------------------
+
+_ALBUM_DECISIONS_MODULE = Path(photosort.__file__).resolve().parent / "api" / "album_decisions.py"
+
+
+def _functions_touching_the_user(source: str) -> tuple[list[str], list[str]]:
+    """Je Funktionsrumpf: Nimmt sie ein `current_user` entgegen, und liest sie `User`?
+
+    AUF FUNKTIONSRUMPF-GRANULARITAET und nicht ueber eine Textsuche im ganzen Modul - der
+    Modulkopf BEGRUENDET die Abwesenheit ausdruecklich und nennt dabei `current_user`. Ein
+    Wortverbot ueber die Datei verboete genau diese Begruendung."""
+    taking: list[str] = []
+    reading: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        arguments = node.args
+        names = [
+            argument.arg
+            for argument in (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)
+        ]
+        if any(name == "current_user" for name in names):
+            taking.append(node.name)
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Name) and inner.id == "User":
+                reading.append(node.name)
+                break
+    return taking, reading
+
+
+def test_no_function_of_the_album_decision_endpoint_obtains_a_user() -> None:
+    """S9, STRUKTURELLE Haelfte: `user_id IS NULL` der gemeinsamen Entscheidung wird nie
+    aufgefuellt - getragen davon, dass dieser Router gar keinen Nutzer kennt.
+
+    Ein Ereignisschreiber, der sich dafuer eines besorgt, fuehrte das in ADR 0099 verworfene
+    `decided_by` durch die Hintertuer ein - und das Log waere der Ort, an dem man nachsieht, wer
+    wollte, was das PROJEKT entschieden hat. Ein Verhaltensfall roetete das nicht: Die Zeile saehe
+    genauso aus wie eine richtige, nur mit einem Wert mehr."""
+    source = _ALBUM_DECISIONS_MODULE.read_text(encoding="utf-8")
+
+    taking, reading = _functions_touching_the_user(source)
+
+    assert taking == [], (
+        f"Diese Funktionen von api/album_decisions.py nehmen ein `current_user` entgegen: {taking}"
+    )
+    assert reading == [], f"Diese Funktionen von api/album_decisions.py lesen `User`: {reading}"
+
+
+def test_the_router_still_carries_its_mandatory_auth_dependency() -> None:
+    """GEGENPROBE, und sie traegt hier tatsaechlich: Ohne sie waere der Waechter oben durch
+    ENTFERNEN DER AUTHENTIFIZIERUNG zu erfuellen. Die Torwaechter-Dependency am Router ist die
+    einzige Auth dieses Endpunkts - an der Funktionssignatur ist sie nicht sichtbar."""
+    source = _ALBUM_DECISIONS_MODULE.read_text(encoding="utf-8")
+
+    assert "dependencies=[Depends(get_current_user)]" in source
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        pytest.param(
+            "async def f(current_user: User = Depends(get_current_user)) -> None: ...",
+            id="parameter-und-lesezugriff",
+        ),
+        pytest.param(
+            "async def f(session: AsyncSession) -> None:\n    await session.execute(select(User))",
+            id="nur-lesezugriff",
+        ),
+    ],
+)
+def test_the_user_guard_finds_both_written_forms(snippet: str) -> None:
+    """SELBSTSCHUTZ: Beide Haelften der Aussage haben ihre eigene Form im Code - der Parameter und
+    der Lesezugriff."""
+    taking, reading = _functions_touching_the_user(snippet)
+
+    assert taking or reading
+
+
+def test_the_user_guard_stays_silent_on_a_mere_mention_in_a_comment() -> None:
+    """DIE tragende Gegenprobe: Der Modulkopf von `api/album_decisions.py` begruendet ausdruecklich,
+    warum es hier KEIN `current_user` gibt. Ein Waechter, der die blosse Nennung ahndet, verboete
+    genau die Begruendung - und wer sie entfernt, macht ihn wieder gruen."""
+    snippet = (
+        '"""Der Endpunkt nimmt KEIN current_user entgegen - die Entscheidung gehoert dem '
+        'Projekt, nicht einem User."""\n'
+        "async def f(session: AsyncSession) -> None: ...\n"
+    )
+
+    assert _functions_touching_the_user(snippet) == ([], [])
