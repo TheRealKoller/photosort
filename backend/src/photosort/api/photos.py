@@ -876,45 +876,42 @@ async def _latest_successful_criterion_scoring_run_id(
     ).scalar_one_or_none()
 
 
-async def _top_n_per_event_photo_ids(
-    session: AsyncSession, project_id: int, top_n: int
+async def _selection_photo_ids(
+    session: AsyncSession, project_id: int
 ) -> tuple[list[int], dict[int, int], int | None]:
-    """Kuratierung ohne Backfill: liefert je Partition (`event_id`) des LETZTEN erfolgreichen
-    CriterionScoringRun die Fotos mit `rank_position <= top_n`.
+    """Der Auswahlvorschlag des LETZTEN erfolgreichen CriterionScoringRun: die Fotos mit
+    `selection_position IS NOT NULL`, sortiert nach `(events.position, selection_position)` und
+    damit chronologisch.
+
+    DER VORSCHLAG IST EIN LAUF-ARTEFAKT, kein Leseparameter: Welche Fotos hier stehen, hat das
+    Verfahren beim Lauf bzw. beim letzten Neuaufbau entschieden (`worker.py`,
+    `selection.py`). Der Endpunkt wählt nichts aus und bildet keine Schwelle nach.
 
     KEIN ABLEHNUNGSFILTER: die Query filtert die vom anfragenden Nutzer REJECTED-bewerteten
-    Fotos NICHT aus, und damit ist auch keine Fensterfunktion nötig -
-    `PhotoRanking.rank_position` ist je Partition lückenlos ab 1 vergeben
-    (`ranking.py::rank_photos` liefert `index + 1` über die VOLLSTÄNDIGE Partition;
-    `worker.py::_build_grouping_and_rankings` ruft sie je Event auf).
-
-    Folge: Welche Fotos die Ansicht zeigt, hängt ausschließlich vom LAUF ab, nicht vom
-    Bewertungsstand des Betrachters. Ein verworfenes Foto bleibt an seiner Position und trägt
+    Fotos NICHT aus. Welche Fotos die Ansicht zeigt, hängt ausschließlich vom LAUF ab, nicht vom
+    Bewertungsstand des Betrachters; ein verworfenes Foto bleibt an seiner Position und trägt
     seinen Zustand in `PhotoOut.ratings[]`.
 
-    `top_n` wirkt JE EVENT. Rückgabe dreiteilig: die Foto-Ids in Anzeigereihenfolge, die
-    `curation_position` je Foto (ohne Ablehnungsfilter identisch mit `rank_position`) und die
-    Lauf-Id."""
+    Rückgabe dreiteilig: die Foto-Ids in Anzeigereihenfolge, die `curation_position` je Foto (hier
+    die `selection_position`, NICHT die `rank_position`) und die Lauf-Id."""
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
         return [], {}, None
 
     result = await session.execute(
-        select(PhotoRanking.photo_id, PhotoRanking.rank_position)
+        select(PhotoRanking.photo_id, PhotoRanking.selection_position)
+        .join(Event, Event.id == PhotoRanking.event_id)
         .where(
             PhotoRanking.criterion_scoring_run_id == latest_run_id,
-            # AUSGESCHRIEBEN, obwohl `NULL <= n` in SQL ohnehin nie wahr wird: die Aussage "ein
-            # Foto ohne Modellbewertung erscheint nicht im Entwurf" soll hier stehen und nicht
-            # aus dem Dreiwertigkeits-Verhalten des Vergleichs mitgelesen werden muessen.
-            PhotoRanking.rank_position.is_not(None),
-            PhotoRanking.rank_position <= top_n,
+            Event.criterion_scoring_run_id == latest_run_id,
+            PhotoRanking.selection_position.is_not(None),
         )
-        .order_by(PhotoRanking.event_id, PhotoRanking.rank_position)
+        .order_by(Event.position, PhotoRanking.selection_position)
     )
     ordered_ids: list[int] = []
     curation_positions: dict[int, int] = {}
-    for photo_id, rank_position in result.all():
-        curation_positions[photo_id] = rank_position
+    for photo_id, selection_position in result.all():
+        curation_positions[photo_id] = selection_position
         ordered_ids.append(photo_id)
     return ordered_ids, curation_positions, latest_run_id
 
@@ -975,12 +972,25 @@ _MAX_QUERY_POSITION = 1_000_000_000
 async def list_photos(
     project_id: int,
     rating_status: RatingFilter | None = None,
-    # Kuratierung: serverseitig deklarativ begrenzt (Field(ge=1, le=10)) -
-    # Robustheits-/Ressourcen-Kriterium, kein Sicherheitskriterium. Wenn gesetzt, ersetzt dieser
-    # Query-Modus rating_status vollstaendig (eigenstaendige Kuratierungs-Ansicht) - limit/offset
-    # werden in diesem Modus ignoriert, da der volle Partitions-Pool (N x Partitionsanzahl) fuer
-    # ein Zwei-Personen-Familienprojekt naturgemaess klein bleibt.
-    top_n_per_event: int | None = Query(None, ge=1, le=10),
+    # AUSWAHLMODUS. Gesetzt, ersetzt er `rating_status` vollstaendig (eigenstaendige
+    # Kuratierungs-Ansicht) und liefert den Vorschlag des letzten erfolgreichen Laufs als GANZES.
+    #
+    # SICHERHEIT (S4): `limit`/`offset` werden in diesem Zweig VOLLSTAENDIG ignoriert - nie halb.
+    # Der frueher deckelnde Parameter `top_n_per_event` ist mit ADR 0096 ersatzlos entfallen; die
+    # Obergrenze der Antwort ist damit der auswahlfaehige Bestand des Laufs. Das wird bewusst
+    # getragen (die Ansicht zeigt den Vorschlag als Ganzes, beide Nutzer sind die
+    # Vertrauensbasis). Wirkten `limit`/`offset` hier HALB, zeigte die Ansicht einen
+    # abgeschnittenen Vorschlag als vollstaendigen an, und ihr Hinweis "der Bildbestand reicht
+    # fuer mehr nicht" saegte etwas Falsches - ein Zustand, den keine Anzeige als fehlerhaft
+    # ausweist.
+    selection: bool = False,
+    # Der alte Kuratierungsparameter, mit ADR 0096 ERSATZLOS entfallen. Er steht hier noch als
+    # `None`-typisierter Parameter, damit ein Aufruf mit ihm LAUT scheitert (`422`) statt still
+    # ignoriert zu werden: FastAPI uebergeht einen unbekannten Query-Parameter kommentarlos, und
+    # ein stehengebliebener Aufrufer bekaeme dann den vollen Listing-Zweig statt einer Auswahl -
+    # ohne dass irgendwo ein Fehler sichtbar wuerde. Ein Uebergangsweg, der beide Parameter
+    # kennt, entsteht bewusst nicht; er waere eine zweite Auswahlregel.
+    top_n_per_event: None = Query(None, include_in_schema=False),
     # Ohne diesen Filter kann die Oberflaeche die beiden Fotos fuer den Versatz-Vorschlag nicht
     # anbieten. `ge=1` schliesst `0` und negative Werte aus, `le` verhindert, dass ein Wert
     # jenseits von 2^63 unter SQLite einen OverflowError und damit eine 500 statt einer leeren
@@ -993,9 +1003,9 @@ async def list_photos(
 ) -> PhotoListOut:
     project = await _get_project_or_404(project_id, session)
 
-    if top_n_per_event is not None:
-        ids, curation_positions, criterion_scoring_run_id = await _top_n_per_event_photo_ids(
-            session, project_id, top_n_per_event
+    if selection:
+        ids, curation_positions, criterion_scoring_run_id = await _selection_photo_ids(
+            session, project_id
         )
         photos_by_id = await _photos_by_id(session, ids)
         rankings_by_id = (
