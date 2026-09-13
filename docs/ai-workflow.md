@@ -78,6 +78,7 @@ wo sie ausgeführt wird:
 | `architect` — **Umsetzungsplanung** bei „Blockiert" | Agent | Subagent | seltener Sonderpfad, echtes Entwurfsurteil, Isolation sinnvoll. |
 | `ship-feature` | Skill | Hauptsession | Nachbereitungs-Orchestrierung: Board-Status, `review` aufrufen, Findings-Loop per `SendMessage` an `developer`, PR-Erstellung, Copilot-Review. Der Auslieferpfad des **Story-Wegs** — und der einzige mit Review-Phase und Copilot-Review. |
 | `ship-entwurf` | Skill | Hauptsession | Auslieferpfad eines Penpot-Entwurfsrundenlaufs: ausgelöst durch dessen Übergabeanker, misst den Diff selbst, prüft ihn gegen eine geschlossene Pfad-Zulassungsmenge, committet pfadgenau, gleicht mit `main` ab, pusht, eröffnet den Pull Request. Zweite Stelle mit GitHub-Schreibzugriff; bewusst **ohne** Perspektivenrunde und ohne Copilot-Review (siehe `CLAUDE.md`). |
+| `laufstand` | Skill | Hauptsession | keine Stufe der Kette, sondern eine Nachfrage daneben: liest den Stand eines gerade laufenden Umsetzungslaufs, ohne ihn anzufassen. Eigener Auslöser (Daniel fragt), kein Vorgänger- und kein Nachfolgeschritt. |
 | `research-engineer` | Agent | Subagent | Standard-Modell, immer; Tool-Isolation (kein `Bash`/`Write`/`Edit`/`Agent`) — Quellenbewertung ist echtes fachliches Abwägen, kein Kandidat für eine günstigere Modellstufe. |
 
 Die fünf Fachagenten (`architect`, `test-engineer`, `security-engineer`, `requirements-engineer`,
@@ -130,6 +131,17 @@ landet dort, den Unterschied trägt GitHubs Close-Grund (`not planned` gegenübe
 
 Der lokale Spec-Datei-Lebenszyklus (`Proposed → Accepted → Implemented → Superseded`,
 `specs/README.md`) ist davon unberührt.
+
+### Eine Nachfrage neben der Kette: der Laufstand
+
+Ein Umsetzungslauf ist lang, und bis zu seinem Abschlussbericht sagt er nichts. Damit das Warten
+nicht blind ist, gibt er seinen Schrittplan als Block `## Laufstand` in seine eigene Ausgabe —
+einmal vor dem ersten Rot-Schritt, danach nach jeder abgeschlossenen Einheit und zu Beginn jedes
+Folgeauftrags. Der Skill `laufstand` liest diesen Block auf Nachfrage von außen und ergänzt ihn um
+den gemessenen Commit-Stand des Branches. Er ist **kein Schritt der Kette**: Er hat einen eigenen
+Auslöser (Daniel fragt), verändert nichts und fasst den Lauf nicht an — insbesondere schickt er
+ihm keine Nachricht, die einen seiner Züge verbrauchen würde. Findet er keinen Lauf oder keinen
+Block, sagt er genau das, statt einen Stand zu erfinden.
 
 ## Testgetrieben, mit hartem Gate
 
