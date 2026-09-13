@@ -6,7 +6,7 @@ import jwt
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api import cameras, motifs, opencloud, projects, stats
+from photosort.api import album_decisions, cameras, motifs, opencloud, projects, stats
 from photosort.config import settings
 from photosort.models import User
 from photosort.security import ALGORITHM, create_access_token, hash_password
@@ -137,12 +137,19 @@ def _protected_router_operations() -> list[tuple[str, str]]:
     # specs/features/0427-motive-mit-staerke.md, Auflage S1: dasselbe fuer `motifs.router` - ohne
     # diesen Eintrag waere ein spaeter ergaenzter zweiter Endpunkt jenes Routers von keinem
     # Vollstaendigkeitstest erfasst.
+    # specs/features/0431-endauswahl-gemeinsam.md, Auflage S1: dasselbe fuer
+    # `album_decisions.router` - und dort wiegt es schwerer als anderswo. Sein Endpunkt nimmt kein
+    # `current_user` entgegen; seine Authentifizierung ist an der Funktionssignatur NICHT sichtbar,
+    # es gibt keinen Parameter, dessen Fehlen auffiele. Ein hier vergessener Router erzeugt
+    # schlicht weniger Faelle, ohne rot zu werden - deshalb traegt jener Endpunkt zusaetzlich
+    # seinen eigenen, pfadbenannten 401-Fall in tests/test_api_album_decisions.py.
     for router in (
         projects.router,
         opencloud.router,
         stats.router,
         cameras.router,
         motifs.router,
+        album_decisions.router,
     ):
         for route in router.routes:
             path = getattr(route, "path", "")

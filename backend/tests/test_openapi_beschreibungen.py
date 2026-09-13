@@ -44,6 +44,11 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # (das Event abzueglich des eigenen Entwurfs, gestrichene eingeschlossen) und WORAN die
     # Reihenfolge haengt (den Motiven des Bezugsbildes).
     ("get", "/projects/{project_id}/draft-alternatives"),
+    # specs/features/0431-endauswahl-gemeinsam.md, PR 1: der Schreibendpunkt der gemeinsamen
+    # Entscheidung. Seine Beschreibung traegt die Aussage, die der Signatur gerade nicht anzusehen
+    # ist - dass die Entscheidung dem PROJEKT gehoert und nicht dem angemeldeten Nutzer, dass sie
+    # die Einigkeit in beide Richtungen ueberschreibt und dass es kein `DELETE` gibt.
+    ("put", "/photos/{photo_id}/album-decision"),
 )
 
 
