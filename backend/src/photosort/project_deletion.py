@@ -36,6 +36,7 @@ from photosort.models import (
     CriterionScoringRun,
     Event,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
@@ -145,6 +146,13 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     await _run(
         "photo_cloud_vision_errors",
         delete(PhotoCloudVisionError).where(PhotoCloudVisionError.photo_id.in_(photo_ids)),
+    )
+    # Ohne diese Anweisung ueberleben Aussagen ueber die Bildguete geloeschter Familienfotos die
+    # Projektloeschung. Die Position folgt der per Test erzwungenen Ordnung
+    # `reversed(Base.metadata.sorted_tables)`.
+    await _run(
+        "photo_album_suitability",
+        delete(PhotoAlbumSuitability).where(PhotoAlbumSuitability.photo_id.in_(photo_ids)),
     )
     # NACH photo_rankings (die zeigen auf events), VOR criterion_scoring_runs (darauf zeigen
     # events). Beide Kanten sind echte Fremdschluessel - unter Postgres bleibt sonst eine verwaiste

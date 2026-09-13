@@ -18,6 +18,7 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
@@ -1644,3 +1645,144 @@ def test_both_motif_unique_constraints_carry_an_explicit_name() -> None:
 
     assert strength_names == {"uq_motif_strength_photo_key"}
     assert correction_names == {"uq_motif_correction_photo_key"}
+
+
+# specs/features/0428-albumtauglichkeit-vom-modell.md ab hier: die Albumtauglichkeit haengt an
+# `photos` und nicht an der Motiv-Kopfzeile (ADR 0093, Abschnitt 6), und `photo_rankings` traegt
+# ab hier `NULL` fuer ein Foto ohne Modellurteil.
+
+
+async def test_create_photo_album_suitability(db_session: AsyncSession) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoAlbumSuitability(
+            photo_id=photo.id,
+            level=4,
+            reason="Alle schauen in die Kamera.",
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    stored = (
+        await db_session.execute(
+            select(PhotoAlbumSuitability).where(PhotoAlbumSuitability.photo_id == photo.id)
+        )
+    ).scalar_one()
+    assert stored.level == 4
+    assert stored.reason == "Alle schauen in die Kamera."
+    assert stored.provider == "anthropic"
+
+
+async def test_photo_album_suitability_is_one_to_one_with_photo(db_session: AsyncSession) -> None:
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoAlbumSuitability(
+            photo_id=photo.id,
+            level=3,
+            reason=None,
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    db_session.add(
+        PhotoAlbumSuitability(
+            photo_id=photo.id,
+            level=5,
+            reason=None,
+            provider="anthropic",
+            computed_at=datetime.now(UTC),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_photo_album_suitability_reason_may_be_absent(db_session: AsyncSession) -> None:
+    """Ohne brauchbare Begruendung steht dort `NULL`, nie eine leere Zeichenkette."""
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoAlbumSuitability(
+            photo_id=photo.id, level=2, provider="anthropic", computed_at=datetime.now(UTC)
+        )
+    )
+    await db_session.commit()
+
+    stored = await db_session.get(PhotoAlbumSuitability, photo.id)
+    assert stored is not None
+    assert stored.reason is None
+
+
+async def test_deleting_photo_cascades_to_album_suitability(db_session: AsyncSession) -> None:
+    """Sonst ueberleben Aussagen ueber die Bildguete geloeschter Familienfotos ihr Foto (S13)."""
+    photo = await _make_photo(db_session)
+    db_session.add(
+        PhotoAlbumSuitability(
+            photo_id=photo.id, level=2, provider="anthropic", computed_at=datetime.now(UTC)
+        )
+    )
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    assert (await db_session.execute(select(PhotoAlbumSuitability))).scalars().all() == []
+
+
+async def test_a_photo_ranking_without_a_model_verdict_carries_null_but_keeps_its_event(
+    db_session: AsyncSession,
+) -> None:
+    """`NULL` heisst "kein Qualitaetswert, weil keine Modellbewertung". Die Gliederung nach Events
+    ist dagegen KEINE Cloud-Leistung: `event_id` bleibt gesetzt, das Foto bleibt im einsehbaren
+    Vorrat."""
+    project = Project(name=f"Project {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+    )
+    db_session.add(run)
+    await db_session.flush()
+    photo = await _make_photo(db_session, project)
+    event_id = await event_id_of_run(db_session, run)
+
+    db_session.add(
+        PhotoRanking(
+            criterion_scoring_run_id=run.id,
+            photo_id=photo.id,
+            event_id=event_id,
+            rank_score=None,
+            rank_position=None,
+        )
+    )
+    await db_session.commit()
+
+    stored = (
+        await db_session.execute(
+            select(PhotoRanking).where(PhotoRanking.criterion_scoring_run_id == run.id)
+        )
+    ).scalar_one()
+    assert stored.rank_score is None
+    assert stored.rank_position is None
+    assert stored.event_id == event_id
+
+
+def test_the_criterion_value_column_stays_not_null() -> None:
+    """Ein nicht messbares Kriterium wird GELOESCHT, nicht auf `NULL` gesetzt - sonst traegt die
+    Spalte zwei verschiedene Aussagen ("nicht messbar" und "Wert unbekannt"), und jeder Leser
+    braeuchte einen Sonderzweig dafuer."""
+    assert PhotoCriterionScore.__table__.columns["value"].nullable is False
+
+
+def test_the_two_ranking_columns_are_nullable_but_the_event_is_not() -> None:
+    columns = PhotoRanking.__table__.columns
+
+    assert columns["rank_score"].nullable is True
+    assert columns["rank_position"].nullable is True
+    assert columns["event_id"].nullable is False

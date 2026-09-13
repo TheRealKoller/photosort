@@ -92,8 +92,13 @@ class RankingOut(BaseModel):
     Ein Foto hat pro Lauf GENAU EINE solche Zeile - die Partition ist allein das Event."""
 
     event_id: int
-    rank_score: float
-    rank_position: int
+    # BEIDE nullable, und `null` heisst hier GENAU EINES: "kein Qualitätswert, weil keine
+    # Modellbewertung" - projektweit ohne Cloud-Freigabe, je Foto bei einem fehlgeschlagenen
+    # Aufruf. `0.0` ist dagegen ein GÜLTIGER Qualitätswert (die schlechteste Modellstufe ohne
+    # lokale Korrektur); ein Leser, der auf Falsyness statt auf `null` prüft, verliert ihn
+    # lautlos. `event_id` bleibt daneben gesetzt - die Gliederung ist keine Cloud-Leistung.
+    rank_score: float | None
+    rank_position: int | None
     # Größe der GESAMTEN Event-Partition (nicht nur der angeforderten top_n), für "Rang M von N"
     # im Info-Popover - lauf-global berechnet (siehe _partition_sizes), nicht nutzerspezifisch
     # gefiltert.
