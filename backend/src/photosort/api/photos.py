@@ -118,6 +118,17 @@ class RankingOut(BaseModel):
     # im Info-Popover - lauf-global berechnet (siehe _partition_sizes), nicht nutzerspezifisch
     # gefiltert.
     partition_size: int
+    # Traegt der LAUF dieses Foto vor? `selection_position IS NOT NULL`, LAUF-GLOBAL und ohne
+    # jeden Nutzerbezug - beide Nutzer sehen denselben Wert.
+    #
+    # Auf ALLEN Lesepfaden befuellt, nicht nur im Entwurfsmodus: Der Entwurf eines Nutzers ist
+    # Vorschlag ∪ eigene Aufnahmen, und erst dieses Feld unterscheidet darin die beiden Herkuenfte.
+    # Ein Eintrag mit `proposed=false` und eigener Entscheidung `album_worthy` ist der Zustand
+    # "aufgenommen, vom aktuellen Vorschlag nicht getragen".
+    #
+    # NICHT aus `curation_position` ableitbar: jene traegt den Platz in der ANGEZEIGTEN Auswahl
+    # und steht ausserhalb des Entwurfszweigs ueberall auf `null`.
+    proposed: bool
     # Der Platz dieses Fotos in der ANGEZEIGTEN Auswahl seines Events. `null`, wenn das Foto nicht
     # zur angeforderten Auswahl gehoert oder gar keine angefordert wurde.
     #
@@ -882,6 +893,10 @@ def _to_photo_out(
                 event_id=ranking.event_id,
                 rank_score=ranking.rank_score,
                 rank_position=ranking.rank_position,
+                # Aus der Rangzeile selbst, nicht aus der uebergebenen Auswahlabbildung: `proposed`
+                # ist lauf-global und muss auch dort stehen, wo gar keine Auswahl angefordert
+                # wurde.
+                proposed=ranking.selection_position is not None,
                 partition_size=(partition_sizes or {}).get(ranking.event_id, 0),
                 curation_position=(curation_positions or {}).get(ranking.photo_id),
             )

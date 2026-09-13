@@ -842,6 +842,7 @@ class TestTheSelection:
             "event_id": (await _default_event(db_session, run)).id,
             "rank_score": 0.9,
             "rank_position": 1,
+            "proposed": True,
             "partition_size": 3,
             # Im Auswahlmodus traegt jedes gelieferte Foto seinen Platz im Vorschlag.
             "curation_position": 1,
@@ -1207,6 +1208,90 @@ class TestTheSelection:
         item = response.json()["items"][0]
         assert item["ranking"] is not None
         assert [c["criterion_key"] for c in item["criterion_scores"]] == ["sharpness"]
+
+
+class TestTheProposedFlag:
+    """`RankingOut.proposed` ist `selection_position IS NOT NULL` des letzten erfolgreichen Laufs:
+    LAUF-GLOBAL (kein Nutzerbezug) und auf ALLEN Lesepfaden befuellt, nicht nur im Entwurfsmodus.
+
+    Es ist die einzige Auskunft darueber, ob der Lauf ein Foto vortraegt - ohne sie muesste die
+    Oberflaeche sie aus `curation_position` nachbauen, und die gibt es nur im Entwurfszweig."""
+
+    async def test_the_listing_carries_proposed_for_both_states(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        proposed = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        candidate = await _make_photo(
+            db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC)
+        )
+        await _add_ranking(db_session, run, proposed, rank_score=0.9, rank_position=1)
+        await _add_ranking(
+            db_session, run, candidate, rank_score=0.5, rank_position=2, selection_position=None
+        )
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        items = {item["id"]: item for item in response.json()["items"]}
+        assert items[proposed.id]["ranking"]["proposed"] is True
+        assert items[candidate.id]["ranking"]["proposed"] is False
+
+    async def test_the_candidates_endpoint_carries_the_same_field(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Feldgleichheit ueber die Lesepfade: derselbe Wert desselben Fotos, einmal ueber das
+        Listing und einmal ueber den Kandidaten-Endpunkt. Ein je Zweig getrennt gesetztes Feld
+        liefe genau hier auseinander."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        first = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        second = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(db_session, run, first, rank_score=0.9, rank_position=1)
+        await _add_ranking(
+            db_session, run, second, rank_score=0.5, rank_position=2, selection_position=None
+        )
+
+        listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+        candidates = await authenticated_api_client.get(
+            f"/projects/{project.id}/curation-candidates",
+            params={"event_id": (await _default_event(db_session, run)).id, "after_rank": 1},
+        )
+
+        from_listing = {item["id"]: item["ranking"]["proposed"] for item in listing.json()["items"]}
+        [candidate_item] = candidates.json()["items"]
+        assert candidate_item["id"] == second.id
+        assert candidate_item["ranking"]["proposed"] == from_listing[second.id] is False
+
+    async def test_proposed_is_run_global_and_not_user_dependent(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die MENGE der Antwort haengt im Entwurfszweig am anfragenden Nutzer, dieses Feld
+        ausdruecklich NICHT: es sagt, was der LAUF vortraegt. Der zweite Nutzer bewertet das Foto
+        gegenlaeufig - beide Sichten tragen trotzdem denselben Wert."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        other_user = await _make_second_user(db_session)
+        db_session.add(
+            Rating(photo_id=photo.id, user_id=other_user.id, status=RatingStatus.REJECTED)
+        )
+        await db_session.commit()
+
+        own = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        own_authorization = authenticated_api_client.headers["Authorization"]
+        authenticated_api_client.headers["Authorization"] = (
+            f"Bearer {create_access_token(other_user)}"
+        )
+        try:
+            other = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+        finally:
+            authenticated_api_client.headers["Authorization"] = own_authorization
+
+        assert own.json()["items"][0]["ranking"]["proposed"] is True
+        assert other.json()["items"][0]["ranking"]["proposed"] is True
 
 
 class TestCurationCandidates:
@@ -2321,6 +2406,8 @@ class TestDefaultListingRanking:
             "event_id": (await _default_event(db_session, run)).id,
             "rank_score": 0.9,
             "rank_position": 1,
+            # Lauf-global und deshalb AUCH hier, ohne jede angeforderte Auswahl.
+            "proposed": True,
             "partition_size": 2,
             # Ohne angeforderte Auswahl bleibt die Position `null`.
             "curation_position": None,

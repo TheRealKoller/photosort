@@ -29,6 +29,7 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
     event_id: 1,
     rank_score: 0.8,
     rank_position: 3,
+    proposed: true,
     partition_size: 12,
     curation_position: null,
     ...overrides,

@@ -293,6 +293,10 @@ export interface RankingOut {
    * „Rang M von N" entfällt dann vollständig; „Rang – von 12" wäre eine Rangaussage über ein
    * Foto ohne Rang. */
   rank_position: number | null
+  /** Trägt der LAUF dieses Foto vor? Lauf-global, ohne jeden Nutzerbezug, auf allen Lesepfaden
+   * gesetzt. `false` bei gleichzeitiger eigener Entscheidung „Im Album" ist der Zustand
+   * „aufgenommen, vom aktuellen Vorschlag nicht getragen". */
+  proposed: boolean
   // Größe der GESAMTEN Event-Partition (nicht nur des Vorschlags), für "Rang M von N"
   // im Info-Popover.
   partition_size: number
