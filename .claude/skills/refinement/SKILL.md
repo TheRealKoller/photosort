@@ -7,7 +7,7 @@ description: Schärft eine neue Produkt-/Feature-Idee rein fachlich zu einer Sto
 
 **GitHub-Erlaubnisstufe:** lesend und schreibend
 
-**Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Fragerunden, das Lohnenswert-Gate und die Issue-Schreibregeln hier vollständig stehen.
+**Umfang:** über dem Richtwert von rund 120 Zeilen, weil die Fragerunden, das Lohnenswert-Gate, die Entwurfsrunden und die Issue-Schreibregeln hier vollständig stehen.
 
 Jeder GitHub-Zugriff läuft über eine Operation des Skills `github-access`; lade ihn einmal über das Skill-Werkzeug, an deinem ersten GitHub-Berührungspunkt (Schritt 0). Dieser Skill nennt ausschließlich Operations-IDs und die Ablauf-Logik drumherum.
 
@@ -47,6 +47,21 @@ Sobald du die Idee grundsätzlich verstehst, untersuche zwei Dinge — bei einer
 - **Bestehende Feature-Specs** (`specs/features/*.md`, alle Status): Gibt es Überschneidungen mit einer bereits geplanten oder umgesetzten Spec? Widerspricht die Idee einer bestehenden Entscheidung (`specs/decisions/*.md`)? Macht sie eine bestehende Spec teilweise oder ganz obsolet?
 
 Das Ziel ist nicht erschöpfende Recherche, sondern genug, um echte Konflikte und Überschneidungen zu erkennen, bevor sie zum Problem werden.
+
+## Schritt 3b: Entwurfsrunden auf ausdrücklichen Wunsch
+
+**Nur auf ausdrücklichen Wunsch.** Ohne Daniels Äußerung im Gespräch wird dieser Schritt weder ausgeführt noch angeboten, und Schritt 3 geht unverändert in Schritt 4 über. Kein anderer Ablauf löst ihn aus.
+
+**Der Schritt bleibt an dieser Stelle:** hinter der Code-/Spec-Recherche, damit ein Entwurf, der dem Bestehenden widerspricht, als Widerspruch auffällt; vor dem Lohnenswert-Gate, damit das Gate über die Idee urteilt, die die Entwürfe **gezeigt** haben, statt über die, die beschrieben wurde.
+
+Ablauf: `penpot-entwurfsrunden` aufrufen und vollständig nach dessen Text arbeiten — Umfang `ansicht`, erste Runde im Modus `alternativen` (mehrere erkennbar verschiedene Ansätze zur Auswahl, nicht ein einzelner Vorschlag). Die weiteren Runden folgen dem, was Daniel auswählt; die Zahl der Runden ist nicht vorgegeben.
+
+- **Fragen statt raten:** Was beim Entwerfen auffällt — eine fehlende Angabe, ein Zustand, an den niemand gedacht hat, ein Widerspruch zur Idee selbst — wird gefragt. Kritische Rückfragen, die die Idee in Zweifel ziehen, sind hier ausdrücklich erwünscht und nehmen dem Gate nichts vorweg.
+- **Was in den Runden erkannt wird, fließt in Schritt 5 und 6 ein:** Erkenntnisse aus den Entwürfen gehören in die Akzeptanzkriterien, nicht in einen Extra-Abschnitt.
+- **Während der Runden wird nichts ausgeliefert:** keine ausgearbeitete Ansicht, keine Aufnahme in die geprüfte Design-Nutzlast, kein Pull Request. Das entscheidet allein der Nachlauf am Ende von Schritt 6, und zwar am Board-Wert. Wird die Idee in Schritt 5 verworfen, ist deshalb nichts ausgeliefert worden, das zurückzunehmen wäre.
+- **Bricht der Rundenlauf ab**, läuft die Schärfung regulär weiter; der Nachlauf entfällt dann, und es wird nichts an das Issue geschrieben.
+
+Der Entwurf wird an dieser Stelle **nicht** an die Story geheftet — das tut der Nachlauf `story-entwurf` am Ende von Schritt 6, nachdem das Gate bestanden und der Status gesetzt ist.
 
 ## Schritt 4: Nachfragen bei Unklarheiten
 
@@ -162,6 +177,10 @@ Ist bereits ein Wert gesetzt (frühere Nachschärfung oder manuelle Board-Änder
 - `board-status-setzen` mit Wert `Ready`
 
 Die Issue-URL wird aus der Nummer **gebildet**, nie aus einer Antwort übernommen. Scheitert eine der Operationen, die Meldung des zuletzt versuchten Wegs unverändert an Daniel weitergeben und die nachfolgenden Operationen nicht ausführen — der Übergang auf `Ready` bleibt der letzte Schritt, damit eine unfertig geschärfte Story sichtbar „noch nicht fertig" bedeutet, statt fälschlich als `Ready` zu erscheinen.
+
+**Übergabe an den gemeinsamen Nachlauf:** Lief Schritt 3b und ist ein Entwurf entstanden, ruf jetzt — nach dem Statuswechsel-Versuch, als letzte Handlung dieses Schritts — den Skill `story-entwurf` auf und arbeite nach dessen Text ab dessen Schritt 3: Freigabe am Board feststellen, bei Freigabe ausarbeiten und ausliefern, den Verweis an die Story heften. Dessen Schritte 0 bis 2 entfallen, weil die Story hier gerade erst geschärft wurde und der Rundenlauf bereits gelaufen ist.
+
+Der Nachlauf existiert genau einmal, dort; hier steht weder die Form des Abschnitts, den er schreibt, noch eine zweite Fassung seines Ablaufs. Er steht **hinter** dem Statuswechsel, weil er die Freigabe am Board liest — der Wert, den dieser Schritt eben erst gesetzt hat. Scheitert der Statuswechsel (Cloud-Session), scheitert damit auch die Freigabe, und der Nachlauf heftet den Arbeitsstand an, ohne auszuliefern; das ist fail-closed und kein Fehlerfall. Ist in Schritt 3b kein Entwurf entstanden, entfällt die Übergabe ersatzlos — es wird nichts angeheftet.
 
 Fasse am Ende kurz zusammen: Issue-Nummer, Titel, deine Prioritäts-Empfehlung samt Angabe, ob sie neu gesetzt wurde oder wegen eines bereits vorhandenen Werts unverändert blieb, und dass Daniel bei Bedarf `spec-writer` mit "setz Story #NNN um" aufrufen kann, sobald die technische Umsetzung ansteht.
 

@@ -165,13 +165,26 @@ def offset(text: str, literal: str) -> int:
 
 
 def abschnitt(text: str, ueberschrift: str) -> str:
-    """Reine Funktion: der Rumpf eines `##`-Abschnitts bis zur naechsten `##`-Ueberschrift."""
+    """Reine Funktion: der Rumpf eines `##`-Abschnitts bis zur naechsten `##`-Ueberschrift.
+
+    **Umzaeunte Bloecke begrenzen nicht.** `refinement` Schritt 6 zeigt die Vorlage des
+    Issue-Bodys als umzaeunten Block, und die traegt ihrerseits `## Ziel` am Zeilenanfang. Eine
+    Suche nach der naechsten `##`-Zeile schnitte den Abschnitt genau dort ab - der Rumpf endete
+    vor der Haelfte, und jede Zusage ueber seinen hinteren Teil waere still leer wahr.
+    """
     beginn = text.find(ueberschrift)
     if beginn == -1:
         return ""
     rest = text[beginn + len(ueberschrift) :]
-    ende = rest.find("\n## ")
-    return rest if ende == -1 else rest[:ende]
+    im_zaun = False
+    gelesen = 0
+    for zeile in rest.split("\n"):
+        if zeile.startswith("```"):
+            im_zaun = not im_zaun
+        elif not im_zaun and zeile.startswith("## "):
+            return rest[:gelesen]
+        gelesen += len(zeile) + 1
+    return rest
 
 
 def absatz(text: str, marker: str) -> str:
@@ -436,6 +449,29 @@ def test_der_skip_ausschluss_steht_im_skip_absatz_selbst() -> None:
         "Der Skip-Absatz benennt den ausschliessenden Abschnitt nicht. Ein Ausschluss ohne "
         "Gegenstand ist zur Laufzeit keiner."
     )
+
+
+def test_der_abschnittsschnitt_endet_an_der_naechsten_ueberschrift() -> None:
+    """Gegenprobe: ohne sie liefe der Rumpf bis zum Dateiende und bestuende jede Zusage."""
+    probe = "## A\nInhalt A\n\n## B\nInhalt B\n"
+
+    assert abschnitt(probe, "## A").strip() == "Inhalt A"
+    assert abschnitt(probe, "## C") == ""
+
+
+def test_der_abschnittsschnitt_uebergeht_ueberschriften_in_umzaeunten_bloecken() -> None:
+    """Die Falle, an der die naive Fassung still danebengriff.
+
+    Die Vorlage des Issue-Bodys steht als umzaeunter Block mitten im Abschnitt und fuehrt `## Ziel`
+    am Zeilenanfang. Wer dort abschneidet, prueft den halben Abschnitt und haelt das Ergebnis fuer
+    eine Abwesenheit.
+    """
+    probe = "## A\nVor dem Block\n\n```markdown\n## Ziel\n\n<Text>\n```\n\nNach dem Block\n\n## B\nInhalt B\n"
+
+    rumpf = abschnitt(probe, "## A")
+
+    assert "Nach dem Block" in rumpf
+    assert "Inhalt B" not in rumpf
 
 
 def test_der_absatzschnitt_endet_an_der_leerzeile() -> None:
