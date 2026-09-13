@@ -6,6 +6,10 @@ import json
 import httpx
 import pytest
 
+from photosort.album_suitability import (
+    MAX_ALBUM_SUITABILITY_REASON_LENGTH,
+    AlbumSuitability,
+)
 from photosort.classification_prompt import build_classification_prompt
 from photosort.cloud_vision import (
     ANTHROPIC_VISION_MODEL,
@@ -941,22 +945,25 @@ class TestResponseBudgetAfterTheMotifSchema:
     Kostenschranke - sie begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und
     potenziell geloggt werden kann.
 
-    Das Motiv-Antwortschema verlaengert die vollbesetzte Antwort von rund 185 auf rund 257
-    Zeichen: acht Schluessel-Zahl-Paare (die laengsten Schluessel zerfallen in mehrere Tokens)
-    plus das Ausschluss-Feld statt dreier Kategorie-Objekte. Ueberschlaegig sind das rund 110
-    Ausgabe-Tokens kompakt und rund 145 bei einer eingerueckten Antwort. Beide Groessen stehen
-    HIER als Literal und nicht nur im Kommentar."""
+    Die Albumtauglichkeit verlaengert die vollbesetzte Antwort ein zweites Mal: zur Stufe kommt
+    eine Begruendung an der 160-Zeichen-Grenze. Gemessen an der real gebauten Antwort (voller
+    Achter-Vektor, `excluded`, zwei Feinlabels, Stufe und Begruendung in Maximallaenge) sind das
+    451 Zeichen kompakt und 547 eingerueckt - mit dem bereits verwendeten Umrechnungsfaktor rund
+    201 bzw. 245 Ausgabe-Tokens. Beide Groessen stehen HIER als Literal und nicht nur im
+    Kommentar."""
 
     def test_the_response_token_ceiling_is_pinned_to_the_new_value(self) -> None:
-        """Von 256 auf 384 angehoben - wer den Wert weiter anhebt, soll an dieser Zeile auf die
-        Begruendung und auf die drei zusammen nachzuziehenden Dinge stossen."""
-        assert _MAX_RESPONSE_TOKENS == 384
+        """Von 384 auf 512 angehoben - wer den Wert weiter anhebt, soll an dieser Zeile auf die
+        Begruendung und auf die drei zusammen nachzuziehenden Dinge stossen. Angehoben wurde die
+        SCHRANKE, nicht die Annahme gesenkt: bei den alten Zahlen reisst die Reserve-Invariante
+        unten rechnerisch (384 gegen 2 x 250)."""
+        assert _MAX_RESPONSE_TOKENS == 512
 
     def test_the_assumed_output_tokens_still_cover_the_longer_response(self) -> None:
         """Die Schaetzung ist die einzige Absicherung VOR der kostenpflichtigen Aktion - sie darf
-        die neue Antwortlaenge nicht unterschaetzen. `145` ist die gemessene obere Schranke der
-        vollbesetzten, eingerueckten Achter-Antwort."""
-        longest_plausible_response_tokens = 145
+        die neue Antwortlaenge nicht unterschaetzen. `245` ist die ueberschlaegige obere Schranke
+        der vollbesetzten, eingerueckten Antwort MIT Stufe und Begruendung in Maximallaenge."""
+        longest_plausible_response_tokens = 245
 
         for provider, assumed in ASSUMED_USAGE_BY_PROVIDER.items():
             assert assumed.output_tokens >= longest_plausible_response_tokens, provider
@@ -967,6 +974,72 @@ class TestResponseBudgetAfterTheMotifSchema:
         neue Zahl an dieser Stelle."""
         for provider, assumed in ASSUMED_USAGE_BY_PROVIDER.items():
             assert _MAX_RESPONSE_TOKENS >= 2 * assumed.output_tokens, provider
+
+
+class TestTheAlbumSuitabilityInTheResponse:
+    """specs/features/0428-albumtauglichkeit-vom-modell.md: dieselbe Antwort traegt ab hier die
+    Albumtauglichkeit. Das Parsen selbst liegt in `album_suitability.py` und ist dort erschoepfend
+    geprueft - hier steht, dass der Aufrufer sie durchreicht und dass ein fehlendes oder entartetes
+    Feld die uebrige Antwort NICHT kostet (inhaltlich tolerant)."""
+
+    def test_a_well_formed_field_is_carried_through(self) -> None:
+        classification = _classification_from_json(
+            {
+                "motifs": {"landschaft": 0.8},
+                "album_suitability": {"level": 4, "reason": "Klarer Blick."},
+            },
+            photo_id=1,
+        )
+
+        assert classification.album_suitability == AlbumSuitability(level=4, reason="Klarer Blick.")
+
+    def test_a_missing_field_is_no_error_and_costs_the_rest_of_the_answer_nothing(self) -> None:
+        classification = _classification_from_json(_VALID_BODY, photo_id=1)
+
+        assert classification.album_suitability is None
+        assert classification.motif_strengths == _vector(landschaft=0.8)
+        assert classification.fine_labels == ("Duene",)
+
+    @pytest.mark.parametrize(
+        "raw_literal",
+        ['{"level": 7}', '{"level": "4"}', '{"level": 4.5}', "null", "4", '"gut"'],
+    )
+    def test_a_degenerate_field_yields_no_suitability_and_keeps_the_motif_vector(
+        self, raw_literal: str
+    ) -> None:
+        """Kein Fehler, keine geklemmte Stufe, kein Verlust der uebrigen Antwort - das Foto bleibt
+        Kandidat des naechsten Laufs (S1)."""
+        parsed = json.loads(
+            '{"motifs": {"landschaft": 0.8}, "fine_labels": ["Duene"], '
+            f'"album_suitability": {raw_literal}}}'
+        )
+
+        classification = _classification_from_json(parsed, photo_id=1)
+
+        assert classification.album_suitability is None
+        assert classification.motif_strengths == _vector(landschaft=0.8)
+        assert classification.fine_labels == ("Duene",)
+
+    def test_a_missing_field_logs_nothing_at_all(self, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level("WARNING"):
+            _classification_from_json(_VALID_BODY, photo_id=1)
+
+        assert caplog.records == []
+
+    def test_the_reason_is_sanitized_and_capped_on_the_way_in(self) -> None:
+        """Der Fremdtext wird an genau einer Stelle behandelt - der Client haelt keine zweite
+        Fassung der Regel."""
+        raw = "A‮" + "b" * (MAX_ALBUM_SUITABILITY_REASON_LENGTH + 40)
+
+        classification = _classification_from_json(
+            {"motifs": {}, "album_suitability": {"level": 2, "reason": raw}}, photo_id=1
+        )
+
+        assert classification.album_suitability is not None
+        reason = classification.album_suitability.reason
+        assert reason is not None
+        assert len(reason) == MAX_ALBUM_SUITABILITY_REASON_LENGTH
+        assert "‮" not in reason
 
 
 # specs/features/0382-cloud-rate-limits-aussitzen.md, K1/K5/K6: beide Kategorie-Clients senden

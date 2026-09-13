@@ -349,9 +349,10 @@ class TestTheEstimateFollowsTheConfiguredModel:
         """Der Betrag des Regelbetriebs, auf API-Ebene LITERAL gepinnt - ohne diesen Anker prueft
         die API-Ebene nur noch sich selbst.
 
-        Seit Spec 0427 (PR 2, Auflage S12) sind das $0,0055 statt $0,0052: die Ausgabe-Annahme
-        ist von 120 auf 180 Tokens angehoben, weil die Motiv-Antwort acht Zahlen plus das
-        Ausschluss-Feld traegt. Die Verschiebung geht in die SICHERE Richtung."""
+        Seit Spec 0428 (Auflage S5) sind das $0,00585 statt $0,0055: die Ausgabe-Annahme ist von
+        180 auf 250 Tokens angehoben, weil dieselbe Antwort zusaetzlich die Stufe der
+        Albumtauglichkeit und eine Begruendung von bis zu 160 Zeichen traegt. Die Verschiebung
+        geht in die SICHERE Richtung."""
         project_id = await _create_project(authenticated_api_client)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
 
@@ -360,8 +361,8 @@ class TestTheEstimateFollowsTheConfiguredModel:
         ).json()
 
         assert body["model"] == "claude-haiku-4-5"
-        assert body["price_per_image_usd"] == pytest.approx(0.0055, abs=1e-9)
-        assert body["estimated_cost_usd"] == pytest.approx(0.0055, abs=1e-9)
+        assert body["price_per_image_usd"] == pytest.approx(0.00585, abs=1e-9)
+        assert body["estimated_cost_usd"] == pytest.approx(0.00585, abs=1e-9)
 
     async def test_a_configured_non_default_model_changes_the_price(
         self,
