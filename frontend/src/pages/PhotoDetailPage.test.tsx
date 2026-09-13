@@ -96,6 +96,9 @@ function motifStrengths(
     key,
     strength: 0,
     correction: null,
+    // Bewusst NICHT aus `strength` abgeleitet: `present` ist die Aussage des Servers, und eine
+    // Kopplung hier machte jeden Fall blind fuer eine Oberflaeche, die doch selbst vergleicht.
+    present: false,
     ...(overrides[key] ?? {}),
   }))
 }

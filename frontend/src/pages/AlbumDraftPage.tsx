@@ -13,7 +13,12 @@ import { useMotifsQuery } from '../hooks/useMotifs'
 import { useDraftDecisionMutation, useDraftQuery } from '../hooks/usePhotos'
 import { useProjectQuery } from '../hooks/useProjects'
 import type { DraftEventGroup } from '../utils/albumDraft'
-import { draftSizeText, formatDraftPhotoCount, groupDraftByDay } from '../utils/albumDraft'
+import {
+  draftMotifText,
+  draftSizeText,
+  formatDraftPhotoCount,
+  groupDraftByDay,
+} from '../utils/albumDraft'
 import { ownRatingStatus } from '../utils/ownRating'
 import { formatDayHeading } from '../utils/timeOfDay'
 
@@ -184,6 +189,10 @@ export function AlbumDraftPage() {
   }
 
   function renderEventGroup(group: DraftEventGroup) {
+    // Die Motivmischung entsteht aus den KACHELN dieser Gruppe, nie aus einer Serveraggregation:
+    // eine solche waere nach jeder Entscheidung veraltet (die Entwurfsliste laedt bewusst nicht
+    // neu, ADR 0098 Punkt 6) und naennte ein Motiv, das kein Bild der Gruppe mehr traegt.
+    const motifText = draftMotifText(group.photos, username, motifsQuery.data?.items ?? [])
     return (
       <section key={group.eventId} className="flex flex-col gap-2">
         {/* Die Zahl steht NEBEN der Ueberschrift in einem eigenen Element, nicht in ihr: der von
@@ -192,6 +201,9 @@ export function AlbumDraftPage() {
           <h3 className="text-base">{group.heading}</h3>
           <span className="text-sm text-text">{`(${formatDraftPhotoCount(group.photos.length)})`}</span>
         </div>
+        {/* Reiner Fliesstext, umbrechend - keine Werte, keine Balken, keine Reihung nach Staerke.
+            In einer leergeraeumten Gruppe entfaellt die Zeile und es bleibt beim Leerzustand. */}
+        {motifText !== null && <p className="text-sm text-text">{motifText}</p>}
         {group.photos.length === 0 && <p className="text-sm text-text">{DRAFT_EMPTY_EVENT_TEXT}</p>}
         {group.photos.length > 0 && (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">

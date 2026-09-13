@@ -50,7 +50,12 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
       excluded_document: false,
       computed_at: '2026-07-21T09:00:00',
     },
-    motifs: MOTIF_SET.items.map((item) => ({ key: item.key, strength: 0.5, correction: null })),
+    motifs: MOTIF_SET.items.map((item) => ({
+      key: item.key,
+      strength: 0.5,
+      correction: null,
+      present: false,
+    })),
     ...overrides,
   }
 }

@@ -48,6 +48,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
       key: item.key,
       strength: 0.5,
       correction: null,
+      present: false,
     })),
     album_suitability: { level: 4, reason: 'Alle schauen in die Kamera.' },
     ...overrides,

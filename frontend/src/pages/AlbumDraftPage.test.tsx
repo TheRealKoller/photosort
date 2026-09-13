@@ -14,7 +14,12 @@ import type { EventOut, PhotoListOut, PhotoOut, ProjectOut, RankingOut } from '.
 import { NOT_PROPOSED_BADGE_TEXT } from '../components/CurationPhotoTile'
 import { setToken } from '../auth/token'
 import { MOTIF_SET } from '../test/motifSetFixture'
-import { draftSizeText, formatDraftPhotoCount } from '../utils/albumDraft'
+import {
+  DRAFT_MOTIFS_NONE_TEXT,
+  DRAFT_MOTIFS_UNASSESSED_TEXT,
+  draftSizeText,
+  formatDraftPhotoCount,
+} from '../utils/albumDraft'
 import {
   AlbumDraftPage,
   DRAFT_CLOUD_CONSENT_TEXT,
@@ -95,10 +100,14 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
       excluded_document: false,
       computed_at: '2026-07-21T09:00:00',
     },
+    // `present: false` als Grundzustand, NICHT aus `strength` abgeleitet: Die Motivmischung liest
+    // ausschliesslich die Serveraussage, und ein Aufbau, der beide koppelt, sieht eine Oberflaeche
+    // nicht, die doch selbst vergleicht.
     motifs: MOTIF_SET.items.map((item) => ({
       key: item.key,
       strength: 0.5,
       correction: null,
+      present: false,
     })),
     album_suitability: { level: 4, reason: 'Alle schauen in die Kamera.' },
     event: eventOut(),
@@ -422,6 +431,91 @@ describe('AlbumDraftPage', () => {
 
     await screen.findByLabelText('Im Album: a.jpg')
     expect(screen.getAllByText(NOT_PROPOSED_BADGE_TEXT)).toHaveLength(2)
+  })
+
+  describe('die Motivmischung am Event', () => {
+    /** Ein Achter-Vektor, in dem genau die genannten Motive getragen werden. */
+    function motifsWith(present: string[]) {
+      return MOTIF_SET.items.map((item) => ({
+        key: item.key,
+        strength: 0.5,
+        correction: null,
+        present: present.includes(item.key),
+      }))
+    }
+
+    it('names the motifs of the group alphabetically and without a number', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([
+          photo({ id: 1, relative_path: 'a.jpg', motifs: motifsWith(['menschen']) }),
+          photo({
+            id: 2,
+            relative_path: 'b.jpg',
+            motifs: motifsWith(['bauwerk_sehenswuerdigkeit']),
+          }),
+        ]),
+      )
+
+      renderPage()
+
+      const line = await screen.findByText('Bauwerk und Sehenswürdigkeit, Menschen')
+      expect(line.textContent).not.toMatch(/\d/)
+    })
+
+    it('drops a motif as soon as its last carrier is struck - without reloading', async () => {
+      // Zusicherung 22 in ihrer sichtbaren Folge: Die Zeile entsteht aus den bereits geladenen
+      // Kacheln, nicht aus einer Serveraggregation - eine solche waere nach jedem Handgriff
+      // veraltet und naennte ein Motiv, das kein Bild der Gruppe mehr traegt.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([
+          photo({ id: 1, relative_path: 'a.jpg', motifs: motifsWith(['menschen']) }),
+          photo({ id: 2, relative_path: 'b.jpg', motifs: motifsWith(['tiere']) }),
+        ]),
+      )
+      vi.mocked(ratingsApi.setRating).mockResolvedValue({
+        photo_id: 2,
+        user_id: 7,
+        status: 'rejected',
+        favorite: false,
+        updated_at: '2026-09-13T10:00:00',
+      })
+
+      renderPage()
+      await screen.findByText('Menschen, Tiere')
+      const callsBefore = draftCalls()
+
+      await userEvent.click(screen.getByLabelText('Im Album: b.jpg'))
+
+      expect(await screen.findByText('Menschen')).toBeInTheDocument()
+      expect(screen.queryByText('Menschen, Tiere')).toBeNull()
+      expect(draftCalls()).toBe(callsBefore)
+    })
+
+    it('says "not yet assessed" for a group without any classified photo', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([photo({ id: 1, motif_assessment: null, motifs: [] })]),
+      )
+
+      renderPage()
+
+      expect(await screen.findByText(DRAFT_MOTIFS_UNASSESSED_TEXT)).toBeInTheDocument()
+    })
+
+    it('shows no motif line in an emptied event group', async () => {
+      const first = eventOut({ id: 10, position: 1 })
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce(listOut([photo({ id: 1, event: first })]))
+        .mockResolvedValue(listOut([]))
+
+      const { queryClient } = renderPage()
+      await screen.findByLabelText('Im Album: a.jpg')
+
+      await queryClient.refetchQueries({ queryKey: ['photos', 1, 'draft'] })
+
+      expect(await screen.findByText(DRAFT_EMPTY_EVENT_TEXT)).toBeInTheDocument()
+      expect(screen.queryByText(DRAFT_MOTIFS_UNASSESSED_TEXT)).toBeNull()
+      expect(screen.queryByText(DRAFT_MOTIFS_NONE_TEXT)).toBeNull()
+    })
   })
 
   it('collapses and expands a day', async () => {

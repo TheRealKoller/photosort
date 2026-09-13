@@ -35,6 +35,7 @@ from photosort.models import (
 from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.security import create_access_token, hash_password
+from photosort.selection import MOTIF_PRESENCE_THRESHOLD
 
 
 async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
@@ -4441,6 +4442,132 @@ class TestTheAdditiveMotifFields:
         ):
             assert field not in item, field
         assert "ranking" in item
+
+
+class TestTheMotifPresenceFlag:
+    """`MotifStrengthOut.present` - die Aussage des Servers, ob ein Foto ein Motiv TRAEGT.
+
+    Die Grenze wohnt in `selection.py` und verlaesst das Backend nie als Zahl; die Motivmischung
+    der Entwurfsansicht liest ausschliesslich dieses Ja/Nein."""
+
+    async def test_the_threshold_is_inclusive_at_the_boundary(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 27, erste Haelfte: Die Staerke EXAKT an der Grenze traegt das Motiv, knapp
+        darunter nicht. Der Zahlwert der Grenze steht in KEINEM Testfall - geprueft wird an der
+        Grenze selbst, wie sie das Backend fuehrt."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(
+            db_session,
+            photo,
+            strengths={
+                "menschen": MOTIF_PRESENCE_THRESHOLD,
+                "tiere": MOTIF_PRESENCE_THRESHOLD - 0.01,
+            },
+        )
+
+        by_key = {
+            entry["key"]: entry
+            for entry in (await _first_photo_out(authenticated_api_client, project))["motifs"]
+        }
+
+        assert by_key["menschen"]["present"] is True
+        assert by_key["tiere"]["present"] is False
+
+    async def test_a_correction_decides_the_flag_in_both_directions(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 27, zweite Haelfte: `present` entsteht aus DERSELBEN wirksamen Staerke wie
+        `strength` - eine Korrektur nimmt ein starkes Motiv weg und holt ein schwaches herein.
+        Beide Richtungen in einem Fall; eine Implementierung, die die MODELLzahl liest, faellt
+        genau hier."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo, strengths={"menschen": 0.9, "tiere": 0.1})
+        user = (await db_session.execute(select(User))).scalars().first()
+        assert user is not None
+        db_session.add(
+            PhotoMotifCorrection(
+                photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=False
+            )
+        )
+        db_session.add(
+            PhotoMotifCorrection(
+                photo_id=photo.id, user_id=user.id, motif_key="tiere", applies=True
+            )
+        )
+        await db_session.commit()
+
+        by_key = {
+            entry["key"]: entry
+            for entry in (await _first_photo_out(authenticated_api_client, project))["motifs"]
+        }
+
+        assert (by_key["menschen"]["strength"], by_key["menschen"]["present"]) == (0.0, False)
+        assert by_key["tiere"]["present"] is True
+        assert by_key["tiere"]["strength"] > 0.0
+
+    async def test_a_missing_strength_row_is_zero_and_absent(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zusicherung 27, dritte Haelfte: Eine fehlende Zeile ergibt `0.0` UND `false` - die
+        beiden Felder entstehen aus derselben lokalen Groesse, auch im Ergaenzungszweig."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        db_session.add(
+            PhotoMotifAssessment(
+                photo_id=photo.id,
+                source=MotifAssessmentSource.CLOUD,
+                excluded_document=False,
+                provider="anthropic",
+                computed_at=datetime(2026, 9, 12, 10, 0, 0),
+            )
+        )
+        await db_session.flush()
+        db_session.add(PhotoMotifStrength(photo_id=photo.id, motif_key="menschen", strength=0.9))
+        await db_session.commit()
+
+        by_key = {
+            entry["key"]: entry
+            for entry in (await _first_photo_out(authenticated_api_client, project))["motifs"]
+        }
+
+        assert (by_key["tiere"]["strength"], by_key["tiere"]["present"]) == (0.0, False)
+        assert by_key["menschen"]["present"] is True
+
+    async def test_a_photo_without_an_assessment_carries_no_entry_and_thus_no_flag(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Acht Eintraege mit `present: false` waeren wieder "nichts erkannt" statt "nicht
+        klassifiziert" - die Liste bleibt LEER."""
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["motifs"] == []
+
+    async def test_present_is_identical_in_the_listing_and_in_the_draft(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Feldgleichheit ueber die Lesepfade, wie bei `proposed`: Ein je Zweig getrennt gesetztes
+        Feld liefe genau hier auseinander, und die Motivmischung naennte dann je nach Ansicht
+        andere Motive."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
+        await _assess_photo(db_session, photo, strengths={"menschen": 0.9, "tiere": 0.1})
+
+        listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+        draft = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"draft": "true"}
+        )
+
+        assert listing.json()["items"][0]["motifs"] == draft.json()["items"][0]["motifs"]
+        by_key = {entry["key"]: entry["present"] for entry in draft.json()["items"][0]["motifs"]}
+        assert (by_key["menschen"], by_key["tiere"]) == (True, False)
 
 
 class TestTheFourPhotoStates:

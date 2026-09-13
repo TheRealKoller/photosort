@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import type { EventOut, PhotoOut, RankingOut, RatingStatus } from '../api/types'
+import type {
+  EventOut,
+  MotifStrengthOut,
+  PhotoOut,
+  RankingOut,
+  RatingOut,
+  RatingStatus,
+} from '../api/types'
+import { MOTIF_SET } from '../test/motifSetFixture'
 import {
+  DRAFT_MOTIFS_NONE_TEXT,
+  DRAFT_MOTIFS_UNASSESSED_TEXT,
+  draftMotifText,
   draftSizeText,
   formatDraftPhotoCount,
   groupDraftByDay,
@@ -168,5 +179,131 @@ describe('formatDraftPhotoCount', () => {
     { count: 0, expected: '0 Bilder' },
   ])('formats $count as "$expected"', ({ count, expected }) => {
     expect(formatDraftPhotoCount(count)).toBe(expected)
+  })
+})
+
+describe('draftMotifText', () => {
+  const USERNAME = 'daniel'
+
+  /** Der Achter-Vektor eines Fotos - `present` kommt vom Server, `strength` ist Beiwerk. */
+  function motifs(present: Record<string, boolean>, strength = 0.5): MotifStrengthOut[] {
+    return MOTIF_SET.items.map((item) => ({
+      key: item.key,
+      strength,
+      correction: null,
+      present: present[item.key] ?? false,
+    }))
+  }
+
+  function ownRating(status: RatingStatus): RatingOut {
+    return { user_id: 7, username: USERNAME, status, favorite: false }
+  }
+
+  /** Ein Foto MIT Kopfzeile - ohne sie ist `motifs` leer (der Server liefert dann keine Zeile). */
+  function assessed(overrides: Partial<PhotoOut> = {}): PhotoOut {
+    return photo({
+      motif_assessment: {
+        source: 'cloud',
+        provider: 'anthropic',
+        excluded_document: false,
+        computed_at: '2026-07-21T09:00:00',
+      },
+      motifs: motifs({}),
+      ...overrides,
+    })
+  }
+
+  it('names the motifs of the photos in the album, alphabetically by display name', () => {
+    // Die Sollreihenfolge entspricht WEDER der Registry- noch der Antwortreihenfolge: „Bauwerk und
+    // Sehenswürdigkeit" steht in der Registry hinter „Menschen" und wird hier als letztes Foto
+    // geliefert, gehört alphabetisch aber nach vorn.
+    const items = [
+      assessed({ id: 1, motifs: motifs({ menschen: true }) }),
+      assessed({ id: 2, motifs: motifs({ tiere: true }) }),
+      assessed({ id: 3, motifs: motifs({ bauwerk_sehenswuerdigkeit: true }) }),
+    ]
+
+    expect(draftMotifText(items, USERNAME, MOTIF_SET.items)).toBe(
+      'Bauwerk und Sehenswürdigkeit, Menschen, Tiere',
+    )
+  })
+
+  it('names a motif once, however many photos carry it', () => {
+    const items = [
+      assessed({ id: 1, motifs: motifs({ menschen: true }) }),
+      assessed({ id: 2, motifs: motifs({ menschen: true, tiere: true }) }),
+    ]
+
+    expect(draftMotifText(items, USERNAME, MOTIF_SET.items)).toBe('Menschen, Tiere')
+  })
+
+  it('carries no number at all', () => {
+    // Die Rangfolge-Eindaemmung im Frontend: keine Staerke, keine Anzahl, keine Reihung nach
+    // Staerke - ein Vergleich von Motivstaerken findet an keiner Stelle der Oberflaeche statt.
+    const items = [assessed({ id: 1, motifs: motifs({ menschen: true, tiere: true }) })]
+
+    expect(draftMotifText(items, USERNAME, MOTIF_SET.items)).not.toMatch(/\d/)
+  })
+
+  it('follows `present`, never `strength`', () => {
+    // Zusicherung 28: zwei bewusst WIDERSPRUECHLICHE Aufbauten. Eine Implementierung, die im
+    // Frontend doch vergleicht, besteht jeden natuerlich gebauten Fall - diesen hier nicht.
+    const items = [
+      assessed({
+        id: 1,
+        motifs: [
+          { key: 'menschen', strength: 0.9, correction: null, present: false },
+          { key: 'tiere', strength: 0.1, correction: null, present: true },
+        ],
+      }),
+    ]
+
+    const text = draftMotifText(items, USERNAME, MOTIF_SET.items)
+
+    expect(text).toBe('Tiere')
+    expect(text).not.toContain('Menschen')
+  })
+
+  it('leaves out the motifs of a struck photo', () => {
+    // Ein gestrichenes Bild bleibt sichtbar, gehoert aber nicht zum Entwurf (ADR 0098 Punkt 1) -
+    // seine Motive also nicht in die Mischung.
+    const items = [
+      assessed({ id: 1, motifs: motifs({ menschen: true }) }),
+      assessed({
+        id: 2,
+        motifs: motifs({ tiere: true }),
+        ratings: [ownRating('rejected')],
+      }),
+    ]
+
+    expect(draftMotifText(items, USERNAME, MOTIF_SET.items)).toBe('Menschen')
+  })
+
+  it('returns null when no photo of the group is in the album', () => {
+    const items = [
+      assessed({ id: 1, motifs: motifs({ menschen: true }), ratings: [ownRating('rejected')] }),
+    ]
+
+    expect(draftMotifText(items, USERNAME, MOTIF_SET.items)).toBeNull()
+  })
+
+  it('says "not yet assessed" when no photo of the album carries a header', () => {
+    const items = [photo({ id: 1, motif_assessment: null, motifs: [] })]
+
+    expect(draftMotifText(items, USERNAME, MOTIF_SET.items)).toBe(DRAFT_MOTIFS_UNASSESSED_TEXT)
+  })
+
+  it('says "none recognised" for a header without a single present motif', () => {
+    // Der Unterschied zum Fall darueber ist die eigentliche Zusage: "nicht angesehen" und "nichts
+    // erkannt" sind zwei Zustaende, und ein Text fuer beide verwischte sie.
+    const items = [assessed({ id: 1, motifs: motifs({}) })]
+
+    expect(draftMotifText(items, USERNAME, MOTIF_SET.items)).toBe(DRAFT_MOTIFS_NONE_TEXT)
+  })
+
+  it('falls back to the generic name while the motif set is still loading', () => {
+    const items = [assessed({ id: 1, motifs: motifs({ menschen: true }) })]
+
+    expect(draftMotifText(items, USERNAME, [])).toBe('Menschen')
   })
 })

@@ -672,7 +672,17 @@ class TestTheStructuralGuardAgainstReadingTheDisplayBands:
     ein Band waere eine Rangfolge zwischen Motiven durch die Hintertuer."""
 
     _SOURCE_DIR = Path(photosort.__file__).resolve().parent
-    _SELECTING_MODULES = ("selection.py", "ranking.py", "quality.py", "worker.py")
+    # `api/photos.py` steht seit Spec 0430 dabei: der Lesepfad liefert `MotifStrengthOut.present`
+    # und liest damit erstmals eine AUSWAHLGRENZE - die Datei faellt ab hier unter denselben
+    # Waechter wie die auswaehlenden Module. Der Eintrag ist ein PFAD relativ zu `_SOURCE_DIR`,
+    # kein flacher Dateiname.
+    _SELECTING_MODULES = (
+        "selection.py",
+        "ranking.py",
+        "quality.py",
+        "worker.py",
+        "api/photos.py",
+    )
     _DISPLAY_BANDS = ("MOTIF_STRENGTH_BAND_STRONG", "MOTIF_STRENGTH_BAND_MEDIUM")
 
     @pytest.mark.parametrize("module", _SELECTING_MODULES)
@@ -681,6 +691,39 @@ class TestTheStructuralGuardAgainstReadingTheDisplayBands:
 
         for band in self._DISPLAY_BANDS:
             assert band not in source, f"{module} liest das Anzeigeband {band}"
+
+    def test_the_presence_threshold_is_named_exactly_once_in_the_source_tree(self) -> None:
+        """Zusicherung 26: Die Praesenzgrenze wird als PRAEDIKAT geteilt, nie als Zahl.
+
+        `MOTIF_PRESENCE_THRESHOLD` kommt unter `backend/src/photosort/` an genau EINER Stelle vor
+        (ihrer Definition in `selection.py`); jede andere Stelle ruft `motif_is_present`. Ein
+        zweites `>=` gegen dieselbe Konstante waere gruen und liefe beim ersten Wechsel auf `>`
+        auseinander - und genau die INKLUSIVITAET ist die Zusage (Zusicherung 7)."""
+        sources = {
+            path.relative_to(self._SOURCE_DIR).as_posix(): path.read_text(encoding="utf-8")
+            for path in sorted(self._SOURCE_DIR.rglob("*.py"))
+        }
+        naming = sorted(
+            name for name, source in sources.items() if "MOTIF_PRESENCE_THRESHOLD" in source
+        )
+
+        # Kein anderes Modul nennt die Konstante ueberhaupt.
+        assert naming == ["selection.py"], (
+            f"Die Praesenzgrenze gehoert ausschliesslich nach selection.py; gefunden in: {naming}"
+        )
+        # Und innerhalb von `selection.py` wird genau EINMAL gegen sie verglichen - in
+        # `motif_is_present`. Ein zweiter Vergleich waere die Stelle, an der die Inklusivitaet
+        # spaeter still auseinanderlaeuft.
+        selection_source = sources["selection.py"]
+        operators = [
+            operator
+            for operator in (">=", ">", "<=", "<", "==")
+            if f"{operator} MOTIF_PRESENCE_THRESHOLD" in selection_source
+        ]
+        assert operators == [">="], f"Die Grenze wird INKLUSIV gelesen; gefunden: {operators}"
+        assert selection_source.count(">= MOTIF_PRESENCE_THRESHOLD") == 1, (
+            "Genau ein Vergleich gegen die Praesenzgrenze, und der steht in motif_is_present"
+        )
 
     def test_selection_does_not_name_the_motif_vocabulary_at_all(self) -> None:
         """`selection.py` nennt `motifs.py` ueberhaupt nicht: es kennt nur Schluessel und eine

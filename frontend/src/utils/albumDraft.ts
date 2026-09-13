@@ -1,4 +1,7 @@
 import type { PhotoOut, RatingStatus } from '../api/types'
+import type { MotifSet } from './motifLabels'
+import { formatMotifKey } from './motifLabels'
+import { ownRatingStatus } from './ownRating'
 import { formatEventHeading } from './timeOfDay'
 
 /**
@@ -106,4 +109,61 @@ export function draftSizeText(actual: number, target: number): string {
 /** „1 Bild" / „N Bilder" - die Anzahl der Bilder eines Events im Entwurf. */
 export function formatDraftPhotoCount(count: number): string {
   return `${count} ${count === 1 ? 'Bild' : 'Bilder'}`
+}
+
+/** Kein Bild des Events hat je einen Klassifizierungslauf gesehen. */
+export const DRAFT_MOTIFS_UNASSESSED_TEXT = 'Motive noch nicht bestimmt'
+
+/**
+ * Klassifiziert, aber kein Motiv getragen. Bewusst ein ANDERER Text als
+ * `DRAFT_MOTIFS_UNASSESSED_TEXT`: „nicht angesehen" und „nichts erkannt" sind zwei Zustände, und
+ * ein Text für beide verwischte sie.
+ */
+export const DRAFT_MOTIFS_NONE_TEXT = 'Keine Motive erkannt'
+
+/**
+ * Die Motivmischung EINER Eventgruppe — die Namen der Motive, die die Bilder dieser Gruppe im
+ * Album tragen. `null` heißt „keine Zeile".
+ *
+ * DIE GRENZE WIRD NICHT GELESEN: Ob ein Bild ein Motiv trägt, sagt ausschließlich
+ * `MotifStrengthOut.present`. `strength` fließt hier nirgends ein — ein Vergleich an dieser Stelle
+ * wäre die zweite Stelle, an der über Zugehörigkeit entschieden wird, und liefe bei der nächsten
+ * Kalibrierung still auseinander. Ebenso wenig erscheint eine Zahl: keine Stärke, keine Anzahl,
+ * keine Reihung nach Stärke.
+ *
+ * GESTRICHENE BILDER ZÄHLEN NICHT MIT. Sie bleiben in der Antwortmenge sichtbar, gehören aber
+ * nicht zum Entwurf (ADR 0098 Punkt 1: `… \ Gestrichen`). Daraus folgt das sichtbare Verhalten:
+ * Mit dem letzten Bild eines Motivs verschwindet das Motiv aus der Zeile — ohne Neuladen, weil die
+ * Zeile aus den bereits geladenen Kacheln entsteht.
+ *
+ * Vier Fälle in dieser Reihenfolge: kein Bild im Album → `null`; Bilder im Album, aber keines mit
+ * Kopfzeile → `DRAFT_MOTIFS_UNASSESSED_TEXT`; Kopfzeile vorhanden, kein `present` →
+ * `DRAFT_MOTIFS_NONE_TEXT`; sonst die Namensliste, alphabetisch nach Anzeigename.
+ */
+export function draftMotifText(
+  photos: PhotoOut[],
+  username: string | null,
+  motifs: MotifSet,
+): string | null {
+  const inAlbum = photos.filter((photo) => isInAlbum(ownRatingStatus(photo.ratings, username)))
+  if (inAlbum.length === 0) {
+    return null
+  }
+  // Die LEERE Motivliste ist die Aussage „noch nicht klassifiziert" - der Server liefert ohne
+  // Kopfzeile ausdrücklich keine acht Nullzeilen.
+  if (!inAlbum.some((photo) => photo.motifs !== undefined && photo.motifs.length > 0)) {
+    return DRAFT_MOTIFS_UNASSESSED_TEXT
+  }
+  const names = new Set<string>()
+  for (const photo of inAlbum) {
+    for (const motif of photo.motifs ?? []) {
+      if (motif.present) {
+        names.add(formatMotifKey(motif.key, motifs))
+      }
+    }
+  }
+  if (names.size === 0) {
+    return DRAFT_MOTIFS_NONE_TEXT
+  }
+  return [...names].sort((left, right) => left.localeCompare(right, 'de')).join(', ')
 }

@@ -274,6 +274,11 @@ export interface MotifStrengthOut {
   key: MotifKey
   strength: number
   correction: boolean | null
+  /** Trägt das Foto dieses Motiv? Die AUSSAGE DES SERVERS; die Grenze wohnt in
+   * `selection.py::motif_is_present` und verlässt das Backend nie als Zahl. Für diese Frage wird
+   * `strength` NICHT gelesen — ein eigener Vergleich hier wäre die zweite Stelle, an der über
+   * Zugehörigkeit entschieden wird, und liefe bei der nächsten Kalibrierung auseinander. */
+  present: boolean
 }
 
 // Antwort von PUT /photos/{id}/motif-corrections/{motif_key} - der gesetzte Wert wird direkt

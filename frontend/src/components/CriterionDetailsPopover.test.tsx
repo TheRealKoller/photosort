@@ -136,6 +136,7 @@ describe('CriterionDetailsPopover', () => {
           key: item.key,
           strength: 0.5,
           correction: null,
+          present: false,
         }))}
       />,
     )

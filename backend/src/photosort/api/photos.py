@@ -46,6 +46,10 @@ from photosort.models import (
 )
 from photosort.motif_strengths import EffectiveStrength, load_effective_strengths
 from photosort.motifs import MOTIF_REGISTRY, is_motif_key
+
+# AUSSCHLIESSLICH das Praedikat, nie die Konstante: Die Praesenzgrenze steht an genau einer Stelle,
+# und der inklusive Vergleich gehoert dort ebenso hin (Zusicherung 26).
+from photosort.selection import motif_is_present
 from photosort.thumbnails import variant_path
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
@@ -324,6 +328,14 @@ class MotifStrengthOut(BaseModel):
     key: str
     strength: float
     correction: bool | None
+    # DIE AUSSAGE DES SERVERS, ob das Foto dieses Motiv TRAEGT. Die Grenze wohnt in
+    # `selection.py::motif_is_present` und verlaesst das Backend nie als Zahl - das Frontend liest
+    # fuer diese Frage ausschliesslich dieses Feld, nie `strength`.
+    #
+    # Additiv und auf ALLEN Lesepfaden befuellt (Muster `RankingOut.proposed`). Es speist die
+    # Motivmischung am Event des Album-Entwurfs; eine im Frontend hinterlegte Grenze waere die
+    # zweite Stelle, an der ueber Zugehoerigkeit entschieden wird.
+    present: bool
 
 
 class PhotoOut(BaseModel):
@@ -810,18 +822,27 @@ def _motifs_out(
     Altschluessel ausserhalb des Sets - er kann hier nicht durchfallen.
 
     Die leere Liste OHNE Kopfzeile ist die eigentliche Zusage: acht Eintraege mit Wert 0 waeren von
-    "nichts erkannt" nicht zu unterscheiden."""
+    "nichts erkannt" nicht zu unterscheiden - und acht Eintraege mit `present=False` ebenso.
+
+    `strength` und `present` entstehen aus EINER lokalen Groesse. Zweimal hergeleitet liefen sie an
+    dem Tag auseinander, an dem eine der beiden Stellen sich aendert; `present` kommt dabei
+    ausschliesslich ueber `selection.py::motif_is_present`, nie ueber einen eigenen Vergleich."""
     if photo.motif_assessment is None:
         return []
     strengths = effective or {}
-    return [
-        MotifStrengthOut(
-            key=motif_key,
-            strength=strengths[motif_key].strength if motif_key in strengths else 0.0,
-            correction=strengths[motif_key].correction if motif_key in strengths else None,
+    entries: list[MotifStrengthOut] = []
+    for motif_key in MOTIF_REGISTRY:
+        effective_entry = strengths.get(motif_key)
+        strength = 0.0 if effective_entry is None else effective_entry.strength
+        entries.append(
+            MotifStrengthOut(
+                key=motif_key,
+                strength=strength,
+                correction=None if effective_entry is None else effective_entry.correction,
+                present=motif_is_present(strength),
+            )
         )
-        for motif_key in MOTIF_REGISTRY
-    ]
+    return entries
 
 
 def _to_photo_out(

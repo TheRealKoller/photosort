@@ -148,8 +148,10 @@ Verarbeitungs-Cache (Thumbnails).
     `remote_category`/`category_confidence`/`category_candidates`/`category_override` die Felder
     `motif_assessment: MotifAssessmentOut | None` (`source`, `excluded_document`, `provider`,
     `computed_at`; `None` heißt „noch nicht klassifiziert") und `motifs: list[MotifStrengthOut]`
-    (acht Einträge in Registry-Reihenfolge mit `key`, `strength` als **wirksamer** Stärke und
-    `correction: bool | None`; leer, solange keine Kopfzeile existiert). Die überstimmte
+    (acht Einträge in Registry-Reihenfolge mit `key`, `strength` als **wirksamer** Stärke,
+    `correction: bool | None` und — seit Spec
+    [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md) — `present: bool`; leer, solange
+    keine Kopfzeile existiert). Die überstimmte
     Modellzahl geht bewusst **nicht** mit: die Oberfläche darf sie neben dem Korrekturwort nicht
     zeigen, und ein Feld ohne Leser verschiebt nur die Frage, was es bedeutet. Der
     Kuratierungsparameter hieß bis Spec 0429 `top_n_per_event` (siehe die Ablösung weiter unten),
@@ -344,6 +346,12 @@ Verarbeitungs-Cache (Thumbnails).
     - `RankingOut` bekommt `proposed: bool` (`selection_position IS NOT NULL`) — **lauf-global,
       ohne Nutzerbezug und auf allen Lesepfaden befüllt**, nicht nur im Entwurfsmodus. Erst dieses
       Feld unterscheidet im Entwurf „vom Lauf vorgeschlagen" von „vom Nutzer aufgenommen".
+    - `MotifStrengthOut` bekommt ebenso additiv `present: bool` — ob das Foto dieses Motiv
+      **trägt**, ebenfalls auf allen Lesepfaden befüllt. Es speist die Motivmischung am Event;
+      **die Grenze bleibt im Backend** und verlässt es nie als Zahl: `strength` und `present`
+      entstehen in `_motifs_out` aus einer lokalen Größe, und die Entscheidung fällt
+      ausschließlich in `selection.py::motif_is_present`. Kosten: keine — der Zweig lädt die
+      wirksamen Stärken für genau diese Fotomenge ohnehin.
     - Ein aufgenommenes Foto **ohne Rangzeile** (im Ausschuss-Schritt aussortiert) wird über
       `events.py::event_for_time` eingeordnet — Containment schlägt Nähe, beide Grenzen inklusiv,
       bei Gleichstand gewinnt das frühere Event. Die Rangzeile hat Vorrang vor dieser Zuordnung.
@@ -609,7 +617,12 @@ Verarbeitungs-Cache (Thumbnails).
     an der ein API-Request `rank_photos` erneut aufrief. Die acht Motive und die beiden
     Anzeige-Bandgrenzen stehen in `motifs.py`; die Bandgrenzen haben **keinen Leser im Auswahl- oder
     Rangfolgepfad** und keinen im Frontend (`scripts/tests/test_kategorien_restlos_entfernt.py`
-    hält beides fest).
+    hält beides fest). Die **Präsenzgrenze** ist davon getrennt und wohnt in `selection.py`
+    (`MOTIF_PRESENCE_THRESHOLD`): Sie wird ausschließlich über das Prädikat `motif_is_present`
+    gelesen — geteilt wird nie die Zahl, sonst stünde der inklusive Vergleich an zwei Stellen — und
+    sie verlässt das Backend einzig als `MotifStrengthOut.present`. Beides hält der strukturelle
+    Wächter in `backend/tests/test_selection.py` fest, der seit Spec 0430 auch `api/photos.py`
+    führt.
 - **Postgres**: Metadaten (Projekte, Fotos, Bewertungen, Nutzer), keine Bilddaten.
 - **Redis**: Job-Queue für den Worker.
 - **Lokaler Cache**: Docker-Volume für Thumbnails/Zwischenergebnisse, kein Ersatz für OpenCloud als
