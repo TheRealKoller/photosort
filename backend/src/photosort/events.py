@@ -123,6 +123,64 @@ def infer_locations(entries: Iterable[LocationEntry]) -> dict[int, EffectiveLoca
 
 
 @dataclass(frozen=True)
+class EventSpan:
+    """Die Zeitspanne EINES fertigen Events - die Lesesicht auf eine `events`-Zeile.
+
+    BEIDE GRENZEN SIND INKLUSIV: `started_at` und `ended_at` sind die Aufnahmezeiten des ersten
+    und des letzten Fotos des Events, nicht die Raender eines halboffenen Intervalls."""
+
+    event_id: int
+    started_at: datetime
+    ended_at: datetime
+
+
+def _span_order(span: EventSpan) -> tuple[datetime, datetime, int]:
+    """Die eine Ordnung, in der `event_for_time` die Spannen betrachtet.
+
+    Sie traegt den Tie-Break: "das FRUEHERE Event gewinnt" ist der erste Eintrag dieser Ordnung.
+    Die beiden hinteren Bestandteile machen sie total - ohne sie haengt das Ergebnis bei zwei
+    gleich beginnenden Spannen an der Reihenfolge der Abfrage, die ohne `ORDER BY` nichts
+    zusichert."""
+    return (span.started_at, span.ended_at, span.event_id)
+
+
+def _distance_to(span: EventSpan, taken_at: datetime) -> timedelta:
+    """Der Abstand einer Zeit zur naechstgelegenen GRENZE der Spanne - `0` innerhalb.
+
+    Gemessen wird gegen BEIDE Grenzen. Eine Messung allein gegen `started_at` beantwortet eine
+    Zeit kurz vor dem Ende eines langen Events falsch; `event_for_time` faengt diesen Fall zwar
+    schon ueber das Enthaltensein ab, aber die Formel bliebe fuer jede Zeit AUSSERHALB eines
+    langen Events daneben."""
+    if taken_at < span.started_at:
+        return span.started_at - taken_at
+    if taken_at > span.ended_at:
+        return taken_at - span.ended_at
+    return timedelta(0)
+
+
+def event_for_time(spans: Iterable[EventSpan], taken_at: datetime) -> int | None:
+    """Das Event, zu dem eine Aufnahmezeit gehoert - `None` ohne jede Spanne.
+
+    ZWEI STUFEN, und die Reihenfolge ist die Zusage: ENTHALTENSEIN SCHLAEGT NAEHE. Liegt die Zeit
+    in einer Spanne (beide Grenzen inklusiv), gewinnt diese; erst sonst entscheidet der kleinste
+    Abstand zu einer Grenze. Bei Gleichstand - beruehrende Spannen (`ended_at(A) ==
+    started_at(B)`) ebenso wie zwei gleich weit entfernte Events - gewinnt das FRUEHERE Event.
+
+    REIN und ohne Uhr; die Reihenfolge der uebergebenen Spannen wirkt sich nicht aus.
+
+    Aufrufer ist der Entwurfszweig von `api/photos.py` fuer die vom Nutzer aufgenommenen Fotos
+    ohne Rangzeile. Die Spannenliste wird dort EINMAL geladen und fuer alle Fotos wiederverwendet
+    (Auflage S14) - nie eine Abfrage je Foto."""
+    ordered = sorted(spans, key=_span_order)
+    if not ordered:
+        return None
+    # `min` liefert bei Gleichstand den ERSTEN Treffer der Eingabefolge - und die ist nach
+    # `_span_order` sortiert. Der Tie-Break steht damit an genau einer Stelle.
+    nearest = min(ordered, key=lambda span: _distance_to(span, taken_at))
+    return nearest.event_id
+
+
+@dataclass(frozen=True)
 class EventCandidate:
     """Ein Kandidatenfoto EINES Kriterien-Laufs (die Ausschuss-Ueberlebenden).
 

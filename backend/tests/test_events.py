@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime, timedelta
+from itertools import permutations
 
 from photosort.events import (
     EVENT_EXTENT_MAX_METERS,
@@ -10,6 +11,7 @@ from photosort.events import (
     DayBoundarySignal,
     EffectiveLocation,
     EventCandidate,
+    EventSpan,
     ExtentSignal,
     LandmarkChangeSignal,
     LocationEntry,
@@ -17,6 +19,7 @@ from photosort.events import (
     TimeGapSignal,
     build_events,
     default_signals,
+    event_for_time,
     infer_locations,
 )
 from photosort.scoring import (
@@ -785,3 +788,95 @@ class TestTheCorrectedTimeFeedsTheEventBoundaries:
 
         assert len(_build(raw)) == 2
         assert len(_build(corrected)) == 1
+
+
+def _span(event_id: int, start_minutes: int, end_minutes: int) -> EventSpan:
+    """Eine Eventspanne relativ zu `T0`, in Minuten. Zonenlos wie `Photo.taken_at`."""
+    return EventSpan(
+        event_id=event_id,
+        started_at=T0 + timedelta(minutes=start_minutes),
+        ended_at=T0 + timedelta(minutes=end_minutes),
+    )
+
+
+class TestEventForTime:
+    """`event_for_time` ordnet eine Aufnahmezeit einem Event zu - fuer die Fotos, die der Nutzer
+    aufgenommen hat, ohne dass der Lauf ihnen eine Rangzeile gegeben haette.
+
+    REIN, ohne Session und ohne Uhr: dieselbe Eingabe liefert immer dieselbe Zuordnung."""
+
+    def test_a_time_inside_a_span_belongs_to_that_event(self) -> None:
+        spans = [_span(7, 0, 60), _span(8, 120, 180)]
+
+        assert event_for_time(spans, T0 + timedelta(minutes=30)) == 7
+
+    def test_containment_beats_proximity(self) -> None:
+        """Zusicherung 10: Eine Zeit KURZ VOR dem Ende eines langen Events gehoert diesem Event -
+        auch wenn der Abstand zum `started_at` des naechsten kleiner ist als der zum eigenen
+        `started_at`. Genau diesen Fall beantwortet eine Abstandsmessung allein gegen `started_at`
+        falsch."""
+        long_event = _span(1, 0, 600)
+        following = _span(2, 610, 640)
+        # 599 Minuten vom eigenen Anfang entfernt, aber nur 11 vom Anfang des naechsten.
+        moment = T0 + timedelta(minutes=599)
+
+        assert event_for_time([long_event, following], moment) == 1
+
+    def test_both_bounds_are_inclusive(self) -> None:
+        spans = [_span(3, 0, 60)]
+
+        assert event_for_time(spans, T0) == 3
+        assert event_for_time(spans, T0 + timedelta(minutes=60)) == 3
+
+    def test_touching_spans_go_to_the_earlier_event(self) -> None:
+        """Zusicherung 11: `ended_at(A) == started_at(B)` ist ueber zwei Aufnahmen derselben
+        Sekunde mit Ortssprung erreichbar. Ohne diesen Fall haengt das Ergebnis an der
+        Aufzaehlungsreihenfolge."""
+        earlier = _span(1, 0, 60)
+        later = _span(2, 60, 120)
+        touching_moment = T0 + timedelta(minutes=60)
+
+        assert event_for_time([earlier, later], touching_moment) == 1
+        assert event_for_time([later, earlier], touching_moment) == 1
+
+    def test_an_equal_distance_goes_to_the_earlier_event(self) -> None:
+        """Zusicherung 12: Die Luecke zwischen den beiden Events ist symmetrisch - die Zeit liegt
+        genau in ihrer Mitte."""
+        earlier = _span(1, 0, 60)
+        later = _span(2, 80, 140)
+        middle = T0 + timedelta(minutes=70)
+
+        assert event_for_time([earlier, later], middle) == 1
+        assert event_for_time([later, earlier], middle) == 1
+
+    def test_a_time_between_two_events_goes_to_the_nearer_one(self) -> None:
+        earlier = _span(1, 0, 60)
+        later = _span(2, 100, 160)
+
+        assert event_for_time([earlier, later], T0 + timedelta(minutes=95)) == 2
+        assert event_for_time([earlier, later], T0 + timedelta(minutes=65)) == 1
+
+    def test_a_single_event_takes_every_time(self) -> None:
+        spans = [_span(5, 100, 200)]
+
+        assert event_for_time(spans, T0) == 5
+        assert event_for_time(spans, T0 + timedelta(minutes=150)) == 5
+        assert event_for_time(spans, T0 + timedelta(days=30)) == 5
+
+    def test_a_time_before_the_first_and_after_the_last_event(self) -> None:
+        spans = [_span(1, 0, 60), _span(2, 120, 180)]
+
+        assert event_for_time(spans, T0 - timedelta(days=1)) == 1
+        assert event_for_time(spans, T0 + timedelta(days=1)) == 2
+
+    def test_an_empty_span_list_answers_none(self) -> None:
+        assert event_for_time([], T0) is None
+
+    def test_the_result_does_not_depend_on_the_order_of_the_spans(self) -> None:
+        """Die Spannenliste kommt aus einer Abfrage - ihre Reihenfolge ist ohne `ORDER BY` nicht
+        zugesichert. Jede Permutation muss dieselbe Zuordnung liefern."""
+        spans = [_span(1, 0, 60), _span(2, 120, 180), _span(3, 300, 360)]
+        moment = T0 + timedelta(minutes=200)
+
+        for permutation in permutations(spans):
+            assert event_for_time(list(permutation), moment) == 2
