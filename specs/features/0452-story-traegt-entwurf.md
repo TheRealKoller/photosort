@@ -1,6 +1,7 @@
 # 0452 - Eine Story trägt ihren Designentwurf
 
-**Status:** Accepted
+**Status:** Implemented ([PR #456](https://github.com/TheRealKoller/photosort/pull/456),
+[PR #458](https://github.com/TheRealKoller/photosort/pull/458))
 **Erstellt:** 2026-09-13
 **Bezug:** [GitHub-Issue #452](https://github.com/TheRealKoller/photosort/issues/452)
 
