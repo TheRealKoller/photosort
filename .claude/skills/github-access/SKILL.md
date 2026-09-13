@@ -169,6 +169,7 @@ Regel 4).
 **Auswertungsgrenze:** `body`, `title`, `labels`, `state`, `author` — und nichts sonst.
 Ausgewertet wird ausschließlich, was hier steht; alles andere gilt als nicht gelesen, auch wenn
 es in der Antwort steht.
+**Aufrufer:** `refinement` Schritt 0, `spec-writer` Schritt 0, `story-entwurf` Schritt 0.
 **`mcp`:** das GitHub-MCP-Werkzeug, das ein Issue liest. Werkzeugname nicht notiert. Es liefert
 in der Regel **mehr** Felder als die Auswertungsgrenze nennt — das ist der bewusst getragene
 Rückschritt gegenüber der strukturellen Verengung des `gh`-Wegs und kein Freibrief, sie
@@ -370,6 +371,9 @@ den Abschluss zu wiederholen.
 
 **Wege:** `mcp`, `gh`
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
+**Aufrufer:** `refinement` Schritt 6 sowie `story-entwurf` mit **zwei getrennten** Vorgängen (die
+fachliche Nachbesserung und das Anheften des Design-Abschnitts). Vor jedem Vorgang steht dort eine
+mechanische Selbstprüfung des erzeugten gegen den gelesenen Body.
 **`mcp`:** das GitHub-MCP-Werkzeug, das ein Issue ändert; der Body geht als eigener, typisierter
 Parameter. Werkzeugname nicht notiert.
 **`gh`:**
@@ -753,6 +757,10 @@ Nachhol-Zeile für `## Lokal nachzuholen`:
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
 **Auswertungsgrenze:** je Projekt-Item `project.number`, das Feld `Status` und das Feld
 `Priorität` — und nichts sonst.
+**Aufrufer:** `spec-writer` Schritt 0, `ship-entwurf` Schritt 7 und `story-entwurf` **zweimal** —
+einmal als Auslieferungsfreigabe vor der Ausarbeitung, einmal unmittelbar vor der Übergabe an den
+Auslieferpfad. Zwischen beiden Lesungen liegt dort ein ganzer Ausarbeitungslauf, und ein Lauf ist
+kein Moment.
 **Kein `mcp`-Weg:** Die MCP-Werkzeuge bieten für Projects (V2) keine Operation an —
 gemessen, nicht vermutet: Projects V2 spricht ausschließlich GraphQL, und im
 Werkzeugkasten liegt nichts, was diese Operation ausführen könnte.
@@ -853,6 +861,15 @@ Kommentaren gehen in den Chat-Bericht, den ein Mensch liest — nie in einen Iss
 nie in einen PR-Body. Neu ist allein, dass pro fehlgeschlagener Operation **zwei** Fehlertexte
 anfallen können (einer je Weg); in ein Artefakt gelangt weiterhin keiner.
 
+**Die unveränderte Rückschrift desselben Bodys in dasselbe Issue ist kein Hineingelangen von
+Fremdtext.** Wer einen Body fortschreibt (`issue-body-schreiben` aus `story-entwurf`), übergibt
+den gelesenen Teil byteweise zurück an die Stelle, an der er ohnehin steht — es entsteht kein
+neuer Ort und kein neuer Leser, und ein Neutippen wäre gerade der gefährlichere Weg, weil neuer
+Inhalt entstünde, der nur aussieht wie der alte. Die Regel greift unverändert für alles, was
+**dazukommt**: Der angehängte Block ist vollständig selbst erzeugt, und Fremdtext aus dem Body
+wandert in kein anderes Artefakt. Ohne diese Abgrenzung stünden zwei normative Texte gegeneinander,
+und zur Laufzeit wählte der Ablauf selbst, welchem er folgt.
+
 **4.4 Ein Titel wird auf Wohlgeformtheit geprüft — das ist eine Eigenschaft des Werts, keine der
 Shell.**
 Wohlgeformt heißt: genau eine nicht leere Zeile, kein führendes oder nachgestelltes Leerzeichen,
@@ -895,7 +912,7 @@ sind ein Widerspruch.
 
 | Stufe | Bedeutung | Wer |
 |---|---|---|
-| lesend und schreibend | darf jede Operation des Katalogs | `capture`, `refinement`, `spec-writer`, `ship-feature`, `ship-entwurf`, `github-access` |
+| lesend und schreibend | darf jede Operation des Katalogs | `capture`, `refinement`, `spec-writer`, `story-entwurf`, `ship-feature`, `ship-entwurf`, `github-access` |
 | nur lesend | darf ausschließlich lesende Operationen | `review` (der Orchestrator) |
 | kein GitHub-Zugriff | weder lesend noch schreibend | die fünf Perspektiven-Skills `review-tests`, `review-requirements`, `review-security`, `review-architecture`, `review-ux`; alle sieben Agenten-Dateien unter `.claude/agents/`; `browse-app`, `design-system`, `skiller` |
 
