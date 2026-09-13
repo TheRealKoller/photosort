@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.feedback_log import (
@@ -43,8 +43,11 @@ from photosort.models import (
     Event,
     FeedbackEvent,
     FeedbackEventKind,
+    MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
+    PhotoMotifAssessment,
+    PhotoMotifStrength,
     PhotoRanking,
     Project,
     ScanStatus,
@@ -460,6 +463,110 @@ async def test_an_unfinished_run_is_not_the_frozen_context(db_session: AsyncSess
     )
 
     assert context.criterion_scoring_run_id == graph.run_id
+
+
+# --- L4, zweiter Satz: die eingefrorenen Zahlen ueberleben die Neuklassifikation ---------------
+
+
+async def test_the_frozen_numbers_stay_untouched_when_the_photo_is_reclassified(
+    db_session: AsyncSession,
+) -> None:
+    """L4, zweiter Satz - und DER NACHWEIS IST DER EINGEFRORENE WERT, nicht das Vorhandensein der
+    Zeile.
+
+    Ein spaeterer Lauf ueberschreibt Modellstufe, Qualitaetswert und Motivstaerke an ihren
+    Quellzeilen. Traegt das Ereignis die Zahlen nicht selbst, waere danach nicht mehr
+    entscheidbar, ob das Modell ein Motiv ZU SCHWACH oder GAR NICHT genannt hatte - die Aussage
+    des Ereignisses haengt dann am heutigen Stand, und genau das schliesst ADR 0100 Punkt 2 aus.
+
+    OHNE DIESEN FALL bestuende die Zusage auch gegen eine Umsetzung, die zur AUSWERTUNGSZEIT
+    nachschlaegt statt einzufrieren: Solange sich die Quellzeilen nicht bewegen, liefern beide
+    Wege dieselben Zahlen. Hier bewegen sie sich - und zwar ALLE DREI in einem Fall, weil sie in
+    drei verschiedenen Tabellen stehen und eine davon einzeln vergessen zu werden droht."""
+    graph = await _build_graph(db_session)
+    photo_id = graph.photo.id
+    frozen_strength = 0.2
+    db_session.add(
+        PhotoMotifAssessment(
+            photo_id=photo_id,
+            source=MotifAssessmentSource.CLOUD,
+            excluded_document=False,
+            provider="test",
+            computed_at=datetime(2026, 1, 1),
+        )
+    )
+    await db_session.flush()
+    db_session.add(
+        PhotoMotifStrength(photo_id=photo_id, motif_key="menschen", strength=frozen_strength)
+    )
+    await db_session.flush()
+
+    context = await load_frozen_context(db_session, project_id=graph.project_id, photo_id=photo_id)
+    await record_motif_correction(
+        db_session,
+        project_id=graph.project_id,
+        photo_id=photo_id,
+        user_id=graph.user_id,
+        kind=FeedbackEventKind.MOTIF_ADDED,
+        motif_key="menschen",
+        motif_strength=frozen_strength,
+        context=context,
+    )
+    await db_session.commit()
+    assert (context.level, context.quality) == (4, pytest.approx(0.8))
+
+    # DIE NEUKLASSIFIKATION: Alle drei Quellzeilen bekommen einen anderen Wert - dasselbe, was ein
+    # spaeterer Lauf tut. Alle drei in EINEM Fall, weil sie in drei verschiedenen Tabellen stehen.
+    await db_session.execute(
+        update(PhotoAlbumSuitability)
+        .where(PhotoAlbumSuitability.photo_id == photo_id)
+        .values(level=1)
+    )
+    await db_session.execute(
+        update(PhotoRanking)
+        .where(
+            PhotoRanking.criterion_scoring_run_id == graph.run_id,
+            PhotoRanking.photo_id == photo_id,
+        )
+        .values(rank_score=0.05)
+    )
+    await db_session.execute(
+        update(PhotoMotifStrength)
+        .where(
+            PhotoMotifStrength.photo_id == photo_id,
+            PhotoMotifStrength.motif_key == "menschen",
+        )
+        .values(strength=0.97)
+    )
+    await db_session.commit()
+
+    stored = await _only_event(db_session)
+    assert stored.motif_strength == pytest.approx(frozen_strength)
+    assert stored.level == 4
+    assert stored.quality == pytest.approx(0.8)
+    # Die Gegenprobe im SELBEN Fall: Die Quellzeilen tragen tatsaechlich die NEUEN Werte - sonst
+    # bestuende der Fall auch gegen eine Neuklassifikation, die gar nicht stattgefunden hat.
+    assert (
+        await db_session.execute(
+            select(PhotoAlbumSuitability.level).where(PhotoAlbumSuitability.photo_id == photo_id)
+        )
+    ).scalar_one() == 1
+    assert (
+        await db_session.execute(
+            select(PhotoRanking.rank_score).where(
+                PhotoRanking.criterion_scoring_run_id == graph.run_id,
+                PhotoRanking.photo_id == photo_id,
+            )
+        )
+    ).scalar_one() == pytest.approx(0.05)
+    assert (
+        await db_session.execute(
+            select(PhotoMotifStrength.strength).where(
+                PhotoMotifStrength.photo_id == photo_id,
+                PhotoMotifStrength.motif_key == "menschen",
+            )
+        )
+    ).scalar_one() == pytest.approx(0.97)
 
 
 # --- Nachweis 4: `event_id` ueberlebt den Neuaufbau der Gliederung -----------------------------

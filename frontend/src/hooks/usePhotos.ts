@@ -189,27 +189,17 @@ export function useDraftDecisionMutation(projectId: number, username: string | n
 }
 
 /**
- * Der Austausch EINES Bildes gegen eine Alternative - ZWEI Schreibvorgänge in einer Geste.
+ * Der Austausch EINES Bildes gegen eine Alternative — EIN Aufruf, eine Transaktion, ein Ereignis.
  *
- * Reihenfolge verbindlich (ADR 0098): erst das Bezugsbild streichen, dann die Alternative
- * aufnehmen. Umgekehrt stünde zwischen den beiden Anfragen ein Bild zu viel im Album, und
- * bräche die zweite ab, wäre der Entwurf um eines gewachsen statt unverändert geblieben.
+ * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht. Der Server schreibt
+ * beide Bewertungszeilen zusammen und hält das Paar als EIN Ereignis fest. Welche der beiden
+ * Zeilen dabei zuerst entsteht, ist ohne Belang: Ein halb ausgeführter Austausch kann nicht
+ * bestehen bleiben, und zwischen ihnen ist kein Zustand beobachtbar.
  *
- * Danach derselbe Cache-Umgang wie bei `useDraftDecisionMutation` und aus demselben Grund: Die
+ * Derselbe Cache-Umgang wie bei `useDraftDecisionMutation` und aus demselben Grund: Die
  * Entwurfsliste wird NICHT neu geladen. Das ersetzte Bild bleibt an seiner Stelle und trägt
  * „gestrichen"; die Alternative wird über `insertDraftPhoto` an ihren chronologischen Platz
- * geschrieben - denselben, den der Server ihr beim nächsten vollständigen Laden gäbe.
- */
-/**
- * Der Austausch — EIN Aufruf statt zweier `setRating` (Spec 0432).
- *
- * Die beiden Schreibvorgänge waren nicht atomar: Der zweite konnte fehlschlagen und einen halb
- * ausgeführten Austausch hinterlassen, und ihre Zusammengehörigkeit kannte allein dieser Client.
- * Der Server schreibt beide Bewertungszeilen jetzt in einer Transaktion und hält „B statt A" als
- * EIN Ereignis fest; über zwei getrennte Aufrufe wäre daraus nie ein Paar geworden.
- *
- * Die Fortschreibung des Caches bleibt unverändert — sie liest beide Zeilenzustände weiterhin aus
- * der Antwort, nur jetzt aus einer statt aus zweien.
+ * geschrieben — denselben, den der Server ihr beim nächsten vollständigen Laden gäbe.
  */
 export function useDraftExchangeMutation(projectId: number, username: string | null) {
   const queryClient = useQueryClient()
