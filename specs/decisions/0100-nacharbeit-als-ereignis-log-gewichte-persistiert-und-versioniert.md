@@ -40,6 +40,19 @@ Das Log ist eine **zweite, unabhängige Aufzeichnung**. Kein Lesepfad des Entwur
 der Bewertung oder der Motive liest es, und sein Inhalt leitet sich nie aus dem Zustand ab. Das
 Zustandsmodell bleibt unverändert.
 
+**`user_id` ist nullable, und `NULL` heißt „keine Zuschreibung".** Eine gemeinsame Entscheidung der
+Endauswahl gehört nach ADR 0099 Punkt 3 dem Projekt und nicht einem Nutzer; ihr Schreibendpunkt
+nimmt aus genau diesem Grund kein `current_user` entgegen. Ihn dafür um einen zu erweitern, führte
+das dort verworfene `decided_by` durch die Hintertür ein — und das Log wäre der Ort, an dem man
+nachsieht, wer wollte, was das Projekt entschieden hat. Aufgezeichnet wird deshalb **ohne** Nutzer.
+
+**`event_id` trägt kein Fremdschlüssel.** Es ist ein Gruppierungsschlüssel, gültig allein zusammen
+mit dem `criterion_scoring_run_id` derselben Zeile, und wird nie zu einer `Event`-Zeile aufgelöst.
+Der Grund ist zwingend: `worker.py::rebuild_run_grouping` **löscht die `Event`-Zeilen eines Laufs
+und legt sie neu an**. Ein echter Fremdschlüssel hielte entweder den Neuaufbau an oder risse Zeilen
+des Logs mit — beides bräche die Zusage aus dem ersten Absatz. Ein struktureller Wächter hält fest,
+dass keine Abfrage `FeedbackEvent.event_id` gegen `Event.id` verbindet.
+
 ### 2. Das Ereignis friert die Entscheidungslage ein — die lokalen Messwerte nicht
 
 Ein Ereignis trägt die Angaben, die zum Zeitpunkt der Korrektur galten und **später überschrieben
@@ -92,6 +105,12 @@ Modellfehler.
 trägt `FINAL_DECISION_WEIGHT > 1`. Es ist der Multiplikator dieses Ereignisses in der **Ableitung**,
 nie in der Anzeige: **Die ausgewiesene Fallzahl bleibt die ungewichtete Anzahl der Korrekturen.**
 Eine gewichtete Zahl als Fallzahl behauptete Korrekturen, die niemand vorgenommen hat.
+
+Als Paar geht eine gemeinsame Entscheidung so ein: Je Lauf und Event tritt jedes aufgenommene gegen
+jedes herausgenommene Foto **derselben Modellstufe** an. Sie ist für sich ein Urteil über ein
+einzelnes Foto; erst die Gegenüberstellung innerhalb desselben Events macht daraus dieselbe
+Aussageform wie ein Austausch. Stufenübergreifende Gegenüberstellungen bleiben draußen, aus dem
+Grund in Punkt 10.
 
 ### 6. Der Gewichtssatz wird persistiert und versioniert, Abwesenheit heißt Startwert
 
@@ -146,7 +165,15 @@ keinen Qualitätswert.
 von `LOCAL_CORRECTION_SPAN`. Die Sicherung gegen einen schlechten Wert ist nicht ihre Höhe, sondern
 dass jede Anpassung von Hand ausgelöst, vorher angezeigt und zurücknehmbar ist.
 
-### 9. Die zwei Tauscharten werden nie zusammengezählt
+### 9. Gezählt und gerechnet wird projektübergreifend
+
+Der Gewichtssatz gilt global. Zählten die ausgewiesenen Fallzahlen nur ein Projekt, stünden sie
+neben einem Vorschlag, den sie nicht belegen — der Leser bezöge die eine Zahl auf den anderen Wert.
+Der Diagnoseabschnitt spricht seinen Umfang deshalb ausdrücklich aus, obwohl er auf einer
+Projektseite steht. Die Ereigniszeile trägt ihr `project_id` trotzdem: für die Projektlöschung, und
+damit eine projektweise Sicht später möglich bleibt, ohne das Log zu ändern.
+
+### 10. Die zwei Tauscharten werden nie zusammengezählt
 
 Ein Austausch **innerhalb derselben Modellstufe** ist eine Aussage über die lokalen
 Qualitätskriterien, ein Austausch **über Stufen hinweg** eine über die Bewertung des Modells selbst.
@@ -155,7 +182,7 @@ gleichstufige Austausch geht in die Gewichte ein**. Ein Paar, bei dem eine der b
 fehlt, ist keiner der beiden Arten zuzuordnen, wird als eigene dritte Zahl ausgewiesen und geht in
 keine Gewichtsrechnung ein — nie stillschweigend einer der beiden Arten zugeschlagen.
 
-### 10. Die Motivdiagnose bewegt keine Gewichte
+### 11. Die Motivdiagnose bewegt keine Gewichte
 
 Die Motiv-Fehlerfälle sind **Diagnose und nur Diagnose**. Motive tragen keine Gewichte: Ihre Stärken
 werden nach ADR 0091 nie untereinander verglichen und bilden keine Rangfolge, die zu kalibrieren
