@@ -1,4 +1,4 @@
-# 0093 - Der Entwurf hängt an der Story, die Ausarbeitung am `Ready`-Gate
+# 0094 - Der Entwurf hängt an der Story, die Ausarbeitung am `Ready`-Gate
 
 **Status:** Accepted
 **Datum:** 2026-09-13

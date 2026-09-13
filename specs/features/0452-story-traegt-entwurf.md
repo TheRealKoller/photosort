@@ -203,7 +203,7 @@ ist Beleg und Einstieg für Daniel und die Hauptsession.
 
 ### Betroffene Dateien, in dieser Reihenfolge
 
-1. `specs/decisions/0093-entwurf-haengt-an-der-story-ausarbeitung-am-ready-gate.md` — neu (Nummer
+1. `specs/decisions/0094-entwurf-haengt-an-der-story-ausarbeitung-am-ready-gate.md` — neu (Nummer
    beim Anlegen gegen den Bestand prüfen; bei Kollision zieht das jüngere Dokument um).
 2. `scripts/tests/test_github_zugriff_an_einer_stelle.py` — `ERWARTETE_STUFEN` um den neuen Skill
    ergänzen; zusätzlich ein benannter Test, dass die beiden Penpot-Skills „kein GitHub-Zugriff"

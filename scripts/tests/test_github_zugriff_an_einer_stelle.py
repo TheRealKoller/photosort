@@ -280,6 +280,7 @@ ERWARTETE_STUFEN: dict[str, str] = {
     ".claude/skills/capture/SKILL.md": STUFE_SCHREIBEND,
     ".claude/skills/design-system/SKILL.md": STUFE_KEINE,
     ".claude/skills/github-access/SKILL.md": STUFE_SCHREIBEND,
+    ".claude/skills/laufstand/SKILL.md": STUFE_KEINE,
     ".claude/skills/penpot-design/SKILL.md": STUFE_KEINE,
     ".claude/skills/penpot-entwurfsrunden/SKILL.md": STUFE_KEINE,
     ".claude/skills/refinement/SKILL.md": STUFE_SCHREIBEND,

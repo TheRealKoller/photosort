@@ -129,7 +129,7 @@ SKILL_UEBERSCHRIFTEN = (
     UEBERSCHRIFT_BERICHT,
 )
 
-# Die beiden Schritte, die schreiben. Ihre Reihenfolge ist die Zusage aus ADR 0093 Abschnitt 7
+# Die beiden Schritte, die schreiben. Ihre Reihenfolge ist die Zusage aus ADR 0094 Abschnitt 7
 # (erst der fachliche Body, dann das Anheften) - und in **beiden** stehen frische Lesung,
 # Drift-Pruefung und Selbstpruefung vor dem Schreibzugriff.
 SCHREIBSCHRITTE = (UEBERSCHRIFT_NACHBESSERN, UEBERSCHRIFT_ANHEFTEN)
