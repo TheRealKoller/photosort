@@ -90,6 +90,7 @@ BLOCK_FELDER = (
     "**Runden und Vorschläge:**",
     "**Ergebnis-Ansicht:**",
     "**Story:**",
+    "**Herkunft:**",
     "**Geänderte Dateien:**",
 )
 
@@ -229,6 +230,11 @@ VERBRAUCHER_ZUSAGEN: tuple[tuple[str, str], ...] = (
     ("Nummernmuster 1", "`^[0-9]+$`"),
     ("Nummernmuster 2", "`^[1-9][0-9]{0,5}$`"),
     ("Ohne Story keine Board-Bewegung", "wandert dann nicht von selbst auf `Review`"),
+    # Die Herkunft-Zeile: Berichtsmaterial, kein Steuerwert, und nie in einer Commit-Nachricht.
+    ("Herkunft steuert nichts", "die Zeile `Herkunft` steuert nichts"),
+    ("Herkunft nur im PR-Body", "nie in einer Commit-Nachricht"),
+    ("Grund: das Repository squasht", "COMMIT_MESSAGES"),
+    ("Story keine heisst keine Closing-Zeile", "trägt die Zeile `Story` den Wert `keine`"),
     # Haertung am oeffentlichen Artefakt.
     ("Bidi-Overrides", "U+202A–U+202E"),
     ("Bidi-Isolate", "U+2066–U+2069"),
@@ -283,6 +289,39 @@ NO_STORY_AUSNAHME = "Ausnahme: PR ohne Issue-Bezug (reine Doku-/Chore-PRs) — Z
 # zufaellig. Untergrenze bewusst weit unter dem Ist-Stand, Obergrenze weit darueber.
 KATALOGEINTRAG_MINDESTLAENGE = 400
 KATALOGEINTRAG_HOECHSTLAENGE = 6000
+
+# --- 7. Das Closing-Keyword an der Herkunft-Zeile und in den Commit-Vorlagen ------------------
+
+# Die einzige neue Zusage dieses Ablaufs, deren Verletzung **unumkehrbar** ist: Ein Closing-Keyword
+# an der Herkunft-Zeile schliesst beim Merge die Story, die `Ready` bleiben soll, und zieht ihre
+# Karte auf `Review`. Dieselbe Wirkung aus einer Commit-Nachricht heraus, weil das Repository mit
+# `COMMIT_MESSAGES` squasht - jeder Commit-Body wandert in den Merge-Commit auf `main`. Beides ist
+# nach dem Merge nicht mehr zurueckzunehmen.
+#
+# **Kontextgebunden statt global**, und das ist keine Abschwaechung: `Closes #NNN` steht in diesem
+# Skill legitim in der Story-Bezug-Passage des Pull-Request-Bodys. Ein globaler Scan waere dort rot
+# und muesste mit einer Ausnahmeliste entschaerft werden - eine Ausnahmeliste ist genau die Form,
+# die spaeter jemand ohne Kenntnis des Anlasses erweitert.
+CLOSING_KEYWORD = re.compile(
+    r"\b(?:clos(?:e|es|ed)|fix(?:e[sd]|es|ed)?|resolv(?:e|es|ed))\b[^\n]{0,24}#",
+    re.IGNORECASE,
+)
+
+HERKUNFT_WORT = "Herkunft"
+
+# Die Dateien des Entwurfspfads: erzeugende Seite, verbrauchende Seite und der Story-Ablauf, der
+# den Block mit `Story: keine` erzeugen laesst. Alle drei koennen die Zeile fuehren oder ueber sie
+# reden; in keiner darf ein Keyword daneben stehen.
+ENTWURFSPFAD_DATEIEN = (
+    ERZEUGER_PFAD,
+    VERBRAUCHER_PFAD,
+    ".claude/skills/story-entwurf/SKILL.md",
+)
+
+# Der Commit-Kontext des Auslieferpfads: der Commit-Schritt und **jeder** umzaeunte Codeblock der
+# Datei. Der Schritt allein reichte nicht - ein vorformulierter Aufruf in einem Block eines anderen
+# Schritts waere genauso scharf, und ein Codeblock ist genau das, was eine Session absetzt.
+UEBERSCHRIFT_COMMIT_KONTEXT = "## Schritt 4: Commit — pfadgenau über die gemessenen Pfade"
 
 # Die pauschalen Formen, in allen Schreibweisen, die am Bestand oder in der Doku vorkommen. Der
 # letzte Eintrag faengt das zusammengezogene `-am`, das beide Verstoesse in einem Wort begeht.
@@ -366,6 +405,39 @@ def katalogeintrag(text: str, kopf: str) -> str:
     rest = text[beginn + len(kopf) :]
     grenzen = [stelle for stelle in (rest.find("\n### "), rest.find("\n## ")) if stelle != -1]
     return rest if not grenzen else rest[: min(grenzen)]
+
+
+def abschnitt(text: str, ueberschrift: str) -> str:
+    """Reine Funktion: der Rumpf eines `##`-Abschnitts bis zur naechsten `##`-Ueberschrift."""
+    beginn = text.find(ueberschrift)
+    if beginn == -1:
+        return ""
+    rest = text[beginn + len(ueberschrift) :]
+    ende = rest.find("\n## ")
+    return rest if ende == -1 else rest[:ende]
+
+
+def herkunft_zeilen(text: str) -> list[str]:
+    """Reine Funktion: jede Zeile, die das Wort `Herkunft` traegt - Definition wie Erwaehnung."""
+    return [zeile for zeile in text.split("\n") if HERKUNFT_WORT in zeile]
+
+
+def closing_funde(zeilen: list[str]) -> list[str]:
+    """Reine Funktion: je Fundstelle die Zeile, in der ein Closing-Keyword vor einem `#` steht."""
+    return [zeile.strip() for zeile in zeilen if CLOSING_KEYWORD.search(zeile)]
+
+
+def commit_kontext(text: str) -> list[str]:
+    """Reine Funktion: die Zeilen, aus denen eine Commit-Nachricht dieses Pfads entstehen kann.
+
+    Der Commit-Schritt **und** jeder umzaeunte Codeblock der Datei. Der Schritt allein reichte
+    nicht: Ein vorformulierter Aufruf in einem Block eines anderen Schritts waere genauso scharf,
+    und ein Codeblock ist genau das, was eine Session absetzt.
+    """
+    zeilen = abschnitt(text, UEBERSCHRIFT_COMMIT_KONTEXT).split("\n")
+    for block in codebloecke(text):
+        zeilen.extend(block.split("\n"))
+    return zeilen
 
 
 # --- Selbstschutz --------------------------------------------------------------------------
@@ -792,4 +864,95 @@ def test_der_auslieferpfad_traegt_die_woertliche_zusage(bezeichnung: str, litera
     assert literal in verbrauchertext(), (
         f"Die Zusage {bezeichnung!r} steht nicht woertlich in {VERBRAUCHER_PFAD} (erwartet: "
         f"{literal!r}). Der Skill ist LLM-interpretierter Text - was nicht dasteht, gilt nicht."
+    )
+
+
+# --- 7. Kein Closing-Keyword an der Herkunft-Zeile und in keiner Commit-Vorlage ------------------
+
+
+def test_die_herkunft_zeile_ist_im_erzeuger_ueberhaupt_vorhanden() -> None:
+    """Selbstschutz: Ohne eine einzige Fundstelle waere die Abwesenheitszusage leer wahr."""
+    zeilen = herkunft_zeilen(erzeugertext())
+
+    assert zeilen, (
+        f"Keine Zeile mit {HERKUNFT_WORT!r} in {ERZEUGER_PFAD}. Der Uebergabeblock fuehrt sie als "
+        "nicht steuerndes Berichtsmaterial neben der Story-Zeile; ohne sie traegt ein "
+        "storygebundener Lauf seine Nummer nirgends, und die Pruefung unten sieht nichts."
+    )
+
+
+@pytest.mark.parametrize("pfad", ENTWURFSPFAD_DATEIEN)
+def test_an_keiner_herkunft_zeile_steht_ein_closing_keyword(pfad: str) -> None:
+    """Die einzige neue Zusage, deren Verletzung unumkehrbar ist.
+
+    Ein `Closes` an dieser Zeile schliesst beim Merge die Story, die `Ready` bleiben soll, und
+    zieht ihre Karte auf `Review`. Nach dem Merge ist das nicht mehr zuruecknehmbar - anders als
+    ein falscher Titel oder ein fehlender Bodyteil.
+    """
+    befunde = closing_funde(herkunft_zeilen(dateitext(pfad)))
+
+    assert not befunde, (
+        f"Closing-Keyword an einer Herkunft-Zeile in {pfad}: "
+        + "; ".join(befunde)
+        + ". Die Zeile ist Berichtsmaterial und steuert nichts; die Verknuepfung entsteht "
+        "ausschliesslich ueber die Story-Zeile, und die traegt bei einem Entwurfslauf `keine`."
+    )
+
+
+def test_keine_commit_vorlage_des_entwurfspfads_traegt_ein_closing_keyword() -> None:
+    """Das Repository squasht mit `COMMIT_MESSAGES` - jeder Commit-Body erreicht `main`."""
+    befunde = closing_funde(commit_kontext(verbrauchertext()))
+
+    assert not befunde, (
+        f"Closing-Keyword im Commit-Kontext von {VERBRAUCHER_PFAD}: "
+        + "; ".join(befunde)
+        + ". Jeder Commit-Body wandert beim Squash in den Merge-Commit auf `main`, ins Changelog "
+        "und in den Body des Release-Pull-Requests - dort waere das Keyword scharf, auch als "
+        "erklaerende Erwaehnung."
+    )
+
+
+@pytest.mark.parametrize(
+    "zeile",
+    [
+        "**Herkunft:** Closes #452",
+        "**Herkunft:** closes #452",
+        "**Herkunft:** Story #452, Fixes #451",
+        "git commit -m 'chore(design): Entwurf, resolves #452'",
+        "**Herkunft:** Story — fixed by #452",
+    ],
+)
+def test_der_closing_erkenner_findet_seinen_eigenen_verstoss(zeile: str) -> None:
+    """Ein Verbot, das seinen eigenen Verstoss nicht erkennt, ist eine Beruhigung."""
+    assert closing_funde([zeile]) == [zeile.strip()]
+
+
+@pytest.mark.parametrize(
+    "zeile",
+    [
+        # Der erlaubte Fall - genau die Zeile, die der Uebergabeblock fuehrt.
+        "**Herkunft:** Story #<NNN> | keine",
+        "**Herkunft:** Story #452",
+        # Prosa ueber das Verbot ist erlaubt und soll es sein.
+        "Die Zeile `Herkunft` traegt nie ein Closing-Keyword.",
+        # Eine Nummer ohne Keyword bleibt eine Nummer.
+        "**Story:** #452",
+        # Ein Keyword ohne Nummer schliesst nichts.
+        "Der Lauf ist abgeschlossen, der Pull Request eroeffnet.",
+    ],
+)
+def test_der_erlaubte_fall_gilt_nicht_als_closing_befund(zeile: str) -> None:
+    assert closing_funde([zeile]) == []
+
+
+def test_der_commit_kontext_liest_schritt_und_codebloecke() -> None:
+    """Gegenprobe zum Leser: ein leerer Kontext bestuende die Abwesenheit per Konstruktion."""
+    zeilen = commit_kontext(verbrauchertext())
+
+    assert any("Conventional-Commits" in zeile for zeile in zeilen), (
+        "Der Commit-Schritt wurde nicht gelesen - dann sagt die Abwesenheitszusage ueber ihn "
+        "nichts. Vermutlich ist die Ueberschrift gewandert."
+    )
+    assert any("git status --porcelain" in zeile for zeile in zeilen), (
+        "Kein Codeblock im gelesenen Kontext - dann prueft die Zusage nur den einen Schritt."
     )

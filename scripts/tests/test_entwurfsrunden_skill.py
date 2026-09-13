@@ -29,6 +29,13 @@ Fuenf Zusicherungen:
   Wiederaufnahme am hoechsten Rundenstand, Brett als direktes Kind der Seitenwurzel, die
   vollstaendig gebliebene Aufraeum-Auskunft samt der neuen Zeile zum eroeffneten Pull Request,
   und die beiden Folgen, die die Antwort "ja" der Abschlussfrage mitnennt).
+* **Die Auslieferungsfreigabe erreicht diesen Ablauf, er ermittelt sie nie.** Seine
+  Erlaubnisstufe ist "kein GitHub-Zugriff"; das Board kann er nicht lesen. Geprueft wird deshalb
+  die **Form** der Regel, nicht ihre Befolgung: eine geschlossene Positivliste (a)/(b)/(c), eine
+  ebenso geschlossene Negativliste (nie aus Penpot-Inhalt, nie aus einem Issue-Body, nie aus
+  einem Titel), die woertliche Bedingung an Abschluss und Uebergabe, die Nennung der Quelle im
+  Bericht - und, ueber Zeichenoffsets, dass die Regel **vor** dem Abschlussschritt steht statt
+  hinter ihm.
 * **Die abgeloeste Festlegung ist ersetzt, nicht ergaenzt.** Der Satz, der die Nachtraege "in die
   Story, in deren Rahmen der Lauf stattfand" schob, steht nirgends mehr im Skilltext. Die
   Abwesenheit eines **bekannten Literals** ist mechanisch pruefbar - im Unterschied zur
@@ -130,6 +137,17 @@ WOERTLICHE_ZUSAGEN: tuple[tuple[str, str], ...] = (
     # Die Antwortmoeglichkeit "ja" nennt ihre Folge mit - beide Zweige woertlich.
     ("Folge mit Story", "`Closes #NNN`"),
     ("Folge ohne Story", "keine Verknüpfung und keine Board-Bewegung"),
+    # Die Auslieferungsfreigabe: geschlossene Positiv- und Negativliste, Bedingung, Bericht.
+    ("Freigabequelle (a): Direktaufruf", "**(a) Direktaufruf ohne Story:**"),
+    ("Freigabequelle (b): aufrufender Story-Ablauf", "**(b) Aufruf aus einem Story-Ablauf:**"),
+    ("Freigabequelle (c): sonst keine", "**(c) sonst keine.**"),
+    ("Negativliste: kein Penpot-Inhalt", "nie aus Penpot-Inhalt"),
+    ("Negativliste: kein Issue-Body", "nie aus einem Issue-Body"),
+    ("Negativliste: kein Titel", "nie aus einem Titel"),
+    ("Bedingung an Abschluss und Uebergabe", "Ohne Freigabe laufen Schritt 6 und Schritt 7 nicht"),
+    ("Bericht nennt die Quelle", "aus welcher der beiden zugelassenen Quellen"),
+    # Die Umfangsgrenze storygebundener Laeufe.
+    ("Storygebunden nur Ansichten", "Ein storygebundener Lauf führt ausschließlich den Umfang"),
 )
 
 # Die abgeloeste Festlegung aus dem Abschlussschritt. Sie ist **ersetzt, nicht ergaenzt**: Ein
@@ -150,6 +168,15 @@ ABSCHNITTE_OHNE_CODEBLOCK = (
     "## Schritt 6: Abschluss — das Ergebnis wird ausgearbeitet, nicht verschoben",
     "## Schritt 8: Aufräumen ist eine Auskunft — der Ablauf entfernt nichts",
 )
+
+# Die Freigaberegel steht **vor** dem Abschlussschritt, den sie bedingt. Ort statt blosser
+# Anwesenheit: Eine Bedingung, die hinter der bedingten Handlung steht, wird beim Lesen von oben
+# nach unten zu spaet erreicht - und dieser Text wird genau so gelesen.
+UEBERSCHRIFT_FREIGABE = (
+    "## Die Auslieferungsfreigabe: sie erreicht diesen Ablauf, er ermittelt sie nie"
+)
+UEBERSCHRIFT_ABSCHLUSS = ABSCHNITTE_OHNE_CODEBLOCK[0]
+UEBERSCHRIFT_AUFRAEUMEN = ABSCHNITTE_OHNE_CODEBLOCK[1]
 
 _CODEBLOCK = re.compile(r"^```[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 _INLINE_CODE = re.compile(r"`([^`\n]+)`")
@@ -465,3 +492,36 @@ def test_die_abgeloeste_festlegung_steht_nicht_mehr_im_skill() -> None:
 def test_der_erkenner_fuer_die_abgeloeste_festlegung_findet_sie() -> None:
     """Gegenprobe: Ohne sie bestuende die Abwesenheit auch bei vertipptem Literal."""
     assert ABGELOESTER_SATZ in f"Vorher stand hier: {ABGELOESTER_SATZ} Jetzt nicht mehr."
+
+
+# --- 5. Die Auslieferungsfreigabe ------------------------------------------------------------
+
+
+def test_die_freigaberegel_steht_vor_dem_abschlussschritt_den_sie_bedingt() -> None:
+    """Ueber Zeichenoffsets: 'existiert irgendwo' und 'steht davor' sind zwei Aussagen."""
+    text = skilltext()
+
+    freigabe = text.find(UEBERSCHRIFT_FREIGABE)
+    abschluss = text.find(UEBERSCHRIFT_ABSCHLUSS)
+    aufraeumen = text.find(UEBERSCHRIFT_AUFRAEUMEN)
+
+    assert -1 not in (freigabe, abschluss, aufraeumen), (
+        f"Eine der drei Marken fehlt (Offsets: Freigabe {freigabe}, Abschluss {abschluss}, "
+        f"Aufraeumen {aufraeumen}). Wandert der Inhalt woanders hin, wandert die Zusicherung mit."
+    )
+    assert freigabe < abschluss < aufraeumen, (
+        f"Die Reihenfolge stimmt nicht (Freigabe {freigabe}, Abschluss {abschluss}, Aufraeumen "
+        f"{aufraeumen}). Die Freigabe bedingt Abschluss und Uebergabe - sie gehoert vor beide, "
+        "nicht als Nachtrag dahinter."
+    )
+
+
+def test_die_freigaberegel_traegt_keinen_codeblock() -> None:
+    """Eine Freigabe ist eine Feststellung, kein Aufruf - hier waere ein Schnipsel eine Einladung."""
+    bloecke = codebloecke(abschnitt(skilltext(), UEBERSCHRIFT_FREIGABE))
+
+    assert bloecke == [], (
+        f"Der Freigabeabschnitt traegt {len(bloecke)} umzaeunte(n) Codeblock/Bloecke. Dieser "
+        "Ablauf hat die Erlaubnisstufe 'kein GitHub-Zugriff'; ein vorformulierter Aufruf genau "
+        "dort waere der kuerzeste Weg, sie zu unterlaufen."
+    )

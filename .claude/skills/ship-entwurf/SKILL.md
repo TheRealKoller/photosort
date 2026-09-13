@@ -62,6 +62,16 @@ GitHub-Antwort. Nennt die Antwortmöglichkeit „ja" des Rundenablaufs keine kon
 sondern einen Platzhalter, hält dieser Pfad an. **Alles Übrige im Block steuert nichts**
 (Rundenzahlen, Ergebnis-Ansicht, Dateiliste): Berichtsmaterial.
 
+**Insbesondere die Zeile `Herkunft` steuert nichts.** Sie nennt die Story, aus deren Ablauf der
+Entwurf stammt, und ist reines Berichtsmaterial: Sie erzeugt keine Verknüpfung, bewegt keine
+Board-Karte und schließt kein Issue. Ihre Nummer wird gegen `^[0-9]+$` geprüft und ausschließlich
+als Zahl weiterverwendet. Sie steht **ausschließlich im Pull-Request-Body und nie in einer Commit-Nachricht**
+— das Repository squasht mit `COMMIT_MESSAGES`, jeder Commit-Body wandert in den
+Merge-Commit auf `main`, ins Changelog und in den Body des Release-Pull-Requests; ein
+Closing-Keyword wäre dort scharf, auch als erklärende Erwähnung. Trägt die Zeile selbst ein
+Closing-Keyword, hält dieser Pfad an: Was sie steuern würde, ist genau das, was sie nicht steuern
+darf.
+
 ## Schritt 1: Bestandsaufnahme vor jedem Schreibzugriff
 
 Vor jedem Schreibzugriff wird **selbst gemessen**, was der Lauf verändert hat:
@@ -232,6 +242,12 @@ geprüften Nummer; nur sie erzeugt die strukturierte Verknüpfung und lässt Git
 Merge schließen. Ohne Story entfällt die Zeile (die Vorlage sieht das als Ausnahme vor) — der Pull
 Request entsteht trotzdem und wandert dann nicht von selbst auf `Review`. Das wird **gemeldet**,
 nicht durch ein eigenmächtiges Setzen des Board-Werts verdeckt.
+
+**Ein storygebundener Entwurfslauf ist genau dieser zweite Fall** und kein Sonderweg: Bei ihm
+trägt die Zeile `Story` den Wert `keine`, die Closing-Zeile entfällt, und die Story bleibt `Ready`. Woher
+der Entwurf stammt, sagt die Zeile `Herkunft`; sie geht als Berichtsmaterial in den Body und
+erzeugt keine Verknüpfung. Ein Entwurfslauf schließt keine Story ab — ein `Closes` täte beim Merge
+genau das, und zwar unumkehrbar.
 
 Scheitert `pr-erstellen` mehrdeutig, wird erst lesend verifiziert, nie blind der nächste Weg
 gegangen. Für einen Branch mit bereits offenem Pull Request scheitert die Operation eindeutig; es
