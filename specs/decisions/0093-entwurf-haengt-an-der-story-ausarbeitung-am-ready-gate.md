@@ -115,6 +115,14 @@ Der neue Body entsteht mechanisch als `<gelesener Inhalt bis zur ersten Zeile ##
 Neuumbrechen, kein Neuformulieren aus dem Kontextverständnis heraus. Ein neu getippter Body ist
 neuer Inhalt, der nur aussieht wie der alte.
 
+**Gelesen wird unmittelbar vor jedem Schreibzugriff, nicht einmal am Laufbeginn.** Zwischen beidem
+liegen der vollständige Rundenlauf und die Ausarbeitung; ein Lauf ist kein Moment, derselbe Grund
+wie in Abschnitt 4. Fortgeschrieben wird ausschließlich die frisch gelesene Fassung, und ein
+Vergleich gegen den Stand vom Laufbeginn **hält bei Abweichung an** — kein Nachziehen im selben
+Durchgang, keine Zusammenführung. Die Selbstprüfung unten deckt diesen Fall nicht ab: Sie
+vergleicht gegen den gelesenen Body und ist über einer veralteten Lesung grün, während eine
+zwischenzeitliche Bearbeitung Daniels stillschweigend überschrieben wird.
+
 **Es entsteht keine Funktion unter `scripts/`, die den Body fortschreibt.** Der Ablauf ist
 durchgehend Text, und zwei Orte derselben Regel driften. Getragen wird die Zusage stattdessen von
 einer verbindlichen mechanischen Selbstprüfung vor jedem Schreibzugriff: Der gelesene und der

@@ -19,17 +19,24 @@ Fuenf Zusicherungsklassen:
    Datei mehr ueber ein Feld reden, ohne rot zu werden, und die Regel waere unbenutzbar statt
    scharf.
 3. **Reihenfolge ueber Zeichenoffsets.** Die Freigabepruefung steht vor der Ausarbeitung, die
-   Fortschreibung des Issue-Bodys vor der Uebergabe an den Auslieferpfad, und die verbindliche
-   Selbstpruefung in **jedem** der beiden Schreibschritte vor dessen Schreibzugriff. Ueber
-   Offsets statt ueber eine Anwesenheitspruefung: "existiert irgendwo" und "steht davor" sind
-   verschiedene Aussagen, und nur die zweite traegt die Zusage.
+   Fortschreibung des Issue-Bodys vor der Uebergabe an den Auslieferpfad, und in **jedem** der
+   beiden Schreibschritte stehen eine frische Lesung **und** die verbindliche Selbstpruefung vor
+   dessen Schreibzugriff. Ueber Offsets statt ueber eine Anwesenheitspruefung: "existiert
+   irgendwo" und "steht davor" sind verschiedene Aussagen, und nur die zweite traegt die Zusage.
+
+   **Warum die frische Lesung eine eigene Zusage ist und nicht in der Selbstpruefung aufgeht:**
+   Die Selbstpruefung vergleicht den erzeugten gegen den **gelesenen** Body. Ist der gelesene
+   veraltet - zwischen Schritt 0 und einem Schreibzugriff liegen ein vollstaendiger Rundenlauf und
+   die Ausarbeitung -, ist sie **gruen, waehrend der Schaden entsteht**: Daniels zwischenzeitliche
+   Bearbeitung wird stillschweigend ueberschrieben. Genau dagegen ist die Drift-Pruefung
+   gerichtet, und deshalb wird sie hier getrennt geprueft.
 4. **Werte aus den Quelltexten, nicht aus Test-Literalen.** Das Schluesselmuster wird aus **drei**
    Dateien gelesen und auf Gleichheit geprueft; das Umfangsvokabular kommt aus
    `penpot-entwurfsrunden`, die storygebundene Teilmenge aus `story-entwurf`. Zwei im Test
    notierte Literale waeren gleich per Konstruktion und bewiesen ueber den Bestand nichts.
-5. **Die elf Sicherheitsauflagen.** M-S1 bis M-S11 stehen je einmal als eigene, am Zeilenanfang
+5. **Die zwoelf Sicherheitsauflagen.** M-S1 bis M-S12 stehen je einmal als eigene, am Zeilenanfang
    verankerte Marke. Gelesen wird die **Nummernmenge** aus dem Text und gegen den
-   luckenlosen Bereich geprueft - eine ausgefallene Auflage faellt damit auf, ohne dass hier elf
+   luckenlosen Bereich geprueft - eine ausgefallene Auflage faellt damit auf, ohne dass hier zwoelf
    Zitate stuenden, die mit dem Skill driften.
 
 **Zur Empfindlichkeit:** Jeder Erkenner traegt eine synthetische Probe seines eigenen Verstosses
@@ -106,7 +113,7 @@ UEBERSCHRIFT_AUSARBEITEN = "## Schritt 4: Ausarbeiten und in die Nutzlast aufneh
 UEBERSCHRIFT_ANHEFTEN = "## Schritt 5: Den Verweis an die Story heften"
 UEBERSCHRIFT_UEBERGABE = "## Schritt 6: Übergabe an den Auslieferpfad"
 UEBERSCHRIFT_BLOCKFORM = "## Der Abschnitt, den dieser Skill schreibt — Form an genau einer Stelle"
-UEBERSCHRIFT_AUFLAGEN = "## Die elf Sicherheitsauflagen"
+UEBERSCHRIFT_AUFLAGEN = "## Die zwölf Sicherheitsauflagen"
 UEBERSCHRIFT_BERICHT = "## Bericht an Daniel"
 
 SKILL_UEBERSCHRIFTEN = (
@@ -123,13 +130,23 @@ SKILL_UEBERSCHRIFTEN = (
 )
 
 # Die beiden Schritte, die schreiben. Ihre Reihenfolge ist die Zusage aus ADR 0093 Abschnitt 7
-# (erst der fachliche Body, dann das Anheften) - und in **beiden** steht die Selbstpruefung vor
-# dem Schreibzugriff.
+# (erst der fachliche Body, dann das Anheften) - und in **beiden** stehen frische Lesung,
+# Drift-Pruefung und Selbstpruefung vor dem Schreibzugriff.
 SCHREIBSCHRITTE = (UEBERSCHRIFT_NACHBESSERN, UEBERSCHRIFT_ANHEFTEN)
 
 SELBSTPRUEFUNG_MARKER = "**Selbstprüfung vor dem Schreibzugriff:**"
 SCHREIBOPERATION = "issue-body-schreiben"
+LESEOPERATION = "issue-lesen"
 FREIGABEOPERATION = "board-status-und-prioritaet-lesen"
+
+# Die Drift-Schranke am Body. Sie steht neben der Selbstpruefung, weil sie etwas **anderes** sichert
+# und die Selbstpruefung genau hier blind ist: Diese vergleicht den erzeugten gegen den **gelesenen**
+# Body - ist der gelesene veraltet, ist sie gruen, waehrend der Schaden entsteht. Zwischen der
+# Lesung in Schritt 0 und einem Schreibzugriff liegen ein vollstaendiger Rundenlauf mit
+# Rueckmeldezyklen und die Ausarbeitung; ein Lauf ist kein Moment. Dasselbe Argument wie M-S7 fuer
+# die Board-Freigabe, nur mit groesserem Schaden - hier geht Daniels eigener Text in einem
+# oeffentlichen, nicht zuruecknehmbaren Artefakt verloren.
+DRIFT_MARKER = "**Drift-Prüfung am Body:**"
 
 # --- 4. Werte, die aus den Quelltexten kommen ------------------------------------------------
 
@@ -142,9 +159,9 @@ _SCHLUESSELMUSTER = re.compile(r"\^\[a-z0-9\]\[a-z0-9-\]\{\d+,\d+\}\$")
 # Modus (`alternativen` / `verfeinern`) trifft dieses Muster nicht.
 _UMFANG_VOKABULAR = re.compile(r"genau einer aus `([a-z]+)` / `([a-z]+)` / `([a-z]+)`")
 
-# --- 5. Die elf Sicherheitsauflagen -----------------------------------------------------------
+# --- 5. Die zwoelf Sicherheitsauflagen -----------------------------------------------------------
 
-ERWARTETE_AUFLAGEN = tuple(range(1, 12))
+ERWARTETE_AUFLAGEN = tuple(range(1, 13))
 _AUFLAGEN_MARKE = re.compile(r"^\*\*M-S(?P<nummer>\d+) — ", re.MULTILINE)
 
 # --- Der Katalog: Erlaubnisstufe und Aufrufer-Zeilen ------------------------------------------
@@ -560,6 +577,70 @@ def test_der_offsetvergleich_unterscheidet_beide_richtungen(
     assert (offset(probe, "PRUEFUNG") < offset(probe, "SCHREIBEN")) is erwartet_gueltig
 
 
+@pytest.mark.parametrize("kopf", SCHREIBSCHRITTE)
+def test_jeder_schreibschritt_liest_den_body_unmittelbar_davor_neu(kopf: str) -> None:
+    """Die Schranke, die die Selbstpruefung strukturell **nicht** stellen kann.
+
+    Sie vergleicht den erzeugten gegen den gelesenen Body. Stammt der gelesene aus Schritt 0, liegt
+    dazwischen ein vollstaendiger Rundenlauf mit Rueckmeldezyklen und die Ausarbeitung - Stunden,
+    keine Sekunden. Hat Daniel den Body in dieser Zeit bearbeitet, ueberschreibt der Lauf seine
+    Fassung, und die Selbstpruefung ist dabei **gruen**: Sie sieht genau den veralteten Stand, gegen
+    den sie prueft. Deshalb steht in jedem Schreibschritt eine frische Lesung **und** eine
+    Drift-Pruefung, und beide stehen vor dem Schreibzugriff.
+
+    Dasselbe Argument wie M-S7 fuer die Board-Freigabe ("ein Lauf ist kein Moment"), nur mit
+    groesserem Schaden: Der Verlust trifft Daniels eigenen Text in einem oeffentlichen, nicht
+    zuruecknehmbaren Artefakt.
+    """
+    rumpf = abschnitt(skilltext(), kopf)
+
+    lesen = offset(rumpf, f"`{LESEOPERATION}`")
+    drift = offset(rumpf, DRIFT_MARKER)
+    schreiben = offset(rumpf, f"`{SCHREIBOPERATION}`")
+
+    assert lesen != -1, (
+        f"Im Schritt {kopf!r} steht kein `{LESEOPERATION}`. Die Fortschreibung baut dann auf der "
+        "Lesung aus Schritt 0 auf - und ueberschreibt stillschweigend, was Daniel waehrend des "
+        "Rundenlaufs am Body geaendert hat."
+    )
+    assert drift != -1, (
+        f"Im Schritt {kopf!r} steht keine Zeile {DRIFT_MARKER!r}. Ein erneutes Lesen allein "
+        "genuegt nicht: Ohne den Vergleich gegen die Fassung aus Schritt 0 laeuft der Ablauf mit "
+        "dem aktualisierten Stand einfach weiter, statt anzuhalten."
+    )
+    assert schreiben != -1, (
+        f"Im Schritt {kopf!r} steht kein `{SCHREIBOPERATION}`. Beide Schreibvorgaenge sind "
+        "getrennt und beide benennen ihre Operation."
+    )
+    assert lesen < drift < schreiben, (
+        f"Im Schritt {kopf!r} stehen Lesung bei {lesen}, Drift-Pruefung bei {drift}, "
+        f"Schreibzugriff bei {schreiben}. Erwartet ist aufsteigend - erst lesen, dann vergleichen, "
+        "dann schreiben. Danach geprueft ist nicht geprueft."
+    )
+
+
+@pytest.mark.parametrize(
+    ("probe", "erwartet_gueltig"),
+    [
+        # Der zugesagte Fall.
+        (f"`{LESEOPERATION}` … {DRIFT_MARKER} … `{SCHREIBOPERATION}`", True),
+        # Der Defekt, gegen den diese Zusage geschrieben ist: gelesen wird nur vorher, irgendwo.
+        (f"{DRIFT_MARKER} … `{SCHREIBOPERATION}` … `{LESEOPERATION}`", False),
+        # Gelesen, aber ohne Schranke dazwischen - der Ablauf zoege mit dem neuen Stand nach.
+        (f"`{LESEOPERATION}` … `{SCHREIBOPERATION}` … {DRIFT_MARKER}", False),
+    ],
+)
+def test_der_drift_offsetvergleich_unterscheidet_alle_richtungen(
+    probe: str, erwartet_gueltig: bool
+) -> None:
+    """Gegenprobe an synthetischem Text - sonst bestuende die Reihenfolgezusage bei jeder Lage."""
+    lesen = offset(probe, f"`{LESEOPERATION}`")
+    drift = offset(probe, DRIFT_MARKER)
+    schreiben = offset(probe, f"`{SCHREIBOPERATION}`")
+
+    assert (lesen < drift < schreiben) is erwartet_gueltig
+
+
 # --- 4. Werte aus den Quelltexten ---------------------------------------------------------------
 
 
@@ -635,10 +716,10 @@ def test_der_storygebundene_umfang_ist_eine_echte_teilmenge_des_vokabulars() -> 
     )
 
 
-# --- 5. Die elf Sicherheitsauflagen --------------------------------------------------------------
+# --- 5. Die zwoelf Sicherheitsauflagen --------------------------------------------------------------
 
 
-def test_die_elf_sicherheitsauflagen_stehen_vollstaendig_und_je_einmal() -> None:
+def test_die_zwoelf_sicherheitsauflagen_stehen_vollstaendig_und_je_einmal() -> None:
     nummern = auflagennummern(skilltext())
 
     assert tuple(nummern) == ERWARTETE_AUFLAGEN, (

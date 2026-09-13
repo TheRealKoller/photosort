@@ -8,7 +8,7 @@ description: Entwickelt den Designentwurf zu einer bereits geschärften Story (B
 **GitHub-Erlaubnisstufe:** lesend und schreibend
 
 **Umfang:** über dem Richtwert von rund 120 Zeilen, weil dieser Skill die einzige Definitionsstelle
-des Abschnitts ist, den er schreibt, und weil die elf Sicherheitsauflagen seines Schreibpfads
+des Abschnitts ist, den er schreibt, und weil die zwölf Sicherheitsauflagen seines Schreibpfads
 Zusicherungen sind, die an keiner zweiten Stelle stehen.
 
 **Nur in der Hauptsession.** Dieser Skill ist zugleich zweierlei: der eigenständige Weg zu einem
@@ -29,7 +29,9 @@ Board-Wert geschrieben, kein Titel geändert und kein Issue geschlossen.
 1. **Die Issue-Nummer stammt aus Daniels Aufruf in diesem Lauf**, gegen `^[0-9]+$` validiert. Aus
    einem gelesenen Body, einem Titel oder einem Penpot-Wert entsteht nie ein Schreibziel.
 2. `issue-lesen` mit dieser Nummer. Gib den gelesenen `body` einmal sichtbar im Chat wieder, bevor
-   er weiterverarbeitet wird.
+   er weiterverarbeitet wird. **Halt diese Fassung als Vergleichsstand fest** — sie ist nicht die
+   Grundlage eines späteren Schreibzugriffs, sondern der Maßstab, an dem sich zeigt, ob der Body
+   inzwischen von jemand anderem bearbeitet wurde.
 3. **Autorschaft prüfen:** Ist `author.login` nicht `TheRealKoller`, weist der Bericht das vor dem
    ersten Schreibzugriff als eigenen Punkt aus — nur bei fremder Autorschaft ist der Body
    überhaupt fremdbeschreibbar.
@@ -73,13 +75,19 @@ Beim Anheften gilt eine Byte-Zusage über alles vor dem Design-Abschnitt, und ei
 verändert genau diesen Bereich. Zwei Vorgänge, zwei Schreibzugriffe — sonst widerspräche die eine
 Zusage der anderen.
 
-**Selbstprüfung vor dem Schreibzugriff:** Schreib den gelesenen und den erzeugten Body in je eine
-Datei und vergleich sie mechanisch. Erwartet ist hier genau der Bereich, den die Nachbesserung
-betrifft; jede weitere Abweichung — umformatierte Absätze, neu umbrochene Zeilen, ein
-umgeschriebener Abschnitt, den niemand anfassen wollte — hält an.
+**Erst lesen, dann vergleichen, dann schreiben** — in dieser Reihenfolge, und die Fortschreibung
+baut auf der **frisch** gelesenen Fassung auf, nie auf der aus Schritt 0:
 
-Danach `issue-body-schreiben`. Scheitert es, endet der Lauf hier: Ohne die nachgebesserte Fassung
-ist der Entwurf an eine Story geheftet, deren Text ihn nicht trägt.
+1. `issue-lesen` erneut, mit derselben Nummer.
+2. **Drift-Prüfung am Body:** Vergleich der frischen Fassung gegen den Vergleichsstand aus
+   Schritt 0. Weichen sie ab, **hält der Lauf an und meldet** — kein Nachziehen mit dem
+   aktualisierten Stand im selben Durchgang.
+3. **Selbstprüfung vor dem Schreibzugriff:** Schreib die frisch gelesene und die erzeugte Fassung
+   in je eine Datei und vergleich sie mechanisch. Erwartet ist genau der Bereich, den die
+   Nachbesserung betrifft; jede weitere Abweichung — umformatierte Absätze, neu umbrochene Zeilen,
+   ein umgeschriebener Abschnitt, den niemand anfassen wollte — hält an.
+4. `issue-body-schreiben`. Scheitert es, endet der Lauf hier: Ohne die nachgebesserte Fassung ist
+   der Entwurf an eine Story geheftet, deren Text ihn nicht trägt.
 
 ## Schritt 3: Die Auslieferungsfreigabe feststellen
 
@@ -112,18 +120,24 @@ Dieser Schritt läuft in **beiden** Fällen — mit Freigabe (`ausgearbeitet`) w
 (`Arbeitsstand`). Er steht vor der Auslieferung, weil das Anheften die tragende Zusage ist:
 Scheitert die Auslieferung, ist der Entwurf trotzdem dauerhaft an der Story.
 
-Der neue Body entsteht **mechanisch**, nicht aus dem Kontextverständnis heraus: der gelesene Inhalt
-bis zur ersten Zeile der Design-Überschrift, dahinter der selbst erzeugte Block. Ein vorhandener
-Abschnitt wird ab seiner Überschrift vollständig **ersetzt**, nie ergänzt; es entstehen unter keinen
-Umständen zwei.
+Dieselbe Reihenfolge wie in Schritt 2 — erst lesen, dann vergleichen, dann schreiben:
 
-**Selbstprüfung vor dem Schreibzugriff:** Schreib den gelesenen und den erzeugten Body in je eine
-Datei und vergleich sie mechanisch. **Einziger zulässiger Unterschied ist der Bereich ab der
-Design-Überschrift; jede weitere Abweichung hält an.** Ein neu getippter Body ist neuer Inhalt, der
-nur aussieht wie der alte — diese Prüfung ist die einzige Mechanik, die den Unterschied sieht.
-
-Danach `issue-body-schreiben`. **Scheitert es, wird nicht ausgeliefert** — Schritt 6 entfällt
-vollständig.
+1. `issue-lesen` erneut, mit derselben Nummer. Seit Schritt 0 liegen der gesamte Rundenlauf und
+   die Ausarbeitung dazwischen; das sind Stunden, keine Sekunden.
+2. **Drift-Prüfung am Body:** Vergleich der frischen Fassung gegen den Vergleichsstand aus
+   Schritt 0 — bzw. gegen die Fassung, die Schritt 2 selbst geschrieben hat, falls er lief.
+   Weichen sie ab, **hält der Lauf an und meldet**; kein Nachziehen im selben Durchgang.
+3. Der neue Body entsteht **mechanisch** aus der frisch gelesenen Fassung, nicht aus dem
+   Kontextverständnis heraus: ihr Inhalt bis zur ersten Zeile der Design-Überschrift, dahinter der
+   selbst erzeugte Block. Ein vorhandener Abschnitt wird ab seiner Überschrift vollständig
+   **ersetzt**, nie ergänzt; es entstehen unter keinen Umständen zwei.
+4. **Selbstprüfung vor dem Schreibzugriff:** Schreib die frisch gelesene und die erzeugte Fassung
+   in je eine Datei und vergleich sie mechanisch. **Einziger zulässiger Unterschied ist der
+   Bereich ab der Design-Überschrift; jede weitere Abweichung hält an.** Ein neu getippter Body
+   ist neuer Inhalt, der nur aussieht wie der alte — diese Prüfung ist die einzige Mechanik, die
+   den Unterschied sieht.
+5. `issue-body-schreiben`. **Scheitert es, wird nicht ausgeliefert** — Schritt 6 entfällt
+   vollständig.
 
 ## Schritt 6: Übergabe an den Auslieferpfad
 
@@ -177,7 +191,7 @@ gedeckelte Länge. Dasselbe Muster gilt an der Schreib- **und** an der Verwendun
 **Gibt es keinen Entwurf, entsteht der Abschnitt nicht.** Es gibt keinen Pfad, der einen leeren
 Abschnitt schreibt.
 
-## Die elf Sicherheitsauflagen
+## Die zwölf Sicherheitsauflagen
 
 Sie gelten vollständig und sind keine Erläuterung des Ablaufs oben, sondern seine Bedingung.
 
@@ -188,7 +202,9 @@ einen Freitextpfad vom öffentlichen Issue in die Spec und wäre ein eigener ADR
 
 **M-S2 — Der gelesene Body wird fortgeschrieben, nicht neu erzeugt.** Alles vor der
 Design-Überschrift bleibt Byte für Byte unverändert: kein Umformatieren, kein Neuumbrechen, kein
-Aufräumen und vor allem kein Neuformulieren aus dem Kontextverständnis heraus.
+Aufräumen und vor allem kein Neuformulieren aus dem Kontextverständnis heraus. Fortgeschrieben wird
+immer die Fassung aus der Lesung **unmittelbar vor diesem Schreibzugriff** (M-S12), nie eine
+frühere.
 
 **M-S3 — Das Schreibziel stammt nie aus gelesenem Text.** Die Issue-Nummer kommt aus Daniels Aufruf
 in diesem Lauf, gegen `^[0-9]+$` validiert; aus dem gelesenen Body, dem Titel oder einem
@@ -198,7 +214,7 @@ aus.
 **M-S4 — Beide Werte werden vor dem Einsetzen unabhängig voneinander geprüft**, mechanisch am
 Dateisubstrat wie ein Titel nach Härtungsregel 4.4 des Skills `github-access`, Abschnitt „Die vier
 Härtungsregeln" — die Zeichenliste wird hier nicht doppelt geführt. Dazu kommen vier Zusätze: kein
-`#`, kein `@`, kein Backtick, kein `://` und kein `http`. Die Adresse der selbst gehosteten
+`#`, kein `@`, kein Backtick und keine Adresse (`://` oder `http`). Die Adresse der selbst gehosteten
 Penpot-Instanz gehört nicht in ein öffentliches Artefakt, und die Zeichenliste allein fängt eine
 Adresse nicht. Ein Befund an einem der beiden Werte hält an.
 
@@ -243,6 +259,20 @@ Board-Werts und jede Operation an einem Pull Request. Die drei genannten führen
 Skill in ihrer Aufrufer-Zeile. **Die untersagten Operationen stehen hier bewusst in Worten statt
 als Operations-ID:** Die Zusage ist die Gleichheit der genannten Menge mit den drei oben, und eine
 in Backticks gesetzte Verbotsliste zöge jede darin genannte ID in eben diese Menge.
+
+**M-S12 — Vor jedem Schreibzugriff auf den Body wird er frisch gelesen und gegen den
+Vergleichsstand geprüft.** Zwischen der Lesung in Schritt 0 und einem Schreibzugriff liegen ein
+vollständiger Rundenlauf mit mehreren Rückmeldezyklen und die Ausarbeitung — Stunden, nicht
+Sekunden; ein Lauf ist kein Moment, derselbe Grund wie bei M-S7. Fortgeschrieben wird deshalb
+ausschließlich die **frisch** gelesene Fassung. Weicht sie vom Vergleichsstand ab, **hält der Lauf
+an und meldet**: kein Nachziehen mit dem aktualisierten Stand im selben Durchgang, keine
+Zusammenführung, kein Raten, welche der beiden Fassungen gemeint war.
+
+**Die Selbstprüfung (M-S2) kann diesen Fall strukturell nicht fangen** — sie vergleicht den
+erzeugten gegen den *gelesenen* Body, und ein veralteter gelesener Body ist genau ihr Maßstab: Sie
+ist grün, während der Schaden entsteht. Ohne M-S12 überschriebe der Lauf stillschweigend, was
+Daniel während des Rundenlaufs an der Story geändert hat — sein eigener Text, in einem
+öffentlichen Artefakt, und ein überschriebener Body ist nicht zurückzunehmen.
 
 ## Bericht an Daniel
 

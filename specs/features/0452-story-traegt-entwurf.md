@@ -6,7 +6,7 @@
 
 **Umfang:** über dem Richtwert von rund 200 Zeilen. Grund: Der Abschnitt `## Design` ist der erste
 strukturierte Kanal aus einem öffentlichen Issue-Body in eine Spec-Datei, die `developer` als
-Bauanleitung liest. Seine Feldform, die Zeichenauflagen an beiden Werten und die elf
+Bauanleitung liest. Seine Feldform, die Zeichenauflagen an beiden Werten und die zwölf
 Sicherheitsauflagen sind Zusicherungen, nicht Erläuterung — sie stehen vollständig, weil kein Test
 dieses Repositoriums je ein Exemplar des Blocks zu sehen bekommt.
 
@@ -153,7 +153,9 @@ dieser Reihenfolge:
 2. Mit Freigabe: Ausarbeitung nach `penpot-entwurfsrunden` Schritt 6 (beide Prüfbreiten,
    Variantenachse `zustand`, Plugin-Daten `ansicht`/`breite`), Eintrag in `design/penpot/views.json`
    samt Lücken, Kardinalitäten in `design/penpot/verify.js`. Ohne Freigabe: nichts davon.
-3. `issue-lesen` → Body fortschreiben → `issue-body-schreiben`.
+3. `issue-lesen` → Drift-Prüfung gegen den Stand vom Laufbeginn → Body fortschreiben →
+   `issue-body-schreiben`. **Die Lesung steht unmittelbar vor dem Schreibzugriff, nicht am
+   Laufbeginn**, und das gilt für beide Schreibvorgänge.
 4. Mit Freigabe: Übergabeblock an `ship-entwurf`.
 
 Schritt 3 steht **vor** Schritt 4, weil das Anheften die tragende Zusage der Story ist: Scheitert die
@@ -162,6 +164,12 @@ Auslieferung, ist der Entwurf trotzdem dauerhaft an der Story.
 **Die Nachbesserung aus Weg B ist ein eigener, vorgezogener Schreibvorgang.** Erst der fachliche
 Body, dann das Anheften — zwei getrennte `issue-body-schreiben`. Die Byte-Zusage oben gilt
 ausschließlich für den Anheft-Vorgang; andernfalls widerspräche sie der zugesagten Nachbesserung.
+
+**Jeder der beiden Schreibvorgänge liest den Body unmittelbar davor neu** (M-S12). Zwischen dem
+Laufbeginn und einem Schreibzugriff liegen der gesamte Rundenlauf und die Ausarbeitung; eine
+Fortschreibung aus der alten Lesung überschriebe eine zwischenzeitliche Bearbeitung Daniels
+stillschweigend, und die Selbstprüfung unten fänge das nicht — sie vergleicht gegen genau diese
+veraltete Fassung. Weicht die frische Fassung vom Stand des Laufbeginns ab, hält der Lauf an.
 
 **Die Zusicherung „Entwurfs-Skills ohne GitHub-Zugriff" bleibt strukturell gewahrt, weil die
 Freigabe den Rundenablauf *erreicht*, statt von ihm *ermittelt* zu werden.**
@@ -278,7 +286,8 @@ aus — nur bei fremder Autorschaft ist der Body überhaupt fremdbeschreibbar.
 **M-S4 — Beide Werte werden vor dem Einsetzen unabhängig voneinander geprüft**, und zwar mechanisch
 am Dateisubstrat wie bei einem Titel nach Härtungsregel 4.4: genau eine nicht leere Zeile, kein
 führendes/nachgestelltes Leerzeichen, keine Steuerzeichen, keine Bidi-Overrides, keine
-Zero-Width-Zeichen — zusätzlich kein `#`, kein `@`, kein Backtick, kein `://`, kein `http`, Länge
+Zero-Width-Zeichen — zusätzlich vier Zusätze: kein `#`, kein `@`, kein Backtick, keine Adresse
+(`://` oder `http`), Länge
 gedeckelt. Die Adresse der selbst gehosteten Penpot-Instanz gehört nicht in ein öffentliches
 Artefakt, und die Zeichenliste allein fängt eine URL nicht; der Block trägt keinen Link. Ein Befund
 an einem der beiden Werte hält an. Geführt wird die Zeichenliste nicht doppelt: `story-entwurf`
@@ -326,6 +335,21 @@ kein `issue-verwerfen`, keine `board-*-setzen`, keine `pr-*`-Operation. Die drei
 nennen `story-entwurf` in ihrer Aufrufer-Zeile; die Stufe „lesend und schreibend" bleibt damit eine
 Obergrenze, keine Gebrauchserlaubnis.
 
+**Im Skilltext selbst stehen die untersagten Operationen in Worten statt in Backticks** — die
+tragende Zusage ist die unter „Teststrategie" geforderte **Gleichheit** der genannten Menge mit den
+drei erlaubten, und eine in Backticks gesetzte Verbotsliste zöge jede darin genannte ID in eben
+diese Menge. Hier in der Spec bleiben die IDs lesbar, weil dieser Text nicht der Prüfgegenstand ist.
+
+**M-S12 — Vor jedem Schreibzugriff auf den Body wird er frisch gelesen und gegen den Stand vom
+Laufbeginn geprüft.** Zwischen der ersten Lesung und einem Schreibzugriff liegen ein vollständiger
+Rundenlauf mit mehreren Rückmeldezyklen und die Ausarbeitung; ein Lauf ist kein Moment, derselbe
+Grund wie bei M-S7. Fortgeschrieben wird ausschließlich die frisch gelesene Fassung; weicht sie vom
+Stand des Laufbeginns ab, **hält der Lauf an und meldet** — kein Nachziehen im selben Durchgang,
+keine Zusammenführung. **Die Selbstprüfung fängt diesen Fall strukturell nicht:** Sie vergleicht den
+erzeugten gegen den *gelesenen* Body und ist über einer veralteten Lesung grün, während der Schaden
+entsteht. Ohne M-S12 überschriebe der Lauf stillschweigend, was Daniel während des Rundenlaufs am
+Body geändert hat — sein eigener Text, in einem öffentlichen Artefakt, nicht zurückzunehmen.
+
 **Restrisiken, bewusst getragen.** Ein `views.json`-Eintrag erreicht `main` über `ship-entwurf`,
 also ohne Perspektivenrunde und ohne Copilot-Review; „im Repository auflösbar" heißt deshalb nicht
 „von einem Prüfer gesehen". Die Zeichenprüfung sagt nichts darüber, ob der aufgelöste Eintrag der
@@ -337,7 +361,8 @@ bleibt bei `Arbeitsstand` — fail-closed und beabsichtigt.
 **Ergänzung von `specs/architecture/0003-securitykonzept.md`** (im selben Branch): ein neuer
 Abschnitt unter „Angriffsflächen" zum strukturierten Kanal aus einem öffentlichen Issue-Body in eine
 Spec-Datei, mit M-S1 als projektweiter Auflage, der unveränderten Rückschrift eines fremden Bodys
-und dem Freigabe-Drift; unter „Bewusst akzeptierte Restrisiken" der `views.json`-Eintrag, der über
+sowie dem Body-Drift und dem Freigabe-Drift als zwei getrennten Punkten; unter „Bewusst akzeptierte
+Restrisiken" der `views.json`-Eintrag, der über
 den reviewfreien Auslieferpfad nach `main` kommt und danach als Nachschlagewert eines
 Spec-Abschnitts wirkt.
 
@@ -356,7 +381,8 @@ nicht mehr und nicht weniger); (3) **Ein-Definitions-Regel** für den `## Design
 Vorrat stehen genau einmal im lebenden Anweisungsraum `.claude/**`, die lesenden Dateien verweisen,
 ohne zu kopieren — mit einer Gegenprobe, die belegt, dass eine bloße Erwähnung der Feldnamen in
 Prosa nicht als Kopie zählt; (4) **Reihenfolge über Zeichenoffsets** — Issue-Fortschreibung vor der
-Übergabe an `ship-entwurf`, Ausarbeitung hinter der Freigabeprüfung, Schritt 3b zwischen Schritt 3
+Übergabe an `ship-entwurf`, Ausarbeitung hinter der Freigabeprüfung, in **jedem** Schreibschritt die
+frische Lesung vor der Drift-Prüfung und diese vor dem Schreibzugriff, Schritt 3b zwischen Schritt 3
 und Schritt 5 von `refinement`, der Skip-Ausschluss **innerhalb** des Skip-Absatzes von
 `spec-writer` Schritt 2; (5) **Abwesenheit** — kein Closing-Keyword an der `Herkunft`-Zeile und in
 keiner Commit-Vorlage des Entwurfs-Pull-Requests. Das Schlüsselmuster und die Umfangswerte werden
@@ -364,10 +390,14 @@ keiner Commit-Vorlage des Entwurfs-Pull-Requests. Das Schlüsselmuster und die U
 Erkenner trägt eine synthetische Probe seines eigenen Verstoßes und eine Gegenprobe des erlaubten
 Falls.
 
-**Selbstprüfung statt Test, verbindlich:** Vor jedem `issue-body-schreiben` schreibt der Ablauf den
-gelesenen und den erzeugten Body in je eine Datei und vergleicht sie mechanisch. Einziger zulässiger
-Unterschied ist der Bereich ab der `## Design`-Überschrift; jede weitere Abweichung hält an. Existenz
-und Position dieses Schritts (vor dem Schreibzugriff) sind per Offset prüfbar.
+**Selbstprüfung statt Test, verbindlich:** Vor jedem `issue-body-schreiben` liest der Ablauf den
+Body **erneut**, prüft ihn gegen den Stand vom Laufbeginn (Abweichung hält an) und schreibt die
+frisch gelesene sowie die erzeugte Fassung in je eine Datei, um sie mechanisch zu vergleichen.
+Einziger zulässiger Unterschied ist der Bereich ab der `## Design`-Überschrift; jede weitere
+Abweichung hält an. Existenz und Position **beider** Schritte — der Lesung und der Selbstprüfung,
+je vor dem Schreibzugriff — sind per Offset prüfbar. Die Reihenfolge ist tragend, nicht
+redaktionell: Die Selbstprüfung vergleicht gegen den gelesenen Body und wäre über einem veralteten
+gelesenen Body grün, während sie den Schaden durchlässt.
 
 **Edge Cases für die Umsetzung.** Body: ohne `## Design`; mit vorhandenem Abschnitt am Ende
 (Idempotenz — ein zweiter Lauf ersetzt, verdoppelt nicht); Abschnitt nicht am Ende; zwei Abschnitte;
@@ -378,7 +408,9 @@ Zeilenumbruch, Zero-Width/Bidi, leer, Überlänge; `Schlüssel` mit Großbuchsta
 führendem Bindestrich, 2 bzw. 41 Zeichen. Ablauf: `Schlüssel` gültig, aber in `views.json` nicht
 auflösbar; Board meldet nicht `Ready`; Board-Lesen scheitert; Knoten `project.number == 8` fehlt;
 Weg B auf `In Progress`/`Review`/`Done`; storygebunden `ausschnitt`/`baustein` gewünscht;
-Rundenlauf abgebrochen.
+Rundenlauf abgebrochen; **Body während des Laufs von Daniel bearbeitet** — vor dem
+Nachbesserungs-Schreibzugriff, vor dem Anheft-Schreibzugriff, und zwischen beiden; erneutes
+`issue-lesen` scheitert.
 
 **Bewusst ungeprüft:** die Laufzeittreue der Anweisungen (nur auf Wunsch, Fragen statt Raten,
 erkennbar verschiedene Ansätze) — Laufzeiteigenschaft eines LLM-interpretierten Textes, es wird
