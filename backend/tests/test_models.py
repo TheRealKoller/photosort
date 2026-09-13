@@ -15,6 +15,7 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    FinalSelectionDecision,
     FineLabel,
     MotifAssessmentSource,
     Photo,
@@ -1899,3 +1900,52 @@ def test_the_two_ranking_columns_are_nullable_but_the_event_is_not() -> None:
     assert columns["rank_score"].nullable is True
     assert columns["rank_position"].nullable is True
     assert columns["event_id"].nullable is False
+
+
+class TestTheSingleDraftStaysUntouchedByTheFinalSelection:
+    """specs/features/0431-endauswahl-gemeinsam.md, Nachweisstellen 1 und 2 von sieben.
+
+    Die Endauswahl ist eine Ebene UEBER beiden Entwuerfen, nicht daneben. Story 6 sagt fuer den
+    Einzelentwurf zu, dass neben der Bewertung keine zweite, daneben liegende Auswahlebene
+    entsteht - beide Faelle hier pruefen GLEICHHEIT der Spaltenmenge bzw. des Wertevorrats, nicht
+    Teilmenge: Eine spaeter ergaenzte Spalte oder ein spaeter ergaenzter Enum-Wert waere genau die
+    zweite Ebene und roetet sonst nichts."""
+
+    def test_the_rating_table_gains_no_column(self) -> None:
+        assert set(Rating.__table__.columns.keys()) == {
+            "id",
+            "photo_id",
+            "user_id",
+            "status",
+            "favorite",
+            "updated_at",
+        }
+
+    def test_the_rating_status_vocabulary_stays_the_album_decision(self) -> None:
+        assert {status.value for status in RatingStatus} == {"album_worthy", "rejected"}
+
+    def test_the_decision_table_carries_no_user_reference(self) -> None:
+        """ADR 0099 Punkt 3: Es gibt keine Spalte, in der ein Nutzerbezug stehen koennte - weder
+        `user_id` noch `decided_by` noch eine Lauf-Bindung. Die Trennung ist strukturell."""
+        assert set(FinalSelectionDecision.__table__.columns.keys()) == {
+            "photo_id",
+            "included",
+            "updated_at",
+        }
+
+    def test_the_decision_table_has_exactly_one_foreign_key_and_it_points_at_photos(self) -> None:
+        foreign_keys = {
+            (key.parent.name, key.column.table.name)
+            for key in FinalSelectionDecision.__table__.foreign_keys
+        }
+
+        assert foreign_keys == {("photo_id", "photos")}
+
+    def test_the_included_column_is_not_null_and_carries_no_default(self) -> None:
+        """Die Abwesenheit der Zeile heisst "unentschieden" (Auflage S4). Ein Vorgabewert erfaende
+        eine Entscheidung, die niemand getroffen hat - und es gibt keinen Weg zurueck."""
+        column = FinalSelectionDecision.__table__.columns["included"]
+
+        assert column.nullable is False
+        assert column.default is None
+        assert column.server_default is None

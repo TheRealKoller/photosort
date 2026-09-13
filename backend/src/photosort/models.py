@@ -992,3 +992,40 @@ class PhotoAlbumSuitability(Base):
     computed_at: Mapped[datetime]
 
     photo: Mapped[Photo] = relationship(back_populates="album_suitability")
+
+
+class FinalSelectionDecision(Base):
+    """Die gemeinsame Entscheidung des PROJEKTS ueber EIN Foto: gehoert es ins Album (ADR 0099).
+
+    Sie liegt eine Ebene UEBER den beiden Album-Entwuerfen, nicht daneben: Die Endauswahl selbst
+    ist ABGELEITET (`album_selection.py::selection_state`), gespeichert wird ausschliesslich die
+    ausdrueckliche Entscheidung. Daraus folgt ohne durchsetzenden Code, dass Einigkeit eine
+    Vorbelegung bleibt und eine getroffene Entscheidung jede spaetere Entwurfsaenderung und jeden
+    neuen Vorschlagslauf ueberlebt.
+
+    KEIN `user_id`, KEIN `decided_by`, KEINE Lauf-Bindung: Die Entscheidung gehoert dem Projekt,
+    nicht einem Nutzer - "wer angemeldet ist, spielt fuer ihre Wirkung keine Rolle". Die Trennung
+    von den beiden Entwuerfen ist damit strukturell; es gibt keine Spalte, in der ein Nutzerbezug
+    stehen koennte. Die Zuordenbarkeit, wer was wollte, bleibt unangetastet in den `Rating`-Zeilen.
+
+    DIE ABWESENHEIT DER ZEILE HEISST "UNENTSCHIEDEN", und es gibt keinen Weg zurueck in diesen
+    Zustand: Es entsteht kein `DELETE`-Endpunkt, aendern heisst den anderen Wert schreiben.
+    "Wieder strittig werden" ist kein Zustand, den die Story kennt."""
+
+    __tablename__ = "final_selection_decisions"
+
+    # Primaerschluessel UND Fremdschluessel (Muster `PhotoAlbumSuitability`): "hoechstens eine
+    # Entscheidung je Foto" ist damit strukturell wahr, ohne eigenen Unique-Constraint. Der
+    # Fremdschluessel ist Pflicht und nicht Geschmack - die Loeschzusage in `project_deletion.py`
+    # prueft Erreichbarkeit ueber die Kanten in `Base.metadata`, eine bloss logische Spalte fiele
+    # still aus der Pruefung heraus. Der Name ist ausgeschrieben, weil `Base.metadata` keine
+    # `naming_convention` traegt.
+    photo_id: Mapped[int] = mapped_column(
+        ForeignKey("photos.id", name="fk_final_selection_decisions_photo_id"), primary_key=True
+    )
+    # NOT NULL, KEIN `default`, KEIN `server_default` (Auflage S4): Jede Zeile wird ausdruecklich
+    # geschrieben. Ein Vorgabewert erfaende eine Entscheidung, die niemand getroffen hat - und weil
+    # es keinen Weg zurueck nach "unentschieden" gibt, waere ein so entstandener Zustand nicht
+    # korrigierbar, nur ueberschreibbar.
+    included: Mapped[bool]
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

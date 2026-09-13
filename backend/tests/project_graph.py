@@ -23,6 +23,7 @@ from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Event,
+    FinalSelectionDecision,
     FineLabel,
     MotifAssessmentSource,
     Photo,
@@ -223,6 +224,11 @@ async def build_project_graph(
                 provider="anthropic",
                 computed_at=now,
             ),
+            # specs/features/0431-endauswahl-gemeinsam.md: aus demselben Grund wie die Zeilen
+            # darueber - der Verhaltenstest der Projektloeschung zaehlt Zeilen und bestuende mit
+            # null Zeilen stillschweigend. Ohne diese Zeile prueft die Loeschung der gemeinsamen
+            # Entscheidungen nichts.
+            FinalSelectionDecision(photo_id=photo.id, included=True),
         ]
     )
     await session.flush()

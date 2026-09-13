@@ -35,6 +35,7 @@ from sqlalchemy.sql.dml import Delete
 from photosort.models import (
     CriterionScoringRun,
     Event,
+    FinalSelectionDecision,
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
@@ -153,6 +154,13 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     await _run(
         "photo_album_suitability",
         delete(PhotoAlbumSuitability).where(PhotoAlbumSuitability.photo_id.in_(photo_ids)),
+    )
+    # Ohne diese Anweisung ueberleben die gemeinsamen Entscheidungen ueber geloeschte
+    # Familienfotos die Projektloeschung - und sie sind die Menge, die als Album gilt. Die Position
+    # folgt der per Test erzwungenen Ordnung `reversed(Base.metadata.sorted_tables)`.
+    await _run(
+        "final_selection_decisions",
+        delete(FinalSelectionDecision).where(FinalSelectionDecision.photo_id.in_(photo_ids)),
     )
     # NACH photo_rankings (die zeigen auf events), VOR criterion_scoring_runs (darauf zeigen
     # events). Beide Kanten sind echte Fremdschluessel - unter Postgres bleibt sonst eine verwaiste

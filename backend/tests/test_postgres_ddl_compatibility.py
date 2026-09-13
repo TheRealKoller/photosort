@@ -1058,3 +1058,87 @@ def test_the_album_decision_downgrade_renders_for_postgres_too() -> None:
     ]
 
     assert positions == sorted(positions)
+
+
+# specs/features/0431-endauswahl-gemeinsam.md: die neue Tabelle `final_selection_decisions`.
+# `included` ist eine BOOLEAN-Spalte OHNE Default - und genau diese Abwesenheit ist unter SQLite
+# nicht pruefbar: dort ist BOOLEAN ein INTEGER, ein versehentliches `server_default=sa.text("0")`
+# liefe klaglos durch und fiele erst auf Postgres um. Die zweite Haelfte des Nachweises (ein
+# `INSERT` ohne die Spalte gegen das aus `Base.metadata` erzeugte Schema) steht in
+# `test_migration_endauswahl.py`.
+
+_FINAL_SELECTION_REVISION = "a1b2c3d4e5f6_endauswahl.py"
+
+
+@pytest.fixture(scope="module")
+def final_selection_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_FINAL_SELECTION_REVISION)
+
+
+def _create_table_statement(ddl: list[str], table: str) -> str:
+    matches = [
+        statement for statement in ddl if "CREATE TABLE" in statement.upper() and table in statement
+    ]
+    assert matches, f"kein CREATE TABLE fuer {table} im gerenderten DDL gefunden"
+    assert len(matches) == 1, f"mehrdeutiges CREATE TABLE fuer {table}: {matches}"
+    return matches[0]
+
+
+def test_the_included_column_renders_as_not_null_boolean_without_any_default(
+    final_selection_upgrade_ddl: list[str],
+) -> None:
+    """DIE Aussage dieses Blocks (Zusicherung 17): Die Abwesenheit der Zeile heisst
+    "unentschieden" - ein Default erfaende eine Entscheidung, die niemand getroffen hat."""
+    statement = _create_table_statement(final_selection_upgrade_ddl, "final_selection_decisions")
+    included_line = next(
+        line for line in statement.splitlines() if line.strip().startswith("included")
+    )
+
+    assert "BOOLEAN" in included_line.upper()
+    assert "NOT NULL" in included_line.upper()
+    assert "DEFAULT" not in included_line.upper()
+
+
+def test_the_primary_key_and_the_foreign_key_both_sit_on_photo_id(
+    final_selection_upgrade_ddl: list[str],
+) -> None:
+    """Beide auf derselben Spalte: "hoechstens eine Entscheidung je Foto" braucht dadurch keinen
+    eigenen Unique-Constraint, und der echte Fremdschluessel haelt die Tabelle in der
+    Erreichbarkeitspruefung der Projektloeschung."""
+    statement = _create_table_statement(final_selection_upgrade_ddl, "final_selection_decisions")
+
+    assert "PRIMARY KEY (photo_id)" in statement
+    assert "CONSTRAINT fk_final_selection_decisions_photo_id FOREIGN KEY(photo_id)" in statement
+    assert "REFERENCES photos (id)" in statement
+
+
+def test_the_table_carries_no_user_reference_at_all(
+    final_selection_upgrade_ddl: list[str],
+) -> None:
+    """ADR 0099 Punkt 3: Es gibt keine Spalte, in der ein Nutzerbezug stehen koennte - die
+    Trennung von den beiden Entwuerfen ist strukturell, nicht zugesichert."""
+    statement = _create_table_statement(final_selection_upgrade_ddl, "final_selection_decisions")
+
+    assert "user_id" not in statement
+    assert "decided_by" not in statement
+    assert "users" not in statement
+
+
+def test_the_final_selection_upgrade_touches_no_data_at_all(
+    final_selection_upgrade_ddl: list[str],
+) -> None:
+    """Kein Backfill: Die Endauswahl eines bestehenden Projekts ist die Schnittmenge der beiden
+    Entwuerfe, und keine Migration rechnet sie rueckwirkend aus."""
+    rendered = " ".join(final_selection_upgrade_ddl).upper()
+
+    assert "INSERT " not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered
+
+
+def test_the_final_selection_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_FINAL_SELECTION_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements)
+    assert "DROP TABLE" in rendered.upper()
+    assert "final_selection_decisions" in rendered
