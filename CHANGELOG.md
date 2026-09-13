@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.0](https://github.com/TheRealKoller/photosort/compare/v1.0.0...v1.1.0) (2026-09-13)
+
+
+### Features
+
+* **ai-workflow:** Designentwurf beim Schärfen und Durchgriff bis in die Spec, Teil 2 von 2 (Spec 0452) ([#458](https://github.com/TheRealKoller/photosort/issues/458)) ([5b21296](https://github.com/TheRealKoller/photosort/commit/5b21296b25cec87d53d7f5a22766ea532674ef1b))
+* **ai-workflow:** Laufstand eines Umsetzungslaufs auf Abruf (Spec 0449) ([#453](https://github.com/TheRealKoller/photosort/issues/453)) ([92c9250](https://github.com/TheRealKoller/photosort/commit/92c925052dc86c9f9b18f1c0ca5360ee2ef5c9ec))
+* **ai-workflow:** Story-Entwurf anheften und am Ready-Gate ausliefern, Teil 1 von 2 (Spec 0452) ([#456](https://github.com/TheRealKoller/photosort/issues/456)) ([6d795c8](https://github.com/TheRealKoller/photosort/commit/6d795c8e2876559532db421b30ad93f520822a1e))
+* Albumtauglichkeit vom Modell bewerten, Qualitaet vom Inhalt trennen (Spec 0428) ([#457](https://github.com/TheRealKoller/photosort/issues/457)) ([f83c87b](https://github.com/TheRealKoller/photosort/commit/f83c87b5cae9fd32f0fc877beb3239497e165767))
+
 ## [1.0.0](https://github.com/TheRealKoller/photosort/compare/v0.43.0...v1.0.0) (2026-09-12)
 
 
