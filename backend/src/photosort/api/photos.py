@@ -1597,9 +1597,11 @@ async def album_selection(
     # fuer die Felder benutzt. Ohne ihn stuende jedes von beiden gestrichene Foto in der Antwort.
     kept_rows: list[tuple[int, datetime, int | None]] = []
     for row in candidate_rows:
-        photo = photos_by_id.get(row.id)
-        if photo is None:
-            continue
+        # Direkter Zugriff, KEIN `.get(...)` mit stillem Ueberspringen: Jede Kandidaten-Id stammt
+        # aus `select(Photo.id)` derselben Transaktion, `_photos_by_id` liefert sie also alle.
+        # Ein fehlender Eintrag waere ein Fehler und soll laut scheitern - stillschweigend
+        # uebersprungen verschwaende ein Foto aus dem Album, ohne dass etwas es meldet.
+        photo = photos_by_id[row.id]
         decision = decisions.get(row.id)
         state = _selection_state_of(
             photo,
