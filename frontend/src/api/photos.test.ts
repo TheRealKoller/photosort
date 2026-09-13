@@ -50,22 +50,32 @@ describe('api/photos', () => {
     )
   })
 
-  it('encodes the selection mode as a query param', async () => {
+  it('encodes the draft mode as a query param', async () => {
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
-    await listPhotos(1, { selection: true })
+    await listPhotos(1, { draft: true })
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?selection=true')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?draft=true')
   })
 
-  it('sends no selection parameter without the selection mode', async () => {
-    /* Der Gegenfall: `selection=false` ist der serverseitige Vorgabewert, und ein mitgesendeter
+  it('sends no draft parameter without the draft mode', async () => {
+    /* Der Gegenfall: `draft=false` ist der serverseitige Vorgabewert, und ein mitgesendeter
      * `false`-Parameter wäre eine zweite Schreibweise für denselben Zustand. */
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
     await listPhotos(1, { limit: 30 })
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?limit=30')
+  })
+
+  it('never sends the abolished selection parameter', async () => {
+    /* Der abgeschaffte Parameter endet serverseitig in `422` - in BEIDEN Belegungen. Ein
+     * Aufrufer, der ihn noch mitsendete, bekäme also gar keine Antwort mehr. */
+    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+
+    await listPhotos(1, { draft: true })
+
+    expect(vi.mocked(apiFetch).mock.calls.at(-1)?.[0]).not.toContain('selection')
   })
 
   it('requests further curation candidates of one partition', async () => {

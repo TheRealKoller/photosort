@@ -23,7 +23,7 @@ export const PROJECT_ROUTE_PATHS = {
   compare: '/projects/:projectId/compare',
   settings: '/projects/:projectId/settings',
   stats: '/projects/:projectId/stats',
-  curate: '/projects/:projectId/curate',
+  album: '/projects/:projectId/album',
 } as const
 
 /**
@@ -148,7 +148,7 @@ export const ALL_PROJECT_NAV_TARGETS: readonly ProjectNavTarget[] = [
  * so ist sie ohne Rendering prüfbar.
  *
  * `null` ist ausdrücklich KEIN Nebenbereich. Die naheliegende Fehlimplementierung "kein
- * Hauptziel aktiv, also Nebenbereich" markierte den Auslöser auf /curate fälschlich als
+ * Hauptziel aktiv, also Nebenbereich" markierte den Auslöser auf /album fälschlich als
  * aktuell.
  */
 export function isSecondaryNavTargetId(id: ProjectNavTargetId | null): boolean {
@@ -157,7 +157,7 @@ export function isSecondaryNavTargetId(id: ProjectNavTargetId | null): boolean {
 
 /**
  * Das aktuell aktive Navigationsziel, oder null. Null bedeutet zweierlei und ist in beiden
- * Fällen richtig: gar kein Projektkontext, ODER die Kuratierung (/curate), die zu keinem der
+ * Fällen richtig: gar kein Projektkontext, ODER der Album-Entwurf (/album), der zu keinem der
  * fünf Ziele gehört - einen Link als aktiv zu markieren, der woanders hinführt, wäre
  * schlechter als gar kein Marker.
  */

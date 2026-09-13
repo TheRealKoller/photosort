@@ -37,6 +37,7 @@ function strengths(overrides: Record<string, Partial<MotifStrengthOut>> = {}): M
     key,
     strength: 0,
     correction: null,
+    present: false,
     ...(overrides[key] ?? {}),
   }))
 }
@@ -112,8 +113,8 @@ describe('MotifStrengthList: die Liste', () => {
     // durchfallen, und die Reihenfolge bleibt auf jedem Foto dieselbe.
     renderList({
       motifs: [
-        { key: 'menschen', strength: 0.5, correction: null },
-        { key: 'unerkannt', strength: 0.9, correction: null },
+        { key: 'menschen', strength: 0.5, correction: null, present: true },
+        { key: 'unerkannt', strength: 0.9, correction: null, present: true },
       ],
     })
 
@@ -127,7 +128,7 @@ describe('MotifStrengthList: die Liste', () => {
 
   it('shows zero for a motif whose strength row is missing entirely', () => {
     // Der Vektor kann unvollstaendig sein - die Liste bleibt achtzeilig.
-    renderList({ motifs: [{ key: 'menschen', strength: 0.5, correction: null }] })
+    renderList({ motifs: [{ key: 'menschen', strength: 0.5, correction: null, present: true }] })
 
     expect(within(rowOf('tiere')).getByText('0%')).toBeTruthy()
     expect(rowOf('tiere').hasAttribute('data-motif-corrected')).toBe(false)
@@ -523,7 +524,7 @@ describe('MotifStrengthList: das Glossar', () => {
           },
         ],
       },
-      motifs: [{ key: 'menschen', strength: 0.5, correction: null }],
+      motifs: [{ key: 'menschen', strength: 0.5, correction: null, present: true }],
     })
 
     expect(document.querySelector('img')).toBeNull()

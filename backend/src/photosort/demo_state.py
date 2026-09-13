@@ -1072,8 +1072,9 @@ async def _seed_rated_project(
 
     # DER AUSWAHLVORSCHLAG ueber DIESELBE Worker-Funktion, nie ueber eine zweite Vergaberegel
     # hier: eine solche saehe im Ergebnis genauso aus und roetete keinen Test. Ohne diesen Aufruf
-    # zeigt `/curate` auf der Demo-Instanz eine leere Liste, und die Pruefstack-Spezifikationen
-    # bleiben trotzdem gruen - ihre Vorbedingungen haengen an Ueberschrift und Scrollhoehe.
+    # zeigt `/album` auf der Demo-Instanz eine leere Liste; der Albumseiten-Eintrag in
+    # `no-horizontal-scroll` verlangt deshalb ausdruecklich mindestens EINE Kachel als
+    # Vorbedingung, statt sich auf Ueberschrift und Scrollhoehe zu verlassen.
     #
     # Die Stelle ist NACH den Motivkopfzeilen: der Vorschlag liest die wirksamen Staerken, und
     # davor gaebe es keine.

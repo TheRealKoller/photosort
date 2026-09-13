@@ -37,6 +37,22 @@ EVENT_SHARE_CAP = 0.25
 # Motive gleich.
 MOTIF_PRESENCE_THRESHOLD = 0.5
 
+
+def motif_is_present(strength: float) -> bool:
+    """Traegt ein Bild dieses Motiv? INKLUSIV verglichen, fuer alle Motive dieselbe Grenze.
+
+    GETEILT WIRD DAS PRAEDIKAT, NIE DIE KONSTANTE: Jeder weitere Leser ruft diese Funktion, statt
+    selbst gegen `MOTIF_PRESENCE_THRESHOLD` zu vergleichen. Sonst stuende die Zahl zwar an einer
+    Stelle, der Vergleichsoperator aber an zweien - und ein spaeteres `>` an einer davon braeche
+    nichts laut, obwohl gerade die Inklusivitaet die Zusage ist. Gehalten in
+    `tests/test_selection.py::TestTheStructuralGuardAgainstReadingTheDisplayBands`.
+
+    Zweiter Leser ausserhalb der Auswahl ist `api/photos.py::_motifs_out`
+    (`MotifStrengthOut.present`) - die Grenze verlaesst das Backend ausschliesslich als dieses
+    Ja/Nein, nie als Zahl."""
+    return strength >= MOTIF_PRESENCE_THRESHOLD
+
+
 # Womit der Wert eines Bildes je bereits gewaehltem, vollstaendig aehnlichem Bild multipliziert
 # wird.
 SIMILARITY_DECAY = 0.5
@@ -96,9 +112,7 @@ def effective_target(configured: int | None, photo_count: int) -> int:
 
 def _carried_motifs(candidate: SelectionCandidate) -> frozenset[str]:
     return frozenset(
-        key
-        for key, strength in candidate.motif_strengths.items()
-        if strength >= MOTIF_PRESENCE_THRESHOLD
+        key for key, strength in candidate.motif_strengths.items() if motif_is_present(strength)
     )
 
 

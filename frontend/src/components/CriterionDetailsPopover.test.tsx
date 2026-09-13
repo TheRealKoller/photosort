@@ -41,6 +41,7 @@ function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
     event_id: 1,
     rank_score: 0.8,
     rank_position: 2,
+    proposed: true,
     partition_size: 5,
     curation_position: null,
     ...overrides,
@@ -135,6 +136,7 @@ describe('CriterionDetailsPopover', () => {
           key: item.key,
           strength: 0.5,
           correction: null,
+          present: false,
         }))}
       />,
     )

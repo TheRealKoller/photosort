@@ -148,8 +148,10 @@ Verarbeitungs-Cache (Thumbnails).
     `remote_category`/`category_confidence`/`category_candidates`/`category_override` die Felder
     `motif_assessment: MotifAssessmentOut | None` (`source`, `excluded_document`, `provider`,
     `computed_at`; `None` heißt „noch nicht klassifiziert") und `motifs: list[MotifStrengthOut]`
-    (acht Einträge in Registry-Reihenfolge mit `key`, `strength` als **wirksamer** Stärke und
-    `correction: bool | None`; leer, solange keine Kopfzeile existiert). Die überstimmte
+    (acht Einträge in Registry-Reihenfolge mit `key`, `strength` als **wirksamer** Stärke,
+    `correction: bool | None` und — seit Spec
+    [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md) — `present: bool`; leer, solange
+    keine Kopfzeile existiert). Die überstimmte
     Modellzahl geht bewusst **nicht** mit: die Oberfläche darf sie neben dem Korrekturwort nicht
     zeigen, und ein Feld ohne Leser verschiebt nur die Frage, was es bedeutet. Der
     Kuratierungsparameter hieß bis Spec 0429 `top_n_per_event` (siehe die Ablösung weiter unten),
@@ -326,6 +328,56 @@ Verarbeitungs-Cache (Thumbnails).
       `rebuild_run_selection`). Der `409`-Wächter deckt Endpunkt-gegen-Lauf ab, nicht
       Endpunkt-gegen-Endpunkt; beide Wege erzeugen einen vollständigen, gültigen Vorschlag, und
       der schlechteste Ausgang ist einer nach altem Richtwert.
+  - **Der Auswahlmodus wird der Album-Entwurf, und seine Antwortmenge hängt am anfragenden
+    Nutzer** *(Spec [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md), ADR
+    [`decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md`](../specs/decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md))*:
+    `GET /projects/{id}/photos` verliert `selection` und bekommt `draft: bool = false`. Der Zweig
+    liefert `Vorschlag(letzter erfolgreicher Lauf) ∪ eigene Bewertung album_worthy`, **ohne
+    Ablehnungsfilter** — ein gestrichenes Foto bleibt in der Antwort und trägt seinen Zustand in
+    `ratings[]`; Streichen ist ein Anzeigezustand, kein Filter. Der Entwurf ist **abgeleitet**, es
+    entsteht keine Entwurfstabelle: „nie angefasst" ist die Abwesenheit einer eigenen
+    Albumentscheidung.
+    - Reihenfolge `(events.position, photos.taken_at, photos.id)` — innerhalb eines Events also
+      **chronologisch** nach der korrigierten Aufnahmezeit, nicht nach `selection_position`. Nach
+      `selection_position NULLS LAST` zu sortieren ist ausgeschlossen: Ein aufgenommenes Foto hat
+      keinen Platz im Vorschlag und stünde dann stets am Gruppenende, ein Austausch verschöbe das
+      Bild also statt es an seiner Stelle zu ersetzen. `curation_position` numeriert die
+      **gelieferte** Reihenfolge je Event lückenlos ab 1.
+    - `RankingOut` bekommt `proposed: bool` (`selection_position IS NOT NULL`) — **lauf-global,
+      ohne Nutzerbezug und auf allen Lesepfaden befüllt**, nicht nur im Entwurfsmodus. Erst dieses
+      Feld unterscheidet im Entwurf „vom Lauf vorgeschlagen" von „vom Nutzer aufgenommen".
+    - `MotifStrengthOut` bekommt ebenso additiv `present: bool` — ob das Foto dieses Motiv
+      **trägt**, ebenfalls auf allen Lesepfaden befüllt. Es speist die Motivmischung am Event;
+      **die Grenze bleibt im Backend** und verlässt es nie als Zahl: `strength` und `present`
+      entstehen in `_motifs_out` aus einer lokalen Größe, und die Entscheidung fällt
+      ausschließlich in `selection.py::motif_is_present`. Kosten: keine — der Zweig lädt die
+      wirksamen Stärken für genau diese Fotomenge ohnehin.
+    - Ein aufgenommenes Foto **ohne Rangzeile** (im Ausschuss-Schritt aussortiert) wird über
+      `events.py::event_for_time` eingeordnet — Containment schlägt Nähe, beide Grenzen inklusiv,
+      bei Gleichstand gewinnt das frühere Event. Die Rangzeile hat Vorrang vor dieser Zuordnung.
+      Die Eventliste wird **einmal** geladen, die Zuordnung läuft in einem Durchgang: nie eine
+      Abfrage je Foto (Auflage S14). Ohne erfolgreichen Lauf ist der Entwurf leer, auch wenn der
+      Nutzer bereits Fotos aufgenommen hat.
+    - `limit`/`offset` bleiben in diesem Zweig **vollständig** wirkungslos — nie halb.
+    - `selection` bleibt als schemaloser Parameter stehen und endet in **beiden** Belegungen in
+      `422`. `selection=false` ist der gefährlichere Fall: heute ein gültiger Aufruf, der sonst
+      still in den Listing-Zweig fiele, obwohl die Antwortmenge des Nachfolgers eine andere
+      Bedeutung hat.
+    - `RatingWriteOut` nennt zusätzlich `user_id` (aus `current_user`, nie aus der Anfrage): Die
+      Entwurfsansicht schreibt den geschriebenen Zustand in ihre bereits geladene Liste fort,
+      statt sie neu zu laden, und ein Eintrag von `PhotoOut.ratings[]` trägt `user_id`.
+  - **Die Kuratierungsansicht wird der Album-Entwurf** *(dieselbe Spec)*: neue Seite
+    `pages/AlbumDraftPage.tsx` unter `PROJECT_ROUTE_PATHS.album = '/projects/:projectId/album'`,
+    mit Tages- und Eventgliederung in der **Antwortreihenfolge des Servers** (die Seite sortiert
+    nicht nach und bildet keine Auswahlregel nach), Richtwert und Ist-Anzahl nebeneinander ohne
+    Fehleroptik, und der Entwurfskachel `CurationPhotoTile` mit dem Zweizustand „Im Album" ⇄
+    „Gestrichen" (`aria-pressed`). Die Entscheidung läuft über eine **eigene** Mutation
+    (`useDraftDecisionMutation`), die den betroffenen Eintrag im Cache fortschreibt und nur die
+    übrigen Fotoabfragen invalidiert — die breite Invalidierung träfe sonst die Entwurfsliste mit,
+    und das gerade gestrichene Bild verschwände unter dem Finger. `pages/CuratePage.tsx`,
+    `utils/rankings.ts::curatedRanking` und die Route `/projects/:id/curate` entfallen
+    **ersatzlos, ohne Weiterleitung**: Ein stillschweigend umgeleiteter Altlink verdeckte, dass
+    sich die Ansicht geändert hat.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
@@ -565,7 +617,12 @@ Verarbeitungs-Cache (Thumbnails).
     an der ein API-Request `rank_photos` erneut aufrief. Die acht Motive und die beiden
     Anzeige-Bandgrenzen stehen in `motifs.py`; die Bandgrenzen haben **keinen Leser im Auswahl- oder
     Rangfolgepfad** und keinen im Frontend (`scripts/tests/test_kategorien_restlos_entfernt.py`
-    hält beides fest).
+    hält beides fest). Die **Präsenzgrenze** ist davon getrennt und wohnt in `selection.py`
+    (`MOTIF_PRESENCE_THRESHOLD`): Sie wird ausschließlich über das Prädikat `motif_is_present`
+    gelesen — geteilt wird nie die Zahl, sonst stünde der inklusive Vergleich an zwei Stellen — und
+    sie verlässt das Backend einzig als `MotifStrengthOut.present`. Beides hält der strukturelle
+    Wächter in `backend/tests/test_selection.py` fest, der seit Spec 0430 auch `api/photos.py`
+    führt.
 - **Postgres**: Metadaten (Projekte, Fotos, Bewertungen, Nutzer), keine Bilddaten.
 - **Redis**: Job-Queue für den Worker.
 - **Lokaler Cache**: Docker-Volume für Thumbnails/Zwischenergebnisse, kein Ersatz für OpenCloud als

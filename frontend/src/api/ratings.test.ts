@@ -10,6 +10,7 @@ vi.mock('./client', () => ({
 
 const WRITTEN: RatingWriteOut = {
   photo_id: 1,
+  user_id: 1,
   status: 'album_worthy',
   favorite: false,
   updated_at: '2026-09-13T10:00:00',

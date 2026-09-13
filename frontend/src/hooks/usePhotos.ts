@@ -2,7 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 
 import { listCurationCandidates, listPhotos } from '../api/photos'
 import { deleteRating, setFavorite, setRating } from '../api/ratings'
-import type { PhotoListOut, RatingFilter, RatingStatus } from '../api/types'
+import type { PhotoListOut, RatingFilter, RatingStatus, RatingWriteOut } from '../api/types'
 
 /**
  * Batch-Groesse fuer das Foto-Listing: Fotos werden paginiert geladen (Batches statt Gesamt-Reload
@@ -16,25 +16,73 @@ function photosQueryKey(projectId: number, ratingStatus?: RatingFilter) {
   return ['photos', projectId, ratingStatus ?? null] as const
 }
 
-// Kuratierung: bewusst unter demselben ['photos', projectId, ...]-Praefix wie
-// photosQueryKey oben - die bestehende, breite Invalidierung in
-// useSetRatingMutation/useDeleteRatingMutation (queryKey: ['photos', projectId], ohne exact)
-// invalidiert React-Query-seitig automatisch auch diese Query, ohne dass die Kuratierungs-Ansicht
-// einen eigenen Invalidierungs-Pfad braucht.
-function curationQueryKey(projectId: number) {
-  return ['photos', projectId, 'curate'] as const
+/**
+ * Der Album-Entwurf: bewusst unter demselben ['photos', projectId, ...]-Praefix wie
+ * photosQueryKey oben - die breite Invalidierung der Bewertungsmutationen trifft ihn damit mit,
+ * wenn anderswo bewertet wird (Raster, Einzelbild, Vergleich).
+ *
+ * Die Entwurfsansicht selbst benutzt genau deshalb NICHT jene Mutationen, sondern
+ * `useDraftDecisionMutation`: ein Neuladen der Entwurfsliste bei jeder Entscheidung risse die
+ * gerade gestrichene Kachel aus der Liste.
+ */
+const DRAFT_QUERY_SEGMENT = 'draft'
+
+function draftQueryKey(projectId: number) {
+  return ['photos', projectId, DRAFT_QUERY_SEGMENT] as const
 }
 
 /**
- * Der Auswahlvorschlag des Projekts. KEIN Leseparameter mehr im Schluessel: welche Fotos der
- * Vorschlag umfasst, ist eine Eigenschaft des Laufs und keine der Anfrage - eine zweite Variante
- * desselben Projekts kann es nicht geben.
+ * Der Album-Entwurf DIESES Nutzers. KEIN Leseparameter im Schluessel: welche Fotos er umfasst,
+ * ist eine Eigenschaft des Laufs und der eigenen Entscheidungen, keine der Anfrage - eine zweite
+ * Variante desselben Projekts kann es nicht geben.
  */
-export function useCurationQuery(projectId: number) {
+export function useDraftQuery(projectId: number) {
   return useQuery({
-    queryKey: curationQueryKey(projectId),
-    queryFn: () => listPhotos(projectId, { selection: true }),
+    queryKey: draftQueryKey(projectId),
+    queryFn: () => listPhotos(projectId, { draft: true }),
   })
+}
+
+/**
+ * Schreibt den Zustand EINER Bewertungszeile in eine bereits geladene Fotoliste fort - rein, ohne
+ * Cache und ohne Netz.
+ *
+ * Der betroffene Eintrag wird ueber `user_id` der SERVERANTWORT getroffen, nie geraten; der
+ * `username` fuellt allein das Feld, ueber das `utils/ownRating.ts` den eigenen Zustand spaeter
+ * wiederfindet. Eine geleerte Zeile (`status: null` und kein Kennzeichen) verschwindet, statt als
+ * Bewertung ohne Inhalt stehenzubleiben.
+ *
+ * Fotos ohne Bezug behalten ihre OBJEKTREFERENZ - ihre Kacheln rendern dadurch nicht neu.
+ */
+export function applyWrittenRating(
+  list: PhotoListOut,
+  written: RatingWriteOut,
+  username: string,
+): PhotoListOut {
+  return {
+    ...list,
+    items: list.items.map((item) => {
+      if (item.id !== written.photo_id) {
+        return item
+      }
+      const others = item.ratings.filter((rating) => rating.user_id !== written.user_id)
+      if (written.status === null && !written.favorite) {
+        return { ...item, ratings: others }
+      }
+      return {
+        ...item,
+        ratings: [
+          ...others,
+          {
+            user_id: written.user_id,
+            username,
+            status: written.status,
+            favorite: written.favorite,
+          },
+        ],
+      }
+    }),
+  }
 }
 
 // Derselbe ['photos', projectId]-Praefix wie oben, und hier ist er nicht Bequemlichkeit, sondern
@@ -91,6 +139,39 @@ export function usePhotoSequenceQuery(
     getNextPageParam: (lastPage: PhotoListOut, allPages: PhotoListOut[]) => {
       const loaded = allPages.reduce((sum, loadedPage) => sum + loadedPage.items.length, 0)
       return loaded < lastPage.total ? loaded : undefined
+    },
+  })
+}
+
+/**
+ * Die Albumentscheidung AUS DER ENTWURFSANSICHT - „Im Album" ⇄ „Gestrichen".
+ *
+ * Sie schreibt dieselbe Bewertung wie `useSetRatingMutation`, behandelt den Cache danach aber
+ * anders, und das ist ihr ganzer Zweck (ADR 0098 Punkt 6): Sie schreibt den betroffenen Eintrag
+ * im Entwurfs-Cache FORT und invalidiert ausschließlich die ÜBRIGEN Fotoabfragen des Projekts.
+ *
+ * Ohne diese Trennung träfe die breite Invalidierung den Entwurfsschlüssel mit: Ein gerade
+ * gestrichenes Bild fiele beim Neuladen aus der Antwortmenge, die Kachel verschwände unter dem
+ * Finger, und der nächste Druck landete auf einem anderen Bild. Ein gestrichenes Bild bleibt
+ * stattdessen an seiner Stelle stehen.
+ */
+export function useDraftDecisionMutation(projectId: number, username: string | null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ photoId, status }: { photoId: number; status: RatingStatus }) =>
+      setRating(photoId, status),
+    onSuccess: (written) => {
+      if (username !== null) {
+        queryClient.setQueryData<PhotoListOut>(draftQueryKey(projectId), (current) =>
+          current === undefined ? current : applyWrittenRating(current, written, username),
+        )
+      }
+      // Derselbe breite Präfix wie überall - aber der Entwurfsschlüssel ist ausgenommen, weil
+      // sein Stand oben bereits geschrieben wurde.
+      void queryClient.invalidateQueries({
+        queryKey: ['photos', projectId],
+        predicate: (query) => query.queryKey[2] !== DRAFT_QUERY_SEGMENT,
+      })
     },
   })
 }

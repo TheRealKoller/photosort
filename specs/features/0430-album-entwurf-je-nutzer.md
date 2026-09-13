@@ -217,6 +217,41 @@ Durchlauf von `test_postgres_ddl_compatibility.py`:
   (`MOTIF_PRESENCE_THRESHOLD`), und der bestehende strukturelle Wächter („kein auswählender
   Codepfad liest die Anzeigebänder") behält seine Aussage.
 
+### Die Motivmischung am Event
+
+Die Zeile entsteht im Frontend als Vereinigung über die Kacheln der Gruppe — die Grenze bleibt im
+Backend, das Frontend liest ein Ergebnis.
+
+- `selection.py` bekommt `motif_is_present(strength: float) -> bool`
+  (`strength >= MOTIF_PRESENCE_THRESHOLD`); `_carried_motifs` ruft es. Geteilt wird das
+  **Prädikat**, nicht die Konstante: Sonst stünde die Zahl zwar an einer Stelle, der inklusive
+  Vergleich aber an zweien, und ein späteres `>` an einer davon bricht nichts laut (Zusicherung 7
+  macht die Inklusivität zur Zusage). `MOTIF_PRESENCE_THRESHOLD` wird außerhalb von `selection.py`
+  nirgends genannt.
+- `MotifStrengthOut` bekommt **ein** additives Feld `present: bool`, auf **allen** Lesepfaden
+  befüllt (Muster `RankingOut.proposed`). `_motifs_out` bildet die wirksame Stärke in einer lokalen
+  Größe und reicht sie an beide Felder — zweimal geschrieben liefen `strength` und `present` an dem
+  Tag auseinander, an dem eine der beiden Stellen sich ändert. Ohne Kopfzeile bleibt `motifs` leer;
+  acht Einträge mit `present: false` wären wieder „nichts erkannt" statt „nicht klassifiziert".
+  Kosten: keine. Der Entwurfszweig lädt `load_effective_strengths` für genau diese Fotomenge
+  bereits — keine Abfrage je Foto und keine je Event (Auflage S14).
+- `utils/albumDraft.ts::draftMotifText(photos, username, motifs)` ist rein und liefert den Text
+  einer Eventgruppe: die Schlüssel aller Einträge mit `present === true` **derjenigen Fotos, die im
+  Album stehen** (`isInAlbum(ownRatingStatus(...))`), über `formatMotifKey` benannt, alphabetisch
+  nach Anzeigename (`localeCompare('de')`), mit `, ` verbunden. `strength` wird nicht gelesen. Ein
+  gestrichenes Bild gehört nach ADR 0098 Punkt 1 nicht zum Entwurf (`… \ Gestrichen`), seine Motive
+  also nicht in die Mischung — daraus folgt zugleich die Rückmeldung ohne Neuladen: Mit dem letzten
+  Bild eines Motivs verschwindet das Motiv aus der Zeile (ADR 0098 Punkt 6). Vier Fälle, in dieser
+  Reihenfolge: kein Bild der Gruppe im Album → **keine** Zeile; Bilder im Album, aber keines mit
+  Kopfzeile → „Motive noch nicht bestimmt"; Kopfzeile vorhanden, kein `present` → „Keine Motive
+  erkannt"; sonst die Namensliste.
+- `AlbumDraftPage` rendert sie als `<p className="text-sm text-text">` zwischen Überschriftenzeile
+  und Kachelraster, umbrechend, ohne waagerechtes Scrollen. Bei `group.photos.length === 0` bleibt
+  es beim bestehenden Leerzustandstext der Gruppe.
+- Der strukturelle Wächter `TestTheStructuralGuardAgainstReadingTheDisplayBands` bekommt
+  `api/photos.py` in `_SELECTING_MODULES` **bereits in PR 2** — ab hier liest die Datei eine
+  Auswahlgrenze, nicht erst mit dem Alternativen-Endpunkt.
+
 ### Frontend
 
 - **Neu:** `frontend/src/pages/AlbumDraftPage.tsx` unter der Route
@@ -267,11 +302,14 @@ ist für sich grün, für sich mergebar und hinterlässt keinen Übergangszustan
 
 **PR 2 — „Der Album-Entwurf"**
 
-1. `events.py::event_for_time` (rein, mit Tests) — Datenzugriff kennt sie noch nicht.
-2. `api/photos.py`: `proposed` an `RankingOut`, `_draft_photo_ids`, Umbau von
-   `_event_and_location_by_photo_id` auf die Event-Abbildung, Parameter `draft`/`selection`-Riegel.
+1. `events.py::event_for_time` und `selection.py::motif_is_present` (rein, mit Tests) —
+   Datenzugriff kennt beide noch nicht.
+2. `api/photos.py`: `proposed` an `RankingOut`, `present` an `MotifStrengthOut`,
+   `_draft_photo_ids`, Umbau von `_event_and_location_by_photo_id` auf die Event-Abbildung,
+   Parameter `draft`/`selection`-Riegel.
 3. Frontend: `api/photos.ts`/`usePhotos.ts` (Entwurfsabfrage, eigene Entscheidungsmutation),
-   `AlbumDraftPage.tsx` samt Route, Kachel-Umbau, Wegfall von `CuratePage` und `curatedRanking`.
+   `utils/albumDraft.ts::draftMotifText`, `AlbumDraftPage.tsx` samt Route, Kachel-Umbau, Wegfall
+   von `CuratePage` und `curatedRanking`.
 4. e2e: `no-horizontal-scroll`, `popover-position` auf die neue Route.
 5. `docs/architecture.md` (Kuratierungszweig, Route).
 
@@ -449,6 +487,17 @@ Falschergebnis statt Ausnahme, grüne Suite, kein Fehlerbild. Diese Liste ist ve
     Kardinalitätsfall wird auf die neue Zerlegung umgeschrieben, nicht gelöscht.
 25. **Die alte Route entfällt ohne Weiterleitung.** Ein Fall auf `/projects/:id/curate`; ohne ihn
     ist sowohl ein vergessener Wegfall als auch ein eingeschlichener Redirect unsichtbar.
+26. **Die Präsenzgrenze wird als Prädikat gelesen, nie als Zahl.** `MOTIF_PRESENCE_THRESHOLD` kommt
+    unter `backend/src/photosort/` an genau einer Stelle vor; jede andere ruft `motif_is_present`.
+    Ein zweites `>=` gegen dieselbe Konstante ist grün und läuft beim ersten Wechsel auf `>`
+    auseinander.
+27. **`present` und `strength` entstehen aus demselben Wert.** Stärke exakt an der Grenze ergibt
+    `true`, knapp darunter `false`; eine Korrektur `applies=false` auf einem starken Motiv ergibt
+    `present: false`, `applies=true` auf einem schwachen `true`. Eine fehlende Stärkezeile ergibt
+    `0.0` und `false`.
+28. **Die Motivzeile folgt `present`, nie `strength`.** Zwei bewusst widersprüchliche Aufbauten:
+    `strength: 0.9, present: false` erscheint **nicht**, `strength: 0.1, present: true` erscheint.
+    Eine Implementierung, die im Frontend doch vergleicht, besteht jeden natürlich gebauten Fall.
 
 ### Unit (pytest, rein, ohne Session)
 
@@ -506,6 +555,11 @@ auf den neuen Endpunkt umgeschrieben und behält dabei jede seiner Sicherheitszu
   tabellengetrieben, ohne Router und ohne QueryClient.
 - Die Motivmischung enthält **keine Zahl** — der Fall, der die Rangfolge-Eindämmung im Frontend
   hält.
+- `draftMotifText`: die vier Fälle (kein Bild im Album, keine Kopfzeile, Kopfzeile ohne `present`,
+  Namensliste), die alphabetische Ordnung über einen Aufbau, dessen Sollreihenfolge weder der
+  Registry- noch der Antwortreihenfolge entspricht, und Punkt 28.
+- Nach dem Streichen des letzten Trägers eines Motivs fehlt das Motiv in der Zeile — geprüft
+  **ohne** neue Serverantwort (der `listPhotos`-Zähler steht still, Punkt 22).
 - Kopfbereich: Richtwert und Ist-Anzahl in **beiden** Abweichungsrichtungen ohne Fehleroptik (kein
   `role="alert"`, kein angleichender Schalter, keine ausgehende Anfrage).
 - Zweizustand „Im Album ⇄ Gestrichen" über `aria-pressed`; Punkte 22 und 23; die Mutation schreibt
@@ -783,6 +837,13 @@ Invariante mit genau einem durchsetzenden Ort.
   vorgegeben und keine offene Produktfrage.
 - **Alternativen im Dialog, nicht im Popover** — ein Bildraster mit eigenem Blätterweg braucht auf
   360px Breite die volle Fläche, und der Austausch verlangt Fokusfang und Fokusrückgabe.
+- **Die Motivmischung kommt aus `MotifStrengthOut.present` und wird in der Ansicht vereinigt**,
+  nicht aus einer Liste am `EventOut`. Eine servergerechnete Aggregation wäre nach jedem Handgriff
+  veraltet, weil eine Entscheidung die Entwurfsliste nicht neu lädt (ADR 0098 Punkt 6), und
+  `EventOut` sagt zu, dass keiner seiner Werte davon abhängt, welche Fotos die Antwort enthält. Die
+  Grenze bleibt an einer Stelle, weil das Prädikat exportiert wird und nicht die Konstante. Keine
+  eigene ADR: keine neue Technologie, keine Datenmodell-Änderung, keine Abhängigkeit — die
+  Entscheidung liegt innerhalb von ADR 0098 und ADR 0091.
 - **Die Story zerfällt in drei Pull Requests** (Bewertungsmodell → Entwurfsansicht → Austauschen).
   Jeder Schnitt ist für sich grün und hinterlässt keinen Zustand mit zwei Auswahlwegen.
 - **„Unbewertet" heißt ab jetzt „keine Albumentscheidung"** (`status IS NULL`), an allen drei

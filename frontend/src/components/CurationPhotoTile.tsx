@@ -1,11 +1,22 @@
 import type { MotifSetOut, PhotoOut, RatingStatus } from '../api/types'
+import { isInAlbum, isTakenWithoutProposal } from '../utils/albumDraft'
 import { qualityLevel } from '../utils/qualityLevel'
 import { CriterionDetailsPopover } from './CriterionDetailsPopover'
 import { MotifAssessmentMarker } from './MotifAssessmentMarker'
 import { PhotoCard } from './PhotoCard'
 import { PhotoImage } from './PhotoImage'
 import { QualityMeter } from './QualityMeter'
+import { Badge } from './ui/badge'
 import { Button } from './ui/button'
+
+/**
+ * Die Kennzeichnung von „aufgenommen, vom aktuellen Vorschlag nicht getragen".
+ *
+ * EINE Zeichenkette für BEIDE Datenformen (`ranking: null` und `ranking.proposed === false`) -
+ * die Kennzeichnung ist an genau dieser Stelle definiert, damit dieselbe Lage nicht je nach
+ * Datenform verschieden aussieht.
+ */
+export const NOT_PROPOSED_BADGE_TEXT = 'nicht vorgeschlagen'
 
 export interface CurationPhotoTileProps {
   photo: PhotoOut
@@ -21,18 +32,14 @@ export interface CurationPhotoTileProps {
    * jeweils anderen als eigene dar (Sicherheits-Muss-Kriterium).
    */
   ownStatus: RatingStatus | null
-  /** true, solange die Verwerfen-Mutation DIESES Fotos laeuft. */
-  rejecting: boolean
-  onReject: () => void
+  /** true, solange die Entscheidung DIESES Fotos laeuft. */
+  deciding: boolean
+  onDecide: (status: RatingStatus) => void
 }
 
 /**
- * EINE Kachel der Kuratierungsansicht: `PhotoCard` samt Info-Popover, Ecken-Marker,
- * Qualitaetsstufe und Verwerfen-Aktion.
- *
- * Sie wird an ZWEI Stellen gebraucht - fuer die Top-Auswahl und fuer die eingeblendeten weiteren
- * Kandidaten -, und eine zweite Kopie waere die zweite Stelle, an der eine kuenftige Aenderung
- * vergessen wird.
+ * EINE Kachel des Album-Entwurfs: `PhotoCard` samt Info-Popover, Ecken-Marker, Qualitaetsstufe,
+ * Begruendung des Modells und dem Zweizustand „Im Album" ⇄ „Gestrichen".
  *
  * MOTIVNAMEN UND STAERKEN ERSCHEINEN NICHT AUF DER KACHEL: acht Werte haben bei 158px
  * Kachelbreite keinen Platz, und der staerkste allein behauptete wieder eine Hauptkategorie. Sie
@@ -45,8 +52,8 @@ export function CurationPhotoTile({
   motifSetError,
   onMotifSetRetry,
   ownStatus,
-  rejecting,
-  onReject,
+  deciding,
+  onDecide,
 }: CurationPhotoTileProps) {
   // `?? null` fuer den FEHLENDEN Wert, nie fuer die Zahl selbst: `0` ist ein gueltiger
   // Qualitaetswert (schlechteste Modellstufe), und ein `||` verloere ihn lautlos. Ohne Rangzeile
@@ -55,7 +62,8 @@ export function CurationPhotoTile({
   // fehlt.
   const level = qualityLevel(photo.ranking?.rank_score ?? null)
   const reason = photo.album_suitability?.reason ?? null
-  const isRejected = ownStatus === 'rejected'
+  const inAlbum = isInAlbum(ownStatus)
+  const takenWithoutProposal = isTakenWithoutProposal(photo, ownStatus)
 
   return (
     <PhotoCard
@@ -73,7 +81,7 @@ export function CurationPhotoTile({
          RatingBadge mit x-circle, durchgestrichener Dateiname). `undefined` heisst "die Karte
          traegt keinen Zustand" und haelt die bestehende Entscheidung aufrecht, dass in der
          Kuratierung nicht auf jeder Kachel "Neu" steht. */
-      status={isRejected ? 'rejected' : undefined}
+      status={inAlbum ? undefined : 'rejected'}
       /* DER EINZIGE Motiv-Marker der Kachel. Lokale Grundlage und Dokument-Ausschluss stehen im
          Info-Popover und in der Einzelansicht, nicht als weitere Ecken-Glyphen. `=== null`
          geprueft und nicht auf Falsyness: `undefined` (Feld nicht durchgereicht) ist keine
@@ -108,21 +116,37 @@ export function CurationPhotoTile({
               {reason}
             </p>
           )}
-          {/* Die Aktion bleibt an DERSELBEN Stelle, auch verworfen - sie wechselt nur in einen
-              deaktivierten Zustand. Der zugaengliche Name traegt den Dateinamen, sonst hiessen
-              auf einer Seite mit vielen Kacheln alle Schaltflaechen gleich. Waehrend einer
-              laufenden Mutation wird NUR die Schaltflaeche busy; Bild, Ecken-Marker und
-              Info-Trigger bleiben stehen. */}
+          {/* „Aufgenommen, vom aktuellen Vorschlag nicht getragen" - UEBER der Fusszeile, weil
+              der Zustand zum Bild gehoert und nicht zur Aktion. Die Kachel wird dabei NICHT
+              gedaempft und nicht ans Ende sortiert: das Bild ist eine bewusste eigene
+              Entscheidung, kein Mangel. */}
+          {takenWithoutProposal && (
+            <div>
+              <Badge tone="neutral">{NOT_PROPOSED_BADGE_TEXT}</Badge>
+            </div>
+          )}
+          {/* DER ZWEIZUSTAND, ein Druck ohne Bestaetigungsschritt und ohne Dialog. `aria-pressed`
+              statt einer eigenen Umschalter-Rolle; die Beschriftung nennt den ZUSTAND, nicht die
+              Handlung, und der zugaengliche Name traegt den Dateinamen - sonst hiessen auf einer
+              Seite mit vielen Kacheln alle Schaltflaechen gleich.
+
+              Waehrend der eigenen laufenden Mutation ist die Flaeche gesperrt: Ein zweiter Druck
+              auf DASSELBE Foto liefe in den Unique-Constraint der Bewertungszeile. Verschiedene
+              Fotos entscheiden unabhaengig voneinander.
+
+              `h-11 sm:h-8` wie die Bewertungsleiste - auf dem Telefon sichtbar mindestens 44px. */}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            disabled={isRejected || rejecting}
-            busy={rejecting}
-            aria-label={`${isRejected ? 'Verworfen' : 'Verwerfen'}: ${photo.relative_path}`}
-            onClick={onReject}
+            className="h-11 sm:h-8"
+            aria-pressed={inAlbum}
+            disabled={deciding}
+            busy={deciding}
+            aria-label={`${inAlbum ? 'Im Album' : 'Gestrichen'}: ${photo.relative_path}`}
+            onClick={() => onDecide(inAlbum ? 'rejected' : 'album_worthy')}
           >
-            {isRejected ? 'Verworfen' : rejecting ? 'Wird verworfen…' : 'Verwerfen'}
+            {inAlbum ? 'Im Album' : 'Gestrichen'}
           </Button>
         </div>
       }

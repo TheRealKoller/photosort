@@ -96,6 +96,9 @@ function motifStrengths(
     key,
     strength: 0,
     correction: null,
+    // Bewusst NICHT aus `strength` abgeleitet: `present` ist die Aussage des Servers, und eine
+    // Kopplung hier machte jeden Fall blind fuer eine Oberflaeche, die doch selbst vergleicht.
+    present: false,
     ...(overrides[key] ?? {}),
   }))
 }
@@ -248,6 +251,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'album_worthy',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -272,6 +276,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: null,
       favorite: true,
       updated_at: '2026-09-13T10:00:00',
@@ -302,6 +307,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'rejected',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -334,6 +340,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'album_worthy',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -368,6 +375,7 @@ describe('PhotoDetailPage', () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
       vi.mocked(ratingsApi.setRating).mockResolvedValue({
         photo_id: 1,
+        user_id: 1,
         status,
         favorite: false,
         updated_at: '2026-09-13T10:00:00',
@@ -394,6 +402,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setFavorite).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: null,
       favorite: true,
       updated_at: '2026-09-13T10:00:00',
@@ -446,6 +455,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'album_worthy',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -475,6 +485,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'album_worthy',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -592,6 +603,7 @@ describe('PhotoDetailPage', () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
       photo_id: 1,
+      user_id: 1,
       status: 'rejected',
       favorite: false,
       updated_at: '2026-09-13T10:00:00',
@@ -618,6 +630,7 @@ describe('PhotoDetailPage', () => {
               event_id: 1,
               rank_score: 0.8,
               rank_position: 2,
+              proposed: true,
               partition_size: 5,
               curation_position: null,
             },
@@ -801,6 +814,7 @@ describe('PhotoDetailPage', () => {
           event_id: 1,
           rank_score: 0.8,
           rank_position: 2,
+          proposed: true,
           partition_size: 5,
           curation_position: null,
         },
@@ -1289,6 +1303,7 @@ describe('PhotoDetailPage', () => {
               event_id: 1,
               rank_score: 0.8,
               rank_position: 1,
+              proposed: true,
               partition_size: 3,
               curation_position: null,
             },

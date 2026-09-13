@@ -195,6 +195,11 @@ export interface RatingOut {
  */
 export interface RatingWriteOut {
   photo_id: number
+  /** Der Nutzer, für den geschrieben wurde — serverseitig aus dem Token, nie aus der Anfrage.
+   * Er trägt das Fortschreiben des betroffenen Eintrags im Cache der Entwurfsabfrage: ein
+   * Eintrag von `PhotoOut.ratings[]` trägt `user_id`, und ohne dieses Feld müsste der Client
+   * eine Id erfinden. */
+  user_id: number
   status: RatingStatus | null
   favorite: boolean
   updated_at: string | null
@@ -269,6 +274,11 @@ export interface MotifStrengthOut {
   key: MotifKey
   strength: number
   correction: boolean | null
+  /** Trägt das Foto dieses Motiv? Die AUSSAGE DES SERVERS; die Grenze wohnt in
+   * `selection.py::motif_is_present` und verlässt das Backend nie als Zahl. Für diese Frage wird
+   * `strength` NICHT gelesen — ein eigener Vergleich hier wäre die zweite Stelle, an der über
+   * Zugehörigkeit entschieden wird, und liefe bei der nächsten Kalibrierung auseinander. */
+  present: boolean
 }
 
 // Antwort von PUT /photos/{id}/motif-corrections/{motif_key} - der gesetzte Wert wird direkt
@@ -293,6 +303,10 @@ export interface RankingOut {
    * „Rang M von N" entfällt dann vollständig; „Rang – von 12" wäre eine Rangaussage über ein
    * Foto ohne Rang. */
   rank_position: number | null
+  /** Trägt der LAUF dieses Foto vor? Lauf-global, ohne jeden Nutzerbezug, auf allen Lesepfaden
+   * gesetzt. `false` bei gleichzeitiger eigener Entscheidung „Im Album" ist der Zustand
+   * „aufgenommen, vom aktuellen Vorschlag nicht getragen". */
+  proposed: boolean
   // Größe der GESAMTEN Event-Partition (nicht nur des Vorschlags), für "Rang M von N"
   // im Info-Popover.
   partition_size: number

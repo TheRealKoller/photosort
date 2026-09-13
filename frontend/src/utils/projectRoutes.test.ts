@@ -28,7 +28,7 @@ const PATHS_WITH_PROJECT_CONTEXT = [
   '/projects/1/compare',
   '/projects/1/settings',
   '/projects/1/stats',
-  '/projects/1/curate',
+  '/projects/1/album',
 ]
 
 describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
@@ -38,8 +38,8 @@ describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
     expect([...PROJECT_CONTEXT_ROUTE_PATHS].sort()).toEqual(
       [
         '/projects/:projectId',
+        '/projects/:projectId/album',
         '/projects/:projectId/compare',
-        '/projects/:projectId/curate',
         '/projects/:projectId/photos',
         '/projects/:projectId/photos/:photoId',
         '/projects/:projectId/pipeline',
@@ -50,11 +50,21 @@ describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
     )
   })
 
-  // AK2: /curate ist neu im Projektkontext und kehrt die ausdrueckliche Gegenfestlegung aus
-  // Spec 0033 um - ein eigener Fall, nicht nur ein Tabelleneintrag.
-  it('enthaelt die Kuratierungsroute (AK2, Umkehrung der Spec-0033-Ausnahme)', () => {
-    expect(PROJECT_ROUTE_PATHS.curate).toBe('/projects/:projectId/curate')
-    expect(PROJECT_CONTEXT_ROUTE_PATHS).toContain('/projects/:projectId/curate')
+  // Der Album-Entwurf steht im Projektkontext (Nachfolger der Kuratierungsroute aus Spec 0298,
+  // die ihrerseits die Gegenfestlegung aus Spec 0033 umkehrte) - ein eigener Fall, nicht nur ein
+  // Tabelleneintrag.
+  it('enthaelt die Album-Entwurfsroute', () => {
+    expect(PROJECT_ROUTE_PATHS.album).toBe('/projects/:projectId/album')
+    expect(PROJECT_CONTEXT_ROUTE_PATHS).toContain('/projects/:projectId/album')
+  })
+
+  // Zusicherung 25: Die alte Route entfaellt ERSATZLOS. Ohne diesen Fall waere sowohl ein
+  // vergessener Wegfall als auch ein eingeschlichener Redirect unsichtbar - beides sieht in der
+  // Oberflaeche wie "funktioniert" aus.
+  it('kennt die alte Kuratierungsroute nicht mehr, auch nicht als Weiterleitung', () => {
+    expect(Object.values(PROJECT_ROUTE_PATHS)).not.toContain('/projects/:projectId/curate')
+    expect(PROJECT_CONTEXT_ROUTE_PATHS).not.toContain('/projects/:projectId/curate')
+    expect(matchProjectId('/projects/1/curate')).toBeNull()
   })
 })
 

@@ -99,14 +99,16 @@ describe('KuratierungStepPage', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('links to /curate without any search parameter', () => {
+  it('links to /album without any search parameter', () => {
     /* Der Suchparameter `?topN=` ist mit ADR 0097 entfallen - der Umfang haengt am Projekt, nicht
-     * am Aufruf der Ansicht. */
+     * am Aufruf der Ansicht. Das Ziel ist seit ADR 0098 der Album-Entwurf; die alte
+     * Kuratierungsroute entfaellt ohne Weiterleitung, ein stehengebliebener Link liefe ins
+     * Leere. */
     renderPage(project())
 
-    expect(screen.getByRole('link', { name: 'Kuratierung öffnen' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Album-Entwurf öffnen' })).toHaveAttribute(
       'href',
-      '/projects/1/curate',
+      '/projects/1/album',
     )
   })
 
