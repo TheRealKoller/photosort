@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
-from photosort.album_selection import selection_state
+from photosort.album_selection import SelectionState, selection_state
 from photosort.api.deps import get_current_user, get_session
 from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
@@ -416,6 +416,41 @@ class PhotoOut(BaseModel):
 class PhotoListOut(BaseModel):
     items: list[PhotoOut]
     total: int
+
+
+class AlbumParticipantOut(BaseModel):
+    """EIN Teilnehmer der Endauswahl - genau `user_id` und `username`, nie mehr (Auflage S8).
+
+    Die Liste entsteht aus einer AUSDRUECKLICHEN Projektion auf diese zwei Spalten, nie aus einer
+    Serialisierung des `User`-Objekts: Dies ist der erste Endpunkt, der den vollstaendigen
+    Kontenbestand ausliefert, und ein `model_validate(User)` mit `from_attributes` schoebe
+    `password_hash` und `created_at` in eine Antwort, die im Browser beider Nutzer und in jedem
+    Cache landet.
+
+    Es entsteht dadurch keine neue Datenklasse zwischen den beiden Nutzern: Der `username` ist
+    ueber `PhotoOut.ratings[]` bereits heute sichtbar."""
+
+    user_id: int
+    username: str
+
+
+class AlbumSelectionOut(BaseModel):
+    """Die gemeinsame Endauswahl eines Projekts.
+
+    KEIN `total` und keine Seitenweise: Die Menge wird als GANZES geliefert, wie der
+    Entwurfszweig. Ein `total == len(items)` lueede dazu ein, etwas zu blaettern, das nicht
+    geblaettert wird."""
+
+    # ALLE Nutzer, nach `user_id` sortiert - auch der, der noch nie etwas angefasst hat. Aus
+    # `ratings[]` abgeleitet fehlte genau er, und die Story benennt ihn ausdruecklich als "kein
+    # Sonderfall". Seine LAENGE ist zugleich der Nenner der Einigkeitsregel (Auflage S8).
+    participants: list[AlbumParticipantOut]
+    # "Mindestens eine Rangzeile des letzten erfolgreichen Laufs traegt `selection_position`."
+    # Trennt die beiden Leerzustaende, die die Story GETRENNT verlangt ("kein Auswahlvorschlag"
+    # gegen "keine Unterschiede offen") - sie verlangen verschiedene Handlungen, einmal einen Lauf
+    # starten, einmal nichts tun. Aus den Kandidatenzeilen abgeleitet, ohne eigene Abfrage.
+    has_proposal: bool
+    items: list[PhotoOut]
 
 
 async def _get_project_or_404(project_id: int, session: AsyncSession) -> Project:
@@ -886,6 +921,39 @@ async def _final_selection_decisions(
     return {photo_id: included for photo_id, included in result.all()}
 
 
+def _selection_state_of(
+    photo: Photo, *, proposed: bool, decision: bool | None, user_count: int
+) -> SelectionState:
+    """Die Eingaenge der Endauswahl-Regel aus EINEM Foto - die Regel selbst lebt in
+    `album_selection.py` und nur dort.
+
+    Die beiden Zaehlungen laufen ueber `Rating.status`, NIE ueber das Vorhandensein der Zeile:
+    Seit ADR 0098 kann eine Zeile allein den Favoriten tragen, und ein Existenztest machte aus
+    einer Auszeichnung eine Streichung.
+
+    EINE Stelle fuer beide Leser (`_to_photo_out` und der Zustandsfilter von
+    `album_selection`): Zweimal geschrieben liefe die Antwortmenge an dem Tag von den gelieferten
+    Feldern auseinander, an dem eine der beiden Stellen sich aendert - die Ansicht zeigte dann ein
+    Bild, dessen eigene Felder sagen, dass es nicht dazugehoert."""
+    return selection_state(
+        taken=sum(1 for r in photo.ratings if r.status is RatingStatus.ALBUM_WORTHY),
+        rejected=sum(1 for r in photo.ratings if r.status is RatingStatus.REJECTED),
+        user_count=user_count,
+        proposed=proposed,
+        decision=decision,
+    )
+
+
+async def _participants(session: AsyncSession) -> list[AlbumParticipantOut]:
+    """Alle Konten als AUSDRUECKLICHE Projektion auf zwei Spalten, nach `user_id` sortiert.
+
+    Nie `model_validate(User)`: `password_hash` und `created_at` duerfen diesen Endpunkt nicht
+    erreichen (Auflage S8). Die LAENGE dieser Liste ist der Nenner der Regel - sie stammt damit
+    aus derselben Leseoperation wie die Anzeige, und die beiden koennen nicht auseinandergehen."""
+    rows = (await session.execute(select(User.id, User.username).order_by(User.id))).all()
+    return [AlbumParticipantOut(user_id=user_id, username=username) for user_id, username in rows]
+
+
 async def _user_count(session: AsyncSession) -> int:
     """Der NENNER der Einigkeitsregel: die Zahl der Konten im Bestand.
 
@@ -976,17 +1044,12 @@ def _to_photo_out(
         and not has_own_album_decision
     )
     suggestion = _to_suggestion_out(photo.score) if has_suggestion and photo.score else None
-    # DIE REGEL LEBT IN `album_selection.py` UND NUR DORT. Hier steht ausschliesslich die
-    # Beschaffung ihrer Eingaenge - und die beiden Zaehlungen laufen ueber `Rating.status`, nie
-    # ueber das Vorhandensein der Zeile: seit ADR 0098 kann eine Zeile allein den Favoriten
-    # tragen, und ein Existenztest machte aus einer Auszeichnung eine Streichung.
     decision = decisions.get(photo.id)
-    state = selection_state(
-        taken=sum(1 for r in photo.ratings if r.status is RatingStatus.ALBUM_WORTHY),
-        rejected=sum(1 for r in photo.ratings if r.status is RatingStatus.REJECTED),
-        user_count=user_count,
+    state = _selection_state_of(
+        photo,
         proposed=ranking is not None and ranking.selection_position is not None,
         decision=decision,
+        user_count=user_count,
     )
     return PhotoOut(
         id=photo.id,
@@ -1421,6 +1484,162 @@ async def list_photos(
         for photo_id in ids
     ]
     return PhotoListOut(items=items, total=total)
+
+
+@router.get("/projects/{project_id}/album-selection", response_model=AlbumSelectionOut)
+async def album_selection(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei) - ein Endpunkt, der diesen
+    # Parameter vergisst, waere STILL OEFFENTLICH. `current_user.id` geht unveraendert an
+    # `_to_photo_out`: die MENGE dieser Antwort ist zwar nutzerunabhaengig, `PhotoOut.suggestion`
+    # bleibt es nicht.
+    current_user: User = Depends(get_current_user),
+) -> AlbumSelectionOut:
+    """Die gemeinsame Endauswahl des Projekts - die Menge, die als Album gilt (ADR 0099).
+
+    Sie ist ABGELEITET und nirgends gespeichert: Gespeichert wird allein die ausdrueckliche
+    gemeinsame Entscheidung. Einigkeit beider Entwuerfe ist eine VORBELEGUNG, die nur wirkt,
+    solange keine Entscheidung vorliegt; eine getroffene Entscheidung ueberlebt umgekehrt jede
+    spaetere Entwurfsaenderung und jeden neuen Vorschlagslauf.
+
+    Die Antwort traegt DREI Teile: `participants` (alle Konten, auch das ohne jede Bewertung),
+    `has_proposal` (trennt die beiden Leerzustaende) und `items`.
+
+    DIE ANTWORTMENGE IST ADDITIV: `strittig ∪ Endauswahl ∪ entschieden`. Der dritte Teil ist keine
+    Redundanz (ADR 0099 Punkt 5) - ein ausdruecklich HERAUSGENOMMENES Bild gehoert nicht zur
+    Endauswahl und verschwaende sonst aus beiden Sichten; die Entscheidung liesse sich dann nicht
+    mehr aendern, obwohl die Story das ausdruecklich zusagt. Es bleibt stattdessen mit einem
+    Anzeigezustand stehen, genau wie ein gestrichenes Foto im Entwurf (ADR 0071 Entscheidung 3).
+    Kein Ausschluss bildet die Menge. Ein Bild, das BEIDE gestrichen haben und ueber das niemand
+    entschieden hat, erscheint hier nicht; der Weg zurueck fuehrt ueber den Einzelentwurf.
+
+    KEINE SEITENWEISE, wie der Entwurfszweig (ADR 0098, Auflage S14). Die Obergrenze der Antwort
+    ist `Vorschlag ∪ jemals bewertet ∪ entschieden`; die Zahl der Abfragen ist fest und
+    unabhaengig von der Fotoanzahl.
+
+    SICHERHEIT - Projektbindung (S2): `Photo.project_id == project_id` ist eine UND-Bedingung
+    ueber die GESAMTE Kandidatenmenge und steht AUSSERHALB der ODER-Verknuepfung ihrer drei
+    Quellen; der Rangzweig haengt zusaetzlich am `criterion_scoring_run_id` des letzten
+    erfolgreichen Laufs DIESES Projekts. Zwei der drei Quellen sind projektblind:
+    `final_selection_decisions` hat nur `photo_id`, `Rating` nur `(photo_id, user_id)`, und
+    `PhotoRanking` traegt keine `project_id`. Ein in die ODER-Verknuepfung gerutschtes
+    Projektpraedikat ist syntaktisch unauffaellig und liesse jedes jemals bewertete oder
+    entschiedene Foto ALLER Projekte in die Antwort - die Endauswahl eines Projekts enthielte dann
+    kohaerent aussehende Fotos eines anderen, und das ist die Menge, die der Export nimmt.
+    `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
+
+    SICHERHEIT (S8): `user_count` stammt aus DERSELBEN Leseoperation wie `participants`. Gingen
+    beide auseinander, behauptete die Ansicht Einigkeit ueber zwei Teilnehmer, waehrend die Regel
+    ueber drei rechnet - kein Feld der Antwort saehe dabei widerspruechlich aus."""
+    project = await _get_project_or_404(project_id, session)
+
+    # (1) Teilnehmer UND Nenner aus EINER Leseoperation (S8).
+    participants = await _participants(session)
+    user_count = len(participants)
+
+    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    if latest_run_id is None:
+        # Ohne erfolgreichen Lauf gibt es weder Vorschlag noch Events, in die einzuordnen waere -
+        # die Teilnehmerliste steht trotzdem, sonst waere der Leerzustand nicht von einer Instanz
+        # ohne Konten zu unterscheiden.
+        return AlbumSelectionOut(participants=participants, has_proposal=False, items=[])
+
+    # (2) Die Events des Laufs - einmal, ueber dieselbe Beschaffung wie der Entwurfszweig.
+    spans, position_by_event_id = await _event_spans_and_positions(session, latest_run_id)
+
+    # (3) DIE KANDIDATENMENGE, eine Obermenge, in EINER Abfrage: vorgeschlagen ODER entschieden
+    # ODER jemals mit einer Albumentscheidung versehen. Sie ist vollstaendig - ohne jede
+    # Bewertungszeile sind alle Nutzer einig, und Zugehoerigkeit ohne Entscheidung setzt den
+    # Vorschlag voraus.
+    #
+    # `Rating.status.is_not(None)` und nicht das Vorhandensein der Zeile: eine reine
+    # Favoritenzeile ist keine Aussage ueber die Albumzugehoerigkeit und holt ein sonst
+    # unbeteiligtes Foto nicht herein.
+    ranking = aliased(PhotoRanking)
+    decision_row = aliased(FinalSelectionDecision)
+    candidate_rows = (
+        await session.execute(
+            select(Photo.id, Photo.taken_at, ranking.event_id, ranking.selection_position)
+            # SICHERHEIT (S2): das Pflichtpraedikat, UND-verknuepft ueber die gesamte Menge.
+            .where(Photo.project_id == project_id)
+            .outerjoin(
+                ranking,
+                and_(
+                    ranking.photo_id == Photo.id,
+                    ranking.criterion_scoring_run_id == latest_run_id,
+                ),
+            )
+            .outerjoin(decision_row, decision_row.photo_id == Photo.id)
+            .where(
+                or_(
+                    ranking.selection_position.is_not(None),
+                    decision_row.photo_id.is_not(None),
+                    Photo.id.in_(select(Rating.photo_id).where(Rating.status.is_not(None))),
+                )
+            )
+        )
+    ).all()
+
+    # `has_proposal` aus den Kandidatenzeilen, ohne eigene Abfrage: ein Foto mit
+    # `selection_position` ist ueber das erste Praedikat immer Kandidat.
+    has_proposal = any(row.selection_position is not None for row in candidate_rows)
+
+    # (4) Hydratation der Kandidaten - `photo.ratings` samt `Rating.user` ist dort bereits eager
+    # geladen, die Zaehlung darunter loest deshalb keinen Lazy-Load aus.
+    candidate_ids = [row.id for row in candidate_rows]
+    photos_by_id = await _photos_by_id(session, candidate_ids)
+    decisions = await _final_selection_decisions(session, candidate_ids)
+
+    # (5) DER ZUSTANDSFILTER: behalten wird, was strittig ist ODER zur Endauswahl gehoert ODER
+    # eine Entscheidung traegt - derselbe `selection_state`-Aufruf, den `_to_photo_out` danach
+    # fuer die Felder benutzt. Ohne ihn stuende jedes von beiden gestrichene Foto in der Antwort.
+    kept_rows: list[tuple[int, datetime, int | None]] = []
+    for row in candidate_rows:
+        photo = photos_by_id.get(row.id)
+        if photo is None:
+            continue
+        decision = decisions.get(row.id)
+        state = _selection_state_of(
+            photo,
+            proposed=row.selection_position is not None,
+            decision=decision,
+            user_count=user_count,
+        )
+        if state.contested or state.included or decision is not None:
+            kept_rows.append((row.id, row.taken_at, row.event_id))
+
+    placed = _place_in_events(kept_rows, spans, position_by_event_id)
+    ids = placed.ordered_ids
+    rankings_by_id = await _ranking_by_photo_id(session, latest_run_id, ids)
+    partition_sizes = await _partition_sizes(session, latest_run_id)
+    place_by_id = await _event_and_location_by_photo_id(
+        session,
+        project_id,
+        latest_run_id,
+        {photo_id: photos_by_id[photo_id] for photo_id in ids},
+        placed.event_id_by_photo_id,
+    )
+    motifs_by_id = await load_effective_strengths(session, ids)
+    items = [
+        _to_photo_out(
+            photos_by_id[photo_id],
+            current_user.id,
+            project,
+            rankings_by_id.get(photo_id),
+            partition_sizes,
+            # KEINE `curation_position`: Die Endauswahl ist keine numerierte Auswahl, und eine
+            # Zahl hier waere eine Rangaussage ueber eine Menge, die keinen Rang kennt.
+            None,
+            place_by_id.get(photo_id, NO_PLACE),
+            motifs_by_id.get(photo_id),
+            decisions=decisions,
+            user_count=user_count,
+        )
+        for photo_id in ids
+    ]
+    return AlbumSelectionOut(participants=participants, has_proposal=has_proposal, items=items)
 
 
 def _strength_values(effective: Mapping[str, EffectiveStrength] | None) -> dict[str, float]:
