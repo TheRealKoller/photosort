@@ -15,6 +15,7 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    FinalSelectionDecision,
     FineLabel,
     MotifAssessmentSource,
     Photo,
@@ -1899,3 +1900,177 @@ def test_the_two_ranking_columns_are_nullable_but_the_event_is_not() -> None:
     assert columns["rank_score"].nullable is True
     assert columns["rank_position"].nullable is True
     assert columns["event_id"].nullable is False
+
+
+class TestTheSingleDraftStaysUntouchedByTheFinalSelection:
+    """specs/features/0431-endauswahl-gemeinsam.md, Nachweisstellen 1 und 2 von sieben.
+
+    Die Endauswahl ist eine Ebene UEBER beiden Entwuerfen, nicht daneben. Story 6 sagt fuer den
+    Einzelentwurf zu, dass neben der Bewertung keine zweite, daneben liegende Auswahlebene
+    entsteht - beide Faelle hier pruefen GLEICHHEIT der Spaltenmenge bzw. des Wertevorrats, nicht
+    Teilmenge: Eine spaeter ergaenzte Spalte oder ein spaeter ergaenzter Enum-Wert waere genau die
+    zweite Ebene und roetet sonst nichts."""
+
+    def test_the_rating_table_gains_no_column(self) -> None:
+        assert set(Rating.__table__.columns.keys()) == {
+            "id",
+            "photo_id",
+            "user_id",
+            "status",
+            "favorite",
+            "updated_at",
+        }
+
+    def test_the_rating_status_vocabulary_stays_the_album_decision(self) -> None:
+        assert {status.value for status in RatingStatus} == {"album_worthy", "rejected"}
+
+    def test_the_decision_table_carries_no_user_reference(self) -> None:
+        """ADR 0099 Punkt 3: Es gibt keine Spalte, in der ein Nutzerbezug stehen koennte - weder
+        `user_id` noch `decided_by` noch eine Lauf-Bindung. Die Trennung ist strukturell."""
+        assert set(FinalSelectionDecision.__table__.columns.keys()) == {
+            "photo_id",
+            "included",
+            "updated_at",
+        }
+
+    def test_the_decision_table_has_exactly_one_foreign_key_and_it_points_at_photos(self) -> None:
+        foreign_keys = {
+            (key.parent.name, key.column.table.name)
+            for key in FinalSelectionDecision.__table__.foreign_keys
+        }
+
+        assert foreign_keys == {("photo_id", "photos")}
+
+    def test_the_included_column_is_not_null_and_carries_no_default(self) -> None:
+        """Die Abwesenheit der Zeile heisst "unentschieden" (Auflage S4). Ein Vorgabewert erfaende
+        eine Entscheidung, die niemand getroffen hat - und es gibt keinen Weg zurueck."""
+        column = FinalSelectionDecision.__table__.columns["included"]
+
+        assert column.nullable is False
+        assert column.default is None
+        assert column.server_default is None
+
+
+# specs/features/0431-endauswahl-gemeinsam.md, Nachweisstelle 3 von sieben: Die Funktionen des
+# EINZELENTWURFS nennen die gemeinsame Entscheidung nicht.
+#
+# DIE EINHEIT IST DER FUNKTIONSRUMPF, NICHT DIE DATEI, und das ist keine Feinheit: `_to_photo_out`
+# und `album_selection` liegen im selben Modul wie `_draft_photo_ids` und `draft_alternatives`, und
+# die drei Endauswahl-Felder stehen auf ALLEN Lesepfaden - ein Waechter auf Dateiebene waere
+# deshalb entweder dauerhaft rot oder so weit gefasst, dass er nichts zusichert.
+#
+# Gemessen wird ausschliesslich der MODELLNAME, nicht der Lader `_final_selection_decisions`:
+# `draft_alternatives` und `list_photos` MUESSEN ihn aufrufen, weil die Felder auch dort stehen.
+# Was ihnen untersagt ist, ist der direkte Zugriff auf die Tabelle - der waere der Anfang einer
+# zweiten Auswahlebene IM Einzelentwurf.
+_DECISION_MODEL = "FinalSelectionDecision"
+
+# Jede Stelle, die den Modellnamen nennen DARF - je Eintrag `<pfad>::<funktion>`. Geprueft wird
+# GLEICHHEIT: Findet der Waechter eine erlaubte Stelle nicht mehr, prueft er fuer sie nichts.
+_ALLOWED_DECISION_MODEL_READERS = frozenset(
+    {
+        "api/photos.py::_final_selection_decisions",
+        "api/photos.py::album_selection",
+        "api/album_decisions.py::_existing_decision",
+        "api/album_decisions.py::set_album_decision",
+        "project_deletion.py::delete_projects",
+        # Der Dissens-Block des Demo-Seeders. Er schreibt Entscheidungszeilen und ist damit ein
+        # erlaubter Leser - er beruehrt den Einzelentwurf nicht, sondern die Ebene darueber.
+        "demo_state.py::_seed_final_selection_dissent",
+    }
+)
+
+
+def _functions_naming_the_decision_model(source: str) -> set[str]:
+    """Die Funktionen dieses Moduls, die `FinalSelectionDecision` nennen - ueber den Syntaxbaum,
+    nicht ueber eine Textsuche.
+
+    DREI erkannte Leseformen, alle drei am Bestand vertreten: der Attributzugriff
+    (`FinalSelectionDecision.photo_id`), der Konstruktoraufruf und der blosse Name als Argument
+    (`aliased(FinalSelectionDecision)`, `session.get(FinalSelectionDecision, …)`). Alle drei sind
+    im Syntaxbaum derselbe `ast.Name` - genau deshalb ist der Baum hier das richtige Werkzeug.
+
+    Eine verschachtelte Funktion wird ihrer umgebenden ZUGERECHNET (der Teilbaum wird vollstaendig
+    durchlaufen) und zusaetzlich unter ihrem eigenen Namen gefuehrt: Ein Zugriff, der sich in einen
+    lokalen Helfer zurueckzieht, soll nicht aus der Messung fallen."""
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        if any(
+            isinstance(child, ast.Name) and child.id == _DECISION_MODEL for child in ast.walk(node)
+        ):
+            found.add(node.name)
+    return found
+
+
+class TestTheDraftFunctionsNeverTouchTheJointDecision:
+    def test_exactly_the_known_functions_name_the_decision_model(self) -> None:
+        """DIE Zusage: Weder `_draft_photo_ids` noch `draft_alternatives` steht in der Fundmenge.
+        Eine dort eingefuegte Abfrage auf `final_selection_decisions` roetet keinen
+        Verhaltenstest - der Entwurf saehe weiter richtig aus, waehrend er eine zweite Ebene
+        bekommt."""
+        source_root = Path(photosort.__file__).resolve().parent
+        readers = {
+            f"{path.relative_to(source_root)}::{function}"
+            for path in source_root.rglob("*.py")
+            for function in _functions_naming_the_decision_model(path.read_text(encoding="utf-8"))
+        }
+
+        assert readers == set(_ALLOWED_DECISION_MODEL_READERS), (
+            "Die Menge der Funktionen, die `FinalSelectionDecision` nennen, weicht von den "
+            f"erlaubten ab ({sorted(_ALLOWED_DECISION_MODEL_READERS)}). Zu viel: "
+            f"{sorted(readers - set(_ALLOWED_DECISION_MODEL_READERS))}; nicht mehr gefunden: "
+            f"{sorted(set(_ALLOWED_DECISION_MODEL_READERS) - readers)}"
+        )
+
+    def test_the_found_set_is_not_empty(self) -> None:
+        """Positiv-Gegenprobe: Ein Waechter, der nichts findet, besteht jede Zusage. Die
+        Fundmenge oben muss die Stellen tatsaechlich TREFFEN, nicht bloss die verbotenen
+        verfehlen."""
+        assert _ALLOWED_DECISION_MODEL_READERS
+        source = (
+            Path(photosort.__file__).resolve().parent / "api" / "album_decisions.py"
+        ).read_text(encoding="utf-8")
+
+        assert "set_album_decision" in _functions_naming_the_decision_model(source)
+
+    @pytest.mark.parametrize(
+        "snippet",
+        [
+            pytest.param(
+                "def f():\n    return FinalSelectionDecision.photo_id", id="attributzugriff"
+            ),
+            pytest.param(
+                "def f():\n    return FinalSelectionDecision(photo_id=1, included=True)",
+                id="konstruktor",
+            ),
+            pytest.param("def f():\n    return aliased(FinalSelectionDecision)", id="argument"),
+        ],
+    )
+    def test_the_guard_sees_every_read_form_it_claims_to_cover(self, snippet: str) -> None:
+        """Selbstschutz zum Selbstschutz: Der Waechter ist nur so gut wie die Formen, die er
+        tatsaechlich erkennt - jede wird einzeln nachgewiesen, statt sich darauf zu verlassen,
+        dass der Bestand sie alle enthaelt."""
+        assert _functions_naming_the_decision_model(snippet) == {"f"}
+
+    def test_the_guard_ignores_the_mere_mention_in_a_comment_or_docstring(self) -> None:
+        """Die Gegenprobe, die eine Textsuche NICHT bestuende: Ein Kommentar, der erklaert, warum
+        der Entwurfszweig die Tabelle gerade nicht liest, ist kein Zugriff - und ein Wortverbot
+        verboete genau diese Begruendung."""
+        snippet = (
+            "def f():\n"
+            '    """Liest ausdruecklich KEINE FinalSelectionDecision."""\n'
+            "    # FinalSelectionDecision gehoert hier nicht her.\n"
+            "    return None\n"
+        )
+
+        assert _functions_naming_the_decision_model(snippet) == set()
+
+    def test_the_guard_ignores_the_loader_that_every_read_path_must_call(self) -> None:
+        """Die Abgrenzung, auf der die ganze Messung steht: `_final_selection_decisions` ist der
+        PFLICHTIGE Aufruf jedes Lesepfads - die drei Felder stehen ueberall. Zaehlte er als
+        Zugriff, waere der Waechter dauerhaft rot."""
+        snippet = "async def f():\n    return await _final_selection_decisions(session, ids)"
+
+        assert _functions_naming_the_decision_model(snippet) == set()

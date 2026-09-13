@@ -5,6 +5,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from photosort.api import (
+    album_decisions,
     auth,
     cameras,
     motifs,
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(album_decisions.router)
     app.include_router(auth.router)
     app.include_router(cameras.router)
     app.include_router(motifs.router)

@@ -22,6 +22,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import demo_state
+from photosort.album_selection import SelectionState, selection_state
 from photosort.album_suitability import (
     ALBUM_SUITABILITY_MAX_LEVEL,
     MAX_ALBUM_SUITABILITY_REASON_LENGTH,
@@ -56,6 +57,7 @@ from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
     CriterionScoringRun,
     Event,
+    FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
@@ -1812,3 +1814,180 @@ class TestTheDemoStateCarriesAnAlbumDraft:
         for row in await self._rankings_of_the_rated_project(db_session):
             if row.selection_position is not None:
                 assert row.rank_score is not None, row.photo_id
+
+
+class TestTheDemoStateCarriesTheFinalSelection:
+    """specs/features/0431-endauswahl-gemeinsam.md, Zusicherung 21.
+
+    Der Seeder legt fuer den bestehenden Block ALLEN Nutzern DIESELBEN Bewertungen an - eine
+    Eigenschaft, die bleibt. Ohne einen benannten Dissens daneben zeigte die Arbeitssicht der
+    Endauswahl auf der Demo-Instanz dauerhaft "keine Unterschiede", und KEIN Test wuerde rot: die
+    Sichtpruefung besuchte eine Seite, die nichts zu tun hat, und haette keinen Anhaltspunkt,
+    dass das falsch ist."""
+
+    @staticmethod
+    async def _state_of_the_rated_project(
+        session: AsyncSession,
+    ) -> tuple[dict[int, SelectionState], dict[int, bool]]:
+        """Der Zustand jedes Fotos des bewerteten Projekts - ueber DIESELBE reine Funktion, die
+        auch der Lesepfad benutzt, nie ueber eine zweite Nachbildung hier."""
+        photos = await _photos_of(session, RATED_PROJECT_NAME)
+        photo_ids = [photo.id for photo in photos]
+        rankings = {
+            row.photo_id: row
+            for row in (
+                await session.execute(
+                    select(PhotoRanking).where(PhotoRanking.photo_id.in_(photo_ids))
+                )
+            )
+            .scalars()
+            .all()
+        }
+        decisions = {
+            row.photo_id: row.included
+            for row in (
+                await session.execute(
+                    select(FinalSelectionDecision).where(
+                        FinalSelectionDecision.photo_id.in_(photo_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        }
+        ratings: dict[int, list[Rating]] = {}
+        for rating in (
+            (await session.execute(select(Rating).where(Rating.photo_id.in_(photo_ids))))
+            .scalars()
+            .all()
+        ):
+            ratings.setdefault(rating.photo_id, []).append(rating)
+        user_count = len((await session.execute(select(User))).scalars().all())
+
+        states = {}
+        for photo_id in photo_ids:
+            rows = ratings.get(photo_id, [])
+            ranking = rankings.get(photo_id)
+            states[photo_id] = selection_state(
+                taken=sum(1 for r in rows if r.status is RatingStatus.ALBUM_WORTHY),
+                rejected=sum(1 for r in rows if r.status is RatingStatus.REJECTED),
+                user_count=user_count,
+                proposed=ranking is not None and ranking.selection_position is not None,
+                decision=decisions.get(photo_id),
+            )
+        return states, decisions
+
+    async def test_all_four_states_of_the_final_selection_occur(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """KARDINALITAETSFALL ueber die vier benannten Zustaende: strittig, gemeinsam entschieden
+        und drin, einig aber herausgenommen, und einig drin ohne Zutun. Fehlt einer, ist die
+        Sichtpruefung blind fuer genau die Darstellung, die es fuer ihn gibt."""
+        await _make_user(db_session, "daniel")
+        await _make_user(db_session, "zweiter-nutzer")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        states, decisions = await self._state_of_the_rated_project(db_session)
+
+        contested = [pid for pid, state in states.items() if state.contested]
+        decided_in = [pid for pid, included in decisions.items() if included]
+        decided_out = [pid for pid, included in decisions.items() if not included]
+        agreed_in = [
+            pid for pid, state in states.items() if state.included and pid not in decisions
+        ]
+
+        assert contested, "kein strittiges Foto - die Arbeitssicht bliebe dauerhaft leer"
+        assert decided_in, "kein gemeinsam entschiedenes Foto mit `included=true`"
+        assert decided_out, "kein ausdruecklich herausgenommenes Foto"
+        assert agreed_in, "kein einig-drinnes Foto ohne Entscheidung"
+
+    async def test_a_decided_photo_is_no_longer_contested(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Zustand "gemeinsam entschieden, drin" entsteht auf einem Foto, das OHNE die
+        Entscheidung strittig waere - sonst zeigte die Demo die Ueberschreibung gar nicht."""
+        await _make_user(db_session, "daniel")
+        await _make_user(db_session, "zweiter-nutzer")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        states, decisions = await self._state_of_the_rated_project(db_session)
+
+        for photo_id in decisions:
+            assert not states[photo_id].contested, photo_id
+            assert states[photo_id].included is decisions[photo_id], photo_id
+
+    async def test_two_rebuilds_put_the_same_photo_ids_into_the_same_roles(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Zusicherung 21, zweite Haelfte: Die Auswahl stammt aus dem TATSAECHLICHEN Vorschlag -
+        genau dort wird eine `set`-Iteration unbemerkt sprunghaft, und die Sichtpruefung zeigte
+        von Lauf zu Lauf andere Bilder in anderen Rollen."""
+        await _make_user(db_session, "daniel")
+        await _make_user(db_session, "zweiter-nutzer")
+
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        first_states, first_decisions = await self._state_of_the_rated_project(db_session)
+        first = (
+            sorted(pid for pid, s in first_states.items() if s.contested),
+            sorted(first_decisions.items()),
+        )
+
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        second_states, second_decisions = await self._state_of_the_rated_project(db_session)
+        second = (
+            sorted(pid for pid, s in second_states.items() if s.contested),
+            sorted(second_decisions.items()),
+        )
+
+        assert first[0], "ohne strittiges Foto prueft der Determinismusfall nichts"
+        # Die Foto-Ids selbst wandern beim Neuaufbau (die Zeilen werden geloescht und neu
+        # angelegt); verglichen wird deshalb die STRUKTUR: gleich viele Fotos in gleichen Rollen,
+        # an gleicher Stelle der nach Id sortierten Fotoliste.
+        photos = [photo.id for photo in await _photos_of(db_session, RATED_PROJECT_NAME)]
+        second_offsets = (
+            [photos.index(pid) for pid in second[0]],
+            [(photos.index(pid), included) for pid, included in second[1]],
+        )
+        assert second_offsets[0] == sorted(second_offsets[0])
+        assert len(second[0]) == len(first[0])
+        assert len(second[1]) == len(first[1])
+
+    async def test_the_block_writes_nothing_without_any_user(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Seeder legt selbst nie ein Konto an. Ohne Nutzer gibt es keine Entwuerfe, ueber die
+        man uneins sein koennte."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        assert (await db_session.execute(select(FinalSelectionDecision))).scalars().all() == []
+
+    async def test_the_block_writes_nothing_with_exactly_one_user(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Bei `n = 1` ist Dissens ARITHMETISCH unmoeglich: jedes vorgeschlagene, unangefasste
+        Foto ist in der Endauswahl, und nichts ist strittig. Ein Block, der hier trotzdem
+        schriebe, erzeugte einen Zustand, den die Anwendung selbst nie herstellt."""
+        await _make_user(db_session, "daniel")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        states, decisions = await self._state_of_the_rated_project(db_session)
+
+        assert decisions == {}
+        assert not any(state.contested for state in states.values())
+
+    async def test_the_project_deletion_removes_the_decisions_too(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Seeder raeumt ueber `project_deletion` auf - hier am Demo-Bestand. Ohne diese
+        Anweisung ueberlebten die gemeinsamen Entscheidungen ueber geloeschte Familienfotos die
+        Projektloeschung."""
+        await _make_user(db_session, "daniel")
+        await _make_user(db_session, "zweiter-nutzer")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        assert (await db_session.execute(select(FinalSelectionDecision))).scalars().all() != []
+
+        await purge_demo_state(db_session, tmp_path)
+        await db_session.commit()
+
+        assert (await db_session.execute(select(FinalSelectionDecision))).scalars().all() == []
+        assert (await db_session.execute(select(User))).scalars().all() != []
