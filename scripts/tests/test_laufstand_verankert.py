@@ -44,6 +44,30 @@ EINER_IN_ARBEIT = "genau einer in Arbeit"
 # Listenzeilen - eine Klammer im Fliesstext des Blocks ist kein Zustandsmarker.
 _ZUSTANDSZEILE = re.compile(r"^\s*-\s*\[([^\]\n]+)\]", re.MULTILINE)
 
+# --- Die drei Ausgabezeitpunkte, abschnittsgebunden ------------------------------------------
+
+SCHRITT_ZWEI = "## Schritt 2"
+
+# Der Ordnungsmarker fuer AK 2. Die Erstausgabe steht **vor** dem Rot-Schritt, nicht hinter dem
+# Commit der ersten Einheit: Ein gerade gestarteter Lauf zeigt damit den vollstaendigen Plan mit
+# dem ersten Schritt in Arbeit; ohne diese Reihenfolge waere "gerade gestartet" von
+# "steckengeblieben" nicht zu unterscheiden.
+MARKE_ROT = "**Rot:**"
+
+# Genau zwei Anweisungen in Schritt 2: einmal vor dem ersten Rot, einmal nach jeder
+# abgeschlossenen Einheit. Gezaehlt wird ueber den **codefence-freien** Abschnitt - die
+# Definition des Blocks steht selbst in einem Fence und ist keine Anweisung.
+AUSGABEN_IN_SCHRITT_ZWEI = 2
+
+_FOLGEAUFTRAG = re.compile(r"^## Folgeauftrag:[^\n]*$", re.MULTILINE)
+
+# Gemessen am Bestand (2026-09-13): `Findings beheben`, `CI-Fehlschlag beheben`,
+# `Abgleich mit main`. Die Zahl steht hier, damit ein **kuenftiger** Abschnitt sich der
+# Ausgabepflicht nicht dadurch entzieht, dass niemand daran denkt, ihn einzutragen: Ein vierter
+# Folgeauftrag faerbt diesen Test rot und zwingt zur bewussten Entscheidung, statt still eine
+# Luecke zu lassen. Sie stand bei Abfassung der Spec bei drei und ist zuletzt gewachsen.
+ERWARTETE_FOLGEAUFTRAEGE = 3
+
 # --- Selbstschutz --------------------------------------------------------------------------
 
 # Untergrenzen weit unter dem Ist-Stand (2026-09-13: 251 Markdown-Dateien im Suchraum, 7
@@ -162,6 +186,21 @@ def formatverstoesse(block: str) -> list[str]:
     return befunde
 
 
+def folgeauftrags_abschnitte(text: str) -> dict[str, str]:
+    """Reine Funktion: je `## Folgeauftrag:`-Ueberschrift ihr Abschnittstext.
+
+    Ausgewertet ueber den codefence-freien Text: Die Abschluss-Anker der Folgeauftraege stehen
+    selbst in Codefences und sind Formatvorlagen, keine Ueberschriften des Ablaufs.
+    """
+    sichtbar = ohne_codebloecke(text)
+    abschnitte: dict[str, str] = {}
+    for kopf in _FOLGEAUFTRAG.finditer(sichtbar):
+        naechster = _ABSCHNITT.search(sichtbar, kopf.end())
+        ende = naechster.start() if naechster else len(sichtbar)
+        abschnitte[kopf.group(0).strip()] = sichtbar[kopf.start() : ende]
+    return abschnitte
+
+
 def ausgabepflicht_ausserhalb(abbild: Mapping[str, str]) -> list[str]:
     """Reine Funktion: jede Agenten-Datei ausser `developer.md`, die den Anker nennt.
 
@@ -276,6 +315,71 @@ def test_die_blockdefinition_steht_ausschliesslich_in_developer_md() -> None:
         f"Der Block {ANKER!r} wird in {stellen} als Codeblock gefuehrt, erwartet ausschliesslich "
         f"in {DEVELOPER_PFAD}. Eine Erwaehnung im Fliesstext ist davon unberuehrt und bleibt "
         "ausdruecklich frei; eine zweite eingezaeunte Fassung ist eine zweite Quelle."
+    )
+
+
+# --- AK 1/AK 2: die drei Ausgabezeitpunkte, je an ihrem Ort -----------------------------------
+
+
+def test_schritt_2_verlangt_die_ausgabe_zweimal() -> None:
+    """AK 1: einmal vor dem ersten Rot, einmal nach jeder abgeschlossenen Einheit.
+
+    Abschnittsgebunden statt dateiweit: Eine dateiweite Zaehlung waere auch dann erfuellt, wenn
+    beide Anweisungen in einem Folgeauftrag stuenden und der eigentliche TDD-Zyklus keine
+    Ausgabe mehr verlangte.
+    """
+    schritt = abschnitt(ohne_codebloecke(dateitext(DEVELOPER_PFAD)), SCHRITT_ZWEI)
+    gefunden = schritt.count(ANKER)
+
+    assert gefunden == AUSGABEN_IN_SCHRITT_ZWEI, (
+        f"{gefunden} Ausgabe-Anweisungen in {SCHRITT_ZWEI}, erwartet "
+        f"{AUSGABEN_IN_SCHRITT_ZWEI} (vor dem ersten Rot-Schritt und nach jeder abgeschlossenen "
+        "Einheit). Gezaehlt wird ueber den codefence-freien Abschnitt; die Definition des Blocks "
+        "steht selbst in einem Fence und zaehlt nicht mit."
+    )
+
+
+def test_die_erstausgabe_steht_vor_dem_rot_schritt() -> None:
+    """AK 2, ueber Zeichenoffsets statt ueber eine Formulierung."""
+    schritt = abschnitt(ohne_codebloecke(dateitext(DEVELOPER_PFAD)), SCHRITT_ZWEI)
+    erste = schritt.index(ANKER)
+    rot = schritt.index(MARKE_ROT)
+    zweite = schritt.index(ANKER, erste + len(ANKER))
+
+    assert erste < rot, (
+        f"Die erste Ausgabe-Anweisung steht hinter {MARKE_ROT!r}. Ein gerade gestarteter Lauf "
+        "zeigte dann noch keinen Plan, und 'gerade gestartet' waere von 'steckengeblieben' nicht "
+        "zu unterscheiden."
+    )
+    assert rot < zweite, (
+        "Die zweite Ausgabe-Anweisung steht vor dem Rot-Schritt. Sie gehoert an das Ende des "
+        "Zyklus - sie meldet eine abgeschlossene Einheit."
+    )
+
+
+def test_jeder_folgeauftrag_verlangt_die_ausgabe_zu_seinem_beginn() -> None:
+    """AK 1, dritter Zeitpunkt - je Abschnitt einzeln, nicht als Summe."""
+    abschnitte = folgeauftrags_abschnitte(dateitext(DEVELOPER_PFAD))
+
+    ohne = sorted(kopf for kopf, text in abschnitte.items() if ANKER not in text)
+
+    assert not ohne, (
+        f"Diese Folgeauftrags-Abschnitte verlangen keine Ausgabe des Blocks: {ohne}. Der letzte "
+        "sichtbare Stand behauptete dort 'alles fertig', waehrend noch gearbeitet wird - genau "
+        "die Falschauskunft, gegen die der Block gebaut ist."
+    )
+
+
+def test_die_zahl_der_folgeauftraege_ist_zugesichert() -> None:
+    """Ohne diese Zusage entzieht sich ein kuenftiger Abschnitt der Pflicht, indem ihn niemand
+    eintraegt."""
+    abschnitte = folgeauftrags_abschnitte(dateitext(DEVELOPER_PFAD))
+
+    assert len(abschnitte) == ERWARTETE_FOLGEAUFTRAEGE, (
+        f"{len(abschnitte)} Folgeauftrags-Abschnitte in {DEVELOPER_PFAD} "
+        f"({sorted(abschnitte)}), erwartet {ERWARTETE_FOLGEAUFTRAEGE}. Kommt ein Abschnitt dazu, "
+        "gehoert die Ausgabe-Anweisung hinein und diese Zahl nachgezogen - beides bewusst, nicht "
+        "als Nebenprodukt."
     )
 
 
@@ -396,6 +500,73 @@ def test_ein_anker_im_codeblock_einer_anderen_agenten_datei_zaehlt_nicht() -> No
     }
 
     assert ausgabepflicht_ausserhalb(abbild) == []
+
+
+_FOLGEAUFTRAGS_VORLAGE = (
+    "## Schritt 2: TDD-Zyklus\n\n"
+    f"Gib den Block `{ANKER}` aus.\n\n"
+    f"1. {MARKE_ROT} Schreibe einen Test.\n"
+    f"2. Melden: Gib den Block `{ANKER}` erneut aus.\n\n"
+    "## Folgeauftrag: Findings beheben\n\n"
+    f"Gib zu Beginn den Block `{ANKER}` aus.\n\n"
+    "```\n"
+    "## Abschlussbericht (Folgeauftrag: Findings behoben)\n"
+    "```\n\n"
+    "## Folgeauftrag: Abgleich mit `main`\n\n"
+    f"Gib zu Beginn den Block `{ANKER}` aus.\n"
+)
+
+
+def test_die_vorlage_erfuellt_beide_zaehlungen() -> None:
+    """Gegenprobe zur Methodik an synthetischem Text - die erwartete Form bleibt gruen."""
+    schritt = abschnitt(ohne_codebloecke(_FOLGEAUFTRAGS_VORLAGE), SCHRITT_ZWEI)
+    abschnitte = folgeauftrags_abschnitte(_FOLGEAUFTRAGS_VORLAGE)
+
+    assert schritt.count(ANKER) == AUSGABEN_IN_SCHRITT_ZWEI
+    assert schritt.index(ANKER) < schritt.index(MARKE_ROT)
+    assert sorted(abschnitte) == [
+        "## Folgeauftrag: Abgleich mit `main`",
+        "## Folgeauftrag: Findings beheben",
+    ]
+    assert all(ANKER in text for text in abschnitte.values())
+
+
+def test_ein_folgeauftrag_ohne_ausgabe_wird_gemeldet() -> None:
+    ohne = _FOLGEAUFTRAGS_VORLAGE.replace(
+        f"## Folgeauftrag: Abgleich mit `main`\n\nGib zu Beginn den Block `{ANKER}` aus.\n",
+        "## Folgeauftrag: Abgleich mit `main`\n\nLoese die Konflikte auf.\n",
+    )
+
+    abschnitte = folgeauftrags_abschnitte(ohne)
+
+    assert [kopf for kopf, text in abschnitte.items() if ANKER not in text] == [
+        "## Folgeauftrag: Abgleich mit `main`"
+    ]
+
+
+def test_ein_abschluss_anker_im_codefence_ist_kein_folgeauftrags_abschnitt() -> None:
+    """Der wahrscheinlichste Zaehlfehler: Die Abschluss-Anker nennen 'Folgeauftrag' selbst."""
+    abschnitte = folgeauftrags_abschnitte(_FOLGEAUFTRAGS_VORLAGE)
+
+    assert len(abschnitte) == 2, (
+        "Ein `## Abschlussbericht (Folgeauftrag: …)` in einem Codefence ist eine Formatvorlage, "
+        "kein Abschnitt des Ablaufs."
+    )
+
+
+def test_eine_ausgabe_in_schritt_3_zaehlt_nicht_zu_schritt_2() -> None:
+    """Die Abschnittsgrenze traegt auch hier - sonst genuegte eine Erwaehnung irgendwo."""
+    text = (
+        "## Schritt 2: TDD-Zyklus\n\n"
+        f"Gib den Block `{ANKER}` aus.\n\n"
+        f"1. {MARKE_ROT} Schreibe einen Test.\n\n"
+        "## Schritt 3: Codequalität\n\n"
+        f"Und hier noch einmal `{ANKER}`.\n"
+    )
+
+    schritt = abschnitt(ohne_codebloecke(text), SCHRITT_ZWEI)
+
+    assert schritt.count(ANKER) == 1
 
 
 def test_der_abschnittsleser_schneidet_an_der_naechsten_ueberschrift() -> None:
