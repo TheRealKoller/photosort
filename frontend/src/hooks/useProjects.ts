@@ -10,6 +10,7 @@ import {
   listFineLabels,
   listProjects,
   setCloudVisionConsent,
+  setSelectionTarget,
   triggerClassification,
   triggerScan,
   triggerScore,
@@ -146,6 +147,25 @@ export function useSetCloudVisionConsentMutation(id: number) {
     mutationFn: (enabled: boolean) => setCloudVisionConsent(id, enabled),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
+    },
+  })
+}
+
+/**
+ * Setzt den Richtwert des Auswahlvorschlags.
+ *
+ * Invalidiert neben dem Projekt auch die Kuratierungsansicht: der Server hat den Vorschlag beim
+ * Speichern neu gerechnet, und die zuletzt geladene Liste beschreibt ihn danach nicht mehr. Der
+ * breite `['photos', id]`-Praefix deckt beide Kuratierungs-Queries ab (Vorschlag und
+ * Kandidatenvorrat) - zwei Wahrheiten ueber denselben Lauf duerfen nicht nebeneinander stehen.
+ */
+export function useSetSelectionTargetMutation(id: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (target: number | null) => setSelectionTarget(id, target),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: ['photos', id] })
     },
   })
 }

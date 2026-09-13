@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
@@ -13,7 +13,6 @@ import { Skeleton } from '../components/ui/skeleton'
 import { useMotifsQuery } from '../hooks/useMotifs'
 import { useCurationQuery, useSetRatingMutation } from '../hooks/usePhotos'
 import { useProjectQuery } from '../hooks/useProjects'
-import { parseTopN } from '../utils/curationTopN'
 import { ownRatingStatus } from '../utils/ownRating'
 import { curatedRanking } from '../utils/rankings'
 import { formatDayHeading, formatEventHeading } from '../utils/timeOfDay'
@@ -181,13 +180,23 @@ export const CURATION_CLOUD_CONSENT_TEXT =
   'Ohne Cloud-Freigabe entsteht kein Album-Entwurf. Die Freigabe erteilst du in den ' +
   'Projekteinstellungen.'
 
+/**
+ * Der Hinweis, wenn der Vorschlag kleiner ausfällt als der wirksame Richtwert. Beide Zahlen
+ * ausgeschrieben: „weniger als angestrebt" allein beantwortet die Frage nicht, die ein Nutzer
+ * dann stellt.
+ */
+export function shortDraftText(drafted: number, target: number): string {
+  return (
+    `Der Vorschlag umfasst ${drafted} von angestrebten ${target} Bildern — ` +
+    'für mehr reicht der Bildbestand nicht.'
+  )
+}
+
 const SKELETON_TILE_COUNT = 6
 
 export function CuratePage() {
   const { projectId } = useParams()
   const id = Number(projectId)
-  const [searchParams] = useSearchParams()
-  const topN = parseTopN(searchParams.get('topN'))
   // Das Motivset kommt vom Server und wird langlebig gecacht - es speist die schreibgeschuetzte
   // Motivliste im Info-Popover jeder Kachel. EIN Request fuer alle Kacheln.
   const motifsQuery = useMotifsQuery()
@@ -198,7 +207,7 @@ export function CuratePage() {
   const token = getToken()
   const username = token ? decodeUsername(token) : null
 
-  const query = useCurationQuery(id, topN)
+  const query = useCurationQuery(id)
   // Die Cloud-Freigabe ist eine PROJEKTeinstellung und steht nicht am Foto - ohne sie entsteht
   // kein Album-Entwurf, und die Ansicht sagt das, statt eine leere Liste zu zeigen.
   const projectQuery = useProjectQuery(id)
@@ -304,6 +313,11 @@ export function CuratePage() {
   // und das ist keine Aussage ueber die Freigabe.
   const cloudConsentGiven = projectQuery.data?.cloud_vision_detection_enabled === true
 
+  // Die wirksame Zahl kommt FERTIG vom Server - das Frontend leitet sie nie selbst ab. Vor dem
+  // Laden steht `0`, und die Bedingung unten ist damit unwahr: der Hinweis blitzt nicht auf,
+  // bevor die Zahl bekannt ist.
+  const effectiveSelectionTarget = projectQuery.data?.effective_selection_target ?? 0
+
   const motifSetError = motifsQuery.isError
     ? motifsQuery.error instanceof ApiError
       ? motifsQuery.error.detail
@@ -378,6 +392,20 @@ export function CuratePage() {
       {query.isSuccess && projectQuery.isSuccess && cloudConsentGiven && dayKeys.length === 0 && (
         <p className="text-sm text-text">{CURATION_EMPTY_TEXT}</p>
       )}
+
+      {/* Der Hinweis gilt allein dem Fall "Vorschlag KLEINER als der wirksame Richtwert" - dann
+          hat der Bildbestand für mehr nicht gereicht, und beide Zahlen liegen bereits vor. Ist
+          der Vorschlag GRÖSSER, sagt die Oberfläche nichts: dass jeder Foto-Moment vorkommt, ist
+          die zugesagte Eigenschaft und kein Überraschungsfall. */}
+      {query.isSuccess &&
+        projectQuery.isSuccess &&
+        cloudConsentGiven &&
+        items.length > 0 &&
+        items.length < effectiveSelectionTarget && (
+          <Alert variant="warning" title="Weniger Bilder als angestrebt">
+            {shortDraftText(items.length, effectiveSelectionTarget)}
+          </Alert>
+        )}
 
       {dayKeys.length > 0 && (
         // Zwei globale Aktionen - bleiben auch bei genau einem Tag im Projekt
@@ -492,14 +520,6 @@ export function CuratePage() {
                         {!eventIsEmpty && (
                           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                             {photos.map((photo) => renderTile(photo))}
-                            {/* Der Erschoepfungshinweis und der Auslöser weiter unten schliessen
-                                einander aus: "Kein weiteres Foto verfügbar" waere neben "es gibt
-                                noch drei" ein Widerspruch. */}
-                            {photos.length < topN && remainingCandidateCount <= 0 && (
-                              <li className="flex aspect-square w-full flex-col items-center justify-center rounded-lg border border-dashed border-separator p-2 text-center text-xs text-text">
-                                Kein weiteres Foto verfügbar
-                              </li>
-                            )}
                           </ul>
                         )}
                         {/* Der Auslöser erst NACH der Top-Foto-Reihe und nur, wenn der Vorrat

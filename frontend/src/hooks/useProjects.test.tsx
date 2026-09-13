@@ -40,6 +40,8 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
+    selection_target: null,
+    effective_selection_target: 1,
     ...overrides,
   }
 }

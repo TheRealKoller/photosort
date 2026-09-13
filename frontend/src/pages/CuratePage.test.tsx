@@ -42,6 +42,9 @@ function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: false,
     cloud_vision_detection_enabled: true,
     cloud_vision_consent_at: '2026-07-01T10:00:00',
+    // Klein genug, dass der Regelfall der Bestandstests KEINEN "zu wenige Bilder"-Hinweis traegt.
+    selection_target: 1,
+    effective_selection_target: 1,
     ...overrides,
   }
 }
@@ -179,7 +182,7 @@ describe('toggleDayCollapse', () => {
   })
 })
 
-function renderPage(initialPath = '/projects/1/curate?topN=3') {
+function renderPage(initialPath = '/projects/1/curate') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -502,5 +505,78 @@ describe('CuratePage', () => {
     expect(screen.getByText('Korrigieren in der Einzelbildansicht.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Trifft zu/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /^Trifft nicht zu/ })).toBeNull()
+  })
+
+  describe('der Auswahlvorschlag', () => {
+    it('requests the selection instead of a top-N parameter', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
+
+      renderPage()
+
+      await waitFor(() => {
+        expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { selection: true })
+      })
+    })
+
+    it('ignores an old topN search parameter instead of stumbling over it', async () => {
+      /* Ein altes Lesezeichen bleibt gültig - die Route verliert ihren Suchparameter, aber ein
+       * mitgeschickter stört nicht. */
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([photo({ id: 1 })]))
+
+      renderPage('/projects/1/curate?topN=3')
+
+      expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Kuratierung')
+      await waitFor(() => {
+        expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { selection: true })
+      })
+    })
+
+    it('says how small the draft is when the stock did not suffice', async () => {
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        projectOut({ selection_target: 10, effective_selection_target: 10 }),
+      )
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([photo({ id: 1 })]))
+
+      renderPage()
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('1')
+      expect(alert).toHaveTextContent('10')
+      expect(alert).toHaveTextContent(/reicht der bildbestand nicht/i)
+    })
+
+    it('says nothing when the draft is larger than the target', async () => {
+      /* Dass jeder Foto-Moment vorkommt, ist die zugesagte Eigenschaft und kein
+       * Überraschungsfall - der Gegenfall gehört dazu, ein reiner Positivtest bestünde auch bei
+       * einem Hinweis in beide Richtungen. */
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        projectOut({ selection_target: 1, effective_selection_target: 1 }),
+      )
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([
+          photo({ id: 1 }),
+          photo({ id: 2, ranking: ranking({ rank_position: 2, curation_position: 2 }) }),
+        ]),
+      )
+
+      renderPage()
+
+      await screen.findByRole('heading', { level: 2 })
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('says nothing about a short draft while the draft is empty', async () => {
+      /* Der Leerzustand hat seinen eigenen Text; "0 von 10" daneben wäre eine zweite Erklärung
+       * für denselben Zustand. */
+      vi.mocked(projectsApi.getProject).mockResolvedValue(
+        projectOut({ selection_target: 10, effective_selection_target: 10 }),
+      )
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
+
+      renderPage()
+
+      expect(await screen.findByText(CURATION_EMPTY_TEXT)).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
   })
 })
