@@ -1311,10 +1311,18 @@ class ContentCriteria:
 
     Geschluesselt sind sie mit dem KRITERIEN-Schluessel, dessen Allow-Liste sie ausgemessen haben
     (`content_people`, `tier`, `fahrzeug`, `essen_trinken`) - so gibt es keine zweite
-    Schluesselmenge, die gegen `criteria.py` driften koennte."""
+    Schluesselmenge, die gegen `criteria.py` driften koennte.
+
+    `not_measurable` traegt AUSSCHLIESSLICH die Kriterien, deren Detektion tatsaechlich LIEF und
+    das Merkmal nicht fand - "nicht messbar". Es ist ausdruecklich KEIN Komplement von `values`:
+    ein Kriterium, das mangels Detektor oder wegen einer Ausnahme gar nicht berechnet wurde
+    ("nicht berechenbar"), fehlt in BEIDEN Mengen. Der Unterschied entscheidet ueber Loeschen
+    oder Behalten einer Altzeile - eine Voreinstellung "alles, was nicht in `values` steht"
+    loeschte beim Frühausstieg unten den gesamten Kriteriensatz eines Fotos."""
 
     values: dict[str, float]
     area_fractions: dict[str, float]
+    not_measurable: frozenset[str] = frozenset()
 
 
 def _compute_content_criteria(
@@ -1358,6 +1366,11 @@ def _compute_content_criteria(
         return ContentCriteria(values={}, area_fractions={})
 
     values: dict[str, float] = {}
+    # "Die Detektion lief, das Merkmal fehlt" - gefuellt AUSSCHLIESSLICH dort, wo der Detektor ein
+    # Ergebnis geliefert hat und die Score-Funktion `None` zurueckgibt. Nie als Komplement von
+    # `values` gebildet: der Fruehausstieg oben verlaesst die Funktion mit zwei LEEREN Mengen,
+    # und ein Komplement haette dort jedes Kriterium des Fotos als "nicht messbar" ausgewiesen.
+    not_measurable: set[str] = set()
     # Die Flaechenanteile je Allow-Liste, aus DENSELBEN Detektionen wie die Scores darunter - kein
     # zweiter Detektoraufruf. Jede Berechnung hat ihr eigenes try/except wie die Scores: ein
     # Fehlschlag laesst genau diesen Anteil ungeschrieben (das Motiv bleibt bei 0), statt den
@@ -1463,9 +1476,13 @@ def _compute_content_criteria(
         try:
             # Nur die TIER-Erkennungen sind Kompositions-Subjekt-Kandidaten - kein Auto,
             # kein Teller.
-            values["goldener_schnitt"] = compute_golden_ratio_score(
-                faces, animal_detections(objects)
-            )
+            golden_ratio = compute_golden_ratio_score(faces, animal_detections(objects))
+            # BEIDE Detektionen liefen (das sichern die `is not None` oben): ein `None` heisst
+            # hier "kein Subjekt im Bild", also NICHT MESSBAR - und nicht "nicht berechenbar".
+            if golden_ratio is None:
+                not_measurable.add("goldener_schnitt")
+            else:
+                values["goldener_schnitt"] = golden_ratio
         except Exception:
             pass
 
@@ -1473,13 +1490,20 @@ def _compute_content_criteria(
     # content_people/goldener_schnitt bleiben unveraendert auf dem bestehenden face_detector.
     if face_landmarker is not None:
         try:
-            values["freiraum"] = compute_freiraum_score(
-                detect_face_orientation(image, face_landmarker)
-            )
+            freiraum = compute_freiraum_score(detect_face_orientation(image, face_landmarker))
+            # Die Detektion lief - ein `None` heisst "kein Gesicht erkannt", also NICHT MESSBAR.
+            # Wirft `detect_face_orientation` dagegen, greift das `except` und das Kriterium
+            # landet in KEINER der beiden Mengen ("nicht berechenbar").
+            if freiraum is None:
+                not_measurable.add("freiraum")
+            else:
+                values["freiraum"] = freiraum
         except Exception:
             pass
 
-    return ContentCriteria(values=values, area_fractions=area_fractions)
+    return ContentCriteria(
+        values=values, area_fractions=area_fractions, not_measurable=frozenset(not_measurable)
+    )
 
 
 # Defensive Obergrenze fuer die zusammengesetzte laufweite Cloud-Fehlermeldung - analog

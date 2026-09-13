@@ -688,7 +688,10 @@ async def test_a_failing_model_builder_does_not_fail_the_run_or_unrelated_criter
         build_animal_detector=_no_animal_detector,
         build_classifier=_no_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
-        build_landmarker=_no_face_landmarker,
+        # Ein Landmarker, der tatsaechlich ein Gesicht findet: seit Spec 0428 ist `freiraum` ohne
+        # erkanntes Gesicht NICHT MESSBAR und bliebe auch ohne jeden Fehler ungeschrieben - die
+        # Aussage "haengt am eigenen Builder, nicht an build_detector" braeuchte dann keinen Wert.
+        build_landmarker=lambda: FaceLandmarkerStub(matrix=_rotation_matrix_y(30.0)),
     )
 
     assert run.status == ScanStatus.SUCCESS
@@ -821,7 +824,9 @@ async def test_gebaeude_criterion_best_effort_failure_does_not_fail_the_run_or_o
         project,
         scoring_run.id,
         cache_dir=tmp_path,
-        build_detector=_no_face_detector,
+        # Ein Gesicht im Bild: seit Spec 0428 ist `goldener_schnitt` ohne Subjekt NICHT
+        # MESSBAR und bliebe auch ohne den hier gepruueften Fehler ungeschrieben.
+        build_detector=_single_face_detector,
         build_animal_detector=_no_animal_detector,
         build_classifier=BrokenSceneClassifier,
         build_aesthetics=_no_aesthetics_model,
@@ -906,7 +911,9 @@ async def test_aesthetics_criterion_best_effort_failure_does_not_fail_the_run_or
         project,
         scoring_run.id,
         cache_dir=tmp_path,
-        build_detector=_no_face_detector,
+        # Ein Gesicht im Bild: seit Spec 0428 ist `goldener_schnitt` ohne Subjekt NICHT
+        # MESSBAR und bliebe auch ohne den hier gepruueften Fehler ungeschrieben.
+        build_detector=_single_face_detector,
         build_animal_detector=_no_animal_detector,
         build_classifier=_no_scene_classifier,
         build_aesthetics=BrokenAestheticsModel,
@@ -990,7 +997,9 @@ async def test_freiraum_criterion_best_effort_failure_does_not_fail_the_run_or_o
         project,
         scoring_run.id,
         cache_dir=tmp_path,
-        build_detector=_no_face_detector,
+        # Ein Gesicht im Bild: seit Spec 0428 ist `goldener_schnitt` ohne Subjekt NICHT
+        # MESSBAR und bliebe auch ohne den hier gepruueften Fehler ungeschrieben.
+        build_detector=_single_face_detector,
         build_animal_detector=_no_animal_detector,
         build_classifier=_no_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
@@ -1159,7 +1168,7 @@ async def test_goldener_schnitt_best_effort_failure_when_face_detection_fails(
     assert "tier" in criteria  # haengt nur vom (hier funktionierenden) Animal-Detektor ab
 
 
-async def test_goldener_schnitt_is_written_when_both_detections_succeed_even_without_a_subject(
+async def test_goldener_schnitt_is_left_out_when_both_detections_succeed_without_a_subject(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     project = await _make_project(db_session)
@@ -1191,8 +1200,11 @@ async def test_goldener_schnitt_is_written_when_both_detections_succeed_even_wit
         ).scalars()
     }
     # Weder Gesicht noch Tier erkannt (beide Detektoren liefern erfolgreich eine leere Liste) -
-    # dokumentierter niedriger Fallback-Wert (0.0), kein fehlendes Kriterium.
-    assert criteria["goldener_schnitt"] == 0.0
+    # seit Spec 0428 heisst das NICHT MESSBAR: das Kriterium wird weggelassen statt als
+    # schlechter Wert (0.0) geschrieben. "sharpness" steht daneben und zeigt, dass der Lauf
+    # ueberhaupt Kriterien geschrieben hat.
+    assert "goldener_schnitt" not in criteria
+    assert "sharpness" in criteria
 
 
 async def test_detect_person_and_detect_objects_are_each_called_at_most_once_per_photo(
@@ -5174,3 +5186,148 @@ async def test_an_ausschuss_photo_gets_no_motif_header(
 
     assert await db_session.get(PhotoMotifAssessment, survivor.id) is not None
     assert await db_session.get(PhotoMotifAssessment, rejected.id) is None
+
+
+# specs/features/0428-albumtauglichkeit-vom-modell.md, Schritt 6: `_compute_content_criteria`
+# unterscheidet ab hier zwei Faelle, die vorher beide `0.0` ergaben - NICHT MESSBAR (die Detektion
+# lief, das Foto traegt das Merkmal nicht) und NICHT BERECHENBAR (Detektor fehlte, Ausnahme,
+# Bild unlesbar). Nur der erste landet in `not_measurable`.
+
+
+class BrokenFaceDetectorForContent:
+    def detect(self, image: object) -> NoReturn:
+        raise RuntimeError("simulierter Detektorfehler")
+
+
+class BrokenLandmarkerForContent:
+    def detect(self, image: object) -> NoReturn:
+        raise RuntimeError("simulierter Landmarker-Fehler")
+
+
+class TestWhatIsNotMeasurable:
+    def _content(
+        self,
+        cache_dir: Path,
+        photo: Photo,
+        *,
+        face_detector: object | None,
+        face_landmarker: object | None,
+        animal_detector: object | None = None,
+    ) -> worker.ContentCriteria:
+        return worker._compute_content_criteria(
+            cache_dir,
+            photo,
+            face_detector,  # type: ignore[arg-type]
+            animal_detector if animal_detector is not None else NoAnimalDetector(),  # type: ignore[arg-type]
+            NoSceneLabels(),  # type: ignore[arg-type]
+            NeutralAestheticsModel(),  # type: ignore[arg-type]
+            face_landmarker,  # type: ignore[arg-type]
+        )
+
+    async def test_a_ran_detection_without_the_feature_marks_both_criteria_not_measurable(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Detektion lief und fand nichts: `goldener_schnitt` ohne Subjekt und `freiraum` ohne
+        Gesicht liefern KEINEN Wert statt `0.0` - ein Foto ohne Personen wird nicht mehr fuer
+        das abgewertet, was ihm fehlt."""
+        project = await _make_project(db_session)
+        photo = await _add_photo(
+            db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+        content = self._content(
+            tmp_path,
+            photo,
+            face_detector=NoFaceDetector(),
+            face_landmarker=NoFaceLandmarker(),
+        )
+
+        assert "goldener_schnitt" not in content.values
+        assert "freiraum" not in content.values
+        assert content.not_measurable == frozenset({"goldener_schnitt", "freiraum"})
+
+    async def test_a_missing_detector_is_not_the_same_as_not_measurable(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """NICHT BERECHENBAR: der Detektor stand nicht zur Verfuegung. Das Kriterium bleibt
+        ungeschrieben UND ausserhalb von `not_measurable` - ein Infrastrukturproblem darf keinen
+        gueltigen Messwert eines frueheren Laufs vernichten."""
+        project = await _make_project(db_session)
+        photo = await _add_photo(
+            db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+        content = self._content(tmp_path, photo, face_detector=None, face_landmarker=None)
+
+        assert "goldener_schnitt" not in content.values
+        assert "freiraum" not in content.values
+        assert content.not_measurable == frozenset()
+
+    async def test_a_throwing_detector_is_not_the_same_as_not_measurable(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _add_photo(
+            db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+        content = self._content(
+            tmp_path,
+            photo,
+            face_detector=BrokenFaceDetectorForContent(),
+            face_landmarker=BrokenLandmarkerForContent(),
+        )
+
+        assert content.not_measurable == frozenset()
+
+    async def test_a_measured_feature_is_a_value_and_not_in_the_not_measurable_set(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _add_photo(
+            db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        _write_display_variant(tmp_path, photo, _flat_image())
+
+        content = self._content(
+            tmp_path,
+            photo,
+            face_detector=SingleFaceDetector(),
+            face_landmarker=FaceLandmarkerStub(matrix=_rotation_matrix_y(30.0)),
+        )
+
+        assert "goldener_schnitt" in content.values
+        assert "freiraum" in content.values
+        assert content.not_measurable == frozenset()
+
+    async def test_an_unreadable_cache_file_marks_nothing_not_measurable(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """DER gefaehrlichste Fall, und er traegt keinen Kriteriennamen: fehlt die
+        `display`-Cache-Datei oder ist sie unlesbar, verlaesst die Funktion sich frueh. Waere
+        `not_measurable` dort voreingestellt ("alles, was nicht in `values` steht"), loeschte der
+        Lauf den GESAMTEN Kriteriensatz des Fotos - lautlos."""
+        project = await _make_project(db_session)
+        missing = await _add_photo(
+            db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        broken = await _add_photo(
+            db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+        broken_path = display_path(tmp_path, broken.id, broken.etag)
+        broken_path.parent.mkdir(parents=True, exist_ok=True)
+        broken_path.write_bytes(b"kein JPEG")
+
+        for photo in (missing, broken):
+            content = self._content(
+                tmp_path,
+                photo,
+                face_detector=NoFaceDetector(),
+                face_landmarker=NoFaceLandmarker(),
+            )
+
+            assert content.values == {}
+            assert content.not_measurable == frozenset(), photo.relative_path

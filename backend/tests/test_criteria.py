@@ -281,9 +281,16 @@ class TestComputeGoldenRatioScore:
         score = compute_golden_ratio_score([], animals=[_FakeSubjectBox(2 / 3, 2 / 3, 0.2, 0.2)])
         assert score > 0.9
 
-    def test_returns_a_low_documented_fallback_when_neither_face_nor_animal_detected(self) -> None:
+    def test_returns_no_value_at_all_when_neither_face_nor_animal_detected(self) -> None:
+        """ADR 0093, Abschnitt 5: ohne erkennbares Subjekt ist das Kriterium NICHT MESSBAR und
+        liefert KEINEN Wert - nie `0.0`. Der abgeloeste niedrige Fallback wertete ein Foto ohne
+        Personen doppelt ab, und die Anzeige seiner Qualitaetsstufe war entsprechend verfaelscht.
+        Die explizite Gegenprobe auf `0.0` gehoert dazu: `None == 0.0` ist falsch, aber ein
+        Wahrheitswert-Vergleich (`not score`) saehe beide gleich."""
         score = compute_golden_ratio_score([], animals=[])
-        assert score == 0.0
+
+        assert score is None
+        assert score != 0.0
 
     def test_multiple_faces_select_the_largest_by_area_not_the_first(self) -> None:
         # Erstes (kleines) Gesicht liegt exakt mittig (niedriger Score), zweites (grosses) Gesicht
@@ -311,7 +318,10 @@ class TestComputeGoldenRatioScoreBehaviourPreservation:
             [], animals=animal_detections([_detection("car", 0.95, x=1 / 3, y=1 / 3, size=0.5)])
         )
         without_anything = compute_golden_ratio_score([], animals=[])
-        assert with_car == without_anything == 0.0
+        # Seit Spec 0428 ist "kein Subjekt" kein niedriger Wert mehr, sondern gar keiner - der
+        # Verhaltenserhalt (ein Auto ist kein Kompositions-Subjekt) gilt unveraendert.
+        assert with_car is None
+        assert with_car == without_anything
 
     def test_a_small_animal_wins_over_a_large_car(self) -> None:
         detections = [
@@ -452,10 +462,14 @@ class TestObjectAllowLists:
 
 
 class TestComputeFreiraumScore:
-    def test_no_face_detected_scores_zero(self) -> None:
-        # AK der Spec 0048: "Kein Gesicht erkannt -> score == 0.0" (niedriger, NICHT neutraler
-        # Fallback - analog goldener_schnitt: kein Subjekt = kein Kompositionswert).
-        assert compute_freiraum_score(None) == 0.0
+    def test_no_face_detected_yields_no_value_at_all(self) -> None:
+        # Spec 0428/ADR 0093, Abschnitt 5: "Kein Gesicht erkannt" heisst ab hier NICHT MESSBAR -
+        # kein Wert statt des abgeloesten `0.0` (analog goldener_schnitt). Die beiden uebrigen
+        # Fallbacks (0.5) bleiben Werte: sie sind messbar und neutral.
+        score = compute_freiraum_score(None)
+
+        assert score is None
+        assert score != 0.0
 
     def test_yaw_within_the_deadzone_scores_the_neutral_fallback(self) -> None:
         # AK: "|Yaw| < FREIRAUM_YAW_DEADZONE_DEGREES -> score == 0.5" (kein klares
