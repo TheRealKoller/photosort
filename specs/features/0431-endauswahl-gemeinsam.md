@@ -212,8 +212,9 @@ def selection_state(
   bekommt dieser Endpunkt das **Vollständigkeitsnetz**, das `photos.router` und `ratings.router`
   bewusst nicht haben (Auflage S1 der Spec 0430). Er gehört nicht nach `api/ratings.py`: dessen
   Gegenstand ist die Aussage **eines** Nutzers.
-- Registrierung in `backend/src/photosort/main.py` (`app.include_router(album_decisions.router)`)
-  und in `photosort/api/__init__.py`.
+- Registrierung ausschließlich in `backend/src/photosort/main.py`
+  (`app.include_router(album_decisions.router)`), wie bei jedem bestehenden Router:
+  `photosort/api/__init__.py` ist leer und trägt keine Registrierungen.
 - `404` für ein unbekanntes Foto (Muster `_get_photo_or_404`). Projektbindung ausschließlich über
   die globale `photo_id`, wie bei `PUT /photos/{id}/rating` — es gibt keine Projekt-Mitgliedschaft,
   beide Nutzer sehen alle Projekte.
