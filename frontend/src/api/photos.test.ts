@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch, apiFetchBlob } from './client'
-import { fetchPhotoImageBlobUrl, listCurationCandidates, listPhotos } from './photos'
+import { fetchPhotoImageBlobUrl, listDraftAlternatives, listPhotos } from './photos'
 import type { PhotoListOut } from './types'
 
 vi.mock('./client', () => ({
@@ -78,32 +78,42 @@ describe('api/photos', () => {
     expect(vi.mocked(apiFetch).mock.calls.at(-1)?.[0]).not.toContain('selection')
   })
 
-  it('requests further curation candidates of one partition', async () => {
+  it('requests the alternatives of one photo of one event', async () => {
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
-    const result = await listCurationCandidates(1, {
+    const result = await listDraftAlternatives(1, {
       eventId: 42,
-      afterRank: 10,
+      photoId: 7,
       limit: 60,
       offset: 60,
     })
 
     expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/curation-candidates?event_id=42&after_rank=10&limit=60&offset=60',
+      '/projects/1/draft-alternatives?event_id=42&photo_id=7&limit=60&offset=60',
     )
     expect(result).toEqual(PHOTO_LIST)
   })
 
-  it('addresses the partition by event id alone, with no free key left', async () => {
-    /* Seit Spec 0427 tragen ALLE drei Query-Parameter dieses Endpunkts Zahlen - es gibt keinen
-     * freien Schlüssel mehr, der etwas einschleusen könnte. Als eigener Fall, weil ein
-     * stehengebliebener Schlüsselparameter in der Abfrage serverseitig schlicht ignoriert würde
-     * und damit von jedem Positivtest unbemerkt bliebe. */
+  it('addresses event and reference by their ids alone, with no free key anywhere', async () => {
+    /* ALLE vier Query-Parameter dieses Endpunkts tragen Zahlen - es gibt keinen freien Schlüssel,
+     * der etwas einschleusen könnte. Als eigener Fall, weil ein stehengebliebener
+     * Schlüsselparameter serverseitig schlicht ignoriert würde und damit von jedem Positivtest
+     * unbemerkt bliebe. */
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
-    await listCurationCandidates(1, { eventId: 7, afterRank: 0 })
+    await listDraftAlternatives(1, { eventId: 7, photoId: 3 })
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/curation-candidates?event_id=7&after_rank=0')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/draft-alternatives?event_id=7&photo_id=3')
+  })
+
+  it('never calls the endpoint that was replaced', async () => {
+    /* `GET /projects/{id}/curation-candidates` entfällt ersatzlos und antwortet `404`. Ein
+     * stehengebliebener Aufrufer wäre ein toter Weg, der erst im Browser auffiele. */
+    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+
+    await listDraftAlternatives(1, { eventId: 7, photoId: 3 })
+
+    expect(vi.mocked(apiFetch).mock.calls.at(-1)?.[0]).not.toContain('curation-candidates')
   })
 
   it('fetchPhotoImageBlobUrl requests the image and returns an object URL', async () => {

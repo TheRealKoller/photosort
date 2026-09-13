@@ -1658,10 +1658,12 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/components/CurationPhotoTile.tsx',
-      snippet: 'className="h-11 sm:h-8"',
+      snippet: 'className="h-11 flex-1 sm:h-8"',
       reason:
-        'heisser Pfad: der Zweizustand der Entwurfskachel wird viele Male hintereinander ' +
-        'gedrueckt, und ein Fehlgriff schreibt hier einen falschen Datenwert',
+        'heisser Pfad, ZWEI Flaechen: der Zweizustand der Entwurfskachel wird viele Male ' +
+        'hintereinander gedrueckt, und ein Fehlgriff schreibt hier einen falschen Datenwert; ' +
+        'die Flaeche "Alternativen" liegt unmittelbar daneben und wird mit demselben Daumen ' +
+        'getroffen - eine niedrigere von beiden waere genau der Fehlgriff',
     },
     {
       file: 'src/pages/ProjectListPage.tsx',

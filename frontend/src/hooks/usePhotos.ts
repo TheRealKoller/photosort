@@ -1,8 +1,15 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { listCurationCandidates, listPhotos } from '../api/photos'
+import { listDraftAlternatives, listPhotos } from '../api/photos'
 import { deleteRating, setFavorite, setRating } from '../api/ratings'
-import type { PhotoListOut, RatingFilter, RatingStatus, RatingWriteOut } from '../api/types'
+import type {
+  PhotoListOut,
+  PhotoOut,
+  RatingFilter,
+  RatingStatus,
+  RatingWriteOut,
+} from '../api/types'
+import { insertDraftPhoto } from '../utils/albumDraft'
 
 /**
  * Batch-Groesse fuer das Foto-Listing: Fotos werden paginiert geladen (Batches statt Gesamt-Reload
@@ -86,38 +93,43 @@ export function applyWrittenRating(
 }
 
 // Derselbe ['photos', projectId]-Praefix wie oben, und hier ist er nicht Bequemlichkeit, sondern
-// Bedingung: die nachgeladenen Kandidaten sind eine ZWEITE Query ueber demselben Datensatz auf
-// demselben Bildschirm. Dasselbe Foto kann in beiden Listen stehen; wird es in der einen verworfen,
-// muss die andere denselben Zustand zeigen. Genau das leistet die bestehende breite Invalidierung -
-// ohne den Praefix stuenden zwei Wahrheiten ueber dasselbe Foto nebeneinander.
-function curationCandidatesQueryKey(projectId: number, eventId: number, afterRank: number) {
-  return ['photos', projectId, 'curate', 'candidates', eventId, afterRank] as const
+// Bedingung: die Alternativen sind eine ZWEITE Query ueber demselben Datensatz auf demselben
+// Bildschirm. Dasselbe Foto kann in beiden Listen stehen; wird es in der einen bewertet, muss die
+// andere denselben Zustand zeigen. Genau das leistet die bestehende breite Invalidierung - ohne den
+// Praefix stuenden zwei Wahrheiten ueber dasselbe Foto nebeneinander.
+//
+// DAS BEZUGSBILD GEHOERT IN DEN SCHLUESSEL: An ihm haengen die Menge (sein Entwurf wird abgezogen)
+// UND die Reihenfolge (seine Motive ordnen). Zwei Bilder desselben Events unter einem Schluessel
+// zeigten dem zweiten Dialog die Alternativen des ersten.
+function draftAlternativesQueryKey(projectId: number, eventId: number, photoId: number) {
+  return ['photos', projectId, 'alternatives', eventId, photoId] as const
 }
 
-export interface CurationCandidatesQueryParams {
+export interface DraftAlternativesQueryParams {
   eventId: number
-  afterRank: number
-  /** Der Request laeuft ausschliesslich im AUFGEKLAPPTEN Zustand. */
+  photoId: number
+  /** Der Request laeuft ausschliesslich im GEOEFFNETEN Dialog - eine Abfrage je geoeffnetem Bild,
+   * nie eine je Kachel. */
   enabled: boolean
   pageSize?: number
 }
 
-export function useCurationCandidatesQuery(
+export function useDraftAlternativesQuery(
   projectId: number,
-  { eventId, afterRank, enabled, pageSize = PHOTOS_PAGE_SIZE }: CurationCandidatesQueryParams,
+  { eventId, photoId, enabled, pageSize = PHOTOS_PAGE_SIZE }: DraftAlternativesQueryParams,
 ) {
   return useInfiniteQuery({
-    queryKey: curationCandidatesQueryKey(projectId, eventId, afterRank),
+    queryKey: draftAlternativesQueryKey(projectId, eventId, photoId),
     queryFn: ({ pageParam }: { pageParam: number }) =>
-      listCurationCandidates(projectId, {
+      listDraftAlternatives(projectId, {
         eventId,
-        afterRank,
+        photoId,
         limit: pageSize,
         offset: pageParam,
       }),
     initialPageParam: 0,
     // Identisch zu usePhotoSequenceQuery: der naechste Offset ist die Zahl der bereits geladenen
-    // Eintraege, und `total` ist die Restmenge der Partition (nicht die Seitengroesse).
+    // Eintraege, und `total` ist die Restmenge (nicht die Seitengroesse).
     getNextPageParam: (lastPage: PhotoListOut, allPages: PhotoListOut[]) => {
       const loaded = allPages.reduce((sum, loadedPage) => sum + loadedPage.items.length, 0)
       return loaded < lastPage.total ? loaded : undefined
@@ -168,6 +180,50 @@ export function useDraftDecisionMutation(projectId: number, username: string | n
       }
       // Derselbe breite Präfix wie überall - aber der Entwurfsschlüssel ist ausgenommen, weil
       // sein Stand oben bereits geschrieben wurde.
+      void queryClient.invalidateQueries({
+        queryKey: ['photos', projectId],
+        predicate: (query) => query.queryKey[2] !== DRAFT_QUERY_SEGMENT,
+      })
+    },
+  })
+}
+
+/**
+ * Der Austausch EINES Bildes gegen eine Alternative - ZWEI Schreibvorgänge in einer Geste.
+ *
+ * Reihenfolge verbindlich (ADR 0098): erst das Bezugsbild streichen, dann die Alternative
+ * aufnehmen. Umgekehrt stünde zwischen den beiden Anfragen ein Bild zu viel im Album, und
+ * bräche die zweite ab, wäre der Entwurf um eines gewachsen statt unverändert geblieben.
+ *
+ * Danach derselbe Cache-Umgang wie bei `useDraftDecisionMutation` und aus demselben Grund: Die
+ * Entwurfsliste wird NICHT neu geladen. Das ersetzte Bild bleibt an seiner Stelle und trägt
+ * „gestrichen"; die Alternative wird über `insertDraftPhoto` an ihren chronologischen Platz
+ * geschrieben - denselben, den der Server ihr beim nächsten vollständigen Laden gäbe.
+ */
+export function useDraftExchangeMutation(projectId: number, username: string | null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ replaced, chosen }: { replaced: PhotoOut; chosen: PhotoOut }) => {
+      const struck = await setRating(replaced.id, 'rejected')
+      const taken = await setRating(chosen.id, 'album_worthy')
+      return { struck, taken }
+    },
+    onSuccess: ({ struck, taken }, { chosen }) => {
+      if (username !== null) {
+        queryClient.setQueryData<PhotoListOut>(draftQueryKey(projectId), (current) => {
+          if (current === undefined) {
+            return current
+          }
+          // Erst aufnehmen, dann beide Bewertungen fortschreiben: `applyWrittenRating` trifft nur
+          // Einträge, die bereits in der Liste stehen.
+          const withChosen = insertDraftPhoto(current, chosen)
+          return applyWrittenRating(
+            applyWrittenRating(withChosen, struck, username),
+            taken,
+            username,
+          )
+        })
+      }
       void queryClient.invalidateQueries({
         queryKey: ['photos', projectId],
         predicate: (query) => query.queryKey[2] !== DRAFT_QUERY_SEGMENT,

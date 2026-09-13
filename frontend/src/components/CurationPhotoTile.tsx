@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 import type { MotifSetOut, PhotoOut, RatingStatus } from '../api/types'
 import { isInAlbum, isTakenWithoutProposal } from '../utils/albumDraft'
 import { qualityLevel } from '../utils/qualityLevel'
@@ -35,6 +37,18 @@ export interface CurationPhotoTileProps {
   /** true, solange die Entscheidung DIESES Fotos laeuft. */
   deciding: boolean
   onDecide: (status: RatingStatus) => void
+  /** Oeffnet den Alternativen-Dialog zu diesem Bild. Geladen wird erst DORT. */
+  onOpenAlternatives: () => void
+  /**
+   * Holt den Fokus auf den Album-Zweizustand dieser Kachel - gesetzt fuer genau EINE Kachel und
+   * genau nach einem Austausch.
+   *
+   * Der Dialog gibt den Fokus beim Schliessen an sein ausloesendes Element zurueck; nach einem
+   * Austausch ist das die Schaltflaeche eines Bildes, das den Platz gewechselt hat. React laesst
+   * ALLE Aufraeumfunktionen vor allen neuen Effekten laufen - die Fokusnahme hier gewinnt
+   * deshalb gegen die Rueckgabe des Dialogs, unabhaengig von der Reihenfolge im Baum.
+   */
+  focusDecision: boolean
 }
 
 /**
@@ -54,7 +68,17 @@ export function CurationPhotoTile({
   ownStatus,
   deciding,
   onDecide,
+  onOpenAlternatives,
+  focusDecision,
 }: CurationPhotoTileProps) {
+  const decisionRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (focusDecision) {
+      decisionRef.current?.focus()
+    }
+  }, [focusDecision])
+
   // `?? null` fuer den FEHLENDEN Wert, nie fuer die Zahl selbst: `0` ist ein gueltiger
   // Qualitaetswert (schlechteste Modellstufe), und ein `||` verloere ihn lautlos. Ohne Rangzeile
   // und ohne Qualitaetswert ist `level === null` - die Kachel sagt dann "Noch nicht bewertet"
@@ -125,29 +149,46 @@ export function CurationPhotoTile({
               <Badge tone="neutral">{NOT_PROPOSED_BADGE_TEXT}</Badge>
             </div>
           )}
-          {/* DER ZWEIZUSTAND, ein Druck ohne Bestaetigungsschritt und ohne Dialog. `aria-pressed`
-              statt einer eigenen Umschalter-Rolle; die Beschriftung nennt den ZUSTAND, nicht die
-              Handlung, und der zugaengliche Name traegt den Dateinamen - sonst hiessen auf einer
-              Seite mit vielen Kacheln alle Schaltflaechen gleich.
+          {/* ZWEI Trefferflaechen nebeneinander - die Fusszeile verliert hier bewusst ihre
+              bisherige Ein-Trefferflaechen-Regel. Links der Zweizustand der Albumentscheidung,
+              rechts der Zugang zu den Alternativen; 12px Abstand (`gap-3`), beide auf dem Telefon
+              sichtbar mindestens 44px hoch (`h-11 sm:h-8`, wie die Bewertungsleiste).
 
-              Waehrend der eigenen laufenden Mutation ist die Flaeche gesperrt: Ein zweiter Druck
-              auf DASSELBE Foto liefe in den Unique-Constraint der Bewertungszeile. Verschiedene
-              Fotos entscheiden unabhaengig voneinander.
+              DER ZWEIZUSTAND ist ein Druck ohne Bestaetigungsschritt und ohne Dialog.
+              `aria-pressed` statt einer eigenen Umschalter-Rolle; die Beschriftung nennt den
+              ZUSTAND, nicht die Handlung. Beide zugaenglichen Namen tragen den Dateinamen - sonst
+              hiessen auf einer Seite mit vielen Kacheln alle Schaltflaechen gleich.
 
-              `h-11 sm:h-8` wie die Bewertungsleiste - auf dem Telefon sichtbar mindestens 44px. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-11 sm:h-8"
-            aria-pressed={inAlbum}
-            disabled={deciding}
-            busy={deciding}
-            aria-label={`${inAlbum ? 'Im Album' : 'Gestrichen'}: ${photo.relative_path}`}
-            onClick={() => onDecide(inAlbum ? 'rejected' : 'album_worthy')}
-          >
-            {inAlbum ? 'Im Album' : 'Gestrichen'}
-          </Button>
+              Waehrend der eigenen laufenden Mutation ist der Zweizustand gesperrt: Ein zweiter
+              Druck auf DASSELBE Foto liefe in den Unique-Constraint der Bewertungszeile.
+              Verschiedene Fotos entscheiden unabhaengig voneinander. Die Alternativen bleiben
+              erreichbar - sie lesen nur. */}
+          <div className="flex gap-3">
+            <Button
+              ref={decisionRef}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-11 flex-1 sm:h-8"
+              aria-pressed={inAlbum}
+              disabled={deciding}
+              busy={deciding}
+              aria-label={`${inAlbum ? 'Im Album' : 'Gestrichen'}: ${photo.relative_path}`}
+              onClick={() => onDecide(inAlbum ? 'rejected' : 'album_worthy')}
+            >
+              {inAlbum ? 'Im Album' : 'Gestrichen'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-11 flex-1 sm:h-8"
+              aria-label={`Alternativen: ${photo.relative_path}`}
+              onClick={onOpenAlternatives}
+            >
+              Alternativen
+            </Button>
+          </div>
         </div>
       }
     />
