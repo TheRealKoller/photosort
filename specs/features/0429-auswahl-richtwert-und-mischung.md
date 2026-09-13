@@ -89,7 +89,7 @@ Pull Request nachzuziehen:
 ## Architektur / Umsetzung
 
 Die Entscheidung ist als ADR
-[`0096`](../decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md)
+[`0097`](../decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md)
 festgehalten und dort vollständig begründet; sie löst die Auswahlregel aus ADR
 [`0071`](../decisions/0071-kuratierung-stabile-auswahl-ohne-backfill-und-einsehbarer-vorrat.md)
 teilweise ab. Die `**Teilweise abgelöst:**`-Kopfzeile in ADR 0071 wird im selben Pull Request

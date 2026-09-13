@@ -976,7 +976,7 @@ async def list_photos(
     # Kuratierungs-Ansicht) und liefert den Vorschlag des letzten erfolgreichen Laufs als GANZES.
     #
     # SICHERHEIT (S4): `limit`/`offset` werden in diesem Zweig VOLLSTAENDIG ignoriert - nie halb.
-    # Der frueher deckelnde Parameter `top_n_per_event` ist mit ADR 0096 ersatzlos entfallen; die
+    # Der frueher deckelnde Parameter `top_n_per_event` ist mit ADR 0097 ersatzlos entfallen; die
     # Obergrenze der Antwort ist damit der auswahlfaehige Bestand des Laufs. Das wird bewusst
     # getragen (die Ansicht zeigt den Vorschlag als Ganzes, beide Nutzer sind die
     # Vertrauensbasis). Wirkten `limit`/`offset` hier HALB, zeigte die Ansicht einen
@@ -984,7 +984,7 @@ async def list_photos(
     # fuer mehr nicht" saegte etwas Falsches - ein Zustand, den keine Anzeige als fehlerhaft
     # ausweist.
     selection: bool = False,
-    # Der alte Kuratierungsparameter, mit ADR 0096 ERSATZLOS entfallen. Er steht hier noch als
+    # Der alte Kuratierungsparameter, mit ADR 0097 ERSATZLOS entfallen. Er steht hier noch als
     # `None`-typisierter Parameter, damit ein Aufruf mit ihm LAUT scheitert (`422`) statt still
     # ignoriert zu werden: FastAPI uebergeht einen unbekannten Query-Parameter kommentarlos, und
     # ein stehengebliebener Aufrufer bekaeme dann den vollen Listing-Zweig statt einer Auswahl -

@@ -1,4 +1,4 @@
-# 0096 - Auswahl mit Richtwert: Kontingente je Event, motivgeführte Vergabe mit Ähnlichkeitsabwertung
+# 0097 - Auswahl mit Richtwert: Kontingente je Event, motivgeführte Vergabe mit Ähnlichkeitsabwertung
 
 **Status:** Accepted
 **Datum:** 2026-09-13

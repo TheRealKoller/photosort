@@ -632,7 +632,7 @@ async def _add_ranking(
 
 
 class TestTheSelection:
-    """Der Auswahlmodus `selection=true` (ADR 0096): der Endpunkt liefert genau die Fotos mit
+    """Der Auswahlmodus `selection=true` (ADR 0097): der Endpunkt liefert genau die Fotos mit
     `selection_position` des letzten erfolgreichen Laufs. Die Auswahlregel selbst ist ein
     LAUF-ARTEFAKT und wird hier nicht wiederholt (tests/test_selection.py)."""
 

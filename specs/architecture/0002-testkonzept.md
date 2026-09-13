@@ -684,7 +684,7 @@ Gilt als Vorlage für jede künftige Unterscheidung zweier Ursachen derselben Ab
 Löschung in einem Schreibpfad mit Zeilen-Cache, für jede Ordnungszusage zwischen zwei Zahlenräumen
 und für jede Vergröberung eines Wertebereichs auf weniger Anzeigestufen.
 
-### Ein mehrstufiges Verteilungsverfahren, dessen Fehler kein Fehlerbild hat: Invarianten als Nachsatz, Permutationen als Determinismusnachweis und eine Größenzusage als Eigenschaft (`selection.py`) — neu für ADR [`0096`](../decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md) / Spec [`0429`](../features/0429-auswahl-richtwert-und-mischung.md)
+### Ein mehrstufiges Verteilungsverfahren, dessen Fehler kein Fehlerbild hat: Invarianten als Nachsatz, Permutationen als Determinismusnachweis und eine Größenzusage als Eigenschaft (`selection.py`) — neu für ADR [`0097`](../decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md) / Spec [`0429`](../features/0429-auswahl-richtwert-und-mischung.md)
 
 Erster Testgegenstand des Projekts, dessen Fehlverhalten **weder eine Ausnahme wirft noch ein Schema
 verletzt noch auffällig aussieht**: Eine falsche Auswahl ist eine andere plausible Auswahl. Sieben
@@ -1951,7 +1951,7 @@ Kein neues Testframework, kein neues CI-Gate; der Job `demo-scripts` fährt die 
 
 ## Bekannte Lücken (Stand 2026-08-03)
 
-- **Neu mit Spec [`0429`](../features/0429-auswahl-richtwert-und-mischung.md) / ADR [`0096`](../decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md) (2026-09-13), zwei benannte Lücken der Albumauswahl:**
+- **Neu mit Spec [`0429`](../features/0429-auswahl-richtwert-und-mischung.md) / ADR [`0097`](../decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md) (2026-09-13), zwei benannte Lücken der Albumauswahl:**
   - **Ob der Vorschlag eine gute Auswahl ist, prüft nichts und kann hier nichts prüfen.** Geprüft ist das Verfahren: Kontingente, Kappe, Abdeckung, Motivpflicht, Abwertung, Determinismus. Ob ein Viertel der richtige Deckel ist, ob Halbieren je ähnlichem Bild zu stark oder zu schwach dosiert und ob 15 Minuten das Fenster treffen, in dem Menschen zwei Aufnahmen als „dasselbe" empfinden, ist Kalibrierung gegen einen Fotokorpus, den das Repository nach der Bilddaten-Regel nicht haben kann. Gleiche Klasse wie Motivstärken und Albumtauglichkeit. Erkennungsweg: Daniels Blick auf den ersten Vorschlag über echten Bildern.
   - **Dass der Vorschlag im Browser als Liste ankommt, hängt am Demo-Seeder und nicht an einer E2E-Zusicherung.** Das Aufnahmekriterium der E2E-Ebene ist nicht erfüllt (keine Geometrie, kein CSS), und die bestehenden Specs auf `/curate` bleiben grün, wenn die Auswahl leer ist — ihre Vorbedingungen hängen an Überschrift und Scrollhöhe, nicht an Kacheln. Tragend ist stattdessen der Kardinalitätsfall in `test_demo_state.py`. Fällt er weg oder wird er auf „≥ 0" aufgeweicht, prüft auf dieser Ebene niemand mehr, dass die Demo-Instanz überhaupt etwas zeigt.
 

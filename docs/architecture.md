@@ -297,7 +297,7 @@ Verarbeitungs-Cache (Thumbnails).
     Spec 0425.
   - **Der Kuratierungsparameter wird ein Schalter, und ein neuer Schreib-Endpunkt setzt den
     Richtwert** *(Spec [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
-    [`decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md))*:
+    [`decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md))*:
     `GET /projects/{id}/photos` verliert `top_n_per_event` **ersatzlos** und bekommt
     `selection: bool = false`. Im Auswahlmodus liefert der Endpunkt genau die Fotos mit
     `selection_position IS NOT NULL` des letzten erfolgreichen Laufs, sortiert nach
@@ -656,7 +656,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     strukturell nicht auffiele.
   - **Richtwert des Auswahlvorschlags** *(Spec
     [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
-    [`decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
+    [`decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
     Migration `e7f8a9b0c1d2`)*: additiv `selection_target: int | None`. **`NULL` heißt nicht „kein
     Richtwert", sondern „nicht selbst eingestellt"** — wirksam ist dann ein Zehntel der Bilderzahl
     des Projekts, aufgerundet und mindestens 1, im Moment der Auswahl berechnet und damit mit dem
@@ -1034,7 +1034,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     entsteht auch ohne Freigabe.
   - **Neue Spalte `selection_position: int | None` und eine neue Auswahlregel** *(Spec
     [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
-    [`decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
+    [`decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
     Migration `e7f8a9b0c1d2`)*: der 1-basierte Platz eines Fotos im Auswahlvorschlag **innerhalb
     seines Events**; `NULL` heißt „gehört nicht zum Vorschlag". Der Vorschlag ist damit ein
     **persistiertes Lauf-Artefakt** statt eines Leseparameters: „die besten N je Event, N beim

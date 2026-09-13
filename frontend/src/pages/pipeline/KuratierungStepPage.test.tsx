@@ -100,7 +100,7 @@ describe('KuratierungStepPage', () => {
   })
 
   it('links to /curate without any search parameter', () => {
-    /* Der Suchparameter `?topN=` ist mit ADR 0096 entfallen - der Umfang haengt am Projekt, nicht
+    /* Der Suchparameter `?topN=` ist mit ADR 0097 entfallen - der Umfang haengt am Projekt, nicht
      * am Aufruf der Ansicht. */
     renderPage(project())
 
