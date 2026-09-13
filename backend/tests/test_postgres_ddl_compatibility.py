@@ -1022,14 +1022,22 @@ def test_the_album_decision_upgrade_converts_both_coupled_columns(
 ) -> None:
     """Die Konvertierung ist der Zweck dieser Migration und muss auch auf Postgres ankommen -
     beide Spalten, `ratings.status` UND die ueber dieselbe Enum-Klasse gekoppelte
-    `photo_scores.suggested_status` (Auflage S11)."""
+    `photo_scores.suggested_status` (Auflage S11).
+
+    GEPRUEFT WIRD AUSDRUECKLICH DIE SCHREIBWEISE: Die Spalten tragen den Enum-NAMEN
+    (`'FAVORITE'`). Ein `WHERE` auf den kleingeschriebenen `.value` traefe keine Zeile - die
+    Migration liefe fehlerfrei durch und konvertierte nichts."""
     rendered = " ".join(album_decision_upgrade_ddl)
 
-    assert "UPDATE ratings SET favorite = true, status = NULL WHERE status = 'favorite'" in rendered
     assert (
-        "UPDATE photo_scores SET suggested_status = NULL WHERE suggested_status = 'favorite'"
+        "UPDATE ratings SET favorite = true, status = NULL WHERE upper(status) = 'FAVORITE'"
         in rendered
     )
+    assert (
+        "UPDATE photo_scores SET suggested_status = NULL "
+        "WHERE upper(suggested_status) = 'FAVORITE'" in rendered
+    )
+    assert "'favorite'" not in rendered
 
 
 def test_the_album_decision_downgrade_renders_for_postgres_too() -> None:
@@ -1040,8 +1048,10 @@ def test_the_album_decision_downgrade_renders_for_postgres_too() -> None:
     statements = _render_postgres_ddl(_ALBUM_DECISION_REVISION, direction="downgrade")
 
     rendered = " ".join(statements)
+    # Der Rueckweg schreibt einen Wert, den das WIEDERHERGESTELLTE alte Enum lesen koennen muss.
+    assert "'favorite'" not in rendered
     positions = [
-        rendered.index("UPDATE ratings SET status = 'favorite'"),
+        rendered.index("UPDATE ratings SET status = 'FAVORITE'"),
         rendered.index("DELETE FROM ratings WHERE status IS NULL"),
         rendered.upper().index("ALTER COLUMN STATUS SET NOT NULL"),
         rendered.upper().index("DROP COLUMN FAVORITE"),

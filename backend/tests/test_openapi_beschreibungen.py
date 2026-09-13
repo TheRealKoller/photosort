@@ -33,6 +33,12 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # specs/features/0429-auswahl-richtwert-und-mischung.md: ein nicht eingetragener Endpunkt
     # faellt ohne roten Test aus der Beschreibungspflicht.
     ("put", "/projects/{project_id}/selection-target"),
+    # specs/features/0430-album-entwurf-je-nutzer.md, PR 1: alle drei Schreibendpunkte der
+    # Bewertungszeile. Ihre Beschreibung traegt die Aussage, die diese Story erst erzeugt -
+    # WELCHES Feld der jeweilige Endpunkt anfasst und welches er unberuehrt laesst.
+    ("put", "/photos/{photo_id}/rating"),
+    ("delete", "/photos/{photo_id}/rating"),
+    ("put", "/photos/{photo_id}/favorite"),
 )
 
 
@@ -66,3 +72,24 @@ class TestTheDocumentedRoutesKeepTheirOpenApiDescription:
         operation = openapi_schema["paths"][path][method]
 
         assert operation.get("description", "").strip(), (method, path)
+
+
+class TestTheSchemaNamesStayUnqualified:
+    """Zwei gleichnamige Pydantic-Modelle in verschiedenen Modulen benennt FastAPI in der
+    OpenAPI-Beschreibung auf BEIDEN Seiten um - aus `RatingOut` wird
+    `photosort__api__photos__RatingOut` UND `photosort__api__ratings__RatingOut`.
+
+    Der Schaden trifft damit auch den Endpunkt, den niemand angefasst hat: Ein neues Modell in
+    Modul B aendert still den Schemanamen eines Bestands-Endpunkts in Modul A. Nichts im Bestand
+    faellt darueber - kein Lint, kein Typprüfer, kein anderer Test.
+
+    Geprueft wird die FORM, nicht eine eingefrorene Namensliste: Der Doppelunterstrich entsteht
+    ausschliesslich aus dieser Qualifizierung."""
+
+    def test_no_schema_name_is_module_qualified(self, openapi_schema: dict[str, Any]) -> None:
+        qualified = [name for name in openapi_schema["components"]["schemas"] if "__" in name]
+
+        assert qualified == [], (
+            "Gleichnamige Modelle in verschiedenen Modulen - FastAPI qualifiziert dadurch auch "
+            f"den Schemanamen des unveraenderten Endpunkts: {qualified}"
+        )

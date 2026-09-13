@@ -38,8 +38,14 @@ class FavoriteUpdate(BaseModel):
     favorite: bool
 
 
-class RatingOut(BaseModel):
+class RatingWriteOut(BaseModel):
     """Der Zustand der eigenen Bewertungszeile NACH dem Schreibvorgang.
+
+    NICHT `RatingOut` - dieser Name gehoert dem Element aus `PhotoOut.ratings[]`
+    (`api/photos.py`) und ist eine ANDERE Form. Zwei gleichnamige Modelle in verschiedenen
+    Modulen benennt FastAPI in der OpenAPI-Beschreibung auf beiden Seiten um
+    (`photosort__api__photos__RatingOut`, `photosort__api__ratings__RatingOut`) - eine stille
+    Aenderung an der Beschreibung eines Endpunkts, der gar nicht angefasst wurde.
 
     `updated_at` ist `None`, wenn die Zeile dabei geleert und damit geloescht wurde - ein dann
     ersatzweise gesetzter Zeitstempel behauptete eine Zeile, die es nicht mehr gibt."""
@@ -71,7 +77,7 @@ async def _get_own_rating(session: AsyncSession, photo_id: int, user_id: int) ->
 
 async def _write_own_rating(
     session: AsyncSession, photo_id: int, user_id: int, next_state: _NextState
-) -> RatingOut:
+) -> RatingWriteOut:
     """DIE EINE Schreibstelle, die alle drei Endpunkte durchlaufen.
 
     Sie haelt zwei Zusagen, die sonst je Endpunkt neu getroffen werden muessten:
@@ -93,7 +99,7 @@ async def _write_own_rating(
         if rating is not None:
             await session.delete(rating)
             await session.commit()
-        return RatingOut(photo_id=photo_id, status=None, favorite=False, updated_at=None)
+        return RatingWriteOut(photo_id=photo_id, status=None, favorite=False, updated_at=None)
 
     if rating is None:
         rating = Rating(
@@ -118,7 +124,7 @@ async def _write_own_rating(
         ) from exc
     await session.commit()
     await session.refresh(rating)
-    return RatingOut(
+    return RatingWriteOut(
         photo_id=photo_id,
         status=rating.status,
         favorite=rating.favorite,
@@ -126,14 +132,14 @@ async def _write_own_rating(
     )
 
 
-@router.put("/photos/{photo_id}/rating", response_model=RatingOut)
+@router.put("/photos/{photo_id}/rating", response_model=RatingWriteOut)
 async def set_rating(
     photo_id: int,
     payload: RatingUpdate,
     session: AsyncSession = Depends(get_session),
     # SICHERHEIT (S1): ausgeschriebene Auth-Dependency, siehe Router-Kommentar oben.
     current_user: User = Depends(get_current_user),
-) -> RatingOut:
+) -> RatingWriteOut:
     """Setzt die ALBUMENTSCHEIDUNG dieses Nutzers: gehoert das Bild ins Album (`album_worthy`)
     oder nicht (`rejected`).
 
@@ -173,14 +179,14 @@ async def delete_rating(
     )
 
 
-@router.put("/photos/{photo_id}/favorite", response_model=RatingOut)
+@router.put("/photos/{photo_id}/favorite", response_model=RatingWriteOut)
 async def set_favorite(
     photo_id: int,
     payload: FavoriteUpdate,
     session: AsyncSession = Depends(get_session),
     # SICHERHEIT (S1): ausgeschriebene Auth-Dependency, siehe Router-Kommentar oben.
     current_user: User = Depends(get_current_user),
-) -> RatingOut:
+) -> RatingWriteOut:
     """Setzt oder entfernt die Auszeichnung als Favorit - eine eigene, von der Albumentscheidung
     UNABHAENGIGE Angabe (ADR 0098 Punkt 2). Sie wirkt nicht auf den Album-Entwurf.
 
