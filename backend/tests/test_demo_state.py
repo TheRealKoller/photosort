@@ -1695,6 +1695,21 @@ class TestTheDemoStateCarriesTheAlbumSuitability:
                 compute_quality_score(suitability.level, values, QUALITY_CRITERION_WEIGHTS)
             ), photo.relative_path
 
+    async def test_only_the_rated_project_carries_the_cloud_approval(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Freigabe ist Teil des dargestellten Zustands: ohne sie koennte die Anwendung die
+        Cloud-Bilanz und die Albumtauglichkeit dieses Projekts gar nicht erzeugt haben, und die
+        Kuratierung zeigte statt der Kacheln den Hinweis auf die fehlende Freigabe. Als PAAR
+        geprueft - der Fall "ohne Cloud" muss im Bestand erhalten bleiben."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        projects = (await db_session.execute(select(Project))).scalars().all()
+        approved = {project.name for project in projects if project.cloud_vision_detection_enabled}
+
+        assert approved == {RATED_PROJECT_NAME}
+        assert len(projects) > 1
+
     async def test_the_project_deletion_removes_the_suitability_rows_too(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:

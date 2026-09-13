@@ -818,6 +818,17 @@ async def _seed_rated_project(
 
     Rueckgabe: die Fotos und die Anzahl der Nutzer, fuer die Bewertungen geschrieben wurden."""
     project = await _create_project(session, spec)
+    # Dieses EINE Demo-Projekt traegt die Cloud-Freigabe - und zwar notwendigerweise: sein
+    # Zustand enthaelt eine Cloud-Bilanz, eine Cloud-Motiv-Kopfzeile und eine Albumtauglichkeit,
+    # und die kann die Anwendung ohne Freigabe gar nicht erzeugt haben. Ohne sie zeigte die
+    # Kuratierung hier den Hinweis "Ohne Cloud-Freigabe entsteht kein Album-Entwurf" statt der
+    # Kacheln, und die Pruefstack-Spezifikationen besuchten eine leere Ansicht.
+    #
+    # Es wird dadurch NICHTS ausgeloest: der Demo-Stapel hat keinen Worker-Lauf, und die Freigabe
+    # allein ruft nirgends an. Der Fall "ohne Cloud" bleibt im Fehlerzustands-Projekt sichtbar,
+    # das die Freigabe weiterhin nicht traegt.
+    project.cloud_vision_detection_enabled = True
+    project.cloud_vision_consent_at = _BASE_SCORING_AT
     # Die beiden Kamerazeilen entstehen VOR den Fotos - `Photo.camera_id` ist ein echter
     # Fremdschluessel, und die wirksame Zeit haengt am Versatz der Zeile.
     cameras = [

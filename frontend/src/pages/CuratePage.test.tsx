@@ -315,7 +315,7 @@ describe('CuratePage', () => {
       expect(screen.queryByLabelText(/^Verwerfen:/)).toBeNull()
     })
 
-    it('takes precedence over the ordinary empty text', async () => {
+    it('is shown instead of the ordinary empty text', async () => {
       /* „führe eine Kriterien-Bewertung aus" wäre hier ein Rat, der nicht hilft. */
       vi.mocked(projectsApi.getProject).mockResolvedValue(
         projectOut({ cloud_vision_detection_enabled: false }),
