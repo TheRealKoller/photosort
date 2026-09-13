@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type { CriterionScoreOut, FineLabelOut, RankingOut, SuggestionOut } from '../api/types'
+import { ALBUM_SUITABILITY_NOT_RATED_TEXT } from '../utils/albumSuitability'
 import { CriterionDetailsList } from './CriterionDetailsList'
 
 /**
@@ -102,6 +103,23 @@ describe('CriterionDetailsList', () => {
     renderList({ ranking: null })
 
     expect(screen.queryByText('Rang')).toBeNull()
+  })
+
+  it('omits the rank row when the ranking row carries no position', () => {
+    /* „Rang – von 12" wäre eine Rangaussage über ein Foto ohne Rang. Geprüft auf `!== null`,
+     * nie auf Falsyness. */
+    renderList({ ranking: ranking({ rank_position: null, rank_score: null }) })
+
+    expect(screen.queryByText('Rang')).toBeNull()
+  })
+
+  it('keeps the rank row for position 1 - the falsy case of the guard', () => {
+    /* Gegenprobe zum Fall darüber: eine Falsyness-Prüfung (`ranking.rank_position &&`) verlöre
+     * hier nichts, wohl aber bei einem künftigen 0-basierten Rang; entscheidend ist, dass die
+     * Zeile für einen echten Rang bleibt. */
+    renderList({ ranking: ranking({ rank_position: 1, partition_size: 4 }) })
+
+    expect(screen.getByText('Rang 1 von 4')).toBeInTheDocument()
   })
 
   it('shows the suggestion reason when a suggestion exists and showSuggestion is true', () => {
@@ -323,5 +341,98 @@ describe('CriterionDetailsList: Feinlabel-Chips', () => {
     const list = screen.getByRole('list', { name: 'Feinlabels' })
     expect(list.querySelector('img')).toBeNull()
     expect(within(list).getByText('<img src=x onerror="alert(1)">')).toBeInTheDocument()
+  })
+})
+
+describe('CriterionDetailsList: die Albumtauglichkeit', () => {
+  it('shows the exact model level inside the quality block', () => {
+    /* Die genaue Stufe erscheint NUR hier - nicht neben der Dreistufigkeit auf der Kachel: zwei
+     * Skalen nebeneinander wären zwei Zahlen für eine Aussage. */
+    renderList({ albumSuitability: { level: 4, reason: 'Alle schauen in die Kamera.' } })
+
+    const quality = screen.getByRole('group', { name: 'Qualität' })
+    expect(within(quality).getByText('Albumtauglichkeit')).toBeInTheDocument()
+    expect(within(quality).getByText('Stufe 4 von 5')).toBeInTheDocument()
+  })
+
+  it('shows the full reason, not a shortened one', () => {
+    const reason =
+      'Die Person ist am linken Bildrand angeschnitten und der Hintergrund ist unruhig, ' +
+      'dadurch wirkt der Bildaufbau zufällig.'
+
+    renderList({ albumSuitability: { level: 2, reason } })
+
+    expect(screen.getByText(reason)).toBeInTheDocument()
+  })
+
+  it('says "Noch nicht bewertet" instead of a level when there is no verdict', () => {
+    renderList({ albumSuitability: null })
+
+    const quality = screen.getByRole('group', { name: 'Qualität' })
+    expect(within(quality).getByText('Albumtauglichkeit')).toBeInTheDocument()
+    expect(within(quality).getByText(ALBUM_SUITABILITY_NOT_RATED_TEXT)).toBeInTheDocument()
+  })
+
+  it('renders no reason carrier at all without a verdict', () => {
+    const { container } = renderList({ albumSuitability: null })
+
+    expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
+  })
+
+  it('renders no reason carrier when the reason is null', () => {
+    /* Kardinalität Null über ein `data-`-Attribut statt über eine Textsuche: ein leerer Träger
+     * fiele einer Textsuche nicht auf. */
+    const { container } = renderList({ albumSuitability: { level: 3, reason: null } })
+
+    expect(
+      within(screen.getByRole('group', { name: 'Qualität' })).getByText('Stufe 3 von 5'),
+    ).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
+  })
+
+  it('renders exactly one reason carrier when there is a reason', () => {
+    const { container } = renderList({ albumSuitability: { level: 3, reason: 'Solide.' } })
+
+    expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(1)
+  })
+
+  it('never renders the reason via dangerouslySetInnerHTML', () => {
+    /* SICHERHEIT (S12): freier, extern erzeugter LLM-Text aus einem Bild, das Text enthalten
+     * kann - ausschließlich als regulärer React-Textknoten. */
+    const payload = '<img src=x onerror="alert(1)">'
+
+    const { container } = renderList({ albumSuitability: { level: 1, reason: payload } })
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText(payload)).toBeInTheDocument()
+  })
+
+  it('never turns a javascript: payload into a link or an image', () => {
+    const payload = 'javascript:alert(1)'
+
+    const { container } = renderList({ albumSuitability: { level: 1, reason: payload } })
+
+    expect(container.querySelector('a')).toBeNull()
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText(payload)).toBeInTheDocument()
+  })
+
+  it('omits the whole row when the field was not passed at all', () => {
+    /* `undefined` heißt "diese Einbindungsstelle reicht das Feld nicht durch" und ist keine
+     * Aussage über den Bewertungsstand - dann erscheint auch kein Satz. */
+    renderList({})
+
+    expect(screen.queryByText('Albumtauglichkeit')).toBeNull()
+  })
+
+  it('never dresses the model statement as the human rating badge', () => {
+    /* Die Abgrenzung zur Bewertung „Album-würdig": keine Badge, keine Bewertungsfarbe, kein
+     * `book`-Symbol - sonst lägen die Entscheidung eines Menschen und die Schätzung eines
+     * Modells in derselben Form auf einer Kachel. */
+    const { container } = renderList({ albumSuitability: { level: 5, reason: 'Sehr gut.' } })
+
+    const quality = screen.getByRole('group', { name: 'Qualität' })
+    expect(quality.querySelector('svg')).toBeNull()
+    expect(container.innerHTML).not.toContain('rating-album-worthy')
   })
 })

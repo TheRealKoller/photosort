@@ -21,6 +21,7 @@ from photosort.models import (
     CriterionScoringRun,
     Event,
     Photo,
+    PhotoAlbumSuitability,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -56,9 +57,13 @@ async def _add_photo(
     gps: tuple[float, float] | None = None,
     suggested_status: RatingStatus | None = None,
     cache_dir: Path | None = None,
+    album_suitability_level: int | None = None,
 ) -> Photo:
     """Ein Foto samt `PhotoScore` - und, falls `cache_dir` gegeben, seiner display-Variante, damit
-    der Kriterien-Lauf die Inhalts-Kriterien ueberhaupt berechnen kann."""
+    der Kriterien-Lauf die Inhalts-Kriterien ueberhaupt berechnen kann.
+
+    `album_suitability_level` legt die Modellbewertung gleich mit an: ohne sie traegt das Foto
+    seit Spec 0428 keinen Qualitaetswert, und die Rangzeile steht mit `NULL` da."""
     offset = 0 if camera is None else camera.offset_minutes
     corrected = shifted(taken_at, offset)
     assert corrected is not None
@@ -87,6 +92,16 @@ async def _add_photo(
             computed_at=datetime.now(UTC).replace(tzinfo=None),
         )
     )
+    if album_suitability_level is not None:
+        session.add(
+            PhotoAlbumSuitability(
+                photo_id=photo.id,
+                level=album_suitability_level,
+                reason="Modellbegruendung",
+                provider="anthropic",
+                computed_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
     await session.commit()
     await session.refresh(photo)
     if cache_dir is not None:
@@ -183,6 +198,7 @@ async def _build_full_fixture(
         camera=camera,
         gps=_EIFFEL,
         cache_dir=cache_dir,
+        album_suitability_level=5,
     )
     await _add_photo(
         session,
@@ -191,6 +207,7 @@ async def _build_full_fixture(
         _BASE + timedelta(minutes=5),
         camera=camera,
         cache_dir=cache_dir,
+        album_suitability_level=2,
     )
     # Abschnitt 2: hinter einer Zeitluecke, ein Foto OHNE Kamera (damit ein Versatz die Grenze
     # tatsaechlich verschieben kann).
@@ -261,14 +278,26 @@ async def _snapshot(
         .scalars()
         .all()
     )
+    # Sortierschluessel mit -1 statt `None`: beide Rangspalten sind seit Spec 0428 nullable, und
+    # ein Tupelvergleich `(1, None, ...)` gegen `(1, 2, ...)` wuerfe einen TypeError. Der
+    # SCHLUESSEL ist das Ersatzwerkzeug, die TUPEL selbst tragen weiterhin `None` - sonst waere
+    # der Unterschied zwischen "kein Wert" und "Wert 0" im Schnappschuss verloren.
     ranking_tuples = sorted(
         (
-            position_by_event_id[ranking.event_id],
-            ranking.rank_position,
-            ranking.photo_id,
-            ranking.rank_score,
-        )
-        for ranking in rankings
+            (
+                position_by_event_id[ranking.event_id],
+                ranking.rank_position,
+                ranking.photo_id,
+                ranking.rank_score,
+            )
+            for ranking in rankings
+        ),
+        key=lambda entry: (
+            entry[0],
+            -1 if entry[1] is None else entry[1],
+            entry[2],
+            -1.0 if entry[3] is None else entry[3],
+        ),
     )
     return event_tuples, ranking_tuples
 
@@ -360,7 +389,15 @@ async def test_a_rebuild_with_offset_zero_produces_the_same_state_as_the_run_its
     before = await _snapshot(db_session, run_id)
     assert len(before[0]) >= 2, "Die Fixture muss mindestens zwei Abschnitte haben."
     assert len({tuple_[1] for tuple_ in before[1]}) >= 2, (
-        "Die Fixture muss mindestens zwei Kategorien haben."
+        "Die Fixture muss mindestens zwei verschiedene Rangpositionen haben."
+    )
+    assert any(tuple_[3] is not None for tuple_ in before[1]), (
+        "Die Fixture muss mindestens einen Qualitaetswert haben - mit lauter `NULL` waere die "
+        "Gleichheit unten auch dann erfuellt, wenn der Neuaufbau gar nichts mehr rechnete."
+    )
+    assert any(tuple_[3] is None for tuple_ in before[1]), (
+        "Die Fixture muss ein Foto OHNE Modellbewertung haben - sonst bliebe unbemerkt, wenn der "
+        "Neuaufbau ihm einen erfundenen Wert gaebe."
     )
     await _mark_every_event(db_session, run_id, "NEUAUFBAU-MARKER")
 

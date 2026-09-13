@@ -642,6 +642,48 @@ Erster Fall im Projekt, in dem ein fachlicher Wert **nirgends gespeichert** ist:
 
 Gilt als Vorlage für jeden künftig nur im Lesepfad gerechneten Wert, für jeden Zustand, der durch die Abwesenheit einer Zeile ausgedrückt wird, für jede Verdrängungsregel zwischen zwei Datenquellen und für jede Testplanung, die sich über mehr als einen Pull Request erstreckt.
 
+### Zwei Ursachen derselben Abwesenheit mit verschiedenen Folgen, eine Ordnungszusage zwischen zwei Zahlenräumen, und eine Anzeigezusage, deren Grenze schärfer ist als die des Rechenwegs (`quality.py`/`criteria.py`/`worker.py`/`qualityLevel.ts`) — neu für ADR [`0095`](../decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md) / Spec [`0428`](../features/0428-albumtauglichkeit-vom-modell.md)
+
+Erster Fall im Projekt, in dem ein fehlender Messwert **zwei** verschiedene Ursachen haben kann, die
+verschiedene Datenbankzustände nach sich ziehen — und der erste, in dem eine Frontend-Zusage eine
+**schärfere** Grenze an einen Backend-Parameter stellt als der Rechenweg selbst. Vier Muster, die
+über dieses Feature hinaus gelten:
+
+1. **Zwei Ursachen derselben Abwesenheit, zwei verschiedene Folgen, EIN Testfall.** Wo „Merkmal
+   fehlt" und „Messung ging schief" zum selben fehlenden Wert führen, aber zu verschiedenen
+   Datenbankzuständen (Zeile löschen gegen Zeile behalten), wird das Paar in **einem** Fall geprüft,
+   mit einer Assertion darauf, dass die beiden Zustände sich **unterscheiden müssen**. Getrennt
+   geschrieben bestehen beide Hälften auch bei einer Implementierung, die immer oder nie löscht —
+   und genau das ist der naheliegende Fehler. Der **Sammel-Frühausstieg** (kein Bild, unlesbares
+   Bild) ist ein eigener Fall der zweiten Klasse und der gefährlichste: er trägt keinen
+   Kriteriennamen und wird beim Aufzählen der Kriterien übersehen, während eine Voreinstellung
+   „alles, was nicht im Ergebnis steht, ist nicht messbar" dort den gesamten Kriteriensatz des
+   Gegenstands löscht — lautlos, und mit grüner Suite, wenn der Fall fehlt.
+2. **Eine Löschung im Schreibpfad räumt auch den In-Memory-Cache ab.** Wo ein Lauf seine Zeilen über
+   ein Dictionary wiederverwendet, ist die Zeile erst fort, wenn beide fort sind; sonst belebt ein
+   späteres Upsert im selben Lauf ein verwaistes ORM-Objekt wieder. Der Nachweis ist ein **zweiter
+   Lauf** über demselben Gegenstand, nach dem die Zeile nicht existiert — nicht die Prüfung
+   unmittelbar nach dem Löschen.
+3. **Eine Ordnungszusage zwischen zwei Zahlenräumen wird über die Extreme des inneren Raums je Paar
+   des äußeren geprüft**, nicht an Beispielwerten. Und: **liest eine zweite Zusage denselben
+   Parameter mit einer schärferen Grenze, gehört die schärfere in den Test.** Trägt der Rechenweg
+   `p <= g` und die Anzeigezusage nur `p < g`, lässt ein Test auf die weichere Grenze die
+   Anzeigezusage brechen, ohne rot zu werden — der Bruch erscheint dann als Frontend-Fehler, dessen
+   Ursache im Backend liegt. Die Grenze steht auf der Seite, die sie braucht, mit dem Grund im
+   Kommentar.
+4. **Eine Vergröberungszusage wird an ihren Rändern geprüft, nicht in ihrer Mitte.** Bildet eine
+   Anzeige N Werteräume auf M < N Stufen ab, ist der Testgegenstand je Werteraum das **Paar seiner
+   Extreme** — beide müssen in derselben Anzeigestufe landen. Die Fälle in der Mitte tragen nichts;
+   die Zusage steht und fällt mit den zwei Werten je Raum, die dem Rand am nächsten liegen.
+
+**Migration.** Eine Migration, die ausdrücklich **keine** Daten anfasst, bekommt auch **keinen**
+Testfall über Bestandswerte. Ein solcher Fall behauptete eine Zusage, die niemand gegeben hat, und
+zementierte ein Verhalten, das die nächste Änderung folgenlos brechen dürfte.
+
+Gilt als Vorlage für jede künftige Unterscheidung zweier Ursachen derselben Abwesenheit, für jede
+Löschung in einem Schreibpfad mit Zeilen-Cache, für jede Ordnungszusage zwischen zwei Zahlenräumen
+und für jede Vergröberung eines Wertebereichs auf weniger Anzeigestufen.
+
 ## Frontend (`frontend/`, `vitest` + Testing Library)
 
 **Stand:** vor Spec "Minimales Projekt-Frontend" nur Vite-Scaffold-Test (`App.test.tsx`, reines Rendering, keine Router-/Query-Nutzung). Mit dieser Spec entstehen erstmals echte Konventionen, hier erstmalig festgehalten:
@@ -1812,6 +1854,10 @@ Kein neues Testframework, kein CI-Gate — konsistent mit den übrigen reinen Pr
 ## Bekannte Lücken (Stand 2026-08-03)
 
 - **Neu mit Spec 0449 / ADR [`0093`](../decisions/0093-laufstand-in-der-ausgabe-des-laufs-gelesen-nicht-erfragt.md) (2026-09-13), eine benannte Lücke des Laufstands: Der Verifikationslauf ist ein Beobachtungspunkt ohne dauerhaften Träger.** Ob ein echter Umsetzungslauf den Block ausgibt und ob er im Fenster ankommt, zeigt allein der erste reale Lauf nach dem Merge. Die Beobachtung gehört in den PR-Body dieses Laufs — danach gibt es keinen Ort mehr, an dem sie steht, und keinen Mechanismus, der sie wiederholt. Bleibt der Block aus, äußert sich das nicht als roter Test, sondern als eine Auskunft, die dauerhaft „kein Schrittstand abrufbar" meldet und nur den Commit-Stand trägt. Erkennungsweg ist genau das: Wenn dieselbe Antwort über mehrere Läufe hinweg kommt, ist nicht das Fenster zu klein, sondern die Anweisung wirkungslos.
+
+- **Neu mit Spec [`0428`](../features/0428-albumtauglichkeit-vom-modell.md) / ADR [`0095`](../decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md) (2026-09-13), zwei benannte Lücken der Albumtauglichkeit:**
+  - **Ob eine Albumtauglichkeitsstufe stimmt, prüft nichts und kann hier nichts prüfen.** Geprüft ist, dass die Zahl unverändert ankommt, dass sie den lokalen Korrekturen gegenüber führt und dass eine unbrauchbare Antwort keine Zeile erzeugt. Ob 3 für dieses Bild die richtige Stufe ist, ob die fünf Ankertexte das Modell zu der gemeinten Unterscheidung bringen und ob `span = 0,1` die lokale Korrektur richtig dosiert, ist Kalibrierung gegen einen Fotokorpus, den das Repository nach der Bilddaten-Regel nicht haben kann. Gleiche Klasse wie die Motivstärken; die Startwerte sind dokumentiert-unkalibriert.
+  - **Das Coverage-Gate trägt diese Spec nicht.** Bei rund 4.500 Statements und 97 % Ausgangslage bliebe die Zahl auch dann bei etwa 93 % — 13 Punkte über dem Gate von 80 % —, wenn der gesamte Albumtauglichkeitspfad ungetestet bliebe. Was hier trägt, ist ausschließlich die namentliche Fallliste der Spec. Die Lücke ist vermerkt, damit ein grünes Gate nicht als Abdeckungsnachweis gelesen wird.
 
 - **Neu mit Spec [`0427`](../features/0427-motive-mit-staerke.md) / ADR [`0091`](../decisions/0091-motive-mit-staerke-statt-hauptkategorie.md) (2026-09-12), drei benannte Lücken der Motivstärken:**
   - **Ob eine Motivstärke der Wahrheit entspricht, prüft nichts und kann hier nichts prüfen.** Geprüft ist, dass die Zahl des Modells unverändert ankommt, dass ein Flächenanteil monoton wirkt und dass die Sättigungsgrenze greift. Ob 0,7 für dieses Bild die richtige Zahl ist, ob die Sättigungsanteile der lokalen Signale plausibel liegen und ob die beiden Bandgrenzen die Fotos so teilen, wie ein Mensch sie teilen würde, ist Kalibrierung gegen einen Fotokorpus, den das Repository nicht hat und nach der Bilddaten-Regel nicht haben kann. Die Startwerte sind dokumentiert-unkalibriert; ein Test, der sie bestätigte, bestätigte nur sich selbst.

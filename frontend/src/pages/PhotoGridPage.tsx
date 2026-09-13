@@ -234,6 +234,7 @@ export function PhotoGridPage() {
                     }}
                     assessment={photo.motif_assessment ?? null}
                     motifs={photo.motifs}
+                    albumSuitability={photo.album_suitability ?? null}
                   />
                 }
                 /* Separates Tap-Ziel ausserhalb des Kachel-Links (UI/UX-Abschnitt der Spec): die

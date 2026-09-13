@@ -58,9 +58,9 @@ _TOKENS_PER_MTOK = 1_000_000
 # das Vierfache des Eingabepreises, beide Ministral-Einträge sind symmetrisch. Ein vertauschtes
 # oder versehentlich symmetrisch übernommenes Paar fällt durch KEINEN der Ordnungstests
 # ("stärker => teurer"), weil auch $0,00045 und $0,0017 über der Voreinstellung $0,0003 liegen;
-# dagegen steht allein der Literal-Pin auf $0,00054 je Bild in tests/test_pricing.py. Die
-# Ausgabeseite ist zusätzlich durch `_MAX_RESPONSE_TOKENS = 384` in BEIDEN Clients hart gedeckelt
-# (höchstens $0,00023 Ausgabekosten je Aufruf) - wer den Deckel anhebt, stellt diese Rechnung neu.
+# dagegen steht allein der Literal-Pin auf $0,000582 je Bild in tests/test_pricing.py. Die
+# Ausgabeseite ist zusätzlich durch `_MAX_RESPONSE_TOKENS = 512` in BEIDEN Clients hart gedeckelt
+# (höchstens $0,00031 Ausgabekosten je Aufruf) - wer den Deckel anhebt, stellt diese Rechnung neu.
 #
 # Bekannte Grenze, bewusst nicht automatisiert abgesichert: die inhaltliche RICHTIGKEIT dieser
 # Werte gegen echte Anbieter-Abrechnungen ist nicht testbar. Ersatzverfahren: Abgleich der ersten
@@ -139,13 +139,13 @@ class AssumedImageUsage:
 #   eigene Story (Verbrauchsannahme je MODELL statt je Anbieter) - nie für eine stille Korrektur
 #   hier.
 #
-# AUSGABESEITE, beide Anbieter: 180 Tokens, hergeleitet gegen die vollbesetzte Motiv-Antwort
-# (`{"motifs": {acht Schlüssel-Zahl-Paare}, "excluded": false, "fine_labels": [zwei kurze]}`, rund
-# 257 Zeichen und damit überschlägig 110 Tokens kompakt bzw. 145 bei einer eingerückten Antwort).
-# 180 hält denselben Sicherheitsabstand zur gemessenen Obergrenze wie der abgelöste Wert 120 zu
-# seinen 100 und bewahrt zugleich die Reserve-Invariante
-# `remote_classification.py::_MAX_RESPONSE_TOKENS >= 2 x Annahme` (384 >= 360). Wird die Schranke
-# erneut angehoben, ist dieser Wert erneut herzuleiten - nicht umgekehrt die Invariante an ihn
+# AUSGABESEITE, beide Anbieter: 250 Tokens, hergeleitet gegen die vollbesetzte Antwort
+# (`{"motifs": {acht Schlüssel-Zahl-Paare}, "excluded": false, "fine_labels": [zwei kurze],
+# "album_suitability": {"level": 4, "reason": "<160 Zeichen>"}}`, 451 Zeichen kompakt bzw. 547
+# eingerückt und damit überschlägig 201 bzw. 245 Tokens). 250 liegt über dieser Obergrenze und
+# bewahrt die Reserve-Invariante `remote_classification.py::_MAX_RESPONSE_TOKENS >= 2 x Annahme`
+# (512 >= 500). Wird die Schranke erneut angehoben oder die Zeichengrenze der Begründung
+# verschoben, ist dieser Wert erneut herzuleiten - nicht umgekehrt die Invariante an ihn
 # anzupassen.
 #
 # Bewusst grob und eher über- als unterschätzend: EIN Preis je Bild für BEIDE Cloud-Anteile,
@@ -153,8 +153,8 @@ class AssumedImageUsage:
 # niedrig ausfallen - sie ist die einzige Absicherung vor der kostenpflichtigen Aktion. Bekannte
 # Grenze und Ersatzverfahren wie bei MODEL_PRICING oben.
 ASSUMED_USAGE_BY_PROVIDER: dict[str, AssumedImageUsage] = {
-    "anthropic": AssumedImageUsage(input_tokens=4_600, output_tokens=180),
-    "mistral": AssumedImageUsage(input_tokens=2_880, output_tokens=180),
+    "anthropic": AssumedImageUsage(input_tokens=4_600, output_tokens=250),
+    "mistral": AssumedImageUsage(input_tokens=2_880, output_tokens=250),
 }
 
 

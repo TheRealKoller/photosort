@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 
 import type {
+  AlbumSuitabilityOut,
   CriterionScoreOut,
   FineLabelOut,
   MotifAssessmentOut,
@@ -40,6 +41,9 @@ interface CriterionDetailsPopoverProps {
   onMotifSetRetry?: () => void
   assessment?: MotifAssessmentOut | null
   motifs?: readonly MotifStrengthOut[]
+  /** Reine Durchreichung an CriterionDetailsList.tsx - `undefined` laesst die Zeile weg, `null`
+   * traegt den Satz "Noch nicht bewertet". */
+  albumSuitability?: AlbumSuitabilityOut | null
 }
 
 /**
@@ -104,6 +108,7 @@ export function CriterionDetailsPopover({
   onMotifSetRetry,
   assessment,
   motifs,
+  albumSuitability,
 }: CriterionDetailsPopoverProps) {
   const [open, setOpen] = useState(false)
   const justOpenedByHoverRef = useRef(false)
@@ -194,6 +199,7 @@ export function CriterionDetailsPopover({
           suggestion={suggestion}
           showSuggestion={true}
           fineLabels={fineLabels}
+          albumSuitability={albumSuitability}
         />
         {/* Die Motivstärken SCHREIBGESCHÜTZT (`editable={false}`) - einsehbar bleibt einsehbar,
             aber ohne die 24 Korrektur-Schaltflächen. Darunter der Verweis auf den Ort, an dem

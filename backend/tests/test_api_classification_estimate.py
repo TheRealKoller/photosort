@@ -15,6 +15,7 @@ from photosort.models import (
     CriterionSource,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCriterionScore,
     PhotoMotifAssessment,
     PhotoScore,
@@ -40,6 +41,18 @@ def _assessment(photo: Photo, source: MotifAssessmentSource) -> PhotoMotifAssess
         source=source,
         excluded_document=False,
         provider="anthropic" if source is MotifAssessmentSource.CLOUD else None,
+        computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+    )
+
+
+def _album_suitability(photo: Photo) -> PhotoAlbumSuitability:
+    """Die zweite Haelfte des zusammengesetzten Skip-Kriteriums (S6): erst mit ihr ist ein Foto
+    fertig bewertet und faellt aus der Schaetzung."""
+    return PhotoAlbumSuitability(
+        photo_id=photo.id,
+        level=4,
+        reason=None,
+        provider="anthropic",
         computed_at=datetime(2023, 1, 1, tzinfo=UTC),
     )
 
@@ -207,8 +220,10 @@ class TestEstimateEndpoint:
         cloud_assessed = await _add_photo_candidate(db_session, project_id, "b.jpg")
 
         # Sicherheitsauflage S14: "bereits klassifiziert" haengt seit Spec 0427 (PR 2) an einer
-        # Kopfzeile mit `source='cloud'`.
+        # Kopfzeile mit `source='cloud'` - und seit Spec 0428 (S6) zusaetzlich an einer
+        # Albumtauglichkeitszeile.
         db_session.add(_assessment(cloud_assessed, MotifAssessmentSource.CLOUD))
+        db_session.add(_album_suitability(cloud_assessed))
         await db_session.commit()
 
         response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
@@ -235,6 +250,7 @@ class TestEstimateEndpoint:
         cloud_assessed = await _add_photo_candidate(db_session, project_id, "c.jpg")
         db_session.add(_assessment(locally_assessed, MotifAssessmentSource.LOCAL))
         db_session.add(_assessment(cloud_assessed, MotifAssessmentSource.CLOUD))
+        db_session.add(_album_suitability(cloud_assessed))
         await db_session.commit()
 
         response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
@@ -349,9 +365,10 @@ class TestTheEstimateFollowsTheConfiguredModel:
         """Der Betrag des Regelbetriebs, auf API-Ebene LITERAL gepinnt - ohne diesen Anker prueft
         die API-Ebene nur noch sich selbst.
 
-        Seit Spec 0427 (PR 2, Auflage S12) sind das $0,0055 statt $0,0052: die Ausgabe-Annahme
-        ist von 120 auf 180 Tokens angehoben, weil die Motiv-Antwort acht Zahlen plus das
-        Ausschluss-Feld traegt. Die Verschiebung geht in die SICHERE Richtung."""
+        Seit Spec 0428 (Auflage S5) sind das $0,00585 statt $0,0055: die Ausgabe-Annahme ist von
+        180 auf 250 Tokens angehoben, weil dieselbe Antwort zusaetzlich die Stufe der
+        Albumtauglichkeit und eine Begruendung von bis zu 160 Zeichen traegt. Die Verschiebung
+        geht in die SICHERE Richtung."""
         project_id = await _create_project(authenticated_api_client)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
 
@@ -360,8 +377,8 @@ class TestTheEstimateFollowsTheConfiguredModel:
         ).json()
 
         assert body["model"] == "claude-haiku-4-5"
-        assert body["price_per_image_usd"] == pytest.approx(0.0055, abs=1e-9)
-        assert body["estimated_cost_usd"] == pytest.approx(0.0055, abs=1e-9)
+        assert body["price_per_image_usd"] == pytest.approx(0.00585, abs=1e-9)
+        assert body["estimated_cost_usd"] == pytest.approx(0.00585, abs=1e-9)
 
     async def test_a_configured_non_default_model_changes_the_price(
         self,

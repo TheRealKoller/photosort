@@ -217,19 +217,20 @@ class TestEstimateUsdPerImage:
         daneben abgeleitet - sonst prueft dieser Test nur noch sich selbst. Eine Aenderung der
         Verbrauchsannahme verschiebt damit die Anzeige nicht unbemerkt.
 
-        Seit specs/features/0427-motive-mit-staerke.md (PR 2, Auflage S12) stehen hier 0.0055
-        bzw. 0.000306 statt 0.0052/0.0003: die Ausgabe-Annahme ist von 120 auf 180 Tokens
-        angehoben, weil die Motiv-Antwort acht Zahlen plus das Ausschluss-Feld traegt. Die
-        Verschiebung geht in die SICHERE Richtung (die Schaetzung liegt hoeher als vorher).
+        Seit specs/features/0428-albumtauglichkeit-vom-modell.md (Auflage S5) stehen hier 0.00585
+        bzw. 0.000313 statt 0.0055/0.000306: die Ausgabe-Annahme ist von 180 auf 250 Tokens
+        angehoben, weil dieselbe Antwort zusaetzlich die Stufe und eine Begruendung von bis zu 160
+        Zeichen traegt. Die Verschiebung geht in die SICHERE Richtung (die Schaetzung liegt hoeher
+        als vorher).
 
         `abs=1e-9` statt `==`: die Assertion soll an einer fachlichen Aenderung scheitern, nicht am
         Float-Rauschen einer kuenftigen Annahmenpflege - ein einzelnes Token Unterschied liegt bei
         1e-6 und wird von dieser Toleranz weiterhin rot."""
         assert estimate_usd_per_image(ANTHROPIC_VISION_MODEL, "anthropic") == pytest.approx(
-            0.0055, abs=1e-9
+            0.00585, abs=1e-9
         )
         assert estimate_usd_per_image(MISTRAL_VISION_MODEL, "mistral") == pytest.approx(
-            0.000306, abs=1e-9
+            0.000313, abs=1e-9
         )
 
     def test_the_estimate_is_exactly_the_cost_of_the_assumed_usage(self) -> None:
@@ -279,12 +280,12 @@ class TestEstimateUsdPerImage:
     def test_the_stronger_mistral_model_is_pinned_to_its_literal_amount(self) -> None:
         """specs/features/0369-mistral-small-loest-ministral-8b-ab.md, K5: der Betrag je Bild fuer
         `mistral-small-2603`, ausgeschrieben statt aus der Preistabelle abgeleitet. Seit der
-        angehobenen Ausgabe-Annahme (Spec 0427, PR 2) sind das $0,00054 statt $0,000504.
+        angehobenen Ausgabe-Annahme (Spec 0428, S5) sind das $0,000582 statt $0,00054.
 
         Der Preis ist ASYMMETRISCH (0,15 Eingabe / 0,60 Ausgabe) - das erste Mal bei Mistral,
         dessen beide Vorgaengermodelle symmetrisch bepreist waren. Ein vertauschtes Paar
-        (0,60/0,15) ergaebe $0,001782, ein versehentlich symmetrisch uebernommenes (0,15/0,15)
-        $0,00046; beide lagen weiterhin ueber der Voreinstellung und blieben damit unter JEDEM
+        (0,60/0,15) ergaebe $0,001765, ein versehentlich symmetrisch uebernommenes (0,15/0,15)
+        $0,00047; beide lagen weiterhin ueber der Voreinstellung und blieben damit unter JEDEM
         bestehenden Ordnungstest ("staerker => teurer") gruen. Nur dieser Literal-Pin plus die
         Ungleichheits-Assertion faengt das.
 
@@ -295,7 +296,7 @@ class TestEstimateUsdPerImage:
         assert pricing.input_usd_per_mtok != pricing.output_usd_per_mtok
         assert pricing.output_usd_per_mtok > pricing.input_usd_per_mtok
         assert estimate_usd_per_image("mistral-small-2603", "mistral") == pytest.approx(
-            0.00054, abs=1e-9
+            0.000582, abs=1e-9
         )
 
     def test_a_different_model_of_the_same_provider_yields_a_different_estimate(self) -> None:

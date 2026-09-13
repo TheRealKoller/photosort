@@ -48,7 +48,13 @@ export function CurationPhotoTile({
   rejecting,
   onReject,
 }: CurationPhotoTileProps) {
-  const level = photo.ranking ? qualityLevel(photo.ranking.rank_score) : null
+  // `?? null` fuer den FEHLENDEN Wert, nie fuer die Zahl selbst: `0` ist ein gueltiger
+  // Qualitaetswert (schlechteste Modellstufe), und ein `||` verloere ihn lautlos. Ohne Rangzeile
+  // und ohne Qualitaetswert ist `level === null` - die Kachel sagt dann "Noch nicht bewertet"
+  // statt gar nichts: ein Foto ohne Stufenzeile saehe aus wie eines, dessen Zeile nur gerade
+  // fehlt.
+  const level = qualityLevel(photo.ranking?.rank_score ?? null)
+  const reason = photo.album_suitability?.reason ?? null
   const isRejected = ownStatus === 'rejected'
 
   return (
@@ -85,11 +91,23 @@ export function CurationPhotoTile({
           onMotifSetRetry={onMotifSetRetry}
           assessment={photo.motif_assessment ?? null}
           motifs={photo.motifs}
+          albumSuitability={photo.album_suitability ?? null}
         />
       }
       footer={
         <div className="flex flex-col gap-2">
-          {level && <QualityMeter level={level} className="text-xs" />}
+          <QualityMeter level={level} className="text-xs" />
+          {/* Die Begruendung des Modells: visuell auf zwei Zeilen gekuerzt (`line-clamp-2`), im
+              DOM und damit fuer Screenreader VOLLSTAENDIG - gekuerzt wird die Darstellung, nie
+              die Zeichenkette. Ohne Begruendung entfaellt die Zeile ersatzlos, kein Platzhalter
+              und kein "—". Reiner React-Textknoten: freier Modelltext, nie als HTML, nie in
+              `href`/`src`/`style`. Kein Ausklapp-Bedienelement - die Fusszeile behaelt genau eine
+              Trefferflaeche. */}
+          {reason !== null && (
+            <p data-album-suitability-reason="" className="line-clamp-2 text-xs text-text">
+              {reason}
+            </p>
+          )}
           {/* Die Aktion bleibt an DERSELBEN Stelle, auch verworfen - sie wechselt nur in einen
               deaktivierten Zustand. Der zugaengliche Name traegt den Dateinamen, sonst hiessen
               auf einer Seite mit vielen Kacheln alle Schaltflaechen gleich. Waehrend einer
