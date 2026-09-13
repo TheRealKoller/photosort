@@ -1,6 +1,6 @@
 # 0429 - Auswahl mit Richtwert und Mischung: jedes Event, jedes Motiv, das Beste je Motiv
 
-**Status:** Accepted
+**Status:** Implemented ([PR #462](https://github.com/TheRealKoller/photosort/pull/462))
 **Erstellt:** 2026-09-13
 **Bezug:** [Issue #429](https://github.com/TheRealKoller/photosort/issues/429) (Story unter dem Zielbild [#424](https://github.com/TheRealKoller/photosort/issues/424))
 
