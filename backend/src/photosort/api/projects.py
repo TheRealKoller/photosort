@@ -4,6 +4,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,7 +44,9 @@ from photosort.models import (
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
 from photosort.pricing import estimate_usd_per_image
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
+from photosort.selection import effective_target
 from photosort.thumbnails import delete_cached_variants
+from photosort.worker import rebuild_run_selection
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +271,45 @@ class ProjectOut(BaseModel):
     # den Zustand aus den bereits geladenen Projektdaten lesen kann.
     cloud_vision_detection_enabled: bool
     cloud_vision_consent_at: datetime | None
+    # ZWEI Felder, nicht eines: `selection_target` ist die EINGESTELLTE Zahl oder `null` ("nicht
+    # selbst eingestellt"), `effective_selection_target` die wirksame. Das Frontend leitet die
+    # zweite nicht selbst ab - die Ableitung lebt an genau einer Stelle
+    # (`selection.py::effective_target`), und ein Feld, das beide Zustände mischte, machte "vom
+    # System vorbelegt" von "selbst eingestellt" ununterscheidbar.
+    selection_target: int | None
+    effective_selection_target: int
+
+
+# SICHERHEIT (S3) - Obergrenze des Richtwerts, im Muster von `api/photos.py::_MAX_QUERY_POSITION`:
+# ein Pydantic-`int` ist unbeschraenkt, der Wert wird in eine INTEGER-Spalte geschrieben und geht
+# in `⌈0,25·T⌉`/`⌈T/m⌉`/`T − m`; jenseits von 2^63 ergibt das unter SQLite einen `OverflowError`
+# und damit eine 500 statt einer 422.
+#
+# AUSDRUECKLICH NICHT die Schranke gegen Ueberlast: Antwortgroesse und Rechenzeit saettigen beim
+# auswahlfaehigen Bestand, nicht am Richtwert. Die Ueberlastschranke liegt in der
+# Komplexitaetsklasse des Verfahrens (`selection.py::_assign_event`).
+MAX_SELECTION_TARGET = 1_000_000
+
+_SelectionTargetValue = Annotated[int, Field(ge=1, le=MAX_SELECTION_TARGET)]
+
+
+class SelectionTargetUpdate(BaseModel):
+    """`null` ist ein eigener ZULAESSIGER Wert - der Rueckweg zur Vorbelegung - und von "Feld
+    fehlt" zu unterscheiden. Deshalb ohne Vorgabewert: ein fehlendes Feld ist eine `422`, kein
+    stilles Zuruecksetzen.
+
+    `0` ist kein Weg zur Vorbelegung (`ge=1`); zwei Wege zum selben Zustand waeren zwei Aussagen
+    an einer Stelle."""
+
+    target: _SelectionTargetValue | None
+
+
+async def _project_photo_count(session: AsyncSession, project_id: int) -> int:
+    return (
+        await session.execute(
+            select(func.count()).select_from(Photo).where(Photo.project_id == project_id)
+        )
+    ).scalar_one()
 
 
 async def _latest_scan_run(session: AsyncSession, project_id: int) -> ScanRun | None:
@@ -565,6 +607,10 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
         category_selection_enabled=settings.category_selection_enabled,
         cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
         cloud_vision_consent_at=project.cloud_vision_consent_at,
+        selection_target=project.selection_target,
+        effective_selection_target=effective_target(
+            project.selection_target, await _project_photo_count(session, project.id)
+        ),
     )
 
 
@@ -866,6 +912,70 @@ async def set_cloud_vision_consent(
         cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
         cloud_vision_consent_at=project.cloud_vision_consent_at,
     )
+
+
+async def _reject_while_a_criterion_run_is_active(session: AsyncSession, project_id: int) -> None:
+    """`409`, solange der Kriterien-Lauf dieses Projekts laeuft.
+
+    ENGER als `api/cameras.py::_reject_while_a_run_is_active`, das auch den Scan erfasst: nur
+    dieser Lauftyp schreibt `selection_position`, der Scan nicht.
+
+    Der laufende Lauf liest den Richtwert am Ende seiner Phase `RANKING`. Ohne diesen Waechter
+    schreibt der Endpunkt den neuen Wert, waehrend der Lauf noch mit dem alten rechnet - Ergebnis
+    ist ein Vorschlag nach altem Richtwert unter einer Oberflaeche, die den neuen anzeigt. Die
+    Abweichung heilt erst beim naechsten Ausloeser und ist bis dahin nirgends als Fehler sichtbar.
+
+    Geprueft wird nur der NEUESTE Lauf (Muster `delete_project`), damit ein haengengebliebener
+    Altlauf nicht dauerhaft blockiert - ein solcher wird ohnehin vom Watchdog auf FAILED
+    gesetzt."""
+    latest = (
+        (
+            await session.execute(
+                select(CriterionScoringRun.status)
+                .where(CriterionScoringRun.project_id == project_id)
+                .order_by(CriterionScoringRun.started_at.desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if latest == ScanStatus.RUNNING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Fuer dieses Projekt laeuft gerade eine Kriterien-Bewertung. Der Richtwert "
+            "kann danach gesetzt werden.",
+        )
+
+
+@router.put("/{project_id}/selection-target", response_model=ProjectOut)
+async def set_selection_target(
+    project_id: int,
+    payload: SelectionTargetUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> ProjectOut:
+    """Setzt den Richtwert des Auswahlvorschlags und rechnet den Vorschlag daraufhin neu.
+
+    `PUT` statt `POST`, da ein Zustand gesetzt und kein Job ausgelöst wird. `target: null` setzt
+    auf die Vorbelegung zurück - die Vorbelegung selbst wird nie in die Spalte geschrieben.
+
+    Der Neuaufbau läuft SYNCHRON in derselben Transaktion (Muster
+    `api/cameras.py::set_camera_time_offset` → `rebuild_run_grouping`): er rechnet ausschließlich
+    aus persistierten Zeilen, ohne Cloud-Aufruf und ohne Bildverarbeitung. Events und Rangzeilen
+    bleiben unangetastet.
+
+    Reihenfolge der Prüfungen: `404` → `409` → schreiben. SICHERHEIT: der Endpunkt hängt am
+    router-weiten Auth-Torwächter; weder `target` noch ein Query-Parameter steuert je eine Lauf-,
+    Event- oder Foto-Id bei - die Projektbindung kommt ausschließlich aus dem Pfadparameter."""
+    project = await _get_project_or_404(project_id, session)
+    await _reject_while_a_criterion_run_is_active(session, project_id)
+
+    project.selection_target = payload.target
+    await rebuild_run_selection(session, project_id)
+    await session.commit()
+    await session.refresh(project)
+
+    return await _to_project_out(session, project)
 
 
 @router.get("/{project_id}/classify/estimate", response_model=ClassificationEstimateOut)

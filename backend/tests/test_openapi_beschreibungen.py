@@ -30,6 +30,9 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     ("get", "/motifs"),
     ("put", "/photos/{photo_id}/motif-corrections/{motif_key}"),
     ("delete", "/photos/{photo_id}/motif-corrections/{motif_key}"),
+    # specs/features/0429-auswahl-richtwert-und-mischung.md: ein nicht eingetragener Endpunkt
+    # faellt ohne roten Test aus der Beschreibungspflicht.
+    ("put", "/projects/{project_id}/selection-target"),
 )
 
 
