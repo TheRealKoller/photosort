@@ -867,6 +867,63 @@ Identität mit der Konstante geprüft, plus Einmaligkeit des Literals im Quellba
 Zeichenkettengleichheit besteht auch gegen eine Kopie, und die Kopie ist genau der Zustand, den die
 Zusage ausschließt.
 
+### Zusagen, die eine Abwesenheit im Zeitverlauf sind — neu für ADR [`0100`](../decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md) / Spec [`0432`](../features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md)
+
+Die erste Tabelle des Projekts, die **Verlauf statt Zustand** hält. Fast jede ihrer Zusagen ist eine
+Abwesenheit im Zeitverlauf — ein Ereignis, das nicht entstehen darf; eine Zeile, die eine spätere
+Neuberechnung überleben muss; eine Zahl, die sich nach einer Änderung nicht bewegen darf. Solche
+Zusagen brechen ohne Ausnahme und ohne Fehlermeldung. Sechs Muster, die über dieses Feature hinaus
+gelten:
+
+1. **Ein append-only Log braucht einen strukturellen Wächter, weil kein Verhaltensfall sein
+   Gegenteil sieht.** Weder Schema noch Datenbank erzwingen „nur `INSERT`". Ein späteres
+   `update`/`delete` — eine Bereinigungsmigration, ein Feature, das ein Ereignis „korrigiert" —
+   rötet keinen Verhaltenstest; es nimmt still weg, worauf sich jede abgeleitete Zahl stützt. Der
+   Wächter läuft über den Syntaxbaum (nie über eine Textsuche, sonst schlägt die Nennung im
+   Docstring an), prüft **Gleichheit** gegen die Liste der erlaubten Module, und trägt Mikrotests
+   je erkannter Schreibform plus Positiv-Gegenproben.
+2. **Eine Reihenfolgezusage auf einer laufenden Nummer wird mit *gleichem* Zeitstempel geprüft.**
+   Mit natürlich verschiedenen Zeitstempeln bestünde der Fall auch gegen ein `ORDER BY` über die
+   Zeit — und unter SQLite ist eine unvollständige Sortierung zufällig stabil. Der Fall setzt die
+   Zeit ausdrücklich gleich und prüft die vollständige Id-Folge.
+3. **Eine Spalte mit Referenz-Aussehen ohne Referenz braucht vier Nachweise, weil kein einzelner
+   trägt.** Am Modell (die Abwesenheit des Fremdschlüssels **und**, im selben Fall, sein
+   Vorhandensein an den Nachbarspalten — sonst bestünde die Aussage auch für eine Tabelle ganz ohne
+   Fremdschlüssel); an der gerenderten Postgres-DDL, weil die Suite ohne `PRAGMA foreign_keys=ON`
+   läuft und ein ergänzter Schlüssel dort strukturell nicht auffiele; als Syntaxbaum-Wächter gegen
+   jede Verbindung der beiden Spalten, mit Selbstschutz-Gegenproben; und als Verhaltensfall über
+   die Operation, derentwegen es den Fremdschlüssel nicht gibt.
+4. **Eine Feldmatrix je Aufzählungswert wird über die Aufzählung selbst parametrisiert und auf den
+   EXAKTEN Satz belegter Felder geprüft.** Nicht über eine zweite, danebenstehende Liste: Die
+   driftet, und ein ergänzter Wert liefe ungeprüft durch. Nicht als Teilmenge: Ein zusätzlich
+   befülltes Feld ist genau die Fehlerklasse. Die Messlage muss so gebaut sein, dass **jedes**
+   optionale Feld belegbar wäre — was dort fehlt, fehlt dann aus fachlichem Grund und nicht aus
+   Mangel an Daten. Dazu ein Fall auf die Länge der Aufzählung als Literal.
+5. **Eine Invariante der Form „Feld X ist `NULL` genau für Y" wird in beiden Richtungen in *einem*
+   Fall geprüft — und ihre strukturelle Hälfte auf Funktionsrumpf-Granularität.** Die eine Hälfte
+   allein („Y trägt kein X") bestünde auch gegen eine Umsetzung, die X **nirgends** schreibt. Der
+   strukturelle Wächter misst je Funktion, nicht je Datei, weil der Modulkopf die Abwesenheit
+   ausdrücklich begründet und dabei den verbotenen Namen nennt — ein Wortverbot über die Datei
+   verböte genau die Begründung. Er braucht zwei Gegenproben, die tatsächlich tragen: die bloße
+   Nennung im Fließtext darf nicht anschlagen, und die pflichtige Absicherung muss vorhanden
+   bleiben, sonst wäre er durch **Entfernen** der Absicherung zu erfüllen.
+6. **Ein Schreibvorgang, der aus einem Zustandswechsel folgt, braucht alle Hälften seines Prädikats
+   nebeneinander in *einem* Fall.** „Derselbe Zustand erneut gesetzt → nichts", „ein Nachbarfeld
+   umgeschaltet → nichts", „anderer Zustand → genau eins": Getrennt geschrieben besteht jede Hälfte
+   auch bei einer Umsetzung, die **immer** oder **nie** schreibt; erst nebeneinander schließen sie
+   beides aus. Die Übergangsregel selbst gehört als **reine** Funktion neben die Schreibstelle, nie
+   in den Endpunkt — mehrere Endpunkte durchlaufen sie, und je Endpunkt wiederholt wären es
+   mehrere Stellen, die auseinanderlaufen.
+
+Dazu zwei Einzelpunkte ohne eigenes Muster. **Eine zurückgenommene Korrektur wird über die
+unveränderte Fallzahl geprüft, nicht über das Vorhandensein des Rücknahme-Eintrags:** Die beiden
+naheliegenden Fehler — den ursprünglichen Eintrag löschen, die Rücknahme abziehen — liefern beide
+eine plausible Zahl und bestehen einen Fall, der nur das Hinzukommen prüft. Und: **Ein
+Zwischenzustand ohne Leser ist kein Handeinfügen.** Prüft ein Pull Request die geschriebene Zeile
+per `select(...)`, weil der Lesepfad erst im nächsten entsteht, trifft das Muster nicht zu, das
+handeingefügte Zeilen bei abgeschaltetem **Schreib**pfad beanstandet — geschrieben wird durchgehend
+über den Produktionsweg.
+
 ## Frontend (`frontend/`, `vitest` + Testing Library)
 
 **Stand:** vor Spec "Minimales Projekt-Frontend" nur Vite-Scaffold-Test (`App.test.tsx`, reines Rendering, keine Router-/Query-Nutzung). Mit dieser Spec entstehen erstmals echte Konventionen, hier erstmalig festgehalten:
