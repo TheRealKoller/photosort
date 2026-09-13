@@ -1,6 +1,6 @@
 # 0459 - Die Projektversion bleibt unter 1.0
 
-**Status:** Accepted
+**Status:** Implemented ([PR #460](https://github.com/TheRealKoller/photosort/pull/460))
 **Erstellt:** 2026-09-13
 **Bezug:** [GitHub-Issue #459](https://github.com/TheRealKoller/photosort/issues/459)
 
@@ -53,7 +53,7 @@ Die Entscheidung steht in ADR
    Konfiguration.
 5. ADR `0008` — der falsche Kommentar am Flag wird richtiggestellt.
 
-**Ausserhalb des Repositories, nach dem Eröffnen des Pull Requests und vor dessen Merge:**
+**Ausserhalb des Repositories, vor dem Merge dieses Pull Requests:**
 
 - GitHub-Release `v1.0.0` löschen, Tag `v1.0.0` löschen (remote und lokal).
 - Den offenen release-please-Pull-Request schliessen; der nächste Lauf legt ihn neu an.
