@@ -422,7 +422,13 @@ async def _snapshot(session: AsyncSession, cache_dir: Path) -> dict[str, object]
                 .scalars()
                 .all()
             ):
-                ratings[rating.status.value] = ratings.get(rating.status.value, 0) + 1
+                # Beide Angaben im Schluessel: `status` allein liesse eine verlorene oder
+                # zusaetzliche Favoriten-Auszeichnung durch den Schnappschuss fallen.
+                key = (
+                    f"{'-' if rating.status is None else rating.status.value}"
+                    f"+{'favorit' if rating.favorite else 'kein-favorit'}"
+                )
+                ratings[key] = ratings.get(key, 0) + 1
             score = await session.get(PhotoScore, photo.id)
             if score is not None and score.suggested_status is not None:
                 suggestions += 1
@@ -531,9 +537,16 @@ class TestRebuildDemoStateProducesTheFourStates:
 
         assert strong_keys == set(MOTIF_REGISTRY)
 
-    async def test_rated_project_has_all_three_rating_statuses_for_every_user(
+    async def test_rated_project_covers_every_album_decision_and_the_favorite_marker(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
+        """Zusicherung 24: `tuple(RatingStatus)` ist mit dem Wegfall von `favorite` STILL
+        geschrumpft. Ohne diesen Fall legte der Seeder danach nur noch Albumentscheidungen an,
+        und die Demo-Instanz verloere den Favoriten - sichtbar erst im Browser, nirgends rot.
+
+        Geprueft wird die neue Zerlegung, je Nutzer: JEDE Albumentscheidung des Enums kommt vor,
+        UND es gibt eine Zeile mit dem Kennzeichen NEBEN einer Albumentscheidung (der Zustand,
+        den ADR 0098 neu ermoeglicht) UND eine mit AUSSCHLIESSLICH dem Kennzeichen."""
         await _make_user(db_session, "daniel")
         await _make_user(db_session, "zweiter-nutzer")
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
@@ -543,12 +556,16 @@ class TestRebuildDemoStateProducesTheFourStates:
             .scalars()
             .all()
         )
-        by_user: dict[int, set[str]] = {}
+        by_user: dict[int, list[Rating]] = {}
         for rating in rows:
-            by_user.setdefault(rating.user_id, set()).add(rating.status.value)
+            by_user.setdefault(rating.user_id, []).append(rating)
+
         assert len(by_user) == 2
         expected_statuses = {status.value for status in RatingStatus}
-        assert all(statuses == expected_statuses for statuses in by_user.values())
+        for ratings in by_user.values():
+            assert {r.status.value for r in ratings if r.status is not None} == expected_statuses
+            assert any(r.favorite and r.status is not None for r in ratings)
+            assert any(r.favorite and r.status is None for r in ratings)
 
     async def test_rated_project_has_an_open_rejection_suggestion(
         self, db_session: AsyncSession, tmp_path: Path

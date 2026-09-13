@@ -10,7 +10,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
@@ -51,6 +51,12 @@ router = APIRouter(tags=["photos"])
 
 
 class RatingFilter(enum.StrEnum):
+    """Die Eintraege des Rasterfilters. `favorite` bleibt als EINTRAG, ist aber kein
+    Bewertungsstatus mehr: er filtert auf die eigene Spalte `Rating.favorite`.
+
+    `unrated` heisst ab jetzt "KEINE ALBUMENTSCHEIDUNG" (`status IS NULL`), nicht mehr "keine
+    Zeile" - ein nur als Favorit markiertes Bild bleibt damit in diesem Filter."""
+
     UNRATED = "unrated"
     SUGGESTED = "suggested"
     FAVORITE = "favorite"
@@ -59,9 +65,18 @@ class RatingFilter(enum.StrEnum):
 
 
 class RatingOut(BaseModel):
+    """Die Bewertungszeile EINES Nutzers. `status` ist die Albumentscheidung und `null`, wenn
+    keine getroffen wurde - auch dann, wenn die Zeile wegen `favorite` existiert.
+
+    SICHERHEIT (S6): Die Oberflaeche liest den EIGENEN Zustand - Albumentscheidung UND
+    Kennzeichen - ausschliesslich ueber `utils/ownRating.ts` (Abgleich ueber den
+    `username`-Claim), nie ueber eine Zweitableitung wie `ratings.some(r => r.favorite)`. Eine
+    solche stellte die Auszeichnung des anderen als die eigene dar."""
+
     user_id: int
     username: str
-    status: RatingStatus
+    status: RatingStatus | None
+    favorite: bool
 
 
 class SuggestionOut(BaseModel):
@@ -382,16 +397,26 @@ async def _filtered_photo_ids(
         # damit kein Foto und ergibt eine LEERE Liste, ohne den Wert zu spiegeln.
         base = base.where(Photo.camera_id == camera_id)
     if rating_status is RatingFilter.UNRATED:
-        base = base.where(own_rating.id.is_(None))
+        # "Unbewertet" ist KEINE ALBUMENTSCHEIDUNG, nicht mehr "keine Zeile": seit `favorite`
+        # eine eigene Spalte ist, kann eine Zeile ohne jede Albumentscheidung existieren. Ueber
+        # das Zeilenvorhandensein gepruefte Abwesenheit liesse ein nur als Favorit markiertes
+        # Foto still aus dem Filter fallen.
+        base = base.where(or_(own_rating.id.is_(None), own_rating.status.is_(None)))
     elif rating_status is RatingFilter.SUGGESTED:
-        # Bildet dieselbe Regel wie has_suggestion in _to_photo_out als SQL-Praedikat nach: kein
-        # eigenes Rating des anfragenden Nutzers UND PhotoScore.suggested_status gesetzt. Bewusst
-        # keine gemeinsame Codebasis mit has_suggestion (ORM-Query vs. Objekt-Praedikat) -
-        # Konsistenz sichert stattdessen
+        # Bildet dieselbe Regel wie has_suggestion in _to_photo_out als SQL-Praedikat nach: keine
+        # eigene ALBUMENTSCHEIDUNG des anfragenden Nutzers UND PhotoScore.suggested_status
+        # gesetzt. Bewusst keine gemeinsame Codebasis mit has_suggestion (ORM-Query vs.
+        # Objekt-Praedikat) - Konsistenz sichert stattdessen
         # `tests/test_api_photos.py::test_list_photos_suggested_filter_matches_has_suggestion_parity`.
         base = base.join(PhotoScore, PhotoScore.photo_id == Photo.id).where(
-            own_rating.id.is_(None), PhotoScore.suggested_status.is_not(None)
+            or_(own_rating.id.is_(None), own_rating.status.is_(None)),
+            PhotoScore.suggested_status.is_not(None),
         )
+    elif rating_status is RatingFilter.FAVORITE:
+        # Eigene SPALTE, nicht mehr ein Wert von `status`. Ohne diesen Zweig wuerfe
+        # `RatingStatus("favorite")` unten einen `ValueError` - eine 500 auf einem
+        # nutzererreichbaren Query-Parameter (Auflage S11).
+        base = base.where(own_rating.favorite.is_(True))
     elif rating_status is not None:
         base = base.where(own_rating.status == RatingStatus(rating_status.value))
 
@@ -791,8 +816,9 @@ def _to_photo_out(
     Bekommen `GET /projects/{id}/photos` oder `GET /projects/{id}/curation-candidates` je eine
     Antwort-Zwischenspeicherung, ein `ETag` oder ein `Cache-Control` ueber `no-store` hinaus, MUSS
     der Schluessel den Nutzer enthalten. Grund ist `PhotoOut.suggestion`: es wird unten genau dann
-    gesetzt, wenn der anfragende Nutzer noch keine eigene Rating-Zeile hat (`has_own_rating`) -
-    zwei Nutzer bekommen fuer dasselbe Foto verschiedene Antwortkoerper. Die Regel gilt in BEIDEN
+    gesetzt, wenn der anfragende Nutzer noch keine eigene Albumentscheidung fuer dieses Foto hat
+    (`has_own_album_decision`) - zwei Nutzer bekommen fuer dasselbe Foto verschiedene
+    Antwortkoerper. Die Regel gilt in BEIDEN
     Query-Modi. Nicht theoretisch: das Frontend ist eine PWA mit Workbox
     (`registerType: 'autoUpdate'`), heute ohne `runtimeCaching` fuer API-Antworten; der
     Service-Worker-Cache ist pro Browserprofil geteilt, und das JWT liegt in `localStorage`.
@@ -804,12 +830,21 @@ def _to_photo_out(
     `curation_position` trägt sie ebenfalls nicht (kein Ablehnungsfilter, kein
     Nutzerbezug)."""
     # Anzeigeregel: ein Vorschlag ist nur sichtbar, wenn (a) PhotoScore.suggested_status gesetzt
-    # ist UND (b) der anfragende Nutzer noch KEINE eigene Rating-Zeile fuer dieses Foto hat -
+    # ist UND (b) der anfragende Nutzer noch KEINE eigene ALBUMENTSCHEIDUNG fuer dieses Foto hat -
     # unabhaengig davon, ob eine ANDERE Person das Foto schon bewertet hat; die eigene Bewertung
     # hat immer Vorrang.
-    has_own_rating = any(rating.user_id == current_user_id for rating in photo.ratings)
+    #
+    # Das VORHANDENSEIN der Zeile ist hier keine Aussage mehr: seit `favorite` eine eigene Spalte
+    # ist, existiert eine Zeile auch ohne jede Albumentscheidung. Ueber das Zeilenvorhandensein
+    # gepruefte Abwesenheit liesse den Ausschuss-Vorschlag verschwinden, sobald jemand das Foto
+    # als Favorit markiert - ohne Meldung und ohne Weg zurueck.
+    has_own_album_decision = any(
+        rating.user_id == current_user_id and rating.status is not None for rating in photo.ratings
+    )
     has_suggestion = (
-        photo.score is not None and photo.score.suggested_status is not None and not has_own_rating
+        photo.score is not None
+        and photo.score.suggested_status is not None
+        and not has_own_album_decision
     )
     suggestion = _to_suggestion_out(photo.score) if has_suggestion and photo.score else None
     return PhotoOut(
@@ -831,7 +866,12 @@ def _to_photo_out(
             )
         ),
         ratings=[
-            RatingOut(user_id=r.user_id, username=r.user.username, status=r.status)
+            RatingOut(
+                user_id=r.user_id,
+                username=r.user.username,
+                status=r.status,
+                favorite=r.favorite,
+            )
             for r in photo.ratings
         ],
         suggestion=suggestion,

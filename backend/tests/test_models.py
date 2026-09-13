@@ -184,20 +184,38 @@ async def _make_photo_and_user(db_session: AsyncSession) -> tuple[Photo, User]:
 async def test_create_rating(db_session: AsyncSession) -> None:
     photo, user = await _make_photo_and_user(db_session)
 
-    rating = Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.FAVORITE)
+    rating = Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.ALBUM_WORTHY)
     db_session.add(rating)
     await db_session.commit()
 
     result = await db_session.execute(select(Rating).where(Rating.photo_id == photo.id))
     stored = result.scalar_one()
-    assert stored.status == RatingStatus.FAVORITE
+    assert stored.status == RatingStatus.ALBUM_WORTHY
+    # Zwei unabhaengige Angaben: die Albumentscheidung sagt nichts ueber das Kennzeichen, und
+    # ohne gesetzten Wert ist es `False` - nie `None` in einer nicht-nullbaren Spalte.
+    assert stored.favorite is False
     assert stored.updated_at is not None
+
+
+async def test_create_rating_with_only_the_favorite_marker(db_session: AsyncSession) -> None:
+    """`status IS NULL` heisst "keine Albumentscheidung" und ist ein gueltiger Zustand, sobald
+    das Kennzeichen die Zeile traegt."""
+    photo, user = await _make_photo_and_user(db_session)
+
+    db_session.add(Rating(photo_id=photo.id, user_id=user.id, favorite=True))
+    await db_session.commit()
+
+    stored = (
+        await db_session.execute(select(Rating).where(Rating.photo_id == photo.id))
+    ).scalar_one()
+    assert stored.status is None
+    assert stored.favorite is True
 
 
 async def test_rating_unique_per_photo_and_user(db_session: AsyncSession) -> None:
     photo, user = await _make_photo_and_user(db_session)
 
-    db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.FAVORITE))
+    db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.ALBUM_WORTHY))
     await db_session.commit()
 
     db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.REJECTED))
@@ -207,7 +225,7 @@ async def test_rating_unique_per_photo_and_user(db_session: AsyncSession) -> Non
 
 async def test_deleting_photo_cascades_to_ratings(db_session: AsyncSession) -> None:
     photo, user = await _make_photo_and_user(db_session)
-    db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.FAVORITE))
+    db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.ALBUM_WORTHY))
     await db_session.commit()
 
     await db_session.delete(photo)
