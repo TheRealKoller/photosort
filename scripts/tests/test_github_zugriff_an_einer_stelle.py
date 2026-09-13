@@ -293,7 +293,19 @@ ERWARTETE_STUFEN: dict[str, str] = {
     ".claude/skills/ship-feature/SKILL.md": STUFE_SCHREIBEND,
     ".claude/skills/skiller/SKILL.md": STUFE_KEINE,
     ".claude/skills/spec-writer/SKILL.md": STUFE_SCHREIBEND,
+    ".claude/skills/story-entwurf/SKILL.md": STUFE_SCHREIBEND,
 }
+
+# Die beiden Penpot-Skills. Ihre Stufe steht schon in der Tabelle darueber - der eigene Test
+# unten haengt trotzdem an dieser Konstante, weil die Zusage eine **andere** ist als
+# "irgendeine Stufe ist eingetragen": Solange `story-entwurf` die Auslieferungsfreigabe am Board
+# feststellt und sie dem Rundenablauf *nennt*, ist "der Rundenablauf ermittelt sie nie selbst"
+# strukturell gewahrt. Faellt die Stufe eines der beiden auf "nur lesend", koennte er das Board
+# selbst lesen, und die geschlossene Quellenliste waere eine Bitte statt einer Schranke.
+PENPOT_SKILLS = (
+    ".claude/skills/penpot-design/SKILL.md",
+    ".claude/skills/penpot-entwurfsrunden/SKILL.md",
+)
 
 # --- Schwacher Waechter gegen die Rueckkehr der Vorabmessung ------------------------------
 
@@ -956,6 +968,37 @@ def test_die_fuenf_perspektiven_skills_tragen_kein_github_zugriff() -> None:
 
     assert [ERWARTETE_STUFEN[pfad] for pfad in perspektiven] == [STUFE_KEINE] * 5
     assert ERWARTETE_STUFEN[".claude/skills/review/SKILL.md"] == STUFE_LESEND
+
+
+def test_die_beiden_penpot_skills_tragen_kein_github_zugriff() -> None:
+    """Die Freigabe *erreicht* den Rundenablauf, sie wird von ihm nie *ermittelt*.
+
+    Geprueft wird am **entdeckten Bestand**, nicht nur an der Erwartungstabelle: Waere die Stufe
+    dort versehentlich auf "nur lesend" angehoben, koennte der Rundenablauf
+    `board-status-und-prioritaet-lesen` selbst ausfuehren - und die geschlossene Quellenliste
+    (Direktaufruf / aufrufender Story-Ablauf / sonst keine) waere keine Schranke mehr, sondern
+    eine Bitte. Die Folge eines Missbrauchs ist benennbar: ein verfrueht eroeffneter
+    oeffentlicher Pull Request plus ein `views.json`-Eintrag, der danach als Nachschlagewert des
+    Spec-Abschnitts `## UI/UX` wirkt.
+    """
+    abbild = suchraum()
+
+    befunde: list[str] = []
+    for pfad in PENPOT_SKILLS:
+        if pfad not in abbild:
+            befunde.append(f"{pfad}: nicht im entdeckten Bestand.")
+            continue
+        if ERWARTETE_STUFEN.get(pfad) != STUFE_KEINE:
+            befunde.append(f"{pfad}: Erwartungstabelle fuehrt {ERWARTETE_STUFEN.get(pfad)!r}.")
+        if f"{STUFE_MARKER} {STUFE_KEINE}" not in abbild[pfad]:
+            befunde.append(f"{pfad}: Datei spricht die Stufe {STUFE_KEINE!r} nicht aus.")
+
+    assert not befunde, (
+        "Penpot-Skill ohne die engste Erlaubnisstufe: "
+        + "; ".join(befunde)
+        + f". Beide tragen {STUFE_KEINE!r} - kein Entwurfsablauf stellt eine "
+        "Auslieferungsfreigabe selbst fest."
+    )
 
 
 # --- Gegenproben an synthetischem Text ---------------------------------------------------
