@@ -763,6 +763,65 @@ Gilt als Vorlage für jedes künftige mehrstufige Rechen- oder Verteilungsverfah
 für jede Zusage der Form „zwischen X gibt es keine Rangfolge", für jeden weiteren
 Schreibstellen-Wächter und für jeden ersatzlos entfallenden Leseparameter.
 
+### Ein Ergebnis, das keine Tabelle hat: Mengen zur Lesezeit, ein Zeilenvorhandensein, das aufhört eine Aussage zu sein, und ein Enum, das schrumpft — neu für ADR [`0098`](../decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md) / Spec [`0430`](../features/0430-album-entwurf-je-nutzer.md)
+
+Erster Testgegenstand des Projekts, dessen Ergebnis **nirgends persistiert wird**: Der Album-Entwurf
+ist `Vorschlag ∪ Aufgenommen \ Gestrichen`, zur Lesezeit gebildet. Es gibt keine Zeile, gegen die
+man ihn prüfen könnte, und ein Fehler in der Verschmelzung wirft keine Ausnahme — er liefert einen
+anderen, plausibel aussehenden Entwurf. Sechs projektweit gültige Muster:
+
+1. **Eine zur Lesezeit gebildete Menge braucht einen Fall auf die Überschneidung ihrer Operanden
+   und einen über zwei Zustände der Quelle.** Ein Gegenstand, der in beiden Operanden steht, muss
+   genau einmal in der Antwort erscheinen — eine Verkettung statt einer Vereinigung fällt sonst nie
+   auf. Und eine Zusage der Form „nur Unangefasstes wird neu befüllt" ist erst über **zwei** Läufe
+   sichtbar: getrennt geschrieben bestehen die Hälften auch bei einer Umsetzung, die immer oder nie
+   den neuen Lauf gewinnen lässt.
+2. **Sprechen zwei Endpunkte von derselben Menge und meint der eine sie mit, der andere ohne einen
+   Bestandteil, gehört das Paar in EINEN Fall.** Zwei getrennte Fälle sind beide grün, wenn ein
+   gemeinsamer Helfer eine der beiden Seiten falsch bedient.
+3. **Eine Reihenfolgezusage über eine aus zwei Quellen zusammengesetzte Zeilenmenge braucht einen
+   totalen Sortierschlüssel, und der Nachweis darf die Zufallsordnung von SQLite nicht erben.** Ein
+   unvollständiges `ORDER BY` ist unter SQLite zufällig stabil und unter Postgres nicht; der Bruch
+   erscheint erst produktiv, als Liste, die sich bei jedem Laden anders ordnet. Der Nachweis ist
+   eine in geschüttelter Reihenfolge eingefügte Zeilenmenge plus eine Assertion auf die
+   **vollständige** Id-Folge.
+4. **Hört ein Zeilenvorhandensein auf, eine Aussage zu sein, werden seine Lesestellen aufgezählt,
+   und über allen Fällen der Datei läuft ein Invariantenhelfer.** Sobald eine Zeile aus einem
+   zweiten Grund existieren kann, liefert jede Stelle, die „vorhanden" als „entschieden" liest,
+   stumm falsche Werte. Die betroffenen Stellen gehören abschließend aufgezählt und bekommen je
+   einen Fall mit genau dieser Datenlage. Dazu die Kehrseite: Der Zustand, den es nicht geben darf
+   (`assert_no_empty_rating_rows`), wird als **Nachsatz jedes Falls** der Datei geprüft, nicht nur
+   dort, wo jemand daran gedacht hat — er ist auf keinem Lesepfad als Fehler erkennbar.
+5. **Verliert ein Enum ein Element, bekommt jede Stelle, die es aufzählt, einen Fall auf ihre
+   Kardinalität.** `tuple(RatingStatus)` schrumpft still: Der Seeder legt danach zwei statt drei
+   Bewertungen an, und die Demo-Instanz verliert einen Zustand, ohne dass etwas rot wird. Der
+   bestehende Kardinalitätsfall wird auf die neue Zerlegung **umgeschrieben, nicht gelöscht**.
+   Ebenso erhoben wird vor der Migration, welche **Spalten** den Wert verwenden — ein geteilter
+   Wertevorrat ist eine Kopplung ohne Fremdschlüsselbeziehung; jede solche Spalte wird in derselben
+   Migration konvertiert oder bekommt einen eigenen Vorrat.
+6. **Eine Zuordnungsfunktion über Intervalle hat sechs Grenzfälle, und „Enthaltensein schlägt Nähe"
+   trennt allein.** Eine Zeit kurz vor dem Ende eines langen Intervalls gehört diesem, auch wenn der
+   Abstand zum Beginn des nächsten kleiner ist — genau der Fall, den eine Abstandsmessung nur gegen
+   den Intervallbeginn falsch beantwortet. Dazu: beide Grenzen inklusiv, berührende Spannen an das
+   frühere Intervall, bei gleichem Abstand das frühere, vor dem ersten, nach dem letzten, leere
+   Spannenliste.
+
+Dazu vier Einzelregeln ohne eigenes Muster:
+
+- **Zwei Datenformen, ein Anzeigezustand.** Entstehen für denselben sichtbaren Zustand zwei
+  verschiedene Datenlagen, gehört **ein** Fall mit beiden Formen und einer Assertion darauf, dass
+  die Kennzeichnung dieselbe ist — nicht zwei Fälle, die je eine Form beschreiben.
+- **Ein Endpunkt, dessen Projektbindung an einer Lauf-Id hängt, prüft `total` mit.** Ein Fall, der
+  nur die leere Liste prüft, lässt eine Zählabfrage ohne Lauf-Prädikat durch: plausible Zahl zu
+  leerer Liste, nichts wird rot.
+- **Ein Dialog auf dem geprüften Grundelement beweist dessen Zusagen nicht erneut.** Fokusfang,
+  Escape und Fokusrückgabe sind Zusage von `ui/dialog` und werden am Aufrufer nicht wiederholt.
+- **Eine ersatzlos entfallende Route braucht einen Fall.** Ohne ihn ist sowohl ein vergessener
+  Wegfall als auch ein eingeschlichener Redirect unsichtbar.
+
+Gilt als Vorlage für jede künftige zur Lesezeit gebildete Ergebnismenge, für jede Spalte, deren
+Abwesenheit ein gültiger Zustand ist, und für jede Enum-Verkleinerung.
+
 ## Frontend (`frontend/`, `vitest` + Testing Library)
 
 **Stand:** vor Spec "Minimales Projekt-Frontend" nur Vite-Scaffold-Test (`App.test.tsx`, reines Rendering, keine Router-/Query-Nutzung). Mit dieser Spec entstehen erstmals echte Konventionen, hier erstmalig festgehalten:
