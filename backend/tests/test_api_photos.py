@@ -597,8 +597,8 @@ async def _add_ranking(
     photo: Photo,
     *,
     event: Event | None = None,
-    rank_score: float,
-    rank_position: int,
+    rank_score: float | None,
+    rank_position: int | None,
 ) -> None:
     """Ein Foto steht je Lauf in GENAU EINER Rangzeile - die Partition ist allein das Event
     (Spec 0427, PR 3).
@@ -3329,6 +3329,113 @@ async def _assess_photo(
         computed_at=computed_at or datetime(2026, 9, 12, 10, 0, 0),
     )
     await session.commit()
+
+
+class TestTheAlbumSuitabilityInThePhotoOut:
+    """specs/features/0428-albumtauglichkeit-vom-modell.md, Schritt 10: die Modellaussage wird
+    ausgeliefert, und die beiden Rangfelder sind nullable geworden."""
+
+    async def test_a_rated_photo_carries_level_and_reason(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _rate_album_suitability(db_session, photo, level=2, reason="Augen geschlossen.")
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["album_suitability"] == {"level": 2, "reason": "Augen geschlossen."}
+
+    async def test_a_photo_without_a_row_carries_null(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die ABWESENHEIT ist "noch nicht bewertet" - unterscheidbar von der niedrigsten
+        Stufe."""
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["album_suitability"] is None
+
+    async def test_a_missing_reason_is_null_and_not_an_empty_string(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _rate_album_suitability(db_session, photo, level=5, reason=None)
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["album_suitability"] == {"level": 5, "reason": None}
+
+    async def test_the_reason_is_delivered_verbatim_without_any_interpretation(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Fremdtext wird auf dem Lesepfad nicht noch einmal angefasst - saniert und gekappt
+        wurde er EINMAL, am Parser. Eine zweite Fassung der Regel hier waere die zweite
+        Pflegestelle."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _rate_album_suitability(db_session, photo, reason="<b>fett</b> & 'roh'")
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["album_suitability"]["reason"] == "<b>fett</b> & 'roh'"
+
+
+class TestARankingRowWithoutAModelVerdict:
+    async def test_both_rank_fields_are_null_while_the_event_stays(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=None, rank_position=None)
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["ranking"]["rank_score"] is None
+        assert item["ranking"]["rank_position"] is None
+        assert item["ranking"]["event_id"] == (await _default_event(db_session, run)).id
+
+    async def test_a_score_of_zero_survives_as_a_real_value(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """`0.0` ist ein GUELTIGER Qualitaetswert (schlechteste Modellstufe, schlechteste lokale
+        Messung) - ein Falsyness-Filter auf dem Weg nach draussen verloere ihn lautlos."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, rank_score=0.0, rank_position=1)
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["ranking"]["rank_score"] == 0.0
+        assert item["ranking"]["rank_score"] is not None
+
+    async def test_an_unrated_photo_is_not_part_of_the_curation_selection(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Ein Foto ohne Qualitaetswert erscheint NICHT im Entwurf - und die Partitionsgroesse
+        beschreibt dieselbe Menge, die die Auswahl zeigt. Beides in einem Fall: eine Groesse, die
+        die unbewerteten mitzaehlt, machte "Rang 1 von 2" aus einer Partition mit genau einem
+        einsehbaren Foto."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        rated = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        unrated = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        await _add_ranking(db_session, run, rated, rank_score=0.9, rank_position=1)
+        await _add_ranking(db_session, run, unrated, rank_score=None, rank_position=None)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"top_n_per_event": 5}
+        )
+
+        body = response.json()
+        assert [item["id"] for item in body["items"]] == [rated.id]
+        assert body["total"] == 1
+        assert body["items"][0]["ranking"]["partition_size"] == 1
 
 
 async def _rate_album_suitability(
