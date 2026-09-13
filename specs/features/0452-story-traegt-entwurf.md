@@ -1,6 +1,7 @@
 # 0452 - Eine Story trägt ihren Designentwurf
 
-**Status:** Accepted
+**Status:** Implemented ([PR #456](https://github.com/TheRealKoller/photosort/pull/456),
+[PR #458](https://github.com/TheRealKoller/photosort/pull/458))
 **Erstellt:** 2026-09-13
 **Bezug:** [GitHub-Issue #452](https://github.com/TheRealKoller/photosort/issues/452)
 
@@ -170,6 +171,11 @@ Laufbeginn und einem Schreibzugriff liegen der gesamte Rundenlauf und die Ausarb
 Fortschreibung aus der alten Lesung überschriebe eine zwischenzeitliche Bearbeitung Daniels
 stillschweigend, und die Selbstprüfung unten fänge das nicht — sie vergleicht gegen genau diese
 veraltete Fassung. Weicht die frische Fassung vom Stand des Laufbeginns ab, hält der Lauf an.
+
+**„Stand vom Laufbeginn" ist für beide Einstiegspunkte definiert**, sonst wäre die Prüfung auf
+einem von ihnen nicht ausführbar: auf Weg B die Lesung aus Schritt 0 des Nachlaufs; auf Weg A der
+Body, den `refinement` Schritt 6 selbst geschrieben hat und der mit der Übergabe an den Nachlauf
+geht — dort läuft dessen Schritt 0 nicht.
 
 **Die Zusicherung „Entwurfs-Skills ohne GitHub-Zugriff" bleibt strukturell gewahrt, weil die
 Freigabe den Rundenablauf *erreicht*, statt von ihm *ermittelt* zu werden.**
@@ -341,7 +347,8 @@ drei erlaubten, und eine in Backticks gesetzte Verbotsliste zöge jede darin gen
 diese Menge. Hier in der Spec bleiben die IDs lesbar, weil dieser Text nicht der Prüfgegenstand ist.
 
 **M-S12 — Vor jedem Schreibzugriff auf den Body wird er frisch gelesen und gegen den Stand vom
-Laufbeginn geprüft.** Zwischen der ersten Lesung und einem Schreibzugriff liegen ein vollständiger
+Laufbeginn geprüft** (oben definiert, für beide Einstiegspunkte). Zwischen der ersten Lesung und
+einem Schreibzugriff liegen ein vollständiger
 Rundenlauf mit mehreren Rückmeldezyklen und die Ausarbeitung; ein Lauf ist kein Moment, derselbe
 Grund wie bei M-S7. Fortgeschrieben wird ausschließlich die frisch gelesene Fassung; weicht sie vom
 Stand des Laufbeginns ab, **hält der Lauf an und meldet** — kein Nachziehen im selben Durchgang,
