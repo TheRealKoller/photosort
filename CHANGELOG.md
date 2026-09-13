@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.44.0](https://github.com/TheRealKoller/photosort/compare/v0.43.0...v0.44.0) (2026-09-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* `GET /projects/{id}/curation-candidates` antwortet 404.
+* Album-Entwurf je Nutzer mit Aufnehmen und Streichen, Teil 2 von 3 (Spec 0430) ([#465](https://github.com/TheRealKoller/photosort/issues/465))
+* Bewertung heisst Albumentscheidung, Favorit als eigene Angabe, Teil 1 von 3 (Spec 0430) ([#463](https://github.com/TheRealKoller/photosort/issues/463))
+* Auswahlvorschlag mit Richtwert, Event-Kontingenten und Motivmischung (Spec 0429) ([#462](https://github.com/TheRealKoller/photosort/issues/462))
+* Hauptkategorie, Vorrangreihenfolge und Konfidenz-Schwelle ablösen, Teil 3 von 3 (Spec 0427) ([#450](https://github.com/TheRealKoller/photosort/issues/450))
+
+### Features
+
+* **ai-workflow:** CI-Ergebnis abwarten und begrenzt nachbessern (Spec 0405) ([#448](https://github.com/TheRealKoller/photosort/issues/448)) ([4da7e26](https://github.com/TheRealKoller/photosort/commit/4da7e2635eaf4bc90cfed2b522fc0a16b0a3fc11))
+* **ai-workflow:** Designentwurf beim Schärfen und Durchgriff bis in die Spec, Teil 2 von 2 (Spec 0452) ([#458](https://github.com/TheRealKoller/photosort/issues/458)) ([5b21296](https://github.com/TheRealKoller/photosort/commit/5b21296b25cec87d53d7f5a22766ea532674ef1b))
+* **ai-workflow:** Laufstand eines Umsetzungslaufs auf Abruf (Spec 0449) ([#453](https://github.com/TheRealKoller/photosort/issues/453)) ([92c9250](https://github.com/TheRealKoller/photosort/commit/92c925052dc86c9f9b18f1c0ca5360ee2ef5c9ec))
+* **ai-workflow:** Story-Entwurf anheften und am Ready-Gate ausliefern, Teil 1 von 2 (Spec 0452) ([#456](https://github.com/TheRealKoller/photosort/issues/456)) ([6d795c8](https://github.com/TheRealKoller/photosort/commit/6d795c8e2876559532db421b30ad93f520822a1e))
+* Album-Entwurf je Nutzer mit Aufnehmen und Streichen, Teil 2 von 3 (Spec 0430) ([#465](https://github.com/TheRealKoller/photosort/issues/465)) ([005d56d](https://github.com/TheRealKoller/photosort/commit/005d56da12c0bb824643401b97a07cb308208f07))
+* Albumtauglichkeit vom Modell bewerten, Qualitaet vom Inhalt trennen (Spec 0428) ([#457](https://github.com/TheRealKoller/photosort/issues/457)) ([f83c87b](https://github.com/TheRealKoller/photosort/commit/f83c87b5cae9fd32f0fc877beb3239497e165767))
+* Austauschen im Album-Entwurf, Teil 3 von 3 (Spec 0430) ([#466](https://github.com/TheRealKoller/photosort/issues/466)) ([440a0bf](https://github.com/TheRealKoller/photosort/commit/440a0bfd7bcfa65a5e0032a62bdaaf2be68c69f8))
+* Auswahlvorschlag mit Richtwert, Event-Kontingenten und Motivmischung (Spec 0429) ([#462](https://github.com/TheRealKoller/photosort/issues/462)) ([e11439f](https://github.com/TheRealKoller/photosort/commit/e11439f1a4588882084a115fcf7cb92041ca7619))
+* **backend:** Events statt Zeitcluster gliedern das Album (Spec 0425) ([#439](https://github.com/TheRealKoller/photosort/issues/439)) ([fbe19c0](https://github.com/TheRealKoller/photosort/commit/fbe19c035ae6a60e84e4ea6177981d3e4e05e6a1))
+* Bewertung heisst Albumentscheidung, Favorit als eigene Angabe, Teil 1 von 3 (Spec 0430) ([#463](https://github.com/TheRealKoller/photosort/issues/463)) ([22c406a](https://github.com/TheRealKoller/photosort/commit/22c406a855af533b226d4288d53d376e035756f4))
+* Cloud-Klassifizierung liefert Motivstärken, Teil 2 von 3 (Spec 0427) ([#447](https://github.com/TheRealKoller/photosort/issues/447)) ([da53dae](https://github.com/TheRealKoller/photosort/commit/da53dae3981a9159e83e7282061ea92aa2e0739f))
+* Hauptkategorie, Vorrangreihenfolge und Konfidenz-Schwelle ablösen, Teil 3 von 3 (Spec 0427) ([#450](https://github.com/TheRealKoller/photosort/issues/450)) ([22e9bf6](https://github.com/TheRealKoller/photosort/commit/22e9bf6607a01089bffe2cef756d190c0197d5d3))
+* Motive mit Stärke statt einer Hauptkategorie, Teil 1 von 3 (Spec 0427) ([#446](https://github.com/TheRealKoller/photosort/issues/446)) ([2368cf2](https://github.com/TheRealKoller/photosort/commit/2368cf2b9e87bc92d795ab5ba4acf8c78c9a1b48))
+* Zeitversatz je Kamera und Projekt korrigieren (Spec 0426) ([#445](https://github.com/TheRealKoller/photosort/issues/445)) ([115beec](https://github.com/TheRealKoller/photosort/commit/115beec599da010c2fd995f2d7fc6a4521f59ef1))
+
 ## [0.43.0](https://github.com/TheRealKoller/photosort/compare/v0.42.0...v0.43.0) (2026-09-11)
 
 
