@@ -1,6 +1,6 @@
 # 0430 - Album-Entwurf je Nutzer: chronologisch nach Event, austauschen, aufnehmen, streichen
 
-**Status:** Implemented
+**Status:** Implemented ([PR #466](https://github.com/TheRealKoller/photosort/pull/466))
 **Erstellt:** 2026-09-13
 **Bezug:** [Issue #430](https://github.com/TheRealKoller/photosort/issues/430) (Story unter dem Zielbild [#424](https://github.com/TheRealKoller/photosort/issues/424))
 
