@@ -1029,3 +1029,112 @@ class FinalSelectionDecision(Base):
     # korrigierbar, nur ueberschreibbar.
     included: Mapped[bool]
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class FeedbackEventKind(enum.StrEnum):
+    """Die neun Arten der Nacharbeit, die aufgezeichnet werden (ADR 0100).
+
+    DIE AUSSAGERICHTUNG STEHT ALS EIGENER WERT, nie als nullable Boolean daneben: Eine dritte
+    Bedeutung von `NULL` waere auf keinem Lesepfad als Fehler erkennbar.
+
+    Fuer die gemeinsame Endauswahl gibt es folgerichtig KEINEN Ruecknahme-Wert - ADR 0099 kennt
+    kein `DELETE` auf ihr, "wieder strittig werden" ist kein Zustand, den die Story kennt."""
+
+    PHOTO_INCLUDED = "photo_included"
+    PHOTO_REMOVED = "photo_removed"
+    DECISION_WITHDRAWN = "decision_withdrawn"
+    EXCHANGED = "exchanged"
+    MOTIF_ADDED = "motif_added"
+    MOTIF_DROPPED = "motif_dropped"
+    MOTIF_CORRECTION_WITHDRAWN = "motif_correction_withdrawn"
+    FINAL_DECISION_IN = "final_decision_in"
+    FINAL_DECISION_OUT = "final_decision_out"
+
+
+class FeedbackEvent(Base):
+    """EIN Handgriff der Nacharbeit am Album-Entwurf, unveraenderlich festgehalten (ADR 0100).
+
+    APPEND-ONLY: Auf diese Tabelle laeuft ausschliesslich `INSERT`. Kein Schreibpfad der Anwendung
+    aendert oder loescht je eine ihrer Zeilen; einzige Ausnahme ist die Projektloeschung. Weder
+    Schema noch Datenbank erzwingen das - der strukturelle Waechter dazu steht in
+    tests/test_feedback_event_model.py. Aus der Zusage folgen ohne durchsetzenden Code beide
+    Aussagen der Story: Ein Ereignis ueberlebt jede Neuklassifizierung und die Ruecknahme der
+    Korrektur, und mehrere Korrekturen am selben Foto bleiben in ihrer Reihenfolge erkennbar.
+
+    DIE REIHENFOLGE IST DIE AUFSTEIGENDE `id`, nie `occurred_at`: Zwei Schreibvorgaenge derselben
+    Sekunde sind ueber eine Zeit nicht zu ordnen. `occurred_at` ist Anzeige, nie Sortierschluessel.
+
+    DAS EREIGNIS FRIERT DIE ENTSCHEIDUNGSLAGE EIN, die lokalen Kriterienwerte nicht: Modellstufe,
+    Qualitaetswert und Motivstaerke werden mitgeschrieben, weil ein neuer Lauf sie ueberschreibt
+    und die Frage "zu schwach oder gar nicht genannt?" danach nicht mehr beantwortbar waere. Alle
+    eingefrorenen Felder sind NULLBAR - ein Foto ohne Modellbewertung erzeugt trotzdem ein
+    Ereignis.
+
+    ES GIBT KEINE BILDDATEN UND KEINEN FREMDTEXT hier: Festgehalten werden ausschliesslich
+    Verweise, Zeitpunkt, Art und die eingefrorenen Zahlen (L8). `motif_key` stammt aus dem
+    geschlossenen Motivset und nie aus einem rohen Pfadparameter (S11).
+
+    Die Feldmatrix je `kind` - welches Feld pflichtig, welches verboten - wird an der EINEN
+    Schreibstelle gehalten (`feedback_log.py`) und dort ueber einen Fall je `kind` geprueft, nicht
+    ueber neun `CheckConstraint`s."""
+
+    __tablename__ = "feedback_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # EIGENE Spalte, nie ueber den Foto-Join hergeleitet: Die Projektloeschung prueft
+    # Erreichbarkeit ueber die Kanten in `Base.metadata`, und die Diagnose liest zwar
+    # projektuebergreifend, soll eine projektweise Sicht spaeter aber ohne Aenderung am Log
+    # zulassen. Indiziert, weil das Log mit der Nacharbeit waechst.
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    # NULLABLE, und `NULL` heisst "KEINE ZUSCHREIBUNG" (S9). Genau die beiden
+    # `final_decision_*`-Arten tragen keinen Nutzer: Die gemeinsame Entscheidung gehoert nach ADR
+    # 0099 dem Projekt, und ihr Schreibendpunkt nimmt aus diesem Grund kein `current_user`
+    # entgegen. Ihn dafuer um einen zu erweitern, fuehrte das dort verworfene `decided_by` durch
+    # die Hintertuer ein - und das Log waere der Ort, an dem man nachsieht, wer wollte, was das
+    # Projekt entschieden hat.
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    kind: Mapped[FeedbackEventKind] = mapped_column(
+        SQLEnum(FeedbackEventKind, native_enum=False, length=32)
+    )
+    # ANZEIGE, nie Sortierschluessel - siehe Klassen-Docstring.
+    occurred_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Der Multiplikator dieses Ereignisses in der ABLEITUNG, nie in der Anzeige: Die ausgewiesene
+    # Fallzahl bleibt die ungewichtete Anzahl der Korrekturen. Eine gewichtete Zahl als Fallzahl
+    # behauptete Korrekturen, die niemand vorgenommen hat. `server_default` in Migration UND
+    # Modell, damit beide dieselbe DDL lesen.
+    weight: Mapped[float] = mapped_column(default=1.0, server_default="1.0")
+    # Der Lauf, auf dem der Entwurf beruhte. `NULL` heisst "kein erfolgreicher Lauf" - dann traegt
+    # das Ereignis auch kein `event_id`, und es bildet in der Ableitung kein Paar.
+    criterion_scoring_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("criterion_scoring_runs.id"), default=None
+    )
+    # GRUPPIERUNGSSCHLUESSEL OHNE FREMDSCHLUESSEL, und das ist keine Nachlaessigkeit: Die Spalte
+    # ist gueltig allein zusammen mit dem `criterion_scoring_run_id` derselben Zeile und wird nie
+    # zu einer `Event`-Zeile aufgeloest. `worker.py::rebuild_run_grouping` LOESCHT die
+    # `Event`-Zeilen eines Laufs und legt sie neu an; ein echter Fremdschluessel hielte entweder
+    # den Neuaufbau an oder risse Zeilen dieses Logs mit - beides braeche die Append-only-Zusage.
+    #
+    # Die Spalte SIEHT wie eine Referenz aus und ist keine. Vier Nachweise halten das fest, weil
+    # kein einzelner traegt: am Modell und als AST-Waechter gegen jede Verbindung der beiden
+    # Spalten (tests/test_feedback_event_model.py), an der gerenderten Postgres-DDL
+    # (tests/test_migration_feedback_events.py) und als Verhaltensfall ueber
+    # `rebuild_run_grouping` (tests/test_feedback_log.py).
+    event_id: Mapped[int | None] = mapped_column(default=None)
+    # Das ersetzte Bild - gesetzt genau bei `exchanged`. "B statt A" ist die Aussage; die beiden
+    # Bilder fuer sich tragen sie nicht.
+    replaced_photo_id: Mapped[int | None] = mapped_column(ForeignKey("photos.id"), default=None)
+    motif_key: Mapped[str | None] = mapped_column(default=None)
+    # Die eingefrorene GESPEICHERTE Modellstaerke (`PhotoMotifStrength.strength`), ausdruecklich
+    # NIE die wirksame aus `motif_strengths.py::effective_strength_expression`: Letztere traegt
+    # bereits eine fruehere Korrektur desselben Paares und beantwortete die Frage nach dem
+    # Modellfehler mit der Korrektur statt mit der Modellaussage. Die zweite Korrektur eines
+    # Motivs zeigte dann nie einen Fehler an.
+    motif_strength: Mapped[float | None] = mapped_column(default=None)
+    # Die eingefrorenen Modellstufen (`PhotoAlbumSuitability.level`) beider beteiligter Fotos.
+    level: Mapped[int | None] = mapped_column(default=None)
+    replaced_level: Mapped[int | None] = mapped_column(default=None)
+    # Die eingefrorenen Qualitaetswerte (`PhotoRanking.rank_score` des damals juengsten
+    # erfolgreichen Laufs) beider beteiligter Fotos.
+    quality: Mapped[float | None] = mapped_column(default=None)
+    replaced_quality: Mapped[float | None] = mapped_column(default=None)

@@ -35,6 +35,7 @@ from sqlalchemy.sql.dml import Delete
 from photosort.models import (
     CriterionScoringRun,
     Event,
+    FeedbackEvent,
     FinalSelectionDecision,
     Photo,
     PhotoAlbumSuitability,
@@ -161,6 +162,19 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     await _run(
         "final_selection_decisions",
         delete(FinalSelectionDecision).where(FinalSelectionDecision.photo_id.in_(photo_ids)),
+    )
+    # DIE EINE AUSNAHME der Append-only-Zusage des Ereignis-Logs (ADR 0100 Punkt 1, S13). Ohne
+    # diese Anweisung ueberleben Aussagen ueber geloeschte Familienfotos ihr Projekt. Adressiert
+    # ueber die EIGENE `project_id`-Spalte und nicht ueber den Foto-Join: Die Spalte ist genau
+    # dafuer da, und sie traegt den Index. VOR `photos` und `users` - beide sind
+    # Fremdschluessel-Eltern dieser Zeilen -, die Position folgt der per Test erzwungenen Ordnung
+    # `reversed(Base.metadata.sorted_tables)`.
+    #
+    # Ein struktureller Waechter in tests/test_feedback_event_model.py haelt fest, dass dies die
+    # EINZIGE Stelle im Anwendungscode bleibt, die eine Ereigniszeile loescht oder aendert.
+    await _run(
+        "feedback_events",
+        delete(FeedbackEvent).where(FeedbackEvent.project_id.in_(project_ids)),
     )
     # NACH photo_rankings (die zeigen auf events), VOR criterion_scoring_runs (darauf zeigen
     # events). Beide Kanten sind echte Fremdschluessel - unter Postgres bleibt sonst eine verwaiste

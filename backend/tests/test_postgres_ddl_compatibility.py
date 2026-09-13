@@ -1142,3 +1142,81 @@ def test_the_final_selection_downgrade_renders_for_postgres_too() -> None:
     rendered = " ".join(statements)
     assert "DROP TABLE" in rendered.upper()
     assert "final_selection_decisions" in rendered
+
+
+# specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md, ADR 0100: das append-only
+# Ereignis-Log. Hier steht der ZWEITE der vier Nachweise dafuer, dass `event_id` wie eine Referenz
+# AUSSIEHT und keine ist. Er gehoert an die gerenderte Postgres-DDL, weil die Suite gegen SQLite
+# ohne `PRAGMA foreign_keys=ON` laeuft: Ein spaeter ergaenzter Fremdschluessel auf `events` fiele
+# dort zur Laufzeit nicht auf, und `rebuild_run_grouping` - das die `events`-Zeilen eines Laufs
+# loescht und neu anlegt - risse dann entweder Log-Zeilen mit oder bliebe stehen.
+
+_FEEDBACK_EVENTS_REVISION = "b1c2d3e4f5a6_feedback_events.py"
+
+
+@pytest.fixture(scope="module")
+def feedback_events_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_FEEDBACK_EVENTS_REVISION)
+
+
+def test_the_event_id_renders_without_a_foreign_key_while_the_others_render_with_one(
+    feedback_events_upgrade_ddl: list[str],
+) -> None:
+    """ZWEITER der vier Nachweise. Die zweite Haelfte steht im SELBEN Fall: Ohne sie bestuende die
+    Aussage auch fuer eine Tabelle ganz ohne Fremdschluessel."""
+    statement = _create_table_statement(feedback_events_upgrade_ddl, "feedback_events")
+
+    assert "event_id INTEGER" in statement
+    assert "REFERENCES events" not in statement
+    assert "FOREIGN KEY(event_id)" not in statement
+
+    assert "FOREIGN KEY(photo_id) REFERENCES photos (id)" in statement
+    assert "FOREIGN KEY(replaced_photo_id) REFERENCES photos (id)" in statement
+    assert "FOREIGN KEY(project_id) REFERENCES projects (id)" in statement
+    assert "FOREIGN KEY(user_id) REFERENCES users (id)" in statement
+    assert (
+        "FOREIGN KEY(criterion_scoring_run_id) REFERENCES criterion_scoring_runs (id)" in statement
+    )
+
+
+def test_the_weight_default_renders_as_a_float_literal_on_a_float_column(
+    feedback_events_upgrade_ddl: list[str],
+) -> None:
+    """SQLite kennt keinen Unterschied zwischen INTEGER und DOUBLE PRECISION und akzeptiert jeden
+    Default klaglos - der Multiplikator der Ableitung muss ein Fliesskommawert bleiben."""
+    statement = _create_table_statement(feedback_events_upgrade_ddl, "feedback_events")
+
+    assert "weight FLOAT DEFAULT '1.0' NOT NULL" in statement
+
+
+def test_the_kind_column_renders_without_a_native_enum_type(
+    feedback_events_upgrade_ddl: list[str],
+) -> None:
+    """Ohne `native_enum=False` legte Postgres einen echten Enum-Typ an, und jeder weitere
+    `kind`-Wert braeuchte dort eine Typmigration, die SQLite nie verlangt."""
+    rendered = " ".join(feedback_events_upgrade_ddl)
+    statement = _create_table_statement(feedback_events_upgrade_ddl, "feedback_events")
+
+    assert "CREATE TYPE" not in rendered.upper()
+    assert "VARCHAR(32)" in statement
+
+
+def test_the_feedback_events_upgrade_touches_no_data_at_all(
+    feedback_events_upgrade_ddl: list[str],
+) -> None:
+    """Kein Backfill, und es gaebe auch nichts zu backfillen: Der Bestand haelt den heutigen
+    Stand, nicht den Verlauf - eine zurueckgenommene Korrektur hinterlaesst dort keine Spur."""
+    rendered = " ".join(feedback_events_upgrade_ddl).upper()
+
+    assert "INSERT " not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered
+
+
+def test_the_feedback_events_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_FEEDBACK_EVENTS_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements)
+    assert "DROP TABLE" in rendered.upper()
+    assert "DROP INDEX" in rendered.upper()
+    assert "feedback_events" in rendered
