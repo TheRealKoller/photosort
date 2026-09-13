@@ -59,7 +59,7 @@ Verarbeitungs-Cache (Thumbnails).
     Ableitung des aktiven Navigationsziels) und neues `components/ProjectNav.tsx` als die Leiste
     selbst. Reines Frontend, kein API-Delta.
   - die Zieltabelle ist in Haupt- und Nebenziele geteilt — die Leiste führt ab `lg:` nur noch
-    Projekt, Fotos und Vergleich, ein einziger Auslöser (bei jeder Breite genau einer im DOM) öffnet
+    Projekt, Fotos und Endauswahl, ein einziger Auslöser (bei jeder Breite genau einer im DOM) öffnet
     den Nebenbereich mit Einstellungen und Statistik; unterhalb `lg:` führt sein Panel alle fünf
     Ziele in zwei abgesetzten Blöcken. `utils/projectRoutes.ts` führt sie dafür in zwei Gruppen
     (`PROJECT_NAV_PRIMARY_TARGETS`, `PROJECT_NAV_SECONDARY_TARGETS`, `ALL_PROJECT_NAV_TARGETS` als
@@ -469,6 +469,40 @@ Verarbeitungs-Cache (Thumbnails).
       4 von `_draft_photo_ids`, das Ergebnis heißt `PlacedPhotos` statt `DraftContent`). Zweimal
       geschrieben ordneten Entwurf und Endauswahl dieselben Fotos verschieden — sichtbar, ohne dass
       eine Prüfung rot würde.
+    - **Die Ansicht** ist `pages/AlbumSelectionPage.tsx` unter
+      `PROJECT_ROUTE_PATHS.selection = '/projects/:projectId/selection'`, Titel „Endauswahl". **Ein
+      Ort, zwei Sichten, eine Abfrage** (`hooks/useAlbumSelection.ts`, Query-Key
+      `['photos', projectId, 'selection']` unter demselben breiten Präfix wie Raster, Einzelbild
+      und Entwurf): Die Arbeitssicht filtert lokal auf `contested`, die Ergebnissicht auf
+      `in_final_selection` plus die ausdrücklich Herausgenommenen. **Der Umschalter lädt nichts
+      nach**, und die Entscheidungsmutation nimmt den eigenen Schlüssel von der Invalidierung aus
+      (Muster `useDraftDecisionMutation`) — daraus folgt beides zugleich: Das entschiedene Bild
+      verlässt die Arbeitssicht sofort, und die Ergebnissicht ordnet sich dabei nicht neu.
+    - **Die Zugehörigkeit kommt vom Server.** `utils/albumDraft.ts::isInAlbum` wird auf dieser
+      Seite ausdrücklich **nicht** benutzt: Seine Aussage (`status !== 'rejected'`) gilt nur
+      innerhalb der Antwortmenge des Entwurfszweigs, und die Endauswahl enthält auch Fotos, die in
+      keinem der beiden Entwürfe stehen. Lokal ausgewertet wird allein
+      `utils/albumSelection.ts::applyAlbumDecision`, und das ist exakt, weil eine Entscheidung
+      immer überschreibt. Ein struktureller Wächter (`albumSelection.structure.test.ts`) hält beide
+      Richtungen fest: Entwurfsseite und Entwurfskachel nennen keines der drei neuen Felder,
+      Endauswahlseite und -kachel importieren `isInAlbum` nicht.
+    - **Die Kachel** `components/SelectionPhotoTile.tsx` trägt je Teilnehmer **eine benannte
+      Haltungszeile** — die Zuordnung entsteht aus `user_id` und dem vorangestellten Namen, nie aus
+      der Position in `ratings[]`, und die Zahl der Zeilen ist die Kardinalität von `participants`.
+      Kennzeichen ist der bestehende `RatingBadge`; das Symbol `check` ist ausgeschlossen (es ist
+      im Produkt die Erfolgsmeldung), und `variant="destructive"` ist hier unzulässig — gefülltes
+      `--danger` bei Radius 6px ist formgleich mit dem Kennzeichen „Aussortiert", und diese Seite
+      zeigt Bewertungs-Kennzeichen. `PhotoCard` bekommt dafür `setAside`: dieselbe optische
+      Zurücknahme wie eine Streichung, aber **ohne** Bewertungs-Kennzeichen — ein unbenanntes
+      „Verworfen" am Kartenkörper wäre neben den benannten Haltungszeilen als Haltung einer Person
+      lesbar.
+    - **Die Vergleichsseite entfällt ersatzlos.** `pages/PhotoComparePage.tsx` und die Route
+      `/projects/:id/compare` sind weg, **ohne Weiterleitung** — aus demselben Grund wie bei der
+      Kuratierung: Ein zweiter Weg auf den einen verbleibenden Ort wäre ein zweiter Ort. Das dritte
+      Hauptziel der Projektnavigation heißt „Endauswahl" statt „Vergleich"; `PhotoDetailPage`
+      verlinkt dorthin. Backendseitig entfällt nichts — die Seite las das Standard-Listing.
+      `groupDraftByDay` zieht dabei nach `utils/eventGrouping.ts::groupPhotosByDay`, weil beide
+      Ansichten dieselbe Antwortform gliedern.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
