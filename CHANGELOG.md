@@ -1,21 +1,5 @@
 # Changelog
 
-## [1.0.0](https://github.com/TheRealKoller/photosort/compare/v0.43.0...v1.0.0) (2026-09-12)
-
-
-### ⚠ BREAKING CHANGES
-
-* Hauptkategorie, Vorrangreihenfolge und Konfidenz-Schwelle ablösen, Teil 3 von 3 (Spec 0427) ([#450](https://github.com/TheRealKoller/photosort/issues/450))
-
-### Features
-
-* **ai-workflow:** CI-Ergebnis abwarten und begrenzt nachbessern (Spec 0405) ([#448](https://github.com/TheRealKoller/photosort/issues/448)) ([4da7e26](https://github.com/TheRealKoller/photosort/commit/4da7e2635eaf4bc90cfed2b522fc0a16b0a3fc11))
-* **backend:** Events statt Zeitcluster gliedern das Album (Spec 0425) ([#439](https://github.com/TheRealKoller/photosort/issues/439)) ([fbe19c0](https://github.com/TheRealKoller/photosort/commit/fbe19c035ae6a60e84e4ea6177981d3e4e05e6a1))
-* Cloud-Klassifizierung liefert Motivstärken, Teil 2 von 3 (Spec 0427) ([#447](https://github.com/TheRealKoller/photosort/issues/447)) ([da53dae](https://github.com/TheRealKoller/photosort/commit/da53dae3981a9159e83e7282061ea92aa2e0739f))
-* Hauptkategorie, Vorrangreihenfolge und Konfidenz-Schwelle ablösen, Teil 3 von 3 (Spec 0427) ([#450](https://github.com/TheRealKoller/photosort/issues/450)) ([22e9bf6](https://github.com/TheRealKoller/photosort/commit/22e9bf6607a01089bffe2cef756d190c0197d5d3))
-* Motive mit Stärke statt einer Hauptkategorie, Teil 1 von 3 (Spec 0427) ([#446](https://github.com/TheRealKoller/photosort/issues/446)) ([2368cf2](https://github.com/TheRealKoller/photosort/commit/2368cf2b9e87bc92d795ab5ba4acf8c78c9a1b48))
-* Zeitversatz je Kamera und Projekt korrigieren (Spec 0426) ([#445](https://github.com/TheRealKoller/photosort/issues/445)) ([115beec](https://github.com/TheRealKoller/photosort/commit/115beec599da010c2fd995f2d7fc6a4521f59ef1))
-
 ## [0.43.0](https://github.com/TheRealKoller/photosort/compare/v0.42.0...v0.43.0) (2026-09-11)
 
 
