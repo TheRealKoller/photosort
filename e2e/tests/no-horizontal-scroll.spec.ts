@@ -35,6 +35,13 @@ const TOLERANCE = 1
  */
 type Precondition = { heading: string } | { role: 'group'; name: string }
 
+/**
+ * Der zugaengliche Name des Zweizustands einer Entwurfskachel. Die Kacheln des Album-Entwurfs
+ * tragen KEINEN Kachel-Link und sind deshalb ueber `photoTiles()` nicht auffindbar - ihr
+ * Bedienelement ist der belastbare Beleg dafuer, dass die Seite wirklich Kacheln traegt.
+ */
+const DRAFT_TILE_TOGGLE = /^(Im Album|Gestrichen): /
+
 interface PageMetrics {
   scrollWidth: number
   clientWidth: number
@@ -69,7 +76,15 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       heading: DEMO_PROJECTS.error,
     },
     { label: 'Statistik', path: `/projects/${ratedId}/stats`, heading: 'Statistik' },
-    { label: 'Kuratierung', path: `/projects/${ratedId}/curate`, heading: 'Kuratierung' },
+    // Der Album-Entwurf braucht MINDESTENS EINE KACHEL als Vorbedingung: seine Antwortmenge haengt
+    // am Auswahlvorschlag des Laufs, und ein leerer Entwurf traegt zwar Ueberschrift und
+    // Inhaltshoehe, aber genau die Elemente nicht, die hier ueberstehen koennten.
+    {
+      label: 'Album-Entwurf',
+      path: `/projects/${ratedId}/album`,
+      heading: 'Album-Entwurf',
+      requiresTile: true,
+    },
     {
       label: 'Einstellungen',
       path: `/projects/${ratedId}/settings`,
@@ -80,7 +95,7 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     // Symbol, Beschriftung und Tasten-Kaestchen brauchen nebeneinander rund 400px, bei 360px
     // stehen 288px zur Verfuegung. Genau diese Route fehlte hier bisher.
     { label: 'Foto-Detail', path: detailPath, role: 'group' as const, name: 'Bewertung' },
-  ] satisfies ({ label: string; path: string } & Precondition)[]
+  ] satisfies ({ label: string; path: string; requiresTile?: boolean } & Precondition)[]
 
   const viewportWidth = page.viewportSize()?.width
   expect(viewportWidth, 'Viewport-Breite des Projekts').toBe(360)
@@ -96,6 +111,16 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
         ? page.getByRole('heading', { name: route.heading })
         : page.getByRole(route.role, { name: route.name })
     await expect(marker, `Vorbedingung auf "${route.label}"`).toBeVisible()
+
+    // Vorbedingung 1b, nur wo die Ueberschrift zu wenig sagt: Die Seite traegt tatsaechlich
+    // Kacheln. Eine Route, deren Inhaltsmenge von Laufergebnissen abhaengt, bestuende sonst genau
+    // dann, wenn sie leer ist.
+    if ('requiresTile' in route && route.requiresTile) {
+      await expect(
+        page.getByRole('button', { name: DRAFT_TILE_TOGGLE }).first(),
+        `Kachel-Vorbedingung auf "${route.label}"`,
+      ).toBeVisible()
+    }
 
     const metrics: PageMetrics = await page.evaluate(() => {
       const root = document.documentElement

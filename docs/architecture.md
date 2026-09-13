@@ -326,6 +326,50 @@ Verarbeitungs-Cache (Thumbnails).
       `rebuild_run_selection`). Der `409`-Wächter deckt Endpunkt-gegen-Lauf ab, nicht
       Endpunkt-gegen-Endpunkt; beide Wege erzeugen einen vollständigen, gültigen Vorschlag, und
       der schlechteste Ausgang ist einer nach altem Richtwert.
+  - **Der Auswahlmodus wird der Album-Entwurf, und seine Antwortmenge hängt am anfragenden
+    Nutzer** *(Spec [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md), ADR
+    [`decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md`](../specs/decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md))*:
+    `GET /projects/{id}/photos` verliert `selection` und bekommt `draft: bool = false`. Der Zweig
+    liefert `Vorschlag(letzter erfolgreicher Lauf) ∪ eigene Bewertung album_worthy`, **ohne
+    Ablehnungsfilter** — ein gestrichenes Foto bleibt in der Antwort und trägt seinen Zustand in
+    `ratings[]`; Streichen ist ein Anzeigezustand, kein Filter. Der Entwurf ist **abgeleitet**, es
+    entsteht keine Entwurfstabelle: „nie angefasst" ist die Abwesenheit einer eigenen
+    Albumentscheidung.
+    - Reihenfolge `(events.position, photos.taken_at, photos.id)` — innerhalb eines Events also
+      **chronologisch** nach der korrigierten Aufnahmezeit, nicht nach `selection_position`. Nach
+      `selection_position NULLS LAST` zu sortieren ist ausgeschlossen: Ein aufgenommenes Foto hat
+      keinen Platz im Vorschlag und stünde dann stets am Gruppenende, ein Austausch verschöbe das
+      Bild also statt es an seiner Stelle zu ersetzen. `curation_position` numeriert die
+      **gelieferte** Reihenfolge je Event lückenlos ab 1.
+    - `RankingOut` bekommt `proposed: bool` (`selection_position IS NOT NULL`) — **lauf-global,
+      ohne Nutzerbezug und auf allen Lesepfaden befüllt**, nicht nur im Entwurfsmodus. Erst dieses
+      Feld unterscheidet im Entwurf „vom Lauf vorgeschlagen" von „vom Nutzer aufgenommen".
+    - Ein aufgenommenes Foto **ohne Rangzeile** (im Ausschuss-Schritt aussortiert) wird über
+      `events.py::event_for_time` eingeordnet — Containment schlägt Nähe, beide Grenzen inklusiv,
+      bei Gleichstand gewinnt das frühere Event. Die Rangzeile hat Vorrang vor dieser Zuordnung.
+      Die Eventliste wird **einmal** geladen, die Zuordnung läuft in einem Durchgang: nie eine
+      Abfrage je Foto (Auflage S14). Ohne erfolgreichen Lauf ist der Entwurf leer, auch wenn der
+      Nutzer bereits Fotos aufgenommen hat.
+    - `limit`/`offset` bleiben in diesem Zweig **vollständig** wirkungslos — nie halb.
+    - `selection` bleibt als schemaloser Parameter stehen und endet in **beiden** Belegungen in
+      `422`. `selection=false` ist der gefährlichere Fall: heute ein gültiger Aufruf, der sonst
+      still in den Listing-Zweig fiele, obwohl die Antwortmenge des Nachfolgers eine andere
+      Bedeutung hat.
+    - `RatingWriteOut` nennt zusätzlich `user_id` (aus `current_user`, nie aus der Anfrage): Die
+      Entwurfsansicht schreibt den geschriebenen Zustand in ihre bereits geladene Liste fort,
+      statt sie neu zu laden, und ein Eintrag von `PhotoOut.ratings[]` trägt `user_id`.
+  - **Die Kuratierungsansicht wird der Album-Entwurf** *(dieselbe Spec)*: neue Seite
+    `pages/AlbumDraftPage.tsx` unter `PROJECT_ROUTE_PATHS.album = '/projects/:projectId/album'`,
+    mit Tages- und Eventgliederung in der **Antwortreihenfolge des Servers** (die Seite sortiert
+    nicht nach und bildet keine Auswahlregel nach), Richtwert und Ist-Anzahl nebeneinander ohne
+    Fehleroptik, und der Entwurfskachel `CurationPhotoTile` mit dem Zweizustand „Im Album" ⇄
+    „Gestrichen" (`aria-pressed`). Die Entscheidung läuft über eine **eigene** Mutation
+    (`useDraftDecisionMutation`), die den betroffenen Eintrag im Cache fortschreibt und nur die
+    übrigen Fotoabfragen invalidiert — die breite Invalidierung träfe sonst die Entwurfsliste mit,
+    und das gerade gestrichene Bild verschwände unter dem Finger. `pages/CuratePage.tsx`,
+    `utils/rankings.ts::curatedRanking` und die Route `/projects/:id/curate` entfallen
+    **ersatzlos, ohne Weiterleitung**: Ein stillschweigend umgeleiteter Altlink verdeckte, dass
+    sich die Ansicht geändert hat.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).

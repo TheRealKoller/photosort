@@ -34,7 +34,7 @@ test('geoeffnete Popover bleiben vollstaendig im Sichtbereich', async ({ page })
   const routes = [
     { label: 'Foto-Grid', path: `/projects/${ratedId}/photos` },
     { label: 'Statistik', path: `/projects/${ratedId}/stats` },
-    { label: 'Kuratierung', path: `/projects/${ratedId}/curate` },
+    { label: 'Album-Entwurf', path: `/projects/${ratedId}/album` },
   ]
 
   const viewport = page.viewportSize()
