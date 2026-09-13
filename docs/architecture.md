@@ -151,9 +151,10 @@ Verarbeitungs-Cache (Thumbnails).
     (acht Einträge in Registry-Reihenfolge mit `key`, `strength` als **wirksamer** Stärke und
     `correction: bool | None`; leer, solange keine Kopfzeile existiert). Die überstimmte
     Modellzahl geht bewusst **nicht** mit: die Oberfläche darf sie neben dem Korrekturwort nicht
-    zeigen, und ein Feld ohne Leser verschiebt nur die Frage, was es bedeutet. Der Kuratierungsparameter heißt `top_n_per_event`, und `GET
-    /projects/{id}/curation-candidates` verliert `category_key` — die Partition ist allein das
-    Event. `GET /projects/{id}/stats` liefert `motifs` (je Motiv `strong_count`/`medium_count`/
+    zeigen, und ein Feld ohne Leser verschiebt nur die Frage, was es bedeutet. Der
+    Kuratierungsparameter hieß bis Spec 0429 `top_n_per_event` (siehe die Ablösung weiter unten),
+    und `GET /projects/{id}/curation-candidates` verliert `category_key` — die Partition ist allein
+    das Event. `GET /projects/{id}/stats` liefert `motifs` (je Motiv `strong_count`/`medium_count`/
     `weak_count`/`average_strength`), `strength_bands`, `motif_correction_count`,
     `unassessed_photo_count` und `excluded_photo_count` statt `categories`/`category_confidence`/
     `manual_category_override_count`.
@@ -294,6 +295,37 @@ Verarbeitungs-Cache (Thumbnails).
     `utils/timeOfDay.ts::formatEventHeading()` daraus zwei Formen — `"<Name> (<Zeitspanne>)"` oder
     `"Position <n> (<Zeitspanne>)"`; Tageszeit-Kategorien und die Koordinate als Name entfallen mit
     Spec 0425.
+  - **Der Kuratierungsparameter wird ein Schalter, und ein neuer Schreib-Endpunkt setzt den
+    Richtwert** *(Spec [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
+    [`decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md))*:
+    `GET /projects/{id}/photos` verliert `top_n_per_event` **ersatzlos** und bekommt
+    `selection: bool = false`. Im Auswahlmodus liefert der Endpunkt genau die Fotos mit
+    `selection_position IS NOT NULL` des letzten erfolgreichen Laufs, sortiert nach
+    `(events.position, selection_position)`; `curation_position` trägt dort die
+    `selection_position`, **nicht** die `rank_position`. Das Antwortschema bleibt unverändert. Ein
+    Aufruf mit dem alten Parameter endet in `422` statt still ignoriert zu werden — ein
+    Übergangsweg, der beide Parameter kennt, wäre eine zweite Auswahlregel.
+    `GET /projects/{id}/curation-candidates` bleibt unberührt: der volle Vorrat bleibt einsehbar.
+    - **`limit`/`offset` wirken im Auswahlmodus weiterhin gar nicht** — nie halb. Damit entfällt
+      die bisherige Obergrenze der Kuratierungsantwort (`top_n <= 10` je Event) ersatzlos; die
+      neue Obergrenze ist der auswahlfähige Bestand des Laufs. Bewusst getragen (die Ansicht zeigt
+      den Vorschlag als Ganzes, beide Nutzer sind die Vertrauensbasis); ein abgeschnittener
+      Vorschlag, den die Ansicht als vollständigen ausweist, wäre dagegen ein Zustand, den keine
+      Anzeige als fehlerhaft erkennt.
+    - `PUT /projects/{id}/selection-target` (`api/projects.py`, am Router-weiten Auth-Guard, Body
+      `{"target": int | null}` mit `ge=1` und statischem Deckel `MAX_SELECTION_TARGET`) setzt den
+      Richtwert und rechnet den Vorschlag des letzten erfolgreichen Laufs **synchron in derselben
+      Transaktion** neu (`worker.py::rebuild_run_selection`, ohne Cloud-Aufruf und ohne
+      Bildverarbeitung; Events und Rangzeilen bleiben unangetastet), Antwort ist `ProjectOut`.
+      Reihenfolge der Prüfungen: `404` → `409`, solange der neueste `CriterionScoringRun` des
+      Projekts `RUNNING` ist (enger als der Versatz-Wächter: nur dieser Lauftyp schreibt
+      `selection_position`) → schreiben. `null` ist ein eigener zulässiger Wert (der Rückweg zur
+      Vorbelegung) und von „Feld fehlt" zu unterscheiden; `0` ist kein Weg dorthin.
+    - **Nicht geschlossen, bewusst:** zwei synchron rechnende Endpunkte schreiben auf dieselben
+      Rangzeilen (`PUT …/time-offset` über `rebuild_run_grouping`, `PUT …/selection-target` über
+      `rebuild_run_selection`). Der `409`-Wächter deckt Endpunkt-gegen-Lauf ab, nicht
+      Endpunkt-gegen-Endpunkt; beide Wege erzeugen einen vollständigen, gültigen Vorschlag, und
+      der schlechteste Ausgang ist einer nach altem Richtwert.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
@@ -360,7 +392,15 @@ Verarbeitungs-Cache (Thumbnails).
     [`0428`](../specs/features/0428-albumtauglichkeit-vom-modell.md) ist `rank_photos` eine **reine
     Sortierung**: der Qualitätswert selbst entsteht in `quality.py` — dort stehen die Gewichte
     (`QUALITY_CRITERION_WEIGHTS`) und `LOCAL_CORRECTION_SPAN` an genau einer Stelle, und
-    `album_suitability.py` hält Stufenband, Ankertexte und den Parser der Modellaussage. Der
+    `album_suitability.py` hält Stufenband, Ankertexte und den Parser der Modellaussage. Seit Spec
+    [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md) hängt am Ende desselben
+    Schritts — innerhalb der bestehenden Phase `RANKING`, unmittelbar hinter den Rangzeilen — der
+    Auswahlvorschlag aus dem vierten reinen Modul dieser Familie, `selection.py`: es trägt die
+    Kontingent- und Vergabelogik samt ihren fünf Stellschrauben (`EVENT_SHARE_CAP`,
+    `MOTIF_PRESENCE_THRESHOLD`, `SIMILARITY_DECAY`, `SIMILARITY_TIME_WINDOW`,
+    `DEFAULT_TARGET_DIVISOR`) an genau einer Stelle und nennt `motifs.py` nicht — die Grenze, ab
+    der ein Motiv als getragen gilt, ist **keines** der Anzeigebänder (ADR 0091 Punkt 8). Der
+    Klassifizierungs-Prompt lebt in `classification_prompt.py` (Motivblock plus
     Klassifizierungs-Prompt lebt in `classification_prompt.py` (Motivblock plus
     Albumtauglichkeits-Block); `motifs.py` bleibt reines Registermodul und weiß nichts über die
     Antwortform des Anbieters. `classification.py`s mediapipe Face Detector Task-API (gepinntes
@@ -614,6 +654,17 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     die Erreichbarkeit von `projects` entlang der Fremdschlüsselkanten) — nötig, weil die Testsuite
     gegen SQLite **ohne** `PRAGMA foreign_keys=ON` läuft und eine falsche Reihenfolge dort
     strukturell nicht auffiele.
+  - **Richtwert des Auswahlvorschlags** *(Spec
+    [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
+    [`decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
+    Migration `e7f8a9b0c1d2`)*: additiv `selection_target: int | None`. **`NULL` heißt nicht „kein
+    Richtwert", sondern „nicht selbst eingestellt"** — wirksam ist dann ein Zehntel der Bilderzahl
+    des Projekts, aufgerundet und mindestens 1, im Moment der Auswahl berechnet und damit mit dem
+    Bestand mitwachsend. Die Vorbelegung wird **nie** in die Spalte geschrieben; ein
+    eingeschriebener Vorgabewert wäre von einer Nutzereingabe nicht mehr zu unterscheiden. Die
+    Ableitung lebt an genau einer Stelle (`selection.py::effective_target`), und `ProjectOut` trägt
+    beide Werte (`selection_target`, `effective_selection_target`), damit das Frontend die zweite
+    nicht selbst bildet. Projektweit, ohne `user_id`-Bezug.
 - **OpenCloud-Verbindung**: kein eigenes DB-Modell — eine einzige, instanzweite Verbindung,
   konfiguriert über
   `OPENCLOUD_BASE_URL`/`OPENCLOUD_USERNAME`/`OPENCLOUD_APP_TOKEN`/`OPENCLOUD_DRIVE_NAME` in `.env`.
@@ -981,6 +1032,27 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     fehlgeschlagen); ein solches Foto erscheint nicht im Album-Entwurf, bleibt aber im einsehbaren
     Vorrat. `event_id` bleibt `NOT NULL` — die Gliederung nach Events ist keine Cloud-Leistung und
     entsteht auch ohne Freigabe.
+  - **Neue Spalte `selection_position: int | None` und eine neue Auswahlregel** *(Spec
+    [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
+    [`decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0096-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
+    Migration `e7f8a9b0c1d2`)*: der 1-basierte Platz eines Fotos im Auswahlvorschlag **innerhalb
+    seines Events**; `NULL` heißt „gehört nicht zum Vorschlag". Der Vorschlag ist damit ein
+    **persistiertes Lauf-Artefakt** statt eines Leseparameters: „die besten N je Event, N beim
+    Ansehen gewählt" entfällt ersatzlos. Berechnet wird er von der reinen, DB-freien Funktion
+    `selection.py::select_album_draft` in zwei Stufen — Kontingente je Event (jedes Event
+    mindestens ein Platz, der Rest nach `√n_i` im Größte-Reste-Verfahren, Obergrenze
+    `min(n_i, max(⌈T/m⌉, ⌈0,25·T⌉))` mit Umverteilung der gekappten Plätze) und darin eine
+    motivgeführte Greedy-Vergabe mit Ähnlichkeitsabwertung
+    (`rank_score · 0,5^Σ ähnlichkeit`, `ähnlichkeit = geteiltes_motiv · max(0, 1 − |Δt|/15min)`).
+    Auswahlfähig ist eine Rangzeile mit `rank_score IS NOT NULL` und ohne `excluded_document` am
+    Foto. **Geschrieben an genau einer Stelle** (`worker.py`, ein struktureller Wächter in
+    `test_models.py` hält das fest), mit drei Auslösern: dem Kriterien-Lauf und dem Neuaufbau nach
+    einer Versatz-Änderung (beide über `_build_grouping_and_rankings`, innerhalb der bestehenden
+    Phase `RANKING` — **kein** neuer `ClassificationPhase`-Wert) sowie `rebuild_run_selection`
+    hinter dem Richtwert-Endpunkt. **Der Wert ist lauf-global und hat keinen Nutzerbezug.**
+    Bestandsläufe tragen überall `NULL` und zeigen einen leeren Vorschlag, bis ein neuer Lauf oder
+    eine Richtwert-Änderung ihn erzeugt; eine rückwirkend rechnende Migration gibt es bewusst
+    nicht.
 - **Event** *(implementiert, Spec
   [`0425`](../specs/features/0425-events-statt-zeitcluster.md), `models.py`, Tabelle `events`, ADR
   [`decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md`](../specs/decisions/0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md),
