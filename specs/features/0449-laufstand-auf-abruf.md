@@ -1,6 +1,6 @@
 # 0449 - Stand eines laufenden Umsetzungslaufs auf Abruf
 
-**Status:** Accepted
+**Status:** Implemented ([PR #453](https://github.com/TheRealKoller/photosort/pull/453))
 **Erstellt:** 2026-09-13
 **Bezug:** [GitHub-Issue #449](https://github.com/TheRealKoller/photosort/issues/449)
 
