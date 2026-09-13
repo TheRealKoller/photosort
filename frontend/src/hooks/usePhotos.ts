@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { listDraftAlternatives, listPhotos } from '../api/photos'
+import { exchangeDraftPhoto, listDraftAlternatives, listPhotos } from '../api/photos'
 import { deleteRating, setFavorite, setRating } from '../api/ratings'
 import type {
   PhotoListOut,
@@ -200,14 +200,22 @@ export function useDraftDecisionMutation(projectId: number, username: string | n
  * „gestrichen"; die Alternative wird über `insertDraftPhoto` an ihren chronologischen Platz
  * geschrieben - denselben, den der Server ihr beim nächsten vollständigen Laden gäbe.
  */
+/**
+ * Der Austausch — EIN Aufruf statt zweier `setRating` (Spec 0432).
+ *
+ * Die beiden Schreibvorgänge waren nicht atomar: Der zweite konnte fehlschlagen und einen halb
+ * ausgeführten Austausch hinterlassen, und ihre Zusammengehörigkeit kannte allein dieser Client.
+ * Der Server schreibt beide Bewertungszeilen jetzt in einer Transaktion und hält „B statt A" als
+ * EIN Ereignis fest; über zwei getrennte Aufrufe wäre daraus nie ein Paar geworden.
+ *
+ * Die Fortschreibung des Caches bleibt unverändert — sie liest beide Zeilenzustände weiterhin aus
+ * der Antwort, nur jetzt aus einer statt aus zweien.
+ */
 export function useDraftExchangeMutation(projectId: number, username: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ replaced, chosen }: { replaced: PhotoOut; chosen: PhotoOut }) => {
-      const struck = await setRating(replaced.id, 'rejected')
-      const taken = await setRating(chosen.id, 'album_worthy')
-      return { struck, taken }
-    },
+    mutationFn: ({ replaced, chosen }: { replaced: PhotoOut; chosen: PhotoOut }) =>
+      exchangeDraftPhoto(projectId, chosen.id, replaced.id),
     onSuccess: ({ struck, taken }, { chosen }) => {
       if (username !== null) {
         queryClient.setQueryData<PhotoListOut>(draftQueryKey(projectId), (current) => {

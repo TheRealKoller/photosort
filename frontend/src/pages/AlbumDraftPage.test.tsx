@@ -422,6 +422,11 @@ describe('AlbumDraftPage', () => {
       }
     }
 
+    /** Die Antwort des Austausch-Endpunkts: beide geschriebenen Zeilen in einer Antwort. */
+    function exchangeAnswer(takenId: number, struckId: number) {
+      return { taken: written(takenId, 'album_worthy'), struck: written(struckId, 'rejected') }
+    }
+
     it('asks for alternatives only once the dialog is opened - never one query per tile', async () => {
       // Die Durchsatz-Zusage der Ansicht: Bei hundert Kacheln liefe sonst hundertmal derselbe
       // Endpunkt, bevor jemand auch nur einen Austausch angefangen hat.
@@ -448,19 +453,21 @@ describe('AlbumDraftPage', () => {
       })
     })
 
-    it('exchanges in two writes, closes the dialog and shows BOTH photos', async () => {
+    it('exchanges in ONE write, closes the dialog and shows BOTH photos', async () => {
       // Das Akzeptanzkriterium des Austauschs: das neue Bild als „Im Album", das ersetzte an
       // seiner Stelle als „Gestrichen". Es rückt nichts nach und es entsteht keine Lücke - und
       // die Entwurfsliste wird dabei NICHT neu geladen.
+      //
+      // Umgeschrieben mit Spec 0432: EIN Aufruf statt zweier. Die negative Assertion trägt den
+      // Fall - ein stehengebliebener Doppelschreibweg sähe an der Oberfläche identisch aus und
+      // erzeugte serverseitig drei Ereignisse statt einem.
       vi.mocked(photosApi.listPhotos).mockResolvedValue(
         listOut([photo({ id: 1, relative_path: 'a.jpg', taken_at: '2026-07-20T10:00:00' })]),
       )
       vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
         listOut([photo({ id: 2, relative_path: 'b.jpg', taken_at: '2026-07-20T10:30:00' })]),
       )
-      vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
-        Promise.resolve(written(photoId, photoId === 1 ? 'rejected' : 'album_worthy')),
-      )
+      vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValue(exchangeAnswer(2, 1))
 
       renderPage()
       await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
@@ -469,11 +476,9 @@ describe('AlbumDraftPage', () => {
       await userEvent.click(await screen.findByLabelText('Austauschen gegen: b.jpg'))
 
       await waitFor(() =>
-        expect(vi.mocked(ratingsApi.setRating).mock.calls).toEqual([
-          [1, 'rejected'],
-          [2, 'album_worthy'],
-        ]),
+        expect(vi.mocked(photosApi.exchangeDraftPhoto).mock.calls).toEqual([[1, 2, 1]]),
       )
+      expect(ratingsApi.setRating).not.toHaveBeenCalled()
       expect(await screen.findByLabelText('Gestrichen: a.jpg')).toBeInTheDocument()
       expect(screen.getByLabelText('Im Album: b.jpg')).toBeInTheDocument()
       expect(screen.queryByLabelText('Austauschen gegen: b.jpg')).toBeNull()
@@ -489,9 +494,7 @@ describe('AlbumDraftPage', () => {
       vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
         listOut([photo({ id: 2, relative_path: 'b.jpg', taken_at: '2026-07-20T10:30:00' })]),
       )
-      vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
-        Promise.resolve(written(photoId, photoId === 1 ? 'rejected' : 'album_worthy')),
-      )
+      vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValue(exchangeAnswer(2, 1))
 
       renderPage()
       await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
@@ -509,8 +512,8 @@ describe('AlbumDraftPage', () => {
       vi.mocked(photosApi.listDraftAlternatives)
         .mockResolvedValueOnce(listOut([chosen]))
         .mockResolvedValue(listOut([{ ...replaced, ratings: [ownRating('rejected')] }]))
-      vi.mocked(ratingsApi.setRating).mockImplementation((photoId, status) =>
-        Promise.resolve(written(photoId, status)),
+      vi.mocked(photosApi.exchangeDraftPhoto).mockImplementation((_projectId, takenId, struckId) =>
+        Promise.resolve(exchangeAnswer(takenId, struckId)),
       )
 
       renderPage()
@@ -523,12 +526,13 @@ describe('AlbumDraftPage', () => {
       await userEvent.click(screen.getByLabelText('Austauschen gegen: a.jpg'))
 
       // Beide Zeilen zurück: das zurückgeholte Bild ist wieder im Album, das eingewechselte
-      // gestrichen.
+      // gestrichen. Serverseitig ist die Umkehr ein ZWEITER Austausch mit eigenem Ereignis, der
+      // den ersten nicht löscht (ADR 0100 Punkt 3) - hier zählen die zwei Aufrufe.
       expect(await screen.findByLabelText('Im Album: a.jpg')).toBeInTheDocument()
       expect(screen.getByLabelText('Gestrichen: b.jpg')).toBeInTheDocument()
-      expect(vi.mocked(ratingsApi.setRating).mock.calls.slice(-2)).toEqual([
-        [2, 'rejected'],
-        [1, 'album_worthy'],
+      expect(vi.mocked(photosApi.exchangeDraftPhoto).mock.calls).toEqual([
+        [1, 2, 1],
+        [1, 1, 2],
       ])
     })
   })

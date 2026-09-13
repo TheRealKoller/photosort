@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch, apiFetchBlob } from './client'
-import { fetchPhotoImageBlobUrl, listDraftAlternatives, listPhotos } from './photos'
+import {
+  exchangeDraftPhoto,
+  fetchPhotoImageBlobUrl,
+  listDraftAlternatives,
+  listPhotos,
+} from './photos'
 import type { PhotoListOut } from './types'
 
 vi.mock('./client', () => ({
@@ -117,6 +122,28 @@ describe('api/photos', () => {
     await listDraftAlternatives(1, { eventId: 7, photoId: 3 })
 
     expect(vi.mocked(apiFetch).mock.calls.at(-1)?.[0]).not.toContain('curation-candidates')
+  })
+
+  it('exchangeDraftPhoto posts both photo ids and nothing else', async () => {
+    /* Spec 0432, Auflage S4: Der Body trägt AUSSCHLIESSLICH die beiden Foto-Ids. Kein `event_id`,
+     * kein Gewicht, kein Nutzer — geprüft als GLEICHHEIT der Schlüsselmenge und nicht als
+     * Teilmenge: Ein zusätzlich mitgeschicktes Feld wird vom Server mit `422` abgewiesen, und
+     * `weight` ließe die eigene Korrektur in der global wirkenden Ableitung stärker zählen. */
+    vi.mocked(apiFetch).mockResolvedValue({
+      taken: { photo_id: 2, user_id: 1, status: 'album_worthy', favorite: false, updated_at: null },
+      struck: { photo_id: 1, user_id: 1, status: 'rejected', favorite: false, updated_at: null },
+    })
+
+    const result = await exchangeDraftPhoto(7, 2, 1)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/7/draft/exchange', {
+      method: 'POST',
+      body: { photo_id: 2, replaced_photo_id: 1 },
+    })
+    const body = vi.mocked(apiFetch).mock.calls.at(-1)?.[1]?.body as Record<string, unknown>
+    expect(Object.keys(body).sort()).toEqual(['photo_id', 'replaced_photo_id'])
+    expect(result.taken.photo_id).toBe(2)
+    expect(result.struck.photo_id).toBe(1)
   })
 
   it('fetchPhotoImageBlobUrl requests the image and returns an object URL', async () => {

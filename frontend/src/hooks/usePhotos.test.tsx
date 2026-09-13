@@ -212,8 +212,14 @@ describe('useDraftExchangeMutation', () => {
     updated_at: '2026-09-13T10:00:00',
   })
 
+  const exchanged = (takenId: number, struckId: number) => ({
+    taken: written(takenId, 'album_worthy' as const),
+    struck: written(struckId, 'rejected' as const),
+  })
+
   beforeEach(() => {
     vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(photosApi.exchangeDraftPhoto).mockReset()
     vi.mocked(ratingsApi.setRating).mockReset()
   })
 
@@ -232,12 +238,16 @@ describe('useDraftExchangeMutation', () => {
     }
   }
 
-  it('writes TWO ratings - first the strike, then the take', async () => {
-    // Die Reihenfolge steht in ADR 0098: streichen des Bezugsbilds, dann aufnehmen der
-    // Alternative. Umgekehrt stuende zwischendurch ein Bild zu viel im Entwurf.
-    vi.mocked(ratingsApi.setRating)
-      .mockResolvedValueOnce(written(1, 'rejected'))
-      .mockResolvedValueOnce(written(2, 'album_worthy'))
+  it('writes ONE exchange call and no rating call at all', async () => {
+    // Umgeschrieben mit Spec 0432: Aus den zwei `setRating`-Aufrufen wird EIN `exchangeDraft`.
+    // Die Reihenfolge aus ADR 0098 (erst streichen, dann aufnehmen) ist damit gegenstandslos -
+    // beide Zeilen entstehen serverseitig in EINER Transaktion, und ein halb ausgefuehrter
+    // Austausch kann nicht mehr entstehen.
+    //
+    // DIE NEGATIVE ASSERTION IST DIE TRAGENDE: Ohne sie bliebe ein stehengebliebener
+    // Doppelschreibweg unsichtbar - die Oberflaeche saehe richtig aus, und jeder Austausch
+    // erzeugte DREI Ereignisse statt einem.
+    vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValue(exchanged(2, 1))
     const { result } = renderHook(() => useDraftExchangeMutation(1, 'testuser'), { wrapper })
 
     await result.current.mutateAsync({
@@ -245,10 +255,10 @@ describe('useDraftExchangeMutation', () => {
       chosen: draftPhoto(2, '2026-07-20T11:00:00'),
     })
 
-    expect(vi.mocked(ratingsApi.setRating).mock.calls).toEqual([
-      [1, 'rejected'],
-      [2, 'album_worthy'],
-    ])
+    // Das GEWAEHLTE Bild zuerst, das ersetzte danach - die Reihenfolge der Argumente ist die des
+    // Bodys, und vertauscht taeuschte der Aufruf genau die Gegenrichtung vor.
+    expect(vi.mocked(photosApi.exchangeDraftPhoto).mock.calls).toEqual([[1, 2, 1]])
+    expect(ratingsApi.setRating).not.toHaveBeenCalled()
   })
 
   it('writes both photos into the draft cache without reloading the list', async () => {
@@ -258,9 +268,7 @@ describe('useDraftExchangeMutation', () => {
     const replaced = draftPhoto(1, '2026-07-20T10:00:00')
     const chosen = draftPhoto(2, '2026-07-20T11:00:00')
     vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [replaced], total: 1 })
-    vi.mocked(ratingsApi.setRating)
-      .mockResolvedValueOnce(written(1, 'rejected'))
-      .mockResolvedValueOnce(written(2, 'album_worthy'))
+    vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValue(exchanged(2, 1))
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const sharedWrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -285,6 +293,33 @@ describe('useDraftExchangeMutation', () => {
     expect(cached?.total).toBe(2)
     // Kein Neuladen der Entwurfsliste - der eine Aufruf ist der des ersten Ladens.
     expect(photosApi.listPhotos).toHaveBeenCalledTimes(1)
+    expect(ratingsApi.setRating).not.toHaveBeenCalled()
+  })
+
+  it('leaves the draft cache untouched when the exchange fails', async () => {
+    // Spec 0432: Der Austausch ist serverseitig atomar - scheitert er, ist KEINE der beiden
+    // Bewertungszeilen geaendert. Die Oberflaeche muss das spiegeln: Ein optimistisch
+    // fortgeschriebener Cache zeigte danach einen Austausch, den es nicht gibt, und erst ein
+    // vollstaendiges Neuladen brachte das ans Licht.
+    const replaced = draftPhoto(1, '2026-07-20T10:00:00')
+    const chosen = draftPhoto(2, '2026-07-20T11:00:00')
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [replaced], total: 1 })
+    vi.mocked(photosApi.exchangeDraftPhoto).mockRejectedValue(new Error('422'))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const sharedWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const draft = renderHook(() => useDraftQuery(1), { wrapper: sharedWrapper })
+    await waitFor(() => expect(draft.result.current.isSuccess).toBe(true))
+
+    const { result } = renderHook(() => useDraftExchangeMutation(1, 'testuser'), {
+      wrapper: sharedWrapper,
+    })
+    await expect(result.current.mutateAsync({ replaced, chosen })).rejects.toThrow()
+
+    const cached = queryClient.getQueryData<PhotoListOut>(['photos', 1, 'draft'])
+    expect(cached?.items.map((item) => item.id)).toEqual([1])
+    expect(cached?.items[0]?.ratings).toEqual([])
   })
 })
 
