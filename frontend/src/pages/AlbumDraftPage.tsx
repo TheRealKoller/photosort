@@ -17,13 +17,9 @@ import {
   useDraftQuery,
 } from '../hooks/usePhotos'
 import { useProjectQuery } from '../hooks/useProjects'
-import type { DraftEventGroup } from '../utils/albumDraft'
-import {
-  draftMotifText,
-  draftSizeText,
-  formatDraftPhotoCount,
-  groupDraftByDay,
-} from '../utils/albumDraft'
+import { draftMotifText, draftSizeText, formatDraftPhotoCount } from '../utils/albumDraft'
+import type { PhotoEventGroup } from '../utils/eventGrouping'
+import { groupPhotosByDay } from '../utils/eventGrouping'
 import { ownRatingStatus } from '../utils/ownRating'
 import { formatDayHeading } from '../utils/timeOfDay'
 
@@ -124,7 +120,7 @@ export function AlbumDraftPage() {
   // Ueberschrift und einem eigenen Leerzustand stehenzubleiben.
   const knownEventGroupsRef = useRef<Map<number, KnownEventGroup>>(new Map())
 
-  const days = groupDraftByDay(items)
+  const days = groupPhotosByDay(items)
   for (const day of days) {
     for (const group of day.events) {
       knownEventGroupsRef.current.set(group.eventId, {
@@ -218,7 +214,7 @@ export function AlbumDraftPage() {
     )
   }
 
-  function renderEventGroup(group: DraftEventGroup) {
+  function renderEventGroup(group: PhotoEventGroup) {
     // Die Motivmischung entsteht aus den KACHELN dieser Gruppe, nie aus einer Serveraggregation:
     // eine solche waere nach jeder Entscheidung veraltet (die Entwurfsliste laedt bewusst nicht
     // neu, ADR 0098 Punkt 6) und naennte ein Motiv, das kein Bild der Gruppe mehr traegt.

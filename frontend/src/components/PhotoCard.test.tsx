@@ -116,6 +116,22 @@ describe('PhotoCard', () => {
     expect(screen.queryByText('–')).not.toBeInTheDocument()
   })
 
+  /*
+   * `setAside` ist die gemeinsame Herausnahme aus der Endauswahl (Spec 0431): dieselbe
+   * Zuruecknahme wie bei einer Streichung, aber OHNE Bewertungs-Kennzeichen. Beide Haelften
+   * gehoeren in EINEN Fall - getrennt bestuende jede auch bei einer Umsetzung, die `setAside`
+   * einfach auf `status='rejected'` abbildet und damit ein unbenanntes "Verworfen" an den
+   * Kartenkoerper haengt.
+   */
+  it('lets a set-aside card step back WITHOUT asserting a rating state', () => {
+    const { container } = renderCard({ setAside: true })
+
+    expect(container.querySelector('[data-struck="true"]')?.textContent).toBe('IMG_0042.jpg')
+    expect(container.querySelector('.opacity-40')).not.toBeNull()
+    expect(container.querySelector('[data-rating-status]')).toBeNull()
+    expect(screen.queryByLabelText('Verworfen')).not.toBeInTheDocument()
+  })
+
   it('shows no rating indicator at all when the card carries no rating state', () => {
     // Kuratierung und Vergleich zeigen den Zustand woanders bzw. gar nicht - die Karte darf dort
     // nichts hinzufuegen ("es wird nichts hinzugefuegt" ist Akzeptanzkriterium).

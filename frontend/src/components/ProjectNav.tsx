@@ -149,7 +149,7 @@ export function ProjectNav({ projectId }: ProjectNavProps) {
       {/* gap-3 (12px) ist Pflicht, kein Geschmack: die aufgespannten Trefferflaechen ragen bis zu
           6px je Seite ueber das Sichtbare hinaus und duerfen sich nicht ueberlappen - in einer
           Überlappung gewinnt das obenliegende Element. Ab `lg:` steht auch der Auslöser
-          unmittelbar neben "Vergleich", deshalb trägt der <nav> denselben Abstand. */}
+          unmittelbar neben "Endauswahl", deshalb trägt der <nav> denselben Abstand. */}
       <div className="hidden items-center gap-3 lg:flex">
         {PROJECT_NAV_PRIMARY_TARGETS.map((target) => (
           <ProjectNavLink

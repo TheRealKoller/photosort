@@ -2,7 +2,6 @@ import type { EventOut, PhotoListOut, PhotoOut, RatingStatus } from '../api/type
 import type { MotifSet } from './motifLabels'
 import { formatMotifKey } from './motifLabels'
 import { ownRatingStatus } from './ownRating'
-import { formatEventHeading } from './timeOfDay'
 
 /**
  * Reine Ableitungen des Album-Entwurfs - getrennt von der Ansicht, damit sie ohne Router,
@@ -54,59 +53,6 @@ export function isTakenWithoutProposal(photo: PhotoOut, ownStatus: RatingStatus 
   return !ranking || ranking.proposed === false
 }
 
-/** Eine Eventgruppe des Entwurfs - die Fotos in der Reihenfolge der Serverantwort. */
-export interface DraftEventGroup {
-  eventId: number
-  heading: string
-  photos: PhotoOut[]
-}
-
-/** Ein Tages-Abschnitt des Entwurfs mit seinen Eventgruppen. */
-export interface DraftDay {
-  dayKey: string
-  events: DraftEventGroup[]
-}
-
-/**
- * Die zwei Gruppierungsebenen des Entwurfs: Tag und Event.
- *
- * DIE REIHENFOLGE IST DIE DER SERVERANTWORT - Tage, Eventgruppen und Fotos erscheinen in der
- * Reihenfolge ihres ersten Auftretens, und innerhalb einer Gruppe unverändert. Der Server sortiert
- * nach `(events.position, taken_at, photo_id)`; eine zweite Sortierung hier wäre eine zweite
- * Wahrheit über dieselbe Liste und liefe an dem Tag auseinander, an dem eine der beiden sich
- * ändert.
- *
- * Ein Foto ohne `event` wird ÜBERSPRUNGEN. Der Server liefert das Event auf jedem Foto des
- * Entwurfs; die Ausfallrichtung ist „nicht zeigen", nie eine erfundene Gruppe.
- */
-export function groupDraftByDay(items: PhotoOut[]): DraftDay[] {
-  const days: DraftDay[] = []
-  const dayByKey = new Map<string, DraftDay>()
-  const groupByEventId = new Map<number, DraftEventGroup>()
-
-  for (const photo of items) {
-    const photoEvent = photo.event
-    if (!photoEvent) {
-      continue
-    }
-    const { dayKey, heading } = formatEventHeading(photoEvent)
-    let day = dayByKey.get(dayKey)
-    if (day === undefined) {
-      day = { dayKey, events: [] }
-      dayByKey.set(dayKey, day)
-      days.push(day)
-    }
-    let group = groupByEventId.get(photoEvent.id)
-    if (group === undefined) {
-      group = { eventId: photoEvent.id, heading, photos: [] }
-      groupByEventId.set(photoEvent.id, group)
-      day.events.push(group)
-    }
-    group.photos.push(photo)
-  }
-  return days
-}
-
 /**
  * Nimmt ein Foto in eine bereits geladene Entwurfsliste auf — rein, ohne Cache und ohne Netz.
  *
@@ -117,8 +63,8 @@ export function groupDraftByDay(items: PhotoOut[]): DraftDay[] {
  *
  * Zwei Fälle lassen die Liste UNVERÄNDERT (dieselbe Objektreferenz): das Foto steht bereits darin
  * — ein zweites Vorkommen wäre eine Kachel, die zweimal dasteht —, und ein Foto ohne Event, das
- * `groupDraftByDay` ohnehin überginge und dessen einzige Wirkung eine falsche Ist-Anzahl im
- * Kopfbereich wäre.
+ * `eventGrouping.ts::groupPhotosByDay` ohnehin überginge und dessen einzige Wirkung eine falsche
+ * Ist-Anzahl im Kopfbereich wäre.
  *
  * Unberührte Fotos behalten ihre OBJEKTREFERENZ (wie `applyWrittenRating`).
  */

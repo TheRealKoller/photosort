@@ -60,7 +60,7 @@ const buttonVariants = cva(
         // Radius 6px ist formgleich mit dem Kennzeichen "Aussortiert" und dem aktiven
         // "Verwerfen"-Eintrag der Bewertungsleiste - `destructive` darf deshalb auf keiner
         // Ansicht stehen, die Bewertungs-Kennzeichen oder die Bewertungsleiste zeigt (Raster,
-        // Kuratierung, Einzelbild, Vergleich).
+        // Kuratierung, Einzelbild, Endauswahl).
         destructive: 'bg-danger text-danger-fg hover:opacity-85 active:opacity-70',
         // Link ist Text im Fließtext, keine Schaltfläche - eigene Größe und kein Board-Maß.
         link: 'bg-transparent text-sm font-normal text-accent-strong underline-offset-4 hover:underline active:underline p-0 h-auto min-h-0 min-w-0',

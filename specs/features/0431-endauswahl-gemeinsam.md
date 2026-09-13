@@ -1,6 +1,6 @@
 # 0431 - Zwei Album-Entwürfe vergleichen und gemeinsam die Endauswahl treffen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #471](https://github.com/TheRealKoller/photosort/pull/471))
 **Erstellt:** 2026-09-13
 **Bezug:** [Issue #431](https://github.com/TheRealKoller/photosort/issues/431) (Story unter dem Zielbild [#424](https://github.com/TheRealKoller/photosort/issues/424))
 

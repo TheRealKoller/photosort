@@ -199,13 +199,33 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Fotos' })).toBeInTheDocument()
   })
 
-  it('routes /projects/:id/compare to the comparison view within the app shell', async () => {
+  it('routes /projects/:id/selection to the joint final selection within the app shell', async () => {
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+
+    renderApp(['/projects/1/selection'])
+
+    expect(screen.getByText('PhotoSort')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Endauswahl' })).toBeInTheDocument()
+  })
+
+  /*
+   * Zusicherung 28: Die alte Vergleichsroute entfaellt OHNE Weiterleitung - aus demselben Grund
+   * wie `/curate` (ADR 0099 Punkt 8): Ein zweiter Weg auf den einen verbleibenden Ort waere ein
+   * zweiter Ort. Beide Haelften gehoeren in EINEN Fall; ohne die zweite bliebe ein
+   * eingeschlichener Redirect unsichtbar, ohne die erste ein vergessener Wegfall.
+   */
+  it('renders nothing for the dropped /compare route and redirects nowhere', async () => {
     setToken(makeToken({ sub: '1', username: 'daniel' }))
 
     renderApp(['/projects/1/compare'])
 
-    expect(screen.getByText('PhotoSort')).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Vergleich' })).toBeInTheDocument()
+    // Der globale `*`-Fallback traegt sie auf die Projektliste - das ist KEINE Weiterleitung auf
+    // die Endauswahl, und die Vergleichsansicht selbst gibt es nicht mehr.
+    expect(screen.queryByRole('heading', { name: 'Vergleich' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Endauswahl' })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Projekte' })).toBeInTheDocument(),
+    )
   })
 
   it('routes /projects/:id/stats to the project stats page within the app shell', async () => {
@@ -301,7 +321,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     '/projects/1/pipeline/scan',
     '/projects/1/photos',
     '/projects/1/photos/42',
-    '/projects/1/compare',
+    '/projects/1/selection',
     '/projects/1/settings',
     '/projects/1/stats',
     // specs/features/0298 (AK2): zum ersten Mal ueberhaupt Projektkontext in der Kopfzeile -
@@ -314,7 +334,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
   const PRIMARY_TARGETS = [
     { label: 'Projekt', href: '/projects/1/pipeline' },
     { label: 'Fotos', href: '/projects/1/photos' },
-    { label: 'Vergleich', href: '/projects/1/compare' },
+    { label: 'Endauswahl', href: '/projects/1/selection' },
   ]
 
   /** Die zwei Nebenziele - ausschliesslich ueber den Ausloeser erreichbar. */
@@ -411,7 +431,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     ['/projects/1/pipeline/scan', 'Projekt'],
     ['/projects/1/photos', 'Fotos'],
     ['/projects/1/photos/42', 'Fotos'],
-    ['/projects/1/compare', 'Vergleich'],
+    ['/projects/1/selection', 'Endauswahl'],
   ])('markiert auf %s genau "%s" als aktuelle Seite (AK8a)', async (path, expectedLabel) => {
     renderApp([path])
 
@@ -565,7 +585,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     renderApp(['/projects/1/photos'])
 
     await screen.findByRole('navigation', { name: 'Projektbereiche' })
-    const link = within(group()).getByRole('link', { name: 'Vergleich' })
+    const link = within(group()).getByRole('link', { name: 'Endauswahl' })
     expect(link.tagName).toBe('A')
     link.focus()
     expect(link).toHaveFocus()

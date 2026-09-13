@@ -28,7 +28,7 @@ import { ProjectNav } from './ProjectNav'
 const PRIMARY_TARGETS = [
   { label: 'Projekt', href: '/projects/1/pipeline' },
   { label: 'Fotos', href: '/projects/1/photos' },
-  { label: 'Vergleich', href: '/projects/1/compare' },
+  { label: 'Endauswahl', href: '/projects/1/selection' },
 ]
 
 const SECONDARY_TARGETS = [
@@ -129,7 +129,7 @@ describe('ProjectNav - Leiste', () => {
     ['/projects/1/pipeline/kriterien', 'Projekt'],
     ['/projects/1/photos', 'Fotos'],
     ['/projects/1/photos/42', 'Fotos'],
-    ['/projects/1/compare', 'Vergleich'],
+    ['/projects/1/selection', 'Endauswahl'],
   ])('markiert auf %s genau "%s" mit aria-current="page" (AK8a)', (path, expectedLabel) => {
     renderNav(path)
 
@@ -163,7 +163,7 @@ describe('ProjectNav - Leiste', () => {
     expect(active.className).toContain('border-accent')
     expect(active.className).toContain('font-bold')
     // Gegenprobe: ein ruhendes Ziel traegt beides nicht.
-    const resting = within(bar()).getByRole('link', { name: 'Vergleich' })
+    const resting = within(bar()).getByRole('link', { name: 'Endauswahl' })
     expect(resting.className).not.toContain('border-accent')
     expect(resting.className).not.toContain('font-bold')
   })
@@ -228,7 +228,7 @@ describe('ProjectNav - Ausloeser des Nebenbereichs', () => {
     '/projects/1/curate',
     '/projects/1/photos',
     '/projects/1/pipeline',
-    '/projects/1/compare',
+    '/projects/1/selection',
   ])('bleibt auf %s ohne aria-current und ohne Aktivstil (AK6)', (path) => {
     renderNav(path)
 
@@ -310,7 +310,7 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
   })
 
   it.each([
-    ['/projects/1/compare', 'Vergleich'],
+    ['/projects/1/selection', 'Endauswahl'],
     ['/projects/1/settings', 'Einstellungen'],
     // specs/features/0347 (AK6): /stats ist als Positivfall zurueck - beim blossen Streichen aus
     // der frueheren "kein Ziel aktiv"-Tabelle waere die Zusage lautlos verschwunden.
@@ -344,7 +344,7 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
 
   it.each([
     ['Statistik', '/projects/1/stats'],
-    ['Vergleich', '/projects/1/compare'],
+    ['Endauswahl', '/projects/1/selection'],
   ])(
     'navigiert bei Auswahl von "%s" UND schliesst das Panel (AK7)',
     async (label, expectedPath) => {

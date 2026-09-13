@@ -17,8 +17,8 @@ import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
 import { ProjectNav } from './components/ProjectNav'
 import { Button } from './components/ui/button'
 import { AlbumDraftPage } from './pages/AlbumDraftPage'
+import { AlbumSelectionPage } from './pages/AlbumSelectionPage'
 import { LoginPage } from './pages/LoginPage'
-import { PhotoComparePage } from './pages/PhotoComparePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PhotoGridPage } from './pages/PhotoGridPage'
 import { PipelineStepView } from './pages/pipeline/PipelineStepView'
@@ -55,7 +55,11 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   { path: PROJECT_ROUTE_PATHS.detail, element: <ProjectDetailRedirect /> },
   { path: PROJECT_ROUTE_PATHS.photos, element: <PhotoGridPage /> },
   { path: PROJECT_ROUTE_PATHS.photoDetail, element: <PhotoDetailPage /> },
-  { path: PROJECT_ROUTE_PATHS.compare, element: <PhotoComparePage /> },
+  // Der EINE Ort, an dem die beiden Staende gegenuebergestellt werden. Die fruehere
+  // Vergleichsseite ist mit Spec 0431 ERSATZLOS entfallen - ohne Weiterleitung, aus demselben
+  // Grund wie bei der Kuratierung: Ein zweiter Weg auf den einen verbleibenden Ort waere ein
+  // zweiter Ort.
+  { path: PROJECT_ROUTE_PATHS.selection, element: <AlbumSelectionPage /> },
   // Erste dedizierte Projekteinstellungs-Route.
   { path: PROJECT_ROUTE_PATHS.settings, element: <ProjectSettingsPage /> },
   // Querschnittsansicht wie die Einstellungsseite, bewusst ausserhalb der Pipeline-Schritt-Routen

@@ -43,6 +43,9 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     criterion_scores: [],
     fine_labels: [],
     cloud_vision_status: [],
+    final_selection_decision: null,
+    in_final_selection: false,
+    contested: false,
     // Basiszustand: klassifiziert per Cloud-Grundlage, ohne Ausschluss.
     motif_assessment: {
       source: 'cloud' as const,

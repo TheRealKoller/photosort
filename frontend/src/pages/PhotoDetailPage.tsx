@@ -148,7 +148,7 @@ export function PhotoDetailPage() {
   const currentOwnFavorite = ownFavorite(currentPhoto?.ratings ?? [], username)
   // Anzeigeregel (Akzeptanzkriterium der Spec): eigene Bewertung hat immer Vorrang - der Server
   // liefert suggestion in diesem Fall ohnehin bereits als null, currentOwnStatus wird hier
-  // trotzdem zusaetzlich geprueft (defensiv, gleiche Regel wie Grid-/Vergleichsansicht).
+  // trotzdem zusaetzlich geprueft (defensiv, gleiche Regel wie im Raster).
   const suggestion = currentOwnStatus === null ? (currentPhoto?.suggestion ?? null) : null
 
   function handleToggleRating(status: RatingStatus): void {
@@ -284,7 +284,7 @@ export function PhotoDetailPage() {
             <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
           </Button>
           <Button asChild variant="secondary">
-            <Link to={`/projects/${id}/compare`}>Zur Vergleichsansicht</Link>
+            <Link to={`/projects/${id}/selection`}>Zur Endauswahl</Link>
           </Button>
         </div>
       </div>

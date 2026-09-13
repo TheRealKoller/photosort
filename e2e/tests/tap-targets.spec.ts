@@ -33,7 +33,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 13
+const EXPECTED_CONTROL_COUNT = 17
 
 async function assertTappable(
   control: Locator,
@@ -152,6 +152,35 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     'Alternativen (Entwurfskachel)',
   )
   checked.push('Alternativen der Entwurfskachel')
+
+  // --- Die Bedienelemente der Endauswahl (specs/features/0431-...) ---------------------------
+  // ERGAENZUNG, kein Nachziehen: Die abgeloeste Vergleichsseite stand nie in diesem Spec, weil
+  // sie nur las. Die Endauswahl schreibt - und sie ist heisser Pfad nach derselben Begruendung
+  // wie die Entwurfskachel: Beim Durchgehen der Unterschiede wird viele Male hintereinander
+  // gedrueckt, und ein Fehlgriff aendert die Bildmenge, die als Album gilt.
+  //
+  // Die beiden Entscheidungsflaechen liegen unmittelbar NEBENEINANDER - genau die Fehlerklasse
+  // "ueberlappende aufgespannte Trefferflaechen benachbarter Bedienelemente". Beide beziehen ihre
+  // 44 px vollstaendig aus der Aufspannung: sie tragen bewusst KEINE eigene Hoehenklasse, und ein
+  // `::after`-Pseudoelement ist in jsdom prinzipiell nicht messbar.
+  await page.goto(`/projects/${projectId}/selection`)
+  for (const label of ['Aufnehmen', 'Nicht aufnehmen']) {
+    const control = page.getByRole('button', { name: new RegExp(`^${label}: `) }).first()
+    await expect(control, `Entscheidungsflaeche "${label}" der Arbeitssicht`).toBeVisible()
+    await assertTappable(control, `${label} (Kachel der Endauswahl)`)
+    checked.push(`${label} der Endauswahl-Kachel`)
+  }
+
+  // Die beiden Umschalter der Sichten. Sie stehen mit 8 px Abstand nebeneinander - dem
+  // Mindestabstand, unterhalb dessen sich zwei aufgespannte Trefferflaechen ueberlappen wuerden,
+  // und in einer Ueberlappung gewinnt das obenliegende Element.
+  for (const label of ['Unterschiede', 'Endauswahl']) {
+    await assertTappable(
+      page.getByRole('button', { name: label, exact: true }),
+      `${label} (Umschalter der Endauswahl)`,
+    )
+    checked.push(`Umschalter ${label}`)
+  }
 
   // --- Projekt-Navigationsgruppe in der Kopfzeile (Spec 0298, AK11c) -------------------------
   // Bei 360 px ist ausschliesslich der Menue-Ausloeser sichtbar; er ist ein `size="icon"`-Button

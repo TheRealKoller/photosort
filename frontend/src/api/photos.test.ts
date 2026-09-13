@@ -25,6 +25,9 @@ const PHOTO_LIST: PhotoListOut = {
       fine_labels: [],
       // specs/features/0299-kategorie-konfidenz-anzeigen.md: Basiswert "keine Angabe".
       cloud_vision_status: [],
+      final_selection_decision: null,
+      in_final_selection: false,
+      contested: false,
     },
   ],
   total: 1,

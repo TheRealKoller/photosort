@@ -50,6 +50,9 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     criterion_scores: [],
     fine_labels: [],
     cloud_vision_status: [],
+    final_selection_decision: null,
+    in_final_selection: false,
+    contested: false,
     ...overrides,
   }
 }
@@ -474,13 +477,13 @@ describe('PhotoDetailPage', () => {
 
   /*
    * specs/features/0298-projektnavigation-in-der-kopfzeile.md (AK14, Bestandsschutz): Beide Links
-   * bleiben trotz der neuen Kopfzeilengruppe ausdruecklich erhalten - "Zur Vergleichsansicht" ist
+   * bleiben trotz der neuen Kopfzeilengruppe ausdruecklich erhalten - "Zur Endauswahl" ist
    * hier eine Handlungsaufforderung fuer den naechsten Arbeitsschritt (nur im Abschlusszustand),
    * "Zurück zum Grid" fuehrt zu einem ANDEREN Ziel als die Kopfzeile, weil es den aktiven Filter
    * der Fotoliste bewahrt. Eine Anwesenheits-, keine Abwesenheitspruefung: die Kopfzeilengruppe
    * darf sie nicht mitreissen.
    */
-  it('keeps "Zurück zum Grid" and "Zur Vergleichsansicht" in the completion state (AK14)', async () => {
+  it('keeps "Zurück zum Grid" and "Zur Endauswahl" in the completion state (AK14)', async () => {
     const list: PhotoListOut = { items: [photo({ id: 1 })], total: 1 }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
     vi.mocked(ratingsApi.setRating).mockResolvedValue({
@@ -506,9 +509,9 @@ describe('PhotoDetailPage', () => {
       'href',
       '/projects/1/photos?filter=unrated',
     )
-    expect(screen.getByRole('link', { name: 'Zur Vergleichsansicht' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Zur Endauswahl' })).toHaveAttribute(
       'href',
-      '/projects/1/compare',
+      '/projects/1/selection',
     )
   })
 

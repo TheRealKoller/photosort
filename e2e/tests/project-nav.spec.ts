@@ -92,7 +92,7 @@ async function visibleCount(locator: import('@playwright/test').Locator): Promis
 }
 
 /** Die drei Hauptziele der Leiste, in Anzeigereihenfolge. */
-const PRIMARY_LABELS = ['Projekt', 'Fotos', 'Vergleich']
+const PRIMARY_LABELS = ['Projekt', 'Fotos', 'Endauswahl']
 /** Die zwei Nebenziele des Panels, in Anzeigereihenfolge. */
 const SECONDARY_LABELS = ['Einstellungen', 'Statistik']
 
@@ -266,7 +266,7 @@ test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, 
   const groupGap = rowBoxes[3]!.top - rowBoxes[2]!.bottom
   expect(
     groupGap,
-    `Abstand "Vergleich" -> "Einstellungen" (${groupGap.toFixed(1)} px) gegen den groessten ` +
+    `Abstand "Endauswahl" -> "Einstellungen" (${groupGap.toFixed(1)} px) gegen den groessten ` +
       `Abstand innerhalb der Hauptgruppe (${largestInnerGap.toFixed(1)} px)`,
   ).toBeGreaterThanOrEqual(largestInnerGap * 2)
 

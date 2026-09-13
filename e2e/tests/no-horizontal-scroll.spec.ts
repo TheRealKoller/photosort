@@ -42,6 +42,13 @@ type Precondition = { heading: string } | { role: 'group'; name: string }
  */
 const DRAFT_TILE_TOGGLE = /^(Im Album|Gestrichen): /
 
+/**
+ * Dasselbe fuer die Kacheln der gemeinsamen Endauswahl (specs/features/0431-...). Die Alternative
+ * deckt beide Sichten ab: In der Arbeitssicht traegt eine Kachel "Aufnehmen" und "Nicht
+ * aufnehmen", in der Ergebnissicht "Herausnehmen" oder "Aufnehmen".
+ */
+const SELECTION_TILE_CONTROL = /^(Aufnehmen|Nicht aufnehmen|Herausnehmen): /
+
 interface PageMetrics {
   scrollWidth: number
   clientWidth: number
@@ -83,19 +90,29 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       label: 'Album-Entwurf',
       path: `/projects/${ratedId}/album`,
       heading: 'Album-Entwurf',
-      requiresTile: true,
+      requiresTile: DRAFT_TILE_TOGGLE,
     },
     {
       label: 'Einstellungen',
       path: `/projects/${ratedId}/settings`,
       heading: 'Projekteinstellungen',
     },
-    { label: 'Vergleich', path: `/projects/${ratedId}/compare`, heading: 'Vergleich' },
+    // Die Endauswahl braucht - wie der Album-Entwurf und aus demselben Grund - MINDESTENS EINE
+    // KACHEL als Vorbedingung: Ihre Antwortmenge haengt am Auswahlvorschlag des Laufs und an den
+    // Bewertungen beider Nutzer. Gemessen wird hier die ARBEITSSICHT (die Vorbelegung); die
+    // Ergebnissicht ist ein anderes DOM und bekommt deshalb unten ihre eigene Messung - diese
+    // Schleife misst je Route genau einmal.
+    {
+      label: 'Endauswahl (Arbeitssicht)',
+      path: `/projects/${ratedId}/selection`,
+      heading: 'Endauswahl',
+      requiresTile: SELECTION_TILE_CONTROL,
+    },
     // Die Detailseite traegt seit Spec 0321 die umbrechende Bewertungsleiste: drei Eintraege mit
     // Symbol, Beschriftung und Tasten-Kaestchen brauchen nebeneinander rund 400px, bei 360px
     // stehen 288px zur Verfuegung. Genau diese Route fehlte hier bisher.
     { label: 'Foto-Detail', path: detailPath, role: 'group' as const, name: 'Bewertung' },
-  ] satisfies ({ label: string; path: string; requiresTile?: boolean } & Precondition)[]
+  ] satisfies ({ label: string; path: string; requiresTile?: RegExp } & Precondition)[]
 
   const viewportWidth = page.viewportSize()?.width
   expect(viewportWidth, 'Viewport-Breite des Projekts').toBe(360)
@@ -115,9 +132,9 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     // Vorbedingung 1b, nur wo die Ueberschrift zu wenig sagt: Die Seite traegt tatsaechlich
     // Kacheln. Eine Route, deren Inhaltsmenge von Laufergebnissen abhaengt, bestuende sonst genau
     // dann, wenn sie leer ist.
-    if ('requiresTile' in route && route.requiresTile) {
+    if ('requiresTile' in route && route.requiresTile !== undefined) {
       await expect(
-        page.getByRole('button', { name: DRAFT_TILE_TOGGLE }).first(),
+        page.getByRole('button', { name: route.requiresTile }).first(),
         `Kachel-Vorbedingung auf "${route.label}"`,
       ).toBeVisible()
     }
@@ -158,6 +175,63 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       })`,
     ).toBeLessThanOrEqual(metrics.clientWidth + TOLERANCE)
   }
+})
+
+/**
+ * Die ERGEBNISSICHT der Endauswahl bei 360 px - eine ZWEITE Messung derselben Route.
+ *
+ * Sie entsteht nur ueber den Umschalter und ist ein ANDERES DOM als die Arbeitssicht: andere
+ * Kachelmenge, eine statt zwei Schaltflaechen je Kachel, dazu das Kennzeichen "gemeinsam
+ * entschieden" und die gedaempften, herausgenommenen Bilder. Die Routenschleife oben misst je
+ * Route genau einmal und saehe davon nichts.
+ */
+test('die Ergebnissicht der Endauswahl erzeugt kein horizontales Scrollen bei 360 px', async ({
+  page,
+}) => {
+  const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.goto(`/projects/${ratedId}/selection`)
+
+  await page.getByRole('button', { name: 'Endauswahl', exact: true }).click()
+
+  // Vorbedingung: die Ergebnissicht traegt WIRKLICH Kacheln. Ohne sie bestuende der Fall auch
+  // dann, wenn die Endauswahl leer waere - also genau dann, wenn nichts ueberstehen koennte.
+  await expect(
+    page.getByRole('button', { name: SELECTION_TILE_CONTROL }).first(),
+    'mindestens eine Kachel in der Ergebnissicht',
+  ).toBeVisible()
+
+  const metrics: PageMetrics = await page.evaluate(() => {
+    const root = document.documentElement
+    const clientWidth = root.clientWidth
+    const main = document.querySelector('main')
+    const overflowing = Array.from(document.querySelectorAll('body *'))
+      .filter((element) => element.getBoundingClientRect().right > clientWidth + 1)
+      .slice(0, 5)
+      .map((element) => {
+        const rect = element.getBoundingClientRect()
+        return `<${element.tagName.toLowerCase()}> bis x=${Math.round(rect.right)}: ${(
+          element.textContent ?? ''
+        )
+          .trim()
+          .slice(0, 40)}`
+      })
+    return {
+      scrollWidth: root.scrollWidth,
+      clientWidth,
+      contentHeight: main?.getBoundingClientRect().height ?? 0,
+      overflowing,
+    }
+  })
+
+  expect(metrics.contentHeight, 'Hoehe des Inhaltsbereichs der Ergebnissicht').toBeGreaterThan(
+    MIN_CONTENT_HEIGHT,
+  )
+  expect(
+    metrics.scrollWidth,
+    `Dokumentbreite in der Ergebnissicht der Endauswahl (ueberstehende Elemente: ${
+      metrics.overflowing.length === 0 ? 'keine gefunden' : metrics.overflowing.join(' | ')
+    })`,
+  ).toBeLessThanOrEqual(metrics.clientWidth + TOLERANCE)
 })
 
 /**
