@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 import httpx
 
+from photosort.classification_prompt import build_classification_prompt
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
     ANTHROPIC_ENDPOINT,
@@ -29,7 +30,7 @@ from photosort.cloud_vision import (
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.label_embedding import LabelEmbedderLike
-from photosort.motifs import MOTIF_REGISTRY, build_motif_prompt, is_motif_key
+from photosort.motifs import MOTIF_REGISTRY, is_motif_key
 
 # Strukturell analog landmark.py. Das Antwortschema ist GESCHLOSSEN: das Modell nennt fuer JEDEN
 # der acht Motivschluessel (motifs.py::MOTIF_REGISTRY) eine Staerke in [0, 1] plus einen
@@ -40,11 +41,12 @@ from photosort.motifs import MOTIF_REGISTRY, build_motif_prompt, is_motif_key
 logger = logging.getLogger(__name__)
 
 # Obergrenze der Feinlabels je Foto - hier, weil dieses Modul der einzige Leser ist: es schreibt
-# den Wert ueber `build_motif_prompt(max_fine_labels=...)` in den Prompt UND kuerzt die geparste
-# Antwort gegen dieselbe Konstante, Prompt und Validierung koennen damit nicht auseinanderlaufen.
+# den Wert ueber `build_classification_prompt(max_fine_labels=...)` in den Prompt UND kuerzt die
+# geparste Antwort gegen dieselbe Konstante, Prompt und Validierung koennen damit nicht
+# auseinanderlaufen.
 #
-# Bewusst NICHT in `motifs.py`: Feinlabels sind kein Motiv. `motifs.py` nimmt den Wert deshalb als
-# Parameter entgegen, statt ihn zu importieren - das Motivregister soll nichts ueber die
+# Bewusst NICHT in `motifs.py`: Feinlabels sind kein Motiv. Der Prompt-Bau nimmt den Wert deshalb
+# als Parameter entgegen, statt ihn zu importieren - das Motivregister soll nichts ueber die
 # Antwortform des Anbieters wissen.
 MAX_FINE_LABELS_PER_PHOTO = 2
 
@@ -385,7 +387,9 @@ class AnthropicCategoryClient:
                         },
                         {
                             "type": "text",
-                            "text": build_motif_prompt(max_fine_labels=MAX_FINE_LABELS_PER_PHOTO),
+                            "text": build_classification_prompt(
+                                max_fine_labels=MAX_FINE_LABELS_PER_PHOTO
+                            ),
                         },
                     ],
                 }
@@ -453,7 +457,9 @@ class MistralCategoryClient:
                         },
                         {
                             "type": "text",
-                            "text": build_motif_prompt(max_fine_labels=MAX_FINE_LABELS_PER_PHOTO),
+                            "text": build_classification_prompt(
+                                max_fine_labels=MAX_FINE_LABELS_PER_PHOTO
+                            ),
                         },
                     ],
                 }

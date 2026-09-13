@@ -6,6 +6,7 @@ import json
 import httpx
 import pytest
 
+from photosort.classification_prompt import build_classification_prompt
 from photosort.cloud_vision import (
     ANTHROPIC_VISION_MODEL,
     MISTRAL_VISION_MODEL,
@@ -13,7 +14,7 @@ from photosort.cloud_vision import (
     TokenUsage,
     _sanitize_label_text,
 )
-from photosort.motifs import MOTIF_REGISTRY, build_motif_prompt
+from photosort.motifs import MOTIF_REGISTRY
 from photosort.pricing import ASSUMED_USAGE_BY_PROVIDER
 from photosort.remote_classification import (
     _MAX_RESPONSE_TOKENS,
@@ -410,7 +411,9 @@ class TestAnthropicCategoryClient:
         # `motifs.py::MOTIF_REGISTRY`, nicht aus einem Literal in diesem Modul. Die
         # Feinlabel-Grenze uebergibt die Aufrufstelle.
         content = body["messages"][0]["content"]
-        assert content[1]["text"] == build_motif_prompt(max_fine_labels=MAX_FINE_LABELS_PER_PHOTO)
+        assert content[1]["text"] == build_classification_prompt(
+            max_fine_labels=MAX_FINE_LABELS_PER_PHOTO
+        )
 
     def test_error_response_raises_remote_category_classification_api_error(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -458,7 +461,9 @@ class TestMistralCategoryClient:
         assert isinstance(body, dict)
         assert body["model"] == MISTRAL_VISION_MODEL
         content = body["messages"][0]["content"]
-        assert content[1]["text"] == build_motif_prompt(max_fine_labels=MAX_FINE_LABELS_PER_PHOTO)
+        assert content[1]["text"] == build_classification_prompt(
+            max_fine_labels=MAX_FINE_LABELS_PER_PHOTO
+        )
 
     def test_error_response_raises_remote_category_classification_api_error(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
