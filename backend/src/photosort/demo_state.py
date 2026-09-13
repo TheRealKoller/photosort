@@ -66,6 +66,7 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     Event,
+    FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
@@ -1080,7 +1081,102 @@ async def _seed_rated_project(
     # davor gaebe es keine.
     await rebuild_run_selection(session, project.id)
     await session.flush()
+
+    # DER DISSENS-BLOCK, NACH dem Vorschlag und nicht davor: Vorher steht nicht fest, WELCHES Foto
+    # vorgeschlagen ist, und ein geratenes traefe die gewuenschten Zustaende nicht.
+    await _seed_final_selection_dissent(session, criterion_run.id, users)
+    await session.flush()
     return photos, len(users)
+
+
+async def _seed_final_selection_dissent(
+    session: AsyncSession, criterion_scoring_run_id: int, users: Sequence[User]
+) -> None:
+    """Die vier Zustaende der gemeinsamen Endauswahl auf der Demo-Instanz (Spec 0431).
+
+    Ohne diesen Block bekommen ALLE Nutzer dieselben Bewertungen - die Nutzer sind dann per
+    Definition einig, die Arbeitssicht zeigt dauerhaft "keine Unterschiede", und KEIN Test wuerde
+    rot. Erzeugt werden:
+
+    1. ein vorgeschlagenes Foto, vom ERSTEN Nutzer gestrichen -> strittig;
+    2. ein nicht vorgeschlagenes Kandidatenfoto, vom ZWEITEN Nutzer aufgenommen -> strittig;
+    3. ein strittiges Foto mit `included=true` -> "gemeinsam entschieden, drin";
+    4. ein einig-drinnes Foto mit `included=false` -> "einig, aber herausgenommen".
+
+    OHNE NUTZER UND MIT GENAU EINEM NUTZER SCHREIBT ER NICHTS: Bei `n = 1` ist Dissens
+    arithmetisch unmoeglich (jedes vorgeschlagene, unangefasste Foto ist in der Endauswahl), und
+    ein trotzdem geschriebener Zustand waere einer, den die Anwendung selbst nie herstellt.
+
+    DETERMINISTISCH: Die Kandidaten kommen aus dem TATSAECHLICHEN Vorschlag, sortiert nach
+    `photo_id` - genau hier wuerde eine Mengeniteration unbemerkt sprunghaft, und die
+    Sichtpruefung zeigte von Lauf zu Lauf andere Bilder in anderen Rollen.
+
+    Beruehrt werden ausschliesslich Fotos OHNE bestehende Bewertungszeile: Der Block darf den
+    Zustandsvorrat des bestehenden Bewertungsblocks nicht verschieben, dessen Abdeckung ein
+    eigener Testfall festhaelt."""
+    if len(users) < 2:
+        return
+
+    rows = (
+        await session.execute(
+            select(PhotoRanking.photo_id, PhotoRanking.selection_position)
+            .where(
+                PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
+                PhotoRanking.rank_score.is_not(None),
+            )
+            .order_by(PhotoRanking.photo_id)
+        )
+    ).all()
+    already_rated = set(
+        (
+            await session.execute(
+                select(Rating.photo_id).where(
+                    Rating.photo_id.in_([photo_id for photo_id, _ in rows])
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    proposed = [pid for pid, position in rows if position is not None and pid not in already_rated]
+    unproposed = [pid for pid, position in rows if position is None and pid not in already_rated]
+
+    # Drei vorgeschlagene und ein nicht vorgeschlagenes Foto. Reicht der Vorrat nicht, entstehen
+    # die Zustaende, fuer die er reicht - der Seeder laeuft auch mit kleinen Fotozahlen (die
+    # Testsuite faehrt ihn so) und darf dort nicht abbrechen.
+    if len(proposed) >= 1:
+        session.add(
+            Rating(
+                photo_id=proposed[0],
+                user_id=users[0].id,
+                status=RatingStatus.REJECTED,
+                updated_at=_BASE_SCORING_AT,
+            )
+        )
+    if len(unproposed) >= 1:
+        session.add(
+            Rating(
+                photo_id=unproposed[0],
+                user_id=users[1].id,
+                status=RatingStatus.ALBUM_WORTHY,
+                updated_at=_BASE_SCORING_AT,
+            )
+        )
+    if len(proposed) >= 2:
+        # Strittig UND entschieden: die Entscheidung ueberschreibt, das Foto verlaesst die
+        # Arbeitssicht. Ohne die Streichung daneben zeigte die Demo die Ueberschreibung nicht.
+        session.add(
+            Rating(
+                photo_id=proposed[1],
+                user_id=users[0].id,
+                status=RatingStatus.REJECTED,
+                updated_at=_BASE_SCORING_AT,
+            )
+        )
+        session.add(FinalSelectionDecision(photo_id=proposed[1], included=True))
+    if len(proposed) >= 3:
+        # Einig drin - und trotzdem herausgenommen. Einigkeit ist eine Vorbelegung, keine Sperre.
+        session.add(FinalSelectionDecision(photo_id=proposed[2], included=False))
 
 
 async def _seed_error_project(

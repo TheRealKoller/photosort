@@ -1974,6 +1974,9 @@ _ALLOWED_DECISION_MODEL_READERS = frozenset(
         "api/album_decisions.py::_existing_decision",
         "api/album_decisions.py::set_album_decision",
         "project_deletion.py::delete_projects",
+        # Der Dissens-Block des Demo-Seeders. Er schreibt Entscheidungszeilen und ist damit ein
+        # erlaubter Leser - er beruehrt den Einzelentwurf nicht, sondern die Ebene darueber.
+        "demo_state.py::_seed_final_selection_dissent",
     }
 )
 
