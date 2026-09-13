@@ -12,6 +12,14 @@ from typing import Any, Protocol
 
 import httpx
 
+from photosort.album_suitability import (
+    NO_VALUE as ALBUM_SUITABILITY_NO_VALUE,
+)
+from photosort.album_suitability import (
+    AlbumSuitability,
+    album_suitability_from_json,
+)
+from photosort.classification_prompt import build_classification_prompt
 from photosort.cloud_vision import (
     ANTHROPIC_API_VERSION,
     ANTHROPIC_ENDPOINT,
@@ -29,7 +37,7 @@ from photosort.cloud_vision import (
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.label_embedding import LabelEmbedderLike
-from photosort.motifs import MOTIF_REGISTRY, build_motif_prompt, is_motif_key
+from photosort.motifs import MOTIF_REGISTRY, is_motif_key
 
 # Strukturell analog landmark.py. Das Antwortschema ist GESCHLOSSEN: das Modell nennt fuer JEDEN
 # der acht Motivschluessel (motifs.py::MOTIF_REGISTRY) eine Staerke in [0, 1] plus einen
@@ -40,28 +48,32 @@ from photosort.motifs import MOTIF_REGISTRY, build_motif_prompt, is_motif_key
 logger = logging.getLogger(__name__)
 
 # Obergrenze der Feinlabels je Foto - hier, weil dieses Modul der einzige Leser ist: es schreibt
-# den Wert ueber `build_motif_prompt(max_fine_labels=...)` in den Prompt UND kuerzt die geparste
-# Antwort gegen dieselbe Konstante, Prompt und Validierung koennen damit nicht auseinanderlaufen.
+# den Wert ueber `build_classification_prompt(max_fine_labels=...)` in den Prompt UND kuerzt die
+# geparste Antwort gegen dieselbe Konstante, Prompt und Validierung koennen damit nicht
+# auseinanderlaufen.
 #
-# Bewusst NICHT in `motifs.py`: Feinlabels sind kein Motiv. `motifs.py` nimmt den Wert deshalb als
-# Parameter entgegen, statt ihn zu importieren - das Motivregister soll nichts ueber die
+# Bewusst NICHT in `motifs.py`: Feinlabels sind kein Motiv. Der Prompt-Bau nimmt den Wert deshalb
+# als Parameter entgegen, statt ihn zu importieren - das Motivregister soll nichts ueber die
 # Antwortform des Anbieters wissen.
 MAX_FINE_LABELS_PER_PHOTO = 2
 
 # Das Modell kommt als Konstruktor-Parameter herein, nie aus einer Modulkonstante.
 
-# Kurze, reine Klassifikationsantwort: eine vollbesetzte Antwort (acht Schluessel-Zahl-Paare plus
-# das Ausschluss-Feld, zwei kurze deutsche Feinlabels und das JSON-Geruest) liegt bei rund 257
-# Zeichen und damit ueberschlaegig bei 110 Ausgabe-Tokens kompakt bzw. 145 bei einer
-# eingerueckten Antwort; der deutlich groessere Prompt waechst ausschliesslich auf der
-# EINGABEseite. 384 behaelt damit klare Reserve - die Grenze ist keine reine Kostenschranke, sie
-# begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und potenziell geloggt werden
-# kann. Beim Anheben gehoeren drei Dinge zusammen nachgezogen: dieser Kommentar, der Waechtertest
-# in tests/test_remote_classification.py und
-# pricing.py::ASSUMED_USAGE_BY_PROVIDER.output_tokens, das gegen die vollbesetzte Antwort neu
-# herzuleiten ist. Die Reserve-Invariante `Schranke >= 2 x Annahme` ist dabei einzuhalten, nicht
-# der Annahme anzupassen.
-_MAX_RESPONSE_TOKENS = 384
+# Kurze, reine Klassifikationsantwort: eine vollbesetzte Antwort (acht Schluessel-Zahl-Paare, das
+# Ausschluss-Feld, zwei kurze deutsche Feinlabels, die Stufe der Albumtauglichkeit und eine
+# Begruendung an der 160-Zeichen-Grenze) liegt bei 451 Zeichen kompakt bzw. 547 eingerueckt und
+# damit ueberschlaegig bei 201 bzw. 245 Ausgabe-Tokens; der deutlich groessere Prompt waechst
+# ausschliesslich auf der EINGABEseite. 512 behaelt damit Reserve - die Grenze ist keine reine
+# Kostenschranke, sie begrenzt zugleich die Menge an Fremdtext, die je Foto geparst und potenziell
+# geloggt werden kann, und eine abgeschnittene Antwort ist kein JSON und landet auf dem
+# strukturell harten Pfad, nie bei einem teilweise geparsten Datensatz. Beim Anheben gehoeren drei
+# Dinge zusammen nachgezogen: dieser Kommentar, der Waechtertest in
+# tests/test_remote_classification.py und pricing.py::ASSUMED_USAGE_BY_PROVIDER.output_tokens, das
+# gegen die vollbesetzte Antwort neu herzuleiten ist. Die Reserve-Invariante
+# `Schranke >= 2 x Annahme` ist dabei einzuhalten, nicht der Annahme anzupassen - gehoben wird die
+# Schranke. Sie haengt an MAX_ALBUM_SUITABILITY_REASON_LENGTH: wer die eine hebt, leitet die
+# andere neu her (S5).
+_MAX_RESPONSE_TOKENS = 512
 
 # Defensive Obergrenze gegen eine entartete Modellantwort - verhindert einen uebermaessig langen
 # canonical_key/display_name, BEVOR resolve_canonical_label/_slugify aufgerufen wird
@@ -121,7 +133,12 @@ class RemoteClassification:
     bleiben daneben unveraendert gespeichert.
 
     `fine_labels` enthaelt die zeichensanierten, freien Feinlabels, hoechstens
-    MAX_FINE_LABELS_PER_PHOTO - der einzige verbliebene Fremdtext-Kanal dieser Antwort."""
+    MAX_FINE_LABELS_PER_PHOTO.
+
+    `album_suitability` ist die fuenfstufige Aussage ueber die BILDGUETE samt Begruendung, oder
+    `None` - "das Modell hat dazu nichts Brauchbares gesagt". Sie ist keine Motivstaerke (ADR 0091
+    bleibt unberuehrt) und wird in einer eigenen Tabelle persistiert; ihre Begruendung ist der
+    zweite Fremdtext-Kanal dieser Antwort und bereits saniert und gekappt."""
 
     # `Mapping` statt `dict` als Annotation UND `MappingProxyType` als das, was der Parser
     # hineingibt: die Zusage von `frozen=True` gilt sonst nur fuer die REFERENZ, nicht fuer den
@@ -131,6 +148,7 @@ class RemoteClassification:
     motif_strengths: Mapping[str, float]
     fine_labels: tuple[str, ...]
     excluded: bool = False
+    album_suitability: AlbumSuitability | None = None
     # Der reale Token-Verbrauch DIESES Aufrufs (analog LandmarkDetection.usage). `None` heisst
     # "nicht ermittelbar", nicht "keine Kosten".
     usage: TokenUsage | None = None
@@ -297,10 +315,11 @@ def _classification_from_json(
     teilweise geparsten Datensatz.
 
     INHALTLICH TOLERANT: unbekannte Motivschluessel, unbrauchbare Zahlen, ein unbrauchbares
-    `excluded` und entartete Feinlabels werden VERWORFEN statt abgelehnt. Der wichtigste
-    Grenzfall: sind ALLE Schluessel unbekannt, ist das KEIN Fehler - das Ergebnis ist der
-    Achter-Vektor mit acht Nullen, und die Feinlabels desselben Fotos bleiben erhalten.
-    `fine_labels` und `excluded` sind optional, `motifs` nicht."""
+    `excluded`, eine unbrauchbare Albumtauglichkeit und entartete Feinlabels werden VERWORFEN
+    statt abgelehnt. Der wichtigste Grenzfall: sind ALLE Schluessel unbekannt, ist das KEIN Fehler
+    - das Ergebnis ist der Achter-Vektor mit acht Nullen, und die Feinlabels desselben Fotos
+    bleiben erhalten. `fine_labels`, `excluded` und `album_suitability` sind optional, `motifs`
+    nicht."""
     if not isinstance(parsed, dict):
         raise RemoteCategoryClassificationApiError(
             "Unerwartete Antwortstruktur der Vision-API-Antwort (kein JSON-Objekt)."
@@ -327,6 +346,11 @@ def _classification_from_json(
         motif_strengths=_motif_strengths_from_json(raw_motifs, photo_id),
         fine_labels=_fine_labels_from_json(raw_fine_labels),
         excluded=_excluded_from_json(parsed.get("excluded", _NO_VALUE), photo_id),
+        # Pruefung, Sanitisierung und Kappung liegen VOLLSTAENDIG im Parser von
+        # `album_suitability.py` - hier steht keine zweite Fassung der Regeln.
+        album_suitability=album_suitability_from_json(
+            parsed.get("album_suitability", ALBUM_SUITABILITY_NO_VALUE), photo_id
+        ),
         usage=usage,
     )
 
@@ -385,7 +409,9 @@ class AnthropicCategoryClient:
                         },
                         {
                             "type": "text",
-                            "text": build_motif_prompt(max_fine_labels=MAX_FINE_LABELS_PER_PHOTO),
+                            "text": build_classification_prompt(
+                                max_fine_labels=MAX_FINE_LABELS_PER_PHOTO
+                            ),
                         },
                     ],
                 }
@@ -453,7 +479,9 @@ class MistralCategoryClient:
                         },
                         {
                             "type": "text",
-                            "text": build_motif_prompt(max_fine_labels=MAX_FINE_LABELS_PER_PHOTO),
+                            "text": build_classification_prompt(
+                                max_fine_labels=MAX_FINE_LABELS_PER_PHOTO
+                            ),
                         },
                     ],
                 }

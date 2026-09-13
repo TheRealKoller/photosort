@@ -26,6 +26,7 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
@@ -207,6 +208,15 @@ async def build_project_graph(
             ),
             PhotoMotifCorrection(
                 photo_id=photo.id, user_id=user.id, motif_key="menschen", applies=True
+            ),
+            # Aus demselben Grund wie die drei Motivzeilen darueber: der Verhaltenstest der
+            # Projektloeschung zaehlt Zeilen und bestuende mit null Zeilen stillschweigend.
+            PhotoAlbumSuitability(
+                photo_id=photo.id,
+                level=4,
+                reason="Alle schauen in die Kamera.",
+                provider="anthropic",
+                computed_at=now,
             ),
         ]
     )

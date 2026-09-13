@@ -19,6 +19,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
+from photosort.album_suitability import AlbumSuitability
 from photosort.cache_cleanup import cleanup_orphaned_cache
 from photosort.cameras import CameraIdentity, shifted
 from photosort.classification import (
@@ -89,6 +90,7 @@ from photosort.models import (
     FineLabel,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoFineLabel,
@@ -110,6 +112,7 @@ from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCl
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.pricing import compute_cost_usd
+from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.ranking import rank_photos
 from photosort.remote_classification import (
     CategoryDetectionClientLike,
@@ -177,12 +180,6 @@ CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
 # thumbnails.py::generate_variants immer als JPEG schreibt - fester Wert statt einer
 # Format-Erkennung. Das Bildquellen-Muss-Kriterium gilt für BEIDE Cloud-Vision-Pfade.
 _CLOUD_VISION_IMAGE_MIME_TYPE = "image/jpeg"
-
-# Default-Gewichtung für ranking.py::rank_photos: die Gleichgewichtung aller im Register
-# bekannten Kriterien ist ein bewusst austauschbarer Platzhalter, keine kalibrierte Formel.
-# Eine spätere Gewichtungs-/Formel-Entscheidung ändert nur diesen
-# Aufrufer-Default, nie das Datenmodell oder rank_photos selbst.
-DEFAULT_CRITERION_WEIGHTS: dict[str, float] = {key: 1.0 for key in CRITERIA_REGISTRY}
 
 
 class OpenCloudScanClient(Protocol):
@@ -1237,6 +1234,32 @@ async def _upsert_landmark_detection(
     existing.provider = provider
 
 
+async def _upsert_album_suitability(
+    session: AsyncSession,
+    photo_id: int,
+    suitability: AlbumSuitability,
+    now: datetime,
+    provider: str,
+) -> None:
+    """Schreibt bzw. ersetzt die Albumtauglichkeitszeile eines Fotos - GENAU EINE je Foto, auch
+    nach beliebig vielen Laeufen.
+
+    Stufe, Begruendung, Anbieter und Zeitstempel werden gemeinsam gesetzt: die Zeile stammt
+    immer vollstaendig aus EINER Antwort, ein gemischter Zustand aus zwei Aufrufen entsteht nicht.
+    Aufgerufen wird sie nur mit einer bereits validierten Aussage (`album_suitability.py`) - ohne
+    brauchbare Stufe entsteht gar keine Zeile, und das Foto bleibt Kandidat des naechsten Laufs.
+
+    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
+    existing = await session.get(PhotoAlbumSuitability, photo_id)
+    if existing is None:
+        existing = PhotoAlbumSuitability(photo_id=photo_id)
+        session.add(existing)
+    existing.level = suitability.level
+    existing.reason = suitability.reason
+    existing.provider = provider
+    existing.computed_at = now
+
+
 async def _landmark_names(
     session: AsyncSession, photo_ids: Collection[int]
 ) -> dict[int, str | None]:
@@ -1283,10 +1306,18 @@ class ContentCriteria:
 
     Geschluesselt sind sie mit dem KRITERIEN-Schluessel, dessen Allow-Liste sie ausgemessen haben
     (`content_people`, `tier`, `fahrzeug`, `essen_trinken`) - so gibt es keine zweite
-    Schluesselmenge, die gegen `criteria.py` driften koennte."""
+    Schluesselmenge, die gegen `criteria.py` driften koennte.
+
+    `not_measurable` traegt AUSSCHLIESSLICH die Kriterien, deren Detektion tatsaechlich LIEF und
+    das Merkmal nicht fand - "nicht messbar". Es ist ausdruecklich KEIN Komplement von `values`:
+    ein Kriterium, das mangels Detektor oder wegen einer Ausnahme gar nicht berechnet wurde
+    ("nicht berechenbar"), fehlt in BEIDEN Mengen. Der Unterschied entscheidet ueber Loeschen
+    oder Behalten einer Altzeile - eine Voreinstellung "alles, was nicht in `values` steht"
+    loeschte beim Frühausstieg unten den gesamten Kriteriensatz eines Fotos."""
 
     values: dict[str, float]
     area_fractions: dict[str, float]
+    not_measurable: frozenset[str] = frozenset()
 
 
 def _compute_content_criteria(
@@ -1330,6 +1361,11 @@ def _compute_content_criteria(
         return ContentCriteria(values={}, area_fractions={})
 
     values: dict[str, float] = {}
+    # "Die Detektion lief, das Merkmal fehlt" - gefuellt AUSSCHLIESSLICH dort, wo der Detektor ein
+    # Ergebnis geliefert hat und die Score-Funktion `None` zurueckgibt. Nie als Komplement von
+    # `values` gebildet: der Fruehausstieg oben verlaesst die Funktion mit zwei LEEREN Mengen,
+    # und ein Komplement haette dort jedes Kriterium des Fotos als "nicht messbar" ausgewiesen.
+    not_measurable: set[str] = set()
     # Die Flaechenanteile je Allow-Liste, aus DENSELBEN Detektionen wie die Scores darunter - kein
     # zweiter Detektoraufruf. Jede Berechnung hat ihr eigenes try/except wie die Scores: ein
     # Fehlschlag laesst genau diesen Anteil ungeschrieben (das Motiv bleibt bei 0), statt den
@@ -1435,9 +1471,13 @@ def _compute_content_criteria(
         try:
             # Nur die TIER-Erkennungen sind Kompositions-Subjekt-Kandidaten - kein Auto,
             # kein Teller.
-            values["goldener_schnitt"] = compute_golden_ratio_score(
-                faces, animal_detections(objects)
-            )
+            golden_ratio = compute_golden_ratio_score(faces, animal_detections(objects))
+            # BEIDE Detektionen liefen (das sichern die `is not None` oben): ein `None` heisst
+            # hier "kein Subjekt im Bild", also NICHT MESSBAR - und nicht "nicht berechenbar".
+            if golden_ratio is None:
+                not_measurable.add("goldener_schnitt")
+            else:
+                values["goldener_schnitt"] = golden_ratio
         except Exception:
             pass
 
@@ -1445,13 +1485,20 @@ def _compute_content_criteria(
     # content_people/goldener_schnitt bleiben unveraendert auf dem bestehenden face_detector.
     if face_landmarker is not None:
         try:
-            values["freiraum"] = compute_freiraum_score(
-                detect_face_orientation(image, face_landmarker)
-            )
+            freiraum = compute_freiraum_score(detect_face_orientation(image, face_landmarker))
+            # Die Detektion lief - ein `None` heisst "kein Gesicht erkannt", also NICHT MESSBAR.
+            # Wirft `detect_face_orientation` dagegen, greift das `except` und das Kriterium
+            # landet in KEINER der beiden Mengen ("nicht berechenbar").
+            if freiraum is None:
+                not_measurable.add("freiraum")
+            else:
+                values["freiraum"] = freiraum
         except Exception:
             pass
 
-    return ContentCriteria(values=values, area_fractions=area_fractions)
+    return ContentCriteria(
+        values=values, area_fractions=area_fractions, not_measurable=frozenset(not_measurable)
+    )
 
 
 # Defensive Obergrenze fuer die zusammengesetzte laufweite Cloud-Fehlermeldung - analog
@@ -1568,20 +1615,49 @@ async def _build_grouping_and_rankings(
         for photo_id in built.photo_ids
     }
 
+    # DIE MODELLBEWERTUNG als Grundlage des Qualitaetswerts - gelesen aus der TABELLE, nie aus
+    # einer laufinternen Abbildung: der Cloud-Teilschritt ist ein eigener Lauf, und diese Funktion
+    # hat auch den zweiten Aufrufer (`rebuild_run_grouping`), der gar keine Cloud-Phase kennt.
+    # Ohne Freigabe gibt es keine einzige Zeile, und JEDER Qualitaetswert wird `NULL` - es gibt
+    # keinen Rueckfall auf einen lokal gebildeten Wert (ADR 0095, Abschnitt 1).
+    level_by_photo_id: dict[int, int] = {
+        photo_id: level
+        for photo_id, level in (
+            await session.execute(
+                select(PhotoAlbumSuitability.photo_id, PhotoAlbumSuitability.level).where(
+                    PhotoAlbumSuitability.photo_id.in_(values_by_photo_id.keys())
+                )
+            )
+        ).all()
+    }
+
     # Eine Partition je Event, ein Foto in genau einer davon.
     partitions: dict[int, dict[int, dict[str, float]]] = {}
     for photo_id, values in values_by_photo_id.items():
         partitions.setdefault(event_id_by_photo[photo_id], {})[photo_id] = values
 
     for event_id, partition_candidates in partitions.items():
-        for ranked_photo in rank_photos(partition_candidates, DEFAULT_CRITERION_WEIGHTS):
+        # `rank_photos` laeuft NUR ueber die bewertete Teilmenge - `rank_position` bleibt dort
+        # lueckenlos ab 1. Die uebrigen Fotos der Partition bekommen ihre Zeile unten mit `NULL`
+        # in beiden Spalten: sie behalten ihre `event_id`, bleiben im einsehbaren Vorrat und
+        # erscheinen nicht im Entwurf.
+        quality_scores = {
+            photo_id: compute_quality_score(
+                level_by_photo_id[photo_id], values, QUALITY_CRITERION_WEIGHTS
+            )
+            for photo_id, values in partition_candidates.items()
+            if photo_id in level_by_photo_id
+        }
+        ranked_by_photo_id = {ranked.photo_id: ranked for ranked in rank_photos(quality_scores)}
+        for photo_id in partition_candidates:
+            ranked = ranked_by_photo_id.get(photo_id)
             session.add(
                 PhotoRanking(
                     criterion_scoring_run_id=run.id,
-                    photo_id=ranked_photo.photo_id,
+                    photo_id=photo_id,
                     event_id=event_id,
-                    rank_score=ranked_photo.rank_score,
-                    rank_position=ranked_photo.rank_position,
+                    rank_score=None if ranked is None else ranked.rank_score,
+                    rank_position=None if ranked is None else ranked.rank_position,
                 )
             )
 
@@ -1792,6 +1868,22 @@ async def run_criterion_scoring(
             existing.source = source
             existing.computed_at = now
 
+        async def _delete_criterion(photo_id: int, criterion_key: str) -> None:
+            """Loescht die Zeile eines NICHT MESSBAREN Kriteriums - ausschliesslich fuer
+            `ContentCriteria.not_measurable`, nie fuer ein mangels Detektor oder wegen einer
+            Ausnahme unberechnetes.
+
+            Ohne dieses Loeschen liefe die Entscheidung "ein nicht messbares Kriterium wird
+            weggelassen" fuer den BESTAND ins Leere: `_upsert_criterion` loescht nie, und die
+            Altzeile mit ihrem alten `0.0` bliebe wirksam.
+
+            Der In-Memory-Cache wird MITgeraeumt: bliebe das ORM-Objekt darin stehen, belebte ein
+            spaeteres `_upsert_criterion` im selben Lauf eine geloeschte Zeile wieder, und der
+            naechste Lauf faende einen Eintrag vor, den es in der Datenbank nicht mehr gibt."""
+            existing = existing_criterion_scores.pop((photo_id, criterion_key), None)
+            if existing is not None:
+                await session.delete(existing)
+
         # photo_id -> {criterion_key: value}, nur die in DIESEM Lauf erfolgreich berechneten
         # Werte (reine In-Memory-Grundlage fuer rank_photos unten, kein erneutes DB-Read noetig).
         candidate_values: dict[int, dict[str, float]] = {}
@@ -1833,6 +1925,12 @@ async def run_criterion_scoring(
                         photo.id, criterion_key, content.values[criterion_key], source
                     )
                     values[criterion_key] = content.values[criterion_key]
+
+            # NUR `not_measurable` - "die Detektion lief, das Merkmal fehlt". Ein mangels
+            # Detektor oder wegen einer Ausnahme unberechnetes Kriterium steht dort nicht und
+            # behaelt seine Altzeile.
+            for criterion_key in content.not_measurable:
+                await _delete_criterion(photo.id, criterion_key)
 
             candidate_values[photo.id] = values
             area_fractions_by_photo_id[photo.id] = content.area_fractions
@@ -2285,15 +2383,25 @@ async def _classify_photo_for_remote_category(
 async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
     """Kandidatenmenge für die Remote-Kategorie-Klassifizierung: der KOMPLETTE
     Ausschuss-Überlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter
-    (anders als landmark), abzüglich bereits von der Cloud beurteilter Fotos.
+    (anders als landmark), abzüglich der bereits VOLLSTÄNDIG von der Cloud beurteilten Fotos.
 
-    DAS SKIP-KRITERIUM IST EINE KOPFZEILE MIT `source='cloud'`, nicht das bloße Vorhandensein
-    einer Kopfzeile (Sicherheitsauflage S14). Der Kriterien-Lauf schreibt für JEDES beurteilte
-    Foto eine LOKALE Kopfzeile; ein reiner Existenztest machte damit jedes lokal beurteilte Foto
-    dauerhaft zum Nicht-Kandidaten - die Cloud-Klassifizierung wäre ein stilles No-op und die
-    Kostenschätzung zeigte `0`. Der Fehler in die andere Richtung (ein zu weites Kriterium)
-    schickte bereits klassifizierte Fotos erneut an den Anbieter, also Kosten und wiederholte
-    Datenexposition.
+    DAS SKIP-KRITERIUM IST ZUSAMMENGESETZT (Sicherheitsauflage S6): eine Kopfzeile mit
+    `source='cloud'` UND eine Albumtauglichkeitszeile. Beide Hälften tragen je einen eigenen
+    Fehler:
+
+    - Ein reiner Existenztest auf die Kopfzeile (statt auf `source='cloud'`) machte jedes lokal
+      beurteilte Foto dauerhaft zum Nicht-Kandidaten - der Kriterien-Lauf schreibt für JEDES
+      beurteilte Foto eine LOKALE Kopfzeile. Die Cloud-Klassifizierung wäre ein stilles No-op.
+    - Eine Lockerung auf nur EINES der beiden Merkmale schickt fertig bewertete Fotos erneut an
+      den Anbieter: Kosten und wiederholte Datenexposition.
+
+    Die zweite Hälfte ist zugleich die NACHBEWERTUNG: ein Foto aus einem früheren Lauf, das eine
+    Cloud-Kopfzeile, aber noch keine Albumtauglichkeit trägt, wird wieder Kandidat - ohne Re-Scan
+    und ohne zweiten Auslöser.
+
+    Das lokale Ausschuss-Gate bleibt dabei unberührt und steht ausgeschrieben in DERSELBEN
+    Anweisung wie der Skip-Term (S8): `join(PhotoScore)` plus `suggested_status IS NULL` begrenzen
+    weiterhin, welche Fotos den Homeserver überhaupt verlassen dürfen.
 
     Von `run_remote_category_classification` UND `GET .../classify/estimate` (api/projects.py)
     genutzt - "ermittelt ueber dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
@@ -2312,17 +2420,31 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
     if not rows:
         return []
 
+    photo_ids = [photo.id for photo in rows]
     cloud_assessed_ids = set(
         (
             await session.execute(
                 select(PhotoMotifAssessment.photo_id).where(
-                    PhotoMotifAssessment.photo_id.in_([photo.id for photo in rows]),
+                    PhotoMotifAssessment.photo_id.in_(photo_ids),
                     PhotoMotifAssessment.source == MotifAssessmentSource.CLOUD,
                 )
             )
         ).scalars()
     )
-    return [photo for photo in rows if photo.id not in cloud_assessed_ids]
+    suitability_ids = set(
+        (
+            await session.execute(
+                select(PhotoAlbumSuitability.photo_id).where(
+                    PhotoAlbumSuitability.photo_id.in_(photo_ids)
+                )
+            )
+        ).scalars()
+    )
+    return [
+        photo
+        for photo in rows
+        if not (photo.id in cloud_assessed_ids and photo.id in suitability_ids)
+    ]
 
 
 async def run_remote_category_classification(
@@ -2506,6 +2628,19 @@ async def run_remote_category_classification(
                         computed_at=now,
                     )
 
+                    # Die Albumtauglichkeit derselben Antwort, im SELBEN Schleifendurchlauf und mit
+                    # demselben `now` - und nach derselben Best-effort-Regel: ohne brauchbare Stufe
+                    # entsteht keine Zeile, kein Fehler, kein Laufabbruch. Das Foto bleibt dann
+                    # Kandidat des naechsten Laufs (die Auswahl unten verlangt BEIDE Zeilen).
+                    if classification.album_suitability is not None:
+                        await _upsert_album_suitability(
+                            session,
+                            photo.id,
+                            classification.album_suitability,
+                            now,
+                            settings.landmark_provider,
+                        )
+
                     # Feinlabels sind reine Zusatzinformation und werden AUCH DANN geschrieben,
                     # wenn das Modell kein Motiv deutlich erkennt. Loesen beide
                     # Labels auf denselben canonical_key auf, entsteht nur eine Zeile - kein
@@ -2515,6 +2650,20 @@ async def run_remote_category_classification(
                     for raw_label in classification.fine_labels:
                         entry = resolve_canonical_label(raw_label, snapshot, embedder)
                         entries_by_canonical.setdefault(entry.canonical_key, (entry, raw_label))
+
+                    # Die Feinlabel-Zeilen der VORHERIGEN Antwort fallen VOLLSTAENDIG, bevor die
+                    # neuen entstehen - dieselbe Regel wie beim Staerkevektor: eine Antwort ist
+                    # vollstaendig oder sie existiert nicht, ein Gemisch aus zwei Antworten gibt es
+                    # nicht. Seit der geweiteten Kandidatenauswahl ist das keine Kosmetik: ein
+                    # erneut gesendetes Foto traegt seine alten Zeilen noch, und ein zweiter
+                    # INSERT desselben Labels verletzte `UniqueConstraint(photo_id,
+                    # fine_label_id)` - die IntegrityError rollt die Transaktion zurueck und laesst
+                    # den GESAMTEN Lauf scheitern, nicht nur dieses eine Foto. Die
+                    # `fine_labels`-Registry selbst bleibt unberuehrt (projektuebergreifendes
+                    # Vokabular).
+                    await session.execute(
+                        delete(PhotoFineLabel).where(PhotoFineLabel.photo_id == photo.id)
+                    )
 
                     for entry, raw_label in entries_by_canonical.values():
                         if entry.id is None:

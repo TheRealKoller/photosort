@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
@@ -12,6 +12,7 @@ import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { useMotifsQuery } from '../hooks/useMotifs'
 import { useCurationQuery, useSetRatingMutation } from '../hooks/usePhotos'
+import { useProjectQuery } from '../hooks/useProjects'
 import { parseTopN } from '../utils/curationTopN'
 import { ownRatingStatus } from '../utils/ownRating'
 import { curatedRanking } from '../utils/rankings'
@@ -166,6 +167,20 @@ export const CURATION_EMPTY_TEXT =
   'Noch keine Kuratierung verfügbar — führe eine Kriterien-Bewertung aus. ' +
   'Ein Lauf von vor der Umstellung auf Events muss einmal neu berechnet werden.'
 
+/**
+ * Der Leerzustand OHNE Cloud-Freigabe - mit Vorrang vor `CURATION_EMPTY_TEXT`: ohne Freigabe
+ * entsteht gar kein Album-Entwurf, und „führe eine Kriterien-Bewertung aus" wäre ein Rat, der
+ * nicht hilft.
+ *
+ * Er benennt die fehlende Freigabe und den Ort, an dem sie erteilt wird - und WIEDERHOLT DEN
+ * ZUSTIMMUNGSTEXT NICHT. Was an die Cloud geht, steht weiterhin an genau einer Stelle, im
+ * Info-Popover neben dem Schalter der Projekteinstellungen; zwei Fassungen desselben Textes
+ * driften, und eine Einwilligung, die an zwei Orten verschieden beschrieben ist, ist keine.
+ */
+export const CURATION_CLOUD_CONSENT_TEXT =
+  'Ohne Cloud-Freigabe entsteht kein Album-Entwurf. Die Freigabe erteilst du in den ' +
+  'Projekteinstellungen.'
+
 const SKELETON_TILE_COUNT = 6
 
 export function CuratePage() {
@@ -184,6 +199,9 @@ export function CuratePage() {
   const username = token ? decodeUsername(token) : null
 
   const query = useCurationQuery(id, topN)
+  // Die Cloud-Freigabe ist eine PROJEKTeinstellung und steht nicht am Foto - ohne sie entsteht
+  // kein Album-Entwurf, und die Ansicht sagt das, statt eine leere Liste zu zeigen.
+  const projectQuery = useProjectQuery(id)
   const setRatingMutation = useSetRatingMutation(id)
   // useMemo statt einer neuen `?? []`-Array-Referenz bei jedem Render (Lint-Fund: der Effekt
   // unten haengt von `items` ab, ein staendig neuer Referenzwert wuerde ihn bei jedem Render neu
@@ -282,6 +300,10 @@ export function CuratePage() {
     )
   }
 
+  // Auf `=== true` gepruueft statt auf Falsyness: waehrend des Ladens ist das Feld `undefined`,
+  // und das ist keine Aussage ueber die Freigabe.
+  const cloudConsentGiven = projectQuery.data?.cloud_vision_detection_enabled === true
+
   const motifSetError = motifsQuery.isError
     ? motifsQuery.error instanceof ApiError
       ? motifsQuery.error.detail
@@ -320,7 +342,7 @@ export function CuratePage() {
         <p className="text-sm text-text">Deine Auswahl</p>
       </header>
 
-      {query.isLoading && (
+      {(query.isLoading || projectQuery.isLoading) && (
         <ul
           role="status"
           aria-label="Fotos werden geladen…"
@@ -340,7 +362,20 @@ export function CuratePage() {
         </Alert>
       )}
 
-      {query.isSuccess && dayKeys.length === 0 && (
+      {/* Der Hinweis erscheint erst, wenn Projekt UND Kuratierungsantwort geladen sind - sonst
+          blitzt er beim Laden eines freigegebenen Projekts kurz auf. Kein `Alert`, kein
+          `role="alert"`, keine Fehlerfarbe, kein Symbol: eine fehlende Einwilligung ist kein
+          Fehler. Die Schaltfläche ist bewusst SEKUNDÄR - sie navigiert, sie erteilt nichts. */}
+      {query.isSuccess && projectQuery.isSuccess && !cloudConsentGiven && (
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-sm text-text">{CURATION_CLOUD_CONSENT_TEXT}</p>
+          <Button asChild variant="secondary" size="sm">
+            <Link to={`/projects/${id}/settings`}>Zu den Projekteinstellungen</Link>
+          </Button>
+        </div>
+      )}
+
+      {query.isSuccess && projectQuery.isSuccess && cloudConsentGiven && dayKeys.length === 0 && (
         <p className="text-sm text-text">{CURATION_EMPTY_TEXT}</p>
       )}
 

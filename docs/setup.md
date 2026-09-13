@@ -378,8 +378,8 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
 
   | `LANDMARK_PROVIDER` | wählbare `LANDMARK_MODEL`-Werte | Voreinstellung (leer) | Schätzung je Bild |
   |---|---|---|---|
-  | `anthropic` | `claude-haiku-4-5`, `claude-sonnet-5` | `claude-haiku-4-5` | ~$0,0055 / ~$0,0110 |
-  | `mistral` | `ministral-3b-2512`, `mistral-small-2603` | `ministral-3b-2512` | ~$0,0003 / ~$0,0005 |
+  | `anthropic` | `claude-haiku-4-5`, `claude-sonnet-5` | `claude-haiku-4-5` | ~$0,0058 / ~$0,0117 |
+  | `mistral` | `ministral-3b-2512`, `mistral-small-2603` | `ministral-3b-2512` | ~$0,0003 / ~$0,0006 |
 
   Ein Wert außerhalb dieser Auswahl — auch ein für den *anderen* Provider gültiges Modell —
   lässt den Prozess beim Start mit einem Validierungsfehler abbrechen, kein stiller Fallback.
