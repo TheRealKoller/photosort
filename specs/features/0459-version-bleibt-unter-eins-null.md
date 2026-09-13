@@ -80,25 +80,30 @@ Release ist nicht umkehrbar.
 
 ## Teststrategie
 
-**Kein automatisierter Test**, und das ist eine bewusste Abweichung von der TDD-Vorgabe in
-`CLAUDE.md`, nicht ein Versäumnis. Die Änderung besteht aus Konfigurationswerten ohne eigene
-Logik; das Verhalten, das zu prüfen wäre, liegt vollständig in einer externen GitHub Action.
+Die Änderung ändert per Zusicherung kein Verhalten der Anwendung — sie besteht aus
+Konfigurationswerten ohne eigene Logik, und das zu prüfende Verhalten liegt vollständig in einer
+externen GitHub Action. Damit greift der **Nachweis ohne Rot-Grün** aus dem Testkonzept
+([`0002`](../architecture/0002-testkonzept.md), Abschnitt gleichen Namens) mit seinen drei
+Gleichheitsgrößen; er ist auf dem Commit-Paar `origin/main` → Branch-Spitze erbracht:
 
-Ein Wächtertest auf `bump-minor-pre-major: true` wurde erwogen und von Daniel verworfen: Der Wert
-wird beim geplanten Schritt auf 1.0.0 wieder umgestellt, und ein Test, der ihn festschreibt,
-müsste dann mitgelöscht werden.
+1. **Kein Testdiff** — der Diff enthält keine Zeile unter einem Testpfad.
+2. **Identische Testknoten-Menge mit identischem Ausgang** — 1455 Knoten vorher wie nachher,
+   Ausgang unverändert.
+3. **`Stmts` je Datei unverändert** — der Diff enthält keine Python- oder TypeScript-Zeile.
 
-Verifiziert wird stattdessen am realen Lauf: Nach dem Merge muss der von release-please
+Ein Wächtertest auf `bump-minor-pre-major: true` entsteht nicht. Der Wert ist ein bewusst
+umzustellender Schalter; ein Test, der ihn festschreibt, müsste beim vorgesehenen Gebrauch
+mitgelöscht werden.
+
+Die Wirkung selbst zeigt sich erst am realen Lauf: Nach dem Merge muss der von release-please
 vorgeschlagene Release die Nummer **0.44.0** tragen (Kriterium 5). Trägt er eine andere, ist die
 Umsetzung nicht gelungen.
 
 ## Entscheidungen
 
-- **Zurückdrehen statt Weiterzählen ab 1.0.1.** Ein Weiterzählen ließe die nach außen sichtbare
-  Hauptversion stehen — genau das, was das Ziel ausschließt.
 - **Der Changelog-Abschnitt wird entfernt, nicht umbenannt.** release-please erzeugt ihn beim
-  nächsten Lauf aus den Commits neu; ein von Hand umgeschriebener Abschnitt würde dabei
-  doppelt.
+  nächsten Lauf aus den Commits neu; ein von Hand umgeschriebener Abschnitt stünde dann doppelt
+  im Changelog.
 
 ## Offene Fragen
 

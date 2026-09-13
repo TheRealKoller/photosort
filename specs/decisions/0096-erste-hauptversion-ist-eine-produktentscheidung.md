@@ -42,8 +42,7 @@ nächste Release-Lauf eine Versionsnummer, die nach außen eine Reife behauptet,
 nicht erklärt hat; zurücknehmbar ist das nur über das Löschen von Tag und Release.
 
 Kein Wächtertest nagelt den Wert fest. Er ist ein bewusst umzustellender Schalter, und ein Test,
-der ihn auf `true` festschreibt, stünde genau bei der Umstellung im Weg, für die er gedacht wäre
-— eine Prüfung, die man beim vorgesehenen Gebrauch löschen muss, prüft nichts.
+der ihn auf `true` festschreibt, stünde genau bei der Umstellung im Weg, für die er gedacht wäre.
 
 ## Konsequenzen
 
