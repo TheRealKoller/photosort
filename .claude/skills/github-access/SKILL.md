@@ -147,12 +147,19 @@ nicht von „galt einmal" unterscheiden und bleibt grün, wenn ein Weg belegt wi
 **Wege:** `mcp`, `gh`
 **Ziel (auf jedem Weg als Literal):** `owner` = `TheRealKoller`, `repo` = `photosort`
 **`mcp`:** das GitHub-MCP-Werkzeug, das ein Issue anlegt. Titel, Body und Label gehen als eigene,
-typisierte Parameter. Werkzeugname nicht notiert.
+typisierte Parameter. Meldet das Issue einen Defekt, trägt die Label-Liste genau den einen Wert
+`bug`; sonst wird sie **nicht** übergeben — auch nicht leer. Werkzeugname nicht notiert.
 **`gh`:**
 
 ```bash
-gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" --body-file <body-datei> --label <idee|bug>
+gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" --body-file <body-datei>
+# meldet das Issue einen Defekt, kommt genau ein Schalter hinzu:
+gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" --body-file <body-datei> --label bug
 ```
+
+**Ein Typ-Label wird genau dann vergeben, wenn das Issue einen Defekt meldet**, und dann genau
+`bug`. In jedem anderen Fall entfällt der Schalter ersatzlos (ADR
+[`0101`](../../../specs/decisions/0101-ein-label-traegt-eine-unterscheidung.md)).
 
 Die Antwort liefert die **Nummer** des neuen Issues — auf dem `gh`-Weg aus der ausgegebenen URL
 geparst, auf dem `mcp`-Weg aus dem strukturierten Zahlenfeld gelesen. Sie wird in **beiden**
@@ -318,8 +325,8 @@ gh issue edit <NNN> --repo TheRealKoller/photosort --add-label bereich:frontend 
 Bereich korrigiert, muss den falschen entfernen, sonst weist der Board-Filter das Issue dauerhaft
 unter einem Bereich aus, den es nicht mehr betrifft. Die beiden Wege erreichen denselben
 Zielzustand verschieden: `gh` additiv und subtraktiv über `--add-label`/`--remove-label`, `mcp`
-durch Übergabe der **vollständigen** Menge. **Auf dem `mcp`-Weg gehören `idee`/`bug` deshalb mit
-in den Aufruf**, sonst fallen sie still weg.
+durch Übergabe der **vollständigen** Menge. **Auf dem `mcp`-Weg gehört `bug` deshalb mit in den
+Aufruf**, sonst fällt es still weg.
 
 **Die Schreibmenge wird mechanisch gebildet:** gelesene Menge desselben Laufs — als Namen nach der
 Normalisierung oben —, minus aller Namen mit dem Präfix `bereich:`, plus der vorgesehenen Werte.

@@ -1,6 +1,5 @@
 name: Feature Request / Idee
 description: Neue Anforderung oder Idee für PhotoSort beschreiben
-labels: ["feature", "needs-spec"]
 body:
   - type: markdown
     attributes:
