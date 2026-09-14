@@ -11,12 +11,17 @@ Sehenswuerdigkeit-Name nur als `%r` und laengenbegrenzt.
 from __future__ import annotations
 
 from bisect import bisect_left
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from photosort.places import place_cell
+from photosort.places import (
+    MAX_PLACE_NAME_LENGTH,
+    PlaceInfo,
+    place_cell,
+    usable_locality,
+)
 from photosort.scoring import (
     GPS_CLUSTER_SPLIT_DISTANCE_METERS,
     TIME_CLUSTER_GAP,
@@ -212,6 +217,11 @@ class BuiltEvent:
     place_kind: str | None = None
     place_lat: float | None = None
     place_lon: float | None = None
+    # Die verschiedenen gerundeten GEMESSENEN Zellen dieses Events, sortiert und dublettenfrei.
+    # Sie entstehen UNABHAENGIG von `_place_of`, das bei gesetztem `landmark_name` zurueckkehrt,
+    # bevor es sie bildet: auch ein Landmark-Event traegt seine Zellen, sonst waere die Ausnahme
+    # der Namensvergabe (ein Landmark-Event bekommt keinen Ortsnamen) nicht pruefbar.
+    place_cells: tuple[tuple[float, float], ...] = ()
 
 
 def _usable_name(name: str | None) -> str | None:
@@ -406,8 +416,24 @@ def _name_of(members: Sequence[EventCandidate]) -> str | None:
     return None
 
 
+def _cells_of(members: Sequence[EventCandidate]) -> tuple[tuple[float, float], ...]:
+    """Die verschiedenen gerundeten GEMESSENEN Zellen eines Events, sortiert und dublettenfrei.
+
+    Ausschliesslich gemessene Werte: ein uebernommener Ort bestimmt die Grenzen mit, speist den
+    Ortsbezug eines Events aber nie - und darf deshalb auch keinen Namen tragen."""
+    return tuple(
+        sorted(
+            {
+                place_cell(member.gps_lat, member.gps_lon)
+                for member in members
+                if member.gps_lat is not None and member.gps_lon is not None
+            }
+        )
+    )
+
+
 def _place_of(
-    members: Sequence[EventCandidate], landmark_name: str | None
+    cells: Sequence[tuple[float, float]], landmark_name: str | None
 ) -> tuple[str | None, float | None, float | None]:
     """Die Stufenentscheidung ueber das VOLLSTAENDIGE Event, ausschliesslich aus GEMESSENEN Werten.
 
@@ -415,21 +441,16 @@ def _place_of(
     -> kein Ortsbezug. Der Name hat Vorrang auch dann, wenn zusaetzlich abweichende Koordinaten
     vorliegen.
 
-    `landmark_name` kommt als Parameter herein statt hier ein zweites Mal gesucht zu werden: so
-    gibt es EINE Stelle, die "gibt es einen verwendbaren Namen" beantwortet, und die Invariante
-    `place_kind='landmark'` ⇒ `landmark_name` gesetzt kann an der einen Aufrufstelle gar nicht
-    auseinanderlaufen."""
+    VERGLICHEN WIRD DIE GERUNDETE Zelle, nicht der Rohwert: ein Vergleich der ungerundeten Werte
+    schluege schon bei zwei 40 m auseinanderliegenden Aufnahmen zu und machte aus einem einzelnen
+    Ortsbesuch "Mehrere Orte".
+
+    `landmark_name` und `cells` kommen als Parameter herein statt hier ein zweites Mal gebildet zu
+    werden: so gibt es je EINE Stelle, die "gibt es einen verwendbaren Namen" und "welche Zellen
+    hat dieses Event" beantwortet, und die Invariante `place_kind='landmark'` ⇒ `landmark_name`
+    gesetzt kann an der einen Aufrufstelle gar nicht auseinanderlaufen."""
     if landmark_name is not None:
         return "landmark", None, None
-
-    # VERGLICHEN WIRD DIE GERUNDETE Zelle, nicht der Rohwert: ein Vergleich der ungerundeten Werte
-    # schluege schon bei zwei 40 m auseinanderliegenden Aufnahmen zu und machte aus einem einzelnen
-    # Ortsbesuch "Mehrere Orte".
-    cells = {
-        place_cell(member.gps_lat, member.gps_lon)
-        for member in members
-        if member.gps_lat is not None and member.gps_lon is not None
-    }
     if not cells:
         return None, None, None
     if len(cells) > 1:
@@ -440,7 +461,8 @@ def _place_of(
 
 def _built(position: int, members: Sequence[EventCandidate]) -> BuiltEvent:
     landmark_name = _name_of(members)
-    place_kind, place_lat, place_lon = _place_of(members, landmark_name)
+    cells = _cells_of(members)
+    place_kind, place_lat, place_lon = _place_of(cells, landmark_name)
     return BuiltEvent(
         position=position,
         photo_ids=tuple(member.photo_id for member in members),
@@ -450,6 +472,7 @@ def _built(position: int, members: Sequence[EventCandidate]) -> BuiltEvent:
         place_kind=place_kind,
         place_lat=place_lat,
         place_lon=place_lon,
+        place_cells=cells,
     )
 
 
@@ -484,3 +507,106 @@ def build_events(
         events[-1].append(candidate)
 
     return [_built(position, members) for position, members in enumerate(events, start=1)]
+
+
+class PlaceNamedEvent(Protocol):
+    """Was die Namensvergabe von einem Event liest - und mehr nicht.
+
+    Ein Protokoll statt `BuiltEvent`, weil dieselbe Vergabe zwei Aufrufer hat: den Lauf
+    (`BuiltEvent`) und das Messkommando (`place_probe.ProbeEvent`). Eine ZWEITE, nachbildende
+    Fassung der Regel driftet - und dann misst das Messkommando etwas anderes, als der Lauf
+    tatsaechlich tut, waehrend beide fuer sich gruen bleiben.
+
+    Nur-lesende Eigenschaften: beide Aufrufer sind eingefrorene Datenklassen."""
+
+    @property
+    def landmark_name(self) -> str | None: ...
+
+    @property
+    def place_cells(self) -> tuple[tuple[float, float], ...]: ...
+
+
+def _the_one_of(values: Iterable[str | None]) -> str | None:
+    """Der EINE verschiedene Wert einer Menge, oder `None` bei null oder mehreren.
+
+    Werte `None` zaehlen ausdruecklich NICHT mit: ein Event aus zwei Zellen, von denen nur eine
+    einen Namen liefert, traegt diesen Namen."""
+    distinct = {value for value in values if value is not None}
+    if len(distinct) != 1:
+        return None
+    return distinct.pop()
+
+
+def _locality_of(
+    event: PlaceNamedEvent, info_by_cell: Mapping[tuple[float, float], PlaceInfo]
+) -> str | None:
+    """Der Ortsname dieses Events - ohne Viertel, das entscheidet erst der Lauf.
+
+    Ein Event MIT Sehenswuerdigkeit bekommt keinen: der Ortsname ersetzt sie nicht und tritt nicht
+    daneben. Es zaehlt deshalb auch bei der Gleichnamigkeitspruefung nicht mit und loest bei
+    keinem anderen Event die Viertel-Ergaenzung aus.
+
+    Gelesen werden ALLE Zellen des Events, nicht nur die eines `place_kind='coordinate'`: ein
+    Event darf die Zellgrenze streifen und waere dann `'multiple'`, obwohl alle Aufnahmen in
+    derselben Stadt liegen. Traegt eine Menge von Orten genau einen Namen, ist sie keine Menge von
+    Orten."""
+    if event.landmark_name is not None:
+        return None
+    return _the_one_of(usable_locality(info_by_cell.get(cell)) for cell in event.place_cells)
+
+
+def _district_of(
+    event: PlaceNamedEvent, info_by_cell: Mapping[tuple[float, float], PlaceInfo]
+) -> str | None:
+    """Das EINE Viertel ueber die Zellen dieses Events - bei zwei verschiedenen keines.
+
+    Gezaehlt wird nur ueber Zellen, deren Auskunft tatsaechlich einen Ortsnamen aufloest: das
+    Viertel einer Auskunft ohne brauchbare Ebene ist keine Angabe, die hier gilt."""
+    return _the_one_of(
+        info.neighbourhood
+        for cell in event.place_cells
+        if (info := info_by_cell.get(cell)) is not None and usable_locality(info) is not None
+    )
+
+
+def assign_place_names(
+    events: Sequence[PlaceNamedEvent],
+    info_by_cell: Mapping[tuple[float, float], PlaceInfo],
+) -> list[str | None]:
+    """Der Ortsname JE EVENT eines Laufs, POSITIONSTREU zur uebergebenen Liste.
+
+    Zwei Durchgaenge, und der zweite ist der Grund, warum diese Vergabe hier und nicht in
+    `places.py` steht (ADR 0102 Punkt 4): Ob ein Event "Berlin" oder "Berlin, Kreuzberg" heisst,
+    haengt davon ab, was sonst im selben Lauf liegt - das ist keine Eigenschaft des Ortes.
+
+    1. Je Event der eine Ortsname seiner Zellen (`None` bei null oder mehreren, und bei einer
+       erkannten Sehenswuerdigkeit).
+    2. Ueber den ganzen Lauf: Fuer jeden MEHRFACH vergebenen Namen bekommt GENAU JEDES dieser
+       Events zusaetzlich sein Viertel, sofern ueber seine Zellen genau eines vorliegt - JE EVENT
+       EINZELN, die uebrigen bleiben beim Ortsnamen und sind ueber ihre Zeitspanne
+       unterscheidbar.
+
+    REISST die zusammengesetzte Form `MAX_PLACE_NAME_LENGTH`, bleibt der Ortsname allein stehen.
+    Gekuerzt wird NIE: zwei verschiedene, auf dieselbe Laenge gekappte Namen waeren ein Name, und
+    die Viertel-Regel griffe dann fuer Events an verschiedenen Orten.
+
+    REIN und deterministisch - das Ergebnis haengt nicht von der Reihenfolge der Eingabe ab."""
+    localities = [_locality_of(event, info_by_cell) for event in events]
+
+    occurrences: dict[str, int] = {}
+    for locality in localities:
+        if locality is not None:
+            occurrences[locality] = occurrences.get(locality, 0) + 1
+
+    names: list[str | None] = []
+    for event, locality in zip(events, localities, strict=True):
+        if locality is None or occurrences[locality] < 2:
+            names.append(locality)
+            continue
+        district = _district_of(event, info_by_cell)
+        if district is None:
+            names.append(locality)
+            continue
+        composed = f"{locality}, {district}"
+        names.append(locality if len(composed) > MAX_PLACE_NAME_LENGTH else composed)
+    return names
