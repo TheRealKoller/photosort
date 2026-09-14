@@ -46,8 +46,21 @@ Basis, je nachdem, wer wann geschrieben hat.
 
 Kontrahenten sind alle Branches nach Punkt 1, die im selben Nummernraum eine Nummer ≥ Basis führen,
 zuzüglich des eigenen Branches. Sie werden nach ihrem vollständigen Namen byteweise aufsteigend
-sortiert. Jeder Kontrahent belegt so viele Nummern, wie er sichtbar führt; die eigene Nummer ist
-die Basis plus die Summe der von rangniedrigeren Kontrahenten geführten Nummern.
+sortiert. Zugeteilt wird dann in zwei Gängen über der gesamten Kontrahentenmenge:
+
+1. **In Rangfolge behält jeder Kontrahent seine niedrigste sichtbar geführte Nummer**, sofern eine
+   rangniedrigere Seite sie nicht bereits beansprucht hat. Ein Dokument zieht damit nur um, wenn
+   seine Nummer einer rangniedrigeren Seite zusteht — nie aus Rechenmechanik heraus.
+2. **Wer nichts behalten konnte** — weil er noch keine Datei angelegt hat oder weil eine
+   rangniedrigere Seite dieselbe Nummer führte —, bekommt, wieder in Rangfolge, die nächste Nummer
+   ab der Basis, die **kein** Kontrahent führt.
+
+**Gezählt wird nicht.** Eine Zuteilung, die nur die Anzahl der von rangniedrigeren Kontrahenten
+geführten Nummern auf die Basis addiert, ist ausschließlich dann kollisionsfrei, wenn diese Nummern
+lückenlos ab der Basis liegen; andernfalls teilt sie Nummern zu, die andere Branches bereits
+führen. Eine Lücke entsteht ohne jede Handvergabe: Nach Punkt 1 ist ein Branch ohne Arbeitsbaum und
+ohne `origin`-Gegenstück kein Kontrahent mehr, und wer die Basisnummer führte, hinterlässt beim
+Verschwinden genau diese Lücke.
 
 Der Branchname trägt diese Ordnung, weil git denselben Branch nie in zwei Arbeitsbäumen auscheckt:
 Er ist ohne Abstimmung eindeutig, beiden Seiten bekannt und von keiner Seite zu den eigenen Gunsten
@@ -75,8 +88,11 @@ aufzulösen, sondern konstruktiv ausgeschlossen, und dieselbe Eingabe liefert be
 dieselbe Kennung. Preis: Die neue Kennung sieht anders aus als die 35 bestehenden, deren scheinbar
 fortlaufende Form genau die Kollisionsquelle war.
 
-`down_revision` ist immer der Head von `origin/main`. Verschiebt sich dieser, während der Branch
-offen ist, hängt sich die eigene Migration beim Abgleich mit `main` selbsttätig und **ohne
+`down_revision` ist der Kopf der aufgelösten Kette des Arbeitsstands — solange der Branch keine
+eigene Migration trägt, ist das genau der Head von `origin/main`. Trägt er bereits eine, hängt die
+nächste hinter der eigenen: Setzten beide auf den Head von `origin/main`, hätte die Kette zwei
+Köpfe, und `alembic upgrade head` bräche beim Containerstart ab. Verschiebt sich der Head, während
+der Branch offen ist, hängt sich die eigene Migration beim Abgleich mit `main` selbsttätig und **ohne
 Rückfrage** hinter den neuen Head; die bereits übernommene Migration wird nie angefasst. Bei
 mehreren eigenen Migrationen wird nur die unterste umgehängt, die eigene Reihenfolge bleibt.
 

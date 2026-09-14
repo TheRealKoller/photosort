@@ -106,7 +106,13 @@ Repository und wäre weder testbar noch für Hintergrundläufe zugesichert.
    der eigene Blick, sonst rechnet jede Seite mit einer anderen Basis.
 2. **Kontrahenten** = alle Branches, die im selben Nummernraum eine Nummer ≥ Basis führen, plus der
    eigene Branch; sortiert byteweise (C-Locale) nach dem vollständigen Branchnamen.
-3. **Eigene Nummer** = Basis + Summe der Nummern, die rangniedrigere Kontrahenten sichtbar führen.
+3. **Zuteilung in zwei Gängen** über der gesamten Kontrahentenmenge: In Rangfolge behält jeder
+   seine niedrigste sichtbar geführte Nummer, sofern eine rangniedrigere Seite sie nicht schon
+   beansprucht hat; wer nichts behalten konnte, bekommt — wieder in Rangfolge — die nächste Nummer
+   ab der Basis, die **kein** Kontrahent führt. **Gezählt wird nicht:** Basis plus Anzahl der von
+   rangniedrigeren Kontrahenten geführten Nummern ist nur bei lückenloser Belegung ab der Basis
+   kollisionsfrei, und eine Lücke entsteht ohne Handvergabe, sobald ein Branch ohne Arbeitsbaum und
+   ohne `origin`-Gegenstück aus der Kontrahentenmenge fällt.
 
 Der Branchname trägt die Ordnung, weil git denselben Branch nie in zwei Arbeitsbäumen auscheckt.
 Beide Seiten rechnen dasselbe, jede für sich, ohne Nachricht und ohne Wartepunkt (AK 3, AK 4).
@@ -134,7 +140,10 @@ Determinismus-Zusage ist still falsch.
 
 - **Kennung:** `sha256(<Branchname> + NUL + <Slug>)`, erste 12 Hex-Zeichen. Kollision konstruktiv
   ausgeschlossen, deterministisch wiederholbar. Die 35 bestehenden Migrationen bleiben unberührt.
-- **Kette:** `down_revision` = Head von `origin/main`. Hat sich der Head verschoben, hängt der
+- **Kette:** `down_revision` = Kopf der aufgelösten Kette des Arbeitsstands; ohne eigene Migration
+  ist das genau der Head von `origin/main`. Trägt der Branch schon eine, hängt die nächste hinter
+  der eigenen — setzten beide auf den Head von `origin/main`, hätte die Kette zwei Köpfe und
+  `alembic upgrade head` bräche beim Containerstart ab. Hat sich der Head verschoben, hängt der
   Abgleich mit `main` die eigene unterste Migration **ohne Rückfrage** hinter den neuen Head um; die
   bereits übernommene Migration wird nie angefasst. Mehrere eigene Migrationen behalten ihre interne
   Reihenfolge.
@@ -153,7 +162,11 @@ Determinismus-Zusage ist still falsch.
 | `migration <slug>` | Revisions-Kennung und `down_revision` | `0` / `10` (Head verschoben, Umhängen nötig) |
 | `pruefen` | Befunde zeilenweise | `0` sauber, `10` Kontention aufgelöst, `20` echte Dublette im eigenen Baum |
 | `kette` | aufgelöste Migrationskette | `0` |
+| `umhaengen` | Berichtszeile `<eigene Revision> hinter <neuer Head> gehängt` | `0` nichts umzuhängen, `10` umgehängt, `30` nicht messbar (dann wird nichts geschrieben) |
 | `vorschlag features` | Meldung „Nummer kommt vom Issue" | `≠0` — nie still eine Nummer liefern |
+
+`umhaengen` ist der ausführende Gegenpart zu `migration`, das den verschobenen Head nur meldet: AK 6
+verlangt ein Umhängen **ohne Rückfrage**, und der `main`-Abgleich braucht dafür einen Aufruf.
 
 Ein unbekannter Exit-Code wird an keiner Aufrufstelle wie `0` behandelt.
 
