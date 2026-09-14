@@ -22,6 +22,12 @@ REPO_WURZEL = _SCRIPTS_DIR.parent
 # brauchen.
 _SEED_SCRIPT_PATH = _SCRIPTS_DIR / "seed-opencloud-demo.py"
 
+# `nummern.py` traegt zwar einen gueltigen Modulnamen, ist aber aus demselben Grund per Pfad zu
+# laden: `scripts/` ist bewusst kein importierbares Paket (`py-modules = []` in pyproject.toml),
+# und zwei Testmodule (test_nummern.py, test_nummernvergabe_verankert.py) brauchen dasselbe
+# Skript - eine modul-lokale Fixture traegt das nicht.
+_NUMMERN_SCRIPT_PATH = _SCRIPTS_DIR / "nummern.py"
+
 
 def _load_module(module_name: str, script_path: Path) -> ModuleType:
     spec = importlib.util.spec_from_file_location(module_name, script_path)
@@ -35,6 +41,11 @@ def _load_module(module_name: str, script_path: Path) -> ModuleType:
 @pytest.fixture(scope="session")
 def seed_module() -> ModuleType:
     return _load_module("seed_opencloud_demo", _SEED_SCRIPT_PATH)
+
+
+@pytest.fixture(scope="session")
+def nummern_module() -> ModuleType:
+    return _load_module("nummern", _NUMMERN_SCRIPT_PATH)
 
 
 # --- Spielplaetze fuer die Verhaltenstests der Bash-Skripte unter scripts/ ----------------------
