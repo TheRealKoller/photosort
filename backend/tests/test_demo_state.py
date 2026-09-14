@@ -800,9 +800,7 @@ class TestTheDemoPhotosCarryTheirAspectRatio:
         ]
         assert without_cache
         assert all(photo.aspect_ratio is None for photo in without_cache)
-        assert all(
-            photo.aspect_ratio is not None for photo in photos if photo not in without_cache
-        )
+        assert all(photo.aspect_ratio is not None for photo in photos if photo not in without_cache)
 
 
 class TestRebuildDemoStateWritesRealThumbnails:
