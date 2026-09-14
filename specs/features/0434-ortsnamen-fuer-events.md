@@ -150,6 +150,14 @@ deshalb zuerst das Messkommando, dann misst Daniel an seinem echten Projekt, dan
 Wegwahl und wird als eigene ADR festgehalten, dann entsteht die eigentliche Auflösung. Fällt die
 Messung dürftig aus, endet die Story dort — das ist ein Ergebnis.
 
+**Gelaufen und entschieden (2026-09-14): der lokale Datensatz (GeoNames), ADR
+[`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md).**
+10 von 10 Zellen mit Ortsnamen, 8 davon mit Viertel, kein Fehltreffer; 16 von 17 Events ohne
+Sehenswürdigkeit bekämen einen Namen; 100 % der Fotos mit Koordinate liegen in einer auflösbaren
+Zelle. Der externe Kandidat fiel vollständig aus (`http-status` auf allen 10 Zellen) und blieb
+damit **ungemessen**; er wurde nicht aufgeklärt, weil der lokale Weg das Erreichbare bereits
+ausschöpft. Teil 2 setzt darauf auf: der externe Kandidat und sein Schalter entfallen.
+
 ### 1. Messkommando `backend/src/photosort/place_probe.py`
 
 Aufruf `python -m photosort.place_probe --project-id N`, Muster `demo_state`, aber **rein lesend**:
@@ -214,37 +222,16 @@ vorwegnehmen, deren Anschaffung sie erst begründen soll:
   `places.place_cell`. Dazu eine grobe obere Schranke von **25 km** je Treffer — jenseits davon
   ist ein Eintrag kein Ortsname mehr, sondern der nächste Eintrag irgendwo. Großzügig gewählt,
   weil der Mittelpunkt einer Großstadt weit vom bereisten Rand liegen kann.
-- **Extern: Photon** (öffentliche Instanz, OSM-Daten, Apache-2.0 mit Selbst-Hosting-Pfad). Die
-  getroffene Ebene steht in der Antwort im Feld **`type`** — nicht in `layer`, das ausschließlich
-  ein Filter-Parameter der **Anfrage** ist und in der Antwort gar nicht vorkommt (belegt am
-  CHANGELOG 0.3.3/0.4.0 und an zwei Live-Abrufen, 2026-09-14). `matched_level` kommt damit aus
-  `type`. Bewusst **nicht** die öffentliche Nominatim-Instanz (untersagt rasterförmige
-  Reverse-Abfragen), **nicht** LocationIQ/Mapbox (befristen bzw. verkaufen das dauerhafte
-  Zwischenspeichern, das diese Story als Akzeptanzkriterium trägt), **nicht** OpenCage
-  (Gratisstufe ist „testing only").
+- **Extern: Photon** (öffentliche Instanz, OSM-Daten) — **in Teil 2 entfallen.** Der Kandidat fiel
+  im Messlauf auf allen 10 Zellen mit `http-status` aus und blieb damit ungemessen; die Wegwahl
+  fiel auf den lokalen Datensatz (ADR
+  [`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)).
+  Teil 2 entfernt `PhotonResolver`, seine Fabrik, den Schalter und die zugehörigen Tests, statt
+  sie als toten Weg stehen zu lassen. Wer den externen Weg je wieder aufmacht, fängt bei der
+  Anbieterprüfung an, nicht bei diesem Code.
 
-  **Achtung, Namenskollision — Photons `locality` ist nicht unser `locality`.** Photon staffelt
-  `locality` ⊂ `district` ⊂ `city` („Ritterkiez" ⊂ „Kreuzberg" ⊂ „Berlin"). Unser `locality` ist
-  der **Ort**, entspricht also Photons `city`; unser `neighbourhood` entspricht Photons
-  `district`. Die Abbildung lautet damit `city → locality`, `district → neighbourhood`; Photons
-  `locality` wird verworfen. Eine Umsetzung, die Photons `locality` direkt übernimmt, setzt
-  systematisch die falsche Ebene als Überschrift — „Ritterkiez" statt „Berlin". Die
-  Viertel-Ebene kommt in der Antwort ausschließlich als `district`: `suburb`, `borough` und
-  `city_district` erscheinen dort nicht (`suburb` nur als roher `osm_value`).
-
-  **Ebenen feiner als `district` zählen als Treffer, nicht als Fehltreffer — und das bestimmt den
-  Großteil aller Messwerte.** Photons `house`, `street` und `locality` liegen **unterhalb** jeder
-  Ebene, die dieses Projekt führt; sie werden deshalb auf `neighbourhood` abgebildet, nicht auf
-  „keine Ebene". Die Begründung des Regions-Ausschlusses trägt hier ausdrücklich **nicht**: Ein
-  Regionstreffer nennt oft eine Stadt, die Dutzende Kilometer entfernt liegt — ein Haustreffer
-  nennt genau die richtige. Das ist kein Randfall: Die Belegabfrage vom 2026-09-14 lieferte für
-  eine gerundete Zelle genau `type: "house"`. Wer die Zahlen ohne diese Kenntnis liest, liest sie
-  falsch; eine Abbildung auf „keine Ebene" wiese den externen Kandidaten systematisch zu dürftig
-  aus. Weil die Zuordnung eine **Annahme über eine fremde Quelle** ist, weist Block C die
-  tatsächlich gesehenen `type`-Werte zusätzlich **roh** aus — sie bleibt damit am Messergebnis
-  nachprüfbar, statt geglaubt werden zu müssen.
-
-**Bezug des lokalen Datensatzes — `scripts/fetch-ortsdatensatz.sh`.** Die Datei wird **einmal**
+**Bezug des lokalen Datensatzes — `scripts/fetch-ortsdatensatz.sh` (Teil 1; in Teil 2 abgelöst von
+Abschnitt 8, weil ein Host-Skript auf dem Server nicht trägt).** Die Datei wird **einmal**
 bezogen und liegt dann lokal; sie wird nicht bei jedem Lauf neu geholt. Das Skript bildet den
 Hash beim Erstbezug **selbst** und legt ihn daneben; jeder spätere Lauf prüft die lokale Datei
 dagegen und bricht bei Abweichung laut ab — kein stiller Rückfall auf den externen Weg und keine
@@ -257,8 +244,8 @@ erzeugt `allCountries.zip` nächtlich neu (gemessen am 2026-09-14: Last-Modified
 421 MB) und veröffentlicht **keine Prüfsummen** — im Download-Verzeichnis liegen nur die
 ZIP-Dateien, keine `.md5`, `.sha256` oder Signatur. Es gibt damit weder einen stabilen Sollwert
 noch eine vertrauenswürdige Quelle für einen. Das Modell-Muster trägt dort nur, weil die
-Modelldatei unveränderlich und versioniert ist. Ein Neubezug im Quartalsrhythmus ist eine Option
-für den **Betriebsfall** und wird von der Wegwahl-ADR entschieden, nicht hier.
+Modelldatei unveränderlich und versioniert ist. **Für den Betriebsfall entschieden (ADR 0103 Punkt
+4): kein Rhythmus** — erneuert wird auf Anlass.
 
 Gemessen wird auch, **welche** Schlüssel tatsächlich zurückkommen: ob ein Stadtteil bei der
 gewählten Quelle als `suburb`, `borough`, `city_district` oder `district` erscheint, hängt an der
@@ -392,16 +379,57 @@ entsteht **keine** neue Zählspalte an der Lauf-Zeile.
 strukturell nicht erreichbar. Diese Story verwendet die Auskunft in der Sehenswürdigkeitserkennung
 nicht; sie stellt sie nur bereit.
 
-### 8. Doku
+### 8. Der Ortsdatensatz im Betrieb (Teil 2)
+
+**Grundlage:** ADR
+[`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)
+Punkt 3. Die Rohdatei taugt nicht für den Betrieb (1,74 GB, 13,46 Mio. Zeilen); betrieben wird ein
+Auszug.
+
+**Der Auszug — `backend/src/photosort/place_dataset.py`, Aufruf `python -m
+photosort.place_dataset`.** Bezieht `allCountries.zip`, bildet daraus den Auszug, löscht das
+Archiv wieder und legt den SHA256 des Auszugs daneben. Gemessen (2026-09-14): 5.770.883 Zeilen,
+223 MB, gzip-gepackt **69 MB**; ein vollständiger Lese-Durchgang dauert 3,3 s.
+
+- **Form:** eine GeoNames-Datei mit **geleerten** ungebrauchten Spalten, kein eigenes Format.
+  Behalten werden die Zeilen der Feature-Klassen `P` und `A` und darin die Felder Name, Breite,
+  Länge, `featureClass`, `featureCode` an **unveränderter Spaltenposition**. Damit liest
+  `place_probe.py::parse_geonames_line` den Auszug unverändert, und die Gleichheit zum gemessenen
+  Verhalten ist strukturell statt argumentiert. Abgelegt wird die gzip-gepackte Form.
+- **Wo:** eigenes Docker-Volume `place_dataset` (`docker-compose.yml`), im Backend-Dienst
+  schreibbar, im Worker **nur lesend** eingehängt — genau ein Schreiber, und der operative Pfad
+  ist keiner. Der Pfad kommt aus einer Betriebseinstellung mit Vorgabe auf dem Volume, nie aus
+  Datenbank oder Request.
+- **Kein Shellskript auf dem Host.** Auf dem Server gibt es keine Shell, nur eine Oberfläche für
+  Docker Compose und eine Container-Konsole; ein Weg über `scripts/*.sh` trägt dort nicht.
+  `scripts/fetch-ortsdatensatz.sh` entfällt ersatzlos — eine zweite Fassung desselben Ablaufs
+  driftet, und die auf dem Server unbrauchbare wäre die schlechtere.
+- **Das Kommando bleibt von jedem automatischen Pfad fern** — kein Aufrufpfad aus
+  `main.py`/`worker.py`, kein Endpunkt, kein Compose-`command`, dieselbe Auflage und derselbe
+  Nachweis wie bei `place_probe.py`. Ein 400-MB-Abruf tritt nur ein, wenn er getippt wird.
+- **Geprüft wird der Auszug selbst**, also genau die Datei, die gelesen wird — vor jedem Gebrauch
+  gegen den beim Bezug gebildeten Hash. Stimmt er nicht oder fehlt die Datei: **kein Auflöser wird
+  gebaut**, kein stiller Ersatzweg, eine laute Zeile mit festem Grund-Token je Lauf. Die Events
+  behalten Nummer und Zeitspanne, der Lauf läuft durch.
+- **Ein Neubezug geschieht auf Anlass, nicht nach Kalender** (ADR 0103 Punkt 4).
+
+**Gleichheitsnachweis statt Zusicherung:** Ein Test bildet aus literal geschriebenen
+GeoNames-Rohzeilen den Auszug und belegt, dass `geonames_answer` über beide Fassungen für dieselbe
+Zelle dieselbe Antwort liefert — einschließlich einer Zeile außerhalb `P`/`A`, die in beiden
+Fassungen nichts beiträgt. Ohne diesen Fall wäre „der Auszug ändert nichts" eine Behauptung.
+
+### 9. Doku
 
 `docs/architecture.md` (Datenmodell: `place_lookups`, `events.place_name`; Lesepfad: die dritte
-Stufe der Überschrift) und `docs/setup.md` (Aufruf des Messkommandos, ggf. Bezug des lokalen
-Ortsdatensatzes) ziehen im selben Pull Request nach — Owner `architect`.
+Stufe der Überschrift; der Ortsdatensatz als Betriebsartefakt) und `docs/setup.md` (Bezug des
+Auszugs, Messkommando ohne den entfallenen externen Kandidaten) ziehen im selben Pull Request nach
+— Owner `architect`.
 
-Die Namensnennungspflicht der gewählten Quelle wird sichtbar erfüllt (GeoNames: CC-BY; OSM-basiert:
-ODbL) — die Stelle dafür legt die Wegwahl-ADR fest, zusammen mit dem Weg.
+Die Namensnennungspflicht wird sichtbar erfüllt: GeoNames steht unter CC BY 4.0, genannt in einer
+statischen Zeile am Fuß der Projektliste (ADR 0103 Punkt 5) — Quelle und Lizenz, verlinkt auf
+`geonames.org` und den Lizenztext. Keine neue Komponente, kein neues Token.
 
-### 9. Zuschnitt der zwei Auslieferungen
+### 10. Zuschnitt der zwei Auslieferungen
 
 **Teil 1 — „Messen, bevor gewählt wird"** (Abschnitte 0 und 1, plus das Wegwahl-unabhängige aus 3):
 `places.py` nur mit `PLACE_CELL_DIGITS`, `place_cell`, `PLACE_LEVELS`, `MAX_PLACE_NAME_LENGTH`,
@@ -411,14 +439,27 @@ Umbenennung von `events.py::_EVENT_PLACE_COORDINATE_DIGITS`/`_rounded` auf die g
 `scripts/fetch-ortsdatensatz.sh`; `docs/setup.md`. **Nicht** dabei: Migration, `PlaceLookup`,
 `events.place_name`, Worker-Verdrahtung, API, Frontend.
 
-**Dazwischen:** Daniel lässt das Kommando laufen, gibt die Zahlen zurück und wählt den Weg (oder
-bricht ab). Die Wegwahl-ADR entsteht danach, ihre Nummer wird erst dann vergeben.
+**Dazwischen — erledigt am 2026-09-14:** Daniel hat gemessen und den Weg gewählt: der lokale
+Datensatz, ADR
+[`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md).
 
-**Teil 2 — „Der Name steht"** (Abschnitte 2, 4, 5, 6, 7, 8): Migration, `PlaceLookup`,
-`events.place_name`, `project_deletion.py`, `project_graph.py`; der gewählte Auflöser als
-`PlaceResolver`-Implementierung; `_place_infos` und die Verdrahtung im Worker;
+**Teil 2 — „Der Name steht"** (Abschnitte 2, 4, 5, 6, 7, 8, 9): Migration, `PlaceLookup`,
+`events.place_name`, `project_deletion.py`, `project_graph.py`; der lokale Auflöser als
+`PlaceResolver`-Implementierung im Produktivpfad; `_place_infos` und die Verdrahtung im Worker;
 `assign_place_names` samt `BuiltEvent.place_cells`; `EventOut.place_name`, `formatEventHeading`,
 Demo-Daten, Namensnennung; `docs/architecture.md`.
+
+**Dazu aus der Wegwahl:**
+
+- `place_dataset.py`, das Volume, die Pfad-Einstellung und der Gleichheitsnachweis (Abschnitt 8);
+  `scripts/fetch-ortsdatensatz.sh` entfällt.
+- Der lokale Auflöser zieht aus `place_probe.py` in den Produktivpfad — er ist ab hier keine
+  wegwerfbare Messfassung mehr. `place_probe.py` benutzt dieselbe Fassung, statt eine zweite zu
+  führen; dasselbe Motiv wie die Auflage zur Vergabelogik unten.
+- **`PhotonResolver`, seine Fabrik, `EXTERNAL_PLACE_LOOKUP_ENABLED`,
+  `Settings.external_place_lookup_enabled`, der Eintrag in `.env.example` und die zugehörigen
+  Tests entfallen** — ein Schalter, der nichts mehr schaltet, ist Ballast, und sein Name lässt
+  keine Umwidmung zu. Der `--namen`-Abschnitt und die fünf Messblöcke bleiben.
 
 **Auflage an Teil 2 — die Vergabelogik darf nicht zweimal stehen bleiben.** Teil 1 bildet die
 Namensvergabe in `place_probe.py` **zählend** nach (`heading_counts`/`_place_name_of`/
@@ -613,8 +654,19 @@ legt eine `PlaceLookup`-Zeile an — ohne sie prüfen die beiden Vollständigkei
   Koordinatenziffer der Messlage oder einen aufgelösten Namen, geprüft über `record.getMessage()`
   **und** `record.args`, sonst rutscht ein `%s`-Argument durch. Keine neue Zählspalte an der
   Lauf-Zeile.
-- `run_criterion_scoring` reicht den konfigurierten Auflöser durch; steht
-  `EXTERNAL_PLACE_LOOKUP_ENABLED` auf `false`, wird keiner gebaut und der Lauf geht durch.
+- `run_criterion_scoring` reicht den konfigurierten Auflöser durch; **fehlt der Ortsdatensatz oder
+  weicht er von seinem Hash ab, wird keiner gebaut und der Lauf geht trotzdem durch** — Events
+  ohne Namen, Lauf `successful`, eine laute Zeile mit festem Grund-Token. Beide Fälle einzeln, und
+  je die Gegenprobe, dass kein Ersatzweg eintritt.
+- **Der Ortsdatensatz (Abschnitt 8):** der Gleichheitsnachweis Rohzeilen ↔ Auszug; der Auszug
+  enthält keine Zeile außerhalb `P`/`A` und keine der ausgelassenen Spalten; das Bezugskommando
+  steht in keiner Hülle von `main`/`worker`, hinter keinem `APIRouter` und in keinem
+  Compose-`command` (Muster und Gegenprobe wie bei `place_probe`). Kein Test bezieht die echte
+  Datei — die Rohzeilen stehen literal.
+- **Was mit dem externen Weg entfällt:** die Teil-1-Fälle zum Schalter, zum ausgehenden Rand und
+  zu den vier Ausfallgründen des externen Auflösers. Sie verschwinden mit ihrem Gegenstand, nicht
+  weil sie lästig wären; ein zurückbleibender grüner Test ohne Gegenstand ist die schlechtere
+  Hinterlassenschaft. Die Trennung von Ausfall und Fehltreffer in Block C bleibt.
 - Umsetzungsauflage aus der Testbarkeit: `resolver` bekommt in `_build_grouping_and_rankings`
   **keinen Vorgabewert**. Mit Vorgabe `None` wäre eine vergessene Aufrufstelle ein stiller
   Totalausfall der Auflösung; ohne Vorgabe meldet ihn `mypy --strict`.
@@ -667,31 +719,40 @@ möglicher **zweiter Empfänger** von Ortsdaten der Familie und mit `place_looku
 **dauerhafteste Ortsspur** des Systems. Die projektweite Einschätzung ist im selben Zug neu
 gestellt: `specs/architecture/0003-securitykonzept.md`, Abschnitt „Standortdaten".
 
-### S1 — Der Schalter: `EXTERNAL_PLACE_LOOKUP_ENABLED`, Vorgabe `false`
+### S1 — Der externe Empfänger entfällt ganz, und mit ihm sein Schalter
 
-Betriebseinstellung (`Settings.external_place_lookup_enabled: bool = False`, `.env.example`), kein
-Projektfeld, kein UI-Element, keine Einwilligungsmechanik. Er schaltet genau eines: **ob ein
-externer Dienst nach einem Ort gefragt wird** — im Worker und im Messkommando gleichermaßen.
+**Das ist die eigentliche Verbesserung der Sicherheitslage dieser Story.** Die Wegwahl fiel auf den
+lokalen Datensatz (ADR
+[`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)).
+Damit entsteht der **zweite Empfänger von Ortsdaten der Familie, um den es hier ging, gar nicht**
+— nicht „vorerst abgeschaltet", sondern nicht vorhanden. Kein Betriebszustand, keine Einstellung
+und keine vergessene `.env`-Zeile kann ihn wieder aufmachen; die Ortsauskunft entsteht vollständig
+innerhalb des Systems.
 
-Steht er auf `false`: kein externer Auflöser wird gebaut (Muster `build_landmark_client` bei
-fehlender Einwilligung — kein Client-Aufbau „auf Verdacht"), keine Anfrage geht hinaus, keine neue
-Zeile wird beschafft. Bereits vorhandene `place_lookups`-Zeilen werden weiter gelesen; Events ohne
-Auskunft behalten Nummer und Zeitspanne, der Lauf läuft weiter. Der Prozess startet normal — die
-Vorgabe muss ein arbeitsfähiger Zustand sein, kein Startfehler.
+`EXTERNAL_PLACE_LOOKUP_ENABLED` und `Settings.external_place_lookup_enabled` entfallen deshalb in
+Teil 2 zusammen mit dem externen Auflöser. Ein Schalter, der nichts mehr schaltet, ist Ballast, und
+umgewidmet wird er nicht — sein Name benennt genau eine Sache. Eine `.env`, die ihn noch trägt,
+bricht davon nicht (`Settings` läuft mit `extra="ignore"`).
 
-**Ausschalten stoppt den Abfluss, es löscht die Spur nicht** — das tut allein die Projektlöschung.
-Fällt die Wegwahl auf den lokalen Datenbestand, ist der Schalter wirkungslos und bleibt es; er wird
-dann nicht für etwas anderes umgewidmet, weil sein Name genau eine Sache benennt.
+**Was dadurch nicht besser wird:** `place_lookups` bleibt die dauerhafteste Ortsspur des Systems
+und fällt weiterhin erst mit dem Projekt (S6 und das Restrisiko unten). Die Spur entsteht jetzt
+nur ohne fremden Mitwisser.
+
+**Der Ortsdatensatz selbst ist kein Empfänger, sondern eine Quelle.** Sein Bezug sendet keine
+Ortsangabe hinaus: abgerufen wird eine für alle gleiche, öffentliche Datei, unabhängig davon, wo
+die Familie war. Was daraus an Auflagen folgt, steht in S7 (Fremdtext) und S9.
 
 ### S2 — Was das System verlässt, ist strukturell begrenzt, nicht zugesagt
 
 `PlaceResolver.resolve` nimmt ausschließlich `tuple[float, float]` aus `places.py::place_cell`
 entgegen. Weder Foto noch Event noch eine ungerundete Koordinate sind über diese Signatur
-erreichbar. **Zweite, unabhängige Schranke am ausgehenden Rand:** Der externe Auflöser formatiert
-beide Zahlen mit genau `PLACE_CELL_DIGITS` Nachkommastellen in die Anfrage — eine ungerundete Zahl
-ist in der abgesetzten Zeichenkette nicht darstellbar, selbst wenn sie ihn erreichte. Ohne diese
-zweite Schranke hinge das Akzeptanzkriterium an einer Aufrufstelle statt an dem Rand, an dem die
-Daten tatsächlich abfließen.
+erreichbar.
+
+Der ausgehende Rand, an dem diese Grenze früher ein zweites Mal gezogen war, existiert mit dem
+externen Auflöser nicht mehr (S1) — der lokale Auflöser sendet nichts. Die Signaturgrenze bleibt
+trotzdem stehen und ist ab hier die **einzige**: Sie ist das, was einen künftigen Auflöser hinter
+demselben Protokoll — und Story #469 — daran hindert, an mehr als die vergröberte Zelle zu kommen.
+Wer je wieder einen sendenden Auflöser einsetzt, zieht die zweite Schranke an seinem Rand erneut.
 
 ### S3 — `PLACE_CELL_DIGITS = 2` — geprüft und bestätigt, als Sicherheitsentscheidung
 
@@ -712,43 +773,28 @@ Migration, die sie ändert, leert die Tabelle. Sonst bleiben die unter der alten
 Zeilen unerreichbar, aber vorhanden liegen — eine Vergröberung wäre gerade für den Altbestand
 wirkungslos, für den sie gedacht war.
 
-### S4 — Der Messlauf ist der erste tatsächliche Abfluss, nicht seine Vorstufe
+### S4 — Der Messlauf war der eine tatsächliche Abfluss; danach gibt es keinen mehr
 
-`place_probe.py` fragt beide Kandidaten über die Zellen eines **echten** Projekts. Auflagen:
+Der Messlauf hat am 2026-09-14 stattgefunden. Er ist der **einzige** Abfluss geblieben, den diese
+Story erzeugt hat, und er ist abgeschlossen: Die Zellen des gemessenen Projekts gingen einmalig an
+die öffentliche Photon-Instanz, die sie mit einem Fehlerstatus beantwortete. Das Restrisiko unten
+bleibt in Kraft — ein Abfluss wird nicht dadurch ungeschehen, dass der Empfänger nichts
+zurückgab, und auch nicht dadurch, dass der Weg danach entfällt.
 
-- Der externe Kandidat läuft nur bei gesetztem `EXTERNAL_PLACE_LOOKUP_ENABLED` und **meldet sein
-  Ausbleiben in der Ausgabe**, statt eine leere Spalte zu zeigen, die als schlechtes Messergebnis
-  gelesen würde.
-- Gefragt wird über **alle** verschiedenen Zellen des Projekts (Daniel, 2026-09-14) — kein Deckel,
-  keine Stichprobe. Eine gedeckelte Ziehung wurde erwogen und verworfen, weil die Blöcke D und E
-  sonst Hochrechnungen statt Auszählungen lieferten. Die Folge steht unten als Restrisiko.
+Die Bedingungsprüfung des Anbieters wurde vor dem Messlauf geführt (2026-09-14, Ergebnis: beide
+Kandidaten zulässig — dauerhaftes Speichern erlaubt, rasterförmige Abfragen nicht untersagt),
+nicht erst danach. Wer sie erst hinterher am Wortlaut belegt, hat die untersagte Abfrage bereits
+abgesetzt.
+
+**Mit dem externen Kandidaten entfällt der Abflusspfad des Messkommandos vollständig** (S1); es
+liest ab Teil 2 nur noch den lokalen Datensatz. Zwei Auflagen bleiben und gelten ab Teil 2 auch
+für das Bezugskommando `place_dataset`:
+
 - Gefragt wird über die **Menge** der verschiedenen Zellen, nie je Event — sonst ginge die
-  Verweildauer je Ort mit hinaus.
-- Jede Anfrage trägt eine Zeitgrenze und einen Mindestabstand zur vorigen (Muster `cloud_vision`).
-- Das Kommando bleibt von jedem Endpunkt, jedem Compose-`command` und jedem automatischen Pfad
-  fern — der Abfluss tritt nur ein, wenn Daniel ihn tippt.
-- **Die Bedingungsprüfung des Anbieters gehört vor den Messlauf, nicht in die Wegwahl-ADR danach.**
-  Die beiden Ausschlussgründe aus ADR 0102 Punkt 6 (dauerhaftes Zwischenspeichern untersagt,
-  rasterförmige Abfragen untersagt) treffen den Messlauf genauso wie den Betrieb; wer sie erst
-  hinterher am Wortlaut belegt, hat die untersagte Abfrage bereits abgesetzt. **Geführt am
-  2026-09-14, Ergebnis: beide Kandidaten zulässig.** Photons Bedingungen untersagen weder das
-  dauerhafte Speichern noch rasterförmige Abfragen; die dauerhafte Speicherung ist über die
-  OSM-Geocoding-Guideline ausdrücklich erlaubt („Geocoding Results may be stored (either
-  permanently or temporarily)"). GeoNames ist über CC BY 4.0 unbefristet abgedeckt.
-- **Die Grenze der OSM-Guideline ist die Flächendeckung, nicht das Raster.** Eine Sammlung von
-  Ergebnissen darf kein „systematic attempt to aggregate all or substantially all Primary
-  Features … within a geographic area city-sized or larger" sein. Daraus folgt eine
-  Umsetzungsauflage: Gefragt wird ausschließlich über die **tatsächlich besuchten** Zellen aus dem
-  Projektbestand. Ein Messkommando, das ein Rechteck flächendeckend abrastert, risse diese Grenze.
-- **Ratenbegrenzung:** Photon nennt **keine Zahl** — nur „please be fair, extensive usage will be
-  throttled". Der Mindestabstand im Messkommando ist deshalb eine begründete Selbstauflage und
-  lässt sich aus keiner Quelle ableiten. Die öffentliche Instanz ist erklärtermaßen eine
-  Demo-Instanz; für den Dauerbetrieb ist das ein Verfügbarkeitsrisiko, das die Wegwahl-ADR
-  bewerten muss (Selbst-Hosting ist der vom Betreiber genannte Ausweg).
-- **Namensnennung:** an die Anwendung, nicht an die einzelne `place_lookups`-Zeile — OSM/ODbL
-  („credit OpenStreetMap and its contributors") bzw. GeoNames/CC-BY.
-- Betriebshinweis in `docs/setup.md`: gemessen wird an einem Reiseprojekt, nicht am Alltagsbestand
-  — die Zellen des Wohnorts tragen zur Messung nichts bei, gehen aber mit hinaus.
+  Verweildauer je Ort mit ein.
+- Beide Kommandos bleiben von jedem Endpunkt, jedem Compose-`command` und jedem automatischen Pfad
+  fern. Für das Messkommando hieß das: Der Abfluss tritt nur ein, wenn Daniel ihn tippt. Für
+  `place_dataset` heißt es: Ein 400-MB-Abruf tritt nur ein, wenn Daniel ihn tippt.
 
 ### S5 — Die Ausgabe trennt Zahlen von Ortsangaben
 
@@ -805,17 +851,25 @@ nicht auf `place_kind`, nicht auf Event-Grenzen, nicht auf einen Partitionsschl�
 eine Kategorie- oder Rangfolgeentscheidung. Eine bösartige Antwort erreicht höchstens, dass alle
 Events eines Laufs gleich heißen und deshalb ihr Viertel angehängt bekommen.
 
-### S9 — Die Antwort des Dienstes ist eine fremde HTTP-Antwort, nicht nur ein Textfeld
+### S9 — Der bezogene Datensatz ist eine fremde HTTP-Antwort, nicht nur eine Datei
 
-- Zeitgrenze je Anfrage und Mindestabstand zwischen zwei Anfragen sind Muss: eine hängende
-  Fremdantwort hielte sonst den Kriterien-Lauf an, bis der Fortschritts-Watchdog ihn für hängend
-  erklärt (dieselbe Rechnung wie ADR 0074).
-- Größe und Struktur der Antwort werden begrenzt gelesen.
-- **Straße und Hausnummer am Parser-Rand zu verwerfen reicht als Injektionsabwehr nicht** — es ist
-  Datensparsamkeit. Gegen Injektion tragen Sanitisierung (S7), die Längengrenze und der Umstand,
-  dass der Text in **dieser** Story in keine Modellanfrage eingeht.
-- Der Ziel-Host ist eine Konstante oder eine Betriebseinstellung, nie ein Wert aus Datenbank oder
-  Request — kein SSRF-Pfad.
+Mit dem externen Dienst entfällt die fremde Antwort **im Lauf** (S1). Sie entfällt nicht ganz: Der
+Auszug entsteht aus einem Abruf bei GeoNames. Der liegt aber an einer anderen Stelle, und das ist
+die Verbesserung — **kein Kriterien-Lauf wartet mehr auf einen Dritten.**
+
+- Der Abruf geschieht ausschließlich im getippten Bezugskommando, nie in einem Lauf und nie in
+  einem Request. Damit kann keine hängende Fremdantwort einen Lauf bis in den
+  Fortschritts-Watchdog ziehen (die Rechnung aus ADR 0074 greift hier nicht mehr).
+- Die Quell-Adresse ist eine **Konstante**, der Pfad des Auszugs eine Betriebseinstellung — beides
+  nie ein Wert aus Datenbank oder Request, kein SSRF-Pfad. Das Kommando entpackt genau einen
+  benannten Eintrag des Archivs, nie dessen Verzeichnis (kein Pfad aus fremden Daten).
+- Der Inhalt ist Fremdtext und läuft durch dieselbe Sanitisierung und Längengrenze wie jede
+  Dienstantwort (S7). Verworfen wird ganz, nie abgeschnitten.
+- **Die Spaltenreduktion des Auszugs ist Datensparsamkeit, keine Injektionsabwehr** — dieselbe
+  Unterscheidung wie bei Straße und Hausnummer in S6. Gegen Injektion tragen S7, die Längengrenze
+  und der Umstand, dass der Text in **dieser** Story in keine Modellanfrage eingeht.
+- Der Auszug wird vor jedem Gebrauch gegen seinen Hash geprüft; bei Abweichung entsteht kein
+  Auflöser und kein Ersatzweg (Abschnitt 8). Ungeschützt bleibt der Erstbezug — Restrisiko unten.
 
 ### S10 — Der Request-Pfad `rebuild_run_grouping` fragt niemanden
 
@@ -867,12 +921,13 @@ Worker-Lauf ist.
 nächtlich neu (Stand 2026-09-14: 02:58 UTC, 421 MB), ein fester Hash wäre am Folgetag rot, und
 GeoNames veröffentlicht **überhaupt keine Prüfsummen** (keine `.md5`/`.sha256`, keine Signatur), es
 gibt also gar keinen vertrauenswürdigen Sollwert. Beim Modell trägt der Pin nur, weil die Datei
-unveränderlich und versioniert ist. **Regelung (Daniel, 2026-09-14):** Die Datei wird **einmal**
-bezogen und liegt dann lokal, nicht bei jedem Lauf neu; `scripts/fetch-ortsdatensatz.sh` bildet den
-Hash beim Erstbezug selbst und legt ihn daneben, jeder spätere Lauf prüft die lokale Datei dagegen
-und bricht bei Abweichung **laut** ab. Das erkennt jede Veränderung **nach** dem Erstbezug; der
-Erstbezug selbst bleibt ungeschützt und ist als Restrisiko geführt. Die Datei liegt weiterhin nicht
-im Image und nicht im Repository.
+unveränderlich und versioniert ist. **Regelung (Daniel, 2026-09-14; ab Teil 2 auf den Auszug
+bezogen):** Bezogen wird **einmal**, nicht je Lauf; das Bezugskommando bildet den Hash **des
+Auszugs** selbst und legt ihn daneben, und vor jedem Gebrauch wird der Auszug dagegen geprüft —
+bei Abweichung entsteht kein Auflöser und kein Ersatzweg. Gegenüber Teil 1 ist das eine
+Verbesserung: Dort war das **Archiv** geprüft und die daneben liegende, tatsächlich gelesene Datei
+nicht. Geprüft wird jetzt genau die Datei, die gelesen wird. Der **Erstbezug** bleibt ungeschützt
+und ist als Restrisiko geführt. Weder Rohdatei noch Auszug liegen im Image oder im Repository.
 
 ### Bewusst akzeptierte Restrisiken (Daniel, 2026-09-14)
 
@@ -884,21 +939,24 @@ Alle drei stehen mit voller Begründung im Sicherheitskonzept; hier die Entschei
   zweiten Weg: keine dokumentierte `DELETE`-Anweisung, kein Leeren je Lauf. Getragen von der
   Körnung (rund 1,1 km, kein Personen- und kein Zeitbezug an der Zeile), davon, dass kein neuer
   Empfänger entsteht, und von der testgeprüften Vollständigkeit der Projektlöschung.
-- **Der Messlauf fragt über alle Zellen.** Die Reiseroute des gemessenen Projekts geht in ihrer
-  vollen Auflösung von rund 1,1 km **einmalig und nicht rücknehmbar** an einen Dritten — zu einem
-  Zeitpunkt, an dem noch nicht entschieden ist, ob dieser Weg überhaupt genommen wird. Fällt die
-  Messung dürftig aus und die Wegwahl lautet „lokal", macht das diesen Abfluss nicht ungeschehen.
-  Getragen davon, dass es ein einzelnes, von Daniel selbst getipptes Kommando ist, dass die
-  Zellmenge ohne Verweildauer und ohne Zeitbezug hinausgeht und der Empfänger keinen Personenbezug
-  dazu erhält.
-- **Der Erstbezug des lokalen Ortsdatensatzes ist ungeschützt** — ein Integritäts-, nicht nur ein
+- **Der Messlauf fragte über alle Zellen — eingetreten am 2026-09-14.** Die Reiseroute des
+  gemessenen Projekts ist in ihrer vollen Auflösung von rund 1,1 km **einmalig und nicht
+  rücknehmbar** an einen Dritten gegangen, zu einem Zeitpunkt, an dem noch nicht entschieden war,
+  ob dieser Weg überhaupt genommen wird. Genau dieser Fall ist eingetreten: Die Wegwahl lautet
+  „lokal", und das macht den Abfluss nicht ungeschehen. Getragen davon, dass es ein einzelnes,
+  von Daniel selbst getipptes Kommando war, dass die Zellmenge ohne Verweildauer und ohne
+  Zeitbezug hinausging und der Empfänger keinen Personenbezug dazu erhält. Ein **weiterer** Abfluss
+  dieser Art ist ab Teil 2 strukturell ausgeschlossen (S1).
+- **Der Erstbezug des Ortsdatensatzes ist ungeschützt** — ein Integritäts-, nicht nur ein
   Verfügbarkeitsrisiko, und darin anders als ADR 0033. Der selbst gebildete Hash schützt jede
   spätere Prüfung, nicht den ersten Abruf; dort tragen allein HTTPS und das Vertrauen in GeoNames.
   Eine an der Quelle oder auf dem Weg veränderte Datei würde als Sollwert übernommen und von jeder
-  Folgeprüfung bestätigt. Getragen davon, dass der Schaden auf falsche Ortsnamen in
-  Event-Überschriften begrenzt ist: die Werte laufen durch dieselbe Sanitisierung und Längengrenze
-  wie jeder andere Fremdtext (S7), steuern keinen Kontrollfluss außerhalb der Überschrift (S8) und
-  erreichen keinen Secrets-, Auth- oder Bilddatenpfad.
+  Folgeprüfung bestätigt. **Ab Teil 2 wiegt das schwerer als in Teil 1: Der Datensatz benennt dann
+  nicht mehr nur eine Messung, sondern die Event-Überschriften im laufenden Betrieb.** Getragen
+  davon, dass der Schaden genau darauf begrenzt bleibt: die Werte laufen durch dieselbe
+  Sanitisierung und Längengrenze wie jeder andere Fremdtext (S7), steuern keinen Kontrollfluss
+  außerhalb der Überschrift (S8) und erreichen keinen Secrets-, Auth- oder Bilddatenpfad. Eine
+  Beschädigung **nach** dem Bezug fällt dagegen auf, und zwar an der Datei, die gelesen wird.
 
 ## Entscheidungen
 
@@ -909,9 +967,24 @@ Alle drei stehen mit voller Begründung im Sicherheitskonzept; hier die Entschei
   standardmäßig ausgeschalteten Schalter.
 - **ADR 0102** (neu, `Accepted`) trägt die sechs Architekturentscheidungen. ADR 0029 (Punkt 6) und
   ADR 0072 sind im Kopf als teilweise abgelöst vermerkt; ihre übrigen Aussagen gelten weiter.
-- **Wegwahl-ADR:** noch offen, entsteht nach dem Messlauf mit den gemessenen Zahlen als Begründung.
-  Prüft am Wortlaut des Anbieters: dauerhaftes Zwischenspeichern erlaubt, rasterförmige Abfragen
-  nicht untersagt, Namensnennungspflicht.
+- **Wegwahl (Daniel, 2026-09-14):** der lokale Datensatz (GeoNames). ADR
+  [`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)
+  trägt die Zahlen, die Grenzen der Stichprobe und ausdrücklich den Umstand, dass der externe
+  Kandidat ungemessen blieb — es gab keinen Vergleich zweier Zahlenreihen.
+- **Der Schalter `EXTERNAL_PLACE_LOOKUP_ENABLED` entfällt (Daniel, 2026-09-14)** — zusammen mit dem
+  Photon-Kandidaten im Messkommando. Umwidmung verbietet das Sicherheitskonzept; `Settings` läuft
+  mit `extra="ignore"`, eine bestehende `.env` bricht davon nicht.
+- **Betriebsweg (`architect`, 2026-09-14, technische Entscheidung):** ein gzip-gepackter Auszug
+  (69 MB statt 1,74 GB, gemessen) auf einem eigenen Volume, erzeugt durch ein Kommando im
+  Produktivpaket statt durch ein Host-Skript — auf dem Server gibt es keine Shell. Verworfen:
+  der Weg über eine Schicht des Docker-Images, weil jeder kalte Bau 400 MB bei GeoNames zöge,
+  zweimal je CI-Lauf, und der Datensatz bei jedem Rebuild still wechselte. Preis der gewählten
+  Form: ein einmaliger Handgriff je Volume. Einzelheiten und Alternativen in ADR 0103 Punkt 3.
+- **Namensnennung (`architect`, 2026-09-14):** GeoNames/CC BY 4.0 als statische Zeile am Fuß der
+  Projektliste — app-weit, außerhalb der Arbeitsansichten, ohne neue Komponente.
+- **Kein Neubezugsrhythmus (`architect`, 2026-09-14):** erneuert wird auf Anlass, nicht nach
+  Kalender; ein automatischer Neubezug wäre ein wiederkehrender ungeprüfter Abruf ohne bezifferten
+  Nutzen.
 - **Anbieter-Ausschlüsse vor jeder Messung:** Mapbox, LocationIQ und OpenCage scheiden aus, weil
   sie dauerhaftes Zwischenspeichern befristen, verkaufen oder nur zum Testen erlauben — die
   Wiederverwendung der Auskunft ist hier Akzeptanzkriterium. Die öffentliche Nominatim-Instanz
@@ -925,8 +998,8 @@ Alle drei stehen mit voller Begründung im Sicherheitskonzept; hier die Entschei
 - **Bezug des Ortsdatensatzes (Daniel, 2026-09-14):** Einmaliger Bezug statt Bezug je Lauf; der
   Hash entsteht beim Erstbezug selbst und trägt jede spätere Prüfung der lokalen Datei. Ein Pin
   gegen einen veröffentlichten Sollwert ist bei GeoNames nicht möglich — die Datei wird nächtlich
-  neu erzeugt und es gibt keine Prüfsummen (gemessen 2026-09-14). Quartalsweiser Neubezug ist eine
-  Option für den Betriebsfall und Sache der Wegwahl-ADR.
+  neu erzeugt und es gibt keine Prüfsummen (gemessen 2026-09-14). Ab Teil 2 bezieht sich der Hash
+  auf den **Auszug**, also auf die tatsächlich gelesene Datei.
 - `architect` konsultiert (Schritt 1): ADR 0102 und der Abschnitt „Architektur / Umsetzung".
 - `ux-ui-designer` konsultiert (Schritt 2): dritte Stufe der Event-Überschrift, kein Entwurf nötig.
 - `test-engineer` konsultiert (Schritt 3): Teststrategie je Auslieferung, neun geschärfte
@@ -939,13 +1012,13 @@ Alle drei stehen mit voller Begründung im Sicherheitskonzept; hier die Entschei
 
 ## Offene Fragen
 
-- Löst Nominatim im `admin`-Stil (ohne Straßendaten) beliebige Zellen brauchbar auf? Nur für den
-  Selbst-Hosting-Fall erheblich; die öffentliche Instanz bleibt ausgeschlossen.
-- **Beantwortet am 2026-09-14:** Photons Ebenenangabe steht in der Antwort als `type`; `layer` ist
-  nur Anfrage-Filter. Die Viertel-Ebene kommt ausschließlich als `district`.
-- Trägt Photons `city` auch außerhalb Deutschlands den Ort, oder rutscht die Ebene in manchen
-  Ländern auf `county`/`state`? Die beiden Belegabrufe lagen beide in Berlin — die Ländervarianz
-  ist ungeprüft und ist genau das, was Block C des Messlaufs beantwortet.
+- **Erledigt am 2026-09-14 durch die Wegwahl (ADR 0103):** Die drei offenen Fragen zum externen
+  Weg (Nominatim im `admin`-Stil, Photons Ebenenangabe, Ländervarianz von Photons `city`) betreffen
+  einen Weg, den diese Story nicht nimmt.
+- **Offen und bewusst ungedeckt:** Hält die Trefferquote des lokalen Datensatzes auch außerhalb des
+  gemessenen Projekts — andere Länder, dünner besiedelte Gegenden? Gemessen wurde ein Projekt mit
+  10 verschiedenen Zellen. Kein Test deckt das ab; es fällt im Betrieb als fehlender Name auf, nie
+  als Fehler (ADR 0103 Punkt 1).
 
 ## Out of Scope
 
