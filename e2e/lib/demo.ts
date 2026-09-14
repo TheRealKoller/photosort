@@ -27,6 +27,8 @@ export const DEMO_PROJECTS = {
   rated: 'Demo — Bewertet',
   /** Fehlgeschlagener Lauf, Foto ohne Cache-Datei, Cloud-Vision-Fehlerzeile. */
   error: 'Demo — Fehlerzustand',
+  /** Zwei Duplikat-Gruppen verschiedener Groesse (7 und 3), beide unentschieden. */
+  duplicates: 'Demo — Duplikate',
 } as const
 
 /**

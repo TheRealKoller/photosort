@@ -6,8 +6,8 @@ Aufruf::
     docker compose -f docker-compose.yml -f docker-compose.e2e.yml \\
         exec -T backend python -m photosort.demo_state
 
-Vier Projekte mit dem festen Namenspraefix ``Demo — `` decken die vier prueflohnenden Zustaende ab
-(leer, grosse Sammlung, bewertet, Fehlerzustand). Die Bilddateien entstehen synthetisch mit Pillow
+Fuenf Projekte mit dem festen Namenspraefix ``Demo — `` decken die prueflohnenden Zustaende ab
+(leer, grosse Sammlung, bewertet, Fehlerzustand, Duplikate). Die Bilddateien entstehen mit Pillow
 und werden ueber die ECHTE ``thumbnails.py``-Logik in den lokalen Cache geschrieben - kein zweites
 Abbild von Datenmodell oder Cache-Schluessel, das bei einer Modelaenderung still abdriften
 koennte.
@@ -117,6 +117,7 @@ EMPTY_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Leeres Projekt"
 LARGE_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Große Sammlung"
 RATED_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Bewertet"
 ERROR_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Fehlerzustand"
+DUPLICATE_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Duplikate"
 
 # Umgebungsvariable + exakter Satz-Literal (M1a). Bewusst KEIN "gesetzt"/truthy-Test: `1`/`true`
 # setzt man versehentlich, einen Satz wie diesen nicht.
@@ -131,6 +132,21 @@ LARGE_COLLECTION_PHOTO_COUNT = 72
 # Fotoanzahl des Fehlerzustands-Projekts - klein, aber gross genug, dass ein Foto ohne
 # Cache-Datei ("wird noch verarbeitet"-Platzhalter) neben normal dargestellten Fotos auffaellt.
 ERROR_STATE_PHOTO_COUNT = 6
+
+# Die Groessen der beiden Duplikat-Gruppen des Vergleichs-Projekts, in dieser Reihenfolge. Das
+# Projekt besteht ausschliesslich aus ihnen; seine Fotoanzahl ist ihre Summe.
+#
+# ZWEI Gruppen VERSCHIEDENER Groesse, und das ist keine Zugabe: Die Ansicht sagt zu, bei mehr
+# Mitgliedern UMZUBRECHEN statt die Bilder zu verkleinern. Pruefbar ist das nur, wenn eine zweite
+# Gruppe anderer Groesse dieselbe Kachelbreite zeigt - mit einer einzigen Gruppe bliebe die Zusage
+# unbelegt, und genau dieser Fehler faellt in keinem Rendering-Test auf. Die sieben bringen dabei
+# auf der breiten Pruefbreite (drei Spalten) eine angebrochene dritte Zeile, also den Umbruch
+# selbst und nicht bloss eine volle Zeile.
+_DEMO_DUPLICATE_GROUP_SIZES = (7, 3)
+
+# Der Bestand ist ABSICHTLICH unentschieden: Die Sichtpruefung soll den Anfangszustand beider
+# Gruppen sehen, und der Gruppenzaehler soll "1 von 2" nennen. Eine mitgelieferte Entscheidung
+# naehme genau das weg.
 
 # Hostnamen, die als "eindeutig lokal/Demo" gelten (M1c). Muster inklusive Port-Pflicht aus
 # scripts/seed-opencloud-demo.py::validate_demo_base_url - dort als Copilot-Review-Fund ergaenzt,
@@ -440,7 +456,7 @@ class DemoProjectSpec:
 def demo_project_specs(
     *, large_collection_photo_count: int = LARGE_COLLECTION_PHOTO_COUNT
 ) -> tuple[DemoProjectSpec, ...]:
-    """Die vier Zustaende in fester Reihenfolge.
+    """Die fuenf Zustaende in fester Reihenfolge.
 
     Die Fotoanzahl der grossen Sammlung ist ein Parameter mit der Produktionskonstante als Default
     (Edge Case E6): die Masse der Tests laeuft klein, genau ein Test faehrt die echte Groesse.
@@ -461,6 +477,15 @@ def demo_project_specs(
             slug="fehlerzustand",
             photo_count=ERROR_STATE_PHOTO_COUNT,
             uncached_photo_indices=(0,),
+        ),
+        # EIGENES Projekt statt zusaetzlicher Fotos im bewerteten: Dort haengt an jedem Index ein
+        # benannter Sonderzustand, und die Event-/Ortsverteilung rechnet gegen die Fotoanzahl.
+        # Zehn weitere Fotos verschoeben beides und nahmen der Sichtpruefung Zustaende weg, die sie
+        # zeigen soll. Hier steht der Bestand fuer sich: nichts als die beiden Gruppen.
+        DemoProjectSpec(
+            name=DUPLICATE_PROJECT_NAME,
+            slug="duplikate",
+            photo_count=sum(_DEMO_DUPLICATE_GROUP_SIZES),
         ),
     )
 
@@ -1463,6 +1488,73 @@ async def _seed_error_project(
     return photos
 
 
+async def _seed_duplicate_project(
+    session: AsyncSession, spec: DemoProjectSpec, cache_dir: Path
+) -> list[Photo]:
+    """Zustand 5: zwei Duplikat-Gruppen verschiedener Groesse, beide unentschieden.
+
+    Ohne diesen Bestand ist die Vergleichsansicht weder vorfuehrbar noch im Browser pruefbar, und
+    kein Test wuerde rot (ADR 0104).
+
+    Der Bestand entsteht GENAU SO, wie ihn ein echter Ausschuss-Lauf hinterliesse: Je Gruppe
+    traegt das erste Foto keinen Vorschlag und kein `duplicate_of` (der Gewinner), alle uebrigen
+    `suggested_status = REJECTED` und `duplicate_of` auf den Gewinner. Ketten gibt es nicht; der
+    Gewinner zeigt nirgendwohin. `suggestions_found` ist die Zahl der Verlierer.
+
+    KEINE Entscheidungszeile: Die Ansicht soll ihren Anfangszustand zeigen."""
+    project = await _create_project(session, spec)
+    photos = await _create_photos(session, project, spec, cache_dir)
+    session.add(
+        _scan_run(
+            project,
+            status=ScanStatus.SUCCESS,
+            photo_count=len(photos),
+            started_at=_BASE_SCAN_AT,
+        )
+    )
+
+    verlierer_gesamt = 0
+    erste = 0
+    for size in _DEMO_DUPLICATE_GROUP_SIZES:
+        gruppe = photos[erste : erste + size]
+        gewinner = gruppe[0]
+        for offset, photo in enumerate(gruppe):
+            ist_gewinner = offset == 0
+            session.add(
+                PhotoScore(
+                    photo_id=photo.id,
+                    sharpness=_deterministic_unit_value(spec.slug, erste + offset, "sharpness"),
+                    exposure=_deterministic_unit_value(spec.slug, erste + offset, "exposure"),
+                    # Der Zeit-/Ortscluster wird nur fuer die NICHT aussortierten Fotos gesetzt -
+                    # dieselbe Regel wie im Lauf. Er ist ausdruecklich nicht die Duplikat-Gruppe.
+                    cluster_key=f"{spec.slug}-cluster-0" if ist_gewinner else None,
+                    duplicate_of=None if ist_gewinner else gewinner.id,
+                    suggested_status=None if ist_gewinner else RatingStatus.REJECTED,
+                    computed_at=_BASE_SCORING_AT,
+                )
+            )
+        verlierer_gesamt += size - 1
+        erste += size
+
+    session.add(
+        ScoringRun(
+            project_id=project.id,
+            status=ScanStatus.SUCCESS,
+            started_at=_BASE_SCORING_AT,
+            finished_at=_BASE_SCORING_AT + timedelta(minutes=2),
+            last_progress_at=_BASE_SCORING_AT + timedelta(minutes=2),
+            photos_total=len(photos),
+            photos_processed=len(photos),
+            suggestions_found=verlierer_gesamt,
+            # Das Gate bleibt UNBESTAETIGT: Die Vergleichsansicht ist der Weg durch die Sichtung,
+            # und ein bereits bestaetigtes Gate zeigte den Einstieg in sie nie.
+            gate_confirmed_at=None,
+        )
+    )
+    await session.flush()
+    return photos
+
+
 async def rebuild_demo_state(
     session: AsyncSession,
     cache_dir: Path,
@@ -1470,13 +1562,13 @@ async def rebuild_demo_state(
     large_collection_photo_count: int = LARGE_COLLECTION_PHOTO_COUNT,
 ) -> DemoStateSummary:
     """Zielzustands-idempotent: entfernt zuerst ALLE eigenen Demo-Projekte (auch Reste eines
-    frueheren Laufs mit anderen Namen) und legt die vier Zustaende danach neu an. Das Ergebnis
+    frueheren Laufs mit anderen Namen) und legt die fuenf Zustaende danach neu an. Das Ergebnis
     haengt nicht vom Vorzustand ab.
 
     Enthaelt selbst KEINE Sperre - der Aufrufer (main()) wertet `assert_safe_to_seed` vor dem
     ersten Schreibzugriff vollstaendig aus."""
     await purge_demo_state(session, cache_dir)
-    empty_spec, large_spec, rated_spec, error_spec = demo_project_specs(
+    empty_spec, large_spec, rated_spec, error_spec, duplicate_spec = demo_project_specs(
         large_collection_photo_count=large_collection_photo_count
     )
     photos = list(await _seed_empty_project(session, empty_spec, cache_dir))
@@ -1484,6 +1576,7 @@ async def rebuild_demo_state(
     rated_photos, rated_user_count = await _seed_rated_project(session, rated_spec, cache_dir)
     photos += rated_photos
     photos += await _seed_error_project(session, error_spec, cache_dir)
+    photos += await _seed_duplicate_project(session, duplicate_spec, cache_dir)
     await session.flush()
 
     cache_file_count = (
@@ -1495,6 +1588,7 @@ async def rebuild_demo_state(
             large_spec.name,
             rated_spec.name,
             error_spec.name,
+            duplicate_spec.name,
         ),
         photo_count=len(photos),
         cache_file_count=cache_file_count,

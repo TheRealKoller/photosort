@@ -33,6 +33,7 @@ from photosort.demo_state import (
     CONFIRM_ENV_VAR,
     CONFIRM_LITERAL,
     DEMO_PROJECT_PREFIX,
+    DUPLICATE_PROJECT_NAME,
     EMPTY_PROJECT_NAME,
     ERROR_PROJECT_NAME,
     ERROR_STATE_PHOTO_COUNT,
@@ -65,6 +66,7 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoDuplicateDecision,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
@@ -194,15 +196,32 @@ class TestCheckOpencloudTarget:
 class TestDemoProjectSpecs:
     """Reine Zustandsbeschreibung - ohne DB, ohne Dateisystem."""
 
-    def test_all_four_states_are_described_and_carry_the_demo_prefix(self) -> None:
+    def test_all_five_states_are_described_and_carry_the_demo_prefix(self) -> None:
         specs = demo_project_specs()
         assert [spec.name for spec in specs] == [
             EMPTY_PROJECT_NAME,
             LARGE_PROJECT_NAME,
             RATED_PROJECT_NAME,
             ERROR_PROJECT_NAME,
+            DUPLICATE_PROJECT_NAME,
         ]
         assert all(is_demo_project_name(spec.name) for spec in specs)
+
+    def test_the_duplicate_project_holds_exactly_the_two_group_sizes(self) -> None:
+        """specs/features/0374-duplikate-vergleichen.md: ZWEI Gruppen verschiedener Groesse, und
+        die Fotoanzahl ist ihre Summe - kein Foto steht daneben.
+
+        Die zweite Gruppe ist keine Zugabe: AK3 sichert zu, dass eine Gruppe mit sieben
+        Mitgliedern UMBRICHT, statt die Bilder zu verkleinern, und diese Zusage ist nur pruefbar,
+        wenn eine zweite Gruppe anderer Groesse dieselbe Kachelbreite zeigt. Mit nur einer Gruppe
+        bliebe sie unbelegt."""
+        duplicates = demo_project_specs()[4]
+
+        assert demo_state._DEMO_DUPLICATE_GROUP_SIZES == (7, 3)
+        assert duplicates.photo_count == sum(demo_state._DEMO_DUPLICATE_GROUP_SIZES)
+        assert len(set(demo_state._DEMO_DUPLICATE_GROUP_SIZES)) == len(
+            demo_state._DEMO_DUPLICATE_GROUP_SIZES
+        )
 
     def test_slugs_are_unique(self) -> None:
         slugs = [spec.slug for spec in demo_project_specs()]
@@ -449,11 +468,11 @@ class TestAssertSafeToSeed:
             )
 
 
-class TestRebuildDemoStateProducesTheFourStates:
-    """Die vier Zustaende, geprueft ueber ihre pruefrelevante Eigenschaft - nie ueber die
+class TestRebuildDemoStateProducesTheFiveStates:
+    """Die fuenf Zustaende, geprueft ueber ihre pruefrelevante Eigenschaft - nie ueber die
     Implementierung."""
 
-    async def test_creates_exactly_the_four_demo_projects(
+    async def test_creates_exactly_the_five_demo_projects(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
@@ -465,7 +484,69 @@ class TestRebuildDemoStateProducesTheFourStates:
             LARGE_PROJECT_NAME,
             RATED_PROJECT_NAME,
             ERROR_PROJECT_NAME,
+            DUPLICATE_PROJECT_NAME,
         ]
+
+    async def test_the_duplicate_project_holds_two_reachable_groups(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """specs/features/0374-duplikate-vergleichen.md: Ohne diesen Bestand ist die
+        Vergleichsansicht weder vorfuehrbar noch im Browser pruefbar, und kein Test wuerde rot.
+
+        Geprueft ueber den STERN, nicht ueber eine abgeschriebene Id-Liste: Jede Gruppe hat genau
+        einen Repraesentanten ohne `duplicate_of`, alle uebrigen Mitglieder zeigen auf ihn und
+        tragen einen Ausschuss-Vorschlag."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        photos = await _photos_of(db_session, DUPLICATE_PROJECT_NAME)
+        scores = {photo.id: await db_session.get(PhotoScore, photo.id) for photo in photos}
+
+        assert all(score is not None for score in scores.values())
+        gruppen: dict[int, list[int]] = {}
+        for photo_id, score in scores.items():
+            assert score is not None
+            representative = score.duplicate_of if score.duplicate_of is not None else photo_id
+            gruppen.setdefault(representative, []).append(photo_id)
+
+        assert sorted(len(members) for members in gruppen.values()) == sorted(
+            demo_state._DEMO_DUPLICATE_GROUP_SIZES
+        )
+        for representative, members in gruppen.items():
+            repraesentant = scores[representative]
+            assert repraesentant is not None
+            # Der Repraesentant ist der Ausschuss-Ueberlebende der Serie: kein `duplicate_of` und
+            # kein Vorschlag.
+            assert repraesentant.duplicate_of is None
+            assert repraesentant.suggested_status is None
+            for member_id in members:
+                score = scores[member_id]
+                assert score is not None
+                if member_id == representative:
+                    continue
+                assert score.duplicate_of == representative
+                assert score.suggested_status == RatingStatus.REJECTED
+
+    async def test_the_duplicate_project_leaves_every_group_undecided(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Demo-Bestand zeigt die Ansicht in ihrem ANFANGSZUSTAND: nichts entschieden, beide
+        Gruppen offen. Eine mitgelieferte Entscheidung naehme der Sichtpruefung genau den Zustand,
+        den sie zeigen soll - und der Gruppenzaehler stuende nicht auf "1 von 2"."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        photos = await _photos_of(db_session, DUPLICATE_PROJECT_NAME)
+
+        entscheidungen = (
+            (
+                await db_session.execute(
+                    select(PhotoDuplicateDecision).where(
+                        PhotoDuplicateDecision.photo_id.in_([photo.id for photo in photos])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert entscheidungen == []
 
     async def test_empty_project_exists_but_has_no_photos(
         self, db_session: AsyncSession, tmp_path: Path
@@ -744,7 +825,10 @@ class TestRebuildDemoStateAtProductionSize:
             assert thumbnail_path(tmp_path, photo.id, photo.etag).is_file()
             assert display_path(tmp_path, photo.id, photo.etag).is_file()
         assert summary.photo_count == (
-            LARGE_COLLECTION_PHOTO_COUNT + len(MOTIF_REGISTRY) + ERROR_STATE_PHOTO_COUNT
+            LARGE_COLLECTION_PHOTO_COUNT
+            + len(MOTIF_REGISTRY)
+            + ERROR_STATE_PHOTO_COUNT
+            + sum(demo_state._DEMO_DUPLICATE_GROUP_SIZES)
         )
 
 
@@ -852,9 +936,10 @@ class TestMainSucceeds:
             LARGE_PROJECT_NAME,
             RATED_PROJECT_NAME,
             ERROR_PROJECT_NAME,
+            DUPLICATE_PROJECT_NAME,
         ):
             assert name in captured.out
-        assert _read_counts(url)["projects"] == 4
+        assert _read_counts(url)["projects"] == 5
 
     def test_second_run_leaves_the_same_number_of_projects(
         self,
@@ -887,7 +972,7 @@ class TestMainSucceeds:
         _write_rows(url, cache_dir, [f"{DEMO_PROJECT_PREFIX}Rest aus einem alten Lauf"])
 
         assert main(["--cache-dir", str(cache_dir)], database_url=url) == 0
-        assert _read_counts(url)["projects"] == 4
+        assert _read_counts(url)["projects"] == 5
         capsys.readouterr()
 
 

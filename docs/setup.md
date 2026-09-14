@@ -571,8 +571,8 @@ docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \
   backend python -m photosort.demo_state
 ```
 
-Der Seeder legt vier Projekte mit dem Präfix `Demo — ` an (leer / große Sammlung / bewertet /
-Fehlerzustand) und ist zielzustands-idempotent: er löscht seine eigenen Projekte und legt sie neu
+Der Seeder legt fünf Projekte mit dem Präfix `Demo — ` an (leer / große Sammlung / bewertet /
+Fehlerzustand / Duplikate) und ist zielzustands-idempotent: er löscht seine eigenen Projekte und legt sie neu
 an. Er **bricht ab**, wenn die Freigabe-Variable fehlt, die Datenbank irgendein Projekt ohne
 diesen Präfix enthält oder eine echte OpenCloud-Adresse konfiguriert ist — die drei Bedingungen
 werden vollständig vor dem ersten Schreibzugriff ausgewertet. Anmelden danach mit
