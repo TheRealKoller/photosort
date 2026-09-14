@@ -27,6 +27,7 @@ from photosort.scoring import (
     TIME_CLUSTER_GAP,
     haversine_meters,
 )
+from photosort.selection import carried_motifs
 
 # Raeumliche Ausdehnung, ab der ein neues Event beginnt - gleichrangig neben TIME_CLUSTER_GAP.
 # Dokumentierte, UNKALIBRIERTE Modulkonstante im Muster von TIME_CLUSTER_GAP/
@@ -40,6 +41,12 @@ EVENT_EXTENT_MAX_METERS = 1000.0
 # Der geschlossene Vorrat von `events.place_kind`. Ein Wert ausserhalb ist ein Datenfehler und
 # wird im Lesepfad zu "kein Ortsbezug", nie zu einer 500.
 PLACE_KINDS = ("landmark", "coordinate", "multiple")
+
+# Wie viele aufeinanderfolgende mitredende Fotos einen Motivwechsel bestaetigen muessen, das erste
+# abweichende eingeschlossen. Dokumentierte, UNKALIBRIERTE Modulkonstante im Muster von
+# EVENT_EXTENT_MAX_METERS - aenderbar, durch keinen Test auf den Zahlwert gepinnt.
+# Ein Wert von 1 widerspraeche der Zusage "ein einzelnes abweichendes Foto trennt nie".
+MOTIF_CHANGE_CONFIRMING_PHOTOS = 3
 
 
 @dataclass(frozen=True)
@@ -190,7 +197,12 @@ class EventCandidate:
     nicht aus Schaetzungen entstehen.
 
     `landmark_name` kommt bereits durch `sanitize_landmark_name` (worker.py::_landmark_names) -
-    `None` heisst "kein verwendbarer Name"."""
+    `None` heisst "kein verwendbarer Name".
+
+    `motif_strengths` traegt die WIRKSAMEN Staerken (Nutzerkorrektur inbegriffen). `None` heisst
+    "keine Motiv-Kopfzeile" und ist ausdruecklich etwas anderes als eine leere Abbildung: jene ist
+    eine vorhandene Kopfzeile ohne getragenes Motiv und redet voll mit. Beide Motivfelder haben
+    Vorgabewerte - ohne Motivangabe ist die Gliederung die bisherige."""
 
     photo_id: int
     taken_at: datetime
@@ -198,6 +210,8 @@ class EventCandidate:
     gps_lat: float | None = None
     gps_lon: float | None = None
     landmark_name: str | None = None
+    motif_strengths: Mapping[str, float] | None = None
+    excluded_document: bool = False
 
 
 @dataclass(frozen=True)
@@ -406,6 +420,78 @@ def default_signals() -> list[BoundarySignal]:
         ExtentSignal(),
         LandmarkChangeSignal(),
     ]
+
+
+def _motif_picture(candidate: EventCandidate) -> frozenset[str] | None:
+    """Das MOTIVBILD eines Fotos: die Menge der Motive, die es traegt.
+
+    `None` heisst "redet fuer den Motivwechsel nicht mit" - keine Kopfzeile, oder als Dokument
+    bzw. Bildschirmabbild ausgeschlossen. Uebergangen heisst NIE ausgeschlossen: das Foto bleibt
+    Mitglied seines Events. Eine vorhandene Kopfzeile ohne ein einziges getragenes Motiv ergibt
+    dagegen die leere Menge und redet voll mit.
+
+    Was als getragen gilt, beantwortet AUSSCHLIESSLICH `selection.py::carried_motifs` - dieselbe
+    eine, inklusive Grenze wie im Auswahlvorschlag. Eine eigene Grenze hier waere ein zweiter
+    Begriff von "dieses Foto zeigt X" im selben Produkt, und die beiden liefen beim naechsten
+    Grenzfall auseinander."""
+    if candidate.excluded_document or candidate.motif_strengths is None:
+        return None
+    return carried_motifs(candidate.motif_strengths)
+
+
+def motif_change_starts(ordered: Sequence[EventCandidate]) -> frozenset[int]:
+    """Die Indizes der BEREITS SORTIERTEN Folge, an denen ein bestaetigter Motivwechsel ein neues
+    Event erzwingt - die erste Stufe der Event-Bildung, REIN und ohne Kenntnis der Signale.
+
+    Der Motivwechsel ist kein Eintrag in `default_signals()`: Er ist keine paarweise Frage,
+    sondern eine Segmentierung ueber die ganze Folge, und das vorwaerts entscheidende
+    `BoundarySignal`-Protokoll kann weder das Bestaetigungsfenster noch die Rueckwirkung
+    ausdruecken.
+
+    WECHSEL ist die symmetrische Differenz zum Motivbild des Fotos, das den laufenden
+    Motivabschnitt EROEFFNET hat - nicht zum unmittelbaren Vorgaenger: gegen den gemessen liefe
+    ein langsames Abdriften unbegrenzt weiter, ohne je zu trennen. Kein Wechsel des staerksten
+    Motivs und kein Gesamtabstand ueber die Staerken; entschieden wird je Motiv einzeln gegen
+    dieselbe eine Grenze.
+
+    BESTAETIGT ist der Wechsel, wenn `MOTIF_CHANGE_CONFIRMING_PHOTOS` aufeinanderfolgende
+    mitredende Fotos ihn zeigen - das erste abweichende eingeschlossen -, wobei jedes weitere
+    mindestens EINES der zuerst geaenderten Motive weiterhin geaendert zeigt. Das identische
+    Motivbild wird bewusst nicht verlangt: dieselbe Situation mit einem zusaetzlichen Motiv im
+    Bild darf die Bestaetigung nicht abreissen lassen. Zeigt ein Foto keines davon, zerfaellt das
+    Fenster: es beginnt an diesem Foto neu, wenn es selbst abweicht, und entfaellt sonst.
+
+    GELIEFERT wird der Index des ERSTEN Fotos des Fensters, nicht des bestaetigenden; sein
+    Motivbild wird der neue Bezug. Der Index ist nie `0` - er setzt einen bereits gesetzten Bezug
+    voraus, ein leeres fuehrendes Event kann also nicht entstehen."""
+    starts: set[int] = set()
+    reference: frozenset[str] | None = None
+    window_start = 0
+    window_changed: frozenset[str] = frozenset()
+    window_count = 0
+
+    for index, candidate in enumerate(ordered):
+        picture = _motif_picture(candidate)
+        if picture is None:
+            continue
+        if reference is None:
+            reference = picture
+            continue
+
+        changed = picture ^ reference
+        if window_count and changed & window_changed:
+            window_count += 1
+        elif changed:
+            window_start, window_changed, window_count = index, changed, 1
+        else:
+            window_count = 0
+
+        if window_count >= MOTIF_CHANGE_CONFIRMING_PHOTOS:
+            starts.add(window_start)
+            reference = _motif_picture(ordered[window_start])
+            window_count = 0
+
+    return frozenset(starts)
 
 
 def _name_of(members: Sequence[EventCandidate]) -> str | None:

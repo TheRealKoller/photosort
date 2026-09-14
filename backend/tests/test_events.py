@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Sequence
+import math
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime, timedelta
 from itertools import permutations
 from pathlib import Path
 
+import pytest
+
+from photosort import events as events_module
 from photosort.events import (
     EVENT_EXTENT_MAX_METERS,
     BoundarySignal,
@@ -24,6 +28,7 @@ from photosort.events import (
     default_signals,
     event_for_time,
     infer_locations,
+    motif_change_starts,
 )
 from photosort.places import MAX_PLACE_NAME_LENGTH, PlaceInfo
 from photosort.scoring import (
@@ -31,6 +36,7 @@ from photosort.scoring import (
     TIME_CLUSTER_GAP,
     haversine_meters,
 )
+from photosort.selection import MOTIF_PRESENCE_THRESHOLD
 
 SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "photosort"
 
@@ -109,6 +115,78 @@ def _placeless_candidate(
         gps_lon=None,
         landmark_name=landmark_name,
     )
+
+
+# Die Staerken der Motivfaelle stehen ausschliesslich als SYMBOL zur Praesenzgrenze - kein Fall
+# nennt ihren Zahlwert. `_AT_THRESHOLD` und `_JUST_BELOW` sind das Paar, an dem ein in `events.py`
+# nachgebautes `>` statt des geteilten inklusiven `>=` rot wird.
+_ABOVE = 1.0
+_AT_THRESHOLD = MOTIF_PRESENCE_THRESHOLD
+_JUST_BELOW = math.nextafter(MOTIF_PRESENCE_THRESHOLD, 0.0)
+_BELOW = 0.0
+
+# Vier frei gewaehlte Schluessel: `events.py` kennt das Motiv-Vokabular nicht und darf es nicht
+# kennen - fuer die Regel zaehlt allein die MENGE der getragenen Schluessel.
+_MOTIF_KEYS = ("a", "b", "c", "d")
+
+
+def _picture(*carried: str) -> dict[str, float]:
+    """Eine Motiv-Kopfzeile, die GENAU die genannten Motive traegt.
+
+    Die uebrigen stehen ausgeschrieben unter der Grenze - `_picture()` ist damit die vorhandene
+    Kopfzeile ohne ein einziges getragenes Motiv (das leere Motivbild) und ausdruecklich etwas
+    anderes als `None` (keine Kopfzeile)."""
+    strengths = {key: _BELOW for key in _MOTIF_KEYS}
+    strengths.update({key: _ABOVE for key in carried})
+    return strengths
+
+
+def _motif_candidates(
+    pictures: Sequence[Mapping[str, float] | None], *, excluded: Collection[int] = ()
+) -> list[EventCandidate]:
+    """Kandidaten aus einer Folge von Motiv-Kopfzeilen - `photo_id` IST der Index.
+
+    Ohne Ort, ohne Namen und mit einem Sekundenabstand: kein anderes Trennsignal spricht mit,
+    gleich wie lang die Folge wird. Nur so darf die Laenge aus dem Symbol
+    `MOTIF_CHANGE_CONFIRMING_PHOTOS` wachsen, ohne dass Zeitluecke oder Tagesgrenze dazwischen-
+    geraten."""
+    return [
+        EventCandidate(
+            photo_id=index,
+            taken_at=T0 + index * EPSILON_TIME,
+            motif_strengths=None if picture is None else dict(picture),
+            excluded_document=index in excluded,
+        )
+        for index, picture in enumerate(pictures)
+    ]
+
+
+class _UnderEveryConfirmingWindow:
+    """Jeder Fall einer erbenden Klasse laeuft unter MEHREREN Fensterlaengen.
+
+    Die Fensterlaenge ist eine aenderbare, unkalibrierte Festlegung; kein Fall darf ihren Zahlwert
+    pinnen. Die Faelle bauen ihre Folgen deshalb aus `_window()` statt aus einer Zahl, und diese
+    Fixture setzt die Modulkonstante auf jeden Wert der Liste. Ein Fall, der den Zahlwert doch
+    spiegelt, wird unter mindestens einem Parameter rot.
+
+    VORAUSSETZUNG, die still braeche: Die Konstante wird als MODULATTRIBUT gelesen
+    (`events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS`, siehe `_window`). Ein `from ... import` baende
+    den Wert beim Import des Testmoduls, und die Faelle waeren unter der Fixture falsch
+    dimensioniert."""
+
+    @pytest.fixture(
+        autouse=True,
+        params=sorted({2, 5, events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS}),
+    )
+    def _confirming_window(
+        self, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(events_module, "MOTIF_CHANGE_CONFIRMING_PHOTOS", request.param)
+
+
+def _window() -> int:
+    """Die aktuell geltende Fensterlaenge - als Modulattribut gelesen, nie als Zahl."""
+    return events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS
 
 
 def assert_event_invariants(
@@ -603,6 +681,205 @@ class TestSignalsAreNeverShortCircuited:
         assert sorted(spy.begun + spy.advanced) == [1, 2, 3]
         assert spy.begun == [1, 3]
         assert spy.advanced == [2]
+
+
+class TestTheMotifChangeRule(_UnderEveryConfirmingWindow):
+    """Die REINE Regel, direkt an `motif_change_starts` gemessen.
+
+    Sie ist keine paarweise Frage, sondern eine Segmentierung ueber die ganze Folge - ihr Ergebnis
+    ist eine Indexmenge und damit direkt beobachtbar. Ein Nachweis allein durch `build_events`
+    hindurch saehe die Rueckwirkung nicht."""
+
+    def test_a_newly_carried_motif_starts_a_new_event(self) -> None:
+        candidates = _motif_candidates([_picture("a")] + [_picture("a", "b")] * _window())
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_a_dropped_motif_starts_a_new_event(self) -> None:
+        """Die symmetrische Differenz ist SYMMETRISCH: der Wegfall trennt wie das Hinzukommen."""
+        candidates = _motif_candidates([_picture("a", "b")] + [_picture("a")] * _window())
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_a_changed_strongest_motif_within_the_same_carried_set_starts_nothing(self) -> None:
+        """Untersagt ist der Wechsel des STAERKSTEN Motivs (er benennt eine Rangfolge zwischen
+        Motiven) - entschieden wird ueber die getragene Menge, und die ist hier unveraendert."""
+        candidates = _motif_candidates(
+            [{"a": _ABOVE, "b": _AT_THRESHOLD}] + [{"a": _AT_THRESHOLD, "b": _ABOVE}] * _window()
+        )
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_a_strength_change_below_the_threshold_starts_nothing(self) -> None:
+        """Kein Gesamtabstand ueber die Staerken: unterhalb der Grenze ist jede Bewegung
+        dasselbe leere Motivbild."""
+        candidates = _motif_candidates([{"a": _BELOW}] + [{"a": _JUST_BELOW}] * _window())
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_the_presence_threshold_is_inclusive_and_not_rebuilt(self) -> None:
+        """Beide Haelften in EINEM Fall - ein in `events.py` nachgebautes `>` liesse die erste
+        leer und bliebe in der zweiten gruen.
+
+        Genau auf der Grenze gilt ein Motiv als getragen, knapp darunter nicht."""
+        exactly_at = _motif_candidates([{"a": _JUST_BELOW}] + [{"a": _AT_THRESHOLD}] * _window())
+        just_below = _motif_candidates([{"a": _BELOW}] + [{"a": _JUST_BELOW}] * _window())
+
+        assert motif_change_starts(exactly_at) == frozenset({1})
+        assert motif_change_starts(just_below) == frozenset()
+
+    def test_the_reference_is_the_opening_photo_and_not_the_predecessor(self) -> None:
+        """Eine Folge, die sich Foto fuer Foto um je EIN Motiv weiterschiebt.
+
+        Gegen den jeweiligen Vorgaenger gemessen traete nie eine Grenze ein: jedes Foto zeigt
+        gegenueber seinem Vorgaenger ein ANDERES geaendertes Motiv, und kein Fenster kaeme je
+        zustande. Gegen das eroeffnende Foto gemessen trennt das Abdriften."""
+        candidates = _motif_candidates(
+            [_picture(*(f"m{step}" for step in range(count + 1))) for count in range(_window() + 1)]
+        )
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_the_start_is_the_first_photo_of_the_window_not_the_confirming_one(self) -> None:
+        """DIE RUECKWIRKUNG. Geprueft wird der Index selbst, nicht nur, DASS getrennt wird."""
+        candidates = _motif_candidates([_picture("a")] * 2 + [_picture("a", "b")] * _window())
+
+        assert motif_change_starts(candidates) == frozenset({2})
+
+    def test_confirmation_does_not_require_an_identical_picture(self) -> None:
+        """Bestaetigt ist der Wechsel, wenn MINDESTENS EINES der zuerst geaenderten Motive
+        weiterhin geaendert ist - ein zusaetzlich getragenes Motiv reisst ihn nicht ab."""
+        candidates = _motif_candidates(
+            [_picture("a"), _picture("a", "b"), _picture("a", "b", "c")]
+            + [_picture("a", "b")] * (_window() - 2)
+        )
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_a_window_one_photo_short_then_a_return_to_the_reference_starts_nothing(self) -> None:
+        candidates = _motif_candidates(
+            [_picture("a")] + [_picture("a", "b")] * (_window() - 1) + [_picture("a")]
+        )
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_a_decayed_window_followed_by_a_full_one_starts_at_the_second_window(self) -> None:
+        candidates = _motif_candidates(
+            [_picture("a")]
+            + [_picture("a", "b")] * (_window() - 1)
+            + [_picture("a")]
+            + [_picture("a", "b")] * _window()
+        )
+
+        assert motif_change_starts(candidates) == frozenset({_window() + 1})
+
+    def test_a_single_deviating_photo_never_starts_an_event(self) -> None:
+        """Der verhaltensnahe Zwilling der Ungleichung `MOTIF_CHANGE_CONFIRMING_PHOTOS >= 2`:
+        beide werden bei `1` rot, und das ist die zugesagte Wirkung."""
+        candidates = _motif_candidates(
+            [_picture("a"), _picture("a", "b")] + [_picture("a")] * _window()
+        )
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_the_window_length_is_at_least_two(self) -> None:
+        """Die EINE Aussage ueber den Zahlwert, und sie ist eine Ungleichung."""
+        assert events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS >= 2
+
+    def test_zero_is_never_a_start_and_every_start_is_a_valid_index(self) -> None:
+        """Ein Index `0` waere ein leeres fuehrendes Event - er setzt einen bereits gesetzten
+        Bezug voraus und kann deshalb nicht entstehen."""
+        candidates = _motif_candidates([_picture("a")] + [_picture("b")] * _window())
+
+        starts = motif_change_starts(candidates)
+
+        assert 0 not in starts
+        assert starts <= set(range(len(candidates)))
+        assert starts
+
+    def test_candidates_without_any_motif_information_yield_no_start(self) -> None:
+        """Die Vorgabewerte von `EventCandidate`: ohne Motivangabe liefert die erste Stufe die
+        leere Menge und der Durchlauf ist der bisherige."""
+        candidates = [_placeless_candidate(index, _at(minutes=index)) for index in range(1, 6)]
+
+        assert motif_change_starts(candidates) == frozenset()
+
+
+class TestWhichPhotosSpeakForTheMotifChange(_UnderEveryConfirmingWindow):
+    """Die drei Zustaende: keine Kopfzeile, leeres Motivbild, ausgeschlossenes Dokument.
+
+    Der erste und der dritte heissen "redet nicht mit", der zweite redet VOLL mit. Fielen zwei
+    davon zusammen, waere genau einer der Zwillingsfaelle rot - in welche Richtung sie auch
+    zusammenfallen."""
+
+    def test_a_missing_header_is_not_an_empty_motif_picture(self) -> None:
+        """DAS ZWILLINGSPAAR: identisch gebaute Folgen, die sich NUR in `None` gegen die
+        vorhandene Kopfzeile ohne getragenes Motiv unterscheiden - mit entgegengesetzter
+        Erwartung. Ein einzelner Fall bewiese hier nichts."""
+        without_header = _motif_candidates([_picture("a")] + [None] * _window())
+        empty_picture = _motif_candidates([_picture("a")] + [_picture()] * _window())
+
+        assert motif_change_starts(without_header) == frozenset()
+        assert motif_change_starts(empty_picture) == frozenset({1})
+
+    def test_a_photo_without_a_header_never_starts_an_event(self) -> None:
+        candidates = _motif_candidates([_picture("a")] + [None] * _window() + [_picture("a")])
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_a_photo_without_a_header_does_not_decay_a_running_window(self) -> None:
+        candidates = _motif_candidates(
+            [_picture("a")] + [_picture("a", "b")] * (_window() - 1) + [None] + [_picture("a", "b")]
+        )
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_a_photo_without_a_header_counts_in_no_window(self) -> None:
+        """Dieselbe Folge wie oben, nur ohne das bestaetigende Foto dahinter: zaehlte das
+        unklassifizierte mit, waere das Fenster hier bereits voll."""
+        candidates = _motif_candidates(
+            [_picture("a")] + [_picture("a", "b")] * (_window() - 1) + [None]
+        )
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_an_excluded_document_is_not_an_empty_motif_picture(self) -> None:
+        """Das Zwillingspaar ein zweites Mal - dieselben Kopfzeilen, nur einmal ausgeschlossen."""
+        deviating = [_picture("a")] + [_picture("a", "b")] * _window()
+        excluded_indices = range(1, _window() + 1)
+
+        assert motif_change_starts(_motif_candidates(deviating)) == frozenset({1})
+        assert (
+            motif_change_starts(_motif_candidates(deviating, excluded=excluded_indices))
+            == frozenset()
+        )
+
+    def test_an_excluded_document_never_starts_an_event(self) -> None:
+        pictures = [_picture("a")] + [_picture("b")] * _window() + [_picture("a")]
+        excluded_indices = range(1, _window() + 1)
+
+        assert motif_change_starts(_motif_candidates(pictures, excluded=excluded_indices)) == (
+            frozenset()
+        )
+
+    def test_an_excluded_document_does_not_decay_a_running_window(self) -> None:
+        pictures = (
+            [_picture("a")]
+            + [_picture("a", "b")] * (_window() - 1)
+            + [_picture("a")]
+            + [_picture("a", "b")]
+        )
+
+        starts = motif_change_starts(_motif_candidates(pictures, excluded={_window()}))
+
+        assert starts == frozenset({1})
+
+    def test_an_excluded_document_counts_in_no_window(self) -> None:
+        pictures = [_picture("a")] + [_picture("a", "b")] * _window()
+
+        starts = motif_change_starts(_motif_candidates(pictures, excluded={_window()}))
+
+        assert starts == frozenset()
 
 
 def _reference_time_and_day_events(candidates: Sequence[EventCandidate]) -> list[tuple[int, ...]]:
