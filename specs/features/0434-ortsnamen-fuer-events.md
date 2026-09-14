@@ -1,6 +1,6 @@
 # 0434 - Ortsnamen aus Koordinaten für Events ohne erkannte Sehenswürdigkeit
 
-**Status:** Accepted
+**Status:** Implemented ([PR #483](https://github.com/TheRealKoller/photosort/pull/483))
 **Erstellt:** 2026-09-14
 **Bezug:** [Issue #434](https://github.com/TheRealKoller/photosort/issues/434)
 
