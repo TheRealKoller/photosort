@@ -180,6 +180,17 @@ Ausgabe: Markdown nach stdout, **Zahlen ohne Koordinaten**. Aufgelöste Namensbe
 einem eigenen, standardmäßig abgeschalteten Abschnitt (`--namen`), damit die Zahlen für sich
 weitergegeben werden können. Kein Log dieses Kommandos trägt je eine Koordinate.
 
+**Ein Ausfall ist kein Messwert.** Block C weist „ohne Treffer" (die Quelle hat geantwortet und
+nichts gefunden) und „Ausfall" (es kam gar keine verwertbare Antwort — HTTP ≠ 200, Transportfehler
+bzw. Zeitüberschreitung, Größenüberschreitung, unlesbares JSON) **getrennt** aus; der Ausfall wird
+aus „ohne Treffer" herausgerechnet, statt zusätzlich danebenzustehen. Ohne diese Trennung sähe
+eine Drosselung der öffentlichen Photon-Instanz — sie nennt keine Ratenzahl und drosselt bei
+Massenabfragen — wie ein schlechter Anbieter aus, und darauf fiele eine nicht rücknehmbare
+Wegwahl, die ein zweiter Messlauf nur um den Preis eines zweiten Abflusses korrigieren könnte. Die
+Ausfallgründe sind ein geschlossener Vorrat fester Token; ein Statuswert oder eine Fehlermeldung
+des Dienstes gelangt nie in die Ausgabe. Dieselbe Unterscheidung trifft ADR 0102 Punkt 5 für den
+späteren Betrieb.
+
 Beide Kandidaten stehen bewusst in **wegwerfbarer** Form — die Messung darf die Abhängigkeit nicht
 vorwegnehmen, deren Anschaffung sie erst begründen soll:
 
@@ -191,6 +202,18 @@ vorwegnehmen, deren Anschaffung sie erst begründen soll:
   der Viertel-Abdeckung negativ vorwegzunehmen, statt sie zu beantworten. Die Ebene kommt aus
   `featureClass`/`featureCode`: Klasse `P` ist ein Ort, Klasse `A` (ADM1–ADM5) ist genau der als
   wertlos eingestufte Fall.
+
+  **Suchradius und Distanzgrenze — beide bestimmen die Trefferquote unmittelbar und gehören
+  deshalb hierher, nicht nur in den Code.** Der naive Durchgang sammelt Kandidaten über ein
+  prozessinternes **Zehntelgrad-Raster** (rund 11 km je Kachel, ausgewertet samt den acht
+  Nachbarkacheln), nicht über einen Kranz aus Ortszellen: Der Mittelpunkt einer Stadt liegt
+  regelmäßig mehrere Kilometer von dem Viertel entfernt, in dem fotografiert wurde, und ein Kranz
+  von rund 1,1 km fände ihn nicht — er wiese den lokalen Kandidaten systematisch zu dürftig aus.
+  Dieses Raster ist **keine zweite Ortszelle**: Es entsteht nur während des einen Dateidurchgangs,
+  wird nie abgelegt und nie abgesendet; der Wert, der das System verlässt, bleibt ausschließlich
+  `places.place_cell`. Dazu eine grobe obere Schranke von **25 km** je Treffer — jenseits davon
+  ist ein Eintrag kein Ortsname mehr, sondern der nächste Eintrag irgendwo. Großzügig gewählt,
+  weil der Mittelpunkt einer Großstadt weit vom bereisten Rand liegen kann.
 - **Extern: Photon** (öffentliche Instanz, OSM-Daten, Apache-2.0 mit Selbst-Hosting-Pfad). Die
   getroffene Ebene steht in der Antwort im Feld **`type`** — nicht in `layer`, das ausschließlich
   ein Filter-Parameter der **Anfrage** ist und in der Antwort gar nicht vorkommt (belegt am
@@ -208,6 +231,18 @@ vorwegnehmen, deren Anschaffung sie erst begründen soll:
   systematisch die falsche Ebene als Überschrift — „Ritterkiez" statt „Berlin". Die
   Viertel-Ebene kommt in der Antwort ausschließlich als `district`: `suburb`, `borough` und
   `city_district` erscheinen dort nicht (`suburb` nur als roher `osm_value`).
+
+  **Ebenen feiner als `district` zählen als Treffer, nicht als Fehltreffer — und das bestimmt den
+  Großteil aller Messwerte.** Photons `house`, `street` und `locality` liegen **unterhalb** jeder
+  Ebene, die dieses Projekt führt; sie werden deshalb auf `neighbourhood` abgebildet, nicht auf
+  „keine Ebene". Die Begründung des Regions-Ausschlusses trägt hier ausdrücklich **nicht**: Ein
+  Regionstreffer nennt oft eine Stadt, die Dutzende Kilometer entfernt liegt — ein Haustreffer
+  nennt genau die richtige. Das ist kein Randfall: Die Belegabfrage vom 2026-09-14 lieferte für
+  eine gerundete Zelle genau `type: "house"`. Wer die Zahlen ohne diese Kenntnis liest, liest sie
+  falsch; eine Abbildung auf „keine Ebene" wiese den externen Kandidaten systematisch zu dürftig
+  aus. Weil die Zuordnung eine **Annahme über eine fremde Quelle** ist, weist Block C die
+  tatsächlich gesehenen `type`-Werte zusätzlich **roh** aus — sie bleibt damit am Messergebnis
+  nachprüfbar, statt geglaubt werden zu müssen.
 
 **Bezug des lokalen Datensatzes — `scripts/fetch-ortsdatensatz.sh`.** Die Datei wird **einmal**
 bezogen und liegt dann lokal; sie wird nicht bei jedem Lauf neu geholt. Das Skript bildet den
@@ -385,6 +420,15 @@ bricht ab). Die Wegwahl-ADR entsteht danach, ihre Nummer wird erst dann vergeben
 `assign_place_names` samt `BuiltEvent.place_cells`; `EventOut.place_name`, `formatEventHeading`,
 Demo-Daten, Namensnennung; `docs/architecture.md`.
 
+**Auflage an Teil 2 — die Vergabelogik darf nicht zweimal stehen bleiben.** Teil 1 bildet die
+Namensvergabe in `place_probe.py` **zählend** nach (`heading_counts`/`_place_name_of`/
+`_district_of`), weil die schreibende Fassung noch nicht existiert. Mit `events.py::
+assign_place_names` gibt es dieselbe Regel dann ein zweites Mal. **Teil 2 stellt `place_probe.py`
+auf `assign_place_names` um und entfernt die zählende Nachbildung.** Ohne das driften beide
+Fassungen auseinander — und dann misst das Messkommando etwas anderes, als der Lauf tatsächlich
+tut, während beide für sich grün bleiben. Vor der Umstellung ist das kein Fehler, sondern der
+Preis der Reihenfolge; danach wäre es einer.
+
 ## UI/UX
 
 **Überschriftenform — drei Stufen, sequenziell:**
@@ -479,6 +523,11 @@ ein geteiltes Nicht-`test_*`-Modul, Muster `project_graph.py`). Geändert: `conf
 - **Schalter aus ist die Vorgabe:** der externe Auflöser wird gar nicht erst gebaut — eine Fabrik,
   die beim Aufruf bricht, und der Lauf geht trotzdem durch. Die Ausgabe meldet das Ausbleiben,
   statt eine leere Spalte zu zeigen, die als schlechtes Messergebnis gelesen würde.
+- **Ausfall gegen Fehltreffer, in einem Lauf gemessen:** ein Auflöser, der einen Teil der Zellen
+  mit HTTP 429 beantwortet, weist beide Zahlen **getrennt** aus, und der Ausfall zählt nicht als
+  Nichttreffer mit. Dazu die Gegenprobe — eine Antwort ohne Treffer ist ein Messergebnis, kein
+  Ausfall — und je ein Fall für die vier Ausfallgründe. Ohne beide Hälften sähe eine Drosselung
+  wie ein schlechter Anbieter aus.
 - **Der ausgehende Rand:** eine ungerundete Eingabe erzeugt in der abgesetzten Anfrage zwei Zahlen
   mit genau `PLACE_CELL_DIGITS` Nachkommastellen (`httpx.MockTransport`, geprüft an der Ziel-URL).
   Der Ziel-Host ist Konstante oder Einstellung, nie ein Wert aus Datenbank oder Parameter

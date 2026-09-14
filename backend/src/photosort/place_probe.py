@@ -138,12 +138,62 @@ class CellCounts:
     max_cells_in_one_event: int
 
 
+# Der geschlossene Vorrat der Ausfallgruende. FESTE TOKEN, nie ein Fremdtext: weder ein
+# Statuswert noch eine Fehlermeldung des Dienstes und erst recht keine Zelle geraet darueber in
+# die Ausgabe (S5/S11).
+FAILURE_HTTP_STATUS = "http-status"
+FAILURE_TRANSPORT = "transport"
+FAILURE_TOO_LARGE = "zu-gross"
+FAILURE_UNREADABLE = "unlesbar"
+FAILURE_REASONS = (
+    FAILURE_HTTP_STATUS,
+    FAILURE_TRANSPORT,
+    FAILURE_TOO_LARGE,
+    FAILURE_UNREADABLE,
+)
+
+
+@dataclass(frozen=True)
+class ProbeTally:
+    """Die Nebenbefunde EINES Kandidaten-Durchgangs, die in der Antwort selbst nicht stehen.
+
+    `seen_levels` sind die roh gesehenen Ebenenangaben der Quelle, `failures` die Ausfaelle je
+    Grund aus `FAILURE_REASONS`.
+
+    Frozen, aber die beiden Abbildungen darin sind veraenderlich: der Aufrufer legt sie an, der
+    Auflöser fuellt sie waehrend des Durchgangs. Ein Rueckkanal neben dem Rueckgabewert ist noetig,
+    weil `PlaceResolver.resolve` bewusst nur "Antwort oder nichts" kennt - diese Schmalheit ist
+    eine Sicherheitszusage (S2) und wird hier nicht aufgeweicht."""
+
+    seen_levels: dict[str, int]
+    failures: dict[str, int]
+
+    @property
+    def failed_requests(self) -> int:
+        return sum(self.failures.values())
+
+    def record_failure(self, reason: str) -> None:
+        self.failures[reason] = self.failures.get(reason, 0) + 1
+
+
+def new_tally() -> ProbeTally:
+    return ProbeTally(seen_levels={}, failures={})
+
+
 @dataclass(frozen=True)
 class LevelCounts:
-    """Block C - AGGREGIERT. Eine Zeile je Zelle traegt die Zelle nie als Kennung (S5)."""
+    """Block C - AGGREGIERT. Eine Zeile je Zelle traegt die Zelle nie als Kennung (S5).
+
+    `cells_without_answer` und `cells_with_a_failed_request` sind ZWEI VERSCHIEDENE DINGE und
+    duerfen nie zu einem werden: das eine heisst "der Dienst hat geantwortet und nichts
+    gefunden" - ein Messergebnis -, das andere "es kam gar keine verwertbare Antwort" - ein
+    Ausfall. Beides als "ohne Treffer" auszuweisen machte aus einer Drosselung ein schlechtes
+    Messergebnis, und darauf faellt eine NICHT RUECKNEHMBARE Wegwahl. Dieselbe Unterscheidung
+    trifft ADR 0102 Punkt 5 fuer den spaeteren Betrieb."""
 
     cells_total: int
     cells_without_answer: int
+    cells_with_a_failed_request: int
     cells_with_locality: int
     cells_with_neighbourhood: int
     cells_region_or_country_only: int
@@ -196,10 +246,19 @@ def cell_counts(probe: ProbeInput) -> CellCounts:
     )
 
 
-def level_counts(answers_by_cell: Mapping[Cell, PlaceAnswer | None]) -> LevelCounts:
+def level_counts(
+    answers_by_cell: Mapping[Cell, PlaceAnswer | None],
+    failures: Mapping[str, int] | None = None,
+) -> LevelCounts:
     """Block C. Gezaehlt wird nach `matched_level`, NICHT nach gefuellter Stufe: eine Antwort auf
     Regionsebene nennt oft trotzdem eine Stadt, und wer die mitzaehlt, misst systematisch zu
-    guenstig - und traegt damit eine nicht ruecknehmbare Wegwahl."""
+    guenstig - und traegt damit eine nicht ruecknehmbare Wegwahl.
+
+    `failures` sind die Zellen, fuer die gar keine verwertbare Antwort kam. Sie werden aus
+    `cells_without_answer` HERAUSGERECHNET, statt zusaetzlich danebenzustehen - sonst waere
+    dieselbe Zelle zweimal gezaehlt. Ein Kandidat ohne Ausfallbegriff (der lokale Datensatz)
+    laesst den Parameter weg."""
+    failed = sum(failures.values()) if failures is not None else 0
     without = 0
     with_locality = 0
     with_neighbourhood = 0
@@ -221,7 +280,8 @@ def level_counts(answers_by_cell: Mapping[Cell, PlaceAnswer | None]) -> LevelCou
             coarse_only += 1
     return LevelCounts(
         cells_total=len(answers_by_cell),
-        cells_without_answer=without,
+        cells_without_answer=without - failed,
+        cells_with_a_failed_request=failed,
         cells_with_locality=with_locality,
         cells_with_neighbourhood=with_neighbourhood,
         cells_region_or_country_only=coarse_only,
@@ -650,11 +710,11 @@ class PhotonResolver:
         self,
         client: httpx.AsyncClient,
         throttle: CloudRequestThrottle,
-        seen_levels: dict[str, int],
+        tally: ProbeTally,
     ) -> None:
         self._client = client
         self._throttle = throttle
-        self._seen_levels = seen_levels
+        self._tally = tally
 
     async def resolve(self, cell: Cell) -> PlaceAnswer | None:
         await self._throttle.acquire()
@@ -676,24 +736,34 @@ class PhotonResolver:
                 params=params,
                 timeout=PHOTON_REQUEST_TIMEOUT_SECONDS,
             ) as response:
+                # JEDER dieser vier Ausgaenge heisst "es kam keine verwertbare Antwort" und wird
+                # als AUSFALL vermerkt - ausdruecklich nicht als "nichts gefunden". Eine
+                # Drosselung der Dienst-Instanz (sie nennt keine Ratenzahl) saehe sonst in der
+                # Messung aus wie ein schlechter Anbieter.
                 if response.status_code != httpx.codes.OK:
+                    self._tally.record_failure(FAILURE_HTTP_STATUS)
                     return None
                 async for chunk in response.aiter_bytes():
                     body += chunk
                     if len(body) > PHOTON_MAX_RESPONSE_BYTES:
+                        self._tally.record_failure(FAILURE_TOO_LARGE)
                         return None
         except httpx.HTTPError:
             # KEINE ANTWORT ist etwas anderes als eine Antwort ohne brauchbare Ebene: eine
             # voruebergehende Stoerung darf die Zelle nicht dauerhaft vergiften.
+            self._tally.record_failure(FAILURE_TRANSPORT)
             return None
         try:
             payload = json.loads(bytes(body))
         except ValueError:
+            self._tally.record_failure(FAILURE_UNREADABLE)
             return None
-        return photon_answer(payload, self._seen_levels)
+        # Ab hier HAT der Dienst geantwortet: ein `None` von `photon_answer` ist ein Nichttreffer
+        # und damit ein Messergebnis, kein Ausfall.
+        return photon_answer(payload, self._tally.seen_levels)
 
 
-def build_photon_resolver(seen_levels: dict[str, int]) -> PlaceResolver:
+def build_photon_resolver(tally: ProbeTally) -> PlaceResolver:
     """Die echte Fabrik - baut einen Client gegen das echte Netz.
 
     Sie wird NUR bei gesetztem Schalter aufgerufen; kein automatisierter Test ruft sie je auf
@@ -701,7 +771,7 @@ def build_photon_resolver(seen_levels: dict[str, int]) -> PlaceResolver:
     return PhotonResolver(
         httpx.AsyncClient(),
         CloudRequestThrottle(min_interval_seconds=PHOTON_MIN_REQUEST_INTERVAL_SECONDS),
-        seen_levels,
+        tally,
     )
 
 
@@ -731,7 +801,7 @@ class CandidateResult:
     levels: LevelCounts | None = None
     headings: HeadingCounts | None = None
     photos: PhotoCounts | None = None
-    raw_levels: dict[str, int] | None = None
+    tally: ProbeTally | None = None
     examples: tuple[str, ...] = ()
 
 
@@ -751,21 +821,22 @@ def measure_candidate(
     name: str,
     probe: ProbeInput,
     answers: Mapping[Cell, PlaceAnswer | None],
-    raw_levels: dict[str, int] | None = None,
+    tally: ProbeTally | None = None,
 ) -> CandidateResult:
     """Die Bloecke C, D und E fuer einen Kandidaten.
 
-    `examples` traegt die aufgeloesten Namen - sie erscheinen NUR im `--namen`-Abschnitt."""
+    `examples` traegt die aufgeloesten Namen - sie erscheinen NUR im `--namen`-Abschnitt. `tally`
+    fehlt bei einem Kandidaten, der keinen Ausfallbegriff kennt (der lokale Datensatz)."""
     infos = _info_by_cell(answers)
     resolved = sorted(
         {locality for info in infos.values() if (locality := usable_locality(info)) is not None}
     )
     return CandidateResult(
         name=name,
-        levels=level_counts(answers),
+        levels=level_counts(answers, tally.failures if tally is not None else None),
         headings=heading_counts(probe, infos),
         photos=photo_counts(probe, infos),
-        raw_levels=raw_levels,
+        tally=tally,
         examples=tuple(resolved),
     )
 
@@ -827,19 +898,38 @@ def render_report(
             "### C - getroffene Ebenen (aggregiert)",
             "",
             f"- gefragte Zellen: {levels.cells_total}",
-            f"- ohne Treffer: {levels.cells_without_answer}",
+            f"- ohne Treffer (Quelle antwortete, fand nichts): {levels.cells_without_answer}",
             f"- mit Ortsnamen: {levels.cells_with_locality} "
             f"({_percent(levels.cells_with_locality, levels.cells_total)})",
             f"- davon zusaetzlich mit Viertel: {levels.cells_with_neighbourhood}",
             f"- nur Region/Land (gilt als kein Name): {levels.cells_region_or_country_only}",
         ]
-        if candidate.raw_levels:
+        if candidate.tally is not None:
+            failed = candidate.tally.failed_requests
             lines.append(
-                "- rohe Ebenenangaben der Quelle: "
-                + ", ".join(
-                    f"{key}: {count}" for key, count in sorted(candidate.raw_levels.items())
-                )
+                f"- AUSFALL (gar keine verwertbare Antwort): {failed} "
+                f"({_percent(failed, levels.cells_total)})"
             )
+            if failed:
+                lines += [
+                    "  - "
+                    + ", ".join(
+                        f"{reason}: {count}"
+                        for reason, count in sorted(candidate.tally.failures.items())
+                    ),
+                    "  ACHTUNG: Diese Zellen sind NICHT gemessen - sie sagen nichts ueber die",
+                    "  Quelle aus. Ein nennenswerter Ausfall (Drosselung, Stoerung) macht die",
+                    "  Zahlen dieses Kandidaten unbrauchbar; dann erst die Ursache beheben und",
+                    "  neu messen, nicht auf dieser Grundlage entscheiden.",
+                ]
+            if candidate.tally.seen_levels:
+                lines.append(
+                    "- rohe Ebenenangaben der Quelle: "
+                    + ", ".join(
+                        f"{key}: {count}"
+                        for key, count in sorted(candidate.tally.seen_levels.items())
+                    )
+                )
         lines += [
             "",
             "### D - Verwendung Ueberschrift (zaehlt EVENTS)",
@@ -912,7 +1002,7 @@ async def _probe_with_own_session(
     dataset_path: Path | None,
     show_names: bool,
     external_enabled: bool,
-    build_external_resolver: Callable[[dict[str, int]], PlaceResolver],
+    build_external_resolver: Callable[[ProbeTally], PlaceResolver],
 ) -> str:
     engine = make_engine(database_url)
     try:
@@ -961,14 +1051,14 @@ async def _probe_with_own_session(
             )
         )
     else:
-        seen_levels: dict[str, int] = {}
-        external = build_external_resolver(seen_levels)
+        tally = new_tally()
+        external = build_external_resolver(tally)
         candidates.append(
             measure_candidate(
                 "Externer Dienst (Photon)",
                 probe,
                 await resolve_all(external, cells),
-                seen_levels,
+                tally,
             )
         )
 
@@ -980,7 +1070,7 @@ def main(
     *,
     database_url: str | None = None,
     external_lookup_enabled: bool | None = None,
-    build_external_resolver: Callable[[dict[str, int]], PlaceResolver] = build_photon_resolver,
+    build_external_resolver: Callable[[ProbeTally], PlaceResolver] = build_photon_resolver,
 ) -> int:
     """Verdrahtung + Exit-Code. `argv`, `database_url`, der Schalter und die externe Fabrik sind
     injizierbar - kein `sys.argv`-Zugriff im Testpfad, kein unbeabsichtigter Zugriff auf die

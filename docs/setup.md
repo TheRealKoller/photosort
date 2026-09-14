@@ -493,8 +493,17 @@ GEMESSEN"), statt eine leere Spalte zu zeigen, die als schlechtes Messergebnis g
   GeoNames erzeugt die Datei nächtlich neu und veröffentlicht **keine Prüfsummen**. Ein fest
   eingetragener Hash wie bei `fetch-label-embedder-model.sh` ist deshalb nicht möglich.
   Stattdessen bildet das Skript den Hash **beim Erstbezug selbst** und legt ihn daneben; jeder
-  spätere Lauf prüft die lokale Datei dagegen und bricht bei Abweichung **laut** ab. Der
-  Erstbezug selbst bleibt ungeschützt — dort tragen allein HTTPS und das Vertrauen in GeoNames.
+  spätere Lauf prüft dagegen und bricht bei Abweichung **laut** ab.
+
+  **Worauf sich diese Prüfung bezieht:** auf `allCountries.zip`, das bezogene Archiv. Die
+  entpackte `allCountries.txt`, die das Messkommando tatsächlich liest, wird bei einem späteren
+  Lauf **nicht** erneut geprüft — sie misst rund 1,5 GB, und das bei jedem Aufruf zu tun kostete
+  Minuten für einen Fall, der ohne Zutun nicht eintritt. Wird sie verändert oder beschädigt,
+  während das Archiv intakt bleibt, fällt das nicht auf. Abhilfe bei Zweifeln: die `.txt`
+  löschen und das Skript erneut aufrufen — es entpackt sie dann aus dem geprüften Archiv neu.
+
+  Der **Erstbezug** selbst bleibt ungeschützt — dort tragen allein HTTPS und das Vertrauen in
+  GeoNames.
 
 - **Externer Dienst (Photon).** Nur bei `EXTERNAL_PLACE_LOOKUP_ENABLED=true` in `.env`. Vorgabe
   ist `false`; dann wird gar kein externer Auflöser gebaut und keine Anfrage abgesetzt. Hinaus

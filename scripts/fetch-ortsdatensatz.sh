@@ -13,9 +13,19 @@
 # versioniert ist.
 #
 # STATTDESSEN: Der Hash entsteht BEIM ERSTBEZUG selbst und wird daneben abgelegt. Jeder spaetere
-# Lauf prueft die lokale Datei dagegen und bricht bei Abweichung LAUT ab - kein stiller Rueckfall
-# auf den externen Weg und keine stillschweigend beschaedigte Datei. Das erkennt jede Veraenderung
-# NACH dem Erstbezug.
+# Lauf prueft dagegen und bricht bei Abweichung LAUT ab - kein stiller Rueckfall auf den externen
+# Weg. Das erkennt jede Veraenderung des ARCHIVS nach dem Erstbezug.
+#
+# WORAUF SICH DIE PRUEFUNG GENAU BEZIEHT - und worauf NICHT: Geprueft wird allCountries.zip, das
+# BEZOGENE Archiv. Die entpackte allCountries.txt, die das Messkommando tatsaechlich liest, wird
+# NICHT bei jedem Lauf erneut geprueft: sie misst rund 1,5 GB, und sie bei jedem Aufruf zu hashen
+# oder neu zu entpacken kostete jedes Mal Minuten fuer einen Fall, der ohne Zutun nicht eintritt.
+# Die Folge ist ausgeschrieben, damit sich niemand auf eine Zusage verlaesst, die hier nicht
+# gegeben wird: Wird die .txt veraendert oder beschaedigt, waehrend das Archiv daneben intakt
+# bleibt, faellt das hier NICHT auf.
+#
+# ABHILFE, falls daran je ein Zweifel besteht: die .txt loeschen und dieses Skript erneut laufen
+# lassen. Es entpackt sie dann aus dem zuvor gegen den Hash geprueften Archiv neu.
 #
 # UNGESCHUETZT BLEIBT AUSDRUECKLICH DER ERSTBEZUG: Dort tragen allein HTTPS und das Vertrauen in
 # GeoNames. Eine an der Quelle oder auf dem Weg veraenderte Datei wuerde als Sollwert uebernommen
@@ -56,6 +66,8 @@ if [ -f "$ARCHIV" ] && [ -f "$HASH_DATEI" ]; then
     exit 1
   fi
   echo "allCountries.zip liegt vor und stimmt mit dem abgelegten Hash ueberein."
+  echo "(Geprueft ist damit das ARCHIV. Die daneben liegende, entpackte allCountries.txt wird"
+  echo " nicht erneut geprueft - bei Zweifeln loeschen und dieses Skript erneut aufrufen.)"
 else
   if [ -f "$ARCHIV" ] || [ -f "$HASH_DATEI" ]; then
     echo "Fehler: Es liegt nur eines von beiden vor (Archiv bzw. Hash-Datei)." >&2

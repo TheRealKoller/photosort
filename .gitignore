@@ -50,7 +50,9 @@ example-pictures/
 # Lokaler Ortsdatensatz fuer das Messkommando (specs/features/0434-ortsnamen-fuer-events.md,
 # scripts/fetch-ortsdatensatz.sh): rund 400 MB gepackt, rund 1,5 GB entpackt. Die Datei wird
 # EINMAL bezogen, liegt dann lokal und gehoert weder ins Repository noch ins Docker-Image. Neben
-# ihr liegt der beim Erstbezug selbst gebildete SHA256-Hash, gegen den jeder spaetere Lauf prueft.
+# dem Archiv liegt der beim Erstbezug selbst gebildete SHA256-Hash, gegen den jeder spaetere Lauf
+# das ARCHIV prueft; die daneben entpackte .txt wird nicht erneut geprueft (Begruendung und
+# Abhilfe im Skript).
 .ortsdatensatz/
 
 # Docker / data volumes

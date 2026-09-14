@@ -31,6 +31,11 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.place_probe import (
+    FAILURE_HTTP_STATUS,
+    FAILURE_REASONS,
+    FAILURE_TOO_LARGE,
+    FAILURE_TRANSPORT,
+    FAILURE_UNREADABLE,
     PHOTON_MAX_RESPONSE_BYTES,
     PHOTON_MIN_REQUEST_INTERVAL_SECONDS,
     PHOTON_REVERSE_URL,
@@ -40,6 +45,7 @@ from photosort.place_probe import (
     PlaceProbeError,
     ProbeEvent,
     ProbeInput,
+    ProbeTally,
     cell_counts,
     coverage_counts,
     geonames_answer,
@@ -47,6 +53,7 @@ from photosort.place_probe import (
     heading_counts,
     level_counts,
     main,
+    new_tally,
     parse_geonames_line,
     photo_counts,
     photon_answer,
@@ -64,6 +71,11 @@ _WRITING_METHODS = frozenset({"add", "add_all", "merge", "delete", "commit", "fl
 _WRITING_CONSTRUCTORS = frozenset({"insert", "update", "delete"})
 _WRITING_NAMES = _WRITING_METHODS | _WRITING_CONSTRUCTORS
 _DML_KEYWORDS = ("insert ", "update ", "delete ", "drop ", "alter ", "create ", "truncate ")
+
+
+def _tally() -> ProbeTally:
+    """Ein frischer Nebenbefund-Sammler je Fall - geteilte Zaehler taeuschten Ausfaelle vor."""
+    return new_tally()
 
 
 def write_statements(tree: ast.AST) -> list[str]:
@@ -351,6 +363,35 @@ class TestBlockCComparison:
         assert counts.cells_with_locality == 2
         assert counts.cells_with_neighbourhood == 1
         assert counts.cells_region_or_country_only == 2
+
+    def test_a_failed_request_is_counted_apart_from_a_genuine_miss(self) -> None:
+        """DIE UNTERSCHEIDUNG, DIE DIE WEGWAHL TRAEGT. `resolve` liefert `None` sowohl fuer
+        "geantwortet, nichts Brauchbares" als auch fuer "gar nicht geantwortet" (HTTP 429,
+        Zeitueberschreitung, Transportfehler). Beides als "ohne Treffer" auszuweisen macht aus
+        einer Drosselung ein schlechtes Messergebnis - und darauf faellt eine nicht ruecknehmbare
+        Entscheidung."""
+        counts = level_counts(
+            {
+                SPLIT: _answer(matched_level="locality", locality="Split"),
+                GARMISCH: None,
+                BERLIN_MITTE: None,
+                BERLIN_KREUZBERG: None,
+            },
+            {"http-status": 2, "transport": 1},
+        )
+
+        assert counts.cells_total == 4
+        assert counts.cells_with_a_failed_request == 3
+        # "Ohne Treffer" meint ab hier AUSSCHLIESSLICH: der Dienst hat geantwortet und nichts
+        # gefunden. Die drei Ausfaelle stehen NICHT zusaetzlich darin - sonst waere dieselbe
+        # Zelle doppelt gezaehlt.
+        assert counts.cells_without_answer == 0
+
+    def test_without_any_failure_every_none_is_a_genuine_miss(self) -> None:
+        counts = level_counts({SPLIT: None, GARMISCH: None})
+
+        assert counts.cells_without_answer == 2
+        assert counts.cells_with_a_failed_request == 0
 
     def test_a_region_hit_naming_a_city_does_not_count_as_a_locality(self) -> None:
         """Die Anbieterangabe gewinnt. Ohne diesen Fall zaehlte eine Umsetzung, die auf die
@@ -777,7 +818,7 @@ class TestTheOutgoingEdge:
         resolver = PhotonResolver(
             httpx.AsyncClient(transport=httpx.MockTransport(handler)),
             CloudRequestThrottle(min_interval_seconds=0.0),
-            {},
+            _tally(),
         )
         # Volle EXIF-Praezision, wie sie in `photos.gps_lat` steht.
         await resolver.resolve((43.50812345678, 16.44018765432))
@@ -796,7 +837,7 @@ class TestTheOutgoingEdge:
         resolver = PhotonResolver(
             httpx.AsyncClient(transport=httpx.MockTransport(handler)),
             CloudRequestThrottle(min_interval_seconds=0.0),
-            {},
+            _tally(),
         )
         await resolver.resolve(SPLIT)
 
@@ -874,7 +915,7 @@ class TestTheOutgoingEdge:
                 )
             ),
             throttle,
-            {},
+            _tally(),
         )
 
         await resolver.resolve(SPLIT)
@@ -889,49 +930,84 @@ class TestTheOutgoingEdge:
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectTimeout("zu langsam")
 
+        tally = _tally()
         resolver = PhotonResolver(
             httpx.AsyncClient(transport=httpx.MockTransport(handler)),
             CloudRequestThrottle(min_interval_seconds=0.0),
-            {},
+            tally,
         )
 
         assert await resolver.resolve(SPLIT) is None
+        assert tally.failures == {FAILURE_TRANSPORT: 1}
 
     async def test_an_error_status_is_no_answer(self) -> None:
+        tally = _tally()
         resolver = PhotonResolver(
             httpx.AsyncClient(
                 transport=httpx.MockTransport(lambda _: httpx.Response(429, text="zu viel"))
             ),
             CloudRequestThrottle(min_interval_seconds=0.0),
-            {},
+            tally,
         )
 
         assert await resolver.resolve(SPLIT) is None
+        assert tally.failures == {FAILURE_HTTP_STATUS: 1}
 
     async def test_an_oversized_answer_is_read_only_up_to_the_limit(self) -> None:
         """S9: Groesse und Struktur werden BEGRENZT gelesen - eine unerwartet grosse Fremdantwort
         soll den Messlauf nicht in den Speicher laufen lassen."""
         huge = b"x" * (PHOTON_MAX_RESPONSE_BYTES + 1024)
+        tally = _tally()
         resolver = PhotonResolver(
             httpx.AsyncClient(
                 transport=httpx.MockTransport(lambda _: httpx.Response(200, content=huge))
             ),
             CloudRequestThrottle(min_interval_seconds=0.0),
-            {},
+            tally,
         )
 
         assert await resolver.resolve(SPLIT) is None
+        assert tally.failures == {FAILURE_TOO_LARGE: 1}
 
     async def test_a_non_json_answer_is_no_answer(self) -> None:
+        tally = _tally()
         resolver = PhotonResolver(
             httpx.AsyncClient(
                 transport=httpx.MockTransport(lambda _: httpx.Response(200, text="<html>"))
             ),
             CloudRequestThrottle(min_interval_seconds=0.0),
-            {},
+            tally,
         )
 
         assert await resolver.resolve(SPLIT) is None
+        assert tally.failures == {FAILURE_UNREADABLE: 1}
+
+    async def test_an_answer_without_a_feature_is_a_miss_not_a_failure(self) -> None:
+        """DIE GEGENPROBE, und sie traegt den ganzen Fix: der Dienst HAT geantwortet, er hat nur
+        nichts gefunden. Das ist ein Messergebnis - kein Ausfall."""
+        tally = _tally()
+        resolver = PhotonResolver(
+            httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"features": []}))
+            ),
+            CloudRequestThrottle(min_interval_seconds=0.0),
+            tally,
+        )
+
+        assert await resolver.resolve(SPLIT) is None
+        assert tally.failures == {}
+
+    async def test_every_failure_token_is_free_of_coordinates_and_names(self) -> None:
+        """S11: die Gruende sind ein FESTER Vorrat, nie ein Fremdtext - kein Statuswert, keine
+        Fehlermeldung des Dienstes und erst recht keine Zelle geraet darueber in die Ausgabe."""
+        assert FAILURE_REASONS == (
+            FAILURE_HTTP_STATUS,
+            FAILURE_TRANSPORT,
+            FAILURE_TOO_LARGE,
+            FAILURE_UNREADABLE,
+        )
+        for reason in FAILURE_REASONS:
+            assert reason.replace("-", "").isalpha()
 
 
 # --- main() gegen eine echte, dateibasierte SQLite ----------------------------------------------
@@ -1352,12 +1428,12 @@ class TestTheSwitchIsOffByDefault:
         class FakeResolver:
             """Ein Double, kein Client - die Netzsperre machte einen echten laut."""
 
-            def __init__(self, seen_levels: dict[str, int]) -> None:
-                self._seen_levels = seen_levels
+            def __init__(self, tally: ProbeTally) -> None:
+                self._tally = tally
 
             async def resolve(self, cell: Cell) -> PlaceAnswer | None:
                 return photon_answer(
-                    _photon_payload({"type": "city", "city": "Split"}), self._seen_levels
+                    _photon_payload({"type": "city", "city": "Split"}), self._tally.seen_levels
                 )
 
         exit_code = main(
@@ -1377,6 +1453,109 @@ class TestTheSwitchIsOffByDefault:
         # ... und weiterhin keine Koordinate und kein Name ohne --namen.
         assert "43.51" not in report
         assert "Split" not in report
+
+    def test_a_partial_outage_is_reported_apart_from_the_misses(
+        self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """DAS SZENARIO, GEGEN DAS DER AUSFALLZAEHLER ANTRITT: Die Dienst-Instanz drosselt nach
+        der ersten Zelle. Ohne die Trennung meldete der Bericht "ohne Treffer: 1" und liesse eine
+        Drosselung wie einen schlechten Anbieter aussehen - und darauf faellt eine nicht
+        ruecknehmbare Wegwahl, die ein zweiter Messlauf nur um den Preis eines zweiten Abflusses
+        korrigieren koennte."""
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> int:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                project_id = await _seed_measured_project(session)
+                await session.commit()
+            await engine.dispose()
+            return project_id
+
+        project_id = asyncio.run(prepare())
+
+        def throttling_factory(tally: ProbeTally) -> PlaceResolver:
+            # Die erste Zelle wird beantwortet, ab der zweiten kommt HTTP 429.
+            answered = [0]
+
+            def handler(request: httpx.Request) -> httpx.Response:
+                answered[0] += 1
+                if answered[0] == 1:
+                    return httpx.Response(
+                        200, json=_photon_payload({"type": "city", "city": "Split"})
+                    )
+                return httpx.Response(429, text="slow down")
+
+            return PhotonResolver(
+                httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                CloudRequestThrottle(min_interval_seconds=0.0),
+                tally,
+            )
+
+        exit_code = main(
+            ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)],
+            database_url=url,
+            external_lookup_enabled=True,
+            build_external_resolver=throttling_factory,
+        )
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+
+        # Die zwei Zellen des Projekts: eine beantwortet, eine gedrosselt.
+        assert "AUSFALL (gar keine verwertbare Antwort): 1" in report
+        assert f"{FAILURE_HTTP_STATUS}: 1" in report
+        # Der Ausfall steht NICHT zusaetzlich als Nichttreffer da.
+        assert "ohne Treffer (Quelle antwortete, fand nichts): 0" in report
+        # Und er ist als unbrauchbar gekennzeichnet, nicht als Messwert.
+        assert "NICHT gemessen" in report
+
+    def test_without_an_outage_the_failure_line_stays_at_zero(
+        self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Gegenprobe: die Ausfallzeile steht immer da - eine Zeile, die nur bei Ausfall
+        erschiene, liesse ihr Fehlen als "kein Ausfallbegriff" lesen."""
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> int:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                project_id = await _seed_measured_project(session)
+                await session.commit()
+            await engine.dispose()
+            return project_id
+
+        project_id = asyncio.run(prepare())
+
+        def healthy_factory(tally: ProbeTally) -> PlaceResolver:
+            return PhotonResolver(
+                httpx.AsyncClient(
+                    transport=httpx.MockTransport(
+                        lambda _: httpx.Response(200, json={"features": []})
+                    )
+                ),
+                CloudRequestThrottle(min_interval_seconds=0.0),
+                tally,
+            )
+
+        main(
+            ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)],
+            database_url=url,
+            external_lookup_enabled=True,
+            build_external_resolver=healthy_factory,
+        )
+        report = capsys.readouterr().out
+
+        assert "AUSFALL (gar keine verwertbare Antwort): 0" in report
+        # Der Dienst HAT geantwortet und nichts gefunden - das ist ein Messergebnis.
+        assert "ohne Treffer (Quelle antwortete, fand nichts): 2" in report
+        assert "NICHT gemessen" not in report
 
     def test_an_unreachable_database_leaks_no_credentials(
         self, capsys: pytest.CaptureFixture[str]
