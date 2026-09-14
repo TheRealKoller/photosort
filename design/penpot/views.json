@@ -304,7 +304,7 @@
         {
           "schluessel": "angabenzeile",
           "stelle": "Auslösung und Höhenanteil der eingeblendeten Zeile",
-          "grund": "Die Zeile erscheint durch Überfahren an einem Gerät mit feinem Zeiger, durch Fokus, sonst durch einen Druck von mindestens 500 ms. Penpot bildet weder Gerätefähigkeit noch Zeitschwelle ab; der Entwurf zeigt die Zeile als eingeblendeten Zustand. Ihre Höhenkappung auf ein Viertel der Bildhöhe ist ein gerechnetes Layoutmaß ohne Token und steht als Wert."
+          "grund": "Die Zeile erscheint durch Überfahren an einem Gerät mit feinem Zeiger, durch Fokus, sonst durch einen längeren Druck. Penpot bildet weder Gerätefähigkeit noch Zeitschwelle ab; der Entwurf zeigt die Zeile als eingeblendeten Zustand. Ihre Höhenkappung auf ein Viertel der Bildhöhe ist ein gerechnetes Layoutmaß ohne Token und steht als Wert."
         }
       ]
     },
