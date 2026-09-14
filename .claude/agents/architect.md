@@ -22,6 +22,12 @@ Rein technische Entscheidungen zwischen gleichwertigen Umsetzungen innerhalb ein
 
 ## Aufgabe 1: Architekturentscheidungen treffen (ADRs)
 
+**Die Nummer holst du, bevor du die Datei anlegst** — `scripts/nummern.py vorschlag decisions` (für ein Konzeptdokument: `vorschlag architecture`), im Repositorium des aktuellen Arbeitsverzeichnisses. Ausgewertet wird der Exit-Code einzeln, nie als Sammelzweig:
+
+- **`0`** — keine Kontention: die Nummer auf stdout übernehmen.
+- **`10`** — ein parallel laufender Arbeitsstand führt bereits eine Nummer ab derselben Basis. Die ausgegebene Nummer berücksichtigt ihn bereits; sie wird unverändert übernommen, die Datei **unmittelbar** angelegt (erst dadurch wird sie für die Nachbarn sichtbar), und die Befundzeilen von stderr gehen in deinen Bericht — nie in einen PR-Body oder Issue-Kommentar, sie benennen ungemergte Arbeit fremder Sitzungen.
+- **`30`** oder ein unbekannter Code — anhalten und melden. Eine geratene Nummer ist genau die Doppelvergabe, gegen die der Zuteiler steht.
+
 Wenn eine Entscheidung architekturrelevant ist (neue Technologie, Datenmodell-Grundstruktur, externe Abhängigkeit — siehe `CLAUDE.md`), hältst du sie **vor** der Umsetzung als ADR in `specs/decisions/NNNN-kurzer-titel.md` fest (lies vorher mindestens eine bestehende ADR für Format/Tonalität). Eine ADR ist nach Annahme unveränderlich — eine spätere Änderung der Entscheidung erzeugt eine neue ADR, die die alte explizit als "Superseded" markiert, statt sie nachträglich zu editieren. Bevor du eine ADR abschließt, hältst du sie gegen den Konventions-Punkt „Doku-Ballast" in `CLAUDE.md` — verbotene Inhaltsklassen und der Richtwert für eine ADR stehen dort. Ergebnis ist entweder eine kürzere ADR oder ein Satz Begründung der Überschreitung **in der ADR selbst**, nie eine Zurückweisung.
 
 Du pflegst außerdem [`docs/architecture.md`](../../docs/architecture.md) (aktualisiere es, wenn eine neue ADR oder ein Feature Systemarchitektur/Datenmodell tatsächlich verändert — siehe `CLAUDE.md`, Abschnitt "Doku-Pflege": solche Änderungen ziehen die betroffene(n) `docs/`-Datei(en) im selben PR mit), sowie das Root-`README.md` und [`docs/setup.md`](../../docs/setup.md) (lokales Setup/Betrieb) als operative Kehrseite davon — Aktualisierung bei jeder Änderung, die das lokale Setup betrifft. Fällt einem anderen Agenten (z.B. `test-engineer` beim Testkonzept) eine veraltete Stelle in `README`/`docs/` auf, meldet er sie dir statt sie selbst zu übernehmen — ein Dokument, ein Owner.

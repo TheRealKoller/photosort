@@ -47,7 +47,10 @@ FAILED tests/test_dokumentnummern_eindeutig.py::test_keine_nummer_ist_in_einem_v
 ======================== 1 failed, 927 passed in 11.11s ========================
 
 Die Meldung stand im Lauf in **einer** Zeile; oben ist sie allein zur Zeilenbreite umbrochen,
-Wortlaut und Reihenfolge sind unveraendert. Der Lauf belegt in einem: dass die Pruefung im
+Wortlaut und Reihenfolge sind unveraendert - einschliesslich der damals genannten Regel, die seit
+ADR 0108 nicht mehr gilt; den heutigen Wortlaut des Befundes fuehrt `dubletten_befunde` unten, und
+`scripts/tests/test_nummernvergabe_verankert.py` misst ihn am **erzeugten** Text. Der Lauf belegt
+in einem: dass die Pruefung im
 regulaeren Pruefsatz mitlaeuft und ihn fehlschlagen laesst (nicht bloss warnt), und dass die
 Meldung **alle** betroffenen Dateien vollstaendig nennt statt nur der mehrdeutigen Nummer.
 
@@ -150,7 +153,8 @@ def dubletten_befunde(dokumente: Mapping[str, list[str]]) -> list[str]:
                 f"{verzeichnis}: Die Nummer {nummer!r} ist {len(betroffen)}-fach vergeben: "
                 + ", ".join(betroffen)
                 + ". Jede blanke Nennung dieser Nummer bezeichnet damit mehr als ein Dokument "
-                "- die juengere Vergabe zieht auf die naechste freie Nummer um (ADR 0081)."
+                "- 'scripts/nummern.py vorschlag' nennt je Branch die Nummer, die ihm nach "
+                "seinem Rang zusteht (ADR 0108); die uebrigen Dokumente ziehen darauf um."
             )
     return befunde
 

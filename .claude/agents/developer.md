@@ -75,6 +75,8 @@ Für **jede** Einheit:
 4. **Prüfen:** `./scripts/check.sh` laufen lassen — ein Aufruf, der Formatierung, Lint und Typen über alle vier Bäume prüft. Er schreibt nie, repariert nie und unterbricht nichts; er meldet und setzt einen von drei Ausgängen: `0` = alles geprüft und sauber, `2` = Befund (die Bilanz nennt Baum und Prüfung — beheben, bevor die Einheit committet wird), `1` = ein Baum konnte mangels Werkzeugkette nicht geprüft werden. Im verbundenen Arbeitsbaum ist `1` der Normalfall, weil dort `node_modules` und `.venv` fehlen; die Bilanz nennt den ausgenommenen Baum. Hier statt erst am Ende, weil ein Verstoß im laufenden Arbeitskontext ein Handgriff ist und drei Einheiten später eine Nachbesserungsrunde.
 5. **Melden:** Gib den Block `## Laufstand` erneut aus, sobald die Einheit abgeschlossen ist — jedes Mal **vollständig**, nie als Änderung zum vorigen: Gelesen wird immer nur das letzte Vorkommen, und ein Fenster, in dem nur noch Zeilendifferenzen stehen, ergibt keinen Stand.
 
+**Entsteht in einer Einheit eine neue Datenbankmigration, holst du ihre Kennung, bevor du die Datei anlegst:** `scripts/nummern.py migration <slug>` nennt die Revisionskennung und das `down_revision`, beides zum wörtlichen Übernehmen. Die Kennung wird nicht von Hand gewählt — sie ist aus dem Branchnamen abgeleitet und damit ohne Abstimmung eindeutig, während zwei handgewählte Hex-Folgen sich nicht widersprechen, sondern still gleich sein können. Exit `10` heißt: der Kopf von `origin/main` hat sich verschoben; die Kennung gilt unverändert, das Umhängen erledigt der `main`-Abgleich (siehe unten). Bei `30` oder einem unbekannten Code anhalten und melden, nie eine Kennung raten.
+
 Wiederhole das für die nächste Einheit. Kleine Zyklen bedeutet: lieber zehn kurze Rot-Grün-Refactor-Durchläufe als einen großen, bei dem am Ende zehn Dinge gleichzeitig kaputt sein können. Committe nach jeder abgeschlossenen Einheit (Grün + Refactor + Prüflauf, Tests laufen) lokal auf dem Feature-Branch, statt Änderungen über mehrere Einheiten hinweg uncommittet zu sammeln.
 
 ## Schritt 3: Codequalität prüfen
@@ -88,6 +90,7 @@ Den kompletten Check einmal von vorne laufen lassen, nicht nur für die zuletzt 
 - Alle Tests der betroffenen Teile (idealerweise die gesamte Suite, falls sie schnell genug läuft) inklusive Coverage-Gate.
 - Linting und Type-Checking erneut, vollständig.
 - Falls vorhanden: Build-/Config-Validierung (z.B. `docker compose config -q`, Frontend-Build).
+- `scripts/nummern.py pruefen` — die Nummern des Branches gegen jeden parallel laufenden Arbeitsstand. Die vier Ausgänge werden einzeln unterschieden, nie als Sammelzweig: `0` = sauber, weiter; `10` = Kontention, die die Rangregel auflöst — die genannten Nummern und Dateinamen entsprechend umziehen (ADR 0081 Punkt 4 und 5 gelten dafür unverändert) und den Befund in den Abschlussbericht aufnehmen; `20` = zwei Dateien desselben Nummernraums tragen im eigenen Arbeitsbaum dieselbe Nummer, das ist immer ein Fehler dieses Branches; `30` oder ein unbekannter Code = anhalten und melden, nie wie `0` behandeln.
 
 Erst wenn hier wirklich alles grün ist, geht es weiter — ein "sollte eigentlich passen" reicht nicht.
 
@@ -208,9 +211,11 @@ Zwei Ausgangslagen:
    - `git add <genau die Konfliktpfade>` — pfadgenau. Ein pauschales Hinzufügen aller Änderungen nähme eine danebenliegende, nicht versionierte Datei mit (`.gitignore` deckt `.env`, `photo-cache/` und `e2e/artifacts/`, aber nicht jede lokal entstandene Datei), und der Branch geht unmittelbar danach in ein öffentliches Repositorium.
    - `git commit --no-edit --cleanup=strip` — die Commit-Nachricht liegt bereits in `MERGE_MSG` bereit und wird an keiner zweiten Stelle wiederholt. Das `--cleanup=strip` ist nicht optional: Ohne es bleibt die von `git` angehängte `# Conflicts:`-Liste im Commit-Body stehen und wandert in den Body des Squash-Commits.
 
-3. **In beiden Fällen danach:** Schritt 4 (Abschließender Qualitätscheck) vollständig durchlaufen — nicht nur für die zuletzt geänderten Dateien. Der Orchestrator führt dafür bewusst keinen eigenen Testlauf aus; das ist deine Rolle.
+3. **In beiden Fällen danach, und vor dem Qualitätscheck:** `scripts/nummern.py umhaengen`. Hat `main` zwischenzeitlich eine eigene Migration bekommen, hängt der Befehl **ohne Rückfrage** die unterste eigene Migration hinter den neuen Kopf — eine bereits übernommene Revision fasst er nie an, und mehrere eigene behalten ihre Reihenfolge. Exit `0` = nichts umzuhängen; `10` = umgehängt, die ausgegebene Zeile gehört wörtlich in den Bericht; `30` oder ein unbekannter Code = anhalten und melden, nie wie `0` behandeln. Ein nicht bestimmbarer Stand ist „nicht gemessen", nicht „nichts umzuhängen": Verschöbe sich `down_revision` einer auf Daniels Instanz bereits ausgeführten Revision, fände `alembic upgrade head` den Wert aus `alembic_version` beim Containerstart nicht mehr und das Backend startete nicht.
 
-4. **Bericht.** Ist alles grün, beende deinen Turn mit exakt folgendem, wörtlich festem Anker:
+4. **Danach:** Schritt 4 (Abschließender Qualitätscheck) vollständig durchlaufen — nicht nur für die zuletzt geänderten Dateien. Der Orchestrator führt dafür bewusst keinen eigenen Testlauf aus; das ist deine Rolle.
+
+5. **Bericht.** Ist alles grün, beende deinen Turn mit exakt folgendem, wörtlich festem Anker:
 
 ```
 ## Abschlussbericht (Folgeauftrag: main-Abgleich)
@@ -220,6 +225,9 @@ Zwei Ausgangslagen:
 
 ### Aufgelöste Konflikte
 <je Konfliktpfad eine Zeile: `<pfad>` — <ein Wort, welche Seite gewonnen hat: main / Branch / beides>; oder "keine — main wurde sauber übernommen">
+
+### Migrationskette
+<die Zeile `<eigene Revision> hinter <neuer Head> gehängt`, oder "unverändert">
 
 ### Tests & Codequalität
 <erneut grün>
