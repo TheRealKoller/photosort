@@ -57,6 +57,36 @@ def _nummern(
     return [modul.zugeteilte_nummer(basis, gefuehrt, branch) for branch in branches]
 
 
+def pruefe_kollisionsfrei(
+    modul: ModuleType, basis: int, gefuehrt: Mapping[str, Sequence[int]]
+) -> dict[str, int]:
+    """Die tragende Zusicherung, an **einer** Stelle formuliert und ueberall aufgerufen.
+
+    Zwei Haelften, und die zweite fehlte urspruenglich: (1) Die Zuteilungen sind paarweise
+    verschieden. (2) Jede Zuteilung ist **entweder** eine Nummer, die der Branch selbst fuehrt,
+    **oder** eine, die kein Kontrahent fuehrt. Ohne (2) bleibt eine Rechnung gruen, die vier
+    Branches vier verschiedene, aber laengst belegte Nummern zuteilt - der Fall, der bei vier
+    parallelen Arbeitsstaenden der Regelfall ist.
+
+    Der zugelassene Rest von (2) ist genau das Fenster aus ADR 0108 Punkt 4: Fuehren zwei Seiten
+    dieselbe Nummer, behaelt sie die rangniedrigere, und die andere bekommt eine freie.
+    """
+    branches = sorted(gefuehrt)
+    zuteilung = {branch: modul.zugeteilte_nummer(basis, gefuehrt, branch) for branch in branches}
+    belegt = {nummer for nummern in gefuehrt.values() for nummer in nummern if nummer >= basis}
+
+    assert len(set(zuteilung.values())) == len(zuteilung), f"Dublette in der Zuteilung: {zuteilung}"
+
+    for branch, nummer in zuteilung.items():
+        eigene = {wert for wert in gefuehrt[branch] if wert >= basis}
+        assert nummer >= basis
+        assert nummer in eigene or nummer not in belegt, (
+            f"{branch} bekommt {nummer:04d} - diese Nummer fuehrt bereits ein anderer Branch, "
+            f"und {branch} selbst fuehrt sie nicht. Belegt ist {sorted(belegt)}."
+        )
+    return zuteilung
+
+
 # --- Basis ------------------------------------------------------------------------------------
 
 
@@ -184,12 +214,58 @@ def test_die_zuteilung_ist_ueber_allen_permutationen_injektiv(nummern_module: Mo
     branches = sorted(_FESTE_ZAEHLSTAENDE)
     erwartet = _nummern(nummern_module, 106, dict(_FESTE_ZAEHLSTAENDE), branches)
 
-    assert len(set(erwartet)) == len(branches), f"Dublette in der Zuteilung: {erwartet}"
+    pruefe_kollisionsfrei(nummern_module, 106, dict(_FESTE_ZAEHLSTAENDE))
 
     for reihenfolge in itertools.permutations(branches):
         vertauscht = {name: _FESTE_ZAEHLSTAENDE[name] for name in reihenfolge}
 
         assert _nummern(nummern_module, 106, vertauscht, branches) == erwartet
+
+
+def test_keine_zuteilung_trifft_eine_nummer_die_ein_anderer_kontrahent_fuehrt(
+    nummern_module: ModuleType,
+) -> None:
+    """Der Fall, den eine blosse Anzahl-Rechnung verfehlt: vier Kontrahenten, deren Nummern
+    nicht lueckenlos ab der Basis liegen."""
+    zuteilung = pruefe_kollisionsfrei(nummern_module, 106, dict(_FESTE_ZAEHLSTAENDE))
+
+    assert zuteilung == {
+        "chore/design-runde": 110,
+        "feature/0469-sehenswuerdigkeiten": 106,
+        "feature/0474-ausschuss": 108,
+        "feature/0485-nummernvergabe": 109,
+    }
+
+
+def test_der_minimalfall_einer_luecke_unter_der_eigenen_nummer(
+    nummern_module: ModuleType,
+) -> None:
+    """Basis 106, ein Kontrahent fuehrt nur 107 - die 106 ist frei und gehoert dem Anfragenden."""
+    gefuehrt = {"feature/a": [107], "feature/z": []}
+
+    assert nummern_module.zugeteilte_nummer(106, gefuehrt, "feature/z") == 106
+    pruefe_kollisionsfrei(nummern_module, 106, gefuehrt)
+
+
+def test_eine_luecke_entsteht_auch_ohne_handvergabe(nummern_module: ModuleType) -> None:
+    """Ein Branch ohne Arbeitsbaum und ohne `origin`-Gegenstueck ist kein Kontrahent mehr
+    (ADR 0108 Punkt 1) - verschwindet der, der die Basisnummer fuehrte, bleibt seine Luecke."""
+    vorher = {"feature/a-weg": [106], "feature/b-bleibt": [107], "feature/z-eigen": []}
+    nachher = {"feature/b-bleibt": [107], "feature/z-eigen": []}
+
+    assert nummern_module.zugeteilte_nummer(106, vorher, "feature/z-eigen") == 108
+    assert nummern_module.zugeteilte_nummer(106, nachher, "feature/z-eigen") == 106
+    pruefe_kollisionsfrei(nummern_module, 106, nachher)
+
+
+def test_ein_kontrahent_behaelt_seine_nummer_auch_wenn_sie_nicht_an_der_basis_liegt(
+    nummern_module: ModuleType,
+) -> None:
+    """Eine Zuteilung schickt niemanden grundlos auf eine andere Nummer."""
+    gefuehrt = {"feature/a": [109], "feature/z": [112]}
+
+    assert nummern_module.zugeteilte_nummer(106, gefuehrt, "feature/a") == 109
+    assert nummern_module.zugeteilte_nummer(106, gefuehrt, "feature/z") == 112
 
 
 def test_jede_seite_erhaelt_bei_wiederholung_dasselbe(nummern_module: ModuleType) -> None:
@@ -204,14 +280,16 @@ def test_jede_seite_erhaelt_bei_wiederholung_dasselbe(nummern_module: ModuleType
 def test_ohne_jeden_gemergten_beteiligten_bleibt_das_ergebnis_dublettenfrei(
     nummern_module: ModuleType,
 ) -> None:
-    """AK 4: Kein Beteiligter liegt auf `origin/main` - die Basis kennt keinen von ihnen."""
-    aus_jeder_sicht = _nummern(
-        nummern_module, 106, dict(_FESTE_ZAEHLSTAENDE), sorted(_FESTE_ZAEHLSTAENDE)
-    )
+    """AK 4: Kein Beteiligter liegt auf `origin/main` - die Basis kennt keinen von ihnen.
 
-    # chore/design-runde (3 Nummern), 0469 (2), 0474 (1), 0485 (1) - byteweise in dieser Folge.
-    assert aus_jeder_sicht == [106, 109, 111, 112]
-    assert len(set(aus_jeder_sicht)) == len(aus_jeder_sicht)
+    Gemessen wird beides: dass die Ergebnismenge keine Dublette enthaelt **und** dass keine
+    Zuteilung eine Nummer trifft, die ein anderer Kontrahent bereits fuehrt. Die erste Haelfte
+    allein liesse vier verschiedene, aber laengst belegte Nummern durchgehen.
+    """
+    zuteilung = pruefe_kollisionsfrei(nummern_module, 106, dict(_FESTE_ZAEHLSTAENDE))
+
+    # Jeder behaelt seine niedrigste gefuehrte Nummer - hier kollidiert keine mit einer anderen.
+    assert sorted(zuteilung.values()) == [106, 108, 109, 110]
 
 
 # --- AK 3 (c): das Fenster aus ADR 0108 Punkt 4 ------------------------------------------------
@@ -239,6 +317,7 @@ def test_im_fenster_rechnen_beide_dasselbe_und_der_naechste_lauf_loest_es_auf(
 
     assert nummern_module.zugeteilte_nummer(106, beide_geschrieben, "feature/b-mitte") == 107
     assert nummern_module.zugeteilte_nummer(106, beide_geschrieben, "feature/c-hinten") == 108
+    pruefe_kollisionsfrei(nummern_module, 106, beide_geschrieben)
 
 
 # --- AK 2: Befundzeilen ------------------------------------------------------------------------

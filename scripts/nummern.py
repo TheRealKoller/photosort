@@ -9,8 +9,10 @@ ohne Nachricht, ohne Sperre und ohne Wartepunkt (ADR 0108).
 **Die Rechnung.** Basis ist die hoechste auf `origin/main` vergebene Nummer des Verzeichnisses
 plus eins - nie der eigene Blick, sonst rechnet jede Seite mit einer anderen Basis. Kontrahenten
 sind alle Branches, die im selben Nummernraum eine Nummer ab der Basis fuehren, zuzueglich des
-eigenen; sortiert wird byteweise nach dem vollstaendigen Branchnamen. Die eigene Nummer ist die
-Basis plus die Summe der Nummern, die rangniedrigere Kontrahenten sichtbar fuehren.
+eigenen; sortiert wird byteweise nach dem vollstaendigen Branchnamen. Zugeteilt wird dann in zwei
+Gaengen: Jeder behaelt in Rangfolge seine niedrigste gefuehrte Nummer, und wer nichts behalten
+konnte, bekommt die naechste Nummer ab der Basis, die kein Kontrahent fuehrt (siehe
+`zuteilung_je_kontrahent`).
 
 **In CI sieht der nachbarlesende Teil nichts**, weil es dort weder einen zweiten Arbeitsbaum noch
 einen ungepushten Branch gibt. Eine gruene CI belegt die Fruehwarnung deshalb nicht.
@@ -19,9 +21,9 @@ Sicherheitsauflagen, die still brechen, wenn sie fallen (Spec 0485, S1-S8):
 
 * Jeder Branchname und jeder Pfad geht als Listenelement an `subprocess.run`, nie ueber eine
   Shell, und jeder Aufruf mit einem Branchnamen als Tree-ish uebergibt den voll qualifizierten
-  `refs/heads/<name>` bzw. schiebt `--end-of-options` davor. Die Listenform allein genuegt nicht:
-  `git ls-tree -r --name-only -rf -- specs/decisions` endet gemessen mit 129. Ausfallrichtung ist
-  keine Codeausfuehrung, sondern ein **unsichtbarer Kontrahent** - also genau die Doppelvergabe.
+  `refs/heads/<name>` bzw. schiebt `--end-of-options` davor - die Listenform allein genuegt
+  nicht, weil git einen Branchnamen wie `-rf` sonst als Option liest. Ausfallrichtung ist keine
+  Codeausfuehrung, sondern ein **unsichtbarer Kontrahent** - also genau die Doppelvergabe.
 * Die Umgebung ist der zweite Eingabekanal: Vor jedem `git`-Aufruf werden `GIT_DIR`,
   `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
   `GIT_ALTERNATE_OBJECT_DIRECTORIES` und `GIT_CONFIG_COUNT` entfernt. Sonst liest der Zuteiler
@@ -165,17 +167,58 @@ def kontrahenten(
     )
 
 
+def zuteilung_je_kontrahent(
+    basis: int, gefuehrt: Mapping[str, Sequence[int]], eigener_branch: str
+) -> dict[str, int]:
+    """Reine Funktion: die vollstaendige Zuteilung ueber der Kontrahentenmenge, in zwei Gaengen.
+
+    **Erster Gang, in Rangfolge:** Jeder Kontrahent behaelt seine niedrigste sichtbar gefuehrte
+    Nummer, sofern eine rangniedrigere Seite sie nicht schon beansprucht hat. Das ist der Fall
+    aus ADR 0108 Punkt 4: Fuehren zwei Seiten dieselbe Nummer, behaelt sie die rangniedrigere.
+
+    **Zweiter Gang, wieder in Rangfolge:** Wer nichts behalten konnte - weil er noch keine Datei
+    angelegt hat oder weil eine rangniedrigere Seite seine Nummer hielt -, bekommt die naechste
+    Nummer ab der Basis, die **kein** Kontrahent fuehrt und die in diesem Lauf noch niemand
+    bekommen hat.
+
+    **Gezaehlt wird nicht.** Eine Rechnung, die nur die Anzahl der von rangniedrigeren
+    Kontrahenten gefuehrten Nummern auf die Basis addiert, ist ausschliesslich dann
+    kollisionsfrei, wenn diese Nummern lueckenlos ab der Basis liegen. Eine Luecke entsteht ohne
+    jede Handvergabe: Ein Branch ohne Arbeitsbaum und ohne `origin`-Gegenstueck ist nach Punkt 1
+    kein Kontrahent mehr, und wer die Basisnummer fuehrte, hinterlaesst beim Verschwinden genau
+    diese Luecke. Ab da teilte die Zaehlung Nummern zu, die andere Branches bereits fuehren.
+
+    Die Zuteilung haengt nur an der Kontrahentenmenge, nicht daran, wer fragt: Jede Seite
+    errechnet dieselbe Abbildung, ohne Nachricht und ohne Wartepunkt.
+    """
+    reihe = kontrahenten(basis, gefuehrt, eigener_branch)
+    belegt = {nummer for kontrahent in reihe for nummer in kontrahent.nummern}
+
+    vergeben: dict[str, int] = {}
+    genommen: set[int] = set()
+    offen: list[str] = []
+    for kontrahent in reihe:
+        behalten = [nummer for nummer in kontrahent.nummern if nummer not in genommen]
+        if behalten:
+            vergeben[kontrahent.branch] = behalten[0]
+            genommen.add(behalten[0])
+        else:
+            offen.append(kontrahent.branch)
+
+    naechste = basis
+    for branch in offen:
+        while naechste in belegt or naechste in genommen:
+            naechste += 1
+        vergeben[branch] = naechste
+        genommen.add(naechste)
+    return vergeben
+
+
 def zugeteilte_nummer(
     basis: int, gefuehrt: Mapping[str, Sequence[int]], eigener_branch: str
 ) -> int:
-    """Reine Funktion: Basis plus alles, was rangniedrigere Kontrahenten sichtbar fuehren."""
-    schluessel = eigener_branch.encode("utf-8")
-    belegt = sum(
-        len(kontrahent.nummern)
-        for kontrahent in kontrahenten(basis, gefuehrt, eigener_branch)
-        if kontrahent.branch.encode("utf-8") < schluessel
-    )
-    return basis + belegt
+    """Reine Funktion: die eigene Nummer aus der Zuteilung ueber der Kontrahentenmenge."""
+    return zuteilung_je_kontrahent(basis, gefuehrt, eigener_branch)[eigener_branch]
 
 
 def befundzeilen(
@@ -386,10 +429,9 @@ def eigene_wurzel(wurzel: Path) -> Path:
 def nummern_eines_refs(wurzel: Path, ref: str, verzeichnis: str) -> Ablesung:
     """Der committete Stand eines Branches, gelesen aus dem eigenen Arbeitsbaum heraus.
 
-    `--end-of-options` ist keine Stilfrage: Gemessen endet
-    `git ls-tree -r --name-only -rf -- specs/decisions` mit 129, waehrend derselbe Aufruf mit
-    `--end-of-options` sauber durchlaeuft. Ohne die Absicherung bliebe ein Branch mit einem
-    Namen, der wie eine Option aussieht, ein **unsichtbarer** Kontrahent.
+    `--end-of-options` ist keine Stilfrage: Ohne es liest git einen Branchnamen, der wie eine
+    Option aussieht (`-rf`), als Option und bricht ab - der Branch bliebe ein **unsichtbarer**
+    Kontrahent. Ein solcher Name ist anlegbar: `git branch` weigert sich, `git update-ref` nicht.
     """
     rohdaten = git_ausgabe(
         ["ls-tree", "-r", "-z", "--name-only", "--end-of-options", ref, "--", verzeichnis],
