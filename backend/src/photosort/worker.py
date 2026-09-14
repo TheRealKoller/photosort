@@ -80,8 +80,10 @@ from photosort.label_embedding import LabelEmbedderLike, build_label_embedder
 from photosort.landmark import (
     LandmarkClientLike,
     LandmarkDetection,
+    PlaceHint,
     build_landmark_client,
-    sanitize_landmark_name,
+    place_hint_for,
+    usable_landmark_name,
 )
 from photosort.logging_config import configure_logging
 from photosort.models import (
@@ -119,7 +121,9 @@ from photosort.places import (
     PLACE_LEVELS,
     PlaceInfo,
     PlaceResolver,
+    place_cell,
     sanitize_place_name,
+    usable_locality,
 )
 from photosort.pricing import compute_cost_usd
 from photosort.quality import compute_quality_score
@@ -1216,8 +1220,44 @@ async def _clear_cloud_vision_error(
         await session.delete(existing)
 
 
+def _landmark_place_hints(
+    photos: Collection[Photo], info_by_cell: Mapping[tuple[float, float], PlaceInfo]
+) -> dict[int, PlaceHint | None]:
+    """Die Ortsangabe je Kandidatenfoto - rein, DB-frei und ohne Netzwerk.
+
+    Ausschliesslich aus der EIGENEN gemessenen Koordinate des Fotos (S3, ADR 0106 Punkt 4): Die
+    Inferenzbasis aus `events.py::infer_locations` wird hier nicht gelesen und diese Funktion
+    bekommt sie gar nicht erst zu sehen. Ein Foto ohne eigene Koordinate bekommt `None`, und das
+    ist kein Fehlerfall.
+
+    Die Stufenwahl selbst liegt in `landmark.py::place_hint_for`; hier steht nur die Zuordnung von
+    Foto zu abgelegter Auskunft."""
+    hints: dict[int, PlaceHint | None] = {}
+    for photo in photos:
+        if photo.gps_lat is None or photo.gps_lon is None:
+            hints[photo.id] = None
+            continue
+        info = info_by_cell.get(place_cell(photo.gps_lat, photo.gps_lon))
+        hints[photo.id] = place_hint_for(usable_locality(info), photo.gps_lat, photo.gps_lon)
+    return hints
+
+
+def _landmark_place_cells(photos: Collection[Photo]) -> set[tuple[float, float]]:
+    """Die abgelegten Zellen der Kandidatenfotos, fuer die es ueberhaupt eine gibt.
+
+    Die Zellen, nach denen gefragt und unter denen abgelegt wird, sind unveraendert die von
+    `place_cell` (`PLACE_CELL_DIGITS`) - die Vergroeberung auf die ausgehende Koernung passiert
+    erst in `place_hint_for`, am sendenden Rand. Eine eigene Zellsorte in `place_lookups` entstuende
+    sonst, und die abgelegte Ortsspur waere nicht mehr die eine des Projekts."""
+    return {
+        place_cell(photo.gps_lat, photo.gps_lon)
+        for photo in photos
+        if photo.gps_lat is not None and photo.gps_lon is not None
+    }
+
+
 async def _detect_landmark_for_photo(
-    client: LandmarkClientLike, cache_dir: Path, photo: Photo
+    client: LandmarkClientLike, cache_dir: Path, photo: Photo, hint: PlaceHint | None
 ) -> LandmarkDetection:
     """Der reine I/O-/Netzwerk-Teil eines einzelnen Landmark-Kandidaten (analog
     _fetch_and_thumbnail) - bewusst OHNE Session-Zugriff, damit mehrere Aufrufe sicher parallel
@@ -1228,7 +1268,7 @@ async def _detect_landmark_for_photo(
     aufrufenden Block-Schleife abgefangen), exakt wie ein LandmarkApiError des Clients selbst."""
     path = variant_path(cache_dir, photo.id, photo.etag, "display")
     image_bytes = path.read_bytes()
-    return await client.detect(image_bytes, _CLOUD_VISION_IMAGE_MIME_TYPE)
+    return await client.detect(image_bytes, _CLOUD_VISION_IMAGE_MIME_TYPE, hint)
 
 
 async def _upsert_landmark_detection(
@@ -1291,9 +1331,21 @@ async def _landmark_names(
 
     Dies ist zugleich die EINZIGE Quelle von `events.landmark_name` (Sicherheitsauflage M9).
 
+    DIE GRENZE WIRKT HIER, an der LESESTELLE, nicht an der Schreibstelle (ADR 0107 Punkt 2): Die
+    Erkennungszeile wird unveraendert vollstaendig geschrieben - die Antwort ist bezahlt -, und ob
+    aus ihr ein verwendbarer Name wird, entscheidet `usable_landmark_name`. Eine spaetere Aenderung
+    der Grenze wirkt dadurch beim naechsten Neuaufbau der Gruppierung, ohne einen einzigen erneuten
+    Cloud-Aufruf; laege die Entscheidung an der Schreibstelle, waere jede Korrektur kostenpflichtig
+    und fuer den Altbestand gar nicht mehr moeglich.
+
+    Ein so verworfener Treffer ist von "nie erkannt" NICHT zu unterscheiden: beide ergeben `None`,
+    das Foto faellt auf Ortsname bzw. Koordinate zurueck, und es entsteht kein Anzeigezustand und
+    kein Hinweis auf die Vermutung.
+
     SANITISIERUNG BEIM LESEN DER PERSISTIERTEN ZEILEN (Muss-Kriterium des Sicherheitskonzepts,
-    Abschnitt "Standortdaten"): `sanitize_landmark_name` wirkt hier ein ZWEITES Mal, obwohl
-    `landmark.py::_landmark_detection_from_json` sie bereits an der Quelle anwendet. Sie ist die
+    Abschnitt "Standortdaten"): `usable_landmark_name` wendet `sanitize_landmark_name` hier ein
+    ZWEITES Mal an, obwohl `landmark.py::_landmark_detection_from_json` sie bereits an der Quelle
+    anwendet, und zwar auf den kanonischen Namen EBENSO wie auf den Rohnamen (S9). Sie ist die
     einzige Deckung des Altbestands: es gibt reale Zeilen mit unsaniertem Rohtext und fuer sie
     keinen Migrationsweg. Bitte nicht als vermeintliche Dopplung entfernen. Fachlich wirkt sie
     hier zusaetzlich als Zusammenfuehrung: ein unsanierter Altname und sein sauberer Zwilling
@@ -1303,12 +1355,14 @@ async def _landmark_names(
 
     rows = (
         await session.execute(
-            select(PhotoLandmarkDetection.photo_id, PhotoLandmarkDetection.name).where(
-                PhotoLandmarkDetection.photo_id.in_(photo_ids)
-            )
+            select(
+                PhotoLandmarkDetection.photo_id,
+                PhotoLandmarkDetection.name,
+                PhotoLandmarkDetection.confidence,
+            ).where(PhotoLandmarkDetection.photo_id.in_(photo_ids))
         )
     ).all()
-    return {photo_id: sanitize_landmark_name(name) for photo_id, name in rows}
+    return {photo_id: usable_landmark_name(name, confidence) for photo_id, name, confidence in rows}
 
 
 # Der geschlossene eigene Vorrat von `place_lookups.source` - er hat genau einen Eintrag, weil es
@@ -2330,12 +2384,41 @@ async def run_criterion_scoring(
                     run.landmark_photos_processed = 0
                     run.landmark_failed_calls = 0
                     await session.commit()
+
+                    # DIE ORTSAUSKUNFT, VOR der Blockschleife und in EINEM Zug fuer alle
+                    # Kandidaten - nicht je Foto: derselbe Auflöser, dieselbe Tabelle, ein
+                    # Durchgang durch den Ortsdatensatz statt einem je Aufnahme. Die Event-Phase
+                    # findet ihre Zellen danach ueberwiegend bereits abgelegt vor und baut dann gar
+                    # keinen Auflöser mehr (ADR 0106, Konsequenzen).
+                    #
+                    # Ausschliesslich die EIGENE gemessene Koordinate des Fotos (S3):
+                    # `infer_locations` wird hier nicht aufgerufen, und ein Syntaxbaum-Waechter in
+                    # tests/test_worker_criterion_scoring.py haelt das fest - ein hinzugefuegter
+                    # Aufruf roetet sonst keinen Verhaltenstest, solange die Messlage echte
+                    # Koordinaten traegt.
+                    landmark_candidate_photos = [
+                        photos_by_id[photo_id] for photo_id in landmark_candidate_ids
+                    ]
+                    landmark_place_infos = await _place_infos(
+                        session,
+                        project.id,
+                        _landmark_place_cells(landmark_candidate_photos),
+                        build_place_resolver,
+                    )
+                    landmark_hints = _landmark_place_hints(
+                        landmark_candidate_photos, landmark_place_infos
+                    )
+                    await session.commit()
+
                     for start in range(0, len(landmark_candidate_ids), landmark_concurrency):
                         block_ids = landmark_candidate_ids[start : start + landmark_concurrency]
                         results = await asyncio.gather(
                             *[
                                 _detect_landmark_for_photo(
-                                    landmark_client, cache_dir, photos_by_id[photo_id]
+                                    landmark_client,
+                                    cache_dir,
+                                    photos_by_id[photo_id],
+                                    landmark_hints[photo_id],
                                 )
                                 for photo_id in block_ids
                             ],

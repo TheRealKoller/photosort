@@ -22,6 +22,7 @@ import pytest
 from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.landmark import LANDMARK_CONFIDENCE_THRESHOLD
 from photosort.models import (
     CriterionScoringRun,
     Event,
@@ -483,18 +484,118 @@ class TestTheRunWritesTheNames:
         assert await _lookup_rows(db_session, project.id) == []
 
 
-async def _add_landmark(session: AsyncSession, photo_id: int, name: str) -> None:
+async def _add_landmark(
+    session: AsyncSession, photo_id: int, name: str, *, confidence: float = 0.9
+) -> None:
     from photosort.models import PhotoLandmarkDetection
 
     session.add(
         PhotoLandmarkDetection(
             photo_id=photo_id,
             name=name,
-            confidence=0.9,
+            confidence=confidence,
             computed_at=datetime.now(UTC).replace(tzinfo=None),
         )
     )
     await session.flush()
+
+
+def _event_shape(event: Event) -> dict[str, object]:
+    """Alles, was an einer Event-Zeile ueberhaupt steht - ohne `id` und Laufbezug.
+
+    Bewusst ueber die Metadaten und nicht ueber eine ausgeschriebene Feldliste: Genau der Fall, der
+    hier zaehlt, ist ein KUENFTIGES Feld, das die beiden Datenlagen doch unterscheidet. Eine
+    Handliste erfasste es nicht."""
+    return {
+        column.name: getattr(event, column.name)
+        for column in Event.__table__.columns
+        if column.name not in ("id", "criterion_scoring_run_id")
+    }
+
+
+class TestADiscardedHitIsIndistinguishableFromNoHitAtAll:
+    """specs/features/0469, ADR 0107 Punkt 2: Ein wegen Unsicherheit verworfener Treffer ist von
+    "nie erkannt" nicht zu unterscheiden.
+
+    Es entsteht kein zusaetzlicher Anzeigezustand und kein Hinweis auf die verworfene Vermutung.
+    Geprueft als GLEICHHEIT ZWEIER BEOBACHTUNGEN in EINEM Fall - zwei getrennte Faelle, die je
+    einen erwarteten Wert festnageln, bestuenden auch dann, wenn die beiden Lagen auseinanderlaufen
+    und beide Erwartungen mitgezogen wuerden."""
+
+    async def test_both_data_situations_produce_exactly_the_same_events(
+        self, db_session: AsyncSession
+    ) -> None:
+        mit_verworfener_zeile, run_a, values_a = await _run_with_photos(
+            db_session, "verworfen", [KREUZBERG]
+        )
+        await _add_landmark(
+            db_session, next(iter(values_a)), "Vermutetes Wahrzeichen", confidence=0.49
+        )
+        ohne_zeile, run_b, values_b = await _run_with_photos(db_session, "gar-nichts", [KREUZBERG])
+
+        resolver_a = CountingResolver({KREUZBERG: _answer("Berlin")})
+        resolver_b = CountingResolver({KREUZBERG: _answer("Berlin")})
+        await _build_grouping_and_rankings(
+            db_session,
+            run_a,
+            mit_verworfener_zeile.id,
+            values_a,
+            _factory(resolver_a),  # type: ignore[arg-type]
+        )
+        await _build_grouping_and_rankings(
+            db_session,
+            run_b,
+            ohne_zeile.id,
+            values_b,
+            _factory(resolver_b),  # type: ignore[arg-type]
+        )
+
+        events_a = [_event_shape(event) for event in await _events_of(db_session, run_a)]
+        events_b = [_event_shape(event) for event in await _events_of(db_session, run_b)]
+
+        assert events_a == events_b
+        # Gegenprobe zur Selbsterfuellung: ein Lauf ganz ohne Events bestuende die Gleichheit oben.
+        assert len(events_a) == 1
+
+    async def test_an_event_whose_hits_were_all_discarded_falls_back_to_the_place_name(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Der fachliche Folgefall: Das Foto verliert nicht seinen Ortsbezug, es verliert nur die
+        unsichere Vermutung."""
+        project, run, values = await _run_with_photos(db_session, "rueckfall", [KREUZBERG])
+        await _add_landmark(
+            db_session, next(iter(values)), "Vermutetes Wahrzeichen", confidence=0.1
+        )
+        resolver = CountingResolver({KREUZBERG: _answer("Berlin")})
+
+        await _build_grouping_and_rankings(
+            db_session,
+            run,
+            project.id,
+            values,
+            _factory(resolver),  # type: ignore[arg-type]
+        )
+
+        [event] = await _events_of(db_session, run)
+        assert event.landmark_name is None
+        assert event.place_name == "Berlin"
+
+    async def test_a_hit_exactly_on_the_threshold_still_names_its_event(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Die Gegenprobe zu beiden Faellen darueber: Die Grenze verwirft, sie verstummt nicht."""
+        project, run, values = await _run_with_photos(db_session, "genau-drauf", [KREUZBERG])
+        await _add_landmark(
+            db_session,
+            next(iter(values)),
+            "Brandenburger Tor",
+            confidence=LANDMARK_CONFIDENCE_THRESHOLD,
+        )
+
+        await _build_grouping_and_rankings(db_session, run, project.id, values, None)
+
+        [event] = await _events_of(db_session, run)
+        assert event.landmark_name == "Brandenburger Tor"
 
 
 class TestNothingLeaksIntoALogOrIntoTheRunRow:

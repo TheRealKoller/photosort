@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import logging
@@ -34,6 +35,7 @@ from photosort.landmark import (
     AnthropicLandmarkClient,
     LandmarkApiError,
     LandmarkDetection,
+    PlaceHint,
 )
 from photosort.models import (
     ClassificationPhase,
@@ -62,10 +64,12 @@ from photosort.models import (
 )
 from photosort.motif_strengths import load_effective_strengths, upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
+from photosort.places import PlaceAnswer, PlaceResolver, landmark_place_cell, place_cell
 from photosort.pricing import compute_cost_usd
 from photosort.quality import LOCAL_CORRECTION_SPAN
 from photosort.thumbnails import display_path
 from photosort.worker import _select_landmark_candidates, run_criterion_scoring, run_project_scoring
+from tests.import_closure import module_file
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
 
 
@@ -1713,6 +1717,10 @@ class RecordingLandmarkClient:
         )
         self._raise_error = raise_error
         self.calls: list[tuple[bytes, str]] = []
+        # specs/features/0469: die Ortsangabe JE AUFRUF, getrennt von `calls` gefuehrt - die
+        # bestehenden Faelle pruefen dort Bildbytes und MIME-Typ und sollen davon unberuehrt
+        # bleiben.
+        self.hints: list[PlaceHint | None] = []
         # Review-Fund (ship-feature-Runde): kein bisheriger Fake bot aclose() an, der
         # worker.py::run_criterion_scoring's `getattr(landmark_client, "aclose", None)`-Zweig
         # nahm deshalb immer den None-Pfad - ein versehentlich falsch benannter/entfernter Aufruf
@@ -1720,8 +1728,11 @@ class RecordingLandmarkClient:
         # ebenfalls auffiele.
         self.aclose_calls = 0
 
-    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+    async def detect(
+        self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
+    ) -> LandmarkDetection:
         self.calls.append((image_bytes, mime_type))
+        self.hints.append(hint)
         if self._raise_error:
             raise LandmarkApiError("simulierter Cloud-Fehler")
         return self._detection
@@ -1739,7 +1750,9 @@ class ConcurrencyTrackingLandmarkClient:
         self.max_concurrent = 0
         self.call_count = 0
 
-    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+    async def detect(
+        self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
+    ) -> LandmarkDetection:
         self.call_count += 1
         self._active += 1
         self.max_concurrent = max(self.max_concurrent, self._active)
@@ -1759,7 +1772,9 @@ class PerPhotoLandmarkClient:
         self._results = results
         self.calls = 0
 
-    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+    async def detect(
+        self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
+    ) -> LandmarkDetection:
         result = self._results[self.calls]
         self.calls += 1
         if isinstance(result, Exception):
@@ -1772,7 +1787,9 @@ class CancellingLandmarkClient:
     0025, analog DownloadRaisesCancelledErrorClient in test_worker_scan_project.py) -
     Regressionsnachweis, dass return_exceptions=True das CancelledError nicht verschluckt."""
 
-    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+    async def detect(
+        self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
+    ) -> LandmarkDetection:
         raise asyncio.CancelledError("simulierter Abbruch waehrend eines parallelen Cloud-Aufrufs")
 
 
@@ -2466,7 +2483,9 @@ async def test_repeated_landmark_failures_upsert_the_same_error_row(
         def __init__(self, message: str) -> None:
             self._message = message
 
-        async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+        async def detect(
+            self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
+        ) -> LandmarkDetection:
             raise LandmarkApiError(self._message)
 
     await run_criterion_scoring(
@@ -2521,7 +2540,9 @@ async def test_landmark_error_message_is_capped_at_500_characters(
     overlong_message = "x" * 600
 
     class _RaisingClient:
-        async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+        async def detect(
+            self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
+        ) -> LandmarkDetection:
             raise LandmarkApiError(overlong_message)
 
     await run_criterion_scoring(
@@ -3469,7 +3490,9 @@ class SnapshottingLandmarkClient:
         self._results = results
         self.snapshots: list[_LandmarkSnapshot] = []
 
-    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+    async def detect(
+        self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
+    ) -> LandmarkDetection:
         self.snapshots.append(_snapshot(self._run))
         result = self._results[len(self.snapshots) - 1]
         if isinstance(result, Exception):
@@ -5863,3 +5886,359 @@ class TestTheLandmarkEstimateCountsWhatTheRunSends:
         # Gegenprobe zur Selbsterfuellung: Eine Umsetzung, die beide Seiten auf null zieht,
         # bestuende die Gleichheit oben, ohne irgendetwas zu zeigen.
         assert geschaetzt == 2
+
+
+# specs/features/0469-verlaessliche-sehenswuerdigkeitsnamen.md, Teil 1 Schritt 3: die grobe
+# Ortsangabe geht in die Erkennung ein. Ab hier die Verdrahtung im Worker.
+
+# Zwei Zellen im Wettersteingebirge, rund 5 km auseinander: sie fallen in verschiedene
+# `place_cell`-Zellen (die Koernung, mit der gefragt und abgelegt wird) und in DIESELBE
+# `landmark_place_cell`-Zelle - die Vergroeberung ist damit an der Messlage sichtbar und nicht nur
+# behauptet.
+GARMISCH = (47.4917, 11.0953)
+GRAINAU = (47.4764, 11.0289)
+
+
+class _RecordingResolverFactory:
+    """Die Auflöser-Fabrik, wie der Worker sie bekommt - zaehlend, ohne Netz und ohne Datensatz
+    (Muster `test_worker_place_names.py::CountingResolver`)."""
+
+    def __init__(
+        self, answers: dict[tuple[float, float], PlaceAnswer | None] | None = None
+    ) -> None:
+        self.answers = answers or {}
+        self.asked: list[tuple[float, float]] = []
+        self.built_for: list[frozenset[tuple[float, float]]] = []
+
+    def __call__(self, cells: object) -> PlaceResolver | None:
+        self.built_for.append(frozenset(cells))  # type: ignore[arg-type]
+        return self
+
+    async def resolve(self, cell: tuple[float, float]) -> PlaceAnswer | None:
+        self.asked.append(cell)
+        return self.answers.get(cell)
+
+
+def _no_resolver(cells: object) -> PlaceResolver | None:
+    """Der Fall "Datensatz fehlt": Die Fabrik liefert keinen Auflöser. Das ist ein arbeitsfaehiger
+    Zustand, kein Fehlerfall."""
+    return None
+
+
+def _locality_answer(locality: str) -> PlaceAnswer:
+    return PlaceAnswer(
+        neighbourhood=None,
+        locality=locality,
+        region="Bayern",
+        country="Deutschland",
+        matched_level="locality",
+    )
+
+
+async def _run_landmark_phase(
+    session: AsyncSession,
+    project: Project,
+    scoring_run_id: int,
+    tmp_path: Path,
+    client: object,
+    build_place_resolver: object,
+) -> CriterionScoringRun:
+    return await run_criterion_scoring(
+        session,
+        project,
+        scoring_run_id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda _model: client,  # type: ignore[arg-type,return-value]
+        build_place_resolver=build_place_resolver,  # type: ignore[arg-type]
+        use_cloud=True,
+    )
+
+
+async def _cloud_project(session: AsyncSession, name: str = "Reise") -> Project:
+    project = await _make_project(session, name=name)
+    project.cloud_vision_detection_enabled = True
+    await session.commit()
+    return project
+
+
+class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
+    """ADR 0106: Der Aufnahmeort geht als grobe Ortsangabe in die Erkennung ein - in den Prompt
+    desselben Aufrufs, der das Foto traegt. Ein zweiter Empfaenger entsteht dabei nicht."""
+
+    async def test_a_photo_with_a_resolved_locality_carries_its_name(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project = await _cloud_project(db_session)
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _add_photo(
+            db_session,
+            project,
+            "a.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            gps_lat=GARMISCH[0],
+            gps_lon=GARMISCH[1],
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+        resolver = _RecordingResolverFactory(
+            {place_cell(*GARMISCH): _locality_answer("Garmisch-Partenkirchen")}
+        )
+        client = RecordingLandmarkClient()
+
+        run = await _run_landmark_phase(
+            db_session, project, scoring_run.id, tmp_path, client, resolver
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert client.hints == [PlaceHint(locality="Garmisch-Partenkirchen")]
+
+    async def test_a_photo_without_a_resolvable_locality_carries_the_coarse_coordinate(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Koordinatenstufe ist DAUERHAFT und kein Uebergangszustand - sie greift bevorzugt
+        dort, wo sich kein Ortsname aufloesen liess."""
+        project = await _cloud_project(db_session)
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _add_photo(
+            db_session,
+            project,
+            "a.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            gps_lat=GARMISCH[0],
+            gps_lon=GARMISCH[1],
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+        resolver = _RecordingResolverFactory(
+            {
+                place_cell(*GARMISCH): PlaceAnswer(
+                    neighbourhood=None,
+                    locality="Garmisch-Partenkirchen",
+                    region="Bayern",
+                    country="Deutschland",
+                    # Ein Treffer auf Regionsebene gilt als "kein Name aufgeloest", auch wenn er
+                    # eine Stadt nennt.
+                    matched_level="region",
+                )
+            }
+        )
+        client = RecordingLandmarkClient()
+
+        await _run_landmark_phase(db_session, project, scoring_run.id, tmp_path, client, resolver)
+
+        assert client.hints == [PlaceHint(cell=landmark_place_cell(*GARMISCH))]
+
+    async def test_every_photo_gets_the_hint_of_its_own_cell(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Je Foto die EIGENE Zelle - nicht eine gemeinsame des Laufs."""
+        project = await _cloud_project(db_session)
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        for index, (path, coords) in enumerate([("a.jpg", GARMISCH), ("b.jpg", GRAINAU)], start=1):
+            photo = await _add_photo(
+                db_session,
+                project,
+                path,
+                f"etag-{index}",
+                datetime(2023, 1, 1, 10, index, tzinfo=UTC),
+                gps_lat=coords[0],
+                gps_lon=coords[1],
+            )
+            await _add_score(db_session, photo)
+            _write_display_variant(tmp_path, photo, _flat_image())
+        resolver = _RecordingResolverFactory(
+            {
+                place_cell(*GARMISCH): _locality_answer("Garmisch-Partenkirchen"),
+                place_cell(*GRAINAU): _locality_answer("Grainau"),
+            }
+        )
+        client = RecordingLandmarkClient()
+
+        await _run_landmark_phase(db_session, project, scoring_run.id, tmp_path, client, resolver)
+
+        assert client.hints == [
+            PlaceHint(locality="Garmisch-Partenkirchen"),
+            PlaceHint(locality="Grainau"),
+        ]
+
+    async def test_a_photo_without_its_own_coordinate_carries_no_hint_at_all(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """SICHERHEIT (S3, ADR 0106 Punkt 4): Die Messlage ist so gebaut, dass
+        `events.py::infer_locations` dem zweiten Foto sehr wohl eine Koordinate GAEBE - es liegt
+        wenige Minuten nach dem ersten. Genau deshalb steht der Fall hier: Eine SCHAETZUNG truege
+        Ortsdaten auch fuer Aufnahmen hinaus, die selbst nie eine hatten."""
+        project = await _cloud_project(db_session)
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        with_gps = await _add_photo(
+            db_session,
+            project,
+            "mit-ort.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, 10, 0, tzinfo=UTC),
+            gps_lat=GARMISCH[0],
+            gps_lon=GARMISCH[1],
+        )
+        without_gps = await _add_photo(
+            db_session, project, "ohne-ort.jpg", "etag-2", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
+        )
+        for photo in (with_gps, without_gps):
+            await _add_score(db_session, photo)
+            _write_display_variant(tmp_path, photo, _flat_image())
+        resolver = _RecordingResolverFactory(
+            {place_cell(*GARMISCH): _locality_answer("Garmisch-Partenkirchen")}
+        )
+        client = RecordingLandmarkClient()
+
+        await _run_landmark_phase(db_session, project, scoring_run.id, tmp_path, client, resolver)
+
+        assert client.hints == [PlaceHint(locality="Garmisch-Partenkirchen"), None]
+
+    async def test_only_the_cells_of_photos_that_carry_one_are_ever_asked_for(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project = await _cloud_project(db_session)
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        with_gps = await _add_photo(
+            db_session,
+            project,
+            "mit-ort.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, 10, 0, tzinfo=UTC),
+            gps_lat=GARMISCH[0],
+            gps_lon=GARMISCH[1],
+        )
+        without_gps = await _add_photo(
+            db_session, project, "ohne-ort.jpg", "etag-2", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
+        )
+        for photo in (with_gps, without_gps):
+            await _add_score(db_session, photo)
+            _write_display_variant(tmp_path, photo, _flat_image())
+        resolver = _RecordingResolverFactory(
+            {place_cell(*GARMISCH): _locality_answer("Garmisch-Partenkirchen")}
+        )
+
+        await _run_landmark_phase(
+            db_session, project, scoring_run.id, tmp_path, RecordingLandmarkClient(), resolver
+        )
+
+        assert resolver.asked == [place_cell(*GARMISCH)]
+
+    async def test_the_landmark_phase_never_calls_infer_locations(self) -> None:
+        """Ein SYNTAXBAUM-Waechter, und er hat einen Grund (S3): Ein hinzugefuegter
+        `infer_locations`-Aufruf roetet keinen Verhaltenstest, solange die Messlage echte
+        Koordinaten traegt - genau dann waere die Zusage aber gebrochen."""
+        path = module_file("photosort.worker")
+        assert path is not None
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        phase = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "run_criterion_scoring"
+        )
+
+        called = {
+            node.func.id
+            for node in ast.walk(phase)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+
+        assert "infer_locations" not in called
+        # Gegenprobe: ohne sie bestuende der Fall auch dann, wenn der Walker nichts findet.
+        assert "_place_infos" in called
+
+    async def test_without_a_resolver_the_coordinate_stage_takes_over_and_the_run_succeeds(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Fehlt der Ortsdatensatz, bleibt die Namensstufe leer und die Koordinatenstufe greift -
+        kein Fehlerfall, keine Fehlerzeile, kein Laufabbruch."""
+        project = await _cloud_project(db_session)
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _add_photo(
+            db_session,
+            project,
+            "a.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            gps_lat=GARMISCH[0],
+            gps_lon=GARMISCH[1],
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+        client = RecordingLandmarkClient()
+
+        run = await _run_landmark_phase(
+            db_session, project, scoring_run.id, tmp_path, client, _no_resolver
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert run.cloud_error_message is None
+        assert client.hints == [PlaceHint(cell=landmark_place_cell(*GARMISCH))]
+        assert (
+            await db_session.execute(select(func.count()).select_from(PhotoCloudVisionError))
+        ).scalar_one() == 0
+
+    async def test_neither_the_locality_nor_the_coordinate_ever_reaches_a_log_or_an_error_row(
+        self, db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """SICHERHEIT (S6): `str(exc)` eines fehlgeschlagenen Landmark-Aufrufs geht an ZWEI Senken
+        - die WARNING-Zeile UND `photo_cloud_vision_errors.error_message`, das ueber
+        `GET /projects/{id}/photos` an den Browser ausgeliefert wird. Weder Ortsname noch
+        Koordinate gehoert in eine von beiden.
+
+        Gesucht werden die einpraegsamen Zeichenfolgen DIESER Messlage, nie ein allgemeines
+        Zahlenmuster."""
+        project = await _cloud_project(db_session)
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _add_photo(
+            db_session,
+            project,
+            "a.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            gps_lat=GARMISCH[0],
+            gps_lon=GARMISCH[1],
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(tmp_path, photo, _flat_image())
+        resolver = _RecordingResolverFactory(
+            {place_cell(*GARMISCH): _locality_answer("Unverwechselbarshausen")}
+        )
+        client = RecordingLandmarkClient(raise_error=True)
+
+        with caplog.at_level(logging.DEBUG):
+            run = await _run_landmark_phase(
+                db_session, project, scoring_run.id, tmp_path, client, resolver
+            )
+
+        assert run.status == ScanStatus.SUCCESS
+        error_row = (await db_session.execute(select(PhotoCloudVisionError))).scalar_one()
+        # Die Logzeilen dieses Projekts, ueber `getMessage()` UND `args` - sonst rutschte ein
+        # `%s`-Argument durch. Fremde Logger (der DB-Treiber der Testsuite) sind nicht der
+        # Gegenstand der Auflage.
+        own_log = "\n".join(
+            record.getMessage() + repr(record.args)
+            for record in caplog.records
+            if record.name.split(".")[0] == "photosort"
+        )
+        haystack = "\n".join([own_log, error_row.error_message, run.cloud_error_message or ""])
+        for forbidden in (
+            "Unverwechselbarshausen",
+            "47.4917",
+            "11.0953",
+            "47.5",
+            "11.1",
+            "Bayern",
+            "Deutschland",
+        ):
+            assert forbidden not in haystack, forbidden
+        # Gegenprobe: beide Senken tragen ueberhaupt etwas, der Fall oben ist nicht leer.
+        assert "simulierter Cloud-Fehler" in own_log
+        assert "simulierter Cloud-Fehler" in error_row.error_message
