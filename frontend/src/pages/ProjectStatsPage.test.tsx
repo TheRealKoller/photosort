@@ -5,11 +5,16 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
+import * as feedbackApi from '../api/feedback'
 import * as projectsApi from '../api/projects'
-import type { ProjectStatsOut } from '../api/types'
+import type { FeedbackDiagnosisOut, ProjectStatsOut } from '../api/types'
 import { ProjectStatsPage } from './ProjectStatsPage'
 
 vi.mock('../api/projects')
+// Die Rueckmeldung aus der Nacharbeit laedt ihre Zahlen SELBST und projektuebergreifend. Sie wird
+// hier ruhiggestellt, damit die Faelle dieser Datei die Projektzahlen pruefen und nicht den
+// Fehlerzweig eines zweiten, nicht gemockten Abrufs.
+vi.mock('../api/feedback')
 
 // specs/features/0207-projekt-statistikseite.md: reine Anzeigeseite, eine Momentaufnahme ohne
 // Bedienelemente. Die Negativ-Assertions am Ende sind so wichtig wie die positiven - die Spec
@@ -132,7 +137,12 @@ function fullStats(): ProjectStatsOut {
   }
 }
 
+function emptyDiagnosis(): FeedbackDiagnosisOut {
+  return { correction_count: 0, motif_errors: [], exchanges: [], criteria: [] }
+}
+
 function renderPage() {
+  vi.mocked(feedbackApi.getFeedbackDiagnosis).mockResolvedValue(emptyDiagnosis())
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -150,6 +160,7 @@ function renderPage() {
 describe('ProjectStatsPage', () => {
   beforeEach(() => {
     vi.mocked(projectsApi.getProjectStats).mockReset()
+    vi.mocked(feedbackApi.getFeedbackDiagnosis).mockReset()
   })
 
   describe('Zustaende', () => {
@@ -433,6 +444,32 @@ describe('ProjectStatsPage', () => {
 
       await screen.findByRole('heading', { name: 'Statistik' })
       expect(vi.mocked(projectsApi.getProjectStats).mock.calls).toHaveLength(1)
+    })
+  })
+
+  describe('Rueckmeldung aus der Nacharbeit', () => {
+    it('steht als eigener Abschnitt hinter "Vertrauen und Fehlersuche"', async () => {
+      // Die Reihenfolge ist die Aussage: Der Abschnitt gehoert ans Ende, weil seine Zahlen als
+      // einzige nicht dieses Projekt beschreiben.
+      vi.mocked(projectsApi.getProjectStats).mockResolvedValue(fullStats())
+
+      renderPage()
+
+      await screen.findByRole('region', { name: 'Rückmeldung aus der Nacharbeit' })
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((node) => node.textContent)
+      expect(headings.at(-1)).toBe('Rückmeldung aus der Nacharbeit')
+      expect(headings.at(-2)).toBe('Vertrauen und Fehlersuche')
+    })
+
+    it('fragt seine Zahlen ohne Projektbezug ab', async () => {
+      vi.mocked(projectsApi.getProjectStats).mockResolvedValue(fullStats())
+
+      renderPage()
+
+      await screen.findByRole('region', { name: 'Rückmeldung aus der Nacharbeit' })
+      // Die tragende Assertion ist die leere Argumentliste: Eine Projekt-Id hier waere der Weg,
+      // auf dem die Zahlen stillschweigend wieder projektweise wuerden.
+      expect(vi.mocked(feedbackApi.getFeedbackDiagnosis).mock.calls).toEqual([[]])
     })
   })
 })

@@ -731,3 +731,61 @@ export interface ProjectStatsOut {
   last_successful_runs: ProjectStatsLastSuccessfulRuns
   diagnostics: ProjectStatsDiagnostics
 }
+
+/**
+ * Die drei Arten, auf die das Modell bei einem Motiv danebenlag: zu schwach erkannt, gar nicht
+ * erkannt, vom Modell genannt und von uns weggenommen.
+ */
+export type MotifErrorCase = 'too_weak' | 'missing' | 'overcalled'
+
+/** Gleichstufig, über Modellstufen hinweg, oder mangels Stufe unbestimmt. */
+export type ExchangeKind = 'within_level' | 'across_level' | 'undetermined'
+
+/**
+ * Die drei Fehlerfälle sind NICHT erschöpfend: Eine Korrektur ohne Modellfehler zählt in keinem
+ * von ihnen. Ihre Bezugsgröße ist `correction_count`, nie ihre eigene Summe.
+ */
+export interface FeedbackMotifError {
+  case: MotifErrorCase
+  count: number
+}
+
+/**
+ * `quality_incomparable_count` hält die Austausche mit gleichem UND die mit fehlendem
+ * eingefrorenem Qualitätswert. Sie gehen in `preferred_lower_rated_count` nicht ein und werden
+ * auch seinem Gegenstück nicht zugeschlagen.
+ */
+export interface FeedbackExchangeStats {
+  kind: ExchangeKind
+  count: number
+  preferred_lower_rated_count: number
+  quality_incomparable_count: number
+}
+
+/**
+ * `case_count` ist die Zahl der tatsächlich auswertbaren Paare - beide Fotos tragen den Messwert.
+ * Sie kann kleiner sein als die Zahl der gleichstufigen Austausche.
+ */
+export interface FeedbackCriterionAgreement {
+  criterion_key: string
+  case_count: number
+  /** In `[-1, 1]`; bei null Stimmen `0`. */
+  agreement: number
+}
+
+/**
+ * Die laufende Diagnose der Modellfehler.
+ *
+ * DIE ZAHLEN GELTEN PROJEKTÜBERGREIFEND UND ÜBER BEIDE NUTZER, obwohl der Abschnitt auf der
+ * Projekt-Statistikseite steht - der Endpunkt nimmt keinen Projektparameter entgegen.
+ *
+ * `correction_count` ist die UNGEWICHTETE Zahl aller festgehaltenen Korrekturen und zugleich das
+ * einzige Unterscheidungsmerkmal des Leerzustands: Die drei Fehlerfälle, die drei Tauschklassen
+ * und die Kriterien stehen auch bei null Korrekturen vollständig in der Antwort.
+ */
+export interface FeedbackDiagnosisOut {
+  correction_count: number
+  motif_errors: FeedbackMotifError[]
+  exchanges: FeedbackExchangeStats[]
+  criteria: FeedbackCriterionAgreement[]
+}
