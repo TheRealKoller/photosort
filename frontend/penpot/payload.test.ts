@@ -389,9 +389,9 @@ const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: strin
   { datei: 'verify.js', zeile: 56, wert: '12', ausschnitt: 'ERWARTETE_BAUSTEINE = 12' },
   { datei: 'verify.js', zeile: 57, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
   { datei: 'verify.js', zeile: 58, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
-  { datei: 'verify.js', zeile: 59, wert: '7', ausschnitt: 'ERWARTETE_ANSICHTEN = 7' },
-  { datei: 'verify.js', zeile: 60, wert: '30', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 30' },
-  { datei: 'verify.js', zeile: 61, wert: '6', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 6' },
+  { datei: 'verify.js', zeile: 59, wert: '8', ausschnitt: 'ERWARTETE_ANSICHTEN = 8' },
+  { datei: 'verify.js', zeile: 60, wert: '40', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 40' },
+  { datei: 'verify.js', zeile: 61, wert: '8', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 8' },
 ]
 
 describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast', () => {
@@ -1239,7 +1239,14 @@ const BREITEN = breitenNamenAus(viewportQuelle)
 
 /** Geschlossenes Zustandsvokabular der Ansichten. `standard` traegt die Ansicht, die genau EINEN
  * Zustand fuehrt - eine Variantenachse mit einem Wert beschriebe nichts. */
-const ANSICHTSZUSTAENDE = ['standard', 'gefuellt', 'leer', 'ladend', 'fehler'] as const
+const ANSICHTSZUSTAENDE = [
+  'standard',
+  'gefuellt',
+  'vergroessert',
+  'leer',
+  'ladend',
+  'fehler',
+] as const
 
 /** Die zwei absehbaren Luecken sind MUSS-Eintraege: ohne sie waere "Luecken werden ausgewiesen"
  * eine Zusage, die eine leere Liste erfuellte. */
@@ -1283,7 +1290,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
 
   /* GESCHLOSSENE NAMENSMENGE INKLUSIVE REIHENFOLGE, nicht blosse Kardinalitaet - dieselbe Bauart
      wie bei den Bausteinen. */
-  it('fuehrt genau die sieben Ansichten in dieser Reihenfolge', () => {
+  it('fuehrt genau die acht Ansichten in dieser Reihenfolge', () => {
     expect(ansichten.map((ansicht) => ansicht.schluessel)).toEqual([
       'uebersicht',
       'anlegen',
@@ -1292,6 +1299,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
       'schrittleiste',
       'fotos',
       'einstellungen',
+      'duplikate',
     ])
     expect(ansichten.map((ansicht) => ansicht.anzeigename)).toEqual([
       'Projektübersicht',
@@ -1301,6 +1309,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
       'Schrittleiste',
       'Fotos',
       'Projekteinstellungen',
+      'Duplikate vergleichen',
     ])
   })
 
