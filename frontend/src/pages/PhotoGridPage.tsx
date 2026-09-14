@@ -67,7 +67,9 @@ export function PhotoGridPage() {
     () => query.data?.pages.flatMap((page) => page.items) ?? [],
     [query.data?.pages],
   )
-  const totalSuggested = query.data?.pages[0]?.total ?? 0
+  // Die Gesamtzahl der gefilterten Menge. Sie traegt ZWEI Aussagen: den Kandidatenzaehler des
+  // Gate-Hinweises und das "y" der Zaehlzeile unter dem Raster.
+  const total = query.data?.pages[0]?.total ?? 0
 
   // Die Containerbreite kommt aus dem Beobachter-Eintrag, nie aus dem Element - siehe
   // `useElementWidth`. Sie ist `0`, solange noch nicht gemessen wurde.
@@ -181,10 +183,10 @@ export function PhotoGridPage() {
       {isGateMode && (
         <div className="flex flex-col items-start gap-3 rounded-md border border-accent bg-elevated p-3 text-sm">
           <p className="text-text-h">
-            Sichte den erkannten Ausschuss ({totalSuggested}{' '}
-            {totalSuggested === 1 ? 'Kandidat' : 'Kandidaten'}), bevor du fortfährst. Einzelne Fotos
-            kannst du hier korrigieren ("Übernehmen"-Button/Bewertung in der Detailansicht) - das
-            ist aber nicht Voraussetzung, um fortzufahren.
+            Sichte den erkannten Ausschuss ({total} {total === 1 ? 'Kandidat' : 'Kandidaten'}),
+            bevor du fortfährst. Einzelne Fotos kannst du hier korrigieren
+            ("Übernehmen"-Button/Bewertung in der Detailansicht) - das ist aber nicht Voraussetzung,
+            um fortzufahren.
           </p>
           <Button
             type="button"
@@ -359,7 +361,7 @@ export function PhotoGridPage() {
         <div className="flex flex-col items-start gap-3">
           {nextPageError === undefined ? (
             <p aria-live="polite" className="text-sm text-text">
-              {photos.length} von {totalSuggested} geladen
+              {photos.length} von {total} geladen
               {query.isFetchingNextPage ? ' — lädt…' : ''}
             </p>
           ) : (

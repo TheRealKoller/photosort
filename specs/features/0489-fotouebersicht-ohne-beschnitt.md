@@ -29,48 +29,48 @@ Bestand schnell erfassen und gezielt einzelne Bilder öffnen kann.
 
 ## Akzeptanzkriterien
 
-- [ ] AK1 — Kein Bild der Übersicht wird beschnitten; jedes Foto ist vollständig sichtbar.
-- [ ] AK2 — Die Bilder stehen in zeilenweise justierten Reihen. Innerhalb einer Zeile haben alle
+- [x] AK1 — Kein Bild der Übersicht wird beschnitten; jedes Foto ist vollständig sichtbar.
+- [x] AK2 — Die Bilder stehen in zeilenweise justierten Reihen. Innerhalb einer Zeile haben alle
       Bilder dieselbe Höhe; die Summe der Bildbreiten und der Zwischenräume einer Zeile entspricht
       **exakt** der verfügbaren Breite, und ein verbleibender Rundungsrest liegt auf dem letzten
       Bild der Zeile. Die letzte, unvollständige Zeile wird **nicht** aufgezogen: sie behält die
       Zielzeilenhöhe und steht linksbündig. Um ein einzelnes Bild entsteht kein leerer Rand.
-- [ ] AK3 — Im Ruhezustand trägt ein Bild **genau zwei** Zeichen, gemeinsam in einer Ecke: einen
+- [x] AK3 — Im Ruhezustand trägt ein Bild **genau zwei** Zeichen, gemeinsam in einer Ecke: einen
       Stern und einen Punkt. Weitere Ecken-Elemente gibt es in dieser Ansicht nicht — der
       Info-Auslöser der Bewertungsdetails (`CriterionDetailsPopover`) und der Motiv-Marker
       (`MotifAssessmentMarker`) entfallen in der Übersicht ersatzlos.
-- [ ] AK4 — Der Stern zeigt allein durch seine An- oder Abwesenheit, ob das Bild ein **eigener**
+- [x] AK4 — Der Stern zeigt allein durch seine An- oder Abwesenheit, ob das Bild ein **eigener**
       Favorit ist. Kein leerer Stern als Gegenzustand: Er steht da oder er ist nicht im Dokument.
       Das Favoriten-Kennzeichen einer anderen Person erzeugt keinen Stern.
-- [ ] AK5 — Der Punkt zeigt die Albumentscheidung: **gefüllt** bei eigener Entscheidung
+- [x] AK5 — Der Punkt zeigt die Albumentscheidung: **gefüllt** bei eigener Entscheidung
       (album-würdig oder verworfen), als **Ring** bei noch nicht bestätigtem Vorschlag, **gar
       nicht**, wenn weder das eine noch das andere vorliegt. Füllung und Ring desselben Zustands
       benutzen denselben Farbwert, sodass auch bei einem Vorschlag erkennbar bleibt, wofür
       vorgeschlagen wird.
-- [ ] AK6 — Ein verworfenes Bild tritt zusätzlich optisch zurück. Der Rücktritt liegt ausschließlich
+- [x] AK6 — Ein verworfenes Bild tritt zusätzlich optisch zurück. Der Rücktritt liegt ausschließlich
       auf der Bildfläche, nie auf dem Kachelkörper und nie auf den beiden Zeichen; der Zustand ist
       dadurch auch ohne Farbwahrnehmung erkennbar.
-- [ ] AK7 — Dateiname und weitere Angaben stehen nicht dauerhaft in der Übersicht. Sie sind im
+- [x] AK7 — Dateiname und weitere Angaben stehen nicht dauerhaft in der Übersicht. Sie sind im
       Ruhezustand **nicht im Dokument** und erscheinen erst auf Anforderung als Zeile bündig an der
       Unterkante der Bildfläche; die Zeile überdeckt höchstens **ein Viertel** der Bildhöhe.
-- [ ] AK8 — Die Zeile wird an einem Gerät mit feinem Zeiger und Hover-Fähigkeit durch Überfahren
+- [x] AK8 — Die Zeile wird an einem Gerät mit feinem Zeiger und Hover-Fähigkeit durch Überfahren
       ausgelöst, sonst durch einen Druck von mindestens **500 ms**. Ein kürzerer Druck öffnet die
       Detailansicht und blendet die Zeile nicht ein; ein langer Druck blendet die Zeile ein und
       öffnet die Detailansicht **nicht**.
-- [ ] AK9 — Ein Klick oder Tippen auf ein Bild öffnet weiterhin die bestehende Detailansicht, unter
+- [x] AK9 — Ein Klick oder Tippen auf ein Bild öffnet weiterhin die bestehende Detailansicht, unter
       Beibehaltung des aktiven Filters.
-- [ ] AK10 — Weitere Fotos werden beim Weiterscrollen nachgeladen, ohne dass eine Schaltfläche
+- [x] AK10 — Weitere Fotos werden beim Weiterscrollen nachgeladen, ohne dass eine Schaltfläche
       gedrückt werden muss; eine Schaltfläche zum Nachladen gibt es nicht mehr. Die Ansicht nennt
       durchgehend, wie viele Bilder von wie vielen geladen sind, und zeigt an derselben Stelle einen
       Fehler samt Wiederholmöglichkeit, wenn das Nachladen scheitert.
-- [ ] AK11 — Die bestehenden Filter bleiben unverändert nutzbar. Bei 360 px erzeugt die Seite kein
+- [x] AK11 — Die bestehenden Filter bleiben unverändert nutzbar. Bei 360 px erzeugt die Seite kein
       horizontales Scrollen des Dokuments; die Filterleiste ist dort ein eigener horizontaler
       Scrollbereich und scrollt nachweislich selbst. Die beiden Zeichen bleiben erkennbar; die
       Kachel selbst bleibt auf 44 × 44 px treffbar.
-- [ ] AK12 — Der Modus zum Sichten des erkannten Ausschusses (`?gate=1`) funktioniert unverändert
+- [x] AK12 — Der Modus zum Sichten des erkannten Ausschusses (`?gate=1`) funktioniert unverändert
       weiter. „Übernehmen" und „Vergleichen" erscheinen **ausschließlich** im Gate-Modus dauerhaft
       unter dem Bild, in der normalen Übersicht gar nicht.
-- [ ] AK13 — Die übrigen Foto-Ansichten (Kuratierung, gemeinsame Endauswahl, Duplikatsvergleich)
+- [x] AK13 — Die übrigen Foto-Ansichten (Kuratierung, gemeinsame Endauswahl, Duplikatsvergleich)
       bleiben unverändert: ihre bestehenden Tests bleiben ohne jede Anpassung grün, und `PhotoCard`
       behält genau ihre drei Aufrufstellen.
 

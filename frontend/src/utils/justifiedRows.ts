@@ -44,8 +44,13 @@ export const TARGET_ROW_HEIGHT_PX = 220
  *
  * Sie gilt ausdruecklich nur fuer Zeilen mit MEHR ALS EINEM Bild: Ein Bild allein hat keine
  * Nachbarn, die es hochziehen koennten, und fiele sonst aus der Liste, statt bloss flach zu sein.
+ *
+ * Der Wert ist an der SCHMALSTEN zugesicherten Breite gewaehlt (360px): Zwei Querformate 4:3
+ * nebeneinander ergeben dort eine Zeilenhoehe von rund 130px. Eine Untergrenze darueber machte am
+ * Telefon aus jedem einzelnen Bild eine eigene Zeile - aus der Uebersicht wuerde eine Bilderfolge,
+ * und genau den schnellen Ueberblick soll die Ansicht geben.
  */
-export const MIN_ROW_HEIGHT_PX = 150
+export const MIN_ROW_HEIGHT_PX = 110
 
 export interface JustifiedRowsInput {
   /** Die Seitenverhaeltnisse in Anzeigereihenfolge. `null` = unbekannt (siehe Ausfallrichtung). */

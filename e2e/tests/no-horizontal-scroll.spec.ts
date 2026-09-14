@@ -75,7 +75,8 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
   // Foto-Id, und die vergibt der Seeder bei jedem Lauf neu. Genommen wird der ECHTE Einstieg aus
   // der Ausschuss-Sichtung.
   const duplicatesId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
-  await page.goto(`/projects/${duplicatesId}/photos?filter=suggested`)
+  // `&gate=1` seit Spec 0489: Der Einstieg steht ausschliesslich im Gate-Modus unter dem Bild.
+  await page.goto(`/projects/${duplicatesId}/photos?filter=suggested&gate=1`)
   const compareLink = page.getByRole('link', { name: /^Duplikate vergleichen:/ }).first()
   await expect(compareLink, 'Einstieg in den Duplikat-Vergleich').toBeVisible()
   const compareHref = await compareLink.getAttribute('href')
@@ -194,6 +195,49 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       })`,
     ).toBeLessThanOrEqual(metrics.clientWidth + TOLERANCE)
   }
+})
+
+/**
+ * Die Filterleiste der Fotouebersicht bei 360 px (specs/features/0489-..., AK11).
+ *
+ * ZWEI MESSUNGEN, nicht eine. „Die Seite scrollt nicht seitlich" allein bestuende auch gegen eine
+ * Leiste, die ihre Eintraege abschneidet oder umbricht statt selbst zu scrollen - und genau das
+ * ist der Fall, den Daniels Entscheidung ausschliesst. Belegt wird deshalb BEIDES: die Leiste
+ * scrollt nachweislich selbst (`scrollWidth > clientWidth` UND ein tatsaechlich wirksamer
+ * `scrollLeft`), und das Dokument daneben nicht.
+ */
+test('die Filterleiste ist bei 360 px ein eigener Scrollbereich', async ({ page }) => {
+  const largeId = await demoProjectId(page, DEMO_PROJECTS.large)
+  await page.goto(`/projects/${largeId}/photos`)
+
+  const leiste = page.getByRole('group', { name: 'Filter' })
+  await expect(leiste, 'Filterleiste').toBeVisible()
+  // Vorbedingung: die Leiste traegt WIRKLICH alle Eintraege. Eine auf zwei Knoepfe geschrumpfte
+  // Leiste braeuchte gar keinen Scrollbereich, und der Fall bestuende ohne Aussage.
+  await expect(leiste.getByRole('button')).toHaveCount(6)
+
+  const vorher = await leiste.evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+  }))
+  expect(
+    vorher.scrollWidth,
+    'Inhaltsbreite der Filterleiste gegen ihre sichtbare Breite',
+  ).toBeGreaterThan(vorher.clientWidth + TOLERANCE)
+
+  const scrollLeft = await leiste.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth
+    return element.scrollLeft
+  })
+  expect(scrollLeft, 'die Leiste laesst sich tatsaechlich seitlich rollen').toBeGreaterThan(0)
+
+  const dokument = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }))
+  expect(dokument.scrollWidth, 'Dokumentbreite neben der scrollenden Leiste').toBeLessThanOrEqual(
+    dokument.clientWidth + TOLERANCE,
+  )
 })
 
 /**

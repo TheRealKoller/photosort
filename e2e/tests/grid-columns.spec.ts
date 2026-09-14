@@ -1,20 +1,16 @@
 /**
- * CSS-Grid-Spaltenzahl ueber die volle Breakpoint-Leiter.
+ * Die Geometrie der beiden Foto-Raster - gemessen im echten Browser.
  *
- * Diese Zusage war bis zur Einfuehrung dieser Ebene "manueller visueller Smoke-Test vor Merge":
- * jsdom hat keine Layout-Engine, `grid-cols-2 sm:grid-cols-3 md:grid-cols-4` ist dort eine
- * Zeichenkette in einem `class`-Attribut und keine Geometrie. Der Spec dupliziert die bestehende
- * jsdom-Zusicherung nicht - die prueft die DOM-Gruppierung, dieser hier ausschliesslich die
- * gemessene Geometrie.
+ * jsdom hat keine Layout-Engine: Dort ist jede Breite 0 und jedes Rechteck leer. Alles, was diese
+ * Datei prueft, ist deshalb in keinem Komponententest pruefbar, und die Komponententests pruefen
+ * umgekehrt nichts davon - keine Verdopplung in beide Richtungen.
  *
- * EIGENE VIEWPORT-BREITEN (Edge Case E1 der Spec 0174): Die beiden Projekt-Viewports (360, 1280)
- * zeigen den Wechsel 2 -> 3 gar nicht - er liegt am `sm:`-Breakpoint dazwischen. Der Spec setzt
- * seine drei Breiten deshalb selbst und ist in `playwright.config.ts` an ein einziges Projekt
- * gebunden, sonst liefe er zweimal mit identischem Ergebnis.
+ * NEU GEFASST MIT SPEC 0489: Die Fotouebersicht misst keine feste Spaltenzahl mehr. Sie ist ein
+ * justiertes ZEILENraster - alle Bilder einer Zeile auf gemeinsamer Hoehe, die Zeile buendig auf
+ * die verfuegbare Breite, kein Bild beschnitten. Der Duplikat-Teil weiter unten bleibt
+ * unveraendert: dort gilt die Spaltenzahl weiterhin.
  *
- * Rot-Nachweis bei Einfuehrung (2026-09-05): siehe PR-Beschreibung - mit einer erzwungenen
- * `grid-template-columns: repeat(2, ...)`-Ueberschreibung bei 1280 px meldete der Spec
- * "Spaltenzahl bei 1280 px: expected 4, received 2".
+ * Rot-Nachweis der neuen Fassung: siehe PR-Beschreibung.
  */
 
 import type { Page } from '@playwright/test'
@@ -29,63 +25,157 @@ import {
 } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
-/**
- * Die Leiter des Foto-Grids. Die drei erwarteten Zahlen sind EXAKT, nicht "mindestens" - eine
- * Mindestwert-Assertion auf einer Layout-Eigenschaft traegt den Fehlerfall praktisch immer mit.
- */
-const LADDER = [
-  { width: 360, expectedColumns: 2 },
-  { width: 700, expectedColumns: 3 },
-  { width: 1280, expectedColumns: 4 },
-] as const
-
 const VIEWPORT_HEIGHT = 900
 /** Zeilen-Toleranz in px: Kacheln derselben Zeile duerfen sich um Subpixel unterscheiden. */
 const SAME_ROW_TOLERANCE = 2
+/** Der Zwischenraum zwischen zwei Kacheln (`gap-3` = `GRID_GAP_PX`). */
+const GRID_GAP = 12
+/** Zulaessige Abweichung beim Vergleich Kastenverhaeltnis gegen Bildverhaeltnis. */
+const RATIO_TOLERANCE = 0.02
 
-test('Foto-Grid rendert 2 / 3 / 4 Spalten ueber die Breakpoint-Leiter', async ({ page }) => {
+interface TileMeasurement extends Box {
+  naturalWidth: number
+  naturalHeight: number
+}
+
+async function photoTileBoxes(page: Page): Promise<TileMeasurement[]> {
+  const tiles = photoTiles(page)
+  // Zielzustand statt Wartezeit: das Raster existiert erst, wenn die Fotoabfrage geantwortet hat.
+  await expect(tiles.first()).toBeVisible()
+  // Und die Bilder selbst sind erst nach ihrem authentifizierten Blob-Abruf geladen - ohne dieses
+  // Warten waeren `naturalWidth`/`naturalHeight` 0 und der Beschnitt-Vergleich unten bedeutungslos.
+  await expect
+    .poll(async () =>
+      tiles.evaluateAll((elements) =>
+        elements.every((element) => {
+          const image = element.querySelector('img')
+          return image !== null && image.complete && image.naturalWidth > 0
+        }),
+      ),
+    )
+    .toBe(true)
+
+  return tiles.evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect()
+      const image = element.querySelector('img')
+      return {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        naturalWidth: image?.naturalWidth ?? 0,
+        naturalHeight: image?.naturalHeight ?? 0,
+      }
+    }),
+  )
+}
+
+/** Gruppiert die gemessenen Kacheln nach ihrer Oberkante zu Zeilen. */
+function rowsOf(boxes: TileMeasurement[]): TileMeasurement[][] {
+  const rows: TileMeasurement[][] = []
+  for (const box of [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const row = rows[rows.length - 1]
+    if (row !== undefined && Math.abs((row[0]?.y ?? 0) - box.y) <= SAME_ROW_TOLERANCE) {
+      row.push(box)
+    } else {
+      rows.push([box])
+    }
+  }
+  return rows
+}
+
+test('Fotouebersicht setzt justierte Zeilen ohne Beschnitt', async ({ page }) => {
   const projectId = await demoProjectId(page, DEMO_PROJECTS.large)
-  const measuredColumns: number[] = []
 
-  for (const { width, expectedColumns } of LADDER) {
+  await page.setViewportSize({ width: 1280, height: VIEWPORT_HEIGHT })
+  await page.goto(`/projects/${projectId}/photos`)
+  const boxes = await photoTileBoxes(page)
+
+  // Ohne diese Zusicherung koennte das Raster aus einer einzigen Kachel bestehen, und jede Aussage
+  // ueber "Zeilen" waere leer.
+  expect(boxes.length, 'Kacheln im Raster').toBeGreaterThan(4)
+
+  const rows = rowsOf(boxes)
+  expect(rows.length, 'Zeilen im Raster').toBeGreaterThan(1)
+
+  // Der Demo-Bestand fuehrt bewusst gemischte Formate. Ohne sie waere ein justiertes Raster von
+  // einem Spaltenraster gar nicht zu unterscheiden, und dieser Spec pruefte nichts.
+  const shapes = new Set(boxes.map((box) => (box.naturalWidth / box.naturalHeight).toFixed(2)))
+  expect(shapes.size, 'verschiedene Bildformate im Bestand').toBeGreaterThanOrEqual(3)
+
+  // Die LETZTE Zeile ist ausgenommen: sie bleibt bewusst ungestreckt und linksbuendig stehen.
+  const fullRows = rows.slice(0, -1)
+  const rasterLeft = Math.min(...boxes.map((box) => box.x))
+  const rasterRight = Math.max(
+    ...rows.map((row) => row[row.length - 1]!.x + row[row.length - 1]!.width),
+  )
+
+  for (const [index, row] of fullRows.entries()) {
+    const heights = row.map((box) => Math.round(box.height))
+    expect(new Set(heights).size, `verschiedene Hoehen in Zeile ${index}`).toBe(1)
+
+    const lineWidth = row.reduce((sum, box) => sum + box.width, 0) + GRID_GAP * (row.length - 1)
+    expect(
+      Math.abs(lineWidth - (rasterRight - rasterLeft)),
+      `buendiges Zeilenende in Zeile ${index}`,
+    ).toBeLessThanOrEqual(SAME_ROW_TOLERANCE)
+  }
+
+  // KEIN BESCHNITT - der eigentliche Beweis: Das Kastenverhaeltnis jeder Kachel folgt dem
+  // Verhaeltnis ihres tatsaechlich geladenen Bildes. Ein `object-cover` oder eine feste Form
+  // liesse hier lauter gleiche Kastenverhaeltnisse entstehen.
+  for (const box of boxes) {
+    const imageRatio = box.naturalWidth / box.naturalHeight
+    expect(
+      Math.abs(box.width / box.height - imageRatio),
+      `Kastenverhaeltnis gegen Bildverhaeltnis (${box.width}x${box.height} vs. ${box.naturalWidth}x${box.naturalHeight})`,
+    ).toBeLessThanOrEqual(RATIO_TOLERANCE * imageRatio + RATIO_TOLERANCE)
+  }
+})
+
+test('Fotouebersicht rechnet die Zeilen fuer jede Breite neu', async ({ page }) => {
+  // Die schaerfere Form der Vorbedingung: Ein Raster, das gar nicht mehr auf die Breite reagiert,
+  // faellt hier auch dann auf, wenn eine der beiden Messungen fuer sich stimmt.
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.large)
+  const firstRowHeights: number[] = []
+  const firstRowCounts: number[] = []
+
+  for (const width of [700, 1280]) {
     await page.setViewportSize({ width, height: VIEWPORT_HEIGHT })
     await page.goto(`/projects/${projectId}/photos`)
 
-    const tiles = photoTiles(page)
-    // Zielzustand statt Wartezeit: das Grid existiert erst, wenn die Fotoabfrage geantwortet hat.
-    await expect(tiles.first()).toBeVisible()
-
-    const boxes: Box[] = await tiles.evaluateAll((elements) =>
-      elements.map((element) => {
-        const rect = element.getBoundingClientRect()
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-      }),
-    )
-    // Ohne diese Zusicherung koennte die erste Zeile aus einer einzigen Kachel bestehen und der
-    // Spec meldete "1 Spalte" statt "Grid gar nicht gerendert".
-    expect(boxes.length, `Kacheln im Grid bei ${width} px`).toBeGreaterThan(
-      LADDER[LADDER.length - 1]!.expectedColumns,
-    )
-
-    const firstRowY = Math.min(...boxes.map((box) => box.y))
-    const firstRow = boxes.filter((box) => Math.abs(box.y - firstRowY) <= SAME_ROW_TOLERANCE)
-
-    expect(firstRow.length, `Spaltenzahl bei ${width} px`).toBe(expectedColumns)
-
-    // Kacheln mit Breite 0 oder ungleicher Breite innerhalb einer Zeile fallen durch: eine
-    // kollabierte Kachel liegt geometrisch weiterhin in der ersten Zeile und wuerde sonst als
-    // vollwertige Spalte mitgezaehlt.
-    const widths = firstRow.map((box) => Math.round(box.width))
-    expect(Math.min(...widths), `schmalste Kachel bei ${width} px`).toBeGreaterThan(0)
-    expect(new Set(widths).size, `verschiedene Kachelbreiten in Zeile 1 bei ${width} px`).toBe(1)
-
-    measuredColumns.push(firstRow.length)
+    const rows = rowsOf(await photoTileBoxes(page))
+    const firstRow = rows[0]!
+    expect(firstRow.length, `Kacheln in Zeile 1 bei ${width} px`).toBeGreaterThan(0)
+    firstRowHeights.push(Math.round(firstRow[0]!.height))
+    firstRowCounts.push(firstRow.length)
   }
 
-  // Die schaerfere Form der Vorbedingung (Regel 2 des Testkonzepts): ein Grid, das ueberhaupt
-  // nicht mehr auf den Breakpoint reagiert, faellt hier auch dann auf, wenn eine der drei Zahlen
-  // zufaellig stimmt.
-  expect(new Set(measuredColumns).size, 'paarweise verschiedene Spaltenzahlen').toBe(LADDER.length)
+  expect(new Set(firstRowHeights).size, 'paarweise verschiedene Zeilenhoehen').toBe(2)
+  // Die breitere Ansicht traegt mindestens so viele Bilder in der ersten Zeile wie die schmalere -
+  // andernfalls waere die Hoehendifferenz oben ein anderer Effekt als der gesuchte.
+  expect(firstRowCounts[1]!).toBeGreaterThanOrEqual(firstRowCounts[0]!)
+})
+
+test('Fotouebersicht laedt beim Scrollen nach, ohne Schaltflaeche', async ({ page }) => {
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.large)
+  await page.setViewportSize({ width: 1280, height: VIEWPORT_HEIGHT })
+  await page.goto(`/projects/${projectId}/photos`)
+
+  const tiles = photoTiles(page)
+  await expect(tiles.first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /weitere laden/i })).toHaveCount(0)
+
+  const zaehlzeile = page.getByText(/^\d+ von \d+ geladen/)
+  await expect(zaehlzeile, 'Zaehlzeile unter dem Raster').toBeVisible()
+  const vorher = await tiles.count()
+
+  await page.mouse.wheel(0, 100000)
+
+  // Nachgeladen wird allein durch das Scrollen - kein Klick dazwischen.
+  await expect.poll(async () => tiles.count()).toBeGreaterThan(vorher)
+  await expect(zaehlzeile).toBeVisible()
 })
 
 /**
