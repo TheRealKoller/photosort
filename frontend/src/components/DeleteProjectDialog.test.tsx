@@ -113,6 +113,33 @@ describe('DeleteProjectDialog', () => {
     expect(confirmationField()).toBeInTheDocument()
   })
 
+  /*
+   * Spec 0375, Akzeptanzkriterium G2 - WAECHTER, kein offener Bau: die Zusage gilt heute bereits,
+   * nur der Testfall fehlte. Ein gekuerzter Name macht die Huerde unpassierbar: der Nutzer soll
+   * abtippen, was dasteht, und was hinter einem Auslassungszeichen verschwindet, kann er nicht
+   * abtippen - er muesste den Dialog verlassen, um den Namen nachzulesen, und das ist keine
+   * Huerde, sondern eine Sackgasse.
+   *
+   * Die zweite Assertion ist die eine bewusste Ausnahme von "keine CSS-Assertion": Kuerzung ist an
+   * dieser Stelle AUSSCHLIESSLICH eine CSS-Eigenschaft, jsdom hat keine Layout-Engine, und ein
+   * Test, der die Klasse nicht ansieht, koennte die Zusage ueberhaupt nicht halten. Genau ein
+   * spaeterer "Aufraeum"-Refactor, der hier `truncate` ergaenzt, MUSS scheitern.
+   */
+  it('kuerzt den abzutippenden Projektnamen nie', () => {
+    const longName = 'Sommerurlaub Costa Rica und Nicaragua mit den Grosseltern 2019'
+    renderDialog({ projectName: longName })
+
+    const shown = screen.getByText(longName)
+    expect(shown).toBeVisible()
+    expect(shown.textContent).toBe(longName)
+    for (const utility of ['truncate', 'text-ellipsis', 'overflow-hidden', 'line-clamp-1']) {
+      expect(shown.className.split(/\s+/)).not.toContain(utility)
+    }
+    // Die Gegenrichtung: der Name DARF umbrechen - ohne `break-words` liefe ein langer Name ohne
+    // Leerzeichen aus dem Dialog heraus statt zu kuerzen.
+    expect(shown.className.split(/\s+/)).toContain('break-words')
+  })
+
   it('carries the input attributes without which the button never unlocks on mobile', () => {
     renderDialog()
 
