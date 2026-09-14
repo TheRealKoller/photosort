@@ -234,6 +234,7 @@ describe('useDraftExchangeMutation', () => {
         started_at: '2026-07-20T09:00:00',
         ended_at: '2026-07-20T13:00:00',
         place: null,
+        place_name: null,
       },
     }
   }

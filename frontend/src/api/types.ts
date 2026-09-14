@@ -441,15 +441,27 @@ export interface EventPlace {
 
 /** Das Event, zu dem dieses Foto im letzten erfolgreichen Lauf gehört.
  *
- * Nummer und Zeitspanne stehen in der Zeile des Events und hängen damit NICHT davon ab, welche
- * Fotos eine Antwort gerade enthält - anders als bei der früheren Cluster-Überschrift, die aus
- * den sichtbaren Fotos aggregiert wurde. */
+ * Nummer, Zeitspanne und Name stehen in der Zeile des Events und hängen damit NICHT davon ab,
+ * welche Fotos eine Antwort gerade enthält - anders als bei der früheren Cluster-Überschrift, die
+ * aus den sichtbaren Fotos aggregiert wurde.
+ *
+ * `place_name` ist der aufgelöste Ortsname dieses Events, `null` heißt "keiner". Er steht bewusst
+ * NEBEN `place` und nicht darin: `place` ist `null`, sobald der Server die Ortsstufe nicht kennt,
+ * und der Name fiele dort still mit. Die zusammengesetzte Form "Ort, Viertel" kommt FERTIG vom
+ * Server; hier wird nichts zusammengesetzt.
+ *
+ * Es ist freier, extern erzeugter Text und trägt dieselbe Auflage wie `landmark_name`:
+ * ausschließlich als regulärer React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als
+ * HTML-String-Prop, nie in `href`/`src`/`style`, nie als React-`key`. Die Schlüssel-Auflage ist
+ * hier nicht nur XSS-Hygiene: Gleichnamigkeit ist der Normalfall dieser Überschrift, und ein
+ * doppelter Schlüssel bringt die Listenabgleichung durcheinander. */
 export interface EventOut {
   id: number
   position: number
   started_at: string
   ended_at: string
   place: EventPlace | null
+  place_name: string | null
 }
 
 /** Die Kamera eines Fotos. `label` kommt vom SERVER - eine Stelle entscheidet, wie eine Kamera

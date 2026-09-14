@@ -19,11 +19,13 @@ from photosort.events import (
     LocationEntry,
     StepDistanceSignal,
     TimeGapSignal,
+    assign_place_names,
     build_events,
     default_signals,
     event_for_time,
     infer_locations,
 )
+from photosort.places import MAX_PLACE_NAME_LENGTH, PlaceInfo
 from photosort.scoring import (
     GPS_CLUSTER_SPLIT_DISTANCE_METERS,
     TIME_CLUSTER_GAP,
@@ -969,3 +971,214 @@ class TestTheRoundingStandsAtExactlyOnePlace:
         ]
 
         assert len(matches) == 2
+
+
+# --- Die Namensvergabe ueber die Events eines Laufs ---------------------------------------------
+
+BERLIN = (52.52, 13.40)
+BERLIN_OST = (52.53, 13.45)
+SPLIT = (43.51, 16.44)
+OHNE_NAMEN = (0.0, 0.0)
+
+
+def _info(locality: str | None, neighbourhood: str | None = None) -> PlaceInfo:
+    """Eine abgelegte Auskunft mit AUFLOESENDER Ebene - genau die Lage, in der ein Name entsteht.
+
+    Die Ebene folgt dem Viertel: eine Auskunft mit Viertel hat die Viertel-Ebene getroffen."""
+    return PlaceInfo(
+        neighbourhood=neighbourhood,
+        locality=locality,
+        matched_level="neighbourhood" if neighbourhood is not None else "locality",
+    )
+
+
+def _place_event(
+    position: int, *cells: tuple[float, float], landmark_name: str | None = None
+) -> BuiltEvent:
+    """Ein fertiges Event, auf das reduziert, was die Vergabe liest."""
+    return BuiltEvent(
+        position=position,
+        photo_ids=(position,),
+        started_at=T0,
+        ended_at=_at(minutes=10),
+        landmark_name=landmark_name,
+        place_kind="landmark" if landmark_name is not None else "coordinate",
+        place_cells=tuple(cells),
+    )
+
+
+class TestBuiltEventCarriesItsCells:
+    """`place_cells` sind die verschiedenen gerundeten GEMESSENEN Zellen des Events - dieselbe
+    Menge, aus der `_place_of` seine Stufenentscheidung bildet."""
+
+    def test_the_cells_are_sorted_and_free_of_duplicates(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0, lat=48.95, lon=2.29),
+            _measured_candidate(2, _at(minutes=1), lat=48.85, lon=2.29),
+            _measured_candidate(3, _at(minutes=2), lat=48.8501, lon=2.2901),
+        ]
+
+        [event] = _build(candidates, [])
+
+        assert event.place_cells == ((48.85, 2.29), (48.95, 2.29))
+
+    def test_an_event_without_a_measured_coordinate_has_no_cells(self) -> None:
+        [event] = _build([_inherited_candidate(1, T0)])
+
+        assert event.place_cells == ()
+
+    def test_a_landmark_event_carries_its_cells_too(self) -> None:
+        """`_place_of` kehrt bei gesetztem Namen zurueck, BEVOR es die Zellen bildet - die Zellen
+        entstehen deshalb unabhaengig davon. Ohne sie waere der Landmark-Fall der Vergabe unten
+        vakuum-gruen: er bestuende auch dann, wenn die Ausnahme ersatzlos entfiele."""
+        candidates = [
+            _measured_candidate(1, T0, lat=52.52, lon=13.40, landmark_name="Brandenburger Tor"),
+        ]
+
+        [event] = _build(candidates)
+
+        assert event.place_kind == "landmark"
+        assert event.place_cells == ((52.52, 13.4),)
+
+    def test_the_existing_place_fields_stay_exactly_as_they_were(self) -> None:
+        """Regressionsfall: `place_kind`/`place_lat`/`place_lon` bleiben von den Zellen
+        vollstaendig unberuehrt."""
+        candidates = [
+            _measured_candidate(1, T0, lat=48.85, lon=2.29),
+            _measured_candidate(2, _at(minutes=1), lat=48.95, lon=2.29),
+        ]
+
+        [event] = _build(candidates, [])
+
+        assert (event.place_kind, event.place_lat, event.place_lon) == ("multiple", None, None)
+
+
+class TestAssignPlaceNames:
+    """Die Vergabe ueber die Events EINES Laufs - rein, deterministisch, positionstreu.
+
+    Die Viertel-Ergaenzung ist eine Aussage ueber den LAUF und lebt deshalb hier und nicht in
+    `places.py` (ADR 0102 Punkt 4)."""
+
+    def test_one_name_over_several_cells_becomes_the_name(self) -> None:
+        """Auch dann, wenn eine der Zellen gar keinen Namen liefert - Zellen ohne Namen zaehlen
+        nicht mit."""
+        events = [_place_event(1, BERLIN, BERLIN_OST, OHNE_NAMEN)]
+        infos = {BERLIN: _info("Berlin"), BERLIN_OST: _info("Berlin")}
+
+        assert assign_place_names(events, infos) == ["Berlin"]
+
+    def test_two_different_names_in_one_event_yield_none(self) -> None:
+        """Fuer eine Menge von Orten gibt es keinen einen Namen."""
+        events = [_place_event(1, BERLIN, SPLIT)]
+        infos = {BERLIN: _info("Berlin"), SPLIT: _info("Split")}
+
+        assert assign_place_names(events, infos) == [None]
+
+    def test_an_event_without_any_usable_cell_keeps_its_position(self) -> None:
+        events = [_place_event(1), _place_event(2, OHNE_NAMEN)]
+
+        assert assign_place_names(events, {}) == [None, None]
+
+    def test_a_coarse_answer_is_no_name_at_all(self) -> None:
+        """Ein Treffer auf Regionsebene nennt oft trotzdem eine Stadt - die gilt hier nicht."""
+        events = [_place_event(1, BERLIN)]
+        infos = {BERLIN: PlaceInfo(neighbourhood=None, locality="Berlin", matched_level="region")}
+
+        assert assign_place_names(events, infos) == [None]
+
+    def test_a_single_event_in_berlin_is_just_berlin(self) -> None:
+        events = [_place_event(1, BERLIN)]
+        infos = {BERLIN: _info("Berlin", "Kreuzberg")}
+
+        assert assign_place_names(events, infos) == ["Berlin"]
+
+    def test_only_the_events_sharing_a_name_get_their_district(self) -> None:
+        events = [
+            _place_event(1, BERLIN),
+            _place_event(2, BERLIN_OST),
+            _place_event(3, SPLIT),
+        ]
+        infos = {
+            BERLIN: _info("Berlin", "Kreuzberg"),
+            BERLIN_OST: _info("Berlin", "Mitte"),
+            SPLIT: _info("Split", "Bacvice"),
+        }
+
+        assert assign_place_names(events, infos) == ["Berlin, Kreuzberg", "Berlin, Mitte", "Split"]
+
+    def test_the_district_is_added_per_event_not_per_name(self) -> None:
+        """Traegt von zwei gleichnamigen Events nur eines ein Viertel, bekommt nur dieses den
+        Zusatz - das andere bleibt beim Ortsnamen und ist ueber seine Zeitspanne unterscheidbar."""
+        events = [_place_event(1, BERLIN), _place_event(2, BERLIN_OST)]
+        infos = {BERLIN: _info("Berlin", "Kreuzberg"), BERLIN_OST: _info("Berlin")}
+
+        assert assign_place_names(events, infos) == ["Berlin, Kreuzberg", "Berlin"]
+
+    def test_two_namesakes_without_any_district_both_keep_the_locality(self) -> None:
+        events = [_place_event(1, BERLIN), _place_event(2, BERLIN_OST)]
+        infos = {BERLIN: _info("Berlin"), BERLIN_OST: _info("Berlin")}
+
+        assert assign_place_names(events, infos) == ["Berlin", "Berlin"]
+
+    def test_two_different_districts_in_one_event_yield_no_district(self) -> None:
+        events = [_place_event(1, BERLIN, BERLIN_OST), _place_event(2, (52.54, 13.41))]
+        infos = {
+            BERLIN: _info("Berlin", "Kreuzberg"),
+            BERLIN_OST: _info("Berlin", "Mitte"),
+            (52.54, 13.41): _info("Berlin", "Wedding"),
+        }
+
+        assert assign_place_names(events, infos) == ["Berlin", "Berlin, Wedding"]
+
+    def test_a_composed_name_beyond_the_limit_leaves_the_locality_alone(self) -> None:
+        """Gekuerzt wird NIE: zwei verschiedene, auf dieselbe Laenge gekappte Namen waeren ein
+        Name, und die Viertel-Regel griffe dann fuer Events an verschiedenen Orten.
+
+        Je Event einzeln - das zweite, gleichnamige Event mit kurzem Viertel behaelt seinen."""
+        langes_viertel = "V" * MAX_PLACE_NAME_LENGTH
+        events = [_place_event(1, BERLIN), _place_event(2, BERLIN_OST)]
+        infos = {
+            BERLIN: _info("Berlin", langes_viertel),
+            BERLIN_OST: _info("Berlin", "Mitte"),
+        }
+
+        assert assign_place_names(events, infos) == ["Berlin", "Berlin, Mitte"]
+
+    def test_a_landmark_event_gets_no_place_name_and_triggers_no_district(self) -> None:
+        """Zwei Haelften in einem Fall: Das Landmark-Event bekaeme einen Namen (seine Zelle loest
+        auf), bekommt aber keinen - und es loest bei dem gleichnamigen Nicht-Landmark-Event auch
+        keine Viertel-Ergaenzung aus."""
+        events = [
+            _place_event(1, BERLIN, landmark_name="Brandenburger Tor"),
+            _place_event(2, BERLIN_OST),
+        ]
+        infos = {BERLIN: _info("Berlin", "Mitte"), BERLIN_OST: _info("Berlin", "Kreuzberg")}
+
+        assert assign_place_names(events, infos) == [None, "Berlin"]
+
+    def test_the_result_is_aligned_with_the_input_positionwise(self) -> None:
+        """Eine um eins verschobene Zuordnung ist der zweite stille Fehler dieser Form."""
+        events = [_place_event(1), _place_event(2, SPLIT), _place_event(3)]
+        infos = {SPLIT: _info("Split")}
+
+        assert assign_place_names(events, infos) == [None, "Split", None]
+
+    def test_every_permutation_of_the_input_yields_the_same_name_per_event(self) -> None:
+        events = [
+            _place_event(1, BERLIN),
+            _place_event(2, BERLIN_OST),
+            _place_event(3, SPLIT),
+        ]
+        infos = {
+            BERLIN: _info("Berlin", "Kreuzberg"),
+            BERLIN_OST: _info("Berlin", "Mitte"),
+            SPLIT: _info("Split"),
+        }
+        expected = {1: "Berlin, Kreuzberg", 2: "Berlin, Mitte", 3: "Split"}
+
+        for permutation in permutations(events):
+            ordered = list(permutation)
+            names = assign_place_names(ordered, infos)
+            assert {
+                event.position: name for event, name in zip(ordered, names, strict=True)
+            } == expected

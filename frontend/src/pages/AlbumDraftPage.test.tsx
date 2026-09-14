@@ -80,6 +80,7 @@ function eventOut(overrides: Partial<EventOut> = {}): EventOut {
     started_at: '2026-07-20T10:00:00',
     ended_at: '2026-07-20T11:00:00',
     place: null,
+    place_name: null,
     ...overrides,
   }
 }
@@ -158,6 +159,14 @@ function draftCalls(): number {
     .length
 }
 
+/** Maskiert die Sonderzeichen einer Zeichenkette für die Verwendung in einem regulären Ausdruck.
+ *
+ * Die Überschrift trägt Namen UND Zeitspanne; gesucht wird deshalb ein Teiltreffer, und der
+ * feindliche Text besteht selbst aus Regex-Sonderzeichen. */
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 describe('AlbumDraftPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -212,6 +221,61 @@ describe('AlbumDraftPage', () => {
     expect(screen.getByText(`(${formatDraftPhotoCount(2)})`)).toBeInTheDocument()
     expect(screen.getByLabelText('Im Album: a.jpg')).toBeInTheDocument()
     expect(screen.getByLabelText('Im Album: c.jpg')).toBeInTheDocument()
+  })
+
+  /*
+   * Spec 0434, Auflage S8: `place_name` und `landmark_name` sind freier, extern erzeugter Text -
+   * der eine aus einem Ortsdatensatz Dritter, der andere aus einer Modellantwort. Beide erscheinen
+   * ausschliesslich als regulaerer React-Textknoten, nie ueber `dangerouslySetInnerHTML` und nie
+   * in einem Attribut, das Code ausfuehren koennte. Seit ADR 0005 liegt das Session-Token in
+   * `localStorage`; ein eingeschleustes Skript laese es unmittelbar aus.
+   *
+   * DER NACHWEIS GEHOERT AN DIE RENDERING-STELLE, nicht in `timeOfDay.test.ts`: Dass die Funktion
+   * nichts interpretiert, sagt nichts darueber, was das Markup daraus macht - das Escaping
+   * leistet React.
+   */
+  const hostile = '<img src=x onerror="window.__pwned = true">'
+
+  it('rendert einen HTML-artigen Ortsnamen als Text, nicht als Markup', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(
+      listOut([photo({ event: eventOut({ place_name: hostile }) })]),
+    )
+
+    renderPage()
+
+    expect(await screen.findByText(new RegExp(escapeForRegExp(hostile)))).toBeInTheDocument()
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+    expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
+  })
+
+  it('rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(
+      listOut([
+        photo({
+          event: eventOut({
+            place: { kind: 'landmark', landmark_name: hostile, lat: null, lon: null },
+          }),
+        }),
+      ]),
+    )
+
+    renderPage()
+
+    expect(await screen.findByText(new RegExp(escapeForRegExp(hostile)))).toBeInTheDocument()
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+    expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
+  })
+
+  it('nutzt den Ortsnamen als Event-Ueberschrift', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(
+      listOut([photo({ event: eventOut({ place_name: 'Berlin, Kreuzberg' }) })]),
+    )
+
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { level: 3 })
+    expect(heading).toHaveTextContent('Berlin, Kreuzberg')
+    expect(heading.textContent).not.toContain('Position')
   })
 
   describe('der Kopfbereich', () => {

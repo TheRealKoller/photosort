@@ -170,6 +170,33 @@ export function ProjectListPage() {
           ))}
         </ul>
       )}
+
+      {/*
+        Namensnennung des Ortsdatensatzes (ADR 0105 Punkt 5): GeoNames steht unter CC BY 4.0, die
+        Nennung ist Pflicht und wird sichtbar erfuellt. Sie steht app-weit am Fuss der
+        Projektliste - der Einstiegsseite nach der Anmeldung - und damit ausserhalb der
+        Arbeitsansichten, und sie haengt NICHT am Ladezustand der Projekte: Die Pflicht besteht,
+        weil die Anwendung den Datensatz benutzt, nicht weil gerade etwas angezeigt wird.
+
+        Metadatenzeile in `--text-muted` ueber einer freistehenden Linie auf dem Seitengrund
+        (`--separator`) - keine neue Komponente, kein neues Token.
+      */}
+      <footer className="border-t border-separator pt-4 text-xs text-text-muted">
+        Ortsnamen aus{' '}
+        <a href="https://www.geonames.org/" className="underline" rel="noreferrer" target="_blank">
+          GeoNames
+        </a>
+        , lizenziert unter{' '}
+        <a
+          href="https://creativecommons.org/licenses/by/4.0/"
+          className="underline"
+          rel="noreferrer"
+          target="_blank"
+        >
+          CC BY 4.0
+        </a>
+        .
+      </footer>
     </div>
   )
 }

@@ -296,8 +296,13 @@ Verarbeitungs-Cache (Thumbnails).
     (`events.py`): dieselbe Zahl entscheidet dort über `"coordinate"` vs. `"multiple"`. Ein
     Sehenswürdigkeit-Name über `MAX_LANDMARK_NAME_LENGTH` (80) wird **verworfen, nie
     abgeschnitten**; das Event fällt dann auf die Koordinatenstufe zurück. Im Frontend bildet
-    `utils/timeOfDay.ts::formatEventHeading()` daraus zwei Formen — `"<Name> (<Zeitspanne>)"` oder
-    `"Position <n> (<Zeitspanne>)"`; Tageszeit-Kategorien und die Koordinate als Name entfallen mit
+    `utils/timeOfDay.ts::formatEventHeading()` daraus seit Spec
+    [`0434`](../specs/features/0434-ortsnamen-fuer-events.md) **drei** Formen, sequenziell:
+    `"<Sehenswürdigkeit> (<Zeitspanne>)"` → `"<Ortsname> (<Zeitspanne>)"` →
+    `"Position <n> (<Zeitspanne>)"`. Der Ortsname kommt aus `EventOut.place_name` und steht dort
+    **neben** `place`, nicht darin: `place` ist bei unbekanntem `place_kind` `null`, und der Name
+    fiele sonst still mit. Die zusammengesetzte Form `"Ort, Viertel"` kommt fertig vom Server; das
+    Frontend setzt nichts zusammen. Tageszeit-Kategorien und die Koordinate als Name entfallen mit
     Spec 0425.
   - **Der Kuratierungsparameter wird ein Schalter, und ein neuer Schreib-Endpunkt setzt den
     Richtwert** *(Spec [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
@@ -1432,6 +1437,18 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   - `events.landmark_name` entsteht **ausschließlich** über `worker.py::_landmark_names` (und damit
     `sanitize_landmark_name`) — kein direkter Zugriff auf `PhotoLandmarkDetection.name` an der
     Schreibstelle, kein Abschneiden, und die Migration kopiert **keine** Namen.
+  - `events.place_name` *(Spec [`0434`](../specs/features/0434-ortsnamen-fuer-events.md), ADR
+    [`0102`](../specs/decisions/0102-ortsauskunft-je-zelle-projektgebunden-eventname-als-laufartefakt.md),
+    Migration `d7e8f9a0b1c2`)*: der aufgelöste **Ortsname dieses Events in diesem Lauf**, nullable
+    und additiv — Altläufe behalten `NULL`, nachgezogen wird nichts. Er entsteht in
+    `events.py::assign_place_names` aus den Ortsauskünften der Zellen des Events (`PlaceLookup`,
+    siehe unten) und ist ausdrücklich **kein Ortswissen**: Ob ein Event „Berlin" oder „Berlin,
+    Kreuzberg" heißt, hängt davon ab, was sonst im selben Lauf liegt. Regeln: genau ein Ortsname
+    über alle Zellen ⇒ dieser Name, null oder mehrere ⇒ keiner; ein Event **mit** Sehenswürdigkeit
+    bekommt keinen und löst auch bei keinem anderen die Viertel-Ergänzung aus; mehrfach vergebene
+    Namen bekommen je Event einzeln ihr Viertel, sofern genau eines vorliegt und `"Ort, Viertel"`
+    die Längengrenze hält — **gekürzt wird nie**, zwei gekappte Namen wären ein Name und die
+    Viertel-Regel griffe für Events an verschiedenen Orten.
 - **Rating** *(implementiert, Spec 0002, `models.py`; Neufassung mit Spec
   [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md) / ADR
   [`0098`](../specs/decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md))*: Die
@@ -1631,6 +1648,44 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   Lesepfad (`applies=true` → `1.0`, `applies=false` → `0.0`, keine Zeile → Wert der Grundlage) und
   wird nie in die Stärkezeile materialisiert; der SQL-Ausdruck dafür lebt an genau einer Stelle
   (`motif_strengths.py`), gehalten von einem Wächtertest.
+- **PlaceLookup** *(Spec [`0434`](../specs/features/0434-ortsnamen-fuer-events.md), ADR
+  [`0102`](../specs/decisions/0102-ortsauskunft-je-zelle-projektgebunden-eventname-als-laufartefakt.md),
+  `models.py`; Tabelle `place_lookups`, Migration `d7e8f9a0b1c2`)*: die Auskunft darüber, **was an
+  einer vergröberten Ortszelle liegt** — `project_id` (echter Fremdschlüssel, NOT NULL),
+  `cell_lat`/`cell_lon` (das auf `places.PLACE_CELL_DIGITS` gerundete Paar aus
+  `places.place_cell`), die vier Stufen `neighbourhood`/`locality`/`region`/`country`,
+  `matched_level`, `source`, `resolved_at`; `UniqueConstraint(project_id, cell_lat, cell_lon)`.
+  - **LAUF-UNABHÄNGIG und trotzdem am Projekt.** Einmal beschafft, danach wiederverwendet: dieselbe
+    Zelle wird in einem zweiten Lauf nicht erneut gefragt, dieselbe Zelle in einem zweiten Projekt
+    dagegen schon — die Auskunft des einen Projekts wird für das andere nie gelesen. Jede Zeile ist
+    eine Aussage darüber, wo die Familie war, kein allgemeines Vokabular wie `fine_labels`; sie ist
+    damit die **dauerhafteste Ortsspur des Systems** und fällt ausschließlich mit dem Projekt
+    (`project_deletion.py`). Es gibt bewusst keinen zweiten Weg, sie loszuwerden.
+  - **Beschafft wird ausschließlich im Worker** (`worker.py::_place_infos`, gebunden an
+    `project_id`). Drei unterschiedene Ausgänge: **keine Antwort** schreibt keine Zeile (sonst
+    vergiftete eine vorübergehende Störung die Zelle dauerhaft), eine **Antwort ohne brauchbare
+    Ebene** schreibt eine Zeile mit leeren Namensstufen und wird nicht erneut gefragt, und
+    **mehrere Ortsnamen im Event** ergeben keinen Namen. In allen drei Fällen behält das Event
+    Nummer und Zeitspanne, und der Lauf läuft weiter. `rebuild_run_grouping` bekommt **keinen**
+    Auflöser: es läuft in einem Request, liest nur den Bestand und fragt niemanden.
+  - **Vier benannte Stufen, kein Beutel.** Straße und Hausnummer fallen am Parser-Rand und
+    erreichen die Tabelle nie. `matched_level` ist die Aussage der Quelle, nicht die Ableitung aus
+    gefüllten Spalten, und wird an beiden Rändern gegen `places.PLACE_LEVELS` geprüft; ein Treffer
+    auf `region`/`country` gilt als „kein Name aufgelöst".
+- **Der Ortsdatensatz als Betriebsartefakt** *(ADR
+  [`0105`](../specs/decisions/0105-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md))*:
+  Die Ortsauskunft entsteht **vollständig innerhalb des Systems**, aus einem vorbereiteten Auszug
+  des GeoNames-Datensatzes — kein externer Ortsdienst, kein Schalter, der einen aufmachen könnte.
+  Der Auszug ist eine GeoNames-Datei mit **geleerten ungebrauchten Spalten** an unveränderter
+  Spaltenposition (dieselben Zeilen, dieselben Felder, derselbe Parser wie die Rohdatei), gepackt
+  rund 69 MB, erzeugt vom getippten Kommando `python -m photosort.place_dataset`. Er liegt auf dem
+  Volume `place_dataset`: im Backend-Dienst schreibbar, im Worker **nur lesend** — genau ein
+  Schreiber, und der operative Pfad ist keiner. **Geprüft wird vor jedem Gebrauch die Datei, die
+  gelesen wird**, gegen den beim Bezug gebildeten Hash; stimmt er nicht oder fehlt sie, wird
+  **kein Auflöser gebaut** (`geonames.py::build_place_resolver`), es entsteht **kein Ersatzweg**,
+  und jeder Lauf schreibt eine laute Zeile mit festem Grund-Token. Das ist der Zustand von heute —
+  Events heißen dann nach Nummer und Zeitspanne —, kein Fehlerzustand. Weder Rohdatei noch Auszug
+  liegen im Image oder im Repository.
 - **FineLabel** *(implementiert, Spec
   [`0055`](../specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md),
   `models.py`; Tabelle `fine_labels`, bis Spec 0289 `category_labels`/`CategoryLabel`, ADR

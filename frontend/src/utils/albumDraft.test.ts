@@ -40,6 +40,7 @@ function event(overrides: Partial<EventOut> = {}): EventOut {
     started_at: '2026-07-20T10:00:00',
     ended_at: '2026-07-20T11:00:00',
     place: null,
+    place_name: null,
     ...overrides,
   }
 }

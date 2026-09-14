@@ -308,6 +308,29 @@ _DEMO_OTHER_CELL_STEP = 0.02
 _DEMO_LANDMARK_NAME = "Eiffelturm"
 _DEMO_LANDMARK_CONFIDENCE = 0.91
 
+# Abstand der Ein-Zellen-Lage von der Basis - groß genug für eine EIGENE gerundete Zelle (rund
+# 1,1 km), klein genug, um in derselben Stadt zu bleiben. Ohne ihn läge das Koordinaten-Event in
+# derselben Zelle wie das "Mehrere Orte"-Event, und zwei verschiedene Viertel in derselben Zelle
+# wären ein Zustand, den die Anwendung nie schriebe: dieselbe Zelle ergibt dieselbe Auskunft.
+_DEMO_SINGLE_CELL_OFFSET = 0.05
+
+# DIE AUFGELÖSTEN ORTSNAMEN der Demo-Events, als LITERALE: `demo_state` ruft nie einen Auflöser
+# und bezieht keinen Ortsdatensatz (S10).
+#
+# Die Kardinalität ist der Zweck: ZWEI Events teilen sich denselben Ortsnamen und tragen deshalb
+# ihr Viertel. Ohne diesen Fall ist die Viertel-Regel im Browser unsichtbar, und `browse-app` kann
+# sie nicht zeigen.
+#
+# NUR ZWEI Events tragen einen Namen, und mehr sind hier nicht zu haben: Von den vier Events des
+# "bewertet"-Projekts trägt eines eine Sehenswürdigkeit (der Ortsname ersetzt sie nicht) und eines
+# gar keine Ortsangabe (dort gibt es nichts aufzulösen). Ein fünftes Event wäre bei acht Fotos ein
+# Event aus einem einzigen Foto - und das ausgeschlossene Dokument stünde dann allein in seinem
+# Event, das damit Kandidaten, aber keinen Album-Entwurf trüge.
+_DEMO_PLACE_NAMES = {
+    _DEMO_SINGLE_COORDINATE_EVENT: "Paris, Montmartre",
+    _DEMO_MULTIPLE_PLACES_EVENT: "Paris, Gros-Caillou",
+}
+
 # specs/features/0426-zeitversatz-je-kamera.md, Umsetzungsschritt 8: der "bewertet"-Zustand muss
 # ALLE Zustaende hergeben, die die Kameraliste und die Fotoansicht zeigen koennen - eine Kamera
 # OHNE Versatz, eine MIT gesetztem Versatz und Fotos ohne bestimmbare Kamera. Sonst ist die
@@ -357,7 +380,11 @@ def _demo_gps(index: int, photo_count: int) -> tuple[float, float] | None:
     Die Zuordnung folgt dem Event: das Landmark- und das Koordinaten-Event streuen INNERHALB einer
     gerundeten Zelle, das "Mehrere Orte"-Event ueber Zellgrenzen hinweg, und das vierte Event
     bekommt gar keine Koordinate. `None` heisst hier wie ueberall "kein Ort" - nie eine halbe
-    Koordinate."""
+    Koordinate.
+
+    Das Koordinaten-Event liegt um `_DEMO_SINGLE_CELL_OFFSET` versetzt und damit in einer EIGENEN
+    Zelle: Es traegt ein anderes Viertel als das "Mehrere Orte"-Event, und zwei verschiedene
+    Viertel in derselben Zelle waeren ein Zustand, den die Anwendung nie schriebe."""
     event_index = _demo_event_index(index, photo_count)
     if event_index == _DEMO_NO_LOCATION_EVENT:
         return None
@@ -366,10 +393,11 @@ def _demo_gps(index: int, photo_count: int) -> tuple[float, float] | None:
         if event_index == _DEMO_MULTIPLE_PLACES_EVENT
         else _DEMO_SAME_CELL_STEP
     )
+    offset = _DEMO_SINGLE_CELL_OFFSET if event_index == _DEMO_SINGLE_COORDINATE_EVENT else 0.0
     step = _demo_event_offset(index, photo_count)
     return (
-        round(_DEMO_BASE_LAT + spread * step, 6),
-        round(_DEMO_BASE_LON + spread * step, 6),
+        round(_DEMO_BASE_LAT + offset + spread * step, 6),
+        round(_DEMO_BASE_LON + offset + spread * step, 6),
     )
 
 
@@ -829,6 +857,9 @@ async def _create_demo_events(
             place_kind=place_kind,
             place_lat=place_lat,
             place_lon=place_lon,
+            # Ein Event OHNE Ortsangabe bekommt auch dann keinen Namen, wenn die Abbildung einen
+            # traegt: Was es aufzuloesen gaebe, gibt es dort nicht.
+            place_name=None if place_kind is None else _DEMO_PLACE_NAMES.get(event_index),
         )
         session.add(event)
         await session.flush()
