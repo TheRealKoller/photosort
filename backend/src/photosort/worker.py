@@ -112,7 +112,8 @@ from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCl
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.pricing import compute_cost_usd
-from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
+from photosort.quality import compute_quality_score
+from photosort.quality_weights import effective_weights, latest_weight_set
 from photosort.ranking import rank_photos
 from photosort.remote_classification import (
     CategoryDetectionClientLike,
@@ -1637,6 +1638,15 @@ async def _build_grouping_and_rankings(
         ).all()
     }
 
+    # DIE GEWICHTE EINMAL JE LAUF, vor der Partitionsschleife - nicht je Foto (Spec 0432): Die
+    # geltende Fassung aendert sich waehrend eines Laufs nicht, und ein Lesegang je Foto fiele an
+    # keinem Ergebnis auf. Welche Fassung gerechnet hat, haelt die Lauf-Zeile fest; ohne sie ist
+    # ein vergangener Rang-Score nach der naechsten Anpassung nicht mehr nachrechenbar. `NULL`
+    # heisst dort "Startwerte oder Altzeile".
+    weights = await effective_weights(session)
+    used_weight_set = await latest_weight_set(session)
+    run.quality_weight_set_id = None if used_weight_set is None else used_weight_set.id
+
     # Eine Partition je Event, ein Foto in genau einer davon.
     partitions: dict[int, dict[int, dict[str, float]]] = {}
     for photo_id, values in values_by_photo_id.items():
@@ -1648,9 +1658,7 @@ async def _build_grouping_and_rankings(
         # in beiden Spalten: sie behalten ihre `event_id`, bleiben im einsehbaren Vorrat und
         # erscheinen nicht im Entwurf.
         quality_scores = {
-            photo_id: compute_quality_score(
-                level_by_photo_id[photo_id], values, QUALITY_CRITERION_WEIGHTS
-            )
+            photo_id: compute_quality_score(level_by_photo_id[photo_id], values, weights)
             for photo_id, values in partition_candidates.items()
             if photo_id in level_by_photo_id
         }

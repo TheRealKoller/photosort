@@ -14,6 +14,13 @@ function diagnosis(correctionCount: number): FeedbackDiagnosisOut {
     motif_errors: [],
     exchanges: [],
     criteria: [],
+    weights: {
+      current: [],
+      proposed: [],
+      based_on_event_id: 0,
+      current_set_id: null,
+      can_revert: false,
+    },
   }
 }
 

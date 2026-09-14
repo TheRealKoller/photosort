@@ -97,7 +97,8 @@ from photosort.models import (
 from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import LOCAL_MOTIF_SIGNALS, MOTIF_REGISTRY
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
-from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
+from photosort.quality import compute_quality_score
+from photosort.quality_weights import effective_weights, latest_weight_set
 from photosort.thumbnails import (
     delete_cached_variants,
     generate_variants,
@@ -998,6 +999,14 @@ async def _seed_rated_project(
     session.add(criterion_run)
     await session.flush()
 
+    # DIESELBE Herkunft der Gewichte wie im Lauf (`worker.py`), einmal gelesen und an der
+    # Lauf-Zeile belegt: Eine hier stehengebliebene Modulkonstante zeigte auf der Demo-Instanz
+    # Zahlen, die die Anwendung nach der naechsten Anpassung nie wieder erzeugte - und die Demo
+    # darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe.
+    weights = await effective_weights(session)
+    used_weight_set = await latest_weight_set(session)
+    criterion_run.quality_weight_set_id = None if used_weight_set is None else used_weight_set.id
+
     # Die Rangzeilen werden erst GESAMMELT und dann partitionsweise geschrieben: `rank_position`
     # ist innerhalb einer Partition lueckenlos 1..n (dieselbe Zusage wie im produktiven
     # Schreibpfad), und die Position steht erst fest, wenn die Partition vollstaendig ist.
@@ -1071,7 +1080,7 @@ async def _seed_rated_project(
             (
                 event_id,
                 photo,
-                compute_quality_score(level, criterion_values, QUALITY_CRITERION_WEIGHTS),
+                compute_quality_score(level, criterion_values, weights),
             )
         )
 

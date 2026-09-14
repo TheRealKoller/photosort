@@ -395,12 +395,17 @@ class FeedbackDiagnosis:
     Korrekturen fest, die der Bestand nicht mehr zeigt.
 
     `correction_count` ist die UNGEWICHTETE Zahl aller Ereignisse und die Bezugsgroesse der
-    Fehlerzahlen."""
+    Fehlerzahlen.
+
+    `latest_event_id` ist die hoechste `id` des GESAMTEN Logs und bei leerem Log `0` - das
+    Zustimmungs-Token, gegen das eine spaetere Uebernahme auf strikte Gleichheit geprueft wird
+    (S6). Es ist KEIN Objektverweis und wird nie zu einer Zeile aufgeloest."""
 
     correction_count: int
     motif_errors: Mapping[MotifErrorCase, int]
     exchanges: Mapping[ExchangeKind, ExchangeStats]
     criteria: Mapping[str, CriterionAgreement]
+    latest_event_id: int
 
 
 async def _criterion_values(
@@ -543,4 +548,19 @@ async def load_diagnosis(
         motif_errors=motif_errors,
         exchanges=exchanges,
         criteria=criterion_agreement(pairs, criterion_keys),
+        latest_event_id=await latest_event_id(session),
     )
+
+
+async def latest_event_id(session: AsyncSession) -> int:
+    """Die hoechste `id` des GESAMTEN Logs, `0` bei leerem Log.
+
+    OHNE JEDEN FILTER - nicht nach Projekt, nicht nach Art (S6): Gegen ein gefiltertes Maximum
+    geprueft, gingen Ereignisse unbemerkt durch, und die uebernommene Fassung entstuende gegen
+    eine Lage, die niemand gesehen hat.
+
+    `0` bei leerem Log und nicht `None`: Ohne definierten Wert waere der erste Schreibvorgang
+    ungeprueft. Die `id`-Folge beginnt bei `1`, `0` kollidiert also mit keiner Zeile."""
+    return (
+        await session.execute(select(func.coalesce(func.max(FeedbackEvent.id), 0)))
+    ).scalar_one()
