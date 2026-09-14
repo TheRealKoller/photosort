@@ -22,6 +22,7 @@ from photosort.cloud_vision import (
 )
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
+from photosort.places import landmark_place_cell, sanitize_place_name
 
 # Isoliertes Modul - haelt den synchronen criteria.py-Vertrag aller sieben lokalen Kriterien
 # unangetastet. Direkter httpx-REST-Aufruf gegen die Anthropic Messages API, KEIN
@@ -90,6 +91,57 @@ class LandmarkDetection:
     # Aufruf traegt dann nichts zur Tokensumme bei, wird aber trotzdem als stattgefundener Aufruf
     # gezaehlt.
     usage: TokenUsage | None = None
+
+
+@dataclass(frozen=True)
+class PlaceHint:
+    """Die grobe Ortsangabe, die zusammen mit dem Foto hinausgeht - GENAU EINE der beiden Stufen.
+
+    `locality` ist der aufgeloeste, sanitierte Ortsname; `cell` das auf
+    `places.LANDMARK_PLACE_CELL_DIGITS` gerundete Zahlenpaar. Dass nie beide zugleich gesetzt sind,
+    ist strukturell durchgesetzt und nicht bloss dokumentiert: eine Doppelbelegung waere der stille
+    Weg, auf dem die Namensstufe ihre Schonung verloere und das Zahlenpaar zusaetzlich hinausginge.
+    "Keine Angabe" wird als `None` STATT dieses Objekts ausgedrueckt, damit es nicht zwei
+    Darstellungen derselben Abwesenheit gibt.
+
+    Der Vorrat ist bewusst geschlossen: kein Viertel, keine Region, kein Land, kein
+    zusammengesetzter Anzeigename, keine weitere Zeichenkette aus der Datenbank (ADR 0106 Punkt 6,
+    S2/S4)."""
+
+    locality: str | None = None
+    cell: tuple[float, float] | None = None
+
+    def __post_init__(self) -> None:
+        if (self.locality is None) == (self.cell is None):
+            raise ValueError("Ein PlaceHint traegt genau eine Stufe: Ortsname ODER Zelle.")
+
+
+def place_hint_for(
+    locality: str | None, gps_lat: float | None, gps_lon: float | None
+) -> PlaceHint | None:
+    """Die Stufenwahl der Ortsangabe an genau EINER Stelle (ADR 0106 Punkt 2).
+
+    Ortsname, sonst grobe Koordinate, sonst nichts. Beide Stufen sind dauerhaft; die
+    Koordinatenstufe ist kein Uebergangszustand bis zu einer besseren Namensaufloesung, sie greift
+    bevorzugt dort, wo sich kein Ortsname aufloesen liess.
+
+    `locality` ist bereits das Ergebnis von `places.usable_locality` - es gibt keine zweite Fassung
+    von "ein Ortsname gilt als aufgeloest" (S2). Er laeuft hier dennoch ein weiteres Mal durch
+    `sanitize_place_name`: Das ist der AUSGEHENDE Rand, und er verlaesst sich nicht auf die
+    Sanitisierung am Schreibrand. Ueberlebt der Name sie nicht, greift die Koordinatenstufe - ein
+    unbrauchbarer Name macht das Foto nicht ortlos.
+
+    OHNE eigene gemessene Koordinate gibt es GAR KEINEN Hinweis, und damit strukturell auch keinen
+    Ortsnamen: der Name stammt aus der Zelle des Fotos. Eine ueber `events.py::infer_locations`
+    uebernommene Koordinate erreicht diese Funktion nie (S3) - eine Schaetzung truege Ortsdaten auch
+    fuer Aufnahmen hinaus, die selbst nie eine hatten. Das Fehlen ist kein Fehlerfall: das Foto wird
+    unveraendert erkannt."""
+    if gps_lat is None or gps_lon is None:
+        return None
+    name = sanitize_place_name(locality)
+    if name is not None:
+        return PlaceHint(locality=name)
+    return PlaceHint(cell=landmark_place_cell(gps_lat, gps_lon))
 
 
 class LandmarkClientLike(Protocol):

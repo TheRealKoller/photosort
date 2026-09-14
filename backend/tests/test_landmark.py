@@ -23,9 +23,12 @@ from photosort.landmark import (
     LandmarkClientLike,
     LandmarkDetection,
     MistralLandmarkClient,
+    PlaceHint,
     _landmark_detection_from_json,
+    place_hint_for,
     usable_landmark_name,
 )
+from photosort.places import landmark_place_cell
 from tests.import_closure import module_file
 
 # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md,
@@ -947,3 +950,83 @@ class TestUsableLandmarkName:
         ob kanonischer Name oder Rohname - die Altbestandsdeckung darf nicht dadurch entfallen,
         dass ein neues Feld daneben tritt."""
         assert usable_landmark_name("Eiffel Tower", 0.9, "Eiffel‮turm") == "Eiffelturm"
+
+
+class TestThePlaceHintHasTwoStagesAndAPrecedence:
+    """ADR 0106 Punkt 2: Ortsname, sonst grobe Koordinate, sonst nichts - die Stufenwahl an genau
+    EINER Stelle.
+
+    Beide Stufen sind dauerhaft; die Koordinatenstufe ist kein Uebergangszustand bis zu einer
+    besseren Namensaufloesung."""
+
+    def test_a_resolved_locality_wins_over_the_coordinate(self) -> None:
+        hint = place_hint_for("Garmisch-Partenkirchen", 47.49, 11.09)
+
+        assert hint is not None
+        assert hint.locality == "Garmisch-Partenkirchen"
+
+    def test_the_coordinate_does_not_ride_along_with_a_resolved_locality(self) -> None:
+        """Die Stufen sind ein ENTWEDER-ODER. Steht der Name, geht das Zahlenpaar nicht zusaetzlich
+        hinaus - sonst waere die Namensstufe keine Schonung, sondern eine Ergaenzung."""
+        hint = place_hint_for("Garmisch-Partenkirchen", 47.49, 11.09)
+
+        assert hint is not None
+        assert hint.cell is None
+
+    def test_without_a_resolvable_locality_the_coordinate_stage_takes_over(self) -> None:
+        """Nicht "nichts": Der Fall ist genau der, fuer den die Koordinatenstufe da ist - eine
+        Antwort auf Regionsebene gilt als "kein Name aufgeloest"."""
+        hint = place_hint_for(None, 47.49, 11.09)
+
+        assert hint is not None
+        assert hint.locality is None
+        assert hint.cell == landmark_place_cell(47.49, 11.09)
+
+    def test_a_locality_that_fails_sanitisation_falls_through_to_the_coordinate(self) -> None:
+        """Ein Ortsdatensatz ist von Dritten beschreibbar. Ein unbrauchbarer Name ist kein Name -
+        und macht das Foto nicht ortlos."""
+        hint = place_hint_for("​‮", 47.49, 11.09)
+
+        assert hint is not None
+        assert hint.locality is None
+        assert hint.cell == landmark_place_cell(47.49, 11.09)
+
+    def test_the_locality_is_sanitised_on_the_way_out(self) -> None:
+        """S4 (c): Hinaus geht der EINE sanitierte Name. Die Sanitisierung am Schreibrand deckt den
+        Bestand; der ausgehende Rand verlaesst sich nicht darauf."""
+        hint = place_hint_for("Garmisch‮-Partenkirchen​", 47.49, 11.09)
+
+        assert hint is not None
+        assert hint.locality == "Garmisch-Partenkirchen"
+
+    def test_a_photo_without_a_measured_coordinate_gets_no_hint_at_all(self) -> None:
+        """Und damit STRUKTURELL auch keinen Ortsnamen: Der Name stammt aus der Zelle des Fotos,
+        und ohne Koordinate gibt es keine. Das Fehlen ist kein Fehlerfall - das Foto wird
+        unveraendert erkannt."""
+        assert place_hint_for("Garmisch-Partenkirchen", None, None) is None
+
+    @pytest.mark.parametrize(
+        ("lat", "lon"), [(47.49, None), (None, 11.09)], ids=["nur-breite", "nur-laenge"]
+    )
+    def test_half_a_coordinate_is_no_coordinate(self, lat: float | None, lon: float | None) -> None:
+        assert place_hint_for(None, lat, lon) is None
+
+    def test_the_coordinate_stage_is_coarsened_never_the_measured_value(self) -> None:
+        """Die Zelle, die das System verlaesst - nie feiner (S1)."""
+        hint = place_hint_for(None, 47.4912345, 11.0987654)
+
+        assert hint is not None
+        assert hint.cell == (47.5, 11.1)
+
+    def test_a_hint_never_carries_both_stages_at_once(self) -> None:
+        """Die Invariante ist strukturell durchgesetzt, nicht bloss dokumentiert: eine von Hand
+        gebaute Doppelbelegung waere sonst der stille Weg, auf dem beide Stufen zugleich
+        hinausgingen."""
+        with pytest.raises(ValueError):
+            PlaceHint(locality="Garmisch-Partenkirchen", cell=(47.5, 11.1))
+
+    def test_a_hint_never_carries_neither_stage(self) -> None:
+        """ "Nichts" wird als `None` ausgedrueckt, nie als leerer Hinweis - sonst gaebe es zwei
+        Darstellungen derselben Abwesenheit."""
+        with pytest.raises(ValueError):
+            PlaceHint()
