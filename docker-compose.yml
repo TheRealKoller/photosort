@@ -64,6 +64,11 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - photo_cache:/data/photo-cache
+      # Der vorbereitete GeoNames-Auszug (ADR 0105 Punkt 3). Hier SCHREIBBAR, weil das getippte
+      # Bezugskommando ueber die Konsole dieses Dienstes laeuft:
+      #   docker compose exec backend python -m photosort.place_dataset
+      # Genau ein Schreiber - im Worker unten steht dasselbe Volume nur lesend.
+      - place_dataset:/data/place-dataset
 
   # Verarbeitet Hintergrund-Jobs (Foto-Ingest, Thumbnails, KI-Scoring) via arq.
   # Führt selbst keine Migration mehr aus (siehe specs/decisions/0012-single-service-migration-ownership.md)
@@ -99,6 +104,10 @@ services:
     command: ["python", "-m", "arq", "photosort.worker.WorkerSettings"]
     volumes:
       - photo_cache:/data/photo-cache
+      # NUR LESEND (`:ro`): Der operative Pfad ist kein Schreiber. Fehlt der Auszug oder weicht er
+      # von seinem Hash ab, wird kein Aufloeser gebaut, es entsteht kein Ersatzweg, und die Events
+      # behalten Nummer und Zeitspanne - der Lauf laeuft durch.
+      - place_dataset:/data/place-dataset:ro
 
   frontend:
     build:
@@ -114,6 +123,7 @@ services:
 volumes:
   postgres_data:
   photo_cache:
+  place_dataset:
 
 # Expliziter Default-Netzwerk-Block statt des von Docker Compose automatisch angelegten
 # Default-Netzwerks (siehe specs/features/0010-explicit-ipv4-only-network.md): das externe

@@ -56,6 +56,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.cloud_vision import CloudRequestThrottle
 from photosort.config import settings
 from photosort.db import make_engine, make_session_factory
+from photosort.geonames import GeoNamesResolver, PlaceDatasetError
 from photosort.models import (
     CriterionScoringRun,
     Event,
@@ -66,7 +67,6 @@ from photosort.models import (
 )
 from photosort.places import (
     PLACE_CELL_DIGITS,
-    PLACE_LEVELS,
     PlaceAnswer,
     PlaceInfo,
     PlaceResolver,
@@ -74,7 +74,6 @@ from photosort.places import (
     sanitize_place_name,
     usable_locality,
 )
-from photosort.scoring import haversine_meters
 
 # Die vergroeberte Ortszelle, wie `places.place_cell` sie bildet. Eigener Name, weil sie in diesem
 # Modul durchgaengig der Schluessel ist.
@@ -451,179 +450,6 @@ async def read_probe_input(session: AsyncSession, project_id: int) -> ProbeInput
         events=events,
         run_found=True,
     )
-
-
-# --- Kandidat 1: der lokale Ortsdatensatz (GeoNames), bewusst WEGWERFBAR ------------------------
-#
-# Naiv und ohne Index - die Messung darf die Abhaengigkeit nicht vorwegnehmen, deren Anschaffung
-# sie erst begruenden soll. Kein Paket, keine neue Laufzeit-Abhaengigkeit, nicht im Docker-Image.
-
-# Die Ebene kommt aus `featureClass`/`featureCode`, NICHT aus der Bevoelkerungszahl: viele
-# `PPLX`-Eintraege (die Viertel-Ebene) tragen `population = 0`, und ein nach Einwohnern
-# gefilterter Extrakt naehme die Frage nach der Viertel-Abdeckung negativ vorweg.
-_GEONAMES_NEIGHBOURHOOD_CODE = "PPLX"
-_GEONAMES_NAME_FIELD = 1
-_GEONAMES_LAT_FIELD = 4
-_GEONAMES_LON_FIELD = 5
-_GEONAMES_FEATURE_CLASS_FIELD = 6
-_GEONAMES_FEATURE_CODE_FIELD = 7
-_GEONAMES_FIELD_COUNT = 8
-
-
-@dataclass(frozen=True)
-class GeoNamesEntry:
-    """Eine Zeile des Datensatzes, auf die fuenf gebrauchten Felder reduziert."""
-
-    name: str
-    lat: float
-    lon: float
-    feature_class: str
-    feature_code: str
-
-
-def parse_geonames_line(line: str) -> GeoNamesEntry | None:
-    """Eine tab-getrennte Zeile, oder `None` bei jeder Unregelmaessigkeit.
-
-    Der Name laeuft durch `sanitize_place_name`: ein Ortsdatensatz ist ebenso von Dritten
-    geschrieben wie eine Dienstantwort (S7). Eine Zeile ohne verwendbaren Namen faellt ganz weg."""
-    fields = line.rstrip("\n").split("\t")
-    if len(fields) < _GEONAMES_FIELD_COUNT:
-        return None
-    name = sanitize_place_name(fields[_GEONAMES_NAME_FIELD])
-    if name is None:
-        return None
-    try:
-        lat = float(fields[_GEONAMES_LAT_FIELD])
-        lon = float(fields[_GEONAMES_LON_FIELD])
-    except ValueError:
-        return None
-    return GeoNamesEntry(
-        name=name,
-        lat=lat,
-        lon=lon,
-        feature_class=fields[_GEONAMES_FEATURE_CLASS_FIELD],
-        feature_code=fields[_GEONAMES_FEATURE_CODE_FIELD],
-    )
-
-
-def geonames_level(entry: GeoNamesEntry) -> str | None:
-    """Die Ebene EINES Eintrags, oder `None` fuer alles, was dieses Projekt nicht fuehrt.
-
-    Klasse `P` ist ein Ort, `PPLX` ("section of populated place") die Viertel-Ebene. Klasse `A`
-    ist die Verwaltungsebene - genau der als wertlos eingestufte Fall: `ADM*` ergibt `region`,
-    `PCL*` ein Land. Beides traegt keinen Ortsnamen."""
-    if entry.feature_class == "P":
-        if entry.feature_code == _GEONAMES_NEIGHBOURHOOD_CODE:
-            return "neighbourhood"
-        return "locality"
-    if entry.feature_class == "A":
-        if entry.feature_code.startswith("PCL"):
-            return "country"
-        if entry.feature_code.startswith("ADM"):
-            return "region"
-    return None
-
-
-def geonames_answer(entries: Iterable[GeoNamesEntry], cell: Cell) -> PlaceAnswer | None:
-    """Die Auskunft zu einer Zelle aus den Eintraegen in ihrer Nachbarschaft.
-
-    Je Ebene gewinnt der NAECHSTGELEGENE Eintrag. `matched_level` ist die FEINSTE getroffene
-    Ebene; ohne jeden verwertbaren Eintrag gibt es keine Antwort (`None`) - das ist ausdruecklich
-    etwas anderes als eine Antwort ohne brauchbare Ebene."""
-    lat, lon = cell
-    nearest: dict[str, tuple[float, str]] = {}
-    for entry in entries:
-        level = geonames_level(entry)
-        if level is None:
-            continue
-        distance = haversine_meters(lat, lon, entry.lat, entry.lon)
-        if distance > _GEONAMES_MAX_DISTANCE_METERS:
-            continue
-        current = nearest.get(level)
-        if current is None or distance < current[0]:
-            nearest[level] = (distance, entry.name)
-    if not nearest:
-        return None
-    matched = next((level for level in PLACE_LEVELS if level in nearest), None)
-    return PlaceAnswer(
-        neighbourhood=nearest["neighbourhood"][1] if "neighbourhood" in nearest else None,
-        locality=nearest["locality"][1] if "locality" in nearest else None,
-        region=nearest["region"][1] if "region" in nearest else None,
-        country=nearest["country"][1] if "country" in nearest else None,
-        matched_level=matched,
-    )
-
-
-# Suchraster des naiven Durchgangs: eine Zehntelgrad-Kachel, rund 11 km.
-#
-# ACHTUNG, DAS IST KEINE ZWEITE ORTSZELLE: Dieser Schluessel ist rein prozessintern, entsteht nur
-# waehrend des einen Dateidurchgangs, wird NIE abgelegt und NIE abgesendet. Die Ortszelle - der
-# Wert, der das System verlaesst - bleibt ausschliesslich `places.place_cell`.
-#
-# Ein Kranz aus ORTSZELLEN (rund 1,1 km) traegt hier nicht: der Mittelpunkt einer Stadt liegt
-# regelmaessig mehrere Kilometer von dem Viertel entfernt, in dem fotografiert wurde. Ein zu enger
-# Radius wiese den lokalen Kandidaten systematisch zu duerftig aus und traege damit eine nicht
-# ruecknehmbare Wegwahl.
-_SEARCH_BUCKET_DIGITS = 1
-
-# Grobe Obergrenze des naiven Durchgangs. Jenseits davon ist ein Treffer kein Ortsname mehr,
-# sondern der naechste Eintrag irgendwo - grosszuegig, weil der Mittelpunkt einer Grossstadt weit
-# vom bereisten Rand liegen kann.
-_GEONAMES_MAX_DISTANCE_METERS = 25_000.0
-
-
-def _search_bucket(lat: float, lon: float) -> tuple[float, float]:
-    """Der prozessinterne Suchschluessel - siehe `_SEARCH_BUCKET_DIGITS`."""
-    return (round(lat, _SEARCH_BUCKET_DIGITS), round(lon, _SEARCH_BUCKET_DIGITS))
-
-
-def search_buckets_around(cell: Cell) -> tuple[tuple[float, float], ...]:
-    """Die Kachel der Zelle und ihre acht Nachbarn - zusammen rund 11 bis 22 km im Umkreis."""
-    lat, lon = cell
-    step = 10.0**-_SEARCH_BUCKET_DIGITS
-    return tuple(
-        _search_bucket(lat + row * step, lon + column * step)
-        for row in (-1, 0, 1)
-        for column in (-1, 0, 1)
-    )
-
-
-class GeoNamesResolver:
-    """Liest den Datensatz in EINEM Durchgang und behaelt nur, was in der Naehe der gefragten
-    Zellen liegt.
-
-    Die Zellmenge kommt in den Konstruktor, weil ein Durchgang je Zelle bei rund 1,5 GB Text
-    nicht laeuft; der Durchgang selbst bleibt naiv und ohne Index. Gefragt wird ausschliesslich
-    ueber die TATSAECHLICH BESUCHTEN Zellen - dieser Auflöser erzeugt keine."""
-
-    def __init__(self, path: Path, cells: Iterable[Cell]) -> None:
-        wanted: dict[Cell, list[GeoNamesEntry]] = {cell: [] for cell in cells}
-        bucket_owners: dict[tuple[float, float], list[Cell]] = {}
-        for cell in wanted:
-            for bucket in search_buckets_around(cell):
-                bucket_owners.setdefault(bucket, []).append(cell)
-        if not path.is_file():
-            # LAUT, ohne stillen Rueckfall auf den externen Weg: ein fehlender Datensatz ist
-            # etwas anderes als ein Datensatz ohne Treffer, und beide duerfen in der Messung nicht
-            # gleich aussehen.
-            raise PlaceProbeError(
-                f"Der Ortsdatensatz {path.name} liegt nicht unter dem angegebenen Pfad. "
-                "Erst scripts/fetch-ortsdatensatz.sh laufen lassen."
-            )
-        with path.open(encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                entry = parse_geonames_line(line)
-                if entry is None:
-                    continue
-                owners = bucket_owners.get(_search_bucket(entry.lat, entry.lon))
-                if owners is None:
-                    continue
-                for owner in owners:
-                    wanted[owner].append(entry)
-        self._entries = wanted
-
-    async def resolve(self, cell: Cell) -> PlaceAnswer | None:
-        return geonames_answer(self._entries.get(cell, ()), cell)
 
 
 # --- Kandidat 2: der externe Dienst (Photon), bewusst WEGWERFBAR --------------------------------
@@ -1094,7 +920,10 @@ def main(
                 build_external_resolver=build_external_resolver,
             )
         )
-    except PlaceProbeError as exc:
+    except (PlaceProbeError, PlaceDatasetError) as exc:
+        # BEIDE Abbruchgruende sehen fuer den Aufrufer gleich aus: der Messlauf hat nicht
+        # stattgefunden, und warum, steht in der Meldung. Ein fehlender Ortsdatensatz ist hier
+        # ausdruecklich KEIN leeres Messergebnis.
         print(f"Fehler: {exc}", file=sys.stderr)
         return 1
     except SQLAlchemyError as exc:

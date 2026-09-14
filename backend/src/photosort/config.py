@@ -174,6 +174,18 @@ class Settings(BaseSettings):
     # Sache benennt.
     external_place_lookup_enabled: bool = False
 
+    # Der Pfad des vorbereiteten GeoNames-Auszugs, aus dem die Ortsauflösung liest (ADR 0105
+    # Punkt 3). Vorgabe ist das eigene Docker-Volume `place_dataset`: im Backend-Dienst
+    # schreibbar, im Worker nur lesend eingehängt - genau ein Schreiber, und der operative Pfad
+    # ist keiner.
+    #
+    # Betriebseinstellung wie `photo_cache_dir`, nie ein Wert aus Datenbank oder Request. Fehlt
+    # die Datei oder weicht sie von ihrem Hash ab, wird kein Auflöser gebaut, es entsteht kein
+    # Ersatzweg, und die Events behalten Nummer und Zeitspanne - ein arbeitsfähiger Zustand, kein
+    # Startfehler. Erzeugt wird der Auszug einmal je Volume über
+    # `python -m photosort.place_dataset`.
+    place_dataset_path: str = "/data/place-dataset/geonames-auszug.txt.gz"
+
     # Obergrenze für die begrenzte Parallelisierung der Cloud-Aufrufe der
     # Remote-Kategorie-Klassifizierung - analog landmark_api_concurrency. Bewusst ein eigenes
     # Setting statt dessen Wiederverwendung: ein eigenständiger Job mit eigener Kandidatenmenge

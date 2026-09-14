@@ -40,21 +40,16 @@ from photosort.place_probe import (
     PHOTON_MIN_REQUEST_INTERVAL_SECONDS,
     PHOTON_REVERSE_URL,
     Cell,
-    GeoNamesResolver,
     PhotonResolver,
-    PlaceProbeError,
     ProbeEvent,
     ProbeInput,
     ProbeTally,
     cell_counts,
     coverage_counts,
-    geonames_answer,
-    geonames_level,
     heading_counts,
     level_counts,
     main,
     new_tally,
-    parse_geonames_line,
     photo_counts,
     photon_answer,
 )
@@ -566,98 +561,6 @@ BERLIN_LINES = [
     _geonames_line("Land Berlin", 52.5000, 13.4000, "A", "ADM1"),
     _geonames_line("Bundesrepublik Deutschland", 52.5000, 13.4000, "A", "PCLI"),
 ]
-
-
-class TestTheLocalCandidate:
-    """Nur an den RAENDERN geprueft - der Auflöser selbst ist bewusst wegwerfbar. Die Zaehlbloecke
-    oben tragen die Zahlen, die die Wegwahl begruenden."""
-
-    def test_a_populated_place_gives_the_locality_level(self) -> None:
-        entry = parse_geonames_line(_geonames_line("Split", 43.5081, 16.4402, "P", "PPL"))
-        assert entry is not None
-
-        assert geonames_level(entry) == "locality"
-
-    def test_a_section_of_a_populated_place_gives_the_district_level(self) -> None:
-        """`PPLX` ist die Viertel-Ebene - und traegt regelmaessig `population = 0`. Genau deshalb
-        darf nicht mit einem nach Einwohnern gefilterten Extrakt gemessen werden."""
-        entry = parse_geonames_line(_geonames_line("Kreuzberg", 52.4980, 13.4030, "P", "PPLX"))
-        assert entry is not None
-
-        assert geonames_level(entry) == "neighbourhood"
-
-    @pytest.mark.parametrize("code", ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"])
-    def test_an_administrative_division_carries_no_usable_level(self, code: str) -> None:
-        """Klasse `A` ist genau der als wertlos eingestufte Fall: `region` traegt keinen Namen."""
-        entry = parse_geonames_line(_geonames_line("Bayern", *GARMISCH, "A", code))
-        assert entry is not None
-        answer = geonames_answer([entry], GARMISCH)
-        assert answer is not None
-
-        assert geonames_level(entry) == "region"
-        assert answer.matched_level == "region"
-        assert usable_locality(_info_of(answer)) is None
-
-    def test_a_line_with_too_few_fields_is_skipped_not_crashing(self) -> None:
-        assert parse_geonames_line("1\tBerlin\n") is None
-
-    def test_a_line_with_an_unparsable_coordinate_is_skipped(self) -> None:
-        assert (
-            parse_geonames_line(
-                _geonames_line("Berlin", 0.0, 0.0, "P", "PPL").replace(
-                    "\t0.0\t0.0\t", "\tNORD\tOST\t"
-                )
-            )
-            is None
-        )
-
-    def test_a_name_that_does_not_survive_sanitisation_drops_the_whole_line(self) -> None:
-        line = _geonames_line("​‮", 52.52, 13.40, "P", "PPL")
-
-        assert parse_geonames_line(line) is None
-
-    def test_the_nearest_entry_per_level_wins(self) -> None:
-        entries = [entry for line in BERLIN_LINES if (entry := parse_geonames_line(line))]
-
-        answer = geonames_answer(entries, BERLIN_KREUZBERG)
-
-        assert answer is not None
-        assert answer.matched_level == "neighbourhood"
-        assert answer.neighbourhood == "Kreuzberg"
-        assert answer.locality == "Berlin"
-        assert answer.country == "Bundesrepublik Deutschland"
-
-    def test_no_nearby_entry_at_all_means_no_answer(self) -> None:
-        """KEINE ANTWORT, ausdruecklich nicht "Antwort ohne brauchbare Ebene" - die beiden sind
-        verschieden und duerfen in der Messung nicht gleich aussehen."""
-        assert geonames_answer([], SPLIT) is None
-
-    async def test_the_resolver_reads_the_file_and_answers(self, tmp_path: Path) -> None:
-        dataset = tmp_path / "allCountries.txt"
-        dataset.write_text("\n".join(BERLIN_LINES) + "\n", encoding="utf-8")
-
-        resolver = GeoNamesResolver(dataset, [BERLIN_KREUZBERG])
-        answer = await resolver.resolve(BERLIN_KREUZBERG)
-
-        assert answer is not None
-        assert answer.locality == "Berlin"
-
-    async def test_a_cell_nobody_asked_for_gets_no_answer(self, tmp_path: Path) -> None:
-        """Der Auflöser behaelt nur die Nachbarschaft der GEFRAGTEN Zellen - er erzeugt keine."""
-        dataset = tmp_path / "allCountries.txt"
-        dataset.write_text("\n".join(BERLIN_LINES) + "\n", encoding="utf-8")
-
-        resolver = GeoNamesResolver(dataset, [BERLIN_KREUZBERG])
-
-        assert await resolver.resolve(SPLIT) is None
-
-    def test_a_missing_dataset_breaks_loudly_without_a_silent_fallback(
-        self, tmp_path: Path
-    ) -> None:
-        """Ein fehlender Datensatz ist etwas anderes als ein Datensatz ohne Treffer. Ein stiller
-        Rueckfall auf den externen Weg waere zudem ein Abfluss, den niemand angeordnet hat."""
-        with pytest.raises(PlaceProbeError):
-            GeoNamesResolver(tmp_path / "gibt-es-nicht.txt", [SPLIT])
 
 
 # --- Der externe Kandidat (Photon), an seinen Raendern ------------------------------------------
