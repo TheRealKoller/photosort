@@ -22,6 +22,7 @@ from photosort.api.deps import (
 from photosort.cloud_vision import provider_for_vision_model
 from photosort.config import settings
 from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
+from photosort.duplicates import survives_ausschuss
 from photosort.models import (
     ClassificationPhase,
     CloudVisionPhase,
@@ -532,7 +533,10 @@ async def _count_remote_category_candidates(session: AsyncSession, project_id: i
         .join(PhotoScore, PhotoScore.photo_id == Photo.id)
         .where(
             Photo.project_id == project_id,
-            PhotoScore.suggested_status.is_(None),
+            # SICHERHEIT (S1 von Spec 0374): DASSELBE Praedikat wie im Lauf. Es folgt der Auswahl
+            # nicht von selbst - dies ist eine eigene Anweisung, und sie muss dieselbe Menge
+            # zaehlen, die der Lauf sendet.
+            survives_ausschuss(),
             or_(~cloud_assessed, ~album_rated),
         )
     )
@@ -572,7 +576,10 @@ async def _count_landmark_candidates(session: AsyncSession, project_id: int) -> 
             .join(PhotoScore, PhotoScore.photo_id == Photo.id)
             .where(
                 Photo.project_id == project_id,
-                PhotoScore.suggested_status.is_(None),
+                # SICHERHEIT (S1 von Spec 0374): dieselbe Begruendung wie eine Funktion weiter
+                # oben. Der Sehenswuerdigkeits-Teilschritt wird vom Kriterien-Lauf gespeist, und
+                # dessen Fotoauswahl traegt dasselbe Praedikat.
+                survives_ausschuss(),
                 PhotoCriterionScore.criterion_key.in_(LANDMARK_CANDIDATE_CRITERION_KEYS),
                 PhotoCriterionScore.photo_id.not_in(already_scored),
             )

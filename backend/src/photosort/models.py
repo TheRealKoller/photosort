@@ -252,6 +252,13 @@ class Photo(Base):
     # worker.py::run_project_scan ein auf OpenCloud verschwundenes Foto löscht, das noch in einem
     # photo_rankings-Eintrag steht.
     rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
+    # 1:1 und optional; ihre ABWESENHEIT ist der Zustand "noch nicht entschieden" (ADR 0104).
+    # Grundlage der Objektfassung des Überlebenden-Prädikats
+    # (`duplicates.py::survives_ausschuss_for`) - ohne diese Relationship müsste jeder Lesepfad
+    # die Entscheidungszeile selbst nachladen, und genau das soll die eine Stelle ersparen.
+    duplicate_decision: Mapped[PhotoDuplicateDecision | None] = relationship(
+        uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class ScanRun(Base):

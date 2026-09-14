@@ -23,10 +23,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, or_, select
+from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.models import Photo, PhotoDuplicateDecision, PhotoScore
+from photosort.models import DuplicateDecision, Photo, PhotoDuplicateDecision, PhotoScore
 
 
 @dataclass(frozen=True)
@@ -140,6 +140,119 @@ def group_position(representative_id: int, links: list[DuplicateLink]) -> tuple[
     }
     geordnet = _ordered_representatives(bezugsmenge)
     return geordnet.index(representative_id) + 1, len(geordnet)
+
+
+# ----------------------------------------------------------------------------------------------
+# Der Ausschuss-Ueberlebender-Bestand - EIN Praedikat fuer sechs Stellen
+# ----------------------------------------------------------------------------------------------
+#
+#     DISCARD ueberlebt nie · KEEP ueberlebt, solange duplicate_of IS NOT NULL ·
+#     sonst entscheidet suggested_status
+#
+# SICHERHEITSAUFLAGE (S1) - DASSELBE PRAEDIKAT IST DIE GRENZE DES HOMESERVERS. Es begrenzt, welche
+# Fotos den Homeserver Richtung Cloud-Anbieter verlassen duerfen, und gilt fuer JEDE Abfrage, die
+# Cloud-Kandidaten bestimmt. Das sind VIER, nicht eine: die beiden Laeufe
+# (`worker.py::run_criterion_scoring`, das zugleich den Sehenswuerdigkeits-Teilschritt speist, und
+# `worker.py::select_remote_category_candidates`) und die beiden vorgelagerten Kostenschaetzungen
+# (`api/projects.py::_count_remote_category_candidates`, `_count_landmark_candidates`). Die
+# Schaetzungen folgen der Auswahl nicht von selbst, sondern sind eigene Anweisungen; sie zaehlen
+# dieselbe Menge, die der Lauf sendet. Untersagte Alternative ist die naheliegende Teilumsetzung -
+# das Praedikat in die Lesepfade der Oberflaeche zu legen und eine der vier Stellen beim alten
+# `suggested_status IS NULL` zu belassen. Bei Verletzung verlassen ausdruecklich verworfene
+# Aufnahmen den Homeserver, behaltene fehlen in der Bewertung, und die Schaetzung nennt eine andere
+# Zahl als der Lauf sendet - ohne Fehler, ohne Meldung, sichtbar erst an der Abrechnung des
+# Anbieters. Der fuenfte Ort (`api/photos.py::_cloud_vision_status_out`) traegt dieselbe Bedingung,
+# ist aber Anzeige und keine Grenze.
+#
+# DIE ASYMMETRIE ZWISCHEN DEN BEIDEN WERTEN IST DIE ENTSCHEIDUNG, NICHT EIN DETAIL (S3).
+# `suggested_status = REJECTED` traegt zwei Gruende - Duplikat-Verlierer UND Unschaerfe unterhalb
+# `SHARPNESS_REJECT_THRESHOLD`, wobei `duplicate_of` im zweiten Fall `NULL` bleibt. Ein
+# unbedingtes `keep` hoebe damit eine Ablehnung auf, zu der der Nutzer nie befragt wurde: Er hat
+# die Duplikatfrage beantwortet, nicht die Schaerfefrage. `discard` bleibt unbedingt, weil es den
+# abfliessenden Bestand verkleinert.
+
+
+def _decision_subquery() -> ColumnElement[DuplicateDecision | None]:
+    """Die Entscheidung zu DIESEM `PhotoScore`, als korrelierte Skalar-Unterabfrage.
+
+    Skalar und nicht als Join, damit keine Aufrufstelle eine Join-Buchfuehrung erbt: Das Praedikat
+    tritt an jeder der sechs Stellen als weiterer Konjunktionsteil in die BESTEHENDE Anweisung."""
+    return (
+        select(PhotoDuplicateDecision.decision)
+        .where(PhotoDuplicateDecision.photo_id == PhotoScore.photo_id)
+        .scalar_subquery()
+    )
+
+
+def survives_ausschuss() -> ColumnElement[bool]:
+    """Die SQL-Fassung. Setzt einen inneren Join auf `PhotoScore` in derselben Anweisung voraus.
+
+    SICHERHEIT (S2), drei Festlegungen, jede einzeln tragend:
+
+    1. Ueberleben wird POSITIV auf `KEEP` geprueft, nie negativ auf `DISCARD`. Die Spalte ist eine
+       Zeichenkette, der Wertevorrat wird von der Datenbank nicht erzwungen, und ein unerwarteter
+       Wert muss zur zurueckhaltenden Seite fallen - nicht zum Abfluss.
+    2. Der Fall "keine Zeile" ist ein ausdrueckliches `IS NULL` auf die Unterabfrage, nie ein
+       Ungleichheitsvergleich: `<Unterabfrage> != 'discard'` ergibt bei fehlender Zeile `NULL`,
+       und die Auswahl lieferte dann den LEEREN Bestand.
+    3. Der innere Join auf `PhotoScore` bleibt ein innerer Join, und das Praedikat tritt als
+       weiterer Konjunktionsteil in DIESELBE Anweisung. Ein Umbau auf einen Outer Join oder auf
+       eine vorgeschaltete Aufloesung machte das Gate zu einem nachgelagerten Filter ueber einer
+       bereits gebildeten Menge und ist untersagt."""
+    decision = _decision_subquery()
+    wirksames_keep = and_(decision == DuplicateDecision.KEEP, PhotoScore.duplicate_of.is_not(None))
+    # "Ohne Wirkung" deckt zwei Faelle: keine Zeile, und ein `keep`, dessen Gruppe zerfallen ist
+    # (AK12). Beide fallen auf `suggested_status` zurueck - ein `keep` macht eine Aufnahme nie
+    # schlechter, als sie ohne Entscheidung staende.
+    ohne_wirkung = or_(
+        decision.is_(None),
+        and_(decision == DuplicateDecision.KEEP, PhotoScore.duplicate_of.is_(None)),
+    )
+    return or_(wirksames_keep, and_(ohne_wirkung, PhotoScore.suggested_status.is_(None)))
+
+
+def has_open_suggestion() -> ColumnElement[bool]:
+    """Die SQL-Fassung von "offener Vorschlag": gestellt und noch nicht beantwortet.
+
+    AUSDRUECKLICH NICHT die Negation von `survives_ausschuss()` (AK5): Eine mit `Ausschuss`
+    entschiedene Aufnahme ist weder Ueberlebende noch offener Vorschlag. Eine Umsetzung, die die
+    eine Menge als Verneinung der anderen bildet, liefert plausible, falsche Listen."""
+    return and_(PhotoScore.suggested_status.is_not(None), _decision_subquery().is_(None))
+
+
+def _survives(
+    suggested_status: object, duplicate_of: int | None, decision: DuplicateDecision | None
+) -> bool:
+    if decision is DuplicateDecision.KEEP and duplicate_of is not None:
+        return True
+    if decision is None or (decision is DuplicateDecision.KEEP and duplicate_of is None):
+        return suggested_status is None
+    return False
+
+
+def survives_ausschuss_for(photo: Photo) -> bool:
+    """Die Objektfassung, ueber einem Foto mit geladenem `score` und `duplicate_decision`.
+
+    Ein Foto OHNE `PhotoScore` ueberlebt nicht - das entspricht dem inneren Join der SQL-Fassung.
+    Beide werden ueber demselben Datenbestand gegeneinander gemessen
+    (`tests/test_ausschuss_ueberlebende.py`)."""
+    score = photo.score
+    if score is None:
+        return False
+    entscheidung = photo.duplicate_decision
+    return _survives(
+        score.suggested_status,
+        score.duplicate_of,
+        entscheidung.decision if entscheidung is not None else None,
+    )
+
+
+def has_open_suggestion_for(photo: Photo) -> bool:
+    """Die Objektfassung von "offener Vorschlag" - siehe `has_open_suggestion()`."""
+    score = photo.score
+    if score is None:
+        return False
+    return score.suggested_status is not None and photo.duplicate_decision is None
 
 
 def _project_member_condition(project_id: int) -> ColumnElement[bool]:

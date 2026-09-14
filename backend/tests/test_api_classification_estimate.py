@@ -13,10 +13,12 @@ from photosort.main import app
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
+    DuplicateDecision,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
     PhotoCriterionScore,
+    PhotoDuplicateDecision,
     PhotoMotifAssessment,
     PhotoScore,
     RatingStatus,
@@ -26,6 +28,7 @@ from photosort.models import (
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.pricing import estimate_usd_per_image
+from photosort.worker import select_remote_category_candidates
 
 # specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md, Akzeptanzkriterium
 # "Kostenschätzung", fortgeschrieben von specs/features/0296-klassifizierung-ein-ausloeser-cloud-
@@ -85,7 +88,13 @@ async def _create_project(client: httpx.AsyncClient) -> int:
 
 
 async def _add_photo_candidate(
-    session: AsyncSession, project_id: int, path: str, *, rejected: bool = False
+    session: AsyncSession,
+    project_id: int,
+    path: str,
+    *,
+    rejected: bool = False,
+    duplicate_of: int | None = None,
+    decision: DuplicateDecision | None = None,
 ) -> Photo:
     now = datetime(2023, 1, 1, tzinfo=UTC)
     photo = Photo(
@@ -107,9 +116,12 @@ async def _add_photo_candidate(
             exposure=0.0,
             cluster_key="cluster-0",
             suggested_status=RatingStatus.REJECTED if rejected else None,
+            duplicate_of=duplicate_of,
             computed_at=now,
         )
     )
+    if decision is not None:
+        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=decision))
     await session.commit()
     return photo
 
@@ -671,3 +683,138 @@ async def test_the_two_flat_candidate_fields_are_gone(
         "price_per_image_usd",
         "estimated_cost_usd",
     }
+
+
+class TestTheAusschussDecisionMovesBothEstimates:
+    """specs/features/0374-duplikate-vergleichen.md, Auflage S1: Die beiden Kostenschaetzungen
+    sind EIGENE Anweisungen und folgen der Kandidatenwahl des Laufs nicht von selbst. Sie sind
+    zugleich die Grundlage, auf der die Freigabe eines kostenpflichtigen Laufs beruht.
+
+    BEIDE RICHTUNGEN AUSDRUECKLICH: Ohne die zweite bestuende jeder Fall auch gegen ein Praedikat,
+    das schlicht alles durchlaesst."""
+
+    async def test_a_keep_decision_turns_a_sorted_out_photo_into_a_remote_category_candidate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        winner = await _add_photo_candidate(db_session, project_id, "gewinner.jpg")
+        await _add_photo_candidate(
+            db_session,
+            project_id,
+            "verlierer.jpg",
+            rejected=True,
+            duplicate_of=winner.id,
+            decision=DuplicateDecision.KEEP,
+        )
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["remote_categories"]["candidate_count"] == 2
+
+    async def test_a_discard_decision_takes_a_candidate_out_of_the_remote_category_estimate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        await _add_photo_candidate(db_session, project_id, "bleibt.jpg")
+        await _add_photo_candidate(
+            db_session, project_id, "raus.jpg", decision=DuplicateDecision.DISCARD
+        )
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["remote_categories"]["candidate_count"] == 1
+
+    async def test_the_remote_category_estimate_counts_exactly_what_the_run_would_send(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """MENGENGLEICHHEIT ueber demselben Datenbestand (S1), nicht zwei getrennt hingeschriebene
+        Erwartungswerte. `select_remote_category_candidates` ist genau die Funktion, die der Lauf
+        benutzt - laufen die beiden auseinander, nennt die Schaetzung eine andere Zahl, als der
+        Lauf sendet, und die Freigabe beruht auf einer Zahl, die nicht gilt."""
+        project_id = await _create_project(authenticated_api_client)
+        winner = await _add_photo_candidate(db_session, project_id, "gewinner.jpg")
+        await _add_photo_candidate(
+            db_session,
+            project_id,
+            "behalten.jpg",
+            rejected=True,
+            duplicate_of=winner.id,
+            decision=DuplicateDecision.KEEP,
+        )
+        await _add_photo_candidate(
+            db_session, project_id, "verworfen.jpg", decision=DuplicateDecision.DISCARD
+        )
+        await _add_photo_candidate(
+            db_session, project_id, "unentschieden.jpg", rejected=True, duplicate_of=winner.id
+        )
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+        vom_lauf = await select_remote_category_candidates(db_session, project_id)
+
+        assert body["remote_categories"]["candidate_count"] == len(vom_lauf)
+        assert {photo.relative_path for photo in vom_lauf} == {"gewinner.jpg", "behalten.jpg"}
+
+    async def test_a_keep_decision_turns_a_sorted_out_photo_into_a_landmark_candidate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        await _add_classification_run(db_session, project_id)
+        winner = await _add_photo_candidate(db_session, project_id, "gewinner.jpg")
+        behalten = await _add_photo_candidate(
+            db_session,
+            project_id,
+            "verlierer.jpg",
+            rejected=True,
+            duplicate_of=winner.id,
+            decision=DuplicateDecision.KEEP,
+        )
+        await _add_criterion_score(db_session, behalten, "landschaft", 1.0)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["landmark"]["candidate_count"] == 1
+
+    async def test_a_discard_decision_takes_a_photo_out_of_the_landmark_estimate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        await _add_classification_run(db_session, project_id)
+        verworfen = await _add_photo_candidate(
+            db_session, project_id, "raus.jpg", decision=DuplicateDecision.DISCARD
+        )
+        await _add_criterion_score(db_session, verworfen, "landschaft", 1.0)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["landmark"]["candidate_count"] == 0
+
+    async def test_a_keep_on_a_blurry_photo_without_duplicate_of_stays_out_of_both_estimates(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Auflage S3 an der cloud-bestimmenden Stelle: Ein `keep` hebt die Duplikatablehnung auf
+        und ausdruecklich keine Ablehnung aus einem anderen Grund. Eine wegen Unschaerfe
+        abgelehnte Aufnahme traegt kein `duplicate_of` - sie bleibt abgelehnt und geht nicht an
+        den Anbieter, obwohl jemand "behalten" gedrueckt hat."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_classification_run(db_session, project_id)
+        unscharf = await _add_photo_candidate(
+            db_session, project_id, "unscharf.jpg", rejected=True, decision=DuplicateDecision.KEEP
+        )
+        await _add_criterion_score(db_session, unscharf, "landschaft", 1.0)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["remote_categories"]["candidate_count"] == 0
+        assert body["landmark"]["candidate_count"] == 0

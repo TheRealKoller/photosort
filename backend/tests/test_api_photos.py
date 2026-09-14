@@ -13,12 +13,14 @@ from photosort.criteria import CRITERIA_REGISTRY
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
+    DuplicateDecision,
     Event,
     FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
     PhotoCriterionScore,
+    PhotoDuplicateDecision,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
@@ -633,8 +635,16 @@ async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
     """Paritaets-Test (Architektur-Abschnitt der Spec): die Menge der IDs mit
     rating_status=suggested muss exakt der Menge der IDs entsprechen, fuer die im ungefilterten
     Aufruf suggestion != null ist - sichert die bewusste Doppelimplementierung (SQL-WHERE vs.
-    Python-has_suggestion) ab."""
+    Python-has_suggestion) ab.
+
+    specs/features/0374-duplikate-vergleichen.md ERWEITERT diesen Fall um die dritte Menge: die
+    Ausschuss-Ueberlebenden. "Ueberlebender" und "offener Vorschlag" sind NICHT komplementaer -
+    eine mit `Ausschuss` entschiedene Aufnahme ist weder das eine noch das andere. Eine Umsetzung,
+    die "offener Vorschlag" als `NOT ueberlebt` schreibt, liefert plausible, falsche Listen, und
+    das faellt nur nebeneinander auf."""
     project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
     # Praefix _ statt eigenem Namen: nur zur Vollstaendigkeit der Fallmatrix angelegt (Foto ganz
     # ohne PhotoScore), keine eigene Assertion darauf noetig.
     await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
@@ -647,6 +657,12 @@ async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
     suggested_with_own_rating = await _make_photo(
         db_session, project, "d.jpg", datetime(2023, 1, 4, tzinfo=UTC)
     )
+    # Die beiden entschiedenen Faelle: Sie sind KEIN offener Vorschlag mehr, und sie liegen auf
+    # verschiedenen Seiten des Ueberlebendenbestands.
+    kept_duplicate = await _make_photo(
+        db_session, project, "e.jpg", datetime(2023, 1, 5, tzinfo=UTC)
+    )
+    discarded = await _make_photo(db_session, project, "f.jpg", datetime(2023, 1, 6, tzinfo=UTC))
     db_session.add_all(
         [
             PhotoScore(
@@ -669,6 +685,22 @@ async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
                 suggested_status=RatingStatus.ALBUM_WORTHY,
                 computed_at=datetime(2023, 1, 1, tzinfo=UTC),
             ),
+            PhotoScore(
+                photo_id=kept_duplicate.id,
+                sharpness=1.0,
+                exposure=0.2,
+                suggested_status=RatingStatus.REJECTED,
+                duplicate_of=unsuggested_score.id,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            ),
+            PhotoDuplicateDecision(photo_id=kept_duplicate.id, decision=DuplicateDecision.KEEP),
+            PhotoScore(
+                photo_id=discarded.id,
+                sharpness=1.0,
+                exposure=0.2,
+                computed_at=datetime(2023, 1, 1, tzinfo=UTC),
+            ),
+            PhotoDuplicateDecision(photo_id=discarded.id, decision=DuplicateDecision.DISCARD),
         ]
     )
     await db_session.commit()
@@ -683,11 +715,27 @@ async def test_list_photos_suggested_filter_matches_has_suggestion_parity(
 
     assert unfiltered.status_code == 200
     assert filtered.status_code == 200
-    expected_ids = {
-        item["id"] for item in unfiltered.json()["items"] if item["suggestion"] is not None
-    }
+    items = unfiltered.json()["items"]
+    expected_ids = {item["id"] for item in items if item["suggestion"] is not None}
     actual_ids = {item["id"] for item in filtered.json()["items"]}
     assert expected_ids == actual_ids
+
+    # Die dritte Menge, in DEMSELBEN Fall: die Ausschuss-Ueberlebenden, abgelesen an der
+    # Kandidaten-Anzeige der Remote-Klassifizierung. `not_candidate` ist genau der Rang, den die
+    # Kaskade fuer eine nicht ueberlebende Aufnahme vergibt - die Einwilligung steht dafuer oben
+    # auf `True`, sonst gewaenne `consent_disabled` und die Aussage waere nicht ablesbar.
+    def _ist_ueberlebender(item: dict[str, Any]) -> bool:
+        return any(
+            eintrag["phase"] == "remote_category" and eintrag["status"] != "not_candidate"
+            for eintrag in item["cloud_vision_status"]
+        )
+
+    ueberlebende = {item["id"] for item in items if _ist_ueberlebender(item)}
+    assert ueberlebende == {unsuggested_score.id, kept_duplicate.id}
+    # Die Aussage, die eine komplementaer gebaute Umsetzung verfehlte: die verworfene Aufnahme
+    # steht in KEINER der beiden Mengen.
+    assert discarded.id not in ueberlebende
+    assert discarded.id not in expected_ids
     assert actual_ids == {suggested_no_rating.id}
 
 

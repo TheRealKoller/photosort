@@ -21,6 +21,11 @@ from photosort.api.ratings import RatingWriteOut, write_own_rating
 from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
+from photosort.duplicates import (
+    has_open_suggestion,
+    has_open_suggestion_for,
+    survives_ausschuss_for,
+)
 from photosort.events import (
     EffectiveLocation,
     EventSpan,
@@ -497,13 +502,18 @@ async def _filtered_photo_ids(
         base = base.where(or_(own_rating.id.is_(None), own_rating.status.is_(None)))
     elif rating_status is RatingFilter.SUGGESTED:
         # Bildet dieselbe Regel wie has_suggestion in _to_photo_out als SQL-Praedikat nach: keine
-        # eigene ALBUMENTSCHEIDUNG des anfragenden Nutzers UND PhotoScore.suggested_status
-        # gesetzt. Bewusst keine gemeinsame Codebasis mit has_suggestion (ORM-Query vs.
-        # Objekt-Praedikat) - Konsistenz sichert stattdessen
-        # `tests/test_api_photos.py::test_list_photos_suggested_filter_matches_has_suggestion_parity`.
+        # eigene ALBUMENTSCHEIDUNG des anfragenden Nutzers UND ein OFFENER Vorschlag.
+        #
+        # "Offen" ist seit ADR 0104 mehr als "suggested_status gesetzt": Eine im Duplikat-Vergleich
+        # entschiedene Aufnahme ist beantwortet und verschwindet aus diesem Filter - und damit auch
+        # aus der Zaehlung des Ausschuss-Gates, die denselben Filter benutzt. Die Bedingung steht
+        # deshalb an EINER Stelle (`duplicates.py::has_open_suggestion`); die Objektfassung
+        # daneben bleibt ueber
+        # `tests/test_api_photos.py::test_list_photos_suggested_filter_matches_has_suggestion_parity`
+        # an sie gebunden.
         base = base.join(PhotoScore, PhotoScore.photo_id == Photo.id).where(
             or_(own_rating.id.is_(None), own_rating.status.is_(None)),
-            PhotoScore.suggested_status.is_not(None),
+            has_open_suggestion(),
         )
     elif rating_status is RatingFilter.FAVORITE:
         # Eigene SPALTE, nicht mehr ein Wert von `status`. Ohne diesen Zweig wuerfe
@@ -557,6 +567,11 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
             # `photo.album_suitability` einen Lazy-Load aus und schluege im Async-Kontext mit
             # MissingGreenlet fehl.
             selectinload(Photo.album_suitability),
+            # Grundlage der Objektfassung des Ueberlebenden-Praedikats (`is_candidate`) und der
+            # Anzeigeregel des offenen Vorschlags. Ohne dieses selectinload loeste
+            # `photo.duplicate_decision` einen Lazy-Load aus und schluege im Async-Kontext mit
+            # MissingGreenlet fehl.
+            selectinload(Photo.duplicate_decision),
         )
     )
     return {photo.id: photo for photo in result.scalars()}
@@ -712,10 +727,11 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
             success=remote_category_success,
             error=errors_by_phase.get(CloudVisionPhase.REMOTE_CATEGORY),
             consent_enabled=project.cloud_vision_detection_enabled,
-            # Spiegelt exakt die WHERE-Klausel von worker.py::select_remote_category_candidates
-            # - kein PhotoScore vorhanden ODER bereits aussortiert -> kein
-            # Kandidat.
-            is_candidate=photo.score is not None and photo.score.suggested_status is None,
+            # Spiegelt exakt die WHERE-Klausel von worker.py::select_remote_category_candidates -
+            # und zwar ueber DASSELBE Praedikat, nicht ueber eine zweite Formulierung davon. Kein
+            # PhotoScore vorhanden ODER nicht ueberlebend -> kein Kandidat. Dies ist der fuenfte
+            # Ort des Praedikats: Anzeige, keine Grenze (S1).
+            is_candidate=survives_ausschuss_for(photo),
         ),
     ]
 
@@ -1031,23 +1047,19 @@ def _to_photo_out(
 
     Die drei Felder sind PROJEKTAUSSAGEN und tragen die Cache-Auflage ausdruecklich NICHT - genau
     wie `ratings[]` und `RankingOut.proposed`."""
-    # Anzeigeregel: ein Vorschlag ist nur sichtbar, wenn (a) PhotoScore.suggested_status gesetzt
-    # ist UND (b) der anfragende Nutzer noch KEINE eigene ALBUMENTSCHEIDUNG fuer dieses Foto hat -
-    # unabhaengig davon, ob eine ANDERE Person das Foto schon bewertet hat; die eigene Bewertung
-    # hat immer Vorrang.
+    # Anzeigeregel: ein Vorschlag ist nur sichtbar, wenn (a) er OFFEN ist - gestellt und im
+    # Duplikat-Vergleich noch nicht beantwortet (ADR 0104) - UND (b) der anfragende Nutzer noch
+    # KEINE eigene ALBUMENTSCHEIDUNG fuer dieses Foto hat, unabhaengig davon, ob eine ANDERE
+    # Person das Foto schon bewertet hat; die eigene Bewertung hat immer Vorrang.
     #
-    # Das VORHANDENSEIN der Zeile ist hier keine Aussage mehr: seit `favorite` eine eigene Spalte
-    # ist, existiert eine Zeile auch ohne jede Albumentscheidung. Ueber das Zeilenvorhandensein
-    # gepruefte Abwesenheit liesse den Ausschuss-Vorschlag verschwinden, sobald jemand das Foto
-    # als Favorit markiert - ohne Meldung und ohne Weg zurueck.
+    # Das VORHANDENSEIN der Bewertungszeile ist hier keine Aussage: seit `favorite` eine eigene
+    # Spalte ist, existiert eine Zeile auch ohne jede Albumentscheidung. Ueber das
+    # Zeilenvorhandensein gepruefte Abwesenheit liesse den Ausschuss-Vorschlag verschwinden, sobald
+    # jemand das Foto als Favorit markiert - ohne Meldung und ohne Weg zurueck.
     has_own_album_decision = any(
         rating.user_id == current_user_id and rating.status is not None for rating in photo.ratings
     )
-    has_suggestion = (
-        photo.score is not None
-        and photo.score.suggested_status is not None
-        and not has_own_album_decision
-    )
+    has_suggestion = has_open_suggestion_for(photo) and not has_own_album_decision
     suggestion = _to_suggestion_out(photo.score) if has_suggestion and photo.score else None
     decision = decisions.get(photo.id)
     state = _selection_state_of(
