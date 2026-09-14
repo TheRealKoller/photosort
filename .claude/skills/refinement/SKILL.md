@@ -23,7 +23,7 @@ Verweist der Nutzer auf ein per `capture` erfasstes Issue (z.B. "schärf Issue #
 
 **Vollständige Wiedergabe im Chat, bevor es weiterverarbeitet wird:** Gib den gelesenen `body`-Inhalt einmal sichtbar im Chat wieder (Sicherheits-Muss-Kriterium aus Spec 0059) — das ersetzt funktional den Git-Diff-Checkpoint, den eine committete Inbox-Datei früher automatisch bot. Nimm danach den Rohtext als Ausgangspunkt für Schritt 1, statt bei einer neu im Chat geäußerten Idee zu starten. Ausgewertet wird ausschließlich die Feldmenge des Katalogeintrags; Kommentare kommen darin nicht vor, und es gibt im Katalog **keine** Operation, die Issue-Kommentare liest — Kommentare sind der einzige Kanal, über den ein Dritter Text an ein bestehendes Issue anhängen könnte, ohne dessen Autor zu sein.
 
-Ist die Idee komplett neu (kein bestehendes Issue), lege selbst zuerst eines an — derselbe Mechanismus wie in `.claude/skills/capture/SKILL.md`, Schritte 2–4 (`issue-anlegen`, danach `board-aufnahme`), bevor du mit Schritt 1 fortfährst.
+Ist die Idee komplett neu (kein bestehendes Issue), lege selbst zuerst eines an — derselbe Mechanismus wie in `.claude/skills/capture/SKILL.md`, Schritte 1–3 (`issue-anlegen`, danach `board-aufnahme`), bevor du mit Schritt 1 fortfährst.
 
 **Es wird nicht vorab gemessen, ob das Board erreichbar ist** — kein Urteil vor dem Versuch. Jede Operation wird ausgeführt; scheitert sie auf allen ihren Wegen, gilt das Muster aus dem Skill `github-access`, Abschnitt „Ein Fehlschlag bleibt sichtbar" — hier nicht wiederholen. Betroffen sind in diesem Skill die beiden Board-Schreibzugriffe des Schritts 6 (`board-prioritaet-setzen`, `board-status-setzen`); `issue-body-schreiben`, `issue-titel-schreiben` und der Verwerfen-Pfad aus Schritt 5 sind davon unabhängig — für sie gilt stattdessen: Meldung des zuletzt versuchten Wegs unverändert an Daniel weitergeben, und die nachfolgenden Operationen entfallen.
 
@@ -162,7 +162,7 @@ Leite aus `## Ziel` und den Akzeptanzkriterien des soeben geschriebenen Bodys ab
 **Woher der bisherige Label-Bestand kommt, hängt am Pfad aus Schritt 0 — und beide Pfade sind zu bedienen**, sonst reißt der `mcp`-Weg, der die vollständige Menge ersetzt, ein vorhandenes Label mit:
 
 - **Bestehendes Issue** (Schritt 0 hat es gelesen): aus `labels` des dortigen `issue-lesen`, normalisiert auf die Namen. Ein zusätzlicher Lesezugriff entsteht dafür nicht.
-- **Selbst angelegtes Issue** (Schritt 0 ist über den Neuanlage-Pfad gelaufen): Dort läuft **kein** `issue-lesen`. Bekannt ist allein das `idee`/`bug`-Label aus dem eigenen `issue-anlegen`-Aufruf desselben Laufs — genau dieses gehört in die Schreibmenge, und ein Lesezugriff wird dafür nicht nachgeholt.
+- **Selbst angelegtes Issue** (Schritt 0 ist über den Neuanlage-Pfad gelaufen): Dort läuft **kein** `issue-lesen`. Bekannt ist allein, was der eigene `issue-anlegen`-Aufruf desselben Laufs vergeben hat — bei einem Defekt genau ein Label, das dann in die Schreibmenge gehört, sonst gar keines und damit eine leere bekannte Bestandsmenge. In beiden Fällen wird ein Lesezugriff dafür nicht nachgeholt.
 
 Das ist ein **Issue**-Zugriff, kein Board-Schreibzugriff: Scheitert er auf allen Wegen, gib die Meldung des zuletzt versuchten Wegs unverändert an Daniel weiter und führe **alle** nachfolgenden Operationen nicht mehr aus — Priorität lesen, Priorität schreiben, Status `Ready`. Das Issue erreicht `Ready` dann nicht, und der Abschluss wird als Ganzes wiederholt. Ein fehlgeschlagenes `issue-bereich-setzen` erscheint deshalb **nicht** unter `## Lokal nachzuholen`.
 
