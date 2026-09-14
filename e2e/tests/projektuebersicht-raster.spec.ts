@@ -13,9 +13,12 @@
  * im selben Lauf mitgemessenen Inhaltsbreite geprueft - nie gegen eine hartkodierte Pixelzahl,
  * die bei jeder Aenderung des Inhaltsrahmens still falsch wuerde.
  *
- * Rot-Nachweis bei Einfuehrung (2026-09-14), gemessen: mit einer erzwungenen
- * `display:flex; flex-direction:column`-Ueberschreibung auf dem Kartenlink - dem Zustand vor
- * dieser Story - meldet der Spec "verschiedene y-Positionen bei 1024 px: Expected 1, Received 3".
+ * Rot-Nachweis bei Einfuehrung (2026-09-14), beide gemessen:
+ * - Karte: mit einer erzwungenen `display:flex; flex-direction:column`-Ueberschreibung auf dem
+ *   Kartenlink - dem Zustand vor dieser Story - meldet der Spec
+ *   "verschiedene y-Positionen bei 1024 px: Expected 1, Received 3".
+ * - Anlegen-Formular: gegen den Frontend-Stand vor der Spaltenbegrenzung meldet der Spec
+ *   "Breitenanteil des Namensfelds: Expected <= 0.6, Received 1".
  */
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -113,4 +116,57 @@ test('Projektkarte: drei Angaben untereinander bei 1023 px, auf einer Zeile ab 1
   // Schaerfere Form der Vorbedingung: ein Layout, das gar nicht mehr auf den Umbruchpunkt
   // reagiert, faellt hier auch dann auf, wenn eine der beiden Zahlen zufaellig stimmt.
   expect(new Set(beobachtet).size, 'die beiden Breiten liefern ein verschiedenes Ergebnis').toBe(2)
+})
+
+/**
+ * Akzeptanzkriterium G1: Namensfeld und Ordner-Browser nehmen ab dem Umbruchpunkt nicht mehr die
+ * volle Inhaltsbreite ein (Spalten 1-6 bzw. 1-8 von 12).
+ *
+ * Gemessen wird als VERHAELTNIS zur im selben Lauf mitgemessenen Inhaltsbreite, NIE gegen eine
+ * hartkodierte Pixelzahl: der Inhaltsbereich ist auf `max-w-*` begrenzt, und eine Pixelzahl wuerde
+ * bei jeder Aenderung dieses Rahmens still falsch, ohne rot zu werden.
+ *
+ * Die Schranken sind grosszuegiger als das rechnerische Soll (6/12 = 0,50 und 8/12 = 0,67): das
+ * Raster traegt `gap-x`, und geprueft gehoert "deutlich schmaler als die volle Breite", nicht eine
+ * nachgerechnete Spaltenarithmetik - letztere waere eine zweite Definition des Rasters im Test.
+ */
+const NAMENSFELD_MAX_ANTEIL = 0.6
+const ORDNER_BROWSER_MAX_ANTEIL = 0.75
+
+test('Anlegen-Formular: Feld und Ordner-Browser bleiben ab 1024 px unter der vollen Breite', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: BREIT, height: VIEWPORT_HEIGHT })
+  await page.goto('/projects/new')
+
+  const formular = page.locator('form')
+  await expect(formular).toBeVisible()
+  const inhaltsbreite = (await lage(formular)).width
+  expect(inhaltsbreite, 'mitgemessene Inhaltsbreite').toBeGreaterThan(0)
+
+  const namensfeld = await lage(page.locator('#project-name'))
+  expect(namensfeld.width / inhaltsbreite, 'Breitenanteil des Namensfelds').toBeLessThanOrEqual(
+    NAMENSFELD_MAX_ANTEIL,
+  )
+
+  // Der Ordner-Browser wird ueber seine Pfadleiste lokalisiert (Rolle + zugaenglicher Name), nicht
+  // ueber einen Klassennamen oder eine Kindposition - gemessen wird sein Rahmen, also das Element,
+  // das die Spaltenbegrenzung traegt.
+  const browser = formular
+    .locator('div', { has: page.getByRole('navigation', { name: 'Ordnerpfad' }) })
+    .last()
+  const browserBreite = (await lage(browser)).width
+  expect(browserBreite / inhaltsbreite, 'Breitenanteil des Ordner-Browsers').toBeLessThanOrEqual(
+    ORDNER_BROWSER_MAX_ANTEIL,
+  )
+
+  // Gegenprobe im selben Lauf: MOBIL laufen beide ueber die volle Breite. Ohne sie bestuende der
+  // Test auch dann, wenn die Begrenzung in jeder Breite griffe - und das waere die falsche Zusage.
+  await page.setViewportSize({ width: 360, height: VIEWPORT_HEIGHT })
+  const schmalesFormular = (await lage(formular)).width
+  const schmalesFeld = (await lage(page.locator('#project-name'))).width
+  expect(
+    schmalesFeld / schmalesFormular,
+    'Breitenanteil des Namensfelds bei 360 px',
+  ).toBeGreaterThan(NAMENSFELD_MAX_ANTEIL)
 })
