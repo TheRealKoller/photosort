@@ -171,7 +171,7 @@ Frontend-Ableitung. Keine Migration, kein neuer Endpunkt, keine neue Abhängigke
 | `frontend/src/utils/pipelineSteps.ts` | `deriveProjectStand(project)` — die Stand-Ableitung, aufgesetzt auf `computeStepStates` und die bestehende Frontier-Suche. |
 | `frontend/src/utils/formatStats.ts` | `formatTakenAtRange(earliest, latest)` — Datumsspanne, Ein-Tages-Fall, Platzhalter. |
 | `frontend/src/components/ProjectStandLine.tsx` | **neu.** Rendert die vier Ausprägungen der Stand-Zeile. |
-| `frontend/src/components/StatusTag.tsx` | Optionale Prop `label` überschreibt die Beschriftung; Optik, Tonwerte und Ring-Indikator unverändert. |
+| `frontend/src/components/StatusTag.tsx` | Prop `label` trägt die Beschriftung; Optik, Tonwerte und Ring-Indikator unverändert. Sie ist **Pflicht**, nicht optional: Die bisherige Vorgabetabelle `LABELS` weicht im Wortlaut von dieser Story ab („Fehlgeschlagen" gegen „Scan fehlgeschlagen") und hätte als unerreichbarer Zweig samt Testdatei zurückbleiben müssen. |
 | `frontend/src/pages/ProjectListPage.tsx` | Karte → Rasterzeile, drei neue Angaben, Fehlertitel, Zählzeile. |
 | `frontend/src/pages/ProjectCreatePage.tsx` | Namensfeld und Ordner-Browser auf Spaltenbreite begrenzt. |
 | 15 lokale `project()`-Testfabriken | Drei Zeilen je Fabrik; `tsc` findet jede einzelne. |
