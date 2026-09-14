@@ -6,7 +6,16 @@ import jwt
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api import album_decisions, cameras, feedback, motifs, opencloud, projects, stats
+from photosort.api import (
+    album_decisions,
+    cameras,
+    duplicate_decisions,
+    feedback,
+    motifs,
+    opencloud,
+    projects,
+    stats,
+)
 from photosort.config import settings
 from photosort.models import User
 from photosort.security import ALGORITHM, create_access_token, hash_password
@@ -149,6 +158,11 @@ def _protected_router_operations() -> list[tuple[str, str]]:
     # Signatur also nicht sichtbar. Ohne Torwaechter waere er ein unauthentifizierter Lesepfad auf
     # Aussagen ueber ALLE Projekte; er traegt deshalb zusaetzlich seinen eigenen, pfadbenannten
     # 401-Fall in tests/test_api_feedback.py.
+    # specs/features/0374-duplikate-vergleichen.md, Auflage S8: dasselbe fuer
+    # `duplicate_decisions.router`. Seine beiden Endpunkte bestimmen mit, welche Bilder den
+    # Homeserver verlassen; ein vergessener Torwaechter waere dort ein unauthentifizierter
+    # Schreibzugriff auf genau diese Frage. Sie tragen deshalb zusaetzlich je einen eigenen,
+    # pfadbenannten 401-Fall in tests/test_api_duplicate_decisions.py.
     for router in (
         projects.router,
         opencloud.router,
@@ -156,6 +170,7 @@ def _protected_router_operations() -> list[tuple[str, str]]:
         cameras.router,
         motifs.router,
         album_decisions.router,
+        duplicate_decisions.router,
         feedback.router,
     ):
         for route in router.routes:
