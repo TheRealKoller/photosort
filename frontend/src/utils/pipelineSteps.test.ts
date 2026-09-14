@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ProjectOut } from '../api/types'
+import type { ProjectOut, ScanStatus } from '../api/types'
 import {
   computeStepStates,
+  deriveProjectStand,
   getDefaultStepId,
   getHighestReachableStepId,
   isStepId,
   PIPELINE_STEPS,
+  RUN_FIELD_BY_STEP,
+  STAND_KATEGORIE_ABGESCHALTET,
+  STAND_OHNE_SCAN,
   stepProgress,
+  type ProjectStand,
   type StepId,
 } from './pipelineSteps'
 
@@ -451,5 +456,307 @@ describe('stepProgress', () => {
       expect(value).toBeLessThan(max)
       previous = value
     }
+  })
+})
+
+/*
+ * deriveProjectStand - die Stand-Zeile der Projektkarte (Spec 0375, Akzeptanzkriterien A4/A6/S1).
+ *
+ * DIE WORTLAUT-TABELLE STEHT AUF DER AUSGABESEITE, NICHT AUF DER EINGABESEITE. Der Test rechnet
+ * den ENDLICHEN Eingaberaum vollstaendig durch (256 Kombinationen), sammelt die beobachteten
+ * Ergebnisse als Tripel `(kind, stepId, runStatus)` und vergleicht die MENGE gegen die Tabelle -
+ * in beiden Richtungen. Nur das faengt ein vierzehntes Verhalten, eine unerreichbar gewordene
+ * Zeile und eine zu zwei Zeilen kollabierte Unterscheidung.
+ *
+ * Den Anzeigetext bildet er auf seine Definition ZURUECK (Nachschlagen in PIPELINE_STEPS), statt
+ * ihn abzutippen. Die zwei Sonderwortlaute stehen in einer ausdruecklichen Ausnahmeliste, sodass
+ * jede weitere Abweichung rot wird statt zu einer stillen zweiten Textquelle.
+ */
+
+const RUN_STATES: readonly (ScanStatus | null)[] = [null, 'running', 'success', 'failed']
+
+function scanSummary(status: ScanStatus): ProjectOut['last_scan'] {
+  return { status } as ProjectOut['last_scan']
+}
+
+function scoringRunSummary(
+  status: ScanStatus,
+  gateConfirmedAt: string | null,
+): ProjectOut['last_scoring_run'] {
+  return { status, gate_confirmed_at: gateConfirmedAt } as ProjectOut['last_scoring_run']
+}
+
+function criterionRunSummary(status: ScanStatus): ProjectOut['last_criterion_scoring_run'] {
+  return { status } as ProjectOut['last_criterion_scoring_run']
+}
+
+/**
+ * Der vollstaendig aufgezaehlte Eingaberaum: 4 Scan-Zustaende x 4 Ausschuss-Zustaende x 2
+ * Gate-Zustaende x 4 Kriterien-Zustaende x 2 Feature-Flag-Zustaende = 256 Projekte.
+ */
+function enumerateProjects(): ProjectOut[] {
+  const projects: ProjectOut[] = []
+  for (const scan of RUN_STATES) {
+    for (const scoring of RUN_STATES) {
+      for (const gateConfirmed of [false, true]) {
+        for (const criterion of RUN_STATES) {
+          for (const categoryEnabled of [false, true]) {
+            projects.push(
+              project({
+                last_scan: scan === null ? null : scanSummary(scan),
+                last_scoring_run:
+                  scoring === null
+                    ? null
+                    : scoringRunSummary(scoring, gateConfirmed ? '2026-08-12T09:30:00Z' : null),
+                last_criterion_scoring_run:
+                  criterion === null ? null : criterionRunSummary(criterion),
+                category_selection_enabled: categoryEnabled,
+              }),
+            )
+          }
+        }
+      }
+    }
+  }
+  return projects
+}
+
+/** Die zwei Wortlaute, die KEINEN Schritt benennen, mit der Tabellenzeile, zu der sie gehoeren. */
+const SONDERWORTLAUTE: Readonly<Record<string, StepId>> = {
+  [STAND_OHNE_SCAN]: 'scan',
+  [STAND_KATEGORIE_ABGESCHALTET]: 'gate',
+}
+
+const SUFFIXES = [' läuft…', ' fehlgeschlagen'] as const
+
+/**
+ * Bildet den erzeugten TEXT auf seine Definition zurueck. Wirft, sobald ein Text weder aus
+ * PIPELINE_STEPS noch aus der Ausnahmeliste stammt - eine stille zweite Textquelle ist damit
+ * ausgeschlossen.
+ */
+function stepOfText(text: string): StepId {
+  const exact = PIPELINE_STEPS.find((step) => step.label === text)
+  if (exact !== undefined) {
+    return exact.id
+  }
+  for (const suffix of SUFFIXES) {
+    if (text.endsWith(suffix)) {
+      const base = text.slice(0, text.length - suffix.length)
+      const step = PIPELINE_STEPS.find((entry) => entry.label === base)
+      if (step !== undefined) {
+        return step.id
+      }
+    }
+  }
+  if (Object.hasOwn(SONDERWORTLAUTE, text)) {
+    return SONDERWORTLAUTE[text]
+  }
+  throw new Error(`Unbekannter Wortlaut der Stand-Zeile: ${JSON.stringify(text)}`)
+}
+
+/** Der Text, den die Ausprägung traegt - `fertig` traegt keinen (er entsteht erst beim Zeichnen). */
+function textOf(stand: ProjectStand): string | null {
+  switch (stand.kind) {
+    case 'weiter':
+      return stand.stepLabel
+    case 'lauf':
+    case 'hinweis':
+      return stand.label
+    case 'fertig':
+      return null
+  }
+}
+
+type Descriptor = `${ProjectStand['kind']}|${StepId | '-'}|${ScanStatus | '-'}`
+
+function descriptorOf(stand: ProjectStand): Descriptor {
+  const text = textOf(stand)
+  const step = text === null ? '-' : stepOfText(text)
+  const runStatus = stand.kind === 'lauf' ? stand.status : '-'
+  return `${stand.kind}|${step}|${runStatus}`
+}
+
+/**
+ * Die dreizehn Zeilen der Wortlaut-Tabelle aus dem Abschnitt UI/UX der Spec 0375.
+ *
+ * `erreichbar: false` bei Randfall B ist kein Schlupfloch, sondern die Buchfuehrung ueber einen
+ * BEWUSST vorweggenommenen Zustand: `kuratierung.isDone` ist ohne Abschlusssignal im Datenmodell
+ * konstant `false`, also ist "jeder Schritt erledigt" heute strukturell unerreichbar. Die Zeile
+ * wird trotzdem gebaut und ihre Darstellung direkt an ProjectStandLine geprueft; erreichbar wird
+ * sie von selbst, sobald es ein Abschlusssignal gibt.
+ */
+const WORTLAUT_TABELLE: readonly { descriptor: Descriptor; erreichbar: boolean }[] = [
+  { descriptor: 'hinweis|scan|-', erreichbar: true }, // Randfall A: Noch nicht gescannt
+  { descriptor: 'lauf|scan|running', erreichbar: true },
+  { descriptor: 'lauf|scan|failed', erreichbar: true },
+  { descriptor: 'lauf|ausschuss|running', erreichbar: true },
+  { descriptor: 'lauf|ausschuss|failed', erreichbar: true },
+  { descriptor: 'weiter|ausschuss|-', erreichbar: true },
+  { descriptor: 'weiter|gate|-', erreichbar: true },
+  { descriptor: 'lauf|kriterien|running', erreichbar: true },
+  { descriptor: 'lauf|kriterien|failed', erreichbar: true },
+  { descriptor: 'weiter|kriterien|-', erreichbar: true },
+  { descriptor: 'weiter|kuratierung|-', erreichbar: true },
+  { descriptor: 'hinweis|gate|-', erreichbar: true }, // Randfall C: Kategorie-Bewertung aus
+  { descriptor: 'fertig|-|-', erreichbar: false }, // Randfall B: Alles erledigt
+]
+
+describe('deriveProjectStand', () => {
+  const projects = enumerateProjects()
+
+  it('rechnet den Eingaberaum vollstaendig durch (256 Kombinationen)', () => {
+    expect(projects).toHaveLength(256)
+  })
+
+  it('beobachtet ueber dem ganzen Eingaberaum GENAU die erreichbaren Zeilen der Tabelle', () => {
+    const observed = new Set(projects.map((entry) => descriptorOf(deriveProjectStand(entry))))
+    const expected = new Set(
+      WORTLAUT_TABELLE.filter((row) => row.erreichbar).map((row) => row.descriptor),
+    )
+
+    // Beide Richtungen: `toEqual` auf sortierten Listen faengt sowohl ein vierzehntes Verhalten
+    // als auch eine unerreichbar gewordene Zeile.
+    expect([...observed].sort()).toEqual([...expected].sort())
+  })
+
+  it('erzeugt paarweise verschiedene Texte - keine zwei Zeilen lesen sich gleich', () => {
+    const texts = projects
+      .map((entry) => textOf(deriveProjectStand(entry)))
+      .filter((text): text is string => text !== null)
+
+    expect(new Set(texts).size).toBe(WORTLAUT_TABELLE.filter((row) => row.erreichbar).length)
+  })
+
+  it('haelt den Schluesselvorrat der Lauf-Zuordnung gegen PIPELINE_STEPS', () => {
+    // Ein sechster Schritt macht diesen Test rot, statt ohne Lauf-Zuordnung durchzurutschen.
+    expect(Object.keys(RUN_FIELD_BY_STEP).sort()).toEqual(PIPELINE_STEPS.map((s) => s.id).sort())
+  })
+
+  it('laesst gate und kuratierung nie in kind:"lauf" landen - sie tragen keinen Lauf', () => {
+    expect(RUN_FIELD_BY_STEP.gate).toBeNull()
+    expect(RUN_FIELD_BY_STEP.kuratierung).toBeNull()
+
+    for (const entry of projects) {
+      const stand = deriveProjectStand(entry)
+      if (stand.kind === 'lauf') {
+        expect(['scan', 'ausschuss', 'kriterien']).toContain(stepOfText(stand.label))
+      }
+    }
+  })
+
+  /*
+   * Akzeptanzkriterium S1(i) - eine BINDUNGSzusicherung, keine unabhaengige zweite Messung: ihr
+   * Wert liegt darin, dass eine spaetere eigenstaendige Nachrechnung des Schritts hier rot wird.
+   * Zugleich Akzeptanzkriterium S2: der Klick auf die Karte fuehrt ueber `/projects/:id` auf
+   * genau `getDefaultStepId`.
+   */
+  it('benennt nie einen anderen Schritt als den, auf den der Klick fuehrt', () => {
+    for (const entry of projects) {
+      const stand = deriveProjectStand(entry)
+      const text = textOf(stand)
+      if (text === null) {
+        continue
+      }
+
+      expect(stepOfText(text)).toBe(getDefaultStepId(computeStepStates(entry)))
+    }
+  })
+
+  /*
+   * Akzeptanzkriterium A6, Nachweis (i). Randfall B haengt an "jeder Schritt ist isDone", NICHT
+   * an "die Frontier-Suche lief leer" - die naheliegende Umsetzung ist bei abgeschaltetem
+   * category_selection_enabled heute schon ausloesbar und behauptete Fertigkeit fuer ein
+   * Projekt, das nur abgeschnitten ist.
+   */
+  it('liefert ueber dem ganzen Eingaberaum in keinem Fall kind:"fertig"', () => {
+    for (const entry of projects) {
+      expect(deriveProjectStand(entry).kind).not.toBe('fertig')
+    }
+  })
+
+  /* Akzeptanzkriterium A6, Nachweis (ii) - der konkrete Fall, an dem die falsche Bedingung kippt. */
+  it('nennt ein abgeschnittenes Projekt mit vollem sonstigen Fortschritt nicht "erledigt"', () => {
+    const stand = deriveProjectStand(
+      project({
+        category_selection_enabled: false,
+        last_scan: scanSummary('success'),
+        last_scoring_run: scoringRunSummary('success', '2026-08-12T09:30:00Z'),
+        last_criterion_scoring_run: null,
+      }),
+    )
+
+    expect(stand).toEqual({ kind: 'hinweis', label: STAND_KATEGORIE_ABGESCHALTET })
+  })
+
+  /*
+   * Randfall C spricht eine Aussage ueber das Feature-Flag aus. Dass sie nie faellt, waehrend das
+   * Flag AN ist, ist die Bedingung dafuer, dass der Wortlaut nicht luegt.
+   */
+  it('zeigt "Kategorie-Bewertung ist abgeschaltet" nur bei ausgeschaltetem Feature-Flag', () => {
+    for (const entry of projects) {
+      const stand = deriveProjectStand(entry)
+      if (stand.kind === 'hinweis' && stand.label === STAND_KATEGORIE_ABGESCHALTET) {
+        expect(entry.category_selection_enabled).toBe(false)
+      }
+    }
+  })
+
+  it('greift Randfall C nur bei ERLEDIGTEM Gate, nie bei bloss ausgeschaltetem Flag', () => {
+    const stand = deriveProjectStand(
+      project({
+        category_selection_enabled: false,
+        last_scan: scanSummary('success'),
+        last_scoring_run: scoringRunSummary('success', null),
+      }),
+    )
+
+    expect(stand).toEqual({ kind: 'weiter', stepLabel: 'Ausschuss-Gate' })
+  })
+
+  /*
+   * Randfall A greift an `last_scan === null`, NICHT an "Frontier ist Scan": ein laufender oder
+   * fehlgeschlagener Scan ist ebenfalls Frontier und traegt trotzdem seinen Lauf-Wortlaut.
+   */
+  it.each([
+    ['running', 'Scan läuft…'],
+    ['failed', 'Scan fehlgeschlagen'],
+  ] as const)('zeigt bei einem %s Scan den Lauf statt "Noch nicht gescannt"', (status, label) => {
+    const stand = deriveProjectStand(project({ last_scan: scanSummary(status) }))
+
+    expect(stand).toEqual({ kind: 'lauf', status, label })
+  })
+
+  it('zeigt Randfall A, solange nie gescannt wurde', () => {
+    expect(deriveProjectStand(project({ last_scan: null }))).toEqual({
+      kind: 'hinweis',
+      label: STAND_OHNE_SCAN,
+    })
+  })
+
+  /*
+   * Ein laufender Lauf auf einem Schritt, der nicht Frontier ist, wird NICHT gezeigt: die Zeile
+   * beantwortet "wo mache ich weiter", nicht "laeuft irgendwo etwas".
+   */
+  it('zeigt einen laufenden Lauf nicht, wenn er nicht am Frontier-Schritt haengt', () => {
+    const stand = deriveProjectStand(
+      project({
+        last_scan: null,
+        last_criterion_scoring_run: criterionRunSummary('running'),
+      }),
+    )
+
+    expect(stand).toEqual({ kind: 'hinweis', label: STAND_OHNE_SCAN })
+  })
+
+  it('nennt den Schrittnamen woertlich aus PIPELINE_STEPS - "Kuratierung", nicht das Altwort', () => {
+    const stand = deriveProjectStand(
+      project({
+        last_scan: scanSummary('success'),
+        last_scoring_run: scoringRunSummary('success', '2026-08-12T09:30:00Z'),
+        last_criterion_scoring_run: criterionRunSummary('success'),
+      }),
+    )
+
+    expect(stand).toEqual({ kind: 'weiter', stepLabel: 'Kuratierung' })
   })
 })
