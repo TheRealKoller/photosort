@@ -44,8 +44,18 @@ export function ProjectCreatePage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-xl sm:text-2xl">Neues Projekt anlegen</h1>
       {errorDetail && <Alert>{errorDetail}</Alert>}
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
+      {/*
+        BREITENBEGRENZUNG AB `lg:`: Mobil laufen Feld, Browser und Aktionszeile ueber die volle
+        Breite untereinander. Ab dem Umbruchpunkt steht das Namensfeld auf den Spalten 1-6 und der
+        Ordner-Browser auf 1-8; die Spalten 9-12 bleiben leer. Ein rund 950px breites Eingabefeld
+        fuer einen Projektnamen ist unbrauchbar, und eine Ordnerliste ueber die volle
+        Inhaltsbreite ist eine Wueste aus Weissraum zwischen Name und Dateizahl.
+      */}
+      <form
+        onSubmit={handleSubmit}
+        className="flex flex-col gap-4 lg:grid lg:grid-cols-12 lg:gap-x-3"
+      >
+        <div className="flex flex-col gap-2 lg:col-span-6">
           <label htmlFor="project-name" className="text-xs font-medium text-text-h">
             Name
           </label>
@@ -61,13 +71,15 @@ export function ProjectCreatePage() {
           />
         </div>
 
-        <FolderBrowser
-          value={selectedPath}
-          onChange={setSelectedPath}
-          onErrorChange={setBrowseHasError}
-        />
+        <div className="lg:col-span-8">
+          <FolderBrowser
+            value={selectedPath}
+            onChange={setSelectedPath}
+            onErrorChange={setBrowseHasError}
+          />
+        </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 lg:col-span-8">
           <Button type="submit" busy={mutation.isPending} disabled={isSubmitDisabled}>
             {mutation.isPending ? 'Wird angelegt…' : 'Projekt anlegen'}
           </Button>

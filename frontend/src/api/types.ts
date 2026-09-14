@@ -121,6 +121,16 @@ export interface ProjectOut {
   // Stelle lebt und mit dem Bildbestand mitwächst.
   selection_target: number | null
   effective_selection_target: number
+  // Bestandszahlen des Projekts (ADR 0103). PFLICHTFELDER ohne Vorgabewert: dann erzwingt `tsc`
+  // die Ergaenzung jeder lokalen `project()`-Testfabrik, und es braucht keinen Test ueber deren
+  // Vollzaehligkeit.
+  //
+  // `photo_count === 0` ist eine Aussage ("keine Fotos"), die beiden `null` sind ihre Abwesenheit
+  // ("kein Zeitraum bekannt"). Die Anzeige unterscheidet sichtbar: "0 Fotos" gegen den Strich
+  // `NOT_AVAILABLE`. Nie ein `?? 0` im Pfad.
+  photo_count: number
+  taken_at_earliest: string | null
+  taken_at_latest: string | null
 }
 
 // Kostenschätzung vor dem Lauf, über ALLE Cloud-Anteile, die die Checkbox am Auslöser

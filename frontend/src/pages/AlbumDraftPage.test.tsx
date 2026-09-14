@@ -48,6 +48,9 @@ function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
     cloud_vision_consent_at: '2026-07-01T10:00:00',
     selection_target: 1,
     effective_selection_target: 1,
+    photo_count: 0,
+    taken_at_earliest: null,
+    taken_at_latest: null,
     ...overrides,
   }
 }

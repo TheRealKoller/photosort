@@ -25,6 +25,7 @@ from photosort.models import (
     MotifAssessmentSource,
     Photo,
     PhotoCloudVisionError,
+    PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
@@ -1726,3 +1727,84 @@ class TestTheLiveCountersNeverTriggerTheIncompletenessHint:
         by_purpose = {entry["purpose"]: entry for entry in payload["cost"]["by_purpose"]}
         assert by_purpose["remote_category"]["has_unrecorded_runs"] is False
         assert by_purpose["landmark"]["has_unrecorded_runs"] is False
+
+
+class TestTheOverviewAndTheStatsPageAgree:
+    """Spec 0375, Akzeptanzkriterium S3 und Sicherheitsauflage S3.
+
+    Uebersicht und Statistikseite beziehen `photo_count`/`taken_at_earliest`/`taken_at_latest`
+    aus DENSELBEN Spaltenausdruecken (`photo_aggregates.py`). Zwei Definitionen liefen
+    spaetestens bei einer Umstellung auf `taken_at_original` auseinander, ohne dass ein Test das
+    bemerkte."""
+
+    _FIELDS = ("photo_count", "taken_at_earliest", "taken_at_latest")
+
+    async def test_all_three_endpoints_report_the_same_three_values(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Zwei Projekte im SELBEN Test - eines mit Fotos, eines ohne. Das Projekt mit Fotos
+        traegt `photo_scores`-Zeilen: der geteilte Zaehlausdruck laeuft in `api/stats.py` unter
+        einem LEFT JOIN auf genau diese Tabelle, und der Gleichlauftest faengt ein still zu hoch
+        zaehlendes 1:N-Verhaeltnis nur, wenn die Zeilen tatsaechlich da sind."""
+        with_photos = await _make_project(db_session, "Mit Fotos")
+        without_photos = await _make_project(db_session, "Ohne Fotos")
+        for index, moment in enumerate(
+            (
+                datetime(2019, 4, 2, 9, 15),
+                datetime(2019, 6, 11, 18, 0),
+                datetime(2019, 8, 17, 14, 30),
+            )
+        ):
+            photo = await _add_photo(db_session, with_photos, f"{index}.jpg", taken_at=moment)
+            await _add_score(db_session, photo)
+
+        listed = {
+            entry["id"]: entry for entry in (await authenticated_api_client.get("/projects")).json()
+        }
+        for project in (with_photos, without_photos):
+            detail = (await authenticated_api_client.get(f"/projects/{project.id}")).json()
+            stats = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+            from_list = {field: listed[project.id][field] for field in self._FIELDS}
+            from_detail = {field: detail[field] for field in self._FIELDS}
+            from_stats = {field: stats[field] for field in self._FIELDS}
+
+            assert from_list == from_detail == from_stats
+
+        assert listed[with_photos.id]["photo_count"] == 3
+        assert listed[with_photos.id]["taken_at_earliest"] == "2019-04-02T09:15:00"
+        assert listed[with_photos.id]["taken_at_latest"] == "2019-08-17T14:30:00"
+        assert listed[without_photos.id]["photo_count"] == 0
+        assert listed[without_photos.id]["taken_at_earliest"] is None
+        assert listed[without_photos.id]["taken_at_latest"] is None
+
+    def test_photo_scores_stay_one_row_per_photo(self) -> None:
+        """Die TRAGENDE Kardinalitaet hinter `photo_count_expression()`.
+
+        Der geteilte Zaehlausdruck laeuft in `api/stats.py` unter einem LEFT JOIN auf
+        `photo_scores`. Dass er dabei Fotos und nicht Join-Zeilen zaehlt, haelt allein der
+        Primaerschluessel auf `photo_id` - weder `count(Photo.id)` noch `count(*)` schuetzte gegen
+        ein 1:N-Verhaeltnis. Wird die Spalte einmal Teil eines zusammengesetzten Schluessels,
+        zaehlt der Ausdruck still zu hoch, und mit ihm `RatingsOut.unrated`.
+
+        Geprueft wird die Schluesselmenge auf GLEICHHEIT, nicht auf Enthaltensein: ein
+        hinzugekommener zweiter Schluesselteil ist genau die Aenderung, um die es geht."""
+        assert {column.name for column in PhotoScore.__table__.primary_key} == {"photo_id"}
+
+        # Gegenprobe: die Assertion laeuft nicht gegen eine Eigenschaft, die jede Tabelle haette.
+        # `photo_criterion_scores` ist die 1:N-Nachbartabelle - sie faellt hier durch.
+        assert {column.name for column in PhotoCriterionScore.__table__.primary_key} != {"photo_id"}
+
+    def test_the_earliest_taken_at_is_defined_in_exactly_one_place(self) -> None:
+        """Akzeptanzkriterium S1(ii), struktureller Waechter im Muster von
+        `test_api_motif_corrections.py`: `func.min(Photo.taken_at)` steht im Quellbaum an GENAU
+        EINER Stelle. Eine zweite Definition ist der Weg, auf dem Uebersicht und Statistikseite
+        auseinanderlaufen, ohne dass der Gleichlauftest es sieht."""
+        source_dir = Path(__file__).resolve().parent.parent / "src" / "photosort"
+        occurrences = [
+            path.relative_to(source_dir).as_posix()
+            for path in sorted(source_dir.rglob("*.py"))
+            for _ in range(path.read_text(encoding="utf-8").count("func.min(Photo.taken_at)"))
+        ]
+
+        assert occurrences == ["photo_aggregates.py"]
