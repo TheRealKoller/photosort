@@ -421,8 +421,18 @@ def eigener_branch(wurzel: Path) -> str:
     return rohdaten.decode("utf-8").strip().removeprefix("refs/heads/")
 
 
-def eigene_wurzel(wurzel: Path) -> Path:
-    rohdaten = git_ausgabe(["rev-parse", "--show-toplevel"], cwd=wurzel)
+def eigene_wurzel(start: Path) -> Path:
+    """Die Wurzel des Arbeitsbaums - **jeder** Pfadfilter wird gegen sie aufgeloest.
+
+    `git ls-tree -- <pfad>` und `git ls-files -- <pfad>` loesen ihren Pfadfilter gegen das
+    Arbeitsverzeichnis auf, nicht gegen die Wurzel. Liefe ein Unterbefehl aus `scripts/` heraus,
+    filterte er auf `scripts/specs/decisions` bzw. `scripts/backend/alembic/versions`, bekaeme
+    eine leere Liste bei Rueckgabe `0` - und die Meldung behauptete einen Repo-Zustand („keine
+    Nummer auf origin/main"), wo ein Aufruffehler vorliegt. Deshalb steht diese Bestimmung am
+    Eintritt jedes Unterbefehls, und alle weiteren Aufrufe laufen mit ihr als
+    Arbeitsverzeichnis. Gelesen wird dabei nur, und ausschliesslich im eigenen Arbeitsbaum.
+    """
+    rohdaten = git_ausgabe(["rev-parse", "--show-toplevel"], cwd=start)
     return Path(rohdaten.decode("utf-8").strip())
 
 
@@ -472,8 +482,9 @@ def nummern_im_verzeichnis(pfad: Path) -> Ablesung:
     )
 
 
-def fremde_arbeitsbaeume(wurzel: Path, eigene: Path) -> tuple[Arbeitsbaum, ...]:
-    rohdaten = git_ausgabe(["worktree", "list", "--porcelain", "-z"], cwd=wurzel)
+def fremde_arbeitsbaeume(eigene: Path) -> tuple[Arbeitsbaum, ...]:
+    """Jeder Arbeitsbaum ausser dem eigenen - der zaehlt genau einmal, ueber seinen Pfad."""
+    rohdaten = git_ausgabe(["worktree", "list", "--porcelain", "-z"], cwd=eigene)
     aufgeloest = eigene.resolve()
     fremde = []
     for baum in arbeitsbaeume_aus_porcelain(rohdaten):
@@ -516,29 +527,29 @@ def erhebe_sicht(wurzel: Path, raum: str) -> Sicht:
     """
     verzeichnis = NUMMERNRAEUME[raum]
     eigene = eigene_wurzel(wurzel)
-    eigen = eigener_branch(wurzel)
+    eigen = eigener_branch(eigene)
 
-    basis_ablesung = nummern_auf_origin_main(wurzel, verzeichnis)
+    basis_ablesung = nummern_auf_origin_main(eigene, verzeichnis)
     gelesen = basis_ablesung.gelesen
     gefuehrt: dict[str, set[int]] = {eigen: set()}
 
-    eigene_ablesung = nummern_im_index(wurzel, verzeichnis)
+    eigene_ablesung = nummern_im_index(eigene, verzeichnis)
     aufgelistet = nummern_im_verzeichnis(eigene / verzeichnis)
     gefuehrt[eigen] |= set(eigene_ablesung.nummern) | set(aufgelistet.nummern)
     gelesen += eigene_ablesung.gelesen
 
-    baeume = fremde_arbeitsbaeume(wurzel, eigene)
+    baeume = fremde_arbeitsbaeume(eigene)
     for baum in baeume:
         assert baum.branch is not None
-        aus_tree = nummern_eines_refs(wurzel, f"refs/heads/{baum.branch}", verzeichnis)
+        aus_tree = nummern_eines_refs(eigene, f"refs/heads/{baum.branch}", verzeichnis)
         nachbarschaft = nummern_im_verzeichnis(Path(baum.pfad) / verzeichnis)
         gefuehrt.setdefault(baum.branch, set())
         gefuehrt[baum.branch] |= set(aus_tree.nummern) | set(nachbarschaft.nummern)
         gelesen += aus_tree.gelesen + nachbarschaft.gelesen
 
-    fremde = tuple(name for name in gepushte_branches(wurzel) if name not in gefuehrt)
+    fremde = tuple(name for name in gepushte_branches(eigene) if name not in gefuehrt)
     for name in fremde:
-        aus_tree = nummern_eines_refs(wurzel, f"{_FERNPRAEFIX}{name}", verzeichnis)
+        aus_tree = nummern_eines_refs(eigene, f"{_FERNPRAEFIX}{name}", verzeichnis)
         gefuehrt.setdefault(name, set())
         gefuehrt[name] |= set(aus_tree.nummern)
         gelesen += aus_tree.gelesen
@@ -563,7 +574,7 @@ def eigene_dokumente(wurzel: Path, verzeichnis: str) -> dict[int, tuple[str, ...
     eigene = eigene_wurzel(wurzel)
     rohdaten = git_ausgabe(
         ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", verzeichnis],
-        cwd=wurzel,
+        cwd=eigene,
     )
     namen = {
         pfad.rpartition("/")[2]
@@ -696,6 +707,7 @@ def migrationen_auf_main(wurzel: Path) -> tuple[Migration, ...]:
     Kennung oder `down_revision` einer bereits ausgefuehrten Revision, findet
     `alembic upgrade head` beim Containerstart den Wert aus `alembic_version` nicht mehr.
     """
+    eigene = eigene_wurzel(wurzel)
     rohdaten = git_ausgabe(
         [
             "ls-tree",
@@ -707,7 +719,7 @@ def migrationen_auf_main(wurzel: Path) -> tuple[Migration, ...]:
             "--",
             VERSIONSVERZEICHNIS,
         ],
-        cwd=wurzel,
+        cwd=eigene,
     )
     pfade = sorted(
         pfad for pfad in nul_felder(rohdaten) if pfad.rpartition("/")[0] == VERSIONSVERZEICHNIS
@@ -722,7 +734,7 @@ def migrationen_auf_main(wurzel: Path) -> tuple[Migration, ...]:
     # stilles Ueberspringen machte genau den verschobenen Kopf unsichtbar.
     return tuple(
         migration_aus_text(
-            git_ausgabe(["show", "--end-of-options", f"{ORIGIN_MAIN}:{pfad}"], cwd=wurzel).decode(
+            git_ausgabe(["show", "--end-of-options", f"{ORIGIN_MAIN}:{pfad}"], cwd=eigene).decode(
                 "utf-8"
             ),
             Path(pfad),
@@ -755,8 +767,9 @@ def alle_migrationen(versionen: Path) -> tuple[Migration, ...]:
 
 
 def kettenlage(wurzel: Path) -> Kettenlage:
-    alle = alle_migrationen(eigene_wurzel(wurzel) / VERSIONSVERZEICHNIS)
-    auf_main = migrationen_auf_main(wurzel)
+    eigene = eigene_wurzel(wurzel)
+    alle = alle_migrationen(eigene / VERSIONSVERZEICHNIS)
+    auf_main = migrationen_auf_main(eigene)
     uebernommen = frozenset(eintrag.kennung for eintrag in auf_main)
 
     eigene = [eintrag for eintrag in alle if eintrag.kennung not in uebernommen]
@@ -865,9 +878,9 @@ def befehl_vorschlag(wurzel: Path, raum: str) -> int:
 
 def befehl_migration(wurzel: Path, slug: str) -> int:
     geprueft = gepruefter_slug(slug)
-    branch = eigener_branch(wurzel)
-    kennung = gepruefte_kennung(revisionskennung(branch, geprueft))
-    lage = kettenlage(wurzel)
+    eigene = eigene_wurzel(wurzel)
+    kennung = gepruefte_kennung(revisionskennung(eigener_branch(eigene), geprueft))
+    lage = kettenlage(eigene)
     print(f"revision: {kennung}")
     print(f"down_revision: {kopf_der_menge(lage.alle)}")
     if lage.haengt_am_alten_kopf:

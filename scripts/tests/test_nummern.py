@@ -992,6 +992,57 @@ def test_pruefen_meldet_eine_echte_dublette_im_eigenen_baum_mit_zwanzig(
     assert "0110-eigen.md" in lauf.stdout and "0110-zweite-vergabe.md" in lauf.stdout
 
 
+@pytest.mark.parametrize("unterbefehl", [("vorschlag", "decisions"), ("pruefen",)])
+def test_derselbe_unterbefehl_aus_einem_unterverzeichnis_sagt_dasselbe(
+    wegwerf: Wegwerf, unterbefehl: tuple[str, ...]
+) -> None:
+    """`git ls-tree -- <pfad>` loest den Pfadfilter gegen das **Arbeitsverzeichnis** auf.
+
+    Aus einem Unterverzeichnis heraus filterte der Aufruf ohne Wurzelbindung auf
+    `<unterverzeichnis>/specs/decisions`, bekaeme eine leere Liste bei Rueckgabe `0` - und
+    verbuchte einen Aufruffehler als gemessene Abwesenheit. Genau die Ausfallrichtung, die
+    fail-closed ausschliessen soll.
+    """
+    aus_der_wurzel = _laufe(wegwerf.haupt, *unterbefehl)
+    aus_der_tiefe = _laufe(wegwerf.haupt / "specs" / "decisions", *unterbefehl)
+
+    assert (aus_der_tiefe.code, aus_der_tiefe.stdout) == (
+        aus_der_wurzel.code,
+        aus_der_wurzel.stdout,
+    )
+
+
+@pytest.mark.parametrize(
+    "unterbefehl", [("migration", "neue-sache"), ("kette",), ("umhaengen",), ("pruefen",)]
+)
+def test_die_migrationsbefehle_arbeiten_aus_jedem_verzeichnis_gleich(
+    mit_migrationen: Kettenstand, unterbefehl: tuple[str, ...]
+) -> None:
+    """Der gemessene Fall: aus `scripts/` heraus meldete `pruefen` einen leeren Bestand auf
+    `origin/main` und endete mit `30`."""
+    wurzel = mit_migrationen.ort.haupt
+    aus_der_wurzel = _laufe(wurzel, *unterbefehl)
+    aus_der_tiefe = _laufe(wurzel / "backend" / "alembic", *unterbefehl)
+
+    assert aus_der_wurzel.code in ZULAESSIGE_CODES[unterbefehl[0]]
+    assert (aus_der_tiefe.code, aus_der_tiefe.stdout) == (
+        aus_der_wurzel.code,
+        aus_der_wurzel.stdout,
+    )
+
+
+def test_ein_leerer_nummernraum_auf_origin_main_wird_nicht_zur_diagnose_ueber_den_bestand(
+    wegwerf: Wegwerf,
+) -> None:
+    """Die Basis wird gegen die Wurzel des Arbeitsbaums gemessen, nie gegen das
+    Arbeitsverzeichnis - sonst behauptete die Meldung einen Repo-Zustand, wo ein Aufruffehler
+    vorliegt."""
+    tief = _laufe(wegwerf.haupt / "specs", "vorschlag", "decisions")
+
+    assert tief.code == 10
+    assert tief.stdout.strip() == "0110"
+
+
 def test_keine_ausgabe_nennt_die_remote_url(wegwerf: Wegwerf) -> None:
     lauf = _laufe(wegwerf.haupt, "pruefen")
 
