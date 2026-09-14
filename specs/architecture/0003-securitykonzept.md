@@ -1105,7 +1105,7 @@ Kein Anwendungscode, kein Endpunkt, kein Datenmodell, kein Frontend, keine neue 
 
 **Ausdrücklich geprüft und ohne Befund:** Die sha256-Ableitung der Revisionskennung ist keine Angriffsfläche — der Branchname wird nie ausgeführt, die Ausgabe ist auf zwölf Hexziffern beschränkt, der NUL-Trenner schließt die Mehrdeutigkeit zweier Eingabepaare aus, und Branchnamen sind kein Geheimnis. Kein neuer Empfängerkreis, keine Änderung an Authentifizierung, Berechtigungen oder Datensichtbarkeit zwischen den beiden Nutzern.
 
-### Die Motivzahl des Modells bewegt erstmals eine Event-Grenze (ADR [`0109`](../decisions/0109-motivwechsel-trennt-in-einem-vorgelagerten-durchlauf.md)/Spec [`0477`](../features/0477-motivwechsel-trennsignal.md)) — Vorausschau, noch nicht implementiert
+### Die Motivzahl des Modells bewegt erstmals eine Event-Grenze (ADR [`0109`](../decisions/0109-motivwechsel-trennt-in-einem-vorgelagerten-durchlauf.md)/Spec [`0477`](../features/0477-motivwechsel-trennsignal.md)) — **umgesetzt**
 
 Kein neues Secret, kein neuer Empfänger von Bilddaten, keine Migration, kein Endpunkt, kein neues Antwortfeld, keine neue Eingabe von außen und keine Änderung an Auth oder an der Sichtbarkeit zwischen den beiden Nutzern. Neu ist ein **zweiter Leser** der Motivstärken und damit eine zweite Wirkung derselben Modellzahl: Sie bestimmt ab hier mit, wo ein Event beginnt.
 
