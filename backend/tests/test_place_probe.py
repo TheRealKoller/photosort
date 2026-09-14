@@ -14,13 +14,12 @@ import socket
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.cloud_vision import CloudRequestThrottle
 from photosort.db import Base, make_engine, make_session_factory
+from photosort.geonames import dataset_hash_path
 from photosort.models import (
     CriterionScoringRun,
     Event,
@@ -30,35 +29,19 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
+from photosort.place_dataset import write_extract
 from photosort.place_probe import (
-    FAILURE_HTTP_STATUS,
-    FAILURE_REASONS,
-    FAILURE_TOO_LARGE,
-    FAILURE_TRANSPORT,
-    FAILURE_UNREADABLE,
-    PHOTON_MAX_RESPONSE_BYTES,
-    PHOTON_MIN_REQUEST_INTERVAL_SECONDS,
-    PHOTON_REVERSE_URL,
     Cell,
-    GeoNamesResolver,
-    PhotonResolver,
-    PlaceProbeError,
     ProbeEvent,
     ProbeInput,
-    ProbeTally,
     cell_counts,
     coverage_counts,
-    geonames_answer,
-    geonames_level,
     heading_counts,
     level_counts,
     main,
-    new_tally,
-    parse_geonames_line,
     photo_counts,
-    photon_answer,
 )
-from photosort.places import PlaceAnswer, PlaceInfo, PlaceResolver, usable_locality
+from photosort.places import PlaceAnswer, PlaceInfo
 from tests.conftest import NetworkAccessInTestError
 from tests.import_closure import import_closure, module_file
 
@@ -71,11 +54,6 @@ _WRITING_METHODS = frozenset({"add", "add_all", "merge", "delete", "commit", "fl
 _WRITING_CONSTRUCTORS = frozenset({"insert", "update", "delete"})
 _WRITING_NAMES = _WRITING_METHODS | _WRITING_CONSTRUCTORS
 _DML_KEYWORDS = ("insert ", "update ", "delete ", "drop ", "alter ", "create ", "truncate ")
-
-
-def _tally() -> ProbeTally:
-    """Ein frischer Nebenbefund-Sammler je Fall - geteilte Zaehler taeuschten Ausfaelle vor."""
-    return new_tally()
 
 
 def write_statements(tree: ast.AST) -> list[str]:
@@ -217,12 +195,15 @@ GARMISCH = (47.49, 11.09)
 def _probe_event(
     position: int,
     *,
-    cells: tuple[Cell, ...] = (),
+    place_cells: tuple[Cell, ...] = (),
     landmark_name: str | None = None,
     place_kind: str | None = None,
 ) -> ProbeEvent:
     return ProbeEvent(
-        position=position, landmark_name=landmark_name, place_kind=place_kind, cells=cells
+        position=position,
+        landmark_name=landmark_name,
+        place_kind=place_kind,
+        place_cells=place_cells,
     )
 
 
@@ -279,8 +260,10 @@ class TestBlockACoverage:
                 photo_cells=(SPLIT, SPLIT, BERLIN_MITTE, GARMISCH),
                 events=(
                     _probe_event(1, place_kind="landmark", landmark_name="Diokletianpalast"),
-                    _probe_event(2, place_kind="coordinate", cells=(SPLIT,)),
-                    _probe_event(3, place_kind="multiple", cells=(BERLIN_MITTE, BERLIN_KREUZBERG)),
+                    _probe_event(2, place_kind="coordinate", place_cells=(SPLIT,)),
+                    _probe_event(
+                        3, place_kind="multiple", place_cells=(BERLIN_MITTE, BERLIN_KREUZBERG)
+                    ),
                     _probe_event(4, place_kind=None),
                 ),
             )
@@ -314,7 +297,7 @@ class TestBlockBCells:
             _probe_input(
                 photos_total=5,
                 photo_cells=(SPLIT, SPLIT, SPLIT, BERLIN_MITTE),
-                events=(_probe_event(1, cells=(SPLIT,)),),
+                events=(_probe_event(1, place_cells=(SPLIT,)),),
             )
         )
 
@@ -328,9 +311,9 @@ class TestBlockBCells:
                 photos_total=3,
                 photo_cells=(BERLIN_MITTE, BERLIN_KREUZBERG, GARMISCH),
                 events=(
-                    _probe_event(1, cells=(BERLIN_MITTE, BERLIN_KREUZBERG)),
-                    _probe_event(2, cells=(GARMISCH,)),
-                    _probe_event(3, cells=()),
+                    _probe_event(1, place_cells=(BERLIN_MITTE, BERLIN_KREUZBERG)),
+                    _probe_event(2, place_cells=(GARMISCH,)),
+                    _probe_event(3, place_cells=()),
                 ),
             )
         )
@@ -423,10 +406,10 @@ class TestBlockDHeadings:
             _probe_input(
                 photos_total=6,
                 events=(
-                    _probe_event(1, cells=(BERLIN_KREUZBERG,)),
-                    _probe_event(2, cells=(BERLIN_MITTE,)),
-                    _probe_event(3, cells=(SPLIT,)),
-                    _probe_event(4, cells=(GARMISCH,)),
+                    _probe_event(1, place_cells=(BERLIN_KREUZBERG,)),
+                    _probe_event(2, place_cells=(BERLIN_MITTE,)),
+                    _probe_event(3, place_cells=(SPLIT,)),
+                    _probe_event(4, place_cells=(GARMISCH,)),
                     _probe_event(5, place_kind="landmark", landmark_name="Zugspitze"),
                 ),
             ),
@@ -448,7 +431,7 @@ class TestBlockDHeadings:
             GARMISCH: _info_of(_answer(matched_level="locality", locality="Garmisch")),
         }
         counts = heading_counts(
-            _probe_input(photos_total=2, events=(_probe_event(1, cells=(SPLIT, GARMISCH)),)),
+            _probe_input(photos_total=2, events=(_probe_event(1, place_cells=(SPLIT, GARMISCH)),)),
             info_by_cell,
         )
 
@@ -463,7 +446,7 @@ class TestBlockDHeadings:
             GARMISCH: _info_of(_answer(matched_level="country", country="Deutschland")),
         }
         counts = heading_counts(
-            _probe_input(photos_total=2, events=(_probe_event(1, cells=(SPLIT, GARMISCH)),)),
+            _probe_input(photos_total=2, events=(_probe_event(1, place_cells=(SPLIT, GARMISCH)),)),
             info_by_cell,
         )
 
@@ -484,11 +467,11 @@ class TestBlockDHeadings:
                 events=(
                     _probe_event(
                         1,
-                        cells=(BERLIN_KREUZBERG,),
+                        place_cells=(BERLIN_KREUZBERG,),
                         place_kind="landmark",
                         landmark_name="Brandenburger Tor",
                     ),
-                    _probe_event(2, cells=(BERLIN_KREUZBERG,)),
+                    _probe_event(2, place_cells=(BERLIN_KREUZBERG,)),
                 ),
             ),
             info_by_cell,
@@ -514,7 +497,7 @@ class TestBlockEPhotos:
             _probe_input(
                 photos_total=8,
                 photo_cells=(SPLIT, SPLIT, SPLIT, GARMISCH),
-                events=(_probe_event(1, cells=(SPLIT, GARMISCH)),),
+                events=(_probe_event(1, place_cells=(SPLIT, GARMISCH)),),
             ),
             info_by_cell,
         )
@@ -533,7 +516,7 @@ class TestBlockEPhotos:
         probe = _probe_input(
             photos_total=4,
             photo_cells=(SPLIT, GARMISCH),
-            events=(_probe_event(1, cells=(SPLIT, GARMISCH)),),
+            events=(_probe_event(1, place_cells=(SPLIT, GARMISCH)),),
         )
 
         assert heading_counts(probe, info_by_cell).events_named == 0
@@ -566,448 +549,6 @@ BERLIN_LINES = [
     _geonames_line("Land Berlin", 52.5000, 13.4000, "A", "ADM1"),
     _geonames_line("Bundesrepublik Deutschland", 52.5000, 13.4000, "A", "PCLI"),
 ]
-
-
-class TestTheLocalCandidate:
-    """Nur an den RAENDERN geprueft - der Auflöser selbst ist bewusst wegwerfbar. Die Zaehlbloecke
-    oben tragen die Zahlen, die die Wegwahl begruenden."""
-
-    def test_a_populated_place_gives_the_locality_level(self) -> None:
-        entry = parse_geonames_line(_geonames_line("Split", 43.5081, 16.4402, "P", "PPL"))
-        assert entry is not None
-
-        assert geonames_level(entry) == "locality"
-
-    def test_a_section_of_a_populated_place_gives_the_district_level(self) -> None:
-        """`PPLX` ist die Viertel-Ebene - und traegt regelmaessig `population = 0`. Genau deshalb
-        darf nicht mit einem nach Einwohnern gefilterten Extrakt gemessen werden."""
-        entry = parse_geonames_line(_geonames_line("Kreuzberg", 52.4980, 13.4030, "P", "PPLX"))
-        assert entry is not None
-
-        assert geonames_level(entry) == "neighbourhood"
-
-    @pytest.mark.parametrize("code", ["ADM1", "ADM2", "ADM3", "ADM4", "ADM5"])
-    def test_an_administrative_division_carries_no_usable_level(self, code: str) -> None:
-        """Klasse `A` ist genau der als wertlos eingestufte Fall: `region` traegt keinen Namen."""
-        entry = parse_geonames_line(_geonames_line("Bayern", *GARMISCH, "A", code))
-        assert entry is not None
-        answer = geonames_answer([entry], GARMISCH)
-        assert answer is not None
-
-        assert geonames_level(entry) == "region"
-        assert answer.matched_level == "region"
-        assert usable_locality(_info_of(answer)) is None
-
-    def test_a_line_with_too_few_fields_is_skipped_not_crashing(self) -> None:
-        assert parse_geonames_line("1\tBerlin\n") is None
-
-    def test_a_line_with_an_unparsable_coordinate_is_skipped(self) -> None:
-        assert (
-            parse_geonames_line(
-                _geonames_line("Berlin", 0.0, 0.0, "P", "PPL").replace(
-                    "\t0.0\t0.0\t", "\tNORD\tOST\t"
-                )
-            )
-            is None
-        )
-
-    def test_a_name_that_does_not_survive_sanitisation_drops_the_whole_line(self) -> None:
-        line = _geonames_line("​‮", 52.52, 13.40, "P", "PPL")
-
-        assert parse_geonames_line(line) is None
-
-    def test_the_nearest_entry_per_level_wins(self) -> None:
-        entries = [entry for line in BERLIN_LINES if (entry := parse_geonames_line(line))]
-
-        answer = geonames_answer(entries, BERLIN_KREUZBERG)
-
-        assert answer is not None
-        assert answer.matched_level == "neighbourhood"
-        assert answer.neighbourhood == "Kreuzberg"
-        assert answer.locality == "Berlin"
-        assert answer.country == "Bundesrepublik Deutschland"
-
-    def test_no_nearby_entry_at_all_means_no_answer(self) -> None:
-        """KEINE ANTWORT, ausdruecklich nicht "Antwort ohne brauchbare Ebene" - die beiden sind
-        verschieden und duerfen in der Messung nicht gleich aussehen."""
-        assert geonames_answer([], SPLIT) is None
-
-    async def test_the_resolver_reads_the_file_and_answers(self, tmp_path: Path) -> None:
-        dataset = tmp_path / "allCountries.txt"
-        dataset.write_text("\n".join(BERLIN_LINES) + "\n", encoding="utf-8")
-
-        resolver = GeoNamesResolver(dataset, [BERLIN_KREUZBERG])
-        answer = await resolver.resolve(BERLIN_KREUZBERG)
-
-        assert answer is not None
-        assert answer.locality == "Berlin"
-
-    async def test_a_cell_nobody_asked_for_gets_no_answer(self, tmp_path: Path) -> None:
-        """Der Auflöser behaelt nur die Nachbarschaft der GEFRAGTEN Zellen - er erzeugt keine."""
-        dataset = tmp_path / "allCountries.txt"
-        dataset.write_text("\n".join(BERLIN_LINES) + "\n", encoding="utf-8")
-
-        resolver = GeoNamesResolver(dataset, [BERLIN_KREUZBERG])
-
-        assert await resolver.resolve(SPLIT) is None
-
-    def test_a_missing_dataset_breaks_loudly_without_a_silent_fallback(
-        self, tmp_path: Path
-    ) -> None:
-        """Ein fehlender Datensatz ist etwas anderes als ein Datensatz ohne Treffer. Ein stiller
-        Rueckfall auf den externen Weg waere zudem ein Abfluss, den niemand angeordnet hat."""
-        with pytest.raises(PlaceProbeError):
-            GeoNamesResolver(tmp_path / "gibt-es-nicht.txt", [SPLIT])
-
-
-# --- Der externe Kandidat (Photon), an seinen Raendern ------------------------------------------
-
-
-def _photon_payload(properties: dict[str, object]) -> dict[str, object]:
-    return {"features": [{"type": "Feature", "properties": properties}]}
-
-
-class TestThePhotonParser:
-    """Der Parser-Rand: eine FREMDE Struktur, gegen die nichts vorausgesetzt werden darf."""
-
-    def test_the_level_comes_from_type_not_from_layer(self) -> None:
-        """`layer` ist ausschliesslich ein Filter-Parameter der ANFRAGE und kommt in der Antwort
-        gar nicht vor. Ein Parser, der darauf sieht, liest systematisch nichts."""
-        answer = photon_answer(_photon_payload({"type": "city", "city": "Split"}))
-
-        assert answer is not None
-        assert answer.matched_level == "locality"
-
-        misleading = photon_answer(
-            _photon_payload({"layer": "city", "city": "Split", "type": "state"})
-        )
-        assert misleading is not None
-        assert misleading.matched_level == "region"
-
-    def test_photons_locality_is_not_our_locality(self) -> None:
-        """DIE NAMENSKOLLISION. Photon staffelt `locality` ⊂ `district` ⊂ `city`; unser
-        `locality` ist der ORT. Wer Photons `locality` uebernimmt, schreibt "Ritterkiez" als
-        Event-Ueberschrift statt "Berlin" - und der Fehler ist an keiner Stelle laut."""
-        answer = photon_answer(
-            _photon_payload(
-                {
-                    "type": "house",
-                    "locality": "Ritterkiez",
-                    "district": "Kreuzberg",
-                    "city": "Berlin",
-                    "state": "Berlin",
-                    "country": "Deutschland",
-                }
-            )
-        )
-
-        assert answer is not None
-        assert answer.locality == "Berlin"
-        assert answer.neighbourhood == "Kreuzberg"
-        # "Ritterkiez" darf in KEINER Stufe auftauchen - es ist eine Ebene, die dieses Projekt
-        # nicht fuehrt, und wird ersatzlos verworfen.
-        assert "Ritterkiez" not in (
-            answer.neighbourhood,
-            answer.locality,
-            answer.region,
-            answer.country,
-        )
-
-    def test_street_and_housenumber_never_reach_a_field(self) -> None:
-        """Datensparsamkeit am Parser-Rand: es gibt keinen offenen Beutel, in dem sie ankaemen."""
-        answer = photon_answer(
-            _photon_payload(
-                {
-                    "type": "house",
-                    "street": "Oranienstrasse",
-                    "housenumber": "12",
-                    "postcode": "10999",
-                    "name": "Ein Haus",
-                    "city": "Berlin",
-                }
-            )
-        )
-
-        assert answer is not None
-        assert "Oranienstrasse" not in str(answer)
-        assert "12" not in str(answer)
-        assert "10999" not in str(answer)
-
-    @pytest.mark.parametrize(
-        ("raw_type", "expected"),
-        [
-            ("house", "neighbourhood"),
-            ("street", "neighbourhood"),
-            ("locality", "neighbourhood"),
-            ("district", "neighbourhood"),
-            ("city", "locality"),
-            ("county", "region"),
-            ("state", "region"),
-            ("country", "country"),
-            ("other", None),
-            ("was-auch-immer", None),
-        ],
-    )
-    def test_the_whole_type_vocabulary(self, raw_type: str, expected: str | None) -> None:
-        answer = photon_answer(_photon_payload({"type": raw_type, "city": "Berlin"}))
-
-        assert answer is not None
-        assert answer.matched_level == expected
-
-    def test_a_level_finer_than_ours_still_yields_the_place_name(self) -> None:
-        """`house`/`street` sind FEINER als jede Ebene dieses Projekts, nicht groeber. Die
-        Begruendung des Regions-Ausschlusses traegt hier ausdruecklich nicht: ein Regionstreffer
-        nennt oft eine Stadt Dutzende Kilometer entfernt, ein Haustreffer nennt die richtige."""
-        answer = photon_answer(_photon_payload({"type": "house", "city": "Split"}))
-        assert answer is not None
-
-        assert usable_locality(_info_of(answer)) == "Split"
-
-    def test_the_raw_level_is_counted_for_the_report(self) -> None:
-        """Die Zuordnung oben ist eine ANNAHME ueber eine fremde Quelle. Block C weist die roh
-        gesehenen Werte zusaetzlich aus, damit sie am Messergebnis nachpruefbar bleibt."""
-        seen: dict[str, int] = {}
-
-        photon_answer(_photon_payload({"type": "city", "city": "Split"}), seen)
-        photon_answer(_photon_payload({"type": "city", "city": "Berlin"}), seen)
-        photon_answer(_photon_payload({"type": "house", "city": "Berlin"}), seen)
-
-        assert seen == {"city": 2, "house": 1}
-
-    @pytest.mark.parametrize(
-        "payload",
-        [
-            None,
-            42,
-            "keine Antwort",
-            {},
-            {"features": []},
-            {"features": "nichts"},
-            {"features": [42]},
-            {"features": [{}]},
-            {"features": [{"properties": "nichts"}]},
-        ],
-    )
-    def test_a_malformed_answer_is_no_answer_never_an_exception(self, payload: object) -> None:
-        assert photon_answer(payload) is None
-
-    def test_a_hostile_name_goes_through_the_same_sanitisation(self) -> None:
-        answer = photon_answer(
-            _photon_payload({"type": "city", "city": "Ber‮lin\x00", "district": "A" * 200})
-        )
-
-        assert answer is not None
-        assert answer.locality == "Berlin"
-        # VERWORFEN, nie abgeschnitten - ein gekappter Name waere ein anderer Ort.
-        assert answer.neighbourhood is None
-
-
-class TestTheOutgoingEdge:
-    """S2/S9 - was das System verlaesst, ist strukturell begrenzt, nicht zugesagt."""
-
-    async def test_an_unrounded_input_leaves_with_exactly_the_cell_precision(self) -> None:
-        """DIE ZWEITE, UNABHAENGIGE SCHRANKE. Gemessen wird an der ABGESETZTEN Anfrage, nicht an
-        der Aufrufstelle: das Akzeptanzkriterium haengt an dem Rand, an dem die Daten tatsaechlich
-        abfliessen. Eine ungerundete Zahl ist in der Zeichenkette nicht darstellbar."""
-        requested: list[httpx.URL] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            requested.append(request.url)
-            return httpx.Response(200, json=_photon_payload({"type": "city", "city": "Split"}))
-
-        resolver = PhotonResolver(
-            httpx.AsyncClient(transport=httpx.MockTransport(handler)),
-            CloudRequestThrottle(min_interval_seconds=0.0),
-            _tally(),
-        )
-        # Volle EXIF-Praezision, wie sie in `photos.gps_lat` steht.
-        await resolver.resolve((43.50812345678, 16.44018765432))
-
-        assert len(requested) == 1
-        assert requested[0].params["lat"] == "43.51"
-        assert requested[0].params["lon"] == "16.44"
-
-    async def test_the_request_goes_to_the_constant_host(self) -> None:
-        requested: list[httpx.URL] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            requested.append(request.url)
-            return httpx.Response(200, json=_photon_payload({"type": "city", "city": "Split"}))
-
-        resolver = PhotonResolver(
-            httpx.AsyncClient(transport=httpx.MockTransport(handler)),
-            CloudRequestThrottle(min_interval_seconds=0.0),
-            _tally(),
-        )
-        await resolver.resolve(SPLIT)
-
-        assert str(requested[0]).startswith(PHOTON_REVERSE_URL)
-
-    def test_the_target_host_is_a_constant_never_a_value_from_outside(self) -> None:
-        """Syntaxbaum-Waechter, KEIN SSRF-PFAD: die Ziel-URL jedes abgesetzten Aufrufs ist ein
-        Modulname, nie ein Parameter, ein Datenbankwert oder eine zusammengesetzte Zeichenkette."""
-        path = module_file("photosort.place_probe")
-        assert path is not None
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-
-        module_constants = {
-            target.id
-            for node in tree.body
-            if isinstance(node, ast.Assign)
-            for target in node.targets
-            if isinstance(target, ast.Name)
-            and isinstance(node.value, ast.Constant)
-            and isinstance(node.value.value, str)
-        }
-
-        urls: list[ast.expr] = []
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
-                continue
-            if node.func.attr not in ("stream", "get", "post", "request"):
-                continue
-            # NUR Aufrufe auf einem HTTP-Client. Ohne diese Einschraenkung faengt der Waechter
-            # jedes `dict.get("schluessel")` mit und wird dann entschaerft - und mit ihm die
-            # Zusage.
-            receiver = node.func.value
-            receiver_name = (
-                receiver.attr
-                if isinstance(receiver, ast.Attribute)
-                else receiver.id
-                if isinstance(receiver, ast.Name)
-                else ""
-            )
-            if "client" not in receiver_name.lower():
-                continue
-            # Bei `stream`/`request` steht die Methode vorn, die URL dahinter.
-            urls.extend(
-                argument
-                for argument in node.args
-                if not (isinstance(argument, ast.Constant) and argument.value in ("GET", "POST"))
-            )
-
-        assert urls, "Der Waechter findet gar keinen abgesetzten Aufruf - er prueft dann nichts."
-        for url in urls:
-            assert isinstance(url, ast.Name), ast.unparse(url)
-            assert url.id in module_constants, url.id
-
-    async def test_a_minimum_interval_is_held_between_two_requests(self) -> None:
-        """S9: eine Zeitgrenze und ein Mindestabstand sind Muss. Ueber eine INJIZIERTE Uhr - ein
-        Test, der echte Sekunden wartet, wird beim ersten Zeitdruck entschaerft."""
-        slept: list[float] = []
-        now = [0.0]
-
-        async def fake_sleep(seconds: float) -> None:
-            slept.append(seconds)
-            now[0] += seconds
-
-        throttle = CloudRequestThrottle(
-            min_interval_seconds=PHOTON_MIN_REQUEST_INTERVAL_SECONDS,
-            clock=lambda: now[0],
-            sleep=fake_sleep,
-        )
-        resolver = PhotonResolver(
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(
-                    lambda _: httpx.Response(
-                        200, json=_photon_payload({"type": "city", "city": "Split"})
-                    )
-                )
-            ),
-            throttle,
-            _tally(),
-        )
-
-        await resolver.resolve(SPLIT)
-        await resolver.resolve(GARMISCH)
-
-        assert slept == [PHOTON_MIN_REQUEST_INTERVAL_SECONDS]
-
-    async def test_a_timeout_is_no_answer_never_a_crash(self) -> None:
-        """KEINE ANTWORT ist ausdruecklich etwas anderes als eine Antwort ohne brauchbare Ebene:
-        eine voruebergehende Stoerung darf die Zelle nicht dauerhaft vergiften."""
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            raise httpx.ConnectTimeout("zu langsam")
-
-        tally = _tally()
-        resolver = PhotonResolver(
-            httpx.AsyncClient(transport=httpx.MockTransport(handler)),
-            CloudRequestThrottle(min_interval_seconds=0.0),
-            tally,
-        )
-
-        assert await resolver.resolve(SPLIT) is None
-        assert tally.failures == {FAILURE_TRANSPORT: 1}
-
-    async def test_an_error_status_is_no_answer(self) -> None:
-        tally = _tally()
-        resolver = PhotonResolver(
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(lambda _: httpx.Response(429, text="zu viel"))
-            ),
-            CloudRequestThrottle(min_interval_seconds=0.0),
-            tally,
-        )
-
-        assert await resolver.resolve(SPLIT) is None
-        assert tally.failures == {FAILURE_HTTP_STATUS: 1}
-
-    async def test_an_oversized_answer_is_read_only_up_to_the_limit(self) -> None:
-        """S9: Groesse und Struktur werden BEGRENZT gelesen - eine unerwartet grosse Fremdantwort
-        soll den Messlauf nicht in den Speicher laufen lassen."""
-        huge = b"x" * (PHOTON_MAX_RESPONSE_BYTES + 1024)
-        tally = _tally()
-        resolver = PhotonResolver(
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(lambda _: httpx.Response(200, content=huge))
-            ),
-            CloudRequestThrottle(min_interval_seconds=0.0),
-            tally,
-        )
-
-        assert await resolver.resolve(SPLIT) is None
-        assert tally.failures == {FAILURE_TOO_LARGE: 1}
-
-    async def test_a_non_json_answer_is_no_answer(self) -> None:
-        tally = _tally()
-        resolver = PhotonResolver(
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(lambda _: httpx.Response(200, text="<html>"))
-            ),
-            CloudRequestThrottle(min_interval_seconds=0.0),
-            tally,
-        )
-
-        assert await resolver.resolve(SPLIT) is None
-        assert tally.failures == {FAILURE_UNREADABLE: 1}
-
-    async def test_an_answer_without_a_feature_is_a_miss_not_a_failure(self) -> None:
-        """DIE GEGENPROBE, und sie traegt den ganzen Fix: der Dienst HAT geantwortet, er hat nur
-        nichts gefunden. Das ist ein Messergebnis - kein Ausfall."""
-        tally = _tally()
-        resolver = PhotonResolver(
-            httpx.AsyncClient(
-                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"features": []}))
-            ),
-            CloudRequestThrottle(min_interval_seconds=0.0),
-            tally,
-        )
-
-        assert await resolver.resolve(SPLIT) is None
-        assert tally.failures == {}
-
-    async def test_every_failure_token_is_free_of_coordinates_and_names(self) -> None:
-        """S11: die Gruende sind ein FESTER Vorrat, nie ein Fremdtext - kein Statuswert, keine
-        Fehlermeldung des Dienstes und erst recht keine Zelle geraet darueber in die Ausgabe."""
-        assert FAILURE_REASONS == (
-            FAILURE_HTTP_STATUS,
-            FAILURE_TRANSPORT,
-            FAILURE_TOO_LARGE,
-            FAILURE_UNREADABLE,
-        )
-        for reason in FAILURE_REASONS:
-            assert reason.replace("-", "").isalpha()
 
 
 # --- main() gegen eine echte, dateibasierte SQLite ----------------------------------------------
@@ -1109,8 +650,11 @@ SPLIT_DATASET_LINES = [
 
 @pytest.fixture
 def dataset(tmp_path: Path) -> Path:
-    path = tmp_path / "allCountries.txt"
-    path.write_text("\n".join(SPLIT_DATASET_LINES) + "\n", encoding="utf-8")
+    """Der Auszug in genau der Form, die auch im Betrieb liegt - gepackt und mit seinem Hash
+    daneben. Ueber `write_extract` statt von Hand geschrieben: das Messkommando liest ab hier
+    dieselbe Datei wie ein Lauf, und ein von Hand gebauter Beinahe-Auszug bewiese das nicht."""
+    path = tmp_path / "geonames-auszug.txt.gz"
+    write_extract(SPLIT_DATASET_LINES, path)
     return path
 
 
@@ -1160,7 +704,6 @@ class TestARealRunChangesNothing:
         exit_code = main(
             ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)],
             database_url=url,
-            external_lookup_enabled=False,
         )
 
         assert exit_code == 0
@@ -1207,7 +750,7 @@ class TestMainRefusesLoudly:
 
         asyncio.run(prepare())
 
-        exit_code = main(["--project-id", "999"], database_url=url, external_lookup_enabled=False)
+        exit_code = main(["--project-id", "999"], database_url=url)
 
         assert exit_code == 1
         captured = capsys.readouterr()
@@ -1235,9 +778,7 @@ class TestMainRefusesLoudly:
 
         project_id = asyncio.run(prepare())
 
-        exit_code = main(
-            ["--project-id", str(project_id)], database_url=url, external_lookup_enabled=False
-        )
+        exit_code = main(["--project-id", str(project_id)], database_url=url)
 
         assert exit_code == 1
         assert "Lauf" in capsys.readouterr().err
@@ -1269,7 +810,6 @@ class TestTheOutputSeparatesNumbersFromPlaces:
             main(
                 ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)],
                 database_url=url,
-                external_lookup_enabled=False,
             )
             == 0
         )
@@ -1289,7 +829,6 @@ class TestTheOutputSeparatesNumbersFromPlaces:
             main(
                 ["--project-id", str(project_id), "--ortsdatensatz", str(dataset), "--namen"],
                 database_url=url,
-                external_lookup_enabled=False,
             )
             == 0
         )
@@ -1325,7 +864,6 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         main(
             ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)],
             database_url=url,
-            external_lookup_enabled=False,
         )
         report = capsys.readouterr().out
 
@@ -1333,12 +871,11 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         assert "davon in einer Zelle mit Ortsnamen: 4" in report
 
 
-class TestTheSwitchIsOffByDefault:
-    """S1/S4: steht der Schalter auf `false`, wird der externe Auflöser GAR NICHT ERST GEBAUT."""
+class TestAnAbsentDatasetIsReportedNotShownAsZero:
+    """Der Kandidat MELDET sein Ausbleiben: eine leere Spalte wuerde als schlechtes Messergebnis
+    gelesen - und auf so eine Zahl faellt dann eine Entscheidung."""
 
-    def test_the_external_factory_is_never_called_and_the_run_goes_through(
-        self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def _prepared_project(self, tmp_path: Path) -> str:
         url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
 
         async def prepare() -> int:
@@ -1352,223 +889,54 @@ class TestTheSwitchIsOffByDefault:
             await engine.dispose()
             return project_id
 
-        project_id = asyncio.run(prepare())
+        self.project_id = asyncio.run(prepare())
+        return url
 
-        def exploding_factory(seen_levels: dict[str, int]) -> PlaceResolver:
-            raise AssertionError(
-                "Der externe Aufloeser wurde trotz ausgeschaltetem Schalter gebaut."
-            )
-
-        exit_code = main(
-            ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)],
-            database_url=url,
-            external_lookup_enabled=False,
-            build_external_resolver=exploding_factory,
-        )
-
-        assert exit_code == 0
-        report = capsys.readouterr().out
-        # Das AUSBLEIBEN wird gemeldet, statt eine leere Spalte zu zeigen, die als schlechtes
-        # Messergebnis gelesen wuerde.
-        assert "NICHT GEMESSEN" in report
-        assert "EXTERNAL_PLACE_LOOKUP_ENABLED" in report
-        assert "sie sind nicht null" in report
-
-    def test_an_absent_local_dataset_is_reported_too_not_shown_as_zero(
+    def test_a_missing_dataset_ends_in_a_measured_zero_free_report(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
-
-        async def prepare() -> int:
-            engine = make_engine(url)
-            async with engine.begin() as connection:
-                await connection.run_sync(Base.metadata.create_all)
-            factory = make_session_factory(engine)
-            async with factory() as session:
-                project_id = await _seed_measured_project(session)
-                await session.commit()
-            await engine.dispose()
-            return project_id
-
-        project_id = asyncio.run(prepare())
-
-        assert (
-            main(
-                ["--project-id", str(project_id)],
-                database_url=url,
-                external_lookup_enabled=False,
-            )
-            == 0
-        )
-        report = capsys.readouterr().out
-
-        assert report.count("NICHT GEMESSEN") == 2
-        assert "--ortsdatensatz" in report
-
-    def test_with_the_switch_on_the_external_candidate_is_measured(
-        self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Die Gegenprobe zum Fall darueber: ohne sie bestuende "der Schalter wirkt" auch dann,
-        wenn der externe Weg ueberhaupt nicht mehr gebaut werden KANN."""
-        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
-
-        async def prepare() -> int:
-            engine = make_engine(url)
-            async with engine.begin() as connection:
-                await connection.run_sync(Base.metadata.create_all)
-            factory = make_session_factory(engine)
-            async with factory() as session:
-                project_id = await _seed_measured_project(session)
-                await session.commit()
-            await engine.dispose()
-            return project_id
-
-        project_id = asyncio.run(prepare())
-
-        class FakeResolver:
-            """Ein Double, kein Client - die Netzsperre machte einen echten laut."""
-
-            def __init__(self, tally: ProbeTally) -> None:
-                self._tally = tally
-
-            async def resolve(self, cell: Cell) -> PlaceAnswer | None:
-                return photon_answer(
-                    _photon_payload({"type": "city", "city": "Split"}), self._tally.seen_levels
-                )
+        url = self._prepared_project(tmp_path)
 
         exit_code = main(
-            ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)],
+            ["--project-id", str(self.project_id), "--ortsdatensatz", str(tmp_path / "fehlt.gz")],
             database_url=url,
-            external_lookup_enabled=True,
-            build_external_resolver=FakeResolver,
         )
 
         assert exit_code == 0
         report = capsys.readouterr().out
-        # Nur der lokale Kandidat fehlt nicht mehr - der externe traegt jetzt Zahlen.
-        assert report.count("NICHT GEMESSEN") == 0
-        # Die roh gesehene Ebenenangabe steht in Block C, damit die Zuordnung auf `PLACE_LEVELS`
-        # am Messergebnis nachpruefbar bleibt statt geglaubt werden zu muessen.
-        assert "rohe Ebenenangaben der Quelle: city: 2" in report
-        # ... und weiterhin keine Koordinate und kein Name ohne --namen.
-        assert "43.51" not in report
-        assert "Split" not in report
+        assert "NICHT GEMESSEN" in report
+        assert "sie sind nicht null" in report
+        assert "python -m photosort.place_dataset" in report
 
-    def test_a_partial_outage_is_reported_apart_from_the_misses(
+    def test_a_changed_dataset_is_not_measured_either(
         self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """DAS SZENARIO, GEGEN DAS DER AUSFALLZAEHLER ANTRITT: Die Dienst-Instanz drosselt nach
-        der ersten Zelle. Ohne die Trennung meldete der Bericht "ohne Treffer: 1" und liesse eine
-        Drosselung wie einen schlechten Anbieter aussehen - und darauf faellt eine nicht
-        ruecknehmbare Wegwahl, die ein zweiter Messlauf nur um den Preis eines zweiten Abflusses
-        korrigieren koennte."""
-        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
-
-        async def prepare() -> int:
-            engine = make_engine(url)
-            async with engine.begin() as connection:
-                await connection.run_sync(Base.metadata.create_all)
-            factory = make_session_factory(engine)
-            async with factory() as session:
-                project_id = await _seed_measured_project(session)
-                await session.commit()
-            await engine.dispose()
-            return project_id
-
-        project_id = asyncio.run(prepare())
-
-        def throttling_factory(tally: ProbeTally) -> PlaceResolver:
-            # Die erste Zelle wird beantwortet, ab der zweiten kommt HTTP 429.
-            answered = [0]
-
-            def handler(request: httpx.Request) -> httpx.Response:
-                answered[0] += 1
-                if answered[0] == 1:
-                    return httpx.Response(
-                        200, json=_photon_payload({"type": "city", "city": "Split"})
-                    )
-                return httpx.Response(429, text="slow down")
-
-            return PhotonResolver(
-                httpx.AsyncClient(transport=httpx.MockTransport(handler)),
-                CloudRequestThrottle(min_interval_seconds=0.0),
-                tally,
-            )
+        """Kein stiller Ersatzweg: Ein Auszug, der von seinem Hash abweicht, wird nicht gelesen -
+        auch hier nicht, wo er nur eine Messung traegt."""
+        url = self._prepared_project(tmp_path)
+        dataset_hash_path(dataset).write_text("0" * 64 + "\n", encoding="utf-8")
 
         exit_code = main(
-            ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)],
+            ["--project-id", str(self.project_id), "--ortsdatensatz", str(dataset)],
             database_url=url,
-            external_lookup_enabled=True,
-            build_external_resolver=throttling_factory,
         )
 
         assert exit_code == 0
-        report = capsys.readouterr().out
+        assert "NICHT GEMESSEN" in capsys.readouterr().out
 
-        # Die zwei Zellen des Projekts: eine beantwortet, eine gedrosselt.
-        assert "AUSFALL (gar keine verwertbare Antwort): 1" in report
-        assert f"{FAILURE_HTTP_STATUS}: 1" in report
-        # Der Ausfall steht NICHT zusaetzlich als Nichttreffer da.
-        assert "ohne Treffer (Quelle antwortete, fand nichts): 0" in report
-        # Und er ist als unbrauchbar gekennzeichnet, nicht als Messwert.
-        assert "NICHT gemessen" in report
-
-    def test_without_an_outage_the_failure_line_stays_at_zero(
+    def test_the_report_names_no_external_candidate_at_all(
         self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Gegenprobe: die Ausfallzeile steht immer da - eine Zeile, die nur bei Ausfall
-        erschiene, liesse ihr Fehlen als "kein Ausfallbegriff" lesen."""
-        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
-
-        async def prepare() -> int:
-            engine = make_engine(url)
-            async with engine.begin() as connection:
-                await connection.run_sync(Base.metadata.create_all)
-            factory = make_session_factory(engine)
-            async with factory() as session:
-                project_id = await _seed_measured_project(session)
-                await session.commit()
-            await engine.dispose()
-            return project_id
-
-        project_id = asyncio.run(prepare())
-
-        def healthy_factory(tally: ProbeTally) -> PlaceResolver:
-            return PhotonResolver(
-                httpx.AsyncClient(
-                    transport=httpx.MockTransport(
-                        lambda _: httpx.Response(200, json={"features": []})
-                    )
-                ),
-                CloudRequestThrottle(min_interval_seconds=0.0),
-                tally,
-            )
+        """Der externe Kandidat ist mit seinem Gegenstand verschwunden (ADR 0105 Punkt 2) - nicht
+        "vorerst abgeschaltet". Eine Ausgabe, die ihn noch als ausgeblieben fuehrt, legte eine
+        Entscheidung nahe, die es nicht mehr gibt."""
+        url = self._prepared_project(tmp_path)
 
         main(
-            ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)],
+            ["--project-id", str(self.project_id), "--ortsdatensatz", str(dataset)],
             database_url=url,
-            external_lookup_enabled=True,
-            build_external_resolver=healthy_factory,
         )
         report = capsys.readouterr().out
 
-        assert "AUSFALL (gar keine verwertbare Antwort): 0" in report
-        # Der Dienst HAT geantwortet und nichts gefunden - das ist ein Messergebnis.
-        assert "ohne Treffer (Quelle antwortete, fand nichts): 2" in report
-        assert "NICHT gemessen" not in report
-
-    def test_an_unreachable_database_leaks_no_credentials(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Die SQLAlchemy-Meldung kann die DATABASE_URL samt Zugangsdaten enthalten - ausgegeben
-        wird deshalb nur der Fehlertyp, nie `str(exc)` und nie ein Traceback."""
-        unreachable = "sqlite+aiosqlite:////nicht/vorhandenes/verzeichnis/geheim.db"
-
-        exit_code = main(
-            ["--project-id", "1"], database_url=unreachable, external_lookup_enabled=False
-        )
-
-        assert exit_code == 1
-        captured = capsys.readouterr()
-        assert "geheim" not in captured.err
-        assert "Datenbankzugriff fehlgeschlagen" in captured.err
+        assert "Photon" not in report
+        assert report.count("## Kandidat:") == 1

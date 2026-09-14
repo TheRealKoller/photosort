@@ -24,6 +24,7 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoRanking,
     PhotoScore,
+    PlaceLookup,
     Project,
     ProjectCamera,
     RatingStatus,
@@ -484,6 +485,65 @@ async def test_the_rebuild_does_not_commit(db_session: AsyncSession, tmp_path: P
 
     assert db_session.in_transaction()
     await db_session.rollback()
+
+
+async def test_the_rebuild_names_from_stored_lookups_and_asks_nobody(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """specs/features/0434-ortsnamen-fuer-events.md, S10: Der Neuaufbau bildet die Namen NEU,
+    aber ausschliesslich aus bereits abgelegten Auskuenften - er fragt niemanden und legt keine
+    neue Auskunft an.
+
+    BEIDE HAELFTEN in einem Fall: die Zelle MIT abgelegter Auskunft traegt danach ihren Namen, die
+    Zelle OHNE bleibt namenlos. Die erste Haelfte allein bestuende auch dann, wenn dieser Pfad das
+    Merkmal gar nicht mehr kennte; die zweite allein auch dann, wenn er nie einen Namen
+    schriebe."""
+    project, _camera, run = await _build_full_fixture(db_session, tmp_path)
+    # Das Foto mit Koordinate der Fixture liegt am Eiffelturm; die Zelle des zweiten Abschnitts
+    # bekommt bewusst KEINE Auskunft.
+    db_session.add(
+        PlaceLookup(
+            project_id=project.id,
+            cell_lat=round(_EIFFEL[0], 2),
+            cell_lon=round(_EIFFEL[1], 2),
+            locality="Paris",
+            matched_level="locality",
+            source="geonames",
+            resolved_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+    )
+    await db_session.flush()
+    lookups_before = (
+        await db_session.execute(
+            select(func.count())
+            .select_from(PlaceLookup)
+            .where(PlaceLookup.project_id == project.id)
+        )
+    ).scalar_one()
+
+    await rebuild_run_grouping(db_session, project.id)
+
+    events = (
+        (
+            await db_session.execute(
+                select(Event)
+                .where(Event.criterion_scoring_run_id == run.id)
+                .order_by(Event.position)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    named = [event.place_name for event in events]
+    assert "Paris" in named
+    assert None in named
+    assert (
+        await db_session.execute(
+            select(func.count())
+            .select_from(PlaceLookup)
+            .where(PlaceLookup.project_id == project.id)
+        )
+    ).scalar_one() == lookups_before
 
 
 async def test_a_rollback_after_the_rebuild_restores_the_previous_grouping(

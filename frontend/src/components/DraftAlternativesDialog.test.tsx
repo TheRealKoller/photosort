@@ -38,6 +38,7 @@ function eventOut(overrides: Partial<EventOut> = {}): EventOut {
     started_at: '2026-07-20T10:00:00',
     ended_at: '2026-07-20T11:00:00',
     place: null,
+    place_name: null,
     ...overrides,
   }
 }
@@ -138,6 +139,16 @@ describe('DraftAlternativesDialog', () => {
     })
 
     expect(await screen.findByRole('heading', { name: /Eiffelturm/ })).toBeInTheDocument()
+  })
+
+  it('carries a resolved place name as its title too', async () => {
+    // Der Dialogtitel geht durch dieselbe Funktion wie jede andere Event-Ueberschrift: eine
+    // dritte Stufe dort kommt hier an, ohne dass dieser Dialog etwas davon wissen muss.
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(listOut([]))
+
+    renderDialog({ photo: photo({ event: eventOut({ place_name: 'Berlin, Kreuzberg' }) }) })
+
+    expect(await screen.findByRole('heading', { name: /Berlin, Kreuzberg/ })).toBeInTheDocument()
   })
 
   it('keeps the ORDER OF THE ANSWER and does not sort again', async () => {

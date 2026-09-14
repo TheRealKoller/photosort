@@ -22,6 +22,7 @@ function event(overrides: Partial<EventOut> = {}): EventOut {
     started_at: '2026-07-20T10:00:00',
     ended_at: '2026-07-20T11:00:00',
     place: null,
+    place_name: null,
     ...overrides,
   }
 }
@@ -76,6 +77,17 @@ describe('groupPhotosByDay', () => {
     const days = groupPhotosByDay([photo({ id: 1, event: morning })])
 
     expect(days[0].events[0].heading).toContain('Position 1')
+  })
+
+  it('carries a resolved place name into the group heading', () => {
+    // Die Gruppierung bildet die Ueberschrift NICHT selbst, sie geht durch `formatEventHeading` -
+    // eine zweite Rangfolge hier waere eine zweite Wahrheit (Spec 0434).
+    const days = groupPhotosByDay([
+      photo({ id: 1, event: event({ ...morning, place_name: 'Berlin, Kreuzberg' }) }),
+    ])
+
+    expect(days[0].events[0].heading).toContain('Berlin, Kreuzberg')
+    expect(days[0].events[0].heading).not.toContain('Position')
   })
 
   it('skips a photo without an event instead of inventing a group', () => {

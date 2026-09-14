@@ -59,6 +59,7 @@ function eventOut(overrides: Partial<EventOut> = {}): EventOut {
     started_at: '2026-07-20T10:30:00',
     ended_at: '2026-07-20T11:45:00',
     place: null,
+    place_name: null,
     ...overrides,
   }
 }
@@ -103,6 +104,59 @@ describe('formatEventHeading', () => {
     )
 
     expect(result.heading).toBe('Position 3 (10:30–11:45 Uhr)')
+  })
+
+  // Spec 0434: die DRITTE Stufe zwischen Sehenswuerdigkeit und Nummer. Die Zeitspanne bleibt in
+  // jedem Fall Teil der Ueberschrift - sie traegt die Unterscheidbarkeit, wenn mehrere Events
+  // denselben Namen tragen und kein Viertel vorliegt.
+  it('nutzt den aufgeloesten Ortsnamen, wenn keine Sehenswuerdigkeit erkannt wurde', () => {
+    const result = formatEventHeading(eventOut({ place_name: 'Garmisch-Partenkirchen' }))
+
+    expect(result.heading).toBe('Garmisch-Partenkirchen (10:30–11:45 Uhr)')
+  })
+
+  it('laesst der Sehenswuerdigkeit den Vorrang, wenn beide vorliegen', () => {
+    const result = formatEventHeading(
+      eventOut({
+        place: place({ kind: 'landmark', landmark_name: 'Eiffelturm' }),
+        place_name: 'Paris, Gros-Caillou',
+      }),
+    )
+
+    expect(result.heading).toBe('Eiffelturm (10:30–11:45 Uhr)')
+  })
+
+  it('nimmt den Ortsnamen, wenn ein "landmark" ohne Namen danebensteht', () => {
+    // Die Rangfolge ist sequenziell: faellt die erste Stufe aus, gewinnt die zweite - nicht
+    // sofort die Nummer.
+    const result = formatEventHeading(
+      eventOut({
+        place: place({ kind: 'landmark', landmark_name: null }),
+        place_name: 'Split',
+      }),
+    )
+
+    expect(result.heading).toBe('Split (10:30–11:45 Uhr)')
+  })
+
+  it('nutzt den Ortsnamen auch ohne jeden Ortsbezug in "place"', () => {
+    const result = formatEventHeading(eventOut({ place: null, place_name: 'Split' }))
+
+    expect(result.heading).toBe('Split (10:30–11:45 Uhr)')
+  })
+
+  it('faellt bei einem leeren Ortsnamen auf die Position zurueck', () => {
+    expect(formatEventHeading(eventOut({ place_name: '' })).heading).toBe(
+      'Position 3 (10:30–11:45 Uhr)',
+    )
+  })
+
+  it('gibt die zusammengesetzte Form unveraendert weiter', () => {
+    // "Ort, Viertel" entsteht AUSSCHLIESSLICH auf dem Server (ADR 0102 Punkt 4) - das Frontend
+    // setzt nichts zusammen und zerlegt nichts.
+    const result = formatEventHeading(eventOut({ place_name: 'Berlin, Kreuzberg' }))
+
+    expect(result.heading).toBe('Berlin, Kreuzberg (10:30–11:45 Uhr)')
   })
 
   it('kollabiert die Zeitspanne eines Events innerhalb einer Minute', () => {

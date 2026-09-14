@@ -39,6 +39,7 @@ from photosort.models import (
     PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
+    PlaceLookup,
     Project,
     ProjectCamera,
     Rating,
@@ -235,6 +236,22 @@ async def build_project_graph(
             # Das Ereignis-Log ist append-only, die Projektloeschung ist seine EINZIGE Ausnahme
             # (S13) - ohne diese Zeile prueft sie dort nichts. `event_id` steht bewusst gesetzt
             # UND ohne Fremdschluessel: Die Spalte sieht wie eine Referenz aus und ist keine.
+            # specs/features/0434-ortsnamen-fuer-events.md, Teil 2: die Ortsauskunft haengt am
+            # PROJEKT und nicht am Lauf. Ohne diese Zeile pruefen die beiden
+            # Vollstaendigkeitstests der Projektloeschung die neue Kante nicht, und "mit dem
+            # Projekt verschwindet die Ortsspur" (S6) waere unbelegt.
+            PlaceLookup(
+                project_id=project.id,
+                cell_lat=47.51,
+                cell_lon=11.09,
+                neighbourhood="Partenkirchen",
+                locality="Garmisch-Partenkirchen",
+                region="Bayern",
+                country="Deutschland",
+                matched_level="neighbourhood",
+                source="geonames",
+                resolved_at=now,
+            ),
             FeedbackEvent(
                 project_id=project.id,
                 user_id=user.id,

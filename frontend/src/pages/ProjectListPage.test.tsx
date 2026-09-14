@@ -165,6 +165,35 @@ describe('ProjectListPage', () => {
     expect(new Set(labels).size).toBe(4)
   })
 
+  /*
+   * ADR 0105 Punkt 5: GeoNames steht unter CC BY 4.0, die Namensnennung ist Pflicht und wird
+   * sichtbar erfuellt - app-weit am Fuss der Projektliste, der Einstiegsseite nach der Anmeldung,
+   * und damit ausserhalb der Arbeitsansichten. Sie haengt NICHT daran, ob gerade Projekte
+   * vorliegen: die Pflicht besteht, sobald die Anwendung den Datensatz benutzt.
+   */
+  describe('die Namensnennung des Ortsdatensatzes', () => {
+    it('nennt Quelle und Lizenz und verlinkt beide', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([project()])
+
+      renderPage()
+
+      const quelle = await screen.findByRole('link', { name: /GeoNames/ })
+      expect(quelle).toHaveAttribute('href', 'https://www.geonames.org/')
+      expect(screen.getByRole('link', { name: /CC BY 4\.0/ })).toHaveAttribute(
+        'href',
+        'https://creativecommons.org/licenses/by/4.0/',
+      )
+    })
+
+    it('steht auch im Leerzustand', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([])
+
+      renderPage()
+
+      expect(await screen.findByRole('link', { name: /GeoNames/ })).toBeInTheDocument()
+    })
+  })
+
   it('links each card to its project detail page', async () => {
     vi.mocked(projectsApi.listProjects).mockResolvedValue([project()])
     const user = userEvent.setup()
