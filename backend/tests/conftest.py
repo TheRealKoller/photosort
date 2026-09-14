@@ -6,7 +6,9 @@ import os
 os.environ.setdefault("SECRET_KEY", "test-only-secret-key-not-for-production-use")
 os.environ.setdefault("RATE_LIMIT_STORAGE_URI", "memory://")
 
+import socket  # noqa: E402
 from collections.abc import AsyncIterator, Iterator  # noqa: E402
+from typing import Any  # noqa: E402
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
@@ -19,6 +21,43 @@ from photosort.main import app  # noqa: E402
 from photosort.models import User  # noqa: E402
 from photosort.rate_limit import limiter  # noqa: E402
 from photosort.security import create_access_token, hash_password  # noqa: E402
+
+
+class NetworkAccessInTestError(RuntimeError):
+    """Ein Test hat versucht, eine echte Netzwerkverbindung aufzubauen.
+
+    Eigene Klasse statt eines nackten `RuntimeError`: nur so kann ein Test die Sperre selbst
+    pruefen, ohne auf eine Meldungszeichenkette zu zielen."""
+
+
+@pytest.fixture(autouse=True)
+def _no_network_access(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """SPERRE, keine Konvention: kein automatisierter Test erreicht je ein Netz
+    (specs/features/0434-ortsnamen-fuer-events.md, Teststrategie).
+
+    Gilt fuer JEDEN Test dieses Baums, nicht nur fuer die Ortsauflösung - jeder Fremddienst des
+    Projekts (OpenCloud, beide Cloud-Vision-Anbieter, eine Ortsquelle) kommt injiziert herein und
+    wird im Test durch ein Double oder einen `httpx.MockTransport` ersetzt. Ein Test, der
+    stattdessen den echten Client baut, soll LAUT scheitern statt still hinauszugehen: ohne
+    Sperre haengt er an einem fremden Dienst, kostet je nach Pfad Geld und gibt reale Daten ab.
+
+    Gesperrt werden drei Wege, weil keiner die anderen abdeckt: `connect`, das ergebnis- statt
+    ausnahmegetriebene `connect_ex` (ein Fehlschlag waere dort ein Rueckgabewert und ginge still
+    durch) und `create_connection`, das seinen Socket selbst anlegt.
+
+    UNBERUEHRT bleibt alles ohne echten Socket: `httpx.ASGITransport`/`MockTransport`, die
+    In-Memory-SQLite und der `memory://`-Rate-Limiter."""
+
+    def _verweigert(*args: Any, **kwargs: Any) -> Any:
+        raise NetworkAccessInTestError(
+            "Netzwerkzugriff aus einem automatisierten Test. Den betroffenen Fremddienst als "
+            "Double oder ueber httpx.MockTransport injizieren, statt den echten Client zu bauen."
+        )
+
+    monkeypatch.setattr(socket.socket, "connect", _verweigert)
+    monkeypatch.setattr(socket.socket, "connect_ex", _verweigert)
+    monkeypatch.setattr(socket, "create_connection", _verweigert)
+    yield
 
 
 @pytest.fixture(autouse=True)

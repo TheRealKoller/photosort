@@ -9,7 +9,6 @@ einen laufenden Container voraus.
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import hashlib
 import io
@@ -85,46 +84,8 @@ from photosort.motifs import MOTIF_REGISTRY, MOTIF_STRENGTH_BAND_STRONG, is_moti
 from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.quality_weights import store_weights
 from photosort.thumbnails import display_path, generate_variants, thumbnail_path
+from tests.import_closure import import_closure
 from tests.time_offset_invariant import assert_time_offset_invariant
-
-_SRC_DIR = Path(__file__).resolve().parents[1] / "src"
-
-
-def _module_file(module: str) -> Path | None:
-    relative = module.replace(".", "/")
-    for candidate in (_SRC_DIR / f"{relative}.py", _SRC_DIR / relative / "__init__.py"):
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def _import_closure(entry_module: str) -> set[str]:
-    """Statischer Import-Graph des Quellbaums ab `entry_module`, auf `photosort.*` beschraenkt.
-
-    Bewusst per AST statt per echtem Import: der Laufzeit-Import von `photosort.main` zieht
-    mediapipe/onnxruntime mit und waere nur in einem Subprozess aussagekraeftig (`sys.modules` ist
-    im Testprozess bereits durch die Testdatei selbst verunreinigt)."""
-    seen: set[str] = set()
-    pending = [entry_module]
-    while pending:
-        module = pending.pop()
-        if module in seen:
-            continue
-        seen.add(module)
-        path = _module_file(module)
-        if path is None:
-            continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.Import):
-                pending.extend(
-                    alias.name for alias in node.names if alias.name.startswith("photosort")
-                )
-            elif isinstance(node, ast.ImportFrom) and node.module is not None:
-                if node.module.startswith("photosort"):
-                    pending.append(node.module)
-                    # "from photosort.api import projects" - der Name kann ein Untermodul sein.
-                    pending.extend(f"{node.module}.{alias.name}" for alias in node.names)
-    return seen
 
 
 class TestIsDemoProjectName:
@@ -1093,19 +1054,19 @@ class TestNoCallPathFromTheRunningApplication:
     ueber den statischen Import-Graphen des Quellbaums (kein Laufzeit-Import noetig)."""
 
     def test_import_graph_of_the_api_does_not_contain_the_seeder(self) -> None:
-        closure = _import_closure("photosort.main")
+        closure = import_closure("photosort.main")
         assert "photosort.demo_state" not in closure
 
     def test_import_graph_of_the_worker_does_not_contain_the_seeder(self) -> None:
-        closure = _import_closure("photosort.worker")
+        closure = import_closure("photosort.worker")
         assert "photosort.demo_state" not in closure
 
     def test_the_import_graph_walker_actually_finds_something(self) -> None:
         # Gegenprobe: ohne sie bestuenden die beiden Tests oben auch dann, wenn der Walker gar
         # nichts findet (Tippfehler im Modulnamen, geaenderte Verzeichnisstruktur).
-        assert {"photosort.models", "photosort.config"} <= _import_closure("photosort.main")
-        assert "photosort.models" in _import_closure("photosort.demo_state")
-        assert "photosort.thumbnails" in _import_closure("photosort.demo_state")
+        assert {"photosort.models", "photosort.config"} <= import_closure("photosort.main")
+        assert "photosort.models" in import_closure("photosort.demo_state")
+        assert "photosort.thumbnails" in import_closure("photosort.demo_state")
 
 
 class TestTheDemoStateCarriesACloudBalance:
