@@ -1993,3 +1993,276 @@ class _RangeFailsAfterFirstClient(FakeOpenCloudClient):
         if self.range_requests:
             raise OpenCloudError("Verbindung verloren")
         return await super().get_range(webdav_url, relative_path, length)
+
+
+# --- Seitenverhaeltnis, Schreibweg 2: die Nachhol-Runde fuer den Bestand -----------------------
+# specs/features/0489-fotouebersicht-ohne-beschnitt.md (Auflagen S1-S4), ADR 0110 Punkt 3.
+
+
+async def _existing_photo_without_ratio(
+    session: AsyncSession,
+    project: Project,
+    path: str,
+    *,
+    etag: str = "same-etag",
+    aspect_ratio: float | None = None,
+) -> Photo:
+    moment = datetime(2023, 8, 15, 10, 0)
+    photo = Photo(
+        project_id=project.id,
+        relative_path=path,
+        etag=etag,
+        content_length=10,
+        taken_at=moment,
+        taken_at_original=moment,
+        # Bereits geprueft: so entsteht KEIN `probe_only`-Arbeitsposten, und die Nachhol-Runde
+        # steht allein im Blickfeld.
+        camera_probed=True,
+        last_modified=moment,
+        aspect_ratio=aspect_ratio,
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return photo
+
+
+def _sized_jpeg(width: int, height: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), color="blue").save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def _write_thumbnail(cache_dir: Path, photo: Photo, width: int, height: int) -> None:
+    """Legt die Vorschau-Variante an, die die Nachhol-Runde liest - ueber genau den Pfadbildner
+    der Produktion (Auflage S4), nie ueber einen selbst zusammengesetzten Namen."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    thumbnail_path(cache_dir, photo.id, photo.etag).write_bytes(_sized_jpeg(width, height))
+
+
+def _unchanged_entries(*paths: str) -> list[tuple[str, DavEntry]]:
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    return [(path, _entry(path.rsplit("/", 1)[-1], "same-etag", modified)) for path in paths]
+
+
+async def test_the_catch_up_round_fills_a_null_ratio_from_the_cached_thumbnail(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    photo = await _existing_photo_without_ratio(db_session, project, "CostaRica/img001.jpg")
+    _write_thumbnail(tmp_path, photo, 300, 200)
+    client = FakeOpenCloudClient(entries=_unchanged_entries("CostaRica/img001.jpg"))
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    await db_session.refresh(photo)
+    assert photo.aspect_ratio == pytest.approx(1.5)
+
+
+async def test_the_catch_up_round_touches_the_network_not_at_all(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ohne Netz, ohne OpenCloud-Abruf, ohne das Original - nur die lokale Vorschau."""
+    project = await _make_project(db_session)
+    photo = await _existing_photo_without_ratio(db_session, project, "CostaRica/img001.jpg")
+    _write_thumbnail(tmp_path, photo, 300, 200)
+    client = FakeOpenCloudClient(entries=_unchanged_entries("CostaRica/img001.jpg"))
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    assert client.download_requests == []
+    assert client.range_requests == []
+
+
+async def test_the_catch_up_round_leaves_an_already_filled_row_untouched(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Sie fuellt NUR `IS NULL`. Die Vorschau traegt hier bewusst eine ANDERE Form als der
+    gespeicherte Wert - wuerde die Runde ueberschreiben, faellt es sofort auf."""
+    project = await _make_project(db_session)
+    photo = await _existing_photo_without_ratio(
+        db_session, project, "CostaRica/img001.jpg", aspect_ratio=2.0
+    )
+    _write_thumbnail(tmp_path, photo, 200, 300)
+    client = FakeOpenCloudClient(entries=_unchanged_entries("CostaRica/img001.jpg"))
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    await db_session.refresh(photo)
+    assert photo.aspect_ratio == 2.0
+
+
+async def test_a_photo_without_a_cache_file_stays_null_and_is_tried_again_next_run(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Der Endzustand allein genuegt hier NICHT: `NULL` nach zwei Laeufen ist auch dann zu sehen,
+    wenn die Runde beim zweiten Lauf gar nicht mehr hingesehen haette. Der Spion zeigt, dass sie
+    es ein zweites Mal VERSUCHT hat - daran haengt die Zusage aus ADR 0110 Punkt 3, dass es keine
+    Merker-Spalte braucht."""
+    project = await _make_project(db_session)
+    photo = await _existing_photo_without_ratio(db_session, project, "CostaRica/img001.jpg")
+    attempts: list[Path] = []
+    original = worker.aspect_ratio_of_cached_thumbnail
+
+    def _spy(path: Path) -> float | None:
+        attempts.append(path)
+        return original(path)
+
+    monkeypatch.setattr(worker, "aspect_ratio_of_cached_thumbnail", _spy)
+    entries = _unchanged_entries("CostaRica/img001.jpg")
+
+    for _ in range(2):
+        await run_project_scan(
+            db_session,
+            FakeOpenCloudClient(entries=entries),
+            project,
+            drive_name=None,
+            cache_dir=tmp_path,
+        )
+
+    await db_session.refresh(photo)
+    assert photo.aspect_ratio is None
+    assert attempts == [thumbnail_path(tmp_path, photo.id, photo.etag)] * 2
+
+
+async def test_an_unreadable_cache_file_leaves_the_scan_successful(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Auflage S2: je Foto isoliert. Ein einzelnes beschaedigtes Vorschaubild darf den gesamten
+    Projekt-Scan nicht reissen - und zwar VOR jeder anderen Arbeit, also bei jedem Versuch
+    erneut."""
+    project = await _make_project(db_session)
+    kaputt = await _existing_photo_without_ratio(db_session, project, "CostaRica/img001.jpg")
+    heil = await _existing_photo_without_ratio(db_session, project, "CostaRica/img002.jpg")
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    thumbnail_path(tmp_path, kaputt.id, kaputt.etag).write_bytes(b"kein Bild")
+    _write_thumbnail(tmp_path, heil, 400, 200)
+    client = FakeOpenCloudClient(
+        entries=_unchanged_entries("CostaRica/img001.jpg", "CostaRica/img002.jpg")
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    await db_session.refresh(kaputt)
+    await db_session.refresh(heil)
+    assert kaputt.aspect_ratio is None
+    assert heil.aspect_ratio == pytest.approx(2.0)
+
+
+async def test_the_ratio_read_from_the_preview_matches_the_original_within_a_tolerance(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der aus der Vorschau gelesene Wert ist wegen der Ganzzahl-Skalierung beim Erzeugen NICHT
+    exakt der des Originals. Zugesichert ist er nur innerhalb dieser Toleranz - nie auf
+    Gleichheit mit dem Scan-Weg geprueft."""
+    project = await _make_project(db_session)
+    photo = await _existing_photo_without_ratio(db_session, project, "CostaRica/img001.jpg")
+    original_ratio = 1001 / 667
+    assert generate_variants(tmp_path, photo.id, photo.etag, _sized_jpeg(1001, 667)) is not None
+    client = FakeOpenCloudClient(entries=_unchanged_entries("CostaRica/img001.jpg"))
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    await db_session.refresh(photo)
+    assert photo.aspect_ratio != original_ratio
+    assert photo.aspect_ratio == pytest.approx(
+        original_ratio, rel=worker.ASPECT_RATIO_PREVIEW_TOLERANCE
+    )
+
+
+class TestCatchUpRoundProgressStamps:
+    """Auflage S1: Die Runde laeuft VOR Phase 1 und damit vor dem ersten Stempel, den
+    `run_project_scan` heute setzt. Ohne eigene Commit-Punkte setzte `reap_stalled_runs` einen
+    Lauf, dessen Runde laenger als `STALL_THRESHOLD` arbeitet, auf FAILED - und braeche die
+    Coroutine dabei bewusst NICHT ab: Der Scan liefe weiter, waehrend die Oberflaeche
+    "fehlgeschlagen" sagt."""
+
+    async def _run_with_ratios(
+        self, session: AsyncSession, project: Project, cache_dir: Path, count: int
+    ) -> ScanRun:
+        run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
+        session.add(run)
+        await session.commit()
+        await session.refresh(run)
+        for index in range(count):
+            photo = await _existing_photo_without_ratio(
+                session, project, f"CostaRica/img{index:03d}.jpg", etag=f"etag-{index}"
+            )
+            _write_thumbnail(cache_dir, photo, 300, 200)
+        return run
+
+    async def test_every_block_gets_its_own_commit_and_progress_stamp(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await self._run_with_ratios(db_session, project, tmp_path, 3)
+        monkeypatch.setattr(worker, "ASPECT_RATIO_CATCH_UP_BATCH_SIZE", 1)
+        stamps: list[datetime] = []
+        original_commit = db_session.commit
+
+        async def _recording_commit() -> None:
+            stamps.append(run.last_progress_at)
+            await original_commit()
+
+        monkeypatch.setattr(db_session, "commit", _recording_commit)
+
+        await worker._catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
+
+        # Drei Bloecke, drei Commits - und der Stempel ist bei jedem VOR dem Commit gesetzt
+        # worden, also (schwach) aufsteigend statt ein einziges Mal am Ende.
+        assert len(stamps) == 3
+        assert stamps == sorted(stamps)
+        assert len(set(stamps)) > 1
+
+    async def test_it_loads_only_id_and_etag_never_whole_photo_objects(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Auflage S1, zweiter Teil: Geladen werden je Foto nur `id` und `etag`. Ein
+        `select(Photo)` ueber den gesamten Bestand zoege zehntausende ORM-Objekte in die
+        Sitzung."""
+        project = await _make_project(db_session)
+        run = await self._run_with_ratios(db_session, project, tmp_path, 1)
+
+        with _recorded_photo_selects() as statements:
+            await worker._catch_up_aspect_ratios(db_session, project.id, tmp_path, run)
+
+        assert statements, "Die Runde muss die Arbeitsmenge ueber `photos` bestimmen"
+        for statement in statements:
+            assert "photos.relative_path" not in statement, statement
+            assert "photos.taken_at" not in statement, statement
+            assert "photos.content_length" not in statement, statement
+
+
+@contextmanager
+def _recorded_photo_selects() -> Iterator[list[str]]:
+    """Die TATSAECHLICH abgesetzten SELECTs auf `photos` - dasselbe Muster wie
+    `_recorded_camera_selects` oben."""
+    statements: list[str] = []
+
+    def _listener(
+        conn: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        normalized = statement.lstrip().upper()
+        if normalized.startswith("SELECT") and "FROM PHOTOS" in normalized:
+            statements.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", _listener)
+    try:
+        yield statements
+    finally:
+        event.remove(Engine, "before_cursor_execute", _listener)

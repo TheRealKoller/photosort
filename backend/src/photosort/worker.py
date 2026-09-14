@@ -4,7 +4,7 @@ import asyncio
 import enum
 import logging
 import os
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -159,7 +159,12 @@ from photosort.selection import (
     effective_target,
     select_album_draft,
 )
-from photosort.thumbnails import generate_variants, variant_path
+from photosort.thumbnails import (
+    aspect_ratio_of_cached_thumbnail,
+    generate_variants,
+    thumbnail_path,
+    variant_path,
+)
 
 # Kein Logger-Objekt wird injiziert oder durchgereicht: worker.py ist die einzige Stelle mit
 # Zugriff auf sowohl die Exception als auch den Foto-Kontext - landmark.py/
@@ -681,6 +686,96 @@ async def _enumerate_scan_entries(
     return entries
 
 
+# Blockgroesse der Nachhol-Runde: je Block ein Commit und ein Fortschrittsstempel (Auflage S1).
+# Modul-Konstante statt Default-Parameterwert, damit Tests sie per
+# monkeypatch.setattr(worker, "ASPECT_RATIO_CATCH_UP_BATCH_SIZE", ...) verkleinern koennen -
+# dasselbe Muster wie SCAN_COMMIT_BATCH_SIZE.
+ASPECT_RATIO_CATCH_UP_BATCH_SIZE = 200
+
+# Das aus der VORSCHAU gelesene Verhaeltnis ist wegen der Ganzzahl-Skalierung beim Erzeugen der
+# Vorschau nicht exakt das des Originals. Diese relative Abweichung ist die zugesicherte Grenze;
+# sie wird nie auf Gleichheit mit dem Scan-Weg geprueft. Bei THUMBNAIL_MAX_SIZE = 400 kann die
+# kurze Kante um hoechstens eine halbe Pixelzeile danebenliegen - eine relative Abweichung von
+# unter einem Prozent, und damit weit unterhalb dessen, was im Raster sichtbar waere.
+ASPECT_RATIO_PREVIEW_TOLERANCE = 0.01
+
+
+def _read_cached_aspect_ratios(
+    cache_dir: Path, photos: Sequence[tuple[int, str]]
+) -> list[tuple[int, float]]:
+    """Liest das Seitenverhaeltnis der uebergebenen `(photo_id, etag)`-Paare aus ihrer lokalen
+    Vorschau-Variante. Ein Paar ohne lesbare Datei kommt schlicht nicht zurueck.
+
+    Rein synchron und ohne DB-Bezug (deshalb Tupel statt ORM-Objekten), genau wie
+    `thumbnails.measure_cache_usage`: Der Aufrufer fuehrt sie ueber `asyncio.to_thread` aus, damit
+    die Event-Loop bei einem Dateisystemzugriff je Foto nicht blockiert.
+
+    SICHERHEIT (Auflage S4): Der Pfad entsteht AUSSCHLIESSLICH ueber `thumbnails.thumbnail_path`.
+    Der `etag` kommt vom WebDAV-Server, ist damit Fremdtext und geht dort nur als SHA-256-Eingabe
+    in `cache_key` ein, nie in einen Dateinamen. Jede zweite Pfadbildung, die `etag` oder
+    `relative_path` als Namensbestandteil verwendet, bleibt untersagt: ein `etag` mit `../` laese
+    sonst aus einem beliebigen Pfad ausserhalb des Cache-Verzeichnisses.
+
+    SICHERHEIT (Auflage S2): Je Foto isoliert - die Fehlerbehandlung liegt vollstaendig in
+    `aspect_ratio_of_cached_thumbnail` (bewusst breites `except Exception`). Hier steht deshalb
+    kein zweiter, engerer Block."""
+    ratios: list[tuple[int, float]] = []
+    for photo_id, etag in photos:
+        ratio = aspect_ratio_of_cached_thumbnail(thumbnail_path(cache_dir, photo_id, etag))
+        if ratio is not None:
+            ratios.append((photo_id, ratio))
+    return ratios
+
+
+async def _catch_up_aspect_ratios(
+    session: AsyncSession, project_id: int, cache_dir: Path, run: ScanRun
+) -> int:
+    """Fuellt `Photo.aspect_ratio` fuer die Bestandsfotos des Projekts aus deren lokal
+    zwischengespeichertem Vorschaubild - ohne Netz, ohne OpenCloud-Abruf, ohne das Original
+    (ADR 0110 Punkt 3). Gibt die Zahl der gefuellten Zeilen zurueck.
+
+    Die Arbeitsmenge ist `aspect_ratio IS NULL` und damit zugleich die Abbruchbedingung: Es gibt
+    KEINE Merker-Spalte nach dem Muster von `camera_probed`. Der Merker dort verhindert einen
+    wiederholten NETZZUGRIFF je Bestandsfoto; hier kostet ein erneuter Versuch einen lokalen
+    Dateizugriff. Fehlt die Cache-Datei, bleibt der Wert `NULL` und der naechste Scan versucht es
+    erneut.
+
+    SICHERHEIT (Auflage S1): Je Block wird committet UND `ScanRun.last_progress_at` gesetzt.
+    Diese Runde laeuft VOR Phase 1 und damit vor dem ersten Stempel, den `run_project_scan` sonst
+    setzt. Ohne eigene Commit-Punkte setzte `reap_stalled_runs` einen Lauf, dessen Runde laenger
+    als `STALL_THRESHOLD` (15 Minuten) ohne Stempel arbeitet, auf FAILED - und braeche die
+    Coroutine dabei bewusst NICHT ab. Der Scan liefe weiter, waehrend die Oberflaeche
+    "fehlgeschlagen" sagt.
+
+    SICHERHEIT (Auflage S1, zweiter Teil): Geladen werden je Foto nur `id` und `etag`, nie ganze
+    `Photo`-Objekte ueber den gesamten Bestand - ein `select(Photo)` zoege bei zehntausenden
+    Bestandsfotos ebenso viele ORM-Objekte in die Sitzung."""
+    rows = (
+        (
+            await session.execute(
+                select(Photo.id, Photo.etag).where(
+                    Photo.project_id == project_id,
+                    Photo.aspect_ratio.is_(None),
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    filled = 0
+    for start in range(0, len(rows), ASPECT_RATIO_CATCH_UP_BATCH_SIZE):
+        block = list(rows[start : start + ASPECT_RATIO_CATCH_UP_BATCH_SIZE])
+        ratios = await asyncio.to_thread(_read_cached_aspect_ratios, cache_dir, block)
+        for photo_id, ratio in ratios:
+            await session.execute(
+                update(Photo).where(Photo.id == photo_id).values(aspect_ratio=ratio)
+            )
+        filled += len(ratios)
+        run.last_progress_at = _now_utc()
+        await session.commit()
+    return filled
+
+
 async def run_project_scan(
     session: AsyncSession,
     client: OpenCloudScanClient,
@@ -694,6 +789,12 @@ async def run_project_scan(
     await session.refresh(scan_run)
 
     try:
+        # Nachhol-Runde fuer den Bestand, VOR Phase 1 und vor jedem Netzzugriff dieses Laufs
+        # (ADR 0110 Punkt 3). Sie steht bewusst vor dem Laden von `existing_photos`: So schreibt
+        # sie ausschliesslich per UPDATE-Anweisung und kann keine ORM-Objekte hinter dem Ruecken
+        # der Sitzung veraltern lassen.
+        await _catch_up_aspect_ratios(session, project.id, cache_dir, scan_run)
+
         drive = await client.resolve_drive(drive_name)
 
         existing_photos = {
