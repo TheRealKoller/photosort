@@ -9,7 +9,8 @@ import { Card } from '../components/ui/card'
 import { Icon } from '../components/ui/icon'
 import { Skeleton } from '../components/ui/skeleton'
 import { useProjectsQuery } from '../hooks/useProjects'
-import { formatCount, formatTakenAtRange } from '../utils/formatStats'
+import { cn } from '../lib/utils'
+import { formatCount, formatTakenAtRange, NOT_AVAILABLE } from '../utils/formatStats'
 import { deriveProjectStand } from '../utils/pipelineSteps'
 
 const SKELETON_CARD_COUNT = 4
@@ -22,6 +23,12 @@ const SKELETON_CARD_COUNT = 4
  * waere Text, den es nur in einer Breite gibt.
  */
 function ProjectCard({ project }: { project: ProjectOut }) {
+  const takenAtRange = formatTakenAtRange(project.taken_at_earliest, project.taken_at_latest)
+  // WER HIER ENTSCHEIDET: die Formatierungsfunktion, nicht die Karte. Verglichen wird gegen die von
+  // ihr selbst zurueckgegebene Konstante, statt die Regel "einer der beiden Werte fehlt" ein
+  // zweites Mal hinzuschreiben - eine zweite Formulierung liefe mit der ersten auseinander.
+  const isTakenAtPlaceholder = takenAtRange === NOT_AVAILABLE
+
   return (
     <Card className="p-0">
       {/* Die ganze Zeile ist EINE Trefferflaeche - `min-h-11` als Zeilenhoehe einer zeilenweisen
@@ -51,10 +58,22 @@ function ProjectCard({ project }: { project: ProjectOut }) {
           <span className="font-mono">{formatCount(project.photo_count)}</span> Fotos
         </span>
 
+        {/* Die Tonwertstufe haengt am WERT, nicht am Container: eine bekannte Spanne steht in
+            `--text`, der Platzhalterstrich in `--text-muted`. Der Strich heisst "keine Angabe" und
+            ist ausdruecklich nicht dasselbe wie eine Null - auf der Karte eines ungescannten
+            Projekts steht er neben "0 Fotos", und genau dieses Paar traegt den Unterschied
+            zwischen einer Aussage und ihrer Abwesenheit. Die ganze Spanne muted zu setzen naehme
+            dem echten Wert seine Stufe.
+
+            `data-value-state` ist der semantische Haken fuer den Test (Muster `data-status` an
+            StatusTag) - zugesichert wird er, nicht die CSS-Klasse. */}
         <span data-testid={`project-taken-at-${project.id}`} className="text-sm lg:col-span-3">
           <span className="text-text-muted">Aufnahmen</span>{' '}
-          <span className="font-mono text-text">
-            {formatTakenAtRange(project.taken_at_earliest, project.taken_at_latest)}
+          <span
+            data-value-state={isTakenAtPlaceholder ? 'placeholder' : 'known'}
+            className={cn('font-mono', isTakenAtPlaceholder ? 'text-text-muted' : 'text-text')}
+          >
+            {takenAtRange}
           </span>
         </span>
 

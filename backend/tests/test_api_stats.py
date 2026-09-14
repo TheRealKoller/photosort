@@ -25,6 +25,7 @@ from photosort.models import (
     MotifAssessmentSource,
     Photo,
     PhotoCloudVisionError,
+    PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
@@ -1776,6 +1777,23 @@ class TestTheOverviewAndTheStatsPageAgree:
         assert listed[without_photos.id]["photo_count"] == 0
         assert listed[without_photos.id]["taken_at_earliest"] is None
         assert listed[without_photos.id]["taken_at_latest"] is None
+
+    def test_photo_scores_stay_one_row_per_photo(self) -> None:
+        """Die TRAGENDE Kardinalitaet hinter `photo_count_expression()`.
+
+        Der geteilte Zaehlausdruck laeuft in `api/stats.py` unter einem LEFT JOIN auf
+        `photo_scores`. Dass er dabei Fotos und nicht Join-Zeilen zaehlt, haelt allein der
+        Primaerschluessel auf `photo_id` - weder `count(Photo.id)` noch `count(*)` schuetzte gegen
+        ein 1:N-Verhaeltnis. Wird die Spalte einmal Teil eines zusammengesetzten Schluessels,
+        zaehlt der Ausdruck still zu hoch, und mit ihm `RatingsOut.unrated`.
+
+        Geprueft wird die Schluesselmenge auf GLEICHHEIT, nicht auf Enthaltensein: ein
+        hinzugekommener zweiter Schluesselteil ist genau die Aenderung, um die es geht."""
+        assert {column.name for column in PhotoScore.__table__.primary_key} == {"photo_id"}
+
+        # Gegenprobe: die Assertion laeuft nicht gegen eine Eigenschaft, die jede Tabelle haette.
+        # `photo_criterion_scores` ist die 1:N-Nachbartabelle - sie faellt hier durch.
+        assert {column.name for column in PhotoCriterionScore.__table__.primary_key} != {"photo_id"}
 
     def test_the_earliest_taken_at_is_defined_in_exactly_one_place(self) -> None:
         """Akzeptanzkriterium S1(ii), struktureller Waechter im Muster von

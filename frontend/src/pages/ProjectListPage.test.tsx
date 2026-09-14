@@ -215,6 +215,36 @@ describe('ProjectListPage', () => {
       expect(screen.getByTestId('project-stand-5')).toHaveTextContent('Noch nicht gescannt')
     })
 
+    /*
+     * Der Strich heisst "keine Angabe" und wird optisch abgesetzt (`--text-muted`), waehrend eine
+     * bekannte Spanne in `--text` steht. Ohne diese Absetzung stuenden auf der Karte eines
+     * ungescannten Projekts "0 Fotos" und der Strich in derselben Tonwertstufe - und genau dieses
+     * Paar soll den Unterschied zwischen einer Aussage und ihrer Abwesenheit tragen.
+     *
+     * Geprueft wird der SEMANTISCHE Haken `data-value-state`, nicht die CSS-Klasse. Beide
+     * Ausprägungen stehen im selben Fall nebeneinander: eine Zusicherung auf nur eine von beiden
+     * bestuende auch dann, wenn die Karte jede Spanne gleich zeichnete.
+     */
+    it('setzt den Platzhalterstrich gegen eine bekannte Spanne ab', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([
+        scannedProject({ id: 10 }),
+        project({ id: 11, name: 'Ungescannt', opencloud_path: 'Ungescannt' }),
+      ])
+
+      renderPage()
+
+      const mitSpanne = (await screen.findByTestId('project-taken-at-10')).querySelector(
+        '[data-value-state]',
+      )
+      const mitStrich = screen
+        .getByTestId('project-taken-at-11')
+        .querySelector('[data-value-state]')
+
+      expect(mitSpanne).toHaveAttribute('data-value-state', 'known')
+      expect(mitStrich).toHaveAttribute('data-value-state', 'placeholder')
+      expect(mitStrich).toHaveTextContent('—')
+    })
+
     it.each([
       [999, '999 Fotos'],
       [1000, '1.000 Fotos'],

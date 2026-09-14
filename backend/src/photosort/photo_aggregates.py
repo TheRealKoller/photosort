@@ -38,8 +38,23 @@ EMPTY_PHOTO_AGGREGATE = PhotoAggregate(photo_count=0, taken_at_earliest=None, ta
 
 
 def photo_count_expression() -> Function[int]:
-    """Zaehlt `photos.id`, nicht `*`: unter dem LEFT JOIN auf `photo_scores` in `api/stats.py`
-    zaehlt der Ausdruck damit Fotos und nicht Join-Zeilen."""
+    """Die Fotoanzahl eines Projekts.
+
+    DASS DIESER AUSDRUCK FOTOS UND NICHT JOIN-ZEILEN ZAEHLT, TRAEGT DIE KARDINALITAET, NICHT DIE
+    SPALTENWAHL: In `api/stats.py` laeuft er unter einem LEFT JOIN auf `photo_scores`, und dort ist
+    `Photo` die linke Seite - `Photo.id` ist in keiner Ergebniszeile NULL, `count(Photo.id)` und
+    `count(*)` zaehlen also exakt dasselbe. Was die Gleichheit "Join-Zeilen == Fotos" haelt, ist
+    `PhotoScore.photo_id` als PRIMARY KEY (models.py): die Beziehung ist strukturell 1:1.
+
+    Wird sie einmal 1:N, zaehlt dieser Ausdruck still zu hoch - und mit ihm `RatingsOut.unrated`,
+    das in `api/stats.py` als `photo_count - eigene Bewertungen` gerechnet wird. Gegen 1:N schuetzt
+    weder `count(Photo.id)` noch `count(*)`; das taete nur `count(distinct Photo.id)`, und das ist
+    bewusst NICHT gewaehlt - ein teureres Aggregat auf jedem Listenaufruf als Absicherung gegen eine
+    hypothetische Schemaaenderung. Die Fruehwarnung ist stattdessen der Testsatz:
+    `test_api_stats.py::TestTheOverviewAndTheStatsPageAgree` haelt beide Endpunkte gegeneinander und
+    sein Testprojekt traegt `photo_scores`-Zeilen, `::test_photo_scores_stay_one_row_per_photo`
+    bindet den Primaerschluessel selbst.
+    """
     return sa_func.count(Photo.id)
 
 
