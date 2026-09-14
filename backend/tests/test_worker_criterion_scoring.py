@@ -6558,6 +6558,50 @@ class TestTheRegisterMakesTheNamesUniform:
 
         assert run.status == ScanStatus.SUCCESS
 
+    async def test_the_embedder_is_never_built_without_a_single_candidate(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Phase wird betreten, aber es gibt nichts zu tun: Im ZWEITEN Lauf ueber dasselbe
+        Projekt sind alle Fotos bereits gescort, `_select_landmark_candidates` liefert die leere
+        Liste, und die Blockschleife laeuft null Mal.
+
+        Dieselbe Begruendung wie beim danebenstehenden `_place_infos` ("ein Durchgang durch den
+        Ortsdatensatz ohne offene Zelle waere reine Arbeit"): Ein 113-MB-Modell zu laden, um es
+        ungenutzt zu verwerfen, ist Arbeit ohne Gegenwert."""
+        project = await _cloud_project(db_session, "kein-kandidat-mehr")
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        await _landmark_photo(
+            db_session,
+            project,
+            tmp_path,
+            "a.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            coords=GARMISCH,
+        )
+
+        first = RecordingLandmarkClient(
+            detection=LandmarkDetection(name="Zugspitze", confidence=0.9)
+        )
+        await _run_with_embedder(
+            db_session, project, scoring_run.id, tmp_path, first, _no_resolver, ConstantEmbedder
+        )
+        assert len(first.calls) == 1
+
+        second = RecordingLandmarkClient()
+        run = await _run_with_embedder(
+            db_session,
+            project,
+            scoring_run.id,
+            tmp_path,
+            second,
+            _no_resolver,
+            ExplodingEmbedderBuilder(),
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert second.calls == []
+
     async def test_the_register_of_one_project_is_never_read_for_another(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:

@@ -2447,23 +2447,37 @@ async def run_criterion_scoring(
                     # Rohnamen zurueck). Gebaut wird er erst HIER, innerhalb der Landmark-Phase -
                     # `rebuild_run_grouping` erreicht diese Stelle nie und laedt deshalb kein
                     # 113-MB-Modell in einen Anfragepfad (S10).
-                    landmark_embedder = _try_build(build_embedder)
-                    landmark_register = [
-                        LandmarkNameEntry(
-                            normalized_name=row.normalized_name,
-                            display_name=row.display_name,
-                            embedding=list(row.embedding),
-                            locality=row.locality,
-                            id=row.id,
-                        )
-                        for row in (
-                            await session.execute(
-                                select(LandmarkName).where(LandmarkName.project_id == project.id)
+                    #
+                    # UND NUR, WENN ES UEBERHAUPT KANDIDATEN GIBT: Die Phase wird auch dann
+                    # betreten, wenn `_select_landmark_candidates` alles herausgefiltert hat (ein
+                    # zweiter Lauf ueber ein bereits vollstaendig gescortes Projekt) - dann laeuft
+                    # die Blockschleife null Mal, und ein geladenes 113-MB-Modell waere Arbeit
+                    # ohne Gegenwert. Dieselbe Begruendung wie beim `_place_infos` daneben.
+                    landmark_embedder = (
+                        _try_build(build_embedder) if landmark_candidate_ids else None
+                    )
+                    # Der Schnappschuss haengt am Einbetter und nicht umgekehrt: Ohne ihn wird er
+                    # nie gelesen, und die Abfrage waere derselbe Leerlauf.
+                    landmark_register: list[LandmarkNameEntry] = []
+                    if landmark_embedder is not None:
+                        landmark_register = [
+                            LandmarkNameEntry(
+                                normalized_name=row.normalized_name,
+                                display_name=row.display_name,
+                                embedding=list(row.embedding),
+                                locality=row.locality,
+                                id=row.id,
                             )
-                        )
-                        .scalars()
-                        .all()
-                    ]
+                            for row in (
+                                await session.execute(
+                                    select(LandmarkName).where(
+                                        LandmarkName.project_id == project.id
+                                    )
+                                )
+                            )
+                            .scalars()
+                            .all()
+                        ]
 
                     for start in range(0, len(landmark_candidate_ids), landmark_concurrency):
                         block_ids = landmark_candidate_ids[start : start + landmark_concurrency]

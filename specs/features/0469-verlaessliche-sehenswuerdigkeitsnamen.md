@@ -223,13 +223,23 @@ Oberflächen-Aussage trägt das allein. `PLACE_CELL_DIGITS = 2` und damit jede g
 den Browser ausgelieferte Ortskörnung bleibt unangetastet. `rebuild_run_grouping` fragt weiter
 niemanden und löst keinen Vision-Aufruf aus.
 
-**S1 — Eine Vergröberungsfunktion, an einem Rand.** Die Koordinatenstufe rundet auf
-`LANDMARK_PLACE_CELL_DIGITS = 1` (rund 11 km) in **genau einer** Funktion neben
-`places.py::place_cell` und formatiert aus den `float`-Werten mit fester Nachkommastellenzahl —
-nie aus einem in der Datenbank abgelegten String, nie aus `PhotoOut`/`EventOut`, nie an der
-Aufrufstelle nachgerechnet. Die `PlaceResolver`-Signaturgrenze deckt diesen Rand nicht: Der
-sendende Rand ist hier kein Auflöser, sondern der Vision-Client. Ohne die eine Funktion hinge die
-Zusage an einer Aufrufstelle, und die zweite bekäme sie nicht mit.
+**S1 — Eine Vergröberungsfunktion, an einem Rand; die Textform am Prompt.** Die Koordinatenstufe
+rundet auf `LANDMARK_PLACE_CELL_DIGITS = 1` (rund 11 km) in **genau einer** Funktion neben
+`places.py::place_cell`; nie an einer Aufrufstelle nachgerechnet. Die **Textform** entsteht an
+**genau einer** anderen Stelle, unmittelbar am Prompt (`landmark.py`), aus denselben
+`float`-Werten mit fester Nachkommastellenzahl — nie aus einem in der Datenbank abgelegten String,
+nie aus `PhotoOut`/`EventOut`, und die Nachkommastellenzahl wird von der Konstante gelesen statt
+ein zweites Mal geschrieben.
+
+**Warum zwei Orte und nicht einer:** ADR 0102 Punkt 4 untersagt `places.py` das Zusammensetzen
+zweier Ortswerte zu einer Zeichenkette und setzt das per Wächtertest durch
+(`test_places.py::TestTheModuleBoundaryFromAdr0102` schlägt auf jede Formatzeichenkette mit zwei
+Platzhaltern an). Diese Zusicherung wird für die Textform nicht aufgeweicht; sie zieht stattdessen
+dorthin, wo sie ohnehin hingehört — in das Modul, das den ausgehenden Rand trägt.
+
+Die `PlaceResolver`-Signaturgrenze deckt diesen Rand nicht: Der sendende Rand ist hier kein
+Auflöser, sondern der Vision-Client. Ohne die eine Vergröberungsfunktion hinge die Zusage an einer
+Aufrufstelle, und die zweite bekäme sie nicht mit.
 
 **S2 — Die Namensstufe hat eine andere Schranke, und sie ist ausgeschrieben.** Hinaus geht genau
 ein Wert aus `locality`: nie `neighbourhood` (die Ebene darf treffen, ihr Wert geht nie hinaus),
