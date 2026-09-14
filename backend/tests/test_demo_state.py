@@ -83,6 +83,7 @@ from photosort.models import (
 )
 from photosort.motifs import MOTIF_REGISTRY, MOTIF_STRENGTH_BAND_STRONG, is_motif_key
 from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
+from photosort.quality_weights import store_weights
 from photosort.thumbnails import display_path, generate_variants, thumbnail_path
 from tests.time_offset_invariant import assert_time_offset_invariant
 
@@ -2181,3 +2182,63 @@ class TestTheDemoStateCarriesTheReworkLog:
         await db_session.commit()
 
         assert await self._events(db_session) == []
+
+
+class TestTheDemoStateRespectsAStoredWeightSet:
+    """specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md, PR 3 Schritt 2.
+
+    Der Seeder rechnet den Qualitaetswert selbst, statt ihn zu wuerfeln - er muss deshalb
+    DIESELBE Herkunft der Gewichte benutzen wie der Lauf. Eine hier stehengebliebene
+    Modulkonstante zeigte auf der Demo-Instanz Zahlen, die die Anwendung nach der naechsten
+    Anpassung nie wieder erzeugte, und kein Verhaltensfall des Bestands wuerde rot: Ohne
+    gespeicherte Fassung sind beide Wege identisch.
+
+    Die gewaehlten Gewichte sind ausdruecklich keine gleichmaessige Streckung - die ist
+    nachweislich wirkungslos (`test_quality.py::TestTheRenormalizationInvariance`)."""
+
+    _TILTED = {"sharpness": 1.9, "exposure": 0.1}
+
+    async def _rank_scores(self, session: AsyncSession) -> dict[int, float | None]:
+        rows = (await session.execute(select(PhotoRanking))).scalars().all()
+        return {row.photo_id: row.rank_score for row in rows}
+
+    async def test_the_seeded_scores_follow_the_stored_set(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        before = await self._rank_scores(db_session)
+        user = await _make_user(db_session, "gewichts-nutzer")
+        await store_weights(db_session, weights=self._TILTED, user_id=user.id, based_on_event_id=0)
+        await db_session.flush()
+
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        after = await self._rank_scores(db_session)
+        assert sorted(before.values(), key=lambda value: (value is None, value)) != sorted(
+            after.values(), key=lambda value: (value is None, value)
+        )
+
+    async def test_the_seeded_run_records_the_set_it_used(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Lauf-Zeile der Demo traegt denselben Beleg wie die eines echten Laufs - sonst
+        erzeugte der Seeder einen Zustand, den die Anwendung selbst nie schriebe.
+
+        Geprueft am Lauf des BEWERTETEN Projekts: Nur er rechnet Qualitaetswerte. Die Laeufe der
+        uebrigen Demo-Zustaende (leer, gross, fehlgeschlagen) tragen folgerichtig `NULL` - sie
+        haben keine Gewichte benutzt."""
+        user = await _make_user(db_session, "gewichts-nutzer")
+        written = await store_weights(
+            db_session, weights=self._TILTED, user_id=user.id, based_on_event_id=0
+        )
+        await db_session.flush()
+
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        rated = await _project(db_session, RATED_PROJECT_NAME)
+        run = (
+            await db_session.execute(
+                select(CriterionScoringRun).where(CriterionScoringRun.project_id == rated.id)
+            )
+        ).scalar_one()
+        assert run.quality_weight_set_id == written.id

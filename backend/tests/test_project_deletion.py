@@ -16,6 +16,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+import pytest
 from sqlalchemy import event, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,9 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.db import Base
 from photosort.models import CriterionScoringRun, Project
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
+from photosort.quality_weights import store_weights
 from tests.project_graph import (
     build_project_graph,
     count_rows,
+    get_or_create_user,
     tables_reachable_from_projects,
 )
 
@@ -119,6 +122,53 @@ async def test_delete_projects_removes_every_row_of_the_given_project(
     # Projektuebergreifendes Vokabular und Nutzer bleiben unangetastet (ADR 0032).
     assert await count_rows(db_session, "fine_labels") == 1
     assert await count_rows(db_session, "users") == 1
+
+
+class TestTheWeightSetsSurviveEveryProjectDeletion:
+    """specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md, Auflage S13 in der
+    GEGENRICHTUNG.
+
+    Die beiden Metadaten-Tests oben pruefen, dass nichts VERGESSEN wird. Hier steht das
+    Gegenstueck: Die beiden Gewichtstabellen duerfen ueberhaupt nicht auftauchen. Sie haengen an
+    keinem Projekt, tragen sieben Zahlen und einen Nutzerverweis, keinen Foto-Bezug - und sie
+    gelten global. Verschwaenden sie mit dem ersten geloeschten Projekt, rechnete jeder Lauf
+    danach wieder mit den Startwerten, ohne dass irgendetwas das als Verlust auswiese."""
+
+    _TABLES = ("quality_weight_sets", "quality_weight_entries")
+
+    @pytest.mark.parametrize("table_name", _TABLES)
+    def test_the_table_is_not_reachable_from_projects(self, table_name: str) -> None:
+        assert table_name not in tables_reachable_from_projects()
+
+    @pytest.mark.parametrize("table_name", _TABLES)
+    async def test_the_deletion_issues_no_statement_against_the_table(
+        self, db_session: AsyncSession, table_name: str
+    ) -> None:
+        graph = await build_project_graph(db_session, "Weg")
+
+        with _recorded_delete_targets() as targets:
+            await delete_projects(db_session, [graph.project_id])
+
+        assert table_name not in targets
+
+    async def test_a_stored_set_is_still_there_afterwards(self, db_session: AsyncSession) -> None:
+        """Der Verhaltensnachweis daneben: Die Anweisungsliste allein bestuende auch gegen eine
+        Kaskade, die die Zeilen ueber einen Fremdschluessel mitrisse."""
+        graph = await build_project_graph(db_session, "Weg")
+        user = await get_or_create_user(db_session)
+        await store_weights(
+            db_session,
+            weights={"sharpness": 1.2},
+            user_id=user.id,
+            based_on_event_id=0,
+        )
+        await db_session.commit()
+
+        await delete_projects(db_session, [graph.project_id])
+        await db_session.commit()
+
+        assert await count_rows(db_session, "quality_weight_sets") == 1
+        assert await count_rows(db_session, "quality_weight_entries") == 1
 
 
 async def test_delete_projects_without_ids_deletes_nothing(db_session: AsyncSession) -> None:

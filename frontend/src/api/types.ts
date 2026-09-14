@@ -768,9 +768,47 @@ export interface FeedbackExchangeStats {
  */
 export interface FeedbackCriterionAgreement {
   criterion_key: string
+  /** Aus der Backend-Registry, wie bei `CriterionScoreOut` - im Frontend wird dazu bewusst keine
+   * zweite Merkmalsliste gepflegt. */
+  display_name: string
   case_count: number
   /** In `[-1, 1]`; bei null Stimmen `0`. */
   agreement: number
+}
+
+/** Das geltende Gewicht eines Kriteriums. */
+export interface FeedbackCurrentWeight {
+  criterion_key: string
+  weight: number
+}
+
+/**
+ * Das abgeleitete Gewicht samt seiner Abweichung vom GELTENDEN - genau der Unterschied zwischen
+ * den beiden nebeneinander dargestellten Spalten.
+ */
+export interface FeedbackProposedWeight {
+  criterion_key: string
+  weight: number
+  delta: number
+}
+
+/**
+ * Die Gewichts-Vorschau.
+ *
+ * `based_on_event_id` ist ein ZUSTIMMUNGS-TOKEN, kein Objektverweis: Es wird unverändert an die
+ * Übernahme zurückgereicht und ist das Einzige, was „übernommen wurde, was angezeigt war" wahr
+ * macht. Bei leerem Log ist es `0`.
+ *
+ * `current_set_id` ist die geltende Fassung (`null` = es gilt der Startwertsatz) und zugleich das,
+ * was die Rücknahme nennen muss. `can_revert` ist serverseitig genau `current_set_id !== null` und
+ * steht daneben, damit die Oberfläche die Bedingung nicht selbst formuliert.
+ */
+export interface FeedbackWeightPreview {
+  current: FeedbackCurrentWeight[]
+  proposed: FeedbackProposedWeight[]
+  based_on_event_id: number
+  current_set_id: number | null
+  can_revert: boolean
 }
 
 /**
@@ -788,4 +826,5 @@ export interface FeedbackDiagnosisOut {
   motif_errors: FeedbackMotifError[]
   exchanges: FeedbackExchangeStats[]
   criteria: FeedbackCriterionAgreement[]
+  weights: FeedbackWeightPreview
 }

@@ -138,7 +138,19 @@ function fullStats(): ProjectStatsOut {
 }
 
 function emptyDiagnosis(): FeedbackDiagnosisOut {
-  return { correction_count: 0, motif_errors: [], exchanges: [], criteria: [] }
+  return {
+    correction_count: 0,
+    motif_errors: [],
+    exchanges: [],
+    criteria: [],
+    weights: {
+      current: [],
+      proposed: [],
+      based_on_event_id: 0,
+      current_set_id: null,
+      can_revert: false,
+    },
+  }
 }
 
 function renderPage() {

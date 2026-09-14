@@ -1076,9 +1076,12 @@ def final_selection_upgrade_ddl() -> list[str]:
 
 
 def _create_table_statement(ddl: list[str], table: str) -> str:
-    matches = [
-        statement for statement in ddl if "CREATE TABLE" in statement.upper() and table in statement
-    ]
+    # VERANKERT am `CREATE TABLE <name> (` und nicht am blossen Vorkommen des Namens: Der Name
+    # einer Tabelle steht auch in der `REFERENCES`-Zeile jeder anderen, die auf sie zeigt - eine
+    # Suche nach dem Namen allein liefert dann zwei Treffer und faellt ausgerechnet dort um, wo
+    # zwei Tabellen einer Migration aufeinander verweisen.
+    marker = f"CREATE TABLE {table} ("
+    matches = [statement for statement in ddl if marker in statement]
     assert matches, f"kein CREATE TABLE fuer {table} im gerenderten DDL gefunden"
     assert len(matches) == 1, f"mehrdeutiges CREATE TABLE fuer {table}: {matches}"
     return matches[0]
@@ -1220,3 +1223,118 @@ def test_the_feedback_events_downgrade_renders_for_postgres_too() -> None:
     assert "DROP TABLE" in rendered.upper()
     assert "DROP INDEX" in rendered.upper()
     assert "feedback_events" in rendered
+
+
+# PR 3 derselben Spec: die beiden Gewichtstabellen und der Fassungsbezug an der Lauf-Zeile. Drei
+# Klassen von Fehlern, die SQLite strukturell nicht sehen kann, haengen hier: der native Enum-Typ
+# (`origin`), ein versehentlicher `server_default` auf der Gewichtsspalte (SQLite kennt keinen
+# Unterschied zwischen INTEGER und DOUBLE PRECISION), und der ohne Namen nicht loesbare
+# Fremdschluessel der neuen Laufspalte.
+
+_WEIGHT_SETS_REVISION = "c5d6e7f8a9b0_gewichtssaetze.py"
+
+
+@pytest.fixture(scope="module")
+def weight_sets_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_WEIGHT_SETS_REVISION)
+
+
+def test_the_origin_renders_without_a_native_enum_type(
+    weight_sets_upgrade_ddl: list[str],
+) -> None:
+    """Ohne `native_enum=False` legte Postgres einen echten Enum-Typ an, und jeder weitere
+    Herkunftswert braeuchte dort eine Typmigration, die SQLite nie verlangt."""
+    rendered = " ".join(weight_sets_upgrade_ddl)
+    statement = _create_table_statement(weight_sets_upgrade_ddl, "quality_weight_sets")
+
+    assert "CREATE TYPE" not in rendered.upper()
+    assert "VARCHAR(16)" in statement
+
+
+def test_the_weight_column_renders_as_a_floating_point_column_without_any_default(
+    weight_sets_upgrade_ddl: list[str],
+) -> None:
+    """KEIN `server_default`: Ein Vorgabegewicht erfaende einen Wert, den niemand uebernommen hat,
+    und ein Integer-Default auf einer Gleitkommaspalte faellt unter SQLite nie auf."""
+    statement = _create_table_statement(weight_sets_upgrade_ddl, "quality_weight_entries")
+    weight_line = next(line for line in statement.splitlines() if line.strip().startswith("weight"))
+
+    assert "FLOAT" in weight_line.upper()
+    assert "NOT NULL" in weight_line.upper()
+    assert "DEFAULT" not in weight_line.upper()
+
+
+def test_the_criterion_key_renders_without_a_foreign_key_while_the_set_binding_renders_with_one(
+    weight_sets_upgrade_ddl: list[str],
+) -> None:
+    """Beide Haelften im SELBEN Fall - ohne die zweite bestuende die Aussage auch fuer eine
+    Tabelle ganz ohne Fremdschluessel."""
+    statement = _create_table_statement(weight_sets_upgrade_ddl, "quality_weight_entries")
+
+    assert "FOREIGN KEY(criterion_key)" not in statement
+    assert "FOREIGN KEY(set_id) REFERENCES quality_weight_sets (id)" in statement
+
+
+def test_the_anchor_renders_without_a_foreign_key_while_the_author_renders_with_one(
+    weight_sets_upgrade_ddl: list[str],
+) -> None:
+    """`based_on_event_id` ist ein Zustimmungs-Token (S6) und traegt bei leerem Log den Wert `0` -
+    ein Fremdschluessel wiese ihn unter Postgres ab, waehrend SQLite ohne
+    `PRAGMA foreign_keys=ON` klaglos schriebe."""
+    statement = _create_table_statement(weight_sets_upgrade_ddl, "quality_weight_sets")
+
+    assert "FOREIGN KEY(based_on_event_id)" not in statement
+    assert "FOREIGN KEY(created_by_user_id) REFERENCES users (id)" in statement
+    assert "FOREIGN KEY(reverts_set_id) REFERENCES quality_weight_sets (id)" in statement
+
+
+def test_the_creation_timestamp_is_zoneless(weight_sets_upgrade_ddl: list[str]) -> None:
+    """Alle Zeitstempel des Projekts sind zonenlos (ADR 0090, Punkt 4)."""
+    rendered = " ".join(weight_sets_upgrade_ddl).upper()
+
+    assert "CREATED_AT TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW() NOT NULL" in rendered
+    assert "WITH TIME ZONE" not in rendered
+
+
+def test_the_run_column_is_added_with_its_explicitly_named_foreign_key(
+    weight_sets_upgrade_ddl: list[str],
+) -> None:
+    """Der Name ist nicht Kosmetik: Ein unbenannt angelegter Constraint ist im `downgrade()` unter
+    SQLite nicht droppbar, und der Rueckwaertsweg waere ohne ihn nicht ausfuehrbar."""
+    statement = _add_column_statement(weight_sets_upgrade_ddl, "quality_weight_set_id")
+    rendered = " ".join(weight_sets_upgrade_ddl)
+
+    assert "criterion_scoring_runs" in statement
+    assert "INTEGER" in statement.upper()
+    assert "NOT NULL" not in statement.upper()
+    assert "fk_criterion_scoring_runs_quality_weight_set_id" in rendered
+    assert "REFERENCES quality_weight_sets (id)" in rendered
+
+
+def test_the_weight_sets_upgrade_touches_no_data_at_all(
+    weight_sets_upgrade_ddl: list[str],
+) -> None:
+    """DIE Zusage dieser Migration: Ohne eine einzige Zeile gelten die Startwerte aus
+    `quality.py`. Ein eingeschriebener Vorgabewert waere von einer uebernommenen Anpassung nicht
+    mehr zu unterscheiden."""
+    rendered = " ".join(weight_sets_upgrade_ddl).upper()
+
+    assert "INSERT " not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered
+
+
+def test_the_weight_sets_downgrade_renders_for_postgres_too() -> None:
+    """Die REIHENFOLGE ist tragend: erst der Fremdschluessel der Laufspalte, dann die Spalte, dann
+    die Eintraege, dann die Fassungen - andersherum haengt ein Fremdschluessel in der Luft."""
+    statements = _render_postgres_ddl(_WEIGHT_SETS_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements)
+    positions = [
+        rendered.index("DROP CONSTRAINT fk_criterion_scoring_runs_quality_weight_set_id"),
+        rendered.upper().index("DROP COLUMN QUALITY_WEIGHT_SET_ID"),
+        rendered.index("DROP TABLE quality_weight_entries"),
+        rendered.index("DROP TABLE quality_weight_sets"),
+    ]
+
+    assert positions == sorted(positions)
