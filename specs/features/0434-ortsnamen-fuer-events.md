@@ -151,7 +151,7 @@ Wegwahl und wird als eigene ADR festgehalten, dann entsteht die eigentliche Aufl
 Messung dürftig aus, endet die Story dort — das ist ein Ergebnis.
 
 **Gelaufen und entschieden (2026-09-14): der lokale Datensatz (GeoNames), ADR
-[`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md).**
+[`0105`](../decisions/0105-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md).**
 10 von 10 Zellen mit Ortsnamen, 8 davon mit Viertel, kein Fehltreffer; 16 von 17 Events ohne
 Sehenswürdigkeit bekämen einen Namen; 100 % der Fotos mit Koordinate liegen in einer auflösbaren
 Zelle. Der externe Kandidat fiel vollständig aus (`http-status` auf allen 10 Zellen) und blieb
@@ -225,7 +225,7 @@ vorwegnehmen, deren Anschaffung sie erst begründen soll:
 - **Extern: Photon** (öffentliche Instanz, OSM-Daten) — **in Teil 2 entfallen.** Der Kandidat fiel
   im Messlauf auf allen 10 Zellen mit `http-status` aus und blieb damit ungemessen; die Wegwahl
   fiel auf den lokalen Datensatz (ADR
-  [`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)).
+  [`0105`](../decisions/0105-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)).
   Teil 2 entfernt `PhotonResolver`, seine Fabrik, den Schalter und die zugehörigen Tests, statt
   sie als toten Weg stehen zu lassen. Wer den externen Weg je wieder aufmacht, fängt bei der
   Anbieterprüfung an, nicht bei diesem Code.
@@ -244,7 +244,7 @@ erzeugt `allCountries.zip` nächtlich neu (gemessen am 2026-09-14: Last-Modified
 421 MB) und veröffentlicht **keine Prüfsummen** — im Download-Verzeichnis liegen nur die
 ZIP-Dateien, keine `.md5`, `.sha256` oder Signatur. Es gibt damit weder einen stabilen Sollwert
 noch eine vertrauenswürdige Quelle für einen. Das Modell-Muster trägt dort nur, weil die
-Modelldatei unveränderlich und versioniert ist. **Für den Betriebsfall entschieden (ADR 0103 Punkt
+Modelldatei unveränderlich und versioniert ist. **Für den Betriebsfall entschieden (ADR 0105 Punkt
 4): kein Rhythmus** — erneuert wird auf Anlass.
 
 Gemessen wird auch, **welche** Schlüssel tatsächlich zurückkommen: ob ein Stadtteil bei der
@@ -382,7 +382,7 @@ nicht; sie stellt sie nur bereit.
 ### 8. Der Ortsdatensatz im Betrieb (Teil 2)
 
 **Grundlage:** ADR
-[`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)
+[`0105`](../decisions/0105-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)
 Punkt 3. Die Rohdatei taugt nicht für den Betrieb (1,74 GB, 13,46 Mio. Zeilen); betrieben wird ein
 Auszug.
 
@@ -411,7 +411,7 @@ Archiv wieder und legt den SHA256 des Auszugs daneben. Gemessen (2026-09-14): 5.
   gegen den beim Bezug gebildeten Hash. Stimmt er nicht oder fehlt die Datei: **kein Auflöser wird
   gebaut**, kein stiller Ersatzweg, eine laute Zeile mit festem Grund-Token je Lauf. Die Events
   behalten Nummer und Zeitspanne, der Lauf läuft durch.
-- **Ein Neubezug geschieht auf Anlass, nicht nach Kalender** (ADR 0103 Punkt 4).
+- **Ein Neubezug geschieht auf Anlass, nicht nach Kalender** (ADR 0105 Punkt 4).
 
 **Gleichheitsnachweis statt Zusicherung:** Ein Test bildet aus literal geschriebenen
 GeoNames-Rohzeilen den Auszug und belegt, dass `geonames_answer` über beide Fassungen für dieselbe
@@ -426,7 +426,7 @@ Auszugs, Messkommando ohne den entfallenen externen Kandidaten) ziehen im selben
 — Owner `architect`.
 
 Die Namensnennungspflicht wird sichtbar erfüllt: GeoNames steht unter CC BY 4.0, genannt in einer
-statischen Zeile am Fuß der Projektliste (ADR 0103 Punkt 5) — Quelle und Lizenz, verlinkt auf
+statischen Zeile am Fuß der Projektliste (ADR 0105 Punkt 5) — Quelle und Lizenz, verlinkt auf
 `geonames.org` und den Lizenztext. Keine neue Komponente, kein neues Token.
 
 ### 10. Zuschnitt der zwei Auslieferungen
@@ -441,7 +441,7 @@ Umbenennung von `events.py::_EVENT_PLACE_COORDINATE_DIGITS`/`_rounded` auf die g
 
 **Dazwischen — erledigt am 2026-09-14:** Daniel hat gemessen und den Weg gewählt: der lokale
 Datensatz, ADR
-[`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md).
+[`0105`](../decisions/0105-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md).
 
 **Teil 2 — „Der Name steht"** (Abschnitte 2, 4, 5, 6, 7, 8, 9): Migration, `PlaceLookup`,
 `events.place_name`, `project_deletion.py`, `project_graph.py`; der lokale Auflöser als
@@ -723,7 +723,7 @@ gestellt: `specs/architecture/0003-securitykonzept.md`, Abschnitt „Standortdat
 
 **Das ist die eigentliche Verbesserung der Sicherheitslage dieser Story.** Die Wegwahl fiel auf den
 lokalen Datensatz (ADR
-[`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)).
+[`0105`](../decisions/0105-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)).
 Damit entsteht der **zweite Empfänger von Ortsdaten der Familie, um den es hier ging, gar nicht**
 — nicht „vorerst abgeschaltet", sondern nicht vorhanden. Kein Betriebszustand, keine Einstellung
 und keine vergessene `.env`-Zeile kann ihn wieder aufmachen; die Ortsauskunft entsteht vollständig
@@ -968,7 +968,7 @@ Alle drei stehen mit voller Begründung im Sicherheitskonzept; hier die Entschei
 - **ADR 0102** (neu, `Accepted`) trägt die sechs Architekturentscheidungen. ADR 0029 (Punkt 6) und
   ADR 0072 sind im Kopf als teilweise abgelöst vermerkt; ihre übrigen Aussagen gelten weiter.
 - **Wegwahl (Daniel, 2026-09-14):** der lokale Datensatz (GeoNames). ADR
-  [`0103`](../decisions/0103-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)
+  [`0105`](../decisions/0105-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)
   trägt die Zahlen, die Grenzen der Stichprobe und ausdrücklich den Umstand, dass der externe
   Kandidat ungemessen blieb — es gab keinen Vergleich zweier Zahlenreihen.
 - **Der Schalter `EXTERNAL_PLACE_LOOKUP_ENABLED` entfällt (Daniel, 2026-09-14)** — zusammen mit dem
@@ -979,7 +979,7 @@ Alle drei stehen mit voller Begründung im Sicherheitskonzept; hier die Entschei
   Produktivpaket statt durch ein Host-Skript — auf dem Server gibt es keine Shell. Verworfen:
   der Weg über eine Schicht des Docker-Images, weil jeder kalte Bau 400 MB bei GeoNames zöge,
   zweimal je CI-Lauf, und der Datensatz bei jedem Rebuild still wechselte. Preis der gewählten
-  Form: ein einmaliger Handgriff je Volume. Einzelheiten und Alternativen in ADR 0103 Punkt 3.
+  Form: ein einmaliger Handgriff je Volume. Einzelheiten und Alternativen in ADR 0105 Punkt 3.
 - **Namensnennung (`architect`, 2026-09-14):** GeoNames/CC BY 4.0 als statische Zeile am Fuß der
   Projektliste — app-weit, außerhalb der Arbeitsansichten, ohne neue Komponente.
 - **Kein Neubezugsrhythmus (`architect`, 2026-09-14):** erneuert wird auf Anlass, nicht nach
@@ -1012,13 +1012,13 @@ Alle drei stehen mit voller Begründung im Sicherheitskonzept; hier die Entschei
 
 ## Offene Fragen
 
-- **Erledigt am 2026-09-14 durch die Wegwahl (ADR 0103):** Die drei offenen Fragen zum externen
+- **Erledigt am 2026-09-14 durch die Wegwahl (ADR 0105):** Die drei offenen Fragen zum externen
   Weg (Nominatim im `admin`-Stil, Photons Ebenenangabe, Ländervarianz von Photons `city`) betreffen
   einen Weg, den diese Story nicht nimmt.
 - **Offen und bewusst ungedeckt:** Hält die Trefferquote des lokalen Datensatzes auch außerhalb des
   gemessenen Projekts — andere Länder, dünner besiedelte Gegenden? Gemessen wurde ein Projekt mit
   10 verschiedenen Zellen. Kein Test deckt das ab; es fällt im Betrieb als fehlender Name auf, nie
-  als Fehler (ADR 0103 Punkt 1).
+  als Fehler (ADR 0105 Punkt 1).
 
 ## Out of Scope
 

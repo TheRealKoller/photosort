@@ -1,4 +1,7 @@
-# 0103 - Ortsnamen aus dem lokalen Datensatz, betrieben als Auszug auf einem Volume
+# 0105 - Ortsnamen aus dem lokalen Datensatz, betrieben als Auszug auf einem Volume
+
+**Frühere Nummer:** 0103 (bis 2026-09-14), aufgelöste Dublette mit
+`0103-bestandszahlen-an-projectout-stand-bleibt-frontend-ableitung.md`.
 
 **Status:** Accepted
 **Datum:** 2026-09-14
