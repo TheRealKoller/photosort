@@ -244,22 +244,27 @@
       "breiten": ["mobile", "desktop"],
       "zustaende": ["gefuellt", "leer", "ladend", "fehler"],
       "variantenachse": "zustand",
-      "bausteine": ["button", "badge", "alert", "skeleton"],
+      "bausteine": ["button", "alert", "skeleton"],
       "luecken": [
         {
           "schluessel": "seitenverhaeltnis",
-          "stelle": "Zeilenhöhe und Kartenbreiten des justierten Rasters",
-          "grund": "Die Fotos behalten ihr eigenes Seitenverhältnis statt quadratisch beschnitten zu werden. Die Höhe einer Zeile und die daraus folgenden Kartenbreiten sind deshalb gerechnete Layoutmaße ohne Token; sie stehen im Entwurf als Werte."
+          "stelle": "Zeilenhöhe und Bildbreiten des justierten Rasters",
+          "grund": "Die Fotos behalten ihr eigenes Seitenverhältnis statt quadratisch beschnitten zu werden. Die Höhe einer Zeile und die daraus folgenden Bildbreiten sind deshalb gerechnete Layoutmaße ohne Token; sie stehen im Entwurf als Werte."
         },
         {
           "schluessel": "mindestzeilenhoehe",
           "stelle": "Untergrenze der Zeilenhöhe im justierten Raster",
-          "grund": "Ohne Untergrenze werden Hochformate so schmal, dass Kennzeichen und Dateiname nebeneinander nicht mehr tragen. Die Grenze ist eine Bedienbarkeitsvorgabe ohne Token und wird als Wert gesetzt."
+          "grund": "Ohne Untergrenze werden nebeneinanderstehende Hochformate so schmal, dass die beiden Zeichen in der Bildecke nicht mehr auseinanderzuhalten sind. Die Grenze ist eine Bedienbarkeitsvorgabe ohne Token und wird als Wert gesetzt."
         },
         {
-          "schluessel": "behaelter",
-          "stelle": "Fotokarte als Behälter für Bildfläche, Statuszeile und Fußzeile",
-          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Die Karte ist im Entwurf deshalb ein tokengebundener Rahmen statt einer Instanz."
+          "schluessel": "zeichentraeger",
+          "stelle": "Plättchen mit Stern und Punkt in der oberen Bildecke",
+          "grund": "Kantenlänge des Plättchens, Durchmesser des Punktes, Stärke seines Rings und die Teildeckkraft der Trägerfläche haben kein Token und stehen im Entwurf als Werte. Der Ring unterscheidet einen offenen Vorschlag von einer getroffenen Entscheidung und trägt dabei dieselbe Farbe wie sie, damit auch am Vorschlag erkennbar bleibt, wofür vorgeschlagen wird."
+        },
+        {
+          "schluessel": "einblendung",
+          "stelle": "Zeile mit Dateiname und Info-Auslöser über dem unteren Bildrand",
+          "grund": "Höhe der Zeile und die Teildeckkraft ihrer Fläche haben kein Token. Die Zeile erscheint erst auf Anforderung, und Penpot bildet weder das Überfahren am Zeigegerät noch den langen Druck ab, der sie am Telefon auslöst. Der Entwurf zeigt sie deshalb an einem Bild dauerhaft eingeblendet; das ist eine ausgewiesene Lücke, kein erledigter Punkt."
         },
         {
           "schluessel": "inhaltsbreite",
@@ -269,17 +274,12 @@
         {
           "schluessel": "daempfung",
           "stelle": "Zurücktretende Bildfläche im Zustand verworfen",
-          "grund": "Für die Dämpfung einer aussortierten Bildfläche gibt es keinen benannten Wert im Tokensatz. Sie wird im Entwurf als Deckkraft gesetzt; Kennzeichen, Dateiname und Durchstreichung bleiben voll deckend."
+          "grund": "Für die Dämpfung einer aussortierten Bildfläche gibt es keinen benannten Wert im Tokensatz. Sie wird im Entwurf als Deckkraft gesetzt und ist zugleich das von der Farbe unabhängige zweite Signal dieses Zustands; die Zeichen in der Bildecke bleiben voll deckend."
         },
         {
-          "schluessel": "eckenoverlay",
-          "stelle": "Runder Info-Auslöser in der Bildecke",
-          "grund": "Kreisform, Eckabstand und die Teildeckkraft des Auslösers haben kein Token. Der Auslöser selbst ist eine Instanz des Schaltflächen-Bausteins, seine Fläche ist im Entwurf korrigiert an ein Token gebunden — der Baustein in der Bibliothek trägt dort keine Bindung und erscheint deshalb weiß."
-        },
-        {
-          "schluessel": "uebersteuerungsmarker",
-          "stelle": "Marker für die manuell übersteuerte Kategorie, Bildecke oben links",
-          "grund": "Die Bibliothek führt dafür keinen Baustein. Er wird nicht frei nachgezeichnet, sondern hier als Lücke geführt; er kommt hinzu, wenn eine Story ihn samt Eintrag in components.json aufnimmt."
+          "schluessel": "filterleiste",
+          "stelle": "Einzeilige, waagerecht laufende Filterleiste auf dem schmalen Brett",
+          "grund": "Auf der schmalen Breite stehen die Filter nicht nebeneinander. Statt sie umbrechen zu lassen und damit das erste Foto nach unten zu drücken, läuft die Leiste einzeilig weiter und wird am Rand angeschnitten. Penpot bildet das seitliche Scrollen nicht ab; der angeschnittene Eintrag im Entwurf ist die Andeutung dafür."
         },
         {
           "schluessel": "gatemodus",
@@ -298,8 +298,8 @@
         },
         {
           "schluessel": "textkuerzung",
-          "stelle": "Einzeilig gekürzter Dateiname in schmalen Karten",
-          "grund": "Für die Kürzung mit Auslassung gibt es kein Token. Im Entwurf steht sie als tatsächlich gekürzter Beispieltext, damit der ungünstige Fall sichtbar ist statt nur der bequeme."
+          "stelle": "Einzeilig gekürzter Dateiname in der eingeblendeten Zeile",
+          "grund": "Für die Kürzung mit Auslassung gibt es kein Token. Im Entwurf steht der Name als Beispieltext in der eingeblendeten Zeile; auf einem schmalen Bild reicht die Zeile für ihn nicht, und dann wird er gekürzt."
         }
       ]
     },
