@@ -1,6 +1,10 @@
 # 0081 - Die Dokumentnummer ist Identität: die jüngere Dublette zieht um, keine Nummer wird recycelt
 
 **Status:** Accepted
+**Teilweise abgelöst:** Punkt 2 vollständig und Punkt 3 in seinem ersten Satz („die nächste
+freie") durch ADR [`0108`](./0108-nummer-folgt-dem-rang-des-arbeitsstands.md) — welches Dokument
+umzieht und auf welche Nummer, entscheidet dort der Rang des Arbeitsstands. Punkt 1, Punkt 3 in
+seinem zweiten Satz (keine Nummer wird recycelt), Punkt 4, Punkt 5 und Punkt 6 gelten unverändert.
 **Datum:** 2026-09-11
 **Bezug:** GitHub-Issue [`#406`](https://github.com/TheRealKoller/photosort/issues/406), Spec
 `specs/features/0406-*.md`
