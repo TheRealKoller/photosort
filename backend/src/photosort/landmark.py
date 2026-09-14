@@ -48,6 +48,19 @@ _MAX_RESPONSE_TOKENS = 256
 # 80 statt der 60 des Feinlabel-Pfads: Sehenswuerdigkeitsnamen sind laenger.
 MAX_LANDMARK_NAME_LENGTH = 80
 
+# DIE EINE GRENZE fuer jede Verwendung des Namens (ADR 0107 Punkt 1): ab hier gilt ein Treffer als
+# sicher genug, `>=` und inklusiv. `criteria.py` liest sie von HIER als
+# `CRITERIA_REGISTRY["landmark"].presence_threshold`, und die Importrichtung ist erzwungen -
+# `criteria.py` importiert bereits aus diesem Modul, umgekehrt entstuende ein Zyklus. Solange der
+# Wert an zwei Stellen geschrieben werden koennte, koennten Bewertung und Name auseinanderlaufen;
+# genau das war der Ausgangszustand.
+#
+# Dokumentiert-unkalibriert (gleiche Klasse wie SHARPNESS_NORMALIZATION_CEILING, es gibt keinen
+# Fotokorpus im Repo). Gegen das beobachtete Ueberidentifikations-Risiko des Vision-LLM ist sie die
+# strukturelle, aber womoeglich nicht ausreichende Gegenmassnahme - ob sie steigen muss, entscheidet
+# die Abnahme an einer echten Reise.
+LANDMARK_CONFIDENCE_THRESHOLD = 0.5
+
 _PROMPT = (
     "Analysiere dieses Foto. Ist eine bekannte oder auch weniger bekannte Sehenswuerdigkeit/ein "
     "Wahrzeichen zu erkennen? Antworte AUSSCHLIESSLICH mit einem einzigen validen JSON-Objekt, "
@@ -107,6 +120,32 @@ def sanitize_landmark_name(raw: object) -> str | None:
     if not sanitized or len(sanitized) > MAX_LANDMARK_NAME_LENGTH:
         return None
     return sanitized
+
+
+def usable_landmark_name(
+    name: object, confidence: float, canonical_name: object = None
+) -> str | None:
+    """Der Name, den eine Erkennungszeile fuer die Anzeige hergibt - oder `None`.
+
+    GRENZE ZUERST, danach die Sanitisierung: Ein Treffer unterhalb von
+    `LANDMARK_CONFIDENCE_THRESHOLD` ergibt keinen verwendbaren Namen, gleich wie einwandfrei er
+    geschrieben ist. `None` heisst "kein verwendbarer Name" und ist von "nie erkannt" NICHT zu
+    unterscheiden: es entsteht kein Anzeigezustand und kein Hinweis auf die verworfene Vermutung,
+    das Foto faellt auf Ortsname bzw. Koordinate zurueck.
+
+    Ueber die Verwendbarkeit entscheidet damit die LESESTELLE, nicht die Schreibstelle (ADR 0107
+    Punkt 2): Die Erkennungszeile bleibt unveraendert vollstaendig - die Antwort ist bezahlt - und
+    eine spaetere Aenderung der Grenze wirkt beim naechsten Neuaufbau der Gruppierung, ohne einen
+    einzigen erneuten Cloud-Aufruf.
+
+    Der KANONISCHE Name schlaegt den Rohnamen (ADR 0107 Punkt 5); eine Zeile ohne kanonischen Namen
+    verhaelt sich exakt wie vor dem Register. SICHERHEIT (S9): `sanitize_landmark_name` wirkt auf
+    den zurueckgegebenen Wert, GLEICH ob kanonischer Name oder Rohname - die Altbestandsdeckung
+    darf nicht dadurch entfallen, dass ein neues Feld daneben tritt. Uebersteht der kanonische Name
+    die Sanitisierung nicht, faellt der Aufruf auf den Rohnamen zurueck."""
+    if confidence < LANDMARK_CONFIDENCE_THRESHOLD:
+        return None
+    return sanitize_landmark_name(canonical_name) or sanitize_landmark_name(name)
 
 
 def _landmark_detection_from_json(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import base64
 import json
@@ -13,7 +14,9 @@ from photosort.cloud_vision import (
     CloudRequestThrottle,
     TokenUsage,
 )
+from photosort.criteria import CRITERIA_REGISTRY, compute_landmark_score
 from photosort.landmark import (
+    LANDMARK_CONFIDENCE_THRESHOLD,
     MAX_LANDMARK_NAME_LENGTH,
     AnthropicLandmarkClient,
     LandmarkApiError,
@@ -21,7 +24,9 @@ from photosort.landmark import (
     LandmarkDetection,
     MistralLandmarkClient,
     _landmark_detection_from_json,
+    usable_landmark_name,
 )
+from tests.import_closure import module_file
 
 # specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md,
 # specs/architecture/0002-testkonzept.md ("Cloud-LLM-Vision-Client-Test-Double..."): httpx.
@@ -828,3 +833,117 @@ class TestLandmarkNameSanitisation:
         detection = _landmark_detection_from_json({"name": None, "confidence": 0.0})
 
         assert detection.name is None
+
+
+class TestOneMeasureForEveryUseOfTheName:
+    """specs/features/0469, ADR 0107 Punkt 1: Bewertung und Name messen an DEMSELBEN Wert.
+
+    Bisher war ein erkannter Name an zwei verschieden strengen Massstaeben gemessen - fuer die
+    Bewertung zaehlte er erst ab der registrierten Konfidenzschwelle, als Gruppenname erschien er
+    unabhaengig davon. Geprueft wird nicht die Gleichheit zweier Literale, sondern die
+    UEBEREINSTIMMUNG der beiden Verbraucher ueber den ganzen Wertebereich."""
+
+    def test_the_registry_reads_the_threshold_from_the_landmark_module(self) -> None:
+        assert CRITERIA_REGISTRY["landmark"].presence_threshold == LANDMARK_CONFIDENCE_THRESHOLD
+
+    def test_the_numeric_value_itself_is_unchanged(self) -> None:
+        """Geaendert wird die Gleichheit des Massstabs, nicht seine Hoehe (Spec 0469, Out of
+        Scope). Ob er steigen muss, entscheidet die Abnahme an einer echten Reise."""
+        assert LANDMARK_CONFIDENCE_THRESHOLD == 0.5
+
+    def test_criteria_no_longer_carries_a_landmark_threshold_literal_of_its_own(self) -> None:
+        """Der Waechter gegen den Rueckfall: Solange der Wert an zwei Stellen GESCHRIEBEN werden
+        kann, kann er auch auseinanderlaufen - und der Fall darueber bestuende weiter, bis jemand
+        genau eine der beiden Stellen aendert."""
+        path = module_file("photosort.criteria")
+        assert path is not None
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+
+        landmark_literals = [
+            ast.unparse(node)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, int | float)
+            and any(
+                isinstance(target, ast.Name) and "LANDMARK" in target.id.upper()
+                for target in node.targets
+            )
+        ]
+
+        assert landmark_literals == []
+
+    @pytest.mark.parametrize(
+        "confidence",
+        [
+            0.0,
+            0.1,
+            LANDMARK_CONFIDENCE_THRESHOLD - 0.01,
+            LANDMARK_CONFIDENCE_THRESHOLD,
+            LANDMARK_CONFIDENCE_THRESHOLD + 0.01,
+            0.9,
+            1.0,
+        ],
+    )
+    def test_score_verdict_and_name_verdict_agree_for_every_confidence(
+        self, confidence: float
+    ) -> None:
+        """Die eigentliche Zusage, als Tabelle ueber die Grenze hinweg: fuer JEDEN Konfidenzwert
+        sagen Bewertung und Name dasselbe."""
+        detection = LandmarkDetection(name="Zugspitze", confidence=confidence)
+        threshold = CRITERIA_REGISTRY["landmark"].presence_threshold
+        assert threshold is not None
+
+        counts_as_present = compute_landmark_score(detection) >= threshold
+        has_a_usable_name = usable_landmark_name("Zugspitze", confidence) is not None
+
+        assert counts_as_present == has_a_usable_name
+
+
+class TestUsableLandmarkName:
+    """Die EINE Stelle, an der aus einer Erkennungszeile ein verwendbarer Name wird (ADR 0107
+    Punkt 2). `None` heisst "kein verwendbarer Name" und ist von "nie erkannt" nicht zu
+    unterscheiden."""
+
+    def test_exactly_on_the_threshold_is_usable_inclusive(self) -> None:
+        """`>=`, inklusiv - derselbe Vergleichssinn wie `presence_threshold`."""
+        assert usable_landmark_name("Zugspitze", LANDMARK_CONFIDENCE_THRESHOLD) == "Zugspitze"
+
+    def test_just_below_the_threshold_is_no_name_even_if_it_is_flawless(self) -> None:
+        assert usable_landmark_name("Zugspitze", LANDMARK_CONFIDENCE_THRESHOLD - 0.01) is None
+
+    def test_above_the_threshold_an_unusable_name_is_still_no_name(self) -> None:
+        """Die Grenze steht VOR der Sanitisierung, aber sie ersetzt sie nicht."""
+        assert usable_landmark_name("A" * (MAX_LANDMARK_NAME_LENGTH + 1), 0.99) is None
+
+    def test_the_threshold_is_checked_before_the_sanitisation(self) -> None:
+        """Beide Gruende fuehren zu DEMSELBEN Ergebnis - ein unsicherer Treffer mit unbrauchbarem
+        Namen erzeugt keinen zweiten Zustand."""
+        assert usable_landmark_name("A" * (MAX_LANDMARK_NAME_LENGTH + 1), 0.0) is None
+
+    def test_a_name_is_sanitised_on_the_way_out(self) -> None:
+        assert usable_landmark_name("Eiffel‮turm​", 0.9) == "Eiffelturm"
+
+    def test_a_missing_name_is_no_name(self) -> None:
+        assert usable_landmark_name(None, 0.99) is None
+
+    def test_the_canonical_name_wins_over_the_raw_one(self) -> None:
+        """ADR 0107 Punkt 5: Die Lesestelle nimmt den kanonischen Namen, sonst den Rohnamen."""
+        assert usable_landmark_name("Eiffel Tower", 0.9, "Eiffelturm") == "Eiffelturm"
+
+    def test_a_row_without_a_canonical_name_behaves_exactly_as_before(self) -> None:
+        """Kein Nachziehen von Altbestand: ohne einen kanonischen Namen verhaelt sich eine
+        Altzeile wie heute."""
+        assert usable_landmark_name("Eiffelturm", 0.9, None) == "Eiffelturm"
+
+    def test_a_canonical_name_that_fails_sanitisation_falls_back_to_the_raw_one(self) -> None:
+        assert usable_landmark_name("Eiffelturm", 0.9, "​‮") == "Eiffelturm"
+
+    def test_the_canonical_name_does_not_survive_a_confidence_below_the_threshold(self) -> None:
+        assert usable_landmark_name("Eiffel Tower", 0.1, "Eiffelturm") is None
+
+    def test_the_canonical_name_is_sanitised_too(self) -> None:
+        """SICHERHEIT (S9): `sanitize_landmark_name` wirkt auf den zurueckgegebenen Wert, GLEICH
+        ob kanonischer Name oder Rohname - die Altbestandsdeckung darf nicht dadurch entfallen,
+        dass ein neues Feld daneben tritt."""
+        assert usable_landmark_name("Eiffel Tower", 0.9, "Eiffel‮turm") == "Eiffelturm"
