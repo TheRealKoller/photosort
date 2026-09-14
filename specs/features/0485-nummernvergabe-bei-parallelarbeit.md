@@ -1,6 +1,6 @@
 # 0485 - Parallel vergebene Nummern bleiben eindeutig
 
-**Status:** Accepted
+**Status:** Implemented ([PR #488](https://github.com/TheRealKoller/photosort/pull/488))
 **Erstellt:** 2026-09-14
 **Bezug:** GitHub-Issue [`#485`](https://github.com/TheRealKoller/photosort/issues/485)
 
