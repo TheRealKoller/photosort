@@ -23,10 +23,16 @@ Stundenjob statt eines roten Tests.
 from __future__ import annotations
 
 import itertools
+import os
+import subprocess
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+ZEITGRENZE_SEKUNDEN = 120
 
 # --- Nachbau der abgeloesten Regel, ausschliesslich als Messgegenstand -------------------------
 
@@ -416,3 +422,368 @@ def test_gegenprobe_vorfall_2_die_handgewaehlte_folge_war_fuer_beide_dieselbe(
     assert len(set(handgewaehlt.values())) == 1, "so sah der Vorfall aus: eine Folge, zwei Branches"
     assert len(set(abgeleitet.values())) == 2
     assert VORFALL_2_HANDGEWAEHLT not in set(abgeleitet.values())
+
+
+# --- Das Wegwerf-Repositorium ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Wegwerf:
+    """Ein bares `origin` mit `main`, ein Haupt-Checkout und vier Nachbarn mit je eigenem
+    Sichtbarkeitsgrad."""
+
+    wurzel: Path
+    origin: Path
+    haupt: Path
+    drin: Path
+    nachbar_a: Path
+    nachbar_b: Path
+    pflege: Path
+
+
+def _git(verzeichnis: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    ergebnis = subprocess.run(
+        ["git", *args],
+        cwd=verzeichnis,
+        capture_output=True,
+        text=True,
+        timeout=ZEITGRENZE_SEKUNDEN,
+        check=False,
+    )
+    assert ergebnis.returncode == 0, (
+        f"Fixture-Aufbau gescheitert: git {' '.join(args)} in {verzeichnis} "
+        f"-> {ergebnis.returncode}\n{ergebnis.stderr}"
+    )
+    return ergebnis
+
+
+def _dokument(verzeichnis: Path, name: str) -> None:
+    verzeichnis.mkdir(parents=True, exist_ok=True)
+    (verzeichnis / name).write_text(f"# {name}\n", encoding="utf-8")
+
+
+@pytest.fixture
+def wegwerf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Wegwerf:
+    """Vier Nachbarn, jeder nur ueber genau die Quelle sichtbar, die er belegt.
+
+    ```
+    tmp_path/
+      origin.git/                    bar, main, fuehrt specs/decisions/0101-0105  -> Basis 0106
+      haupt/                         Klon, eigener Branch z/eigen, fuehrt 0110
+      haupt/.claude/worktrees/drin/  Arbeitsbaum INNERHALB des Haupt-Checkouts, d/drin -> 0109
+      nachbar-a/                     Arbeitsbaum a/committet -> 0106 committet und auf Platte
+      nachbar-b/                     Arbeitsbaum b/angelegt  -> 0107 nur angelegt, kein add
+      (ohne Arbeitsbaum)             gepushter Branch c/gepusht -> 0108, nur ueber ls-tree
+    ```
+
+    **Mutationsprobe, durchgefuehrt am 2026-09-14.** Je einmal wurde einer der beiden Lesewege
+    in `erhebe_sicht` entfernt und der Lauf wiederholt:
+
+    * ohne den `ls-tree`-Weg faellt `test_ein_gepushter_branch_ohne_arbeitsbaum_wird_zugerechnet`
+      (0108 wird niemandem zugerechnet), waehrend der 0107-Fall gruen bleibt;
+    * ohne den Verzeichnisweg faellt `test_eine_nur_angelegte_datei_wird_ihrem_branch_zugerechnet`
+      (0107 fehlt ganz), waehrend der 0108-Fall gruen bleibt.
+
+    Jedes Mal genau einer der beiden Faelle - ohne diese Probe belegte ein gruener Lauf nur, dass
+    irgendein Weg getroffen hat.
+
+    Saemtliche `GIT_*` der aufrufenden Umgebung werden entfernt und die Decke auf `tmp_path`
+    gesetzt: Sonst richtete ein stehen gebliebenes `GIT_DIR` den Leser auf das echte
+    PhotoSort-Repositorium, und der Test waere aus dem falschen Grund gruen. Jeder Unterprozess
+    traegt eine Zeitgrenze.
+    """
+    for name in [n for n in os.environ if n.startswith("GIT_")]:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "PhotoSort Test")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "test@example.invalid")
+    monkeypatch.setenv("GIT_COMMITTER_NAME", "PhotoSort Test")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "test@example.invalid")
+
+    ort = Wegwerf(
+        wurzel=tmp_path,
+        origin=tmp_path / "origin.git",
+        haupt=tmp_path / "haupt",
+        drin=tmp_path / "haupt" / ".claude" / "worktrees" / "drin",
+        nachbar_a=tmp_path / "nachbar-a",
+        nachbar_b=tmp_path / "nachbar-b",
+        pflege=tmp_path / "pflege",
+    )
+
+    _git(tmp_path, "init", "--quiet", "--bare", "-b", "main", str(ort.origin))
+    _git(tmp_path, "init", "--quiet", "-b", "main", str(ort.haupt))
+
+    entscheidungen = ort.haupt / "specs" / "decisions"
+    for name in ["0101-eins.md", "0102-zwei.md", "0105-basis.md"]:
+        _dokument(entscheidungen, name)
+    # Zwei Namen, an denen sich die Aufzaehlungsform entscheidet: Ohne `-z` verfremdet git den
+    # Umlaut zu einer zitierten Folge, das Nummernmuster greift nicht mehr, und die Nummer faellt
+    # still aus der Basis. Der Umlaut steht hier als echtes Zeichen - er IST der Pruefgegenstand.
+    _dokument(entscheidungen, "0103-mit leerzeichen.md")
+    _dokument(entscheidungen, "0104-gateführte-pipeline.md")
+    _dokument(entscheidungen, "liesmich.md")
+    _dokument(entscheidungen / "unterverzeichnis", "0150-tief.md")
+    _dokument(ort.haupt / "specs" / "architecture", "0004-design.md")
+    _git(ort.haupt, "add", "-A")
+    _git(ort.haupt, "commit", "--quiet", "-m", "chore: Ausgangsstand")
+    _git(ort.haupt, "remote", "add", "origin", str(ort.origin))
+    _git(ort.haupt, "push", "--quiet", "origin", "main")
+
+    _git(tmp_path, "clone", "--quiet", str(ort.origin), str(ort.pflege))
+    _git(ort.pflege, "checkout", "--quiet", "-b", "c/gepusht")
+    _dokument(ort.pflege / "specs" / "decisions", "0108-gepusht.md")
+    _git(ort.pflege, "add", "-A")
+    _git(ort.pflege, "commit", "--quiet", "-m", "docs: 0108")
+    _git(ort.pflege, "push", "--quiet", "origin", "c/gepusht")
+
+    _git(ort.haupt, "checkout", "--quiet", "-b", "z/eigen")
+    _git(ort.haupt, "fetch", "--quiet", "origin")
+
+    _git(ort.haupt, "worktree", "add", "--quiet", "-b", "a/committet", str(ort.nachbar_a), "main")
+    _dokument(ort.nachbar_a / "specs" / "decisions", "0106-nachbar-a.md")
+    _git(ort.nachbar_a, "add", "-A")
+    _git(ort.nachbar_a, "commit", "--quiet", "-m", "docs: 0106")
+
+    _git(ort.haupt, "worktree", "add", "--quiet", "-b", "b/angelegt", str(ort.nachbar_b), "main")
+    _dokument(ort.nachbar_b / "specs" / "decisions", "0107-nachbar-b.md")
+
+    _git(ort.haupt, "worktree", "add", "--quiet", "-b", "d/drin", str(ort.drin), "main")
+    _dokument(ort.drin / "specs" / "decisions", "0109-drin.md")
+    _git(ort.drin, "add", "-A")
+    _git(ort.drin, "commit", "--quiet", "-m", "docs: 0109")
+
+    _dokument(entscheidungen, "0110-eigen.md")
+    return ort
+
+
+# --- Die Basis kommt ausschliesslich von origin/main -------------------------------------------
+
+
+def test_die_basis_kommt_aus_origin_main_nicht_aus_dem_eigenen_blick(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    """Haenge die Basis am eigenen Blick, rechnete jede Seite mit einer anderen."""
+    assert nummern_module.erhebe_sicht(wegwerf.haupt, "decisions").basis == 106
+
+
+def test_ein_name_mit_umlaut_und_leerzeichen_zaehlt_zur_basis(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    ablesung = nummern_module.nummern_auf_origin_main(wegwerf.haupt, "specs/decisions")
+
+    assert {103, 104}.issubset(ablesung.nummern)
+
+
+def test_ein_unterverzeichnis_zaehlt_nicht_mit(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    ablesung = nummern_module.nummern_auf_origin_main(wegwerf.haupt, "specs/decisions")
+
+    assert 150 not in ablesung.nummern
+
+
+def test_ein_fehlender_origin_main_scheitert_laut_statt_still(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    _git(wegwerf.haupt, "update-ref", "-d", "refs/remotes/origin/main")
+
+    with pytest.raises(nummern_module.ZuteilerFehler):
+        nummern_module.nummern_auf_origin_main(wegwerf.haupt, "specs/decisions")
+
+
+def test_keine_meldung_zitiert_die_rohe_git_ausgabe(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    """Ausgabehygiene: `git remote get-url` kann ein Token tragen, `fatal:` traegt Pfade."""
+    _git(wegwerf.haupt, "update-ref", "-d", "refs/remotes/origin/main")
+
+    with pytest.raises(nummern_module.ZuteilerFehler) as befund:
+        nummern_module.nummern_auf_origin_main(wegwerf.haupt, "specs/decisions")
+
+    assert "fatal:" not in str(befund.value)
+
+
+# --- Die Zurechnung, auf der die ganze Injektivitaet ruht --------------------------------------
+
+
+def test_eine_committete_datei_wird_ihrem_branch_zugerechnet(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    sicht = nummern_module.erhebe_sicht(wegwerf.haupt, "decisions")
+
+    assert 106 in set(sicht.gefuehrt["a/committet"])
+
+
+def test_eine_nur_angelegte_datei_wird_ihrem_branch_zugerechnet(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    """Der Verzeichnisweg: 0107 ist nie `git add`-et und steht in keinem Tree."""
+    sicht = nummern_module.erhebe_sicht(wegwerf.haupt, "decisions")
+
+    assert 107 in set(sicht.gefuehrt["b/angelegt"])
+
+
+def test_ein_gepushter_branch_ohne_arbeitsbaum_wird_zugerechnet(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    """Der `ls-tree`-Weg: c/gepusht hat kein Verzeichnis, das sich auflisten liesse."""
+    sicht = nummern_module.erhebe_sicht(wegwerf.haupt, "decisions")
+
+    assert 108 in set(sicht.gefuehrt["c/gepusht"])
+
+
+def test_ein_arbeitsbaum_im_haupt_checkout_zaehlt_seinem_eigenen_branch(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    """Zu messen, weil es an `.git/info/exclude` haengt - einer Datei ausserhalb des
+    Repositoriums."""
+    sicht = nummern_module.erhebe_sicht(wegwerf.haupt, "decisions")
+
+    assert 109 in set(sicht.gefuehrt["d/drin"])
+    assert 109 not in set(sicht.gefuehrt["z/eigen"])
+
+
+def test_der_eigene_arbeitsbaum_zaehlt_genau_einmal(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    sicht = nummern_module.erhebe_sicht(wegwerf.haupt, "decisions")
+    gemessen = nummern_module.kontrahenten(sicht.basis, sicht.gefuehrt, "z/eigen")
+    eigene = [k for k in gemessen if k.branch == "z/eigen"]
+
+    assert len(eigene) == 1, "der eigene Arbeitsbaum steht in `git worktree list` und im Index"
+    assert eigene[0].nummern == (110,), "0110 liegt in Index und Verzeichnis - und zaehlt einmal"
+
+
+def test_der_eigene_branch_wird_aus_dem_arbeitsbaum_gelesen(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    assert nummern_module.eigener_branch(wegwerf.haupt) == "z/eigen"
+    assert nummern_module.erhebe_sicht(wegwerf.haupt, "decisions").eigener_branch == "z/eigen"
+
+
+def test_die_zuteilung_ueber_den_echten_leser_trifft_die_rangnummer(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    sicht = nummern_module.erhebe_sicht(wegwerf.haupt, "decisions")
+
+    assert nummern_module.zugeteilte_nummer(sicht.basis, sicht.gefuehrt, "z/eigen") == 110
+    assert nummern_module.zugeteilte_nummer(sicht.basis, sicht.gefuehrt, "a/committet") == 106
+
+
+def test_der_leser_belegt_dass_ueberhaupt_gelesen_wurde(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    """Zaehler statt Abwesenheit: eine leere Menge ist von einer kaputten Aufzaehlung sonst
+    nicht zu unterscheiden."""
+    sicht = nummern_module.erhebe_sicht(wegwerf.haupt, "decisions")
+
+    assert sicht.gelesen >= 6
+    assert sicht.arbeitsbaeume == 4
+    assert sicht.fremde_branches == 1
+
+
+def test_die_symmetrie_beider_filter_am_eigenen_arbeitsbaum(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    """Dieselbe Verzeichnisebene, einmal ueber den Index und einmal aufgelistet."""
+    ueber_git = nummern_module.nummern_im_index(wegwerf.haupt, "specs/decisions")
+    aufgelistet = nummern_module.nummern_im_verzeichnis(wegwerf.haupt / "specs" / "decisions")
+
+    assert ueber_git.nummern == aufgelistet.nummern
+
+
+def test_der_zweite_nummernraum_wird_getrennt_gefuehrt(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    sicht = nummern_module.erhebe_sicht(wegwerf.haupt, "architecture")
+
+    assert sicht.basis == 5
+    assert sicht.verzeichnis == "specs/architecture"
+
+
+# --- Reine Parser: die Formen, an denen eine Aufzaehlung zerbricht -----------------------------
+
+
+def test_der_porcelain_parser_haelt_einen_zeilenumbruch_im_pfad_aus(
+    nummern_module: ModuleType,
+) -> None:
+    rohdaten = (
+        b"worktree /pfad/mit\nzeilenumbruch\x00HEAD abc\x00branch refs/heads/x\x00\x00"
+        b"worktree /zweiter\x00HEAD def\x00branch refs/heads/y\x00\x00"
+    )
+
+    baeume = nummern_module.arbeitsbaeume_aus_porcelain(rohdaten)
+
+    assert [baum.pfad for baum in baeume] == ["/pfad/mit\nzeilenumbruch", "/zweiter"]
+    assert [baum.branch for baum in baeume] == ["x", "y"]
+
+
+def test_ein_barer_eintrag_ist_kein_kontrahent(nummern_module: ModuleType) -> None:
+    rohdaten = (
+        b"worktree /bar\x00bare\x00\x00worktree /echt\x00HEAD a\x00branch refs/heads/x\x00\x00"
+    )
+
+    baeume = nummern_module.arbeitsbaeume_aus_porcelain(rohdaten)
+
+    assert [baum.bar for baum in baeume] == [True, False]
+
+
+def test_ein_raeumbarer_eintrag_wird_als_solcher_erkannt(nummern_module: ModuleType) -> None:
+    rohdaten = b"worktree /weg\x00HEAD a\x00branch refs/heads/x\x00prunable gone\x00\x00"
+
+    (baum,) = nummern_module.arbeitsbaeume_aus_porcelain(rohdaten)
+
+    assert baum.raeumbar is True
+
+
+def test_ein_losgeloester_head_ist_kein_leerer_branchname(nummern_module: ModuleType) -> None:
+    """Ein leerer Name sortierte byteweise ganz vorn und schoebe alle anderen weiter."""
+    rohdaten = b"worktree /los\x00HEAD abc\x00detached\x00\x00"
+
+    (baum,) = nummern_module.arbeitsbaeume_aus_porcelain(rohdaten)
+
+    assert baum.losgeloest is True
+    assert baum.branch is None
+
+
+def test_ein_nachbar_mit_losgeloestem_head_haelt_den_lauf_an(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    kopf = _git(wegwerf.nachbar_a, "rev-parse", "HEAD").stdout.strip()
+    _git(wegwerf.nachbar_a, "checkout", "--quiet", "--detach", kopf)
+
+    with pytest.raises(nummern_module.ZuteilerFehler, match=r"losgel"):
+        nummern_module.erhebe_sicht(wegwerf.haupt, "decisions")
+
+
+def test_die_pfeilform_von_origin_head_ist_kein_branchname(nummern_module: ModuleType) -> None:
+    """`git branch -r` gaebe hier die Zeile `origin/HEAD -> origin/main` aus."""
+    felder = [
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/feature/x",
+        "refs/remotes/origin/main",
+    ]
+
+    assert nummern_module.branches_aus_refnamen(felder) == ("feature/x", "main")
+
+
+def test_ein_veralteter_tracking_ref_faellt_ueber_seine_nummer_heraus(
+    nummern_module: ModuleType, wegwerf: Wegwerf
+) -> None:
+    """Sein Tip ist nie Vorfahre von `origin/main`; getragen wird das allein davon, dass seine
+    Nummer unter der Basis liegt."""
+    _git(wegwerf.pflege, "checkout", "--quiet", "-b", "alt/squash-gemergt", "origin/main")
+    _dokument(wegwerf.pflege / "specs" / "decisions", "0100-alt.md")
+    _git(wegwerf.pflege, "add", "-A")
+    _git(wegwerf.pflege, "commit", "--quiet", "-m", "docs: 0100")
+    _git(wegwerf.pflege, "push", "--quiet", "origin", "alt/squash-gemergt")
+    _git(wegwerf.haupt, "fetch", "--quiet", "origin")
+
+    sicht = nummern_module.erhebe_sicht(wegwerf.haupt, "decisions")
+    namen = [k.branch for k in nummern_module.kontrahenten(sicht.basis, sicht.gefuehrt, "z/eigen")]
+
+    assert "alt/squash-gemergt" not in namen
+    assert nummern_module.zugeteilte_nummer(sicht.basis, sicht.gefuehrt, "z/eigen") == 110
