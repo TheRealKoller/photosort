@@ -1601,6 +1601,17 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
         'Streichung (`status="rejected"`) und die gemeinsame Herausnahme aus der Endauswahl ' +
         '(`setAside`)',
     },
+    {
+      file: 'src/components/DuplicatePhotoTile.tsx',
+      snippet: "gedaempft && 'opacity-40'",
+      reason:
+        'gedaempfte BILDFLAECHE der als Ausschuss markierten Aufnahme im Duplikat-Vergleich - ' +
+        'der Ausschnitt zeigt das Element, das die Bildflaeche TRAEGT (das native <button> der ' +
+        'Vergroesserung), nie den Kachelkoerper: dort druecke dieselbe Utility Kennzeichen und ' +
+        'Dateinamen unter die Kontrastschwelle. `gedaempft` schliesst die Vergroesserung ' +
+        'ausdruecklich aus - die vergroesserte Aufnahme bleibt unverfaelscht, weil sie beurteilt ' +
+        'werden soll',
+    },
   ]
 
   it('verwendet opacity-* nur an der begruendeten Liste, fundstellengenau', () => {
