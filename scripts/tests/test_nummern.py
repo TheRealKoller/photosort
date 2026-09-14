@@ -295,3 +295,124 @@ def test_gegenprobe_vorfall_1_die_abgeloeste_regel_gibt_beiden_dieselbe_nummer(
 
     assert len({haltend_alt, eigen_alt}) == 1, "die abgeloeste Regel kollidiert - so entstand 0485"
     assert len(neu) == 2, "die Rangregel muss genau hier trennen"
+
+
+# --- AK 6: die Revisionskennung ----------------------------------------------------------------
+
+# Fester Vektor, einmal ausgerechnet und hier festgeschrieben: Rechnete der Test den Hash selbst
+# nach, pruefte er sich selbst und bliebe gruen, wenn Trenner oder Laenge kippen.
+VEKTOR_BRANCH = "feature/0485-nummernvergabe-bei-parallelarbeit"
+VEKTOR_SLUG = "nummernvergabe"
+VEKTOR_KENNUNG = "411e5778672b"
+
+
+def test_die_kennung_trifft_den_festen_vektor(nummern_module: ModuleType) -> None:
+    assert nummern_module.revisionskennung(VEKTOR_BRANCH, VEKTOR_SLUG) == VEKTOR_KENNUNG
+
+
+def test_dieselbe_eingabe_liefert_dieselbe_kennung(nummern_module: ModuleType) -> None:
+    erste = nummern_module.revisionskennung(VEKTOR_BRANCH, VEKTOR_SLUG)
+    zweite = nummern_module.revisionskennung(VEKTOR_BRANCH, VEKTOR_SLUG)
+
+    assert erste == zweite
+
+
+def test_verschiedener_branch_liefert_bei_identischem_slug_eine_andere_kennung(
+    nummern_module: ModuleType,
+) -> None:
+    eine = nummern_module.revisionskennung("feature/a", "gleich")
+    andere = nummern_module.revisionskennung("feature/b", "gleich")
+
+    assert eine != andere
+
+
+def test_der_nul_trenner_haelt_zwei_eingabepaare_auseinander(nummern_module: ModuleType) -> None:
+    """Mutationsprobe auf den Trenner: ohne ihn waeren `("ab","c")` und `("a","bc")` dasselbe."""
+    assert nummern_module.revisionskennung("ab", "c") != nummern_module.revisionskennung("a", "bc")
+
+
+def test_die_kennung_ist_genau_zwoelf_kleinbuchstaben_hex(nummern_module: ModuleType) -> None:
+    kennung = nummern_module.revisionskennung(VEKTOR_BRANCH, VEKTOR_SLUG)
+
+    assert nummern_module.KENNUNGSFORM.fullmatch(kennung)
+    assert len(kennung) == 12
+
+
+def test_eine_kennung_falscher_form_wird_abgewiesen_bevor_sie_einen_dateinamen_bildet(
+    nummern_module: ModuleType,
+) -> None:
+    """`re.fullmatch`, nie `.match`: `$` passt auch unmittelbar vor einem Zeilenumbruch."""
+    for unzulaessig in ["411E5778672B", "411e5778672", "411e5778672bb", "411e5778672b\n", ""]:
+        with pytest.raises(nummern_module.ZuteilerFehler):
+            nummern_module.gepruefte_kennung(unzulaessig)
+
+
+@pytest.mark.parametrize(
+    "slug", ["ortsnamen", "duplikate-vergleichen", "a", "teil2", "0485-nummern"]
+)
+def test_ein_zulaessiger_slug_geht_durch(nummern_module: ModuleType, slug: str) -> None:
+    assert nummern_module.gepruefter_slug(slug) == slug
+
+
+@pytest.mark.parametrize(
+    "slug",
+    [
+        "",
+        "-fuehrender-strich",
+        "endstrich-",
+        "Gross",
+        "mit leerzeichen",
+        "mit_unterstrich",
+        "pfad/trenner",
+        "..",
+        "../../etc/passwd",
+        "doppel--strich",
+        "umlaut-ae-ä",
+        "slug\n",
+        "x" * 61,
+    ],
+)
+def test_ein_unzulaessiger_slug_wird_abgewiesen(nummern_module: ModuleType, slug: str) -> None:
+    """Der Slug ist der einzige frei gewaehlte Wert, der in einen Dateinamen laeuft."""
+    with pytest.raises(nummern_module.ZuteilerFehler):
+        nummern_module.gepruefter_slug(slug)
+
+
+# --- AK 9, Vorfall 2: die doppelt vergebene Revisionskennung -----------------------------------
+
+VORFALL_2_BRANCH_A = "feature/0374-duplikate-vergleichen"
+VORFALL_2_BRANCH_B = "feature/0434-ortsnamen-teil2"
+
+# Die von Hand gewaehlte Hex-Folge, die beide Seiten am 2026-09-14 vergaben. Sie ist hier die
+# gemessene zweite Haelfte der Gegenprobe: **ein** Wert fuer zwei Branches.
+VORFALL_2_HANDGEWAEHLT = "d7e8f9a0b1c2"
+
+
+@pytest.mark.parametrize("slug", ["duplikate", "gleicher-slug"])
+def test_gegenprobe_vorfall_2_die_ableitung_trennt_beide_branches(
+    nummern_module: ModuleType, slug: str
+) -> None:
+    a = nummern_module.revisionskennung(VORFALL_2_BRANCH_A, slug)
+    b = nummern_module.revisionskennung(VORFALL_2_BRANCH_B, slug)
+
+    assert a != b, "bei identischem Slug traegt allein der Branchname die Unterscheidung"
+    assert a == nummern_module.revisionskennung(VORFALL_2_BRANCH_A, slug)
+    assert b == nummern_module.revisionskennung(VORFALL_2_BRANCH_B, slug)
+    assert all(nummern_module.KENNUNGSFORM.fullmatch(wert) for wert in (a, b))
+
+
+def test_gegenprobe_vorfall_2_die_handgewaehlte_folge_war_fuer_beide_dieselbe(
+    nummern_module: ModuleType,
+) -> None:
+    """Die zweite Haelfte der Gegenprobe - ohne sie waere die erste eine Tautologie."""
+    handgewaehlt = {
+        VORFALL_2_BRANCH_A: VORFALL_2_HANDGEWAEHLT,
+        VORFALL_2_BRANCH_B: VORFALL_2_HANDGEWAEHLT,
+    }
+    abgeleitet = {
+        branch: nummern_module.revisionskennung(branch, "duplikate") for branch in handgewaehlt
+    }
+
+    assert len(set(handgewaehlt.values())) == 1, "so sah der Vorfall aus: eine Folge, zwei Branches"
+    assert len(set(abgeleitet.values())) == 2
+    assert VORFALL_2_HANDGEWAEHLT not in set(abgeleitet.values())

@@ -48,6 +48,7 @@ Sicherheitsauflagen, die still brechen, wenn sie fallen (Spec 0485, S1-S8):
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -69,6 +70,16 @@ ABGELEHNTER_RAUM = "features"
 # Vierstellige Nummer, Trennstrich, nicht-leerer Rumpf, `.md` - dasselbe Muster, an dem
 # `test_dokumentnummern_eindeutig.py` die Eindeutigkeit misst.
 _DOKUMENTNAME = re.compile(r"^(?P<nummer>\d{4})-.+\.md$")
+
+# Die Form, in der der Zeilenparser von `backend/tests/test_migration_chain.py` die Kennung
+# sieht. Faellt sie, sieht das bestehende Sicherheitsnetz die neuen Kennungen still nicht mehr.
+KENNUNGSFORM = re.compile(r"[0-9a-f]{12}")
+
+# Kleinbuchstaben, Ziffern, einfache Bindestriche, kein fuehrender/abschliessender Strich. Der
+# Slug ist der einzige frei gewaehlte Wert, der von aussen in einen Dateinamen laeuft: kein
+# Pfadtrenner, kein `..`, kein fuehrender Bindestrich.
+SLUGFORM = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+SLUG_HOECHSTLAENGE = 60
 
 
 class ZuteilerFehler(Exception):
@@ -176,3 +187,40 @@ def befundzeilen(
         gefuehrte = ", ".join(f"{nummer:04d}" for nummer in kontrahent.nummern)
         zeilen.append(f"{kontrahent.branch} fuehrt {gefuehrte} und rangiert {rang} dem eigenen")
     return zeilen
+
+
+# --- Alembic: die Kennung ----------------------------------------------------------------------
+
+
+def revisionskennung(branch: str, slug: str) -> str:
+    """Die ersten zwoelf Hex-Zeichen aus `sha256(<Branch> + NUL + <Slug>)`.
+
+    Der Branchname ist ohne Abstimmung eindeutig, weil git denselben Branch nie in zwei
+    Arbeitsbaeumen auscheckt; eine doppelt vergebene Kennung ist damit nicht mehr aufzuloesen,
+    sondern ausgeschlossen. Der NUL-Trenner schliesst aus, dass zwei verschiedene Eingabepaare
+    (`"ab"`/`"c"` und `"a"`/`"bc"`) auf dieselbe Kennung fallen.
+    """
+    roh = hashlib.sha256(branch.encode("utf-8") + b"\0" + slug.encode("utf-8")).hexdigest()
+    return roh[:12]
+
+
+def gepruefte_kennung(kennung: str) -> str:
+    """Prueft die eigene Ausgabe, bevor sie einen Dateinamen bildet."""
+    if KENNUNGSFORM.fullmatch(kennung) is None:
+        raise ZuteilerFehler(
+            f"Die Revisionskennung hat nicht die Form von zwoelf Kleinbuchstaben-Hex "
+            f"(Laenge {len(kennung)}). In dieser Form sieht der Zeilenparser von "
+            "backend/tests/test_migration_chain.py sie nicht mehr."
+        )
+    return kennung
+
+
+def gepruefter_slug(slug: str) -> str:
+    """Prueft den einzigen frei gewaehlten Wert, der in einen Dateinamen laeuft."""
+    if len(slug) > SLUG_HOECHSTLAENGE or SLUGFORM.fullmatch(slug) is None:
+        raise ZuteilerFehler(
+            f"Unzulaessiger Slug (Laenge {len(slug)}). Zulaessig sind hoechstens "
+            f"{SLUG_HOECHSTLAENGE} Zeichen aus Kleinbuchstaben und Ziffern, getrennt durch "
+            "einfache Bindestriche - kein Pfadtrenner, kein '..', kein fuehrender Bindestrich."
+        )
+    return slug
