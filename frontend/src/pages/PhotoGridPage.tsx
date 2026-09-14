@@ -1,20 +1,26 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
-import { CriterionDetailsPopover } from '../components/CriterionDetailsPopover'
-import { MotifAssessmentMarker } from '../components/MotifAssessmentMarker'
-import { PhotoCard } from '../components/PhotoCard'
+import { PhotoGridTile } from '../components/PhotoGridTile'
 import { PhotoImage } from '../components/PhotoImage'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
-import { useMotifsQuery } from '../hooks/useMotifs'
+import { useElementWidth } from '../hooks/useElementWidth'
 import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
+import {
+  GRID_GAP_PX,
+  MIN_ROW_HEIGHT_PX,
+  TARGET_ROW_HEIGHT_PX,
+  justifiedRows,
+  naturalTiles,
+} from '../utils/justifiedRows'
+import type { JustifiedTile } from '../utils/justifiedRows'
 import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
 
@@ -57,16 +63,32 @@ export function PhotoGridPage() {
   const query = usePhotoSequenceQuery(id, ratingStatus)
   const setRatingMutation = useSetRatingMutation(id)
   const gateMutation = useConfirmAusschussGateMutation(id)
-  // Das Motivset kommt vom Server (langlebiger Cache) - Grundlage der schreibgeschuetzten
-  // Motivliste im Info-Popover. EIN Request fuer alle Kacheln.
-  const motifsQuery = useMotifsQuery()
-  const motifSetError = motifsQuery.isError
-    ? motifsQuery.error instanceof ApiError
-      ? motifsQuery.error.detail
-      : 'Fehler beim Laden der Motive.'
-    : undefined
-  const photos = query.data?.pages.flatMap((page) => page.items) ?? []
+  const photos = useMemo(
+    () => query.data?.pages.flatMap((page) => page.items) ?? [],
+    [query.data?.pages],
+  )
   const totalSuggested = query.data?.pages[0]?.total ?? 0
+
+  // Die Containerbreite kommt aus dem Beobachter-Eintrag, nie aus dem Element - siehe
+  // `useElementWidth`. Sie ist `0`, solange noch nicht gemessen wurde.
+  const { ref: gridRef, width: containerWidth } = useElementWidth<HTMLUListElement>()
+
+  const tiles = useMemo(() => {
+    const ratios = photos.map((photo) => photo.aspect_ratio ?? null)
+    if (containerWidth <= 0) {
+      return new Map(naturalTiles(ratios, TARGET_ROW_HEIGHT_PX).map((tile) => [tile.index, tile]))
+    }
+    const rows = justifiedRows({
+      ratios,
+      containerWidth,
+      gap: GRID_GAP_PX,
+      targetRowHeight: TARGET_ROW_HEIGHT_PX,
+      minRowHeight: MIN_ROW_HEIGHT_PX,
+    })
+    return new Map<number, JustifiedTile>(
+      rows.flatMap((row) => row.tiles.map((tile) => [tile.index, tile] as const)),
+    )
+  }, [photos, containerWidth])
 
   function handleConfirmGate(): void {
     if (gateMutation.isPending) {
@@ -98,6 +120,60 @@ export function PhotoGridPage() {
     setSearchParams(next)
   }
 
+  /*
+   * SICHERHEIT (Auflage S7): Das Nachladen hat eine SPERRE und ein ENDE. Ein Abruf gleichzeitig
+   * (`isFetchingNextPage`), und kein neuer, sobald alles geladen ist (`hasNextPage` wird falsch,
+   * sobald die Summe der geladenen Eintraege `total` erreicht). Ohne beides feuerte der
+   * Beobachter bei jedem Scroll-Schritt und erzeugte einen Anfragensturm - je Antwort bis zu 200
+   * Fotos samt ihrer Bildabrufe - gegen den Homeserver, auf dem PhotoSort und OpenCloud zusammen
+   * laufen.
+   */
+  // Die Sperre liegt in einem REF und nicht in einem Renderwert: Der Beobachter kann mehrfach
+  // innerhalb DESSELBEN Ticks melden (Scroll-Schritt, Groessenaenderung, erneutes Einblenden), und
+  // `isFetchingNextPage` wird erst beim naechsten Rendern wahr. Ein Renderwert liesse in genau
+  // diesem Fenster beliebig viele Abrufe durch - gemessen elf statt zwei.
+  const fetchingRef = useRef(false)
+  const loadMoreRef = useRef<() => void>(() => {})
+  loadMoreRef.current = () => {
+    if (!query.hasNextPage || query.isFetchingNextPage || fetchingRef.current) {
+      return
+    }
+    fetchingRef.current = true
+    void query.fetchNextPage().finally(() => {
+      fetchingRef.current = false
+    })
+  }
+
+  const anchorObserverRef = useRef<IntersectionObserver | null>(null)
+  const anchorRef = useCallback((node: HTMLDivElement | null) => {
+    anchorObserverRef.current?.disconnect()
+    anchorObserverRef.current = null
+    if (node === null || typeof IntersectionObserver === 'undefined') {
+      return
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        loadMoreRef.current()
+      }
+    })
+    observer.observe(node)
+    anchorObserverRef.current = observer
+  }, [])
+
+  useEffect(
+    () => () => {
+      anchorObserverRef.current?.disconnect()
+      anchorObserverRef.current = null
+    },
+    [],
+  )
+
+  const nextPageError = query.isFetchNextPageError
+    ? query.error instanceof ApiError
+      ? query.error.detail
+      : 'Fehler beim Nachladen der Fotos.'
+    : undefined
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-xl sm:text-2xl">Fotos</h1>
@@ -128,7 +204,14 @@ export function PhotoGridPage() {
         </div>
       )}
 
-      <div role="group" aria-label="Filter" className="flex flex-wrap gap-2">
+      {/* Am Telefon (< 640px) ist die Leiste ein EIGENER horizontaler Scrollbereich, einzeilig und
+          am Rand angeschnitten - die Seite selbst scrollt nie seitlich (AK11). Ab `sm:` fliesst
+          sie wieder um. */}
+      <div
+        role="group"
+        aria-label="Filter"
+        className="flex gap-2 overflow-x-auto sm:flex-wrap sm:overflow-x-visible"
+      >
         {FILTERS.map((option) => (
           <Button
             key={option.value || 'all'}
@@ -137,6 +220,7 @@ export function PhotoGridPage() {
             size="sm"
             aria-pressed={filterParam === option.value}
             onClick={() => handleFilterChange(option.value)}
+            className="shrink-0"
           >
             {option.label}
           </Button>
@@ -144,20 +228,19 @@ export function PhotoGridPage() {
       </div>
 
       {query.isLoading && (
-        <ul
-          role="status"
-          aria-label="Fotos werden geladen…"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
-        >
-          {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
-            <li key={index} aria-hidden="true">
-              <Skeleton className="aspect-square w-full rounded-md" />
+        <ul role="status" aria-label="Fotos werden geladen…" className="flex flex-wrap gap-3">
+          {naturalTiles(
+            Array.from({ length: SKELETON_TILE_COUNT }, () => null),
+            TARGET_ROW_HEIGHT_PX,
+          ).map((tile) => (
+            <li key={tile.index} aria-hidden="true" style={{ width: tile.width }}>
+              <Skeleton className="size-full rounded-md" style={{ height: tile.height }} />
             </li>
           ))}
         </ul>
       )}
 
-      {query.isError && (
+      {query.isError && !query.isFetchNextPageError && (
         <Alert onRetry={() => void query.refetch()}>
           {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Fotos.'}
         </Alert>
@@ -175,20 +258,18 @@ export function PhotoGridPage() {
       )}
 
       {photos.length > 0 && (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {photos.map((photo) => {
+        <ul data-photo-grid ref={gridRef} className="flex flex-wrap gap-3">
+          {photos.map((photo, index) => {
+            const tile = tiles.get(index)
             const ownStatus = ownRatingStatus(photo.ratings, username)
-            // SICHERHEIT (Auflage S6): das EIGENE Kennzeichen, ueber `utils/ownRating.ts` -
-            // nie `photo.ratings.some(r => r.favorite)`, das zeigte die Auszeichnung der
-            // anderen Person als die eigene.
+            // SICHERHEIT: das EIGENE Kennzeichen, ueber `utils/ownRating.ts` - nie
+            // `photo.ratings.some(r => r.favorite)`, das zeigte die Auszeichnung der anderen
+            // Person als die eigene.
             const isFavorite = ownFavorite(photo.ratings, username)
-            // Anzeigeregel (Akzeptanzkriterium der Spec): eigene Bewertung hat immer Vorrang -
-            // eine Vorschlags-Badge erscheint nur, solange keine eigene Bewertung existiert.
-            // Der Server garantiert bereits, dass photo.suggestion in diesem Fall null ist, aber
-            // ownStatus wird hier zusaetzlich geprueft statt sich blind auf suggestion zu
-            // verlassen (defensiv, gleiche Anzeigeregel wie die Detailansicht).
-            const isSuggested = ownStatus === null && photo.suggestion !== null
-            const badgeStatus = ownStatus ?? photo.suggestion?.status ?? null
+            // Anzeigeregel: eine eigene Bewertung hat immer Vorrang - ein Vorschlag erscheint nur,
+            // solange keine eigene existiert. Der Server garantiert das bereits, `ownStatus` wird
+            // hier zusaetzlich geprueft statt sich blind darauf zu verlassen.
+            const suggestedStatus = ownStatus === null ? (photo.suggestion?.status ?? null) : null
             const isConfirming = confirmingPhotoIds.has(photo.id)
 
             function handleConfirmSuggestion(): void {
@@ -211,60 +292,38 @@ export function PhotoGridPage() {
             }
 
             return (
-              <PhotoCard
+              <PhotoGridTile
                 key={photo.id}
                 to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
                 relativePath={photo.relative_path}
-                status={badgeStatus}
+                status={ownStatus}
+                suggestedStatus={suggestedStatus}
                 favorite={isFavorite}
-                suggested={isSuggested}
+                width={tile?.width ?? 0}
+                height={tile?.height ?? 0}
                 image={
                   <PhotoImage
                     photoId={photo.id}
                     variant="thumbnail"
                     alt={photo.relative_path}
-                    className="size-full object-cover"
+                    // `object-contain` statt des eingebauten `object-cover`: KEIN BESCHNITT (AK1).
+                    // tailwind-merge laesst die durchgereichte Utility gewinnen.
+                    className="size-full object-contain"
                   />
                 }
-                /* Motiv-Marker in der Ecke oben links, Info-Trigger oben rechts. Beide sind
-                   Geschwister der Bildflaeche und liegen nie in ihr - die Bildflaeche
-                   beschneidet, und eine aufgespannte Trefferflaeche in einem beschneidenden
-                   Container wuerde still abgeschnitten.
-                   Der `MotifAssessmentMarker` ist der EINZIGE Motiv-Marker der Kachel; `=== null`
-                   geprueft und nicht auf Falsyness, denn `undefined` (Feld nicht durchgereicht)
-                   ist keine Aussage ueber den Klassifizierungsstand. */
-                topLeft={photo.motif_assessment === null ? <MotifAssessmentMarker /> : undefined}
-                topRight={
-                  <CriterionDetailsPopover
-                    criterionScores={photo.criterion_scores}
-                    ranking={photo.ranking ?? null}
-                    suggestion={photo.suggestion}
-                    fineLabels={photo.fine_labels}
-                    motifSet={motifsQuery.data}
-                    motifSetLoading={motifsQuery.isLoading}
-                    motifSetError={motifSetError}
-                    onMotifSetRetry={() => {
-                      void motifsQuery.refetch()
-                    }}
-                    assessment={photo.motif_assessment ?? null}
-                    motifs={photo.motifs}
-                    albumSuitability={photo.album_suitability ?? null}
-                  />
-                }
-                /* Separates Tap-Ziel ausserhalb des Kachel-Links (UI/UX-Abschnitt der Spec): die
-                   Kachel selbst oeffnet weiterhin die Detailansicht, "Uebernehmen" bestaetigt den
-                   Vorschlag direkt, ohne zu navigieren. Das `aria-label` enthaelt den Dateinamen -
-                   mehrere offene Vorschlaege im selben Raster waeren sonst per Tastatur/
-                   Screenreader nicht auseinanderzuhalten. */
-                /* ZWEI Wege nebeneinander, nicht einer statt des anderen: "Übernehmen"
-                   bestätigt den Vorschlag hier, der Vergleich öffnet die ganze Serie. Der
-                   Einstieg erscheint NUR bei `reason === 'duplicate'` - eine wegen Unschärfe
-                   abgelehnte Aufnahme hat keine Gruppe, und ein Weg, der auf einen Leerzustand
-                   führt, ist kein Weg. 12px Abstand zwischen den beiden aufgespannten
-                   Trefferflächen (`gap-3`). */
-                footer={
-                  isSuggested ? (
-                    <div className="flex flex-wrap gap-3">
+                /* NUR im Gate-Modus (AK12, Daniels Entscheidung vom 2026-09-14): "Übernehmen" und
+                   "Vergleichen" stehen dort dauerhaft unter dem Bild, in der normalen Übersicht
+                   gar nicht. Damit bleiben AK3 ("genau zwei Zeichen") und AK12 gleichzeitig
+                   wörtlich wahr.
+
+                   ZWEI Wege nebeneinander, nicht einer statt des anderen: "Übernehmen" bestätigt
+                   den Vorschlag hier, der Vergleich öffnet die ganze Serie. Der Einstieg
+                   erscheint NUR bei `reason === 'duplicate'` - eine wegen Unschärfe abgelehnte
+                   Aufnahme hat keine Gruppe, und ein Weg, der auf einen Leerzustand führt, ist
+                   kein Weg. */
+                actions={
+                  isGateMode && suggestedStatus !== null ? (
+                    <>
                       <Button
                         type="button"
                         variant="outline"
@@ -285,7 +344,7 @@ export function PhotoGridPage() {
                           </Link>
                         </Button>
                       )}
-                    </div>
+                    </>
                   ) : undefined
                 }
               />
@@ -294,16 +353,22 @@ export function PhotoGridPage() {
         </ul>
       )}
 
-      {query.hasNextPage && (
-        <Button
-          type="button"
-          variant="outline"
-          busy={query.isFetchingNextPage}
-          onClick={() => void query.fetchNextPage()}
-          className="self-start"
-        >
-          {query.isFetchingNextPage ? 'Lädt…' : 'Weitere laden'}
-        </Button>
+      {/* Die Zählzeile ist zugleich die Fehlerstelle des Nachladens: Scheitert es, steht hier die
+          Meldung mit "Erneut versuchen", und die bereits geladenen Bilder bleiben sichtbar. */}
+      {photos.length > 0 && (
+        <div className="flex flex-col items-start gap-3">
+          {nextPageError === undefined ? (
+            <p aria-live="polite" className="text-sm text-text">
+              {photos.length} von {totalSuggested} geladen
+              {query.isFetchingNextPage ? ' — lädt…' : ''}
+            </p>
+          ) : (
+            <Alert onRetry={() => void query.fetchNextPage()}>{nextPageError}</Alert>
+          )}
+          {/* Der Sichtbarkeitsanker. Er steht NUR unter einem gefüllten Raster - im Leerzustand
+              löste er sofort einen Abruf aus. */}
+          {query.hasNextPage && <div ref={anchorRef} aria-hidden="true" className="h-1 w-full" />}
+        </div>
       )}
     </div>
   )

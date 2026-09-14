@@ -6,6 +6,7 @@ import {
   MIN_ROW_HEIGHT_PX,
   TARGET_ROW_HEIGHT_PX,
   justifiedRows,
+  naturalTiles,
 } from './justifiedRows'
 
 /*
@@ -198,6 +199,26 @@ describe('justifiedRows', () => {
         )
       },
     )
+  })
+
+  describe('naturalTiles: die Ausfallrichtung vor der ersten Messung', () => {
+    it('gives every image its natural width at the target height', () => {
+      const tiles = naturalTiles([1.5, 0.75, null], TARGET_ROW_HEIGHT_PX)
+
+      expect(tiles).toEqual([
+        { index: 0, width: Math.round(1.5 * TARGET_ROW_HEIGHT_PX), height: TARGET_ROW_HEIGHT_PX },
+        { index: 1, width: Math.round(0.75 * TARGET_ROW_HEIGHT_PX), height: TARGET_ROW_HEIGHT_PX },
+        {
+          index: 2,
+          width: Math.round(FALLBACK_ASPECT_RATIO * TARGET_ROW_HEIGHT_PX),
+          height: TARGET_ROW_HEIGHT_PX,
+        },
+      ])
+    })
+
+    it('returns nothing for an empty input', () => {
+      expect(naturalTiles([], TARGET_ROW_HEIGHT_PX)).toEqual([])
+    })
   })
 
   describe('die Konstanten', () => {

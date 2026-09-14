@@ -76,6 +76,25 @@ function usableRatio(ratio: number | null | undefined): number {
   return ratio
 }
 
+/**
+ * Die Ausfallrichtung, solange die Containerbreite noch nicht gemessen ist: jedes Bild in seiner
+ * natuerlichen Breite auf der Zielzeilenhoehe, umgebrochen vom Fluss der Liste.
+ *
+ * Sie ist keine Bequemlichkeit: Ohne sie zeigte eine Umgebung ohne `ResizeObserver` DAUERHAFT ein
+ * leeres Raster - still, ohne Meldung und ohne Fehler. Die Anordnung ist dann nicht buendig, aber
+ * jedes Bild ist da und vollstaendig sichtbar.
+ */
+export function naturalTiles(
+  ratios: readonly (number | null)[],
+  targetRowHeight: number,
+): JustifiedTile[] {
+  return ratios.map((ratio, index) => ({
+    index,
+    width: Math.max(1, Math.round(usableRatio(ratio) * targetRowHeight)),
+    height: targetRowHeight,
+  }))
+}
+
 export function justifiedRows({
   ratios,
   containerWidth,
