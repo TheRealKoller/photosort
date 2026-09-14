@@ -718,7 +718,7 @@ async def _create_photos(
         session.add(photo)
         await session.flush()
         if index not in spec.uncached_photo_indices:
-            if not generate_variants(cache_dir, photo.id, photo.etag, image_bytes):
+            if generate_variants(cache_dir, photo.id, photo.etag, image_bytes) is None:
                 raise DemoStateError(
                     "Die Thumbnail-Erzeugung im Cache-Verzeichnis ist fehlgeschlagen (Pfad "
                     "nicht beschreibbar?). Abbruch."
