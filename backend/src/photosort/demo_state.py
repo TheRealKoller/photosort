@@ -155,11 +155,21 @@ _DEMO_DUPLICATE_GROUP_SIZES = (7, 3)
 # im Backend-Image nicht installiert.
 _DEMO_HOSTS = frozenset({"opencloud-demo", "localhost", "127.0.0.1", "::1"})
 
-# Bilderzeugung: fester Zufallskeim, feste Groesse, feste JPEG-Qualitaet - zwei Laeufe liefern
-# byte-identische Dateien (per Test belegt, nicht behauptet).
+# Bilderzeugung: fester Zufallskeim, fester Formatsatz, feste JPEG-Qualitaet - zwei Laeufe
+# liefern byte-identische Dateien (per Test belegt, nicht behauptet).
 _IMAGE_SEED = "photosort-demo-state-v1"
-_IMAGE_SIZE = (960, 720)
 _IMAGE_JPEG_QUALITY = 90
+
+# Vier Formate statt eines einzigen (ADR 0110, Konsequenzen): An lauter gleichen Verhaeltnissen
+# ist ein justiertes Zeilenraster von einem Spaltenraster nicht zu unterscheiden - der
+# E2E-Pruefstack pruefte die Zusage "kein Beschnitt, gemeinsame Zeilenhoehe" dann gar nicht.
+# Hoch, quer, breit und quadratisch, alle innerhalb des Gueltigkeitsbands aus thumbnails.py.
+_IMAGE_SIZES = (
+    (960, 720),  # 4:3, quer
+    (720, 960),  # 3:4, hoch
+    (1200, 500),  # 12:5, breit
+    (800, 800),  # 1:1, quadratisch
+)
 
 # Feste Zeit-Anker: alle Zeitstempel sind deterministisch daraus abgeleitet, damit Sortierung,
 # Zeit-Cluster und angezeigte Daten zwischen zwei Laeufen identisch bleiben. Naiv/UTC wie im
@@ -537,16 +547,29 @@ def demo_taken_at(index: int) -> datetime:
     return _BASE_TAKEN_AT + timedelta(minutes=17 * index)
 
 
+def demo_image_size(*, slug: str, index: int) -> tuple[int, int]:
+    """Das Format des Demo-Fotos `index` - deterministisch aus `slug`/`index` gewaehlt.
+
+    Reines Durchreihen ueber `index`, ohne den Zufallskeim: Der Satz hat vier Eintraege, und ein
+    Zufallsgriff traefe bei kleinen Fotoanzahlen (die Masse der Tests laeuft mit drei oder vier
+    Fotos) leicht viermal dasselbe Format. Das `slug` verschiebt den Startpunkt, damit zwei
+    Projekte nicht Foto fuer Foto dieselbe Formfolge zeigen."""
+    offset = sum(slug.encode()) % len(_IMAGE_SIZES)
+    return _IMAGE_SIZES[(index + offset) % len(_IMAGE_SIZES)]
+
+
 def render_demo_image(*, slug: str, index: int) -> bytes:
     """Erzeugt ein synthetisches, erkennbar durchnummeriertes JPEG.
 
-    Deterministisch: der Zufallskeim haengt ausschliesslich an `slug`/`index`, JPEG-Qualitaet und
-    Bildgroesse sind Konstanten. Zwei Laeufe liefern byte-identische Dateien - ohne diese Zusage
-    waere jeder darauf aufbauende E2E-Spec sprunghaft."""
+    Deterministisch: der Zufallskeim haengt ausschliesslich an `slug`/`index`, die JPEG-Qualitaet
+    ist eine Konstante, und das Format kommt aus `demo_image_size` - ebenfalls allein aus
+    `slug`/`index`. Zwei Laeufe liefern byte-identische Dateien; ohne diese Zusage waere jeder
+    darauf aufbauende E2E-Spec sprunghaft."""
     rng = random.Random(f"{_IMAGE_SEED}:{slug}:{index}")
-    width, height = _IMAGE_SIZE
+    size = demo_image_size(slug=slug, index=index)
+    width, height = size
     background = (rng.randrange(24, 96), rng.randrange(24, 96), rng.randrange(40, 120))
-    image = Image.new("RGB", _IMAGE_SIZE, background)
+    image = Image.new("RGB", size, background)
     draw = ImageDraw.Draw(image)
 
     # Ein paar grobe Formen, damit die Bilder im Grid unterscheidbar sind und die
@@ -718,11 +741,20 @@ async def _create_photos(
         session.add(photo)
         await session.flush()
         if index not in spec.uncached_photo_indices:
-            if generate_variants(cache_dir, photo.id, photo.etag, image_bytes) is None:
+            # Das Seitenverhaeltnis kommt aus DERSELBEN Quelle wie produktiv - dem Rueckgabewert
+            # von `generate_variants` -, nie aus einer zweiten Rechnung ueber `_IMAGE_SIZES`. Der
+            # Demo-Bestand bildet den Zustand NACH dem Scan ab (wie `camera_probed`); ohne diesen
+            # Wert fiele jedes Demo-Foto im Raster auf die 3:2-Ausfallrichtung zurueck.
+            #
+            # Ein Foto OHNE Cache-Dateien behaelt `None`: genau der Zustand, den ein echter Scan
+            # hinterlaesst, wenn die Vorschau nicht geschrieben werden konnte.
+            ratio = generate_variants(cache_dir, photo.id, photo.etag, image_bytes)
+            if ratio is None:
                 raise DemoStateError(
                     "Die Thumbnail-Erzeugung im Cache-Verzeichnis ist fehlgeschlagen (Pfad "
                     "nicht beschreibbar?). Abbruch."
                 )
+            photo.aspect_ratio = ratio
         photos.append(photo)
     return photos
 
