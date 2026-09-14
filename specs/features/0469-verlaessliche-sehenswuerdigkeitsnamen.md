@@ -1,6 +1,6 @@
 # 0469 - Verlässliche und einheitliche Sehenswürdigkeitsnamen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #487](https://github.com/TheRealKoller/photosort/pull/487))
 **Erstellt:** 2026-09-14
 **Bezug:** [Issue #469](https://github.com/TheRealKoller/photosort/issues/469)
 
