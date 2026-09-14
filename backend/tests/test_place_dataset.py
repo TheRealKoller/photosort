@@ -91,6 +91,11 @@ def _info_of_answer(answer: object) -> PlaceInfo:
     )
 
 
+def _without_comments(compose: str) -> str:
+    """Eine Compose-Datei ohne ihre reinen Kommentarzeilen."""
+    return "\n".join(line for line in compose.splitlines() if not line.lstrip().startswith("#"))
+
+
 def _entries(lines: list[str]) -> list[object]:
     return [entry for line in lines if (entry := parse_geonames_line(line)) is not None]
 
@@ -331,12 +336,33 @@ class TestTheFetchCommandStaysAwayFromEveryAutomaticPath:
         """Gegenprobe: ohne sie bestuenden die beiden Zusagen oben auch bei einem Walker, der gar
         nichts findet. Der LESENDE Teil ist ausdruecklich erreichbar - er ist der Produktivpfad."""
         assert {"photosort.models", "photosort.config"} <= import_closure("photosort.main")
-        assert "photosort.geonames" in import_closure("photosort.place_probe")
+        assert "photosort.geonames" in import_closure("photosort.worker")
         assert "photosort.geonames" in import_closure("photosort.place_dataset")
 
     def test_no_compose_file_runs_the_command(self) -> None:
+        """Gesucht wird der MODULPFAD, unter dem das Kommando aufgerufen wuerde - der blosse Name
+        `place_dataset` steht dort als Volume und traegt nichts aus. Ein `command:` oder ein
+        `entrypoint:` auf dieses Modul enthielte den Modulpfad zwangslaeufig.
+
+        KOMMENTARZEILEN ZAEHLEN NICHT: Der Volume-Eintrag nennt den getippten Aufruf erklaerend,
+        und ein Wortverbot verboete genau diese Erklaerung. Dass die Trennung die echte Form noch
+        faengt, steht als eigener Fall darunter."""
         for compose in sorted(REPO_ROOT.glob("docker-compose*.yml")):
-            assert "place_dataset" not in compose.read_text(encoding="utf-8"), compose.name
+            assert "photosort.place_dataset" not in _without_comments(
+                compose.read_text(encoding="utf-8")
+            ), compose.name
+
+    def test_the_comment_stripping_still_sees_a_real_command(self) -> None:
+        """Gegenprobe zur Zeile darueber: ohne sie bestuende der Waechter auch dann, wenn das
+        Ausklammern der Kommentare versehentlich die ganze Datei verschluckte."""
+        compose = (
+            "services:\n"
+            "  worker:\n"
+            "    # docker compose exec backend python -m photosort.place_dataset\n"
+            '    command: ["python", "-m", "photosort.place_dataset"]\n'
+        )
+
+        assert "photosort.place_dataset" in _without_comments(compose)
 
     def test_the_module_defines_no_endpoint(self) -> None:
         path = module_file("photosort.place_dataset")
