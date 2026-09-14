@@ -64,6 +64,13 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # Nutzer gelten, obwohl der Abschnitt auf der Projekt-Statistikseite steht, und dass die drei
     # Tauschklassen nirgends summiert werden.
     ("get", "/feedback/diagnosis"),
+    # PR 3 derselben Spec: die beiden Schreibendpunkte auf die global wirkende Grundlage. Ihre
+    # Beschreibung traegt die Aussagen, die der Signatur gerade nicht anzusehen sind - dass der
+    # Server den Vorschlag NEU rechnet und keine Gewichte aus dem Body uebernimmt, dass die
+    # Aenderung erst beim naechsten Durchlauf wirkt und sonst nichts schreibt, und dass die
+    # Ruecknahme eine neue Fassung anlegt statt eine zu loeschen.
+    ("post", "/feedback/weights"),
+    ("post", "/feedback/weights/revert"),
 )
 
 
