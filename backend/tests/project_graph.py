@@ -28,6 +28,7 @@ from photosort.models import (
     FeedbackEventKind,
     FinalSelectionDecision,
     FineLabel,
+    LandmarkName,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
@@ -246,6 +247,17 @@ async def build_project_graph(
             # PROJEKT und nicht am Lauf. Ohne diese Zeile pruefen die beiden
             # Vollstaendigkeitstests der Projektloeschung die neue Kante nicht, und "mit dem
             # Projekt verschwindet die Ortsspur" (S6) waere unbelegt.
+            # specs/features/0469-verlaessliche-sehenswuerdigkeitsnamen.md, S8: das Namensregister
+            # haengt am PROJEKT und nicht am Lauf. Ohne diese Zeile pruefen die beiden
+            # Vollstaendigkeitstests der Projektloeschung die neue Kante nicht, und "mit dem
+            # Projekt verschwinden die Namen der besuchten Orte" waere unbelegt.
+            LandmarkName(
+                project_id=project.id,
+                normalized_name="zugspitze",
+                display_name="Zugspitze",
+                embedding=[0.3, 0.4],
+                locality="Grainau",
+            ),
             PlaceLookup(
                 project_id=project.id,
                 cell_lat=47.51,

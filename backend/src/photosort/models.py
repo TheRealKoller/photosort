@@ -746,6 +746,16 @@ class PhotoLandmarkDetection(Base):
     confidence: Mapped[float]
     computed_at: Mapped[datetime]
     provider: Mapped[str] = mapped_column(default="anthropic")
+    # Der auf das projektweite Register aufgeloeste Name (ADR 0107 Punkt 5), gefuellt in der
+    # Cloud-Phase und nur oberhalb von `landmark.LANDMARK_CONFIDENCE_THRESHOLD`: Ein unsicherer und
+    # wahrscheinlich falscher Name soll nicht die Anzeigeform eines Registereintrags besetzen, dem
+    # sich spaeter der richtige anschliesst.
+    #
+    # Eine gewoehnliche Textspalte, KEIN Fremdschluessel auf `landmark_names` - die Lesestelle
+    # braucht den Namen, nicht den Eintrag, und ein Join im Gruppierungspfad waere keine Hilfe.
+    # `NULL` heisst "nicht kanonisiert"; eine solche Zeile verhaelt sich exakt wie vor dem Register
+    # und faellt auf ihren Rohnamen zurueck. Fruehere Erkennungslaeufe werden nicht nachgezogen.
+    canonical_name: Mapped[str | None] = mapped_column(default=None)
 
     photo: Mapped[Photo] = relationship(back_populates="landmark_detection")
 
@@ -1322,6 +1332,48 @@ class PlaceLookup(Base):
     matched_level: Mapped[str | None] = mapped_column(default=None)
     source: Mapped[str]
     resolved_at: Mapped[datetime]
+
+
+class LandmarkName(Base):
+    """Das kanonische Namensregister der Sehenswürdigkeiten eines Projekts - PROJEKTGEBUNDEN.
+
+    Es trägt die Einheitlichkeit: Zwei Schreibweisen derselben Sehenswürdigkeit lösen auf denselben
+    Eintrag auf, und `photo_landmark_detections.canonical_name` bekommt dessen Anzeigeform.
+    `events.py::LandmarkChangeSignal` vergleicht weiter zeichengenau - die Vereinheitlichung liegt
+    jetzt davor.
+
+    AM PROJEKT und ausdrücklich NICHT projektübergreifend wie `fine_labels`: Ein
+    Sehenswürdigkeitsname ist ein personenbezogenes Datum - er benennt einen Ort, an dem diese
+    Familie war -, während "hund" ein allgemeiner Begriff ist. Ein projektübergreifendes Register
+    führte die Reisen verschiedener Projekte in einer Tabelle zusammen. Die Projektbindung ist
+    deshalb ein echter Fremdschlüssel und `NOT NULL`, wie bei `place_lookups`: Ohne die Spalte wäre
+    die Tabelle ein reiner Fremdschlüssel-Elternteil, fiele aus der Erreichbarkeitsprüfung der
+    Projektlöschung heraus, und beide Vollständigkeitstests prüften sie stillschweigend nicht mehr.
+
+    `normalized_name` ist der über `label_embedding.py::normalize_label_text` normalisierte Name und
+    je Projekt eindeutig; `display_name` der zuerst gesehene Rohtext in Originalschreibweise (reine
+    Anzeigehilfe, keine kuratierte Fassung). `locality` ist der zu diesem Eintrag aufgelöste
+    Ortsname und wirkt als SPERRE gegen das Zusammenziehen zweier verschiedener Sehenswürdigkeiten
+    - nie als Schlüssel, und er darf fehlen.
+
+    `embedding` ist der 384-dimensionale Text-Embedding-Vektor (`label_embedding.py`) als
+    JSON-Liste von float. Er ist eine verlustbehaftete Kodierung genau des Namens in derselben Zeile
+    und erbt dessen Einstufung: dieselbe Lebensdauer, keine API-Antwort, kein Log."""
+
+    __tablename__ = "landmark_names"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "normalized_name", name="uq_landmark_name_project_normalized"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    normalized_name: Mapped[str]
+    display_name: Mapped[str]
+    embedding: Mapped[list[float]] = mapped_column(SQLJSON)
+    locality: Mapped[str | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class QualityWeightEntry(Base):
