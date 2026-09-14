@@ -456,65 +456,71 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
 Danach die Einwilligung für das jeweilige Projekt einmalig über die Settings-Seite
 (`/projects/:id/settings`) aktivieren.
 
-## Ortsauskunft messen, bevor der Weg gewählt wird
+## Ortsnamen für Event-Überschriften: der Ortsdatensatz
 
-Bevor entschieden ist, woher Ortsnamen für Event-Überschriften kommen (lokaler Datensatz oder
-externer Dienst), wird an einem **echten** Projekt gemessen, was beide Wege überhaupt hergäben
+Ein Event ohne erkannte Sehenswürdigkeit heißt nach seinem Ort, sobald sich einer auflösen lässt
 (Spec [`0434`](../specs/features/0434-ortsnamen-fuer-events.md), ADR
-[`0102`](../specs/decisions/0102-ortsauskunft-je-zelle-projektgebunden-eventname-als-laufartefakt.md)).
-Das Messkommando ist **rein lesend**: kein Lauf von ihm hinterlässt eine geänderte, gelöschte oder
-neue Zeile.
+[`0102`](../specs/decisions/0102-ortsauskunft-je-zelle-projektgebunden-eventname-als-laufartefakt.md),
+ADR [`0105`](../specs/decisions/0105-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md)).
+Die Auflösung entsteht **vollständig innerhalb des Systems**: aus einem lokal abgelegten Auszug des
+GeoNames-Datensatzes. Es gibt keinen externen Ortsdienst und keinen Schalter, der einen aufmachen
+könnte.
+
+### Den Auszug einmal je Volume erzeugen
+
+```bash
+docker compose exec backend python -m photosort.place_dataset
+```
+
+Das Kommando bezieht `allCountries.zip` (rund 400 MB), bildet daraus den Auszug, löscht das Archiv
+wieder und legt den SHA256 des Auszugs daneben. Der Auszug misst gepackt rund 69 MB und liegt auf
+dem Volume `place_dataset` — im Backend-Dienst schreibbar, im Worker **nur lesend**. Er gehört
+weder ins Repository noch ins Docker-Image.
+
+**Es gibt bewusst kein Shellskript dafür:** Auf dem Server steht keine Shell zur Verfügung, nur
+eine Oberfläche für Docker Compose und eine Container-Konsole. Eine zweite Fassung desselben
+Ablaufs driftete, und die dort unbrauchbare wäre die schlechtere.
+
+**Bis der Auszug liegt, heißen Events wie bisher** nach Nummer und Zeitspanne. Das ist ein
+arbeitsfähiger Zustand, kein Fehler: Fehlt die Datei oder weicht sie von ihrem Hash ab, wird **kein
+Auflöser gebaut**, es entsteht **kein Ersatzweg**, und jeder Lauf schreibt eine laute Zeile mit
+festem Grund-Token. Der Pfad lässt sich über `PLACE_DATASET_PATH` verlegen (Vorgabe: der Pfad auf
+dem Volume).
+
+**Ein Neubezug geschieht auf Anlass, nicht nach Kalender** (ein falscher oder fehlender Name fällt
+auf). Bereits abgelegte Ortsauskünfte berührt ein neuerer Datensatz ohnehin nicht rückwirkend.
+
+**Geprüft wird der Auszug selbst**, also genau die Datei, die gelesen wird — vor jedem Gebrauch
+gegen den beim Bezug gebildeten Hash. GeoNames erzeugt die Quelldatei nächtlich neu und
+veröffentlicht **keine Prüfsummen**; ein fest eingetragener Hash wie bei
+`fetch-label-embedder-model.sh` ist deshalb nicht möglich. Der **Erstbezug** bleibt damit
+ungeschützt — dort tragen allein HTTPS und das Vertrauen in GeoNames.
+
+**Namensnennung:** GeoNames steht unter CC BY 4.0. Die Anwendung erfüllt die Pflicht sichtbar mit
+einer Zeile am Fuß der Projektliste; sie ist nicht zu entfernen.
+
+### Was der Datensatz hergibt, an einem echten Projekt messen
 
 ```bash
 docker compose exec -T backend python -m photosort.place_probe --project-id <N>
 ```
 
-**An welchem Projekt gemessen wird, ist keine Nebensache:** Zu messen ist an einem
-**Reiseprojekt**, nicht am Alltagsbestand. Die Zellen des Wohnorts tragen zur Messung nichts bei —
-sie gehen bei eingeschaltetem externem Kandidaten aber mit hinaus.
+Das Messkommando ist **rein lesend**: kein Lauf von ihm hinterlässt eine geänderte, gelöschte oder
+neue Zeile. Es liest denselben Auszug, benutzt denselben Auflöser und dieselbe Vergabelogik wie ein
+Kriterien-Lauf — es misst damit, was der Lauf tatsächlich täte, nicht eine Nachbildung davon. Ohne
+`--ortsdatensatz <pfad>` gilt `PLACE_DATASET_PATH`.
 
-Die Ausgabe ist Markdown auf stdout und trägt in der Vorgabe **nur Kennzahlen**: keine
-Koordinate, keinen aufgelösten Ortsnamen und keinen OpenCloud-Pfad. Damit sind die Zahlen als
-Ganzes weitergebbar, ohne jede Zeile einzeln prüfen zu müssen. Aufgelöste Namen hängt `--namen`
-an — dieser Abschnitt gehört dann **nicht** in eine Weitergabe der Zahlen: ein Ortsname *ist* die
+Die Ausgabe ist Markdown auf stdout und trägt in der Vorgabe **nur Kennzahlen**: keine Koordinate,
+keinen aufgelösten Ortsnamen und keinen OpenCloud-Pfad. Damit sind die Zahlen als Ganzes
+weitergebbar, ohne jede Zeile einzeln prüfen zu müssen. Aufgelöste Namen hängt `--namen` an —
+dieser Abschnitt gehört dann **nicht** in eine Weitergabe der Zahlen: ein Ortsname *ist* die
 Ortsangabe, ihn wegzugeben ist dasselbe wie die Zelle wegzugeben.
 
-Gemessen werden zwei Kandidaten. Fehlt einer, sagt die Ausgabe das ausdrücklich („NICHT
-GEMESSEN"), statt eine leere Spalte zu zeigen, die als schlechtes Messergebnis gelesen würde:
+Fehlt der Auszug oder weicht er von seinem Hash ab, sagt die Ausgabe das ausdrücklich („NICHT
+GEMESSEN"), statt eine leere Spalte zu zeigen, die als schlechtes Messergebnis gelesen würde.
 
-- **Lokaler Ortsdatensatz (GeoNames).** Nur mit `--ortsdatensatz <pfad>`. Der Datensatz wird
-  **einmalig** bezogen (rund 400 MB gepackt, rund 1,5 GB entpackt) und liegt danach lokal; er
-  gehört weder ins Repository noch ins Docker-Image:
-
-  ```bash
-  scripts/fetch-ortsdatensatz.sh
-  ```
-
-  GeoNames erzeugt die Datei nächtlich neu und veröffentlicht **keine Prüfsummen**. Ein fest
-  eingetragener Hash wie bei `fetch-label-embedder-model.sh` ist deshalb nicht möglich.
-  Stattdessen bildet das Skript den Hash **beim Erstbezug selbst** und legt ihn daneben; jeder
-  spätere Lauf prüft dagegen und bricht bei Abweichung **laut** ab.
-
-  **Worauf sich diese Prüfung bezieht:** auf `allCountries.zip`, das bezogene Archiv. Die
-  entpackte `allCountries.txt`, die das Messkommando tatsächlich liest, wird bei einem späteren
-  Lauf **nicht** erneut geprüft — sie misst rund 1,5 GB, und das bei jedem Aufruf zu tun kostete
-  Minuten für einen Fall, der ohne Zutun nicht eintritt. Wird sie verändert oder beschädigt,
-  während das Archiv intakt bleibt, fällt das nicht auf. Abhilfe bei Zweifeln: die `.txt`
-  löschen und das Skript erneut aufrufen — es entpackt sie dann aus dem geprüften Archiv neu.
-
-  Der **Erstbezug** selbst bleibt ungeschützt — dort tragen allein HTTPS und das Vertrauen in
-  GeoNames.
-
-- **Externer Dienst (Photon).** Nur bei `EXTERNAL_PLACE_LOOKUP_ENABLED=true` in `.env`. Vorgabe
-  ist `false`; dann wird gar kein externer Auflöser gebaut und keine Anfrage abgesetzt. Hinaus
-  geht ausschließlich die bereits vergröberte Ortszelle (zwei Nachkommastellen, rund 1,1 km),
-  nie die genaue Koordinate eines einzelnen Fotos — und nur über die tatsächlich besuchten Zellen
-  des Projekts.
-
-**Der Messlauf mit eingeschaltetem externem Kandidaten ist ein echter Datenabfluss, keine
-Vorstufe:** Die Reiseroute des gemessenen Projekts geht in ihrer Auflösung von rund 1,1 km
-einmalig und nicht rücknehmbar an einen Dritten — zu einem Zeitpunkt, an dem noch nicht
-entschieden ist, ob dieser Weg überhaupt genommen wird.
+**Zu messen ist an einem Reiseprojekt**, nicht am Alltagsbestand: Die Zellen des Wohnorts tragen
+zur Messung nichts bei.
 
 ## Lokal ausprobieren ohne echten OpenCloud-Server
 
