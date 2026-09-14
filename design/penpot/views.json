@@ -362,7 +362,10 @@
       "schluessel": "duplikate",
       "anzeigename": "Duplikate vergleichen",
       "seite": "Ansicht — Duplikate vergleichen",
-      "produktdateien": [],
+      "produktdateien": [
+        "src/pages/DuplicateComparePage.tsx",
+        "src/components/DuplicatePhotoTile.tsx"
+      ],
       "breiten": [
         "mobile",
         "desktop"

@@ -22,7 +22,7 @@
 
 import type { Locator } from '@playwright/test'
 
-import { DEMO_PROJECTS, demoProjectId, photoTiles } from '../lib/demo.ts'
+import { DEMO_PROJECTS, demoProjectId, openDuplicateGroup, photoTiles } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
 /** Zugesicherte Mindest-Trefferflaeche in px (Design-System). */
@@ -33,7 +33,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 17
+const EXPECTED_CONTROL_COUNT = 19
 
 async function assertTappable(
   control: Locator,
@@ -244,6 +244,22 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   await expect(gesperrt, 'gesperrte Schritte der Leiste').toHaveCount(1)
   await assertTappable(gesperrt, 'gesperrter Schritt der Schrittleiste', { ariaDisabled: true })
   checked.push('gesperrter Schritt der Schrittleiste')
+
+  // --- Die Wahlzeile der Duplikat-Vergleichsansicht (specs/features/0374-...) ----------------
+  // Heisser Pfad nach derselben Begruendung wie die Entwurfskachel: Beim Durchgehen einer Serie
+  // wird hier viele Male hintereinander gedrueckt. Ein Fehlgriff wiegt hier SCHWERER als dort -
+  // er bestimmt mit, welche Bilddaten den Homeserver Richtung Cloud-Anbieter verlassen.
+  //
+  // Die beiden Flaechen liegen unmittelbar NEBENEINANDER und beziehen ihre 44 px vollstaendig aus
+  // der Aufspannung: genau die Fehlerklasse "ueberlappende aufgespannte Trefferflaechen".
+  const duplicatesProjectId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
+  await openDuplicateGroup(page, duplicatesProjectId, 'gross')
+  for (const label of ['Behalten', 'Ausschuss']) {
+    const control = page.getByRole('button', { name: new RegExp(`^${label}: `) }).first()
+    await expect(control, `Wahlflaeche "${label}" der Vergleichsansicht`).toBeVisible()
+    await assertTappable(control, `${label} (Kachel des Duplikat-Vergleichs)`)
+    checked.push(`${label} der Duplikat-Kachel`)
+  }
 
   // Ohne diese Zusicherung bestuende der Spec auch dann, wenn keine der Lokalisierungen oben noch
   // etwas faende und jede Schleife ueber eine leere Menge liefe.

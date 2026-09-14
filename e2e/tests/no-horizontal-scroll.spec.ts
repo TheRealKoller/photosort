@@ -71,6 +71,16 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
   expect(detailHref, 'Ziel der ersten Kachel').toMatch(/\/photos\/\d+/)
   const detailPath = detailHref ?? ''
 
+  // Dieselbe Ableitung wie oben, fuer die Duplikat-Vergleichsansicht: Der Pfad traegt eine
+  // Foto-Id, und die vergibt der Seeder bei jedem Lauf neu. Genommen wird der ECHTE Einstieg aus
+  // der Ausschuss-Sichtung.
+  const duplicatesId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
+  await page.goto(`/projects/${duplicatesId}/photos?filter=suggested`)
+  const compareLink = page.getByRole('link', { name: /^Duplikate vergleichen:/ }).first()
+  await expect(compareLink, 'Einstieg in den Duplikat-Vergleich').toBeVisible()
+  const compareHref = await compareLink.getAttribute('href')
+  expect(compareHref, 'Ziel des Vergleichs-Einstiegs').toMatch(/\/photos\/\d+\/duplicates$/)
+
   const routes = [
     { label: 'Projektliste', path: '/', heading: 'Projekte' },
     { label: 'Neues Projekt', path: '/projects/new', heading: 'Neues Projekt anlegen' },
@@ -112,6 +122,15 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     // Symbol, Beschriftung und Tasten-Kaestchen brauchen nebeneinander rund 400px, bei 360px
     // stehen 288px zur Verfuegung. Genau diese Route fehlte hier bisher.
     { label: 'Foto-Detail', path: detailPath, role: 'group' as const, name: 'Bewertung' },
+    // specs/features/0374-duplikate-vergleichen.md: Die Ansicht traegt bei 360 px zwei Spalten
+    // Bildkacheln samt zweiteiliger Wahlzeile - die dichteste Stelle des Produkts nach der
+    // Bewertungsleiste, und damit die, an der ein zu enges Raster zuerst uebersteht.
+    {
+      label: 'Duplikat-Vergleich',
+      path: compareHref ?? '',
+      role: 'group' as const,
+      name: 'Ganze Gruppe',
+    },
   ] satisfies ({ label: string; path: string; requiresTile?: RegExp } & Precondition)[]
 
   const viewportWidth = page.viewportSize()?.width

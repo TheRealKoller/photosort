@@ -1434,13 +1434,26 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
     }
   })
 
-  /* BEDINGT: heute ist die Liste leer (die Ansichten sind noch nicht gebaut). Wird sie gefuellt,
-     muss jede genannte Datei tatsaechlich lesbar sein - sonst waere sie eine Behauptung. */
+  /* BEDINGT: Eine leere Liste heisst "die Ansicht ist noch nicht gebaut". Ist sie gefuellt, muss
+     jede genannte Datei tatsaechlich lesbar sein - sonst waere sie eine Behauptung. */
   it('nennt nur Produktdateien, die es gibt', () => {
     for (const ansicht of ansichten) {
       for (const quelle of ansicht.produktdateien) {
         expect(() => readFileSync(`${FRONTEND_DIR}${quelle}`, 'utf8'), quelle).not.toThrow()
       }
+    }
+  })
+
+  /* Die Gegenprobe zur Zusicherung darueber: Bestuende sie auf einer durchgehend leeren Menge,
+     pruefte sie nichts. Genannt sind die Ansichten, die im Produkt TATSAECHLICH existieren - eine
+     spaeter gebaute Ansicht, deren Verweis niemand nachtraegt, faellt hier auf. */
+  it('fuehrt die gebauten Ansichten mit ihren Produktdateien', () => {
+    const gebaut = new Map([['duplikate', 'src/pages/DuplicateComparePage.tsx']])
+
+    for (const [schluessel, erwartet] of gebaut) {
+      const ansicht = ansichten.find((eintrag) => eintrag.schluessel === schluessel)
+      expect(ansicht, schluessel).toBeDefined()
+      expect(ansicht?.produktdateien, schluessel).toContain(erwartet)
     }
   })
 
