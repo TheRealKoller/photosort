@@ -53,6 +53,7 @@ from photosort.demo_state import (
     rebuild_demo_state,
     render_demo_image,
 )
+from photosort.feedback_log import load_diagnosis
 from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
     CriterionScoringRun,
@@ -2115,6 +2116,26 @@ class TestTheDemoStateCarriesTheReworkLog:
             .all()
         )
         assert corrections == []
+
+    async def test_the_seeded_log_fills_every_number_of_the_diagnosis(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Nachweis am ERGEBNIS statt an den geschriebenen Zeilen: Die Ereignisse koennen
+        vollzaehlig dastehen und die Diagnose trotzdem ihren Nullzustand zeigen - etwa weil kein
+        `motif_dropped` auf ein tatsaechlich getragenes Motiv faellt (dann ist es kein
+        Modellfehler) oder weil dem gleichstufigen Austausch die Kriterienwerte fehlen (dann
+        bildet er kein auswertbares Paar). Genau das saehe auf der Demo-Instanz aus wie "noch nie
+        korrigiert", und die Pruefstack-Spezifikation maesse es, ohne rot zu werden."""
+        await self._seed_two_users(db_session, tmp_path)
+
+        diagnosis = await load_diagnosis(
+            db_session, criterion_keys=tuple(QUALITY_CRITERION_WEIGHTS)
+        )
+
+        assert diagnosis.correction_count > 0
+        assert sum(diagnosis.motif_errors.values()) > 0
+        assert all(stats.count > 0 for stats in diagnosis.exchanges.values())
+        assert any(entry.case_count > 0 for entry in diagnosis.criteria.values())
 
     async def test_every_joint_decision_has_its_event_and_none_of_them_names_a_user(
         self, db_session: AsyncSession, tmp_path: Path

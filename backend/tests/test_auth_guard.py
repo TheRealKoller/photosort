@@ -6,7 +6,7 @@ import jwt
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api import album_decisions, cameras, motifs, opencloud, projects, stats
+from photosort.api import album_decisions, cameras, feedback, motifs, opencloud, projects, stats
 from photosort.config import settings
 from photosort.models import User
 from photosort.security import ALGORITHM, create_access_token, hash_password
@@ -143,6 +143,12 @@ def _protected_router_operations() -> list[tuple[str, str]]:
     # es gibt keinen Parameter, dessen Fehlen auffiele. Ein hier vergessener Router erzeugt
     # schlicht weniger Faelle, ohne rot zu werden - deshalb traegt jener Endpunkt zusaetzlich
     # seinen eigenen, pfadbenannten 401-Fall in tests/test_api_album_decisions.py.
+    # specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md, Auflage S1: dasselbe fuer
+    # `feedback.router`. Sein Endpunkt nimmt wie der der Endauswahl kein `current_user` entgegen -
+    # die Diagnose ist in jedem Feld nutzerunabhaengig -, seine Authentifizierung ist an der
+    # Signatur also nicht sichtbar. Ohne Torwaechter waere er ein unauthentifizierter Lesepfad auf
+    # Aussagen ueber ALLE Projekte; er traegt deshalb zusaetzlich seinen eigenen, pfadbenannten
+    # 401-Fall in tests/test_api_feedback.py.
     for router in (
         projects.router,
         opencloud.router,
@@ -150,6 +156,7 @@ def _protected_router_operations() -> list[tuple[str, str]]:
         cameras.router,
         motifs.router,
         album_decisions.router,
+        feedback.router,
     ):
         for route in router.routes:
             path = getattr(route, "path", "")

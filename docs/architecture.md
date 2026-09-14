@@ -535,6 +535,45 @@ Verarbeitungs-Cache (Thumbnails).
       verlinkt dorthin. Backendseitig entfällt nichts — die Seite las das Standard-Listing.
       `groupDraftByDay` zieht dabei nach `utils/eventGrouping.ts::groupPhotosByDay`, weil beide
       Ansichten dieselbe Antwortform gliedern.
+  - **Die laufende Diagnose der Modellfehler** *(Spec
+    [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
+    [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md))*:
+    `GET /feedback/diagnosis` (`api/feedback.py`, Antwort `FeedbackDiagnosisOut` mit
+    `correction_count`, `motif_errors[]`, `exchanges[]`, `criteria[]`).
+    - **Ohne Projektparameter**, und das ist die Aussage des Endpunkts: Er zählt über das
+      **gesamte** Log, alle Projekte und beide Nutzer, weil der Gewichtssatz global gilt — zählte
+      er nur ein Projekt, stünden die Fallzahlen neben einem Vorschlag, den sie nicht belegen.
+      Deshalb auch ein eigener Endpunkt statt eines Blocks in `ProjectStatsOut`: Er rechnet über
+      das ganze Log, ist spürbar teurer als die Projektzahlen und wird für sich neu geladen.
+    - **Ausschließlich Aggregate**: kein Einzelereignis, kein `user_id`, keine Foto-Id-Liste, keine
+      Aufschlüsselung je Nutzer. Das Log ist die einzige Stelle, die auch **zurückgenommene**
+      Korrekturen hält — alles andere, was die Diagnose zählt, ist über `PhotoOut.ratings[]`
+      ohnehin je Foto und namentlich lesbar. Der Router trägt
+      `dependencies=[Depends(get_current_user)]` plus Eintrag in
+      `test_auth_guard.py::_protected_router_operations()` und einen eigenen pfadbenannten
+      401-Fall; ohne ihn wäre dies ein unauthentifizierter Lesepfad auf Aussagen über alle
+      Projekte.
+    - Die **Rechnung** liegt im reinen, DB-freien `feedback.py` (Muster
+      `quality.py`/`selection.py`), die Abfragen in `feedback_log.py::load_diagnosis`. Drei
+      Motiv-Fehlerfälle (`too_weak`/`missing`/`overcalled`, Präsenzgrenze über
+      `selection.py::motif_is_present` und nie als Zahl), drei **disjunkte und erschöpfende**
+      Tauschklassen, die **nirgends summiert** werden — `undetermined` ist eine eigene ausgewiesene
+      Klasse und kein Restposten —, und je Kriterium die auswertbare Fallzahl samt
+      Zustimmungsrate. Die eingefrorenen Zahlen kommen aus dem Ereignis, die lokalen
+      Kriterienwerte **live** aus `photo_criterion_scores`; ein Paar mit unvollständigen Werten
+      fällt heraus, und die kleinere Fallzahl macht das sichtbar.
+    - **Gewichtet wird nur gerechnet, ausgewiesen wird ungewichtet:** `correction_count` und jede
+      Fallzahl sind die schlichte Anzahl der Korrekturen. Eine gewichtete Zahl als Fallzahl
+      behauptete Korrekturen, die niemand vorgenommen hat.
+    - **Die Ansicht** ist `components/FeedbackDiagnosisSection.tsx` als letzter Abschnitt von
+      `ProjectStatsPage` — mit **eigener** Abfrage (`hooks/useFeedbackDiagnosis.ts`, Query-Key
+      `['feedback-diagnosis']` ohne Projekt- und ohne Nutzersegment, weil die Antwort in Menge und
+      in jedem Feld von beidem unabhängig ist). Eine Unterzeile spricht die projektübergreifende
+      Zählung aus und behält ihren Platz im Lade-, Leer- und Fehlerzustand; ohne sie liest jeder
+      die Zahlen als Aussage über das offene Projekt. Im **Leerzustand** wird keine einzige
+      Kennzahlen- oder Tauschzeile dargestellt — sonst wäre „noch nie korrigiert" nicht von
+      „N Korrekturen, 0 Fehler" zu unterscheiden. `Section`, `Metric`, `MetricRow` und `DetailRow`
+      liegen dafür in `components/StatsLayout.tsx` statt weiter in `ProjectStatsPage.tsx`.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
