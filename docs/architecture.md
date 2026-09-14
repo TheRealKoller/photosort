@@ -1010,13 +1010,14 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     auch die neue Remote-Kategorie-Klassifizierung. **Löschumfang (Spec
     [`0044`](../specs/features/0044-projekte-loeschen.md), ADR
     [`decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md`](../specs/decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md)):**
-    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller zwanzig am Projekt
-    hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
+    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller dreiundzwanzig am
+    Projekt hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
     `criterion_scoring_runs`, `remote_category_classification_runs`, `ratings`, `photo_scores`,
     `photo_criterion_scores`, `photo_rankings`, `events`, `photo_landmark_detections`,
-    `photo_fine_labels`, `photo_motif_assessments`, `photo_motif_strengths`,
-    `photo_motif_corrections`, `photo_album_suitability`, `photo_cloud_vision_errors`,
-    `final_selection_decisions`, `feedback_events`) sowie das Projekt selbst, dazu
+    `photo_fine_labels`, `photo_duplicate_decisions`, `photo_motif_assessments`,
+    `photo_motif_strengths`, `photo_motif_corrections`, `photo_album_suitability`,
+    `photo_cloud_vision_errors`, `final_selection_decisions`, `feedback_events`, `place_lookups`,
+    `landmark_names`) sowie das Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
     Erreichbarkeitsprüfung automatisch heraus, ohne eigene Ausnahmeliste; ein `fine_labels`-Eintrag,
@@ -1244,6 +1245,58 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   - additiv `provider: str` (Python-seitiger Default `"anthropic"`, Migration `a2b3c4d5e6f7`) — hält
     fest, welcher Cloud-Provider (`"anthropic"`/`"mistral"`) die jeweilige Zeile erzeugt hat, atomar
     mit `name`/`confidence` im selben Upsert gesetzt.
+  - additiv `canonical_name: str | None` *(Spec
+    [`0469`](../specs/features/0469-verlaessliche-sehenswuerdigkeitsnamen.md), ADR
+    [`decisions/0107-sehenswuerdigkeitsname-eine-grenze-und-ein-projektgebundenes-namensregister.md`](../specs/decisions/0107-sehenswuerdigkeitsname-eine-grenze-und-ein-projektgebundenes-namensregister.md),
+    Migration `a8b9c0d1e2f3`)*: der auf `landmark_names` aufgelöste Name, eine gewöhnliche
+    Textspalte und **kein** Fremdschlüssel auf das Register. Gefüllt in der Cloud-Phase und **nur
+    oberhalb von `landmark.LANDMARK_CONFIDENCE_THRESHOLD`** — ein unsicherer und wahrscheinlich
+    falscher Name soll nicht die Anzeigeform eines Registereintrags besetzen. `NULL` heißt „nicht
+    kanonisiert": frühere Erkennungsläufe werden nicht nachgezogen, und eine solche Zeile verhält
+    sich exakt wie vor dem Register.
+  - **Zwei verschieden strenge Zusagen in derselben Zeile.** `name` und `confidence` gehen
+    **ungefiltert** hinein, auch unterhalb der Grenze — die Antwort ist bezahlt und bleibt
+    vollständig erhalten. Ob aus der Zeile ein *verwendbarer* Name wird, entscheidet allein die
+    **Lesestelle** (`worker.py::_landmark_names` über `landmark.usable_landmark_name`). Folge, und
+    sie ist gewollt: Eine spätere Änderung der Grenze wirkt beim nächsten Neuaufbau der Gruppierung,
+    ohne einen einzigen erneuten Cloud-Aufruf. Ein so verworfener Treffer ist von „nie erkannt"
+    nicht zu unterscheiden — kein Anzeigezustand, kein Hinweis auf die Vermutung.
+    `api/stats.py` filtert hier **bewusst nicht**: Dort zählt die Zeile als Nachweis dafür, dass
+    Geld geflossen ist, und ein unsicherer Treffer hat ebenso gekostet wie ein sicherer.
+- **LandmarkName** *(Spec
+  [`0469`](../specs/features/0469-verlaessliche-sehenswuerdigkeitsnamen.md), ADR
+  [`0107`](../specs/decisions/0107-sehenswuerdigkeitsname-eine-grenze-und-ein-projektgebundenes-namensregister.md),
+  `models.py`; Tabelle `landmark_names`, Migration `a8b9c0d1e2f3`)*: das **kanonische Namensregister
+  der Sehenswürdigkeiten eines Projekts** — `project_id` (echter Fremdschlüssel, NOT NULL),
+  `normalized_name` (über `label_embedding.normalize_label_text`), `display_name` (der zuerst
+  gesehene Rohtext), `embedding: JSON` (384-dimensionaler Vektor, `label_embedding.py`), `locality`,
+  `created_at`; `UniqueConstraint(project_id, normalized_name)`.
+  - **AM PROJEKT und ausdrücklich nicht projektübergreifend wie `fine_labels`.** Ein
+    Sehenswürdigkeitsname ist ein personenbezogenes Datum — er benennt einen Ort, an dem diese
+    Familie war —, während „hund" ein allgemeiner Begriff ist; ein projektübergreifendes Register
+    führte die Reisen verschiedener Projekte in einer Tabelle zusammen. Die Tabelle fällt deshalb
+    unter dieselbe projektgebundene Lebensdauer wie `place_lookups` und wird in
+    `project_deletion.py` mitgelöscht. Die Projektbindung ist dabei der **Mechanismus** und nicht
+    nur eine Aussage: Ohne die Spalte wäre die Tabelle ein reiner Fremdschlüssel-**Elternteil**,
+    fiele aus der Erreichbarkeitsprüfung heraus, und beide Vollständigkeitstests der
+    Projektlöschung prüften sie stillschweigend nicht mehr.
+  - **Aufgelöst wird in zwei Schritten** (`landmark_names.py::resolve_canonical_landmark`, rein und
+    DB-frei nach dem Muster `places.py`): gleicher normalisierter Name trifft **immer**, ohne
+    Ortsprüfung und ohne Modellaufruf; Ähnlichkeit oberhalb einer **eigenen** Schwelle
+    (`LANDMARK_NAME_SIMILARITY_THRESHOLD`, dokumentiert-unkalibriert, strenger als die der
+    Feinlabels) trifft **nur**, wenn nicht beide Seiten einen aufgelösten, verschiedenen Ortsnamen
+    tragen. Die Ortsnamen-Sperre trägt die Zusicherung gegen die gefährlichste Klasse: Ein
+    mehrsprachiges Satz-Einbettungsmodell hält „Kölner Dom" und „Ulmer Dom" für nahe verwandt, weil
+    es die Bauform vergleicht und nicht den Eigennamen. Trägt eine Seite keinen aufgelösten
+    Ortsnamen, entscheidet die Ähnlichkeit allein — bewusst getragenes Restrisiko.
+  - **Geschrieben wird ausschließlich im Worker**, in der Landmark-Phase, in der das
+    Einbettungsmodell ohnehin gebaut wird. `rebuild_run_grouping` baut **keinen** Einbetter: Der
+    Pfad läuft in einem Request, und ein 113-MB-Modell im Anfragepfad wäre ein Speicher- und
+    Laufzeitvielfaches, das eine authentifizierte Anfrage wiederholt auslösen könnte. Der
+    Einbettungsvektor ist eine verlustbehaftete Kodierung genau des Namens in derselben Zeile und
+    erbt dessen Einstufung: dieselbe Lebensdauer, keine API-Antwort, kein Log. Es entsteht **kein
+    Endpunkt** — der Name erreicht die Oberfläche weiterhin ausschließlich über
+    `events.landmark_name`.
 - **ScoringRun** *(implementiert, Spec 0003, `models.py`)*: ein Lauf des Phase-A-Scoring-Jobs,
   analog zu `ScanRun` (nutzt bewusst denselben `ScanStatus`-Enum statt eines eigenen, identische
   running/success/failed-Semantik), mit `photos_total`/`photos_processed` für granularen, periodisch
@@ -1739,7 +1792,13 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     damit die **dauerhafteste Ortsspur des Systems** und fällt ausschließlich mit dem Projekt
     (`project_deletion.py`). Es gibt bewusst keinen zweiten Weg, sie loszuwerden.
   - **Beschafft wird ausschließlich im Worker** (`worker.py::_place_infos`, gebunden an
-    `project_id`). Drei unterschiedene Ausgänge: **keine Antwort** schreibt keine Zeile (sonst
+    `project_id`), seit Spec 0469 an **zwei** Stellen desselben Laufs: vor der Cloud-Phase für die
+    Zellen der Landmark-Kandidaten (die Ortsangabe geht dort in die Erkennung ein, siehe
+    `landmark.py::place_hint_for`) und danach für die Zellen fertiger Events. Dieselbe Funktion,
+    dieselbe Tabelle, derselbe Auflöser; die Event-Phase findet ihre Zellen dadurch überwiegend
+    bereits abgelegt vor und baut dann gar keinen Auflöser mehr. Die abgelegte Ortsspur wächst
+    damit in der **Zeilenzahl**, nicht in der Art. Drei unterschiedene Ausgänge: **keine Antwort**
+    schreibt keine Zeile (sonst
     vergiftete eine vorübergehende Störung die Zelle dauerhaft), eine **Antwort ohne brauchbare
     Ebene** schreibt eine Zeile mit leeren Namensstufen und wird nicht erneut gefragt, und
     **mehrere Ortsnamen im Event** ergeben keinen Namen. In allen drei Fällen behält das Event
