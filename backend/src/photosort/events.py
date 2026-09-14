@@ -537,10 +537,14 @@ def _the_one_of(values: Iterable[str | None]) -> str | None:
     return distinct.pop()
 
 
-def _locality_of(
+def locality_of_event(
     event: PlaceNamedEvent, info_by_cell: Mapping[tuple[float, float], PlaceInfo]
 ) -> str | None:
     """Der Ortsname dieses Events - ohne Viertel, das entscheidet erst der Lauf.
+
+    OEFFENTLICH, weil das Messkommando die Gleichnamigkeit ueber genau diesen Wert zaehlt: sie ist
+    eine Aussage ueber den Ortsnamen, nicht ueber die fertige Ueberschrift. Ohne diese Stelle
+    braeuchte es dort eine zweite Fassung derselben Regel.
 
     Ein Event MIT Sehenswuerdigkeit bekommt keinen: der Ortsname ersetzt sie nicht und tritt nicht
     daneben. Es zaehlt deshalb auch bei der Gleichnamigkeitspruefung nicht mit und loest bei
@@ -591,7 +595,7 @@ def assign_place_names(
     die Viertel-Regel griffe dann fuer Events an verschiedenen Orten.
 
     REIN und deterministisch - das Ergebnis haengt nicht von der Reihenfolge der Eingabe ab."""
-    localities = [_locality_of(event, info_by_cell) for event in events]
+    localities = [locality_of_event(event, info_by_cell) for event in events]
 
     occurrences: dict[str, int] = {}
     for locality in localities:

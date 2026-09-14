@@ -1,14 +1,13 @@
-"""REIN LESENDES Messkommando: misst an einem echten Projekt, was eine Ortsauskunft ueberhaupt
-hergaebe - BEVOR die Wegwahl faellt.
+"""REIN LESENDES Messkommando: misst an einem echten Projekt, was die Ortsauskunft hergibt.
 
 Aufruf::
 
     docker compose exec -T backend python -m photosort.place_probe --project-id 3
 
-Die Wegwahl (lokaler Ortsdatensatz oder externer Dienst) ist eine Entscheidung Daniels und kann
-nicht vorweggenommen werden. Beide Kandidaten stehen hier deshalb in bewusst WEGWERFBARER Form:
-die Messung darf die Abhaengigkeit nicht vorwegnehmen, deren Anschaffung sie erst begruenden soll.
-Faellt die Messung duerftig aus, ist das ein Ergebnis und keine Vorstufe.
+Gemessen wird der Weg, der auch im Betrieb laeuft: der lokale Ortsdatensatz (ADR 0105). Dasselbe
+Modul, derselbe Auflöser, dieselbe Vergabelogik wie im Kriterien-Lauf - eine zweite, nachbildende
+Fassung driftete, und dann maesse dieses Kommando etwas anderes, als der Lauf tatsaechlich tut,
+waehrend beide fuer sich gruen blieben.
 
 REIN LESEND, und das ist eine gepruefte Zusage, keine Absicht: kein ``INSERT``/``UPDATE``/
 ``DELETE``, kein Aufrufpfad aus ``main.py``/``worker.py``, kein Endpunkt, kein
@@ -17,20 +16,17 @@ Compose-``command``. Kein Lauf hinterlaesst eine geaenderte, geloeschte oder neu
 jede Schreibform und ein echter ``main()``-Lauf mit Schnappschuss jeder Tabelle davor und danach.
 Kein Teil traegt allein.
 
-WARUM DIESES MODUL TROTZDEM IM PRODUKTIV-PAKET LIEGT: Es braucht die echten SQLAlchemy-Modelle und
-dieselbe Zellbildung wie die Anwendung (``places.place_cell``) - ein zweites Abbild davon
-verfehlte genau die Frage, die gemessen werden soll.
+WARUM DIESES MODUL IM PRODUKTIV-PAKET LIEGT: Es braucht die echten SQLAlchemy-Modelle und dieselbe
+Zellbildung wie die Anwendung (``places.place_cell``) - ein zweites Abbild davon verfehlte genau
+die Frage, die gemessen werden soll.
 
-SICHERHEIT - der Messlauf ist der ERSTE tatsaechliche Abfluss, nicht seine Vorstufe:
+SICHERHEIT:
 
-* Der externe Kandidat laeuft nur bei gesetztem ``EXTERNAL_PLACE_LOOKUP_ENABLED`` und MELDET SEIN
-  AUSBLEIBEN in der Ausgabe, statt eine leere Spalte zu zeigen, die als schlechtes Messergebnis
-  gelesen wuerde.
+* MIT DEM EXTERNEN KANDIDATEN IST DER ABFLUSSPFAD DIESES KOMMANDOS VOLLSTAENDIG ENTFALLEN (ADR
+  0105 Punkt 2): Es liest nur noch eine lokale Datei; keine Ortsangabe verlaesst das System.
 * Gefragt wird ueber die MENGE der verschiedenen Zellen, nie je Event - sonst ginge die
-  Verweildauer je Ort mit hinaus - und ausschliesslich ueber die TATSAECHLICH BESUCHTEN Zellen aus
-  dem Projektbestand. Dieses Kommando erzeugt keine Zelle und rastert kein Rechteck ab; eine
-  flaechendeckende Sammlung risse die Grenze der OSM-Geocoding-Guideline ("systematic attempt to
-  aggregate ... within a geographic area city-sized or larger").
+  Verweildauer je Ort mit ein - und ausschliesslich ueber die TATSAECHLICH BESUCHTEN Zellen aus
+  dem Projektbestand. Dieses Kommando erzeugt keine Zelle und rastert kein Rechteck ab.
 * Die Vorgabe-Ausgabe traegt KEINE Koordinate, KEINEN aufgeloesten Ortsnamen und keinen
   OpenCloud-Pfad - nur Kennzahlen und die Projekt-Id. Namensbeispiele stehen ausschliesslich im
   abschaltbaren ``--namen``-Abschnitt.
@@ -42,21 +38,19 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import sys
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.cloud_vision import CloudRequestThrottle
 from photosort.config import settings
 from photosort.db import make_engine, make_session_factory
-from photosort.geonames import GeoNamesResolver, PlaceDatasetError
+from photosort.events import assign_place_names, locality_of_event
+from photosort.geonames import PlaceDatasetError, build_place_resolver
 from photosort.models import (
     CriterionScoringRun,
     Event,
@@ -66,12 +60,10 @@ from photosort.models import (
     ScanStatus,
 )
 from photosort.places import (
-    PLACE_CELL_DIGITS,
     PlaceAnswer,
     PlaceInfo,
     PlaceResolver,
     place_cell,
-    sanitize_place_name,
     usable_locality,
 )
 
@@ -90,14 +82,15 @@ class PlaceProbeError(Exception):
 class ProbeEvent:
     """Ein Event des gemessenen Laufs, auf das reduziert, was die Bloecke brauchen.
 
-    `cells` sind die verschiedenen gerundeten GEMESSENEN Zellen seiner Fotos, sortiert und
-    dublettenfrei - dieselbe Menge, aus der `events.py::_place_of` seine Stufenentscheidung
-    bildet."""
+    `place_cells` sind die verschiedenen gerundeten GEMESSENEN Zellen seiner Fotos, sortiert und
+    dublettenfrei - dieselbe Menge, die `events.py::BuiltEvent` traegt. Der Feldname ist derselbe,
+    weil `assign_place_names` beide ueber dasselbe Protokoll liest: die Vergabelogik steht genau
+    EINMAL im Projekt."""
 
     position: int
     landmark_name: str | None
     place_kind: str | None
-    cells: tuple[Cell, ...]
+    place_cells: tuple[Cell, ...]
 
 
 @dataclass(frozen=True)
@@ -135,48 +128,6 @@ class CellCounts:
     distinct_cells: int
     cells_per_event: dict[int, int]
     max_cells_in_one_event: int
-
-
-# Der geschlossene Vorrat der Ausfallgruende. FESTE TOKEN, nie ein Fremdtext: weder ein
-# Statuswert noch eine Fehlermeldung des Dienstes und erst recht keine Zelle geraet darueber in
-# die Ausgabe (S5/S11).
-FAILURE_HTTP_STATUS = "http-status"
-FAILURE_TRANSPORT = "transport"
-FAILURE_TOO_LARGE = "zu-gross"
-FAILURE_UNREADABLE = "unlesbar"
-FAILURE_REASONS = (
-    FAILURE_HTTP_STATUS,
-    FAILURE_TRANSPORT,
-    FAILURE_TOO_LARGE,
-    FAILURE_UNREADABLE,
-)
-
-
-@dataclass(frozen=True)
-class ProbeTally:
-    """Die Nebenbefunde EINES Kandidaten-Durchgangs, die in der Antwort selbst nicht stehen.
-
-    `seen_levels` sind die roh gesehenen Ebenenangaben der Quelle, `failures` die Ausfaelle je
-    Grund aus `FAILURE_REASONS`.
-
-    Frozen, aber die beiden Abbildungen darin sind veraenderlich: der Aufrufer legt sie an, der
-    Auflöser fuellt sie waehrend des Durchgangs. Ein Rueckkanal neben dem Rueckgabewert ist noetig,
-    weil `PlaceResolver.resolve` bewusst nur "Antwort oder nichts" kennt - diese Schmalheit ist
-    eine Sicherheitszusage (S2) und wird hier nicht aufgeweicht."""
-
-    seen_levels: dict[str, int]
-    failures: dict[str, int]
-
-    @property
-    def failed_requests(self) -> int:
-        return sum(self.failures.values())
-
-    def record_failure(self, reason: str) -> None:
-        self.failures[reason] = self.failures.get(reason, 0) + 1
-
-
-def new_tally() -> ProbeTally:
-    return ProbeTally(seen_levels={}, failures={})
 
 
 @dataclass(frozen=True)
@@ -236,12 +187,12 @@ def cell_counts(probe: ProbeInput) -> CellCounts:
     Mittelwert verbirgt genau den Fall, der die Viertel-Regel traegt."""
     per_event: dict[int, int] = {}
     for event in probe.events:
-        size = len(event.cells)
+        size = len(event.place_cells)
         per_event[size] = per_event.get(size, 0) + 1
     return CellCounts(
         distinct_cells=len(set(probe.photo_cells)),
         cells_per_event=per_event,
-        max_cells_in_one_event=max((len(e.cells) for e in probe.events), default=0),
+        max_cells_in_one_event=max((len(e.place_cells) for e in probe.events), default=0),
     )
 
 
@@ -287,54 +238,31 @@ def level_counts(
     )
 
 
-def _the_one_of(values: Iterable[str | None]) -> str | None:
-    """Der EINE verschiedene Wert einer Menge, oder `None` bei null oder mehreren.
-
-    Werte `None` zaehlen ausdruecklich nicht mit: ein Event aus zwei Zellen, von denen nur eine
-    einen Namen liefert, traegt diesen Namen."""
-    distinct = {value for value in values if value is not None}
-    if len(distinct) != 1:
-        return None
-    return distinct.pop()
-
-
-def _place_name_of(event: ProbeEvent, info_by_cell: Mapping[Cell, PlaceInfo]) -> str | None:
-    """Der Ortsname, den DIESES Event bekaeme - ohne Viertel, das entscheidet erst der Lauf.
-
-    Ein Event mit Sehenswuerdigkeit bekommt KEINEN: der Ortsname ersetzt sie nicht und tritt
-    nicht daneben."""
-    if event.landmark_name is not None:
-        return None
-    return _the_one_of(usable_locality(info_by_cell.get(cell)) for cell in event.cells)
-
-
-def _district_of(event: ProbeEvent, info_by_cell: Mapping[Cell, PlaceInfo]) -> str | None:
-    """Das eine Viertel ueber die Zellen dieses Events. Liefern sie zwei verschiedene, keines."""
-    return _the_one_of(
-        info.neighbourhood
-        for cell in event.cells
-        if (info := info_by_cell.get(cell)) is not None and usable_locality(info) is not None
-    )
-
-
 def heading_counts(probe: ProbeInput, info_by_cell: Mapping[Cell, PlaceInfo]) -> HeadingCounts:
-    """Block D. Bildet die Vergabe aus Spec 0434 nach, ZAEHLEND statt schreibend.
+    """Block D. Zaehlt ueber die ECHTE Vergabe (`events.py::assign_place_names`), nie ueber eine
+    Nachbildung davon: Was dieses Kommando misst, ist damit genau das, was ein Lauf schreibt.
+
+    `locality_of_event` liefert den Namen OHNE Viertel - die Gleichnamigkeit ist eine Aussage
+    ueber ihn, nicht ueber die fertige Ueberschrift. Ein Event, dessen fertiger Name von seinem
+    Ortsnamen abweicht, hat sein Viertel bekommen und ist damit unterscheidbar.
 
     Ein Event mit Sehenswuerdigkeit zaehlt bei der Gleichnamigkeitspruefung NICHT mit: es traegt
     keinen Ortsnamen und loest deshalb auch bei keinem anderen Event die Viertel-Ergaenzung aus."""
-    names = [_place_name_of(event, info_by_cell) for event in probe.events]
+    localities = [locality_of_event(event, info_by_cell) for event in probe.events]
+    names = assign_place_names(probe.events, info_by_cell)
+
     occurrences: dict[str, int] = {}
-    for name in names:
-        if name is not None:
-            occurrences[name] = occurrences.get(name, 0) + 1
+    for locality in localities:
+        if locality is not None:
+            occurrences[locality] = occurrences.get(locality, 0) + 1
 
     shared = 0
     distinguishable = 0
-    for event, name in zip(probe.events, names, strict=True):
-        if name is None or occurrences[name] < 2:
+    for locality, name in zip(localities, names, strict=True):
+        if locality is None or occurrences[locality] < 2:
             continue
         shared += 1
-        if _district_of(event, info_by_cell) is not None:
+        if name != locality:
             distinguishable += 1
 
     with_landmark = sum(1 for event in probe.events if event.landmark_name is not None)
@@ -439,7 +367,7 @@ async def read_probe_input(session: AsyncSession, project_id: int) -> ProbeInput
             position=position,
             landmark_name=landmark_name,
             place_kind=place_kind,
-            cells=tuple(sorted(set(grouped.get(event_id, ())))),
+            place_cells=tuple(sorted(set(grouped.get(event_id, ())))),
         )
         for event_id, position, landmark_name, place_kind in event_rows
     )
@@ -452,153 +380,7 @@ async def read_probe_input(session: AsyncSession, project_id: int) -> ProbeInput
     )
 
 
-# --- Kandidat 2: der externe Dienst (Photon), bewusst WEGWERFBAR --------------------------------
-
-# Der Ziel-Host ist eine KONSTANTE, nie ein Wert aus Datenbank, Parameter oder Request - kein
-# SSRF-Pfad. Photon laeuft auf OSM-Daten (Apache-2.0, Selbst-Hosting als Ausweg).
-PHOTON_REVERSE_URL = "https://photon.komoot.io/reverse"
-
-# Zeitgrenze je Anfrage: eine haengende Fremdantwort haelt sonst den ganzen Messlauf an.
-PHOTON_REQUEST_TIMEOUT_SECONDS = 10.0
-
-# Mindestabstand zwischen zwei Anfragen. BEGRUENDETE SELBSTAUFLAGE, aus keiner Quelle ableitbar:
-# Photon nennt keine Ratenzahl, nur "please be fair, extensive usage will be throttled". Eine
-# Sekunde ist die vorsichtige Setzung fuer eine erklaerte Demo-Instanz.
-PHOTON_MIN_REQUEST_INTERVAL_SECONDS = 1.0
-
-# Die Antwort wird BEGRENZT gelesen: eine unerwartet grosse Fremdantwort soll den Messlauf nicht
-# in den Speicher laufen lassen. Eine Reverse-Antwort mit einem Treffer misst wenige Kilobyte.
-PHOTON_MAX_RESPONSE_BYTES = 256 * 1024
-
-# Photons Ebenenangabe steht in der Antwort im Feld `type` (nicht in `layer` - das ist
-# ausschliesslich ein Filter-Parameter der ANFRAGE und kommt in der Antwort nicht vor).
-#
-# ACHTUNG, NAMENSKOLLISION: Photons `locality` ist NICHT unser `locality`. Photon staffelt
-# `locality` ⊂ `district` ⊂ `city` ("Ritterkiez" ⊂ "Kreuzberg" ⊂ "Berlin"); unser `locality` ist
-# der ORT und entspricht Photons `city`, unser `neighbourhood` entspricht Photons `district`.
-# Wer Photons `locality` direkt uebernimmt, setzt systematisch die falsche Ebene als Ueberschrift.
-#
-# `house`/`street`/`locality` sind FEINER als jede Ebene, die dieses Projekt fuehrt, und werden
-# deshalb auf `neighbourhood` abgebildet - nicht auf "keine Ebene". Die Begruendung des
-# Regions-Ausschlusses traegt hier ausdruecklich NICHT: ein Regionstreffer nennt oft eine Stadt,
-# die Dutzende Kilometer entfernt liegt, ein Haustreffer nennt genau die richtige. Ein Abbilden
-# auf "keine Ebene" wiese die Messung systematisch zu duerftig aus und traege damit eine nicht
-# ruecknehmbare Wegwahl. Die tatsaechlich gesehenen `type`-Werte weist Block C zusaetzlich roh
-# aus, damit diese Zuordnung am Messergebnis nachprüfbar bleibt statt geglaubt werden zu muessen.
-_PHOTON_TYPE_TO_LEVEL = {
-    "house": "neighbourhood",
-    "street": "neighbourhood",
-    "locality": "neighbourhood",
-    "district": "neighbourhood",
-    "city": "locality",
-    "county": "region",
-    "state": "region",
-    "country": "country",
-}
-
-
-def photon_answer(payload: object, seen_levels: dict[str, int] | None = None) -> PlaceAnswer | None:
-    """Der Parser-Rand des externen Wegs - rein, ohne Netz, gegen eine FREMDE Struktur.
-
-    Gelesen werden ausschliesslich die vier Stufen und die Ebenenangabe. Strasse, Hausnummer,
-    Postleitzahl und Photons `locality` werden HIER verworfen und erreichen kein Feld: es gibt
-    keinen offenen Beutel, in dem sie doch ankaemen."""
-    if not isinstance(payload, dict):
-        return None
-    features = payload.get("features")
-    if not isinstance(features, list) or not features:
-        return None
-    first = features[0]
-    if not isinstance(first, dict):
-        return None
-    properties = first.get("properties")
-    if not isinstance(properties, dict):
-        return None
-
-    raw_level = properties.get("type")
-    if seen_levels is not None and isinstance(raw_level, str):
-        seen_levels[raw_level] = seen_levels.get(raw_level, 0) + 1
-    level = _PHOTON_TYPE_TO_LEVEL.get(raw_level) if isinstance(raw_level, str) else None
-
-    return PlaceAnswer(
-        neighbourhood=sanitize_place_name(properties.get("district")),
-        locality=sanitize_place_name(properties.get("city")),
-        region=sanitize_place_name(properties.get("state")),
-        country=sanitize_place_name(properties.get("country")),
-        matched_level=level,
-    )
-
-
-class PhotonResolver:
-    """Der externe Kandidat. Gebaut wird er NUR bei gesetztem `EXTERNAL_PLACE_LOOKUP_ENABLED`."""
-
-    def __init__(
-        self,
-        client: httpx.AsyncClient,
-        throttle: CloudRequestThrottle,
-        tally: ProbeTally,
-    ) -> None:
-        self._client = client
-        self._throttle = throttle
-        self._tally = tally
-
-    async def resolve(self, cell: Cell) -> PlaceAnswer | None:
-        await self._throttle.acquire()
-        lat, lon = cell
-        # ZWEITE, UNABHAENGIGE SCHRANKE AM AUSGEHENDEN RAND (S2): beide Zahlen werden mit genau
-        # `PLACE_CELL_DIGITS` Nachkommastellen formatiert. Eine ungerundete Zahl ist in der
-        # abgesetzten Zeichenkette damit nicht darstellbar, selbst wenn sie hierher gelangte -
-        # das Akzeptanzkriterium haengt an diesem Rand, nicht an einer Aufrufstelle.
-        params = {
-            "lat": f"{lat:.{PLACE_CELL_DIGITS}f}",
-            "lon": f"{lon:.{PLACE_CELL_DIGITS}f}",
-            "limit": "1",
-        }
-        body = bytearray()
-        try:
-            async with self._client.stream(
-                "GET",
-                PHOTON_REVERSE_URL,
-                params=params,
-                timeout=PHOTON_REQUEST_TIMEOUT_SECONDS,
-            ) as response:
-                # JEDER dieser vier Ausgaenge heisst "es kam keine verwertbare Antwort" und wird
-                # als AUSFALL vermerkt - ausdruecklich nicht als "nichts gefunden". Eine
-                # Drosselung der Dienst-Instanz (sie nennt keine Ratenzahl) saehe sonst in der
-                # Messung aus wie ein schlechter Anbieter.
-                if response.status_code != httpx.codes.OK:
-                    self._tally.record_failure(FAILURE_HTTP_STATUS)
-                    return None
-                async for chunk in response.aiter_bytes():
-                    body += chunk
-                    if len(body) > PHOTON_MAX_RESPONSE_BYTES:
-                        self._tally.record_failure(FAILURE_TOO_LARGE)
-                        return None
-        except httpx.HTTPError:
-            # KEINE ANTWORT ist etwas anderes als eine Antwort ohne brauchbare Ebene: eine
-            # voruebergehende Stoerung darf die Zelle nicht dauerhaft vergiften.
-            self._tally.record_failure(FAILURE_TRANSPORT)
-            return None
-        try:
-            payload = json.loads(bytes(body))
-        except ValueError:
-            self._tally.record_failure(FAILURE_UNREADABLE)
-            return None
-        # Ab hier HAT der Dienst geantwortet: ein `None` von `photon_answer` ist ein Nichttreffer
-        # und damit ein Messergebnis, kein Ausfall.
-        return photon_answer(payload, self._tally.seen_levels)
-
-
-def build_photon_resolver(tally: ProbeTally) -> PlaceResolver:
-    """Die echte Fabrik - baut einen Client gegen das echte Netz.
-
-    Sie wird NUR bei gesetztem Schalter aufgerufen; kein automatisierter Test ruft sie je auf
-    (die Netzsperre in `tests/conftest.py` machte das laut)."""
-    return PhotonResolver(
-        httpx.AsyncClient(),
-        CloudRequestThrottle(min_interval_seconds=PHOTON_MIN_REQUEST_INTERVAL_SECONDS),
-        tally,
-    )
+# --- Der Durchgang ueber die gefragten Zellen ---------------------------------------------------
 
 
 async def resolve_all(
@@ -627,7 +409,6 @@ class CandidateResult:
     levels: LevelCounts | None = None
     headings: HeadingCounts | None = None
     photos: PhotoCounts | None = None
-    tally: ProbeTally | None = None
     examples: tuple[str, ...] = ()
 
 
@@ -647,22 +428,22 @@ def measure_candidate(
     name: str,
     probe: ProbeInput,
     answers: Mapping[Cell, PlaceAnswer | None],
-    tally: ProbeTally | None = None,
+    failures: Mapping[str, int] | None = None,
 ) -> CandidateResult:
     """Die Bloecke C, D und E fuer einen Kandidaten.
 
-    `examples` traegt die aufgeloesten Namen - sie erscheinen NUR im `--namen`-Abschnitt. `tally`
-    fehlt bei einem Kandidaten, der keinen Ausfallbegriff kennt (der lokale Datensatz)."""
+    `examples` traegt die aufgeloesten Namen - sie erscheinen NUR im `--namen`-Abschnitt.
+    `failures` bleibt bei einer Quelle ohne Ausfallbegriff leer: der lokale Datensatz antwortet
+    entweder oder es gibt ihn nicht, und dann entsteht gar kein Auflöser."""
     infos = _info_by_cell(answers)
     resolved = sorted(
         {locality for info in infos.values() if (locality := usable_locality(info)) is not None}
     )
     return CandidateResult(
         name=name,
-        levels=level_counts(answers, tally.failures if tally is not None else None),
+        levels=level_counts(answers, failures),
         headings=heading_counts(probe, infos),
         photos=photo_counts(probe, infos),
-        tally=tally,
         examples=tuple(resolved),
     )
 
@@ -730,32 +511,19 @@ def render_report(
             f"- davon zusaetzlich mit Viertel: {levels.cells_with_neighbourhood}",
             f"- nur Region/Land (gilt als kein Name): {levels.cells_region_or_country_only}",
         ]
-        if candidate.tally is not None:
-            failed = candidate.tally.failed_requests
-            lines.append(
-                f"- AUSFALL (gar keine verwertbare Antwort): {failed} "
-                f"({_percent(failed, levels.cells_total)})"
-            )
-            if failed:
-                lines += [
-                    "  - "
-                    + ", ".join(
-                        f"{reason}: {count}"
-                        for reason, count in sorted(candidate.tally.failures.items())
-                    ),
-                    "  ACHTUNG: Diese Zellen sind NICHT gemessen - sie sagen nichts ueber die",
-                    "  Quelle aus. Ein nennenswerter Ausfall (Drosselung, Stoerung) macht die",
-                    "  Zahlen dieses Kandidaten unbrauchbar; dann erst die Ursache beheben und",
-                    "  neu messen, nicht auf dieser Grundlage entscheiden.",
-                ]
-            if candidate.tally.seen_levels:
-                lines.append(
-                    "- rohe Ebenenangaben der Quelle: "
-                    + ", ".join(
-                        f"{key}: {count}"
-                        for key, count in sorted(candidate.tally.seen_levels.items())
-                    )
-                )
+        # AUSFALL und NICHTTREFFER bleiben getrennt (ADR 0102 Punkt 5). Die Zeile erscheint nur,
+        # wenn es tatsaechlich einen Ausfall gab: Der lokale Datensatz kennt keinen - er liegt
+        # vor und antwortet, oder es entsteht gar kein Auflöser. Eine dauerhaft auf null stehende
+        # Zeile behauptete eine Messung, die niemand vornimmt.
+        if levels.cells_with_a_failed_request:
+            lines += [
+                f"- AUSFALL (gar keine verwertbare Antwort): {levels.cells_with_a_failed_request} "
+                f"({_percent(levels.cells_with_a_failed_request, levels.cells_total)})",
+                "  ACHTUNG: Diese Zellen sind NICHT gemessen - sie sagen nichts ueber die",
+                "  Quelle aus. Ein nennenswerter Ausfall macht die Zahlen dieses Kandidaten",
+                "  unbrauchbar; dann erst die Ursache beheben und neu messen, nicht auf dieser",
+                "  Grundlage entscheiden.",
+            ]
         lines += [
             "",
             "### D - Verwendung Ueberschrift (zaehlt EVENTS)",
@@ -806,8 +574,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--ortsdatensatz",
         default=None,
         help=(
-            "Pfad auf die entpackte GeoNames-Datei (scripts/fetch-ortsdatensatz.sh). Ohne diese "
-            "Angabe bleibt der lokale Kandidat ungemessen und sagt das in der Ausgabe."
+            "Pfad auf den GeoNames-Auszug. Ohne Angabe gilt die Betriebseinstellung "
+            "PLACE_DATASET_PATH - also genau die Datei, aus der auch ein Lauf liest."
         ),
     )
     parser.add_argument(
@@ -825,10 +593,8 @@ async def _probe_with_own_session(
     database_url: str,
     *,
     project_id: int,
-    dataset_path: Path | None,
+    dataset_path: Path,
     show_names: bool,
-    external_enabled: bool,
-    build_external_resolver: Callable[[ProbeTally], PlaceResolver],
 ) -> str:
     engine = make_engine(database_url)
     try:
@@ -845,79 +611,42 @@ async def _probe_with_own_session(
         )
 
     cells = sorted(set(probe.photo_cells))
-    candidates: list[CandidateResult] = []
 
-    if dataset_path is None:
-        candidates.append(
-            CandidateResult(
-                name="Lokaler Ortsdatensatz (GeoNames)",
-                absent_reason=(
-                    "kein --ortsdatensatz angegeben. Die Zahlen dieses Kandidaten fehlen, sie "
-                    "sind nicht null."
-                ),
-            )
+    # DERSELBE Auflöser und DIESELBE Pruefung wie im Lauf: Fehlt der Auszug oder weicht er von
+    # seinem Hash ab, wird auch hier keiner gebaut. Der Kandidat MELDET dann sein Ausbleiben -
+    # eine leere Spalte wuerde als schlechtes Messergebnis gelesen.
+    resolver = build_place_resolver(cells, path=dataset_path)
+    if resolver is None:
+        candidate = CandidateResult(
+            name="Lokaler Ortsdatensatz (GeoNames)",
+            absent_reason=(
+                "Der Ortsdatensatz fehlt oder weicht von seinem Hash ab - es wurde kein Auflöser "
+                "gebaut. Erst 'python -m photosort.place_dataset' laufen lassen. Die Zahlen "
+                "dieses Kandidaten fehlen, sie sind nicht null."
+            ),
         )
     else:
-        local = GeoNamesResolver(dataset_path, cells)
-        candidates.append(
-            measure_candidate(
-                "Lokaler Ortsdatensatz (GeoNames)", probe, await resolve_all(local, cells)
-            )
+        candidate = measure_candidate(
+            "Lokaler Ortsdatensatz (GeoNames)", probe, await resolve_all(resolver, cells)
         )
 
-    if not external_enabled:
-        candidates.append(
-            CandidateResult(
-                name="Externer Dienst (Photon)",
-                absent_reason=(
-                    "EXTERNAL_PLACE_LOOKUP_ENABLED steht auf false - es wurde kein Auflöser "
-                    "gebaut und keine Anfrage abgesetzt. Die Zahlen dieses Kandidaten fehlen, "
-                    "sie sind nicht null."
-                ),
-            )
-        )
-    else:
-        tally = new_tally()
-        external = build_external_resolver(tally)
-        candidates.append(
-            measure_candidate(
-                "Externer Dienst (Photon)",
-                probe,
-                await resolve_all(external, cells),
-                tally,
-            )
-        )
-
-    return render_report(probe, candidates, show_names=show_names)
+    return render_report(probe, [candidate], show_names=show_names)
 
 
-def main(
-    argv: Sequence[str] | None = None,
-    *,
-    database_url: str | None = None,
-    external_lookup_enabled: bool | None = None,
-    build_external_resolver: Callable[[ProbeTally], PlaceResolver] = build_photon_resolver,
-) -> int:
-    """Verdrahtung + Exit-Code. `argv`, `database_url`, der Schalter und die externe Fabrik sind
-    injizierbar - kein `sys.argv`-Zugriff im Testpfad, kein unbeabsichtigter Zugriff auf die
-    konfigurierte Anwendungs-Datenbank und kein Client-Bau im Test.
+def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) -> int:
+    """Verdrahtung + Exit-Code. `argv` und `database_url` sind injizierbar - kein
+    `sys.argv`-Zugriff im Testpfad und kein unbeabsichtigter Zugriff auf die konfigurierte
+    Anwendungs-Datenbank.
 
     `asyncio.run` laeuft INNERHALB von main(): eine Async-Engine ueberlebt keinen Loop-Wechsel."""
     args = _build_parser().parse_args(argv)
-    enabled = (
-        settings.external_place_lookup_enabled
-        if external_lookup_enabled is None
-        else external_lookup_enabled
-    )
     try:
         report = asyncio.run(
             _probe_with_own_session(
                 database_url or settings.database_url,
                 project_id=args.project_id,
-                dataset_path=Path(args.ortsdatensatz) if args.ortsdatensatz else None,
+                dataset_path=Path(args.ortsdatensatz or settings.place_dataset_path),
                 show_names=args.namen,
-                external_enabled=enabled,
-                build_external_resolver=build_external_resolver,
             )
         )
     except (PlaceProbeError, PlaceDatasetError) as exc:
