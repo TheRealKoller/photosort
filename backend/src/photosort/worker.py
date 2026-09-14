@@ -78,6 +78,7 @@ from photosort.geonames import build_place_resolver
 from photosort.horizon import compute_horizon_tilt_score
 from photosort.label_embedding import LabelEmbedderLike, build_label_embedder
 from photosort.landmark import (
+    LANDMARK_CONFIDENCE_THRESHOLD,
     LandmarkClientLike,
     LandmarkDetection,
     PlaceHint,
@@ -85,6 +86,7 @@ from photosort.landmark import (
     place_hint_for,
     usable_landmark_name,
 )
+from photosort.landmark_names import LandmarkNameEntry, resolve_canonical_landmark
 from photosort.logging_config import configure_logging
 from photosort.models import (
     ClassificationPhase,
@@ -93,6 +95,7 @@ from photosort.models import (
     CriterionSource,
     Event,
     FineLabel,
+    LandmarkName,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
@@ -1272,14 +1275,25 @@ async def _detect_landmark_for_photo(
 
 
 async def _upsert_landmark_detection(
-    session: AsyncSession, photo_id: int, detection: LandmarkDetection, now: datetime, provider: str
+    session: AsyncSession,
+    photo_id: int,
+    detection: LandmarkDetection,
+    now: datetime,
+    provider: str,
+    canonical_name: str | None,
 ) -> None:
     """Legt eine photo_landmark_detections-Zeile nur an, wenn tatsaechlich ein Name identifiziert
     wurde (kein Platzhalter-"unbekannt") - wird nur aufgerufen, wenn detection.name is not None
     (siehe Aufrufer). `provider` wird atomar mit name/confidence gesetzt -dieser Aufruf feuert
     praktisch nie fuer ein bereits gescortes Foto (Skip ueber _select_landmark_candidates anhand von
     PhotoCriterionScore, providerunabhaengig), ein
-    Providerwechsel ueberschreibt das Feld bei bereits gescorten Fotos deshalb nicht."""
+    Providerwechsel ueberschreibt das Feld bei bereits gescorten Fotos deshalb nicht.
+
+    ZWEI VERSCHIEDENE ZUSAGEN in einer Zeile: `name` und `confidence` gehen UNGEFILTERT hinein -
+    die Antwort ist bezahlt und bleibt vollstaendig erhalten, ob aus ihr ein verwendbarer Name wird,
+    entscheidet die Lesestelle. `canonical_name` dagegen setzt der Aufrufer nur oberhalb von
+    `LANDMARK_CONFIDENCE_THRESHOLD` und nur mit gebautem Einbetter; sonst bleibt er `None`, und die
+    Zeile verhaelt sich exakt wie vor dem Register."""
     assert detection.name is not None
     existing = await session.get(PhotoLandmarkDetection, photo_id)
     if existing is None:
@@ -1289,6 +1303,7 @@ async def _upsert_landmark_detection(
     existing.confidence = detection.confidence
     existing.computed_at = now
     existing.provider = provider
+    existing.canonical_name = canonical_name
 
 
 async def _upsert_album_suitability(
@@ -1359,10 +1374,14 @@ async def _landmark_names(
                 PhotoLandmarkDetection.photo_id,
                 PhotoLandmarkDetection.name,
                 PhotoLandmarkDetection.confidence,
+                PhotoLandmarkDetection.canonical_name,
             ).where(PhotoLandmarkDetection.photo_id.in_(photo_ids))
         )
     ).all()
-    return {photo_id: usable_landmark_name(name, confidence) for photo_id, name, confidence in rows}
+    return {
+        photo_id: usable_landmark_name(name, confidence, canonical_name)
+        for photo_id, name, confidence, canonical_name in rows
+    }
 
 
 # Der geschlossene eigene Vorrat von `place_lookups.source` - er hat genau einen Eintrag, weil es
@@ -2101,6 +2120,7 @@ async def run_criterion_scoring(
     build_landmarker: Callable[[], FaceLandmarkerLike] = build_face_landmarker,
     build_landmark_client: Callable[[str], LandmarkClientLike] = build_landmark_client,
     build_place_resolver: PlaceResolverFactory = build_place_resolver,
+    build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
     *,
     run: CriterionScoringRun | None = None,
     use_cloud: bool = False,
@@ -2410,6 +2430,41 @@ async def run_criterion_scoring(
                     )
                     await session.commit()
 
+                    # DAS NAMENSREGISTER dieses Projekts, einmal je Lauf geladen und danach
+                    # mutierbar durchgereicht (Muster `run_remote_category_classification`): Ein
+                    # in diesem Lauf neu entstandener Eintrag ergaenzt den Schnappschuss sofort,
+                    # sodass ein zweiter aehnlicher Name im selben Lauf auf ihn trifft statt eine
+                    # zweite Zeile anzulegen.
+                    #
+                    # SICHERHEIT (S8): Die Bindung an `project.id` steht in der Abfrage
+                    # ausgeschrieben, und es gibt keinen Rueckfall auf das Register eines anderen
+                    # Projekts - ein solcher Rueckfall fuehrte die Reisen verschiedener Projekte
+                    # zusammen.
+                    #
+                    # Der Einbetter ist BEST-EFFORT: Ohne ihn entsteht kein kanonischer Name und
+                    # kein Registereintrag, der Lauf laeuft unveraendert durch, und jede
+                    # Erkennungszeile verhaelt sich wie vor dem Register (sie faellt auf ihren
+                    # Rohnamen zurueck). Gebaut wird er erst HIER, innerhalb der Landmark-Phase -
+                    # `rebuild_run_grouping` erreicht diese Stelle nie und laedt deshalb kein
+                    # 113-MB-Modell in einen Anfragepfad (S10).
+                    landmark_embedder = _try_build(build_embedder)
+                    landmark_register = [
+                        LandmarkNameEntry(
+                            normalized_name=row.normalized_name,
+                            display_name=row.display_name,
+                            embedding=list(row.embedding),
+                            locality=row.locality,
+                            id=row.id,
+                        )
+                        for row in (
+                            await session.execute(
+                                select(LandmarkName).where(LandmarkName.project_id == project.id)
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    ]
+
                     for start in range(0, len(landmark_candidate_ids), landmark_concurrency):
                         block_ids = landmark_candidate_ids[start : start + landmark_concurrency]
                         results = await asyncio.gather(
@@ -2481,8 +2536,53 @@ async def run_criterion_scoring(
                                 session, photo_id, CloudVisionPhase.LANDMARK
                             )
                             if detection.name is not None:
+                                # DIE KANONISIERUNG, und nur OBERHALB DER GRENZE: Ein unsicherer
+                                # und wahrscheinlich falscher Name soll nicht die Anzeigeform eines
+                                # Registereintrags besetzen, dem sich spaeter der richtige
+                                # anschliesst (ADR 0107 Punkt 5). Ohne Einbetter entsteht kein
+                                # kanonischer Name - kein Fehlerfall.
+                                #
+                                # `name` und `confidence` gehen dagegen UNGEFILTERT in die Zeile:
+                                # Die Antwort ist bezahlt und bleibt vollstaendig erhalten.
+                                canonical_name: str | None = None
+                                if (
+                                    landmark_embedder is not None
+                                    and detection.confidence >= LANDMARK_CONFIDENCE_THRESHOLD
+                                ):
+                                    # Die SPERRE ist der aufgeloeste Ortsname dieses Fotos - genau
+                                    # die Namensstufe des Hinweises, nie die Koordinatenstufe: Eine
+                                    # Zelle von rund 11 km ist als Unterscheidungsmerkmal zweier
+                                    # Sehenswuerdigkeiten zu grob.
+                                    hint = landmark_hints[photo_id]
+                                    entry = resolve_canonical_landmark(
+                                        detection.name,
+                                        hint.locality if hint is not None else None,
+                                        landmark_register,
+                                        landmark_embedder,
+                                    )
+                                    if entry.id is None:
+                                        register_row = LandmarkName(
+                                            project_id=project.id,
+                                            normalized_name=entry.normalized_name,
+                                            display_name=entry.display_name,
+                                            embedding=entry.embedding,
+                                            locality=entry.locality,
+                                        )
+                                        session.add(register_row)
+                                        await session.flush()
+                                        # Die `id` NACHSETZEN, auf genau der Instanz im
+                                        # Schnappschuss - sonst legte derselbe Eintrag beim
+                                        # naechsten Treffer eine zweite Zeile an und verletzte
+                                        # `UniqueConstraint(project_id, normalized_name)`.
+                                        entry.id = register_row.id
+                                    canonical_name = entry.display_name
                                 await _upsert_landmark_detection(
-                                    session, photo_id, detection, now, settings.landmark_provider
+                                    session,
+                                    photo_id,
+                                    detection,
+                                    now,
+                                    settings.landmark_provider,
+                                    canonical_name,
                                 )
 
                         # Fortgeschrieben wird AM BLOCKENDE, nie beim Betreten des Blocks: sonst
@@ -2722,6 +2822,7 @@ async def run_classification(
         build_aesthetics,
         build_landmarker,
         build_landmark_client,
+        build_embedder=build_embedder,
         run=run,
         use_cloud=use_cloud,
     )

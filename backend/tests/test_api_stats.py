@@ -984,16 +984,67 @@ class TestTheRanking:
         assert [item["ranking"]["partition_size"] for item in photos["items"]] == [2, 2]
 
 
-async def _add_landmark_detection(session: AsyncSession, photo: Photo) -> None:
+async def _add_landmark_detection(
+    session: AsyncSession, photo: Photo, *, confidence: float = 0.9
+) -> None:
     session.add(
         PhotoLandmarkDetection(
             photo_id=photo.id,
             name="Eiffelturm",
-            confidence=0.9,
+            confidence=confidence,
             computed_at=datetime(2023, 6, 3, 12, 0),
         )
     )
     await session.commit()
+
+
+class TestTheCostFiguresCountEveryPaidAnswer:
+    """specs/features/0469: Hier wird AUSDRUECKLICH NICHT nach der Konfidenzgrenze gefiltert.
+
+    `photo_landmark_detections` ist an dieser Stelle der Nachweis dafuer, dass Geld geflossen ist,
+    nicht eine Aussage ueber einen verwendbaren Namen - ein unsicherer Treffer hat ebenso gekostet
+    wie ein sicherer. Die Stelle sieht neben `worker.py::_landmark_names` wie eine Inkonsistenz aus
+    und ist keine; ohne diese beiden Faelle wuerde sie frueher oder spaeter "angeglichen"."""
+
+    async def test_a_run_of_only_discarded_hits_still_reports_its_rows_and_costs(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        photo = await _add_photo(db_session, project, "a.jpg")
+        await _add_landmark_detection(db_session, photo, confidence=0.1)
+        await _add_criterion_scoring_run(
+            db_session,
+            project,
+            started_at=datetime(2023, 6, 3),
+            finished_at=datetime(2023, 6, 3, 13, 0),
+            landmark_api_calls=1,
+            landmark_cost_usd=0.0052,
+        )
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        landmark_cost = next(
+            entry for entry in payload["cost"]["by_purpose"] if entry["purpose"] == "landmark"
+        )
+        assert landmark_cost["cost_usd"] == pytest.approx(0.0052)
+        assert landmark_cost["has_unrecorded_runs"] is False
+
+    def test_the_statistics_module_filters_neither_on_confidence_nor_on_the_canonical_name(
+        self,
+    ) -> None:
+        """Ein struktureller Waechter, weil ein Verhaltenstest hier zu wenig faengt: Eine spaeter
+        eingebaute Filterung auf `canonical_name is not null` roetete den Fall darueber nicht,
+        solange die Messlage keinen kanonischen Namen traegt."""
+        source = (
+            Path(__file__).resolve().parent.parent / "src" / "photosort" / "api" / "stats.py"
+        ).read_text(encoding="utf-8")
+
+        assert "PhotoLandmarkDetection.confidence" not in source
+        assert "PhotoLandmarkDetection.canonical_name" not in source
+        # Gegenprobe: die Tabelle wird dort ueberhaupt gelesen, der Waechter laeuft nicht ins Leere.
+        assert "PhotoLandmarkDetection" in source
 
 
 async def _add_remote_category_run(

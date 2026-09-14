@@ -31,6 +31,7 @@ from photosort.cloud_vision import (
 )
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.landmark import (
+    LANDMARK_CONFIDENCE_THRESHOLD,
     MAX_LANDMARK_NAME_LENGTH,
     AnthropicLandmarkClient,
     LandmarkApiError,
@@ -44,6 +45,7 @@ from photosort.models import (
     CriterionSource,
     DuplicateDecision,
     Event,
+    LandmarkName,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
@@ -6242,3 +6244,355 @@ class TestTheLandmarkPhaseCarriesTheCoarsePlaceHint:
         # Gegenprobe: beide Senken tragen ueberhaupt etwas, der Fall oben ist nicht leer.
         assert "simulierter Cloud-Fehler" in own_log
         assert "simulierter Cloud-Fehler" in error_row.error_message
+
+
+# specs/features/0469, Teil 2 Schritt 4: das Namensregister in der Landmark-Phase.
+
+
+class ConstantEmbedder:
+    """Ein Einbetter, der jeden Text auf denselben Vektor abbildet - damit entscheidet allein die
+    Ortsnamen-Sperre, ob zwei Namen zusammenfallen (Aehnlichkeit 1.0, maximale Gegenkraft)."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def embed(self, text: str) -> list[float]:
+        self.calls.append(text)
+        return [1.0, 0.0]
+
+
+class ExplodingEmbedderBuilder:
+    """Ein Builder, dessen Aufruf den Test zum Scheitern bringt - so wird "es wurde gar nicht erst
+    versucht" zu einer beweisbaren Aussage statt zu einer Zaehlerbeobachtung."""
+
+    def __call__(self) -> NoReturn:
+        pytest.fail("build_embedder darf an dieser Stelle nie aufgerufen werden")
+
+
+def _no_embedder() -> NoReturn:
+    """Der Fall "Modell nicht ladbar": `_try_build` faengt die Ausnahme und liefert `None`."""
+    raise RuntimeError("Einbettungsmodell nicht ladbar")
+
+
+async def _run_with_embedder(
+    session: AsyncSession,
+    project: Project,
+    scoring_run_id: int,
+    tmp_path: Path,
+    client: object,
+    build_place_resolver: object,
+    build_embedder: object,
+) -> CriterionScoringRun:
+    return await run_criterion_scoring(
+        session,
+        project,
+        scoring_run_id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda _model: client,  # type: ignore[arg-type,return-value]
+        build_place_resolver=build_place_resolver,  # type: ignore[arg-type]
+        build_embedder=build_embedder,  # type: ignore[arg-type]
+        use_cloud=True,
+    )
+
+
+async def _landmark_photo(
+    session: AsyncSession,
+    project: Project,
+    tmp_path: Path,
+    path: str,
+    etag: str,
+    taken_at: datetime,
+    *,
+    coords: tuple[float, float] | None = None,
+) -> Photo:
+    photo = await _add_photo(
+        session,
+        project,
+        path,
+        etag,
+        taken_at,
+        gps_lat=None if coords is None else coords[0],
+        gps_lon=None if coords is None else coords[1],
+    )
+    await _add_score(session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+    return photo
+
+
+async def _register_rows(session: AsyncSession, project_id: int) -> list[LandmarkName]:
+    return list(
+        (
+            await session.execute(
+                select(LandmarkName)
+                .where(LandmarkName.project_id == project_id)
+                .order_by(LandmarkName.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+class TestTheRegisterMakesTheNamesUniform:
+    async def test_a_first_hit_creates_a_register_row_and_its_canonical_name(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project = await _cloud_project(db_session, "register-erst")
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _landmark_photo(
+            db_session,
+            project,
+            tmp_path,
+            "a.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            coords=GARMISCH,
+        )
+        client = RecordingLandmarkClient(
+            detection=LandmarkDetection(name="Zugspitze", confidence=0.9)
+        )
+        resolver = _RecordingResolverFactory({place_cell(*GARMISCH): _locality_answer("Grainau")})
+
+        await _run_with_embedder(
+            db_session, project, scoring_run.id, tmp_path, client, resolver, ConstantEmbedder
+        )
+
+        [entry] = await _register_rows(db_session, project.id)
+        assert entry.normalized_name == "zugspitze"
+        assert entry.display_name == "Zugspitze"
+        assert entry.locality == "Grainau"
+        detection_row = (
+            await db_session.execute(
+                select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+            )
+        ).scalar_one()
+        assert detection_row.canonical_name == "Zugspitze"
+
+    async def test_two_spellings_end_up_in_one_event_instead_of_two(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Das eigentliche Ziel der Story: Zwei Erkennungszeilen mit verschiedenem `name`, aber
+        gleichem `canonical_name`, ergeben EIN Event statt zweier."""
+        project = await _cloud_project(db_session, "ein-event")
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        for index, path in enumerate(["a.jpg", "b.jpg"], start=1):
+            await _landmark_photo(
+                db_session,
+                project,
+                tmp_path,
+                path,
+                f"etag-{index}",
+                datetime(2023, 1, 1, 10, index, tzinfo=UTC),
+                coords=GARMISCH,
+            )
+        client = PerPhotoLandmarkClient(
+            [
+                LandmarkDetection(name="Zugspitze", confidence=0.9),
+                LandmarkDetection(name="Zugspitzgipfel", confidence=0.9),
+            ]
+        )
+        resolver = _RecordingResolverFactory({place_cell(*GARMISCH): _locality_answer("Grainau")})
+
+        run = await _run_with_embedder(
+            db_session, project, scoring_run.id, tmp_path, client, resolver, ConstantEmbedder
+        )
+
+        events = (
+            (
+                await db_session.execute(
+                    select(Event).where(Event.criterion_scoring_run_id == run.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [event.landmark_name for event in events] == ["Zugspitze"]
+        assert len(await _register_rows(db_session, project.id)) == 1
+
+    async def test_a_hit_below_the_threshold_never_enters_the_register(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Kanonisiert wird nur ein Name, der die Grenze erreicht (ADR 0107 Punkt 5): Ein
+        unsicherer und wahrscheinlich falscher Name soll nicht die Anzeigeform eines Eintrags
+        besetzen, dem sich spaeter der richtige anschliesst."""
+        project = await _cloud_project(db_session, "unter-der-grenze")
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _landmark_photo(
+            db_session,
+            project,
+            tmp_path,
+            "a.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            coords=GARMISCH,
+        )
+        client = RecordingLandmarkClient(
+            detection=LandmarkDetection(
+                name="Vermutung", confidence=LANDMARK_CONFIDENCE_THRESHOLD - 0.01
+            )
+        )
+        embedder = ConstantEmbedder()
+
+        await _run_with_embedder(
+            db_session,
+            project,
+            scoring_run.id,
+            tmp_path,
+            client,
+            _no_resolver,
+            lambda: embedder,
+        )
+
+        assert await _register_rows(db_session, project.id) == []
+        assert embedder.calls == []
+        detection_row = (
+            await db_session.execute(
+                select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+            )
+        ).scalar_one()
+        # Die Zeile selbst entsteht unveraendert vollstaendig - die Antwort ist bezahlt.
+        assert detection_row.name == "Vermutung"
+        assert detection_row.canonical_name is None
+
+    async def test_a_later_run_never_asks_a_discarded_photo_again(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Das Skip-bereits-gescorter-Fotos-Verhalten gilt providerunabhaengig und unabhaengig
+        davon, ob der Treffer verwendbar war - sonst kostete jede Wiederholung erneut Geld."""
+        project = await _cloud_project(db_session, "kein-zweiter-aufruf")
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        await _landmark_photo(
+            db_session,
+            project,
+            tmp_path,
+            "a.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            coords=GARMISCH,
+        )
+        detection = LandmarkDetection(
+            name="Vermutung", confidence=LANDMARK_CONFIDENCE_THRESHOLD - 0.01
+        )
+
+        first = RecordingLandmarkClient(detection=detection)
+        await _run_with_embedder(
+            db_session, project, scoring_run.id, tmp_path, first, _no_resolver, ConstantEmbedder
+        )
+        second = RecordingLandmarkClient(detection=detection)
+        await _run_with_embedder(
+            db_session, project, scoring_run.id, tmp_path, second, _no_resolver, ConstantEmbedder
+        )
+
+        assert len(first.calls) == 1
+        assert second.calls == []
+
+    async def test_without_an_embedder_the_run_completes_without_canonical_names(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Kein Einbetter, kein kanonischer Name, KEIN Laufabbruch: Die Erkennungszeilen entstehen
+        unveraendert, und jede verhaelt sich wie vor dem Register."""
+        project = await _cloud_project(db_session, "ohne-einbetter")
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        photo = await _landmark_photo(
+            db_session,
+            project,
+            tmp_path,
+            "a.jpg",
+            "etag-1",
+            datetime(2023, 1, 1, tzinfo=UTC),
+            coords=GARMISCH,
+        )
+        client = RecordingLandmarkClient(
+            detection=LandmarkDetection(name="Zugspitze", confidence=0.9)
+        )
+
+        run = await _run_with_embedder(
+            db_session, project, scoring_run.id, tmp_path, client, _no_resolver, _no_embedder
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+        assert await _register_rows(db_session, project.id) == []
+        detection_row = (
+            await db_session.execute(
+                select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+            )
+        ).scalar_one()
+        assert detection_row.name == "Zugspitze"
+        assert detection_row.canonical_name is None
+        [event] = (
+            (
+                await db_session.execute(
+                    select(Event).where(Event.criterion_scoring_run_id == run.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert event.landmark_name == "Zugspitze"
+
+    async def test_the_embedder_is_never_built_without_a_landmark_phase(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Ohne Einwilligung faellt die ganze Cloud-Phase aus - dann gibt es auch nichts zu
+        kanonisieren, und ein 113-MB-Modell zu laden waere reine Arbeit."""
+        project = await _make_project(db_session, name="ohne-einwilligung")
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        await _landmark_photo(
+            db_session, project, tmp_path, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+        )
+
+        run = await _run_with_embedder(
+            db_session,
+            project,
+            scoring_run.id,
+            tmp_path,
+            _failing_landmark_client_builder,
+            _no_resolver,
+            ExplodingEmbedderBuilder(),
+        )
+
+        assert run.status == ScanStatus.SUCCESS
+
+    async def test_the_register_of_one_project_is_never_read_for_another(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Kreuzfall (S8): Zwei Projekte, derselbe normalisierte Name - zwei Zeilen, keine
+        Constraint-Verletzung, und die Zeile des einen wird fuer das andere nicht gelesen."""
+        register_rows: list[LandmarkName] = []
+        for name in ("projekt-a", "projekt-b"):
+            project = await _cloud_project(db_session, name)
+            scoring_run = await _add_successful_scoring_run(db_session, project)
+            await _landmark_photo(
+                db_session,
+                project,
+                tmp_path,
+                f"{name}.jpg",
+                f"etag-{name}",
+                datetime(2023, 1, 1, tzinfo=UTC),
+                coords=GARMISCH,
+            )
+            client = RecordingLandmarkClient(
+                detection=LandmarkDetection(name="Zugspitze", confidence=0.9)
+            )
+            await _run_with_embedder(
+                db_session,
+                project,
+                scoring_run.id,
+                tmp_path,
+                client,
+                _no_resolver,
+                ConstantEmbedder,
+            )
+            register_rows.extend(await _register_rows(db_session, project.id))
+
+        assert len(register_rows) == 2
+        assert {row.project_id for row in register_rows} == {
+            row.project_id for row in register_rows
+        }
+        assert all(row.normalized_name == "zugspitze" for row in register_rows)
+        assert register_rows[0].project_id != register_rows[1].project_id
