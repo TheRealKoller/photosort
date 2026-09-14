@@ -1,6 +1,6 @@
 # 0375 - Projektübersicht zeigt Umfang und nächsten Schritt
 
-**Status:** Accepted
+**Status:** Implemented ([PR #482](https://github.com/TheRealKoller/photosort/pull/482))
 **Erstellt:** 2026-09-14
 **Bezug:** [Issue #375](https://github.com/TheRealKoller/photosort/issues/375)
 
