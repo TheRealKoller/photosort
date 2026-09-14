@@ -214,9 +214,12 @@ function WeightSection({ diagnosis }: { diagnosis: FeedbackDiagnosisOut }) {
       <h3 className="text-base text-text-h">Gewichte der Qualitätskriterien</h3>
       {/* Eigener Scroll-Container statt einer umstrukturierten Darstellung: Vier Zahlenspalten
           nebeneinander sind bei 360px schmal, aber lesbar - als Kartenliste verlören sie die
-          Achse, auf der sie verglichen werden. */}
+          Achse, auf der sie verglichen werden.
+          Die Mindestbreite und die Polsterung je Zahlenspalte sind KEINE Kosmetik: Ohne sie
+          stoßen die Spaltenköpfe bei 360px aneinander („GELTENDVORSCHLAGABWEICHUNG"), und der
+          horizontale Scroll zeigt eine Tabelle, deren Kopfzeile nicht mehr lesbar ist. */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-80 border-collapse text-sm">
+        <table className="w-full min-w-96 border-collapse text-sm">
           <caption className="sr-only">
             Geltendes Gewicht, Vorschlag, Abweichung und Fallzahl je Qualitätskriterium
           </caption>
@@ -225,16 +228,16 @@ function WeightSection({ diagnosis }: { diagnosis: FeedbackDiagnosisOut }) {
               <th scope="col" className="py-2 text-left">
                 Kriterium
               </th>
-              <th scope="col" className="py-2 text-right">
+              <th scope="col" className="py-2 pl-3 text-right">
                 Geltend
               </th>
-              <th scope="col" className="py-2 text-right">
+              <th scope="col" className="py-2 pl-3 text-right">
                 Vorschlag
               </th>
-              <th scope="col" className="py-2 text-right">
+              <th scope="col" className="py-2 pl-3 text-right">
                 Abweichung
               </th>
-              <th scope="col" className="py-2 text-right">
+              <th scope="col" className="py-2 pl-3 text-right">
                 Fälle
               </th>
             </tr>
@@ -321,10 +324,10 @@ function WeightSection({ diagnosis }: { diagnosis: FeedbackDiagnosisOut }) {
               <th scope="col" className="py-2 text-left">
                 Kriterium
               </th>
-              <th scope="col" className="py-2 text-right">
+              <th scope="col" className="py-2 pl-3 text-right">
                 Geltend
               </th>
-              <th scope="col" className="py-2 text-right">
+              <th scope="col" className="py-2 pl-3 text-right">
                 Neu
               </th>
             </tr>
@@ -339,8 +342,10 @@ function WeightSection({ diagnosis }: { diagnosis: FeedbackDiagnosisOut }) {
                 <th scope="row" className="py-2 text-left font-normal text-text">
                   {row.displayName}
                 </th>
-                <td className="py-2 text-right font-mono text-text">{formatWeight(row.current)}</td>
-                <td className="py-2 text-right font-mono text-text-h">
+                <td className="py-2 pl-3 text-right font-mono text-text">
+                  {formatWeight(row.current)}
+                </td>
+                <td className="py-2 pl-3 text-right font-mono text-text-h">
                   {row.proposed === null ? NOT_AVAILABLE : formatWeight(row.proposed)}
                 </td>
               </tr>
@@ -365,16 +370,18 @@ function WeightTableRow({ row }: { row: WeightRow }) {
       <th scope="row" className="py-2 text-left font-normal text-text">
         {row.displayName}
       </th>
-      <td className="py-2 text-right font-mono text-text">{formatWeight(row.current)}</td>
-      <td className="py-2 text-right font-mono text-text-h">
+      <td className="py-2 pl-3 text-right font-mono text-text">{formatWeight(row.current)}</td>
+      <td className="py-2 pl-3 text-right font-mono text-text-h">
         {row.proposed === null ? NOT_AVAILABLE : formatWeight(row.proposed)}
       </td>
       {/* Die Richtung steht im VORZEICHEN, nicht in einer Einfärbung - keine Aussage allein über
           Farbe. */}
-      <td className="py-2 text-right font-mono text-text">
+      <td className="py-2 pl-3 text-right font-mono text-text">
         {row.delta === null ? NOT_AVAILABLE : formatDelta(row.delta)}
       </td>
-      <td className="py-2 text-right font-mono text-text-muted">{formatCount(row.caseCount)}</td>
+      <td className="py-2 pl-3 text-right font-mono text-text-muted">
+        {formatCount(row.caseCount)}
+      </td>
     </tr>
   )
 }
