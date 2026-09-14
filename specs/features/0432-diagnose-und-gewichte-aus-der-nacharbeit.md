@@ -1,8 +1,9 @@
 # 0432 - Laufende Diagnose der Modellfehler und Gewichte aus der Nacharbeit
 
-**Status:** Accepted
+**Status:** Implemented ([PR #476](https://github.com/TheRealKoller/photosort/pull/476))
 **Erstellt:** 2026-09-13
 **Bezug:** [Issue #432](https://github.com/TheRealKoller/photosort/issues/432) (Story 8 und Abschluss des Zielbilds [#424](https://github.com/TheRealKoller/photosort/issues/424))
+**Umgesetzt in drei Teilen:** [PR #473](https://github.com/TheRealKoller/photosort/pull/473) (Ereignis-Log der Nacharbeit), [PR #474](https://github.com/TheRealKoller/photosort/pull/474) (laufende Diagnose), [PR #476](https://github.com/TheRealKoller/photosort/pull/476) (Gewichte aus dem Feedback)
 
 **Umfang:** ein Mehrfaches des Richtwerts von rund 200 Zeilen. Vier Abschnitte tragen ihn, jeder aus
 einem eigenen Grund: „Architektur / Umsetzung" führt die betroffenen Dateien je Pull Request auf,
