@@ -1,6 +1,6 @@
 # 0477 - Motivwechsel als Trennsignal für Events
 
-**Status:** Accepted
+**Status:** Implemented ([PR #491](https://github.com/TheRealKoller/photosort/pull/491))
 **Erstellt:** 2026-09-14
 **Bezug:** [Issue #477](https://github.com/TheRealKoller/photosort/issues/477)
 
