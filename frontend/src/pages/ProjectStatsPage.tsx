@@ -3,6 +3,8 @@ import { useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { CloudVisionPurpose, ProjectStatsCostByPurpose, ProjectStatsOut } from '../api/types'
+import { FeedbackDiagnosisSection } from '../components/FeedbackDiagnosisSection'
+import { DetailRow, Metric, MetricRow, Section } from '../components/StatsLayout'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '../components/ui/popover'
@@ -36,59 +38,6 @@ import {
  * Akzeptanzkriterium A3 ausschliesst. Den Projektkontext liefert der Sticky-Header.
  */
 
-/** Wiederkehrendes Muster "Grosszahl + Label" (Design-System/UI-Abschnitt der Spec): der Wert in
- * `text-xl`, darunter das Label klein. Rein typografisch, kein eigener Hintergrund, kein
- * Rahmen. */
-function Metric({
-  value,
-  label,
-  info,
-  children,
-}: {
-  value: string
-  label: string
-  info?: ReactNode
-  children?: ReactNode
-}) {
-  return (
-    <div className="col-span-12 flex min-w-0 flex-col gap-1 sm:col-span-6 lg:col-span-3">
-      {/* Kennzahlen in Festbreitenschrift (Board): eine Zahl ist eine Datenausgabe, kein
-          Fliesstext - und untereinander stehende Kennzahlen fluchten dadurch. */}
-      <span className="font-mono text-xl font-semibold text-text-h">{value}</span>
-      <span className="flex items-center gap-1 text-sm text-text">
-        {label}
-        {info}
-      </span>
-      {children}
-    </div>
-  )
-}
-
-/**
- * Kennzahlen stehen auf breiten Schirmen nebeneinander und auf dem Smartphone gestapelt.
- *
- * Die erste Verwendung des 12-Spalten-Rasters des Boards (Spaltenbreite fluessig, Zwischenraum 12px
- * = `gap-x-3`). Bewusst hier und nicht als Seitengeruest: eine Kennzahlenreihe ist genau der Fall,
- * fuer den ein festes Spaltenraster gegenueber `flex-wrap` etwas bringt - die Werte stehen
- * untereinander auf einer Achse statt inhaltsabhaengig zu springen.
- */
-function MetricRow({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-12 gap-x-3 gap-y-6">{children}</div>
-}
-
-function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
-  return (
-    // Abschnittstrenner auf --separator: als freistehende Linie auf dem Grund erreichte --border
-    // 1.45:1 und war praktisch keine Linie.
-    <section aria-labelledby={id} className="flex flex-col gap-4 border-t border-separator pt-6">
-      <h2 id={id} className="text-lg text-text-h">
-        {title}
-      </h2>
-      {children}
-    </section>
-  )
-}
-
 /**
  * Erlaeuterung unmittelbar bei der Kennzahl (Akzeptanzkriterium A2) - das im Projekt etablierte
  * Info-Popover-Muster (Radix, Klick-Ausloeser, 44x44px Trefferflaeche). Bewusst KEIN
@@ -119,16 +68,6 @@ function InfoPopover({ label, children }: { label: string; children: ReactNode }
         <p className="text-sm text-text">{children}</p>
       </PopoverContent>
     </Popover>
-  )
-}
-
-/** Eine Zeile "Bezeichnung … x von y Fotos" bzw. "Bezeichnung … Wert". */
-function DetailRow({ term, children }: { term: ReactNode; children: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-separator py-2 last:border-b-0">
-      <dt className="flex items-center gap-1 text-sm text-text">{term}</dt>
-      <dd className="text-sm font-medium text-text-h">{children}</dd>
-    </div>
   )
 }
 
@@ -452,6 +391,10 @@ function StatsContent({ stats }: { stats: ProjectStatsOut }) {
           ))}
         </dl>
       </Section>
+
+      {/* Der Abschnitt laedt seine Zahlen SELBST und projektuebergreifend - er steht deshalb
+          ausserhalb von `stats` und nimmt keine Projekt-Id entgegen. */}
+      <FeedbackDiagnosisSection />
     </div>
   )
 }

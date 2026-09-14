@@ -59,6 +59,11 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # Laufs gehoeren muessen, und dass er ausdruecklich KEIN zusaetzliches Streich- und
     # Aufnahme-Ereignis erzeugt.
     ("post", "/projects/{project_id}/draft/exchange"),
+    # PR 2 derselben Spec: die laufende Diagnose. Ihre Beschreibung traegt die Aussage, die der
+    # Antwort selbst nicht anzusehen ist - dass die Zahlen PROJEKTUEBERGREIFEND und ueber beide
+    # Nutzer gelten, obwohl der Abschnitt auf der Projekt-Statistikseite steht, und dass die drei
+    # Tauschklassen nirgends summiert werden.
+    ("get", "/feedback/diagnosis"),
 )
 
 
