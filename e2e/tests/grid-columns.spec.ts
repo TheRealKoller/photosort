@@ -32,6 +32,8 @@ const SAME_ROW_TOLERANCE = 2
 const GRID_GAP = 12
 /** Zulaessige Abweichung beim Vergleich Kastenverhaeltnis gegen Bildverhaeltnis. */
 const RATIO_TOLERANCE = 0.02
+/** Wartegrenze, bis alle Kacheln einer Seite ihr Bild geladen haben. */
+const IMAGE_LOAD_TIMEOUT_MS = 30_000
 
 interface TileMeasurement extends Box {
   naturalWidth: number
@@ -45,13 +47,21 @@ async function photoTileBoxes(page: Page): Promise<TileMeasurement[]> {
   // Und die Bilder selbst sind erst nach ihrem authentifizierten Blob-Abruf geladen - ohne dieses
   // Warten waeren `naturalWidth`/`naturalHeight` 0 und der Beschnitt-Vergleich unten bedeutungslos.
   await expect
-    .poll(async () =>
-      tiles.evaluateAll((elements) =>
-        elements.every((element) => {
-          const image = element.querySelector('img')
-          return image !== null && image.complete && image.naturalWidth > 0
-        }),
-      ),
+    .poll(
+      async () =>
+        tiles.evaluateAll((elements) =>
+          elements.every((element) => {
+            const image = element.querySelector('img')
+            return image !== null && image.complete && image.naturalWidth > 0
+          }),
+        ),
+      {
+        // Eine volle Seite sind sechzig einzeln authentifizierte Blob-Abrufe - die Vorgabe von
+        // fuenf Sekunden reicht dafuer nicht verlaesslich, und ein Zeitablauf hier waere ein
+        // sprunghafter Fehlschlag ohne Aussage ueber die Geometrie.
+        timeout: IMAGE_LOAD_TIMEOUT_MS,
+        message: 'alle Kacheln haben ihr Bild geladen',
+      },
     )
     .toBe(true)
 
@@ -104,23 +114,33 @@ test('Fotouebersicht setzt justierte Zeilen ohne Beschnitt', async ({ page }) =>
   const shapes = new Set(boxes.map((box) => (box.naturalWidth / box.naturalHeight).toFixed(2)))
   expect(shapes.size, 'verschiedene Bildformate im Bestand').toBeGreaterThanOrEqual(3)
 
-  // Die LETZTE Zeile ist ausgenommen: sie bleibt bewusst ungestreckt und linksbuendig stehen.
-  const fullRows = rows.slice(0, -1)
-  const rasterLeft = Math.min(...boxes.map((box) => box.x))
-  const rasterRight = Math.max(
-    ...rows.map((row) => row[row.length - 1]!.x + row[row.length - 1]!.width),
-  )
+  // Die verfuegbare Breite kommt vom CONTAINER, nie aus den Kacheln selbst. Gegen eine aus den
+  // Kacheln abgeleitete Breite maesse dieser Vergleich sich selbst: Er bliebe auch dann gruen,
+  // wenn jede Kachel eine erzwungene Fremdbreite traegt - nachgewiesen im Rot-Nachweis, wo genau
+  // diese erste Fassung gruen blieb.
+  const rasterWidth = await page
+    .locator('[data-photo-grid]')
+    .evaluate((element) => element.clientWidth)
+  expect(rasterWidth, 'gemessene Rasterbreite').toBeGreaterThan(0)
 
-  for (const [index, row] of fullRows.entries()) {
+  // Die LETZTE Zeile ist ausgenommen: sie bleibt bewusst ungestreckt und linksbuendig stehen.
+  for (const [index, row] of rows.slice(0, -1).entries()) {
     const heights = row.map((box) => Math.round(box.height))
     expect(new Set(heights).size, `verschiedene Hoehen in Zeile ${index}`).toBe(1)
 
     const lineWidth = row.reduce((sum, box) => sum + box.width, 0) + GRID_GAP * (row.length - 1)
     expect(
-      Math.abs(lineWidth - (rasterRight - rasterLeft)),
-      `buendiges Zeilenende in Zeile ${index}`,
+      Math.abs(lineWidth - rasterWidth),
+      `buendiges Zeilenende in Zeile ${index} (${lineWidth} gegen ${rasterWidth})`,
     ).toBeLessThanOrEqual(SAME_ROW_TOLERANCE)
   }
+
+  // Und die letzte Zeile ist NACHWEISLICH kuerzer - ohne diese Gegenprobe bestuende die Aussage
+  // "sie wird nicht aufgezogen" auch gegen eine Umsetzung, die sie mitstreckt.
+  const lastRow = rows[rows.length - 1]!
+  const lastLineWidth =
+    lastRow.reduce((sum, box) => sum + box.width, 0) + GRID_GAP * (lastRow.length - 1)
+  expect(lastLineWidth, 'die letzte Zeile bleibt ungestreckt').toBeLessThan(rasterWidth)
 
   // KEIN BESCHNITT - der eigentliche Beweis: Das Kastenverhaeltnis jeder Kachel folgt dem
   // Verhaeltnis ihres tatsaechlich geladenen Bildes. Ein `object-cover` oder eine feste Form
