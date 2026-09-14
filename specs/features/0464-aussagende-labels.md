@@ -1,6 +1,6 @@
 # 0464 - Nur noch Labels, die etwas aussagen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #475](https://github.com/TheRealKoller/photosort/pull/475))
 **Erstellt:** 2026-09-14
 **Bezug:** [GitHub-Issue #464](https://github.com/TheRealKoller/photosort/issues/464)
 
