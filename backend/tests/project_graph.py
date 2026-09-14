@@ -22,6 +22,7 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    DuplicateDecision,
     Event,
     FeedbackEvent,
     FeedbackEventKind,
@@ -32,6 +33,7 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoDuplicateDecision,
     PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
@@ -231,6 +233,10 @@ async def build_project_graph(
             # null Zeilen stillschweigend. Ohne diese Zeile prueft die Loeschung der gemeinsamen
             # Entscheidungen nichts.
             FinalSelectionDecision(photo_id=photo.id, included=True),
+            # specs/features/0374-duplikate-vergleichen.md: dasselbe wie oben. Ohne diese Zeile
+            # prueft die Loeschung der Ausschuss-Entscheidungen nichts - und sie sind die Menge,
+            # die mitbestimmt, welche Bilddaten den Homeserver verlassen.
+            PhotoDuplicateDecision(photo_id=photo.id, decision=DuplicateDecision.KEEP),
             # specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md: dasselbe wie oben.
             # Das Ereignis-Log ist append-only, die Projektloeschung ist seine EINZIGE Ausnahme
             # (S13) - ohne diese Zeile prueft sie dort nichts. `event_id` steht bewusst gesetzt

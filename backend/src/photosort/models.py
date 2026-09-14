@@ -1042,6 +1042,59 @@ class FinalSelectionDecision(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
+class DuplicateDecision(enum.StrEnum):
+    """Die Antwort des Nutzers auf die DUPLIKATFRAGE: Ueberlebt diese Aufnahme den
+    Ausschuss-Schritt (ADR 0104)?
+
+    `DISCARD` und ausdruecklich nicht `RatingStatus.REJECTED`: Jenes ist die Albumentscheidung
+    eines Nutzers und keine Aussage ueber die Bildguete. Hier steht die andere Frage auf einer
+    anderen Ebene. Ein geteilter Wertevorrat machte die beiden an jeder Lesestelle
+    verwechselbar."""
+
+    KEEP = "keep"
+    DISCARD = "discard"
+
+
+class PhotoDuplicateDecision(Base):
+    """Die Entscheidung des PROJEKTS ueber EIN Foto des Ausschusses (ADR 0104 Punkt 2).
+
+    DIE ABWESENHEIT DER ZEILE HEISST "NOCH NICHT ENTSCHIEDEN", und es gibt keinen Weg zurueck in
+    diesen Zustand: Es entsteht kein `DELETE`-Endpunkt, aendern heisst den anderen Wert schreiben.
+
+    KEIN `user_id`, KEINE Lauf-Bindung: Was nach dem Ausschuss weiterlaeuft, ist ein
+    Projektvorgang. Zwei nutzereigene Antworten darauf waeren zwei widersprueckliche Wahrheiten
+    ueber denselben Bestand, und der Kriterien-Lauf muesste eine davon waehlen.
+
+    Die Zeile haengt am Foto und UEBERLEBT deshalb einen erneuten Lauf ohne durchsetzenden Code:
+    `worker.py::run_project_scoring` setzt `duplicate_of`, `cluster_key` und `suggested_status`
+    zurueck und fasst diese Tabelle nicht an."""
+
+    __tablename__ = "photo_duplicate_decisions"
+
+    # Primaerschluessel UND Fremdschluessel (Muster `FinalSelectionDecision`, Auflage S11):
+    # "hoechstens eine Entscheidung je Foto" ist damit strukturell wahr, ohne eigenen
+    # Unique-Constraint - und genau darauf beruht, dass ein wiederholtes `PUT` ueberschreibt statt
+    # in einen `IntegrityError` und damit eine 500 zu laufen. Der echte Fremdschluessel ist
+    # Pflicht: Die Loeschzusage in `project_deletion.py` prueft Erreichbarkeit ueber die Kanten in
+    # `Base.metadata`, eine bloss logische Spalte fiele still aus der Pruefung. Der Name ist
+    # ausgeschrieben, weil `Base.metadata` keine `naming_convention` traegt.
+    photo_id: Mapped[int] = mapped_column(
+        ForeignKey("photos.id", name="fk_photo_duplicate_decisions_photo_id"), primary_key=True
+    )
+    # NOT NULL, KEIN `default`, KEIN `server_default` (Auflage S12): Ein Vorgabewert erfaende eine
+    # Entscheidung, die niemand getroffen hat - und diese Entscheidung bestimmt mit, welche
+    # Bilddaten den Homeserver Richtung Cloud-Anbieter verlassen.
+    #
+    # `native_enum=False` wie ueberall im Datenmodell: Die Spalte ist eine Zeichenkette ohne
+    # DB-seitige Pruefeinschraenkung. Der Wertevorrat wird von der Datenbank damit NICHT erzwungen,
+    # und genau deshalb prueft das Ueberlebenden-Praedikat in `duplicates.py` POSITIV auf `KEEP`
+    # statt negativ auf `DISCARD` (Auflage S2) - ein unerwarteter Wert faellt so zur
+    # zurueckhaltenden Seite, nicht zum Abfluss.
+    decision: Mapped[DuplicateDecision] = mapped_column(
+        SQLEnum(DuplicateDecision, native_enum=False, length=16)
+    )
+
+
 class FeedbackEventKind(enum.StrEnum):
     """Die neun Arten der Nacharbeit, die aufgezeichnet werden (ADR 0100).
 
