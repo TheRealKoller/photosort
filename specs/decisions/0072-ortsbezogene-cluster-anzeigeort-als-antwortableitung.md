@@ -4,8 +4,11 @@
 **Teilweise abgelöst:** das Antwortfeld `cluster_place` (Entscheidung 1, geht in `PhotoOut.event`
 auf) und die indexbasierte Schlüsselform `cluster-<n>-<i>` (Entscheidung 3, entfällt mit der
 Sehenswürdigkeit als Trennsignal) durch ADR
-[`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md). Unverändert weiter
-gelten die Trennung von Foto-Ort und Gruppen-Ort, die Herkunft der Namen aus
+[`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md); dazu die Aussage, ein
+abgeleiteter **Orts**wert werde nie persistiert (Entscheidung 1, letzter Absatz), durch ADR
+[`0102`](./0102-ortsauskunft-je-zelle-projektgebunden-eventname-als-laufartefakt.md) — die Auskunft
+über eine vergröberte Ortszelle wird dort projektgebunden abgelegt. Unverändert weiter gelten die
+Trennung von Foto-Ort und Gruppen-Ort, die Herkunft der **Sehenswürdigkeits**namen aus
 `photo_landmark_detections`, die 500 m, der Bezug auf das letzte koordinatentragende Foto, die
 beiden Verwerfungsregeln in `extract_gps` und die Pflicht zur ausgeschriebenen Laufbindung.
 **Datum:** 2026-09-09
