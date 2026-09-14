@@ -917,3 +917,261 @@ def test_keine_ausgabe_nennt_die_remote_url(wegwerf: Wegwerf) -> None:
     lauf = _laufe(wegwerf.haupt, "pruefen")
 
     assert str(wegwerf.origin) not in lauf.stdout + lauf.stderr
+
+
+# --- Die Migrationskette -----------------------------------------------------------------------
+
+REPO_WURZEL = Path(__file__).parents[2]
+VERSIONEN = REPO_WURZEL / "backend" / "alembic" / "versions"
+
+
+def _migration(verzeichnis: Path, kennung: str, unten: str | None, slug: str = "sache") -> Path:
+    """Eine Migrationsdatei in der Form, die der Bestand traegt."""
+    verzeichnis.mkdir(parents=True, exist_ok=True)
+    unten_text = "None" if unten is None else f'"{unten}"'
+    pfad = verzeichnis / f"{kennung}_{slug}.py"
+    pfad.write_text(
+        '"""probe"""\n\n'
+        "from collections.abc import Sequence\n"
+        "from typing import Union\n\n"
+        f'revision: str = "{kennung}"\n'
+        f"down_revision: Union[str, Sequence[str], None] = {unten_text}\n"
+        "branch_labels = None\n"
+        "depends_on = None\n",
+        encoding="utf-8",
+    )
+    return pfad
+
+
+def test_der_zeilenparser_liest_kennung_und_vorgaenger(
+    nummern_module: ModuleType, tmp_path: Path
+) -> None:
+    pfad = _migration(tmp_path / "versions", "aaaaaaaaaaaa", "bbbbbbbbbbbb")
+
+    gelesen = nummern_module.migration_aus_datei(pfad)
+
+    assert (gelesen.kennung, gelesen.unten) == ("aaaaaaaaaaaa", "bbbbbbbbbbbb")
+
+
+def test_die_unterste_migration_traegt_kein_down_revision(
+    nummern_module: ModuleType, tmp_path: Path
+) -> None:
+    pfad = _migration(tmp_path / "versions", "aaaaaaaaaaaa", None)
+
+    assert nummern_module.migration_aus_datei(pfad).unten is None
+
+
+def test_die_kette_ueber_den_echten_bestand_loest_auf(nummern_module: ModuleType) -> None:
+    """Bindetest: derselbe Zeilenparser, den `backend/tests/test_migration_chain.py` benutzt -
+    die Autoritaet ueber die echte Kette bleibt dort, hier wird gemessen, dass beide ueber den
+    echten Bestand dasselbe sagen."""
+    dateien = sorted(VERSIONEN.glob("*.py"))
+    kette = nummern_module.aufgeloeste_kette(VERSIONEN)
+
+    # Der Parser aus `backend/tests/test_migration_chain.py`, wortgleich nachgezogen.
+    aus_dem_netz: list[str] = []
+    for pfad in dateien:
+        for zeile in pfad.read_text(encoding="utf-8").splitlines():
+            if zeile.startswith("revision: str = ") or zeile.startswith("revision = "):
+                aus_dem_netz.append(zeile.split("=", 1)[1].strip().strip("\"'"))
+                break
+
+    assert len(kette) == len(dateien) >= 35
+    assert len(aus_dem_netz) == len(dateien), "der Parser des Netzes liest jede Datei"
+    assert set(aus_dem_netz) == {eintrag.kennung for eintrag in kette}
+
+
+def test_die_neue_kennungsform_ist_fuer_den_bestehenden_parser_sichtbar(
+    nummern_module: ModuleType, tmp_path: Path
+) -> None:
+    """Faellt das, sieht das bestehende Sicherheitsnetz die neuen Kennungen still nicht mehr -
+    die einzige Art, wie diese Story AK 8 verletzen koennte."""
+    kennung = nummern_module.revisionskennung(VEKTOR_BRANCH, VEKTOR_SLUG)
+    pfad = _migration(tmp_path / "versions", kennung, "f6a7b8c9d0e1")
+
+    zeilen = [
+        zeile
+        for zeile in pfad.read_text(encoding="utf-8").splitlines()
+        if zeile.startswith("revision: str = ") or zeile.startswith("revision = ")
+    ]
+
+    assert len(zeilen) == 1
+    assert zeilen[0].split("=", 1)[1].strip().strip("\"'") == kennung
+
+
+def test_keine_neue_kennung_kollidiert_mit_dem_bestand(nummern_module: ModuleType) -> None:
+    bestand = {eintrag.kennung for eintrag in nummern_module.aufgeloeste_kette(VERSIONEN)}
+    neu = nummern_module.revisionskennung(VEKTOR_BRANCH, VEKTOR_SLUG)
+
+    assert neu not in bestand
+
+
+def test_zwei_koepfe_werden_laut_gemeldet_statt_geraten(
+    nummern_module: ModuleType, tmp_path: Path
+) -> None:
+    versionen = tmp_path / "versions"
+    _migration(versionen, "aaaaaaaaaaaa", None)
+    _migration(versionen, "bbbbbbbbbbbb", "aaaaaaaaaaaa")
+    _migration(versionen, "cccccccccccc", "aaaaaaaaaaaa")
+
+    with pytest.raises(nummern_module.ZuteilerFehler, match=r"Kopf"):
+        nummern_module.aufgeloeste_kette(versionen)
+
+
+def test_ein_unaufloesbares_down_revision_haelt_an(
+    nummern_module: ModuleType, tmp_path: Path
+) -> None:
+    versionen = tmp_path / "versions"
+    _migration(versionen, "aaaaaaaaaaaa", "gibtesnichtxx")
+
+    with pytest.raises(nummern_module.ZuteilerFehler):
+        nummern_module.aufgeloeste_kette(versionen)
+
+
+# --- Das Umhaengen bei verschobenem Head -------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Kettenstand:
+    ort: Wegwerf
+    versionen: Path
+
+
+@pytest.fixture
+def mit_migrationen(wegwerf: Wegwerf) -> Kettenstand:
+    """Zwei Migrationen auf `main`, zwei eigene darueber - und `main` laeuft danach weiter."""
+    versionen = wegwerf.haupt / "backend" / "alembic" / "versions"
+    _migration(versionen, "111111111111", None, "erste")
+    _migration(versionen, "222222222222", "111111111111", "zweite")
+    _git(wegwerf.haupt, "add", "-A")
+    _git(wegwerf.haupt, "commit", "--quiet", "-m", "feat: zwei Migrationen")
+    _git(wegwerf.haupt, "push", "--quiet", "origin", "z/eigen:main")
+    _git(wegwerf.haupt, "fetch", "--quiet", "origin")
+
+    _migration(versionen, "aaaaaaaaaaaa", "222222222222", "eigene-unterste")
+    _migration(versionen, "bbbbbbbbbbbb", "aaaaaaaaaaaa", "eigene-oberste")
+    _git(wegwerf.haupt, "add", "-A")
+    _git(wegwerf.haupt, "commit", "--quiet", "-m", "feat: zwei eigene Migrationen")
+    return Kettenstand(wegwerf, versionen)
+
+
+def _main_laeuft_weiter(stand: Kettenstand) -> None:
+    _git(stand.ort.pflege, "fetch", "--quiet", "origin")
+    _git(stand.ort.pflege, "checkout", "--quiet", "-B", "main", "origin/main")
+    _migration(
+        stand.ort.pflege / "backend" / "alembic" / "versions",
+        "333333333333",
+        "222222222222",
+        "fremde",
+    )
+    _git(stand.ort.pflege, "add", "-A")
+    _git(stand.ort.pflege, "commit", "--quiet", "-m", "feat: fremde Migration")
+    _git(stand.ort.pflege, "push", "--quiet", "origin", "main")
+    _git(stand.ort.haupt, "fetch", "--quiet", "origin")
+    # Der Abgleich mit `main` selbst - genau die Lage, in der umgehaengt wird: Die fremde
+    # Migration liegt jetzt lokal, und die Kette ist gegabelt.
+    _git(stand.ort.haupt, "merge", "--quiet", "--no-edit", "refs/remotes/origin/main")
+
+
+def test_migration_nennt_kennung_und_den_aktuellen_kopf(
+    mit_migrationen: Kettenstand,
+) -> None:
+    """Ohne eigene Migration ist der Kopf genau der von `origin/main`; mit eigenen bleibt ihre
+    interne Reihenfolge, sonst haette die Kette zwei Koepfe."""
+    lauf = _laufe(mit_migrationen.ort.haupt, "migration", "neue-sache")
+
+    assert lauf.code in ZULAESSIGE_CODES["migration"]
+    assert re.search(r"\brevision: [0-9a-f]{12}\b", lauf.stdout)
+    assert "down_revision: bbbbbbbbbbbb" in lauf.stdout
+
+
+def test_migration_weist_einen_unzulaessigen_slug_ab(mit_migrationen: Kettenstand) -> None:
+    lauf = _laufe(mit_migrationen.ort.haupt, "migration", "../../etc/passwd")
+
+    assert lauf.code == 30
+    assert not re.search(r"[0-9a-f]{12}", lauf.stdout)
+
+
+def test_ohne_verschobenen_head_ist_umhaengen_ein_no_op(mit_migrationen: Kettenstand) -> None:
+    lauf = _laufe(mit_migrationen.ort.haupt, "umhaengen")
+
+    assert lauf.code == 0
+    assert "gehaengt" not in lauf.stdout
+
+
+def test_bei_verschobenem_head_haengt_nur_die_unterste_eigene_um(
+    mit_migrationen: Kettenstand, nummern_module: ModuleType
+) -> None:
+    _main_laeuft_weiter(mit_migrationen)
+
+    lauf = _laufe(mit_migrationen.ort.haupt, "umhaengen")
+
+    assert lauf.code == 10
+    assert "aaaaaaaaaaaa hinter 333333333333 gehaengt" in lauf.stdout
+    kette = nummern_module.aufgeloeste_kette(mit_migrationen.versionen)
+    assert [eintrag.kennung for eintrag in kette] == [
+        "111111111111",
+        "222222222222",
+        "333333333333",
+        "aaaaaaaaaaaa",
+        "bbbbbbbbbbbb",
+    ]
+
+
+def test_nach_dem_umhaengen_hat_die_kette_genau_einen_kopf(
+    mit_migrationen: Kettenstand, nummern_module: ModuleType
+) -> None:
+    _main_laeuft_weiter(mit_migrationen)
+    _laufe(mit_migrationen.ort.haupt, "umhaengen")
+
+    kette = nummern_module.aufgeloeste_kette(mit_migrationen.versionen)
+    unten = {eintrag.unten for eintrag in kette}
+
+    assert len([eintrag for eintrag in kette if eintrag.kennung not in unten]) == 1
+
+
+def test_die_bereits_uebernommene_migration_wird_nie_angefasst(
+    mit_migrationen: Kettenstand,
+) -> None:
+    vorher = (mit_migrationen.versionen / "222222222222_zweite.py").read_bytes()
+    _main_laeuft_weiter(mit_migrationen)
+
+    _laufe(mit_migrationen.ort.haupt, "umhaengen")
+
+    assert (mit_migrationen.versionen / "222222222222_zweite.py").read_bytes() == vorher
+
+
+def test_ohne_origin_main_wird_nicht_umgehaengt_sondern_angehalten(
+    mit_migrationen: Kettenstand,
+) -> None:
+    """Fail-closed: ein fehlender Ref ist "nicht gemessen", nie "nichts umzuhaengen"."""
+    vorher = (mit_migrationen.versionen / "aaaaaaaaaaaa_eigene-unterste.py").read_bytes()
+    _git(mit_migrationen.ort.haupt, "update-ref", "-d", "refs/remotes/origin/main")
+
+    lauf = _laufe(mit_migrationen.ort.haupt, "umhaengen")
+
+    assert lauf.code == 30
+    assert (mit_migrationen.versionen / "aaaaaaaaaaaa_eigene-unterste.py").read_bytes() == vorher
+
+
+def test_kette_macht_die_reihenfolge_ohne_dateilesen_lesbar(
+    mit_migrationen: Kettenstand,
+) -> None:
+    lauf = _laufe(mit_migrationen.ort.haupt, "kette")
+
+    assert lauf.code == 0
+    assert lauf.stdout.splitlines()[:4] == [
+        "111111111111",
+        "222222222222",
+        "aaaaaaaaaaaa",
+        "bbbbbbbbbbbb",
+    ]
+
+
+def test_pruefen_meldet_einen_verschobenen_head(mit_migrationen: Kettenstand) -> None:
+    _main_laeuft_weiter(mit_migrationen)
+
+    lauf = _laufe(mit_migrationen.ort.haupt, "pruefen")
+
+    assert lauf.code in {10, 20}
+    assert "333333333333" in lauf.stdout

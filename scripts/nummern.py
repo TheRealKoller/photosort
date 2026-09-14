@@ -541,11 +541,240 @@ def eigene_dokumente(wurzel: Path, verzeichnis: str) -> dict[int, tuple[str, ...
     return {nummer: tuple(sorted(namen)) for nummer, namen in je_nummer.items()}
 
 
+# --- Die Migrationskette -----------------------------------------------------------------------
+
+VERSIONSVERZEICHNIS = "backend/alembic/versions"
+
+# Dieselben beiden Zeilenanfaenge, an denen `backend/tests/test_migration_chain.py` die Kennung
+# liest. `alembic` wird bewusst keine Abhaengigkeit von `scripts/`; die Autoritaet ueber die
+# echte Kette bleibt beim Netz im Backend, und ein Bindetest misst, dass beide ueber den echten
+# Bestand dasselbe sagen.
+_REVISIONSZEILEN = ("revision: str = ", "revision = ")
+_VORGAENGERZEILEN = ("down_revision: ", "down_revision = ")
+
+
+@dataclass(frozen=True)
+class Migration:
+    kennung: str
+    unten: str | None
+    pfad: Path
+
+
+def _wert_der_zeile(zeile: str) -> str | None:
+    wert = zeile.split("=", 1)[1].strip()
+    return None if wert == "None" else wert.strip("\"'")
+
+
+def migration_aus_datei(pfad: Path) -> Migration:
+    """Zeilenparser statt Import: eine Migrationsdatei wird nie ausgefuehrt."""
+    return migration_aus_text(pfad.read_text(encoding="utf-8"), pfad)
+
+
+def migration_aus_text(text: str, pfad: Path) -> Migration:
+    kennung: str | None = None
+    unten: str | None = None
+    for zeile in text.splitlines():
+        if kennung is None and zeile.startswith(_REVISIONSZEILEN):
+            kennung = _wert_der_zeile(zeile)
+        elif zeile.startswith(_VORGAENGERZEILEN):
+            unten = _wert_der_zeile(zeile)
+    if kennung is None:
+        raise ZuteilerFehler(
+            f"Keine Revisionszeile in {pfad.name}. Ohne sie faellt die Datei aus jeder "
+            "Kettenpruefung heraus, statt von ihr erfasst zu werden."
+        )
+    return Migration(gepruefte_kennung(kennung), unten, pfad)
+
+
+def aufgeloeste_kette(versionen: Path) -> tuple[Migration, ...]:
+    """Die Kette von unten nach oben, mit genau einem Fuss und genau einem Kopf.
+
+    Ein mehrdeutiger Kopf wird gemeldet, nie geraten: Bei zwei Koepfen ist `head` mehrdeutig und
+    `alembic upgrade head` - der Startbefehl des Backend-Containers - bricht ab.
+    """
+    eintraege = {
+        gelesen.kennung: gelesen
+        for gelesen in (migration_aus_datei(pfad) for pfad in sorted(versionen.glob("*.py")))
+    }
+    if not eintraege:
+        raise ZuteilerFehler(f"Keine Migration in {VERSIONSVERZEICHNIS} gefunden.")
+
+    fuesse = [eintrag for eintrag in eintraege.values() if eintrag.unten is None]
+    if len(fuesse) != 1:
+        raise ZuteilerFehler(
+            f"{len(fuesse)} Migrationen ohne down_revision - die Kette hat nicht genau einen Fuss."
+        )
+    darueber: dict[str, list[Migration]] = {}
+    for eintrag in eintraege.values():
+        if eintrag.unten is not None:
+            if eintrag.unten not in eintraege:
+                raise ZuteilerFehler(
+                    f"down_revision von {eintrag.pfad.name} zeigt auf eine Revision, die es "
+                    "nicht gibt. Die Kette loest nicht auf."
+                )
+            darueber.setdefault(eintrag.unten, []).append(eintrag)
+
+    kette = [fuesse[0]]
+    while True:
+        folger = darueber.get(kette[-1].kennung, [])
+        if len(folger) > 1:
+            raise ZuteilerFehler(
+                f"{len(folger)} Migrationen haengen an {kette[-1].kennung} - die Kette hat mehr "
+                "als einen Kopf, und 'head' ist damit mehrdeutig."
+            )
+        if not folger:
+            break
+        kette.append(folger[0])
+    if len(kette) != len(eintraege):
+        raise ZuteilerFehler(
+            f"{len(eintraege)} Migrationen, aber nur {len(kette)} von unten erreichbar - die "
+            "Kette faellt auseinander."
+        )
+    return tuple(kette)
+
+
+def kopf_der_menge(eintraege: Iterable[Migration]) -> str:
+    """Die eine Revision einer Menge, auf die keine andere derselben Menge zeigt."""
+    vorhanden = tuple(eintraege)
+    kennungen = {eintrag.kennung for eintrag in vorhanden}
+    referenziert = {eintrag.unten for eintrag in vorhanden if eintrag.unten in kennungen}
+    koepfe = sorted(kennungen - referenziert)
+    if len(koepfe) != 1:
+        raise ZuteilerFehler(
+            f"{len(koepfe)} Koepfe statt einem - 'head' waere mehrdeutig, und hier wird "
+            "angehalten statt geraten."
+        )
+    return koepfe[0]
+
+
+def migrationen_auf_main(wurzel: Path) -> tuple[Migration, ...]:
+    """Die Migrationen, die auf `origin/main` liegen - alles andere ist eigene Arbeit.
+
+    Laesst sich diese Menge nicht bestimmen, wird angehalten statt umgehaengt: Aendert sich
+    Kennung oder `down_revision` einer bereits ausgefuehrten Revision, findet
+    `alembic upgrade head` beim Containerstart den Wert aus `alembic_version` nicht mehr.
+    """
+    rohdaten = git_ausgabe(
+        [
+            "ls-tree",
+            "-r",
+            "-z",
+            "--name-only",
+            "--end-of-options",
+            ORIGIN_MAIN,
+            "--",
+            VERSIONSVERZEICHNIS,
+        ],
+        cwd=wurzel,
+    )
+    pfade = sorted(
+        pfad for pfad in nul_felder(rohdaten) if pfad.rpartition("/")[0] == VERSIONSVERZEICHNIS
+    )
+    if not pfade:
+        raise ZuteilerFehler(
+            f"Keine Migration in {VERSIONSVERZEICHNIS} auf origin/main. Das ist 'nicht "
+            "gemessen', nicht 'nichts umzuhaengen' - hier wird angehalten."
+        )
+    # Gelesen wird der Stand auf origin/main selbst, nicht die lokal daneben liegende Datei:
+    # Eine auf main neu entstandene Migration liegt im eigenen Arbeitsbaum gar nicht, und ein
+    # stilles Ueberspringen machte genau den verschobenen Kopf unsichtbar.
+    return tuple(
+        migration_aus_text(
+            git_ausgabe(["show", "--end-of-options", f"{ORIGIN_MAIN}:{pfad}"], cwd=wurzel).decode(
+                "utf-8"
+            ),
+            Path(pfad),
+        )
+        for pfad in pfade
+    )
+
+
+@dataclass(frozen=True)
+class Kettenlage:
+    """Die Lage, in der das Umhaengen entschieden wird - bewusst ohne aufgeloeste Kette.
+
+    Genau dann, wenn umzuhaengen ist, liegt die Kette gegabelt vor (die eigene Migration und die
+    von `main` haengen an derselben Revision). Eine Lage, die sich nur ueber eine aufloesbare
+    Kette bestimmen liesse, waere in ihrem einzigen Anwendungsfall nicht bestimmbar.
+    """
+
+    alle: tuple[Migration, ...]
+    uebernommen: frozenset[str]
+    kopf_auf_main: str
+    unterste_eigene: Migration | None
+
+    @property
+    def haengt_am_alten_kopf(self) -> bool:
+        return self.unterste_eigene is not None and self.unterste_eigene.unten != self.kopf_auf_main
+
+
+def alle_migrationen(versionen: Path) -> tuple[Migration, ...]:
+    return tuple(migration_aus_datei(pfad) for pfad in sorted(versionen.glob("*.py")))
+
+
+def kettenlage(wurzel: Path) -> Kettenlage:
+    alle = alle_migrationen(eigene_wurzel(wurzel) / VERSIONSVERZEICHNIS)
+    auf_main = migrationen_auf_main(wurzel)
+    uebernommen = frozenset(eintrag.kennung for eintrag in auf_main)
+
+    eigene = [eintrag for eintrag in alle if eintrag.kennung not in uebernommen]
+    eigene_kennungen = {eintrag.kennung for eintrag in eigene}
+    unterste = [eintrag for eintrag in eigene if eintrag.unten not in eigene_kennungen]
+    if len(unterste) > 1:
+        raise ZuteilerFehler(
+            f"{len(unterste)} eigene Migrationen haengen unmittelbar an uebernommener Arbeit - "
+            "welche die unterste ist, wird hier nicht geraten."
+        )
+    return Kettenlage(
+        alle=alle,
+        uebernommen=uebernommen,
+        kopf_auf_main=kopf_der_menge(auf_main),
+        unterste_eigene=unterste[0] if unterste else None,
+    )
+
+
+def haenge_um(wurzel: Path) -> str | None:
+    """Haengt die unterste eigene Migration hinter den Kopf von `origin/main`.
+
+    Angefasst wird ausschliesslich eine Revision, die von `origin/main` nicht erreichbar ist -
+    eine bereits uebernommene nie. Mehrere eigene Migrationen behalten ihre interne Reihenfolge,
+    weil nur die unterste umgehaengt wird.
+    """
+    lage = kettenlage(wurzel)
+    if lage.unterste_eigene is None or not lage.haengt_am_alten_kopf:
+        return None
+    ziel = lage.unterste_eigene
+    if ziel.kennung in lage.uebernommen:
+        raise ZuteilerFehler(
+            "Die umzuhaengende Revision liegt bereits auf origin/main - hier wird angehalten "
+            "statt geschrieben."
+        )
+    neuer_kopf = gepruefte_kennung(lage.kopf_auf_main)
+    zeilen = ziel.pfad.read_text(encoding="utf-8").splitlines(keepends=True)
+    geschrieben = False
+    for stelle, zeile in enumerate(zeilen):
+        if zeile.startswith(_VORGAENGERZEILEN):
+            schluessel, _, _ = zeile.partition("=")
+            zeilen[stelle] = f'{schluessel.rstrip()} = "{neuer_kopf}"\n'
+            geschrieben = True
+            break
+    if not geschrieben:
+        raise ZuteilerFehler(f"Keine down_revision-Zeile in {ziel.pfad.name} - nichts umgehaengt.")
+    ziel.pfad.write_text("".join(zeilen), encoding="utf-8")
+    return f"{ziel.kennung} hinter {neuer_kopf} gehaengt"
+
+
 # --- Die Unterbefehle --------------------------------------------------------------------------
 
 _HILFE = (
     "Aufruf: nummern.py <vorschlag <decisions|architecture>|migration <slug>|pruefen|kette"
     "|umhaengen>"
+)
+
+
+_KOPF_VERSCHOBEN = (
+    "Der Kopf von origin/main hat sich verschoben - 'umhaengen' haengt die unterste eigene "
+    "Migration dahinter, ohne eine bereits uebernommene anzufassen."
 )
 
 
@@ -592,9 +821,51 @@ def befehl_vorschlag(wurzel: Path, raum: str) -> int:
     return EXIT_KONTENTION
 
 
+def befehl_migration(wurzel: Path, slug: str) -> int:
+    geprueft = gepruefter_slug(slug)
+    branch = eigener_branch(wurzel)
+    kennung = gepruefte_kennung(revisionskennung(branch, geprueft))
+    lage = kettenlage(wurzel)
+    print(f"revision: {kennung}")
+    print(f"down_revision: {kopf_der_menge(lage.alle)}")
+    if lage.haengt_am_alten_kopf:
+        _meldung(_KOPF_VERSCHOBEN)
+        return EXIT_KONTENTION
+    return EXIT_OK
+
+
+def befehl_kette(wurzel: Path) -> int:
+    for eintrag in aufgeloeste_kette(eigene_wurzel(wurzel) / VERSIONSVERZEICHNIS):
+        print(eintrag.kennung)
+    return EXIT_OK
+
+
+def befehl_umhaengen(wurzel: Path) -> int:
+    bericht = haenge_um(wurzel)
+    if bericht is None:
+        print("Kette unveraendert: die unterste eigene Migration haengt am Kopf von origin/main")
+        return EXIT_OK
+    print(bericht)
+    return EXIT_KONTENTION
+
+
+def _kettenbefunde(wurzel: Path) -> list[str]:
+    """Der Kettenteil von `pruefen` - still, wenn es hier gar keine Migrationen gibt."""
+    if not (eigene_wurzel(wurzel) / VERSIONSVERZEICHNIS).is_dir():
+        return []
+    lage = kettenlage(wurzel)
+    if not lage.haengt_am_alten_kopf or lage.unterste_eigene is None:
+        return []
+    return [
+        f"{VERSIONSVERZEICHNIS}: {lage.unterste_eigene.kennung} haengt an "
+        f"{lage.unterste_eigene.unten}, der Kopf von origin/main ist aber {lage.kopf_auf_main}. "
+        f"{_KOPF_VERSCHOBEN}"
+    ]
+
+
 def befehl_pruefen(wurzel: Path) -> int:
     dubletten: list[str] = []
-    kontention: list[str] = []
+    kontention: list[str] = _kettenbefunde(wurzel)
     for raum, verzeichnis in NUMMERNRAEUME.items():
         sicht = erhebe_sicht(wurzel, raum)
         dubletten += _dublettenzeilen(wurzel, verzeichnis)
@@ -626,8 +897,17 @@ def main(argv: Sequence[str]) -> int:
                 _meldung(_HILFE)
                 return EXIT_VORBEDINGUNG
             return befehl_vorschlag(Path.cwd(), rest[0])
+        if befehl == "migration":
+            if len(rest) != 1:
+                _meldung(_HILFE)
+                return EXIT_VORBEDINGUNG
+            return befehl_migration(Path.cwd(), rest[0])
         if befehl == "pruefen" and not rest:
             return befehl_pruefen(Path.cwd())
+        if befehl == "kette" and not rest:
+            return befehl_kette(Path.cwd())
+        if befehl == "umhaengen" and not rest:
+            return befehl_umhaengen(Path.cwd())
     except ZuteilerFehler as grund:
         _meldung(str(grund))
         return EXIT_VORBEDINGUNG
