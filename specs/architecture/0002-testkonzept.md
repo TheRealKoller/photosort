@@ -1738,9 +1738,8 @@ Momentaufnahmen, dieselbe Begründung wie beim Abschnittszitat-Scan) und die Wä
 (sie führt die Werte als Erwartungsmenge und in jeder Gegenprobe; der Ausschluss ist an ihren
 eigenen Pfad gebunden und wird gegen ihn geprüft, damit er nicht auf einen toten Pfad verrottet).
 Eine Aufzählung des „lebenden Anweisungsraums" (`.claude/**`, `CLAUDE.md`, `docs/**`) trägt hier
-nachweislich nicht: `.github/ISSUE_TEMPLATE/*.yml` **vergibt Label** (`labels: ["bug"]`,
-`labels: ["feature", "needs-spec"]`) und ist damit ein möglicher zweiter Wahrheitsort, gegen den
-die Zusicherung gerade antritt. **Regel:** Eine Positivliste ist nur dort richtig, wo die
+nachweislich nicht: `.github/ISSUE_TEMPLATE/*.yml` **vergibt Label** (`labels: ["bug"]`) und ist
+damit ein möglicher zweiter Wahrheitsort, gegen den die Zusicherung gerade antritt. **Regel:** Eine Positivliste ist nur dort richtig, wo die
 *Erlaubnis* aufgezählt wird (die Formprüfungen über den Katalog), nie dort, wo eine **Abwesenheit**
 zugesichert wird. Zwei Folgen für jeden Leser dieser Bauart: Nicht als UTF-8 lesbare Dateien
 (Bilder, Modelldateien — gemessen 2026-09-11: 19 von 688) werden übersprungen statt den Lauf
@@ -1890,6 +1889,73 @@ Formzeile nicht stehen darf), und die Gegenrichtung — „es entsteht kein Wegw
 **Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts` ohne
 Gate; die Story fasst keine Zeile Anwendungscode an. Der Abdeckungsanspruch ist die Liste der
 Zusicherungen im Modul-Docstring, keine Prozentzahl.
+
+### Erweiterung für Spec [`0464`](../features/0464-aussagende-labels.md) / ADR [`0101`](../decisions/0101-ein-label-traegt-eine-unterscheidung.md) (ein Label trägt eine Unterscheidung): drei Namen, drei Prüfarten — und eine Zählgrenze ohne Reserve
+
+Achte Story auf der Ebene der Repo-Konsistenztests
+(`scripts/tests/test_entfallene_label_restlos.py`, Job `demo-scripts`). Fünf Regeln gelten über
+diesen Branch hinaus.
+
+**1. Ein Verbot über mehrere Namen zerfällt in so viele Prüfarten, wie die Namen
+Legitimitätsgrade haben.** Die Regel aus der Spec-0400-Sektion („ist der verbotene Begriff *als
+Begriff* legitim, ist das Verbot ein Form-, nie ein Wortverbot") ist hier nicht pauschal
+anwendbar, weil die drei Namen **verschieden** legitim sind — am Bestand gemessen (2026-09-14,
+525 als UTF-8 gelesene Dateien im Suchraum): `needs-spec` null legitime Vorkommen,
+`idee` legitim nur großgeschrieben (deutsche Prosa; die Labelform ist die kleingeschriebene),
+`feature` in 210 der 525 Dateien legitim (`specs/features/`, „Feature-Spec", `feature/`-Zweig).
+Daraus folgen drei Prüfarten in **einer** Datei: freie Wortsuche, Wortsuche mit Wortgrenze und
+Fallunterscheidung, Konstruktprüfung. **Regel:** Die Prüfart wird je Wert am Bestand bestimmt,
+nicht je Story einheitlich gewählt; ein über alle Werte gezogenes Verbot nimmt den Schärfegrad
+des schwächsten Werts an.
+
+**2. Eine Konstruktprüfung deckt jede Schemaform des Konstrukts ab, nicht die eine, die im
+Bestand steht.** Der tragende Fall dieser Sektion, und er ist am Entwurf gefunden worden, nicht am
+Bestand: Eine `labels:`-Zeile in einer GitHub-Issue-Vorlage ist in YAML **zwei** Formen — die
+Flow-Liste `labels: ["bug"]` und die Blockliste (`labels:` plus eingerückte `- `-Zeilen). Beide
+sind gültig, GitHub nimmt beide. Ein Muster, das nur die Flow-Form kennt, ist gegen die
+wahrscheinlichste Wiedereinführung überhaupt — `feature` zurück in `feature_request.yml`, in
+Blockform geschrieben — **grün**, und zwar als einzige Prüfung, die diesen Wert überhaupt trägt
+(Wortsuche scheidet nach Regel 1 aus). **Regel:** Vor der Formulierung wird die Frage gestellt,
+welche *anderen* Schreibweisen desselben Konstrukts das aufnehmende System akzeptiert; die
+Antwort ist Teil der Zusicherung, nicht der Umsetzung. Für Werte hinter
+`--label`/`--add-label`/`--remove-label` heißt dasselbe: der Wert wird normalisiert (Anführungs-
+zeichen, Backticks, spitze Klammern) und an **jedem** Trennzeichen zerlegt, das eine
+Mehrfachangabe schreiben könnte (`|`, `,`), sonst entgeht `--label feature,bug` der Prüfung.
+
+**3. Eine Pfadausnahme in eine fremde, maschinell erzeugte Datei wird an ihren Treffer gebunden,
+nicht nur an ihren Pfad.** Die einzige Ausnahme der `idee`-Prüfung ist
+`backend/src/photosort/assets/label_embedder_tokenizer.json` (Modell-Vokabular, Eintrag
+`▁idee`; das vorangestellte U+2581 ist kein `\w`, die Wortgrenze greift dort also). Die
+Bindung an den eigenen Pfad — Regel der Spec-0259-Sektion — reicht hier nicht: Wird das Asset
+ersetzt oder umbenannt, bliebe eine Ausnahme stehen, die nichts mehr ausnimmt und die nächste
+echte Fundstelle stillschweigend deckte. Der eigene Fall liest deshalb die **reale** Datei aus
+dem Suchraum und behauptet, dass das Muster dort trifft. **Regel:** Eine Ausnahme, deren Anlass
+außerhalb der eigenen Verfügung liegt, wird gegen ihren Anlass geprüft, nicht gegen ihren Namen.
+
+**4. Eine Untergrenze für das *Gesehene* ohne Reserve ist keine Untergrenze.** Die Regel aus der
+Spec-0406-Sektion („Untergrenzen liegen bewusst weit unter dem Ist-Stand") kollidiert hier mit
+der Regel aus der Spec-0259-Sektion („ein Abwesenheits-Test braucht eine Untergrenze für das,
+was er gesehen hat"): Nach dieser Story führt der Suchraum genau **eine** `labels:`-Zeile
+(`bug_report.yml`) und der Katalog genau **drei** Label-Argumente. Eine Zahlengrenze auf 1 bzw. 3
+hat null Reserve — sie wird bei jeder legitimen Änderung rot und wird dann heruntergesetzt, bis
+sie nichts mehr aussagt. Aufgelöst wird der Konflikt **wertgebunden** statt zählend: Unter dem
+Gesehenen muss die `labels:`-Zeile von `bug_report.yml` mit dem Wert `bug` sein und unter den
+Label-Argumenten des Katalogs das `bug` des `issue-anlegen`-Aufrufs. Das kann nicht leer wahr
+sein, rostet nicht mit dem Bestand und benennt bei Bruch die Stelle. **Regel:** Wo die Zählgrenze
+keine Reserve hat, wird sie durch eine Wertzusicherung ersetzt, nicht abgesenkt.
+
+**5. Was das Repositorium hier nicht erreicht, und was kein Test ersetzt.** Welche Label auf
+GitHub existieren, ist Zustand einer fremden Oberfläche — dieselbe Klasse wie die Board-Ansicht
+aus der Spec-0259-Sektion: einmal gemessen und als Messung ausgewiesen, nie in einen Test
+gegossen, der etwas anderes prüft als das, wonach er benannt ist. Zwei Lücken bleiben benannt
+statt zugedeckt: `feature` ist nur dort prüfbar, wo es in einer maschinell erkennbaren Form
+steht — der `mcp`-Weg benennt seine Label in Prosa und kennt kein `--label`-Konstrukt, eine
+formlose Wiedereinführung dort ist von legitimem Fließtext nicht zu trennen; und dass eine
+Erfassung ohne Typfrage auskommt, ist LLM-interpretierter Skill-Text und bleibt
+Review-Kriterium.
+
+**Coverage-Gate: kein Bezug.** Der Wächter liegt unter `scripts/tests/` im Job `demo-scripts`
+ohne Gate; die Story fasst keine Zeile Anwendungscode an.
 
 ## Reine Bash-Wrapper-Skripte ohne Testframework (`scripts/*.sh`)
 
