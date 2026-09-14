@@ -111,6 +111,29 @@ def classify_motif_error(kind: str, model_strength: float | None) -> MotifErrorC
     return None
 
 
+@dataclass(frozen=True)
+class MotifCorrectionRecord:
+    """Eine Motivkorrektur, so weit die Fehlerklassifizierung sie braucht: ihre Art und die
+    EINGEFRORENE gespeicherte Modellstaerke."""
+
+    kind: str
+    model_strength: float | None
+
+
+def count_motif_errors(corrections: Iterable[MotifCorrectionRecord]) -> dict[MotifErrorCase, int]:
+    """Die drei Fehlerzahlen - mit einem Eintrag JE FALL, auch fuer den mit null Vorkommen.
+
+    Eine Korrektur ohne Modellfehler zaehlt NIRGENDS mit; es gibt keine vierte Klasse, in der sie
+    landete. Die Bezugsgroesse der drei Zahlen ist die Gesamtzahl der Korrekturen und nicht ihre
+    eigene Summe - sie sind ausdruecklich nicht erschoepfend."""
+    tally = dict.fromkeys(MotifErrorCase, 0)
+    for correction in corrections:
+        case = classify_motif_error(correction.kind, correction.model_strength)
+        if case is not None:
+            tally[case] += 1
+    return tally
+
+
 class ExchangeKind(enum.StrEnum):
     """Die drei Tauschklassen. Sie sind DISJUNKT und ERSCHOEPFEND und werden nirgends summiert:
     `UNDETERMINED` ist kein Restposten, sondern eine eigene ausgewiesene Klasse (D3)."""
@@ -142,6 +165,59 @@ def preferred_lower_rated(quality: float | None, replaced_quality: float | None)
     if quality is None or replaced_quality is None or quality == replaced_quality:
         return None
     return quality < replaced_quality
+
+
+@dataclass(frozen=True)
+class ExchangeRecord:
+    """Ein Austausch, so weit die Auszaehlung ihn braucht: beide eingefrorenen Modellstufen und
+    beide eingefrorenen Qualitaetswerte."""
+
+    level: int | None
+    replaced_level: int | None
+    quality: float | None
+    replaced_quality: float | None
+
+
+@dataclass(frozen=True)
+class ExchangeStats:
+    """Die Bilanz EINER Tauschklasse.
+
+    `quality_incomparable_count` haelt die Paare mit gleichem und die mit fehlendem
+    Qualitaetswert. Sie gehen in `preferred_lower_rated_count` NICHT ein und werden auch nicht
+    seinem Gegenstueck zugeschlagen (D4): Ohne diese eigene Zahl laese sich ein gestiegener
+    Anteil "schlechteres Bild vorgezogen" nicht von einem gewachsenen Anteil unvergleichbarer
+    Paare unterscheiden."""
+
+    count: int = 0
+    preferred_lower_rated_count: int = 0
+    quality_incomparable_count: int = 0
+
+
+def summarize_exchanges(records: Iterable[ExchangeRecord]) -> dict[ExchangeKind, ExchangeStats]:
+    """Die Austausche je Klasse - mit einem Eintrag je Klasse, auch fuer die ohne Vorkommen.
+
+    DIE DREI KLASSEN WERDEN HIER NICHT SUMMIERT und tauchen auch als Summe nirgends auf (D3). Sie
+    sind disjunkt und erschoepfend, ihre Summe waere also die Gesamtzahl der Austausche - eine
+    Zahl, die die Aussage ueber die lokalen Kriterien mit der ueber die Modellstufe mischte."""
+    counts = dict.fromkeys(ExchangeKind, 0)
+    lower_rated = dict.fromkeys(ExchangeKind, 0)
+    incomparable = dict.fromkeys(ExchangeKind, 0)
+    for record in records:
+        kind = classify_exchange(record.level, record.replaced_level)
+        counts[kind] += 1
+        preference = preferred_lower_rated(record.quality, record.replaced_quality)
+        if preference is None:
+            incomparable[kind] += 1
+        elif preference:
+            lower_rated[kind] += 1
+    return {
+        kind: ExchangeStats(
+            count=counts[kind],
+            preferred_lower_rated_count=lower_rated[kind],
+            quality_incomparable_count=incomparable[kind],
+        )
+        for kind in ExchangeKind
+    }
 
 
 @dataclass(frozen=True)

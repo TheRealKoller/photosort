@@ -1,4 +1,5 @@
-"""DIE EINE Schreibstelle des Ereignis-Logs der Nacharbeit (ADR 0100, Spec 0432).
+"""DIE EINE Schreibstelle des Ereignis-Logs der Nacharbeit - und die Ladeabfragen der Diagnose
+(ADR 0100, Spec 0432).
 
 Jedes `FeedbackEvent` dieses Projekts entsteht hier. Das ist keine Bequemlichkeit, sondern der
 Ort, an dem die FELDMATRIX JE `kind` gehalten wird: welches Feld eine Art pflichtig traegt und
@@ -15,21 +16,43 @@ dieselbe Transaktion wie der Schreibvorgang, den es beschreibt - insbesondere be
 zwei Bewertungszeilen und ein Ereignis atomar schreibt (S5).
 
 Dieses Modul liest und schreibt, hat also eine Session - die reine, DB-freie Auswertung des Logs
-lebt getrennt davon (Muster `quality.py`/`selection.py`/`album_selection.py`).
+lebt getrennt davon in `feedback.py` (Muster `quality.py`/`selection.py`/`album_selection.py`).
+
+KEINE LADEABFRAGE DER DIAGNOSE FILTERT NACH PROJEKT (D1). Der Gewichtssatz gilt global; zaehlten
+die Fallzahlen nur ein Projekt, stuenden sie neben einem Vorschlag, den sie nicht belegen. Der
+Preis - eine Zahl auf der Projektseite, die nicht dieses Projekt beschreibt - wird von der
+Beschriftung des Abschnitts ausgesprochen.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.feedback import (
+    CriterionAgreement,
+    ExchangeKind,
+    ExchangeRecord,
+    ExchangeStats,
+    FinalDecisionRecord,
+    MotifCorrectionRecord,
+    MotifErrorCase,
+    PreferencePair,
+    classify_exchange,
+    count_motif_errors,
+    criterion_agreement,
+    final_decision_pairs,
+    summarize_exchanges,
+)
 from photosort.models import (
     CriterionScoringRun,
     FeedbackEvent,
     FeedbackEventKind,
     PhotoAlbumSuitability,
+    PhotoCriterionScore,
     PhotoRanking,
     ScanStatus,
 )
@@ -348,4 +371,176 @@ async def record_exchange(
         replaced_level=replaced_level,
         quality=quality,
         replaced_quality=replaced_quality,
+    )
+
+
+_MOTIF_KINDS = (
+    FeedbackEventKind.MOTIF_ADDED,
+    FeedbackEventKind.MOTIF_DROPPED,
+    FeedbackEventKind.MOTIF_CORRECTION_WITHDRAWN,
+)
+_FINAL_DECISION_KINDS = (
+    FeedbackEventKind.FINAL_DECISION_IN,
+    FeedbackEventKind.FINAL_DECISION_OUT,
+)
+
+
+@dataclass(frozen=True)
+class FeedbackDiagnosis:
+    """Die laufende Diagnose - AUSSCHLIESSLICH AGGREGATE (S8).
+
+    Kein Einzelereignis, kein `user_id`, keine Foto-Id und keine Aufschluesselung je Nutzer
+    verlaesst diesen Ladepfad; der Endpunkt darueber kann nur weglassen, was er hier bekommt. Das
+    ist die eine Auflage, die das Log vom Zustandsmodell unterscheidet: Es haelt ZURUECKGENOMMENE
+    Korrekturen fest, die der Bestand nicht mehr zeigt.
+
+    `correction_count` ist die UNGEWICHTETE Zahl aller Ereignisse und die Bezugsgroesse der
+    Fehlerzahlen."""
+
+    correction_count: int
+    motif_errors: Mapping[MotifErrorCase, int]
+    exchanges: Mapping[ExchangeKind, ExchangeStats]
+    criteria: Mapping[str, CriterionAgreement]
+
+
+async def _criterion_values(
+    session: AsyncSession, photo_ids: Iterable[int], criterion_keys: Sequence[str]
+) -> dict[int, dict[str, float]]:
+    """Die LOKALEN Kriterienwerte der beteiligten Fotos, live gelesen.
+
+    Ausdruecklich nicht eingefroren: Sie sind eine deterministische Messung an denselben Pixeln,
+    keine je Lauf neu erfragte Fremdaussage. Ein Foto ohne Werte fehlt in der Abbildung, und sein
+    Paar faellt in `criterion_agreement` heraus - sichtbar an der dort kleineren Fallzahl."""
+    ids = list(dict.fromkeys(photo_ids))
+    if not ids or not criterion_keys:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                PhotoCriterionScore.photo_id,
+                PhotoCriterionScore.criterion_key,
+                PhotoCriterionScore.value,
+            ).where(
+                PhotoCriterionScore.photo_id.in_(ids),
+                PhotoCriterionScore.criterion_key.in_(list(criterion_keys)),
+            )
+        )
+    ).all()
+    values: dict[int, dict[str, float]] = {}
+    for photo_id, criterion_key, value in rows:
+        values.setdefault(photo_id, {})[criterion_key] = value
+    return values
+
+
+async def load_diagnosis(
+    session: AsyncSession, *, criterion_keys: Sequence[str]
+) -> FeedbackDiagnosis:
+    """Die Diagnose ueber das GESAMTE Log - ohne Projektfilter (siehe Modulkopf).
+
+    `criterion_keys` wird uebergeben und nicht aus `quality.py` gelesen: Welcher Schluesselsatz
+    gilt, entscheidet der Aufrufer und nie der Bestand an Messwerten (G2).
+
+    GEORDNET WIRD UEBER DIE AUFSTEIGENDE `id`, nie ueber `occurred_at`: Zwei Schreibvorgaenge
+    derselben Sekunde sind ueber eine Zeit nicht zu ordnen. Fuer die Aggregate selbst ist die
+    Reihenfolge gleichgueltig - sie macht das Ergebnis bei gleicher Eingabe wiederholbar."""
+    correction_count = (
+        await session.execute(select(func.count()).select_from(FeedbackEvent))
+    ).scalar_one()
+
+    motif_rows = (
+        await session.execute(
+            select(FeedbackEvent.kind, FeedbackEvent.motif_strength)
+            .where(FeedbackEvent.kind.in_(_MOTIF_KINDS))
+            .order_by(FeedbackEvent.id)
+        )
+    ).all()
+    motif_errors = count_motif_errors(
+        MotifCorrectionRecord(kind=kind.value, model_strength=strength)
+        for kind, strength in motif_rows
+    )
+
+    exchange_rows = (
+        await session.execute(
+            select(
+                FeedbackEvent.photo_id,
+                FeedbackEvent.replaced_photo_id,
+                FeedbackEvent.weight,
+                FeedbackEvent.level,
+                FeedbackEvent.replaced_level,
+                FeedbackEvent.quality,
+                FeedbackEvent.replaced_quality,
+            )
+            .where(FeedbackEvent.kind == FeedbackEventKind.EXCHANGED)
+            .order_by(FeedbackEvent.id)
+        )
+    ).all()
+    exchanges = summarize_exchanges(
+        ExchangeRecord(
+            level=row.level,
+            replaced_level=row.replaced_level,
+            quality=row.quality,
+            replaced_quality=row.replaced_quality,
+        )
+        for row in exchange_rows
+    )
+
+    decision_rows = (
+        await session.execute(
+            select(
+                FeedbackEvent.photo_id,
+                FeedbackEvent.kind,
+                FeedbackEvent.weight,
+                FeedbackEvent.criterion_scoring_run_id,
+                FeedbackEvent.event_id,
+                FeedbackEvent.level,
+            )
+            .where(FeedbackEvent.kind.in_(_FINAL_DECISION_KINDS))
+            .order_by(FeedbackEvent.id)
+        )
+    ).all()
+
+    # ZWEI PAARQUELLEN, und nur diese: gleichstufige Austausche und die gemeinsame Endauswahl.
+    # Ein stufenuebergreifender Austausch zaehlt oben als Fall und bildet hier KEIN Paar - sonst
+    # vermischte sich die Aussage ueber die lokalen Kriterien mit der ueber das Modell (G5).
+    paired_exchanges = [
+        row
+        for row in exchange_rows
+        if classify_exchange(row.level, row.replaced_level) is ExchangeKind.WITHIN_LEVEL
+        and row.replaced_photo_id is not None
+    ]
+    values = await _criterion_values(
+        session,
+        [row.photo_id for row in paired_exchanges]
+        + [row.replaced_photo_id for row in paired_exchanges]
+        + [row.photo_id for row in decision_rows],
+        criterion_keys,
+    )
+    empty: dict[str, float] = {}
+    pairs = [
+        PreferencePair(
+            preferred=values.get(row.photo_id, empty),
+            rejected=values.get(row.replaced_photo_id, empty),
+            weight=row.weight,
+        )
+        for row in paired_exchanges
+    ]
+    pairs.extend(
+        final_decision_pairs(
+            FinalDecisionRecord(
+                criterion_scoring_run_id=row.criterion_scoring_run_id,
+                event_id=row.event_id,
+                level=row.level,
+                included=row.kind is FeedbackEventKind.FINAL_DECISION_IN,
+                weight=row.weight,
+                values=values.get(row.photo_id, empty),
+            )
+            for row in decision_rows
+        )
+    )
+
+    return FeedbackDiagnosis(
+        correction_count=correction_count,
+        motif_errors=motif_errors,
+        exchanges=exchanges,
+        criteria=criterion_agreement(pairs, criterion_keys),
     )

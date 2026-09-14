@@ -26,15 +26,20 @@ from photosort.feedback import (
     PRIOR_STRENGTH,
     CriterionAgreement,
     ExchangeKind,
+    ExchangeRecord,
+    ExchangeStats,
     FinalDecisionRecord,
+    MotifCorrectionRecord,
     MotifErrorCase,
     PreferencePair,
     classify_exchange,
     classify_motif_error,
+    count_motif_errors,
     criterion_agreement,
     derive_weights,
     final_decision_pairs,
     preferred_lower_rated,
+    summarize_exchanges,
 )
 from photosort.quality import QUALITY_CRITERION_WEIGHTS
 from photosort.selection import MOTIF_PRESENCE_THRESHOLD
@@ -169,6 +174,114 @@ class TestTheExchangeClassification:
         seen = {classify_exchange(a, b) for a in levels for b in levels}
 
         assert seen == set(ExchangeKind)
+
+
+class TestTheMotifErrorTally:
+    def test_every_case_appears_even_without_a_single_correction(self) -> None:
+        """Ein Eintrag je Fall, auch bei null - sonst muesste jeder Leser der Zahlen ihre
+        Abwesenheit als Null deuten, und der Leerzustand ist etwas anderes als "0 Fehler"."""
+        assert count_motif_errors([]) == dict.fromkeys(MotifErrorCase, 0)
+
+    def test_each_correction_lands_in_its_own_case(self) -> None:
+        corrections = [
+            MotifCorrectionRecord("motif_added", None),
+            MotifCorrectionRecord("motif_added", MOTIF_ABSENT_THRESHOLD / 2),
+            MotifCorrectionRecord("motif_added", MOTIF_ABSENT_THRESHOLD),
+            MotifCorrectionRecord("motif_dropped", 0.9),
+        ]
+
+        assert count_motif_errors(corrections) == {
+            MotifErrorCase.MISSING: 2,
+            MotifErrorCase.TOO_WEAK: 1,
+            MotifErrorCase.OVERCALLED: 1,
+        }
+
+    def test_corrections_without_a_model_error_are_counted_nowhere(self) -> None:
+        """Sie sind kein Restposten und keine vierte Klasse: Sie zaehlen schlicht nicht mit."""
+        corrections = [
+            MotifCorrectionRecord("motif_added", MOTIF_PRESENCE_THRESHOLD),
+            MotifCorrectionRecord("motif_dropped", None),
+            MotifCorrectionRecord("motif_correction_withdrawn", 0.9),
+        ]
+
+        assert count_motif_errors(corrections) == dict.fromkeys(MotifErrorCase, 0)
+
+
+class TestTheExchangeTally:
+    def _record(
+        self,
+        *,
+        level: int | None = 3,
+        replaced_level: int | None = 3,
+        quality: float | None = 0.4,
+        replaced_quality: float | None = 0.8,
+    ) -> ExchangeRecord:
+        return ExchangeRecord(
+            level=level,
+            replaced_level=replaced_level,
+            quality=quality,
+            replaced_quality=replaced_quality,
+        )
+
+    def test_every_kind_appears_even_without_a_single_exchange(self) -> None:
+        assert summarize_exchanges([]) == dict.fromkeys(ExchangeKind, ExchangeStats())
+
+    def test_the_three_classes_are_disjoint_and_exhaustive(self) -> None:
+        """Ihre Summe IST die Gesamtzahl der Austausch-Ereignisse (D3) - hier als Assertion und
+        nicht als ausgewiesene Zahl: Die drei stehen nirgends summiert nebeneinander."""
+        records = [
+            self._record(level=3, replaced_level=3),
+            self._record(level=4, replaced_level=2),
+            self._record(level=None, replaced_level=2),
+            self._record(level=3, replaced_level=None),
+        ]
+
+        result = summarize_exchanges(records)
+
+        assert [result[kind].count for kind in ExchangeKind] == [1, 1, 2]
+        assert sum(stats.count for stats in result.values()) == len(records)
+
+    def test_a_pulled_in_photo_with_the_lower_frozen_quality_is_counted(self) -> None:
+        result = summarize_exchanges([self._record(quality=0.4, replaced_quality=0.8)])
+
+        assert result[ExchangeKind.WITHIN_LEVEL] == ExchangeStats(
+            count=1, preferred_lower_rated_count=1, quality_incomparable_count=0
+        )
+
+    def test_a_pulled_in_photo_with_the_higher_frozen_quality_is_not_counted(self) -> None:
+        result = summarize_exchanges([self._record(quality=0.8, replaced_quality=0.4)])
+
+        assert result[ExchangeKind.WITHIN_LEVEL] == ExchangeStats(
+            count=1, preferred_lower_rated_count=0, quality_incomparable_count=0
+        )
+
+    @pytest.mark.parametrize(
+        ("quality", "replaced_quality"), [(0.5, 0.5), (None, 0.5), (0.5, None), (None, None)]
+    )
+    def test_a_tie_or_a_missing_value_forms_its_own_number(
+        self, quality: float | None, replaced_quality: float | None
+    ) -> None:
+        """Weder der einen noch der anderen Seite zugeschlagen (D4)."""
+        result = summarize_exchanges(
+            [self._record(quality=quality, replaced_quality=replaced_quality)]
+        )
+
+        assert result[ExchangeKind.WITHIN_LEVEL] == ExchangeStats(
+            count=1, preferred_lower_rated_count=0, quality_incomparable_count=1
+        )
+
+    def test_the_quality_comparison_is_kept_per_exchange_kind(self) -> None:
+        """JE TAUSCHART GETRENNT GEFUEHRT, nie summiert: Eine Gesamtzahl ueber alle drei mischte
+        die Aussage ueber die lokalen Kriterien mit der ueber die Modellstufe."""
+        result = summarize_exchanges(
+            [
+                self._record(level=3, replaced_level=3, quality=0.1, replaced_quality=0.9),
+                self._record(level=5, replaced_level=1, quality=0.1, replaced_quality=0.9),
+            ]
+        )
+
+        assert result[ExchangeKind.WITHIN_LEVEL].preferred_lower_rated_count == 1
+        assert result[ExchangeKind.ACROSS_LEVEL].preferred_lower_rated_count == 1
 
 
 class TestThePreferenceOverTheFrozenQuality:
