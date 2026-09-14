@@ -574,6 +574,54 @@ Verarbeitungs-Cache (Thumbnails).
       Kennzahlen- oder Tauschzeile dargestellt — sonst wäre „noch nie korrigiert" nicht von
       „N Korrekturen, 0 Fehler" zu unterscheiden. `Section`, `Metric`, `MetricRow` und `DetailRow`
       liegen dafür in `components/StatsLayout.tsx` statt weiter in `ProjectStatsPage.tsx`.
+  - **Die Gewichte aus der Nacharbeit** *(dieselbe Spec und ADR)*: derselbe `feedback`-Router trägt
+    zusätzlich `POST /feedback/weights` (Body `{based_on_event_id}`) und
+    `POST /feedback/weights/revert` (Body `{reverts_set_id}`); beide antworten mit
+    `WeightPreviewOut`, das auch in `FeedbackDiagnosisOut.weights` steht (`current[]`,
+    `proposed[]` je mit `delta`, `based_on_event_id`, `current_set_id`, `can_revert`).
+    - **Der Body trägt nie ein Gewicht.** Beide Felder sind Wächter, `extra="forbid"` weist ein
+      zusätzliches Feld ab, und der Server rechnet den Vorschlag neu. `weight` wäre der einzige
+      Wert, mit dem ein Aufrufer die eigene Korrektur in der global wirkenden Ableitung
+      überproportional zählen ließe.
+    - `based_on_event_id` ist ein **Zustimmungs-Token, kein Objektverweis**: nie zu einer Zeile
+      aufgelöst, geprüft auf **strikte Gleichheit** gegen die höchste `id` des **gesamten** Logs
+      (`feedback_log.py::latest_event_id`, ohne jeden Filter), bei leerem Log `0`. Ein seither
+      hinzugekommenes Ereignis — gleich in welchem Projekt — ergibt `409`, und es wird **nichts**
+      geschrieben. Gegen ein nach Projekt oder Art gefiltertes Maximum geprüft, entstünde die
+      Fassung gegen eine Lage, die niemand gesehen hat.
+    - Auch die **Rücknahme** trägt einen Wächter: Sie nennt die Fassung, die zurückgenommen werden
+      soll, und antwortet `409`, wenn sie nicht mehr die geltende ist. Ohne ihn legen zwei Aufrufe
+      kurz hintereinander erst die Rücknahme und dann deren Rücknahme an — das Ergebnis ist der
+      Ausgangszustand, die Kette sieht lückenlos aus, und keine Anzeige weist das als falsch aus.
+      Zurückgesetzt wird als **neue Fassung** mit den Werten der Vorgängerin; es wird nie eine
+      gelöscht, und der zweite Druck führt auf die Werte zurück, von denen der erste zurückgesetzt
+      hat.
+    - **Der Vorschlag wird aus den Startwerten abgeleitet**, nie aus den geltenden Gewichten:
+      Sonst verschöbe jede Übernahme die Grundlage der nächsten, und die Bandbreite
+      (`feedback.py::FEEDBACK_WEIGHT_SPAN`) wäre nach wenigen Runden verlassen, ohne dass eine
+      einzelne Übernahme sie je verletzte. `delta` ist dagegen der Unterschied zum **geltenden**
+      Gewicht — genau der zwischen den beiden nebeneinander dargestellten Spalten.
+    - **Die Übernahme schreibt die neue Fassung und sonst nichts**: keine Rangzeile bewegt sich,
+      es entsteht kein Lauf, es wird nichts eingereiht, es ergeht kein Modell- oder Cloud-Aufruf.
+      Erst der nächste Durchlauf rechnet damit — der bewusste Gegensatz zu
+      `PUT /projects/{id}/selection-target`, das synchron neu rechnet; eine Gewichtsanpassung wirkt
+      global und risse sonst jeden offenen Entwurf jedes Projekts um.
+    - **Die Herkunft der wirksamen Gewichte** liegt in `quality_weights.py`: `effective_weights`
+      überlagert die geltende Fassung über die Startwerte aus `quality.py`, **in beide Richtungen
+      geprüft** — ein den Startwerten unbekannter Schlüssel der Fassung wird verworfen, ein der
+      Fassung unbekannter Startwertschlüssel behält seinen Startwert. Der wirksame Schlüsselsatz
+      ist damit immer exakt der Startwertsatz; insbesondere gelangt kein Kriterium mit
+      Inhaltsaussage in den Qualitätswert. Kein nicht-endlicher und kein nicht-positiver Wert
+      erreicht die Persistenz, und der Lesepfad nimmt keinen an: Ein gespeichertes `NaN` käme durch
+      jede Schranke von `quality.py` und machte die Rangfolge **aller** Projekte beliebig, ohne
+      einen Fehler zu erzeugen.
+    - **Die Ansicht** ist die Gewichts-Vorschau im selben Abschnitt: je Kriterium geltendes
+      Gewicht, Vorschlag, Abweichung mit Vorzeichen und Fallzahl, darunter der Hinweis auf den
+      nächsten Durchlauf, „Gewichte anpassen" (mit Bestätigungsdialog und verkürzter
+      Gegenüberstellung) und „Auf vorige Gewichte zurücksetzen" nur bei `can_revert`. Die
+      Belastbarkeit trägt allein die sichtbare Fallzahl; die Zustimmungsrate bleibt über den
+      Endpunkt verfügbar und wird nicht dargestellt. Aufbereitung in `utils/feedbackWeights.ts`
+      (rein), Mutationen in `hooks/useFeedbackDiagnosis.ts`.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
@@ -908,7 +956,11 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     gegen SQLite **ohne** `PRAGMA foreign_keys=ON` läuft und eine falsche Reihenfolge dort
     strukturell nicht auffiele. `feedback_events` ist seit Spec 0432 dabei und ist zugleich die
     **einzige Ausnahme** der Append-only-Zusage dieser Tabelle: Ohne die Anweisung überlebten
-    Aussagen über gelöschte Familienfotos ihr Projekt.
+    Aussagen über gelöschte Familienfotos ihr Projekt. `quality_weight_sets` und
+    `quality_weight_entries` bleiben dagegen **bewusst stehen** — sie hängen an keinem Projekt,
+    tragen sieben Zahlen und einen Nutzerverweis und sind auf kein Foto zurückzurechnen; ein
+    eigener Testfall hält diese Gegenrichtung fest, weil die beiden Metadaten-Tests nur prüfen,
+    dass nichts vergessen wird.
   - **Richtwert des Auswahlvorschlags** *(Spec
     [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
     [`decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
@@ -1523,6 +1575,33 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   - Geschrieben wird ausschließlich über `feedback_log.py`; dort hängt die Feldmatrix je `kind`
     (welches Feld pflichtig, welches verboten), in beide Richtungen durchgesetzt. Festgehalten
     werden nur Verweise, Zeitpunkt, Art und Zahlen — **keine Bilddaten, kein Fremdtext**.
+- **QualityWeightSet / QualityWeightEntry** *(dieselbe Spec und ADR, `models.py`, Tabellen
+  `quality_weight_sets`/`quality_weight_entries`)*: **eine Fassung des global geltenden
+  Gewichtssatzes** der Qualitätskriterien und ihre Gewichte je Kriterium.
+  `quality_weight_sets`: `id` (Primary Key **und** die Version), `created_at`,
+  `created_by_user_id` (Fremdschlüssel, NOT NULL), `origin` (`feedback`|`revert`),
+  `based_on_event_id` (nullable, **ohne** Fremdschlüssel), `reverts_set_id` (Fremdschlüssel auf
+  sich selbst, nullable). `quality_weight_entries`: `id`, `set_id` (Fremdschlüssel, Kaskade),
+  `criterion_key` (**freier String ohne Fremdschlüssel**, derselbe Grund wie bei
+  `photo_criterion_scores` — ein neues Kriterium erzwingt nie eine Migration), `weight`,
+  `UniqueConstraint(set_id, criterion_key)`.
+  - **Es gilt die Fassung mit der höchsten `id`.** Es gibt kein `active`-Kennzeichen, das
+    danebentreten und mit ihr auseinanderlaufen könnte; `id` *ist* die Version.
+  - **Ohne eine einzige Zeile gelten die Startwerte** aus `quality.py`. Keine Migration schreibt
+    sie ein — ein eingeschriebener Vorgabewert wäre von einer übernommenen Anpassung nicht mehr zu
+    unterscheiden, und „zurück auf die Startwerte" hieße danach „zurück auf eine Fassung, die
+    jemand übernommen hat". Aus demselben Grund ist die Vorgängerin der ersten Fassung der
+    Startwertsatz, ohne dass er je gespeichert würde.
+  - **Keine Bindung an Projekt oder Nutzer.** `created_by_user_id` ist Urheberschaft, nie
+    Geltungsbereich: Die Fassung wirkt auf jeden Lauf jedes Projekts. Beide Tabellen hängen
+    folgerichtig an **keinem** Projekt und bleiben von der Projektlöschung **unberührt** — sie
+    tragen sieben Zahlen und einen Nutzerverweis, keinen Foto-Bezug; ein eigener Testfall hält
+    diese Gegenrichtung fest.
+  - `criterion_scoring_runs.quality_weight_set_id` (nullable) hält fest, **mit welcher Fassung ein
+    Lauf gerechnet hat**; `NULL` heißt „Startwerte oder Altzeile". Gelesen und geschrieben wird
+    **einmal je Lauf** vor der Partitionsschleife (`worker.py::_build_grouping_and_rankings`, dazu
+    `demo_state.py`) — zuvor stand die Konstante innerhalb der Schleife, je Foto neu. Ohne die
+    Spalte wäre ein vergangener `rank_score` nach der nächsten Anpassung nicht mehr nachrechenbar.
 - **PhotoMotifCorrection** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR 0091,
   `models.py`, Tabelle `photo_motif_corrections`)*: die menschliche Korrektur **einer** Motivaussage
   — `photo_id` (Fremdschlüssel auf `photos`, Kaskade), `user_id`, `motif_key`, `applies: bool`,
