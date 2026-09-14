@@ -117,6 +117,32 @@ export function formatDateTime(isoDate: string): string {
   return DATE_TIME.format(new Date(isoDate))
 }
 
+/**
+ * Der Aufnahmezeitraum eines Projekts - geteilt zwischen Projektkarte und Statistikseite.
+ *
+ * Vier entscheidbare Faelle:
+ * 1. beide gesetzt, VERSCHIEDENE Kalendertage -> "02.04.2019 – 17.08.2019" (Gedankenstrich
+ *    U+2013, je ein Leerzeichen),
+ * 2. beide gesetzt, DERSELBE Kalendertag -> das Datum EINMAL,
+ * 3./4. mindestens einer `null` -> `NOT_AVAILABLE`.
+ *
+ * Der Ein-Tages-Fall wird am FORMATIERTEN Datum entschieden, nicht am rohen Zeitstempel: zwei
+ * Aufnahmen desselben Tages sind praktisch nie zeitstempelgleich, und "02.04.2019 – 02.04.2019"
+ * liest sich als Fehler statt als Aussage.
+ *
+ * Genau EIN `null` ist heute unmoeglich (`MIN`/`MAX` derselben Abfrage sind entweder beide `NULL`
+ * oder beide gesetzt) und faellt trotzdem auf den Strich: die Zeile soll bei einer kuenftigen
+ * Aenderung nichts Halbes behaupten.
+ */
+export function formatTakenAtRange(earliest: string | null, latest: string | null): string {
+  if (earliest === null || latest === null) {
+    return NOT_AVAILABLE
+  }
+  const from = formatDate(earliest)
+  const to = formatDate(latest)
+  return from === to ? from : `${from} – ${to}`
+}
+
 // Anzeigename eines Cloud-Vision-Providers (backend `provider`-Feld, aktuell "anthropic"/
 // "mistral") - geteilt zwischen der Klassifizierungs-Sektion, der Fortschrittsanzeige, der
 // Kostenschaetzung und der Grundlagenzeile der Motivstaerken. Fallback auf den rohen Wert fuer

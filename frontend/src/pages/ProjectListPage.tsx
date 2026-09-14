@@ -1,27 +1,86 @@
 import { Link } from 'react-router'
 
 import { ApiError } from '../api/client'
-import { StatusTag } from '../components/StatusTag'
+import type { ProjectOut } from '../api/types'
+import { ProjectStandLine } from '../components/ProjectStandLine'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
 import { Icon } from '../components/ui/icon'
 import { Skeleton } from '../components/ui/skeleton'
 import { useProjectsQuery } from '../hooks/useProjects'
-import { deriveScanStatus } from '../utils/scanStatus'
+import { formatCount, formatTakenAtRange } from '../utils/formatStats'
+import { deriveProjectStand } from '../utils/pipelineSteps'
 
 const SKELETON_CARD_COUNT = 4
+
+/*
+ * Die Projektkarte ist EIN DOM-Baum, kein zweiter Zweig je Breite: `lg:grid lg:grid-cols-12` auf
+ * dem bestehenden `Link`. Kein `hidden lg:block` neben `lg:hidden`, kein doppelter Inhalt, keine
+ * Spaltenkopfzeile - JEDER WERT TRAEGT SEIN WORT BEI SICH ("… Fotos", "Aufnahmen …"). Ein Wert,
+ * der seine Bedeutung aus einer Kopfzeile bezoege, braeuchte zwei Darstellungen, und die zweite
+ * waere Text, den es nur in einer Breite gibt.
+ */
+function ProjectCard({ project }: { project: ProjectOut }) {
+  return (
+    <Card className="p-0">
+      {/* Die ganze Zeile ist EINE Trefferflaeche - `min-h-11` als Zeilenhoehe einer zeilenweisen
+          Liste (Trefferflaechen-Regel 3), nicht als Schaltflaechenmass. */}
+      <Link
+        to={`/projects/${project.id}`}
+        className="flex min-h-11 flex-col gap-2 px-4 py-3 lg:grid lg:grid-cols-12 lg:items-center lg:gap-x-3 lg:gap-y-0"
+      >
+        <span className="flex min-w-0 flex-col lg:col-span-4">
+          {/* Ungekuerzt und umbrechend: ein Projektname ist die Kennung, unter der der Nutzer sein
+              Projekt wiedererkennt - ein abgeschnittener Name macht zwei aehnliche Projekte
+              ununterscheidbar. */}
+          <span className="text-lg font-semibold leading-tight text-text-h">{project.name}</span>
+          {/* Pfad in Festbreitenschrift und einzeilig gekuerzt: ein Cloud-Pfad ist eine technische
+              Kennung, kein Fliesstext. */}
+          <span className="truncate font-mono text-xs text-text">{project.opencloud_path}</span>
+        </span>
+
+        {/* Zahl in Festbreitenschrift, Wortmarke in der Textschrift - die Wortmarke steht IM
+            sichtbaren Text, nicht in einer Spaltenkopfzeile. Der `data-testid` macht den Bereich
+            einzeln lokalisierbar, ohne dass die Typografie dafuer in ein Element zusammenfallen
+            muesste. */}
+        <span
+          data-testid={`project-photo-count-${project.id}`}
+          className="text-sm text-text lg:col-span-2"
+        >
+          <span className="font-mono">{formatCount(project.photo_count)}</span> Fotos
+        </span>
+
+        <span data-testid={`project-taken-at-${project.id}`} className="text-sm lg:col-span-3">
+          <span className="text-text-muted">Aufnahmen</span>{' '}
+          <span className="font-mono text-text">
+            {formatTakenAtRange(project.taken_at_earliest, project.taken_at_latest)}
+          </span>
+        </span>
+
+        <span className="lg:col-span-3">
+          <ProjectStandLine stand={deriveProjectStand(project)} projectId={project.id} />
+        </span>
+      </Link>
+    </Card>
+  )
+}
 
 export function ProjectListPage() {
   const query = useProjectsQuery()
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Der Kopfbereich steht in ALLEN VIER Zustaenden - ein Projekt anlegen zu koennen haengt
+          nicht daran, ob die Liste laedt oder scheitert. Nur die Zaehlzeile entfaellt, solange
+          keine Zahl bekannt ist. */}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl">Projekte</h1>
           {query.isSuccess && query.data.length > 0 && (
-            <p className="text-xs text-text-muted">{query.data.length} Ordner</p>
+            <p className="text-xs text-text-muted">
+              {query.data.length} {query.data.length === 1 ? 'Projekt' : 'Projekte'}
+            </p>
           )}
         </div>
         <Button asChild>
@@ -33,14 +92,20 @@ export function ProjectListPage() {
         <ul role="status" aria-label="Projekte werden geladen…" className="flex flex-col gap-3">
           {Array.from({ length: SKELETON_CARD_COUNT }, (_, index) => (
             <li key={index} aria-hidden="true">
-              <Skeleton className="h-20 w-full rounded-lg" />
+              {/* Hoehe aus der Kartenhoehe gemessen: vier Zeilen mobil, eine Rasterzeile ab `lg:`.
+                  Ein Platzhalter, der die spaetere Hoehe verfehlt, laesst die Seite beim Eintreffen
+                  der Daten springen. */}
+              <Skeleton className="h-[136px] w-full rounded-lg lg:h-[72px]" />
             </li>
           ))}
         </ul>
       )}
 
+      {/* Der Fehler ersetzt nur die LISTE, nie die ganze Ansicht. Kuratierter Titel statt des
+          nichtssagenden Standardtitels "Fehler"; Beitext ist der woertliche `detail`-Text des
+          Servers, ausschliesslich als Textknoten. */}
       {query.isError && (
-        <Alert onRetry={() => query.refetch()}>
+        <Alert title="Projekte konnten nicht geladen werden" onRetry={() => query.refetch()}>
           {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Projekte.'}
         </Alert>
       )}
@@ -79,39 +144,11 @@ export function ProjectListPage() {
 
       {query.isSuccess && query.data.length > 0 && (
         <ul className="flex flex-col gap-3">
-          {query.data.map((project) => {
-            const status = deriveScanStatus(project)
-            return (
-              <li key={project.id}>
-                <Card className="p-0">
-                  {/* Die ganze Zeile ist EINE Trefferflaeche - `min-h-11` als Zeilenhoehe
-                      einer zeilenweisen Liste (Trefferflaechen-Regel 3), nicht als
-                      Schaltflaechenmass. */}
-                  <Link
-                    to={`/projects/${project.id}`}
-                    className="flex min-h-11 flex-col justify-center gap-2 px-4 py-3"
-                  >
-                    <span className="flex min-w-0 flex-col">
-                      <span className="text-lg font-semibold leading-tight text-text-h">
-                        {project.name}
-                      </span>
-                      {/* Pfad in Festbreitenschrift und einzeilig gekuerzt (Vorlage): ein
-                          Cloud-Pfad ist eine technische Kennung, kein Fliesstext. */}
-                      <span className="truncate font-mono text-xs text-text">
-                        {project.opencloud_path}
-                      </span>
-                    </span>
-                    <span
-                      data-testid={`project-status-${project.id}`}
-                      className="flex flex-wrap items-center gap-2"
-                    >
-                      <StatusTag status={status} />
-                    </span>
-                  </Link>
-                </Card>
-              </li>
-            )
-          })}
+          {query.data.map((project) => (
+            <li key={project.id}>
+              <ProjectCard project={project} />
+            </li>
+          ))}
         </ul>
       )}
     </div>

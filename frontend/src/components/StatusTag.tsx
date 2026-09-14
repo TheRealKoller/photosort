@@ -1,20 +1,13 @@
 import { cn } from '../lib/utils'
 import type { ScanStatusLabel } from '../utils/scanStatus'
 
-const LABELS: Record<ScanStatusLabel, string> = {
-  never: 'Noch nicht gescannt',
-  running: 'Scan läuft…',
-  success: 'Erfolgreich',
-  failed: 'Fehlgeschlagen',
-}
-
 /*
  * Vier Zustaende in einer Form, umgestellt auf die TOAST-KONSTRUKTION des Boards: Flaeche
  * `--elevated`, farbiger 1px-Rand, farbige Beschriftung - statt eigener Tint-/Strong-Paare, die das
  * Board nicht kennt. Die acht `--status-*-tint`/`-strong`-Tokens sind in index.css darauf
  * UMDEFINIERT worden statt gestrichen; die Aufrufstellen hier bleiben dadurch unveraendert.
  *
- * Alle vier Beschriftungen halten damit AA auf `#1E2230` (8.64 / 9.48 / 5.08 / 6.44), nachgerechnet
+ * Alle vier Tonwerte halten damit AA auf `#1E2230` (8.64 / 9.48 / 5.08 / 6.44), nachgerechnet
  * in src/designSystem.contract.test.ts.
  *
  * Vollstaendig ausgeschriebene Klassennamen je Zustand - Tailwind erkennt Utility-Klassen nur als
@@ -28,11 +21,15 @@ const TONE_CLASSES: Record<ScanStatusLabel, string> = {
 }
 
 interface StatusTagProps {
+  /** Bestimmt Tonwert und Laufindikator - nicht mehr die Beschriftung. */
   status: ScanStatusLabel
+  /** PFLICHT: Jede Aufrufstelle traegt ihren Wortlaut selbst. Eine hier hinterlegte
+   * Vorgabetabelle waere eine zweite Textquelle, die kein Aufrufer mehr ausloest. */
+  label: string
   className?: string
 }
 
-export function StatusTag({ status, className }: StatusTagProps) {
+export function StatusTag({ status, label, className }: StatusTagProps) {
   return (
     <span
       data-status={status}
@@ -54,7 +51,7 @@ export function StatusTag({ status, className }: StatusTagProps) {
           )}
         />
       )}
-      {LABELS[status]}
+      {label}
     </span>
   )
 }

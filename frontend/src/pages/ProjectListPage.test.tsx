@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -27,8 +27,22 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     cloud_vision_consent_at: null,
     selection_target: null,
     effective_selection_target: 1,
+    photo_count: 0,
+    taken_at_earliest: null,
+    taken_at_latest: null,
     ...overrides,
   }
+}
+
+/** Ein gescanntes Projekt mit Bestand - der Normalfall der Uebersicht. */
+function scannedProject(overrides: Partial<ProjectOut> = {}): ProjectOut {
+  return project({
+    last_scan: { status: 'success' } as ProjectOut['last_scan'],
+    photo_count: 1284,
+    taken_at_earliest: '2019-04-02T10:12:00',
+    taken_at_latest: '2019-08-17T14:30:00',
+    ...overrides,
+  })
 }
 
 function renderPage() {
@@ -53,126 +67,266 @@ describe('ProjectListPage', () => {
     vi.mocked(projectsApi.listProjects).mockReset()
   })
 
-  it('shows a loading state distinct from the empty state while fetching', () => {
-    vi.mocked(projectsApi.listProjects).mockReturnValue(new Promise(() => {}))
+  /*
+   * Akzeptanzkriterium D1: die vier Zustaende schliessen einander aus, und der Kopfbereich mit
+   * "Neues Projekt anlegen" ist in ALLEN vieren bedienbar - ein Projekt anlegen zu koennen haengt
+   * nicht daran, ob die Liste laedt oder scheitert. Nur die Zaehlzeile entfaellt, solange keine
+   * Zahl bekannt ist.
+   */
+  describe('die vier Zustaende', () => {
+    it('zeigt im Ladezustand weder Leerzustand noch Karte', async () => {
+      vi.mocked(projectsApi.listProjects).mockReturnValue(new Promise(() => {}))
 
-    renderPage()
+      renderPage()
 
-    expect(screen.getByRole('status')).toBeInTheDocument()
-    expect(screen.queryByText(/noch nichts sortiert/i)).not.toBeInTheDocument()
+      expect(await screen.findByRole('status')).toBeInTheDocument()
+      expect(screen.queryByText(/noch nichts sortiert/i)).not.toBeInTheDocument()
+      expect(screen.queryByTestId(/project-stand-/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/^\d+ Projekte?$/)).not.toBeInTheDocument()
+    })
+
+    it('zeigt im Fehlerzustand weder Leerzustand noch Karte noch Zaehlzeile', async () => {
+      vi.mocked(projectsApi.listProjects).mockRejectedValue(new ApiError(500, 'Serverfehler'))
+
+      renderPage()
+
+      await screen.findByRole('alert')
+      expect(screen.queryByText(/noch nichts sortiert/i)).not.toBeInTheDocument()
+      expect(screen.queryByTestId(/project-stand-/)).not.toBeInTheDocument()
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    })
+
+    it('zeigt im Leerzustand keine Zaehlzeile', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([])
+
+      renderPage()
+
+      expect(await screen.findByText(/noch nichts sortiert/i)).toBeInTheDocument()
+      expect(screen.queryByText(/^\d+ Projekte?$/)).not.toBeInTheDocument()
+    })
+
+    it('benennt die Zaehlzeile nach dem, was in der Liste steht', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([
+        scannedProject({ id: 1 }),
+        scannedProject({ id: 2, name: 'Island', opencloud_path: 'Island' }),
+      ])
+
+      renderPage()
+
+      expect(await screen.findByText('2 Projekte')).toBeInTheDocument()
+    })
+
+    it.each([
+      ['ladend', () => vi.mocked(projectsApi.listProjects).mockReturnValue(new Promise(() => {}))],
+      [
+        'fehler',
+        () =>
+          vi.mocked(projectsApi.listProjects).mockRejectedValue(new ApiError(500, 'Serverfehler')),
+      ],
+      ['leer', () => vi.mocked(projectsApi.listProjects).mockResolvedValue([])],
+      ['gefuellt', () => vi.mocked(projectsApi.listProjects).mockResolvedValue([scannedProject()])],
+    ])('haelt den Kopfbereich im Zustand %s bedienbar', async (_name, arrange) => {
+      arrange()
+
+      renderPage()
+
+      expect(
+        await screen.findByRole('link', { name: /neues projekt anlegen/i }),
+      ).toBeInTheDocument()
+    })
   })
 
-  it('shows an error banner with a retry option distinct from the empty state on failure', async () => {
-    vi.mocked(projectsApi.listProjects).mockRejectedValue(new ApiError(500, 'Serverfehler'))
+  /* Akzeptanzkriterium D2 - Waechter gegen den Verlust beim Umbau auf das Raster. */
+  describe('der Ladezustand', () => {
+    it('ist fuer Screenreader erkennbar und seine Platzhalter sind es nicht', async () => {
+      vi.mocked(projectsApi.listProjects).mockReturnValue(new Promise(() => {}))
 
-    renderPage()
+      renderPage()
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
-    expect(screen.getByRole('button', { name: /erneut versuchen/i })).toBeInTheDocument()
-    expect(screen.queryByText(/noch nichts sortiert/i)).not.toBeInTheDocument()
+      const region = await screen.findByRole('status')
+      expect(region).toHaveAccessibleName(/geladen/i)
+      const placeholders = within(region).getAllByRole('listitem', { hidden: true })
+      expect(placeholders.length).toBeGreaterThan(0)
+      for (const placeholder of placeholders) {
+        expect(placeholder).toHaveAttribute('aria-hidden', 'true')
+      }
+    })
   })
 
-  it('retries the fetch when "Erneut versuchen" is clicked', async () => {
-    vi.mocked(projectsApi.listProjects)
-      .mockRejectedValueOnce(new ApiError(500, 'Serverfehler'))
-      .mockResolvedValueOnce([project()])
-    const user = userEvent.setup()
+  /* Akzeptanzkriterium X1 und Sicherheitsauflage S4: der Beitext ist der woertliche `detail`. */
+  describe('der Fehlerzustand', () => {
+    it('traegt einen kuratierten Titel und den woertlichen Servertext als Beitext', async () => {
+      vi.mocked(projectsApi.listProjects).mockRejectedValue(
+        new ApiError(500, 'Unerwarteter Fehler (500)'),
+      )
 
-    renderPage()
+      renderPage()
 
-    await screen.findByRole('alert')
-    await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('Projekte konnten nicht geladen werden')
+      expect(alert).toHaveTextContent('Unerwarteter Fehler (500)')
+      expect(alert).not.toHaveTextContent(/^Fehler$/)
+    })
 
-    expect(await screen.findByText('Costa Rica')).toBeInTheDocument()
+    it('laesst die Liste erneut laden', async () => {
+      vi.mocked(projectsApi.listProjects)
+        .mockRejectedValueOnce(new ApiError(500, 'Serverfehler'))
+        .mockResolvedValueOnce([scannedProject()])
+      const user = userEvent.setup()
+
+      renderPage()
+
+      await screen.findByRole('alert')
+      await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
+
+      expect(await screen.findByText('Costa Rica')).toBeInTheDocument()
+    })
   })
 
-  it('shows a hint and a link to /projects/new when there are no projects', async () => {
-    vi.mocked(projectsApi.listProjects).mockResolvedValue([])
+  /*
+   * Akzeptanzkriterien A1/A2/A3: drei einzeln lokalisierbare Textbereiche je Karte, jeder mit
+   * seiner Wortmarke BEI SICH. Es gibt keine Spaltenkopfzeile, aus der ein Wert seine Bedeutung
+   * bezoege - und damit keinen Text, den es nur in einer Breite gibt.
+   */
+  describe('die drei Angaben je Karte', () => {
+    it('zeigt Name, Pfad, Fotoanzahl, Zeitraum und Stand', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([scannedProject({ id: 4 })])
 
-    renderPage()
+      renderPage()
 
-    expect(await screen.findByText(/noch nichts sortiert/i)).toBeInTheDocument()
-    expect(screen.getAllByRole('link', { name: /neues projekt/i }).length).toBeGreaterThan(0)
+      expect(await screen.findByText('Costa Rica')).toBeInTheDocument()
+      expect(screen.getByText('CostaRica')).toBeInTheDocument()
+      expect(screen.getByTestId('project-photo-count-4')).toHaveTextContent('1.284 Fotos')
+      expect(screen.getByTestId('project-taken-at-4')).toHaveTextContent(
+        'Aufnahmen 02.04.2019 – 17.08.2019',
+      )
+      expect(screen.getByTestId('project-stand-4')).toHaveTextContent('Weiter: Ausschuss-Erkennung')
+    })
+
+    it('zeigt "0 Fotos" neben "Aufnahmen —" am ungescannten Projekt', async () => {
+      // `0` ist eine Aussage, der Strich die Abwesenheit einer Aussage - nie das eine fuer das
+      // andere, und die Karte zeigt hier beides nebeneinander.
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([project({ id: 5 })])
+
+      renderPage()
+
+      expect(await screen.findByTestId('project-photo-count-5')).toHaveTextContent('0 Fotos')
+      expect(screen.getByTestId('project-taken-at-5')).toHaveTextContent('Aufnahmen —')
+      expect(screen.getByTestId('project-stand-5')).toHaveTextContent('Noch nicht gescannt')
+    })
+
+    it.each([
+      [999, '999 Fotos'],
+      [1000, '1.000 Fotos'],
+    ])('setzt bei %s den deutschen Tausenderpunkt richtig', async (count, expected) => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([
+        scannedProject({ id: 3, photo_count: count }),
+      ])
+
+      renderPage()
+
+      expect(await screen.findByTestId('project-photo-count-3')).toHaveTextContent(expected)
+    })
+
+    it('nennt einen eintaegigen Zeitraum nur einmal', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([
+        scannedProject({
+          id: 3,
+          taken_at_earliest: '2019-04-02T09:15:00',
+          taken_at_latest: '2019-04-02T18:44:00',
+        }),
+      ])
+
+      renderPage()
+
+      expect(await screen.findByTestId('project-taken-at-3')).toHaveTextContent(
+        'Aufnahmen 02.04.2019',
+      )
+    })
+
+    /*
+     * Akzeptanzkriterium A5: laufende und fehlgeschlagene Laeufe behalten ihre Kennzeichen-Optik.
+     * Zugesichert wird der SEMANTISCHE Haken, nicht die CSS-Klasse.
+     */
+    it('behaelt am laufenden Lauf Kennzeichen und Ringindikator', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([
+        project({ id: 6, last_scan: { status: 'running' } as ProjectOut['last_scan'] }),
+      ])
+
+      renderPage()
+
+      const stand = await screen.findByTestId('project-stand-6')
+      expect(within(stand).getByText('Scan läuft…')).toHaveAttribute('data-status', 'running')
+      expect(within(stand).getByTestId('status-tag-spinner')).toBeInTheDocument()
+    })
+
+    it('behaelt am fehlgeschlagenen Lauf das Kennzeichen', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([
+        project({ id: 7, last_scan: { status: 'failed' } as ProjectOut['last_scan'] }),
+      ])
+
+      renderPage()
+
+      const stand = await screen.findByTestId('project-stand-7')
+      expect(within(stand).getByText('Scan fehlgeschlagen')).toHaveAttribute(
+        'data-status',
+        'failed',
+      )
+    })
   })
 
-  it('always shows a link to /projects/new even with a non-empty list', async () => {
-    vi.mocked(projectsApi.listProjects).mockResolvedValue([project()])
+  /*
+   * Akzeptanzkriterium D3, jsdom-Haelfte: EIN DOM-Baum, kein zweiter Zweig. Die Geometrie der
+   * gemeinsamen vertikalen Flucht ist in jsdom nicht pruefbar und wird im Browser gemessen
+   * (e2e/tests/projektuebersicht-raster.spec.ts).
+   */
+  describe('ein DOM-Baum fuer beide Breiten', () => {
+    it('haelt jeden Text genau einmal im DOM - kein hidden/lg:hidden-Zwilling', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([scannedProject({ id: 8 })])
 
-    renderPage()
+      renderPage()
 
-    await screen.findByText('Costa Rica')
-    expect(screen.getAllByRole('link', { name: /neues projekt/i }).length).toBeGreaterThan(0)
+      await screen.findByText('Costa Rica')
+      for (const text of ['Costa Rica', 'CostaRica']) {
+        expect(screen.getAllByText(text)).toHaveLength(1)
+      }
+      for (const testId of ['project-photo-count-8', 'project-taken-at-8', 'project-stand-8']) {
+        expect(screen.getAllByTestId(testId)).toHaveLength(1)
+      }
+    })
   })
 
-  it('renders name, opencloud_path and a distinguishable status for each of the four scan states', async () => {
-    vi.mocked(projectsApi.listProjects).mockResolvedValue([
-      project({ id: 1, name: 'Never scanned', last_scan: null }),
-      project({
-        id: 2,
-        name: 'Running',
-        last_scan: {
-          status: 'running',
-          started_at: '2026-07-20T10:00:00Z',
-          finished_at: null,
-          files_found: 0,
-          total_files: null,
-          photos_added: 0,
-          photos_updated: 0,
-          photos_removed: 0,
-          files_skipped: 0,
-          error_message: null,
-        },
-      }),
-      project({
-        id: 3,
-        name: 'Succeeded',
-        last_scan: {
-          status: 'success',
-          started_at: '2026-07-20T10:00:00Z',
-          finished_at: '2026-07-20T10:05:00Z',
-          files_found: 10,
-          total_files: 10,
-          photos_added: 10,
-          photos_updated: 0,
-          photos_removed: 0,
-          files_skipped: 0,
-          error_message: null,
-        },
-      }),
-      project({
-        id: 4,
-        name: 'Failed',
-        last_scan: {
-          status: 'failed',
-          started_at: '2026-07-20T10:00:00Z',
-          finished_at: '2026-07-20T10:01:00Z',
-          files_found: 0,
-          total_files: 0,
-          photos_added: 0,
-          photos_updated: 0,
-          photos_removed: 0,
-          files_skipped: 0,
-          error_message: 'OpenCloud nicht erreichbar',
-        },
-      }),
-    ])
+  describe('die Zeile als Trefferflaeche', () => {
+    it('fuehrt mit einem Klick auf die Detailseite', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([scannedProject()])
+      const user = userEvent.setup()
 
-    renderPage()
+      renderPage()
 
-    await screen.findByText('Never scanned')
-    const statuses = screen.getAllByTestId(/project-status-/)
-    const labels = statuses.map((el) => el.textContent)
-    expect(new Set(labels).size).toBe(4)
+      await user.click(await screen.findByRole('link', { name: /costa rica/i }))
+
+      expect(await screen.findByText('Projekt-Detail-Seite')).toBeInTheDocument()
+    })
+
+    it('spannt je Karte GENAU EINEN Link auf, nicht mehrere nebeneinander', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([scannedProject({ id: 9 })])
+
+      renderPage()
+
+      const card = (await screen.findByTestId('project-stand-9')).closest('li')
+      expect(card).not.toBeNull()
+      expect(within(card as HTMLElement).getAllByRole('link')).toHaveLength(1)
+    })
   })
 
-  it('links each card to its project detail page', async () => {
-    vi.mocked(projectsApi.listProjects).mockResolvedValue([project()])
-    const user = userEvent.setup()
+  /* Akzeptanzkriterium D4: der vollstaendige Name steht als Textknoten im DOM. Dass er umbricht
+   * statt zu ueberlaufen, ist Geometrie und wird im Browser gemessen. */
+  it('kuerzt den Projektnamen nicht', async () => {
+    const longName = 'Sommerurlaub Costa Rica und Nicaragua mit den Grosseltern 2019'
+    vi.mocked(projectsApi.listProjects).mockResolvedValue([scannedProject({ name: longName })])
 
     renderPage()
 
-    await user.click(await screen.findByRole('link', { name: /costa rica/i }))
-
-    expect(await screen.findByText('Projekt-Detail-Seite')).toBeInTheDocument()
+    expect(await screen.findByText(longName)).toBeInTheDocument()
   })
 })

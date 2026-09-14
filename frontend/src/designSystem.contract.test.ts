@@ -1501,6 +1501,14 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       snippet: 'className="aspect-[4/3] w-full',
       reason: 'Seitenverhaeltnis der Detailbildflaeche - Tailwind kennt nur square und video',
     },
+    {
+      file: 'src/pages/ProjectListPage.tsx',
+      snippet: 'className="h-[136px] w-full rounded-lg lg:h-[72px]"',
+      reason:
+        'Platzhalterhoehe der Projektkarte, aus der tatsaechlichen Kartenhoehe gemessen (vier ' +
+        'Zeilen mobil, eine Rasterzeile ab lg:) - ein Platzhalter auf der naechsten Rasterstufe ' +
+        'liesse die Seite beim Eintreffen der Daten springen. Ausgewiesene Luecke der Spec 0375',
+    },
   ]
 
   it('verwendet willkuerliche Werte nur an der begruendeten Liste', () => {
@@ -1670,7 +1678,7 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/pages/ProjectListPage.tsx',
-      snippet: 'flex min-h-11 flex-col justify-center',
+      snippet: 'flex min-h-11 flex-col gap-2 px-4 py-3 lg:grid',
       reason: 'Projektzeile: die ganze Zeile ist EINE Trefferflaeche (Zeilenhoehe einer Liste)',
     },
     {

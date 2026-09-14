@@ -6,7 +6,9 @@ import {
   formatCriterionPercent,
   formatDate,
   formatDateTime,
+  formatTakenAtRange,
   formatUsd,
+  NOT_AVAILABLE,
 } from './formatStats'
 
 // specs/features/0207-projekt-statistikseite.md, Akzeptanzkriterien S1/K1/K4: reine
@@ -91,6 +93,35 @@ describe('formatDate / formatDateTime', () => {
 
   it('ergaenzt beim Lauf-Zeitpunkt die Uhrzeit', () => {
     expect(formatDateTime('2026-08-01T09:05:00')).toMatch(/^01\.08\.2026, 09:05$/)
+  })
+})
+
+/*
+ * specs/features/0375-projektuebersicht-umfang-und-naechster-schritt.md, Akzeptanzkriterium A3:
+ * vier entscheidbare Faelle. Die Testdaten tragen bewusst KEIN Zonenkennzeichen und liegen fern
+ * von Mitternacht - der Testlauf pinnt keine Zeitzone, und ein Zeitstempel dicht an 00:00 fiele je
+ * nach Maschine auf einen anderen Kalendertag.
+ */
+describe('formatTakenAtRange', () => {
+  it('stellt eine Spanne mit Gedankenstrich und je einem Leerzeichen dar', () => {
+    expect(formatTakenAtRange('2019-04-02T10:12:00', '2019-08-17T14:30:00')).toBe(
+      '02.04.2019 – 17.08.2019',
+    )
+  })
+
+  it('nennt denselben Kalendertag genau einmal, auch bei verschiedenen Uhrzeiten', () => {
+    // Entschieden am FORMATIERTEN Datum, nicht am rohen Zeitstempel: zwei Aufnahmen desselben
+    // Tages sind nie zeitstempelgleich, und "02.04.2019 – 02.04.2019" liest sich als Fehler.
+    expect(formatTakenAtRange('2019-04-02T09:15:00', '2019-04-02T18:44:00')).toBe('02.04.2019')
+  })
+
+  it.each([
+    ['nur das fruehere fehlt', null, '2019-08-17T14:30:00'],
+    ['nur das spaetere fehlt', '2019-04-02T10:12:00', null],
+    ['beide fehlen', null, null],
+  ])('zeigt den Strich, wenn %s', (_name, earliest, latest) => {
+    // Der Strich heisst "keine Angabe" und ist ausdruecklich nicht dasselbe wie eine Null.
+    expect(formatTakenAtRange(earliest, latest)).toBe(NOT_AVAILABLE)
   })
 })
 
