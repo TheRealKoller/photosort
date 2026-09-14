@@ -24,14 +24,16 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.feedback import ExchangeKind, MotifErrorCase
+from photosort.feedback import FEEDBACK_WEIGHT_SPAN, ExchangeKind, MotifErrorCase
 from photosort.feedback_log import FrozenContext, record_exchange, record_motif_correction
 from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Event,
+    FeedbackEvent,
     FeedbackEventKind,
     Photo,
     PhotoCriterionScore,
@@ -42,6 +44,7 @@ from photosort.models import (
     User,
 )
 from photosort.quality import QUALITY_CRITERION_WEIGHTS
+from photosort.quality_weights import store_weights
 
 _URL = "/feedback/diagnosis"
 _NOW = datetime(2023, 6, 1, tzinfo=UTC).replace(tzinfo=None)
@@ -269,6 +272,12 @@ class TestTheAnswerCarriesAggregatesOnly:
 
     _FORBIDDEN = ("user", "photo", "occurred", "event_id")
 
+    # DIE EINE erlaubte Ausnahme, namentlich und abschliessend: `based_on_event_id` ist das
+    # Zustimmungs-Token auf den zuletzt beruecksichtigten Ereignisstand (S6) - eine Hochwassermarke
+    # ueber das GESAMTE Log, kein lesbares Einzelereignis. Es steht hier als exakter Name und nicht
+    # als gelockertes Muster: Ein spaeter ergaenztes `event_id` faellt weiterhin durch.
+    _ALLOWED = frozenset({"based_on_event_id"})
+
     def _keys(self, node: Any) -> list[str]:
         if isinstance(node, dict):
             return [key for key in node] + [
@@ -289,4 +298,159 @@ class TestTheAnswerCarriesAggregatesOnly:
 
         payload = (await authenticated_api_client.get(_URL)).json()
 
-        assert [key for key in self._keys(payload) if forbidden in key] == []
+        assert [
+            key for key in self._keys(payload) if forbidden in key and key not in self._ALLOWED
+        ] == []
+
+
+class TestTheDiagnosisCarriesTheWeightPreview:
+    """G6 an der Aussenkante: Vor dem Ausloesen ist je Kriterium erkennbar, was gilt, was
+    vorgeschlagen wird und wie weit beides auseinanderliegt."""
+
+    async def test_without_any_correction_the_proposal_equals_the_starting_values(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        """G4 an der Aussenkante: Bei null auswertbaren Paaren ist jedes abgeleitete Gewicht EXAKT
+        sein Startwert - Gleichheit, kein `approx`."""
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        assert {entry["criterion_key"]: entry["weight"] for entry in weights["current"]} == (
+            QUALITY_CRITERION_WEIGHTS
+        )
+        assert {entry["criterion_key"]: entry["weight"] for entry in weights["proposed"]} == (
+            QUALITY_CRITERION_WEIGHTS
+        )
+        assert all(entry["delta"] == 0.0 for entry in weights["proposed"])
+
+    async def test_the_key_set_of_both_lists_is_exactly_the_baseline_key_set(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """G2 an der Aussenkante, fuer BEIDE Listen: Insbesondere steht in keiner ein Kriterium
+        mit Inhaltsaussage."""
+        await _seed_exchange(db_session, "Costa Rica")
+
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        for name in ("current", "proposed"):
+            assert [entry["criterion_key"] for entry in weights[name]] == list(
+                QUALITY_CRITERION_WEIGHTS
+            ), name
+
+    async def test_a_within_level_exchange_moves_the_proposal_away_from_the_current_weights(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Das gleichstufige Paar stimmt auf allen sieben Kriterien zu - der Vorschlag liegt
+        danach ueber dem geltenden Gewicht, und die Abweichung traegt ihr Vorzeichen."""
+        await _seed_exchange(db_session, "Costa Rica")
+
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        current = {entry["criterion_key"]: entry["weight"] for entry in weights["current"]}
+        for entry in weights["proposed"]:
+            assert entry["weight"] > current[entry["criterion_key"]], entry
+            assert entry["delta"] == pytest.approx(
+                entry["weight"] - current[entry["criterion_key"]]
+            )
+
+    async def test_every_proposed_weight_stays_strictly_positive_and_inside_the_band(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """G3: abgewertet, nie invertiert und nie auf null gesetzt - ein Gewicht null liesse das
+        Kriterium aus der Renormierung ganz herausfallen."""
+        await _seed_exchange(db_session, "Costa Rica")
+
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        for entry in weights["proposed"]:
+            start = QUALITY_CRITERION_WEIGHTS[entry["criterion_key"]]
+            assert entry["weight"] > 0.0
+            assert abs(entry["weight"] - start) < FEEDBACK_WEIGHT_SPAN * start
+
+
+class TestTheAnchorAndTheRevertFlag:
+    async def test_an_empty_log_reports_the_anchor_zero(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        """S6: Ohne definierten Wert waere der erste Schreibvorgang ungeprueft."""
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        assert weights["based_on_event_id"] == 0
+
+    async def test_the_anchor_is_the_highest_id_of_the_whole_log(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """UEBER DAS GESAMTE LOG, nie ueber ein nach Projekt oder Art gefiltertes Maximum: sonst
+        gehen Ereignisse unbemerkt durch, und die Fassung entstuende gegen eine Lage, die niemand
+        gesehen hat."""
+        await _seed_exchange(db_session, "Costa Rica")
+        await _seed_exchange(db_session, "Norwegen")
+        highest = (await db_session.execute(select(func.max(FeedbackEvent.id)))).scalar_one()
+
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        assert weights["based_on_event_id"] == highest
+
+    async def test_without_a_stored_set_the_revert_is_not_offered(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        """G10: Ohne Fassung gibt es nichts zurueckzunehmen - die Schaltflaeche erscheint nicht,
+        und der Aufruf wird abgewiesen."""
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        assert weights["can_revert"] is False
+
+    async def test_with_a_stored_set_the_revert_is_offered(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        await store_weights(
+            db_session,
+            weights=QUALITY_CRITERION_WEIGHTS,
+            user_id=await _user_id(db_session),
+            based_on_event_id=0,
+        )
+        await db_session.commit()
+
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        assert weights["can_revert"] is True
+
+    async def test_the_current_weights_follow_the_stored_set(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ "Geltend" heisst die gespeicherte Fassung, nicht der Startwert - sonst zeigte die
+        Tabelle nach der ersten Anpassung dauerhaft dieselbe linke Spalte."""
+        adjusted = dict(QUALITY_CRITERION_WEIGHTS)
+        adjusted["sharpness"] = 1.15
+        await store_weights(
+            db_session,
+            weights=adjusted,
+            user_id=await _user_id(db_session),
+            based_on_event_id=0,
+        )
+        await db_session.commit()
+
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        current = {entry["criterion_key"]: entry["weight"] for entry in weights["current"]}
+        assert current == adjusted
+
+    async def test_the_proposal_is_derived_from_the_starting_values_and_not_from_the_current_ones(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SONST DRIFTETE DER SATZ: Jede Uebernahme verschoebe die Grundlage der naechsten, und
+        die Bandbreite aus G3 waere nach wenigen Runden verlassen, ohne dass eine einzelne
+        Uebernahme sie je verletzte."""
+        adjusted = dict(QUALITY_CRITERION_WEIGHTS)
+        adjusted["sharpness"] = 1.15
+        await store_weights(
+            db_session,
+            weights=adjusted,
+            user_id=await _user_id(db_session),
+            based_on_event_id=0,
+        )
+        await db_session.commit()
+
+        weights = (await authenticated_api_client.get(_URL)).json()["weights"]
+
+        proposed = {entry["criterion_key"]: entry["weight"] for entry in weights["proposed"]}
+        assert proposed == QUALITY_CRITERION_WEIGHTS
