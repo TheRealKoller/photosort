@@ -27,6 +27,17 @@ from photosort.cloud_vision import _sanitize_label_text
 # abgelegten Zeilen unerreichbar, aber vorhanden liegen.
 PLACE_CELL_DIGITS = 2
 
+# Die Koernung, mit der eine Koordinate das System VERLAESST: eine Nachkommastelle sind rund 11 km
+# in der Breite, weniger in der Laenge. Sie gilt fuer die Ortsangabe an die
+# Sehenswuerdigkeits-Erkennung (ADR 0106 Punkt 3) und ist damit eine Groessenordnung groeber als
+# die oben abgelegte und in der Oberflaeche gezeigte Zelle.
+#
+# SICHERHEITSENTSCHEIDUNG, keine Genauigkeit: Die Stufe greift genau dort, wo sich kein Ortsname
+# aufloesen liess - in duenn besiedelter Gegend, wo eine Koordinate mehr ueber die Familie verraet
+# als in einer Stadt. Wer diesen Wert VERFEINERT, gibt mehr ueber jedes Foto ohne aufloesbaren
+# Ortsnamen preis; das braucht eine eigene ADR, keine stillschweigende Anpassung.
+LANDMARK_PLACE_CELL_DIGITS = 1
+
 # Der geschlossene Vorrat von `matched_level`, von der feinsten zur groebsten Ebene. Ein Wert
 # ausserhalb heisst "kein Name aufgeloest" - Mitgliedschaftspruefung statt Cast, nie eine 500
 # (Muster `events.py::PLACE_KINDS`).
@@ -53,6 +64,30 @@ def place_cell(lat: float, lon: float) -> tuple[float, float]:
     Himmelsrichtung, die es nicht gibt. Die Addition von `0.0` erledigt das nach IEEE 754 ohne
     Sonderfallzweig."""
     return (round(lat, PLACE_CELL_DIGITS) + 0.0, round(lon, PLACE_CELL_DIGITS) + 0.0)
+
+
+def landmark_place_cell(lat: float, lon: float) -> tuple[float, float]:
+    """Die EINE Vergroeberung dessen, was als Koordinate hinausgeht (S1).
+
+    Getrennt von `place_cell` darueber, weil die Fragen verschieden sind: dort die Koernung, mit
+    der gefragt und abgelegt wird, hier die Grenze dessen, was dieses System an Ortsdaten der
+    Familie herausgibt. Die `PlaceResolver`-Signaturgrenze deckt diesen Rand nicht - der sendende
+    Rand ist hier kein Auflöser, sondern der Vision-Client.
+
+    Sie steht als Funktion und nicht an der Aufrufstelle: `landmark.py::place_hint_for` ist heute
+    der einzige Aufrufer, und eine zweite Aufrufstelle bekaeme eine dort nachgerechnete Rundung
+    nicht mit.
+
+    `-0.0` wird auf `0.0` normalisiert, aus demselben Grund wie oben.
+
+    Die TEXTFORM entsteht bewusst nicht hier, sondern in `landmark.py` unmittelbar am Prompt: Ein
+    Modul, das zwei Ortswerte zu einer Zeichenkette zusammensetzt, waere genau die Form, die ADR
+    0102 Punkt 4 diesem Modul untersagt (Waechter in
+    tests/test_places.py::TestTheModuleBoundaryFromAdr0102)."""
+    return (
+        round(lat, LANDMARK_PLACE_CELL_DIGITS) + 0.0,
+        round(lon, LANDMARK_PLACE_CELL_DIGITS) + 0.0,
+    )
 
 
 def sanitize_place_name(raw: object) -> str | None:

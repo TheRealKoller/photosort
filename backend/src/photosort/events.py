@@ -369,8 +369,12 @@ class LandmarkChangeSignal:
     tragen. Namenlose Fotos loesen nie aus, und ein einmal gesetzter Name des laufenden Events
     ueberlebt namenlose Fotos - sonst zerrisse eine Aufnahme ohne Erkennung den Ortsbesuch.
 
-    Exakter Zeichenkettenvergleich, KEIN Fuzzy-Matching (bewusste Vereinfachung): zwei
-    Schreibweisen-Varianten desselben Orts trennen."""
+    Exakter Zeichenkettenvergleich, KEIN Fuzzy-Matching - und das ist seit ADR 0107 keine
+    Vereinfachung mehr, sondern die richtige Arbeitsteilung: Die Vereinheitlichung liegt DAVOR.
+    `worker.py::_landmark_names` liefert den bereits auf das projektweite Namensregister
+    aufgeloesten Namen, sodass zwei Schreibweisen derselben Sehenswuerdigkeit hier gar nicht mehr
+    als verschieden ankommen. Ein Fuzzy-Vergleich an dieser Stelle waere ein zweiter, danebenstehen-
+    der Massstab."""
 
     def __init__(self) -> None:
         self._name: str | None = None

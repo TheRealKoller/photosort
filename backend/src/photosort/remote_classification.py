@@ -4,7 +4,6 @@ import base64
 import hashlib
 import logging
 import re
-import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -36,7 +35,7 @@ from photosort.cloud_vision import (
 )
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
-from photosort.label_embedding import LabelEmbedderLike
+from photosort.label_embedding import LabelEmbedderLike, cosine_similarity, normalize_label_text
 from photosort.motifs import MOTIF_REGISTRY, is_motif_key
 
 # Strukturell analog landmark.py. Das Antwortschema ist GESCHLOSSEN: das Modell nennt fuer JEDEN
@@ -546,13 +545,6 @@ class FineLabelSnapshotEntry:
     id: int | None = None
 
 
-def _normalize_label_text(raw: str) -> str:
-    """Reine String-Normalisierung (Schritt 1) - kein Modell-Aufruf. NFKC deckt u.a.
-    Ligaturen/Kompatibilitaetszeichen ab (z.B. "ﬁsch" -> "fisch"), casefold ist eine aggressivere,
-    unicode-bewusste Kleinschreibung als .lower()."""
-    return unicodedata.normalize("NFKC", raw).strip().casefold()
-
-
 _SLUG_INVALID_CHARS = re.compile(r"[^a-z0-9]+")
 
 
@@ -578,13 +570,6 @@ def _slugify(text: str) -> str:
     return f"label_{digest}"
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Reine Vektor-Aehnlichkeitsfunktion (Schritt 3) - beide Embedding-Vektoren sind bereits
-    L2-normiert (label_embedding.py::_mean_pool_and_normalize), das Skalarprodukt entspricht
-    deshalb direkt der Kosinus-Aehnlichkeit, keine erneute Normierung noetig."""
-    return sum(x * y for x, y in zip(a, b, strict=True))
-
-
 def resolve_canonical_label(
     raw_label: str,
     existing_labels: list[FineLabelSnapshotEntry],
@@ -595,10 +580,10 @@ def resolve_canonical_label(
     gegen ALLE `existing_labels` (`>=` CATEGORY_LABEL_SIMILARITY_THRESHOLD, inklusiv), (3) sonst
     ein neuer kanonischer Eintrag, der `existing_labels` sofort (in-place) ergaenzt - verhindert
     Duplikat-Anlage bei zwei sehr aehnlichen neuen Labeln innerhalb desselben Laufs."""
-    normalized = _normalize_label_text(raw_label)
+    normalized = normalize_label_text(raw_label)
 
     for entry in existing_labels:
-        if _normalize_label_text(entry.display_name) == normalized:
+        if normalize_label_text(entry.display_name) == normalized:
             return entry
 
     vector = embedder.embed(normalized)
@@ -606,7 +591,7 @@ def resolve_canonical_label(
     best_entry: FineLabelSnapshotEntry | None = None
     best_similarity = -1.0
     for entry in existing_labels:
-        similarity = _cosine_similarity(vector, entry.embedding)
+        similarity = cosine_similarity(vector, entry.embedding)
         if similarity > best_similarity:
             best_similarity = similarity
             best_entry = entry

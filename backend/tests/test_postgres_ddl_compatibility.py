@@ -1488,3 +1488,80 @@ def test_the_ortsauskunft_downgrade_renders_for_postgres_too() -> None:
 
     assert "DROP COLUMN PLACE_NAME" in rendered
     assert "DROP TABLE PLACE_LOOKUPS" in rendered
+
+
+# specs/features/0469-verlaessliche-sehenswuerdigkeitsnamen.md: das Namensregister. Die
+# Fehlerklasse, die SQLite hier strukturell nicht zeigt, ist die JSON-Spalte des
+# Einbettungsvektors - unter SQLite ist sie schlicht TEXT, unter Postgres ein eigener Typ - und der
+# `server_default=func.now()` auf einer zonenlosen Zeitstempelspalte.
+
+_NAMENSREGISTER_REVISION = "a8b9c0d1e2f3_namensregister.py"
+
+
+@pytest.fixture(scope="module")
+def namensregister_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_NAMENSREGISTER_REVISION)
+
+
+def test_the_embedding_renders_as_a_json_column(namensregister_upgrade_ddl: list[str]) -> None:
+    statement = _create_table_statement(namensregister_upgrade_ddl, "landmark_names").upper()
+
+    assert "EMBEDDING JSON NOT NULL" in statement
+
+
+def test_the_register_is_bound_to_its_project_and_unique_per_normalised_name(
+    namensregister_upgrade_ddl: list[str],
+) -> None:
+    """S8: echter Fremdschluessel, NOT NULL - und `project_id` IM Constraint, damit dieselbe
+    Sehenswuerdigkeit in einem zweiten Projekt eine eigene Zeile ist."""
+    statement = _create_table_statement(namensregister_upgrade_ddl, "landmark_names")
+
+    assert "project_id INTEGER NOT NULL" in statement
+    assert "UNIQUE (project_id, normalized_name)" in statement
+    assert "FOREIGN KEY(project_id) REFERENCES projects (id)" in statement
+
+
+def test_the_register_timestamp_is_zoneless(namensregister_upgrade_ddl: list[str]) -> None:
+    """Alle Zeitstempel des Projekts sind zonenlos (ADR 0090, Punkt 4)."""
+    statement = _create_table_statement(namensregister_upgrade_ddl, "landmark_names").upper()
+
+    assert "CREATED_AT TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW() NOT NULL" in statement
+    assert "WITH TIME ZONE" not in statement
+
+
+def test_the_locality_stays_nullable(namensregister_upgrade_ddl: list[str]) -> None:
+    """Der Ortsname wirkt als SPERRE und nie als Schluessel - er darf fehlen, und genau dann
+    entscheidet die Aehnlichkeit allein."""
+    statement = _create_table_statement(namensregister_upgrade_ddl, "landmark_names")
+
+    assert "locality VARCHAR, \n" in statement or "locality VARCHAR," in statement
+    assert "locality VARCHAR NOT NULL" not in statement
+
+
+def test_the_canonical_name_column_is_added_nullable_and_without_a_default(
+    namensregister_upgrade_ddl: list[str],
+) -> None:
+    statement = _add_column_statement(namensregister_upgrade_ddl, "canonical_name").upper()
+
+    assert "VARCHAR" in statement
+    assert "NOT NULL" not in statement
+    assert "DEFAULT" not in statement
+
+
+def test_the_namensregister_upgrade_touches_no_data_at_all(
+    namensregister_upgrade_ddl: list[str],
+) -> None:
+    """Rein additiv: kein Nachziehen frueherer Erkennungslaeufe, keine Datenloeschung - und
+    insbesondere kein Zuruecksetzen einer erteilten Cloud-Einwilligung."""
+    rendered = " ".join(namensregister_upgrade_ddl).upper()
+    assert "INSERT " not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered
+
+
+def test_the_namensregister_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_NAMENSREGISTER_REVISION, direction="downgrade")
+    rendered = " ".join(statements).upper()
+
+    assert "DROP COLUMN CANONICAL_NAME" in rendered
+    assert "DROP TABLE LANDMARK_NAMES" in rendered

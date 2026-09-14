@@ -9,13 +9,17 @@ gesetzter Override koennte still verloren gehen (ADR 0090, Punkt 5).
 
 from __future__ import annotations
 
+import ast
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import NoReturn
 
+import pytest
 from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort import worker
 from photosort.cameras import shifted
 from photosort.models import (
     CriterionScoringRun,
@@ -34,6 +38,7 @@ from photosort.models import (
 from photosort.scoring import TIME_CLUSTER_GAP
 from photosort.thumbnails import display_path
 from photosort.worker import rebuild_run_grouping, run_criterion_scoring
+from tests.import_closure import module_file
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
 # Eiffelturm - eine bekannte Referenzkoordinate statt eines "plausibel aussehenden" Floats.
@@ -563,3 +568,44 @@ async def test_a_rollback_after_the_rebuild_restores_the_previous_grouping(
     assert await _snapshot(db_session, run_id) == before
     event_ids_after, _ranking_ids_after = await _id_sets(db_session, run_id)
     assert event_ids_after == event_ids_before
+
+
+class TestTheRebuildLoadsNoEmbeddingModel:
+    """specs/features/0469, SICHERHEIT S10 (ADR 0107 Punkt 5): Der Neuaufbau laeuft IN EINEM
+    REQUEST (Versatz-Endpunkt). Ein 113-MB-Modell im Anfragepfad waere ein Speicher- und
+    Laufzeitvielfaches, das eine authentifizierte Anfrage - auch eine mit gestohlenem JWT -
+    wiederholt ausloesen koennte."""
+
+    async def test_the_rebuild_never_calls_the_embedder_builder(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Der Verhaltensnachweis: der Bau des Modells bringt den Test zum Scheitern, statt nur
+        einen Zaehler stehen zu lassen."""
+        project, _camera, _run = await _build_full_fixture(db_session, tmp_path)
+
+        def _explode() -> NoReturn:
+            pytest.fail("rebuild_run_grouping darf kein Einbettungsmodell bauen (S10)")
+
+        monkeypatch.setattr(worker, "build_label_embedder", _explode)
+
+        await rebuild_run_grouping(db_session, project.id)
+
+    def test_the_rebuild_mentions_no_embedder_at_all(self) -> None:
+        """Dazu ein struktureller Waechter: Der Verhaltensnachweis oben haengt daran, dass der
+        Bau ueber genau diesen Modulnamen laeuft. Ein direkt importierter zweiter Bauweg roetete
+        ihn nicht."""
+        path = module_file("photosort.worker")
+        assert path is not None
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        rebuild = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "rebuild_run_grouping"
+        )
+
+        mentioned = {node.id for node in ast.walk(rebuild) if isinstance(node, ast.Name)}
+
+        assert "build_label_embedder" not in mentioned
+        assert "build_embedder" not in mentioned
+        # Gegenprobe: ohne sie bestuende der Fall auch dann, wenn der Walker nichts findet.
+        assert "_build_grouping_and_rankings" in mentioned

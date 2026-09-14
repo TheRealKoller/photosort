@@ -19,7 +19,7 @@ from photosort.classification import (
     compute_uniform_area_fraction,
     detect_person,
 )
-from photosort.landmark import LandmarkDetection
+from photosort.landmark import LANDMARK_CONFIDENCE_THRESHOLD, LandmarkDetection
 from photosort.models import CriterionSource
 
 # Kriterien-Registry und Normierungsfunktionen. Eine Registry-Erweiterung ist der einzige
@@ -69,14 +69,11 @@ _ESSEN_TRINKEN_PRESENCE_THRESHOLD = 0.01
 # dieser Konfidenzschwelle.
 _LANDSCHAFT_PRESENCE_THRESHOLD = 0.01
 
-# Confidence-Schwelle des Vision-LLM, ab der ein Foto als "Sehenswürdigkeit erkannt" gilt -
-# zugleich Vorfilterungs-Schwelle für content_landscape/gebaeude in
-# worker.py::run_criterion_scoring. Dokumentiert-unkalibriert (gleiche Klasse wie
-# SHARPNESS_NORMALIZATION_CEILING/UNIFORM_TILE_VARIANCE_THRESHOLD, es gibt keinen Fotokorpus
-# im Repo zur Kalibrierung). Gegen das bekannte, beobachtete Überidentifikations-Risiko des
-# Vision-LLM ist diese Schwelle die strukturelle, aber womöglich nicht ausreichende
-# Gegenmaßnahme.
-_LANDMARK_PRESENCE_THRESHOLD = 0.5
+# Die Confidence-Schwelle des `landmark`-Kriteriums steht NICHT hier, sondern in
+# `landmark.py::LANDMARK_CONFIDENCE_THRESHOLD`, und wird von dort gelesen (ADR 0107 Punkt 1). Sie
+# misst dasselbe wie `landmark.py::usable_landmark_name`; zwei Maßstäbe für dasselbe Ergebnis kann
+# es nicht mehr geben, ohne dass jemand den Wert an zwei Stellen schreibt. Ein Wächter in
+# tests/test_landmark.py hält fest, dass hier kein eigenes Schwellenliteral zurückkehrt.
 
 CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
     "sharpness": CriterionDefinition("sharpness", "Schärfe", CriterionSource.LOCAL_HEURISTIC),
@@ -134,7 +131,7 @@ CRITERIA_REGISTRY: dict[str, CriterionDefinition] = {
         "landmark",
         "Sehenswürdigkeit",
         CriterionSource.CLOUD,
-        presence_threshold=_LANDMARK_PRESENCE_THRESHOLD,
+        presence_threshold=LANDMARK_CONFIDENCE_THRESHOLD,
     ),
     # Zwei weitere lokale Inhalts-Kriterien aus DERSELBEN COCO-Detektorausgabe wie `tier` -
     # keine zusätzliche Inferenz, kein neues Modell-Asset.
