@@ -582,6 +582,17 @@ class CriterionScoringRun(Base):
         ForeignKey("remote_category_classification_runs.id"), default=None
     )
 
+    # Mit WELCHER Fassung der Qualitätsgewichte dieser Lauf gerechnet hat (Spec 0432). `NULL`
+    # heißt "Startwerte oder Altzeile" - es gibt keine Fassung, die die Startwerte enthielte, und
+    # deshalb keinen Wert, auf den eine Altzeile zeigen könnte.
+    #
+    # Gelesen und geschrieben wird EINMAL JE LAUF, vor der Partitionsschleife: Ohne diese Zeile
+    # wäre ein vergangener Rang-Score nicht mehr nachrechenbar, sobald jemand die Gewichte
+    # angepasst hat.
+    quality_weight_set_id: Mapped[int | None] = mapped_column(
+        ForeignKey("quality_weight_sets.id"), default=None
+    )
+
     project: Mapped[Project] = relationship(back_populates="criterion_scoring_runs")
     # PhotoRanking hängt an ZWEI Elternteilen. Ohne diese Kaskade bleiben beim Löschen eines
     # Kuratierungslaufs verwaiste photo_rankings-Zeilen zurück.
@@ -1138,3 +1149,83 @@ class FeedbackEvent(Base):
     # erfolgreichen Laufs) beider beteiligter Fotos.
     quality: Mapped[float | None] = mapped_column(default=None)
     replaced_quality: Mapped[float | None] = mapped_column(default=None)
+
+
+class QualityWeightSetOrigin(enum.StrEnum):
+    """Woraus eine Fassung entstanden ist.
+
+    `REVERT` steht als EIGENER Wert und nicht als abgeleitete Aussage aus einem belegten
+    `reverts_set_id`: Die Herkunft ist die Frage, die die Kette beantworten koennen muss, und eine
+    aus der Belegung einer anderen Spalte hergeleitete Antwort haette eine zweite Bedeutung von
+    `NULL`."""
+
+    FEEDBACK = "feedback"
+    REVERT = "revert"
+
+
+class QualityWeightSet(Base):
+    """EINE Fassung des global geltenden Gewichtssatzes der Qualitaetskriterien (ADR 0100).
+
+    ES GILT DIE FASSUNG MIT DER HOECHSTEN `id`; `id` IST die Version. Es gibt kein
+    `active`-Kennzeichen, das danebentreten und mit ihr auseinanderlaufen koennte.
+
+    OHNE EINE EINZIGE ZEILE GELTEN DIE STARTWERTE aus `quality.py`. Keine Migration schreibt sie
+    ein - ein eingeschriebener Vorgabewert waere von einer uebernommenen Anpassung nicht mehr zu
+    unterscheiden, und "zurueck auf die Startwerte" hiesse danach "zurueck auf eine Fassung, die
+    jemand uebernommen hat".
+
+    KEINE BINDUNG AN PROJEKT ODER NUTZER (G1). `created_by_user_id` ist Urheberschaft, nie
+    Geltungsbereich: Die Fassung wirkt auf jeden Lauf jedes Projekts.
+
+    ZURUECKSETZEN IST EINE NEUE FASSUNG mit den Werten der Vorgaengerin, nie ein Loeschen - die
+    Kette bleibt lueckenlos, und der zweite Druck fuehrt auf die Werte zurueck, von denen der
+    erste zurueckgesetzt hat (G10)."""
+
+    __tablename__ = "quality_weight_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    origin: Mapped[QualityWeightSetOrigin] = mapped_column(
+        SQLEnum(QualityWeightSetOrigin, native_enum=False, length=16)
+    )
+    # DAS ZUSTIMMUNGS-TOKEN auf den zuletzt beruecksichtigten Ereignisstand (S6), nie ein
+    # Objektverweis: Es wird nie zu einer Zeile aufgeloest, traegt keine Autorisierung und ist bei
+    # leerem Log `0` - ein Wert, auf den kein Fremdschluessel zeigen koennte. Es ist das Einzige,
+    # was "der Nutzer hat uebernommen, was ihm angezeigt wurde" wahr macht.
+    #
+    # Nullbar, weil eine Ruecknahme-Fassung keinen Ereignisstand uebernimmt: Sie rechnet nichts
+    # neu, sie kopiert die Werte ihrer Vorgaengerin.
+    based_on_event_id: Mapped[int | None] = mapped_column(default=None)
+    # Die Fassung, die diese hier zuruecknimmt. `NULL` bei jeder aus dem Feedback abgeleiteten.
+    reverts_set_id: Mapped[int | None] = mapped_column(
+        ForeignKey("quality_weight_sets.id"), default=None
+    )
+    entries: Mapped[list[QualityWeightEntry]] = relationship(
+        back_populates="weight_set", cascade="all, delete-orphan"
+    )
+
+
+class QualityWeightEntry(Base):
+    """Ein Gewicht je Kriterium innerhalb EINER Fassung.
+
+    `criterion_key` ist ein FREIER STRING OHNE FREMDSCHLUESSEL, derselbe Grund wie bei
+    `photo_criterion_scores.criterion_key`: Ein neues Kriterium erzwingt nie eine Migration. Der
+    Preis ist, dass eine Fassung Schluessel tragen kann, die der Startwertsatz nicht kennt - genau
+    dafuer prueft `quality_weights.py::effective_weights` die Ueberlagerung in BEIDE Richtungen
+    (G2).
+
+    `weight` ist STRIKT POSITIV und endlich. Weder Schema noch Datenbank erzwingen das; die
+    Schreibstelle tut es, und der Lesepfad nimmt keinen anderen Wert an (S12). Ein gespeichertes
+    `NaN` vergiftete jeden Qualitaetswert aller Projekte, ohne einen Fehler zu erzeugen."""
+
+    __tablename__ = "quality_weight_entries"
+    __table_args__ = (
+        UniqueConstraint("set_id", "criterion_key", name="uq_quality_weight_entries_set_criterion"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    set_id: Mapped[int] = mapped_column(ForeignKey("quality_weight_sets.id"))
+    criterion_key: Mapped[str]
+    weight: Mapped[float]
+    weight_set: Mapped[QualityWeightSet] = relationship(back_populates="entries")
