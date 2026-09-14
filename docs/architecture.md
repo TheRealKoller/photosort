@@ -1515,7 +1515,22 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     einzelnen Fotos bleibt unpersistiert.
   - **Gebildet wird in EINEM sortierten Durchlauf** (`events.py::build_events`, aufgerufen in
     `worker.py::_build_grouping_and_rankings` an der Stelle der früheren Landmark-Verfeinerung —
-    nach der Cloud-Phase, vor dem Aufbau der Partitionen).
+    nach der Cloud-Phase, vor dem Aufbau der Partitionen), dem seit Spec
+    [`0477`](../specs/features/0477-motivwechsel-trennsignal.md) / ADR
+    [`0109`](../specs/decisions/0109-motivwechsel-trennt-in-einem-vorgelagerten-durchlauf.md) eine
+    **zweite Stufe vorausgeht**: `events.py::motif_change_starts(ordered)` bestimmt rein und vorab
+    die Indizes, an denen ein **bestätigter Motivwechsel** ein neues Event erzwingt. Ein solcher
+    Index wirkt im Durchlauf wie eine gemeldete Grenze — `begin` läuft auf allen Signalen und ist
+    deren vollständige Rücksetzung —, und die Signalkette selbst bleibt unverändert. Der Wechsel
+    ist die symmetrische Differenz der getragenen Motive gegenüber dem **eröffnenden** Foto des
+    laufenden Abschnitts; getragen heißt `selection.py::carried_motifs`, also dieselbe eine Grenze
+    wie im Auswahlvorschlag, nie eine eigene. Getrennt wird erst, wenn
+    `MOTIF_CHANGE_CONFIRMING_PHOTOS` aufeinanderfolgende mitredende Fotos den Wechsel zeigen
+    (unkalibriert, durch keinen Test gepinnt), und die Grenze fällt **rückwirkend** auf das erste
+    Foto dieses Fensters. Ein Foto ohne Motiv-Kopfzeile oder mit `excluded_document` wird dabei
+    übergangen — es löst keine Grenze aus und bleibt Mitglied seines Events; eine vorhandene
+    Kopfzeile ohne getragenes Motiv ist davon verschieden und redet voll mit. Ohne Motivangabe
+    liefert die Stufe die leere Menge und der Durchlauf ist der bisherige.
   - **Zwei Aufrufer, EIN Weg zur Gliederung** *(Spec
     [`0426`](../specs/features/0426-zeitversatz-je-kamera.md))*: Event-Bildung, Partitionen,
     Kategorieableitung und Rangzeilen stehen seither gemeinsam in
@@ -1542,8 +1557,11 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     ausdrücklich nicht kurzgeschlossen) und ruft danach genau eine der schreibenden Methoden auf
     allen auf. Nur diese Trennung von reiner Frage (`is_boundary`) und Fortschreibung
     (`begin`/`advance`) erlaubt ein zustandsbehaftetes Signal neben einem paarweisen, ohne dass die
-    Auswertungsreihenfolge zum Bestandteil des Ergebnisses wird — ein weiteres Signal ist danach
-    eine Klasse und ein Listeneintrag.
+    Auswertungsreihenfolge zum Bestandteil des Ergebnisses wird — ein weiteres **paarweises**
+    Signal ist danach eine Klasse und ein Listeneintrag. Die Liste bleibt genau dafür der
+    Erweiterungspunkt: Der Motivwechsel ist keine paarweise Frage, sondern eine Segmentierung über
+    die ganze Folge (Bestätigungsfenster, rückwirkender Beginn), und steht deshalb als eigene Stufe
+    davor statt als sechster Eintrag.
   - **Die Ausdehnung ist der fachliche Kern:** die bisherige Schwelle begrenzte den *Schritt*, nicht
     den Durchmesser — ein Spaziergang in 400-m-Schritten trennte nie und überspannte Kilometer.
   - **Der Ortsbezug entsteht ausschließlich aus GEMESSENEN Koordinaten und Namen** (Rangfolge

@@ -115,7 +115,11 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
-from photosort.motif_strengths import load_effective_strengths, upsert_assessment
+from photosort.motif_strengths import (
+    EffectiveStrength,
+    load_effective_strengths,
+    upsert_assessment,
+)
 from photosort.motifs import local_motif_strengths
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
@@ -1705,6 +1709,21 @@ def _append_cloud_error(run: CriterionScoringRun, message: str) -> None:
     run.cloud_error_message = combined[:_MAX_RUN_CLOUD_ERROR_MESSAGE_LENGTH]
 
 
+def _plain_strengths(
+    effective: Mapping[str, EffectiveStrength] | None,
+) -> dict[str, float] | None:
+    """Die wirksamen Staerken eines Fotos als blanke Zahlen - `None` BLEIBT `None`.
+
+    Die Abwesenheit der Kopfzeile ist ein eigener Zustand ("noch nicht klassifiziert") und
+    ausdruecklich nicht dasselbe wie eine Kopfzeile ohne getragenes Motiv. Ein `.get(photo_id, {})`
+    an der Aufrufstelle - wie es der Auswahlvorschlag richtigerweise tut - liesse beide
+    zusammenfallen, und ein unklassifiziertes Foto zerrisse dann ein Event, statt uebergangen zu
+    werden."""
+    if effective is None:
+        return None
+    return {motif_key: value.strength for motif_key, value in effective.items()}
+
+
 async def _build_grouping_and_rankings(
     session: AsyncSession,
     run: CriterionScoringRun,
@@ -1764,6 +1783,30 @@ async def _build_grouping_and_rankings(
     # Abschneiden.
     landmark_name_by_photo = await _landmark_names(session, values_by_photo_id.keys())
 
+    # DAS MOTIVBILD je Kandidat - die Grundlage des Motivwechsels als Trennsignal.
+    #
+    # Die WIRKSAMEN Staerken, nie die rohe Staerkezeile: eine Nutzerkorrektur wirkt damit genau
+    # wie die Modellaussage, ohne eine zweite Fassung des `CASE`.
+    #
+    # SICHERHEIT (S4): Beide Abfragen bleiben auf `values_by_photo_id.keys()` eingeschraenkt und
+    # duerfen die Menge, die `build_events` sieht, NIE erweitern. Ausdruecklich nicht der Fall von
+    # `infer_locations` oben, dessen Bezugsmenge bewusst das ganze Projekt ist: eine "analog
+    # verbreiterte" Motivabfrage braechte hier keinen Nutzen, sondern nur einen Weg, auf dem ein
+    # projektfremdes Foto in die geordnete Folge gelangt.
+    effective_strengths = await load_effective_strengths(session, values_by_photo_id.keys())
+    excluded_documents = set(
+        (
+            await session.execute(
+                select(PhotoMotifAssessment.photo_id).where(
+                    PhotoMotifAssessment.photo_id.in_(list(values_by_photo_id)),
+                    PhotoMotifAssessment.excluded_document.is_(True),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     # DIE EVENT-BILDUNG. Beim Kriterien-Lauf liegt die Stelle bewusst NACH dem `finally` der
     # Landmark-Phase (sonst fehlten die Namen, die dieser Lauf gerade erst erzeugt hat) und VOR
     # dem Aufbau von `partitions` unten (der Partitionsschluessel IST die `event_id`).
@@ -1779,6 +1822,8 @@ async def _build_grouping_and_rankings(
             gps_lat=time_and_place_by_photo_id[photo_id][1],
             gps_lon=time_and_place_by_photo_id[photo_id][2],
             landmark_name=landmark_name_by_photo.get(photo_id),
+            motif_strengths=_plain_strengths(effective_strengths.get(photo_id)),
+            excluded_document=photo_id in excluded_documents,
         )
         for photo_id in values_by_photo_id
     )

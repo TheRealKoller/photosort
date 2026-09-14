@@ -26,13 +26,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import (
+    CriterionScoringRun,
+    Event,
     FeedbackEvent,
     FeedbackEventKind,
     MotifAssessmentSource,
     Photo,
     PhotoMotifCorrection,
     PhotoMotifStrength,
+    PhotoRanking,
     Project,
+    ScanStatus,
+    ScoringRun,
     User,
 )
 from photosort.motif_strengths import load_effective_strengths, upsert_assessment
@@ -736,3 +741,102 @@ class TestTheRecordedCorrection:
 
         assert (written.status_code, withdrawn.status_code) == (422, 422)
         assert await _recorded_kinds(db_session) == []
+
+
+async def _grouped_run(session: AsyncSession, photo: Photo) -> int:
+    """Ein erfolgreicher Kriterien-Lauf mit einem Event und einer Rangzeile fuer dieses Foto.
+
+    Rueckgabe ist die Lauf-Id als `int`, nicht das ORM-Objekt: `_grouping_rows` verwirft den
+    Identity-Zustand, und ein Attributzugriff danach liefe in einen Lazy-Load ausserhalb des
+    greenlet-Kontexts."""
+    project_id, photo_id, taken_at = photo.project_id, photo.id, photo.taken_at
+    scoring_run = ScoringRun(project_id=project_id, status=ScanStatus.SUCCESS)
+    session.add(scoring_run)
+    await session.flush()
+    run = CriterionScoringRun(
+        project_id=project_id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+    )
+    session.add(run)
+    await session.flush()
+    event = Event(
+        criterion_scoring_run_id=run.id, position=1, started_at=taken_at, ended_at=taken_at
+    )
+    session.add(event)
+    await session.flush()
+    session.add(
+        PhotoRanking(
+            criterion_scoring_run_id=run.id,
+            photo_id=photo_id,
+            event_id=event.id,
+            rank_score=0.5,
+            rank_position=1,
+        )
+    )
+    await session.commit()
+    return run.id
+
+
+async def _grouping_rows(session: AsyncSession, run_id: int) -> tuple[list[object], list[object]]:
+    session.expire_all()
+    events = list(
+        (
+            await session.execute(
+                select(Event.id, Event.position, Event.started_at, Event.ended_at)
+                .where(Event.criterion_scoring_run_id == run_id)
+                .order_by(Event.position)
+            )
+        ).all()
+    )
+    rankings = list(
+        (
+            await session.execute(
+                select(
+                    PhotoRanking.photo_id,
+                    PhotoRanking.event_id,
+                    PhotoRanking.rank_position,
+                    PhotoRanking.selection_position,
+                )
+                .where(PhotoRanking.criterion_scoring_run_id == run_id)
+                .order_by(PhotoRanking.photo_id)
+            )
+        ).all()
+    )
+    return events, rankings
+
+
+class TestTheCorrectionDoesNotRegroupAnExistingRun:
+    """Ein Event ist ein LAUF-ARTEFAKT: die Korrektur verschiebt Event-Grenzen erst beim naechsten
+    Lauf. Der Endpunkt selbst stoesst keine Neugliederung an - taete er es, aenderte ein Klick in
+    der Einzelbildansicht die Gliederung und damit die Auswahl-Kontingente eines abgeschlossenen
+    Laufs unter der Hand."""
+
+    async def test_the_put_leaves_events_and_ranking_rows_untouched(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        photo = await _make_photo(db_session)
+        await _assess(db_session, photo, menschen=0.9)
+        photo_id = photo.id
+        run_id = await _grouped_run(db_session, photo)
+        before = await _grouping_rows(db_session, run_id)
+
+        response = await authenticated_api_client.put(
+            _url(photo_id, "tiere"), json={"applies": True}
+        )
+
+        assert response.status_code == 200
+        assert await _grouping_rows(db_session, run_id) == before
+
+    async def test_the_delete_leaves_events_and_ranking_rows_untouched(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        photo = await _make_photo(db_session)
+        await _assess(db_session, photo, menschen=0.9)
+        photo_id = photo.id
+        run_id = await _grouped_run(db_session, photo)
+        await authenticated_api_client.put(_url(photo_id, "tiere"), json={"applies": True})
+        before = await _grouping_rows(db_session, run_id)
+
+        response = await authenticated_api_client.delete(_url(photo_id, "tiere"))
+
+        assert response.status_code == 204
+        assert await _grouping_rows(db_session, run_id) == before

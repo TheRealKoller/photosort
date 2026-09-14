@@ -1,6 +1,11 @@
 # 0087 - Das Event ist eine persistierte Einheit je Kriterien-Lauf, seine Grenzen entstehen aus einer Liste gleichrangiger Trennsignale
 
 **Status:** Accepted
+**Teilweise abgelöst:** Abschnitt 3, letzter Satz (das Motivwechsel-Signal als Klasse und
+Listeneintrag) durch ADR
+[`0109`](./0109-motivwechsel-trennt-in-einem-vorgelagerten-durchlauf.md). Das Protokoll, die
+Reinheit von `is_boundary`, die nicht kurzgeschlossene Auswertung und die Liste als
+Erweiterungspunkt für paarweise Signale gelten unverändert.
 **Datum:** 2026-09-12
 **Bezug:** Spec `specs/features/0425-*.md`, ADR
 [`0021`](./0021-kriterien-datenmodell-kuratierungs-pipeline.md) (gateführte Zwei-Phasen-Pipeline),
