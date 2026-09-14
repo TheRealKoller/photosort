@@ -229,6 +229,38 @@ describe('Cloud-Nutzung pro Durchlauf', () => {
       /läuft vollständig lokal auf diesem server/i,
     )
   })
+
+  // specs/features/0469-verlaessliche-sehenswuerdigkeitsnamen.md, S7: An diesem Text haengt die
+  // Einwilligung. Seit ADR 0106 geht mit dem Foto eine grobe Ortsangabe hinaus - bliebe der Satz
+  // bei "sendet Fotos", waere die Einwilligung fuer diese Datenklasse an einer Beschreibung
+  // erteilt, die sie nicht nennt.
+  it('names the coarse place hint in the cloud sentence', () => {
+    renderSection(project({ cloud_vision_detection_enabled: true }))
+
+    const text = screen.getByTestId('classification-scope-text')
+
+    // BEIDE Stufen benannt - eine Aussage, die nur den Ortsnamen naennte, verschwiege die
+    // Koordinate, und umgekehrt.
+    expect(text).toHaveTextContent(/ortsname/i)
+    expect(text).toHaveTextContent(/koordinate/i)
+  })
+
+  it('says that photos without location data are not affected', () => {
+    renderSection(project({ cloud_vision_detection_enabled: true }))
+
+    expect(screen.getByTestId('classification-scope-text')).toHaveTextContent(/ohne standortdaten/i)
+  })
+
+  it('leaves the local sentence free of any place hint', async () => {
+    const user = userEvent.setup()
+    renderSection(project({ cloud_vision_detection_enabled: true }))
+
+    await user.click(screen.getByRole('checkbox', CHECKBOX))
+
+    const text = screen.getByTestId('classification-scope-text')
+    expect(text).not.toHaveTextContent(/ortsname/i)
+    expect(text).not.toHaveTextContent(/koordinate/i)
+  })
 })
 
 describe('Kosten sichtbar vor dem Start', () => {
