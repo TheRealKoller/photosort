@@ -5,9 +5,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import CursorResult, and_, delete, func, or_, select
@@ -21,6 +22,15 @@ from photosort.api.ratings import RatingWriteOut, write_own_rating
 from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
+from photosort.duplicates import (
+    group_position,
+    has_open_suggestion,
+    has_open_suggestion_for,
+    load_duplicate_links,
+    member_ids_of,
+    representative_of,
+    survives_ausschuss_for,
+)
 from photosort.events import (
     EffectiveLocation,
     EventSpan,
@@ -33,6 +43,7 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    DuplicateDecision,
     Event,
     FeedbackEventKind,
     FinalSelectionDecision,
@@ -40,6 +51,7 @@ from photosort.models import (
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
+    PhotoDuplicateDecision,
     PhotoFineLabel,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -511,13 +523,18 @@ async def _filtered_photo_ids(
         base = base.where(or_(own_rating.id.is_(None), own_rating.status.is_(None)))
     elif rating_status is RatingFilter.SUGGESTED:
         # Bildet dieselbe Regel wie has_suggestion in _to_photo_out als SQL-Praedikat nach: keine
-        # eigene ALBUMENTSCHEIDUNG des anfragenden Nutzers UND PhotoScore.suggested_status
-        # gesetzt. Bewusst keine gemeinsame Codebasis mit has_suggestion (ORM-Query vs.
-        # Objekt-Praedikat) - Konsistenz sichert stattdessen
-        # `tests/test_api_photos.py::test_list_photos_suggested_filter_matches_has_suggestion_parity`.
+        # eigene ALBUMENTSCHEIDUNG des anfragenden Nutzers UND ein OFFENER Vorschlag.
+        #
+        # "Offen" ist seit ADR 0104 mehr als "suggested_status gesetzt": Eine im Duplikat-Vergleich
+        # entschiedene Aufnahme ist beantwortet und verschwindet aus diesem Filter - und damit auch
+        # aus der Zaehlung des Ausschuss-Gates, die denselben Filter benutzt. Die Bedingung steht
+        # deshalb an EINER Stelle (`duplicates.py::has_open_suggestion`); die Objektfassung
+        # daneben bleibt ueber
+        # `tests/test_api_photos.py::test_list_photos_suggested_filter_matches_has_suggestion_parity`
+        # an sie gebunden.
         base = base.join(PhotoScore, PhotoScore.photo_id == Photo.id).where(
             or_(own_rating.id.is_(None), own_rating.status.is_(None)),
-            PhotoScore.suggested_status.is_not(None),
+            has_open_suggestion(),
         )
     elif rating_status is RatingFilter.FAVORITE:
         # Eigene SPALTE, nicht mehr ein Wert von `status`. Ohne diesen Zweig wuerfe
@@ -571,6 +588,11 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
             # `photo.album_suitability` einen Lazy-Load aus und schluege im Async-Kontext mit
             # MissingGreenlet fehl.
             selectinload(Photo.album_suitability),
+            # Grundlage der Objektfassung des Ueberlebenden-Praedikats (`is_candidate`) und der
+            # Anzeigeregel des offenen Vorschlags. Ohne dieses selectinload loeste
+            # `photo.duplicate_decision` einen Lazy-Load aus und schluege im Async-Kontext mit
+            # MissingGreenlet fehl.
+            selectinload(Photo.duplicate_decision),
         )
     )
     return {photo.id: photo for photo in result.scalars()}
@@ -726,10 +748,11 @@ def _cloud_vision_status_out(photo: Photo, project: Project) -> list[CloudVision
             success=remote_category_success,
             error=errors_by_phase.get(CloudVisionPhase.REMOTE_CATEGORY),
             consent_enabled=project.cloud_vision_detection_enabled,
-            # Spiegelt exakt die WHERE-Klausel von worker.py::select_remote_category_candidates
-            # - kein PhotoScore vorhanden ODER bereits aussortiert -> kein
-            # Kandidat.
-            is_candidate=photo.score is not None and photo.score.suggested_status is None,
+            # Spiegelt exakt die WHERE-Klausel von worker.py::select_remote_category_candidates -
+            # und zwar ueber DASSELBE Praedikat, nicht ueber eine zweite Formulierung davon. Kein
+            # PhotoScore vorhanden ODER nicht ueberlebend -> kein Kandidat. Dies ist der fuenfte
+            # Ort des Praedikats: Anzeige, keine Grenze (S1).
+            is_candidate=survives_ausschuss_for(photo),
         ),
     ]
 
@@ -1046,23 +1069,19 @@ def _to_photo_out(
 
     Die drei Felder sind PROJEKTAUSSAGEN und tragen die Cache-Auflage ausdruecklich NICHT - genau
     wie `ratings[]` und `RankingOut.proposed`."""
-    # Anzeigeregel: ein Vorschlag ist nur sichtbar, wenn (a) PhotoScore.suggested_status gesetzt
-    # ist UND (b) der anfragende Nutzer noch KEINE eigene ALBUMENTSCHEIDUNG fuer dieses Foto hat -
-    # unabhaengig davon, ob eine ANDERE Person das Foto schon bewertet hat; die eigene Bewertung
-    # hat immer Vorrang.
+    # Anzeigeregel: ein Vorschlag ist nur sichtbar, wenn (a) er OFFEN ist - gestellt und im
+    # Duplikat-Vergleich noch nicht beantwortet (ADR 0104) - UND (b) der anfragende Nutzer noch
+    # KEINE eigene ALBUMENTSCHEIDUNG fuer dieses Foto hat, unabhaengig davon, ob eine ANDERE
+    # Person das Foto schon bewertet hat; die eigene Bewertung hat immer Vorrang.
     #
-    # Das VORHANDENSEIN der Zeile ist hier keine Aussage mehr: seit `favorite` eine eigene Spalte
-    # ist, existiert eine Zeile auch ohne jede Albumentscheidung. Ueber das Zeilenvorhandensein
-    # gepruefte Abwesenheit liesse den Ausschuss-Vorschlag verschwinden, sobald jemand das Foto
-    # als Favorit markiert - ohne Meldung und ohne Weg zurueck.
+    # Das VORHANDENSEIN der Bewertungszeile ist hier keine Aussage: seit `favorite` eine eigene
+    # Spalte ist, existiert eine Zeile auch ohne jede Albumentscheidung. Ueber das
+    # Zeilenvorhandensein gepruefte Abwesenheit liesse den Ausschuss-Vorschlag verschwinden, sobald
+    # jemand das Foto als Favorit markiert - ohne Meldung und ohne Weg zurueck.
     has_own_album_decision = any(
         rating.user_id == current_user_id and rating.status is not None for rating in photo.ratings
     )
-    has_suggestion = (
-        photo.score is not None
-        and photo.score.suggested_status is not None
-        and not has_own_album_decision
-    )
+    has_suggestion = has_open_suggestion_for(photo) and not has_own_album_decision
     suggestion = _to_suggestion_out(photo.score) if has_suggestion and photo.score else None
     decision = decisions.get(photo.id)
     state = _selection_state_of(
@@ -1376,7 +1395,13 @@ async def _ranking_by_photo_id(
 #
 # Steht VOR `list_photos`, nicht erst vor dem Alternativen-Endpunkt: `Query(...)`-Vorgabewerte
 # werden zur DEFINITIONSZEIT ausgewertet, eine spaeter definierte Konstante bricht den Import.
-_MAX_QUERY_POSITION = 1_000_000_000
+#
+# OEFFENTLICH (kein fuehrender Unterstrich), weil die Grenze GETEILT ist: `api/duplicate_decisions.py`
+# zieht sie von hier. Ein geteilter Grenzwert soll nicht zweimal dastehen - zwei Zahlen liefen
+# auseinander, und die kleinere entschiede still, welche Anfrage `422` statt `404` bekommt. Die
+# aeltere Nachbildung in `api/cameras.py` bleibt vorerst stehen (eigener Wert, eigene Begruendung);
+# sie darf spaeter hierher zusammengezogen werden.
+MAX_QUERY_POSITION = 1_000_000_000
 
 
 @router.get("/projects/{project_id}/photos", response_model=PhotoListOut)
@@ -1411,8 +1436,8 @@ async def list_photos(
     # Ohne diesen Filter kann die Oberflaeche die beiden Fotos fuer den Versatz-Vorschlag nicht
     # anbieten. `ge=1` schliesst `0` und negative Werte aus, `le` verhindert, dass ein Wert
     # jenseits von 2^63 unter SQLite einen OverflowError und damit eine 500 statt einer leeren
-    # Liste erzeugt (Muster `_MAX_QUERY_POSITION`).
-    camera_id: int | None = Query(None, ge=1, le=_MAX_QUERY_POSITION),
+    # Liste erzeugt (Muster `MAX_QUERY_POSITION`).
+    camera_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -1664,6 +1689,154 @@ async def album_selection(
     return AlbumSelectionOut(participants=participants, has_proposal=has_proposal, items=items)
 
 
+class DuplicateGroupPhotoOut(BaseModel):
+    """Ein Mitglied der Duplikat-Gruppe: das Foto und die Entscheidung darueber.
+
+    Die Entscheidung reist NEBEN dem Foto, nicht an ihm (ADR 0104): `PhotoOut` bekommt kein Feld,
+    weil die Entscheidung ausserhalb dieser Ansicht keine Anzeigerolle hat und sonst auf jedem
+    Lesepfad stuende. `null` heisst "noch nicht entschieden"."""
+
+    photo: PhotoOut
+    decision: DuplicateDecision | None
+
+
+class DuplicateGroupOut(BaseModel):
+    """Die Antwortform ALLER DREI Endpunkte der Vergleichsansicht - Lesepfad wie beide
+    Schreibwege. Ein Schreibvorgang liefert damit denselben vollstaendigen Stand zurueck, den ein
+    erneutes Laden liefern wuerde; die Oberflaeche braucht danach keine zweite Anfrage, um zu
+    wissen, was gilt.
+
+    `position`/`total` sind 1-basiert, und `total` zaehlt die noch OFFENEN Gruppen des Projekts,
+    vereinigt mit der gerade angesehenen (AK10, siehe `duplicates.py::group_position`)."""
+
+    items: list[DuplicateGroupPhotoOut]
+    position: int
+    total: int
+
+
+async def _duplicate_decisions(
+    session: AsyncSession, photo_ids: list[int]
+) -> dict[int, DuplicateDecision]:
+    """Die Ausschuss-Entscheidung je Foto - EINE Abfrage je Anfrage, nie eine je Foto (Muster
+    `_final_selection_decisions`). Ein fehlender Eintrag heisst "noch nicht entschieden"."""
+    if not photo_ids:
+        return {}
+    result = await session.execute(
+        select(PhotoDuplicateDecision.photo_id, PhotoDuplicateDecision.decision).where(
+            PhotoDuplicateDecision.photo_id.in_(photo_ids)
+        )
+    )
+    return {photo_id: decision for photo_id, decision in result.all()}
+
+
+async def build_duplicate_group_out(
+    session: AsyncSession, project: Project, photo_id: int, current_user_id: int
+) -> DuplicateGroupOut:
+    """Bildet den Stern um `photo_id` und hydratisiert seine Mitglieder zur vollen Antwort.
+
+    VON ALLEN DREI ENDPUNKTEN GENUTZT, auch von den beiden Schreibwegen im eigenen Router - genau
+    deshalb steht der Aufbau hier und nicht im Endpunkt: Die Hydratation (`_photos_by_id`,
+    `_to_photo_out` samt Event-, Orts- und Rang-Kontext) haengt an dieser Datei, und eine zweite
+    Fassung davon liefe auseinander.
+
+    `404` (als `HTTPException`), wenn es keine Gruppe gibt. Der Fall deckt unbekannte Id, fremdes
+    Projekt (die Kantenliste ist bereits projektbegrenzt, S7) und "Foto in keinem Stern" - und
+    unterscheidet sie ausdruecklich nicht.
+
+    SICHERHEIT (S10): Die Antwort traegt `PhotoOut` und damit `suggestion`/`ratings`; sie ist
+    damit eine Funktion des ANFRAGENDEN Nutzers. Bekaeme sie je eine Zwischenspeicherung, ein
+    `ETag` oder ein `Cache-Control` ueber `no-store` hinaus, muss der Schluessel den Nutzer
+    enthalten."""
+    links = await load_duplicate_links(session, project.id)
+    representative_id = representative_of(photo_id, links)
+    if representative_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
+        )
+    stellung = group_position(representative_id, links)
+    # `representative_of` hat die Gruppe soeben aufgeloest - `group_position` kann sie nicht mehr
+    # verfehlen. Der Zweig steht trotzdem, weil `mypy --strict` sonst das `None` durchliesse.
+    assert stellung is not None
+    position, total = stellung
+
+    ids = member_ids_of(representative_id, links)
+    photos_by_id = await _photos_by_id(session, ids)
+    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project.id)
+    rankings_by_id = (
+        await _ranking_by_photo_id(session, latest_run_id, ids) if latest_run_id is not None else {}
+    )
+    partition_sizes = (
+        await _partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
+    )
+    place_by_id = await _event_and_location_by_photo_id(
+        session, project.id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
+    )
+    motifs_by_id = await load_effective_strengths(session, ids)
+    final_decisions = await _final_selection_decisions(session, ids)
+    duplicate_decisions = await _duplicate_decisions(session, ids)
+    user_count = await _user_count(session)
+    return DuplicateGroupOut(
+        items=[
+            DuplicateGroupPhotoOut(
+                photo=_to_photo_out(
+                    photos_by_id[member_id],
+                    current_user_id,
+                    project,
+                    rankings_by_id.get(member_id),
+                    partition_sizes,
+                    # Keine `curation_position`: Die Gruppe ist keine numerierte Auswahl.
+                    None,
+                    place_by_id.get(member_id, NO_PLACE),
+                    motifs_by_id.get(member_id),
+                    decisions=final_decisions,
+                    user_count=user_count,
+                ),
+                decision=duplicate_decisions.get(member_id),
+            )
+            for member_id in ids
+        ],
+        position=position,
+        total=total,
+    )
+
+
+@router.get("/projects/{project_id}/duplicate-groups/{photo_id}", response_model=DuplicateGroupOut)
+async def duplicate_group(
+    project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
+    photo_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT: ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE router-weite
+    # `dependencies`-Liste (siehe Kopfkommentar der Datei) - ein Endpunkt, der diesen Parameter
+    # vergisst, waere STILL OEFFENTLICH.
+    current_user: User = Depends(get_current_user),
+) -> DuplicateGroupOut:
+    """Alle Aufnahmen EINER Duplikat-Gruppe samt ihrer Ausschuss-Entscheidung.
+
+    Die Gruppe ist ABGELEITET und nirgends gespeichert (ADR 0104 Punkt 1): Sie ist der Stern ueber
+    `PhotoScore.duplicate_of` - der Gewinner und alle, die auf ihn zeigen -, zur Lesezeit gebildet.
+    Sie hat deshalb keine eigene Id und ist ueber JEDES ihrer Mitglieder unter derselben Antwort
+    erreichbar, den Gewinner eingeschlossen. Der Gewinner traegt dabei selbst keine
+    Vorschlagszeile; er ist der Ausschuss-Ueberlebende der Serie.
+
+    KEIN MITGLIED IST AUSGEZEICHNET. Die Antwort nennt weder Gewinner noch Original noch
+    Vorgeschlagenen - die Reihenfolge ist `taken_at`, bei Gleichstand `id`, und sonst nichts.
+
+    `position`/`total` beziehen sich auf die noch OFFENEN Gruppen des Projekts: Eine Gruppe, in
+    der jedes Mitglied entschieden ist, zaehlt nicht mehr mit, und der Zaehler beschreibt damit
+    die verbleibende Arbeit. Die gerade angesehene Gruppe behaelt ihren Platz auch dann, wenn sie
+    fertig ist.
+
+    `404`, wenn es zu dieser Id keine Gruppe gibt - unbekanntes Foto, fremdes Projekt, Foto ohne
+    Duplikat, oder ein Vorschlag wegen geringer Bildqualitaet (der traegt kein `duplicate_of`).
+    Die vier Faelle sind voneinander nicht unterscheidbar, und die Antwort spiegelt den
+    uebergebenen Wert nicht.
+
+    `422` fuer eine Pfad-Id ausserhalb der Grenzen: Ein unbeschraenkter Pydantic-`int` erreicht die
+    Datenbank und wird jenseits von 2^63 zu `500` statt `404`."""
+    project = await _get_project_or_404(project_id, session)
+    return await build_duplicate_group_out(session, project, photo_id, current_user.id)
+
+
 def _strength_values(effective: Mapping[str, EffectiveStrength] | None) -> dict[str, float]:
     """Die wirksamen Staerken als nackte Zahlen fuer `selection.py`.
 
@@ -1681,13 +1854,13 @@ async def draft_alternatives(
     # 2^63 unter SQLite einen `OverflowError` und damit eine 500 statt einer leeren Liste erzeugt.
     # FastAPI spiegelt bei `422` den Rohwert im `input`-Feld zurueck - er wird ausschliesslich als
     # React-Textknoten gerendert, nie geloggt.
-    event_id: int = Query(..., ge=1, le=_MAX_QUERY_POSITION),
-    photo_id: int = Query(..., ge=1, le=_MAX_QUERY_POSITION),
+    event_id: int = Query(..., ge=1, le=MAX_QUERY_POSITION),
+    photo_id: int = Query(..., ge=1, le=MAX_QUERY_POSITION),
     # `limit <= 200` deckelt zugleich die schwere Hydratation ueber `_photos_by_id` mit ihren
     # `selectinload`s - sie laeuft ausschliesslich ueber die angeforderte Seite, nie ueber die
     # ganze Restmenge.
     limit: int = Query(60, ge=1, le=200),
-    offset: int = Query(0, ge=0, le=_MAX_QUERY_POSITION),
+    offset: int = Query(0, ge=0, le=MAX_QUERY_POSITION),
     session: AsyncSession = Depends(get_session),
     # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei), und
@@ -1872,8 +2045,8 @@ class DraftExchangeIn(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    photo_id: int = Field(ge=1, le=_MAX_QUERY_POSITION)
-    replaced_photo_id: int = Field(ge=1, le=_MAX_QUERY_POSITION)
+    photo_id: int = Field(ge=1, le=MAX_QUERY_POSITION)
+    replaced_photo_id: int = Field(ge=1, le=MAX_QUERY_POSITION)
 
 
 class DraftExchangeOut(BaseModel):

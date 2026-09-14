@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import pricing, worker
 from photosort.album_suitability import normalize_level
+from photosort.api.projects import _count_landmark_candidates
 from photosort.cloud_vision import (
     VISION_MODELS_BY_PROVIDER,
     CloudRequestThrottle,
@@ -39,12 +40,14 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    DuplicateDecision,
     Event,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoDuplicateDecision,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
@@ -109,6 +112,8 @@ async def _add_score(
     exposure: float = 0.0,
     cluster_key: str | None = "cluster-0",
     suggested_status: RatingStatus | None = None,
+    duplicate_of: int | None = None,
+    duplicate_decision: DuplicateDecision | None = None,
 ) -> PhotoScore:
     score = PhotoScore(
         photo_id=photo.id,
@@ -116,9 +121,12 @@ async def _add_score(
         exposure=exposure,
         cluster_key=cluster_key,
         suggested_status=suggested_status,
+        duplicate_of=duplicate_of,
         computed_at=datetime.now(UTC),
     )
     session.add(score)
+    if duplicate_decision is not None:
+        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=duplicate_decision))
     await session.commit()
     return score
 
@@ -530,6 +538,81 @@ async def test_only_considers_ausschuss_survivors(db_session: AsyncSession, tmp_
         .all()
     )
     assert criteria == []
+
+
+async def test_a_keep_decision_pulls_a_duplicate_loser_back_into_the_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """specs/features/0374-duplikate-vergleichen.md, Auflage S1 an der ersten der vier
+    cloud-bestimmenden Stellen: Die Fotoauswahl dieses Laufs speist zugleich den
+    Sehenswuerdigkeits-Teilschritt. Ohne sie fehlte eine ausdruecklich behaltene Aufnahme in der
+    Bewertung - und damit spaeter im Album."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    winner = await _add_photo(
+        db_session, project, "gewinner.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, winner)
+    _write_display_variant(tmp_path, winner, _flat_image())
+    behalten = await _add_photo(
+        db_session, project, "behalten.jpg", "etag-2", datetime(2023, 1, 1, 0, 0, 1, tzinfo=UTC)
+    )
+    await _add_score(
+        db_session,
+        behalten,
+        cluster_key=None,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=winner.id,
+        duplicate_decision=DuplicateDecision.KEEP,
+    )
+    _write_display_variant(tmp_path, behalten, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.photos_total == 2
+    assert await _criteria_of(db_session, behalten) != {}
+
+
+async def test_a_discard_decision_takes_a_survivor_out_of_the_run(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die zweite Richtung. Ohne sie bestuende der Fall darueber auch gegen ein Praedikat, das
+    schlicht alles durchlaesst - und gerade diese Richtung ist die, die den abfliessenden Bestand
+    verkleinert."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    verworfen = await _add_photo(
+        db_session, project, "raus.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, verworfen, duplicate_decision=DuplicateDecision.DISCARD)
+    _write_display_variant(tmp_path, verworfen, _flat_image())
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert run.photos_total == 0
+    assert await _criteria_of(db_session, verworfen) == {}
 
 
 async def test_best_effort_content_criteria_failure_does_not_fail_the_run(
@@ -5681,3 +5764,102 @@ class TestTheQualityScoreOfTheRankingStep:
         assert await _criteria_of(db_session, without[2]) == await _criteria_of(
             db_session, with_photo
         )
+
+
+class TestTheLandmarkEstimateCountsWhatTheRunSends:
+    """specs/features/0374-duplikate-vergleichen.md, Auflage S1 fuer den ZWEITEN Cloud-Teilschritt.
+
+    MENGENGLEICHHEIT ueber demselben Datenbestand, nicht zwei getrennt hingeschriebene
+    Erwartungswerte: Die Schaetzung ist eine eigene Anweisung in `api/projects.py` und folgt der
+    Fotoauswahl des Laufs nicht von selbst. Nennt sie eine andere Zahl, als der Lauf sendet, beruht
+    die Freigabe eines kostenpflichtigen Laufs auf einer Zahl, die nicht gilt - sichtbar erst an
+    der Abrechnung des Anbieters."""
+
+    async def _photo_with_variant(
+        self,
+        session: AsyncSession,
+        project: Project,
+        path: str,
+        etag: str,
+        second: int,
+        cache_dir: Path,
+        **score: object,
+    ) -> Photo:
+        photo = await _add_photo(
+            session, project, path, etag, datetime(2023, 1, 1, 0, 0, second, tzinfo=UTC)
+        )
+        await _add_score(session, photo, **score)  # type: ignore[arg-type]
+        _write_display_variant(cache_dir, photo, _flat_image())
+        return photo
+
+    async def _run(
+        self,
+        session: AsyncSession,
+        project: Project,
+        scoring_run_id: int,
+        cache_dir: Path,
+        *,
+        landmark_client: RecordingLandmarkClient | None = None,
+    ) -> CriterionScoringRun:
+        return await run_criterion_scoring(
+            session,
+            project,
+            scoring_run_id,
+            cache_dir=cache_dir,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_landscape_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+            build_landmark_client=(
+                (lambda _model: landmark_client) if landmark_client is not None else None
+            ),
+            use_cloud=landmark_client is not None,
+        )
+
+    async def test_the_estimate_equals_the_number_of_photos_the_run_actually_sends(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        project = await _make_project(db_session)
+        project.cloud_vision_detection_enabled = True
+        await db_session.commit()
+        scoring_run = await _add_successful_scoring_run(db_session, project)
+        winner = await self._photo_with_variant(
+            db_session, project, "gewinner.jpg", "etag-1", 0, tmp_path
+        )
+        # Ausdruecklich behalten: ein Duplikat-Verlierer, den der Nutzer zurueckgeholt hat.
+        await self._photo_with_variant(
+            db_session,
+            project,
+            "behalten.jpg",
+            "etag-2",
+            1,
+            tmp_path,
+            cluster_key=None,
+            suggested_status=RatingStatus.REJECTED,
+            duplicate_of=winner.id,
+            duplicate_decision=DuplicateDecision.KEEP,
+        )
+        # Ausdruecklich verworfen: eine Aufnahme, die ohne Entscheidung weitergelaufen waere.
+        await self._photo_with_variant(
+            db_session,
+            project,
+            "verworfen.jpg",
+            "etag-3",
+            2,
+            tmp_path,
+            duplicate_decision=DuplicateDecision.DISCARD,
+        )
+
+        # Erster Lauf OHNE Cloud: er legt die Kriterienwerte an, aus denen die Schaetzung ihre
+        # Kandidaten ableitet. Sie ist strukturell eine Schaetzung, keine Vorausberechnung.
+        await self._run(db_session, project, scoring_run.id, tmp_path)
+        geschaetzt = await _count_landmark_candidates(db_session, project.id)
+
+        client = RecordingLandmarkClient()
+        await self._run(db_session, project, scoring_run.id, tmp_path, landmark_client=client)
+
+        assert geschaetzt == len(client.calls)
+        # Gegenprobe zur Selbsterfuellung: Eine Umsetzung, die beide Seiten auf null zieht,
+        # bestuende die Gleichheit oben, ohne irgendetwas zu zeigen.
+        assert geschaetzt == 2

@@ -71,6 +71,19 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # Ruecknahme eine neue Fassung anlegt statt eine zu loeschen.
     ("post", "/feedback/weights"),
     ("post", "/feedback/weights/revert"),
+    # specs/features/0374-duplikate-vergleichen.md: der Lesepfad der Vergleichsansicht. Seine
+    # Beschreibung traegt die drei Aussagen, die der Antwort selbst nicht anzusehen sind - dass die
+    # Gruppe ABGELEITET ist und deshalb keine eigene Id hat (sie ist ueber jedes Mitglied
+    # erreichbar), dass kein Mitglied ausgezeichnet ist, und worauf sich `position`/`total`
+    # beziehen.
+    ("get", "/projects/{project_id}/duplicate-groups/{photo_id}"),
+    # Und die beiden Schreibwege derselben Spec. Ihre Beschreibung traegt die Aussagen, die der
+    # Signatur gerade nicht anzusehen sind - dass die Wirkung ASYMMETRISCH ist (`discard`
+    # unbedingt, `behalten` nur solange die Aufnahme Duplikat-Verlierer ist), dass hier weder eine
+    # Bewertungszeile noch ein Nacharbeits-Ereignis entsteht, dass die Menge des Gruppenwegs vom
+    # SERVER stammt und nicht aus dem Koerper, und dass es kein `DELETE` gibt.
+    ("put", "/projects/{project_id}/photos/{photo_id}/duplicate-decision"),
+    ("put", "/projects/{project_id}/duplicate-groups/{photo_id}/decision"),
 )
 
 

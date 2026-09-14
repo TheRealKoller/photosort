@@ -15,7 +15,7 @@
 import { expect, type Page } from '@playwright/test'
 
 /**
- * Die vier Demo-Projekte, benannt nach ihrer PRUEFRELEVANTEN Eigenschaft. Muss zu den Konstanten
+ * Die fuenf Demo-Projekte, benannt nach ihrer PRUEFRELEVANTEN Eigenschaft. Muss zu den Konstanten
  * in `demo_state.py` passen; ein Auseinanderlaufen faellt sofort als fehlender Projektlink auf.
  */
 export const DEMO_PROJECTS = {
@@ -27,6 +27,8 @@ export const DEMO_PROJECTS = {
   rated: 'Demo — Bewertet',
   /** Fehlgeschlagener Lauf, Foto ohne Cache-Datei, Cloud-Vision-Fehlerzeile. */
   error: 'Demo — Fehlerzustand',
+  /** Zwei Duplikat-Gruppen verschiedener Groesse (7 und 3), beide unentschieden. */
+  duplicates: 'Demo — Duplikate',
 } as const
 
 /**
@@ -58,6 +60,38 @@ export async function demoProjectId(page: Page, projectName: string): Promise<nu
  */
 export function photoTiles(page: Page) {
   return page.getByRole('listitem').filter({ has: page.locator('a[href*="/photos/"]') })
+}
+
+/**
+ * Kacheln der Duplikat-Vergleichsansicht. Lokalisiert ueber das SEMANTISCHE Attribut, das den
+ * Entscheidungszustand traegt - nicht ueber Klassennamen, deren Wirkung hier ja gerade gemessen
+ * wird.
+ */
+export function duplicateTiles(page: Page) {
+  return page.locator('li[data-duplicate-decision]')
+}
+
+/**
+ * Oeffnet eine Duplikat-Gruppe des Demo-Projekts ueber den ECHTEN Einstieg: die
+ * Ausschuss-Sichtung. Nicht ueber eine zusammengebaute URL - die Foto-Ids vergibt der Seeder bei
+ * jedem Lauf neu, und der Weg ueber die Kachel prueft den Einstieg gleich mit.
+ *
+ * Der Demo-Bestand fuehrt zwei Gruppen in fester zeitlicher Reihenfolge: erst die grosse (sieben
+ * Aufnahmen), dann die kleine (drei). `gruppe` waehlt zwischen ihnen.
+ */
+export async function openDuplicateGroup(
+  page: Page,
+  projectId: number,
+  gruppe: 'gross' | 'klein',
+): Promise<void> {
+  await page.goto(`/projects/${projectId}/photos?filter=suggested`)
+  const einstiege = page.getByRole('link', { name: /^Duplikate vergleichen:/ })
+  await expect(einstiege.first(), 'Einstieg in den Duplikat-Vergleich').toBeVisible()
+  await (gruppe === 'gross' ? einstiege.first() : einstiege.last()).click()
+  await expect(
+    page.getByRole('heading', { name: /^Duplikat-Gruppe \d+ von \d+$/ }),
+    'Ueberschrift der Vergleichsansicht',
+  ).toBeVisible()
 }
 
 export interface Box {

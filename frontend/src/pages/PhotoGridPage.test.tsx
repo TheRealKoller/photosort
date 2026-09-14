@@ -368,6 +368,70 @@ describe('PhotoGridPage', () => {
     ).toBeInTheDocument()
   })
 
+  describe('Einstieg in den Duplikat-Vergleich (Spec 0374)', () => {
+    it('zeigt den Einstieg GENAU DANN, wenn der Vorschlagsgrund `duplicate` ist', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 7,
+            relative_path: 'serie.jpg',
+            ratings: [],
+            suggestion: suggestion({ reason: 'duplicate', duplicate_of: 3 }),
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage()
+
+      const einstieg = await screen.findByRole('link', { name: 'Duplikate vergleichen: serie.jpg' })
+      expect(einstieg).toHaveAttribute('href', '/projects/1/photos/7/duplicates')
+    })
+
+    it.each([
+      ['low_quality', suggestion({ reason: 'low_quality' })],
+      ['kein Vorschlag', null],
+    ])('zeigt ihn NICHT bei %s', async (_fall, eingabe) => {
+      // AK13: Fuer Vorschlaege wegen geringer Bildqualitaet aendert sich nichts - kein Einstieg
+      // an der Kachel. Ohne die Gegenprobe bestuende der Fall darueber auch gegen eine Umsetzung,
+      // die den Einstieg an JEDER Kachel zeigt.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 7, ratings: [], suggestion: eingabe })],
+        total: 1,
+      })
+
+      renderPage()
+
+      await screen.findAllByRole('listitem')
+      expect(screen.queryByRole('link', { name: /Duplikate vergleichen/ })).not.toBeInTheDocument()
+    })
+
+    it('steht NEBEN dem Uebernehmen-Einstieg, nicht an seiner Stelle', async () => {
+      // Der Vorschlag bleibt uebernehmbar, ohne die Vergleichsansicht zu oeffnen - die Story
+      // nimmt dem Gate nichts weg, sie stellt einen zweiten Weg daneben.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 7,
+            relative_path: 'serie.jpg',
+            ratings: [],
+            suggestion: suggestion({ reason: 'duplicate', duplicate_of: 3 }),
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage()
+
+      expect(
+        await screen.findByRole('button', { name: 'Vorschlag übernehmen: serie.jpg' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('link', { name: 'Duplikate vergleichen: serie.jpg' }),
+      ).toBeInTheDocument()
+    })
+  })
+
   it('does not show a suggestion badge/button when the photo has no open suggestion', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
       items: [photo({ id: 1, ratings: [], suggestion: null })],

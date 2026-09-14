@@ -66,6 +66,7 @@ from photosort.criteria import (
     normalize_sharpness,
 )
 from photosort.db import async_session_factory
+from photosort.duplicates import survives_ausschuss
 from photosort.events import (
     EventCandidate,
     LocationEntry,
@@ -2121,7 +2122,7 @@ async def run_criterion_scoring(
             await session.execute(
                 select(Photo, PhotoScore)
                 .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-                .where(Photo.project_id == project.id, PhotoScore.suggested_status.is_(None))
+                .where(Photo.project_id == project.id, survives_ausschuss())
             )
         ).all()
 
@@ -2686,7 +2687,7 @@ async def _classify_photo_for_remote_category(
 
 async def select_remote_category_candidates(session: AsyncSession, project_id: int) -> list[Photo]:
     """Kandidatenmenge für die Remote-Kategorie-Klassifizierung: der KOMPLETTE
-    Ausschuss-Überlebender-Bestand (PhotoScore.suggested_status IS NULL) OHNE Vorfilter
+    Ausschuss-Überlebender-Bestand (`duplicates.py::survives_ausschuss`) OHNE Vorfilter
     (anders als landmark), abzüglich der bereits VOLLSTÄNDIG von der Cloud beurteilten Fotos.
 
     DAS SKIP-KRITERIUM IST ZUSAMMENGESETZT (Sicherheitsauflage S6): eine Kopfzeile mit
@@ -2704,8 +2705,10 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
     und ohne zweiten Auslöser.
 
     Das lokale Ausschuss-Gate bleibt dabei unberührt und steht ausgeschrieben in DERSELBEN
-    Anweisung wie der Skip-Term (S8): `join(PhotoScore)` plus `suggested_status IS NULL` begrenzen
-    weiterhin, welche Fotos den Homeserver überhaupt verlassen dürfen.
+    Anweisung wie der Skip-Term (S8 jener Spec, S1/S2 von Spec 0374): `join(PhotoScore)` plus
+    `survives_ausschuss()` begrenzen weiterhin, welche Fotos den Homeserver überhaupt verlassen
+    dürfen. Das Prädikat tritt als weiterer Konjunktionsteil in DIESE Anweisung ein, nie als
+    nachgelagerter Filter über einer bereits gebildeten Menge.
 
     Von `run_remote_category_classification` UND `GET .../classify/estimate` (api/projects.py)
     genutzt - "ermittelt ueber dieselbe Kandidaten-Selektion wie der tatsaechliche Lauf"."""
@@ -2714,7 +2717,7 @@ async def select_remote_category_candidates(session: AsyncSession, project_id: i
             await session.execute(
                 select(Photo)
                 .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-                .where(Photo.project_id == project_id, PhotoScore.suggested_status.is_(None))
+                .where(Photo.project_id == project_id, survives_ausschuss())
             )
         )
         .scalars()

@@ -10,7 +10,7 @@ import { matchPath } from 'react-router'
  */
 
 /**
- * Die neun Pfadmuster mit Projektkontext, benannt statt nur aufgezählt - App.tsx bezieht
+ * Die zehn Pfadmuster mit Projektkontext, benannt statt nur aufgezählt - App.tsx bezieht
  * daraus sowohl die <Route>-Deklarationen als auch die Matching-Liste, sodass eine neue
  * Route nicht mehr nur an einer der beiden Stellen landen kann.
  */
@@ -20,6 +20,7 @@ export const PROJECT_ROUTE_PATHS = {
   pipelineStep: '/projects/:projectId/pipeline/:step',
   photos: '/projects/:projectId/photos',
   photoDetail: '/projects/:projectId/photos/:photoId',
+  photoDuplicates: '/projects/:projectId/photos/:photoId/duplicates',
   selection: '/projects/:projectId/selection',
   settings: '/projects/:projectId/settings',
   stats: '/projects/:projectId/stats',
@@ -103,7 +104,14 @@ export const PROJECT_NAV_PRIMARY_TARGETS: readonly ProjectNavTarget[] = [
     id: 'photos',
     label: 'Fotos',
     buildPath: (projectId) => `/projects/${projectId}/photos`,
-    activeRoutePaths: [PROJECT_ROUTE_PATHS.photos, PROJECT_ROUTE_PATHS.photoDetail],
+    // Der Duplikat-Vergleich gehört hierher: Er wird aus der Ausschuss-Sichtung heraus geöffnet
+    // und ist ein Nebenweg der Fotoliste, kein eigenes Ziel. Eine nicht zugeordnete Route
+    // markierte still GAR KEIN Ziel als aktiv - die Kopfzeile zeigte dort dann nicht, wo man ist.
+    activeRoutePaths: [
+      PROJECT_ROUTE_PATHS.photos,
+      PROJECT_ROUTE_PATHS.photoDetail,
+      PROJECT_ROUTE_PATHS.photoDuplicates,
+    ],
   },
   {
     id: 'selection',

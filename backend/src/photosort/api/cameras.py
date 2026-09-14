@@ -47,7 +47,7 @@ from photosort.worker import rebuild_run_grouping
 router = APIRouter(prefix="/projects", tags=["cameras"], dependencies=[Depends(get_current_user)])
 
 # SICHERHEIT - Obergrenze der Foto-Ids des Vorschlags, im Muster von
-# `api/photos.py::_MAX_QUERY_POSITION`: ein Pydantic-`int` ist unbeschraenkt und landet direkt im
+# `api/photos.py::MAX_QUERY_POSITION`: ein Pydantic-`int` ist unbeschraenkt und landet direkt im
 # SQL-Vergleich; unter SQLite wirft ein Wert jenseits von 2^63 einen `OverflowError` und damit
 # eine 500 statt einer 404.
 _MAX_PHOTO_ID = 1_000_000_000

@@ -25,11 +25,13 @@ from photosort.cloud_vision import (
 from photosort.label_embedding import LabelEmbedderLike
 from photosort.models import (
     CloudVisionPhase,
+    DuplicateDecision,
     FineLabel,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
+    PhotoDuplicateDecision,
     PhotoFineLabel,
     PhotoMotifAssessment,
     PhotoMotifStrength,
@@ -86,6 +88,8 @@ async def _add_score(
     photo: Photo,
     *,
     suggested_status: RatingStatus | None = None,
+    duplicate_of: int | None = None,
+    duplicate_decision: DuplicateDecision | None = None,
 ) -> PhotoScore:
     score = PhotoScore(
         photo_id=photo.id,
@@ -93,9 +97,12 @@ async def _add_score(
         exposure=0.0,
         cluster_key="cluster-0",
         suggested_status=suggested_status,
+        duplicate_of=duplicate_of,
         computed_at=datetime.now(UTC),
     )
     session.add(score)
+    if duplicate_decision is not None:
+        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=duplicate_decision))
     await session.commit()
     return score
 
@@ -1035,6 +1042,42 @@ async def test_select_remote_category_candidates_returns_empty_list_for_no_photo
 ) -> None:
     project = await _make_project(db_session)
     assert await select_remote_category_candidates(db_session, project.id) == []
+
+
+async def test_the_ausschuss_decision_moves_the_candidate_set_in_both_directions(
+    db_session: AsyncSession,
+) -> None:
+    """specs/features/0374-duplikate-vergleichen.md, Auflage S1 an der zweiten der beiden
+    Lauf-Stellen. Diese Auswahl bestimmt unmittelbar, welche Bilddaten den Homeserver Richtung
+    Cloud-Anbieter verlassen.
+
+    BEIDE RICHTUNGEN IN EINEM FALL: `keep` holt eine zuvor aussortierte Aufnahme herein, `discard`
+    nimmt eine zuvor kandidierende heraus. Ohne die zweite Richtung bestuende der Fall auch gegen
+    ein Praedikat, das schlicht alles durchlaesst."""
+    project = await _make_project(db_session)
+    winner = await _add_photo(db_session, project, "gewinner.jpg", "etag-1")
+    await _add_score(db_session, winner)
+    behalten = await _add_photo(db_session, project, "behalten.jpg", "etag-2")
+    await _add_score(
+        db_session,
+        behalten,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=winner.id,
+        duplicate_decision=DuplicateDecision.KEEP,
+    )
+    verworfen = await _add_photo(db_session, project, "verworfen.jpg", "etag-3")
+    await _add_score(db_session, verworfen, duplicate_decision=DuplicateDecision.DISCARD)
+    unentschieden = await _add_photo(db_session, project, "unentschieden.jpg", "etag-4")
+    await _add_score(
+        db_session, unentschieden, suggested_status=RatingStatus.REJECTED, duplicate_of=winner.id
+    )
+    await db_session.commit()
+
+    candidates = await select_remote_category_candidates(db_session, project.id)
+
+    assert {photo.id for photo in candidates} == {winner.id, behalten.id}
+    assert verworfen.id not in {photo.id for photo in candidates}
+    assert unentschieden.id not in {photo.id for photo in candidates}
 
 
 # specs/features/0428-albumtauglichkeit-vom-modell.md ab hier: derselbe Aufruf traegt die

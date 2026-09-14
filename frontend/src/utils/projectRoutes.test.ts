@@ -18,13 +18,14 @@ import {
  * verschachtelte :photoId-Route) sind mit dieser Spec hierher gewandert.
  */
 
-/** Die neun Muster mit eingesetzten Parametern - Grundlage beider Funktionen. */
+/** Die zehn Muster mit eingesetzten Parametern - Grundlage beider Funktionen. */
 const PATHS_WITH_PROJECT_CONTEXT = [
   '/projects/1',
   '/projects/1/pipeline',
   '/projects/1/pipeline/scan',
   '/projects/1/photos',
   '/projects/1/photos/42',
+  '/projects/1/photos/42/duplicates',
   '/projects/1/selection',
   '/projects/1/settings',
   '/projects/1/stats',
@@ -32,9 +33,9 @@ const PATHS_WITH_PROJECT_CONTEXT = [
 ]
 
 describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
-  it('fuehrt genau die neun Muster mit Projektkontext', () => {
-    expect(Object.values(PROJECT_ROUTE_PATHS)).toHaveLength(9)
-    expect(PROJECT_CONTEXT_ROUTE_PATHS).toHaveLength(9)
+  it('fuehrt genau die zehn Muster mit Projektkontext', () => {
+    expect(Object.values(PROJECT_ROUTE_PATHS)).toHaveLength(10)
+    expect(PROJECT_CONTEXT_ROUTE_PATHS).toHaveLength(10)
     expect([...PROJECT_CONTEXT_ROUTE_PATHS].sort()).toEqual(
       [
         '/projects/:projectId',
@@ -42,12 +43,24 @@ describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
         '/projects/:projectId/selection',
         '/projects/:projectId/photos',
         '/projects/:projectId/photos/:photoId',
+        '/projects/:projectId/photos/:photoId/duplicates',
         '/projects/:projectId/pipeline',
         '/projects/:projectId/pipeline/:step',
         '/projects/:projectId/settings',
         '/projects/:projectId/stats',
       ].sort(),
     )
+  })
+
+  // specs/features/0374-duplikate-vergleichen.md: Eine unregistrierte Route markiert still KEIN
+  // Navigationsziel als aktiv - die Kopfzeile zeigte dann auf der Vergleichsansicht gar keinen
+  // Ort an, und nichts wuerde rot.
+  it('ordnet die Duplikat-Vergleichsroute dem Ziel "Fotos" zu', () => {
+    expect(PROJECT_ROUTE_PATHS.photoDuplicates).toBe(
+      '/projects/:projectId/photos/:photoId/duplicates',
+    )
+    expect(resolveActiveNavTargetId('/projects/1/photos/5/duplicates')).toBe('photos')
+    expect(matchProjectId('/projects/1/photos/5/duplicates')).toBe('1')
   })
 
   // Der Album-Entwurf steht im Projektkontext (Nachfolger der Kuratierungsroute aus Spec 0298,

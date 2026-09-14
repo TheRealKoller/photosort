@@ -231,6 +231,40 @@ export interface SuggestionOut {
   computed_at: string
 }
 
+/**
+ * Die Entscheidung des PROJEKTS über EINE Aufnahme des Ausschusses (ADR 0104).
+ *
+ * AUSDRÜCKLICH KEIN `RatingStatus`: Jenes ist die Albumentscheidung eines Nutzers. Hier steht die
+ * andere Frage — ob die Aufnahme den Ausschuss-Schritt überlebt. Ein geteilter Wertevorrat machte
+ * die beiden an jeder Lesestelle verwechselbar.
+ *
+ * `null` an `DuplicateGroupItem.decision` heißt „noch nicht entschieden" und ist ein eigener
+ * Zustand, kein fehlender Wert.
+ */
+export type DuplicateDecision = 'keep' | 'discard'
+
+/** Ein Mitglied der Duplikat-Gruppe. Die Entscheidung reist NEBEN dem Foto, nicht an ihm:
+ * `PhotoOut` trägt kein Feld dafür, weil sie außerhalb dieser Ansicht keine Rolle hat. */
+export interface DuplicateGroupItem {
+  photo: PhotoOut
+  decision: DuplicateDecision | null
+}
+
+/**
+ * Die Antwortform ALLER DREI Endpunkte der Vergleichsansicht — Lesepfad wie beide Schreibwege.
+ * Ein Schreibvorgang liefert damit denselben vollständigen Stand zurück, den ein erneutes Laden
+ * liefern würde.
+ *
+ * `position`/`total` sind 1-basiert mit `1 <= position <= total`. `total` zählt die noch OFFENEN
+ * Gruppen des Projekts: Eine Gruppe, in der jedes Mitglied entschieden ist, zählt nicht mehr mit,
+ * und der Zähler beschreibt damit die verbleibende Arbeit.
+ */
+export interface DuplicateGroupOut {
+  items: DuplicateGroupItem[]
+  position: number
+  total: number
+}
+
 // Das Motivset (specs/features/0427-motive-mit-staerke.md). Die Menge ist fachlich
 // GESCHLOSSEN (acht Einträge, backend motifs.py::MOTIF_REGISTRY), der TypeScript-Typ bleibt
 // aber bewusst `string`: das Set kommt zur Laufzeit über `GET /motifs` vom Server, eine hier

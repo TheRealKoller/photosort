@@ -41,6 +41,7 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoDuplicateDecision,
     PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
@@ -141,6 +142,14 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     await _run(
         "photo_fine_labels",
         delete(PhotoFineLabel).where(PhotoFineLabel.photo_id.in_(photo_ids)),
+    )
+    # Ohne diese Anweisung ueberleben die Ausschuss-Entscheidungen ueber geloeschte Familienfotos
+    # die Projektloeschung - und sie sind die Menge, die mitbestimmt, welche Bilddaten den
+    # Homeserver verlassen. Die Position folgt der per Test erzwungenen Ordnung
+    # `reversed(Base.metadata.sorted_tables)`.
+    await _run(
+        "photo_duplicate_decisions",
+        delete(PhotoDuplicateDecision).where(PhotoDuplicateDecision.photo_id.in_(photo_ids)),
     )
     await _run(
         "photo_criterion_scores",

@@ -1340,6 +1340,82 @@ def test_the_weight_sets_downgrade_renders_for_postgres_too() -> None:
     assert positions == sorted(positions)
 
 
+# specs/features/0374-duplikate-vergleichen.md: die neue Tabelle `photo_duplicate_decisions`.
+# Zwei Klassen von Fehlern haengen hier, die SQLite strukturell nicht sehen kann: der native
+# Enum-Typ (ohne `native_enum=False` legte Postgres einen echten Typ an, und jeder weitere Wert
+# brauchte kuenftig eine Migration statt nur einen Eintrag im Python-Enum) und ein
+# unbeabsichtigter Server-Default auf `decision` - unter SQLite bliebe beides unsichtbar, waehrend
+# der Backend-Container `alembic upgrade head` VOR dem Serverstart ausfuehrt.
+
+_DUPLICATE_DECISION_REVISION = "e3f4a5b6c7d8_duplikat_entscheidung.py"
+
+
+@pytest.fixture(scope="module")
+def duplicate_decision_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_DUPLICATE_DECISION_REVISION)
+
+
+def test_the_decision_column_renders_as_a_plain_varchar_without_a_native_enum_type(
+    duplicate_decision_upgrade_ddl: list[str],
+) -> None:
+    """Unter SQLite ist jeder Enum ein VARCHAR - ein Auseinanderlaufen von Modell- und
+    Migrationsseite bliebe dort bis zur Produktion unsichtbar. Ein echter Postgres-Enum-Typ
+    verlangte fuer jeden kuenftigen Wert ein `ALTER TYPE`."""
+    statement = _create_table_statement(duplicate_decision_upgrade_ddl, "photo_duplicate_decisions")
+    decision_line = next(
+        line for line in statement.splitlines() if line.strip().startswith("decision")
+    )
+
+    assert "VARCHAR(16)" in decision_line.upper()
+    assert "NOT NULL" in decision_line.upper()
+    # Auflage S12: Die Abwesenheit der Zeile heisst "nicht entschieden".
+    assert "DEFAULT" not in decision_line.upper()
+    # Kein DB-seitiger Wertevorrat - die Spalte ist eine Zeichenkette, und genau deshalb prueft das
+    # Ueberlebenden-Praedikat POSITIV auf `keep` statt negativ auf `discard` (Auflage S2).
+    assert "CHECK" not in statement.upper()
+
+
+def test_the_decision_primary_key_and_foreign_key_both_sit_on_photo_id(
+    duplicate_decision_upgrade_ddl: list[str],
+) -> None:
+    """Auflage S11: Beide auf derselben Spalte - "hoechstens eine Entscheidung je Foto" braucht
+    dadurch keinen eigenen Unique-Constraint, und der echte Fremdschluessel haelt die Tabelle in
+    der Erreichbarkeitspruefung der Projektloeschung."""
+    statement = _create_table_statement(duplicate_decision_upgrade_ddl, "photo_duplicate_decisions")
+
+    assert "PRIMARY KEY (photo_id)" in statement
+    assert "CONSTRAINT fk_photo_duplicate_decisions_photo_id FOREIGN KEY(photo_id)" in statement
+    assert "REFERENCES photos (id)" in statement
+
+
+def test_the_duplicate_decision_table_carries_no_user_reference_at_all(
+    duplicate_decision_upgrade_ddl: list[str],
+) -> None:
+    """ADR 0104 Punkt 2: Die Entscheidung ist projektweit. Es gibt keine Spalte, in der ein
+    Nutzerbezug stehen koennte - die Abwesenheit ist strukturell, nicht bloss zugesichert."""
+    statement = _create_table_statement(duplicate_decision_upgrade_ddl, "photo_duplicate_decisions")
+
+    assert "user_id" not in statement
+    assert "decided_by" not in statement
+    assert "users" not in statement
+
+
+def test_the_duplicate_decision_upgrade_touches_no_data_at_all(
+    duplicate_decision_upgrade_ddl: list[str],
+) -> None:
+    rendered = " ".join(duplicate_decision_upgrade_ddl).upper()
+    assert "INSERT " not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered
+
+
+def test_the_duplicate_decision_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_DUPLICATE_DECISION_REVISION, direction="downgrade")
+
+    rendered = " ".join(statements)
+    assert "DROP TABLE photo_duplicate_decisions" in rendered
+
+
 # specs/features/0434-ortsnamen-fuer-events.md, Teil 2: die Ortsauskunft. Zwei Fehlerklassen
 # haengen hier, die SQLite strukturell nicht zeigt - die Gleitkomma-Spalten des Zellschluessels
 # (dort sind INTEGER und DOUBLE PRECISION dasselbe, und genau an diesen beiden Werten haengt der
@@ -1401,7 +1477,6 @@ def test_the_ortsauskunft_upgrade_touches_no_data_at_all(
 ) -> None:
     """Rein additiv: kein Nachziehen bestehender Laeufe, keine Datenloeschung."""
     rendered = " ".join(ortsauskunft_upgrade_ddl).upper()
-
     assert "INSERT " not in rendered
     assert "UPDATE " not in rendered
     assert "DELETE " not in rendered
