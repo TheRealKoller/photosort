@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
@@ -256,18 +256,36 @@ export function PhotoGridPage() {
                    Vorschlag direkt, ohne zu navigieren. Das `aria-label` enthaelt den Dateinamen -
                    mehrere offene Vorschlaege im selben Raster waeren sonst per Tastatur/
                    Screenreader nicht auseinanderzuhalten. */
+                /* ZWEI Wege nebeneinander, nicht einer statt des anderen: "Übernehmen"
+                   bestätigt den Vorschlag hier, der Vergleich öffnet die ganze Serie. Der
+                   Einstieg erscheint NUR bei `reason === 'duplicate'` - eine wegen Unschärfe
+                   abgelehnte Aufnahme hat keine Gruppe, und ein Weg, der auf einen Leerzustand
+                   führt, ist kein Weg. 12px Abstand zwischen den beiden aufgespannten
+                   Trefferflächen (`gap-3`). */
                 footer={
                   isSuggested ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      aria-label={`Vorschlag übernehmen: ${photo.relative_path}`}
-                      busy={isConfirming}
-                      onClick={handleConfirmSuggestion}
-                    >
-                      {isConfirming ? 'Wird übernommen…' : 'Übernehmen'}
-                    </Button>
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Vorschlag übernehmen: ${photo.relative_path}`}
+                        busy={isConfirming}
+                        onClick={handleConfirmSuggestion}
+                      >
+                        {isConfirming ? 'Wird übernommen…' : 'Übernehmen'}
+                      </Button>
+                      {photo.suggestion?.reason === 'duplicate' && (
+                        <Button asChild variant="ghost" size="sm">
+                          <Link
+                            to={`/projects/${id}/photos/${photo.id}/duplicates`}
+                            aria-label={`Duplikate vergleichen: ${photo.relative_path}`}
+                          >
+                            Vergleichen
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
                   ) : undefined
                 }
               />

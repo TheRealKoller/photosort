@@ -18,6 +18,7 @@ import { ProjectNav } from './components/ProjectNav'
 import { Button } from './components/ui/button'
 import { AlbumDraftPage } from './pages/AlbumDraftPage'
 import { AlbumSelectionPage } from './pages/AlbumSelectionPage'
+import { DuplicateComparePage } from './pages/DuplicateComparePage'
 import { LoginPage } from './pages/LoginPage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PhotoGridPage } from './pages/PhotoGridPage'
@@ -55,6 +56,10 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   { path: PROJECT_ROUTE_PATHS.detail, element: <ProjectDetailRedirect /> },
   { path: PROJECT_ROUTE_PATHS.photos, element: <PhotoGridPage /> },
   { path: PROJECT_ROUTE_PATHS.photoDetail, element: <PhotoDetailPage /> },
+  // Der Duplikat-Vergleich: erreichbar aus der Ausschuss-Sichtung, ausschliesslich fuer
+  // Aufnahmen mit dem Vorschlagsgrund `duplicate`. Eine Id ohne Gruppe fuehrt nicht ins Leere,
+  // sondern auf den Leerzustand der Seite.
+  { path: PROJECT_ROUTE_PATHS.photoDuplicates, element: <DuplicateComparePage /> },
   // Der EINE Ort, an dem die beiden Staende gegenuebergestellt werden. Die fruehere
   // Vergleichsseite ist mit Spec 0431 ERSATZLOS entfallen - ohne Weiterleitung, aus demselben
   // Grund wie bei der Kuratierung: Ein zweiter Weg auf den einen verbleibenden Ort waere ein
