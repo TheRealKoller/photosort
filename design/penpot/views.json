@@ -411,7 +411,7 @@
         {
           "schluessel": "dateinameschrift",
           "stelle": "Dateiname unter der Bildfläche",
-          "grund": "Der Dateiname soll die dicktengleiche Schrift des Karten-Bausteins tragen. Die Bindung der Schriftfamilie und die des Schriftstufen-Verbunds schließen einander an derselben Textform aus; im Entwurf steht der Name deshalb in der Standardschrift."
+          "grund": "Der Dateiname soll die dicktengleiche Schrift des Karten-Bausteins tragen. An derselben Textform verdrängen die Bindung der Schriftfamilie und die des Schriftstufen-Verbunds einander: Die zuletzt gesetzte bleibt, die andere verschwindet ohne Fehlermeldung. Der Entwurf behält die Schriftstufe, weil eine falsche Schriftgröße schwerer wiegt als eine fehlende Schriftfamilie; der Name steht deshalb in der Standardschrift."
         },
         {
           "schluessel": "inhaltsbreite",
