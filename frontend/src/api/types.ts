@@ -121,6 +121,16 @@ export interface ProjectOut {
   // Stelle lebt und mit dem Bildbestand mitwächst.
   selection_target: number | null
   effective_selection_target: number
+  // Bestandszahlen des Projekts (ADR 0103). PFLICHTFELDER ohne Vorgabewert: dann erzwingt `tsc`
+  // die Ergaenzung jeder lokalen `project()`-Testfabrik, und es braucht keinen Test ueber deren
+  // Vollzaehligkeit.
+  //
+  // `photo_count === 0` ist eine Aussage ("keine Fotos"), die beiden `null` sind ihre Abwesenheit
+  // ("kein Zeitraum bekannt"). Die Anzeige unterscheidet sichtbar: "0 Fotos" gegen den Strich
+  // `NOT_AVAILABLE`. Nie ein `?? 0` im Pfad.
+  photo_count: number
+  taken_at_earliest: string | null
+  taken_at_latest: string | null
 }
 
 // Kostenschätzung vor dem Lauf, über ALLE Cloud-Anteile, die die Checkbox am Auslöser
@@ -465,15 +475,27 @@ export interface EventPlace {
 
 /** Das Event, zu dem dieses Foto im letzten erfolgreichen Lauf gehört.
  *
- * Nummer und Zeitspanne stehen in der Zeile des Events und hängen damit NICHT davon ab, welche
- * Fotos eine Antwort gerade enthält - anders als bei der früheren Cluster-Überschrift, die aus
- * den sichtbaren Fotos aggregiert wurde. */
+ * Nummer, Zeitspanne und Name stehen in der Zeile des Events und hängen damit NICHT davon ab,
+ * welche Fotos eine Antwort gerade enthält - anders als bei der früheren Cluster-Überschrift, die
+ * aus den sichtbaren Fotos aggregiert wurde.
+ *
+ * `place_name` ist der aufgelöste Ortsname dieses Events, `null` heißt "keiner". Er steht bewusst
+ * NEBEN `place` und nicht darin: `place` ist `null`, sobald der Server die Ortsstufe nicht kennt,
+ * und der Name fiele dort still mit. Die zusammengesetzte Form "Ort, Viertel" kommt FERTIG vom
+ * Server; hier wird nichts zusammengesetzt.
+ *
+ * Es ist freier, extern erzeugter Text und trägt dieselbe Auflage wie `landmark_name`:
+ * ausschließlich als regulärer React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als
+ * HTML-String-Prop, nie in `href`/`src`/`style`, nie als React-`key`. Die Schlüssel-Auflage ist
+ * hier nicht nur XSS-Hygiene: Gleichnamigkeit ist der Normalfall dieser Überschrift, und ein
+ * doppelter Schlüssel bringt die Listenabgleichung durcheinander. */
 export interface EventOut {
   id: number
   position: number
   started_at: string
   ended_at: string
   place: EventPlace | null
+  place_name: string | null
 }
 
 /** Die Kamera eines Fotos. `label` kommt vom SERVER - eine Stelle entscheidet, wie eine Kamera

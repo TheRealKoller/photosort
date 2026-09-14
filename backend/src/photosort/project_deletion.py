@@ -49,6 +49,7 @@ from photosort.models import (
     PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
+    PlaceLookup,
     Project,
     ProjectCamera,
     Rating,
@@ -208,6 +209,14 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     await _run(
         "project_cameras",
         delete(ProjectCamera).where(ProjectCamera.project_id.in_(project_ids)),
+    )
+    # Die dauerhafteste Ortsspur des Systems (Spec 0434, S6): lauf-unabhaengig, und sie faellt
+    # deshalb NUR hier. Ohne diese Anweisung ueberlebte die Auskunft darueber, wo die Familie war,
+    # das geloeschte Projekt. Die Position folgt der per Test erzwungenen Ordnung
+    # `reversed(Base.metadata.sorted_tables)` - VOR `projects`, deren Zeilen ihr Elternteil sind.
+    await _run(
+        "place_lookups",
+        delete(PlaceLookup).where(PlaceLookup.project_id.in_(project_ids)),
     )
     await _run("projects", delete(Project).where(Project.id.in_(project_ids)))
     return deleted

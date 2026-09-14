@@ -564,36 +564,35 @@ def test_the_provider_defaults_cover_exactly_the_selectable_providers() -> None:
     assert set(DEFAULT_REQUESTS_PER_MINUTE_BY_PROVIDER) == set(VISION_MODELS_BY_PROVIDER)
 
 
-def test_external_place_lookup_is_off_by_default() -> None:
-    """specs/features/0434-ortsnamen-fuer-events.md, S1: der Schalter entscheidet GENAU EINES -
-    ob ein externer Dienst nach einem Ort gefragt wird, im Worker und im Messkommando
-    gleichermassen. Restriktiver Default wie bei jedem Cloud-Feature: ohne ihn verliesse eine
-    Ortsangabe der Familie das System, ohne dass jemand es eingeschaltet haette."""
-    settings = Settings(_env_file=None)
+def test_the_external_place_lookup_switch_is_gone_for_good() -> None:
+    """specs/decisions/0105-*.md Punkt 2: Mit der Wegwahl auf den lokalen Datensatz schaltet er
+    nichts mehr, und UMGEWIDMET wird er nicht - sein Name benennt genau eine Sache.
 
-    assert settings.external_place_lookup_enabled is False
-
-
-def test_the_default_is_a_workable_state_not_a_start_error() -> None:
-    """Die Vorgabe muss ein ARBEITSFAEHIGER Zustand sein: der Prozess startet normal, bereits
-    vorhandene Auskuenfte werden weiter gelesen, ein Lauf laeuft durch. Ausschalten stoppt den
-    Abfluss, es loescht die Spur nicht - das tut allein die Projektloeschung."""
-    settings = Settings(_env_file=None)
-
-    assert settings.external_place_lookup_enabled is not None
-
-
-def test_the_switch_can_be_turned_on_by_environment() -> None:
+    Der externe Empfaenger von Ortsdaten der Familie entsteht damit gar nicht erst; kein
+    Betriebszustand und keine vergessene `.env`-Zeile kann ihn wieder aufmachen. Eine `.env`, die
+    ihn noch traegt, bricht davon nicht: `Settings` laeuft mit `extra="ignore"`."""
     settings = Settings(_env_file=None, EXTERNAL_PLACE_LOOKUP_ENABLED=True)
 
-    assert settings.external_place_lookup_enabled is True
+    assert not hasattr(settings, "external_place_lookup_enabled")
+    assert "EXTERNAL_PLACE_LOOKUP" not in _env_example_text()
 
 
-def test_env_example_documents_the_external_place_lookup_switch() -> None:
-    """Ein Sicherheitsschalter, den der Betreiber nicht findet, ist keiner: die Variable steht
-    mit ihrer Vorgabe in `.env.example` (specs/features/0434-ortsnamen-fuer-events.md, S1)."""
+def _env_example_text() -> str:
     env_example = Path(__file__).resolve().parents[2] / ".env.example"
-
     assert env_example.is_file(), f"{env_example} nicht gefunden"
+    return env_example.read_text(encoding="utf-8")
 
-    assert "EXTERNAL_PLACE_LOOKUP_ENABLED=false" in env_example.read_text(encoding="utf-8")
+
+def test_the_place_dataset_path_defaults_onto_the_volume() -> None:
+    """Der Pfad des Auszugs ist eine BETRIEBSEINSTELLUNG mit Vorgabe auf dem Volume (ADR 0105
+    Punkt 3) - nie ein Wert aus Datenbank oder Request."""
+    settings = Settings(_env_file=None)
+
+    assert settings.place_dataset_path.startswith("/data/")
+    assert settings.place_dataset_path.endswith(".gz")
+
+
+def test_env_example_documents_the_place_dataset_path() -> None:
+    """Eine Einstellung, die der Betreiber nicht findet, ist keine - und dieser Pfad ist der
+    Unterschied zwischen benannten Events und Nummern."""
+    assert "PLACE_DATASET_PATH=" in _env_example_text()

@@ -14,7 +14,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, tuple_, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -70,9 +70,11 @@ from photosort.duplicates import survives_ausschuss
 from photosort.events import (
     EventCandidate,
     LocationEntry,
+    assign_place_names,
     build_events,
     infer_locations,
 )
+from photosort.geonames import build_place_resolver
 from photosort.horizon import compute_horizon_tilt_score
 from photosort.label_embedding import LabelEmbedderLike, build_label_embedder
 from photosort.landmark import (
@@ -99,6 +101,7 @@ from photosort.models import (
     PhotoMotifAssessment,
     PhotoRanking,
     PhotoScore,
+    PlaceLookup,
     Project,
     ProjectCamera,
     RatingStatus,
@@ -112,6 +115,12 @@ from photosort.motifs import local_motif_strengths
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
+from photosort.places import (
+    PLACE_LEVELS,
+    PlaceInfo,
+    PlaceResolver,
+    sanitize_place_name,
+)
 from photosort.pricing import compute_cost_usd
 from photosort.quality import compute_quality_score
 from photosort.quality_weights import effective_weights, latest_weight_set
@@ -1302,6 +1311,101 @@ async def _landmark_names(
     return {photo_id: sanitize_landmark_name(name) for photo_id, name in rows}
 
 
+# Der geschlossene eigene Vorrat von `place_lookups.source` - er hat genau einen Eintrag, weil es
+# genau einen Weg zur Ortsauskunft gibt (ADR 0105 Punkt 1). Er stammt NIE aus der Antwort.
+PLACE_LOOKUP_SOURCE = "geonames"
+
+# Die Fabrik des Auflösers: aus der Menge der noch nicht beschafften Zellen entsteht ein Auflöser
+# oder `None`. `None` heisst "es wird keiner gebaut" und ist ein arbeitsfaehiger Zustand.
+PlaceResolverFactory = Callable[[Collection[tuple[float, float]]], PlaceResolver | None]
+
+
+async def _place_infos(
+    session: AsyncSession,
+    project_id: int,
+    cells: Collection[tuple[float, float]],
+    build_resolver: PlaceResolverFactory | None,
+) -> dict[tuple[float, float], PlaceInfo]:
+    """Die Ortsauskunft je vergroeberter Zelle - aus dem Bestand gelesen, nur fuer die FEHLENDEN
+    gefragt (Muster `_landmark_names`: die reine Logik im Modul, der Datenbankzugriff hier).
+
+    SICHERHEIT (S6): Die Bindung an `project_id` steht in der Abfrage ausgeschrieben, und es gibt
+    KEINEN Rueckfall auf die Zeile eines anderen Projekts - ein solcher Rueckfall waere der stille
+    Weg, auf dem die Lebensdauer-Bindung der Ortsspur aufhoert zu gelten.
+
+    `build_resolver` ist `None` im Request-Pfad (S10) und wird sonst erst gerufen, wenn es
+    tatsaechlich etwas zu fragen gibt: ein Durchgang durch den Ortsdatensatz ohne offene Zelle
+    waere reine Arbeit. Liefert die Fabrik `None` (Datensatz fehlt oder weicht von seinem Hash
+    ab), wird nichts beschafft und nichts geschrieben; die Events behalten Nummer und Zeitspanne.
+
+    DREI AUSGAENGE, und sie sind verschieden (ADR 0102 Punkt 5): **keine Antwort** schreibt KEINE
+    Zeile - sonst vergiftete eine voruebergehende Stoerung die Zelle dauerhaft; eine **Antwort
+    ohne brauchbare Ebene** schreibt eine Zeile mit leeren Namensstufen und wird nicht erneut
+    gefragt; der dritte Ausgang (mehrere Namen in einem Event) faellt erst in `assign_place_names`.
+
+    SCHREIBRAND (S7): Jede Namensstufe laeuft EINZELN durch `sanitize_place_name` - eine
+    unbrauchbare Stufe wird `NULL`, nie die ganze Antwort verworfen, und verworfen wird ganz, nie
+    abgeschnitten. `matched_level` wird gegen `PLACE_LEVELS` geprueft; ein Wert ausserhalb heisst
+    `NULL`. Beides wirkt hier auch fuer einen kuenftigen Auflöser hinter demselben Protokoll.
+
+    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
+    if not cells:
+        return {}
+
+    rows = (
+        await session.execute(
+            select(PlaceLookup).where(
+                PlaceLookup.project_id == project_id,
+                tuple_(PlaceLookup.cell_lat, PlaceLookup.cell_lon).in_(list(cells)),
+            )
+        )
+    ).scalars()
+    by_cell = {
+        (row.cell_lat, row.cell_lon): PlaceInfo(
+            neighbourhood=row.neighbourhood,
+            locality=row.locality,
+            matched_level=row.matched_level,
+        )
+        for row in rows
+    }
+
+    missing = sorted(set(cells) - set(by_cell))
+    if not missing or build_resolver is None:
+        return by_cell
+
+    resolver = build_resolver(missing)
+    if resolver is None:
+        return by_cell
+
+    now = _now_utc()
+    for cell in missing:
+        answer = await resolver.resolve(cell)
+        if answer is None:
+            continue
+        level = answer.matched_level if answer.matched_level in PLACE_LEVELS else None
+        info = PlaceInfo(
+            neighbourhood=sanitize_place_name(answer.neighbourhood),
+            locality=sanitize_place_name(answer.locality),
+            matched_level=level,
+        )
+        session.add(
+            PlaceLookup(
+                project_id=project_id,
+                cell_lat=cell[0],
+                cell_lon=cell[1],
+                neighbourhood=info.neighbourhood,
+                locality=info.locality,
+                region=sanitize_place_name(answer.region),
+                country=sanitize_place_name(answer.country),
+                matched_level=level,
+                source=PLACE_LOOKUP_SOURCE,
+                resolved_at=now,
+            )
+        )
+        by_cell[cell] = info
+    return by_cell
+
+
 @dataclass(frozen=True)
 class ContentCriteria:
     """Das Ergebnis der bildbasierten Analyse EINES Fotos: die Kriterien-Werte und die
@@ -1533,6 +1637,7 @@ async def _build_grouping_and_rankings(
     run: CriterionScoringRun,
     project_id: int,
     values_by_photo_id: Mapping[int, dict[str, float]],
+    build_place_resolver: PlaceResolverFactory | None,
 ) -> None:
     """Die Gliederung eines Laufs samt seiner Rangzeilen: Event-Bildung, Partitionen und
     `PhotoRanking`-Zeilen.
@@ -1544,6 +1649,11 @@ async def _build_grouping_and_rankings(
     Die Kandidatenmenge IST `values_by_photo_id.keys()`; alles Weitere liest die Funktion selbst.
     Das kostet gegenueber dem durchgereichten Zustand eine Abfrage mehr JE LAUF - der Preis
     dafuer, dass beide Aufrufer garantiert dasselbe tun.
+
+    `build_place_resolver` hat BEWUSST KEINEN Vorgabewert: Mit einer Vorgabe `None` waere eine
+    vergessene Aufrufstelle ein stiller Totalausfall der Ortsauflösung; ohne Vorgabe meldet ihn
+    `mypy --strict`. `None` heisst hier "liest nur den Bestand und fragt niemanden" und ist der
+    Request-Pfad (S10).
 
     DIE PARTITION IST ALLEIN DAS EVENT. Ein Foto bekommt je Lauf genau eine Rangzeile; es gibt
     keine Kategorie-Ebene und keine Uebersteuerung mehr, und die Motivstaerken bilden
@@ -1600,6 +1710,15 @@ async def _build_grouping_and_rankings(
         for photo_id in values_by_photo_id
     )
 
+    # DIE ORTSNAMEN, zwischen Event-Bildung und Schreiben der Zeilen. Gefragt wird nur fuer Events
+    # OHNE Sehenswuerdigkeit: der Ortsname ersetzt sie nicht und tritt nicht daneben - das spart
+    # Anfragen und setzt das Akzeptanzkriterium strukturell um.
+    cells = {
+        cell for built in built_events if built.landmark_name is None for cell in built.place_cells
+    }
+    info_by_cell = await _place_infos(session, project_id, cells, build_place_resolver)
+    place_names = assign_place_names(built_events, info_by_cell)
+
     event_rows = [
         Event(
             criterion_scoring_run_id=run.id,
@@ -1610,8 +1729,9 @@ async def _build_grouping_and_rankings(
             place_kind=built.place_kind,
             place_lat=built.place_lat,
             place_lon=built.place_lon,
+            place_name=place_name,
         )
-        for built in built_events
+        for built, place_name in zip(built_events, place_names, strict=True)
     ]
     session.add_all(event_rows)
     # EIN `flush` fuer alle Events, nicht einer je Event: die Ids werden unten als
@@ -1908,7 +2028,11 @@ async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
     # Unique-Constraint ueber `(Lauf, position)`.
     await session.flush()
 
-    await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id)
+    # `None` STATT EINES AUFLOESERS (S10): Dieser Pfad laeuft in einem Request (Versatz-Endpunkt).
+    # Er baut die Namen ausschliesslich aus bereits abgelegten Auskuenften neu und fragt niemanden;
+    # eine noch nie gefragte Zelle bleibt hier ohne Namen, bis der naechste Kriterien-Lauf sie
+    # beschafft. Ohne diese Grenze koennte ein Request-Pfad nach aussen wirken.
+    await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id, None)
 
 
 async def run_criterion_scoring(
@@ -1922,6 +2046,7 @@ async def run_criterion_scoring(
     build_aesthetics: Callable[[], AestheticsModelLike] = build_aesthetics_model,
     build_landmarker: Callable[[], FaceLandmarkerLike] = build_face_landmarker,
     build_landmark_client: Callable[[str], LandmarkClientLike] = build_landmark_client,
+    build_place_resolver: PlaceResolverFactory = build_place_resolver,
     *,
     run: CriterionScoringRun | None = None,
     use_cloud: bool = False,
@@ -2367,7 +2492,9 @@ async def run_criterion_scoring(
         run.phase = ClassificationPhase.RANKING
         await session.commit()
 
-        await _build_grouping_and_rankings(session, run, project.id, candidate_values)
+        await _build_grouping_and_rankings(
+            session, run, project.id, candidate_values, build_place_resolver
+        )
 
         run.status = ScanStatus.SUCCESS
         run.phase = None

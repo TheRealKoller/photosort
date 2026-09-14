@@ -652,6 +652,20 @@ class Event(Base):
     place_kind: Mapped[str | None] = mapped_column(default=None)
     place_lat: Mapped[float | None] = mapped_column(default=None)
     place_lon: Mapped[float | None] = mapped_column(default=None)
+    # Der aus der Ortsauskunft abgeleitete Name DIESES Events in DIESEM Lauf - "Split" oder
+    # "Berlin, Kreuzberg". `NULL` heißt "kein aufgelöster Ortsname"; das Event heißt dann nach
+    # Nummer und Zeitspanne.
+    #
+    # LAUF-ARTEFAKT, kein Ortswissen: Ob ein Event "Berlin" oder "Berlin, Kreuzberg" heißt, hängt
+    # davon ab, was sonst im selben Lauf liegt - das ist keine Eigenschaft des Ortes. Die Auskunft
+    # darüber, was an einer Zelle liegt, steht in `place_lookups` und ist lauf-unabhängig; beide
+    # dürfen nicht zu einem werden (ADR 0102 Punkt 1). Ein neuer Lauf schreibt seine Events ohnehin
+    # neu, damit entstehen die Namen neu.
+    #
+    # Freier, extern erzeugter Text wie `landmark_name` und mit derselben Auflage: er kommt
+    # ausschließlich über `places.sanitize_place_name` hierher (verworfen, nie abgeschnitten), und
+    # beim Rendern ausschließlich als regulärer React-Textknoten.
+    place_name: Mapped[str | None] = mapped_column(default=None)
 
 
 class PhotoRanking(Base):
@@ -1264,6 +1278,50 @@ class QualityWeightSet(Base):
     entries: Mapped[list[QualityWeightEntry]] = relationship(
         back_populates="weight_set", cascade="all, delete-orphan"
     )
+
+
+class PlaceLookup(Base):
+    """Die Auskunft darüber, was an einer vergröberten Ortszelle liegt - projektgebunden und
+    LAUF-UNABHÄNGIG (ADR 0102 Punkt 1).
+
+    Einmal beschafft, danach wiederverwendet: dieselbe Zelle wird in einem zweiten Lauf nicht
+    erneut gefragt. Der Schlüssel ist das auf `places.PLACE_CELL_DIGITS` gerundete Zahlenpaar aus
+    `places.place_cell` - nie die Koordinate eines Fotos.
+
+    AM PROJEKT und nicht projektübergreifend wie `fine_labels`: Jede Zeile ist eine Aussage
+    darüber, wo die Familie war, kein allgemeiner Begriff. Sie überdauert den einzelnen Lauf und
+    ist damit die dauerhafteste Ortsspur des Systems; die Projektbindung (echter Fremdschlüssel,
+    NOT NULL) hält ihre Lebensdauer an der des Projekts fest. Der Lesepfad bindet `project_id`
+    ausgeschrieben und fällt nie auf die Zeile eines anderen Projekts zurück.
+
+    VIER BENANNTE STUFEN und kein offener Beutel für alles Weitere: Straße und Hausnummer werden
+    am Parser-Rand verworfen und erreichen diese Tabelle nie. Jede Stufe ist einzeln nullbar -
+    eine unbrauchbare Stufe wird `NULL`, nie die ganze Antwort verworfen.
+
+    `matched_level` ist die AUSSAGE DER QUELLE darüber, was sie getroffen hat, aus
+    `places.PLACE_LEVELS` - keine Ableitung daraus, welche Stufen gefüllt sind. `NULL` heißt
+    "keine Ebene, die dieses Projekt führt", und eine solche Zeile ist eine Auskunft: dieselbe
+    Zelle wird nicht erneut gefragt. Eine ausgebliebene ANTWORT hinterlässt dagegen gar keine
+    Zeile - sonst vergiftete eine vorübergehende Störung die Zelle dauerhaft.
+
+    `source` stammt aus einem geschlossenen eigenen Vorrat und nie aus der Antwort."""
+
+    __tablename__ = "place_lookups"
+    __table_args__ = (
+        UniqueConstraint("project_id", "cell_lat", "cell_lon", name="uq_place_lookup_project_cell"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    cell_lat: Mapped[float]
+    cell_lon: Mapped[float]
+    neighbourhood: Mapped[str | None] = mapped_column(default=None)
+    locality: Mapped[str | None] = mapped_column(default=None)
+    region: Mapped[str | None] = mapped_column(default=None)
+    country: Mapped[str | None] = mapped_column(default=None)
+    matched_level: Mapped[str | None] = mapped_column(default=None)
+    source: Mapped[str]
+    resolved_at: Mapped[datetime]
 
 
 class QualityWeightEntry(Base):

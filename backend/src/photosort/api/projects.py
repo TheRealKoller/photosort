@@ -43,6 +43,12 @@ from photosort.models import (
     User,
 )
 from photosort.opencloud.client import OpenCloudClient, OpenCloudError
+from photosort.photo_aggregates import (
+    EMPTY_PHOTO_AGGREGATE,
+    PhotoAggregate,
+    photo_aggregate_for_project,
+    photo_aggregates_by_project,
+)
 from photosort.pricing import estimate_usd_per_image
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
 from photosort.selection import effective_target
@@ -279,6 +285,16 @@ class ProjectOut(BaseModel):
     # System vorbelegt" von "selbst eingestellt" ununterscheidbar.
     selection_target: int | None
     effective_selection_target: int
+    # Bestandszahlen des Projekts (ADR 0103): fuer die ganze Liste in EINER gruppierten Abfrage zu
+    # haben, in konstanter Antwortgroesse, und damit auch im Zwei-Sekunden-Takt von
+    # `useProjectQuery` tragbar. Die Kennzahlen von `GET /projects/{id}/stats` erfuellen das nicht
+    # (zwei `os.stat` je Foto) und bleiben deshalb dort.
+    #
+    # `photo_count == 0` ist eine Aussage, die beiden `null` sind ihre Abwesenheit - das Frontend
+    # unterscheidet sichtbar zwischen "0 Fotos" und dem Strich "keine Angabe".
+    photo_count: int
+    taken_at_earliest: datetime | None
+    taken_at_latest: datetime | None
 
 
 # SICHERHEIT (S3) - Obergrenze des Richtwerts, im Muster von `api/photos.py::MAX_QUERY_POSITION`:
@@ -303,14 +319,6 @@ class SelectionTargetUpdate(BaseModel):
     an einer Stelle."""
 
     target: _SelectionTargetValue | None
-
-
-async def _project_photo_count(session: AsyncSession, project_id: int) -> int:
-    return (
-        await session.execute(
-            select(func.count()).select_from(Photo).where(Photo.project_id == project_id)
-        )
-    ).scalar_one()
 
 
 async def _latest_scan_run(session: AsyncSession, project_id: int) -> ScanRun | None:
@@ -592,7 +600,12 @@ async def _count_landmark_candidates(session: AsyncSession, project_id: int) -> 
     return sum(1 for values in values_by_photo.values() if is_landmark_candidate(values))
 
 
-async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut:
+async def _to_project_out(
+    session: AsyncSession, project: Project, aggregate: PhotoAggregate
+) -> ProjectOut:
+    """Das Aggregat kommt als PARAMETER herein, statt hier je Projekt nachgeladen zu werden:
+    `list_projects` laedt es einmal fuer alle Projekte, die Einzeloperationen fuer genau eines.
+    Ein Nachladen an dieser Stelle waere die Abfrage je Projekt, die ADR 0103 ausschliesst."""
     scan_run = await _latest_scan_run(session, project.id)
     scoring_run = await _latest_scoring_run(session, project.id)
     criterion_scoring_run = await _latest_criterion_scoring_run(session, project.id)
@@ -615,9 +628,21 @@ async def _to_project_out(session: AsyncSession, project: Project) -> ProjectOut
         cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
         cloud_vision_consent_at=project.cloud_vision_consent_at,
         selection_target=project.selection_target,
+        # DIESELBE Zahl, die die Antwort als `photo_count` ausweist - nicht eine zweite Zaehlung
+        # daneben, die mit ihr auseinanderlaufen koennte.
         effective_selection_target=effective_target(
-            project.selection_target, await _project_photo_count(session, project.id)
+            project.selection_target, aggregate.photo_count
         ),
+        photo_count=aggregate.photo_count,
+        taken_at_earliest=aggregate.taken_at_earliest,
+        taken_at_latest=aggregate.taken_at_latest,
+    )
+
+
+async def _to_single_project_out(session: AsyncSession, project: Project) -> ProjectOut:
+    """Eine Antwort ueber GENAU EIN Projekt - derselbe Stapel-Helfer mit einelementiger Liste."""
+    return await _to_project_out(
+        session, project, await photo_aggregate_for_project(session, project.id)
     )
 
 
@@ -656,19 +681,25 @@ async def create_project(
         ) from exc
 
     await session.refresh(project)
-    return await _to_project_out(session, project)
+    return await _to_single_project_out(session, project)
 
 
 @router.get("", response_model=list[ProjectOut])
 async def list_projects(session: AsyncSession = Depends(get_session)) -> list[ProjectOut]:
-    result = await session.execute(select(Project).order_by(Project.created_at))
-    return [await _to_project_out(session, project) for project in result.scalars()]
+    """Die Bestandszahlen werden EINMAL fuer alle Projekte geladen, nicht je Projekt: die Zahl der
+    Abfragen mit `min(photos.taken_at)` ist genau eine, unabhaengig von der Projektzahl."""
+    projects = list((await session.execute(select(Project).order_by(Project.created_at))).scalars())
+    aggregates = await photo_aggregates_by_project(session, [project.id for project in projects])
+    return [
+        await _to_project_out(session, project, aggregates.get(project.id, EMPTY_PHOTO_AGGREGATE))
+        for project in projects
+    ]
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(project_id: int, session: AsyncSession = Depends(get_session)) -> ProjectOut:
     project = await _get_project_or_404(project_id, session)
-    return await _to_project_out(session, project)
+    return await _to_single_project_out(session, project)
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -982,7 +1013,7 @@ async def set_selection_target(
     await session.commit()
     await session.refresh(project)
 
-    return await _to_project_out(session, project)
+    return await _to_single_project_out(session, project)
 
 
 @router.get("/{project_id}/classify/estimate", response_model=ClassificationEstimateOut)

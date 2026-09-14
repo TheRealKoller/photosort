@@ -29,8 +29,8 @@ Wert - siehe `tests/test_migration_duplikat_entscheidung.py`.
 
 ACHTUNG - `downgrade()` VERLIERT DATEN, siehe seinen Docstring.
 
-Revision ID: d7e8f9a0b1c2
-Revises: c5d6e7f8a9b0
+Revision ID: e3f4a5b6c7d8
+Revises: d7e8f9a0b1c2
 Create Date: 2026-09-14 11:20:00.000000
 
 """
@@ -42,8 +42,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "d7e8f9a0b1c2"
-down_revision: Union[str, Sequence[str], None] = "c5d6e7f8a9b0"
+revision: str = "e3f4a5b6c7d8"
+down_revision: Union[str, Sequence[str], None] = "d7e8f9a0b1c2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

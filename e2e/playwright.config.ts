@@ -32,6 +32,9 @@ export const DESKTOP_ONLY = [
   // Panel-Ueberlagerung) - ohne die Bindung an EIN Projekt liefe der Spec zweimal mit identischem
   // Ergebnis, weil die Projekt-Viewports gar nicht zum Tragen kommen.
   /project-nav\.spec\.ts/,
+  // Ebenfalls selbstgesetzte Breiten, und zwar exakt 1023/1024: die Umbruchgrenze IST der
+  // Gegenstand der Messung, die beiden Projekt-Viewports liegen beide weit davon entfernt.
+  /projektuebersicht-raster\.spec\.ts/,
 ]
 
 export default defineConfig({

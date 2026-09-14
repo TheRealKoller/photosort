@@ -156,23 +156,17 @@ class Settings(BaseSettings):
     # aber nur verwendet (build_landmark_client()), wenn landmark_provider == "mistral".
     mistral_api_key: str = ""
 
-    # Schaltet GENAU EINES: ob ein EXTERNER Dienst nach einem Ort gefragt wird - im Worker und im
-    # Messkommando (place_probe.py) gleichermaßen. Betriebseinstellung wie landmark_provider, kein
-    # Projektfeld, kein UI-Element, keine Einwilligungsmechanik.
+    # Der Pfad des vorbereiteten GeoNames-Auszugs, aus dem die Ortsauflösung liest (ADR 0105
+    # Punkt 3). Vorgabe ist das eigene Docker-Volume `place_dataset`: im Backend-Dienst
+    # schreibbar, im Worker nur lesend eingehängt - genau ein Schreiber, und der operative Pfad
+    # ist keiner.
     #
-    # Default `false`, anders als beim rein lokal arbeitenden category_selection_enabled: sonst
-    # verließe eine Ortsangabe der Familie das System, ohne dass jemand es eingeschaltet hätte.
-    # Steht er auf `false`, wird kein externer Auflöser GEBAUT (Muster build_landmark_client bei
-    # fehlender Einwilligung - kein Client-Aufbau "auf Verdacht"), keine Anfrage geht hinaus, keine
-    # neue Auskunft wird beschafft. Die Vorgabe ist trotzdem ein ARBEITSFÄHIGER Zustand und kein
-    # Startfehler: bereits vorhandene Auskünfte werden weiter gelesen, Events ohne Auskunft
-    # behalten Nummer und Zeitspanne, der Lauf läuft weiter.
-    #
-    # AUSSCHALTEN STOPPT DEN ABFLUSS, ES LÖSCHT DIE SPUR NICHT - das tut allein die
-    # Projektlöschung. Fällt die Wegwahl auf den lokalen Datenbestand, ist der Schalter wirkungslos
-    # und bleibt es; er wird dann nicht für etwas anderes umgewidmet, weil sein Name genau eine
-    # Sache benennt.
-    external_place_lookup_enabled: bool = False
+    # Betriebseinstellung wie `photo_cache_dir`, nie ein Wert aus Datenbank oder Request. Fehlt
+    # die Datei oder weicht sie von ihrem Hash ab, wird kein Auflöser gebaut, es entsteht kein
+    # Ersatzweg, und die Events behalten Nummer und Zeitspanne - ein arbeitsfähiger Zustand, kein
+    # Startfehler. Erzeugt wird der Auszug einmal je Volume über
+    # `python -m photosort.place_dataset`.
+    place_dataset_path: str = "/data/place-dataset/geonames-auszug.txt.gz"
 
     # Obergrenze für die begrenzte Parallelisierung der Cloud-Aufrufe der
     # Remote-Kategorie-Klassifizierung - analog landmark_api_concurrency. Bewusst ein eigenes

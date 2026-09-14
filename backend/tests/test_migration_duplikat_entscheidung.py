@@ -33,7 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from photosort.db import Base
 from photosort.models import DuplicateDecision, PhotoDuplicateDecision
 
-_MIGRATION_FILENAME = "d7e8f9a0b1c2_duplikat_entscheidung.py"
+_MIGRATION_FILENAME = "e3f4a5b6c7d8_duplikat_entscheidung.py"
 _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent / "alembic" / "versions" / _MIGRATION_FILENAME
 )
@@ -82,10 +82,18 @@ def _columns(connection: Connection, table: str) -> dict[str, dict[str, object]]
 
 def test_revision_chains_onto_the_current_head() -> None:
     """`down_revision` gegen den zum Umsetzungszeitpunkt TATSAECHLICHEN Head. Die Kette selbst
-    prueft `test_migration_chain.py`."""
+    prueft `test_migration_chain.py`.
+
+    UMGEZOGEN BEIM ABGLEICH MIT `main`: Diese Migration hiess zunaechst `d7e8f9a0b1c2` und setzte
+    auf `c5d6e7f8a9b0` auf. Parallel vergab Spec 0434 (Teil 2, Ortsauskunft) dieselbe Id auf
+    demselben Vorgaenger - zwei Dateien mit verschiedenem Namen, fuer `git` deshalb kein Konflikt.
+    Aufgefallen ist es erst an `test_migration_chain.py` (doppelte Id, zwei Heads). Die noch nicht
+    gemergte Seite zieht um, und sie setzt danach HINTER der Ortsauskunft auf, damit die Kette
+    linear bleibt: Die Duplikat-Tabelle entsteht im Deployment nach der Ortsauskunft."""
     module = _load_migration_module()
 
-    assert module.down_revision == "c5d6e7f8a9b0"
+    assert module.revision == "e3f4a5b6c7d8"
+    assert module.down_revision == "d7e8f9a0b1c2"
 
 
 def test_the_upgrade_creates_the_table_with_exactly_two_columns(tmp_path: Path) -> None:

@@ -1,11 +1,14 @@
 import logging
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, event, func, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +33,13 @@ from photosort.models import (
 )
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
+from photosort.photo_aggregates import (
+    EMPTY_PHOTO_AGGREGATE,
+    PhotoAggregate,
+    photo_aggregates_by_project,
+)
 from photosort.security import create_access_token, hash_password
+from photosort.selection import effective_target
 from photosort.thumbnails import display_path, thumbnail_path
 from tests.project_graph import (
     ProjectGraph,
@@ -1768,3 +1777,256 @@ class TestTheSelectionTarget:
         paths = {getattr(route, "path", "") for route in projects_api.router.routes}
 
         assert "/projects/{project_id}/selection-target" in paths
+
+
+# Der SQL-Text, an dem die Stapelabfrage des Aufnahmezeitraums erkennbar ist. Gezaehlt wird die
+# Anweisung mit DIESEM Ausdruck, nie die Gesamtzahl aller Anweisungen: letztere haengt an den hier
+# nicht angefassten Lauf-Abfragen und waere beim naechsten fremden Zusatz rot.
+_TAKEN_AT_MIN_SQL = "min(photos.taken_at)"
+
+
+@contextmanager
+def _recorded_statements() -> Iterator[list[str]]:
+    """Die TATSAECHLICH abgesetzten Anweisungen (Muster aus `test_project_deletion.py`)."""
+    statements: list[str] = []
+
+    def _listener(
+        conn: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", _listener)
+    try:
+        yield statements
+    finally:
+        event.remove(Engine, "before_cursor_execute", _listener)
+
+
+def _taken_at_min_statements(statements: Sequence[str]) -> list[str]:
+    return [line for line in statements if _TAKEN_AT_MIN_SQL in line.lower()]
+
+
+class TestPhotoCountAndTakenAtRange:
+    """Spec 0375 / ADR 0103: `photo_count`, `taken_at_earliest` und `taken_at_latest` treten
+    additiv an `ProjectOut`, gespeist aus EINER gruppierten Abfrage je Antwort."""
+
+    @staticmethod
+    async def _add_photos(
+        session: AsyncSession,
+        project_id: int,
+        moments: Sequence[datetime],
+        *,
+        prefix: str,
+    ) -> None:
+        for index, moment in enumerate(moments):
+            session.add(
+                Photo(
+                    project_id=project_id,
+                    relative_path=f"{prefix}/{index}.jpg",
+                    etag=f"{prefix}-etag-{index}",
+                    content_length=100,
+                    taken_at=moment,
+                    taken_at_original=moment,
+                    camera_probed=True,
+                    last_modified=datetime(2026, 8, 12, 10),
+                )
+            )
+        await session.flush()
+
+    async def test_a_freshly_created_project_answers_with_zero_and_two_nulls(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        """Akzeptanzkriterium S5, letzter Teil. `0` ist eine Aussage, `null` ihre Abwesenheit -
+        die Unterscheidung entsteht hier und traegt bis in die Anzeige."""
+        app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+
+        response = await authenticated_api_client.post(
+            "/projects", json={"name": "Costa Rica", "opencloud_path": "CostaRica"}
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["photo_count"] == 0
+        assert body["taken_at_earliest"] is None
+        assert body["taken_at_latest"] is None
+
+    async def test_the_range_comes_from_the_photos_not_from_the_insertion_order(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Einfuegereihenfolge ist bewusst NICHT die Zeitreihenfolge: ein `MIN`/`MAX`, das
+        versehentlich "erste"/"letzte Zeile" liefert, wird hier rot."""
+        project_id = await _create_project(authenticated_api_client)
+        await self._add_photos(
+            db_session,
+            project_id,
+            [
+                datetime(2019, 8, 17, 14, 30),
+                datetime(2019, 4, 2, 9, 15),
+                datetime(2019, 6, 11, 18, 0),
+            ],
+            prefix="cr",
+        )
+
+        body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+
+        assert body["photo_count"] == 3
+        assert body["taken_at_earliest"] == "2019-04-02T09:15:00"
+        assert body["taken_at_latest"] == "2019-08-17T14:30:00"
+
+    async def test_photos_of_another_project_flow_into_none_of_the_three_values(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sicherheitsauflage S2 / Akzeptanzkriterium S5. Die Ausfallrichtung ist keine
+        Fehlermeldung, sondern eine plausible fremde Zahl - deshalb ZWEI Projekte, davon eines
+        ohne Fotos: ein Testbestand mit einem einzigen Projekt bliebe auch ohne die
+        `project_id`-Einschraenkung gruen."""
+        with_photos = await _create_project(authenticated_api_client, name="Mit Fotos")
+        without_photos = await _create_project(authenticated_api_client, name="Ohne Fotos")
+        await self._add_photos(
+            db_session,
+            with_photos,
+            [datetime(2019, 4, 2, 9, 15), datetime(2019, 8, 17, 14, 30)],
+            prefix="mit",
+        )
+
+        body = (await authenticated_api_client.get("/projects")).json()
+        by_id = {entry["id"]: entry for entry in body}
+
+        assert by_id[with_photos]["photo_count"] == 2
+        assert by_id[with_photos]["taken_at_earliest"] == "2019-04-02T09:15:00"
+        assert by_id[with_photos]["taken_at_latest"] == "2019-08-17T14:30:00"
+        assert by_id[without_photos]["photo_count"] == 0
+        assert by_id[without_photos]["taken_at_earliest"] is None
+        assert by_id[without_photos]["taken_at_latest"] is None
+
+    async def test_a_project_without_photos_gets_the_named_default_never_a_neighbours_row(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sicherheitsauflage S2, Kern: ein Projekt ohne Treffer FEHLT im Ergebnis der
+        Gruppierung. Es entsteht als `(0, None, None)` - nie durch Uebernahme einer Nachbarzeile,
+        nie durch Auslassen des Eintrags."""
+        with_photos = await _create_project(authenticated_api_client, name="Mit Fotos")
+        without_photos = await _create_project(authenticated_api_client, name="Ohne Fotos")
+        await self._add_photos(db_session, with_photos, [datetime(2019, 4, 2, 9, 15)], prefix="mit")
+
+        aggregates = await photo_aggregates_by_project(db_session, [with_photos, without_photos])
+
+        assert aggregates[with_photos] == PhotoAggregate(
+            photo_count=1,
+            taken_at_earliest=datetime(2019, 4, 2, 9, 15),
+            taken_at_latest=datetime(2019, 4, 2, 9, 15),
+        )
+        assert aggregates.get(without_photos, EMPTY_PHOTO_AGGREGATE) == EMPTY_PHOTO_AGGREGATE
+
+    async def test_an_empty_id_set_asks_the_database_nothing(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Kein `IN ()`: eine leere Id-Menge ist als Frage sinnlos und in manchen Dialekten
+        ueberdies ungueltiges SQL."""
+        with _recorded_statements() as statements:
+            aggregates = await photo_aggregates_by_project(db_session, [])
+
+        assert aggregates == {}
+        assert statements == []
+
+    async def test_the_empty_project_list_answers_without_crashing(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        response = await authenticated_api_client.get("/projects")
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    @pytest.mark.parametrize("photo_count", [0, 1, 20])
+    async def test_the_effective_target_stays_on_the_very_number_the_answer_reports(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        photo_count: int,
+    ) -> None:
+        """Akzeptanzkriterium S6: mit dem Wegfall von `_project_photo_count` speist dasselbe
+        Aggregat auch die Vorbelegung des Richtwerts - einschliesslich `photo_count == 0`."""
+        project_id = await _create_project(authenticated_api_client)
+        await self._add_photos(
+            db_session,
+            project_id,
+            [datetime(2019, 4, 2, 9, 15) + timedelta(hours=index) for index in range(photo_count)],
+            prefix="cr",
+        )
+
+        body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+
+        assert body["photo_count"] == photo_count
+        assert body["effective_selection_target"] == effective_target(
+            body["selection_target"], body["photo_count"]
+        )
+
+    @pytest.mark.parametrize("project_count", [1, 4])
+    async def test_the_list_asks_for_the_range_exactly_once_regardless_of_the_project_count(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        project_count: int,
+    ) -> None:
+        """Akzeptanzkriterium S4: exakte Kardinalitaet UND Skaleninvarianz im selben Test. Eine
+        Assertion auf die GESAMTZAHL aller Anweisungen waere an die hier nicht angefassten
+        Lauf-Abfragen gebunden."""
+        for index in range(project_count):
+            project_id = await _create_project(authenticated_api_client, name=f"Projekt {index}")
+            await self._add_photos(
+                db_session,
+                project_id,
+                [datetime(2019, 4, 2, 9, 15) + timedelta(days=index)],
+                prefix=f"p{index}",
+            )
+
+        with _recorded_statements() as statements:
+            response = await authenticated_api_client.get("/projects")
+
+        assert response.status_code == 200
+        assert len(response.json()) == project_count
+        assert len(_taken_at_min_statements(statements)) == 1
+
+    async def test_every_operation_answering_with_a_project_carries_the_three_fields(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Alle vier tragenden Operationen antworten mit `ProjectOut` und damit mit denselben
+        drei Feldern - es gibt keinen zweiten Rechenweg fuer dieselben Zahlen."""
+        app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
+        created = (
+            await authenticated_api_client.post(
+                "/projects", json={"name": "Costa Rica", "opencloud_path": "CostaRica"}
+            )
+        ).json()
+        project_id = created["id"]
+        await self._add_photos(
+            db_session,
+            project_id,
+            [datetime(2019, 4, 2, 9, 15), datetime(2019, 8, 17, 14, 30)],
+            prefix="cr",
+        )
+
+        detail = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+        listed = next(
+            entry
+            for entry in (await authenticated_api_client.get("/projects")).json()
+            if entry["id"] == project_id
+        )
+        updated = (
+            await authenticated_api_client.put(
+                f"/projects/{project_id}/selection-target", json={"target": 3}
+            )
+        ).json()
+
+        expected = {
+            "photo_count": 2,
+            "taken_at_earliest": "2019-04-02T09:15:00",
+            "taken_at_latest": "2019-08-17T14:30:00",
+        }
+        for body in (detail, listed, updated):
+            assert {key: body[key] for key in expected} == expected

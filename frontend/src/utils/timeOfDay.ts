@@ -32,26 +32,36 @@ export function formatTimeRange(minIso: string, maxIso: string): string {
 /**
  * Tag und fertige Ueberschrift EINES Events - eine reine Funktion ueber der `events`-Zeile.
  *
- * Zwei Formen, sonst keine: der erkannte Name (`Eiffelturm (10:30–11:45 Uhr)`) oder der
- * Rueckfall auf die Nummer (`Position 3 (10:30–11:45 Uhr)`). Eine Koordinate erscheint
- * ausdruecklich NICHT als Name - sie bleibt in `place` und wird spaeter ueber Reverse-Geocoding
- * wieder einer.
+ * DREI STUFEN, sequenziell: die erkannte Sehenswuerdigkeit (`Eiffelturm (10:30–11:45 Uhr)`), der
+ * aufgeloeste Ortsname (`Berlin, Kreuzberg (10:30–11:45 Uhr)`), sonst die Nummer
+ * (`Position 3 (10:30–11:45 Uhr)`). Die Zeitspanne bleibt in JEDEM Fall Teil der Ueberschrift -
+ * sie traegt die Unterscheidbarkeit, wenn mehrere Events denselben Namen tragen und kein Viertel
+ * vorliegt.
+ *
+ * Eine Koordinate erscheint ausdruecklich NICHT als Name - sie bleibt in `place`.
+ *
+ * Die zusammengesetzte Form "Ort, Viertel" kommt FERTIG vom Server (ADR 0102 Punkt 4): Sie ist
+ * eine Aussage ueber alle Events eines Laufs, die das Frontend gar nicht treffen koennte. Hier
+ * wird nichts zusammengesetzt und nichts zerlegt.
  *
  * Anders als die frueher hier stehende Cluster-Ueberschrift haengt nichts davon ab, welche Fotos
- * gerade sichtbar sind: Nummer und Zeitspanne stehen in der Zeile des Events.
+ * gerade sichtbar sind: Nummer, Zeitspanne und Name stehen in der Zeile des Events.
  */
 export function formatEventHeading(event: EventOut): { dayKey: string; heading: string } {
   const timeRange = formatTimeRange(event.started_at, event.ended_at)
-  const name = event.place?.kind === 'landmark' ? (event.place.landmark_name ?? null) : null
+  const landmark = event.place?.kind === 'landmark' ? (event.place.landmark_name ?? null) : null
+  // Der `null`/`''`-Rueckfall je Stufe ist defensiv: der Server liefert diese Kombinationen nicht,
+  // aber `"null"` in einer Ueberschrift waere schlimmer als die Nummer. Faellt eine Stufe aus,
+  // gewinnt die NAECHSTE - nicht sofort die Nummer.
+  const name = usableName(landmark) ?? usableName(event.place_name)
   return {
     dayKey: dayKeyOf(event.started_at),
-    // Der `null`-Rueckfall bei einem `landmark` ohne Namen ist defensiv: der Server liefert diese
-    // Kombination nicht, aber `"null"` in einer Ueberschrift waere schlimmer als die Nummer.
-    heading:
-      name === null || name === ''
-        ? `Position ${event.position} (${timeRange})`
-        : `${name} (${timeRange})`,
+    heading: name === null ? `Position ${event.position} (${timeRange})` : `${name} (${timeRange})`,
   }
+}
+
+function usableName(value: string | null | undefined): string | null {
+  return value === null || value === undefined || value === '' ? null : value
 }
 
 const WEEKDAY_LABELS = [

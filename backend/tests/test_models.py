@@ -15,6 +15,7 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
+    Event,
     FinalSelectionDecision,
     FineLabel,
     MotifAssessmentSource,
@@ -29,6 +30,7 @@ from photosort.models import (
     PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
+    PlaceLookup,
     Project,
     ProjectCamera,
     Rating,
@@ -2079,3 +2081,130 @@ class TestTheDraftFunctionsNeverTouchTheJointDecision:
         snippet = "async def f():\n    return await _final_selection_decisions(session, ids)"
 
         assert _functions_naming_the_decision_model(snippet) == set()
+
+
+class TestPlaceLookupIsBoundToItsProject:
+    """`place_lookups` ist die DAUERHAFTESTE Ortsspur des Systems (S6): lauf-unabhaengig, und
+    ihre Lebensdauer haengt allein am Projekt."""
+
+    async def test_a_second_row_for_the_same_cell_of_the_same_project_is_rejected(
+        self, db_session: AsyncSession
+    ) -> None:
+        project = Project(name=f"Projekt {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
+        db_session.add(project)
+        await db_session.flush()
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        db_session.add(
+            PlaceLookup(
+                project_id=project.id,
+                cell_lat=47.51,
+                cell_lon=11.09,
+                locality="Garmisch-Partenkirchen",
+                matched_level="locality",
+                source="geonames",
+                resolved_at=now,
+            )
+        )
+        await db_session.commit()
+
+        db_session.add(
+            PlaceLookup(
+                project_id=project.id,
+                cell_lat=47.51,
+                cell_lon=11.09,
+                locality="Anderswo",
+                matched_level="locality",
+                source="geonames",
+                resolved_at=now,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
+
+    async def test_the_same_cell_in_a_second_project_is_a_row_of_its_own(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Die Auskunft des einen Projekts wird fuer das andere NIE gelesen - sie darf deshalb
+        auch nicht am Constraint des ersten scheitern."""
+        first = Project(name=f"Projekt {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
+        second = Project(name=f"Projekt {uuid4()}", opencloud_drive_id="d", opencloud_path="/b")
+        db_session.add_all([first, second])
+        await db_session.flush()
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        db_session.add_all(
+            [
+                PlaceLookup(
+                    project_id=first.id,
+                    cell_lat=47.51,
+                    cell_lon=11.09,
+                    locality="Garmisch-Partenkirchen",
+                    matched_level="locality",
+                    source="geonames",
+                    resolved_at=now,
+                ),
+                PlaceLookup(
+                    project_id=second.id,
+                    cell_lat=47.51,
+                    cell_lon=11.09,
+                    locality="Garmisch-Partenkirchen",
+                    matched_level="locality",
+                    source="geonames",
+                    resolved_at=now,
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        stored = (
+            (await db_session.execute(select(PlaceLookup).order_by(PlaceLookup.project_id)))
+            .scalars()
+            .all()
+        )
+        assert [row.project_id for row in stored] == sorted([first.id, second.id])
+
+    def test_the_project_column_carries_a_real_foreign_key(self) -> None:
+        """Eine bloss logische Spalte fiele still aus der Erreichbarkeitspruefung der
+        Projektloeschung heraus - und mit ihr die Zusage, dass die Ortsspur mit dem Projekt
+        verschwindet."""
+        column = inspect(PlaceLookup).columns["project_id"]
+
+        assert not column.nullable
+        assert {fk.target_fullname for fk in column.foreign_keys} == {"projects.id"}
+
+    def test_every_name_level_is_nullable_on_its_own(self) -> None:
+        """Eine unbrauchbare Stufe wird `NULL`, nie die ganze Antwort verworfen (S7) - und eine
+        Antwort OHNE brauchbare Ebene ist eine Zeile mit leeren Namensstufen, kein Fehlen."""
+        columns = inspect(PlaceLookup).columns
+
+        for level in ("neighbourhood", "locality", "region", "country", "matched_level"):
+            assert columns[level].nullable, level
+        assert not columns["source"].nullable
+
+
+async def test_event_place_name_is_nullable_and_defaults_to_none(
+    db_session: AsyncSession,
+) -> None:
+    """Der Name eines Events ist ein LAUF-Artefakt: `NULL` heisst "kein aufgeloester Ortsname",
+    und ein Altlauf bleibt genau dort."""
+    project = Project(name=f"Projekt {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    event = Event(criterion_scoring_run_id=run.id, position=1, started_at=now, ended_at=now)
+    db_session.add(event)
+    await db_session.commit()
+
+    stored = (await db_session.execute(select(Event).where(Event.id == event.id))).scalar_one()
+    assert stored.place_name is None
+    assert inspect(Event).columns["place_name"].nullable

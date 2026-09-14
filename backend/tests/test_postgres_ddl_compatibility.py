@@ -1347,7 +1347,7 @@ def test_the_weight_sets_downgrade_renders_for_postgres_too() -> None:
 # unbeabsichtigter Server-Default auf `decision` - unter SQLite bliebe beides unsichtbar, waehrend
 # der Backend-Container `alembic upgrade head` VOR dem Serverstart ausfuehrt.
 
-_DUPLICATE_DECISION_REVISION = "d7e8f9a0b1c2_duplikat_entscheidung.py"
+_DUPLICATE_DECISION_REVISION = "e3f4a5b6c7d8_duplikat_entscheidung.py"
 
 
 @pytest.fixture(scope="module")
@@ -1404,7 +1404,6 @@ def test_the_duplicate_decision_upgrade_touches_no_data_at_all(
     duplicate_decision_upgrade_ddl: list[str],
 ) -> None:
     rendered = " ".join(duplicate_decision_upgrade_ddl).upper()
-
     assert "INSERT " not in rendered
     assert "UPDATE " not in rendered
     assert "DELETE " not in rendered
@@ -1415,3 +1414,77 @@ def test_the_duplicate_decision_downgrade_renders_for_postgres_too() -> None:
 
     rendered = " ".join(statements)
     assert "DROP TABLE photo_duplicate_decisions" in rendered
+
+
+# specs/features/0434-ortsnamen-fuer-events.md, Teil 2: die Ortsauskunft. Zwei Fehlerklassen
+# haengen hier, die SQLite strukturell nicht zeigt - die Gleitkomma-Spalten des Zellschluessels
+# (dort sind INTEGER und DOUBLE PRECISION dasselbe, und genau an diesen beiden Werten haengt der
+# Treffer eines abgelegten Eintrags) und der mehrspaltige `UniqueConstraint`, der die
+# Wiederverwendung der Auskunft traegt.
+
+_ORTSAUSKUNFT_REVISION = "d7e8f9a0b1c2_ortsauskunft.py"
+
+
+@pytest.fixture(scope="module")
+def ortsauskunft_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_ORTSAUSKUNFT_REVISION)
+
+
+def test_the_cell_key_renders_as_two_float_columns(ortsauskunft_upgrade_ddl: list[str]) -> None:
+    """Der Schluessel der Auskunft IST das gerundete Zahlenpaar - eine Ganzzahlspalte machte aus
+    jeder Zelle denselben Eintrag."""
+    statement = _create_table_statement(ortsauskunft_upgrade_ddl, "place_lookups")
+
+    for column in ("cell_lat", "cell_lon"):
+        line = next(line for line in statement.splitlines() if line.strip().startswith(column))
+        assert "FLOAT" in line.upper() or "DOUBLE PRECISION" in line.upper(), line
+        assert "NOT NULL" in line.upper(), line
+        assert "DEFAULT" not in line.upper(), line
+
+
+def test_the_unique_constraint_spans_project_and_both_cell_columns(
+    ortsauskunft_upgrade_ddl: list[str],
+) -> None:
+    """Dieselbe Zelle in einem ZWEITEN Projekt ist eine eigene Zeile - der Constraint traegt
+    `project_id` deshalb mit, und die Auskunft des einen Projekts wird fuer das andere nie
+    gelesen (S6)."""
+    statement = _create_table_statement(ortsauskunft_upgrade_ddl, "place_lookups")
+
+    assert "UNIQUE (project_id, cell_lat, cell_lon)" in statement
+    assert "FOREIGN KEY(project_id) REFERENCES projects (id)" in statement
+
+
+def test_the_resolution_timestamp_is_zoneless(ortsauskunft_upgrade_ddl: list[str]) -> None:
+    """Alle Zeitstempel des Projekts sind zonenlos (ADR 0090, Punkt 4)."""
+    statement = _create_table_statement(ortsauskunft_upgrade_ddl, "place_lookups").upper()
+
+    assert "RESOLVED_AT TIMESTAMP WITHOUT TIME ZONE NOT NULL" in statement
+    assert "WITH TIME ZONE" not in statement
+
+
+def test_the_event_column_is_added_nullable_and_without_a_default(
+    ortsauskunft_upgrade_ddl: list[str],
+) -> None:
+    statement = _add_column_statement(ortsauskunft_upgrade_ddl, "place_name").upper()
+
+    assert "VARCHAR" in statement
+    assert "NOT NULL" not in statement
+    assert "DEFAULT" not in statement
+
+
+def test_the_ortsauskunft_upgrade_touches_no_data_at_all(
+    ortsauskunft_upgrade_ddl: list[str],
+) -> None:
+    """Rein additiv: kein Nachziehen bestehender Laeufe, keine Datenloeschung."""
+    rendered = " ".join(ortsauskunft_upgrade_ddl).upper()
+    assert "INSERT " not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered
+
+
+def test_the_ortsauskunft_downgrade_renders_for_postgres_too() -> None:
+    statements = _render_postgres_ddl(_ORTSAUSKUNFT_REVISION, direction="downgrade")
+    rendered = " ".join(statements).upper()
+
+    assert "DROP COLUMN PLACE_NAME" in rendered
+    assert "DROP TABLE PLACE_LOOKUPS" in rendered
