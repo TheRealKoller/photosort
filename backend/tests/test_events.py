@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import ast
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from itertools import permutations
+from pathlib import Path
 
 from photosort.events import (
     EVENT_EXTENT_MAX_METERS,
@@ -27,6 +29,8 @@ from photosort.scoring import (
     TIME_CLUSTER_GAP,
     haversine_meters,
 )
+
+SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "photosort"
 
 # Bezugszeitpunkt aller Faelle. Zonenlos, wie `Photo.taken_at` selbst.
 T0 = datetime(2026, 7, 20, 10, 0, 0)
@@ -880,3 +884,88 @@ class TestEventForTime:
 
         for permutation in permutations(spans):
             assert event_for_time(list(permutation), moment) == 2
+
+
+def _modules_building_a_cell(*, with_a_digit_literal: bool) -> dict[str, int]:
+    """Je Quelldatei die Zahl der Stellen darin, die eine ORTSZELLE bilden.
+
+    `with_a_digit_literal` trennt die beiden Faelle, um die es geht: `round(wert, 2) + 0.0` ist
+    eine eigene Stellschraube und darf nirgends stehen, `round(wert, PLACE_CELL_DIGITS) + 0.0`
+    ist die eine benannte.
+
+    Gesucht wird die Signatur `round(<etwas>, <Zahlliteral>) + 0.0` - gezaehlt wird die FORM, nicht
+    der Wert. Die Addition von `0.0` normalisiert `-0.0` und ist genau das, was aus einer beliebigen
+    Rundung eine Zelle macht; ein blosses `round(wert, 3)` auf einen Qualitaetswert faellt dadurch
+    nicht mit herein und soll es auch nicht.
+
+    Eine Stelle, die heute zufaellig ebenfalls auf zwei Stellen rundet, ist genau der Fall, der bei
+    der naechsten Aenderung der Koernung zurueckbleibt."""
+    found: dict[str, int] = {}
+    for path in sorted(SRC_DIR.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)):
+                continue
+            if not (isinstance(node.right, ast.Constant) and node.right.value == 0.0):
+                continue
+            call = node.left
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)):
+                continue
+            if call.func.id != "round" or len(call.args) < 2:
+                continue
+            digits = call.args[1]
+            literal = isinstance(digits, ast.Constant) and isinstance(digits.value, int)
+            if literal is with_a_digit_literal:
+                name = path.relative_to(SRC_DIR).as_posix()
+                found[name] = found.get(name, 0) + 1
+    return found
+
+
+class TestTheRoundingStandsAtExactlyOnePlace:
+    """ADR 0102 Punkt 2: die Koernung der Ortszelle ist EINE benannte Konstante, nicht ueber den
+    Code verteilt. Sie ist die Stellschraube der Sicherheitsentscheidung - wie grob gefragt und
+    abgelegt wird, gehoert dorthin und nicht in die Bequemlichkeit einer Aufrufstelle.
+
+    Ein Verhaltenstest roetete hier nichts: eine zweite, zufaellig gleich rundende Stelle liefert
+    heute dieselben Werte und driftet erst bei der naechsten Aenderung ab. Die Zusage ist eine
+    Aussage ueber eine ANZAHL und braucht deshalb einen strukturellen Waechter."""
+
+    def test_the_old_constant_name_is_gone_from_the_source_tree(self) -> None:
+        """`events.py::_EVENT_PLACE_COORDINATE_DIGITS` ist in `places.PLACE_CELL_DIGITS`
+        aufgegangen. Bliebe der alte Name irgendwo stehen, gaebe es wieder zwei Stellschrauben."""
+        hits = [
+            path.relative_to(SRC_DIR).as_posix()
+            for path in sorted(SRC_DIR.rglob("*.py"))
+            if "_EVENT_PLACE_COORDINATE_DIGITS" in path.read_text(encoding="utf-8")
+        ]
+
+        assert hits == []
+
+    def test_no_module_builds_a_cell_with_a_digit_literal_of_its_own(self) -> None:
+        """Die Zusage aus ADR 0102 Punkt 2 in ihrer pruefbaren Form: nirgends im Quellbaum steht
+        eine zweite Rundung mit STELLENLITERAL. Eine solche Stelle liefert heute dieselben Werte
+        wie `place_cell` und bleibt bei der naechsten Aenderung der Koernung zurueck - lautlos."""
+        assert _modules_building_a_cell(with_a_digit_literal=True) == {}
+
+    def test_the_one_named_cell_rounding_lives_in_places(self) -> None:
+        """Die Gegenprobe zum Fall darueber: ohne sie bestuende er auch dann, wenn der Walker gar
+        nichts faende - etwa nach einer Umbenennung von `round`, einem Wegfall der
+        `-0.0`-Normalisierung oder einem Umbau des Quellverzeichnisses.
+
+        Zwei Stellen, weil `place_cell` Breite und Laenge getrennt rundet."""
+        assert _modules_building_a_cell(with_a_digit_literal=False) == {"places.py": 2}
+
+    def test_the_guard_would_catch_a_second_rounding(self) -> None:
+        """Mikrotest auf den Walker selbst, gegen einen ausgeschriebenen Verstoss - sonst belegt
+        keiner der beiden Faelle oben, dass die Form ueberhaupt erkannt wird."""
+        offender = ast.parse("cell = (round(lat, 2) + 0.0, round(lon, 2) + 0.0)")
+        matches = [
+            node
+            for node in ast.walk(offender)
+            if isinstance(node, ast.BinOp)
+            and isinstance(node.op, ast.Add)
+            and isinstance(node.right, ast.Constant)
+            and node.right.value == 0.0
+        ]
+
+        assert len(matches) == 2

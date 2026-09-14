@@ -131,6 +131,7 @@ photo-cache/
 .DS_Store
 .coverage
 example-pictures/
+.ortsdatensatz/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

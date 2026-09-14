@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
+from photosort.places import place_cell
 from photosort.scoring import (
     GPS_CLUSTER_SPLIT_DISTANCE_METERS,
     TIME_CLUSTER_GAP,
@@ -30,12 +31,6 @@ from photosort.scoring import (
 # ueber der Schrittschwelle von 500 m. Der Wert ist aenderbar und durch keinen Test gepinnt - ein
 # Test auf den Zahlwert waere eine Spiegelung des Codes.
 EVENT_EXTENT_MAX_METERS = 1000.0
-
-# Anzeigerundung der Event-Koordinate: zwei Nachkommastellen entsprechen rund 1,1 km (Vorgabe
-# "grob, ~1 km"). Die Rundung liegt im BACKEND, nie im Frontend - dieselbe Zahl entscheidet hier
-# ueber `"coordinate"` vs. `"multiple"`, und diese Stufe ist ohne das vollstaendige Event nicht
-# bestimmbar.
-_EVENT_PLACE_COORDINATE_DIGITS = 2
 
 # Der geschlossene Vorrat von `events.place_kind`. Ein Wert ausserhalb ist ein Datenfehler und
 # wird im Lesepfad zu "kein Ortsbezug", nie zu einer 500.
@@ -399,14 +394,6 @@ def default_signals() -> list[BoundarySignal]:
     ]
 
 
-def _rounded(value: float) -> float:
-    """Auf die Anzeigegenauigkeit gerundet, mit `-0.0` normalisiert auf `0.0`.
-
-    `-0.0` waere im JSON `-0.0` und in der Anzeige `"-0.00"` - eine Himmelsrichtung, die es nicht
-    gibt. Die Addition von `0.0` erledigt das nach IEEE 754 ohne Sonderfallzweig."""
-    return round(value, _EVENT_PLACE_COORDINATE_DIGITS) + 0.0
-
-
 def _name_of(members: Sequence[EventCandidate]) -> str | None:
     """Der eine Name eines Events, oder `None`.
 
@@ -439,7 +426,7 @@ def _place_of(
     # schluege schon bei zwei 40 m auseinanderliegenden Aufnahmen zu und machte aus einem einzelnen
     # Ortsbesuch "Mehrere Orte".
     cells = {
-        (_rounded(member.gps_lat), _rounded(member.gps_lon))
+        place_cell(member.gps_lat, member.gps_lon)
         for member in members
         if member.gps_lat is not None and member.gps_lon is not None
     }
