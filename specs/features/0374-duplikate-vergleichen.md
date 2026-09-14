@@ -259,8 +259,8 @@ Verkleinern sowie Vor/Zurück innerhalb der Gruppe als sichtbare Bedienelemente.
 **Penpot-Seite:** Ansicht — Duplikate vergleichen
 **Schlüssel:** duplikate
 
-Offener Punkt der Entwurfsdatei: Das Feld `produktdateien` der Ansicht ist leer und wird im
-Umsetzungslauf gefüllt (Schritt 11).
+Das Feld `produktdateien` der Ansicht ist im Umsetzungslauf gefüllt worden (Schritt 11): Es nennt
+`src/pages/DuplicateComparePage.tsx` und `src/components/DuplicatePhotoTile.tsx`.
 
 ### Ablauf und Layout
 

@@ -535,6 +535,67 @@ Verarbeitungs-Cache (Thumbnails).
       verlinkt dorthin. Backendseitig entfällt nichts — die Seite las das Standard-Listing.
       `groupDraftByDay` zieht dabei nach `utils/eventGrouping.ts::groupPhotosByDay`, weil beide
       Ansichten dieselbe Antwortform gliedern.
+  - **Duplikate vergleichen und einzeln entscheiden** *(Spec
+    [`0374`](../specs/features/0374-duplikate-vergleichen.md), ADR
+    [`decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md`](../specs/decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md))*:
+    drei Endpunkte über einer **abgeleiteten** Gruppe. `PhotoOut` bekommt **kein** Feld — die
+    Entscheidung reist in einem eigenen Antwortmodell **neben** dem Foto, weil sie außerhalb dieser
+    Ansicht keine Anzeigerolle hat und sonst auf jedem Lesepfad stünde.
+    - **Der Ausschuss-Überlebender-Bestand ist seither ein Prädikat an genau einer Stelle**
+      (`duplicates.py::survives_ausschuss` als SQL-Fassung, `survives_ausschuss_for` als
+      Objektfassung), nicht mehr ein an sechs Stellen ausgeschriebenes
+      `PhotoScore.suggested_status IS NULL`:
+
+      > `discard` überlebt nie · `keep` überlebt, solange `duplicate_of IS NOT NULL` · sonst
+      > entscheidet `suggested_status`
+
+      **Vier** der sechs Verwendungsstellen bestimmen unmittelbar, welche Fotos den Homeserver
+      Richtung Cloud-Anbieter verlassen: `worker.py::run_criterion_scoring` (speist zugleich den
+      Sehenswürdigkeits-Teilschritt), `worker.py::select_remote_category_candidates` und die beiden
+      **vorgelagerten Kostenschätzungen** in `api/projects.py`. Die Schätzungen folgen der Auswahl
+      nicht von selbst — sie sind eigene Anweisungen und müssen dieselbe Menge zählen, die der Lauf
+      sendet, sonst beruht die Freigabe eines kostenpflichtigen Laufs auf einer Zahl, die nicht
+      gilt. Die übrigen zwei (`api/photos.py`) sind Anzeige. Das Prädikat prüft **positiv auf
+      `keep`** und behandelt „keine Zeile" als ausdrückliches `IS NULL` auf die Unterabfrage: Die
+      Spalte ist eine Zeichenkette ohne DB-seitigen Wertevorrat, ein unerwarteter Wert muss zur
+      zurückhaltenden Seite fallen, und `<Unterabfrage> != 'discard'` ergäbe bei fehlender Zeile
+      `NULL` und damit den leeren Bestand. **„Überlebender" und „offener Vorschlag" sind nicht
+      komplementär:** Eine mit `discard` entschiedene Aufnahme ist weder das eine noch das andere.
+      Die Asymmetrie zwischen den beiden Werten ist die Entscheidung, nicht ein Detail —
+      `suggested_status = REJECTED` trägt zwei Gründe, und ein unbedingtes `keep` höbe eine
+      Ablehnung auf, zu der der Nutzer nie befragt wurde.
+    - `GET /projects/{project_id}/duplicate-groups/{photo_id}` (`api/photos.py`, Antwort
+      `DuplicateGroupOut` mit `items[]` aus `photo: PhotoOut` und `decision`, dazu `position` und
+      `total`). Die Gruppe hat **keine eigene Id**: Sie ist der zur Lesezeit gebildete Stern über
+      `PhotoScore.duplicate_of` und damit über **jedes** ihrer Mitglieder unter derselben Antwort
+      erreichbar, den Gewinner eingeschlossen. `404` deckt vier ununterscheidbare Fälle —
+      unbekanntes Foto, fremdes Projekt, Foto ohne Duplikat und Vorschlag wegen geringer
+      Bildqualität; unterschiede die Antwort sie, wäre der Endpunkt ein Existenz-Orakel über fremde
+      Foto-Ids. `total` zählt die noch **offenen** Gruppen, vereinigt mit der gerade angesehenen:
+      Nur so gilt `1 ≤ position ≤ total` auch für die Gruppe, die man soeben fertig entschieden
+      hat.
+    - `PUT /projects/{project_id}/photos/{photo_id}/duplicate-decision` und
+      `PUT /projects/{project_id}/duplicate-groups/{photo_id}/decision`
+      (`api/duplicate_decisions.py`, Body **ausschließlich** `{"decision": "keep"|"discard"}`,
+      Antwort dieselbe `DuplicateGroupOut` wie der Lesepfad) — **eigener Router mit router-weiter
+      Auth-Dependency** plus Eintrag in `test_auth_guard.py::_protected_router_operations()` und je
+      einem pfadbenannten 401-Fall. In `photos.router` wäre ein vergessener Torwächter still
+      öffentlich, und das ist hier ein unauthentifizierter Schreibzugriff darauf, welche Bilder den
+      Homeserver verlassen. **Keine Id-Liste im Body:** Welche Fotos die Gruppe umfasst, bestimmt
+      der Server aus dem Stern; eine vom Aufrufer gelieferte Menge wäre ein Massen-Schreibweg auf
+      beliebige Fotos des Projekts. Der Gruppenweg löst den Repräsentanten **zuerst** auf und
+      antwortet bei fehlender Gruppe `404`, **bevor** geschrieben wird — ein `None` als
+      Vergleichswert würde in SQLAlchemy zu `duplicate_of IS NULL` und träfe jede nicht aussortierte
+      Aufnahme des Projekts. Geschrieben wird in **einer** Transaktion; ein wiederholtes `PUT`
+      überschreibt, statt am Primärschlüssel in eine 500 zu laufen. Es gibt **kein `DELETE`**: „noch
+      nicht entschieden" ist kein Zustand, in den man zurückkehrt.
+    - **Die Ansicht** ist `pages/DuplicateComparePage.tsx` unter
+      `PROJECT_ROUTE_PATHS.photoDuplicates`, erreichbar aus der Ausschuss-Sichtung und nur bei
+      `suggestion.reason === 'duplicate'`. Die Kachel `components/DuplicatePhotoTile.tsx` steht
+      bewusst **neben** `PhotoCard`/`CurationPhotoTile`/`RatingBadge` statt auf ihnen: Deren
+      Vokabular ist die Albumentscheidung eines Nutzers. Die Vergrößerung ist **kein Dialog** — die
+      gewählte Kachel spannt die Rasterbreite, die übrige Gruppe bleibt sichtbar, und genau das ist
+      der Zweck.
   - **Die laufende Diagnose der Modellfehler** *(Spec
     [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
     [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md))*:
@@ -1537,6 +1598,19 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   und der so entstandene Zustand wäre nicht korrigierbar, nur überschreibbar. Die Endauswahl selbst
   wird **nicht** materialisiert. Zuordenbarkeit, wer was wollte, bleibt unangetastet in den
   `Rating`-Zeilen.
+- **PhotoDuplicateDecision** *(Spec [`0374`](../specs/features/0374-duplikate-vergleichen.md), ADR
+  [`decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md`](../specs/decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md),
+  `models.py`, Tabelle `photo_duplicate_decisions`)*: die Entscheidung des **Projekts** darüber, ob
+  eine Aufnahme des Ausschusses den Ausschuss-Schritt **überlebt** — `photo_id` als Primary Key
+  **und** Fremdschlüssel auf `photos` (Muster `FinalSelectionDecision`), `decision ∈ {keep,
+  discard}` **NOT NULL ohne jeden Default**. Kein `user_id`, keine Lauf-Bindung; die Abwesenheit
+  der Zeile heißt „noch nicht entschieden", und es gibt keinen Weg zurück in diesen Zustand.
+  **`discard` und ausdrücklich nicht `RatingStatus.REJECTED`:** Jenes ist die Albumentscheidung
+  eines Nutzers, dies die Antwort auf eine andere Frage auf einer anderen Ebene — ein geteilter
+  Wertevorrat machte die beiden an jeder Lesestelle verwechselbar. Die **Duplikat-Gruppe** bekommt
+  keine eigene Entität: Sie bleibt ein zur Lesezeit über `PhotoScore.duplicate_of` gebildeter
+  Stern (`duplicates.py`), flach nach Bauart, und eine gespeicherte Gruppen-Id wäre ein zweites
+  Abbild derselben Aussage, das jeder Lauf neu vergeben müsste.
 - **FeedbackEvent** *(Spec
   [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
   [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md),
