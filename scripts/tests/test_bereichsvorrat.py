@@ -20,10 +20,10 @@ die Operations-ID, nie einen der Werte. Vier Zusicherungen tragen das:
 und dieser Datei selbst.** Eine Positivliste waere hier die falsche Bauart, und das ist im Review
 am Bestand belegt worden, nicht befuerchtet: Die erste Fassung zaehlte `.claude/**`, `CLAUDE.md`
 und `docs/**` auf und uebersah `.github/ISSUE_TEMPLATE/*.yml` - Dateien, die **nachweislich Label
-vergeben** (`labels: ["bug"]`, `labels: ["feature", "needs-spec"]`). Ein Bereichswert in einer
-solchen `labels:`-Zeile ist genau der zweite Wahrheitsort, den (b) verhindern soll; die Probe
-blieb gruen. **Regel:** Eine Positivliste waechst nicht mit - jeder kuenftige Ort faellt durch,
-und der Waechter bleibt dabei gruen. Ein Ausschluss wird einzeln begruendet:
+vergeben** (`labels: ["bug"]`). Ein Bereichswert in einer solchen `labels:`-Zeile ist genau der
+zweite Wahrheitsort, den (b) verhindern soll; die Probe blieb gruen. **Regel:** Eine Positivliste
+waechst nicht mit - jeder kuenftige Ort faellt durch, und der Waechter bleibt dabei gruen. Ein
+Ausschluss wird einzeln begruendet:
 
 * **`specs/**`** sind eingefrorene Momentaufnahmen; Spec 0259 und ADR 0085 nennen den Vorrat
   selbst. Ein Textscan koennte lebende und historische Nennung dort nicht trennen und wuerde zum
@@ -334,9 +334,14 @@ def test_der_katalog_und_capture_liegen_im_suchraum() -> None:
             "dort wird der Ablauf beschrieben, ein Wert sickert hier am ehesten ein",
         ),
         (
-            ".github/ISSUE_TEMPLATE/feature_request.yml",
-            "eine `labels:`-Zeile vergibt Label - genau der zweite Wahrheitsort, den die "
+            ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "eine lebende `labels:`-Zeile vergibt Label - genau der zweite Wahrheitsort, den die "
             "erste, aufzaehlende Fassung dieses Waechters uebersehen hat",
+        ),
+        (
+            ".github/ISSUE_TEMPLATE/feature_request.yml",
+            "ein Issue-Formular, das Label vergeben *kann* - heute fuehrt es keine "
+            "`labels:`-Zeile, und genau deshalb faellt eine neue dort nicht von selbst auf",
         ),
     ],
 )
