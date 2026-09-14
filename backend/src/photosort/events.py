@@ -569,7 +569,8 @@ def _built(position: int, members: Sequence[EventCandidate]) -> BuiltEvent:
 def build_events(
     candidates: Iterable[EventCandidate], signals: list[BoundarySignal] | None = None
 ) -> list[BuiltEvent]:
-    """Die Event-Bildung: EIN sortierter Durchlauf ueber die Kandidaten eines Kriterien-Laufs.
+    """Die Event-Bildung: EIN sortierter Durchlauf ueber die Kandidaten eines Kriterien-Laufs,
+    dem die Motivgrenzen als eigene Stufe VORAUSGEHEN.
 
     Das Ergebnis ist chronologisch geordnet und ueberschneidungsfrei, `position` laeuft
     lueckenlos ab 1, und jeder uebergebene Kandidat steht in genau einem Event.
@@ -577,17 +578,24 @@ def build_events(
     Der Durchlauf wertet ALLE Signale aus - `any` ueber eine bereits gebaute LISTE, ausdruecklich
     NICHT kurzgeschlossen - und ruft danach genau eine der schreibenden Methoden auf ALLEN auf.
     Wuerde die Auswertung beim ersten `True` abbrechen, haenge die Zustandsfortschreibung eines
-    Signals an seiner Listenposition.
+    Signals an seiner Listenposition. Aus demselben Grund steht `index in forced_starts` RECHTS
+    der Signalauswertung und in einer eigenen Anweisung: links davon wuerde an einem erzwungenen
+    Start kein Signal mehr gefragt.
+
+    Ein erzwungener Start wirkt wie jede gemeldete Grenze - `begin` laeuft auf allen Signalen und
+    ist deren vollstaendige Ruecksetzung. Eine erst spaeter faellige Grenze von Ausdehnung,
+    Schritt oder Name kann dadurch entfallen, weil an der frueheren Stelle bereits getrennt wurde.
 
     `signals` ist injizierbar; ohne Angabe gilt `default_signals()`."""
     ordered = sorted(candidates, key=lambda candidate: (candidate.taken_at, candidate.photo_id))
+    forced_starts = motif_change_starts(ordered)
     active = default_signals() if signals is None else signals
 
     events: list[list[EventCandidate]] = []
-    for candidate in ordered:
+    for index, candidate in enumerate(ordered):
         # Die Liste wird VOLLSTAENDIG gebaut, bevor `any` sie liest.
         boundary = any([signal.is_boundary(candidate) for signal in active])
-        if boundary or not events:
+        if boundary or index in forced_starts or not events:
             for signal in active:
                 signal.begin(candidate)
             events.append([])
