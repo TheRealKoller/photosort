@@ -96,6 +96,7 @@ from photosort.models import (
 )
 from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import LOCAL_MOTIF_SIGNALS, MOTIF_REGISTRY
+from photosort.places import place_cell
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
 from photosort.quality import compute_quality_score
 from photosort.quality_weights import effective_weights, latest_weight_set
@@ -805,7 +806,7 @@ async def _create_demo_events(
     for position, event_index in enumerate(sorted(members), start=1):
         group = members[event_index]
         cells = {
-            (round(photo.gps_lat, 2) + 0.0, round(photo.gps_lon, 2) + 0.0)
+            place_cell(photo.gps_lat, photo.gps_lon)
             for photo in group
             if photo.gps_lat is not None and photo.gps_lon is not None
         }

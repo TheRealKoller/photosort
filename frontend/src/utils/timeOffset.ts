@@ -67,7 +67,7 @@ export function formatTimeOffset(offsetMinutes: number): string {
 /** Felder -> Minuten. `behind` (Uhr ging nach) ergibt einen POSITIVEN Versatz.
  *
  * Die Addition von `0` normalisiert `-0` auf `0` (IEEE 754, dasselbe Mittel wie in
- * `events.py::_rounded`): Ohne sie liefert die zurückstellende Richtung bei lauter Nullen ein
+ * `places.py::place_cell`): Ohne sie liefert die zurückstellende Richtung bei lauter Nullen ein
  * `-0`, das sich durch jeden `=== 0`-Vergleich schmuggelt, aber in `Object.is` und in einem
  * Zustandsvergleich als eigener Wert auftritt. */
 export function offsetFromFields(fields: OffsetFields): number {

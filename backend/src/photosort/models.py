@@ -184,8 +184,8 @@ class Photo(Base):
     # Dezimalgrad aus dem EXIF-GPSInfo-IFD (opencloud/exif.py::extract_gps). `None` heißt "kein
     # Ort bekannt" - es gibt NIE eine halbe Koordinate: scheitert eine Komponente, sind beide
     # Felder `None` (Paar-Invariante von extract_gps). Volle EXIF-Präzision, keine Rundung beim
-    # Speichern; die Anzeigerundung auf zwei Nachkommastellen liegt allein in
-    # events.py::_rounded (`_EVENT_PLACE_COORDINATE_DIGITS`) und trifft ausschließlich
+    # Speichern; die Vergröberung auf zwei Nachkommastellen liegt allein in
+    # places.py::place_cell (`PLACE_CELL_DIGITS`) und trifft ausschließlich
     # `events.place_lat`/`place_lon`, nie diese Spalten hier.
     #
     # KEIN server_default und kein Backfill: `0.0` ist eine gültige Koordinate, kein
