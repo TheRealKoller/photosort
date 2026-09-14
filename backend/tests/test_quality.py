@@ -1,6 +1,6 @@
 """specs/features/0428-albumtauglichkeit-vom-modell.md, Schritt 7 - Muster `test_ranking.py`.
 
-Rein, DB-frei, netzfrei. Vier Zusagen tragen mehr als eine Werteprüfung, und jede bekommt einen
+Rein, DB-frei, netzfrei. Fünf Zusagen tragen mehr als eine Werteprüfung, und jede bekommt einen
 eigenen, benannten Fall, der die Aussage über der TABELLE formuliert statt sie abzuschreiben:
 
 (a) Kein Eintrag der Gewichtstabelle trägt eine `presence_threshold`, und `content_landscape`
@@ -10,6 +10,10 @@ eigenen, benannten Fall, der die Aussage über der TABELLE formuliert statt sie 
 (c) Die Ordnungszusage über alle vier benachbarten Stufenpaare - plus die STRIKTE Grenze
     `LOCAL_CORRECTION_SPAN < 0,125`, die von der Anzeigezusage kommt.
 (d) Die Renormierung: ein fehlendes Kriterium senkt den Wert NICHT.
+(e) Dieselbe Renormierung von der anderen Seite: eine gleichmäßige Streckung ALLER Gewichte
+    ändert keinen Qualitätswert - es wirken allein die Verhältnisse. Darauf ruht die
+    Abwertungsaussage der Gewichtsableitung (`feedback.py::derive_weights`); bricht die
+    Eigenschaft hier, wird kein Fall in `test_feedback.py` rot.
 """
 
 from __future__ import annotations
@@ -145,6 +149,88 @@ class TestComputeQualityScore:
             for value in (0.0, 0.5, 1.0):
                 score = compute_quality_score(level, _values(value), QUALITY_CRITERION_WEIGHTS)
                 assert 0.0 <= score <= 1.0, (level, value)
+
+
+class TestTheRenormalizationInvariance:
+    """Eine gleichmaessige Streckung ALLER Gewichte aendert keinen Qualitaetswert:
+    `compute_quality_score(level, values, {k: c*w_k})` ist fuer jedes `c > 0` identisch zu
+    `compute_quality_score(level, values, w)`. Es wirken allein die VERHAELTNISSE.
+
+    DAS IST DIE EIGENSCHAFT DES BESTANDSCODES, AUF DER DIE ABWERTUNGSAUSSAGE DER
+    GEWICHTSABLEITUNG RUHT (`feedback.py::derive_weights`): "abgewertet, nie invertiert" und "ein
+    Kriterium mit Gegenwind verliert an Einfluss" sind nur wahr, weil `local_correction` auf die
+    Gewichtssumme renormiert. Ohne diese Renormierung waere eine gleichmaessige Streckung eine
+    Verhaltensaenderung, und eine Ableitung, die alle sieben Gewichte anhebt, verschoebe jeden
+    Qualitaetswert des Bestands.
+
+    DER FALL STEHT HIER UND NICHT IN `test_feedback.py`: Braeche die Eigenschaft kuenftig in
+    `quality.py`, wuerde kein einziger Fall dort rot - die Aussage verschwaende still an einer
+    Stelle, die niemand mit dem Feedback in Verbindung bringt.
+
+    Nicht zu verwechseln mit Invariante (d): Die betrifft ein FEHLENDES Kriterium, diese die
+    gleichmaessige Streckung der vorhandenen."""
+
+    # UNGLEICHE Gewichte und UNGLEICHE Werte. Bei durchgehend gleichen Werten liefert jedes
+    # gewichtete Mittel denselben Wert, und der Fall bestuende auch gegen eine Umsetzung, die die
+    # Gewichte gar nicht liest.
+    _WEIGHTS = {"sharpness": 1.0, "exposure": 2.0, "aesthetics": 0.5}
+    _VALUES = {"sharpness": 0.9, "exposure": 0.2, "aesthetics": 0.6}
+    _FACTORS = (0.5, 2.0, 3.0, 100.0)
+
+    @pytest.mark.parametrize("factor", _FACTORS)
+    def test_scaling_every_weight_alike_leaves_the_local_correction_untouched(
+        self, factor: float
+    ) -> None:
+        stretched = {key: factor * weight for key, weight in self._WEIGHTS.items()}
+
+        assert local_correction(self._VALUES, stretched) == pytest.approx(
+            local_correction(self._VALUES, self._WEIGHTS)
+        )
+
+    @pytest.mark.parametrize("factor", _FACTORS)
+    def test_scaling_every_weight_alike_leaves_the_quality_score_untouched(
+        self, factor: float
+    ) -> None:
+        stretched = {key: factor * weight for key, weight in self._WEIGHTS.items()}
+
+        assert compute_quality_score(3, self._VALUES, stretched) == pytest.approx(
+            compute_quality_score(3, self._VALUES, self._WEIGHTS)
+        )
+
+    @pytest.mark.parametrize("factor", _FACTORS)
+    def test_the_invariance_holds_for_the_real_weight_table_on_every_level(
+        self, factor: float
+    ) -> None:
+        """Ueber der TATSAECHLICHEN Tabelle und allen Stufen, weil genau sie es ist, die
+        `derive_weights` streckt."""
+        stretched = {key: factor * weight for key, weight in QUALITY_CRITERION_WEIGHTS.items()}
+        # `strict=True` ist hier die Aussage: Waechst die Tabelle um ein achtes Kriterium, soll
+        # der Fall LAUT brechen statt still nur noch sieben abzudecken.
+        values = dict(
+            zip(QUALITY_CRITERION_WEIGHTS, (0.9, 0.2, 0.6, 0.35, 0.8, 0.1, 0.55), strict=True)
+        )
+
+        for level in _ALL_LEVELS:
+            assert compute_quality_score(level, values, stretched) == pytest.approx(
+                compute_quality_score(level, values, QUALITY_CRITERION_WEIGHTS)
+            ), level
+
+    def test_the_chosen_case_sits_away_from_both_clamping_edges(self) -> None:
+        """Selbstschutz (a): An einer Kappungsgrenze liefern beide Seiten `0.0` bzw. `1.0`, und
+        die Faelle darueber bestuenden auch gegen eine kaputte Renormierung."""
+        score = compute_quality_score(3, self._VALUES, self._WEIGHTS)
+
+        assert 0.0 < score < 1.0
+
+    def test_the_weights_influence_this_very_case(self) -> None:
+        """Selbstschutz (b): Die Invarianz ist nur dann eine Aussage, wenn die Gewichte an dieser
+        Stelle ueberhaupt etwas bewirken. Eine NICHT-proportionale Aenderung muss den Wert
+        bewegen - sonst waere die Gleichheit oben trivial."""
+        reweighted = {"sharpness": 5.0, "exposure": 1.0, "aesthetics": 0.5}
+
+        assert compute_quality_score(3, self._VALUES, reweighted) != pytest.approx(
+            compute_quality_score(3, self._VALUES, self._WEIGHTS)
+        )
 
 
 class TestTheOrderingGuarantee:
