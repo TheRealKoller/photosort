@@ -16,12 +16,14 @@ import pytest
 
 from photosort.landmark import MAX_LANDMARK_NAME_LENGTH, sanitize_landmark_name
 from photosort.places import (
+    LANDMARK_PLACE_CELL_DIGITS,
     MAX_PLACE_NAME_LENGTH,
     NAME_BEARING_LEVELS,
     PLACE_CELL_DIGITS,
     PLACE_LEVELS,
     PlaceAnswer,
     PlaceInfo,
+    landmark_place_cell,
     place_cell,
     sanitize_place_name,
     usable_locality,
@@ -72,6 +74,58 @@ class TestTheCellIsTheOneRounding:
         dieselbe gewinnt, ist es nicht."""
         assert place_cell(48.125, 11.125) == place_cell(48.125, 11.125)
         assert place_cell(48.125, 11.125) == (round(48.125, 2) + 0.0, round(11.125, 2) + 0.0)
+
+
+class TestTheOutgoingCellIsCoarserThanTheStoredOne:
+    """Die Zelle, die das System VERLAESST (Spec 0469, S1; ADR 0106 Punkt 3).
+
+    `place_cell` daneben ist die Koernung, mit der gefragt und ABGELEGT wird; diese hier ist die
+    Koernung, mit der etwas hinausgeht. Sie ist eine Groessenordnung groeber, und beide Zusagen
+    stehen doppelt fest: als Literal und als Relation zueinander."""
+
+    def test_the_outgoing_digit_count_is_pinned_as_a_literal(self) -> None:
+        """Eine Nachkommastelle sind rund 11 km. Wer diesen Wert aendert, aendert eine
+        Datenschutzentscheidung und braucht eine eigene ADR."""
+        assert LANDMARK_PLACE_CELL_DIGITS == 1
+
+    def test_the_outgoing_cell_is_coarser_than_the_displayed_one(self) -> None:
+        """Die Relation faengt eine Verschiebung der ANZEIGEKOERNUNG: wuerde `PLACE_CELL_DIGITS`
+        eines Tages auf 1 fallen, waere die ausgehende Koernung nicht mehr die groebere, ohne dass
+        das Literal oben davon etwas merkte."""
+        assert LANDMARK_PLACE_CELL_DIGITS < PLACE_CELL_DIGITS
+
+    def test_two_points_eight_kilometres_apart_share_the_outgoing_cell(self) -> None:
+        """Was `place_cell` laengst trennt, faellt hier noch zusammen - das ist der Zweck."""
+        near = (48.06, 11.57)
+        also_near = (48.14, 11.57)
+        assert haversine_meters(*near, *also_near) > 8000.0
+        assert place_cell(*near) != place_cell(*also_near)
+
+        assert landmark_place_cell(*near) == landmark_place_cell(*also_near)
+
+    def test_two_points_across_the_outgoing_cell_boundary_differ(self) -> None:
+        assert landmark_place_cell(48.14, 11.57) != landmark_place_cell(48.24, 11.57)
+
+    def test_negative_zero_is_normalised_for_the_latitude(self) -> None:
+        """Dieselbe `-0.0`-Normalisierung wie bei `place_cell`, und aus demselben Grund. Breite
+        und Laenge GETRENNT geprueft - ein Normalisieren nur einer von beiden faellt sonst nicht
+        auf. `-0.04` rundet auf einer Nachkommastelle nach `-0.0`, nicht nach `-0.1`."""
+        lat, _ = landmark_place_cell(-0.04, 11.57)
+
+        assert lat == 0.0
+        assert str(lat) == "0.0"
+
+    def test_negative_zero_is_normalised_for_the_longitude(self) -> None:
+        _, lon = landmark_place_cell(48.14, -0.04)
+
+        assert lon == 0.0
+        assert str(lon) == "0.0"
+
+    def test_a_value_on_the_rounding_boundary_is_deterministic(self) -> None:
+        """Festgenagelt wie bei `place_cell`: welche Seite Pythons Bankiers-Rundung gewinnt, ist
+        gleichgueltig - dass immer dieselbe gewinnt, ist es nicht."""
+        assert landmark_place_cell(48.25, 11.25) == landmark_place_cell(48.25, 11.25)
+        assert landmark_place_cell(48.25, 11.25) == (round(48.25, 1) + 0.0, round(11.25, 1) + 0.0)
 
 
 class TestPlaceNameSanitisation:

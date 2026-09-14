@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import photosort.worker as worker
 from photosort.cloud_vision import VISION_MODELS_BY_PROVIDER
 from photosort.label_embedding import LabelEmbedderLike
-from photosort.landmark import LandmarkApiError, LandmarkDetection
+from photosort.landmark import LandmarkApiError, LandmarkDetection, PlaceHint
 from photosort.models import (
     ClassificationPhase,
     CriterionScoringRun,
@@ -183,7 +183,9 @@ class RecordingLandmarkClient:
         self.calls = 0
         self._raise_error = raise_error
 
-    async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+    async def detect(
+        self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
+    ) -> LandmarkDetection:
         self.calls += 1
         if self._raise_error:
             raise LandmarkApiError("simulierter Cloud-Fehler")
@@ -830,9 +832,11 @@ async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
             return await super().classify(image_bytes, mime_type, photo_id)
 
     class _PhaseObservingLandmarkClient(RecordingLandmarkClient):
-        async def detect(self, image_bytes: bytes, mime_type: str) -> LandmarkDetection:
+        async def detect(
+            self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
+        ) -> LandmarkDetection:
             recorder.record(await _current_phase(db_session))
-            return await super().detect(image_bytes, mime_type)
+            return await super().detect(image_bytes, mime_type, hint)
 
     real_rank_photos = worker.rank_photos
 

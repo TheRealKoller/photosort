@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
@@ -43,6 +44,27 @@ class LabelEmbedderLike(Protocol):
     ein Fake in Unit-Tests ohne echtes Modell."""
 
     def embed(self, text: str) -> list[float]: ...
+
+
+def normalize_label_text(raw: str) -> str:
+    """Reine String-Normalisierung - kein Modell-Aufruf. NFKC deckt u.a.
+    Ligaturen/Kompatibilitaetszeichen ab (z.B. "ﬁsch" -> "fisch"), casefold ist eine aggressivere,
+    unicode-bewusste Kleinschreibung als .lower().
+
+    Sie liegt HIER und nicht im Kategorie-Pfad, weil sie zwei Verbraucher hat: die Feinlabels
+    (`remote_classification.py::resolve_canonical_label`) und die Sehenswuerdigkeitsnamen
+    (`landmark_names.py::resolve_canonical_landmark`). Ein Import des einen aus dem anderen waere
+    eine Abhaengigkeit zwischen zwei fachlich unverbundenen Pfaden."""
+    return unicodedata.normalize("NFKC", raw).strip().casefold()
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Reine Vektor-Aehnlichkeitsfunktion - beide Embedding-Vektoren sind bereits L2-normiert
+    (`_mean_pool_and_normalize` unten), das Skalarprodukt entspricht deshalb direkt der
+    Kosinus-Aehnlichkeit, keine erneute Normierung noetig.
+
+    Zwei Verbraucher, dieselbe Begruendung wie bei `normalize_label_text` darueber."""
+    return sum(x * y for x, y in zip(a, b, strict=True))
 
 
 def _mean_pool_and_normalize(

@@ -32,8 +32,6 @@ from photosort.remote_classification import (
     RemoteCategoryClassificationApiError,
     RemoteClassification,
     _classification_from_json,
-    _cosine_similarity,
-    _normalize_label_text,
     _slugify,
     resolve_canonical_label,
 )
@@ -511,21 +509,10 @@ class TestSlugify:
         assert _slugify("犬") == _slugify("犬")
 
 
-class TestNormalizeLabelText:
-    def test_casefolds_and_strips(self) -> None:
-        assert _normalize_label_text("  HUND  ") == "hund"
-
-    def test_nfkc_normalizes_equivalent_unicode_forms(self) -> None:
-        # "ﬁsch" (Ligatur U+FB01) normalisiert NFKC zu "fisch".
-        assert _normalize_label_text("ﬁsch") == "fisch"
-
-
-class TestCosineSimilarity:
-    def test_identical_vectors_have_similarity_one(self) -> None:
-        assert _cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
-
-    def test_orthogonal_vectors_have_similarity_zero(self) -> None:
-        assert _cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+# `TestNormalizeLabelText` und `TestCosineSimilarity` stehen seit Spec 0469 in
+# tests/test_label_embedding.py: Beide Helfer sind nach `label_embedding.py` gezogen, damit der
+# Sehenswuerdigkeits-Pfad sie nicht aus dem Kategorie-Pfad importieren muss. Der Umzug ist
+# verhaltenserhaltend - dieselben Faelle, dieselben Assertions, nur gegen den neuen Importpfad.
 
 
 class FakeLabelEmbedder:

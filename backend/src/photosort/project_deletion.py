@@ -37,6 +37,7 @@ from photosort.models import (
     Event,
     FeedbackEvent,
     FinalSelectionDecision,
+    LandmarkName,
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
@@ -217,6 +218,16 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     await _run(
         "place_lookups",
         delete(PlaceLookup).where(PlaceLookup.project_id.in_(project_ids)),
+    )
+    # Das Namensregister der Sehenswuerdigkeiten (Spec 0469, S8): projektgebunden und
+    # lauf-unabhaengig wie `place_lookups` daneben, und es faellt deshalb NUR hier. Ohne diese
+    # Anweisung ueberlebten die Namen der Orte, an denen die Familie war, das geloeschte Projekt -
+    # samt ihrer Einbettungsvektoren, die eine verlustbehaftete Kodierung genau dieser Namen sind.
+    # Die Position folgt der per Test erzwungenen Ordnung `reversed(Base.metadata.sorted_tables)` -
+    # VOR `projects`, deren Zeilen ihr Elternteil sind.
+    await _run(
+        "landmark_names",
+        delete(LandmarkName).where(LandmarkName.project_id.in_(project_ids)),
     )
     await _run("projects", delete(Project).where(Project.id.in_(project_ids)))
     return deleted

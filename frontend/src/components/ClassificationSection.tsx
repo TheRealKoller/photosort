@@ -132,10 +132,16 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       </p>
       {/* Zustandsabhaengige Datenschutz-Aussage: die frueher absolute Formulierung "laeuft
           vollstaendig lokal auf diesem Server" war unwahr, sobald die Cloud-Bilderkennung
-          freigegeben war. Sie gilt jetzt genau dann, wenn sie zutrifft. */}
+          freigegeben war. Sie gilt jetzt genau dann, wenn sie zutrifft.
+
+          An DIESEM Text haengt die Einwilligung (Spec 0469, S7). Seit ADR 0106 geht mit dem Foto
+          eine grobe Ortsangabe hinaus, und der Satz muss sie nennen - beide Stufen, und dass Fotos
+          ohne Standortdaten nicht betroffen sind. Bliebe er bei "sendet Fotos", waere die
+          Einwilligung fuer diese Datenklasse an einer Beschreibung erteilt, die sie nicht nennt.
+          Der lokale Durchlauf behaelt seinen Satz unveraendert - dort geht nichts hinaus. */}
       <p className="text-sm text-text" data-testid="classification-scope-text">
         {cloudChecked
-          ? `Dieser Durchlauf sendet Fotos an ${providerLabel || 'den Cloud-Anbieter'} — für Kategorie-Vorschläge und die Sehenswürdigkeits-Erkennung.`
+          ? `Dieser Durchlauf sendet Fotos an ${providerLabel || 'den Cloud-Anbieter'} — für Kategorie-Vorschläge und die Sehenswürdigkeits-Erkennung. Trägt ein Foto Standortdaten, geht dabei eine grobe Angabe zum Aufnahmeort mit: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.`
           : 'Dieser Durchlauf läuft vollständig lokal auf diesem Server — kein Foto verlässt ihn.'}
       </p>
 

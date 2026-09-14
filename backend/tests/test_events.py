@@ -949,13 +949,18 @@ class TestTheRoundingStandsAtExactlyOnePlace:
         wie `place_cell` und bleibt bei der naechsten Aenderung der Koernung zurueck - lautlos."""
         assert _modules_building_a_cell(with_a_digit_literal=True) == {}
 
-    def test_the_one_named_cell_rounding_lives_in_places(self) -> None:
+    def test_every_named_cell_rounding_lives_in_places(self) -> None:
         """Die Gegenprobe zum Fall darueber: ohne sie bestuende er auch dann, wenn der Walker gar
         nichts faende - etwa nach einer Umbenennung von `round`, einem Wegfall der
         `-0.0`-Normalisierung oder einem Umbau des Quellverzeichnisses.
 
-        Zwei Stellen, weil `place_cell` Breite und Laenge getrennt rundet."""
-        assert _modules_building_a_cell(with_a_digit_literal=False) == {"places.py": 2}
+        VIER Stellen in EINER Datei: zwei Zellrundungen mit je getrennter Breite und Laenge.
+        `place_cell` ist die Koernung, mit der gefragt und abgelegt wird, `landmark_place_cell` die
+        groebere, mit der eine Koordinate das System verlaesst (Spec 0469, S1). Beide tragen eine
+        eigene benannte Konstante und stehen nebeneinander; die Zusage aus ADR 0102 Punkt 2 ist
+        nicht "genau eine Rundung", sondern "keine mit Stellenliteral und keine ausserhalb dieses
+        Moduls"."""
+        assert _modules_building_a_cell(with_a_digit_literal=False) == {"places.py": 4}
 
     def test_the_guard_would_catch_a_second_rounding(self) -> None:
         """Mikrotest auf den Walker selbst, gegen einen ausgeschriebenen Verstoss - sonst belegt
