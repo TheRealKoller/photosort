@@ -192,10 +192,22 @@ vorwegnehmen, deren Anschaffung sie erst begründen soll:
   `featureClass`/`featureCode`: Klasse `P` ist ein Ort, Klasse `A` (ADM1–ADM5) ist genau der als
   wertlos eingestufte Fall.
 - **Extern: Photon** (öffentliche Instanz, OSM-Daten, Apache-2.0 mit Selbst-Hosting-Pfad). Die
-  Ebene steht explizit in `layer`, wo `district` „city district or suburb" bedeutet. Bewusst
-  **nicht** die öffentliche Nominatim-Instanz (untersagt rasterförmige Reverse-Abfragen), **nicht**
-  LocationIQ/Mapbox (befristen bzw. verkaufen das dauerhafte Zwischenspeichern, das diese Story
-  als Akzeptanzkriterium trägt), **nicht** OpenCage (Gratisstufe ist „testing only").
+  getroffene Ebene steht in der Antwort im Feld **`type`** — nicht in `layer`, das ausschließlich
+  ein Filter-Parameter der **Anfrage** ist und in der Antwort gar nicht vorkommt (belegt am
+  CHANGELOG 0.3.3/0.4.0 und an zwei Live-Abrufen, 2026-09-14). `matched_level` kommt damit aus
+  `type`. Bewusst **nicht** die öffentliche Nominatim-Instanz (untersagt rasterförmige
+  Reverse-Abfragen), **nicht** LocationIQ/Mapbox (befristen bzw. verkaufen das dauerhafte
+  Zwischenspeichern, das diese Story als Akzeptanzkriterium trägt), **nicht** OpenCage
+  (Gratisstufe ist „testing only").
+
+  **Achtung, Namenskollision — Photons `locality` ist nicht unser `locality`.** Photon staffelt
+  `locality` ⊂ `district` ⊂ `city` („Ritterkiez" ⊂ „Kreuzberg" ⊂ „Berlin"). Unser `locality` ist
+  der **Ort**, entspricht also Photons `city`; unser `neighbourhood` entspricht Photons
+  `district`. Die Abbildung lautet damit `city → locality`, `district → neighbourhood`; Photons
+  `locality` wird verworfen. Eine Umsetzung, die Photons `locality` direkt übernimmt, setzt
+  systematisch die falsche Ebene als Überschrift — „Ritterkiez" statt „Berlin". Die
+  Viertel-Ebene kommt in der Antwort ausschließlich als `district`: `suburb`, `borough` und
+  `city_district` erscheinen dort nicht (`suburb` nur als roher `osm_value`).
 
 **Bezug des lokalen Datensatzes — `scripts/fetch-ortsdatensatz.sh`.** Die Datei wird **einmal**
 bezogen und liegt dann lokal; sie wird nicht bei jedem Lauf neu geholt. Das Skript bildet den
@@ -669,8 +681,23 @@ wirkungslos, für den sie gedacht war.
 - **Die Bedingungsprüfung des Anbieters gehört vor den Messlauf, nicht in die Wegwahl-ADR danach.**
   Die beiden Ausschlussgründe aus ADR 0102 Punkt 6 (dauerhaftes Zwischenspeichern untersagt,
   rasterförmige Abfragen untersagt) treffen den Messlauf genauso wie den Betrieb; wer sie erst
-  hinterher am Wortlaut belegt, hat die untersagte Abfrage bereits abgesetzt. Der Beleg gehört in
-  den Pull Request von Teil 1 (Recherche über `research-engineer`).
+  hinterher am Wortlaut belegt, hat die untersagte Abfrage bereits abgesetzt. **Geführt am
+  2026-09-14, Ergebnis: beide Kandidaten zulässig.** Photons Bedingungen untersagen weder das
+  dauerhafte Speichern noch rasterförmige Abfragen; die dauerhafte Speicherung ist über die
+  OSM-Geocoding-Guideline ausdrücklich erlaubt („Geocoding Results may be stored (either
+  permanently or temporarily)"). GeoNames ist über CC BY 4.0 unbefristet abgedeckt.
+- **Die Grenze der OSM-Guideline ist die Flächendeckung, nicht das Raster.** Eine Sammlung von
+  Ergebnissen darf kein „systematic attempt to aggregate all or substantially all Primary
+  Features … within a geographic area city-sized or larger" sein. Daraus folgt eine
+  Umsetzungsauflage: Gefragt wird ausschließlich über die **tatsächlich besuchten** Zellen aus dem
+  Projektbestand. Ein Messkommando, das ein Rechteck flächendeckend abrastert, risse diese Grenze.
+- **Ratenbegrenzung:** Photon nennt **keine Zahl** — nur „please be fair, extensive usage will be
+  throttled". Der Mindestabstand im Messkommando ist deshalb eine begründete Selbstauflage und
+  lässt sich aus keiner Quelle ableiten. Die öffentliche Instanz ist erklärtermaßen eine
+  Demo-Instanz; für den Dauerbetrieb ist das ein Verfügbarkeitsrisiko, das die Wegwahl-ADR
+  bewerten muss (Selbst-Hosting ist der vom Betreiber genannte Ausweg).
+- **Namensnennung:** an die Anwendung, nicht an die einzelne `place_lookups`-Zeile — OSM/ODbL
+  („credit OpenStreetMap and its contributors") bzw. GeoNames/CC-BY.
 - Betriebshinweis in `docs/setup.md`: gemessen wird an einem Reiseprojekt, nicht am Alltagsbestand
   — die Zellen des Wohnorts tragen zur Messung nichts bei, gehen aber mit hinaus.
 
@@ -863,12 +890,13 @@ Alle drei stehen mit voller Begründung im Sicherheitskonzept; hier die Entschei
 
 ## Offene Fragen
 
-- Löst Nominatim im `admin`-Stil (ohne Straßendaten) beliebige Zellen brauchbar auf? Fällt in den
-  Messlauf.
-- Steht Photons Ebenenangabe auch in der **Antwort** oder nur als Filter (`layer`)? Fällt in den
-  Messlauf.
-- Welche Schlüssel liefert die gewählte Quelle für die Viertel-Ebene (`suburb`, `borough`,
-  `city_district`, `district`)? Die Zuordnung auf `PLACE_LEVELS` entsteht aus dem Messergebnis.
+- Löst Nominatim im `admin`-Stil (ohne Straßendaten) beliebige Zellen brauchbar auf? Nur für den
+  Selbst-Hosting-Fall erheblich; die öffentliche Instanz bleibt ausgeschlossen.
+- **Beantwortet am 2026-09-14:** Photons Ebenenangabe steht in der Antwort als `type`; `layer` ist
+  nur Anfrage-Filter. Die Viertel-Ebene kommt ausschließlich als `district`.
+- Trägt Photons `city` auch außerhalb Deutschlands den Ort, oder rutscht die Ebene in manchen
+  Ländern auf `county`/`state`? Die beiden Belegabrufe lagen beide in Berlin — die Ländervarianz
+  ist ungeprüft und ist genau das, was Block C des Messlaufs beantwortet.
 
 ## Out of Scope
 
