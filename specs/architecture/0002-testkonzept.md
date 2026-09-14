@@ -1739,13 +1739,13 @@ Momentaufnahmen, dieselbe Begründung wie beim Abschnittszitat-Scan) und die Wä
 eigenen Pfad gebunden und wird gegen ihn geprüft, damit er nicht auf einen toten Pfad verrottet).
 Eine Aufzählung des „lebenden Anweisungsraums" (`.claude/**`, `CLAUDE.md`, `docs/**`) trägt hier
 nachweislich nicht: `.github/ISSUE_TEMPLATE/*.yml` **vergibt Label** (`labels: ["bug"]`) und ist
-damit ein möglicher zweiter Wahrheitsort, gegen den die Zusicherung gerade antritt. **Regel:** Eine Positivliste ist nur dort richtig, wo die
-*Erlaubnis* aufgezählt wird (die Formprüfungen über den Katalog), nie dort, wo eine **Abwesenheit**
-zugesichert wird. Zwei Folgen für jeden Leser dieser Bauart: Nicht als UTF-8 lesbare Dateien
-(Bilder, Modelldateien — gemessen 2026-09-11: 19 von 688) werden übersprungen statt den Lauf
-abzubrechen; und die Untergrenze allein trägt den Selbstschutz nicht mehr, weil sie erfüllt
-bleibt, während ein ganzer Zweig herausfällt — daneben gehören **namentliche Anker** für die
-belegten Orte der Labelvergabe.
+damit ein möglicher zweiter Wahrheitsort, gegen den die Zusicherung gerade antritt. **Regel:** Eine
+Positivliste ist nur dort richtig, wo die *Erlaubnis* aufgezählt wird (die Formprüfungen über den
+Katalog), nie dort, wo eine **Abwesenheit** zugesichert wird. Zwei Folgen für jeden Leser dieser
+Bauart: Nicht als UTF-8 lesbare Dateien (Bilder, Modelldateien — gemessen 2026-09-11: 19 von 688)
+werden übersprungen statt den Lauf abzubrechen; und die Untergrenze allein trägt den Selbstschutz
+nicht mehr, weil sie erfüllt bleibt, während ein ganzer Zweig herausfällt — daneben gehören
+**namentliche Anker** für die belegten Orte der Labelvergabe.
 
 **2. Eine Reihenfolge-Kette wächst nur mit ihren Bedingungen.** Die Kette aus der
 Spec-0288-Sektion (Body → Titel → `Ready`) bekommt ein viertes Glied (→ Bereich → **jede**

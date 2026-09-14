@@ -152,14 +152,15 @@ typisierte Parameter. Meldet das Issue einen Defekt, trägt die Label-Liste gena
 **`gh`:**
 
 ```bash
-gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" --body-file <body-datei>
-# meldet das Issue einen Defekt, kommt genau ein Schalter hinzu:
-gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" --body-file <body-datei> --label bug
+gh issue create --repo TheRealKoller/photosort --title "$(cat <titel-datei>)" --body-file <body-datei> <label-schalter>
 ```
 
 **Ein Typ-Label wird genau dann vergeben, wenn das Issue einen Defekt meldet**, und dann genau
-`bug`. In jedem anderen Fall entfällt der Schalter ersatzlos (ADR
-[`0101`](../../../specs/decisions/0101-ein-label-traegt-eine-unterscheidung.md)).
+`bug`: `<label-schalter>` ist in diesem einen Fall `--label bug` und in jedem anderen **leer** —
+der Schalter entfällt ersatzlos, kein leeres Labelfeld (ADR
+[`0101`](../../../specs/decisions/0101-ein-label-traegt-eine-unterscheidung.md)). **Ausgeführt wird
+je Anlegevorgang genau eine Befehlszeile**; eine zweite legte ein zweites, nicht zurücknehmbares
+Issue an.
 
 Die Antwort liefert die **Nummer** des neuen Issues — auf dem `gh`-Weg aus der ausgegebenen URL
 geparst, auf dem `mcp`-Weg aus dem strukturierten Zahlenfeld gelesen. Sie wird in **beiden**
