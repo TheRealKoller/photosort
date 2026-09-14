@@ -14,6 +14,8 @@ from photosort.label_embedding import (
     LABEL_EMBEDDER_TOKENIZER_SHA256,
     LabelEmbedderLike,
     _mean_pool_and_normalize,
+    cosine_similarity,
+    normalize_label_text,
 )
 
 # specs/decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 4,
@@ -115,3 +117,26 @@ class TestRealAssetOutputDimension:
             return sum(x * y for x, y in zip(a, b, strict=True))
 
         assert cosine(hund, hunde) > cosine(hund, strand)
+
+
+# specs/features/0469, Teil 2 Schritt 1: Die beiden generischen Helfer sind aus
+# `remote_classification.py` hierher gezogen, damit der Sehenswuerdigkeits-Pfad sie nicht aus dem
+# Kategorie-Pfad importieren muss. VERHALTENSERHALTEND - die Faelle stehen unveraendert hier, mit
+# denselben Namen und denselben Assertions, nur gegen den neuen Importpfad.
+
+
+class TestNormalizeLabelText:
+    def test_casefolds_and_strips(self) -> None:
+        assert normalize_label_text("  HUND  ") == "hund"
+
+    def test_nfkc_normalizes_equivalent_unicode_forms(self) -> None:
+        # "ﬁsch" (Ligatur U+FB01) normalisiert NFKC zu "fisch".
+        assert normalize_label_text("ﬁsch") == "fisch"
+
+
+class TestCosineSimilarity:
+    def test_identical_vectors_have_similarity_one(self) -> None:
+        assert cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
+
+    def test_orthogonal_vectors_have_similarity_zero(self) -> None:
+        assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
