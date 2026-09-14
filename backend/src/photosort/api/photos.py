@@ -255,7 +255,7 @@ class EventPlaceOut(BaseModel):
     `sanitize_landmark_name` entstanden) - dieselbe Auflage wie bei `FineLabelOut.raw_label`:
     ausschliesslich als regulaerer React-Textknoten rendern, nie `dangerouslySetInnerHTML`, nie als
     HTML-String-Prop, nie in `href`/`src`/`style`, nie als React-`key`. Bricht in
-    `frontend/src/pages/CurateCategoriesPage.test.tsx`, Fall
+    `frontend/src/pages/AlbumDraftPage.test.tsx`, Fall
     `rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup`."""
 
     kind: Literal["landmark", "coordinate", "multiple"]
@@ -268,15 +268,29 @@ class EventOut(BaseModel):
     """Das Event, zu dem dieses Foto im letzten erfolgreichen Lauf gehoert.
 
     Der Server liefert weiterhin KEINE fertige Ueberschrift, sondern ihre Teile: Nummer,
-    Zeitspanne und den aufgeloesten Ort. Anders als die frueheren Cluster-Angaben haengt hier
-    nichts mehr davon ab, welche Fotos eine Antwort gerade enthaelt - alle vier Werte stehen in
-    der `events`-Zeile."""
+    Zeitspanne, den aufgeloesten Ort und den aufgeloesten Ortsnamen. Anders als die frueheren
+    Cluster-Angaben haengt hier nichts mehr davon ab, welche Fotos eine Antwort gerade enthaelt -
+    alle Werte stehen in der `events`-Zeile.
+
+    `place_name` steht BEWUSST HIER und nicht in `EventPlaceOut`: `_event_place_out` liefert bei
+    unbekanntem `place_kind` `None`, und ein persistierter Name darf damit nicht mitfallen. `null`
+    heisst "kein aufgeloester Ortsname" - das Event heisst dann nach Nummer und Zeitspanne.
+
+    Es ist freier, extern erzeugter Text (aus dem Ortsdatensatz, ueber
+    `places.sanitize_place_name` entstanden) und traegt die Auflage von `landmark_name`
+    wortgleich: ausschliesslich als regulaerer React-Textknoten rendern, nie
+    `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in `href`/`src`/`style`, nie als
+    React-`key`. Die Schluessel-Auflage ist hier nicht nur XSS-Hygiene: Gleichnamigkeit ist der
+    Normalfall, den diese Story eigens behandelt. Bricht in
+    `frontend/src/pages/AlbumDraftPage.test.tsx`, Fall
+    `rendert einen HTML-artigen Ortsnamen als Text, nicht als Markup`."""
 
     id: int
     position: int
     started_at: datetime
     ended_at: datetime
     place: EventPlaceOut | None = None
+    place_name: str | None = None
 
 
 class CameraOut(BaseModel):
@@ -755,6 +769,7 @@ def _event_out(event: Event) -> EventOut:
         started_at=event.started_at,
         ended_at=event.ended_at,
         place=_event_place_out(event),
+        place_name=event.place_name,
     )
 
 

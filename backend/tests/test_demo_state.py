@@ -81,10 +81,11 @@ from photosort.models import (
     User,
 )
 from photosort.motifs import MOTIF_REGISTRY, MOTIF_STRENGTH_BAND_STRONG, is_motif_key
+from photosort.places import sanitize_place_name
 from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.quality_weights import store_weights
 from photosort.thumbnails import display_path, generate_variants, thumbnail_path
-from tests.import_closure import import_closure
+from tests.import_closure import import_closure, module_file
 from tests.time_offset_invariant import assert_time_offset_invariant
 
 
@@ -1347,6 +1348,90 @@ class TestDemoStateCoversAllFourHeadingStates:
         }
 
         assert first == second
+
+
+class TestTheDemoStateShowsTheDistrictRule(TestDemoStateCoversAllFourHeadingStates):
+    """specs/features/0434-ortsnamen-fuer-events.md, Teil 2: Ohne den Kardinalitaetsfall - zwei
+    Events mit DEMSELBEN Ortsnamen und VERSCHIEDENEN Vierteln - ist die Viertel-Regel im Browser
+    unsichtbar, und `browse-app` kann sie nicht zeigen.
+
+    Erbt die Lage-Hilfe der Ueberschriftenzustaende: es ist derselbe Lauf desselben Projekts."""
+
+    async def test_two_events_share_a_locality_and_differ_in_their_district(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        _by_event, events, _names = await self._rated_state(db_session, tmp_path)
+
+        composed = [
+            event.place_name
+            for event in events.values()
+            if event.place_name is not None and ", " in event.place_name
+        ]
+        assert len(composed) == 2
+        localities = {name.split(", ")[0] for name in composed}
+        districts = {name.split(", ")[1] for name in composed}
+        assert len(localities) == 1
+        assert len(districts) == 2
+
+    async def test_the_two_named_events_do_not_share_a_single_cell(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe: Dieselbe
+        Zelle ergibt dieselbe Auskunft - zwei VERSCHIEDENE Viertel aus einer gemeinsamen Zelle
+        gaebe es nie."""
+        by_event, events, _names = await self._rated_state(db_session, tmp_path)
+
+        cells_per_named_event = [
+            {
+                (round(photo.gps_lat, 2), round(photo.gps_lon, 2))
+                for photo in members
+                if photo.gps_lat is not None and photo.gps_lon is not None
+            }
+            for event_id, members in by_event.items()
+            if events[event_id].place_name is not None
+        ]
+        assert len(cells_per_named_event) == 2
+        assert not cells_per_named_event[0] & cells_per_named_event[1]
+
+    async def test_the_landmark_event_and_the_placeless_event_carry_no_place_name(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Der Ortsname ersetzt eine Sehenswuerdigkeit nicht und tritt nicht daneben - und ohne
+        jede Ortsangabe gibt es nichts aufzuloesen. Ein Seeder, der das anders schriebe, erzeugte
+        einen Zustand, den die Anwendung selbst nie schreibt."""
+        _by_event, events, _names = await self._rated_state(db_session, tmp_path)
+
+        for event in events.values():
+            if event.place_kind == "landmark" or event.place_kind is None:
+                assert event.place_name is None, event.place_kind
+
+    async def test_every_seeded_name_survives_the_sanitisation_unchanged(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Literale muessen durch denselben Rand passen wie ein echter Name - sonst zeigte der
+        Browser einen Zustand, den der Lauf nie erzeugt."""
+        _by_event, events, _names = await self._rated_state(db_session, tmp_path)
+
+        seeded = [event.place_name for event in events.values() if event.place_name is not None]
+        assert seeded
+        for name in seeded:
+            assert sanitize_place_name(name) == name
+
+    def test_the_seeder_builds_no_resolver_and_fetches_no_dataset(self) -> None:
+        """`demo_state` schreibt Ortsnamen als LITERALE und baut nie einen Auflöser (S10).
+
+        Gemessen am eigenen Quelltext und nicht an der Import-Huelle: Der Seeder ruft
+        `worker.rebuild_run_selection` und traegt das Auflöser-Modul deshalb ohnehin in seiner
+        Huelle - erreichbar heisst hier nicht gerufen. Das Bezugskommando bleibt dagegen auch aus
+        der Huelle heraus."""
+        assert "photosort.place_dataset" not in import_closure("photosort.demo_state")
+
+        path = module_file("photosort.demo_state")
+        assert path is not None
+        source = path.read_text(encoding="utf-8")
+
+        assert "build_place_resolver" not in source
+        assert "GeoNamesResolver" not in source
 
 
 class TestDemoStateCoversEveryCameraState:

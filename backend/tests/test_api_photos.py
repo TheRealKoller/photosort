@@ -729,6 +729,7 @@ async def _make_event(
     place_kind: str | None = None,
     place_lat: float | None = None,
     place_lon: float | None = None,
+    place_name: str | None = None,
 ) -> Event:
     """Ein Event eines Laufs. Die Zeitgrenzen sind zonenlos wie `Photo.taken_at` selbst."""
     default = datetime(2023, 1, 1, 10, 0)
@@ -741,6 +742,7 @@ async def _make_event(
         place_kind=place_kind,
         place_lat=place_lat,
         place_lon=place_lon,
+        place_name=place_name,
     )
     session.add(event_row)
     await session.commit()
@@ -3765,6 +3767,9 @@ class TestPhotoEvent:
             "started_at": "2023-01-01T10:30:00",
             "ended_at": "2023-01-01T11:45:00",
             "place": {"kind": "landmark", "landmark_name": "Eiffelturm", "lat": None, "lon": None},
+            # Ein Event MIT Sehenswuerdigkeit traegt keinen Ortsnamen: er ersetzt sie nicht und
+            # tritt nicht daneben.
+            "place_name": None,
         }
 
     async def test_the_event_is_identical_across_both_read_paths(
@@ -3898,6 +3903,73 @@ class TestPhotoEvent:
         response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
 
         assert response.json()["items"][0]["event"]["place"] == expected
+
+    async def test_the_place_name_stands_beside_the_place_not_inside_it(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+    ) -> None:
+        """DER TRAGENDE FALL: ein Event MIT Namen und UNBEKANNTEM `place_kind`. `place` ist dann
+        `null` - der Name steht trotzdem da.
+
+        Bei einer Unterbringung in `EventPlaceOut` fiele er still mit: `_event_place_out` liefert
+        bei unbekanntem `place_kind` `None`, und die Ueberschrift des Events verschwaende."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(
+            db_session, run, position=1, place_kind="unbekannt", place_name="Split"
+        )
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, event=event_row, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        event = response.json()["items"][0]["event"]
+        assert event["place"] is None
+        assert event["place_name"] == "Split"
+
+    async def test_a_named_event_over_several_places_still_carries_no_coordinate(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+    ) -> None:
+        """Eine Koordinate erscheint weiterhin nie als Name - und ein Name macht aus "mehrere
+        Orte" keinen einen Ort."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(
+            db_session, run, position=1, place_kind="multiple", place_name="Berlin, Mitte"
+        )
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, event=event_row, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        event = response.json()["items"][0]["event"]
+        assert event["place"] == {
+            "kind": "multiple",
+            "landmark_name": None,
+            "lat": None,
+            "lon": None,
+        }
+        assert event["place_name"] == "Berlin, Mitte"
+
+    async def test_an_old_run_without_a_name_answers_null_not_an_empty_string(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+    ) -> None:
+        """`NULL` heisst "kein aufgeloester Ortsname"; ein leerer String saehe in der Oberflaeche
+        aus wie ein Name, den es gibt."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(db_session, run, position=1, place_kind="coordinate")
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        await _add_ranking(db_session, run, photo, event=event_row, rank_score=0.9, rank_position=1)
+
+        response = await authenticated_api_client.get(f"/projects/{project.id}/photos")
+
+        assert response.json()["items"][0]["event"]["place_name"] is None
 
     async def test_an_unknown_place_kind_does_not_break_the_answer(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
