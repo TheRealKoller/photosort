@@ -27,6 +27,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.criteria import CRITERIA_REGISTRY
 from photosort.feedback import FEEDBACK_WEIGHT_SPAN, ExchangeKind, MotifErrorCase
 from photosort.feedback_log import FrozenContext, record_exchange, record_motif_correction
 from photosort.models import (
@@ -179,6 +180,18 @@ class TestTheEmptyDiagnosis:
         assert [entry["criterion_key"] for entry in payload["criteria"]] == list(
             QUALITY_CRITERION_WEIGHTS
         )
+
+    async def test_every_criterion_carries_its_display_name_from_the_registry(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        """Der Anzeigename kommt aus der Backend-Registry, wie bei `CriterionScoreOut`: Im
+        Frontend wird dazu bewusst keine zweite Merkmalsliste gepflegt - sie liefe mit jedem
+        neuen Kriterium auseinander, und die Tabelle zeigte dann rohe Schluessel."""
+        payload = (await authenticated_api_client.get(_URL)).json()
+
+        assert [entry["display_name"] for entry in payload["criteria"]] == [
+            CRITERIA_REGISTRY[key].display_name for key in QUALITY_CRITERION_WEIGHTS
+        ]
 
 
 class TestTheDiagnosisCountsAcrossProjects:
@@ -398,11 +411,16 @@ class TestTheAnchorAndTheRevertFlag:
         weights = (await authenticated_api_client.get(_URL)).json()["weights"]
 
         assert weights["can_revert"] is False
+        assert weights["current_set_id"] is None
 
-    async def test_with_a_stored_set_the_revert_is_offered(
+    async def test_with_a_stored_set_the_revert_is_offered_and_names_the_set(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        await store_weights(
+        """`current_set_id` ist die EINE Quelle beider Aussagen: Die Ruecknahme muss die Fassung
+        nennen koennen, die sie zuruecknimmt (S7), und `can_revert` ist genau
+        `current_set_id is not None`. Zwei unabhaengig gefuellte Felder liefen auseinander, und
+        die Oberflaeche boete eine Schaltflaeche ohne Ziel an."""
+        written = await store_weights(
             db_session,
             weights=QUALITY_CRITERION_WEIGHTS,
             user_id=await _user_id(db_session),
@@ -413,6 +431,7 @@ class TestTheAnchorAndTheRevertFlag:
         weights = (await authenticated_api_client.get(_URL)).json()["weights"]
 
         assert weights["can_revert"] is True
+        assert weights["current_set_id"] == written.id
 
     async def test_the_current_weights_follow_the_stored_set(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession

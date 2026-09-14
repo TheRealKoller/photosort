@@ -15,10 +15,11 @@ ueberproportional zaehlen liesse.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_current_user, get_session
+from photosort.criteria import CRITERIA_REGISTRY
 from photosort.feedback import ExchangeKind, MotifErrorCase, derive_weights
 from photosort.feedback_log import latest_event_id, load_diagnosis
 from photosort.models import QualityWeightSetOrigin, User
@@ -84,9 +85,14 @@ class CriterionAgreementOut(BaseModel):
 
     `case_count` ist die Zahl der TATSAECHLICH AUSWERTBAREN Paare - beide Fotos tragen den
     Messwert. Sie kann kleiner sein als die Zahl der gleichstufigen Austausche; beide stehen
-    nebeneinander. `agreement` liegt in `[-1, 1]` und ist bei null Stimmen `0.0`."""
+    nebeneinander. `agreement` liegt in `[-1, 1]` und ist bei null Stimmen `0.0`.
+
+    `display_name` kommt aus `criteria.py::CRITERIA_REGISTRY`, wie bei `CriterionScoreOut`: Im
+    Frontend wird dazu bewusst keine zweite Merkmalsliste gepflegt - sie liefe mit jedem neuen
+    Kriterium auseinander, und die Tabelle zeigte dann rohe Schluessel."""
 
     criterion_key: str
+    display_name: str
     case_count: int
     agreement: float
 
@@ -123,9 +129,12 @@ class WeightPreviewOut(BaseModel):
     uebernommen, was ihm angezeigt wurde" wahr macht - die Uebernahme prueft es auf STRIKTE
     GLEICHHEIT gegen die hoechste `id` des GESAMTEN Logs.
 
-    `can_revert` ist wahr, sobald ueberhaupt eine Fassung gespeichert ist: Ohne sie gibt es
-    nichts zurueckzunehmen, und die Schaltflaeche wird nicht angeboten (G10). Die erste Fassung
-    ist sehr wohl zuruecknehmbar - ihre Vorgaengerin ist der Startwertsatz.
+    `current_set_id` ist die geltende Fassung, `None` heisst "es gilt der Startwertsatz". Die
+    Ruecknahme MUSS sie nennen koennen (S7), und `can_revert` ist genau
+    `current_set_id is not None` - deshalb ein BERECHNETES Feld und kein zweites, unabhaengig
+    gefuelltes: Zwei Quellen fuer dieselbe Aussage liefen auseinander, und die Oberflaeche boete
+    eine Schaltflaeche ohne Ziel an. Die erste Fassung ist sehr wohl zuruecknehmbar - ihre
+    Vorgaengerin ist der Startwertsatz.
 
     DER VORSCHLAG WIRD AUS DEN STARTWERTEN ABGELEITET, nie aus den geltenden Gewichten: Sonst
     verschoebe jede Uebernahme die Grundlage der naechsten, und die Bandbreite aus G3 waere nach
@@ -134,7 +143,13 @@ class WeightPreviewOut(BaseModel):
     current: list[CriterionWeightOut]
     proposed: list[ProposedWeightOut]
     based_on_event_id: int
-    can_revert: bool
+    current_set_id: int | None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def can_revert(self) -> bool:
+        """Ohne gespeicherte Fassung gibt es nichts zurueckzunehmen (G10)."""
+        return self.current_set_id is not None
 
 
 class FeedbackDiagnosisOut(BaseModel):
@@ -190,6 +205,7 @@ async def _weight_preview(session: AsyncSession) -> WeightPreviewOut:
     denselben Weg gehen."""
     diagnosis = await load_diagnosis(session, criterion_keys=tuple(QUALITY_CRITERION_WEIGHTS))
     current = await effective_weights(session)
+    current_set = await latest_weight_set(session)
     # ABGELEITET AUS DEN STARTWERTEN, nie aus `current`: siehe `WeightPreviewOut`.
     proposed = derive_weights(diagnosis.criteria, QUALITY_CRITERION_WEIGHTS)
     return WeightPreviewOut(
@@ -204,7 +220,7 @@ async def _weight_preview(session: AsyncSession) -> WeightPreviewOut:
             for key in QUALITY_CRITERION_WEIGHTS
         ],
         based_on_event_id=diagnosis.latest_event_id,
-        can_revert=await latest_weight_set(session) is not None,
+        current_set_id=None if current_set is None else current_set.id,
     )
 
 
@@ -325,6 +341,7 @@ async def get_feedback_diagnosis(
         criteria=[
             CriterionAgreementOut(
                 criterion_key=key,
+                display_name=CRITERIA_REGISTRY[key].display_name,
                 case_count=diagnosis.criteria[key].case_count,
                 agreement=diagnosis.criteria[key].agreement,
             )
