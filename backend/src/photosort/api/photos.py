@@ -5,18 +5,19 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from sqlalchemy import and_, delete, func, or_, select
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import CursorResult, and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
 from photosort.album_selection import SelectionState, selection_state
 from photosort.api.deps import get_current_user, get_session
+from photosort.api.ratings import RatingWriteOut, write_own_rating
 from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
@@ -27,17 +28,21 @@ from photosort.events import (
     event_for_time,
     infer_locations,
 )
+from photosort.feedback_log import load_frozen_context, record_exchange, record_motif_correction
 from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
     Event,
+    FeedbackEventKind,
     FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
+    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoFineLabel,
     PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -1833,6 +1838,197 @@ async def draft_alternatives(
     return PhotoListOut(items=items, total=total)
 
 
+# --- Der Austausch: ein Aufruf, eine Transaktion, ein Ereignis ---------------------------------
+
+
+class DraftExchangeIn(BaseModel):
+    """SICHERHEIT (S4): der Body traegt GENAU ZWEI Felder, beide mit deklarativen Grenzen.
+
+    Kein `user_id`, kein `event_id`, kein `weight`, kein `kind`, kein `criterion_scoring_run_id`,
+    kein `motif_strength` - Massenzuweisung ist strukturell ausgeschlossen statt im Handler
+    herausgefiltert; `model_config` weist ein zusaetzliches Feld ausdruecklich ab statt es still
+    zu verwerfen.
+
+    `weight` WIEGT AM SCHWERSTEN: Es ist der einzige Wert, mit dem ein Aufrufer die eigene
+    Korrektur in der global wirkenden Gewichtsableitung ueberproportional zaehlen liesse.
+
+    Die Obergrenze ist nicht Kosmetik: Ein unbeschraenkter Pydantic-`int` erzeugt unter SQLite
+    jenseits von 2^63 einen `OverflowError` und damit `500` statt `422`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    photo_id: int = Field(ge=1, le=_MAX_QUERY_POSITION)
+    replaced_photo_id: int = Field(ge=1, le=_MAX_QUERY_POSITION)
+
+
+class DraftExchangeOut(BaseModel):
+    """Der geschriebene Zustand BEIDER Bewertungszeilen (L2).
+
+    Beide, damit die Oberflaeche wie bisher in ihre bereits geladene Liste fortschreibt statt neu
+    zu laden - ein Neuladen risse die gerade getauschte Kachel aus der Entwurfsliste."""
+
+    taken: RatingWriteOut
+    struck: RatingWriteOut
+
+
+@dataclass(frozen=True)
+class _ExchangeSide:
+    """Eine Seite des Austauschs, AUFGELOEST UEBER IHRE RANGZEILE (S2)."""
+
+    photo_id: int
+    event_id: int
+    level: int | None
+    quality: float | None
+
+
+# S14: EIN Text fuer die unbekannte und fuer die projektfremde Id. Verschiedene Antworten machten
+# den Endpunkt zum Existenz-Orakel ueber fremde Foto-Ids.
+_EXCHANGE_REFUSAL = (
+    "Beide Bilder muessen zum selben Ereignis des juengsten Vorschlagslaufs dieses Projekts "
+    "gehoeren."
+)
+
+
+async def _exchange_sides(
+    session: AsyncSession, criterion_scoring_run_id: int, photo_ids: tuple[int, int]
+) -> dict[int, _ExchangeSide]:
+    """Loest beide Foto-Ids UEBER EINE RANGZEILE des uebergebenen Laufs auf.
+
+    SICHERHEIT (S2), und das ist die tragende Entscheidung dieses Endpunkts: Die Aufloesung laeuft
+    ausschliesslich ueber `PhotoRanking` mit dem Praedikat "juengster erfolgreicher Lauf DIESES
+    Projekts", NIE ueber `session.get(Photo, …)` mit nachgelagerter Projektpruefung.
+
+    Grund: `PhotoRanking` traegt keine `project_id`, `event_id` ist ein globaler
+    Surrogatschluessel, und ohne das Laufpraedikat identifiziert eine Id aus Projekt B unter
+    `/projects/A/…` eindeutig FREMDE Zeilen - der Endpunkt liefe dann nicht in eine erkennbar
+    falsche Menge, sondern tauschte kohaerent zwei Bilder eines fremden Projekts. Die untersagte
+    Alternative ist die nachgelagerte Pruefung auf `Photo.project_id`; sie ist keine zweite
+    Verteidigungslinie, sondern der Ersatz der richtigen Bedingung durch eine schwaechere.
+
+    Die Modellstufe kommt ueber einen OUTER JOIN mit: Ein Foto ohne Modellbewertung haelt den
+    Austausch nicht auf (L4), sein Paar ist in der Diagnose spaeter nur `unbestimmt`."""
+    rows = (
+        await session.execute(
+            select(
+                PhotoRanking.photo_id,
+                PhotoRanking.event_id,
+                PhotoAlbumSuitability.level,
+                PhotoRanking.rank_score,
+            )
+            .outerjoin(
+                PhotoAlbumSuitability,
+                PhotoAlbumSuitability.photo_id == PhotoRanking.photo_id,
+            )
+            .where(
+                PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
+                PhotoRanking.photo_id.in_(photo_ids),
+            )
+        )
+    ).all()
+    return {
+        photo_id: _ExchangeSide(
+            photo_id=photo_id, event_id=event_id, level=level, quality=rank_score
+        )
+        for photo_id, event_id, level, rank_score in rows
+    }
+
+
+@router.post("/projects/{project_id}/draft/exchange", response_model=DraftExchangeOut)
+async def exchange_draft_photo(
+    project_id: int,
+    payload: DraftExchangeIn,
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Fuer diesen Router gibt es KEIN
+    # Vollstaendigkeitsnetz - ein hier vergessener Parameter waere still oeffentlich: kein Fehler,
+    # keine 401, sondern ein unauthentifizierter Schreibzugriff, der ZWEI Bewertungszeilen aendert.
+    current_user: User = Depends(get_current_user),
+) -> DraftExchangeOut:
+    """Tauscht im eigenen Album-Entwurf ein Bild gegen ein anderes desselben Ereignisses: Das
+    gewaehlte wird aufgenommen, das ersetzte gestrichen.
+
+    EIN AUFRUF STATT ZWEIER, und das ist der Gegenstand dieses Endpunkts: "B statt A" ist die
+    Aussage, die beiden Bilder fuer sich tragen sie nicht. Zwei getrennte Aufrufe liessen sich
+    nachtraeglich nur ueber eine Heuristik zu einem Paar zusammenfuegen, und der zweite kann
+    fehlschlagen - dann bliebe ein halb ausgefuehrter Austausch stehen.
+
+    BEIDE Bewertungszeilen und das eine Ereignis gehen in EINER Transaktion oder gar nicht
+    (Auflage S5). Das Favoriten-Kennzeichen bleibt auf beiden Seiten unberuehrt, weil der Austausch
+    durch dieselbe Schreibstelle laeuft wie `PUT /photos/{id}/rating`.
+
+    Er erzeugt AUSDRUECKLICH KEIN zusaetzliches Streich- und Aufnahme-Ereignis: Sonst zaehlte jeder
+    Austausch dreifach. Die Umkehr eines Austauschs ist ein weiterer Austausch mit eigenem
+    Ereignis; sie loescht nichts.
+
+    `404` ohne Projekt. `422`, wenn beide Verweise dasselbe Foto benennen, wenn eines der Bilder
+    nicht ueber eine Rangzeile des juengsten erfolgreichen Laufs dieses Projekts erreichbar ist,
+    oder wenn die beiden nicht zum selben Ereignis gehoeren - in allen drei Faellen mit
+    demselben Text (Auflage S14). `409` bei einem gleichzeitigen Schreibversuch auf eine der
+    beiden Zeilen.
+
+    Die Antwort traegt BEIDE geschriebenen Zeilenzustaende, damit die Oberflaeche fortschreibt
+    statt neu zu laden."""
+    await _get_project_or_404(project_id, session)
+
+    if payload.photo_id == payload.replaced_photo_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
+        )
+
+    run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    if run_id is None:
+        # Ohne erfolgreichen Lauf gibt es keine Rangzeile, ueber die die Projektbindung liefe -
+        # und damit keinen Entwurf, in dem etwas auszutauschen waere. Derselbe Text (S14).
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
+        )
+
+    sides = await _exchange_sides(session, run_id, (payload.photo_id, payload.replaced_photo_id))
+    taken = sides.get(payload.photo_id)
+    struck = sides.get(payload.replaced_photo_id)
+    # EINE Bedingung fuer alle drei Ablehnungsgruende: unbekannt, projektfremd, verschiedene
+    # Ereignisse. `event_id` stammt damit aus der Rangzeile und nie aus dem Body (S3).
+    if taken is None or struck is None or taken.event_id != struck.event_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
+        )
+
+    # `record=False` auf BEIDEN Aufrufen: Ohne diese Unterdrueckung entstuenden neben dem
+    # Austausch-Ereignis noch ein Streich- und ein Aufnahme-Ereignis, und jeder Austausch zaehlte
+    # dreifach. Keiner der beiden Aufrufe committet - die Transaktionsgrenze liegt unten.
+    written_taken = await write_own_rating(
+        session,
+        project_id=project_id,
+        photo_id=taken.photo_id,
+        user_id=current_user.id,
+        next_state=lambda _status, favorite: (RatingStatus.ALBUM_WORTHY, favorite),
+        record=False,
+    )
+    written_struck = await write_own_rating(
+        session,
+        project_id=project_id,
+        photo_id=struck.photo_id,
+        user_id=current_user.id,
+        next_state=lambda _status, favorite: (RatingStatus.REJECTED, favorite),
+        record=False,
+    )
+    await record_exchange(
+        session,
+        project_id=project_id,
+        user_id=current_user.id,
+        photo_id=taken.photo_id,
+        replaced_photo_id=struck.photo_id,
+        criterion_scoring_run_id=run_id,
+        event_id=taken.event_id,
+        level=taken.level,
+        replaced_level=struck.level,
+        quality=taken.quality,
+        replaced_quality=struck.quality,
+    )
+    # DER EINE COMMIT ueber beide Zeilen und das Ereignis (S5).
+    await session.commit()
+    return DraftExchangeOut(taken=written_taken, struck=written_struck)
+
+
 @router.get("/photos/{photo_id}/image")
 async def get_photo_image(
     photo_id: int,
@@ -1888,6 +2084,28 @@ class MotifCorrectionOut(BaseModel):
     applies: bool
 
 
+async def _stored_motif_strength(
+    session: AsyncSession, photo_id: int, motif_key: str
+) -> float | None:
+    """Die GESPEICHERTE Modellstaerke dieses Paares, `None` ohne Staerkezeile.
+
+    AUSDRUECKLICH NICHT `motif_strengths.py::effective_strength_expression` (ADR 0100 Punkt 2):
+    Die wirksame Staerke traegt bereits eine fruehere Korrektur desselben Paares. Eingefroren
+    zeigte die ZWEITE Korrektur eines Motivs nie einen Modellfehler an - sie beantwortete die
+    Frage nach der Modellaussage mit der Korrektur.
+
+    `None` ist ein gewoehnlicher, haeufiger Fall und kein Fehler: Die Korrektur eines nie
+    erkannten Motivs ist ausdruecklich erlaubt und fuer die Diagnose der interessanteste Fall."""
+    return (
+        await session.execute(
+            select(PhotoMotifStrength.strength).where(
+                PhotoMotifStrength.photo_id == photo_id,
+                PhotoMotifStrength.motif_key == motif_key,
+            )
+        )
+    ).scalar_one_or_none()
+
+
 def _validated_motif_key(motif_key: str) -> str:
     """SICHERHEIT (S4): reine Mitgliedschaftspruefung im geschlossenen Achter-Schluesselraum, VOR
     jeder Schreib- und Loeschaktion, fuer `PUT` UND `DELETE`.
@@ -1937,7 +2155,10 @@ async def set_motif_correction(
     geschrieben hat - es gibt keine Historie und keinen Hinweis an die erste Person. Eine
     wirkungslose Korrektur (`applies=false` auf einem Motiv, dessen Staerke schon 0 ist) wird
     trotzdem gespeichert; sie ist eine Nutzeraussage, keine Zwischenspeicherung."""
-    await _get_photo_or_404(photo_id, session)
+    # Die `project_id` VOR dem `flush` festhalten: Dessen `rollback`-Zweig laesst jedes geladene
+    # Objekt expired zurueck, und ein danach angefasstes Attribut braeche unter `asyncio` mit
+    # `MissingGreenlet`.
+    project_id = (await _get_photo_or_404(photo_id, session)).project_id
     _validated_motif_key(motif_key)
 
     # SICHERHEIT (S6): die Aufsuch-Bedingung lautet `(photo_id, motif_key)` und filtert BEWUSST
@@ -1951,6 +2172,11 @@ async def set_motif_correction(
             )
         )
     ).scalar_one_or_none()
+
+    # NUR BEI TATSAECHLICHER AENDERUNG (Spec 0432, L1): Dieselbe Korrektur erneut geschrieben ist
+    # keine Korrektur - auch dann nicht, wenn die Zeile dabei den Nutzer wechselt. Der
+    # Bestandszustand des FOTOS bewegt sich nicht, und die Story misst Korrekturen.
+    changed = existing is None or existing.applies != payload.applies
 
     if existing is None:
         # SICHERHEIT (S6): `user_id` stammt AUSSCHLIESSLICH aus `current_user.id` - nie aus Body
@@ -1981,6 +2207,23 @@ async def set_motif_correction(
             status_code=status.HTTP_409_CONFLICT,
             detail="Die Korrektur dieses Motivs wurde gerade veraendert. Bitte erneut versuchen.",
         ) from exc
+
+    if changed:
+        await record_motif_correction(
+            session,
+            project_id=project_id,
+            photo_id=photo_id,
+            user_id=current_user.id,
+            kind=(
+                FeedbackEventKind.MOTIF_ADDED
+                if payload.applies
+                else FeedbackEventKind.MOTIF_DROPPED
+            ),
+            motif_key=motif_key,
+            motif_strength=await _stored_motif_strength(session, photo_id, motif_key),
+            context=await load_frozen_context(session, project_id=project_id, photo_id=photo_id),
+        )
+    # Der EINE Commit: Korrekturzeile und etwaiges Ereignis gehen gemeinsam oder gar nicht.
     await session.commit()
 
     return MotifCorrectionOut(photo_id=photo_id, motif_key=motif_key, applies=payload.applies)
@@ -2001,14 +2244,32 @@ async def delete_motif_correction(
     Grundlage. `404` bei fehlendem Foto, `422` bei einem `motif_key` ausserhalb des festen Sets.
 
     IDEMPOTENT (`204` auch ohne bestehende Zeile) und ohne Body. Auch die jeweils andere Person
-    darf eine Korrektur zuruecknehmen: die Aussage gehoert zum Foto, nicht zu einem Geschmack."""
-    await _get_photo_or_404(photo_id, session)
+    darf eine Korrektur zuruecknehmen: die Aussage gehoert zum Foto, nicht zu einem Geschmack.
+
+    Ein Aufruf auf ein NIE korrigiertes Motiv erzeugt kein Ereignis der Nacharbeit (Spec 0432,
+    L1): Er nimmt nichts zurueck. Die Ruecknahme einer bestehenden Korrektur dagegen erzeugt ein
+    ZUSAETZLICHES Ereignis - das urspruengliche bleibt unveraendert stehen (L6)."""
+    project_id = (await _get_photo_or_404(photo_id, session)).project_id
     _validated_motif_key(motif_key)
 
-    await session.execute(
+    # Die Staerke VOR der Loeschung lesen - danach ist die Korrekturzeile fort, und die
+    # eingefrorene Modellaussage steht in einer anderen Tabelle, die den Zeitpunkt nicht kennt.
+    motif_strength = await _stored_motif_strength(session, photo_id, motif_key)
+    deleted = await session.execute(
         delete(PhotoMotifCorrection).where(
             PhotoMotifCorrection.photo_id == photo_id,
             PhotoMotifCorrection.motif_key == motif_key,
         )
     )
+    if cast("CursorResult[Any]", deleted).rowcount:
+        await record_motif_correction(
+            session,
+            project_id=project_id,
+            photo_id=photo_id,
+            user_id=current_user.id,
+            kind=FeedbackEventKind.MOTIF_CORRECTION_WITHDRAWN,
+            motif_key=motif_key,
+            motif_strength=motif_strength,
+            context=await load_frozen_context(session, project_id=project_id, photo_id=photo_id),
+        )
     await session.commit()

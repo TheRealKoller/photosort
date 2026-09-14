@@ -61,11 +61,18 @@ from photosort.cloud_vision import default_vision_model_for_provider
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.db import make_engine, make_session_factory
+from photosort.feedback_log import (
+    FrozenContext,
+    record_exchange,
+    record_final_decision,
+    record_motif_correction,
+)
 from photosort.models import (
     ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
     Event,
+    FeedbackEventKind,
     FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
@@ -74,6 +81,7 @@ from photosort.models import (
     PhotoCriterionScore,
     PhotoLandmarkDetection,
     PhotoMotifCorrection,
+    PhotoMotifStrength,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -161,6 +169,43 @@ _DEMO_LOCAL_BASIS_INDEX = 6
 _DEMO_EXCLUDED_INDEX = 7
 _DEMO_CORRECTED_INDEX = 1
 _DEMO_CORRECTED_MOTIF_KEY = "menschen"
+
+# Die Austausche im Ereignis-Log der Demo-Instanz: (gewaehltes Foto, ersetztes Foto, eingefrorene
+# Stufe, eingefrorene Stufe des ersetzten). Die Foto-Indizes sind PAARE INNERHALB EINES EVENTS -
+# bei acht Fotos und vier Events liegen 0/1, 2/3 und 4/5 jeweils zusammen, und ein Austausch ueber
+# Eventgrenzen hinweg waere ein Zustand, den der Endpunkt selbst abweist.
+#
+# ALLE DREI TAUSCHARTEN, weil die Diagnose sie getrennt ausweist und nie summiert: gleichstufig
+# (geht als einzige in die Gewichte ein), stufenuebergreifend, und unbestimmt. Die dritte entsteht
+# aus dem gewoehnlichsten Hergang ueberhaupt - das Bild wurde ausgetauscht, BEVOR es eine
+# Modellbewertung trug -, und ohne sie liesse sich der Zustand "keiner der beiden anderen Klassen
+# zugeschlagen" in der Sichtpruefung nicht erkennen.
+_DEMO_EXCHANGES: tuple[tuple[int, int, int | None, int | None], ...] = (
+    (1, 0, 3, 3),
+    (3, 2, 4, 2),
+    (5, 4, None, 4),
+)
+
+# Das Foto und das Motiv, deren Korrektur die Demo als ZURUECKGENOMMEN zeigt: erst hinzugefuegt,
+# dann zurueckgenommen. Es entsteht dabei bewusst KEINE Korrekturzeile - der Bestand zeigt eine
+# zurueckgenommene Korrektur nicht mehr, und genau das ist der Grund fuer das Log. Der Index
+# kollidiert mit keinem der uebrigen Sonderfaelle (0 Landmark, 1 korrigiert, 3 offener Vorschlag,
+# 4 ohne Motiv-Kopfzeile, 6 lokale Grundlage, 7 ausgeschlossen).
+_DEMO_WITHDRAWN_MOTIF_INDEX = 2
+_DEMO_WITHDRAWN_MOTIF_KEY = "tiere"
+
+# Die Motiv-Ereignisse der Demo: (Foto-Index, Motiv, Art). Der erste Eintrag gehoert zu der EINEN
+# Korrekturzeile, die der Bestand traegt; die beiden folgenden bilden das Paar aus Korrektur und
+# Ruecknahme, dem im Bestand nichts entspricht.
+_DEMO_MOTIF_EVENTS: tuple[tuple[int, str, FeedbackEventKind], ...] = (
+    (_DEMO_CORRECTED_INDEX, _DEMO_CORRECTED_MOTIF_KEY, FeedbackEventKind.MOTIF_DROPPED),
+    (_DEMO_WITHDRAWN_MOTIF_INDEX, _DEMO_WITHDRAWN_MOTIF_KEY, FeedbackEventKind.MOTIF_ADDED),
+    (
+        _DEMO_WITHDRAWN_MOTIF_INDEX,
+        _DEMO_WITHDRAWN_MOTIF_KEY,
+        FeedbackEventKind.MOTIF_CORRECTION_WITHDRAWN,
+    ),
+)
 
 # Die Spitzenstaerke, die das i-te Foto in seinem i-ten Motiv traegt. Literal und deutlich
 # oberhalb der oberen Bandgrenze (2/3) statt aus dem deterministischen Generator: der Fall soll
@@ -1086,6 +1131,17 @@ async def _seed_rated_project(
     # vorgeschlagen ist, und ein geratenes traefe die gewuenschten Zustaende nicht.
     await _seed_final_selection_dissent(session, criterion_run.id, users)
     await session.flush()
+
+    # DAS EREIGNIS-LOG ZULETZT: Es beschreibt Handgriffe an einem fertigen Entwurf, und die
+    # gemeinsamen Entscheidungen, deren Ereignisse es traegt, entstehen erst im Block darueber.
+    await _seed_feedback_events(
+        session,
+        project_id=project.id,
+        criterion_scoring_run_id=criterion_run.id,
+        photos=photos,
+        user_ids=[user.id for user in users],
+    )
+    await session.flush()
     return photos, len(users)
 
 
@@ -1177,6 +1233,143 @@ async def _seed_final_selection_dissent(
     if len(proposed) >= 3:
         # Einig drin - und trotzdem herausgenommen. Einigkeit ist eine Vorbelegung, keine Sperre.
         session.add(FinalSelectionDecision(photo_id=proposed[2], included=False))
+
+
+async def _seed_feedback_events(
+    session: AsyncSession,
+    *,
+    project_id: int,
+    criterion_scoring_run_id: int,
+    photos: Sequence[Photo],
+    user_ids: Sequence[int],
+) -> None:
+    """Das Ereignis-Log der Nacharbeit auf der Demo-Instanz (Spec 0432).
+
+    OHNE DIESEN BLOCK zeigt der Diagnoseabschnitt dort dauerhaft seinen Nullzustand, und KEIN Test
+    wuerde rot: Die Pruefstack-Spezifikation misst die Statistik-Route bereits und maesse dann
+    dauerhaft den Leerzustand.
+
+    ALLE DREI TAUSCHARTEN entstehen hier, weil die Diagnose sie getrennt ausweist und nie
+    summiert - und die unbestimmte ist ohne eigenen Eintrag nicht darstellbar. Die eingefrorenen
+    Stufen stehen dafuer in `_DEMO_EXCHANGES` und werden NICHT aus der heutigen Modellbewertung
+    gelesen: Ein Ereignis haelt die Lage zum Zeitpunkt der Korrektur fest, und ein spaeterer Lauf
+    ueberschreibt sie - genau das ist der Gegenstand des Einfrierens (ADR 0100 Punkt 2). Die
+    unbestimmte Tauschart entsteht so aus dem gewoehnlichsten Hergang ueberhaupt: Das Bild wurde
+    ausgetauscht, BEVOR es eine Modellbewertung trug.
+
+    Lauf, Ereignis-Gruppierung, Projekt und Qualitaetswerte kommen dagegen aus dem TATSAECHLICHEN
+    Bestand - die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe.
+
+    Geschrieben wird ausschliesslich ueber `feedback_log` - die eine Schreibstelle, an der die
+    Feldmatrix je `kind` haengt. Ein zweiter Schreibweg hier saehe im Ergebnis genauso aus und
+    roetete keinen Test.
+
+    OHNE NUTZER ENTSTEHT NICHTS ausser den gemeinsamen Entscheidungen: Die tragen bewusst keinen
+    Nutzerbezug (S9), alles andere haengt an einem vorhandenen Konto."""
+    rankings = {
+        photo_id: (event_id, rank_score)
+        for photo_id, event_id, rank_score in (
+            await session.execute(
+                select(PhotoRanking.photo_id, PhotoRanking.event_id, PhotoRanking.rank_score).where(
+                    PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id
+                )
+            )
+        ).all()
+    }
+    # Die HEUTIGE Modellstufe - richtig fuer jedes Ereignis, dessen Lage sich seither nicht
+    # bewegt hat. Nur die Tauschereignisse tragen bewusst andere, aeltere Stufen (siehe oben).
+    levels = {
+        photo_id: level
+        for photo_id, level in (
+            await session.execute(
+                select(PhotoAlbumSuitability.photo_id, PhotoAlbumSuitability.level).where(
+                    PhotoAlbumSuitability.photo_id.in_([photo.id for photo in photos])
+                )
+            )
+        ).all()
+    }
+
+    def _context(photo_id: int) -> FrozenContext:
+        event_id, quality = rankings.get(photo_id, (None, None))
+        return FrozenContext(
+            criterion_scoring_run_id=criterion_scoring_run_id if event_id is not None else None,
+            event_id=event_id,
+            level=levels.get(photo_id),
+            quality=quality,
+        )
+
+    if user_ids:
+        for taken_index, replaced_index, level, replaced_level in _DEMO_EXCHANGES:
+            if max(taken_index, replaced_index) >= len(photos):
+                continue
+            taken, replaced = photos[taken_index], photos[replaced_index]
+            if taken.id not in rankings or replaced.id not in rankings:
+                continue
+            event_id, quality = rankings[taken.id]
+            _, replaced_quality = rankings[replaced.id]
+            await record_exchange(
+                session,
+                project_id=project_id,
+                user_id=user_ids[0],
+                photo_id=taken.id,
+                replaced_photo_id=replaced.id,
+                criterion_scoring_run_id=criterion_scoring_run_id,
+                event_id=event_id,
+                level=level,
+                replaced_level=replaced_level,
+                quality=quality,
+                replaced_quality=replaced_quality,
+            )
+
+        strengths = {
+            (photo_id, motif_key): strength
+            for photo_id, motif_key, strength in (
+                await session.execute(
+                    select(
+                        PhotoMotifStrength.photo_id,
+                        PhotoMotifStrength.motif_key,
+                        PhotoMotifStrength.strength,
+                    ).where(PhotoMotifStrength.photo_id.in_([photo.id for photo in photos]))
+                )
+            ).all()
+        }
+        for photo_index, motif_key, kind in _DEMO_MOTIF_EVENTS:
+            if photo_index >= len(photos):
+                continue
+            photo = photos[photo_index]
+            await record_motif_correction(
+                session,
+                project_id=project_id,
+                photo_id=photo.id,
+                user_id=user_ids[0],
+                kind=kind,
+                motif_key=motif_key,
+                motif_strength=strengths.get((photo.id, motif_key)),
+                context=_context(photo.id),
+            )
+
+    # Die gemeinsamen Entscheidungen - OHNE Nutzer, und der Aufruf koennte auch gar keinen
+    # anbieten. Gelesen aus dem tatsaechlich geschriebenen Bestand statt aus einer zweiten
+    # Indexliste daneben: Welche Fotos der Dissens-Block entschieden hat, haengt am Vorschlag.
+    decisions = (
+        await session.execute(
+            select(FinalSelectionDecision.photo_id, FinalSelectionDecision.included)
+            .where(FinalSelectionDecision.photo_id.in_(list(rankings)))
+            .order_by(FinalSelectionDecision.photo_id)
+        )
+    ).all()
+    for photo_id, included in decisions:
+        await record_final_decision(
+            session,
+            project_id=project_id,
+            photo_id=photo_id,
+            kind=(
+                FeedbackEventKind.FINAL_DECISION_IN
+                if included
+                else FeedbackEventKind.FINAL_DECISION_OUT
+            ),
+            context=_context(photo_id),
+        )
 
 
 async def _seed_error_project(

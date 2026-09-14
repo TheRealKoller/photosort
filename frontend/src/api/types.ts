@@ -289,6 +289,19 @@ export interface MotifCorrectionOut {
   applies: boolean
 }
 
+/**
+ * Der geschriebene Zustand BEIDER Bewertungszeilen eines Austauschs (Spec 0432).
+ *
+ * Beide, damit die Entwurfsansicht wie bisher in ihre bereits geladene Liste fortschreibt statt
+ * neu zu laden — ein Neuladen risse die gerade getauschte Kachel aus der Liste.
+ */
+export interface DraftExchangeOut {
+  /** Das aufgenommene Bild. */
+  taken: RatingWriteOut
+  /** Das ersetzte, damit gestrichene Bild. */
+  struck: RatingWriteOut
+}
+
 // Die Rangzeile eines Fotos aus der Kriterien-/Rangfolgen-Pipeline. Ein Foto hat je Lauf
 // GENAU EINE davon - die Partition ist allein das Event.
 export interface RankingOut {

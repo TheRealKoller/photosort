@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { listDraftAlternatives, listPhotos } from '../api/photos'
+import { exchangeDraftPhoto, listDraftAlternatives, listPhotos } from '../api/photos'
 import { deleteRating, setFavorite, setRating } from '../api/ratings'
 import type {
   PhotoListOut,
@@ -189,25 +189,23 @@ export function useDraftDecisionMutation(projectId: number, username: string | n
 }
 
 /**
- * Der Austausch EINES Bildes gegen eine Alternative - ZWEI Schreibvorgänge in einer Geste.
+ * Der Austausch EINES Bildes gegen eine Alternative — EIN Aufruf, eine Transaktion, ein Ereignis.
  *
- * Reihenfolge verbindlich (ADR 0098): erst das Bezugsbild streichen, dann die Alternative
- * aufnehmen. Umgekehrt stünde zwischen den beiden Anfragen ein Bild zu viel im Album, und
- * bräche die zweite ab, wäre der Entwurf um eines gewachsen statt unverändert geblieben.
+ * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht. Der Server schreibt
+ * beide Bewertungszeilen zusammen und hält das Paar als EIN Ereignis fest. Welche der beiden
+ * Zeilen dabei zuerst entsteht, ist ohne Belang: Ein halb ausgeführter Austausch kann nicht
+ * bestehen bleiben, und zwischen ihnen ist kein Zustand beobachtbar.
  *
- * Danach derselbe Cache-Umgang wie bei `useDraftDecisionMutation` und aus demselben Grund: Die
+ * Derselbe Cache-Umgang wie bei `useDraftDecisionMutation` und aus demselben Grund: Die
  * Entwurfsliste wird NICHT neu geladen. Das ersetzte Bild bleibt an seiner Stelle und trägt
  * „gestrichen"; die Alternative wird über `insertDraftPhoto` an ihren chronologischen Platz
- * geschrieben - denselben, den der Server ihr beim nächsten vollständigen Laden gäbe.
+ * geschrieben — denselben, den der Server ihr beim nächsten vollständigen Laden gäbe.
  */
 export function useDraftExchangeMutation(projectId: number, username: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ replaced, chosen }: { replaced: PhotoOut; chosen: PhotoOut }) => {
-      const struck = await setRating(replaced.id, 'rejected')
-      const taken = await setRating(chosen.id, 'album_worthy')
-      return { struck, taken }
-    },
+    mutationFn: ({ replaced, chosen }: { replaced: PhotoOut; chosen: PhotoOut }) =>
+      exchangeDraftPhoto(projectId, chosen.id, replaced.id),
     onSuccess: ({ struck, taken }, { chosen }) => {
       if (username !== null) {
         queryClient.setQueryData<PhotoListOut>(draftQueryKey(projectId), (current) => {

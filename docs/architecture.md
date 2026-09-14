@@ -409,12 +409,44 @@ Verarbeitungs-Cache (Thumbnails).
     - Oberfläche: Der Austausch läuft in `components/DraftAlternativesDialog.tsx` (`ui/dialog`,
       **kein** Popover — ein Bildraster mit eigenem Blätterweg braucht auf 360px die volle Fläche,
       und der Vorgang verlangt Fokusfang). Geladen wird **erst beim Öffnen**: eine Abfrage je
-      geöffnetem Bild, nie eine je Kachel. Ein Tippen führt **zwei** Schreibvorgänge aus
-      (streichen, dann aufnehmen), schließt den Dialog und setzt den Fokus auf die nun an dieser
-      Stelle stehende Kachel; die Entwurfsliste wird dabei **nicht** neu geladen
-      (`useDraftExchangeMutation` schreibt sie über `utils/albumDraft.ts::insertDraftPhoto` mit
-      dem Sortierschlüssel des Servers fort). `components/CurationCandidates.tsx`,
-      `useCurationCandidatesQuery` und `listCurationCandidates` entfallen.
+      geöffnetem Bild, nie eine je Kachel. Ein Tippen löst **einen** Schreibvorgang aus (siehe den
+      Austausch-Endpunkt unten; bis Spec 0432 waren es zwei), schließt den Dialog und setzt den
+      Fokus auf die nun an dieser Stelle stehende Kachel; die Entwurfsliste wird dabei **nicht**
+      neu geladen (`useDraftExchangeMutation` schreibt sie über
+      `utils/albumDraft.ts::insertDraftPhoto` mit dem Sortierschlüssel des Servers fort).
+      `components/CurationCandidates.tsx`, `useCurationCandidatesQuery` und
+      `listCurationCandidates` entfallen.
+  - **Der Austausch ist ein Aufruf, eine Transaktion und ein Ereignis** *(Spec
+    [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
+    [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md)
+    Punkt 3)*: `POST /projects/{project_id}/draft/exchange` (`api/photos.py`, Body
+    `{"photo_id": …, "replaced_photo_id": …}`, Antwort `DraftExchangeOut` mit **beiden**
+    geschriebenen Bewertungszeilen). „B statt A" ist die Aussage; die beiden Bilder für sich tragen
+    sie nicht. Zwei getrennte `PUT /photos/{id}/rating` ließen sich nachträglich nur über eine
+    Heuristik zu einem Paar zusammenfügen, und der zweite konnte fehlschlagen — dann blieb ein
+    halb ausgeführter Austausch stehen.
+    - Beide Bewertungszeilen und das eine `exchanged`-Ereignis gehen in **einer** Transaktion oder
+      gar nicht. Dafür ist die Transaktionsgrenze aus `api/ratings.py::write_own_rating` zum
+      Aufrufer gewandert: Die Schreibstelle flusht weiterhin (daran hängt der `409`-Fall),
+      committet aber nicht mehr. Ihr neuer Parameter `record=False` unterdrückt die Aufzeichnung
+      für beide Teilschreibvorgänge — ohne ihn zählte jeder Austausch **dreifach**.
+    - **Projektbindung über die Rangzeile:** Beide Ids werden ausschließlich über eine Zeile von
+      `photo_rankings` mit dem Prädikat „jüngster erfolgreicher Kriterienlauf dieses Projekts"
+      aufgelöst, nie über `session.get(Photo, …)` mit nachgelagerter Projektprüfung.
+      `photo_rankings` trägt keine `project_id`, und ohne das Laufprädikat identifiziert eine Id
+      aus Projekt B unter `/projects/A/…` eindeutig fremde Zeilen — der Endpunkt liefe dann nicht
+      in eine erkennbar falsche Menge, sondern **tauschte kohärent zwei Bilder eines fremden
+      Projekts**. Beide Fotos müssen zudem im **selben Event** liegen; `event_id` des Ereignisses
+      stammt aus der Rangzeile und nie aus dem Body.
+    - `404` ohne Projekt, `422` für dasselbe Foto auf beiden Seiten, eine unbekannte oder
+      projektfremde Id und zwei verschiedene Events — **alle drei mit identischem Text**, sonst
+      wäre der Endpunkt ein Existenz-Orakel über fremde Foto-Ids. Der Body trägt genau zwei
+      Felder mit deklarativen Grenzen und weist jedes weitere ab; `weight` wäre der Wert, mit dem
+      ein Aufrufer die eigene Korrektur in der global wirkenden Gewichtsableitung
+      überproportional zählen ließe.
+    - Die Umkehr eines Austauschs ist ein **weiterer** Austausch mit eigenem Ereignis; sie löscht
+      nichts. Das Favoriten-Kennzeichen bleibt auf beiden Seiten unberührt, weil der Austausch
+      durch dieselbe Schreibstelle läuft wie `PUT /photos/{id}/rating`.
   - **Die Endauswahl des Projekts, eine Ebene über beiden Entwürfen** *(Spec
     [`0431`](../specs/features/0431-endauswahl-gemeinsam.md), ADR
     [`decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md`](../specs/decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md))*:
@@ -820,13 +852,13 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     auch die neue Remote-Kategorie-Klassifizierung. **Löschumfang (Spec
     [`0044`](../specs/features/0044-projekte-loeschen.md), ADR
     [`decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md`](../specs/decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md)):**
-    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller neunzehn am Projekt
+    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller zwanzig am Projekt
     hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
     `criterion_scoring_runs`, `remote_category_classification_runs`, `ratings`, `photo_scores`,
     `photo_criterion_scores`, `photo_rankings`, `events`, `photo_landmark_detections`,
     `photo_fine_labels`, `photo_motif_assessments`, `photo_motif_strengths`,
     `photo_motif_corrections`, `photo_album_suitability`, `photo_cloud_vision_errors`,
-    `final_selection_decisions`) sowie das Projekt selbst, dazu
+    `final_selection_decisions`, `feedback_events`) sowie das Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
     Erreichbarkeitsprüfung automatisch heraus, ohne eigene Ausnahmeliste; ein `fine_labels`-Eintrag,
@@ -835,7 +867,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `Base.metadata` abgeleitet (Reihenfolge gegen `reversed(sorted_tables)`, Vollständigkeit über
     die Erreichbarkeit von `projects` entlang der Fremdschlüsselkanten) — nötig, weil die Testsuite
     gegen SQLite **ohne** `PRAGMA foreign_keys=ON` läuft und eine falsche Reihenfolge dort
-    strukturell nicht auffiele.
+    strukturell nicht auffiele. `feedback_events` ist seit Spec 0432 dabei und ist zugleich die
+    **einzige Ausnahme** der Append-only-Zusage dieser Tabelle: Ohne die Anweisung überlebten
+    Aussagen über gelöschte Familienfotos ihr Projekt.
   - **Richtwert des Auswahlvorschlags** *(Spec
     [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
     [`decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
@@ -1412,6 +1446,44 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   und der so entstandene Zustand wäre nicht korrigierbar, nur überschreibbar. Die Endauswahl selbst
   wird **nicht** materialisiert. Zuordenbarkeit, wer was wollte, bleibt unangetastet in den
   `Rating`-Zeilen.
+- **FeedbackEvent** *(Spec
+  [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
+  [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md),
+  `models.py`, Tabelle `feedback_events`)*: **ein Handgriff der Nacharbeit am Album-Entwurf**,
+  unveränderlich festgehalten — die erste Tabelle des Projekts, die **Verlauf statt Zustand** hält.
+  Spalten: `id` (Primary Key), `project_id` (Fremdschlüssel, NOT NULL, indiziert), `user_id`
+  (Fremdschlüssel, **nullable**), `photo_id` (Fremdschlüssel, NOT NULL), `kind` (neun Werte:
+  `photo_included`, `photo_removed`, `decision_withdrawn`, `exchanged`, `motif_added`,
+  `motif_dropped`, `motif_correction_withdrawn`, `final_decision_in`, `final_decision_out`),
+  `occurred_at`, `weight` (NOT NULL, Vorbelegung `1.0`), `criterion_scoring_run_id`, `event_id`,
+  `replaced_photo_id`, `motif_key`, `motif_strength`, `level`/`replaced_level`,
+  `quality`/`replaced_quality`.
+  - **Append-only:** Auf die Tabelle läuft ausschließlich `INSERT`; einzige Ausnahme ist die
+    Projektlöschung. Daraus folgen ohne durchsetzenden Code beide Zusagen der Story — ein Ereignis
+    überlebt jede Neuklassifizierung und die Rücknahme der Korrektur, und mehrere Korrekturen am
+    selben Foto bleiben in ihrer Reihenfolge erkennbar. **Die Reihenfolge *ist* die aufsteigende
+    `id`**, nie `occurred_at`: Zwei Schreibvorgänge derselben Sekunde sind über eine Zeit nicht zu
+    ordnen. Ein struktureller Wächter hält fest, dass außerhalb von `project_deletion.py` kein
+    Modul `update`/`delete` auf dieser Tabelle absetzt.
+  - **Die eingefrorene Entscheidungslage:** `level`, `quality` und `motif_strength` halten fest, was
+    zum Zeitpunkt der Korrektur galt und von einem späteren Lauf überschrieben wird — sonst wäre
+    „zu schwach oder gar nicht genannt?" danach nicht mehr beantwortbar. Alle sind **nullbar**; ein
+    Foto ohne Modellbewertung erzeugt trotzdem ein Ereignis. Eingefroren wird die **gespeicherte**
+    Motivstärke, nie die wirksame: Letztere trägt bereits eine frühere Korrektur desselben Paares.
+    Die lokalen Kriterienwerte werden dagegen **nicht** eingefroren — sie sind eine
+    deterministische Messung an denselben Pixeln.
+  - **`user_id IS NULL` genau für `final_decision_in`/`final_decision_out`:** Die gemeinsame
+    Entscheidung gehört dem Projekt, und ihr Schreibendpunkt nimmt aus genau diesem Grund kein
+    `current_user` entgegen (ADR 0099). Ein Ereignisschreiber, der sich dafür eines besorgte, führte
+    das dort verworfene `decided_by` durch die Hintertür ein.
+  - **`event_id` trägt keinen Fremdschlüssel**, obwohl die Spalte wie eine Referenz aussieht:
+    `worker.py::rebuild_run_grouping` löscht die `events`-Zeilen eines Laufs und legt sie neu an.
+    Ein echter Fremdschlüssel hielte den Neuaufbau an oder risse Log-Zeilen mit — beides bräche die
+    Append-only-Zusage. Gültig ist die Spalte allein zusammen mit dem `criterion_scoring_run_id`
+    derselben Zeile.
+  - Geschrieben wird ausschließlich über `feedback_log.py`; dort hängt die Feldmatrix je `kind`
+    (welches Feld pflichtig, welches verboten), in beide Richtungen durchgesetzt. Festgehalten
+    werden nur Verweise, Zeitpunkt, Art und Zahlen — **keine Bilddaten, kein Fremdtext**.
 - **PhotoMotifCorrection** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR 0091,
   `models.py`, Tabelle `photo_motif_corrections`)*: die menschliche Korrektur **einer** Motivaussage
   — `photo_id` (Fremdschlüssel auf `photos`, Kaskade), `user_id`, `motif_key`, `applies: bool`,

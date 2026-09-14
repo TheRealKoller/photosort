@@ -1,5 +1,6 @@
 import { apiFetch, apiFetchBlob } from './client'
 import type {
+  DraftExchangeOut,
   MotifCorrectionOut,
   MotifKey,
   PhotoListOut,
@@ -120,5 +121,28 @@ export function setMotifCorrection(
 export function deleteMotifCorrection(photoId: number, motifKey: MotifKey): Promise<void> {
   return apiFetch<void>(`/photos/${photoId}/motif-corrections/${encodeURIComponent(motifKey)}`, {
     method: 'DELETE',
+  })
+}
+
+/**
+ * Tauscht im eigenen Album-Entwurf ein Bild gegen ein anderes desselben Ereignisses — EIN Aufruf
+ * statt zweier `setRating` (Spec 0432).
+ *
+ * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht. Zwei getrennte
+ * Aufrufe waren nicht atomar — der zweite konnte fehlschlagen und einen halb ausgeführten
+ * Austausch hinterlassen — und ihre Zusammengehörigkeit kannte allein der Client.
+ *
+ * Der Body trägt AUSSCHLIESSLICH die beiden Foto-Ids. Kein `event_id`, kein Gewicht, kein
+ * Nutzer: Der Server löst alles über die Rangzeile des Laufs auf, und ein vom Client geliefertes
+ * Gewicht ließe die eigene Korrektur in der global wirkenden Ableitung stärker zählen.
+ */
+export function exchangeDraftPhoto(
+  projectId: number,
+  photoId: number,
+  replacedPhotoId: number,
+): Promise<DraftExchangeOut> {
+  return apiFetch<DraftExchangeOut>(`/projects/${projectId}/draft/exchange`, {
+    method: 'POST',
+    body: { photo_id: photoId, replaced_photo_id: replacedPhotoId },
   })
 }

@@ -53,6 +53,12 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # Antwortmenge (`strittig ∪ Endauswahl ∪ entschieden`), die der Antwort selbst nicht anzusehen
     # ist - namentlich, warum ein ausdruecklich herausgenommenes Bild darin stehen bleibt.
     ("get", "/projects/{project_id}/album-selection"),
+    # specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md, PR 1: der Austausch. Seine
+    # Beschreibung traegt die drei Aussagen, die der Signatur nicht anzusehen sind - dass es EIN
+    # Schreibvorgang in EINER Transaktion ist, dass beide Bilder zum selben Ereignis desselben
+    # Laufs gehoeren muessen, und dass er ausdruecklich KEIN zusaetzliches Streich- und
+    # Aufnahme-Ereignis erzeugt.
+    ("post", "/projects/{project_id}/draft/exchange"),
 )
 
 

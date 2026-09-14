@@ -23,6 +23,8 @@ from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Event,
+    FeedbackEvent,
+    FeedbackEventKind,
     FinalSelectionDecision,
     FineLabel,
     MotifAssessmentSource,
@@ -229,6 +231,20 @@ async def build_project_graph(
             # null Zeilen stillschweigend. Ohne diese Zeile prueft die Loeschung der gemeinsamen
             # Entscheidungen nichts.
             FinalSelectionDecision(photo_id=photo.id, included=True),
+            # specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md: dasselbe wie oben.
+            # Das Ereignis-Log ist append-only, die Projektloeschung ist seine EINZIGE Ausnahme
+            # (S13) - ohne diese Zeile prueft sie dort nichts. `event_id` steht bewusst gesetzt
+            # UND ohne Fremdschluessel: Die Spalte sieht wie eine Referenz aus und ist keine.
+            FeedbackEvent(
+                project_id=project.id,
+                user_id=user.id,
+                photo_id=photo.id,
+                kind=FeedbackEventKind.PHOTO_REMOVED,
+                criterion_scoring_run_id=criterion_run.id,
+                event_id=event.id,
+                level=4,
+                quality=0.61,
+            ),
         ]
     )
     await session.flush()
