@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import itertools
 import os
+import re
 import subprocess
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -787,3 +788,132 @@ def test_ein_veralteter_tracking_ref_faellt_ueber_seine_nummer_heraus(
 
     assert "alt/squash-gemergt" not in namen
     assert nummern_module.zugeteilte_nummer(sicht.basis, sicht.gefuehrt, "z/eigen") == 110
+
+
+# --- Die Unterbefehle und ihre Exit-Codes ------------------------------------------------------
+
+SKRIPT = Path(__file__).parents[1] / "nummern.py"
+
+
+@dataclass(frozen=True)
+class Lauf:
+    code: int
+    stdout: str
+    stderr: str
+
+
+def _laufe(verzeichnis: Path, *args: str) -> Lauf:
+    fertig = subprocess.run(
+        [str(SKRIPT), *args],
+        cwd=verzeichnis,
+        capture_output=True,
+        text=True,
+        timeout=ZEITGRENZE_SEKUNDEN,
+        check=False,
+    )
+    return Lauf(fertig.returncode, fertig.stdout, fertig.stderr)
+
+
+# Je Unterbefehl eine geschlossene Menge zulaessiger Exit-Codes. Ein unbekannter Code wird an
+# keiner Aufrufstelle wie 0 behandelt.
+ZULAESSIGE_CODES: Mapping[str, frozenset[int]] = {
+    "vorschlag": frozenset({0, 10, 30}),
+    "migration": frozenset({0, 10, 30}),
+    "pruefen": frozenset({0, 10, 20, 30}),
+    "kette": frozenset({0, 30}),
+    "umhaengen": frozenset({0, 10, 30}),
+}
+
+
+def test_das_skript_ist_ausfuehrbar() -> None:
+    assert SKRIPT.exists() and os.access(SKRIPT, os.X_OK)
+
+
+def test_vorschlag_gibt_die_vierstellige_nummer_auf_stdout(wegwerf: Wegwerf) -> None:
+    lauf = _laufe(wegwerf.haupt, "vorschlag", "decisions")
+
+    assert lauf.stdout.strip() == "0110"
+
+
+def test_vorschlag_meldet_kontention_mit_zehn_und_einer_zeile_je_branch(
+    wegwerf: Wegwerf,
+) -> None:
+    lauf = _laufe(wegwerf.haupt, "vorschlag", "decisions")
+
+    assert lauf.code == 10
+    befunde = [zeile for zeile in lauf.stderr.splitlines() if "fuehrt" in zeile]
+    assert len(befunde) == 4
+    assert any("a/committet" in zeile and "0106" in zeile for zeile in befunde)
+
+
+def test_ohne_kontention_endet_vorschlag_mit_null(wegwerf: Wegwerf) -> None:
+    """Exit 0 entsteht an genau einer Stelle - dem einzigen Ausgang, der still falsch sein
+    koennte."""
+    lauf = _laufe(wegwerf.haupt, "vorschlag", "architecture")
+
+    assert lauf.code == 0
+    assert lauf.stdout.strip() == "0005"
+
+
+def test_vorschlag_features_liefert_nie_eine_zahl(wegwerf: Wegwerf) -> None:
+    """Ein Aufrufer, der stdout greppt, darf auch versehentlich keine Nummer bekommen."""
+    lauf = _laufe(wegwerf.haupt, "vorschlag", "features")
+
+    assert lauf.code != 0
+    assert lauf.code in ZULAESSIGE_CODES["vorschlag"]
+    assert not re.search(r"\d{4}", lauf.stdout)
+    assert "Issue" in lauf.stderr
+
+
+def test_ein_unbekannter_nummernraum_wird_abgewiesen(wegwerf: Wegwerf) -> None:
+    lauf = _laufe(wegwerf.haupt, "vorschlag", "erfunden")
+
+    assert lauf.code == 30
+    assert not re.search(r"\d{4}", lauf.stdout)
+
+
+def test_ein_unbekannter_unterbefehl_endet_nie_mit_null(wegwerf: Wegwerf) -> None:
+    lauf = _laufe(wegwerf.haupt, "gibtesnicht")
+
+    assert lauf.code != 0
+
+
+def test_pruefen_meldet_die_kontention_mit_zehn(wegwerf: Wegwerf) -> None:
+    lauf = _laufe(wegwerf.haupt, "pruefen")
+
+    assert lauf.code == 10
+    assert lauf.code in ZULAESSIGE_CODES["pruefen"]
+
+
+def test_pruefen_belegt_auch_ohne_befund_dass_gelesen_wurde(wegwerf: Wegwerf) -> None:
+    """Eine leere Ausgabe darf nie als "nichts gefunden" durchgehen - Zaehler statt
+    Abwesenheit."""
+    _git(wegwerf.haupt, "worktree", "remove", "--force", str(wegwerf.nachbar_a))
+    _git(wegwerf.haupt, "worktree", "remove", "--force", str(wegwerf.nachbar_b))
+    _git(wegwerf.haupt, "worktree", "remove", "--force", str(wegwerf.drin))
+    _git(wegwerf.haupt, "update-ref", "-d", "refs/remotes/origin/c/gepusht")
+
+    lauf = _laufe(wegwerf.haupt, "pruefen")
+
+    assert lauf.code == 0
+    assert re.search(r"\b\d+ Dateinamen", lauf.stdout)
+    assert "1 Arbeitsbaum" in lauf.stdout
+
+
+def test_pruefen_meldet_eine_echte_dublette_im_eigenen_baum_mit_zwanzig(
+    wegwerf: Wegwerf,
+) -> None:
+    """20 ist von 10 an Ausgabe und Code unterscheidbar."""
+    _dokument(wegwerf.haupt / "specs" / "decisions", "0110-zweite-vergabe.md")
+
+    lauf = _laufe(wegwerf.haupt, "pruefen")
+
+    assert lauf.code == 20
+    assert "0110" in lauf.stdout
+    assert "0110-eigen.md" in lauf.stdout and "0110-zweite-vergabe.md" in lauf.stdout
+
+
+def test_keine_ausgabe_nennt_die_remote_url(wegwerf: Wegwerf) -> None:
+    lauf = _laufe(wegwerf.haupt, "pruefen")
+
+    assert str(wegwerf.origin) not in lauf.stdout + lauf.stderr

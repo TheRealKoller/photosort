@@ -52,6 +52,7 @@ import hashlib
 import os
 import re
 import subprocess
+import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -509,3 +510,130 @@ def erhebe_sicht(wurzel: Path, raum: str) -> Sicht:
         arbeitsbaeume=len(baeume) + 1,
         fremde_branches=len(fremde),
     )
+
+
+def eigene_dokumente(wurzel: Path, verzeichnis: str) -> dict[int, tuple[str, ...]]:
+    """Je Nummer die Dateinamen, die sie im eigenen Arbeitsbaum tragen.
+
+    Eine Nummer mit zwei Namen ist die Dublette, die das Sicherheitsnetz in CI spaetestens beim
+    Zusammenfuehren meldet - hier wird sie im laufenden Arbeitskontext sichtbar.
+    """
+    eigene = eigene_wurzel(wurzel)
+    rohdaten = git_ausgabe(
+        ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", verzeichnis],
+        cwd=wurzel,
+    )
+    namen = {
+        pfad.rpartition("/")[2]
+        for pfad in nul_felder(rohdaten)
+        if pfad.rpartition("/")[0] == verzeichnis
+    }
+    ort = eigene / verzeichnis
+    if ort.is_dir():
+        namen |= {
+            eintrag.name for eintrag in os.scandir(ort) if eintrag.is_file(follow_symlinks=False)
+        }
+    je_nummer: dict[int, set[str]] = {}
+    for name in namen:
+        treffer = _DOKUMENTNAME.fullmatch(name)
+        if treffer is not None:
+            je_nummer.setdefault(int(treffer.group("nummer")), set()).add(name)
+    return {nummer: tuple(sorted(namen)) for nummer, namen in je_nummer.items()}
+
+
+# --- Die Unterbefehle --------------------------------------------------------------------------
+
+_HILFE = (
+    "Aufruf: nummern.py <vorschlag <decisions|architecture>|migration <slug>|pruefen|kette"
+    "|umhaengen>"
+)
+
+
+def _meldung(text: str) -> None:
+    print(text, file=sys.stderr)
+
+
+def _dublettenzeilen(wurzel: Path, verzeichnis: str) -> list[str]:
+    zeilen = []
+    for nummer, namen in sorted(eigene_dokumente(wurzel, verzeichnis).items()):
+        if len(namen) > 1:
+            zeilen.append(
+                f"{verzeichnis}: Die Nummer {nummer:04d} traegt im eigenen Arbeitsbaum "
+                f"{len(namen)} Dateien: {', '.join(namen)}"
+            )
+    return zeilen
+
+
+def befehl_vorschlag(wurzel: Path, raum: str) -> int:
+    if raum == ABGELEHNTER_RAUM:
+        _meldung(
+            "Die Nummer einer Feature-Spec kommt vom GitHub-Issue und faellt nicht unter die "
+            "Rangregel. Hier wird bewusst keine vergeben."
+        )
+        return EXIT_VORBEDINGUNG
+    if raum not in NUMMERNRAEUME:
+        _meldung(f"Unbekannter Nummernraum: {raum!r}. {_HILFE}")
+        return EXIT_VORBEDINGUNG
+
+    sicht = erhebe_sicht(wurzel, raum)
+    nummer = zugeteilte_nummer(sicht.basis, sicht.gefuehrt, sicht.eigener_branch)
+    print(f"{nummer:04d}")
+
+    befunde = befundzeilen(sicht.basis, sicht.gefuehrt, sicht.eigener_branch)
+    if not befunde:
+        return EXIT_OK
+    for zeile in befunde:
+        _meldung(zeile)
+    _meldung(
+        "Die Zuteilung oben beruecksichtigt diese Kontrahenten bereits; jede Seite rechnet "
+        "dasselbe, ohne Abstimmung. Die Datei jetzt anlegen - erst dadurch wird die Nummer "
+        "fuer die Nachbarn sichtbar."
+    )
+    return EXIT_KONTENTION
+
+
+def befehl_pruefen(wurzel: Path) -> int:
+    dubletten: list[str] = []
+    kontention: list[str] = []
+    for raum, verzeichnis in NUMMERNRAEUME.items():
+        sicht = erhebe_sicht(wurzel, raum)
+        dubletten += _dublettenzeilen(wurzel, verzeichnis)
+        kontention += befundzeilen(sicht.basis, sicht.gefuehrt, sicht.eigener_branch)
+        baeume = (
+            f"{sicht.arbeitsbaeume} Arbeitsbaum"
+            if sicht.arbeitsbaeume == 1
+            else f"{sicht.arbeitsbaeume} Arbeitsbaeume"
+        )
+        print(
+            f"{verzeichnis}: {sicht.gelesen} Dateinamen gelesen, Basis {sicht.basis:04d}, "
+            f"{baeume}, {sicht.fremde_branches} gepushte Branches"
+        )
+    for zeile in dubletten + kontention:
+        print(zeile)
+    if dubletten:
+        return EXIT_DUBLETTE
+    return EXIT_KONTENTION if kontention else EXIT_OK
+
+
+def main(argv: Sequence[str]) -> int:
+    if not argv:
+        _meldung(_HILFE)
+        return EXIT_VORBEDINGUNG
+    befehl, rest = argv[0], argv[1:]
+    try:
+        if befehl == "vorschlag":
+            if len(rest) != 1:
+                _meldung(_HILFE)
+                return EXIT_VORBEDINGUNG
+            return befehl_vorschlag(Path.cwd(), rest[0])
+        if befehl == "pruefen" and not rest:
+            return befehl_pruefen(Path.cwd())
+    except ZuteilerFehler as grund:
+        _meldung(str(grund))
+        return EXIT_VORBEDINGUNG
+    _meldung(f"Unbekannter Aufruf. {_HILFE}")
+    return EXIT_VORBEDINGUNG
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
