@@ -46,7 +46,8 @@ Ausschluss wird einzeln begruendet:
   naechste echte Fundstelle.
 
 Nicht als UTF-8 lesbare Dateien werden uebersprungen statt den Lauf abzubrechen (gemessen
-2026-09-14: 545 gelistete Dateien, davon 525 gelesen, 19 uebersprungen).
+2026-09-14: 545 gelistete Dateien ausserhalb `specs/**`, davon 525 gelesen, 19 uebersprungen und
+diese Datei selbst).
 
 **Alle vier Teile starten gruen**, weil ihr Erfolgsfall eine Abwesenheit ist; der triviale Lauf
 belegt fuer sie nichts. Tragend sind die synthetischen Gegenproben je Muster und die
@@ -99,8 +100,8 @@ AUSGESCHLOSSENE_PRAEFIXE = ("specs/",)
 
 WAECHTERDATEI = "scripts/tests/test_entfallene_label_restlos.py"
 
-# Selbstschutz: bewusst weit unter dem Ist-Stand (gemessen 2026-09-14: 545 verwaltete Dateien,
-# davon 19 nicht als UTF-8 lesbar und 246 unter `specs/`, also rund 525 im Suchraum) - faengt den
+# Selbstschutz: bewusst weit unter dem Ist-Stand (gemessen 2026-09-14: 792 verwaltete Dateien,
+# davon 247 unter `specs/` und 19 nicht als UTF-8 lesbar, also 525 im Suchraum) - faengt den
 # Totalausfall der Aufzaehlung, nicht jede geloeschte Datei.
 MINDESTZAHL_DATEIEN_IM_SUCHRAUM = 300
 
