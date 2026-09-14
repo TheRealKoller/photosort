@@ -230,13 +230,18 @@ statt getippt. Ein `scan`, der Frontier ist, kann nur `null`, `running` oder `fa
 läuft. Weil `kuratierung.isDone` ohne Abschlusssignal konstant `false` ist, bleibt der Zustand heute
 unerreichbar und wird von selbst erreichbar, sobald es eines gibt.
 
-**Randfall C, entschieden von Daniel am 2026-09-14:** Bei ausgeschaltetem
-`category_selection_enabled` sind `kriterien` und `kuratierung` unerreichbar, die Frontier-Suche
-läuft leer und fällt auf das bereits **erledigte** `gate` zurück. Statt dort ein irreführendes
-„Weiter: Ausschuss-Gate" zu zeigen, trägt die Zeile den eigenen Wortlaut „Kategorie-Bewertung ist
-abgeschaltet" als reinen Text (`kind:'hinweis'`). Das Klickziel bleibt unverändert das Gate. Die
-Zeile benennt in diesem Fall — wie in Randfall A und B — keinen Schritt; die Zusage aus S2 bleibt
-damit unverletzt, weil sie nur greift, wo die Zeile einen Schritt nennt.
+**Randfall C, entschieden von Daniel:** Fällt die Frontier-Suche auf einen bereits **erledigten**
+Schritt zurück, trägt die Zeile den eigenen Wortlaut „Kategorie-Bewertung ist abgeschaltet" als
+reinen Text (`kind:'hinweis'`) statt eines irreführenden „Weiter: Ausschuss-Gate" auf etwas längst
+Erledigtem. Das Klickziel bleibt unverändert. Die Zeile benennt in diesem Fall — wie in Randfall A
+und B — keinen Schritt; die Zusage aus S2 bleibt damit unverletzt, weil sie nur greift, wo die Zeile
+einen Schritt nennt.
+
+**Bedingung ist der Rückfall, nicht der Flag-Zustand.** Zurückfallen kann die Suche nur bei
+ausgeschaltetem `category_selection_enabled` — mit eingeschaltetem Flag gibt es immer einen
+erreichbaren offenen Schritt. Umgekehrt gilt das nicht: Ein abgeschaltetes Flag bei noch offenem
+Gate oder erreichbarer Kuratierung hat sehr wohl einen nächsten Schritt und nennt ihn. Am Flag
+festgemacht verschwiege die Zeile dort einen tatsächlich erreichbaren Schritt.
 
 **Eine benannte Abweichung vom Wortlaut des Entwurfs:** Die Tabelle in Spec 0358 schreibt „Weiter:
 Kategorie-Kuratierung". `PIPELINE_STEPS` trägt seit dem Wegfall der Kategorien das Label
@@ -322,7 +327,7 @@ konkurrieren, und „wo mache ich weiter" schließt „läuft gerade etwas" mit 
 | `kriterien` | Lauf `failed` | `lauf` (failed) | „Kriterien-Bewertung fehlgeschlagen" |
 | `kriterien` | sonst | `weiter` | „Weiter: Kriterien-Bewertung" |
 | `kuratierung` | — | `weiter` | „Weiter: Kuratierung" |
-| — | `category_selection_enabled === false`, Gate erledigt (**Randfall C**) | `hinweis` | „Kategorie-Bewertung ist abgeschaltet" |
+| — | Frontier-Suche auf einen bereits **erledigten** Schritt zurückgefallen (**Randfall C**) | `hinweis` | „Kategorie-Bewertung ist abgeschaltet" |
 | kein offener Schritt | **Randfall B** | `fertig` | „Alles erledigt" |
 
 Randfall A bekommt bewusst **nicht** „Weiter: Scan": Ein Projekt, in dem noch nie etwas passiert ist,
