@@ -17,7 +17,7 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api.photos import _MAX_QUERY_POSITION
+from photosort.api.photos import MAX_QUERY_POSITION
 from photosort.models import (
     DuplicateDecision,
     Photo,
@@ -290,7 +290,7 @@ async def test_an_unknown_project_is_a_404(
     assert response.status_code == 404
 
 
-@pytest.mark.parametrize("photo_id", [0, -1, _MAX_QUERY_POSITION + 1])
+@pytest.mark.parametrize("photo_id", [0, -1, MAX_QUERY_POSITION + 1])
 async def test_a_photo_id_outside_the_declared_bounds_is_a_422(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession, photo_id: int
 ) -> None:

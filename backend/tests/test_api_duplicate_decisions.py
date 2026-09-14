@@ -19,10 +19,11 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.duplicate_decisions import DuplicateDecisionIn
-from photosort.api.photos import _MAX_QUERY_POSITION
+from photosort.api.photos import MAX_QUERY_POSITION
 from photosort.models import (
     DuplicateDecision,
     FeedbackEvent,
@@ -387,6 +388,54 @@ async def test_the_group_write_path_commits_in_one_transaction(
     assert len(commits) == 1
 
 
+@pytest.mark.parametrize("url_builder", [_single_url, _group_url])
+async def test_a_concurrent_write_on_the_same_photo_is_a_409_and_never_a_500(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    url_builder: object,
+) -> None:
+    """SICHERHEIT (S9), zweite Haelfte: Der Primaerschluessel ist `photo_id`. Das `DELETE` vor dem
+    `INSERT` faengt den WIEDERHOLTEN Druck ab - nicht den NEBENLAEUFIGEN: Committet die andere
+    Sitzung zwischen beiden Anweisungen, trifft das `INSERT` eine Zeile, die es beim `DELETE` noch
+    nicht gab, und der Primaerschluessel wirft.
+
+    Der Fehler wird EINGESETZT statt nachgestellt (Muster `test_api_album_decisions.py`): Das
+    Fenster zwischen zwei Anweisungen einer Transaktion ist in einer Testsitzung, die dieselbe
+    Verbindung benutzt, nicht herstellbar - und der Testgegenstand ist ohnehin der Zweig, nicht
+    das Scheduling. `calls` belegt, dass er betreten wurde; ohne diese Zusicherung bestuende der
+    Fall auch gegen eine Umsetzung, die den `flush` gar nicht erst absetzt."""
+    project = await _project(db_session)
+    winner, losers = await _star(db_session, project, 3)
+    projekt_id, ziel_id = project.id, losers[0].id
+    mitglied_ids = [winner.id, *(loser.id for loser in losers)]
+    calls = {"count": 0}
+    original_flush = AsyncSession.flush
+
+    async def _always_failing(self: AsyncSession, *args: object, **kwargs: object) -> None:
+        calls["count"] += 1
+        raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed"))
+
+    monkeypatch.setattr(AsyncSession, "flush", _always_failing)
+    try:
+        response = await authenticated_api_client.put(
+            url_builder(projekt_id, ziel_id),  # type: ignore[operator]
+            json={"decision": "discard"},
+        )
+    finally:
+        monkeypatch.setattr(AsyncSession, "flush", original_flush)
+
+    assert calls["count"] >= 1, "der IntegrityError-Zweig wurde gar nicht betreten"
+    assert response.status_code == 409
+    # Die Meldung nennt die Handlung, nie einen Wert oder eine fremde Id.
+    assert "erneut" in response.json()["detail"].lower()
+    # Der Rueckzug ist vollstaendig: Auf dem Gruppenweg bleibt keine einzige Zeile der Gruppe halb
+    # geschrieben zurueck - die Transaktion umfasst sie alle. Die Ids stehen VOR dem Verfallen
+    # fest; danach loeste ein Attributzugriff einen Lazy-Load aus.
+    for mitglied_id in mitglied_ids:
+        assert await _stored(db_session, mitglied_id) is None
+
+
 # ------------------------------------------------------------------------------------------
 # Der Koerper und die Pfad-Ids (S6)
 # ------------------------------------------------------------------------------------------
@@ -435,7 +484,7 @@ async def test_an_unknown_decision_value_is_a_422(
 
 
 @pytest.mark.parametrize("url_builder", [_single_url, _group_url])
-@pytest.mark.parametrize("photo_id", [0, -1, _MAX_QUERY_POSITION + 1])
+@pytest.mark.parametrize("photo_id", [0, -1, MAX_QUERY_POSITION + 1])
 async def test_a_photo_id_outside_the_declared_bounds_is_a_422(
     authenticated_api_client: httpx.AsyncClient,
     db_session: AsyncSession,

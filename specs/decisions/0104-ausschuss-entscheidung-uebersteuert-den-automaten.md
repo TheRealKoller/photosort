@@ -108,8 +108,14 @@ des Gates — eine Liste, eine Abschluss-Aktion, keine Einzelbestätigungspflich
   Anzeigerolle; sie reist in einem eigenen Antwortmodell neben dem Foto, nicht an ihm.
 - **`project_deletion.py`** nimmt die neue Tabelle auf; der Vollständigkeitswächter gegen
   `Base.metadata` fängt ein Vergessen.
-- **Der Demo-Bestand bekommt eine Duplikat-Gruppe.** Ohne sie ist die Ansicht weder vorführbar noch
-  im Browser prüfbar, und kein Test würde rot.
+- **Der Demo-Bestand bekommt mindestens eine Duplikat-Gruppe.** Ohne sie ist die Ansicht weder
+  vorführbar noch im Browser prüfbar, und kein Test würde rot. *Umgesetzt wurden zwei Gruppen in
+  einem eigenen, fünften Demo-Projekt:* Die Zusage „bricht um, statt die Bilder kleiner zu machen"
+  ist nur über zwei Gruppen **verschiedener Größe** belegbar — eine einzelne zeigt nicht, dass die
+  Kachelbreite an der Fensterbreite hängt und nicht an der Mitgliederzahl. Ein eigenes Projekt
+  statt zusätzlicher Fotos im bewerteten, weil dort an jedem Index ein benannter Sonderzustand
+  hängt und die Event-/Ortsverteilung gegen die Fotoanzahl rechnet. **Folge:** `docs/setup.md` und
+  der Skill `browse-app` nennen die Projektzahl und ziehen im selben Pull Request nach.
 - **`docs/architecture.md`** bekommt die neue Tabelle, die drei Endpunkte und die neue Definition des
   Ausschuss-Überlebender-Bestands im selben Pull Request.
 - **Die Duplikaterkennung bleibt unverändert** — Schwellwert, Clusterbildung und die Wahl des

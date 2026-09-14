@@ -343,7 +343,7 @@ async def test_an_unknown_stored_value_falls_to_the_withholding_side(
 
 
 # ------------------------------------------------------------------------------------------
-# Die Zahl der Verwendungsstellen als Sollgroesse
+# Die Zahl der Aufrufstellen als Sollgroesse
 # ------------------------------------------------------------------------------------------
 
 _SRC = Path(__file__).resolve().parent.parent / "src" / "photosort"
@@ -355,20 +355,42 @@ _HANDGESCHRIEBEN = re.compile(
     r"suggested_status\s*\.\s*is_(?:not_)?\(\s*None\s*\)|suggested_status\s+is\s+(?:not\s+)?None"
 )
 
-# specs/features/0374-duplikate-vergleichen.md, ADR 0104 Punkt 3: SECHS Stellen ziehen das
-# Praedikat, keine schreibt es selbst. Die Zahl ist die Sollgroesse - eine siebte Stelle, die sich
-# spaeter dazustellt, faellt hier auf und nicht erst an der Abrechnung des Anbieters.
+# ZWEI ZAEHLWEISEN, DIE NICHT DIESELBE ZAHL ERGEBEN - hier auseinandergehalten, weil ihre
+# Vermischung genau die Sorte Fund erzeugt, die keiner ist:
+#
+# * ERSETZTE VORKOMMEN: SECHS. So zaehlen Spec 0374, ADR 0104 Punkt 3 und das Sicherheitskonzept,
+#   und so stand `PhotoScore.suggested_status IS NULL` vorher ausgeschrieben da. Diese Zahl wird
+#   in den Dokumenten NICHT nachgezogen - sie beschreibt den abgeloesten Zustand.
+# * NEUE AUFRUFSTELLEN: SIEBEN, die Sollgroesse dieses Waechters. Die eine Bedingung zerfaellt in
+#   ZWEI Funktionen ("ueberlebt" und "offener Vorschlag", seit ADR 0104 nicht mehr komplementaer),
+#   und "der Vorschlags-Zweig" war schon vorher zwei Codeformen - eine SQL- und eine Objektfassung,
+#   die der Paritaetstest aneinander band.
+#
+# Wer beide verwechselt, "korrigiert" die Tabelle unten auf sechs und haelt den dann roten Test
+# fuer einen Fund.
+_ERSETZTE_VORKOMMEN = 6
+
+# Je Aufrufstelle steht DA, WELCHE der vier Funktionen dort gezogen wird - nicht bloss eine Zahl je
+# Datei. Nur so faellt ein Vertauschen auf: `has_open_suggestion` an einer cloud-bestimmenden
+# Stelle liefert eine plausible Menge und dieselbe Gesamtzahl.
 _ERWARTETE_VERWENDUNGEN = {
     # run_criterion_scoring (speist zugleich den Sehenswuerdigkeits-Teilschritt) und
     # select_remote_category_candidates - beide cloud-bestimmend (S1).
-    "worker.py": 2,
+    ("worker.py", "survives_ausschuss"): 2,
     # Die beiden Kostenschaetzungen, auf denen die Freigabe eines kostenpflichtigen Laufs beruht.
     # Sie folgen der Auswahl NICHT von selbst (S1).
-    "api/projects.py": 2,
-    # `is_candidate` (Anzeige), der Vorschlags-Zweig von `_filtered_photo_ids` und sein
-    # Objekt-Zwilling `has_suggestion`.
-    "api/photos.py": 3,
+    ("api/projects.py", "survives_ausschuss"): 2,
+    # `is_candidate` - Anzeige, keine Grenze.
+    ("api/photos.py", "survives_ausschuss_for"): 1,
+    # Der Vorschlags-Zweig von `_filtered_photo_ids` und sein Objekt-Zwilling `has_suggestion`.
+    ("api/photos.py", "has_open_suggestion"): 1,
+    ("api/photos.py", "has_open_suggestion_for"): 1,
 }
+
+# Die beiden Fassungen, getrennt gezaehlt: Nur die SQL-Fassungen treten als weiterer
+# Konjunktionsteil in eine bestehende Anweisung ein (Auflage S2) - die Objektfassungen lesen ein
+# bereits geladenes Foto.
+_SQL_FASSUNGEN = frozenset({"survives_ausschuss", "has_open_suggestion"})
 
 
 def _quelldateien() -> list[Path]:
@@ -399,26 +421,54 @@ _PRAEDIKATSNAMEN = frozenset(
 )
 
 
-def _aufrufe(quelle: str) -> int:
+def _aufrufe(quelle: str) -> dict[str, int]:
     """Gezaehlt werden AUFRUFE im Syntaxbaum, nie Vorkommen im Text. Ein Verweis in einem
     Doc-Block traegt denselben Namen und ist keine Verwendungsstelle - eine textuelle Zaehlung
     haenge daran, wie die Doku formuliert ist."""
-    return sum(
-        1
-        for knoten in ast.walk(ast.parse(quelle))
-        if isinstance(knoten, ast.Call)
-        and isinstance(knoten.func, ast.Name)
-        and knoten.func.id in _PRAEDIKATSNAMEN
-    )
+    gezaehlt: dict[str, int] = {}
+    for knoten in ast.walk(ast.parse(quelle)):
+        if (
+            isinstance(knoten, ast.Call)
+            and isinstance(knoten.func, ast.Name)
+            and knoten.func.id in _PRAEDIKATSNAMEN
+        ):
+            gezaehlt[knoten.func.id] = gezaehlt.get(knoten.func.id, 0) + 1
+    return gezaehlt
 
 
-def test_the_predicate_is_drawn_at_exactly_the_six_sites() -> None:
-    """Die Zahl der Verwendungsstellen ist selbst eine Sollgroesse. Ein Wegfall faellt sonst nicht
-    auf: Eine Stelle, die das Praedikat schlicht nicht mehr zieht, liefert weiterhin eine
-    plausible Menge."""
-    gezaehlt = {
-        relativ: _aufrufe((_SRC / relativ).read_text(encoding="utf-8"))
-        for relativ in _ERWARTETE_VERWENDUNGEN
+def _gemessene_verwendungen() -> dict[tuple[str, str], int]:
+    dateien = {relativ for relativ, _name in _ERWARTETE_VERWENDUNGEN}
+    return {
+        (relativ, name): anzahl
+        for relativ in sorted(dateien)
+        for name, anzahl in _aufrufe((_SRC / relativ).read_text(encoding="utf-8")).items()
     }
 
-    assert gezaehlt == _ERWARTETE_VERWENDUNGEN
+
+def test_the_two_predicates_are_drawn_at_exactly_the_seven_expected_call_sites() -> None:
+    """Die Zahl der Verwendungsstellen ist selbst eine Sollgroesse. Ein Wegfall faellt sonst nicht
+    auf: Eine Stelle, die das Praedikat schlicht nicht mehr zieht, liefert weiterhin eine
+    plausible Menge.
+
+    Geprueft wird je (Datei, Funktion), nicht je Datei: Ein Vertauschen der beiden Praedikate -
+    `has_open_suggestion` an einer cloud-bestimmenden Stelle - liefert eine plausible Menge und
+    dieselbe Gesamtzahl."""
+    assert _gemessene_verwendungen() == _ERWARTETE_VERWENDUNGEN
+
+
+def test_the_six_replaced_occurrences_became_seven_call_sites_and_that_is_no_drift() -> None:
+    """Die beiden Zaehlweisen stehen hier NEBENEINANDER, damit ihre Differenz eine erklaerte
+    Groesse ist statt eines Verdachts.
+
+    Die sechs ersetzten Vorkommen der Dokumente werden zu sieben Aufrufstellen, weil die eine
+    Bedingung in ZWEI Funktionen zerfaellt und "der Vorschlags-Zweig" schon vorher zwei Codeformen
+    war. Genau FUENF davon sind SQL-Fassungen und treten als weiterer Konjunktionsteil in eine
+    bestehende Anweisung ein (Auflage S2); die zwei Objektfassungen lesen ein bereits geladenes
+    Foto."""
+    gemessen = _gemessene_verwendungen()
+    sql = sum(anzahl for (_datei, name), anzahl in gemessen.items() if name in _SQL_FASSUNGEN)
+
+    assert _ERSETZTE_VORKOMMEN == 6
+    assert sum(gemessen.values()) == 7
+    assert sql == 5
+    assert sum(gemessen.values()) - sql == 2

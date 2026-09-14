@@ -143,11 +143,25 @@ def group_position(representative_id: int, links: list[DuplicateLink]) -> tuple[
 
 
 # ----------------------------------------------------------------------------------------------
-# Der Ausschuss-Ueberlebender-Bestand - EIN Praedikat fuer sechs Stellen
+# Der Ausschuss-Ueberlebender-Bestand - eine Bedingung statt sechs ausgeschriebener Vorkommen
 # ----------------------------------------------------------------------------------------------
 #
 #     DISCARD ueberlebt nie · KEEP ueberlebt, solange duplicate_of IS NOT NULL ·
 #     sonst entscheidet suggested_status
+#
+# ZWEI ZAEHLWEISEN, DIE NICHT DIESELBE ZAHL ERGEBEN - und das ist kein Versehen:
+#
+# * ERSETZTE VORKOMMEN: SECHS. So zaehlen Spec 0374, ADR 0104 Punkt 3 und das Sicherheitskonzept,
+#   und so stand `PhotoScore.suggested_status IS NULL` vorher ausgeschrieben da.
+# * NEUE AUFRUFSTELLEN: SIEBEN. Die eine Bedingung zerfaellt in ZWEI Funktionen ("ueberlebt" und
+#   "offener Vorschlag", die seit ADR 0104 nicht mehr komplementaer sind), und "der Vorschlags-
+#   Zweig" war schon vorher zwei Codeformen - eine SQL- und eine Objektfassung, die der
+#   Paritaetstest aneinander band. Vier Aufrufe von `survives_ausschuss`, einer von
+#   `survives_ausschuss_for`, je einer von `has_open_suggestion`/`_for`.
+#
+# Die Sollgroesse des Waechters ist die ZWEITE Zahl (`tests/test_ausschuss_ueberlebende.py`); die
+# erste steht in den Dokumenten und wird dort nicht nachgezogen. Wer beide verwechselt, "korrigiert"
+# das Waechter-Dictionary auf sechs und haelt den dann roten Test fuer einen Fund.
 #
 # SICHERHEITSAUFLAGE (S1) - DASSELBE PRAEDIKAT IST DIE GRENZE DES HOMESERVERS. Es begrenzt, welche
 # Fotos den Homeserver Richtung Cloud-Anbieter verlassen duerfen, und gilt fuer JEDE Abfrage, die
@@ -175,8 +189,10 @@ def group_position(representative_id: int, links: list[DuplicateLink]) -> tuple[
 def _decision_subquery() -> ColumnElement[DuplicateDecision | None]:
     """Die Entscheidung zu DIESEM `PhotoScore`, als korrelierte Skalar-Unterabfrage.
 
-    Skalar und nicht als Join, damit keine Aufrufstelle eine Join-Buchfuehrung erbt: Das Praedikat
-    tritt an jeder der sechs Stellen als weiterer Konjunktionsteil in die BESTEHENDE Anweisung."""
+    Skalar und nicht als Join, damit keine Aufrufstelle eine Join-Buchfuehrung erbt: Die
+    SQL-Fassungen treten an jeder ihrer FUENF Aufrufstellen als weiterer Konjunktionsteil in die
+    BESTEHENDE Anweisung. Die beiden Objektfassungen in `api/photos.py` tun das gerade nicht - sie
+    lesen ein bereits geladenes Foto und kommen hier nie vorbei."""
     return (
         select(PhotoDuplicateDecision.decision)
         .where(PhotoDuplicateDecision.photo_id == PhotoScore.photo_id)

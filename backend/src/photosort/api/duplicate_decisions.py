@@ -12,11 +12,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_current_user, get_session
 from photosort.api.photos import (
-    _MAX_QUERY_POSITION,
+    MAX_QUERY_POSITION,
     DuplicateGroupOut,
     build_duplicate_group_out,
 )
@@ -76,13 +77,36 @@ async def _write(session: AsyncSession, photo_ids: list[int], decision: Duplicat
     Loeschen und neu einfuegen statt Zeile-fuer-Zeile-Abgleich: Der Primaerschluessel ist
     `photo_id`, ein naives `INSERT` liefe bei einer bestehenden Zeile in einen `IntegrityError`
     und damit in eine 500 auf einem alltaeglichen zweiten Druck. Beide Anweisungen liegen in
-    DERSELBEN Transaktion; ein Zwischenzustand ohne Zeile ist von aussen nie beobachtbar."""
+    DERSELBEN Transaktion; ein Zwischenzustand ohne Zeile ist von aussen nie beobachtbar.
+
+    SICHERHEIT (S9), zweite Haelfte: Das deckt den WIEDERHOLTEN Druck ab, nicht den
+    NEBENLAEUFIGEN. Committet die andere Sitzung zwischen unserem `DELETE` und unserem `INSERT`,
+    trifft das `INSERT` eine Zeile, die es beim `DELETE` noch nicht gab - und der
+    Primaerschluessel wirft. Der `flush` VOR dem `commit` des Endpunkts holt diesen Fehler an eine
+    Stelle, an der er sich in `409` uebersetzen laesst; ohne ihn faende ihn erst der `commit`, und
+    der Aufrufer bekaeme eine `500` auf einen alltaeglichen Doppeldruck zu zweit.
+
+    Bewusst getragen bleibt "der letzte Schreibende gewinnt": Es gibt keine
+    Optimistic-Locking-Pruefung, und im Regelfall - die andere Sitzung committet VOR unserem
+    `DELETE` - raeumt dieses die fremde Zeile weg und der zweite Schreibende setzt sich durch. Der
+    `409` gilt allein fuer das schmale Fenster dazwischen, und die Wiederholung loest ihn auf."""
     await session.execute(
         delete(PhotoDuplicateDecision).where(PhotoDuplicateDecision.photo_id.in_(photo_ids))
     )
     session.add_all(
         [PhotoDuplicateDecision(photo_id=photo_id, decision=decision) for photo_id in photo_ids]
     )
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Die Entscheidung zu dieser Duplikat-Gruppe wurde gerade veraendert. "
+                "Bitte erneut versuchen."
+            ),
+        ) from None
 
 
 @router.put(
@@ -90,8 +114,8 @@ async def _write(session: AsyncSession, photo_ids: list[int], decision: Duplicat
     response_model=DuplicateGroupOut,
 )
 async def set_duplicate_decision(
-    project_id: Annotated[int, Path(ge=1, le=_MAX_QUERY_POSITION)],
-    photo_id: Annotated[int, Path(ge=1, le=_MAX_QUERY_POSITION)],
+    project_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
+    photo_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
     payload: DuplicateDecisionIn,
     session: AsyncSession = Depends(get_session),
     # Ausschliesslich fuer die ANTWORT (S10) - siehe den Kopfkommentar dieser Datei. In die
@@ -122,7 +146,8 @@ async def set_duplicate_decision(
 
     `404` fuer ein Foto ohne Duplikat-Gruppe, ein unbekanntes Foto oder eines aus einem fremden
     Projekt (die drei sind nicht unterscheidbar), `422` fuer eine Pfad-Id ausserhalb der Grenzen
-    oder einen Koerper mit einem anderen Feld als `decision`."""
+    oder einen Koerper mit einem anderen Feld als `decision`, `409` bei einem gleichzeitigen
+    Schreibversuch, der sich nicht aufloesen laesst - nie eine `500`."""
     project = await _project_or_404(project_id, session)
     # SICHERHEIT (S7): Die Projektbindung steht ausgeschrieben, hier ueber die bereits
     # projektbegrenzte Kantenliste. Ein Foto eines fremden Projekts loest sich nicht auf und wird
@@ -143,8 +168,8 @@ async def set_duplicate_decision(
     response_model=DuplicateGroupOut,
 )
 async def set_duplicate_group_decision(
-    project_id: Annotated[int, Path(ge=1, le=_MAX_QUERY_POSITION)],
-    photo_id: Annotated[int, Path(ge=1, le=_MAX_QUERY_POSITION)],
+    project_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
+    photo_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
     payload: DuplicateDecisionIn,
     session: AsyncSession = Depends(get_session),
     # Wie beim Einzelweg: ausschliesslich fuer die Antwort (S10).
@@ -169,7 +194,9 @@ async def set_duplicate_group_decision(
 
     SICHERHEIT (S9): EINE Transaktion, ein `commit` ueber alle Zeilen. Eine halb entschiedene
     Gruppe waere eine willkuerliche Teilmenge im abfliessenden Bestand, ohne dass ein Lesepfad den
-    Zwischenzustand als solchen erkennt.
+    Zwischenzustand als solchen erkennt. Ein gleichzeitiger Schreibzugriff beider Nutzer auf
+    dieselbe Aufnahme wird `409`, nie `500` - und weil die Transaktion die GANZE Gruppe umfasst,
+    bleibt dann keine einzige ihrer Zeilen geschrieben.
 
     Antwortform und Fehlercodes wie beim Einzelweg."""
     project = await _project_or_404(project_id, session)

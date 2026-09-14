@@ -430,6 +430,16 @@
           "schluessel": "seitengrund",
           "stelle": "Hintergrund der Ansichtsseite",
           "grund": "Eine Penpot-Seite ist keine Form; eine Tokenbindung greift dort nicht. Der Grund ist aus dem Flächentoken gelesen und gesetzt, damit die Sichtprüfung gegen denselben Untergrund urteilt, gegen den der Kontrast gerechnet ist."
+        },
+        {
+          "schluessel": "kennzeichenbaustein",
+          "stelle": "Zustandskennzeichen der Aufnahmekarte (behalten / Ausschuss / noch offen)",
+          "grund": "Der Entwurf setzt dafür den Baustein badge; die Umsetzung tut es bewusst nicht. Eine voll gefüllte Fläche mit dunkler Tinte im Kennzeichen-Radius ist im Produkt die Form der Albumentscheidung, und ein Chip in der Aussortiert-Farbe wäre von ihr nicht zu unterscheiden — genau die Verwechslung, die der eigene Wertevorrat dieser Ansicht ausschließt. Das Kennzeichen steht stattdessen als Symbol plus Text im tokengebundenen Zustandsrahmen der Karte."
+        },
+        {
+          "schluessel": "zaehlerbaustein",
+          "stelle": "Gruppenzähler in der Seitenüberschrift",
+          "grund": "Der Entwurf setzt dafür den Baustein progress; die Umsetzung tut es bewusst nicht. Der Zähler nennt die Stelle in der Reihe der noch offenen Gruppen, nicht einen erledigten Anteil, und seine Bezugsmenge schrumpft mit jeder abgeschlossenen Gruppe. Ein Balken behauptete einen Fortschrittsanteil, den die Zahlen nicht tragen; der Zähler steht deshalb als Text."
         }
       ]
     }

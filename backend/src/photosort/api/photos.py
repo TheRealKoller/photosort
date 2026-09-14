@@ -1380,7 +1380,13 @@ async def _ranking_by_photo_id(
 #
 # Steht VOR `list_photos`, nicht erst vor dem Alternativen-Endpunkt: `Query(...)`-Vorgabewerte
 # werden zur DEFINITIONSZEIT ausgewertet, eine spaeter definierte Konstante bricht den Import.
-_MAX_QUERY_POSITION = 1_000_000_000
+#
+# OEFFENTLICH (kein fuehrender Unterstrich), weil die Grenze GETEILT ist: `api/duplicate_decisions.py`
+# zieht sie von hier. Ein geteilter Grenzwert soll nicht zweimal dastehen - zwei Zahlen liefen
+# auseinander, und die kleinere entschiede still, welche Anfrage `422` statt `404` bekommt. Die
+# aeltere Nachbildung in `api/cameras.py` bleibt vorerst stehen (eigener Wert, eigene Begruendung);
+# sie darf spaeter hierher zusammengezogen werden.
+MAX_QUERY_POSITION = 1_000_000_000
 
 
 @router.get("/projects/{project_id}/photos", response_model=PhotoListOut)
@@ -1415,8 +1421,8 @@ async def list_photos(
     # Ohne diesen Filter kann die Oberflaeche die beiden Fotos fuer den Versatz-Vorschlag nicht
     # anbieten. `ge=1` schliesst `0` und negative Werte aus, `le` verhindert, dass ein Wert
     # jenseits von 2^63 unter SQLite einen OverflowError und damit eine 500 statt einer leeren
-    # Liste erzeugt (Muster `_MAX_QUERY_POSITION`).
-    camera_id: int | None = Query(None, ge=1, le=_MAX_QUERY_POSITION),
+    # Liste erzeugt (Muster `MAX_QUERY_POSITION`).
+    camera_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -1781,8 +1787,8 @@ async def build_duplicate_group_out(
 
 @router.get("/projects/{project_id}/duplicate-groups/{photo_id}", response_model=DuplicateGroupOut)
 async def duplicate_group(
-    project_id: Annotated[int, PathParam(ge=1, le=_MAX_QUERY_POSITION)],
-    photo_id: Annotated[int, PathParam(ge=1, le=_MAX_QUERY_POSITION)],
+    project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
+    photo_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
     session: AsyncSession = Depends(get_session),
     # SICHERHEIT: ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE router-weite
     # `dependencies`-Liste (siehe Kopfkommentar der Datei) - ein Endpunkt, der diesen Parameter
@@ -1833,13 +1839,13 @@ async def draft_alternatives(
     # 2^63 unter SQLite einen `OverflowError` und damit eine 500 statt einer leeren Liste erzeugt.
     # FastAPI spiegelt bei `422` den Rohwert im `input`-Feld zurueck - er wird ausschliesslich als
     # React-Textknoten gerendert, nie geloggt.
-    event_id: int = Query(..., ge=1, le=_MAX_QUERY_POSITION),
-    photo_id: int = Query(..., ge=1, le=_MAX_QUERY_POSITION),
+    event_id: int = Query(..., ge=1, le=MAX_QUERY_POSITION),
+    photo_id: int = Query(..., ge=1, le=MAX_QUERY_POSITION),
     # `limit <= 200` deckelt zugleich die schwere Hydratation ueber `_photos_by_id` mit ihren
     # `selectinload`s - sie laeuft ausschliesslich ueber die angeforderte Seite, nie ueber die
     # ganze Restmenge.
     limit: int = Query(60, ge=1, le=200),
-    offset: int = Query(0, ge=0, le=_MAX_QUERY_POSITION),
+    offset: int = Query(0, ge=0, le=MAX_QUERY_POSITION),
     session: AsyncSession = Depends(get_session),
     # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei), und
@@ -2024,8 +2030,8 @@ class DraftExchangeIn(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    photo_id: int = Field(ge=1, le=_MAX_QUERY_POSITION)
-    replaced_photo_id: int = Field(ge=1, le=_MAX_QUERY_POSITION)
+    photo_id: int = Field(ge=1, le=MAX_QUERY_POSITION)
+    replaced_photo_id: int = Field(ge=1, le=MAX_QUERY_POSITION)
 
 
 class DraftExchangeOut(BaseModel):

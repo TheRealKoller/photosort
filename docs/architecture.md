@@ -549,13 +549,16 @@ Verarbeitungs-Cache (Thumbnails).
       > `discard` überlebt nie · `keep` überlebt, solange `duplicate_of IS NOT NULL` · sonst
       > entscheidet `suggested_status`
 
-      **Vier** der sechs Verwendungsstellen bestimmen unmittelbar, welche Fotos den Homeserver
+      Aus den sechs ersetzten Vorkommen werden **sieben** Aufrufstellen — die eine Bedingung
+      zerfällt in zwei Funktionen („überlebt" und „offener Vorschlag", seit ADR 0104 nicht mehr
+      komplementär), und „der Vorschlags-Zweig" war schon vorher eine SQL- und eine Objektfassung.
+      **Vier** der sieben Aufrufstellen bestimmen unmittelbar, welche Fotos den Homeserver
       Richtung Cloud-Anbieter verlassen: `worker.py::run_criterion_scoring` (speist zugleich den
       Sehenswürdigkeits-Teilschritt), `worker.py::select_remote_category_candidates` und die beiden
       **vorgelagerten Kostenschätzungen** in `api/projects.py`. Die Schätzungen folgen der Auswahl
       nicht von selbst — sie sind eigene Anweisungen und müssen dieselbe Menge zählen, die der Lauf
       sendet, sonst beruht die Freigabe eines kostenpflichtigen Laufs auf einer Zahl, die nicht
-      gilt. Die übrigen zwei (`api/photos.py`) sind Anzeige. Das Prädikat prüft **positiv auf
+      gilt. Die übrigen drei (`api/photos.py`) sind Anzeige. Das Prädikat prüft **positiv auf
       `keep`** und behandelt „keine Zeile" als ausdrückliches `IS NULL` auf die Unterabfrage: Die
       Spalte ist eine Zeichenkette ohne DB-seitigen Wertevorrat, ein unerwarteter Wert muss zur
       zurückhaltenden Seite fallen, und `<Unterabfrage> != 'discard'` ergäbe bei fehlender Zeile

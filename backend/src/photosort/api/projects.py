@@ -281,7 +281,7 @@ class ProjectOut(BaseModel):
     effective_selection_target: int
 
 
-# SICHERHEIT (S3) - Obergrenze des Richtwerts, im Muster von `api/photos.py::_MAX_QUERY_POSITION`:
+# SICHERHEIT (S3) - Obergrenze des Richtwerts, im Muster von `api/photos.py::MAX_QUERY_POSITION`:
 # ein Pydantic-`int` ist unbeschraenkt, der Wert wird in eine INTEGER-Spalte geschrieben und geht
 # in `⌈0,25·T⌉`/`⌈T/m⌉`/`T − m`; jenseits von 2^63 ergibt das unter SQLite einen `OverflowError`
 # und damit eine 500 statt einer 422.
