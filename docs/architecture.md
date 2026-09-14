@@ -89,7 +89,9 @@ Verarbeitungs-Cache (Thumbnails).
   `Authorization: Bearer`-Header, kein Cookie); Anbindung an OpenCloud via WebDAV; stößt
   Hintergrund-Jobs im Worker an.
   - `/opencloud/browse`, `/projects` (CRUD + Scan-Trigger), OpenCloud-Client (`opencloud/client.py`,
-    `opencloud/webdav_xml.py`, `opencloud/exif.py`).
+    `opencloud/webdav_xml.py`, `opencloud/exif.py`). `ProjectOut` trägt die Bestandszahlen
+    `photo_count`/`taken_at_earliest`/`taken_at_latest`; `GET /projects` lädt sie für **alle**
+    Projekte in **einer** gruppierten Abfrage (`photo_aggregates.py`), nicht je Projekt.
   - `POST /auth/login`, `get_current_user`-Dependency (Argon2/PyJWT gemäß
     [`decisions/0005-auth-implementation.md`](../specs/decisions/0005-auth-implementation.md)),
     `/projects`- und `/opencloud`-Router sind auth-pflichtig (Router-Level-Dependency).
@@ -972,6 +974,20 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Ableitung lebt an genau einer Stelle (`selection.py::effective_target`), und `ProjectOut` trägt
     beide Werte (`selection_target`, `effective_selection_target`), damit das Frontend die zweite
     nicht selbst bildet. Projektweit, ohne `user_id`-Bezug.
+  - **Bestandszahlen an `ProjectOut`** *(Spec
+    [`0375`](../specs/features/0375-projektuebersicht-umfang-und-naechster-schritt.md), ADR
+    [`decisions/0103-bestandszahlen-an-projectout-stand-bleibt-frontend-ableitung.md`](../specs/decisions/0103-bestandszahlen-an-projectout-stand-bleibt-frontend-ableitung.md))*:
+    ohne Migration, additiv `photo_count: int`, `taken_at_earliest`/`taken_at_latest:
+    datetime | None`. **`photo_count == 0` ist eine Aussage, die beiden `null` sind ihre
+    Abwesenheit** — das Frontend unterscheidet sichtbar zwischen „0 Fotos" und dem Strich „keine
+    Angabe". Die drei Werte entstehen an genau einer Stelle
+    (`photo_aggregates.py`: `COUNT`/`MIN`/`MAX` über `photos` mit `GROUP BY project_id`) und
+    speisen **sowohl** `ProjectOut` **als auch** `GET /projects/{id}/stats`; ein Projekt ohne Fotos
+    fehlt in der Gruppierung und bekommt die benannte Vorgabe `(0, None, None)`. `photo_count`
+    speist zugleich `effective_selection_target` — es ist dieselbe Zahl, die die Antwort ausweist,
+    keine zweite Zählung daneben. Der **Bearbeitungsstand** wird bewusst **kein** Feld: er bleibt
+    Frontend-Ableitung (`utils/pipelineSteps.ts`), weil dieselbe Ableitung das Ziel der
+    Weiterleitung von `/projects/:id` bestimmt und ein zweiter Ort dafür auseinanderliefe.
 - **OpenCloud-Verbindung**: kein eigenes DB-Modell — eine einzige, instanzweite Verbindung,
   konfiguriert über
   `OPENCLOUD_BASE_URL`/`OPENCLOUD_USERNAME`/`OPENCLOUD_APP_TOKEN`/`OPENCLOUD_DRIVE_NAME` in `.env`.

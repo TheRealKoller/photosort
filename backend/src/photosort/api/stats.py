@@ -39,6 +39,11 @@ from photosort.motifs import (
     MOTIF_STRENGTH_BAND_MEDIUM,
     MOTIF_STRENGTH_BAND_STRONG,
 )
+from photosort.photo_aggregates import (
+    photo_count_expression,
+    taken_at_earliest_expression,
+    taken_at_latest_expression,
+)
 from photosort.thumbnails import measure_cache_usage
 
 # EIN aggregierender Nur-Lese-Endpunkt je Projekt. Ein Endpunkt statt mehrerer, weil die Seite eine
@@ -556,6 +561,13 @@ async def get_project_stats(
     # Eine Abfrage ueber `photos` LEFT JOIN `photo_scores` (1:1, `photo_id` ist dort Primary Key -
     # der Join vervielfacht keine Zeile) statt zwei: Umfang, Speicher, Aufnahmezeitraum und die
     # drei Kennzahlen aus der Ausschuss-Schicht auf einer gemeinsamen FROM-Klausel.
+    #
+    # Die ersten drei Werte kommen aus `photo_aggregates.py` und werden hier NICHT selbst
+    # geschrieben: dieselben drei Zahlen stehen an `ProjectOut`, und zwei Definitionen liefen
+    # auseinander. SICHERHEIT (Spec 0375, S3): `RatingsOut.unrated` wird unten als
+    # `photo_count - eigene Bewertungen` gerechnet - der geteilte Zaehlausdruck muss unter dem
+    # LEFT JOIN weiterhin genau eine Zeile je Foto zaehlen. Waere der Join einmal 1:N, zaehlte er
+    # still zu hoch, und `unrated` wuerde groesser als der Bestand.
     (
         photo_count,
         opencloud_bytes,
@@ -566,11 +578,11 @@ async def get_project_stats(
     ) = (
         await session.execute(
             select(
-                func.count(Photo.id),
+                photo_count_expression(),
                 # SUM liefert bei 0 Fotos NULL, nicht 0 - serverseitig normalisiert.
                 func.coalesce(func.sum(Photo.content_length), 0),
-                func.min(Photo.taken_at),
-                func.max(Photo.taken_at),
+                taken_at_earliest_expression(),
+                taken_at_latest_expression(),
                 func.count().filter(PhotoScore.photo_id.is_not(None)),
                 func.count().filter(PhotoScore.duplicate_of.is_not(None)),
             )
