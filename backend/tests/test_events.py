@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Sequence
+import math
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime, timedelta
-from itertools import permutations
+from itertools import permutations, product
 from pathlib import Path
 
+import pytest
+
+from photosort import events as events_module
 from photosort.events import (
     EVENT_EXTENT_MAX_METERS,
     BoundarySignal,
@@ -24,6 +29,7 @@ from photosort.events import (
     default_signals,
     event_for_time,
     infer_locations,
+    motif_change_starts,
 )
 from photosort.places import MAX_PLACE_NAME_LENGTH, PlaceInfo
 from photosort.scoring import (
@@ -31,6 +37,7 @@ from photosort.scoring import (
     TIME_CLUSTER_GAP,
     haversine_meters,
 )
+from photosort.selection import MOTIF_PRESENCE_THRESHOLD
 
 SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "photosort"
 
@@ -66,6 +73,7 @@ def _measured_candidate(
     lat: float = BASE_LAT,
     lon: float = BASE_LON,
     landmark_name: str | None = None,
+    motif_strengths: Mapping[str, float] | None = None,
 ) -> EventCandidate:
     """Ein Kandidat mit EIGENER, gemessener Koordinate."""
     return EventCandidate(
@@ -75,6 +83,7 @@ def _measured_candidate(
         gps_lat=lat,
         gps_lon=lon,
         landmark_name=landmark_name,
+        motif_strengths=motif_strengths,
     )
 
 
@@ -109,6 +118,78 @@ def _placeless_candidate(
         gps_lon=None,
         landmark_name=landmark_name,
     )
+
+
+# Die Staerken der Motivfaelle stehen ausschliesslich als SYMBOL zur Praesenzgrenze - kein Fall
+# nennt ihren Zahlwert. `_AT_THRESHOLD` und `_JUST_BELOW` sind das Paar, an dem ein in `events.py`
+# nachgebautes `>` statt des geteilten inklusiven `>=` rot wird.
+_ABOVE = 1.0
+_AT_THRESHOLD = MOTIF_PRESENCE_THRESHOLD
+_JUST_BELOW = math.nextafter(MOTIF_PRESENCE_THRESHOLD, 0.0)
+_BELOW = 0.0
+
+# Vier frei gewaehlte Schluessel: `events.py` kennt das Motiv-Vokabular nicht und darf es nicht
+# kennen - fuer die Regel zaehlt allein die MENGE der getragenen Schluessel.
+_MOTIF_KEYS = ("a", "b", "c", "d")
+
+
+def _picture(*carried: str) -> dict[str, float]:
+    """Eine Motiv-Kopfzeile, die GENAU die genannten Motive traegt.
+
+    Die uebrigen stehen ausgeschrieben unter der Grenze - `_picture()` ist damit die vorhandene
+    Kopfzeile ohne ein einziges getragenes Motiv (das leere Motivbild) und ausdruecklich etwas
+    anderes als `None` (keine Kopfzeile)."""
+    strengths = {key: _BELOW for key in _MOTIF_KEYS}
+    strengths.update({key: _ABOVE for key in carried})
+    return strengths
+
+
+def _motif_candidates(
+    pictures: Sequence[Mapping[str, float] | None], *, excluded: Collection[int] = ()
+) -> list[EventCandidate]:
+    """Kandidaten aus einer Folge von Motiv-Kopfzeilen - `photo_id` IST der Index.
+
+    Ohne Ort, ohne Namen und mit einem Sekundenabstand: kein anderes Trennsignal spricht mit,
+    gleich wie lang die Folge wird. Nur so darf die Laenge aus dem Symbol
+    `MOTIF_CHANGE_CONFIRMING_PHOTOS` wachsen, ohne dass Zeitluecke oder Tagesgrenze dazwischen-
+    geraten."""
+    return [
+        EventCandidate(
+            photo_id=index,
+            taken_at=T0 + index * EPSILON_TIME,
+            motif_strengths=None if picture is None else dict(picture),
+            excluded_document=index in excluded,
+        )
+        for index, picture in enumerate(pictures)
+    ]
+
+
+class _UnderEveryConfirmingWindow:
+    """Jeder Fall einer erbenden Klasse laeuft unter MEHREREN Fensterlaengen.
+
+    Die Fensterlaenge ist eine aenderbare, unkalibrierte Festlegung; kein Fall darf ihren Zahlwert
+    pinnen. Die Faelle bauen ihre Folgen deshalb aus `_window()` statt aus einer Zahl, und diese
+    Fixture setzt die Modulkonstante auf jeden Wert der Liste. Ein Fall, der den Zahlwert doch
+    spiegelt, wird unter mindestens einem Parameter rot.
+
+    VORAUSSETZUNG, die still braeche: Die Konstante wird als MODULATTRIBUT gelesen
+    (`events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS`, siehe `_window`). Ein `from ... import` baende
+    den Wert beim Import des Testmoduls, und die Faelle waeren unter der Fixture falsch
+    dimensioniert."""
+
+    @pytest.fixture(
+        autouse=True,
+        params=sorted({2, 5, events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS}),
+    )
+    def _confirming_window(
+        self, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(events_module, "MOTIF_CHANGE_CONFIRMING_PHOTOS", request.param)
+
+
+def _window() -> int:
+    """Die aktuell geltende Fensterlaenge - als Modulattribut gelesen, nie als Zahl."""
+    return events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS
 
 
 def assert_event_invariants(
@@ -603,6 +684,412 @@ class TestSignalsAreNeverShortCircuited:
         assert sorted(spy.begun + spy.advanced) == [1, 2, 3]
         assert spy.begun == [1, 3]
         assert spy.advanced == [2]
+
+
+class TestTheMotifChangeRule(_UnderEveryConfirmingWindow):
+    """Die REINE Regel, direkt an `motif_change_starts` gemessen.
+
+    Sie ist keine paarweise Frage, sondern eine Segmentierung ueber die ganze Folge - ihr Ergebnis
+    ist eine Indexmenge und damit direkt beobachtbar. Ein Nachweis allein durch `build_events`
+    hindurch saehe die Rueckwirkung nicht."""
+
+    def test_a_newly_carried_motif_starts_a_new_event(self) -> None:
+        candidates = _motif_candidates([_picture("a")] + [_picture("a", "b")] * _window())
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_a_dropped_motif_starts_a_new_event(self) -> None:
+        """Die symmetrische Differenz ist SYMMETRISCH: der Wegfall trennt wie das Hinzukommen."""
+        candidates = _motif_candidates([_picture("a", "b")] + [_picture("a")] * _window())
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_a_changed_strongest_motif_within_the_same_carried_set_starts_nothing(self) -> None:
+        """Untersagt ist der Wechsel des STAERKSTEN Motivs (er benennt eine Rangfolge zwischen
+        Motiven) - entschieden wird ueber die getragene Menge, und die ist hier unveraendert."""
+        candidates = _motif_candidates(
+            [{"a": _ABOVE, "b": _AT_THRESHOLD}] + [{"a": _AT_THRESHOLD, "b": _ABOVE}] * _window()
+        )
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_a_strength_change_below_the_threshold_starts_nothing(self) -> None:
+        """Kein Gesamtabstand ueber die Staerken: unterhalb der Grenze ist jede Bewegung
+        dasselbe leere Motivbild."""
+        candidates = _motif_candidates([{"a": _BELOW}] + [{"a": _JUST_BELOW}] * _window())
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_the_presence_threshold_is_inclusive_and_not_rebuilt(self) -> None:
+        """Beide Haelften in EINEM Fall - ein in `events.py` nachgebautes `>` liesse die erste
+        leer und bliebe in der zweiten gruen.
+
+        Genau auf der Grenze gilt ein Motiv als getragen, knapp darunter nicht."""
+        exactly_at = _motif_candidates([{"a": _JUST_BELOW}] + [{"a": _AT_THRESHOLD}] * _window())
+        just_below = _motif_candidates([{"a": _BELOW}] + [{"a": _JUST_BELOW}] * _window())
+
+        assert motif_change_starts(exactly_at) == frozenset({1})
+        assert motif_change_starts(just_below) == frozenset()
+
+    def test_the_reference_is_the_opening_photo_and_not_the_predecessor(self) -> None:
+        """Eine Folge, die sich Foto fuer Foto um je EIN Motiv weiterschiebt.
+
+        Gegen den jeweiligen Vorgaenger gemessen traete nie eine Grenze ein: jedes Foto zeigt
+        gegenueber seinem Vorgaenger ein ANDERES geaendertes Motiv, und kein Fenster kaeme je
+        zustande. Gegen das eroeffnende Foto gemessen trennt das Abdriften."""
+        candidates = _motif_candidates(
+            [_picture(*(f"m{step}" for step in range(count + 1))) for count in range(_window() + 1)]
+        )
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_the_start_is_the_first_photo_of_the_window_not_the_confirming_one(self) -> None:
+        """DIE RUECKWIRKUNG. Geprueft wird der Index selbst, nicht nur, DASS getrennt wird."""
+        candidates = _motif_candidates([_picture("a")] * 2 + [_picture("a", "b")] * _window())
+
+        assert motif_change_starts(candidates) == frozenset({2})
+
+    def test_confirmation_does_not_require_an_identical_picture(self) -> None:
+        """Bestaetigt ist der Wechsel, wenn MINDESTENS EINES der zuerst geaenderten Motive
+        weiterhin geaendert ist - ein zusaetzlich getragenes Motiv reisst ihn nicht ab."""
+        candidates = _motif_candidates(
+            [_picture("a"), _picture("a", "b"), _picture("a", "b", "c")]
+            + [_picture("a", "b")] * (_window() - 2)
+        )
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_a_window_one_photo_short_then_a_return_to_the_reference_starts_nothing(self) -> None:
+        candidates = _motif_candidates(
+            [_picture("a")] + [_picture("a", "b")] * (_window() - 1) + [_picture("a")]
+        )
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_a_decayed_window_followed_by_a_full_one_starts_at_the_second_window(self) -> None:
+        candidates = _motif_candidates(
+            [_picture("a")]
+            + [_picture("a", "b")] * (_window() - 1)
+            + [_picture("a")]
+            + [_picture("a", "b")] * _window()
+        )
+
+        assert motif_change_starts(candidates) == frozenset({_window() + 1})
+
+    def test_a_single_deviating_photo_never_starts_an_event(self) -> None:
+        """Der verhaltensnahe Zwilling der Ungleichung `MOTIF_CHANGE_CONFIRMING_PHOTOS >= 2`:
+        beide werden bei `1` rot, und das ist die zugesagte Wirkung."""
+        candidates = _motif_candidates(
+            [_picture("a"), _picture("a", "b")] + [_picture("a")] * _window()
+        )
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_the_window_length_is_at_least_two(self) -> None:
+        """Die EINE Aussage ueber den Zahlwert, und sie ist eine Ungleichung."""
+        assert events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS >= 2
+
+    def test_zero_is_never_a_start_and_every_start_is_a_valid_index(self) -> None:
+        """Ein Index `0` waere ein leeres fuehrendes Event - er setzt einen bereits gesetzten
+        Bezug voraus und kann deshalb nicht entstehen."""
+        candidates = _motif_candidates([_picture("a")] + [_picture("b")] * _window())
+
+        starts = motif_change_starts(candidates)
+
+        assert 0 not in starts
+        assert starts <= set(range(len(candidates)))
+        assert starts
+
+    def test_candidates_without_any_motif_information_yield_no_start(self) -> None:
+        """Die Vorgabewerte von `EventCandidate`: ohne Motivangabe liefert die erste Stufe die
+        leere Menge und der Durchlauf ist der bisherige."""
+        candidates = [_placeless_candidate(index, _at(minutes=index)) for index in range(1, 6)]
+
+        assert motif_change_starts(candidates) == frozenset()
+
+
+class TestWhichPhotosSpeakForTheMotifChange(_UnderEveryConfirmingWindow):
+    """Die drei Zustaende: keine Kopfzeile, leeres Motivbild, ausgeschlossenes Dokument.
+
+    Der erste und der dritte heissen "redet nicht mit", der zweite redet VOLL mit. Fielen zwei
+    davon zusammen, waere genau einer der Zwillingsfaelle rot - in welche Richtung sie auch
+    zusammenfallen."""
+
+    def test_a_missing_header_is_not_an_empty_motif_picture(self) -> None:
+        """DAS ZWILLINGSPAAR: identisch gebaute Folgen, die sich NUR in `None` gegen die
+        vorhandene Kopfzeile ohne getragenes Motiv unterscheiden - mit entgegengesetzter
+        Erwartung. Ein einzelner Fall bewiese hier nichts."""
+        without_header = _motif_candidates([_picture("a")] + [None] * _window())
+        empty_picture = _motif_candidates([_picture("a")] + [_picture()] * _window())
+
+        assert motif_change_starts(without_header) == frozenset()
+        assert motif_change_starts(empty_picture) == frozenset({1})
+
+    def test_a_photo_without_a_header_never_starts_an_event(self) -> None:
+        candidates = _motif_candidates([_picture("a")] + [None] * _window() + [_picture("a")])
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_a_photo_without_a_header_does_not_decay_a_running_window(self) -> None:
+        candidates = _motif_candidates(
+            [_picture("a")] + [_picture("a", "b")] * (_window() - 1) + [None] + [_picture("a", "b")]
+        )
+
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_a_photo_without_a_header_counts_in_no_window(self) -> None:
+        """Dieselbe Folge wie oben, nur ohne das bestaetigende Foto dahinter: zaehlte das
+        unklassifizierte mit, waere das Fenster hier bereits voll."""
+        candidates = _motif_candidates(
+            [_picture("a")] + [_picture("a", "b")] * (_window() - 1) + [None]
+        )
+
+        assert motif_change_starts(candidates) == frozenset()
+
+    def test_an_excluded_document_is_not_an_empty_motif_picture(self) -> None:
+        """Das Zwillingspaar ein zweites Mal - dieselben Kopfzeilen, nur einmal ausgeschlossen."""
+        deviating = [_picture("a")] + [_picture("a", "b")] * _window()
+        excluded_indices = range(1, _window() + 1)
+
+        assert motif_change_starts(_motif_candidates(deviating)) == frozenset({1})
+        assert (
+            motif_change_starts(_motif_candidates(deviating, excluded=excluded_indices))
+            == frozenset()
+        )
+
+    def test_an_excluded_document_never_starts_an_event(self) -> None:
+        pictures = [_picture("a")] + [_picture("b")] * _window() + [_picture("a")]
+        excluded_indices = range(1, _window() + 1)
+
+        assert motif_change_starts(_motif_candidates(pictures, excluded=excluded_indices)) == (
+            frozenset()
+        )
+
+    def test_an_excluded_document_does_not_decay_a_running_window(self) -> None:
+        pictures = (
+            [_picture("a")]
+            + [_picture("a", "b")] * (_window() - 1)
+            + [_picture("a")]
+            + [_picture("a", "b")]
+        )
+
+        starts = motif_change_starts(_motif_candidates(pictures, excluded={_window()}))
+
+        assert starts == frozenset({1})
+
+    def test_an_excluded_document_counts_in_no_window(self) -> None:
+        pictures = [_picture("a")] + [_picture("a", "b")] * _window()
+
+        starts = motif_change_starts(_motif_candidates(pictures, excluded={_window()}))
+
+        assert starts == frozenset()
+
+
+class TestTheMotifChangeInsideBuildEvents(_UnderEveryConfirmingWindow):
+    """Die zweite Stufe: der erzwungene Start neben den fuenf unveraenderten Signalen."""
+
+    def test_the_story_case_yields_two_events_where_no_other_signal_would(self) -> None:
+        """Ruinenbesuch, danach Mittagessen um die Ecke - und der ROT-ANKER daneben: dieselbe
+        Folge ohne Motivangaben ergibt genau EIN Event.
+
+        Kein anderes Signal kann den Fall erklaeren: Minutenabstand (unter der Zeitluecke),
+        50 m je Schritt (unter Schritt- und Ausdehnungsschwelle), derselbe Kalendertag, kein
+        Sehenswuerdigkeitsname."""
+        ruins = _picture("ruine")
+        lunch = _picture("essen")
+        candidates = [
+            _measured_candidate(
+                index,
+                _at(minutes=index),
+                lat=_north(index * EPSILON_METERS),
+                motif_strengths=picture,
+            )
+            for index, picture in enumerate([ruins, ruins] + [lunch] * _window())
+        ]
+        without_motifs = [replace(candidate, motif_strengths=None) for candidate in candidates]
+
+        events = _build(candidates, default_signals())
+
+        assert [event.photo_ids for event in _build(without_motifs, default_signals())] == [
+            tuple(range(len(candidates)))
+        ]
+        assert [event.photo_ids for event in events] == [
+            (0, 1),
+            tuple(range(2, len(candidates))),
+        ]
+
+    def test_an_atypical_opening_photo_becomes_an_event_of_its_own(self) -> None:
+        """Ein Event aus einem einzigen Foto ist zugesagt, nicht versehentlich - die Kehrseite
+        des festen Bezugs auf das eroeffnende Foto."""
+        candidates = _motif_candidates([_picture("a")] + [_picture("b")] * _window())
+
+        events = _build(candidates, default_signals())
+
+        assert [event.photo_ids for event in events] == [(0,), tuple(range(1, _window() + 1))]
+
+    def test_a_photo_that_does_not_speak_stays_a_member_of_its_event(self) -> None:
+        """UEBERGANGEN HEISST NIE AUSGESCHLOSSEN: das unklassifizierte (Index 1) und das als
+        Dokument ausgeschlossene Foto (Index 2) lenken die Gliederung nicht und stehen trotzdem
+        beide in ihrem Event."""
+        pictures = [_picture("a"), None, _picture("a")] + [_picture("a", "b")] * _window()
+        candidates = _motif_candidates(pictures, excluded={2})
+
+        events = _build(candidates, default_signals())
+
+        assert [event.photo_ids for event in events] == [
+            (0, 1, 2),
+            tuple(range(3, _window() + 3)),
+        ]
+
+    def test_a_forced_start_asks_every_signal_and_then_begins_it(self) -> None:
+        """Die tragende Annahme der zweiten Stufe: ein erzwungener Start wirkt wie jede andere
+        Grenze. Jedes Signal wird auch dort GEFRAGT - sonst haengt seine Fortschreibung an der
+        Listenposition - und bekommt danach `begin`, nicht `advance`."""
+        spy = _SpySignal()
+        candidates = _motif_candidates([_picture("a")] * 2 + [_picture("a", "b")] * _window())
+
+        _build(candidates, [spy])
+
+        assert spy.asked == [candidate.photo_id for candidate in candidates]
+        assert spy.begun == [0, 2]
+        assert spy.advanced == [1, *range(3, _window() + 2)]
+
+    def test_a_forced_start_resets_the_extent_and_can_drop_a_later_boundary(self) -> None:
+        """DIE KEHRSEITE der Ruecksetzung, und der Grund, warum ein Superset-Vergleich der
+        Grenzindizes mit dem motivfreien Lauf die falsche Zusage waere: Hier verschwindet die
+        Ausdehnungsgrenze am letzten Foto, weil an frueherer Stelle bereits getrennt wurde.
+
+        Die Schrittweite ist aus `EVENT_EXTENT_MAX_METERS` gebaut: ueber alle Fotos reisst die Box
+        die Schwelle, ab dem erzwungenen Start nicht mehr. Nur das Ausdehnungssignal ist im Spiel -
+        die Schrittweite laege ueber der Schrittschwelle."""
+        step = (EVENT_EXTENT_MAX_METERS - EPSILON_METERS) / (_window() - 1)
+        candidates = [
+            _measured_candidate(
+                index,
+                _at(minutes=index),
+                lat=_north(index * step),
+                motif_strengths=picture,
+            )
+            for index, picture in enumerate([_picture("a")] + [_picture("a", "b")] * _window())
+        ]
+        without_motifs = [replace(candidate, motif_strengths=None) for candidate in candidates]
+
+        assert [event.photo_ids for event in _build(without_motifs, [ExtentSignal()])] == [
+            tuple(range(_window())),
+            (_window(),),
+        ]
+        assert [event.photo_ids for event in _build(candidates, [ExtentSignal()])] == [
+            (0,),
+            tuple(range(1, _window() + 1)),
+        ]
+
+    def test_a_motif_boundary_on_an_index_that_already_splits_changes_nothing(self) -> None:
+        """Faellt die Motivgrenze auf einen Index, an dem ohnehin getrennt wird, sind Anzahl,
+        Mitgliedschaft und Positionen identisch zum motivfreien Lauf."""
+        # Der Abstand zum Foto davor (das selbst bei `T0 + EPSILON_TIME` liegt) muss die Luecke
+        # ECHT ueberschreiten - `TimeGapSignal` vergleicht mit `>`, nicht mit `>=`.
+        after_the_gap = T0 + TIME_CLUSTER_GAP + 2 * EPSILON_TIME
+        times = [T0, T0 + EPSILON_TIME] + [
+            after_the_gap + index * EPSILON_TIME for index in range(_window())
+        ]
+        candidates = [_placeless_candidate(index, taken_at) for index, taken_at in enumerate(times)]
+        candidates = [
+            replace(candidate, motif_strengths=picture)
+            for candidate, picture in zip(
+                candidates,
+                [_picture("a")] * 2 + [_picture("a", "b")] * _window(),
+                strict=True,
+            )
+        ]
+        without_motifs = [replace(candidate, motif_strengths=None) for candidate in candidates]
+
+        events = _build(candidates, default_signals())
+        reference = _build(without_motifs, default_signals())
+
+        assert [(event.photo_ids, event.position) for event in events] == [
+            (event.photo_ids, event.position) for event in reference
+        ]
+
+    def test_a_window_spanning_midnight_keeps_both_boundaries(self) -> None:
+        """Der rueckwirkende Beginn liegt auf dem VORTAG, das bestaetigende Foto dahinter.
+        Beide Grenzen entstehen, und kein Event reicht ueber die Tagesgrenze.
+
+        Braucht `default_signals()`: der injizierte Signalsatz der uebrigen Faelle kennt
+        `DayBoundarySignal` nicht."""
+        before_midnight = datetime(2026, 7, 20, 23, 30, 0)
+        last_of_the_day = datetime(2026, 7, 20, 23, 59, 59)
+        after_midnight = datetime(2026, 7, 21, 0, 0, 0)
+        times = [before_midnight, before_midnight + EPSILON_TIME, last_of_the_day] + [
+            after_midnight + index * EPSILON_TIME for index in range(_window() - 1)
+        ]
+        candidates = [
+            EventCandidate(photo_id=index, taken_at=taken_at, motif_strengths=picture)
+            for index, (taken_at, picture) in enumerate(
+                zip(
+                    times,
+                    [_picture("a")] * 2 + [_picture("a", "b")] * _window(),
+                    strict=True,
+                )
+            )
+        ]
+
+        events = _build(candidates, default_signals())
+
+        assert [event.photo_ids for event in events] == [
+            (0, 1),
+            (2,),
+            tuple(range(3, _window() + 2)),
+        ]
+        for event in events:
+            assert event.started_at.date() == event.ended_at.date()
+
+    def test_a_run_without_any_carried_motif_groups_exactly_as_one_without_motif_fields(
+        self,
+    ) -> None:
+        """Traegt kein Foto ein getragenes Motiv - weder als fehlende Kopfzeile noch als leeres
+        Motivbild -, sind Anzahl, Mitgliedschaft und Positionen die bisherigen."""
+        offsets = [0, 30, 61, 95, 400, 460, 461, 900, 1400, 1450]
+        plain = [
+            _placeless_candidate(index, _at(minutes=offset))
+            for index, offset in enumerate(offsets, start=1)
+        ]
+        empty_pictures = [replace(candidate, motif_strengths=_picture()) for candidate in plain]
+
+        reference = [
+            (event.photo_ids, event.position) for event in _build(plain, default_signals())
+        ]
+
+        assert [
+            (event.photo_ids, event.position) for event in _build(empty_pictures, default_signals())
+        ] == reference
+
+
+class TestEveryShortSequenceOverATinyMotifAlphabet(_UnderEveryConfirmingWindow):
+    """Eine ERSCHOEPFENDE AUFZAEHLUNG an der Stelle, an der sonst Property-Testing staende -
+    `hypothesis` waere eine ADR-pflichtige neue Abhaengigkeit, und hier braucht es keinen Zufall.
+
+    Aufgezaehlt werden ALLE Folgen der Laenge `MOTIF_CHANGE_CONFIRMING_PHOTOS + 2` ueber vier
+    Motivbildern: keine Kopfzeile, leeres Motivbild, ein Motiv, zwei Motive. Das deckt die Formen
+    ab, die eine handverlesene Fallmenge nicht aufzaehlt (leeres fuehrendes Event, Index 0, ein
+    Foto in zwei Events).
+
+    ZULAESSIG ist die Form nur, solange Alphabet und Laenge winzig bleiben: die Zahl der Laeufe
+    waechst exponentiell, und jeder einzelne muss linear und DB-frei sein."""
+
+    def test_every_sequence_keeps_the_invariants_and_the_index_promises(self) -> None:
+        alphabet = (None, _picture(), _picture("a"), _picture("a", "b"))
+
+        for combination in product(alphabet, repeat=_window() + 2):
+            candidates = _motif_candidates(list(combination))
+            starts = motif_change_starts(candidates)
+
+            assert 0 not in starts, combination
+            assert starts <= set(range(len(candidates))), combination
+            # Kein anderes Signal spricht bei diesen Kandidaten mit (Sekundenabstand, kein Ort,
+            # kein Name): JEDER erzwungene Start ist damit genau eine Event-Grenze und keine
+            # weitere entsteht.
+            events = _build(candidates, default_signals())
+            assert [event.photo_ids[0] for event in events] == [0, *sorted(starts)], combination
 
 
 def _reference_time_and_day_events(candidates: Sequence[EventCandidate]) -> list[tuple[int, ...]]:

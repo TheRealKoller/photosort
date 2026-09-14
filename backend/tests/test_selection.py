@@ -830,12 +830,15 @@ class TestTheStructuralGuardAgainstReadingTheDisplayBands:
     # und liest damit erstmals eine AUSWAHLGRENZE - die Datei faellt ab hier unter denselben
     # Waechter wie die auswaehlenden Module. Der Eintrag ist ein PFAD relativ zu `_SOURCE_DIR`,
     # kein flacher Dateiname.
+    # `events.py` steht seit Spec 0477 dabei: der Motivwechsel als Trennsignal liest ueber
+    # `carried_motifs` erstmals eine AUSWAHLGRENZE und faellt ab hier unter denselben Waechter.
     _SELECTING_MODULES = (
         "selection.py",
         "ranking.py",
         "quality.py",
         "worker.py",
         "api/photos.py",
+        "events.py",
     )
     _DISPLAY_BANDS = ("MOTIF_STRENGTH_BAND_STRONG", "MOTIF_STRENGTH_BAND_MEDIUM")
 

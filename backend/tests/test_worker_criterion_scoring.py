@@ -5,8 +5,9 @@ import asyncio
 import json
 import logging
 import math
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NoReturn
@@ -19,7 +20,7 @@ from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort import pricing, worker
+from photosort import events, pricing, worker
 from photosort.album_suitability import normalize_level
 from photosort.api.projects import _count_landmark_candidates
 from photosort.cloud_vision import (
@@ -70,7 +71,12 @@ from photosort.places import PlaceAnswer, PlaceResolver, landmark_place_cell, pl
 from photosort.pricing import compute_cost_usd
 from photosort.quality import LOCAL_CORRECTION_SPAN
 from photosort.thumbnails import display_path
-from photosort.worker import _select_landmark_candidates, run_criterion_scoring, run_project_scoring
+from photosort.worker import (
+    _select_landmark_candidates,
+    rebuild_run_grouping,
+    run_criterion_scoring,
+    run_project_scoring,
+)
 from tests.import_closure import module_file
 from tests.run_bookkeeping import assert_call_bookkeeping_invariant
 
@@ -6640,3 +6646,306 @@ class TestTheRegisterMakesTheNamesUniform:
         }
         assert all(row.normalized_name == "zugspitze" for row in register_rows)
         assert register_rows[0].project_id != register_rows[1].project_id
+
+
+# --------------------------------------------------------------------------------------
+# Die VERDRAHTUNG des Motivwechsels (Spec 0477). Die Regel selbst steht DB-frei in
+# tests/test_events.py; hier wird ausschliesslich geprueft, dass wirksame Staerken und
+# Dokument-Ausschluss tatsaechlich an `build_events` ankommen.
+# --------------------------------------------------------------------------------------
+
+_MOTIF_GROUPING_BASE = datetime(2026, 8, 12, 9, 0, 0)
+
+
+def _confirming_window() -> int:
+    """Die Fensterlaenge als MODULATTRIBUT - die Faelle bauen ihre Folgen daraus, nie aus dem
+    Zahlwert."""
+    return events.MOTIF_CHANGE_CONFIRMING_PHOTOS
+
+
+def _motif_vector(*carried: str) -> dict[str, float]:
+    """Ein VOLLSTAENDIGER Staerkevektor ueber alle acht Motive - genau die genannten liegen ueber
+    der Praesenzgrenze. `_motif_vector()` ist damit die vorhandene Kopfzeile ohne ein einziges
+    getragenes Motiv und etwas anderes als eine fehlende Kopfzeile."""
+    return dict.fromkeys(MOTIF_REGISTRY, 0.0) | dict.fromkeys(carried, 1.0)
+
+
+async def _motif_grouping_run(
+    session: AsyncSession,
+    *,
+    vectors: Sequence[Mapping[str, float] | None],
+    name: str,
+    excluded: Collection[int] = (),
+) -> tuple[Project, CriterionScoringRun, list[Photo]]:
+    """Ein bereits erfolgreicher Kriterien-Lauf samt Rangzeilen, bereit fuer
+    `rebuild_run_grouping` - derselbe Weg zur Gliederung wie der Lauf selbst, aber ohne
+    Bildverarbeitung.
+
+    Die Fotos liegen eine Minute auseinander, ohne Ort und ohne Namen: kein anderes Trennsignal
+    spricht mit, gleich wie lang die Folge wird. `vectors[i] is None` heisst "dieses Foto bekommt
+    gar keine Motiv-Kopfzeile"."""
+    project = await _make_project(session, name=name)
+    scoring_run = await _add_successful_scoring_run(session, project)
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+    )
+    session.add(run)
+    await session.flush()
+    placeholder = Event(
+        criterion_scoring_run_id=run.id,
+        position=1,
+        started_at=_MOTIF_GROUPING_BASE,
+        ended_at=_MOTIF_GROUPING_BASE,
+    )
+    session.add(placeholder)
+    await session.flush()
+
+    photos: list[Photo] = []
+    for index, vector in enumerate(vectors):
+        photo = await _add_photo(
+            session,
+            project,
+            f"{name}-{index}.jpg",
+            f"etag-{name}-{index}",
+            _MOTIF_GROUPING_BASE + timedelta(minutes=index),
+        )
+        await _add_score(session, photo)
+        session.add(
+            PhotoRanking(
+                criterion_scoring_run_id=run.id,
+                photo_id=photo.id,
+                event_id=placeholder.id,
+                rank_score=0.5,
+                rank_position=index + 1,
+            )
+        )
+        if vector is not None:
+            await upsert_assessment(
+                session,
+                photo.id,
+                source=MotifAssessmentSource.CLOUD,
+                strengths=dict(vector),
+                excluded_document=index in excluded,
+                provider="testanbieter",
+                computed_at=_MOTIF_GROUPING_BASE,
+            )
+        photos.append(photo)
+    await session.commit()
+    return project, run, photos
+
+
+async def _event_membership(session: AsyncSession, run_id: int) -> list[tuple[int, ...]]:
+    """Die Fotos je Event eines Laufs, Events nach `position`, Fotos nach `photo_id`."""
+    rows = (
+        await session.execute(
+            select(Event.position, PhotoRanking.photo_id)
+            .join(PhotoRanking, PhotoRanking.event_id == Event.id)
+            .where(Event.criterion_scoring_run_id == run_id)
+            .order_by(Event.position, PhotoRanking.photo_id)
+        )
+    ).all()
+    grouped: dict[int, list[int]] = {}
+    for position, photo_id in rows:
+        grouped.setdefault(position, []).append(photo_id)
+    return [tuple(grouped[position]) for position in sorted(grouped)]
+
+
+async def test_a_motif_change_alone_splits_the_grouping_of_a_run(
+    db_session: AsyncSession,
+) -> None:
+    """Der ROT-ANKER steht daneben: dieselbe Folge ohne Motiv-Kopfzeilen ergibt genau EIN Event.
+    Minutenabstand, kein Ort, derselbe Kalendertag - kein anderes Signal kann hier trennen."""
+    window = _confirming_window()
+    ruins = _motif_vector("bauwerk_sehenswuerdigkeit")
+    lunch = _motif_vector("essen_trinken")
+    with_motifs, run, photos = await _motif_grouping_run(
+        db_session, vectors=[ruins, ruins] + [lunch] * window, name="mit-motiven"
+    )
+    without_motifs, plain_run, plain_photos = await _motif_grouping_run(
+        db_session, vectors=[None] * (window + 2), name="ohne-motive"
+    )
+
+    await rebuild_run_grouping(db_session, with_motifs.id)
+    await rebuild_run_grouping(db_session, without_motifs.id)
+    await db_session.commit()
+
+    assert await _event_membership(db_session, plain_run.id) == [
+        tuple(photo.id for photo in plain_photos)
+    ]
+    assert await _event_membership(db_session, run.id) == [
+        tuple(photo.id for photo in photos[:2]),
+        tuple(photo.id for photo in photos[2:]),
+    ]
+
+
+async def test_a_missing_motif_header_is_not_an_empty_motif_picture(
+    db_session: AsyncSession,
+) -> None:
+    """DAS ZWILLINGSPAAR an der Aufrufstelle: identisch gebaute Laeufe, die sich nur in "keine
+    Kopfzeile" gegen "Kopfzeile ohne getragenes Motiv" unterscheiden, mit ENTGEGENGESETZTER
+    Erwartung.
+
+    `.get(photo_id, {})` - die naheliegende Uebernahme aus `_apply_run_selection`, wo genau das
+    richtig ist - liesse beide Zustaende zusammenfallen, und keine Pruefung des privaten
+    Umwandlungshelfers allein saehe das. Im vollen Kriterien-Lauf ist die fehlende Kopfzeile nicht
+    herstellbar (die lokale Phase schreibt fuer jeden Kandidaten eine); der Fall laeuft deshalb
+    ueber `rebuild_run_grouping` und deckt damit zugleich den zweiten Aufrufer ab."""
+    window = _confirming_window()
+    carried = _motif_vector("menschen")
+    headerless_project, headerless_run, headerless_photos = await _motif_grouping_run(
+        db_session, vectors=[carried] + [None] * window, name="ohne-kopfzeile"
+    )
+    empty_project, empty_run, empty_photos = await _motif_grouping_run(
+        db_session, vectors=[carried] + [_motif_vector()] * window, name="leeres-motivbild"
+    )
+
+    await rebuild_run_grouping(db_session, headerless_project.id)
+    await rebuild_run_grouping(db_session, empty_project.id)
+    await db_session.commit()
+
+    assert await _event_membership(db_session, headerless_run.id) == [
+        tuple(photo.id for photo in headerless_photos)
+    ]
+    assert await _event_membership(db_session, empty_run.id) == [
+        (empty_photos[0].id,),
+        tuple(photo.id for photo in empty_photos[1:]),
+    ]
+
+
+async def test_a_user_correction_moves_an_event_boundary_like_a_model_statement(
+    db_session: AsyncSession,
+) -> None:
+    """Die Modellstaerken ALLEIN ergaeben ein Event; erst die Korrekturzeilen erzeugen die
+    Grenze. Rot-Anker gegen ein Lesen der rohen Staerkezeile statt `load_effective_strengths`."""
+    window = _confirming_window()
+    carried = _motif_vector("menschen")
+    corrected_project, corrected_run, corrected_photos = await _motif_grouping_run(
+        db_session, vectors=[carried] * (window + 1), name="mit-korrektur"
+    )
+    plain_project, plain_run, plain_photos = await _motif_grouping_run(
+        db_session, vectors=[carried] * (window + 1), name="ohne-korrektur"
+    )
+    user = User(username="daniel", password_hash="hashed-value")
+    db_session.add(user)
+    await db_session.flush()
+    for photo in corrected_photos[1:]:
+        db_session.add(
+            PhotoMotifCorrection(
+                photo_id=photo.id, user_id=user.id, motif_key="tiere", applies=True
+            )
+        )
+    await db_session.commit()
+
+    await rebuild_run_grouping(db_session, corrected_project.id)
+    await rebuild_run_grouping(db_session, plain_project.id)
+    await db_session.commit()
+
+    assert await _event_membership(db_session, plain_run.id) == [
+        tuple(photo.id for photo in plain_photos)
+    ]
+    assert await _event_membership(db_session, corrected_run.id) == [
+        (corrected_photos[0].id,),
+        tuple(photo.id for photo in corrected_photos[1:]),
+    ]
+
+
+async def test_an_excluded_document_never_moves_an_event_boundary(
+    db_session: AsyncSession,
+) -> None:
+    """Der einzige Fremdwert mit fotoweitem Hebel und ohne Handkorrekturpfad nimmt eine Aufnahme
+    auch aus diesem Trennsignal. Der Zwilling ohne das Flag steht daneben - sonst bestuende die
+    erste Haelfte auch bei einer durchgehend ungeteilten Gliederung.
+
+    UEBERGANGEN HEISST NIE AUSGESCHLOSSEN: die ausgeschlossenen Fotos stehen weiterhin in genau
+    einem Event."""
+    window = _confirming_window()
+    vectors = [_motif_vector("menschen")] + [_motif_vector("tiere")] * window
+    excluded_project, excluded_run, excluded_photos = await _motif_grouping_run(
+        db_session, vectors=vectors, name="ausgeschlossen", excluded=range(1, window + 1)
+    )
+    included_project, included_run, included_photos = await _motif_grouping_run(
+        db_session, vectors=vectors, name="nicht-ausgeschlossen"
+    )
+
+    await rebuild_run_grouping(db_session, excluded_project.id)
+    await rebuild_run_grouping(db_session, included_project.id)
+    await db_session.commit()
+
+    assert await _event_membership(db_session, excluded_run.id) == [
+        tuple(photo.id for photo in excluded_photos)
+    ]
+    assert await _event_membership(db_session, included_run.id) == [
+        (included_photos[0].id,),
+        tuple(photo.id for photo in included_photos[1:]),
+    ]
+
+
+class _AnimalOnlyInMarkedPhotos:
+    """Faket den ObjectDetector so, dass NUR das Markerbild ein bildfuellendes Tier liefert.
+
+    Bildfuellend, damit die Flaechengewichtung die Praesenzgrenze sicher erreicht; die Steuerung
+    ueber die Bildgroesse statt ueber einen Aufrufzaehler haengt nicht an der
+    Verarbeitungsreihenfolge der Zeilen."""
+
+    def detect(self, image: object) -> object:
+        if getattr(image, "width", None) != _ANIMAL_MARKER_SIZE:
+            return SimpleNamespace(detections=[])
+        return SimpleNamespace(
+            detections=[
+                SimpleNamespace(
+                    categories=[SimpleNamespace(category_name="dog", score=0.9)],
+                    bounding_box=SimpleNamespace(
+                        origin_x=0,
+                        origin_y=0,
+                        width=_ANIMAL_MARKER_SIZE,
+                        height=_ANIMAL_MARKER_SIZE,
+                    ),
+                )
+            ]
+        )
+
+
+async def test_the_local_motif_basis_alone_splits_a_run_without_any_cloud_phase(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Eine Cloud-Klassifizierung wird NICHT vorausgesetzt: die Motivbilder dieses Laufs entstehen
+    aus dem echten `local_motif_strengths` ueber die eingespielten Detektoren."""
+    window = _confirming_window()
+    project = await _make_project(db_session)
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photos: list[Photo] = []
+    for index in range(window + 2):
+        photo = await _add_photo(
+            db_session,
+            project,
+            f"lokal-{index}.jpg",
+            f"etag-lokal-{index}",
+            _MOTIF_GROUPING_BASE + timedelta(minutes=index),
+        )
+        await _add_score(db_session, photo)
+        _write_display_variant(
+            tmp_path, photo, _flat_image() if index < 2 else _animal_marked_image()
+        )
+        photos.append(photo)
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_AnimalOnlyInMarkedPhotos,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    strengths = await load_effective_strengths(db_session, [photo.id for photo in photos])
+    assert [strengths[photo.id]["tiere"].strength for photo in photos] == [0.0, 0.0] + [1.0] * (
+        window
+    ), "ohne zwei verschiedene LOKALE Motivbilder prueft der Fall nichts"
+    assert await _event_membership(db_session, run.id) == [
+        tuple(photo.id for photo in photos[:2]),
+        tuple(photo.id for photo in photos[2:]),
+    ]
