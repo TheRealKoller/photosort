@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.45.0](https://github.com/TheRealKoller/photosort/compare/v0.44.0...v0.45.0) (2026-09-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **frontend:** gemeinsame Endauswahl löst die Vergleichsseite ab, Teil 2 von 2 (Spec 0431) ([#471](https://github.com/TheRealKoller/photosort/issues/471))
+
+### Features
+
+* **backend:** Endauswahl als Projektentscheidung über beiden Album-Entwürfen, Teil 1 von 2 (Spec 0431) ([#468](https://github.com/TheRealKoller/photosort/issues/468)) ([825682a](https://github.com/TheRealKoller/photosort/commit/825682a1e8d4c18996d6628ac52615368df5e377))
+* **frontend:** gemeinsame Endauswahl löst die Vergleichsseite ab, Teil 2 von 2 (Spec 0431) ([#471](https://github.com/TheRealKoller/photosort/issues/471)) ([5ec7920](https://github.com/TheRealKoller/photosort/commit/5ec7920ecad4cab11d46fb6b44aef28b005dd388))
+* laufende Diagnose der Modellfehler auf der Statistikseite, Teil 2 von 3 (Spec 0432) ([#474](https://github.com/TheRealKoller/photosort/issues/474)) ([8f7d981](https://github.com/TheRealKoller/photosort/commit/8f7d98161614007863fabb57ad4b2903082e8bf0))
+* Nacharbeit am Album-Entwurf wird festgehalten, Teil 1 von 3 (Spec 0432) ([#473](https://github.com/TheRealKoller/photosort/issues/473)) ([7cf6d8f](https://github.com/TheRealKoller/photosort/commit/7cf6d8f8acc45292fdd008b5aff4192397a7a55a))
+* Qualitätsgewichte aus dem Feedback ableiten und übernehmen, Teil 3 von 3 (Spec 0432) ([#476](https://github.com/TheRealKoller/photosort/issues/476)) ([81dc3e8](https://github.com/TheRealKoller/photosort/commit/81dc3e8169eb31c7882975e120c0960140911331))
+
 ## [0.44.0](https://github.com/TheRealKoller/photosort/compare/v0.43.0...v0.44.0) (2026-09-13)
 
 
