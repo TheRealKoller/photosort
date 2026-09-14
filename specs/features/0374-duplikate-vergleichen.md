@@ -1,6 +1,6 @@
 # 0374 - Duplikate im Ausschuss vergleichen und einzeln entscheiden
 
-**Status:** Accepted
+**Status:** Implemented ([PR #484](https://github.com/TheRealKoller/photosort/pull/484))
 **Erstellt:** 2026-09-14
 **Bezug:** [Issue #374](https://github.com/TheRealKoller/photosort/issues/374), ADR [`0104`](../decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md)
 
