@@ -365,11 +365,14 @@ async def _generate_thumbnails(
     photo_id: int,
     etag: str,
     cache_dir: Path,
-) -> None:
+) -> float | None:
     """Best-effort: weder ein Download- noch ein
     Dekodierfehler duerfen den Scan des Projekts abbrechen (anders als die uebrigen
     OpenCloudError-Faelle unten, die den ganzen Scan als FAILED markieren) - ein fehlendes
     Thumbnail aeussert sich nur als 404-Platzhalter im Bild-Endpunkt, siehe thumbnails.py.
+
+    Gibt das Seitenverhaeltnis des GEZEIGTEN Bildes zurueck, oder `None`, wenn keines ermittelt
+    werden konnte (Downloadfehler, nicht dekodierbar, entartetes Verhaeltnis).
 
     Nimmt bewusst `photo_id`/`etag` statt eines `Photo`-Objekts entgegen: wird als Teil
     von _fetch_and_thumbnail parallel zu Geschwister-Aufrufen desselben Blocks ausgefuehrt und darf
@@ -379,8 +382,8 @@ async def _generate_thumbnails(
     try:
         content = await client.download(webdav_url, relative_path)
     except OpenCloudError:
-        return
-    generate_variants(cache_dir, photo_id, etag, content)
+        return None
+    return generate_variants(cache_dir, photo_id, etag, content)
 
 
 @dataclass(frozen=True)
@@ -398,11 +401,17 @@ class ScanExifResult:
 
     `taken_at` ist hier die AUFGEZEICHNETE Zeit (EXIF `DateTimeOriginal`, sonst der Rueckfall auf
     `last_modified`) - die Korrektur um den Kamera-Versatz passiert erst im sequentiellen Teil von
-    `_process_scan_block`, wo die Kamerazeile und damit der Versatz bekannt sind."""
+    `_process_scan_block`, wo die Kamerazeile und damit der Versatz bekannt sind.
+
+    `aspect_ratio` ist das Seitenverhaeltnis des GEZEIGTEN Bildes, das die Thumbnail-Erzeugung
+    ohnehin kennt - `None` fuer einen `probe_only`-Posten (es wurde gar nichts dekodiert) und fuer
+    jeden Fehlerfall. Es faellt bei derselben Dekodierung an wie die Vorschau; es entsteht kein
+    zusaetzlicher Abruf und kein zweites Dekodieren."""
 
     taken_at: datetime
     gps: tuple[float, float] | None
     camera: CameraIdentity | None
+    aspect_ratio: float | None = None
 
 
 async def _fetch_and_thumbnail(
@@ -443,9 +452,12 @@ async def _fetch_and_thumbnail(
         gps = extract_gps(content, photo_id=photo_id)
         camera = extract_camera(content, photo_id=photo_id)
 
+    aspect_ratio: float | None = None
     if not probe_only:
-        await _generate_thumbnails(client, webdav_url, relative_path, photo_id, etag, cache_dir)
-    return ScanExifResult(taken_at=taken_at, gps=gps, camera=camera)
+        aspect_ratio = await _generate_thumbnails(
+            client, webdav_url, relative_path, photo_id, etag, cache_dir
+        )
+    return ScanExifResult(taken_at=taken_at, gps=gps, camera=camera, aspect_ratio=aspect_ratio)
 
 
 async def _resolve_project_camera(
@@ -574,7 +586,7 @@ async def _process_scan_block(
             raise result
 
     cache = {} if camera_cache is None else camera_cache
-    for photo, exif_result in zip(photos, results, strict=True):
+    for photo, exif_result, item in zip(photos, results, block, strict=True):
         # Die Typzusicherung nagelt die FORM fest: ohne sie entpackte eine durchgereichte
         # BaseException ihre Attribute in die Foto-Felder, statt oben als Fehler erkannt zu werden.
         assert isinstance(exif_result, ScanExifResult)  # bereits oben auf Exceptions geprueft
@@ -616,6 +628,20 @@ async def _process_scan_block(
         # Anwendung zeigte weiter einen Ort an, den die Datei nachweislich nicht mehr
         # enthält. Abgedeckt durch test_worker_scan_project.py.
         photo.gps_lat, photo.gps_lon = exif_result.gps or (None, None)
+
+        # ERSTER der zwei Schreibwege der Spalte (ADR 0110 Punkt 3). Fuer einen Posten, der die
+        # Datei tatsaechlich gelesen hat, wird UNBEDINGT geschrieben - auch zurueck auf `None`:
+        # Aendert eine Datei ihre Form, aendert das Foto sie mit, und ein nicht mehr dekodierbares
+        # Bild verliert seine Angabe, statt eine falsche zu behalten. Zurueck auf `None` heisst
+        # dabei nichts Endgueltiges: `aspect_ratio IS NULL` ist zugleich die Arbeitsmenge der
+        # Nachhol-Runde, die es beim naechsten Lauf erneut versucht.
+        #
+        # Ein `probe_only`-Posten wird dabei UEBERSPRUNGEN statt auf `None` gesetzt: Er hat die
+        # Datei gar nicht geladen (das ist sein ganzer Zweck) und weiss deshalb nichts ueber ihre
+        # Form. Ein unbedingtes Schreiben loeschte hier bei jedem Scan einen bereits bekannten,
+        # unveraendert gueltigen Wert.
+        if not item.probe_only:
+            photo.aspect_ratio = exif_result.aspect_ratio
 
     return added, updated
 

@@ -58,6 +58,20 @@ def _jpeg_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _rotated_jpeg_bytes() -> bytes:
+    """20x10 GESPEICHERT plus EXIF-Orientierung 6 - gezeigt wird 10x20 (Hochformat)."""
+    import io
+
+    from PIL import Image
+
+    image = Image.new("RGB", (20, 10), color="blue")
+    exif = image.getexif()
+    exif[0x0112] = 6
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", exif=exif)
+    return buffer.getvalue()
+
+
 class FakeOpenCloudClient:
     def __init__(
         self,
@@ -642,6 +656,120 @@ async def test_scan_survives_undecodable_image_without_failing(
     photo = (await db_session.execute(select(Photo))).scalar_one()
     assert photo.relative_path == "CostaRica/broken.jpg"
     assert not thumbnail_path(tmp_path, photo.id, photo.etag).is_file()
+
+
+# --- Seitenverhaeltnis, Schreibweg 1: der Scan -------------------------------------------------
+# specs/features/0489-fotouebersicht-ohne-beschnitt.md, ADR 0110 Punkt 3.
+
+
+async def test_scan_stores_the_aspect_ratio_of_a_new_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Das Verhaeltnis reist auf demselben Weg wie `taken_at`: aus `generate_variants` ueber
+    `ScanExifResult` in den sequentiellen Teil - ohne zusaetzlichen Abruf."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    # `_jpeg_bytes()` liefert 20x10.
+    assert photo.aspect_ratio == pytest.approx(2.0)
+
+
+async def test_scan_stores_the_shown_aspect_ratio_of_an_exif_rotated_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/hoch.jpg", _entry("hoch.jpg", "etag-rot", modified))],
+        file_contents={"CostaRica/hoch.jpg": _rotated_jpeg_bytes()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    # Gespeichert 20x10, Orientierung 6 - gezeigt 10x20.
+    assert photo.aspect_ratio == pytest.approx(0.5)
+
+
+async def test_a_photo_whose_image_cannot_be_decoded_keeps_a_null_aspect_ratio(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """`None` ist ein regulaerer Zustand, kein Laufabbruch - der Scan bleibt erfolgreich."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/broken.jpg", _entry("broken.jpg", "etag-broken", modified))],
+        file_contents={"CostaRica/broken.jpg": b"not a real jpeg"},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.aspect_ratio is None
+
+
+async def test_the_aspect_ratio_is_rewritten_when_the_file_changes_its_shape(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """UNBEDINGT schreiben, dieselbe Begruendung wie bei `gps_lat`/`camera_id`: aendert sich die
+    Datei, aendert sich das Verhaeltnis mit. Ein bedingtes Schreiben hielte das alte fest, und das
+    Raster plante das Bild dauerhaft mit einer falschen Breite ein."""
+    project = await _make_project(db_session)
+    moment = datetime(2023, 8, 15, 10, 0)
+    db_session.add(
+        Photo(
+            project_id=project.id,
+            relative_path="CostaRica/img.jpg",
+            etag="old-etag",
+            content_length=10,
+            taken_at=moment,
+            taken_at_original=moment,
+            last_modified=moment,
+            aspect_ratio=2.0,
+        )
+    )
+    await db_session.commit()
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "new-etag", modified))],
+        file_contents={"CostaRica/img.jpg": _rotated_jpeg_bytes()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.aspect_ratio == pytest.approx(0.5)
+
+
+async def test_a_probe_only_item_triggers_no_download(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ein `probe_only`-Posten (unveraenderte Datei, Kamera noch nicht geprueft) laedt die Datei
+    NICHT herunter - das Seitenverhaeltnis kommt fuer ihn aus der Nachhol-Runde, nie aus einem
+    zusaetzlichen Netzzugriff."""
+    project = await _make_project(db_session)
+    await _existing_unprobed_photo(db_session, project, "CostaRica/img001.jpg")
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img001.jpg", _entry("img001.jpg", "same-etag", modified))],
+        file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    assert client.download_requests == []
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.aspect_ratio is None
 
 
 async def test_scan_survives_thumbnail_download_failure_without_failing(
