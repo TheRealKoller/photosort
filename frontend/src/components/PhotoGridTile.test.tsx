@@ -51,6 +51,11 @@ function marks(): HTMLElement[] {
  * Ein Druck der angegebenen Dauer auf das uebergebene Element. Zeit kommt ueber Fake-Timer, NIE
  * ueber echtes Warten - ein Test, der 500 ms schlaeft, verlaengert den Prueflauf um genau diese
  * Zeit und wird auf einer langsamen Maschine trotzdem sprunghaft.
+ *
+ * DAS ABSCHLIESSENDE `pointerleave` GEHOERT ZWINGEND DAZU: Ein Touch-Pointer wird nach `pointerup`
+ * vom Browser ZERSTOERT, und dabei feuert er `pointerleave` - ohne Zutun des Nutzers. Ein Helfer,
+ * der nur `pointerdown`/`pointerup` sendet, bildet den Druck am Telefon nicht ab, und jede daran
+ * haengende Zusage bestuende, ohne im Browser zu gelten.
  */
 function press(element: HTMLElement, milliseconds: number): void {
   vi.useFakeTimers()
@@ -62,6 +67,10 @@ function press(element: HTMLElement, milliseconds: number): void {
   })
   act(() => {
     element.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    // Gesendet wird `pointerout`, nicht `pointerleave`: React synthetisiert `onPointerLeave`
+    // ueber das Ueber-/Austritts-Paar, und ein direkt abgesetztes `pointerleave` erreichte den
+    // Rueckruf gar nicht - der Fall bliebe gruen, ohne etwas zu pruefen.
+    element.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: null }))
   })
 }
 
@@ -312,6 +321,75 @@ describe('PhotoGridTile: die Angabenzeile (AK7, AK8)', () => {
     await userEvent.setup().click(link)
 
     expect(screen.getByText('Detailansicht')).toBeInTheDocument()
+  })
+
+  it('keeps the line after the finger is lifted', () => {
+    // DER FALL AM TELEFON: Nach `pointerup` zerstoert der Browser den Touch-Pointer und feuert
+    // dabei `pointerleave`. Blendete das aus, waere der Dateiname genau so lange zu sehen, wie der
+    // Finger ihn verdeckt - also nie.
+    renderTile()
+
+    press(screen.getByRole('link'), 600)
+
+    expect(screen.getByText('IMG_0042.jpg')).toBeInTheDocument()
+  })
+
+  it('closes the pressed line on the next press anywhere', () => {
+    // Das Gegenstueck zum langen Druck: Am Zeigegeraet schliesst das Verlassen der Kachel die
+    // Zeile, am Telefon gibt es das nicht - dort schliesst sie der naechste Druck.
+    renderTile()
+    press(screen.getByRole('link'), 600)
+    expect(screen.getByText('IMG_0042.jpg')).toBeInTheDocument()
+
+    act(() => {
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+
+    expect(screen.queryByText('IMG_0042.jpg')).not.toBeInTheDocument()
+  })
+
+  it('closes the pressed line on scrolling', () => {
+    renderTile()
+    press(screen.getByRole('link'), 600)
+
+    act(() => {
+      window.dispatchEvent(new Event('scroll'))
+    })
+
+    expect(screen.queryByText('IMG_0042.jpg')).not.toBeInTheDocument()
+  })
+
+  it('stops listening once the tile is gone', () => {
+    // Ohne Ruecknahme lauschte je eingeblendeter Kachel dauerhaft ein Zuhoerer am Dokument.
+    renderTile()
+    press(screen.getByRole('link'), 600)
+    const entfernen = vi.spyOn(document, 'removeEventListener')
+
+    act(() => {
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+
+    expect(entfernen).toHaveBeenCalledWith('pointerdown', expect.any(Function), { capture: true })
+    entfernen.mockRestore()
+  })
+
+  it('still hides the hovered line when the pointer leaves', () => {
+    // Die Gegenprobe zum Fall darueber: Was durch Ueberfahren kam, verschwindet beim Verlassen
+    // weiterhin. Ohne sie bestuende die Zusage auch gegen eine Kachel, die nie mehr ausblendet.
+    stubHover(true)
+    renderTile()
+    const item = screen.getByRole('listitem')
+
+    act(() => {
+      item.dispatchEvent(new MouseEvent('pointerover', { bubbles: true, relatedTarget: null }))
+    })
+    expect(screen.getByText('IMG_0042.jpg')).toBeInTheDocument()
+
+    act(() => {
+      item.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: null }))
+    })
+
+    expect(screen.queryByText('IMG_0042.jpg')).not.toBeInTheDocument()
   })
 
   it('suppresses the navigation of the long press itself', () => {

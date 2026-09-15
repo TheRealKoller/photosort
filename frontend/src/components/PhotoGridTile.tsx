@@ -82,7 +82,17 @@ export function PhotoGridTile({
   image,
   actions,
 }: PhotoGridTileProps) {
-  const [detailsVisible, setDetailsVisible] = useState(false)
+  /*
+   * WOHER die Zeile kam, nicht nur DASS sie da ist. Die drei Auslöser haben verschiedene
+   * Gegenstücke, und ein gemeinsames `boolean` könnte sie nicht auseinanderhalten:
+   *
+   * Ein TOUCH-Pointer wird nach `pointerup` vom Browser ZERSTÖRT und feuert dabei `pointerleave`,
+   * ohne Zutun des Nutzers. Blendete das Verlassen bedingungslos aus, verschwände die eben per
+   * langem Druck eingeblendete Zeile im selben Moment, in dem der Finger sie freigibt - der
+   * Dateiname wäre am Telefon faktisch nie zu sehen.
+   */
+  const [detailsSource, setDetailsSource] = useState<'hover' | 'focus' | 'press' | null>(null)
+  const detailsVisible = detailsSource !== null
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const suppressClickRef = useRef(false)
 
@@ -104,6 +114,28 @@ export function PhotoGridTile({
   }, [])
 
   useEffect(() => clearTimer, [clearTimer])
+
+  /*
+   * Das Gegenstück zum langen Druck: Eine so eingeblendete Zeile schließt beim nächsten Druck
+   * IRGENDWO (andere Kachel, Seitengrund, dieselbe Kachel erneut) oder beim Rollen. Am
+   * Zeigegerät übernimmt das Verlassen der Kachel diese Rolle, am Telefon gibt es das nicht.
+   *
+   * `capture: true` - ein `pointerdown` auf einem Bedienelement, das `stopPropagation` ruft,
+   * erreichte die Blasenphase am Dokument sonst nie, und die Zeile bliebe stehen.
+   * Die Rücknahme hängt am Zustand selbst: Ohne eingeblendete Zeile lauscht nichts.
+   */
+  useEffect(() => {
+    if (detailsSource !== 'press') {
+      return undefined
+    }
+    const schliessen = (): void => setDetailsSource(null)
+    document.addEventListener('pointerdown', schliessen, { capture: true })
+    window.addEventListener('scroll', schliessen, { passive: true })
+    return () => {
+      document.removeEventListener('pointerdown', schliessen, { capture: true })
+      window.removeEventListener('scroll', schliessen)
+    }
+  }, [detailsSource])
 
   // Die eigene Entscheidung hat immer Vorrang; ein Vorschlag erscheint nur, solange keine
   // vorliegt. Der Server sichert das bereits zu - hier wird es trotzdem geprueft, statt sich
@@ -132,7 +164,7 @@ export function PhotoGridTile({
       // Merker folgte der Browser unmittelbar danach dem Link, und die eben eingeblendete Zeile
       // waere nie zu sehen.
       suppressClickRef.current = true
-      setDetailsVisible(true)
+      setDetailsSource('press')
     }, LONG_PRESS_MS)
   }
 
@@ -152,13 +184,16 @@ export function PhotoGridTile({
       onPointerDown={handlePointerDown}
       onPointerUp={clearTimer}
       onPointerCancel={clearTimer}
-      onPointerEnter={hoverCapable ? () => setDetailsVisible(true) : undefined}
+      onPointerEnter={hoverCapable ? () => setDetailsSource('hover') : undefined}
       onPointerLeave={() => {
+        // Der laufende Druck wird IMMER abgebrochen - wer den Finger von der Kachel zieht, wollte
+        // die Zeile nicht. Ausgeblendet wird dagegen nur, was durch Ueberfahren kam: Nach dem
+        // Loslassen eines Touch-Pointers feuert der Browser dieses Ereignis von selbst.
         clearTimer()
-        setDetailsVisible(false)
+        setDetailsSource((quelle) => (quelle === 'hover' ? null : quelle))
       }}
-      onFocus={() => setDetailsVisible(true)}
-      onBlur={() => setDetailsVisible(false)}
+      onFocus={() => setDetailsSource('focus')}
+      onBlur={() => setDetailsSource((quelle) => (quelle === 'focus' ? null : quelle))}
     >
       <Link to={to} onClick={handleClick} className="block size-full rounded-md">
         {/* Der Ruecktritt einer verworfenen Aufnahme liegt AUSSCHLIESSLICH auf der Bildflaeche
