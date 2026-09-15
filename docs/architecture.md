@@ -575,15 +575,37 @@ Verarbeitungs-Cache (Thumbnails).
       `suggested_status = REJECTED` trägt zwei Gründe, und ein unbedingtes `keep` höbe eine
       Ablehnung auf, zu der der Nutzer nie befragt wurde.
     - `GET /projects/{project_id}/duplicate-groups/{photo_id}` (`api/photos.py`, Antwort
-      `DuplicateGroupOut` mit `items[]` aus `photo: PhotoOut` und `decision`, dazu `position` und
-      `total`). Die Gruppe hat **keine eigene Id**: Sie ist der zur Lesezeit gebildete Stern über
+      `DuplicateGroupOut` mit `items[]` aus `photo: PhotoOut`, `effective_decision` und
+      `keep_possible`, dazu `position`, `total`, `previous_photo_id` und `next_photo_id`). Die
+      Gruppe hat **keine eigene Id**: Sie ist der zur Lesezeit gebildete Stern über
       `PhotoScore.duplicate_of` und damit über **jedes** ihrer Mitglieder unter derselben Antwort
       erreichbar, den Gewinner eingeschlossen. `404` deckt vier ununterscheidbare Fälle —
       unbekanntes Foto, fremdes Projekt, Foto ohne Duplikat und Vorschlag wegen geringer
       Bildqualität; unterschiede die Antwort sie, wäre der Endpunkt ein Existenz-Orakel über fremde
-      Foto-Ids. `total` zählt die noch **offenen** Gruppen, vereinigt mit der gerade angesehenen:
-      Nur so gilt `1 ≤ position ≤ total` auch für die Gruppe, die man soeben fertig entschieden
-      hat.
+      Foto-Ids. **Die Antwort nennt die Auswertung des Überlebens-Prädikats, nicht die
+      Entscheidungszeile** (ADR 0111): Beide fielen genau dort auseinander, wo keine Zeile steht —
+      ein unentschiedener Duplikat-Verlierer trägt `suggested_status = REJECTED` und scheidet aus,
+      sah aber aus wie der Repräsentant, der bleibt. Es gibt deshalb kein `null` und keinen dritten
+      Wert. `keep_possible = false` heißt, dass kein Wert der Entscheidungszeile diesen Zustand
+      ändert; der **Grund** reist nicht als Feld, weil er aus der Bedingung folgt. `position`/`total`
+      zählen **alle** Gruppen des Projekts, entschiedene eingeschlossen — nur so verschiebt sich
+      die Position einer Gruppe nicht dadurch, dass eine andere entschieden wird.
+      `previous_photo_id`/`next_photo_id` tragen die Repräsentanten-Id der Nachbargruppe (`null` am
+      Rand) und stammen aus **derselben** projektbegrenzten Kantenliste wie die Gruppe selbst:
+      `photo_scores.duplicate_of` zeigt auf `photos.id` ohne Projektbedingung, und ohne die Bindung
+      nennte die Antwort Foto-Ids fremder Projekte.
+    - `GET /projects/{project_id}/duplicate-groups` (`api/photos.py`, Antwort
+      `DuplicateGroupIndexOut` mit `total` und `first_photo_id`) — der Einstieg in den Durchgang,
+      Grundlage der beiden Wege dorthin. Ohne Foto-Hydratation: Die Antwort trägt kein `PhotoOut`
+      und ist damit keine Funktion des anfragenden Nutzers. `total` ist **dieselbe** Zahl wie in
+      `DuplicateGroupOut`; zwei getrennt gebildete liefen auseinander, und der Einstieg führte auf
+      einen Durchgang, dessen Zähler eine andere Gesamtzahl nennt. `first_photo_id` ist `null`, wenn
+      es keine Gruppe gibt — die Oberfläche rendert den Einstieg dann gar nicht. **Keine Liste aller
+      Gruppen** und **kein Feld an `ProjectOut`** (ADR 0111 Punkt 3/4): Die Liste wäre eine zweite
+      Quelle derselben Reihenfolge, und ein Feld an `ProjectOut` würde im Zwei-Sekunden-Takt über
+      den gesamten `photo_scores`-Bestand mitgerechnet. Der Endpunkt liegt in `photos.router`, der
+      keine router-weite `dependencies`-Liste trägt, und hat deshalb seine Auth-Dependency
+      **ausgeschrieben** plus einen eigenen pfadbenannten 401-Fall.
     - `PUT /projects/{project_id}/photos/{photo_id}/duplicate-decision` und
       `PUT /projects/{project_id}/duplicate-groups/{photo_id}/decision`
       (`api/duplicate_decisions.py`, Body **ausschließlich** `{"decision": "keep"|"discard"}`,
@@ -600,12 +622,28 @@ Verarbeitungs-Cache (Thumbnails).
       überschreibt, statt am Primärschlüssel in eine 500 zu laufen. Es gibt **kein `DELETE`**: „noch
       nicht entschieden" ist kein Zustand, in den man zurückkehrt.
     - **Die Ansicht** ist `pages/DuplicateComparePage.tsx` unter
-      `PROJECT_ROUTE_PATHS.photoDuplicates`, erreichbar aus der Ausschuss-Sichtung und nur bei
-      `suggestion.reason === 'duplicate'`. Die Kachel `components/DuplicatePhotoTile.tsx` steht
-      bewusst **neben** `PhotoCard`/`CurationPhotoTile`/`RatingBadge` statt auf ihnen: Deren
-      Vokabular ist die Albumentscheidung eines Nutzers. Die Vergrößerung ist **kein Dialog** — die
-      gewählte Kachel spannt die Rasterbreite, die übrige Gruppe bleibt sichtbar, und genau das ist
-      der Zweck.
+      `PROJECT_ROUTE_PATHS.photoDuplicates`, erreichbar aus dem Ausschuss-Schritt, aus der nach
+      Vorschlägen gefilterten Fotoliste und je Kachel bei `suggestion.reason === 'duplicate'`. Die
+      Kachel `components/DuplicatePhotoTile.tsx` steht bewusst **neben**
+      `PhotoCard`/`CurationPhotoTile`/`RatingBadge` statt auf ihnen: Deren Vokabular ist die
+      Albumentscheidung eines Nutzers. Die Vergrößerung ist **kein Dialog** — die gewählte Kachel
+      spannt die Rasterbreite, die übrige Gruppe bleibt sichtbar, und genau das ist der Zweck.
+    - **Jede Aufnahme trägt beim Öffnen bereits ihren Zustand** (`effective_decision`), und zwar in
+      derselben Form wie eine selbst getroffene Wahl; einen sichtbaren Zustand „noch nicht
+      entschieden" gibt es nicht mehr. Bei `keep_possible === false` rendert die Kachel **gar
+      keine** Wahlschaltflächen — auch „Ausschuss" nicht, der wäre ebenso wirkungslos — und nennt
+      stattdessen den Grund. Bewusst nicht `disabled`: „nicht anwendbar" ist etwas anderes als
+      „kurzzeitig gesperrt". Der Zustand wird **nie im Frontend aus `PhotoOut.suggestion`
+      abgeleitet** (ADR 0111 Punkt 1, untersagt): Jenes Feld fällt bei eigener Albumbewertung und
+      bei getroffener Entscheidung auf `null`, und eine TypeScript-Fassung des Prädikats sieht der
+      Wächter über die Verwendungsstellen nicht — er liest nur `backend/src`.
+    - **Der Durchgang** läuft über `previous_photo_id`/`next_photo_id` derselben Antwort. Die Route
+      bleibt `PROJECT_ROUTE_PATHS.photoDuplicates` und ihr Pfadwert ein **Anker-Foto** — kein
+      Gruppenindex: Ein Index wäre über einen erneuten Lauf hinweg nicht stabil und benennte nichts,
+      was es im Datenmodell gibt. Navigiert wird als **Push**, damit der Zurück-Knopf des Browsers
+      „vorherige Gruppe" heißt. **Die Seite bleibt dabei montiert** (gleiche Route, anderer
+      Parameter); `enlargedId` und `decidingIds` werden beim Ankerwechsel deshalb ausdrücklich
+      zurückgesetzt, sonst zeigten sie auf Fotos einer Gruppe, die nicht mehr da ist.
   - **Die laufende Diagnose der Modellfehler** *(Spec
     [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
     [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md))*:
