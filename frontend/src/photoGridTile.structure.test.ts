@@ -4,9 +4,9 @@
  * AK13; ADR 0110 Punkt 5).
  *
  * WARUM DIESE EBENE: Beide Zusagen brechen ohne eigenen Testfall STILL. `PhotoCard` bleibt
- * unverändert und behält genau ihre drei Aufrufstellen (Kuratierung, gemeinsame Endauswahl,
- * Duplikatsvergleich) — eine vierte Aufrufstelle wäre in jedem Komponententest unauffällig,
- * machte aber die Aussage „die Rasteransicht benutzt die Fotokarte nicht mehr" falsch. Umgekehrt
+ * unverändert und behält genau ihre beiden verbleibenden Aufrufstellen (Kuratierung, gemeinsame
+ * Endauswahl) — eine dritte Aufrufstelle wäre in jedem Komponententest unauffällig, machte aber
+ * die Aussage „die Rasteransicht benutzt die Fotokarte nicht mehr" falsch. Umgekehrt
  * sähe eine Rasterkachel, die `PhotoCard` intern wiederverwendet, in ihren eigenen Tests völlig
  * richtig aus und zöge trotzdem Kartenkörper, Statuszeile und feste Bildform mit.
  *
@@ -50,17 +50,13 @@ function importsPhotoCard(content: string): boolean {
 describe('Rasterkachel und Fotokarte stehen nebeneinander', () => {
   it('lässt PhotoCard genau ihre verbliebenen Aufrufstellen', () => {
     /*
-     * ABWEICHUNG VON DER AUFZÄHLUNG IN ADR 0110 PUNKT 5 / AK13, gemessen statt übernommen: Dort
-     * heißen die verbleibenden Aufrufstellen „Kuratierung, gemeinsame Endauswahl,
-     * Duplikatsvergleich". Der Duplikatsvergleich benutzt die Fotokarte jedoch nachweislich
-     * nicht — `components/DuplicatePhotoTile.tsx` schließt das in seinem eigenen Doku-Block
-     * ausdrücklich aus („KEIN Aufbau auf `PhotoCard`/`CurationPhotoTile`/`RatingBadge`"), weil
-     * deren Vokabular die Albumentscheidung eines Nutzers ist und dort die andere Frage steht.
-     * Auf `main` sind es deshalb drei Aufrufstellen inklusive der Rasteransicht, nach deren
-     * Wegfall zwei.
+     * Die Menge ist ABSCHLIESSEND, nicht „mindestens": Eine weitere Aufrufstelle wäre in jedem
+     * Komponententest unauffällig und machte die Zusage „die Rasteransicht benutzt die Fotokarte
+     * nicht mehr" still falsch.
      *
-     * Die TRAGENDE Zusage ist unberührt: Die Fotokarte bleibt unverändert, die Rasteransicht
-     * benutzt sie nicht mehr, und keine weitere Ansicht kommt hinzu. Genau das steht hier.
+     * Der Duplikatsvergleich steht bewusst NICHT darin — `components/DuplicatePhotoTile.tsx`
+     * schließt den Aufbau auf `PhotoCard` in seinem eigenen Doku-Block aus, weil deren Vokabular
+     * die Albumentscheidung eines Nutzers ist und dort die andere Frage steht.
      */
     const callers = productionSources()
       .filter((file) => importsPhotoCard(file.content))

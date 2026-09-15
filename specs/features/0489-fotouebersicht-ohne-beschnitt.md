@@ -72,7 +72,9 @@ Bestand schnell erfassen und gezielt einzelne Bilder öffnen kann.
       unter dem Bild, in der normalen Übersicht gar nicht.
 - [x] AK13 — Die übrigen Foto-Ansichten (Kuratierung, gemeinsame Endauswahl, Duplikatsvergleich)
       bleiben unverändert: ihre bestehenden Tests bleiben ohne jede Anpassung grün, und `PhotoCard`
-      behält genau ihre drei Aufrufstellen.
+      behält genau ihre verbleibenden Aufrufstellen (Kuratierung und gemeinsame Endauswahl — der
+      Duplikatsvergleich hat die Fotokarte nie benutzt; am Bestand gemessen, siehe
+      `photoGridTile.structure.test.ts`).
 
 ## Datenmodell-Bezug
 
@@ -349,8 +351,9 @@ und ein eigener Komponententest sichert die Struktur ab, damit ein Bruch in `vit
 Der Umbau macht 13 Fälle in `PhotoGridPage.test.tsx` und 5 in `test_thumbnails.py` rot; sie werden
 umgeschrieben, nicht gestrichen. Die Fälle zu „Übernehmen"/„Vergleichen" **ziehen in den Gate-Modus
 um** — blieben sie stehen, wo sie sind, wären sie ab sofort nicht mehr rot zu bekommen. Die Tests
-von `PhotoCard` und den drei `*PhotoTile` bleiben ohne jede Anpassung grün; ein Wächter hält fest,
-dass `PhotoCard` genau drei Aufrufstellen hat und `PhotoGridTile` sie nicht importiert.
+von `PhotoCard` und den drei `*PhotoTile` bleiben ohne jede Anpassung grün; ein Wächter hält die
+Menge der Aufrufstellen von `PhotoCard` abschließend fest und dass `PhotoGridTile` sie nicht
+importiert.
 
 Das Testkonzept (`specs/architecture/0002-testkonzept.md`) wird im selben PR fortgeschrieben: die
 jsdom-Fallstricke (beide Observer, konstante Breite 0), die Regel „treibbarer Stub statt No-op-Stub"

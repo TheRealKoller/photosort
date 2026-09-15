@@ -19,10 +19,12 @@ Lösungsmenge:
   **aller** Bilder der Zeile bekannt sind. PhotoSort lädt Bilder über `PhotoImage` authentifiziert
   als Blob; das Verhältnis eines Bildes steht damit erst fest, nachdem es geladen ist. Ein Layout,
   das darauf wartet, ordnet sich bei jedem eintreffenden Bild neu.
-- Die Foto-Karte `components/PhotoCard.tsx` lebt heute genau einmal und wird von vier Ansichten
-  benutzt (Raster, Kuratierung, gemeinsame Endauswahl, Duplikatsvergleich). Sie beschneidet
-  quadratisch, trägt Kartenkörper, Statuszeile und Fußzeile. Drei der vier Ansichten sollen
-  unverändert bleiben.
+- Die Foto-Karte `components/PhotoCard.tsx` lebt heute genau einmal und wird von drei Ansichten
+  benutzt (Raster, Kuratierung, gemeinsame Endauswahl). Der Duplikatsvergleich benutzt sie
+  ausdrücklich **nicht** — `DuplicatePhotoTile` schließt das in seinem eigenen Doku-Block aus, weil
+  das Vokabular der Fotokarte die Albumentscheidung eines Nutzers ist und dort die andere Frage
+  steht. Die Karte beschneidet quadratisch, trägt Kartenkörper, Statuszeile und Fußzeile. Zwei der
+  drei Ansichten sollen unverändert bleiben.
 
 ## Entscheidung
 
@@ -85,9 +87,9 @@ Verbindlich für diese Funktion:
 
 ### 5. Die Rasterkachel ist eine eigene Komponente, keine Ausprägung der Fotokarte
 
-`components/PhotoCard.tsx` bleibt **unverändert** und behält seine drei Aufrufstellen (Kuratierung,
-gemeinsame Endauswahl, Duplikatsvergleich). Die Rasteransicht bekommt eine eigene Kachel neben den
-bestehenden `*PhotoTile`-Komponenten.
+`components/PhotoCard.tsx` bleibt **unverändert** und behält ihre beiden verbleibenden
+Aufrufstellen (Kuratierung, gemeinsame Endauswahl). Die Rasteransicht bekommt eine eigene Kachel
+neben den bestehenden `*PhotoTile`-Komponenten; es kommt keine weitere Aufrufstelle hinzu.
 
 Die beiden teilen nichts, was eine Prop trennen könnte: Die Fotokarte ist ein Kartenkörper mit
 fester quadratischer Bildfläche, sichtbarer Statuszeile und Fußzeile; die Rasterkachel ist eine
