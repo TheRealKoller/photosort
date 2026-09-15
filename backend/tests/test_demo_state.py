@@ -80,12 +80,14 @@ from photosort.models import (
     RemoteCategoryClassificationRun,
     ScanRun,
     ScanStatus,
+    ScoringRun,
     User,
 )
 from photosort.motifs import MOTIF_REGISTRY, MOTIF_STRENGTH_BAND_STRONG, is_motif_key
 from photosort.places import sanitize_place_name
 from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.quality_weights import store_weights
+from photosort.scoring import SHARPNESS_REJECT_THRESHOLD
 from photosort.thumbnails import display_path, generate_variants, thumbnail_path
 from tests.import_closure import import_closure, module_file
 from tests.time_offset_invariant import assert_time_offset_invariant
@@ -496,7 +498,12 @@ class TestRebuildDemoStateProducesTheFiveStates:
 
         Geprueft ueber den STERN, nicht ueber eine abgeschriebene Id-Liste: Jede Gruppe hat genau
         einen Repraesentanten ohne `duplicate_of`, alle uebrigen Mitglieder zeigen auf ihn und
-        tragen einen Ausschuss-Vorschlag."""
+        tragen einen Ausschuss-Vorschlag.
+
+        DER REPRAESENTANT TRAEGT NICHT MEHR ZWINGEND "kein Vorschlag" (Spec 0486): Genau eine der
+        beiden Gruppen bricht das bewusst - ihr Gewinner ist selbst wegen Unschaerfe abgelehnt und
+        damit das unveraenderliche Mitglied, an dem AK3 vorfuehrbar wird. Was fuer JEDEN
+        Repraesentanten gilt, ist allein `duplicate_of is None`."""
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
         photos = await _photos_of(db_session, DUPLICATE_PROJECT_NAME)
         scores = {photo.id: await db_session.get(PhotoScore, photo.id) for photo in photos}
@@ -514,10 +521,7 @@ class TestRebuildDemoStateProducesTheFiveStates:
         for representative, members in gruppen.items():
             repraesentant = scores[representative]
             assert repraesentant is not None
-            # Der Repraesentant ist der Ausschuss-Ueberlebende der Serie: kein `duplicate_of` und
-            # kein Vorschlag.
             assert repraesentant.duplicate_of is None
-            assert repraesentant.suggested_status is None
             for member_id in members:
                 score = scores[member_id]
                 assert score is not None
@@ -525,6 +529,57 @@ class TestRebuildDemoStateProducesTheFiveStates:
                     continue
                 assert score.duplicate_of == representative
                 assert score.suggested_status == RatingStatus.REJECTED
+
+    async def test_exactly_one_representative_is_itself_rejected_without_a_duplicate(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """AK3 muss im Browser vorfuehrbar sein: Ohne ein Mitglied, dessen Ausschuss NICHT aus dem
+        Duplikat folgt, zeigt die Demo die Kachel ohne Wahlschaltflaechen nie.
+
+        GENAU EINER, nicht "mindestens einer": Der andere Repraesentant traegt weiter keinen
+        Vorschlag und belegt damit den Regelfall daneben - ohne ihn bliebe unbelegt, dass die
+        Ansicht beide Faelle unterscheidet. Der Gewinner liegt zugleich unterhalb
+        `SHARPNESS_REJECT_THRESHOLD`, damit der Bestand genau so aussieht, wie ihn ein echter Lauf
+        hinterliesse."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        photos = await _photos_of(db_session, DUPLICATE_PROJECT_NAME)
+        scores = [await db_session.get(PhotoScore, photo.id) for photo in photos]
+
+        repraesentanten = [
+            score for score in scores if score is not None and score.duplicate_of is None
+        ]
+        abgelehnt = [
+            score for score in repraesentanten if score.suggested_status == RatingStatus.REJECTED
+        ]
+
+        assert len(repraesentanten) == len(demo_state._DEMO_DUPLICATE_GROUP_SIZES)
+        assert len(abgelehnt) == 1
+        assert abgelehnt[0].sharpness < SHARPNESS_REJECT_THRESHOLD
+        # Der Zeit-/Ortscluster wird nur fuer die NICHT aussortierten Fotos gesetzt - dieselbe
+        # Regel wie im Lauf.
+        assert abgelehnt[0].cluster_key is None
+
+    async def test_the_run_counts_the_rejected_representative_among_its_suggestions(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """`suggestions_found` ist die Zahl der Aufnahmen mit Vorschlag, nicht die Zahl der
+        Duplikat-Verlierer. Der selbst abgelehnte Repraesentant zaehlt mit - sonst nennte der
+        Ausschuss-Schritt eine andere Zahl, als die Fotoliste unter dem Filter `suggested`
+        zeigt."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        photos = await _photos_of(db_session, DUPLICATE_PROJECT_NAME)
+        scores = [await db_session.get(PhotoScore, photo.id) for photo in photos]
+        mit_vorschlag = sum(
+            1 for score in scores if score is not None and score.suggested_status is not None
+        )
+
+        run = (
+            await db_session.execute(
+                select(ScoringRun).where(ScoringRun.project_id == photos[0].project_id)
+            )
+        ).scalar_one()
+
+        assert run.suggestions_found == mit_vorschlag
 
     async def test_the_duplicate_project_leaves_every_group_undecided(
         self, db_session: AsyncSession, tmp_path: Path
