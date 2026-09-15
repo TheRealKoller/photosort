@@ -88,7 +88,12 @@ export function AusschussStepPage() {
       {/* ZWEI GLEICHRANGIGE WEGE, nebeneinander und in derselben Button-Variante: Der eine
           sichtet Einzelvorschläge, der andere geht die Duplikat-Serien der Reihe nach durch. Der
           zweite erscheint nur, wenn es überhaupt eine Gruppe gibt — und bis die Auskunft da ist
-          gar nicht, damit er nicht kurz aufblitzt und wieder verschwindet. */}
+          gar nicht, damit er nicht kurz aufblitzt und wieder verschwindet.
+
+          Der zugängliche Name beginnt mit der sichtbaren Beschriftung (WCAG 2.5.3) und trägt den
+          Zusatz nach einem GEDANKENSTRICH, nie nach einem Doppelpunkt: Der kachelgenaue Einstieg
+          heißt `Duplikate vergleichen: <Dateiname>`, und der Prüfstack wählt ihn über genau dieses
+          Präfixmuster. Ein zweiter Treffer führte ihn in die falsche Ansicht. */}
       {scoringStatus === 'success' && (
         <div className="flex flex-wrap gap-3">
           <Button asChild variant="secondary" size="sm">
@@ -103,7 +108,7 @@ export function AusschussStepPage() {
             <Button asChild variant="secondary" size="sm">
               <Link
                 to={`/projects/${project.id}/photos/${duplicateGroupIndex.data.first_photo_id}/duplicates`}
-                aria-label="Duplikat-Gruppen der Reihe nach durchgehen"
+                aria-label="Duplikate vergleichen — alle Gruppen der Reihe nach durchgehen"
               >
                 Duplikate vergleichen
               </Link>

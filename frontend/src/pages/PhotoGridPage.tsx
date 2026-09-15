@@ -150,9 +150,15 @@ export function PhotoGridPage() {
       </div>
 
       {/* EIN Weg für die ganze Liste, außerhalb des Kachelrasters — der kachelgenaue Einstieg
-          bleibt daneben bestehen. Sein zugänglicher Name unterscheidet sich bewusst vom
-          kachelgenauen `Duplikate vergleichen: <Dateiname>`: Der Prüfstack wählt jenen über ein
-          Präfixmuster, und ein zweiter Treffer führte ihn in die falsche Ansicht.
+          bleibt daneben bestehen.
+
+          DIE SICHTBARE BESCHRIFTUNG IST DIESELBE wie am Ausschuss-Schritt: Es ist derselbe Weg an
+          einer zweiten Stelle, und zwei Namen dafür arbeiteten gegen die Wiedererkennung, die
+          dieser Einstieg gerade herstellen soll. Unterschieden wird über den ZUGÄNGLICHEN Namen —
+          mit dem sichtbaren Text als Anfang (WCAG 2.5.3) und dem Zusatz nach einem
+          GEDANKENSTRICH, nie nach einem Doppelpunkt: Der kachelgenaue Einstieg heißt
+          `Duplikate vergleichen: <Dateiname>`, und der Prüfstack wählt ihn über genau dieses
+          Präfixmuster.
 
           Bei `total === 0` und während des Ladens ausgeblendet, nicht deaktiviert (AK8): Ein Weg,
           der auf einen Leerzustand führt, ist kein Weg, und ein kurz aufblitzender Einstieg wäre
@@ -161,9 +167,9 @@ export function PhotoGridPage() {
         <Button asChild variant="secondary" size="sm" className="self-start">
           <Link
             to={`/projects/${id}/photos/${duplicateGroupIndex.data.first_photo_id}/duplicates`}
-            aria-label="Alle Duplikat-Gruppen der Reihe nach durchgehen"
+            aria-label="Duplikate vergleichen — alle Gruppen der Reihe nach durchgehen"
           >
-            Duplikat-Gruppen durchgehen
+            Duplikate vergleichen
           </Link>
         </Button>
       )}

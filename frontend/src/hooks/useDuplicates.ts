@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   getDuplicateGroup,
@@ -25,6 +25,16 @@ export function useDuplicateGroupQuery(projectId: number, photoId: number) {
   return useQuery({
     queryKey: duplicateGroupQueryKey(projectId, photoId),
     queryFn: () => getDuplicateGroup(projectId, photoId),
+    /* BEIM BLÄTTERN BLEIBT DIE VORIGE GRUPPE STEHEN, bis die nächste da ist. Der Anker steht im
+       Schlüssel; ohne das Vorhalten gibt es für den neuen Schlüssel keine Daten, die Seite fiele
+       bei JEDEM Schritt des Durchgangs in den Ladezustand, und die Gruppennavigation verschwände
+       mitsamt dem gerade gedrückten Knopf — genau der Sprung unter dem Finger, den `disabled`
+       statt „fehlt" am Rand vermeidet.
+
+       Beim ERSTEN Laden greift es nicht (es gibt keinen Vorgänger), der Skeleton-Zustand bleibt
+       also erhalten. Ein Fehler ersetzt den vorgehaltenen Stand unverändert, `isError`/`isSuccess`
+       laufen wie bisher — Leer- und Fehlerpfad der Seite bleiben davon unberührt. */
+    placeholderData: keepPreviousData,
   })
 }
 

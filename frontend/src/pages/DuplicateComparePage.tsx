@@ -162,7 +162,9 @@ export function DuplicateComparePage() {
             Am Rand `disabled` statt abwesend: Ein verschwindender Knopf verschöbe die übrigen
             unter dem Finger. Die zugänglichen Namen unterscheiden sich bewusst von den
             `Vorherige/Nächste Aufnahme der Gruppe` der Vergrößerung, die gleichzeitig im Dokument
-            stehen können. */}
+            stehen können — und beginnen mit der sichtbaren Beschriftung (WCAG 2.5.3): Ein
+            zugänglicher Name, der den sichtbaren Text nicht als zusammenhängende Kette enthält,
+            ist per Spracheingabe nicht ansprechbar. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl sm:text-2xl">
             {query.isSuccess
@@ -173,8 +175,8 @@ export function DuplicateComparePage() {
             <div role="group" aria-label="Duplikat-Gruppen" className="flex gap-3">
               {(
                 [
-                  ['Zur vorherigen Gruppe', 'Zurück', query.data.previous_photo_id],
-                  ['Zur nächsten Gruppe', 'Vor', query.data.next_photo_id],
+                  ['Zurück zur vorherigen Gruppe', 'Zurück', query.data.previous_photo_id],
+                  ['Vor zur nächsten Gruppe', 'Vor', query.data.next_photo_id],
                 ] as const
               ).map(([name, beschriftung, ziel]) => (
                 <Button

@@ -474,16 +474,16 @@ describe('PhotoGridPage', () => {
       renderPage('/projects/1/photos?filter=suggested')
 
       const einstiege = await screen.findAllByRole('link', {
-        name: 'Alle Duplikat-Gruppen der Reihe nach durchgehen',
+        name: 'Duplikate vergleichen — alle Gruppen der Reihe nach durchgehen',
       })
       expect(einstiege).toHaveLength(1)
       expect(einstiege[0]).toHaveAttribute('href', '/projects/1/photos/42/duplicates')
     })
 
-    it('traegt einen Namen, der den kachelgenauen Einstieg NICHT mittrifft', async () => {
-      // AK7: Der Prüfstack waehlt den Kachel-Einstieg ueber `/^Duplikate vergleichen:/` und
-      // `.last()`. Truege der listenweite Weg dasselbe Muster, waehlte er beim Durchklicken IHN -
-      // drei Pruefstack-Spezifikationen liefen dann gegen die falsche Ansicht.
+    it('heisst sichtbar wie am Ausschuss-Schritt - es ist derselbe Weg', async () => {
+      // AK7 spricht von EINEM Einstieg an zwei Stellen. Zwei sichtbare Namen fuer dieselbe Sache
+      // arbeiteten gegen die Wiedererkennung, die dieser Einstieg gerade herstellen soll.
+      // Unterschieden wird ueber den ZUGAENGLICHEN Namen, nicht ueber die Beschriftung.
       vi.mocked(photosApi.listPhotos).mockResolvedValue(VORGESCHLAGENE_LISTE)
       vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
         total: 2,
@@ -492,7 +492,27 @@ describe('PhotoGridPage', () => {
 
       renderPage('/projects/1/photos?filter=suggested')
 
-      await screen.findByRole('link', { name: 'Alle Duplikat-Gruppen der Reihe nach durchgehen' })
+      const einstieg = await screen.findByRole('link', { name: /durchgehen$/ })
+      expect(einstieg.textContent).toBe('Duplikate vergleichen')
+    })
+
+    it('traegt einen Namen, der den kachelgenauen Einstieg NICHT mittrifft', async () => {
+      // AK7: Der Prüfstack waehlt den Kachel-Einstieg ueber `/^Duplikate vergleichen:/` und
+      // `.last()`. Truege der listenweite Weg dasselbe Muster, waehlte er beim Durchklicken IHN -
+      // drei Pruefstack-Spezifikationen liefen dann gegen die falsche Ansicht. Der Zusatz folgt
+      // deshalb nach einem GEDANKENSTRICH, nie nach einem Doppelpunkt - und beginnt trotzdem mit
+      // der sichtbaren Beschriftung (WCAG 2.5.3).
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(VORGESCHLAGENE_LISTE)
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+        total: 2,
+        first_photo_id: 42,
+      })
+
+      renderPage('/projects/1/photos?filter=suggested')
+
+      const einstieg = await screen.findByRole('link', { name: /durchgehen$/ })
+      expect(einstieg.getAttribute('aria-label')).toMatch(/^Duplikate vergleichen\b/)
+      expect(einstieg.getAttribute('aria-label')).not.toMatch(/^Duplikate vergleichen:/)
       expect(screen.getAllByRole('link', { name: /^Duplikate vergleichen:/ })).toHaveLength(1)
       expect(
         screen.getByRole('link', { name: 'Duplikate vergleichen: serie.jpg' }),

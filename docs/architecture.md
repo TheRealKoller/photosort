@@ -643,7 +643,18 @@ Verarbeitungs-Cache (Thumbnails).
       was es im Datenmodell gibt. Navigiert wird als **Push**, damit der Zurück-Knopf des Browsers
       „vorherige Gruppe" heißt. **Die Seite bleibt dabei montiert** (gleiche Route, anderer
       Parameter); `enlargedId` und `decidingIds` werden beim Ankerwechsel deshalb ausdrücklich
-      zurückgesetzt, sonst zeigten sie auf Fotos einer Gruppe, die nicht mehr da ist.
+      zurückgesetzt, sonst zeigten sie auf Fotos einer Gruppe, die nicht mehr da ist. Die
+      Gruppenabfrage hält über `placeholderData: keepPreviousData` die vorige Gruppe, bis die
+      nächste da ist: Der Anker steht im Query-Schlüssel, und ohne das Vorhalten fiele die Seite
+      bei **jedem** Schritt des Durchgangs in den Ladezustand — die Navigation verschwände mitsamt
+      dem gerade gedrückten Knopf, also genau der Sprung unter dem Finger, den `disabled` statt
+      „fehlt" am Rand vermeidet.
+    - **Der zugängliche Name beginnt an allen neuen Bedienelementen mit der sichtbaren
+      Beschriftung** (WCAG 2.5.3, `specs/architecture/0004-design-system.md`); sonst sind sie per
+      Spracheingabe nicht ansprechbar. Beide Einstiege heißen sichtbar gleich („Duplikate
+      vergleichen") — es ist derselbe Weg an zwei Stellen — und tragen ihren Zusatz nach einem
+      **Gedankenstrich, nie nach einem Doppelpunkt**: Der kachelgenaue Einstieg heißt `Duplikate
+      vergleichen: <Dateiname>`, und der Prüfstack wählt ihn über genau dieses Präfixmuster.
   - **Die laufende Diagnose der Modellfehler** *(Spec
     [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
     [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md))*:

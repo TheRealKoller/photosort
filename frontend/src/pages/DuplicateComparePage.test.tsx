@@ -191,8 +191,8 @@ describe('DuplicateComparePage - die Gruppennavigation', () => {
     )
     renderPage()
 
-    expect(await screen.findByRole('button', { name: 'Zur vorherigen Gruppe' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Zur nächsten Gruppe' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Zurück zur vorherigen Gruppe' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Vor zur nächsten Gruppe' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /verkleinern$/ })).toBeNull()
   })
 
@@ -208,12 +208,30 @@ describe('DuplicateComparePage - die Gruppennavigation', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Reise/serie-12.jpg vergrößern' }))
 
     for (const name of [
-      'Zur vorherigen Gruppe',
-      'Zur nächsten Gruppe',
+      'Zurück zur vorherigen Gruppe',
+      'Vor zur nächsten Gruppe',
       'Vorherige Aufnahme der Gruppe',
       'Nächste Aufnahme der Gruppe',
     ]) {
       expect(screen.getAllByRole('button', { name })).toHaveLength(1)
+    }
+  })
+
+  it('beginnt den zugaenglichen Namen mit der sichtbaren Beschriftung (WCAG 2.5.3)', async () => {
+    // Zugesichert in specs/architecture/0004-design-system.md. Enthaelt der zugaengliche Name den
+    // sichtbaren Text nicht als ZUSAMMENHAENGENDE Kette, ist das Element per Spracheingabe nicht
+    // ansprechbar - "Klick Zurueck" findet dann nichts.
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      group([11, 12], { position: 2, total: 3, previousPhotoId: 5, nextPhotoId: 20 }),
+    )
+    renderPage()
+
+    const navigation = await screen.findByRole('group', { name: 'Duplikat-Gruppen' })
+    const knoepfe = within(navigation).getAllByRole('button')
+
+    expect(knoepfe.map((knopf) => knopf.textContent)).toEqual(['Zurück', 'Vor'])
+    for (const knopf of knoepfe) {
+      expect(knopf.getAttribute('aria-label')).toMatch(new RegExp(`^${knopf.textContent}\\b`, 'iu'))
     }
   })
 
@@ -230,14 +248,35 @@ describe('DuplicateComparePage - die Gruppennavigation', () => {
       vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(group([11, 12], nachbarn))
       renderPage()
 
-      const zurueck = await screen.findByRole('button', { name: 'Zur vorherigen Gruppe' })
+      const zurueck = await screen.findByRole('button', { name: 'Zurück zur vorherigen Gruppe' })
       expect(zurueck).toHaveProperty('disabled', zurueckGesperrt)
-      expect(screen.getByRole('button', { name: 'Zur nächsten Gruppe' })).toHaveProperty(
+      expect(screen.getByRole('button', { name: 'Vor zur nächsten Gruppe' })).toHaveProperty(
         'disabled',
         vorGesperrt,
       )
     },
   )
+
+  it('bleibt WAEHREND DES LADENS der Nachbargruppe stehen', async () => {
+    // Der Query-Schluessel traegt den Anker - beim Blaettern gibt es fuer den neuen keine Daten.
+    // Ohne Vorhalten faellt die Seite in den Ladezustand, die Navigation verschwindet mitsamt dem
+    // gerade gedrueckten Knopf, und beim Durchgang durch viele Gruppen springt sie bei JEDEM
+    // Schritt weg. Das bricht zugleich die Begruendung fuer `disabled` statt abwesend.
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockImplementation((_projectId, photoId) =>
+      photoId === 10
+        ? Promise.resolve(group([11, 12], { position: 1, total: 2, nextPhotoId: 20 }))
+        : // Loest NIE auf: der Ladezustand der Nachbargruppe bleibt stehen und ist messbar.
+          new Promise(() => {}),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Vor zur nächsten Gruppe' }))
+
+    await waitFor(() => expect(screen.getByTestId('pfad').textContent).toContain('/photos/20/'))
+    expect(screen.getByRole('button', { name: 'Vor zur nächsten Gruppe' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Zurück zur vorherigen Gruppe' })).toBeTruthy()
+  })
 
   it('navigiert auf den Anker der Nachbargruppe - als Push, nicht als Ersetzung', async () => {
     // Der Pfadwert bleibt ein ANKER-Foto, es gibt keinen Gruppenindex in der Route. Push statt
@@ -248,7 +287,7 @@ describe('DuplicateComparePage - die Gruppennavigation', () => {
     renderPage()
     await waitFor(() => expect(tiles()).toHaveLength(2))
 
-    await userEvent.click(screen.getByRole('button', { name: 'Zur nächsten Gruppe' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Vor zur nächsten Gruppe' }))
 
     expect(screen.getByTestId('pfad').textContent).toBe('/projects/1/photos/20/duplicates')
   })
@@ -273,7 +312,7 @@ describe('DuplicateComparePage - der Ankerwechsel', () => {
   }
 
   async function wechsleGruppe() {
-    await userEvent.click(screen.getByRole('button', { name: 'Zur nächsten Gruppe' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Vor zur nächsten Gruppe' }))
   }
 
   it('nimmt die Vergroesserung zurueck', async () => {
@@ -288,7 +327,7 @@ describe('DuplicateComparePage - der Ankerwechsel', () => {
 
     await wechsleGruppe()
     await waitFor(() => expect(screen.queryByRole('button', { name: /verkleinern$/ })).toBeNull())
-    await userEvent.click(screen.getByRole('button', { name: 'Zur vorherigen Gruppe' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Zurück zur vorherigen Gruppe' }))
 
     await waitFor(() => expect(tiles()).toHaveLength(2))
     expect(screen.queryByRole('button', { name: /verkleinern$/ })).toBeNull()
@@ -315,7 +354,7 @@ describe('DuplicateComparePage - der Ankerwechsel', () => {
 
     await wechsleGruppe()
     await waitFor(() => expect(screen.getByTestId('pfad').textContent).toContain('/photos/20/'))
-    await userEvent.click(screen.getByRole('button', { name: 'Zur vorherigen Gruppe' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Zurück zur vorherigen Gruppe' }))
 
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Ausschuss: Reise/serie-11.jpg' })).toHaveProperty(

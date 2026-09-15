@@ -23,9 +23,18 @@ der bleibt.
 
 `DuplicateGroupPhotoOut` trägt `effective_decision: DuplicateDecision` — `KEEP`, wenn das Foto den
 Ausschuss-Schritt überlebt, sonst `DISCARD`, berechnet durch
-`duplicates.py::survives_ausschuss_for`. Das Feld `decision` entfällt aus der Antwort. Die Ansicht
-kennt damit keinen dritten Wert und unterscheidet nicht mehr, ob ein Zustand vom Automaten oder vom
-Nutzer stammt.
+`duplicates.py::effective_decision_for` über demselben `_survives`, das auch die beiden
+Überlebens-Fassungen ziehen. Das Feld `decision` entfällt aus der Antwort. Die Ansicht kennt damit
+keinen dritten Wert und unterscheidet nicht mehr, ob ein Zustand vom Automaten oder vom Nutzer
+stammt.
+
+**Eine Delegation an `duplicates.py::survives_ausschuss_for` ist untersagt.** Jene Funktion bildet
+den inneren Join der SQL-Fassung nach und antwortet für ein Mitglied **ohne `PhotoScore`-Zeile**
+`False`. Ein Repräsentant braucht strukturell keine eigene Zeile, um referenziert zu werden
+(`photo_scores.duplicate_of` zeigt auf `photos.id`), und `load_duplicate_links` joint genau deshalb
+äußer — über die Delegation stünde der Gruppengewinner als unumkehrbarer Ausschuss da, genau
+verkehrt. `effective_decision_for` liest `score is None` deshalb ausdrücklich wie
+`suggested_status = NULL, duplicate_of = NULL` (⇒ `KEEP`, änderbar).
 
 **Untersagt ist die Ableitung im Frontend aus `PhotoOut.suggestion`.** Dieses Feld ist eine
 Anzeigegröße mit eigenen Unterdrückungsregeln — eine Albumbewertung des anfragenden Nutzers und

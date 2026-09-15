@@ -237,11 +237,31 @@ describe('AusschussStepPage', () => {
       renderPage(ERFOLGREICHER_LAUF)
 
       expect(
-        await screen.findByRole('link', { name: 'Duplikat-Gruppen der Reihe nach durchgehen' }),
+        await screen.findByRole('link', {
+          name: 'Duplikate vergleichen — alle Gruppen der Reihe nach durchgehen',
+        }),
       ).toHaveAttribute('href', '/projects/1/photos/42/duplicates')
       expect(
         screen.getByRole('link', { name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen' }),
       ).toBeInTheDocument()
+    })
+
+    it('beginnt den zugaenglichen Namen mit der sichtbaren Beschriftung (WCAG 2.5.3)', async () => {
+      // Zugesichert in specs/architecture/0004-design-system.md. Der Zusatz folgt nach einem
+      // GEDANKENSTRICH, nie nach einem Doppelpunkt - sonst traefe der Name das Praefixmuster des
+      // kachelgenauen Einstiegs (`Duplikate vergleichen: <Dateiname>`), ueber das der Pruefstack
+      // jenen waehlt.
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+        total: 2,
+        first_photo_id: 42,
+      })
+      renderPage(ERFOLGREICHER_LAUF)
+
+      const einstieg = await screen.findByRole('link', { name: /durchgehen$/ })
+
+      expect(einstieg.textContent).toBe('Duplikate vergleichen')
+      expect(einstieg.getAttribute('aria-label')).toMatch(/^Duplikate vergleichen\b/)
+      expect(einstieg.getAttribute('aria-label')).not.toMatch(/^Duplikate vergleichen:/)
     })
 
     it('rendert ihn NICHT, wenn es keine einzige Gruppe gibt', async () => {
