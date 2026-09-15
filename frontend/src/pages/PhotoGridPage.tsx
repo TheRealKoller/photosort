@@ -365,7 +365,11 @@ export function PhotoGridPage() {
               {query.isFetchingNextPage ? ' — lädt…' : ''}
             </p>
           ) : (
-            <Alert onRetry={() => void query.fetchNextPage()}>{nextPageError}</Alert>
+            // Ueber DIESELBE Sperre wie der Anker (Auflage S7): "ein Abruf gleichzeitig" gilt
+            // ohne Einschraenkung auf den Beobachterpfad. Ein `fetchNextPage()` direkt hier
+            // ginge an `fetchingRef` vorbei, und mehrere Druecke im selben Tick erzeugten je
+            // einen Abruf.
+            <Alert onRetry={() => loadMoreRef.current()}>{nextPageError}</Alert>
           )}
           {/* Der Sichtbarkeitsanker. Er steht NUR unter einem gefüllten Raster - im Leerzustand
               löste er sofort einen Abruf aus. */}

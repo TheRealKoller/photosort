@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -516,6 +516,34 @@ describe('PhotoGridPage', () => {
       expect(alert).toHaveTextContent('Nachladen fehlgeschlagen')
       expect(screen.getByRole('button', { name: /erneut versuchen/i })).toBeInTheDocument()
       expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    })
+
+    it('sends the retry through the same lock as the anchor', async () => {
+      // Auflage S7 sagt "ein Abruf gleichzeitig" OHNE Einschraenkung auf den Beobachterpfad. Ein
+      // `fetchNextPage()` direkt am Wiederholknopf ginge an der Sperre vorbei; hier druecken
+      // Knopf und Anker im selben Tick, und es darf trotzdem nur EIN weiterer Abruf entstehen.
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce({ items: [photo({ id: 1 })], total: 3 })
+        .mockRejectedValueOnce(new ApiError(500, 'Nachladen fehlgeschlagen'))
+        .mockReturnValue(new Promise(() => {}))
+      renderPage()
+      await screen.findAllByRole('listitem')
+      intersectionObserver.setIntersecting(true)
+      await screen.findByRole('alert')
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(2)
+
+      // Fuenf Klicks OHNE Warten dazwischen - genau das Fenster, in dem `isFetchingNextPage` noch
+      // falsch ist. Mit `await` dazwischen bestuende der Fall auch gegen einen Aufruf, der an der
+      // Sperre vorbeigeht, weil React zwischendurch neu rendert.
+      const wiederholen = screen.getByRole('button', { name: /erneut versuchen/i })
+      act(() => {
+        for (let versuch = 0; versuch < 5; versuch += 1) {
+          fireEvent.click(wiederholen)
+        }
+      })
+
+      await waitFor(() => expect(photosApi.listPhotos).toHaveBeenCalledTimes(3))
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(3)
     })
 
     it('does not place the anchor in the empty state', async () => {
