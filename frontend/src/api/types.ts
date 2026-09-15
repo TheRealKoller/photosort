@@ -238,16 +238,34 @@ export interface SuggestionOut {
  * andere Frage — ob die Aufnahme den Ausschuss-Schritt überlebt. Ein geteilter Wertevorrat machte
  * die beiden an jeder Lesestelle verwechselbar.
  *
- * `null` an `DuplicateGroupItem.decision` heißt „noch nicht entschieden" und ist ein eigener
- * Zustand, kein fehlender Wert.
+ * Es gibt keinen dritten Wert: Die Ansicht zeigt seit ADR 0111 die Auswertung des
+ * Überlebens-Prädikats, nicht die Entscheidungszeile — „noch nicht entschieden" ist kein
+ * darstellbarer Zustand mehr.
  */
 export type DuplicateDecision = 'keep' | 'discard'
 
-/** Ein Mitglied der Duplikat-Gruppe. Die Entscheidung reist NEBEN dem Foto, nicht an ihm:
- * `PhotoOut` trägt kein Feld dafür, weil sie außerhalb dieser Ansicht keine Rolle hat. */
+/**
+ * Ein Mitglied der Duplikat-Gruppe. Der Zustand reist NEBEN dem Foto, nicht an ihm: `PhotoOut`
+ * trägt kein Feld dafür, weil er außerhalb dieser Ansicht keine Rolle hat.
+ *
+ * `effective_decision` ist das, was ohne weiteres Zutun eintritt — nicht die gespeicherte Zeile.
+ * Ob ein Zustand vom System oder vom Nutzer stammt, geht daraus nicht hervor und wird nicht
+ * angezeigt.
+ *
+ * **Dieser Wert wird nie aus `PhotoOut.suggestion` abgeleitet** (ADR 0111 Punkt 1, untersagt):
+ * Jenes Feld fällt bei eigener Albumbewertung und bei getroffener Entscheidung auf `null`, und
+ * eine TypeScript-Fassung des Prädikats sieht der Wächter über die Verwendungsstellen nicht — er
+ * liest nur `backend/src`. Bei Verletzung zeigt die Ansicht einen anderen Zustand, als der
+ * Ausschuss-Schritt anwendet, ohne Fehler und ohne Meldung.
+ *
+ * `keep_possible === false` heißt: Kein Wert der Entscheidungszeile ändert diesen Zustand. Der
+ * Grund reist nicht mit — er folgt aus der Bedingung selbst, und die Oberfläche rendert dort einen
+ * festen Text.
+ */
 export interface DuplicateGroupItem {
   photo: PhotoOut
-  decision: DuplicateDecision | null
+  effective_decision: DuplicateDecision
+  keep_possible: boolean
 }
 
 /**
@@ -255,14 +273,30 @@ export interface DuplicateGroupItem {
  * Ein Schreibvorgang liefert damit denselben vollständigen Stand zurück, den ein erneutes Laden
  * liefern würde.
  *
- * `position`/`total` sind 1-basiert mit `1 <= position <= total`. `total` zählt die noch OFFENEN
- * Gruppen des Projekts: Eine Gruppe, in der jedes Mitglied entschieden ist, zählt nicht mehr mit,
- * und der Zähler beschreibt damit die verbleibende Arbeit.
+ * `position`/`total` sind 1-basiert mit `1 <= position <= total` und beziehen sich auf ALLE
+ * Duplikat-Gruppen des Projekts — eine vollständig entschiedene zählt weiter mit.
+ *
+ * `previous_photo_id`/`next_photo_id` tragen die Repräsentanten-Id der jeweils benachbarten
+ * Gruppe, `null` am Rand. Die Ansicht schaltet dort auf `disabled`, statt die Schaltfläche
+ * wegzulassen.
  */
 export interface DuplicateGroupOut {
   items: DuplicateGroupItem[]
   position: number
   total: number
+  previous_photo_id: number | null
+  next_photo_id: number | null
+}
+
+/**
+ * Die Auskunft für den Einstieg in den Durchgang.
+ *
+ * `first_photo_id` ist `null`, wenn es keine Gruppe gibt — der Einstieg wird dann gar nicht
+ * gerendert, statt auf eine leere Ansicht zu führen.
+ */
+export interface DuplicateGroupIndexOut {
+  total: number
+  first_photo_id: number | null
 }
 
 // Das Motivset (specs/features/0427-motive-mit-staerke.md). Die Menge ist fachlich

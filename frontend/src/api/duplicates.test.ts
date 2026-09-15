@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch } from './client'
-import { getDuplicateGroup, setDuplicateDecision, setDuplicateGroupDecision } from './duplicates'
-import type { DuplicateGroupOut } from './types'
+import {
+  getDuplicateGroup,
+  getDuplicateGroupIndex,
+  setDuplicateDecision,
+  setDuplicateGroupDecision,
+} from './duplicates'
+import type { DuplicateGroupIndexOut, DuplicateGroupOut } from './types'
 
 vi.mock('./client', () => ({
   apiFetch: vi.fn(),
@@ -12,6 +17,13 @@ const GROUP: DuplicateGroupOut = {
   items: [],
   position: 1,
   total: 2,
+  previous_photo_id: null,
+  next_photo_id: 43,
+}
+
+const INDEX: DuplicateGroupIndexOut = {
+  total: 2,
+  first_photo_id: 42,
 }
 
 describe('api/duplicates', () => {
@@ -52,13 +64,26 @@ describe('api/duplicates', () => {
     expect(result).toEqual(GROUP)
   })
 
+  it('liest den Einstieg ueber das PROJEKT, nicht ueber ein Foto', async () => {
+    // Der Einstieg kennt noch kein Mitglied - er fragt gerade, wo der Durchgang beginnt. Kein
+    // `PhotoOut` in der Antwort, also auch kein nutzerabhaengiger Inhalt.
+    vi.mocked(apiFetch).mockResolvedValue(INDEX)
+
+    const result = await getDuplicateGroupIndex(7)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/7/duplicate-groups')
+    expect(result).toEqual(INDEX)
+  })
+
   it('kennt keinen Weg zurueck nach "noch nicht entschieden"', async () => {
     // Es gibt kein `DELETE` und keine Ruecknahme-Funktion: aendern heisst den anderen Wert
-    // schreiben. Geprueft als Abwesenheit im Modul, nicht als Kommentar.
+    // schreiben. Geprueft als Abwesenheit im Modul, nicht als Kommentar - die Sollmenge steht
+    // ausgeschrieben, damit ein neuer Export sie erweitern MUSS statt sie aufzuweichen.
     const modul = await import('./duplicates')
 
     expect(Object.keys(modul).sort()).toEqual([
       'getDuplicateGroup',
+      'getDuplicateGroupIndex',
       'setDuplicateDecision',
       'setDuplicateGroupDecision',
     ])

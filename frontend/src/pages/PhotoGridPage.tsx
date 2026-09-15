@@ -12,6 +12,7 @@ import { PhotoImage } from '../components/PhotoImage'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
+import { useDuplicateGroupIndexQuery } from '../hooks/useDuplicates'
 import { useMotifsQuery } from '../hooks/useMotifs'
 import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
@@ -67,6 +68,11 @@ export function PhotoGridPage() {
     : undefined
   const photos = query.data?.pages.flatMap((page) => page.items) ?? []
   const totalSuggested = query.data?.pages[0]?.total ?? 0
+  // Nur unter dem Vorschlags-Filter: Dort wird der Ausschuss gesichtet, und nur dort gehoert der
+  // Weg durch die Serien hin. Unter jedem anderen Filter liefe die Anfrage ohne Adressaten.
+  const duplicateGroupIndex = useDuplicateGroupIndexQuery(id, {
+    enabled: filterParam === 'suggested',
+  })
 
   function handleConfirmGate(): void {
     if (gateMutation.isPending) {
@@ -142,6 +148,25 @@ export function PhotoGridPage() {
           </Button>
         ))}
       </div>
+
+      {/* EIN Weg für die ganze Liste, außerhalb des Kachelrasters — der kachelgenaue Einstieg
+          bleibt daneben bestehen. Sein zugänglicher Name unterscheidet sich bewusst vom
+          kachelgenauen `Duplikate vergleichen: <Dateiname>`: Der Prüfstack wählt jenen über ein
+          Präfixmuster, und ein zweiter Treffer führte ihn in die falsche Ansicht.
+
+          Bei `total === 0` und während des Ladens ausgeblendet, nicht deaktiviert (AK8): Ein Weg,
+          der auf einen Leerzustand führt, ist kein Weg, und ein kurz aufblitzender Einstieg wäre
+          schlimmer als keiner. */}
+      {duplicateGroupIndex.isSuccess && duplicateGroupIndex.data.first_photo_id !== null && (
+        <Button asChild variant="secondary" size="sm" className="self-start">
+          <Link
+            to={`/projects/${id}/photos/${duplicateGroupIndex.data.first_photo_id}/duplicates`}
+            aria-label="Alle Duplikat-Gruppen der Reihe nach durchgehen"
+          >
+            Duplikat-Gruppen durchgehen
+          </Link>
+        </Button>
+      )}
 
       {query.isLoading && (
         <ul

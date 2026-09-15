@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -41,16 +41,33 @@ function photo(id: number): PhotoOut {
 
 function group(
   ids: number[],
-  overrides: { position?: number; total?: number; decisions?: (DuplicateDecision | null)[] } = {},
+  overrides: {
+    position?: number
+    total?: number
+    decisions?: DuplicateDecision[]
+    keepPossible?: boolean[]
+    previousPhotoId?: number | null
+    nextPhotoId?: number | null
+  } = {},
 ): DuplicateGroupOut {
   return {
     items: ids.map((id, index) => ({
       photo: photo(id),
-      decision: overrides.decisions?.[index] ?? null,
+      effective_decision: overrides.decisions?.[index] ?? 'keep',
+      keep_possible: overrides.keepPossible?.[index] ?? true,
     })),
     position: overrides.position ?? 1,
     total: overrides.total ?? 1,
+    previous_photo_id: overrides.previousPhotoId ?? null,
+    next_photo_id: overrides.nextPhotoId ?? null,
   }
+}
+
+/** Die tatsächlich besuchte Route — die Seite bleibt beim Gruppenwechsel montiert, nur der
+ * Parameter ändert sich, und genau das muss prüfbar sein. */
+function Pfadspiegel() {
+  const ort = useLocation()
+  return <span data-testid="pfad">{ort.pathname}</span>
 }
 
 function renderPage() {
@@ -60,6 +77,7 @@ function renderPage() {
   )
   render(
     <MemoryRouter initialEntries={['/projects/1/photos/10/duplicates']}>
+      <Pfadspiegel />
       <Routes>
         <Route
           path="/projects/:projectId/photos/:photoId/duplicates"
@@ -133,14 +151,16 @@ describe('DuplicateComparePage - Zaehler und Hinweis', () => {
     expect(await screen.findByRole('heading', { name: 'Duplikat-Gruppe 2 von 5' })).toBeTruthy()
   })
 
-  it('traegt eine unveraenderliche Hinweiszeile, die den Vorschlag des Systems nennt', async () => {
-    // AK11: Die Zeile sagt NICHT zu, dass unentschiedene Aufnahmen erhalten bleiben - ein
-    // unentschiedener Duplikat-Verlierer faellt am Gate heraus.
+  it('traegt eine unveraenderliche Hinweiszeile ueber den DARGESTELLTEN Zustand', async () => {
+    // AK4: Die Zeile sagt, dass der angezeigte Zustand gilt, wenn man ihn nicht ändert. Sie darf
+    // weder behaupten, es liege noch keine Entscheidung vor, noch zusichern, dass "unentschiedene"
+    // Aufnahmen erhalten bleiben - ein unentschiedener Duplikat-Verlierer fällt am Gate heraus.
     vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(group([11, 12]))
     renderPage()
 
     expect(await screen.findByText(DUPLICATE_HINT_TEXT)).toBeTruthy()
-    expect(DUPLICATE_HINT_TEXT).not.toMatch(/bleib|erhalten/i)
+    expect(DUPLICATE_HINT_TEXT).not.toMatch(/bleib|erhalten|noch nicht|offen/i)
+    expect(DUPLICATE_HINT_TEXT).toMatch(/änder/i)
   })
 
   it('benennt an der Handlung, was "behalten" nach sich zieht', async () => {
@@ -154,6 +174,159 @@ describe('DuplicateComparePage - Zaehler und Hinweis', () => {
     const hinweis = await screen.findByTestId('duplicate-consequence')
     expect(hinweis.textContent).toMatch(/Cloud/i)
     expect(hinweis.textContent).toMatch(/behalten/i)
+  })
+})
+
+/* ------------------------------------------------------------------------------------------
+ * AK5 - vor und zurueck zwischen den Gruppen
+ * ---------------------------------------------------------------------------------------- */
+
+describe('DuplicateComparePage - die Gruppennavigation', () => {
+  it('steht ohne jede Vergroesserung im Seitenkopf', async () => {
+    // AK5: Aus der Ansicht heraus erreichbar, also unabhaengig davon, ob gerade eine Aufnahme
+    // vergroessert ist. An die Vergroesserungssteuerung gehaengt waere sie ohne Vergroesserung
+    // unerreichbar - und der Durchgang damit gar nicht.
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      group([11, 12], { position: 2, total: 3, previousPhotoId: 5, nextPhotoId: 20 }),
+    )
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'Zur vorherigen Gruppe' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Zur nächsten Gruppe' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /verkleinern$/ })).toBeNull()
+  })
+
+  it('traegt Namen, die sich nicht mit dem Blaettern INNERHALB der Gruppe ueberschneiden', async () => {
+    // AK7: Die bestehenden `Vorherige/Nächste Aufnahme der Gruppe` der Vergroesserung stehen
+    // gleichzeitig im Dokument. Ueberschnitten sich die Namen, waeren sechs bestehende
+    // `getByRole`-Abfragen mehrdeutig - und zwar still, als Testfehler statt als Produktfehler.
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      group([11, 12, 13], { position: 2, total: 3, previousPhotoId: 5, nextPhotoId: 20 }),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(3))
+    await userEvent.click(screen.getByRole('button', { name: 'Reise/serie-12.jpg vergrößern' }))
+
+    for (const name of [
+      'Zur vorherigen Gruppe',
+      'Zur nächsten Gruppe',
+      'Vorherige Aufnahme der Gruppe',
+      'Nächste Aufnahme der Gruppe',
+    ]) {
+      expect(screen.getAllByRole('button', { name })).toHaveLength(1)
+    }
+  })
+
+  it.each([
+    ['am Anfang', { previousPhotoId: null, nextPhotoId: 20 }, true, false],
+    ['am Ende', { previousPhotoId: 5, nextPhotoId: null }, false, true],
+    ['in der Mitte', { previousPhotoId: 5, nextPhotoId: 20 }, false, false],
+  ])(
+    'ist %s genau dort disabled, wo der Nachbarwert null ist',
+    async (_fall, nachbarn, zurueckGesperrt, vorGesperrt) => {
+      // `disabled`, nicht "fehlt": Ein verschwindender Knopf verschöbe die übrigen unter dem
+      // Finger, und am Rand bliebe unklar, ob es dort nichts gibt oder die Ansicht etwas
+      // vergessen hat.
+      vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(group([11, 12], nachbarn))
+      renderPage()
+
+      const zurueck = await screen.findByRole('button', { name: 'Zur vorherigen Gruppe' })
+      expect(zurueck).toHaveProperty('disabled', zurueckGesperrt)
+      expect(screen.getByRole('button', { name: 'Zur nächsten Gruppe' })).toHaveProperty(
+        'disabled',
+        vorGesperrt,
+      )
+    },
+  )
+
+  it('navigiert auf den Anker der Nachbargruppe - als Push, nicht als Ersetzung', async () => {
+    // Der Pfadwert bleibt ein ANKER-Foto, es gibt keinen Gruppenindex in der Route. Push statt
+    // `replace`: Der Zurueck-Knopf des Browsers ist dann "vorherige Gruppe".
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      group([11, 12], { position: 1, total: 2, nextPhotoId: 20 }),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Zur nächsten Gruppe' }))
+
+    expect(screen.getByTestId('pfad').textContent).toBe('/projects/1/photos/20/duplicates')
+  })
+})
+
+/* ------------------------------------------------------------------------------------------
+ * AK5 - die Seite bleibt beim Gruppenwechsel montiert
+ * ---------------------------------------------------------------------------------------- */
+
+describe('DuplicateComparePage - der Ankerwechsel', () => {
+  /** Zwei Gruppen hinter einem Anker - der Hin- und Rueckweg ist die einzige Form, in der ein
+   * stehen gebliebener Zustand sichtbar wird: Zwei Gruppen sind disjunkt, eine Id der alten
+   * traefe in der neuen ohnehin keine Kachel. */
+  function zweiGruppen() {
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockImplementation((_projectId, photoId) =>
+      Promise.resolve(
+        photoId === 10
+          ? group([11, 12], { position: 1, total: 2, nextPhotoId: 20 })
+          : group([21, 22], { position: 2, total: 2, previousPhotoId: 10 }),
+      ),
+    )
+  }
+
+  async function wechsleGruppe() {
+    await userEvent.click(screen.getByRole('button', { name: 'Zur nächsten Gruppe' }))
+  }
+
+  it('nimmt die Vergroesserung zurueck', async () => {
+    // Gleiche Route, anderer Parameter - die Seite wird NICHT neu montiert. `enlargedId` zeigte
+    // sonst weiter auf ein Foto der alten Gruppe und vergroesserte es beim Zurueckblaettern
+    // erneut, ohne dass jemand darum gebeten haette.
+    zweiGruppen()
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+    await userEvent.click(screen.getByRole('button', { name: 'Reise/serie-11.jpg vergrößern' }))
+    expect(screen.getByRole('button', { name: /verkleinern$/ })).toBeTruthy()
+
+    await wechsleGruppe()
+    await waitFor(() => expect(screen.queryByRole('button', { name: /verkleinern$/ })).toBeNull())
+    await userEvent.click(screen.getByRole('button', { name: 'Zur vorherigen Gruppe' }))
+
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+    expect(screen.queryByRole('button', { name: /verkleinern$/ })).toBeNull()
+  })
+
+  it('nimmt die laufende Entscheidung zurueck', async () => {
+    // GETRENNT vom Fall darueber: Eine Ruecksetzung erfasst leicht nur einen der beiden Zustaende.
+    //
+    // Gemessen ueber einen HIN- UND RUECKWEG, nicht ueber einen einzelnen Wechsel: Zwei Gruppen
+    // sind disjunkt, eine stehen gebliebene Id der alten Gruppe traefe in der neuen also ohnehin
+    // keine Kachel. Erst bei der Rueckkehr sperrt sie wieder - und zwar dauerhaft, weil die
+    // Entscheidung nie auffloest.
+    zweiGruppen()
+    vi.mocked(duplicatesApi.setDuplicateDecision).mockReturnValue(new Promise(() => {}))
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+    await userEvent.click(screen.getByRole('button', { name: 'Ausschuss: Reise/serie-11.jpg' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Ausschuss: Reise/serie-11.jpg' })).toHaveProperty(
+        'disabled',
+        true,
+      ),
+    )
+
+    await wechsleGruppe()
+    await waitFor(() => expect(screen.getByTestId('pfad').textContent).toContain('/photos/20/'))
+    await userEvent.click(screen.getByRole('button', { name: 'Zur vorherigen Gruppe' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Ausschuss: Reise/serie-11.jpg' })).toHaveProperty(
+        'disabled',
+        false,
+      ),
+    )
+    expect(screen.getByRole('button', { name: 'Behalten: Reise/serie-11.jpg' })).toHaveProperty(
+      'disabled',
+      false,
+    )
   })
 })
 

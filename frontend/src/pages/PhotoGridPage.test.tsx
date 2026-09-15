@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
+import * as duplicatesApi from '../api/duplicates'
 import * as motifsApi from '../api/motifs'
 import * as photosApi from '../api/photos'
 import * as projectsApi from '../api/projects'
@@ -22,6 +23,7 @@ vi.mock('../api/motifs')
 vi.mock('../api/photos')
 vi.mock('../api/projects')
 vi.mock('../api/ratings')
+vi.mock('../api/duplicates')
 
 function makeToken(payload: unknown): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -131,6 +133,11 @@ describe('PhotoGridPage', () => {
     vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
     vi.mocked(projectsApi.confirmAusschussGate).mockReset()
     vi.mocked(projectsApi.confirmAusschussGate).mockResolvedValue({ status: 'confirmed' })
+    vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockReset()
+    vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+      total: 0,
+      first_photo_id: null,
+    })
     setToken(makeToken({ sub: '1', username: 'testuser' }))
   })
 
@@ -392,9 +399,13 @@ describe('PhotoGridPage', () => {
       ['low_quality', suggestion({ reason: 'low_quality' })],
       ['kein Vorschlag', null],
     ])('zeigt ihn NICHT bei %s', async (_fall, eingabe) => {
-      // AK13: Fuer Vorschlaege wegen geringer Bildqualitaet aendert sich nichts - kein Einstieg
-      // an der Kachel. Ohne die Gegenprobe bestuende der Fall darueber auch gegen eine Umsetzung,
-      // die den Einstieg an JEDER Kachel zeigt.
+      // AK13 der Spec 0374: Fuer Vorschlaege wegen geringer Bildqualitaet aendert sich nichts -
+      // kein Einstieg an der Kachel. Ohne die Gegenprobe bestuende der Fall darueber auch gegen
+      // eine Umsetzung, die den Einstieg an JEDER Kachel zeigt.
+      //
+      // AUF DAS KACHELGENAUE LABEL EINGEENGT (Spec 0486): Ein `/Duplikate vergleichen/` griffe
+      // seit dem listenweiten Einstieg auch diesen ab und waere nur deshalb gruen, weil
+      // `renderPage()` ohne `?filter=suggested` laeuft.
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 7, ratings: [], suggestion: eingabe })],
         total: 1,
@@ -403,7 +414,9 @@ describe('PhotoGridPage', () => {
       renderPage()
 
       await screen.findAllByRole('listitem')
-      expect(screen.queryByRole('link', { name: /Duplikate vergleichen/ })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('link', { name: /^Duplikate vergleichen:/ }),
+      ).not.toBeInTheDocument()
     })
 
     it('steht NEBEN dem Uebernehmen-Einstieg, nicht an seiner Stelle', async () => {
@@ -429,6 +442,101 @@ describe('PhotoGridPage', () => {
       expect(
         screen.getByRole('link', { name: 'Duplikate vergleichen: serie.jpg' }),
       ).toBeInTheDocument()
+    })
+  })
+
+  /* --------------------------------------------------------------------------------------
+   * AK7/AK8 (Spec 0486) - der listenweite Einstieg
+   * ------------------------------------------------------------------------------------ */
+
+  describe('Listenweiter Einstieg in den Duplikat-Durchgang', () => {
+    const VORGESCHLAGENE_LISTE = {
+      items: [
+        photo({
+          id: 7,
+          relative_path: 'serie.jpg',
+          ratings: [],
+          suggestion: suggestion({ reason: 'duplicate' as const, duplicate_of: 3 }),
+        }),
+      ],
+      total: 1,
+    }
+
+    it('steht GENAU EINMAL da und fuehrt auf die erste Gruppe', async () => {
+      // Ein Weg fuer die ganze Liste, nicht je Kachel - und ausserhalb des Kachelrasters. Die
+      // Zaehlung ist die Zusage: In das Raster gerutscht staende er n-mal da.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(VORGESCHLAGENE_LISTE)
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+        total: 2,
+        first_photo_id: 42,
+      })
+
+      renderPage('/projects/1/photos?filter=suggested')
+
+      const einstiege = await screen.findAllByRole('link', {
+        name: 'Alle Duplikat-Gruppen der Reihe nach durchgehen',
+      })
+      expect(einstiege).toHaveLength(1)
+      expect(einstiege[0]).toHaveAttribute('href', '/projects/1/photos/42/duplicates')
+    })
+
+    it('traegt einen Namen, der den kachelgenauen Einstieg NICHT mittrifft', async () => {
+      // AK7: Der Prüfstack waehlt den Kachel-Einstieg ueber `/^Duplikate vergleichen:/` und
+      // `.last()`. Truege der listenweite Weg dasselbe Muster, waehlte er beim Durchklicken IHN -
+      // drei Pruefstack-Spezifikationen liefen dann gegen die falsche Ansicht.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(VORGESCHLAGENE_LISTE)
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+        total: 2,
+        first_photo_id: 42,
+      })
+
+      renderPage('/projects/1/photos?filter=suggested')
+
+      await screen.findByRole('link', { name: 'Alle Duplikat-Gruppen der Reihe nach durchgehen' })
+      expect(screen.getAllByRole('link', { name: /^Duplikate vergleichen:/ })).toHaveLength(1)
+      expect(
+        screen.getByRole('link', { name: 'Duplikate vergleichen: serie.jpg' }),
+      ).toHaveAttribute('href', '/projects/1/photos/7/duplicates')
+    })
+
+    it('steht NICHT da, wenn es keine einzige Gruppe gibt', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(VORGESCHLAGENE_LISTE)
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+        total: 0,
+        first_photo_id: null,
+      })
+
+      renderPage('/projects/1/photos?filter=suggested')
+
+      await screen.findAllByRole('listitem')
+      expect(screen.queryByRole('link', { name: /durchgehen/i })).not.toBeInTheDocument()
+    })
+
+    it('steht auch WAEHREND DES LADENS nicht da - er soll nicht kurz aufblitzen', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(VORGESCHLAGENE_LISTE)
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockReturnValue(new Promise(() => {}))
+
+      renderPage('/projects/1/photos?filter=suggested')
+
+      await screen.findAllByRole('listitem')
+      expect(screen.queryByRole('link', { name: /durchgehen/i })).not.toBeInTheDocument()
+    })
+
+    it('steht NICHT da, solange die Liste nicht nach Vorschlaegen gefiltert ist', async () => {
+      // Der Einstieg gehoert an die Sichtung des Ausschusses, nicht an jede Fotoliste. Ohne die
+      // Bedingung stuende er auch unter "Alle" und unter jedem anderen Filter - und die Anfrage
+      // liefe dort ebenfalls.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(VORGESCHLAGENE_LISTE)
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+        total: 2,
+        first_photo_id: 42,
+      })
+
+      renderPage()
+
+      await screen.findAllByRole('listitem')
+      expect(screen.queryByRole('link', { name: /durchgehen/i })).not.toBeInTheDocument()
+      expect(duplicatesApi.getDuplicateGroupIndex).not.toHaveBeenCalled()
     })
   })
 
