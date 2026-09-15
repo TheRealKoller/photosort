@@ -408,3 +408,22 @@ async def test_the_item_carries_an_unextended_photo_out(
     assert set(vom_vergleich) == set(aus_der_liste)
     assert set(gruppe["items"][0]) == {"photo", "decision"}
     assert set(gruppe) == {"items", "position", "total"}
+
+
+async def test_the_item_carries_the_aspect_ratio_like_every_other_read_path(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Der fuenfte Lesepfad (ADR 0110 Punkt 1). `aspect_ratio` steht auf ALLEN, nicht nur auf dem
+    der Rasteransicht - ein je Abfragemodus verschiedenes `PhotoOut` waere eine zweite,
+    driftende Abbildung desselben Fotos."""
+    project = await _project(db_session)
+    winner, losers = await _star(db_session, project, 2)
+    winner.aspect_ratio = 1.5
+    await db_session.commit()
+
+    gruppe = (await authenticated_api_client.get(_url(project.id, winner.id))).json()
+
+    nach_id = {item["photo"]["id"]: item["photo"] for item in gruppe["items"]}
+    assert nach_id[winner.id]["aspect_ratio"] == 1.5
+    # `null` ist ein regulaerer Zustand und erzeugt auch hier keinen Fehler.
+    assert nach_id[losers[0].id]["aspect_ratio"] is None

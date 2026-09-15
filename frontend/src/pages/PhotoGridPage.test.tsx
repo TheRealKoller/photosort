@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as motifsApi from '../api/motifs'
@@ -13,6 +13,9 @@ import * as ratingsApi from '../api/ratings'
 import type { CriterionScoreOut, PhotoListOut, PhotoOut, SuggestionOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { MOTIF_SET } from '../test/motifSetFixture'
+import { installIntersectionObserver, installResizeObserver } from '../test/observers'
+import type { IntersectionObserverHarness, ResizeObserverHarness } from '../test/observers'
+import { GRID_GAP_PX } from '../utils/justifiedRows'
 import { PhotoGridPage } from './PhotoGridPage'
 
 // specs/features/0289-feste-kategorien.md: die Seite laedt das Kategorien-Set zur Laufzeit
@@ -108,12 +111,29 @@ function renderPage(initialPath = '/projects/1/photos') {
   )
 }
 
+/** Die beiden Zeichen einer Kachel - ueber semantische `data-*`, nie ueber Klassennamen. */
+function marksOf(item: HTMLElement): { mark: string; shape?: string; status?: string }[] {
+  return Array.from(item.querySelectorAll<HTMLElement>('[data-mark]')).map((element) => ({
+    mark: element.dataset.mark ?? '',
+    ...(element.dataset.markShape === undefined ? {} : { shape: element.dataset.markShape }),
+    ...(element.dataset.markStatus === undefined ? {} : { status: element.dataset.markStatus }),
+  }))
+}
+
 describe('PhotoGridPage', () => {
+  let resizeObserver: ResizeObserverHarness
+  let intersectionObserver: IntersectionObserverHarness
+
   beforeEach(() => {
-    // window.matchMedia existiert in jsdom nicht (specs/architecture/0002-testkonzept.md) -
-    // CriterionDetailsPopover fragt es beim Pointer-Enter des Info-Triggers ab, das auch
-    // userEvent.click() vor dem eigentlichen Klick ausloest. Nur das Klick-Verhalten selbst wird
-    // hier getestet, Hover-spezifisches Verhalten deckt CriterionDetailsPopover.test.tsx ab.
+    // Beide Beobachter fehlen in jsdom und bekommen TREIBBARE Attrappen
+    // (specs/architecture/0002-testkonzept.md): Eine No-op-Attrappe nach dem `matchMedia`-Muster
+    // reichte hier nicht - an ihnen haengen die gemessene Containerbreite und das Nachladen, also
+    // genau das, was zu pruefen ist.
+    resizeObserver = installResizeObserver()
+    intersectionObserver = installIntersectionObserver()
+    // window.matchMedia existiert in jsdom nicht - die Kachel fragt es nach der Geraeteklasse
+    // (Hover oder langer Druck). Hier durchgaengig "kein feiner Zeiger"; die Geste selbst deckt
+    // PhotoGridTile.test.tsx in ihren vier Faellen ab.
     vi.stubGlobal(
       'matchMedia',
       vi.fn().mockReturnValue({
@@ -132,6 +152,10 @@ describe('PhotoGridPage', () => {
     vi.mocked(projectsApi.confirmAusschussGate).mockReset()
     vi.mocked(projectsApi.confirmAusschussGate).mockResolvedValue({ status: 'confirmed' })
     setToken(makeToken({ sub: '1', username: 'testuser' }))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('no longer renders its own "Zurück zum Projekt" link (specs/features/0033, AK7 - now covered by the sticky header link)', async () => {
@@ -153,7 +177,10 @@ describe('PhotoGridPage', () => {
     expect(status.children.length).toBeGreaterThan(1)
   })
 
-  it('renders one tile per photo with the own rating badge', async () => {
+  it('renders one tile per photo, each with its own dot for the own album decision', async () => {
+    // UMGESCHRIEBEN, NICHT GESTRICHEN: Die Aussage bleibt "je Foto eine Kachel, und die EIGENE
+    // Albumentscheidung ist an ihr ablesbar". Sie haengt seit AK3/AK5 am Punkt statt am
+    // beschrifteten Kennzeichen - das Wort "Neu" gibt es in dieser Ansicht nicht mehr.
     const list: PhotoListOut = {
       items: [
         photo({
@@ -169,15 +196,18 @@ describe('PhotoGridPage', () => {
 
     renderPage()
 
-    expect(await screen.findAllByRole('listitem')).toHaveLength(2)
-    expect(screen.getByLabelText('Album-würdig')).toBeInTheDocument()
-    // Spec 0321, Entscheidung 3: Auf der Karte steht fuer "unbewertet" das WORT "Neu" statt des
-    // neutralen "–"-Badges. Die Aussage des Falls bleibt dieselbe - "nicht bewertet" ist von
-    // "Badge noch nicht geladen" unterscheidbar -, sie haengt jetzt am Wort statt am Strich.
-    expect(screen.getByText('Neu')).toBeInTheDocument()
+    const items = await screen.findAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(marksOf(items[0])).toEqual([{ mark: 'album', shape: 'filled', status: 'album_worthy' }])
+    // Ohne Entscheidung und ohne Vorschlag traegt die Kachel GAR KEIN Zeichen (AK3).
+    expect(marksOf(items[1])).toEqual([])
   })
 
   it("only shows the current user's own rating, not another user's", async () => {
+    // Die Sicherheitszusage bleibt der Kern des Falls, nur ihre Beobachtungsstelle wandert vom
+    // Kennzeichen auf die beiden Zeichen: `ownFavorite`/`ownRatingStatus`, nie
+    // `ratings.some(r => r.favorite)` - das zeigte die Auszeichnung der anderen Person als die
+    // eigene. Beide Felder der Fremdbewertung sind hier gesetzt.
     const list: PhotoListOut = {
       items: [
         photo({
@@ -191,15 +221,13 @@ describe('PhotoGridPage', () => {
 
     renderPage()
 
-    // Spec 0321, Entscheidung 3: "unbewertet" heisst auf der Karte "Neu" (siehe oben).
-    expect(await screen.findByText('Neu')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Verworfen')).not.toBeInTheDocument()
-    // Auflage S6: auch das KENNZEICHEN der anderen Person erscheint nicht als eigenes -
-    // `ratings.some(r => r.favorite)` waere hier wahr.
-    expect(screen.queryByLabelText('Favorit')).not.toBeInTheDocument()
+    const [item] = await screen.findAllByRole('listitem')
+    expect(marksOf(item)).toEqual([])
+    expect(item).not.toHaveTextContent('Favorit')
+    expect(item).not.toHaveTextContent('Verworfen')
   })
 
-  it('shows the own favorite marker next to the own album decision', async () => {
+  it('shows the star next to the dot when the photo is an own favourite and decided', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
       items: [
         photo({
@@ -212,13 +240,16 @@ describe('PhotoGridPage', () => {
 
     renderPage()
 
-    expect(await screen.findByLabelText('Favorit')).toBeInTheDocument()
-    expect(screen.getByLabelText('Album-würdig')).toBeInTheDocument()
+    const [item] = await screen.findAllByRole('listitem')
+    expect(marksOf(item)).toEqual([
+      { mark: 'favorite' },
+      { mark: 'album', shape: 'filled', status: 'album_worthy' },
+    ])
   })
 
-  it('replaces the word "Neu" with the favorite marker when only the marker is set', async () => {
-    // "Favorit" ohne Albumkennzeichen daneben IST die Aussage "noch nicht entschieden"; beides
-    // zugleich laese sich wie ein Widerspruch.
+  it('shows the star alone when only the favourite marker is set', async () => {
+    // "Favorit ohne Albumzeichen daneben IST die Aussage: noch nicht entschieden." Das fruehere
+    // Wort "Neu" entfaellt - die Abwesenheit des Punktes sagt dasselbe, ohne Platz zu kosten.
     vi.mocked(photosApi.listPhotos).mockResolvedValue({
       items: [
         photo({
@@ -231,8 +262,81 @@ describe('PhotoGridPage', () => {
 
     renderPage()
 
-    expect(await screen.findByLabelText('Favorit')).toBeInTheDocument()
-    expect(screen.queryByText('Neu')).not.toBeInTheDocument()
+    const [item] = await screen.findAllByRole('listitem')
+    expect(marksOf(item)).toEqual([{ mark: 'favorite' }])
+    expect(item).not.toHaveTextContent('Neu')
+  })
+
+  it('shows a ring, not a filled dot, for an unconfirmed suggestion', async () => {
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 1, ratings: [], suggestion: suggestion({ status: 'rejected' }) })],
+      total: 1,
+    })
+
+    renderPage()
+
+    const [item] = await screen.findAllByRole('listitem')
+    expect(marksOf(item)).toEqual([{ mark: 'album', shape: 'ring', status: 'rejected' }])
+  })
+
+  describe('das justierte Zeilenraster (AK1, AK2)', () => {
+    it('lays the tiles out to the measured container width, without cropping', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({ id: 1, relative_path: 'quer.jpg', aspect_ratio: 1.5 }),
+          photo({ id: 2, relative_path: 'hoch.jpg', aspect_ratio: 0.75 }),
+          photo({ id: 3, relative_path: 'breit.jpg', aspect_ratio: 2.4 }),
+        ],
+        total: 3,
+      })
+
+      renderPage()
+      await screen.findAllByRole('listitem')
+      resizeObserver.resizeTo(900)
+
+      const items = screen.getAllByRole('listitem')
+      const widths = items.map((item) => Number.parseInt(item.style.width, 10))
+      const heights = items.map((item) => Number.parseInt(item.style.height, 10))
+      // Eine volle Zeile: gemeinsame Hoehe, und Bildbreiten plus Zwischenraeume ergeben EXAKT
+      // die gemessene Breite.
+      expect(new Set(heights).size).toBe(1)
+      expect(widths.reduce((sum, width) => sum + width, 0) + GRID_GAP_PX * 2).toBe(900)
+      // Jede Breite folgt dem eigenen Verhaeltnis - kein Bild wird auf eine feste Form gezwungen.
+      expect(widths[0]).toBeGreaterThan(widths[1])
+      expect(widths[2]).toBeGreaterThan(widths[0])
+    })
+
+    it('shows every photo even before the first measurement', async () => {
+      // Ohne Ausfallrichtung stuende hier dauerhaft ein leeres Raster - still und ohne Meldung.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1 }), photo({ id: 2 })],
+        total: 2,
+      })
+
+      renderPage()
+
+      const items = await screen.findAllByRole('listitem')
+      expect(items).toHaveLength(2)
+      for (const item of items) {
+        expect(Number.parseInt(item.style.width, 10)).toBeGreaterThan(0)
+      }
+    })
+
+    it('plans a photo without a known ratio as 3:2 instead of dropping it', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, aspect_ratio: null })],
+        total: 1,
+      })
+
+      renderPage()
+      await screen.findAllByRole('listitem')
+      resizeObserver.resizeTo(900)
+
+      const [item] = screen.getAllByRole('listitem')
+      const width = Number.parseInt(item.style.width, 10)
+      const height = Number.parseInt(item.style.height, 10)
+      expect(width / height).toBeCloseTo(1.5, 1)
+    })
   })
 
   it('links a tile to the detail view, preserving the active filter', async () => {
@@ -335,41 +439,172 @@ describe('PhotoGridPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
   })
 
-  it('loads the next batch on "Weitere laden" click', async () => {
-    vi.mocked(photosApi.listPhotos)
-      .mockResolvedValueOnce({ items: [photo({ id: 1 })], total: 2 })
-      .mockResolvedValueOnce({ items: [photo({ id: 2 })], total: 2 })
-    const user = userEvent.setup()
+  describe('Nachladen am Sichtbarkeitsanker (AK10)', () => {
+    it('loads the next batch without any click, once the anchor becomes visible', async () => {
+      // UMGESCHRIEBEN, NICHT GESTRICHEN: Die Aussage bleibt "die zweite Seite kommt an und die
+      // Kacheln verdoppeln sich". Ausgeloest wird sie jetzt vom Anker statt von einer
+      // Schaltflaeche - eine Schaltflaeche zum Nachladen gibt es nicht mehr.
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce({ items: [photo({ id: 1 })], total: 2 })
+        .mockResolvedValueOnce({ items: [photo({ id: 2 })], total: 2 })
 
-    renderPage()
-    await screen.findAllByRole('listitem')
-    const loadMoreButton = screen.getByRole('button', { name: /weitere laden/i })
+      renderPage()
+      await screen.findAllByRole('listitem')
+      expect(screen.queryByRole('button', { name: /weitere laden/i })).not.toBeInTheDocument()
 
-    await user.click(loadMoreButton)
+      intersectionObserver.setIntersecting(true)
 
-    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
-    expect(screen.queryByRole('button', { name: /weitere laden/i })).not.toBeInTheDocument()
-  })
-
-  it('shows a suggestion badge and an "Übernehmen" button when a photo has an open suggestion', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [photo({ id: 1, relative_path: 'sunset.jpg', ratings: [], suggestion: suggestion() })],
-      total: 1,
+      await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
     })
 
-    renderPage()
+    it('names how many of how many are loaded, across two pages', async () => {
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce({ items: [photo({ id: 1 })], total: 2 })
+        .mockResolvedValueOnce({ items: [photo({ id: 2 })], total: 2 })
 
-    expect(await screen.findByLabelText('Vorschlag: Verworfen')).toBeInTheDocument()
-    // Photo-spezifisches aria-label (UI/UX-Review-Fund): mehrere offene Vorschlaege in einem Grid
-    // sind sonst per Tastatur/Screenreader nicht auseinanderzuhalten, da alle Buttons denselben
-    // sichtbaren Text "Uebernehmen" tragen.
-    expect(
-      screen.getByRole('button', { name: 'Vorschlag übernehmen: sunset.jpg' }),
-    ).toBeInTheDocument()
+      renderPage()
+      expect(await screen.findByText(/1 von 2 geladen/)).toBeInTheDocument()
+
+      intersectionObserver.setIntersecting(true)
+
+      expect(await screen.findByText(/2 von 2 geladen/)).toBeInTheDocument()
+    })
+
+    it('stops observing once everything is loaded', async () => {
+      // Auflage S7: kein neuer Abruf, sobald alles da ist. Ohne das Ende feuerte der Beobachter
+      // bei jedem Scroll-Schritt weiter.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 1 })], total: 1 })
+
+      renderPage()
+      await screen.findAllByRole('listitem')
+
+      expect(intersectionObserver.observedCount()).toBe(0)
+      intersectionObserver.setIntersecting(true)
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(1)
+    })
+
+    it('never fires a second request while one is still in flight', async () => {
+      // Auflage S7: EIN Abruf gleichzeitig. Zehn Anker-Meldungen hintereinander duerfen nicht
+      // zehn Anfragen erzeugen - je Antwort bis zu 200 Fotos samt ihrer Bildabrufe gegen den
+      // Homeserver, auf dem PhotoSort und OpenCloud zusammen laufen.
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce({ items: [photo({ id: 1 })], total: 3 })
+        .mockReturnValue(new Promise(() => {}))
+
+      renderPage()
+      await screen.findAllByRole('listitem')
+
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        intersectionObserver.setIntersecting(true)
+      }
+
+      await waitFor(() => expect(photosApi.listPhotos).toHaveBeenCalledTimes(2))
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(2)
+    })
+
+    it('shows the failure of a follow-up load where the counter stands, keeping the tiles', async () => {
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce({ items: [photo({ id: 1 })], total: 2 })
+        .mockRejectedValueOnce(new ApiError(500, 'Nachladen fehlgeschlagen'))
+
+      renderPage()
+      await screen.findAllByRole('listitem')
+
+      intersectionObserver.setIntersecting(true)
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('Nachladen fehlgeschlagen')
+      expect(screen.getByRole('button', { name: /erneut versuchen/i })).toBeInTheDocument()
+      expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    })
+
+    it('sends the retry through the same lock as the anchor', async () => {
+      // Auflage S7 sagt "ein Abruf gleichzeitig" OHNE Einschraenkung auf den Beobachterpfad. Ein
+      // `fetchNextPage()` direkt am Wiederholknopf ginge an der Sperre vorbei; hier druecken
+      // Knopf und Anker im selben Tick, und es darf trotzdem nur EIN weiterer Abruf entstehen.
+      vi.mocked(photosApi.listPhotos)
+        .mockResolvedValueOnce({ items: [photo({ id: 1 })], total: 3 })
+        .mockRejectedValueOnce(new ApiError(500, 'Nachladen fehlgeschlagen'))
+        .mockReturnValue(new Promise(() => {}))
+      renderPage()
+      await screen.findAllByRole('listitem')
+      intersectionObserver.setIntersecting(true)
+      await screen.findByRole('alert')
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(2)
+
+      // Fuenf Klicks OHNE Warten dazwischen - genau das Fenster, in dem `isFetchingNextPage` noch
+      // falsch ist. Mit `await` dazwischen bestuende der Fall auch gegen einen Aufruf, der an der
+      // Sperre vorbeigeht, weil React zwischendurch neu rendert.
+      const wiederholen = screen.getByRole('button', { name: /erneut versuchen/i })
+      act(() => {
+        for (let versuch = 0; versuch < 5; versuch += 1) {
+          fireEvent.click(wiederholen)
+        }
+      })
+
+      await waitFor(() => expect(photosApi.listPhotos).toHaveBeenCalledTimes(3))
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not place the anchor in the empty state', async () => {
+      // Sonst loeste er dort sofort einen Abruf aus.
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
+
+      renderPage()
+      await screen.findByText('Keine Fotos mit diesem Filter.')
+
+      expect(intersectionObserver.observedCount()).toBe(0)
+    })
   })
 
-  describe('Einstieg in den Duplikat-Vergleich (Spec 0374)', () => {
-    it('zeigt den Einstieg GENAU DANN, wenn der Vorschlagsgrund `duplicate` ist', async () => {
+  describe('die Gate-Aktionen stehen ausschliesslich im Gate-Modus (AK3, AK12)', () => {
+    /*
+     * DIESE FAELLE SIND UMGEZOGEN, NICHT GESTRICHEN. Ohne `gate=1` waeren sie ab sofort nicht
+     * mehr rot zu bekommen - "Übernehmen" und "Vergleichen" gibt es in der normalen Übersicht
+     * gar nicht mehr, ein Test dort bestuende auch gegen eine Umsetzung, die sie ueberall
+     * weglaesst.
+     */
+    const GATE = '/projects/1/photos?filter=suggested&gate=1'
+
+    it('shows an "Übernehmen" button when a photo has an open suggestion', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({ id: 1, relative_path: 'sunset.jpg', ratings: [], suggestion: suggestion() }),
+        ],
+        total: 1,
+      })
+
+      renderPage(GATE)
+
+      // Photo-spezifisches aria-label (UI/UX-Review-Fund): mehrere offene Vorschlaege in einem
+      // Raster sind sonst per Tastatur/Screenreader nicht auseinanderzuhalten, da alle Buttons
+      // denselben sichtbaren Text "Uebernehmen" tragen.
+      expect(
+        await screen.findByRole('button', { name: 'Vorschlag übernehmen: sunset.jpg' }),
+      ).toBeInTheDocument()
+    })
+
+    it('shows no action at all in the normal overview', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            relative_path: 'serie.jpg',
+            ratings: [],
+            suggestion: suggestion({ reason: 'duplicate', duplicate_of: 3 }),
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage()
+
+      await screen.findAllByRole('listitem')
+      expect(screen.queryByRole('button', { name: /übernehmen/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: /Duplikate vergleichen/ })).not.toBeInTheDocument()
+    })
+
+    it('zeigt den Duplikat-Einstieg GENAU DANN, wenn der Vorschlagsgrund `duplicate` ist', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [
           photo({
@@ -382,7 +617,7 @@ describe('PhotoGridPage', () => {
         total: 1,
       })
 
-      renderPage()
+      renderPage(GATE)
 
       const einstieg = await screen.findByRole('link', { name: 'Duplikate vergleichen: serie.jpg' })
       expect(einstieg).toHaveAttribute('href', '/projects/1/photos/7/duplicates')
@@ -392,23 +627,23 @@ describe('PhotoGridPage', () => {
       ['low_quality', suggestion({ reason: 'low_quality' })],
       ['kein Vorschlag', null],
     ])('zeigt ihn NICHT bei %s', async (_fall, eingabe) => {
-      // AK13: Fuer Vorschlaege wegen geringer Bildqualitaet aendert sich nichts - kein Einstieg
-      // an der Kachel. Ohne die Gegenprobe bestuende der Fall darueber auch gegen eine Umsetzung,
-      // die den Einstieg an JEDER Kachel zeigt.
+      // Fuer Vorschlaege wegen geringer Bildqualitaet aendert sich nichts - kein Einstieg an der
+      // Kachel. Ohne die Gegenprobe bestuende der Fall darueber auch gegen eine Umsetzung, die
+      // den Einstieg an JEDER Kachel zeigt.
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 7, ratings: [], suggestion: eingabe })],
         total: 1,
       })
 
-      renderPage()
+      renderPage(GATE)
 
       await screen.findAllByRole('listitem')
       expect(screen.queryByRole('link', { name: /Duplikate vergleichen/ })).not.toBeInTheDocument()
     })
 
     it('steht NEBEN dem Uebernehmen-Einstieg, nicht an seiner Stelle', async () => {
-      // Der Vorschlag bleibt uebernehmbar, ohne die Vergleichsansicht zu oeffnen - die Story
-      // nimmt dem Gate nichts weg, sie stellt einen zweiten Weg daneben.
+      // Der Vorschlag bleibt uebernehmbar, ohne die Vergleichsansicht zu oeffnen - der zweite
+      // Weg steht daneben, er ersetzt den ersten nicht.
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [
           photo({
@@ -421,7 +656,7 @@ describe('PhotoGridPage', () => {
         total: 1,
       })
 
-      renderPage()
+      renderPage(GATE)
 
       expect(
         await screen.findByRole('button', { name: 'Vorschlag übernehmen: serie.jpg' }),
@@ -430,41 +665,43 @@ describe('PhotoGridPage', () => {
         screen.getByRole('link', { name: 'Duplikate vergleichen: serie.jpg' }),
       ).toBeInTheDocument()
     })
-  })
 
-  it('does not show a suggestion badge/button when the photo has no open suggestion', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [photo({ id: 1, ratings: [], suggestion: null })],
-      total: 1,
+    it('does not show an action when the photo has no open suggestion', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, ratings: [], suggestion: null })],
+        total: 1,
+      })
+
+      renderPage(GATE)
+
+      await screen.findAllByRole('listitem')
+      expect(screen.queryByRole('button', { name: /übernehmen/i })).not.toBeInTheDocument()
     })
 
-    renderPage()
+    it("shows a busy state only on the confirming tile's own button while its request is in flight", async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({ id: 1, ratings: [], suggestion: suggestion() }),
+          photo({ id: 2, ratings: [], suggestion: suggestion() }),
+        ],
+        total: 2,
+      })
+      vi.mocked(ratingsApi.setRating).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
 
-    await screen.findAllByRole('listitem')
-    expect(screen.queryByRole('button', { name: /übernehmen/i })).not.toBeInTheDocument()
+      renderPage(GATE)
+      const [firstButton, secondButton] = await screen.findAllByRole('button', {
+        name: /vorschlag übernehmen/i,
+      })
+      await user.click(firstButton)
+
+      await waitFor(() => expect(firstButton).toBeDisabled())
+      expect(secondButton).toBeEnabled()
+    })
   })
 
-  it("shows a busy state only on the confirming tile's own button while its request is in flight", async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [
-        photo({ id: 1, ratings: [], suggestion: suggestion() }),
-        photo({ id: 2, ratings: [], suggestion: suggestion() }),
-      ],
-      total: 2,
-    })
-    vi.mocked(ratingsApi.setRating).mockReturnValue(new Promise(() => {}))
-    const user = userEvent.setup()
-
-    renderPage()
-    const [firstButton, secondButton] = await screen.findAllByRole('button', {
-      name: /übernehmen/i,
-    })
-    await user.click(firstButton)
-
-    await waitFor(() => expect(firstButton).toBeDisabled())
-    expect(secondButton).toBeEnabled()
-  })
-
+  // Die beiden folgenden Faelle ziehen ebenfalls in den Gate-Modus um - sie pruefen dieselbe
+  // Schaltflaeche und waeren in der normalen Uebersicht nicht mehr rot zu bekommen.
   it("allows confirming a second tile while an earlier tile's confirm is still in flight", async () => {
     // Regression fuer einen im UI/UX-Review gefundenen Bug: eine gemeinsam genutzte
     // useSetRatingMutation-Instanz fuer die ganze Seite hat frueher jeden weiteren Klick
@@ -490,9 +727,9 @@ describe('PhotoGridPage', () => {
     )
     const user = userEvent.setup()
 
-    renderPage()
+    renderPage('/projects/1/photos?filter=suggested&gate=1')
     const [firstButton, secondButton] = await screen.findAllByRole('button', {
-      name: /übernehmen/i,
+      name: /vorschlag übernehmen/i,
     })
     await user.click(firstButton)
     await user.click(secondButton)
@@ -514,105 +751,67 @@ describe('PhotoGridPage', () => {
     })
     const user = userEvent.setup()
 
-    renderPage()
-    const confirmButton = await screen.findByRole('button', { name: /übernehmen/i })
+    renderPage('/projects/1/photos?filter=suggested&gate=1')
+    const confirmButton = await screen.findByRole('button', { name: /vorschlag übernehmen/i })
     await user.click(confirmButton)
 
     expect(ratingsApi.setRating).toHaveBeenCalledWith(7, 'rejected')
     expect(screen.queryByText('Einzelbild-Seite')).not.toBeInTheDocument()
   })
 
-  // Spec 0040 (Bewertungsdetails-Info-Popover), Akzeptanzkriterien 1, 2, 17.
-  describe('info popover trigger', () => {
-    it('shows the trigger as a sibling of the tile link when criterion_scores is not empty', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
-        total: 1,
-      })
-
-      renderPage()
-
-      const trigger = await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
-      const [item] = await screen.findAllByRole('listitem')
-      const link = item.querySelector('a')
-      // Geschwisterelement NEBEN, nicht INNERHALB des <Link>-Kachel-Wrappers (Akzeptanzkriterium
-      // 17) - ein Klick auf den Trigger darf nicht zur Detailseite navigieren.
-      expect(link?.contains(trigger)).toBe(false)
-      expect(item.contains(trigger)).toBe(true)
-    })
-
-    it('does not show the trigger when criterion_scores is empty', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1, criterion_scores: [] })],
-        total: 1,
-      })
-
-      renderPage()
-
-      await screen.findAllByRole('listitem')
-      expect(
-        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' }),
-      ).not.toBeInTheDocument()
-    })
-
-    /*
-     * ERSATZ, KEINE STREICHUNG (specs/features/0321-dark-utility-register-ansichten.md, Etappe 4,
-     * Punkt 3 - der einzige vorab genehmigte Wegfall dieser Story).
-     *
-     * Der zuvor hier gepruefte Mechanismus hoert auf zu existieren: Die RatingBadge lag als
-     * absolut positioniertes Geschwisterelement UEBER dem <Link> und brauchte deshalb
-     * `pointer-events-none`, damit Klicks in ihrem rein dekorativen Bereich die Kachel noch
-     * navigieren liessen. Seit Entscheidung 2 sitzt das Kennzeichen im Kartenkoerper, nicht mehr
-     * ueber dem Bild - es kann gar keinen Klick mehr abfangen, und der Kniff entfaellt ersatzlos.
-     *
-     * An seine Stelle tritt die Zusage, die den Kniff ueberhaupt noetig gemacht hatte: Kennzeichen
-     * und Dateiname liegen NICHT im <a>, und der Ecken-Trigger bleibt dessen Geschwister (nicht
-     * sein Kind - die Bildflaeche beschneidet, eine Trefferflaeche darin waere still
-     * abgeschnitten). Ein ersatzloses Streichen waere der Verlust der Zusage, nicht ihre Erfuellung.
-     */
-    it('keeps the badge, the file name and the corner trigger outside the tile link', async () => {
+  /*
+   * ERSATZ, KEINE STREICHUNG (specs/features/0489-fotouebersicht-ohne-beschnitt.md, AK3 und
+   * Daniels Entscheidung vom 2026-09-14). Der Info-Ausloeser der Bewertungsdetails und der
+   * Motiv-Marker entfallen in DIESER Ansicht ersatzlos - die Kachel traegt genau zwei Zeichen.
+   *
+   * Ein ersatzloses Streichen dieser Faelle waere der Verlust der Zusage, nicht ihre Erfuellung:
+   * Geprueft wird jetzt die ABWESENHEIT, und zwar mit einem Foto, das beide fruehere Ausloeser
+   * ausgeloest haette. Der getragene Preis steht in der Spec: Die Bewertungsdetails sind aus dem
+   * Raster nicht mehr erreichbar, nur noch in der Detailansicht (dort weiterhin geprueft, siehe
+   * PhotoDetailPage.test.tsx und CriterionDetailsPopover.test.tsx).
+   */
+  describe('kein drittes Ecken-Element mehr (AK3)', () => {
+    it('shows neither the info trigger nor the motif marker, even where both used to appear', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [
           photo({
             id: 1,
-            relative_path: 'a.jpg',
             criterion_scores: [criterionScore()],
-            ratings: [
-              { user_id: 1, username: 'testuser', status: 'album_worthy', favorite: false },
-            ],
+            motif_assessment: null,
+            motifs: [],
           }),
         ],
         total: 1,
       })
 
       renderPage()
+      const [item] = await screen.findAllByRole('listitem')
 
-      const trigger = await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
-      const [item] = screen.getAllByRole('listitem')
-      const link = item.querySelector('a')!
-
-      expect(link.contains(trigger)).toBe(false)
-      expect(item.contains(trigger)).toBe(true)
-      expect(link.contains(screen.getByLabelText('Album-würdig'))).toBe(false)
-      expect(link.contains(screen.getByText('a.jpg'))).toBe(false)
+      expect(
+        screen.queryByRole('button', { name: 'Bewertungsdetails anzeigen' }),
+      ).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Motive noch nicht bestimmt')).not.toBeInTheDocument()
+      // Und daraus folgend: hoechstens die beiden Zeichen, nie ein drittes.
+      expect(marksOf(item).length).toBeLessThanOrEqual(2)
     })
 
-    it('clicking the trigger does not navigate to the detail view', async () => {
+    it('keeps the tile a list item with exactly one photo link', async () => {
+      // Daran haengt der Auffinde-Ausdruck des E2E-Pruefstacks und damit vier Specs. Ein Bruch
+      // faellt hier in vitest auf, nicht erst im Browser.
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
         total: 1,
       })
-      const user = userEvent.setup()
 
       renderPage()
-      const trigger = await screen.findByRole('button', { name: 'Bewertungsdetails anzeigen' })
-      await user.click(trigger)
 
-      expect(screen.getByRole('dialog')).toBeInTheDocument()
-      expect(screen.queryByText('Einzelbild-Seite')).not.toBeInTheDocument()
+      const [item] = await screen.findAllByRole('listitem')
+      const photoLinks = Array.from(item.querySelectorAll('a')).filter((anchor) =>
+        /\/photos\/\d+(\?|$)/.test(anchor.getAttribute('href') ?? ''),
+      )
+      expect(photoLinks).toHaveLength(1)
     })
   })
-
   describe('gate mode (&gate=1)', () => {
     it('shows a banner with candidate count and confirm button, hidden without the gate param', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
@@ -675,69 +874,23 @@ describe('PhotoGridPage', () => {
     })
   })
 
-  // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Kachel und Raster".
+  // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Kachel und Raster" - die Zusage
+  // "kein Motivname und keine Staerke auf der Kachel selbst" gilt unveraendert weiter und wird
+  // durch den Wegfall des Info-Ausloesers nur noch strenger.
   describe('Motive auf der Kachel', () => {
-    it('marks an unassessed photo and leaves an assessed one unmarked', async () => {
-      /* Als PAAR geprueft: eine Einzelpruefung bestuende auch dann, wenn der Marker auf jeder
-       * Kachel stuende. */
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [
-          photo({ id: 1, motif_assessment: null, motifs: [] }),
-          photo({ id: 2, relative_path: 'b.jpg' }),
-        ],
-        total: 2,
-      })
-
-      renderPage()
-
-      // Beide Fotos laden asynchron ueber PhotoImage (role="status" waehrend des Ladens) - erst
-      // abwarten, bis beide fertig sind, bevor die role="img"-Elemente gezaehlt werden. Sonst
-      // koennte "findAllByRole('img')" (loest bereits beim ERSTEN Treffer auf, wartet NICHT bis
-      // sich nichts mehr aendert) faelschlich schon beim synchron gerenderten Marker allein
-      // aufloesen, bevor die beiden async geladenen Foto-<img>-Elemente ueberhaupt existieren.
-      await waitFor(() => {
-        expect(screen.queryAllByRole('status')).toHaveLength(0)
-      })
-
-      // Zwei geladene Foto-Thumbnails (role="img" ueber das native <img alt=...>) + ein
-      // Motiv-Marker (role="img", nur fuer das eine Foto ohne Kopfzeile).
-      expect(screen.getAllByRole('img')).toHaveLength(3)
-      expect(screen.getAllByLabelText('Motive noch nicht bestimmt')).toHaveLength(1)
-    })
-
     it('shows no motif name or strength on the tile itself', async () => {
-      /* Acht Werte haben bei 158px Kachelbreite keinen Platz, und der staerkste allein
-       * behauptete wieder eine Hauptkategorie. Sie stehen ausschliesslich im Info-Popover - das
-       * hier geschlossen ist. */
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
         total: 1,
       })
 
       renderPage()
-      await screen.findAllByRole('img')
+      await screen.findAllByRole('listitem')
 
       for (const item of MOTIF_SET.items) {
         expect(screen.queryByText(item.display_name)).toBeNull()
       }
       expect(screen.queryByRole('list', { name: 'Motive' })).toBeNull()
-    })
-
-    it('shows the read-only motif list inside the info popover', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1, criterion_scores: [criterionScore()] })],
-        total: 1,
-      })
-      const user = userEvent.setup()
-
-      renderPage()
-      await screen.findAllByRole('img')
-      await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
-
-      const list = await screen.findByRole('list', { name: 'Motive' })
-      expect(within(list).getAllByRole('listitem')).toHaveLength(MOTIF_SET.items.length)
-      expect(screen.getByText('Korrigieren in der Einzelbildansicht.')).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /^Trifft zu/ })).toBeNull()
     })
   })
 })

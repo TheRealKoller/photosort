@@ -24,6 +24,81 @@ JPEG_QUALITY_DISPLAY = 88
 
 Variant = Literal["thumbnail", "display"]
 
+# Gueltigkeitsband des Seitenverhaeltnisses (ADR 0110 Punkt 2). Ein Wert ausserhalb wird NICHT
+# gespeichert: Die Zeilenhoehe des justierten Rasters entsteht aus der SUMME der Verhaeltnisse
+# einer Zeile, ein entartetes Verhaeltnis zoege deshalb die ganze Zeile auf eine unbrauchbare
+# Hoehe, nicht nur sein eigenes Bild.
+ASPECT_RATIO_MIN = 0.05
+ASPECT_RATIO_MAX = 20.0
+
+
+def _ratio_within_band(width: int, height: int) -> float | None:
+    """Breite geteilt durch Hoehe, sofern das Ergebnis im Gueltigkeitsband liegt - sonst `None`.
+
+    SICHERHEIT (Auflage S5): Die Bereichspruefung ist als EINSCHLUSS geschrieben
+    (`ASPECT_RATIO_MIN <= r <= ASPECT_RATIO_MAX`), nie als verneinte Ausschlussform. `NaN` und
+    `inf` sind gegen jeden Vergleich falsch und passierten die Umkehrform. Ein `NaN` in der Spalte
+    waere kein Fehler EINES Fotos, sondern der ANTWORT: `json.dumps` schreibt das Literal `NaN`,
+    `JSON.parse` weist den Koerper ab - die gesamte Fotoliste des Projekts fiele aus.
+
+    Eine Hoehe von 0 (oder darunter) liefert `None`, statt eine ZeroDivisionError zu werfen."""
+    if height <= 0 or width <= 0:
+        return None
+    ratio = width / height
+    if ASPECT_RATIO_MIN <= ratio <= ASPECT_RATIO_MAX:
+        return ratio
+    return None
+
+
+def aspect_ratio_of(image: Image.Image) -> float | None:
+    """Das Seitenverhaeltnis des GEZEIGTEN Bildes - Breite durch Hoehe nach EXIF-Orientierung.
+
+    Die Orientierung wird hier selbst angewandt, damit der Name der Funktion fuer sich genommen
+    wahr ist. Fuer ein bereits gedrehtes Bild kostet das nichts: `exif_transpose` entfernt den
+    Orientierungs-Tag, findet also beim zweiten Aufruf keinen mehr und liefert `None`.
+
+    `None` heisst "nicht bekannt" und ist ein regulaerer Zustand (ADR 0110 Punkt 1) - hier der
+    Fall eines Verhaeltnisses ausserhalb des Gueltigkeitsbands oder einer entarteten Groesse.
+
+    Die entartete Groesse wird VOR der Drehung abgewiesen: Entartung ist gegen das Vertauschen der
+    Kantenlaengen unempfindlich, und `exif_transpose` dekodiert und kopiert das Bild - fuer einen
+    Fall, der ohnehin `None` liefert, ist das vergebene Arbeit."""
+    width, height = image.size
+    if width <= 0 or height <= 0:
+        return None
+    shown = ImageOps.exif_transpose(image) or image
+    return _ratio_within_band(*shown.size)
+
+
+def aspect_ratio_of_cached_thumbnail(path: Path) -> float | None:
+    """Das Seitenverhaeltnis aus einer bereits geschriebenen Cache-Variante - ohne Netz und ohne
+    das Original. Zweiter Schreibweg der Spalte (ADR 0110 Punkt 3, Nachhol-Runde).
+
+    Der so gelesene Wert ist wegen der Ganzzahl-Skalierung beim Erzeugen der Vorschau NICHT exakt
+    das Verhaeltnis des Originals; zugesichert ist er nur innerhalb einer Toleranz.
+
+    SICHERHEIT (Auflage S3): Gelesen wird der KOPF der Datei, nicht ihr Bildinhalt - `.size`
+    innerhalb eines `with`-Blocks, ohne `load()` und ohne `exif_transpose`. Die Cache-Variante ist
+    beim Schreiben bereits gedreht worden und traegt keinen Orientierungs-Tag. Bei Verletzung zoege
+    das Dekodieren die volle Pixelflaeche in den Speicher, und ein offen gelassener Dateizeiger
+    erschoepfte ueber zehntausende Bestandsfotos die Dateizeiger des Worker-Prozesses.
+
+    SICHERHEIT (Auflage S2): Bewusst breites `except Exception`, nie eine engere Liste -
+    `PIL.Image.DecompressionBombError` erbt NICHT von `OSError` und liefe durch. Eine fehlende,
+    beschaedigte oder nicht dekodierbare Datei laesst den Wert `None` und die Nachhol-Runde
+    weiterlaufen; bei Verletzung risse ein einzelnes Foto den gesamten Projekt-Scan, und zwar vor
+    jeder anderen Arbeit, also bei jedem Versuch erneut.
+
+    SICHERHEIT (Auflage S4): Der `path` wird vom Aufrufer ausschliesslich ueber
+    `thumbnail_path`/`variant_path` gebildet - der `etag` kommt vom WebDAV-Server, ist damit
+    Fremdtext und geht nur als SHA-256-Eingabe in `cache_key` ein, nie in einen Dateinamen."""
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+    except Exception:
+        return None
+    return _ratio_within_band(width, height)
+
 
 def cache_key(photo_id: int, etag: str) -> str:
     """Deterministischer, dateisystemsicherer Cache-Schluessel aus photo_id+etag.
@@ -50,7 +125,9 @@ def variant_path(cache_dir: Path, photo_id: int, etag: str, variant: Variant) ->
     return display_path(cache_dir, photo_id, etag)
 
 
-def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: bytes) -> bool:
+def generate_variants(
+    cache_dir: Path, photo_id: int, etag: str, image_bytes: bytes
+) -> float | None:
     """Erzeugt Thumbnail- und Display-Auflösung im lokalen Cache.
 
     Best-effort wie opencloud/exif.py::extract_taken_at: ein nicht dekodierbares Bild (z.B.
@@ -59,12 +136,19 @@ def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: by
     verarbeitet"-Platzhalter im Frontend), bis eine neue etag-Version erfolgreich verarbeitet
     werden kann.
 
-    Returns True, wenn beide Varianten geschrieben wurden, sonst False.
+    Returns das Seitenverhaeltnis des GEZEIGTEN Bildes, wenn beide Varianten geschrieben wurden -
+    sonst `None`. Der Rueckgabewert ist damit zugleich die Erfolgsmeldung UND der erste
+    Schreibweg der Spalte `Photo.aspect_ratio` (ADR 0110 Punkt 3): Das Bild liegt nach
+    `exif_transpose` ohnehin dekodiert vor, es entsteht also kein zusaetzlicher Abruf und kein
+    zweites Dekodieren. `None` heisst deshalb NICHT nur "nicht erzeugt", sondern deckt auch den
+    Fall eines erfolgreich geschriebenen Bildes mit entartetem Verhaeltnis ab (siehe
+    `aspect_ratio_of`) - fuer den Aufrufer ist beides dasselbe: kein Wert zum Schreiben.
     """
     try:
         opened = Image.open(io.BytesIO(image_bytes))
         opened.load()
         image: Image.Image = ImageOps.exif_transpose(opened) or opened
+        ratio = aspect_ratio_of(image)
         if image.mode not in ("RGB", "L"):
             image = image.convert("RGB")
 
@@ -92,8 +176,8 @@ def generate_variants(cache_dir: Path, photo_id: int, etag: str, image_bytes: by
         # read-only, Platte voll) darf den Scan-Job ebenfalls nicht crashen und den ScanRun
         # dauerhaft auf RUNNING haengen lassen, statt nur dieses eine Thumbnail best-effort zu
         # ueberspringen. Gleiches Best-effort-Muster wie opencloud/exif.py::extract_taken_at.
-        return False
-    return True
+        return None
+    return ratio
 
 
 # Speicherbedarf ab hier.

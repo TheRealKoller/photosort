@@ -53,6 +53,33 @@ Verarbeitungs-Cache (Thumbnails).
     gruppiert nur noch nach Tag und Foto-Moment — die Kategorie-Ebene der Gruppierung fällt weg.
     Anzeigenamen, Reihenfolge und Bandgrenzen kommen aus `GET /motifs`; das Frontend spiegelt sie
     nicht.
+  - **Die Fotoübersicht ist ein justiertes Zeilenraster** *(Spec
+    [`0489`](../specs/features/0489-fotouebersicht-ohne-beschnitt.md), ADR
+    [`decisions/0110-seitenverhaeltnis-als-serverdatum-und-rasterkachel-neben-der-fotokarte.md`](../specs/decisions/0110-seitenverhaeltnis-als-serverdatum-und-rasterkachel-neben-der-fotokarte.md))*:
+    `pages/PhotoGridPage.tsx` zeigt kein Spaltenraster mehr. `utils/justifiedRows.ts` ist eine
+    **reine Funktion ohne DOM** (Verhältnisse, Containerbreite, Zwischenraum, Ziel- und
+    Mindestzeilenhöhe hinein — Zeilen mit je Bild einer ganzen Pixelbreite und gemeinsamer Höhe
+    heraus); es kommt **keine** Layout-Bibliothek hinzu. Die Breiten einer vollen Zeile plus
+    Zwischenräume ergeben **exakt** die Containerbreite, der Rundungsrest liegt auf dem letzten
+    Bild; die letzte, unvollständige Zeile bleibt ungestreckt. Die Containerbreite kommt aus
+    `hooks/useElementWidth.ts` und dort aus `entry.contentRect.width` des `ResizeObserver`-Eintrags,
+    **nie** aus dem Element — in jsdom sind `clientWidth` und `getBoundingClientRect().width`
+    konstant 0, und ein Raster, das daraus läse, wäre im Komponententest nicht prüfbar. Die
+    gerechneten Maße gehen als **Zahl in eine gewöhnliche CSS-Eigenschaft** (`style={{ width, height }}`),
+    nie als zusammengesetzte Zeichenkette und nie als CSS-Custom-Property (siehe Sicherheitskonzept).
+    - **Die Kachel** `components/PhotoGridTile.tsx` steht **neben** `PhotoCard` statt auf ihr: eine
+      Bildfläche im eigenen Seitenverhältnis, ohne Kartenkörper, ohne Fußzeile, mit genau zwei
+      Zeichen (Stern und Punkt) auf der undurchsichtigen Fläche `--overlay` und einer erst auf
+      Anforderung eingeblendeten Angabenzeile. Jede Kachel bleibt ein `<li>` mit **genau einem**
+      Link auf `/photos/<id>` — daran hängt der Auffinde-Ausdruck des E2E-Prüfstacks und damit vier
+      Specs. Die Dämpfung einer verworfenen Aufnahme liegt ausschließlich auf der Bildfläche, nie
+      auf den beiden Zeichen. `PhotoCard` selbst bleibt unverändert; ein struktureller Wächter
+      (`photoGridTile.structure.test.ts`) hält ihre Aufrufstellen fest.
+    - **Nachgeladen wird am Sichtbarkeitsanker** (`IntersectionObserver` auf einem Element unter dem
+      Raster), nicht an einer Schaltfläche; die Zählzeile „x von y geladen" ist zugleich die
+      Fehlerstelle. Die Sperre „ein Abruf gleichzeitig" liegt in einem **Ref**, nicht in einem
+      Renderwert: Der Beobachter kann mehrfach im selben Tick melden, und `isFetchingNextPage` wird
+      erst beim nächsten Rendern wahr.
   - die Projektnavigation liegt in der Kopfzeile der `AppShell` statt am Seitenende — neues
     `utils/projectRoutes.ts` als einzige Quelle der Wahrheit für "welcher Pfad hat Projektkontext"
     (speist die `<Route>`-Erzeugung in `App.tsx`, die `projectId`-Ermittlung der Kopfzeile und die
@@ -1129,6 +1156,35 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     (Datenschutzbedingung, siehe Sicherheitskonzept). Bereits gescannte Fotos bekommen ihre
     Koordinaten erst, wenn sich die Datei auf OpenCloud ändert (kein Bestandsnachzug, Daniels
     Entscheidung).
+  - additiv `aspect_ratio: float | None` (Migration `bcc517b1ab22`, nullable, **kein**
+    `server_default`, kein Backfill). Breite geteilt durch Höhe des **gezeigten** Bildes, also nach
+    EXIF-Orientierung; gespeichert wird das Verhältnis und nicht das Paar aus Breite und Höhe, weil
+    einer der beiden Schreibwege die Pixelmaße des Originals gar nicht kennt. Ein Wert außerhalb
+    von `0.05 <= r <= 20.0` wird nicht gespeichert — die Zeilenhöhe des justierten Rasters entsteht
+    aus der *Summe* der Verhältnisse einer Zeile, ein entartetes Verhältnis zöge also die ganze
+    Zeile auf eine unbrauchbare Höhe. `null` heißt "nicht bekannt" und ist ein **regulärer**
+    Zustand: Jeder Lesepfad antwortet dafür fehlerfrei, und die Oberfläche plant ein solches Foto
+    mit 3:2 ein.
+    - **Zwei Schreibwege.** Der Scan ist der Regelweg: `thumbnails.py::generate_variants` kennt das
+      Bild nach `exif_transpose` bereits und gibt sein Verhältnis zurück, der Wert reist über
+      `ScanExifResult` in den sequentiellen Teil von `_process_scan_block`. Kein zusätzlicher
+      Download, kein zweites Dekodieren. Geschrieben wird dort **unbedingt**, auch zurück auf
+      `None` (dieselbe Begründung wie bei `gps_lat`) — ausgenommen ein `probe_only`-Arbeitsposten,
+      der die Datei gar nicht gelesen hat und deshalb nichts über ihre Form weiß.
+    - **Nachhol-Regel des Scans:** Zu Beginn **jedes** Projekt-Scans, vor Phase 1 und vor jedem
+      Netzzugriff, läuft `worker.py::_catch_up_aspect_ratios` über die Fotos des Projekts mit
+      `aspect_ratio IS NULL` und liest das Verhältnis aus dem **lokal zwischengespeicherten
+      Vorschaubild** — ohne Netz, ohne OpenCloud-Abruf, ohne das Original. Fehlt die Cache-Datei
+      oder ist sie unlesbar, bleibt der Wert `NULL` und der nächste Scan versucht es erneut. Es
+      gibt hier **keine** Merker-Spalte nach dem Muster von `camera_probed`: Der Merker dort
+      verhindert einen wiederholten *Netzzugriff* je Bestandsfoto, hier kostet ein erneuter Versuch
+      einen lokalen Dateizugriff, und `aspect_ratio IS NULL` ist bereits selbst die
+      Abbruchbedingung. Die Runde arbeitet in Blöcken und setzt je Block `last_progress_at`; ohne
+      diese eigenen Commit-Punkte setzte `reap_stalled_runs` einen Lauf, dessen Runde länger als
+      `STALL_THRESHOLD` arbeitet, auf `FAILED`, ohne die Coroutine abzubrechen. Das aus der
+      Vorschau gelesene Verhältnis ist wegen der Ganzzahl-Skalierung beim Erzeugen der Vorschau
+      **nicht exakt** das des Originals; zugesichert ist es nur innerhalb von
+      `ASPECT_RATIO_PREVIEW_TOLERANCE`.
   - neue `cloud_vision_errors: list[PhotoCloudVisionError]`-Relationship (`cascade="all,
     delete-orphan"`, siehe `PhotoCloudVisionError`-Eintrag unten).
 - **ScanRun** *(implementiert, `models.py`)*: ein (Re-)Scan-Lauf eines Projekts — Status

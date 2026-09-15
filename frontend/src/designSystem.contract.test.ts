@@ -22,6 +22,8 @@ import { fileURLToPath } from 'node:url'
 import { compile } from '@tailwindcss/node'
 import { describe, expect, it } from 'vitest'
 
+import { GRID_GAP_PX } from './utils/justifiedRows'
+
 const SRC_DIR = fileURLToPath(new URL('.', import.meta.url))
 const FRONTEND_DIR = fileURLToPath(new URL('..', import.meta.url))
 
@@ -1005,6 +1007,46 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     expect(FLOWING_TEXT_DANGER.test(line)).toBe(expected)
   })
 
+  /*
+   * specs/features/0489-fotouebersicht-ohne-beschnitt.md, AK1: Die Rasterkachel beschneidet NIE.
+   * `object-cover` schneidet zu, `aspect-square` zwingt eine feste Form auf - beides hebt die
+   * Zusage auf, ohne dass sonst irgendetwas rot wuerde. Die Bildflaeche traegt ihr eigenes
+   * Verhaeltnis als gerechnetes Inline-Mass; die Kachel selbst darf dazu keine Form vorgeben.
+   */
+  it.each(['object-cover', 'aspect-square'])(
+    'haelt %s aus der Rasterkachel heraus (AK1: kein Beschnitt)',
+    (utility) => {
+      const tile = sourceFiles.find((file) =>
+        file.path.endsWith('src/components/PhotoGridTile.tsx'),
+      )
+      expect(tile, 'PhotoGridTile.tsx muss im Pruefsatz liegen').toBeDefined()
+
+      expect(stripComments(tile?.content ?? '')).not.toContain(utility)
+    },
+  )
+
+  /*
+   * ZWEI WAHRHEITEN DESSELBEN WERTS. Der Zwischenraum zwischen zwei Kacheln ist eine Utility der
+   * 8-Punkt-Skala (`gap-3` = 12px) UND eine Zahl in der Rasterrechnung (`GRID_GAP_PX`). Laufen
+   * die beiden auseinander, rechnet die Funktion mit einem anderen Abstand als der Browser setzt,
+   * und jede Zeile bricht einen Pixel zu frueh oder zu spaet um - buendig waere sie nie wieder,
+   * ohne dass eine Pruefung anschluege.
+   */
+  it('haelt den Zwischenraum des Rasters an seiner Utility fest', () => {
+    expect(GRID_GAP_PX).toBe(12)
+
+    const page = sourceFiles.find((file) => file.path.endsWith('src/pages/PhotoGridPage.tsx'))
+    expect(page, 'PhotoGridPage.tsx muss im Pruefsatz liegen').toBeDefined()
+    // Ueber das semantische `data-photo-grid` gesucht, nicht ueber "irgendeine flex-wrap-Zeile":
+    // Die Filterleiste derselben Datei ist ebenfalls eine, traegt aber ihren eigenen Abstand.
+    const listClasses = stripComments(page?.content ?? '').match(
+      /data-photo-grid[^>]*?className="([^"]*)"/,
+    )
+    expect(listClasses, 'Das Raster muss als `data-photo-grid` erkennbar sein').not.toBeNull()
+    expect(listClasses?.[1]).toContain('flex-wrap')
+    expect(listClasses?.[1]).toContain(`gap-${GRID_GAP_PX / 4}`)
+  })
+
   /** Der Variantenpraefix einer Utility (`group-active:bg-border` -> `group-active:`), leer bei
    * einer unpraefixierten. */
   function variantPrefix(utility: string): string {
@@ -1224,6 +1266,16 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
       file: 'src/components/MotifAssessmentMarker.tsx',
       snippet: 'items-center justify-center rounded-full bg-bg/85',
       reason: 'runder Backdrop des Motiv-Markers ueber der Fotokachel',
+    },
+    {
+      file: 'src/components/PhotoGridTile.tsx',
+      snippet: "'block size-3 rounded-full border-2'",
+      reason:
+        'der PUNKT der Rasterkachel - eines der genau zwei Zeichen der Fotouebersicht. Die ' +
+        'Kreisform traegt hier Bedeutung und nicht Geometrie: Unter Graustufen sind Favorit und ' +
+        'Album-wuerdig als Flaechen nicht unterscheidbar, die Unterscheidung laeuft ueber die ' +
+        'SILHOUETTE (Stern gegen Kreis). Die Fuellung unterscheidet zusaetzlich die eigene ' +
+        'Entscheidung vom offenen Vorschlag',
     },
   ]
 
@@ -1619,6 +1671,16 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
         'Dateinamen unter die Kontrastschwelle. `gedaempft` schliesst die Vergroesserung ' +
         'ausdruecklich aus - die vergroesserte Aufnahme bleibt unverfaelscht, weil sie beurteilt ' +
         'werden soll',
+    },
+    {
+      file: 'src/components/PhotoGridTile.tsx',
+      snippet: "rejected && 'opacity-40'",
+      reason:
+        'gedaempfte BILDFLAECHE der verworfenen Aufnahme im Raster - der Ausschnitt zeigt das ' +
+        'Element INNERHALB des Kachel-Links, das allein das Bild traegt. Die beiden Zeichen sind ' +
+        'seine Geschwister und bleiben voll deckend; am Kachelkoerper druecke dieselbe Utility ' +
+        'sie unter die Kontrastschwelle, und ueber einer Bildflaeche ist ein Kontrast mit ' +
+        'Deckkraft statisch ohnehin nicht nachrechenbar',
     },
   ]
 

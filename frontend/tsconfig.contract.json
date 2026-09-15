@@ -25,6 +25,7 @@
      Dateisystem- und Werkzeugzugriff. */
   "include": [
     "src/albumSelection.structure.test.ts",
+    "src/photoGridTile.structure.test.ts",
     "src/designSystem.contract.test.ts",
     "src/prettierSupportInfo.test.ts"
   ]

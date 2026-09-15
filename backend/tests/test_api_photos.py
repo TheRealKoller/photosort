@@ -5653,6 +5653,58 @@ class TestTheThreeFieldsAreIdenticalOnAllFourReadPaths:
         assert _selection_fields(draft[reference.id]) == _selection_fields(listing[reference.id])
 
 
+class TestTheAspectRatioOnEveryReadPath:
+    """specs/features/0489-fotouebersicht-ohne-beschnitt.md, ADR 0110 Punkt 1: `aspect_ratio`
+    steht auf ALLEN Lesepfaden, nicht nur auf dem der Rasteransicht. Ein je Abfragemodus
+    verschiedenes `PhotoOut` waere eine zweite, driftende Abbildung desselben Fotos."""
+
+    async def test_the_same_photo_reports_the_same_ratio_on_all_four_paths_here(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event = await _default_event(db_session, run)
+        reference = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, 10, 0))
+        subject = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 1, 10, 30))
+        subject.aspect_ratio = 0.75
+        await db_session.commit()
+        await _add_ranking(db_session, run, reference, rank_score=0.9, rank_position=1)
+        await _add_ranking(
+            db_session, run, subject, rank_score=0.5, rank_position=2, selection_position=None
+        )
+        await _make_second_user(db_session)
+        await _decide(db_session, subject, True)
+
+        listing = _by_id(await _listing(authenticated_api_client, project))
+        draft = _by_id(await _draft(authenticated_api_client, project))
+        alternatives = await authenticated_api_client.get(
+            f"/projects/{project.id}/draft-alternatives",
+            params={"event_id": event.id, "photo_id": reference.id},
+        )
+        selection = _by_id((await _selection(authenticated_api_client, project))["items"])
+
+        assert alternatives.status_code == 200
+        alternative_items = _by_id(alternatives.json()["items"])
+        assert listing[subject.id]["aspect_ratio"] == 0.75
+        assert alternative_items[subject.id]["aspect_ratio"] == 0.75
+        assert selection[subject.id]["aspect_ratio"] == 0.75
+        # Der Entwurfszweig fuehrt `subject` nicht (niemand hat es aufgenommen) - fuer das
+        # Bezugsbild steht das Feld dort ebenso.
+        assert draft[reference.id]["aspect_ratio"] is None
+
+    async def test_a_photo_without_a_known_ratio_reports_null_and_breaks_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """`NULL` ist ein regulaerer Zustand (ADR 0110 Punkt 1): Jeder Lesepfad antwortet dafuer
+        fehlerfrei, statt das Feld wegzulassen oder einen Fehler zu erzeugen."""
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+
+        items = await _listing(authenticated_api_client, project)
+
+        assert items[0]["aspect_ratio"] is None
+
+
 class TestTheSingleDraftStaysUntouchedByAJointDecision:
     """Die "Spannung, die aufzuloesen ist": Story 6 sagt zu, dass neben der Bewertung KEINE zweite,
     daneben liegende Auswahlebene entsteht. Die Endauswahl ist eine Ebene UEBER beiden Entwuerfen -

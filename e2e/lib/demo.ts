@@ -84,7 +84,10 @@ export async function openDuplicateGroup(
   projectId: number,
   gruppe: 'gross' | 'klein',
 ): Promise<void> {
-  await page.goto(`/projects/${projectId}/photos?filter=suggested`)
+  // `&gate=1` ist seit Spec 0489 Bedingung, nicht Beiwerk: "Übernehmen" und "Vergleichen" stehen
+  // ausschliesslich im Gate-Modus unter dem Bild, in der normalen Uebersicht gar nicht. Ohne den
+  // Parameter faende der Einstieg unten kein Element.
+  await page.goto(`/projects/${projectId}/photos?filter=suggested&gate=1`)
   const einstiege = page.getByRole('link', { name: /^Duplikate vergleichen:/ })
   await expect(einstiege.first(), 'Einstieg in den Duplikat-Vergleich').toBeVisible()
   await (gruppe === 'gross' ? einstiege.first() : einstiege.last()).click()

@@ -193,6 +193,18 @@ class Photo(Base):
     # OpenCloud ändert.
     gps_lat: Mapped[float | None] = mapped_column(default=None)
     gps_lon: Mapped[float | None] = mapped_column(default=None)
+    # Breite geteilt durch Hoehe des GEZEIGTEN Bildes, also nach EXIF-Orientierung (ADR 0110).
+    # `None` heisst "nicht bekannt" und ist ein REGULAERER Zustand, kein Fehler: Jeder Lesepfad
+    # antwortet dafuer fehlerfrei, und die Oberflaeche plant ein solches Foto mit 3:2 ein.
+    #
+    # KEIN server_default und kein Backfill. `aspect_ratio IS NULL` ist zugleich die
+    # Arbeitsmenge der Nachhol-Runde zu Beginn jedes Projekt-Scans (worker.py) - ein Default
+    # naehme ihr die Arbeitsmenge weg, und jedes Bestandsfoto zeigte dauerhaft ein erfundenes
+    # Verhaeltnis.
+    #
+    # Gespeichert wird das Verhaeltnis, nicht Breite UND Hoehe: die Nachhol-Runde liest aus dem
+    # Vorschaubild und kennt die Masse des Originals nicht, nur sein Verhaeltnis.
+    aspect_ratio: Mapped[float | None] = mapped_column(default=None)
     last_modified: Mapped[datetime]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

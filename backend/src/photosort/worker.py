@@ -4,7 +4,7 @@ import asyncio
 import enum
 import logging
 import os
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -159,7 +159,12 @@ from photosort.selection import (
     effective_target,
     select_album_draft,
 )
-from photosort.thumbnails import generate_variants, variant_path
+from photosort.thumbnails import (
+    aspect_ratio_of_cached_thumbnail,
+    generate_variants,
+    thumbnail_path,
+    variant_path,
+)
 
 # Kein Logger-Objekt wird injiziert oder durchgereicht: worker.py ist die einzige Stelle mit
 # Zugriff auf sowohl die Exception als auch den Foto-Kontext - landmark.py/
@@ -365,11 +370,14 @@ async def _generate_thumbnails(
     photo_id: int,
     etag: str,
     cache_dir: Path,
-) -> None:
+) -> float | None:
     """Best-effort: weder ein Download- noch ein
     Dekodierfehler duerfen den Scan des Projekts abbrechen (anders als die uebrigen
     OpenCloudError-Faelle unten, die den ganzen Scan als FAILED markieren) - ein fehlendes
     Thumbnail aeussert sich nur als 404-Platzhalter im Bild-Endpunkt, siehe thumbnails.py.
+
+    Gibt das Seitenverhaeltnis des GEZEIGTEN Bildes zurueck, oder `None`, wenn keines ermittelt
+    werden konnte (Downloadfehler, nicht dekodierbar, entartetes Verhaeltnis).
 
     Nimmt bewusst `photo_id`/`etag` statt eines `Photo`-Objekts entgegen: wird als Teil
     von _fetch_and_thumbnail parallel zu Geschwister-Aufrufen desselben Blocks ausgefuehrt und darf
@@ -379,8 +387,8 @@ async def _generate_thumbnails(
     try:
         content = await client.download(webdav_url, relative_path)
     except OpenCloudError:
-        return
-    generate_variants(cache_dir, photo_id, etag, content)
+        return None
+    return generate_variants(cache_dir, photo_id, etag, content)
 
 
 @dataclass(frozen=True)
@@ -398,11 +406,17 @@ class ScanExifResult:
 
     `taken_at` ist hier die AUFGEZEICHNETE Zeit (EXIF `DateTimeOriginal`, sonst der Rueckfall auf
     `last_modified`) - die Korrektur um den Kamera-Versatz passiert erst im sequentiellen Teil von
-    `_process_scan_block`, wo die Kamerazeile und damit der Versatz bekannt sind."""
+    `_process_scan_block`, wo die Kamerazeile und damit der Versatz bekannt sind.
+
+    `aspect_ratio` ist das Seitenverhaeltnis des GEZEIGTEN Bildes, das die Thumbnail-Erzeugung
+    ohnehin kennt - `None` fuer einen `probe_only`-Posten (es wurde gar nichts dekodiert) und fuer
+    jeden Fehlerfall. Es faellt bei derselben Dekodierung an wie die Vorschau; es entsteht kein
+    zusaetzlicher Abruf und kein zweites Dekodieren."""
 
     taken_at: datetime
     gps: tuple[float, float] | None
     camera: CameraIdentity | None
+    aspect_ratio: float | None = None
 
 
 async def _fetch_and_thumbnail(
@@ -443,9 +457,12 @@ async def _fetch_and_thumbnail(
         gps = extract_gps(content, photo_id=photo_id)
         camera = extract_camera(content, photo_id=photo_id)
 
+    aspect_ratio: float | None = None
     if not probe_only:
-        await _generate_thumbnails(client, webdav_url, relative_path, photo_id, etag, cache_dir)
-    return ScanExifResult(taken_at=taken_at, gps=gps, camera=camera)
+        aspect_ratio = await _generate_thumbnails(
+            client, webdav_url, relative_path, photo_id, etag, cache_dir
+        )
+    return ScanExifResult(taken_at=taken_at, gps=gps, camera=camera, aspect_ratio=aspect_ratio)
 
 
 async def _resolve_project_camera(
@@ -574,7 +591,7 @@ async def _process_scan_block(
             raise result
 
     cache = {} if camera_cache is None else camera_cache
-    for photo, exif_result in zip(photos, results, strict=True):
+    for photo, exif_result, item in zip(photos, results, block, strict=True):
         # Die Typzusicherung nagelt die FORM fest: ohne sie entpackte eine durchgereichte
         # BaseException ihre Attribute in die Foto-Felder, statt oben als Fehler erkannt zu werden.
         assert isinstance(exif_result, ScanExifResult)  # bereits oben auf Exceptions geprueft
@@ -617,6 +634,20 @@ async def _process_scan_block(
         # enthält. Abgedeckt durch test_worker_scan_project.py.
         photo.gps_lat, photo.gps_lon = exif_result.gps or (None, None)
 
+        # ERSTER der zwei Schreibwege der Spalte (ADR 0110 Punkt 3). Fuer einen Posten, der die
+        # Datei tatsaechlich gelesen hat, wird UNBEDINGT geschrieben - auch zurueck auf `None`:
+        # Aendert eine Datei ihre Form, aendert das Foto sie mit, und ein nicht mehr dekodierbares
+        # Bild verliert seine Angabe, statt eine falsche zu behalten. Zurueck auf `None` heisst
+        # dabei nichts Endgueltiges: `aspect_ratio IS NULL` ist zugleich die Arbeitsmenge der
+        # Nachhol-Runde, die es beim naechsten Lauf erneut versucht.
+        #
+        # Ein `probe_only`-Posten wird dabei UEBERSPRUNGEN statt auf `None` gesetzt: Er hat die
+        # Datei gar nicht geladen (das ist sein ganzer Zweck) und weiss deshalb nichts ueber ihre
+        # Form. Ein unbedingtes Schreiben loeschte hier bei jedem Scan einen bereits bekannten,
+        # unveraendert gueltigen Wert.
+        if not item.probe_only:
+            photo.aspect_ratio = exif_result.aspect_ratio
+
     return added, updated
 
 
@@ -655,6 +686,96 @@ async def _enumerate_scan_entries(
     return entries
 
 
+# Blockgroesse der Nachhol-Runde: je Block ein Commit und ein Fortschrittsstempel (Auflage S1).
+# Modul-Konstante statt Default-Parameterwert, damit Tests sie per
+# monkeypatch.setattr(worker, "ASPECT_RATIO_CATCH_UP_BATCH_SIZE", ...) verkleinern koennen -
+# dasselbe Muster wie SCAN_COMMIT_BATCH_SIZE.
+ASPECT_RATIO_CATCH_UP_BATCH_SIZE = 200
+
+# Das aus der VORSCHAU gelesene Verhaeltnis ist wegen der Ganzzahl-Skalierung beim Erzeugen der
+# Vorschau nicht exakt das des Originals. Diese relative Abweichung ist die zugesicherte Grenze;
+# sie wird nie auf Gleichheit mit dem Scan-Weg geprueft. Bei THUMBNAIL_MAX_SIZE = 400 kann die
+# kurze Kante um hoechstens eine halbe Pixelzeile danebenliegen - eine relative Abweichung von
+# unter einem Prozent, und damit weit unterhalb dessen, was im Raster sichtbar waere.
+ASPECT_RATIO_PREVIEW_TOLERANCE = 0.01
+
+
+def _read_cached_aspect_ratios(
+    cache_dir: Path, photos: Sequence[tuple[int, str]]
+) -> list[tuple[int, float]]:
+    """Liest das Seitenverhaeltnis der uebergebenen `(photo_id, etag)`-Paare aus ihrer lokalen
+    Vorschau-Variante. Ein Paar ohne lesbare Datei kommt schlicht nicht zurueck.
+
+    Rein synchron und ohne DB-Bezug (deshalb Tupel statt ORM-Objekten), genau wie
+    `thumbnails.measure_cache_usage`: Der Aufrufer fuehrt sie ueber `asyncio.to_thread` aus, damit
+    die Event-Loop bei einem Dateisystemzugriff je Foto nicht blockiert.
+
+    SICHERHEIT (Auflage S4): Der Pfad entsteht AUSSCHLIESSLICH ueber `thumbnails.thumbnail_path`.
+    Der `etag` kommt vom WebDAV-Server, ist damit Fremdtext und geht dort nur als SHA-256-Eingabe
+    in `cache_key` ein, nie in einen Dateinamen. Jede zweite Pfadbildung, die `etag` oder
+    `relative_path` als Namensbestandteil verwendet, bleibt untersagt: ein `etag` mit `../` laese
+    sonst aus einem beliebigen Pfad ausserhalb des Cache-Verzeichnisses.
+
+    SICHERHEIT (Auflage S2): Je Foto isoliert - die Fehlerbehandlung liegt vollstaendig in
+    `aspect_ratio_of_cached_thumbnail` (bewusst breites `except Exception`). Hier steht deshalb
+    kein zweiter, engerer Block."""
+    ratios: list[tuple[int, float]] = []
+    for photo_id, etag in photos:
+        ratio = aspect_ratio_of_cached_thumbnail(thumbnail_path(cache_dir, photo_id, etag))
+        if ratio is not None:
+            ratios.append((photo_id, ratio))
+    return ratios
+
+
+async def _catch_up_aspect_ratios(
+    session: AsyncSession, project_id: int, cache_dir: Path, run: ScanRun
+) -> int:
+    """Fuellt `Photo.aspect_ratio` fuer die Bestandsfotos des Projekts aus deren lokal
+    zwischengespeichertem Vorschaubild - ohne Netz, ohne OpenCloud-Abruf, ohne das Original
+    (ADR 0110 Punkt 3). Gibt die Zahl der gefuellten Zeilen zurueck.
+
+    Die Arbeitsmenge ist `aspect_ratio IS NULL` und damit zugleich die Abbruchbedingung: Es gibt
+    KEINE Merker-Spalte nach dem Muster von `camera_probed`. Der Merker dort verhindert einen
+    wiederholten NETZZUGRIFF je Bestandsfoto; hier kostet ein erneuter Versuch einen lokalen
+    Dateizugriff. Fehlt die Cache-Datei, bleibt der Wert `NULL` und der naechste Scan versucht es
+    erneut.
+
+    SICHERHEIT (Auflage S1): Je Block wird committet UND `ScanRun.last_progress_at` gesetzt.
+    Diese Runde laeuft VOR Phase 1 und damit vor dem ersten Stempel, den `run_project_scan` sonst
+    setzt. Ohne eigene Commit-Punkte setzte `reap_stalled_runs` einen Lauf, dessen Runde laenger
+    als `STALL_THRESHOLD` (15 Minuten) ohne Stempel arbeitet, auf FAILED - und braeche die
+    Coroutine dabei bewusst NICHT ab. Der Scan liefe weiter, waehrend die Oberflaeche
+    "fehlgeschlagen" sagt.
+
+    SICHERHEIT (Auflage S1, zweiter Teil): Geladen werden je Foto nur `id` und `etag`, nie ganze
+    `Photo`-Objekte ueber den gesamten Bestand - ein `select(Photo)` zoege bei zehntausenden
+    Bestandsfotos ebenso viele ORM-Objekte in die Sitzung."""
+    rows = (
+        (
+            await session.execute(
+                select(Photo.id, Photo.etag).where(
+                    Photo.project_id == project_id,
+                    Photo.aspect_ratio.is_(None),
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    filled = 0
+    for start in range(0, len(rows), ASPECT_RATIO_CATCH_UP_BATCH_SIZE):
+        block = list(rows[start : start + ASPECT_RATIO_CATCH_UP_BATCH_SIZE])
+        ratios = await asyncio.to_thread(_read_cached_aspect_ratios, cache_dir, block)
+        for photo_id, ratio in ratios:
+            await session.execute(
+                update(Photo).where(Photo.id == photo_id).values(aspect_ratio=ratio)
+            )
+        filled += len(ratios)
+        run.last_progress_at = _now_utc()
+        await session.commit()
+    return filled
+
+
 async def run_project_scan(
     session: AsyncSession,
     client: OpenCloudScanClient,
@@ -668,6 +789,12 @@ async def run_project_scan(
     await session.refresh(scan_run)
 
     try:
+        # Nachhol-Runde fuer den Bestand, VOR Phase 1 und vor jedem Netzzugriff dieses Laufs
+        # (ADR 0110 Punkt 3). Sie steht bewusst vor dem Laden von `existing_photos`: So schreibt
+        # sie ausschliesslich per UPDATE-Anweisung und kann keine ORM-Objekte hinter dem Ruecken
+        # der Sitzung veraltern lassen.
+        await _catch_up_aspect_ratios(session, project.id, cache_dir, scan_run)
+
         drive = await client.resolve_drive(drive_name)
 
         existing_photos = {
