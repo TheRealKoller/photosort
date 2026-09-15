@@ -23,6 +23,7 @@ from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
 from photosort.duplicates import (
+    all_group_representative_ids,
     effective_decision_for,
     group_standing,
     has_open_suggestion,
@@ -53,7 +54,6 @@ from photosort.models import (
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
-    PhotoDuplicateDecision,
     PhotoFineLabel,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -1809,6 +1809,56 @@ async def build_duplicate_group_out(
         total=stellung.total,
         previous_photo_id=stellung.previous_id,
         next_photo_id=stellung.next_id,
+    )
+
+
+class DuplicateGroupIndexOut(BaseModel):
+    """Die Auskunft fuer den EINSTIEG: wie viele Duplikat-Gruppen es gibt und wo der Durchgang
+    beginnt.
+
+    `first_photo_id` ist `null`, wenn es keine Gruppe gibt - die Oberflaeche rendert den Einstieg
+    dann gar nicht, statt auf eine leere Ansicht zu fuehren (AK8).
+
+    KEINE LISTE ALLER GRUPPEN (ADR 0111 Punkt 3): Sie waere eine zweite Quelle derselben
+    Reihenfolge neben `position`/`total`, deren Momentaufnahmen auseinanderlaufen koennen. Die
+    Nachbarn reisen in der Gruppenantwort selbst."""
+
+    total: int
+    first_photo_id: int | None
+
+
+@router.get("/projects/{project_id}/duplicate-groups", response_model=DuplicateGroupIndexOut)
+async def duplicate_group_index(
+    project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # router-weite `dependencies`-Liste und keinen Vollstaendigkeitstest - ein Endpunkt, der
+    # diesen Parameter vergisst, waere STILL OEFFENTLICH (keine 401, nur Daten). Der eigene
+    # 401-Fall steht in `tests/test_api_duplicate_group_index.py`.
+    current_user: User = Depends(get_current_user),
+) -> DuplicateGroupIndexOut:
+    """Wie viele Duplikat-Gruppen dieses Projekt hat und ueber welche Aufnahme die erste beginnt.
+
+    Grundlage der beiden Einstiege in die Vergleichsansicht - aus dem Ausschuss-Schritt und aus der
+    nach Vorschlaegen gefilterten Fotoliste. Ohne Foto-Hydratation: Die Antwort traegt kein
+    `PhotoOut` und ist damit keine Funktion des anfragenden Nutzers.
+
+    `total` ist DIESELBE Zahl wie in `DuplicateGroupOut` und zaehlt alle Gruppen des Projekts,
+    entschiedene eingeschlossen.
+
+    SICHERHEIT (S6): `first_photo_id` stammt aus derselben projektbegrenzten Kantenliste wie die
+    Gruppe selbst, nie aus einer eigenen Abfrage auf `photo_scores` - dessen `duplicate_of` zeigt
+    auf `photos.id` ohne Projektbedingung. Eine Zugriffsmarke ist die Id nicht: Die Folgeanfrage
+    laeuft erneut ueber `project_id`.
+
+    `404` fuer ein unbekanntes Projekt, ohne den uebergebenen Wert zu spiegeln. `422` fuer eine
+    Pfad-Id ausserhalb der Grenzen - ein unbeschraenkter Pydantic-`int` erreicht die Datenbank und
+    wird jenseits von 2^63 zu `500` statt `404`."""
+    project = await _get_project_or_404(project_id, session)
+    representatives = all_group_representative_ids(await load_duplicate_links(session, project.id))
+    return DuplicateGroupIndexOut(
+        total=len(representatives),
+        first_photo_id=representatives[0] if representatives else None,
     )
 
 
