@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.46.0](https://github.com/TheRealKoller/photosort/compare/v0.45.0...v0.46.0) (2026-09-15)
+
+
+### Features
+
+* Duplikat-Gruppen in einem Durchgang mit sichtbarer Vorauswahl (Spec 0486) ([#496](https://github.com/TheRealKoller/photosort/issues/496)) ([2cde58d](https://github.com/TheRealKoller/photosort/commit/2cde58d9fcf526d00f217f771d2630ab530019fa))
+* Duplikate im Ausschuss nebeneinander vergleichen und einzeln entscheiden (Spec 0374) ([#484](https://github.com/TheRealKoller/photosort/issues/484)) ([06d89b5](https://github.com/TheRealKoller/photosort/commit/06d89b508e7dc57b9c465a7ed6f6ff19e13a1659))
+* Events heißen nach ihrem Ort, Teil 2 von 2 (Spec 0434) ([#483](https://github.com/TheRealKoller/photosort/issues/483)) ([1cb138f](https://github.com/TheRealKoller/photosort/commit/1cb138f4214d9be8e6256da3a8aca28086b25669))
+* **events:** Motivwechsel trennt Events als vorgelagerte Stufe (Spec 0477) ([#491](https://github.com/TheRealKoller/photosort/issues/491)) ([69783ec](https://github.com/TheRealKoller/photosort/commit/69783ec62dc60de28e00facbf8d4701c71c6c07b))
+* Fotoübersicht zeigt jedes Bild vollständig (Spec 0489) ([#494](https://github.com/TheRealKoller/photosort/issues/494)) ([e1e452d](https://github.com/TheRealKoller/photosort/commit/e1e452d2035f87b4153e73ac8cba18fc48653e92))
+* Ortsauskunft messen, bevor der Weg gewählt wird, Teil 1 von 2 (Spec 0434) ([#478](https://github.com/TheRealKoller/photosort/issues/478)) ([7e7aac8](https://github.com/TheRealKoller/photosort/commit/7e7aac840a57d3c3f5361a9e46a49ded3a8e6505))
+* Projektübersicht zeigt Umfang und nächsten Schritt (Spec 0375) ([#482](https://github.com/TheRealKoller/photosort/issues/482)) ([9657a41](https://github.com/TheRealKoller/photosort/commit/9657a4167b4279c258a03936162e97839ac81200))
+* **scripts:** Nummernvergabe bleibt bei Parallelarbeit eindeutig (Spec 0485) ([#488](https://github.com/TheRealKoller/photosort/issues/488)) ([1999876](https://github.com/TheRealKoller/photosort/commit/1999876a53471fa081cb288fb358b2af65ab67ff))
+* verlässliche und einheitliche Sehenswürdigkeitsnamen (Spec 0469) ([#487](https://github.com/TheRealKoller/photosort/issues/487)) ([5c38709](https://github.com/TheRealKoller/photosort/commit/5c38709b05091c714ddd7fb75d7bf93eabf19253))
+
 ## [0.45.0](https://github.com/TheRealKoller/photosort/compare/v0.44.0...v0.45.0) (2026-09-14)
 
 
