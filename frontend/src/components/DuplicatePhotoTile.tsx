@@ -121,9 +121,16 @@ export function DuplicatePhotoTile({
            genau diesem einen `opacity-*` an der BILDFLÄCHE — am Kachelkörper drückte dieselbe
            Utility Kennzeichen und Dateinamen unter die Kontrastschwelle. */
         data-dimmed={gedaempft ? 'true' : 'false'}
+        /* BEIDE ZUSTÄNDE RESERVIEREN IHRE HÖHE, BEVOR DAS BILD DA IST — `h-96` in der
+           Vergrößerung, nicht `max-h-96`. Die Bildfläche lädt über einen authentifizierten Abruf
+           und trifft damit immer erst nach dem ersten Rendern ein; ohne reservierte Höhe ist die
+           vergrößerte Kachel bis dahin 145px hoch und wächst beim Eintreffen um 384px. Alles
+           darunter rutscht dann aus dem Sichtbereich, nachdem bereits gescrollt wurde — die
+           übrige Gruppe verschwindet, und die Vergrößerung ist faktisch doch ein Vollbild
+           (`e2e/tests/grid-columns.spec.ts`, „laesst die Gruppe im Blick"). */
         className={cn(
           'block w-full overflow-hidden rounded-md',
-          enlarged ? 'max-h-96' : 'aspect-square',
+          enlarged ? 'h-96' : 'aspect-square',
           gedaempft && 'opacity-40',
         )}
       >

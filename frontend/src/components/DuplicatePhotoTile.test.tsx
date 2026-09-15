@@ -137,6 +137,27 @@ describe('DuplicatePhotoTile - die zwei Zustaende', () => {
     expect(tile().className).not.toContain('opacity-')
   })
 
+  it('reserviert die Hoehe der Bildflaeche in BEIDEN Zustaenden, bevor das Bild da ist', () => {
+    // Die Bildflaeche laedt ueber einen authentifizierten Abruf und trifft immer erst nach dem
+    // ersten Rendern ein. Ohne reservierte Hoehe waere die vergroesserte Kachel bis dahin flach
+    // und wuechse danach um die volle Bildhoehe - alles darunter rutschte aus dem Sichtbereich,
+    // nachdem bereits gescrollt wurde.
+    //
+    // Geprueft als Anwesenheit einer FESTEN Hoehe, nicht als Abwesenheit von `max-h-96`: Ein
+    // dritter Zustand ohne reservierte Hoehe faellt hier ebenfalls auf.
+    for (const [enlarged, erwartet] of [
+      [false, 'aspect-square'],
+      [true, 'h-96'],
+    ] as const) {
+      const { unmount } = render(<ul>{tileElement({ enlarged })}</ul>)
+      const flaeche = screen.getByTestId('duplicate-image')
+
+      expect(flaeche.className).toContain(erwartet)
+      expect(flaeche.className).not.toContain('max-h-')
+      unmount()
+    }
+  })
+
   it('zeigt den Zustandsrahmen auch in der Vergroesserung', () => {
     // Das vergroesserte Bild wird ungedaempft gezeigt, traegt aber unveraendert seinen Zustand -
     // sonst verloere man beim Beurteilen genau die Angabe, die man gerade setzt.
