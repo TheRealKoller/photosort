@@ -1,6 +1,6 @@
 # 0486 - Duplikat-Gruppen in einem Durchgang, mit sichtbarer Vorauswahl
 
-**Status:** Accepted
+**Status:** Implemented ([PR #496](https://github.com/TheRealKoller/photosort/pull/496))
 **Erstellt:** 2026-09-15
 **Bezug:** [Issue #486](https://github.com/TheRealKoller/photosort/issues/486), ADR
 [`0111`](../decisions/0111-vergleichsansicht-zeigt-das-praedikat-nicht-die-entscheidungszeile.md),
