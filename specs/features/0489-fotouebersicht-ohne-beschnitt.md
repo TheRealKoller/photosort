@@ -1,6 +1,6 @@
 # 0489 - Fotoübersicht mit vollständig sichtbaren Bildern
 
-**Status:** Accepted
+**Status:** Implemented ([PR #494](https://github.com/TheRealKoller/photosort/pull/494))
 **Erstellt:** 2026-09-14
 **Bezug:** [GitHub-Issue #489](https://github.com/TheRealKoller/photosort/issues/489), ADR [`0110`](../decisions/0110-seitenverhaeltnis-als-serverdatum-und-rasterkachel-neben-der-fotokarte.md)
 
