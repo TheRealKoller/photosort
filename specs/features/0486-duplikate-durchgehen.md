@@ -308,8 +308,10 @@ unverändert.
 
 Die Gruppennavigation liegt **im Seitenkopf neben der Überschrift und ist immer sichtbar** — sie ist
 ausdrücklich nicht an die Bildvergrößerung gekoppelt. Am Rand ist die jeweilige Schaltfläche
-`disabled`. Ihre zugänglichen Namen (`Zur vorherigen Gruppe` / `Zur nächsten Gruppe`) überschneiden
-sich nicht mit den bestehenden `Vorherige/Nächste Aufnahme der Gruppe` der Vergrößerung.
+`disabled`. Ihre zugänglichen Namen (`Zurück zur vorherigen Gruppe` / `Vor zur nächsten Gruppe`)
+überschneiden sich nicht mit den bestehenden `Vorherige/Nächste Aufnahme der Gruppe` der
+Vergrößerung und beginnen mit der sichtbaren Beschriftung („Zurück" / „Vor"), wie es
+`specs/architecture/0004-design-system.md` für WCAG 2.5.3 zusichert.
 
 Überschrift: „Duplikat-Gruppe N von Total" über alle Gruppen des Projekts.
 
@@ -317,8 +319,11 @@ sich nicht mit den bestehenden `Vorherige/Nächste Aufnahme der Gruppe` der Verg
 
 - **Ausschuss-Schritt:** „Duplikate vergleichen" neben „Vorschläge ansehen", gleiche Button-Variante
   (Gleichrangigkeit), beide nebeneinander.
-- **Fotoliste mit Filter „Vorschläge":** ein listenweiter Einstieg oberhalb des Kachelrasters. Sein
-  zugänglicher Name unterscheidet sich vom kachelgenauen `Duplikate vergleichen: <Dateiname>`.
+- **Fotoliste mit Filter „Vorschläge":** ein listenweiter Einstieg oberhalb des Kachelrasters. Er
+  trägt dieselbe sichtbare Beschriftung wie am Ausschuss-Schritt — es ist derselbe Weg an einer
+  zweiten Stelle. Sein **zugänglicher** Name unterscheidet sich vom kachelgenauen
+  `Duplikate vergleichen: <Dateiname>`: Der Zusatz folgt nach einem Gedankenstrich, nie nach einem
+  Doppelpunkt, damit er jenes Präfixmuster nicht trifft.
 - Beide werden bei `total === 0` und während des Ladens **ausgeblendet**, nicht deaktiviert.
 
 ### Zustände, Responsivität, Barrierefreiheit
