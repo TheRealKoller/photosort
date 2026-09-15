@@ -23,7 +23,7 @@ from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
 from photosort.duplicates import (
-    group_position,
+    group_standing,
     has_open_suggestion,
     has_open_suggestion_for,
     load_duplicate_links,
@@ -1753,11 +1753,10 @@ async def build_duplicate_group_out(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
         )
-    stellung = group_position(representative_id, links)
-    # `representative_of` hat die Gruppe soeben aufgeloest - `group_position` kann sie nicht mehr
+    stellung = group_standing(representative_id, links)
+    # `representative_of` hat die Gruppe soeben aufgeloest - `group_standing` kann sie nicht mehr
     # verfehlen. Der Zweig steht trotzdem, weil `mypy --strict` sonst das `None` durchliesse.
     assert stellung is not None
-    position, total = stellung
 
     ids = member_ids_of(representative_id, links)
     photos_by_id = await _photos_by_id(session, ids)
@@ -1795,8 +1794,8 @@ async def build_duplicate_group_out(
             )
             for member_id in ids
         ],
-        position=position,
-        total=total,
+        position=stellung.position,
+        total=stellung.total,
     )
 
 

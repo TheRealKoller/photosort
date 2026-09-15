@@ -31,18 +31,34 @@ from photosort.models import DuplicateDecision, Photo, PhotoDuplicateDecision, P
 
 @dataclass(frozen=True)
 class DuplicateLink:
-    """Eine Kante des Sterns: ein Foto des Projekts, auf wen es zeigt, wann es aufgenommen wurde
-    und ob darueber bereits entschieden ist.
+    """Eine Kante des Sterns: ein Foto des Projekts, auf wen es zeigt und wann es aufgenommen
+    wurde.
 
     `duplicate_of is None` heisst "kein Verlierer" - das Foto ist Repraesentant, sofern jemand auf
-    es zeigt. `decided` traegt ausschliesslich die ANWESENHEIT einer Entscheidungszeile, nie ihren
-    Wert: Fuer den Gruppenzaehler ist `keep` von `discard` nicht zu unterscheiden, beides ist
-    erledigte Arbeit."""
+    es zeigt.
+
+    DIE KANTE TRAEGT KEINE ENTSCHEIDUNGSAUSKUNFT (AK6). Die Gruppenreihenfolge haengt damit an
+    keinem Wert, den eine Entscheidung aendert, und Zaehler wie Position koennen sich waehrend
+    eines Durchgangs nicht verschieben. Ein wieder eingefuehrtes `decided` faellt in
+    `tests/test_duplicates.py::test_the_group_order_cannot_depend_on_any_decision` auf."""
 
     photo_id: int
     duplicate_of: int | None
     taken_at: datetime
-    decided: bool
+
+
+@dataclass(frozen=True)
+class GroupStanding:
+    """Die Stellung EINER Gruppe in der Gruppenreihenfolge: Platz, Gesamtzahl und die beiden
+    Nachbarn als Repraesentanten-Id.
+
+    `previous_id`/`next_id` sind `None` am jeweiligen Rand - die Ansicht schaltet die Schaltflaeche
+    dort auf `disabled`, statt sie wegzulassen (AK5)."""
+
+    position: int
+    total: int
+    previous_id: int | None
+    next_id: int | None
 
 
 def representative_of(photo_id: int, links: list[DuplicateLink]) -> int | None:
@@ -108,38 +124,33 @@ def _ordered_representatives(groups: dict[int, list[DuplicateLink]]) -> list[int
     )
 
 
-def open_group_representative_ids(links: list[DuplicateLink]) -> list[int]:
-    """Die noch OFFENEN Gruppen in Anzeigereihenfolge: fruehester `taken_at` der Mitglieder, bei
-    Gleichstand die Repraesentanten-Id (AK10).
+def all_group_representative_ids(links: list[DuplicateLink]) -> list[int]:
+    """ALLE Duplikat-Gruppen des Projekts in Anzeigereihenfolge: fruehester `taken_at` der
+    Mitglieder, bei Gleichstand die Repraesentanten-Id.
 
-    Eine Gruppe, in der jedes Mitglied entschieden ist, faellt heraus - der Zaehler beschreibt die
-    verbleibende Arbeit und laeuft auf null zu. Dass sich `position` dadurch verschiebt, sobald
-    eine Gruppe abgeschlossen wird, ist die bewusst getragene Folge."""
-    groups = _members_by_representative(links)
-    offen = {
-        representative: members
-        for representative, members in groups.items()
-        if any(not member.decided for member in members)
-    }
-    return _ordered_representatives(offen)
+    KEINE Auswahl nach offen/erledigt (AK6). Eine vollstaendig entschiedene Gruppe bleibt in der
+    Liste, bleibt erreichbar und wird beim Durchgang nicht uebersprungen. Die Reihenfolge haengt
+    damit an keinem Wert, den eine Entscheidung aendert; nur ein erneuter Ausschuss-Lauf kann sie
+    bewegen."""
+    return _ordered_representatives(_members_by_representative(links))
 
 
-def group_position(representative_id: int, links: list[DuplicateLink]) -> tuple[int, int] | None:
-    """`(position, total)` der Gruppe, 1-basiert - oder `None`, wenn es sie nicht gibt.
+def group_standing(representative_id: int, links: list[DuplicateLink]) -> GroupStanding | None:
+    """Platz, Gesamtzahl und die beiden Nachbarn der Gruppe - oder `None`, wenn es sie nicht gibt.
 
-    Bezugsmenge sind die offenen Gruppen VEREINIGT mit der gerade angesehenen. Die Vereinigung ist
-    nicht Bequemlichkeit: AK10 sichert `1 <= position <= total` zu, und wer die letzte offene
-    Gruppe fertig entscheidet, laedt genau sie danach neu. Ohne sie stuende dort `position = 1` bei
-    `total = 0`. Fremde abgeschlossene Gruppen fallen unveraendert heraus."""
-    groups = _members_by_representative(links)
-    if representative_id not in groups:
+    EINE geordnete Liste fuer alle vier Werte, einmal berechnet: Zaehler und Nachbarn sind
+    dieselbe Aussage. Getrennt gebildet koennten sie auseinanderlaufen, und ein Durchgang endete an
+    einer Gruppe, die der Zaehler nicht kennt."""
+    geordnet = all_group_representative_ids(links)
+    if representative_id not in geordnet:
         return None
-    bezugsmenge = {
-        representative: groups[representative]
-        for representative in [*open_group_representative_ids(links), representative_id]
-    }
-    geordnet = _ordered_representatives(bezugsmenge)
-    return geordnet.index(representative_id) + 1, len(geordnet)
+    index = geordnet.index(representative_id)
+    return GroupStanding(
+        position=index + 1,
+        total=len(geordnet),
+        previous_id=geordnet[index - 1] if index > 0 else None,
+        next_id=geordnet[index + 1] if index + 1 < len(geordnet) else None,
+    )
 
 
 # ----------------------------------------------------------------------------------------------
@@ -295,26 +306,19 @@ async def load_duplicate_links(session: AsyncSession, project_id: int) -> list[D
     und die Ansicht zeigte den Vergleich ohne das Bild, gegen das verglichen wird.
 
     Geladen werden AUSSCHLIESSLICH Sternmitglieder, nicht alle Fotos des Projekts: Die Menge ist
-    damit durch die Zahl der erkannten Duplikate begrenzt und nicht durch die Projektgroesse."""
+    damit durch die Zahl der erkannten Duplikate begrenzt und nicht durch die Projektgroesse.
+
+    `photo_duplicate_decisions` wird NICHT mitgelesen (AK6): Die Gruppenreihenfolge kennt keinen
+    Unterschied zwischen offen und erledigt, und eine mitgeladene Auskunft darueber waere eine
+    Einladung, den Zaehler wieder daran zu haengen."""
     rows = (
         await session.execute(
-            select(
-                Photo.id,
-                PhotoScore.duplicate_of,
-                Photo.taken_at,
-                PhotoDuplicateDecision.photo_id,
-            )
+            select(Photo.id, PhotoScore.duplicate_of, Photo.taken_at)
             .outerjoin(PhotoScore, PhotoScore.photo_id == Photo.id)
-            .outerjoin(PhotoDuplicateDecision, PhotoDuplicateDecision.photo_id == Photo.id)
             .where(Photo.project_id == project_id, _project_member_condition(project_id))
         )
     ).all()
     return [
-        DuplicateLink(
-            photo_id=photo_id,
-            duplicate_of=duplicate_of,
-            taken_at=taken_at,
-            decided=decided_photo_id is not None,
-        )
-        for photo_id, duplicate_of, taken_at, decided_photo_id in rows
+        DuplicateLink(photo_id=photo_id, duplicate_of=duplicate_of, taken_at=taken_at)
+        for photo_id, duplicate_of, taken_at in rows
     ]
