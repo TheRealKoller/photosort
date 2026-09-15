@@ -274,6 +274,54 @@ def survives_ausschuss_for(photo: Photo) -> bool:
     )
 
 
+def _score_und_entscheidung(photo: Photo) -> tuple[object, int | None, DuplicateDecision | None]:
+    """`(suggested_status, duplicate_of, decision)` eines geladenen Fotos.
+
+    EINE FEHLENDE `PhotoScore`-ZEILE WIRD WIE `NULL, NULL` GELESEN (Auflage S3) - anders als beim
+    inneren Join der beiden Ueberlebens-Fassungen. Der Repraesentant braucht strukturell keine
+    eigene Zeile, um referenziert zu werden (`photo_scores.duplicate_of` zeigt auf `photos.id`),
+    und `load_duplicate_links` joint genau deshalb aeusser."""
+    score = photo.score
+    entscheidung = photo.duplicate_decision
+    return (
+        score.suggested_status if score is not None else None,
+        score.duplicate_of if score is not None else None,
+        entscheidung.decision if entscheidung is not None else None,
+    )
+
+
+def effective_decision_for(photo: Photo) -> DuplicateDecision:
+    """Der Zustand, den die Vergleichsansicht zeigt: `KEEP`, wenn das Foto den Ausschuss-Schritt
+    ueberlebt, sonst `DISCARD` (ADR 0111 Punkt 1).
+
+    KEIN DRITTER WERT. Aus der Antwort geht nicht hervor, ob der Zustand vom Automaten oder vom
+    Nutzer stammt - der unentschiedene Duplikat-Verlierer traegt `suggested_status = REJECTED` und
+    steht damit von Anfang an als "Ausschuss" da.
+
+    KEINE DELEGATION AN `survives_ausschuss_for`, obwohl die Aussage dieselbe ist: Jenes bildet den
+    INNEREN Join nach und antwortet fuer ein Mitglied ohne `PhotoScore`-Zeile `False` - der
+    Gruppengewinner staende dann als unumkehrbarer Ausschuss da."""
+    suggested_status, duplicate_of, decision = _score_und_entscheidung(photo)
+    return (
+        DuplicateDecision.KEEP
+        if _survives(suggested_status, duplicate_of, decision)
+        else DuplicateDecision.DISCARD
+    )
+
+
+def keep_possible_for(photo: Photo) -> bool:
+    """Ob "behalten" fuer dieses Mitglied ueberhaupt etwas bewirken kann (ADR 0111 Punkt 2).
+
+    AUSDRUECKLICH KEINE NEUE REGEL, sondern dasselbe Praedikat an einer HYPOTHETISCHEN
+    Entscheidung: Die tatsaechlich gespeicherte Zeile wird nicht gelesen. `false` ist es genau
+    dann, wenn `duplicate_of IS NULL AND suggested_status IS NOT NULL` - der Ausschuss folgt dann
+    nicht aus dem Duplikat, und `keep` wirkt laut ADR 0104 Punkt 3 nicht. Ein solches Mitglied
+    steht unveraenderlich auf `discard`; die Ansicht bietet dort keine Wahl an, statt einen Klick
+    anzunehmen, der still wirkungslos bleibt."""
+    suggested_status, duplicate_of, _decision = _score_und_entscheidung(photo)
+    return _survives(suggested_status, duplicate_of, DuplicateDecision.KEEP)
+
+
 def has_open_suggestion_for(photo: Photo) -> bool:
     """Die Objektfassung von "offener Vorschlag" - siehe `has_open_suggestion()`."""
     score = photo.score
