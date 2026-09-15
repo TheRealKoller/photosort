@@ -244,22 +244,27 @@
       "breiten": ["mobile", "desktop"],
       "zustaende": ["gefuellt", "leer", "ladend", "fehler"],
       "variantenachse": "zustand",
-      "bausteine": ["button", "badge", "alert", "skeleton"],
+      "bausteine": ["button", "alert", "skeleton"],
       "luecken": [
         {
           "schluessel": "seitenverhaeltnis",
-          "stelle": "Zeilenhöhe und Kartenbreiten des justierten Rasters",
-          "grund": "Die Fotos behalten ihr eigenes Seitenverhältnis statt quadratisch beschnitten zu werden. Die Höhe einer Zeile und die daraus folgenden Kartenbreiten sind deshalb gerechnete Layoutmaße ohne Token; sie stehen im Entwurf als Werte."
+          "stelle": "Zeilenhöhe und Bildbreiten des justierten Rasters",
+          "grund": "Die Fotos behalten ihr eigenes Seitenverhältnis statt quadratisch beschnitten zu werden. Die Höhe einer Zeile und die daraus folgenden Bildbreiten sind deshalb gerechnete Layoutmaße ohne Token; sie stehen im Entwurf als Werte."
         },
         {
           "schluessel": "mindestzeilenhoehe",
           "stelle": "Untergrenze der Zeilenhöhe im justierten Raster",
-          "grund": "Ohne Untergrenze werden Hochformate so schmal, dass Kennzeichen und Dateiname nebeneinander nicht mehr tragen. Die Grenze ist eine Bedienbarkeitsvorgabe ohne Token und wird als Wert gesetzt."
+          "grund": "Ohne Untergrenze werden nebeneinanderstehende Hochformate so schmal, dass die beiden Zeichen in der Bildecke nicht mehr auseinanderzuhalten sind. Die Grenze ist eine Bedienbarkeitsvorgabe ohne Token und wird als Wert gesetzt."
         },
         {
-          "schluessel": "behaelter",
-          "stelle": "Rasterkachel als Behälter für Bildfläche, Zeichenplättchen und eingeblendete Zeile",
-          "grund": "Die Rasteransicht benutzt die Fotokarte nicht mehr: Sie hat eine eigene Kachel ohne Kartenkörper, ohne Statuszeile und ohne Fußzeile. Die Bibliothek führt weiterhin keinen Behälter-Baustein — Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Die Kachel ist im Entwurf deshalb ein tokengebundener Rahmen statt einer Instanz."
+          "schluessel": "zeichentraeger",
+          "stelle": "Plättchen mit Stern und Punkt in der oberen Bildecke",
+          "grund": "Kantenlänge des Plättchens, Durchmesser des Punktes, Stärke seines Rings und die Teildeckkraft der Trägerfläche haben kein Token und stehen im Entwurf als Werte. Der Ring unterscheidet einen offenen Vorschlag von einer getroffenen Entscheidung und trägt dabei dieselbe Farbe wie sie, damit auch am Vorschlag erkennbar bleibt, wofür vorgeschlagen wird."
+        },
+        {
+          "schluessel": "einblendung",
+          "stelle": "Zeile mit Dateiname und Info-Auslöser über dem unteren Bildrand",
+          "grund": "Höhe der Zeile und die Teildeckkraft ihrer Fläche haben kein Token. Die Zeile erscheint erst auf Anforderung, und Penpot bildet weder das Überfahren am Zeigegerät noch den langen Druck ab, der sie am Telefon auslöst. Der Entwurf zeigt sie deshalb an einem Bild dauerhaft eingeblendet; das ist eine ausgewiesene Lücke, kein erledigter Punkt."
         },
         {
           "schluessel": "inhaltsbreite",
@@ -269,17 +274,12 @@
         {
           "schluessel": "daempfung",
           "stelle": "Zurücktretende Bildfläche im Zustand verworfen",
-          "grund": "Für die Dämpfung einer verworfenen Bildfläche gibt es keinen benannten Wert im Tokensatz. Sie wird im Entwurf als Deckkraft gesetzt, und zwar ausschließlich auf der Bildfläche: Die beiden Zeichen sind deren Geschwister und bleiben voll deckend. Eine Durchstreichung gibt es hier nicht mehr — der Dateiname steht im Ruhezustand gar nicht in der Kachel."
+          "grund": "Für die Dämpfung einer aussortierten Bildfläche gibt es keinen benannten Wert im Tokensatz. Sie wird im Entwurf als Deckkraft gesetzt und ist zugleich das von der Farbe unabhängige zweite Signal dieses Zustands; die Zeichen in der Bildecke bleiben voll deckend."
         },
         {
-          "schluessel": "zeichenplaettchen",
-          "stelle": "Stern und Punkt gemeinsam in der oberen Bildecke",
-          "grund": "Die Kachel trägt im Ruhezustand genau zwei Zeichen auf einem Plättchen; der runde Info-Auslöser und der Motiv-Marker entfallen in dieser Ansicht ersatzlos. Für die Kreisform des Punktes, seinen Ring gegenüber der Füllung und den Eckabstand des Plättchens gibt es kein Token — sie stehen im Entwurf als Werte. Die Fläche des Plättchens ist dagegen tokengebunden (undurchsichtiges --overlay), weil ein Kontrast mit Deckkraft über einer Bildfläche statisch nicht nachrechenbar wäre."
-        },
-        {
-          "schluessel": "uebersteuerungsmarker",
-          "stelle": "Marker für die manuell übersteuerte Kategorie, Bildecke oben links",
-          "grund": "Die Bibliothek führt dafür keinen Baustein. Er wird nicht frei nachgezeichnet, sondern hier als Lücke geführt; er kommt hinzu, wenn eine Story ihn samt Eintrag in components.json aufnimmt."
+          "schluessel": "filterleiste",
+          "stelle": "Einzeilige, waagerecht laufende Filterleiste auf dem schmalen Brett",
+          "grund": "Auf der schmalen Breite stehen die Filter nicht nebeneinander. Statt sie umbrechen zu lassen und damit das erste Foto nach unten zu drücken, läuft die Leiste einzeilig weiter und wird am Rand angeschnitten. Penpot bildet das seitliche Scrollen nicht ab; der angeschnittene Eintrag im Entwurf ist die Andeutung dafür."
         },
         {
           "schluessel": "gatemodus",
@@ -298,13 +298,8 @@
         },
         {
           "schluessel": "textkuerzung",
-          "stelle": "Einzeilig gekürzter Dateiname in der eingeblendeten Angabenzeile",
-          "grund": "Der Dateiname steht nicht mehr dauerhaft in der Kachel, sondern erscheint erst auf Anforderung als Zeile über dem unteren Bildrand. Für die Kürzung mit Auslassung gibt es weiterhin kein Token; im Entwurf steht sie als tatsächlich gekürzter Beispieltext, damit der ungünstige Fall sichtbar ist statt nur der bequeme."
-        },
-        {
-          "schluessel": "angabenzeile",
-          "stelle": "Auslösung und Höhenanteil der eingeblendeten Zeile",
-          "grund": "Die Zeile erscheint durch Überfahren an einem Gerät mit feinem Zeiger, durch Fokus, sonst durch einen längeren Druck. Penpot bildet weder Gerätefähigkeit noch Zeitschwelle ab; der Entwurf zeigt die Zeile als eingeblendeten Zustand. Ihre Höhenkappung auf ein Viertel der Bildhöhe ist ein gerechnetes Layoutmaß ohne Token und steht als Wert."
+          "stelle": "Einzeilig gekürzter Dateiname in der eingeblendeten Zeile",
+          "grund": "Für die Kürzung mit Auslassung gibt es kein Token. Im Entwurf steht der Name als Beispieltext in der eingeblendeten Zeile; auf einem schmalen Bild reicht die Zeile für ihn nicht, und dann wird er gekürzt."
         }
       ]
     },
