@@ -574,6 +574,11 @@ export interface PhotoOut {
   time_offset_minutes: number
   /** `null` heißt "Kamera nicht bestimmbar" - ein regulärer Zustand, kein Fehler. */
   camera: CameraOut | null
+  /** Breite geteilt durch Höhe des GEZEIGTEN Bildes (nach EXIF-Orientierung). `null` heißt "nicht
+   * bekannt" und ist ein regulärer Zustand, kein Fehler - das Raster plant ein solches Foto mit
+   * 3:2 ein und passt es in seinem Feld ein (`utils/justifiedRows.ts`). Optional deklariert wie
+   * `ranking`/`location`: `undefined` und `null` bedeuten an jeder Lesestelle dasselbe. */
+  aspect_ratio?: number | null
   ratings: RatingOut[]
   suggestion: SuggestionOut | null
   /** Die Rangzeile des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi - `null`,

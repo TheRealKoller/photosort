@@ -29,6 +29,7 @@
      verfuegbar. Sie teilen sich deshalb ein eigenes TS-Projekt (tsconfig.contract.json). */
   "exclude": [
     "src/albumSelection.structure.test.ts",
+    "src/photoGridTile.structure.test.ts",
     "src/designSystem.contract.test.ts",
     "src/prettierSupportInfo.test.ts"
   ]

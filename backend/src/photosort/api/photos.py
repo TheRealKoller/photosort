@@ -390,6 +390,12 @@ class PhotoOut(BaseModel):
     # einem Foto, dessen Versatz beim Scan an einem Ueberlauf gescheitert ist).
     time_offset_minutes: int
     camera: CameraOut | None = None
+    # Breite geteilt durch Hoehe des GEZEIGTEN Bildes (ADR 0110 Punkt 1). `null` heisst "nicht
+    # bekannt" und ist ein REGULAERER Zustand, kein Fehler - die Oberflaeche plant ein solches
+    # Foto mit 3:2 ein. Einheitlich auf ALLEN Lesepfaden ausgeliefert, nicht nur auf dem der
+    # Rasteransicht: ein je Query-Modus divergierendes `PhotoOut` waere genau die "zweite,
+    # driftende Abbildung", vor der der `ranking`-Kommentar oben warnt.
+    aspect_ratio: float | None = None
     ratings: list[RatingOut]
     suggestion: SuggestionOut | None
     # Die Rangzeile des Fotos im letzten erfolgreichen Lauf, in beiden Query-Modi - `null`,
@@ -1110,6 +1116,7 @@ def _to_photo_out(
                 ),
             )
         ),
+        aspect_ratio=photo.aspect_ratio,
         ratings=[
             RatingOut(
                 user_id=r.user_id,

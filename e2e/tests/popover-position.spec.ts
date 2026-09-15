@@ -31,8 +31,13 @@ const TOLERANCE = 1
 test('geoeffnete Popover bleiben vollstaendig im Sichtbereich', async ({ page }) => {
   const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
 
+  // ERSATZROUTE STATT STREICHUNG (specs/features/0489-fotouebersicht-ohne-beschnitt.md, AK3): Die
+  // Fotouebersicht traegt keinen Popover-Ausloeser mehr - die Kachel hat genau zwei Zeichen, und
+  // der Info-Ausloeser entfaellt dort ersatzlos. Waere die Route nur gestrichen worden, maesse
+  // dieser Spec ab sofort eine Flaeche weniger, ohne dass das irgendwo auffiele. An ihre Stelle
+  // treten die Projekteinstellungen: eine dritte Seite mit einem eigenen Ausloeser in `main`.
   const routes = [
-    { label: 'Foto-Grid', path: `/projects/${ratedId}/photos` },
+    { label: 'Projekteinstellungen', path: `/projects/${ratedId}/settings` },
     { label: 'Statistik', path: `/projects/${ratedId}/stats` },
     { label: 'Album-Entwurf', path: `/projects/${ratedId}/album` },
   ]

@@ -88,7 +88,13 @@ from photosort.places import sanitize_place_name
 from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.quality_weights import store_weights
 from photosort.scoring import SHARPNESS_REJECT_THRESHOLD
-from photosort.thumbnails import display_path, generate_variants, thumbnail_path
+from photosort.thumbnails import (
+    ASPECT_RATIO_MAX,
+    ASPECT_RATIO_MIN,
+    display_path,
+    generate_variants,
+    thumbnail_path,
+)
 from tests.import_closure import import_closure, module_file
 from tests.time_offset_invariant import assert_time_offset_invariant
 
@@ -301,6 +307,50 @@ class TestRenderDemoImage:
         assert render_demo_image(slug="bewertet", index=1) != render_demo_image(
             slug="fehlerzustand", index=1
         )
+
+
+class TestTheDemoImagesCoverSeveralShapes:
+    """specs/features/0489-fotouebersicht-ohne-beschnitt.md, ADR 0110 Konsequenzen: An lauter
+    gleichen Verhaeltnissen ist ein justiertes Raster von einem Spaltenraster nicht zu
+    unterscheiden - der E2E-Pruefstack pruefte die Zusage dann gar nicht."""
+
+    def _ratios(self, slug: str, count: int) -> list[float]:
+        ratios = []
+        for index in range(count):
+            with Image.open(io.BytesIO(render_demo_image(slug=slug, index=index))) as image:
+                ratios.append(image.width / image.height)
+        return ratios
+
+    def test_the_large_collection_shows_at_least_three_pairwise_different_ratios(self) -> None:
+        spec = next(s for s in demo_project_specs() if s.slug == "grosse-sammlung")
+
+        ratios = self._ratios(spec.slug, spec.photo_count)
+
+        assert len({round(ratio, 4) for ratio in ratios}) >= 3
+
+    def test_the_large_collection_shows_both_a_portrait_and_a_wide_format(self) -> None:
+        spec = next(s for s in demo_project_specs() if s.slug == "grosse-sammlung")
+
+        ratios = self._ratios(spec.slug, spec.photo_count)
+
+        assert any(ratio < 1 for ratio in ratios), "kein Hochformat im Bestand"
+        assert any(ratio > 1.5 for ratio in ratios), "kein Breitformat im Bestand"
+
+    def test_the_shape_is_deterministic_and_the_bytes_stay_identical(self) -> None:
+        """Die Formatwahl haengt allein an `slug`/`index` - die Zusage der Byte-Identitaet zweier
+        Laeufe bleibt dadurch unberuehrt."""
+        for index in (0, 1, 2, 3):
+            first = render_demo_image(slug="grosse-sammlung", index=index)
+            second = render_demo_image(slug="grosse-sammlung", index=index)
+            assert first == second
+
+    def test_every_shape_stays_within_the_valid_band(self) -> None:
+        """Ein Demo-Bild ausserhalb von `0.05..20.0` liesse `aspect_ratio` auf `NULL` fallen -
+        der Demo-Bestand bildet den Zustand NACH dem Scan ab und darf das nicht erzeugen."""
+        spec = next(s for s in demo_project_specs() if s.slug == "grosse-sammlung")
+
+        for ratio in self._ratios(spec.slug, spec.photo_count):
+            assert ASPECT_RATIO_MIN <= ratio <= ASPECT_RATIO_MAX
 
 
 class TestDemoPhotoIdentity:
@@ -761,6 +811,51 @@ class TestRebuildDemoStateProducesTheFiveStates:
         )
         assert len(errors) >= 1
         assert all(error.error_message.strip() != "" for error in errors)
+
+
+class TestTheDemoPhotosCarryTheirAspectRatio:
+    """Der Demo-Bestand bildet den Zustand NACH dem Scan ab (wie `camera_probed`). Ohne
+    gespeichertes Verhaeltnis fiele jedes Demo-Foto im Raster auf die 3:2-Ausfallrichtung
+    zurueck, und der E2E-Pruefstack saehe wieder lauter gleiche Formen."""
+
+    async def test_a_photo_with_cache_files_carries_the_ratio_of_its_image(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=4)
+
+        photos = await _photos_of(db_session, LARGE_PROJECT_NAME)
+        assert len(photos) == 4
+        for index, photo in enumerate(sorted(photos, key=lambda p: p.relative_path)):
+            with Image.open(
+                io.BytesIO(render_demo_image(slug="grosse-sammlung", index=index))
+            ) as image:
+                expected = image.width / image.height
+            assert photo.aspect_ratio == pytest.approx(expected)
+
+    async def test_the_large_collection_holds_at_least_three_different_ratios(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=8)
+
+        photos = await _photos_of(db_session, LARGE_PROJECT_NAME)
+        ratios = {round(photo.aspect_ratio, 4) for photo in photos if photo.aspect_ratio}
+        assert len(ratios) >= 3
+
+    async def test_a_photo_without_cache_files_carries_no_ratio(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Genau der Zustand, den ein echter Scan hinterlaesst, wenn die Vorschau nicht
+        geschrieben werden konnte: kein Bild im Cache UND kein Verhaeltnis. Die Oberflaeche
+        zeigt dafuer ihren Platzhalter und plant das Feld mit 3:2 ein."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        photos = await _photos_of(db_session, ERROR_PROJECT_NAME)
+        without_cache = [
+            photo for photo in photos if not thumbnail_path(tmp_path, photo.id, photo.etag).exists()
+        ]
+        assert without_cache
+        assert all(photo.aspect_ratio is None for photo in without_cache)
+        assert all(photo.aspect_ratio is not None for photo in photos if photo not in without_cache)
 
 
 class TestRebuildDemoStateWritesRealThumbnails:

@@ -8,11 +8,15 @@ import pytest
 from PIL import Image
 
 from photosort.thumbnails import (
+    ASPECT_RATIO_MAX,
+    ASPECT_RATIO_MIN,
     CACHE_FILE_PATTERN,
     DISPLAY_MAX_SIZE,
     THUMBNAIL_MAX_SIZE,
     CacheSweepResult,
     CacheUsage,
+    aspect_ratio_of,
+    aspect_ratio_of_cached_thumbnail,
     cache_key,
     collect_cache_entries,
     delete_cached_variants,
@@ -32,6 +36,19 @@ def _jpeg_bytes(width: int, height: int) -> bytes:
     return buffer.getvalue()
 
 
+def _jpeg_bytes_with_orientation(width: int, height: int, orientation: int) -> bytes:
+    """Ein JPEG der GESPEICHERTEN Groesse `width`x`height` plus EXIF-Orientierungs-Tag.
+
+    Orientierung 6 heisst "um 90 Grad im Uhrzeigersinn drehen, um es richtig zu zeigen" - das
+    gezeigte Bild hat damit die vertauschten Kantenlaengen."""
+    image = Image.new("RGB", (width, height), color="red")
+    exif = image.getexif()
+    exif[0x0112] = orientation
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", exif=exif)
+    return buffer.getvalue()
+
+
 def test_cache_key_is_deterministic_and_differs_by_etag() -> None:
     assert cache_key(1, "etag-a") == cache_key(1, "etag-a")
     assert cache_key(1, "etag-a") != cache_key(1, "etag-b")
@@ -46,12 +63,124 @@ def test_variant_path_thumbnail_and_display_differ(tmp_path: Path) -> None:
     assert variant_path(tmp_path, 1, "etag-a", "display") == display
 
 
+# specs/features/0489-fotouebersicht-ohne-beschnitt.md, ADR 0110 Punkt 1/2: das Seitenverhaeltnis
+# des GEZEIGTEN Bildes, mit einem Gueltigkeitsband und `None` in jedem Fehlerfall.
+
+
+class TestAspectRatioOf:
+    @pytest.mark.parametrize(
+        ("width", "height", "expected"),
+        [
+            (600, 400, 1.5),
+            (400, 600, pytest.approx(2 / 3)),
+            (500, 500, 1.0),
+        ],
+    )
+    def test_quer_hoch_und_quadratformat(self, width: int, height: int, expected: float) -> None:
+        with Image.new("RGB", (width, height)) as image:
+            assert aspect_ratio_of(image) == expected
+
+    def test_an_exif_rotated_image_yields_the_ratio_as_shown(self) -> None:
+        # Gespeichert 600x400 (quer), Orientierung 6 - gezeigt wird 400x600 (hoch).
+        with Image.open(io.BytesIO(_jpeg_bytes_with_orientation(600, 400, 6))) as image:
+            assert aspect_ratio_of(image) == pytest.approx(2 / 3)
+
+    @pytest.mark.parametrize(
+        ("width", "height"),
+        [
+            (100, 2001),  # knapp unter ASPECT_RATIO_MIN
+            (2001, 100),  # knapp ueber ASPECT_RATIO_MAX
+        ],
+    )
+    def test_a_ratio_outside_the_band_yields_none(self, width: int, height: int) -> None:
+        with Image.new("RGB", (width, height)) as image:
+            assert aspect_ratio_of(image) is None
+
+    @pytest.mark.parametrize(
+        ("width", "height"),
+        [
+            (100, 2000),  # exakt ASPECT_RATIO_MIN
+            (2000, 100),  # exakt ASPECT_RATIO_MAX
+        ],
+    )
+    def test_the_band_boundaries_themselves_are_included(self, width: int, height: int) -> None:
+        # Auflage S5: die Pruefung ist als EINSCHLUSS geschrieben, die Grenzen gehoeren dazu.
+        with Image.new("RGB", (width, height)) as image:
+            assert aspect_ratio_of(image) is not None
+
+    def test_the_band_constants_are_the_values_the_spec_names(self) -> None:
+        assert (ASPECT_RATIO_MIN, ASPECT_RATIO_MAX) == (0.05, 20.0)
+
+    def test_height_zero_yields_none_without_crashing(self) -> None:
+        # Ein Bild der Hoehe 0 ist ueber Image.new nicht erzeugbar; die Attrappe traegt genau die
+        # eine Eigenschaft, die die Funktion liest.
+        class _ZeroHeight:
+            size = (100, 0)
+
+        assert aspect_ratio_of(_ZeroHeight()) is None  # type: ignore[arg-type]
+
+
+class TestAspectRatioOfCachedThumbnail:
+    def test_reads_the_ratio_from_the_file_on_disk(self, tmp_path: Path) -> None:
+        path = tmp_path / "vorschau.jpg"
+        path.write_bytes(_jpeg_bytes(800, 500))
+
+        assert aspect_ratio_of_cached_thumbnail(path) == pytest.approx(1.6)
+
+    def test_a_missing_file_yields_none(self, tmp_path: Path) -> None:
+        assert aspect_ratio_of_cached_thumbnail(tmp_path / "gibt-es-nicht.jpg") is None
+
+    def test_an_undecodable_file_yields_none(self, tmp_path: Path) -> None:
+        path = tmp_path / "kaputt.jpg"
+        path.write_bytes(b"not an image")
+
+        assert aspect_ratio_of_cached_thumbnail(path) is None
+
+    def test_a_decompression_bomb_yields_none_instead_of_raising(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Auflage S2: DecompressionBombError erbt NICHT von OSError. Pillow prueft die Pixelzahl
+        # bereits beim Oeffnen des Kopfes, also auf genau dem Weg, den diese Funktion geht.
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+        path = tmp_path / "bombe.jpg"
+        path.write_bytes(_jpeg_bytes(100, 100))
+
+        assert aspect_ratio_of_cached_thumbnail(path) is None
+
+    def test_the_file_is_not_decoded_and_not_left_open(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Auflage S3: gelesen wird der KOPF der Datei. Ein `load()` zoege die volle Pixelflaeche in
+        # den Speicher, ein offener Dateizeiger erschoepfte ueber zehntausende Bestandsfotos die
+        # Dateizeiger des Worker-Prozesses.
+        path = tmp_path / "vorschau.jpg"
+        path.write_bytes(_jpeg_bytes(800, 500))
+        opened: list[Image.Image] = []
+        original_open = Image.open
+
+        def _tracking_open(*args: object, **kwargs: object) -> Image.Image:
+            image = original_open(*args, **kwargs)  # type: ignore[arg-type]
+            opened.append(image)
+            return image
+
+        monkeypatch.setattr(Image, "open", _tracking_open)
+        monkeypatch.setattr(
+            Image.Image,
+            "load",
+            lambda self: pytest.fail("aspect_ratio_of_cached_thumbnail darf nicht dekodieren"),
+        )
+
+        assert aspect_ratio_of_cached_thumbnail(path) == pytest.approx(1.6)
+        assert len(opened) == 1
+        assert opened[0].fp is None  # vom `with`-Block geschlossen
+
+
 def test_generate_variants_writes_both_files_downsized(tmp_path: Path) -> None:
     content = _jpeg_bytes(4000, 3000)
 
-    ok = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=content)
+    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=content)
 
-    assert ok is True
+    assert ratio == pytest.approx(4 / 3)
     thumb = thumbnail_path(tmp_path, 1, "etag-a")
     display = display_path(tmp_path, 1, "etag-a")
     assert thumb.is_file()
@@ -70,9 +199,9 @@ def test_generate_variants_converts_non_rgb_images(tmp_path: Path) -> None:
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
 
-    ok = generate_variants(tmp_path, photo_id=1, etag="etag-rgba", image_bytes=buffer.getvalue())
+    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-rgba", image_bytes=buffer.getvalue())
 
-    assert ok is True
+    assert ratio == pytest.approx(1.5)
     with Image.open(thumbnail_path(tmp_path, 1, "etag-rgba")) as saved:
         assert saved.mode == "RGB"
 
@@ -86,15 +215,29 @@ def test_generate_variants_does_not_upscale_small_images(tmp_path: Path) -> None
         assert image.size == (50, 40)
 
 
-def test_generate_variants_returns_false_for_undecodable_bytes(tmp_path: Path) -> None:
-    ok = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=b"not an image")
+def test_generate_variants_returns_none_for_undecodable_bytes(tmp_path: Path) -> None:
+    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=b"not an image")
 
-    assert ok is False
+    assert ratio is None
     assert not thumbnail_path(tmp_path, 1, "etag-a").exists()
     assert not display_path(tmp_path, 1, "etag-a").exists()
 
 
-def test_generate_variants_returns_false_instead_of_crashing_on_write_failure(
+def test_generate_variants_returns_the_shown_ratio_of_an_exif_rotated_image(
+    tmp_path: Path,
+) -> None:
+    # Der Scan-Weg liefert das Verhaeltnis NACH `exif_transpose` - dasselbe, das die Oberflaeche
+    # zeigt und das die Thumbnail-Datei traegt.
+    content = _jpeg_bytes_with_orientation(600, 400, 6)
+
+    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-rot", image_bytes=content)
+
+    assert ratio == pytest.approx(2 / 3)
+    with Image.open(thumbnail_path(tmp_path, 1, "etag-rot")) as saved:
+        assert saved.size[0] < saved.size[1]
+
+
+def test_generate_variants_returns_none_instead_of_crashing_on_write_failure(
     tmp_path: Path,
 ) -> None:
     # Code-Review-Fund: mkdir()/save() lagen zuvor ausserhalb des Except-Blocks - ein
@@ -107,12 +250,12 @@ def test_generate_variants_returns_false_instead_of_crashing_on_write_failure(
     blocked_cache_dir = tmp_path / "blocked"
     blocked_cache_dir.write_text("occupies the path generate_variants tries to mkdir into")
 
-    ok = generate_variants(blocked_cache_dir, photo_id=1, etag="etag-a", image_bytes=content)
+    ratio = generate_variants(blocked_cache_dir, photo_id=1, etag="etag-a", image_bytes=content)
 
-    assert ok is False
+    assert ratio is None
 
 
-def test_generate_variants_returns_false_instead_of_crashing_on_decompression_bomb(
+def test_generate_variants_returns_none_instead_of_crashing_on_decompression_bomb(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Security-Review-Fund (specs/features/0002-manual-categorization.md): Pillows
@@ -126,9 +269,9 @@ def test_generate_variants_returns_false_instead_of_crashing_on_decompression_bo
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
     content = _jpeg_bytes(100, 100)
 
-    ok = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=content)
+    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=content)
 
-    assert ok is False
+    assert ratio is None
     assert not thumbnail_path(tmp_path, 1, "etag-a").exists()
 
 
