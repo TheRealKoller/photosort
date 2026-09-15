@@ -6,12 +6,14 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../../api/client'
+import * as duplicatesApi from '../../api/duplicates'
 import * as projectsApi from '../../api/projects'
 import type { ProjectOut, ScoringRunSummary } from '../../api/types'
 import { AusschussStepPage } from './AusschussStepPage'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 
 vi.mock('../../api/projects')
+vi.mock('../../api/duplicates')
 
 function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
   return {
@@ -81,6 +83,11 @@ function renderPage(initialProject: ProjectOut, refetchProject = vi.fn()) {
 describe('AusschussStepPage', () => {
   beforeEach(() => {
     vi.mocked(projectsApi.triggerScore).mockReset()
+    vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockReset()
+    vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+      total: 0,
+      first_photo_id: null,
+    })
   })
 
   it('shows a short explanation line (UI/UX-Abschnitt der Spec 0042)', () => {
@@ -203,5 +210,91 @@ describe('AusschussStepPage', () => {
     await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
 
     expect(projectsApi.triggerScore).toHaveBeenCalledWith(1)
+  })
+
+  /* --------------------------------------------------------------------------------------
+   * AK7/AK8 (Spec 0486) - der Einstieg in den Duplikat-Durchgang
+   * ------------------------------------------------------------------------------------ */
+
+  describe('Einstieg in den Duplikat-Durchgang', () => {
+    const ERFOLGREICHER_LAUF = project({
+      last_scoring_run: scoringRun({
+        status: 'success',
+        finished_at: '2026-07-20T10:05:00Z',
+        photos_total: 10,
+        photos_processed: 10,
+        suggestions_found: 3,
+      }),
+    })
+
+    it('fuehrt auf die erste Gruppe und steht NEBEN dem Sichten der Einzelvorschlaege', async () => {
+      // AK7: Gleichrangig, nicht anstelle - der eine Weg sichtet einzeln, der andere geht die
+      // Serien durch. Beide sind daneben nur sinnvoll, wenn sie zugleich erreichbar sind.
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+        total: 2,
+        first_photo_id: 42,
+      })
+      renderPage(ERFOLGREICHER_LAUF)
+
+      expect(
+        await screen.findByRole('link', {
+          name: 'Duplikate vergleichen — alle Gruppen der Reihe nach durchgehen',
+        }),
+      ).toHaveAttribute('href', '/projects/1/photos/42/duplicates')
+      expect(
+        screen.getByRole('link', { name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen' }),
+      ).toBeInTheDocument()
+    })
+
+    it('beginnt den zugaenglichen Namen mit der sichtbaren Beschriftung (WCAG 2.5.3)', async () => {
+      // Zugesichert in specs/architecture/0004-design-system.md. Der Zusatz folgt nach einem
+      // GEDANKENSTRICH, nie nach einem Doppelpunkt - sonst traefe der Name das Praefixmuster des
+      // kachelgenauen Einstiegs (`Duplikate vergleichen: <Dateiname>`), ueber das der Pruefstack
+      // jenen waehlt.
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+        total: 2,
+        first_photo_id: 42,
+      })
+      renderPage(ERFOLGREICHER_LAUF)
+
+      const einstieg = await screen.findByRole('link', { name: /durchgehen$/ })
+
+      expect(einstieg.textContent).toBe('Duplikate vergleichen')
+      expect(einstieg.getAttribute('aria-label')).toMatch(/^Duplikate vergleichen\b/)
+      expect(einstieg.getAttribute('aria-label')).not.toMatch(/^Duplikate vergleichen:/)
+    })
+
+    it('rendert ihn NICHT, wenn es keine einzige Gruppe gibt', async () => {
+      // AK8: Kein Einstieg ins Leere. Ausgeblendet, nicht deaktiviert - ein gesperrter Knopf
+      // verspraeche etwas, das es in diesem Projekt gar nicht gibt.
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+        total: 0,
+        first_photo_id: null,
+      })
+      renderPage(ERFOLGREICHER_LAUF)
+
+      await screen.findByRole('link', {
+        name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen',
+      })
+      expect(screen.queryByRole('link', { name: /durchgehen/i })).not.toBeInTheDocument()
+    })
+
+    it('rendert ihn auch WAEHREND DES LADENS nicht - er soll nicht kurz aufblitzen', async () => {
+      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockReturnValue(new Promise(() => {}))
+      renderPage(ERFOLGREICHER_LAUF)
+
+      await screen.findByRole('link', {
+        name: 'Vorschläge aus der Ausschuss-Aussortierung ansehen',
+      })
+      expect(screen.queryByRole('link', { name: /durchgehen/i })).not.toBeInTheDocument()
+    })
+
+    it('fragt gar nicht erst, solange kein Lauf erfolgreich war', () => {
+      // Ohne erfolgreichen Lauf gibt es keine Vorschlaege und damit keine Gruppen - eine Anfrage
+      // dorthin waere eine Anfrage je Schrittaufruf ohne moegliche Antwort.
+      renderPage(project({ last_scoring_run: null }))
+
+      expect(duplicatesApi.getDuplicateGroupIndex).not.toHaveBeenCalled()
+    })
   })
 })

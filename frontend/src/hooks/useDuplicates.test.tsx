@@ -8,12 +8,19 @@ import type { DuplicateGroupOut } from '../api/types'
 import {
   useDuplicateDecisionMutation,
   useDuplicateGroupDecisionMutation,
+  useDuplicateGroupIndexQuery,
   useDuplicateGroupQuery,
 } from './useDuplicates'
 
 vi.mock('../api/duplicates')
 
-const GROUP: DuplicateGroupOut = { items: [], position: 1, total: 2 }
+const GROUP: DuplicateGroupOut = {
+  items: [],
+  position: 1,
+  total: 2,
+  previous_photo_id: null,
+  next_photo_id: 43,
+}
 
 function sharedClient() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -25,8 +32,46 @@ function sharedClient() {
 
 beforeEach(() => {
   vi.mocked(duplicatesApi.getDuplicateGroup).mockReset()
+  vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockReset()
   vi.mocked(duplicatesApi.setDuplicateDecision).mockReset()
   vi.mocked(duplicatesApi.setDuplicateGroupDecision).mockReset()
+})
+
+describe('useDuplicateGroupIndexQuery', () => {
+  it('liegt unter demselben breiten Praefix, mit "index" statt einer Foto-Id', async () => {
+    // Derselbe Praefix wie die Gruppenabfrage, damit die breite Invalidierung nach jeder
+    // Entscheidung ihn mitnimmt. `'index'` statt einer Zahl: Der Einstieg kennt noch kein
+    // Mitglied, und eine Zahl an dieser Stelle kollidierte mit dem Schluessel einer echten Gruppe.
+    vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+      total: 2,
+      first_photo_id: 42,
+    })
+    const { queryClient, wrapper } = sharedClient()
+
+    const { result } = renderHook(() => useDuplicateGroupIndexQuery(7, { enabled: true }), {
+      wrapper,
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(queryClient.getQueryData(['photos', 7, 'duplicates', 'index'])).toEqual({
+      total: 2,
+      first_photo_id: 42,
+    })
+  })
+
+  it('fragt gar nicht, solange der Aufrufer es nicht freigibt', async () => {
+    // Beide Einstiege haben eine Bedingung, unter der es nichts zu fragen gibt (kein
+    // erfolgreicher Lauf, falscher Filter). Ohne `enabled` liefe je Seitenaufruf eine Anfrage,
+    // deren Antwort nie angezeigt wird.
+    const { wrapper } = sharedClient()
+
+    const { result } = renderHook(() => useDuplicateGroupIndexQuery(7, { enabled: false }), {
+      wrapper,
+    })
+
+    await waitFor(() => expect(result.current.fetchStatus).toBe('idle'))
+    expect(duplicatesApi.getDuplicateGroupIndex).not.toHaveBeenCalled()
+  })
 })
 
 describe('useDuplicateGroupQuery', () => {
@@ -48,7 +93,13 @@ describe('useDuplicateDecisionMutation', () => {
   it('schreibt die Antwort fort und invalidiert die Fotoliste des Projekts', async () => {
     // Ohne die Invalidierung zeigte die Ausschuss-Liste die entschiedenen Aufnahmen weiter, und
     // die Zahl am Gate bliebe stehen - kein Rendering-Test saehe das.
-    const written: DuplicateGroupOut = { items: [], position: 1, total: 1 }
+    const written: DuplicateGroupOut = {
+      items: [],
+      position: 1,
+      total: 1,
+      previous_photo_id: null,
+      next_photo_id: null,
+    }
     vi.mocked(duplicatesApi.setDuplicateDecision).mockResolvedValue(written)
     const { queryClient, wrapper } = sharedClient()
     queryClient.setQueryData(['photos', 7, 'duplicates', 42], GROUP)

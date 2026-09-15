@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   getDuplicateGroup,
+  getDuplicateGroupIndex,
   setDuplicateDecision,
   setDuplicateGroupDecision,
 } from '../api/duplicates'
@@ -24,6 +25,34 @@ export function useDuplicateGroupQuery(projectId: number, photoId: number) {
   return useQuery({
     queryKey: duplicateGroupQueryKey(projectId, photoId),
     queryFn: () => getDuplicateGroup(projectId, photoId),
+    /* BEIM BLÄTTERN BLEIBT DIE VORIGE GRUPPE STEHEN, bis die nächste da ist. Der Anker steht im
+       Schlüssel; ohne das Vorhalten gibt es für den neuen Schlüssel keine Daten, die Seite fiele
+       bei JEDEM Schritt des Durchgangs in den Ladezustand, und die Gruppennavigation verschwände
+       mitsamt dem gerade gedrückten Knopf — genau der Sprung unter dem Finger, den `disabled`
+       statt „fehlt" am Rand vermeidet.
+
+       Beim ERSTEN Laden greift es nicht (es gibt keinen Vorgänger), der Skeleton-Zustand bleibt
+       also erhalten. Ein Fehler ersetzt den vorgehaltenen Stand unverändert, `isError`/`isSuccess`
+       laufen wie bisher — Leer- und Fehlerpfad der Seite bleiben davon unberührt. */
+    placeholderData: keepPreviousData,
+  })
+}
+
+/**
+ * Die Auskunft für den Einstieg — unter demselben breiten `['photos', projectId, ...]`-Präfix,
+ * damit die Invalidierung nach jeder Entscheidung sie mitnimmt.
+ *
+ * `'index'` statt einer Foto-Id an derselben Stelle: Der Einstieg kennt noch kein Mitglied, und
+ * eine Zahl dort kollidierte mit dem Schlüssel einer echten Gruppe.
+ *
+ * `enabled` stellt der Aufrufer: An beiden Einstiegen gibt es eine Bedingung, unter der gar nicht
+ * gefragt werden soll (kein erfolgreicher Lauf, falscher Filter).
+ */
+export function useDuplicateGroupIndexQuery(projectId: number, options: { enabled: boolean }) {
+  return useQuery({
+    queryKey: ['photos', projectId, 'duplicates', 'index'] as const,
+    queryFn: () => getDuplicateGroupIndex(projectId),
+    enabled: options.enabled,
   })
 }
 

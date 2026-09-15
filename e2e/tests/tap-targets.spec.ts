@@ -33,7 +33,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 19
+const EXPECTED_CONTROL_COUNT = 21
 
 async function assertTappable(
   control: Locator,
@@ -260,6 +260,25 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     await assertTappable(control, `${label} (Kachel des Duplikat-Vergleichs)`)
     checked.push(`${label} der Duplikat-Kachel`)
   }
+
+  // --- Die Gruppennavigation derselben Ansicht (specs/features/0486-...) ---------------------
+  // Der heisse Pfad dieser Story: Zwischen zwei Gruppen wird beim Durchgehen einer Urlaubsserie
+  // haeufiger gedrueckt als auf jede einzelne Wahlflaeche. Sie liegen ebenfalls unmittelbar
+  // nebeneinander und beziehen ihre 44 px aus der Aufspannung.
+  //
+  // Die ERSTE Gruppe ist offen, "zurueck" dort also `disabled` und von `assertTappable` nicht
+  // messbar - gemessen wird deshalb "vor". Ohne Aufnahme hier fehlte der einzige Nachweis der
+  // 44-px-Zusage fuer diese beiden.
+  const weiter = page.getByRole('button', { name: 'Vor zur nächsten Gruppe' })
+  await expect(weiter, 'Gruppennavigation der Vergleichsansicht').toBeVisible()
+  await assertTappable(weiter, 'Vor zur naechsten Gruppe')
+  checked.push('Vor zur naechsten Gruppe')
+
+  await weiter.click()
+  const zurueck = page.getByRole('button', { name: 'Zurück zur vorherigen Gruppe' })
+  await expect(zurueck, 'Gruppennavigation nach dem Blaettern').toBeEnabled()
+  await assertTappable(zurueck, 'Zurueck zur vorherigen Gruppe')
+  checked.push('Zurueck zur vorherigen Gruppe')
 
   // Ohne diese Zusicherung bestuende der Spec auch dann, wenn keine der Lokalisierungen oben noch
   // etwas faende und jede Schleife ueber eine leere Menge liefe.

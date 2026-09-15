@@ -11,6 +11,7 @@ und ein Mitzaehlen des Repraesentanten auf.
 
 from __future__ import annotations
 
+from dataclasses import fields
 from datetime import datetime, timedelta
 
 import pytest
@@ -18,10 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.duplicates import (
     DuplicateLink,
-    group_position,
+    GroupStanding,
+    all_group_representative_ids,
+    group_standing,
     load_duplicate_links,
     member_ids_of,
-    open_group_representative_ids,
     representative_of,
 )
 from photosort.models import Photo, PhotoScore, Project
@@ -34,13 +36,11 @@ def _link(
     duplicate_of: int | None = None,
     *,
     minutes: int = 0,
-    decided: bool = False,
 ) -> DuplicateLink:
     return DuplicateLink(
         photo_id=photo_id,
         duplicate_of=duplicate_of,
         taken_at=_BASE + timedelta(minutes=minutes),
-        decided=decided,
     )
 
 
@@ -146,8 +146,19 @@ def test_a_photo_of_another_star_never_joins_this_group() -> None:
 
 
 # ------------------------------------------------------------------------------------------
-# Gruppenreihenfolge und Zaehler (AK10)
+# Gruppenreihenfolge, Zaehler und Nachbarn (AK5, AK6)
 # ------------------------------------------------------------------------------------------
+
+
+def _drei_gruppen() -> list[DuplicateLink]:
+    return [
+        _link(10, None, minutes=0),
+        _link(11, 10, minutes=1),
+        _link(20, None, minutes=5),
+        _link(21, 20, minutes=6),
+        _link(30, None, minutes=9),
+        _link(31, 30, minutes=10),
+    ]
 
 
 def test_the_groups_are_ordered_by_the_earliest_taken_at_of_their_members() -> None:
@@ -160,7 +171,7 @@ def test_the_groups_are_ordered_by_the_earliest_taken_at_of_their_members() -> N
         _link(21, 20, minutes=31),
     ]
 
-    assert open_group_representative_ids(links) == [10, 20]
+    assert all_group_representative_ids(links) == [10, 20]
 
 
 def test_a_tie_between_two_groups_is_broken_by_the_representative_id() -> None:
@@ -171,66 +182,86 @@ def test_a_tie_between_two_groups_is_broken_by_the_representative_id() -> None:
         _link(11, 10, minutes=0),
     ]
 
-    assert open_group_representative_ids(links) == [10, 30]
+    assert all_group_representative_ids(links) == [10, 30]
 
 
-def test_a_group_whose_every_member_is_decided_drops_out_of_the_reference_set() -> None:
-    """AK10: Der Zaehler beschreibt die VERBLEIBENDE Arbeit und laeuft auf null zu."""
-    links = [
-        _link(10, None, minutes=0, decided=True),
-        _link(11, 10, minutes=1, decided=True),
-        _link(20, None, minutes=5),
-        _link(21, 20, minutes=6),
+def test_the_group_order_cannot_depend_on_any_decision() -> None:
+    """AK6 als ERSATZ fuer die abgeloeste Zusage der Spec 0374 (AK10): Eine vollstaendig
+    entschiedene Gruppe BLEIBT in der Liste, und die Position einer Gruppe verschiebt sich nicht
+    dadurch, dass eine andere entschieden wird.
+
+    Konstruktiv zugesichert statt fallweise geprueft: Die Kantenliste traegt gar keine
+    Entscheidungsauskunft mehr, die Reihenfolge KANN also an keiner haengen. Die Feldmenge steht
+    hier als Gleichheit - ein wieder eingefuehrtes `decided` faellt auf, bevor eine Verzweigung
+    darauf entsteht. Die Wirkung ueber beide Schreibwege prueft
+    `test_api_duplicate_groups.py::test_the_counter_stays_constant_while_another_group_is_decided`."""
+    assert {feld.name for feld in fields(DuplicateLink)} == {
+        "photo_id",
+        "duplicate_of",
+        "taken_at",
+    }
+    assert all_group_representative_ids(_drei_gruppen()) == [10, 20, 30]
+
+
+def test_the_counter_is_one_based_and_names_the_place_among_all_groups() -> None:
+    links = _drei_gruppen()
+
+    assert [group_standing(rep, links) for rep in (10, 20, 30)] == [
+        GroupStanding(position=1, total=3, previous_id=None, next_id=20),
+        GroupStanding(position=2, total=3, previous_id=10, next_id=30),
+        GroupStanding(position=3, total=3, previous_id=20, next_id=None),
     ]
 
-    assert open_group_representative_ids(links) == [20]
+
+def test_a_single_group_has_no_neighbours_at_all() -> None:
+    """AK5 am Rand: Bei genau einer Gruppe ist WEDER vor NOCH zurueck bedienbar - und die Stellung
+    steht trotzdem auf `(1, 1)` statt auf `(1, 0)`."""
+    standing = group_standing(10, _star(3))
+
+    assert standing == GroupStanding(position=1, total=1, previous_id=None, next_id=None)
 
 
-def test_a_single_undecided_member_keeps_its_whole_group_open() -> None:
-    links = [
-        _link(10, None, minutes=0, decided=True),
-        _link(11, 10, minutes=1, decided=True),
-        _link(12, 10, minutes=2),
-    ]
-
-    assert open_group_representative_ids(links) == [10]
+def test_the_standing_of_an_unknown_representative_is_none() -> None:
+    assert group_standing(999, _star(3)) is None
 
 
-def test_the_counter_is_one_based_and_names_the_place_among_the_open_groups() -> None:
-    links = [
-        _link(10, None, minutes=0),
-        _link(11, 10, minutes=1),
-        _link(20, None, minutes=5),
-        _link(21, 20, minutes=6),
-        _link(30, None, minutes=9),
-        _link(31, 30, minutes=10),
-    ]
+def test_following_next_id_visits_every_group_exactly_once_and_ends() -> None:
+    """AK5, der Kettendurchlauf: Ein Durchgang vom Einstieg aus besucht JEDE Gruppe genau einmal
+    und endet nach `total` Schritten.
 
-    assert group_position(10, links) == (1, 3)
-    assert group_position(20, links) == (2, 3)
-    assert group_position(30, links) == (3, 3)
+    Die vollstaendig entschiedene Gruppe liegt dabei MITTEN in der Kette - sie wird nicht
+    uebersprungen. Ohne den Durchlauf bestuende eine Umsetzung, die `next_id` je Gruppe plausibel,
+    aber nicht kettenbildend besetzt (etwa immer den Nachbarn in der Ladereihenfolge)."""
+    links = _drei_gruppen()
+    geordnet = all_group_representative_ids(links)
 
+    besucht: list[int] = []
+    positionen: list[int] = []
+    aktuell: int | None = geordnet[0]
+    while aktuell is not None:
+        standing = group_standing(aktuell, links)
+        assert standing is not None
+        besucht.append(aktuell)
+        positionen.append(standing.position)
+        aktuell = standing.next_id
 
-def test_the_viewed_group_keeps_its_place_even_after_it_has_been_finished() -> None:
-    """Die eine Stelle, an der die Bezugsmenge nicht bloss die offenen Gruppen ist: Die GERADE
-    ANGESEHENE Gruppe zaehlt mit, auch wenn jedes ihrer Mitglieder entschieden ist.
-
-    Ohne sie liefe die Zusage `1 <= position <= total` aus AK10 leer - wer die letzte offene Gruppe
-    fertig entscheidet, laedt sie danach neu und bekaeme `position = 1` bei `total = 0`. Fremde
-    abgeschlossene Gruppen fallen unveraendert heraus."""
-    links = [
-        _link(10, None, minutes=0, decided=True),
-        _link(11, 10, minutes=1, decided=True),
-        _link(20, None, minutes=5),
-        _link(21, 20, minutes=6),
-    ]
-
-    assert group_position(10, links) == (1, 2)
-    assert group_position(20, links) == (1, 1)
+    assert besucht == geordnet
+    assert positionen == list(range(1, len(geordnet) + 1))
 
 
-def test_the_position_of_an_unknown_representative_is_none() -> None:
-    assert group_position(999, _star(3)) is None
+def test_previous_id_is_the_exact_inverse_of_next_id() -> None:
+    links = _drei_gruppen()
+    geordnet = all_group_representative_ids(links)
+
+    rueckwaerts: list[int] = []
+    aktuell: int | None = geordnet[-1]
+    while aktuell is not None:
+        standing = group_standing(aktuell, links)
+        assert standing is not None
+        rueckwaerts.append(aktuell)
+        aktuell = standing.previous_id
+
+    assert rueckwaerts == list(reversed(geordnet))
 
 
 # ------------------------------------------------------------------------------------------

@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.photos import MAX_QUERY_POSITION
@@ -308,9 +309,13 @@ async def test_a_photo_id_outside_the_declared_bounds_is_a_422(
 # ------------------------------------------------------------------------------------------
 
 
-async def test_each_item_carries_its_own_decision_or_null(
+async def test_each_item_carries_the_state_that_applies_without_further_action(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
+    """DER KERN VON AK1. Das dritte Mitglied traegt KEINE Entscheidungszeile und stand bis zu
+    dieser Story deshalb als `null` da - es scheidet aber ohne weiteres Zutun aus. Die Ansicht
+    zeigt seit ADR 0111 die Auswertung des Praedikats, nicht die Zeile: Es gibt kein `null` mehr,
+    und der unentschiedene Verlierer steht von Anfang an als `discard` da."""
     project = await _project(db_session)
     winner = await _photo(db_session, project, "w.jpg", decision=DuplicateDecision.KEEP)
     verworfen = await _photo(
@@ -322,7 +327,7 @@ async def test_each_item_carries_its_own_decision_or_null(
         duplicate_of=winner.id,
         decision=DuplicateDecision.DISCARD,
     )
-    offen = await _photo(
+    ohne_zeile = await _photo(
         db_session,
         project,
         "c.jpg",
@@ -333,14 +338,50 @@ async def test_each_item_carries_its_own_decision_or_null(
 
     body = (await authenticated_api_client.get(_url(project.id, winner.id))).json()
 
-    assert {item["photo"]["id"]: item["decision"] for item in body["items"]} == {
+    assert {item["photo"]["id"]: item["effective_decision"] for item in body["items"]} == {
         winner.id: "keep",
         verworfen.id: "discard",
-        offen.id: None,
+        ohne_zeile.id: "discard",
     }
 
 
-async def test_the_counter_is_one_based_over_the_open_groups(
+async def test_the_answer_never_says_whether_a_state_came_from_the_automaton_or_the_user(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """AK2: Es gibt keinen Zustand "noch nicht entschieden" mehr, und die Herkunft wird nicht
+    unterschieden. Geprueft als Ununterscheidbarkeit zweier Bestaende, die sich NUR in der
+    Anwesenheit der Entscheidungszeile unterscheiden - ein zusaetzliches Herkunftsfeld oder ein
+    drittes `effective_decision` faellt hier auf."""
+    project = await _project(db_session)
+    winner = await _photo(db_session, project, "w.jpg")
+    ohne_zeile = await _photo(
+        db_session,
+        project,
+        "b.jpg",
+        seconds=1,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=winner.id,
+    )
+    mit_zeile = await _photo(
+        db_session,
+        project,
+        "c.jpg",
+        seconds=2,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=winner.id,
+        decision=DuplicateDecision.DISCARD,
+    )
+
+    body = (await authenticated_api_client.get(_url(project.id, winner.id))).json()
+    eintraege = {item["photo"]["id"]: item for item in body["items"]}
+
+    ohne = {schluessel: wert for schluessel, wert in eintraege[ohne_zeile.id].items()}
+    mit = {schluessel: wert for schluessel, wert in eintraege[mit_zeile.id].items()}
+    del ohne["photo"], mit["photo"]
+    assert ohne == mit
+
+
+async def test_the_counter_is_one_based_over_all_groups(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     project = await _project(db_session)
@@ -356,12 +397,36 @@ async def test_the_counter_is_one_based_over_the_open_groups(
     assert zaehler == {erste.id: (1, 3), zweite.id: (2, 3), dritte.id: (3, 3)}
 
 
-async def test_a_finished_group_drops_out_of_the_reference_set_of_the_others(
+async def test_the_neighbours_are_the_representative_ids_of_the_adjacent_groups(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """AK10: Der Zaehler beschreibt die VERBLEIBENDE Arbeit und laeuft auf null zu. Dass sich
-    `position` verschiebt, sobald eine Gruppe abgeschlossen wird, ist die bewusst getragene
-    Folge."""
+    """AK5: Ziel des Blaetterns ist jeweils die REPRAESENTANTEN-Id der Nachbargruppe, `null` am
+    Rand ("nicht bedienbar", nicht "fehlt"). Geprueft ueber alle drei Gruppen zugleich - eine
+    Umsetzung, die die Nachbarn je Gruppe plausibel, aber nicht kettenbildend besetzt, faellt nur
+    so auf."""
+    project = await _project(db_session)
+    erste, _ = await _star(db_session, project, 2, first_second=0, prefix="a")
+    zweite, _ = await _star(db_session, project, 2, first_second=100, prefix="b")
+    dritte, _ = await _star(db_session, project, 2, first_second=200, prefix="c")
+
+    nachbarn = {}
+    for stern in (erste, zweite, dritte):
+        body = (await authenticated_api_client.get(_url(project.id, stern.id))).json()
+        nachbarn[stern.id] = (body["previous_photo_id"], body["next_photo_id"])
+
+    assert nachbarn == {
+        erste.id: (None, zweite.id),
+        zweite.id: (erste.id, dritte.id),
+        dritte.id: (zweite.id, None),
+    }
+
+
+async def test_a_finished_group_keeps_its_place_and_stays_reachable(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """HEBT AK10 DER SPEC 0374 AUF (AK6): Eine vollstaendig entschiedene Gruppe faellt NICHT mehr
+    aus der Bezugsmenge. Sie behaelt ihren Platz, die offene Gruppe hinter ihr steht auf `(2, 2)`
+    statt auf `(1, 1)`, und der Weg zurueck zu ihr fuehrt ueber `previous_photo_id`."""
     project = await _project(db_session)
     fertig_winner = await _photo(db_session, project, "a-w.jpg", decision=DuplicateDecision.KEEP)
     await _photo(
@@ -378,10 +443,36 @@ async def test_a_finished_group_drops_out_of_the_reference_set_of_the_others(
     offen_body = (await authenticated_api_client.get(_url(project.id, offen_winner.id))).json()
     fertig_body = (await authenticated_api_client.get(_url(project.id, fertig_winner.id))).json()
 
-    assert (offen_body["position"], offen_body["total"]) == (1, 1)
-    # Die gerade angesehene Gruppe behaelt ihren Platz, auch wenn sie fertig ist - sonst liefe
-    # die Zusage `1 <= position <= total` aus AK10 leer.
+    assert (offen_body["position"], offen_body["total"]) == (2, 2)
     assert (fertig_body["position"], fertig_body["total"]) == (1, 2)
+    assert offen_body["previous_photo_id"] == fertig_winner.id
+
+
+async def test_the_counter_stays_constant_while_another_group_is_decided(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """AK6, zugesichert gegen den SCHREIBWEG DES PRODUKTS und nicht bloss gegen zwei
+    aufeinanderfolgende Lesevorgaenge: Zwischen den beiden Beobachtungen wird eine ANDERE Gruppe
+    ueber den gruppenweiten Schreibweg vollstaendig entschieden.
+
+    `(position, total)` steht als Gleichheit ZWEIER BEOBACHTUNGEN, nicht gegen ein Literal - ein
+    Literal bestuende auch dann, wenn beide Lesevorgaenge dieselbe falsche Zahl lieferten."""
+    project = await _project(db_session)
+    erste, _ = await _star(db_session, project, 2, first_second=0, prefix="a")
+    zweite, _ = await _star(db_session, project, 2, first_second=100, prefix="b")
+    await _star(db_session, project, 2, first_second=200, prefix="c")
+
+    vorher = (await authenticated_api_client.get(_url(project.id, zweite.id))).json()
+
+    entschieden = await authenticated_api_client.put(
+        f"/projects/{project.id}/duplicate-groups/{erste.id}/decision", json={"decision": "discard"}
+    )
+    assert entschieden.status_code == 200
+
+    nachher = (await authenticated_api_client.get(_url(project.id, zweite.id))).json()
+
+    assert (nachher["position"], nachher["total"]) == (vorher["position"], vorher["total"])
+    assert nachher["previous_photo_id"] == erste.id
 
 
 # ------------------------------------------------------------------------------------------
@@ -406,8 +497,127 @@ async def test_the_item_carries_an_unextended_photo_out(
     )
     aus_der_liste = next(item for item in liste["items"] if item["id"] == winner.id)
     assert set(vom_vergleich) == set(aus_der_liste)
-    assert set(gruppe["items"][0]) == {"photo", "decision"}
-    assert set(gruppe) == {"items", "position", "total"}
+    # Als GLEICHHEIT, nicht als Teilmenge: zugleich der Waechter dagegen, dass der Rohwert
+    # `decision` spaeter als Zusatzfeld wieder mitreist.
+    assert set(gruppe["items"][0]) == {"photo", "effective_decision", "keep_possible"}
+    assert set(gruppe) == {
+        "items",
+        "position",
+        "total",
+        "previous_photo_id",
+        "next_photo_id",
+    }
+
+
+# ------------------------------------------------------------------------------------------
+# Die Unveraenderlichkeit (AK3) und ihr Verhaeltnis zum gruppenweiten Schreibweg (S4, S5)
+# ------------------------------------------------------------------------------------------
+
+
+async def _gruppe_mit_unveraenderlichem_mitglied(
+    session: AsyncSession, project: Project
+) -> tuple[Photo, Photo, Photo]:
+    """Eine Serie, deren GEWINNER selbst wegen Unschaerfe abgelehnt ist: `suggested_status =
+    REJECTED` bei `duplicate_of = None`. Sein Ausschuss folgt nicht aus dem Duplikat, und kein
+    Wert der Entscheidungszeile aendert ihn."""
+    unveraenderlich = await _photo(
+        session, project, "u-w.jpg", suggested_status=RatingStatus.REJECTED
+    )
+    verlierer = await _photo(
+        session,
+        project,
+        "u-v.jpg",
+        seconds=1,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=unveraenderlich.id,
+    )
+    return unveraenderlich, verlierer, unveraenderlich
+
+
+async def test_keep_possible_is_false_exactly_where_the_rejection_does_not_follow_from_the_duplicate(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """AK3: Eine wegen Unschaerfe abgelehnte Aufnahme laesst sich hier nicht auf "behalten" drehen
+    und sagt das, statt einen Klick anzunehmen, der still wirkungslos bleibt."""
+    project = await _project(db_session)
+    unveraenderlich, verlierer, _ = await _gruppe_mit_unveraenderlichem_mitglied(
+        db_session, project
+    )
+
+    body = (await authenticated_api_client.get(_url(project.id, unveraenderlich.id))).json()
+
+    assert {item["photo"]["id"]: item["keep_possible"] for item in body["items"]} == {
+        unveraenderlich.id: False,
+        verlierer.id: True,
+    }
+
+
+async def test_keep_all_writes_on_every_member_and_the_immutable_one_still_reads_as_discard(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """AUFLAGE S5 x AK3. Die Unterdrueckung der Wahlschaltflaechen ist eine ANZEIGE-, keine
+    Durchsetzungsmassnahme: Der gruppenweite Schreibweg bestimmt die Menge unveraendert aus dem
+    Stern und schreibt auf ALLE Mitglieder, das unveraenderliche eingeschlossen. Die dort
+    geschriebene Zeile bleibt ohne Wirkung.
+
+    Ohne diesen Fall waere ein Schreibweg, der das Mitglied auslaesst, von einem, der es
+    einschliesst, nicht zu unterscheiden."""
+    project = await _project(db_session)
+    unveraenderlich, verlierer, _ = await _gruppe_mit_unveraenderlichem_mitglied(
+        db_session, project
+    )
+
+    antwort = await authenticated_api_client.put(
+        f"/projects/{project.id}/duplicate-groups/{unveraenderlich.id}/decision",
+        json={"decision": "keep"},
+    )
+
+    assert antwort.status_code == 200
+    geschrieben = (
+        await db_session.execute(
+            select(PhotoDuplicateDecision.photo_id, PhotoDuplicateDecision.decision)
+        )
+    ).all()
+    assert dict(geschrieben) == {
+        unveraenderlich.id: DuplicateDecision.KEEP,
+        verlierer.id: DuplicateDecision.KEEP,
+    }
+
+    eintraege = {item["photo"]["id"]: item for item in antwort.json()["items"]}
+    assert eintraege[unveraenderlich.id]["effective_decision"] == "discard"
+    assert eintraege[unveraenderlich.id]["keep_possible"] is False
+    assert eintraege[verlierer.id]["effective_decision"] == "keep"
+
+
+async def test_a_member_without_a_score_row_reads_as_keep_instead_of_tearing_the_whole_group(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S3) auf dem Lesepfad: Der Repraesentant braucht strukturell keine eigene
+    `PhotoScore`-Zeile. Ein `photo.score.suggested_status` an der Aufrufstelle traefe nicht eine
+    Kachel, sondern die gesamte Gruppenantwort und damit den einzigen Zugang zur Ansicht (`500`)."""
+    project = await _project(db_session)
+    winner = await _photo(db_session, project, "w.jpg", with_score=False)
+    verlierer = await _photo(
+        db_session,
+        project,
+        "b.jpg",
+        seconds=1,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=winner.id,
+    )
+
+    response = await authenticated_api_client.get(_url(project.id, winner.id))
+
+    assert response.status_code == 200
+    eintraege = {item["photo"]["id"]: item for item in response.json()["items"]}
+    assert eintraege[winner.id]["effective_decision"] == "keep"
+    assert eintraege[winner.id]["keep_possible"] is True
+    assert eintraege[verlierer.id]["effective_decision"] == "discard"
+
+
+# ------------------------------------------------------------------------------------------
+# Das Seitenverhaeltnis auf dem fuenften Lesepfad (ADR 0110)
+# ------------------------------------------------------------------------------------------
 
 
 async def test_the_item_carries_the_aspect_ratio_like_every_other_read_path(

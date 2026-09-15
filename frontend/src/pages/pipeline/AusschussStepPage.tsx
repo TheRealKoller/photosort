@@ -5,6 +5,7 @@ import { Alert } from '../../components/ui/alert'
 import { Button } from '../../components/ui/button'
 import { Progress } from '../../components/ui/progress'
 import { StatusDot } from '../../components/StatusDot'
+import { useDuplicateGroupIndexQuery } from '../../hooks/useDuplicates'
 import { useTriggerScoreMutation } from '../../hooks/useProjects'
 import { useTriggerConfirmation } from '../../hooks/useTriggerConfirmation'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
@@ -26,6 +27,12 @@ export function AusschussStepPage() {
     scoringStartedAt,
     refetchProject,
   )
+
+  // Nur nach einem erfolgreichen Lauf: Ohne ihn gibt es keine Vorschläge und damit keine Gruppen,
+  // und jeder Aufruf dieses Schritts setzte eine Anfrage ab, die nichts beantworten kann.
+  const duplicateGroupIndex = useDuplicateGroupIndexQuery(project.id, {
+    enabled: scoringStatus === 'success',
+  })
 
   const isScoreBusy =
     scoreMutation.isPending || awaitingScoreConfirmation || scoringStatus === 'running'
@@ -78,15 +85,36 @@ export function AusschussStepPage() {
         {scoringStatus === 'failed' && 'Fehlgeschlagen'}
       </p>
 
+      {/* ZWEI GLEICHRANGIGE WEGE, nebeneinander und in derselben Button-Variante: Der eine
+          sichtet Einzelvorschläge, der andere geht die Duplikat-Serien der Reihe nach durch. Der
+          zweite erscheint nur, wenn es überhaupt eine Gruppe gibt — und bis die Auskunft da ist
+          gar nicht, damit er nicht kurz aufblitzt und wieder verschwindet.
+
+          Der zugängliche Name beginnt mit der sichtbaren Beschriftung (WCAG 2.5.3) und trägt den
+          Zusatz nach einem GEDANKENSTRICH, nie nach einem Doppelpunkt: Der kachelgenaue Einstieg
+          heißt `Duplikate vergleichen: <Dateiname>`, und der Prüfstack wählt ihn über genau dieses
+          Präfixmuster. Ein zweiter Treffer führte ihn in die falsche Ansicht. */}
       {scoringStatus === 'success' && (
-        <Button asChild variant="secondary" size="sm">
-          <Link
-            to={`/projects/${project.id}/photos?filter=suggested`}
-            aria-label="Vorschläge aus der Ausschuss-Aussortierung ansehen"
-          >
-            Vorschläge ansehen
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild variant="secondary" size="sm">
+            <Link
+              to={`/projects/${project.id}/photos?filter=suggested`}
+              aria-label="Vorschläge aus der Ausschuss-Aussortierung ansehen"
+            >
+              Vorschläge ansehen
+            </Link>
+          </Button>
+          {duplicateGroupIndex.isSuccess && duplicateGroupIndex.data.first_photo_id !== null && (
+            <Button asChild variant="secondary" size="sm">
+              <Link
+                to={`/projects/${project.id}/photos/${duplicateGroupIndex.data.first_photo_id}/duplicates`}
+                aria-label="Duplikate vergleichen — alle Gruppen der Reihe nach durchgehen"
+              >
+                Duplikate vergleichen
+              </Link>
+            </Button>
+          )}
+        </div>
       )}
 
       {scoringStatus === 'running' && (

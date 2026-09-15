@@ -100,6 +100,7 @@ from photosort.places import place_cell
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
 from photosort.quality import compute_quality_score
 from photosort.quality_weights import effective_weights, latest_weight_set
+from photosort.scoring import SHARPNESS_REJECT_THRESHOLD
 from photosort.thumbnails import (
     delete_cached_variants,
     generate_variants,
@@ -1560,9 +1561,15 @@ async def _seed_duplicate_project(
     kein Test wuerde rot (ADR 0104).
 
     Der Bestand entsteht GENAU SO, wie ihn ein echter Ausschuss-Lauf hinterliesse: Je Gruppe
-    traegt das erste Foto keinen Vorschlag und kein `duplicate_of` (der Gewinner), alle uebrigen
+    traegt das erste Foto kein `duplicate_of` (der Gewinner), alle uebrigen
     `suggested_status = REJECTED` und `duplicate_of` auf den Gewinner. Ketten gibt es nicht; der
-    Gewinner zeigt nirgendwohin. `suggestions_found` ist die Zahl der Verlierer.
+    Gewinner zeigt nirgendwohin. `suggestions_found` ist die Zahl der Aufnahmen mit Vorschlag.
+
+    DER GEWINNER DER ZWEITEN GRUPPE IST SELBST ABGELEHNT - eine Serie unterhalb der
+    Schaerfeschwelle, deren Gewinner trotzdem herausfaellt. Sein Ausschuss folgt nicht aus dem
+    Duplikat (`duplicate_of` bleibt `None`), und kein Wert der Entscheidungszeile aendert ihn: Er
+    ist das UNVERAENDERLICHE Mitglied, an dem die Kachel ohne Wahlschaltflaechen vorfuehrbar wird.
+    Ohne ihn ist AK3 der Spec 0486 im Browser nicht pruefbar.
 
     KEINE Entscheidungszeile: Die Ansicht soll ihren Anfangszustand zeigen."""
     project = await _create_project(session, spec)
@@ -1576,27 +1583,40 @@ async def _seed_duplicate_project(
         )
     )
 
-    verlierer_gesamt = 0
+    mit_vorschlag = 0
     erste = 0
-    for size in _DEMO_DUPLICATE_GROUP_SIZES:
+    for gruppen_index, size in enumerate(_DEMO_DUPLICATE_GROUP_SIZES):
         gruppe = photos[erste : erste + size]
         gewinner = gruppe[0]
+        # GENAU EINE der beiden Gruppen traegt einen selbst abgelehnten Gewinner. Die andere zeigt
+        # den Regelfall daneben - ohne sie bliebe unbelegt, dass die Ansicht beide unterscheidet.
+        gewinner_abgelehnt = gruppen_index == 1
         for offset, photo in enumerate(gruppe):
             ist_gewinner = offset == 0
+            abgelehnt = not ist_gewinner or gewinner_abgelehnt
             session.add(
                 PhotoScore(
                     photo_id=photo.id,
-                    sharpness=_deterministic_unit_value(spec.slug, erste + offset, "sharpness"),
+                    # Der abgelehnte Gewinner liegt unterhalb der Schaerfeschwelle - ein Wert
+                    # darueber waere ein Bestand, den kein Lauf hinterliesse.
+                    sharpness=(
+                        SHARPNESS_REJECT_THRESHOLD / 2
+                        if ist_gewinner and gewinner_abgelehnt
+                        else _deterministic_unit_value(spec.slug, erste + offset, "sharpness")
+                    ),
                     exposure=_deterministic_unit_value(spec.slug, erste + offset, "exposure"),
                     # Der Zeit-/Ortscluster wird nur fuer die NICHT aussortierten Fotos gesetzt -
                     # dieselbe Regel wie im Lauf. Er ist ausdruecklich nicht die Duplikat-Gruppe.
-                    cluster_key=f"{spec.slug}-cluster-0" if ist_gewinner else None,
+                    cluster_key=None if abgelehnt else f"{spec.slug}-cluster-0",
+                    # Der abgelehnte Gewinner traegt trotzdem KEIN `duplicate_of` - genau daran
+                    # haengt, dass sein Ausschuss nicht aus dem Duplikat folgt.
                     duplicate_of=None if ist_gewinner else gewinner.id,
-                    suggested_status=None if ist_gewinner else RatingStatus.REJECTED,
+                    suggested_status=RatingStatus.REJECTED if abgelehnt else None,
                     computed_at=_BASE_SCORING_AT,
                 )
             )
-        verlierer_gesamt += size - 1
+            if abgelehnt:
+                mit_vorschlag += 1
         erste += size
 
     session.add(
@@ -1608,7 +1628,7 @@ async def _seed_duplicate_project(
             last_progress_at=_BASE_SCORING_AT + timedelta(minutes=2),
             photos_total=len(photos),
             photos_processed=len(photos),
-            suggestions_found=verlierer_gesamt,
+            suggestions_found=mit_vorschlag,
             # Das Gate bleibt UNBESTAETIGT: Die Vergleichsansicht ist der Weg durch die Sichtung,
             # und ein bereits bestaetigtes Gate zeigte den Einstieg in sie nie.
             gate_confirmed_at=None,

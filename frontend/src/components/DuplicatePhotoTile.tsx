@@ -7,25 +7,21 @@ import { Button } from './ui/button'
 import { Icon, type IconName } from './ui/icon'
 
 /**
- * Die drei Zustände einer Aufnahme in der Vergleichsansicht — je Zustand ein eigener Wert, ein
+ * Die ZWEI Zustände einer Aufnahme in der Vergleichsansicht — je Zustand ein eigener Wert, ein
  * eigener sichtbarer Text und ein eigenes Symbol.
  *
  * DIE DREIFACHE CODIERUNG IST DIE ZUSAGE, nicht die Farbe: In Graustufen liegen die
  * Umrissfarben dicht beieinander, und ein Zustand, den nur der Umriss trägt, ist ohne
- * Farbwahrnehmung nicht ablesbar (AK6). Der Ruhezustand hebt seinen Umriss dabei bewusst NICHT
- * an — dass nichts entschieden ist, zeigt die Abwesenheit einer Auszeichnung; ein kräftigerer
- * Umriss ließe Unbearbeitetes auffälliger erscheinen als Entschiedenes.
+ * Farbwahrnehmung nicht ablesbar.
+ *
+ * ES GIBT KEINEN DRITTEN EINTRAG. „Noch offen" ist kein Zustand mehr: Die Ansicht zeigt die
+ * Auswertung des Überlebens-Prädikats, und jede Aufnahme trägt beim Öffnen bereits das, was ohne
+ * weiteres Zutun eintritt (ADR 0111). Exportiert, damit die Schlüsselmenge selbst prüfbar ist.
  */
-const ZUSTAENDE: Record<
-  'undecided' | DuplicateDecision,
+export const DUPLICATE_ZUSTAENDE: Record<
+  DuplicateDecision,
   { text: string; icon: IconName; rahmen: string; schrift: string }
 > = {
-  undecided: {
-    text: 'Noch offen',
-    icon: 'cog',
-    rahmen: 'border border-border-control',
-    schrift: 'text-text',
-  },
   keep: {
     text: 'Behalten',
     icon: 'check',
@@ -41,10 +37,26 @@ const ZUSTAENDE: Record<
   },
 }
 
+/**
+ * Der feste Text bei `keepPossible === false`.
+ *
+ * Der Grund reist nicht als Feld der Antwort: Er folgt aus der Bedingung selbst
+ * (`duplicate_of IS NULL` ist genau das, woran der Server `low_quality` festmacht). Entstünde ein
+ * dritter Ablehnungsgrund, trüge `keepPossible === false` seine Begründung nicht mehr eindeutig —
+ * der Grund wird dann ein eigenes Feld, statt dass dieser Text weiter behauptet, was nicht gilt.
+ * Ein Backend-Test hält die Äquivalenz fest, damit das laut auffällt statt still.
+ */
+export const DUPLICATE_IMMUTABLE_TEXT =
+  'Abgelehnt wegen geringer Bildqualität — lässt sich nicht ändern.'
+
 export interface DuplicatePhotoTileProps {
   photo: PhotoOut
-  /** `null` heißt „noch nicht entschieden" — ein eigener Zustand, kein fehlender Wert. */
-  decision: DuplicateDecision | null
+  /** Der Zustand, der ohne weiteres Zutun eintritt — nicht die gespeicherte Entscheidungszeile.
+   * Ob er vom System oder vom Nutzer stammt, weiß die Kachel nicht und zeigt sie nicht. */
+  effectiveDecision: DuplicateDecision
+  /** Ob „behalten" hier überhaupt etwas bewirken kann. Bei `false` rendert die Kachel KEINE
+   * Wahlschaltflächen und zeigt stattdessen den Grund. */
+  keepPossible: boolean
   enlarged: boolean
   /** true, solange die Entscheidung DIESER Aufnahme läuft. Andere Kacheln bleiben bedienbar. */
   deciding: boolean
@@ -63,31 +75,33 @@ export interface DuplicatePhotoTileProps {
  * Ausschuss-Schritt überlebt —, und ein geteilter Baustein machte die beiden an jeder Lesestelle
  * verwechselbar.
  *
- * ALLE MITGLIEDER SIND GLEICHRANGIG (AK2): Diese eine Komponente rendert jedes von ihnen, und
- * keines trägt eine Auszeichnung als Gewinner, Original oder Vorgeschlagener. Die Kachel weiß
- * nicht, welche Rolle ihre Aufnahme im Stern hat, und kann sie deshalb auch nicht zeigen.
+ * ALLE MITGLIEDER SIND GLEICHRANGIG: Diese eine Komponente rendert jedes von ihnen, und keines
+ * trägt eine Auszeichnung als Gewinner, Original oder Vorgeschlagener. Die Kachel weiß nicht,
+ * welche Rolle ihre Aufnahme im Stern hat, und kann sie deshalb auch nicht zeigen. Der Zustand,
+ * den sie zeigt, ist keine solche Auszeichnung — er sagt, was ohne Zutun geschieht.
  *
- * DIE BILDFLÄCHE IST EIN NATIVES `<button>` (AK7) — Enter und Leertaste wirken ohne eigenen
+ * DIE BILDFLÄCHE IST EIN NATIVES `<button>` — Enter und Leertaste wirken ohne eigenen
  * Tastatur-Handler, und der zugängliche Name nennt die Aktion samt Dateiname. Die Wahlzeile liegt
  * daneben, nie darin: verschachtelte Schaltflächen sind kein gültiges HTML.
  */
 export function DuplicatePhotoTile({
   photo,
-  decision,
+  effectiveDecision,
+  keepPossible,
   enlarged,
   deciding,
   onToggle,
   onDecide,
   controls,
 }: DuplicatePhotoTileProps) {
-  const zustand = ZUSTAENDE[decision ?? 'undecided']
+  const zustand = DUPLICATE_ZUSTAENDE[effectiveDecision]
   // Die Dämpfung gilt AUSSCHLIESSLICH in der Übersicht: Die vergrößerte Aufnahme bleibt
   // unverfälscht, weil sie beurteilt werden soll.
-  const gedaempft = decision === 'discard' && !enlarged
+  const gedaempft = effectiveDecision === 'discard' && !enlarged
 
   return (
     <li
-      data-duplicate-decision={decision ?? 'undecided'}
+      data-duplicate-decision={effectiveDecision}
       className={cn(
         'flex flex-col gap-3 rounded-lg bg-elevated p-2 sm:p-3',
         zustand.rahmen,
@@ -107,9 +121,16 @@ export function DuplicatePhotoTile({
            genau diesem einen `opacity-*` an der BILDFLÄCHE — am Kachelkörper drückte dieselbe
            Utility Kennzeichen und Dateinamen unter die Kontrastschwelle. */
         data-dimmed={gedaempft ? 'true' : 'false'}
+        /* BEIDE ZUSTÄNDE RESERVIEREN IHRE HÖHE, BEVOR DAS BILD DA IST — `h-96` in der
+           Vergrößerung, nicht `max-h-96`. Die Bildfläche lädt über einen authentifizierten Abruf
+           und trifft damit immer erst nach dem ersten Rendern ein; ohne reservierte Höhe ist die
+           vergrößerte Kachel bis dahin 145px hoch und wächst beim Eintreffen um 384px. Alles
+           darunter rutscht dann aus dem Sichtbereich, nachdem bereits gescrollt wurde — die
+           übrige Gruppe verschwindet, und die Vergrößerung ist faktisch doch ein Vollbild
+           (`e2e/tests/grid-columns.spec.ts`, „laesst die Gruppe im Blick"). */
         className={cn(
           'block w-full overflow-hidden rounded-md',
-          enlarged ? 'max-h-96' : 'aspect-square',
+          enlarged ? 'h-96' : 'aspect-square',
           gedaempft && 'opacity-40',
         )}
       >
@@ -144,27 +165,37 @@ export function DuplicatePhotoTile({
           verlassen.
 
           KEINE DRITTE SCHALTFLÄCHE: Eine Rücknahme nach „noch nicht entschieden" gibt es nicht,
-          und die Ansicht bietet sie deshalb auch nicht an. `aria-pressed` statt einer eigenen
-          Umschalter-Rolle; beide zugänglichen Namen tragen den Dateinamen, sonst hießen im selben
-          Raster alle Schaltflächen gleich. */}
-      <div className="flex gap-3">
-        {(['keep', 'discard'] as const).map((wert) => (
-          <Button
-            key={wert}
-            type="button"
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            aria-pressed={decision === wert}
-            disabled={deciding}
-            busy={deciding && decision !== wert}
-            aria-label={`${ZUSTAENDE[wert].text}: ${photo.relative_path}`}
-            onClick={() => onDecide(wert)}
-          >
-            {ZUSTAENDE[wert].text}
-          </Button>
-        ))}
-      </div>
+          und die Ansicht bietet sie deshalb auch nicht an. `aria-pressed` folgt dem WIRKSAMEN
+          Zustand, nicht einer gespeicherten Zeile; beide zugänglichen Namen tragen den Dateinamen,
+          sonst hießen im selben Raster alle Schaltflächen gleich.
+
+          BEI `keepPossible === false` STEHT HIER GAR KEINE WAHL, auch nicht „Ausschuss": Kein
+          Wert der Entscheidungszeile ändert den Zustand dieser Aufnahme, und ein angenommener
+          Klick bliebe still wirkungslos. Bewusst NICHT `disabled` — „nicht anwendbar" ist etwas
+          anderes als „kurzzeitig gesperrt", und ein gesperrter Knopf verspräche, später zu
+          wirken. */}
+      {keepPossible ? (
+        <div className="flex gap-3">
+          {(['keep', 'discard'] as const).map((wert) => (
+            <Button
+              key={wert}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              aria-pressed={effectiveDecision === wert}
+              disabled={deciding}
+              busy={deciding && effectiveDecision !== wert}
+              aria-label={`${DUPLICATE_ZUSTAENDE[wert].text}: ${photo.relative_path}`}
+              onClick={() => onDecide(wert)}
+            >
+              {DUPLICATE_ZUSTAENDE[wert].text}
+            </Button>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-text-muted">{DUPLICATE_IMMUTABLE_TEXT}</p>
+      )}
 
       {enlarged && controls}
     </li>

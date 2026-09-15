@@ -23,9 +23,12 @@ from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
 from photosort.duplicates import (
-    group_position,
+    all_group_representative_ids,
+    effective_decision_for,
+    group_standing,
     has_open_suggestion,
     has_open_suggestion_for,
+    keep_possible_for,
     load_duplicate_links,
     member_ids_of,
     representative_of,
@@ -51,7 +54,6 @@ from photosort.models import (
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
-    PhotoDuplicateDecision,
     PhotoFineLabel,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -1697,14 +1699,24 @@ async def album_selection(
 
 
 class DuplicateGroupPhotoOut(BaseModel):
-    """Ein Mitglied der Duplikat-Gruppe: das Foto und die Entscheidung darueber.
+    """Ein Mitglied der Duplikat-Gruppe: das Foto, sein wirksamer Zustand und ob sich dieser
+    ueberhaupt aendern laesst.
 
-    Die Entscheidung reist NEBEN dem Foto, nicht an ihm (ADR 0104): `PhotoOut` bekommt kein Feld,
-    weil die Entscheidung ausserhalb dieser Ansicht keine Anzeigerolle hat und sonst auf jedem
-    Lesepfad stuende. `null` heisst "noch nicht entschieden"."""
+    DIE ANTWORT NENNT DIE AUSWERTUNG DES UEBERLEBENS-PRAEDIKATS, NICHT DIE ENTSCHEIDUNGSZEILE
+    (ADR 0111). Die beiden fielen genau dort auseinander, wo keine Zeile steht: Ein unentschiedener
+    Duplikat-Verlierer traegt `suggested_status = REJECTED` und scheidet aus, sah aber aus wie der
+    Repraesentant, der bleibt. Es gibt deshalb keinen dritten Wert und kein `null`, und aus der
+    Antwort geht nicht hervor, ob ein Zustand vom Automaten oder vom Nutzer stammt.
+
+    `keep_possible = false` heisst: Kein Wert der Entscheidungszeile aendert diesen Zustand - die
+    Ablehnung folgt nicht aus dem Duplikat. Der GRUND reist nicht als Feld, weil er aus der
+    Bedingung selbst folgt; die Oberflaeche rendert dort einen festen Text. Entstuende ein dritter
+    Ablehnungsgrund, gehoert er ab dann als eigenes Feld hierher (ADR 0111, Konsequenzen) -
+    `tests/test_duplikat_anzeigezustand.py` laesst das laut auffallen."""
 
     photo: PhotoOut
-    decision: DuplicateDecision | None
+    effective_decision: DuplicateDecision
+    keep_possible: bool
 
 
 class DuplicateGroupOut(BaseModel):
@@ -1713,27 +1725,20 @@ class DuplicateGroupOut(BaseModel):
     erneutes Laden liefern wuerde; die Oberflaeche braucht danach keine zweite Anfrage, um zu
     wissen, was gilt.
 
-    `position`/`total` sind 1-basiert, und `total` zaehlt die noch OFFENEN Gruppen des Projekts,
-    vereinigt mit der gerade angesehenen (AK10, siehe `duplicates.py::group_position`)."""
+    `position`/`total` sind 1-basiert und beziehen sich auf ALLE Duplikat-Gruppen des Projekts.
+    `previous_photo_id`/`next_photo_id` tragen die Repraesentanten-Id der jeweils benachbarten
+    Gruppe, `null` am Rand - dort ist die Schaltflaeche `disabled`, nicht abwesend.
+
+    SICHERHEIT (S6): Beide Nachbar-Ids stammen aus derselben projektbegrenzten Kantenliste wie die
+    Gruppe selbst, nie aus einer eigenen Abfrage auf `photo_scores` - dessen `duplicate_of` zeigt
+    auf `photos.id` ohne Projektbedingung. Zugriffsmarken sind sie nicht: Die Folgeanfrage laeuft
+    erneut ueber `project_id` und loest eine fremde Id nicht auf."""
 
     items: list[DuplicateGroupPhotoOut]
     position: int
     total: int
-
-
-async def _duplicate_decisions(
-    session: AsyncSession, photo_ids: list[int]
-) -> dict[int, DuplicateDecision]:
-    """Die Ausschuss-Entscheidung je Foto - EINE Abfrage je Anfrage, nie eine je Foto (Muster
-    `_final_selection_decisions`). Ein fehlender Eintrag heisst "noch nicht entschieden"."""
-    if not photo_ids:
-        return {}
-    result = await session.execute(
-        select(PhotoDuplicateDecision.photo_id, PhotoDuplicateDecision.decision).where(
-            PhotoDuplicateDecision.photo_id.in_(photo_ids)
-        )
-    )
-    return {photo_id: decision for photo_id, decision in result.all()}
+    previous_photo_id: int | None
+    next_photo_id: int | None
 
 
 async def build_duplicate_group_out(
@@ -1760,11 +1765,10 @@ async def build_duplicate_group_out(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
         )
-    stellung = group_position(representative_id, links)
-    # `representative_of` hat die Gruppe soeben aufgeloest - `group_position` kann sie nicht mehr
+    stellung = group_standing(representative_id, links)
+    # `representative_of` hat die Gruppe soeben aufgeloest - `group_standing` kann sie nicht mehr
     # verfehlen. Der Zweig steht trotzdem, weil `mypy --strict` sonst das `None` durchliesse.
     assert stellung is not None
-    position, total = stellung
 
     ids = member_ids_of(representative_id, links)
     photos_by_id = await _photos_by_id(session, ids)
@@ -1780,7 +1784,6 @@ async def build_duplicate_group_out(
     )
     motifs_by_id = await load_effective_strengths(session, ids)
     final_decisions = await _final_selection_decisions(session, ids)
-    duplicate_decisions = await _duplicate_decisions(session, ids)
     user_count = await _user_count(session)
     return DuplicateGroupOut(
         items=[
@@ -1798,12 +1801,71 @@ async def build_duplicate_group_out(
                     decisions=final_decisions,
                     user_count=user_count,
                 ),
-                decision=duplicate_decisions.get(member_id),
+                # BEIDE WERTE KOMMEN AUS `duplicates.py`, nie als ausgeschriebene Bedingung hier
+                # (Auflage S2): Sie ziehen dasselbe Praedikat, das bestimmt, welche Bilder den
+                # Homeserver Richtung Cloud-Anbieter verlassen. Eine zweite Fassung liefe von der
+                # ersten weg, ohne Fehler und ohne Meldung -
+                # `tests/test_ausschuss_ueberlebende.py` schlaegt fuer jede hier ausgeschriebene
+                # Fassung an.
+                effective_decision=effective_decision_for(photos_by_id[member_id]),
+                keep_possible=keep_possible_for(photos_by_id[member_id]),
             )
             for member_id in ids
         ],
-        position=position,
-        total=total,
+        position=stellung.position,
+        total=stellung.total,
+        previous_photo_id=stellung.previous_id,
+        next_photo_id=stellung.next_id,
+    )
+
+
+class DuplicateGroupIndexOut(BaseModel):
+    """Die Auskunft fuer den EINSTIEG: wie viele Duplikat-Gruppen es gibt und wo der Durchgang
+    beginnt.
+
+    `first_photo_id` ist `null`, wenn es keine Gruppe gibt - die Oberflaeche rendert den Einstieg
+    dann gar nicht, statt auf eine leere Ansicht zu fuehren (AK8).
+
+    KEINE LISTE ALLER GRUPPEN (ADR 0111 Punkt 3): Sie waere eine zweite Quelle derselben
+    Reihenfolge neben `position`/`total`, deren Momentaufnahmen auseinanderlaufen koennen. Die
+    Nachbarn reisen in der Gruppenantwort selbst."""
+
+    total: int
+    first_photo_id: int | None
+
+
+@router.get("/projects/{project_id}/duplicate-groups", response_model=DuplicateGroupIndexOut)
+async def duplicate_group_index(
+    project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # router-weite `dependencies`-Liste und keinen Vollstaendigkeitstest - ein Endpunkt, der
+    # diesen Parameter vergisst, waere STILL OEFFENTLICH (keine 401, nur Daten). Der eigene
+    # 401-Fall steht in `tests/test_api_duplicate_group_index.py`.
+    current_user: User = Depends(get_current_user),
+) -> DuplicateGroupIndexOut:
+    """Wie viele Duplikat-Gruppen dieses Projekt hat und ueber welche Aufnahme die erste beginnt.
+
+    Grundlage der beiden Einstiege in die Vergleichsansicht - aus dem Ausschuss-Schritt und aus der
+    nach Vorschlaegen gefilterten Fotoliste. Ohne Foto-Hydratation: Die Antwort traegt kein
+    `PhotoOut` und ist damit keine Funktion des anfragenden Nutzers.
+
+    `total` ist DIESELBE Zahl wie in `DuplicateGroupOut` und zaehlt alle Gruppen des Projekts,
+    entschiedene eingeschlossen.
+
+    SICHERHEIT (S6): `first_photo_id` stammt aus derselben projektbegrenzten Kantenliste wie die
+    Gruppe selbst, nie aus einer eigenen Abfrage auf `photo_scores` - dessen `duplicate_of` zeigt
+    auf `photos.id` ohne Projektbedingung. Eine Zugriffsmarke ist die Id nicht: Die Folgeanfrage
+    laeuft erneut ueber `project_id`.
+
+    `404` fuer ein unbekanntes Projekt, ohne den uebergebenen Wert zu spiegeln. `422` fuer eine
+    Pfad-Id ausserhalb der Grenzen - ein unbeschraenkter Pydantic-`int` erreicht die Datenbank und
+    wird jenseits von 2^63 zu `500` statt `404`."""
+    project = await _get_project_or_404(project_id, session)
+    representatives = all_group_representative_ids(await load_duplicate_links(session, project.id))
+    return DuplicateGroupIndexOut(
+        total=len(representatives),
+        first_photo_id=representatives[0] if representatives else None,
     )
 
 
@@ -1817,21 +1879,22 @@ async def duplicate_group(
     # vergisst, waere STILL OEFFENTLICH.
     current_user: User = Depends(get_current_user),
 ) -> DuplicateGroupOut:
-    """Alle Aufnahmen EINER Duplikat-Gruppe samt ihrer Ausschuss-Entscheidung.
+    """Alle Aufnahmen EINER Duplikat-Gruppe samt ihrem wirksamen Zustand und ihren Nachbargruppen.
 
     Die Gruppe ist ABGELEITET und nirgends gespeichert (ADR 0104 Punkt 1): Sie ist der Stern ueber
     `PhotoScore.duplicate_of` - der Gewinner und alle, die auf ihn zeigen -, zur Lesezeit gebildet.
     Sie hat deshalb keine eigene Id und ist ueber JEDES ihrer Mitglieder unter derselben Antwort
-    erreichbar, den Gewinner eingeschlossen. Der Gewinner traegt dabei selbst keine
-    Vorschlagszeile; er ist der Ausschuss-Ueberlebende der Serie.
+    erreichbar, den Gewinner eingeschlossen.
 
     KEIN MITGLIED IST AUSGEZEICHNET. Die Antwort nennt weder Gewinner noch Original noch
     Vorgeschlagenen - die Reihenfolge ist `taken_at`, bei Gleichstand `id`, und sonst nichts.
+    Jedes Mitglied traegt aber seinen wirksamen Zustand (`effective_decision`), also das, was ohne
+    weiteres Zutun eintritt.
 
-    `position`/`total` beziehen sich auf die noch OFFENEN Gruppen des Projekts: Eine Gruppe, in
-    der jedes Mitglied entschieden ist, zaehlt nicht mehr mit, und der Zaehler beschreibt damit
-    die verbleibende Arbeit. Die gerade angesehene Gruppe behaelt ihren Platz auch dann, wenn sie
-    fertig ist.
+    `position`/`total` beziehen sich auf ALLE Duplikat-Gruppen des Projekts. Eine vollstaendig
+    entschiedene Gruppe zaehlt weiter mit und bleibt erreichbar; die Gesamtzahl aendert sich
+    waehrend eines Durchgangs nicht, und die Position einer Gruppe verschiebt sich nicht dadurch,
+    dass eine andere entschieden wird.
 
     `404`, wenn es zu dieser Id keine Gruppe gibt - unbekanntes Foto, fremdes Projekt, Foto ohne
     Duplikat, oder ein Vorschlag wegen geringer Bildqualitaet (der traegt kein `duplicate_of`).

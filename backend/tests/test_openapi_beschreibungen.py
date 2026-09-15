@@ -77,6 +77,12 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # erreichbar), dass kein Mitglied ausgezeichnet ist, und worauf sich `position`/`total`
     # beziehen.
     ("get", "/projects/{project_id}/duplicate-groups/{photo_id}"),
+    # specs/features/0486-duplikate-durchgehen.md: der Einstieg in den Durchgang. Seine
+    # Beschreibung traegt, dass `total` DIESELBE Zahl ist wie in der Gruppenantwort (zwei getrennt
+    # gebildete liefen auseinander), dass `first_photo_id` aus derselben projektbegrenzten
+    # Kantenliste stammt und keine Zugriffsmarke ist, und dass `null` "keine Gruppe" heisst statt
+    # "irgendein Foto".
+    ("get", "/projects/{project_id}/duplicate-groups"),
     # Und die beiden Schreibwege derselben Spec. Ihre Beschreibung traegt die Aussagen, die der
     # Signatur gerade nicht anzusehen sind - dass die Wirkung ASYMMETRISCH ist (`discard`
     # unbedingt, `behalten` nur solange die Aufnahme Duplikat-Verlierer ist), dass hier weder eine

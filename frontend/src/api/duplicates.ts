@@ -1,5 +1,19 @@
 import { apiFetch } from './client'
-import type { DuplicateDecision, DuplicateGroupOut } from './types'
+import type { DuplicateDecision, DuplicateGroupIndexOut, DuplicateGroupOut } from './types'
+
+/**
+ * Wie viele Duplikat-Gruppen das Projekt hat und wo der Durchgang beginnt.
+ *
+ * Grundlage der beiden Einstiege — aus dem Ausschuss-Schritt und aus der nach Vorschlägen
+ * gefilterten Fotoliste. `total === 0` heißt „es gibt nichts zu vergleichen"; der Einstieg wird
+ * dann nicht gerendert, damit er nicht auf eine leere Ansicht führt.
+ *
+ * KEINE Liste aller Gruppen: Sie wäre eine zweite Quelle derselben Reihenfolge neben
+ * `position`/`total` der Gruppenantwort. Die Nachbarn reisen dort mit.
+ */
+export function getDuplicateGroupIndex(projectId: number): Promise<DuplicateGroupIndexOut> {
+  return apiFetch<DuplicateGroupIndexOut>(`/projects/${projectId}/duplicate-groups`)
+}
 
 /**
  * Eine Duplikat-Gruppe, erreichbar über IRGENDEIN Mitglied.

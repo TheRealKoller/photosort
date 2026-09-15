@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { DuplicateDecision } from '../api/types'
@@ -16,15 +16,16 @@ import {
 const SKELETON_TILE_COUNT = 4
 
 /**
- * Die unveränderliche Hinweiszeile (AK11).
+ * Die unveränderliche Hinweiszeile (AK4).
  *
- * Sie sagt, was OHNE Entscheidung geschieht — und sichert ausdrücklich NICHT zu, dass
- * unentschiedene Aufnahmen erhalten bleiben: Ein unentschiedener Duplikat-Verlierer trägt weiter
- * den Vorschlag „Ausschuss" und fällt am Gate heraus. Ein Satz wie „ohne Entscheidung bleibt
- * alles" wäre eine Zusage, die die Ansicht nicht halten kann.
+ * Sie benennt einen BESTEHENDEN Zustand, keine ausstehende Entscheidung: Jede Aufnahme trägt beim
+ * Öffnen bereits das, was ohne weiteres Zutun eintritt. Die Zeile darf deshalb weder behaupten, es
+ * liege noch keine Entscheidung vor, noch zusichern, dass „unentschiedene" Aufnahmen erhalten
+ * bleiben — ein unentschiedener Duplikat-Verlierer fällt am Gate heraus, und ein Satz wie „ohne
+ * Entscheidung bleibt alles" wäre eine Zusage, die die Ansicht nicht halten kann.
  */
 export const DUPLICATE_HINT_TEXT =
-  'Ohne eigene Entscheidung gilt der Vorschlag des Systems für diese Aufnahme.'
+  'Der angezeigte Zustand jeder Aufnahme gilt, falls du ihn nicht änderst.'
 
 /**
  * Die Folge von „behalten", an der Handlung selbst (Auflage S4).
@@ -61,6 +62,7 @@ export const DUPLICATE_EMPTY_TEXT =
  */
 export function DuplicateComparePage() {
   const { projectId, photoId } = useParams()
+  const navigate = useNavigate()
   const id = Number(projectId)
   const anchorId = Number(photoId)
 
@@ -79,6 +81,15 @@ export function DuplicateComparePage() {
    * unabhängig voneinander, und eine seitenweite Sperre blockierte den zügigen Durchlauf, den
    * diese Ansicht gerade ermöglichen soll. */
   const [decidingIds, setDecidingIds] = useState<ReadonlySet<number>>(new Set())
+
+  /* DIE SEITE BLEIBT BEIM GRUPPENWECHSEL MONTIERT — gleiche Route, anderer Parameter. Beide
+     Zustände zeigen auf Foto-Ids der alten Gruppe und müssen deshalb zurückgesetzt werden: Ohne
+     das bliebe eine Kachel der neuen Gruppe gesperrt, deren Entscheidung nie lief, und die
+     Vergrößerung zeigte auf ein Foto, das hier nicht vorkommt. */
+  useEffect(() => {
+    setEnlargedId(null)
+    setDecidingIds(new Set())
+  }, [anchorId])
 
   const enlargedIndex = items.findIndex((item) => item.photo.id === enlargedId)
 
@@ -143,11 +154,50 @@ export function DuplicateComparePage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <h1 className="text-xl sm:text-2xl">
-          {query.isSuccess
-            ? `Duplikat-Gruppe ${query.data.position} von ${query.data.total}`
-            : 'Duplikate vergleichen'}
-        </h1>
+        {/* DIE GRUPPENNAVIGATION LIEGT IM SEITENKOPF UND IST IMMER SICHTBAR — ausdrücklich nicht
+            an die Bildvergrößerung gekoppelt: Der Durchgang ist eine Aussage über die ANSICHT,
+            nicht über eine vergrößerte Aufnahme, und an die Vergrößerungssteuerung gehängt wäre
+            er ohne Vergrößerung unerreichbar.
+
+            Am Rand `disabled` statt abwesend: Ein verschwindender Knopf verschöbe die übrigen
+            unter dem Finger. Die zugänglichen Namen unterscheiden sich bewusst von den
+            `Vorherige/Nächste Aufnahme der Gruppe` der Vergrößerung, die gleichzeitig im Dokument
+            stehen können — und beginnen mit der sichtbaren Beschriftung (WCAG 2.5.3): Ein
+            zugänglicher Name, der den sichtbaren Text nicht als zusammenhängende Kette enthält,
+            ist per Spracheingabe nicht ansprechbar. */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl sm:text-2xl">
+            {query.isSuccess
+              ? `Duplikat-Gruppe ${query.data.position} von ${query.data.total}`
+              : 'Duplikate vergleichen'}
+          </h1>
+          {query.isSuccess && (
+            <div role="group" aria-label="Duplikat-Gruppen" className="flex gap-3">
+              {(
+                [
+                  ['Zurück zur vorherigen Gruppe', 'Zurück', query.data.previous_photo_id],
+                  ['Vor zur nächsten Gruppe', 'Vor', query.data.next_photo_id],
+                ] as const
+              ).map(([name, beschriftung, ziel]) => (
+                <Button
+                  key={name}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={ziel === null}
+                  aria-label={name}
+                  // Push, kein `replace`: Der Zurück-Knopf des Browsers ist damit „vorherige
+                  // Gruppe" statt „raus aus dem Durchgang".
+                  onClick={() =>
+                    ziel !== null && navigate(`/projects/${id}/photos/${ziel}/duplicates`)
+                  }
+                >
+                  {beschriftung}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
         <p className="text-sm text-text">{DUPLICATE_HINT_TEXT}</p>
         <p data-testid="duplicate-consequence" className="text-sm text-text">
           {DUPLICATE_CONSEQUENCE_TEXT}
@@ -214,7 +264,8 @@ export function DuplicateComparePage() {
               <DuplicatePhotoTile
                 key={item.photo.id}
                 photo={item.photo}
-                decision={item.decision}
+                effectiveDecision={item.effective_decision}
+                keepPossible={item.keep_possible}
                 enlarged={item.photo.id === enlargedId}
                 deciding={decidingIds.has(item.photo.id)}
                 onToggle={() =>

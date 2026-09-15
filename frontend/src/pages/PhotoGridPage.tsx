@@ -10,6 +10,7 @@ import { PhotoImage } from '../components/PhotoImage'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
+import { useDuplicateGroupIndexQuery } from '../hooks/useDuplicates'
 import { useElementWidth } from '../hooks/useElementWidth'
 import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
 import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
@@ -63,6 +64,11 @@ export function PhotoGridPage() {
   const query = usePhotoSequenceQuery(id, ratingStatus)
   const setRatingMutation = useSetRatingMutation(id)
   const gateMutation = useConfirmAusschussGateMutation(id)
+  // Nur unter dem Vorschlags-Filter: Dort wird der Ausschuss gesichtet, und nur dort gehoert der
+  // Weg durch die Serien hin. Unter jedem anderen Filter liefe die Anfrage ohne Adressaten.
+  const duplicateGroupIndex = useDuplicateGroupIndexQuery(id, {
+    enabled: filterParam === 'suggested',
+  })
   const photos = useMemo(
     () => query.data?.pages.flatMap((page) => page.items) ?? [],
     [query.data?.pages],
@@ -228,6 +234,31 @@ export function PhotoGridPage() {
           </Button>
         ))}
       </div>
+
+      {/* EIN Weg für die ganze Liste, außerhalb des Kachelrasters — der kachelgenaue Einstieg
+          bleibt daneben bestehen.
+
+          DIE SICHTBARE BESCHRIFTUNG IST DIESELBE wie am Ausschuss-Schritt: Es ist derselbe Weg an
+          einer zweiten Stelle, und zwei Namen dafür arbeiteten gegen die Wiedererkennung, die
+          dieser Einstieg gerade herstellen soll. Unterschieden wird über den ZUGÄNGLICHEN Namen —
+          mit dem sichtbaren Text als Anfang (WCAG 2.5.3) und dem Zusatz nach einem
+          GEDANKENSTRICH, nie nach einem Doppelpunkt: Der kachelgenaue Einstieg heißt
+          `Duplikate vergleichen: <Dateiname>`, und der Prüfstack wählt ihn über genau dieses
+          Präfixmuster.
+
+          Bei `total === 0` und während des Ladens ausgeblendet, nicht deaktiviert (AK8): Ein Weg,
+          der auf einen Leerzustand führt, ist kein Weg, und ein kurz aufblitzender Einstieg wäre
+          schlimmer als keiner. */}
+      {duplicateGroupIndex.isSuccess && duplicateGroupIndex.data.first_photo_id !== null && (
+        <Button asChild variant="secondary" size="sm" className="self-start">
+          <Link
+            to={`/projects/${id}/photos/${duplicateGroupIndex.data.first_photo_id}/duplicates`}
+            aria-label="Duplikate vergleichen — alle Gruppen der Reihe nach durchgehen"
+          >
+            Duplikate vergleichen
+          </Link>
+        </Button>
+      )}
 
       {query.isLoading && (
         <ul role="status" aria-label="Fotos werden geladen…" className="flex flex-wrap gap-3">

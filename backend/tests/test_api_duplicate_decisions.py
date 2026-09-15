@@ -153,9 +153,9 @@ async def test_a_single_decision_is_written_and_answered_in_the_group_form(
 
     assert response.status_code == 200
     body = response.json()
-    assert {item["photo"]["id"]: item["decision"] for item in body["items"]}[losers[0].id] == (
-        decision
-    )
+    assert {item["photo"]["id"]: item["effective_decision"] for item in body["items"]}[
+        losers[0].id
+    ] == (decision)
     assert await _stored(db_session, losers[0].id) == DuplicateDecision(decision)
 
 
@@ -275,7 +275,7 @@ async def test_the_group_write_path_sets_every_member_in_one_call(
     )
 
     assert response.status_code == 200
-    assert {item["decision"] for item in response.json()["items"]} == {decision}
+    assert {item["effective_decision"] for item in response.json()["items"]} == {decision}
     assert {await _stored(db_session, member.id) for member in (winner, *losers)} == {
         DuplicateDecision(decision)
     }
@@ -607,7 +607,9 @@ async def test_a_decision_survives_an_unchanged_rescoring(
     body = (
         await authenticated_api_client.get(f"/projects/{project.id}/duplicate-groups/{winner.id}")
     ).json()
-    assert {item["photo"]["id"]: item["decision"] for item in body["items"]}[losers[0].id] == "keep"
+    assert {item["photo"]["id"]: item["effective_decision"] for item in body["items"]}[
+        losers[0].id
+    ] == "keep"
 
 
 async def test_a_stale_keep_becomes_ineffective_while_a_stale_discard_keeps_working(
