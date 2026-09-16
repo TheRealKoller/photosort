@@ -142,7 +142,6 @@ export function PhotoGridTile({
   // blind darauf zu verlassen (dieselbe Anzeigeregel wie in der Detailansicht).
   const dotStatus = status ?? suggestedStatus
   const dotShape = status !== null ? 'filled' : 'ring'
-  const rejected = status === 'rejected'
   const fileName = relativePath.split('/').pop() ?? relativePath
 
   const stateWords = [
@@ -196,16 +195,13 @@ export function PhotoGridTile({
       onBlur={() => setDetailsSource((quelle) => (quelle === 'focus' ? null : quelle))}
     >
       <Link to={to} onClick={handleClick} className="block size-full rounded-md">
-        {/* Der Ruecktritt einer verworfenen Aufnahme liegt AUSSCHLIESSLICH auf der Bildflaeche
-            (AK6). Am Kachelkoerper druecke dieselbe Utility die beiden Zeichen unter die
-            Kontrastschwelle; ueber einer Bildflaeche ist ein Kontrast mit Deckkraft statisch
-            ohnehin nicht nachrechenbar. Die Zeichen sind deshalb GESCHWISTER dieses Elements. */}
-        <div
-          data-dimmed={rejected ? 'true' : undefined}
-          className={cn('size-full overflow-hidden rounded-md', rejected && 'opacity-40')}
-        >
-          {image}
-        </div>
+        {/* JEDE AUFNAHME STEHT IN VOLLER HELLIGKEIT, auch die verworfene (ADR 0112) - eine
+            gedaempfte Bildflaeche verfaelscht die Beurteilung des Motivs. Den Zustand tragen
+            allein die beiden Zeichen und die Zustandswoerter, beide ausserhalb dieses Elements.
+
+            DAS ELEMENT SELBST BLEIBT: Es traegt Beschnitt und Rundung der Bildflaeche - ohne es
+            liefe das Bild ueber die Kachelrundung hinaus, ohne dass eine Pruefung anschluege. */}
+        <div className="size-full overflow-hidden rounded-md">{image}</div>
         {/* Die Bedeutung der beiden Zeichen zusaetzlich als UNSICHTBARER Text. Der Stern und der
             Punkt ersetzen das bisherige beschriftete Kennzeichen; ohne diesen Text verloere die
             Ansicht ihre Aussage fuer Bildschirmleser. Der Dateiname steht hier bewusst NICHT - er

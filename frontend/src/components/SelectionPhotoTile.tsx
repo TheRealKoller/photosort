@@ -118,8 +118,8 @@ export function SelectionPhotoTile({
         />
       }
       /* Der ausdrücklich HERAUSGENOMMENE Zustand - dasselbe Muster wie ein gestrichenes Foto im
-         Entwurf (ADR 0071 Entscheidung 3): gedämpfte Bildfläche, durchgestrichener Dateiname,
-         Kennzeichen und Bedienelement voll deckend.
+         Entwurf (ADR 0071 Entscheidung 3): durchgestrichener Dateiname, Bildfläche in voller
+         Helligkeit.
 
          `setAside` und NICHT `status='rejected'`: Die Karte trägt hier gar keinen
          Bewertungszustand. Ein unbenanntes „Verworfen" am Kartenkörper wäre neben den benannten

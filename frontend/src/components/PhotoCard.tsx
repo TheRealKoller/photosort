@@ -77,28 +77,19 @@ export function PhotoCard({
   topRight,
   footer,
 }: PhotoCardProps) {
-  // BEIDE Faelle treten optisch zurueck, und nur einer traegt zusaetzlich ein Kennzeichen: die
+  // BEIDE Faelle werden gleich dargestellt, und nur einer traegt zusaetzlich ein Kennzeichen: die
   // eigene Streichung (Bewertung eines Nutzers) und die gemeinsame Herausnahme aus der Endauswahl
-  // (Entscheidung des Projekts).
+  // (Entscheidung des Projekts). Traeger ist die Durchstreichung des Dateinamens - bei `setAside`
+  // ohne Bewertungszustand ist sie der einzige.
   const stepsBack = status === 'rejected' || setAside
 
   /*
-   * AUSSORTIERT: Nur die BILDFLAECHE tritt zurueck, die Bedeutungstraeger nicht.
-   * Das Board daempft die ganze Karte auf 40 %; das ist bindend abgelehnt - Deckkraft auf einem
-   * Container mischt gegen den Seitengrund und ist statisch nicht nachrechenbar (weisse Schrift bei
-   * 40 % ueber `--bg` erreicht 3.79:1, die dunkle Tinte auf dem roten Badge wird praktisch
-   * unlesbar). Kennzeichen, Dateiname, die beiden Ecken-Trigger und die Fusszeilen-Aktion bleiben
-   * deshalb voll deckend; der Dateiname traegt zusaetzlich die Durchstreichung. Optisch tritt die
-   * Karte trotzdem zurueck, und die Zusage "ohne Farbwahrnehmung erkennbar" traegt ueber Deckkraft
-   * UND Durchstreichung UND Symbol UND Text.
-   *
-   * Diese eine Zeile ist die einzige `opacity-`-Fundstelle der Datei und als solche im
-   * Vertragstest freigegeben - ein spaeteres `opacity-40` am Kartenkoerper wuerde dort rot.
+   * DIE BILDFLAECHE STEHT IMMER IN VOLLER HELLIGKEIT (ADR 0112), auch bei einer Streichung oder
+   * einer Herausnahme: Eine gedaempfte Bildflaeche verfaelscht die Beurteilung des Motivs, und
+   * beurteilt wird ueberall dort, wo diese Karte steht. Den Zustand tragen Kennzeichen (Symbol und
+   * Wort) und der durchgestrichene Dateiname, beide ausserhalb der Bildflaeche.
    */
-  const imageAreaClassName = cn(
-    'block aspect-square overflow-hidden rounded-md',
-    stepsBack && 'opacity-40',
-  )
+  const imageAreaClassName = 'block aspect-square overflow-hidden rounded-md'
 
   // Nur der Basisname: Der Ordnerteil ist auf ~60px ohnehin unlesbar und steht bereits im `alt`
   // des Bildes sowie im `aria-label` der Fusszeilen-Aktion.

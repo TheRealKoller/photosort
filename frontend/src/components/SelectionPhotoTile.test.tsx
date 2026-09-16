@@ -256,7 +256,7 @@ describe('SelectionPhotoTile - die drei Anzeigezustände', () => {
     expect(screen.getByText(SELECTION_DECIDED_BADGE_TEXT)).toBeInTheDocument()
   })
 
-  it('lets an explicitly removed photo step back visibly - dimmed image, struck file name', () => {
+  it('marks an explicitly removed photo by its struck file name', () => {
     const { container } = render(
       <ul>
         <SelectionPhotoTile

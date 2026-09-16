@@ -245,8 +245,8 @@ test('die Filterleiste ist bei 360 px ein eigener Scrollbereich', async ({ page 
  *
  * Sie entsteht nur ueber den Umschalter und ist ein ANDERES DOM als die Arbeitssicht: andere
  * Kachelmenge, eine statt zwei Schaltflaechen je Kachel, dazu das Kennzeichen "gemeinsam
- * entschieden" und die gedaempften, herausgenommenen Bilder. Die Routenschleife oben misst je
- * Route genau einmal und saehe davon nichts.
+ * entschieden" und die herausgenommenen Bilder mit durchgestrichenem Dateinamen. Die
+ * Routenschleife oben misst je Route genau einmal und saehe davon nichts.
  */
 test('die Ergebnissicht der Endauswahl erzeugt kein horizontales Scrollen bei 360 px', async ({
   page,
