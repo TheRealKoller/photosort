@@ -203,7 +203,7 @@ VERWEIGERUNG = "Für jeden anderen Lauf wird die Auskunft verweigert"
 # git-Messung traegt dagegen keine Aussage und wird ausdruecklich **nicht** eingefroren.
 QUELLE_LAEUFE = "ListAgents"
 QUELLE_PFAD = "output_file"
-QUELLE_AUSZUG = "jq"
+QUELLE_AUSZUG = "**Bilanz:**"
 
 # Der ueberholte Lesekanal (AK 3). Er darf an **keiner** Stelle mehr vorkommen - auch nicht als
 # Erklaerung, warum er entfallen ist: Ein Modell, das ihn im Text findet, hat ihn als Weg gesehen.
@@ -362,13 +362,13 @@ WURZELN = {
 
 # --- Selbstschutz --------------------------------------------------------------------------
 
-# Untergrenzen weit unter dem Ist-Stand (2026-09-13: 251 Markdown-Dateien im Suchraum, 7
-# Agenten-Dateien, 21.000 bzw. 8.000 Zeichen in den beiden gelesenen Dateien). Sie fangen den
+# Untergrenzen weit unter dem Ist-Stand (2026-09-16: 291 Markdown-Dateien im Suchraum, 7
+# Agenten-Dateien, 28.000 bzw. 22.000 Zeichen in den beiden gelesenen Dateien). Sie fangen den
 # Totalausfall der Aufzaehlung, nicht jede geloeschte Datei: Ein leer oder halb gelesener
 # Suchraum darf nie als "genau einmal gefunden" oder "nirgends gefunden" durchgehen.
 MINDESTZAHL_DATEIEN_IM_SUCHRAUM = 150
 MINDESTZAHL_AGENTEN_DATEIEN = 7
-MINDESTGROESSE = {DEVELOPER_PFAD: 10_000, SKILL_PFAD: 3_000}
+MINDESTGROESSE = {DEVELOPER_PFAD: 10_000, SKILL_PFAD: 8_000}
 
 SUCHRAUM_ORTE = (".claude", "docs", "specs")
 
