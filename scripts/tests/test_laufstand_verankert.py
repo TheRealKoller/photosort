@@ -2,11 +2,16 @@ r"""Haelt die Verankerung des Laufstands fest - Ausgabepflicht im Lauf, Lesepfli
 
 Gegenstand ist Markdown, das ein Modell zur Laufzeit interpretiert: `.claude/agents/developer.md`
 gibt einen Block `## Laufstand` in seine eigene Ausgabe, `.claude/skills/laufstand/SKILL.md` liest
-ihn von aussen. Kein Mechanismus dieses Repositoriums konsumiert diesen Block - er entsteht und
-vergeht in einem Ausgabefenster. Zugesichert wird hier deshalb ausschliesslich **Nachweisbares**:
-dass die Anweisung dasteht, an welcher Stelle sie dasteht, und dass sie nur an einer Stelle steht.
+ihn von aussen aus dem Sitzungstranskript des Laufs. Kein Mechanismus dieses Repositoriums
+konsumiert diesen Block. Zugesichert wird hier deshalb ueberwiegend **Nachweisbares**: dass die
+Anweisung dasteht, an welcher Stelle sie dasteht, und dass sie nur an einer Stelle steht.
 
-Neun Zusicherungen, je Akzeptanzkriterium der Spec getrennt, damit ein Ausfall benennt, *welche*
+**Mit einer Ausnahme, und die ist neu:** Der Auszug aus dem Transkript ist ein **Befehlsliteral**
+und damit ausfuehrbar. Es wird aus der Skill-Datei gelesen und gegen im Test erzeugte Fixtures
+laufen gelassen - dort wird eine **Wirkung** geprueft, nicht eine Form (Zusicherung 12,
+`specs/architecture/0002-testkonzept.md`, Punkt 12).
+
+Zwoelf Zusicherungen, je Akzeptanzkriterium der Spec getrennt, damit ein Ausfall benennt, *welche*
 verschwunden ist:
 
 1. **Der Block ist definiert** - eingezaeunt in `developer.md`, genau einmal in dieser Form.
@@ -24,36 +29,50 @@ verschwunden ist:
 7. **Jeder `git`-Aufruf der Auskunft stammt aus einer geschlossenen Menge** von drei lesenden
    Formen, mit dem gemessenen Pfad als **einem** gequoteten Argument.
 8. **Das `SendMessage`-Verbot** als Anwesenheit plus Ort jedes Vorkommens des Tokens.
-9. **Die vier Saetze fuer den Fall ohne abrufbaren Stand**, die Auswahl ueber die `branch`-Zeile,
-   beide Arbeitsort-Faelle, die Verweigerung fuer fremde Laeufe, und die eine echte
-   Datenabhaengigkeit `ListAgents` -> `TaskOutput`.
-10. **Die fuenf Sicherheitsauflagen stehen in voller Aussage da** - als Form geprueft, Kennungen
+9. **Die vier Ausgaenge als geschlossene Menge** mit Kopf je Zeile, A/D ("kein Schrittstand")
+   nie mit B/C ("Strukturbefund") verschmolzen; dazu die drei Antwortformen mit dem Commit-Stand
+   in **jeder** von ihnen, dem Alter nur bei vorhandenem Block und der Version nur beim Befund;
+   die Auswahl des Arbeitsbaums ueber die `branch`-Zeile, beide Arbeitsort-Faelle, die
+   Verweigerung fuer fremde Laeufe, und die eine echte Datenabhaengigkeit `ListAgents` ->
+   Pfadherkunft -> Extraktion.
+10. **Die sechs Sicherheitsauflagen stehen in voller Aussage da** - als Form geprueft, Kennungen
     auf Gleichheit. Das sichert ihre **Anwesenheit**, nie ihre Befolgung; fuer M-S3, M-S4 und
     M-S5 ist es der einzige mechanische Waechter, und die Ankerliste in
     `specs/architecture/0003-securitykonzept.md` sagt genau das statt eine Wirkung zu behaupten.
+    Dazu die zwei Pfadklassen: M-S2 und M-S6 nennen je ihre eigene Wurzel als Literal und die
+    andere Klasse namentlich - beide Wurzeln enthalten ein `.claude`.
+11. **Jedes Befehlsliteral des Auszugs stammt aus einer geschlossenen Menge**, der Pfad als
+    **ein** gequotetes Argument und `jq` mit roher Ausgabe; dazu die Abwesenheit jeder Form, die
+    die Datei als Ganzes liest, und jeder Selektion der empfangenen Werkzeugergebnisse. Die
+    Zeilenschwelle fuer Ausgang C steht als **Zahl** im Text und im Literal, und keine
+    Versionszahl steht irgendwo als Vergleichswert.
+12. **Der ausfuehrende Pruefer:** das Literal aus der Datei, ausgefuehrt gegen Fixtures, je
+    Ausgang statt nur im Erfolgsfall. Fehlt `jq`, wird er **rot statt uebersprungen** - ein
+    uebersprungener Pruefer sagt nichts, und ohne das Werkzeug ist die gepruefte Anweisung
+    ohnehin nicht ausfuehrbar.
 
 **Was hier bewusst NICHT gebaut wird:** ein Pruefer, der aus Prosa herausliest, dass der Lauf den
-Block tatsaechlich ausgibt, und eine Heuristik ueber Sitzungsprotokolle. Beide waeren gruen, ohne
-etwas zu wissen - schaedlicher als kein Test, weil sie die benannte offene Flanke zudeckten. Dass
-der Block zur Laufzeit erscheint und im endlichen Ausgabefenster ankommt, zeigt allein der erste
-reale Umsetzungslauf nach dem Merge (`specs/architecture/0002-testkonzept.md`, Punkt 11 und
-"Bekannte Luecken").
+Block tatsaechlich ausgibt, und eine Heuristik ueber die echten Sitzungsprotokolle unter
+`~/.claude/`. Beide waeren gruen, ohne etwas zu wissen - der zweite misst die Vergangenheit einer
+bestimmten Maschine, und in CI existiert der Ort nicht. Dass der Block zur Laufzeit erscheint und
+der Leseweg ihn an einem echten Lauf findet, zeigt allein ein realer Umsetzungslauf
+(`specs/architecture/0002-testkonzept.md`, Punkt 11 und 12, sowie "Bekannte Luecken").
 
 **Zwei Zusicherungen haben konstruktionsbedingt keinen Rot-Schritt.** Die Einmaligkeit (5) und die
 Abwesenheit in den uebrigen Agenten-Dateien (6) sind vom ersten Lauf an gruen, weil es die zweite
 Stelle nie gab. Ein kuenstlich herbeigefuehrtes Rot belegte dort nichts; der Nachweis laeuft
 ueber die Gegenprobe in **beide** Richtungen an synthetischem Text und ueber die Mutation unten.
 
-**Mutationsprobe am echten Bestand, nach Gruen gefuehrt (2026-09-13), jede Mutation danach
-zurueckgenommen.** 22 gesetzt, 22 rot - je die erwartete Zusicherung. Die Liste steht hier nicht
-als Messprotokoll, sondern als **Eingabe einer Wartungspflicht**: Wer eines der Muster aendert,
-wiederholt genau diese Proben, statt sie zu glauben - und braucht dafuer, welche Fundstelle je
-Mutation angefasst wurde.
+**Mutationsprobe am echten Bestand, nach Gruen gefuehrt (2026-09-16, vollstaendig neu gesetzt
+ueber die umgebauten Dateien), jede Mutation danach zurueckgenommen.** 31 gesetzt, 31 rot - je die
+erwartete Zusicherung. Die Liste steht hier nicht als Messprotokoll, sondern als **Eingabe einer
+Wartungspflicht**: Wer eines der Muster aendert, wiederholt genau diese Proben, statt sie zu
+glauben - und braucht dafuer, welche Fundstelle je Mutation angefasst wurde.
 
 * Anker im Codeblock umbenannt; ein vierter Zustand `[blockiert]` ergaenzt; der
   Kardinalitaetssatz entfernt - **3 von 3 rot** (1, 2).
-* Der Erstausgabe-Absatz samt Codefence hinter die Rot-Grün-Refactor-Liste verschoben, Zahl der
-  Fundstellen unveraendert - **rot** (4). Genau der Fall, den eine Zaehlung allein nicht faengt.
+* Die Erstausgabe hinter den Rot-Schritt verschoben, Zahl der Fundstellen unveraendert - **rot**
+  (4). Genau der Fall, den eine Zaehlung allein nicht faengt.
 * Die Ausgabe-Anweisung aus einem der drei Folgeauftraege entfernt; ein vierter
   Folgeauftrags-Abschnitt ergaenzt - **2 von 2 rot** (3).
 * `## Laufstand` in `architect.md` einmal als Prosa und einmal als Codeblock ergaenzt - **2 von 2
@@ -64,24 +83,40 @@ Mutation angefasst wurde.
   teuerste: Sie sieht wie Kosmetik aus und gibt die Quoting-Auflage des Sicherheitskonzepts auf.
 * `SendMessage` in Schritt 1 erwaehnt, Verbotsabschnitt unberuehrt - **rot** (8). Eine reine
   Anwesenheitspruefung des Verbots waere hier **gruen** geblieben.
-* Einen der vier Saetze aus `## Kein abrufbarer Schrittstand` entfernt; `branch refs/heads/`
-  durch die `worktree`-Zeile ersetzt; einen Zustand aus der Antwortvorlage entfernt; `TaskOutput`
-  vor `ListAgents` gezogen; ein Schreibwerkzeug genannt - **5 von 5 rot** (9, 2, 7).
+* Einen der vier Ausgaenge (C) entfernt; Ausgang C mit dem Wortlaut von D versehen; `branch
+  refs/heads/` durch die `worktree`-Zeile ersetzt; einen Zustand aus der Antwortvorlage entfernt;
+  den Auszug vor die Pfadherkunft gezogen; ein Schreibwerkzeug genannt - **6 von 6 rot** (9, 2,
+  7). Die zweite ist die tragende: Ein als "kein Schrittstand" ausgesprochener Strukturbefund
+  ist genau die Verschmelzung, gegen die diese Stufe gebaut ist, und sieht im Text unauffaellig
+  aus.
 * M-S4 geloescht; M-S4 weichgeschrieben mit dem alten Wortlaut als Zitat daneben; M-S3
-  weichgeschrieben; M-S5 geloescht; eine sechste Auflage ergaenzt - **5 von 5 rot** (10). Die
-  zweite ist die tragende: Eine Nadelsuche ueber den Abschnitt waere dort **gruen** geblieben,
-  weil der alte Satz als Zitat weiterhin dasteht. Deshalb wird der Kopf geprueft, nicht der Text.
+  weichgeschrieben; M-S5 geloescht; M-S6 geloescht; M-S6 weichgeschrieben; eine **siebte**
+  Auflage ergaenzt - **7 von 7 rot** (10). Die zweite ist die tragende: Eine Nadelsuche ueber den
+  Abschnitt waere dort **gruen** geblieben, weil der alte Satz als Zitat weiterhin dasteht.
+  Deshalb wird der Kopf geprueft, nicht der Text. Die siebte laeuft ueber `M-S7`, nicht ueber
+  `M-S6`: Seit ADR 0114 ist M-S6 die regulaere sechste Auflage.
+* Die Zeilenschwelle aus dem Bilanz-Literal genommen; das Extraktionsliteral um eine rohe Lesart
+  ergaenzt; eine Versionszahl in den Skilltext gesetzt; die Nutzer-Zeilen in den Auszug genommen -
+  **4 von 4 rot** (11). Die letzte zoege den Text in den Kontext, den der Lauf **empfangen** und
+  nie selbst verfasst hat.
+* **Und die zwei, die allein der ausfuehrende Pruefer faengt** - kein Textpruefer sieht sie: die
+  Fence-Behandlung aus dem Kandidat-Literal entfernt (ein zitierter Block zaehlt dann als
+  gemeldeter Fortschritt); `last` durch `first` ersetzt (die Auskunft zeigt dann den aeltesten
+  statt den juengsten Stand) - **2 von 2 rot** (12). Sie sind die Begruendung dafuer, dass diese
+  Ebene ueberhaupt existiert.
 
-**Und die drei Nicht-Reaktionen, die genauso zaehlen** (sie duerfen **nicht** rot werden): eine
+**Und die vier Nicht-Reaktionen, die genauso zaehlen** (sie duerfen **nicht** rot werden): eine
 dritte Prosa-Erwaehnung von `## Laufstand` in einer Doku-Datei - der Pruefer verbietet eine
 zweite *Definition*, keine Erwaehnung; ein Codefence mit einer Zustandszeile ohne Anker in
 `architect.md` - ein Formatzitat ist keine Ausgabepflicht; der Erlaeuterungstext **unterhalb**
-eines Auflagenkopfs umformuliert - geprueft ist die Regel, nicht ihre Begruendung. Ohne diese
-Gegenrichtung waere nicht belegt, dass die Pruefer ihren Gegenstand treffen statt jede Datei, die
-das Wort kennt.
+eines Auflagenkopfs umformuliert - geprueft ist die Regel, nicht ihre Begruendung; das
+`jq`-Programm lesbar umbrochen - geprueft ist die Form ueber zusammengezogenen Leerraum, nie die
+Zeilenaufteilung. Ohne diese Gegenrichtung waere nicht belegt, dass die Pruefer ihren Gegenstand
+treffen statt jede Datei, die das Wort kennt.
 
 Kein Netzwerk, kein GitHub, kein echtes git ausser `git ls-files`: gelesen werden ausschliesslich
-die von Git verwalteten Dateien dieses Repositoriums.
+die von Git verwalteten Dateien dieses Repositoriums. Der ausfuehrende Pruefer ruft zusaetzlich
+`jq` auf - gegen eine Fixture unterhalb von `tmp_path`, nie gegen ein echtes Sitzungstranskript.
 """
 
 from __future__ import annotations
