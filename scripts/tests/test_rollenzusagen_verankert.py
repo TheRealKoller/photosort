@@ -68,13 +68,38 @@ ARTEFAKT_PFAD = "scripts/tests/werkzeugzuteilung.json"
 
 AGENTEN_VERZEICHNIS = ".claude/agents"
 RECHERCHEUR = ".claude/agents/research-engineer.md"
+DEFINITIONSSTELLE = ".claude/skills/produktentscheidung/SKILL.md"
+
+# Der Anker, woertlich. Definiert wird sein Blockformat ausschliesslich in DEFINITIONSSTELLE; die
+# Ankerzeile selbst darf ueberall dort stehen, wo sie ausgegeben oder erkannt wird - das ist ein
+# funktionaler Verweis, keine zweite Formatdefinition (ADR 0040 Teil 3, ADR 0115 Punkt 2).
+ANKER = "## Blockiert: Produktentscheidung nötig"
+
+# Die sechs Felder des Blocks, in der Reihenfolge der Definitionsstelle. Geprueft wird ihre
+# **Anwesenheit im einen** Block; ihre Reihenfolge wird ausdruecklich nicht eingefroren.
+FELDNAMEN = (
+    "**Rolle:**",
+    "**Auftrag:**",
+    "**Frage:**",
+    "**Optionen:**",
+    "**Empfehlung:**",
+    "**Bisheriger Stand:**",
+)
+
+# Der Suchraum der Einmaligkeitspruefung. Geweitet ueber `.claude/**` hinaus, weil
+# `docs/ai-workflow.md`, das Sicherheitskonzept und die Spec den Anker **nennen** - genau dagegen
+# muss der Detektor robust sein: Er erkennt eine **Definition** (eingezaeunter Block mit der
+# Ankerzeile), nie eine Erwaehnung.
+SUCHRAUM_ORTE = (".claude", "docs", "specs")
 
 # --- Selbstschutz ----------------------------------------------------------------------------
 
-# Untergrenzen weit unter dem Ist-Stand (2026-09-16: 7 Rollendateien, 5 Aufrufstellen). Sie fangen
-# den Totalausfall der Aufzaehlung, nicht jede geloeschte Datei: Ein leer oder halb gelesener
-# Suchraum darf nie als "genau einmal gefunden" oder "nirgends gefunden" durchgehen.
+# Untergrenzen weit unter dem Ist-Stand (2026-09-16: 7 Rollendateien, 5 Aufrufstellen, 250
+# Markdown-Dateien im Suchraum). Sie fangen den Totalausfall der Aufzaehlung, nicht jede geloeschte
+# Datei: Ein leer oder halb gelesener Suchraum darf nie als "genau einmal gefunden" oder "nirgends
+# gefunden" durchgehen.
 MINDESTZAHL_ROLLENDATEIEN = 7
+MINDESTZAHL_DATEIEN_IM_SUCHRAUM = 150
 
 # --- Reine Funktionen ------------------------------------------------------------------------
 
@@ -259,7 +284,98 @@ def artefakt_befunde(artefakt: Mapping[str, object]) -> list[str]:
     return befunde
 
 
+_FENCE = ("```", "~~~")
+
+
+def codebloecke(text: str) -> list[str]:
+    """Reine Funktion: alle mit ``` eingezaeunten Bloecke - dort steht eine Formatdefinition."""
+    return re.findall(r"^```[^\n]*\n(.*?)^```", text, re.MULTILINE | re.DOTALL)
+
+
+def ohne_codebloecke(text: str) -> str:
+    """Reine Funktion: leert jede Zeile innerhalb eines Codefence-Blocks.
+
+    Geleert statt entfernt, damit gemeldete Zeilennummern weiterhin auf die echte Datei zeigen.
+    Zwingend vor jeder Prosa- und jeder Abwesenheitspruefung: Die **Definition** des Blocks steht
+    selbst in einem Codefence und traegt den Anker; ohne diese Behandlung zaehlte sie als Anweisung
+    mit und jede Fundstellenzahl waere um eins daneben.
+    """
+    ergebnis: list[str] = []
+    offen = False
+    for zeile in text.split("\n"):
+        if zeile.lstrip().startswith(_FENCE):
+            offen = not offen
+            ergebnis.append("")
+            continue
+        ergebnis.append("" if offen else zeile)
+    return "\n".join(ergebnis)
+
+
+def formatdefinitionen(abbild: Mapping[str, str]) -> list[str]:
+    """Reine Funktion: jede Datei, die den Anker **in einem Codeblock** fuehrt.
+
+    Ein Codeblock mit der Ankerzeile ist eine Definition des Formats; eine Erwaehnung im
+    Fliesstext (in Backticks, als Verweis) ist keine und bleibt ausdruecklich frei. Genau darauf
+    kommt es im geweiteten Suchraum an: `docs/`, das Sicherheitskonzept und die Spec nennen den
+    Anker, ohne ihn zu definieren.
+    """
+    if not abbild:
+        raise ValueError(
+            "0 Dateien im Suchraum: Ein leerer Suchraum darf nie als 'genau eine "
+            "Definitionsstelle' durchgehen."
+        )
+    return sorted(
+        datei
+        for datei, inhalt in abbild.items()
+        if any(ANKER in block for block in codebloecke(inhalt))
+    )
+
+
+def feldblock(text: str) -> str:
+    """Reine Funktion: der eine Codeblock, der die Ankerzeile traegt.
+
+    Wirft, wenn es keinen oder mehr als einen gibt - beides macht jede Aussage ueber "den" Block
+    bedeutungslos, und ein stiller Nullbefund waere hier die schlechteste Antwort.
+    """
+    kandidaten = [block for block in codebloecke(text) if ANKER in block]
+    if len(kandidaten) != 1:
+        raise ValueError(
+            f"{len(kandidaten)} Codebloecke mit {ANKER!r} in der Datei, erwartet genau einer. "
+            "Ohne genau einen Block ist nicht entscheidbar, welche Form gilt."
+        )
+    return kandidaten[0]
+
+
+def feldblock_befunde(block: str) -> list[str]:
+    """Reine Funktion: der Block ist nicht leer und traegt alle sechs Feldnamen.
+
+    Ein Block, der nur noch aus der Ankerzeile besteht, waere formal eine Definitionsstelle und
+    sagte nichts. Ein fehlendes Feld ist einzeln zu melden, weil die sechs verschiedene Schaeden
+    tragen: ohne `**Frage:**` gibt es nichts vorzulegen, ohne `**Optionen:**` keine Wahl, ohne
+    `**Bisheriger Stand:**` keinen Ort fuer ein Zitat - und Zitate stehen nirgends sonst.
+    """
+    befunde: list[str] = []
+    if not block.strip():
+        befunde.append("Der Feldblock ist leer.")
+    for feld in FELDNAMEN:
+        if feld not in block:
+            befunde.append(
+                f"Der Feldblock fuehrt {feld!r} nicht. Die sechs Felder tragen verschiedene "
+                "Schaeden; ein fehlendes ist kein Formfehler, sondern eine fehlende Zusage."
+            )
+    return befunde
+
+
 # --- Duenne Leser ----------------------------------------------------------------------------
+
+
+def suchraum(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
+    """Duenner Leser: alle von Git verwalteten `.md` unter `.claude/`, `docs/` und `specs/`."""
+    return {
+        pfad: (wurzel / pfad).read_text(encoding="utf-8")
+        for pfad in git_dateien(*SUCHRAUM_ORTE, wurzel=wurzel)
+        if pfad.endswith(".md") and (wurzel / pfad).is_file()
+    }
 
 
 def rollendateien(wurzel: Path = REPO_WURZEL) -> dict[str, str]:
@@ -470,6 +586,75 @@ def test_eine_leere_bemerkung_wird_gemeldet() -> None:
 
     assert len(befunde) == 1
     assert "bemerkung" in befunde[0]
+
+
+def test_der_suchraum_hat_eine_plausible_groesse() -> None:
+    """Ein leer gelesener Suchraum darf nie als 'genau eine Definitionsstelle' durchgehen."""
+    dateien = suchraum()
+
+    assert len(dateien) >= MINDESTZAHL_DATEIEN_IM_SUCHRAUM, (
+        f"Nur {len(dateien)} Markdown-Dateien im Suchraum (erwartet mindestens "
+        f"{MINDESTZAHL_DATEIEN_IM_SUCHRAUM}). Die Aufzaehlung ist kaputt."
+    )
+
+
+def test_ein_leerer_suchraum_scheitert_laut_statt_still() -> None:
+    with pytest.raises(ValueError, match=r"0 Dateien im Suchraum"):
+        formatdefinitionen({})
+
+
+# --- Zusicherung 7: ein Format, eine Stelle ----------------------------------------------------
+
+
+def test_das_blockformat_ist_ausschliesslich_an_einer_stelle_definiert() -> None:
+    """AK5: keine zweite Datei fuehrt eine Kopie - zwei Abbilder desselben Formats driften."""
+    stellen = formatdefinitionen(suchraum())
+
+    assert stellen == [DEFINITIONSSTELLE], (
+        f"Der Feldblock wird in {stellen} eingezaeunt gefuehrt, erwartet ausschliesslich in "
+        f"{DEFINITIONSSTELLE}. Eine Erwaehnung der Ankerzeile im Fliesstext ist davon unberuehrt "
+        "und bleibt ausdruecklich frei; eine zweite eingezaeunte Fassung ist eine zweite Quelle."
+    )
+
+
+def test_der_eine_feldblock_traegt_alle_sechs_felder() -> None:
+    befunde = feldblock_befunde(feldblock(suchraum()[DEFINITIONSSTELLE]))
+
+    assert not befunde, "; ".join(befunde)
+
+
+def test_eine_erwaehnung_im_fliesstext_ist_keine_definition() -> None:
+    """Gegenprobe zur Methodik: Nur ein eingezaeunter Block definiert."""
+    abbild = {
+        "a.md": f"Der Lauf beendet seinen Turn mit `{ANKER}`.",
+        "b.md": f"Text\n\n```\n{ANKER}\n\n**Frage:** <eine Frage>\n```\n",
+    }
+
+    assert formatdefinitionen(abbild) == ["b.md"]
+
+
+def test_zwei_definitionsstellen_werden_beide_gemeldet() -> None:
+    block = f"```\n{ANKER}\n```\n"
+
+    assert formatdefinitionen({"a.md": block, "b.md": block}) == ["a.md", "b.md"]
+
+
+def test_mehrere_bloecke_in_einer_datei_scheitern_laut_statt_still() -> None:
+    with pytest.raises(ValueError, match=r"2 Codebloecke"):
+        feldblock(f"```\n{ANKER}\n```\n\n```\n{ANKER}\n```\n")
+
+
+def test_ein_fehlendes_feld_wird_einzeln_gemeldet() -> None:
+    block = "\n".join([ANKER, "", *(feld + " x" for feld in FELDNAMEN[:-1])])
+
+    befunde = feldblock_befunde(block)
+
+    assert len(befunde) == 1
+    assert "Bisheriger Stand" in befunde[0]
+
+
+def test_ein_leerer_block_wird_gemeldet() -> None:
+    assert feldblock_befunde("   \n") != []
 
 
 def test_durchweg_identische_werkzeugmengen_werden_gemeldet() -> None:

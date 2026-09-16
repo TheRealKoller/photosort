@@ -91,19 +91,10 @@ abgeben".
 Anker, wörtlich: **`## Blockiert: Produktentscheidung nötig`**
 
 Das Blockformat ist **ausschließlich** in `.claude/skills/produktentscheidung/SKILL.md` definiert;
-keine zweite Datei führt eine Kopie. Die Ankerzeile darf dort stehen, wo sie ausgegeben oder
-erkannt wird — funktionaler Verweis, keine zweite Formatdefinition. Felder:
-
-```
-## Blockiert: Produktentscheidung nötig
-
-**Rolle:** <name aus der Rollendatei>
-**Auftrag:** <woran gearbeitet wurde, mit Spec-/Issue-Bezug>
-**Frage:** <eine entscheidbar formulierte Frage>
-**Optionen:** <je Option eine Zeile, mit ihrer Folge>
-**Empfehlung:** <die eigene fachliche Empfehlung, als Empfehlung gekennzeichnet, nie als Wahl>
-**Bisheriger Stand:** <was bereits getan/committet ist; hier und nur hier stehen Zitate>
-```
+keine zweite Datei führt eine Kopie — auch diese Spec nicht. Die Ankerzeile darf dort stehen, wo
+sie ausgegeben oder erkannt wird — funktionaler Verweis, keine zweite Formatdefinition. Sechs
+Felder: `**Rolle:**`, `**Auftrag:**`, `**Frage:**`, `**Optionen:**`, `**Empfehlung:**`,
+`**Bisheriger Stand:**`; ihre Form steht an der Definitionsstelle.
 
 Der Lauf beendet seinen Turn mit diesem Block. Ein Halt ist kein berichtsloser Abbruch — er gibt
 mit dem Anker aus, was er bereits festgestellt hat.
