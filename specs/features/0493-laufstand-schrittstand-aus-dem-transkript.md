@@ -1,6 +1,6 @@
 # 0493 - Stand eines laufenden Umsetzungslaufs ist jederzeit ablesbar
 
-**Status:** Accepted
+**Status:** Implemented ([PR #502](https://github.com/TheRealKoller/photosort/pull/502))
 **Erstellt:** 2026-09-16
 **Bezug:** [Issue #493](https://github.com/TheRealKoller/photosort/issues/493)
 
