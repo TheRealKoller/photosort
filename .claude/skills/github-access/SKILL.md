@@ -945,11 +945,12 @@ Drei Festlegungen dazu:
   noch nicht gab.
 - **Subagenten haben keinen GitHub-Zugriff.** Tragende Kontrolle dafür ist und bleibt die
   Konvention in den Agenten-Dateien. Daneben steht ein **beobachteter, nicht zugesicherter**
-  Umgebungsbefund: Am 2026-09-06 enthielt der Werkzeugsatz eines Subagenten dieses Repositories
-  die GitHub-Werkzeuge nicht. Das ist Client-Konfiguration — das Projekt kann diesen Zustand
-  weder herstellen noch prüfen noch seine Änderung bemerken. Er zählt als Verteidigung in der
-  Tiefe, **nicht** als Zusicherung: Fällt er weg, ändert sich an der Erlaubnisstufe nichts, weil
-  sie nie auf ihm beruhte.
+  Umgebungsbefund, je Rolle festgehalten in `scripts/tests/werkzeugzuteilung.json`: Kein
+  angebotener Werkzeugname trägt das Präfix `mcp__`. Das ist Client-Konfiguration — das Projekt
+  kann diesen Zustand weder herstellen noch prüfen noch seine Änderung bemerken. Er zählt als
+  Verteidigung in der Tiefe, **nicht** als Zusicherung: Fällt er weg, ändert sich an der
+  Erlaubnisstufe nichts, weil sie nie auf ihm beruhte. Zeigt eine künftige Messung
+  MCP-GitHub-Werkzeuge in einem Subagenten, wird der Befund **gestrichen** statt stehen gelassen.
 - **Für `research-engineer` wird die Grenze ausdrücklich gezogen:** Externe Recherche auf
   öffentlichen Webseiten — auch solchen auf github.com — ist kein GitHub-Zugriff im Sinne dieses
   Katalogs. Gemeint sind Issues, Board und Pull Requests **dieses** Repositories im Rahmen des
