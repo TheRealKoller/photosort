@@ -10,9 +10,10 @@ Definitionsstelle — hier angewendet, nicht geändert), ADR
 einen Werkzeugsatz aus einer Einzelmessung verallgemeinert), ADR
 [`0016`](./0016-research-engineer-agent.md) (Tragfähigkeit der Rechercheur-Rolle)
 
-**Umfang:** über dem Richtwert von rund 100 Zeilen, weil jeder der fünf Entscheidungspunkte eine
-Zusicherung samt Geltungsbereich und Verletzungsfolge trägt und diese ADR die einzige Stelle ist,
-an der die beiden Klassen von Abwesenheit auseinandergehalten werden.
+**Umfang:** rund 130 statt 100 Zeilen zu 100 Zeichen, weil jeder der fünf
+Entscheidungspunkte eine Zusicherung samt Geltungsbereich und Verletzungsfolge trägt, diese ADR
+die einzige Stelle ist, an der die beiden Klassen von Abwesenheit auseinandergehalten werden, und
+die Reichweite jedes Kanals hier an der Messung festgemacht wird statt an einer Annahme.
 
 ## Kontext
 
@@ -60,49 +61,61 @@ dem wörtlich festen Anker `## Blockiert: Produktentscheidung nötig`. Er rät n
 entscheidet die Frage nicht ersatzweise selbst — auch nicht „vorläufig" oder „als Annahme, die
 später geprüft werden kann".
 
-Der Anker gilt für alle sieben Rollen und ersetzt jede bisherige `AskUserQuestion`-Stelle in
-ihnen. Es entsteht **ein** Weg für alle diese Fälle, nicht je Fall einer: Unterschiedlich ist nur
-der Inhalt der Frage, nicht der Übergabemechanismus.
+Der Anker gilt für die **sechs** Rollen, deren Rückgabewert die Hauptsitzung erreicht, und ersetzt
+jede bisherige `AskUserQuestion`-Stelle in ihnen. Es entsteht **ein** Weg für alle diese Fälle,
+nicht je Fall einer: Unterschiedlich ist nur der Inhalt der Frage, nicht der Übergabemechanismus.
+Der Rechercheur ist die einzige Ausnahme und setzt den Anker nie (Punkt 3) — er ist die einzige
+Rolle, die auch auf einer zweiten Ebene laufen kann, und die einzige ohne Produktmandat.
 
 Das Blockformat samt Feldnamen ist **ausschließlich** in `.claude/skills/produktentscheidung/SKILL.md`
 definiert; keine zweite Datei führt eine Kopie. Die Ankerzeile selbst darf dort stehen, wo sie
 erkannt oder ausgegeben werden muss — das ist ein funktionaler Verweis, keine zweite
 Formatdefinition (ADR 0040 Teil 3, unverändert angewendet).
 
-### 3. Der Anker geht nach oben, die Antwort kommt über `SendMessage` zurück
+### 3. Der Anker geht nach oben; der Weg nach unten trägt genau eine Ebene
 
-Die aufrufende Sitzung erkennt den Anker im Rückgabewert, legt die Frage Daniel vor
-(`AskUserQuestion`, in der Hauptsitzung vorhanden) und gibt die Antwort per `SendMessage` an
-denselben, weiterhin offenen Lauf zurück, der danach fortfährt. Das ist derselbe Mechanismus, den
-`## Blockiert: Architektur-Konsultation nötig` bereits trägt.
+Die Hauptsitzung erkennt den Anker im Rückgabewert, legt die Frage Daniel vor
+(`AskUserQuestion`, dort vorhanden) und gibt die Antwort per `SendMessage` an denselben,
+weiterhin offenen Lauf zurück, der danach fortfährt. Gemessen: Der Hauptsitzung ist `SendMessage`
+zugeteilt, ein bereits abgeschlossener Lauf wird dadurch fortgesetzt und antwortet, und sein
+Werkzeugsatz ist nach der Wiederaufnahme unverändert. Es ist derselbe Mechanismus, den
+`## Blockiert: Architektur-Konsultation nötig` bereits trägt. Fehlt der Hauptsitzung `SendMessage`
+einmal, wird der Lauf mit der Antwort im Auftrag neu gestartet — die Antwort verfällt nie.
 
-**Aus der zweiten Subagenten-Ebene wird weitergemeldet, nicht abgekürzt.** Der Rückgabewert eines
-Rechercheurs erreicht nur den Fachagenten, der ihn gestartet hat. Trägt er den Anker, übernimmt
-der Fachagent die Frage **unverändert** in seinen eigenen Bericht unter demselben Anker und hält
-seinerseits an. Er beantwortet sie nicht und formt sie nicht um; sonst versandet die Frage genau
-eine Ebene unter der einzigen Stelle, die sie stellen könnte.
+**Der Weg nach unten endet nach einer Ebene, und das ist strukturell, nicht sitzungsabhängig.**
+Keiner der sieben Subagenten hat `SendMessage`; je Rolle gemessen und mit Aufrufversuch bestätigt.
+Ein Fachagent kann einem Lauf, den er selbst gestartet hat, nichts zustellen — auch keine Antwort,
+die er gerade von oben erhalten hat.
 
-**`SendMessage` an die Hauptsitzung als Weg nach oben ist untersagt**, auch wenn `to: "main"` für
-einen Hintergrund-Subagenten eine gültige Adresse ist. Drei Gründe, jeder für sich tragend. Er
-spart keinen Schritt: Der Fachagent muss ohnehin anhalten, weil er die Recherche gerade deshalb
-beauftragt hat, weil er ohne ihr Ergebnis nicht weiterkommt — die Ebene wird also nicht
-übersprungen, sondern nur um eine zweite Meldung ergänzt. Er legt Daniel nichts vor: Eine
-Nachricht kann keine Zustimmung erteilen und trifft die Sitzung an beliebiger Stelle ihres
-Ablaufs; ob sie eine ruhende Sitzung überhaupt weckt, ist nicht zugesichert. Und er wäre ein
-zweiter Weg für denselben Fall, der dem einen das Merkmal nimmt, das ihn tragfähig macht: Der
-Rückgabewert kommt zwangsläufig bei der Stelle an, die weiterarbeitet.
+**Der Rechercheur gibt deshalb keine Produktentscheidung ab.** Er setzt den Anker **nie**. Eine
+Mehrdeutigkeit seines Auftrags nennt er in dem Abschnitt „offene Unsicherheiten", den sein Bericht
+ohnehin trägt, und liefert ihn ab, statt anzuhalten. Drei Gründe, jeder für sich tragend. Er hat
+laut ADR 0016 kein Produktmandat — die Entscheidung bleibt beim Aufrufer. Seine Eskalationsfälle
+sind Mehrdeutigkeiten des **Auftrags** („günstig — Lizenzkosten oder Rechenkosten?"), und deren
+Adressat ist, wer den Auftrag geschrieben hat, nicht Daniel. Und eine Pflicht, seinen Text
+**unverändert** zwei Ebenen hinaufzutragen, wäre ein Kanal, der Inhalt aus einem Lauf, der
+unvertrauenswürdige Webseiten liest, wortgetreu in eine menschliche Entscheidungsvorlage führt —
+dieselbe Rollendatei verlangt an anderer Stelle, eingebettete Anweisungen aus Quellen auffällig zu
+kennzeichnen. Bei Verletzung entsteht genau diese Einflussmöglichkeit auf Daniels Entscheidung.
 
-`SendMessage` bleibt damit ausschließlich der Weg **nach unten**, für die Antwort.
+**Der Aufrufer einer Recherche löst die Mehrdeutigkeit selbst auf** — er hat den Auftrag
+formuliert — oder erkennt, dass dahinter doch eine Produktentscheidung steht, und gibt sie unter
+dem Anker als **seine eigene** Frage nach oben, mit eigener Formulierung und eigener Empfehlung.
+Es entsteht dadurch keine Lücke: Die Frage erreicht Daniel über die Rolle, die sie ohnehin zu
+verantworten hätte. Ist der Aufrufer die Hauptsitzung selbst, liest sie den Bericht und fragt
+unmittelbar; ein Anker wäre dort ein Umweg über einen Mechanismus, den sie nicht braucht.
 
-**Der Bericht ist einmalig, deshalb hält der Fachagent seinen Bericht zurück, solange eine
-beauftragte Recherche aussteht.** Ein Subagent kann seinen Abschlussbericht **genau einmal**
-abgeben; danach hat er keinen Kanal nach oben mehr, und seine freie Textausgabe erreicht den
-Aufrufer nicht. Ein Fachagent, der berichtet und **erst danach** das Ergebnis seines Rechercheurs
-erhält, kann eine darin enthaltene Produktentscheidung nicht mehr weitermelden — sie ist dann
-endgültig verloren, ohne Fehler und ohne Spur. Er wartet das Ergebnis deshalb ab, bevor er
-berichtet. Fällt eine weiterzumeldende Feststellung dennoch nach dem Bericht an, ist der einzige
-verbleibende Weg, sie in das Dokument zu schreiben, das ohnehin Gegenstand des Auftrags ist; ein
-eigenes Berichtsdokument entsteht dafür nicht.
+**Nach oben trägt allein der Rückgabewert.** Kein zweiter Kanal tritt daneben: Er nähme dem einen
+das Merkmal, das ihn tragfähig macht — der Rückgabewert kommt zwangsläufig bei der Stelle an, die
+weiterarbeitet —, und eine Nachricht kann ohnehin keine Zustimmung erteilen.
+
+**Der Bericht ist einmalig, deshalb hält ein Fachagent seinen Bericht zurück, solange eine
+beauftragte Recherche aussteht.** Ein Subagent gibt seinen Abschlussbericht **genau einmal** ab;
+danach hat er keinen Kanal nach oben mehr, und seine freie Textausgabe erreicht den Aufrufer
+nicht. Wer berichtet und das Ergebnis seiner Recherche erst danach erhält, kann es nicht mehr
+verwenden und nicht mehr weitergeben — es ist ohne Fehler und ohne Spur verloren. Fällt eine
+Feststellung dennoch nach dem Bericht an, bleibt allein, sie in das Dokument zu schreiben, das
+ohnehin Gegenstand des Auftrags ist; ein eigenes Berichtsdokument entsteht dafür nicht.
 
 ### 4. Die drei bestehenden Anker des Umsetzungslaufs bleiben unberührt
 
@@ -152,14 +165,18 @@ die **Anwesenheit dieser Anweisung**, nie ihre Befolgung; das ist derselbe Zusch
   unberührt, weil keiner ihrer vier Punkte an der Aufzählung hängt — der Ausschluss von
   `SendMessage` als Statuskanal ist dort mit dem Eingriff in den Lauf begründet, nicht mit
   Verfügbarkeit.
-- **Der Weg nach unten ist vor der Umsetzung zu prüfen, nicht vorauszusetzen.** In der Sitzung, in
-  der diese ADR entstand, ist `SendMessage` sitzungsweit abgeschaltet — „disabled for this session,
-  in subagents as well as here". Trifft das beim Umsetzen wieder zu, kann die aufrufende Sitzung
-  eine Antwort nicht an den offenen Lauf zurückgeben; dann bleibt nur, den Lauf mit der Antwort im
-  Auftrag neu zu starten. Betroffen sind davon auch die bestehenden `SendMessage`-Schritte in
-  `ship-feature` (Findings-Rückspielung, Architektur-Ergebnis, CI-Nachbesserung) — diese ADR ändert
-  sie nicht, hängt aber am selben Kanal. Die Verfügbarkeit von `SendMessage` in der Hauptsitzung
-  gehört deshalb als eigener Eintrag in den Messartefakt aus Punkt 5.
+- Die bestehenden `SendMessage`-Schritte in `ship-feature` (Findings-Rückspielung,
+  Architektur-Ergebnis, CI-Nachbesserung) laufen alle von der Hauptsitzung zu einem Lauf der ersten
+  Ebene und sind damit durch Punkt 3 gedeckt. Diese ADR ändert sie nicht.
+- **Aus einer Fehlermeldung der Laufzeit ist kein Schluss auf die Ursache einer Abwesenheit zu
+  ziehen.** Gemessen: `Agent` fehlt dem Umsetzungslauf mit der Begründung „disabled for this
+  session, in subagents as well as here", während in **derselben** Sitzung ein anderer Lauf ein
+  funktionierendes `Agent` hatte. Die Begründung ist also falsch. Der Messartefakt hält deshalb
+  fest, **was angeboten wurde**, nie warum; und ein Wächter, der aus solchen Meldungen eine
+  Filterlogik ableitete, kodierte eine Unwahrheit.
+- Ein strukturell abwesendes Werkzeug ist auch nicht nachladbar: `ToolSearch` ist keinem der sieben
+  zugeteilt. Die Aussicht, ein fehlendes Werkzeug zur Laufzeit nachzuladen, besteht nicht und
+  entlastet keine Zusage.
 - `docs/ai-workflow.md` beschreibt den Rückfrageweg der Agenten und zieht den vierten Anker im
   selben Pull Request nach.
 - Vier Aufrufstellen weisen `run_in_background: false` an, obwohl der Vordergrund aus einer
