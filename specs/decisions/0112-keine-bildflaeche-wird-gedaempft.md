@@ -45,7 +45,7 @@ Kachel- oder Kartenkörper. Am Körper drückt dieselbe Utility Kennzeichen, Dat
 Bedienelemente gemeinsam unter die Kontrastschwelle, und über einer Bildfläche ist ein Kontrast mit
 Deckkraft statisch nicht nachrechenbar. Die Regel wird ausdrücklich **nicht** mit aufgeräumt.
 
-### 4. Zwei Wächter, und der zweite kennt keine Freigabeliste
+### 4. Drei Wächter, und nur der erste kennt eine besetzte Freigabeliste
 
 Punkt 1 hängt an `frontend/src/designSystem.contract.test.ts`:
 
@@ -59,10 +59,22 @@ Punkt 1 hängt an `frontend/src/designSystem.contract.test.ts`:
   statt aufgezählt — jede Produktionsdatei, die `PhotoImage` nennt —, damit eine neue bildtragende
   Komponente ohne Zutun darunterfällt. Eine Gegenprobe weist die Menge als nicht leer und eine
   bekannte Datei als enthalten nach; sonst liefe die Regel nach einer Umbenennung gegen nichts.
+- Dazu eine dritte Regel über **alle** Produktiv-`.tsx`, für die sechs Filter und den Mischmodus,
+  mit fundstellengenauer und heute leerer Freigabeliste. Grund: Die abgeleitete Menge erfasst drei
+  Seiten **nicht**, die eine Foto-Kachel rendern, ohne `PhotoImage` selbst zu nennen
+  (`AlbumDraftPage`, `AlbumSelectionPage`, `DuplicateComparePage`) — und Filter wie Mischmodus
+  wirken von **jedem** Vorfahren auf das Kind, ein `<div className="grayscale">` um die Kachel
+  liefe sonst durch. `opacity-*` bleibt hier außen vor: Dafür gibt es die erste Regel mit ihrer
+  begründeten Freigabe der Bedienelement-Zustände.
 
 Dass die zweite Regel keine Ausnahme kennt, kostet nichts: Deckkraft für Bedienelement-Zustände
-liegt im Produkt ohnehin in `ui/button.tsx`, nicht in der aufrufenden Ansicht. Tritt der Fall je
-ein, wird die Regel laut rot, statt dass eine Bildfläche still wieder dunkler wird.
+liegt im Produkt ohnehin in `ui/button.tsx`, nicht in der aufrufenden Ansicht. Auch die dritte
+Regel kostet gemessen nichts — es gibt heute kein Vorkommen dieser Muster in einer Produktiv-`.tsx`.
+Tritt der Fall je ein, wird die Regel laut rot, statt dass eine Bildfläche still wieder dunkler
+wird.
+
+**Eine Grenze, die keine dieser Regeln schließt:** Alle drei sind klassen-in-Datei-basiert, nicht
+render-baum-basiert. Ein Kind-Baustein, der selbst dämpft, bliebe außerhalb.
 
 ## Konsequenzen
 
