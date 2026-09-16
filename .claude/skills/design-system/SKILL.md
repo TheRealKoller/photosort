@@ -97,7 +97,7 @@ Zwölf Symbole, mehr gibt es nicht: `star · book · x-circle · cog · image ·
 - **Keine Deckkraft-Modifikatoren auf Farb-Utilities** (`border-border/60`, `bg-border/60`, `text-text/70`) — statisch geprüft. Der Kontrast einer abgedunkelten Farbe ist nicht nachrechenbar, und genau so verschwinden Linien auf dem Grund. Freigegeben sind nur die Abdunklungen ohne Vorder-/Hintergrundpaar (Dialog-Backdrop, Backdrop über einer Fotokachel, durchscheinende sticky Kopfzeile). `w-1/2` ist ein Bruch, kein Modifikator.
 - **Zwischen fokussierbaren Elementen mindestens 8px** (sonst läuft die abgesetzte Fokuskontur ins Nachbarelement), **zwischen aufgespannten Trefferflächen mindestens 12px**. Die 4er-Stufe ist eine Stufe für **Innen**abstände, nicht für Abstände zwischen Bedienelementen.
 - **12-Spalten-Raster** für Seitenlayouts: `grid-cols-12 gap-x-3` (12px Gutter).
-- **Keine `.washed`-Bildbehandlung mehr** — auf dem neutral-dunklen Grund treten Fotos von selbst hervor. Die einzige zulässige Dämpfung eines Fotos ist die Bildfläche der aussortierten Karte.
+- **Keine `.washed`-Bildbehandlung mehr** — auf dem neutral-dunklen Grund treten Fotos von selbst hervor. Bildflächen werden in voller Helligkeit gezeigt; die Dämpfung ist mit Spec 0498 ersatzlos entfallen.
 
 ## Trefferflächen: 32px sichtbar, 44px treffbar
 
@@ -149,7 +149,7 @@ Praktisch relevant:
   - **Vier Zustände** über `data-rating-status`: neu / Favorit / Album-würdig / aussortiert. Der Board-Zustand **„ausgewählt“ ist bewusst nicht gebaut** — es gibt keine `selected`-Prop und kein `data-selected`; er kommt mit der Story, die eine Foto-Auswahl einführt.
   - **Das Kennzeichen sitzt im Kartenkörper**, nicht in der Bildecke (dort ist kein Platz für ein Textbadge, und die Ecke oben rechts gehört dem Info-Trigger).
   - **Ecken-Overlays sind Geschwister der Bildfläche, nie ihre Kinder** — die Bildfläche beschneidet.
-  - **Aussortiert:** `opacity-40` **ausschließlich** auf dem `<a>` der Bildfläche (fundstellengenau geprüft). Kennzeichen, Dateiname, Ecken-Trigger und Fußzeilen-Aktion bleiben voll deckend; der Dateiname zusätzlich `line-through` in `--text-muted` (nicht `--text-disabled` — er ist Inhalt).
+  - **Aussortiert:** Die Bildfläche wird in voller Helligkeit gezeigt (Spec 0498). Der Zustand wird über die Bewertungs-Badge, den durchgestrichenen Dateinamen in `--text-muted` und den Rahmen erkannt, auch ohne Farbwahrnehmung — kein Mittel, das die Bildfläche selbst verändert.
   - **Dateiname:** nur der Basisname, `font-mono text-xs`, `min-w-6 truncate`, **außerhalb** des Kachel-Links. Extern entstandener Text, ausschließlich als React-Textknoten.
   - **„Neu“ ist ein Wort, kein Badge.** Das neutrale „–“ bleibt der Vergleichsansicht vorbehalten, wo es „hat nicht bewertet“ heißt.
 - **Bewertungsleiste (`components/RatingButtons.tsx`)** — Container `bg-surface rounded-md p-2`, Abstand zwischen den Einträgen **`gap-3`** (Pflichtgrenze zwischen aufgespannten Trefferflächen, kein Gestaltungsspielraum). Je Eintrag Symbol + **sichtbare Beschriftung** (wortgleich mit dem `aria-label`, WCAG 2.5.3) + **Tasten-Kästchen** mit der Ziffer, die ihn auslöst (`bg-overlay rounded-xs font-mono text-xs`, **`aria-hidden`** — sonst hieße der zugängliche Name „Favorit 1“ und die e2e-Selektoren brächen). Unterhalb `sm:` stehen die drei Einträge **untereinander** (`h-11`, volle Breite): nebeneinander bräuchten sie ~400px, verfügbar sind bei 360px 288px.
