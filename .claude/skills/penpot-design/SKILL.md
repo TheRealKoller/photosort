@@ -134,7 +134,7 @@ Ein Formexport zeigt **jeden Text, der in den Entwurf getippt wurde**, und geht 
 
 ## Schritt 4: Rücklesen und Abschluss
 
-`verify.js` unverändert ausführen. Der Vergleich gegen `tokens.json`, `icons.json`, `components.json` und `views.json` ist **mechanisch** — ein Zeichenkettenvergleich, kein „durchlesen und beurteilen". Er gilt als bestanden, wenn bei den **erzeugten** Objekten keine Abweichung bleibt: jeder erzeugte Tokenname vorhanden und wertgleich, zwölf Symbole, zwölf Bausteine mit den in `components.json` genannten Varianteneigenschaften und deren Anzahl Ausprägungen, dazu je Baustein die Tokenbindungen. Zusätzlich in Penpot vorhandene Objekte werden als Zahl mitgemeldet.
+`verify.js` unverändert ausführen. Der Vergleich gegen `tokens.json`, `icons.json`, `components.json` und `views.json` ist **mechanisch** — ein Zeichenkettenvergleich, kein „durchlesen und beurteilen". Er gilt als bestanden, wenn bei den **erzeugten** Objekten keine Abweichung bleibt: jeder erzeugte Tokenname vorhanden und wertgleich, zwanzig Symbole, zwölf Bausteine mit den in `components.json` genannten Varianteneigenschaften und deren Anzahl Ausprägungen, dazu je Baustein die Tokenbindungen. Zusätzlich in Penpot vorhandene Objekte werden als Zahl mitgemeldet.
 
 **Zwei Zählwerte je Baustein gehören zum bestandenen Abgleich:** `variantenOhneFuellung` und `variantenMitFuellungOhneBindung`. Der zweite ist der eigentliche Befund — eine Fläche, die aus keinem Token stammt — und **muss über alle Bausteine 0 sein**. Eine ungebundene Standardfüllung ist keine Bindung und taucht in der Bindungsliste nirgends auf: Ein weißes Brett sieht dort aus wie ein leeres. Ist der Wert nicht 0, ist der Weg zurück Schritt K, nicht ein Wiederaufbau.
 
