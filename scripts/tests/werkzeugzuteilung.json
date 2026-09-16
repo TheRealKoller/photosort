@@ -1,0 +1,86 @@
+{
+  "_zweck": "Je Rollendatei unter .claude/agents/ festgestellt, welche Werkzeuge ein Lauf tatsaechlich angeboten bekommt. Grundlage von Spec 0454 / ADR 0115. Gelesen von scripts/tests/test_rollenzusagen_verankert.py.",
+  "_grenze": "Die Feststellung ist die Selbstauskunft des jeweiligen Laufs. Ein Lauf, der sich verzaehlt, faellt nicht auf; ein zweiter, unabhaengiger Blick auf den effektiven Werkzeugsatz existiert nicht. Gegenblick ist allein der tatsaechliche Aufrufversuch, dessen Fehlermeldung die Ursache der Abwesenheit nachweislich falsch benennt (siehe _meldungen_nennen_die_ursache_falsch). Der Artefakt behauptet keine Genauigkeit, die er nicht hat.",
+  "_meldungen_nennen_die_ursache_falsch": "Die Laufzeit meldet fuer ein nicht angebotenes Werkzeug 'X is disabled for this session, in subagents as well as here', auch wenn X lediglich in der tools:-Zeile dieser Rolle fehlt: developer erhielt diese Meldung fuer Agent, waehrend architect, requirements-engineer, security-engineer, test-engineer und ux-ui-designer in derselben Sitzung ein funktionierendes Agent hatten. Aus einer solchen Meldung wird deshalb kein Schluss auf die Ursache gezogen. Dieser Artefakt haelt fest, WAS angeboten wurde, nie warum.",
+  "_keine_frist": "claude_code_version und gemessen_am werden auf Vorhandensein und Form geprueft, nie gegen einen Sollwert oder ein Hoechstalter. Ein veralteter Artefakt ist kein CI-Fehlschlag: In CI laeuft keine Laufzeit, die ihn widerlegen koennte, und eine Frist wuerde an einem Tag rot, an dem nichts falsch ist und niemand im Repositorium etwas beheben kann.",
+  "claude_code_version": "2.1.273",
+  "gemessen_am": "2026-09-16",
+  "strukturell_abwesend": [
+    "AskUserQuestion",
+    "TaskCreate",
+    "TaskUpdate",
+    "TaskGet",
+    "TaskList"
+  ],
+  "_strukturell_abwesend_erlaeuterung": "In allen sieben Proben abwesend, unabhaengig von der tools:-Zeile. AskUserQuestion meldet dabei selbst den Grund: 'AskUserQuestion is not available inside subagents'. Diese Menge darf in einer Rollendatei nur noch innerhalb des Blocks **Werkzeugabweichung:** vorkommen, sonst nirgends.",
+  "sitzungsabhaengig_abwesend": [
+    "Grep",
+    "Glob"
+  ],
+  "_sitzungsabhaengig_erlaeuterung": "Von der Laufzeit an Subagenten zugeteilt, in allen sieben Proben aber abwesend, weil sie der aufrufenden Sitzung fehlen. Die Meldung nennt den Ersatzweg: 'search file contents with grep via the Bash tool instead' bzw. 'find files with find via the Bash tool instead'. Darf in der tools:-Zeile stehen. Dass eine Arbeitsanweisung sich dennoch darauf verlassen kann, ist eine benannte Luecke des Testkonzepts, kein Waechterkriterium.",
+  "ohne_deklaration_hinzugefuegt": [
+    "SubagentHandback"
+  ],
+  "_ohne_deklaration_erlaeuterung": "Das einzige Werkzeug, das die Laufzeit ueber die tools:-Zeile hinaus anbietet. Sonst schraenkt sie ausschliesslich ein. Die tools:-Zeile ist damit nachweislich keine vollstaendige Beschreibung des Zugeteilten.",
+  "kein_nachlademechanismus": "ToolSearch wird keinem der sieben Laeufe angeboten. Ein strukturell abwesendes Werkzeug ist damit auch nicht nachladbar und entlastet keine Zusage.",
+  "rueckweg_der_antwort": {
+    "befund": "traegt genau eine Ebene",
+    "hauptsitzung_hat_sendmessage": true,
+    "subagenten_haben_sendmessage": false,
+    "gemessen_an": "ux-ui-designer (Wiederaufnahme), developer / requirements-engineer / security-engineer / test-engineer (Abwesenheit)",
+    "wie": "Die Hauptsitzung hat einem bereits abgeschlossenen Lauf per SendMessage eine Nachfrage geschickt; der Lauf wurde fortgesetzt und hat geantwortet. Sein Werkzeugsatz war nach der Wiederaufnahme unveraendert.",
+    "folge": "Der Weg nach oben ist der Rueckgabewert, der Weg nach unten SendMessage von der Hauptsitzung zur ersten Ebene. Eine zweite Ebene ist auf diesem Weg nicht erreichbar; deshalb setzt der research-engineer den Anker nicht (ADR 0115 Punkt 2). Fehlt der Hauptsitzung SendMessage einmal, wird der Lauf mit der Antwort im Auftrag neu gestartet - die Antwort verfaellt nie."
+  },
+  "rollen": {
+    "architect": {
+      "aufrufparameter": "subagent_type: architect, kein model-Parameter, aus spec-writer Schritt 1",
+      "angeboten": ["Read", "Write", "Edit", "Bash", "Skill", "Agent", "SubagentHandback"],
+      "verlangt_aber_fehlt": ["Grep", "Glob", "AskUserQuestion", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList"],
+      "bemerkung": "Agent ist zugeteilt, die Delegation an research-engineer traegt also. Monitor fehlt, obwohl es in der Filterliste der Dokumentation steht - die Liste ist eine Obergrenze, keine Zusage."
+    },
+    "developer": {
+      "aufrufparameter": "subagent_type: developer, kein model-Parameter, aus ship-feature bzw. direkt",
+      "angeboten": ["Read", "Write", "Edit", "Bash", "Skill", "SubagentHandback"],
+      "verlangt_aber_fehlt": ["Grep", "Glob", "AskUserQuestion", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList"],
+      "bemerkung": "Die einzige der sieben Rollen ohne Agent - developer.md deklariert es nicht. Damit ist die Feststellung, dass developer keine weitere Verschachtelungsebene hat, fuer ihn belegt und fuer die uebrigen fuenf Fachagenten widerlegt. Auch SendMessage, Monitor, TodoWrite, EnterWorktree und ToolSearch fehlen."
+    },
+    "requirements-engineer": {
+      "aufrufparameter": "subagent_type: requirements-engineer, kein model-Parameter, aus refinement Schritt 2",
+      "angeboten": ["Read", "Write", "Edit", "Bash", "Skill", "Agent", "SubagentHandback"],
+      "verlangt_aber_fehlt": ["Grep", "Glob", "AskUserQuestion", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList"],
+      "bemerkung": "Agent ist zugeteilt, die Delegation an research-engineer traegt."
+    },
+    "research-engineer": {
+      "aufrufparameter": "subagent_type: research-engineer, kein model-Parameter, delegiert von den Fachagenten oder direkt aus dem Hauptchat",
+      "angeboten": ["Read", "WebSearch", "WebFetch", "Skill", "SubagentHandback"],
+      "verlangt_aber_fehlt": ["AskUserQuestion", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList"],
+      "bemerkung": "Die Rolle ist tragfaehig - das ist die Feststellung zu AK7. WebSearch lieferte Treffer, WebFetch holte eine Doku-Seite (nach einem 301, der einen zweiten Aufruf brauchte); beide Faehigkeiten wurden ausgefuehrt, nicht nur angeboten. Write, Bash, Grep und Glob fehlen: Er kann an keinem Artefakt mitschreiben und nur mit bekanntem absolutem Pfad lesen. Seine Feststellung reist im Bericht; die aufrufende Stelle traegt sie ein. Als einzige Rolle weicht seine angeboten-Menge strukturell von den uebrigen sechs ab."
+    },
+    "security-engineer": {
+      "aufrufparameter": "subagent_type: security-engineer, kein model-Parameter, aus spec-writer Schritt 3",
+      "angeboten": ["Read", "Write", "Edit", "Bash", "Skill", "Agent", "SubagentHandback"],
+      "verlangt_aber_fehlt": ["Grep", "Glob", "AskUserQuestion", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList"],
+      "bemerkung": "SendMessage fehlt - der Befund, der die Weitergabe ueber eine zweite Ebene unmoeglich macht und ADR 0115 Punkt 3 gedreht hat. Der Lauf hat statt Grep/Glob grep/sed ueber Bash benutzt, also genau das stille Ausweichen, das als Luecke gefuehrt wird."
+    },
+    "test-engineer": {
+      "aufrufparameter": "subagent_type: test-engineer, kein model-Parameter, aus spec-writer Schritt 3",
+      "angeboten": ["Read", "Write", "Edit", "Bash", "Skill", "Agent", "SubagentHandback"],
+      "verlangt_aber_fehlt": ["Grep", "Glob", "AskUserQuestion", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList"],
+      "bemerkung": "Agent war vorhanden, eine Delegation an research-engineer waere moeglich gewesen. Der Lauf ist selbst in eine Produktentscheidungs-Lage geraten und hat unter dem vorgeschriebenen Anker zurueckgemeldet - damit ist Glied (a) des Durchstichs am Bestand gezeigt."
+    },
+    "ux-ui-designer": {
+      "aufrufparameter": "subagent_type: ux-ui-designer, model: haiku, aus spec-writer Schritt 2",
+      "angeboten": ["Read", "Write", "Edit", "Bash", "Skill", "Agent", "SubagentHandback"],
+      "verlangt_aber_fehlt": ["Grep", "Glob", "AskUserQuestion", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList"],
+      "bemerkung": "Als einzige Rolle unter model: haiku gemessen, wie spec-writer sie aufruft. Auf Nachfrage per SendMessage nach Abschluss bestaetigt: Werkzeugsatz seit Laufstart unveraendert, ToolSearch weiterhin nicht angeboten."
+    }
+  },
+  "mcp_werkzeuge": {
+    "befund": "keinem der sieben Laeufe angeboten",
+    "anzahl": 0,
+    "geprueft_als": "kein angebotener Werkzeugname traegt das Praefix mcp__",
+    "anweisungen_ohne_werkzeug": "Die Nutzungsanweisungen mehrerer MCP-Server stehen vollstaendig im Kontext der Laeufe, ohne dass ein Werkzeug sie implementiert. Ein Text im Kontext, fuer den kein Werkzeug existiert, ist keine Faehigkeit.",
+    "kein_inventar": "Welche Server das sind, wird hier bewusst nicht aufgezaehlt. Festgehalten wird die Werkzeugklasse, nicht ein Serverinventar - ein Inventar truege die Adresse der selbst gehosteten Instanz in ein oeffentliches Repositorium.",
+    "verhaeltnis_zur_erlaubnisstufe": "Die Erlaubnisstufe 'kein GitHub-Zugriff' der sieben Rollendateien beruht nicht auf diesem Befund; tragende Kontrolle bleibt die Konvention in den Rollendateien. Der Befund ist Verteidigung in der Tiefe. Zeigt eine kuenftige Messung MCP-Werkzeuge in einem Subagenten, wird er gestrichen statt stehen gelassen."
+  }
+}
