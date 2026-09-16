@@ -326,9 +326,7 @@ def zone_grenzen(text: str) -> tuple[int, int]:
     zeilen = text.split("\n")
     flaggen = zeilen_in_fences(text)
     marken = [
-        nummer
-        for nummer, zeile in enumerate(zeilen)
-        if ZONE_MARKE in zeile and not flaggen[nummer]
+        nummer for nummer, zeile in enumerate(zeilen) if ZONE_MARKE in zeile and not flaggen[nummer]
     ]
     if len(marken) != 1:
         raise ValueError(
