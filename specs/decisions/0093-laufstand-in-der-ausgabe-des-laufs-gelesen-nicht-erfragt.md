@@ -11,13 +11,14 @@ Abschlussbericht ist heute seine einzige Äußerung nach außen: Wer den Lauf ge
 bis dahin nichts — nicht, wie weit er ist, nicht, was noch aussteht, und nicht, ob überhaupt noch
 etwas vorangeht.
 
-**Gemessen am Bestand (2026-09-13, Claude Code 2.1.270, Standard-Modell).** Der Werkzeugsatz, den
-ein Subagent zur Laufzeit tatsächlich zugeteilt bekommt, ist `Read`, `Write`, `Edit`, `Bash`,
-`Skill`. `TaskCreate`, `TaskUpdate`, `TaskGet` und `TaskList` stehen in der `tools:`-Zeile der
-Agenten-Dateien, werden dem Subagenten aber **nicht** zugeteilt; eine zweite Probe mit einem
-anderen Subagententyp ergab dasselbe. Eine Hauptsitzung hat sie. Daraus folgt zweierlei: Eine
-Aufgabenliste des Laufs existiert nicht und kann nicht vorausgesetzt werden, und Schritt 2 der
-Agenten-Datei verweist auf Werkzeuge, die dort keine sind.
+**Gemessen am Bestand (2026-09-13, Claude Code 2.1.270, Standard-Modell).** Die vier
+Aufgabenlisten-Werkzeuge stehen in der `tools:`-Zeile der Agenten-Dateien, werden einem Subagenten
+aber **nicht** zugeteilt; eine zweite Probe mit einem anderen Subagententyp ergab dasselbe. Eine
+Hauptsitzung hat sie. Daraus folgt zweierlei: Eine Aufgabenliste des Laufs existiert nicht und kann
+nicht vorausgesetzt werden, und Schritt 2 der Agenten-Datei verweist auf Werkzeuge, die dort keine
+sind. Welche Werkzeuge einem Lauf tatsächlich angeboten werden, steht **je Rolle** in
+`scripts/tests/werkzeugzuteilung.json`; die Zuteilung ist nicht für alle Rollen dieselbe, und eine
+an zwei Proben gemessene Aufzählung ließe sich nicht auf alle übertragen.
 
 Was sich von einer Hauptsitzung aus lesen lässt, **ohne den Lauf anzufassen**:
 

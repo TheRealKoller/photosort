@@ -26,6 +26,17 @@ festgehalten, bevor sie umgesetzt werden.
 Bei Unklarheiten fragt die KI aktiv nach, statt zu raten — im Chat oder als Kommentar in einem
 GitHub Issue. Erst wenn eine Spezifikation akzeptiert ist, beginnt die Implementierung.
 
+**Ein Subagent fragt nicht selbst, er gibt ab.** Keinem der sieben Agenten unter `.claude/agents/`
+ist `AskUserQuestion` zur Laufzeit zugeteilt; die Zuteilung steht je Rolle in
+`scripts/tests/werkzeugzuteilung.json`. Steht in einem Lauf eine Entscheidung an, die Daniel
+gehört, hält er an und beendet seinen Turn mit dem Anker `## Blockiert: Produktentscheidung nötig`.
+Die Hauptsession erkennt ihn, legt die Frage Daniel vor und spielt die Antwort per `SendMessage` in
+denselben, weiterhin offenen Lauf zurück. Format und Abgrenzung stehen ausschließlich in
+[`.claude/skills/produktentscheidung/SKILL.md`](../.claude/skills/produktentscheidung/SKILL.md).
+Einzige Ausnahme ist `research-engineer`: Er setzt den Anker nie, sondern nennt eine
+Auftragsmehrdeutigkeit in den „offenen Unsicherheiten" seines Berichts — der Weg nach unten trägt
+genau eine Ebene, und der Adressat einer Auftragsmehrdeutigkeit ist ohnehin der Aufrufer.
+
 ## Der Workflow als eine Tabelle
 
 Von einer akzeptierten Story (Schritt 1: `refinement`, siehe unten) bis zum Merge läuft jedes
@@ -59,6 +70,10 @@ Zwischenschritt „Architektur-Konsultation nötig" (`developer` kommt mit dem S
 dem Anker `## Blockiert: Architektur-Konsultation nötig`, die Hauptsession ruft `architect` als
 Subagenten (Standard-Modell) und gibt das Ergebnis per `SendMessage` an den weiterhin offenen
 `developer`-Lauf zurück.
+
+Zwischenschritt „Produktentscheidung nötig": derselbe Mechanismus, anderer Adressat — die
+Hauptsession ruft keinen Subagenten, sondern legt die Frage Daniel vor (siehe oben). Er kann an
+jedem Schritt auftreten, an dem ein Subagent läuft, nicht nur bei `developer`.
 
 ![Workflow-Übersicht: Erfassen/Schärfen (capture, refinement), Verfeinern (spec-writer) und Umsetzen (developer + ship-feature)](../specs/diagrams/workflow-overview.svg)
 
