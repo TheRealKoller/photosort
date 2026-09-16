@@ -7,7 +7,7 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CloudVisionStatusList } from '../components/CloudVisionStatusList'
 import { CriterionDetailsList } from '../components/CriterionDetailsList'
-import { MotifStrengthList } from '../components/MotifStrengthList'
+import { MotifStrengthSection } from '../components/MotifStrengthSection'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
@@ -426,7 +426,7 @@ export function PhotoDetailPage() {
         >
           Motive
         </h2>
-        <MotifStrengthList
+        <MotifStrengthSection
           motifSet={motifsQuery.data}
           motifSetLoading={motifsQuery.isPending}
           motifSetError={motifsQuery.isError ? MOTIF_SET_ERROR_TEXT : undefined}

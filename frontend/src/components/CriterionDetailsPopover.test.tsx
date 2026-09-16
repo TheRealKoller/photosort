@@ -116,7 +116,7 @@ describe('CriterionDetailsPopover', () => {
 
   // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Kachel und Raster": die
   // Staerkeliste SCHREIBGESCHUETZT samt Verweis auf den Ort, an dem korrigiert wird. Die volle
-  // Darstellungsmatrix der Liste lebt in MotifStrengthList.test.tsx, hier nur der
+  // Darstellungsmatrix des Bausteins lebt in MotifStrengthSection.test.tsx, hier nur der
   // Durchreichungs-Nachweis samt der Zusage, dass kein Korrekturschalter mitkommt.
   it('shows the motif strengths read-only and points to the single-photo view', async () => {
     const user = userEvent.setup()

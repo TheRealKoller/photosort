@@ -9,7 +9,7 @@ import { CriterionDetailsList } from './CriterionDetailsList'
  * specs/features/0427-motive-mit-staerke.md, PR 3: die Komponente verliert ihren
  * Kategorien-Block. Was bleibt, sind vier Bereiche - der Qualitätsblock, der Bildinhalt-Block
  * samt „Rang", die Feinlabels und der Ausschuss-Vorschlag; die Motivstärken sind eine eigene
- * Liste daneben (`MotifStrengthList`).
+ * Baustein daneben (`MotifStrengthSection`).
  */
 function criterionScore(overrides: Partial<CriterionScoreOut> = {}): CriterionScoreOut {
   return {

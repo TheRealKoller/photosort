@@ -33,7 +33,7 @@ import type { MotifCorrectionError } from '../hooks/useMotifCorrection'
  * Bei 360px: Name und Wert in einer Zeile, Balken darunter ueber die volle Breite, Schaltflaechen
  * in einer eigenen `flex-wrap`-Zeile - EIN DOM-Baum, kein breitenabhaengiger Zweig.
  */
-interface MotifStrengthListProps {
+interface MotifStrengthSectionProps {
   /** Das geladene Set. `undefined` waehrend des Ladens bzw. nach einem Fehlschlag. */
   motifSet: MotifSetOut | undefined
   motifSetLoading?: boolean
@@ -225,7 +225,7 @@ function MotifRow({
   )
 }
 
-export function MotifStrengthList({
+export function MotifStrengthSection({
   motifSet,
   motifSetLoading = false,
   motifSetError,
@@ -237,7 +237,7 @@ export function MotifStrengthList({
   onWithdraw,
   pendingMotifKey = null,
   error = null,
-}: MotifStrengthListProps) {
+}: MotifStrengthSectionProps) {
   if (motifSetError !== undefined) {
     // Keine Liste mit Rohschluesseln - lieber gar keine Liste.
     return <Alert onRetry={onMotifSetRetry}>{motifSetError}</Alert>

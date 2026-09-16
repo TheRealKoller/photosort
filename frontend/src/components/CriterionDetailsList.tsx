@@ -84,7 +84,7 @@ function CriterionRow({ score }: { score: CriterionScoreOut }) {
  * Ausschuss-Vorschlag bleibt ein dritter, eigener Bereich ausserhalb beider Bloecke und ohne
  * eigene Ueberschrift.
  *
- * KEIN MOTIV-TEIL. Die Motivstaerken sind eine eigene Liste (`MotifStrengthList`) und stehen im
+ * KEIN MOTIV-TEIL. Die Motivstaerken sind ein eigener Baustein (`MotifStrengthSection`) und stehen im
  * Popover daneben, nicht hier: sie tragen ihre eigenen Zustaende (noch nicht klassifiziert,
  * lokale Grundlage, ausgeschlossen) und ihre eigene Ladelogik. Die frueheren Kategorie-Teile
  * (Kandidatenliste, "Kategorie"-Zeile, "Rolle", "Alle Kategorien"-Auswahl, Konfidenz-Erklaerung)

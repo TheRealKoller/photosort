@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { MotifAssessmentOut, MotifStrengthOut } from '../api/types'
 import { MOTIF_KEYS, MOTIF_SET } from '../test/motifSetFixture'
-import { MotifStrengthList } from './MotifStrengthList'
+import { MotifStrengthSection } from './MotifStrengthSection'
 
 /**
  * specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt „components/MotifStrengthList.tsx".
@@ -42,11 +42,11 @@ function strengths(overrides: Record<string, Partial<MotifStrengthOut>> = {}): M
   }))
 }
 
-function renderList(props: Partial<Parameters<typeof MotifStrengthList>[0]> = {}) {
+function renderList(props: Partial<Parameters<typeof MotifStrengthSection>[0]> = {}) {
   const onCorrect = vi.fn()
   const onWithdraw = vi.fn()
   render(
-    <MotifStrengthList
+    <MotifStrengthSection
       motifSet={MOTIF_SET}
       assessment={CLOUD_ASSESSMENT}
       motifs={strengths()}
@@ -67,7 +67,7 @@ function rowOf(motifKey: string): HTMLElement {
   return row as HTMLElement
 }
 
-describe('MotifStrengthList: die Liste', () => {
+describe('MotifStrengthSection: die Liste', () => {
   it('renders the eight motifs in registry order, not sorted by strength', () => {
     renderList({
       motifs: strengths({
@@ -135,7 +135,7 @@ describe('MotifStrengthList: die Liste', () => {
   })
 })
 
-describe('MotifStrengthList: die vier Fotozustände', () => {
+describe('MotifStrengthSection: die vier Fotozustände', () => {
   it('shows a sentence instead of the list when the photo was never classified', () => {
     renderList({ assessment: null })
 
@@ -154,7 +154,7 @@ describe('MotifStrengthList: die vier Fotozustände', () => {
     // DAS PAAR. Ohne diesen Fall machte ein `?? 0` im Lesepfad aus „noch nicht klassifiziert"
     // acht Nullzeilen, und kein anderer Fall bräche.
     const { unmount } = render(
-      <MotifStrengthList
+      <MotifStrengthSection
         motifSet={MOTIF_SET}
         assessment={null}
         motifs={[]}
@@ -170,7 +170,7 @@ describe('MotifStrengthList: die vier Fotozustände', () => {
     unmount()
 
     render(
-      <MotifStrengthList
+      <MotifStrengthSection
         motifSet={MOTIF_SET}
         assessment={CLOUD_ASSESSMENT}
         motifs={strengths()}
@@ -276,7 +276,7 @@ describe('MotifStrengthList: die vier Fotozustände', () => {
   })
 })
 
-describe('MotifStrengthList: die Korrektur', () => {
+describe('MotifStrengthSection: die Korrektur', () => {
   it('offers both directions per row with the motif name in the accessible name', () => {
     // Acht gleichnamige Schaltflächen sind sonst per Tastatur nicht auseinanderzuhalten.
     renderList()
@@ -414,7 +414,7 @@ describe('MotifStrengthList: die Korrektur', () => {
   })
 })
 
-describe('MotifStrengthList: die Zustände', () => {
+describe('MotifStrengthSection: die Zustände', () => {
   it('disables only the buttons of the row whose correction is running', () => {
     renderList({ pendingMotifKey: 'menschen' })
 
@@ -430,7 +430,7 @@ describe('MotifStrengthList: die Zustände', () => {
 
   it('shows eight skeleton rows while the motif set is loading', () => {
     render(
-      <MotifStrengthList
+      <MotifStrengthSection
         motifSet={undefined}
         motifSetLoading
         assessment={CLOUD_ASSESSMENT}
@@ -450,7 +450,7 @@ describe('MotifStrengthList: die Zustände', () => {
   it('shows an alert with a retry action when the motif set failed to load', () => {
     // Keine Liste mit Rohschlüsseln.
     render(
-      <MotifStrengthList
+      <MotifStrengthSection
         motifSet={undefined}
         motifSetError="Motive konnten nicht geladen werden."
         onMotifSetRetry={vi.fn()}
@@ -488,7 +488,7 @@ describe('MotifStrengthList: die Zustände', () => {
   })
 })
 
-describe('MotifStrengthList: das Glossar', () => {
+describe('MotifStrengthSection: das Glossar', () => {
   it('carries exactly one collapsed details element at the end of the list', () => {
     renderList()
 
