@@ -102,6 +102,28 @@ AUSWERTUNGSABSCHNITT = "## Kommt der Anker zurück"
 # seine Aufgabe. Er ist deshalb der einzige zweite erlaubte Ort einer Ankerzeile.
 TRIGGERABSCHNITT = "## Schritt 0: Trigger erkennen"
 SHIP_FEATURE = ".claude/skills/ship-feature/SKILL.md"
+DEVELOPER = ".claude/agents/developer.md"
+
+# Die drei bestehenden Anker des Umsetzungslaufs samt ihren Feldnamen, woertlich. Sie bezeichnen
+# technische Lagen mit je eigener Folge beim Aufrufer, keine Frage an Daniel; der neue Anker tritt
+# **neben** sie und subsumiert keinen. Ihre Definitionsstelle bleibt `developer.md`.
+BESTEHENDE_ANKER: dict[str, tuple[str, ...]] = {
+    "## Blockiert: Architektur-Konsultation nötig": (
+        "**Feature-Branch:**",
+        "**Grund:**",
+        "**Bisheriger Stand:**",
+    ),
+    "## Blockiert: CI-Fehlschlag außerhalb der zulässigen Klasse": (
+        "**Feature-Branch:**",
+        "**Grund:**",
+        "**Zustand:**",
+    ),
+    "## Blockiert: main-Abgleich fehlgeschlagen": (
+        "**Feature-Branch:**",
+        "**Grund:**",
+        "**Zustand:**",
+    ),
+}
 
 # S5, woertlich in der Definitionsstelle **und** allen fuenf Aufrufstellen. Nicht sinngemaess:
 # Fuenf Stellen, die dieselbe Auflage in eigenen Worten tragen, driften, und die Auflage sagt an
@@ -634,6 +656,11 @@ def artefakt(wurzel: Path = REPO_WURZEL) -> dict[str, object]:
     return inhalt
 
 
+def dateitext(pfad: str, wurzel: Path = REPO_WURZEL) -> str:
+    """Duenner Leser: der Text **einer** Datei, unabhaengig vom Index."""
+    return (wurzel / pfad).read_text(encoding="utf-8")
+
+
 def git_dateien(*orte: str, wurzel: Path = REPO_WURZEL) -> list[str]:
     """Duenner Leser: die von Git verwalteten Pfade unter `orte`.
 
@@ -834,6 +861,64 @@ def test_der_suchraum_hat_eine_plausible_groesse() -> None:
 def test_ein_leerer_suchraum_scheitert_laut_statt_still() -> None:
     with pytest.raises(ValueError, match=r"0 Dateien im Suchraum"):
         formatdefinitionen({})
+
+
+# --- Zusicherung 8: die drei bestehenden Anker bleiben unberuehrt -----------------------------
+
+
+def test_die_drei_bestehenden_anker_stehen_je_einmal_in_developer_md() -> None:
+    """AK8: woertlich, je genau einmal als eingezaeunte Definition, samt ihren Feldnamen.
+
+    Der neue Anker tritt **neben** sie und subsumiert keinen: Alle drei bezeichnen technische
+    Lagen mit je eigener Folge beim Aufrufer, keine Frage an Daniel. Faellt einer von ihnen bei
+    dieser Umstellung weg, verliert der Umsetzungslauf einen Ausgang, ohne dass irgendwo etwas
+    fehlt - er berichtete dann unter einem Anker, der etwas anderes bedeutet.
+    """
+    text = dateitext(DEVELOPER)
+    befunde: list[str] = []
+    for anker in BESTEHENDE_ANKER:
+        gefunden = [block for block in codebloecke(text) if anker in block]
+        if len(gefunden) != 1:
+            befunde.append(
+                f"{anker!r} steht {len(gefunden)} Mal als eingezaeunte Definition in "
+                f"{DEVELOPER}, erwartet genau einmal."
+            )
+            continue
+        fehlend = [feld for feld in BESTEHENDE_ANKER[anker] if feld not in gefunden[0]]
+        if fehlend:
+            befunde.append(f"{anker!r}: Die Feldnamen {fehlend} fehlen im Block.")
+
+    assert not befunde, "; ".join(befunde)
+
+
+def test_der_neue_feldblock_steht_nicht_in_developer_md() -> None:
+    """Die Definitionsstellen bleiben getrennt: drei technische Anker hier, der vierte dort."""
+    text = dateitext(DEVELOPER)
+
+    assert ANKER not in "".join(codebloecke(text)), (
+        f"{DEVELOPER} fuehrt {ANKER!r} in einem Codeblock. Der vierte Anker ist ausschliesslich "
+        f"in {DEFINITIONSSTELLE} definiert; zwei Abbilder desselben Formats driften."
+    )
+
+
+@pytest.mark.parametrize("anker", sorted(BESTEHENDE_ANKER))
+def test_jeder_bestehende_anker_steht_weiterhin_in_der_ausloeseliste(anker: str) -> None:
+    """Ohne Eintrag in der Auslöseliste bleibt ein Bericht liegen, ohne dass etwas fehlschlaegt."""
+    liste = abschnitte(dateitext(SHIP_FEATURE))[TRIGGERABSCHNITT]
+
+    assert anker in liste, (
+        f"{anker!r} steht nicht mehr in {TRIGGERABSCHNITT!r} von {SHIP_FEATURE}. Ein Bericht "
+        "unter diesem Anker bliebe dann liegen - ohne Fehlschlag und ohne Spur."
+    )
+
+
+def test_auch_der_neue_anker_steht_in_der_ausloeseliste() -> None:
+    liste = abschnitte(dateitext(SHIP_FEATURE))[TRIGGERABSCHNITT]
+
+    assert ANKER in liste, (
+        f"{ANKER!r} steht nicht in {TRIGGERABSCHNITT!r} von {SHIP_FEATURE}. Der Orchestrator "
+        "behaelt seine drei Verzweigungen und bekommt eine vierte dazu."
+    )
 
 
 # --- Zusicherung 3: Zone statt Verbot ----------------------------------------------------------
