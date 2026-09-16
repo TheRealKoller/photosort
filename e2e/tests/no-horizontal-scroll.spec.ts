@@ -356,3 +356,61 @@ test('der geoeffnete Alternativen-Dialog erzeugt kein horizontales Scrollen bei 
     })`,
   ).toBeLessThanOrEqual(metrics.clientWidth + TOLERANCE)
 })
+
+/**
+ * Die Motivstaerke-Reihe bei 360 px (specs/features/0490-motivstaerke-kompakt.md, AK12).
+ *
+ * ERWEITERUNG DIESES SPECS STATT EINES NEUNTEN: Es ist dieselbe Breitenzusage, und der Einstieg
+ * ueber die erste Kachel steht hier bereits.
+ *
+ * DREI MESSUNGEN, nicht eine. "Die Seite scrollt nicht seitlich" allein bestuende auch gegen eine
+ * Reihe, die umbricht oder ein Symbol auf Breite 0 drueckt - beides ist bei acht Achteln von
+ * 360 px genau der Fehler, der eintraete. Belegt werden deshalb: alle acht auf DERSELBEN Zeile
+ * (gleiche Oberkante), jedes mindestens 24 x 24 px (WCAG 2.5.8 - die Mindestgroesse, auf die sich
+ * ADR 0113 Punkt 5 beim bewussten Verzicht auf die waagerechten 44 px stuetzt, und damit die
+ * einzige Stelle, an der diese Zahl ueberhaupt geprueft wird), und das Dokument daneben ohne
+ * waagerechten Ueberstand.
+ */
+test('die acht Motivsymbole liegen bei 360 px in einer Zeile', async ({ page }) => {
+  /** WCAG 2.5.8 (Stufe AA): die Mindestgroesse, die auf beiden Achsen gilt. */
+  const MIN_TARGET_SIZE = 24
+
+  const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.goto(`/projects/${ratedId}/photos`)
+  const tile = photoTiles(page).first()
+  await expect(tile, 'erste Kachel des bewerteten Demo-Projekts').toBeVisible()
+  await tile.getByRole('link').first().click()
+
+  const reihe = page.getByRole('list', { name: 'Motive' })
+  await expect(reihe, 'Motivstaerke-Reihe').toBeVisible()
+  const symbole = reihe.getByRole('button')
+  // Vorbedingung: die Reihe traegt WIRKLICH alle acht. Auf einem Foto ohne Klassifizierungslauf
+  // stuende hier ein Satz statt der Reihe, und jede Messung darunter liefe ueber eine leere Menge.
+  await expect(symbole, 'Symbole der Reihe').toHaveCount(8)
+
+  const kaesten = await symbole.evaluateAll((elemente) =>
+    elemente.map((element) => {
+      const rect = element.getBoundingClientRect()
+      return { top: Math.round(rect.top), width: rect.width, height: rect.height }
+    }),
+  )
+
+  const oberkanten = [...new Set(kaesten.map((kasten) => kasten.top))]
+  expect(
+    oberkanten,
+    'Oberkanten der acht Symbole (mehr als eine heisst: die Reihe bricht um)',
+  ).toHaveLength(1)
+
+  for (const [index, kasten] of kaesten.entries()) {
+    expect(kasten.width, `Breite von Symbol ${index + 1}`).toBeGreaterThanOrEqual(MIN_TARGET_SIZE)
+    expect(kasten.height, `Hoehe von Symbol ${index + 1}`).toBeGreaterThanOrEqual(MIN_TARGET_SIZE)
+  }
+
+  const dokument = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }))
+  expect(dokument.scrollWidth, 'Dokumentbreite auf der Foto-Detailseite').toBeLessThanOrEqual(
+    dokument.clientWidth + TOLERANCE,
+  )
+})
