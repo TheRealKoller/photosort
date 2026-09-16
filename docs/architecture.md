@@ -43,8 +43,12 @@ Verarbeitungs-Cache (Thumbnails).
     `utils/categoryLabels.ts`, `hooks/useCategories.ts` und `hooks/useCategoryOverrideControls.ts`
     entfallen — ebenso `api/categories.ts`, `utils/confidenceLabels.ts`,
     `components/CurationPhotoTile`s Kategorie-Anteil und `pages/CurateCategoriesPage.tsx` — und
-    werden durch `MotifStrengthList` (alle acht Motive mit Stärke und Korrekturschaltern, bedienbar
-    in der Detailansicht, schreibgeschützt im Kachel-Popover), `pages/CuratePage.tsx` sowie
+    werden durch `MotifStrengthSection` (alle acht Motive als Reihe von Füllstandssymbolen mit
+    aufklappender Detailzeile, in der auch korrigiert wird — bedienbar in der Detailansicht,
+    schreibgeschützt im Kachel-Popover; Spec
+    [`0490`](../specs/features/0490-motivstaerke-kompakt.md), ADR
+    [`decisions/0113-motivstaerke-als-fuellstandssymbol.md`](../specs/decisions/0113-motivstaerke-als-fuellstandssymbol.md)),
+    `pages/CuratePage.tsx` sowie
     `hooks/useMotifs.ts`/`hooks/useMotifCorrection.ts` und `utils/motifLabels.ts` ersetzt. **Auf der
     Kachel steht kein Motiv**: acht Werte haben dort keinen Platz, und der stärkste allein
     behauptete wieder die Zuordnung, die diese Spec ablöst — der einzige neue Kachelmarker ist

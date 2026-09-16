@@ -7,7 +7,7 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CloudVisionStatusList } from '../components/CloudVisionStatusList'
 import { CriterionDetailsList } from '../components/CriterionDetailsList'
-import { MotifStrengthList } from '../components/MotifStrengthList'
+import { MotifStrengthSection } from '../components/MotifStrengthSection'
 import { PhotoImage } from '../components/PhotoImage'
 import { RatingButtons } from '../components/RatingButtons'
 import { Alert } from '../components/ui/alert'
@@ -412,7 +412,7 @@ export function PhotoDetailPage() {
           Bewertungsleiste und Zurueck/Weiter unter den Bildschirmrand, weiter unten stuende ein
           Bedienelement im Informationsteil.
 
-          Sie steht PERMANENT, auch ohne Kopfzeile - dann zeigt sie an Stelle der Liste einen
+          Sie steht PERMANENT, auch ohne Kopfzeile - dann zeigt sie an Stelle der Reihe einen
           Satz. Sie ist seit PR 3 der EINZIGE Bedienblock der Bewertungsdetails: die
           Kategorie-Bedienelemente sind mit den Kategorien entfallen. */}
       <section
@@ -426,7 +426,7 @@ export function PhotoDetailPage() {
         >
           Motive
         </h2>
-        <MotifStrengthList
+        <MotifStrengthSection
           motifSet={motifsQuery.data}
           motifSetLoading={motifsQuery.isPending}
           motifSetError={motifsQuery.isError ? MOTIF_SET_ERROR_TEXT : undefined}

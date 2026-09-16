@@ -13,7 +13,7 @@ import type {
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { CriterionDetailsList } from './CriterionDetailsList'
-import { MotifStrengthList } from './MotifStrengthList'
+import { MotifStrengthSection } from './MotifStrengthSection'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from './ui/popover'
 
 /**
@@ -48,7 +48,7 @@ interface CriterionDetailsPopoverProps {
 
 /**
  * Info-Popover mit den berechneten Bewertungsdetails eines Fotos - feature-spezifische Komposition
- * auf ui/popover.tsx, analog zum bestehenden Muster ui/progress.tsx -> MotifStrengthList.tsx.
+ * auf ui/popover.tsx, analog zum bestehenden Muster ui/progress.tsx -> CriterionDetailsList.tsx.
  * Rendert
  * bewusst nichts, wenn criterionScores leer ist - EINE Stelle entscheidet das statt jeder der drei
  * Einbindungsstellen einzeln. Die eigentliche `<dl>`-Darstellung des Inhalts lebt in der
@@ -201,13 +201,13 @@ export function CriterionDetailsPopover({
           fineLabels={fineLabels}
           albumSuitability={albumSuitability}
         />
-        {/* Die Motivstärken SCHREIBGESCHÜTZT (`editable={false}`) - einsehbar bleibt einsehbar,
-            aber ohne die 24 Korrektur-Schaltflächen. Darunter der Verweis auf den Ort, an dem
-            korrigiert wird. */}
+        {/* Die Motivstärken SCHREIBGESCHÜTZT (`editable={false}`) - einsehbar bleibt einsehbar:
+            Die aufklappende Detailzeile zeigt hier Name und genauen Wert, aber keine
+            Korrektur-Schaltfläche. Darunter der Verweis auf den Ort, an dem korrigiert wird. */}
         {assessment !== undefined && (
           <div className="mt-4 flex flex-col gap-2 border-t border-separator pt-4">
             <h3 className="text-xs font-medium text-text-h">Motive</h3>
-            <MotifStrengthList
+            <MotifStrengthSection
               motifSet={motifSet}
               motifSetLoading={motifSetLoading}
               motifSetError={motifSetError}

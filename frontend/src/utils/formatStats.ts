@@ -86,7 +86,19 @@ export function formatUsd(amountUsd: number): string {
  * "kaufmaennisch" (0.5 aufwaerts).
  */
 export function formatCriterionPercent(value: number): string {
-  return `${Math.round(value * 100)}%`
+  return `${criterionPercentValue(value)}%`
+}
+
+/**
+ * Derselbe gerundete Prozentwert als ZAHL - fuer Stellen, die ihn zusaetzlich als Geometrie
+ * brauchen (die Fuellhoehe eines Motivsymbols).
+ *
+ * EINE Rundungsstelle fuer Text und Geometrie: Runden beide getrennt, koennen angezeigte Zahl und
+ * gezeigte Hoehe auseinanderlaufen, und die Anzeige behauptete eine Staerke, die die Zahl nicht
+ * nennt.
+ */
+export function criterionPercentValue(value: number): number {
+  return Math.round(value * 100)
 }
 
 /** Ganze Zahl mit deutschem Tausenderpunkt - die Fotoanzahlen dieser Seite werden fuenfstellig. */

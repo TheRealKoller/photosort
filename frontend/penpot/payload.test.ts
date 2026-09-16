@@ -385,7 +385,7 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
  * `views.json` bekommt hier keine einzige Freigabe: die Datei traegt per Bauart keine Zahl.
  */
 const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: string }[] = [
-  { datei: 'verify.js', zeile: 55, wert: '12', ausschnitt: 'ERWARTETE_SYMBOLE = 12' },
+  { datei: 'verify.js', zeile: 55, wert: '20', ausschnitt: 'ERWARTETE_SYMBOLE = 20' },
   { datei: 'verify.js', zeile: 56, wert: '12', ausschnitt: 'ERWARTETE_BAUSTEINE = 12' },
   { datei: 'verify.js', zeile: 57, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
   { datei: 'verify.js', zeile: 58, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },

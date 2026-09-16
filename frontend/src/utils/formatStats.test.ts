@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  criterionPercentValue,
   formatBytes,
   formatCount,
   formatCriterionPercent,
@@ -153,5 +154,22 @@ describe('formatCriterionPercent', () => {
     // erscheint am Foto und in der Statistik, und zwei Formen fuer eine Zahl liessen den Leser
     // nach dem Unterschied suchen.
     expect(formatCriterionPercent(0.925)).toBe('93%')
+  })
+})
+
+describe('criterionPercentValue', () => {
+  it.each([0, 0.004, 0.42, 0.426, 0.925, 0.995, 1])(
+    'liefert fuer %s denselben Wert, den der Text zeigt',
+    (value) => {
+      // Der Wert erscheint an der Motivstaerke als Text UND als Fuellhoehe. Runden beide
+      // getrennt, laufen Zahl und Hoehe auseinander - dieser Fall ist die Klammer.
+      expect(`${criterionPercentValue(value)}%`).toBe(formatCriterionPercent(value))
+    },
+  )
+
+  it('rundet eine Staerke groesser null, die auf 0 % faellt, auch geometrisch auf null', () => {
+    // Der absichernde Fall: eine Fuellung von 0,4 % Hoehe waere ein Farbstrich, den die Zahl
+    // daneben nicht nennt.
+    expect(criterionPercentValue(0.004)).toBe(0)
   })
 })

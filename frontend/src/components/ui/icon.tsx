@@ -1,21 +1,29 @@
 import {
   Book,
+  Building2,
   Camera,
   Check,
   ChevronDown,
   CircleX,
   Cog,
   Folder,
+  Footprints,
   Image as ImageIcon,
   Info,
+  Landmark,
+  MountainSnow,
+  PawPrint,
   Search,
+  Sparkles,
   Star,
   Tag,
+  UserRound,
+  Utensils,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 /*
- * Der Zwoelfer-Symbolsatz des Boards.
+ * Der Zwanziger-Symbolsatz des Boards: zwoelf Board-Symbole und die acht Motivsymbole.
  *
  * DIES IST DIE EINZIGE DATEI IM PROJEKT, DIE AUS `lucide-react` IMPORTIEREN DARF - statisch
  * erzwungen in src/designSystem.contract.test.ts. Die Aufrufstellen waehlen ihr Symbol
@@ -23,7 +31,7 @@ import type { LucideIcon } from 'lucide-react'
  *
  * TREE-SHAKING IST BEDINGUNG, NICHT KOSMETIK: `lucide-react` ist entpackt rund 32 MB (ein Modul je
  * Symbol). Nur BENANNTE Importe in einem STATISCHEN Objektliteral halten die tatsaechlich
- * ausgelieferte Menge bei zwoelf Pfad-Definitionen. Ein Namespace-Import (`import * as icons`)
+ * ausgelieferte Menge bei zwanzig Pfad-Definitionen. Ein Namespace-Import (`import * as icons`)
  * oder ein berechneter Zugriff auf das Paket-Objekt zoege den vollen Satz ins Bundle.
  *
  * Der Satz wird NICHT stillschweigend erweitert. Die SIEBEN dokumentierten Luecken (`x` Schliessen,
@@ -51,11 +59,22 @@ const ICONS = {
   folder: Folder,
   camera: Camera,
   tag: Tag,
+  // Die acht Motivsymbole (ADR 0113 Punkt 3): je eines fuer einen Motivschluessel der Registry,
+  // zugeordnet in utils/motifIcons.ts. Sie stehen NUR hier als Name, nie als Komponentenreferenz
+  // an der Aufrufstelle.
+  'user-round': UserRound,
+  'mountain-snow': MountainSnow,
+  landmark: Landmark,
+  'building-2': Building2,
+  'paw-print': PawPrint,
+  utensils: Utensils,
+  footprints: Footprints,
+  sparkles: Sparkles,
 } as const satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof ICONS
 
-/** Die zwoelf Namen als Laufzeitwert - Grundlage der parametrisierten Tests, damit ein neues
+/** Die zwanzig Namen als Laufzeitwert - Grundlage der parametrisierten Tests, damit ein neues
  * Symbol nicht ungeprueft hinzukommen kann. */
 export const ICON_NAMES = Object.keys(ICONS) as readonly IconName[]
 
