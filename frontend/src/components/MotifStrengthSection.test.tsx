@@ -311,6 +311,32 @@ describe('MotifStrengthSection: die Detailzeile', () => {
     expect(within(row).getByText('60%')).toBeTruthy()
   })
 
+  it('marks the pinned symbol visibly, not only for assistive technology', async () => {
+    // AK6 „das geoeffnete Symbol ist als solches ausgezeichnet": `aria-expanded` allein traegt das
+    // nur fuer assistive Technik. Ohne sichtbares Merkmal ist am Bildschirm nicht zu sehen, WELCHES
+    // der acht Symbole zu der Zeile darunter gehoert.
+    const user = userEvent.setup()
+    renderSection()
+
+    expect(symbolOf('menschen').className).not.toContain('bg-overlay')
+
+    await user.click(symbolOf('menschen'))
+
+    expect(symbolOf('menschen').className).toContain('bg-overlay')
+    expect(symbolOf('tiere').className).not.toContain('bg-overlay')
+  })
+
+  it('does not mark a merely hovered symbol as pinned', async () => {
+    // Dieselbe Trennung wie bei `aria-expanded`: Zeigen blendet die Zeile ein, heftet aber nichts
+    // an - eine Markierung unter dem Zeiger behauptete einen Zustand, der nicht besteht.
+    const user = userEvent.setup()
+    renderSection()
+
+    await user.hover(symbolOf('menschen'))
+
+    expect(symbolOf('menschen').className).not.toContain('bg-overlay')
+  })
+
   it('does not report a merely hovered symbol as expanded', () => {
     // `aria-expanded` folgt NUR dem Anheften: ein Zeigen ist keine Zustandsaenderung, die
     // assistive Technik ansagen soll.

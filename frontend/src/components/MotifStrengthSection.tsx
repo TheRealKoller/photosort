@@ -325,7 +325,14 @@ export function MotifStrengthSection({
                 // 44px-Flaechen brauchten 352px und vertrugen sich nicht mit der Zusage "alle
                 // acht in einer Zeile ohne waagerechtes Scrollen". WCAG 2.5.8 (24x24px) bleibt
                 // auf beiden Achsen deutlich ueberschritten (ADR 0113 Punkt 5).
-                className="tap-target flex w-full items-center justify-center py-1"
+                //
+                // Das ANGEHEFTETE Symbol traegt zusaetzlich die Board-Flaeche `bg-overlay`: ohne
+                // ein sichtbares Merkmal ist am Bildschirm nicht zu sehen, welches der acht
+                // Symbole zu der Zeile darunter gehoert - `aria-expanded` traegt das nur fuer
+                // assistive Technik. Das blosse Zeigen markiert NICHT: es heftet nichts an.
+                className={`tap-target flex w-full items-center justify-center rounded-sm py-1 ${
+                  pinnedKey === item.key ? 'bg-overlay' : ''
+                }`}
                 aria-label={`${displayName}: ${valueText(strength, showLocalGap).text}`}
                 aria-expanded={pinnedKey === item.key}
                 aria-controls={detailId}
