@@ -1,6 +1,6 @@
 # 0498 - Jede Aufnahme wird in voller Helligkeit gezeigt
 
-**Status:** Accepted
+**Status:** Implemented ([PR #501](https://github.com/TheRealKoller/photosort/pull/501))
 **Erstellt:** 2026-09-16
 **Bezug:** [Issue #498](https://github.com/TheRealKoller/photosort/issues/498), ADR
 [`0112`](../decisions/0112-keine-bildflaeche-wird-gedaempft.md)
