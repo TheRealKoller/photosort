@@ -78,11 +78,28 @@ _ABSCHNITT = re.compile(r"^## ")
 # Haertungsregel 4.4 in `github-access`, hier erstmals ausserhalb eines GitHub-Titels angewandt.
 # Je Klasse eine eigene Meldung: Die vier Klassen haben verschiedene Wirkungen, und eine
 # Sammelmeldung "unerlaubtes Zeichen" sagt nicht, wonach zu suchen ist.
-_ZEICHENKLASSEN = (
-    ("Bidi-Override", re.compile("[‪-‮⁦-⁩]")),
-    ("Zero-Width", re.compile("[​-‍﻿]")),
-    ("Zeilentrenner", re.compile("[  ]")),
-    ("Steuerzeichen", re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")),
+#
+# Die Klassen stehen als **Codepoint-Mengen**, nicht als Zeichenklasse mit den Zeichen selbst:
+# Eine Menge, die niemand lesen kann, ist nicht reviewbar - ein Tippfehler darin faellt in keinem
+# Review auf, und ausgerechnet diese Datei prueft auf genau die Zeichen, die in ihrem eigenen
+# Quelltext unsichtbar waeren. Zwei der Klassen veraendern zudem die Datei, die sie enthaelt:
+# Zeilentrenner zerlegen sie fuer jedes Werkzeug, das Unicode-Umbrueche respektiert.
+_ZEICHENKLASSEN: tuple[tuple[str, frozenset[int]], ...] = (
+    # U+202A..U+202E (LRE, RLE, PDF, LRO, RLO) und U+2066..U+2069 (LRI, RLI, FSI, PDI).
+    ("Bidi-Override", frozenset(range(0x202A, 0x202F)) | frozenset(range(0x2066, 0x206A))),
+    # U+200B..U+200D (ZWSP, ZWNJ, ZWJ) und U+FEFF (BOM als Zero-Width-No-Break-Space).
+    ("Zero-Width", frozenset(range(0x200B, 0x200E)) | frozenset({0xFEFF})),
+    # U+0085 (NEL), U+2028 (LINE SEPARATOR), U+2029 (PARAGRAPH SEPARATOR).
+    ("Zeilentrenner", frozenset({0x0085, 0x2028, 0x2029})),
+    # C0-Steuerzeichen und DEL, unter bewusster Aussparung von Tab (U+0009), LF (U+000A) und
+    # CR (U+000D): Ein Feldwert ist genau eine Zeile, und der Umbruch wird als Zeilenzahl geprueft.
+    (
+        "Steuerzeichen",
+        frozenset(range(0x00, 0x09))
+        | frozenset({0x0B, 0x0C})
+        | frozenset(range(0x0E, 0x20))
+        | frozenset({0x7F}),
+    ),
 )
 
 EXIT_OK = 0
@@ -179,8 +196,8 @@ def zeichenbefunde(bezeichnung: str, wert: str) -> list[str]:
     stattfindet.
     """
     befunde: list[str] = []
-    for name, muster in _ZEICHENKLASSEN:
-        if muster.search(wert):
+    for name, menge in _ZEICHENKLASSEN:
+        if any(ord(zeichen) in menge for zeichen in wert):
             befunde.append(
                 f"{bezeichnung}: {name} gefunden. Diese Zeichenklasse ist im Kontext eines "
                 "Modells unsichtbar und veraendert die Anzeige, nicht den Text - vorgelegt wird "

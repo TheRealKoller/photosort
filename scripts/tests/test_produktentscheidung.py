@@ -157,11 +157,11 @@ def test_die_erwartete_blockform_hat_keinen_befund(modul: ModuleType) -> None:
 @pytest.mark.parametrize(
     ("zeichen", "name"),
     [
-        ("‮", "Bidi-Override"),
-        ("​", "Zero-Width"),
-        ("﻿", "Zero-Width"),
-        (" ", "Zeilentrenner"),
-        ("", "Zeilentrenner"),
+        (chr(0x202E), "Bidi-Override"),  # RIGHT-TO-LEFT OVERRIDE
+        (chr(0x200B), "Zero-Width"),  # ZERO WIDTH SPACE
+        (chr(0xFEFF), "Zero-Width"),  # ZERO WIDTH NO-BREAK SPACE (BOM)
+        (chr(0x2028), "Zeilentrenner"),  # LINE SEPARATOR
+        (chr(0x0085), "Zeilentrenner"),  # NEXT LINE
         ("\x07", "Steuerzeichen"),
     ],
 )
@@ -182,7 +182,7 @@ def test_ein_unsichtbares_zeichen_in_einer_option_wird_gemeldet(
 
 
 def test_ein_unsichtbares_zeichen_in_der_frage_wird_gemeldet(modul: ModuleType) -> None:
-    text = BERICHT_MIT_BLOCK.replace("Soll die", "Soll​die")
+    text = BERICHT_MIT_BLOCK.replace("Soll die", f"Soll{chr(0x200B)}die")
 
     befunde = modul.befunde(modul.block(text))
 
@@ -305,7 +305,7 @@ def test_zwei_bloecke_in_einem_bericht_halten_an(modul: ModuleType) -> None:
 
 def test_ein_befund_endet_mit_exit_zwei(tmp_path: Path) -> None:
     """Scheitert die Pruefung, wird nichts vorgelegt; der Befund steht im Bericht."""
-    text = BERICHT_MIT_BLOCK.replace("Ueberschreiben:", "Ueber‮schreiben:")
+    text = BERICHT_MIT_BLOCK.replace("Ueberschreiben:", f"Ueber{chr(0x202E)}schreiben:")
 
     ergebnis = _laufe(_bericht(tmp_path, text))
 
