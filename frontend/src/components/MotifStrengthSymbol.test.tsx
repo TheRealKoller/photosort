@@ -102,6 +102,23 @@ describe('MotifStrengthSymbol', () => {
     expect(fill.className).toContain('motif-fill-clip')
   })
 
+  it.each([0, 7, 43, 100])(
+    'traegt fuer %s ausschliesslich Ziffern und Prozentzeichen in die Custom-Property',
+    (percent) => {
+      // SICHERHEIT (specs/architecture/0003-securitykonzept.md, Abschnitt zur Motivstaerke): Der
+      // Traeger ist ein durch `Math.round` mechanisch geschlossener Integer, NIE eine aus
+      // API-Daten zusammengesetzte Zeichenkette. Das Angriffsmodell der Konzeptzeile ist, dass
+      // eine Custom-Property nahezu beliebige Token-Folgen aufnimmt und sie ueber `var()` wieder
+      // in CSS-Kontext traegt - diese Zusage schliesst genau das aus.
+      const { container } = render(
+        <MotifStrengthSymbol iconName="landmark" step="medium" fillPercent={percent} />,
+      )
+
+      const fill = container.querySelector('[data-motif-layer="fill"]') as HTMLElement
+      expect(fill.style.getPropertyValue('--motif-fill')).toMatch(/^\d+%$/)
+    },
+  )
+
   it('uebernimmt den Prozentwert unveraendert, auch an den Raendern', () => {
     // Derselbe gerundete Wert, den die Aufrufstelle als Text zeigt: Hoehe und Zahl koennen nicht
     // auseinanderlaufen (AK4). Der absichernde Fall ist eine Staerke groesser null, die auf 0 %

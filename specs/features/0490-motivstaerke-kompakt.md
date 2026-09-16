@@ -135,7 +135,7 @@ vier Flächen.
 - **`frontend/src/components/MotifStrengthList.tsx` → `MotifStrengthSection.tsx`** (Umbenennung:
   „Liste" beschreibt die Oberfläche nicht mehr). **Die Props bleiben unverändert** — beide
   Aufrufstellen ändern nur Import und Elementnamen. Erhalten bleiben unverändert: die vier
-  Fotozustände (Satz statt Reihe ohne Kopfzeile, Ausschlusstext, Grundlagenzeile, Skeleton), das
+  Fotozustände (Satz statt Reihe ohne Kopfzeile, Ausschlusstext, Grundlagenzeile), das
   Glossar, der Fehler-`Alert`, `rowsEditable = editable && !excluded`, der Nachschlag je Schlüssel
   über eine `Map` statt über den Index der Antwortliste.
 
@@ -147,9 +147,16 @@ vier Flächen.
     `h-11`. Zugänglicher Name = `{Motivname}: {Wert}`, wobei der Wert das Korrekturwort, „lokal
     nicht beurteilbar" oder der Prozentwert ist — alle Angaben stehen damit auch ohne Aufklappen
     zur Verfügung. `aria-expanded` (folgt **nur** dem Anheften, nicht dem Zeigen), `aria-controls`
-    auf die Detailzeile, `data-motif-key`, `data-motif-corrected` wie bisher.
-  - Zustand: `pinnedKey` (Klick, umschaltend) und `hoveredKey` (Zeigen). Angezeigt wird
-    `pinnedKey ?? hoveredKey` — **sobald etwas angeheftet ist, überschreibt Zeigen nichts mehr**,
+    auf die Detailzeile, `data-motif-key`, `data-motif-corrected` wie bisher. Das **angeheftete**
+    Symbol trägt zusätzlich die Board-Fläche `bg-overlay` (AK6 „als solches ausgezeichnet"):
+    `aria-expanded` trägt das nur für assistive Technik, am Bildschirm wäre sonst nicht zu sehen,
+    welches der acht Symbole zur Zeile darunter gehört. Das bloße Zeigen markiert **nicht** — es
+    heftet nichts an.
+  - Zustand: `pinnedKey` (Klick, umschaltend) und `previewKey` (Zeigen **und** Tastaturfokus —
+    ohne `onFocus` bekäme ein sehender Tastaturnutzer beim Durchtabben nichts zu sehen, der
+    zugängliche Name ist genau für ihn unsichtbar; `aria-expanded` und die sichtbare Markierung
+    folgen trotzdem **nur** dem Anheften). Angezeigt wird
+    `pinnedKey ?? previewKey` — **sobald etwas angeheftet ist, überschreibt die Vorschau nichts mehr**,
     sonst wechselte die Zeile unter dem Zeiger auf dem Weg zu den Korrekturschaltern. Der
     angeheftete Schlüssel überlebt den Fotowechsel der Detailansicht; die Zeile zeigt dann die
     Werte des neuen Fotos.
@@ -209,7 +216,11 @@ Bilddetailansicht selbst ist dort bewusst nicht entworfen (Folge-Issue #497).
 bei 360 px Gerätebreite rund 41 px, im Kachel-Popover rund 32 px. Vertikal über `tap-target` auf
 44 px aufgespannt. Darunter die Detailzeile mit gleichbleibender Höhe.
 
-**Zustände.** Ladend: der bestehende Skeleton. Fehler einer Korrektur: der bestehende `Alert`, der
+**Zustände.** Ladend: Platzhalter in der **Form der neuen Darstellung** — acht nebeneinander plus
+eine Detailzeile, nicht die acht gestapelten Zeilen der abgelösten Balkenliste. Deren rund 340 px
+gegen die rund 60 px der geladenen Reihe schöben beim Eintrudeln der Antwort alles darunter um rund
+280 px zurück, und das ist die vom Design-System ausgeschlossene „Bewegung von Layout oder
+Position". Fehler einer Korrektur: der bestehende `Alert`, der
 den Motivnamen nennt, auch wenn dieses Motiv gerade nicht aufgeklappt ist. Die vier Fotozustände
 wie in AK13 — bei fehlender Erhebung erscheint weiterhin **ein Satz an Stelle der Reihe**, nie acht
 ungefüllte Symbole: Acht Umrisse sind von „erhoben, aber nichts erkannt" nicht zu unterscheiden.

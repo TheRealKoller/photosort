@@ -30,6 +30,23 @@ interface MotifStrengthSymbolProps {
   size?: number
 }
 
+/**
+ * Der Stil der Fuellebene - eine EIGENE Schnittstelle statt eines `as React.CSSProperties`-Casts.
+ *
+ * SICHERHEIT (specs/architecture/0003-securitykonzept.md, Abschnitt zur Motivstaerke): Die
+ * Custom-Property ist hier der einzig verbliebene Weg (eine `clip-path-[…]`-Utility ist als
+ * willkuerlicher Wert vertraglich verboten, die Zeichenketten-Variante `clipPath: '…'` untersagt
+ * dieselbe Konzeptzeile). Die Auflage dazu lautet: Der Traeger ist ein durch `Math.round`
+ * mechanisch geschlossener Integer, nie eine aus API-Daten zusammengesetzte Zeichenkette.
+ *
+ * Ein Cast haette genau die Typpruefung abgeschaltet, die diese Auflage stuetzt - auch fuer jede
+ * regulaere Eigenschaft, die spaeter danebentritt. Die Erweiterung laesst sie scharf und benennt
+ * die eine zusaetzliche Eigenschaft ausdruecklich.
+ */
+interface MotifFillStyle extends React.CSSProperties {
+  '--motif-fill': string
+}
+
 /** Die drei Bandfarben aus dem bestehenden Vorrat (ADR 0113 Punkt 4). `none` faerbt nicht ein:
  * die Fuellebene ist dann ohnehin auf 0 % beschnitten. */
 const FILL_TONE: Record<MotifFillStep, string> = {
@@ -45,6 +62,10 @@ export function MotifStrengthSymbol({
   fillPercent,
   size = 24,
 }: MotifStrengthSymbolProps) {
+  // Ueber eine TYPISIERTE Variable statt als Literal an `style`: Die Erweiterung ist dort
+  // zuweisbar, waehrend das Literal am Ueberschuss-Check scheiterte - und beides ohne Cast.
+  const fillStyle: MotifFillStyle = { '--motif-fill': `${fillPercent}%` }
+
   return (
     <span className="relative inline-flex items-center justify-center">
       <span data-motif-layer="outline" className="text-text-muted">
@@ -53,7 +74,7 @@ export function MotifStrengthSymbol({
       <span
         data-motif-layer="fill"
         className={`motif-fill-clip absolute inset-0 inline-flex items-center justify-center ${FILL_TONE[step]}`}
-        style={{ '--motif-fill': `${fillPercent}%` } as React.CSSProperties}
+        style={fillStyle}
       >
         <Icon name={iconName} size={size} />
       </span>

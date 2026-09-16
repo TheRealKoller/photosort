@@ -227,6 +227,27 @@ describe('MotifStrengthSection: die Reihe', () => {
     expect(fill.className).toContain(utility)
   })
 
+  it('never carries text from the strength field into the inline style', () => {
+    // SICHERHEIT (specs/architecture/0003-securitykonzept.md): Die Fuellhoehe ist die einzige
+    // Stelle des Frontends, die einen gerechneten Wert ueber eine CSS-CUSTOM-PROPERTY traegt. Die
+    // Konzeptzeile erlaubt das nur, solange der Traeger eine ZAHL ist und nicht aus einem
+    // API-Feld zusammengesetzt wird. Hier kommt das Feld feindlich herein - wie es eine
+    // fehlerhafte oder manipulierte Antwort liefern koennte, entgegen dem Typ.
+    const feindlich = 'red;--x:url(javascript:alert(1))' as unknown as number
+    renderSection({
+      motifs: [{ key: 'menschen', strength: feindlich, correction: null, present: true }],
+    })
+
+    const fill = symbolOf('menschen').querySelector('[data-motif-layer="fill"]') as HTMLElement
+    const wert = fill.style.getPropertyValue('--motif-fill')
+    // `Math.round` schliesst den Wert mechanisch: aus einer Nicht-Zahl wird `NaN`, nie der Text.
+    expect(wert).toMatch(/^(\d+|NaN)%$/)
+    expect(wert).not.toContain('url(')
+    expect(wert).not.toContain(';')
+    // Und auch der sichtbare Text traegt ihn nicht - dieselbe eine Rundungsstelle.
+    expect(document.body.innerHTML).not.toContain('javascript:')
+  })
+
   it('leaves a motif at zero without any fill at all', () => {
     renderSection()
 
@@ -346,6 +367,66 @@ describe('MotifStrengthSection: die Detailzeile', () => {
     return user.hover(symbolOf('menschen')).then(() => {
       expect(symbolOf('menschen').getAttribute('aria-expanded')).toBe('false')
     })
+  })
+
+  /**
+   * Tabbt weiter, bis das genannte Symbol den Fokus hat - der ECHTE Tastaturweg, statt
+   * `element.focus()` von aussen zu rufen (das liefe zudem ausserhalb von `act()`).
+   *
+   * Bewusst „bis erreicht" statt „n-mal": Wo der Fokus startet, haengt davon ab, was der Fall
+   * vorher getan hat - ein Klick laesst ihn auf dem geklickten Symbol stehen. Eine feste
+   * Schrittzahl landete dann still auf dem falschen Symbol.
+   */
+  async function tabToSymbol(user: ReturnType<typeof userEvent.setup>, motifKey: string) {
+    for (let schritt = 0; schritt < MOTIF_KEYS.length * 2; schritt += 1) {
+      await user.tab()
+      if (document.activeElement?.getAttribute('data-motif-key') === motifKey) {
+        return
+      }
+    }
+    throw new Error(`Symbol ${motifKey} per Tabulator nicht erreichbar`)
+  }
+
+  it('shows name and value on keyboard focus, like on hover', async () => {
+    // Ein sehender Tastaturnutzer bekommt sonst beim Durchtabben nichts zu sehen: Der zugaengliche
+    // Name traegt zwar alle Angaben, ist aber genau fuer ihn unsichtbar.
+    const user = userEvent.setup()
+    renderSection({ motifs: strengths({ landschaft: { strength: 0.6 } }) })
+
+    await tabToSymbol(user, 'landschaft')
+
+    const row = detailRow()
+    expect(within(row).getByText('Landschaft')).toBeTruthy()
+    expect(within(row).getByText('60%')).toBeTruthy()
+
+    // Weitertabben nimmt die Vorschau mit - sie haengt am Fokus, nicht an einem Rest.
+    await user.tab()
+    expect(within(detailRow()).queryByText('Landschaft')).toBeNull()
+  })
+
+  it('does not report a merely focused symbol as expanded', async () => {
+    // `aria-expanded` folgt AUSSCHLIESSLICH dem Anheften. Folgte es dem Fokus, saehe assistive
+    // Technik beim blossen Durchtabben acht aufklappende Bereiche, von denen keiner offen ist.
+    const user = userEvent.setup()
+    renderSection()
+
+    await tabToSymbol(user, 'menschen')
+
+    expect(symbolOf('menschen').getAttribute('aria-expanded')).toBe('false')
+    expect(symbolOf('menschen').className).not.toContain('bg-overlay')
+  })
+
+  it('lets a pinned symbol survive keyboard focus on another one', async () => {
+    // Dieselbe Vorrangregel wie beim Zeigen - sonst zoege der Fokus die Zeile vom angehefteten
+    // Symbol weg, waehrend man zu dessen Korrekturschaltern tabbt.
+    const user = userEvent.setup()
+    renderSection({ motifs: strengths({ menschen: { strength: 0.42 }, tiere: { strength: 0.8 } }) })
+
+    await user.click(symbolOf('menschen'))
+    await tabToSymbol(user, 'tiere')
+
+    expect(within(detailRow()).getByText('Menschen')).toBeTruthy()
+    expect(within(detailRow()).queryByText('Tiere')).toBeNull()
   })
 
   it('lets a pinned symbol survive hovering another one', async () => {
@@ -773,8 +854,8 @@ describe('MotifStrengthSection: die Zustände', () => {
     expect(symbolOf('menschen').hasAttribute('disabled')).toBe(false)
   })
 
-  it('shows eight skeleton rows while the motif set is loading', () => {
-    render(
+  function renderLoading() {
+    return render(
       <MotifStrengthSection
         motifSet={undefined}
         motifSetLoading
@@ -787,9 +868,39 @@ describe('MotifStrengthSection: die Zustände', () => {
         error={null}
       />,
     )
+  }
 
-    expect(screen.getAllByTestId('motif-skeleton-row')).toHaveLength(8)
+  it('shows the placeholders in the shape of the ROW, not stacked as rows', () => {
+    // DIE FORM, NICHT DIE ZAHL: Acht Platzhalter untereinander waren die Form der abgeloesten
+    // Balkenliste und beanspruchen rund 340 px gegen die rund 60 px der geladenen Reihe. Der
+    // Bereich schoebe beim Eintrudeln der Antwort alles darunter um rund 280 px zurueck - genau
+    // die "Bewegung von Layout oder Position", die das Design-System ausschliesst.
+    //
+    // Die Hoehe selbst ist in jsdom nicht messbar (keine Layout-Engine); geprueft wird deshalb
+    // die Achse des Platzhalter-Containers - dieselbe Ebene, auf der auch der Design-Vertrag
+    // Klassen liest.
+    renderLoading()
+
+    const reihe = screen.getByTestId('motif-skeleton-row')
+    const klassen = reihe.className.split(/\s+/)
+    expect(klassen).toContain('flex')
+    expect(klassen).not.toContain('flex-col')
+    expect(within(reihe).getAllByTestId('motif-skeleton-symbol')).toHaveLength(8)
+  })
+
+  it('holds a placeholder for the detail line as well', () => {
+    // Die Detailzeile steht auch ungewaehlt - fehlte sie im Ladezustand, spraenge die Seite genau
+    // um ihre Hoehe.
+    renderLoading()
+
+    expect(screen.getByTestId('motif-skeleton-detail')).toBeTruthy()
+  })
+
+  it('draws no bar while the motif set is loading', () => {
+    renderLoading()
+
     expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(document.querySelector('progress')).toBeNull()
   })
 
   it('shows an alert with a retry action when the motif set failed to load', () => {

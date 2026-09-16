@@ -77,14 +77,28 @@ const NOT_LOCALLY_ASSESSABLE_TEXT = 'lokal nicht beurteilbar'
 
 const DETAIL_PROMPT_TEXT = 'Symbol antippen für Details'
 
-/** Acht Platzhalterzeilen statt eines Spinners - dieselbe Zeilenzahl wie die spaetere Reihe, damit
- * der Bereich beim Eintrudeln nicht springt. `rounded-lg` wie eine Listenzeile. */
+/**
+ * Platzhalter statt eines Spinners, in der FORM DER SPAETEREN DARSTELLUNG: eine Reihe aus acht
+ * Platzhaltern NEBENEINANDER, darunter einer fuer die Detailzeile.
+ *
+ * Die Form ist keine Kosmetik. Acht Platzhalter untereinander (die Form der abgeloesten
+ * Balkenliste) beanspruchen rund 340 px gegen die rund 60 px der geladenen Reihe; der Bereich
+ * zoege beim Eintrudeln der Antwort alles darunter um rund 280 px hoch - die "Bewegung von Layout
+ * oder Position", die das Design-System ausschliesst.
+ */
 function SkeletonRows() {
   return (
     <div className="flex flex-col gap-3" role="status" aria-label="Motive werden geladen">
-      {Array.from({ length: 8 }, (_, index) => (
-        <Skeleton key={index} className="h-8 rounded-lg" data-testid="motif-skeleton-row" />
-      ))}
+      {/* Die Grundlagenzeile, die nach dem Laden an dieser Stelle steht. */}
+      <Skeleton className="h-4 w-2/3 rounded-sm" data-testid="motif-skeleton-basis" />
+      <div className="flex items-stretch" data-testid="motif-skeleton-row">
+        {Array.from({ length: 8 }, (_, index) => (
+          <div key={index} className="flex-1 px-1">
+            <Skeleton className="h-8 rounded-sm" data-testid="motif-skeleton-symbol" />
+          </div>
+        ))}
+      </div>
+      <Skeleton className="h-4 w-1/2 rounded-sm" data-testid="motif-skeleton-detail" />
     </div>
   )
 }
@@ -271,10 +285,13 @@ export function MotifStrengthSection({
   error = null,
 }: MotifStrengthSectionProps) {
   const detailId = useId()
-  // Zwei Quellen, bewusst getrennt: der Klick heftet an, das Zeigen ergaenzt nur. Ein
-  // gemeinsamer Zustand koennte den Unterschied nicht tragen, an dem `aria-expanded` haengt.
+  // Zwei Zustaende, bewusst getrennt: der Klick HEFTET AN, Zeigen und Tastaturfokus zeigen nur
+  // eine VORSCHAU. Ein gemeinsamer Zustand koennte den Unterschied nicht tragen, an dem
+  // `aria-expanded` und die sichtbare Markierung haengen - beide folgen ausschliesslich dem
+  // Anheften. Folgte `aria-expanded` der Vorschau, saehe assistive Technik beim blossen
+  // Durchtabben acht aufklappende Bereiche, von denen keiner offen ist.
   const [pinnedKey, setPinnedKey] = useState<MotifKey | null>(null)
-  const [hoveredKey, setHoveredKey] = useState<MotifKey | null>(null)
+  const [previewKey, setPreviewKey] = useState<MotifKey | null>(null)
 
   if (motifSetError !== undefined) {
     // Keine Reihe mit Rohschluesseln - lieber gar keine Reihe.
@@ -295,7 +312,7 @@ export function MotifStrengthSection({
   const rowsEditable = editable && !excluded
   const byKey = new Map((motifs ?? []).map((entry) => [entry.key, entry]))
 
-  const activeKey = pinnedKey ?? hoveredKey
+  const activeKey = pinnedKey ?? previewKey
   const activeItem = motifSet.items.find((item) => item.key === activeKey)
   const activeLocalGap =
     activeItem !== undefined &&
@@ -339,10 +356,15 @@ export function MotifStrengthSection({
                 data-motif-key={item.key}
                 data-motif-corrected={correctionState(strength?.correction ?? null)}
                 onClick={() => setPinnedKey((current) => (current === item.key ? null : item.key))}
-                onMouseEnter={() => setHoveredKey(item.key)}
+                // Zeigen UND Tastaturfokus speisen dieselbe Vorschau: Ohne `onFocus` bekaeme ein
+                // sehender Tastaturnutzer beim Durchtabben nichts zu sehen - der zugaengliche
+                // Name traegt zwar alle Angaben, ist aber genau fuer ihn unsichtbar.
+                onMouseEnter={() => setPreviewKey(item.key)}
                 onMouseLeave={() =>
-                  setHoveredKey((current) => (current === item.key ? null : current))
+                  setPreviewKey((current) => (current === item.key ? null : current))
                 }
+                onFocus={() => setPreviewKey(item.key)}
+                onBlur={() => setPreviewKey((current) => (current === item.key ? null : current))}
               >
                 <MotifStrengthSymbol
                   iconName={motifIconName(item.key)}
