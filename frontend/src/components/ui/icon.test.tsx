@@ -5,28 +5,54 @@ import { Icon, ICON_NAMES } from './icon'
 
 /*
  * specs/features/0320-dark-utility-register.md, Teststrategie "Komponentenebene, semantisch".
- * Der Zwoelfer-Satz des Boards ist die einzige Symbolquelle des Produkts; diese Datei ist die
+ * Der Symbolsatz des Boards ist die einzige Symbolquelle des Produkts; diese Datei ist die
  * einzige Stelle, an der `lucide-react` ueberhaupt importiert werden darf (statisch erzwungen in
  * src/designSystem.contract.test.ts).
  */
 describe('Icon', () => {
-  it('kennt genau die zwoelf Symbole des Boards', () => {
+  it('kennt genau die zwanzig Symbole des Boards', () => {
     expect([...ICON_NAMES].sort()).toEqual(
       [
         'book',
+        'building-2',
         'camera',
         'check',
         'chevron-down',
         'cog',
         'folder',
+        'footprints',
         'image',
         'info',
+        'landmark',
+        'mountain-snow',
+        'paw-print',
         'search',
+        'sparkles',
         'star',
         'tag',
+        'user-round',
+        'utensils',
         'x-circle',
       ].sort(),
     )
+  })
+
+  /* Die acht Motivsymbole (ADR 0113 Punkt 3) als EIGENE Zusage: sie sind die Menge, deren
+     Vollstaendigkeit `utils/motifIcons.ts` voraussetzt - faellt eine weg, faellt dort ein Motiv
+     stillschweigend auf das Ersatzsymbol zurueck. */
+  it('traegt die acht Motivsymbole', () => {
+    for (const name of [
+      'user-round',
+      'mountain-snow',
+      'landmark',
+      'building-2',
+      'paw-print',
+      'utensils',
+      'footprints',
+      'sparkles',
+    ]) {
+      expect(ICON_NAMES, name).toContain(name)
+    }
   })
 
   it.each(ICON_NAMES)('rendert fuer %s ein <svg> mit data-icon', (name) => {

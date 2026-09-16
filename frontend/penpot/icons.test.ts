@@ -1,6 +1,6 @@
 // @vitest-environment node
 /*
- * Erzeugung UND Pruefung der zwoelf Penpot-Symbole (specs/features/0352-penpot-als-alleinige-
+ * Erzeugung UND Pruefung der zwanzig Penpot-Symbole (specs/features/0352-penpot-als-alleinige-
  * design-quelle.md, decisions/0066-penpot-stand-als-erzeugte-idempotente-nutzlast.md Abschnitt 3).
  *
  * Wie bei den Tokens ist der Test der ERZEUGER: `toMatchFileSnapshot` schreibt
@@ -24,8 +24,8 @@ const icons = buildIcons()
 const iconsSource = readFileSync(ICONS_TS_PATH, 'utf8')
 
 describe('Penpot-Symbole: Erzeugung aus ui/icon.tsx', () => {
-  it('erzeugt genau zwoelf Symbole', () => {
-    expect(Object.keys(icons)).toHaveLength(12)
+  it('erzeugt genau zwanzig Symbole', () => {
+    expect(Object.keys(icons)).toHaveLength(20)
   })
 
   it('traegt exakt die Schluesselmenge von ICON_NAMES, in deren Reihenfolge', () => {
