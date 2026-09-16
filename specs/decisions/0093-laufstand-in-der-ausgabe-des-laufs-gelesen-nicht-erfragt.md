@@ -4,6 +4,22 @@
 **Datum:** 2026-09-13
 **Bezug:** [GitHub-Issue #449](https://github.com/TheRealKoller/photosort/issues/449), Spec 0449
 
+**Teilweise abgelöst:** **Punkt 4**, und dort ausschließlich seine Begründung — der Lesekanal
+`TaskOutput` und das daran hängende „endliche Ausgabefenster" (auch im dritten Punkt der
+Konsequenzen) — durch ADR
+[`0114`](./0114-laufstand-aus-dem-transkript-ueber-einen-gelieferten-pfad.md) (Accepted,
+2026-09-16): Gelesen wird ab dort das Sitzungstranskript des Laufs über einen entgegengenommenen
+Pfad, gezielt extrahiert statt roh, und die beiden Fälle des Punktes 4 werden zu vier Ausgängen
+verfeinert, von denen zwei als Strukturbefund ausgesprochen werden. **Die Regel des Punktes 4
+selbst gilt unverändert weiter:** Fehlt der Block, sagt die Auskunft genau das, nennt den Grund,
+trägt nur den gemessenen Commit-Stand und bezeichnet ihn ausdrücklich als solchen — samt beider
+Verbotssätze. **Alles Übrige dieser ADR bleibt unverändert in Kraft** — die Auskunft als reiner
+Lesevorgang mit `SendMessage` als ausgeschlossenem Statuskanal (Punkt 1), der Block `## Laufstand`
+als einziger Ort des Fortschritts, ausschließlich in `.claude/agents/developer.md` definiert
+(Punkt 2), der gemessene statt gemeldete Arbeitsort (Punkt 3) und der Geltungsbereich
+Umsetzungslauf (Punkt 5). Deshalb `Accepted` und nicht `Superseded`; die Abstufung ist in
+[`../README.md`](../README.md) beschrieben.
+
 ## Kontext
 
 Der Umsetzungslauf (`developer`) ist ein über das `Agent`-Werkzeug gestarteter Subagent. Sein
