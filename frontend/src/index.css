@@ -411,4 +411,17 @@
     min-height: 44px;
     transform: translate(-50%, -50%);
   }
+
+  /*
+   * Fuellstand eines Motivsymbols: Beschnitt auf die UNTEREN `--motif-fill` Prozent der Hoehe
+   * (specs/features/0490-motivstaerke-kompakt.md, decisions/0113-...). Das Rezept steht an genau
+   * DIESER einen Stelle, die Aufrufstelle uebergibt nur den Prozentwert - eine
+   * `clip-path-[…]`-Utility im TSX waere ein willkuerlicher Wert und damit vertraglich verboten.
+   *
+   * Der Rueckfallwert 0% ist nicht Kosmetik: ohne ihn zeigte ein Symbol ohne gesetzte Variable
+   * die VOLLE Fuellung und behauptete damit eine Staerke, die niemand gemessen hat.
+   */
+  .motif-fill-clip {
+    clip-path: inset(calc(100% - var(--motif-fill, 0%)) 0 0 0);
+  }
 }
