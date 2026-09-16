@@ -1165,8 +1165,9 @@ describe('PhotoDetailPage', () => {
       expect(within(motifSection()).getByRole('heading', { name: 'Motive' })).toBeInTheDocument()
     })
 
-    it('zeigt den Satz statt der Liste, solange das Foto keinen Lauf gesehen hat', async () => {
-      // Die KARDINALITAET Null, nicht eine Textsuche: der Satz kann ueber acht Nullzeilen stehen.
+    it('zeigt den Satz statt der Reihe, solange das Foto keinen Lauf gesehen hat', async () => {
+      // Die KARDINALITAET Null, nicht eine Textsuche: der Satz kann ueber acht leeren Symbolen
+      // stehen.
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 1, motif_assessment: null, motifs: [] })],
         total: 1,
@@ -1179,7 +1180,7 @@ describe('PhotoDetailPage', () => {
       expect(within(motifSection()).getByText(/Noch nicht klassifiziert/)).toBeInTheDocument()
     })
 
-    it('zeigt die acht Zeilen in Registry-Reihenfolge, sobald eine Kopfzeile vorliegt', async () => {
+    it('zeigt die acht Symbole in Registry-Reihenfolge, sobald eine Kopfzeile vorliegt', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [photo({ id: 1, motif_assessment: CLOUD_ASSESSMENT, motifs: motifStrengths() })],
         total: 1,
@@ -1233,6 +1234,9 @@ describe('PhotoDetailPage', () => {
 
       renderPage('/projects/1/photos/1')
       await screen.findByAltText('a.jpg')
+      // ERST aufklappen: die Korrekturschalter stehen seit Spec 0490 in der Detailzeile unter der
+      // Symbolreihe, nicht mehr an acht Listenzeilen.
+      await user.click(within(motifSection()).getByRole('button', { name: /^Menschen:/ }))
       await user.click(
         within(motifSection()).getByRole('button', { name: 'Trifft nicht zu: Menschen' }),
       )
@@ -1258,6 +1262,7 @@ describe('PhotoDetailPage', () => {
 
       renderPage('/projects/1/photos/1')
       await screen.findByAltText('a.jpg')
+      await user.click(within(motifSection()).getByRole('button', { name: /^Menschen:/ }))
       await user.click(
         within(motifSection()).getByRole('button', { name: 'Zurücknehmen: Menschen' }),
       )
@@ -1268,6 +1273,10 @@ describe('PhotoDetailPage', () => {
     })
 
     it('bietet fuer ein ausgeschlossenes Foto keinen Korrekturschalter an', async () => {
+      // DER KLICK AUF EIN SYMBOL STEHT VOR DER NEGATIVEN ASSERTION: seit Spec 0490 erscheinen die
+      // Schalter erst nach dem Aufklappen, und ohne ihn bestuende die Zusage auch dann, wenn sie
+      // dort sehr wohl erschienen.
+      const user = userEvent.setup()
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [
           photo({
@@ -1285,10 +1294,15 @@ describe('PhotoDetailPage', () => {
       expect(
         within(motifSection()).getByText(/Als Dokument oder Bildschirmabbildung erkannt/),
       ).toBeInTheDocument()
-      expect(within(motifSection()).queryByRole('button', { name: /Trifft/ })).toBeNull()
+
+      await user.click(within(motifSection()).getByRole('button', { name: /^Menschen:/ }))
+
+      expect(within(motifSection()).queryByRole('button', { name: /^Trifft/ })).toBeNull()
+      expect(within(motifSection()).queryByRole('button', { name: /^Zurücknehmen:/ })).toBeNull()
     })
 
     it('ist der EINZIGE Bedienblock der Bewertungsdetails', async () => {
+      const user = userEvent.setup()
       /* specs/features/0427-motive-mit-staerke.md, PR 3: mit den Kategorien sind die
        * Bedienelemente aus der Aufschlüsselung verschwunden. Als eigener Fall samt NEGATIVER
        * Assertion, weil ein stehengebliebener Bedienteil ohne Datengrundlage still leer bliebe
@@ -1320,10 +1334,13 @@ describe('PhotoDetailPage', () => {
       await screen.findByAltText('a.jpg')
       expect(screen.queryByTestId('category-controls-section')).toBeNull()
       expect(motifSection()).toBeInTheDocument()
-      // Die Korrekturschalter der Motivliste sind die einzigen Bedienelemente der
-      // Bewertungsdetails.
+
+      await user.click(within(motifSection()).getByRole('button', { name: /^Menschen:/ }))
+
+      // Die Korrekturschalter der aufgeklappten Detailzeile sind die einzigen Bedienelemente der
+      // Bewertungsdetails, die einen Datenwert schreiben.
       expect(
-        within(motifSection()).getAllByRole('button', { name: /^Trifft zu/ }).length,
+        within(motifSection()).getAllByRole('button', { name: /^Trifft zu:/ }).length,
       ).toBeGreaterThan(0)
     })
   })

@@ -147,8 +147,52 @@ describe('CriterionDetailsPopover', () => {
     const list = within(dialog).getByRole('list', { name: 'Motive' })
     expect(within(list).getAllByRole('listitem')).toHaveLength(MOTIF_SET.items.length)
     expect(within(dialog).getByText(MOTIF_CORRECTION_HINT)).toBeInTheDocument()
-    expect(within(dialog).queryByRole('button', { name: /^Trifft zu/ })).toBeNull()
-    expect(within(dialog).queryByRole('button', { name: /^Trifft nicht zu/ })).toBeNull()
+
+    // DER KLICK AUF EIN SYMBOL STEHT VOR DER NEGATIVEN ASSERTION: seit Spec 0490 erscheinen die
+    // Korrekturschalter erst nach dem Aufklappen. Ohne ihn bliebe die Zusage auch dann gruen,
+    // wenn die schreibgeschuetzte Stelle dort sehr wohl welche anboete.
+    await user.click(within(dialog).getByRole('button', { name: /^Menschen:/ }))
+
+    expect(within(dialog).queryByRole('button', { name: /^Trifft zu:/ })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /^Trifft nicht zu:/ })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /^Zurücknehmen:/ })).toBeNull()
+  })
+
+  it('keeps name and exact value reachable in the read-only popover', async () => {
+    // AK9: einsehbar bleibt einsehbar - der Wegfall der Schalter nimmt der Stelle keine Angabe.
+    const user = userEvent.setup()
+    render(
+      <CriterionDetailsPopover
+        criterionScores={[criterionScore()]}
+        ranking={ranking()}
+        suggestion={null}
+        motifSet={MOTIF_SET}
+        assessment={{
+          source: 'cloud',
+          provider: 'anthropic',
+          excluded_document: false,
+          computed_at: '2026-07-21T09:00:00',
+        }}
+        motifs={MOTIF_SET.items.map((item) => ({
+          key: item.key,
+          strength: 0.5,
+          correction: null,
+          present: false,
+        }))}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Bewertungsdetails anzeigen' }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Menschen: 50%' }))
+
+    const detailId = within(dialog)
+      .getByRole('button', { name: 'Menschen: 50%' })
+      .getAttribute('aria-controls')
+    const row = document.getElementById(detailId ?? '')
+    expect(row).not.toBeNull()
+    expect(within(row!).getByText('Menschen')).toBeInTheDocument()
+    expect(within(row!).getByText('50%')).toBeInTheDocument()
   })
 
   it('leaves the motif part out entirely when the caller passes no assessment', async () => {

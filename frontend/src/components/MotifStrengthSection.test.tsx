@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { MotifAssessmentOut, MotifStrengthOut } from '../api/types'
@@ -6,17 +7,28 @@ import { MOTIF_KEYS, MOTIF_SET } from '../test/motifSetFixture'
 import { MotifStrengthSection } from './MotifStrengthSection'
 
 /**
- * specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt „components/MotifStrengthList.tsx".
+ * specs/features/0490-motivstaerke-kompakt.md — die Reihe aus acht Fuellstandssymbolen mit der
+ * aufklappenden Detailzeile.
  *
- * Zwei Nachweise tragen mehr als eine Textprüfung:
+ * Vier Nachweise tragen mehr als eine Textpruefung:
  *
- * * Das PAAR „noch nicht klassifiziert" gegen „acht Nullen": geprüft über die KARDINALITÄT von
- *   `[data-motif-key]`, nicht über eine Textsuche nach dem Satz - der Satz kann über acht
- *   Nullzeilen stehen, und dann ist er grün und falsch.
- * * Die Zeilenreihenfolge ist die Registry-Reihenfolge, NIE nach Stärke sortiert: acht
- *   gleichnamige Korrekturschalter, die von Foto zu Foto die Position wechseln, laden zum
- *   Fehlklick ein - und ein Fehlklick schreibt hier einen Datenwert.
+ * * Das PAAR „noch nicht klassifiziert" gegen „acht Nullen": geprueft ueber die KARDINALITAET von
+ *   `[data-motif-key]`, nicht ueber eine Textsuche nach dem Satz - der Satz kann ueber acht
+ *   leeren Symbolen stehen, und dann ist er gruen und falsch.
+ * * Die Reihenfolge ist die Registry-Reihenfolge, NIE nach Staerke sortiert: acht gleichartige
+ *   Schaltflaechen, die von Foto zu Foto die Position wechseln, laden zum Fehlklick ein - und ein
+ *   Fehlklick schreibt hier ueber die Detailzeile einen Datenwert.
+ * * Jede Abwesenheitszusage ueber einen Korrekturschalter braucht den Klick auf ein Symbol VOR
+ *   der negativen Assertion. Ohne ihn bestuende sie auch dann, wenn nach dem Aufklappen sehr wohl
+ *   Schalter erschienen.
+ * * Die Werte stehen im zugaenglichen NAMEN der Schaltflaechen. Eine Zusage, die nur
+ *   `document.body.textContent` liest, erfasst sie nicht mehr.
+ *
+ * Die Bandgrenzen stehen als `MOTIF_SET.strength_bands`, nie als Dezimalliteral - sonst prueften
+ * die Faelle die Kalibrierung statt die Stufung.
  */
+
+const BANDS = MOTIF_SET.strength_bands
 
 const CLOUD_ASSESSMENT: MotifAssessmentOut = {
   source: 'cloud',
@@ -42,10 +54,10 @@ function strengths(overrides: Record<string, Partial<MotifStrengthOut>> = {}): M
   }))
 }
 
-function renderList(props: Partial<Parameters<typeof MotifStrengthSection>[0]> = {}) {
+function renderSection(props: Partial<Parameters<typeof MotifStrengthSection>[0]> = {}) {
   const onCorrect = vi.fn()
   const onWithdraw = vi.fn()
-  render(
+  const view = render(
     <MotifStrengthSection
       motifSet={MOTIF_SET}
       assessment={CLOUD_ASSESSMENT}
@@ -58,18 +70,35 @@ function renderList(props: Partial<Parameters<typeof MotifStrengthSection>[0]> =
       {...props}
     />,
   )
-  return { onCorrect, onWithdraw }
+  return { onCorrect, onWithdraw, view }
 }
 
-function rowOf(motifKey: string): HTMLElement {
-  const row = document.querySelector(`[data-motif-key="${motifKey}"]`)
-  expect(row).not.toBeNull()
+/** Die Schaltflaeche eines Motivs - der Traeger von `data-motif-key`. */
+function symbolOf(motifKey: string): HTMLElement {
+  const button = document.querySelector(`[data-motif-key="${motifKey}"]`)
+  expect(button).not.toBeNull()
+  return button as HTMLElement
+}
+
+/** Die Detailzeile ueber die `aria-controls`-Verknuepfung - nie ueber einen eigenen Testhaken:
+ * so ist zugleich geprueft, dass die Verknuepfung ueberhaupt irgendwohin zeigt. */
+function detailRow(motifKey = MOTIF_KEYS[0]): HTMLElement {
+  const id = symbolOf(motifKey).getAttribute('aria-controls')
+  expect(id).not.toBeNull()
+  const row = document.getElementById(id!)
+  expect(row, `Detailzeile ${id}`).not.toBeNull()
   return row as HTMLElement
 }
 
-describe('MotifStrengthSection: die Liste', () => {
-  it('renders the eight motifs in registry order, not sorted by strength', () => {
-    renderList({
+function accessibleNames(): string[] {
+  return [...document.querySelectorAll('[data-motif-key]')].map(
+    (node) => node.getAttribute('aria-label') ?? '',
+  )
+}
+
+describe('MotifStrengthSection: die Reihe', () => {
+  it('shows the eight motifs in registry order, not sorted by strength', () => {
+    renderSection({
       motifs: strengths({
         menschen: { strength: 0.1 },
         detail_stimmung: { strength: 0.99 },
@@ -84,34 +113,65 @@ describe('MotifStrengthSection: die Liste', () => {
   })
 
   it('names the list for assistive technology', () => {
-    renderList()
+    // Zwei Abwesenheitszusagen anderer Ansichten (PhotoGridPage, SelectionPhotoTile) haengen an
+    // genau diesem Namen; faellt er weg, werden beide still bedeutungslos.
+    renderSection()
 
     expect(screen.getByRole('list', { name: 'Motive' })).toBeTruthy()
   })
 
-  it('shows the display name and the percentage of every motif', () => {
-    renderList({ motifs: strengths({ menschen: { strength: 0.42 } }) })
+  it('carries exactly eight list items, each with one button', () => {
+    renderSection()
 
-    const row = rowOf('menschen')
-    expect(within(row).getByText('Menschen')).toBeTruthy()
-    expect(within(row).getByText('42%')).toBeTruthy()
+    const list = screen.getByRole('list', { name: 'Motive' })
+    const items = within(list).getAllByRole('listitem')
+    expect(items).toHaveLength(MOTIF_KEYS.length)
+    for (const item of items) {
+      expect(within(item).getAllByRole('button')).toHaveLength(1)
+    }
   })
 
-  it('carries the ratio on the bar instead of an inline style', () => {
-    renderList({ motifs: strengths({ menschen: { strength: 0.42 } }) })
+  it('shows no bar anywhere in the motif section', () => {
+    // AK1: Die Balkenliste bleibt nirgends stehen.
+    renderSection({ motifs: strengths({ menschen: { strength: 0.42 } }) })
 
-    const bar = rowOf('menschen').querySelector('progress')
-    expect(bar).not.toBeNull()
-    expect(bar?.getAttribute('value')).toBe('0.42')
-    expect(bar?.getAttribute('max')).toBe('1')
-    expect(bar?.getAttribute('aria-hidden')).toBe('true')
-    expect(bar?.getAttribute('style')).toBeNull()
+    expect(document.querySelector('progress')).toBeNull()
+    expect(screen.queryByRole('progressbar')).toBeNull()
   })
 
-  it('drives the rows from the registry, not from the strength rows of the photo', () => {
-    // Ein Altwert aus der Laufhistorie erzeugt keine Zeile - er kann hier strukturell nicht
-    // durchfallen, und die Reihenfolge bleibt auf jedem Foto dieselbe.
-    renderList({
+  it('draws one filled symbol per motif', () => {
+    renderSection()
+
+    for (const key of MOTIF_KEYS) {
+      expect(symbolOf(key).querySelector('[data-motif-layer="outline"]'), key).not.toBeNull()
+      expect(symbolOf(key).querySelector('[data-motif-layer="fill"]'), key).not.toBeNull()
+    }
+  })
+
+  it.each([
+    ['menschen', 'user-round'],
+    ['landschaft', 'mountain-snow'],
+    ['bauwerk_sehenswuerdigkeit', 'landmark'],
+    ['stadt_strasse', 'building-2'],
+    ['tiere', 'paw-print'],
+    ['essen_trinken', 'utensils'],
+    ['aktivitaet', 'footprints'],
+    ['detail_stimmung', 'sparkles'],
+  ])('gives %s the icon %s', (motifKey, iconName) => {
+    renderSection()
+
+    expect(symbolOf(motifKey).querySelector(`[data-icon="${iconName}"]`)).not.toBeNull()
+  })
+
+  it('names every symbol with its motif and its value', () => {
+    // Damit steht JEDE Angabe auch ohne Zeigen und ohne Aufklappen zur Verfuegung (AK4).
+    renderSection({ motifs: strengths({ menschen: { strength: 0.42 } }) })
+
+    expect(screen.getByRole('button', { name: 'Menschen: 42%' })).toBeTruthy()
+  })
+
+  it('drives the row from the registry, not from the strength rows of the photo', () => {
+    renderSection({
       motifs: [
         { key: 'menschen', strength: 0.5, correction: null, present: true },
         { key: 'unerkannt', strength: 0.9, correction: null, present: true },
@@ -123,21 +183,257 @@ describe('MotifStrengthSection: die Liste', () => {
     )
 
     expect(keys).toEqual(MOTIF_KEYS)
-    expect(within(rowOf('menschen')).getByText('50%')).toBeTruthy()
+    expect(symbolOf('menschen').getAttribute('aria-label')).toBe('Menschen: 50%')
   })
 
   it('shows zero for a motif whose strength row is missing entirely', () => {
-    // Der Vektor kann unvollstaendig sein - die Liste bleibt achtzeilig.
-    renderList({ motifs: [{ key: 'menschen', strength: 0.5, correction: null, present: true }] })
+    // Der Vektor darf unvollstaendig sein - die Reihe bleibt achtteilig.
+    renderSection({ motifs: [{ key: 'menschen', strength: 0.5, correction: null, present: true }] })
 
-    expect(within(rowOf('tiere')).getByText('0%')).toBeTruthy()
-    expect(rowOf('tiere').hasAttribute('data-motif-corrected')).toBe(false)
+    expect(symbolOf('tiere').getAttribute('aria-label')).toBe('Tiere: 0%')
+    expect(symbolOf('tiere').hasAttribute('data-motif-corrected')).toBe(false)
+  })
+
+  it('takes the fill height from the same rounded percentage as the text', () => {
+    // AK4: Fuellhoehe und angezeigter Wert koennen nicht auseinanderlaufen. Der absichernde Fall
+    // ist eine Staerke GROESSER NULL, die auf 0 % rundet - waere die Hoehe anders gerundet,
+    // zeigte das Symbol eine Fuellung, die die Zahl nicht nennt.
+    renderSection({
+      motifs: strengths({ menschen: { strength: 0.426 }, tiere: { strength: 0.004 } }),
+    })
+
+    expect(symbolOf('menschen').getAttribute('aria-label')).toBe('Menschen: 43%')
+    expect(
+      (
+        symbolOf('menschen').querySelector('[data-motif-layer="fill"]') as HTMLElement
+      ).style.getPropertyValue('--motif-fill'),
+    ).toBe('43%')
+    expect(symbolOf('tiere').getAttribute('aria-label')).toBe('Tiere: 0%')
+    expect(
+      (
+        symbolOf('tiere').querySelector('[data-motif-layer="fill"]') as HTMLElement
+      ).style.getPropertyValue('--motif-fill'),
+    ).toBe('0%')
+  })
+
+  it.each([
+    ['strong', BANDS.strong, 'text-status-success'],
+    ['medium', BANDS.medium, 'text-status-running'],
+    ['weak', BANDS.medium / 2, 'text-status-failed'],
+  ])('colours a %s motif with its band colour', (_step, strength, utility) => {
+    renderSection({ motifs: strengths({ menschen: { strength } }) })
+
+    const fill = symbolOf('menschen').querySelector('[data-motif-layer="fill"]') as HTMLElement
+    expect(fill.className).toContain(utility)
+  })
+
+  it('leaves a motif at zero without any fill at all', () => {
+    renderSection()
+
+    const fill = symbolOf('menschen').querySelector('[data-motif-layer="fill"]') as HTMLElement
+    expect(fill.style.getPropertyValue('--motif-fill')).toBe('0%')
+  })
+})
+
+describe('MotifStrengthSection: die Detailzeile', () => {
+  it('shows a prompt instead of an empty area while nothing is chosen', () => {
+    // Die Zeile behaelt ihre Hoehe - die Reihe springt beim ersten Klick nicht.
+    renderSection()
+
+    expect(within(detailRow()).getByText(/Symbol antippen/)).toBeTruthy()
+  })
+
+  it('keeps the row in the document even while nothing is chosen', () => {
+    // `aria-controls` zeigt nie ins Leere.
+    renderSection()
+
+    for (const key of MOTIF_KEYS) {
+      expect(symbolOf(key).getAttribute('aria-controls')).toBe(detailRow().id)
+    }
+  })
+
+  it('reports every symbol as collapsed while nothing is pinned', () => {
+    renderSection()
+
+    for (const key of MOTIF_KEYS) {
+      expect(symbolOf(key).getAttribute('aria-expanded'), key).toBe('false')
+    }
+  })
+
+  it('opens the row with full name and exact value on click', async () => {
+    const user = userEvent.setup()
+    renderSection({ motifs: strengths({ menschen: { strength: 0.42 } }) })
+
+    await user.click(symbolOf('menschen'))
+
+    const row = detailRow()
+    expect(within(row).getByText('Menschen')).toBeTruthy()
+    expect(within(row).getByText('42%')).toBeTruthy()
+    expect(symbolOf('menschen').getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('unpins the row again on a second click on the same symbol', async () => {
+    // Der Klick loest die Anheftung. Dass die Zeile danach WEITER steht, solange der Zeiger auf
+    // dem Symbol bleibt, ist kein Rest der Anheftung, sondern AK10 (Zeigen blendet ein) - und
+    // genau deshalb ist der Nachweis zweiteilig: erst `aria-expanded`, dann das Verlassen.
+    const user = userEvent.setup()
+    renderSection()
+
+    await user.click(symbolOf('menschen'))
+    await user.click(symbolOf('menschen'))
+    expect(symbolOf('menschen').getAttribute('aria-expanded')).toBe('false')
+
+    await user.unhover(symbolOf('menschen'))
+    expect(within(detailRow()).getByText(/Symbol antippen/)).toBeTruthy()
+  })
+
+  it('switches the row to the other motif on a click on another symbol', async () => {
+    const user = userEvent.setup()
+    renderSection({ motifs: strengths({ tiere: { strength: 0.8 } }) })
+
+    await user.click(symbolOf('menschen'))
+    await user.click(symbolOf('tiere'))
+
+    expect(symbolOf('menschen').getAttribute('aria-expanded')).toBe('false')
+    expect(symbolOf('tiere').getAttribute('aria-expanded')).toBe('true')
+    expect(within(detailRow()).getByText('Tiere')).toBeTruthy()
+  })
+
+  it('shows name and value on hover, without a click', async () => {
+    // AK10: Zeigen ERGAENZT.
+    const user = userEvent.setup()
+    renderSection({ motifs: strengths({ landschaft: { strength: 0.6 } }) })
+
+    await user.hover(symbolOf('landschaft'))
+
+    const row = detailRow()
+    expect(within(row).getByText('Landschaft')).toBeTruthy()
+    expect(within(row).getByText('60%')).toBeTruthy()
+  })
+
+  it('does not report a merely hovered symbol as expanded', () => {
+    // `aria-expanded` folgt NUR dem Anheften: ein Zeigen ist keine Zustandsaenderung, die
+    // assistive Technik ansagen soll.
+    const user = userEvent.setup()
+    renderSection()
+
+    return user.hover(symbolOf('menschen')).then(() => {
+      expect(symbolOf('menschen').getAttribute('aria-expanded')).toBe('false')
+    })
+  })
+
+  it('lets a pinned symbol survive hovering another one', async () => {
+    // AK10: Sonst wechselte die Zeile unter dem Zeiger auf dem Weg zu den Korrekturschaltern.
+    const user = userEvent.setup()
+    renderSection({ motifs: strengths({ menschen: { strength: 0.42 }, tiere: { strength: 0.8 } }) })
+
+    await user.click(symbolOf('menschen'))
+    await user.hover(symbolOf('tiere'))
+
+    const row = detailRow()
+    expect(within(row).getByText('Menschen')).toBeTruthy()
+    expect(within(row).queryByText('Tiere')).toBeNull()
+  })
+
+  it('falls back to the hovered symbol again once nothing is pinned', async () => {
+    const user = userEvent.setup()
+    renderSection({ motifs: strengths({ tiere: { strength: 0.8 } }) })
+
+    await user.click(symbolOf('menschen'))
+    await user.click(symbolOf('menschen'))
+    await user.hover(symbolOf('tiere'))
+
+    expect(within(detailRow()).getByText('Tiere')).toBeTruthy()
+  })
+
+  it('offers the same entries on hover as after a click', async () => {
+    // AK10: Auf Geraeten ohne Maus ist der Klick der VOLLSTAENDIGE Weg - keine Angabe und keine
+    // Aktion ist allein ueber Zeigen erreichbar.
+    const user = userEvent.setup()
+    const { view } = renderSection({ motifs: strengths({ menschen: { strength: 0.42 } }) })
+
+    await user.hover(symbolOf('menschen'))
+    const hovered = detailRow().innerHTML
+    await user.unhover(symbolOf('menschen'))
+    await user.click(symbolOf('menschen'))
+    const clicked = detailRow().innerHTML
+    view.unmount()
+
+    expect(clicked).toBe(hovered)
+  })
+
+  it('shows the reason instead of the value for a locally unassessable motif', async () => {
+    // AK7: Ein `0 %` waere dort die Aussage „nicht zu sehen" statt „nicht angesehen".
+    const user = userEvent.setup()
+    renderSection({ assessment: LOCAL_ASSESSMENT })
+
+    await user.click(symbolOf('aktivitaet'))
+
+    const row = detailRow()
+    expect(within(row).getByText('lokal nicht beurteilbar')).toBeTruthy()
+    expect(within(row).queryByText('0%')).toBeNull()
+  })
+
+  it('names a locally unassessable motif with the reason instead of a number', () => {
+    renderSection({ assessment: LOCAL_ASSESSMENT })
+
+    expect(symbolOf('aktivitaet').getAttribute('aria-label')).toBe(
+      'Aktivität: lokal nicht beurteilbar',
+    )
+  })
+
+  it('leaves a locally unassessable symbol unfilled', () => {
+    // AK7: In der Reihe traegt dieser Fall dieselbe leere Fuellung wie „gar nicht vertreten".
+    renderSection({
+      assessment: LOCAL_ASSESSMENT,
+      motifs: strengths({ aktivitaet: { strength: 0.9 } }),
+    })
+
+    const fill = symbolOf('aktivitaet').querySelector('[data-motif-layer="fill"]') as HTMLElement
+    expect(fill.style.getPropertyValue('--motif-fill')).toBe('0%')
+    for (const utility of ['text-status-success', 'text-status-running', 'text-status-failed']) {
+      expect(fill.className, utility).not.toContain(utility)
+    }
+  })
+
+  it('shows value and fill on a CLOUD basis even for a locally unassessable motif', () => {
+    // Der Hinweis haengt an der Grundlage, nicht am Motiv: das Modell hat es beurteilt.
+    renderSection({ motifs: strengths({ aktivitaet: { strength: 0.7 } }) })
+
+    expect(symbolOf('aktivitaet').getAttribute('aria-label')).toBe('Aktivität: 70%')
+  })
+
+  it('keeps a pinned symbol pinned across a photo change and shows the NEW value', async () => {
+    // Die Komponente kann den Fotowechsel mangels Fotoidentitaet in den Props nicht erkennen.
+    // Zugesichert wird deshalb, dass die Zeile danach den neuen Wert zeigt, nie einen
+    // stehengebliebenen alten.
+    const user = userEvent.setup()
+    const { view } = renderSection({ motifs: strengths({ menschen: { strength: 0.42 } }) })
+
+    await user.click(symbolOf('menschen'))
+    view.rerender(
+      <MotifStrengthSection
+        motifSet={MOTIF_SET}
+        assessment={CLOUD_ASSESSMENT}
+        motifs={strengths({ menschen: { strength: 0.91 } })}
+        editable
+        onCorrect={vi.fn()}
+        onWithdraw={vi.fn()}
+        pendingMotifKey={null}
+        error={null}
+      />,
+    )
+
+    expect(symbolOf('menschen').getAttribute('aria-expanded')).toBe('true')
+    const row = detailRow()
+    expect(within(row).getByText('91%')).toBeTruthy()
+    expect(within(row).queryByText('42%')).toBeNull()
   })
 })
 
 describe('MotifStrengthSection: die vier Fotozustände', () => {
-  it('shows a sentence instead of the list when the photo was never classified', () => {
-    renderList({ assessment: null })
+  it('shows a sentence instead of the row when the photo was never classified', () => {
+    renderSection({ assessment: null })
 
     expect(document.querySelectorAll('[data-motif-key]')).toHaveLength(0)
     expect(screen.queryByRole('list', { name: 'Motive' })).toBeNull()
@@ -145,14 +441,14 @@ describe('MotifStrengthSection: die vier Fotozustände', () => {
   })
 
   it('offers no correction button at all when the photo was never classified', () => {
-    renderList({ assessment: null })
+    renderSection({ assessment: null })
 
-    expect(screen.queryByRole('button', { name: /Trifft zu/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Trifft zu:/ })).toBeNull()
   })
 
   it('renders differently for an unclassified photo than for eight zeroes', () => {
     // DAS PAAR. Ohne diesen Fall machte ein `?? 0` im Lesepfad aus „noch nicht klassifiziert"
-    // acht Nullzeilen, und kein anderer Fall bräche.
+    // acht leere Symbole, und kein anderer Fall braeche.
     const { unmount } = render(
       <MotifStrengthSection
         motifSet={MOTIF_SET}
@@ -166,7 +462,7 @@ describe('MotifStrengthSection: die vier Fotozustände', () => {
       />,
     )
     const unassessedMarkup = document.body.innerHTML
-    const unassessedRows = document.querySelectorAll('[data-motif-key]').length
+    const unassessedSymbols = document.querySelectorAll('[data-motif-key]').length
     unmount()
 
     render(
@@ -182,76 +478,48 @@ describe('MotifStrengthSection: die vier Fotozustände', () => {
       />,
     )
 
-    expect(unassessedRows).toBe(0)
+    expect(unassessedSymbols).toBe(0)
     expect(document.querySelectorAll('[data-motif-key]')).toHaveLength(MOTIF_KEYS.length)
     expect(document.body.innerHTML).not.toBe(unassessedMarkup)
   })
 
-  it('shows the eight short bars without a computed "nothing recognised" verdict', () => {
-    // Dafür bräuchte die Oberfläche eine Schwelle, und die schafft diese Story ab. Geprüft wird
-    // die LISTE selbst - der Glossartext darf das Wort tragen, die Zeilen nicht.
-    renderList({ motifs: strengths() })
+  it('shows the eight empty symbols without a computed "nothing recognised" verdict', () => {
+    renderSection({ motifs: strengths() })
 
     const list = screen.getByRole('list', { name: 'Motive' })
     expect(document.querySelectorAll('[data-motif-key]')).toHaveLength(MOTIF_KEYS.length)
-    expect(within(list).getAllByText('0%')).toHaveLength(MOTIF_KEYS.length)
+    expect(accessibleNames().filter((name) => name.endsWith(': 0%'))).toHaveLength(
+      MOTIF_KEYS.length,
+    )
     expect(list.textContent ?? '').not.toMatch(/nichts erkannt/i)
     expect(screen.queryByText(/Noch nicht klassifiziert/)).toBeNull()
   })
 
   it('names the cloud basis with provider and time', () => {
-    renderList()
+    renderSection()
 
     expect(screen.getByText(/Grundlage: Cloud-Klassifizierung \(Anthropic\)/)).toBeTruthy()
   })
 
   it('names the local basis and that it cannot judge every motif', () => {
-    renderList({ assessment: LOCAL_ASSESSMENT })
+    renderSection({ assessment: LOCAL_ASSESSMENT })
 
     expect(screen.getByText(/Grundlage: lokale Erkennung/)).toBeTruthy()
     expect(screen.getByText(/kann nicht jedes Motiv beurteilen/)).toBeTruthy()
   })
 
-  it('shows the reason instead of a bar for a locally unassessable motif', () => {
-    // Ein `0 %` wäre dort die Aussage „nicht zu sehen" statt „nicht angesehen".
-    renderList({ assessment: LOCAL_ASSESSMENT })
+  it('keeps the buttons of a locally unassessable motif operable', async () => {
+    const user = userEvent.setup()
+    renderSection({ assessment: LOCAL_ASSESSMENT })
 
-    const row = rowOf('aktivitaet')
-    expect(within(row).getByText('lokal nicht beurteilbar')).toBeTruthy()
-    expect(within(row).queryByText('0%')).toBeNull()
-    expect(row.querySelector('progress')).toBeNull()
-  })
+    await user.click(symbolOf('aktivitaet'))
 
-  it('keeps the buttons of a locally unassessable motif operable', () => {
-    renderList({ assessment: LOCAL_ASSESSMENT })
-
-    const row = rowOf('aktivitaet')
-    const applies = within(row).getByRole('button', { name: 'Trifft zu: Aktivität' })
+    const applies = within(detailRow()).getByRole('button', { name: 'Trifft zu: Aktivität' })
     expect(applies.hasAttribute('disabled')).toBe(false)
   })
 
-  it('shows bar and number for a locally ASSESSABLE motif on a local basis', () => {
-    renderList({
-      assessment: LOCAL_ASSESSMENT,
-      motifs: strengths({ menschen: { strength: 0.3 } }),
-    })
-
-    const row = rowOf('menschen')
-    expect(within(row).getByText('30%')).toBeTruthy()
-    expect(row.querySelector('progress')).not.toBeNull()
-  })
-
-  it('shows bar and number on a CLOUD basis even for a locally unassessable motif', () => {
-    // Der Hinweis hängt an der Grundlage, nicht am Motiv: das Modell hat es beurteilt.
-    renderList({ motifs: strengths({ aktivitaet: { strength: 0.7 } }) })
-
-    const row = rowOf('aktivitaet')
-    expect(within(row).getByText('70%')).toBeTruthy()
-    expect(within(row).queryByText('lokal nicht beurteilbar')).toBeNull()
-  })
-
-  it('states the exclusion first and shows the list read-only', () => {
-    renderList({
+  it('states the exclusion first and shows the row read-only', () => {
+    renderSection({
       assessment: { ...CLOUD_ASSESSMENT, excluded_document: true },
       motifs: strengths({ menschen: { strength: 0.9 } }),
     })
@@ -259,46 +527,65 @@ describe('MotifStrengthSection: die vier Fotozustände', () => {
     expect(screen.getByText(/Als Dokument oder Bildschirmabbildung erkannt/)).toBeTruthy()
     expect(screen.getByText(/lässt sich nicht von Hand ändern/)).toBeTruthy()
     expect(document.querySelectorAll('[data-motif-key]')).toHaveLength(MOTIF_KEYS.length)
-    expect(screen.queryByRole('button', { name: /Trifft zu/ })).toBeNull()
   })
 
   it('names the way back out of the exclusion', () => {
-    renderList({ assessment: { ...CLOUD_ASSESSMENT, excluded_document: true } })
+    renderSection({ assessment: { ...CLOUD_ASSESSMENT, excluded_document: true } })
 
     expect(screen.getByText(/neuer Klassifizierungslauf beurteilt das Foto erneut/)).toBeTruthy()
   })
 
-  it('renders no disabled correction button for an excluded photo', () => {
-    // Kein deaktivierter Schalter, nach dem niemand suchen soll.
-    renderList({ assessment: { ...CLOUD_ASSESSMENT, excluded_document: true } })
+  it('renders no correction button for an excluded photo, not even after expanding', async () => {
+    // DER KLICK STEHT VOR DER NEGATIVEN ASSERTION: ohne ihn bestuende die Zusage auch dann, wenn
+    // nach dem Aufklappen sehr wohl Schalter erschienen. Kein deaktivierter Schalter, nach dem
+    // niemand suchen soll.
+    const user = userEvent.setup()
+    renderSection({ assessment: { ...CLOUD_ASSESSMENT, excluded_document: true } })
 
-    expect(screen.queryAllByRole('button', { name: /Trifft/ })).toHaveLength(0)
+    await user.click(symbolOf('menschen'))
+
+    expect(screen.queryAllByRole('button', { name: /^Trifft/ })).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /^Zurücknehmen:/ })).toBeNull()
+  })
+
+  it('still shows name and value of an excluded photo after expanding', () => {
+    renderSection({
+      assessment: { ...CLOUD_ASSESSMENT, excluded_document: true },
+      motifs: strengths({ menschen: { strength: 0.9 } }),
+    })
+
+    expect(symbolOf('menschen').getAttribute('aria-label')).toBe('Menschen: 90%')
   })
 })
 
 describe('MotifStrengthSection: die Korrektur', () => {
-  it('offers both directions per row with the motif name in the accessible name', () => {
-    // Acht gleichnamige Schaltflächen sind sonst per Tastatur nicht auseinanderzuhalten.
-    renderList()
+  async function openCorrection(motifKey: string, props = {}) {
+    const user = userEvent.setup()
+    const handlers = renderSection(props)
+    await user.click(symbolOf(motifKey))
+    return { ...handlers, user, row: detailRow() }
+  }
 
-    const row = rowOf('menschen')
+  it('offers both directions in the expanded row with the motif name in the accessible name', async () => {
+    const { row } = await openCorrection('menschen')
+
     expect(within(row).getByRole('button', { name: 'Trifft zu: Menschen' })).toBeTruthy()
     expect(within(row).getByRole('button', { name: 'Trifft nicht zu: Menschen' })).toBeTruthy()
   })
 
-  it('reports both directions as unpressed without a correction', () => {
-    renderList()
+  it('reports both directions as unpressed without a correction', async () => {
+    const { row } = await openCorrection('menschen')
 
-    const row = rowOf('menschen')
     for (const name of ['Trifft zu: Menschen', 'Trifft nicht zu: Menschen']) {
       expect(within(row).getByRole('button', { name }).getAttribute('aria-pressed')).toBe('false')
     }
   })
 
-  it('marks the applying direction as pressed', () => {
-    renderList({ motifs: strengths({ menschen: { strength: 1, correction: true } }) })
+  it('marks the applying direction as pressed', async () => {
+    const { row } = await openCorrection('menschen', {
+      motifs: strengths({ menschen: { strength: 1, correction: true } }),
+    })
 
-    const row = rowOf('menschen')
     expect(
       within(row).getByRole('button', { name: 'Trifft zu: Menschen' }).getAttribute('aria-pressed'),
     ).toBe('true')
@@ -309,10 +596,11 @@ describe('MotifStrengthSection: die Korrektur', () => {
     ).toBe('false')
   })
 
-  it('marks the rejecting direction as pressed', () => {
-    renderList({ motifs: strengths({ menschen: { strength: 0, correction: false } }) })
+  it('marks the rejecting direction as pressed', async () => {
+    const { row } = await openCorrection('menschen', {
+      motifs: strengths({ menschen: { strength: 0, correction: false } }),
+    })
 
-    const row = rowOf('menschen')
     expect(
       within(row)
         .getByRole('button', { name: 'Trifft nicht zu: Menschen' })
@@ -320,112 +608,143 @@ describe('MotifStrengthSection: die Korrektur', () => {
     ).toBe('true')
   })
 
-  it('replaces the percentage with the correction word', () => {
-    // Die überstimmte Modellzahl steht NICHT daneben.
-    renderList({ motifs: strengths({ menschen: { strength: 1, correction: true } }) })
+  it('replaces the percentage with the correction word', async () => {
+    // Die ueberstimmte Modellzahl steht NICHT daneben - weder in der Zeile noch im Namen.
+    const { row } = await openCorrection('menschen', {
+      motifs: strengths({ menschen: { strength: 1, correction: true } }),
+    })
 
-    const row = rowOf('menschen')
     expect(within(row).getByText('Trifft zu (korrigiert)')).toBeTruthy()
     expect(within(row).queryByText('100%')).toBeNull()
-    expect(within(row).queryByText('90%')).toBeNull()
+    expect(symbolOf('menschen').getAttribute('aria-label')).toBe('Menschen: Trifft zu (korrigiert)')
   })
 
-  it('uses the rejecting word for a rejecting correction', () => {
-    renderList({ motifs: strengths({ menschen: { strength: 0, correction: false } }) })
-
-    expect(within(rowOf('menschen')).getByText('Trifft nicht zu (korrigiert)')).toBeTruthy()
-  })
-
-  it('marks the corrected row in the DOM', () => {
-    renderList({
-      motifs: strengths({
-        menschen: { strength: 1, correction: true },
-        tiere: { strength: 0, correction: false },
-      }),
+  it('uses the rejecting word for a rejecting correction', async () => {
+    const { row } = await openCorrection('menschen', {
+      motifs: strengths({ menschen: { strength: 0, correction: false } }),
     })
 
-    expect(rowOf('menschen').getAttribute('data-motif-corrected')).toBe('applies')
-    expect(rowOf('tiere').getAttribute('data-motif-corrected')).toBe('rejected')
-    expect(rowOf('landschaft').hasAttribute('data-motif-corrected')).toBe(false)
-  })
-
-  it('fills the bar of an applying correction and empties it for a rejecting one', () => {
-    renderList({
-      motifs: strengths({
-        menschen: { strength: 1, correction: true },
-        tiere: { strength: 0, correction: false },
-      }),
-    })
-
-    expect(rowOf('menschen').querySelector('progress')?.getAttribute('value')).toBe('1')
-    expect(rowOf('tiere').querySelector('progress')?.getAttribute('value')).toBe('0')
-  })
-
-  it('offers the withdrawal only while a correction exists', () => {
-    renderList({ motifs: strengths({ menschen: { strength: 1, correction: true } }) })
-
-    expect(
-      within(rowOf('menschen')).getByRole('button', { name: 'Zurücknehmen: Menschen' }),
-    ).toBeTruthy()
-    expect(within(rowOf('tiere')).queryByRole('button', { name: 'Zurücknehmen: Tiere' })).toBeNull()
-  })
-
-  it('reports a pointless correction as corrected as well', () => {
-    // `applies=false` auf einem Motiv, dessen Grundlage schon 0 ist: die Zeile zeigt das
-    // Korrekturwort, obwohl sich keine Zahl bewegt.
-    renderList({ motifs: strengths({ menschen: { strength: 0, correction: false } }) })
-
-    const row = rowOf('menschen')
-    expect(row.getAttribute('data-motif-corrected')).toBe('rejected')
     expect(within(row).getByText('Trifft nicht zu (korrigiert)')).toBeTruthy()
   })
 
-  it('calls the handler with motif key and direction', () => {
-    const { onCorrect } = renderList()
+  it('marks the corrected symbol in the DOM', () => {
+    renderSection({
+      motifs: strengths({
+        menschen: { strength: 1, correction: true },
+        tiere: { strength: 0, correction: false },
+      }),
+    })
 
-    within(rowOf('tiere')).getByRole('button', { name: 'Trifft zu: Tiere' }).click()
-    within(rowOf('tiere')).getByRole('button', { name: 'Trifft nicht zu: Tiere' }).click()
+    expect(symbolOf('menschen').getAttribute('data-motif-corrected')).toBe('applies')
+    expect(symbolOf('tiere').getAttribute('data-motif-corrected')).toBe('rejected')
+    expect(symbolOf('landschaft').hasAttribute('data-motif-corrected')).toBe(false)
+  })
+
+  it('fills the symbol of an applying correction and empties it for a rejecting one', () => {
+    // Die wirksame Staerke ist bereits 1 bzw. 0 - die Fuellung folgt ihr ohne Sonderweg.
+    renderSection({
+      motifs: strengths({
+        menschen: { strength: 1, correction: true },
+        tiere: { strength: 0, correction: false },
+      }),
+    })
+
+    const filled = symbolOf('menschen').querySelector('[data-motif-layer="fill"]') as HTMLElement
+    const empty = symbolOf('tiere').querySelector('[data-motif-layer="fill"]') as HTMLElement
+    expect(filled.style.getPropertyValue('--motif-fill')).toBe('100%')
+    expect(empty.style.getPropertyValue('--motif-fill')).toBe('0%')
+  })
+
+  it('offers the withdrawal only while a correction exists', async () => {
+    const { user, row } = await openCorrection('menschen', {
+      motifs: strengths({ menschen: { strength: 1, correction: true } }),
+    })
+
+    expect(within(row).getByRole('button', { name: 'Zurücknehmen: Menschen' })).toBeTruthy()
+
+    await user.click(symbolOf('tiere'))
+    expect(within(detailRow()).queryByRole('button', { name: 'Zurücknehmen: Tiere' })).toBeNull()
+  })
+
+  it('reports a pointless correction as corrected as well', async () => {
+    const { row } = await openCorrection('menschen', {
+      motifs: strengths({ menschen: { strength: 0, correction: false } }),
+    })
+
+    expect(symbolOf('menschen').getAttribute('data-motif-corrected')).toBe('rejected')
+    expect(within(row).getByText('Trifft nicht zu (korrigiert)')).toBeTruthy()
+  })
+
+  it('calls the handler with motif key and direction', async () => {
+    const { onCorrect, row } = await openCorrection('tiere')
+
+    within(row).getByRole('button', { name: 'Trifft zu: Tiere' }).click()
+    within(row).getByRole('button', { name: 'Trifft nicht zu: Tiere' }).click()
 
     expect(onCorrect).toHaveBeenNthCalledWith(1, 'tiere', true)
     expect(onCorrect).toHaveBeenNthCalledWith(2, 'tiere', false)
   })
 
-  it('calls the withdrawal handler with the motif key', () => {
-    const { onWithdraw } = renderList({
+  it('calls the withdrawal handler with the motif key', async () => {
+    const { onWithdraw, row } = await openCorrection('menschen', {
       motifs: strengths({ menschen: { strength: 1, correction: true } }),
     })
 
-    within(rowOf('menschen')).getByRole('button', { name: 'Zurücknehmen: Menschen' }).click()
+    within(row).getByRole('button', { name: 'Zurücknehmen: Menschen' }).click()
 
     expect(onWithdraw).toHaveBeenCalledWith('menschen')
   })
 
-  it('renders no button at all when the list is read-only', () => {
-    renderList({ editable: false })
+  it('renders no CORRECTION button when the section is read-only, not even after expanding', async () => {
+    // Geschaerft: die acht Symbole SIND Schaltflaechen, „gar keine Schaltflaeche" waere hier
+    // zwangslaeufig rot und saegte die eigentliche Zusage ab. Der Klick steht vor der negativen
+    // Assertion.
+    const user = userEvent.setup()
+    renderSection({ editable: false })
 
-    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    await user.click(symbolOf('menschen'))
+
+    expect(screen.queryAllByRole('button', { name: /^Trifft/ })).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /^Zurücknehmen:/ })).toBeNull()
     expect(document.querySelectorAll('[data-motif-key]')).toHaveLength(MOTIF_KEYS.length)
   })
 
-  it('still shows the values when the list is read-only', () => {
-    renderList({ editable: false, motifs: strengths({ menschen: { strength: 0.6 } }) })
+  it('still shows the values when the section is read-only', async () => {
+    const user = userEvent.setup()
+    renderSection({ editable: false, motifs: strengths({ menschen: { strength: 0.6 } }) })
 
-    expect(within(rowOf('menschen')).getByText('60%')).toBeTruthy()
+    expect(symbolOf('menschen').getAttribute('aria-label')).toBe('Menschen: 60%')
+
+    await user.click(symbolOf('menschen'))
+    expect(within(detailRow()).getByText('60%')).toBeTruthy()
   })
 })
 
 describe('MotifStrengthSection: die Zustände', () => {
-  it('disables only the buttons of the row whose correction is running', () => {
-    renderList({ pendingMotifKey: 'menschen' })
+  it('disables only the buttons of the motif whose correction is running', async () => {
+    const user = userEvent.setup()
+    renderSection({ pendingMotifKey: 'menschen' })
 
-    const pending = rowOf('menschen')
-    const other = rowOf('tiere')
+    await user.click(symbolOf('menschen'))
     expect(
-      within(pending).getByRole('button', { name: 'Trifft zu: Menschen' }).hasAttribute('disabled'),
+      within(detailRow())
+        .getByRole('button', { name: 'Trifft zu: Menschen' })
+        .hasAttribute('disabled'),
     ).toBe(true)
+
+    await user.click(symbolOf('tiere'))
     expect(
-      within(other).getByRole('button', { name: 'Trifft zu: Tiere' }).hasAttribute('disabled'),
+      within(detailRow())
+        .getByRole('button', { name: 'Trifft zu: Tiere' })
+        .hasAttribute('disabled'),
     ).toBe(false)
+  })
+
+  it('keeps the symbol row operable while a correction is running', async () => {
+    // Nur die Schaltflaechen DIESER Zeile werden gesperrt, nie die Reihe.
+    renderSection({ pendingMotifKey: 'menschen' })
+
+    expect(symbolOf('menschen').hasAttribute('disabled')).toBe(false)
   })
 
   it('shows eight skeleton rows while the motif set is loading', () => {
@@ -448,7 +767,7 @@ describe('MotifStrengthSection: die Zustände', () => {
   })
 
   it('shows an alert with a retry action when the motif set failed to load', () => {
-    // Keine Liste mit Rohschlüsseln.
+    // Keine Reihe mit Rohschluesseln.
     render(
       <MotifStrengthSection
         motifSet={undefined}
@@ -469,8 +788,8 @@ describe('MotifStrengthSection: die Zustände', () => {
   })
 
   it('shows the backend detail and the motif name when a correction failed', () => {
-    // Der `detail` steht WOERTLICH als Textknoten, und die Meldung sagt, welche Zeile es war.
-    renderList({
+    // Der Fehler nennt den Motivnamen, AUCH wenn dieses Motiv gerade nicht aufgeklappt ist.
+    renderSection({
       error: { motifKey: 'menschen', detail: 'Bitte erneut versuchen.' },
     })
 
@@ -480,17 +799,15 @@ describe('MotifStrengthSection: die Zustände', () => {
   })
 
   it('offers no retry button for a failed correction', () => {
-    // Die Schaltfläche der Zeile IST die Wiederholung - ein zweites „Erneut versuchen" wären
-    // zwei Bedienelemente für eine Aktion.
-    renderList({ error: { motifKey: 'menschen', detail: 'Bitte erneut versuchen.' } })
+    renderSection({ error: { motifKey: 'menschen', detail: 'Bitte erneut versuchen.' } })
 
     expect(screen.queryByRole('button', { name: 'Erneut versuchen' })).toBeNull()
   })
 })
 
 describe('MotifStrengthSection: das Glossar', () => {
-  it('carries exactly one collapsed details element at the end of the list', () => {
-    renderList()
+  it('carries exactly one collapsed details element at the end of the section', () => {
+    renderSection()
 
     const details = document.querySelectorAll('details')
     expect(details).toHaveLength(1)
@@ -499,7 +816,7 @@ describe('MotifStrengthSection: das Glossar', () => {
   })
 
   it('explains every motif with its definition and its delimitation', () => {
-    renderList()
+    renderSection()
 
     const glossary = document.querySelector('details') as HTMLElement
     for (const item of MOTIF_SET.items) {
@@ -509,9 +826,12 @@ describe('MotifStrengthSection: das Glossar', () => {
     }
   })
 
-  it('renders the registry text as plain text nodes', () => {
-    // SICHERHEIT (S19): nie über `dangerouslySetInnerHTML`, nie als HTML-String-Prop.
-    renderList({
+  it('renders the registry text as plain text nodes - in the row and in the accessible name', async () => {
+    // SICHERHEIT (S19): nie ueber `dangerouslySetInnerHTML`, nie als HTML-String-Prop. Die
+    // Detailzeile und der zugaengliche Name sind seit dem Umbau eigene Austrittsstellen des
+    // Registry-Texts und deshalb HIER mit abgedeckt.
+    const user = userEvent.setup()
+    renderSection({
       motifSet: {
         ...MOTIF_SET,
         items: [
@@ -527,28 +847,46 @@ describe('MotifStrengthSection: das Glossar', () => {
       motifs: [{ key: 'menschen', strength: 0.5, correction: null, present: true }],
     })
 
+    expect(symbolOf('menschen').getAttribute('aria-label')).toBe(
+      '<img src=x onerror=alert(1)>: 50%',
+    )
+    await user.click(symbolOf('menschen'))
+
     expect(document.querySelector('img')).toBeNull()
     expect(document.querySelector('script')).toBeNull()
     expect(document.querySelector('details b')).toBeNull()
+    expect(detailRow().querySelector('img')).toBeNull()
     expect(screen.getAllByText('<img src=x onerror=alert(1)>').length).toBeGreaterThan(0)
   })
 
-  it('has no info trigger per row', () => {
-    // Acht zusätzliche Trefferflächen für Nachschlagetext - und die Liste steckt ihrerseits in
-    // einem Popover, in dem kein zweites Panel zulässig ist.
-    renderList()
+  it('has no info trigger per motif', () => {
+    renderSection()
 
     expect(screen.queryAllByRole('button', { name: /Erklärung/ })).toHaveLength(0)
   })
 
-  it('shows no band word anywhere outside the statistics table', () => {
-    // Ein Bandwort neben dem Einzelwert eines Fotos lehrte den Nutzer genau die
-    // Zugehörigkeitsschwelle, die diese Story abschafft.
-    renderList({ motifs: strengths({ menschen: { strength: 0.95 } }) })
+  it('opens no second panel inside the popover', () => {
+    // Die Reihe steht im Kachel-Popover bereits in einem Panel; ein zweites darin ist nicht
+    // zulaessig - deshalb kein Popover und kein `title`-Attribut an den Symbolen.
+    renderSection()
 
-    const text = document.body.textContent ?? ''
-    expect(text).not.toMatch(/\bstark\b/i)
-    expect(text).not.toMatch(/\bmittel\b/i)
-    expect(text).not.toMatch(/\bschwach\b/i)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    for (const key of MOTIF_KEYS) {
+      expect(symbolOf(key).hasAttribute('title'), key).toBe(false)
+    }
+  })
+
+  it('shows no band word anywhere outside the statistics table', async () => {
+    // Ein Bandwort neben dem Einzelwert lehrte den Nutzer genau die Zugehoerigkeitsschwelle, die
+    // es im Auswahlpfad nicht gibt. Geprueft werden Text UND die zugaenglichen Namen - die Werte
+    // wandern dorthin, und `document.body.textContent` erfasst `aria-label` nicht.
+    const user = userEvent.setup()
+    renderSection({ motifs: strengths({ menschen: { strength: 0.95 } }) })
+    await user.click(symbolOf('menschen'))
+
+    const haystack = [document.body.textContent ?? '', ...accessibleNames()].join(' ')
+    expect(haystack).not.toMatch(/\bstark\b/i)
+    expect(haystack).not.toMatch(/\bmittel\b/i)
+    expect(haystack).not.toMatch(/\bschwach\b/i)
   })
 })
