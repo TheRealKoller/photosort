@@ -122,16 +122,31 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
 
   // --- Motivkorrektur in der Einzelbildansicht ----------------------------------------------
   // Die frueher hier gepruefte Trefferflaeche "Alle Kategorien" ist mit den Kategorien entfallen
-  // (Spec 0427). An ihre Stelle treten die Korrekturschalter der Motivliste - und sie stehen
-  // NICHT im Popover der Kachel (dort ist die Liste schreibgeschuetzt), sondern in der
+  // (Spec 0427). An ihre Stelle treten die Korrekturschalter der Motivstaerke - und sie stehen
+  // NICHT im Popover der Kachel (dort ist der Baustein schreibgeschuetzt), sondern in der
   // Einzelbildansicht. Genau diese Verschiebung macht den eigenen Testschritt noetig.
+  //
+  // SEIT SPEC 0490 ERST NACH EINEM KLICK: Die Schalter stehen in der Detailzeile unter der
+  // Symbolreihe, nicht mehr an acht Listenzeilen. Gesucht wird deshalb im Abschnitt
+  // (`data-testid="motifs-section"`), nicht in der Liste - die Zeile steht AUSSERHALB von <ul>.
+  //
+  // Die acht Symbole selbst gehoeren BEWUSST NICHT in diesen Pruefsatz (ADR 0113 Punkt 5): Sie
+  // spannen nur die kurze Achse auf, waagerecht sind sie ein Achtel der Reihenbreite. Acht
+  // nebeneinanderliegende 44-px-Flaechen brauchten 352 px zuzueglich Zwischenraeumen und
+  // vertruegen sich nicht mit "alle acht in einer Zeile ohne waagerechtes Scrollen" - der
+  // Treffertest meldete an den Ecken zwangslaeufig das Nachbarsymbol. Ihre Mindestgroesse
+  // (WCAG 2.5.8, 24 x 24 px) belegt `no-horizontal-scroll.spec.ts`.
   await page.goto(`/projects/${projectId}/photos`)
   await expect(tiles.first()).toBeVisible()
   await tiles.nth(1).getByRole('link').first().click()
-  const motifList = page.getByRole('list', { name: 'Motive' })
-  await expect(motifList).toBeVisible()
+  const motifSection = page.getByTestId('motifs-section')
+  await expect(motifSection).toBeVisible()
 
-  const appliesButton = motifList.getByRole('button', { name: /^Trifft zu:/ }).first()
+  const motifSymbol = motifSection.getByRole('list', { name: 'Motive' }).getByRole('button').first()
+  await expect(motifSymbol, 'erstes Motivsymbol').toBeVisible()
+  await motifSymbol.click()
+
+  const appliesButton = motifSection.getByRole('button', { name: /^Trifft zu:/ }).first()
   await assertTappable(appliesButton, 'Trifft zu (Motivkorrektur)')
   checked.push('Trifft zu')
 

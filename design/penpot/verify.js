@@ -52,7 +52,7 @@ const SYMBOL_PFAD = 'symbol'
 /* Erwartete Kardinalitaeten. Sie sind KEINE Gestaltungswerte, sondern der Schutz gegen einen
    halb gelesenen Stand: ohne sie waere ein abgeschnittenes Ergebnis von einem vollstaendigen
    nicht zu unterscheiden. Die Werte stehen so auch in den Akzeptanzkriterien 1, 3 und 5. */
-const ERWARTETE_SYMBOLE = 12
+const ERWARTETE_SYMBOLE = 20
 const ERWARTETE_BAUSTEINE = 12
 const ERWARTETE_KATEGORIEN = 13
 const ERWARTETE_FARBEN = 64
