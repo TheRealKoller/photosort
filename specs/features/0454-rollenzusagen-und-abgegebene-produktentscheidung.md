@@ -1,6 +1,6 @@
 # 0454 - Rollenzusagen nennen nur Zugeteiltes; die Produktentscheidung geht als Anker nach oben
 
-**Status:** Accepted
+**Status:** Implemented ([PR #503](https://github.com/TheRealKoller/photosort/pull/503))
 **Erstellt:** 2026-09-16
 **Bezug:** [GitHub-Issue #454](https://github.com/TheRealKoller/photosort/issues/454),
 ADR [`0115`](../decisions/0115-rollenzusage-nennt-nur-zugeteilte-werkzeuge-produktentscheidung-geht-als-anker-nach-oben.md)
