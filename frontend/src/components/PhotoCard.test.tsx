@@ -117,17 +117,19 @@ describe('PhotoCard', () => {
   })
 
   /*
-   * `setAside` ist die gemeinsame Herausnahme aus der Endauswahl (Spec 0431): dieselbe
-   * Zuruecknahme wie bei einer Streichung, aber OHNE Bewertungs-Kennzeichen. Beide Haelften
-   * gehoeren in EINEN Fall - getrennt bestuende jede auch bei einer Umsetzung, die `setAside`
-   * einfach auf `status='rejected'` abbildet und damit ein unbenanntes "Verworfen" an den
-   * Kartenkoerper haengt.
+   * `setAside` ist die gemeinsame Herausnahme aus der Endauswahl (Spec 0431): erkennbar, aber OHNE
+   * Bewertungs-Kennzeichen. Beide Haelften gehoeren in EINEN Fall - getrennt bestuende jede auch
+   * bei einer Umsetzung, die `setAside` einfach auf `status='rejected'` abbildet und damit ein
+   * unbenanntes "Verworfen" an den Kartenkoerper haengt.
+   *
+   * TRAEGER IST DER DURCHGESTRICHENE DATEINAME, nicht mehr die Bildflaeche (Spec 0498 AK4): Die
+   * Bildflaeche steht seither in voller Helligkeit, und ohne Bewertungszustand ist die
+   * Durchstreichung der einzige Zustandstraeger dieser Karte.
    */
-  it('lets a set-aside card step back WITHOUT asserting a rating state', () => {
+  it('marks a set-aside card by its struck file name, WITHOUT asserting a rating state', () => {
     const { container } = renderCard({ setAside: true })
 
     expect(container.querySelector('[data-struck="true"]')?.textContent).toBe('IMG_0042.jpg')
-    expect(container.querySelector('.opacity-40')).not.toBeNull()
     expect(container.querySelector('[data-rating-status]')).toBeNull()
     expect(screen.queryByLabelText('Verworfen')).not.toBeInTheDocument()
   })

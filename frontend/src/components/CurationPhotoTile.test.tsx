@@ -234,9 +234,10 @@ describe('CurationPhotoTile: der Zweizustand Im Album ⇄ Gestrichen', () => {
     expect(onDecide).not.toHaveBeenCalled()
   })
 
-  it('keeps the struck photo in its dimmed display state', () => {
+  it('keeps the struck photo in place, carrying its rating state', () => {
     /* Ein gestrichenes Foto verschwindet nicht und nichts rückt nach - es behält den bestehenden
-     * Anzeigezustand der `PhotoCard`. */
+     * Anzeigezustand der `PhotoCard`, und der ist seit Spec 0498 allein das Kennzeichen samt
+     * durchgestrichenem Dateinamen; die Bildfläche steht in voller Helligkeit. */
     const { container } = renderTile({}, { ownStatus: 'rejected' })
 
     expect(container.querySelector('[data-rating-status="rejected"]')).not.toBeNull()
