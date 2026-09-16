@@ -86,6 +86,15 @@ FELDNAMEN = (
     "**Bisheriger Stand:**",
 )
 
+# Die eine erlaubte Zone je Rollendatei. Sie loest den Ausschluss zwischen "das Token kommt in der
+# Datei nicht vor" und "die Datei nennt die fehlenden Werkzeuge namentlich" - zwei Haelften, die
+# auf keinem Bestand gemeinsam gruen werden koennen. Aufgeloest wird er als Anwesenheit plus Ort
+# plus Mengengleichheit.
+ZONE_MARKE = "**Werkzeugabweichung:**"
+
+# Der Abschnitt, in dem die Ankerzeile einer Rollendatei stehen muss - die Entscheidungslage.
+ENTSCHEIDUNGSABSCHNITT = "## Steht eine Produktentscheidung an"
+
 # Der Suchraum der Einmaligkeitspruefung. Geweitet ueber `.claude/**` hinaus, weil
 # `docs/ai-workflow.md`, das Sicherheitskonzept und die Spec den Anker **nennen** - genau dagegen
 # muss der Detektor robust sein: Er erkennt eine **Definition** (eingezaeunter Block mit der
@@ -285,6 +294,103 @@ def artefakt_befunde(artefakt: Mapping[str, object]) -> list[str]:
 
 
 _FENCE = ("```", "~~~")
+_UEBERSCHRIFT = re.compile(r"^#{1,6} ")
+
+
+def zeilen_in_fences(text: str) -> list[bool]:
+    """Reine Funktion: je Zeile, ob sie innerhalb eines Codefence-Blocks liegt.
+
+    Die Fence-Zeilen selbst zaehlen als innen. Gebraucht wird das zweimal: Die Zone ist
+    **kein** Codeblock (sonst oeffnete jede Formatvorlage eine zweite Zone durch die
+    Hintertuer), und eine Ueberschrift innerhalb eines Fences beendet die Zone nicht.
+    """
+    flaggen: list[bool] = []
+    offen = False
+    for zeile in text.split("\n"):
+        if zeile.lstrip().startswith(_FENCE):
+            offen = not offen
+            flaggen.append(True)
+            continue
+        flaggen.append(offen)
+    return flaggen
+
+
+def zone_grenzen(text: str) -> tuple[int, int]:
+    """Reine Funktion: (erste, letzte+1) Zeilennummer der `**Werkzeugabweichung:**`-Zone.
+
+    Die Zone beginnt bei der Markenzeile und endet vor der naechsten Markdown-Ueberschrift
+    ausserhalb eines Codefences, sonst am Dateiende. Wirft, wenn es nicht genau eine Marke
+    **ausserhalb** eines Codefences gibt: Ohne genau eine Zone ist jede Ortsaussage
+    bedeutungslos, und ein stiller Nullbefund waere hier die schlechteste Antwort.
+    """
+    zeilen = text.split("\n")
+    flaggen = zeilen_in_fences(text)
+    marken = [
+        nummer
+        for nummer, zeile in enumerate(zeilen)
+        if ZONE_MARKE in zeile and not flaggen[nummer]
+    ]
+    if len(marken) != 1:
+        raise ValueError(
+            f"{len(marken)} Vorkommen von {ZONE_MARKE!r} ausserhalb eines Codeblocks, erwartet "
+            "genau eines. Die Zone ist kein Codeblock - sonst oeffnete jede Formatvorlage eine "
+            "zweite Zone durch die Hintertuer."
+        )
+    beginn = marken[0]
+    for nummer in range(beginn + 1, len(zeilen)):
+        if _UEBERSCHRIFT.match(zeilen[nummer]) and not flaggen[nummer]:
+            return beginn, nummer
+    return beginn, len(zeilen)
+
+
+def token_muster(tokens: list[str]) -> re.Pattern[str]:
+    """Reine Funktion: ein wortgrenzen-gebundenes Muster ueber die Tokenmenge.
+
+    Wortgrenzen-gebunden, weil ein Werkzeugname als Wortbestandteil eines anderen Begriffs
+    vorkommt (`Agent` steckt in `Agent-Tool` und in `Agenten`). Ohne `\\b` faerbte eine
+    Prosa-Erwaehnung, die gar kein Werkzeug meint, die Ortszusicherung rot.
+    """
+    return re.compile(r"\b(?:" + "|".join(re.escape(token) for token in sorted(tokens)) + r")\b")
+
+
+def zonen_befunde(pfad: str, text: str, abwesend: list[str]) -> list[str]:
+    """Reine Funktion: Ort **und** Mengengleichheit der Zone einer Rollendatei.
+
+    **(a) Ort:** Jedes Vorkommen jedes strukturell abwesenden Tokens liegt innerhalb der Zone -
+    null Vorkommen ausserhalb, ueber die ganze Datei einschliesslich `tools:` und `description:`.
+    **(b) Gleichheit:** Die in der Zone genannte Tokenmenge ist **gleich** der Artefaktmenge.
+
+    (a) faengt die wiederkehrende Zusage im Fliesstext, (b) die still geschrumpfte Liste.
+
+    **Die Folge, die hier geschrieben stehen muss:** Eine **erklaerende** Nennung ausserhalb der
+    Zone ist rot - und das ist die gewollte Antwort, kein Kollateralschaden. Wer erklaeren will,
+    erklaert **in** der Zone: Ein Textpruefer kann eine erklaerende Nennung ("dieses Werkzeug
+    steht nicht zur Verfuegung") von einer Zusage ("frag per AskUserQuestion nach") nicht
+    unterscheiden - ausser ueber die Stelle, an der sie steht.
+    """
+    befunde: list[str] = []
+    beginn, ende = zone_grenzen(text)
+    muster = token_muster(abwesend)
+
+    for nummer, zeile in enumerate(text.split("\n")):
+        if beginn <= nummer < ende:
+            continue
+        for treffer in muster.findall(zeile):
+            befunde.append(
+                f"{pfad}:{nummer + 1}: {treffer!r} steht ausserhalb des "
+                f"{ZONE_MARKE}-Blocks. Auch eine erklaerende Nennung ist hier rot - sie ist von "
+                "einer Zusage mechanisch nicht unterscheidbar. Wer erklaeren will, erklaert im "
+                "Block."
+            )
+
+    in_der_zone = set(muster.findall("\n".join(text.split("\n")[beginn:ende])))
+    if in_der_zone != set(abwesend):
+        befunde.append(
+            f"{pfad}: Der {ZONE_MARKE}-Block nennt {sorted(in_der_zone)}, der Messartefakt "
+            f"{sorted(abwesend)}. Geprueft wird Gleichheit: Eine still geschrumpfte Liste liesse "
+            "eine Zusage wieder entstehen, ohne dass irgendwo etwas hinzukaeme."
+        )
+    return befunde
 
 
 def codebloecke(text: str) -> list[str]:
@@ -601,6 +707,143 @@ def test_der_suchraum_hat_eine_plausible_groesse() -> None:
 def test_ein_leerer_suchraum_scheitert_laut_statt_still() -> None:
     with pytest.raises(ValueError, match=r"0 Dateien im Suchraum"):
         formatdefinitionen({})
+
+
+# --- Zusicherung 3: Zone statt Verbot ----------------------------------------------------------
+
+
+def test_jede_rollendatei_haelt_die_strukturell_abwesenden_tokens_in_ihrer_zone() -> None:
+    """AK1 und AK6: Ort ueber die ganze Datei einschliesslich `tools:` und `description:`."""
+    abwesend = artefakt()["strukturell_abwesend"]
+    assert isinstance(abwesend, list)
+
+    befunde: list[str] = []
+    for pfad, text in sorted(rollendateien().items()):
+        befunde.extend(zonen_befunde(pfad, text, abwesend))
+
+    assert not befunde, "; ".join(befunde)
+
+
+_ZONE_PROBE = "\n".join(
+    [
+        "---",
+        "name: probe",
+        "tools: Read, Bash",
+        "---",
+        "",
+        "# Probe",
+        "",
+        "Fliesstext ohne Werkzeugnamen.",
+        "",
+        "## Was dieser Rolle fehlt",
+        "",
+        f"{ZONE_MARKE} AskUserQuestion und TaskList fehlen.",
+        "",
+        "## Abschlussbericht",
+        "",
+        "Text.",
+        "",
+    ]
+)
+
+_PROBE_ABWESEND = ["AskUserQuestion", "TaskList"]
+
+
+def test_die_erwartete_zonenform_gilt_nicht_als_verstoss() -> None:
+    assert zonen_befunde("probe.md", _ZONE_PROBE, _PROBE_ABWESEND) == []
+
+
+def test_eine_nennung_ausserhalb_der_zone_wird_gemeldet() -> None:
+    """Die tragende Haelfte: genau so saehe eine wiederkehrende Zusage im Fliesstext aus."""
+    text = _ZONE_PROBE.replace(
+        "Fliesstext ohne Werkzeugnamen.", "Frag per AskUserQuestion nach, statt zu raten."
+    )
+
+    befunde = zonen_befunde("probe.md", text, _PROBE_ABWESEND)
+
+    assert len(befunde) == 1
+    assert "AskUserQuestion" in befunde[0]
+
+
+def test_eine_erklaerende_nennung_ausserhalb_der_zone_ist_ebenfalls_rot() -> None:
+    """Gewollt, kein Kollateralschaden: Erklaerung und Zusage sind mechanisch ununterscheidbar."""
+    text = _ZONE_PROBE.replace(
+        "Fliesstext ohne Werkzeugnamen.", "`AskUserQuestion` steht dir nicht zur Verfuegung."
+    )
+
+    assert len(zonen_befunde("probe.md", text, _PROBE_ABWESEND)) == 1
+
+
+def test_eine_nennung_in_der_tools_zeile_wird_gemeldet() -> None:
+    """Der Ort umfasst ausdruecklich das Frontmatter - dort stand die Zusage zuerst."""
+    text = _ZONE_PROBE.replace("tools: Read, Bash", "tools: Read, Bash, TaskList")
+
+    assert len(zonen_befunde("probe.md", text, _PROBE_ABWESEND)) == 1
+
+
+def test_eine_geschrumpfte_zonenliste_wird_gemeldet() -> None:
+    """Die zweite Haelfte: (a) allein bliebe hier gruen, weil nichts hinzukommt."""
+    text = _ZONE_PROBE.replace(" und TaskList fehlen.", " fehlt.")
+
+    befunde = zonen_befunde("probe.md", text, _PROBE_ABWESEND)
+
+    assert len(befunde) == 1
+    assert "Gleichheit" in befunde[0]
+
+
+def test_eine_zone_im_codeblock_zaehlt_nicht_als_zone() -> None:
+    """Sonst oeffnete jede Formatvorlage eine zweite Zone durch die Hintertuer."""
+    text = _ZONE_PROBE.replace(
+        f"{ZONE_MARKE} AskUserQuestion und TaskList fehlen.",
+        f"```\n{ZONE_MARKE} AskUserQuestion und TaskList fehlen.\n```",
+    )
+
+    with pytest.raises(ValueError, match=r"0 Vorkommen"):
+        zonen_befunde("probe.md", text, _PROBE_ABWESEND)
+
+
+def test_zwei_zonen_scheitern_laut_statt_still() -> None:
+    text = _ZONE_PROBE + f"\n## Noch ein Abschnitt\n\n{ZONE_MARKE} AskUserQuestion, TaskList.\n"
+
+    with pytest.raises(ValueError, match=r"2 Vorkommen"):
+        zonen_befunde("probe.md", text, _PROBE_ABWESEND)
+
+
+def test_die_zone_endet_an_der_naechsten_ueberschrift() -> None:
+    """Ohne Grenze zoege die Zone den Rest der Datei in sich und bestuende jede Zusicherung."""
+    text = _ZONE_PROBE.replace("Text.", "Frag per AskUserQuestion nach.")
+
+    befunde = zonen_befunde("probe.md", text, _PROBE_ABWESEND)
+
+    assert len(befunde) == 1
+    assert "ausserhalb" in befunde[0]
+
+
+def test_ein_wortbestandteil_ist_kein_treffer() -> None:
+    """Wortgrenzen-gebunden: `Agent` steckt in `Agent-Tool` und in `Agenten`."""
+    muster = token_muster(["Agent"])
+
+    assert muster.findall("Die Agenten des Projekts nutzen keinen Agentenbegriff.") == []
+    assert muster.findall("per Agent-Tool gestartet") == ["Agent"]
+
+
+# --- Zusicherung 6: der Rechercheur fuehrt den Anker nicht -------------------------------------
+
+
+def test_der_rechercheur_fuehrt_den_anker_null_mal() -> None:
+    """Als Gleichheit geprueft, damit er nicht spaeter 'hilfsbereit' nachgetragen wird.
+
+    Seine Eskalationsfaelle sind Mehrdeutigkeiten des **Auftrags**, und deren Adressat ist, wer
+    den Auftrag geschrieben hat - nicht Daniel. Dazu kommt: Er liest unvertrauenswuerdige
+    Webseiten; eine Pflicht, seinen Text unveraendert zwei Ebenen hinaufzutragen, waere ein Kanal
+    von dort in eine menschliche Entscheidungsvorlage.
+    """
+    gefunden = rollendateien()[RECHERCHEUR].count(ANKER)
+
+    assert gefunden == 0, (
+        f"{ANKER!r} kommt in {RECHERCHEUR} {gefunden} Mal vor, erwartet null Mal. Er nennt eine "
+        "Auftragsmehrdeutigkeit in den 'offenen Unsicherheiten' seines Berichts und liefert ab."
+    )
 
 
 # --- Zusicherung 7: ein Format, eine Stelle ----------------------------------------------------
