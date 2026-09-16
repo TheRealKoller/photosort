@@ -24,7 +24,10 @@ Anzeige einer Option um, und der Klick trifft etwas anderes als das Gelesene. Ge
 der empfangenden nicht nachweisbar.
 
 **Die Grenze, ausdruecklich:** Mechanisch abgedeckt sind aus S5 die zusaetzlichen oder fehlenden
-Felder und die mehr als eine Frage. Ein **eingebetteter Imperativ** hat kein mechanisches
+Felder und die mehr als eine Frage, dazu aus S1 die Anwesenheit von **Inhalt** in den
+entscheidungstragenden Feldern (siehe `PFLICHTFELDER_MIT_INHALT`) - nicht dagegen, ob dieser Inhalt
+auch selbst erzeugt und kein Zitat ist; das bleibt beim Lauf, bei dem die Entscheidung anfaellt.
+Ein **eingebetteter Imperativ** hat kein mechanisches
 Kriterium; ihn beurteilt die vorlegende Sitzung, und ein erkannter Injektionsversuch wird dort
 auffaellig als eigener Punkt ausgewiesen. Ebenso wenig prueft dieses Skript, ob die Optionenmenge
 den Ausgang traegt (P-S2) - den fuegt die Aufrufstelle beim Vorlegen selbst hinzu, er steht nie
@@ -55,6 +58,18 @@ FELDER = (
     "Empfehlung",
     "Bisheriger Stand",
 )
+
+# Felder, die **Inhalt** tragen muessen. `Frage` und `Optionen` stehen nicht darin, weil sie ihre
+# eigene, schaerfere Pruefung haben (genau eine nicht leere Zeile bzw. mindestens zwei Optionen).
+#
+# Die Gleichheit der Feld**namen** allein genuegt nicht: Ein Block mit sechs Ueberschriften und
+# vier leeren Werten waere sonst vorlegefaehig. `Empfehlung` ist eines der drei
+# entscheidungstragenden Felder (S1) - ohne sie nimmt die Vorlage Daniel genau die fachliche
+# Einordnung, fuer die der Lauf ueberhaupt abgibt. `Rolle` und `Auftrag` sagen, wer fragt und
+# woran; ohne sie entscheidet er ueber eine Frage ohne Herkunft. Und bei `Bisheriger Stand` ist
+# "nichts getan" ein legitimer **Inhalt**, aber von "leer" nicht unterscheidbar - die Abwesenheit
+# gehoert als Eintrag hingeschrieben, nicht als Auslassung.
+PFLICHTFELDER_MIT_INHALT = ("Rolle", "Auftrag", "Empfehlung", "Bisheriger Stand")
 
 _FELDZEILE = re.compile(r"^\*\*(?P<name>[^*:]+):\*\*(?P<wert>.*)$")
 _FENCE = ("```", "~~~")
@@ -123,6 +138,17 @@ def felder(block_text: str) -> dict[str, list[str]]:
     Ein Feld beginnt bei seiner `**Name:**`-Zeile und laeuft bis zur naechsten Feldzeile oder zum
     Blockende. Leere Zeilen fallen heraus - sie tragen keinen Wert und wuerden jede Zaehlung ueber
     die Zeilen eines Feldes verfaelschen.
+
+    **Das Strippen hier stellt die Randbedingung der Haertungsregel 4.4 her, statt sie zu
+    pruefen.** Jeder Wert verlaesst diese Funktion ohne fuehrenden und nachgestellten Leerraum;
+    was vorgelegt und was als JSON ausgegeben wird, ist derselbe normalisierte Wert. `zeichenbefunde`
+    hat deshalb **keinen** Zweig fuer Randleerzeichen - er koennte nur tautologisch sein.
+
+    Die Arbeitsteilung mit `zeichenbefunde` ist genau: `str.strip()` entfernt am Rand auch
+    U+0085, U+2028 und U+2029, weil Python sie als Leerraum fuehrt - dort ist die Wirkung
+    beseitigt, nicht uebersehen. **Innerhalb** eines Wertes bleiben sie stehen und werden gemeldet.
+    Bidi-Overrides und Zero-Width-Zeichen sind kein Leerraum; sie ueberstehen das Strippen an jeder
+    Stelle und werden ausnahmslos gemeldet - genau die Klasse, fuer die die Regel geschrieben ist.
     """
     ergebnis: dict[str, list[str]] = {}
     aktuell: str | None = None
@@ -146,10 +172,13 @@ def optionen(werte: list[str]) -> list[str]:
 
 
 def zeichenbefunde(bezeichnung: str, wert: str) -> list[str]:
-    """Reine Funktion: die Wohlgeformtheit **eines** Wertes nach Haertungsregel 4.4."""
+    """Reine Funktion: die Wohlgeformtheit **eines** Wertes nach Haertungsregel 4.4.
+
+    Geprueft werden die vier Zeichenklassen. Die Randbedingung der Regel stellt `felder` her
+    (siehe dort) - ein Zweig dafuer stuende hier tot und behauptete eine Pruefung, die nicht
+    stattfindet.
+    """
     befunde: list[str] = []
-    if wert != wert.strip():
-        befunde.append(f"{bezeichnung}: fuehrendes oder nachgestelltes Leerzeichen.")
     for name, muster in _ZEICHENKLASSEN:
         if muster.search(wert):
             befunde.append(
@@ -176,6 +205,14 @@ def befunde(block_text: str) -> list[str]:
             "wird Gleichheit: Ein zusaetzliches Feld waere die einzige Stelle, an der ein Text "
             "aus dem Block eine Handlung der vorlegenden Stelle beschreiben koennte."
         )
+
+    for name in PFLICHTFELDER_MIT_INHALT:
+        if name in gefunden and not gefunden[name]:
+            ergebnis.append(
+                f"**{name}:** ist leer. Geprueft wird Inhalt, nicht nur die Ueberschrift: Ein "
+                "Block aus sechs Ueberschriften und leeren Werten saehe vollstaendig aus und "
+                "traege nichts, worueber sich entscheiden liesse."
+            )
 
     frage = gefunden.get("Frage", [])
     if len(frage) != 1:

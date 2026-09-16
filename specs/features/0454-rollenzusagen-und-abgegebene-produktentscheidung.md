@@ -240,6 +240,16 @@ Glied (c) — Weitermeldung aus der zweiten Ebene — entfällt gegenstandslos, 
    Stellen liegen für AK4 ohnehin offen; ein zweiter Pull Request für fünf Zeilen wäre teurer.
 6. `scripts/tests/test_rollenzusagen_verankert.py` *(neu)* — die zehn Zusicherungen. Im
    TDD-Zyklus entsteht jede vor dem Teilschritt, den sie absichert.
+6a. `scripts/produktentscheidung.py` *(neu)* samt `scripts/tests/test_produktentscheidung.py`
+   *(neu)* — der Auswertungsschritt, den die fünf Aufrufstellen nach S4 über den als Datei
+   materialisierten Block laufen lassen: Erkennung, Zerlegung in die sechs Felder,
+   Wohlgeformtheit nach Härtungsregel 4.4, vier getrennte Ausgänge. Er ist zugleich Glied (b) des
+   Durchstichs — ohne ein ausführbares Artefakt gäbe es nichts „laufen zu lassen" und die Auflage
+   bliebe eine Absichtserklärung.
+6b. `scripts/tests/test_github_zugriff_an_einer_stelle.py` — die neue Skill-Datei in die
+   eingefrorene Erwartungstabelle der Erlaubnisstufen aufnehmen (Stufe: kein GitHub-Zugriff).
+   Ohne den Eintrag wird jener Wächter rot; eine neue Datei entzieht sich der Einstufung nicht
+   dadurch, dass niemand an die Tabelle denkt.
 7. `specs/decisions/0093-*.md` — im Abschnitt „Kontext" entfällt die Aufzählung des Werkzeugsatzes
    zugunsten eines Verweises auf den Messartefakt. Entscheidung, Statuszeile und Teil-Vermerke
    bleiben unberührt; kein `Superseded`.

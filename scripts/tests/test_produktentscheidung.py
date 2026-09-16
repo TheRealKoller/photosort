@@ -190,6 +190,57 @@ def test_ein_unsichtbares_zeichen_in_der_frage_wird_gemeldet(modul: ModuleType) 
     assert "**Frage:**" in befunde[0]
 
 
+def test_randleerzeichen_kommen_normalisiert_im_json_an(modul: ModuleType) -> None:
+    """Das Strippen **stellt** die Randbedingung der Regel 4.4 her, statt sie zu pruefen.
+
+    Deshalb gibt es dafuer keinen Befund-Zweig - er koennte nur tautologisch sein. Zugesichert
+    ist stattdessen das Ergebnis: Was vorgelegt wird, traegt keinen Rand mehr.
+    """
+    text = BERICHT_MIT_BLOCK.replace("**Rolle:** developer", "**Rolle:**   developer  ")
+
+    assert modul.befunde(modul.block(text)) == []
+    assert json.loads(modul.als_json(modul.block(text)))["rolle"] == "developer"
+
+
+@pytest.mark.parametrize("feld", ["Rolle", "Auftrag", "Empfehlung", "Bisheriger Stand"])
+def test_ein_leeres_pflichtfeld_haelt_an(modul: ModuleType, feld: str) -> None:
+    """Die Gleichheit der Feld**namen** allein liesse einen Block aus leeren Werten durch.
+
+    Bei `Bisheriger Stand` ist "nichts getan" ein legitimer Inhalt, von "leer" aber nicht
+    unterscheidbar - die Abwesenheit gehoert als Eintrag hingeschrieben, nicht als Auslassung.
+    """
+    zeilen = [
+        f"**{feld}:**" if zeile.startswith(f"**{feld}:**") else zeile
+        for zeile in BERICHT_MIT_BLOCK.split("\n")
+    ]
+    text = "\n".join(
+        zeile
+        for stelle, zeile in enumerate(zeilen)
+        # Die Fortsetzungszeile des mehrzeiligen `Bisheriger Stand` faellt mit weg.
+        if not (feld == "Bisheriger Stand" and zeile.startswith('"Die Reihenfolge'))
+    )
+
+    befunde = modul.befunde(modul.block(text))
+
+    assert len(befunde) == 1, befunde
+    assert f"**{feld}:** ist leer" in befunde[0]
+
+
+def test_eine_leere_empfehlung_endet_mit_exit_zwei(tmp_path: Path) -> None:
+    """S1 fuehrt die Empfehlung als entscheidungstragendes Feld - ohne sie fehlt die Einordnung."""
+    text = BERICHT_MIT_BLOCK.replace(
+        "**Empfehlung:** Empfehlung: danebenstellen, weil der Verlust nicht rueckgaengig zu "
+        "machen ist.",
+        "**Empfehlung:**",
+    )
+
+    ergebnis = _laufe(_bericht(tmp_path, text))
+
+    assert ergebnis.returncode == 2
+    assert ergebnis.stdout.strip() == ""
+    assert "**Empfehlung:** ist leer" in ergebnis.stderr
+
+
 def test_eine_mehrzeilige_frage_wird_gemeldet(modul: ModuleType) -> None:
     """Genau eine nicht leere Zeile je Feld - sonst ist nicht entscheidbar, was vorgelegt wird."""
     text = BERICHT_MIT_BLOCK.replace(
