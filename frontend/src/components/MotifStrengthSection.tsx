@@ -78,27 +78,36 @@ const NOT_LOCALLY_ASSESSABLE_TEXT = 'lokal nicht beurteilbar'
 const DETAIL_PROMPT_TEXT = 'Symbol antippen für Details'
 
 /**
- * Platzhalter statt eines Spinners, in der FORM DER SPAETEREN DARSTELLUNG: eine Reihe aus acht
- * Platzhaltern NEBENEINANDER, darunter einer fuer die Detailzeile.
+ * Platzhalter statt eines Spinners, in der FORM DER SPAETEREN DARSTELLUNG: Grundlagenzeile, eine
+ * Reihe aus acht Platzhaltern NEBENEINANDER, Detailzeile, Glossar - je einer fuer jeden Bereich,
+ * den der geladene Baustein traegt.
  *
- * Die Form ist keine Kosmetik. Acht Platzhalter untereinander (die Form der abgeloesten
- * Balkenliste) beanspruchen rund 340 px gegen die rund 60 px der geladenen Reihe; der Bereich
- * zoege beim Eintrudeln der Antwort alles darunter um rund 280 px hoch - die "Bewegung von Layout
- * oder Position", die das Design-System ausschliesst.
+ * Die Form ist keine Kosmetik. Acht Platzhalter UNTEREINANDER (die Form der abgeloesten
+ * Balkenliste) beanspruchen rund 340 px gegen die rund 160 px des geladenen Bausteins; der
+ * Bereich zoege beim Eintrudeln der Antwort alles darunter um rund 180 px hoch - die "Bewegung
+ * von Layout oder Position", die das Design-System ausschliesst.
+ *
+ * PIXELGENAUE DECKUNG IST NICHT DAS ZIEL und waere nicht erreichbar: Die Grundlagenzeile traegt
+ * Fremdtext (Anbietername, Zeitstempel) und bricht je nach Breite auf eine oder zwei Zeilen um.
+ * Zugesichert ist dieselbe Form und dieselbe Groessenordnung, nicht dieselbe Hoehe.
  */
 function SkeletonRows() {
   return (
     <div className="flex flex-col gap-3" role="status" aria-label="Motive werden geladen">
-      {/* Die Grundlagenzeile, die nach dem Laden an dieser Stelle steht. */}
-      <Skeleton className="h-4 w-2/3 rounded-sm" data-testid="motif-skeleton-basis" />
+      {/* Die Grundlagenzeile - bei Telefonbreite zweizeilig, daher `h-8`. */}
+      <Skeleton className="h-8 w-2/3 rounded-sm" data-testid="motif-skeleton-basis" />
       <div className="flex items-stretch" data-testid="motif-skeleton-row">
         {Array.from({ length: 8 }, (_, index) => (
           <div key={index} className="flex-1 px-1">
-            <Skeleton className="h-8 rounded-sm" data-testid="motif-skeleton-symbol" />
+            {/* `h-10`: die Symbolhoehe samt der `py-1` der Schaltflaeche. */}
+            <Skeleton className="h-10 rounded-sm" data-testid="motif-skeleton-symbol" />
           </div>
         ))}
       </div>
       <Skeleton className="h-4 w-1/2 rounded-sm" data-testid="motif-skeleton-detail" />
+      {/* Das Glossar steht im geladenen Zustand IMMER - ohne seinen Platzhalter fehlte dem
+          Ladezustand genau dessen Hoehe. */}
+      <Skeleton className="h-4 w-1/2 rounded-sm" data-testid="motif-skeleton-glossary" />
     </div>
   )
 }

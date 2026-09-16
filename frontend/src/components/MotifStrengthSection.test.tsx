@@ -888,12 +888,17 @@ describe('MotifStrengthSection: die Zustände', () => {
     expect(within(reihe).getAllByTestId('motif-skeleton-symbol')).toHaveLength(8)
   })
 
-  it('holds a placeholder for the detail line as well', () => {
-    // Die Detailzeile steht auch ungewaehlt - fehlte sie im Ladezustand, spraenge die Seite genau
-    // um ihre Hoehe.
+  it.each([
+    ['motif-skeleton-basis', 'Grundlagenzeile'],
+    ['motif-skeleton-detail', 'Detailzeile'],
+    ['motif-skeleton-glossary', 'Glossar'],
+  ])('holds a placeholder for the %s (%s)', (testId) => {
+    // JEDER Bereich, den der geladene Baustein traegt, braucht seinen Platzhalter - fehlt einer,
+    // springt die Seite beim Eintrudeln genau um dessen Hoehe. Detailzeile und Glossar stehen im
+    // geladenen Zustand IMMER, nicht nur nach einer Auswahl.
     renderLoading()
 
-    expect(screen.getByTestId('motif-skeleton-detail')).toBeTruthy()
+    expect(screen.getByTestId(testId)).toBeTruthy()
   })
 
   it('draws no bar while the motif set is loading', () => {
