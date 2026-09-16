@@ -225,31 +225,45 @@ describe('PhotoGridTile: die zwei Zeichen (AK3-AK5)', () => {
   })
 })
 
-describe('PhotoGridTile: der Rücktritt einer verworfenen Aufnahme (AK6)', () => {
-  it('dims the image area, not the tile body and not the marks', () => {
-    renderTile({ status: 'rejected', favorite: true })
+/*
+ * specs/features/0498-volle-helligkeit.md, AK2/AK4 (hebt AK6 der Spec 0489 auf): Die Bildflaeche
+ * der verworfenen Aufnahme wird nicht mehr gedaempft. Traeger des Zustands bleibt der Punkt in der
+ * Bildecke - und seine FORM trennt weiterhin die Entscheidung vom Vorschlag (Spec 0489 AK5), was
+ * bis hierher am dritten Fall des entfallenen Daempfungs-Blocks hing.
+ */
+describe('PhotoGridTile: volle Helligkeit, Zustand am Punkt', () => {
+  it.each([
+    { label: 'a rejected photo', props: { status: 'rejected' as const }, shape: 'filled' },
+    { label: 'an album-worthy photo', props: { status: 'album_worthy' as const }, shape: 'filled' },
+    {
+      label: 'a photo merely suggested for rejection',
+      props: { suggestedStatus: 'rejected' as const },
+      shape: 'ring',
+    },
+  ])('shows $label undimmed, with its state on the dot', ({ props, shape }) => {
+    renderTile({ ...props, favorite: true })
 
     const item = screen.getByRole('listitem')
-    const dimmed = document.querySelector('[data-dimmed="true"]')
-    expect(dimmed).not.toBeNull()
-    expect(dimmed).not.toBe(item)
     expect(item).not.toHaveAttribute('data-dimmed')
+    expect(item.querySelectorAll('[data-dimmed]')).toHaveLength(0)
+
+    // Ein Vorschlag ist keine Entscheidung - er tritt nicht zurueck, er fragt. Gefuellt heisst
+    // entschieden, der blosse Ring heisst vorgeschlagen.
+    const dot = item.querySelector('[data-mark="album"]')
+    expect(dot).toHaveAttribute('data-mark-shape', shape)
+    expect(dot).toHaveAttribute('data-mark-status', props.status ?? props.suggestedStatus)
+  })
+
+  it('keeps the marks outside the image area', () => {
+    // Die beiden Zeichen sind GESCHWISTER der Bildflaeche, nie ihre Kinder: Sie liegen auf der
+    // undurchsichtigen Flaeche `--overlay`, damit ihr Kontrast nachrechenbar bleibt.
+    renderTile({ status: 'rejected', favorite: true })
+
+    const bildflaeche = screen.getByTestId('bildinhalt').parentElement
+    expect(marks()).toHaveLength(2)
     for (const mark of marks()) {
-      expect(dimmed?.contains(mark)).toBe(false)
+      expect(bildflaeche?.contains(mark)).toBe(false)
     }
-  })
-
-  it('leaves an album-worthy photo undimmed', () => {
-    renderTile({ status: 'album_worthy' })
-
-    expect(document.querySelector('[data-dimmed="true"]')).toBeNull()
-  })
-
-  it('does not dim a photo that is merely suggested for rejection', () => {
-    // Ein Vorschlag ist keine Entscheidung - er tritt nicht zurueck, er fragt.
-    renderTile({ suggestedStatus: 'rejected' })
-
-    expect(document.querySelector('[data-dimmed="true"]')).toBeNull()
   })
 })
 

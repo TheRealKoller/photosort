@@ -76,8 +76,9 @@ Verarbeitungs-Cache (Thumbnails).
       Zeichen (Stern und Punkt) auf der undurchsichtigen Fläche `--overlay` und einer erst auf
       Anforderung eingeblendeten Angabenzeile. Jede Kachel bleibt ein `<li>` mit **genau einem**
       Link auf `/photos/<id>` — daran hängt der Auffinde-Ausdruck des E2E-Prüfstacks und damit vier
-      Specs. Die Dämpfung einer verworfenen Aufnahme liegt ausschließlich auf der Bildfläche, nie
-      auf den beiden Zeichen. `PhotoCard` selbst bleibt unverändert; ein struktureller Wächter
+      Specs. Die Bildfläche wird in keinem Zustand gedämpft (ADR 0112); den Zustand einer
+      verworfenen Aufnahme tragen allein die beiden Zeichen und die Zustandswörter der Kachel.
+      `PhotoCard` selbst bleibt unverändert; ein struktureller Wächter
       (`photoGridTile.structure.test.ts`) hält ihre Aufrufstellen fest.
     - **Nachgeladen wird am Sichtbarkeitsanker** (`IntersectionObserver` auf einem Element unter dem
       Raster), nicht an einer Schaltfläche; die Zählzeile „x von y geladen" ist zugleich die

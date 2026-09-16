@@ -101,8 +101,8 @@ export function CurationPhotoTile({
         />
       }
       /* "Verworfen" ist ein ANZEIGEzustand, kein Filterkriterium: die
-         bestehende `PhotoCard`-Prop stellt ihn bereits vollstaendig dar (gedaempfte Bildflaeche,
-         RatingBadge mit x-circle, durchgestrichener Dateiname). `undefined` heisst "die Karte
+         bestehende `PhotoCard`-Prop stellt ihn bereits vollstaendig dar (RatingBadge mit
+         x-circle, durchgestrichener Dateiname). `undefined` heisst "die Karte
          traegt keinen Zustand" und haelt die bestehende Entscheidung aufrecht, dass in der
          Kuratierung nicht auf jeder Kachel "Neu" steht. */
       status={inAlbum ? undefined : 'rejected'}
@@ -141,9 +141,8 @@ export function CurationPhotoTile({
             </p>
           )}
           {/* „Aufgenommen, vom aktuellen Vorschlag nicht getragen" - UEBER der Fusszeile, weil
-              der Zustand zum Bild gehoert und nicht zur Aktion. Die Kachel wird dabei NICHT
-              gedaempft und nicht ans Ende sortiert: das Bild ist eine bewusste eigene
-              Entscheidung, kein Mangel. */}
+              der Zustand zum Bild gehoert und nicht zur Aktion. Die Kachel wird dabei NICHT ans
+              Ende sortiert: das Bild ist eine bewusste eigene Entscheidung, kein Mangel. */}
           {takenWithoutProposal && (
             <div>
               <Badge tone="neutral">{NOT_PROPOSED_BADGE_TEXT}</Badge>

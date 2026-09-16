@@ -95,9 +95,6 @@ export function DuplicatePhotoTile({
   controls,
 }: DuplicatePhotoTileProps) {
   const zustand = DUPLICATE_ZUSTAENDE[effectiveDecision]
-  // Die Dämpfung gilt AUSSCHLIESSLICH in der Übersicht: Die vergrößerte Aufnahme bleibt
-  // unverfälscht, weil sie beurteilt werden soll.
-  const gedaempft = effectiveDecision === 'discard' && !enlarged
 
   return (
     <li
@@ -109,18 +106,18 @@ export function DuplicatePhotoTile({
       )}
     >
       {/* Die Bildfläche beschneidet - Trefferflächen-Utilities haben hier nichts zu suchen, sie
-          würden still abgeschnitten. Sie ist ohnehin deutlich größer als 44px. */}
+          würden still abgeschnitten. Sie ist ohnehin deutlich größer als 44px.
+
+          JEDE AUFNAHME STEHT IN VOLLER HELLIGKEIT, in beiden Zuständen und in beiden
+          Darstellungen (ADR 0112): Hier liegen mehrere ähnliche Aufnahmen nebeneinander, und
+          genau ihr Helligkeits- und Qualitätsunterschied soll beurteilt werden. Den Zustand
+          tragen der Rahmen der Kachel und das Zustandsfeld aus Symbol und Wort — beide außerhalb
+          der Bildfläche. */}
       <button
         type="button"
         onClick={onToggle}
         aria-label={`${photo.relative_path} ${enlarged ? 'verkleinern' : 'vergrößern'}`}
         data-testid="duplicate-image"
-        /* `data-dimmed` steht IMMER, nie bloß im gedämpften Fall: Ein fehlendes Attribut wäre von
-           „nicht gedämpft" nicht zu unterscheiden, und der Prüfstack kann den berechneten
-           Deckkraftwert sonst gegen keine Absicht halten. Die tatsächliche Dämpfung hängt an
-           genau diesem einen `opacity-*` an der BILDFLÄCHE — am Kachelkörper drückte dieselbe
-           Utility Kennzeichen und Dateinamen unter die Kontrastschwelle. */
-        data-dimmed={gedaempft ? 'true' : 'false'}
         /* BEIDE ZUSTÄNDE RESERVIEREN IHRE HÖHE, BEVOR DAS BILD DA IST — `h-96` in der
            Vergrößerung, nicht `max-h-96`. Die Bildfläche lädt über einen authentifizierten Abruf
            und trifft damit immer erst nach dem ersten Rendern ein; ohne reservierte Höhe ist die
@@ -131,7 +128,6 @@ export function DuplicatePhotoTile({
         className={cn(
           'block w-full overflow-hidden rounded-md',
           enlarged ? 'h-96' : 'aspect-square',
-          gedaempft && 'opacity-40',
         )}
       >
         <PhotoImage

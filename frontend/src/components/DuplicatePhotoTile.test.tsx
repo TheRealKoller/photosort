@@ -110,31 +110,23 @@ describe('DuplicatePhotoTile - die zwei Zustaende', () => {
     expect(Object.keys(DUPLICATE_ZUSTAENDE).sort()).toEqual(['discard', 'keep'])
   })
 
-  it('daempft die Bildflaeche NUR bei Ausschuss und NUR in der Uebersicht', () => {
-    // Die vergroesserte Aufnahme bleibt unverfaelscht, weil sie beurteilt werden soll.
-    const { unmount } = render(<ul>{tileElement({ effectiveDecision: 'discard' })}</ul>)
-    expect(screen.getByTestId('duplicate-image').dataset.dimmed).toBe('true')
-    unmount()
+  it('traegt in keinem Zustand und in keiner Darstellung ein data-dimmed', () => {
+    // AK1 (Spec 0498): Jede Aufnahme wird in voller Helligkeit gezeigt - genau hier liegen
+    // mehrere aehnliche Aufnahmen nebeneinander, und ihr Helligkeitsunterschied SOLL beurteilt
+    // werden. `data-dimmed` hatte genau einen Zweck (einen berechneten Deckkraftwert gegen eine
+    // Absicht zu halten) und sagt ohne Daempfung nichts mehr.
+    //
+    // Ueber den GANZEN Kachelbaum, nicht nur ueber die Bildflaeche: Ein stehengebliebenes
+    // Attribut an einem beliebigen Kind bliebe sonst unbemerkt.
+    for (const effectiveDecision of ['keep', 'discard'] as const) {
+      for (const enlarged of [false, true]) {
+        const { unmount } = render(<ul>{tileElement({ effectiveDecision, enlarged })}</ul>)
 
-    render(<ul>{tileElement({ effectiveDecision: 'discard', enlarged: true })}</ul>)
-    expect(screen.getByTestId('duplicate-image').dataset.dimmed).toBe('false')
-  })
-
-  it('setzt data-dimmed auf "false" statt es wegzulassen', () => {
-    // Ein fehlendes Attribut waere von "nicht gedaempft" nicht zu unterscheiden, und der
-    // Pruefstack kann den berechneten Deckkraftwert nicht gegen eine Absicht halten.
-    renderTile({ effectiveDecision: 'keep' })
-
-    expect(screen.getByTestId('duplicate-image').dataset.dimmed).toBe('false')
-  })
-
-  it('haelt die Daempfung an der Bildflaeche, nie am Kachelkoerper', () => {
-    // ADR 0055 Abweichung 7: Ein `opacity-40` am Koerper drueckte Kennzeichen und Dateinamen
-    // wieder unter die Kontrastschwelle.
-    renderTile({ effectiveDecision: 'discard' })
-
-    expect(screen.getByTestId('duplicate-image').className).toContain('opacity-40')
-    expect(tile().className).not.toContain('opacity-')
+        expect(tile().hasAttribute('data-dimmed')).toBe(false)
+        expect(tile().querySelectorAll('[data-dimmed]')).toHaveLength(0)
+        unmount()
+      }
+    }
   })
 
   it('reserviert die Hoehe der Bildflaeche in BEIDEN Zustaenden, bevor das Bild da ist', () => {
@@ -158,12 +150,17 @@ describe('DuplicatePhotoTile - die zwei Zustaende', () => {
     }
   })
 
-  it('zeigt den Zustandsrahmen auch in der Vergroesserung', () => {
-    // Das vergroesserte Bild wird ungedaempft gezeigt, traegt aber unveraendert seinen Zustand -
-    // sonst verloere man beim Beurteilen genau die Angabe, die man gerade setzt.
+  it('zeigt Zustandsrahmen, Symbol und Wort auch in der Vergroesserung', () => {
+    // AK4 (Spec 0498): Seit die Bildflaeche in voller Helligkeit steht, tragen den Zustand
+    // ausschliesslich der zustandsabhaengige Rahmen und das Zustandsfeld aus Symbol UND Wort -
+    // beide auch in der Vergroesserung, sonst verloere man beim Beurteilen genau die Angabe, die
+    // man gerade setzt.
     renderTile({ effectiveDecision: 'discard', enlarged: true })
 
     expect(tile().dataset.duplicateDecision).toBe('discard')
+    const kennzeichen = screen.getByTestId('duplicate-state')
+    expect(kennzeichen).toHaveTextContent(DUPLICATE_ZUSTAENDE.discard.text)
+    expect(kennzeichen.querySelector('[data-icon]')).not.toBeNull()
   })
 })
 

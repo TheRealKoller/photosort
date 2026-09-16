@@ -1432,6 +1432,60 @@ function colorOpacityModifiers(line: string): string[] {
     .filter((base) => COLOR_OPACITY_PATTERN.test(base))
 }
 
+/*
+ * REGEL 5 - KEINE BILDFLAECHE WIRD GEDAEMPFT (ADR 0112). Auf einer Bildflaeche liegt keine
+ * Daempfung, in keiner Ansicht, und kein anderes bildveraenderndes Mittel tritt an ihre Stelle:
+ * Eine gedaempft dargestellte Aufnahme verfaelscht die Beurteilung des Motivs, und ueberall dort,
+ * wo die Daempfung sass, wird beurteilt. Der Zustand einer Aufnahme haengt stattdessen an
+ * Kennzeichen, Rahmen, Punkt und durchgestrichenem Dateinamen - alle ausserhalb der Bildflaeche.
+ *
+ * SECHS FILTER-MUSTER plus das MISCHMODUS-Muster treten neben `opacity-`: Ein `grayscale` oder
+ * `brightness-50` erreichte dasselbe Ergebnis, ohne dass Regel 4 anschlueg.
+ */
+const FILTER_PREFIX_UTILITIES = ['brightness', 'contrast', 'saturate', 'mix-blend']
+const FILTER_BARE_UTILITIES = ['grayscale', 'invert', 'sepia']
+
+/** Ein Utility in TAILWIND-KLASSENFORM, verankert an beiden Enden. Nie als Teilzeichenkette: Sonst
+ * traefe der Erkenner den Bezeichner `inverted`, das `animate-pulse` des Bildskeletts und - bei
+ * einem spaeter erweiterten Suchraum - den CSS-Wert in `-moz-osx-font-smoothing: grayscale`. */
+function utilityPattern(prefixed: string[], bare: string[]): RegExp {
+  const alternatives = [
+    ...(prefixed.length > 0 ? [`(?:${prefixed.join('|')})-\\S+`] : []),
+    ...(bare.length > 0 ? [`(?:${bare.join('|')})(?:-\\S+)?`] : []),
+  ]
+  return new RegExp(`^(?:${alternatives.join('|')})$`)
+}
+
+const FILTER_PATTERN = utilityPattern(FILTER_PREFIX_UTILITIES, FILTER_BARE_UTILITIES)
+const DIMMING_PATTERN = utilityPattern(
+  ['opacity', ...FILTER_PREFIX_UTILITIES],
+  FILTER_BARE_UTILITIES,
+)
+
+/**
+ * Die Treffer einer Zeile zu einem der beiden Muster.
+ *
+ * Ein WERT EINER CSS-DEKLARATION ist kein Utility und wird ausgenommen: Dort folgt der Name auf
+ * einen Doppelpunkt MIT Leerraum (`-moz-osx-font-smoothing: grayscale`), waehrend eine
+ * Tailwind-Variante ohne Leerraum anschliesst (`hover:grayscale`).
+ */
+function matchingUtilities(pattern: RegExp, line: string): string[] {
+  return classTokens(line)
+    .map((token) => utilityBase(token))
+    .filter((base) => pattern.test(base))
+    .filter((base) => !new RegExp(`:\\s+${escapeForRegExp(base)}\\b`).test(line))
+}
+
+/** `opacity-*` samt Filtern und Mischmodi - der volle Satz fuer die bildtragenden Dateien. */
+function imageDimmingUtilities(line: string): string[] {
+  return matchingUtilities(DIMMING_PATTERN, line)
+}
+
+/** Nur Filter und Mischmodi - der Satz fuer alle uebrigen Produktivdateien. */
+function filterUtilities(line: string): string[] {
+  return matchingUtilities(FILTER_PATTERN, line)
+}
+
 describe('Design-Vertrag: Abstands- und Wertskalen', () => {
   /*
    * Jeder der vier Erkenner wird TABELLENGETRIEBEN gegen synthetische Zeilen geprueft, bevor er
@@ -1603,11 +1657,19 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
   })
 
   /*
-   * REGEL 4 - `opacity-*` FUNDSTELLENGENAU. Sie sichert die riskanteste Einzelentscheidung dieser
-   * Stufe dauerhaft ab: Auf der aussortierten Karte wird ausschliesslich die BILDFLAECHE gedaempft,
-   * nie der Kartenkoerper (ADR 0055 Abweichung 7). Ein spaeteres `opacity-40` am Koerper druecke
-   * Kennzeichen und Dateinamen wieder unter die Kontrastschwelle, ohne dass sonst irgendetwas rot
-   * wuerde - der Graustufen-Lauf ist ein einmaliger Ad-hoc-Lauf und traegt das nicht.
+   * REGEL 4 - `opacity-*` FUNDSTELLENGENAU. Die Liste fuehrt ausschliesslich ZUSTAENDE VON
+   * BEDIENELEMENTEN (deaktiviert, ueberfahren, gedrueckt); kein Eintrag nennt eine Bildflaeche.
+   * Jedes nicht freigegebene `opacity-`-Vorkommen in einer Produktions-`.tsx` ist rot.
+   *
+   * DIE ORTSREGEL (ADR 0112): Entstuende je wieder eine Daempfung an einer Foto-Kachel, saesse sie
+   * auf der BILDFLAECHE und nie am Kachel- oder Kartenkoerper - dort druecke dieselbe Utility
+   * Kennzeichen und Dateinamen unter die Kontrastschwelle. Ueber einer Bildflaeche selbst ist ein
+   * Kontrast mit Deckkraft statisch ohnehin nicht nachrechenbar. Die Regel gilt weiter, hat aber
+   * keinen Gegenstand mehr: Regel 5 schliesst jede Daempfung auf einer Bildflaeche bereits aus.
+   *
+   * Diese Regel ist ein FREIGABE-, kein Verbotsmechanismus - wer eine Bildflaeche wieder daempfen
+   * wollte, koennte hier einen Eintrag mit Begruendung nachtragen. Genau deshalb steht Regel 5
+   * daneben, die keine Ausnahme kennt.
    */
   const OPACITY_ALLOWLIST: AllowlistEntry[] = [
     {
@@ -1651,41 +1713,125 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       snippet: 'text-rating-rejected-fg hover:opacity-85 active:opacity-70',
       reason: 'aktiver Eintrag der Bewertungsleiste (Verwerfen)',
     },
-    {
-      file: 'src/components/PhotoCard.tsx',
-      snippet: "stepsBack && 'opacity-40'",
-      reason:
-        'gedaempfte BILDFLAECHE der zurueckgetretenen Karte - der Ausschnitt zeigt bewusst das ' +
-        'Element, das den Kachel-Link traegt; am Kartenkoerper waere dieselbe Utility ein ' +
-        'Kontrastverlust. `stepsBack` deckt zwei Faelle mit derselben Darstellung: die eigene ' +
-        'Streichung (`status="rejected"`) und die gemeinsame Herausnahme aus der Endauswahl ' +
-        '(`setAside`)',
-    },
-    {
-      file: 'src/components/DuplicatePhotoTile.tsx',
-      snippet: "gedaempft && 'opacity-40'",
-      reason:
-        'gedaempfte BILDFLAECHE der als Ausschuss markierten Aufnahme im Duplikat-Vergleich - ' +
-        'der Ausschnitt zeigt das Element, das die Bildflaeche TRAEGT (das native <button> der ' +
-        'Vergroesserung), nie den Kachelkoerper: dort druecke dieselbe Utility Kennzeichen und ' +
-        'Dateinamen unter die Kontrastschwelle. `gedaempft` schliesst die Vergroesserung ' +
-        'ausdruecklich aus - die vergroesserte Aufnahme bleibt unverfaelscht, weil sie beurteilt ' +
-        'werden soll',
-    },
-    {
-      file: 'src/components/PhotoGridTile.tsx',
-      snippet: "rejected && 'opacity-40'",
-      reason:
-        'gedaempfte BILDFLAECHE der verworfenen Aufnahme im Raster - der Ausschnitt zeigt das ' +
-        'Element INNERHALB des Kachel-Links, das allein das Bild traegt. Die beiden Zeichen sind ' +
-        'seine Geschwister und bleiben voll deckend; am Kachelkoerper druecke dieselbe Utility ' +
-        'sie unter die Kontrastschwelle, und ueber einer Bildflaeche ist ein Kontrast mit ' +
-        'Deckkraft statisch ohnehin nicht nachrechenbar',
-    },
   ]
 
   it('verwendet opacity-* nur an der begruendeten Liste, fundstellengenau', () => {
     expect(allowlistedOccurrences('opacity-', OPACITY_ALLOWLIST, productionTsxFiles())).toEqual([])
+    // Positiv-Gegenprobe: Die Regel laeuft nicht gegen eine leere Kandidatenmenge - sonst bestuende
+    // sie auch dann, wenn der Suchbegriff nichts mehr faende.
+    expect(findMatches('opacity-', productionTsxFiles()).length).toBeGreaterThan(0)
+  })
+
+  // -----------------------------------------------------------------------------------------
+  // Regel 5 - keine Bildflaeche wird gedaempft (ADR 0112, Spec 0498 AK3)
+  // -----------------------------------------------------------------------------------------
+
+  it.each([
+    'opacity-40',
+    'opacity-85',
+    'hover:opacity-85',
+    'grayscale',
+    'grayscale-50',
+    'invert',
+    'sepia',
+    'brightness-50',
+    'contrast-125',
+    'saturate-0',
+    'mix-blend-multiply',
+    'sm:mix-blend-overlay',
+  ])('erkennt %s als bildveraenderndes Utility', (utility) => {
+    expect(imageDimmingUtilities(`className="${utility} size-full"`)).toEqual([
+      utilityBase(utility),
+    ])
+  })
+
+  it.each([
+    'inverted',
+    'animate-pulse',
+    'object-contain',
+    'invertiert',
+    'bg-invert',
+    'sepiafarben',
+    'text-contrast',
+    '-moz-osx-font-smoothing: grayscale;',
+  ])('erkennt %s NICHT als bildveraenderndes Utility', (line) => {
+    expect(imageDimmingUtilities(line)).toEqual([])
+  })
+
+  it.each(['grayscale', 'invert', 'sepia', 'brightness-50', 'contrast-125', 'mix-blend-multiply'])(
+    'erkennt %s als Filter-/Mischmodus-Utility',
+    (utility) => {
+      expect(filterUtilities(`className="${utility}"`)).toEqual([utility])
+    },
+  )
+
+  it('zaehlt opacity-* NICHT zu den Filtern - dort gilt die Freigabeliste der Regel 4', () => {
+    // Sonst waere jede Schaltflaeche mit `hover:opacity-85` ueber die zweite, ausnahmefreie Regel
+    // rot, und die begruendete Freigabe der Bedienelement-Zustaende liefe ins Leere.
+    expect(filterUtilities('className="hover:opacity-85"')).toEqual([])
+  })
+
+  /**
+   * Die bildtragenden Produktivdateien: ABGELEITET statt aufgezaehlt - jede Produktions-`.tsx`,
+   * die `PhotoImage` nennt. Eine neue bildtragende Komponente faellt damit ohne Zutun unter die
+   * Regel, waehrend eine abgeschriebene Liste beim naechsten Zuwachs still unvollstaendig waere.
+   *
+   * Bewusst am ROHEN Inhalt, nicht am kommentarfreien: In `PhotoCard` und `PhotoGridTile` steht
+   * der Name ausschliesslich im Doku-Block der `image`-Prop - beide fielen sonst heraus, und das
+   * sind genau die beiden Dateien, um die es hier geht.
+   */
+  function imageBearingFiles(): typeof sourceFiles {
+    return productionTsxFiles().filter((file) => file.content.includes('PhotoImage'))
+  }
+
+  it('daempft in keiner bildtragenden Datei die Bildflaeche - ohne Ausnahmemoeglichkeit', () => {
+    const files = imageBearingFiles()
+
+    // Gegenprobe auf eine nicht leere Kandidatenmenge, OHNE ihre Maechtigkeit festzuschreiben:
+    // Eine neue bildtragende Datei soll in die Regel fallen, nicht die Gegenprobe rot faerben.
+    expect(files.length).toBeGreaterThan(0)
+    // ... und die Ableitung erfasst tatsaechlich die drei Kacheln, um die es geht. Ohne diese
+    // Zeile bliebe unbemerkt, dass sie am Kern vorbeigreift, solange sie irgendetwas findet.
+    const labels = files.map((file) => file.label)
+    for (const kachel of ['PhotoCard', 'PhotoGridTile', 'DuplicatePhotoTile']) {
+      expect(labels).toContain(`src/components/${kachel}.tsx`)
+    }
+
+    // KEINE Freigabeliste - anders als Regel 4 ist das ein Verbot, kein Freigabemechanismus.
+    expect(allowlistedOccurrences(imageDimmingUtilities, [], files)).toEqual([])
+  })
+
+  /*
+   * Die zweite Regel, ueber ALLE Produktiv-`.tsx`. Grund: Die abgeleitete Menge oben erfasst die
+   * drei Seiten nicht, die eine Foto-Kachel rendern, ohne `PhotoImage` selbst zu nennen
+   * (`AlbumDraftPage`, `AlbumSelectionPage`, `DuplicateComparePage`). Filter und Mischmodus wirken
+   * von JEDEM Vorfahren auf das Kind - ein `<div className="grayscale">` um die Kachel liefe sonst
+   * durch. `opacity-*` bleibt hier aussen vor: dafuer gibt es Regel 4 mit ihrer begruendeten
+   * Freigabe der Bedienelement-Zustaende.
+   *
+   * Die Liste ist HEUTE LEER und kostet gemessen nichts - es gibt kein Vorkommen dieser Muster in
+   * einer Produktiv-`.tsx`. Sie steht trotzdem als Liste da, damit ein kuenftiger Bedarf eine
+   * fundstellengenaue Begruendung verlangt statt einer Regelaufweichung.
+   */
+  const FILTER_ALLOWLIST: AllowlistEntry[] = []
+
+  it('verwendet in keiner Produktivdatei ein Filter- oder Mischmodus-Utility', () => {
+    const files = productionTsxFiles()
+
+    expect(files.length).toBeGreaterThan(0)
+    expect(allowlistedOccurrences(filterUtilities, FILTER_ALLOWLIST, files)).toEqual([])
+  })
+
+  it('meldet ein Filter-Utility an einer synthetischen Produktivdatei', () => {
+    // Die Regel oben laeuft ueber eine leere TREFFERmenge - sie bestuende deshalb auch mit einem
+    // stillgelegten Erkenner. Hier wird sie einmal im roten Zustand gesehen, an einer literal
+    // geschriebenen Datei statt am Bestand.
+    const problems = allowlistedOccurrences(filterUtilities, FILTER_ALLOWLIST, [
+      { label: 'src/pages/Irgendeine.tsx', content: '<div className="grayscale">{kachel}</div>' },
+    ])
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('src/pages/Irgendeine.tsx')
   })
 
   /*
