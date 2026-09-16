@@ -549,7 +549,7 @@ def vorlegebefunde(pfad: str, text: str) -> list[str]:
     Block als Prosa liest und selbst antwortet, ist am Repositorium nicht von einer zu
     unterscheiden, die fragt.
     """
-    for kopf, inhalt in abschnitte(text).items():
+    for inhalt in abschnitte(text).values():
         if ANKER in inhalt and VORLEGEN in inhalt and ZURUECKSPIELEN in inhalt:
             return []
     return [
