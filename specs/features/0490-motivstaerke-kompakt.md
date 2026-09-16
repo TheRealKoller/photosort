@@ -1,6 +1,6 @@
 # 0490 - Motivstärke kompakt auf einen Blick
 
-**Status:** Accepted
+**Status:** Implemented ([PR #499](https://github.com/TheRealKoller/photosort/pull/499))
 **Erstellt:** 2026-09-16
 **Bezug:** [Issue #490](https://github.com/TheRealKoller/photosort/issues/490)
 
