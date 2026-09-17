@@ -59,6 +59,7 @@ function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScor
     cloud_phases: [REMOTE_PHASE, LANDMARK_PHASE],
     estimated_cost_usd: 1.2,
     cloud_cost_total_usd: 0.9,
+    phase_remaining_seconds: null,
     ...overrides,
   }
 }
@@ -231,6 +232,97 @@ describe('deriveClassificationSteps: Fortschrittsquellen', () => {
   it('gibt jedem Teilschritt eine nicht-leere Beschriftung', () => {
     for (const step of deriveClassificationSteps(run())) {
       expect(step.label.trim(), step.id).not.toBe('')
+    }
+  })
+})
+
+/**
+ * specs/features/0481-restdauer-klassifizierungslauf.md: Der gelieferte Wert haengt an GENAU DEM
+ * Teilschritt, der auf `running` steht - und an keinem anderen (AK1).
+ */
+describe('deriveClassificationSteps: die Restdauer', () => {
+  it('haengt den gemessenen Wert an den laufenden Teilschritt und an keinen anderen', () => {
+    const steps = deriveClassificationSteps(
+      run({ phase: 'criteria', phase_remaining_seconds: 240 }),
+    )
+
+    const withEta = steps.filter((step) => step.etaKind !== null)
+    expect(withEta).toHaveLength(1)
+    expect(withEta[0].id).toBe('criteria')
+    expect(withEta[0].state).toBe('running')
+    expect(withEta[0].etaKind).toBe('measured')
+    expect(withEta[0].etaSeconds).toBe(240)
+  })
+
+  it('haengt ihn auch an einen laufenden Cloud-Teilschritt', () => {
+    const steps = deriveClassificationSteps(run({ phase: 'landmark', phase_remaining_seconds: 90 }))
+
+    const landmark = steps.find((step) => step.id === 'landmark')
+    expect(landmark?.state).toBe('running')
+    expect(landmark?.etaKind).toBe('measured')
+    expect(landmark?.etaSeconds).toBe(90)
+  })
+
+  it('nennt den fehlenden Wert "unbekannt" statt ihn wegzulassen', () => {
+    const steps = deriveClassificationSteps(
+      run({ phase: 'criteria', phase_remaining_seconds: null }),
+    )
+
+    const criteria = steps.find((step) => step.id === 'criteria')
+    expect(criteria?.etaKind).toBe('unknown')
+    expect(criteria?.etaSeconds).toBeNull()
+  })
+
+  it('gibt dem Rangfolge-Teilschritt die Erfahrungs-Art, nicht die gemessene', () => {
+    const steps = deriveClassificationSteps(
+      run({ phase: 'ranking', phase_remaining_seconds: null }),
+    )
+
+    const ranking = steps.find((step) => step.id === 'ranking')
+    expect(ranking?.state).toBe('running')
+    expect(ranking?.etaKind).toBe('experience')
+  })
+
+  it('bleibt bei der Erfahrungs-Art, selbst wenn der Server wider Erwarten einen Wert liefert', () => {
+    // ADR 0116 Punkt 5: `ranking` bekommt NIE eine gemessene Angabe. Die Art haengt am Teilschritt,
+    // nicht daran, ob zufaellig eine Zahl in der Antwort steht.
+    const steps = deriveClassificationSteps(run({ phase: 'ranking', phase_remaining_seconds: 42 }))
+
+    expect(steps.find((step) => step.id === 'ranking')?.etaKind).toBe('experience')
+  })
+
+  it('gibt einem beendeten Lauf gar keine Angabe - auch mit stehengebliebenem Teilschritt', () => {
+    // AK8. Der Zustand "beendet, aber `phase` gesetzt" existiert am Bestand; er darf hier keine
+    // Zeitangabe erzeugen, sonst behauptete eine laengst fertige Zeile weiter eine Restdauer.
+    for (const status of ['success', 'failed'] as const) {
+      const steps = deriveClassificationSteps(
+        run({ status, phase: 'criteria', phase_remaining_seconds: 240 }),
+      )
+
+      expect(
+        steps.filter((step) => step.etaKind !== null),
+        status,
+      ).toHaveLength(0)
+    }
+  })
+
+  it('gibt einem laufenden Lauf ohne Teilschritt gar keine Angabe', () => {
+    const steps = deriveClassificationSteps(run({ phase: null, phase_remaining_seconds: null }))
+
+    expect(steps.filter((step) => step.etaKind !== null)).toHaveLength(0)
+  })
+
+  it('laesst ausstehende, erledigte und uebersprungene Teilschritte ohne Angabe', () => {
+    const steps = deriveClassificationSteps(
+      run({ phase: 'criteria', phase_remaining_seconds: 240 }),
+    )
+
+    for (const step of steps) {
+      if (step.state === 'running') {
+        continue
+      }
+      expect(step.etaKind, step.id).toBeNull()
+      expect(step.etaSeconds, step.id).toBeNull()
     }
   })
 })

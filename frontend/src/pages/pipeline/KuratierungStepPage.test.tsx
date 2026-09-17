@@ -50,6 +50,7 @@ function criterionScoringRun(
     cloud_phases: [],
     estimated_cost_usd: null,
     cloud_cost_total_usd: null,
+    phase_remaining_seconds: null,
     ...overrides,
   }
 }

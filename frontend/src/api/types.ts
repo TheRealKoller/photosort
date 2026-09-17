@@ -98,6 +98,17 @@ export interface CriterionScoringRunSummary {
   cloud_phases: CloudPhaseSummaryOut[]
   estimated_cost_usd: number | null
   cloud_cost_total_usd: number | null
+  // Die geschaetzte Restdauer GENAU DES Teilschritts, den `phase` nennt - in Sekunden. Ein Feld,
+  // keines je Teilschritt: es laeuft immer genau einer.
+  //
+  // `null` heisst "noch nicht abschaetzbar", NIE "keine Restdauer" und nie "sofort fertig" - die
+  // Oberflaeche schreibt dort sichtbar hin, dass die Angabe noch fehlt, statt ein leeres Feld zu
+  // zeigen. `null` steht auch immer bei `ranking` (keine gezaehlte Menge) und bei jedem beendeten
+  // Lauf. Die Spanne entsteht aus dieser Zahl erst hier im Frontend (utils/classificationEta.ts).
+  //
+  // PFLICHTFELD ohne Vorgabewert - dann erzwingt `tsc` die Ergaenzung jeder lokalen Testfabrik,
+  // und es braucht keinen Test ueber deren Vollzaehligkeit.
+  phase_remaining_seconds: number | null
 }
 
 export interface ProjectOut {

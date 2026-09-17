@@ -19,6 +19,8 @@ from photosort.api.deps import (
     get_opencloud_client,
     get_session,
 )
+from photosort.classification_eta import remaining_seconds
+from photosort.clock import now_utc
 from photosort.cloud_vision import provider_for_vision_model
 from photosort.config import settings
 from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
@@ -181,6 +183,19 @@ class CriterionScoringRunSummary(BaseModel):
     estimated_cost_usd: float | None
     cloud_phases: list[CloudPhaseSummaryOut]
     cloud_cost_total_usd: float | None
+    # Die geschaetzte Restdauer GENAU DES Teilschritts, den `phase` nennt - in Sekunden, nicht als
+    # Text: Die Spanne, die die Oberflaeche daraus macht, ist eine Darstellungsentscheidung
+    # (ADR 0116 Punkt 4).
+    #
+    # EIN Feld, keines je Teilschritt und keines an `CloudPhaseSummaryOut`: Es laeuft zu jedem
+    # Zeitpunkt genau einer, ein erledigter hat keine Restdauer und ein ausstehender keine
+    # Messgrundlage.
+    #
+    # `null` heisst "noch nicht abschaetzbar", NIE "keine Restdauer" und nie "sofort fertig" -
+    # die Oberflaeche schreibt dort sichtbar hin, dass die Angabe noch fehlt, statt ein leeres
+    # Feld zu zeigen. `null` steht auch immer bei `ranking` (keine gezaehlte Menge) und bei jedem
+    # beendeten Lauf.
+    phase_remaining_seconds: float | None
 
 
 class ClassificationEstimatePartOut(BaseModel):
@@ -442,13 +457,65 @@ def _cloud_cost_total(phases: list[CloudPhaseSummaryOut]) -> float | None:
     return sum(phase.cost_usd for phase in phases if phase.cost_usd is not None)
 
 
+def _phase_progress(
+    run: CriterionScoringRun, phases: list[CloudPhaseSummaryOut]
+) -> tuple[int | None, int | None]:
+    """Der Zaehler-/Nenner-Stand GENAU DES laufenden Teilschritts.
+
+    Die Zuordnung "welcher Zaehler gehoert zu welchem Teilschritt" steht SERVERSEITIG; das
+    Frontend bildet sie nicht nach (ADR 0116 Punkt 2). Die Landmark-Zahlen kommen aus der bereits
+    gebauten `phases`-Liste und der Remote-Stand aus deren Eintrag - KEIN zusaetzlicher
+    Datenbankzugriff je Projekt, der im Zwei-Sekunden-Takt des Pollings anfiele (ADR 0103
+    Punkt 1).
+
+    `ranking` liefert `(None, None)` und damit immer `null`: Der Teilschritt arbeitet ueber
+    Partitionen und hat keine gezaehlte Menge (ADR 0116 Punkt 5).
+    """
+    if run.phase is ClassificationPhase.CRITERIA:
+        return run.photos_processed, run.photos_total
+    purpose = _CLOUD_PURPOSE_BY_PHASE.get(run.phase) if run.phase is not None else None
+    if purpose is None:
+        return None, None
+    phase = next((entry for entry in phases if entry.purpose is purpose), None)
+    if phase is None:
+        return None, None
+    return phase.photos_processed, phase.photos_total
+
+
+# Die beiden Teilschritte, deren Fortschritt an einem Cloud-Eintrag haengt. `criteria` steht
+# bewusst nicht hier (es zaehlt an der Lauf-Zeile), `ranking` hat gar keine Menge.
+_CLOUD_PURPOSE_BY_PHASE: dict[ClassificationPhase, CloudVisionPhase] = {
+    ClassificationPhase.REMOTE_CATEGORIES: CloudVisionPhase.REMOTE_CATEGORY,
+    ClassificationPhase.LANDMARK: CloudVisionPhase.LANDMARK,
+}
+
+
+def _phase_remaining_seconds(
+    run: CriterionScoringRun, phases: list[CloudPhaseSummaryOut]
+) -> float | None:
+    """Die Restdauer des laufenden Teilschritts, oder `null`.
+
+    Die Statuspruefung steht VOR der Rechnung, und sie prueft NICHT allein `phase`: Der Zustand
+    "beendet, aber `phase` nicht zurueckgesetzt" existiert am Bestand (Altzeilen). Ohne sie
+    zaehlte eine laengst beendete Zeile weiter hoch, ohne dass etwas fehlschluege (AK8)."""
+    if run.status is not ScanStatus.RUNNING or run.phase is None:
+        return None
+    processed, total = _phase_progress(run, phases)
+    return remaining_seconds(
+        phase_started_at=run.phase_started_at,
+        now=now_utc(),
+        processed=processed,
+        total=total,
+    )
+
+
 async def _criterion_scoring_run_summary(
     session: AsyncSession, run: CriterionScoringRun
 ) -> CriterionScoringRunSummary:
-    """FELDWEISE konstruiert, nie ueber `model_validate(run)`: `cloud_phases` und
-    `cloud_cost_total_usd` entstehen nicht an der Zeile, sondern aus ihr plus einem
-    Fremdschluessel-Zugriff - eine nachtraegliche Zuweisung an ein validiertes Modell umginge die
-    Validierung genau dieser beiden Felder."""
+    """FELDWEISE konstruiert, nie ueber `model_validate(run)`: `cloud_phases`,
+    `cloud_cost_total_usd` und `phase_remaining_seconds` entstehen nicht an der Zeile, sondern aus
+    ihr - eine nachtraegliche Zuweisung an ein validiertes Modell umginge die Validierung genau
+    dieser Felder."""
     phases = await _cloud_phase_summaries(session, run)
     return CriterionScoringRunSummary(
         status=run.status,
@@ -463,6 +530,7 @@ async def _criterion_scoring_run_summary(
         estimated_cost_usd=run.estimated_cost_usd,
         cloud_phases=phases,
         cloud_cost_total_usd=_cloud_cost_total(phases),
+        phase_remaining_seconds=_phase_remaining_seconds(run, phases),
     )
 
 

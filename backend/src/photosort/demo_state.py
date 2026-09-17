@@ -68,7 +68,6 @@ from photosort.feedback_log import (
     record_motif_correction,
 )
 from photosort.models import (
-    ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
     Event,
@@ -1069,7 +1068,11 @@ async def _seed_rated_project(
         last_progress_at=_BASE_SCORING_AT + timedelta(minutes=15),
         photos_total=len(photos),
         photos_processed=len(photos),
-        phase=ClassificationPhase.CRITERIA,
+        # KEIN `phase`: Der Lauf ist abgeschlossen (`status=SUCCESS`), und ein abgeschlossener
+        # Lauf traegt keinen laufenden Teilschritt (ADR 0116 Punkt 1). Der frueher hier gesetzte
+        # Wert widersprach der Invariante, auf die AK8 der Spec 0481 sich stuetzt - der eigene
+        # Demo-Bestand war der einzige Ort, an dem sie falsch war.
+        # Der Beginn `phase_started_at` faellt damit mit weg; beide Spalten gehoeren zusammen.
         # Der "bewertet"-Zustand traegt die vollstaendige Lauf-Bilanz: beide Cloud-Teilschritte,
         # verknuepfter Remote-Lauf und eingefrorene Startschaetzung - sonst waere der Block im
         # Pruefstack/`browse-app` gar nicht sichtbar. Der Fall "ohne Cloud" bleibt im

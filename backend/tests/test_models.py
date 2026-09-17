@@ -2208,3 +2208,255 @@ async def test_event_place_name_is_nullable_and_defaults_to_none(
     stored = (await db_session.execute(select(Event).where(Event.id == event.id))).scalar_one()
     assert stored.place_name is None
     assert inspect(Event).columns["place_name"].nullable
+
+
+# specs/features/0481-restdauer-klassifizierungslauf.md, decisions/0116-restdauer-als-
+# servermessung-spanne-im-frontend-keine-gesamtrestzeit.md Punkt 1: `phase` und
+# `phase_started_at` werden AUSSCHLIESSLICH GEMEINSAM gesetzt, ueber genau eine Funktion.
+_ALLOWED_PHASE_WRITER_FUNCTIONS = frozenset({"_set_phase"})
+_ALLOWED_PHASE_WRITER_MODULES = frozenset({"worker.py"})
+
+_PHASE = "phase"
+_PHASE_STARTED_AT = "phase_started_at"
+# Die Zeilenklasse, deren Konstruktor-Schluesselwort zaehlt. AUSGESCHRIEBEN und exakt verglichen:
+# `PhotoCloudVisionError(phase=…)` und `CloudVisionStatusOut(phase=…)` fuehren eine gleichnamige
+# Spalte eines ANDEREN Modells und sind keine Schreibstelle im Sinne dieser Bindung.
+_PHASE_ROW_CLASS = "CriterionScoringRun"
+# Ein Schreibzugriff ausserhalb jeder Funktion - er faellt ueber die Gleichheitspruefung unten
+# auf, statt unbemerkt keiner Funktion zugeordnet zu werden.
+_MODULE_LEVEL = "<modulebene>"
+
+
+def _is_phase_write(node: ast.AST, field: str) -> bool:
+    """Ob DIESER Knoten `field` an einer `CriterionScoringRun`-Zeile setzt.
+
+    VIER Schreibformen, verglichen ueber `ast.Attribute.attr` bzw. das Schluesselwort - nie ueber
+    ein Textmuster: `"phase"` als Teilstring traefe `phase_started_at`, `cloud_phases` und
+    `CloudVisionPhase` gleich mit.
+
+    1. Attributzuweisung `run.phase = ...`.
+    2. `phase` als Schluessel eines Dict-Literals (die Form eines gebuendelten Bulk-Updates).
+    3. `phase` als Schluesselwort eines `.values(...)`-Aufrufs.
+    4. Das KONSTRUKTOR-Schluesselwort `CriterionScoringRun(phase=...)`.
+
+    Die vierte Form ist eine BEWUSSTE Abweichung vom `taken_at`-Waechter, der das Anlegen einer
+    Zeile ausdruecklich nicht zaehlt. Hier ist gerade das Anlegen die gefaehrliche Stelle: Die
+    ERSTE Phase jedes Laufs wurde vor dieser Spec als Konstruktor-Schluesselwort gesetzt. Bliebe
+    sie es, entkaeme genau sie der Bindung - und die gesamte erste Phase jedes Laufs zeigte
+    dauerhaft "wird noch ermittelt", schweigend und ohne roten Test."""
+    if isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        return any(isinstance(target, ast.Attribute) and target.attr == field for target in targets)
+    if isinstance(node, ast.Dict):
+        return any(isinstance(key, ast.Constant) and key.value == field for key in node.keys)
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "values":
+            return any(keyword.arg == field for keyword in node.keywords)
+        if isinstance(node.func, ast.Name) and node.func.id == _PHASE_ROW_CLASS:
+            return any(keyword.arg == field for keyword in node.keywords)
+    return False
+
+
+def _functions_writing(source: str, field: str) -> set[str]:
+    """Die Namen der Funktionen dieses Quelltexts, die `field` setzen - Modulebene als eigener,
+    nicht stiller Eintrag.
+
+    Feiner als der Modulwaechter unten, und das ist der Punkt: Waeren nur die MODULE geprueft,
+    duerfte eine beliebige zweite Funktion in `worker.py` die Phase setzen, ohne den Zeitstempel
+    mitzufuehren - der Modulwaechter bliebe gruen."""
+    found: set[str] = set()
+
+    def descend(node: ast.AST, enclosing: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                descend(child, child.name)
+                continue
+            if _is_phase_write(child, field):
+                found.add(enclosing)
+            descend(child, enclosing)
+
+    descend(ast.parse(source), _MODULE_LEVEL)
+    return found
+
+
+def _writes_a_phase_field(source: str) -> bool:
+    return bool(_functions_writing(source, _PHASE) or _functions_writing(source, _PHASE_STARTED_AT))
+
+
+def _worker_source() -> str:
+    return (Path(photosort.__file__).resolve().parent / "worker.py").read_text(encoding="utf-8")
+
+
+def test_exactly_one_function_writes_the_phase() -> None:
+    """STRUKTURELLER Waechter: Eine zweite Schreibstelle auf `phase` roetet KEINEN
+    Verhaltenstest - sie setzt den Teilschritt weiterhin richtig und laesst nur den Zeitstempel
+    stehen. Die Restdauer rechnet dann den Beginn des vorigen Teilschritts gegen den Fortschritt
+    des aktuellen und ist zu gross, ohne Fehlermeldung.
+
+    Geprueft wird GLEICHHEIT, nicht Teilmenge: Findet der Waechter die erlaubte Stelle nicht mehr,
+    prueft er fuer sie nichts - so bliebe er gruen, nachdem die Bindung ausgebaut wurde."""
+    writers = _functions_writing(_worker_source(), _PHASE)
+
+    assert writers == set(_ALLOWED_PHASE_WRITER_FUNCTIONS), (
+        "Die Menge der Funktionen in worker.py, die `CriterionScoringRun.phase` setzen, weicht "
+        f"von der genau einen erlaubten ab ({sorted(_ALLOWED_PHASE_WRITER_FUNCTIONS)}). Zu viel: "
+        f"{sorted(writers - set(_ALLOWED_PHASE_WRITER_FUNCTIONS))}; nicht mehr gefunden: "
+        f"{sorted(set(_ALLOWED_PHASE_WRITER_FUNCTIONS) - writers)}"
+    )
+
+
+def test_exactly_one_function_writes_the_phase_start() -> None:
+    """Dieselbe Pruefung fuer die zweite Spalte. Sie steht EINZELN da, weil die erste allein auch
+    gegen ein `_set_phase` bestuende, das `phase_started_at` gar nicht mehr anfasst - dann gaebe
+    es schlicht keine zweite Schreibstelle, und die erste Zusicherung bliebe gruen."""
+    writers = _functions_writing(_worker_source(), _PHASE_STARTED_AT)
+
+    assert writers == set(_ALLOWED_PHASE_WRITER_FUNCTIONS), (
+        "Die Menge der Funktionen in worker.py, die `CriterionScoringRun.phase_started_at` "
+        f"setzen, weicht von der genau einen erlaubten ab "
+        f"({sorted(_ALLOWED_PHASE_WRITER_FUNCTIONS)}). Zu viel: "
+        f"{sorted(writers - set(_ALLOWED_PHASE_WRITER_FUNCTIONS))}; nicht mehr gefunden: "
+        f"{sorted(set(_ALLOWED_PHASE_WRITER_FUNCTIONS) - writers)}"
+    )
+
+
+def test_the_one_phase_writer_sets_both_columns() -> None:
+    """Die dritte Zusicherung, und die eigentliche Bindung: DIESELBE Funktion setzt beide. Ohne
+    sie waeren die beiden Mengen oben auch dann erfuellt, wenn sie leer waeren."""
+    source = _worker_source()
+
+    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _functions_writing(source, _PHASE)
+    assert _ALLOWED_PHASE_WRITER_FUNCTIONS <= _functions_writing(source, _PHASE_STARTED_AT)
+
+
+def test_exactly_the_one_known_module_writes_a_phase_field() -> None:
+    """PAKETWEIT, nicht nur modulintern: Ohne diese Pruefung wanderte die Schreibstelle nach
+    `api/projects.py` oder `demo_state.py` ab, und der Funktionswaechter oben bliebe gruen, weil
+    er nur `worker.py` liest.
+
+    Der Suchraum wird GEMESSEN (`rglob`), nicht gelistet - eine neu hinzukommende Datei ist sonst
+    von Anfang an unsichtbar."""
+    source_root = Path(photosort.__file__).resolve().parent
+    writers = {
+        str(path.relative_to(source_root))
+        for path in source_root.rglob("*.py")
+        if _writes_a_phase_field(path.read_text(encoding="utf-8"))
+    }
+
+    assert writers == set(_ALLOWED_PHASE_WRITER_MODULES), (
+        "Die Menge der Module, die `CriterionScoringRun.phase`/`phase_started_at` schreiben, "
+        f"weicht von der genau einen erlaubten ab ({sorted(_ALLOWED_PHASE_WRITER_MODULES)}). Zu "
+        f"viel: {sorted(writers - set(_ALLOWED_PHASE_WRITER_MODULES))}; nicht mehr gefunden: "
+        f"{sorted(set(_ALLOWED_PHASE_WRITER_MODULES) - writers)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        pytest.param("def f():\n    run.phase = value", id="attributzuweisung"),
+        pytest.param('def f():\n    rows.append({"id": 1, "phase": value})', id="dict-schluessel"),
+        pytest.param(
+            "def f():\n    session.execute(update(CriterionScoringRun).values(phase=value))",
+            id="values-aufruf",
+        ),
+        pytest.param(
+            "def f():\n    session.add(CriterionScoringRun(project_id=1, phase=value))",
+            id="konstruktor-schluesselwort",
+        ),
+    ],
+)
+def test_the_phase_guard_sees_every_write_form_it_claims_to_cover(snippet: str) -> None:
+    """Der Waechter ist nur so gut wie die Formen, die er tatsaechlich erkennt - jede der vier
+    wird hier EINZELN nachgewiesen, statt sich darauf zu verlassen, dass der Bestand sie alle
+    enthaelt (er enthaelt die Dict- und die `values()`-Form nicht)."""
+    assert _functions_writing(snippet, _PHASE) == {"f"}
+
+
+def test_the_phase_guard_sees_the_start_column_in_the_same_forms() -> None:
+    """Dieselben Formen fuer die zweite Spalte - der Vergleich laeuft ueber den Feldnamen, nicht
+    ueber ein Muster, und muss deshalb fuer beide gleich greifen."""
+    assert _functions_writing("def f():\n    run.phase_started_at = now", _PHASE_STARTED_AT) == {
+        "f"
+    }
+    assert _functions_writing(
+        "def f():\n    session.add(CriterionScoringRun(phase_started_at=now))", _PHASE_STARTED_AT
+    ) == {"f"}
+
+
+def test_the_phase_guard_does_not_confuse_the_two_columns() -> None:
+    """`phase_started_at` enthaelt `phase` als Teilstring. Ein Textmuster zaehlte die
+    Zeitstempel-Zuweisung als Phasen-Schreibstelle mit, und der Waechter waere in beiden
+    Richtungen blind."""
+    assert _functions_writing("def f():\n    run.phase_started_at = now", _PHASE) == set()
+    assert _functions_writing("def f():\n    run.phase = value", _PHASE_STARTED_AT) == set()
+
+
+def test_the_phase_guard_ignores_a_constructor_of_another_model() -> None:
+    """Gegenprobe: `PhotoCloudVisionError` und `CloudVisionStatusOut` fuehren eine gleichnamige
+    Spalte. Zaehlten sie mit, waeren `worker.py::_record_cloud_vision_error` und `api/photos.py`
+    Befunde - und der Waechter waere nur noch abzuschalten."""
+    assert (
+        _functions_writing(
+            "def f():\n    return PhotoCloudVisionError(photo_id=1, phase=phase)", _PHASE
+        )
+        == set()
+    )
+    assert (
+        _functions_writing(
+            "def f():\n    return CloudVisionStatusOut(phase=phase, status=status)", _PHASE
+        )
+        == set()
+    )
+
+
+def test_the_phase_guard_ignores_a_parameter_or_a_local_variable() -> None:
+    """Gegenprobe: ein gleichnamiger Funktionsparameter und eine gleichnamige lokale Variable
+    sind keine Spaltenzuweisung. `worker.py` fuehrt beides."""
+    assert _functions_writing("def f(phase: str) -> None:\n    pass", _PHASE) == set()
+    assert _functions_writing("def f():\n    phase = compute()", _PHASE) == set()
+
+
+def test_the_phase_guard_ignores_reading_the_columns() -> None:
+    """Gegenprobe: Lesen zaehlt nie - sonst waere jeder Lesepfad (`api/projects.py`) ein Befund."""
+    assert (
+        _functions_writing("def f():\n    return select(CriterionScoringRun.phase)", _PHASE)
+        == set()
+    )
+    assert (
+        _functions_writing("def f():\n    if run.phase is None: return run.phase", _PHASE) == set()
+    )
+    assert (
+        _functions_writing(
+            "def f():\n    return CriterionScoringRunSummary(phase=run.phase)", _PHASE
+        )
+        == set()
+    )
+
+
+async def test_criterion_scoring_run_phase_start_is_nullable_and_defaults_to_none(
+    db_session: AsyncSession,
+) -> None:
+    """Der Beginn des laufenden Teilschritts. `NULL` heisst "kein laufender Teilschritt"
+    (beendet, abgebrochen, oder Altzeile), NIE "gerade begonnen"."""
+    project = Project(name=f"Projekt {uuid4()}", opencloud_drive_id="d", opencloud_path="/a")
+    db_session.add(project)
+    await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
+
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.RUNNING
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    stored = (
+        await db_session.execute(
+            select(CriterionScoringRun).where(CriterionScoringRun.id == run.id)
+        )
+    ).scalar_one()
+    assert stored.phase_started_at is None
+    assert inspect(CriterionScoringRun).columns["phase_started_at"].nullable
+    assert CriterionScoringRun.__table__.c.phase_started_at.server_default is None
