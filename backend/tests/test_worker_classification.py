@@ -39,6 +39,7 @@ from photosort.motifs import MOTIF_REGISTRY
 from photosort.remote_classification import RemoteClassification
 from photosort.thumbnails import display_path
 from photosort.worker import run_classification
+from tests.phase_binding import assert_phase_binding, assert_phase_starts_strictly_increase
 
 # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
 # klassifizierungslauf-mit-laufbezogener-cloud-freigabe.md: EIN verketteter Lauf statt zweier
@@ -358,6 +359,7 @@ async def test_the_run_record_reports_phase_and_cloud_request(
 
     assert observed_phases == [ClassificationPhase.REMOTE_CATEGORIES]
     assert run.phase is None
+    assert_phase_binding(run)
     assert run.cloud_requested is True
     assert run.cloud_error_message is None
 
@@ -390,6 +392,7 @@ async def test_a_local_run_records_that_no_cloud_was_requested(
     assert run.status == ScanStatus.SUCCESS
     assert run.cloud_requested is False
     assert run.phase is None
+    assert_phase_binding(run)
 
 
 # --------------------------------------------------------------------------------------------
@@ -704,6 +707,7 @@ async def test_a_cancelled_remote_phase_fails_the_whole_run_immediately(
     run = (await db_session.execute(select(CriterionScoringRun))).scalar_one()
     assert run.status == ScanStatus.FAILED
     assert run.phase is None
+    assert_phase_binding(run)
     assert run.error_message == "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown)."
 
 
@@ -782,20 +786,25 @@ async def test_a_purely_local_run_resolves_no_model_at_all(
 
 class _PhaseRecorder:
     """Sammelt Phasenwerte und faltet unmittelbare Wiederholungen zusammen - beobachtet wird pro
-    Foto/pro Aufruf, die Aussage ist aber die Abfolge, nicht die Aufrufzahl."""
+    Foto/pro Aufruf, die Aussage ist aber die Abfolge, nicht die Aufrufzahl.
+
+    Aufgezeichnet wird zu jedem Teilschritt auch sein `phase_started_at`: Die Bindung der beiden
+    Spalten (ADR 0116 Punkt 1) ist nur an der ABFOLGE zu sehen, nicht an einem Zustand - ein
+    `_set_phase`, das den alten Zeitstempel stehen laesst, bestuende jede Einzelpruefung."""
 
     def __init__(self) -> None:
         self.sequence: list[str | None] = []
+        self.observed: list[tuple[ClassificationPhase | None, datetime | None]] = []
 
-    def record(self, phase: ClassificationPhase | None) -> None:
-        value = phase.value if phase is not None else None
+    def record(self, run: CriterionScoringRun) -> None:
+        value = run.phase.value if run.phase is not None else None
         if not self.sequence or self.sequence[-1] != value:
             self.sequence.append(value)
+            self.observed.append((run.phase, run.phase_started_at))
 
 
-async def _current_phase(session: AsyncSession) -> ClassificationPhase | None:
-    run = (await session.execute(select(CriterionScoringRun))).scalar_one()
-    return run.phase
+async def _current_run(session: AsyncSession) -> CriterionScoringRun:
+    return (await session.execute(select(CriterionScoringRun))).scalar_one()
 
 
 def _phase_observing_scene_classifier(session: AsyncSession, recorder: _PhaseRecorder) -> object:
@@ -810,7 +819,7 @@ def _phase_observing_scene_classifier(session: AsyncSession, recorder: _PhaseRec
             run = next(
                 obj for obj in session.identity_map.values() if isinstance(obj, CriterionScoringRun)
             )
-            recorder.record(run.phase)
+            recorder.record(run)
             return super().classify(image)
 
     return _Observing()
@@ -828,14 +837,14 @@ async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
         async def classify(
             self, image_bytes: bytes, mime_type: str, photo_id: int
         ) -> RemoteClassification:
-            recorder.record(await _current_phase(db_session))
+            recorder.record(await _current_run(db_session))
             return await super().classify(image_bytes, mime_type, photo_id)
 
     class _PhaseObservingLandmarkClient(RecordingLandmarkClient):
         async def detect(
             self, image_bytes: bytes, mime_type: str, hint: PlaceHint | None
         ) -> LandmarkDetection:
-            recorder.record(await _current_phase(db_session))
+            recorder.record(await _current_run(db_session))
             return await super().detect(image_bytes, mime_type, hint)
 
     real_rank_photos = worker.rank_photos
@@ -846,7 +855,7 @@ async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
         run = next(
             obj for obj in db_session.identity_map.values() if isinstance(obj, CriterionScoringRun)
         )
-        recorder.record(run.phase)
+        recorder.record(run)
         return real_rank_photos(*args, **kwargs)
 
     monkeypatch.setattr(worker, "rank_photos", _observing_rank_photos)
@@ -863,9 +872,15 @@ async def test_the_phase_sequence_of_a_cloud_run_is_monotone(
         build_landmark_client=lambda _model: _PhaseObservingLandmarkClient(),
         build_classifier=lambda: _phase_observing_scene_classifier(db_session, recorder),
     )
-    recorder.record(run.phase)
+    recorder.record(run)
 
     assert recorder.sequence == ["remote_categories", "criteria", "landmark", "ranking", None]
+    # Der Verhaltens-Nachsatz zur vollstaendigen Abfolge (ADR 0116 Punkt 1): Jeder Wechsel schreibt
+    # den Phasenbeginn fort. Ohne ihn bestuende die Bindung auch gegen ein `_set_phase`, das den
+    # alten Zeitstempel stehen laesst - die Restdauer des neuen Teilschritts rechnete dann mit dem
+    # Beginn des vorigen und waere zu gross, ohne dass irgendetwas fehlschluege.
+    assert_phase_starts_strictly_increase(recorder.observed)
+    assert_phase_binding(run)
 
 
 async def test_a_run_without_cloud_keeps_the_order_and_skips_both_cloud_phases(
@@ -882,7 +897,7 @@ async def test_a_run_without_cloud_keeps_the_order_and_skips_both_cloud_phases(
         run = next(
             obj for obj in db_session.identity_map.values() if isinstance(obj, CriterionScoringRun)
         )
-        recorder.record(run.phase)
+        recorder.record(run)
         return real_rank_photos(*args, **kwargs)
 
     monkeypatch.setattr(worker, "rank_photos", _observing_rank_photos)
@@ -897,9 +912,11 @@ async def test_a_run_without_cloud_keeps_the_order_and_skips_both_cloud_phases(
         build_landmark_client=_exploding_landmark_client_builder,
         build_classifier=lambda: _phase_observing_scene_classifier(db_session, recorder),
     )
-    recorder.record(run.phase)
+    recorder.record(run)
 
     assert recorder.sequence == ["criteria", "ranking", None]
+    assert_phase_starts_strictly_increase(recorder.observed)
+    assert_phase_binding(run)
 
 
 async def test_the_ranking_step_no_longer_reports_the_landmark_phase(
@@ -967,6 +984,7 @@ async def test_a_failed_run_leaves_no_phase_behind(
 
     assert run.status == ScanStatus.FAILED
     assert run.phase is None
+    assert_phase_binding(run)
 
 
 # --------------------------------------------------------------------------------------------

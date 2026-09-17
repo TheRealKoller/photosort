@@ -50,6 +50,7 @@ function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScor
     cloud_phases: [cloudPhase(), LANDMARK_PHASE],
     estimated_cost_usd: 2.5,
     cloud_cost_total_usd: 1.23,
+    phase_remaining_seconds: null,
     ...overrides,
   }
 }

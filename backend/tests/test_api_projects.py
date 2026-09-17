@@ -1383,6 +1383,9 @@ async def test_the_response_carries_no_further_configuration_fields(
         "estimated_cost_usd",
         "cloud_phases",
         "cloud_cost_total_usd",
+        # Spec 0481: die Restdauer des laufenden Teilschritts - eine ABLEITUNG aus Werten, die
+        # dieselbe Antwort schon heute liefert, kein neues Datum.
+        "phase_remaining_seconds",
     }
     assert set(run["cloud_phases"][0]) == {
         "purpose",
@@ -2030,3 +2033,332 @@ class TestPhotoCountAndTakenAtRange:
         }
         for body in (detail, listed, updated):
             assert {key: body[key] for key in expected} == expected
+
+
+# --------------------------------------------------------------------------------------------
+# specs/features/0481-restdauer-klassifizierungslauf.md, decisions/0116-restdauer-als-
+# servermessung-spanne-im-frontend-keine-gesamtrestzeit.md: `phase_remaining_seconds` - die
+# Restdauer GENAU DES Teilschritts, den `phase` nennt.
+# --------------------------------------------------------------------------------------------
+
+_FIXED_NOW = datetime(2026, 9, 17, 12, 0, 0)
+
+
+def _phase_started(seconds_ago: float) -> datetime:
+    """Ein Phasenbeginn relativ zur FESTEN Uhr - gepaart mit `_freeze_reading_clock` unten."""
+    return _FIXED_NOW - timedelta(seconds=seconds_ago)
+
+
+def _freeze_reading_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Friert die Uhr DES LESEPFADS ein.
+
+    Gepatcht wird `photosort.api.projects.now_utc`, nicht `photosort.clock.now_utc`: Das Modul
+    bindet den Namen beim Import an sich, ein Patch an der Quelle wirkte dort nicht - der Test
+    waere gruen und maesse nichts."""
+    monkeypatch.setattr(projects_api, "now_utc", lambda: _FIXED_NOW)
+
+
+async def _remaining(client: httpx.AsyncClient, project_id: int) -> float | None:
+    body = (await client.get(f"/projects/{project_id}")).json()
+    value: float | None = body["last_criterion_scoring_run"]["phase_remaining_seconds"]
+    return value
+
+
+async def test_the_criteria_phase_measures_against_the_run_counters(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Die Kriterien-Phase zaehlt an der Lauf-Zeile: 10 von 50 in 60 s -> 240 s."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.CRITERIA,
+        phase_started_at=_phase_started(60.0),
+        photos_total=50,
+        photos_processed=10,
+    )
+    _freeze_reading_clock(monkeypatch)
+
+    assert await _remaining(authenticated_api_client, project_id) == 240.0
+
+
+async def test_the_remote_phase_measures_against_the_linked_remote_run(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Die Remote-Phase zaehlt am VERKNUEPFTEN Remote-Lauf, nicht an der Lauf-Zeile. Die Zahlen
+    der Lauf-Zeile stehen bewusst daneben und ergaeben ein anderes Ergebnis - bei gleichen Zahlen
+    waere eine Verwechslung der beiden Quellen unsichtbar."""
+    project_id = await _create_project(authenticated_api_client)
+    remote_run = await _add_remote_run(
+        db_session, project_id, status=ScanStatus.RUNNING, photos_total=20, photos_processed=5
+    )
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.REMOTE_CATEGORIES,
+        phase_started_at=_phase_started(100.0),
+        cloud_requested=True,
+        remote_category_classification_run_id=remote_run.id,
+        photos_total=50,
+        photos_processed=40,
+    )
+    _freeze_reading_clock(monkeypatch)
+
+    # 5 von 20 in 100 s -> 15 verbleibende bei 20 s je Foto -> 300 s. Aus den Zahlen der
+    # Lauf-Zeile (40 von 50) kaemen 25 s.
+    assert await _remaining(authenticated_api_client, project_id) == 300.0
+
+
+async def test_the_landmark_phase_measures_against_the_landmark_counters_not_the_run(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PFLICHTFALL gegen den wahrscheinlichsten Fehler: Waehrend der Landmark-Phase sind die
+    Kriterien bereits fertig (`photos_processed == photos_total`). Ein Rueckgriff auf diese
+    Zaehler ergaebe dauerhaft `0.0` - also "nur noch wenige Sekunden" -, waehrend die Cloud-Phase
+    noch 45 von 50 Fotos vor sich hat. Nichts daran schluege fehl."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.LANDMARK,
+        phase_started_at=_phase_started(60.0),
+        cloud_requested=True,
+        photos_total=200,
+        photos_processed=200,
+        landmark_photos_total=50,
+        landmark_photos_processed=5,
+        landmark_failed_calls=0,
+    )
+    _freeze_reading_clock(monkeypatch)
+
+    # 5 von 50 in 60 s -> 45 verbleibende bei 12 s je Foto -> 540 s. Aus den Zahlen der Lauf-Zeile
+    # (200 von 200) kaemen 0.0.
+    assert await _remaining(authenticated_api_client, project_id) == 540.0
+
+
+async def test_the_landmark_phase_below_the_threshold_says_not_yet_and_not_almost_done(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Derselbe Pflichtfall am unteren Rand, mit den Zahlen aus der Spec: Landmark-Zaehler bei
+    2 von 50, also UNTER der Drei-Einheiten-Schwelle. Die richtige Antwort ist `null` ("wird noch
+    ermittelt"). Ein Rueckgriff auf `photos_processed`/`photos_total` der Lauf-Zeile (200 von 200)
+    ergaebe hier `0.0` und damit "nur noch wenige Sekunden" - die beiden Werte sind an dieser
+    Stelle unterscheidbar, und genau darauf beruht der Nachweis."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.LANDMARK,
+        phase_started_at=_phase_started(60.0),
+        cloud_requested=True,
+        photos_total=200,
+        photos_processed=200,
+        landmark_photos_total=50,
+        landmark_photos_processed=2,
+        landmark_failed_calls=0,
+    )
+    _freeze_reading_clock(monkeypatch)
+
+    assert await _remaining(authenticated_api_client, project_id) is None
+
+
+async def test_the_ranking_phase_never_reports_a_measured_value(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`ranking` arbeitet ueber Partitionen und hat keine gezaehlte Menge (ADR 0116 Punkt 5):
+    serverseitig IMMER `null`, auch wenn die Lauf-Zeile Zaehler traegt, die eine Rechnung
+    erlaubten. Die Oberflaeche setzt dort den Erfahrungstext."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.RANKING,
+        phase_started_at=_phase_started(600.0),
+        photos_total=50,
+        photos_processed=10,
+    )
+    _freeze_reading_clock(monkeypatch)
+
+    assert await _remaining(authenticated_api_client, project_id) is None
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        pytest.param(ScanStatus.SUCCESS, id="abgeschlossen"),
+        pytest.param(ScanStatus.FAILED, id="fehlgeschlagen"),
+    ],
+)
+async def test_a_finished_run_reports_no_remaining_time_even_with_a_phase_left_behind(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    status: ScanStatus,
+) -> None:
+    """AK8, und der Grund, warum der Lesepfad sich NICHT allein auf `phase` verlaesst: Der Zustand
+    "beendet, aber `phase` nicht zurueckgesetzt" existiert am Bestand (Altzeilen, und bis zu
+    dieser Spec auch der eigene Demo-Seeder). Er darf keine Zeitangabe erzeugen - sonst zaehlte
+    eine laengst beendete Zeile weiter hoch, und zwar unbegrenzt."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=status,
+        phase=ClassificationPhase.CRITERIA,
+        phase_started_at=_phase_started(600.0),
+        photos_total=50,
+        photos_processed=10,
+        finished_at=_FIXED_NOW,
+    )
+    _freeze_reading_clock(monkeypatch)
+
+    assert await _remaining(authenticated_api_client, project_id) is None
+
+
+async def test_a_running_run_without_a_phase_reports_no_remaining_time(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Die Gegenrichtung desselben Paares: `phase IS NULL` heisst "kein laufender Teilschritt",
+    und das Feld ist es mit."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        phase=None,
+        phase_started_at=None,
+        photos_total=50,
+        photos_processed=10,
+    )
+    _freeze_reading_clock(monkeypatch)
+
+    assert await _remaining(authenticated_api_client, project_id) is None
+
+
+async def test_an_old_row_without_a_phase_start_reports_no_remaining_time(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Der von der Migration hinterlassene Zustand: Ein Lauf, der schon lief, traegt `phase`, aber
+    keinen Beginn. Regulaerer `null`-Zweig, kein Fehlerfall - die Oberflaeche sagt dort "wird noch
+    ermittelt"."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.CRITERIA,
+        phase_started_at=None,
+        photos_total=50,
+        photos_processed=10,
+    )
+    _freeze_reading_clock(monkeypatch)
+
+    assert await _remaining(authenticated_api_client, project_id) is None
+
+
+@pytest.mark.parametrize(
+    ("label", "fields"),
+    [
+        pytest.param("nenner-null", {"photos_total": 0, "photos_processed": 0}, id="nenner-null"),
+        pytest.param(
+            "zaehler-null", {"photos_total": 50, "photos_processed": 0}, id="zaehler-null"
+        ),
+        pytest.param(
+            "kein-phasenbeginn",
+            {"photos_total": 50, "photos_processed": 10, "phase_started_at": None},
+            id="kein-phasenbeginn",
+        ),
+        pytest.param(
+            "phasenbeginn-in-der-zukunft",
+            {
+                "photos_total": 50,
+                "photos_processed": 10,
+                "phase_started_at": _phase_started(-10800),
+            },
+            id="phasenbeginn-in-der-zukunft",
+        ),
+    ],
+)
+async def test_no_degenerate_input_takes_the_project_answer_with_it(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    label: str,
+    fields: dict[str, Any],
+) -> None:
+    """AK10. Die Rechnung laeuft im Lesepfad JEDER Projektantwort, im Zwei-Sekunden-Takt. Ein
+    unbehandelter Rechenfehler naehme dort nicht das Feld, sondern die gesamte Projektuebersicht
+    mit (HTTP 500) - beide Nutzer saehen dann gar keine Projekte mehr.
+
+    Die LISTENLAENGE gehoert in die Zusicherung: Ohne sie bestuende der Test auch gegen eine
+    Antwort, die nur noch ein Projekt enthaelt."""
+    first_id = await _create_project(authenticated_api_client)
+    second_id = await _create_project(authenticated_api_client, name=f"Zweites-{label}")
+    await _add_criterion_scoring_run(
+        db_session,
+        second_id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.CRITERIA,
+        phase_started_at=fields.pop("phase_started_at", _phase_started(600.0)),
+        **fields,
+    )
+    _freeze_reading_clock(monkeypatch)
+
+    listed = await authenticated_api_client.get("/projects")
+    detail = await authenticated_api_client.get(f"/projects/{second_id}")
+
+    assert listed.status_code == 200
+    assert detail.status_code == 200
+    assert {entry["id"] for entry in listed.json()} == {first_id, second_id}
+    assert detail.json()["last_criterion_scoring_run"]["phase_remaining_seconds"] is None
+
+
+async def test_the_reading_path_uses_the_same_naive_utc_as_the_worker(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """DER Fall OHNE Uhr-Attrappe, und der einzige, der eine Zeitzonenverwechslung im Lesepfad
+    finden kann.
+
+    Der Phasenbeginn steht hier WOERTLICH als naives UTC da, nicht aus derselben `now_utc()`
+    gezogen, die der Produktivcode benutzt: Ein solcher Zeitstempel waere um denselben Betrag
+    falsch wie die Uhr daneben, die Differenz ginge auf, und der Test bliebe gruen, waehrend die
+    Anzeige um den Zonenversatz danebenlaege.
+
+    Geprueft wird gegen ein BAND, nicht gegen eine Zahl: zwischen Setzen und Lesen vergeht echte
+    Zeit. Das Band ist eng genug, dass ein Zonenversatz (mindestens 3600 s) es sicher verfehlt."""
+    project_id = await _create_project(authenticated_api_client)
+    await _add_criterion_scoring_run(
+        db_session,
+        project_id,
+        status=ScanStatus.RUNNING,
+        phase=ClassificationPhase.CRITERIA,
+        phase_started_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=60),
+        photos_total=50,
+        photos_processed=10,
+    )
+
+    value = await _remaining(authenticated_api_client, project_id)
+
+    # 10 von 50 in ~60 s -> ~240 s. Eine Minute Spielraum nach oben deckt die Laufzeit des Tests
+    # ab und bleibt weit unter einer Stunde.
+    assert value is not None
+    assert 235.0 <= value <= 300.0

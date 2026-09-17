@@ -117,6 +117,18 @@ Verarbeitungs-Cache (Thumbnails).
     `last_remote_category_classification_run` ersatzlos und wird nicht ersetzt — der
     Klassifizierungslauf ist während des GESAMTEN verketteten Durchlaufs `running`, die verbleibende
     Bedingung deckt seine Remote-Phase mit ab.
+  - der laufende Teilschritt trägt zusätzlich eine **Restdauer** *(Spec
+    [`0481`](../specs/features/0481-restdauer-klassifizierungslauf.md), ADR 0116)*: eine eigene
+    Textzeile innerhalb des `<li>` mit `data-step-state="running"`, neben Fortschrittswert, Balken
+    und Zustandswort statt an ihrer Stelle. Gemessen wird im Backend
+    (`CriterionScoringRunSummary.phase_remaining_seconds`), die **Spanne** entsteht im Frontend:
+    `utils/classificationEta.ts` bildet die Sekundenzahl auf eine feste Stufenleiter ab — nie eine
+    Einzelzahl, auch an den beiden Rändern nicht. `deriveClassificationSteps` hängt Wert und Art
+    (`measured`/`unknown`/`experience`, im DOM als `data-eta-kind`) an genau den laufenden
+    Teilschritt; ein beendeter Lauf bekommt gar keine, auch mit stehengebliebenem `phase`.
+    `hooks/useSteadyEtaText.ts` übernimmt einen geänderten Stufentext erst, wenn er in zwei
+    aufeinanderfolgenden Antworten steht, und setzt beim Wechsel des Teilschritts sofort zurück —
+    ohne das pendelte ein Wert dicht an einer Stufengrenze im Zwei-Sekunden-Takt hin und her.
 - **Backend** (`backend/`): FastAPI. REST-API für Projekte, Fotos, Bewertungen; Auth (JWT,
   `Authorization: Bearer`-Header, kein Cookie); Anbindung an OpenCloud via WebDAV; stößt
   Hintergrund-Jobs im Worker an.
@@ -205,7 +217,17 @@ Verarbeitungs-Cache (Thumbnails).
     strukturell eine Schätzung, vor dem ersten Lauf eines Projekts 0). Kein hinterlegter Preis
     heißt `null`, nie `0` — `ClassificationEstimateOut.price_per_image_usd`/`.estimated_cost_usd`
     sind entsprechend nullable, dazu das Feld `model`. `CriterionScoringRunSummary` trägt additiv
-    `phase`/`cloud_requested`/`cloud_error_message`.
+    `phase`/`cloud_requested`/`cloud_error_message`, seit Spec 0481 dazu
+    `phase_remaining_seconds` (die Restdauer des in `phase` genannten Teilschritts in Sekunden;
+    `null` heißt „noch nicht abschätzbar", nie „keine Restdauer", und steht immer bei `ranking`
+    sowie bei jedem beendeten Lauf). Gerechnet wird in der reinen Funktion
+    `classification_eta.py::remaining_seconds`, befüllt in `_criterion_scoring_run_summary` und
+    damit im Lesepfad jeder Projektantwort: Die Zuordnung Teilschritt → Zähler steht serverseitig
+    und läuft über die bereits geladenen Werte, ohne zusätzliche Abfrage je Projekt (ADR 0103
+    Punkt 1). Der naive-UTC-Zeitpunkt hat seither genau eine Definition (`clock.py::now_utc`), von
+    der `worker.py::_now_utc` und der Lesepfad gleichermaßen lesen — zwei Uhren mit verschiedener
+    Zeitzonenbehandlung ergäben eine Restdauer, die um den Zonenversatz danebenliegt, ohne dass
+    etwas fehlschlägt.
   - neues Router-Modul `api/stats.py` mit dem einzigen Endpunkt `GET /projects/{project_id}/stats` —
     reine Leseleistung über Bestandsdaten, löst keinen Lauf aus und schreibt nichts. Auth doppelt:
     `current_user` als expliziter Parameter (der Bewertungsstand ist die erste rein personenbezogene
@@ -1489,6 +1511,21 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     dem Zufall zu überlassen. `landmark_model` bekommt mit dieser Spec seinen Lesepfad in der
     Oberfläche (die frühere Aussage „bewusst ohne Lesepfad" ist damit überholt) und wird bereits am
     Phasenanfang geschrieben statt erst im `finally`.
+  - elfte additive, nullable Spalte `phase_started_at` *(Spec
+    [`0481`](../specs/features/0481-restdauer-klassifizierungslauf.md), ADR 0116, Migration
+    `c5bc9a02c3c2`)* — der Beginn GENAU DES Teilschritts, den `phase` daneben nennt, und die
+    Messgrundlage der Restdauer. Nicht aus `started_at`/`last_progress_at` ableitbar: das erste ist
+    der Beginn des Gesamtlaufs, das zweite wird in der Folgephase weitergeschrieben. Python-Default
+    `None`, ausdrücklich ohne `server_default` und ohne Backfill — ein Lauf, der zur Migration
+    bereits lief, trägt `phase` schon und bekommt keinen erfundenen Beginn; er fällt bis zum
+    nächsten Teilschritt in den regulären `null`-Zweig.
+    **`phase` und `phase_started_at` werden ausschließlich gemeinsam gesetzt**, über die eine
+    Funktion `worker.py::_set_phase` — auch die erste Phase jedes Laufs, die vorher als
+    Konstruktor-Schlüsselwort mitlief. Bricht die Bindung, rechnet die Messung den Beginn des
+    vorigen Teilschritts gegen den Fortschritt des aktuellen: Die Restdauer ist dann zu groß, ohne
+    Fehler und ohne roten Verhaltenstest. Festgehalten wird das von einem Quelltext-Wächter
+    (`tests/test_models.py`: die Funktionsmenge je Spalte und die Modulmenge paketweit) und dem
+    Nachsatz `assert_phase_binding` samt strenger Monotonie über die volle Phasenabfolge.
 - **PhotoRanking** *(implementiert, Spec
   [`0037`](../specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md), `models.py`, ADR
   0021)*: der volle, sortierte Kandidatenpool einer Partition für einen `CriterionScoringRun` —

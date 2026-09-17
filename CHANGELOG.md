@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.47.0](https://github.com/TheRealKoller/photosort/compare/v0.46.0...v0.47.0) (2026-09-17)
+
+
+### Features
+
+* Jede Aufnahme in voller Helligkeit zeigen (Spec 0498) ([#501](https://github.com/TheRealKoller/photosort/issues/501)) ([227f858](https://github.com/TheRealKoller/photosort/commit/227f85810f44f084073ca9d1e505724026a233fd))
+* Motivstärke als Reihe aus acht Füllstandssymbolen (Spec 0490) ([#499](https://github.com/TheRealKoller/photosort/issues/499)) ([9d24b4a](https://github.com/TheRealKoller/photosort/commit/9d24b4af10dfbbc65a178cf4bf2c96a61ad5ff13))
+* Restdauer des laufenden Klassifizierungslaufs (Spec 0481) ([#507](https://github.com/TheRealKoller/photosort/issues/507)) ([da3eda4](https://github.com/TheRealKoller/photosort/commit/da3eda40ceb30eef4b6c727a59aff3e9296b72fd))
+
+
+### Bug Fixes
+
+* **agents:** Nur zugeteilte Werkzeuge zusagen, Produktentscheidung abgeben (Spec 0454) ([#503](https://github.com/TheRealKoller/photosort/issues/503)) ([643ca97](https://github.com/TheRealKoller/photosort/commit/643ca97363a1d2ece2598624469e9a56b5f94fee))
+* **laufstand:** Schrittstand aus dem Transkript statt aus dem Ausgabefenster (Spec 0493) ([#502](https://github.com/TheRealKoller/photosort/issues/502)) ([fdb5a04](https://github.com/TheRealKoller/photosort/commit/fdb5a0468771f5b05e25ed6563f8c4919359a50f))
+
 ## [0.46.0](https://github.com/TheRealKoller/photosort/compare/v0.45.0...v0.46.0) (2026-09-15)
 
 

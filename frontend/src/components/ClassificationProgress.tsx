@@ -1,7 +1,10 @@
 import type { CloudPhaseSummaryOut, CriterionScoringRunSummary } from '../api/types'
+import { useSteadyEtaText } from '../hooks/useSteadyEtaText'
+import { etaText, type EtaKind } from '../utils/classificationEta'
 import {
   deriveClassificationSteps,
   type ClassificationStep,
+  type ClassificationStepId,
   type ClassificationStepState,
 } from '../utils/classificationSteps'
 import { formatProviderLabel } from '../utils/formatStats'
@@ -66,6 +69,9 @@ export function ClassificationProgress({ run }: ClassificationProgressProps) {
               <CloudDetail cloud={step.cloud} state={step.state} />
             </p>
           )}
+          {step.etaKind !== null && (
+            <EtaLine kind={step.etaKind} seconds={step.etaSeconds} stepId={step.id} />
+          )}
           {step.total !== null &&
             // Zwei Gründe für den UNBESTIMMTEN Balken, beide dieselbe Regel:
             // - `max={0}` ist als HTML-Attribut ungültig; im kurzen Fenster unmittelbar nach dem
@@ -83,6 +89,36 @@ export function ClassificationProgress({ run }: ClassificationProgressProps) {
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * Die Restdauer des laufenden Teilschritts - eine eigene Textzeile, kein Ersatz für den
+ * Fortschrittswert, den Balken oder das Zustandswort (AK9).
+ *
+ * Eigene Komponente, weil `useSteadyEtaText` ein Hook ist und in der Schrittschleife nicht
+ * aufgerufen werden dürfte. Der Nebeneffekt ist erwünscht: Je Teilschritt entsteht eine eigene
+ * Instanz, und ein Phasenwechsel setzt die Verzögerung schon dadurch zurück.
+ *
+ * Der Unterschied zwischen gemessener und Erfahrungsangabe hängt am AUSGESCHRIEBENEN Wortlaut und
+ * an `data-eta-kind`, nie an einer visuellen Auszeichnung: `italic` kommt im Frontend nicht vor,
+ * und diese Komponente führt die Regel bereits, dass eine Aussage am Wort hängt.
+ */
+function EtaLine({
+  kind,
+  seconds,
+  stepId,
+}: {
+  kind: EtaKind
+  seconds: number | null
+  stepId: ClassificationStepId
+}) {
+  const text = useSteadyEtaText(etaText(kind, seconds), stepId)
+
+  return (
+    <p className="text-xs text-text-muted" data-eta-kind={kind}>
+      {text}
+    </p>
   )
 }
 
