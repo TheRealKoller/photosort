@@ -228,3 +228,111 @@ describe('ClassificationProgress: eigene Fortschrittsquellen je Teilschritt', ()
     expect(screen.getByRole('list')).toHaveAttribute('aria-live', 'polite')
   })
 })
+
+/**
+ * specs/features/0481-restdauer-klassifizierungslauf.md: die Restdauer-Zeile.
+ */
+describe('ClassificationProgress: die Restdauer', () => {
+  function etaLines(container: HTMLElement): HTMLElement[] {
+    return [...container.querySelectorAll<HTMLElement>('[data-eta-kind]')]
+  }
+
+  it('zeigt GENAU EINE Zeitzeile, und zwar im laufenden Teilschritt', () => {
+    // AK1 als Kardinalitäts-Zusicherung über das ganze DOM, nicht als Stichprobe an einer Zeile:
+    // Eine zweite Zeitangabe an einem erledigten Schritt fiele sonst nirgends auf.
+    const { container } = render(
+      <ClassificationProgress run={run({ phase: 'criteria', phase_remaining_seconds: 240 })} />,
+    )
+
+    const lines = etaLines(container)
+    expect(lines).toHaveLength(1)
+    expect(stepRow('criteria')).toContainElement(lines[0])
+    expect(stepRow('criteria')).toHaveAttribute('data-step-state', 'running')
+  })
+
+  it('zeigt die gemessene Angabe als Spanne, nie als Einzelzahl', () => {
+    const { container } = render(
+      <ClassificationProgress run={run({ phase: 'criteria', phase_remaining_seconds: 240 })} />,
+    )
+
+    const line = etaLines(container)[0]
+    expect(line).toHaveAttribute('data-eta-kind', 'measured')
+    expect(line).toHaveTextContent('noch ca. 2–5 Minuten')
+    expect(line.textContent).not.toContain('240')
+  })
+
+  it('sagt bei fehlender Schätzung sichtbar, dass sie noch aussteht', () => {
+    const { container } = render(
+      <ClassificationProgress run={run({ phase: 'criteria', phase_remaining_seconds: null })} />,
+    )
+
+    const line = etaLines(container)[0]
+    expect(line).toHaveAttribute('data-eta-kind', 'unknown')
+    expect(line).toHaveTextContent('wird noch ermittelt')
+  })
+
+  it('zeigt am Rangfolge-Teilschritt den Erfahrungstext, maschinenlesbar unterschieden', () => {
+    const { container } = render(
+      <ClassificationProgress run={run({ phase: 'ranking', phase_remaining_seconds: null })} />,
+    )
+
+    const line = etaLines(container)[0]
+    expect(line).toHaveAttribute('data-eta-kind', 'experience')
+    expect(line).toHaveTextContent('erfahrungsgemäß kurz')
+    // AK5: kein Ziffernzeichen, und nicht die Form einer Messung.
+    expect(line.textContent).not.toMatch(/\d/)
+    expect(line.textContent?.startsWith('noch ca.')).toBe(false)
+  })
+
+  it('gibt einem beendeten Lauf keine Zeitzeile - auch mit stehengebliebenem Teilschritt', () => {
+    // AK8. Der Zustand existiert am Bestand; ohne diesen Fall behauptete eine längst fertige
+    // Zeile weiter eine Restdauer.
+    const { container } = render(
+      <ClassificationProgress
+        run={run({ status: 'success', phase: 'criteria', phase_remaining_seconds: 240 })}
+      />,
+    )
+
+    expect(etaLines(container)).toHaveLength(0)
+  })
+
+  it('gibt einem Lauf ohne laufenden Teilschritt keine Zeitzeile', () => {
+    const { container } = render(
+      <ClassificationProgress run={run({ phase: null, phase_remaining_seconds: null })} />,
+    )
+
+    expect(etaLines(container)).toHaveLength(0)
+  })
+
+  it('lässt die Zeile in der höflich angekündigten Liste mitlaufen', () => {
+    // Eine visuell sichtbare, für Screenreader stumme Restdauer wäre eine Barriere gegen genau
+    // den Zweck der Story.
+    const { container } = render(
+      <ClassificationProgress run={run({ phase: 'criteria', phase_remaining_seconds: 240 })} />,
+    )
+
+    expect(screen.getByRole('list')).toContainElement(etaLines(container)[0])
+  })
+
+  it('tritt neben Fortschrittswert, Balken und Zustandswort, nicht an ihre Stelle', () => {
+    // AK9 als EIGENER Fall, nicht als Seiteneffekt der Bestandstests: Die Zeitangabe ist ein
+    // zusätzlicher Knoten. Ersetzte sie eine der drei Angaben, bliebe jeder Bestandstest grün,
+    // der nur die Zeitangabe nicht kennt.
+    const { container } = render(
+      <ClassificationProgress
+        run={run({
+          phase: 'criteria',
+          phase_remaining_seconds: 240,
+          photos_total: 10,
+          photos_processed: 4,
+        })}
+      />,
+    )
+
+    const row = stepRow('criteria')
+    expect(row).toHaveTextContent('läuft')
+    expect(row).toHaveTextContent('4/10')
+    expect(row.querySelector('progress')).not.toBeNull()
+    expect(row).toContainElement(etaLines(container)[0])
+  })
+})
