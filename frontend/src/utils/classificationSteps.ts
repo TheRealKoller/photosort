@@ -3,6 +3,7 @@ import type {
   CloudPhaseSummaryOut,
   CriterionScoringRunSummary,
 } from '../api/types'
+import type { EtaKind } from './classificationEta'
 
 /**
  * Die Ableitung "welche Teilschritte hat dieser Klassifizierungslauf, in welchem Zustand, mit
@@ -27,6 +28,17 @@ export interface ClassificationStep {
   total: number | null
   /** Der Bilanz-Eintrag dieses Teilschritts, oder `null` bei einem nicht-Cloud-Teilschritt. */
   cloud: CloudPhaseSummaryOut | null
+  /**
+   * Woher die Restdauer dieses Teilschritts kommt - `null` heisst "dieser Teilschritt trägt gar
+   * keine Angabe" und gilt für jeden, der nicht gerade läuft (AK1), sowie für jeden Teilschritt
+   * eines beendeten Laufs (AK8).
+   */
+  etaKind: EtaKind | null
+  /**
+   * Die vom Server gelieferte Restdauer in Sekunden, oder `null`. Die Spanne entsteht daraus
+   * erst bei der Darstellung (`classificationEta.ts`) - hier steht die Zahl unverändert.
+   */
+  etaSeconds: number | null
 }
 
 /**
@@ -90,16 +102,57 @@ export function deriveClassificationSteps(run: CriterionScoringRunSummary): Clas
       ? (run.cloud_phases.find((phase) => phase.purpose === CLOUD_PURPOSE_BY_STEP[id]) ?? null)
       : null
 
+    const state = deriveState({
+      index,
+      currentIndex,
+      isFinished,
+      isCloudStep: isCloudStep(id),
+      cloud,
+    })
     steps.push({
       id,
       label: STEP_LABELS[id],
-      state: deriveState({ index, currentIndex, isFinished, isCloudStep: isCloudStep(id), cloud }),
+      state,
       ...progressOf(id, run, cloud),
       cloud,
+      ...etaOf(id, state, isFinished, run),
     })
   }
 
   return steps
+}
+
+/**
+ * Die Restdauer hängt an GENAU DEM Teilschritt, der läuft (AK1) - der Server liefert genau einen
+ * Wert, und welcher Teilschritt gemeint ist, sagt `phase`.
+ *
+ * Zwei Gründe für "gar keine Angabe", beide als eigener Zweig:
+ *
+ * - Der Teilschritt läuft nicht (ausstehend, erledigt, übersprungen). Eine Restdauer an einem
+ *   erledigten Schritt wäre eine Aussage über etwas Vergangenes.
+ * - Der LAUF ist beendet (AK8). Das wird hier ausdrücklich noch einmal geprüft und nicht dem
+ *   Zustand `running` überlassen: Der Bestandszustand "beendet, aber `phase` gesetzt" lässt
+ *   `deriveState` einen Teilschritt weiterhin als laufend ausweisen, und eine längst fertige
+ *   Zeile behauptete dann eine Restdauer.
+ */
+function etaOf(
+  id: ClassificationStepId,
+  state: ClassificationStepState,
+  isFinished: boolean,
+  run: CriterionScoringRunSummary,
+): { etaKind: EtaKind | null; etaSeconds: number | null } {
+  if (isFinished || state !== 'running') {
+    return { etaKind: null, etaSeconds: null }
+  }
+  if (id === 'ranking') {
+    // ADR 0116 Punkt 5: `ranking` trägt NIE eine gemessene Angabe. Die Art hängt am Teilschritt,
+    // nicht daran, ob zufällig eine Zahl in der Antwort steht.
+    return { etaKind: 'experience', etaSeconds: null }
+  }
+  if (run.phase_remaining_seconds === null) {
+    return { etaKind: 'unknown', etaSeconds: null }
+  }
+  return { etaKind: 'measured', etaSeconds: run.phase_remaining_seconds }
 }
 
 function deriveState({
