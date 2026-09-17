@@ -442,6 +442,89 @@
           "grund": "Der Entwurf setzt dafür den Baustein progress; die Umsetzung tut es bewusst nicht. Der Zähler nennt die Stelle in der Reihe der noch offenen Gruppen, nicht einen erledigten Anteil, und seine Bezugsmenge schrumpft mit jeder abgeschlossenen Gruppe. Ein Balken behauptete einen Fortschrittsanteil, den die Zahlen nicht tragen; der Zähler steht deshalb als Text."
         }
       ]
+    },
+    {
+      "schluessel": "bilddetail",
+      "anzeigename": "Bilddetail",
+      "seite": "Ansicht — Bilddetail",
+      "produktdateien": [
+        "src/pages/PhotoDetailPage.tsx",
+        "src/components/MotifStrengthSection.tsx",
+        "src/components/CriterionDetailsList.tsx",
+        "src/components/RatingButtons.tsx"
+      ],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "gefuellt",
+        "ladend",
+        "fehler"
+      ],
+      "variantenachse": "zustand",
+      "bausteine": [
+        "button",
+        "alert",
+        "skeleton"
+      ],
+      "luecken": [
+        {
+          "schluessel": "behaelter",
+          "stelle": "Bedienleiste, Vorschlagszeile und Urteilsfläche als Behälter für ihren Inhalt",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Alle drei sind im Entwurf deshalb tokengebundene Rahmen statt Instanzen."
+        },
+        {
+          "schluessel": "motivbaustein",
+          "stelle": "Motivbereich im Urteil, samt seiner Zustandsachse",
+          "grund": "Motivbereich und Motivreihe liegen als Komponenten in der Design-Datei, werden in der Bausteinliste des Repositories aber noch nicht geführt. Sie stammen aus der vorangegangenen Motivstärke-Story; ihre Aufnahme ist Gegenstand der Umsetzung dieser Ansicht und hier ausdrücklich offen."
+        },
+        {
+          "schluessel": "chipbaustein",
+          "stelle": "Feinlabel als Chips neben dem Rang im Ereignis",
+          "grund": "Der Chip liegt als Komponente in der Design-Datei, wird in der Bausteinliste des Repositories aber nicht geführt. Der Entwurf setzt ihn als Instanz ein; die Bausteinliste dieser Ansicht nennt ihn deshalb nicht, und die Abweichung steht hier statt unbemerkt zu bleiben."
+        },
+        {
+          "schluessel": "fotoflaeche",
+          "stelle": "Größe der Fotofläche auf der breiten Prüfbreite",
+          "grund": "Größen sind nicht tokenisiert. Die Fläche ist aus der Höhe des Sichtbereichs abzüglich Kopfzeile und Bedienleiste gerechnet, damit beide zusammen ohne Rollen sichtbar bleiben, und steht als Wert im Entwurf."
+        },
+        {
+          "schluessel": "sichthoehe",
+          "stelle": "Begrenzung der Fotohöhe auf der schmalen Prüfbreite",
+          "grund": "Auf Telefonbreite folgt das Foto der verfügbaren Höhe statt der Breite, damit Bewertung und Navigation auch bei einer hochformatigen Aufnahme im Sichtbereich bleiben. Die Höhe des Sichtbereichs hat kein Token; sie stammt aus der Datei mit den beiden Prüfbreiten des Projekts."
+        },
+        {
+          "schluessel": "reservierter-platz",
+          "stelle": "Höhe der Urteilsfläche, die den aufgeklappten Motivbereich trägt",
+          "grund": "Die Fläche ist dauerhaft so hoch wie der Motivbereich im aufgeklappten Zustand, damit beim Auf- und Zuklappen nichts darunter verrutscht. Die Höhe ist am Baustein gemessen statt geraten und hat kein Token."
+        },
+        {
+          "schluessel": "rasterspalten",
+          "stelle": "Spaltenaufteilung des Einzelwerte-Rasters",
+          "grund": "Für die Spaltenzahl gibt es kein Token; gedeckt ist allein der Zwischenraum über die Abstandsstufen. Die Aufteilung selbst steht in Worten im UI-Abschnitt der Spec, nicht hier."
+        },
+        {
+          "schluessel": "breakpoint",
+          "stelle": "Umbruch des Einzelwerte-Rasters von mehreren Spalten auf eine",
+          "grund": "Es gibt kein Breakpoint-Token. Die Umbruchbreite lebt allein in der Voreinstellung des Utility-Frameworks und in der Datei mit den beiden Prüfbreiten des Projekts; im Entwurf wird sie als Wert gesetzt."
+        },
+        {
+          "schluessel": "trefferflaeche",
+          "stelle": "Mindesthöhe der Bewertungstaster auf der schmalen Prüfbreite",
+          "grund": "Die Mindesthöhe einer Trefferfläche ist eine Vorgabe der Bedienbarkeit und hat kein eigenes Token; sie wird gesetzt und hier ausgewiesen statt stillschweigend übernommen."
+        },
+        {
+          "schluessel": "schriftschnitt",
+          "stelle": "Halbfetter Schnitt der Abschnittsköpfe über den Einzelwerten",
+          "grund": "Die Schriftstufen tragen selbst keinen Schnitt, und einen eigenen Token dafür gibt es nicht. Der halbfette Schnitt wird im Entwurf gesetzt und bleibt eine Lücke des Tokensatzes."
+        },
+        {
+          "schluessel": "bewegung",
+          "stelle": "Puls der Platzhalter im Zustand ladend",
+          "grund": "Der Puls ist Bewegung. Penpot bildet Bewegung nicht ab, und der Satz photosort führt kein Token dafür. Der Entwurf zeigt die Platzhalter deshalb ruhend; das ist eine ausgewiesene Lücke, kein erledigter Punkt."
+        }
+      ]
     }
   ]
 }
