@@ -72,7 +72,7 @@ prüfbare Aussage, die dieselbe Zusage trägt.
 
 `CriterionScoringRun` bekommt eine Spalte `phase_started_at: datetime | None` (naives UTC wie jede
 andere Zeitspalte im Bestand). Additiv, nullbar, ohne `server_default`, ohne Datenwanderung.
-Alembic-Revision `ab602909001e` auf `bcc517b1ab22`. Keine weitere Entität berührt;
+Alembic-Revision `c5bc9a02c3c2` auf `bcc517b1ab22`. Keine weitere Entität berührt;
 `docs/architecture.md` zieht im selben Pull Request nach.
 
 ## Architektur / Umsetzung
@@ -156,7 +156,7 @@ je Phase sind der Abgleich.
 ### Betroffene Dateien und Reihenfolge
 
 1. **Zeit und Phasenwechsel** — `clock.py` (neu), `models.py` (Spalte), Migration
-   `ab602909001e`, `worker.py::_set_phase` samt allen sechs Stellen oben, Quelltext-Wächter.
+   `c5bc9a02c3c2`, `worker.py::_set_phase` samt allen sechs Stellen oben, Quelltext-Wächter.
    Noch keine sichtbare Änderung.
 2. **Reine Rechnung** — `classification_eta.py` (neu) plus die beiden Schwellwert-Konstanten. Ohne
    DB, ohne Uhr, `now` als Parameter.
