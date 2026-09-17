@@ -40,6 +40,7 @@ from photosort.classification import (
     detect_objects,
     detect_person,
 )
+from photosort.clock import now_utc
 from photosort.cloud_vision import ThrottleStats, TokenUsage
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
@@ -330,7 +331,22 @@ def _naive_utc(value: datetime) -> datetime:
 
 
 def _now_utc() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+    return now_utc()
+
+
+def _set_phase(run: CriterionScoringRun, phase: ClassificationPhase | None) -> None:
+    """Die EINZIGE Stelle im Projekt, an der `phase` und `phase_started_at` gesetzt werden.
+
+    Beide gemeinsam, nie einzeln (ADR 0116 Punkt 1): `phase = NULL` nimmt den Beginn mit, jeder
+    andere Wert setzt ihn neu. Bliebe der alte Zeitstempel bei einem Wechsel stehen, rechnete die
+    Restdauer den Beginn des VORIGEN Teilschritts gegen den Fortschritt des aktuellen - zu gross,
+    ohne Fehler und ohne roten Verhaltenstest.
+
+    Kein `commit()` hier: Der Phasenwechsel wird an jeder Aufrufstelle zusammen mit dem uebrigen
+    Zustand dieses Schritts committet, und ein zweiter Commit mitten in `_fail_run` verschoebe
+    dort die Reihenfolge aus Rollback, Zustand und Commit."""
+    run.phase = phase
+    run.phase_started_at = None if phase is None else _now_utc()
 
 
 async def _fail_run(
@@ -352,7 +368,7 @@ async def _fail_run(
         # der einen haengenden Lauf abraeumt, ohne dass die Job-Coroutine je zurueckkehrt. `phase`
         # existiert nur auf CriterionScoringRun, deshalb die isinstance-Pruefung statt eines
         # gemeinsamen Basisklassen-Feldes (die vier Run-Modelle haben bewusst keine).
-        run.phase = None
+        _set_phase(run, None)
     await session.commit()
     # das vorangehende rollback() expired ORM-Objekte der Session -
     # ohne dieses refresh() koennte ein direkter Attributzugriff auf `run` NACH der Rueckkehr aus
@@ -2333,7 +2349,7 @@ async def run_criterion_scoring(
         session.add(run)
         await session.commit()
         await session.refresh(run)
-    run.phase = ClassificationPhase.CRITERIA
+    _set_phase(run, ClassificationPhase.CRITERIA)
     await session.commit()
 
     try:
@@ -2510,7 +2526,7 @@ async def run_criterion_scoring(
             # unsichtbarer Teil der Kriterien-Phase: bliebe `phase` hier auf `criteria`, waehrend
             # `photos_processed` bereits auf `photos_total` steht, waere ein langer Durchlauf von
             # einem haengengebliebenen nicht zu unterscheiden.
-            run.phase = ClassificationPhase.LANDMARK
+            _set_phase(run, ClassificationPhase.LANDMARK)
             await session.commit()
             # Das Modell wird EINMAL je Cloud-Phase aufgeloest und danach durchgereicht - derselbe
             # lokale Wert baut den Client, rechnet die Ist-Kosten und landet in der Modellspalte des
@@ -2858,7 +2874,7 @@ async def run_criterion_scoring(
         # Landmark-Phase und braucht deshalb einen eigenen Namen: sonst bliebe `phase` hier auf
         # `landmark` bei 100 % Fortschritt stehen ("haengt oder laeuft?") oder muesste auf
         # `criteria` zurueckspringen. Der vierte Wert macht die Abfolge monoton.
-        run.phase = ClassificationPhase.RANKING
+        _set_phase(run, ClassificationPhase.RANKING)
         await session.commit()
 
         await _build_grouping_and_rankings(
@@ -2866,7 +2882,7 @@ async def run_criterion_scoring(
         )
 
         run.status = ScanStatus.SUCCESS
-        run.phase = None
+        _set_phase(run, None)
         run.finished_at = _now_utc()
         await session.commit()
         return run
@@ -2945,13 +2961,19 @@ async def run_classification(
         status=ScanStatus.RUNNING,
         cloud_requested=use_cloud,
         estimated_cost_usd=estimated_cost_usd,
-        phase=(
-            ClassificationPhase.REMOTE_CATEGORIES if cloud_active else ClassificationPhase.CRITERIA
-        ),
     )
     session.add(run)
     await session.commit()
     await session.refresh(run)
+    # Die ERSTE Phase geht ueber denselben Weg wie jede spaetere, statt als
+    # Konstruktor-Schluesselwort mitzulaufen. Sonst entkaeme genau sie der Bindung aus ADR 0116
+    # Punkt 1, und die erste Phase JEDES Laufs - bei einem Lauf ohne Cloud die laengste - zeigte
+    # dauerhaft "wird noch ermittelt", schweigend.
+    _set_phase(
+        run,
+        ClassificationPhase.REMOTE_CATEGORIES if cloud_active else ClassificationPhase.CRITERIA,
+    )
+    await session.commit()
 
     if cloud_active:
         # Die Remote-Zeile entsteht hier, und der Fremdschluessel wird VOR dem ersten Cloud-Aufruf

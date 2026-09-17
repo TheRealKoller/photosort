@@ -507,6 +507,19 @@ class CriterionScoringRun(Base):
     phase: Mapped[ClassificationPhase | None] = mapped_column(
         SQLEnum(ClassificationPhase, native_enum=False, length=20), default=None
     )
+    # Der Beginn GENAU DES Teilschritts, den `phase` daneben nennt - die Messgrundlage der
+    # Restdauer (ADR 0116 Punkt 1). NICHT aus `started_at`/`last_progress_at` ableitbar:
+    # `started_at` ist der Beginn des GESAMTEN Laufs, und `last_progress_at` wird in der
+    # Folgephase weitergeschrieben.
+    #
+    # Die beiden Spalten werden AUSSCHLIESSLICH GEMEINSAM gesetzt, über worker.py::_set_phase.
+    # `NULL` heißt hier "kein laufender Teilschritt" (beendet, abgebrochen, oder Altzeile), nie
+    # "gerade begonnen"; mit `phase = NULL` fällt auch dieser Wert auf `NULL` zurück. Bricht die
+    # Bindung, rechnet die Restdauer den Beginn des VORIGEN Teilschritts gegen den Fortschritt des
+    # aktuellen und ist zu groß - ohne Fehler und ohne roten Verhaltenstest. Festgehalten wird sie
+    # von einem Quelltext-Wächter (tests/test_models.py) und dem Nachsatz
+    # `assert_phase_binding` (tests/phase_binding.py).
+    phase_started_at: Mapped[datetime | None] = mapped_column(default=None)
     # War die Cloud-Nutzung für DIESEN Lauf angefordert (Checkbox am Auslöser)? Macht
     # nachträglich erkennbar, ob das Ergebnis überhaupt Cloud-Anreicherung enthalten kann. Sagt
     # NICHT, ob tatsächlich Cloud-Aufrufe stattgefunden haben - das Gate ist die Konjunktion mit
