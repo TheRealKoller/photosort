@@ -1,6 +1,6 @@
 # 0481 - Restdauer eines laufenden Klassifizierungslaufs
 
-**Status:** Accepted
+**Status:** Implemented ([PR #507](https://github.com/TheRealKoller/photosort/pull/507))
 **Erstellt:** 2026-09-17
 **Bezug:** [GitHub-Issue #481](https://github.com/TheRealKoller/photosort/issues/481)
 
