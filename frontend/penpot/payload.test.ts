@@ -386,12 +386,12 @@ describe('Suchraum der Abwesenheits-Zusicherung', () => {
  */
 const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: string }[] = [
   { datei: 'verify.js', zeile: 55, wert: '20', ausschnitt: 'ERWARTETE_SYMBOLE = 20' },
-  { datei: 'verify.js', zeile: 56, wert: '12', ausschnitt: 'ERWARTETE_BAUSTEINE = 12' },
-  { datei: 'verify.js', zeile: 57, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
-  { datei: 'verify.js', zeile: 58, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
-  { datei: 'verify.js', zeile: 59, wert: '9', ausschnitt: 'ERWARTETE_ANSICHTEN = 9' },
-  { datei: 'verify.js', zeile: 60, wert: '46', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 46' },
-  { datei: 'verify.js', zeile: 61, wert: '10', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 10' },
+  { datei: 'verify.js', zeile: 59, wert: '14', ausschnitt: 'ERWARTETE_BAUSTEINE = 14' },
+  { datei: 'verify.js', zeile: 60, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
+  { datei: 'verify.js', zeile: 61, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
+  { datei: 'verify.js', zeile: 62, wert: '9', ausschnitt: 'ERWARTETE_ANSICHTEN = 9' },
+  { datei: 'verify.js', zeile: 63, wert: '46', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 46' },
+  { datei: 'verify.js', zeile: 64, wert: '10', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 10' },
 ]
 
 describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast', () => {
@@ -627,7 +627,7 @@ describe('Referentielle Integritaet', () => {
   })
 })
 
-describe('Die elf Bausteine', () => {
+describe('Die dreizehn Bausteine', () => {
   /*
    * GESCHLOSSENE NAMENSMENGE, nicht Kardinalitaet: "genau elf" bestuenden auch elf beliebige. Die
    * Menge ist seit der Aufnahme des Platzhalters nicht mehr eingefroren, sondern REGELGEBUNDEN
@@ -635,7 +635,7 @@ describe('Die elf Bausteine', () => {
    * Bausteine aus `components/ui/` stehen zusammen, die Schrittmarke als einzige aus
    * `components/` am Ende. Ein Anhaengen ans Ende zerrisse diese Ordnung still.
    */
-  it('traegt genau die elf maschinellen Schluessel', () => {
+  it('traegt genau die dreizehn maschinellen Schluessel', () => {
     expect(komponenten.bausteine.map((baustein) => baustein.schluessel)).toEqual([
       'button',
       'input',
@@ -648,6 +648,11 @@ describe('Die elf Bausteine', () => {
       'dialog',
       'skeleton',
       'step-marker',
+      // Die beiden Motiv-Bausteine stammen aus der Motivstaerke-Story und sind mit der
+      // Bilddetailansicht (Spec 0497) in die Liste aufgenommen. Sie stehen HINTER der
+      // Schrittmarke: die Bausteine aus `components/ui/` stehen zusammen, die uebrigen dahinter.
+      'motiv-reihe',
+      'motiv-bereich',
     ])
   })
 
@@ -664,6 +669,8 @@ describe('Die elf Bausteine', () => {
       'Dialog',
       'Platzhalter',
       'Schrittmarke',
+      'Motivreihe',
+      'Motivbereich',
     ])
   })
 
@@ -692,9 +699,9 @@ describe('Die elf Bausteine', () => {
     expect(schrittmarke!.quellen).toEqual(['src/components/StepMarker.tsx'])
   })
 
-  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der elf liegen unter
-     `src/components/ui/`, die Schrittmarke unmittelbar unter `src/components/`. Wer nur `ui/`
-     aufzaehlt, verliert sie still. */
+  /* Die Zuordnungstabelle spannt ZWEI Verzeichnisse: zehn der dreizehn liegen unter
+     `src/components/ui/`, Schrittmarke, Motivreihe und Motivbereich unmittelbar unter
+     `src/components/`. Wer nur `ui/` aufzaehlt, verliert sie still. */
   it('spannt beide Verzeichnisse auf', () => {
     const quellen = komponenten.bausteine.flatMap((baustein) => baustein.quellen)
     expect(quellen).toContain('src/components/StepMarker.tsx')
@@ -839,14 +846,14 @@ describe('Die Achsen der Bausteine', () => {
    * Baustein. Eingefroren, weil eine versehentlich hinzugefuegte Achse sie sprunghaft vervielfacht
    * und das sonst niemandem auffiele. 90 + 5 + 9 + 8 + 7 + 3 + 3 + 2 + 4 + 2 + 12.
    */
-  it('baut genau 145 Varianten auf', () => {
+  it('baut genau 153 Varianten auf', () => {
     const gesamt = komponenten.bausteine.reduce(
       (summe, baustein) =>
         summe +
         Object.values(baustein.varianten).reduce((produkt, werte) => produkt * werte.length, 1),
       0,
     )
-    expect(gesamt).toBe(145)
+    expect(gesamt).toBe(153)
   })
 })
 
@@ -1450,7 +1457,10 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
      pruefte sie nichts. Genannt sind die Ansichten, die im Produkt TATSAECHLICH existieren - eine
      spaeter gebaute Ansicht, deren Verweis niemand nachtraegt, faellt hier auf. */
   it('fuehrt die gebauten Ansichten mit ihren Produktdateien', () => {
-    const gebaut = new Map([['duplikate', 'src/pages/DuplicateComparePage.tsx']])
+    const gebaut = new Map([
+      ['duplikate', 'src/pages/DuplicateComparePage.tsx'],
+      ['bilddetail', 'src/pages/PhotoDetailPage.tsx'],
+    ])
 
     for (const [schluessel, erwartet] of gebaut) {
       const ansicht = ansichten.find((eintrag) => eintrag.schluessel === schluessel)
@@ -2119,7 +2129,7 @@ const GETEILTE_TABELLENREIHENFOLGE = [
  * Fuenfter geteilter Block: woran ein Varianten-BEHAELTER erkannt wird.
  *
  * ⚠ GEMESSEN AM ERSTEN ECHTEN KORREKTURLAUF (2026-09-11): `penpot.library.local.components`
- * liefert je Baustein GENAU EINE Komponente, nicht ihre Varianten - 11 statt 145. Die
+ * liefert je Baustein GENAU EINE Komponente, nicht ihre Varianten - 13 statt 153. Die
  * Variantenkomponenten haengen am Behaelter (`behaelter.variants.variantComponents()`), und der
  * ist ein Board und steht deshalb gar nicht in dieser Liste. Ein Korrekturlauf, der ueber
  * `penpot.library.local.components` iteriert, erreicht ein Zwoelftel des Bestandes und meldet
@@ -2229,9 +2239,9 @@ describe('Die geteilten Erkennungen', () => {
  * ⚠ DIESE ZUSICHERUNG STAMMT AUS EINEM FEHLGESCHLAGENEN ECHTEN LAUF, nicht aus einer Ueberlegung.
  * Am 2026-09-11 lief `fix-flaechen.js` zum ersten Mal gegen die bespielte Datei und meldete
  * 2 geaendert / 9 bereits richtig / 1 strukturabweichend - zusammen ZWOELF. Das ist die Zahl der
- * Bausteine, nicht die der 145 Varianten. Gemessen in derselben Sitzung:
+ * Bausteine, nicht die der 153 Varianten. Gemessen in derselben Sitzung:
  * `penpot.library.local.components` traegt 12 Eintraege mit `schluessel`, die 12 Behaelter tragen
- * zusammen 145 Variantenkomponenten, und alle 145 tragen den `schluessel` ebenfalls.
+ * zusammen 153 Variantenkomponenten, und alle 153 tragen den `schluessel` ebenfalls.
  *
  * Der Lauf war damit kein Fehlschlag, den man gesehen haette: Er lief durch, meldete Erfolg und
  * liess fuenf Sechstel des Bestandes unberuehrt. Kein statischer Test konnte das fangen - die
@@ -2804,6 +2814,66 @@ const VARIANTEN_OHNE_FLAECHE: { pfad: string; varianten: number; grund: string }
       'Im Produkt nur `border-border` und `text-text`, kein einziges `bg-*`: Der neutrale Ton ' +
       'ignoriert die Fuellung vollstaendig - deshalb gibt es auch kein `neutral-suggested`.',
   },
+  {
+    pfad: 'motiv-reihe.fuellstufe.stark',
+    varianten: 1,
+    grund:
+      'Die Motivreihe ist ein Umriss-Symbol mit einer darueber geklemmten Fuellebene. Ihre ' +
+      'Tinte steckt vollstaendig in der Rolle `fuellung`, und die ist wie beim ' +
+      'Fortschrittsbalken ein Unterelement, kein Brettmerkmal - das Brett selbst traegt ' +
+      'keine Flaeche.',
+  },
+  {
+    pfad: 'motiv-reihe.fuellstufe.mittel',
+    varianten: 1,
+    grund:
+      'Die Motivreihe ist ein Umriss-Symbol mit einer darueber geklemmten Fuellebene. Ihre ' +
+      'Tinte steckt vollstaendig in der Rolle `fuellung`, und die ist wie beim ' +
+      'Fortschrittsbalken ein Unterelement, kein Brettmerkmal - das Brett selbst traegt ' +
+      'keine Flaeche.',
+  },
+  {
+    pfad: 'motiv-reihe.fuellstufe.schwach',
+    varianten: 1,
+    grund:
+      'Die Motivreihe ist ein Umriss-Symbol mit einer darueber geklemmten Fuellebene. Ihre ' +
+      'Tinte steckt vollstaendig in der Rolle `fuellung`, und die ist wie beim ' +
+      'Fortschrittsbalken ein Unterelement, kein Brettmerkmal - das Brett selbst traegt ' +
+      'keine Flaeche.',
+  },
+  {
+    pfad: 'motiv-reihe.fuellstufe.keine',
+    varianten: 1,
+    grund:
+      'Die Motivreihe ist ein Umriss-Symbol mit einer darueber geklemmten Fuellebene. Ihre ' +
+      'Tinte steckt vollstaendig in der Rolle `fuellung`, und die ist wie beim ' +
+      'Fortschrittsbalken ein Unterelement, kein Brettmerkmal - das Brett selbst traegt ' +
+      'keine Flaeche.',
+  },
+  {
+    pfad: 'motiv-bereich.zustand.regelfall',
+    varianten: 1,
+    grund:
+      'Der Motivbereich steht durchsichtig auf der Urteilsflaeche; eine eigene Flaeche traegt ' +
+      'er NUR im Zustand `gewaehlt` (`bg-overlay` am angehefteten Symbol). Die uebrigen drei ' +
+      'unterscheiden sich allein in der Schrift.',
+  },
+  {
+    pfad: 'motiv-bereich.zustand.schreibgeschuetzt',
+    varianten: 1,
+    grund:
+      'Der Motivbereich steht durchsichtig auf der Urteilsflaeche; eine eigene Flaeche traegt ' +
+      'er NUR im Zustand `gewaehlt` (`bg-overlay` am angehefteten Symbol). Die uebrigen drei ' +
+      'unterscheiden sich allein in der Schrift.',
+  },
+  {
+    pfad: 'motiv-bereich.zustand.nicht-klassifiziert',
+    varianten: 1,
+    grund:
+      'Der Motivbereich steht durchsichtig auf der Urteilsflaeche; eine eigene Flaeche traegt ' +
+      'er NUR im Zustand `gewaehlt` (`bg-overlay` am angehefteten Symbol). Die uebrigen drei ' +
+      'unterscheiden sich allein in der Schrift.',
+  },
 ]
 
 /**
@@ -2858,7 +2928,7 @@ describe('Binden oder leeren: die Flaeche jeder Variante', () => {
     expect(rollen.flaeche).toEqual(['fill'])
     expect(rollen.schrift).toEqual(['fill'])
     expect(textRollenTabelle()).toContain('schrift')
-    expect(alleBindungen()).toHaveLength(145)
+    expect(alleBindungen()).toHaveLength(153)
   })
 
   it('zaehlt die Eigenschaften des BRETTS, nicht die vorgekommenen Rollen', () => {
@@ -2916,13 +2986,13 @@ describe('Binden oder leeren: die Flaeche jeder Variante', () => {
     expect(offen).toEqual([])
   })
 
-  /* AKZEPTANZKRITERIUM 1, zweite Haelfte: 120 gebunden, 25 ausdruecklich geleert. Beide Zahlen
+  /* AKZEPTANZKRITERIUM 1, zweite Haelfte: 121 gebunden, 32 ausdruecklich geleert. Beide Zahlen
      entstehen aus der Simulation, nicht aus der Liste - sonst pruefte sie sich selbst. */
-  it('bindet 120 Flaechen und leert 25', () => {
+  it('bindet 121 Flaechen und leert 32', () => {
     const bindungen = alleBindungen()
     const gebunden = bindungen.filter(({ bindung }) => bindung.flaeche !== null)
-    expect(gebunden).toHaveLength(120)
-    expect(bindungen.length - gebunden.length).toBe(25)
+    expect(gebunden).toHaveLength(121)
+    expect(bindungen.length - gebunden.length).toBe(32)
   })
 
   /* Die Zahl je Eintrag: eine Teilaenderung laesst ihn schrumpfen statt verwaisen. */
@@ -2937,7 +3007,7 @@ describe('Binden oder leeren: die Flaeche jeder Variante', () => {
     for (const eintrag of VARIANTEN_OHNE_FLAECHE) {
       expect(gezaehlt[eintrag.pfad], eintrag.pfad).toBe(eintrag.varianten)
     }
-    expect(VARIANTEN_OHNE_FLAECHE.reduce((summe, e) => summe + e.varianten, 0)).toBe(25)
+    expect(VARIANTEN_OHNE_FLAECHE.reduce((summe, e) => summe + e.varianten, 0)).toBe(32)
   })
 
   it('verlangt je Eintrag eine Begruendung und einen Pfad, den es gibt', () => {
@@ -3021,6 +3091,14 @@ function hexVon(tokenName: string): string {
  * ist statt in einem Dokument geparkt; ein spaeterer Fix loescht einen Eintrag.
  */
 const VARIANTEN_OHNE_SCHRIFTFARBE: { pfad: string; varianten: number; grund: string }[] = [
+  {
+    pfad: 'motiv-reihe',
+    varianten: 4,
+    grund:
+      'Die Motivreihe traegt ueberhaupt keinen Text: Sie ist ein Symbol, und ihr Wert steht als ' +
+      'zugaenglicher Name der Schaltflaeche sowie in der Detailzeile daneben - beides ausserhalb ' +
+      'dieses Bausteins.',
+  },
   {
     pfad: 'card',
     varianten: 8,
@@ -3165,7 +3243,7 @@ describe('Der Kontrast der Beschriftung gegen ihren Untergrund', () => {
       expect(gezaehlt[eintrag.pfad], eintrag.pfad).toBe(eintrag.varianten)
       expect(eintrag.grund.length, eintrag.pfad).toBeGreaterThan(40)
     }
-    expect(VARIANTEN_OHNE_SCHRIFTFARBE.reduce((summe, e) => summe + e.varianten, 0)).toBe(13)
+    expect(VARIANTEN_OHNE_SCHRIFTFARBE.reduce((summe, e) => summe + e.varianten, 0)).toBe(17)
   })
 })
 

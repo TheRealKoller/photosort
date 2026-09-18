@@ -519,6 +519,77 @@
           }
         }
       }
+    },
+    {
+      "schluessel": "motiv-reihe",
+      "name": "Motivreihe",
+      "quellen": [
+        "src/components/MotifStrengthSymbol.tsx"
+      ],
+      "varianten": {
+        "fuellstufe": [
+          "stark",
+          "mittel",
+          "schwach",
+          "keine"
+        ]
+      },
+      "tokens": {
+        "umriss": "color.text-muted"
+      },
+      "tokensProAuspraegung": {
+        "fuellstufe": {
+          "stark": {
+            "fuellung": "color.status-success"
+          },
+          "mittel": {
+            "fuellung": "color.status-running"
+          },
+          "schwach": {
+            "fuellung": "color.status-failed"
+          },
+          "keine": {
+            "fuellung": "color.text-muted"
+          }
+        }
+      }
+    },
+    {
+      "schluessel": "motiv-bereich",
+      "name": "Motivbereich",
+      "quellen": [
+        "src/components/MotifStrengthSection.tsx"
+      ],
+      "varianten": {
+        "zustand": [
+          "regelfall",
+          "gewaehlt",
+          "schreibgeschuetzt",
+          "nicht-klassifiziert"
+        ]
+      },
+      "tokens": {
+        "typografie": "text.xs",
+        "radius": "radius.sm",
+        "innenabstand-laengs": "space.1"
+      },
+      "tokensProAuspraegung": {
+        "zustand": {
+          "regelfall": {
+            "schrift": "color.text"
+          },
+          "gewaehlt": {
+            "flaeche": "color.overlay",
+            "schrift": "color.text-h"
+          },
+          "schreibgeschuetzt": {
+            "schrift": "color.text"
+          },
+          "nicht-klassifiziert": {
+            "schrift": "color.text"
+          }
+        }
+      }
     }
   ]
 }
