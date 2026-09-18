@@ -14,8 +14,12 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.event_probe import (
+    DISTANCE_THRESHOLD_METERS,
     EventProbeError,
     cause_counts,
+    inheritance_counts,
+    landmark_counts,
+    match_distance_counts,
     read_event_probe_input,
     size_counts,
 )
@@ -27,8 +31,10 @@ from photosort.events import (
     BuiltEvent,
     EventCandidate,
     EventFormation,
+    LocationEntry,
     explain_events,
 )
+from photosort.geonames import GEONAMES_MAX_DISTANCE_METERS
 from photosort.models import (
     CriterionScoringRun,
     Event,
@@ -49,6 +55,31 @@ def _candidate(minutes: float, *, gps: tuple[float, float] | None = None) -> Eve
         taken_at=NOW + timedelta(minutes=minutes),
         gps_lat=None if gps is None else gps[0],
         gps_lon=None if gps is None else gps[1],
+    )
+
+
+def _candidate_of(entry: LocationEntry) -> EventCandidate:
+    """Derselbe Eintrag als Kandidat - ohne `location`, weil Block C1 die Uebernahme selbst misst
+    und nicht ihr Ergebnis."""
+    return EventCandidate(
+        photo_id=entry.photo_id,
+        taken_at=entry.taken_at,
+        gps_lat=entry.gps_lat,
+        gps_lon=entry.gps_lon,
+    )
+
+
+def _named_candidate(
+    photo_id: int, minutes: float, name: str, *, gps: tuple[float, float] | None = None
+) -> EventCandidate:
+    """Ein Kandidat mit bereits geprueftem Sehenswuerdigkeit-Namen - so, wie ihn `event_inputs`
+    liefert (`usable_landmark_name` ist dort bereits gelaufen)."""
+    return EventCandidate(
+        photo_id=photo_id,
+        taken_at=NOW + timedelta(minutes=minutes),
+        gps_lat=None if gps is None else gps[0],
+        gps_lon=None if gps is None else gps[1],
+        landmark_name=name,
     )
 
 
@@ -308,3 +339,188 @@ class TestBlockBCauses:
         `BOUNDARY_CAUSES` verschwaende sonst aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
         with pytest.raises(EventProbeError):
             cause_counts(_formation((2, frozenset()), (2, frozenset({"erfunden"}))))
+
+
+# --- Block C: die Ortszuordnung, je Mechanismus getrennt -----------------------------------------
+#
+# Die Entfernungen der Messlage sind nachgerechnet: 0,002 Grad Breite sind rund 222 m, 0,01 Grad
+# rund 1112 m, 0,2 Grad rund 22 239 m. Sie liegen damit klar in ihrer Klasse und nicht auf einer
+# Grenze.
+def _entry(photo_id: int, minutes: float, gps: tuple[float, float] | None = None) -> LocationEntry:
+    return LocationEntry(
+        photo_id=photo_id,
+        taken_at=NOW + timedelta(minutes=minutes),
+        gps_lat=None if gps is None else gps[0],
+        gps_lon=None if gps is None else gps[1],
+    )
+
+
+class TestBlockC1InheritedLocations:
+    """Der uebernommene Ort - er speist Schritt- und Ausdehnungssignal und damit die Grenzen.
+
+    Beide Groessen stehen NUR in Klassen (S5): Sie entstehen aus voller EXIF-Praezision, und eine
+    geordnete Folge daraus waere ein Streckenabdruck."""
+
+    def test_the_hand_computed_graph(self) -> None:
+        entries = [
+            _entry(1, 0, (0.0, 0.0)),
+            # Erbt vom frueheren Anker (30 s) - die Ankerspanne ist die Entfernung zwischen den
+            # beiden Nachbarn, rund 22 km.
+            _entry(2, 0.5),
+            _entry(3, 10, (0.2, 0.0)),
+            # NACH dem letzten Anker: es gibt nur einen Nachbarn, also KEINE Spanne - und `None`
+            # ist ausdruecklich nicht null.
+            _entry(4, 20),
+        ]
+        candidates = [_candidate_of(entry) for entry in entries]
+
+        counts = inheritance_counts(entries, candidates)
+
+        assert counts.candidates_total == 4
+        assert counts.candidates_without_own_coordinate == 2
+        assert counts.inheriting == 2
+        # 30 s in der untersten Klasse, 600 s in "5 bis unter 30 min".
+        assert counts.seconds_to_anchor_classes == (1, 0, 1, 0, 0, 0)
+        # Die eine gemessene Spanne liegt ueber der Schwelle.
+        assert counts.anchor_span_classes == (0, 0, 0, 0, 1)
+        assert counts.without_anchor_span == 1
+
+    def test_only_candidates_are_reported_though_the_whole_project_anchors(self) -> None:
+        """Die Inferenzbasis ist das ganze Projekt - berichtet werden die KANDIDATEN. Ein nach dem
+        Lauf aussortiertes Foto ohne Koordinate gehoert in keine der beiden Verteilungen; die
+        Grenzen dieses Laufs haengen nicht an ihm."""
+        entries = [
+            _entry(1, 0, (0.0, 0.0)),
+            _entry(2, 0.5),
+            _entry(3, 3),
+            _entry(4, 10, (0.2, 0.0)),
+        ]
+        candidates = [
+            _candidate_of(entries[0]),
+            _candidate_of(entries[1]),
+            _candidate_of(entries[3]),
+        ]
+
+        counts = inheritance_counts(entries, candidates)
+
+        assert counts.candidates_total == 3
+        assert counts.candidates_without_own_coordinate == 1
+        assert counts.inheriting == 1
+
+    def test_without_a_single_anchor_nobody_inherits(self) -> None:
+        """Der entartete Fall: Ohne jeden Anker erbt niemand. Die Zahl der Kandidaten ohne eigene
+        Koordinate bleibt trotzdem stehen - sie ist etwas anderes als die Zahl der Uebernahmen."""
+        entries = [_entry(1, 0), _entry(2, 5)]
+        candidates = [_candidate_of(entry) for entry in entries]
+
+        counts = inheritance_counts(entries, candidates)
+
+        assert counts.candidates_without_own_coordinate == 2
+        assert counts.inheriting == 0
+        assert counts.seconds_to_anchor_classes == (0, 0, 0, 0, 0, 0)
+
+
+class TestBlockC2MatchDistances:
+    """Der aufgeloeste Ortsname: die Entfernung zwischen Aufnahmeposition und dem Eintrag, der den
+    Namen geliefert hat. Ausgegeben in Klassen, nie je Zelle (S4)."""
+
+    def test_the_hand_computed_graph(self) -> None:
+        counts = match_distance_counts(
+            {
+                (0.0, 0.0): 120.0,
+                (0.1, 0.0): 3000.0,
+                (0.2, 0.0): 22239.0,
+                # Eine Zelle, die gar keinen Ortsnamen bekaeme - sie traegt keine Entfernung und
+                # darf keine Klasse besetzen.
+                (0.3, 0.0): None,
+            }
+        )
+
+        assert counts.cells_total == 4
+        assert counts.cells_with_a_name == 3
+        assert counts.distance_classes == (1, 0, 1, 0, 1)
+        assert counts.cells_beyond_threshold == 1
+
+    def test_the_threshold_is_the_topmost_class_boundary(self) -> None:
+        """Der Anteil oberhalb der Schwelle wird aus der obersten Klasse ABGELESEN, nie ein zweites
+        Mal gerechnet - ein zweiter Vergleich liefe beim naechsten Grenzfall auseinander."""
+        counts = match_distance_counts(
+            {(0.0, 0.0): DISTANCE_THRESHOLD_METERS, (0.1, 0.0): DISTANCE_THRESHOLD_METERS - 1}
+        )
+
+        assert counts.distance_classes[-1] == 1
+        assert counts.cells_beyond_threshold == counts.distance_classes[-1]
+
+    def test_the_threshold_lies_below_what_the_resolver_will_even_return(self) -> None:
+        """Eine Ungleichung, kein Zahlwert: Laege die Schwelle ueber
+        `GEONAMES_MAX_DISTANCE_METERS`, koennte Block C2 sie strukturell nie ueberschreiten - der
+        Auflöser verwirft weiter entfernte Treffer bereits -, und ein Anteil von null waere dann
+        eine Eigenschaft der Schwelle statt ein Messergebnis."""
+        assert DISTANCE_THRESHOLD_METERS < GEONAMES_MAX_DISTANCE_METERS
+
+
+class TestBlockC3LandmarkNames:
+    """Der Sehenswuerdigkeitsname - der Weg, ueber den eine Ortsaussage am weitesten danebenliegen
+    kann: Ein Name benennt das GANZE Event und verdraengt dessen Koordinatenstufe."""
+
+    def test_a_detection_without_any_place_hint(self) -> None:
+        """`landmark.py::place_hint_for` liefert fuer ein Foto ohne eigenes GPS `None` - die
+        Erkennung entstand dann ohne jeden Ortshinweis. Ein uebernommener Ort erreicht diese
+        Funktion nie."""
+        with_gps = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
+        without_gps = _named_candidate(2, 1, "Palast")
+
+        counts = landmark_counts([with_gps, without_gps], explain_events([]), {})
+
+        assert counts.detections_total == 2
+        assert counts.detections_without_place_hint == 1
+
+    def test_a_name_whose_carriers_lie_further_apart_than_the_threshold(self) -> None:
+        """Ein innerer Widerspruch, fuer den es keine aeussere Wahrheit braucht: Dieselbe
+        Sehenswuerdigkeit kann nicht an zwei 22 km auseinanderliegenden Orten stehen."""
+        candidates = [
+            _named_candidate(1, 0, "Weit", gps=(0.0, 0.0)),
+            _named_candidate(2, 1, "Weit", gps=(0.2, 0.0)),
+            # Derselbe Ortsbesuch, rund 1,1 km auseinander - kein Widerspruch.
+            _named_candidate(3, 2, "Nah", gps=(0.0, 0.0)),
+            _named_candidate(4, 3, "Nah", gps=(0.01, 0.0)),
+        ]
+
+        counts = landmark_counts(candidates, explain_events([]), {})
+
+        assert counts.names_total == 2
+        assert counts.names_spread_beyond_threshold == 1
+
+    def test_an_event_named_by_exactly_one_of_many_photos(self) -> None:
+        """Ein einziges erkanntes Foto benennt hier zwoelf - der Name traegt dann eine Aussage
+        ueber Fotos, zu denen er nie erhoben wurde."""
+        named = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
+        others = [_candidate(minutes) for minutes in (1, 2)]
+        formation = explain_events([named, *others])
+
+        counts = landmark_counts([named, *others], formation, {})
+
+        assert len(formation.events) == 1
+        assert counts.events_named_by_a_single_photo == 1
+
+    def test_an_event_whose_photos_all_carry_the_name_is_not_counted(self) -> None:
+        candidates = [
+            _named_candidate(1, 0, "Palast", gps=(0.0, 0.0)),
+            _named_candidate(2, 1, "Palast", gps=(0.0, 0.0)),
+        ]
+        formation = explain_events(candidates)
+
+        counts = landmark_counts(candidates, formation, {})
+
+        assert len(formation.events) == 1
+        assert counts.events_named_by_a_single_photo == 0
+
+    def test_a_single_photo_event_is_not_counted_either(self) -> None:
+        """ "Auf genau einem von VIELEN Fotos" - ein Event aus einem einzigen Foto ist kein
+        Widerspruch, sondern der Normalfall."""
+        named = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
+        formation = explain_events([named])
+
+        counts = landmark_counts([named], formation, {})
+
+        assert counts.events_named_by_a_single_photo == 0

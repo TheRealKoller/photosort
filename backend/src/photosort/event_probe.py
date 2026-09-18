@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import statistics
 from bisect import bisect_right
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -53,13 +53,17 @@ from photosort.events import (
     EventCandidate,
     EventFormation,
     LocationEntry,
+    inherited_locations,
 )
+from photosort.landmark import place_hint_for
 from photosort.models import (
     CriterionScoringRun,
     PhotoRanking,
     Project,
     ScanStatus,
 )
+from photosort.places import place_cell
+from photosort.scoring import haversine_meters
 
 Cell = tuple[float, float]
 
@@ -307,4 +311,177 @@ def cause_counts(formation: EventFormation) -> CauseCounts:
         involved=involved,
         sole=sole,
         opening_a_small_segment=opening_small,
+    )
+
+
+# --- Block C1: der uebernommene Ort --------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class InheritanceCounts:
+    """Block C1. BEIDE VERTEILUNGEN STEHEN NUR IN KLASSEN (S5) - sie entstehen aus voller
+    EXIF-Praezision, und eine geordnete Folge aus Spannen und Zeitluecken waere ein Streckenabdruck.
+
+    `candidates_without_own_coordinate` und `inheriting` sind ZWEI VERSCHIEDENE ZAHLEN: Ohne jeden
+    Anker erbt niemand, und dann steht die erste hoch, waehrend die zweite null ist.
+
+    `without_anchor_span` sind die Uebernahmen mit nur EINEM Nachbarn - dort gibt es keine Spanne.
+    Eine Null hiesse "beide Nachbarn liegen am selben Ort" und waere die guenstigste aller Aussagen
+    ueber eine Uebernahme."""
+
+    candidates_total: int
+    candidates_without_own_coordinate: int
+    inheriting: int
+    seconds_to_anchor_classes: tuple[int, ...]
+    anchor_span_classes: tuple[int, ...]
+    without_anchor_span: int
+
+
+def inheritance_counts(
+    entries: Sequence[LocationEntry], candidates: Sequence[EventCandidate]
+) -> InheritanceCounts:
+    """Block C1 ueber genau die Ankerwahl, die auch `infer_locations` trifft
+    (`events.py::inherited_locations`) - eine zweite Fassung maesse den Abstand zu einem Anker, den
+    das Foto gar nicht geerbt hat.
+
+    DIE INFERENZBASIS IST DAS GANZE PROJEKT, BERICHTET WERDEN DIE KANDIDATEN: Ein aussortiertes
+    Foto traegt eine ebenso gueltige Koordinate und darf die Ankerwahl mitbestimmen, aber die
+    Grenzen dieses Laufs haengen an den Kandidaten, und nur ueber sie sagt die Verteilung etwas."""
+    candidate_ids = {candidate.photo_id for candidate in candidates}
+    reports = [
+        report for report in inherited_locations(entries) if report.photo_id in candidate_ids
+    ]
+    spans = [
+        report.anchor_span_meters for report in reports if report.anchor_span_meters is not None
+    ]
+    return InheritanceCounts(
+        candidates_total=len(candidates),
+        candidates_without_own_coordinate=sum(
+            1 for candidate in candidates if candidate.gps_lat is None or candidate.gps_lon is None
+        ),
+        inheriting=len(reports),
+        seconds_to_anchor_classes=_class_counts(
+            (report.seconds_to_anchor for report in reports), TIME_CLASS_BOUNDS
+        ),
+        anchor_span_classes=_class_counts(spans, DISTANCE_CLASS_BOUNDS),
+        without_anchor_span=len(reports) - len(spans),
+    )
+
+
+# --- Block C2: der aufgeloeste Ortsname ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MatchDistanceCounts:
+    """Block C2. Die Entfernung steht in KLASSEN, nie je Zelle und nie neben Name oder Ebene (S4):
+    Die Entfernung zu einem benannten, oeffentlich enumerierbaren GeoNames-Eintrag ist ein
+    Trilaterationsmittel - `locality` und `neighbourhood` derselben Zelle schneiden sich zu rund
+    zwei Punkten und unterliefen die 1,1-km-Koernung, die `PLACE_CELL_DIGITS = 2` zusichert."""
+
+    cells_total: int
+    cells_with_a_name: int
+    distance_classes: tuple[int, ...]
+    cells_beyond_threshold: int
+
+
+def match_distance_counts(name_distances: Mapping[Cell, float | None]) -> MatchDistanceCounts:
+    """Block C2 ueber die Zellen der Kandidatenfotos.
+
+    `None` heisst "diese Zelle bekaeme gar keinen Ortsnamen" - sie besetzt dann keine Klasse. Eine
+    Null besetzte die unterste und behauptete einen perfekt getroffenen Namen, den es nicht gibt."""
+    distances = [distance for distance in name_distances.values() if distance is not None]
+    classes = _class_counts(distances, DISTANCE_CLASS_BOUNDS)
+    return MatchDistanceCounts(
+        cells_total=len(name_distances),
+        cells_with_a_name=len(distances),
+        distance_classes=classes,
+        # ABGELESEN, nicht ein zweites Mal gerechnet: Die Schwelle IST die oberste Klassengrenze.
+        cells_beyond_threshold=classes[-1],
+    )
+
+
+# --- Block C3: der Sehenswuerdigkeitsname --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LandmarkCounts:
+    """Block C3. Der Weg, ueber den eine Ortsaussage am weitesten danebenliegen kann: Ein Name
+    benennt das GANZE Event und verdraengt dessen Koordinatenstufe.
+
+    Gezaehlt werden WIDERSPRUECHE, nie Namen (S3): Ein in sich stimmiger Name ist ohne Rueckfrage
+    bei einem bezahlten Dienst nicht ueberpruefbar. Dieser Block BELEGT diesen Weg, wo Widersprueche
+    auftreten, und kann ihn nicht widerlegen."""
+
+    detections_total: int
+    detections_without_place_hint: int
+    names_total: int
+    names_spread_beyond_threshold: int
+    events_named_by_a_single_photo: int
+
+
+def _max_pairwise_meters(cells: Sequence[Cell]) -> float:
+    """Die groesste Entfernung zwischen zwei Zellen einer Menge.
+
+    Gerechnet wird ueber die GERUNDETEN Zellen, nicht die Rohwerte: Das haelt den Aufwand klein
+    (die Zahl verschiedener Zellen je Name ist klein, die der Fotos nicht) und gibt ausserdem
+    keine volle EXIF-Praezision in die Rechnung, die den Bericht speist. Der Preis ist eine
+    Unschaerfe von rund 1,1 km gegen eine Schwelle von 10 km."""
+    return max(
+        (
+            haversine_meters(first[0], first[1], second[0], second[1])
+            for index, first in enumerate(cells)
+            for second in cells[index + 1 :]
+        ),
+        default=0.0,
+    )
+
+
+def landmark_counts(
+    candidates: Sequence[EventCandidate],
+    formation: EventFormation,
+    locality_by_cell: Mapping[Cell, str],
+) -> LandmarkCounts:
+    """Block C3 ueber die Kandidaten des Laufs und die Gliederung, die aus ihnen entstand.
+
+    "Ohne jeden Ortshinweis" entscheidet `landmark.py::place_hint_for` - dieselbe eine Stelle, die
+    auch im Betrieb entscheidet, was einer Erkennung beigelegt wird. Ein Foto ohne eigene
+    Koordinate bekommt dort `None`; ein uebernommener Ort erreicht die Funktion nie."""
+    named = [candidate for candidate in candidates if candidate.landmark_name is not None]
+
+    without_hint = 0
+    cells_by_name: dict[str, list[Cell]] = {}
+    for candidate in named:
+        assert candidate.landmark_name is not None
+        cell: Cell | None = None
+        if candidate.gps_lat is not None and candidate.gps_lon is not None:
+            cell = place_cell(candidate.gps_lat, candidate.gps_lon)
+        locality = None if cell is None else locality_by_cell.get(cell)
+        if place_hint_for(locality, candidate.gps_lat, candidate.gps_lon) is None:
+            without_hint += 1
+        if cell is not None:
+            cells_by_name.setdefault(candidate.landmark_name, []).append(cell)
+
+    spread = sum(
+        1
+        for cells in cells_by_name.values()
+        if _beyond_threshold(_max_pairwise_meters(sorted(set(cells))))
+    )
+
+    name_by_photo = {candidate.photo_id: candidate.landmark_name for candidate in named}
+    single_photo_named = 0
+    for event in formation.events:
+        if event.landmark_name is None or len(event.photo_ids) < 2:
+            continue
+        carriers = sum(
+            1 for photo_id in event.photo_ids if name_by_photo.get(photo_id) == event.landmark_name
+        )
+        if carriers == 1:
+            single_photo_named += 1
+
+    return LandmarkCounts(
+        detections_total=len(named),
+        detections_without_place_hint=without_hint,
+        names_total=len({candidate.landmark_name for candidate in named}),
+        names_spread_beyond_threshold=spread,
+        events_named_by_a_single_photo=single_photo_named,
     )
