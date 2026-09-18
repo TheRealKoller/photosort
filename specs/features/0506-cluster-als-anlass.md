@@ -164,12 +164,24 @@ Messprotokoll): Sie bewegen zusammen höchstens 5,6 % der Grenzen, `schritt` und
 länger Phase A mitverschiebt — mit **unveränderten Werten**, und ihr Vermerk „unkalibriert" bleibt
 stehen.
 
-**Die drei neuen Werte entstehen aus dem gemessenen Bestand, nicht aus einem Kalibrierungslauf** —
-die Herleitung steht bei der jeweiligen Konstante im Code und ist damit nachprüfbar statt geraten.
-`EVENT_MAX_SPAN` muss über der längsten heute gemessenen Eventdauer (1 h 32 min) liegen, damit es
-nichts zerschneidet, was heute zusammengehört, und unter 24 h bleiben (Vorbedingung der
-Überschriftenform). `MERGE_MAX_GAP` liegt über `EVENT_TIME_GAP`, sonst ist die dritte Stufe
-wirkungslos. `MIN_EVENT_PHOTOS` ist mindestens 2, sonst ist sie ein No-op.
+**Die drei neuen Werte entstehen aus dem gemessenen Bestand und aus Daniels Zielbild, nicht aus
+einem Kalibrierungslauf** — die Herleitung steht bei der jeweiligen Konstante im Code und ist damit
+nachprüfbar statt geraten:
+
+- **`EVENT_MAX_SPAN = 8 h`** (Daniel am 2026-09-18). Trägt einen ganzen Ausflugstag — Stadtbummel,
+  Zoobesuch, Wanderung — und ebenso Silvester oder einen Nachtflug über Mitternacht; zwei Reisetage
+  passen nicht hinein. Der Wert liegt weit über der längsten heute gemessenen Eventdauer
+  (1 h 32 min), zerschneidet also nichts, was heute zusammengehört, und unter 24 h, was die
+  Vorbedingung der Überschriftenform ist.
+- **`MERGE_MAX_GAP = 2 h`**, also das Doppelte von `EVENT_TIME_GAP`. Größer als diese muss es sein,
+  sonst ist die dritte Stufe wirkungslos — ein Rest von ein, zwei Bildern trägt keinen eigenen Beleg
+  dafür, dass mit ihm ein neuer Anlass begann. Bewusst nicht größer: Über eine Lücke von mehr als
+  zwei Stunden hinweg anzuhängen hieße, eine echte Pause zu überspringen, und die Dauergrenze
+  finge das erst bei 8 h ab.
+- **`MIN_EVENT_PHOTOS = 2`** (Daniel am 2026-09-18, mit ausdrücklichem Vorbehalt): Zunächst gilt
+  nur ein **einzelnes** Foto als zu klein — das trifft genau die 22 Fälle, um die es geht, und
+  lässt die 15 Zwei-Foto-Cluster unberührt. **Bleibt der Anteil nach der Nachmessung über 12,1 %,
+  wird auf 3 erhöht und erneut gemessen.** Entschieden wird an den Zahlen, nicht vorab.
 
 Alle sechs bleiben Modulkonstanten, ausdrücklich **kein** Settings-/Env-Wert. Kein Test prüft einen
 Zahlwert — geprüft wird wie
