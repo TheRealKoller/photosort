@@ -75,7 +75,11 @@ Ortsfehler (siehe „Entscheidungen").
       beiden Nachbarn, bleibt das Segment unverändert bestehen; das ist ein gültiges Ergebnis, kein
       Fehlerfall.
 - [ ] Nach der Änderung ist an denselben Daten messbar, dass der Anteil der Ein-Bild-Cluster
-      **mindestens halbiert** ist gegenüber dem in „Messprotokoll" festgehaltenen Ausgangswert.
+      **mindestens halbiert** ist gegenüber dem in „Messprotokoll" festgehaltenen Ausgangswert
+      (24,2 %, also Ziel ≤ 12,1 %). **Dieses Kriterium steht unter Vorbehalt:** Die Ausgangsmessung
+      hat gezeigt, dass die Schwellen nicht die Ursache sind und die Motivgrenze es ist; solange
+      diese unantastbar bleibt, ist die Halbierung voraussichtlich nicht erreichbar. Ob das Ziel
+      bleibt oder sinkt, entscheidet Daniel nach der Empfindlichkeitsmessung (Block E).
 
 **Dabei nicht zu viel verschmelzen**
 
@@ -287,6 +291,26 @@ wo Widersprüche auftreten, kann ihn aber nicht **widerlegen**. „Kein systemat
 für die Wege 1 und 2 vollständig, für Weg 3 nur so weit, wie die Widersprüche reichen. Das begrenzt,
 was das Akzeptanzkriterium „belegt oder widerlegt" einlösen kann.
 
+#### Block E — die Empfindlichkeit des Motivwechsels (`--motiv`)
+
+**Nach der Ausgangsmessung eingefügt.** Sie hat den Motivwechsel als alleinige Ursache von 62,2 %
+der Grenzen ausgewiesen, während `schritt` und `ausdehnung` bei 0,0 % stehen — die vorgesehene
+Kalibrierung trifft die Ursache nicht. Bevor an der Unantastbarkeit der Motivgrenze etwas geändert
+wird, wird sie deshalb gemessen, nach demselben Grundsatz wie der Rest dieser Story.
+
+Dieselbe Kandidatenmenge wird unter mehreren Werten von `MOTIF_CHANGE_CONFIRMING_PHOTOS` (heute 3)
+und der Motivstärke-Schwelle durchgerechnet. Je Kombination werden ausgewiesen: Eventzahl, Anteil
+der Ein-Bild-Cluster, Zahl der Grenzen mit `motivwechsel` als alleiniger Ursache, und — als
+Gegenanzeige gegen zu grobes Zusammenfassen — das größte entstehende Event und die längste Dauer.
+
+`MOTIF_CHANGE_CONFIRMING_PHOTOS` liegt in `events.py`, die Stärke-Schwelle als
+`MOTIF_PRESENCE_THRESHOLD` in `selection.py`. **Beide werden in diesem Schritt nicht geändert**,
+sondern nur variiert durchgerechnet; die Messung ist rein lesend wie die Blöcke A–C.
+
+**Was die Messung entscheidbar macht, entscheidet sie nicht:** Ob die Motivgrenze unantastbar
+bleibt, gelockert wird oder das Halbierungsziel sinkt, legt Daniel anhand der Zahlen fest. Der Lauf
+hält an dieser Stelle an.
+
 #### Block D — die Kalibrierung (`--schwellen`)
 
 Dieselbe Kandidatenmenge wird unter mehreren Schwellenkombinationen durchgerechnet; je Kombination
@@ -354,10 +378,21 @@ ohne den gemessenen Ausgangswert kein prüfbares Kriterium.
   Ursachenmenge in `events.py`. **Keine Verhaltensänderung an der Gliederung.** Danach misst Daniel
   an einem echten Projekt und gibt die Ausgabe zurück; sie geht als Ausgangsmessung ins
   Messprotokoll.
-- **PR 2** — Schritte 4–7: Dauergrenze statt Kalendertag, eigene Konstanten, Block D und
-  Kalibrierungslauf, die dritte Stufe, Nachmessung in dasselbe Messprotokoll.
-- **Ein PR 3** entsteht nur, wenn Block C einen systematischen Ortsfehler belegt **und** Daniel
-  dessen Behebung auslöst. Das entscheidet er nach der Messung, nicht der Lauf.
+- **PR 2** — **nach der Ausgangsmessung neu zugeschnitten** (Daniel am 2026-09-18): Die Messung hat
+  gezeigt, dass die Schwellen nicht die Ursache sind und der Motivwechsel es ist. Statt direkt zu
+  kalibrieren, misst PR 2 deshalb zuerst die **Empfindlichkeit des Motivwechsels** — ein Durchlauf
+  über `MOTIF_CHANGE_CONFIRMING_PHOTOS` und die Motivstärke-Schwelle, der zeigt, wie Eventzahl und
+  Ein-Bild-Anteil daran hängen. Danach misst Daniel erneut und entscheidet mit Zahlen, ob die
+  Unantastbarkeit der Motivgrenze fällt, gelockert oder das Ziel gesenkt wird.
+- **PR 3** — die eigentliche Änderung, deren Zuschnitt erst nach dieser zweiten Messung feststeht:
+  die dritte Stufe (Zusammenlegen), die Dauergrenze als Vorsorge, und was die Empfindlichkeitsmessung
+  an Schwellen nahelegt. Nachmessung in dasselbe Messprotokoll.
+
+**Der Ortsfehler ist abgeschlossen.** Block C hat keinen systematischen Fehler belegt; an der
+Ortsbestimmung wird in dieser Spec nichts geändert. Der dabei abgefallene Befund zum
+Sehenswürdigkeitsnamen ist als eigenes Issue
+[#514](https://github.com/TheRealKoller/photosort/issues/514) festgehalten und ausdrücklich nicht
+Teil dieser Story.
 
 ### Umsetzungsreihenfolge (testgetrieben)
 
