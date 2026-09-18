@@ -27,8 +27,8 @@ describe('CriterionScoreGrid: der Regelfall', () => {
   it('zeigt beide Kopfzeilen und jeden Wert unter der richtigen', () => {
     render(<CriterionScoreGrid criterionScores={[QUALITY, CONTENT]} />)
 
-    const quality = screen.getByRole('group', { name: 'Bildqualität' })
-    const content = screen.getByRole('group', { name: 'Bildinhalt' })
+    const quality = screen.getByRole('group', { name: 'Qualität — Einzelwerte' })
+    const content = screen.getByRole('group', { name: 'Bildinhalt — Einzelwerte' })
 
     expect(within(quality).getByText('Schärfe')).toBeInTheDocument()
     expect(within(quality).getByText('80%')).toBeInTheDocument()
@@ -40,9 +40,9 @@ describe('CriterionScoreGrid: der Regelfall', () => {
   it('ordnet einen Wert ohne Präsenz-Schwelle der Bildqualität zu', () => {
     render(<CriterionScoreGrid criterionScores={[QUALITY]} />)
 
-    const quality = screen.getByRole('group', { name: 'Bildqualität' })
+    const quality = screen.getByRole('group', { name: 'Qualität — Einzelwerte' })
     expect(within(quality).getByText('Schärfe')).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Bildinhalt' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Bildinhalt — Einzelwerte' })).toBeNull()
   })
 
   /* KEIN RANG (AK5): Er ist keiner der fünfzehn Einzelwerte, sondern Teil des Urteils und steht
@@ -54,7 +54,7 @@ describe('CriterionScoreGrid: der Regelfall', () => {
 
     expect(screen.queryByText(/^Rang/)).toBeNull()
     expect(
-      within(screen.getByRole('group', { name: 'Bildinhalt' })).queryByText(/^Rang/),
+      within(screen.getByRole('group', { name: 'Bildinhalt — Einzelwerte' })).queryByText(/^Rang/),
     ).toBeNull()
   })
 
@@ -92,8 +92,8 @@ describe('CriterionScoreGrid: leer und fehlend', () => {
   it('lässt einen leeren Block ganz weg', () => {
     render(<CriterionScoreGrid criterionScores={[CONTENT]} />)
 
-    expect(screen.queryByRole('group', { name: 'Bildqualität' })).toBeNull()
-    expect(screen.getByRole('group', { name: 'Bildinhalt' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Qualität — Einzelwerte' })).toBeNull()
+    expect(screen.getByRole('group', { name: 'Bildinhalt — Einzelwerte' })).toBeInTheDocument()
   })
 
   it('rendert bei komplett leerer Eingabe gar nichts', () => {
@@ -107,7 +107,7 @@ describe('CriterionScoreGrid: leer und fehlend', () => {
   it('rendert ohne Bildinhalt-Werte keinen Bildinhalt-Block', () => {
     render(<CriterionScoreGrid criterionScores={[QUALITY]} />)
 
-    expect(screen.getByRole('group', { name: 'Bildqualität' })).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Bildinhalt' })).toBeNull()
+    expect(screen.getByRole('group', { name: 'Qualität — Einzelwerte' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Bildinhalt — Einzelwerte' })).toBeNull()
   })
 })

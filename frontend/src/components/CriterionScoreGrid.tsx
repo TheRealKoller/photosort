@@ -69,7 +69,7 @@ export function CriterionScoreGrid({ criterionScores }: CriterionScoreGridProps)
             id={qualityHeadingId}
             className="text-xs font-semibold tracking-wide text-text-h uppercase"
           >
-            Bildqualität
+            Qualität — Einzelwerte
           </h3>
           <dl className="flex flex-col gap-2">
             {qualityScores.map((score) => (
@@ -89,7 +89,7 @@ export function CriterionScoreGrid({ criterionScores }: CriterionScoreGridProps)
             id={contentHeadingId}
             className="text-xs font-semibold tracking-wide text-text-h uppercase"
           >
-            Bildinhalt
+            Bildinhalt — Einzelwerte
           </h3>
           <dl className="flex flex-col gap-2">
             {contentScores.map((score) => (
