@@ -8,7 +8,7 @@
  *
  * 1. **Bühne** (AK2, AK3a/3b, AK10) — vier Formate durchblättern, Bühnenhöhe gleich, Bild
  *    vollständig eingepasst und an seinen vier Ecken tatsächlich getroffen.
- * 2. **Reservierter Platz** (AK6) — die Oberkante der Kopfzeile „Bildqualität" über vier Zustände.
+ * 2. **Reservierter Platz** (AK6) — die Oberkante der Kopfzeile „Qualität — Einzelwerte" über vier Zustände.
  * 3. **Typografischer Abstand** (AK5) — das Verhältnis zweier im selben Lauf gemessener
  *    `font-size`-Werte.
  *
@@ -263,8 +263,8 @@ test.describe('Bilddetail: der reservierte Platz', () => {
     // Das BEZUGSELEMENT steht UNTERHALB des wachsenden Bereichs: die Kopfzeile des
     // Einzelwerte-Rasters. Ein Bezugselement darüber bewegte sich auch dann nicht, wenn die
     // Reservierung fehlte.
-    const bezug = page.getByRole('heading', { name: 'Bildqualität' })
-    await expect(bezug, 'Kopfzeile Bildqualität als Bezugselement').toBeVisible()
+    const bezug = page.getByRole('heading', { name: 'Qualität — Einzelwerte' })
+    await expect(bezug, 'Kopfzeile des Qualitätsblocks als Bezugselement').toBeVisible()
 
     const detailId = await symbole.first().getAttribute('aria-controls')
     const zeile = page.locator(`[id="${detailId}"]`)

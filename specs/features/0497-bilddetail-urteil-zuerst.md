@@ -57,7 +57,7 @@ und die Einzelheiten erst dann lesen muss, wenn ich sie wirklich brauche.
       (Albumtauglichkeit mit Begründung, Rang, Feinlabel, Motive) steht im Dokument **vor** den
       Einzelwerten.
 - [x] **AK6 — Reservierter Platz bewegt nichts.** Auf beiden Prüfbreiten ändert sich die Oberkante
-      des ersten Elements unterhalb des Motivbereichs (Kopfzeile „Bildqualität") um höchstens 1 px,
+      des ersten Elements unterhalb des Motivbereichs (Kopfzeile „Qualität — Einzelwerte") um höchstens 1 px,
       wenn nacheinander (i) das Motiv mit dem **längsten** Anzeigenamen angeheftet, (ii) ein Motiv
       **mit bestehender Korrektur** angeheftet, (iii) ein Motiv per **Tastaturfokus** vorangezeigt
       und (iv) wieder zugeklappt wird. Vorbedingung je Schritt: der Inhalt der Detailzeile hat
@@ -166,7 +166,7 @@ Der Ort eines Fotos ist der Ort seines Ereignisses. Die dreistufige Namenswahl (
 aufgelöster Ortsname → keiner) steht heute in `utils/timeOfDay.ts::formatEventHeading`; sie wird
 dort als eigene Funktion herausgezogen und von beiden Stellen benutzt, damit die Rangfolge nicht
 ein zweites Mal entsteht. Die Detailseite zeigt allein den Namen ohne Zeitspanne — die Aufnahmezeit
-steht direkt darüber — und ohne Ortsangabe „Ort unbekannt" statt einer Lücke. Die Koordinate
+steht direkt darüber — und ohne Ortsangabe „nicht bestimmbar" statt einer Lücke. Die Koordinate
 erscheint nicht als Name.
 
 ### Design-Nutzlast
@@ -229,7 +229,7 @@ Von unten nach oben, jeder Schritt für sich rot-grün lauffähig:
    Navigationszeile. Zusammen ohne Scrollen im Sichtbereich, gemessen ab Unterkante Kopfzeile.
 2. **Urteilsfläche**: Albumtauglichkeit mit Begründung, Rang im Ereignis, Feinlabel. Darunter der
    Motivbereich, dessen Detailzeile den reservierten Platz hält.
-3. **Einzelwerte-Raster**: zwei Kopfzeilen („Bildqualität", „Bildinhalt"), darunter die acht bzw.
+3. **Einzelwerte-Raster**: zwei Kopfzeilen („Qualität — Einzelwerte", „Bildinhalt — Einzelwerte"), darunter die acht bzw.
    sieben Werte als kompakte Zeilen (Name, Wert). Desktop zwei bis drei Spalten, Telefonbreite
    einspaltig.
 4. **Weitere Angaben**: Aufnahmezeit mit Originalzeit und Korrekturmarke, Kamera, Ort,
@@ -248,19 +248,26 @@ endgültigen Geometrie. *Fehler:* Bühnenrahmen bleibt, in der Fotofläche ein `
 
 | Element | Stufe |
 |---|---|
-| Albumtauglichkeit, Begründung, Rang | `text-lg` (20px) |
+| Albumtauglichkeitsstufe | `text-lg` (20px) |
 | Feinlabel-Chips, Motivbereich-Inhalte | `text-base` (16px) |
-| Kopfzeilen „Motive", „Bildqualität", „Bildinhalt" | `text-xs font-semibold uppercase tracking-wide` |
-| Einzelwert-Zeilen | `text-sm` (14px) |
+| Begründung, Rang, Einzelwert-Zeilen | `text-sm` (14px) |
+| Labels und Kopfzeilen | `text-xs font-semibold uppercase tracking-wide` |
 
 Der Sprung von `text-lg` auf `text-sm` ist der Faktor 1,43 und trägt damit AK5 (Schwelle 1,4). Er
 entspricht dem Abstand „Fließtext (Medium)" zu „Komponententext" der Typografie-Leiter des
 Design-Systems.
 
+**Groß gesetzt ist allein die Stufe.** Begründung und Rang stehen klein unter ihren Labels — sie
+erläutern die Stufe, sie wiederholen ihren Rang nicht. Sie liegen damit auf derselben Stufe wie
+die Einzelwerte, so wie im Entwurf.
+
 ### Oberflächentexte
 
-- Fehlende Ortsangabe: „Ort unbekannt".
-- Motivbereich-Kopf: „Motive". Raster-Kopfzeilen: „Bildqualität" und „Bildinhalt".
+- Fehlende Ortsangabe: „nicht bestimmbar".
+- Motivbereich-Kopf: „Motive". Raster-Kopfzeilen: „Qualität — Einzelwerte" und
+  „Bildinhalt — Einzelwerte".
+- Labels der Urteilsfläche: „Albumtauglichkeit" und „Rang im Ereignis"; der Rang steht darunter
+  als „3 von 14", ohne das vorangestellte Wort.
 - Motivzeile ohne Auswahl: der bestehende Aufforderungssatz aus Spec 0490.
 
 ### Design-System
@@ -369,7 +376,7 @@ werden dort nicht ausgewertet). Drei Fälle, eine Route, ein geseedeter Durchgan
 1. **Bühne** (AK2, AK3a/3b, AK10): vier Formate durchblättern, natürliche Seitenverhältnisse als
    paarweise verschieden zusichern, Bühnenhöhe gleich, Bewertungsleiste und Navigation im
    Sichtfenster, Inhaltsrechteck eingepasst, Treffertest an dessen vier Ecken.
-2. **Reservierter Platz** (AK6): Oberkante der Kopfzeile „Bildqualität" über vier Zustände,
+2. **Reservierter Platz** (AK6): Oberkante der Kopfzeile „Qualität — Einzelwerte" über vier Zustände,
    Wechselnachweis der Detailzeile je Schritt.
 3. **Typografischer Abstand** (AK5): Verhältnis zweier im selben Lauf gemessener `font-size`-Werte.
 
