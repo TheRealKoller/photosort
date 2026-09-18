@@ -303,6 +303,11 @@ und der Motivstärke-Schwelle durchgerechnet. Je Kombination werden ausgewiesen:
 der Ein-Bild-Cluster, Zahl der Grenzen mit `motivwechsel` als alleiniger Ursache, und — als
 Gegenanzeige gegen zu grobes Zusammenfassen — das größte entstehende Event und die längste Dauer.
 
+**Die Tabelle führt den unveränderten Betriebswert als eigene erste Zeile mit**, ohne jede
+Überschreibung — nicht als Rasterzelle: So trägt sie ihren eigenen Nullpunkt auch dann noch, wenn
+einer der beiden Werte später wandert und in keiner Zelle des Rasters mehr steht. Ein Test pinnt
+diese Zeile gegen `explain_events(candidates)`.
+
 `MOTIF_CHANGE_CONFIRMING_PHOTOS` liegt in `events.py`, die Stärke-Schwelle als
 `MOTIF_PRESENCE_THRESHOLD` in `selection.py`. **Beide werden in diesem Schritt nicht geändert**,
 sondern nur variiert durchgerechnet; die Messung ist rein lesend wie die Blöcke A–C.
