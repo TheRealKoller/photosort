@@ -23,12 +23,15 @@ from photosort.db import Base, make_engine, make_session_factory
 from photosort.event_inputs import EventInputs
 from photosort.event_probe import (
     DISTANCE_THRESHOLD_METERS,
+    MOTIF_CONFIRMING_VARIANTS,
+    MOTIF_STRENGTH_VARIANTS,
     EventProbeError,
     cause_counts,
     inheritance_counts,
     landmark_counts,
     main,
     match_distance_counts,
+    motif_sensitivity,
     read_event_probe_input,
     size_counts,
 )
@@ -345,6 +348,114 @@ class TestBlockBCauses:
         `BOUNDARY_CAUSES` verschwaende sonst aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
         with pytest.raises(EventProbeError):
             cause_counts(_formation((2, frozenset()), (2, frozenset({"erfunden"}))))
+
+
+# --- Block E: die Empfindlichkeit des Motivwechsels -----------------------------------------------
+#
+# Die Motivstaerken dieser Faelle sind FREI GEWAEHLT und stehen zur Praesenzgrenze in keinem
+# Verhaeltnis: `_CARRIED` und `_ABSENT` liegen an den Raendern der Skala und fallen unter JEDEM Wert
+# des Rasters gleich aus. Kein Fall hier pinnt den Zahlwert einer Schwelle.
+_CARRIED = 1.0
+_ABSENT = 0.0
+
+
+def _motif_candidate(index: int, motifs: dict[str, float]) -> EventCandidate:
+    """Ein Kandidat mit Motiv-Kopfzeile, ohne Ort und Namen und mit einem Sekundenabstand: Kein
+    anderes Trennsignal spricht mit, gleich wie lang die Folge wird."""
+    return EventCandidate(
+        photo_id=index,
+        taken_at=NOW + timedelta(seconds=index),
+        motif_strengths=dict(motifs),
+    )
+
+
+def _motif_sequence(deviating: int) -> list[EventCandidate]:
+    """Ein Bezugsfoto, dann `deviating` Fotos, die zusaetzlich das Motiv "b" tragen."""
+    reference = {"a": _CARRIED, "b": _ABSENT}
+    changed = {"a": _CARRIED, "b": _CARRIED}
+    return [
+        _motif_candidate(index, picture)
+        for index, picture in enumerate([reference, *([changed] * deviating)])
+    ]
+
+
+class TestBlockEMotifSensitivity:
+    """Wie Eventzahl und Ein-Bild-Anteil an den beiden Festlegungen des Motivwechsels haengen.
+
+    Gemessen wird mit den Mitteln des Laufs: `explain_events` unter variierten Werten, nie eine
+    Nachbildung - eine zweite Fassung maesse etwas anderes, als der Lauf tut."""
+
+    def test_the_grid_is_the_cross_product_plus_the_operating_point(self) -> None:
+        rows = motif_sensitivity(_motif_sequence(2))
+
+        assert len(rows) == 1 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
+        # Die erste Zeile ist der Betriebswert - die Tabelle traegt ihren eigenen Nullpunkt.
+        assert rows[0].confirming_photos is None
+        assert rows[0].strength_threshold is None
+        assert {(row.confirming_photos, row.strength_threshold) for row in rows[1:]} == {
+            (confirming, strength)
+            for confirming in MOTIF_CONFIRMING_VARIANTS
+            for strength in MOTIF_STRENGTH_VARIANTS
+        }
+
+    def test_the_operating_row_is_the_run_itself(self) -> None:
+        """Der Nullpunkt entsteht OHNE Ueberschreibung: Er muss die Gliederung sein, die auch der
+        Lauf gebildet haette - sonst haette die Tabelle keinen Bezug, gegen den sie liest."""
+        candidates = _motif_sequence(6)
+        formation = explain_events(candidates)
+
+        [operating] = [
+            row
+            for row in motif_sensitivity(candidates)
+            if row.confirming_photos is None and row.strength_threshold is None
+        ]
+
+        assert operating.events_total == len(formation.events)
+        assert (
+            operating.sole_motif_boundaries == cause_counts(formation).sole[BOUNDARY_MOTIF_CHANGE]
+        )
+
+    def test_a_shorter_window_splits_more_often_than_a_longer_one(self) -> None:
+        """Die Aussage, um derentwillen der Block gebaut ist - und sie steht als Ungleichung
+        zwischen zwei Zeilen, nie als Zahlwert."""
+        rows = {
+            row.confirming_photos: row
+            for row in motif_sensitivity(_motif_sequence(4))
+            if row.strength_threshold == MOTIF_STRENGTH_VARIANTS[0]
+        }
+        shortest = rows[min(MOTIF_CONFIRMING_VARIANTS)]
+        longest = rows[max(MOTIF_CONFIRMING_VARIANTS)]
+
+        assert shortest.events_total > longest.events_total
+        assert shortest.sole_motif_boundaries > longest.sole_motif_boundaries
+
+    def test_every_row_carries_the_counter_indication_against_coarse_grouping(self) -> None:
+        """Beide Abnahmezahlen wuerden von einem zu groben Zusammenfassen BESSER erfuellt - die
+        Gegenanzeige steht deshalb in derselben Zeile, nicht daneben."""
+        candidates = _motif_sequence(4)
+
+        for row in motif_sensitivity(candidates):
+            assert row.largest_event_photos >= 1
+            assert row.longest_seconds is not None
+            assert row.events_total >= 1
+            assert row.single_photo_events <= row.events_total
+
+    def test_a_run_without_candidates_yields_rows_without_invented_zeroes(self) -> None:
+        """Der entartete Fall: kein Kandidat, also kein Event - und dann gibt es keine laengste
+        Dauer. Eine Null hiesse "das laengste Event dauert nichts"."""
+        rows = motif_sensitivity([])
+
+        for row in rows:
+            assert row.events_total == 0
+            assert row.longest_seconds is None
+            assert row.largest_event_photos == 0
+            assert row.sole_motif_boundaries == 0
+
+    def test_the_grid_varies_both_festlegungen_not_just_one(self) -> None:
+        """Gegenprobe gegen eine wirkungslose Variation: Beide Achsen muessen mehr als einen Wert
+        tragen, sonst misst die Tabelle eine Dimension gar nicht."""
+        assert len(set(MOTIF_CONFIRMING_VARIANTS)) > 1
+        assert len(set(MOTIF_STRENGTH_VARIANTS)) > 1
 
 
 # --- Block C: die Ortszuordnung, je Mechanismus getrennt -----------------------------------------
@@ -726,6 +837,31 @@ class TestMainRefusesLoudly:
         assert "OperationalError" in error
         assert url not in error
 
+    def test_the_motif_mode_refuses_a_project_without_a_successful_run_too(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Dieselbe Vorbedingung, gleich welche Argumentform: Ohne Gliederung gibt es auch keine
+        Empfindlichkeit zu messen - und das wird gesagt, nicht als leere Tabelle gezeigt."""
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> int:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                project_id = await _project(session, "Ohne Lauf")
+                await session.commit()
+            await engine.dispose()
+            return project_id
+
+        project_id = asyncio.run(prepare())
+
+        exit_code = main(["--project-id", str(project_id), "--motiv"], database_url=url)
+
+        assert exit_code == 1
+        assert "Lauf" in capsys.readouterr().err
+
     def test_a_run_without_a_single_ranking_row_reports_dashes_not_zeroes(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -760,6 +896,58 @@ class TestTheOutputSeparatesNumbersFromPlaces:
     """S2 ueber ALLE SECHS KLASSEN. Die Messlage traegt je einen unterscheidbaren Wert, und keiner
     steht im Bericht - das ist die Bedingung dafuer, dass die Zahlen als Ganzes in ein
     oeffentliches Repository duerfen."""
+
+    def test_the_motif_report_carries_none_of_the_six_classes_either(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JE ARGUMENTFORM: Der Bericht des Motiv-Modus entsteht an einer anderen Stelle und ist
+        von der Zusage des Hauptberichts nicht mitgedeckt."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--motiv"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "43.5" not in report
+        assert "16.44" not in report
+        assert MEASURED_LOCALITY not in report
+        assert MEASURED_LANDMARK not in report
+        assert MEASURED_OPENCLOUD_PATH not in report
+        assert MEASURED_PHOTO_FILE not in report
+        assert MEASURED_PROJECT_NAME not in report
+        assert "2029" not in report
+        assert "03:47" not in report
+        assert f"Projekt {project_id}" in report
+
+    def test_the_motif_report_carries_a_row_per_combination_plus_the_operating_point(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--motiv"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "Betriebswert" in report
+        rows = [line for line in report.splitlines() if line.startswith("| ")]
+        # Kopfzeile, die Zeile des Betriebswerts und je eine Zeile je Kombination (die Trennzeile
+        # der Tabelle beginnt mit `|---` und zaehlt hier nicht mit).
+        assert len(rows) == 2 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
+
+    def test_the_motif_mode_measures_nothing_of_the_place_blocks(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Der Modus braucht den Ortsauszug gar nicht - er darf deshalb weder danach fragen noch
+        sein Fehlen als Messergebnis melden."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--motiv"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "NICHT GEMESSEN" not in report
+        assert "C1" not in report
+        assert "C2" not in report
 
     def test_none_of_the_six_classes_reaches_the_report(
         self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
@@ -964,6 +1152,26 @@ class TestARealRunChangesNothing:
         exit_code = main(
             ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)], database_url=url
         )
+
+        assert exit_code == 0
+        assert asyncio.run(snapshot()) == before
+
+    def test_not_a_single_row_changes_in_the_motif_mode_either(self, tmp_path: Path) -> None:
+        """JE ARGUMENTFORM einmal: Der Motiv-Modus nimmt einen anderen Weg durch das Modul, und
+        die Zusage des anderen Wegs deckt ihn nicht mit."""
+        url, project_id = _prepared(tmp_path)
+
+        async def snapshot() -> dict[str, list[tuple[object, ...]]]:
+            engine = make_engine(url)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                taken = await _table_snapshot(session)
+            await engine.dispose()
+            return taken
+
+        before = asyncio.run(snapshot())
+
+        exit_code = main(["--project-id", str(project_id), "--motiv"], database_url=url)
 
         assert exit_code == 0
         assert asyncio.run(snapshot()) == before
