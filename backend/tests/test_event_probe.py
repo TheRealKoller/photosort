@@ -8,17 +8,21 @@ Projektgraphen, `main()` synchron gegen eine dateibasierte SQLite in `tmp_path`.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.db import Base, make_engine, make_session_factory
 from photosort.event_probe import (
     DISTANCE_THRESHOLD_METERS,
     EventProbeError,
     cause_counts,
     inheritance_counts,
     landmark_counts,
+    main,
     match_distance_counts,
     read_event_probe_input,
     size_counts,
@@ -34,16 +38,18 @@ from photosort.events import (
     LocationEntry,
     explain_events,
 )
-from photosort.geonames import GEONAMES_MAX_DISTANCE_METERS
+from photosort.geonames import GEONAMES_MAX_DISTANCE_METERS, dataset_hash_path
 from photosort.models import (
     CriterionScoringRun,
     Event,
     Photo,
+    PhotoLandmarkDetection,
     PhotoRanking,
     Project,
     ScanStatus,
     ScoringRun,
 )
+from photosort.place_dataset import write_extract
 
 NOW = datetime(2026, 7, 20, 10, 0, 0)
 
@@ -524,3 +530,258 @@ class TestBlockC3LandmarkNames:
         counts = landmark_counts([named], formation, {})
 
         assert counts.events_named_by_a_single_photo == 0
+
+
+# --- main() gegen eine echte, dateibasierte SQLite ------------------------------------------------
+#
+# DIE MESSLAGE TRAEGT JE EINEN UNTERSCHEIDBAREN WERT ALLER SECHS KLASSEN AUS S2, und keiner davon
+# darf im Bericht stehen: Koordinate, Ortsname, Sehenswuerdigkeitsname, OpenCloud-Pfad,
+# Projektname, Zeitstempel. Die gesuchten Zeichenfolgen stammen aus DIESER Lage, nie aus einem
+# allgemeinen Muster.
+MEASURED_PROJECT_NAME = "Zahnradbahnhausen"
+MEASURED_OPENCLOUD_PATH = "/Fotos/Geheimpfad"
+MEASURED_PHOTO_FILE = "geheimbild"
+MEASURED_LANDMARK = "Wolkenpalast"
+MEASURED_LOCALITY = "Nirgendwo"
+MEASURED_TAKEN_AT = datetime(2029, 11, 17, 3, 47, 0)
+MEASURED_LAT = 43.5081
+MEASURED_LON = 16.4402
+
+
+def _geonames_line(name: str, lat: float, lon: float, feature_class: str, feature_code: str) -> str:
+    return "\t".join(
+        ["1", name, name, "", str(lat), str(lon), feature_class, feature_code, "HR", ""]
+    )
+
+
+MEASURED_DATASET_LINES = [
+    _geonames_line(MEASURED_LOCALITY, MEASURED_LAT, MEASURED_LON, "P", "PPL"),
+]
+
+
+@pytest.fixture
+def dataset(tmp_path: Path) -> Path:
+    """Der Auszug in genau der Form, die auch im Betrieb liegt - gepackt und mit seinem Hash
+    daneben. Ueber `write_extract` statt von Hand geschrieben: das Messkommando liest ab hier
+    dieselbe Datei wie ein Lauf."""
+    path = tmp_path / "geonames-auszug.txt.gz"
+    write_extract(MEASURED_DATASET_LINES, path)
+    return path
+
+
+async def _seed_measured_project(session: AsyncSession) -> int:
+    """Baut die Messlage auf. SCHREIBT - aber im TEST, nie im Kommando.
+
+    Vier Kandidaten: drei dicht beieinander (ein Event), einer Stunden spaeter (zweites Event,
+    ein einzelnes Foto). Eines traegt einen Sehenswuerdigkeit-Namen, eines gar keine Koordinate."""
+    project = Project(
+        name=MEASURED_PROJECT_NAME,
+        opencloud_drive_id="drive",
+        opencloud_path=MEASURED_OPENCLOUD_PATH,
+    )
+    session.add(project)
+    await session.flush()
+
+    photos = []
+    for index, minutes in enumerate((0, 2, 4, 600)):
+        photos.append(
+            Photo(
+                project_id=project.id,
+                relative_path=f"{MEASURED_PHOTO_FILE}{index:03d}.jpg",
+                etag=f"etag-{index}",
+                content_length=1000,
+                taken_at=MEASURED_TAKEN_AT + timedelta(minutes=minutes),
+                taken_at_original=MEASURED_TAKEN_AT + timedelta(minutes=minutes),
+                last_modified=MEASURED_TAKEN_AT,
+                # Das dritte Foto traegt KEINE Koordinate - es erbt und traegt damit Block C1.
+                gps_lat=None if index == 2 else MEASURED_LAT,
+                gps_lon=None if index == 2 else MEASURED_LON,
+            )
+        )
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    session.add_all([*photos, scoring_run])
+    await session.flush()
+
+    session.add(
+        PhotoLandmarkDetection(
+            photo_id=photos[0].id,
+            name=MEASURED_LANDMARK,
+            confidence=0.9,
+            computed_at=MEASURED_TAKEN_AT,
+        )
+    )
+    criterion_run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+    )
+    session.add(criterion_run)
+    await session.flush()
+
+    event = Event(
+        criterion_scoring_run_id=criterion_run.id,
+        position=1,
+        started_at=MEASURED_TAKEN_AT,
+        ended_at=MEASURED_TAKEN_AT,
+        place_kind=None,
+    )
+    session.add(event)
+    await session.flush()
+    session.add_all(
+        [
+            PhotoRanking(
+                criterion_scoring_run_id=criterion_run.id,
+                photo_id=photo.id,
+                event_id=event.id,
+                rank_score=0.5,
+                rank_position=position,
+            )
+            for position, photo in enumerate(photos, start=1)
+        ]
+    )
+    await session.flush()
+    return project.id
+
+
+def _prepared(tmp_path: Path) -> tuple[str, int]:
+    """Eine dateibasierte SQLite mit der Messlage darin - der Aufrufer bekommt URL und Projekt-Id."""
+    url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+    async def prepare() -> int:
+        engine = make_engine(url)
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        factory = make_session_factory(engine)
+        async with factory() as session:
+            project_id = await _seed_measured_project(session)
+            await session.commit()
+        await engine.dispose()
+        return project_id
+
+    return url, asyncio.run(prepare())
+
+
+class TestMainRefusesLoudly:
+    """Nicht Traceback und nicht stille Null."""
+
+    def test_an_unknown_project_id(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> None:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            await engine.dispose()
+
+        asyncio.run(prepare())
+
+        exit_code = main(["--project-id", "999"], database_url=url)
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "999" in captured.err
+        assert captured.out == ""
+
+    def test_a_project_without_a_successful_run(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> int:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                project = Project(name="Ohne Lauf", opencloud_drive_id="d", opencloud_path="/p")
+                session.add(project)
+                await session.flush()
+                project_id = project.id
+                await session.commit()
+            await engine.dispose()
+            return project_id
+
+        project_id = asyncio.run(prepare())
+
+        exit_code = main(["--project-id", str(project_id)], database_url=url)
+
+        assert exit_code == 1
+        assert "Lauf" in capsys.readouterr().err
+
+
+class TestTheOutputSeparatesNumbersFromPlaces:
+    """S2 ueber ALLE SECHS KLASSEN. Die Messlage traegt je einen unterscheidbaren Wert, und keiner
+    steht im Bericht - das ist die Bedingung dafuer, dass die Zahlen als Ganzes in ein
+    oeffentliches Repository duerfen."""
+
+    def test_none_of_the_six_classes_reaches_the_report(
+        self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(
+            ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)], database_url=url
+        )
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        # 1. Koordinate, 2. Ortsname, 3. Sehenswuerdigkeitsname, 4. OpenCloud-Pfad,
+        # 5. Projektname, 6. Zeitstempel.
+        assert "43.5" not in report
+        assert "16.44" not in report
+        assert MEASURED_LOCALITY not in report
+        assert MEASURED_LANDMARK not in report
+        assert MEASURED_OPENCLOUD_PATH not in report
+        assert MEASURED_PHOTO_FILE not in report
+        assert MEASURED_PROJECT_NAME not in report
+        assert "2029" not in report
+        assert "03:47" not in report
+        # ... aber die Zahlen stehen da, samt der Projekt-Id.
+        assert f"Projekt {project_id}" in report
+        assert "Events: 2" in report
+
+    def test_there_is_no_switch_that_would_add_the_names(self, tmp_path: Path) -> None:
+        """S3: kein `--namen`-Aequivalent. Messgegenstand ist hier die ZAHL der Widersprueche;
+        Pseudonymisierung waere kein Ausweg, weil die Menge der Sehenswuerdigkeitsnamen klein und
+        oeffentlich ist."""
+        url, project_id = _prepared(tmp_path)
+
+        with pytest.raises(SystemExit):
+            main(["--project-id", str(project_id), "--namen"], database_url=url)
+
+
+class TestAnAbsentDatasetIsReportedNotShownAsZero:
+    """S7 - die Ausfallrichtung von Block C2. Ein fehlendes Aggregat, das als gutes Messergebnis
+    gelesen wird, truege hier die Entscheidung, an der Ortsbestimmung nichts zu aendern."""
+
+    def test_a_missing_dataset_is_named_not_measured(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(
+            ["--project-id", str(project_id), "--ortsdatensatz", str(tmp_path / "fehlt.gz")],
+            database_url=url,
+        )
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "NICHT GEMESSEN" in report
+        assert "sie sind nicht null" in report
+        assert "python -m photosort.place_dataset" in report
+        # Die uebrigen Bloecke stehen weiter da - nur C2 haengt am Ortsdatensatz.
+        assert "Events: 2" in report
+
+    def test_a_changed_dataset_is_not_measured_either(
+        self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Kein stiller Ersatzweg: Ein Auszug, der von seinem Hash abweicht, wird nicht gelesen."""
+        url, project_id = _prepared(tmp_path)
+        dataset_hash_path(dataset).write_text("0" * 64 + "\n", encoding="utf-8")
+
+        exit_code = main(
+            ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)], database_url=url
+        )
+
+        assert exit_code == 0
+        assert "NICHT GEMESSEN" in capsys.readouterr().out

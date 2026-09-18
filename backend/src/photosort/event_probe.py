@@ -38,14 +38,21 @@ SICHERHEIT:
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import statistics
+import sys
 from bisect import bisect_right
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.config import settings
+from photosort.db import make_engine, make_session_factory
 from photosort.event_inputs import read_event_inputs
 from photosort.events import (
     BOUNDARY_CAUSES,
@@ -53,8 +60,10 @@ from photosort.events import (
     EventCandidate,
     EventFormation,
     LocationEntry,
+    explain_events,
     inherited_locations,
 )
+from photosort.geonames import GeoNamesResolver, PlaceDatasetError, build_geonames_resolver
 from photosort.landmark import place_hint_for
 from photosort.models import (
     CriterionScoringRun,
@@ -62,7 +71,7 @@ from photosort.models import (
     Project,
     ScanStatus,
 )
-from photosort.places import place_cell
+from photosort.places import PlaceInfo, place_cell, usable_locality
 from photosort.scoring import haversine_meters
 
 Cell = tuple[float, float]
@@ -485,3 +494,304 @@ def landmark_counts(
         names_spread_beyond_threshold=spread,
         events_named_by_a_single_photo=single_photo_named,
     )
+
+
+# --- Der Durchgang ueber die gefragten Zellen ----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PlaceMeasurement:
+    """Block C2 - oder der Grund seines Ausbleibens (S7).
+
+    Ein ausgebliebener Ortsdatensatz MELDET SICH: "0 %" waere hier ein gutes Messergebnis und
+    truege die Entscheidung, an der Ortsbestimmung nichts zu aendern."""
+
+    absent_reason: str | None = None
+    distances: MatchDistanceCounts | None = None
+
+
+async def name_distances_by_cell(
+    resolver: GeoNamesResolver, cells: Sequence[Cell]
+) -> tuple[dict[Cell, float | None], dict[Cell, str]]:
+    """Je Zelle die Entfernung zu dem Eintrag, der ihren Namen geliefert haette - und der Name.
+
+    Der NAME bleibt hier und erreicht den Bericht nie (S2/S4); er wird gebraucht, weil "diese
+    Zelle bekaeme einen Ortsnamen" ausschliesslich `places.usable_locality` entscheidet - es gibt
+    keine zweite Fassung dieser Regel. `None` heisst "kein Name", und eine solche Zelle besetzt
+    keine Entfernungsklasse.
+
+    Eine Anfrage JE VERSCHIEDENER ZELLE, nie je Foto und nie je Event - sonst ginge die
+    Verweildauer je Ort mit in die Verteilung ein."""
+    distances: dict[Cell, float | None] = {}
+    localities: dict[Cell, str] = {}
+    for cell in cells:
+        answer = await resolver.resolve(cell)
+        locality = (
+            None
+            if answer is None
+            else usable_locality(
+                PlaceInfo(
+                    neighbourhood=answer.neighbourhood,
+                    locality=answer.locality,
+                    matched_level=answer.matched_level,
+                )
+            )
+        )
+        if locality is None:
+            distances[cell] = None
+            continue
+        localities[cell] = locality
+        # Name und Entfernung kommen aus DERSELBEN Nachbarschaftssuche - es gibt die eine nicht
+        # ohne die andere.
+        distance = resolver.match_distances(cell).get("locality")
+        assert distance is not None
+        distances[cell] = distance
+    return distances, localities
+
+
+# --- Die Ausgabe ---------------------------------------------------------------------------------
+
+
+def _percent(part: int, whole: int) -> str:
+    if whole == 0:
+        return "-"
+    return f"{100.0 * part / whole:.1f} %"
+
+
+def _duration(seconds: float | None) -> str:
+    """Eine DAUER, nie ein Anfang und nie ein Ende (S2). `None` heisst "nicht gemessen"."""
+    if seconds is None:
+        return "-"
+    hours, rest = divmod(int(seconds), 3600)
+    minutes, remaining = divmod(rest, 60)
+    parts = [f"{hours} h"] if hours else []
+    if minutes:
+        parts.append(f"{minutes} min")
+    if remaining or not parts:
+        parts.append(f"{remaining} s")
+    return " ".join(parts)
+
+
+def _class_lines(counts: Sequence[int], labels: Sequence[str]) -> list[str]:
+    """Die Klassenbesetzung als Liste - die EINZIGE Form, in der Zeiten und Entfernungen dieses
+    Kommandos erscheinen (S5)."""
+    total = sum(counts)
+    return [
+        f"  - {label}: {count} ({_percent(count, total)})"
+        for label, count in zip(labels, counts, strict=True)
+    ]
+
+
+def render_report(
+    probe: EventProbeInput,
+    formation: EventFormation,
+    place: PlaceMeasurement,
+    locality_by_cell: Mapping[Cell, str],
+) -> str:
+    """Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE.
+
+    Der Bericht traegt keine Koordinate, keinen Orts- oder Sehenswuerdigkeit-Namen, keinen
+    OpenCloud-Pfad, keinen Projektnamen und keinen Zeitstempel (S2); ausgewiesen wird die
+    Projekt-Id. Damit sind die Zahlen als Ganzes weitergebbar, ohne Einzelfallpruefung."""
+    sizes = size_counts(formation)
+    causes = cause_counts(formation)
+    inheritance = inheritance_counts(probe.entries, probe.candidates)
+    landmarks = landmark_counts(probe.candidates, formation, locality_by_cell)
+
+    lines = [
+        f"# Event-Messung, Projekt {probe.project_id}",
+        "",
+        "## A - Verteilung der Events nach Fotozahl",
+        "",
+        f"- Events: {sizes.events_total}",
+        f"- Fotos in Events: {sizes.photos_total}",
+        f"- Ein-Bild-Cluster: {sizes.single_photo_events} "
+        f"({_percent(sizes.single_photo_events, sizes.events_total)})",
+        f"- Median der Fotozahl: {sizes.median_photos if sizes.median_photos is not None else '-'}",
+        f"- groesstes Event: {sizes.largest_event_photos} Foto(s)",
+        f"- laengste Eventdauer: {_duration(sizes.longest_seconds)}",
+        f"- kuerzeste Eventdauer: {_duration(sizes.shortest_seconds)}",
+        "- Events nach Fotozahl: "
+        + (
+            ", ".join(
+                f"{size} Foto(s): {count}"
+                for size, count in sorted(sizes.events_by_photo_count.items())
+            )
+            or "-"
+        ),
+        "",
+        "## B - Trennursachen",
+        "",
+        f"- Grenzen mit Ursache: {causes.boundaries_total} (Eventzahl - 1; das erste Segment "
+        "eines Laufs traegt keine)",
+        f"- Mindestgroesse eines Segments: {MIN_EVENT_PHOTOS} Fotos",
+        "",
+        "| Ursache | beteiligt | alleinige Ursache | eroeffnet ein zu kleines Segment |",
+        "|---|---|---|---|",
+    ]
+    for cause in BOUNDARY_CAUSES:
+        involved = causes.involved[cause]
+        lines.append(
+            f"| {cause} | {involved} ({_percent(involved, causes.boundaries_total)}) "
+            f"| {causes.sole[cause]} ({_percent(causes.sole[cause], causes.boundaries_total)}) "
+            f"| {causes.opening_a_small_segment[cause]} "
+            f"({_percent(causes.opening_a_small_segment[cause], involved)}) |"
+        )
+
+    lines += [
+        "",
+        "## C1 - uebernommener Ort",
+        "",
+        f"- Kandidatenfotos: {inheritance.candidates_total}",
+        f"- davon ohne eigene Koordinate: {inheritance.candidates_without_own_coordinate} "
+        f"({_percent(inheritance.candidates_without_own_coordinate, inheritance.candidates_total)})",
+        f"- davon mit tatsaechlicher Uebernahme: {inheritance.inheriting}",
+        "- Zeitabstand zum uebernommenen Anker:",
+        *_class_lines(inheritance.seconds_to_anchor_classes, TIME_CLASS_LABELS),
+        "- Ankerspanne (Entfernung zwischen vorherigem und naechstem Anker):",
+        *_class_lines(inheritance.anchor_span_classes, DISTANCE_CLASS_LABELS),
+        f"  - ohne Spanne (nur ein Nachbar): {inheritance.without_anchor_span}",
+        "",
+        "## C2 - aufgeloester Ortsname",
+        "",
+    ]
+    if place.absent_reason is not None:
+        lines += [f"NICHT GEMESSEN - {place.absent_reason}"]
+    else:
+        distances = place.distances
+        assert distances is not None
+        lines += [
+            f"- gefragte Zellen: {distances.cells_total}",
+            f"- davon mit Ortsnamen: {distances.cells_with_a_name} "
+            f"({_percent(distances.cells_with_a_name, distances.cells_total)})",
+            "- Entfernung zum namengebenden Eintrag:",
+            *_class_lines(distances.distance_classes, DISTANCE_CLASS_LABELS),
+            f"- ueber der Entfernungsschwelle: {distances.cells_beyond_threshold} "
+            f"({_percent(distances.cells_beyond_threshold, distances.cells_with_a_name)})",
+        ]
+
+    lines += [
+        "",
+        "## C3 - Sehenswuerdigkeitsname",
+        "",
+        f"- Erkennungen unter den Kandidaten: {landmarks.detections_total}",
+        f"- davon ohne jeden Ortshinweis: {landmarks.detections_without_place_hint} "
+        f"({_percent(landmarks.detections_without_place_hint, landmarks.detections_total)})",
+        f"- verschiedene Namen: {landmarks.names_total}",
+        "- davon mit Traegerfotos ueber der Entfernungsschwelle auseinander: "
+        f"{landmarks.names_spread_beyond_threshold}",
+        f"- Events, deren Name auf genau einem von vielen Fotos beruht: "
+        f"{landmarks.events_named_by_a_single_photo}",
+        "",
+        'Die Entfernungsschwelle vertritt "falsches Land": Der Laendercode steht nicht in den '
+        "behaltenen",
+        "Feldern des Ortsauszugs. Ein in sich stimmiger Sehenswuerdigkeitsname ist hier nicht "
+        "widerlegbar -",
+        "dieser Block belegt Widersprueche, er schliesst sie nicht aus.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+# --- Verdrahtung ---------------------------------------------------------------------------------
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m photosort.event_probe",
+        description=(
+            "Misst an einem echten Projekt, wie die Event-Bildung heute gliedert. REIN LESEND - "
+            "kein Lauf veraendert eine Zeile."
+        ),
+    )
+    parser.add_argument("--project-id", type=int, required=True)
+    parser.add_argument(
+        "--ortsdatensatz",
+        default=None,
+        help=(
+            "Pfad auf den GeoNames-Auszug. Ohne Angabe gilt die Betriebseinstellung "
+            "PLACE_DATASET_PATH - also genau die Datei, aus der auch ein Lauf liest."
+        ),
+    )
+    return parser
+
+
+async def _probe_with_own_session(database_url: str, *, project_id: int, dataset_path: Path) -> str:
+    engine = make_engine(database_url)
+    try:
+        session_factory = make_session_factory(engine)
+        async with session_factory() as session:
+            probe = await read_event_probe_input(session, project_id)
+    finally:
+        await engine.dispose()
+
+    if not probe.run_found:
+        raise EventProbeError(
+            f"Projekt {project_id} hat keinen erfolgreichen Kriterien-Lauf. Ohne Events gibt es "
+            "nichts zu messen - erst einen Lauf durchfuehren."
+        )
+
+    # DERSELBE Durchlauf, den auch der Lauf nimmt - nur zusaetzlich mit den Ursachen.
+    formation = explain_events(probe.candidates)
+
+    cells = sorted(
+        {
+            place_cell(candidate.gps_lat, candidate.gps_lon)
+            for candidate in probe.candidates
+            if candidate.gps_lat is not None and candidate.gps_lon is not None
+        }
+    )
+
+    # DERSELBE Auflöser und DIESELBE Pruefung wie im Lauf: Fehlt der Auszug oder weicht er von
+    # seinem Hash ab, wird auch hier keiner gebaut - und Block C2 MELDET sein Ausbleiben (S7).
+    resolver = build_geonames_resolver(cells, path=dataset_path)
+    if resolver is None:
+        return render_report(
+            probe,
+            formation,
+            PlaceMeasurement(
+                absent_reason=(
+                    "Der Ortsdatensatz fehlt oder weicht von seinem Hash ab - es wurde kein "
+                    "Auflöser gebaut. Erst 'python -m photosort.place_dataset' laufen lassen. Die "
+                    "Zahlen dieses Blocks fehlen, sie sind nicht null."
+                )
+            ),
+            {},
+        )
+
+    distances, localities = await name_distances_by_cell(resolver, cells)
+    return render_report(
+        probe, formation, PlaceMeasurement(distances=match_distance_counts(distances)), localities
+    )
+
+
+def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) -> int:
+    """Verdrahtung + Exit-Code. `argv` und `database_url` sind injizierbar - kein
+    `sys.argv`-Zugriff im Testpfad und kein unbeabsichtigter Zugriff auf die konfigurierte
+    Anwendungs-Datenbank.
+
+    `asyncio.run` laeuft INNERHALB von main(): eine Async-Engine ueberlebt keinen Loop-Wechsel."""
+    args = _build_parser().parse_args(argv)
+    try:
+        report = asyncio.run(
+            _probe_with_own_session(
+                database_url or settings.database_url,
+                project_id=args.project_id,
+                dataset_path=Path(args.ortsdatensatz or settings.place_dataset_path),
+            )
+        )
+    except (EventProbeError, PlaceDatasetError) as exc:
+        # BEIDE Abbruchgruende sehen fuer den Aufrufer gleich aus: der Messlauf hat nicht
+        # stattgefunden, und warum, steht in der Meldung.
+        print(f"Fehler: {exc}", file=sys.stderr)
+        return 1
+    except SQLAlchemyError as exc:
+        # Nur der Fehlertyp, NIE str(exc)/Traceback - die SQLAlchemy-Meldung kann die
+        # DATABASE_URL inklusive Zugangsdaten enthalten (Muster demo_state.py).
+        print(f"Fehler: Datenbankzugriff fehlgeschlagen ({type(exc).__name__}).", file=sys.stderr)
+        return 1
+    print(report)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
