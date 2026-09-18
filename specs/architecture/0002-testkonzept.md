@@ -1438,6 +1438,27 @@ Der Hauptfehlermodus dieser Ebene ist nicht der falsch-rote, sondern der **immer
 
 **Trefferflächen werden getroffen, nicht gemessen.** Seit dem Dark-Utility-Register sind Bedienelemente sichtbar 32 px hoch und werden über ein transparentes `::after`-Pseudo-Element (`tap-target`/`tap-target-square` in `index.css`) auf ≥ 44 × 44 px aufgespannt. Ein Pseudo-Element taucht in **keiner** `boundingBox()` auf — eine Messung des Elementkastens würde also dauerhaft 32 px melden und wäre entweder falsch-rot oder auf 32 px „kalibriert" und damit wertlos. Geprüft wird deshalb per Treffertest: `document.elementFromPoint()` an den vier Ecken des beabsichtigten 44 × 44-Bereichs muss das Bedienelement selbst oder einen Nachfahren davon liefern. Dasselbe Verfahren deckt zwei weitere, bislang als unprüfbar geführte Fehlerklassen mit ab: das **Klippen durch einen Vorfahren mit `overflow: hidden`** (dann liefert der Treffertest den Vorfahren) und **überlappende aufgespannte Trefferflächen benachbarter Bedienelemente** (dann liefert er das *Nachbar*element — genau der Fehler, den die Aufspannungsregeln des Design-Systems verhindern sollen).
 
+**Der dritte Beleg dafür: das Inhaltsrechteck eines `object-contain`-Bildes.** Es taucht in keiner `boundingBox()` auf — gemeldet wird der Elementkasten, das tatsächlich bemalte Rechteck darin ist kleiner und zentriert. Wer die Position des Kastens misst, prüft eine Fläche, in der das Bild gar nicht stehen muss. Gerechnet wird es deshalb aus `naturalWidth`/`naturalHeight` und dem Elementkasten; ob es frei liegt, entscheidet wieder ein Treffertest an seinen vier Ecken (`e2e/tests/bilddetail-buehne.spec.ts`). Eine Überlagerung ändert keine `boundingBox()` — sie ist ausschließlich so zu finden.
+
+### n Messungen, die gleich sein müssen — die Umkehrung der Unterschiedsregel
+
+Die bekannte Regel lautet: Wo ein Test Verschiedenheit zusichert, müssen die Eingaben nachweislich gleich sein. Die Umkehrung gilt genauso und ist leichter zu übersehen: **Wo ein Test Gleichheit zusichert, ist die Verschiedenheit der Eingaben Vorbedingung.**
+
+Beispiel ist die Formatinvarianz der Bühnenhöhe (Spec 0497, AK10): Vier Fotos ergeben dieselbe Bühnenhöhe. Ohne Vorbedingung wäre das auch dann grün, wenn der Seeder viermal dasselbe Format lieferte — und dann prüfte der Fall nichts. Der Spec sichert deshalb zuerst zu, dass die vier aus `naturalWidth`/`naturalHeight` gelesenen Seitenverhältnisse **paarweise verschieden** sind, und erst danach die Gleichheit der Höhen. Gelesen wird das Format aus dem Bild, nie aus dem Index des Seeders geschlossen: Sonst prüfte der Fall die Absicht des Seeders statt das, was im Browser ankommt.
+
+### „Nichts bewegt sich" als Testgegenstand
+
+Eine Zusage der Form „beim Auf- und Zuklappen verrutscht darunter nichts" braucht zwei Dinge, die keiner naiven Fassung einfallen:
+
+1. **Ein Bezugselement UNTERHALB des wachsenden Bereichs.** Ein Element darüber bewegt sich auch dann nicht, wenn die Reservierung gänzlich fehlt.
+2. **Je Zustandswechsel den Nachweis, dass er stattgefunden hat.** Ohne ihn besteht der Fall auch, wenn gar nichts passierte — und genau das ist der wahrscheinlichste Fehlermodus, wenn ein Selektor nicht mehr trifft. Nachgewiesen wird am gewechselten Inhalt des aufklappenden Bereichs, nicht am Klick.
+
+Gemessen wird in **Dokument**- statt Fensterkoordinaten (`getBoundingClientRect().y + window.scrollY`): Klick und Tastaturfokus rollen das Ziel in den Sichtbereich, und eine fensterrelative Messung meldete diesen Rollweg als Bewegung.
+
+### Was `100dvh` im Prüfstack nicht belegt
+
+`100dvh` soll die *dynamische* Sichthöhe treffen — die Höhe, die bleibt, wenn die Browserleiste eines Telefons ein- oder ausfährt. Headless Chromium hat keine solche Leiste. Der Prüfstack belegt damit die **Rechnung** (Kopfzeile und Innenabstand sind korrekt abgezogen, die Bedienleiste liegt im Bild), nicht das **Verhalten auf einem echten Gerät**. Das bleibt ein manueller Blick und ist als Lücke ausgewiesen, statt von einem grünen Lauf verdeckt zu werden.
+
 ### „Blockierend" ist zur Hälfte eine Einstellung außerhalb des Repositoriums
 
 Der Job `e2e` trägt kein `continue-on-error` und keinen Pfadfilter — das steht in

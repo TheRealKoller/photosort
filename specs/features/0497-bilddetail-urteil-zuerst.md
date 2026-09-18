@@ -28,15 +28,15 @@ und die Einzelheiten erst dann lesen muss, wenn ich sie wirklich brauche.
 
 ## Akzeptanzkriterien
 
-- [ ] **AK1 — Entwurf vorhanden.** Für die Bilddetailansicht liegt ein Entwurf in der Design-Datei
+- [x] **AK1 — Entwurf vorhanden.** Für die Bilddetailansicht liegt ein Entwurf in der Design-Datei
       vor, in beiden Prüfbreiten und mit den Zuständen Regelfall, ladend und fehler.
-- [ ] **AK2 — Bühne ohne Scrollen.** Beim Öffnen der Ansicht liegen auf beiden Prüfbreiten
+- [x] **AK2 — Bühne ohne Scrollen.** Beim Öffnen der Ansicht liegen auf beiden Prüfbreiten
       (360×740 und 1280×800) Fotofläche, Bewertungsleiste **und** Navigationszeile (Zurück/Weiter)
       vollständig im Sichtfenster, ohne dass gescrollt wurde (`scrollY === 0`) — und zwar obwohl
       die Seite darunter nachweislich weiteren Inhalt trägt (`scrollHeight > innerHeight`). Der
       zweite Halbsatz gehört zur Zusage: ohne ihn ist sie auf einer zufällig kurzen Seite trivial
       erfüllt.
-- [ ] **AK3 — Das Foto vollständig.** Drei getrennte Messungen:
+- [x] **AK3 — Das Foto vollständig.** Drei getrennte Messungen:
       **3a nicht beschnitten** — das aus `naturalWidth`/`naturalHeight` und Elementkasten
       errechnete Inhaltsrechteck des Bildes liegt vollständig im Elementkasten und vollständig im
       Sichtfenster.
@@ -44,19 +44,19 @@ und die Einzelheiten erst dann lesen muss, wenn ich sie wirklich brauche.
       eingerückt) liefert `document.elementFromPoint` das Bild selbst oder einen Nachfahren.
       **3c nicht gedämpft** — auf dem Bild und auf keinem seiner Vorfahren steht eine Deckkraft-,
       Filter- oder Mischmodus-Utility.
-- [ ] **AK4 — Keine Angabe geht verloren.** Eine Maximal-Fixture zeigt **ohne jede Bedienhandlung**:
+- [x] **AK4 — Keine Angabe geht verloren.** Eine Maximal-Fixture zeigt **ohne jede Bedienhandlung**:
       Albumtauglichkeitsstufe und Begründung, Rang im Ereignis, alle Feinlabel, die acht
       Qualitätswerte, die sieben Bildinhalt-Werte, die Grundlagenzeile, die acht Motivstärken (als
       zugänglicher Name der Symbole), die wirksame Aufnahmezeit samt Originalzeit und
       Korrekturmarke, Kamera, Ort und beide Cloud-Phasen. Hinter **genau einer** Aufklapphandlung
       stehen nur: das Motiv-Glossar und die Detailzeile eines Motivs samt Korrekturschaltern. Die
       Sollmenge steht literal als Sondenliste im Test und wird als **Menge** verglichen.
-- [ ] **AK5 — Urteil deutlich größer.** Die Schriftgröße der Albumtauglichkeits-Zeile beträgt im
+- [x] **AK5 — Urteil deutlich größer.** Die Schriftgröße der Albumtauglichkeits-Zeile beträgt im
       Browser mindestens das **1,4-fache** der Schriftgröße eines Werts im Einzelwerte-Raster,
       gemessen im selben Lauf; beide Bezugsgrößen sind vorher als > 0 zugesichert. Das Urteil
       (Albumtauglichkeit mit Begründung, Rang, Feinlabel, Motive) steht im Dokument **vor** den
       Einzelwerten.
-- [ ] **AK6 — Reservierter Platz bewegt nichts.** Auf beiden Prüfbreiten ändert sich die Oberkante
+- [x] **AK6 — Reservierter Platz bewegt nichts.** Auf beiden Prüfbreiten ändert sich die Oberkante
       des ersten Elements unterhalb des Motivbereichs (Kopfzeile „Bildqualität") um höchstens 1 px,
       wenn nacheinander (i) das Motiv mit dem **längsten** Anzeigenamen angeheftet, (ii) ein Motiv
       **mit bestehender Korrektur** angeheftet, (iii) ein Motiv per **Tastaturfokus** vorangezeigt
@@ -64,18 +64,18 @@ und die Einzelheiten erst dann lesen muss, wenn ich sie wirklich brauche.
       nachweislich gewechselt. Das längste Motiv wird zur Laufzeit aus den acht zugänglichen Namen
       ermittelt, nie hartkodiert — sonst ist die Reservierung auf den heutigen Registry-Stand
       kalibriert und bricht still, wenn ein Anzeigename wächst.
-- [ ] **AK7 — Der reservierte Platz erklärt die Bedienung.** Solange kein Motiv aufgeklappt ist,
+- [x] **AK7 — Der reservierte Platz erklärt die Bedienung.** Solange kein Motiv aufgeklappt ist,
       steht dort der Aufforderungssatz statt einer leeren Fläche. Beide Zustände trägt **derselbe**
       Container — das ist die Bauform, die die Reservierung möglich macht.
-- [ ] **AK8 — Bedienelemente vor Information.** Die Soll-Folge in `PhotoDetailPage.test.tsx`
+- [x] **AK8 — Bedienelemente vor Information.** Die Soll-Folge in `PhotoDetailPage.test.tsx`
       („Reihenfolge: Bedienelemente zuerst") wird um die neuen Abschnitts-Handles erweitert und
       bleibt **eine** Liste in **einem** `toEqual`.
-- [ ] **AK9 — Gleiche Lesereihenfolge, kein Querscrollen.**
+- [x] **AK9 — Gleiche Lesereihenfolge, kein Querscrollen.**
       **9a** Die Abschnittsfolge ist auf beiden Prüfbreiten dieselbe. Nachgewiesen als
       Abwesenheitszusage am Quelltext: keine breakpoint-gebundene `order-*`-Utility, kein
       `*-reverse`, keine viewport-abhängige Verzweigung im Rendering.
       **9b** Auf Telefonbreite erzeugt die Ansicht kein horizontales Scrollen.
-- [ ] **AK10 — Die Bühnenhöhe hängt am Sichtfenster, nicht am Bild.** Für vier Fotos mit paarweise
+- [x] **AK10 — Die Bühnenhöhe hängt am Sichtfenster, nicht am Bild.** Für vier Fotos mit paarweise
       verschiedenen Originalseitenverhältnissen (quer 4:3, hoch 3:4, breit 12:5, quadratisch 1:1)
       ist die gemessene Bühnenhöhe auf derselben Prüfbreite identisch (≤ 1 px), und in allen vier
       Fällen bleiben Bewertungsleiste und Navigation im Sichtfenster und das Bild vollständig
@@ -83,7 +83,7 @@ und die Einzelheiten erst dann lesen muss, wenn ich sie wirklich brauche.
       Gleichheit trivial erfüllt. Ein breitengeführtes Bild (`aspect-*`) fällt damit durch: es
       machte die Bühne je Format verschieden hoch und schöbe beim Hochformat die Bewertungsleiste
       aus dem Bild.
-- [ ] **AK11 — Design-Nutzlast geführt.** Die Ansicht ist in der Design-Nutzlast des Repositories
+- [x] **AK11 — Design-Nutzlast geführt.** Die Ansicht ist in der Design-Nutzlast des Repositories
       geführt, und die beiden aus Story #490 stammenden Motiv-Bausteine sind dort ebenfalls
       aufgenommen.
 
