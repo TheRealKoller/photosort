@@ -103,7 +103,7 @@ DISTANCE_CLASS_LABELS = (
     "10 km und mehr",
 )
 
-# DAS RASTER DER EMPFINDLICHKEITSMESSUNG (Spec 0506, Block E). Beide Achsen sind Messparameter,
+# DAS RASTER DER EMPFINDLICHKEITSMESSUNG (Block E). Beide Achsen sind Messparameter,
 # keine Schwellen des Produkts: Sie legen fest, WO gemessen wird, und aendern an keinem Betriebswert
 # etwas. `MOTIF_CHANGE_CONFIRMING_PHOTOS` (events.py) und die Motivstaerke-Grenze (selection.py)
 # bleiben in diesem Schritt unveraendert und werden ausschliesslich variiert durchgerechnet.

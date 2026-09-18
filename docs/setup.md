@@ -544,6 +544,20 @@ Ausgewiesen werden die Verteilung der Events nach Fotozahl (Block A), die Trennu
 er von seinem Hash ab, sagt Block C das ausdrücklich („NICHT GEMESSEN"), statt eine Null zu zeigen,
 die als gutes Messergebnis gelesen würde.
 
+Mit `--motiv` misst dasselbe Kommando stattdessen, wie empfindlich die Gliederung auf den
+Motivwechsel reagiert (Block E):
+
+```bash
+docker compose exec -T backend python -m photosort.event_probe --project-id <N> --motiv
+```
+
+Dieselbe Kandidatenmenge wird dafür unter mehreren Kombinationen aus der Zahl der bestätigenden
+Fotos und der Motivstärke-Grenze durchgerechnet; je Kombination stehen Eventzahl, Anteil der
+Ein-Bild-Cluster, Zahl der Grenzen mit `motivwechsel` als alleiniger Ursache sowie — als
+Gegenanzeige gegen zu grobes Zusammenfassen — größtes Event und längste Dauer. **Beide Konstanten
+bleiben dabei unverändert:** Der Modus rechnet nur variiert durch und ist wie die Blöcke A–C rein
+lesend. Den Ortsauszug fragt er gar nicht.
+
 ## Lokal ausprobieren ohne echten OpenCloud-Server
 
 Für einen ersten Eindruck (Ordner-Browsing, Foto-Scan, automatische Bewertung) braucht es keinen

@@ -618,7 +618,7 @@ def motif_change_starts(
     voraus, ein leeres fuehrendes Event kann also nicht entstehen.
 
     BEIDE FESTLEGUNGEN SIND INJIZIERBAR (`None` = Modulkonstante bzw. Betriebswert): Die
-    Empfindlichkeitsmessung (Spec 0506, Block E) rechnet dieselbe Kandidatenmenge unter mehreren
+    Empfindlichkeitsmessung in `event_probe.py` rechnet dieselbe Kandidatenmenge unter mehreren
     Kombinationen durch und laeuft dabei durch DIESEN Rechenweg - eine nachbildende zweite Fassung
     maesse etwas anderes, als der Lauf tut, waehrend beide fuer sich gruen blieben. Die
     Fensterlaenge wird dafuer als MODULATTRIBUT gelesen, nie als Default-Parameterwert gebunden:
