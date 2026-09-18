@@ -176,6 +176,18 @@ describe('formatEventHeading', () => {
     expect(result.dayKey).toBe('2026-07-20')
   })
 
+  it('zeigt ein Event ueber Mitternacht als Spanne und im Abschnitt seines Anfangstags', () => {
+    // Seit Spec 0506 trennt die Kalendertagsgrenze nicht mehr: Ein Anlass darf ueber Mitternacht
+    // laufen. Der Fall darueber (23:50-23:59) unterscheidet diese Moeglichkeit nicht - er bliebe
+    // gruen, auch wenn `dayKey` aus `ended_at` kaeme.
+    const result = formatEventHeading(
+      eventOut({ started_at: '2026-07-20T23:40:00', ended_at: '2026-07-21T01:15:00' }),
+    )
+
+    expect(result.heading).toBe('Position 3 (23:40–01:15 Uhr)')
+    expect(result.dayKey).toBe('2026-07-20')
+  })
+
   it('liest die Zeitspanne per String-Slicing, nicht ueber Date-Getter', () => {
     // `started_at`/`ended_at` sind zonenlos. Ein `Date`-Getter haenge an der Zeitzone des
     // ausfuehrenden Browsers/Testrunners; ein `Z`-Suffix darf das Ergebnis nicht verschieben.
