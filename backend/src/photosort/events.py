@@ -42,6 +42,37 @@ EVENT_EXTENT_MAX_METERS = 1000.0
 # wird im Lesepfad zu "kein Ortsbezug", nie zu einer 500.
 PLACE_KINDS = ("landmark", "coordinate", "multiple")
 
+# Groesse, unter der ein Segment als zu klein gilt. Dokumentierte, UNKALIBRIERTE Modulkonstante im
+# Muster von EVENT_EXTENT_MAX_METERS, bewusst kein Settings-/Env-Wert.
+#
+# Ein Wert von 1 hiesse "kein Segment ist je zu klein" - `MIN_EVENT_PHOTOS >= 2` ist die einzige
+# Aussage, die ein Test ueber diesen Wert treffen darf, und sie ist eine Ungleichung.
+MIN_EVENT_PHOTOS = 2
+
+# --- Der geschlossene Vorrat der TRENNURSACHEN (ADR 0117 Punkt 4) -------------------------------
+#
+# Jede Grenze traegt die MENGE der Signale, die sie gemeldet haben, nie ein einzelnes: Der
+# Durchlauf wertet alle aus, mehrere duerfen gleichzeitig zutreffen, und ein Bericht mit einer
+# Ursache je Grenze addierte sich zu mehr als hundert Prozent oder unterschluege Ursachen.
+BOUNDARY_TIME_GAP = "zeitluecke"
+BOUNDARY_CALENDAR_DAY = "kalendertag"
+BOUNDARY_STEP = "schritt"
+BOUNDARY_EXTENT = "ausdehnung"
+BOUNDARY_LANDMARK = "sehenswuerdigkeit"
+# Kein Eintrag in `default_signals()`: Der Motivwechsel ist eine Segmentierung ueber die ganze
+# Folge (ADR 0109) und trennt als ERZWUNGENER START. Er braucht trotzdem seinen Namen, sonst
+# stuende in der Statistik eine Grenze ohne Ursache.
+BOUNDARY_MOTIF_CHANGE = "motivwechsel"
+
+BOUNDARY_CAUSES = (
+    BOUNDARY_TIME_GAP,
+    BOUNDARY_CALENDAR_DAY,
+    BOUNDARY_STEP,
+    BOUNDARY_EXTENT,
+    BOUNDARY_LANDMARK,
+    BOUNDARY_MOTIF_CHANGE,
+)
+
 # Wie viele aufeinanderfolgende mitredende Fotos einen Motivwechsel bestaetigen muessen, das erste
 # abweichende eingeschlossen. Dokumentierte, UNKALIBRIERTE Modulkonstante im Muster von
 # EVENT_EXTENT_MAX_METERS - aenderbar, durch keinen Test auf den Zahlwert gepinnt.
@@ -81,6 +112,110 @@ def _measured(entry: LocationEntry) -> tuple[float, float] | None:
     return entry.gps_lat, entry.gps_lon
 
 
+def _anchors(entry_list: Sequence[LocationEntry]) -> list[LocationEntry]:
+    """Die koordinatentragenden Fotos, zeitlich geordnet.
+
+    Der Tie-Break der Ordnung traegt die Zusage "bei identischem `taken_at` gewinnt die kleinere
+    `photo_id`" - ohne ihn haengt das Ergebnis an der Zeilenreihenfolge der Datenbank."""
+    return sorted(
+        (entry for entry in entry_list if _measured(entry) is not None),
+        key=lambda entry: (entry.taken_at, entry.photo_id),
+    )
+
+
+def _anchor_neighbours(
+    anchors: Sequence[LocationEntry], entry: LocationEntry
+) -> tuple[LocationEntry | None, LocationEntry | None]:
+    """Die beiden koordinatentragenden Nachbarn eines Zeitpunkts - frueher und spaeter.
+
+    Suche ueber `key=` direkt auf `anchors` - keine vorgeschaltete Zeitstempelliste, die waere je
+    Foto erneut linear und machte den `bisect` zur Zierde."""
+    index = bisect_left(anchors, entry.taken_at, key=lambda anchor: anchor.taken_at)
+    earlier = anchors[index - 1] if index > 0 else None
+    later = anchors[index] if index < len(anchors) else None
+    return earlier, later
+
+
+def _nearest_anchor(anchors: Sequence[LocationEntry], entry: LocationEntry) -> LocationEntry | None:
+    """Der Anker, den ein Foto ohne eigene Koordinate uebernimmt - `None` ohne jeden Anker.
+
+    DIE EINE STELLE, an der die Wahl faellt: `infer_locations` erbt danach, und
+    `inherited_locations` misst den Abstand gegen genau diesen Anker. Eine zweite Fassung maesse
+    den Abstand zu einem Anker, den das Foto gar nicht geerbt hat.
+
+    Tie-Break (deterministisch): bei gleichem Abstand gewinnt der FRUEHERE Zeitpunkt."""
+    earlier, later = _anchor_neighbours(anchors, entry)
+    if earlier is None:
+        return later
+    if later is None:
+        return earlier
+    if (entry.taken_at - earlier.taken_at) <= (later.taken_at - entry.taken_at):
+        return earlier
+    return later
+
+
+@dataclass(frozen=True)
+class InheritedLocation:
+    """Was eine Ortsuebernahme ueber SICH SELBST aussagt - OHNE jede Koordinate (Block C1).
+
+    `seconds_to_anchor` ist der Abstand zu dem Anker, den dieses Foto tatsaechlich geerbt hat.
+    `anchor_span_meters` ist die Entfernung zwischen dem vorherigen und dem naechsten
+    koordinatentragenden Foto: Liegen die beiden weit auseinander, ist die Uebernahme ein
+    Muenzwurf, und das ist ohne jede aeussere Wahrheit belegbar.
+
+    `None` heisst "es gibt nur einen Nachbarn, also keine Spanne" und ausdruecklich NICHT `0` -
+    eine Null hiesse "beide Nachbarn liegen am selben Ort" und waere die guenstigste aller
+    Aussagen ueber eine Uebernahme."""
+
+    photo_id: int
+    seconds_to_anchor: float
+    anchor_span_meters: float | None
+
+
+def inherited_locations(entries: Iterable[LocationEntry]) -> list[InheritedLocation]:
+    """Je Foto OHNE eigene Koordinate, das tatsaechlich erbt, eine Auskunft ueber die Uebernahme.
+
+    OEFFENTLICH, weil das Messkommando Block C1 ueber genau diese Wahl zaehlt - dieselbe
+    Ankerwahl, die `infer_locations` trifft. Ein Foto ohne jeden Anker erbt nicht und erscheint
+    hier nicht: es gibt nichts zu berichten, und eine Zeile mit Null-Abstand behauptete eine
+    Uebernahme, die nicht stattfand.
+
+    SICHERHEIT (S5): Die Rueckgabe traegt Zahlen, keine Orte. Wer sie ausgibt, tut das in
+    Klassen - eine geordnete Folge von Spannen und Zeitlücken waere ein Streckenabdruck."""
+    entry_list = list(entries)
+    anchors = _anchors(entry_list)
+    if not anchors:
+        return []
+
+    reports: list[InheritedLocation] = []
+    for entry in entry_list:
+        if _measured(entry) is not None:
+            continue
+        nearest = _nearest_anchor(anchors, entry)
+        if nearest is None:  # pragma: no cover - `anchors` ist nicht leer
+            continue
+        earlier, later = _anchor_neighbours(anchors, entry)
+        span: float | None = None
+        if earlier is not None and later is not None:
+            earlier_coordinate = _measured(earlier)
+            later_coordinate = _measured(later)
+            assert earlier_coordinate is not None and later_coordinate is not None
+            span = haversine_meters(
+                earlier_coordinate[0],
+                earlier_coordinate[1],
+                later_coordinate[0],
+                later_coordinate[1],
+            )
+        reports.append(
+            InheritedLocation(
+                photo_id=entry.photo_id,
+                seconds_to_anchor=abs((entry.taken_at - nearest.taken_at).total_seconds()),
+                anchor_span_meters=span,
+            )
+        )
+    return reports
+
+
 def infer_locations(entries: Iterable[LocationEntry]) -> dict[int, EffectiveLocation]:
     """Der wirksame Ort JEDES Fotos der uebergebenen Menge, projektweit hergeleitet.
 
@@ -96,10 +231,7 @@ def infer_locations(entries: Iterable[LocationEntry]) -> dict[int, EffectiveLoca
     dem fertigen Event waere zirkulaer. Die Bindung an `Photo.project_id` liegt beim Aufrufer und
     steht dort ausgeschrieben - ohne sie erbt ein Foto Koordinaten aus einem fremden Projekt."""
     entry_list = list(entries)
-    anchors = sorted(
-        (entry for entry in entry_list if _measured(entry) is not None),
-        key=lambda entry: (entry.taken_at, entry.photo_id),
-    )
+    anchors = _anchors(entry_list)
 
     result: dict[int, EffectiveLocation] = {}
     for entry in entry_list:
@@ -109,18 +241,9 @@ def infer_locations(entries: Iterable[LocationEntry]) -> dict[int, EffectiveLoca
                 lat=measured[0], lon=measured[1], inferred=False
             )
             continue
-        if not anchors:
+        nearest = _nearest_anchor(anchors, entry)
+        if nearest is None:
             continue
-        # Suche ueber `key=` direkt auf `anchors` - keine vorgeschaltete Zeitstempelliste, die
-        # waere je Foto erneut linear und machte den `bisect` zur Zierde.
-        index = bisect_left(anchors, entry.taken_at, key=lambda anchor: anchor.taken_at)
-        nearest = anchors[min(index, len(anchors) - 1)]
-        if index > 0:
-            earlier = anchors[index - 1]
-            if index >= len(anchors) or (entry.taken_at - earlier.taken_at) <= (
-                nearest.taken_at - entry.taken_at
-            ):
-                nearest = earlier
         nearest_coordinate = _measured(nearest)
         assert nearest_coordinate is not None
         result[entry.photo_id] = EffectiveLocation(
@@ -253,7 +376,14 @@ class BoundarySignal(Protocol):
 
     `is_boundary` ist REIN - es aendert keinen Zustand und darf beliebig oft gefragt werden.
     `begin` setzt an einer Grenze zurueck, `advance` schreibt innerhalb des laufenden Events fort;
-    je Kandidat laeuft genau eine der beiden."""
+    je Kandidat laeuft genau eine der beiden.
+
+    `name` stammt aus `BOUNDARY_CAUSES` und ist die Ursache, unter der dieses Signal in der
+    Statistik erscheint. Ein Signal ohne Namen aus dem Vorrat fiele dort unter den Tisch, ohne
+    dass eine Summe kleiner wuerde - der Bericht waere still unvollstaendig."""
+
+    @property
+    def name(self) -> str: ...
 
     def is_boundary(self, candidate: EventCandidate) -> bool: ...
 
@@ -265,6 +395,8 @@ class BoundarySignal(Protocol):
 class TimeGapSignal:
     """Die Zeitluecke zwischen zwei aufeinanderfolgenden Fotos - unveraendertes Verhalten,
     `>` und nicht `>=`."""
+
+    name = BOUNDARY_TIME_GAP
 
     def __init__(self, gap: timedelta = TIME_CLUSTER_GAP) -> None:
         self._gap = gap
@@ -286,6 +418,8 @@ class DayBoundarySignal:
     Braucht keinen Zahlwert: verglichen werden die ersten zehn Zeichen des Zeitstempels.
     `taken_at` ist ZONENLOS; eine Zeitzonen-Umrechnung hinge an der Umgebung des ausfuehrenden
     Prozesses."""
+
+    name = BOUNDARY_CALENDAR_DAY
 
     def __init__(self) -> None:
         self._day: str | None = None
@@ -312,6 +446,8 @@ class StepDistanceSignal:
     auseinanderliegenden Aufnahmen die Trennung vollstaendig. Rueckgesetzt wird an JEDER Grenze,
     auch an einer rein zeitlichen - sonst wuerde das erste Foto eines neuen Events gegen eines aus
     dem vorherigen verglichen und ein zweites Mal getrennt."""
+
+    name = BOUNDARY_STEP
 
     def __init__(self, split_distance_meters: float = GPS_CLUSTER_SPLIT_DISTANCE_METERS) -> None:
         self._split_distance_meters = split_distance_meters
@@ -343,6 +479,8 @@ class ExtentSignal:
     quadratisch. Zwei bewusste Kehrseiten: die Schranke trennt etwas frueher, und eine Box ueber
     den 180. Laengengrad faellt maximal gross aus - die Ausfallrichtung ist "trennt", nie
     "behauptet einen Ort"."""
+
+    name = BOUNDARY_EXTENT
 
     def __init__(self, max_meters: float = EVENT_EXTENT_MAX_METERS) -> None:
         self._max_meters = max_meters
@@ -389,6 +527,8 @@ class LandmarkChangeSignal:
     aufgeloesten Namen, sodass zwei Schreibweisen derselben Sehenswuerdigkeit hier gar nicht mehr
     als verschieden ankommen. Ein Fuzzy-Vergleich an dieser Stelle waere ein zweiter, danebenstehen-
     der Massstab."""
+
+    name = BOUNDARY_LANDMARK
 
     def __init__(self) -> None:
         self._name: str | None = None
@@ -566,21 +706,57 @@ def _built(position: int, members: Sequence[EventCandidate]) -> BuiltEvent:
     )
 
 
+@dataclass(frozen=True)
+class EventFormation:
+    """Die Gliederung eines Laufs SAMT der Ursache jeder Grenze - die Erklaerform von
+    `build_events`.
+
+    `causes` ist POSITIONSTREU zu `events`: Eintrag `i` ist die Menge der Signale, die die
+    EROEFFNENDE Grenze von Event `i` gemeldet haben.
+
+    INDEX 0 TRAEGT IMMER DIE LEERE MENGE. Die Ausnahme haengt an der POSITION, nicht an einem
+    einzelnen Signal - sonst braucht jedes kuenftige Signal seine eigene. `TimeGapSignal` meldet
+    am ersten Foto `True` (`_previous is None`); ohne diese Ausnahme truege jeder Lauf eine
+    erfundene Zeitluecke in der Statistik.
+
+    Daraus folgt die tragende Pruefform: Die Zahl der Grenzen MIT Ursache ist stets
+    `Eventzahl - 1`.
+
+    Die Menge wird ausdruecklich NICHT persistiert (ADR 0117 Punkt 4): Stufe 3 liest sie im selben
+    Durchlauf, das Messkommando bildet sie ohnehin neu, und eine Spalte waere nach jeder
+    Schwellenaenderung veraltet, ohne dass es auffiele."""
+
+    events: tuple[BuiltEvent, ...]
+    causes: tuple[frozenset[str], ...]
+
+
 def build_events(
     candidates: Iterable[EventCandidate], signals: list[BoundarySignal] | None = None
 ) -> list[BuiltEvent]:
+    """Die Event-Bildung - die Gliederung ohne ihre Erklaerung.
+
+    EIN Rechenweg, zwei Sichten: Diese Funktion ist `explain_events` ohne die Ursachenmengen. Ein
+    zweiter Durchlauf fuer dasselbe liefe auseinander, und dann maesse das Messkommando die
+    Grenzen einer Gliederung, die so nie entstanden ist."""
+    return list(explain_events(candidates, signals).events)
+
+
+def explain_events(
+    candidates: Iterable[EventCandidate], signals: list[BoundarySignal] | None = None
+) -> EventFormation:
     """Die Event-Bildung: EIN sortierter Durchlauf ueber die Kandidaten eines Kriterien-Laufs,
-    dem die Motivgrenzen als eigene Stufe VORAUSGEHEN.
+    dem die Motivgrenzen als eigene Stufe VORAUSGEHEN - samt der Ursache jeder Grenze.
 
     Das Ergebnis ist chronologisch geordnet und ueberschneidungsfrei, `position` laeuft
     lueckenlos ab 1, und jeder uebergebene Kandidat steht in genau einem Event.
 
-    Der Durchlauf wertet ALLE Signale aus - `any` ueber eine bereits gebaute LISTE, ausdruecklich
-    NICHT kurzgeschlossen - und ruft danach genau eine der schreibenden Methoden auf ALLEN auf.
-    Wuerde die Auswertung beim ersten `True` abbrechen, haenge die Zustandsfortschreibung eines
-    Signals an seiner Listenposition. Aus demselben Grund steht `index in forced_starts` RECHTS
-    der Signalauswertung und in einer eigenen Anweisung: links davon wuerde an einem erzwungenen
-    Start kein Signal mehr gefragt.
+    Der Durchlauf wertet ALLE Signale aus - eine vollstaendig gebaute LISTE der meldenden Namen,
+    ausdruecklich NICHT kurzgeschlossen - und ruft danach genau eine der schreibenden Methoden auf
+    ALLEN auf. Wuerde die Auswertung beim ersten Treffer abbrechen, haenge die
+    Zustandsfortschreibung eines Signals an seiner Listenposition, und die Ursachenmenge naehme
+    nur das erste meldende Signal auf. Aus demselben Grund steht `index in forced_starts` in einer
+    eigenen Anweisung NACH der Signalauswertung: davor wuerde an einem erzwungenen Start kein
+    Signal mehr gefragt.
 
     Ein erzwungener Start wirkt wie jede gemeldete Grenze - `begin` laeuft auf allen Signalen und
     ist deren vollstaendige Ruecksetzung. Eine erst spaeter faellige Grenze von Ausdehnung,
@@ -592,19 +768,32 @@ def build_events(
     active = default_signals() if signals is None else signals
 
     events: list[list[EventCandidate]] = []
+    causes: list[frozenset[str]] = []
     for index, candidate in enumerate(ordered):
-        # Die Liste wird VOLLSTAENDIG gebaut, bevor `any` sie liest.
-        boundary = any([signal.is_boundary(candidate) for signal in active])
-        if boundary or index in forced_starts or not events:
+        # Die Liste wird VOLLSTAENDIG gebaut, bevor `any` sie liest - und sie traegt zugleich, WER
+        # gemeldet hat. Ein `any` ueber einen Generator schnitte beides gleichzeitig ab.
+        reporting = [signal.name for signal in active if signal.is_boundary(candidate)]
+        forced = index in forced_starts
+        if reporting or forced or not events:
             for signal in active:
                 signal.begin(candidate)
             events.append([])
+            # DIE AUSNAHME AN DER POSITION: Das erste Segment eines Laufs traegt keine Ursache,
+            # gleich welches Signal an diesem Foto gemeldet hat.
+            causes.append(
+                frozenset()
+                if index == 0
+                else frozenset(reporting) | ({BOUNDARY_MOTIF_CHANGE} if forced else set())
+            )
         else:
             for signal in active:
                 signal.advance(candidate)
         events[-1].append(candidate)
 
-    return [_built(position, members) for position, members in enumerate(events, start=1)]
+    return EventFormation(
+        events=tuple(_built(position, members) for position, members in enumerate(events, start=1)),
+        causes=tuple(causes),
+    )
 
 
 class PlaceNamedEvent(Protocol):
