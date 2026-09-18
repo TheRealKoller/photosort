@@ -230,8 +230,8 @@ def sanitize_landmark_name(raw: object) -> str | None:
     Sanitisierung, oder laenger als `MAX_LANDMARK_NAME_LENGTH`.
 
     Die Funktion wird an ZWEI Stellen angewandt: an der Quelle in `_landmark_detection_from_json`
-    unten UND beim Lesen der bereits persistierten Zeilen in `worker.py::_landmark_names`, aus dem
-    `events.landmark_name` entsteht. Die Begruendung fuer die doppelte Anwendung steht dort - sie
+    unten UND beim Lesen der bereits persistierten Zeilen in `event_inputs.py::_landmark_names`,
+    aus dem `events.landmark_name` entsteht. Die Begruendung fuer die doppelte Anwendung steht dort - sie
     deckt den unsanierten Altbestand in `photo_landmark_detections`, fuer den es keinen
     kostenlosen Migrationsweg gibt."""
     if not isinstance(raw, str):

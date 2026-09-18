@@ -207,6 +207,11 @@ trägt die **Menge** der meldenden Signale, nie ein einzelnes: Der Durchlauf wer
 mehrere dürfen gleichzeitig zutreffen, und ein Bericht mit einer Ursache je Grenze addierte sich
 zu mehr als hundert Prozent oder unterschlüge Ursachen.
 
+**Der Vorrat oben ist der Endzustand nach PR 2.** In PR 1 heißt die Ursache `kalendertag` statt
+`dauer`: Die Dauergrenze entsteht erst in Schritt 4, und Block B soll den **Ist-Zustand** messen —
+eine Ursache zu benennen, die noch gar nicht trennt, machte die Ausgangsmessung unbrauchbar. Mit
+PR 2 tritt `dauer` an ihre Stelle, zusammen mit `EventSpanSignal`.
+
 **Das erste Segment eines Laufs hat keine Ursache** — seine Menge ist leer. `TimeGapSignal` meldet
 beim ersten Foto `True` (`_previous is None`); ohne diese Ausnahme trüge jeder Lauf eine erfundene
 Zeitlücke in der Statistik.
