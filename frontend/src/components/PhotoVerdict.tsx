@@ -1,5 +1,3 @@
-import { useId } from 'react'
-
 import type { AlbumSuitabilityOut, FineLabelOut, RankingOut } from '../api/types'
 import {
   ALBUM_SUITABILITY_NOT_RATED_TEXT,
@@ -24,8 +22,10 @@ interface PhotoVerdictProps {
   fineLabels: FineLabelOut[]
 }
 
-/** S4 — die Zuschreibung. Sie steht sichtbar UND im zugänglichen Namen des Trägers: ein rein
- *  visueller Hinweis erreichte assistive Technik nicht, ein rein zugänglicher den Sehenden nicht. */
+/** S4 — die Zuschreibung. Sie steht als SICHTBARER TEXTKNOTEN vor der Begründung und damit im
+ *  selben Absatz: Assistive Technik liest ihn ohnehin mit, Sehende sehen ihn. Ein `aria-labelledby`
+ *  daneben trüge nichts bei - ein `<p>` hat keine namensfähige Rolle, und das benannte Element wäre
+ *  sein eigenes Kind. */
 const REASON_ATTRIBUTION = 'Begründung des Modells'
 
 /**
@@ -45,7 +45,6 @@ const REASON_ATTRIBUTION = 'Begründung des Modells'
  * Quelle statt.
  */
 export function PhotoVerdict({ albumSuitability, ranking, fineLabels }: PhotoVerdictProps) {
-  const reasonId = useId()
   // Auf `!== null` geprueft, nie auf Falsyness: "Rang - von 12" waere eine Rangaussage ueber ein
   // Foto ohne Rang.
   const showRankRow = ranking !== null && ranking.rank_position !== null
@@ -63,12 +62,8 @@ export function PhotoVerdict({ albumSuitability, ranking, fineLabels }: PhotoVer
       {reason !== null && (
         // S4: Der Traeger fuehrt die Zuschreibung im zugaenglichen Namen; der sichtbare Vorsatz
         // traegt dieselbe Aussage fuer Sehende. Reiner React-Textknoten, ungekuerzt.
-        <p
-          data-album-suitability-reason=""
-          aria-labelledby={reasonId}
-          className="text-lg text-text"
-        >
-          <span id={reasonId} className="mr-2 text-xs tracking-wide text-text-muted uppercase">
+        <p data-album-suitability-reason="" className="text-lg text-text">
+          <span className="mr-2 text-xs tracking-wide text-text-muted uppercase">
             {REASON_ATTRIBUTION}
           </span>
           {reason}

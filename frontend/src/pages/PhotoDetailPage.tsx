@@ -273,7 +273,7 @@ export function PhotoDetailPage() {
      Platzhalter bzw. `Alert` in der Fotoflaeche statt eines vorgezogenen Satzes. Sonst springt die
      Seite beim Eintreffen der Daten. Die Handler zeigen in diesen beiden Zustaenden ins Leere und
      sind deshalb leer: die Buehne sperrt Bewertung und Navigation ohnehin selbst. */
-  function rahmenNurBuehne(status: 'loading' | 'error') {
+  function stageOnlyFrame(status: 'loading' | 'error') {
     return (
       <div className="flex flex-col gap-4">
         <PhotoDetailStage
@@ -304,11 +304,11 @@ export function PhotoDetailPage() {
   }
 
   if (query.isLoading) {
-    return rahmenNurBuehne('loading')
+    return stageOnlyFrame('loading')
   }
 
   if (query.isError) {
-    return rahmenNurBuehne('error')
+    return stageOnlyFrame('error')
   }
 
   if (completed) {
@@ -457,11 +457,11 @@ export function PhotoDetailPage() {
       {/* DAS EINZELWERTE-RASTER - Nachschlagwerk hinter dem Urteil. Gleiche Sichtbarkeitsregel wie
           bisher: KEIN leerer Bereich bei leerer Liste. Ohne Wrapper-`div` eingebunden, damit auch
           kein leerer Behaelter stehenbleibt - der Baustein rendert dann gar nichts, und sein
-          eigener Testhaken `criterion-score-grid` ist der Nachweis. */}
-      <CriterionScoreGrid
-        criterionScores={currentPhoto.criterion_scores}
-        ranking={currentPhoto.ranking ?? null}
-      />
+          eigener Testhaken `criterion-score-grid` ist der Nachweis.
+
+          OHNE `ranking`: Der Rang ist keiner der fuenfzehn Einzelwerte, sondern Teil des Urteils
+          und steht allein in `PhotoVerdict` (AK5). */}
+      <CriterionScoreGrid criterionScores={currentPhoto.criterion_scores} />
 
       {/* Trennlinie zwischen Urteil/Nachschlagwerk und den uebrigen Angaben: ohne sie stiessen
           die Bloecke unvermittelt aneinander, und der Wechsel von "wie dieses Foto beurteilt ist"

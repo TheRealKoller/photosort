@@ -74,11 +74,12 @@ describe('PhotoVerdict: der Regelfall', () => {
     const reason = screen.getByText('Alle schauen in die Kamera.')
     const carrier = reason.closest('[data-album-suitability-reason]')
     expect(carrier).not.toBeNull()
-    // Die Zuschreibung steht im zugaenglichen Namen des Traegers UND sichtbar daneben - ein rein
-    // visueller Hinweis erreichte assistive Technik nicht, ein rein zugaenglicher den Sehenden
-    // nicht.
-    expect(carrier).toHaveAccessibleName(/Begründung des Modells/i)
+    /* Die Zuschreibung steht als SICHTBARER Textknoten IM SELBEN Absatz wie die Begründung -
+       damit liest assistive Technik sie ohnehin mit, und Sehende sehen sie. Geprüft wird beides
+       zusammen: dass sie da ist UND dass sie im Träger der Begründung steht. Stünde sie daneben,
+       ließe sich die Begründung ohne Zuschreibung vorlesen. */
     expect(within(carrier as HTMLElement).getByText(/Begründung des Modells/i)).toBeInTheDocument()
+    expect(carrier).toHaveTextContent(/Begründung des Modells.*Alle schauen in die Kamera\./)
   })
 
   /* S4: ungekürzt. Kappung findet an der Quelle statt, nie hier. */

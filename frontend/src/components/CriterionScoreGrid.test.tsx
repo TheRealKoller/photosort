@@ -45,46 +45,17 @@ describe('CriterionScoreGrid: der Regelfall', () => {
     expect(screen.queryByRole('group', { name: 'Bildinhalt' })).toBeNull()
   })
 
-  /* Der Rang gehört fachlich zum Bildinhalt und erscheint auch ohne ein einziges
-     Inhalts-Kriterium, sobald eine Rangzeile MIT Rang vorliegt. */
-  it('zeigt den Rang im Bildinhalt-Block', () => {
-    render(
-      <CriterionScoreGrid
-        criterionScores={[QUALITY]}
-        ranking={{
-          event_id: 1,
-          rank_score: 0.8,
-          rank_position: 2,
-          proposed: true,
-          partition_size: 5,
-          curation_position: null,
-        }}
-      />,
-    )
+  /* KEIN RANG (AK5): Er ist keiner der fünfzehn Einzelwerte, sondern Teil des Urteils und steht
+     allein in `PhotoVerdict`. Die Zusage steht als ABWESENHEIT hier, nicht nur als Anwesenheit
+     dort: Zwei Komponenten, die dieselbe Angabe rendern können, laufen früher oder später
+     auseinander - und der Nutzer läse denselben Rang zweimal untereinander. */
+  it('zeigt keinen Rang, auch nicht neben Bildinhalt-Werten', () => {
+    render(<CriterionScoreGrid criterionScores={[QUALITY, CONTENT]} />)
 
-    const content = screen.getByRole('group', { name: 'Bildinhalt' })
-    expect(within(content).getByText('Rang')).toBeInTheDocument()
-    expect(within(content).getByText('Rang 2 von 5')).toBeInTheDocument()
-  })
-
-  /* Auf `!== null` geprüft, nie auf Falsyness: "Rang — von 12" wäre eine Rangaussage über ein
-     Foto ohne Rang. */
-  it('lässt die Rangzeile ohne Rangposition weg', () => {
-    render(
-      <CriterionScoreGrid
-        criterionScores={[CONTENT]}
-        ranking={{
-          event_id: 1,
-          rank_score: 0.8,
-          rank_position: null,
-          proposed: false,
-          partition_size: 5,
-          curation_position: null,
-        }}
-      />,
-    )
-
-    expect(screen.queryByText('Rang')).toBeNull()
+    expect(screen.queryByText(/^Rang/)).toBeNull()
+    expect(
+      within(screen.getByRole('group', { name: 'Bildinhalt' })).queryByText(/^Rang/),
+    ).toBeNull()
   })
 
   /* AK8/Teststrategie: KEINE Bedienhandlung führt zu einer Angabe - das Raster trägt weder
@@ -131,30 +102,12 @@ describe('CriterionScoreGrid: leer und fehlend', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('rendert ohne Kriterien, aber mit Rang, nur den Bildinhalt-Block', () => {
-    render(
-      <CriterionScoreGrid
-        criterionScores={[]}
-        ranking={{
-          event_id: 1,
-          rank_score: 0.8,
-          rank_position: 3,
-          proposed: true,
-          partition_size: 9,
-          curation_position: null,
-        }}
-      />,
-    )
-
-    expect(screen.queryByRole('group', { name: 'Bildqualität' })).toBeNull()
-    expect(
-      within(screen.getByRole('group', { name: 'Bildinhalt' })).getByText('Rang 3 von 9'),
-    ).toBeInTheDocument()
-  })
-
-  it('behandelt ein fehlendes Ranking wie keines', () => {
+  /* Der Bildinhalt-Block haengt jetzt AUSSCHLIESSLICH an eigenen Werten - seit der Rang
+     entfallen ist, gibt es keine zweite Grundlage mehr, ihn zu zeigen. */
+  it('rendert ohne Bildinhalt-Werte keinen Bildinhalt-Block', () => {
     render(<CriterionScoreGrid criterionScores={[QUALITY]} />)
 
-    expect(screen.queryByText('Rang')).toBeNull()
+    expect(screen.getByRole('group', { name: 'Bildqualität' })).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Bildinhalt' })).toBeNull()
   })
 })

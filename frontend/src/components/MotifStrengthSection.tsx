@@ -217,18 +217,17 @@ interface DetailRowProps {
  * BEI VERLETZUNG springt beim ersten Antippen alles darunter um rund 57 px nach unten - der
  * Nutzer verliert die Stelle, an der er gerade las.
  *
- * DER WERT IST AM BESTAND GEMESSEN, NICHT GESCHÄTZT: 121,59 px im ungünstigsten Fall - gemessen
- * IN DER FERTIGEN URTEILSFLÄCHE bei Telefonbreite 360 px, mit dem längsten Motivnamen zweizeilig
- * neben dem längsten Werttext ("Trifft nicht zu (korrigiert)") und den drei Korrekturschaltflächen
- * in ZWEI Reihen. Die Panelform der Urteilsfläche verengt die Zeile gegenüber der freien
- * Inhaltsspalte so weit, dass die dritte Schaltfläche umbricht; eine in der breiteren Spalte
- * genommene Messung fiele um eine ganze Schaltflächenreihe zu klein aus.
+ * DER WERT WIRD GEMESSEN, NICHT GESCHÄTZT, und zwar am ungünstigsten Fall: Telefonbreite,
+ * längster Motivname neben dem längsten Werttext, drei Korrekturschaltflächen - und GEMESSEN IN
+ * DER URTEILSFLÄCHE, nicht in der freien Inhaltsspalte. Deren Panelform verengt die Zeile so weit,
+ * dass die dritte Schaltfläche in eine zweite Reihe umbricht; wer in der breiteren Spalte misst,
+ * bekommt einen um eine ganze Schaltflächenreihe zu kleinen Wert.
  *
- * `min-h-32` ist mit 128 px die nächste Tailwind-Stufe darüber und damit keine willkürliche Größe;
- * `min-h-*` ist eine Größen-, keine Abstands-Utility und unterliegt der Rasterregel nicht. Wächst
- * ein Anzeigename später über diesen Fall hinaus, wird `e2e/tests/bilddetail-buehne.spec.ts` rot -
- * dessen längstes Motiv wird zur Laufzeit aus den acht zugänglichen Namen ermittelt und nie
- * hartkodiert.
+ * `min-h-*` ist eine Größen-, keine Abstands-Utility und unterliegt der Rasterregel nicht; landet
+ * ein neu gemessener Wert nicht auf einer Tailwind-Stufe, braucht er einen Freigabeeintrag im
+ * Design-Vertrag. Wächst ein Anzeigename über den gedeckten Fall hinaus, wird
+ * `e2e/tests/bilddetail-buehne.spec.ts` rot - dessen längstes Motiv wird zur Laufzeit aus den acht
+ * zugänglichen Namen ermittelt und nie hartkodiert.
  */
 const DETAIL_ROW_RESERVED_CLASS = 'min-h-32'
 

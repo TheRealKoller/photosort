@@ -653,16 +653,17 @@ describe('PhotoDetailPage', () => {
 
       expect(await screen.findByText('Schärfe')).toBeInTheDocument()
       expect(screen.getByText('73%')).toBeInTheDocument()
-      /* Spec 0497: Der Rang steht jetzt ZWEIMAL auf der Seite - als Urteilszeile in der
-         Urteilsfläche und als Nachschlagzeile im Bildinhalt-Block des Rasters. Beide sind
-         gewollt: das Urteil führt, das Raster schlägt nach. Geprüft werden deshalb beide
-         Stellen einzeln statt einer mehrdeutigen seitenweiten Textsuche. */
+      /* Spec 0497, AK5: Der Rang steht GENAU EINMAL, und zwar im Urteil - er ist keiner der
+         fünfzehn Einzelwerte. Beide Stellen werden einzeln geprüft: Eine seitenweite Textsuche
+         bestünde auch dann, wenn er zusätzlich im Raster stünde, und genau diese Dublette wäre
+         der Fehler. Eine Mengenprüfung wie die AK4-Sondenliste sieht eine Doppelung
+         grundsätzlich nicht - deshalb steht die Abwesenheitszusage hier. */
       expect(
         within(screen.getByTestId('verdict-section')).getByText('Rang 2 von 5'),
       ).toBeInTheDocument()
       expect(
-        within(screen.getByTestId('criterion-score-grid')).getByText('Rang 2 von 5'),
-      ).toBeInTheDocument()
+        within(screen.getByTestId('criterion-score-grid')).queryByText(/^Rang/),
+      ).not.toBeInTheDocument()
     })
 
     // specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md, Akzeptanzkriterium 1:

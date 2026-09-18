@@ -36,6 +36,21 @@ interface PhotoDetailStageProps {
 const SHORTCUT_TEXT = 'Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/→ navigieren'
 
 /**
+ * AUF TELEFONBREITE AUSGEBLENDET, erst ab `sm:` sichtbar.
+ *
+ * Der Satz nennt Tasten. Auf einem Telefon gibt es keine, dort nützt er also nichts - er bricht
+ * aber auf 360 px mehrzeilig um und nimmt der Fotofläche genau diese Höhe. Das Ziel der Ansicht ist
+ * "das Foto so groß wie möglich"; jede Zeile, die nichts trägt, geht direkt davon ab.
+ *
+ * KEIN VERSTOSS GEGEN AK9a: Ausgeblendet wird ein Hinweis, nicht ein Abschnitt. Die
+ * Abschnittsfolge bleibt auf beiden Prüfbreiten dieselbe, es entsteht keine breitengebundene
+ * `order-*`-Utility, kein `*-reverse` und keine viewport-abhängige Verzweigung im Rendering - das
+ * Element steht in beiden Breiten im Dokument, nur seine Sichtbarkeit folgt der Breite.
+ * `e2e/tests/bilddetail-buehne.spec.ts` misst beide Breiten gegen dieselbe Schwelle.
+ */
+const SHORTCUT_VISIBILITY = 'hidden sm:block'
+
+/**
  * Die Bühne der Bilddetailansicht: Kopfzeile mit Zähler, Fotofläche, Bewertungsleiste,
  * Navigation. Sie trägt die gesamte Höhengeometrie und bekommt Zustand und Handler als Props -
  * SIE ENTSCHEIDET NICHTS SELBST. Datenzugriff, Navigation (Pfeiltasten, Wischen, Auto-Advance) und
@@ -85,7 +100,7 @@ export function PhotoDetailStage({
   onTouchStart,
   onTouchEnd,
 }: PhotoDetailStageProps) {
-  const inaktiv = status !== 'ready'
+  const inactive = status !== 'ready'
 
   return (
     <div
@@ -96,7 +111,7 @@ export function PhotoDetailStage({
         {/* Bleibt unveraendert stehen (es wird nichts entfernt): durch die Tasten-Kaestchen der
             Bewertungsleiste teilweise redundant, aber der Pfeiltasten-Teil hat kein sichtbares
             Gegenstueck. Nur als Metadatenzeile gesetzt statt als Fliesstext. */}
-        <p>{SHORTCUT_TEXT}</p>
+        <p className={SHORTCUT_VISIBILITY}>{SHORTCUT_TEXT}</p>
         {counter !== null && <p>{counter}</p>}
       </div>
 
@@ -138,7 +153,7 @@ export function PhotoDetailStage({
         favorite={favorite}
         onToggle={onToggle}
         onToggleFavorite={onToggleFavorite}
-        disabled={ratingDisabled || inaktiv}
+        disabled={ratingDisabled || inactive}
         busy={ratingBusy}
       />
 
@@ -148,7 +163,7 @@ export function PhotoDetailStage({
           variant="outline"
           aria-label="Vorheriges Foto"
           onClick={onPrev}
-          disabled={prevDisabled || inaktiv}
+          disabled={prevDisabled || inactive}
         >
           Zurück
         </Button>
@@ -157,7 +172,7 @@ export function PhotoDetailStage({
           variant="outline"
           aria-label="Nächstes Foto"
           onClick={onNext}
-          disabled={nextDisabled || inaktiv}
+          disabled={nextDisabled || inactive}
         >
           Weiter
         </Button>

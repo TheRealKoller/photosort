@@ -451,6 +451,27 @@ Bereichs, je Zustandswechsel der Nachweis, dass er stattgefunden hat); ein dritt
 - **Keine Fortschreibung des Sicherheitskonzepts:** Die bestehenden Auflagen hängen am Feld und
   decken die neuen Renderstellen wortgleich ab.
 
+### Bei der Umsetzung hinzugekommen
+
+Drei Festlegungen, die der Umsetzungsplan nicht vorsah und die erst der Prüfsatz erzwungen hat:
+
+- **Die Seite setzt den Scrollstand je Foto zurück.** Ohne das ist AK2 im Normalgebrauch verletzt:
+  Wer ein Foto aus einem bereits gescrollten Raster öffnet, landet auf einer gescrollten
+  Detailseite, und die aus dem Sichtfenster gerechnete Bühne steht teilweise darunter. Gebunden an
+  `currentPhotoId`, nicht an den Seitenaufbau — jedes neue Foto ist erneut ein „Öffnen der
+  Ansicht", innerhalb desselben Fotos nimmt die Rücksetzung dem Nutzer sein Scrollen nicht weg.
+  Navigation, Tastenbelegung, Wischen und Auto-Advance bleiben davon unberührt.
+- **Die Korrekturschaltflächen tragen `gap-y-4` statt `gap-3`.** In der Urteilsfläche bricht die
+  dritte Schaltfläche auf Telefonbreite in eine zweite Reihe um; bei 12 px Reihenabstand stoßen die
+  beiden 44-px-Trefferflächen genau aneinander, und die Subpixel-Rundung entscheidet, wer den
+  Randpunkt bekommt. In einer Überlappung gewinnt das obenliegende Element — hier wäre das ein
+  falsch geschriebener Datenwert.
+- **Der Tastaturhinweis gehört in die Bühne und ist auf Telefonbreite ausgeblendet.** Über der
+  Bühne schöbe er ihre Unterkante um die eigene Höhe unter den Sichtrand (AK2 verfehlt), unter ihr
+  stünde er im Informationsteil, obwohl er über das Foto nichts sagt. Auf 360 px bricht er
+  mehrzeilig um und nimmt der Fotofläche diese Höhe, ohne dort etwas zu nützen — ein Telefon hat
+  keine Tastatur. Ausgeblendet wird ein Hinweis, kein Abschnitt; AK9a bleibt erfüllt.
+
 ## Offene Fragen
 
 Keine. Der offene Punkt zur Ortszeile im Entwurf (siehe UI/UX) ist am Bild zu klären, nicht als

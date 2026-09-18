@@ -73,13 +73,24 @@ async function inhaltsRechteck(bild: Locator): Promise<Rechteck & { format: numb
   })
 }
 
-/** Öffnet das Foto an Position `index` der Übersicht über den ECHTEN Einstieg (Kachel-Klick). */
+/**
+ * Öffnet das Foto an Position `index` der Übersicht über den ECHTEN Einstieg (Kachel-Klick).
+ *
+ * WARTET AUF DIE SCHRIFTEN, bevor gemessen werden darf. Das Produkt lädt vier Inter-Schnitte über
+ * `@fontsource` nach; bis sie da sind, setzt der Browser mit einer Ersatzschrift und anderen
+ * Textmetriken. Jede Zeile, die dabei von ein- auf zweizeilig springt - die Grundlagenzeile des
+ * Motivbereichs etwa -, verschiebt alles darunter um ihre Zeilenhöhe. Eine Messung vor dem
+ * Schriftwechsel ist deshalb nicht falsch, sondern SPRUNGHAFT: Sie trifft je nach Auslastung mal
+ * den einen, mal den anderen Zustand. Ohne dieses Warten fällt die Zusage „nichts darunter bewegt
+ * sich" gelegentlich - und ein Fehlschlag, der nur manchmal kommt, ist kein verlässliches Signal.
+ */
 async function oeffneFoto(page: Page, projectId: number, index: number): Promise<void> {
   await page.goto(`/projects/${projectId}/photos`)
   const kacheln = photoTiles(page)
   await expect(kacheln.first(), 'Kacheln der Fotoübersicht').toBeVisible()
   await kacheln.nth(index).getByRole('link').first().click()
   await expect(page.getByRole('group', { name: 'Bewertung' })).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
 }
 
 function buehne(page: Page): Locator {
@@ -220,9 +231,31 @@ test.describe('Bilddetail: die Bühne', () => {
 })
 
 test.describe('Bilddetail: der reservierte Platz', () => {
+  /** Wie viele Fotos nach einem mit bestehender Korrektur abgesucht werden. Bewusst GESUCHT statt
+   *  über einen festen Index angesteuert: Welches Foto der Seeder korrigiert, ist seine Sache und
+   *  keine Zusage an diesen Spec. Ein fester Index hinge still an einer Seeder-Konstante - und ein
+   *  Fall, der auf einem im Bestand nachträglich entstandenen Datenwert beruht, wäre nach dem
+   *  nächsten frischen Seed rot. Die Sonderzustände des Bestands (nicht klassifiziert, lokale
+   *  Grundlage, ausgeschlossenes Dokument) liegen jenseits dieser Spanne. */
+  const SUCHTIEFE = 5
+
   test('bewegt nichts unterhalb des Motivbereichs beim Auf- und Zuklappen', async ({ page }) => {
     const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
-    await oeffneFoto(page, projectId, 0)
+
+    let gefunden = false
+    for (let index = 0; index < SUCHTIEFE; index += 1) {
+      await oeffneFoto(page, projectId, index)
+      const korrigiert = page.locator('[data-motif-corrected]')
+      if ((await korrigiert.count()) > 0) {
+        gefunden = true
+        break
+      }
+    }
+    expect(
+      gefunden,
+      `ein Foto mit bestehender Motivkorrektur unter den ersten ${SUCHTIEFE} - ohne es prüft ` +
+        'Schritt (ii) den ungünstigsten Fall nicht',
+    ).toBe(true)
 
     const symbole = page.locator('[data-motif-key]')
     await expect(symbole, 'die acht Motivsymbole').toHaveCount(8)
@@ -248,11 +281,8 @@ test.describe('Bilddetail: der reservierte Platz', () => {
       })),
     )
     const laengster = namen.reduce((a, b) => (b.name.length > a.name.length ? b : a))
-    const mitKorrektur = namen.find((eintrag) => eintrag.korrigiert)
-    expect(
-      mitKorrektur,
-      'ein Motiv mit bestehender Korrektur im Demo-Bestand - ohne es prüft Schritt (ii) nichts',
-    ).toBeDefined()
+    // Die Suche oben hat sichergestellt, dass es hier eines gibt.
+    const mitKorrektur = namen.find((eintrag) => eintrag.korrigiert)!
 
     /* IN DOKUMENTKOORDINATEN gemessen, nicht in Fensterkoordinaten: `boundingBox()` ist
        fensterrelativ, und sowohl ein Klick als auch ein Tastaturfokus scrollen das Zielelement in
@@ -298,7 +328,7 @@ test.describe('Bilddetail: der reservierte Platz', () => {
     }
 
     const neutral = namen.find(
-      (eintrag) => eintrag.key !== laengster.key && eintrag.key !== mitKorrektur!.key,
+      (eintrag) => eintrag.key !== laengster.key && eintrag.key !== mitKorrektur.key,
     )!
 
     // (i) das Motiv mit dem LÄNGSTEN Anzeigenamen angeheftet
@@ -311,14 +341,14 @@ test.describe('Bilddetail: der reservierte Platz', () => {
     //
     // Im Demo-Bestand KANN das dasselbe Motiv wie (i) sein; dann steht eine Zwischenstellung
     // dazwischen, damit (ii) ein echter Wechsel bleibt statt ein Weg-Klick.
-    if (mitKorrektur!.key === laengster.key) {
+    if (mitKorrektur.key === laengster.key) {
       await zwischenstellung(neutral.key)
     }
     await schritt('Motiv mit Korrektur angeheftet', () =>
-      page.locator(`[data-motif-key="${mitKorrektur!.key}"]`).click(),
+      page.locator(`[data-motif-key="${mitKorrektur.key}"]`).click(),
     )
     await expect(
-      page.getByRole('button', { name: `Zurücknehmen: ${mitKorrektur!.name}` }),
+      page.getByRole('button', { name: `Zurücknehmen: ${mitKorrektur.name}` }),
       'die dritte Schaltfläche der Korrekturzeile',
     ).toBeVisible()
     expect(
@@ -329,7 +359,7 @@ test.describe('Bilddetail: der reservierte Platz', () => {
     // (iii) ein Motiv per TASTATURFOKUS vorangezeigt - erst das Anheften lösen, sonst schlägt
     // Angeheftet das Zeigen. Der Zeiger muss NACH dem Klick weg: Ein Klick lässt ihn auf dem
     // Symbol stehen, und die Vorschau unter dem Zeiger hielte dieselbe Zeile weiter offen.
-    await page.locator(`[data-motif-key="${mitKorrektur!.key}"]`).click()
+    await page.locator(`[data-motif-key="${mitKorrektur.key}"]`).click()
     await page.mouse.move(0, 0)
     await expect.poll(inhalt, { message: 'Anheften gelöst' }).not.toBe(vorher)
     vorher = await inhalt()
@@ -385,6 +415,35 @@ test.describe('Bilddetail: der typografische Abstand', () => {
     expect((await urteil.boundingBox())!.y, 'Urteil steht über den Einzelwerten').toBeLessThan(
       (await raster.boundingBox())!.y,
     )
+  })
+})
+
+test.describe('Bilddetail: der Tastaturhinweis', () => {
+  /* Er nennt Tasten und nützt auf einem Telefon nichts, nähme der Fotofläche dort aber mehrere
+     Zeilen Höhe. Sichtbar ist er deshalb erst ab der `sm:`-Schwelle.
+
+     GEMESSEN STATT GEGLAUBT: Beide Viewport-Projekte laufen durch DIESELBE Zusicherung und
+     prüfen je einen der beiden Zweige - 360 px erwartet unsichtbar, 1280 px sichtbar. Eine
+     Zusicherung, die nur einen Zweig kennt, bestünde auch bei einer Utility, die immer greift
+     oder nie. Im Dokument steht das Element in BEIDEN Breiten (AK9a): ausgeblendet wird ein
+     Hinweis, nicht ein Abschnitt. */
+  const SM_SCHWELLE = 640
+
+  test('zeigt ihn erst ab der breiteren Prüfbreite', async ({ page }) => {
+    const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+    await oeffneFoto(page, projectId, 0)
+
+    const hinweis = page.getByText(/^Shortcuts:/)
+    const breite = page.viewportSize()!.width
+
+    // Im DOM steht er immer - die Abschnittsfolge ist auf beiden Breiten dieselbe.
+    await expect(hinweis, 'der Hinweis steht im Dokument').toHaveCount(1)
+
+    if (breite >= SM_SCHWELLE) {
+      await expect(hinweis, `bei ${breite} px sichtbar`).toBeVisible()
+    } else {
+      await expect(hinweis, `bei ${breite} px ausgeblendet`).toBeHidden()
+    }
   })
 })
 

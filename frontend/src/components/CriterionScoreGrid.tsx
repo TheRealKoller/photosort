@@ -1,13 +1,11 @@
 import { useId } from 'react'
 
-import type { CriterionScoreOut, RankingOut } from '../api/types'
+import type { CriterionScoreOut } from '../api/types'
 import { partitionByPresenceThreshold } from '../utils/criterionScores'
 import { formatCriterionPercent } from '../utils/formatStats'
 
 interface CriterionScoreGridProps {
   criterionScores: CriterionScoreOut[]
-  /** Die Rangzeile des Fotos - `null`/`undefined`, solange kein erfolgreicher Lauf existiert. */
-  ranking?: RankingOut | null
 }
 
 /** Eine Nachschlagzeile: Name links, Wert rechts. `text-sm` ist die Bezugsgröße von AK5 - die
@@ -38,15 +36,17 @@ function ScoreRow({ label, value }: { label: string; value: string }) {
  * große Seitenraster sind zwei Darstellungen mit verschiedener Elementstruktur und Schriftgröße;
  * eine gemeinsame Komponente hätte zwei sich ausschließende Zweige. Geteilt wird ausschließlich,
  * was zeichengleich ist - die Aufteilung in `utils/criterionScores.ts`.
+ *
+ * KEIN RANG. Er ist keiner der fünfzehn Einzelwerte, sondern Teil des URTEILS und steht
+ * ausschließlich in `PhotoVerdict` (Spec 0497, AK5). Nähme dieser Baustein ihn ebenfalls
+ * entgegen, stünde dieselbe Angabe an zwei Stellen der Seite - die beiden liefen früher oder
+ * später auseinander, und der Nutzer läse denselben Rang zweimal untereinander.
  */
-export function CriterionScoreGrid({ criterionScores, ranking = null }: CriterionScoreGridProps) {
+export function CriterionScoreGrid({ criterionScores }: CriterionScoreGridProps) {
   const { quality: qualityScores, content: contentScores } =
     partitionByPresenceThreshold(criterionScores)
-  // Auf `!== null` geprueft, nie auf Falsyness: "Rang - von 12" waere eine Rangaussage ueber ein
-  // Foto ohne Rang.
-  const showRankRow = ranking !== null && ranking.rank_position !== null
   const showQualityBlock = qualityScores.length > 0
-  const showContentBlock = contentScores.length > 0 || showRankRow
+  const showContentBlock = contentScores.length > 0
 
   // Ein einzelnes useId() mit Suffixen: Die Ids muessen auch dann eindeutig bleiben, wenn eine
   // zweite Instanz gleichzeitig im DOM steht.
@@ -99,12 +99,6 @@ export function CriterionScoreGrid({ criterionScores, ranking = null }: Criterio
                 value={formatCriterionPercent(score.value)}
               />
             ))}
-            {showRankRow && ranking !== null && (
-              <ScoreRow
-                label="Rang"
-                value={`Rang ${ranking.rank_position} von ${ranking.partition_size}`}
-              />
-            )}
           </dl>
         </div>
       )}
