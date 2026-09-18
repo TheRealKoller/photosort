@@ -5,7 +5,7 @@ Messkommando (`event_probe.py`). Eine zweite, nachbildende Fassung maesse etwas 
 Lauf tatsaechlich tut, waehrend beide fuer sich gruen blieben (ADR 0117 Punkt 5).
 
 REIN LESEND, und das ist eine gepruefte Zusage, keine Absicht: kein ``INSERT``/``UPDATE``/
-``DELETE``, kein ``commit``, kein ``flush``. ``tests/test_event_inputs.py`` haelt das mit einem
+``DELETE``, kein ``commit``, kein ``flush``. ``tests/test_event_probe.py`` haelt das mit einem
 eigenen Syntaxbaum-Waechter fest - JE MODUL, nicht ueber den Import-Graphen: ueber die Import-Huelle
 angewandt schluege er auf ``events.py``/``selection.py``/``geonames.py`` an (gleichnamige
 Sammlungs-Methoden) und wuerde dann entschaerft. Der Preis ist, dass diese Datei auf ``set.add``,
