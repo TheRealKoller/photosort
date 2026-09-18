@@ -6,10 +6,22 @@
       "anzeigename": "Projektübersicht",
       "seite": "Ansicht — Projektübersicht",
       "produktdateien": [],
-      "breiten": ["mobile", "desktop"],
-      "zustaende": ["gefuellt", "leer", "ladend", "fehler"],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "gefuellt",
+        "leer",
+        "ladend",
+        "fehler"
+      ],
       "variantenachse": "zustand",
-      "bausteine": ["button", "alert", "skeleton"],
+      "bausteine": [
+        "button",
+        "alert",
+        "skeleton"
+      ],
       "luecken": [
         {
           "schluessel": "bewegung",
@@ -63,10 +75,18 @@
       "anzeigename": "Projekt anlegen",
       "seite": "Ansicht — Projekt anlegen",
       "produktdateien": [],
-      "breiten": ["mobile", "desktop"],
-      "zustaende": ["standard"],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "standard"
+      ],
       "variantenachse": null,
-      "bausteine": ["input", "button"],
+      "bausteine": [
+        "input",
+        "button"
+      ],
       "luecken": [
         {
           "schluessel": "breakpoint",
@@ -105,10 +125,19 @@
       "anzeigename": "Projekt pflegen",
       "seite": "Ansicht — Projekt pflegen",
       "produktdateien": [],
-      "breiten": ["mobile", "desktop"],
-      "zustaende": ["standard"],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "standard"
+      ],
       "variantenachse": null,
-      "bausteine": ["input", "button", "switch"],
+      "bausteine": [
+        "input",
+        "button",
+        "switch"
+      ],
       "luecken": [
         {
           "schluessel": "breakpoint",
@@ -152,10 +181,18 @@
       "anzeigename": "Projekt löschen",
       "seite": "Ansicht — Projekt löschen",
       "produktdateien": [],
-      "breiten": ["mobile", "desktop"],
-      "zustaende": ["standard"],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "standard"
+      ],
       "variantenachse": null,
-      "bausteine": ["input", "button"],
+      "bausteine": [
+        "input",
+        "button"
+      ],
       "luecken": [
         {
           "schluessel": "breakpoint",
@@ -194,10 +231,17 @@
       "anzeigename": "Schrittleiste",
       "seite": "Ansicht — Schrittleiste",
       "produktdateien": [],
-      "breiten": ["mobile", "desktop"],
-      "zustaende": ["standard"],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "standard"
+      ],
       "variantenachse": null,
-      "bausteine": ["step-marker"],
+      "bausteine": [
+        "step-marker"
+      ],
       "luecken": [
         {
           "schluessel": "schloss",
@@ -241,10 +285,22 @@
       "anzeigename": "Fotos",
       "seite": "Ansicht — Fotos",
       "produktdateien": [],
-      "breiten": ["mobile", "desktop"],
-      "zustaende": ["gefuellt", "leer", "ladend", "fehler"],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "gefuellt",
+        "leer",
+        "ladend",
+        "fehler"
+      ],
       "variantenachse": "zustand",
-      "bausteine": ["button", "alert", "skeleton"],
+      "bausteine": [
+        "button",
+        "alert",
+        "skeleton"
+      ],
       "luecken": [
         {
           "schluessel": "seitenverhaeltnis",
@@ -449,8 +505,12 @@
       "seite": "Ansicht — Bilddetail",
       "produktdateien": [
         "src/pages/PhotoDetailPage.tsx",
+        "src/components/PhotoDetailStage.tsx",
+        "src/components/PhotoVerdict.tsx",
+        "src/components/CriterionScoreGrid.tsx",
+        "src/components/FineLabelList.tsx",
         "src/components/MotifStrengthSection.tsx",
-        "src/components/CriterionDetailsList.tsx",
+        "src/components/MotifStrengthSymbol.tsx",
         "src/components/RatingButtons.tsx"
       ],
       "breiten": [
@@ -466,18 +526,15 @@
       "bausteine": [
         "button",
         "alert",
-        "skeleton"
+        "skeleton",
+        "motiv-reihe",
+        "motiv-bereich"
       ],
       "luecken": [
         {
           "schluessel": "behaelter",
           "stelle": "Bedienleiste, Vorschlagszeile und Urteilsfläche als Behälter für ihren Inhalt",
           "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Alle drei sind im Entwurf deshalb tokengebundene Rahmen statt Instanzen."
-        },
-        {
-          "schluessel": "motivbaustein",
-          "stelle": "Motivbereich im Urteil, samt seiner Zustandsachse",
-          "grund": "Motivbereich und Motivreihe liegen als Komponenten in der Design-Datei, werden in der Bausteinliste des Repositories aber noch nicht geführt. Sie stammen aus der vorangegangenen Motivstärke-Story; ihre Aufnahme ist Gegenstand der Umsetzung dieser Ansicht und hier ausdrücklich offen."
         },
         {
           "schluessel": "chipbaustein",

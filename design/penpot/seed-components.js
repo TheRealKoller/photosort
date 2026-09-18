@@ -1,6 +1,6 @@
 // LAUFREGEL: nur-auf-leerer-datei
 /*
- * Baut die zwoelf Bausteine und ihre Varianten in der Penpot-Datei
+ * Baut die vierzehn Bausteine und ihre Varianten in der Penpot-Datei
  * "PhotoSort — Dark Utility Register" auf (decisions/0066-penpot-stand-als-erzeugte-idempotente-
  * nutzlast.md Abschnitt 4).
  *
