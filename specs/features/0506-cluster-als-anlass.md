@@ -586,11 +586,37 @@ heutigen Werte und ihren Vermerk „unkalibriert".
 
 ### Nachmessung (nach der Änderung)
 
-- **Block A und B erneut**, mit demselben Kommando und demselben Projekt. Block C entfällt: Er hat
-  keinen systematischen Fehler belegt, und an der Ortsbestimmung ändert diese Spec nichts.
-- **Abnahme:** Anteil der Ein-Bild-Cluster mindestens halbiert (≤ 12,1 %); kein Event über
-  `EVENT_MAX_SPAN`; die neu ausgewiesene Gegenanzeige (Anteil der aufgelösten Grenzen, Anteil der
-  Fotos, die ihr Event gewechselt haben) bleibt erklärbar.
+Gemessen am 2026-09-18 an Projekt 3, nach dem Merge von PR 3.
+
+| | vorher | nachher | Ziel |
+|---|---|---|---|
+| Events | 91 | 88 | — |
+| Ein-Bild-Cluster | 22 (24,2 %) | **18 (20,5 %)** | ≤ 12,1 % |
+| längste Eventdauer | 1 h 32 min | 2 h 8 min | < 8 h |
+
+**Gegenanzeige:** 3 von 90 Grenzen aufgelöst (3,3 %), 3 von 373 Fotos haben ihr Event gewechselt
+(0,8 %).
+
+**Die Abnahme ist verfehlt, und die Gegenanzeige sagt warum.** Der Anteil ist von 24,2 % auf 20,5 %
+gefallen — das Ziel war ≤ 12,1 %. Stufe 3 hat dabei **nur drei** Grenzen aufgelöst. Sie hat also
+nicht zu viel verschmolzen, sondern fast gar nichts; die 0,8 % gewechselter Fotos belegen, dass in
+der anderen Richtung Luft ist.
+
+**Der begründete Verdacht: Riegel (c) prüft dieselbe Bedingung, die die Trennung verursacht hat.**
+Ein Segment, das wegen `ausdehnung` oder `schritt` abgetrennt wurde, lässt sich nicht
+zurück-zusammenlegen — das Ergebnis überschritte `EVENT_EXTENT_MAX_METERS` erneut, weil genau diese
+Überschreitung die Trennung ausgelöst hat. Beide Ursachen zusammen eröffnen 7 bzw. 7 der zu kleinen
+Segmente. Das wäre ein Entwurfsfehler der dritten Stufe, kein Kalibrierungsproblem.
+
+**Nicht belegt, sondern erschlossen.** An welchem der vier Riegel eine Zusammenlegung tatsächlich
+scheitert, weist das Messkommando heute nicht aus. Bevor daran etwas geändert wird, gehört genau
+das gemessen — nach demselben Grundsatz, der in dieser Story bereits zwei falsche Annahmen
+aufgedeckt hat.
+
+**Was funktioniert hat:** Die Dauergrenze trägt. `dauer` meldet an denselben vier Stellen, an denen
+vorher `kalendertag` meldete, und in beiden Fällen nie allein — dort trennt ohnehin die Zeitlücke.
+Die längste Eventdauer ist von 1 h 32 min auf 2 h 8 min gestiegen: Anlässe über Mitternacht bleiben
+jetzt zusammen. Kein Event kommt `EVENT_MAX_SPAN` (8 h) auch nur nahe.
 
 ### Befund zur Ortszuordnung
 
