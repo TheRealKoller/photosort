@@ -1,6 +1,6 @@
 # 0497 - Bilddetailansicht zeigt das Foto groß und das Urteil zuerst
 
-**Status:** Accepted
+**Status:** Implemented ([PR #509](https://github.com/TheRealKoller/photosort/pull/509))
 **Erstellt:** 2026-09-18
 **Bezug:** [Issue #497](https://github.com/TheRealKoller/photosort/issues/497)
 
