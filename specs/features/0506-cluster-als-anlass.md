@@ -394,7 +394,8 @@ rein messend, in Block B und D.
 - `specs/architecture/0003-securitykonzept.md`: Fortschreibung unter „Standortdaten" und zwei
   Zeilen in der Ankerliste (Security-Abschnitt, letzter Absatz).
 
-**Nicht betroffen:** `models.py`, Alembic, jede API-Antwort, `frontend/`, `scoring.py`,
+**Nicht betroffen:** `models.py`, Alembic, jede API-Antwort, `frontend/`-**Produktivcode** (zwei
+Testdateien wachsen, siehe Teststrategie), `scoring.py`,
 `demo_state.py`.
 
 **`selection.py` ist genau in einem Punkt betroffen, additiv:** `motif_is_present` und
