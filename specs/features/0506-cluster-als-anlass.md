@@ -75,7 +75,11 @@ Ortsfehler (siehe „Entscheidungen").
       beiden Nachbarn, bleibt das Segment unverändert bestehen; das ist ein gültiges Ergebnis, kein
       Fehlerfall.
 - [ ] Nach der Änderung ist an denselben Daten messbar, dass der Anteil der Ein-Bild-Cluster
-      **mindestens halbiert** ist gegenüber dem in „Messprotokoll" festgehaltenen Ausgangswert.
+      **mindestens halbiert** ist gegenüber dem in „Messprotokoll" festgehaltenen Ausgangswert
+      (24,2 %, also Ziel ≤ 12,1 %). **Dieses Kriterium steht unter Vorbehalt:** Die Ausgangsmessung
+      hat gezeigt, dass die Schwellen nicht die Ursache sind und die Motivgrenze es ist; solange
+      diese unantastbar bleibt, ist die Halbierung voraussichtlich nicht erreichbar. Ob das Ziel
+      bleibt oder sinkt, entscheidet Daniel nach der Empfindlichkeitsmessung (Block E).
 
 **Dabei nicht zu viel verschmelzen**
 
@@ -287,6 +291,31 @@ wo Widersprüche auftreten, kann ihn aber nicht **widerlegen**. „Kein systemat
 für die Wege 1 und 2 vollständig, für Weg 3 nur so weit, wie die Widersprüche reichen. Das begrenzt,
 was das Akzeptanzkriterium „belegt oder widerlegt" einlösen kann.
 
+#### Block E — die Empfindlichkeit des Motivwechsels (`--motiv`)
+
+**Nach der Ausgangsmessung eingefügt.** Sie hat den Motivwechsel als alleinige Ursache von 62,2 %
+der Grenzen ausgewiesen, während `schritt` und `ausdehnung` bei 0,0 % stehen — die vorgesehene
+Kalibrierung trifft die Ursache nicht. Bevor an der Unantastbarkeit der Motivgrenze etwas geändert
+wird, wird sie deshalb gemessen, nach demselben Grundsatz wie der Rest dieser Story.
+
+Dieselbe Kandidatenmenge wird unter mehreren Werten von `MOTIF_CHANGE_CONFIRMING_PHOTOS` (heute 3)
+und der Motivstärke-Schwelle durchgerechnet. Je Kombination werden ausgewiesen: Eventzahl, Anteil
+der Ein-Bild-Cluster, Zahl der Grenzen mit `motivwechsel` als alleiniger Ursache, und — als
+Gegenanzeige gegen zu grobes Zusammenfassen — das größte entstehende Event und die längste Dauer.
+
+**Die Tabelle führt den unveränderten Betriebswert als eigene erste Zeile mit**, ohne jede
+Überschreibung — nicht als Rasterzelle: So trägt sie ihren eigenen Nullpunkt auch dann noch, wenn
+einer der beiden Werte später wandert und in keiner Zelle des Rasters mehr steht. Ein Test pinnt
+diese Zeile gegen `explain_events(candidates)`.
+
+`MOTIF_CHANGE_CONFIRMING_PHOTOS` liegt in `events.py`, die Stärke-Schwelle als
+`MOTIF_PRESENCE_THRESHOLD` in `selection.py`. **Beide werden in diesem Schritt nicht geändert**,
+sondern nur variiert durchgerechnet; die Messung ist rein lesend wie die Blöcke A–C.
+
+**Was die Messung entscheidbar macht, entscheidet sie nicht:** Ob die Motivgrenze unantastbar
+bleibt, gelockert wird oder das Halbierungsziel sinkt, legt Daniel anhand der Zahlen fest. Der Lauf
+hält an dieser Stelle an.
+
 #### Block D — die Kalibrierung (`--schwellen`)
 
 Dieselbe Kandidatenmenge wird unter mehreren Schwellenkombinationen durchgerechnet; je Kombination
@@ -339,8 +368,19 @@ rein messend, in Block B und D.
 - `specs/architecture/0003-securitykonzept.md`: Fortschreibung unter „Standortdaten" und zwei
   Zeilen in der Ankerliste (Security-Abschnitt, letzter Absatz).
 
-**Nicht betroffen:** `models.py`, Alembic, jede API-Antwort, `frontend/`, `selection.py`,
-`scoring.py`, `demo_state.py`.
+**Nicht betroffen:** `models.py`, Alembic, jede API-Antwort, `frontend/`, `scoring.py`,
+`demo_state.py`.
+
+**`selection.py` ist genau in einem Punkt betroffen, additiv:** `motif_is_present` und
+`carried_motifs` nehmen einen optionalen `threshold` entgegen (`None` = Modulkonstante, Verhalten
+dann unverändert). Das ist der einzige Weg, die Präsenzgrenze für Block E zu variieren, **ohne eine
+zweite Fassung des Vergleichs zu bauen** — eine Nachbildung maße etwas anderes, als der Lauf tut.
+**Kein auswählender Pfad gibt je einen Wert mit**, und der mitgegebene Wert ist ein Skalar für alle
+Motive: Die Eindämmung aus ADR 0091 Punkt 1 (eine für alle Motive gleiche Grenze) bleibt damit
+unangetastet. Durchgesetzt von
+`tests/test_selection.py::TestOnlyTheMeasuringPathPassesItsOwnThreshold` — ein Aufrufer außerhalb
+des Messwegs lässt den Test rot werden. Die **Auswahllogik** selbst (Kontingente, „Abdeckung
+zuerst") bleibt unberührt.
 
 ### Zuschnitt: zwei Pull Requests, Daniels Messung dazwischen
 
@@ -354,10 +394,21 @@ ohne den gemessenen Ausgangswert kein prüfbares Kriterium.
   Ursachenmenge in `events.py`. **Keine Verhaltensänderung an der Gliederung.** Danach misst Daniel
   an einem echten Projekt und gibt die Ausgabe zurück; sie geht als Ausgangsmessung ins
   Messprotokoll.
-- **PR 2** — Schritte 4–7: Dauergrenze statt Kalendertag, eigene Konstanten, Block D und
-  Kalibrierungslauf, die dritte Stufe, Nachmessung in dasselbe Messprotokoll.
-- **Ein PR 3** entsteht nur, wenn Block C einen systematischen Ortsfehler belegt **und** Daniel
-  dessen Behebung auslöst. Das entscheidet er nach der Messung, nicht der Lauf.
+- **PR 2** — **nach der Ausgangsmessung neu zugeschnitten** (Daniel am 2026-09-18): Die Messung hat
+  gezeigt, dass die Schwellen nicht die Ursache sind und der Motivwechsel es ist. Statt direkt zu
+  kalibrieren, misst PR 2 deshalb zuerst die **Empfindlichkeit des Motivwechsels** — ein Durchlauf
+  über `MOTIF_CHANGE_CONFIRMING_PHOTOS` und die Motivstärke-Schwelle, der zeigt, wie Eventzahl und
+  Ein-Bild-Anteil daran hängen. Danach misst Daniel erneut und entscheidet mit Zahlen, ob die
+  Unantastbarkeit der Motivgrenze fällt, gelockert oder das Ziel gesenkt wird.
+- **PR 3** — die eigentliche Änderung, deren Zuschnitt erst nach dieser zweiten Messung feststeht:
+  die dritte Stufe (Zusammenlegen), die Dauergrenze als Vorsorge, und was die Empfindlichkeitsmessung
+  an Schwellen nahelegt. Nachmessung in dasselbe Messprotokoll.
+
+**Der Ortsfehler ist abgeschlossen.** Block C hat keinen systematischen Fehler belegt; an der
+Ortsbestimmung wird in dieser Spec nichts geändert. Der dabei abgefallene Befund zum
+Sehenswürdigkeitsnamen ist als eigenes Issue
+[#514](https://github.com/TheRealKoller/photosort/issues/514) festgehalten und ausdrücklich nicht
+Teil dieser Story.
 
 ### Umsetzungsreihenfolge (testgetrieben)
 
@@ -371,7 +422,7 @@ ohne den gemessenen Ausgangswert kein prüfbares Kriterium.
 
 ### Was sich ausdrücklich nicht ändert
 
-- **`selection.py` wird nicht angefasst.** „Abdeckung zuerst" (`selection.py:238-241`, jedes Event
+- **Die Auswahllogik in `selection.py` wird nicht angefasst.** „Abdeckung zuerst" (`selection.py:238-241`, jedes Event
   bekommt zuerst einen Platz) ist richtig, sobald ein Event eine Einheit ist. Eine zweite
   Reparatur derselben Verzerrung am Kontingent verdeckte, ob die erste wirkt.
 - **Phase A** (`scoring.py::assign_clusters`, `PhotoScore.cluster_key`, der Ausschuss) bleibt
@@ -383,13 +434,66 @@ ohne den gemessenen Ausgangswert kein prüfbares Kriterium.
 
 ## Messprotokoll
 
-Gegenstand der Abnahme. Wird im Lauf der Umsetzung gefüllt; bis dahin steht hier, was hineingehört.
+Gegenstand der Abnahme.
 
 ### Ausgangsmessung (vor der Änderung)
 
-- **Block A:** _(Verteilung, Anteil Ein-Bild-Cluster, Median, größtes Event, längste/kürzeste Dauer)_
-- **Block B:** _(je Ursache „beteiligt" / „alleinige Ursache", Anteil der zu kleinen Segmente)_
-- **Block C:** _(je Mechanismus die dort genannten Kennzahlen)_
+Gemessen am 2026-09-18 an Projekt 3, letzter erfolgreicher Kriterien-Lauf, mit
+`python -m photosort.event_probe --project-id 3` auf dem Stand von PR 1 (`de02a402`).
+
+**Block A — Verteilung**
+
+91 Events über 373 Fotos. **22 Ein-Bild-Cluster (24,2 %.)** Median der Fotozahl 3, größtes Event
+28 Fotos. Verteilung: 1 Foto: 22, 2: 15, 3: 26, 4: 7, 5: 2, 6: 4, 7: 3, 8: 3, 9: 2, 10: 1, 11: 1,
+13: 1, 16: 1, 19: 1, 21: 1, 28: 1.
+
+**Längste Eventdauer 1 h 32 min, kürzeste 0 s.** Kein einziges Event reicht auch nur nahe an einen
+Tag heran.
+
+**Block B — Trennursachen** (90 Grenzen mit Ursache, Mindestgröße 2 Fotos)
+
+| Ursache | beteiligt | alleinige Ursache | eröffnet ein zu kleines Segment |
+|---|---|---|---|
+| `zeitluecke` | 13 (14,4 %) | 5 (5,6 %) | 6 (46,2 %) |
+| `kalendertag` | 4 (4,4 %) | 0 (0,0 %) | 2 (50,0 %) |
+| `schritt` | 16 (17,8 %) | 0 (0,0 %) | 8 (50,0 %) |
+| `ausdehnung` | 16 (17,8 %) | 0 (0,0 %) | 8 (50,0 %) |
+| `sehenswuerdigkeit` | 10 (11,1 %) | 7 (7,8 %) | 6 (60,0 %) |
+| `motivwechsel` | 62 (68,9 %) | **56 (62,2 %)** | 6 (9,7 %) |
+
+**Block C — Ortszuordnung**
+
+- **C1 (übernommener Ort):** 112 von 373 Kandidatenfotos (30,0 %) ohne eigene Koordinate, alle 112
+  mit tatsächlicher Übernahme. Zeitabstand zum Anker: 93 (83,0 %) unter 1 min, 12 (10,7 %) unter
+  5 min — und **7 (6,2 %) bei 12 h und mehr**. Ankerspanne: 107 (96,4 %) unter 250 m, 2 (1,8 %)
+  zwischen 1 und 5 km, **2 (1,8 %) bei 10 km und mehr**, 1 ohne Spanne.
+- **C2 (aufgelöster Ortsname):** 10 gefragte Zellen, alle 10 mit Namen. Entfernung zum
+  namengebenden Eintrag: 1 unter 250 m, 4 unter 1 km, 4 unter 5 km, 1 unter 10 km. **0 über der
+  Entfernungsschwelle.**
+- **C3 (Sehenswürdigkeitsname):** 26 Erkennungen unter den Kandidaten, davon **11 (42,3 %) ohne
+  jeden Ortshinweis**. 18 verschiedene Namen, davon 0 mit Trägerfotos über der Schwelle
+  auseinander. **18 Events werden von genau einem von vielen Fotos benannt.**
+
+### Was die Messung an dieser Spec widerlegt
+
+Drei tragende Annahmen halten der Messung nicht stand. Das ist der Zweck des Vorgehens „erst
+belegen, dann ändern" — es ist eingetreten, nicht schiefgegangen.
+
+1. **Die vermutete Hauptursache ist es nicht.** Die Story ging davon aus, dass die Cluster an der
+   Zeitlücke und der Ausdehnungsgrenze zerfallen. Tatsächlich ist der **Motivwechsel zu 62,2 % die
+   alleinige Ursache** einer Grenze; die Zeitlücke kommt auf 5,6 %.
+2. **Zwei der drei zu kalibrierenden Schwellen trennen nie allein.** `schritt` und `ausdehnung`
+   stehen bei 0,0 % alleiniger Ursache — sie melden nur mit. Ihre Kalibrierung kann für sich
+   **keine einzige** Grenze auflösen. Zusammen mit der Zeitlücke sind höchstens 5,6 % der Grenzen
+   überhaupt erreichbar; der Ein-Bild-Anteil lässt sich daran nicht halbieren.
+3. **Die Dauergrenze hat in diesen Daten keinen Gegenstand.** `kalendertag` ist 0,0 % alleinige
+   Ursache, und die längste Eventdauer beträgt 1 h 32 min. Eine Dauergrenze statt des Kalendertags
+   bleibt sinnvoll als Vorsorge (Silvester, Nachtflug), ist hier aber **keine Reparatur** und
+   verändert an der Zerstückelung nichts.
+
+**Damit ist die Auswahlregel aus Block D nicht erfüllbar**, und der in ihr vorgesehene Halteort
+greift: Keine Schwellenkombination kann den Anteil der Ein-Bild-Cluster halbieren, weil die
+Schwellen nicht die Ursache sind.
 
 ### Kalibrierung (Block D)
 
@@ -404,9 +508,26 @@ Gegenstand der Abnahme. Wird im Lauf der Umsetzung gefüllt; bis dahin steht hie
 
 ### Befund zur Ortszuordnung
 
-_(Ausfüllen nach Block C: systematischer Fehler belegt — dann Behebung und Nachmessung — oder
-nicht belegt, dann bleibt die Ortsbestimmung unverändert. Die Grenze der Aussage für Weg 3
-(Sehenswürdigkeitsname) ist im Architektur-Abschnitt benannt und gilt hier.)_
+Je Mechanismus getrennt, wie das Akzeptanzkriterium es verlangt:
+
+- **C2 (aufgelöster Ortsname): kein systematischer Fehler, widerlegt.** Alle zehn gefragten Zellen
+  bekommen einen Namen, keine einzige Zuordnung liegt über der Entfernungsschwelle, die weiteste
+  unter 10 km. An der GeoNames-Auflösung wird nichts geändert.
+- **C1 (übernommener Ort): kein systematischer Fehler, aber zwei benannte Ausreißer.** 96,4 % der
+  Übernahmen haben eine Ankerspanne unter 250 m und 83,0 % einen Zeitabstand unter einer Minute —
+  das ist eine Kamera ohne GPS neben einer mit, kein Fehler. Auffällig sind **7 Fotos mit 12 h und
+  mehr Abstand zum Anker** und **2 mit einer Ankerspanne über 10 km**: Dort ist die Übernahme ein
+  Münzwurf, und diese Fotos speisen `StepDistanceSignal`. Bei 373 Fotos sind das Einzelfälle, keine
+  Systematik — sie erklären die Zerstückelung nicht.
+- **C3 (Sehenswürdigkeitsname): ein Befund, aber nicht der vermutete.** Ein „falsches Land" ist
+  nicht belegbar: 0 von 18 Namen haben Trägerfotos über der Schwelle auseinander. Belegt ist etwas
+  anderes — **11 von 26 Erkennungen (42,3 %) entstanden ohne jeden Ortshinweis**, und **18 Events
+  werden von genau einem von vielen Fotos benannt**. Der Name eines Events beruht also regelmäßig
+  auf einem einzigen, ortsblind erkannten Foto und wirkt von dort als Trennsignal
+  (`sehenswuerdigkeit`: 7,8 % alleinige Ursache, eröffnet zu 60 % ein zu kleines Segment).
+
+Die im Architektur-Abschnitt benannte Grenze gilt: Ein in sich stimmiger Sehenswürdigkeitsname ist
+offline nicht widerlegbar. Der Block belegt Widersprüche, er schließt sie nicht aus.
 
 ## UI/UX
 

@@ -56,6 +56,7 @@ from photosort.db import make_engine, make_session_factory
 from photosort.event_inputs import read_event_inputs
 from photosort.events import (
     BOUNDARY_CAUSES,
+    BOUNDARY_MOTIF_CHANGE,
     MIN_EVENT_PHOTOS,
     EventCandidate,
     EventFormation,
@@ -101,6 +102,17 @@ DISTANCE_CLASS_LABELS = (
     "5 km bis unter 10 km",
     "10 km und mehr",
 )
+
+# DAS RASTER DER EMPFINDLICHKEITSMESSUNG (Block E). Beide Achsen sind Messparameter,
+# keine Schwellen des Produkts: Sie legen fest, WO gemessen wird, und aendern an keinem Betriebswert
+# etwas. `MOTIF_CHANGE_CONFIRMING_PHOTOS` (events.py) und die Motivstaerke-Grenze (selection.py)
+# bleiben in diesem Schritt unveraendert und werden ausschliesslich variiert durchgerechnet.
+#
+# DER BETRIEBSWERT LAEUFT NICHT ALS RASTERZELLE MIT, sondern als eigene erste Zeile ohne jede
+# Ueberschreibung - so traegt die Tabelle ihren eigenen Nullpunkt auch dann noch, wenn einer der
+# beiden Werte spaeter wandert und in keiner Rasterzelle mehr steht.
+MOTIF_CONFIRMING_VARIANTS = (2, 3, 4, 5, 6)
+MOTIF_STRENGTH_VARIANTS = (0.3, 0.4, 0.5, 0.6, 0.7)
 
 TIME_CLASS_BOUNDS = (60.0, 300.0, 1800.0, 7200.0, 43200.0)
 TIME_CLASS_LABELS = (
@@ -320,6 +332,76 @@ def cause_counts(formation: EventFormation) -> CauseCounts:
         involved=involved,
         sole=sole,
         opening_a_small_segment=opening_small,
+    )
+
+
+# --- Block E: die Empfindlichkeit des Motivwechsels ----------------------------------------------
+
+
+@dataclass(frozen=True)
+class MotifSensitivityRow:
+    """Eine Zeile des Rasters: dieselbe Kandidatenmenge unter einer Kombination durchgerechnet.
+
+    `confirming_photos` und `strength_threshold` sind `None` in der Zeile des BETRIEBSWERTS - sie
+    entsteht ohne jede Ueberschreibung und ist damit die Gliederung, die auch der Lauf bildete.
+
+    DIE LETZTEN BEIDEN FELDER SIND DIE GEGENANZEIGE: Eventzahl und Ein-Bild-Anteil wuerden von
+    einem zu groben Zusammenfassen BESSER erfuellt; groesstes Event und laengste Dauer stehen
+    deshalb in derselben Zeile, nicht daneben. `longest_seconds` ist `None`, wenn es kein Event
+    gibt - eine Null hiesse "das laengste Event dauert nichts"."""
+
+    confirming_photos: int | None
+    strength_threshold: float | None
+    events_total: int
+    single_photo_events: int
+    sole_motif_boundaries: int
+    largest_event_photos: int
+    longest_seconds: float | None
+
+
+def _sensitivity_row(
+    candidates: Sequence[EventCandidate],
+    confirming_photos: int | None,
+    strength_threshold: float | None,
+) -> MotifSensitivityRow:
+    """Eine Kombination, gerechnet mit den MITTELN DES LAUFS.
+
+    `explain_events` ist derselbe Durchlauf, den auch der Lauf nimmt - die beiden Festlegungen
+    gehen als Parameter hinein, statt dass hier eine zweite Fassung der Motivregel entstuende. Eine
+    Nachbildung maesse etwas anderes, als der Lauf tut, waehrend beide fuer sich gruen blieben."""
+    formation = explain_events(
+        candidates,
+        confirming_photos=confirming_photos,
+        motif_presence_threshold=strength_threshold,
+    )
+    sizes = size_counts(formation)
+    causes = cause_counts(formation)
+    return MotifSensitivityRow(
+        confirming_photos=confirming_photos,
+        strength_threshold=strength_threshold,
+        events_total=sizes.events_total,
+        single_photo_events=sizes.single_photo_events,
+        sole_motif_boundaries=causes.sole[BOUNDARY_MOTIF_CHANGE],
+        largest_event_photos=sizes.largest_event_photos,
+        longest_seconds=sizes.longest_seconds,
+    )
+
+
+def motif_sensitivity(candidates: Sequence[EventCandidate]) -> tuple[MotifSensitivityRow, ...]:
+    """Das ganze Raster, die Zeile des Betriebswerts voran.
+
+    NUR DIE ALLEINIGE URSACHE ist handlungsleitend (wie in Block B): Eine Motivgrenze zu lockern
+    loest dort eine Grenze auf, wo der Motivwechsel ALLEIN getrennt hat - an einer Doppelgrenze
+    traegt die andere Ursache weiter.
+
+    Rein: Kein Aufruf dieser Funktion aendert eine Konstante, eine Zeile oder einen Zustand."""
+    return (
+        _sensitivity_row(candidates, None, None),
+        *(
+            _sensitivity_row(candidates, confirming, strength)
+            for confirming in MOTIF_CONFIRMING_VARIANTS
+            for strength in MOTIF_STRENGTH_VARIANTS
+        ),
     )
 
 
@@ -582,6 +664,52 @@ def _class_lines(counts: Sequence[int], labels: Sequence[str]) -> list[str]:
     ]
 
 
+def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityRow]) -> str:
+    """Block E als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+
+    Derselbe Bericht-Rand wie der Hauptbericht: keine Koordinate, kein Orts- oder
+    Sehenswuerdigkeit-Name, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen
+    wird die Projekt-Id. Dauern stehen als DAUER, nie als Anfang oder Ende.
+
+    Die Zeile des Betriebswerts nennt ihre beiden Werte NICHT: Sie entsteht ohne Ueberschreibung,
+    und eine ausgeschriebene Zahl daneben behauptete, gemessen zu haben, welcher Wert gerade gilt."""
+    lines = [
+        f"# Empfindlichkeit des Motivwechsels, Projekt {probe.project_id}",
+        "",
+        "Dieselbe Kandidatenmenge, durchgerechnet unter mehreren Kombinationen aus der Zahl der",
+        "bestaetigenden Fotos und der Motivstaerke-Grenze. BEIDE KONSTANTEN BLEIBEN UNVERAENDERT -",
+        "dieser Lauf misst, er aendert nichts.",
+        "",
+        "Die letzten beiden Spalten sind die GEGENANZEIGE gegen zu grobes Zusammenfassen: Eventzahl",
+        "und Ein-Bild-Anteil wuerden von einer zu groben Gliederung besser erfuellt.",
+        "",
+        "| bestaetigende Fotos | Motivstaerke-Grenze | Events | Ein-Bild-Cluster | "
+        "motivwechsel allein | groesstes Event | laengste Dauer |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        operating = row.confirming_photos is None and row.strength_threshold is None
+        confirming = "Betriebswert" if operating else str(row.confirming_photos)
+        strength = "Betriebswert" if operating else f"{row.strength_threshold}"
+        lines.append(
+            f"| {confirming} | {strength} | {row.events_total} "
+            f"| {row.single_photo_events} "
+            f"({_percent(row.single_photo_events, row.events_total)}) "
+            f"| {row.sole_motif_boundaries} "
+            f"({_percent(row.sole_motif_boundaries, max(row.events_total - 1, 0))}) "
+            f"| {row.largest_event_photos} Foto(s) | {_duration(row.longest_seconds)} |"
+        )
+
+    lines += [
+        "",
+        'Der Anteil bezieht sich auf die Grenzen MIT Ursache (Eventzahl - 1); "motivwechsel '
+        'allein" zaehlt',
+        "nur die Grenzen, an denen keine andere Ursache mitgemeldet hat - nur dort loest eine",
+        "gelockerte Motivgrenze ueberhaupt etwas auf.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def render_report(
     probe: EventProbeInput,
     formation: EventFormation,
@@ -705,6 +833,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--project-id", type=int, required=True)
     parser.add_argument(
+        "--motiv",
+        action="store_true",
+        help=(
+            "Statt der Bloecke A-C: die Empfindlichkeit des Motivwechsels. Dieselbe "
+            "Kandidatenmenge unter mehreren Kombinationen aus der Zahl der bestaetigenden Fotos "
+            "und der Motivstaerke-Grenze. Beide Konstanten bleiben dabei unveraendert."
+        ),
+    )
+    parser.add_argument(
         "--ortsdatensatz",
         default=None,
         help=(
@@ -715,7 +852,9 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _probe_with_own_session(database_url: str, *, project_id: int, dataset_path: Path) -> str:
+async def _probe_with_own_session(
+    database_url: str, *, project_id: int, dataset_path: Path, motif: bool = False
+) -> str:
     engine = make_engine(database_url)
     try:
         session_factory = make_session_factory(engine)
@@ -729,6 +868,12 @@ async def _probe_with_own_session(database_url: str, *, project_id: int, dataset
             f"Projekt {project_id} hat keinen erfolgreichen Kriterien-Lauf. Ohne Events gibt es "
             "nichts zu messen - erst einen Lauf durchfuehren."
         )
+
+    if motif:
+        # Block E fragt den Ortsauszug GAR NICHT: Die Empfindlichkeit des Motivwechsels haengt an
+        # keiner Ortsangabe, und ein hier gebauter Auflöser laese Daten, die in diesen Bericht
+        # ohnehin nie eingehen.
+        return render_motif_report(probe, motif_sensitivity(probe.candidates))
 
     # DERSELBE Durchlauf, den auch der Lauf nimmt - nur zusaetzlich mit den Ursachen.
     formation = explain_events(probe.candidates)
@@ -777,6 +922,7 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
                 database_url or settings.database_url,
                 project_id=args.project_id,
                 dataset_path=Path(args.ortsdatensatz or settings.place_dataset_path),
+                motif=args.motiv,
             )
         )
     except (EventProbeError, PlaceDatasetError) as exc:

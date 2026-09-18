@@ -12,6 +12,7 @@ Testwelle auszuloesen.
 
 from __future__ import annotations
 
+import ast
 import itertools
 import math
 from collections.abc import Mapping, Sequence
@@ -32,6 +33,7 @@ from photosort.selection import (
     SelectionEvent,
     carried_motifs,
     effective_target,
+    motif_is_present,
     order_alternatives,
     select_album_draft,
 )
@@ -692,6 +694,45 @@ class TestTheCarriedMotifsArePublic:
         assert carried_motifs({}) == frozenset()
 
 
+class TestTheThresholdCanBeVariedForAMeasurementWithoutMovingTheOperatingPoint:
+    """Die Praesenzgrenze ist DURCHREICHBAR, damit ein rein lesender Messlauf sie variieren kann,
+    ohne eine zweite Fassung des Vergleichs zu bauen (Spec 0506, Block E).
+
+    DIE EINDAEMMUNG BLEIBT (Sicherheitskonzept, "Standortdaten"): Es ist EIN Skalar fuer ALLE
+    Motive, nie eine Grenze je Motiv - zwei Motive treten damit weiterhin nie ueber ihre Zahlen
+    gegeneinander an. Ohne Angabe gilt unveraendert die Modulkonstante, und der Vergleich bleibt
+    INKLUSIV."""
+
+    def test_without_an_argument_nothing_changes_at_all(self) -> None:
+        """Der Zwilling gegen das Auseinanderlaufen der beiden Vergleiche in `motif_is_present`:
+        Am Betriebswert muessen beide Zweige Foto fuer Foto dasselbe sagen - EINSCHLIESSLICH des
+        Werts genau auf der Grenze und seines naechsten Nachbarn darunter."""
+        for strength in (0.0, _BELOW, MOTIF_PRESENCE_THRESHOLD, _FULL):
+            assert motif_is_present(strength) is motif_is_present(
+                strength, MOTIF_PRESENCE_THRESHOLD
+            ), strength
+
+    def test_a_stricter_threshold_carries_less_and_a_looser_one_carries_more(self) -> None:
+        strengths = {"a": _FULL, "b": MOTIF_PRESENCE_THRESHOLD, "c": _BELOW}
+
+        assert carried_motifs(strengths, _FULL) == frozenset({"a"})
+        assert carried_motifs(strengths, _BELOW) == frozenset({"a", "b", "c"})
+
+    def test_the_passed_threshold_is_read_inclusively_too(self) -> None:
+        """Nicht nur die Konstante wird inklusiv gelesen: Ein `>` im durchgereichten Zweig waere
+        gruen gegen jeden Wert abseits der Grenze und liefe genau am Grenzfall auseinander."""
+        assert motif_is_present(_FULL, _FULL) is True
+        assert motif_is_present(math.nextafter(_FULL, 0.0), _FULL) is False
+
+    def test_the_same_threshold_applies_to_every_motif_of_a_picture(self) -> None:
+        """Ein Skalar, keine Abbildung je Motiv: Zwei gleich starke Motive fallen unter jedem Wert
+        gemeinsam heraus oder gemeinsam hinein."""
+        strengths = {"a": MOTIF_PRESENCE_THRESHOLD, "b": MOTIF_PRESENCE_THRESHOLD}
+
+        assert carried_motifs(strengths, _FULL) == frozenset()
+        assert carried_motifs(strengths, _BELOW) == frozenset({"a", "b"})
+
+
 class TestTheOrderOfTheAlternatives:
     """Der Sortierschluessel `(0 wenn geteiltes Motiv sonst 1, -quality, photo_id)`.
 
@@ -897,6 +938,45 @@ class TestTheStructuralGuardAgainstReadingTheDisplayBands:
 
         for band in self._DISPLAY_BANDS:
             assert band in source
+
+
+class TestOnlyTheMeasuringPathPassesItsOwnThreshold:
+    """Die durchreichbare Praesenzgrenze steht AUSSCHLIESSLICH dem Messweg offen.
+
+    Sie ist seit Spec 0506 Block E durchreichbar, damit ein rein lesender Messlauf sie variieren
+    kann. Die Eindaemmung des Sicherheitskonzepts (Abschnitt "Standortdaten") haengt daran, dass
+    JEDER AUSWAEHLENDE Pfad gegen die eine, fuer alle Motive gleiche Konstante prueft: Ein
+    Aufrufer, der selbst eine Grenze mitgibt, stellte eine zweite Auswahlgrenze im selben Produkt
+    auf, und zwei Motive traeten dann ueber ihre Zahlen gegeneinander an. Zulaessig ist genau eine
+    Stelle - die Weitergabe in `events.py::_motif_picture`, deren Wert seinerseits nur aus dem
+    injizierbaren Parameter von `motif_change_starts` stammt."""
+
+    _SOURCE_DIR = Path(photosort.__file__).resolve().parent
+    _PREDICATES = ("motif_is_present", "carried_motifs")
+    _ALLOWED = {"selection.py", "events.py"}
+
+    def _modules_passing_a_threshold(self) -> set[str]:
+        passing: set[str] = set()
+        for path in sorted(self._SOURCE_DIR.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                called = node.func.id if isinstance(node.func, ast.Name) else None
+                if called in self._PREDICATES and len(node.args) + len(node.keywords) > 1:
+                    passing.add(path.relative_to(self._SOURCE_DIR).as_posix())
+        return passing
+
+    def test_only_the_measuring_path_ever_passes_a_threshold_of_its_own(self) -> None:
+        assert self._modules_passing_a_threshold() <= self._ALLOWED, (
+            "Ein auswaehlender Pfad gibt eine eigene Praesenzgrenze mit - die Eindaemmung "
+            "'eine Grenze fuer alle Motive' haengt daran, dass er es nicht tut"
+        )
+
+    def test_the_walker_actually_finds_the_two_allowed_call_sites(self) -> None:
+        """Gegenprobe: Ohne sie bestuende der Waechter oben auch dann, wenn der Aufruf-Sucher gar
+        nichts findet - umbenannte Funktion, geaenderte Verzeichnisstruktur."""
+        assert self._modules_passing_a_threshold() == self._ALLOWED
 
 
 class TestTheResultIsDeterministic:

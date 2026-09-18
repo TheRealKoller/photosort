@@ -1843,6 +1843,117 @@ class TestBuildEventsAndTheExplainingFormAreTheSameRun:
         assert list(explain_events(candidates).events) == build_events(candidates)
 
 
+class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
+    """Fensterlaenge und Praesenzgrenze sind INJIZIERBAR - die Voraussetzung dafuer, dass die
+    Empfindlichkeitsmessung (Spec 0506, Block E) den ECHTEN Rechenweg variiert statt eine
+    Nachbildung zu messen.
+
+    Ohne Angabe gilt weiterhin der Betriebswert, und zwar als MODULATTRIBUT gelesen: Ein
+    Default-Parameterwert in der Signatur baende ihn beim Import, `monkeypatch.setattr` liefe ins
+    Leere und die Variation waere wirkungslos - gruen, aber ohne Wirkung.
+
+    Die Staerken dieser Faelle sind FREI GEWAEHLT und stehen zu `MOTIF_PRESENCE_THRESHOLD` in
+    keinem Verhaeltnis: Jeder Fall gibt die Grenze, gegen die er misst, selbst mit."""
+
+    _CARRIED = 1.0
+    _MIDDLE = 0.8
+    _ABSENT = 0.0
+
+    def _sequence(self, length: int) -> list[EventCandidate]:
+        """Ein Bezugsfoto, dann `length` Fotos, in denen "b" mit mittlerer Staerke dazukommt.
+
+        Ob daraus ein Wechsel wird, entscheidet allein die mitgegebene Grenze; wie viele Fotos ihn
+        bestaetigen muessen, allein die mitgegebene Fensterlaenge."""
+        reference = {"a": self._CARRIED, "b": self._ABSENT}
+        deviating = {"a": self._CARRIED, "b": self._MIDDLE}
+        return _motif_candidates([reference, *([deviating] * length)])
+
+    def test_the_window_length_comes_from_the_argument_not_from_the_constant(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die Modulkonstante steht auf einem Wert, unter dem die Folge NICHT bestaetigt - und das
+        Argument setzt sich durch. Andersherum bliebe der Fall auch dann gruen, wenn das Argument
+        gar nicht gelesen wird."""
+        monkeypatch.setattr(events_module, "MOTIF_CHANGE_CONFIRMING_PHOTOS", 5)
+        candidates = self._sequence(2)
+
+        assert motif_change_starts(candidates, motif_presence_threshold=self._MIDDLE) == frozenset()
+        assert motif_change_starts(
+            candidates, confirming_photos=2, motif_presence_threshold=self._MIDDLE
+        ) == frozenset({1})
+
+    def test_the_presence_threshold_comes_from_the_argument_too(self) -> None:
+        """Dieselbe Folge, dieselbe Fensterlaenge, nur die Grenze wandert: Ueber der mittleren
+        Staerke traegt kein Foto "b", und es gibt gar keinen Wechsel."""
+        candidates = self._sequence(2)
+
+        assert motif_change_starts(
+            candidates, confirming_photos=2, motif_presence_threshold=self._MIDDLE
+        ) == frozenset({1})
+        assert (
+            motif_change_starts(
+                candidates, confirming_photos=2, motif_presence_threshold=self._CARRIED
+            )
+            == frozenset()
+        )
+
+    def test_without_arguments_the_module_attributes_apply(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Der Zwilling gegen einen gebundenen Default: Das verschobene Modulattribut MUSS wirken,
+        sonst ist die Konstante beim Import eingefroren."""
+        candidates = self._sequence(4)
+        monkeypatch.setattr(events_module, "MOTIF_CHANGE_CONFIRMING_PHOTOS", 2)
+
+        with_two = motif_change_starts(candidates)
+
+        monkeypatch.setattr(events_module, "MOTIF_CHANGE_CONFIRMING_PHOTOS", 5)
+        with_five = motif_change_starts(candidates)
+
+        assert with_two != with_five
+        assert with_five == motif_change_starts(candidates, confirming_photos=5)
+
+    def test_the_operating_point_is_unchanged_by_the_new_parameters(self) -> None:
+        """KEINE VERHALTENSAENDERUNG am unveraenderten Wert - die Zusage, unter der diese
+        Injizierbarkeit ueberhaupt eingebaut werden durfte. Geprueft ueber eine Folge, die unter
+        den Betriebswerten tatsaechlich trennt: eine Folge ohne jeden Start waere hier
+        vakuum-gruen."""
+        candidates = self._sequence(events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS)
+        threshold = MOTIF_PRESENCE_THRESHOLD
+
+        assert motif_change_starts(candidates) == motif_change_starts(
+            candidates,
+            confirming_photos=events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS,
+            motif_presence_threshold=threshold,
+        )
+        assert motif_change_starts(candidates) == frozenset({1})
+
+    def test_the_explaining_form_hands_both_through(self) -> None:
+        """`explain_events` reicht beide weiter - sonst kann die Messung die Gliederung nicht
+        variieren und misst unter jeder Kombination dieselben Zahlen."""
+        candidates = self._sequence(2)
+
+        narrow = explain_events(
+            candidates, confirming_photos=2, motif_presence_threshold=self._MIDDLE
+        )
+        wide = explain_events(
+            candidates, confirming_photos=5, motif_presence_threshold=self._MIDDLE
+        )
+
+        assert len(narrow.events) == 2
+        assert narrow.causes[1] == frozenset({BOUNDARY_MOTIF_CHANGE})
+        assert len(wide.events) == 1
+
+    def test_the_explaining_form_without_arguments_is_the_run_itself(self) -> None:
+        candidates = self._sequence(events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS)
+
+        assert explain_events(candidates) == explain_events(
+            candidates,
+            confirming_photos=events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS,
+            motif_presence_threshold=MOTIF_PRESENCE_THRESHOLD,
+        )
+
+
 class TestTheMinimumSegmentSizeIsAnInequalityNotANumber:
     def test_a_segment_of_one_photo_is_below_it(self) -> None:
         """Die einzige zulaessige Aussage ueber diesen Zahlwert, und sie ist eine Ungleichung: Bei

@@ -38,7 +38,7 @@ EVENT_SHARE_CAP = 0.25
 MOTIF_PRESENCE_THRESHOLD = 0.5
 
 
-def motif_is_present(strength: float) -> bool:
+def motif_is_present(strength: float, threshold: float | None = None) -> bool:
     """Traegt ein Bild dieses Motiv? INKLUSIV verglichen, fuer alle Motive dieselbe Grenze.
 
     GETEILT WIRD DAS PRAEDIKAT, NIE DIE KONSTANTE: Jeder weitere Leser ruft diese Funktion, statt
@@ -49,19 +49,40 @@ def motif_is_present(strength: float) -> bool:
 
     Zweiter Leser ausserhalb der Auswahl ist `api/photos.py::_motifs_out`
     (`MotifStrengthOut.present`) - die Grenze verlaesst das Backend ausschliesslich als dieses
-    Ja/Nein, nie als Zahl."""
-    return strength >= MOTIF_PRESENCE_THRESHOLD
+    Ja/Nein, nie als Zahl.
+
+    `threshold` ist DER MESSWEG UND NUR ER: Ein rein lesender Messlauf variiert die Grenze, ohne
+    eine zweite Fassung des Vergleichs zu bauen - eine Nachbildung maesse etwas anderes, als der
+    Lauf tut. Ohne Angabe gilt die Modulkonstante, das Verhalten ist dann unveraendert.
+    KEIN AUSWAEHLENDER PFAD GIBT EINEN WERT MIT: Die Eindaemmung aus ADR 0091 Punkt 1 haengt
+    daran, dass die Auswahl je Motiv gegen EINE fuer alle Motive gleiche Konstante prueft; eine
+    eigene Grenze eines auswaehlenden Aufrufers waere eine zweite Auswahlgrenze im selben Produkt.
+    Gehalten in `tests/test_selection.py::TestOnlyTheMeasuringPathPassesItsOwnThreshold`. Ein
+    mitgegebener Wert ist ein SKALAR fuer alle Motive, nie eine Grenze je Motiv."""
+    if threshold is None:
+        return strength >= MOTIF_PRESENCE_THRESHOLD
+    # Derselbe INKLUSIVE Vergleich, eine Zeile tiefer - ein `>` hier braeche die Zusage genauso.
+    # Gepinnt durch den Zwilling, der beide Zweige am Betriebswert Wert fuer Wert gegeneinander
+    # stellt, einschliesslich der Grenze selbst.
+    return strength >= threshold
 
 
-def carried_motifs(motif_strengths: Mapping[str, float]) -> frozenset[str]:
+def carried_motifs(
+    motif_strengths: Mapping[str, float], threshold: float | None = None
+) -> frozenset[str]:
     """Die Motive, die ein Bild traegt - die EINE Herleitung fuer Auswahl und Alternativen.
 
     Sie nimmt die Staerkeabbildung und nicht einen Kandidaten entgegen, weil beide Aufrufer eigene
     Kandidatentypen haben (`SelectionCandidate` mit Zeit und Pflichtqualitaet,
     `AlternativeCandidate` ohne beides): eine zweite Herleitung fuer den zweiten Typ liefe an dem
     Tag auseinander, an dem die Grenze sich aendert. Ein hier fehlendes Motiv zaehlt als nicht
-    getragen."""
-    return frozenset(key for key, strength in motif_strengths.items() if motif_is_present(strength))
+    getragen.
+
+    `threshold` wird unveraendert an `motif_is_present` durchgereicht und gilt fuer JEDES Motiv
+    dieser Abbildung gleich; die Auflage dort gilt hier mit."""
+    return frozenset(
+        key for key, strength in motif_strengths.items() if motif_is_present(strength, threshold)
+    )
 
 
 # Womit der Wert eines Bildes je bereits gewaehltem, vollstaendig aehnlichem Bild multipliziert
