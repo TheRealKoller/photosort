@@ -202,6 +202,32 @@ interface DetailRowProps {
 }
 
 /**
+ * Der RESERVIERTE PLATZ der Detailzeile (Spec 0497, AK6/AK7).
+ *
+ * WAS GILT: Die Oberkante von allem, was unterhalb des Motivbereichs steht, bewegt sich um
+ * höchstens 1 px, wenn ein Motiv an- und wieder abgeheftet wird - gleich welches, gleich ob per
+ * Klick oder per Tastaturfokus, und auch dann, wenn die Zeile eine bestehende Korrektur und damit
+ * eine dritte Schaltfläche trägt.
+ *
+ * WOFÜR: Nur an der bedienbaren Stelle, und dort nur, solange die Zeile tatsächlich
+ * Korrekturschalter bekommen kann - `rowsEditable` (`editable && !excluded`), nicht `editable`
+ * allein. Bei einem als Dokument ausgeschlossenen Foto gibt es keine Schalter, und eine
+ * Reservierung nach `editable` ließe dort dauerhaft leere Fläche stehen, die nie gefüllt wird.
+ *
+ * BEI VERLETZUNG springt beim ersten Antippen alles darunter um rund 57 px nach unten - der
+ * Nutzer verliert die Stelle, an der er gerade las.
+ *
+ * DER WERT IST AM BESTAND GEMESSEN, NICHT GESCHÄTZT: 73,59 px im ungünstigsten Fall
+ * (Telefonbreite 360 px, längster Motivname zweizeilig neben dem längsten Werttext "Trifft nicht
+ * zu (korrigiert)", drei Schaltflächen). `min-h-20` ist mit 80 px die nächste Tailwind-Stufe
+ * darüber und damit keine willkürliche Größe; `min-h-*` ist eine Größen-, keine Abstands-Utility
+ * und unterliegt der Rasterregel nicht. Wächst ein Anzeigename später über diesen Fall hinaus,
+ * wird `e2e/tests/bilddetail-buehne.spec.ts` rot - dessen längstes Motiv wird zur Laufzeit aus den
+ * acht zugänglichen Namen ermittelt und nie hartkodiert.
+ */
+const DETAIL_ROW_RESERVED_CLASS = 'min-h-20'
+
+/**
  * Die Zeile unter der Reihe: voller Motivname, genauer Wert und - nur an der bedienbaren Stelle -
  * die drei Korrekturschaltflaechen.
  *
@@ -219,16 +245,29 @@ function DetailRow({
   onCorrect,
   onWithdraw,
 }: DetailRowProps) {
+  // EIN Container fuer BEIDE Zustaende (AK7): Die Reservierung ist nur moeglich, weil der
+  // Aufforderungssatz und die aufgeklappte Zeile dasselbe Element tragen. Zwei Container koennten
+  // nie dieselbe Hoehe halten, und `aria-controls` zeigte beim Zuklappen ins Leere.
+  const reserved = editable ? DETAIL_ROW_RESERVED_CLASS : ''
+
   if (displayName === undefined || value === undefined || motifKey === undefined) {
     return (
-      <div id={id} className="flex flex-col gap-2 text-xs text-text-muted">
+      <div
+        id={id}
+        data-detail-reserved={editable ? 'true' : undefined}
+        className={`flex flex-col gap-2 text-xs text-text-muted ${reserved}`}
+      >
         <p>{DETAIL_PROMPT_TEXT}</p>
       </div>
     )
   }
 
   return (
-    <div id={id} className="flex flex-col gap-2 text-xs">
+    <div
+      id={id}
+      data-detail-reserved={editable ? 'true' : undefined}
+      className={`flex flex-col gap-2 text-xs ${reserved}`}
+    >
       <div className="flex items-baseline justify-between gap-3">
         {/* Die laengsten Namen muessen umbrechen duerfen. */}
         <span className="break-words text-text-h">{displayName}</span>

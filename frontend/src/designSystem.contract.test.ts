@@ -1603,9 +1603,17 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Fokusstaerkung des Feldrands - 1.5px liegt auf keiner Tailwind-Randstufe',
     },
     {
-      file: 'src/pages/PhotoDetailPage.tsx',
-      snippet: 'className="aspect-[4/3] w-full',
-      reason: 'Seitenverhaeltnis der Detailbildflaeche - Tailwind kennt nur square und video',
+      file: 'src/components/PhotoDetailStage.tsx',
+      snippet: "'flex h-[calc(100dvh-var(--spacing-header)-var(--spacing)*6)] flex-col",
+      reason:
+        'Hoehe der Buehne: sichtbare Hoehe abzueglich Kopfzeile und des oberen Innenabstands der ' +
+        'Inhaltsspalte (py-6 an main). Fotoflaeche, Bewertungsleiste und Navigation muessen ' +
+        'zusammen ohne Scrollen im Sichtfenster liegen - das ist eine Rechnung ueber dem ' +
+        'Sichtfenster und keine Rasterstufe. Die Kopfzeilenhoehe kommt aus demselben ' +
+        '--spacing-header, aus dem h-header/top-header entstehen; ein zweiter Zahlenwert dafuer ' +
+        'ist verboten. Weder eine in JavaScript gemessene Hoehe im Inline-Stil noch eine ' +
+        'CSS-Custom-Property als Traeger eines gerechneten Wertes waeren ein zulaessiger Ausweg - ' +
+        'beides ist im Sicherheitskonzept untersagt',
     },
     {
       file: 'src/pages/ProjectListPage.tsx',
