@@ -11,9 +11,10 @@ import {
   ALBUM_SUITABILITY_NOT_RATED_TEXT,
   formatAlbumSuitabilityLevel,
 } from '../utils/albumSuitability'
+import { partitionByPresenceThreshold } from '../utils/criterionScores'
 import { formatCriterionPercent } from '../utils/formatStats'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
-import { Badge } from './ui/badge'
+import { FineLabelList } from './FineLabelList'
 
 interface CriterionDetailsListProps {
   criterionScores: CriterionScoreOut[]
@@ -43,22 +44,6 @@ interface CriterionDetailsListProps {
    * ausschliesslich als regulärer React-Textknoten rendern. Bricht in
    * `CriterionDetailsList.test.tsx > never renders the reason via dangerouslySetInnerHTML`. */
   albumSuitability?: AlbumSuitabilityOut | null
-}
-
-// Die Block-Zuordnung folgt AUSSCHLIESSLICH dem Registry-Flag `has_presence_threshold` aus der
-// API-Antwort - hier wird bewusst KEINE Key-Liste gepflegt, sonst liefen Backend-Registry und
-// Frontend beim naechsten neuen Kriterium auseinander. Bewusst ordnungserhaltend (zweimal `filter`,
-// kein Sortieren): die Reihenfolge innerhalb eines Blocks bleibt die vom Backend gelieferte
-// Registry-Reihenfolge. Nicht exportiert - die Aufteilung ist ein Implementierungsdetail dieser
-// Komponente.
-function partitionByPresenceThreshold(criterionScores: CriterionScoreOut[]): {
-  quality: CriterionScoreOut[]
-  content: CriterionScoreOut[]
-} {
-  return {
-    quality: criterionScores.filter((score) => !score.has_presence_threshold),
-    content: criterionScores.filter((score) => score.has_presence_threshold),
-  }
 }
 
 function CriterionRow({ score }: { score: CriterionScoreOut }) {
@@ -184,16 +169,9 @@ export function CriterionDetailsList({
           {fineLabels.length > 0 && (
             <div className="mt-2 flex flex-col gap-2">
               <h4 className="text-xs text-text">Feinlabels</h4>
-              <ul aria-label="Feinlabels" className="flex flex-wrap gap-2">
-                {fineLabels.map((label) => (
-                  <li key={label.canonical_key}>
-                    {/* Reiner React-Textknoten - freier LLM-Text, nie als HTML. */}
-                    <Badge tone="accent" suggested className="max-w-full truncate">
-                      {label.display_name}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
+              {/* Die Chips selbst liegen in `FineLabelList` - zeichengleich geteilt mit dem
+                  Seitenurteil, damit sie nicht an zwei Stellen verschieden aussehen. */}
+              <FineLabelList fineLabels={fineLabels} />
             </div>
           )}
         </div>

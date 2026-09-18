@@ -58,7 +58,14 @@ test('die beidbreitigen Specs stehen in keiner Ausschlussliste', () => {
     ['MOBILE_ONLY', MOBILE_ONLY],
     ['DESKTOP_ONLY', DESKTOP_ONLY],
   ]
-  const beidbreitig = ['tests/sticky-header.spec.ts', 'tests/stepper-progress.spec.ts']
+  const beidbreitig = [
+    'tests/sticky-header.spec.ts',
+    'tests/stepper-progress.spec.ts',
+    // specs/features/0497-bilddetail-urteil-zuerst.md, AK2/AK5/AK6/AK9: Die Zusagen der
+    // Buehne gelten AUSDRUECKLICH fuer beide Pruefbreiten - die Abschnittsfolge ist auf
+    // beiden dieselbe, und die Buehne muss gerade auf Telefonbreite ohne Scrollen passen.
+    'tests/bilddetail-buehne.spec.ts',
+  ]
 
   for (const spec of beidbreitig) {
     for (const [name, liste] of listen) {

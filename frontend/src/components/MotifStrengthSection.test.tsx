@@ -1032,3 +1032,105 @@ describe('MotifStrengthSection: das Glossar', () => {
     expect(haystack).not.toMatch(/\bschwach\b/i)
   })
 })
+
+/* specs/features/0497-bilddetail-urteil-zuerst.md, AK6/AK7 — der reservierte Platz der
+   Detailzeile. Neuer describe-Block: kein Bestandsfall dieser Datei ist angetastet.
+
+   WAS HIER PRUEFBAR IST UND WAS NICHT: Die Zusage „nichts darunter bewegt sich um mehr als 1 px"
+   ist echte Geometrie und wird im Browser gemessen (`e2e/tests/bilddetail-buehne.spec.ts`,
+   Fall 2). In jsdom bleibt die BAUFORM, die sie ueberhaupt erst moeglich macht: EIN Container fuer
+   beide Zustaende, und die Reservierung folgt `rowsEditable` statt `editable`. */
+describe('MotifStrengthSection: der reservierte Platz der Detailzeile', () => {
+  it('trägt beide Zustände im selben Container', async () => {
+    // AK7: Der Aufforderungssatz und die aufgeklappte Zeile stehen im SELBEN Element - das ist die
+    // Bauform, die die Reservierung moeglich macht. Zwei Container koennten nie dieselbe Hoehe
+    // halten, und `aria-controls` zeigte beim Zuklappen ins Leere.
+    const user = userEvent.setup()
+    renderSection()
+
+    const zugeklappt = detailRow()
+    expect(within(zugeklappt).getByText('Symbol antippen für Details')).toBeInTheDocument()
+
+    await user.click(symbolOf('menschen'))
+
+    const aufgeklappt = detailRow()
+    expect(aufgeklappt).toBe(zugeklappt)
+    expect(within(aufgeklappt).getByText('Menschen')).toBeInTheDocument()
+    expect(within(aufgeklappt).queryByText('Symbol antippen für Details')).toBeNull()
+  })
+
+  it('reserviert den Platz an der bedienbaren Stelle', () => {
+    renderSection({ editable: true })
+
+    expect(detailRow()).toHaveAttribute('data-detail-reserved', 'true')
+  })
+
+  /* Die Reservierung folgt `rowsEditable` (`editable && !excluded`), NICHT `editable` allein:
+     Bei einem als Dokument ausgeschlossenen Foto gibt es keine Korrekturschalter, und eine
+     Reservierung nach `editable` liesse dort dauerhaft leere Flaeche stehen, die nie gefuellt
+     wird. */
+  it('reserviert bei einem ausgeschlossenen Dokument keinen Platz', () => {
+    renderSection({
+      editable: true,
+      assessment: { ...CLOUD_ASSESSMENT, excluded_document: true },
+    })
+
+    expect(detailRow()).not.toHaveAttribute('data-detail-reserved')
+  })
+
+  it('reserviert an der schreibgeschützten Stelle keinen Platz', () => {
+    // Das Kachel-Popover zeigt die Reihe ohne Bedienteil; dort waere die Reservierung toter Raum.
+    renderSection({ editable: false })
+
+    expect(detailRow()).not.toHaveAttribute('data-detail-reserved')
+  })
+
+  /* Der Platz bleibt ueber JEDEN der vier Zustandswechsel aus AK6 derselbe Container mit
+     derselben Reservierung - auch bei einem Motiv MIT bestehender Korrektur, dessen Zeile eine
+     dritte Schaltflaeche traegt und damit der ungünstigste Fall ist. */
+  it('hält Container und Reservierung über alle vier Zustände', async () => {
+    const user = userEvent.setup()
+    renderSection({ motifs: strengths({ menschen: { correction: true } }) })
+
+    const container = detailRow()
+    expect(container).toHaveAttribute('data-detail-reserved', 'true')
+
+    // (i) laengster Anzeigename angeheftet
+    await user.click(symbolOf('bauwerk_sehenswuerdigkeit'))
+    expect(detailRow()).toBe(container)
+    expect(within(container).getByText('Bauwerk und Sehenswürdigkeit')).toBeInTheDocument()
+
+    // (ii) Motiv MIT bestehender Korrektur angeheftet - drei Schaltflaechen
+    await user.click(symbolOf('menschen'))
+    expect(detailRow()).toBe(container)
+    expect(
+      within(container).getByRole('button', { name: 'Zurücknehmen: Menschen' }),
+    ).toBeInTheDocument()
+
+    // (iii) Tastaturfokus statt Klick zeigt vor. Der ECHTE Tastaturweg, nicht `element.focus()`
+    // von aussen - das liefe ausserhalb von `act()`.
+    await user.click(symbolOf('menschen'))
+    for (let schritt = 0; schritt < MOTIF_KEYS.length * 2; schritt += 1) {
+      await user.tab()
+      if (document.activeElement?.getAttribute('data-motif-key') === 'tiere') {
+        break
+      }
+    }
+    expect(document.activeElement?.getAttribute('data-motif-key')).toBe('tiere')
+    expect(detailRow()).toBe(container)
+    expect(within(container).getByText('Tiere')).toBeInTheDocument()
+
+    // (iv) wieder zugeklappt - weitertabben nimmt die Vorschau mit. Getabbt wird ueber die Reihe
+    // HINAUS: das naechste Symbol uebernaehme die Vorschau sonst nur.
+    for (let schritt = 0; schritt < MOTIF_KEYS.length * 2; schritt += 1) {
+      await user.tab()
+      if (document.activeElement?.getAttribute('data-motif-key') === null) {
+        break
+      }
+    }
+    expect(document.activeElement?.getAttribute('data-motif-key')).toBeNull()
+    expect(detailRow()).toBe(container)
+    expect(within(container).getByText('Symbol antippen für Details')).toBeInTheDocument()
+    expect(container).toHaveAttribute('data-detail-reserved', 'true')
+  })
+})

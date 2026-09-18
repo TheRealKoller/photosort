@@ -85,6 +85,44 @@ Verarbeitungs-Cache (Thumbnails).
       Fehlerstelle. Die Sperre „ein Abruf gleichzeitig" liegt in einem **Ref**, nicht in einem
       Renderwert: Der Beobachter kann mehrfach im selben Tick melden, und `isFetchingNextPage` wird
       erst beim nächsten Rendern wahr.
+  - **Die Bilddetailansicht zeigt das Foto groß und das Urteil zuerst** *(Spec
+    [`0497`](../specs/features/0497-bilddetail-urteil-zuerst.md))*: `pages/PhotoDetailPage.tsx`
+    bleibt der einzige Ort für Datenzugriff, Navigation (Pfeiltasten, Wischen, Auto-Advance) und
+    Bewertungs-Mutationen; die Darstellung liegt in vier Teilen daneben.
+    - **Die Bühne** `components/PhotoDetailStage.tsx` trägt die gesamte Höhengeometrie:
+      `h-[calc(100dvh-var(--spacing-header)-var(--spacing)*6)]` als Flex-Spalte, darin die
+      Fotofläche mit `flex-1 min-h-0` und das Bild als `h-full w-full object-contain`. Die Höhe
+      hängt damit **am Sichtfenster, nie am Bild** — ein breitengeführtes `aspect-*` machte sie je
+      Format verschieden hoch und schöbe beim Hochformat die Bewertungsleiste aus dem Bild. Die
+      Kopfzeilenhöhe kommt aus demselben `--spacing-header`, aus dem `h-header`/`top-header`
+      entstehen; ein zweiter Zahlenwert dafür ist ausgeschlossen. **Keine in JavaScript gemessene
+      Höhe und kein gerechneter Wert in einem Inline-Stil oder einer CSS-Custom-Property** — beide
+      Auswege sind im Sicherheitskonzept untersagt; der willkürliche Klassenwert ist stattdessen im
+      Design-Vertrag fundstellengenau freigegeben. Über der Bühne steht **nichts**: Jedes Element
+      dort schöbe ihre Unterkante um die eigene Höhe unter den Sichtrand. Aus demselben Grund setzt
+      die Seite den Scrollstand je Foto zurück — sonst übernähme sie den des Rasters, aus dem sie
+      geöffnet wurde. Die Zustände *ladend* und *fehler* rendern denselben Rahmen wie der Regelfall
+      (Platzhalter bzw. `Alert` in der Fotofläche, Bewertung und Navigation sichtbar aber gesperrt),
+      statt eines vorgezogenen Satzes — sonst springt die Seite beim Eintreffen der Daten.
+    - **Das Urteil** `components/PhotoVerdict.tsx` (Albumtauglichkeit mit Begründung, Rang,
+      Feinlabel) steht **vor** den Einzelwerten und in `text-lg` gegen deren `text-sm`. Die
+      Begründung ist erkennbar als Aussage des **Modells** ausgewiesen und wird ungekürzt gezeigt;
+      Kappung findet an der Quelle statt.
+    - **Das Nachschlagraster** `components/CriterionScoreGrid.tsx` zeigt die fünfzehn Einzelwerte,
+      auf Telefonbreite einspaltig. Es ist **keine Variante** von `CriterionDetailsList` — die
+      bleibt mit genau einer Aufrufstelle im Kachel-Popover. Geteilt wird nur, was zeichengleich
+      ist: `utils/criterionScores.ts` (Aufteilung nach `has_presence_threshold`) und
+      `components/FineLabelList.tsx`.
+    - **Der Ort** eines Fotos ist der Ort seines Ereignisses und erscheint hier erstmals auf dieser
+      Route. Die dreistufige Namenswahl steht als `utils/timeOfDay.ts::eventPlaceName` in **genau
+      einer** Funktion, die sich Ereignis-Überschrift und Detailseite teilen; eine Koordinate
+      erscheint nie als Name, ohne Ortsangabe steht „Ort unbekannt".
+    - **Der reservierte Platz** der Motiv-Detailzeile (`min-h-32` in
+      `components/MotifStrengthSection.tsx`, am Bestand gemessen) hält alles unterhalb des
+      Motivbereichs beim Auf- und Zuklappen ruhig. Er folgt `rowsEditable`, nicht `editable` allein.
+      Ein struktureller Wächter (`photoDetail.structure.test.ts`) hält die drei Einzigkeits-Zusagen
+      fest; die drei in jsdom nicht messbaren Geometrie-/CSS-Zusagen belegt
+      `e2e/tests/bilddetail-buehne.spec.ts` in beiden Prüfbreiten.
   - die Projektnavigation liegt in der Kopfzeile der `AppShell` statt am Seitenende — neues
     `utils/projectRoutes.ts` als einzige Quelle der Wahrheit für "welcher Pfad hat Projektkontext"
     (speist die `<Route>`-Erzeugung in `App.tsx`, die `projectId`-Ermittlung der Kopfzeile und die

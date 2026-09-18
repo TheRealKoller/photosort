@@ -16,7 +16,7 @@
  * still verloren - deshalb endet diese Datei, wie jede Nutzlastdatei, auf ein `return`.
  *
  * WAS ZURUECKKOMMT, IST AUF DEN VERGLEICH BEGRENZT: Tokennamen, Tokenwerte, Symbolnamen,
- * Varianteneigenschaften der zwoelf Bausteine, je Baustein die gesetzten Eigenschaften MIT dem
+ * Varianteneigenschaften der vierzehn Bausteine, je Baustein die gesetzten Eigenschaften MIT dem
  * Tokennamen, der sie traegt, und zwei Zaehlwerte ueber die Brettfuellungen; je Ansichtsbrett die
  * Plugin-Daten, die Varianteneigenschaften, drei Zaehlwerte und die Bindungen. Keine
  * Beschreibungen, keine Kommentare, keine Textinhalte, keine beliebigen Objektnamen der Datei;
@@ -53,7 +53,10 @@ const SYMBOL_PFAD = 'symbol'
    halb gelesenen Stand: ohne sie waere ein abgeschnittenes Ergebnis von einem vollstaendigen
    nicht zu unterscheiden. Die Werte stehen so auch in den Akzeptanzkriterien 1, 3 und 5. */
 const ERWARTETE_SYMBOLE = 20
-const ERWARTETE_BAUSTEINE = 12
+/* ABLEITUNG (sie steht hier, nicht in einer Nachricht): Bausteine aus `components.json`
+   PLUS der Chip, der in der Design-Datei gefuehrt wird und in jener Liste nicht. Aktuell
+   13 + 1 = 14. Wer einen Baustein in `components.json` ergaenzt, hebt diese Zahl mit an. */
+const ERWARTETE_BAUSTEINE = 14
 const ERWARTETE_KATEGORIEN = 13
 const ERWARTETE_FARBEN = 64
 const ERWARTETE_ANSICHTEN = 9

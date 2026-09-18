@@ -4,6 +4,7 @@ import type { EventOut, EventPlace } from '../api/types'
 
 import {
   dayKeyOf,
+  eventPlaceName,
   formatDayHeading,
   formatEventHeading,
   formatTimeRange,
@@ -206,5 +207,70 @@ describe('formatEventHeading', () => {
     )
 
     expect(result.heading).toBe('<img src=x onerror="window.__pwned = true"> (10:30–11:45 Uhr)')
+  })
+})
+
+/* Spec 0497: Die dreistufige Namenswahl ist aus `formatEventHeading` herausgezogen, weil die
+   Bilddetailansicht den Ortsnamen OHNE Zeitspanne zeigt - die Aufnahmezeit steht dort direkt
+   darüber. Entstünde die Rangfolge dort ein zweites Mal, liefe sie mit dieser auseinander. */
+describe('eventPlaceName', () => {
+  it('nimmt die erkannte Sehenswürdigkeit zuerst', () => {
+    expect(
+      eventPlaceName(
+        eventOut({
+          place: place({ kind: 'landmark', landmark_name: 'Eiffelturm' }),
+          place_name: 'Paris, 7. Arrondissement',
+        }),
+      ),
+    ).toBe('Eiffelturm')
+  })
+
+  it('nimmt den aufgelösten Ortsnamen als zweite Stufe', () => {
+    expect(eventPlaceName(eventOut({ place_name: 'Berlin, Kreuzberg' }))).toBe('Berlin, Kreuzberg')
+  })
+
+  it('liefert ohne jede Ortsangabe null', () => {
+    expect(eventPlaceName(eventOut())).toBeNull()
+  })
+
+  /* Eine Koordinate erscheint AUSDRÜCKLICH NICHT als Name - sie bleibt in `place`. */
+  it('zeigt eine Koordinate nicht als Namen', () => {
+    expect(eventPlaceName(eventOut({ place: place({ kind: 'coordinate' }) }))).toBeNull()
+  })
+
+  /* Fällt eine Stufe aus, gewinnt die NÄCHSTE - nicht sofort `null`. Leerer String und `null`
+     gelten dabei gleich: `""` als Ortsname wäre eine Lücke, kein Name. */
+  it.each([
+    { name: 'landmark null', landmark: null, placeName: 'Berlin', erwartet: 'Berlin' },
+    { name: 'landmark leer', landmark: '', placeName: 'Berlin', erwartet: 'Berlin' },
+    { name: 'place_name leer', landmark: null, placeName: '', erwartet: null },
+  ])('fällt bei $name auf die nächste Stufe', ({ landmark, placeName, erwartet }) => {
+    expect(
+      eventPlaceName(
+        eventOut({
+          place: place({ kind: 'landmark', landmark_name: landmark }),
+          place_name: placeName,
+        }),
+      ),
+    ).toBe(erwartet)
+  })
+
+  /* REINE FUNKTION ÜBER DER EVENT-ZEILE (S2): Sie setzt nichts zusammen und interpretiert nichts -
+     die Form "Ort, Viertel" kommt fertig vom Server. Der XSS-Nachweis gehört an die RENDERSTELLE,
+     nicht hierher; dass die Funktion nichts interpretiert, sagt nichts darüber, was das Markup
+     daraus macht. Hier steht deshalb nur: der Text kommt unverändert zurück. */
+  it('gibt einen HTML-artigen Namen unverändert zurück, ohne ihn zusammenzusetzen', () => {
+    const payload = '<img src=x onerror="window.__pwned = true">'
+
+    expect(
+      eventPlaceName(eventOut({ place: place({ kind: 'landmark', landmark_name: payload }) })),
+    ).toBe(payload)
+  })
+
+  /* Die Rangfolge ist DIESELBE, die die Überschrift benutzt - beide lesen diese eine Funktion. */
+  it('trägt dieselbe Namenswahl wie die Ereignis-Überschrift', () => {
+    const event = eventOut({ place_name: 'Berlin, Kreuzberg' })
+
+    expect(formatEventHeading(event).heading).toBe(`${eventPlaceName(event)} (10:30–11:45 Uhr)`)
   })
 })
