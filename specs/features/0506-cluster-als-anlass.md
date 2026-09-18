@@ -363,8 +363,19 @@ rein messend, in Block B und D.
 - `specs/architecture/0003-securitykonzept.md`: Fortschreibung unter „Standortdaten" und zwei
   Zeilen in der Ankerliste (Security-Abschnitt, letzter Absatz).
 
-**Nicht betroffen:** `models.py`, Alembic, jede API-Antwort, `frontend/`, `selection.py`,
-`scoring.py`, `demo_state.py`.
+**Nicht betroffen:** `models.py`, Alembic, jede API-Antwort, `frontend/`, `scoring.py`,
+`demo_state.py`.
+
+**`selection.py` ist genau in einem Punkt betroffen, additiv:** `motif_is_present` und
+`carried_motifs` nehmen einen optionalen `threshold` entgegen (`None` = Modulkonstante, Verhalten
+dann unverändert). Das ist der einzige Weg, die Präsenzgrenze für Block E zu variieren, **ohne eine
+zweite Fassung des Vergleichs zu bauen** — eine Nachbildung maße etwas anderes, als der Lauf tut.
+**Kein auswählender Pfad gibt je einen Wert mit**, und der mitgegebene Wert ist ein Skalar für alle
+Motive: Die Eindämmung aus ADR 0091 Punkt 1 (eine für alle Motive gleiche Grenze) bleibt damit
+unangetastet. Durchgesetzt von
+`tests/test_selection.py::TestOnlyTheMeasuringPathPassesItsOwnThreshold` — ein Aufrufer außerhalb
+des Messwegs lässt den Test rot werden. Die **Auswahllogik** selbst (Kontingente, „Abdeckung
+zuerst") bleibt unberührt.
 
 ### Zuschnitt: zwei Pull Requests, Daniels Messung dazwischen
 
@@ -406,7 +417,7 @@ Teil dieser Story.
 
 ### Was sich ausdrücklich nicht ändert
 
-- **`selection.py` wird nicht angefasst.** „Abdeckung zuerst" (`selection.py:238-241`, jedes Event
+- **Die Auswahllogik in `selection.py` wird nicht angefasst.** „Abdeckung zuerst" (`selection.py:238-241`, jedes Event
   bekommt zuerst einen Platz) ist richtig, sobald ein Event eine Einheit ist. Eine zweite
   Reparatur derselben Verzerrung am Kontingent verdeckte, ob die erste wirkt.
 - **Phase A** (`scoring.py::assign_clusters`, `PhotoScore.cluster_key`, der Ausschuss) bleibt
