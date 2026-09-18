@@ -229,6 +229,23 @@ export function PhotoDetailPage() {
     return () => window.removeEventListener('keydown', handleKeydown)
   }, [])
 
+  /**
+   * DIE SEITE STEHT BEIM OEFFNEN OBEN (AK2) - die Vorbedingung der Buehnengeometrie.
+   *
+   * Die Buehne ist aus dem Sichtfenster gerechnet und steht ganz oben auf der Seite; sie liegt nur
+   * dann vollstaendig im Bild, wenn die Seite auch oben steht. Ohne diese Ruecksetzung uebernimmt
+   * die Detailansicht den Scrollstand des Rasters, aus dem sie geoeffnet wurde: Beim Klick auf eine
+   * weiter unten liegende Kachel landet der Nutzer auf einer bereits gescrollten Detailseite, und
+   * Bewertungsleiste und Navigation stehen unter dem Sichtrand.
+   *
+   * AN `currentPhotoId` GEBUNDEN, nicht an den Seitenaufbau: Jedes neue Foto ist erneut ein
+   * "Oeffnen der Ansicht" - Pfeiltaste, Wischen und Auto-Advance fuehren alle hierher. Innerhalb
+   * DESSELBEN Fotos laeuft der Effekt nicht und nimmt dem Nutzer sein Scrollen nicht weg.
+   */
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [currentPhotoId])
+
   // Swipe navigiert, Bewertung erfolgt separat per Tap auf die Bewertungs-Buttons (nicht per Swipe,
   // um versehentliche Bewertungen zu vermeiden).
   const touchStartXRef = useRef<number | null>(null)

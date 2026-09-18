@@ -217,15 +217,20 @@ interface DetailRowProps {
  * BEI VERLETZUNG springt beim ersten Antippen alles darunter um rund 57 px nach unten - der
  * Nutzer verliert die Stelle, an der er gerade las.
  *
- * DER WERT IST AM BESTAND GEMESSEN, NICHT GESCHÄTZT: 73,59 px im ungünstigsten Fall
- * (Telefonbreite 360 px, längster Motivname zweizeilig neben dem längsten Werttext "Trifft nicht
- * zu (korrigiert)", drei Schaltflächen). `min-h-20` ist mit 80 px die nächste Tailwind-Stufe
- * darüber und damit keine willkürliche Größe; `min-h-*` ist eine Größen-, keine Abstands-Utility
- * und unterliegt der Rasterregel nicht. Wächst ein Anzeigename später über diesen Fall hinaus,
- * wird `e2e/tests/bilddetail-buehne.spec.ts` rot - dessen längstes Motiv wird zur Laufzeit aus den
- * acht zugänglichen Namen ermittelt und nie hartkodiert.
+ * DER WERT IST AM BESTAND GEMESSEN, NICHT GESCHÄTZT: 121,59 px im ungünstigsten Fall - gemessen
+ * IN DER FERTIGEN URTEILSFLÄCHE bei Telefonbreite 360 px, mit dem längsten Motivnamen zweizeilig
+ * neben dem längsten Werttext ("Trifft nicht zu (korrigiert)") und den drei Korrekturschaltflächen
+ * in ZWEI Reihen. Die Panelform der Urteilsfläche verengt die Zeile gegenüber der freien
+ * Inhaltsspalte so weit, dass die dritte Schaltfläche umbricht; eine in der breiteren Spalte
+ * genommene Messung fiele um eine ganze Schaltflächenreihe zu klein aus.
+ *
+ * `min-h-32` ist mit 128 px die nächste Tailwind-Stufe darüber und damit keine willkürliche Größe;
+ * `min-h-*` ist eine Größen-, keine Abstands-Utility und unterliegt der Rasterregel nicht. Wächst
+ * ein Anzeigename später über diesen Fall hinaus, wird `e2e/tests/bilddetail-buehne.spec.ts` rot -
+ * dessen längstes Motiv wird zur Laufzeit aus den acht zugänglichen Namen ermittelt und nie
+ * hartkodiert.
  */
-const DETAIL_ROW_RESERVED_CLASS = 'min-h-20'
+const DETAIL_ROW_RESERVED_CLASS = 'min-h-32'
 
 /**
  * Die Zeile unter der Reihe: voller Motivname, genauer Wert und - nur an der bedienbaren Stelle -
@@ -276,9 +281,17 @@ function DetailRow({
         </span>
       </div>
       {editable && (
-        // `gap-3` ist die Pflichtgrenze zwischen aufgespannten Trefferflaechen. `size="sm"` statt
-        // `h-11`: die Korrektur ist nicht der heisse Pfad.
-        <div className="flex flex-wrap gap-3">
+        /* `gap-x-3` ist die Pflichtgrenze zwischen aufgespannten Trefferflaechen; `size="sm"`
+           statt `h-11`, weil die Korrektur nicht der heisse Pfad ist.
+
+           QUER GROESSER ALS LAENGS (`gap-y-4`): Seit die Zeile in der Urteilsflaeche der
+           Bilddetailansicht steht, bricht die dritte Schaltflaeche auf Telefonbreite in eine
+           ZWEITE REIHE um. Die Aufspannung ragt bis zu 6px je Seite ueber das Sichtbare hinaus -
+           bei 12px Reihenabstand stossen die beiden 44px-Flaechen genau aneinander, und die
+           Subpixel-Rundung entscheidet, wer den Randpunkt bekommt. In einer Ueberlappung gewinnt
+           das obenliegende Element, und hier waere das ein falsch geschriebener Datenwert.
+           Faellt der Wert zurueck auf `gap-3`, wird `e2e/tests/tap-targets.spec.ts` rot. */
+        <div className="flex flex-wrap gap-x-3 gap-y-4">
           <Button
             type="button"
             size="sm"

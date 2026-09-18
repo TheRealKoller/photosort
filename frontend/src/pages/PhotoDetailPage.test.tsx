@@ -1715,3 +1715,42 @@ describe('PhotoDetailPage: der Ort (S2)', () => {
     },
   )
 })
+
+/* specs/features/0497-bilddetail-urteil-zuerst.md, AK2 — die Vorbedingung der Bühnengeometrie.
+   Die Bühne ist aus dem Sichtfenster gerechnet und steht ganz oben auf der Seite; sie liegt nur
+   dann vollständig im Bild, wenn die Seite auch oben steht. Ohne Rücksetzung übernimmt die
+   Detailansicht den Scrollstand des Rasters, aus dem sie geöffnet wurde - beim Klick auf eine
+   weiter unten liegende Kachel landet der Nutzer auf einer bereits gescrollten Detailseite, und
+   Bewertungsleiste und Navigation stehen unter dem Sichtrand. */
+describe('PhotoDetailPage: die Seite steht beim Öffnen oben (AK2)', () => {
+  it('setzt den Scrollstand beim Öffnen zurück', async () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 1 })], total: 1 })
+
+    renderPage('/projects/1/photos/1')
+    await screen.findByText('1/1')
+
+    expect(scrollTo).toHaveBeenCalledWith(0, 0)
+    scrollTo.mockRestore()
+  })
+
+  it('setzt den Scrollstand bei jedem Fotowechsel zurück', async () => {
+    /* Jedes neue Foto ist erneut ein „Öffnen der Ansicht": Pfeiltaste, Wischen und Auto-Advance
+       führen alle hierher, und in jedem Fall muss die Bühne wieder vollständig im Bild stehen. */
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({
+      items: [photo({ id: 1 }), photo({ id: 2 })],
+      total: 2,
+    })
+
+    renderPage('/projects/1/photos/1')
+    await screen.findByText('1/2')
+    scrollTo.mockClear()
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    await screen.findByText('2/2')
+
+    expect(scrollTo).toHaveBeenCalledWith(0, 0)
+    scrollTo.mockRestore()
+  })
+})
