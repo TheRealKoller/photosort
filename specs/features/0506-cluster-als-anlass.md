@@ -337,6 +337,23 @@ rein messend, in Block B und D.
 **Nicht betroffen:** `models.py`, Alembic, jede API-Antwort, `frontend/`, `selection.py`,
 `scoring.py`, `demo_state.py`.
 
+### Zuschnitt: zwei Pull Requests, Daniels Messung dazwischen
+
+Von Daniel am 2026-09-18 freigegeben — die Ausnahme von „ein PR pro Issue", und sie hat einen
+zwingenden Grund: Die Schwellen werden an einem echten Reiseprojekt kalibriert, und dafür muss das
+Messkommando erst auf dem Server liegen. Ein einziger PR müsste die kalibrierten Werte enthalten,
+bevor die Messung existiert, die sie liefert; „der Anteil der Ein-Bild-Cluster ist halbiert" wäre
+ohne den gemessenen Ausgangswert kein prüfbares Kriterium.
+
+- **PR 1** — Schritte 1–2: `event_inputs.py` (Umzug), `event_probe.py` mit den Blöcken A–C, die
+  Ursachenmenge in `events.py`. **Keine Verhaltensänderung an der Gliederung.** Danach misst Daniel
+  an einem echten Projekt und gibt die Ausgabe zurück; sie geht als Ausgangsmessung ins
+  Messprotokoll.
+- **PR 2** — Schritte 4–7: Dauergrenze statt Kalendertag, eigene Konstanten, Block D und
+  Kalibrierungslauf, die dritte Stufe, Nachmessung in dasselbe Messprotokoll.
+- **Ein PR 3** entsteht nur, wenn Block C einen systematischen Ortsfehler belegt **und** Daniel
+  dessen Behebung auslöst. Das entscheidet er nach der Messung, nicht der Lauf.
+
 ### Umsetzungsreihenfolge (testgetrieben)
 
 1. `event_inputs.py` herausziehen — reiner Umzug, bestehende Worker-Tests bleiben grün.
