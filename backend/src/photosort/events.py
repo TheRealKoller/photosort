@@ -562,7 +562,9 @@ def default_signals() -> list[BoundarySignal]:
     ]
 
 
-def _motif_picture(candidate: EventCandidate) -> frozenset[str] | None:
+def _motif_picture(
+    candidate: EventCandidate, motif_presence_threshold: float | None = None
+) -> frozenset[str] | None:
     """Das MOTIVBILD eines Fotos: die Menge der Motive, die es traegt.
 
     `None` heisst "redet fuer den Motivwechsel nicht mit" - keine Kopfzeile, oder als Dokument
@@ -573,13 +575,23 @@ def _motif_picture(candidate: EventCandidate) -> frozenset[str] | None:
     Was als getragen gilt, beantwortet AUSSCHLIESSLICH `selection.py::carried_motifs` - dieselbe
     eine, inklusive Grenze wie im Auswahlvorschlag. Eine eigene Grenze hier waere ein zweiter
     Begriff von "dieses Foto zeigt X" im selben Produkt, und die beiden liefen beim naechsten
-    Grenzfall auseinander."""
+    Grenzfall auseinander.
+
+    `motif_presence_threshold` ist die DURCHGEREICHTE Grenze der Empfindlichkeitsmessung und
+    stammt ausschliesslich aus dem injizierbaren Parameter von `motif_change_starts`. `None` heisst
+    "der Betriebswert gilt"; die Auswahl selbst gibt nie einen Wert mit (Auflage in
+    `selection.py::motif_is_present`)."""
     if candidate.excluded_document or candidate.motif_strengths is None:
         return None
-    return carried_motifs(candidate.motif_strengths)
+    return carried_motifs(candidate.motif_strengths, motif_presence_threshold)
 
 
-def motif_change_starts(ordered: Sequence[EventCandidate]) -> frozenset[int]:
+def motif_change_starts(
+    ordered: Sequence[EventCandidate],
+    *,
+    confirming_photos: int | None = None,
+    motif_presence_threshold: float | None = None,
+) -> frozenset[int]:
     """Die Indizes der BEREITS SORTIERTEN Folge, an denen ein bestaetigter Motivwechsel ein neues
     Event erzwingt - die erste Stufe der Event-Bildung, REIN und ohne Kenntnis der Signale.
 
@@ -603,7 +615,15 @@ def motif_change_starts(ordered: Sequence[EventCandidate]) -> frozenset[int]:
 
     GELIEFERT wird der Index des ERSTEN Fotos des Fensters, nicht des bestaetigenden; sein
     Motivbild wird der neue Bezug. Der Index ist nie `0` - er setzt einen bereits gesetzten Bezug
-    voraus, ein leeres fuehrendes Event kann also nicht entstehen."""
+    voraus, ein leeres fuehrendes Event kann also nicht entstehen.
+
+    BEIDE FESTLEGUNGEN SIND INJIZIERBAR (`None` = Modulkonstante bzw. Betriebswert): Die
+    Empfindlichkeitsmessung (Spec 0506, Block E) rechnet dieselbe Kandidatenmenge unter mehreren
+    Kombinationen durch und laeuft dabei durch DIESEN Rechenweg - eine nachbildende zweite Fassung
+    maesse etwas anderes, als der Lauf tut, waehrend beide fuer sich gruen blieben. Die
+    Fensterlaenge wird dafuer als MODULATTRIBUT gelesen, nie als Default-Parameterwert gebunden:
+    sonst liefe `monkeypatch.setattr` ins Leere und die Variation waere wirkungslos."""
+    confirming = MOTIF_CHANGE_CONFIRMING_PHOTOS if confirming_photos is None else confirming_photos
     starts: set[int] = set()
     reference: frozenset[str] | None = None
     window_start = 0
@@ -611,7 +631,7 @@ def motif_change_starts(ordered: Sequence[EventCandidate]) -> frozenset[int]:
     window_count = 0
 
     for index, candidate in enumerate(ordered):
-        picture = _motif_picture(candidate)
+        picture = _motif_picture(candidate, motif_presence_threshold)
         if picture is None:
             continue
         if reference is None:
@@ -626,9 +646,9 @@ def motif_change_starts(ordered: Sequence[EventCandidate]) -> frozenset[int]:
         else:
             window_count = 0
 
-        if window_count >= MOTIF_CHANGE_CONFIRMING_PHOTOS:
+        if window_count >= confirming:
             starts.add(window_start)
-            reference = _motif_picture(ordered[window_start])
+            reference = _motif_picture(ordered[window_start], motif_presence_threshold)
             window_count = 0
 
     return frozenset(starts)
@@ -742,7 +762,11 @@ def build_events(
 
 
 def explain_events(
-    candidates: Iterable[EventCandidate], signals: list[BoundarySignal] | None = None
+    candidates: Iterable[EventCandidate],
+    signals: list[BoundarySignal] | None = None,
+    *,
+    confirming_photos: int | None = None,
+    motif_presence_threshold: float | None = None,
 ) -> EventFormation:
     """Die Event-Bildung: EIN sortierter Durchlauf ueber die Kandidaten eines Kriterien-Laufs,
     dem die Motivgrenzen als eigene Stufe VORAUSGEHEN - samt der Ursache jeder Grenze.
@@ -762,9 +786,16 @@ def explain_events(
     ist deren vollstaendige Ruecksetzung. Eine erst spaeter faellige Grenze von Ausdehnung,
     Schritt oder Name kann dadurch entfallen, weil an der frueheren Stelle bereits getrennt wurde.
 
-    `signals` ist injizierbar; ohne Angabe gilt `default_signals()`."""
+    `signals` ist injizierbar; ohne Angabe gilt `default_signals()`. Ebenso die beiden
+    Festlegungen der ersten Stufe (`confirming_photos`, `motif_presence_threshold`, `None` =
+    Betriebswert): Die Empfindlichkeitsmessung braucht die Ursachenmengen DIESES Durchlaufs unter
+    variierten Werten, nicht die einer Nachbildung."""
     ordered = sorted(candidates, key=lambda candidate: (candidate.taken_at, candidate.photo_id))
-    forced_starts = motif_change_starts(ordered)
+    forced_starts = motif_change_starts(
+        ordered,
+        confirming_photos=confirming_photos,
+        motif_presence_threshold=motif_presence_threshold,
+    )
     active = default_signals() if signals is None else signals
 
     events: list[list[EventCandidate]] = []
