@@ -49,15 +49,37 @@ export function formatTimeRange(minIso: string, maxIso: string): string {
  */
 export function formatEventHeading(event: EventOut): { dayKey: string; heading: string } {
   const timeRange = formatTimeRange(event.started_at, event.ended_at)
-  const landmark = event.place?.kind === 'landmark' ? (event.place.landmark_name ?? null) : null
-  // Der `null`/`''`-Rueckfall je Stufe ist defensiv: der Server liefert diese Kombinationen nicht,
-  // aber `"null"` in einer Ueberschrift waere schlimmer als die Nummer. Faellt eine Stufe aus,
-  // gewinnt die NAECHSTE - nicht sofort die Nummer.
-  const name = usableName(landmark) ?? usableName(event.place_name)
+  const name = eventPlaceName(event)
   return {
     dayKey: dayKeyOf(event.started_at),
     heading: name === null ? `Position ${event.position} (${timeRange})` : `${name} (${timeRange})`,
   }
+}
+
+/**
+ * Der Name des Ortes EINES Events - die ersten zwei der drei Stufen aus `formatEventHeading`,
+ * ohne die Zeitspanne und ohne den Rückfall auf die Nummer. `null` heißt "kein Ortsname".
+ *
+ * ZWEI STUFEN, sequenziell: die erkannte Sehenswürdigkeit (`place.landmark_name`, Modellantwort),
+ * sonst der aufgelöste Ortsname (`place_name`, Ortsdatensatz Dritter). Eine Koordinate erscheint
+ * ausdrücklich NICHT als Name - sie bleibt in `place`.
+ *
+ * Der `null`/`''`-Rückfall je Stufe ist defensiv: Der Server liefert diese Kombinationen nicht,
+ * aber `"null"` als Ortsangabe wäre schlimmer als gar keine. Fällt eine Stufe aus, gewinnt die
+ * NÄCHSTE - nicht sofort `null`.
+ *
+ * EINE FUNKTION FÜR BEIDE AUFRUFSTELLEN (Ereignis-Überschrift und Bilddetailansicht): Entstünde die
+ * Rangfolge ein zweites Mal, liefe sie mit dieser auseinander. Der strukturelle Wächter
+ * `photoDetail.structure.test.ts` bindet das fest.
+ *
+ * S2 — REINE FUNKTION ÜBER DER EVENT-ZEILE: Sie setzt nichts zusammen und interpretiert nichts;
+ * die Form "Ort, Viertel" kommt fertig vom Server. Beide gelesenen Felder tragen S1 (extern
+ * erzeugter Text, ausschließlich als regulärer React-Textknoten rendern). Der Nachweis dafür gehört
+ * an die Renderstelle, nicht in den Test dieser Funktion.
+ */
+export function eventPlaceName(event: EventOut): string | null {
+  const landmark = event.place?.kind === 'landmark' ? (event.place.landmark_name ?? null) : null
+  return usableName(landmark) ?? usableName(event.place_name)
 }
 
 function usableName(value: string | null | undefined): string | null {
