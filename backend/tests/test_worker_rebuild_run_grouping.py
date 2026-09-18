@@ -19,6 +19,7 @@ from PIL import Image
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort import events as events_module
 from photosort import worker
 from photosort.cameras import shifted
 from photosort.models import (
@@ -35,12 +36,23 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
-from photosort.scoring import TIME_CLUSTER_GAP
 from photosort.thumbnails import display_path
 from photosort.worker import rebuild_run_grouping, run_criterion_scoring
 from tests.import_closure import module_file
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
+
+
+def _section_gap() -> timedelta:
+    """Der Abstand, der in der Fixture tatsaechlich ZWEI Abschnitte ergibt.
+
+    Er muss `MERGE_MAX_GAP` ueberschreiten, nicht nur `EVENT_TIME_GAP`: Ein Abschnitt aus einem
+    einzigen Foto wuerde sonst von Stufe 3 wieder zugeschlagen, und die Fixture haette still nur
+    noch einen Abschnitt - waehrend jeder Fall darueber gruen bliebe. Als MODULATTRIBUT gelesen,
+    nie als Zahl."""
+    return events_module.MERGE_MAX_GAP + timedelta(minutes=30)
+
+
 # Eiffelturm - eine bekannte Referenzkoordinate statt eines "plausibel aussehenden" Floats.
 _EIFFEL = (48.858093, 2.294694)
 
@@ -221,7 +233,7 @@ async def _build_full_fixture(
         session,
         project,
         "b1.jpg",
-        _BASE + TIME_CLUSTER_GAP + timedelta(minutes=30),
+        _BASE + _section_gap(),
         cache_dir=cache_dir,
     )
     # Am Ausschuss-Gate aussortiert: gehoert NICHT in die Kandidatenmenge, traegt aber eine
@@ -436,7 +448,7 @@ async def test_an_offset_that_pushes_a_photo_across_a_time_gap_changes_the_group
     # Die Kamerafotos um die Zeitluecke nach vorne schieben, sodass sie mit dem kameralosen Foto
     # des zweiten Abschnitts zusammenfallen. Geschrieben wird wie am Endpunkt: `taken_at` aus
     # `taken_at_original` plus Versatz.
-    camera.offset_minutes = int(TIME_CLUSTER_GAP.total_seconds() // 60) + 30
+    camera.offset_minutes = int(_section_gap().total_seconds() // 60)
     photos = (
         (await db_session.execute(select(Photo).where(Photo.camera_id == camera.id)))
         .scalars()

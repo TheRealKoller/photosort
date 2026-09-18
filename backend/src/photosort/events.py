@@ -10,6 +10,7 @@ Sehenswuerdigkeit-Name nur als `%r` und laengenbegrenzt.
 
 from __future__ import annotations
 
+import math
 from bisect import bisect_left
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -22,32 +23,64 @@ from photosort.places import (
     place_cell,
     usable_locality,
 )
-from photosort.scoring import (
-    GPS_CLUSTER_SPLIT_DISTANCE_METERS,
-    TIME_CLUSTER_GAP,
-    haversine_meters,
-)
+from photosort.scoring import haversine_meters
 from photosort.selection import carried_motifs
 
-# Raeumliche Ausdehnung, ab der ein neues Event beginnt - gleichrangig neben TIME_CLUSTER_GAP.
-# Dokumentierte, UNKALIBRIERTE Modulkonstante im Muster von TIME_CLUSTER_GAP/
-# GPS_CLUSTER_SPLIT_DISTANCE_METERS, bewusst kein Settings-/Env-Wert.
+# --- Die SECHS eigenen Schwellen der Event-Bildung -----------------------------------------------
 #
-# Groessenordnung Stadtviertel: ueber der Streuung eines einzelnen Ortsbesuchs (100-300 m) und
-# ueber der Schrittschwelle von 500 m. Der Wert ist aenderbar und durch keinen Test gepinnt - ein
-# Test auf den Zahlwert waere eine Spiegelung des Codes.
+# Sie stehen hier und nicht in `scoring.py`, obwohl zwei von ihnen dort denselben Zahlwert tragen:
+# Dieselben Konstanten steuern `assign_clusters`, also Phase A VOR dem Ausschuss-Gate und damit,
+# welche Fotos im Ausschuss gegeneinander antreten. Eine Kalibrierung an ihnen verschoebe still die
+# Kandidatenmenge. Phase A bleibt von diesen sechs Werten unberuehrt.
+#
+# Alle sechs sind dokumentierte Modulkonstanten, ausdruecklich KEIN Settings-/Env-Wert, und werden
+# ueberall als MODULATTRIBUT gelesen, nie als Default-Parameterwert gebunden: sonst liefe
+# `monkeypatch.setattr` ins Leere und eine Variation waere wirkungslos - gruen, aber ohne Wirkung.
+# Kein Test pinnt einen Zahlwert; zulaessig sind genau die drei Ungleichungen
+# `MERGE_MAX_GAP > EVENT_TIME_GAP`, `MIN_EVENT_PHOTOS >= 2` und `EVENT_MAX_SPAN < 24 h`.
+
+# Zeitluecke zwischen zwei aufeinanderfolgenden Fotos, ab der ein neues Event beginnt.
+# UNKALIBRIERT: Von den Grenzen eines echten Projekts war sie zu 5,6 % alleinige Ursache, `schritt`
+# und `ausdehnung` zu 0,0 % - eine Kalibrierung dieser drei kann die Zerstueckelung nicht aufloesen.
+EVENT_TIME_GAP = timedelta(hours=1)
+
+# Schritt zwischen zwei aufeinanderfolgenden Fotos. UNKALIBRIERT, siehe oben.
+EVENT_STEP_MAX_METERS = 500.0
+
+# Raeumliche Ausdehnung des laufenden Events: die Diagonale der umschliessenden Box. UNKALIBRIERT.
+# Groessenordnung Stadtviertel: ueber der Streuung eines einzelnen Ortsbesuchs (100-300 m) und ueber
+# der Schrittschwelle.
 EVENT_EXTENT_MAX_METERS = 1000.0
+
+# Dauer vom eroeffnenden bis zum betrachteten Foto, ab der ein neues Event beginnt.
+#
+# HERLEITUNG: Acht Stunden tragen einen ganzen Ausflugstag - Stadtbummel, Zoobesuch, Wanderung - und
+# ebenso Silvester oder einen Nachtflug ueber Mitternacht; zwei Reisetage passen nicht hinein. Der
+# Wert liegt weit ueber der laengsten an einem echten Projekt gemessenen Eventdauer (1 h 32 min),
+# zerschneidet also nichts, was heute zusammengehoert. Er MUSS unter 24 h bleiben: die
+# Ueberschriftenform `23:40-01:15 Uhr` ist sonst mehrdeutig.
+EVENT_MAX_SPAN = timedelta(hours=8)
+
+# Zeitluecke, die ein zu kleines Segment beim Zuschlagen ueberbruecken darf.
+#
+# HERLEITUNG: Groesser als `EVENT_TIME_GAP` MUSS der Wert sein, sonst ist die dritte Stufe
+# wirkungslos - ein Rest von ein, zwei Bildern traegt keinen eigenen Beleg dafuer, dass mit ihm ein
+# neuer Anlass begann. Bewusst nicht groesser als das Doppelte: Ueber eine Luecke von mehr als zwei
+# Stunden hinweg anzuhaengen hiesse, eine echte Pause zu ueberspringen, und `EVENT_MAX_SPAN` finge
+# das erst bei acht Stunden ab.
+MERGE_MAX_GAP = timedelta(hours=2)
+
+# Groesse, unter der ein Segment als zu klein gilt und einem Nachbarn zugeschlagen wird.
+#
+# HERLEITUNG: Zunaechst gilt nur ein EINZELNES Foto als zu klein - das traf am gemessenen Projekt
+# genau die 22 Faelle, um die es geht, und liess die 15 Zwei-Foto-Cluster unberuehrt. Ein Wert von 1
+# hiesse "kein Segment ist je zu klein"; `MIN_EVENT_PHOTOS >= 2` ist die einzige Aussage, die ein
+# Test ueber diesen Wert treffen darf, und sie ist eine Ungleichung.
+MIN_EVENT_PHOTOS = 2
 
 # Der geschlossene Vorrat von `events.place_kind`. Ein Wert ausserhalb ist ein Datenfehler und
 # wird im Lesepfad zu "kein Ortsbezug", nie zu einer 500.
 PLACE_KINDS = ("landmark", "coordinate", "multiple")
-
-# Groesse, unter der ein Segment als zu klein gilt. Dokumentierte, UNKALIBRIERTE Modulkonstante im
-# Muster von EVENT_EXTENT_MAX_METERS, bewusst kein Settings-/Env-Wert.
-#
-# Ein Wert von 1 hiesse "kein Segment ist je zu klein" - `MIN_EVENT_PHOTOS >= 2` ist die einzige
-# Aussage, die ein Test ueber diesen Wert treffen darf, und sie ist eine Ungleichung.
-MIN_EVENT_PHOTOS = 2
 
 # --- Der geschlossene Vorrat der TRENNURSACHEN (ADR 0117 Punkt 4) -------------------------------
 #
@@ -55,7 +88,7 @@ MIN_EVENT_PHOTOS = 2
 # Durchlauf wertet alle aus, mehrere duerfen gleichzeitig zutreffen, und ein Bericht mit einer
 # Ursache je Grenze addierte sich zu mehr als hundert Prozent oder unterschluege Ursachen.
 BOUNDARY_TIME_GAP = "zeitluecke"
-BOUNDARY_CALENDAR_DAY = "kalendertag"
+BOUNDARY_DURATION = "dauer"
 BOUNDARY_STEP = "schritt"
 BOUNDARY_EXTENT = "ausdehnung"
 BOUNDARY_LANDMARK = "sehenswuerdigkeit"
@@ -66,12 +99,18 @@ BOUNDARY_MOTIF_CHANGE = "motivwechsel"
 
 BOUNDARY_CAUSES = (
     BOUNDARY_TIME_GAP,
-    BOUNDARY_CALENDAR_DAY,
+    BOUNDARY_DURATION,
     BOUNDARY_STEP,
     BOUNDARY_EXTENT,
     BOUNDARY_LANDMARK,
     BOUNDARY_MOTIF_CHANGE,
 )
+
+# Die beiden Ursachen, die das Zusammenlegen NIE aufloest. Sie sind die einzigen Signale, die zwei
+# verschiedene Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennen; ohne ihren Vorrang waere die Zusage
+# "zwei erkennbar verschiedene Anlaesse bleiben getrennt" nicht durchsetzbar. Ein durch Motivwechsel
+# abgetrenntes Einzelbild bleibt dadurch allein - genau das sagt ADR 0109 bereits zu.
+UNBREAKABLE_CAUSES = frozenset({BOUNDARY_MOTIF_CHANGE, BOUNDARY_LANDMARK})
 
 # Wie viele aufeinanderfolgende mitredende Fotos einen Motivwechsel bestaetigen muessen, das erste
 # abweichende eingeschlossen. Dokumentierte, UNKALIBRIERTE Modulkonstante im Muster von
@@ -398,8 +437,8 @@ class TimeGapSignal:
 
     name = BOUNDARY_TIME_GAP
 
-    def __init__(self, gap: timedelta = TIME_CLUSTER_GAP) -> None:
-        self._gap = gap
+    def __init__(self, gap: timedelta | None = None) -> None:
+        self._gap = EVENT_TIME_GAP if gap is None else gap
         self._previous: datetime | None = None
 
     def is_boundary(self, candidate: EventCandidate) -> bool:
@@ -412,30 +451,37 @@ class TimeGapSignal:
         self._previous = candidate.taken_at
 
 
-class DayBoundarySignal:
-    """Der Kalendertag - ein Event reicht nie ueber eine Tagesgrenze hinaus.
+class EventSpanSignal:
+    """Die DAUER des laufenden Events: die Spanne vom EROEFFNENDEN bis zum gerade betrachteten
+    Foto, geprueft EINSCHLIESSLICH dieses Fotos - sonst begaenne das neue Event ein Foto zu spaet.
 
-    Braucht keinen Zahlwert: verglichen werden die ersten zehn Zeichen des Zeitstempels.
-    `taken_at` ist ZONENLOS; eine Zeitzonen-Umrechnung hinge an der Umgebung des ausfuehrenden
-    Prozesses."""
+    Zustandsbehaftet im Muster von `ExtentSignal`, und der zeitliche Riegel gegen
+    Ueberverschmelzung: Ein Anlass ueber Mitternacht (Silvester, langer Abend, Nachtflug) bleibt EIN
+    Event, mehrere Reisetage werden es nicht. Die Grenze ist die Dauer, nicht das Datum.
 
-    name = BOUNDARY_CALENDAR_DAY
+    Zonenfrei richtig, wo ein Kalendertag es nicht war: `taken_at` ist zonenlos, ein Kalendertag ist
+    eine Aussage der lokalen Zeitzone, eine Zeitspanne dagegen die Differenz zweier naiver
+    Zeitstempel.
 
-    def __init__(self) -> None:
-        self._day: str | None = None
+    `>` und nicht `>=`, wie bei der Zeitluecke. `advance` schreibt NICHTS fort - der Bezug ist das
+    eroeffnende Foto, und ein Fortschreiben machte die Dauergrenze zu einer zweiten Zeitluecke."""
 
-    @staticmethod
-    def _day_of(candidate: EventCandidate) -> str:
-        return candidate.taken_at.isoformat()[:10]
+    name = BOUNDARY_DURATION
+
+    def __init__(self, max_span: timedelta | None = None) -> None:
+        self._max_span = EVENT_MAX_SPAN if max_span is None else max_span
+        self._started_at: datetime | None = None
 
     def is_boundary(self, candidate: EventCandidate) -> bool:
-        return self._day is None or self._day_of(candidate) != self._day
+        if self._started_at is None:
+            return False
+        return candidate.taken_at - self._started_at > self._max_span
 
     def begin(self, candidate: EventCandidate) -> None:
-        self._day = self._day_of(candidate)
+        self._started_at = candidate.taken_at
 
     def advance(self, candidate: EventCandidate) -> None:
-        self._day = self._day_of(candidate)
+        return None
 
 
 class StepDistanceSignal:
@@ -449,8 +495,10 @@ class StepDistanceSignal:
 
     name = BOUNDARY_STEP
 
-    def __init__(self, split_distance_meters: float = GPS_CLUSTER_SPLIT_DISTANCE_METERS) -> None:
-        self._split_distance_meters = split_distance_meters
+    def __init__(self, split_distance_meters: float | None = None) -> None:
+        self._split_distance_meters = (
+            EVENT_STEP_MAX_METERS if split_distance_meters is None else split_distance_meters
+        )
         self._reference: EffectiveLocation | None = None
 
     def is_boundary(self, candidate: EventCandidate) -> bool:
@@ -482,8 +530,8 @@ class ExtentSignal:
 
     name = BOUNDARY_EXTENT
 
-    def __init__(self, max_meters: float = EVENT_EXTENT_MAX_METERS) -> None:
-        self._max_meters = max_meters
+    def __init__(self, max_meters: float | None = None) -> None:
+        self._max_meters = EVENT_EXTENT_MAX_METERS if max_meters is None else max_meters
         self._box: tuple[float, float, float, float] | None = None
 
     @staticmethod
@@ -555,7 +603,7 @@ def default_signals() -> list[BoundarySignal]:
     tarnte einen Lauf als Fortsetzung des vorherigen."""
     return [
         TimeGapSignal(),
-        DayBoundarySignal(),
+        EventSpanSignal(),
         StepDistanceSignal(),
         ExtentSignal(),
         LandmarkChangeSignal(),
@@ -726,6 +774,214 @@ def _built(position: int, members: Sequence[EventCandidate]) -> BuiltEvent:
     )
 
 
+# --- Stufe 3: das Zusammenlegen zu kleiner Segmente ----------------------------------------------
+
+
+class EventMergeError(RuntimeError):
+    """Die Rundenobergrenze von Stufe 3 ist gerissen.
+
+    WIRFT, statt abzubrechen: Ein stiller Frueabbruch liesse eine halb zusammengelegte Gliederung
+    zurueck, die plausibel aussieht und an der niemandem etwas auffiele."""
+
+
+@dataclass(frozen=True)
+class Segment:
+    """Ein Abschnitt der Gliederung, BEVOR aus ihm ein `BuiltEvent` wird - samt der Ursachenmenge
+    seiner EROEFFNENDEN Grenze.
+
+    `causes` des ersten Segments eines Laufs ist leer; die Ausnahme haengt an der Position, nicht an
+    einem einzelnen Signal."""
+
+    members: tuple[EventCandidate, ...]
+    causes: frozenset[str]
+
+
+@dataclass(frozen=True)
+class MergeOutcome:
+    """Das Ergebnis von Stufe 3 samt seiner GEGENANZEIGE.
+
+    `dissolved_boundaries` und `moved_photo_ids` sind nicht Beiwerk: Beide Abnahmezahlen dieser
+    Spec - der Anteil der Ein-Bild-Cluster und die Eventzahl - wuerden von einer zu aggressiven
+    Verschmelzung BESSER erfuellt. Ohne diese beiden misst eine Nachmessung nur die
+    Unter-Zerstueckelung.
+
+    `moved_photo_ids` ist eine MENGE, kein Zaehler: Ein Segment, das ueber mehrere Runden weiter
+    zugeschlagen wird, traegt seine Fotos jedes Mal mit, und eine Summe zaehlte sie doppelt - der
+    Anteil ueberstiege hundert Prozent. Gezaehlt werden die Fotos des jeweils ZUGESCHLAGENEN
+    Segments; die des aufnehmenden Nachbarn bleiben, wo sie waren."""
+
+    segments: tuple[Segment, ...]
+    dissolved_boundaries: int
+    moved_photo_ids: frozenset[int]
+
+
+def _extent_meters(members: Sequence[EventCandidate]) -> float:
+    """Die Diagonale der umschliessenden Box ueber die WIRKSAMEN Koordinaten - dasselbe Mass, das
+    `ExtentSignal` fortschreibt. Ohne jede Koordinate `0.0`: Es gibt keine Ausdehnung zu ueberschrei-
+    ten, und eine Ausfallrichtung "unendlich" verboete jedes Zusammenlegen ortsloser Segmente."""
+    locations = [member.location for member in members if member.location is not None]
+    if not locations:
+        return 0.0
+    return haversine_meters(
+        min(location.lat for location in locations),
+        min(location.lon for location in locations),
+        max(location.lat for location in locations),
+        max(location.lon for location in locations),
+    )
+
+
+def _gap_between(earlier: Segment, later: Segment) -> timedelta:
+    """Die Zeitluecke UEBER DIE KANTE: vom letzten Foto des frueheren zum ersten des spaeteren."""
+    return later.members[0].taken_at - earlier.members[-1].taken_at
+
+
+def _step_over(earlier: Segment, later: Segment) -> float:
+    """Die Entfernung ueber die Kante - `inf`, wenn eine der beiden Seiten keine wirksame
+    Koordinate traegt.
+
+    Der Tie-Break braucht eine TOTALE Ordnung. Eine unbestimmbare Entfernung als groesstmoegliche
+    zu werten heisst: Ein Nachbar, ueber den nichts bekannt ist, gewinnt keinen Gleichstand. Sie
+    schliesst ihn nicht aus - die Riegel entscheiden das, und die Ausdehnung des Ergebnisses ist
+    ohne Koordinate `0.0`."""
+    from_location = earlier.members[-1].location
+    to_location = later.members[0].location
+    if from_location is None or to_location is None:
+        return math.inf
+    return haversine_meters(from_location.lat, from_location.lon, to_location.lat, to_location.lon)
+
+
+def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) -> bool:
+    """Drei der VIER RIEGEL plus die beiden unantastbaren Grenzen - alles, was an einer KANTE
+    haengt und deshalb fuer beide Richtungen ueber sie gleich ausfaellt.
+
+    Der vierte Riegel (d) - das Segment selbst liegt unter der Mindestgroesse - haengt am Segment,
+    nicht an der Kante, und steht bei der Auswahl. Weil hier nur Kanteneigenschaften stehen, ist
+    eine Kante fuer beide Richtungen gleichzeitig zulaessig oder gleichzeitig gesperrt: Daran haengt
+    die Terminierung (siehe `_round_limit`).
+
+    Aufgeloest wird die EROEFFNENDE Grenze des SPAETEREN Segments - `later.causes` ist also die
+    Menge, die ueber die Unantastbarkeit entscheidet."""
+    if later.causes & UNBREAKABLE_CAUSES:
+        return False
+    if _gap_between(earlier, later) > merge_max_gap:  # (a)
+        return False
+    combined = earlier.members + later.members
+    if combined[-1].taken_at - combined[0].taken_at > EVENT_MAX_SPAN:  # (b)
+        return False
+    return not _extent_meters(combined) > EVENT_EXTENT_MAX_METERS  # (c)
+
+
+def _neighbour_for(
+    working: Sequence[Segment], index: int, *, merge_max_gap: timedelta
+) -> int | None:
+    """Der Nachbar, dem ein zu kleines Segment zugeschlagen wird - `None`, wenn keiner haelt.
+
+    Ausschliesslich ANGRENZENDE Segmente, sonst entstuende eine zeitlich zerrissene Einheit.
+    Gewaehlt wird nach kleinerer Zeitluecke, bei Gleichstand nach kleinerer Entfernung, danach der
+    FRUEHERE (`index - 1 < index + 1`). Haelt keiner, bleibt das Segment allein: ein gueltiges
+    Ergebnis, kein Ausnahmezweig."""
+    options: list[tuple[timedelta, float, int]] = []
+    for neighbour in (index - 1, index + 1):
+        if not 0 <= neighbour < len(working):
+            continue
+        low = min(index, neighbour)
+        earlier, later = working[low], working[low + 1]
+        if not _may_merge(earlier, later, merge_max_gap=merge_max_gap):
+            continue
+        options.append((_gap_between(earlier, later), _step_over(earlier, later), neighbour))
+    if not options:
+        return None
+    return min(options)[2]
+
+
+def _smallest_open_index(
+    working: Sequence[Segment], blocked: Sequence[bool], minimum: int
+) -> int | None:
+    """Das kleinste Segment, das NICHT BEREITS ALS GESPERRT FESTSTEHT - bei Gleichstand das
+    fruehere (strikt `<`). Der Zusatz "nicht gesperrt" traegt die Terminierung: ohne ihn waehlte
+    jede Runde dasselbe gescheiterte Segment erneut."""
+    best: int | None = None
+    for index, segment in enumerate(working):
+        if blocked[index] or len(segment.members) >= minimum:  # (d)
+            continue
+        if best is None or len(segment.members) < len(working[best].members):
+            best = index
+    return best
+
+
+def _round_limit(segment_count: int) -> int:
+    """Die Rundenobergrenze: so viele Runden, wie es Segmente gibt.
+
+    Sie haelt, weil je Runde genau eines geschieht - zusammenlegen (die Segmentzahl faellt um eins)
+    oder ein Segment sperren. Ein gesperrtes Segment wird durch keine spaetere Runde wieder
+    zulaessig: Die Riegel (a)-(c) und die Unantastbarkeit haengen an der Kante, und ein Nachbar kann
+    durch Zuwachs nur groesser werden. Es kann auch nicht als Nachbar aufgesogen werden, weil eine
+    Kante fuer beide Richtungen gleich ausfaellt. Zusammenlegungen und Sperrungen zusammen koennen
+    die Segmentzahl daher nicht ueberschreiten.
+
+    Eigene Funktion, damit ein Test die Grenze unterschreiten und nachweisen kann, dass sie WIRFT
+    statt abzubrechen - anders ist ein Sicherungsnetz nicht pruefbar, das im Betrieb nie greift."""
+    return segment_count
+
+
+def merge_small_segments(
+    segments: Sequence[Segment],
+    *,
+    min_event_photos: int | None = None,
+    merge_max_gap: timedelta | None = None,
+) -> MergeOutcome:
+    """Die DRITTE Stufe der Event-Bildung: zu kleine Segmente werden je einem angrenzenden
+    zugeschlagen. REIN, oeffentlich und direkt pruefbar - nicht nur durch `build_events` hindurch.
+
+    Ob ein Segment zu klein ist, steht erst fest, wenn es abgeschlossen ist; im vorwaerts
+    entscheidenden `BoundarySignal`-Protokoll ist das nicht ausdrueckbar. Deshalb eine Stufe NACH
+    dem Durchlauf und kein weiteres Signal.
+
+    Das Ergebnissegment traegt die Ursachenmenge des FRUEHEREN der beiden - seine eroeffnende
+    Grenze bleibt bestehen, aufgeloest wird die dazwischen. Index 0 behaelt damit seine leere
+    Menge, gleich in welche Richtung dort zusammengelegt wird.
+
+    `min_event_photos` und `merge_max_gap` sind injizierbar (`None` = Modulkonstante). Ohne das
+    liefen die Faelle der Signale still durch diese Stufe hindurch, und eine Durchrechnung koennte
+    die beiden Werte nicht variieren - sie sind keine Signale."""
+    minimum = MIN_EVENT_PHOTOS if min_event_photos is None else min_event_photos
+    gap = MERGE_MAX_GAP if merge_max_gap is None else merge_max_gap
+
+    working = list(segments)
+    blocked = [False] * len(working)
+    limit = _round_limit(len(working))
+    dissolved = 0
+    moved: set[int] = set()
+    rounds = 0
+
+    while (index := _smallest_open_index(working, blocked, minimum)) is not None:
+        rounds += 1
+        if rounds > limit:
+            raise EventMergeError(
+                f"Stufe 3 hat die Rundenobergrenze von {limit} gerissen. Eine halb "
+                "zusammengelegte Gliederung darf nicht zurueckbleiben."
+            )
+        neighbour = _neighbour_for(working, index, merge_max_gap=gap)
+        if neighbour is None:
+            blocked[index] = True
+            continue
+        low = min(index, neighbour)
+        merged = Segment(
+            members=working[low].members + working[low + 1].members,
+            causes=working[low].causes,
+        )
+        moved.update(member.photo_id for member in working[index].members)
+        working[low : low + 2] = [merged]
+        blocked[low : low + 2] = [False]
+        dissolved += 1
+
+    return MergeOutcome(
+        segments=tuple(working),
+        dissolved_boundaries=dissolved,
+        moved_photo_ids=frozenset(moved),
+    )
+
+
 @dataclass(frozen=True)
 class EventFormation:
     """Die Gliederung eines Laufs SAMT der Ursache jeder Grenze - die Erklaerform von
@@ -744,21 +1000,38 @@ class EventFormation:
 
     Die Menge wird ausdruecklich NICHT persistiert (ADR 0117 Punkt 4): Stufe 3 liest sie im selben
     Durchlauf, das Messkommando bildet sie ohnehin neu, und eine Spalte waere nach jeder
-    Schwellenaenderung veraltet, ohne dass es auffiele."""
+    Schwellenaenderung veraltet, ohne dass es auffiele.
+
+    `dissolved_boundaries` und `moved_photos` sind die GEGENANZEIGE von Stufe 3 (siehe
+    `MergeOutcome`). Sie beziehen sich auf die Gliederung VOR dem Zusammenlegen; die Zahl der
+    Grenzen davor ist `len(events) - 1 + dissolved_boundaries`."""
 
     events: tuple[BuiltEvent, ...]
     causes: tuple[frozenset[str], ...]
+    dissolved_boundaries: int = 0
+    moved_photos: int = 0
 
 
 def build_events(
-    candidates: Iterable[EventCandidate], signals: list[BoundarySignal] | None = None
+    candidates: Iterable[EventCandidate],
+    signals: list[BoundarySignal] | None = None,
+    *,
+    min_event_photos: int | None = None,
+    merge_max_gap: timedelta | None = None,
 ) -> list[BuiltEvent]:
     """Die Event-Bildung - die Gliederung ohne ihre Erklaerung.
 
     EIN Rechenweg, zwei Sichten: Diese Funktion ist `explain_events` ohne die Ursachenmengen. Ein
     zweiter Durchlauf fuer dasselbe liefe auseinander, und dann maesse das Messkommando die
     Grenzen einer Gliederung, die so nie entstanden ist."""
-    return list(explain_events(candidates, signals).events)
+    return list(
+        explain_events(
+            candidates,
+            signals,
+            min_event_photos=min_event_photos,
+            merge_max_gap=merge_max_gap,
+        ).events
+    )
 
 
 def explain_events(
@@ -767,9 +1040,11 @@ def explain_events(
     *,
     confirming_photos: int | None = None,
     motif_presence_threshold: float | None = None,
+    min_event_photos: int | None = None,
+    merge_max_gap: timedelta | None = None,
 ) -> EventFormation:
-    """Die Event-Bildung: EIN sortierter Durchlauf ueber die Kandidaten eines Kriterien-Laufs,
-    dem die Motivgrenzen als eigene Stufe VORAUSGEHEN - samt der Ursache jeder Grenze.
+    """Die Event-Bildung in DREI Stufen: die Motivgrenzen, der Durchlauf ueber die Signale und das
+    Zusammenlegen zu kleiner Segmente - samt der Ursache jeder Grenze.
 
     Das Ergebnis ist chronologisch geordnet und ueberschneidungsfrei, `position` laeuft
     lueckenlos ab 1, und jeder uebergebene Kandidat steht in genau einem Event.
@@ -786,10 +1061,15 @@ def explain_events(
     ist deren vollstaendige Ruecksetzung. Eine erst spaeter faellige Grenze von Ausdehnung,
     Schritt oder Name kann dadurch entfallen, weil an der frueheren Stelle bereits getrennt wurde.
 
+    Erst NACH Stufe 3 bildet `_built` die Events. Weil das die einzige Stelle bleibt, an der Name,
+    Zellen und `place_kind` entstehen, stimmen diese Werte fuer ein zusammengelegtes Event ohne
+    eigenen Zweig, und `position` laeuft ohne Nacharbeit lueckenlos ab 1.
+
     `signals` ist injizierbar; ohne Angabe gilt `default_signals()`. Ebenso die beiden
-    Festlegungen der ersten Stufe (`confirming_photos`, `motif_presence_threshold`, `None` =
-    Betriebswert): Die Empfindlichkeitsmessung braucht die Ursachenmengen DIESES Durchlaufs unter
-    variierten Werten, nicht die einer Nachbildung."""
+    Festlegungen der ersten Stufe (`confirming_photos`, `motif_presence_threshold`) und die beiden
+    der dritten (`min_event_photos`, `merge_max_gap`), jeweils `None` = Modulkonstante. Die
+    Empfindlichkeitsmessung braucht die Ursachenmengen DIESES Durchlaufs unter variierten Werten,
+    nicht die einer Nachbildung."""
     ordered = sorted(candidates, key=lambda candidate: (candidate.taken_at, candidate.photo_id))
     forced_starts = motif_change_starts(
         ordered,
@@ -821,9 +1101,23 @@ def explain_events(
                 signal.advance(candidate)
         events[-1].append(candidate)
 
+    outcome = merge_small_segments(
+        [
+            Segment(members=tuple(members), causes=cause)
+            for members, cause in zip(events, causes, strict=True)
+        ],
+        min_event_photos=min_event_photos,
+        merge_max_gap=merge_max_gap,
+    )
+
     return EventFormation(
-        events=tuple(_built(position, members) for position, members in enumerate(events, start=1)),
-        causes=tuple(causes),
+        events=tuple(
+            _built(position, segment.members)
+            for position, segment in enumerate(outcome.segments, start=1)
+        ),
+        causes=tuple(segment.causes for segment in outcome.segments),
+        dissolved_boundaries=outcome.dissolved_boundaries,
+        moved_photos=len(outcome.moved_photo_ids),
     )
 
 
