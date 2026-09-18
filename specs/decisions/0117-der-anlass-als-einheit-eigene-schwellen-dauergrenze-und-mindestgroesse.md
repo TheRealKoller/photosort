@@ -14,6 +14,23 @@ Ortsdatensatz, der die Grenze dessen setzt, was gemessen werden kann)
 zwei davon (die Riegel gegen Überverschmelzung, die Grenze der Ortsmessung) ohne ihre
 Ausfallrichtung nicht anwendbar sind.
 
+**Vermerk nach der Messung (2026-09-18).** Zwei Zusagen dieser ADR sind von der Messung an einem
+echten Projekt überholt und gelten in der genannten Form **nicht**; alles übrige gilt unverändert.
+
+1. **Punkt 1, letzter Halbsatz — die Kalibrierung findet nicht statt.** Die drei Schwellen
+   (`EVENT_TIME_GAP`, `EVENT_STEP_MAX_METERS`, `EVENT_EXTENT_MAX_METERS`) ziehen zwar wie
+   entschieden nach `events.py` um, behalten aber ihre heutigen Werte **und ihren Vermerk
+   „unkalibriert"**. Grund: Sie bewegen zusammen höchstens 5,6 % der Grenzen, `schritt` und
+   `ausdehnung` davon 0,0 %. Damit fällt auch der Satz aus Punkt 5, die Konstanten verlören ihren
+   Vermerk „unkalibriert" — sie tun es nicht.
+2. **Punkt 5, zweiter Absatz — es gibt keinen Kalibrierungslauf** und keine „vorab ausgeschriebene
+   Auswahlregel", gegen die die Abnahme liefe. Die Abnahme läuft gegen die Nachmessung derselben
+   Blöcke A und B. Die Injizierbarkeit von `build_events` bleibt davon unberührt und ist
+   umgesetzt: Sie trägt jetzt die Empfindlichkeitsmessung und die drei Stufen-Parameter.
+
+Die Begründung im Einzelnen steht im Abschnitt „Messprotokoll" der Spec
+[`0506`](../features/0506-cluster-als-anlass.md).
+
 ## Kontext
 
 Die Gliederung zerfällt in sehr kleine Einheiten, oft in Einzelbilder. Weil der Auswahlvorschlag

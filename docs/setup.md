@@ -544,6 +544,11 @@ Ausgewiesen werden die Verteilung der Events nach Fotozahl (Block A), die Trennu
 er von seinem Hash ab, sagt Block C das ausdrücklich („NICHT GEMESSEN"), statt eine Null zu zeigen,
 die als gutes Messergebnis gelesen würde.
 
+Block B trägt zusätzlich die **Gegenanzeige** des Zusammenlegens: wie viele Grenzen die dritte
+Stufe der Event-Bildung wieder aufgelöst hat und wie viele Fotos dadurch ihr Event gewechselt
+haben. Beides gehört zur Beurteilung dazu — der Anteil der Ein-Bild-Cluster und die Eventzahl
+würden von einer zu aggressiven Verschmelzung *besser* aussehen.
+
 Mit `--motiv` misst dasselbe Kommando stattdessen, wie empfindlich die Gliederung auf den
 Motivwechsel reagiert (Block E):
 

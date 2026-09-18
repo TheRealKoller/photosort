@@ -1733,12 +1733,33 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Funktion liest alles selbst aus persistierten Werten (zwei Abfragen mehr je Lauf) und
     committet nicht — die Transaktionsgrenze gehört dem Aufrufer, der genau einmal committet. Ein
     Versatzwechsel vergibt dabei **neue Event-Ids**; ein Client, der sie zwischenspeichert, hält
-    sie nicht über die Änderung hinweg. Die Grenzen entstehen aus einer **Liste
-    gleichrangiger Trennsignale**: Zeitlücke (`TIME_CLUSTER_GAP`), Kalendertag (Vergleich der
-    ersten zehn Zeichen des zonenlosen Zeitstempels — neu, eine Nacht ohne Zeitlücke trennt
-    seither), Schrittabstand (`GPS_CLUSTER_SPLIT_DISTANCE_METERS`), **Ausdehnung**
-    (`EVENT_EXTENT_MAX_METERS`, 1000,0 — Diagonale der umschließenden Box **einschließlich** des
-    betrachteten Fotos; unkalibriert und durch keinen Test gepinnt) und Sehenswürdigkeit-Wechsel.
+    sie nicht über die Änderung hinweg.
+  - **Die Event-Bildung läuft in drei Stufen** *(Spec
+    [`0506`](../specs/features/0506-cluster-als-anlass.md), ADR
+    [`0117`](../specs/decisions/0117-der-anlass-als-einheit-eigene-schwellen-dauergrenze-und-mindestgroesse.md))*:
+    die Motivgrenzen (`motif_change_starts`), der Signal-Durchlauf, und das **Zusammenlegen zu
+    kleiner Segmente**. Erst danach entstehen die `BuiltEvent`s — weil `_built` die einzige Stelle
+    bleibt, an der Name, Zellen und `place_kind` gebildet werden, stimmen diese Werte für ein
+    zusammengelegtes Event ohne eigenen Zweig, und `position` läuft lückenlos ab 1.
+  - **`events.py` führt seine SECHS EIGENEN Schwellen**, keine davon aus `scoring.py`:
+    `EVENT_TIME_GAP` (1 h), `EVENT_STEP_MAX_METERS` (500,0), `EVENT_EXTENT_MAX_METERS` (1000,0),
+    `EVENT_MAX_SPAN` (8 h), `MERGE_MAX_GAP` (2 h), `MIN_EVENT_PHOTOS` (2). Grund: Dieselben
+    Konstanten steuerten zuvor **`assign_clusters`**, also Phase A vor dem Ausschuss-Gate — eine
+    Kalibrierung an ihnen verschöbe still, welche Fotos überhaupt Kandidaten werden. Phase A ist
+    von diesen sechs Werten unberührt. Sie bleiben Modulkonstanten (kein Settings-/Env-Wert),
+    werden überall als **Modulattribut** gelesen und sind **unkalibriert**: Kein Test pinnt einen
+    Zahlwert, zulässig sind genau die drei Ungleichungen `MERGE_MAX_GAP > EVENT_TIME_GAP`,
+    `MIN_EVENT_PHOTOS >= 2`, `EVENT_MAX_SPAN < 24 h`.
+  - Die Grenzen des Durchlaufs entstehen aus einer **Liste gleichrangiger Trennsignale**:
+    Zeitlücke (`EVENT_TIME_GAP`), **Dauer** (`EVENT_MAX_SPAN` — die Spanne vom eröffnenden bis zum
+    betrachteten Foto, einschließlich dieses Fotos), Schrittabstand (`EVENT_STEP_MAX_METERS`),
+    **Ausdehnung** (`EVENT_EXTENT_MAX_METERS` — Diagonale der umschließenden Box **einschließlich**
+    des betrachteten Fotos) und Sehenswürdigkeit-Wechsel. **Die Kalendertagsgrenze ist entfallen:**
+    Ein Anlass über Mitternacht (Silvester, langer Abend, Nachtflug) bleibt **ein** Event, mehrere
+    Reisetage werden es nicht — die Grenze ist die Dauer, nicht das Datum, und eine Zeitspanne ist
+    zonenfrei richtig, wo ein Kalendertag eine Aussage der lokalen Zeitzone war. Eine Überschrift
+    kann dadurch `23:40–01:15 Uhr` lauten; das Event steht im Abschnitt seines **Anfangstags**
+    (`dayKey` kommt aus `started_at`).
     Der Durchlauf fragt **alle** Signale bei jedem Kandidaten (`any` über eine gebaute Liste,
     ausdrücklich nicht kurzgeschlossen) und ruft danach genau eine der schreibenden Methoden auf
     allen auf. Nur diese Trennung von reiner Frage (`is_boundary`) und Fortschreibung
@@ -1748,6 +1769,25 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Erweiterungspunkt: Der Motivwechsel ist keine paarweise Frage, sondern eine Segmentierung über
     die ganze Folge (Bestätigungsfenster, rückwirkender Beginn), und steht deshalb als eigene Stufe
     davor statt als sechster Eintrag.
+  - **Stufe 3 — `events.py::merge_small_segments`**, eine öffentliche reine Funktion über den
+    Segmenten: Ein Segment mit weniger als `MIN_EVENT_PHOTOS` Fotos wird genau einem
+    **angrenzenden** zugeschlagen — dem mit der kleineren Zeitlücke, bei Gleichstand der kleineren
+    Entfernung, danach dem früheren. Zugeschlagen wird nur, wenn **vier Riegel** halten: (a) die
+    Zeitlücke zum Nachbarn überschreitet `MERGE_MAX_GAP` nicht, (b) die Dauer des Ergebnisses
+    überschreitet `EVENT_MAX_SPAN` nicht, (c) die Ausdehnung des Ergebnisses überschreitet
+    `EVENT_EXTENT_MAX_METERS` nicht und (d) das Segment liegt selbst unter der Mindestgröße.
+    Hält kein Nachbar, **bleibt das Segment allein** — ein gültiges Ergebnis, kein Fehlerfall.
+    **Zwei Grenzen sind unantastbar** (`UNBREAKABLE_CAUSES`): Eine Grenze, deren Ursachenmenge
+    `motivwechsel` oder `sehenswuerdigkeit` enthält, wird nie aufgelöst; sie sind die einzigen
+    Signale, die zwei Anlässe am selben Ort zur selben Zeit trennen. Je Runde wird das kleinste
+    Segment behandelt, **das nicht bereits als gesperrt feststeht** — dieser Zusatz trägt die
+    Terminierung, weil die vier Riegel an der *Kante* hängen und damit für beide Richtungen gleich
+    ausfallen. Die Rundenobergrenze **wirft** (`EventMergeError`) statt abzubrechen: Ein stiller
+    Frühabbruch ließe eine halb zusammengelegte Gliederung zurück, die niemandem auffiele.
+    `build_events`/`explain_events` nehmen `min_event_photos` und `merge_max_gap` injizierbar
+    entgegen (`None` = Modulkonstante), und `EventFormation` führt die **Gegenanzeige**
+    (`dissolved_boundaries`, `moved_photos`) mit — beide Abnahmezahlen der Gliederung würden von
+    einer zu aggressiven Verschmelzung besser erfüllt.
   - **Die Ausdehnung ist der fachliche Kern:** die bisherige Schwelle begrenzte den *Schritt*, nicht
     den Durchmesser — ein Spaziergang in 400-m-Schritten trennte nie und überspannte Kilometer.
   - **Der Ortsbezug entsteht ausschließlich aus GEMESSENEN Koordinaten und Namen** (Rangfolge

@@ -240,8 +240,8 @@ class PhotoLocationOut(BaseModel):
     auf zwei Nachkommastellen liegt allein in `ClusterPlaceOut`).
 
     `source` ist ein SICHERHEITSMERKMAL, kein Anzeigedetail (Muss-Kriterium des
-    Sicherheitskonzepts): `GPS_CLUSTER_SPLIT_DISTANCE_METERS` begrenzt den SCHRITT zwischen zwei
-    aufeinanderfolgenden Fotos, nicht den DURCHMESSER eines Clusters - ein Spaziergang in
+    Sicherheitskonzepts): `scoring.GPS_CLUSTER_SPLIT_DISTANCE_METERS` begrenzt den SCHRITT zwischen
+    zwei aufeinanderfolgenden Fotos, nicht den DURCHMESSER eines Clusters - ein Spaziergang in
     400-m-Schritten teilt nie und kann Kilometer ueberspannen. Eine `"derived"`-Koordinate kann
     deshalb beliebig weit von der tatsaechlichen Aufnahmestelle entfernt liegen; sie ist eine
     SCHAETZUNG, nie eine Messung. Kein kuenftiger Verbraucher (Kartenansicht, Export,
