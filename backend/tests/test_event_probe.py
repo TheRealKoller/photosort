@@ -8,14 +8,19 @@ Projektgraphen, `main()` synchron gegen eine dateibasierte SQLite in `tmp_path`.
 
 from __future__ import annotations
 
+import ast
 import asyncio
+from collections.abc import Collection
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort import worker
 from photosort.db import Base, make_engine, make_session_factory
+from photosort.event_inputs import EventInputs
 from photosort.event_probe import (
     DISTANCE_THRESHOLD_METERS,
     EventProbeError,
@@ -50,6 +55,8 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.place_dataset import write_extract
+from tests.import_closure import import_closure, module_file
+from tests.write_guard import write_statements
 
 NOW = datetime(2026, 7, 20, 10, 0, 0)
 
@@ -785,3 +792,170 @@ class TestAnAbsentDatasetIsReportedNotShownAsZero:
 
         assert exit_code == 0
         assert "NICHT GEMESSEN" in capsys.readouterr().out
+
+
+# --- Die Zusage "rein lesend", in drei Teilen ------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+class TestTheWriteGuardIsNotVacuous:
+    """Zwei Referenzfaelle gegen Vakuum-Gruen: Ein Waechter, der nichts erkennt, ist immer gruen.
+    Die Mikrotests je Schreibform und die Positiv-Gegenproben stehen bei ihm selbst
+    (`test_place_probe.py::TestTheWriteGuardItself`) - er hat nur EINE Definition."""
+
+    def test_a_writing_form_is_still_recognised(self) -> None:
+        assert "add()" in write_statements(ast.parse("session.add(row)"))
+
+    def test_a_reading_form_is_still_not_flagged(self) -> None:
+        assert (
+            write_statements(ast.parse("rows = (await session.execute(select(Photo))).all()")) == []
+        )
+
+
+class TestTheProbeIsReadOnly:
+    """Die Zusage "kein Lauf hinterlaesst eine geaenderte, geloeschte oder neue Zeile", in drei
+    Teilen - KEIN Teil traegt allein."""
+
+    def test_the_command_is_in_no_import_graph_of_the_application(self) -> None:
+        assert "photosort.event_probe" not in import_closure("photosort.main")
+        assert "photosort.event_probe" not in import_closure("photosort.worker")
+
+    def test_the_import_graph_walker_actually_finds_something(self) -> None:
+        # Gegenprobe: ohne sie bestuenden die beiden Zusagen oben auch bei einem Walker, der gar
+        # nichts findet - Tippfehler im Modulnamen, geaenderte Verzeichnisstruktur.
+        assert {"photosort.models", "photosort.config"} <= import_closure("photosort.main")
+        assert "photosort.events" in import_closure("photosort.event_probe")
+
+    def test_the_inputs_module_lies_in_the_graph_of_the_run(self) -> None:
+        """DIE GEGENPROBE ZUR IMPORT-GRAPH-ZUSAGE: `event_inputs.py` MUSS im Graphen von
+        `worker.py` liegen - sonst waere aus dem gemeinsamen Modul still wieder eine Kopie
+        geworden, und das Messkommando maesse etwas anderes als der Lauf (ADR 0117 Punkt 5)."""
+        assert "photosort.event_inputs" in import_closure("photosort.worker")
+        assert "photosort.event_inputs" in import_closure("photosort.event_probe")
+
+    def test_no_compose_file_runs_either_module(self) -> None:
+        """Der Abfluss tritt nur ein, wenn Daniel ihn TIPPT - nicht, weil ein Container startet.
+        Ueber BEIDE Modulnamen: nur mit dem alten Namen kopiert waere dieser Waechter still
+        vakuum-gruen."""
+        for compose in sorted(REPO_ROOT.glob("docker-compose*.yml")):
+            content = compose.read_text(encoding="utf-8")
+
+            assert "event_probe" not in content, compose.name
+            assert "event_inputs" not in content, compose.name
+
+    @pytest.mark.parametrize("module", ["photosort.event_probe", "photosort.event_inputs"])
+    def test_the_module_defines_no_endpoint(self, module: str) -> None:
+        path = module_file(module)
+        assert path is not None
+        source = path.read_text(encoding="utf-8")
+
+        assert "APIRouter" not in source
+        assert "fastapi" not in source
+
+    @pytest.mark.parametrize("module", ["photosort.event_probe", "photosort.event_inputs"])
+    def test_the_module_contains_no_writing_statement_at_all(self, module: str) -> None:
+        """JE MODUL, nicht ueber den Import-Graphen: Ueber die Import-Huelle angewandt schluege der
+        Waechter auf `events.py`, `selection.py` und `geonames.py` an (gleichnamige
+        Sammlungs-Methoden, falsch positiv) und wuerde dann entschaerft."""
+        path = module_file(module)
+        assert path is not None
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+
+        assert write_statements(tree) == []
+
+
+async def _table_snapshot(session: AsyncSession) -> dict[str, list[tuple[object, ...]]]:
+    """JEDE Tabelle aus `Base.metadata.sorted_tables` - GEMESSEN, nie als handgeschriebene Liste.
+
+    Eine von Hand gepflegte Tabellenliste veraltet still, sobald eine Tabelle hinzukommt; genau
+    die neue waere dann die ungepruefte."""
+    return {
+        table.name: [tuple(row) for row in (await session.execute(select(table))).all()]
+        for table in Base.metadata.sorted_tables
+    }
+
+
+class TestARealRunChangesNothing:
+    """Teil 3 der Zusage: ein ECHTER `main()`-Lauf gegen eine dateibasierte SQLite, mit
+    Schnappschuss jeder Tabelle davor und danach.
+
+    Der Formwaechter allein bestuende gegen ein Modul, das ueber eine Hilfsfunktion schreibt;
+    dieser Vergleich allein bestuende gegen einen Schreibpfad, den die Testlage nicht betritt."""
+
+    def test_not_a_single_row_changes(self, tmp_path: Path, dataset: Path) -> None:
+        url, project_id = _prepared(tmp_path)
+
+        async def snapshot() -> dict[str, list[tuple[object, ...]]]:
+            engine = make_engine(url)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                taken = await _table_snapshot(session)
+            await engine.dispose()
+            return taken
+
+        before = asyncio.run(snapshot())
+
+        exit_code = main(
+            ["--project-id", str(project_id), "--ortsdatensatz", str(dataset)], database_url=url
+        )
+
+        assert exit_code == 0
+        assert asyncio.run(snapshot()) == before
+
+    def test_the_snapshot_actually_covers_something(self, tmp_path: Path) -> None:
+        """Gegenprobe: ohne sie bestuende der Vergleich oben auch gegen einen leeren
+        Schnappschuss - etwa nach einem Umbau von `Base.metadata`."""
+        url, _ = _prepared(tmp_path)
+
+        async def snapshot() -> dict[str, list[tuple[object, ...]]]:
+            engine = make_engine(url)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                taken = await _table_snapshot(session)
+            await engine.dispose()
+            return taken
+
+        taken = asyncio.run(snapshot())
+
+        assert {"projects", "photos", "events", "photo_rankings"} <= set(taken)
+        assert len(taken["photos"]) == 4
+        assert len(taken["photo_rankings"]) == 4
+
+
+def _by_photo_id(candidates: Collection[EventCandidate]) -> list[EventCandidate]:
+    """Dieselbe Menge in derselben Ordnung - verglichen wird danach FELD FUER FELD (`EventCandidate`
+    ist ein frozen dataclass)."""
+    return sorted(candidates, key=lambda candidate: candidate.photo_id)
+
+
+@pytest.mark.asyncio
+class TestBothPathsSeeTheSameCandidates:
+    """ADR 0117 Punkt 5 - ein eigener Fall, den "rein lesend" NICHT mitdeckt: Der Lauf und das
+    Messkommando beziehen die Kandidatenmenge aus derselben Stelle. Eine nachbildende zweite
+    Fassung maesse etwas anderes, als der Lauf tut, waehrend beide fuer sich gruen blieben."""
+
+    async def test_the_worker_path_and_the_probe_path_agree_field_by_field(
+        self, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project_id = await _seed_measured_project(db_session)
+        captured: list[tuple[EventCandidate, ...]] = []
+        through_the_run = worker.read_event_inputs
+
+        async def recording(
+            session: AsyncSession, seen_project_id: int, photo_ids: Collection[int]
+        ) -> EventInputs:
+            inputs = await through_the_run(session, seen_project_id, photo_ids)
+            captured.append(inputs.candidates)
+            return inputs
+
+        monkeypatch.setattr(worker, "read_event_inputs", recording)
+
+        # Der Neuaufbau ist der Lauf-Pfad: er ermittelt die Kandidatenmenge selbst und ruft
+        # `_build_grouping_and_rankings` - genau wie der Kriterien-Lauf.
+        await worker.rebuild_run_grouping(db_session, project_id)
+        probe = await read_event_probe_input(db_session, project_id)
+
+        [from_the_run] = captured
+        assert _by_photo_id(from_the_run) == _by_photo_id(probe.candidates)
+        assert len(from_the_run) == 4
