@@ -13,8 +13,22 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.event_probe import EventProbeError, read_event_probe_input, size_counts
-from photosort.events import EventCandidate, explain_events
+from photosort.event_probe import (
+    EventProbeError,
+    cause_counts,
+    read_event_probe_input,
+    size_counts,
+)
+from photosort.events import (
+    BOUNDARY_CAUSES,
+    BOUNDARY_MOTIF_CHANGE,
+    BOUNDARY_STEP,
+    BOUNDARY_TIME_GAP,
+    BuiltEvent,
+    EventCandidate,
+    EventFormation,
+    explain_events,
+)
 from photosort.models import (
     CriterionScoringRun,
     Event,
@@ -208,3 +222,89 @@ class TestBlockASizes:
         assert counts.largest_event_photos == 0
         assert counts.longest_seconds is None
         assert counts.shortest_seconds is None
+
+
+def _segment(position: int, photo_count: int) -> BuiltEvent:
+    """Ein fertiges Segment fuer die Zaehlung von Block B - nur Groesse und Position zaehlen."""
+    return BuiltEvent(
+        position=position,
+        photo_ids=tuple(range(position * 100, position * 100 + photo_count)),
+        started_at=NOW,
+        ended_at=NOW,
+    )
+
+
+def _formation(*segments: tuple[int, frozenset[str]]) -> EventFormation:
+    """Eine Gliederung SAMT Ursachen, von Hand gestellt: `(Fotozahl, Ursachenmenge)` je Segment.
+
+    Von Hand statt ueber `explain_events`, weil Block B eine reine Zaehlung ueber die Ursachen ist
+    - eine Testlage aus Zeitabstaenden haenge an den Zahlwerten der Schwellen und waere nach der
+    Kalibrierung eine Zeitbombe."""
+    return EventFormation(
+        events=tuple(
+            _segment(position, photo_count)
+            for position, (photo_count, _) in enumerate(segments, start=1)
+        ),
+        causes=tuple(causes for _, causes in segments),
+    )
+
+
+class TestBlockBCauses:
+    """Welche Trennursache wie oft trennt. Nur "war alleinige Ursache" ist handlungsleitend - eine
+    Schwelle anzuheben hilft dort, wo sie allein getrennt hat."""
+
+    def test_the_hand_computed_graph(self) -> None:
+        counts = cause_counts(
+            _formation(
+                # Das erste Segment traegt KEINE Ursache - die Ausnahme haengt an der Position.
+                (3, frozenset()),
+                # Alleinige Ursache, und sie eroeffnet ein Ein-Bild-Segment.
+                (1, frozenset({BOUNDARY_TIME_GAP})),
+                # ZWEI Ursachen gleichzeitig: beteiligt, aber keine allein.
+                (4, frozenset({BOUNDARY_TIME_GAP, BOUNDARY_STEP})),
+                # Alleinige Ursache, aber das Segment ist gross genug.
+                (2, frozenset({BOUNDARY_STEP})),
+                (1, frozenset({BOUNDARY_MOTIF_CHANGE})),
+            )
+        )
+
+        # Die Zahl der Grenzen MIT Ursache ist stets `Eventzahl - 1`.
+        assert counts.boundaries_total == 4
+        assert counts.involved[BOUNDARY_TIME_GAP] == 2
+        assert counts.involved[BOUNDARY_STEP] == 2
+        assert counts.involved[BOUNDARY_MOTIF_CHANGE] == 1
+        # Die Doppelgrenze zaehlt bei KEINER der beiden als alleinige Ursache.
+        assert counts.sole[BOUNDARY_TIME_GAP] == 1
+        assert counts.sole[BOUNDARY_STEP] == 1
+        assert counts.sole[BOUNDARY_MOTIF_CHANGE] == 1
+        # Zu kleine Segmente: das Ein-Bild-Segment hinter der Zeitluecke und das hinter dem
+        # Motivwechsel. Das Zwei-Bild-Segment hinter dem Schritt zaehlt nicht mit.
+        assert counts.opening_a_small_segment[BOUNDARY_TIME_GAP] == 1
+        assert counts.opening_a_small_segment[BOUNDARY_STEP] == 0
+        assert counts.opening_a_small_segment[BOUNDARY_MOTIF_CHANGE] == 1
+
+    def test_every_cause_of_the_closed_supply_appears_even_at_zero(self) -> None:
+        """Eine Ursache, die im Lauf nie gemeldet hat, steht mit null da - sie faellt nicht aus dem
+        Bericht. Sonst waere er still unvollstaendig, ohne dass eine Summe kleiner wuerde."""
+        counts = cause_counts(_formation((2, frozenset()), (2, frozenset({BOUNDARY_TIME_GAP}))))
+
+        assert set(counts.involved) == set(BOUNDARY_CAUSES)
+        assert set(counts.sole) == set(BOUNDARY_CAUSES)
+        assert set(counts.opening_a_small_segment) == set(BOUNDARY_CAUSES)
+
+    def test_a_single_event_has_no_boundary_at_all(self) -> None:
+        counts = cause_counts(_formation((5, frozenset())))
+
+        assert counts.boundaries_total == 0
+        assert sum(counts.involved.values()) == 0
+
+    def test_a_run_without_events_does_not_report_a_negative_boundary_count(self) -> None:
+        counts = cause_counts(explain_events([]))
+
+        assert counts.boundaries_total == 0
+
+    def test_a_cause_outside_the_closed_supply_refuses_loudly(self) -> None:
+        """Nicht stillschweigend uebergehen: Ein kuenftiges Signal ohne Eintrag in
+        `BOUNDARY_CAUSES` verschwaende sonst aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
+        with pytest.raises(EventProbeError):
+            cause_counts(_formation((2, frozenset()), (2, frozenset({"erfunden"}))))

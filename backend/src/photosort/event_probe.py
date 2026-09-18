@@ -48,6 +48,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.event_inputs import read_event_inputs
 from photosort.events import (
+    BOUNDARY_CAUSES,
+    MIN_EVENT_PHOTOS,
     EventCandidate,
     EventFormation,
     LocationEntry,
@@ -247,4 +249,62 @@ def size_counts(formation: EventFormation) -> SizeCounts:
         largest_event_photos=max(sizes, default=0),
         longest_seconds=max(durations) if durations else None,
         shortest_seconds=min(durations) if durations else None,
+    )
+
+
+# --- Block B: welche Trennursache wie oft trennt -------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CauseCounts:
+    """Block B. ZWEI Zahlen je Ursache, und nur die zweite ist handlungsleitend: Eine Schwelle
+    anzuheben hilft dort, wo sie ALLEIN getrennt hat - an einer Doppelgrenze traegt die andere
+    Ursache weiter.
+
+    Alle drei Abbildungen fuehren JEDE Ursache aus `BOUNDARY_CAUSES`, auch die nie gemeldete. Eine
+    fehlende Zeile waere ein still unvollstaendiger Bericht, ohne dass eine Summe kleiner wuerde.
+
+    `boundaries_total` ist `Eventzahl - 1`: Das erste Segment eines Laufs traegt keine Ursache."""
+
+    boundaries_total: int
+    involved: dict[str, int]
+    sole: dict[str, int]
+    opening_a_small_segment: dict[str, int]
+
+
+def cause_counts(formation: EventFormation) -> CauseCounts:
+    """Block B ueber die Ursachenmengen desselben Durchlaufs, der auch die Gliederung gebildet hat.
+
+    Der Index 0 bleibt AUSGESPART - seine Menge ist leer, und eine Zaehlung ueber ihn truege eine
+    erfundene Zeitluecke in die Statistik.
+
+    Eine Ursache ausserhalb des geschlossenen Vorrats laesst diese Zaehlung LAUT scheitern statt
+    sie zu uebergehen: ein kuenftiges Signal ohne Eintrag in `BOUNDARY_CAUSES` verschwaende sonst
+    aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
+    known = set(BOUNDARY_CAUSES)
+    unknown = sorted({cause for causes in formation.causes for cause in causes} - known)
+    if unknown:
+        raise EventProbeError(
+            "Trennursache ausserhalb des geschlossenen Vorrats: "
+            f"{', '.join(unknown)}. Der Bericht waere still unvollstaendig - erst "
+            "BOUNDARY_CAUSES ergaenzen."
+        )
+
+    involved = {cause: 0 for cause in BOUNDARY_CAUSES}
+    sole = {cause: 0 for cause in BOUNDARY_CAUSES}
+    opening_small = {cause: 0 for cause in BOUNDARY_CAUSES}
+    for event, causes in zip(formation.events[1:], formation.causes[1:], strict=True):
+        small = len(event.photo_ids) < MIN_EVENT_PHOTOS
+        for cause in causes:
+            involved[cause] += 1
+            if len(causes) == 1:
+                sole[cause] += 1
+            if small:
+                opening_small[cause] += 1
+    return CauseCounts(
+        # `max(..., 0)`: Ein Lauf ohne ein einziges Event hat null Grenzen, nicht minus eine.
+        boundaries_total=max(len(formation.events) - 1, 0),
+        involved=involved,
+        sole=sole,
+        opening_a_small_segment=opening_small,
     )
