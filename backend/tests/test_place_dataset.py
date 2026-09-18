@@ -12,6 +12,7 @@ automatischen Pfad (ein 400-MB-Abruf tritt nur ein, wenn er getippt wird).
 from __future__ import annotations
 
 import ast
+import dataclasses
 import gzip
 import logging
 from pathlib import Path
@@ -28,15 +29,18 @@ from photosort.geonames import (
     dataset_hash_path,
     geonames_answer,
     geonames_level,
+    geonames_match_distances,
     parse_geonames_line,
     sha256_of,
 )
+from photosort.models import PlaceLookup
 from photosort.place_dataset import (
     GEONAMES_ARCHIVE_URL,
     extract_line,
     write_extract,
 )
-from photosort.places import PlaceInfo, usable_locality
+from photosort.places import PlaceAnswer, PlaceInfo, usable_locality
+from photosort.scoring import haversine_meters
 from tests.import_closure import import_closure, module_file
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -153,6 +157,76 @@ class TestTheParserReadsTheLevelFromClassAndCode:
         """KEINE ANTWORT, ausdruecklich nicht "Antwort ohne brauchbare Ebene" - die beiden sind
         verschieden: die eine hinterlaesst keine Auskunft, die andere eine."""
         assert geonames_answer([], SPLIT) is None
+
+
+class TestTheHitDistanceIsAZahlOhneNamen:
+    """Spec 0506 Block C2 / Security S4. Die Entfernung zwischen Aufnahmeposition und dem Eintrag,
+    der den Namen geliefert hat, wird bereits gerechnet und heute weggeworfen. Sie kommt auf einen
+    EIGENEN Rueckgabeweg - nicht auf `PlaceAnswer` und damit nicht an den Schreibrand.
+
+    GRUND: Die Entfernung zu einem benannten, oeffentlich enumerierbaren GeoNames-Eintrag ist ein
+    Trilaterationsmittel - `locality` und `neighbourhood` derselben Zelle schneiden sich zu rund
+    zwei Punkten und unterliefen die 1,1-km-Koernung, die `PLACE_CELL_DIGITS = 2` zusichert."""
+
+    def test_the_distance_is_reported_per_level_without_any_name(self) -> None:
+        distances = geonames_match_distances(_entries(BERLIN_LINES), BERLIN_KREUZBERG)
+
+        assert set(distances) == {"neighbourhood", "locality", "region", "country"}
+        for value in distances.values():
+            assert isinstance(value, float)
+
+    def test_it_measures_the_same_entry_the_answer_names(self) -> None:
+        """Die beiden duerfen nicht auseinanderlaufen: Eine zweite Fassung der Nachbarschaftssuche
+        maesse die Entfernung zu einem Eintrag, dessen Name gar nicht vergeben wurde."""
+        far = _geonames_line("Beelin", 52.5800, 13.4050, "P", "PPL")
+        entries = _entries([*BERLIN_LINES, far])
+
+        answer = geonames_answer(entries, BERLIN_KREUZBERG)
+        distances = geonames_match_distances(entries, BERLIN_KREUZBERG)
+        assert answer is not None
+
+        # "Berlin" liegt naeher als "Beelin" und gewinnt die Ebene; die gemeldete Entfernung ist
+        # die des Gewinners, nicht die des letzten gelesenen Eintrags.
+        assert answer.locality == "Berlin"
+        assert distances["locality"] < haversine_meters(*BERLIN_KREUZBERG, 52.5800, 13.4050)
+
+    def test_the_levels_of_both_forms_are_always_the_same_set(self) -> None:
+        entries = _entries(BERLIN_LINES)
+        answer = geonames_answer(entries, BERLIN_KREUZBERG)
+        assert answer is not None
+
+        named = {
+            level
+            for level, value in (
+                ("neighbourhood", answer.neighbourhood),
+                ("locality", answer.locality),
+                ("region", answer.region),
+                ("country", answer.country),
+            )
+            if value is not None
+        }
+
+        assert named == set(geonames_match_distances(entries, BERLIN_KREUZBERG))
+
+    def test_an_entry_beyond_the_cap_is_absent_here_too(self) -> None:
+        """Dieselbe Obergrenze wie bei der Antwort. Eine Entfernung ohne diese Kappung waere die
+        Entfernung zum naechsten Eintrag IRGENDWO - und ihr Anteil oberhalb der Schwelle waere
+        eine Aussage ueber die Kappung, nicht ueber die Ortszuordnung."""
+        assert geonames_match_distances([], SPLIT) == {}
+
+    def test_the_answer_itself_never_carries_a_distance(self) -> None:
+        """S4, strukturell: `PlaceAnswer` ist ein geschlossener Stufenvorrat und bleibt es. Ein
+        Feld hier waere der Weg an den `PlaceLookup`-Schreibrand in `worker.py`."""
+        fields = {field.name for field in dataclasses.fields(PlaceAnswer)}
+
+        assert fields == {"neighbourhood", "locality", "region", "country", "matched_level"}
+
+    def test_no_column_of_the_place_lookup_holds_a_distance(self) -> None:
+        """S4, zweite Haelfte: Sie wird nicht persistiert. Ohne diesen Waechter faellt eine
+        spaetere Spalte niemandem auf."""
+        columns = {column.name for column in PlaceLookup.__table__.columns}
+
+        assert not {name for name in columns if "distance" in name or "entfernung" in name}
 
 
 class TestTheExtractBehavesLikeTheRawFile:

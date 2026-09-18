@@ -6,6 +6,9 @@ Listeneintrag) durch ADR
 [`0109`](./0109-motivwechsel-trennt-in-einem-vorgelagerten-durchlauf.md). Das Protokoll, die
 Reinheit von `is_boundary`, die nicht kurzgeschlossene Auswertung und die Liste als
 Erweiterungspunkt für paarweise Signale gelten unverändert.
+**Teilweise abgelöst:** Abschnitt 5, letzter Absatz (die Tagesgrenze braucht keine Zahl) durch ADR
+[`0117`](./0117-der-anlass-als-einheit-eigene-schwellen-dauergrenze-und-mindestgroesse.md) — an ihre
+Stelle tritt eine Dauergrenze. Die Ausdehnung als Diagonale der umschließenden Box gilt unverändert.
 **Datum:** 2026-09-12
 **Bezug:** Spec `specs/features/0425-*.md`, ADR
 [`0021`](./0021-kriterien-datenmodell-kuratierungs-pipeline.md) (gateführte Zwei-Phasen-Pipeline),

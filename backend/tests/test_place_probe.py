@@ -44,44 +44,9 @@ from photosort.place_probe import (
 from photosort.places import PlaceAnswer, PlaceInfo
 from tests.conftest import NetworkAccessInTestError
 from tests.import_closure import import_closure, module_file
+from tests.write_guard import write_statements
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-# Die Schreibformen, gegen die der Waechter antritt. Attributaufrufe (`session.add(...)`) und
-# blanke Namen (`insert(...)` aus einem `from sqlalchemy import insert`) getrennt, weil `delete`
-# in beiden Formen vorkommt und nur die Kombination beide Wege deckt.
-_WRITING_METHODS = frozenset({"add", "add_all", "merge", "delete", "commit", "flush"})
-_WRITING_CONSTRUCTORS = frozenset({"insert", "update", "delete"})
-_WRITING_NAMES = _WRITING_METHODS | _WRITING_CONSTRUCTORS
-_DML_KEYWORDS = ("insert ", "update ", "delete ", "drop ", "alter ", "create ", "truncate ")
-
-
-def write_statements(tree: ast.AST) -> list[str]:
-    """Jede SCHREIBFORM in einem Syntaxbaum, als lesbare Liste.
-
-    Bewusst ueber die FORM statt ueber ein Verhalten: ein Laufvergleich allein bestuende gegen
-    einen Schreibpfad, den die Testlage nicht betritt (ein Zweig hinter einem nicht gesetzten
-    Schalter, ein Fehlerpfad). Umgekehrt bestuende dieser Waechter allein gegen ein Modul, das
-    ueber eine Hilfsfunktion schreibt - deshalb tragen beide zusammen, keiner allein."""
-    found: list[str] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        if isinstance(node.func, ast.Attribute) and node.func.attr in _WRITING_NAMES:
-            # Auch die Attributform der Konstruktoren (`sa.insert(...)`): ein Import unter Alias
-            # waere sonst der stille Weg an diesem Waechter vorbei. Der Preis ist, dass
-            # `place_probe.py` auf die gleichnamigen Sammlungs-Methoden (`set.add`, `dict.update`)
-            # verzichten muss - eine kleine Auflage gegen eine luecklose Zusage.
-            found.append(f"{node.func.attr}()")
-        elif isinstance(node.func, ast.Name) and node.func.id in _WRITING_CONSTRUCTORS:
-            found.append(f"{node.func.id}()")
-        elif isinstance(node.func, ast.Name) and node.func.id == "text":
-            for argument in node.args:
-                if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
-                    lowered = argument.value.lstrip().lower()
-                    if lowered.startswith(_DML_KEYWORDS):
-                        found.append("text(<DML>)")
-    return found
 
 
 class TestTheNetworkIsLockedForEveryTest:

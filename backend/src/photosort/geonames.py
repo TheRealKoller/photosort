@@ -134,12 +134,14 @@ def geonames_level(entry: GeoNamesEntry) -> str | None:
     return None
 
 
-def geonames_answer(entries: Iterable[GeoNamesEntry], cell: Cell) -> PlaceAnswer | None:
-    """Die Auskunft zu einer Zelle aus den Eintraegen in ihrer Nachbarschaft.
+def _nearest_per_level(
+    entries: Iterable[GeoNamesEntry], cell: Cell
+) -> dict[str, tuple[float, str]]:
+    """Je Ebene der NAECHSTGELEGENE Eintrag in der Nachbarschaft, als `(Entfernung, Name)`.
 
-    Je Ebene gewinnt der NAECHSTGELEGENE Eintrag. `matched_level` ist die FEINSTE getroffene
-    Ebene; ohne jeden verwertbaren Eintrag gibt es keine Antwort (`None`) - das ist ausdruecklich
-    etwas anderes als eine Antwort ohne brauchbare Ebene."""
+    DIE EINE Nachbarschaftssuche: `geonames_answer` nimmt davon den Namen, das Messkommando ueber
+    `geonames_match_distances` die Entfernung. Eine zweite Fassung maesse die Entfernung zu einem
+    Eintrag, dessen Name gar nicht vergeben wurde."""
     lat, lon = cell
     nearest: dict[str, tuple[float, str]] = {}
     for entry in entries:
@@ -152,6 +154,33 @@ def geonames_answer(entries: Iterable[GeoNamesEntry], cell: Cell) -> PlaceAnswer
         current = nearest.get(level)
         if current is None or distance < current[0]:
             nearest[level] = (distance, entry.name)
+    return nearest
+
+
+def geonames_match_distances(entries: Iterable[GeoNamesEntry], cell: Cell) -> dict[str, float]:
+    """Je Ebene die Entfernung in METERN zu dem Eintrag, der ihren Namen geliefert haette - OHNE
+    diesen Namen.
+
+    EIN EIGENER RUECKGABEWEG, ausschliesslich fuer das Messkommando (Spec 0506 Block C2,
+    Sicherheitsauflage S4). Die Zahl kommt AUSDRUECKLICH NICHT auf `PlaceAnswer`: Deren
+    geschlossener Stufenvorrat ist selbst eine Zusage, und ein Feld dort waere der Weg an den
+    `PlaceLookup`-Schreibrand in `worker.py`. Sie wird nicht persistiert, erreicht weder
+    `PlaceInfo` noch `place_hint_for` und keinen Modell-Prompt.
+
+    GRUND: Die Entfernung zu einem benannten, oeffentlich enumerierbaren Eintrag ist ein
+    Trilaterationsmittel - `locality` und `neighbourhood` derselben Zelle schneiden sich zu rund
+    zwei Punkten und unterlaufen die 1,1-km-Koernung, die `PLACE_CELL_DIGITS = 2` zusichert. Wer
+    sie ausgibt, tut das deshalb in Klassen und nie je Zelle."""
+    return {level: distance for level, (distance, _) in _nearest_per_level(entries, cell).items()}
+
+
+def geonames_answer(entries: Iterable[GeoNamesEntry], cell: Cell) -> PlaceAnswer | None:
+    """Die Auskunft zu einer Zelle aus den Eintraegen in ihrer Nachbarschaft.
+
+    Je Ebene gewinnt der NAECHSTGELEGENE Eintrag. `matched_level` ist die FEINSTE getroffene
+    Ebene; ohne jeden verwertbaren Eintrag gibt es keine Antwort (`None`) - das ist ausdruecklich
+    etwas anderes als eine Antwort ohne brauchbare Ebene."""
+    nearest = _nearest_per_level(entries, cell)
     if not nearest:
         return None
     matched = next((level for level in PLACE_LEVELS if level in nearest), None)
@@ -243,6 +272,14 @@ class GeoNamesResolver:
     async def resolve(self, cell: Cell) -> PlaceAnswer | None:
         return geonames_answer(self._entries.get(cell, ()), cell)
 
+    def match_distances(self, cell: Cell) -> dict[str, float]:
+        """Je Ebene die Entfernung zum namengebenden Eintrag - NUR fuer das Messkommando (S4).
+
+        Bewusst NICHT Teil des `PlaceResolver`-Protokolls: Der Lauf sieht diese Zahl nie, und ein
+        kuenftiger Auflöser hinter demselben Protokoll muss sie nicht liefern. Wer sie braucht,
+        baut sich seinen Auflöser ueber `build_geonames_resolver` und macht das damit sichtbar."""
+        return geonames_match_distances(self._entries.get(cell, ()), cell)
+
 
 # --- Die Pruefung vor jedem Gebrauch -------------------------------------------------------------
 
@@ -287,15 +324,22 @@ def dataset_problem(path: Path) -> str | None:
     return None
 
 
-def build_place_resolver(cells: Iterable[Cell], path: Path | None = None) -> PlaceResolver | None:
-    """Der Auflöser des Produktivpfads, oder `None`.
+def build_geonames_resolver(
+    cells: Iterable[Cell], path: Path | None = None
+) -> GeoNamesResolver | None:
+    """DER EINE BAUWEG samt seiner Pruefung, in der konkreten Sicht.
 
     `None` heisst "es wird keiner gebaut" und ist ein ARBEITSFAEHIGER Zustand: die Events behalten
     Nummer und Zeitspanne, der Lauf laeuft durch. Es gibt ausdruecklich keinen Ersatzweg - kein
     zweiter Datensatz, kein Dienst, keine Vermutung.
 
     Der Pfad kommt aus einer Betriebseinstellung mit Vorgabe auf dem Volume, nie aus Datenbank
-    oder Request."""
+    oder Request.
+
+    Diese Sicht braucht nur, wer `match_distances` braucht - also allein das Messkommando. Der
+    Lauf geht ueber `build_place_resolver` und sieht die Entfernung dadurch gar nicht erst (S4).
+    Die Hash-Pruefung steht hier und damit an genau EINER Stelle: Ein zweiter Bauweg waere der
+    stille Weg an ihr vorbei."""
     dataset = Path(settings.place_dataset_path) if path is None else path
     problem = dataset_problem(dataset)
     if problem is not None:
@@ -306,3 +350,8 @@ def build_place_resolver(cells: Iterable[Cell], path: Path | None = None) -> Pla
         )
         return None
     return GeoNamesResolver(dataset, cells)
+
+
+def build_place_resolver(cells: Iterable[Cell], path: Path | None = None) -> PlaceResolver | None:
+    """Der Auflöser des Produktivpfads hinter dem Protokoll - der Weg des Laufs."""
+    return build_geonames_resolver(cells, path)

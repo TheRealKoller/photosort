@@ -12,12 +12,20 @@ import pytest
 
 from photosort import events as events_module
 from photosort.events import (
+    BOUNDARY_CALENDAR_DAY,
+    BOUNDARY_CAUSES,
+    BOUNDARY_EXTENT,
+    BOUNDARY_LANDMARK,
+    BOUNDARY_MOTIF_CHANGE,
+    BOUNDARY_STEP,
+    BOUNDARY_TIME_GAP,
     EVENT_EXTENT_MAX_METERS,
     BoundarySignal,
     BuiltEvent,
     DayBoundarySignal,
     EffectiveLocation,
     EventCandidate,
+    EventFormation,
     EventSpan,
     ExtentSignal,
     LandmarkChangeSignal,
@@ -28,7 +36,9 @@ from photosort.events import (
     build_events,
     default_signals,
     event_for_time,
+    explain_events,
     infer_locations,
+    inherited_locations,
     motif_change_starts,
 )
 from photosort.places import MAX_PLACE_NAME_LENGTH, PlaceInfo
@@ -603,6 +613,8 @@ class TestLandmarkChangeSignal:
 class _SpySignal:
     """Ein Signal, das nie trennt und mitschreibt, wonach es gefragt wurde."""
 
+    name = "spion"
+
     def __init__(self) -> None:
         self.asked: list[int] = []
         self.begun: list[int] = []
@@ -621,6 +633,8 @@ class _SpySignal:
 
 class _AlwaysSignal:
     """Ein Signal, das bei JEDEM Kandidaten trennt - steht VOR dem Spion in der Liste."""
+
+    name = "immer"
 
     def is_boundary(self, candidate: EventCandidate) -> bool:
         return True
@@ -1674,3 +1688,228 @@ class TestAssignPlaceNames:
             assert {
                 event.position: name for event, name in zip(ordered, names, strict=True)
             } == expected
+
+
+# --- Die Trennursache (Spec 0506, ADR 0117 Punkt 4) ---------------------------------------------
+
+
+def _explain(
+    candidates: Sequence[EventCandidate], signals: list[BoundarySignal] | None = None
+) -> EventFormation:
+    """`explain_events` plus die Invarianten - jeder Fall dieser Sektion laeuft hierueber."""
+    formation = explain_events(candidates, signals)
+    assert_event_invariants(candidates, list(formation.events))
+    assert len(formation.causes) == len(formation.events)
+    assert formation.causes[0:1] in ((), (frozenset(),))
+    # DIE TRAGENDE PRUEFFORM: Grenzen mit Ursache == Events - 1. Das erste Segment eines Laufs
+    # traegt keine Ursache, jedes weitere genau eine Grenze.
+    assert sum(1 for cause in formation.causes if cause) == max(len(formation.events) - 1, 0)
+    return formation
+
+
+class TestEverySignalCarriesAName:
+    def test_the_default_set_uses_only_names_from_the_closed_stock(self) -> None:
+        """Ein Signal ohne Namen aus dem Vorrat faellt in der Statistik unter den Tisch, ohne dass
+        eine Summe kleiner wuerde - der Bericht waere dann still unvollstaendig."""
+        names = [signal.name for signal in default_signals()]
+
+        assert len(names) == len(set(names)), "zwei gleichnamige Signale sind eine Ursache"
+        assert set(names) <= set(BOUNDARY_CAUSES)
+
+    def test_the_forced_start_has_its_own_name_in_the_stock(self) -> None:
+        """Der Motivwechsel ist kein Eintrag in `default_signals()` - er trennt trotzdem und
+        braucht deshalb seinen Platz im Vorrat."""
+        assert BOUNDARY_MOTIF_CHANGE in BOUNDARY_CAUSES
+        assert BOUNDARY_MOTIF_CHANGE not in {signal.name for signal in default_signals()}
+
+
+class TestTheCauseSetPerBoundary:
+    def test_the_first_segment_carries_no_cause_even_when_a_signal_reports_one(self) -> None:
+        """DIE AUSNAHME HAENGT AN DER POSITION, nicht an `TimeGapSignal`: Das eingeschleuste,
+        IMMER trennende Signal meldet auch am ersten Foto, und die Menge bleibt trotzdem leer.
+        Ohne diese Verankerung braucht jedes kuenftige Signal seine eigene Ausnahme."""
+        candidates = [_placeless_candidate(index, _at(minutes=index)) for index in range(3)]
+
+        formation = _explain(candidates, [_AlwaysSignal()])
+
+        assert len(formation.events) == 3
+        assert formation.causes == (frozenset(), frozenset({"immer"}), frozenset({"immer"}))
+
+    def test_the_twin_empty_at_the_start_and_zeitluecke_at_the_second_boundary(self) -> None:
+        """Der Zwilling in IDENTISCHER Lage: Dieselbe Zeitluecke, die am Index 0 keine Ursache
+        ergibt, ergibt an der zweiten Grenze `zeitluecke`. Ohne diesen Fall truege jeder Lauf eine
+        erfundene Zeitluecke in der Statistik."""
+        gap = TIME_CLUSTER_GAP + timedelta(minutes=1)
+        candidates = [_placeless_candidate(1, T0), _placeless_candidate(2, T0 + gap)]
+
+        formation = _explain(candidates, [TimeGapSignal()])
+
+        assert len(formation.events) == 2
+        assert formation.causes == (frozenset(), frozenset({BOUNDARY_TIME_GAP}))
+
+    def test_two_signals_at_the_same_boundary_yield_a_set_of_two(self) -> None:
+        """Die Grenze traegt die MENGE, nie ein einzelnes Signal: Der Durchlauf wertet alle aus,
+        und ein Bericht mit einer Ursache je Grenze unterschluege die zweite."""
+        gap = TIME_CLUSTER_GAP + timedelta(minutes=1)
+        far = GPS_CLUSTER_SPLIT_DISTANCE_METERS + EPSILON_METERS
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, T0 + gap, lat=_north(far)),
+        ]
+
+        formation = _explain(candidates, [TimeGapSignal(), StepDistanceSignal()])
+
+        assert formation.causes[1] == frozenset({BOUNDARY_TIME_GAP, BOUNDARY_STEP})
+
+    def test_a_forced_motif_start_is_its_own_cause(self) -> None:
+        """Ein erzwungener Start ist eine Grenze wie jede andere und muss als solche gezaehlt
+        werden - sonst stuende in Block B eine Grenze ohne Ursache."""
+        pictures = [_picture("a")] * _window() + [_picture("b")] * _window()
+
+        formation = _explain(_motif_candidates(pictures), [])
+
+        assert len(formation.events) == 2
+        assert BOUNDARY_MOTIF_CHANGE in formation.causes[1]
+
+    def test_the_calendar_day_reports_under_its_own_name(self) -> None:
+        """Der Ist-Zustand enthaelt heute die Kalendertagsgrenze; ohne ihren Namen im Vorrat waere
+        die Ausgangsmessung nicht ehrlich."""
+        candidates = [
+            _placeless_candidate(1, datetime(2026, 7, 20, 23, 40)),
+            _placeless_candidate(2, datetime(2026, 7, 21, 0, 10)),
+        ]
+
+        formation = _explain(candidates, [DayBoundarySignal()])
+
+        assert formation.causes[1] == frozenset({BOUNDARY_CALENDAR_DAY})
+
+    def test_the_landmark_change_reports_under_its_own_name(self) -> None:
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name="Zugspitze"),
+            _placeless_candidate(2, _at(seconds=1), landmark_name="Eibsee"),
+        ]
+
+        formation = _explain(candidates, [LandmarkChangeSignal()])
+
+        assert formation.causes[1] == frozenset({BOUNDARY_LANDMARK})
+
+    def test_the_extent_reports_under_its_own_name(self) -> None:
+        far = EVENT_EXTENT_MAX_METERS + EPSILON_METERS
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(seconds=1), lat=_north(far)),
+        ]
+
+        formation = _explain(candidates, [ExtentSignal()])
+
+        assert formation.causes[1] == frozenset({BOUNDARY_EXTENT})
+
+    def test_a_run_without_any_candidate_has_neither_events_nor_causes(self) -> None:
+        formation = _explain([])
+
+        assert formation.events == ()
+        assert formation.causes == ()
+
+    def test_every_cause_of_a_full_signal_run_stays_inside_the_closed_stock(self) -> None:
+        """Als Nachsatz ueber der ganzen Fallmenge, nicht als Einzelfall: Ein neues Signal ohne
+        Eintrag im Vorrat wird hier rot, nicht erst im Bericht."""
+        gap = TIME_CLUSTER_GAP + timedelta(minutes=1)
+        far = GPS_CLUSTER_SPLIT_DISTANCE_METERS + EPSILON_METERS
+        candidates = [
+            _measured_candidate(1, T0, landmark_name="Zugspitze"),
+            _measured_candidate(2, _at(seconds=1), landmark_name="Eibsee"),
+            _measured_candidate(3, T0 + gap, lat=_north(far)),
+            _measured_candidate(4, datetime(2026, 7, 21, 9, 0)),
+        ]
+
+        formation = _explain(candidates)
+
+        for cause in formation.causes:
+            assert cause <= set(BOUNDARY_CAUSES)
+
+
+class TestBuildEventsAndTheExplainingFormAreTheSameRun:
+    """Ein zweiter Rechenweg fuer dieselbe Gliederung liefe auseinander - und dann maesse Block B
+    die Grenzen einer Gliederung, die so nie entstanden ist."""
+
+    def test_the_same_candidates_yield_the_same_events(self) -> None:
+        gap = TIME_CLUSTER_GAP + timedelta(minutes=1)
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(seconds=30)),
+            _measured_candidate(3, T0 + gap),
+        ]
+
+        assert list(explain_events(candidates).events) == build_events(candidates)
+
+
+class TestTheMinimumSegmentSizeIsAnInequalityNotANumber:
+    def test_a_segment_of_one_photo_is_below_it(self) -> None:
+        """Die einzige zulaessige Aussage ueber diesen Zahlwert, und sie ist eine Ungleichung: Bei
+        `1` waere kein Segment je zu klein, und die Messung in Block B stuende dauerhaft auf
+        null."""
+        assert events_module.MIN_EVENT_PHOTOS >= 2
+
+
+class TestInheritedLocationsReportWithoutACoordinate:
+    """Was eine Uebernahme ueber sich selbst aussagt - der Messgegenstand von Block C1. Die
+    Auskunft traegt KEINE Koordinate: nur den Zeitabstand zum gewaehlten Anker und die Spanne
+    zwischen den beiden koordinatentragenden Nachbarn."""
+
+    def test_a_photo_with_its_own_coordinate_reports_nothing(self) -> None:
+        entries = [LocationEntry(photo_id=1, taken_at=T0, gps_lat=BASE_LAT, gps_lon=BASE_LON)]
+
+        assert inherited_locations(entries) == []
+
+    def test_without_any_anchor_nobody_inherits_and_nobody_reports(self) -> None:
+        entries = [LocationEntry(photo_id=1, taken_at=T0)]
+
+        assert inherited_locations(entries) == []
+
+    def test_the_time_distance_is_measured_against_the_anchor_that_was_actually_chosen(
+        self,
+    ) -> None:
+        """Gemessen wird gegen DENSELBEN Anker, den `infer_locations` waehlt - eine zweite Fassung
+        der Wahl maesse den Abstand zu einem Anker, den das Foto gar nicht geerbt hat."""
+        entries = [
+            LocationEntry(photo_id=1, taken_at=_at(minutes=-2), gps_lat=BASE_LAT, gps_lon=BASE_LON),
+            LocationEntry(photo_id=2, taken_at=T0),
+            LocationEntry(
+                photo_id=3, taken_at=_at(minutes=10), gps_lat=_north(1000.0), gps_lon=BASE_LON
+            ),
+        ]
+
+        [report] = inherited_locations(entries)
+
+        assert report.photo_id == 2
+        assert report.seconds_to_anchor == 120.0
+        assert infer_locations(entries)[2].lat == BASE_LAT
+
+    def test_the_anchor_span_is_the_distance_between_the_two_neighbours(self) -> None:
+        """Die Spanne belegt OHNE jede aeussere Wahrheit, wie wenig eine Uebernahme aussagt:
+        Liegen die beiden koordinatentragenden Nachbarn weit auseinander, ist sie ein Muenzwurf."""
+        distance = 4000.0
+        entries = [
+            LocationEntry(photo_id=1, taken_at=_at(minutes=-5), gps_lat=BASE_LAT, gps_lon=BASE_LON),
+            LocationEntry(photo_id=2, taken_at=T0),
+            LocationEntry(
+                photo_id=3, taken_at=_at(minutes=5), gps_lat=_north(distance), gps_lon=BASE_LON
+            ),
+        ]
+
+        [report] = inherited_locations(entries)
+
+        assert report.anchor_span_meters is not None
+        assert report.anchor_span_meters == pytest.approx(distance, rel=0.01)
+
+    def test_with_only_one_neighbour_the_span_is_absent_not_zero(self) -> None:
+        """Ausfallrichtung: Es gibt keine Spanne, und `0` hiesse "die beiden Nachbarn liegen am
+        selben Ort" - das waere die guenstigste aller Aussagen ueber eine Uebernahme."""
+        entries = [
+            LocationEntry(photo_id=1, taken_at=_at(minutes=-5), gps_lat=BASE_LAT, gps_lon=BASE_LON),
+            LocationEntry(photo_id=2, taken_at=T0),
+        ]
+
+        [report] = inherited_locations(entries)
+
+        assert report.anchor_span_meters is None

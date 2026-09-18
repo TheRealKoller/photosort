@@ -654,7 +654,7 @@ class Event(Base):
     speist sie nie.
 
     `landmark_name` ist freier, extern erzeugter LLM-Text und kommt ausschließlich über
-    `worker.py::_landmark_names` (also durch `sanitize_landmark_name`) hierher - kein direkter
+    `event_inputs.py::_landmark_names` (also durch `sanitize_landmark_name`) hierher - kein direkter
     Zugriff auf `PhotoLandmarkDetection.name` an der Schreibstelle, kein Abschneiden. Beim Rendern
     gilt dieselbe Auflage wie für `FineLabel.raw_label`: ausschließlich als regulärer
     React-Textknoten."""

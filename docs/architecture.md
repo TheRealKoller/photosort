@@ -1428,7 +1428,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   - **Zwei verschieden strenge Zusagen in derselben Zeile.** `name` und `confidence` gehen
     **ungefiltert** hinein, auch unterhalb der Grenze — die Antwort ist bezahlt und bleibt
     vollständig erhalten. Ob aus der Zeile ein *verwendbarer* Name wird, entscheidet allein die
-    **Lesestelle** (`worker.py::_landmark_names` über `landmark.usable_landmark_name`). Folge, und
+    **Lesestelle** (`event_inputs.py::_landmark_names` über `landmark.usable_landmark_name`). Folge, und
     sie ist gewollt: Eine spätere Änderung der Grenze wirkt beim nächsten Neuaufbau der Gruppierung,
     ohne einen einzigen erneuten Cloud-Aufruf. Ein so verworfener Treffer ist von „nie erkannt"
     nicht zu unterscheiden — kein Anzeigezustand, kein Hinweis auf die Vermutung.
@@ -1755,7 +1755,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     übernommener Ort speist ihn nie: eine Ortsaussage über eine Einheit darf nicht aus Schätzungen
     entstehen. Geprüfte Feldkombination: `'landmark'` ⇒ `landmark_name` gesetzt; `'coordinate'` ⇒
     beide Koordinaten gesetzt; `'multiple'` ⇒ beide Koordinaten NULL.
-  - `events.landmark_name` entsteht **ausschließlich** über `worker.py::_landmark_names` (und damit
+  - `events.landmark_name` entsteht **ausschließlich** über `event_inputs.py::_landmark_names` (und damit
     `sanitize_landmark_name`) — kein direkter Zugriff auf `PhotoLandmarkDetection.name` an der
     Schreibstelle, kein Abschneiden, und die Migration kopiert **keine** Namen.
   - `events.place_name` *(Spec [`0434`](../specs/features/0434-ortsnamen-fuer-events.md), ADR

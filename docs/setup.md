@@ -522,6 +522,28 @@ GEMESSEN"), statt eine leere Spalte zu zeigen, die als schlechtes Messergebnis g
 **Zu messen ist an einem Reiseprojekt**, nicht am Alltagsbestand: Die Zellen des Wohnorts tragen
 zur Messung nichts bei.
 
+### Wie die Event-Bildung heute gliedert, an einem echten Projekt messen
+
+```bash
+docker compose exec -T backend python -m photosort.event_probe --project-id <N>
+```
+
+Auch dieses Messkommando ist **rein lesend**: kein Lauf von ihm hinterlässt eine geänderte,
+gelöschte oder neue Zeile. Gemessen wird der letzte erfolgreiche Kriterien-Lauf eines Projekts, und
+zwar mit den Mitteln des Laufs — dieselbe Kandidatenmenge, derselbe Durchlauf, derselbe Auflöser.
+Ohne `--ortsdatensatz <pfad>` gilt `PLACE_DATASET_PATH`.
+
+Die Ausgabe ist Markdown auf stdout und trägt **nur Kennzahlen und die Projekt-Id**: keine
+Koordinate, keinen Orts- oder Sehenswürdigkeitsnamen, keinen OpenCloud-Pfad, keinen Projektnamen
+und keinen Zeitstempel. Einen Schalter, der Namen anhängt, gibt es hier bewusst nicht. Zeiten und
+Entfernungen stehen ausschließlich in festen Klassen, Eventdauern als Dauer statt als Anfang oder
+Ende — damit sind die Zahlen als Ganzes weitergebbar, ohne jede Zeile einzeln prüfen zu müssen.
+
+Ausgewiesen werden die Verteilung der Events nach Fotozahl (Block A), die Trennursachen je Grenze
+(Block B) und die Ortszuordnung je Mechanismus getrennt (Block C). Fehlt der Ortsauszug oder weicht
+er von seinem Hash ab, sagt Block C das ausdrücklich („NICHT GEMESSEN"), statt eine Null zu zeigen,
+die als gutes Messergebnis gelesen würde.
+
 ## Lokal ausprobieren ohne echten OpenCloud-Server
 
 Für einen ersten Eindruck (Ordner-Browsing, Foto-Scan, automatische Bewertung) braucht es keinen
