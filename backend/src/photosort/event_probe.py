@@ -289,12 +289,25 @@ class CauseCounts:
     Alle drei Abbildungen fuehren JEDE Ursache aus `BOUNDARY_CAUSES`, auch die nie gemeldete. Eine
     fehlende Zeile waere ein still unvollstaendiger Bericht, ohne dass eine Summe kleiner wuerde.
 
-    `boundaries_total` ist `Eventzahl - 1`: Das erste Segment eines Laufs traegt keine Ursache."""
+    `boundaries_total` ist `Eventzahl - 1`: Das erste Segment eines Laufs traegt keine Ursache.
+
+    DIE GEGENANZEIGE steht daneben, und sie gehoert zu Block B: Beide Abnahmezahlen dieser Spec -
+    der Anteil der Ein-Bild-Cluster und die Eventzahl - wuerden von einer zu aggressiven
+    Verschmelzung BESSER erfuellt. Ohne `dissolved_by_merge` und `photos_moved_by_merge` misst eine
+    Nachmessung nur die Unter-Zerstueckelung und bemerkte die Ueberverschmelzung nicht.
+
+    `boundaries_before_merge` ist die Bezugsgroesse der Aufloesungen - die Zahl der Grenzen, die
+    der Durchlauf erzeugt hat. Gegen `boundaries_total` gerechnet wuerde der Anteil mit jeder
+    weiteren Aufloesung groesser statt aussagekraeftiger."""
 
     boundaries_total: int
     involved: dict[str, int]
     sole: dict[str, int]
     opening_a_small_segment: dict[str, int]
+    photos_total: int
+    boundaries_before_merge: int
+    dissolved_by_merge: int
+    photos_moved_by_merge: int
 
 
 def cause_counts(formation: EventFormation) -> CauseCounts:
@@ -326,12 +339,17 @@ def cause_counts(formation: EventFormation) -> CauseCounts:
                 sole[cause] += 1
             if small:
                 opening_small[cause] += 1
+    # `max(..., 0)`: Ein Lauf ohne ein einziges Event hat null Grenzen, nicht minus eine.
+    boundaries_total = max(len(formation.events) - 1, 0)
     return CauseCounts(
-        # `max(..., 0)`: Ein Lauf ohne ein einziges Event hat null Grenzen, nicht minus eine.
-        boundaries_total=max(len(formation.events) - 1, 0),
+        boundaries_total=boundaries_total,
         involved=involved,
         sole=sole,
         opening_a_small_segment=opening_small,
+        photos_total=sum(len(event.photo_ids) for event in formation.events),
+        boundaries_before_merge=boundaries_total + formation.dissolved_boundaries,
+        dissolved_by_merge=formation.dissolved_boundaries,
+        photos_moved_by_merge=formation.moved_photos,
     )
 
 
@@ -767,6 +785,19 @@ def render_report(
         )
 
     lines += [
+        "",
+        "### Gegenanzeige: was Stufe 3 wieder zusammengelegt hat",
+        "",
+        f"- Grenzen vor dem Zusammenlegen: {causes.boundaries_before_merge}",
+        f"- davon durch Stufe 3 aufgeloest: {causes.dissolved_by_merge} "
+        f"({_percent(causes.dissolved_by_merge, causes.boundaries_before_merge)})",
+        f"- Fotos, die dadurch ihr Event gewechselt haben: {causes.photos_moved_by_merge} "
+        f"von {causes.photos_total} "
+        f"({_percent(causes.photos_moved_by_merge, causes.photos_total)})",
+        "",
+        "Beide Abnahmezahlen dieser Messung - der Anteil der Ein-Bild-Cluster und die Eventzahl -",
+        "wuerden von einer zu aggressiven Verschmelzung besser erfuellt. Diese zwei Zahlen sind die",
+        "Gegenprobe dazu.",
         "",
         "## C1 - uebernommener Ort",
         "",

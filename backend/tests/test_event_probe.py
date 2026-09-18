@@ -18,6 +18,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort import events as events_module
 from photosort import worker
 from photosort.db import Base, make_engine, make_session_factory
 from photosort.event_inputs import EventInputs
@@ -274,7 +275,11 @@ def _sized_formation(*segments: tuple[int, int]) -> EventFormation:
     return EventFormation(events=events, causes=tuple(frozenset() for _ in events))
 
 
-def _formation(*segments: tuple[int, frozenset[str]]) -> EventFormation:
+def _formation(
+    *segments: tuple[int, frozenset[str]],
+    dissolved_boundaries: int = 0,
+    moved_photos: int = 0,
+) -> EventFormation:
     """Eine Gliederung SAMT Ursachen, von Hand gestellt: `(Fotozahl, Ursachenmenge)` je Segment.
 
     Von Hand statt ueber `explain_events`, weil Block B eine reine Zaehlung ueber die Ursachen ist
@@ -286,6 +291,8 @@ def _formation(*segments: tuple[int, frozenset[str]]) -> EventFormation:
             for position, (photo_count, _) in enumerate(segments, start=1)
         ),
         causes=tuple(causes for _, causes in segments),
+        dissolved_boundaries=dissolved_boundaries,
+        moved_photos=moved_photos,
     )
 
 
@@ -348,6 +355,54 @@ class TestBlockBCauses:
         `BOUNDARY_CAUSES` verschwaende sonst aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
         with pytest.raises(EventProbeError):
             cause_counts(_formation((2, frozenset()), (2, frozenset({"erfunden"}))))
+
+
+class TestBlockBCountsTheCounterIndicationOfTheThirdStage:
+    """Die GEGENANZEIGE: Beide Abnahmezahlen dieser Spec - der Anteil der Ein-Bild-Cluster und die
+    Eventzahl - wuerden von einer zu aggressiven Verschmelzung BESSER erfuellt. Ohne diese beiden
+    Zahlen misst die Nachmessung nur die Unter-Zerstueckelung."""
+
+    def test_the_dissolved_boundaries_are_counted_against_the_state_before_the_stage(self) -> None:
+        """Bezugsgroesse ist die Zahl der Grenzen VOR Stufe 3 - gegen die Zahl danach gerechnet
+        wuerde der Anteil mit jeder weiteren Aufloesung groesser statt aussagekraeftiger."""
+        counts = cause_counts(
+            _formation(
+                (3, frozenset()),
+                (2, frozenset({BOUNDARY_TIME_GAP})),
+                (2, frozenset({BOUNDARY_STEP})),
+                dissolved_boundaries=2,
+                moved_photos=3,
+            )
+        )
+
+        assert counts.boundaries_total == 2
+        assert counts.dissolved_by_merge == 2
+        assert counts.boundaries_before_merge == 4
+        assert counts.photos_moved_by_merge == 3
+        assert counts.photos_total == 7
+
+    def test_a_run_that_merged_nothing_reports_zero_on_both(self) -> None:
+        counts = cause_counts(_formation((2, frozenset()), (2, frozenset({BOUNDARY_TIME_GAP}))))
+
+        assert counts.dissolved_by_merge == 0
+        assert counts.photos_moved_by_merge == 0
+        assert counts.boundaries_before_merge == counts.boundaries_total
+
+    def test_the_counts_come_from_the_real_run_not_from_a_second_pass(self) -> None:
+        """Gemessen wird die Gliederung, die auch entstanden ist. Eine zweite, nachbildende
+        Zaehlung maesse die Grenzen einer Gliederung, die so nie existiert hat."""
+        gap = events_module.EVENT_TIME_GAP + timedelta(seconds=1)
+        candidates = [
+            EventCandidate(photo_id=1, taken_at=NOW),
+            EventCandidate(photo_id=2, taken_at=NOW + timedelta(seconds=1)),
+            EventCandidate(photo_id=3, taken_at=NOW + timedelta(seconds=1) + gap),
+        ]
+
+        counts = cause_counts(explain_events(candidates))
+
+        assert (counts.dissolved_by_merge, counts.photos_moved_by_merge) == (1, 1)
+        assert counts.boundaries_before_merge == 1
+        assert counts.boundaries_total == 0
 
 
 # --- Block E: die Empfindlichkeit des Motivwechsels -----------------------------------------------
@@ -890,6 +945,21 @@ class TestMainRefusesLoudly:
         assert "Events: 0" in report
         assert "Median der Fotozahl: -" in report
         assert "laengste Eventdauer: -" in report
+
+    def test_the_report_carries_the_counter_indication_of_the_third_stage(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Ohne diese zwei Zeilen im BERICHT haette die Nachmessung die Zahlen zwar gerechnet, aber
+        Daniel bekaeme sie nie zu sehen - und beurteilte die Aenderung allein an Zahlen, die eine
+        Ueberverschmelzung verbessert."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id)], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "Grenzen vor dem Zusammenlegen:" in report
+        assert "durch Stufe 3 aufgeloest:" in report
+        assert "Fotos, die dadurch ihr Event gewechselt haben:" in report
 
 
 class TestTheOutputSeparatesNumbersFromPlaces:

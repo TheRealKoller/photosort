@@ -435,6 +435,34 @@ Die Auflagen dieses Abschnitts haben ihre Zeilen in der Ankerliste oben (Hash-Pr
 - **Zeiten und Entfernungen verlassen das System ausschließlich in vorab festgelegten Klassen (S5).** Betroffen sind die Ankerspannen und die Zeitabstände zum Anker: Beide entstehen aus **voller EXIF-Präzision** (`infer_locations` arbeitet auf `photos.gps_lat`/`gps_lon`, nicht auf Zellen). Eine geordnete Folge von Spannen und Zeitlücken ist ein Streckenabdruck, eine Klassenverteilung ist es nicht. Eventdauern stehen als **Dauer**, nie als Anfang oder Ende — ein Anfang wäre wieder der Zeitpunkt. Dieselbe Klassenform trägt die Trefferentfernung aus S4 (Grund siehe `PLACE_CELL_DIGITS = 2` oben).
 - **Ausfallrichtung (S7): „nicht gemessen" ist nicht „null".** Fehlt der Ortsdatensatz oder weicht er von seinem Hash ab, meldet der Ortsblock „NICHT GEMESSEN". Die Ausfallrichtung ist hier tragend und nicht Kosmetik: Ein fehlendes Aggregat, das als gutes Messergebnis gelesen wird, trüge die Entscheidung, an der Ortsbestimmung **nichts** zu ändern — und genau diese Entscheidung hängt an diesen Zahlen.
 - **Die Motivstärke-Grenze ist seit Block E durchreichbar, und genau ein Weg darf sie mitgeben.** `selection.py::motif_is_present` und `carried_motifs` nehmen einen optionalen `threshold` entgegen; `None` bedeutet unverändert die Modulkonstante. **Wofür:** ausschließlich der rein lesende Messweg, der die Empfindlichkeit des Motivwechsels unter mehreren Werten durchrechnet und dafür den echten Rechenweg braucht statt einer Nachbildung. **Kein auswählender Pfad gibt je einen Wert mit**, und ein mitgegebener Wert ist ein **Skalar für alle Motive**, nie eine Grenze je Motiv — damit bleibt die Eindämmung aus ADR 0091 Punkt 1 (zwei Motive treten nie über ihre Zahlen gegeneinander an) inhaltlich unangetastet, und nur deshalb ist die Durchreichbarkeit tragbar. **Bei Verletzung:** `tests/test_selection.py::TestOnlyTheMeasuringPathPassesItsOwnThreshold` wird rot, sobald ein anderes Modul als `selection.py` oder `events.py` einen Wert mitgibt. Die bestehende Zusage „die Konstante steht an genau einer Stelle" bleibt daneben bestehen.
+- **Die Kontrollflusswirkung des Sehenswürdigkeit-Namens wächst — und die obere Schranke wird neu
+  beziffert (M9, Fortschreibung).** Bisher galt: Ein Namenswechsel erzeugt eine Event-**Grenze**,
+  und die Zahl der Events ist durch die Zahl der Kandidatenfotos begrenzt. Mit der dritten Stufe
+  kommt eine zweite Wirkung hinzu: Eine Grenze mit der Ursache `sehenswuerdigkeit` gehört zu
+  `events.UNBREAKABLE_CAUSES` und wird vom Zusammenlegen **nie** aufgelöst. Ein vom Modell
+  gelieferter Name kann damit nicht nur trennen, sondern eine Trennung auch **festhalten**.
+  **Die Schranke bleibt dieselbe und bleibt endlich:** Die Wirkung ist auf die zwei angrenzenden
+  Segmente einer einzigen Grenze begrenzt, sie kann nur Segmente *erhalten*, nie zusätzliche
+  erzeugen, und die Gesamtzahl der Events bleibt durch die Zahl der Kandidatenfotos gedeckelt.
+  Alle vier bestehenden Auflagen (Sanitisierung über `event_inputs.py::_landmark_names`, kein
+  Abschneiden, kein Direktzugriff, React-Textknoten) gelten unverändert. Der Name steht weiterhin
+  **nicht** im Partitionsschlüssel, und er entscheidet an keiner Stelle über einen Ortswert.
+- **Die eigenen Schwellen von `events.py` trennen zwei bislang verbundene Muss-Kriterien
+  sauber.** `EVENT_TIME_GAP`/`EVENT_STEP_MAX_METERS` steuern ab jetzt ausschließlich die
+  Event-Bildung, `TIME_CLUSTER_GAP`/`GPS_CLUSTER_SPLIT_DISTANCE_METERS` ausschließlich Phase A
+  (`assign_clusters`) und damit die Kandidatenmenge vor dem Ausschuss-Gate. Die Werte sind
+  unverändert, aber das Muss-Kriterium zu `source: "derived"` weiter oben hängt damit **nur noch**
+  an der Phase-A-Konstante und wird von einer künftigen Kalibrierung der Event-Schwellen nicht
+  mehr still mitverschoben. Das ist eine Verengung, keine neue Fläche: Zuvor hätte eine Änderung
+  an einer Zahl gleichzeitig die Gliederung und die Kandidatenmenge bewegt, und nur eine der
+  beiden Wirkungen wäre begründet gewesen.
+- **Die Gegenanzeige in Block B ist eine reine Zählung und eröffnet keine neue Klasse.** Der
+  Bericht weist zusätzlich aus, wie viele Grenzen Stufe 3 aufgelöst hat und wie viele Fotos dadurch
+  ihr Event gewechselt haben — beides Anzahlen über den Lauf, ohne Koordinate, ohne Namen, ohne
+  Zeitpunkt und ohne Bezug zu einem einzelnen Foto. Sie fallen unter dieselbe S2-Prüfung wie der
+  übrige Bericht. **Warum sie trotzdem Pflicht sind:** Beide Abnahmezahlen dieser Story würden von
+  einer zu aggressiven Verschmelzung *besser* erfüllt; ohne diese zwei Zahlen wäre die Nachmessung
+  einseitig und könnte ein Zusammenlegen, das zwei Anlässe vermischt, als Erfolg ausweisen.
 - **Ins Messprotokoll kommt die stdout-Ausgabe, nichts daneben (S6).** Der Umsetzungslauf sieht beim Messen echte Daten; die Zusage gilt der Ausgabe des Kommandos, nicht dem, was ein Lauf daneben notiert. Kein aus der Datenbank stammender Wert wird ergänzt, und in Testdaten steht kein echter Wert — die Messlage der Tests ist erfunden.
 
 ### PR↔Issue-Verknüpfung über ein Closing-Keyword im PR-Body (ADR [`0046`](../decisions/0046-pr-issue-verknuepfung-closing-keyword.md), Spec 0251) — Vorausschau, noch nicht implementiert

@@ -21,6 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import events, pricing, worker
+from photosort import events as events_module
 from photosort.album_suitability import normalize_level
 from photosort.api.projects import _count_landmark_candidates
 from photosort.cloud_vision import (
@@ -4603,15 +4604,17 @@ async def test_the_run_persists_its_events_with_position_and_time_span(
 ) -> None:
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    first = await _add_photo(
-        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-    )
-    second = await _add_photo(
-        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 30, tzinfo=UTC)
-    )
-    # Zwei Stunden spaeter: eigenes Event ueber die Zeitluecke.
+    start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    first = await _add_photo(db_session, project, "a.jpg", "etag-a", start)
+    second = await _add_photo(db_session, project, "b.jpg", "etag-b", start + timedelta(minutes=30))
+    # Eigenes Event ueber die Zeitluecke - und weit genug, dass Stufe 3 es nicht wieder
+    # zuschlaegt: der Abstand kommt aus `MERGE_MAX_GAP`, nicht aus einer Zahl.
     third = await _add_photo(
-        db_session, project, "c.jpg", "etag-c", datetime(2023, 1, 1, 13, 0, tzinfo=UTC)
+        db_session,
+        project,
+        "c.jpg",
+        "etag-c",
+        second.taken_at.replace(tzinfo=UTC) + events_module.MERGE_MAX_GAP + timedelta(minutes=1),
     )
     for photo in (first, second, third):
         await _add_score(db_session, photo, cluster_key="cluster-0")

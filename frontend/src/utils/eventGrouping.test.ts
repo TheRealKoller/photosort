@@ -99,6 +99,28 @@ describe('groupPhotosByDay', () => {
     expect(days[0].events[0].photos.map((item) => item.id)).toEqual([2])
   })
 
+  it('keeps an event that runs across midnight in the section of its starting day', () => {
+    // Seit Spec 0506 kann ein Event ueber Mitternacht laufen. `dayKey` kommt aus `started_at` -
+    // ein Event, das sich auf zwei Abschnitte verteilte, zerrisse den Anlass in der Ansicht genau
+    // dort wieder, wo die Gliederung ihn bewusst zusammenhaelt.
+    const overnight = event({
+      id: 20,
+      position: 1,
+      started_at: '2026-07-20T23:40:00',
+      ended_at: '2026-07-21T01:15:00',
+    })
+
+    const days = groupPhotosByDay([
+      photo({ id: 1, taken_at: '2026-07-20T23:40:00', event: overnight }),
+      photo({ id: 2, taken_at: '2026-07-21T01:15:00', event: overnight }),
+    ])
+
+    expect(days.map((day) => day.dayKey)).toEqual(['2026-07-20'])
+    expect(days[0].events).toHaveLength(1)
+    expect(days[0].events[0].photos.map((item) => item.id)).toEqual([1, 2])
+    expect(days[0].events[0].heading).toContain('23:40–01:15 Uhr')
+  })
+
   it('returns nothing for an empty draft', () => {
     expect(groupPhotosByDay([])).toEqual([])
   })
