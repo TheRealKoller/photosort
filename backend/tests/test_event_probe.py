@@ -715,6 +715,49 @@ class TestMainRefusesLoudly:
         assert exit_code == 1
         assert "Lauf" in capsys.readouterr().err
 
+    def test_a_database_error_names_only_the_error_type(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """S8: NIE `str(exc)` und nie ein Traceback - die SQLAlchemy-Meldung kann die
+        `DATABASE_URL` samt Zugangsdaten tragen. Die Lage ist eine Datenbank ohne Tabellen."""
+        url = f"sqlite+aiosqlite:///{tmp_path / 'ohne-tabellen.db'}"
+
+        exit_code = main(["--project-id", "1"], database_url=url)
+
+        assert exit_code == 1
+        error = capsys.readouterr().err
+        assert "OperationalError" in error
+        assert url not in error
+
+    def test_a_run_without_a_single_ranking_row_reports_dashes_not_zeroes(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Der entartete Fall: ein erfolgreicher Lauf, dessen Rangzeilen fehlen. Es gibt dann
+        keinen Median und keine Dauer - und "-" ist etwas anderes als null."""
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> int:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                project_id = await _project(session, "Leerer Lauf")
+                await _successful_run(session, project_id, [])
+                await session.commit()
+            await engine.dispose()
+            return project_id
+
+        project_id = asyncio.run(prepare())
+
+        exit_code = main(["--project-id", str(project_id)], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "Events: 0" in report
+        assert "Median der Fotozahl: -" in report
+        assert "laengste Eventdauer: -" in report
+
 
 class TestTheOutputSeparatesNumbersFromPlaces:
     """S2 ueber ALLE SECHS KLASSEN. Die Messlage traegt je einen unterscheidbaren Wert, und keiner
@@ -778,6 +821,31 @@ class TestAnAbsentDatasetIsReportedNotShownAsZero:
         assert "python -m photosort.place_dataset" in report
         # Die uebrigen Bloecke stehen weiter da - nur C2 haengt am Ortsdatensatz.
         assert "Events: 2" in report
+
+    def test_a_cell_without_any_resolvable_name_carries_no_distance(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """ "Diese Zelle bekaeme keinen Ortsnamen" ist etwas anderes als "die Entfernung ist null":
+        Eine solche Zelle besetzt KEINE Entfernungsklasse. Die unterste zu besetzen behauptete
+        einen perfekt getroffenen Namen, den es nicht gibt.
+
+        Der Auszug dieser Lage traegt nur einen weit entfernten Eintrag - der Auflöser entsteht
+        also, findet aber nichts."""
+        url, project_id = _prepared(tmp_path)
+        far_away = tmp_path / "nur-fern.txt.gz"
+        write_extract([_geonames_line("Anderswo", 0.0, 0.0, "P", "PPL")], far_away)
+
+        exit_code = main(
+            ["--project-id", str(project_id), "--ortsdatensatz", str(far_away)], database_url=url
+        )
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "NICHT GEMESSEN" not in report
+        assert "gefragte Zellen: 1" in report
+        assert "davon mit Ortsnamen: 0" in report
+        # Keine Klasse besetzt - und der Anteil ueber der Schwelle ist nicht messbar, nicht null.
+        assert "ueber der Entfernungsschwelle: 0 (-)" in report
 
     def test_a_changed_dataset_is_not_measured_either(
         self, tmp_path: Path, dataset: Path, capsys: pytest.CaptureFixture[str]
