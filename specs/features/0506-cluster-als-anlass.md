@@ -151,15 +151,28 @@ Kandidatenmenge. `events.py` bekommt deshalb eigene Konstanten; Phase A wird nic
 
 | Name | Bedeutung | Herkunft des Werts |
 |---|---|---|
-| `EVENT_TIME_GAP` | Zeitlücke, ab der ein neues Event beginnt | kalibriert (heute `TIME_CLUSTER_GAP`, 1 h) |
-| `EVENT_STEP_MAX_METERS` | Schritt zwischen zwei Aufnahmen | kalibriert (heute 500 m aus Phase A) |
-| `EVENT_EXTENT_MAX_METERS` | Diagonale der umschließenden Box | kalibriert (heute 1000 m, unkalibriert) |
-| `EVENT_MAX_SPAN` | **neu** — Dauer vom eröffnenden bis zum betrachteten Foto | kalibriert |
-| `MIN_EVENT_PHOTOS` | **neu** — Größe, unter der ein Segment zugeschlagen wird | kalibriert |
-| `MERGE_MAX_GAP` | **neu** — Zeitlücke, die ein zu kleines Segment überbrücken darf | kalibriert, `> EVENT_TIME_GAP` |
+| `EVENT_TIME_GAP` | Zeitlücke, ab der ein neues Event beginnt | **unverändert** 1 h (heute `TIME_CLUSTER_GAP`) |
+| `EVENT_STEP_MAX_METERS` | Schritt zwischen zwei Aufnahmen | **unverändert** 500 m (heute aus Phase A) |
+| `EVENT_EXTENT_MAX_METERS` | Diagonale der umschließenden Box | **unverändert** 1000 m |
+| `EVENT_MAX_SPAN` | **neu** — Dauer vom eröffnenden bis zum betrachteten Foto | begründet gesetzt, siehe unten |
+| `MIN_EVENT_PHOTOS` | **neu** — Größe, unter der ein Segment zugeschlagen wird | begründet gesetzt, siehe unten |
+| `MERGE_MAX_GAP` | **neu** — Zeitlücke, die ein zu kleines Segment überbrücken darf | begründet gesetzt, `> EVENT_TIME_GAP` |
 
-Alle sechs bleiben Modulkonstanten, ausdrücklich **kein** Settings-/Env-Wert, und verlieren mit
-der Kalibrierung ihren Vermerk „unkalibriert". Kein Test prüft einen Zahlwert — geprüft wird wie
+**Die drei bestehenden Schwellen werden nicht kalibriert** (Block D entfällt, Begründung im
+Messprotokoll): Sie bewegen zusammen höchstens 5,6 % der Grenzen, `schritt` und `ausdehnung` davon
+0,0 %. Sie ziehen aus `scoring.py` nach `events.py` um, damit eine spätere Kalibrierung nicht
+länger Phase A mitverschiebt — mit **unveränderten Werten**, und ihr Vermerk „unkalibriert" bleibt
+stehen.
+
+**Die drei neuen Werte entstehen aus dem gemessenen Bestand, nicht aus einem Kalibrierungslauf** —
+die Herleitung steht bei der jeweiligen Konstante im Code und ist damit nachprüfbar statt geraten.
+`EVENT_MAX_SPAN` muss über der längsten heute gemessenen Eventdauer (1 h 32 min) liegen, damit es
+nichts zerschneidet, was heute zusammengehört, und unter 24 h bleiben (Vorbedingung der
+Überschriftenform). `MERGE_MAX_GAP` liegt über `EVENT_TIME_GAP`, sonst ist die dritte Stufe
+wirkungslos. `MIN_EVENT_PHOTOS` ist mindestens 2, sonst ist sie ein No-op.
+
+Alle sechs bleiben Modulkonstanten, ausdrücklich **kein** Settings-/Env-Wert. Kein Test prüft einen
+Zahlwert — geprüft wird wie
 bisher „Wert unter/über Schwelle → erwartetes Verhalten" über injizierte Signale.
 
 ### Die Mitternachtsgrenze
@@ -412,13 +425,15 @@ Teil dieser Story.
 
 ### Umsetzungsreihenfolge (testgetrieben)
 
-1. `event_inputs.py` herausziehen — reiner Umzug, bestehende Worker-Tests bleiben grün.
-2. `event_probe.py` mit Block A/B/C, dazu der dreiteilige Nachweis „rein lesend".
-3. **Messen an einem echten Reiseprojekt**, Ergebnis in den Abschnitt „Messprotokoll".
-4. `EventSpanSignal` und die eigenen Konstanten (unveränderte Startwerte → Gliederung unverändert).
-5. Block D, Kalibrierungslauf, gewählte Werte eintragen.
-6. Die dritte Stufe (Zusammenlegen).
-7. Nachmessen mit demselben Kommando, Ergebnis in dasselbe Messprotokoll.
+1. ✅ `event_inputs.py` herausziehen — reiner Umzug (PR 1, #512).
+2. ✅ `event_probe.py` mit Block A/B/C, dreiteiliger Nachweis „rein lesend" (PR 1, #512).
+3. ✅ **Gemessen an Projekt 3** — Ergebnis im Messprotokoll; es hat die Annahme der Spec widerlegt.
+4. ✅ Block E, Empfindlichkeitsmessung des Motivwechsels (PR 2, #515), und **gemessen** — sie hat
+   auch den zweiten Hebel ausgeschlossen.
+5. ~~Block D, Kalibrierungslauf~~ — **entfällt**, Begründung im Messprotokoll.
+6. `EventSpanSignal` statt `DayBoundarySignal`, die eigenen Konstanten mit unveränderten Werten,
+   und die dritte Stufe (Zusammenlegen) — **PR 3**.
+7. Nachmessen mit demselben Kommando (Block A und B), Ergebnis in dasselbe Messprotokoll.
 
 ### Was sich ausdrücklich nicht ändert
 
@@ -495,16 +510,72 @@ belegen, dann ändern" — es ist eingetreten, nicht schiefgegangen.
 greift: Keine Schwellenkombination kann den Anteil der Ein-Bild-Cluster halbieren, weil die
 Schwellen nicht die Ursache sind.
 
-### Kalibrierung (Block D)
+### Empfindlichkeitsmessung des Motivwechsels (Block E)
 
-- **Tabelle:** _(je Schwellenkombination Eventzahl, Anteil Ein-Bild-Cluster, größte Dauer, Anteil
-  über einem Tag)_
-- **Gewählte Zeile:** _(nach der oben festgelegten Auswahlregel)_
+Gemessen am 2026-09-18 an Projekt 3 mit `python -m photosort.event_probe --motiv --project-id 3`
+auf dem Stand von PR 2. Auszug der tragenden Zeilen; der Betriebswert ist `(3 | 0,5)`.
+
+| bestätigende Fotos | Stärke-Grenze | Events | Ein-Bild-Cluster | `motivwechsel` allein | größtes Event | längste Dauer |
+|---|---|---|---|---|---|---|
+| **Betriebswert** | **Betriebswert** | **91** | **22 (24,2 %)** | **56 (62,2 %)** | **28** | **1 h 32 min** |
+| 2 | 0,3 | 127 | 18 (14,2 %) | 93 (73,8 %) | 19 | 1 h 22 min |
+| 4 | 0,3 | 82 | 16 (19,5 %) | 44 (54,3 %) | 20 | 1 h 31 min |
+| 5 | 0,3 | 62 | 13 (21,0 %) | 24 (39,3 %) | **40** | **3 h 25 min** |
+| 6 | 0,5 | 57 | 14 (24,6 %) | 18 (32,1 %) | **38** | **3 h 24 min** |
+
+**Der Befund: Die Empfindlichkeit des Motivwechsels ist kein Hebel für dieses Ziel.** Drei
+Beobachtungen tragen das, und sie schließen einander nicht aus, sondern verstärken sich.
+
+1. **Ein unempfindlicherer Motivwechsel senkt die Eventzahl, nicht den Anteil.** Von Fenster 3 auf
+   6 fällt die Eventzahl von 91 auf 57 und die Zahl der Ein-Bild-Cluster von 22 auf 14 — ihr
+   **Anteil** bleibt bei 24,2 % gegen 24,6 %. Die Einzelbilder verschwinden nicht, die Grundmenge
+   schrumpft mit. Genau diese Verwechslung fängt die Wahl des Anteils als Abnahmezahl ab.
+2. **Die Gegenanzeige schlägt an, bevor der Anteil sich bewegt.** Ab Fenster 5 entstehen Events mit
+   38 bis 40 Fotos und über 3 h Dauer, gegenüber 28 Fotos und 1 h 32 min am Betriebswert. Das ist
+   die Richtung „mehrere Anlässe in einem Cluster", die Daniels Zielbild ausschließt — erkauft für
+   einen Anteil, der sich nicht verbessert.
+3. **Die Stärke-Grenze bewegt fast nichts.** Bei Fenster 6 liefern 0,4 bis 0,7 identische Zahlen
+   (57 Events, 14 Ein-Bild-Cluster, 18 allein); bei Fenster 2 unterscheiden sich 0,4 bis 0,7 um
+   zwei Events. Nur 0,3 fällt heraus. Als Stellschraube ist sie damit praktisch stumpf.
+
+**Der beste Anteil der ganzen Tabelle kommt aus der Gegenrichtung** und ist trotzdem unbrauchbar:
+`(2 | 0,3)` erreicht 14,2 % — mit **127** Events statt 91, also einer noch feineren Gliederung.
+Das verfehlt das Zielbild „ein Cluster = ein Tag bzw. ein Anlass" in der anderen Richtung.
+
+### Was daraus für die Umsetzung folgt
+
+**Der Betriebswert des Motivwechsels bleibt unverändert** (`MOTIF_CHANGE_CONFIRMING_PHOTOS = 3`,
+`MOTIF_PRESENCE_THRESHOLD = 0,5`), und die Motivgrenze bleibt **unantastbar**. Keine Messung stützt
+eine Änderung: Jede Richtung verschlechtert entweder den Anteil oder das Zielbild.
+
+**Block D (Kalibrierung der drei Schwellen) entfällt ersatzlos.** Die Ausgangsmessung hat gezeigt,
+dass `schritt` und `ausdehnung` nie allein trennen und die Zeitlücke 5,6 % erreicht; ein
+Kalibrierungslauf über Werte, die zusammen höchstens 5,6 % der Grenzen bewegen können, wäre Aufwand
+ohne Aussicht. Die drei Schwellen behalten ihre heutigen Werte und ihren Vermerk „unkalibriert".
+
+**Damit bleibt Stufe 3 — das nachträgliche Zusammenlegen — das einzige wirksame Mittel.** Es war
+von Anfang an Teil des Plans (Daniels Leitplanke „beide Mittel, nicht nur eines"); die Messung
+macht aus „auch" ein „allein".
+
+Die Erwartung, gerechnet am Betriebswert: Von den 22 Ein-Bild-Clustern sind 6 durch `motivwechsel`
+und 6 durch `sehenswuerdigkeit` eröffnet und damit gesperrt (Überschneidung unbekannt). Die
+übrigen 10 bis 16 sind Kandidaten, soweit die vier Riegel halten. Bleiben 6 bis 12 bestehen, liegt
+der Anteil danach zwischen 8 % und 15 % — das Ziel von ≤ 12,1 % ist erreichbar, aber nicht sicher.
+**Die Nachmessung entscheidet es, nicht diese Schätzung.**
+
+### Kalibrierung (Block D) — entfallen
+
+Nicht durchgeführt und nicht gebaut. Begründung oben: Die zu kalibrierenden Schwellen bewegen
+zusammen höchstens 5,6 % der Grenzen, `schritt` und `ausdehnung` davon 0,0 %. Sie behalten ihre
+heutigen Werte und ihren Vermerk „unkalibriert".
 
 ### Nachmessung (nach der Änderung)
 
-- **Block A, B, C erneut**, mit demselben Kommando und demselben Projekt.
-- **Abnahme:** Anteil der Ein-Bild-Cluster mindestens halbiert; kein Event über `EVENT_MAX_SPAN`.
+- **Block A und B erneut**, mit demselben Kommando und demselben Projekt. Block C entfällt: Er hat
+  keinen systematischen Fehler belegt, und an der Ortsbestimmung ändert diese Spec nichts.
+- **Abnahme:** Anteil der Ein-Bild-Cluster mindestens halbiert (≤ 12,1 %); kein Event über
+  `EVENT_MAX_SPAN`; die neu ausgewiesene Gegenanzeige (Anteil der aufgelösten Grenzen, Anteil der
+  Fotos, die ihr Event gewechselt haben) bleibt erklärbar.
 
 ### Befund zur Ortszuordnung
 
@@ -646,7 +717,7 @@ nur noch das Verdrahten und die eine Bindung beider Aufrufer. Keine Migration, k
 Kalendertag des EVENT-ANFANGS" (`timeOfDay.test.ts:170`, 23:50–23:59) unterscheidet diese
 Möglichkeit heute nicht.
 
-**Vor Schritt 4 der Umsetzungsreihenfolge** laufen die Konstanten einmal probeweise verschoben
+**Vor Schritt 6 der Umsetzungsreihenfolge** laufen die Konstanten einmal probeweise verschoben
 durch den ganzen Prüfsatz. Bereits gemessen (`EVENT_TIME_GAP` 3 h, Schritt 1500 m, Ausdehnung
 4000 m): sieben Fälle bauen ihre Testlage aus Zahlen, die nur gegen die heutigen Werte aufgehen,
 und müssen vorher umgebaut werden — `test_events.py:495`, `:508`, `:639`, `:652`, `:674`,
@@ -699,8 +770,13 @@ Konvention formal einhält.
 
 ## Offene Fragen
 
-Keine. Die Schwellenwerte selbst sind nicht offen, sondern durch die Auswahlregel in Block D
-festgelegt; ihre Zahlen entstehen im Kalibrierungslauf und werden im Messprotokoll festgehalten.
+Keine. Die drei bestehenden Schwellen behalten ihre heutigen Werte (Block D entfällt), und die drei
+neuen entstehen aus dem gemessenen Bestand — ihre Herleitung steht bei der jeweiligen Konstante.
+
+Eine Frage ist **beantwortet und hier festgehalten**, weil sie beim Lesen des Messprotokolls
+naheliegt: Ob die Motivgrenze angetastet wird. Sie wird es nicht. Block E zeigt, dass jede Richtung
+entweder den Anteil verschlechtert oder das Zielbild verfehlt; ADR 0109 und Spec 0477 bleiben damit
+vollständig in Kraft.
 
 ## Out of Scope
 
