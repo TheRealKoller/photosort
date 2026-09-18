@@ -509,7 +509,7 @@ export function PhotoDetailPage() {
             Bricht in `PhotoDetailPage.test.tsx > rendert einen feindlich belegten Ortsnamen als
             reinen Textknoten`. */}
         <p className="text-xs text-text-muted" data-testid="place-line">
-          {placeName ?? 'Ort unbekannt'}
+          {placeName ?? 'nicht bestimmbar'}
         </p>
       </section>
 

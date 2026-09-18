@@ -44,10 +44,39 @@ describe('PhotoVerdict: der Regelfall', () => {
 
     expect(screen.getByText('Stufe 4 von 5')).toBeInTheDocument()
     expect(screen.getByText('Alle schauen in die Kamera.')).toBeInTheDocument()
-    expect(screen.getByText('Rang 2 von 5')).toBeInTheDocument()
+    /* Der Rang steht wie im Entwurf ohne das vorangestellte Wort - das trägt sein Label. */
+    expect(screen.getByText('2 von 5')).toBeInTheDocument()
     expect(
       within(screen.getByRole('list', { name: 'Feinlabels' })).getByText('Urlaub'),
     ).toBeInTheDocument()
+  })
+
+  /* Die beiden Labels stehen im Entwurf über ihrem Wert. Sie sind der Grund, warum der Rang ohne
+     das Wort „Rang" auskommt und die Begründung ohne einen Vorsatz gelesen werden kann. */
+  it('beschriftet Albumtauglichkeit und Rang wie der Entwurf', () => {
+    render(
+      <PhotoVerdict
+        albumSuitability={{ level: 4, reason: 'Alle schauen in die Kamera.' }}
+        ranking={ranking()}
+        fineLabels={[]}
+      />,
+    )
+
+    expect(screen.getByText('Albumtauglichkeit')).toBeInTheDocument()
+    expect(screen.getByText('Rang im Ereignis')).toBeInTheDocument()
+  })
+
+  /* Das Label des Rangs erscheint nur mit dem Rang - sonst beschriftete es nichts. */
+  it('lässt das Rang-Label ohne Rangposition weg', () => {
+    render(
+      <PhotoVerdict
+        albumSuitability={{ level: 4, reason: null }}
+        ranking={ranking({ rank_position: null })}
+        fineLabels={[]}
+      />,
+    )
+
+    expect(screen.queryByText('Rang im Ereignis')).toBeNull()
   })
 
   /* AK5: Die Albumtauglichkeits-Zeile trägt einen eigenen Handle, damit der Browser-Prüfsatz ihre
@@ -140,7 +169,7 @@ describe('PhotoVerdict: leer und fehlend', () => {
       />,
     )
 
-    expect(screen.queryByText(/^Rang/)).toBeNull()
+    expect(screen.queryByText('2 von 5')).toBeNull()
   })
 
   it('rendert ohne Feinlabels keinen Platzhalter', () => {

@@ -105,7 +105,8 @@ Verarbeitungs-Cache (Thumbnails).
       (Platzhalter bzw. `Alert` in der Fotofläche, Bewertung und Navigation sichtbar aber gesperrt),
       statt eines vorgezogenen Satzes — sonst springt die Seite beim Eintreffen der Daten.
     - **Das Urteil** `components/PhotoVerdict.tsx` (Albumtauglichkeit mit Begründung, Rang,
-      Feinlabel) steht **vor** den Einzelwerten und in `text-lg` gegen deren `text-sm`. Die
+      Feinlabel) steht **vor** den Einzelwerten. Groß gesetzt ist allein die Stufe (`text-lg`
+      gegen `text-sm` der Rasterzeilen); Begründung und Rang stehen klein unter ihren Labels. Die
       Begründung ist erkennbar als Aussage des **Modells** ausgewiesen und wird ungekürzt gezeigt;
       Kappung findet an der Quelle statt.
     - **Das Nachschlagraster** `components/CriterionScoreGrid.tsx` zeigt die fünfzehn Einzelwerte,
@@ -116,7 +117,7 @@ Verarbeitungs-Cache (Thumbnails).
     - **Der Ort** eines Fotos ist der Ort seines Ereignisses und erscheint hier erstmals auf dieser
       Route. Die dreistufige Namenswahl steht als `utils/timeOfDay.ts::eventPlaceName` in **genau
       einer** Funktion, die sich Ereignis-Überschrift und Detailseite teilen; eine Koordinate
-      erscheint nie als Name, ohne Ortsangabe steht „Ort unbekannt".
+      erscheint nie als Name, ohne Ortsangabe steht „nicht bestimmbar".
     - **Der reservierte Platz** der Motiv-Detailzeile (`min-h-32` in
       `components/MotifStrengthSection.tsx`, am Bestand gemessen) hält alles unterhalb des
       Motivbereichs beim Auf- und Zuklappen ruhig. Er folgt `rowsEditable`, nicht `editable` allein.

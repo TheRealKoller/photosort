@@ -658,11 +658,9 @@ describe('PhotoDetailPage', () => {
          bestünde auch dann, wenn er zusätzlich im Raster stünde, und genau diese Dublette wäre
          der Fehler. Eine Mengenprüfung wie die AK4-Sondenliste sieht eine Doppelung
          grundsätzlich nicht - deshalb steht die Abwesenheitszusage hier. */
+      expect(within(screen.getByTestId('verdict-section')).getByText('2 von 5')).toBeInTheDocument()
       expect(
-        within(screen.getByTestId('verdict-section')).getByText('Rang 2 von 5'),
-      ).toBeInTheDocument()
-      expect(
-        within(screen.getByTestId('criterion-score-grid')).queryByText(/^Rang/),
+        within(screen.getByTestId('criterion-score-grid')).queryByText(/von 5$/),
       ).not.toBeInTheDocument()
     })
 
@@ -693,15 +691,15 @@ describe('PhotoDetailPage', () => {
       renderPage('/projects/1/photos/1')
 
       const section = await screen.findByTestId('criterion-score-grid')
-      /* Spec 0497: Die Kopfzeile des Qualitaetsblocks heisst im Raster "Bildqualität" statt
-         "Qualität" - das Raster ist eine eigene Darstellung, keine Variante des Popovers. Die
-         geprueften Verhaltensweise ("beide beschrifteten Bloecke kommen auf der Seite an") bleibt
+      /* Die Kopfzeilen tragen im Raster den Wortlaut des Entwurfs und damit einen anderen als
+         im Popover - das Raster ist eine eigene Darstellung, keine Variante davon. Die geprueften
+         Verhaltensweise ("beide beschrifteten Bloecke kommen auf der Seite an") bleibt
          unveraendert. */
       expect(
-        within(section).getByRole('heading', { name: 'Bildqualität', level: 3 }),
+        within(section).getByRole('heading', { name: 'Qualität — Einzelwerte', level: 3 }),
       ).toBeInTheDocument()
       expect(
-        within(section).getByRole('heading', { name: 'Bildinhalt', level: 3 }),
+        within(section).getByRole('heading', { name: 'Bildinhalt — Einzelwerte', level: 3 }),
       ).toBeInTheDocument()
     })
 
@@ -1496,7 +1494,7 @@ describe('PhotoDetailPage: die Maximal-Fixture (AK4)', () => {
     const sonden: Record<string, string> = {
       Albumtauglichkeitsstufe: 'Stufe 4 von 5',
       'Begründung des Modells': 'Alle schauen in die Kamera.',
-      'Rang im Ereignis': 'Rang 2 von 5',
+      'Rang im Ereignis': '2 von 5',
       'Feinlabel Urlaub': 'Urlaub',
       'Feinlabel Strand': 'Strand',
       ...Object.fromEntries(ACHT_QUALITAETSWERTE.map((name) => [`Qualitätswert ${name}`, name])),
@@ -1642,7 +1640,7 @@ describe('PhotoDetailPage: der Ort (S2)', () => {
 
     renderPage('/projects/1/photos/1')
 
-    expect(await screen.findByTestId('place-line')).toHaveTextContent('Ort unbekannt')
+    expect(await screen.findByTestId('place-line')).toHaveTextContent('nicht bestimmbar')
   })
 
   /* Eine Koordinate erscheint AUSDRÜCKLICH NICHT als Name - sie bleibt in `place`. */
@@ -1664,7 +1662,7 @@ describe('PhotoDetailPage: der Ort (S2)', () => {
     renderPage('/projects/1/photos/1')
 
     const zeile = await screen.findByTestId('place-line')
-    expect(zeile).toHaveTextContent('Ort unbekannt')
+    expect(zeile).toHaveTextContent('nicht bestimmbar')
     expect(zeile.textContent).not.toMatch(/48\.86|2\.29/)
   })
 
