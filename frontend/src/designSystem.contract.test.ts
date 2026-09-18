@@ -1604,7 +1604,7 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/components/PhotoDetailStage.tsx',
-      snippet: "'flex h-[calc(100dvh-var(--spacing-header)-var(--spacing)*6)] flex-col",
+      snippet: 'className="flex h-[calc(100dvh-var(--spacing-header)-var(--spacing)*6)] flex-col',
       reason:
         'Hoehe der Buehne: sichtbare Hoehe abzueglich Kopfzeile und des oberen Innenabstands der ' +
         'Inhaltsspalte (py-6 an main). Fotoflaeche, Bewertungsleiste und Navigation muessen ' +

@@ -6,11 +6,10 @@ import type { RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CloudVisionStatusList } from '../components/CloudVisionStatusList'
-import { CriterionDetailsList } from '../components/CriterionDetailsList'
+import { CriterionScoreGrid } from '../components/CriterionScoreGrid'
 import { MotifStrengthSection } from '../components/MotifStrengthSection'
-import { PhotoImage } from '../components/PhotoImage'
-import { RatingButtons } from '../components/RatingButtons'
-import { Alert } from '../components/ui/alert'
+import { PhotoDetailStage } from '../components/PhotoDetailStage'
+import { PhotoVerdict } from '../components/PhotoVerdict'
 import { Button } from '../components/ui/button'
 import { useMotifCorrectionControls } from '../hooks/useMotifCorrection'
 import { useMotifsQuery } from '../hooks/useMotifs'
@@ -24,6 +23,7 @@ import { formatDateTime } from '../utils/formatStats'
 import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
+import { eventPlaceName } from '../utils/timeOfDay'
 import { formatTimeOffset } from '../utils/timeOffset'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching for
@@ -252,25 +252,46 @@ export function PhotoDetailPage() {
     }
   }
 
-  if (query.isLoading) {
+  /* Der Rahmen der Buehne steht in ALLEN DREI Zustaenden - ladend und fehler zeigen ihn mit
+     Platzhalter bzw. `Alert` in der Fotoflaeche statt eines vorgezogenen Satzes. Sonst springt die
+     Seite beim Eintreffen der Daten. Die Handler zeigen in diesen beiden Zustaenden ins Leere und
+     sind deshalb leer: die Buehne sperrt Bewertung und Navigation ohnehin selbst. */
+  function rahmenNurBuehne(status: 'loading' | 'error') {
     return (
-      <p role="status" className="text-sm text-text">
-        Fotos werden geladen…
-      </p>
-    )
-  }
-
-  if (query.isError) {
-    return (
-      <div className="flex flex-col items-start gap-3">
-        <Alert onRetry={() => void query.refetch()}>
-          {query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Fotos.'}
-        </Alert>
-        <Button asChild variant="ghost">
+      <div className="flex flex-col gap-4">
+        <PhotoDetailStage
+          status={status}
+          counter={null}
+          photoId={null}
+          altText=""
+          errorText={
+            query.error instanceof ApiError ? query.error.detail : 'Fehler beim Laden der Fotos.'
+          }
+          onRetry={() => void query.refetch()}
+          currentStatus={null}
+          favorite={false}
+          onToggle={() => {}}
+          onToggleFavorite={() => {}}
+          ratingDisabled
+          ratingBusy={false}
+          onPrev={() => {}}
+          onNext={() => {}}
+          prevDisabled
+          nextDisabled
+        />
+        <Button asChild variant="ghost" className="self-start">
           <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
         </Button>
       </div>
     )
+  }
+
+  if (query.isLoading) {
+    return rahmenNurBuehne('loading')
+  }
+
+  if (query.isError) {
+    return rahmenNurBuehne('error')
   }
 
   if (completed) {
@@ -304,80 +325,35 @@ export function PhotoDetailPage() {
 
   const isMutating = setMutation.isPending || deleteMutation.isPending || favoriteMutation.isPending
 
-  /* `showSuggestion={false}` - die Ausschuss-Gruppe bleibt exklusiv im "Automatischer
-     Vorschlag"-Kasten, `suggestion` wird hier bewusst nicht durchgereicht (kein Feld-/Logik-Merge
-     zwischen beiden Bereichen).
-
-     Die Aufschluesselung hat seit Spec 0427 nur noch EINE Einbindung: mit der Kategorie-Welt sind
-     die Bedienelemente aus ihr verschwunden, und ohne Bedienteil gibt es keinen Grund mehr, sie
-     in zwei Ausschnitte zu zerlegen. Die Motivkorrektur ist ihr eigener Abschnitt weiter unten. */
-  const detailsProps = {
-    criterionScores: currentPhoto.criterion_scores,
-    ranking: currentPhoto.ranking ?? null,
-    suggestion: null,
-    showSuggestion: false,
-    fineLabels: currentPhoto.fine_labels,
-    // `?? null` heisst hier "noch nicht bewertet" und nicht "Feld nicht durchgereicht": diese
-    // Ansicht zeigt die Zeile immer, mit Stufe oder mit dem Satz.
-    albumSuitability: currentPhoto.album_suitability ?? null,
-  }
+  // Der Ort eines Fotos ist der Ort seines EREIGNISSES. Die dreistufige Namenswahl steht in
+  // `utils/timeOfDay.ts::eventPlaceName` und entsteht hier ausdruecklich NICHT ein zweites Mal -
+  // sonst liefe sie mit der Ereignis-Ueberschrift auseinander. Ohne Ortsangabe steht der Satz
+  // statt einer Luecke; eine Koordinate erscheint nie als Name.
+  const placeName = currentPhoto.event ? eventPlaceName(currentPhoto.event) : null
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Bleibt unveraendert stehen (es wird nichts entfernt): durch die neuen
-          Tasten-Kaestchen teilweise redundant, aber der Pfeiltasten-Teil hat kein sichtbares
-          Gegenstueck. Nur als Metadatenzeile gesetzt statt als Fliesstext. */}
-      <p className="text-xs text-text-muted">
-        Shortcuts: 1 Favorit, 2 Album-würdig, 3 Verwerfen, ←/→ navigieren
-      </p>
-      <p className="text-xs text-text-muted">
-        {index + 1}/{total}
-      </p>
-
-      <div
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        className="relative mx-auto w-full max-w-2xl"
-      >
-        <PhotoImage
-          photoId={currentPhoto.id}
-          variant="display"
-          alt={currentPhoto.relative_path}
-          className="aspect-[4/3] w-full rounded-md object-contain"
-        />
-      </div>
-
-      {/* Unmittelbar unter dem Foto: die primaere, haeufigste Handlung. role="group" mit
-          aria-label="Bewertung" bleibt unveraendert - die Leiste wandert nur nach oben. */}
-      <RatingButtons
+      {/* DIE BUEHNE steht als ERSTES und ohne irgendetwas darueber: Ihre Hoehe ist aus dem
+          Sichtfenster gerechnet, und jedes Element darueber schoebe ihre Unterkante um die eigene
+          Hoehe unter den Sichtrand (AK2). Der Shortcut-Hinweis ist deshalb in sie gewandert. */}
+      <PhotoDetailStage
+        status="ready"
+        counter={`${index + 1}/${total}`}
+        photoId={currentPhoto.id}
+        altText={currentPhoto.relative_path}
         currentStatus={currentOwnStatus}
         favorite={currentOwnFavorite}
         onToggle={handleToggleRating}
         onToggleFavorite={handleToggleFavorite}
-        disabled={isMutating}
-        busy={isMutating}
+        ratingDisabled={isMutating}
+        ratingBusy={isMutating}
+        onPrev={handlePrev}
+        onNext={() => void handleNext()}
+        prevDisabled={index <= 0}
+        nextDisabled={index + 1 >= photos.length && !query.hasNextPage}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
       />
-
-      <div className="flex justify-between gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          aria-label="Vorheriges Foto"
-          onClick={handlePrev}
-          disabled={index <= 0}
-        >
-          Zurück
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          aria-label="Nächstes Foto"
-          onClick={() => void handleNext()}
-          disabled={index + 1 >= photos.length && !query.hasNextPage}
-        >
-          Weiter
-        </Button>
-      </div>
 
       {suggestion && (
         <div className="flex flex-col items-start gap-2 rounded-md border border-accent bg-elevated p-3 text-sm">
@@ -407,48 +383,73 @@ export function PhotoDetailPage() {
         </div>
       )}
 
-      {/* MOTIVE - eine NEUE permanente Sektion, letzter Bedienblock vor dem Informationsteil:
-          nach dem Vorschlagskasten und VOR der Trennlinie. Weiter oben verdraengte sie
-          Bewertungsleiste und Zurueck/Weiter unter den Bildschirmrand, weiter unten stuende ein
-          Bedienelement im Informationsteil.
+      {/* DIE URTEILSFLAECHE - das Urteil ueber dieses Foto, unmittelbar hinter der Buehne und VOR
+          den Einzelwerten (AK5). Sie traegt die Albumtauglichkeit mit Begruendung, den Rang und
+          die Feinlabel; darunter steht der Motivbereich, dessen Detailzeile den reservierten
+          Platz haelt (AK6/AK7).
 
-          Sie steht PERMANENT, auch ohne Kopfzeile - dann zeigt sie an Stelle der Reihe einen
-          Satz. Sie ist seit PR 3 der EINZIGE Bedienblock der Bewertungsdetails: die
-          Kategorie-Bedienelemente sind mit den Kategorien entfallen. */}
+          Der Motivbereich steht PERMANENT, auch ohne Kopfzeile - dann zeigt er an Stelle der
+          Reihe einen Satz. Er ist der einzige Bedienblock dieses Abschnitts. */}
       <section
-        className="flex flex-col gap-2 text-sm"
-        aria-labelledby="motifs-heading"
-        data-testid="motifs-section"
+        className="flex flex-col gap-4 rounded-md border border-border bg-surface p-4"
+        aria-labelledby="verdict-heading"
+        data-testid="verdict-section"
       >
-        <h2
-          id="motifs-heading"
-          className="text-xs font-semibold tracking-wide text-text-h uppercase"
-        >
-          Motive
+        <h2 id="verdict-heading" className="sr-only">
+          Urteil
         </h2>
-        <MotifStrengthSection
-          motifSet={motifsQuery.data}
-          motifSetLoading={motifsQuery.isPending}
-          motifSetError={motifsQuery.isError ? MOTIF_SET_ERROR_TEXT : undefined}
-          onMotifSetRetry={() => void motifsQuery.refetch()}
-          assessment={currentPhoto.motif_assessment ?? null}
-          motifs={currentPhoto.motifs ?? []}
-          editable
-          onCorrect={(motifKey, applies) =>
-            motifCorrectionControls.correctMotif(currentPhoto.id, motifKey, applies)
-          }
-          onWithdraw={(motifKey) =>
-            motifCorrectionControls.withdrawCorrection(currentPhoto.id, motifKey)
-          }
-          pendingMotifKey={motifCorrectionControls.pendingMotifKeyFor(currentPhoto.id)}
-          error={motifCorrectionControls.error}
+        <PhotoVerdict
+          // `?? null` heisst hier "noch nicht bewertet" und nicht "Feld nicht durchgereicht":
+          // diese Ansicht zeigt die Zeile immer, mit Stufe oder mit dem Satz.
+          albumSuitability={currentPhoto.album_suitability ?? null}
+          ranking={currentPhoto.ranking ?? null}
+          fineLabels={currentPhoto.fine_labels}
         />
+
+        <section
+          className="flex flex-col gap-2 text-base"
+          aria-labelledby="motifs-heading"
+          data-testid="motifs-section"
+        >
+          <h2
+            id="motifs-heading"
+            className="text-xs font-semibold tracking-wide text-text-h uppercase"
+          >
+            Motive
+          </h2>
+          <MotifStrengthSection
+            motifSet={motifsQuery.data}
+            motifSetLoading={motifsQuery.isPending}
+            motifSetError={motifsQuery.isError ? MOTIF_SET_ERROR_TEXT : undefined}
+            onMotifSetRetry={() => void motifsQuery.refetch()}
+            assessment={currentPhoto.motif_assessment ?? null}
+            motifs={currentPhoto.motifs ?? []}
+            editable
+            onCorrect={(motifKey, applies) =>
+              motifCorrectionControls.correctMotif(currentPhoto.id, motifKey, applies)
+            }
+            onWithdraw={(motifKey) =>
+              motifCorrectionControls.withdrawCorrection(currentPhoto.id, motifKey)
+            }
+            pendingMotifKey={motifCorrectionControls.pendingMotifKeyFor(currentPhoto.id)}
+            error={motifCorrectionControls.error}
+          />
+        </section>
       </section>
 
-      {/* Trennlinie zwischen Bedien- und Informationsteil: ohne sie
-          stiessen Vorschlagskasten und Informationsblöcke unvermittelt aneinander, und der
-          Wechsel von "was ich mit diesem Foto tue" zu "was das System über dieses Foto weiß"
-          waere nicht ablesbar. `--separator` ist die freistehende Linie auf dem Grund. */}
+      {/* DAS EINZELWERTE-RASTER - Nachschlagwerk hinter dem Urteil. Gleiche Sichtbarkeitsregel wie
+          bisher: KEIN leerer Bereich bei leerer Liste. Ohne Wrapper-`div` eingebunden, damit auch
+          kein leerer Behaelter stehenbleibt - der Baustein rendert dann gar nichts, und sein
+          eigener Testhaken `criterion-score-grid` ist der Nachweis. */}
+      <CriterionScoreGrid
+        criterionScores={currentPhoto.criterion_scores}
+        ranking={currentPhoto.ranking ?? null}
+      />
+
+      {/* Trennlinie zwischen Urteil/Nachschlagwerk und den uebrigen Angaben: ohne sie stiessen
+          die Bloecke unvermittelt aneinander, und der Wechsel von "wie dieses Foto beurteilt ist"
+          zu "was das System sonst ueber dieses Foto weiss" waere nicht ablesbar. `--separator`
+          ist die freistehende Linie auf dem Grund. */}
       <div className="border-t border-separator" />
 
       {/* AUFNAHMEZEIT - eine NEUE Anzeigestelle, keine Kennzeichnung an einer bestehenden: eine
@@ -481,6 +482,18 @@ export function PhotoDetailPage() {
             ? 'Die Kamera dieses Fotos ist nicht bestimmbar.'
             : currentPhoto.camera.label}
         </p>
+        {/* DER ORT - allein der Name, OHNE Zeitspanne: die Aufnahmezeit steht direkt darueber, und
+            eine zweite Zeitangabe daneben waere eine Wiederholung. Ohne Ortsangabe steht der Satz
+            statt einer Luecke.
+
+            S2 - RENDERSTELLE ZWEIER FREMDTEXTFELDER: `place.landmark_name` (Modellantwort) und
+            `place_name` (Ortsdatensatz Dritter) treten hier zum ersten Mal auf dieser Route auf.
+            Reiner React-Textknoten, nie `dangerouslySetInnerHTML`, nie in `href`/`src`/`style`.
+            Bricht in `PhotoDetailPage.test.tsx > rendert einen feindlich belegten Ortsnamen als
+            reinen Textknoten`. */}
+        <p className="text-xs text-text-muted" data-testid="place-line">
+          {placeName ?? 'Ort unbekannt'}
+        </p>
       </section>
 
       {/* Layout & Platzierung: unmittelbar vor der CriterionDetailsList UND nach den
@@ -492,16 +505,6 @@ export function PhotoDetailPage() {
       <div className="text-sm text-text" data-testid="cloud-vision-status-section">
         <CloudVisionStatusList cloudVisionStatus={currentPhoto.cloud_vision_status} />
       </div>
-
-      {/* Die Aufschluesselung - permanent statt Info-Popover; die fruehere Platzierungsvorgabe
-          "vor den Navigationsbuttons" ist abgeloest, die permanente Sichtbarkeit selbst gilt
-          weiter. Gleiche Sichtbarkeitsregel wie die bisherige Icon-Sichtbarkeit: kein leerer
-          Bereich bei leerer Liste. */}
-      {currentPhoto.criterion_scores.length > 0 && (
-        <div className="text-sm text-text" data-testid="criterion-details-section">
-          <CriterionDetailsList {...detailsProps} />
-        </div>
-      )}
 
       <Button asChild variant="ghost" className="self-start">
         <Link to={`/projects/${id}/photos${filterQuery}`}>Zurück zum Grid</Link>
