@@ -221,26 +221,10 @@ class TestBlockASizes:
     Abnahme laeuft."""
 
     def test_the_hand_computed_graph(self) -> None:
-        """Vier Events zu 3, 1, 2 und 1 Fotos. Die Zeitluecke steht bei einer Stunde; die
-        Abstaende sind so gewaehlt, dass sie klar darueber bzw. darunter liegen - kein Fall
-        haengt an einem Zahlwert der Schwelle."""
-        formation = explain_events(
-            [
-                # Event 1: drei Fotos ueber acht Minuten.
-                _candidate(0),
-                _candidate(4),
-                _candidate(8),
-                # Event 2: ein einzelnes Foto.
-                _candidate(200),
-                # Event 3: zwei Fotos ueber zwei Minuten.
-                _candidate(400),
-                _candidate(402),
-                # Event 4: ein einzelnes Foto.
-                _candidate(600),
-            ]
-        )
-
-        counts = size_counts(formation)
+        """Vier Events zu 3, 1, 2 und 1 Fotos, von Hand gestellt statt aus Zeitabstaenden gebaut:
+        Eine Lage aus Abstaenden haenge an den Zahlwerten der Schwellen und waere nach der
+        Kalibrierung eine Zeitbombe - Block A zaehlt ohnehin ueber die fertige Gliederung."""
+        counts = size_counts(_sized_formation((3, 8), (1, 0), (2, 2), (1, 0)))
 
         assert counts.events_total == 4
         assert counts.photos_total == 7
@@ -268,14 +252,23 @@ class TestBlockASizes:
         assert counts.shortest_seconds is None
 
 
-def _segment(position: int, photo_count: int) -> BuiltEvent:
-    """Ein fertiges Segment fuer die Zaehlung von Block B - nur Groesse und Position zaehlen."""
+def _segment(position: int, photo_count: int, duration_minutes: int = 0) -> BuiltEvent:
+    """Ein fertiges Segment fuer die Zaehlbloecke - Groesse, Position und Dauer."""
     return BuiltEvent(
         position=position,
         photo_ids=tuple(range(position * 100, position * 100 + photo_count)),
         started_at=NOW,
-        ended_at=NOW,
+        ended_at=NOW + timedelta(minutes=duration_minutes),
     )
+
+
+def _sized_formation(*segments: tuple[int, int]) -> EventFormation:
+    """Eine Gliederung aus `(Fotozahl, Dauer in Minuten)` - ohne Ursachen, die Block A nicht liest."""
+    events = tuple(
+        _segment(position, photo_count, duration)
+        for position, (photo_count, duration) in enumerate(segments, start=1)
+    )
+    return EventFormation(events=events, causes=tuple(frozenset() for _ in events))
 
 
 def _formation(*segments: tuple[int, frozenset[str]]) -> EventFormation:
@@ -579,8 +572,12 @@ def dataset(tmp_path: Path) -> Path:
 async def _seed_measured_project(session: AsyncSession) -> int:
     """Baut die Messlage auf. SCHREIBT - aber im TEST, nie im Kommando.
 
-    Vier Kandidaten: drei dicht beieinander (ein Event), einer Stunden spaeter (zweites Event,
-    ein einzelnes Foto). Eines traegt einen Sehenswuerdigkeit-Namen, eines gar keine Koordinate."""
+    Vier Kandidaten: drei dicht beieinander (ein Event), einer DREI TAGE spaeter (zweites Event,
+    ein einzelnes Foto). Eines traegt einen Sehenswuerdigkeit-Namen, eines gar keine Koordinate.
+
+    Drei Tage, nicht drei Stunden: Die Trennung haengt damit an der gepinnten Ungleichung
+    `EVENT_MAX_SPAN < 24 h` und nicht am Zahlwert einer Schwelle, die in Schritt 5 kalibriert
+    wird."""
     project = Project(
         name=MEASURED_PROJECT_NAME,
         opencloud_drive_id="drive",
@@ -590,7 +587,7 @@ async def _seed_measured_project(session: AsyncSession) -> int:
     await session.flush()
 
     photos = []
-    for index, minutes in enumerate((0, 2, 4, 600)):
+    for index, minutes in enumerate((0, 2, 4, 3 * 24 * 60)):
         photos.append(
             Photo(
                 project_id=project.id,
