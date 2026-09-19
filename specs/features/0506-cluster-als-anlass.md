@@ -664,6 +664,35 @@ vorher `kalendertag` meldete, und in beiden Fällen nie allein — dort trennt o
 Die längste Eventdauer ist von 1 h 32 min auf 2 h 8 min gestiegen: Anlässe über Mitternacht bleiben
 jetzt zusammen. Kein Event kommt `EVENT_MAX_SPAN` (8 h) auch nur nahe.
 
+### Riegel-Diagnose (Block F), gemessen am 2026-09-19
+
+An Projekt 3 nach dem Merge von PR 4, mit `python -m photosort.event_probe --riegel --project-id 3`.
+Bezug: 88 Events, 18 Ein-Bild-Cluster, 3 durch Stufe 3 aufgelöste Grenzen, **18 zu kleine Segmente,
+die bestehen blieben**.
+
+| Grund | an einer Kante beteiligt | an allen Kanten **der** Grund |
+|---|---|---|
+| **`unantastbar`** | **14 (77,8 %)** | **7 (38,9 %)** |
+| `ausdehnung` | 7 (38,9 %) | 3 (16,7 %) |
+| `zeitluecke` | 5 (27,8 %) | 0 (0,0 %) |
+| `dauer` | 4 (22,2 %) | 0 (0,0 %) |
+| `kein_nachbar` | 0 (0,0 %) | 0 (0,0 %) |
+
+**Die Unantastbarkeit ist der größte Blocker, der Ausdehnungs-Riegel der zweitgrößte.** An 14 von 18
+Segmenten steht die Sperre an mindestens einer Kante, bei 7 ist sie der alleinige Grund; `ausdehnung`
+kommt auf 3.
+
+**`zeitluecke` und `dauer` sind nie allein der Grund.** `MERGE_MAX_GAP` zu erhöhen — der billigste
+denkbare Eingriff — löste damit **kein einziges** Segment auf. Sichtbar wurde das erst, nachdem der
+Kurzschluss in der Riegelprüfung behoben war: Vorher verdeckte der zuerst zutreffende Riegel die
+späteren, und `ausdehnung` wird zuletzt geprüft.
+
+**Eine Unschärfe, die diese Messung nicht auflöst:** `unantastbar` fasst `motivwechsel` und
+`sehenswuerdigkeit` zusammen. Welcher der beiden wie oft sperrt, weist der Bericht nicht aus; aus
+Block B lässt sich nur abschätzen, dass es grob hälftig ist (Motivwechsel eröffnet 5 zu kleine
+Segmente, Sehenswürdigkeit 6). Mit PR 5 erledigt sich die Frage von selbst: Danach ist `unantastbar`
+eindeutig der Motivwechsel.
+
 ### Befund zur Ortszuordnung
 
 Je Mechanismus getrennt, wie das Akzeptanzkriterium es verlangt:
