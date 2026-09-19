@@ -844,8 +844,8 @@ def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str
         "Rand ist kein Hindernis und zaehlt nicht als Kante.",
         "",
         "`unantastbar` ist kein Riegel, sondern die Zusage, dass eine Grenze mit der Ursache",
-        "`motivwechsel` oder `sehenswuerdigkeit` nie aufgeloest wird. Ihre Behebung waere eine",
-        "andere Entscheidung als die Aenderung einer Zahl.",
+        "`motivwechsel` nie aufgeloest wird. Ihre Behebung waere eine andere Entscheidung als die",
+        "Aenderung einer Zahl.",
         "",
         "Dieser Lauf beobachtet nur: An der Gliederung und an den Riegeln aendert er nichts.",
     ]

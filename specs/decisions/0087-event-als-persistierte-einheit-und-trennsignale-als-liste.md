@@ -9,6 +9,15 @@ Erweiterungspunkt für paarweise Signale gelten unverändert.
 **Teilweise abgelöst:** Abschnitt 5, letzter Absatz (die Tagesgrenze braucht keine Zahl) durch ADR
 [`0117`](./0117-der-anlass-als-einheit-eigene-schwellen-dauergrenze-und-mindestgroesse.md) — an ihre
 Stelle tritt eine Dauergrenze. Die Ausdehnung als Diagonale der umschließenden Box gilt unverändert.
+**Teilweise abgelöst:** Abschnitt 3, zweiter Absatz, und dort **allein die Trennwirkung** der
+Sehenswürdigkeit („vom Gruppierungsmerkmal zum Trennsignal", Grenze beim Übergang auf einen anderen
+Namen) durch ADR
+[`0118`](./0118-sehenswuerdigkeit-trennt-nicht-mehr-und-eine-eigene-ausdehnungsgrenze-fuers-zusammenlegen.md).
+Unverändert gilt der gesamte erste Absatz (Protokoll, Reinheit von `is_boundary`, die nicht
+kurzgeschlossene Auswertung, die Liste als Erweiterungspunkt) — und **im zweiten Absatz** die Regel,
+dass ein nach `sanitize_landmark_name` leerer oder zu langer Name als **nicht vorhanden** gilt und
+**verworfen statt abgeschnitten** wird; nur ihre Begründung wechselt vom Trennsignal auf
+`events.landmark_name` und die Anzeige.
 **Datum:** 2026-09-12
 **Bezug:** Spec `specs/features/0425-*.md`, ADR
 [`0021`](./0021-kriterien-datenmodell-kuratierungs-pipeline.md) (gateführte Zwei-Phasen-Pipeline),
