@@ -312,32 +312,56 @@ def assert_event_invariants(
     assert len(assigned) == len(set(assigned)), "ein Foto gehoert zu genau einem Event"
 
 
+def _diagonal_of(
+    event: BuiltEvent, location_by_id: Mapping[int, EffectiveLocation | None]
+) -> float | None:
+    """Die Diagonale der umschliessenden Box eines Events - `None` ohne jede wirksame Koordinate."""
+    located = [
+        location
+        for photo_id in event.photo_ids
+        if (location := location_by_id[photo_id]) is not None
+    ]
+    if not located:
+        return None
+    return haversine_meters(
+        min(location.lat for location in located),
+        min(location.lon for location in located),
+        max(location.lat for location in located),
+        max(location.lon for location in located),
+    )
+
+
 def assert_full_signal_invariants(
     candidates: Sequence[EventCandidate], events: Sequence[BuiltEvent]
 ) -> None:
-    """Die beiden Zusagen ueber jede Event-Folge aus dem VOLLEN Signalsatz: kein Event ueber
-    `EVENT_MAX_SPAN`, keines ueber `EVENT_EXTENT_MAX_METERS` - weder als Ergebnis des Durchlaufs
-    noch als Ergebnis des Zusammenlegens.
+    """Die DREI Zusagen ueber jede Event-Folge aus dem VOLLEN Signalsatz.
+
+    Kein Event ueber `EVENT_MAX_SPAN`. Kein Event ueber `MERGE_EXTENT_MAX_METERS`. Und kein Event
+    AUS DEM DURCHLAUF ueber `EVENT_EXTENT_MAX_METERS`.
+
+    ZWEIGETEILT, NICHT GELOCKERT (ADR 0118 Punkt 4): Die frueher eine Zusage - beide Stufen gegen
+    dieselbe Zahl - gilt so nicht mehr, seit Riegel (c) seine eigene, groessere Grenze prueft. Sie
+    bloss auf die groessere anzuheben gaebe die Schranke des Durchlaufs stillschweigend mit auf;
+    die Ausdehnung eines Events bliebe zwar beschraenkt, aber nicht mehr messbar daran, in welcher
+    Stufe sie entstanden ist.
+
+    Die zweite Haelfte misst am Durchlauf selbst: Mit abgeschaltetem Zusammenlegen ist die
+    Event-Folge genau seine Gliederung. Gerechnet wird ueber FRISCHE Signale (`None`) - eine bereits
+    verbrauchte Liste traege den Zustand des ersten Laufs weiter.
 
     Als Nachsatz ueber der ganzen Fallmenge, nicht als Einzelfall. Nur fuer den vollen Satz: Eine
-    injizierte Teilmenge kennt die beiden Riegel nicht und darf sie ueberschreiten."""
+    injizierte Teilmenge kennt die Riegel nicht und darf sie ueberschreiten."""
     location_by_id = {candidate.photo_id: candidate.location for candidate in candidates}
     for event in events:
         assert event.ended_at - event.started_at <= _max_span()
-        located = [
-            location
-            for photo_id in event.photo_ids
-            if (location := location_by_id[photo_id]) is not None
-        ]
-        if not located:
-            continue
-        diagonal = haversine_meters(
-            min(location.lat for location in located),
-            min(location.lon for location in located),
-            max(location.lat for location in located),
-            max(location.lon for location in located),
-        )
-        assert diagonal <= _extent_max()
+        diagonal = _diagonal_of(event, location_by_id)
+        if diagonal is not None:
+            assert diagonal <= _merge_extent_max()
+
+    for from_the_pass in build_events(candidates, None, min_event_photos=_NO_MERGING):
+        diagonal = _diagonal_of(from_the_pass, location_by_id)
+        if diagonal is not None:
+            assert diagonal <= _extent_max()
 
 
 def _is_the_full_signal_set(signals: list[BoundarySignal] | None) -> bool:
