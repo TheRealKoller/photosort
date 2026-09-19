@@ -4606,7 +4606,10 @@ async def test_the_run_persists_its_events_with_position_and_time_span(
     scoring_run = await _add_successful_scoring_run(db_session, project)
     start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
     first = await _add_photo(db_session, project, "a.jpg", "etag-a", start)
-    second = await _add_photo(db_session, project, "b.jpg", "etag-b", start + timedelta(minutes=30))
+    # Im selben Event wie `first` - der Abstand kommt aus `EVENT_TIME_GAP`, nicht aus einer Zahl.
+    second = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", start + events_module.EVENT_TIME_GAP / 2
+    )
     # Eigenes Event ueber die Zeitluecke - und weit genug, dass Stufe 3 es nicht wieder
     # zuschlaegt: der Abstand kommt aus `MERGE_MAX_GAP`, nicht aus einer Zahl.
     third = await _add_photo(

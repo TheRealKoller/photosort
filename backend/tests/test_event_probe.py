@@ -309,17 +309,21 @@ class TestBlockBCauses:
     Schwelle anzuheben hilft dort, wo sie allein getrennt hat."""
 
     def test_the_hand_computed_graph(self) -> None:
+        # "Gross genug" und "zu klein" kommen aus `MIN_EVENT_PHOTOS`, nie aus einer Zahl: Eine Lage
+        # aus festen Fotozahlen geht nur gegen den heutigen Wert auf.
+        big = events_module.MIN_EVENT_PHOTOS
+        small = big - 1
         counts = cause_counts(
             _formation(
                 # Das erste Segment traegt KEINE Ursache - die Ausnahme haengt an der Position.
-                (3, frozenset()),
-                # Alleinige Ursache, und sie eroeffnet ein Ein-Bild-Segment.
-                (1, frozenset({BOUNDARY_TIME_GAP})),
+                (big + 1, frozenset()),
+                # Alleinige Ursache, und sie eroeffnet ein zu kleines Segment.
+                (small, frozenset({BOUNDARY_TIME_GAP})),
                 # ZWEI Ursachen gleichzeitig: beteiligt, aber keine allein.
-                (4, frozenset({BOUNDARY_TIME_GAP, BOUNDARY_STEP})),
+                (big + 2, frozenset({BOUNDARY_TIME_GAP, BOUNDARY_STEP})),
                 # Alleinige Ursache, aber das Segment ist gross genug.
-                (2, frozenset({BOUNDARY_STEP})),
-                (1, frozenset({BOUNDARY_MOTIF_CHANGE})),
+                (big, frozenset({BOUNDARY_STEP})),
+                (small, frozenset({BOUNDARY_MOTIF_CHANGE})),
             )
         )
 
@@ -332,8 +336,8 @@ class TestBlockBCauses:
         assert counts.sole[BOUNDARY_TIME_GAP] == 1
         assert counts.sole[BOUNDARY_STEP] == 1
         assert counts.sole[BOUNDARY_MOTIF_CHANGE] == 1
-        # Zu kleine Segmente: das Ein-Bild-Segment hinter der Zeitluecke und das hinter dem
-        # Motivwechsel. Das Zwei-Bild-Segment hinter dem Schritt zaehlt nicht mit.
+        # Zu kleine Segmente: das hinter der Zeitluecke und das hinter dem Motivwechsel. Das
+        # Segment hinter dem Schritt erreicht `MIN_EVENT_PHOTOS` und zaehlt nicht mit.
         assert counts.opening_a_small_segment[BOUNDARY_TIME_GAP] == 1
         assert counts.opening_a_small_segment[BOUNDARY_STEP] == 0
         assert counts.opening_a_small_segment[BOUNDARY_MOTIF_CHANGE] == 1
@@ -433,6 +437,21 @@ def _edges(*reasons: Collection[str]) -> tuple[frozenset[str], ...]:
     return tuple(frozenset(reason) for reason in reasons)
 
 
+def _one_big_segment_and_a_lone_photo_behind_the_merge_gap() -> list[EventCandidate]:
+    """Ein Segment, das `MIN_EVENT_PHOTOS` erreicht, und ein einzelnes Foto jenseits von
+    `MERGE_MAX_GAP` - also genau EIN gesperrtes Segment, und `zeitluecke` an seiner einen Kante.
+
+    Die Groesse des ersten Segments kommt aus der Modulkonstante, nie aus einer Zahl: Mit einer
+    festen Fotozahl waere auch das erste Segment zu klein, sobald `MIN_EVENT_PHOTOS` steigt, und
+    der Fall zaehlte still zwei Blockaden statt einer."""
+    filling = [
+        EventCandidate(photo_id=index, taken_at=NOW + timedelta(seconds=index))
+        for index in range(1, events_module.MIN_EVENT_PHOTOS + 1)
+    ]
+    behind_the_gap = filling[-1].taken_at + events_module.MERGE_MAX_GAP + timedelta(seconds=1)
+    return [*filling, EventCandidate(photo_id=len(filling) + 1, taken_at=behind_the_gap)]
+
+
 class TestBlockFWhyAMergeFailed:
     """Woran eine Zusammenlegung scheitert. ZWEI Zahlen je Grund, und nur die zweite ist
     handlungsleitend: Ein Segment mit zwei Nachbarn hat zwei Kanten, und ein Grund, der nur an
@@ -514,12 +533,7 @@ class TestBlockFWhyAMergeFailed:
         """ADR 0117 Punkt 5: Gezaehlt wird, woran die Stufe TATSAECHLICH gescheitert ist. Eine
         nachbildende Pruefung im Messkommando maesse etwas anderes, als die Stufe tut, waehrend
         beide fuer sich gruen blieben."""
-        gap = events_module.MERGE_MAX_GAP + timedelta(seconds=1)
-        candidates = [
-            EventCandidate(photo_id=1, taken_at=NOW),
-            EventCandidate(photo_id=2, taken_at=NOW + timedelta(seconds=1)),
-            EventCandidate(photo_id=3, taken_at=NOW + timedelta(seconds=1) + gap),
-        ]
+        candidates = _one_big_segment_and_a_lone_photo_behind_the_merge_gap()
 
         counts = block_counts(explain_events(candidates))
 
@@ -532,12 +546,7 @@ class TestBlockFWhyAMergeFailed:
         """Beobachten, nicht veraendern: Der Modus rechnet dieselbe Gliederung wie Block A und B.
         Bekaeme er einen eigenen Rechenweg, maesse er die Blockaden einer Gliederung, die so nie
         entstanden ist - und beides bliebe fuer sich gruen."""
-        gap = events_module.MERGE_MAX_GAP + timedelta(seconds=1)
-        candidates = [
-            EventCandidate(photo_id=1, taken_at=NOW),
-            EventCandidate(photo_id=2, taken_at=NOW + timedelta(seconds=1)),
-            EventCandidate(photo_id=3, taken_at=NOW + timedelta(seconds=1) + gap),
-        ]
+        candidates = _one_big_segment_and_a_lone_photo_behind_the_merge_gap()
 
         formation = explain_events(candidates)
 
