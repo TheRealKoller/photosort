@@ -1051,6 +1051,30 @@ class TestMainRefusesLoudly:
         assert "Median der Fotozahl: -" in report
         assert "laengste Eventdauer: -" in report
 
+    def test_the_bolt_mode_refuses_a_project_without_a_successful_run_too(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JE ARGUMENTFORM: Ohne Gliederung gibt es auch keine Blockade zu messen."""
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> int:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                project_id = await _project(session, "Ohne Lauf")
+                await session.commit()
+            await engine.dispose()
+            return project_id
+
+        project_id = asyncio.run(prepare())
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 1
+        assert "Lauf" in capsys.readouterr().err
+
     def test_the_report_carries_the_counter_indication_of_the_third_stage(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -1093,6 +1117,84 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         assert "2029" not in report
         assert "03:47" not in report
         assert f"Projekt {project_id}" in report
+
+    def test_the_bolt_report_carries_none_of_the_six_classes_either(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JE ARGUMENTFORM: Der Bericht von Block F entsteht an einer anderen Stelle und ist von
+        der Zusage der beiden anderen nicht mitgedeckt. Die Gruende selbst sind interne Kennungen
+        aus geschlossenem Vorrat, keine Ortsangaben - der S2-Fall laeuft trotzdem ueber ihn."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "43.5" not in report
+        assert "16.44" not in report
+        assert MEASURED_LOCALITY not in report
+        assert MEASURED_LANDMARK not in report
+        assert MEASURED_OPENCLOUD_PATH not in report
+        assert MEASURED_PHOTO_FILE not in report
+        assert MEASURED_PROJECT_NAME not in report
+        assert "2029" not in report
+        assert "03:47" not in report
+        assert f"Projekt {project_id}" in report
+
+    def test_the_bolt_report_carries_a_row_per_reason_of_the_closed_supply(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Jeder Grund steht da, auch der nie aufgetretene - sonst waere der Bericht still
+        unvollstaendig, ohne dass eine Summe kleiner wuerde."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        for reason in MERGE_BLOCK_REASONS:
+            assert f"| {reason} |" in report
+        # Kopfzeile plus je eine Zeile je Grund (die Trennzeile beginnt mit `|---`).
+        rows = [line for line in report.splitlines() if line.startswith("| ")]
+        assert len(rows) == 1 + len(MERGE_BLOCK_REASONS)
+
+    def test_the_bolt_report_names_the_measured_blockade(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Die Messlage traegt ein Einzelfoto hinter drei Tagen - es kann an keinen Nachbarn und
+        bleibt bestehen. Ohne diese Zahlen im BERICHT haette der Lauf sie zwar gerechnet, aber
+        Daniel bekaeme sie nie zu sehen."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id), "--riegel"], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "zu kleine Segmente, die bestehen blieben: 1" in report
+        assert "| zeitluecke | 1 " in report
+        assert "| kein_nachbar | 1 " in report
+
+    def test_the_bolt_mode_measures_nothing_of_the_place_blocks(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Der Modus braucht den Ortsauszug gar nicht - er darf deshalb weder danach fragen noch
+        sein Fehlen als Messergebnis melden."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "NICHT GEMESSEN" not in report
+        assert "C1" not in report
+        assert "C2" not in report
+
+    def test_the_two_measuring_modes_exclude_each_other(self, tmp_path: Path) -> None:
+        """Zwei Modi gleichzeitig ist keine Frage, die eine Antwort hat. Eine stille Vorrangregel
+        gaebe einen Bericht aus, den niemand angefordert hat."""
+        url, project_id = _prepared(tmp_path)
+
+        with pytest.raises(SystemExit):
+            main(["--project-id", str(project_id), "--motiv", "--riegel"], database_url=url)
 
     def test_the_motif_report_carries_a_row_per_combination_plus_the_operating_point(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -1347,6 +1449,26 @@ class TestARealRunChangesNothing:
         before = asyncio.run(snapshot())
 
         exit_code = main(["--project-id", str(project_id), "--motiv"], database_url=url)
+
+        assert exit_code == 0
+        assert asyncio.run(snapshot()) == before
+
+    def test_not_a_single_row_changes_in_the_bolt_mode_either(self, tmp_path: Path) -> None:
+        """JE ARGUMENTFORM einmal: Block F beobachtet eine Stufe, die im Lauf schreibt - hier
+        nicht, und das steht nicht von selbst fest."""
+        url, project_id = _prepared(tmp_path)
+
+        async def snapshot() -> dict[str, list[tuple[object, ...]]]:
+            engine = make_engine(url)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                taken = await _table_snapshot(session)
+            await engine.dispose()
+            return taken
+
+        before = asyncio.run(snapshot())
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
 
         assert exit_code == 0
         assert asyncio.run(snapshot()) == before

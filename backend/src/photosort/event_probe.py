@@ -782,6 +782,56 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
     return "\n".join(lines) + "\n"
 
 
+def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str:
+    """Block F als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+
+    Derselbe Bericht-Rand wie die uebrigen Modi: keine Koordinate, kein Orts- oder
+    Sehenswuerdigkeit-Name, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen
+    wird die Projekt-Id. Die Gruende selbst sind interne Kennungen aus geschlossenem Vorrat.
+
+    Die beiden Bezugszeilen oben (Events, Ein-Bild-Cluster) stehen dabei, weil der Bericht sonst
+    nicht fuer sich stuende: "vier gesperrte Segmente" heisst etwas anderes bei 91 Events als bei
+    10."""
+    sizes = size_counts(formation)
+    blocks = block_counts(formation)
+
+    lines = [
+        f"# Woran eine Zusammenlegung scheitert, Projekt {probe.project_id}",
+        "",
+        f"- Events: {sizes.events_total}",
+        f"- Ein-Bild-Cluster: {sizes.single_photo_events} "
+        f"({_percent(sizes.single_photo_events, sizes.events_total)})",
+        f"- durch Stufe 3 aufgeloeste Grenzen: {formation.dissolved_boundaries}",
+        f"- zu kleine Segmente, die bestehen blieben: {blocks.blocked_segments}",
+        f"- Mindestgroesse eines Segments: {MIN_EVENT_PHOTOS} Fotos",
+        "",
+        "| Grund | an einer Kante beteiligt | an allen Kanten der Grund |",
+        "|---|---|---|",
+    ]
+    for reason in MERGE_BLOCK_REASONS:
+        involved = blocks.involved[reason]
+        at_every_edge = blocks.at_every_edge[reason]
+        lines.append(
+            f"| {reason} | {involved} ({_percent(involved, blocks.blocked_segments)}) "
+            f"| {at_every_edge} ({_percent(at_every_edge, blocks.blocked_segments)}) |"
+        )
+
+    lines += [
+        "",
+        "Gezaehlt werden SEGMENTE, nie Kanten. Ein Segment mit zwei Nachbarn hat zwei Kanten, und",
+        "ein Grund, der nur an einer stand, hat die Zusammenlegung nicht verhindert - nur die",
+        "zweite Spalte ist deshalb handlungsleitend. Eine Seite ohne Nachbarn zaehlt als eigene",
+        "Kante (`kein_nachbar`).",
+        "",
+        "`unantastbar` ist kein Riegel, sondern die Zusage, dass eine Grenze mit der Ursache",
+        "`motivwechsel` oder `sehenswuerdigkeit` nie aufgeloest wird. Ihre Behebung waere eine",
+        "andere Entscheidung als die Aenderung einer Zahl.",
+        "",
+        "Dieser Lauf beobachtet nur: An der Gliederung und an den Riegeln aendert er nichts.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def render_report(
     probe: EventProbeInput,
     formation: EventFormation,
@@ -917,13 +967,25 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--project-id", type=int, required=True)
-    parser.add_argument(
+    # EINANDER AUSSCHLIESSEND: Zwei Modi gleichzeitig ist keine Frage, die eine Antwort hat, und
+    # eine stille Vorrangregel gaebe einen Bericht aus, den niemand angefordert hat.
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--motiv",
         action="store_true",
         help=(
             "Statt der Bloecke A-C: die Empfindlichkeit des Motivwechsels. Dieselbe "
             "Kandidatenmenge unter mehreren Kombinationen aus der Zahl der bestaetigenden Fotos "
             "und der Motivstaerke-Grenze. Beide Konstanten bleiben dabei unveraendert."
+        ),
+    )
+    modes.add_argument(
+        "--riegel",
+        action="store_true",
+        help=(
+            "Statt der Bloecke A-C: woran eine Zusammenlegung scheitert. Je zu kleinem Segment, "
+            "das nicht zugeschlagen werden konnte, der Grund an seinen Kanten. Dieselbe "
+            "Gliederung wie ohne Schalter - der Modus beobachtet, er aendert nichts."
         ),
     )
     parser.add_argument(
@@ -938,7 +1000,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 async def _probe_with_own_session(
-    database_url: str, *, project_id: int, dataset_path: Path, motif: bool = False
+    database_url: str,
+    *,
+    project_id: int,
+    dataset_path: Path,
+    motif: bool = False,
+    bolts: bool = False,
 ) -> str:
     engine = make_engine(database_url)
     try:
@@ -962,6 +1029,12 @@ async def _probe_with_own_session(
 
     # DERSELBE Durchlauf, den auch der Lauf nimmt - nur zusaetzlich mit den Ursachen.
     formation = explain_events(probe.candidates)
+
+    if bolts:
+        # DIESELBE Gliederung wie ohne Schalter, aus demselben Aufruf: Ein eigener Rechenweg
+        # maesse die Blockaden einer Gliederung, die so nie entstanden ist. Den Ortsauszug fragt
+        # Block F ebensowenig wie Block E - keine seiner Zahlen haengt an einer Ortsangabe.
+        return render_bolt_report(probe, formation)
 
     cells = sorted(
         {
@@ -1008,6 +1081,7 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
                 project_id=args.project_id,
                 dataset_path=Path(args.ortsdatensatz or settings.place_dataset_path),
                 motif=args.motiv,
+                bolts=args.riegel,
             )
         )
     except (EventProbeError, PlaceDatasetError) as exc:
