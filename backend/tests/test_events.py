@@ -1370,9 +1370,7 @@ class TestEventPlace:
         assert event.landmark_name == "Eiffelturm"
         assert (event.place_lat, event.place_lon) == (None, None)
 
-    def test_an_event_carries_at_most_one_name(self) -> None:
-        """Der chronologisch fruehste Name gewinnt - defensiv, denn das Trennsignal laesst einen
-        zweiten Namen gar nicht erst in dasselbe Event."""
+    def test_an_event_takes_the_name_of_its_first_named_photo(self) -> None:
         candidates = [
             _placeless_candidate(1, T0),
             _placeless_candidate(2, _at(minutes=1), landmark_name="Eiffelturm"),
@@ -1381,6 +1379,42 @@ class TestEventPlace:
         [event] = _build(candidates, [])
 
         assert event.landmark_name == "Eiffelturm"
+
+    def test_an_event_with_two_different_names_carries_the_earlier_one(self) -> None:
+        """Seit ADR 0118 Punkt 3 ist das eine REGEL, kein defensiver Zweig mehr: Ein Event DARF
+        Fotos mit verschiedenen Namen enthalten, weil kein Signal sie mehr trennt, und der frueheste
+        gewinnt. Vorher war dieser Zweig nur defensiv erreichbar und damit ungeprueft."""
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name="Zugspitze"),
+            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Eibsee"),
+        ]
+
+        [event] = _build(candidates)
+
+        assert event.photo_ids == (1, 2)
+        assert event.landmark_name == "Zugspitze"
+        assert event.place_kind == "landmark"
+
+    def test_the_earliest_name_wins_across_a_merge_of_the_third_stage(self) -> None:
+        """`_built` laeuft NACH Stufe 3, der fruehste Name gewinnt also auch ueber eine
+        Zusammenlegung hinweg. Der Fall stellt das zu kleine Segment VORAN: Wuerde der Name aus
+        dem aufnehmenden Nachbarn statt aus dem Ergebnis gebildet, stuende hier der spaetere."""
+        big = events_module.MIN_EVENT_PHOTOS
+        opening = _time_gap() + EPSILON_TIME
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name="Zugspitze"),
+            *(
+                _placeless_candidate(
+                    10 + index, T0 + opening + index * EPSILON_TIME, landmark_name="Eibsee"
+                )
+                for index in range(big)
+            ),
+        ]
+
+        [event] = _build(candidates, min_event_photos=None)
+
+        assert len(event.photo_ids) == big + 1
+        assert event.landmark_name == "Zugspitze"
 
     def test_an_event_without_any_name_carries_none(self) -> None:
         [event] = _build([_measured_candidate(1, T0)])

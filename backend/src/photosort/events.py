@@ -402,7 +402,7 @@ class EventCandidate:
     speisen ausschliesslich den Ortsbezug des Events. Eine Ortsaussage ueber eine Einheit darf
     nicht aus Schaetzungen entstehen.
 
-    `landmark_name` kommt bereits durch `sanitize_landmark_name` (worker.py::_landmark_names) -
+    `landmark_name` kommt bereits durch `sanitize_landmark_name` (event_inputs.py::_landmark_names) -
     `None` heisst "kein verwendbarer Name".
 
     `motif_strengths` traegt die WIRKSAMEN Staerken (Nutzerkorrektur inbegriffen). `None` heisst
@@ -445,8 +445,9 @@ class BuiltEvent:
 
 
 def _usable_name(name: str | None) -> str | None:
-    """Ein Name, der nach Sanitisierung leer ist, gilt als NICHT VORHANDEN - er loest keine Grenze
-    aus und wird nicht geschrieben. Verworfen, nie abgeschnitten."""
+    """Ein Name, der nach Sanitisierung leer ist, gilt als NICHT VORHANDEN - er wird nicht
+    geschrieben, und das Event traegt stattdessen den naechsten vorhandenen. Verworfen, nie
+    abgeschnitten: Ein gekuerzter Name benennte ein Event falsch."""
     return (name or "").strip() or None
 
 
@@ -717,10 +718,15 @@ def motif_change_starts(
 
 
 def _name_of(members: Sequence[EventCandidate]) -> str | None:
-    """Der eine Name eines Events, oder `None`.
+    """Der Name eines Events, oder `None`.
 
-    `members` ist nach `(taken_at, photo_id)` sortiert: ein Event traegt hoechstens EINEN Namen
-    (dafuer sorgt `LandmarkChangeSignal`) - defensiv gewinnt der des fruehesten Fotos."""
+    DIE REGEL, nicht mehr eine Vorsichtsmassnahme: Ein Event DARF Fotos mit verschiedenen Namen
+    enthalten, und der FRUEHESTE gewinnt. `members` ist nach `(taken_at, photo_id)` sortiert; die
+    erste Fundstelle ist damit die chronologisch erste.
+
+    Ausgefuehrt NACH Stufe 3 und ausschliesslich hier, an der einen Aufrufstelle `_built` - der
+    fruehste Name gewinnt deshalb auch ueber eine Zusammenlegung hinweg, und die Feldinvariante
+    `place_kind='landmark'` ⇒ `landmark_name` gesetzt kann nicht auseinanderlaufen."""
     for member in members:
         name = _usable_name(member.landmark_name)
         if name is not None:
@@ -1159,8 +1165,8 @@ def explain_events(
     Signal mehr gefragt.
 
     Ein erzwungener Start wirkt wie jede gemeldete Grenze - `begin` laeuft auf allen Signalen und
-    ist deren vollstaendige Ruecksetzung. Eine erst spaeter faellige Grenze von Ausdehnung,
-    Schritt oder Name kann dadurch entfallen, weil an der frueheren Stelle bereits getrennt wurde.
+    ist deren vollstaendige Ruecksetzung. Eine erst spaeter faellige Grenze von Ausdehnung oder
+    Schritt kann dadurch entfallen, weil an der frueheren Stelle bereits getrennt wurde.
 
     Erst NACH Stufe 3 bildet `_built` die Events. Weil das die einzige Stelle bleibt, an der Name,
     Zellen und `place_kind` entstehen, stimmen diese Werte fuer ein zusammengelegtes Event ohne
