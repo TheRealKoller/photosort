@@ -93,6 +93,15 @@ def _extent_max() -> float:
     return events_module.EVENT_EXTENT_MAX_METERS
 
 
+def _merge_extent_max() -> float:
+    """Die geltende Ausdehnungsgrenze von STUFE 3 - als Modulattribut gelesen.
+
+    Eine andere als `_extent_max()`: Riegel (c) prueft seit ADR 0118 eine eigene, groessere
+    Grenze. Praefte er weiter die Trennschwelle, waere die Stufe fuer genau die Segmente
+    unpassierbar, die die Ausdehnung getrennt hat."""
+    return events_module.MERGE_EXTENT_MAX_METERS
+
+
 def _max_span() -> timedelta:
     """Die geltende Dauergrenze - als Modulattribut gelesen."""
     return events_module.EVENT_MAX_SPAN
@@ -238,14 +247,15 @@ def _window() -> int:
     return events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS
 
 
-# Zeitluecke, Schritt, Ausdehnung, Dauergrenze, Ueberbrueckung, Mindestgroesse. `None` ist der
-# Betriebssatz. Jeder weitere Satz haelt die drei zulaessigen Ungleichungen ein
-# (`MERGE_MAX_GAP > EVENT_TIME_GAP`, `MIN_EVENT_PHOTOS >= 2`, `EVENT_MAX_SPAN < 24 h`) und laesst
+# Zeitluecke, Schritt, Ausdehnung, Dauergrenze, Ueberbrueckung, Mindestgroesse, Ausdehnungsgrenze
+# von Stufe 3. `None` ist der Betriebssatz. Jeder weitere Satz haelt die vier zulaessigen
+# Ungleichungen ein (`MERGE_MAX_GAP > EVENT_TIME_GAP`, `MIN_EVENT_PHOTOS >= 2`,
+# `EVENT_MAX_SPAN < 24 h`, `MERGE_EXTENT_MAX_METERS > EVENT_EXTENT_MAX_METERS`) und laesst
 # `EPSILON_METERS`/`EPSILON_TIME` klein gegen jede seiner Schwellen.
 _SHIFTED_CONSTANT_SETS: tuple[tuple[object, ...] | None, ...] = (
     None,
-    (timedelta(hours=3), 1500.0, 4000.0, timedelta(hours=20), timedelta(hours=5), 3),
-    (timedelta(minutes=10), 300.0, 600.0, timedelta(hours=2), timedelta(minutes=25), 2),
+    (timedelta(hours=3), 1500.0, 4000.0, timedelta(hours=20), timedelta(hours=5), 3, 5500.0),
+    (timedelta(minutes=10), 300.0, 600.0, timedelta(hours=2), timedelta(minutes=25), 2, 900.0),
 )
 
 _SHIFTED_CONSTANT_NAMES = (
@@ -255,15 +265,16 @@ _SHIFTED_CONSTANT_NAMES = (
     "EVENT_MAX_SPAN",
     "MERGE_MAX_GAP",
     "MIN_EVENT_PHOTOS",
+    "MERGE_EXTENT_MAX_METERS",
 )
 
 
 class _UnderShiftedEventConstants:
-    """Jeder Fall einer erbenden Klasse laeuft unter MEHREREN Saetzen der sechs Schwellen.
+    """Jeder Fall einer erbenden Klasse laeuft unter MEHREREN Saetzen der sieben Schwellen.
 
-    Die sechs sind aenderbare, unkalibrierte Festlegungen; kein Fall darf ihren Zahlwert pinnen.
+    Die sieben sind aenderbare, unkalibrierte Festlegungen; kein Fall darf ihren Zahlwert pinnen.
     Die Faelle bauen ihre Lage deshalb aus `_time_gap()`, `_step_max()`, `_extent_max()`,
-    `_max_span()` und `_merge_gap()` statt aus einer Zahl, und diese Fixture setzt die
+    `_max_span()`, `_merge_gap()` und `_merge_extent_max()` statt aus einer Zahl, und diese Fixture setzt die
     Modulkonstanten auf jeden Satz der Liste. Ein Fall, der einen Zahlwert doch spiegelt, wird unter
     mindestens einem Parameter rot - hier, und nicht erst bei der naechsten Kalibrierung.
 
@@ -2148,9 +2159,9 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
         )
 
 
-class TestTheThreeAdmissibleStatementsAboutTheNumbers:
-    """Die EINZIGEN drei Aussagen, die ein Test ueber die sechs Zahlwerte treffen darf - und alle
-    drei sind Ungleichungen. Jede vierte waere eine Spiegelung des Codes und machte die naechste
+class TestTheFourAdmissibleStatementsAboutTheNumbers:
+    """Die EINZIGEN vier Aussagen, die ein Test ueber die sieben Zahlwerte treffen darf - und alle
+    vier sind Ungleichungen. Jede fuenfte waere eine Spiegelung des Codes und machte die naechste
     Kalibrierung zu einem Testumbau."""
 
     def test_a_segment_of_one_photo_is_below_the_minimum(self) -> None:
@@ -2167,6 +2178,13 @@ class TestTheThreeAdmissibleStatementsAboutTheNumbers:
         """Die Vorbedingung der Ueberschriftenform `23:40-01:15 Uhr`: Ab einem Tag waere die
         Spanne ohne Datumsangabe mehrdeutig."""
         assert events_module.EVENT_MAX_SPAN < timedelta(hours=24)
+
+    def test_the_merge_extent_reaches_beyond_the_splitting_extent(self) -> None:
+        """Waere sie nicht groesser, praefte Riegel (c) dieselbe Bedingung, deren Ueberschreitung
+        die Trennung ausgeloest hat - fuer ausdehnungsgetrennte Segmente waere Stufe 3 damit
+        strukturell unpassierbar. Eine Ungleichung, kein Zahlwert: WIE viel groesser, ist eine
+        Kalibrierungsfrage und steht als Herleitung an der Konstante."""
+        assert events_module.MERGE_EXTENT_MAX_METERS > events_module.EVENT_EXTENT_MAX_METERS
 
 
 # --- Stufe 3: das Zusammenlegen zu kleiner Segmente (Spec 0506, ADR 0117 Punkt 3) ----------------
@@ -2366,18 +2384,37 @@ class TestTheFourBoltsAgainstOverMerging(_UnderShiftedEventConstants):
 
         assert _ids(merge_small_segments(segments)) == [_block(1), (10,)]
 
-    def test_bolt_c_the_extent_of_the_result_exceeds_the_maximum_extent(self) -> None:
+    def test_bolt_c_the_extent_of_the_result_exceeds_the_merge_extent(self) -> None:
         segments = [
             _normal_until(timedelta(0), first_id=1, meters_north=0.0),
             _tiny(
                 EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_TIME_GAP},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 
         assert _ids(merge_small_segments(segments)) == [_block(1), (10,)]
+
+    def test_bolt_c_reads_its_own_limit_not_the_splitting_threshold(self) -> None:
+        """DER TRAGENDE FALL von ADR 0118 Punkt 4: Genau die Lage, die die Ausdehnung GETRENNT hat
+        - das Ergebnis liegt ueber `EVENT_EXTENT_MAX_METERS` - wird zusammengelegt, weil Riegel (c)
+        seine eigene, groessere Grenze prueft. Praefte er weiter die Trennschwelle, waere die Stufe
+        fuer ausdehnungsgetrennte Segmente strukturell unpassierbar, und dieser Fall bliebe rot."""
+        between = (_extent_max() + _merge_extent_max()) / 2
+        segments = [
+            _normal_until(timedelta(0), first_id=1, meters_north=0.0),
+            _tiny(
+                EPSILON_TIME,
+                first_id=10,
+                causes={BOUNDARY_EXTENT},
+                meters_north=between,
+            ),
+        ]
+
+        assert between > _extent_max(), "sonst misst der Fall die neue Grenze gar nicht"
+        assert _ids(merge_small_segments(segments)) == [(*_block(1), 10)]
 
     def test_bolt_d_a_segment_at_the_minimum_is_never_absorbed(self) -> None:
         """Ein normal grosses Event wird NIE zugeschlagen, auch wenn Zeit, Dauer und Ausdehnung es
@@ -2683,7 +2720,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
                 EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_TIME_GAP},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 
@@ -2708,7 +2745,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
                 EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_TIME_GAP},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 
@@ -2720,7 +2757,9 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
         """Genau die Lage, fuer die es zwei Zahlen braucht: Keiner der beiden Gruende stand an
         allen Kanten, und eine Zaehlung nur ueber "beteiligt" legte beide Behebungen nahe."""
         segments = [
-            _normal_until(timedelta(0), first_id=1, meters_north=_extent_max() + EPSILON_METERS),
+            _normal_until(
+                timedelta(0), first_id=1, meters_north=_merge_extent_max() + EPSILON_METERS
+            ),
             _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
             _normal_from(_merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}),
         ]
@@ -2743,7 +2782,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
                 _max_span() + _merge_gap() + EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_MOTIF_CHANGE},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 
@@ -2769,7 +2808,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
                 _merge_gap() + EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_TIME_GAP},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 

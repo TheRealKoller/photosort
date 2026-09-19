@@ -26,18 +26,19 @@ from photosort.places import (
 from photosort.scoring import haversine_meters
 from photosort.selection import carried_motifs
 
-# --- Die SECHS eigenen Schwellen der Event-Bildung -----------------------------------------------
+# --- Die SIEBEN eigenen Schwellen der Event-Bildung ----------------------------------------------
 #
 # Sie stehen hier und nicht in `scoring.py`, obwohl zwei von ihnen dort denselben Zahlwert tragen:
 # Dieselben Konstanten steuern `assign_clusters`, also Phase A VOR dem Ausschuss-Gate und damit,
 # welche Fotos im Ausschuss gegeneinander antreten. Eine Kalibrierung an ihnen verschoebe still die
-# Kandidatenmenge. Phase A bleibt von diesen sechs Werten unberuehrt.
+# Kandidatenmenge. Phase A bleibt von diesen sieben Werten unberuehrt.
 #
-# Alle sechs sind dokumentierte Modulkonstanten, ausdruecklich KEIN Settings-/Env-Wert, und werden
+# Alle sieben sind dokumentierte Modulkonstanten, ausdruecklich KEIN Settings-/Env-Wert, und werden
 # ueberall als MODULATTRIBUT gelesen, nie als Default-Parameterwert gebunden: sonst liefe
 # `monkeypatch.setattr` ins Leere und eine Variation waere wirkungslos - gruen, aber ohne Wirkung.
-# Kein Test pinnt einen Zahlwert; zulaessig sind genau die drei Ungleichungen
-# `MERGE_MAX_GAP > EVENT_TIME_GAP`, `MIN_EVENT_PHOTOS >= 2` und `EVENT_MAX_SPAN < 24 h`.
+# Kein Test pinnt einen Zahlwert; zulaessig sind genau die vier Ungleichungen
+# `MERGE_MAX_GAP > EVENT_TIME_GAP`, `MIN_EVENT_PHOTOS >= 2`, `EVENT_MAX_SPAN < 24 h` und
+# `MERGE_EXTENT_MAX_METERS > EVENT_EXTENT_MAX_METERS`.
 
 # Zeitluecke zwischen zwei aufeinanderfolgenden Fotos, ab der ein neues Event beginnt.
 # UNKALIBRIERT: Von den Grenzen eines echten Projekts war sie zu 5,6 % alleinige Ursache, `schritt`
@@ -77,6 +78,25 @@ MERGE_MAX_GAP = timedelta(hours=2)
 # hiesse "kein Segment ist je zu klein"; `MIN_EVENT_PHOTOS >= 2` ist die einzige Aussage, die ein
 # Test ueber diesen Wert treffen darf, und sie ist eine Ungleichung.
 MIN_EVENT_PHOTOS = 2
+
+# Raeumliche Ausdehnung, die das ERGEBNIS einer Zusammenlegung nicht ueberschreiten darf (Riegel
+# (c) in `_may_merge`).
+#
+# Sie MUSS groesser sein als `EVENT_EXTENT_MAX_METERS`, sonst prueft Riegel (c) dieselbe Bedingung,
+# deren Ueberschreitung die Trennung ausgeloest hat - fuer ausdehnungsgetrennte Segmente waere die
+# Stufe damit strukturell unpassierbar.
+#
+# HERLEITUNG: die Trennschwelle plus EINEN Schritt (`EVENT_EXTENT_MAX_METERS` +
+# `EVENT_STEP_MAX_METERS`). Zugeschlagen wird ein Segment unter `MIN_EVENT_PHOTOS`, heute also ein
+# einzelnes Foto ohne eigene Ausdehnung; die Box waechst damit genau um dessen Abstand zur Box des
+# Nachbarn. Ein Schritt ueber `EVENT_STEP_MAX_METERS` ist im Massstab dieses Projekts bereits ein
+# Ortswechsel und trennt fuer sich - mehr als einen zuzulassen hiesse, eine Trennung aufzuloesen,
+# die das Projekt selbst so nennt; weniger hiesse, die Stufe weiter leerlaufen zu lassen.
+#
+# EIN LITERAL, KEINE GERECHNETE SUMME der beiden genannten Konstanten: Die Schwellen werden ueberall
+# als Modulattribut gelesen, damit ein Pruefsatz sie verschieben kann, und eine beim Import
+# gebundene Summe folgte dieser Verschiebung nicht - gruen, aber ohne Wirkung.
+MERGE_EXTENT_MAX_METERS = 1500.0
 
 # Der geschlossene Vorrat von `events.place_kind`. Ein Wert ausserhalb ist ein Datenfehler und
 # wird im Lesepfad zu "kein Ortsbezug", nie zu einer 500.
@@ -897,8 +917,8 @@ def _step_over(earlier: Segment, later: Segment) -> float:
 
 
 def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) -> frozenset[str]:
-    """Drei der VIER RIEGEL plus die beiden unantastbaren Grenzen - alles, was an einer KANTE
-    haengt und deshalb fuer beide Richtungen ueber sie gleich ausfaellt.
+    """Drei der VIER RIEGEL plus die unantastbare Grenze - alles, was an einer KANTE haengt und
+    deshalb fuer beide Richtungen ueber sie gleich ausfaellt.
 
     RUECKGABE: die MENGE der Gruende aus `MERGE_BLOCK_REASONS`, die diese Kante sperren - die LEERE
     Menge, wenn sie offen ist. `_neighbour_for` fragt nur, ob die Menge leer ist; die Gruende
@@ -909,9 +929,13 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
     EINE MENGE, NIE EIN EINZELNER GRUND, und die Auswertung ist AUSDRUECKLICH NICHT
     KURZGESCHLOSSEN - dieselbe Zusage wie fuer die Signale des Durchlaufs: Mehrere Riegel duerfen
     gleichzeitig zutreffen, und wer nach dem ersten abbricht, unterschlaegt die spaeteren. Das
-    traefe zuerst `ausdehnung` als zuletzt geprueften, und genau an dieser Zahl haengt die Frage,
-    ob Riegel (c) dieselbe Bedingung prueft, deren Ueberschreitung die Trennung ausgeloest hat. Der
-    Preis ist, dass die Ausdehnung auch dann gerechnet wird, wenn schon die Zeitluecke sperrt.
+    traefe zuerst `ausdehnung` als zuletzt geprueften. Der Preis ist, dass die Ausdehnung auch dann
+    gerechnet wird, wenn schon die Zeitluecke sperrt.
+
+    RIEGEL (c) PRUEFT `MERGE_EXTENT_MAX_METERS`, NICHT `EVENT_EXTENT_MAX_METERS` (ADR 0118 Punkt 4)
+    - eine eigene, groessere Grenze. Praefte er die Trennschwelle, praefte er dieselbe Bedingung,
+    deren Ueberschreitung die Trennung ausgeloest hat, und die Stufe waere fuer genau die Segmente
+    unpassierbar, die die Ausdehnung getrennt hat.
 
     Der vierte Riegel (d) - das Segment selbst liegt unter der Mindestgroesse - haengt am Segment,
     nicht an der Kante, und steht bei der Auswahl. Weil hier nur Kanteneigenschaften stehen, ist
@@ -927,7 +951,7 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
         (MERGE_BLOCK_UNBREAKABLE, bool(later.causes & UNBREAKABLE_CAUSES)),
         (MERGE_BLOCK_TIME_GAP, _gap_between(earlier, later) > merge_max_gap),  # (a)
         (MERGE_BLOCK_SPAN, combined[-1].taken_at - combined[0].taken_at > EVENT_MAX_SPAN),  # (b)
-        (MERGE_BLOCK_EXTENT, _extent_meters(combined) > EVENT_EXTENT_MAX_METERS),  # (c)
+        (MERGE_BLOCK_EXTENT, _extent_meters(combined) > MERGE_EXTENT_MAX_METERS),  # (c)
     )
     return frozenset(reason for reason, blocking in checked if blocking)
 
