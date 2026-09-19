@@ -359,9 +359,15 @@ def cause_counts(formation: EventFormation) -> CauseCounts:
 
 @dataclass(frozen=True)
 class BlockCounts:
-    """Block F. ZWEI Zahlen je Grund, und nur die zweite ist handlungsleitend: Ein Segment mit zwei
-    Nachbarn hat zwei Kanten, und ein Grund, der nur an einer stand, hat die Zusammenlegung nicht
-    verhindert - der andere haette es ohnehin getan.
+    """Block F. ZWEI Zahlen je Grund, und nur die zweite ist handlungsleitend.
+
+    `involved` - der Grund stand an mindestens einer Kante des Segments.
+
+    `at_every_edge` - er stand an JEDER Kante, und an keiner stand etwas daneben. Nur dann loest
+    seine Behebung dieses Segment tatsaechlich auf: Bleibt an einer Kante ein zweiter Grund
+    stehen, bleibt die Kante gesperrt; und ein Grund, der nur an einer von zwei Kanten stand, hat
+    die Zusammenlegung nicht fuer sich verhindert. Das ist dieselbe Bedeutung wie "alleinige
+    Ursache" in Block B, eine Ebene tiefer angewandt.
 
     Beide Abbildungen fuehren JEDEN Grund aus `MERGE_BLOCK_REASONS`, auch den nie aufgetretenen.
     Eine fehlende Zeile waere ein still unvollstaendiger Bericht, ohne dass eine Summe kleiner
@@ -383,7 +389,13 @@ def block_counts(formation: EventFormation) -> BlockCounts:
     aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
     known = set(MERGE_BLOCK_REASONS)
     unknown = sorted(
-        {reason for blocked in formation.blocked_segments for reason in blocked.reasons} - known
+        {
+            reason
+            for blocked in formation.blocked_segments
+            for edge in blocked.edges
+            for reason in edge
+        }
+        - known
     )
     if unknown:
         raise EventProbeError(
@@ -395,11 +407,13 @@ def block_counts(formation: EventFormation) -> BlockCounts:
     involved = {reason: 0 for reason in MERGE_BLOCK_REASONS}
     at_every_edge = {reason: 0 for reason in MERGE_BLOCK_REASONS}
     for blocked in formation.blocked_segments:
-        distinct = set(blocked.reasons)
-        for reason in distinct:
+        for reason in {reason for edge in blocked.edges for reason in edge}:
             involved[reason] += 1
-        if len(distinct) == 1:
-            at_every_edge[blocked.reasons[0]] += 1
+        # "An allen Kanten DER Grund": jede Kante traegt genau einen Grund, und ueberall denselben.
+        alone = {next(iter(edge)) for edge in blocked.edges if len(edge) == 1}
+        if len(alone) == 1 and all(len(edge) == 1 for edge in blocked.edges):
+            [only] = alone
+            at_every_edge[only] += 1
     return BlockCounts(
         blocked_segments=len(formation.blocked_segments),
         involved=involved,
@@ -818,10 +832,16 @@ def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str
 
     lines += [
         "",
-        "Gezaehlt werden SEGMENTE, nie Kanten. Ein Segment mit zwei Nachbarn hat zwei Kanten, und",
-        "ein Grund, der nur an einer stand, hat die Zusammenlegung nicht verhindert - nur die",
-        "zweite Spalte ist deshalb handlungsleitend. Eine Seite ohne Nachbarn zaehlt als eigene",
-        "Kante (`kein_nachbar`).",
+        "Gezaehlt werden SEGMENTE, nie Kanten, und ein Segment hat so viele Kanten, wie es Nachbarn",
+        "hat. An einer Kante duerfen mehrere Gruende gleichzeitig stehen; ausgewiesen werden alle.",
+        "",
+        "Nur die zweite Spalte ist handlungsleitend: Sie zaehlt die Segmente, an deren JEDER Kante",
+        "dieser Grund stand und sonst keiner - allein dort loest seine Behebung die Zusammenlegung",
+        "aus. Steht daneben ein zweiter Grund, bleibt die Kante auch ohne diesen gesperrt; stand er",
+        "nur an einer von zwei Kanten, hat er die Zusammenlegung nicht fuer sich verhindert.",
+        "",
+        "`kein_nachbar` greift nur, wenn es UEBERHAUPT keinen Nachbarn gibt. Eine fehlende Seite am",
+        "Rand ist kein Hindernis und zaehlt nicht als Kante.",
         "",
         "`unantastbar` ist kein Riegel, sondern die Zusage, dass eine Grenze mit der Ursache",
         "`motivwechsel` oder `sehenswuerdigkeit` nie aufgeloest wird. Ihre Behebung waere eine",

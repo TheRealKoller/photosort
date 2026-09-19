@@ -413,51 +413,86 @@ class TestBlockBCountsTheCounterIndicationOfTheThirdStage:
         assert counts.boundaries_total == 0
 
 
-def _blocked_formation(*blocked: tuple[str, ...]) -> EventFormation:
+def _blocked_formation(*blocked: tuple[frozenset[str], ...]) -> EventFormation:
     """Eine Gliederung samt der Beobachtung von Stufe 3, von Hand gestellt: je gesperrtem Segment
-    das Paar seiner Kantengruende.
+    seine Kanten, je Kante die Menge der Gruende.
 
-    Von Hand statt ueber `merge_small_segments`, weil Block F eine reine Zaehlung ueber diese Paare
-    ist - eine Testlage aus Zeitabstaenden haenge an den Zahlwerten der Schwellen. Dass die Paare
-    entstehen, wie sie entstehen, haelt `test_events.py::TestWhyASegmentCouldNotBeMerged` fest."""
+    Von Hand statt ueber `merge_small_segments`, weil Block F eine reine Zaehlung ueber diese
+    Mengen ist - eine Testlage aus Zeitabstaenden haenge an den Zahlwerten der Schwellen. Dass die
+    Mengen entstehen, wie sie entstehen, haelt `test_events.py::TestWhyASegmentCouldNotBeMerged`
+    fest."""
     return EventFormation(
         events=(_segment(1, 1),),
         causes=(frozenset(),),
-        blocked_segments=tuple(BlockedSegment(reasons=reasons) for reasons in blocked),
+        blocked_segments=tuple(BlockedSegment(edges=edges) for edges in blocked),
     )
+
+
+def _edges(*reasons: Collection[str]) -> tuple[frozenset[str], ...]:
+    """Die Kanten eines gesperrten Segments - je Kante die Menge ihrer Gruende."""
+    return tuple(frozenset(reason) for reason in reasons)
 
 
 class TestBlockFWhyAMergeFailed:
     """Woran eine Zusammenlegung scheitert. ZWEI Zahlen je Grund, und nur die zweite ist
     handlungsleitend: Ein Segment mit zwei Nachbarn hat zwei Kanten, und ein Grund, der nur an
-    einer stand, hat die Zusammenlegung nicht verhindert."""
+    einer stand, hat die Zusammenlegung nicht verhindert.
+
+    "An allen Kanten DER Grund" heisst: an jeder Kante stand er, und an keiner stand etwas
+    daneben. Nur dann loest seine Behebung dieses Segment tatsaechlich auf - dieselbe Bedeutung wie
+    "alleinige Ursache" in Block B."""
 
     def test_the_hand_computed_graph(self) -> None:
         counts = block_counts(
             _blocked_formation(
-                # An BEIDEN Kanten derselbe Grund - er hat fuer sich gesperrt.
-                (MERGE_BLOCK_UNBREAKABLE, MERGE_BLOCK_UNBREAKABLE),
+                # An BEIDEN Kanten derselbe, einzige Grund - er hat fuer sich gesperrt.
+                _edges({MERGE_BLOCK_UNBREAKABLE}, {MERGE_BLOCK_UNBREAKABLE}),
                 # Zwei verschiedene Gruende: beide beteiligt, keiner an allen Kanten.
-                (MERGE_BLOCK_EXTENT, MERGE_BLOCK_TIME_GAP),
-                # Ein Randsegment: die fehlende Seite zaehlt als eigene Kante.
-                (MERGE_BLOCK_EXTENT, MERGE_BLOCK_NO_NEIGHBOUR),
+                _edges({MERGE_BLOCK_EXTENT}, {MERGE_BLOCK_TIME_GAP}),
+                # Ein Randsegment: EINE Kante, dort zwei Gruende gleichzeitig. Beteiligt sind
+                # beide; keiner stand allein, also traegt keiner die zweite Spalte.
+                _edges({MERGE_BLOCK_EXTENT, MERGE_BLOCK_TIME_GAP}),
             )
         )
 
         assert counts.blocked_segments == 3
         assert counts.involved[MERGE_BLOCK_UNBREAKABLE] == 1
         assert counts.involved[MERGE_BLOCK_EXTENT] == 2
-        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 1
-        assert counts.involved[MERGE_BLOCK_NO_NEIGHBOUR] == 1
+        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 2
+        assert counts.involved[MERGE_BLOCK_NO_NEIGHBOUR] == 0
         assert counts.at_every_edge[MERGE_BLOCK_UNBREAKABLE] == 1
         assert counts.at_every_edge[MERGE_BLOCK_EXTENT] == 0
         assert counts.at_every_edge[MERGE_BLOCK_TIME_GAP] == 0
         assert counts.at_every_edge[MERGE_BLOCK_NO_NEIGHBOUR] == 0
 
+    def test_a_reason_beside_another_one_is_never_the_reason_at_that_edge(self) -> None:
+        """Der Fall, der die zweite Spalte belastbar macht: `ausdehnung` steht an beiden Kanten,
+        an einer aber neben `zeitluecke`. Seine Behebung loeste dieses Segment NICHT auf - die
+        Spalte darf ihn deshalb nicht zaehlen, die erste sehr wohl."""
+        counts = block_counts(
+            _blocked_formation(
+                _edges({MERGE_BLOCK_EXTENT}, {MERGE_BLOCK_EXTENT, MERGE_BLOCK_TIME_GAP})
+            )
+        )
+
+        assert counts.involved[MERGE_BLOCK_EXTENT] == 1
+        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 1
+        assert counts.at_every_edge[MERGE_BLOCK_EXTENT] == 0
+
+    def test_a_reason_is_counted_once_per_segment_not_once_per_edge(self) -> None:
+        """Gezaehlt werden SEGMENTE: Die Frage ist, wie viele Zusammenlegungen ein Grund verhindert
+        hat, nicht wie oft er auftrat."""
+        counts = block_counts(
+            _blocked_formation(_edges({MERGE_BLOCK_TIME_GAP}, {MERGE_BLOCK_TIME_GAP}))
+        )
+
+        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 1
+        assert counts.at_every_edge[MERGE_BLOCK_TIME_GAP] == 1
+
     def test_every_reason_of_the_closed_supply_appears_even_at_zero(self) -> None:
         """Ein Grund, der nie an einer Kante stand, steht mit null da - er faellt nicht aus dem
         Bericht. Sonst waere er still unvollstaendig, ohne dass eine Summe kleiner wuerde."""
-        counts = block_counts(_blocked_formation((MERGE_BLOCK_TIME_GAP, MERGE_BLOCK_TIME_GAP)))
+        counts = block_counts(_blocked_formation(_edges({MERGE_BLOCK_TIME_GAP})))
 
         assert set(counts.involved) == set(MERGE_BLOCK_REASONS)
         assert set(counts.at_every_edge) == set(MERGE_BLOCK_REASONS)
@@ -473,7 +508,7 @@ class TestBlockFWhyAMergeFailed:
         """Nicht stillschweigend uebergehen: Ein kuenftiger Riegel ohne Eintrag in
         `MERGE_BLOCK_REASONS` verschwaende sonst aus dem Bericht."""
         with pytest.raises(EventProbeError):
-            block_counts(_blocked_formation(("erfunden", MERGE_BLOCK_NO_NEIGHBOUR)))
+            block_counts(_blocked_formation(_edges({"erfunden"})))
 
     def test_the_counts_come_from_the_real_run_not_from_a_second_pass(self) -> None:
         """ADR 0117 Punkt 5: Gezaehlt wird, woran die Stufe TATSAECHLICH gescheitert ist. Eine
@@ -490,8 +525,8 @@ class TestBlockFWhyAMergeFailed:
 
         assert counts.blocked_segments == 1
         assert counts.involved[MERGE_BLOCK_TIME_GAP] == 1
-        assert counts.involved[MERGE_BLOCK_NO_NEIGHBOUR] == 1
-        assert sum(counts.at_every_edge.values()) == 0
+        assert counts.at_every_edge[MERGE_BLOCK_TIME_GAP] == 1
+        assert counts.involved[MERGE_BLOCK_NO_NEIGHBOUR] == 0
 
     def test_the_grouping_is_the_one_build_events_would_have_produced(self) -> None:
         """Beobachten, nicht veraendern: Der Modus rechnet dieselbe Gliederung wie Block A und B.
@@ -1161,17 +1196,23 @@ class TestTheOutputSeparatesNumbersFromPlaces:
     def test_the_bolt_report_names_the_measured_blockade(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Die Messlage traegt ein Einzelfoto hinter drei Tagen - es kann an keinen Nachbarn und
-        bleibt bestehen. Ohne diese Zahlen im BERICHT haette der Lauf sie zwar gerechnet, aber
-        Daniel bekaeme sie nie zu sehen."""
+        """Die Messlage traegt ein Einzelfoto DREI TAGE hinter den uebrigen: Seine eine Kante reisst
+        die Ueberbrueckung UND die Dauergrenze zugleich.
+
+        Damit haengt am Bericht zweierlei. Erstens stehen die Zahlen ueberhaupt darin - sonst
+        haette der Lauf sie zwar gerechnet, aber Daniel bekaeme sie nie zu sehen. Zweitens steht
+        `dauer` daneben: Kurzgeschlossen gaebe es nur `zeitluecke` zu sehen, und wer sie lockerte,
+        staende danach vor der Dauergrenze. Und keiner der beiden traegt die zweite Spalte, weil
+        keiner fuer sich sperrt."""
         url, project_id = _prepared(tmp_path)
 
         assert main(["--project-id", str(project_id), "--riegel"], database_url=url) == 0
 
         report = capsys.readouterr().out
         assert "zu kleine Segmente, die bestehen blieben: 1" in report
-        assert "| zeitluecke | 1 " in report
-        assert "| kein_nachbar | 1 " in report
+        assert "| zeitluecke | 1 (100.0 %) | 0 (0.0 %) |" in report
+        assert "| dauer | 1 (100.0 %) | 0 (0.0 %) |" in report
+        assert "| kein_nachbar | 0 (0.0 %) | 0 (0.0 %) |" in report
 
     def test_the_bolt_mode_measures_nothing_of_the_place_blocks(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

@@ -2562,13 +2562,17 @@ class TestTheCounterIndicationOfTheThirdStage(_UnderShiftedEventConstants):
 
 
 class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
-    """Block F: Je zu kleinem Segment, das NICHT zugeschlagen werden konnte, steht fest, welcher
-    Grund an seinen Kanten stand.
+    """Block F: Je zu kleinem Segment, das NICHT zugeschlagen werden konnte, steht fest, welche
+    Gruende an seinen Kanten standen.
 
-    JE SEITE GENAU EIN EINTRAG, auch am Rand (`kein_nachbar`). Nur dadurch ist "war an allen Kanten
-    der Grund" von "war an einer beteiligt" unterscheidbar - und nur die erste Aussage ist
-    handlungsleitend: Ein Grund, der nur an einer von zwei Kanten stand, hat die Zusammenlegung
-    nicht verhindert."""
+    JE KANTE EINE MENGE, nie ein einzelner Grund: Mehrere Riegel duerfen gleichzeitig zutreffen,
+    und eine Meldung mit einem Grund je Kante unterschluege die spaeter geprueften - `ausdehnung`
+    steht als letzter und ist genau die Zahl, an der die Frage dieses Blocks haengt.
+
+    EIN SEGMENT HAT SO VIELE KANTEN, WIE ES NACHBARN HAT. Eine nicht vorhandene Seite ist kein
+    Hindernis; sie als Kante zu fuehren verfaelschte "an allen Kanten der Grund" - die einzige
+    handlungsleitende Spalte - bei jedem Randsegment. `kein_nachbar` greift nur, wenn es
+    ueberhaupt keinen Nachbarn gibt."""
 
     def _tiny_between(
         self,
@@ -2614,7 +2618,10 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
 
         [blocked] = merge_small_segments(segments).blocked_segments
 
-        assert blocked.reasons == (MERGE_BLOCK_UNBREAKABLE, MERGE_BLOCK_UNBREAKABLE)
+        assert blocked.edges == (
+            frozenset({MERGE_BLOCK_UNBREAKABLE}),
+            frozenset({MERGE_BLOCK_UNBREAKABLE}),
+        )
 
     def test_the_gap_to_the_neighbour(self) -> None:
         segments = [
@@ -2624,7 +2631,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
 
         [blocked] = merge_small_segments(segments).blocked_segments
 
-        assert blocked.reasons == (MERGE_BLOCK_TIME_GAP, MERGE_BLOCK_NO_NEIGHBOUR)
+        assert blocked.edges == (frozenset({MERGE_BLOCK_TIME_GAP}),)
 
     def test_the_duration_of_the_result(self) -> None:
         segments = [
@@ -2634,7 +2641,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
 
         [blocked] = merge_small_segments(segments).blocked_segments
 
-        assert blocked.reasons == (MERGE_BLOCK_SPAN, MERGE_BLOCK_NO_NEIGHBOUR)
+        assert blocked.edges == (frozenset({MERGE_BLOCK_SPAN}),)
 
     def test_the_extent_of_the_result(self) -> None:
         segments = [
@@ -2649,58 +2656,23 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
 
         [blocked] = merge_small_segments(segments).blocked_segments
 
-        assert blocked.reasons == (MERGE_BLOCK_EXTENT, MERGE_BLOCK_NO_NEIGHBOUR)
+        assert blocked.edges == (frozenset({MERGE_BLOCK_EXTENT}),)
 
     def test_a_segment_without_any_neighbour_at_all(self) -> None:
+        """`kein_nachbar` greift NUR hier - ein einziges Segment im ganzen Lauf. Eine bloss
+        fehlende SEITE eines Randsegments ist kein Hindernis und zaehlt nicht als Kante."""
         [blocked] = merge_small_segments([_tiny(timedelta(0), first_id=1)]).blocked_segments
 
-        assert blocked.reasons == (MERGE_BLOCK_NO_NEIGHBOUR, MERGE_BLOCK_NO_NEIGHBOUR)
+        assert blocked.edges == (frozenset({MERGE_BLOCK_NO_NEIGHBOUR}),)
 
-    def test_two_neighbours_can_stand_for_two_different_reasons(self) -> None:
-        """Genau die Lage, fuer die es zwei Zahlen braucht: Keiner der beiden Gruende hat fuer sich
-        gesperrt, und eine Zaehlung nur ueber "beteiligt" legte beide Behebungen nahe."""
+    def test_a_segment_at_the_edge_of_the_run_has_exactly_one_edge(self) -> None:
+        """Die fehlende Seite taucht NICHT auf. Als eigene Kante gefuehrt, faende sich dieses
+        Segment in "an allen Kanten der Grund" bei keinem einzigen Grund wieder - obwohl die
+        Ausdehnung dort der Grund war."""
         segments = [
-            _normal_until(timedelta(0), first_id=1, meters_north=_extent_max() + EPSILON_METERS),
-            _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
-            _normal_from(_merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}),
-        ]
-
-        [blocked] = merge_small_segments(segments).blocked_segments
-
-        assert blocked.reasons == (MERGE_BLOCK_EXTENT, MERGE_BLOCK_TIME_GAP)
-
-    def test_the_untouchable_boundary_is_asked_before_every_bolt(self) -> None:
-        """Die Reihenfolge des Vorrats IST die Pruefreihenfolge von `_may_merge`. Stuende die
-        Unantastbarkeit dahinter, verschwaende sie hinter einer Schwelle - und die Messung
-        beantwortete die Frage nicht mehr, wegen der es Block F gibt."""
-        segments = [
-            _normal_until(timedelta(0), first_id=1),
-            _tiny(_merge_gap() + EPSILON_TIME, first_id=10, causes={BOUNDARY_MOTIF_CHANGE}),
-        ]
-
-        [blocked] = merge_small_segments(segments).blocked_segments
-
-        assert blocked.reasons[0] == MERGE_BLOCK_UNBREAKABLE
-
-    def test_the_gap_is_asked_before_the_duration(self) -> None:
-        segments = [
-            _normal_spanning_the_maximum(first_id=1),
-            _tiny(
-                _max_span() + _merge_gap() + EPSILON_TIME,
-                first_id=10,
-                causes={BOUNDARY_TIME_GAP},
-            ),
-        ]
-
-        [blocked] = merge_small_segments(segments).blocked_segments
-
-        assert blocked.reasons[0] == MERGE_BLOCK_TIME_GAP
-
-    def test_the_duration_is_asked_before_the_extent(self) -> None:
-        segments = [
-            _normal_spanning_the_maximum(first_id=1),
-            _tiny(
-                _max_span() + EPSILON_TIME,
+            _tiny(timedelta(0), first_id=1, meters_north=0.0),
+            _normal_from(
+                EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_TIME_GAP},
                 meters_north=_extent_max() + EPSILON_METERS,
@@ -2709,11 +2681,73 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
 
         [blocked] = merge_small_segments(segments).blocked_segments
 
-        assert blocked.reasons[0] == MERGE_BLOCK_SPAN
+        assert blocked.edges == (frozenset({MERGE_BLOCK_EXTENT}),)
+
+    def test_two_neighbours_can_stand_for_two_different_reasons(self) -> None:
+        """Genau die Lage, fuer die es zwei Zahlen braucht: Keiner der beiden Gruende stand an
+        allen Kanten, und eine Zaehlung nur ueber "beteiligt" legte beide Behebungen nahe."""
+        segments = [
+            _normal_until(timedelta(0), first_id=1, meters_north=_extent_max() + EPSILON_METERS),
+            _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
+            _normal_from(_merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (
+            frozenset({MERGE_BLOCK_EXTENT}),
+            frozenset({MERGE_BLOCK_TIME_GAP}),
+        )
+
+    def test_an_edge_that_violates_several_bolts_reports_them_all(self) -> None:
+        """NICHT KURZGESCHLOSSEN, dieselbe Zusage wie fuer die Signale des Durchlaufs
+        (`TestSignalsAreNeverShortCircuited`): Alle vier werden ausgewertet. Sonst verschwaende
+        `ausdehnung` als zuletzt geprueftes hinter jedem frueheren Grund - und das ist genau die
+        Zahl, an der die Frage dieses Blocks haengt. Eine Lage, die ALLE VIER zugleich verletzt."""
+        segments = [
+            _normal_spanning_the_maximum(first_id=1),
+            _tiny(
+                _max_span() + _merge_gap() + EPSILON_TIME,
+                first_id=10,
+                causes={BOUNDARY_MOTIF_CHANGE},
+                meters_north=_extent_max() + EPSILON_METERS,
+            ),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (
+            frozenset(
+                {
+                    MERGE_BLOCK_UNBREAKABLE,
+                    MERGE_BLOCK_TIME_GAP,
+                    MERGE_BLOCK_SPAN,
+                    MERGE_BLOCK_EXTENT,
+                }
+            ),
+        )
+
+    def test_the_extent_is_reported_next_to_an_earlier_bolt(self) -> None:
+        """Der Fall, den der Kurzschluss verschluckte: Zeitluecke UND Ausdehnung an derselben
+        Kante. Wer nur die Zeitluecke lockert, steht danach vor der Ausdehnung."""
+        segments = [
+            _normal_until(timedelta(0), first_id=1, meters_north=0.0),
+            _tiny(
+                _merge_gap() + EPSILON_TIME,
+                first_id=10,
+                causes={BOUNDARY_TIME_GAP},
+                meters_north=_extent_max() + EPSILON_METERS,
+            ),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (frozenset({MERGE_BLOCK_TIME_GAP, MERGE_BLOCK_EXTENT}),)
 
     def test_every_reported_reason_comes_from_the_closed_supply(self) -> None:
         """Der Vorrat ist geschlossen: Ein Grund ausserhalb stuende in keiner Zeile des Berichts,
-        ohne dass eine Summe kleiner wuerde."""
+        ohne dass eine Summe kleiner wuerde. Und keine Kante ist leer - eine offene Kante waere
+        ein zulaessiger Nachbar, dann waere das Segment gar nicht gesperrt."""
         for segments in (
             self._tiny_between(gap_after=_merge_gap()),
             [_tiny(timedelta(0), first_id=1)],
@@ -2723,8 +2757,10 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
             ],
         ):
             for blocked in merge_small_segments(segments).blocked_segments:
-                assert set(blocked.reasons) <= set(MERGE_BLOCK_REASONS)
-                assert len(blocked.reasons) == 2, "je Seite genau ein Eintrag"
+                for edge in blocked.edges:
+                    assert edge, "eine leere Kante waere ein zulaessiger Nachbar"
+                    assert edge <= set(MERGE_BLOCK_REASONS)
+                assert 1 <= len(blocked.edges) <= 2, "so viele Kanten, wie es Nachbarn gibt"
 
     def test_the_supply_is_exactly_these_five(self) -> None:
         assert MERGE_BLOCK_REASONS == (
@@ -2774,7 +2810,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
             (minimum,),
         ]
         [blocked] = formation.blocked_segments
-        assert blocked.reasons == (MERGE_BLOCK_TIME_GAP, MERGE_BLOCK_NO_NEIGHBOUR)
+        assert blocked.edges == (frozenset({MERGE_BLOCK_TIME_GAP}),)
 
 
 class TestBuildEventsRunsTheThirdStage:

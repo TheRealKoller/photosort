@@ -570,13 +570,18 @@ Mit `--riegel` weist dasselbe Kommando stattdessen aus, woran eine Zusammenlegun
 docker compose exec -T backend python -m photosort.event_probe --project-id <N> --riegel
 ```
 
-Je zu kleinem Segment, das die dritte Stufe **nicht** zuschlagen konnte, steht der Grund an seinen
-Kanten — `unantastbar`, `zeitluecke`, `dauer`, `ausdehnung` oder `kein_nachbar`. Gezählt wird
-zweifach wie in Block B: „an einer Kante beteiligt" und „an allen Kanten der Grund". **Nur die
-zweite Spalte ist handlungsleitend:** Ein Segment mit zwei Nachbarn hat zwei Kanten, und ein Grund,
-der nur an einer stand, hat die Zusammenlegung nicht verhindert. Der Modus rechnet dieselbe
-Gliederung wie die Blöcke A und B, beobachtet dabei nur — an Riegeln, Schwellen und Gliederung
-ändert er nichts — und fragt den Ortsauszug so wenig wie `--motiv`.
+Je zu kleinem Segment, das die dritte Stufe **nicht** zuschlagen konnte, stehen die Gründe an
+seinen Kanten — `unantastbar`, `zeitluecke`, `dauer`, `ausdehnung` oder `kein_nachbar`. Ein Segment
+hat so viele Kanten, wie es Nachbarn hat, und an einer Kante dürfen **mehrere** Gründe gleichzeitig
+stehen; ausgewiesen werden alle. `kein_nachbar` greift nur, wenn es überhaupt keinen Nachbarn gibt.
+
+Gezählt wird zweifach wie in Block B: „an einer Kante beteiligt" und „an allen Kanten der Grund".
+**Nur die zweite Spalte ist handlungsleitend** — sie zählt die Segmente, an deren *jeder* Kante
+dieser Grund stand und sonst keiner; allein dort löst seine Behebung die Zusammenlegung aus. Steht
+daneben ein zweiter Grund, bleibt die Kante auch ohne diesen gesperrt.
+
+Der Modus rechnet dieselbe Gliederung wie die Blöcke A und B, beobachtet dabei nur — an Riegeln,
+Schwellen und Gliederung ändert er nichts — und fragt den Ortsauszug so wenig wie `--motiv`.
 
 `--motiv` und `--riegel` schließen einander aus; beides zusammen bricht mit einer Meldung ab.
 
