@@ -91,6 +91,11 @@ BOUNDARY_TIME_GAP = "zeitluecke"
 BOUNDARY_DURATION = "dauer"
 BOUNDARY_STEP = "schritt"
 BOUNDARY_EXTENT = "ausdehnung"
+# Kein Eintrag in `default_signals()` seit ADR 0118: Die Sehenswuerdigkeit trennt nicht mehr. Ihr
+# Name bleibt trotzdem im Vorrat - er ist ein BERICHTSWORTSCHATZ, und die Zeile mit 0 ist der
+# Nachweis, dass die Aenderung gewirkt hat. Ohne sie haette die Nachmessung eine Zeile weniger als
+# die Ausgangsmessung, und kein Leser koennte unterscheiden, ob die Ursache weggefallen oder nie
+# gemessen worden ist.
 BOUNDARY_LANDMARK = "sehenswuerdigkeit"
 # Kein Eintrag in `default_signals()`: Der Motivwechsel ist eine Segmentierung ueber die ganze
 # Folge (ADR 0109) und trennt als ERZWUNGENER START. Er braucht trotzdem seinen Namen, sonst
@@ -106,11 +111,17 @@ BOUNDARY_CAUSES = (
     BOUNDARY_MOTIF_CHANGE,
 )
 
-# Die beiden Ursachen, die das Zusammenlegen NIE aufloest. Sie sind die einzigen Signale, die zwei
-# verschiedene Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennen; ohne ihren Vorrang waere die Zusage
+# Die EINE Ursache, die das Zusammenlegen NIE aufloest. Sie ist das einzige Signal, das zwei
+# verschiedene Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennt; ohne ihren Vorrang waere die Zusage
 # "zwei erkennbar verschiedene Anlaesse bleiben getrennt" nicht durchsetzbar. Ein durch Motivwechsel
 # abgetrenntes Einzelbild bleibt dadurch allein - genau das sagt ADR 0109 bereits zu.
-UNBREAKABLE_CAUSES = frozenset({BOUNDARY_MOTIF_CHANGE, BOUNDARY_LANDMARK})
+#
+# `BOUNDARY_LANDMARK` steht hier NICHT, obwohl es in `BOUNDARY_CAUSES` steht, und die
+# Ungleichbehandlung ist gewollt (ADR 0118 Punkt 2): Dieser Vorrat ist kein Wortschatz, sondern eine
+# an JEDER KANTE gelesene Regel. Ein Eintrag, der nie treffen kann, waere hier keine ehrliche Null,
+# sondern eine falsche Aussage ueber das laufende System - er behauptete eine Sperre ohne
+# Gegenstand und machte `MERGE_BLOCK_UNBREAKABLE` mehrdeutig.
+UNBREAKABLE_CAUSES = frozenset({BOUNDARY_MOTIF_CHANGE})
 
 # WORAN EINE ZUSAMMENLEGUNG SCHEITERT - der geschlossene Vorrat der Gruende, die an einer KANTE
 # eines zu kleinen Segments stehen koennen. Die Reihenfolge ist die der Riegel in `_may_merge` und
@@ -595,42 +606,13 @@ class ExtentSignal:
             self._box = self._extended(self._box, candidate.location)
 
 
-class LandmarkChangeSignal:
-    """Die Sehenswuerdigkeit als TRENNSIGNAL statt als Gruppierungsmerkmal.
-
-    Grenze NUR, wenn Kandidat und laufendes Event je einen nicht-leeren, VERSCHIEDENEN Namen
-    tragen. Namenlose Fotos loesen nie aus, und ein einmal gesetzter Name des laufenden Events
-    ueberlebt namenlose Fotos - sonst zerrisse eine Aufnahme ohne Erkennung den Ortsbesuch.
-
-    Exakter Zeichenkettenvergleich, KEIN Fuzzy-Matching - und das ist seit ADR 0107 keine
-    Vereinfachung mehr, sondern die richtige Arbeitsteilung: Die Vereinheitlichung liegt DAVOR.
-    `worker.py::_landmark_names` liefert den bereits auf das projektweite Namensregister
-    aufgeloesten Namen, sodass zwei Schreibweisen derselben Sehenswuerdigkeit hier gar nicht mehr
-    als verschieden ankommen. Ein Fuzzy-Vergleich an dieser Stelle waere ein zweiter, danebenstehen-
-    der Massstab."""
-
-    name = BOUNDARY_LANDMARK
-
-    def __init__(self) -> None:
-        self._name: str | None = None
-
-    def is_boundary(self, candidate: EventCandidate) -> bool:
-        name = _usable_name(candidate.landmark_name)
-        return name is not None and self._name is not None and name != self._name
-
-    def begin(self, candidate: EventCandidate) -> None:
-        self._name = _usable_name(candidate.landmark_name)
-
-    def advance(self, candidate: EventCandidate) -> None:
-        if self._name is None:
-            self._name = _usable_name(candidate.landmark_name)
-
-
 def default_signals() -> list[BoundarySignal]:
-    """Die fuenf Trennsignale, gleichrangig, in einer LISTE.
+    """Die VIER Trennsignale, gleichrangig, in einer LISTE.
 
     Die Liste ist der Erweiterungspunkt: ein weiteres Signal ist eine Klasse und ein Eintrag - kein
-    Eingriff in den Durchlauf, das Datenmodell oder die API.
+    Eingriff in den Durchlauf, das Datenmodell oder die API. Sie fuehrt AUSSCHLIESSLICH Signale,
+    die trennen; ein nie meldender Eintrag machte aus ihr eine Liste mit zwei Bedeutungen. Deshalb
+    ist die Sehenswuerdigkeit hier seit ADR 0118 ersatzlos verschwunden statt stillgelegt.
 
     Jeder Aufruf liefert FRISCHE Objekte: Signale sind zustandsbehaftet, eine geteilte Liste
     tarnte einen Lauf als Fortsetzung des vorherigen."""
@@ -639,7 +621,6 @@ def default_signals() -> list[BoundarySignal]:
         EventSpanSignal(),
         StepDistanceSignal(),
         ExtentSignal(),
-        LandmarkChangeSignal(),
     ]
 
 
