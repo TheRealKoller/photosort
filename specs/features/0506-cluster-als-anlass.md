@@ -334,9 +334,21 @@ seinen Kanten stand. Vorrat, geschlossen und in der Prüfreihenfolge von `_may_m
 | `ausdehnung` | Riegel (c): das Ergebnis überschritte `EVENT_EXTENT_MAX_METERS` |
 | `kein_nachbar` | das Segment liegt am Rand und hat auf dieser Seite keinen |
 
-Gezählt wird wie in Block B **zweifach**: „war an einer Kante beteiligt" und „war an **allen**
-Kanten der Grund" — nur die zweite Zahl ist handlungsleitend. Ein Segment mit zwei Nachbarn hat zwei
-Kanten; ein Grund, der nur an einer stand, hat die Zusammenlegung nicht verhindert.
+**Eine Kante trägt die Menge ihrer Gründe, nie einen einzelnen** — dieselbe Auflage wie bei den
+Trennursachen und aus demselben Grund: `ausdehnung` wird zuletzt geprüft, und ein Abbruch beim
+ersten Treffer unterschlüge ausgerechnet die Zahl, an der die Frage dieses Blocks hängt. Wer
+daraufhin einen früheren Riegel lockert, steht danach vor dem verdeckten.
+
+Gezählt wird wie in Block B **zweifach**: „war an einer Kante beteiligt" und „war an allen Kanten
+**der** Grund". Die zweite Zahl ist die handlungsleitende, und sie ist streng zu lesen: an jeder
+Kante stand er, und an keiner stand etwas daneben. Nur dann löst seine Behebung das Segment
+tatsächlich auf — die strikte Entsprechung zu „alleinige Ursache" aus Block B, eine Ebene tiefer.
+
+**Ein Segment hat so viele Kanten, wie es Nachbarn hat.** Eine fehlende Seite am Rand des Laufs ist
+keine Kante: Sie ist kein Hindernis, und sie als solches zu zählen nähme einem Randsegment die
+zweite Spalte, obwohl an seiner einen echten Kante sehr wohl ein Grund stand. `kein_nachbar` greift
+deshalb nur, wenn es überhaupt keinen Nachbarn gibt — die Zeile ist damit fast immer null, und das
+ist die ehrliche Form.
 
 **Die Unantastbarkeit zählt als eigener Grund und nicht als Riegel.** Sie ist keine Schwelle,
 sondern eine Zusage, und ihre Behebung wäre eine andere Entscheidung als die Änderung einer Zahl.
