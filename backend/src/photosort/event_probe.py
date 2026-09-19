@@ -57,6 +57,7 @@ from photosort.event_inputs import read_event_inputs
 from photosort.events import (
     BOUNDARY_CAUSES,
     BOUNDARY_MOTIF_CHANGE,
+    MERGE_BLOCK_REASONS,
     MIN_EVENT_PHOTOS,
     EventCandidate,
     EventFormation,
@@ -350,6 +351,73 @@ def cause_counts(formation: EventFormation) -> CauseCounts:
         boundaries_before_merge=boundaries_total + formation.dissolved_boundaries,
         dissolved_by_merge=formation.dissolved_boundaries,
         photos_moved_by_merge=formation.moved_photos,
+    )
+
+
+# --- Block F: woran eine Zusammenlegung scheitert ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BlockCounts:
+    """Block F. ZWEI Zahlen je Grund, und nur die zweite ist handlungsleitend.
+
+    `involved` - der Grund stand an mindestens einer Kante des Segments.
+
+    `at_every_edge` - er stand an JEDER Kante, und an keiner stand etwas daneben. Nur dann loest
+    seine Behebung dieses Segment tatsaechlich auf: Bleibt an einer Kante ein zweiter Grund
+    stehen, bleibt die Kante gesperrt; und ein Grund, der nur an einer von zwei Kanten stand, hat
+    die Zusammenlegung nicht fuer sich verhindert. Das ist dieselbe Bedeutung wie "alleinige
+    Ursache" in Block B, eine Ebene tiefer angewandt.
+
+    Beide Abbildungen fuehren JEDEN Grund aus `MERGE_BLOCK_REASONS`, auch den nie aufgetretenen.
+    Eine fehlende Zeile waere ein still unvollstaendiger Bericht, ohne dass eine Summe kleiner
+    wuerde.
+
+    Gezaehlt werden SEGMENTE, nie Kanten: Die Frage ist, wie viele Zusammenlegungen ein Grund
+    verhindert hat, nicht wie oft er auftrat."""
+
+    blocked_segments: int
+    involved: dict[str, int]
+    at_every_edge: dict[str, int]
+
+
+def block_counts(formation: EventFormation) -> BlockCounts:
+    """Block F ueber die Beobachtung DESSELBEN Durchlaufs, der auch die Gliederung gebildet hat.
+
+    Ein Grund ausserhalb des geschlossenen Vorrats laesst diese Zaehlung LAUT scheitern statt sie
+    zu uebergehen: ein kuenftiger Riegel ohne Eintrag in `MERGE_BLOCK_REASONS` verschwaende sonst
+    aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
+    known = set(MERGE_BLOCK_REASONS)
+    unknown = sorted(
+        {
+            reason
+            for blocked in formation.blocked_segments
+            for edge in blocked.edges
+            for reason in edge
+        }
+        - known
+    )
+    if unknown:
+        raise EventProbeError(
+            "Grund ausserhalb des geschlossenen Vorrats: "
+            f"{', '.join(unknown)}. Der Bericht waere still unvollstaendig - erst "
+            "MERGE_BLOCK_REASONS ergaenzen."
+        )
+
+    involved = {reason: 0 for reason in MERGE_BLOCK_REASONS}
+    at_every_edge = {reason: 0 for reason in MERGE_BLOCK_REASONS}
+    for blocked in formation.blocked_segments:
+        for reason in {reason for edge in blocked.edges for reason in edge}:
+            involved[reason] += 1
+        # "An allen Kanten DER Grund": jede Kante traegt genau einen Grund, und ueberall denselben.
+        alone = {next(iter(edge)) for edge in blocked.edges if len(edge) == 1}
+        if len(alone) == 1 and all(len(edge) == 1 for edge in blocked.edges):
+            [only] = alone
+            at_every_edge[only] += 1
+    return BlockCounts(
+        blocked_segments=len(formation.blocked_segments),
+        involved=involved,
+        at_every_edge=at_every_edge,
     )
 
 
@@ -728,6 +796,62 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
     return "\n".join(lines) + "\n"
 
 
+def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str:
+    """Block F als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+
+    Derselbe Bericht-Rand wie die uebrigen Modi: keine Koordinate, kein Orts- oder
+    Sehenswuerdigkeit-Name, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen
+    wird die Projekt-Id. Die Gruende selbst sind interne Kennungen aus geschlossenem Vorrat.
+
+    Die beiden Bezugszeilen oben (Events, Ein-Bild-Cluster) stehen dabei, weil der Bericht sonst
+    nicht fuer sich stuende: "vier gesperrte Segmente" heisst etwas anderes bei 91 Events als bei
+    10."""
+    sizes = size_counts(formation)
+    blocks = block_counts(formation)
+
+    lines = [
+        f"# Woran eine Zusammenlegung scheitert, Projekt {probe.project_id}",
+        "",
+        f"- Events: {sizes.events_total}",
+        f"- Ein-Bild-Cluster: {sizes.single_photo_events} "
+        f"({_percent(sizes.single_photo_events, sizes.events_total)})",
+        f"- durch Stufe 3 aufgeloeste Grenzen: {formation.dissolved_boundaries}",
+        f"- zu kleine Segmente, die bestehen blieben: {blocks.blocked_segments}",
+        f"- Mindestgroesse eines Segments: {MIN_EVENT_PHOTOS} Fotos",
+        "",
+        "| Grund | an einer Kante beteiligt | an allen Kanten der Grund |",
+        "|---|---|---|",
+    ]
+    for reason in MERGE_BLOCK_REASONS:
+        involved = blocks.involved[reason]
+        at_every_edge = blocks.at_every_edge[reason]
+        lines.append(
+            f"| {reason} | {involved} ({_percent(involved, blocks.blocked_segments)}) "
+            f"| {at_every_edge} ({_percent(at_every_edge, blocks.blocked_segments)}) |"
+        )
+
+    lines += [
+        "",
+        "Gezaehlt werden SEGMENTE, nie Kanten, und ein Segment hat so viele Kanten, wie es Nachbarn",
+        "hat. An einer Kante duerfen mehrere Gruende gleichzeitig stehen; ausgewiesen werden alle.",
+        "",
+        "Nur die zweite Spalte ist handlungsleitend: Sie zaehlt die Segmente, an deren JEDER Kante",
+        "dieser Grund stand und sonst keiner - allein dort loest seine Behebung die Zusammenlegung",
+        "aus. Steht daneben ein zweiter Grund, bleibt die Kante auch ohne diesen gesperrt; stand er",
+        "nur an einer von zwei Kanten, hat er die Zusammenlegung nicht fuer sich verhindert.",
+        "",
+        "`kein_nachbar` greift nur, wenn es UEBERHAUPT keinen Nachbarn gibt. Eine fehlende Seite am",
+        "Rand ist kein Hindernis und zaehlt nicht als Kante.",
+        "",
+        "`unantastbar` ist kein Riegel, sondern die Zusage, dass eine Grenze mit der Ursache",
+        "`motivwechsel` oder `sehenswuerdigkeit` nie aufgeloest wird. Ihre Behebung waere eine",
+        "andere Entscheidung als die Aenderung einer Zahl.",
+        "",
+        "Dieser Lauf beobachtet nur: An der Gliederung und an den Riegeln aendert er nichts.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def render_report(
     probe: EventProbeInput,
     formation: EventFormation,
@@ -863,13 +987,25 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--project-id", type=int, required=True)
-    parser.add_argument(
+    # EINANDER AUSSCHLIESSEND: Zwei Modi gleichzeitig ist keine Frage, die eine Antwort hat, und
+    # eine stille Vorrangregel gaebe einen Bericht aus, den niemand angefordert hat.
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--motiv",
         action="store_true",
         help=(
             "Statt der Bloecke A-C: die Empfindlichkeit des Motivwechsels. Dieselbe "
             "Kandidatenmenge unter mehreren Kombinationen aus der Zahl der bestaetigenden Fotos "
             "und der Motivstaerke-Grenze. Beide Konstanten bleiben dabei unveraendert."
+        ),
+    )
+    modes.add_argument(
+        "--riegel",
+        action="store_true",
+        help=(
+            "Statt der Bloecke A-C: woran eine Zusammenlegung scheitert. Je zu kleinem Segment, "
+            "das nicht zugeschlagen werden konnte, der Grund an seinen Kanten. Dieselbe "
+            "Gliederung wie ohne Schalter - der Modus beobachtet, er aendert nichts."
         ),
     )
     parser.add_argument(
@@ -884,7 +1020,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 async def _probe_with_own_session(
-    database_url: str, *, project_id: int, dataset_path: Path, motif: bool = False
+    database_url: str,
+    *,
+    project_id: int,
+    dataset_path: Path,
+    motif: bool = False,
+    bolts: bool = False,
 ) -> str:
     engine = make_engine(database_url)
     try:
@@ -908,6 +1049,12 @@ async def _probe_with_own_session(
 
     # DERSELBE Durchlauf, den auch der Lauf nimmt - nur zusaetzlich mit den Ursachen.
     formation = explain_events(probe.candidates)
+
+    if bolts:
+        # DIESELBE Gliederung wie ohne Schalter, aus demselben Aufruf: Ein eigener Rechenweg
+        # maesse die Blockaden einer Gliederung, die so nie entstanden ist. Den Ortsauszug fragt
+        # Block F ebensowenig wie Block E - keine seiner Zahlen haengt an einer Ortsangabe.
+        return render_bolt_report(probe, formation)
 
     cells = sorted(
         {
@@ -954,6 +1101,7 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
                 project_id=args.project_id,
                 dataset_path=Path(args.ortsdatensatz or settings.place_dataset_path),
                 motif=args.motiv,
+                bolts=args.riegel,
             )
         )
     except (EventProbeError, PlaceDatasetError) as exc:

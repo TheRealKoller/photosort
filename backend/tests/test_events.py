@@ -19,6 +19,12 @@ from photosort.events import (
     BOUNDARY_MOTIF_CHANGE,
     BOUNDARY_STEP,
     BOUNDARY_TIME_GAP,
+    MERGE_BLOCK_EXTENT,
+    MERGE_BLOCK_NO_NEIGHBOUR,
+    MERGE_BLOCK_REASONS,
+    MERGE_BLOCK_SPAN,
+    MERGE_BLOCK_TIME_GAP,
+    MERGE_BLOCK_UNBREAKABLE,
     UNBREAKABLE_CAUSES,
     BoundarySignal,
     BuiltEvent,
@@ -2553,6 +2559,258 @@ class TestTheCounterIndicationOfTheThirdStage(_UnderShiftedEventConstants):
 
         assert outcome.dissolved_boundaries == 1
         assert outcome.moved_photo_ids == frozenset({10})
+
+
+class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
+    """Block F: Je zu kleinem Segment, das NICHT zugeschlagen werden konnte, steht fest, welche
+    Gruende an seinen Kanten standen.
+
+    JE KANTE EINE MENGE, nie ein einzelner Grund: Mehrere Riegel duerfen gleichzeitig zutreffen,
+    und eine Meldung mit einem Grund je Kante unterschluege die spaeter geprueften - `ausdehnung`
+    steht als letzter und ist genau die Zahl, an der die Frage dieses Blocks haengt.
+
+    EIN SEGMENT HAT SO VIELE KANTEN, WIE ES NACHBARN HAT. Eine nicht vorhandene Seite ist kein
+    Hindernis; sie als Kante zu fuehren verfaelschte "an allen Kanten der Grund" - die einzige
+    handlungsleitende Spalte - bei jedem Randsegment. `kein_nachbar` greift nur, wenn es
+    ueberhaupt keinen Nachbarn gibt."""
+
+    def _tiny_between(
+        self,
+        *,
+        gap_after: timedelta = EPSILON_TIME,
+        meters_before: float = 0.0,
+        causes: Collection[str] = (BOUNDARY_TIME_GAP,),
+    ) -> list[Segment]:
+        return [
+            _normal_until(timedelta(0), first_id=1, meters_north=meters_before),
+            _tiny(EPSILON_TIME, first_id=10, causes=causes),
+            _normal_from(EPSILON_TIME + gap_after, first_id=20, causes={BOUNDARY_TIME_GAP}),
+        ]
+
+    def test_nothing_is_reported_when_everything_could_be_merged(self) -> None:
+        """Der ROT-ANKER: Ohne ihn bestuenden die Faelle darunter auch dann, wenn jede beliebige
+        Lage als gesperrt gemeldet wuerde."""
+        segments = [
+            _normal_until(timedelta(0), first_id=1),
+            _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
+        ]
+
+        outcome = merge_small_segments(segments)
+
+        assert outcome.dissolved_boundaries == 1
+        assert outcome.blocked_segments == ()
+
+    def test_a_segment_at_the_minimum_is_no_case_of_this_block(self) -> None:
+        """Riegel (d) haengt an der AUSWAHL, nicht an einer Kante: Ein Segment, das nicht zu klein
+        ist, wird gar nicht erst betrachtet - und taucht deshalb mit keinem Grund auf."""
+        segments = [
+            _normal_until(timedelta(0), first_id=1),
+            _normal_from(_merge_gap() + EPSILON_TIME, first_id=100, causes={BOUNDARY_TIME_GAP}),
+        ]
+
+        assert merge_small_segments(segments).blocked_segments == ()
+
+    def test_an_untouchable_boundary_is_a_reason_of_its_own(self) -> None:
+        """Die Unantastbarkeit ist keine Schwelle, sondern eine Zusage - ihre Behebung waere eine
+        andere Entscheidung als die Aenderung einer Zahl."""
+        segments = self._tiny_between(causes={BOUNDARY_MOTIF_CHANGE})
+        segments[2] = _normal_from(2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_MOTIF_CHANGE})
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (
+            frozenset({MERGE_BLOCK_UNBREAKABLE}),
+            frozenset({MERGE_BLOCK_UNBREAKABLE}),
+        )
+
+    def test_the_gap_to_the_neighbour(self) -> None:
+        segments = [
+            _normal_until(timedelta(0), first_id=1),
+            _tiny(_merge_gap() + EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (frozenset({MERGE_BLOCK_TIME_GAP}),)
+
+    def test_the_duration_of_the_result(self) -> None:
+        segments = [
+            _normal_spanning_the_maximum(first_id=1),
+            _tiny(_max_span() + EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (frozenset({MERGE_BLOCK_SPAN}),)
+
+    def test_the_extent_of_the_result(self) -> None:
+        segments = [
+            _normal_until(timedelta(0), first_id=1, meters_north=0.0),
+            _tiny(
+                EPSILON_TIME,
+                first_id=10,
+                causes={BOUNDARY_TIME_GAP},
+                meters_north=_extent_max() + EPSILON_METERS,
+            ),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (frozenset({MERGE_BLOCK_EXTENT}),)
+
+    def test_a_segment_without_any_neighbour_at_all(self) -> None:
+        """`kein_nachbar` greift NUR hier - ein einziges Segment im ganzen Lauf. Eine bloss
+        fehlende SEITE eines Randsegments ist kein Hindernis und zaehlt nicht als Kante."""
+        [blocked] = merge_small_segments([_tiny(timedelta(0), first_id=1)]).blocked_segments
+
+        assert blocked.edges == (frozenset({MERGE_BLOCK_NO_NEIGHBOUR}),)
+
+    def test_a_segment_at_the_edge_of_the_run_has_exactly_one_edge(self) -> None:
+        """Die fehlende Seite taucht NICHT auf. Als eigene Kante gefuehrt, faende sich dieses
+        Segment in "an allen Kanten der Grund" bei keinem einzigen Grund wieder - obwohl die
+        Ausdehnung dort der Grund war."""
+        segments = [
+            _tiny(timedelta(0), first_id=1, meters_north=0.0),
+            _normal_from(
+                EPSILON_TIME,
+                first_id=10,
+                causes={BOUNDARY_TIME_GAP},
+                meters_north=_extent_max() + EPSILON_METERS,
+            ),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (frozenset({MERGE_BLOCK_EXTENT}),)
+
+    def test_two_neighbours_can_stand_for_two_different_reasons(self) -> None:
+        """Genau die Lage, fuer die es zwei Zahlen braucht: Keiner der beiden Gruende stand an
+        allen Kanten, und eine Zaehlung nur ueber "beteiligt" legte beide Behebungen nahe."""
+        segments = [
+            _normal_until(timedelta(0), first_id=1, meters_north=_extent_max() + EPSILON_METERS),
+            _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
+            _normal_from(_merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (
+            frozenset({MERGE_BLOCK_EXTENT}),
+            frozenset({MERGE_BLOCK_TIME_GAP}),
+        )
+
+    def test_an_edge_that_violates_several_bolts_reports_them_all(self) -> None:
+        """NICHT KURZGESCHLOSSEN, dieselbe Zusage wie fuer die Signale des Durchlaufs
+        (`TestSignalsAreNeverShortCircuited`): Alle vier werden ausgewertet. Sonst verschwaende
+        `ausdehnung` als zuletzt geprueftes hinter jedem frueheren Grund - und das ist genau die
+        Zahl, an der die Frage dieses Blocks haengt. Eine Lage, die ALLE VIER zugleich verletzt."""
+        segments = [
+            _normal_spanning_the_maximum(first_id=1),
+            _tiny(
+                _max_span() + _merge_gap() + EPSILON_TIME,
+                first_id=10,
+                causes={BOUNDARY_MOTIF_CHANGE},
+                meters_north=_extent_max() + EPSILON_METERS,
+            ),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (
+            frozenset(
+                {
+                    MERGE_BLOCK_UNBREAKABLE,
+                    MERGE_BLOCK_TIME_GAP,
+                    MERGE_BLOCK_SPAN,
+                    MERGE_BLOCK_EXTENT,
+                }
+            ),
+        )
+
+    def test_the_extent_is_reported_next_to_an_earlier_bolt(self) -> None:
+        """Der Fall, den der Kurzschluss verschluckte: Zeitluecke UND Ausdehnung an derselben
+        Kante. Wer nur die Zeitluecke lockert, steht danach vor der Ausdehnung."""
+        segments = [
+            _normal_until(timedelta(0), first_id=1, meters_north=0.0),
+            _tiny(
+                _merge_gap() + EPSILON_TIME,
+                first_id=10,
+                causes={BOUNDARY_TIME_GAP},
+                meters_north=_extent_max() + EPSILON_METERS,
+            ),
+        ]
+
+        [blocked] = merge_small_segments(segments).blocked_segments
+
+        assert blocked.edges == (frozenset({MERGE_BLOCK_TIME_GAP, MERGE_BLOCK_EXTENT}),)
+
+    def test_every_reported_reason_comes_from_the_closed_supply(self) -> None:
+        """Der Vorrat ist geschlossen: Ein Grund ausserhalb stuende in keiner Zeile des Berichts,
+        ohne dass eine Summe kleiner wuerde. Und keine Kante ist leer - eine offene Kante waere
+        ein zulaessiger Nachbar, dann waere das Segment gar nicht gesperrt."""
+        for segments in (
+            self._tiny_between(gap_after=_merge_gap()),
+            [_tiny(timedelta(0), first_id=1)],
+            [
+                _normal_spanning_the_maximum(first_id=1),
+                _tiny(_max_span() + EPSILON_TIME, first_id=10, causes={BOUNDARY_LANDMARK}),
+            ],
+        ):
+            for blocked in merge_small_segments(segments).blocked_segments:
+                for edge in blocked.edges:
+                    assert edge, "eine leere Kante waere ein zulaessiger Nachbar"
+                    assert edge <= set(MERGE_BLOCK_REASONS)
+                assert 1 <= len(blocked.edges) <= 2, "so viele Kanten, wie es Nachbarn gibt"
+
+    def test_the_supply_is_exactly_these_five(self) -> None:
+        assert MERGE_BLOCK_REASONS == (
+            MERGE_BLOCK_UNBREAKABLE,
+            MERGE_BLOCK_TIME_GAP,
+            MERGE_BLOCK_SPAN,
+            MERGE_BLOCK_EXTENT,
+            MERGE_BLOCK_NO_NEIGHBOUR,
+        )
+
+    def test_exactly_the_segments_that_stayed_too_small_are_reported(self) -> None:
+        """Die Bilanz statt einer Behauptung ueber den Ablauf: Beobachtet wird, was tatsaechlich
+        stehen geblieben ist - nicht mehr und nicht weniger."""
+        segments = [
+            _tiny(timedelta(0), first_id=1, causes=()),
+            _tiny(_merge_gap() + EPSILON_TIME, first_id=10, causes={BOUNDARY_MOTIF_CHANGE}),
+            _normal_from(
+                2 * _merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}
+            ),
+        ]
+
+        outcome = merge_small_segments(segments)
+
+        still_small = [
+            segment
+            for segment in outcome.segments
+            if len(segment.members) < events_module.MIN_EVENT_PHOTOS
+        ]
+        assert len(outcome.blocked_segments) == len(still_small) == 2
+
+    def test_the_observation_reaches_the_explaining_form(self) -> None:
+        """Ohne diesen Weg bliebe die Diagnose in der Stufe stehen, und das Messkommando muesste
+        sie nachbilden - es maesse dann etwas anderes, als die Stufe tut."""
+        minimum = events_module.MIN_EVENT_PHOTOS
+        gap = _merge_gap() + EPSILON_TIME
+        # Das erste Segment traegt GENAU die Mindestgroesse - unter einer anderen waere es selbst
+        # zu klein und zoege sich in den Fall hinein, den der Fall nicht misst.
+        candidates = [
+            _placeless_candidate(index, T0 + index * EPSILON_TIME) for index in range(minimum)
+        ]
+        candidates.append(_placeless_candidate(minimum, T0 + (minimum - 1) * EPSILON_TIME + gap))
+
+        formation = explain_events(candidates)
+
+        assert [event.photo_ids for event in formation.events] == [
+            tuple(range(minimum)),
+            (minimum,),
+        ]
+        [blocked] = formation.blocked_segments
+        assert blocked.edges == (frozenset({MERGE_BLOCK_TIME_GAP}),)
 
 
 class TestBuildEventsRunsTheThirdStage:

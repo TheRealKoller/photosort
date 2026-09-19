@@ -112,6 +112,39 @@ BOUNDARY_CAUSES = (
 # abgetrenntes Einzelbild bleibt dadurch allein - genau das sagt ADR 0109 bereits zu.
 UNBREAKABLE_CAUSES = frozenset({BOUNDARY_MOTIF_CHANGE, BOUNDARY_LANDMARK})
 
+# WORAN EINE ZUSAMMENLEGUNG SCHEITERT - der geschlossene Vorrat der Gruende, die an einer KANTE
+# eines zu kleinen Segments stehen koennen. Die Reihenfolge ist die der Riegel in `_may_merge` und
+# legt die Zeilenfolge des Berichts fest - sie ist KEIN Vorrang: Die Pruefung ist nicht
+# kurzgeschlossen, jede Kante meldet alle zutreffenden Gruende.
+#
+# `MERGE_BLOCK_NO_NEIGHBOUR` ist kein Riegel, sondern der Fall "es gibt ueberhaupt keinen
+# Nachbarn". Eine bloss fehlende SEITE eines Randsegments faellt nicht darunter - sie ist kein
+# Hindernis und keine Kante.
+#
+# DIE UNANTASTBARKEIT ZAEHLT ALS EIGENER GRUND, NICHT ALS VIERTER RIEGEL. Sie ist keine Schwelle,
+# sondern eine Zusage, und ihre Behebung waere eine andere Entscheidung als die Aenderung einer
+# Zahl. Ohne diese Trennung bliebe offen, ob eine Schwelle oder die Sperre blockiert hat.
+#
+# Riegel (d) - das Segment liegt selbst unter der Mindestgroesse - steht hier NICHT: Er haengt an
+# der Auswahl, nicht an einer Kante, und ein Segment, das nicht zu klein ist, wird gar nicht erst
+# betrachtet.
+#
+# Gleichlautend mit drei Eintraegen aus `BOUNDARY_CAUSES` und doch ein eigener Vorrat: Eine
+# TRENNURSACHE sagt, warum eine Grenze entstand, ein GRUND hier, warum sie nicht wieder verschwand.
+MERGE_BLOCK_UNBREAKABLE = "unantastbar"
+MERGE_BLOCK_TIME_GAP = "zeitluecke"
+MERGE_BLOCK_SPAN = "dauer"
+MERGE_BLOCK_EXTENT = "ausdehnung"
+MERGE_BLOCK_NO_NEIGHBOUR = "kein_nachbar"
+
+MERGE_BLOCK_REASONS = (
+    MERGE_BLOCK_UNBREAKABLE,
+    MERGE_BLOCK_TIME_GAP,
+    MERGE_BLOCK_SPAN,
+    MERGE_BLOCK_EXTENT,
+    MERGE_BLOCK_NO_NEIGHBOUR,
+)
+
 # Wie viele aufeinanderfolgende mitredende Fotos einen Motivwechsel bestaetigen muessen, das erste
 # abweichende eingeschlossen. Dokumentierte, UNKALIBRIERTE Modulkonstante im Muster von
 # EVENT_EXTENT_MAX_METERS - aenderbar, durch keinen Test auf den Zahlwert gepinnt.
@@ -797,6 +830,28 @@ class Segment:
 
 
 @dataclass(frozen=True)
+class BlockedSegment:
+    """Ein zu kleines Segment, das NICHT zugeschlagen werden konnte, samt den Gruenden je Kante
+    (Block F).
+
+    `edges` traegt EINEN EINTRAG JE NACHBARN (also einen oder zwei), in der Reihenfolge frueherer,
+    spaeterer; je Eintrag die MENGE der Gruende, die diese Kante sperren. Keine Menge ist leer -
+    eine offene Kante waere ein zulaessiger Nachbar, und dann waere das Segment nicht gesperrt.
+    Hat das Segment ueberhaupt keinen Nachbarn, steht dort der eine Eintrag
+    `{MERGE_BLOCK_NO_NEIGHBOUR}`.
+
+    Eine MENGE je Kante, kein einzelner Grund: Mehrere Riegel duerfen gleichzeitig zutreffen, und
+    ein Bericht mit einem Grund je Kante unterschluege die spaeter geprueften.
+
+    Daraus entstehen die beiden Zahlen von Block F - "war an einer Kante beteiligt" und "war an
+    allen Kanten der Grund"; nur die zweite ist handlungsleitend.
+
+    REIN BEOBACHTET: Die Aufzeichnung aendert an der Gliederung nichts."""
+
+    edges: tuple[frozenset[str], ...]
+
+
+@dataclass(frozen=True)
 class MergeOutcome:
     """Das Ergebnis von Stufe 3 samt seiner GEGENANZEIGE.
 
@@ -813,6 +868,10 @@ class MergeOutcome:
     segments: tuple[Segment, ...]
     dissolved_boundaries: int
     moved_photo_ids: frozenset[int]
+    # Woran es lag, dass diese Stufe fast nichts aufgeloest hat - je gesperrtem Segment einer.
+    # Die GEGENANZEIGE oben misst, wie viel zusammengelegt WURDE; ohne diese Liste bleibt
+    # unbeantwortet, was das Uebrige verhindert hat.
+    blocked_segments: tuple[BlockedSegment, ...] = ()
 
 
 def _extent_meters(members: Sequence[EventCandidate]) -> float:
@@ -850,9 +909,22 @@ def _step_over(earlier: Segment, later: Segment) -> float:
     return haversine_meters(from_location.lat, from_location.lon, to_location.lat, to_location.lon)
 
 
-def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) -> bool:
+def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) -> frozenset[str]:
     """Drei der VIER RIEGEL plus die beiden unantastbaren Grenzen - alles, was an einer KANTE
     haengt und deshalb fuer beide Richtungen ueber sie gleich ausfaellt.
+
+    RUECKGABE: die MENGE der Gruende aus `MERGE_BLOCK_REASONS`, die diese Kante sperren - die LEERE
+    Menge, wenn sie offen ist. `_neighbour_for` fragt nur, ob die Menge leer ist; die Gruende
+    fallen damit dort an, wo die Pruefung ohnehin steht. Eine nachbildende zweite Pruefung im
+    Messkommando maesse etwas anderes, als die Stufe tut, waehrend beide fuer sich gruen blieben
+    (ADR 0117 Punkt 5).
+
+    EINE MENGE, NIE EIN EINZELNER GRUND, und die Auswertung ist AUSDRUECKLICH NICHT
+    KURZGESCHLOSSEN - dieselbe Zusage wie fuer die Signale des Durchlaufs: Mehrere Riegel duerfen
+    gleichzeitig zutreffen, und wer nach dem ersten abbricht, unterschlaegt die spaeteren. Das
+    traefe zuerst `ausdehnung` als zuletzt geprueften, und genau an dieser Zahl haengt die Frage,
+    ob Riegel (c) dieselbe Bedingung prueft, deren Ueberschreitung die Trennung ausgeloest hat. Der
+    Preis ist, dass die Ausdehnung auch dann gerechnet wird, wenn schon die Zeitluecke sperrt.
 
     Der vierte Riegel (d) - das Segment selbst liegt unter der Mindestgroesse - haengt am Segment,
     nicht an der Kante, und steht bei der Auswahl. Weil hier nur Kanteneigenschaften stehen, ist
@@ -861,14 +933,16 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
 
     Aufgeloest wird die EROEFFNENDE Grenze des SPAETEREN Segments - `later.causes` ist also die
     Menge, die ueber die Unantastbarkeit entscheidet."""
-    if later.causes & UNBREAKABLE_CAUSES:
-        return False
-    if _gap_between(earlier, later) > merge_max_gap:  # (a)
-        return False
     combined = earlier.members + later.members
-    if combined[-1].taken_at - combined[0].taken_at > EVENT_MAX_SPAN:  # (b)
-        return False
-    return not _extent_meters(combined) > EVENT_EXTENT_MAX_METERS  # (c)
+    # Die Paare werden VOLLSTAENDIG gebaut, bevor die Auswahl sie liest - eine Kette aus
+    # `if ... return` waere der Kurzschluss, den diese Stufe gerade nicht haben darf.
+    checked = (
+        (MERGE_BLOCK_UNBREAKABLE, bool(later.causes & UNBREAKABLE_CAUSES)),
+        (MERGE_BLOCK_TIME_GAP, _gap_between(earlier, later) > merge_max_gap),  # (a)
+        (MERGE_BLOCK_SPAN, combined[-1].taken_at - combined[0].taken_at > EVENT_MAX_SPAN),  # (b)
+        (MERGE_BLOCK_EXTENT, _extent_meters(combined) > EVENT_EXTENT_MAX_METERS),  # (c)
+    )
+    return frozenset(reason for reason, blocking in checked if blocking)
 
 
 def _neighbour_for(
@@ -886,12 +960,45 @@ def _neighbour_for(
             continue
         low = min(index, neighbour)
         earlier, later = working[low], working[low + 1]
-        if not _may_merge(earlier, later, merge_max_gap=merge_max_gap):
+        # Eine nicht leere Menge heisst gesperrt - WELCHE Gruende es sind, entscheidet hier nichts.
+        if _may_merge(earlier, later, merge_max_gap=merge_max_gap):
             continue
         options.append((_gap_between(earlier, later), _step_over(earlier, later), neighbour))
     if not options:
         return None
     return min(options)[2]
+
+
+def _blocking_edges(
+    working: Sequence[Segment], index: int, *, merge_max_gap: timedelta
+) -> tuple[frozenset[str], ...]:
+    """Je KANTE die Menge ihrer Sperrgruende, in der Reihenfolge frueherer, spaeterer Nachbar - die
+    Beobachtung zu einem Segment, das nicht zugeschlagen werden konnte (Block F).
+
+    EIN SEGMENT HAT SO VIELE KANTEN, WIE ES NACHBARN HAT. Eine nicht vorhandene Seite eines
+    Randsegments ist KEINE Kante: Sie ist kein Hindernis, und sie mitzuzaehlen hiesse, dass an
+    einem Randsegment nie ein Grund "an allen Kanten" steht - die eine handlungsleitende Spalte
+    waere dort strukturell leer. `MERGE_BLOCK_NO_NEIGHBOUR` bleibt deshalb dem Fall vorbehalten, in
+    dem es UEBERHAUPT keinen Nachbarn gibt (ein einziges Segment im ganzen Lauf); dass dieser
+    Eintrag sonst immer null ist, ist eine ehrliche Null.
+
+    AUFGERUFEN ERST, NACHDEM `_neighbour_for` keinen Nachbarn gefunden hat: Dann ist jede Kante
+    gesperrt, also keine der zurueckgegebenen Mengen leer.
+
+    Beobachtend: Diese Funktion wird ausschliesslich gelesen, sie entscheidet nichts. Die Gruende
+    kommen aus derselben Pruefung, die auch die Stufe fuehrt - nicht aus einer Nachbildung."""
+    edges = [
+        _may_merge(
+            working[min(index, neighbour)],
+            working[min(index, neighbour) + 1],
+            merge_max_gap=merge_max_gap,
+        )
+        for neighbour in (index - 1, index + 1)
+        if 0 <= neighbour < len(working)
+    ]
+    if not edges:
+        return (frozenset({MERGE_BLOCK_NO_NEIGHBOUR}),)
+    return tuple(edges)
 
 
 def _smallest_open_index(
@@ -949,6 +1056,7 @@ def merge_small_segments(
 
     working = list(segments)
     blocked = [False] * len(working)
+    reported: list[BlockedSegment] = []
     limit = _round_limit(len(working))
     dissolved = 0
     moved: set[int] = set()
@@ -963,6 +1071,12 @@ def merge_small_segments(
             )
         neighbour = _neighbour_for(working, index, merge_max_gap=gap)
         if neighbour is None:
+            # BEOBACHTET IN DEM AUGENBLICK, IN DEM ES FESTSTEHT: Ein gesperrtes Segment wird durch
+            # keine spaetere Runde wieder zulaessig (siehe `_round_limit`), und spaeter waeren die
+            # Nachbarn womoeglich andere.
+            reported.append(
+                BlockedSegment(edges=_blocking_edges(working, index, merge_max_gap=gap))
+            )
             blocked[index] = True
             continue
         low = min(index, neighbour)
@@ -979,6 +1093,7 @@ def merge_small_segments(
         segments=tuple(working),
         dissolved_boundaries=dissolved,
         moved_photo_ids=frozenset(moved),
+        blocked_segments=tuple(reported),
     )
 
 
@@ -1004,12 +1119,17 @@ class EventFormation:
 
     `dissolved_boundaries` und `moved_photos` sind die GEGENANZEIGE von Stufe 3 (siehe
     `MergeOutcome`). Sie beziehen sich auf die Gliederung VOR dem Zusammenlegen; die Zahl der
-    Grenzen davor ist `len(events) - 1 + dissolved_boundaries`."""
+    Grenzen davor ist `len(events) - 1 + dissolved_boundaries`.
+
+    `blocked_segments` ist die Gegenfrage dazu: woran es lag, dass das Uebrige NICHT zusammengelegt
+    wurde (Block F). Sie reicht die Beobachtung der Stufe durch, statt dass ein Aufrufer sie
+    nachbildet."""
 
     events: tuple[BuiltEvent, ...]
     causes: tuple[frozenset[str], ...]
     dissolved_boundaries: int = 0
     moved_photos: int = 0
+    blocked_segments: tuple[BlockedSegment, ...] = ()
 
 
 def build_events(
@@ -1118,6 +1238,7 @@ def explain_events(
         causes=tuple(segment.causes for segment in outcome.segments),
         dissolved_boundaries=outcome.dissolved_boundaries,
         moved_photos=len(outcome.moved_photo_ids),
+        blocked_segments=outcome.blocked_segments,
     )
 
 

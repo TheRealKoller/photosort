@@ -27,6 +27,7 @@ from photosort.event_probe import (
     MOTIF_CONFIRMING_VARIANTS,
     MOTIF_STRENGTH_VARIANTS,
     EventProbeError,
+    block_counts,
     cause_counts,
     inheritance_counts,
     landmark_counts,
@@ -41,10 +42,17 @@ from photosort.events import (
     BOUNDARY_MOTIF_CHANGE,
     BOUNDARY_STEP,
     BOUNDARY_TIME_GAP,
+    MERGE_BLOCK_EXTENT,
+    MERGE_BLOCK_NO_NEIGHBOUR,
+    MERGE_BLOCK_REASONS,
+    MERGE_BLOCK_TIME_GAP,
+    MERGE_BLOCK_UNBREAKABLE,
+    BlockedSegment,
     BuiltEvent,
     EventCandidate,
     EventFormation,
     LocationEntry,
+    build_events,
     explain_events,
 )
 from photosort.geonames import GEONAMES_MAX_DISTANCE_METERS, dataset_hash_path
@@ -403,6 +411,138 @@ class TestBlockBCountsTheCounterIndicationOfTheThirdStage:
         assert (counts.dissolved_by_merge, counts.photos_moved_by_merge) == (1, 1)
         assert counts.boundaries_before_merge == 1
         assert counts.boundaries_total == 0
+
+
+def _blocked_formation(*blocked: tuple[frozenset[str], ...]) -> EventFormation:
+    """Eine Gliederung samt der Beobachtung von Stufe 3, von Hand gestellt: je gesperrtem Segment
+    seine Kanten, je Kante die Menge der Gruende.
+
+    Von Hand statt ueber `merge_small_segments`, weil Block F eine reine Zaehlung ueber diese
+    Mengen ist - eine Testlage aus Zeitabstaenden haenge an den Zahlwerten der Schwellen. Dass die
+    Mengen entstehen, wie sie entstehen, haelt `test_events.py::TestWhyASegmentCouldNotBeMerged`
+    fest."""
+    return EventFormation(
+        events=(_segment(1, 1),),
+        causes=(frozenset(),),
+        blocked_segments=tuple(BlockedSegment(edges=edges) for edges in blocked),
+    )
+
+
+def _edges(*reasons: Collection[str]) -> tuple[frozenset[str], ...]:
+    """Die Kanten eines gesperrten Segments - je Kante die Menge ihrer Gruende."""
+    return tuple(frozenset(reason) for reason in reasons)
+
+
+class TestBlockFWhyAMergeFailed:
+    """Woran eine Zusammenlegung scheitert. ZWEI Zahlen je Grund, und nur die zweite ist
+    handlungsleitend: Ein Segment mit zwei Nachbarn hat zwei Kanten, und ein Grund, der nur an
+    einer stand, hat die Zusammenlegung nicht verhindert.
+
+    "An allen Kanten DER Grund" heisst: an jeder Kante stand er, und an keiner stand etwas
+    daneben. Nur dann loest seine Behebung dieses Segment tatsaechlich auf - dieselbe Bedeutung wie
+    "alleinige Ursache" in Block B."""
+
+    def test_the_hand_computed_graph(self) -> None:
+        counts = block_counts(
+            _blocked_formation(
+                # An BEIDEN Kanten derselbe, einzige Grund - er hat fuer sich gesperrt.
+                _edges({MERGE_BLOCK_UNBREAKABLE}, {MERGE_BLOCK_UNBREAKABLE}),
+                # Zwei verschiedene Gruende: beide beteiligt, keiner an allen Kanten.
+                _edges({MERGE_BLOCK_EXTENT}, {MERGE_BLOCK_TIME_GAP}),
+                # Ein Randsegment: EINE Kante, dort zwei Gruende gleichzeitig. Beteiligt sind
+                # beide; keiner stand allein, also traegt keiner die zweite Spalte.
+                _edges({MERGE_BLOCK_EXTENT, MERGE_BLOCK_TIME_GAP}),
+            )
+        )
+
+        assert counts.blocked_segments == 3
+        assert counts.involved[MERGE_BLOCK_UNBREAKABLE] == 1
+        assert counts.involved[MERGE_BLOCK_EXTENT] == 2
+        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 2
+        assert counts.involved[MERGE_BLOCK_NO_NEIGHBOUR] == 0
+        assert counts.at_every_edge[MERGE_BLOCK_UNBREAKABLE] == 1
+        assert counts.at_every_edge[MERGE_BLOCK_EXTENT] == 0
+        assert counts.at_every_edge[MERGE_BLOCK_TIME_GAP] == 0
+        assert counts.at_every_edge[MERGE_BLOCK_NO_NEIGHBOUR] == 0
+
+    def test_a_reason_beside_another_one_is_never_the_reason_at_that_edge(self) -> None:
+        """Der Fall, der die zweite Spalte belastbar macht: `ausdehnung` steht an beiden Kanten,
+        an einer aber neben `zeitluecke`. Seine Behebung loeste dieses Segment NICHT auf - die
+        Spalte darf ihn deshalb nicht zaehlen, die erste sehr wohl."""
+        counts = block_counts(
+            _blocked_formation(
+                _edges({MERGE_BLOCK_EXTENT}, {MERGE_BLOCK_EXTENT, MERGE_BLOCK_TIME_GAP})
+            )
+        )
+
+        assert counts.involved[MERGE_BLOCK_EXTENT] == 1
+        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 1
+        assert counts.at_every_edge[MERGE_BLOCK_EXTENT] == 0
+
+    def test_a_reason_is_counted_once_per_segment_not_once_per_edge(self) -> None:
+        """Gezaehlt werden SEGMENTE: Die Frage ist, wie viele Zusammenlegungen ein Grund verhindert
+        hat, nicht wie oft er auftrat."""
+        counts = block_counts(
+            _blocked_formation(_edges({MERGE_BLOCK_TIME_GAP}, {MERGE_BLOCK_TIME_GAP}))
+        )
+
+        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 1
+        assert counts.at_every_edge[MERGE_BLOCK_TIME_GAP] == 1
+
+    def test_every_reason_of_the_closed_supply_appears_even_at_zero(self) -> None:
+        """Ein Grund, der nie an einer Kante stand, steht mit null da - er faellt nicht aus dem
+        Bericht. Sonst waere er still unvollstaendig, ohne dass eine Summe kleiner wuerde."""
+        counts = block_counts(_blocked_formation(_edges({MERGE_BLOCK_TIME_GAP})))
+
+        assert set(counts.involved) == set(MERGE_BLOCK_REASONS)
+        assert set(counts.at_every_edge) == set(MERGE_BLOCK_REASONS)
+
+    def test_a_run_where_everything_could_be_merged_reports_no_blockade(self) -> None:
+        counts = block_counts(_blocked_formation())
+
+        assert counts.blocked_segments == 0
+        assert sum(counts.involved.values()) == 0
+        assert sum(counts.at_every_edge.values()) == 0
+
+    def test_a_reason_outside_the_closed_supply_refuses_loudly(self) -> None:
+        """Nicht stillschweigend uebergehen: Ein kuenftiger Riegel ohne Eintrag in
+        `MERGE_BLOCK_REASONS` verschwaende sonst aus dem Bericht."""
+        with pytest.raises(EventProbeError):
+            block_counts(_blocked_formation(_edges({"erfunden"})))
+
+    def test_the_counts_come_from_the_real_run_not_from_a_second_pass(self) -> None:
+        """ADR 0117 Punkt 5: Gezaehlt wird, woran die Stufe TATSAECHLICH gescheitert ist. Eine
+        nachbildende Pruefung im Messkommando maesse etwas anderes, als die Stufe tut, waehrend
+        beide fuer sich gruen blieben."""
+        gap = events_module.MERGE_MAX_GAP + timedelta(seconds=1)
+        candidates = [
+            EventCandidate(photo_id=1, taken_at=NOW),
+            EventCandidate(photo_id=2, taken_at=NOW + timedelta(seconds=1)),
+            EventCandidate(photo_id=3, taken_at=NOW + timedelta(seconds=1) + gap),
+        ]
+
+        counts = block_counts(explain_events(candidates))
+
+        assert counts.blocked_segments == 1
+        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 1
+        assert counts.at_every_edge[MERGE_BLOCK_TIME_GAP] == 1
+        assert counts.involved[MERGE_BLOCK_NO_NEIGHBOUR] == 0
+
+    def test_the_grouping_is_the_one_build_events_would_have_produced(self) -> None:
+        """Beobachten, nicht veraendern: Der Modus rechnet dieselbe Gliederung wie Block A und B.
+        Bekaeme er einen eigenen Rechenweg, maesse er die Blockaden einer Gliederung, die so nie
+        entstanden ist - und beides bliebe fuer sich gruen."""
+        gap = events_module.MERGE_MAX_GAP + timedelta(seconds=1)
+        candidates = [
+            EventCandidate(photo_id=1, taken_at=NOW),
+            EventCandidate(photo_id=2, taken_at=NOW + timedelta(seconds=1)),
+            EventCandidate(photo_id=3, taken_at=NOW + timedelta(seconds=1) + gap),
+        ]
+
+        formation = explain_events(candidates)
+
+        assert formation.blocked_segments, "sonst misst der Fall die Beobachtung gar nicht"
+        assert list(formation.events) == build_events(candidates)
 
 
 # --- Block E: die Empfindlichkeit des Motivwechsels -----------------------------------------------
@@ -946,6 +1086,30 @@ class TestMainRefusesLoudly:
         assert "Median der Fotozahl: -" in report
         assert "laengste Eventdauer: -" in report
 
+    def test_the_bolt_mode_refuses_a_project_without_a_successful_run_too(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JE ARGUMENTFORM: Ohne Gliederung gibt es auch keine Blockade zu messen."""
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> int:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                project_id = await _project(session, "Ohne Lauf")
+                await session.commit()
+            await engine.dispose()
+            return project_id
+
+        project_id = asyncio.run(prepare())
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 1
+        assert "Lauf" in capsys.readouterr().err
+
     def test_the_report_carries_the_counter_indication_of_the_third_stage(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -988,6 +1152,90 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         assert "2029" not in report
         assert "03:47" not in report
         assert f"Projekt {project_id}" in report
+
+    def test_the_bolt_report_carries_none_of_the_six_classes_either(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JE ARGUMENTFORM: Der Bericht von Block F entsteht an einer anderen Stelle und ist von
+        der Zusage der beiden anderen nicht mitgedeckt. Die Gruende selbst sind interne Kennungen
+        aus geschlossenem Vorrat, keine Ortsangaben - der S2-Fall laeuft trotzdem ueber ihn."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "43.5" not in report
+        assert "16.44" not in report
+        assert MEASURED_LOCALITY not in report
+        assert MEASURED_LANDMARK not in report
+        assert MEASURED_OPENCLOUD_PATH not in report
+        assert MEASURED_PHOTO_FILE not in report
+        assert MEASURED_PROJECT_NAME not in report
+        assert "2029" not in report
+        assert "03:47" not in report
+        assert f"Projekt {project_id}" in report
+
+    def test_the_bolt_report_carries_a_row_per_reason_of_the_closed_supply(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Jeder Grund steht da, auch der nie aufgetretene - sonst waere der Bericht still
+        unvollstaendig, ohne dass eine Summe kleiner wuerde."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        for reason in MERGE_BLOCK_REASONS:
+            assert f"| {reason} |" in report
+        # Kopfzeile plus je eine Zeile je Grund (die Trennzeile beginnt mit `|---`).
+        rows = [line for line in report.splitlines() if line.startswith("| ")]
+        assert len(rows) == 1 + len(MERGE_BLOCK_REASONS)
+
+    def test_the_bolt_report_names_the_measured_blockade(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Die Messlage traegt ein Einzelfoto DREI TAGE hinter den uebrigen: Seine eine Kante reisst
+        die Ueberbrueckung UND die Dauergrenze zugleich.
+
+        Damit haengt am Bericht zweierlei. Erstens stehen die Zahlen ueberhaupt darin - sonst
+        haette der Lauf sie zwar gerechnet, aber Daniel bekaeme sie nie zu sehen. Zweitens steht
+        `dauer` daneben: Kurzgeschlossen gaebe es nur `zeitluecke` zu sehen, und wer sie lockerte,
+        staende danach vor der Dauergrenze. Und keiner der beiden traegt die zweite Spalte, weil
+        keiner fuer sich sperrt."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id), "--riegel"], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "zu kleine Segmente, die bestehen blieben: 1" in report
+        assert "| zeitluecke | 1 (100.0 %) | 0 (0.0 %) |" in report
+        assert "| dauer | 1 (100.0 %) | 0 (0.0 %) |" in report
+        assert "| kein_nachbar | 0 (0.0 %) | 0 (0.0 %) |" in report
+
+    def test_the_bolt_mode_measures_nothing_of_the_place_blocks(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Der Modus braucht den Ortsauszug gar nicht - er darf deshalb weder danach fragen noch
+        sein Fehlen als Messergebnis melden."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "NICHT GEMESSEN" not in report
+        assert "C1" not in report
+        assert "C2" not in report
+
+    def test_the_two_measuring_modes_exclude_each_other(self, tmp_path: Path) -> None:
+        """Zwei Modi gleichzeitig ist keine Frage, die eine Antwort hat. Eine stille Vorrangregel
+        gaebe einen Bericht aus, den niemand angefordert hat."""
+        url, project_id = _prepared(tmp_path)
+
+        with pytest.raises(SystemExit):
+            main(["--project-id", str(project_id), "--motiv", "--riegel"], database_url=url)
 
     def test_the_motif_report_carries_a_row_per_combination_plus_the_operating_point(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -1242,6 +1490,26 @@ class TestARealRunChangesNothing:
         before = asyncio.run(snapshot())
 
         exit_code = main(["--project-id", str(project_id), "--motiv"], database_url=url)
+
+        assert exit_code == 0
+        assert asyncio.run(snapshot()) == before
+
+    def test_not_a_single_row_changes_in_the_bolt_mode_either(self, tmp_path: Path) -> None:
+        """JE ARGUMENTFORM einmal: Block F beobachtet eine Stufe, die im Lauf schreibt - hier
+        nicht, und das steht nicht von selbst fest."""
+        url, project_id = _prepared(tmp_path)
+
+        async def snapshot() -> dict[str, list[tuple[object, ...]]]:
+            engine = make_engine(url)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                taken = await _table_snapshot(session)
+            await engine.dispose()
+            return taken
+
+        before = asyncio.run(snapshot())
+
+        exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
 
         assert exit_code == 0
         assert asyncio.run(snapshot()) == before

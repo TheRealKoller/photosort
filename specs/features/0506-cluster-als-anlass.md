@@ -317,6 +317,47 @@ wo Widersprüche auftreten, kann ihn aber nicht **widerlegen**. „Kein systemat
 für die Wege 1 und 2 vollständig, für Weg 3 nur so weit, wie die Widersprüche reichen. Das begrenzt,
 was das Akzeptanzkriterium „belegt oder widerlegt" einlösen kann.
 
+#### Block F — woran eine Zusammenlegung scheitert (`--riegel`)
+
+**Nach der Nachmessung eingefügt.** Sie hat gezeigt, dass Stufe 3 nur 3 von 90 Grenzen aufgelöst hat
+und das Halbierungsziel damit verfehlt (20,5 % statt ≤ 12,1 %). Die Stufe hat nicht zu viel
+verschmolzen, sondern fast nichts — **warum**, weist der Bericht heute nicht aus.
+
+Je zu kleinem Segment, das **nicht** zugeschlagen werden konnte, wird ausgewiesen, welcher Grund an
+seinen Kanten stand. Vorrat, geschlossen und in der Prüfreihenfolge von `_may_merge`:
+
+| Grund | Bedeutung |
+|---|---|
+| `unantastbar` | die eröffnende Grenze trägt `motivwechsel` oder `sehenswuerdigkeit` |
+| `zeitluecke` | Riegel (a): Lücke zum Nachbarn über `MERGE_MAX_GAP` |
+| `dauer` | Riegel (b): das Ergebnis überschritte `EVENT_MAX_SPAN` |
+| `ausdehnung` | Riegel (c): das Ergebnis überschritte `EVENT_EXTENT_MAX_METERS` |
+| `kein_nachbar` | das Segment liegt am Rand und hat auf dieser Seite keinen |
+
+**Eine Kante trägt die Menge ihrer Gründe, nie einen einzelnen** — dieselbe Auflage wie bei den
+Trennursachen und aus demselben Grund: `ausdehnung` wird zuletzt geprüft, und ein Abbruch beim
+ersten Treffer unterschlüge ausgerechnet die Zahl, an der die Frage dieses Blocks hängt. Wer
+daraufhin einen früheren Riegel lockert, steht danach vor dem verdeckten.
+
+Gezählt wird wie in Block B **zweifach**: „war an einer Kante beteiligt" und „war an allen Kanten
+**der** Grund". Die zweite Zahl ist die handlungsleitende, und sie ist streng zu lesen: an jeder
+Kante stand er, und an keiner stand etwas daneben. Nur dann löst seine Behebung das Segment
+tatsächlich auf — die strikte Entsprechung zu „alleinige Ursache" aus Block B, eine Ebene tiefer.
+
+**Ein Segment hat so viele Kanten, wie es Nachbarn hat.** Eine fehlende Seite am Rand des Laufs ist
+keine Kante: Sie ist kein Hindernis, und sie als solches zu zählen nähme einem Randsegment die
+zweite Spalte, obwohl an seiner einen echten Kante sehr wohl ein Grund stand. `kein_nachbar` greift
+deshalb nur, wenn es überhaupt keinen Nachbarn gibt — die Zeile ist damit fast immer null, und das
+ist die ehrliche Form.
+
+**Die Unantastbarkeit zählt als eigener Grund und nicht als Riegel.** Sie ist keine Schwelle,
+sondern eine Zusage, und ihre Behebung wäre eine andere Entscheidung als die Änderung einer Zahl.
+Ohne diese Trennung bliebe nach der Messung offen, ob Riegel (c) oder die Sperre blockiert hat —
+beide Erklärungen sind heute unbelegt und schließen einander nicht aus.
+
+**Rein lesend wie die übrigen Blöcke**, keine Verhaltensänderung an der Gliederung. Der Modus
+rechnet dieselbe Gliederung wie Block A und B und beobachtet dabei Stufe 3, statt sie zu verändern.
+
 #### Block E — die Empfindlichkeit des Motivwechsels (`--motiv`)
 
 **Nach der Ausgangsmessung eingefügt.** Sie hat den Motivwechsel als alleinige Ursache von 62,2 %
@@ -430,6 +471,11 @@ ohne den gemessenen Ausgangswert kein prüfbares Kriterium.
 - **PR 3** — die eigentliche Änderung, deren Zuschnitt erst nach dieser zweiten Messung feststeht:
   die dritte Stufe (Zusammenlegen), die Dauergrenze als Vorsorge, und was die Empfindlichkeitsmessung
   an Schwellen nahelegt. Nachmessung in dasselbe Messprotokoll.
+- **PR 4** — **nach der Nachmessung nötig geworden.** Sie hat die Abnahme verfehlt, und der Grund
+  ist unbelegt: Stufe 3 hat nur 3 von 90 Grenzen aufgelöst. PR 4 liefert **Block F**, der misst,
+  woran eine Zusammenlegung scheitert — wieder ohne Verhaltensänderung, nach demselben Grundsatz,
+  der in dieser Story bereits zwei falsche Annahmen aufgedeckt hat. Was danach geändert wird,
+  entscheidet Daniel an diesen Zahlen.
 
 **Der Ortsfehler ist abgeschlossen.** Block C hat keinen systematischen Fehler belegt; an der
 Ortsbestimmung wird in dieser Spec nichts geändert. Der dabei abgefallene Befund zum
