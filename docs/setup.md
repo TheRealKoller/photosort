@@ -563,6 +563,23 @@ Gegenanzeige gegen zu grobes Zusammenfassen — größtes Event und längste Dau
 bleiben dabei unverändert:** Der Modus rechnet nur variiert durch und ist wie die Blöcke A–C rein
 lesend. Den Ortsauszug fragt er gar nicht.
 
+Mit `--riegel` weist dasselbe Kommando stattdessen aus, woran eine Zusammenlegung scheitert
+(Block F):
+
+```bash
+docker compose exec -T backend python -m photosort.event_probe --project-id <N> --riegel
+```
+
+Je zu kleinem Segment, das die dritte Stufe **nicht** zuschlagen konnte, steht der Grund an seinen
+Kanten — `unantastbar`, `zeitluecke`, `dauer`, `ausdehnung` oder `kein_nachbar`. Gezählt wird
+zweifach wie in Block B: „an einer Kante beteiligt" und „an allen Kanten der Grund". **Nur die
+zweite Spalte ist handlungsleitend:** Ein Segment mit zwei Nachbarn hat zwei Kanten, und ein Grund,
+der nur an einer stand, hat die Zusammenlegung nicht verhindert. Der Modus rechnet dieselbe
+Gliederung wie die Blöcke A und B, beobachtet dabei nur — an Riegeln, Schwellen und Gliederung
+ändert er nichts — und fragt den Ortsauszug so wenig wie `--motiv`.
+
+`--motiv` und `--riegel` schließen einander aus; beides zusammen bricht mit einer Meldung ab.
+
 ## Lokal ausprobieren ohne echten OpenCloud-Server
 
 Für einen ersten Eindruck (Ordner-Browsing, Foto-Scan, automatische Bewertung) braucht es keinen
