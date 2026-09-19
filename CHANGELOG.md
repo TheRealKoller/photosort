@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.48.0](https://github.com/TheRealKoller/photosort/compare/v0.47.0...v0.48.0) (2026-09-19)
+
+
+### Features
+
+* **event-probe:** Empfindlichkeit des Motivwechsels messen (Spec 0506, PR 2 von 3) ([#515](https://github.com/TheRealKoller/photosort/issues/515)) ([1e5c2c6](https://github.com/TheRealKoller/photosort/commit/1e5c2c6cd56edef2f0ef2c9b1662c2c2b89ab427))
+* **event-probe:** messen, woran eine Zusammenlegung scheitert (Spec 0506, PR 4) ([#517](https://github.com/TheRealKoller/photosort/issues/517)) ([6abf896](https://github.com/TheRealKoller/photosort/commit/6abf8967bf9593a19ef165ddde8120a6e50ca3d7))
+* **events:** Dauergrenze statt Kalendertag und zu kleine Cluster zusammenlegen (Spec 0506, PR 3 von 3) ([#516](https://github.com/TheRealKoller/photosort/issues/516)) ([9abe221](https://github.com/TheRealKoller/photosort/commit/9abe2218086e51d7bdb7f6efd3f47509a337213e))
+* **events:** Messkommando für die Event-Gliederung (Spec 0506, PR 1 von 2) ([#512](https://github.com/TheRealKoller/photosort/issues/512)) ([de02a40](https://github.com/TheRealKoller/photosort/commit/de02a40242b3ba3b528c19bc193b9099a4d6bce1))
+* **frontend:** Bilddetailansicht zeigt das Foto groß und das Urteil zuerst (Spec 0497) ([#509](https://github.com/TheRealKoller/photosort/issues/509)) ([3e767a0](https://github.com/TheRealKoller/photosort/commit/3e767a0d427c5e39d447270c0a940ca658ff808f))
+
+
+### Bug Fixes
+
+* **frontend:** Texte und Typografie der Bilddetailansicht an den Entwurf angleichen ([#513](https://github.com/TheRealKoller/photosort/issues/513)) ([4812dba](https://github.com/TheRealKoller/photosort/commit/4812dbac189588bd46cdadc4c8404f8c1c10f336))
+
 ## [0.47.0](https://github.com/TheRealKoller/photosort/compare/v0.46.0...v0.47.0) (2026-09-17)
 
 
