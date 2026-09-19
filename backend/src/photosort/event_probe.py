@@ -57,6 +57,7 @@ from photosort.event_inputs import read_event_inputs
 from photosort.events import (
     BOUNDARY_CAUSES,
     BOUNDARY_MOTIF_CHANGE,
+    MERGE_BLOCK_REASONS,
     MIN_EVENT_PHOTOS,
     EventCandidate,
     EventFormation,
@@ -350,6 +351,59 @@ def cause_counts(formation: EventFormation) -> CauseCounts:
         boundaries_before_merge=boundaries_total + formation.dissolved_boundaries,
         dissolved_by_merge=formation.dissolved_boundaries,
         photos_moved_by_merge=formation.moved_photos,
+    )
+
+
+# --- Block F: woran eine Zusammenlegung scheitert ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BlockCounts:
+    """Block F. ZWEI Zahlen je Grund, und nur die zweite ist handlungsleitend: Ein Segment mit zwei
+    Nachbarn hat zwei Kanten, und ein Grund, der nur an einer stand, hat die Zusammenlegung nicht
+    verhindert - der andere haette es ohnehin getan.
+
+    Beide Abbildungen fuehren JEDEN Grund aus `MERGE_BLOCK_REASONS`, auch den nie aufgetretenen.
+    Eine fehlende Zeile waere ein still unvollstaendiger Bericht, ohne dass eine Summe kleiner
+    wuerde.
+
+    Gezaehlt werden SEGMENTE, nie Kanten: Die Frage ist, wie viele Zusammenlegungen ein Grund
+    verhindert hat, nicht wie oft er auftrat."""
+
+    blocked_segments: int
+    involved: dict[str, int]
+    at_every_edge: dict[str, int]
+
+
+def block_counts(formation: EventFormation) -> BlockCounts:
+    """Block F ueber die Beobachtung DESSELBEN Durchlaufs, der auch die Gliederung gebildet hat.
+
+    Ein Grund ausserhalb des geschlossenen Vorrats laesst diese Zaehlung LAUT scheitern statt sie
+    zu uebergehen: ein kuenftiger Riegel ohne Eintrag in `MERGE_BLOCK_REASONS` verschwaende sonst
+    aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
+    known = set(MERGE_BLOCK_REASONS)
+    unknown = sorted(
+        {reason for blocked in formation.blocked_segments for reason in blocked.reasons} - known
+    )
+    if unknown:
+        raise EventProbeError(
+            "Grund ausserhalb des geschlossenen Vorrats: "
+            f"{', '.join(unknown)}. Der Bericht waere still unvollstaendig - erst "
+            "MERGE_BLOCK_REASONS ergaenzen."
+        )
+
+    involved = {reason: 0 for reason in MERGE_BLOCK_REASONS}
+    at_every_edge = {reason: 0 for reason in MERGE_BLOCK_REASONS}
+    for blocked in formation.blocked_segments:
+        distinct = set(blocked.reasons)
+        for reason in distinct:
+            involved[reason] += 1
+        if len(distinct) == 1:
+            at_every_edge[blocked.reasons[0]] += 1
+    return BlockCounts(
+        blocked_segments=len(formation.blocked_segments),
+        involved=involved,
+        at_every_edge=at_every_edge,
     )
 
 

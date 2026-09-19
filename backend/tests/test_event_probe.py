@@ -27,6 +27,7 @@ from photosort.event_probe import (
     MOTIF_CONFIRMING_VARIANTS,
     MOTIF_STRENGTH_VARIANTS,
     EventProbeError,
+    block_counts,
     cause_counts,
     inheritance_counts,
     landmark_counts,
@@ -41,10 +42,17 @@ from photosort.events import (
     BOUNDARY_MOTIF_CHANGE,
     BOUNDARY_STEP,
     BOUNDARY_TIME_GAP,
+    MERGE_BLOCK_EXTENT,
+    MERGE_BLOCK_NO_NEIGHBOUR,
+    MERGE_BLOCK_REASONS,
+    MERGE_BLOCK_TIME_GAP,
+    MERGE_BLOCK_UNBREAKABLE,
+    BlockedSegment,
     BuiltEvent,
     EventCandidate,
     EventFormation,
     LocationEntry,
+    build_events,
     explain_events,
 )
 from photosort.geonames import GEONAMES_MAX_DISTANCE_METERS, dataset_hash_path
@@ -403,6 +411,103 @@ class TestBlockBCountsTheCounterIndicationOfTheThirdStage:
         assert (counts.dissolved_by_merge, counts.photos_moved_by_merge) == (1, 1)
         assert counts.boundaries_before_merge == 1
         assert counts.boundaries_total == 0
+
+
+def _blocked_formation(*blocked: tuple[str, ...]) -> EventFormation:
+    """Eine Gliederung samt der Beobachtung von Stufe 3, von Hand gestellt: je gesperrtem Segment
+    das Paar seiner Kantengruende.
+
+    Von Hand statt ueber `merge_small_segments`, weil Block F eine reine Zaehlung ueber diese Paare
+    ist - eine Testlage aus Zeitabstaenden haenge an den Zahlwerten der Schwellen. Dass die Paare
+    entstehen, wie sie entstehen, haelt `test_events.py::TestWhyASegmentCouldNotBeMerged` fest."""
+    return EventFormation(
+        events=(_segment(1, 1),),
+        causes=(frozenset(),),
+        blocked_segments=tuple(BlockedSegment(reasons=reasons) for reasons in blocked),
+    )
+
+
+class TestBlockFWhyAMergeFailed:
+    """Woran eine Zusammenlegung scheitert. ZWEI Zahlen je Grund, und nur die zweite ist
+    handlungsleitend: Ein Segment mit zwei Nachbarn hat zwei Kanten, und ein Grund, der nur an
+    einer stand, hat die Zusammenlegung nicht verhindert."""
+
+    def test_the_hand_computed_graph(self) -> None:
+        counts = block_counts(
+            _blocked_formation(
+                # An BEIDEN Kanten derselbe Grund - er hat fuer sich gesperrt.
+                (MERGE_BLOCK_UNBREAKABLE, MERGE_BLOCK_UNBREAKABLE),
+                # Zwei verschiedene Gruende: beide beteiligt, keiner an allen Kanten.
+                (MERGE_BLOCK_EXTENT, MERGE_BLOCK_TIME_GAP),
+                # Ein Randsegment: die fehlende Seite zaehlt als eigene Kante.
+                (MERGE_BLOCK_EXTENT, MERGE_BLOCK_NO_NEIGHBOUR),
+            )
+        )
+
+        assert counts.blocked_segments == 3
+        assert counts.involved[MERGE_BLOCK_UNBREAKABLE] == 1
+        assert counts.involved[MERGE_BLOCK_EXTENT] == 2
+        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 1
+        assert counts.involved[MERGE_BLOCK_NO_NEIGHBOUR] == 1
+        assert counts.at_every_edge[MERGE_BLOCK_UNBREAKABLE] == 1
+        assert counts.at_every_edge[MERGE_BLOCK_EXTENT] == 0
+        assert counts.at_every_edge[MERGE_BLOCK_TIME_GAP] == 0
+        assert counts.at_every_edge[MERGE_BLOCK_NO_NEIGHBOUR] == 0
+
+    def test_every_reason_of_the_closed_supply_appears_even_at_zero(self) -> None:
+        """Ein Grund, der nie an einer Kante stand, steht mit null da - er faellt nicht aus dem
+        Bericht. Sonst waere er still unvollstaendig, ohne dass eine Summe kleiner wuerde."""
+        counts = block_counts(_blocked_formation((MERGE_BLOCK_TIME_GAP, MERGE_BLOCK_TIME_GAP)))
+
+        assert set(counts.involved) == set(MERGE_BLOCK_REASONS)
+        assert set(counts.at_every_edge) == set(MERGE_BLOCK_REASONS)
+
+    def test_a_run_where_everything_could_be_merged_reports_no_blockade(self) -> None:
+        counts = block_counts(_blocked_formation())
+
+        assert counts.blocked_segments == 0
+        assert sum(counts.involved.values()) == 0
+        assert sum(counts.at_every_edge.values()) == 0
+
+    def test_a_reason_outside_the_closed_supply_refuses_loudly(self) -> None:
+        """Nicht stillschweigend uebergehen: Ein kuenftiger Riegel ohne Eintrag in
+        `MERGE_BLOCK_REASONS` verschwaende sonst aus dem Bericht."""
+        with pytest.raises(EventProbeError):
+            block_counts(_blocked_formation(("erfunden", MERGE_BLOCK_NO_NEIGHBOUR)))
+
+    def test_the_counts_come_from_the_real_run_not_from_a_second_pass(self) -> None:
+        """ADR 0117 Punkt 5: Gezaehlt wird, woran die Stufe TATSAECHLICH gescheitert ist. Eine
+        nachbildende Pruefung im Messkommando maesse etwas anderes, als die Stufe tut, waehrend
+        beide fuer sich gruen blieben."""
+        gap = events_module.MERGE_MAX_GAP + timedelta(seconds=1)
+        candidates = [
+            EventCandidate(photo_id=1, taken_at=NOW),
+            EventCandidate(photo_id=2, taken_at=NOW + timedelta(seconds=1)),
+            EventCandidate(photo_id=3, taken_at=NOW + timedelta(seconds=1) + gap),
+        ]
+
+        counts = block_counts(explain_events(candidates))
+
+        assert counts.blocked_segments == 1
+        assert counts.involved[MERGE_BLOCK_TIME_GAP] == 1
+        assert counts.involved[MERGE_BLOCK_NO_NEIGHBOUR] == 1
+        assert sum(counts.at_every_edge.values()) == 0
+
+    def test_the_grouping_is_the_one_build_events_would_have_produced(self) -> None:
+        """Beobachten, nicht veraendern: Der Modus rechnet dieselbe Gliederung wie Block A und B.
+        Bekaeme er einen eigenen Rechenweg, maesse er die Blockaden einer Gliederung, die so nie
+        entstanden ist - und beides bliebe fuer sich gruen."""
+        gap = events_module.MERGE_MAX_GAP + timedelta(seconds=1)
+        candidates = [
+            EventCandidate(photo_id=1, taken_at=NOW),
+            EventCandidate(photo_id=2, taken_at=NOW + timedelta(seconds=1)),
+            EventCandidate(photo_id=3, taken_at=NOW + timedelta(seconds=1) + gap),
+        ]
+
+        formation = explain_events(candidates)
+
+        assert formation.blocked_segments, "sonst misst der Fall die Beobachtung gar nicht"
+        assert list(formation.events) == build_events(candidates)
 
 
 # --- Block E: die Empfindlichkeit des Motivwechsels -----------------------------------------------
