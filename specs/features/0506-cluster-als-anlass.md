@@ -1130,12 +1130,29 @@ die dauerhaft in ein **öffentliches** Repository gehen.
   keine Reihenfolge trägt. Die Dauer daneben steht als Dauer (S5); aus ihr und der Zellzahl ist
   eine mittlere Verweildauer je Zelle ableitbar, und das trägt nur, solange keine Zelle benannt ist
   — eine Verweildauer ohne Ort lokalisiert nichts.
+- **S10 (PR 8) — Die Kontrollflusswirkung der Motivstärke fällt auf null, und drei Auflagen ziehen
+  nach.** Nach ADR 0119 bewegt keine vom Modell gelieferte Zahl mehr eine Event-Grenze; der
+  Motivwechsel vermerkt nur noch eine Ursache. Daraus folgt dreierlei. (a) Das Vergleichsverbot aus
+  ADR 0091 Punkt 1 bleibt in `events.py` **Muss**, obwohl sein Gegenstand dort auf ein
+  Berichtssymbol schrumpft — `carried_motifs` bleibt geteilt, und ein zweiter Begriff von „dieses
+  Foto zeigt X" bekäme seine Wirkung beim nächsten Leser zurück. (b) M9-e wird **umformuliert, nicht
+  aufgehoben**: Sie nennt ab jetzt die drei verbliebenen Riegel statt `UNBREAKABLE_CAUSES`, sonst
+  verwiese ein Muss auf ein Symbol, das es nicht mehr gibt. (c) `MERGE_BLOCK_UNBREAKABLE` nennt
+  nichts mehr und führt eine ehrliche Null; er bleibt als Berichtswortschatz stehen, damit ein
+  Block-F-Lauf gegen den vom 2026-09-19 zu halten ist. Neu als Muss: `COHERENCE_TOP_EVENTS` bleibt
+  eine **absolute** Zahl — hinter derselben Zeile stehen danach mehr Fotos, und ein als Anteil
+  gefasster Deckel wüchse mit den größer werdenden Events mit.
 
 **Sicherheitskonzept:** `specs/architecture/0003-securitykonzept.md` wird im selben Pull Request
 fortgeschrieben — unter „Standortdaten" (erstmals gehen Messzahlen aus echten Familiendaten
 dauerhaft ins öffentliche Repository; S2, S4, S5 und S9 als neue Auflagen) und mit drei Zeilen in
 der Ankerliste (Messkommando rein lesend einschließlich `event_inputs.py`; Trefferentfernung
-namenlos und unpersistiert; Ortsgröße je Event nur als gedeckelte, größengeordnete Anzahl).
+namenlos und unpersistiert; Ortsgröße je Event nur als gedeckelte, größengeordnete Anzahl). Mit
+PR 8 kommt eine eigene Fortschreibung zu ADR 0119 dazu (S10), dazu ein Teil-Vermerk am Abschnitt zu
+ADR 0109 und ein **offener** Restrisiko-Eintrag: Die ausgeschöpfte Reichweite eines einzelnen
+Sehenswürdigkeitsnamens wächst auf rund ein Fünftel der Kandidaten eines Laufs — die Bezifferung
+trägt und die Abflussrichtung bleibt entlastend, ob die erreichte Reichweite eine eigene Auflage
+braucht, liegt bei Daniel.
 
 ## Teststrategie
 
