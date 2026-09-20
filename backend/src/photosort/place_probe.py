@@ -246,8 +246,10 @@ def heading_counts(probe: ProbeInput, info_by_cell: Mapping[Cell, PlaceInfo]) ->
     ueber ihn, nicht ueber die fertige Ueberschrift. Ein Event, dessen fertiger Name von seinem
     Ortsnamen abweicht, hat sein Viertel bekommen und ist damit unterscheidbar.
 
-    Ein Event mit Sehenswuerdigkeit zaehlt bei der Gleichnamigkeitspruefung NICHT mit: es traegt
-    keinen Ortsnamen und loest deshalb auch bei keinem anderen Event die Viertel-Ergaenzung aus."""
+    DIE PARTITION WIRD AUS DER VEREINIGUNG GEZAEHLT, nie durch Subtraktion: `events_named` zaehlt
+    ALLE Events mit einem Ortsnamen, und `events_keeping_position` ist die Restmenge darueber.
+    `events_with_landmark` ist eine TEILMENGE von `events_named` - ein benanntes Event traegt
+    seinen Ortsnamen seit ADR 0120 ebenfalls und wuerde beim Abziehen doppelt fehlen."""
     localities = [locality_of_event(event, info_by_cell) for event in probe.events]
     names = assign_place_names(probe.events, info_by_cell)
 
@@ -270,7 +272,7 @@ def heading_counts(probe: ProbeInput, info_by_cell: Mapping[Cell, PlaceInfo]) ->
     return HeadingCounts(
         events_with_landmark=with_landmark,
         events_named=named,
-        events_keeping_position=len(probe.events) - with_landmark - named,
+        events_keeping_position=len(probe.events) - named,
         events_sharing_a_name=shared,
         events_distinguishable_by_district=distinguishable,
     )
@@ -528,7 +530,8 @@ def render_report(
             "",
             "### D - Verwendung Ueberschrift (zaehlt EVENTS)",
             "",
-            f"- Events mit Sehenswuerdigkeit (unveraendert): {headings.events_with_landmark}",
+            f"- Events mit Sehenswuerdigkeit (Teilmenge der benannten): "
+            f"{headings.events_with_landmark}",
             f"- Events, die einen Ortsnamen bekaemen: {headings.events_named}",
             f"- Events, die bei Nummer und Zeitspanne blieben: {headings.events_keeping_position}",
             f"- davon gleichnamig im selben Lauf: {headings.events_sharing_a_name}",

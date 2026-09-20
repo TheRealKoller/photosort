@@ -2019,17 +2019,34 @@ class TestAssignPlaceNames:
 
         assert assign_place_names(events, infos) == ["Berlin", "Berlin, Mitte"]
 
-    def test_a_landmark_event_gets_no_place_name_and_triggers_no_district(self) -> None:
-        """Zwei Haelften in einem Fall: Das Landmark-Event bekaeme einen Namen (seine Zelle loest
-        auf), bekommt aber keinen - und es loest bei dem gleichnamigen Nicht-Landmark-Event auch
-        keine Viertel-Ergaenzung aus."""
+    def test_a_named_event_takes_the_same_place_name_as_without_its_name(self) -> None:
+        """Die EINE Ortsregel (ADR 0120 Punkt 2): `assign_place_names` liest `landmark_name`
+        ueberhaupt nicht mehr. Geprueft als DIFFERENTIELLE PROBE - dieselbe Eventliste einmal MIT
+        und einmal OHNE den Namen, positionsweise dasselbe Ergebnis. Zwei getrennte Erwartungen
+        bestuenden auch dann, wenn beide Lagen auseinanderliefen."""
         events = [
             _place_event(1, BERLIN, landmark_name="Brandenburger Tor"),
             _place_event(2, BERLIN_OST),
         ]
         infos = {BERLIN: _info("Berlin", "Mitte"), BERLIN_OST: _info("Berlin", "Kreuzberg")}
 
-        assert assign_place_names(events, infos) == [None, "Berlin"]
+        mit_namen = assign_place_names(events, infos)
+        ohne_namen = assign_place_names(
+            [replace(event, landmark_name=None) for event in events], infos
+        )
+
+        assert mit_namen == ohne_namen
+        # Gegenprobe gegen eine leere Zusage: hier entsteht tatsaechlich je ein zusammengesetzter
+        # Name, und zwar weil das benannte Event jetzt mitzaehlt.
+        assert mit_namen == ["Berlin, Mitte", "Berlin, Kreuzberg"]
+
+    def test_a_named_event_alone_in_one_locality_keeps_the_plain_locality(self) -> None:
+        """Ein benanntes Event verliert seinen Ortsnamen nicht und bekommt auch keine
+        Viertel-Ergaenzung, wo kein zweiter Namenstraeger liegt."""
+        events = [_place_event(1, BERLIN, landmark_name="Brandenburger Tor")]
+        infos = {BERLIN: _info("Berlin", "Mitte")}
+
+        assert assign_place_names(events, infos) == ["Berlin"]
 
     def test_the_result_is_aligned_with_the_input_positionwise(self) -> None:
         """Eine um eins verschobene Zuordnung ist der zweite stille Fehler dieser Form."""

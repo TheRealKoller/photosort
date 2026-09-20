@@ -384,9 +384,9 @@ class TestBlockDHeadings:
         assert counts.events_with_landmark == 1
         # Berlin (x2) und Split; das Regions-Event traegt keinen Namen.
         assert counts.events_named == 3
-        # NUR Event 4 faellt auf Nummer und Zeitspanne zurueck. Das Landmark-Event zaehlt hier
-        # ausdruecklich nicht mit: es heisst bereits nach seiner Sehenswuerdigkeit.
-        assert counts.events_keeping_position == 1
+        # Events 4 und 5: das Regions-Event faellt auf Nummer und Zeitspanne zurueck, und das
+        # benannte Event traegt keinen aufloesbaren Ortsnamen (seine Zellen sind leer).
+        assert counts.events_keeping_position == 2
         assert counts.events_sharing_a_name == 2
         assert counts.events_distinguishable_by_district == 1
 
@@ -417,10 +417,11 @@ class TestBlockDHeadings:
 
         assert counts.events_named == 1
 
-    def test_a_landmark_event_never_counts_towards_homonymy(self) -> None:
-        """Ein Event mit Sehenswuerdigkeit traegt keinen Ortsnamen und loest deshalb auch bei
-        keinem anderen Event die Viertel-Ergaenzung aus. Die Messlage ist so gebaut, dass es einen
-        Namen BEKAEME: seine Zelle loest auf."""
+    def test_a_named_event_counts_towards_homonymy_like_every_other(self) -> None:
+        """EINE Ortsregel (ADR 0120 Punkt 2): Ein Event mit Sehenswuerdigkeit traegt denselben
+        Ortsnamen wie ohne seinen Namen - es zaehlt bei der Gleichnamigkeit mit und loest beim
+        anderen Event die Viertel-Ergaenzung aus. Die Messlage ist so gebaut, dass beide dieselbe
+        Zelle tragen."""
         info_by_cell = {
             BERLIN_KREUZBERG: _info_of(
                 _answer(matched_level="locality", locality="Berlin", neighbourhood="Kreuzberg")
@@ -442,9 +443,11 @@ class TestBlockDHeadings:
             info_by_cell,
         )
 
-        assert counts.events_named == 1
-        assert counts.events_sharing_a_name == 0
-        assert counts.events_distinguishable_by_district == 0
+        assert counts.events_with_landmark == 1
+        assert counts.events_named == 2
+        assert counts.events_keeping_position == 0
+        assert counts.events_sharing_a_name == 2
+        assert counts.events_distinguishable_by_district == 2
 
 
 class TestBlockEPhotos:
