@@ -199,6 +199,7 @@ also muss seine Zelle gefragt werden. Die Reihenfolge bleibt Event-Bildung → `
 | `backend/src/photosort/worker.py` | Zellenfilter in `_build_grouping_and_rankings` samt Kommentar |
 | `backend/src/photosort/event_probe.py` | Block C3: `LandmarkCounts`, `landmark_counts`, Berichtszeilen |
 | `backend/src/photosort/place_probe.py` | Block D: Partition in `heading_counts`, Docstring, Berichtszeilen |
+| `backend/src/photosort/demo_state.py` | `_DEMO_PLACE_NAMES` samt Kommentar: das Landmark-Event trägt seinen Ortsnamen daneben |
 | `backend/src/photosort/api/photos.py` | Docstrings `EventPlaceOut`/`EventOut` |
 | `frontend/src/utils/timeOfDay.ts` | `eventPlaceName` setzt zusammen; Docstring zieht nach |
 | `frontend/src/api/types.ts` | Kommentare an `EventPlace`/`EventOut` |
@@ -206,8 +207,10 @@ also muss seine Zelle gefragt werden. Die Reihenfolge bleibt Event-Bildung → `
 | `specs/architecture/0003-securitykonzept.md` | M9-Fortschreibung und Restrisiko — siehe `## Security` |
 | `specs/architecture/0002-testkonzept.md` | vier Muster — siehe `## Teststrategie` |
 
-`backend/src/photosort/demo_state.py` ist **nicht** betroffen: `_create_demo_events` setzt
-`place_name` schon heute für Landmark-Events.
+`backend/src/photosort/demo_state.py` ist **betroffen**: `_create_demo_events` setzt `place_name`
+für die Demo-Events, und `_DEMO_PLACE_NAMES` gibt dem Landmark-Event seinen Ortsnamen daneben —
+die beiden Demo-Tests, die dort die abgelöste Zusage behaupteten, ziehen mit (siehe
+`## Teststrategie`).
 
 ## UI/UX
 
@@ -416,11 +419,13 @@ Ein grüner Fall, der die abgelöste Regel behauptet, wird **ersetzt, nicht nach
 - **Selbst entschieden (ux-ui-designer):** die beiden Teile bleiben gleichrangig ausgezeichnet.
 - **Selbst entschieden (test-engineer):** keine Dedup von Name und Ortsname im Frontend; keine
   Erweiterung der E2E-Ebene.
-- **Offener Punkt (an `developer` weitergereicht, keine Produktentscheidung):** Die Demo-Lage zeigt
-  die kombinierte Form heute nicht, weil das Demo-Landmark-Event keinen Ortsnamen trägt. Gibt man
-  ihm einen, zieht die Viertel-Regel mit (alle Demo-Events liegen in Paris) und zwei benachbarte
-  Demo-Tests müssen neu geschrieben werden. Die Teststrategie ist in beiden Varianten vollständig;
-  es ist eine Frage der Sichtprüfbarkeit (`browse-app`).
+- **Entschieden (`developer`, im Rahmen des Offenen Punktes dieser Spec — keine Produktentscheidung):**
+  Das Demo-Landmark-Event trägt seinen Ortsnamen daneben (`_DEMO_PLACE_NAMES`), damit die kombinierte
+  Form auch in den Demo-Daten sichtbar ist. Es teilt seine Zelle mit dem „Mehrere Orte“-Event und
+  bekommt deshalb dasselbe Viertel (`Paris, Gros-Caillou`); das Ein-Zellen-Event behält
+  `Paris, Montmartre`. Die beiden davon berührten Demo-Tests wurden ersetzt, nicht nachgezogen
+  (siehe `## Teststrategie`). Ein Sichtprüflauf (`browse-app`) war dafür nicht nötig — die Lage ist
+  über Demo- und Frontend-Tests belegt.
 
 ## Offene Fragen
 
