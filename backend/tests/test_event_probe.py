@@ -19,18 +19,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import events as events_module
+from photosort import selection as selection_module
 from photosort import worker
 from photosort.db import Base, make_engine, make_session_factory
 from photosort.event_inputs import EventInputs
 from photosort.event_probe import (
+    COHERENCE_TOP_EVENTS,
     DISTANCE_THRESHOLD_METERS,
     MOTIF_CONFIRMING_VARIANTS,
     MOTIF_STRENGTH_VARIANTS,
+    CoherenceCounts,
+    CoherenceRow,
     EventProbeError,
     EventProbeInput,
     _quota_lines,
+    _tally,
     block_counts,
     cause_counts,
+    coherence_counts,
     inheritance_counts,
     landmark_counts,
     main,
@@ -39,6 +45,7 @@ from photosort.event_probe import (
     motif_sensitivity,
     quota_reach,
     read_event_probe_input,
+    render_coherence_report,
     size_counts,
 )
 from photosort.events import (
@@ -58,6 +65,7 @@ from photosort.events import (
     LocationEntry,
     build_events,
     explain_events,
+    has_measured_coordinate,
 )
 from photosort.geonames import GEONAMES_MAX_DISTANCE_METERS, dataset_hash_path
 from photosort.models import (
@@ -71,7 +79,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.place_dataset import write_extract
-from photosort.selection import effective_target
+from photosort.selection import carried_motifs, effective_target
 from tests.import_closure import import_closure, module_file
 from tests.write_guard import write_statements
 
@@ -515,6 +523,21 @@ class TestBlockBCauses:
 
         assert counts.boundaries_total == 0
 
+    def test_the_minimum_size_is_read_as_a_module_attribute_not_bound_at_import(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`MIN_EVENT_PHOTOS` wird bei JEDER Zaehlung frisch aus `events.py` gelesen.
+
+        Ein `from photosort.events import MIN_EVENT_PHOTOS` baende den Wert beim Import: Jede
+        Fixture, die die Konstante verschiebt, liefe hier ins Leere, und die Spalte "eroeffnet ein
+        zu kleines Segment" zaehlte still gegen eine andere Mindestgroesse als die, nach der
+        gegliedert wurde. Aufgefallen beim Probelauf mit verschobenen Konstanten."""
+        monkeypatch.setattr(events_module, "MIN_EVENT_PHOTOS", 3)
+
+        counts = cause_counts(_formation((5, frozenset()), (2, frozenset({BOUNDARY_TIME_GAP}))))
+
+        assert counts.opening_a_small_segment[BOUNDARY_TIME_GAP] == 1
+
     def test_a_cause_outside_the_closed_supply_refuses_loudly(self) -> None:
         """Nicht stillschweigend uebergehen: Ein kuenftiges Signal ohne Eintrag in
         `BOUNDARY_CAUSES` verschwaende sonst aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
@@ -878,6 +901,394 @@ class TestBlockEMotifSensitivity:
         tragen, sonst misst die Tabelle eine Dimension gar nicht."""
         assert len(set(MOTIF_CONFIRMING_VARIANTS)) > 1
         assert len(set(MOTIF_STRENGTH_VARIANTS)) > 1
+
+
+# --- Der Kohaerenz-Modus: vier Zahlen je Event ---------------------------------------------------
+#
+# DIE BEIDEN STAERKEN DER TESTLAGE SIND KEINE SCHWELLE, sondern die beiden Raender: 1,0 wird
+# getragen, 0,0 nicht. Welche Zahl dazwischen getragen wird, entscheidet allein
+# `selection.carried_motifs`; die Lage pinnt sie nirgends, und ein Waechterfall haelt die beiden
+# Raender selbst gegen `carried_motifs` fest, statt sie zu behaupten.
+CARRIED = 1.0
+NOT_CARRIED = 0.0
+
+
+def _coherent(
+    position: int,
+    photo_ids: tuple[int, ...],
+    *,
+    minutes: float = 0.0,
+    cells: tuple[tuple[float, float], ...] = (),
+) -> BuiltEvent:
+    """Ein fertiges Event mit seinen Zellen - von Hand gestellt wie in Block B.
+
+    `place_cells` traegt `_cells_of` bereits sortiert und dublettenfrei bei; hier steht die Menge
+    deshalb so, wie das Event sie traegt, und der Zaehlblock liest sie, statt sie nachzubilden."""
+    return BuiltEvent(
+        position=position,
+        photo_ids=photo_ids,
+        started_at=NOW,
+        ended_at=NOW + timedelta(minutes=minutes),
+        place_cells=cells,
+    )
+
+
+def _with_motifs(
+    photo_id: int, *, gps: tuple[float, float] | None = None, **strengths: float
+) -> EventCandidate:
+    """Ein Kandidat mit Motiv-Kopfzeile - OHNE gemessene Koordinate, sofern keine genannt ist: Er
+    haette seinen Ort dann uebernommen und speist keine Zelle."""
+    return EventCandidate(
+        photo_id=photo_id,
+        taken_at=NOW,
+        gps_lat=None if gps is None else gps[0],
+        gps_lon=None if gps is None else gps[1],
+        motif_strengths=dict(strengths),
+    )
+
+
+class TestCoherenceOfTheEvents:
+    """Vier Zahlen je Event - Fotozahl, Dauer, Zahl der verschiedenen Ortszellen, Zahl der
+    verschiedenen getragenen Motive.
+
+    NUR ANZAHLEN, das ist die tragende Auflage dieses Modus (S2/S3): keine Zelle, keine Koordinate,
+    kein Orts- oder Motivname, kein Zeitstempel. Die Aussagekraft entsteht aus den Zahlen selbst -
+    ein langes Event mit ZWEI Ortszellen ist ein Ausflug, eines mit sechs sind verschmolzene
+    Anlaesse."""
+
+    def test_the_lay_itself_rests_on_selection_not_on_a_number(self) -> None:
+        """Der Waechter unter dieser Testklasse: Traegt 1,0 nicht mehr und 0,0 doch, geht die ganze
+        Lage schief - und zwar hier, mit Ansage, statt verstreut in jedem Fall darunter."""
+        assert carried_motifs({"getragen": CARRIED, "nicht": NOT_CARRIED}) == {"getragen"}
+
+    def test_the_hand_computed_graph(self) -> None:
+        formation = EventFormation(
+            events=(
+                _coherent(1, (1, 2, 3), minutes=90, cells=((43.51, 16.44), (43.52, 16.45))),
+                _coherent(2, (4,), minutes=0, cells=((44.0, 15.0),)),
+            ),
+            causes=(frozenset(), frozenset({BOUNDARY_TIME_GAP})),
+        )
+        candidates = (
+            _with_motifs(1, gps=(43.51, 16.44), strand=CARRIED),
+            _with_motifs(2, gps=(43.52, 16.45), strand=CARRIED, essen=CARRIED),
+            # Das dritte Foto hat den Ort UEBERNOMMEN - es speist keine Zelle und zaehlt nicht mit.
+            _with_motifs(3, berge=CARRIED),
+            _with_motifs(4, gps=(44.0, 15.0), essen=CARRIED),
+        )
+
+        counts = coherence_counts(formation, candidates)
+
+        assert counts.events_total == 2
+        first, second = counts.largest
+        assert (first.photos, first.measured_photos, first.place_cells, first.motifs) == (
+            3,
+            2,
+            2,
+            3,
+        )
+        assert first.duration_seconds == 90 * 60
+        assert (second.photos, second.measured_photos, second.place_cells, second.motifs) == (
+            1,
+            1,
+            1,
+            1,
+        )
+        assert second.duration_seconds == 0.0
+
+    def test_only_photos_with_a_measured_coordinate_are_counted_as_measured(self) -> None:
+        """OHNE DIESE FUENFTE ZAHL IST DIE ZELLZAHL NICHT DEUTBAR. `events.py::_cells_of` nimmt
+        ausschliesslich Kandidaten mit GEMESSENER Koordinate; ein uebernommener Ort speist sie
+        ausdruecklich nicht. Ein Event, dessen Fotos ueberwiegend geerbt haben, zeigt deshalb eine
+        kleine Zellzahl - und die laese sich als "ein Ort, also ein Ausflug" lesen, obwohl schlicht
+        nichts gemessen wurde. In der Ausgangsmessung dieser Spec trugen 30,0 % der Kandidatenfotos
+        keine eigene Koordinate."""
+        formation = EventFormation(
+            events=(_coherent(1, (1, 2, 3, 4), cells=((43.51, 16.44),)),), causes=(frozenset(),)
+        )
+        candidates = (
+            _with_motifs(1, gps=(43.51, 16.44)),
+            _with_motifs(2),
+            _with_motifs(3),
+            _with_motifs(4),
+        )
+
+        [row] = coherence_counts(formation, candidates).largest
+
+        assert (row.photos, row.measured_photos, row.place_cells) == (4, 1, 1)
+
+    def test_an_event_without_a_single_measured_photo_says_zero_not_nothing(self) -> None:
+        formation = EventFormation(events=(_coherent(1, (1, 2)),), causes=(frozenset(),))
+
+        [row] = coherence_counts(formation, (_with_motifs(1), _with_motifs(2))).largest
+
+        assert (row.measured_photos, row.place_cells) == (0, 0)
+
+    def test_measured_and_cells_rest_on_the_same_one_predicate(self) -> None:
+        """Gegen zwei Begriffe von "dieses Foto hat eine gemessene Koordinate" im selben Produkt:
+        Beide Spalten fragen `events.py::has_measured_coordinate`, und `_cells_of` tut es auch.
+        Liefen sie auseinander, stuende die Zahl der gemessenen Fotos neben einer Zellzahl, die
+        nach einer anderen Regel entstanden ist."""
+        measured = EventCandidate(photo_id=1, taken_at=NOW, gps_lat=43.51, gps_lon=16.44)
+        inherited = EventCandidate(photo_id=2, taken_at=NOW)
+        # Eine halbe Koordinate ist keine: `_cells_of` verlangt BEIDE Werte.
+        half = EventCandidate(photo_id=3, taken_at=NOW, gps_lat=43.51)
+
+        assert has_measured_coordinate(measured) is True
+        assert has_measured_coordinate(inherited) is False
+        assert has_measured_coordinate(half) is False
+
+        formation = explain_events([measured, inherited, half])
+        rows = coherence_counts(formation, (measured, inherited, half)).largest
+
+        assert sum(row.measured_photos for row in rows) == 1
+        assert sum(row.place_cells for row in rows) == 1
+
+    def test_only_the_distinct_cells_are_counted(self) -> None:
+        """Gezaehlt werden VERSCHIEDENE Zellen: Zwoelf Aufnahmen an einem Ort sind ein Ort, nicht
+        zwoelf - sonst maesse die Spalte die Fotozahl ein zweites Mal."""
+        formation = EventFormation(
+            events=(_coherent(1, (1, 2), cells=((43.51, 16.44),)),), causes=(frozenset(),)
+        )
+
+        [row] = coherence_counts(formation, (_with_motifs(1), _with_motifs(2))).largest
+
+        assert row.place_cells == 1
+
+    def test_an_event_without_a_single_measured_coordinate_counts_no_cell(self) -> None:
+        formation = EventFormation(events=(_coherent(1, (1,)),), causes=(frozenset(),))
+
+        [row] = coherence_counts(formation, (_with_motifs(1),)).largest
+
+        assert row.place_cells == 0
+
+    def test_only_the_distinct_motifs_are_counted(self) -> None:
+        formation = EventFormation(events=(_coherent(1, (1, 2)),), causes=(frozenset(),))
+        candidates = (_with_motifs(1, strand=CARRIED), _with_motifs(2, strand=CARRIED))
+
+        [row] = coherence_counts(formation, candidates).largest
+
+        assert row.motifs == 1
+
+    def test_a_motif_that_is_not_carried_is_not_counted(self) -> None:
+        formation = EventFormation(events=(_coherent(1, (1,)),), causes=(frozenset(),))
+        candidates = (_with_motifs(1, strand=CARRIED, essen=NOT_CARRIED),)
+
+        [row] = coherence_counts(formation, candidates).largest
+
+        assert row.motifs == 1
+
+    def test_the_carried_motifs_come_from_selection_not_from_a_second_comparison(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die eine Stelle, die "dieses Foto zeigt X" beantwortet, ist
+        `selection.py::carried_motifs`. Wandert ihre Grenze, wandert diese Spalte mit - eine eigene
+        Fassung hier waere ein zweiter Begriff desselben im selben Produkt."""
+        formation = EventFormation(events=(_coherent(1, (1,)),), causes=(frozenset(),))
+        candidates = (_with_motifs(1, strand=CARRIED),)
+        assert coherence_counts(formation, candidates).largest[0].motifs == 1
+
+        monkeypatch.setattr(selection_module, "MOTIF_PRESENCE_THRESHOLD", CARRIED + 1.0)
+
+        assert coherence_counts(formation, candidates).largest[0].motifs == 0
+
+    def test_a_photo_without_a_motif_header_carries_nothing(self) -> None:
+        """`motif_strengths is None` heisst "keine Motiv-Kopfzeile" und ist etwas anderes als eine
+        leere Kopfzeile. Beide tragen hier null Motive bei, und keines von beiden ist ein Fehler."""
+        formation = EventFormation(events=(_coherent(1, (1, 2, 3)),), causes=(frozenset(),))
+        candidates = (
+            EventCandidate(photo_id=1, taken_at=NOW),
+            _with_motifs(2),
+            _with_motifs(3, strand=CARRIED),
+        )
+
+        [row] = coherence_counts(formation, candidates).largest
+
+        assert row.motifs == 1
+
+    def test_the_list_shows_the_largest_events_not_all_of_them(self) -> None:
+        """Eine Vollliste waere ueber die Zellzahlen eine Bewegungsspur. Die Liste beantwortet die
+        Frage "ein langer Ausflug oder mehrere verschmolzene Anlaesse", ohne vollstaendig zu sein -
+        und der Bericht sagt, wonach ausgewaehlt wurde."""
+        events = tuple(
+            _coherent(position, tuple(range(position * 100, position * 100 + position)))
+            for position in range(1, COHERENCE_TOP_EVENTS + 4)
+        )
+        formation = EventFormation(events=events, causes=tuple(frozenset() for _ in events))
+
+        counts = coherence_counts(formation, ())
+
+        assert counts.events_total == len(events)
+        assert len(counts.largest) == COHERENCE_TOP_EVENTS
+        # Die groessten zuerst, absteigend - und das kleinste Event ist nicht dabei.
+        assert [row.photos for row in counts.largest] == sorted(
+            (len(event.photo_ids) for event in events), reverse=True
+        )[:COHERENCE_TOP_EVENTS]
+
+    def test_the_order_rests_on_the_measured_values_not_on_the_chronology(self) -> None:
+        """Sortiert wird nach Fotozahl, dann Dauer, dann Zellzahl, dann Motivzahl - ausschliesslich
+        ueber gemessene Werte. Die Position im Lauf geht NICHT ein und steht auch nicht im Bericht:
+        eine nach Zeit geordnete Folge von Zellzahlen waere ein Bewegungsabdruck."""
+        formation = EventFormation(
+            events=(
+                _coherent(1, (1, 2), minutes=10),
+                _coherent(2, (3, 4), minutes=90),
+                _coherent(3, (5, 6, 7), minutes=1),
+            ),
+            causes=(frozenset(), frozenset(), frozenset()),
+        )
+
+        counts = coherence_counts(formation, ())
+
+        assert [(row.photos, row.duration_seconds) for row in counts.largest] == [
+            (3, 60.0),
+            (2, 90 * 60.0),
+            (2, 10 * 60.0),
+        ]
+
+    def test_the_distributions_cover_every_event_not_only_the_listed_ones(self) -> None:
+        """Die Verteilungszeile laeuft ueber ALLE Events - sonst behauptete der Bericht eine
+        Verteilung, die nur fuer die groessten gilt."""
+        events = tuple(
+            _coherent(position, (position,), cells=((43.5, 16.4),) * min(position, 2))
+            for position in range(1, COHERENCE_TOP_EVENTS + 3)
+        )
+        formation = EventFormation(events=events, causes=tuple(frozenset() for _ in events))
+
+        counts = coherence_counts(formation, ())
+
+        assert sum(counts.cells_per_event.values()) == len(events)
+        assert sum(counts.motifs_per_event.values()) == len(events)
+        assert counts.motifs_per_event == {0: len(events)}
+
+    def test_a_run_without_events_yields_no_invented_row(self) -> None:
+        counts = coherence_counts(explain_events([]), ())
+
+        assert counts.events_total == 0
+        assert counts.largest == ()
+        assert counts.cells_per_event == {}
+        assert counts.motifs_per_event == {}
+
+
+def _coherence_counts(
+    *rows: tuple[int, int, float, int, int], events_total: int = 0
+) -> CoherenceCounts:
+    """Ein fertig gezaehltes Ergebnis, von Hand gestellt - die Ausgabe rechnet nicht, sie
+    schreibt. Je Zeile: Fotos, davon gemessen, Dauer, Ortszellen, Motive."""
+    return CoherenceCounts(
+        events_total=events_total or len(rows),
+        largest=tuple(
+            CoherenceRow(
+                photos=photos,
+                measured_photos=measured,
+                duration_seconds=seconds,
+                place_cells=cells,
+                motifs=motifs,
+            )
+            for photos, measured, seconds, cells, motifs in rows
+        ),
+        cells_per_event=_tally(cells for _, _, _, cells, _ in rows),
+        motifs_per_event=_tally(motifs for _, _, _, _, motifs in rows),
+    )
+
+
+class TestTheCoherenceReport:
+    """Beide Gliederungen nebeneinander, und je Event fuenf ANZAHLEN - sonst nichts."""
+
+    def test_both_groupings_stand_side_by_side(self) -> None:
+        """Die Frage dieses Modus ist ein Vergleich: Traegt das grosse Event der Gliederung "aus"
+        einen Anlass oder mehrere? Eine der beiden Gliederungen allein beantwortet sie nicht."""
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((3, 3, 60.0, 1, 1)),
+            _coherence_counts((9, 9, 600.0, 4, 3)),
+        )
+
+        assert "Betriebswert" in report
+        assert "Motivwechsel aus" in report
+
+    def test_a_row_carries_the_five_numbers_and_nothing_else(self) -> None:
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((28, 26, 2 * 3600.0 + 8 * 60.0, 2, 3)),
+            _coherence_counts((80, 5, 5 * 3600.0, 6, 7)),
+        )
+
+        assert "| 28 | 26 | 2 h 8 min | 2 | 3 |" in report
+        assert "| 80 | 5 | 5 h | 6 | 7 |" in report
+        # Fuenf Spalten je Zeile, nicht sechs: kein Rang, keine Position, keine Kennung.
+        for line in report.splitlines():
+            if line.startswith("| ") and not line.startswith("| Fotos"):
+                assert line.count("|") == 6, line
+
+    def test_the_reading_of_the_cell_count_is_bound_to_the_measured_photos(self) -> None:
+        """DER DEUTUNGSSATZ GILT NUR SOWEIT GEMESSEN WURDE. "Zwei Ortszellen, also ein Ausflug" ist
+        bei 80 Fotos, von denen fuenf eine Koordinate tragen, kein Befund, sondern eine Luecke -
+        und sie sieht genauso aus wie ein Befund. Der Bericht muss das sagen, nicht der Leser."""
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((28, 26, 60.0, 2, 3)),
+            _coherence_counts((80, 5, 5 * 3600.0, 2, 7)),
+        )
+
+        assert "davon gemessen" in report
+        assert "uebernommen" in report
+        assert "soweit" in report
+
+    def test_the_selection_is_named_so_nobody_reads_the_list_as_complete(self) -> None:
+        """Ohne diesen Satz waere eine Liste von acht Zeilen neben "26 Events" stumm daneben - und
+        genau die Vollliste ist hier ausgeschlossen."""
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((3, 3, 60.0, 1, 1), events_total=81),
+            _coherence_counts((9, 9, 600.0, 4, 3), events_total=26),
+        )
+
+        assert str(COHERENCE_TOP_EVENTS) in report
+        assert "nicht vollstaendig" in report
+        assert "Events: 81" in report
+        assert "Events: 26" in report
+
+    def test_the_distribution_over_all_events_stands_in_the_report(self) -> None:
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((3, 3, 60.0, 1, 1), (2, 2, 60.0, 1, 0), (1, 1, 0.0, 2, 1)),
+            _coherence_counts((3, 3, 60.0, 1, 1)),
+        )
+
+        assert "Ortszellen je Event" in report
+        assert "1 Zelle(n): 2, 2 Zelle(n): 1" in report
+        assert "Motive je Event" in report
+        assert "0 Motiv(e): 1, 1 Motiv(e): 2" in report
+
+    def test_no_motif_name_can_reach_the_report(self) -> None:
+        """DIE SIEBTE KLASSE, die erst dieser Modus beruehrt. Ein Motivname ist zwar keine der
+        sechs aus S2, aber er beschreibt, was auf einem Familienfoto zu sehen ist - und dieser
+        Modus ist der erste, der Motive ueberhaupt liest.
+
+        Der Weg dorthin ist durch die Form verschlossen, nicht durch Sorgfalt: `CoherenceRow` traegt
+        vier `int`/`float`, und zwischen `carried_motifs` und der Ausgabe steht nur noch `len`.
+        Dieser Fall haelt genau das fest."""
+        formation = EventFormation(events=(_coherent(1, (1,)),), causes=(frozenset(),))
+        candidates = (_with_motifs(1, **{"geheimmotiv": CARRIED}),)
+
+        counts = coherence_counts(formation, candidates)
+        report = render_coherence_report(
+            _probe_input(selection_target=None), counts, _coherence_counts()
+        )
+
+        assert counts.largest[0].motifs == 1
+        assert "geheimmotiv" not in report
+
+    def test_a_grouping_without_a_single_event_says_so_instead_of_an_empty_table(self) -> None:
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts(),
+            _coherence_counts(),
+        )
+
+        assert "Events: 0" in report
+        assert "-" in report
 
 
 # --- Block C: die Ortszuordnung, je Mechanismus getrennt -----------------------------------------
@@ -1337,6 +1748,30 @@ class TestMainRefusesLoudly:
         assert exit_code == 1
         assert "Lauf" in capsys.readouterr().err
 
+    def test_the_coherence_mode_refuses_a_project_without_a_successful_run_too(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JE ARGUMENTFORM: Ohne Gliederung gibt es auch keine Kohaerenz zu messen."""
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> int:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                project_id = await _project(session, "Ohne Lauf")
+                await session.commit()
+            await engine.dispose()
+            return project_id
+
+        project_id = asyncio.run(prepare())
+
+        exit_code = main(["--project-id", str(project_id), "--kohaerenz"], database_url=url)
+
+        assert exit_code == 1
+        assert "Lauf" in capsys.readouterr().err
+
     def test_the_report_carries_the_counter_indication_of_the_third_stage(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -1507,13 +1942,89 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         assert "C1" not in report
         assert "C2" not in report
 
-    def test_the_two_measuring_modes_exclude_each_other(self, tmp_path: Path) -> None:
+    def test_the_measuring_modes_exclude_each_other(self, tmp_path: Path) -> None:
         """Zwei Modi gleichzeitig ist keine Frage, die eine Antwort hat. Eine stille Vorrangregel
-        gaebe einen Bericht aus, den niemand angefordert hat."""
+        gaebe einen Bericht aus, den niemand angefordert hat. Jede Paarung einzeln: Ein neuer Modus,
+        der nur an EINEN der bestehenden gehaengt wird, liefe neben dem anderen still mit."""
         url, project_id = _prepared(tmp_path)
 
-        with pytest.raises(SystemExit):
-            main(["--project-id", str(project_id), "--motiv", "--riegel"], database_url=url)
+        for pair in (
+            ("--motiv", "--riegel"),
+            ("--motiv", "--kohaerenz"),
+            ("--riegel", "--kohaerenz"),
+        ):
+            with pytest.raises(SystemExit):
+                main(["--project-id", str(project_id), *pair], database_url=url)
+
+    def test_the_coherence_report_carries_none_of_the_six_classes_either(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JE ARGUMENTFORM: Der Kohaerenz-Bericht entsteht an einer anderen Stelle und ist von der
+        Zusage der uebrigen nicht mitgedeckt. Er ist zugleich der Modus, der einer Liste je Event am
+        naechsten kommt - S2 ist hier strenger zu lesen, nicht lockerer."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--kohaerenz"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "43.5" not in report
+        assert "16.44" not in report
+        assert MEASURED_LOCALITY not in report
+        assert MEASURED_LANDMARK not in report
+        assert MEASURED_OPENCLOUD_PATH not in report
+        assert MEASURED_PHOTO_FILE not in report
+        assert MEASURED_PROJECT_NAME not in report
+        assert "2029" not in report
+        assert "03:47" not in report
+        assert f"Projekt {project_id}" in report
+
+    def test_the_coherence_report_carries_both_groupings_of_the_real_lay(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Die Messlage traegt vier Kandidaten in zwei Events (drei dicht beieinander, einer drei
+        Tage spaeter) und kein einziges Motiv - ohne Motivgrenze bleibt es bei denselben zwei."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id), "--kohaerenz"], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "## Betriebswert" in report
+        assert "## Motivwechsel aus" in report
+        assert report.count("- Events: 2") == 2
+        # Drei Fotos an EINER Zelle, davon zwei gemessen - das dritte hat seinen Ort uebernommen
+        # und speist keine Zelle. Genau diese Luecke macht die fuenfte Spalte sichtbar.
+        assert "| 3 | 2 | 4 min | 1 | 0 |" in report
+        assert "| 1 | 1 | 0 s | 1 | 0 |" in report
+
+    def test_the_coherence_mode_measures_nothing_of_the_place_blocks(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Der Modus braucht den Ortsauszug gar nicht - er darf deshalb weder danach fragen noch
+        sein Fehlen als Messergebnis melden."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--kohaerenz"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "NICHT GEMESSEN" not in report
+        assert "C1" not in report
+        assert "C2" not in report
+
+    def test_the_two_groupings_come_from_the_same_means_as_the_run(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Die Gliederung "aus" entsteht ueber `motif_change_off_window`, nicht ueber einen
+        Abschaltpfad - und beide ueber `explain_events`. Der Bericht sagt das, weil sonst offen
+        bliebe, wie die zweite Spalte zustande kommt."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id), "--kohaerenz"], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos" in report
+        assert "keinen Abschalter" in report
 
     def test_the_motif_report_carries_a_row_per_combination_plus_both_reference_rows(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -1729,6 +2240,120 @@ class TestTheProbeIsReadOnly:
         assert write_statements(tree) == []
 
 
+def _adjustable_constants_of_events() -> frozenset[str]:
+    """Die Stellschrauben von `events.py` - AUS DEM MODUL GELESEN, nie von Hand gefuehrt.
+
+    Zwei Achsen, beide gemessen: der NAME muss in `events.py` auf Modulebene zugewiesen sein (die
+    Syntaxbaum-Seite - ein von anderswo importierter Name wie `MAX_PLACE_NAME_LENGTH` ist keine
+    Stellschraube dieses Moduls), und der WERT muss eine Zahl oder ein `timedelta` sein (die
+    Laufzeit-Seite). Die geschlossenen Wortschaetze (`BOUNDARY_*`, `BOUNDARY_CAUSES`,
+    `MERGE_BLOCK_REASONS`, `PLACE_KINDS`, `UNBREAKABLE_CAUSES`) fallen dadurch heraus und duerfen
+    weiter importiert werden - sie aendern sich nicht unter der Hand, und ein Test verschiebt sie
+    nicht.
+
+    Ein handgefuehrter Namensvorrat waere beim naechsten Zuwachs still vakuum-gruen: Genau die neue
+    Stellschraube waere die ungeprueфte."""
+    path = module_file("photosort.events")
+    assert path is not None
+    assigned = {
+        target.id
+        # NUR `.body`, also Modulebene: eine Zuweisung in einer Funktion ist keine Modulkonstante.
+        for node in ast.parse(path.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.Assign | ast.AnnAssign)
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name) and target.id.isupper()
+    }
+    return frozenset(
+        name
+        for name in assigned
+        if isinstance(getattr(events_module, name), int | float | timedelta)
+    )
+
+
+def _names_bound_from_events(source: str) -> frozenset[str]:
+    """Die Namen, die `source` per `from photosort.events import ...` BEIM IMPORT BINDET.
+
+    `import photosort.events as ...` bindet nichts davon - der Zugriff laeuft dann bei jeder
+    Nutzung ueber das Modul und folgt einer Verschiebung."""
+    return frozenset(
+        alias.name
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom) and node.module == "photosort.events"
+        for alias in node.names
+    )
+
+
+class TestNoAdjustableConstantIsBoundAtImport:
+    """Die Fehlerklasse hinter einem Befund, der fuenf PRs und zwei veroeffentlichte Messungen lang
+    still eine falsche Spalte gezaehlt hat: `event_probe.py` band `MIN_EVENT_PHOTOS` per
+    `from photosort.events import ...` und las damit den Wert vom Importzeitpunkt.
+
+    Ein Kommentar ist dagegen kein Waechter, und ein einzelner Verhaltensfall deckt nur die eine
+    Konstante ab, die er benutzt. Dieser Fall deckt ALLE - auch die, die es noch nicht gibt."""
+
+    def test_the_adjustable_constants_are_actually_found(self) -> None:
+        """Gegenprobe gegen einen Detektor, der nichts findet: Ein leerer Vorrat machte jede
+        Zusage unten vakuum-gruen. Geprueft wird eine TEILMENGE, kein Gleichstand - eine neue
+        Stellschraube soll den Waechter erweitern, nicht diesen Fall rot machen."""
+        found = _adjustable_constants_of_events()
+
+        assert {
+            "EVENT_TIME_GAP",
+            "EVENT_STEP_MAX_METERS",
+            "EVENT_EXTENT_MAX_METERS",
+            "EVENT_MAX_SPAN",
+            "MERGE_MAX_GAP",
+            "MERGE_EXTENT_MAX_METERS",
+            "MIN_EVENT_PHOTOS",
+            "MOTIF_CHANGE_CONFIRMING_PHOTOS",
+        } <= found
+
+    def test_the_closed_vocabularies_are_not_mistaken_for_adjustable(self) -> None:
+        """Die Gegenrichtung: Waeren sie mit drin, muesste der Waechter entschaerft werden - und
+        entschaerft faengt er die Stellschrauben auch nicht mehr."""
+        found = _adjustable_constants_of_events()
+
+        assert found.isdisjoint(
+            {
+                "PLACE_KINDS",
+                "BOUNDARY_CAUSES",
+                "BOUNDARY_TIME_GAP",
+                "MERGE_BLOCK_REASONS",
+                "MERGE_BLOCK_UNBREAKABLE",
+                "UNBREAKABLE_CAUSES",
+                # Von `places.py` importiert, nicht hier zugewiesen: keine Stellschraube DIESES
+                # Moduls, und die Namensseite des Kriteriums haelt sie heraus.
+                "MAX_PLACE_NAME_LENGTH",
+            }
+        )
+
+    def test_the_guard_recognises_a_bound_constant(self) -> None:
+        """Gegenprobe gegen einen Waechter, der die Importliste gar nicht liest."""
+        bound = _names_bound_from_events(
+            "from photosort.events import EventCandidate, MIN_EVENT_PHOTOS\n"
+        )
+
+        assert bound & _adjustable_constants_of_events() == {"MIN_EVENT_PHOTOS"}
+
+    def test_the_module_alias_form_binds_nothing(self) -> None:
+        """Die zulaessige Form muss zulaessig BLEIBEN, sonst ist der Waechter unerfuellbar."""
+        bound = _names_bound_from_events("from photosort import events as events_module\n")
+
+        assert bound == frozenset()
+
+    @pytest.mark.parametrize("module", ["photosort.event_probe", "photosort.event_inputs"])
+    def test_the_module_binds_no_adjustable_constant(self, module: str) -> None:
+        """JE MODUL, wie der Formwaechter: Eine Stellschraube gehoert bei jeder Nutzung frisch als
+        Modulattribut gelesen. Gebunden zaehlte der Bericht still gegen einen Wert, nach dem gar
+        nicht gegliedert wurde, und jede Fixture, die sie verschiebt, liefe ins Leere."""
+        path = module_file(module)
+        assert path is not None
+
+        bound = _names_bound_from_events(path.read_text(encoding="utf-8"))
+
+        assert bound & _adjustable_constants_of_events() == frozenset()
+
+
 async def _table_snapshot(session: AsyncSession) -> dict[str, list[tuple[object, ...]]]:
     """JEDE Tabelle aus `Base.metadata.sorted_tables` - GEMESSEN, nie als handgeschriebene Liste.
 
@@ -1803,6 +2428,26 @@ class TestARealRunChangesNothing:
         before = asyncio.run(snapshot())
 
         exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 0
+        assert asyncio.run(snapshot()) == before
+
+    def test_not_a_single_row_changes_in_the_coherence_mode_either(self, tmp_path: Path) -> None:
+        """JE ARGUMENTFORM einmal: Der Kohaerenz-Modus rechnet ZWEI Gliederungen statt einer und
+        nimmt damit einen eigenen Weg durch das Modul, den die Zusage der uebrigen nicht mitdeckt."""
+        url, project_id = _prepared(tmp_path)
+
+        async def snapshot() -> dict[str, list[tuple[object, ...]]]:
+            engine = make_engine(url)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                taken = await _table_snapshot(session)
+            await engine.dispose()
+            return taken
+
+        before = asyncio.run(snapshot())
+
+        exit_code = main(["--project-id", str(project_id), "--kohaerenz"], database_url=url)
 
         assert exit_code == 0
         assert asyncio.run(snapshot()) == before
