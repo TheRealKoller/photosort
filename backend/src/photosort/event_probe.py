@@ -75,6 +75,7 @@ from photosort.models import (
 )
 from photosort.places import PlaceInfo, place_cell, usable_locality
 from photosort.scoring import haversine_meters
+from photosort.selection import effective_target
 
 Cell = tuple[float, float]
 
@@ -165,12 +166,26 @@ class EventProbeInput:
     `event_inputs.py` - derselben Stelle, aus der sie auch der Lauf bezieht (ADR 0117 Punkt 5).
 
     `run_found` unterscheidet "Projekt ohne erfolgreichen Kriterien-Lauf" von "Lauf ohne
-    Kandidaten"."""
+    Kandidaten".
+
+    `selection_target` ist der EINGESTELLTE Richtwert des Projekts; `None` heisst "nicht selbst
+    eingestellt" und ist etwas anderes als "kein Richtwert" (`models.py::Project`)."""
 
     project_id: int
     candidates: tuple[EventCandidate, ...]
     entries: tuple[LocationEntry, ...]
     run_found: bool
+    selection_target: int | None = None
+
+    @property
+    def project_photos(self) -> int:
+        """Die Bilderzahl, auf der der Album-Richtwert rechnet.
+
+        DIESELBE MENGE, DIE AUCH DER LAUF ZAEHLT: `entries` ist jedes Foto dieses Projekts
+        (`event_inputs.py`, Bindung an `Photo.project_id` ohne weitere Einschraenkung), also genau
+        die Menge hinter `count(Photo where project_id)` in `worker.py`. Eine zweite Zaehlung
+        daneben koennte mit ihr auseinanderlaufen."""
+        return len(self.entries)
 
 
 # --- Block A: wie sich die Bilder ueber die Cluster verteilen ------------------------------------
@@ -194,6 +209,63 @@ class SizeCounts:
     shortest_seconds: float | None
 
 
+@dataclass(frozen=True)
+class QuotaReach:
+    """Ob die Kontingentvergabe der Albumauswahl ueberhaupt gewichten kann - Block A.
+
+    DIE EIGENTLICHE ABNAHMEZAHL dieser Messung. `selection.py::_quotas` vergibt nach "Abdeckung
+    zuerst" jedem Event zuerst einen Platz und verteilt erst den REST nach Groesse. Ist die
+    Eventzahl mindestens so gross wie der Richtwert, ist nach diesem ersten Schritt kein Platz mehr
+    uebrig (`remaining <= 0`, `selection.py`): Jedes Event bekommt genau einen, und die Gewichtung
+    kommt nie zum Zug. Der Anteil der Ein-Bild-Cluster sagt darueber nichts - er faellt auch dann,
+    wenn die Grundmenge mitschrumpft.
+
+    `target` kommt aus `selection.effective_target`, NICHT aus einer zweiten Fassung der
+    Ableitung: Zwei Formeln liefen beim naechsten Grenzfall auseinander, und der Bericht behauptete
+    dann einen Richtwert, nach dem die Auswahl gar nicht arbeitet.
+
+    `project_photos` und `candidates_total` stehen NEBENEINANDER, weil sie verschiedene Mengen sind
+    (Auswertungsgrenze): Der Richtwert rechnet auf jedem Foto des Projekts, die gemessene
+    Gliederung auf der Kandidatenmenge des letzten erfolgreichen Laufs. Fallen sie auseinander,
+    gehoert das in den Bericht statt verrechnet zu werden."""
+
+    target: int
+    target_is_configured: bool
+    project_photos: int
+    candidates_total: int
+    events_total: int
+
+    @property
+    def free_seats(self) -> int:
+        """Die Plaetze, die nach "Abdeckung zuerst" noch zu verteilen sind - nie negativ: `_quotas`
+        vergibt keine Plaetze zurueck, es bleibt bei einem je Event."""
+        return max(self.target - self.events_total, 0)
+
+    @property
+    def weighting_is_effective(self) -> bool:
+        """Gleichstand zaehlt schon als "wirkungslos": `_quotas` bricht ab, sobald nach der
+        Abdeckung nichts mehr uebrig ist."""
+        return self.events_total < self.target
+
+    @property
+    def measured_on_the_same_set(self) -> bool:
+        return self.project_photos == self.candidates_total
+
+
+def quota_reach(probe: EventProbeInput, events_total: int) -> QuotaReach:
+    """Der Album-Richtwert dieses Projekts und die Eventzahl gegen ihn - rein.
+
+    Rein lesend wie der ganze Bericht: `effective_target` rechnet, es schreibt nichts, und an
+    `selection.py` aendert dieser Lauf nichts."""
+    return QuotaReach(
+        target=effective_target(probe.selection_target, probe.project_photos),
+        target_is_configured=probe.selection_target is not None,
+        project_photos=probe.project_photos,
+        candidates_total=len(probe.candidates),
+        events_total=events_total,
+    )
+
+
 async def read_event_probe_input(session: AsyncSession, project_id: int) -> EventProbeInput:
     """Der EINZIGE Datenbankzugriff dieses Moduls, und er liest ausschliesslich.
 
@@ -207,11 +279,14 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
 
     Alles Weitere kommt aus `event_inputs.py` - derselben Stelle, aus der auch der Lauf es bezieht
     (ADR 0117 Punkt 5)."""
-    project_id_found = (
-        await session.execute(select(Project.id).where(Project.id == project_id))
-    ).scalar_one_or_none()
-    if project_id_found is None:
+    project_row = (
+        await session.execute(
+            select(Project.id, Project.selection_target).where(Project.id == project_id)
+        )
+    ).one_or_none()
+    if project_row is None:
         raise EventProbeError(f"Es gibt kein Projekt mit der Id {project_id}.")
+    selection_target = project_row.selection_target
 
     run_id = (
         await session.execute(
@@ -231,6 +306,7 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
             candidates=(),
             entries=inputs.entries,
             run_found=False,
+            selection_target=selection_target,
         )
 
     photo_ids = list(
@@ -250,6 +326,7 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
         candidates=inputs.candidates,
         entries=inputs.entries,
         run_found=True,
+        selection_target=selection_target,
     )
 
 
@@ -431,6 +508,10 @@ class MotifSensitivityRow:
     `confirming_photos` und `strength_threshold` sind `None` in der Zeile des BETRIEBSWERTS - sie
     entsteht ohne jede Ueberschreibung und ist damit die Gliederung, die auch der Lauf bildete.
 
+    `motif_change_is_off` kennzeichnet die andere Randzeile: den Motivwechsel ganz ohne Wirkung.
+    Sie fuehrt in `confirming_photos` das tatsaechlich gerechnete Fenster mit, wird aber als "aus"
+    beschriftet - die Zahl ist ein Rechenmittel, kein messbarer Betriebspunkt.
+
     DIE LETZTEN BEIDEN FELDER SIND DIE GEGENANZEIGE: Eventzahl und Ein-Bild-Anteil wuerden von
     einem zu groben Zusammenfassen BESSER erfuellt; groesstes Event und laengste Dauer stehen
     deshalb in derselben Zeile, nicht daneben. `longest_seconds` ist `None`, wenn es kein Event
@@ -443,12 +524,30 @@ class MotifSensitivityRow:
     sole_motif_boundaries: int
     largest_event_photos: int
     longest_seconds: float | None
+    motif_change_is_off: bool = False
+
+
+def motif_change_off_window(candidates: Sequence[EventCandidate]) -> int:
+    """Ein Bestaetigungsfenster, das diese Kandidatenmenge NIE bestaetigen kann - der Motivwechsel
+    damit aus, OHNE einen Abschaltpfad im Produktivcode.
+
+    `motif_change_starts` bestaetigt einen Wechsel erst, wenn so viele aufeinanderfolgende
+    mitredende Fotos ihn zeigen, wie das Fenster lang ist; mehr als alle Kandidatenfotos koennen
+    das nie sein. Ein Fenster von "Kandidatenzahl plus eins" ist deshalb unerreichbar, und es
+    entsteht keine einzige Motivgrenze.
+
+    Bewusst kein Schalter an `motif_change_starts` und kein weiterer Parameter: Ein Abschaltpfad im
+    Produktivcode waere ein Zweig, den nur die Messung betritt und den ab dann jeder Aufrufer
+    setzen koennte."""
+    return len(candidates) + 1
 
 
 def _sensitivity_row(
     candidates: Sequence[EventCandidate],
     confirming_photos: int | None,
     strength_threshold: float | None,
+    *,
+    motif_change_is_off: bool = False,
 ) -> MotifSensitivityRow:
     """Eine Kombination, gerechnet mit den MITTELN DES LAUFS.
 
@@ -470,11 +569,16 @@ def _sensitivity_row(
         sole_motif_boundaries=causes.sole[BOUNDARY_MOTIF_CHANGE],
         largest_event_photos=sizes.largest_event_photos,
         longest_seconds=sizes.longest_seconds,
+        motif_change_is_off=motif_change_is_off,
     )
 
 
 def motif_sensitivity(candidates: Sequence[EventCandidate]) -> tuple[MotifSensitivityRow, ...]:
-    """Das ganze Raster, die Zeile des Betriebswerts voran.
+    """Das ganze Raster, die beiden Randzeilen voran: der Betriebswert, dann der Motivwechsel aus.
+
+    ZWEI BEZUGSZEILEN STATT EINER: Das Raster zeigt, wie empfindlich der Motivwechsel ist; erst die
+    Zeile "aus" zeigt, wie viel er insgesamt traegt. Ohne sie bliebe offen, wie die Gliederung ganz
+    ohne ihn aussaehe, und die Antwort waere aus keiner Rasterzeile zu erschliessen.
 
     NUR DIE ALLEINIGE URSACHE ist handlungsleitend (wie in Block B): Eine Motivgrenze zu lockern
     loest dort eine Grenze auf, wo der Motivwechsel ALLEIN getrennt hat - an einer Doppelgrenze
@@ -483,6 +587,9 @@ def motif_sensitivity(candidates: Sequence[EventCandidate]) -> tuple[MotifSensit
     Rein: Kein Aufruf dieser Funktion aendert eine Konstante, eine Zeile oder einen Zustand."""
     return (
         _sensitivity_row(candidates, None, None),
+        _sensitivity_row(
+            candidates, motif_change_off_window(candidates), None, motif_change_is_off=True
+        ),
         *(
             _sensitivity_row(candidates, confirming, strength)
             for confirming in MOTIF_CONFIRMING_VARIANTS
@@ -750,6 +857,55 @@ def _class_lines(counts: Sequence[int], labels: Sequence[str]) -> list[str]:
     ]
 
 
+def _quota_lines(reach: QuotaReach) -> list[str]:
+    """Der Album-Richtwert und die Eventzahl gegen ihn - AUSGESCHRIEBEN ALS AUSSAGE.
+
+    Ein Zahlenpaar allein liesse den Schluss beim Leser, und genau dieser Schluss ist das Mass:
+    Sind es mindestens so viele Events wie Plaetze, ist die Gewichtung der Albumauswahl
+    wirkungslos."""
+    origin = (
+        "eingestellt"
+        if reach.target_is_configured
+        else f"abgeleitet aus {reach.project_photos} Fotos des Projekts, ein Zehntel aufgerundet"
+    )
+    verdict = (
+        (
+            f"Die Kontingentvergabe kann gewichten: {reach.events_total} Events auf "
+            f'{reach.target} Plaetze - nach "Abdeckung zuerst" bleiben {reach.free_seats} '
+            "Plaetze, die nach Groesse verteilt werden."
+        )
+        if reach.weighting_is_effective
+        else (
+            f"Die Kontingentvergabe kann nicht gewichten: {reach.events_total} Events auf "
+            f"{reach.target} Plaetze - jedes Event bekommt genau einen Platz, und kein Restplatz "
+            "bleibt uebrig, bevor die Gewichtung nach Groesse ueberhaupt beginnt."
+        )
+    )
+    lines = [
+        "",
+        "### Reicht der Album-Richtwert fuer eine Gewichtung?",
+        "",
+        f"- Album-Richtwert: {reach.target} Bild(er) ({origin})",
+        f"- Events: {reach.events_total}",
+        f'- freie Plaetze nach "Abdeckung zuerst": {reach.free_seats}',
+        "",
+        verdict,
+    ]
+    if not reach.measured_on_the_same_set:
+        lines += [
+            "",
+            f"Auswertungsgrenze: Der Richtwert rechnet auf den {reach.project_photos} Fotos des "
+            f"Projekts, die gemessene Gliederung auf den {reach.candidates_total} Kandidaten des "
+            "letzten erfolgreichen Kriterien-Laufs. Die beiden Mengen fallen hier auseinander.",
+        ]
+    return lines + [
+        "",
+        "Die Kontingentvergabe sieht ausserdem nur Events mit mindestens einem auswaehlbaren Foto",
+        "(Ausschuss und Rangzeilen ohne Wert fallen dort weg); die Eventzahl hier ist ihre",
+        "Obergrenze, nie eine kleinere Zahl.",
+    ]
+
+
 def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityRow]) -> str:
     """Block E als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
 
@@ -758,7 +914,9 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
     wird die Projekt-Id. Dauern stehen als DAUER, nie als Anfang oder Ende.
 
     Die Zeile des Betriebswerts nennt ihre beiden Werte NICHT: Sie entsteht ohne Ueberschreibung,
-    und eine ausgeschriebene Zahl daneben behauptete, gemessen zu haben, welcher Wert gerade gilt."""
+    und eine ausgeschriebene Zahl daneben behauptete, gemessen zu haben, welcher Wert gerade gilt.
+    Die Zeile "aus" nennt ihr Fenster aus demselben Grund nicht: Es ist ein Rechenmittel, und als
+    Zahl gelesen sieht es aus wie ein weiterer messbarer Betriebspunkt."""
     lines = [
         f"# Empfindlichkeit des Motivwechsels, Projekt {probe.project_id}",
         "",
@@ -775,8 +933,14 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
     ]
     for row in rows:
         operating = row.confirming_photos is None and row.strength_threshold is None
-        confirming = "Betriebswert" if operating else str(row.confirming_photos)
-        strength = "Betriebswert" if operating else f"{row.strength_threshold}"
+        if row.motif_change_is_off:
+            # "aus" statt der gerechneten Fensterlaenge - und die Staerke-Grenze steht dort
+            # unveraendert, wie in der Zeile des Betriebswerts.
+            confirming, strength = "aus", "Betriebswert"
+        elif operating:
+            confirming, strength = "Betriebswert", "Betriebswert"
+        else:
+            confirming, strength = str(row.confirming_photos), f"{row.strength_threshold}"
         lines.append(
             f"| {confirming} | {strength} | {row.events_total} "
             f"| {row.single_photo_events} "
@@ -792,6 +956,11 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
         'allein" zaehlt',
         "nur die Grenzen, an denen keine andere Ursache mitgemeldet hat - nur dort loest eine",
         "gelockerte Motivgrenze ueberhaupt etwas auf.",
+        "",
+        'Die Zeile "aus" ist keine Rasterzelle und kein Betriebspunkt, sondern der andere Rand: ein',
+        "Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos, nie bestaetigbar. Der",
+        "Produktivcode bekommt dafuer keinen Abschalter und keinen weiteren Parameter; die",
+        "Motivstaerke-Grenze steht dort unveraendert - ohne Wechsel wirkt sie ohnehin nicht.",
     ]
     return "\n".join(lines) + "\n"
 
@@ -865,6 +1034,7 @@ def render_report(
     Projekt-Id. Damit sind die Zahlen als Ganzes weitergebbar, ohne Einzelfallpruefung."""
     sizes = size_counts(formation)
     causes = cause_counts(formation)
+    reach = quota_reach(probe, sizes.events_total)
     inheritance = inheritance_counts(probe.entries, probe.candidates)
     landmarks = landmark_counts(probe.candidates, formation, locality_by_cell)
 
@@ -889,6 +1059,7 @@ def render_report(
             )
             or "-"
         ),
+        *_quota_lines(reach),
         "",
         "## B - Trennursachen",
         "",

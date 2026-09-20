@@ -27,13 +27,17 @@ from photosort.event_probe import (
     MOTIF_CONFIRMING_VARIANTS,
     MOTIF_STRENGTH_VARIANTS,
     EventProbeError,
+    EventProbeInput,
+    _quota_lines,
     block_counts,
     cause_counts,
     inheritance_counts,
     landmark_counts,
     main,
     match_distance_counts,
+    motif_change_off_window,
     motif_sensitivity,
+    quota_reach,
     read_event_probe_input,
     size_counts,
 )
@@ -67,6 +71,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.place_dataset import write_extract
+from photosort.selection import effective_target
 from tests.import_closure import import_closure, module_file
 from tests.write_guard import write_statements
 
@@ -214,6 +219,38 @@ class TestTheReadPath:
         # gueltige Koordinate.
         assert {entry.photo_id for entry in probe.entries} == {ranked, unranked}
 
+    async def test_the_configured_target_and_the_photo_count_of_the_project_are_read(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Beides speist den Album-Richtwert, und beides kommt aus DEM Projekt: `NULL` heisst
+        "nicht selbst eingestellt", und die Bilderzahl ist jedes Foto des Projekts - dieselbe
+        Menge, die auch `worker.py` zaehlt, nicht die Kandidatenmenge des Laufs."""
+        project_id = await _project(db_session)
+        ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
+        await _photo(db_session, project_id, minutes=5, gps=(43.52, 16.45))
+        await _successful_run(db_session, project_id, [ranked])
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.selection_target is None
+        assert probe.project_photos == 2
+        assert len(probe.candidates) == 1
+
+    async def test_a_configured_target_reaches_the_measurement(
+        self, db_session: AsyncSession
+    ) -> None:
+        project_id = await _project(db_session)
+        ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
+        await _successful_run(db_session, project_id, [ranked])
+        project = await db_session.get(Project, project_id)
+        assert project is not None
+        project.selection_target = 12
+        await db_session.flush()
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.selection_target == 12
+
     async def test_only_the_latest_successful_run_is_measured(
         self, db_session: AsyncSession
     ) -> None:
@@ -262,6 +299,122 @@ class TestBlockASizes:
         assert counts.largest_event_photos == 0
         assert counts.longest_seconds is None
         assert counts.shortest_seconds is None
+
+
+class TestBlockAQuotaReach:
+    """Ob die Kontingentvergabe ueberhaupt gewichten kann - das Mass, an dem die Zerstueckelung
+    haengt. Der Anteil der Ein-Bild-Cluster ist nur ein Hilfsmass daneben.
+
+    DIE LAGEN STEHEN UEBER EINEN EINGESTELLTEN RICHTWERT, nie ueber eine Bilderzahl, aus der er
+    sich ergaebe: Eine Lage aus Fotozahlen haenge am Zahlwert von `DEFAULT_TARGET_DIVISOR` und
+    ginge nur gegen den heutigen Wert auf. Die Ableitung selbst prueft der Fall darunter, und zwar
+    gegen `effective_target` statt gegen eine Zahl."""
+
+    def test_more_events_than_seats_leaves_nothing_to_weight(self) -> None:
+        """Die gemessene Lage: deutlich mehr Events als Plaetze. "Abdeckung zuerst" vergibt jeden
+        Platz, bevor die Gewichtung beginnt - kein Restplatz bleibt."""
+        reach = quota_reach(_probe_input(selection_target=38, project_photos=373), events_total=81)
+
+        assert reach.target == 38
+        assert reach.target_is_configured is True
+        assert reach.events_total == 81
+        assert reach.free_seats == 0
+        assert reach.weighting_is_effective is False
+
+    def test_fewer_events_than_seats_leaves_seats_to_weight(self) -> None:
+        reach = quota_reach(_probe_input(selection_target=38, project_photos=373), events_total=20)
+
+        assert reach.free_seats == 18
+        assert reach.weighting_is_effective is True
+
+    def test_as_many_events_as_seats_already_exhausts_them(self) -> None:
+        """Die Grenze liegt bei Gleichstand, nicht darueber: `_quotas` bricht ab, sobald nach der
+        Abdeckung nichts mehr uebrig ist (`remaining <= 0`)."""
+        reach = quota_reach(_probe_input(selection_target=38, project_photos=373), events_total=38)
+
+        assert reach.free_seats == 0
+        assert reach.weighting_is_effective is False
+
+    def test_the_target_comes_from_selection_itself_not_from_a_second_formula(self) -> None:
+        """Nicht nachgebildet: Eine zweite Fassung der Ableitung liefe beim naechsten Grenzfall
+        auseinander. Geprueft ueber mehrere Bilderzahlen, damit nicht eine einzelne Zahl zufaellig
+        uebereinstimmt."""
+        for photo_count in (0, 1, 9, 10, 11, 373, 1000):
+            reach = quota_reach(
+                _probe_input(selection_target=None, project_photos=photo_count), events_total=5
+            )
+
+            assert reach.target == effective_target(None, photo_count)
+            assert reach.target_is_configured is False
+
+    def test_a_configured_target_is_reported_as_configured(self) -> None:
+        """Eine eingestellte Zahl gilt absolut - und der Bericht sagt, dass sie eingestellt ist:
+        "38 aus 373 Fotos abgeleitet" und "38 eingestellt" sind verschiedene Aussagen."""
+        reach = quota_reach(_probe_input(selection_target=7, project_photos=373), events_total=5)
+
+        assert reach.target == 7
+        assert reach.target_is_configured is True
+
+    def test_the_measured_sets_are_carried_side_by_side(self) -> None:
+        """Die Auswertungsgrenze: Der Richtwert rechnet auf jedem Foto des Projekts, die gemessene
+        Gliederung auf der Kandidatenmenge des Laufs. Beide Zahlen stehen nebeneinander, damit ein
+        Auseinanderfallen sichtbar wird statt verrechnet zu werden."""
+        probe = _probe_input(selection_target=None, project_photos=400, candidates=3)
+
+        reach = quota_reach(probe, events_total=5)
+
+        assert reach.project_photos == 400
+        assert reach.candidates_total == 3
+        assert reach.measured_on_the_same_set is False
+
+    def test_the_same_set_is_reported_as_such(self) -> None:
+        probe = _probe_input(selection_target=None, project_photos=3, candidates=3)
+
+        assert quota_reach(probe, events_total=1).measured_on_the_same_set is True
+
+    def test_the_verdict_is_written_out_as_a_sentence(self) -> None:
+        """Ein Zahlenpaar liesse den Schluss beim Leser, und genau dieser Schluss ist das Mass -
+        er gehoert ausgeschrieben."""
+        lines = _quota_lines(quota_reach(_probe_input(selection_target=38), events_total=81))
+
+        text = "\n".join(lines)
+        assert "kann nicht gewichten" in text
+        assert "jedes Event bekommt genau einen Platz" in text
+        assert "kann gewichten:" not in text
+
+    def test_the_other_direction_says_so_too(self) -> None:
+        lines = _quota_lines(quota_reach(_probe_input(selection_target=38), events_total=20))
+
+        text = "\n".join(lines)
+        assert "kann gewichten" in text
+        assert "kann nicht gewichten" not in text
+
+    def test_the_diverging_sets_are_named_in_the_report(self) -> None:
+        """Faellt die Bilderzahl mit der Kandidatenmenge auseinander, sagt der Bericht es - sonst
+        laese sich der Richtwert fuer eine Aussage ueber die gemessene Menge halten."""
+        diverging = _probe_input(selection_target=38, project_photos=400, candidates=3)
+        same = _probe_input(selection_target=38, project_photos=3, candidates=3)
+
+        assert "Auswertungsgrenze" in "\n".join(_quota_lines(quota_reach(diverging, 5)))
+        assert "Auswertungsgrenze" not in "\n".join(_quota_lines(quota_reach(same, 5)))
+
+
+def _probe_input(
+    *, selection_target: int | None, project_photos: int = 0, candidates: int = 0
+) -> EventProbeInput:
+    """Ein gelesener Bestand ohne Datenbank - `quota_reach` rechnet rein ueber diese Felder."""
+    return EventProbeInput(
+        project_id=1,
+        candidates=tuple(_candidate(index) for index in range(candidates)),
+        entries=tuple(
+            LocationEntry(
+                photo_id=index, taken_at=NOW + timedelta(minutes=index), gps_lat=None, gps_lon=None
+            )
+            for index in range(project_photos)
+        ),
+        run_found=True,
+        selection_target=selection_target,
+    )
 
 
 def _segment(position: int, photo_count: int, duration_minutes: int = 0) -> BuiltEvent:
@@ -589,14 +742,19 @@ class TestBlockEMotifSensitivity:
     Gemessen wird mit den Mitteln des Laufs: `explain_events` unter variierten Werten, nie eine
     Nachbildung - eine zweite Fassung maesse etwas anderes, als der Lauf tut."""
 
-    def test_the_grid_is_the_cross_product_plus_the_operating_point(self) -> None:
-        rows = motif_sensitivity(_motif_sequence(2))
+    def test_the_grid_is_the_cross_product_plus_two_reference_rows(self) -> None:
+        candidates = _motif_sequence(2)
 
-        assert len(rows) == 1 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
+        rows = motif_sensitivity(candidates)
+
+        assert len(rows) == 2 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
         # Die erste Zeile ist der Betriebswert - die Tabelle traegt ihren eigenen Nullpunkt.
         assert rows[0].confirming_photos is None
         assert rows[0].strength_threshold is None
-        assert {(row.confirming_photos, row.strength_threshold) for row in rows[1:]} == {
+        assert rows[0].motif_change_is_off is False
+        # Die zweite ist der andere Rand: der Motivwechsel ganz aus.
+        assert rows[1].motif_change_is_off is True
+        assert {(row.confirming_photos, row.strength_threshold) for row in rows[2:]} == {
             (confirming, strength)
             for confirming in MOTIF_CONFIRMING_VARIANTS
             for strength in MOTIF_STRENGTH_VARIANTS
@@ -654,6 +812,66 @@ class TestBlockEMotifSensitivity:
             assert row.longest_seconds is None
             assert row.largest_event_photos == 0
             assert row.sole_motif_boundaries == 0
+
+    def test_the_switched_off_row_confirms_no_change_at_all(self) -> None:
+        """ "Aus" entsteht OHNE Abschaltpfad im Produktivcode: Ein Bestaetigungsfenster groesser als
+        die Zahl der Kandidatenfotos kann nie bestaetigt werden - `motif_change_starts` zaehlt
+        hoechstens so viele aufeinanderfolgende Fotos, wie es Fotos gibt.
+
+        Die Gegenprobe steht daneben: Am Betriebswert trennt dieselbe Folge sehr wohl, sonst
+        bestuende der Fall auch gegen ein wirkungsloses Fenster."""
+        candidates = _motif_sequence(6)
+
+        assert events_module.motif_change_starts(candidates), "sonst misst der Fall nichts"
+        assert (
+            events_module.motif_change_starts(
+                candidates, confirming_photos=motif_change_off_window(candidates)
+            )
+            == frozenset()
+        )
+
+    def test_the_switched_off_row_carries_the_window_it_used(self) -> None:
+        """Die Zeile fuehrt den tatsaechlich gerechneten Wert mit - beschriftet wird sie als "aus",
+        aber gemessen wurde mit einer Zahl, und die steht in den Daten."""
+        candidates = _motif_sequence(6)
+
+        [switched_off] = [row for row in motif_sensitivity(candidates) if row.motif_change_is_off]
+
+        assert switched_off.confirming_photos == motif_change_off_window(candidates)
+        assert switched_off.strength_threshold is None
+        assert switched_off.sole_motif_boundaries == 0
+
+    def test_the_switched_off_row_carries_the_same_columns_as_every_other(self) -> None:
+        """Dieselben Spalten, auch die Gegenanzeige: Ein ausgeschalteter Motivwechsel fasst am
+        groebsten zusammen, und genau dort muessen groesstes Event und laengste Dauer ablesbar
+        sein."""
+        candidates = _motif_sequence(6)
+
+        [switched_off] = [row for row in motif_sensitivity(candidates) if row.motif_change_is_off]
+
+        assert switched_off.events_total >= 1
+        assert switched_off.largest_event_photos == len(candidates)
+        assert switched_off.longest_seconds is not None
+
+    def test_switching_the_motif_change_off_never_splits_more_than_the_operating_point(
+        self,
+    ) -> None:
+        """Die Aussage, um derentwillen die Zeile existiert - als Ungleichung zwischen zwei Zeilen,
+        nie als Zahlwert."""
+        candidates = _motif_sequence(6)
+        rows = motif_sensitivity(candidates)
+        operating, switched_off = rows[0], rows[1]
+
+        assert switched_off.events_total < operating.events_total
+        assert switched_off.sole_motif_boundaries < operating.sole_motif_boundaries
+
+    def test_a_run_without_candidates_switches_off_without_an_invented_row(self) -> None:
+        """Der entartete Fall: Ohne Kandidat gibt es nichts zu bestaetigen - das Fenster bleibt
+        wohldefiniert, und die Zeile entsteht trotzdem."""
+        [switched_off] = [row for row in motif_sensitivity([]) if row.motif_change_is_off]
+
+        assert switched_off.events_total == 0
+        assert switched_off.longest_seconds is None
 
     def test_the_grid_varies_both_festlegungen_not_just_one(self) -> None:
         """Gegenprobe gegen eine wirkungslose Variation: Beide Achsen muessen mehr als einen Wert
@@ -1135,6 +1353,57 @@ class TestMainRefusesLoudly:
         assert "Fotos, die dadurch ihr Event gewechselt haben:" in report
 
 
+def _add_one_unranked_photo(url: str, project_id: int) -> None:
+    """Ein Foto ohne Rangzeile - es zaehlt zum Bestand des Projekts, wird aber nie Kandidat.
+    SCHREIBT, aber im TEST, nie im Kommando."""
+
+    async def add() -> None:
+        engine = make_engine(url)
+        factory = make_session_factory(engine)
+        async with factory() as session:
+            await _photo(session, project_id, minutes=4711)
+            await session.commit()
+        await engine.dispose()
+
+    asyncio.run(add())
+
+
+class TestTheReportNamesWhetherTheQuotaCanWeigh:
+    """Ohne diese Zeilen im BERICHT bliebe das eigentliche Mass ungemessen: Der Anteil der
+    Ein-Bild-Cluster sagt nichts darueber, ob die Kontingentvergabe ueberhaupt gewichten kann."""
+
+    def test_the_report_carries_the_target_and_the_verdict(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Die Messlage traegt vier Fotos; der Richtwert kommt aus `effective_target` und wird
+        deshalb auch hier von dort geholt statt als Zahl hingeschrieben. Der Wortlaut des Urteils
+        steht in den reinen Faellen - hier geht es darum, dass der Block den Bericht ueberhaupt
+        erreicht."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id)], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert f"Album-Richtwert: {effective_target(None, 4)}" in report
+        assert "freie Plaetze" in report
+        assert "Die Kontingentvergabe kann" in report
+
+    def test_the_target_rests_on_the_photos_of_the_project_not_on_the_candidates(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Die Auswertungsgrenze am echten Lesepfad: Ein nach dem Lauf hinzugekommenes Foto zaehlt
+        fuer den Richtwert mit - er rechnet auf dem Bestand, nicht auf der Kandidatenmenge - und
+        der Bericht sagt, dass die beiden Mengen auseinanderfallen."""
+        url, project_id = _prepared(tmp_path)
+        _add_one_unranked_photo(url, project_id)
+
+        assert main(["--project-id", str(project_id)], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert f"Album-Richtwert: {effective_target(None, 5)}" in report
+        assert "Auswertungsgrenze" in report
+
+
 class TestTheOutputSeparatesNumbersFromPlaces:
     """S2 ueber ALLE SECHS KLASSEN. Die Messlage traegt je einen unterscheidbaren Wert, und keiner
     steht im Bericht - das ist die Bedingung dafuer, dass die Zahlen als Ganzes in ein
@@ -1246,7 +1515,7 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         with pytest.raises(SystemExit):
             main(["--project-id", str(project_id), "--motiv", "--riegel"], database_url=url)
 
-    def test_the_motif_report_carries_a_row_per_combination_plus_the_operating_point(
+    def test_the_motif_report_carries_a_row_per_combination_plus_both_reference_rows(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         url, project_id = _prepared(tmp_path)
@@ -1257,9 +1526,24 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         report = capsys.readouterr().out
         assert "Betriebswert" in report
         rows = [line for line in report.splitlines() if line.startswith("| ")]
-        # Kopfzeile, die Zeile des Betriebswerts und je eine Zeile je Kombination (die Trennzeile
-        # der Tabelle beginnt mit `|---` und zaehlt hier nicht mit).
-        assert len(rows) == 2 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
+        # Kopfzeile, die Zeile des Betriebswerts, die Zeile "aus" und je eine Zeile je Kombination
+        # (die Trennzeile der Tabelle beginnt mit `|---` und zaehlt hier nicht mit).
+        assert len(rows) == 3 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
+
+    def test_the_switched_off_row_is_labelled_not_numbered(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """ "Aus" ist eine Aussage, keine Fensterlaenge: Die gerechnete Zahl (Kandidatenzahl plus
+        eins) im Bericht laese sich als messbarer Betriebspunkt missverstehen."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id), "--motiv"], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        [switched_off] = [line for line in report.splitlines() if line.startswith("| aus |")]
+        # Die Messlage traegt vier Kandidaten; das Fenster waere also 5.
+        assert "| 5 |" not in switched_off
+        assert "Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos" in report
 
     def test_the_motif_mode_measures_nothing_of_the_place_blocks(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
