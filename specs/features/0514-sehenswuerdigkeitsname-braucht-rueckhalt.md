@@ -1,6 +1,6 @@
 # 0514 - Sehenswürdigkeitsname benennt ein Event erst ab einem Anteil seiner Fotos
 
-**Status:** Accepted
+**Status:** Implemented ([PR #524](https://github.com/TheRealKoller/photosort/pull/524))
 **Erstellt:** 2026-09-20
 **Bezug:** [Issue #514](https://github.com/TheRealKoller/photosort/issues/514)
 
