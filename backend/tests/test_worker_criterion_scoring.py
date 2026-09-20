@@ -4356,22 +4356,34 @@ async def _events_of_run(session: AsyncSession, run_id: int) -> list[Event]:
     )
 
 
-async def test_the_landmark_signal_works_in_a_run_without_any_cloud_phase(
+def _in_its_own_event(after: datetime) -> datetime:
+    """Ein Zeitpunkt, der ein EIGENES Event eroeffnet und darin bleibt.
+
+    Jenseits von `MERGE_MAX_GAP`, nicht nur jenseits von `EVENT_TIME_GAP`: Stufe 3 schluege ein
+    Ein-Bild-Segment sonst wieder dem Nachbarn zu, und der Fall zaehlte still ein Event statt
+    zweier. Beide Abstaende kommen aus den Modulkonstanten, nie aus einer Zahl.
+
+    Seit ADR 0118 trennt der Sehenswuerdigkeitsname nicht mehr; jeder Fall, der zwei Events
+    braucht, holt sie sich hierueber."""
+    return after + events_module.MERGE_MAX_GAP + timedelta(minutes=1)
+
+
+async def test_the_landmark_names_of_a_run_without_any_cloud_phase_reach_their_events(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     """DER ROT-ANKER dieser Sektion: Einwilligung aus, keine Cloud-Phase, die Namen liegen NUR aus
-    einem frueheren Lauf in `photo_landmark_detections`. Das Trennsignal muss trotzdem greifen.
-    Eine Umsetzung, die die Namen aus einer laufinternen Abbildung der Cloud-Antworten liest, ist
-    hier rot und sonst nirgends."""
+    einem frueheren Lauf in `photo_landmark_detections`. Sie muessen trotzdem an ihren Events
+    ankommen. Eine Umsetzung, die die Namen aus einer laufinternen Abbildung der Cloud-Antworten
+    liest, ist hier rot und sonst nirgends.
+
+    Die TRENNUNG kommt seit ADR 0118 aus der Zeitluecke, nicht mehr aus dem Namenswechsel; der
+    Name wird hier nur noch getragen, nicht mehr gelesen, um eine Grenze zu setzen."""
     project = await _make_project(db_session)
     assert project.cloud_vision_detection_enabled is False
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    eiffel = await _add_photo(
-        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-    )
-    trocadero = await _add_photo(
-        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
-    )
+    start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    eiffel = await _add_photo(db_session, project, "a.jpg", "etag-a", start)
+    trocadero = await _add_photo(db_session, project, "b.jpg", "etag-b", _in_its_own_event(start))
     for photo in (eiffel, trocadero):
         await _add_score(db_session, photo, cluster_key="cluster-0")
         _write_display_variant(tmp_path, photo, _flat_image())
@@ -4398,12 +4410,9 @@ async def test_the_event_building_never_mutates_photo_score_cluster_key(
     unveraendert nachgewiesen. Die Divergenz beider Felder ist gewollt."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    eiffel = await _add_photo(
-        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-    )
-    trocadero = await _add_photo(
-        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
-    )
+    start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    eiffel = await _add_photo(db_session, project, "a.jpg", "etag-a", start)
+    trocadero = await _add_photo(db_session, project, "b.jpg", "etag-b", _in_its_own_event(start))
     for photo in (eiffel, trocadero):
         await _add_score(db_session, photo, cluster_key="cluster-0")
         _write_display_variant(tmp_path, photo, _flat_image())
@@ -4479,12 +4488,9 @@ async def test_landmark_rows_of_mixed_origin_both_take_effect_in_one_run(
     project.cloud_vision_detection_enabled = True
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    older = await _add_photo(
-        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-    )
-    fresh = await _add_photo(
-        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
-    )
+    start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    older = await _add_photo(db_session, project, "a.jpg", "etag-a", start)
+    fresh = await _add_photo(db_session, project, "b.jpg", "etag-b", _in_its_own_event(start))
     for photo in (older, fresh):
         await _add_score(db_session, photo, cluster_key="cluster-0")
         _write_display_variant(tmp_path, photo, _flat_image())
@@ -4535,18 +4541,13 @@ async def test_the_partition_ranking_uses_the_event(
     Erstplatziertes seiner eigenen Partition."""
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
-    eiffel = await _add_photo(
-        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-    )
-    trocadero = await _add_photo(
-        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
-    )
+    start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    eiffel = await _add_photo(db_session, project, "a.jpg", "etag-a", start)
+    trocadero = await _add_photo(db_session, project, "b.jpg", "etag-b", _in_its_own_event(start))
     for photo in (eiffel, trocadero):
         await _add_score(db_session, photo, cluster_key="cluster-0")
         _write_display_variant(tmp_path, photo, _flat_image())
         await _add_album_suitability(db_session, photo)
-    await _add_landmark_detection(db_session, eiffel, "Eiffelturm")
-    await _add_landmark_detection(db_session, trocadero, "Trocadero")
 
     run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
 
@@ -4606,7 +4607,10 @@ async def test_the_run_persists_its_events_with_position_and_time_span(
     scoring_run = await _add_successful_scoring_run(db_session, project)
     start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
     first = await _add_photo(db_session, project, "a.jpg", "etag-a", start)
-    second = await _add_photo(db_session, project, "b.jpg", "etag-b", start + timedelta(minutes=30))
+    # Im selben Event wie `first` - der Abstand kommt aus `EVENT_TIME_GAP`, nicht aus einer Zahl.
+    second = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", start + events_module.EVENT_TIME_GAP / 2
+    )
     # Eigenes Event ueber die Zeitluecke - und weit genug, dass Stufe 3 es nicht wieder
     # zuschlaegt: der Abstand kommt aus `MERGE_MAX_GAP`, nicht aus einer Zahl.
     third = await _add_photo(

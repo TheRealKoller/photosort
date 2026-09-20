@@ -74,6 +74,13 @@ Ortsfehler (siehe „Entscheidungen").
       Entfernung, danach dem früheren — und nur, wenn alle vier Riegel halten. Hält keiner der
       beiden Nachbarn, bleibt das Segment unverändert bestehen; das ist ein gültiges Ergebnis, kein
       Fehlerfall.
+- [ ] Ein Wechsel des Sehenswürdigkeitsnamens trennt keine Events mehr. Zwei Fotos, die sich
+      allein in ihrem Namen unterscheiden, stehen im selben Event.
+- [ ] Der Name bleibt am Event: `events.landmark_name`, `place_kind` und die Anzeige sind
+      unverändert. Ein Event, dessen Fotos verschiedene Namen tragen, trägt den des **frühesten**
+      benannten Fotos — das ist ab jetzt die Regel, nicht mehr ein defensiver Zweig.
+- [ ] `sehenswuerdigkeit` bleibt im Ursachenvorrat und steht in der Nachmessung bei 0 (0,0 %).
+      Die Zeile ist der Nachweis der Änderung; sie verschwindet nicht aus dem Bericht.
 - [ ] Nach der Änderung ist an denselben Daten messbar, dass der Anteil der Ein-Bild-Cluster
       **mindestens halbiert** ist gegenüber dem in „Messprotokoll" festgehaltenen Ausgangswert
       (24,2 %, also Ziel ≤ 12,1 %). **Dieses Kriterium steht unter Vorbehalt:** Die Ausgangsmessung
@@ -83,12 +90,15 @@ Ortsfehler (siehe „Entscheidungen").
 
 **Dabei nicht zu viel verschmelzen**
 
-- [ ] Kein Event überschreitet `EVENT_MAX_SPAN`, und keines überschreitet
-      `EVENT_EXTENT_MAX_METERS` — weder als Ergebnis des Signal-Durchlaufs noch als Ergebnis des
-      Zusammenlegens.
-- [ ] Eine Grenze, deren Ursachenmenge `motivwechsel` oder `sehenswuerdigkeit` enthält, wird vom
-      Zusammenlegen nie aufgelöst — auch dann nicht, wenn beide Nachbarn alle vier Riegel erfüllen
-      und das Segment aus einem einzigen Foto besteht.
+- [ ] Kein Event überschreitet `EVENT_MAX_SPAN`. Kein Event überschreitet
+      `MERGE_EXTENT_MAX_METERS`, und kein Event **aus dem Signal-Durchlauf** überschreitet
+      `EVENT_EXTENT_MAX_METERS`. Die frühere Fassung — beide Stufen gegen dieselbe Zahl — gilt
+      seit ADR 0118 nicht mehr; sie machte Stufe 3 für ausdehnungsgetrennte Segmente strukturell
+      unpassierbar.
+- [ ] Eine Grenze, deren Ursachenmenge `motivwechsel` enthält, wird vom Zusammenlegen nie
+      aufgelöst — auch dann nicht, wenn beide Nachbarn alle vier Riegel erfüllen und das Segment
+      aus einem einzigen Foto besteht. `sehenswuerdigkeit` gehört seit ADR 0118 nicht mehr dazu:
+      Es entstehen keine solchen Grenzen mehr.
 - [ ] Die Nachmessung weist aus, welcher Anteil der Grenzen durch das Zusammenlegen aufgelöst wurde
       und welcher Anteil der Fotos dadurch das Event gewechselt hat.
 - [ ] Weder Datenmodell noch API-Antwort noch Oberfläche bekommen ein Feld, einen Endpunkt oder
@@ -409,6 +419,51 @@ aggressiven Verschmelzung *besser* erfüllt würden: Anteil der Grenzen, die Stu
 und Anteil der Fotos, die dadurch ihr Event gewechselt haben. Beides ohne willkürliche Schwelle,
 rein messend, in Block B und D.
 
+### PR 5 — die Sehenswürdigkeit trennt nicht mehr, Stufe 3 bekommt ihre eigene Ausdehnungsgrenze
+
+Entschieden von Daniel am 2026-09-19 an den Zahlen der Blöcke B, C3 und F; festgehalten als ADR
+[`0118`](../decisions/0118-sehenswuerdigkeit-trennt-nicht-mehr-und-eine-eigene-ausdehnungsgrenze-fuers-zusammenlegen.md).
+Sie löst ADR 0087 Abschnitt 3, zweiter Absatz und ADR 0117 Punkt 3 in zwei benannten Teilen ab.
+
+**1. `LandmarkChangeSignal` entfällt** — aus `default_signals()` und als Klasse; die Liste führt
+vier Signale. `BOUNDARY_LANDMARK` **bleibt** in `BOUNDARY_CAUSES` (die Nachmessung braucht die
+Zeile, um mit der Ausgangsmessung vergleichbar zu bleiben — die Null ist der Nachweis) und
+**fällt** aus `UNBREAKABLE_CAUSES`, wo allein `motivwechsel` bleibt. Ein Wortschatz darf eine
+ehrliche Null führen, eine an jeder Kante gelesene Regel nicht.
+
+**Der Name bleibt.** `_name_of` liefert weiterhin den Namen des frühesten benannten Fotos, und die
+Feldinvariante `place_kind='landmark'` ⇒ `landmark_name` gesetzt läuft unverändert über die eine
+Aufrufstelle `_built`. Was sich ändert, ist der Status dieser Regel: Bisher stellte
+`LandmarkChangeSignal` sicher, dass die Frage gar nicht auftrat; ab jetzt darf ein Event Fotos mit
+verschiedenen Namen enthalten, und der früheste gewinnt. Der Docstring in `events.py` wird
+entsprechend umgeschrieben, und die Regel bekommt ihren eigenen Testfall — heute ist dieser Zweig
+nur defensiv erreichbar und damit ungeprüft.
+
+**Getragene Kehrseite:** Ein Name benennt jetzt ein potenziell größeres Event und verdrängt dort
+weiterhin Ortsnamen und Koordinate. Eine einzelne, zu 42,3 % ortsblinde Erkennung kann einem
+ganzen Ausflug ihren Namen geben. Das ist größere Reichweite der bestehenden Fehlerquelle, keine
+neue; ihre Behebung ist die Plausibilisierung des Namens und gehört zu Issue
+[#514](https://github.com/TheRealKoller/photosort/issues/514).
+
+**2. Riegel (c) prüft `MERGE_EXTENT_MAX_METERS = 1500,0`** statt `EVENT_EXTENT_MAX_METERS`. Heute
+prüft er dieselbe Bedingung, deren Überschreitung die Trennung ausgelöst hat — für
+ausdehnungsgetrennte Segmente ist die Stufe damit strukturell unpassierbar.
+
+Der Wert ist hergeleitet, nicht kalibriert: die Trennschwelle plus **einen** Schritt
+(`EVENT_EXTENT_MAX_METERS + EVENT_STEP_MAX_METERS`). Zugeschlagen wird ein Segment unter
+`MIN_EVENT_PHOTOS`, heute also ein einzelnes Foto ohne eigene Ausdehnung; die Box wächst genau um
+dessen Abstand zur Box des Nachbarn. Ein Schritt über `EVENT_STEP_MAX_METERS` ist im Maßstab
+dieses Projekts bereits ein Ortswechsel — mehr als einen zuzulassen hieße, eine Trennung
+aufzulösen, die das Projekt selbst so nennt. Als **Literal**, nicht als gerechnete Summe: Eine
+beim Import gebundene Summe folgte `monkeypatch.setattr` nicht, und die Fixture über die
+verschobenen Konstanten liefe ins Leere.
+
+**Die Zusage, die dabei fällt:** „Kein Event überschreitet `EVENT_EXTENT_MAX_METERS`, weder als
+Ergebnis des Durchlaufs noch als Ergebnis des Zusammenlegens" gilt so nicht mehr. An ihre Stelle
+treten **zwei** Zusagen mit je eigener Grenze (siehe Akzeptanzkriterien). Die Invariante
+`assert_full_signal_invariants` wird entsprechend **zweigeteilt statt gelockert**; eine bloße
+Lockerung gäbe die Schranke des Durchlaufs stillschweigend mit auf.
+
 ### Betroffene Dateien
 
 **Backend**
@@ -632,11 +687,66 @@ heutigen Werte und ihren Vermerk „unkalibriert".
 
 ### Nachmessung (nach der Änderung)
 
-- **Block A und B erneut**, mit demselben Kommando und demselben Projekt. Block C entfällt: Er hat
-  keinen systematischen Fehler belegt, und an der Ortsbestimmung ändert diese Spec nichts.
-- **Abnahme:** Anteil der Ein-Bild-Cluster mindestens halbiert (≤ 12,1 %); kein Event über
-  `EVENT_MAX_SPAN`; die neu ausgewiesene Gegenanzeige (Anteil der aufgelösten Grenzen, Anteil der
-  Fotos, die ihr Event gewechselt haben) bleibt erklärbar.
+Gemessen am 2026-09-18 an Projekt 3, nach dem Merge von PR 3.
+
+| | vorher | nachher | Ziel |
+|---|---|---|---|
+| Events | 91 | 88 | — |
+| Ein-Bild-Cluster | 22 (24,2 %) | **18 (20,5 %)** | ≤ 12,1 % |
+| längste Eventdauer | 1 h 32 min | 2 h 8 min | < 8 h |
+
+**Gegenanzeige:** 3 von 90 Grenzen aufgelöst (3,3 %), 3 von 373 Fotos haben ihr Event gewechselt
+(0,8 %).
+
+**Die Abnahme ist verfehlt, und die Gegenanzeige sagt warum.** Der Anteil ist von 24,2 % auf 20,5 %
+gefallen — das Ziel war ≤ 12,1 %. Stufe 3 hat dabei **nur drei** Grenzen aufgelöst. Sie hat also
+nicht zu viel verschmolzen, sondern fast gar nichts; die 0,8 % gewechselter Fotos belegen, dass in
+der anderen Richtung Luft ist.
+
+**Der begründete Verdacht: Riegel (c) prüft dieselbe Bedingung, die die Trennung verursacht hat.**
+Ein Segment, das wegen `ausdehnung` oder `schritt` abgetrennt wurde, lässt sich nicht
+zurück-zusammenlegen — das Ergebnis überschritte `EVENT_EXTENT_MAX_METERS` erneut, weil genau diese
+Überschreitung die Trennung ausgelöst hat. Beide Ursachen zusammen eröffnen 7 bzw. 7 der zu kleinen
+Segmente. Das wäre ein Entwurfsfehler der dritten Stufe, kein Kalibrierungsproblem.
+
+**Nicht belegt, sondern erschlossen.** An welchem der vier Riegel eine Zusammenlegung tatsächlich
+scheitert, weist das Messkommando heute nicht aus. Bevor daran etwas geändert wird, gehört genau
+das gemessen — nach demselben Grundsatz, der in dieser Story bereits zwei falsche Annahmen
+aufgedeckt hat.
+
+**Was funktioniert hat:** Die Dauergrenze trägt. `dauer` meldet an denselben vier Stellen, an denen
+vorher `kalendertag` meldete, und in beiden Fällen nie allein — dort trennt ohnehin die Zeitlücke.
+Die längste Eventdauer ist von 1 h 32 min auf 2 h 8 min gestiegen: Anlässe über Mitternacht bleiben
+jetzt zusammen. Kein Event kommt `EVENT_MAX_SPAN` (8 h) auch nur nahe.
+
+### Riegel-Diagnose (Block F), gemessen am 2026-09-19
+
+An Projekt 3 nach dem Merge von PR 4, mit `python -m photosort.event_probe --riegel --project-id 3`.
+Bezug: 88 Events, 18 Ein-Bild-Cluster, 3 durch Stufe 3 aufgelöste Grenzen, **18 zu kleine Segmente,
+die bestehen blieben**.
+
+| Grund | an einer Kante beteiligt | an allen Kanten **der** Grund |
+|---|---|---|
+| **`unantastbar`** | **14 (77,8 %)** | **7 (38,9 %)** |
+| `ausdehnung` | 7 (38,9 %) | 3 (16,7 %) |
+| `zeitluecke` | 5 (27,8 %) | 0 (0,0 %) |
+| `dauer` | 4 (22,2 %) | 0 (0,0 %) |
+| `kein_nachbar` | 0 (0,0 %) | 0 (0,0 %) |
+
+**Die Unantastbarkeit ist der größte Blocker, der Ausdehnungs-Riegel der zweitgrößte.** An 14 von 18
+Segmenten steht die Sperre an mindestens einer Kante, bei 7 ist sie der alleinige Grund; `ausdehnung`
+kommt auf 3.
+
+**`zeitluecke` und `dauer` sind nie allein der Grund.** `MERGE_MAX_GAP` zu erhöhen — der billigste
+denkbare Eingriff — löste damit **kein einziges** Segment auf. Sichtbar wurde das erst, nachdem der
+Kurzschluss in der Riegelprüfung behoben war: Vorher verdeckte der zuerst zutreffende Riegel die
+späteren, und `ausdehnung` wird zuletzt geprüft.
+
+**Eine Unschärfe, die diese Messung nicht auflöst:** `unantastbar` fasst `motivwechsel` und
+`sehenswuerdigkeit` zusammen. Welcher der beiden wie oft sperrt, weist der Bericht nicht aus; aus
+Block B lässt sich nur abschätzen, dass es grob hälftig ist (Motivwechsel eröffnet 5 zu kleine
+Segmente, Sehenswürdigkeit 6). Mit PR 5 erledigt sich die Frage von selbst: Danach ist `unantastbar`
+eindeutig der Motivwechsel.
 
 ### Befund zur Ortszuordnung
 

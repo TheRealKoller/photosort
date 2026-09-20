@@ -1,6 +1,12 @@
 # 0117 - Der Anlass ist die Einheit: eigene Schwellen, Dauergrenze statt Kalendertag, Mindestgröße als dritte Stufe
 
 **Status:** Accepted
+**Teilweise abgelöst:** Punkt 3, zwei benannte Teile — Riegel (c) prüft `MERGE_EXTENT_MAX_METERS`
+statt `EVENT_EXTENT_MAX_METERS`, und von den zwei unantastbaren Grenzen bleibt eine (der
+Motivwechsel; die Sehenswürdigkeit erzeugt keine Grenze mehr) — durch ADR
+[`0118`](./0118-sehenswuerdigkeit-trennt-nicht-mehr-und-eine-eigene-ausdehnungsgrenze-fuers-zusammenlegen.md).
+Unverändert gelten die übrigen drei Riegel, die Nachbarwahl samt Tie-Break, der Durchgang bis zum
+Stillstand, das Terminierungsargument und die werfende Rundenobergrenze.
 **Datum:** 2026-09-18
 **Bezug:** Spec `specs/features/0506-*.md`, ADR
 [`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md) (Abschnitt 5, letzter

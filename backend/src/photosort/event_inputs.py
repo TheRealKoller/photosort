@@ -72,11 +72,12 @@ async def _landmark_names(
     """Die bereits PERSISTIERTEN Sehenswuerdigkeit-Namen der Kandidaten eines Laufs - ein
     einzelner Lesezugriff, KEIN Cloud-Aufruf.
 
-    Gelesen wird die TABELLE, NIE eine laufinterne Abbildung der Cloud-Antworten: das Trennsignal
-    wirkt damit auch in einem Lauf, in dem die Cloud-Phase gar nicht lief (Einwilligung aus,
-    Cloud-Haekchen abgewaehlt, oder alle Fotos bereits in einem frueheren Lauf erkannt), und ein
-    erneuter Kriterien-Lauf zieht dieselben Grenzen wieder. Eine In-Memory-Variante koppelte die
-    Gliederung still an die Frage, ob im SELBEN Lauf Geld ausgegeben wurde.
+    Gelesen wird die TABELLE, NIE eine laufinterne Abbildung der Cloud-Antworten: Die Namen
+    erreichen ihre Events damit auch in einem Lauf, in dem die Cloud-Phase gar nicht lief
+    (Einwilligung aus, Cloud-Haekchen abgewaehlt, oder alle Fotos bereits in einem frueheren Lauf
+    erkannt), und ein erneuter Kriterien-Lauf benennt dieselben Events wieder. Eine
+    In-Memory-Variante koppelte die Benennung still an die Frage, ob im SELBEN Lauf Geld ausgegeben
+    wurde.
 
     Dies ist zugleich die EINZIGE Quelle von `events.landmark_name` (Sicherheitsauflage M9).
 
@@ -98,7 +99,8 @@ async def _landmark_names(
     einzige Deckung des Altbestands: es gibt reale Zeilen mit unsaniertem Rohtext und fuer sie
     keinen Migrationsweg. Bitte nicht als vermeintliche Dopplung entfernen. Fachlich wirkt sie
     hier zusaetzlich als Zusammenfuehrung: ein unsanierter Altname und sein sauberer Zwilling
-    meinen dieselbe Sehenswuerdigkeit und duerfen ihr Event nicht zerteilen."""
+    meinen dieselbe Sehenswuerdigkeit und duerfen ihr Event nicht unter zwei Schreibweisen
+    fuehren."""
     if not photo_ids:
         return {}
 

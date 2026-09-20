@@ -35,7 +35,6 @@ from photosort.events import (
     EventSpan,
     EventSpanSignal,
     ExtentSignal,
-    LandmarkChangeSignal,
     LocationEntry,
     MergeOutcome,
     Segment,
@@ -92,6 +91,15 @@ def _step_max() -> float:
 def _extent_max() -> float:
     """Die geltende Ausdehnungs-Schwelle - als Modulattribut gelesen."""
     return events_module.EVENT_EXTENT_MAX_METERS
+
+
+def _merge_extent_max() -> float:
+    """Die geltende Ausdehnungsgrenze von STUFE 3 - als Modulattribut gelesen.
+
+    Eine andere als `_extent_max()`: Riegel (c) prueft seit ADR 0118 eine eigene, groessere
+    Grenze. Praefte er weiter die Trennschwelle, waere die Stufe fuer genau die Segmente
+    unpassierbar, die die Ausdehnung getrennt hat."""
+    return events_module.MERGE_EXTENT_MAX_METERS
 
 
 def _max_span() -> timedelta:
@@ -239,14 +247,15 @@ def _window() -> int:
     return events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS
 
 
-# Zeitluecke, Schritt, Ausdehnung, Dauergrenze, Ueberbrueckung, Mindestgroesse. `None` ist der
-# Betriebssatz. Jeder weitere Satz haelt die drei zulaessigen Ungleichungen ein
-# (`MERGE_MAX_GAP > EVENT_TIME_GAP`, `MIN_EVENT_PHOTOS >= 2`, `EVENT_MAX_SPAN < 24 h`) und laesst
+# Zeitluecke, Schritt, Ausdehnung, Dauergrenze, Ueberbrueckung, Mindestgroesse, Ausdehnungsgrenze
+# von Stufe 3. `None` ist der Betriebssatz. Jeder weitere Satz haelt die vier zulaessigen
+# Ungleichungen ein (`MERGE_MAX_GAP > EVENT_TIME_GAP`, `MIN_EVENT_PHOTOS >= 2`,
+# `EVENT_MAX_SPAN < 24 h`, `MERGE_EXTENT_MAX_METERS > EVENT_EXTENT_MAX_METERS`) und laesst
 # `EPSILON_METERS`/`EPSILON_TIME` klein gegen jede seiner Schwellen.
 _SHIFTED_CONSTANT_SETS: tuple[tuple[object, ...] | None, ...] = (
     None,
-    (timedelta(hours=3), 1500.0, 4000.0, timedelta(hours=20), timedelta(hours=5), 3),
-    (timedelta(minutes=10), 300.0, 600.0, timedelta(hours=2), timedelta(minutes=25), 2),
+    (timedelta(hours=3), 1500.0, 4000.0, timedelta(hours=20), timedelta(hours=5), 3, 5500.0),
+    (timedelta(minutes=10), 300.0, 600.0, timedelta(hours=2), timedelta(minutes=25), 2, 900.0),
 )
 
 _SHIFTED_CONSTANT_NAMES = (
@@ -256,15 +265,16 @@ _SHIFTED_CONSTANT_NAMES = (
     "EVENT_MAX_SPAN",
     "MERGE_MAX_GAP",
     "MIN_EVENT_PHOTOS",
+    "MERGE_EXTENT_MAX_METERS",
 )
 
 
 class _UnderShiftedEventConstants:
-    """Jeder Fall einer erbenden Klasse laeuft unter MEHREREN Saetzen der sechs Schwellen.
+    """Jeder Fall einer erbenden Klasse laeuft unter MEHREREN Saetzen der sieben Schwellen.
 
-    Die sechs sind aenderbare, unkalibrierte Festlegungen; kein Fall darf ihren Zahlwert pinnen.
+    Die sieben sind aenderbare, unkalibrierte Festlegungen; kein Fall darf ihren Zahlwert pinnen.
     Die Faelle bauen ihre Lage deshalb aus `_time_gap()`, `_step_max()`, `_extent_max()`,
-    `_max_span()` und `_merge_gap()` statt aus einer Zahl, und diese Fixture setzt die
+    `_max_span()`, `_merge_gap()` und `_merge_extent_max()` statt aus einer Zahl, und diese Fixture setzt die
     Modulkonstanten auf jeden Satz der Liste. Ein Fall, der einen Zahlwert doch spiegelt, wird unter
     mindestens einem Parameter rot - hier, und nicht erst bei der naechsten Kalibrierung.
 
@@ -302,32 +312,56 @@ def assert_event_invariants(
     assert len(assigned) == len(set(assigned)), "ein Foto gehoert zu genau einem Event"
 
 
+def _diagonal_of(
+    event: BuiltEvent, location_by_id: Mapping[int, EffectiveLocation | None]
+) -> float | None:
+    """Die Diagonale der umschliessenden Box eines Events - `None` ohne jede wirksame Koordinate."""
+    located = [
+        location
+        for photo_id in event.photo_ids
+        if (location := location_by_id[photo_id]) is not None
+    ]
+    if not located:
+        return None
+    return haversine_meters(
+        min(location.lat for location in located),
+        min(location.lon for location in located),
+        max(location.lat for location in located),
+        max(location.lon for location in located),
+    )
+
+
 def assert_full_signal_invariants(
     candidates: Sequence[EventCandidate], events: Sequence[BuiltEvent]
 ) -> None:
-    """Die beiden Zusagen ueber jede Event-Folge aus dem VOLLEN Signalsatz: kein Event ueber
-    `EVENT_MAX_SPAN`, keines ueber `EVENT_EXTENT_MAX_METERS` - weder als Ergebnis des Durchlaufs
-    noch als Ergebnis des Zusammenlegens.
+    """Die DREI Zusagen ueber jede Event-Folge aus dem VOLLEN Signalsatz.
+
+    Kein Event ueber `EVENT_MAX_SPAN`. Kein Event ueber `MERGE_EXTENT_MAX_METERS`. Und kein Event
+    AUS DEM DURCHLAUF ueber `EVENT_EXTENT_MAX_METERS`.
+
+    ZWEIGETEILT, NICHT GELOCKERT (ADR 0118 Punkt 4): Die frueher eine Zusage - beide Stufen gegen
+    dieselbe Zahl - gilt so nicht mehr, seit Riegel (c) seine eigene, groessere Grenze prueft. Sie
+    bloss auf die groessere anzuheben gaebe die Schranke des Durchlaufs stillschweigend mit auf;
+    die Ausdehnung eines Events bliebe zwar beschraenkt, aber nicht mehr messbar daran, in welcher
+    Stufe sie entstanden ist.
+
+    Die zweite Haelfte misst am Durchlauf selbst: Mit abgeschaltetem Zusammenlegen ist die
+    Event-Folge genau seine Gliederung. Gerechnet wird ueber FRISCHE Signale (`None`) - eine bereits
+    verbrauchte Liste traege den Zustand des ersten Laufs weiter.
 
     Als Nachsatz ueber der ganzen Fallmenge, nicht als Einzelfall. Nur fuer den vollen Satz: Eine
-    injizierte Teilmenge kennt die beiden Riegel nicht und darf sie ueberschreiten."""
+    injizierte Teilmenge kennt die Riegel nicht und darf sie ueberschreiten."""
     location_by_id = {candidate.photo_id: candidate.location for candidate in candidates}
     for event in events:
         assert event.ended_at - event.started_at <= _max_span()
-        located = [
-            location
-            for photo_id in event.photo_ids
-            if (location := location_by_id[photo_id]) is not None
-        ]
-        if not located:
-            continue
-        diagonal = haversine_meters(
-            min(location.lat for location in located),
-            min(location.lon for location in located),
-            max(location.lat for location in located),
-            max(location.lon for location in located),
-        )
-        assert diagonal <= _extent_max()
+        diagonal = _diagonal_of(event, location_by_id)
+        if diagonal is not None:
+            assert diagonal <= _merge_extent_max()
+
+    for from_the_pass in build_events(candidates, None, min_event_photos=_NO_MERGING):
+        diagonal = _diagonal_of(from_the_pass, location_by_id)
+        if diagonal is not None:
+            assert diagonal <= _extent_max()
 
 
 def _is_the_full_signal_set(signals: list[BoundarySignal] | None) -> bool:
@@ -707,65 +741,46 @@ class TestExtentSignal(_UnderShiftedEventConstants):
         assert [event.photo_ids for event in events] == [(1,), (2,)]
 
 
-class TestLandmarkChangeSignal:
-    """Die Sehenswuerdigkeit als TRENNSIGNAL statt als Gruppierungsmerkmal."""
+class TestTheLandmarkNameDoesNotSplitAnything(_UnderShiftedEventConstants):
+    """Die Sehenswuerdigkeit ist seit ADR 0118 KEIN Trennsignal mehr - sie trennt an keiner Stelle
+    und haelt keine Grenze mehr fest.
 
-    def test_a_different_name_splits(self) -> None:
+    Gemessen wird ueber den VOLLEN Signalsatz, nicht ueber ein injiziertes Signal: Die Zusage ist
+    gerade, dass es das Signal nicht mehr gibt, und ein injizierbares Signal koennte sie nicht
+    verfehlen. Alle Faelle liegen dicht unter jeder Schwelle - was hier trennte, traege der
+    Name."""
+
+    def test_two_photos_differing_only_in_their_name_stay_in_one_event(self) -> None:
         candidates = [
             _placeless_candidate(1, T0, landmark_name="Eiffelturm"),
-            _placeless_candidate(2, _at(minutes=1), landmark_name="Louvre"),
+            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Louvre"),
         ]
 
-        events = _build(candidates, [LandmarkChangeSignal()])
+        events = _build(candidates)
 
-        assert [event.photo_ids for event in events] == [(1,), (2,)]
+        assert [event.photo_ids for event in events] == [(1, 2)]
 
-    def test_the_same_name_does_not_split(self) -> None:
-        candidates = [
-            _placeless_candidate(1, T0, landmark_name="Eiffelturm"),
-            _placeless_candidate(2, _at(minutes=1), landmark_name="Eiffelturm"),
-        ]
-
-        assert len(_build(candidates, [LandmarkChangeSignal()])) == 1
-
-    def test_a_nameless_photo_never_triggers(self) -> None:
-        """Weder als Kandidat noch als laufendes Event: ein namenloses Foto zwischen zwei gleichen
-        Namen zerreisst nichts, und ein Name nach namenlosen Fotos ebenfalls nicht."""
-        candidates = [
-            _placeless_candidate(1, T0, landmark_name="Eiffelturm"),
-            _placeless_candidate(2, _at(minutes=1)),
-            _placeless_candidate(3, _at(minutes=2), landmark_name="Eiffelturm"),
-        ]
-
-        assert len(_build(candidates, [LandmarkChangeSignal()])) == 1
-
-    def test_a_name_after_nameless_photos_does_not_split(self) -> None:
+    def test_a_name_appearing_after_nameless_photos_does_not_split(self) -> None:
         candidates = [
             _placeless_candidate(1, T0),
-            _placeless_candidate(2, _at(minutes=1), landmark_name="Eiffelturm"),
+            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Eiffelturm"),
+            _placeless_candidate(3, T0 + 2 * EPSILON_TIME, landmark_name="Louvre"),
         ]
 
-        assert len(_build(candidates, [LandmarkChangeSignal()])) == 1
+        assert len(_build(candidates)) == 1
 
-    def test_an_empty_name_counts_as_absent(self) -> None:
-        """`sanitize_landmark_name` liefert `None`; ein leerer Rest waere trotzdem kein Name."""
+    def test_a_run_of_names_never_produces_a_landmark_cause(self) -> None:
+        """Der Nachweis in der Waehrung des Berichts: `sehenswuerdigkeit` bleibt im Vorrat und
+        steht in der Nachmessung bei null - nicht, weil die Zeile fehlte, sondern weil keine
+        Grenze sie mehr traegt."""
         candidates = [
-            _placeless_candidate(1, T0, landmark_name="Eiffelturm"),
-            _placeless_candidate(2, _at(minutes=1), landmark_name="   "),
+            _placeless_candidate(index, T0 + index * EPSILON_TIME, landmark_name=f"Ort {index}")
+            for index in range(6)
         ]
 
-        assert len(_build(candidates, [LandmarkChangeSignal()])) == 1
+        formation = _explain(candidates)
 
-    def test_the_running_event_keeps_its_first_name_across_nameless_photos(self) -> None:
-        candidates = [
-            _placeless_candidate(1, T0, landmark_name="Eiffelturm"),
-            _placeless_candidate(2, _at(minutes=1)),
-            _placeless_candidate(3, _at(minutes=2), landmark_name="Louvre"),
-        ]
-
-        events = _build(candidates, [LandmarkChangeSignal()])
-
-        assert [event.photo_ids for event in events] == [(1, 2), (3,)]
+        assert all(BOUNDARY_LANDMARK not in cause for cause in formation.causes)
 
 
 class _SpySignal:
@@ -1390,9 +1405,7 @@ class TestEventPlace:
         assert event.landmark_name == "Eiffelturm"
         assert (event.place_lat, event.place_lon) == (None, None)
 
-    def test_an_event_carries_at_most_one_name(self) -> None:
-        """Der chronologisch fruehste Name gewinnt - defensiv, denn das Trennsignal laesst einen
-        zweiten Namen gar nicht erst in dasselbe Event."""
+    def test_an_event_takes_the_name_of_its_first_named_photo(self) -> None:
         candidates = [
             _placeless_candidate(1, T0),
             _placeless_candidate(2, _at(minutes=1), landmark_name="Eiffelturm"),
@@ -1401,6 +1414,42 @@ class TestEventPlace:
         [event] = _build(candidates, [])
 
         assert event.landmark_name == "Eiffelturm"
+
+    def test_an_event_with_two_different_names_carries_the_earlier_one(self) -> None:
+        """Seit ADR 0118 Punkt 3 ist das eine REGEL, kein defensiver Zweig mehr: Ein Event DARF
+        Fotos mit verschiedenen Namen enthalten, weil kein Signal sie mehr trennt, und der frueheste
+        gewinnt. Vorher war dieser Zweig nur defensiv erreichbar und damit ungeprueft."""
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name="Zugspitze"),
+            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Eibsee"),
+        ]
+
+        [event] = _build(candidates)
+
+        assert event.photo_ids == (1, 2)
+        assert event.landmark_name == "Zugspitze"
+        assert event.place_kind == "landmark"
+
+    def test_the_earliest_name_wins_across_a_merge_of_the_third_stage(self) -> None:
+        """`_built` laeuft NACH Stufe 3, der fruehste Name gewinnt also auch ueber eine
+        Zusammenlegung hinweg. Der Fall stellt das zu kleine Segment VORAN: Wuerde der Name aus
+        dem aufnehmenden Nachbarn statt aus dem Ergebnis gebildet, stuende hier der spaetere."""
+        big = events_module.MIN_EVENT_PHOTOS
+        opening = _time_gap() + EPSILON_TIME
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name="Zugspitze"),
+            *(
+                _placeless_candidate(
+                    10 + index, T0 + opening + index * EPSILON_TIME, landmark_name="Eibsee"
+                )
+                for index in range(big)
+            ),
+        ]
+
+        [event] = _build(candidates, min_event_photos=None)
+
+        assert len(event.photo_ids) == big + 1
+        assert event.landmark_name == "Zugspitze"
 
     def test_an_event_without_any_name_carries_none(self) -> None:
         [event] = _build([_measured_candidate(1, T0)])
@@ -1419,15 +1468,17 @@ class TestEventPlace:
 
 
 class TestDefaultSignals:
-    def test_carries_all_five_signal_classes(self) -> None:
+    def test_carries_all_four_signal_classes(self) -> None:
         """Die Liste ist der Erweiterungspunkt (#427): ein neues Signal ist eine Klasse und ein
-        Eintrag, kein Eingriff in den Durchlauf."""
+        Eintrag, kein Eingriff in den Durchlauf.
+
+        VIER seit ADR 0118. Die Liste fuehrt ausschliesslich Signale, die TRENNEN - ein nie
+        meldender Eintrag machte aus ihr eine Liste mit zwei Bedeutungen."""
         assert [type(signal) for signal in default_signals()] == [
             TimeGapSignal,
             EventSpanSignal,
             StepDistanceSignal,
             ExtentSignal,
-            LandmarkChangeSignal,
         ]
 
     def test_every_call_yields_fresh_state(self) -> None:
@@ -1440,8 +1491,8 @@ class TestDefaultSignals:
 
     def test_build_events_uses_them_by_default(self) -> None:
         candidates = [
-            _measured_candidate(1, T0, landmark_name="Eiffelturm"),
-            _measured_candidate(2, _at(minutes=1), landmark_name="Louvre"),
+            _measured_candidate(1, T0),
+            _measured_candidate(2, T0 + _time_gap() + EPSILON_TIME),
         ]
 
         assert len(_build(candidates)) == 2
@@ -1963,15 +2014,13 @@ class TestTheCauseSetPerBoundary:
 
         assert formation.causes[1] == frozenset({BOUNDARY_DURATION})
 
-    def test_the_landmark_change_reports_under_its_own_name(self) -> None:
-        candidates = [
-            _placeless_candidate(1, T0, landmark_name="Zugspitze"),
-            _placeless_candidate(2, _at(seconds=1), landmark_name="Eibsee"),
-        ]
-
-        formation = _explain(candidates, [LandmarkChangeSignal()])
-
-        assert formation.causes[1] == frozenset({BOUNDARY_LANDMARK})
+    def test_the_landmark_keeps_its_name_in_the_supply_without_a_signal_behind_it(self) -> None:
+        """Die EHRLICHE NULL (ADR 0118 Punkt 2): `sehenswuerdigkeit` bleibt im Wortschatz, damit die
+        Nachmessung ihre Zeile behaelt und mit der Ausgangsmessung vergleichbar bleibt. Verschwaende
+        das Symbol, koennte kein Leser unterscheiden, ob die Ursache weggefallen oder nie gemessen
+        worden ist. Kein Signal traegt den Namen mehr - sonst waere die Null keine."""
+        assert BOUNDARY_LANDMARK in BOUNDARY_CAUSES
+        assert all(signal.name != BOUNDARY_LANDMARK for signal in default_signals())
 
     def test_the_extent_reports_under_its_own_name(self) -> None:
         far = _extent_max() + EPSILON_METERS
@@ -2134,9 +2183,9 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
         )
 
 
-class TestTheThreeAdmissibleStatementsAboutTheNumbers:
-    """Die EINZIGEN drei Aussagen, die ein Test ueber die sechs Zahlwerte treffen darf - und alle
-    drei sind Ungleichungen. Jede vierte waere eine Spiegelung des Codes und machte die naechste
+class TestTheFourAdmissibleStatementsAboutTheNumbers:
+    """Die EINZIGEN vier Aussagen, die ein Test ueber die sieben Zahlwerte treffen darf - und alle
+    vier sind Ungleichungen. Jede fuenfte waere eine Spiegelung des Codes und machte die naechste
     Kalibrierung zu einem Testumbau."""
 
     def test_a_segment_of_one_photo_is_below_the_minimum(self) -> None:
@@ -2153,6 +2202,13 @@ class TestTheThreeAdmissibleStatementsAboutTheNumbers:
         """Die Vorbedingung der Ueberschriftenform `23:40-01:15 Uhr`: Ab einem Tag waere die
         Spanne ohne Datumsangabe mehrdeutig."""
         assert events_module.EVENT_MAX_SPAN < timedelta(hours=24)
+
+    def test_the_merge_extent_reaches_beyond_the_splitting_extent(self) -> None:
+        """Waere sie nicht groesser, praefte Riegel (c) dieselbe Bedingung, deren Ueberschreitung
+        die Trennung ausgeloest hat - fuer ausdehnungsgetrennte Segmente waere Stufe 3 damit
+        strukturell unpassierbar. Eine Ungleichung, kein Zahlwert: WIE viel groesser, ist eine
+        Kalibrierungsfrage und steht als Herleitung an der Konstante."""
+        assert events_module.MERGE_EXTENT_MAX_METERS > events_module.EVENT_EXTENT_MAX_METERS
 
 
 # --- Stufe 3: das Zusammenlegen zu kleiner Segmente (Spec 0506, ADR 0117 Punkt 3) ----------------
@@ -2352,18 +2408,37 @@ class TestTheFourBoltsAgainstOverMerging(_UnderShiftedEventConstants):
 
         assert _ids(merge_small_segments(segments)) == [_block(1), (10,)]
 
-    def test_bolt_c_the_extent_of_the_result_exceeds_the_maximum_extent(self) -> None:
+    def test_bolt_c_the_extent_of_the_result_exceeds_the_merge_extent(self) -> None:
         segments = [
             _normal_until(timedelta(0), first_id=1, meters_north=0.0),
             _tiny(
                 EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_TIME_GAP},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 
         assert _ids(merge_small_segments(segments)) == [_block(1), (10,)]
+
+    def test_bolt_c_reads_its_own_limit_not_the_splitting_threshold(self) -> None:
+        """DER TRAGENDE FALL von ADR 0118 Punkt 4: Genau die Lage, die die Ausdehnung GETRENNT hat
+        - das Ergebnis liegt ueber `EVENT_EXTENT_MAX_METERS` - wird zusammengelegt, weil Riegel (c)
+        seine eigene, groessere Grenze prueft. Praefte er weiter die Trennschwelle, waere die Stufe
+        fuer ausdehnungsgetrennte Segmente strukturell unpassierbar, und dieser Fall bliebe rot."""
+        between = (_extent_max() + _merge_extent_max()) / 2
+        segments = [
+            _normal_until(timedelta(0), first_id=1, meters_north=0.0),
+            _tiny(
+                EPSILON_TIME,
+                first_id=10,
+                causes={BOUNDARY_EXTENT},
+                meters_north=between,
+            ),
+        ]
+
+        assert between > _extent_max(), "sonst misst der Fall die neue Grenze gar nicht"
+        assert _ids(merge_small_segments(segments)) == [(*_block(1), 10)]
 
     def test_bolt_d_a_segment_at_the_minimum_is_never_absorbed(self) -> None:
         """Ein normal grosses Event wird NIE zugeschlagen, auch wenn Zeit, Dauer und Ausdehnung es
@@ -2379,10 +2454,13 @@ class TestTheFourBoltsAgainstOverMerging(_UnderShiftedEventConstants):
         assert outcome.dissolved_boundaries == 0
 
 
-class TestTheTwoUntouchableBoundaries(_UnderShiftedEventConstants):
-    """Eine Grenze, deren Ursachenmenge `motivwechsel` oder `sehenswuerdigkeit` enthaelt, wird NIE
-    aufgeloest - auch nicht, wenn beide Nachbarn alle vier Riegel erfuellen und das Segment aus
-    einem einzigen Foto besteht."""
+class TestTheOneUntouchableBoundary(_UnderShiftedEventConstants):
+    """Eine Grenze, deren Ursachenmenge `motivwechsel` enthaelt, wird NIE aufgeloest - auch nicht,
+    wenn beide Nachbarn alle vier Riegel erfuellen und das Segment aus einem einzigen Foto besteht.
+
+    Seit ADR 0118 ist das die EINE unantastbare Grenze. `sehenswuerdigkeit` steht nicht mehr
+    daneben: Der Vorrat ist keine Wortliste, sondern eine an jeder Kante gelesene Regel, und ein
+    Eintrag, der nie treffen kann, behauptete dort eine Sperre ohne Gegenstand."""
 
     def _enclosed(self, causes: Collection[str]) -> list[Segment]:
         return [
@@ -2408,11 +2486,27 @@ class TestTheTwoUntouchableBoundaries(_UnderShiftedEventConstants):
 
         assert outcome.dissolved_boundaries == 1
 
-    def test_the_stock_of_untouchable_causes_is_exactly_these_two(self) -> None:
-        """Sie sind die einzigen Signale, die zwei Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennen.
-        Ein dritter Eintrag hier waere eine stille Ausweitung der Sperre."""
-        assert UNBREAKABLE_CAUSES == frozenset({BOUNDARY_MOTIF_CHANGE, BOUNDARY_LANDMARK})
+    def test_the_stock_of_untouchable_causes_is_exactly_this_one(self) -> None:
+        """Er ist das einzige Signal, das zwei Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennt. Ein
+        zweiter Eintrag hier waere eine stille Ausweitung der Sperre."""
+        assert UNBREAKABLE_CAUSES == frozenset({BOUNDARY_MOTIF_CHANGE})
         assert UNBREAKABLE_CAUSES <= set(BOUNDARY_CAUSES)
+
+    def test_the_landmark_is_in_the_vocabulary_but_not_in_the_rule(self) -> None:
+        """Die UNGLEICHBEHANDLUNG der beiden Vorraete (ADR 0118 Punkt 2), in einem Fall festgehalten:
+        Ein Berichtswortschatz darf eine ehrliche Null fuehren, eine an jeder Kante gelesene Regel
+        nicht. Faellt eine der beiden Seiten weg, wird `MERGE_BLOCK_UNBREAKABLE` wieder
+        mehrdeutig."""
+        assert BOUNDARY_LANDMARK in BOUNDARY_CAUSES
+        assert BOUNDARY_LANDMARK not in UNBREAKABLE_CAUSES
+
+    def test_a_segment_opened_by_a_landmark_cause_is_merged_again(self) -> None:
+        """Der Gegenfall zur Sperre: Dieselbe Lage, die `motivwechsel` festhaelt, loest sich mit
+        `sehenswuerdigkeit` auf. Solche Grenzen entstehen zwar nicht mehr; bliebe der Eintrag in
+        der Sperre, faende dieser Fall es und nicht erst die naechste Messung."""
+        outcome = merge_small_segments(self._enclosed({BOUNDARY_LANDMARK}))
+
+        assert outcome.dissolved_boundaries == 1
 
     def test_an_untouchable_cause_inside_a_set_of_two_still_blocks(self) -> None:
         """Die Grenze traegt eine MENGE. Eine Pruefung auf Gleichheit statt auf Enthaltensein
@@ -2650,7 +2744,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
                 EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_TIME_GAP},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 
@@ -2675,7 +2769,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
                 EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_TIME_GAP},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 
@@ -2687,7 +2781,9 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
         """Genau die Lage, fuer die es zwei Zahlen braucht: Keiner der beiden Gruende stand an
         allen Kanten, und eine Zaehlung nur ueber "beteiligt" legte beide Behebungen nahe."""
         segments = [
-            _normal_until(timedelta(0), first_id=1, meters_north=_extent_max() + EPSILON_METERS),
+            _normal_until(
+                timedelta(0), first_id=1, meters_north=_merge_extent_max() + EPSILON_METERS
+            ),
             _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
             _normal_from(_merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}),
         ]
@@ -2710,7 +2806,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
                 _max_span() + _merge_gap() + EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_MOTIF_CHANGE},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 
@@ -2736,7 +2832,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
                 _merge_gap() + EPSILON_TIME,
                 first_id=10,
                 causes={BOUNDARY_TIME_GAP},
-                meters_north=_extent_max() + EPSILON_METERS,
+                meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
 
@@ -2753,7 +2849,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
             [_tiny(timedelta(0), first_id=1)],
             [
                 _normal_spanning_the_maximum(first_id=1),
-                _tiny(_max_span() + EPSILON_TIME, first_id=10, causes={BOUNDARY_LANDMARK}),
+                _tiny(_max_span() + EPSILON_TIME, first_id=10, causes={BOUNDARY_MOTIF_CHANGE}),
             ],
         ):
             for blocked in merge_small_segments(segments).blocked_segments:

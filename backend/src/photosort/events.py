@@ -26,18 +26,19 @@ from photosort.places import (
 from photosort.scoring import haversine_meters
 from photosort.selection import carried_motifs
 
-# --- Die SECHS eigenen Schwellen der Event-Bildung -----------------------------------------------
+# --- Die SIEBEN eigenen Schwellen der Event-Bildung ----------------------------------------------
 #
 # Sie stehen hier und nicht in `scoring.py`, obwohl zwei von ihnen dort denselben Zahlwert tragen:
 # Dieselben Konstanten steuern `assign_clusters`, also Phase A VOR dem Ausschuss-Gate und damit,
 # welche Fotos im Ausschuss gegeneinander antreten. Eine Kalibrierung an ihnen verschoebe still die
-# Kandidatenmenge. Phase A bleibt von diesen sechs Werten unberuehrt.
+# Kandidatenmenge. Phase A bleibt von diesen sieben Werten unberuehrt.
 #
-# Alle sechs sind dokumentierte Modulkonstanten, ausdruecklich KEIN Settings-/Env-Wert, und werden
+# Alle sieben sind dokumentierte Modulkonstanten, ausdruecklich KEIN Settings-/Env-Wert, und werden
 # ueberall als MODULATTRIBUT gelesen, nie als Default-Parameterwert gebunden: sonst liefe
 # `monkeypatch.setattr` ins Leere und eine Variation waere wirkungslos - gruen, aber ohne Wirkung.
-# Kein Test pinnt einen Zahlwert; zulaessig sind genau die drei Ungleichungen
-# `MERGE_MAX_GAP > EVENT_TIME_GAP`, `MIN_EVENT_PHOTOS >= 2` und `EVENT_MAX_SPAN < 24 h`.
+# Kein Test pinnt einen Zahlwert; zulaessig sind genau die vier Ungleichungen
+# `MERGE_MAX_GAP > EVENT_TIME_GAP`, `MIN_EVENT_PHOTOS >= 2`, `EVENT_MAX_SPAN < 24 h` und
+# `MERGE_EXTENT_MAX_METERS > EVENT_EXTENT_MAX_METERS`.
 
 # Zeitluecke zwischen zwei aufeinanderfolgenden Fotos, ab der ein neues Event beginnt.
 # UNKALIBRIERT: Von den Grenzen eines echten Projekts war sie zu 5,6 % alleinige Ursache, `schritt`
@@ -78,6 +79,25 @@ MERGE_MAX_GAP = timedelta(hours=2)
 # Test ueber diesen Wert treffen darf, und sie ist eine Ungleichung.
 MIN_EVENT_PHOTOS = 2
 
+# Raeumliche Ausdehnung, die das ERGEBNIS einer Zusammenlegung nicht ueberschreiten darf (Riegel
+# (c) in `_may_merge`).
+#
+# Sie MUSS groesser sein als `EVENT_EXTENT_MAX_METERS`, sonst prueft Riegel (c) dieselbe Bedingung,
+# deren Ueberschreitung die Trennung ausgeloest hat - fuer ausdehnungsgetrennte Segmente waere die
+# Stufe damit strukturell unpassierbar.
+#
+# HERLEITUNG: die Trennschwelle plus EINEN Schritt (`EVENT_EXTENT_MAX_METERS` +
+# `EVENT_STEP_MAX_METERS`). Zugeschlagen wird ein Segment unter `MIN_EVENT_PHOTOS`, heute also ein
+# einzelnes Foto ohne eigene Ausdehnung; die Box waechst damit genau um dessen Abstand zur Box des
+# Nachbarn. Ein Schritt ueber `EVENT_STEP_MAX_METERS` ist im Massstab dieses Projekts bereits ein
+# Ortswechsel und trennt fuer sich - mehr als einen zuzulassen hiesse, eine Trennung aufzuloesen,
+# die das Projekt selbst so nennt; weniger hiesse, die Stufe weiter leerlaufen zu lassen.
+#
+# EIN LITERAL, KEINE GERECHNETE SUMME der beiden genannten Konstanten: Die Schwellen werden ueberall
+# als Modulattribut gelesen, damit ein Pruefsatz sie verschieben kann, und eine beim Import
+# gebundene Summe folgte dieser Verschiebung nicht - gruen, aber ohne Wirkung.
+MERGE_EXTENT_MAX_METERS = 1500.0
+
 # Der geschlossene Vorrat von `events.place_kind`. Ein Wert ausserhalb ist ein Datenfehler und
 # wird im Lesepfad zu "kein Ortsbezug", nie zu einer 500.
 PLACE_KINDS = ("landmark", "coordinate", "multiple")
@@ -91,6 +111,11 @@ BOUNDARY_TIME_GAP = "zeitluecke"
 BOUNDARY_DURATION = "dauer"
 BOUNDARY_STEP = "schritt"
 BOUNDARY_EXTENT = "ausdehnung"
+# Kein Eintrag in `default_signals()` seit ADR 0118: Die Sehenswuerdigkeit trennt nicht mehr. Ihr
+# Name bleibt trotzdem im Vorrat - er ist ein BERICHTSWORTSCHATZ, und die Zeile mit 0 ist der
+# Nachweis, dass die Aenderung gewirkt hat. Ohne sie haette die Nachmessung eine Zeile weniger als
+# die Ausgangsmessung, und kein Leser koennte unterscheiden, ob die Ursache weggefallen oder nie
+# gemessen worden ist.
 BOUNDARY_LANDMARK = "sehenswuerdigkeit"
 # Kein Eintrag in `default_signals()`: Der Motivwechsel ist eine Segmentierung ueber die ganze
 # Folge (ADR 0109) und trennt als ERZWUNGENER START. Er braucht trotzdem seinen Namen, sonst
@@ -106,11 +131,17 @@ BOUNDARY_CAUSES = (
     BOUNDARY_MOTIF_CHANGE,
 )
 
-# Die beiden Ursachen, die das Zusammenlegen NIE aufloest. Sie sind die einzigen Signale, die zwei
-# verschiedene Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennen; ohne ihren Vorrang waere die Zusage
+# Die EINE Ursache, die das Zusammenlegen NIE aufloest. Sie ist das einzige Signal, das zwei
+# verschiedene Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennt; ohne ihren Vorrang waere die Zusage
 # "zwei erkennbar verschiedene Anlaesse bleiben getrennt" nicht durchsetzbar. Ein durch Motivwechsel
 # abgetrenntes Einzelbild bleibt dadurch allein - genau das sagt ADR 0109 bereits zu.
-UNBREAKABLE_CAUSES = frozenset({BOUNDARY_MOTIF_CHANGE, BOUNDARY_LANDMARK})
+#
+# `BOUNDARY_LANDMARK` steht hier NICHT, obwohl es in `BOUNDARY_CAUSES` steht, und die
+# Ungleichbehandlung ist gewollt (ADR 0118 Punkt 2): Dieser Vorrat ist kein Wortschatz, sondern eine
+# an JEDER KANTE gelesene Regel. Ein Eintrag, der nie treffen kann, waere hier keine ehrliche Null,
+# sondern eine falsche Aussage ueber das laufende System - er behauptete eine Sperre ohne
+# Gegenstand und machte `MERGE_BLOCK_UNBREAKABLE` mehrdeutig.
+UNBREAKABLE_CAUSES = frozenset({BOUNDARY_MOTIF_CHANGE})
 
 # WORAN EINE ZUSAMMENLEGUNG SCHEITERT - der geschlossene Vorrat der Gruende, die an einer KANTE
 # eines zu kleinen Segments stehen koennen. Die Reihenfolge ist die der Riegel in `_may_merge` und
@@ -391,7 +422,7 @@ class EventCandidate:
     speisen ausschliesslich den Ortsbezug des Events. Eine Ortsaussage ueber eine Einheit darf
     nicht aus Schaetzungen entstehen.
 
-    `landmark_name` kommt bereits durch `sanitize_landmark_name` (worker.py::_landmark_names) -
+    `landmark_name` kommt bereits durch `sanitize_landmark_name` (event_inputs.py::_landmark_names) -
     `None` heisst "kein verwendbarer Name".
 
     `motif_strengths` traegt die WIRKSAMEN Staerken (Nutzerkorrektur inbegriffen). `None` heisst
@@ -434,8 +465,9 @@ class BuiltEvent:
 
 
 def _usable_name(name: str | None) -> str | None:
-    """Ein Name, der nach Sanitisierung leer ist, gilt als NICHT VORHANDEN - er loest keine Grenze
-    aus und wird nicht geschrieben. Verworfen, nie abgeschnitten."""
+    """Ein Name, der nach Sanitisierung leer ist, gilt als NICHT VORHANDEN - er wird nicht
+    geschrieben, und das Event traegt stattdessen den naechsten vorhandenen. Verworfen, nie
+    abgeschnitten: Ein gekuerzter Name benennte ein Event falsch."""
     return (name or "").strip() or None
 
 
@@ -595,42 +627,13 @@ class ExtentSignal:
             self._box = self._extended(self._box, candidate.location)
 
 
-class LandmarkChangeSignal:
-    """Die Sehenswuerdigkeit als TRENNSIGNAL statt als Gruppierungsmerkmal.
-
-    Grenze NUR, wenn Kandidat und laufendes Event je einen nicht-leeren, VERSCHIEDENEN Namen
-    tragen. Namenlose Fotos loesen nie aus, und ein einmal gesetzter Name des laufenden Events
-    ueberlebt namenlose Fotos - sonst zerrisse eine Aufnahme ohne Erkennung den Ortsbesuch.
-
-    Exakter Zeichenkettenvergleich, KEIN Fuzzy-Matching - und das ist seit ADR 0107 keine
-    Vereinfachung mehr, sondern die richtige Arbeitsteilung: Die Vereinheitlichung liegt DAVOR.
-    `worker.py::_landmark_names` liefert den bereits auf das projektweite Namensregister
-    aufgeloesten Namen, sodass zwei Schreibweisen derselben Sehenswuerdigkeit hier gar nicht mehr
-    als verschieden ankommen. Ein Fuzzy-Vergleich an dieser Stelle waere ein zweiter, danebenstehen-
-    der Massstab."""
-
-    name = BOUNDARY_LANDMARK
-
-    def __init__(self) -> None:
-        self._name: str | None = None
-
-    def is_boundary(self, candidate: EventCandidate) -> bool:
-        name = _usable_name(candidate.landmark_name)
-        return name is not None and self._name is not None and name != self._name
-
-    def begin(self, candidate: EventCandidate) -> None:
-        self._name = _usable_name(candidate.landmark_name)
-
-    def advance(self, candidate: EventCandidate) -> None:
-        if self._name is None:
-            self._name = _usable_name(candidate.landmark_name)
-
-
 def default_signals() -> list[BoundarySignal]:
-    """Die fuenf Trennsignale, gleichrangig, in einer LISTE.
+    """Die VIER Trennsignale, gleichrangig, in einer LISTE.
 
     Die Liste ist der Erweiterungspunkt: ein weiteres Signal ist eine Klasse und ein Eintrag - kein
-    Eingriff in den Durchlauf, das Datenmodell oder die API.
+    Eingriff in den Durchlauf, das Datenmodell oder die API. Sie fuehrt AUSSCHLIESSLICH Signale,
+    die trennen; ein nie meldender Eintrag machte aus ihr eine Liste mit zwei Bedeutungen. Deshalb
+    ist die Sehenswuerdigkeit hier seit ADR 0118 ersatzlos verschwunden statt stillgelegt.
 
     Jeder Aufruf liefert FRISCHE Objekte: Signale sind zustandsbehaftet, eine geteilte Liste
     tarnte einen Lauf als Fortsetzung des vorherigen."""
@@ -639,7 +642,6 @@ def default_signals() -> list[BoundarySignal]:
         EventSpanSignal(),
         StepDistanceSignal(),
         ExtentSignal(),
-        LandmarkChangeSignal(),
     ]
 
 
@@ -736,10 +738,15 @@ def motif_change_starts(
 
 
 def _name_of(members: Sequence[EventCandidate]) -> str | None:
-    """Der eine Name eines Events, oder `None`.
+    """Der Name eines Events, oder `None`.
 
-    `members` ist nach `(taken_at, photo_id)` sortiert: ein Event traegt hoechstens EINEN Namen
-    (dafuer sorgt `LandmarkChangeSignal`) - defensiv gewinnt der des fruehesten Fotos."""
+    DIE REGEL, nicht mehr eine Vorsichtsmassnahme: Ein Event DARF Fotos mit verschiedenen Namen
+    enthalten, und der FRUEHESTE gewinnt. `members` ist nach `(taken_at, photo_id)` sortiert; die
+    erste Fundstelle ist damit die chronologisch erste.
+
+    Ausgefuehrt NACH Stufe 3 und ausschliesslich hier, an der einen Aufrufstelle `_built` - der
+    fruehste Name gewinnt deshalb auch ueber eine Zusammenlegung hinweg, und die Feldinvariante
+    `place_kind='landmark'` ⇒ `landmark_name` gesetzt kann nicht auseinanderlaufen."""
     for member in members:
         name = _usable_name(member.landmark_name)
         if name is not None:
@@ -910,8 +917,8 @@ def _step_over(earlier: Segment, later: Segment) -> float:
 
 
 def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) -> frozenset[str]:
-    """Drei der VIER RIEGEL plus die beiden unantastbaren Grenzen - alles, was an einer KANTE
-    haengt und deshalb fuer beide Richtungen ueber sie gleich ausfaellt.
+    """Drei der VIER RIEGEL plus die unantastbare Grenze - alles, was an einer KANTE haengt und
+    deshalb fuer beide Richtungen ueber sie gleich ausfaellt.
 
     RUECKGABE: die MENGE der Gruende aus `MERGE_BLOCK_REASONS`, die diese Kante sperren - die LEERE
     Menge, wenn sie offen ist. `_neighbour_for` fragt nur, ob die Menge leer ist; die Gruende
@@ -922,9 +929,13 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
     EINE MENGE, NIE EIN EINZELNER GRUND, und die Auswertung ist AUSDRUECKLICH NICHT
     KURZGESCHLOSSEN - dieselbe Zusage wie fuer die Signale des Durchlaufs: Mehrere Riegel duerfen
     gleichzeitig zutreffen, und wer nach dem ersten abbricht, unterschlaegt die spaeteren. Das
-    traefe zuerst `ausdehnung` als zuletzt geprueften, und genau an dieser Zahl haengt die Frage,
-    ob Riegel (c) dieselbe Bedingung prueft, deren Ueberschreitung die Trennung ausgeloest hat. Der
-    Preis ist, dass die Ausdehnung auch dann gerechnet wird, wenn schon die Zeitluecke sperrt.
+    traefe zuerst `ausdehnung` als zuletzt geprueften. Der Preis ist, dass die Ausdehnung auch dann
+    gerechnet wird, wenn schon die Zeitluecke sperrt.
+
+    RIEGEL (c) PRUEFT `MERGE_EXTENT_MAX_METERS`, NICHT `EVENT_EXTENT_MAX_METERS` (ADR 0118 Punkt 4)
+    - eine eigene, groessere Grenze. Praefte er die Trennschwelle, praefte er dieselbe Bedingung,
+    deren Ueberschreitung die Trennung ausgeloest hat, und die Stufe waere fuer genau die Segmente
+    unpassierbar, die die Ausdehnung getrennt hat.
 
     Der vierte Riegel (d) - das Segment selbst liegt unter der Mindestgroesse - haengt am Segment,
     nicht an der Kante, und steht bei der Auswahl. Weil hier nur Kanteneigenschaften stehen, ist
@@ -940,7 +951,7 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
         (MERGE_BLOCK_UNBREAKABLE, bool(later.causes & UNBREAKABLE_CAUSES)),
         (MERGE_BLOCK_TIME_GAP, _gap_between(earlier, later) > merge_max_gap),  # (a)
         (MERGE_BLOCK_SPAN, combined[-1].taken_at - combined[0].taken_at > EVENT_MAX_SPAN),  # (b)
-        (MERGE_BLOCK_EXTENT, _extent_meters(combined) > EVENT_EXTENT_MAX_METERS),  # (c)
+        (MERGE_BLOCK_EXTENT, _extent_meters(combined) > MERGE_EXTENT_MAX_METERS),  # (c)
     )
     return frozenset(reason for reason, blocking in checked if blocking)
 
@@ -1178,8 +1189,8 @@ def explain_events(
     Signal mehr gefragt.
 
     Ein erzwungener Start wirkt wie jede gemeldete Grenze - `begin` laeuft auf allen Signalen und
-    ist deren vollstaendige Ruecksetzung. Eine erst spaeter faellige Grenze von Ausdehnung,
-    Schritt oder Name kann dadurch entfallen, weil an der frueheren Stelle bereits getrennt wurde.
+    ist deren vollstaendige Ruecksetzung. Eine erst spaeter faellige Grenze von Ausdehnung oder
+    Schritt kann dadurch entfallen, weil an der frueheren Stelle bereits getrennt wurde.
 
     Erst NACH Stufe 3 bildet `_built` die Events. Weil das die einzige Stelle bleibt, an der Name,
     Zellen und `place_kind` entstehen, stimmen diese Werte fuer ein zusammengelegtes Event ohne
