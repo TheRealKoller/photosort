@@ -2501,7 +2501,7 @@ def _adjustable_constants_of_events() -> frozenset[str]:
     durch das Raster, waehrend der Waechter gruen bliebe.
 
     Ein handgefuehrter Namensvorrat waere beim naechsten Zuwachs still vakuum-gruen: Genau die neue
-    Stellschraube waere die ungeprueфte."""
+    Stellschraube waere die ungepruefte."""
     path = module_file("photosort.events")
     assert path is not None
     assigned = {

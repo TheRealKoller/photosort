@@ -1669,7 +1669,7 @@ class TestTheDemoStateShowsTheDistrictRule(TestDemoStateCoversAllFourHeadingStat
             if event.place_kind == "landmark":
                 assert event.landmark_name is not None
                 assert event.place_name is not None
-                # Die KOORDINATENSTUFE bleibt verdrAengt: der Name ist kein Ortsbezug.
+                # Die KOORDINATENSTUFE bleibt verdraengt: der Name ist kein Ortsbezug.
                 assert (event.place_lat, event.place_lon) == (None, None)
 
     async def test_every_seeded_name_survives_the_sanitisation_unchanged(
