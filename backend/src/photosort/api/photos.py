@@ -262,15 +262,24 @@ class EventPlaceOut(BaseModel):
     welche Stufe (erkannte Sehenswuerdigkeit -> ungefaehre Koordinate -> mehrere Orte) tatsaechlich
     gilt. Das Frontend bildet die Rangfolge NICHT nach, es formatiert nur.
 
+    `kind` benennt die STUFE, nicht den einzigen Text des Events: seit Spec 0514 (ADR 0120) steht
+    `landmark_name` NEBEN `EventOut.place_name`, statt ihn zu verdraengen. Verdraengt bleibt allein
+    die KOORDINATENSTUFE - `kind` bleibt `"landmark"` auch dann, wenn daneben ein Ortsname steht,
+    und traegt weiterhin keine Koordinate.
+
     `kind="multiple"` traegt STRUKTURELL keine Koordinate: es gibt den einen Ort, den sie
     repraesentieren muesste, gerade nicht.
 
     `landmark_name` ist freier, extern erzeugter LLM-Text (`Event.landmark_name`, ueber
     `sanitize_landmark_name` entstanden) - dieselbe Auflage wie bei `FineLabelOut.raw_label`:
     ausschliesslich als regulaerer React-Textknoten rendern, nie `dangerouslySetInnerHTML`, nie als
-    HTML-String-Prop, nie in `href`/`src`/`style`, nie als React-`key`. Bricht in
-    `frontend/src/pages/AlbumDraftPage.test.tsx`, Fall
-    `rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup`."""
+    HTML-String-Prop, nie in `href`/`src`/`style`, nie als React-`key`. Seit Spec 0514 traegt ein
+    Event ihn nur, wenn ihn mindestens ein Zehntel seiner Fotos bezeugt
+    (`events.LANDMARK_MIN_SHARE`); ein zu schwach gestuetzter Name ist von "nie erkannt" NICHT zu
+    unterscheiden und hat keinen eigenen Anzeigezustand. Bricht in
+    `frontend/src/pages/AlbumDraftPage.test.tsx`, Faelle
+    `rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup` und
+    `rendert beide feindlichen Teile als Text, nicht als Markup`."""
 
     kind: Literal["landmark", "coordinate", "multiple"]
     landmark_name: str | None = None
@@ -286,9 +295,15 @@ class EventOut(BaseModel):
     Cluster-Angaben haengt hier nichts mehr davon ab, welche Fotos eine Antwort gerade enthaelt -
     alle Werte stehen in der `events`-Zeile.
 
+    Auch zusammengesetzt wird hier nichts: `place_name` ist der REINE Ortsname ("Ort" bzw.
+    "Ort, Viertel"), und die Form "<Name>, <Ort>" entsteht erst in
+    `frontend/src/utils/timeOfDay.ts::eventPlaceName` (Spec 0514, ADR 0120). Eine zweite Quelle
+    derselben Form erzeugte genau die Divergenz, gegen die `photoDetail.structure.test.ts` steht.
+
     `place_name` steht BEWUSST HIER und nicht in `EventPlaceOut`: `_event_place_out` liefert bei
     unbekanntem `place_kind` `None`, und ein persistierter Name darf damit nicht mitfallen. `null`
-    heisst "kein aufgeloester Ortsname" - das Event heisst dann nach Nummer und Zeitspanne.
+    heisst "kein aufgeloester Ortsname" - das Event heisst dann nach Nummer und Zeitspanne, sofern
+    kein Sehenswuerdigkeitsname daneben steht.
 
     Es ist freier, extern erzeugter Text (aus dem Ortsdatensatz, ueber
     `places.sanitize_place_name` entstanden) und traegt die Auflage von `landmark_name`
