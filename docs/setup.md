@@ -605,15 +605,22 @@ docker compose exec -T backend python -m photosort.event_probe --project-id <N> 
 ```
 
 Der Bericht stellt **zwei Gliederungen nebeneinander**: den Betriebswert und den Motivwechsel
-`aus`. Je Gliederung stehen höchstens die acht größten Events nach Fotozahl mit **vier Anzahlen** —
-Fotozahl, Dauer, Zahl der verschiedenen Ortszellen und Zahl der verschiedenen getragenen Motive —,
-darüber die Verteilung der Zell- und Motivzahlen über *alle* Events.
+`aus`. Je Gliederung stehen höchstens die acht größten Events nach Fotozahl mit **fünf Anzahlen** —
+Fotozahl, davon mit gemessener Koordinate, Dauer, Zahl der verschiedenen Ortszellen und Zahl der
+verschiedenen getragenen Motive —, darüber die Verteilung der Zell- und Motivzahlen über *alle*
+Events.
 
 **Nur Anzahlen, keine Zelle und kein Name:** Die Aussage entsteht aus den Zahlen selbst. Ein Event
 über fünf Stunden mit *zwei* Ortszellen ist ein Ausflug, eines mit *sechs* sind mehrere
 verschmolzene Anlässe. Die Tabelle ist bewusst ein **Ausschnitt** und sagt das auch — eine Zeile je
 Event wäre über die Zellzahlen eine Bewegungsspur. Sortiert wird nach den gemessenen Werten, nie
 nach der Position im Lauf; eine Position oder Kennung des Events steht nirgends.
+
+**Diese Lesart gilt nur, soweit die Fotos des Events gemessen sind.** In die Ortszellen gehen
+ausschließlich Fotos mit eigener Koordinate ein — ein übernommener Ort speist sie nie. Liegt die
+Spalte „davon gemessen" weit unter der Fotozahl, ist eine kleine Zellzahl keine Aussage über den
+Anlass, sondern eine Lücke in der Messung, und sie sieht genauso aus wie ein Befund. Wie groß der
+Anteil insgesamt ist, steht in Block C1 des Hauptberichts.
 
 Die zweite Gliederung entsteht über dasselbe unerreichbare Bestätigungsfenster wie die Zeile `aus`
 bei `--motiv` — **einen Abschalter im Produktivcode gibt es dafür nicht.** Wie `--motiv` und

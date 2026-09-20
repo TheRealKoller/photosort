@@ -65,6 +65,7 @@ from photosort.events import (
     LocationEntry,
     build_events,
     explain_events,
+    has_measured_coordinate,
 )
 from photosort.geonames import GEONAMES_MAX_DISTANCE_METERS, dataset_hash_path
 from photosort.models import (
@@ -932,8 +933,18 @@ def _coherent(
     )
 
 
-def _with_motifs(photo_id: int, **strengths: float) -> EventCandidate:
-    return EventCandidate(photo_id=photo_id, taken_at=NOW, motif_strengths=dict(strengths))
+def _with_motifs(
+    photo_id: int, *, gps: tuple[float, float] | None = None, **strengths: float
+) -> EventCandidate:
+    """Ein Kandidat mit Motiv-Kopfzeile - OHNE gemessene Koordinate, sofern keine genannt ist: Er
+    haette seinen Ort dann uebernommen und speist keine Zelle."""
+    return EventCandidate(
+        photo_id=photo_id,
+        taken_at=NOW,
+        gps_lat=None if gps is None else gps[0],
+        gps_lon=None if gps is None else gps[1],
+        motif_strengths=dict(strengths),
+    )
 
 
 class TestCoherenceOfTheEvents:
@@ -959,20 +970,79 @@ class TestCoherenceOfTheEvents:
             causes=(frozenset(), frozenset({BOUNDARY_TIME_GAP})),
         )
         candidates = (
-            _with_motifs(1, strand=CARRIED),
-            _with_motifs(2, strand=CARRIED, essen=CARRIED),
+            _with_motifs(1, gps=(43.51, 16.44), strand=CARRIED),
+            _with_motifs(2, gps=(43.52, 16.45), strand=CARRIED, essen=CARRIED),
+            # Das dritte Foto hat den Ort UEBERNOMMEN - es speist keine Zelle und zaehlt nicht mit.
             _with_motifs(3, berge=CARRIED),
-            _with_motifs(4, essen=CARRIED),
+            _with_motifs(4, gps=(44.0, 15.0), essen=CARRIED),
         )
 
         counts = coherence_counts(formation, candidates)
 
         assert counts.events_total == 2
         first, second = counts.largest
-        assert (first.photos, first.place_cells, first.motifs) == (3, 2, 3)
+        assert (first.photos, first.measured_photos, first.place_cells, first.motifs) == (
+            3,
+            2,
+            2,
+            3,
+        )
         assert first.duration_seconds == 90 * 60
-        assert (second.photos, second.place_cells, second.motifs) == (1, 1, 1)
+        assert (second.photos, second.measured_photos, second.place_cells, second.motifs) == (
+            1,
+            1,
+            1,
+            1,
+        )
         assert second.duration_seconds == 0.0
+
+    def test_only_photos_with_a_measured_coordinate_are_counted_as_measured(self) -> None:
+        """OHNE DIESE FUENFTE ZAHL IST DIE ZELLZAHL NICHT DEUTBAR. `events.py::_cells_of` nimmt
+        ausschliesslich Kandidaten mit GEMESSENER Koordinate; ein uebernommener Ort speist sie
+        ausdruecklich nicht. Ein Event, dessen Fotos ueberwiegend geerbt haben, zeigt deshalb eine
+        kleine Zellzahl - und die laese sich als "ein Ort, also ein Ausflug" lesen, obwohl schlicht
+        nichts gemessen wurde. In der Ausgangsmessung dieser Spec trugen 30,0 % der Kandidatenfotos
+        keine eigene Koordinate."""
+        formation = EventFormation(
+            events=(_coherent(1, (1, 2, 3, 4), cells=((43.51, 16.44),)),), causes=(frozenset(),)
+        )
+        candidates = (
+            _with_motifs(1, gps=(43.51, 16.44)),
+            _with_motifs(2),
+            _with_motifs(3),
+            _with_motifs(4),
+        )
+
+        [row] = coherence_counts(formation, candidates).largest
+
+        assert (row.photos, row.measured_photos, row.place_cells) == (4, 1, 1)
+
+    def test_an_event_without_a_single_measured_photo_says_zero_not_nothing(self) -> None:
+        formation = EventFormation(events=(_coherent(1, (1, 2)),), causes=(frozenset(),))
+
+        [row] = coherence_counts(formation, (_with_motifs(1), _with_motifs(2))).largest
+
+        assert (row.measured_photos, row.place_cells) == (0, 0)
+
+    def test_measured_and_cells_rest_on_the_same_one_predicate(self) -> None:
+        """Gegen zwei Begriffe von "dieses Foto hat eine gemessene Koordinate" im selben Produkt:
+        Beide Spalten fragen `events.py::has_measured_coordinate`, und `_cells_of` tut es auch.
+        Liefen sie auseinander, stuende die Zahl der gemessenen Fotos neben einer Zellzahl, die
+        nach einer anderen Regel entstanden ist."""
+        measured = EventCandidate(photo_id=1, taken_at=NOW, gps_lat=43.51, gps_lon=16.44)
+        inherited = EventCandidate(photo_id=2, taken_at=NOW)
+        # Eine halbe Koordinate ist keine: `_cells_of` verlangt BEIDE Werte.
+        half = EventCandidate(photo_id=3, taken_at=NOW, gps_lat=43.51)
+
+        assert has_measured_coordinate(measured) is True
+        assert has_measured_coordinate(inherited) is False
+        assert has_measured_coordinate(half) is False
+
+        formation = explain_events([measured, inherited, half])
+        rows = coherence_counts(formation, (measured, inherited, half)).largest
+
+        assert sum(row.measured_photos for row in rows) == 1
+        assert sum(row.place_cells for row in rows) == 1
 
     def test_only_the_distinct_cells_are_counted(self) -> None:
         """Gezaehlt werden VERSCHIEDENE Zellen: Zwoelf Aufnahmen an einem Ort sind ein Ort, nicht
@@ -1100,56 +1170,78 @@ class TestCoherenceOfTheEvents:
         assert counts.motifs_per_event == {}
 
 
-def _coherence_counts(*rows: tuple[int, float, int, int], events_total: int = 0) -> CoherenceCounts:
+def _coherence_counts(
+    *rows: tuple[int, int, float, int, int], events_total: int = 0
+) -> CoherenceCounts:
     """Ein fertig gezaehltes Ergebnis, von Hand gestellt - die Ausgabe rechnet nicht, sie
-    schreibt."""
+    schreibt. Je Zeile: Fotos, davon gemessen, Dauer, Ortszellen, Motive."""
     return CoherenceCounts(
         events_total=events_total or len(rows),
         largest=tuple(
-            CoherenceRow(photos=photos, duration_seconds=seconds, place_cells=cells, motifs=motifs)
-            for photos, seconds, cells, motifs in rows
+            CoherenceRow(
+                photos=photos,
+                measured_photos=measured,
+                duration_seconds=seconds,
+                place_cells=cells,
+                motifs=motifs,
+            )
+            for photos, measured, seconds, cells, motifs in rows
         ),
-        cells_per_event=_tally(cells for _, _, cells, _ in rows),
-        motifs_per_event=_tally(motifs for _, _, _, motifs in rows),
+        cells_per_event=_tally(cells for _, _, _, cells, _ in rows),
+        motifs_per_event=_tally(motifs for _, _, _, _, motifs in rows),
     )
 
 
 class TestTheCoherenceReport:
-    """Beide Gliederungen nebeneinander, und je Event vier ANZAHLEN - sonst nichts."""
+    """Beide Gliederungen nebeneinander, und je Event fuenf ANZAHLEN - sonst nichts."""
 
     def test_both_groupings_stand_side_by_side(self) -> None:
         """Die Frage dieses Modus ist ein Vergleich: Traegt das grosse Event der Gliederung "aus"
         einen Anlass oder mehrere? Eine der beiden Gliederungen allein beantwortet sie nicht."""
         report = render_coherence_report(
             _probe_input(selection_target=None),
-            _coherence_counts((3, 60.0, 1, 1)),
-            _coherence_counts((9, 600.0, 4, 3)),
+            _coherence_counts((3, 3, 60.0, 1, 1)),
+            _coherence_counts((9, 9, 600.0, 4, 3)),
         )
 
         assert "Betriebswert" in report
         assert "Motivwechsel aus" in report
 
-    def test_a_row_carries_the_four_numbers_and_nothing_else(self) -> None:
+    def test_a_row_carries_the_five_numbers_and_nothing_else(self) -> None:
         report = render_coherence_report(
             _probe_input(selection_target=None),
-            _coherence_counts((28, 2 * 3600.0 + 8 * 60.0, 2, 3)),
-            _coherence_counts((80, 5 * 3600.0, 6, 7)),
+            _coherence_counts((28, 26, 2 * 3600.0 + 8 * 60.0, 2, 3)),
+            _coherence_counts((80, 5, 5 * 3600.0, 6, 7)),
         )
 
-        assert "| 28 | 2 h 8 min | 2 | 3 |" in report
-        assert "| 80 | 5 h | 6 | 7 |" in report
-        # Vier Spalten je Zeile, nicht fuenf: kein Rang, keine Position, keine Kennung.
+        assert "| 28 | 26 | 2 h 8 min | 2 | 3 |" in report
+        assert "| 80 | 5 | 5 h | 6 | 7 |" in report
+        # Fuenf Spalten je Zeile, nicht sechs: kein Rang, keine Position, keine Kennung.
         for line in report.splitlines():
             if line.startswith("| ") and not line.startswith("| Fotos"):
-                assert line.count("|") == 5, line
+                assert line.count("|") == 6, line
+
+    def test_the_reading_of_the_cell_count_is_bound_to_the_measured_photos(self) -> None:
+        """DER DEUTUNGSSATZ GILT NUR SOWEIT GEMESSEN WURDE. "Zwei Ortszellen, also ein Ausflug" ist
+        bei 80 Fotos, von denen fuenf eine Koordinate tragen, kein Befund, sondern eine Luecke -
+        und sie sieht genauso aus wie ein Befund. Der Bericht muss das sagen, nicht der Leser."""
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((28, 26, 60.0, 2, 3)),
+            _coherence_counts((80, 5, 5 * 3600.0, 2, 7)),
+        )
+
+        assert "davon gemessen" in report
+        assert "uebernommen" in report
+        assert "soweit" in report
 
     def test_the_selection_is_named_so_nobody_reads_the_list_as_complete(self) -> None:
         """Ohne diesen Satz waere eine Liste von acht Zeilen neben "26 Events" stumm daneben - und
         genau die Vollliste ist hier ausgeschlossen."""
         report = render_coherence_report(
             _probe_input(selection_target=None),
-            _coherence_counts((3, 60.0, 1, 1), events_total=81),
-            _coherence_counts((9, 600.0, 4, 3), events_total=26),
+            _coherence_counts((3, 3, 60.0, 1, 1), events_total=81),
+            _coherence_counts((9, 9, 600.0, 4, 3), events_total=26),
         )
 
         assert str(COHERENCE_TOP_EVENTS) in report
@@ -1160,8 +1252,8 @@ class TestTheCoherenceReport:
     def test_the_distribution_over_all_events_stands_in_the_report(self) -> None:
         report = render_coherence_report(
             _probe_input(selection_target=None),
-            _coherence_counts((3, 60.0, 1, 1), (2, 60.0, 1, 0), (1, 0.0, 2, 1)),
-            _coherence_counts((3, 60.0, 1, 1)),
+            _coherence_counts((3, 3, 60.0, 1, 1), (2, 2, 60.0, 1, 0), (1, 1, 0.0, 2, 1)),
+            _coherence_counts((3, 3, 60.0, 1, 1)),
         )
 
         assert "Ortszellen je Event" in report
@@ -1900,9 +1992,10 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         assert "## Betriebswert" in report
         assert "## Motivwechsel aus" in report
         assert report.count("- Events: 2") == 2
-        # Drei Fotos an einer Zelle, eines davon ohne Koordinate; das zweite Event ein Foto.
-        assert "| 3 | 4 min | 1 | 0 |" in report
-        assert "| 1 | 0 s | 1 | 0 |" in report
+        # Drei Fotos an EINER Zelle, davon zwei gemessen - das dritte hat seinen Ort uebernommen
+        # und speist keine Zelle. Genau diese Luecke macht die fuenfte Spalte sichtbar.
+        assert "| 3 | 2 | 4 min | 1 | 0 |" in report
+        assert "| 1 | 1 | 0 s | 1 | 0 |" in report
 
     def test_the_coherence_mode_measures_nothing_of_the_place_blocks(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

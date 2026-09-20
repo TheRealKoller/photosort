@@ -754,6 +754,30 @@ def _name_of(members: Sequence[EventCandidate]) -> str | None:
     return None
 
 
+def measured_position(candidate: EventCandidate) -> tuple[float, float] | None:
+    """Die SELBST GEMESSENE Position eines Fotos, oder `None` - DIE EINE BEDINGUNG, an der
+    "dieses Foto hat einen eigenen Ort" haengt.
+
+    Eine halbe Koordinate ist keine: Beide Werte muessen stehen. Ein uebernommener Ort
+    (`EventCandidate.location`) zaehlt hier ausdruecklich NICHT mit; er bestimmt die Grenzen, speist
+    den Ortsbezug eines Events aber nie."""
+    lat, lon = candidate.gps_lat, candidate.gps_lon
+    if lat is None or lon is None:
+        return None
+    return lat, lon
+
+
+def has_measured_coordinate(candidate: EventCandidate) -> bool:
+    """Das Praedikat zu `measured_position`, fuer Aufrufer, die nur zaehlen wollen.
+
+    Oeffentlich, weil das Messkommando dieselbe Frage stellt: `event_probe.py` weist je Event neben
+    der Zellzahl aus, auf wie vielen gemessenen Fotos sie ueberhaupt beruht. Eine zweite Fassung
+    dort waere ein zweiter Begriff von "dieses Foto hat einen Ort" im selben Produkt, und die
+    ausgewiesene Zahl stuende neben einer Zellzahl, die nach einer anderen Regel entstanden ist.
+    Delegiert, statt die Bedingung zu wiederholen - es gibt sie genau einmal."""
+    return measured_position(candidate) is not None
+
+
 def _cells_of(members: Sequence[EventCandidate]) -> tuple[tuple[float, float], ...]:
     """Die verschiedenen gerundeten GEMESSENEN Zellen eines Events, sortiert und dublettenfrei.
 
@@ -762,9 +786,9 @@ def _cells_of(members: Sequence[EventCandidate]) -> tuple[tuple[float, float], .
     return tuple(
         sorted(
             {
-                place_cell(member.gps_lat, member.gps_lon)
+                place_cell(*position)
                 for member in members
-                if member.gps_lat is not None and member.gps_lon is not None
+                if (position := measured_position(member)) is not None
             }
         )
     )

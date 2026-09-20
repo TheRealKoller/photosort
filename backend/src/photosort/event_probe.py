@@ -69,6 +69,7 @@ from photosort.events import (
     EventFormation,
     LocationEntry,
     explain_events,
+    has_measured_coordinate,
     inherited_locations,
 )
 from photosort.geonames import GeoNamesResolver, PlaceDatasetError, build_geonames_resolver
@@ -625,15 +626,25 @@ COHERENCE_TOP_EVENTS = 8
 
 @dataclass(frozen=True)
 class CoherenceRow:
-    """Ein Event in VIER ANZAHLEN, und in nichts sonst.
+    """Ein Event in FUENF ANZAHLEN, und in nichts sonst.
 
     Keine Zelle, keine Koordinate, kein Orts- oder Motivname, kein Zeitstempel, keine Position im
     Lauf (S2/S3). Die Aussagekraft entsteht aus den Zahlen selbst: Ein Event ueber fuenf Stunden mit
     ZWEI Ortszellen ist ein Ausflug, eines mit sechs sind verschmolzene Anlaesse.
 
+    `measured_photos` TRAEGT GENAU DIESE DEUTUNG, und ohne sie ist `place_cells` nicht lesbar:
+    `events.py::_cells_of` nimmt ausschliesslich Fotos mit GEMESSENER Koordinate, ein uebernommener
+    Ort speist die Zellen nie. Ein Event, dessen Fotos ueberwiegend geerbt haben, zeigt deshalb eine
+    kleine Zellzahl oder null - und die sieht aus wie "ein Ort, also ein Ausflug", waehrend
+    tatsaechlich nichts gemessen wurde. In der Ausgangsmessung dieser Spec trugen 30,0 % der
+    Kandidatenfotos keine eigene Koordinate, und sie koennen sich in einem einzigen Event ballen;
+    eine Gesamtzahl je Gliederung finge genau diesen Fall nicht. Sie ist selbst eine Anzahl und
+    damit S2-konform.
+
     `duration_seconds` steht als DAUER, nie als Anfang oder Ende (S2)."""
 
     photos: int
+    measured_photos: int
     duration_seconds: float
     place_cells: int
     motifs: int
@@ -664,6 +675,10 @@ def coherence_counts(
     (`events.py::_cells_of`); `len` darauf ist damit genau die Zahl der VERSCHIEDENEN Zellen. Eine
     zweite Bildung hier maesse die Zellen einer Gliederung, die so nie entstanden ist.
 
+    WIE VIELE FOTOS DIESE ZELLEN UEBERHAUPT TRAGEN, steht daneben und entscheidet
+    `events.py::has_measured_coordinate` - dieselbe eine Stelle, die auch `_cells_of` fragt. Ohne
+    diese Zahl liesse sich eine kleine Zellzahl nicht von einer ungemessenen unterscheiden.
+
     WAS EIN FOTO TRAEGT, BEANTWORTET `selection.py::carried_motifs`, nicht diese Funktion - dieselbe
     eine Stelle und dieselbe eine Grenze wie im Lauf. `motif_strengths is None` heisst "keine
     Motiv-Kopfzeile" und traegt nichts bei; das ist etwas anderes als eine leere Kopfzeile, und
@@ -678,6 +693,9 @@ def coherence_counts(
         for candidate in candidates
         if candidate.motif_strengths is not None
     }
+    measured_photo_ids = {
+        candidate.photo_id for candidate in candidates if has_measured_coordinate(candidate)
+    }
 
     rows = []
     for event in formation.events:
@@ -687,6 +705,9 @@ def coherence_counts(
         rows.append(
             CoherenceRow(
                 photos=len(event.photo_ids),
+                measured_photos=sum(
+                    1 for photo_id in event.photo_ids if photo_id in measured_photo_ids
+                ),
                 duration_seconds=(event.ended_at - event.started_at).total_seconds(),
                 place_cells=len(event.place_cells),
                 motifs=len(carried),
@@ -695,7 +716,16 @@ def coherence_counts(
 
     ordered = sorted(
         rows,
-        key=lambda row: (row.photos, row.duration_seconds, row.place_cells, row.motifs),
+        key=lambda row: (
+            row.photos,
+            row.duration_seconds,
+            row.place_cells,
+            row.motifs,
+            # ZULETZT, damit die oben beschriebene Rangfolge unveraendert bleibt - aber ueberhaupt
+            # im Schluessel, weil die Ordnung sonst bei sonst gleichen Zeilen auf die stabile
+            # Eingabefolge zurueckfiele, und die ist die des Laufs.
+            row.measured_photos,
+        ),
         reverse=True,
     )
     return CoherenceCounts(
@@ -1093,13 +1123,14 @@ def _coherence_block(title: str, counts: CoherenceCounts) -> list[str]:
         f"- Ortszellen je Event: {_distribution(counts.cells_per_event, 'Zelle(n)')}",
         f"- Motive je Event: {_distribution(counts.motifs_per_event, 'Motiv(e)')}",
         "",
-        "| Fotos | Dauer | Ortszellen | Motive |",
-        "|---|---|---|---|",
+        "| Fotos | davon gemessen | Dauer | Ortszellen | Motive |",
+        "|---|---|---|---|---|",
     ]
     if not counts.largest:
-        return [*lines, "| - | - | - | - |"]
+        return [*lines, "| - | - | - | - | - |"]
     return lines + [
-        f"| {row.photos} | {_duration(row.duration_seconds)} | {row.place_cells} | {row.motifs} |"
+        f"| {row.photos} | {row.measured_photos} | {_duration(row.duration_seconds)} "
+        f"| {row.place_cells} | {row.motifs} |"
         for row in counts.largest
     ]
 
@@ -1124,11 +1155,17 @@ def render_coherence_report(
             [
                 f"# Kohaerenz der Events, Projekt {probe.project_id}",
                 "",
-                "Je Event vier ANZAHLEN: Fotozahl, Dauer, Zahl der verschiedenen Ortszellen und",
-                "Zahl der verschiedenen getragenen Motive. Weder Zelle noch Koordinate, weder",
-                "Orts- noch Motivname, kein Zeitpunkt - die Aussage entsteht aus den Zahlen selbst:",
-                "Ein langes Event mit ZWEI Ortszellen ist ein Ausflug, eines mit sechs sind mehrere",
-                "verschmolzene Anlaesse.",
+                "Je Event fuenf ANZAHLEN: Fotozahl, davon mit gemessener Koordinate, Dauer, Zahl",
+                "der verschiedenen Ortszellen und Zahl der verschiedenen getragenen Motive. Weder",
+                "Zelle noch Koordinate, weder Orts- noch Motivname, kein Zeitpunkt - die Aussage",
+                "entsteht aus den Zahlen selbst: Ein langes Event mit ZWEI Ortszellen ist ein",
+                "Ausflug, eines mit sechs sind mehrere verschmolzene Anlaesse.",
+                "",
+                'Diese Lesart gilt nur soweit gemessen wurde, und die Spalte "davon gemessen" ist',
+                "deshalb keine Beigabe: In die Ortszellen gehen AUSSCHLIESSLICH Fotos mit eigener",
+                "Koordinate ein - ein uebernommener Ort speist sie nie. Liegt sie weit unter der",
+                "Fotozahl, ist eine kleine Zellzahl keine Aussage ueber den Anlass, sondern eine",
+                "Luecke in der Messung - und sie sieht genauso aus wie ein Befund.",
                 "",
                 f"Die Tabelle zeigt je Gliederung hoechstens die {COHERENCE_TOP_EVENTS} groessten",
                 "Events nach FOTOZAHL, absteigend; bei gleicher Fotozahl entscheiden Dauer,",
