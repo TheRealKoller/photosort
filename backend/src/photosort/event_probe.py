@@ -1067,6 +1067,88 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
     return "\n".join(lines) + "\n"
 
 
+def _distribution(counts: Mapping[int, int], unit: str) -> str:
+    """Eine Verteilung "Anzahl -> Zahl der Events", aufsteigend nach der Anzahl.
+
+    Die Ordnung ist die der ANZAHL, nie die des Laufs: Eine Verteilung sagt nichts darueber, in
+    welcher Reihenfolge ihre Werte entstanden sind."""
+    return ", ".join(f"{value} {unit}: {events}" for value, events in sorted(counts.items())) or "-"
+
+
+def _coherence_block(title: str, counts: CoherenceCounts) -> list[str]:
+    """Eine Gliederung: ihre Eventzahl, die groessten Events und die Verteilung ueber ALLE.
+
+    Die beiden Verteilungszeilen laufen ueber JEDES Event, die Tabelle ist ein Ausschnitt. Ohne sie
+    liesse sich an der Tabelle nicht ablesen, ob sie den Regelfall zeigt oder die Ausnahme."""
+    lines = [
+        f"## {title}",
+        "",
+        f"- Events: {counts.events_total}",
+        f"- Ortszellen je Event: {_distribution(counts.cells_per_event, 'Zelle(n)')}",
+        f"- Motive je Event: {_distribution(counts.motifs_per_event, 'Motiv(e)')}",
+        "",
+        "| Fotos | Dauer | Ortszellen | Motive |",
+        "|---|---|---|---|",
+    ]
+    if not counts.largest:
+        return [*lines, "| - | - | - | - |"]
+    return lines + [
+        f"| {row.photos} | {_duration(row.duration_seconds)} | {row.place_cells} | {row.motifs} |"
+        for row in counts.largest
+    ]
+
+
+def render_coherence_report(
+    probe: EventProbeInput, operating: CoherenceCounts, switched_off: CoherenceCounts
+) -> str:
+    """Der Kohaerenz-Modus als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+
+    Derselbe Bericht-Rand wie die uebrigen Modi: keine Koordinate, kein Orts-, Sehenswuerdigkeit-
+    oder Motivname, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen wird die
+    Projekt-Id. Dauern stehen als DAUER, nie als Anfang oder Ende.
+
+    BEIDE GLIEDERUNGEN NEBENEINANDER, weil die Frage ein Vergleich ist: Das grosse Event der
+    Gliederung "aus" ist nur gegen den Betriebswert zu beurteilen.
+
+    DASS DIE TABELLE EIN AUSSCHNITT IST, STEHT AUSGESCHRIEBEN DARIN. Eine Liste ueber alle Events
+    waere ueber die Zellzahlen eine Bewegungsspur; eine Liste ueber die groessten ohne diesen Satz
+    laese sich fuer die vollstaendige halten und die uebrigen Events fuer nicht vorhanden."""
+    return (
+        "\n".join(
+            [
+                f"# Kohaerenz der Events, Projekt {probe.project_id}",
+                "",
+                "Je Event vier ANZAHLEN: Fotozahl, Dauer, Zahl der verschiedenen Ortszellen und",
+                "Zahl der verschiedenen getragenen Motive. Weder Zelle noch Koordinate, weder",
+                "Orts- noch Motivname, kein Zeitpunkt - die Aussage entsteht aus den Zahlen selbst:",
+                "Ein langes Event mit ZWEI Ortszellen ist ein Ausflug, eines mit sechs sind mehrere",
+                "verschmolzene Anlaesse.",
+                "",
+                f"Die Tabelle zeigt je Gliederung hoechstens die {COHERENCE_TOP_EVENTS} groessten",
+                "Events nach FOTOZAHL, absteigend; bei gleicher Fotozahl entscheiden Dauer,",
+                "Zellzahl und Motivzahl. Sie ist damit bewusst nicht vollstaendig, sobald die",
+                "Gliederung mehr Events traegt - eine Zeile je Event waere ueber die Zellzahlen",
+                "eine Bewegungsspur. Die beiden Verteilungszeilen ueber der Tabelle laufen dagegen",
+                "immer ueber JEDES Event.",
+                "",
+                "Die Reihenfolge der Zeilen ist die der Groesse, nie die des Laufs; eine Position",
+                "oder Kennung des Events steht nirgends.",
+                "",
+                *_coherence_block("Betriebswert", operating),
+                "",
+                *_coherence_block("Motivwechsel aus", switched_off),
+                "",
+                'Die zweite Gliederung entsteht wie die Zeile "aus" der Empfindlichkeitsmessung:',
+                "ueber ein Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos, das nie",
+                "bestaetigt werden kann. Der Produktivcode bekommt dafuer keinen Abschalter und",
+                "keinen weiteren Parameter, und an der Gliederung aendert dieser Lauf nichts - er",
+                "misst.",
+            ]
+        )
+        + "\n"
+    )
+
+
 def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str:
     """Block F als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
 
@@ -1281,6 +1363,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "Gliederung wie ohne Schalter - der Modus beobachtet, er aendert nichts."
         ),
     )
+    modes.add_argument(
+        "--kohaerenz",
+        action="store_true",
+        help=(
+            "Statt der Bloecke A-C: die Kohaerenz der groessten Events, fuer den Betriebswert und "
+            "fuer den Motivwechsel 'aus' nebeneinander. Je Event vier Anzahlen - Fotozahl, Dauer, "
+            "Zahl der verschiedenen Ortszellen, Zahl der verschiedenen getragenen Motive. Rein "
+            "lesend wie die uebrigen Modi."
+        ),
+    )
     parser.add_argument(
         "--ortsdatensatz",
         default=None,
@@ -1299,6 +1391,7 @@ async def _probe_with_own_session(
     dataset_path: Path,
     motif: bool = False,
     bolts: bool = False,
+    coherence: bool = False,
 ) -> str:
     engine = make_engine(database_url)
     try:
@@ -1328,6 +1421,21 @@ async def _probe_with_own_session(
         # maesse die Blockaden einer Gliederung, die so nie entstanden ist. Den Ortsauszug fragt
         # Block F ebensowenig wie Block E - keine seiner Zahlen haengt an einer Ortsangabe.
         return render_bolt_report(probe, formation)
+
+    if coherence:
+        # ZWEI Gliederungen, beide ueber `explain_events`: die des Betriebswerts (dieselbe wie
+        # oben) und die ohne wirksamen Motivwechsel. Die zweite entsteht ueber dasselbe
+        # unerreichbare Bestaetigungsfenster wie die Zeile "aus" in Block E - kein Abschaltpfad im
+        # Produktivcode, kein weiterer Parameter. Den Ortsauszug fragt auch dieser Modus nicht:
+        # Gezaehlt wird die ZAHL der Zellen, und die traegt das Event bereits.
+        without_motif_change = explain_events(
+            probe.candidates, confirming_photos=motif_change_off_window(probe.candidates)
+        )
+        return render_coherence_report(
+            probe,
+            coherence_counts(formation, probe.candidates),
+            coherence_counts(without_motif_change, probe.candidates),
+        )
 
     cells = sorted(
         {
@@ -1375,6 +1483,7 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
                 dataset_path=Path(args.ortsdatensatz or settings.place_dataset_path),
                 motif=args.motiv,
                 bolts=args.riegel,
+                coherence=args.kohaerenz,
             )
         )
     except (EventProbeError, PlaceDatasetError) as exc:

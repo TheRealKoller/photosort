@@ -28,9 +28,12 @@ from photosort.event_probe import (
     DISTANCE_THRESHOLD_METERS,
     MOTIF_CONFIRMING_VARIANTS,
     MOTIF_STRENGTH_VARIANTS,
+    CoherenceCounts,
+    CoherenceRow,
     EventProbeError,
     EventProbeInput,
     _quota_lines,
+    _tally,
     block_counts,
     cause_counts,
     coherence_counts,
@@ -42,6 +45,7 @@ from photosort.event_probe import (
     motif_sensitivity,
     quota_reach,
     read_event_probe_input,
+    render_coherence_report,
     size_counts,
 )
 from photosort.events import (
@@ -1081,6 +1085,86 @@ class TestCoherenceOfTheEvents:
         assert counts.motifs_per_event == {}
 
 
+def _coherence_counts(*rows: tuple[int, float, int, int], events_total: int = 0) -> CoherenceCounts:
+    """Ein fertig gezaehltes Ergebnis, von Hand gestellt - die Ausgabe rechnet nicht, sie
+    schreibt."""
+    return CoherenceCounts(
+        events_total=events_total or len(rows),
+        largest=tuple(
+            CoherenceRow(photos=photos, duration_seconds=seconds, place_cells=cells, motifs=motifs)
+            for photos, seconds, cells, motifs in rows
+        ),
+        cells_per_event=_tally(cells for _, _, cells, _ in rows),
+        motifs_per_event=_tally(motifs for _, _, _, motifs in rows),
+    )
+
+
+class TestTheCoherenceReport:
+    """Beide Gliederungen nebeneinander, und je Event vier ANZAHLEN - sonst nichts."""
+
+    def test_both_groupings_stand_side_by_side(self) -> None:
+        """Die Frage dieses Modus ist ein Vergleich: Traegt das grosse Event der Gliederung "aus"
+        einen Anlass oder mehrere? Eine der beiden Gliederungen allein beantwortet sie nicht."""
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((3, 60.0, 1, 1)),
+            _coherence_counts((9, 600.0, 4, 3)),
+        )
+
+        assert "Betriebswert" in report
+        assert "Motivwechsel aus" in report
+
+    def test_a_row_carries_the_four_numbers_and_nothing_else(self) -> None:
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((28, 2 * 3600.0 + 8 * 60.0, 2, 3)),
+            _coherence_counts((80, 5 * 3600.0, 6, 7)),
+        )
+
+        assert "| 28 | 2 h 8 min | 2 | 3 |" in report
+        assert "| 80 | 5 h | 6 | 7 |" in report
+        # Vier Spalten je Zeile, nicht fuenf: kein Rang, keine Position, keine Kennung.
+        for line in report.splitlines():
+            if line.startswith("| ") and not line.startswith("| Fotos"):
+                assert line.count("|") == 5, line
+
+    def test_the_selection_is_named_so_nobody_reads_the_list_as_complete(self) -> None:
+        """Ohne diesen Satz waere eine Liste von acht Zeilen neben "26 Events" stumm daneben - und
+        genau die Vollliste ist hier ausgeschlossen."""
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((3, 60.0, 1, 1), events_total=81),
+            _coherence_counts((9, 600.0, 4, 3), events_total=26),
+        )
+
+        assert str(COHERENCE_TOP_EVENTS) in report
+        assert "nicht vollstaendig" in report
+        assert "Events: 81" in report
+        assert "Events: 26" in report
+
+    def test_the_distribution_over_all_events_stands_in_the_report(self) -> None:
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts((3, 60.0, 1, 1), (2, 60.0, 1, 0), (1, 0.0, 2, 1)),
+            _coherence_counts((3, 60.0, 1, 1)),
+        )
+
+        assert "Ortszellen je Event" in report
+        assert "1 Zelle(n): 2, 2 Zelle(n): 1" in report
+        assert "Motive je Event" in report
+        assert "0 Motiv(e): 1, 1 Motiv(e): 2" in report
+
+    def test_a_grouping_without_a_single_event_says_so_instead_of_an_empty_table(self) -> None:
+        report = render_coherence_report(
+            _probe_input(selection_target=None),
+            _coherence_counts(),
+            _coherence_counts(),
+        )
+
+        assert "Events: 0" in report
+        assert "-" in report
+
+
 # --- Block C: die Ortszuordnung, je Mechanismus getrennt -----------------------------------------
 #
 # Die Entfernungen der Messlage sind nachgerechnet: 0,002 Grad Breite sind rund 222 m, 0,01 Grad
@@ -1538,6 +1622,30 @@ class TestMainRefusesLoudly:
         assert exit_code == 1
         assert "Lauf" in capsys.readouterr().err
 
+    def test_the_coherence_mode_refuses_a_project_without_a_successful_run_too(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JE ARGUMENTFORM: Ohne Gliederung gibt es auch keine Kohaerenz zu messen."""
+        url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+        async def prepare() -> int:
+            engine = make_engine(url)
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                project_id = await _project(session, "Ohne Lauf")
+                await session.commit()
+            await engine.dispose()
+            return project_id
+
+        project_id = asyncio.run(prepare())
+
+        exit_code = main(["--project-id", str(project_id), "--kohaerenz"], database_url=url)
+
+        assert exit_code == 1
+        assert "Lauf" in capsys.readouterr().err
+
     def test_the_report_carries_the_counter_indication_of_the_third_stage(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -1708,13 +1816,88 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         assert "C1" not in report
         assert "C2" not in report
 
-    def test_the_two_measuring_modes_exclude_each_other(self, tmp_path: Path) -> None:
+    def test_the_measuring_modes_exclude_each_other(self, tmp_path: Path) -> None:
         """Zwei Modi gleichzeitig ist keine Frage, die eine Antwort hat. Eine stille Vorrangregel
-        gaebe einen Bericht aus, den niemand angefordert hat."""
+        gaebe einen Bericht aus, den niemand angefordert hat. Jede Paarung einzeln: Ein neuer Modus,
+        der nur an EINEN der bestehenden gehaengt wird, liefe neben dem anderen still mit."""
         url, project_id = _prepared(tmp_path)
 
-        with pytest.raises(SystemExit):
-            main(["--project-id", str(project_id), "--motiv", "--riegel"], database_url=url)
+        for pair in (
+            ("--motiv", "--riegel"),
+            ("--motiv", "--kohaerenz"),
+            ("--riegel", "--kohaerenz"),
+        ):
+            with pytest.raises(SystemExit):
+                main(["--project-id", str(project_id), *pair], database_url=url)
+
+    def test_the_coherence_report_carries_none_of_the_six_classes_either(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """JE ARGUMENTFORM: Der Kohaerenz-Bericht entsteht an einer anderen Stelle und ist von der
+        Zusage der uebrigen nicht mitgedeckt. Er ist zugleich der Modus, der einer Liste je Event am
+        naechsten kommt - S2 ist hier strenger zu lesen, nicht lockerer."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--kohaerenz"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "43.5" not in report
+        assert "16.44" not in report
+        assert MEASURED_LOCALITY not in report
+        assert MEASURED_LANDMARK not in report
+        assert MEASURED_OPENCLOUD_PATH not in report
+        assert MEASURED_PHOTO_FILE not in report
+        assert MEASURED_PROJECT_NAME not in report
+        assert "2029" not in report
+        assert "03:47" not in report
+        assert f"Projekt {project_id}" in report
+
+    def test_the_coherence_report_carries_both_groupings_of_the_real_lay(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Die Messlage traegt vier Kandidaten in zwei Events (drei dicht beieinander, einer drei
+        Tage spaeter) und kein einziges Motiv - ohne Motivgrenze bleibt es bei denselben zwei."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id), "--kohaerenz"], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "## Betriebswert" in report
+        assert "## Motivwechsel aus" in report
+        assert report.count("- Events: 2") == 2
+        # Drei Fotos an einer Zelle, eines davon ohne Koordinate; das zweite Event ein Foto.
+        assert "| 3 | 4 min | 1 | 0 |" in report
+        assert "| 1 | 0 s | 1 | 0 |" in report
+
+    def test_the_coherence_mode_measures_nothing_of_the_place_blocks(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Der Modus braucht den Ortsauszug gar nicht - er darf deshalb weder danach fragen noch
+        sein Fehlen als Messergebnis melden."""
+        url, project_id = _prepared(tmp_path)
+
+        exit_code = main(["--project-id", str(project_id), "--kohaerenz"], database_url=url)
+
+        assert exit_code == 0
+        report = capsys.readouterr().out
+        assert "NICHT GEMESSEN" not in report
+        assert "C1" not in report
+        assert "C2" not in report
+
+    def test_the_two_groupings_come_from_the_same_means_as_the_run(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Die Gliederung "aus" entsteht ueber `motif_change_off_window`, nicht ueber einen
+        Abschaltpfad - und beide ueber `explain_events`. Der Bericht sagt das, weil sonst offen
+        bliebe, wie die zweite Spalte zustande kommt."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id), "--kohaerenz"], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos" in report
+        assert "keinen Abschalter" in report
 
     def test_the_motif_report_carries_a_row_per_combination_plus_both_reference_rows(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -2004,6 +2187,26 @@ class TestARealRunChangesNothing:
         before = asyncio.run(snapshot())
 
         exit_code = main(["--project-id", str(project_id), "--riegel"], database_url=url)
+
+        assert exit_code == 0
+        assert asyncio.run(snapshot()) == before
+
+    def test_not_a_single_row_changes_in_the_coherence_mode_either(self, tmp_path: Path) -> None:
+        """JE ARGUMENTFORM einmal: Der Kohaerenz-Modus rechnet ZWEI Gliederungen statt einer und
+        nimmt damit einen eigenen Weg durch das Modul, den die Zusage der uebrigen nicht mitdeckt."""
+        url, project_id = _prepared(tmp_path)
+
+        async def snapshot() -> dict[str, list[tuple[object, ...]]]:
+            engine = make_engine(url)
+            factory = make_session_factory(engine)
+            async with factory() as session:
+                taken = await _table_snapshot(session)
+            await engine.dispose()
+            return taken
+
+        before = asyncio.run(snapshot())
+
+        exit_code = main(["--project-id", str(project_id), "--kohaerenz"], database_url=url)
 
         assert exit_code == 0
         assert asyncio.run(snapshot()) == before
