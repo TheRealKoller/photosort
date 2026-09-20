@@ -8,7 +8,8 @@
 [#518](https://github.com/TheRealKoller/photosort/pull/518),
 [#519](https://github.com/TheRealKoller/photosort/pull/519),
 [#520](https://github.com/TheRealKoller/photosort/pull/520),
-[#521](https://github.com/TheRealKoller/photosort/pull/521)
+[#521](https://github.com/TheRealKoller/photosort/pull/521),
+[#522](https://github.com/TheRealKoller/photosort/pull/522)
 **Erstellt:** 2026-09-18
 **Bezug:** [Issue #506](https://github.com/TheRealKoller/photosort/issues/506), ADR
 [`0117`](../decisions/0117-der-anlass-als-einheit-eigene-schwellen-dauergrenze-und-mindestgroesse.md),
