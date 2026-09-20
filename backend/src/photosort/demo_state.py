@@ -347,12 +347,17 @@ _DEMO_SINGLE_CELL_OFFSET = 0.05
 # ihr Viertel. Ohne diesen Fall ist die Viertel-Regel im Browser unsichtbar, und `browse-app` kann
 # sie nicht zeigen.
 #
-# NUR ZWEI Events tragen einen Namen, und mehr sind hier nicht zu haben: Von den vier Events des
-# "bewertet"-Projekts trägt eines eine Sehenswürdigkeit (der Ortsname ersetzt sie nicht) und eines
-# gar keine Ortsangabe (dort gibt es nichts aufzulösen). Ein fünftes Event wäre bei acht Fotos ein
-# Event aus einem einzigen Foto - und das ausgeschlossene Dokument stünde dann allein in seinem
-# Event, das damit Kandidaten, aber keinen Album-Entwurf trüge.
+# DREI der vier Events tragen einen Namen, das vierte hat gar keine Ortsangabe (dort gibt es nichts
+# aufzuloesen). Seit Spec 0514 (ADR 0120) ist auch das LANDMARK-Event darunter: der Ortsname tritt
+# neben die Sehenswuerdigkeit, statt von ihr verdraengt zu werden, und `browse-app` sieht die
+# kombinierte Ueberschrift "Name, Ort" sonst nie.
+#
+# Das Viertel des Landmark-Events ist deshalb DASSELBE wie das des "Mehrere Orte"-Events: die
+# beiden liegen in einer gemeinsamen gerundeten Zelle (siehe `_demo_gps`), und dieselbe Zelle ergibt
+# dieselbe Auskunft. Ein eigenes Viertel dort waere ein Zustand, den die Anwendung nie schriebe.
+# Das Ein-Zellen-Event traegt ein anderes Viertel und liegt dafuer in einer EIGENEN Zelle.
 _DEMO_PLACE_NAMES = {
+    _DEMO_LANDMARK_EVENT: "Paris, Gros-Caillou",
     _DEMO_SINGLE_COORDINATE_EVENT: "Paris, Montmartre",
     _DEMO_MULTIPLE_PLACES_EVENT: "Paris, Gros-Caillou",
 }
@@ -1128,9 +1133,10 @@ async def _seed_rated_project(
             )
         )
         # GENAU EIN erkannter Name im Landmark-Event. Genau einer, nicht mehrere: Ein zweiter Name
-        # im selben Event bliebe zwar drin (er trennt seit ADR 0118 nichts mehr), waere aber ohne
-        # Wirkung auf die Anzeige - das Event traegt den fruehesten. Der Demo-Zustand soll das
-        # Event mit `kind="landmark"` zeigen, nicht einen unsichtbaren zweiten Namen. Die uebrigen Fotos
+        # im selben Event bliebe zwar drin, waere aber ohne Wirkung auf die Anzeige - das Event
+        # traegt den Namen mit den meisten Traegern, bei Gleichstand den frueheren (Spec 0514,
+        # ADR 0120). Der Demo-Zustand soll das Event mit `kind="landmark"` zeigen, nicht einen
+        # unsichtbaren zweiten Namen. Die uebrigen Fotos
         # des Events tragen den Namen ueber `PhotoOut.event.place` mit - genau das ist der Zustand,
         # den die Sichtpruefung sehen soll.
         if index == _DEMO_LANDMARK_PHOTO_INDEX:
