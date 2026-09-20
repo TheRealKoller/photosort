@@ -342,10 +342,10 @@ export function PhotoDetailPage() {
 
   const isMutating = setMutation.isPending || deleteMutation.isPending || favoriteMutation.isPending
 
-  // Der Ort eines Fotos ist der Ort seines EREIGNISSES. Die dreistufige Namenswahl steht in
-  // `utils/timeOfDay.ts::eventPlaceName` und entsteht hier ausdruecklich NICHT ein zweites Mal -
-  // sonst liefe sie mit der Ereignis-Ueberschrift auseinander. Ohne Ortsangabe steht der Satz
-  // statt einer Luecke; eine Koordinate erscheint nie als Name.
+  // Der Ort eines Fotos ist der Ort seines EREIGNISSES. Wie Name und Ortsname zusammengesetzt
+  // werden, steht in `utils/timeOfDay.ts::eventPlaceName` und entsteht hier ausdruecklich NICHT ein
+  // zweites Mal - sonst liefe die Zeile mit der Ereignis-Ueberschrift auseinander. Ohne Ortsangabe
+  // steht der Satz statt einer Luecke; eine Koordinate erscheint nie als Name.
   const placeName = currentPhoto.event ? eventPlaceName(currentPhoto.event) : null
 
   return (
@@ -499,15 +499,16 @@ export function PhotoDetailPage() {
             ? 'Die Kamera dieses Fotos ist nicht bestimmbar.'
             : currentPhoto.camera.label}
         </p>
-        {/* DER ORT - allein der Name, OHNE Zeitspanne: die Aufnahmezeit steht direkt darueber, und
-            eine zweite Zeitangabe daneben waere eine Wiederholung. Ohne Ortsangabe steht der Satz
-            statt einer Luecke.
+        {/* DER ORT - Name und Ortsname, OHNE Zeitspanne: die Aufnahmezeit steht direkt darueber,
+            und eine zweite Zeitangabe daneben waere eine Wiederholung. Ohne Ortsangabe steht der
+            Satz statt einer Luecke.
 
             S2 - RENDERSTELLE ZWEIER FREMDTEXTFELDER: `place.landmark_name` (Modellantwort) und
-            `place_name` (Ortsdatensatz Dritter) treten hier zum ersten Mal auf dieser Route auf.
-            Reiner React-Textknoten, nie `dangerouslySetInnerHTML`, nie in `href`/`src`/`style`.
-            Bricht in `PhotoDetailPage.test.tsx > rendert einen feindlich belegten Ortsnamen als
-            reinen Textknoten`. */}
+            `place_name` (Ortsdatensatz Dritter) treten hier zum ersten Mal auf dieser Route auf -
+            seit Spec 0514 in EINEM Wert, den `eventPlaceName` bildet. Reiner React-Textknoten, nie
+            `dangerouslySetInnerHTML`, nie in `href`/`src`/`style`. Bricht in
+            `PhotoDetailPage.test.tsx > rendert einen feindlich belegten Ortsnamen als reinen
+            Textknoten`. */}
         <p className="text-xs text-text-muted" data-testid="place-line">
           {placeName ?? 'nicht bestimmbar'}
         </p>
