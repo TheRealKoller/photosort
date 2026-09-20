@@ -286,6 +286,27 @@ Events des letzten erfolgreichen Kriterien-Laufs nach Fotozahl: Verteilung (`1 F
 …), Anteil der Ein-Bild-Cluster, Median, größtes Event, längste und kürzeste Eventdauer. Dauern
 stehen als Dauer, nie als Anfang oder Ende (Security S2).
 
+**Dazu das Maß, auf das es eigentlich ankommt: reicht der Album-Richtwert für eine Gewichtung?**
+Nachgetragen am 2026-09-20, nachdem Daniel in der Kuratierung gesehen hat, dass jedes Cluster
+genau ein Bild zeigt. `selection.py::_quotas` vergibt nach „Abdeckung zuerst" jedem Event einen
+Platz, **auch wenn der Vorschlag dadurch größer wird als der Richtwert**, und bricht ab, sobald
+keine Plätze mehr übrig sind. Liegt die Eventzahl **auf oder über** dem Richtwert, bekommt jedes
+Event genau einen Platz und die Gewichtung nach Größe beginnt gar nicht erst. Der Bericht weist
+deshalb Richtwert, Eventzahl, freie Plätze und das Urteil als ausgeschriebenen Satz aus.
+
+Der Richtwert kommt über `selection.effective_target`, nicht nachgebildet. **Zwei Grenzen gehören
+zur Aussage und stehen im Bericht:** `effective_target` rechnet auf **allen** Fotos des Projekts,
+nicht auf der Kandidatenmenge des Laufs — weichen beide voneinander ab, sagt der Bericht es in
+einer eigenen Zeile. Und `_quotas` sieht nur Events mit mindestens einem auswählbaren Foto,
+während das Kommando alle Events der Gliederung zählt; die gemeldete Eventzahl ist damit eine
+**Obergrenze** dessen, was die Vergabe sieht. Den Eingaberand der Auswahl nachzubauen wäre die
+zweite Fassung, die diese Spec durchgehend ausschließt.
+
+**Damit ist das Abnahmemaß dieser Spec korrigiert.** Der Anteil der Ein-Bild-Cluster war ein
+Hilfsmaß und hat in die Irre geführt: Er fiel von 24,2 % auf 13,6 %, während die Verzerrung der
+Albumauswahl — der eigentliche Grund der Story — unverändert bestand, weil 81 Events auf 38 Plätze
+trafen.
+
 #### Block B — welche Trennursache wie oft trennt
 
 Je Ursache **zwei** Zahlen: „war beteiligt" und „war alleinige Ursache". Nur die zweite ist
@@ -384,6 +405,13 @@ Gegenanzeige gegen zu grobes Zusammenfassen — das größte entstehende Event u
 Überschreibung — nicht als Rasterzelle: So trägt sie ihren eigenen Nullpunkt auch dann noch, wenn
 einer der beiden Werte später wandert und in keiner Zelle des Rasters mehr steht. Ein Test pinnt
 diese Zeile gegen `explain_events(candidates)`.
+
+**Eine zweite Bezugszeile: „aus".** Nachgetragen am 2026-09-20. Die erste Fassung von Block E hat
+den Fall „Motivgrenze ganz aus" ausgelassen, weil er einen Abschaltpfad im Produktivcode gebraucht
+hätte — er ist aber die Zeile, an der sich entscheidet, ob der Motivwechsel der Hebel ist: Er ist
+mit 71,2 % alleinige Ursache aller Grenzen. Gemessen wird er **ohne** Abschaltpfad: Ein
+Bestätigungsfenster größer als die Zahl der Kandidatenfotos kann nie bestätigt werden. Keine neue
+Argumentform, kein Schalter an `motif_change_starts`, kein zweiter Rechenweg.
 
 `MOTIF_CHANGE_CONFIRMING_PHOTOS` liegt in `events.py`, die Stärke-Schwelle als
 `MOTIF_PRESENCE_THRESHOLD` in `selection.py`. **Beide werden in diesem Schritt nicht geändert**,
