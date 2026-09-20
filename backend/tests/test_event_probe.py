@@ -27,6 +27,7 @@ from photosort.event_probe import (
     MOTIF_CONFIRMING_VARIANTS,
     MOTIF_STRENGTH_VARIANTS,
     EventProbeError,
+    EventProbeInput,
     block_counts,
     cause_counts,
     inheritance_counts,
@@ -34,6 +35,7 @@ from photosort.event_probe import (
     main,
     match_distance_counts,
     motif_sensitivity,
+    quota_reach,
     read_event_probe_input,
     size_counts,
 )
@@ -67,6 +69,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.place_dataset import write_extract
+from photosort.selection import effective_target
 from tests.import_closure import import_closure, module_file
 from tests.write_guard import write_statements
 
@@ -214,6 +217,38 @@ class TestTheReadPath:
         # gueltige Koordinate.
         assert {entry.photo_id for entry in probe.entries} == {ranked, unranked}
 
+    async def test_the_configured_target_and_the_photo_count_of_the_project_are_read(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Beides speist den Album-Richtwert, und beides kommt aus DEM Projekt: `NULL` heisst
+        "nicht selbst eingestellt", und die Bilderzahl ist jedes Foto des Projekts - dieselbe
+        Menge, die auch `worker.py` zaehlt, nicht die Kandidatenmenge des Laufs."""
+        project_id = await _project(db_session)
+        ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
+        await _photo(db_session, project_id, minutes=5, gps=(43.52, 16.45))
+        await _successful_run(db_session, project_id, [ranked])
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.selection_target is None
+        assert probe.project_photos == 2
+        assert len(probe.candidates) == 1
+
+    async def test_a_configured_target_reaches_the_measurement(
+        self, db_session: AsyncSession
+    ) -> None:
+        project_id = await _project(db_session)
+        ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
+        await _successful_run(db_session, project_id, [ranked])
+        project = await db_session.get(Project, project_id)
+        assert project is not None
+        project.selection_target = 12
+        await db_session.flush()
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.selection_target == 12
+
     async def test_only_the_latest_successful_run_is_measured(
         self, db_session: AsyncSession
     ) -> None:
@@ -262,6 +297,96 @@ class TestBlockASizes:
         assert counts.largest_event_photos == 0
         assert counts.longest_seconds is None
         assert counts.shortest_seconds is None
+
+
+class TestBlockAQuotaReach:
+    """Ob die Kontingentvergabe ueberhaupt gewichten kann - das Mass, an dem die Zerstueckelung
+    haengt. Der Anteil der Ein-Bild-Cluster ist nur ein Hilfsmass daneben."""
+
+    def test_more_events_than_seats_leaves_nothing_to_weight(self) -> None:
+        """Der gemessene Fall: 81 Events auf einen Richtwert von 38. "Abdeckung zuerst" vergibt
+        jeden Platz, bevor die Gewichtung beginnt - kein Restplatz bleibt."""
+        reach = quota_reach(
+            _probe_input(selection_target=None, project_photos=373), events_total=81
+        )
+
+        assert reach.target == 38
+        assert reach.target_is_configured is False
+        assert reach.events_total == 81
+        assert reach.free_seats == 0
+        assert reach.weighting_is_effective is False
+
+    def test_fewer_events_than_seats_leaves_seats_to_weight(self) -> None:
+        reach = quota_reach(
+            _probe_input(selection_target=None, project_photos=373), events_total=20
+        )
+
+        assert reach.free_seats == 18
+        assert reach.weighting_is_effective is True
+
+    def test_as_many_events_as_seats_already_exhausts_them(self) -> None:
+        """Die Grenze liegt bei Gleichstand, nicht darueber: `_quotas` bricht ab, sobald nach der
+        Abdeckung nichts mehr uebrig ist (`remaining <= 0`)."""
+        reach = quota_reach(
+            _probe_input(selection_target=None, project_photos=373), events_total=38
+        )
+
+        assert reach.free_seats == 0
+        assert reach.weighting_is_effective is False
+
+    def test_the_target_comes_from_selection_itself_not_from_a_second_formula(self) -> None:
+        """Nicht nachgebildet: Eine zweite Fassung der Ableitung liefe beim naechsten Grenzfall
+        auseinander. Geprueft ueber mehrere Bilderzahlen, damit nicht eine einzelne Zahl zufaellig
+        uebereinstimmt."""
+        for photo_count in (0, 1, 9, 10, 11, 373, 1000):
+            reach = quota_reach(
+                _probe_input(selection_target=None, project_photos=photo_count), events_total=5
+            )
+
+            assert reach.target == effective_target(None, photo_count)
+
+    def test_a_configured_target_is_reported_as_configured(self) -> None:
+        """Eine eingestellte Zahl gilt absolut - und der Bericht sagt, dass sie eingestellt ist:
+        "38 aus 373 Fotos abgeleitet" und "38 eingestellt" sind verschiedene Aussagen."""
+        reach = quota_reach(_probe_input(selection_target=7, project_photos=373), events_total=5)
+
+        assert reach.target == 7
+        assert reach.target_is_configured is True
+
+    def test_the_measured_sets_are_carried_side_by_side(self) -> None:
+        """Die Auswertungsgrenze: Der Richtwert rechnet auf jedem Foto des Projekts, die gemessene
+        Gliederung auf der Kandidatenmenge des Laufs. Beide Zahlen stehen nebeneinander, damit ein
+        Auseinanderfallen sichtbar wird statt verrechnet zu werden."""
+        probe = _probe_input(selection_target=None, project_photos=400, candidates=3)
+
+        reach = quota_reach(probe, events_total=5)
+
+        assert reach.project_photos == 400
+        assert reach.candidates_total == 3
+        assert reach.measured_on_the_same_set is False
+
+    def test_the_same_set_is_reported_as_such(self) -> None:
+        probe = _probe_input(selection_target=None, project_photos=3, candidates=3)
+
+        assert quota_reach(probe, events_total=1).measured_on_the_same_set is True
+
+
+def _probe_input(
+    *, selection_target: int | None, project_photos: int, candidates: int = 0
+) -> EventProbeInput:
+    """Ein gelesener Bestand ohne Datenbank - `quota_reach` rechnet rein ueber diese Felder."""
+    return EventProbeInput(
+        project_id=1,
+        candidates=tuple(_candidate(index) for index in range(candidates)),
+        entries=tuple(
+            LocationEntry(
+                photo_id=index, taken_at=NOW + timedelta(minutes=index), gps_lat=None, gps_lon=None
+            )
+            for index in range(project_photos)
+        ),
+        run_found=True,
+        selection_target=selection_target,
+    )
 
 
 def _segment(position: int, photo_count: int, duration_minutes: int = 0) -> BuiltEvent:
@@ -1133,6 +1258,37 @@ class TestMainRefusesLoudly:
         assert "Grenzen vor dem Zusammenlegen:" in report
         assert "durch Stufe 3 aufgeloest:" in report
         assert "Fotos, die dadurch ihr Event gewechselt haben:" in report
+
+
+class TestTheReportNamesWhetherTheQuotaCanWeigh:
+    """Ohne diese Zeilen im BERICHT bliebe das eigentliche Mass ungemessen: Der Anteil der
+    Ein-Bild-Cluster sagt nichts darueber, ob die Kontingentvergabe ueberhaupt gewichten kann."""
+
+    def test_the_report_carries_the_target_and_the_verdict(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Die Messlage: vier Fotos, zwei Events. Der abgeleitete Richtwert ist damit 1, und zwei
+        Events auf einen Platz heisst "die Gewichtung kommt nie zum Zug"."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id)], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert f"Album-Richtwert: {effective_target(None, 4)}" in report
+        assert "freie Plaetze" in report
+        assert "kann nicht gewichten" in report
+
+    def test_the_verdict_is_a_sentence_not_only_a_pair_of_numbers(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Ein Zahlenpaar laesst die Aussage beim Leser; sie gehoert ausgeschrieben - das ist der
+        Punkt, an dem die Abnahmezahl dieser Spec haengt."""
+        url, project_id = _prepared(tmp_path)
+
+        main(["--project-id", str(project_id)], database_url=url)
+
+        report = capsys.readouterr().out
+        assert "jedes Event bekommt genau einen Platz" in report
 
 
 class TestTheOutputSeparatesNumbersFromPlaces:
