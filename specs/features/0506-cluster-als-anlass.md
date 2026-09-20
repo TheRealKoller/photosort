@@ -748,6 +748,41 @@ Block B lässt sich nur abschätzen, dass es grob hälftig ist (Motivwechsel er�
 Segmente, Sehenswürdigkeit 6). Mit PR 5 erledigt sich die Frage von selbst: Danach ist `unantastbar`
 eindeutig der Motivwechsel.
 
+### Abnahmemessung nach PR 5, gemessen am 2026-09-20
+
+An Projekt 3, mit `python -m photosort.event_probe --project-id 3`.
+
+| | Ausgang | nach PR 3 | **nach PR 5** | Ziel |
+|---|---|---|---|---|
+| Events | 91 | 88 | **81** | — |
+| Ein-Bild-Cluster | 22 (24,2 %) | 18 (20,5 %) | **11 (13,6 %)** | ≤ 12,1 % |
+| längste Eventdauer | 1 h 32 min | 2 h 8 min | 2 h 8 min | < 8 h |
+
+**Das Ziel ist knapp verfehlt: 13,6 % gegen 12,1 %** — eine Reduktion um 44 % statt der
+zugesagten 50 %. Es fehlen **zwei** Zusammenlegungen: Bei 10 Ein-Bild-Clustern stünde der Anteil
+bei 12,5 %, erst bei 9 fiele er auf 11,4 %.
+
+**Die Zusagen von PR 5 sind eingelöst.** `sehenswuerdigkeit` steht bei **0 (0,0 %)** — die als
+Nachweis eingeplante ehrliche Null; kein Signal meldet den Namen mehr. Sieben Events und sieben
+Ein-Bild-Cluster weniger als nach PR 3, exakt die sieben, die Block F als „unantastbar allein"
+ausgewiesen hatte. `motivwechsel` ist unverändert absolut (56 → 57), steigt aber relativ auf
+71,2 %, weil die Bezugsmenge kleiner wurde.
+
+**Die neue Ausdehnungsgrenze hat nichts bewirkt, und das ist unerklärt.** Stufe 3 löst weiterhin
+genau **3** Grenzen auf (3 von 90 nach PR 3, 3 von 83 nach PR 5). Die drei Segmente, die Block F
+als „`ausdehnung` allein" auswies, sind trotz `MERGE_EXTENT_MAX_METERS = 1500 m` nicht
+zusammengelegt worden. Zwei Erklärungen sind denkbar und beide unbelegt: Die Segmente liegen
+weiter auseinander als die neue Grenze, oder nach dem Wegfall der Sehenswürdigkeits-Sperre
+blockiert dort inzwischen ein anderer Riegel. Ein erneuter Block-F-Lauf würde es entscheiden.
+
+**Die Gegenanzeige bleibt unauffällig:** 3 von 373 Fotos (0,8 %) haben ihr Event gewechselt. Zu
+viel verschmolzen wurde nicht — eher zu wenig.
+
+**Die Verteilung ist gesund**, auch wenn die Abnahmezahl es nicht ist: Median 3, **31 Events mit
+genau drei Fotos**, größtes Event 28, längste Dauer 2 h 8 min. Der Anteil war ein Hilfsmaß für
+„ein Cluster = ein Anlass"; ob das Zielbild getroffen ist, entscheidet der Blick in die
+Kuratierung, nicht diese Tabelle.
+
 ### Befund zur Ortszuordnung
 
 Je Mechanismus getrennt, wie das Akzeptanzkriterium es verlangt:
