@@ -1149,10 +1149,12 @@ dauerhaft ins öffentliche Repository; S2, S4, S5 und S9 als neue Auflagen) und 
 der Ankerliste (Messkommando rein lesend einschließlich `event_inputs.py`; Trefferentfernung
 namenlos und unpersistiert; Ortsgröße je Event nur als gedeckelte, größengeordnete Anzahl). Mit
 PR 8 kommt eine eigene Fortschreibung zu ADR 0119 dazu (S10), dazu ein Teil-Vermerk am Abschnitt zu
-ADR 0109 und ein **offener** Restrisiko-Eintrag: Die ausgeschöpfte Reichweite eines einzelnen
-Sehenswürdigkeitsnamens wächst auf rund ein Fünftel der Kandidaten eines Laufs — die Bezifferung
-trägt und die Abflussrichtung bleibt entlastend, ob die erreichte Reichweite eine eigene Auflage
-braucht, liegt bei Daniel.
+ADR 0109 und ein Restrisiko-Eintrag: Die ausgeschöpfte Reichweite eines einzelnen
+Sehenswürdigkeitsnamens wächst auf rund ein Fünftel der Kandidaten eines Laufs. Die Bezifferung
+trägt und die Abflussrichtung bleibt entlastend; **Daniel hat am 2026-09-20 entschieden, dass die
+Benennung keine eigene Auflage bekommt** — der Schaden ist Anzeigequalität, die Plausibilisierung
+des Namens bleibt Issue #514, und ein eigener Auslöser stellt die Frage neu, sobald ein Name über
+mehr als ein Viertel der Kandidaten reicht oder große Events mehrere Ortszellen zeigen.
 
 ## Teststrategie
 
