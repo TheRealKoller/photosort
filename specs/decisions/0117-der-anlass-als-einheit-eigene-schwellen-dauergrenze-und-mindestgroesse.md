@@ -7,6 +7,12 @@ Motivwechsel; die Sehenswürdigkeit erzeugt keine Grenze mehr) — durch ADR
 [`0118`](./0118-sehenswuerdigkeit-trennt-nicht-mehr-und-eine-eigene-ausdehnungsgrenze-fuers-zusammenlegen.md).
 Unverändert gelten die übrigen drei Riegel, die Nachbarwahl samt Tie-Break, der Durchgang bis zum
 Stillstand, das Terminierungsargument und die werfende Rundenobergrenze.
+**Teilweise abgelöst (zweitens):** Punkt 3, „Zwei Grenzen sind unantastbar" — von den beiden bleibt
+**keine**; `UNBREAKABLE_CAUSES` entfällt ersatzlos, und keiner der Riegel liest eine Ursachenmenge
+mehr — durch ADR
+[`0119`](./0119-der-motivwechsel-vermerkt-eine-grenze-statt-eine-zu-eroeffnen.md). Unverändert
+gelten auch danach die drei Riegel, die Nachbarwahl samt Tie-Break, der Durchgang bis zum Stillstand,
+das Terminierungsargument und die werfende Rundenobergrenze.
 **Datum:** 2026-09-18
 **Bezug:** Spec `specs/features/0506-*.md`, ADR
 [`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md) (Abschnitt 5, letzter

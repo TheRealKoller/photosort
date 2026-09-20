@@ -25,7 +25,6 @@ from photosort.events import (
     MERGE_BLOCK_SPAN,
     MERGE_BLOCK_TIME_GAP,
     MERGE_BLOCK_UNBREAKABLE,
-    UNBREAKABLE_CAUSES,
     BoundarySignal,
     BuiltEvent,
     EffectiveLocation,
@@ -1078,16 +1077,23 @@ class TestWhichPhotosSpeakForTheMotifChange(_UnderEveryConfirmingWindow):
         assert starts == frozenset()
 
 
-class TestTheMotifChangeInsideBuildEvents(_UnderEveryConfirmingWindow):
-    """Die zweite Stufe: der erzwungene Start neben den fuenf unveraenderten Signalen."""
+class TestTheMotifChangeOnlyMarksABoundaryAndNeverOpensOne(_UnderEveryConfirmingWindow):
+    """Die zweite Stufe seit ADR 0119: Ein bestaetigter Motivwechsel EROEFFNET kein Event mehr. Er
+    vermerkt `motivwechsel` an einer Grenze, die der Signal-Durchlauf an derselben Stelle ohnehin
+    zieht; faellt er auf keine solche Grenze, bleibt er wirkungslos und wird verworfen.
 
-    def test_the_story_case_yields_two_events_where_no_other_signal_would(self) -> None:
-        """Ruinenbesuch, danach Mittagessen um die Ecke - und der ROT-ANKER daneben: dieselbe
-        Folge ohne Motivangaben ergibt genau EIN Event.
+    Die Faelle hier ERSETZEN die frueheren, die den erzwungenen Start durch `build_events` hindurch
+    als Trennung geprueft haben: Angepasst haetten sie ihren Namen behalten und danach etwas
+    anderes geprueft, als sie versprechen. Die Faelle an `motif_change_starts` SELBST gelten
+    unveraendert weiter - der Begriff aendert sich nicht, nur seine Wirkung."""
 
-        Kein anderes Signal kann den Fall erklaeren: Minutenabstand (unter der Zeitluecke),
-        50 m je Schritt (unter Schritt- und Ausdehnungsschwelle), derselbe Kalendertag, kein
-        Sehenswuerdigkeitsname."""
+    def test_two_photos_differing_only_in_their_motif_stay_in_one_event(self) -> None:
+        """(a) Der umgekehrte Story-Fall: Ruinenbesuch, danach Mittagessen um die Ecke - EIN
+        Anlass, und jetzt auch ein Event.
+
+        Kein Signal trennt hier (Minutenabstand unter der Zeitluecke, 50 m je Schritt unter
+        Schritt- und Ausdehnungsschwelle, kein Sehenswuerdigkeitsname), und der Motivwechsel allein
+        trennt nicht mehr - gleich wie lange er bestaetigt bleibt."""
         ruins = _picture("ruine")
         lunch = _picture("essen")
         candidates = [
@@ -1099,81 +1105,72 @@ class TestTheMotifChangeInsideBuildEvents(_UnderEveryConfirmingWindow):
             )
             for index, picture in enumerate([ruins, ruins] + [lunch] * _window())
         ]
-        without_motifs = [replace(candidate, motif_strengths=None) for candidate in candidates]
 
-        events = _build(candidates, default_signals())
-
-        assert [event.photo_ids for event in _build(without_motifs, default_signals())] == [
+        assert motif_change_starts(candidates) == frozenset({2}), "sonst misst der Fall nichts"
+        assert [event.photo_ids for event in _build(candidates, default_signals())] == [
             tuple(range(len(candidates)))
         ]
-        assert [event.photo_ids for event in events] == [
-            (0, 1),
-            tuple(range(2, len(candidates))),
-        ]
 
-    def test_an_atypical_opening_photo_becomes_an_event_of_its_own(self) -> None:
-        """Ein Event aus einem einzigen Foto ist zugesagt, nicht versehentlich - die Kehrseite
-        des festen Bezugs auf das eroeffnende Foto."""
+    def test_an_atypical_opening_photo_no_longer_becomes_an_event_of_its_own(self) -> None:
+        """Die Zusage der Spec 0477, die mit ADR 0119 faellt: Ein motivgetrenntes Einzelbild darf
+        NICHT mehr allein bestehen. Ohne diesen Fall bliebe die aufgehobene Zusage ungeprueft."""
         candidates = _motif_candidates([_picture("a")] + [_picture("b")] * _window())
 
-        events = _build(candidates, default_signals())
-
-        assert [event.photo_ids for event in events] == [(0,), tuple(range(1, _window() + 1))]
-
-    def test_a_photo_that_does_not_speak_stays_a_member_of_its_event(self) -> None:
-        """UEBERGANGEN HEISST NIE AUSGESCHLOSSEN: das unklassifizierte (Index 1) und das als
-        Dokument ausgeschlossene Foto (Index 2) lenken die Gliederung nicht und stehen trotzdem
-        beide in ihrem Event."""
-        pictures = [_picture("a"), None, _picture("a")] + [_picture("a", "b")] * _window()
-        candidates = _motif_candidates(pictures, excluded={2})
-
-        events = _build(candidates, default_signals())
-
-        assert [event.photo_ids for event in events] == [
-            (0, 1, 2),
-            tuple(range(3, _window() + 3)),
+        assert motif_change_starts(candidates) == frozenset({1}), "sonst misst der Fall nichts"
+        assert [event.photo_ids for event in _build(candidates, default_signals())] == [
+            tuple(range(_window() + 1))
         ]
 
-    def test_a_forced_start_asks_every_signal_and_then_begins_it(self) -> None:
-        """Die tragende Annahme der zweiten Stufe: ein erzwungener Start wirkt wie jede andere
-        Grenze. Jedes Signal wird auch dort GEFRAGT - sonst haengt seine Fortschreibung an der
-        Listenposition - und bekommt danach `begin`, nicht `advance`."""
+    def test_a_confirmed_change_advances_every_signal_instead_of_beginning_it(self) -> None:
+        """DIE RUECKSETZUNG FAELLT MIT: Wo frueher `begin` auf allen Signalen lief, laeuft jetzt
+        `advance`. Gefragt wird weiterhin jedes Signal an jedem Foto - sonst haengt seine
+        Fortschreibung an der Listenposition."""
         spy = _SpySignal()
         candidates = _motif_candidates([_picture("a")] * 2 + [_picture("a", "b")] * _window())
 
         _build(candidates, [spy])
 
+        assert motif_change_starts(candidates) == frozenset({2}), "sonst misst der Fall nichts"
         assert spy.asked == [candidate.photo_id for candidate in candidates]
-        assert spy.begun == [0, 2]
-        assert spy.advanced == [1, *range(3, _window() + 2)]
+        assert spy.begun == [0]
+        assert spy.advanced == [candidate.photo_id for candidate in candidates[1:]]
 
-    def test_a_forced_start_resets_the_extent_and_can_drop_a_later_boundary(self) -> None:
-        """DIE KEHRSEITE der Ruecksetzung, und der Grund, warum ein Superset-Vergleich der
-        Grenzindizes mit dem motivfreien Lauf die falsche Zusage waere: Hier verschwindet die
-        Ausdehnungsgrenze am letzten Foto, weil an frueherer Stelle bereits getrennt wurde.
+    def test_without_the_reset_the_extent_runs_on_and_splits_later(self) -> None:
+        """(e) DIE EINE RICHTUNG, IN DER DIESE AENDERUNG EINE GRENZE HINZUFUEGT. Ohne den
+        erzwungenen Start bekommt `ExtentSignal` kein `begin` mehr und laeuft ueber den
+        Motivwechsel hinweg weiter - es meldet an SPAETERER Stelle eine Grenze, die es mit der
+        Ruecksetzung nie gebraucht haette.
 
-        Die Schrittweite ist aus `EVENT_EXTENT_MAX_METERS` gebaut: ueber alle Fotos reisst die Box
-        die Schwelle, ab dem erzwungenen Start nicht mehr. Nur das Ausdehnungssignal ist im Spiel -
-        die Schrittweite laege ueber der Schrittschwelle."""
-        step = (_extent_max() - EPSILON_METERS) / (_window() - 1)
+        Die Lage in Metern, alle aus `EVENT_EXTENT_MAX_METERS` gebaut: Foto 0 am Bezugspunkt, Foto
+        1 auf halber Schwelle, ab Foto 2 knapp darueber. Die Box ueber ALLE reisst die Schwelle bei
+        Foto 2; die Box AB Foto 1 - so weit haette der erzwungene Start zurueckgesetzt - bleibt mit
+        einer halben Schwelle darunter."""
+        half = _extent_max() / 2
+        beyond = _extent_max() + EPSILON_METERS
+        metres = [0.0, half] + [beyond] * (_window() - 1)
         candidates = [
             _measured_candidate(
                 index,
-                _at(minutes=index),
-                lat=_north(index * step),
+                T0 + index * EPSILON_TIME,
+                lat=_north(north),
                 motif_strengths=picture,
             )
-            for index, picture in enumerate([_picture("a")] + [_picture("a", "b")] * _window())
+            for index, (north, picture) in enumerate(
+                zip(metres, [_picture("a")] + [_picture("a", "b")] * _window(), strict=True)
+            )
         ]
-        without_motifs = [replace(candidate, motif_strengths=None) for candidate in candidates]
 
-        assert [event.photo_ids for event in _build(without_motifs, [ExtentSignal()])] == [
-            tuple(range(_window())),
-            (_window(),),
+        assert motif_change_starts(candidates) == frozenset({1}), "sonst misst der Fall nichts"
+        # Wie der erzwungene Start gerechnet haette: ab Foto 1 neu - und dann meldet die
+        # Ausdehnung nie wieder.
+        assert [event.photo_ids for event in _build(candidates[1:], [ExtentSignal()])] == [
+            tuple(range(1, len(candidates)))
         ]
+        # Wie jetzt gerechnet wird: die Box laeuft weiter und trennt bei Foto 2 - SPAETER als der
+        # erzwungene Start bei Foto 1 getrennt haette.
         assert [event.photo_ids for event in _build(candidates, [ExtentSignal()])] == [
-            (0,),
-            tuple(range(1, _window() + 1)),
+            (0, 1),
+            tuple(range(2, len(candidates))),
         ]
 
     def test_a_motif_boundary_on_an_index_that_already_splits_changes_nothing(self) -> None:
@@ -1203,33 +1200,34 @@ class TestTheMotifChangeInsideBuildEvents(_UnderEveryConfirmingWindow):
             (event.photo_ids, event.position) for event in reference
         ]
 
-    def test_a_window_spanning_midnight_keeps_the_motif_boundary_and_nothing_else(self) -> None:
-        """Der rueckwirkende Beginn liegt auf dem VORTAG, das bestaetigende Foto dahinter.
+    def test_a_window_spanning_midnight_keeps_everything_in_one_event(self) -> None:
+        """Der rueckwirkende Beginn liegt auf dem VORTAG, das bestaetigende Foto dahinter - und
+        KEINE der beiden Stellen trennt noch: die Mitternachtsgrenze nicht (seit ADR 0117) und der
+        Motivwechsel nicht mehr (seit ADR 0119). Braucht `default_signals()`, weil genau dieser
+        Satz die Dauergrenze anstelle des Kalendertags fuehrt.
 
-        Die MOTIVGRENZE entsteht - und sonst keine: Die Mitternachtsgrenze allein trennt nicht
-        mehr, das zweite Event laeuft ueber sie hinweg. Braucht `default_signals()`, weil genau
-        dieser Satz die Dauergrenze anstelle des Kalendertags fuehrt."""
-        before_midnight = datetime(2026, 7, 20, 23, 30, 0)
-        last_of_the_day = datetime(2026, 7, 20, 23, 59, 59)
-        after_midnight = datetime(2026, 7, 21, 0, 0, 0)
-        times = [before_midnight, before_midnight + EPSILON_TIME, last_of_the_day] + [
-            after_midnight + index * EPSILON_TIME for index in range(_window() - 1)
-        ]
+        Die Fotos liegen einen Sekundenschritt auseinander, der Wechsel faellt auf das erste nach
+        Mitternacht. KEIN Abstand dieser Lage ist aus einer Uhrzeit gebaut: Ein Sprung von
+        `23:30` auf `23:59:59` risse unter einer kleineren Zeitluecken-Schwelle eine Grenze auf,
+        und der Fall maesse dann den Kalendertag gar nicht mehr."""
+        midnight = datetime(2026, 7, 21, 0, 0, 0)
         candidates = [
-            EventCandidate(photo_id=index, taken_at=taken_at, motif_strengths=picture)
-            for index, (taken_at, picture) in enumerate(
-                zip(
-                    times,
-                    [_picture("a")] * 2 + [_picture("a", "b")] * _window(),
-                    strict=True,
-                )
+            EventCandidate(
+                photo_id=index,
+                taken_at=midnight + (index - 2) * EPSILON_TIME,
+                motif_strengths=picture,
             )
+            for index, picture in enumerate([_picture("a")] * 2 + [_picture("a", "b")] * _window())
         ]
 
         events = _build(candidates, default_signals())
 
-        assert [event.photo_ids for event in events] == [(0, 1), tuple(range(2, _window() + 2))]
-        assert events[1].started_at.date() != events[1].ended_at.date()
+        assert candidates[1].taken_at.date() != candidates[2].taken_at.date(), (
+            "sonst laeuft der Fall gar nicht ueber Mitternacht"
+        )
+        assert motif_change_starts(candidates) == frozenset({2}), "sonst misst der Fall nichts"
+        assert [event.photo_ids for event in events] == [tuple(range(_window() + 2))]
+        assert events[0].started_at.date() != events[0].ended_at.date()
 
     def test_a_run_without_any_carried_motif_groups_exactly_as_one_without_motif_fields(
         self,
@@ -1266,18 +1264,24 @@ class TestEveryShortSequenceOverATinyMotifAlphabet(_UnderEveryConfirmingWindow):
 
     def test_every_sequence_keeps_the_invariants_and_the_index_promises(self) -> None:
         alphabet = (None, _picture(), _picture("a"), _picture("a", "b"))
+        found_a_start = False
 
         for combination in product(alphabet, repeat=_window() + 2):
             candidates = _motif_candidates(list(combination))
             starts = motif_change_starts(candidates)
+            found_a_start = found_a_start or bool(starts)
 
             assert 0 not in starts, combination
             assert starts <= set(range(len(candidates))), combination
             # Kein anderes Signal spricht bei diesen Kandidaten mit (Sekundenabstand, kein Ort,
-            # kein Name): JEDER erzwungene Start ist damit genau eine Event-Grenze und keine
-            # weitere entsteht.
+            # kein Name). Seit ADR 0119 eroeffnet ein bestaetigter Wechsel KEIN Event mehr - die
+            # ganze Folge bleibt EIN Event, gleich wie viele Starts die erste Stufe liefert.
             events = _build(candidates, default_signals())
-            assert [event.photo_ids[0] for event in events] == [0, *sorted(starts)], combination
+            assert [event.photo_ids for event in events] == [tuple(range(len(candidates)))], (
+                combination
+            )
+
+        assert found_a_start, "sonst zaehlt die Aufzaehlung nur Folgen ohne jeden Wechsel"
 
 
 def _reference_time_and_span_events(candidates: Sequence[EventCandidate]) -> list[tuple[int, ...]]:
@@ -1922,19 +1926,30 @@ def _explain(
     candidates: Sequence[EventCandidate],
     signals: list[BoundarySignal] | None = None,
     *,
+    confirming_photos: int | None = None,
     min_event_photos: int | None = _NO_MERGING,
 ) -> EventFormation:
     """`explain_events` plus die Invarianten - jeder Fall dieser Sektion laeuft hierueber.
 
     Wie `_build` mit abgeschaltetem Zusammenlegen: Ein Fall ueber die URSACHENMENGE misst die
     Grenzen des Durchlaufs, nicht die, die Stufe 3 davon uebriglaesst."""
-    formation = explain_events(candidates, signals, min_event_photos=min_event_photos)
+    formation = explain_events(
+        candidates,
+        signals,
+        confirming_photos=confirming_photos,
+        min_event_photos=min_event_photos,
+    )
     assert_event_invariants(candidates, list(formation.events))
     assert len(formation.causes) == len(formation.events)
     assert formation.causes[0:1] in ((), (frozenset(),))
     # DIE TRAGENDE PRUEFFORM: Grenzen mit Ursache == Events - 1. Das erste Segment eines Laufs
     # traegt keine Ursache, jedes weitere genau eine Grenze.
     assert sum(1 for cause in formation.causes if cause) == max(len(formation.events) - 1, 0)
+    # DIE ZUSAGE VON ADR 0119, als Nachsatz ueber JEDEM Fall dieser Sektion statt als Einzelfall:
+    # `motivwechsel` steht nie allein. Er vermerkt eine Grenze, die ein Signal ohnehin gemeldet
+    # hat - allein stehend behauptete er eine, die er selbst eroeffnet haette.
+    for cause in formation.causes:
+        assert BOUNDARY_MOTIF_CHANGE not in cause or len(cause) >= 2
     return formation
 
 
@@ -1947,9 +1962,11 @@ class TestEverySignalCarriesAName:
         assert len(names) == len(set(names)), "zwei gleichnamige Signale sind eine Ursache"
         assert set(names) <= set(BOUNDARY_CAUSES)
 
-    def test_the_forced_start_has_its_own_name_in_the_stock(self) -> None:
-        """Der Motivwechsel ist kein Eintrag in `default_signals()` - er trennt trotzdem und
-        braucht deshalb seinen Platz im Vorrat."""
+    def test_the_motif_change_has_its_own_name_in_the_stock(self) -> None:
+        """Der Motivwechsel ist kein Eintrag in `default_signals()` und eroeffnet seit ADR 0119
+        auch kein Event mehr. Sein Name bleibt trotzdem im Vorrat: Er vermerkt eine Grenze mit, und
+        "war beteiligt" ist die Zahl, an der eine spaetere Aenderung dieser Entscheidung gemessen
+        wuerde."""
         assert BOUNDARY_MOTIF_CHANGE in BOUNDARY_CAUSES
         assert BOUNDARY_MOTIF_CHANGE not in {signal.name for signal in default_signals()}
 
@@ -1991,16 +2008,6 @@ class TestTheCauseSetPerBoundary:
         formation = _explain(candidates, [TimeGapSignal(), StepDistanceSignal()])
 
         assert formation.causes[1] == frozenset({BOUNDARY_TIME_GAP, BOUNDARY_STEP})
-
-    def test_a_forced_motif_start_is_its_own_cause(self) -> None:
-        """Ein erzwungener Start ist eine Grenze wie jede andere und muss als solche gezaehlt
-        werden - sonst stuende in Block B eine Grenze ohne Ursache."""
-        pictures = [_picture("a")] * _window() + [_picture("b")] * _window()
-
-        formation = _explain(_motif_candidates(pictures), [])
-
-        assert len(formation.events) == 2
-        assert BOUNDARY_MOTIF_CHANGE in formation.causes[1]
 
     def test_the_duration_reports_under_its_own_name(self) -> None:
         """Die Dauergrenze ist an die Stelle des Kalendertags getreten; ohne ihren Namen im Vorrat
@@ -2057,6 +2064,107 @@ class TestTheCauseSetPerBoundary:
             assert cause <= set(BOUNDARY_CAUSES)
 
 
+class TestTheGroupingNoLongerDependsOnTheFirstStage(_UnderEveryConfirmingWindow):
+    """DIE EIGENTLICHE ZUSAGE von ADR 0119, in ihrer starken Form: `explain_events` liefert unter
+    einem nie erreichbaren Bestaetigungsfenster DIESELBE Eventfolge wie am Betriebswert -
+    verschieden sind allein die Ursachenmengen.
+
+    Gerechnet wird mit den Mitteln des Laufs: dasselbe `explain_events`, nur mit einem Fenster
+    groesser als die Zahl der Kandidatenfotos. Mehr aufeinanderfolgende mitredende Fotos als Fotos
+    kann es nicht geben, also bestaetigt kein Wechsel - ohne einen Abschaltpfad im Produktivcode."""
+
+    def _mixed_run(self) -> list[EventCandidate]:
+        """Vier Abschnitte: ein Bezugsblock, ein zweiter hinter einer Zeitluecke, an der ZUGLEICH
+        das Motiv wechselt, ein dritter mit einem Motivwechsel OHNE jedes meldende Signal, und ein
+        vierter hinter einem Schritt ohne Motivwechsel.
+
+        Ohne den Zusammenfall im zweiten Abschnitt waere der Vergleich unten vakuum-gleich: Die
+        beiden Gliederungen truegen dann auch dieselben Ursachenmengen."""
+        window = _window()
+        gap = _time_gap() + EPSILON_TIME
+        far = _step_max() + EPSILON_METERS
+        first = [(T0 + index * EPSILON_TIME, 0.0, _picture("a")) for index in range(window)]
+        behind_the_gap = [
+            (first[-1][0] + gap + index * EPSILON_TIME, 0.0, _picture("a", "b"))
+            for index in range(window)
+        ]
+        without_a_signal = [
+            (behind_the_gap[-1][0] + (index + 1) * EPSILON_TIME, 0.0, _picture("a", "c"))
+            for index in range(window)
+        ]
+        behind_the_step = [
+            (without_a_signal[-1][0] + (index + 1) * EPSILON_TIME, far, _picture("a", "c"))
+            for index in range(window)
+        ]
+        return [
+            _measured_candidate(index, taken_at, lat=_north(north), motif_strengths=picture)
+            for index, (taken_at, north, picture) in enumerate(
+                [*first, *behind_the_gap, *without_a_signal, *behind_the_step]
+            )
+        ]
+
+    def test_the_lay_carries_both_kinds_of_motif_change(self) -> None:
+        """Der Waechter unter dieser Klasse: einer der beiden Wechsel faellt auf eine Signalgrenze,
+        der andere auf keine. Faellt einer der beiden weg, messen die Faelle darunter die Haelfte
+        der Zusage nicht mehr - und blieben gruen."""
+        candidates = self._mixed_run()
+
+        assert motif_change_starts(candidates) == frozenset({_window(), 2 * _window()})
+
+    def test_the_unreachable_window_yields_the_very_same_events(self) -> None:
+        """(b) Gleiche Fotomengen, gleiche Grenzen, gleiche Positionen - die Gliederung haengt
+        nicht mehr an der ersten Stufe."""
+        candidates = self._mixed_run()
+
+        operating = _explain(candidates)
+        switched_off = _explain(candidates, confirming_photos=len(candidates) + 1)
+
+        assert [(event.photo_ids, event.position) for event in switched_off.events] == [
+            (event.photo_ids, event.position) for event in operating.events
+        ]
+
+    def test_only_the_cause_sets_differ_and_only_by_the_motif_change(self) -> None:
+        """Die Kehrseite des Falls darueber: Etwas UNTERSCHEIDET sich, sonst maesse er nichts - und
+        es ist ausschliesslich der Vermerk."""
+        candidates = self._mixed_run()
+
+        operating = _explain(candidates)
+        switched_off = _explain(candidates, confirming_photos=len(candidates) + 1)
+
+        assert operating.causes != switched_off.causes
+        assert tuple(cause - {BOUNDARY_MOTIF_CHANGE} for cause in operating.causes) == (
+            switched_off.causes
+        )
+
+    def test_a_change_on_a_reported_boundary_joins_its_cause_set(self) -> None:
+        """(c) Der Vermerk selbst: Der Motivwechsel faellt mit der Zeitluecke zusammen und steht
+        NEBEN ihr in der Menge - nie an ihrer Stelle."""
+        formation = _explain(self._mixed_run())
+
+        assert formation.causes[1] == frozenset({BOUNDARY_TIME_GAP, BOUNDARY_MOTIF_CHANGE})
+
+    def test_a_change_without_a_reporting_signal_reaches_no_later_boundary(self) -> None:
+        """(d) DER VERMERK WIRD NICHT AUFGESCHOBEN: Der zweite Wechsel faellt auf einen Index, an
+        dem kein Signal meldet. Er wird verworfen - die naechste Grenze, die der Schritt zieht,
+        nennt nur den Schritt. Ein nachgetragener Vermerk behauptete eine Mitursache an einer
+        Stelle, an der der Wechsel nicht stattgefunden hat."""
+        formation = _explain(self._mixed_run())
+
+        assert len(formation.events) == 3
+        assert formation.causes[2] == frozenset({BOUNDARY_STEP})
+
+    def test_no_cause_set_of_the_run_carries_the_motif_change_alone(self) -> None:
+        """Die zweite maschinell gepruefte Zusage, hier an einer Lage mit beiden Arten von
+        Wechsel. Als Nachsatz ueber JEDEM Fall dieser Sektion steht sie in `_explain`."""
+        formation = _explain(self._mixed_run())
+
+        assert any(BOUNDARY_MOTIF_CHANGE in cause for cause in formation.causes), (
+            "sonst misst der Fall nichts"
+        )
+        for cause in formation.causes:
+            assert cause != frozenset({BOUNDARY_MOTIF_CHANGE})
+
+
 class TestBuildEventsAndTheExplainingFormAreTheSameRun:
     """Ein zweiter Rechenweg fuer dieselbe Gliederung liefe auseinander - und dann maesse Block B
     die Grenzen einer Gliederung, die so nie entstanden ist."""
@@ -2088,14 +2196,32 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
     _MIDDLE = 0.8
     _ABSENT = 0.0
 
-    def _sequence(self, length: int) -> list[EventCandidate]:
+    def _sequence(self, length: int, *, strength: float | None = None) -> list[EventCandidate]:
         """Ein Bezugsfoto, dann `length` Fotos, in denen "b" mit mittlerer Staerke dazukommt.
 
         Ob daraus ein Wechsel wird, entscheidet allein die mitgegebene Grenze; wie viele Fotos ihn
-        bestaetigen muessen, allein die mitgegebene Fensterlaenge."""
+        bestaetigen muessen, allein die mitgegebene Fensterlaenge.
+
+        `strength` waehlt die Staerke von "b". Ein Fall, der KEINE Grenze mitgibt und trotzdem
+        einen Wechsel braucht, gibt `_CARRIED` mit: Diese Staerke liegt am oberen Rand der Skala
+        und wird unter JEDEM Betriebswert getragen. Mit der mittleren Staerke haenge er still am
+        heutigen `MOTIF_PRESENCE_THRESHOLD` und bliebe nach einer Verschiebung vakuum-gruen."""
         reference = {"a": self._CARRIED, "b": self._ABSENT}
-        deviating = {"a": self._CARRIED, "b": self._MIDDLE}
+        deviating = {"a": self._CARRIED, "b": self._MIDDLE if strength is None else strength}
         return _motif_candidates([reference, *([deviating] * length)])
+
+    def _sequence_behind_a_gap(self, length: int) -> list[EventCandidate]:
+        """Dieselbe Folge, aber mit einer ZEITLUECKE genau am Index des Wechsels.
+
+        Seit ADR 0119 wirkt sich die erste Stufe nur noch auf die Ursachenmenge einer Grenze aus,
+        die ein Signal ohnehin meldet. Ohne diese Grenze waere an der Gliederung nicht mehr
+        abzulesen, ob die beiden Festlegungen ueberhaupt durchgereicht werden."""
+        return [
+            replace(candidate, taken_at=candidate.taken_at + (_time_gap() + EPSILON_TIME))
+            if candidate.photo_id >= 1
+            else candidate
+            for candidate in self._sequence(length)
+        ]
 
     def test_the_window_length_comes_from_the_argument_not_from_the_constant(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2131,7 +2257,7 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
     ) -> None:
         """Der Zwilling gegen einen gebundenen Default: Das verschobene Modulattribut MUSS wirken,
         sonst ist die Konstante beim Import eingefroren."""
-        candidates = self._sequence(4)
+        candidates = self._sequence(4, strength=self._CARRIED)
         monkeypatch.setattr(events_module, "MOTIF_CHANGE_CONFIRMING_PHOTOS", 2)
 
         with_two = motif_change_starts(candidates)
@@ -2147,7 +2273,9 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
         Injizierbarkeit ueberhaupt eingebaut werden durfte. Geprueft ueber eine Folge, die unter
         den Betriebswerten tatsaechlich trennt: eine Folge ohne jeden Start waere hier
         vakuum-gruen."""
-        candidates = self._sequence(events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS)
+        candidates = self._sequence(
+            events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS, strength=self._CARRIED
+        )
         threshold = MOTIF_PRESENCE_THRESHOLD
 
         assert motif_change_starts(candidates) == motif_change_starts(
@@ -2158,23 +2286,37 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
         assert motif_change_starts(candidates) == frozenset({1})
 
     def test_the_explaining_form_hands_both_through(self) -> None:
-        """`explain_events` reicht beide weiter - sonst kann die Messung die Gliederung nicht
-        variieren und misst unter jeder Kombination dieselben Zahlen."""
-        candidates = self._sequence(2)
+        """`explain_events` reicht beide weiter - sonst kann die Messung den Vermerk nicht
+        variieren und misst unter jeder Kombination dieselben Zahlen.
 
+        Abgelesen wird seit ADR 0119 an der URSACHENMENGE, nicht mehr an der Gliederung: Die
+        Zeitluecke zieht die Grenze in beiden Laeufen, und nur unter dem kurzen Fenster steht
+        `motivwechsel` daneben."""
+        candidates = self._sequence_behind_a_gap(2)
+
+        # Stufe 3 bleibt draussen (`_NO_MERGING`): Der Fall misst den Durchlauf, und das
+        # Zusammenlegen zoege das fuehrende Einzelfoto sonst wieder ein.
         narrow = explain_events(
-            candidates, confirming_photos=2, motif_presence_threshold=self._MIDDLE
+            candidates,
+            confirming_photos=2,
+            motif_presence_threshold=self._MIDDLE,
+            min_event_photos=_NO_MERGING,
         )
         wide = explain_events(
-            candidates, confirming_photos=5, motif_presence_threshold=self._MIDDLE
+            candidates,
+            confirming_photos=5,
+            motif_presence_threshold=self._MIDDLE,
+            min_event_photos=_NO_MERGING,
         )
 
-        assert len(narrow.events) == 2
-        assert narrow.causes[1] == frozenset({BOUNDARY_MOTIF_CHANGE})
-        assert len(wide.events) == 1
+        assert len(narrow.events) == len(wide.events) == 2
+        assert narrow.causes[1] == frozenset({BOUNDARY_TIME_GAP, BOUNDARY_MOTIF_CHANGE})
+        assert wide.causes[1] == frozenset({BOUNDARY_TIME_GAP})
 
     def test_the_explaining_form_without_arguments_is_the_run_itself(self) -> None:
-        candidates = self._sequence(events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS)
+        candidates = self._sequence(
+            events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS, strength=self._CARRIED
+        )
 
         assert explain_events(candidates) == explain_events(
             candidates,
@@ -2454,13 +2596,14 @@ class TestTheFourBoltsAgainstOverMerging(_UnderShiftedEventConstants):
         assert outcome.dissolved_boundaries == 0
 
 
-class TestTheOneUntouchableBoundary(_UnderShiftedEventConstants):
-    """Eine Grenze, deren Ursachenmenge `motivwechsel` enthaelt, wird NIE aufgeloest - auch nicht,
-    wenn beide Nachbarn alle vier Riegel erfuellen und das Segment aus einem einzigen Foto besteht.
+class TestNoBoundaryIsUntouchableAnyMore(_UnderShiftedEventConstants):
+    """Seit ADR 0119 liest die dritte Stufe ueberhaupt keine Ursachenmenge mehr: `motivwechsel`
+    haelt eine Grenze nicht mehr fest, und `UNBREAKABLE_CAUSES` ist ersatzlos entfallen.
 
-    Seit ADR 0118 ist das die EINE unantastbare Grenze. `sehenswuerdigkeit` steht nicht mehr
-    daneben: Der Vorrat ist keine Wortliste, sondern eine an jeder Kante gelesene Regel, und ein
-    Eintrag, der nie treffen kann, behauptete dort eine Sperre ohne Gegenstand."""
+    Die Faelle hier ERSETZEN die frueheren zur unantastbaren Grenze - sie sind deren woertliche
+    Umkehrung. Der Berichtsgrund `MERGE_BLOCK_UNBREAKABLE` bleibt im Vorrat und steht dauerhaft auf
+    0; ohne die Zeile waere eine Riegel-Diagnose nicht mehr gegen die frueheren zu halten, in denen
+    `unantastbar` der groesste Blocker war."""
 
     def _enclosed(self, causes: Collection[str]) -> list[Segment]:
         return [
@@ -2469,66 +2612,76 @@ class TestTheOneUntouchableBoundary(_UnderShiftedEventConstants):
             _normal_from(2 * EPSILON_TIME, first_id=20, causes=causes),
         ]
 
-    @pytest.mark.parametrize("cause", sorted(UNBREAKABLE_CAUSES))
-    def test_a_single_photo_between_two_untouchable_boundaries_stays_alone(
-        self, cause: str
-    ) -> None:
-        outcome = merge_small_segments(self._enclosed({cause}))
+    def test_a_segment_opened_by_a_motif_change_is_absorbed_like_any_other(self) -> None:
+        """DIE UMKEHRUNG: Genau die Lage, die den Motivwechsel frueher festgehalten hat - ein
+        einzelnes Foto zwischen zwei Grenzen mit `motivwechsel`, beide Nachbarn erfuellen alle drei
+        Riegel - wird jetzt zugeschlagen."""
+        outcome = merge_small_segments(self._enclosed({BOUNDARY_MOTIF_CHANGE}))
 
-        assert _ids(outcome) == [_block(1), (10,), _block(20)]
-        assert outcome.dissolved_boundaries == 0
-        assert outcome.moved_photo_ids == frozenset()
-
-    def test_the_same_lage_with_a_dissolvable_cause_is_merged(self) -> None:
-        """Der ROT-ANKER zu den beiden Faellen darueber: Es liegt an der URSACHE, nicht an der
-        Lage."""
-        outcome = merge_small_segments(self._enclosed({BOUNDARY_TIME_GAP}))
-
+        assert _ids(outcome) == [(*_block(1), 10), _block(20)]
         assert outcome.dissolved_boundaries == 1
+        assert outcome.moved_photo_ids == frozenset({10})
 
-    def test_the_stock_of_untouchable_causes_is_exactly_this_one(self) -> None:
-        """Er ist das einzige Signal, das zwei Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennt. Ein
-        zweiter Eintrag hier waere eine stille Ausweitung der Sperre."""
-        assert UNBREAKABLE_CAUSES == frozenset({BOUNDARY_MOTIF_CHANGE})
-        assert UNBREAKABLE_CAUSES <= set(BOUNDARY_CAUSES)
+    def test_the_lage_is_decided_by_the_bolts_alone_not_by_the_cause(self) -> None:
+        """Dieselbe Lage unter JEDER Ursachenmenge des Vorrats - das Ergebnis ist immer dasselbe.
+        Ein einzelner Eintrag, der die Stufe doch noch liest, wird hier rot, nicht erst im
+        Bericht."""
+        reference = _ids(merge_small_segments(self._enclosed({BOUNDARY_TIME_GAP})))
 
-    def test_the_landmark_is_in_the_vocabulary_but_not_in_the_rule(self) -> None:
-        """Die UNGLEICHBEHANDLUNG der beiden Vorraete (ADR 0118 Punkt 2), in einem Fall festgehalten:
-        Ein Berichtswortschatz darf eine ehrliche Null fuehren, eine an jeder Kante gelesene Regel
-        nicht. Faellt eine der beiden Seiten weg, wird `MERGE_BLOCK_UNBREAKABLE` wieder
-        mehrdeutig."""
-        assert BOUNDARY_LANDMARK in BOUNDARY_CAUSES
-        assert BOUNDARY_LANDMARK not in UNBREAKABLE_CAUSES
+        for cause in BOUNDARY_CAUSES:
+            assert _ids(merge_small_segments(self._enclosed({cause}))) == reference, cause
 
-    def test_a_segment_opened_by_a_landmark_cause_is_merged_again(self) -> None:
-        """Der Gegenfall zur Sperre: Dieselbe Lage, die `motivwechsel` festhaelt, loest sich mit
-        `sehenswuerdigkeit` auf. Solche Grenzen entstehen zwar nicht mehr; bliebe der Eintrag in
-        der Sperre, faende dieser Fall es und nicht erst die naechste Messung."""
-        outcome = merge_small_segments(self._enclosed({BOUNDARY_LANDMARK}))
-
-        assert outcome.dissolved_boundaries == 1
-
-    def test_an_untouchable_cause_inside_a_set_of_two_still_blocks(self) -> None:
-        """Die Grenze traegt eine MENGE. Eine Pruefung auf Gleichheit statt auf Enthaltensein
-        liesse jede Doppelgrenze durch."""
+    def test_a_motif_change_inside_a_set_of_two_dissolves_too(self) -> None:
+        """Die Grenze traegt eine MENGE - und keine Teilmenge davon haelt sie mehr fest."""
         segments = [
             _normal_until(timedelta(0), first_id=1),
             _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP, BOUNDARY_MOTIF_CHANGE}),
         ]
 
-        assert _ids(merge_small_segments(segments)) == [_block(1), (10,)]
+        assert _ids(merge_small_segments(segments)) == [(*_block(1), 10)]
+
+    def test_the_block_reason_stays_in_the_supply_with_an_honest_zero(self) -> None:
+        """Der Berichtswortschatz behaelt seinen Eintrag, und die Stufe liefert ihn unter KEINER
+        Lage - auch nicht an einer Kante, an der alle drei Riegel zugleich sperren."""
+        assert MERGE_BLOCK_UNBREAKABLE in MERGE_BLOCK_REASONS
+
+        for cause in BOUNDARY_CAUSES:
+            segments = [
+                _normal_spanning_the_maximum(first_id=1),
+                _tiny(
+                    _max_span() + _merge_gap() + EPSILON_TIME,
+                    first_id=10,
+                    causes={cause},
+                    meters_north=_merge_extent_max() + EPSILON_METERS,
+                ),
+            ]
+
+            [blocked] = merge_small_segments(segments).blocked_segments
+
+            for edge in blocked.edges:
+                assert MERGE_BLOCK_UNBREAKABLE not in edge, cause
+
+    def test_the_landmark_keeps_its_place_in_the_cause_vocabulary(self) -> None:
+        """Was von der Ungleichbehandlung aus ADR 0118 Punkt 2 bleibt: Der Berichtswortschatz der
+        URSACHEN fuehrt weiter beide Namen mit ehrlicher Null bzw. beweglicher Zahl, waehrend die
+        an jeder Kante gelesene Regel ganz entfallen ist."""
+        assert {BOUNDARY_LANDMARK, BOUNDARY_MOTIF_CHANGE} <= set(BOUNDARY_CAUSES)
+        assert not hasattr(events_module, "UNBREAKABLE_CAUSES")
 
 
 class TestTheThirdStageComesToAStandstill(_UnderShiftedEventConstants):
     """Der Stillstand, maschinenpruefbar - nicht als Behauptung ueber den Ablauf."""
 
     def _a_blocked_and_a_mergeable_segment(self) -> list[Segment]:
-        """Ein Einzelfoto, dessen EINZIGE Kante unantastbar ist (es bleibt gesperrt), davor - und
-        danach ein zweites Einzelfoto, das zugeschlagen werden darf."""
+        """Ein Einzelfoto, dessen EINZIGE Kante die Ueberbrueckungsgrenze reisst (es bleibt
+        gesperrt), und dahinter ein zweites Einzelfoto, das zugeschlagen werden darf.
+
+        Gesperrt wird hier ueber einen RIEGEL, nicht mehr ueber eine Ursache: Seit ADR 0119 haelt
+        keine Ursachenmenge eine Kante mehr fest."""
         return [
             _tiny(timedelta(0), first_id=1),
-            _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_MOTIF_CHANGE}),
-            _normal_from(2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}),
+            _tiny(_merge_gap() + EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
+            _normal_from(_merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}),
         ]
 
     def test_a_blocked_segment_does_not_stall_the_rest(self) -> None:
@@ -2704,19 +2857,6 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
 
         assert merge_small_segments(segments).blocked_segments == ()
 
-    def test_an_untouchable_boundary_is_a_reason_of_its_own(self) -> None:
-        """Die Unantastbarkeit ist keine Schwelle, sondern eine Zusage - ihre Behebung waere eine
-        andere Entscheidung als die Aenderung einer Zahl."""
-        segments = self._tiny_between(causes={BOUNDARY_MOTIF_CHANGE})
-        segments[2] = _normal_from(2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_MOTIF_CHANGE})
-
-        [blocked] = merge_small_segments(segments).blocked_segments
-
-        assert blocked.edges == (
-            frozenset({MERGE_BLOCK_UNBREAKABLE}),
-            frozenset({MERGE_BLOCK_UNBREAKABLE}),
-        )
-
     def test_the_gap_to_the_neighbour(self) -> None:
         segments = [
             _normal_until(timedelta(0), first_id=1),
@@ -2797,15 +2937,15 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
 
     def test_an_edge_that_violates_several_bolts_reports_them_all(self) -> None:
         """NICHT KURZGESCHLOSSEN, dieselbe Zusage wie fuer die Signale des Durchlaufs
-        (`TestSignalsAreNeverShortCircuited`): Alle vier werden ausgewertet. Sonst verschwaende
+        (`TestSignalsAreNeverShortCircuited`): Alle drei werden ausgewertet. Sonst verschwaende
         `ausdehnung` als zuletzt geprueftes hinter jedem frueheren Grund - und das ist genau die
-        Zahl, an der die Frage dieses Blocks haengt. Eine Lage, die ALLE VIER zugleich verletzt."""
+        Zahl, an der die Frage dieses Blocks haengt. Eine Lage, die ALLE DREI zugleich verletzt."""
         segments = [
             _normal_spanning_the_maximum(first_id=1),
             _tiny(
                 _max_span() + _merge_gap() + EPSILON_TIME,
                 first_id=10,
-                causes={BOUNDARY_MOTIF_CHANGE},
+                causes={BOUNDARY_TIME_GAP},
                 meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
@@ -2813,14 +2953,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
         [blocked] = merge_small_segments(segments).blocked_segments
 
         assert blocked.edges == (
-            frozenset(
-                {
-                    MERGE_BLOCK_UNBREAKABLE,
-                    MERGE_BLOCK_TIME_GAP,
-                    MERGE_BLOCK_SPAN,
-                    MERGE_BLOCK_EXTENT,
-                }
-            ),
+            frozenset({MERGE_BLOCK_TIME_GAP, MERGE_BLOCK_SPAN, MERGE_BLOCK_EXTENT}),
         )
 
     def test_the_extent_is_reported_next_to_an_earlier_bolt(self) -> None:
@@ -2849,7 +2982,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
             [_tiny(timedelta(0), first_id=1)],
             [
                 _normal_spanning_the_maximum(first_id=1),
-                _tiny(_max_span() + EPSILON_TIME, first_id=10, causes={BOUNDARY_MOTIF_CHANGE}),
+                _tiny(_max_span() + EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
             ],
         ):
             for blocked in merge_small_segments(segments).blocked_segments:
@@ -2872,7 +3005,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
         stehen geblieben ist - nicht mehr und nicht weniger."""
         segments = [
             _tiny(timedelta(0), first_id=1, causes=()),
-            _tiny(_merge_gap() + EPSILON_TIME, first_id=10, causes={BOUNDARY_MOTIF_CHANGE}),
+            _tiny(_merge_gap() + EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
             _normal_from(
                 2 * _merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}
             ),

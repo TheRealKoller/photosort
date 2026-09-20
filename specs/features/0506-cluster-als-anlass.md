@@ -3,13 +3,19 @@
 **Status:** Accepted
 **Erstellt:** 2026-09-18
 **Bezug:** [Issue #506](https://github.com/TheRealKoller/photosort/issues/506), ADR
-[`0117`](../decisions/0117-der-anlass-als-einheit-eigene-schwellen-dauergrenze-und-mindestgroesse.md)
+[`0117`](../decisions/0117-der-anlass-als-einheit-eigene-schwellen-dauergrenze-und-mindestgroesse.md),
+ADR
+[`0118`](../decisions/0118-sehenswuerdigkeit-trennt-nicht-mehr-und-eine-eigene-ausdehnungsgrenze-fuers-zusammenlegen.md),
+ADR [`0119`](../decisions/0119-der-motivwechsel-vermerkt-eine-grenze-statt-eine-zu-eroeffnen.md)
 
-**Umfang:** rund 370 Zeilen zu 100 Zeichen gegen einen Richtwert von 200. Die Story trägt zwei
-Vorhaben in einem — erst messen, dann ändern —, und beide brauchen ihren Teil: vier Messblöcke mit
-je eigener Auflage, was die Ausgabe tragen darf, sechs Konstanten, die kalibriert werden, und ein
-Messprotokoll, das der Gegenstand der Abnahme ist. Dazu kommen die Zusicherungen, deren
-Ausfallrichtung benannt sein muss, weil sie sonst still brechen.
+**Umfang:** rund 1300 Zeilen zu 100 Zeichen gegen einen Richtwert von 200. Die Story trägt zwei
+Vorhaben in einem — erst messen, dann ändern —, und beide brauchen ihren Teil: sechs Messblöcke mit
+je eigener Auflage, was die Ausgabe tragen darf, sieben Konstanten, und ein Messprotokoll, das der
+Gegenstand der Abnahme ist. Dazu kommen die Zusicherungen, deren Ausfallrichtung benannt sein muss,
+weil sie sonst still brechen. Den größten Teil trägt das **Messprotokoll**: Fünf Messungen haben
+nacheinander vier tragende Annahmen dieser Spec widerlegt, zuletzt ihr eigenes Abnahmemaß. Der Weg
+dorthin ist der Gegenstand der Abnahme und wird deshalb nicht gekürzt — die jeweils überholte
+Fassung bleibt mit ihrem Datum stehen, damit nachvollziehbar ist, was wann galt.
 
 ## Ziel
 
@@ -81,12 +87,34 @@ Ortsfehler (siehe „Entscheidungen").
       benannten Fotos — das ist ab jetzt die Regel, nicht mehr ein defensiver Zweig.
 - [ ] `sehenswuerdigkeit` bleibt im Ursachenvorrat und steht in der Nachmessung bei 0 (0,0 %).
       Die Zeile ist der Nachweis der Änderung; sie verschwindet nicht aus dem Bericht.
-- [ ] Nach der Änderung ist an denselben Daten messbar, dass der Anteil der Ein-Bild-Cluster
-      **mindestens halbiert** ist gegenüber dem in „Messprotokoll" festgehaltenen Ausgangswert
-      (24,2 %, also Ziel ≤ 12,1 %). **Dieses Kriterium steht unter Vorbehalt:** Die Ausgangsmessung
-      hat gezeigt, dass die Schwellen nicht die Ursache sind und die Motivgrenze es ist; solange
-      diese unantastbar bleibt, ist die Halbierung voraussichtlich nicht erreichbar. Ob das Ziel
-      bleibt oder sinkt, entscheidet Daniel nach der Empfindlichkeitsmessung (Block E).
+- [ ] **Ein Motivwechsel trennt keine Events mehr allein.** Zwei Fotos, die sich allein im
+      getragenen Motiv unterscheiden und zwischen denen kein anderes Signal trennt, stehen im
+      selben Event — gleich wie lange der Wechsel bestätigt bleibt.
+- [ ] **Die Gliederung hängt nicht mehr an der ersten Stufe.** `explain_events` liefert unter einem
+      nie erreichbaren Bestätigungsfenster dieselbe Eventfolge wie am Betriebswert; verschieden
+      sind allein die Ursachenmengen. Das ist die starke Form des Kriteriums darüber und die
+      eigentliche Zusage. Sichtbar wird sie auch im Bericht: In Block E sind die Spalten „Events",
+      „Ein-Bild-Cluster", „größtes Event" und „längste Dauer" über **alle** Zeilen einschließlich
+      „aus" gleich.
+- [ ] **`motivwechsel` steht nie allein.** Der Name bleibt im Ursachenvorrat und wird weiter als
+      „beteiligt" gezählt; in der Spalte „alleinige Ursache" steht er auf 0 (0,0 %). Jede
+      Ursachenmenge, die ihn enthält, enthält mindestens eine weitere Ursache.
+- [ ] **Der Vermerk wird nicht aufgeschoben.** Fällt ein bestätigter Motivwechsel auf einen Index,
+      an dem kein Signal meldet, trägt **keine** spätere Grenze deswegen `motivwechsel`. Die
+      Ursachenmenge einer Grenze nennt nur, was an ihr selbst gemeldet hat.
+- [ ] **Das Abnahmemaß ist der Album-Richtwert.** Nach der Änderung weist Block A an denselben
+      Daten (Projekt 3, letzter erfolgreicher Kriterien-Lauf) alle drei Größen zugleich aus:
+      Eventzahl **echt kleiner** als der Richtwert, freie Plätze **echt größer** als 0, und das
+      Urteil, dass die Gewichtung nach Größe beginnt. Die drei sind nicht unabhängig — die dritte
+      ist die Aussage, die ersten beiden sind ihre Bedingung —, und alle drei stehen ausgeschrieben
+      im Bericht.
+      **Warum dieses Maß und nicht mehr der Ein-Bild-Anteil:** Jenes Kriterium stand unter Daniels
+      Vorbehalt und hat in die Irre geführt. Der Anteil fiel von 24,2 % auf 13,6 %, während die
+      Verzerrung, um die es der Story geht, unverändert bestand: 81 Events auf 41 Plätze. Es war ein
+      Hilfsmaß für „ein Cluster = ein Anlass" und ersetzt durch das Maß, an dem der Schaden hängt.
+      Der Ein-Bild-Anteil wird weiter **ausgewiesen**, aber nicht mehr abgenommen — er **steigt**
+      unter dieser Änderung (die Grundmenge schrumpft stärker als der Zähler), und das ist
+      hingenommen.
 
 **Dabei nicht zu viel verschmelzen**
 
@@ -95,10 +123,13 @@ Ortsfehler (siehe „Entscheidungen").
       `EVENT_EXTENT_MAX_METERS`. Die frühere Fassung — beide Stufen gegen dieselbe Zahl — gilt
       seit ADR 0118 nicht mehr; sie machte Stufe 3 für ausdehnungsgetrennte Segmente strukturell
       unpassierbar.
-- [ ] Eine Grenze, deren Ursachenmenge `motivwechsel` enthält, wird vom Zusammenlegen nie
-      aufgelöst — auch dann nicht, wenn beide Nachbarn alle vier Riegel erfüllen und das Segment
-      aus einem einzigen Foto besteht. `sehenswuerdigkeit` gehört seit ADR 0118 nicht mehr dazu:
-      Es entstehen keine solchen Grenzen mehr.
+- [ ] **Keine Grenze ist mehr unantastbar.** Eine Grenze, deren Ursachenmenge `motivwechsel`
+      enthält, wird vom Zusammenlegen aufgelöst wie jede andere, sobald die drei Riegel halten.
+      Die frühere Fassung — eine solche Grenze wird nie aufgelöst — gilt seit ADR 0119 nicht mehr,
+      und mit ihr ist `UNBREAKABLE_CAUSES` entfallen. Der Berichtsgrund `unantastbar` bleibt in der
+      Riegel-Diagnose stehen und steht dort dauerhaft auf 0; die Zeile ist der Nachweis, nicht ein
+      Rest. Der Schutz gegen Überverschmelzung liegt damit **allein** bei den drei Schwellen des
+      Kriteriums darüber — sie gelten unverändert und sind ab jetzt der ganze Schutz.
 - [ ] Die Nachmessung weist aus, welcher Anteil der Grenzen durch das Zusammenlegen aufgelöst wurde
       und welcher Anteil der Fotos dadurch das Event gewechselt hat.
 - [ ] Weder Datenmodell noch API-Antwort noch Oberfläche bekommen ein Feld, einen Endpunkt oder
@@ -224,6 +255,9 @@ zugeschlagen, zu dem es gehört:
   `sehenswuerdigkeit` enthält, wird nie aufgelöst. Sie sind die einzigen Signale, die zwei Anlässe
   am selben Ort zur selben Zeit trennen; ohne ihren Vorrang wäre das Akzeptanzkriterium „zwei
   erkennbar verschiedene Anlässe bleiben getrennt" nicht durchsetzbar.
+  **Überholt:** ADR 0118 hat die Sehenswürdigkeit daraus entfernt, ADR 0119 den Vorrat selbst
+  (siehe „PR 5" und „PR 8"). Es gibt keine unantastbare Grenze mehr; der Absatz steht als Stand
+  von PR 3.
 - **Stillstand:** Der Durchgang läuft, bis keine Zusammenlegung mehr stattfindet, höchstens so
   viele Runden wie es Segmente gibt. Je Runde das kleinste Segment, **das nicht bereits als
   gesperrt feststeht**, bei Gleichstand das frühere — der Stillstand hängt nicht an einer
@@ -381,6 +415,11 @@ zweite Spalte, obwohl an seiner einen echten Kante sehr wohl ein Grund stand. `k
 deshalb nur, wenn es überhaupt keinen Nachbarn gibt — die Zeile ist damit fast immer null, und das
 ist die ehrliche Form.
 
+**Seit ADR 0119 gibt es die Sperre nicht mehr**, und die Zeile `unantastbar` steht dauerhaft auf 0.
+Sie bleibt im Vorrat, damit ein Block-F-Lauf gegen den vom 2026-09-19 zu halten ist — dort war sie
+der größte Blocker. Der folgende Absatz begründet, warum sie überhaupt eine eigene Zeile bekam, und
+gilt für die Lesart dieser früheren Messung weiter.
+
 **Die Unantastbarkeit zählt als eigener Grund und nicht als Riegel.** Sie ist keine Schwelle,
 sondern eine Zusage, und ihre Behebung wäre eine andere Entscheidung als die Änderung einer Zahl.
 Ohne diese Trennung bliebe nach der Messung offen, ob Riegel (c) oder die Sperre blockiert hat —
@@ -419,7 +458,8 @@ sondern nur variiert durchgerechnet; die Messung ist rein lesend wie die Blöcke
 
 **Was die Messung entscheidbar macht, entscheidet sie nicht:** Ob die Motivgrenze unantastbar
 bleibt, gelockert wird oder das Halbierungsziel sinkt, legt Daniel anhand der Zahlen fest. Der Lauf
-hält an dieser Stelle an.
+hält an dieser Stelle an. **Erledigt:** Daniel hat am 2026-09-20 entschieden — der Motivwechsel
+begründet nur noch mit (ADR 0119). Der Halteort ist damit vergangen, kein offener Schritt.
 
 #### Block D — die Kalibrierung (`--schwellen`)
 
@@ -517,6 +557,66 @@ treten **zwei** Zusagen mit je eigener Grenze (siehe Akzeptanzkriterien). Die In
 `assert_full_signal_invariants` wird entsprechend **zweigeteilt statt gelockert**; eine bloße
 Lockerung gäbe die Schranke des Durchlaufs stillschweigend mit auf.
 
+### PR 8 — der Motivwechsel begründet nur noch mit, und die Unantastbarkeit entfällt
+
+Entschieden von Daniel am 2026-09-20 an den Zahlen von Block H und dem Album-Richtwert;
+festgehalten als ADR
+[`0119`](../decisions/0119-der-motivwechsel-vermerkt-eine-grenze-statt-eine-zu-eroeffnen.md). Sie
+löst ADR 0109 Punkt 1, ADR 0117 Punkt 3 und ADR 0118 Punkt 2 (zweiter Absatz) in benannten Teilen
+ab.
+
+**1. Die erste Stufe vermerkt, statt zu erzeugen.** `motif_change_starts` bleibt unverändert — die
+Funktion, ihr Bestätigungsfenster, der Wechselbegriff, wer mitredet. Verändert wird allein, was
+`explain_events` mit ihrem Ergebnis tut:
+
+- Ein gelieferter Index eröffnet **kein** Event mehr. Die Bedingung, die ein neues Segment öffnet,
+  ist `reporting or not events` — der Index steht nicht mehr darin.
+- Fällt der Index mit einer Grenze des Signal-Durchlaufs zusammen, kommt `motivwechsel` zur
+  Ursachenmenge **dieser** Grenze hinzu. Fällt er auf keine, ist er wirkungslos und wird
+  **verworfen, nie auf die nächste Grenze übertragen**.
+- Die Ausnahme an Index 0 bleibt, wo sie ist: Sie hängt an der Position, nicht an einem Signal.
+  `motif_change_starts` liefert die 0 ohnehin nie.
+
+**Die Signal-Rücksetzung fällt damit weg, und das ist die eine Stelle, an der die Änderung
+zusätzliche Grenzen erzeugen kann.** Ein erzwungener Start rief `begin` auf allen Signalen;
+`ExtentSignal` und `EventSpanSignal` starteten dort neu. Ohne ihn laufen beide über den
+Motivwechsel hinweg weiter und melden früher. Die Eventzahl fällt deshalb nicht um genau die Zahl
+der entfallenen erzwungenen Starts — das ist erwartet und hat seinen eigenen Testfall.
+
+**2. `UNBREAKABLE_CAUSES` entfällt ersatzlos.** Der Vorrat verschwindet aus `events.py`, das erste
+Paar aus dem `checked`-Tupel in `_may_merge`, und damit liest die dritte Stufe keine Ursachenmenge
+mehr. Die Nicht-Kurzschluss-Zusage von `_may_merge` bleibt für die drei verbliebenen Riegel
+unberührt. `Segment.causes` bleibt bestehen — das Ergebnissegment trägt weiter die Menge des
+früheren der beiden, und `EventFormation.causes` speist den Bericht.
+
+**Was bewusst stehen bleibt**, beides als Berichtswortschatz mit ehrlicher Null bzw. beweglicher
+Zahl:
+
+- `BOUNDARY_MOTIF_CHANGE` in `BOUNDARY_CAUSES` — „beteiligt" bewegt sich weiter und ist die Größe,
+  an der eine spätere Änderung dieser Entscheidung gemessen würde.
+- `MERGE_BLOCK_UNBREAKABLE` in `MERGE_BLOCK_REASONS` — dauerhaft 0, damit ein Block-F-Lauf gegen
+  den vom 2026-09-19 zu halten bleibt, in dem `unantastbar` der größte Blocker war.
+
+**Nicht geändert:** `motif_change_starts`, `_motif_picture`, `MOTIF_CHANGE_CONFIRMING_PHOTOS`,
+`selection.py` (auch nicht die durchreichbare Grenze), `worker.py`, `event_inputs.py`, die sechs
+übrigen Schwellen, das Datenmodell, jede API-Antwort, das Frontend.
+
+**Block E bleibt und wird vakuum-richtig**, statt entfernt zu werden: Seine Spalten „Events",
+„Ein-Bild-Cluster", „größtes Event" und „längste Dauer" sind danach über alle Zeilen einschließlich
+„aus" gleich — und genau diese Gleichheit ist der ausgewiesene Nachweis, dass die Stufe keine
+Grenze mehr erzeugt. Die Spalte „`motivwechsel` allein" steht dabei auf 0, „beteiligt" nicht.
+
+**Die vorhergesagte Wirkung ist schon gemessen.** Weil der Vermerk die Gliederung nicht anfasst und
+die Unantastbarkeit mit entfällt, ist die neue Betriebsgliederung **dieselbe**, die Block E am
+2026-09-20 in der Zeile „aus" ausgewiesen hat: 26 Events statt 81, größtes Event 80 Fotos, längste
+Dauer 5 h 3 min, Ein-Bild-Anteil 26,9 %. Weicht die Nachmessung davon ab, ist das ein Befund und
+kein Rundungseffekt.
+
+**Die getragene Kehrseite, benannt statt entdeckt:** Ein Event kann danach ein Fünftel der
+Kandidaten eines Laufs umfassen. Block H hat dafür die Grundlage geliefert — die großen Events der
+Zeile „aus" zeigen je genau **eine** Ortszelle, und die Motivzahl wächst unterlinear. Gegen
+Überverschmelzung stehen ab jetzt allein Zeitlücke, Dauer, Schritt und Ausdehnung.
+
 ### Betroffene Dateien
 
 **Backend**
@@ -534,6 +634,14 @@ Lockerung gäbe die Schranke des Durchlaufs stillschweigend mit auf.
   wird herausgegeben, aber **über einen eigenen, nur vom Messkommando benutzten Rückgabeweg, nicht
   auf `PlaceAnswer`**. Sie wird nicht persistiert und erreicht damit den `PlaceLookup`-Schreibrand
   in `worker.py` nicht (Security S4).
+
+**In PR 8 ist von diesen genau eine Datei betroffen — `events.py`**, und darin drei Stellen: die
+Bedingung in `explain_events`, die den Vermerk vom erzwungenen Start trennt; der Wegfall von
+`UNBREAKABLE_CAUSES` samt seines Paars in `_may_merge`; und die Doku-Blöcke an
+`BOUNDARY_MOTIF_CHANGE`, `MERGE_BLOCK_UNBREAKABLE`, `motif_change_starts`, `_may_merge` und
+`explain_events`, die heute die entfallende Trennwirkung als geltende Regel beschreiben.
+`event_probe.py` bleibt unangetastet: Es liest seinen Vorrat aus `events.py`, und Block E misst
+danach von selbst das Richtige.
 
 **Doku** — im selben Pull Request wie die Umsetzung, nicht in einem Nachzieh-Commit:
 
@@ -558,9 +666,10 @@ unangetastet. Durchgesetzt von
 des Messwegs lässt den Test rot werden. Die **Auswahllogik** selbst (Kontingente, „Abdeckung
 zuerst") bleibt unberührt.
 
-### Zuschnitt: zwei Pull Requests, Daniels Messung dazwischen
+### Zuschnitt: mehrere Pull Requests, Daniels Messung dazwischen
 
-Von Daniel am 2026-09-18 freigegeben — die Ausnahme von „ein PR pro Issue", und sie hat einen
+Ursprünglich zwei, mit jeder Messung um einen gewachsen — jeder Zuwachs steht unten mit seinem
+Anlass. Von Daniel am 2026-09-18 freigegeben — die Ausnahme von „ein PR pro Issue", und sie hat einen
 zwingenden Grund: Die Schwellen werden an einem echten Reiseprojekt kalibriert, und dafür muss das
 Messkommando erst auf dem Server liegen. Ein einziger PR müsste die kalibrierten Werte enthalten,
 bevor die Messung existiert, die sie liefert; „der Anteil der Ein-Bild-Cluster ist halbiert" wäre
@@ -584,6 +693,14 @@ ohne den gemessenen Ausgangswert kein prüfbares Kriterium.
   woran eine Zusammenlegung scheitert — wieder ohne Verhaltensänderung, nach demselben Grundsatz,
   der in dieser Story bereits zwei falsche Annahmen aufgedeckt hat. Was danach geändert wird,
   entscheidet Daniel an diesen Zahlen.
+- **PR 5** — die Sehenswürdigkeit trennt nicht mehr, Riegel (c) bekommt `MERGE_EXTENT_MAX_METERS`
+  (ADR 0118). Danach: Abnahme knapp verfehlt, und die Verzerrung der Albumauswahl unverändert.
+- **PR 6 und PR 7** — wieder ohne Verhaltensänderung: der Album-Richtwert im Bericht, die Zeile
+  „aus" in Block E, und Block H (`--kohaerenz`). Sie haben das Abnahmemaß korrigiert und die
+  Entscheidung von PR 8 messbar gemacht.
+- **PR 8** — die letzte Verhaltensänderung: Der Motivwechsel begründet nur noch mit, die
+  Unantastbarkeit entfällt (ADR 0119). Nachmessung in dasselbe Messprotokoll; die Abnahme läuft
+  gegen den Album-Richtwert.
 
 **Der Ortsfehler ist abgeschlossen.** Block C hat keinen systematischen Fehler belegt; an der
 Ortsbestimmung wird in dieser Spec nichts geändert. Der dabei abgefallene Befund zum
@@ -602,7 +719,44 @@ Teil dieser Story.
 6. ✅ `EventSpanSignal` statt `DayBoundarySignal`, die eigenen Konstanten mit unveränderten Werten,
    und die dritte Stufe (Zusammenlegen) — **PR 3**. Block B weist zusätzlich die Gegenanzeige aus
    (Anteil der aufgelösten Grenzen, Anteil der Fotos, die dadurch ihr Event gewechselt haben).
-7. Nachmessen mit demselben Kommando (Block A und B), Ergebnis in dasselbe Messprotokoll.
+7. ✅ Nachmessen mit demselben Kommando (Block A und B), Ergebnis in dasselbe Messprotokoll —
+   danach PR 4 (Block F), PR 5 (Sehenswürdigkeit/Ausdehnung), PR 6/7 (Album-Richtwert, Zeile „aus",
+   Block H) und Daniels Kohärenzmessung.
+
+**PR 8 — testgetrieben, in dieser Reihenfolge.** Zwei Änderungen, die sich trennen lassen, und die
+Trennung ist nicht Kosmetik: Nach Schritt 8 ist messbar, was der Wegfall des erzwungenen Starts
+allein tut, und Schritt 9 fügt nichts hinzu, was Schritt 8 verdecken könnte.
+
+8. **Der Vermerk statt des erzwungenen Starts** in `explain_events`. Rot zuerst, je eigener Fall:
+   (a) zwei Fotos, die sich allein im getragenen Motiv unterscheiden, ohne trennendes Signal
+   dazwischen → **ein** Event; (b) dieselbe Kandidatenmenge unter dem Betriebswert und unter einem
+   nie erreichbaren Bestätigungsfenster → **identische** Eventfolge, verschiedene Ursachenmengen;
+   (c) ein bestätigter Motivwechsel, der mit einer Zeitlücken-Grenze zusammenfällt →
+   `{zeitluecke, motivwechsel}`; (d) ein bestätigter Motivwechsel ohne meldendes Signal → **keine**
+   spätere Grenze trägt `motivwechsel`; (e) eine Lage, in der die entfallende Signal-Rücksetzung
+   den Durchlauf **später** trennen lässt, als er es mit erzwungenem Start getan hätte — die eine
+   Richtung, in der diese Änderung eine Grenze hinzufügt statt wegzunehmen.
+9. **`UNBREAKABLE_CAUSES` entfernen.** Rot zuerst: (a) ein zu kleines Segment, dessen eröffnende
+   Grenze `motivwechsel` trägt und dessen Nachbar alle drei Riegel erfüllt, wird zugeschlagen —
+   die wörtliche Umkehrung des bis hierher geltenden Falls, ersetzt statt angepasst; (b)
+   `MERGE_BLOCK_UNBREAKABLE` bleibt im Vorrat und wird von `_may_merge` unter keiner Lage geliefert.
+10. **Doku im selben PR:** `docs/architecture.md` (Abschnitt Event), die Doku-Blöcke in `events.py`,
+    diese Spec, ADR 0119 und die drei Teil-Vermerke, `specs/architecture/0003-securitykonzept.md`
+    (`security-engineer`).
+11. **Nachmessen** an Projekt 3 mit `--project-id 3` (Block A samt Album-Richtwert), `--riegel`,
+    `--motiv` und `--kohaerenz`; Ergebnis in dasselbe Messprotokoll. Die Abnahme läuft gegen den
+    Album-Richtwert.
+
+**Bestehende Fälle, die das Gegenteil der neuen Zusage behaupten, werden ersetzt statt angepasst**
+— ein angepasster Fall behält seinen Namen und prüft danach etwas anderes, als er verspricht.
+Betroffen sind die Fälle in `test_events.py`, die einen bestätigten Motivwechsel **durch**
+`build_events`/`explain_events` hindurch als Trennung prüfen, sowie der Fall zur unantastbaren
+Grenze in Stufe 3. Die Fälle, die `motif_change_starts` **direkt** prüfen
+(`test_events.py:883` ff.), bleiben unverändert gültig: Der Begriff ändert sich nicht, nur seine
+Wirkung. Ebenfalls nachzuziehen: der Import von `UNBREAKABLE_CAUSES` in `test_events.py` und sein
+Eintrag in der Gegenprobe `test_event_probe.py::test_the_closed_vocabularies_are_not_mistaken_for_adjustable`
+samt der Aufzählung im Doku-Block von `_adjustable_constants_of_events` — ein Name, den es nicht
+mehr gibt, macht die Gegenprobe an dieser Stelle still vakuum-grün.
 
 ### Was sich ausdrücklich nicht ändert
 
@@ -613,8 +767,12 @@ Teil dieser Story.
   unberührt — deshalb die eigenen Konstanten.
 - **Die Ortsbestimmung selbst** wird in dieser Spec nicht geändert; Block C misst, er behebt nicht.
 - **Kein Handlabeln, kein Training, kein Modell-Asset, keine neue Abhängigkeit, kein Cloud-Aufruf.**
-- **Der Motivwechsel** (Spec 0477 / ADR 0109) bleibt vollständig, einschließlich der Zusage, dass
-  ein motivgetrenntes Einzelbild allein bestehen darf.
+- **Der Begriff des Motivwechsels** (Spec 0477 / ADR 0109) bleibt vollständig: Motivbild,
+  symmetrische Differenz gegen das eröffnende Foto, Bestätigungsfenster, rückwirkende Lage, wer
+  mitredet, und die mit dem Auswahlvorschlag geteilte Grenze. **Seine Trennwirkung bleibt es
+  nicht** — sie fällt mit ADR 0119, und mit ihr die Zusage, dass ein motivgetrenntes Einzelbild
+  allein bestehen darf. Geändert wird ausschließlich, was `explain_events` mit dem Ergebnis der
+  ersten Stufe tut.
 
 ## Messprotokoll
 
@@ -712,6 +870,11 @@ Beobachtungen tragen das, und sie schließen einander nicht aus, sondern verstä
 Das verfehlt das Zielbild „ein Cluster = ein Tag bzw. ein Anlass" in der anderen Richtung.
 
 ### Was daraus für die Umsetzung folgt
+
+**Der erste Satz dieses Abschnitts ist am 2026-09-20 überholt worden** (siehe „Der Richtwert und der
+Motivwechsel" weiter unten): Block E hatte den Fall „Motivgrenze ganz aus" nicht gemessen, und genau
+er ist der Hebel. Die Motivgrenze ist seit ADR 0119 nicht mehr unantastbar. Der Abschnitt bleibt als
+Stand vom 2026-09-18 stehen — er begründet, warum Block D entfallen ist, und das gilt weiter.
 
 **Der Betriebswert des Motivwechsels bleibt unverändert** (`MOTIF_CHANGE_CONFIRMING_PHOTOS = 3`,
 `MOTIF_PRESENCE_THRESHOLD = 0,5`), und die Motivgrenze bleibt **unantastbar**. Keine Messung stützt
@@ -967,12 +1130,32 @@ die dauerhaft in ein **öffentliches** Repository gehen.
   keine Reihenfolge trägt. Die Dauer daneben steht als Dauer (S5); aus ihr und der Zellzahl ist
   eine mittlere Verweildauer je Zelle ableitbar, und das trägt nur, solange keine Zelle benannt ist
   — eine Verweildauer ohne Ort lokalisiert nichts.
+- **S10 (PR 8) — Die Kontrollflusswirkung der Motivstärke fällt auf null, und drei Auflagen ziehen
+  nach.** Nach ADR 0119 bewegt keine vom Modell gelieferte Zahl mehr eine Event-Grenze; der
+  Motivwechsel vermerkt nur noch eine Ursache. Daraus folgt dreierlei. (a) Das Vergleichsverbot aus
+  ADR 0091 Punkt 1 bleibt in `events.py` **Muss**, obwohl sein Gegenstand dort auf ein
+  Berichtssymbol schrumpft — `carried_motifs` bleibt geteilt, und ein zweiter Begriff von „dieses
+  Foto zeigt X" bekäme seine Wirkung beim nächsten Leser zurück. (b) M9-e wird **umformuliert, nicht
+  aufgehoben**: Sie nennt die vier Riegel statt `UNBREAKABLE_CAUSES`, sonst verwiese ein Muss auf
+  ein Symbol, das es nicht mehr gibt. Die Zahl der Riegel bleibt vier — die Unantastbarkeit war
+  keiner von ihnen, sondern ein eigener Sperrgrund daneben. (c) `MERGE_BLOCK_UNBREAKABLE` nennt
+  nichts mehr und führt eine ehrliche Null; er bleibt als Berichtswortschatz stehen, damit ein
+  Block-F-Lauf gegen den vom 2026-09-19 zu halten ist. Neu als Muss: `COHERENCE_TOP_EVENTS` bleibt
+  eine **absolute** Zahl — hinter derselben Zeile stehen danach mehr Fotos, und ein als Anteil
+  gefasster Deckel wüchse mit den größer werdenden Events mit.
 
 **Sicherheitskonzept:** `specs/architecture/0003-securitykonzept.md` wird im selben Pull Request
 fortgeschrieben — unter „Standortdaten" (erstmals gehen Messzahlen aus echten Familiendaten
 dauerhaft ins öffentliche Repository; S2, S4, S5 und S9 als neue Auflagen) und mit drei Zeilen in
 der Ankerliste (Messkommando rein lesend einschließlich `event_inputs.py`; Trefferentfernung
-namenlos und unpersistiert; Ortsgröße je Event nur als gedeckelte, größengeordnete Anzahl).
+namenlos und unpersistiert; Ortsgröße je Event nur als gedeckelte, größengeordnete Anzahl). Mit
+PR 8 kommt eine eigene Fortschreibung zu ADR 0119 dazu (S10), dazu ein Teil-Vermerk am Abschnitt zu
+ADR 0109 und ein Restrisiko-Eintrag: Die ausgeschöpfte Reichweite eines einzelnen
+Sehenswürdigkeitsnamens wächst auf rund ein Fünftel der Kandidaten eines Laufs. Die Bezifferung
+trägt und die Abflussrichtung bleibt entlastend; **Daniel hat am 2026-09-20 entschieden, dass die
+Benennung keine eigene Auflage bekommt** — der Schaden ist Anzeigequalität, die Plausibilisierung
+des Namens bleibt Issue #514, und ein eigener Auslöser stellt die Frage neu, sobald ein Name über
+mehr als ein Viertel der Kandidaten reicht oder große Events mehrere Ortszellen zeigen.
 
 ## Teststrategie
 
@@ -990,7 +1173,9 @@ Zahlwerte, und alle drei sind Ungleichungen: `MERGE_MAX_GAP > EVENT_TIME_GAP`,
 durch `build_events` hindurch; `build_events` nimmt ihre Parameter injizierbar entgegen, sonst
 laufen 26 bestehende Fälle still durch sie hindurch und Block D kann sie nicht variieren. Geprüft
 werden: die drei Tie-Break-Stufen je an einem gebauten Gleichstand, die vier Riegel je einzeln
-(jeweils greift genau einer, die anderen drei halten), beide unantastbaren Grenzen, „kein Nachbar
+(jeweils greift genau einer, die anderen drei halten), ~~beide unantastbaren Grenzen~~ — seit ADR
+0119 stattdessen die Umkehrung: eine Grenze mit `motivwechsel` **wird** aufgelöst, sobald die drei
+Riegel halten —, „kein Nachbar
 zulässig → bleibt allein", **Idempotenz** als maschinenprüfbare Form des Stillstands, eine je
 Runde strikt fallende Segmentzahl, und eine Rundenobergrenze, die **wirft statt abzubrechen**.
 Ein stiller Frühabbruch ließe eine halb zusammengelegte Gliederung zurück, die niemandem auffiele.
@@ -1078,6 +1263,20 @@ Konvention formal einhält.
   Auflösung ist ein benannter Halteort statt einer erfundenen Prozentzahl.
 - **Das Terminierungsargument in ADR 0117 war falsch und wurde korrigiert** (test-engineer): „jede
   Runde nimmt mindestens eines weg" gilt nicht, sobald ein Segment an einem Riegel scheitert.
+- **Der Motivwechsel darf eine Grenze mitbegründen, aber nie allein eröffnen; die Unantastbarkeit
+  fällt mit weg** (Daniel am 2026-09-20, an den Zahlen von Block H und dem Album-Richtwert). Damit
+  ist die frühere Festlegung „die Motivgrenze bleibt unantastbar" aufgehoben: Sie beruhte auf
+  Block E, und Block E hatte den Fall „ganz aus" noch nicht gemessen.
+- **Das Abnahmemaß ist der Album-Richtwert statt des Ein-Bild-Anteils** (Daniel am 2026-09-20): Der
+  Anteil fiel, während die Verzerrung blieb; er war ein Hilfsmaß und wird weiter ausgewiesen, aber
+  nicht mehr abgenommen.
+- **`UNBREAKABLE_CAUSES` verschwindet ganz, statt als leerer Vorrat stehen zu bleiben** (architect,
+  technisch): Es ist kein Wortschatz, sondern eine an jeder Kante gelesene Regel — das Kriterium aus
+  ADR 0118 Punkt 2, hier auf den ganzen Vorrat angewandt. Der Berichtsgrund
+  `MERGE_BLOCK_UNBREAKABLE` bleibt dagegen mit ehrlicher Null stehen.
+- **`MIN_EVENT_PHOTOS` bleibt bei 2** (architect, technisch, in Daniels Vorbehalt): Der Vorbehalt
+  hing am Ein-Bild-Anteil, und der ist nicht mehr das Abnahmemaß. Mit rund 26 statt 81 Events hat
+  eine höhere Mindestgröße keinen Gegenstand mehr und räumte echte kleine Anlässe weg.
 
 ## Offene Fragen
 
@@ -1085,9 +1284,13 @@ Keine. Die drei bestehenden Schwellen behalten ihre heutigen Werte (Block D entf
 neuen entstehen aus dem gemessenen Bestand — ihre Herleitung steht bei der jeweiligen Konstante.
 
 Eine Frage ist **beantwortet und hier festgehalten**, weil sie beim Lesen des Messprotokolls
-naheliegt: Ob die Motivgrenze angetastet wird. Sie wird es nicht. Block E zeigt, dass jede Richtung
-entweder den Anteil verschlechtert oder das Zielbild verfehlt; ADR 0109 und Spec 0477 bleiben damit
-vollständig in Kraft.
+naheliegt: Ob die Motivgrenze angetastet wird. **Sie wird es — seit dem 2026-09-20.** Die frühere
+Antwort („sie wird es nicht") beruhte auf Block E in seiner ersten Fassung, der die
+*Empfindlichkeit* des Motivwechsels durchgerechnet, den Fall „ganz aus" aber ausgelassen hatte. Die
+nachgetragene Zeile „aus" und Block H haben die Antwort gedreht: Nur das Abschalten bringt die
+Eventzahl unter den Album-Richtwert, und die großen Events, die dabei entstehen, zeigen je genau
+eine Ortszelle. ADR 0119 hält die Auflösung fest — der Motivwechsel begründet mit, eröffnet aber
+nicht mehr allein.
 
 ## Out of Scope
 

@@ -749,10 +749,16 @@ def _motif_candidate(index: int, motifs: dict[str, float]) -> EventCandidate:
     )
 
 
-def _motif_sequence(deviating: int) -> list[EventCandidate]:
-    """Ein Bezugsfoto, dann `deviating` Fotos, die zusaetzlich das Motiv "b" tragen."""
+def _motif_sequence() -> list[EventCandidate]:
+    """Ein Bezugsfoto, dann Fotos, die zusaetzlich das Motiv "b" tragen - genug fuer eine
+    BESTAETIGUNG: eines mehr, als das Fenster verlangt.
+
+    Die Laenge kommt als MODULATTRIBUT aus `MOTIF_CHANGE_CONFIRMING_PHOTOS`, nie als Zahl. Eine
+    feste Zahl waere eine Zeitbombe: Unter einem groesseren Fenster bestaetigte kein Wechsel mehr,
+    und jeder Fall, der einen braucht, maesse still nichts."""
     reference = {"a": _CARRIED, "b": _ABSENT}
     changed = {"a": _CARRIED, "b": _CARRIED}
+    deviating = events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS + 1
     return [
         _motif_candidate(index, picture)
         for index, picture in enumerate([reference, *([changed] * deviating)])
@@ -766,7 +772,7 @@ class TestBlockEMotifSensitivity:
     Nachbildung - eine zweite Fassung maesse etwas anderes, als der Lauf tut."""
 
     def test_the_grid_is_the_cross_product_plus_two_reference_rows(self) -> None:
-        candidates = _motif_sequence(2)
+        candidates = _motif_sequence()
 
         rows = motif_sensitivity(candidates)
 
@@ -786,7 +792,7 @@ class TestBlockEMotifSensitivity:
     def test_the_operating_row_is_the_run_itself(self) -> None:
         """Der Nullpunkt entsteht OHNE Ueberschreibung: Er muss die Gliederung sein, die auch der
         Lauf gebildet haette - sonst haette die Tabelle keinen Bezug, gegen den sie liest."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
         formation = explain_events(candidates)
 
         [operating] = [
@@ -800,24 +806,49 @@ class TestBlockEMotifSensitivity:
             operating.sole_motif_boundaries == cause_counts(formation).sole[BOUNDARY_MOTIF_CHANGE]
         )
 
-    def test_a_shorter_window_splits_more_often_than_a_longer_one(self) -> None:
-        """Die Aussage, um derentwillen der Block gebaut ist - und sie steht als Ungleichung
-        zwischen zwei Zeilen, nie als Zahlwert."""
-        rows = {
-            row.confirming_photos: row
-            for row in motif_sensitivity(_motif_sequence(4))
-            if row.strength_threshold == MOTIF_STRENGTH_VARIANTS[0]
-        }
-        shortest = rows[min(MOTIF_CONFIRMING_VARIANTS)]
-        longest = rows[max(MOTIF_CONFIRMING_VARIANTS)]
+    def test_no_row_splits_differently_from_any_other(self) -> None:
+        """DIE AUSSAGE, UM DERENTWILLEN DER BLOCK SEIT ADR 0119 STEHT - und sie ist die Gleichheit
+        selbst: Der Motivwechsel eroeffnet kein Event mehr, also gliedert jede Kombination gleich,
+        die Zeile "aus" eingeschlossen. Waere eine Zeile verschieden, eroeffnete die erste Stufe
+        doch noch eine Grenze.
 
-        assert shortest.events_total > longest.events_total
-        assert shortest.sole_motif_boundaries > longest.sole_motif_boundaries
+        Frueher stand hier die Ungleichung "ein kuerzeres Fenster trennt haeufiger". Sie ist mit
+        der Trennwirkung entfallen und wurde ERSETZT statt angepasst."""
+        candidates = _motif_sequence()
+
+        rows = motif_sensitivity(candidates)
+
+        assert events_module.motif_change_starts(candidates), "sonst misst der Fall nichts"
+        assert len(rows) > 1
+        assert {
+            (
+                row.events_total,
+                row.single_photo_events,
+                row.largest_event_photos,
+                row.longest_seconds,
+            )
+            for row in rows
+        } == {
+            (
+                rows[0].events_total,
+                rows[0].single_photo_events,
+                rows[0].largest_event_photos,
+                rows[0].longest_seconds,
+            )
+        }
+
+    def test_the_motif_change_is_never_the_sole_cause_in_any_row(self) -> None:
+        """Die Spalte "alleinige Ursache" steht seit ADR 0119 dauerhaft auf 0 - in JEDER Zeile,
+        nicht nur in der Zeile "aus". Sie bleibt im Bericht: Die Null ist der Nachweis."""
+        rows = motif_sensitivity(_motif_sequence())
+
+        for row in rows:
+            assert row.sole_motif_boundaries == 0
 
     def test_every_row_carries_the_counter_indication_against_coarse_grouping(self) -> None:
         """Beide Abnahmezahlen wuerden von einem zu groben Zusammenfassen BESSER erfuellt - die
         Gegenanzeige steht deshalb in derselben Zeile, nicht daneben."""
-        candidates = _motif_sequence(4)
+        candidates = _motif_sequence()
 
         for row in motif_sensitivity(candidates):
             assert row.largest_event_photos >= 1
@@ -843,7 +874,7 @@ class TestBlockEMotifSensitivity:
 
         Die Gegenprobe steht daneben: Am Betriebswert trennt dieselbe Folge sehr wohl, sonst
         bestuende der Fall auch gegen ein wirkungsloses Fenster."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
 
         assert events_module.motif_change_starts(candidates), "sonst misst der Fall nichts"
         assert (
@@ -856,7 +887,7 @@ class TestBlockEMotifSensitivity:
     def test_the_switched_off_row_carries_the_window_it_used(self) -> None:
         """Die Zeile fuehrt den tatsaechlich gerechneten Wert mit - beschriftet wird sie als "aus",
         aber gemessen wurde mit einer Zahl, und die steht in den Daten."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
 
         [switched_off] = [row for row in motif_sensitivity(candidates) if row.motif_change_is_off]
 
@@ -868,7 +899,7 @@ class TestBlockEMotifSensitivity:
         """Dieselben Spalten, auch die Gegenanzeige: Ein ausgeschalteter Motivwechsel fasst am
         groebsten zusammen, und genau dort muessen groesstes Event und laengste Dauer ablesbar
         sein."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
 
         [switched_off] = [row for row in motif_sensitivity(candidates) if row.motif_change_is_off]
 
@@ -876,17 +907,25 @@ class TestBlockEMotifSensitivity:
         assert switched_off.largest_event_photos == len(candidates)
         assert switched_off.longest_seconds is not None
 
-    def test_switching_the_motif_change_off_never_splits_more_than_the_operating_point(
+    def test_switching_the_motif_change_off_groups_exactly_like_the_operating_point(
         self,
     ) -> None:
-        """Die Aussage, um derentwillen die Zeile existiert - als Ungleichung zwischen zwei Zeilen,
-        nie als Zahlwert."""
-        candidates = _motif_sequence(6)
+        """DIE ZEILE, AN DER DIE ENTSCHEIDUNG ABZULESEN IST (ADR 0119): Der ausgeschaltete
+        Motivwechsel gliedert wie der Betriebswert - dieselbe Eventzahl, derselbe Ein-Bild-Anteil,
+        dasselbe groesste Event, dieselbe laengste Dauer.
+
+        Frueher stand hier die Ungleichung "aus trennt nie mehr als der Betriebswert". Sie war
+        wahr, solange die Stufe Grenzen erzeugte; sie ist mit ihr entfallen und ERSETZT statt
+        angepasst."""
+        candidates = _motif_sequence()
         rows = motif_sensitivity(candidates)
         operating, switched_off = rows[0], rows[1]
 
-        assert switched_off.events_total < operating.events_total
-        assert switched_off.sole_motif_boundaries < operating.sole_motif_boundaries
+        assert events_module.motif_change_starts(candidates), "sonst misst der Fall nichts"
+        assert switched_off.events_total == operating.events_total
+        assert switched_off.single_photo_events == operating.single_photo_events
+        assert switched_off.largest_event_photos == operating.largest_event_photos
+        assert switched_off.longest_seconds == operating.longest_seconds
 
     def test_a_run_without_candidates_switches_off_without_an_invented_row(self) -> None:
         """Der entartete Fall: Ohne Kandidat gibt es nichts zu bestaetigen - das Fenster bleibt
@@ -2247,9 +2286,8 @@ def _adjustable_constants_of_events() -> frozenset[str]:
     Syntaxbaum-Seite - ein von anderswo importierter Name wie `MAX_PLACE_NAME_LENGTH` ist keine
     Stellschraube dieses Moduls), und der WERT muss eine Zahl oder ein `timedelta` sein (die
     Laufzeit-Seite). Die geschlossenen Wortschaetze (`BOUNDARY_*`, `BOUNDARY_CAUSES`,
-    `MERGE_BLOCK_REASONS`, `PLACE_KINDS`, `UNBREAKABLE_CAUSES`) fallen dadurch heraus und duerfen
-    weiter importiert werden - sie aendern sich nicht unter der Hand, und ein Test verschiebt sie
-    nicht.
+    `MERGE_BLOCK_*`, `MERGE_BLOCK_REASONS`, `PLACE_KINDS`) fallen dadurch heraus und duerfen weiter
+    importiert werden - sie aendern sich nicht unter der Hand, und ein Test verschiebt sie nicht.
 
     Ein handgefuehrter Namensvorrat waere beim naechsten Zuwachs still vakuum-gruen: Genau die neue
     Stellschraube waere die ungeprueфte."""
@@ -2310,21 +2348,28 @@ class TestNoAdjustableConstantIsBoundAtImport:
 
     def test_the_closed_vocabularies_are_not_mistaken_for_adjustable(self) -> None:
         """Die Gegenrichtung: Waeren sie mit drin, muesste der Waechter entschaerft werden - und
-        entschaerft faengt er die Stellschrauben auch nicht mehr."""
+        entschaerft faengt er die Stellschrauben auch nicht mehr.
+
+        JEDER GENANNTE NAME MUSS ES GEBEN: Ein Name, den `events.py` nicht mehr fuehrt, machte
+        diese Zeile still vakuum-gruen - die Gegenprobe darunter faengt das."""
+        vocabularies = {
+            "PLACE_KINDS",
+            "BOUNDARY_CAUSES",
+            "BOUNDARY_TIME_GAP",
+            "BOUNDARY_MOTIF_CHANGE",
+            "MERGE_BLOCK_REASONS",
+            "MERGE_BLOCK_UNBREAKABLE",
+        }
+
         found = _adjustable_constants_of_events()
 
+        for name in vocabularies:
+            assert hasattr(events_module, name), name
         assert found.isdisjoint(
-            {
-                "PLACE_KINDS",
-                "BOUNDARY_CAUSES",
-                "BOUNDARY_TIME_GAP",
-                "MERGE_BLOCK_REASONS",
-                "MERGE_BLOCK_UNBREAKABLE",
-                "UNBREAKABLE_CAUSES",
-                # Von `places.py` importiert, nicht hier zugewiesen: keine Stellschraube DIESES
-                # Moduls, und die Namensseite des Kriteriums haelt sie heraus.
-                "MAX_PLACE_NAME_LENGTH",
-            }
+            vocabularies
+            # Von `places.py` importiert, nicht hier zugewiesen: keine Stellschraube DIESES
+            # Moduls, und die Namensseite des Kriteriums haelt sie heraus.
+            | {"MAX_PLACE_NAME_LENGTH"}
         )
 
     def test_the_guard_recognises_a_bound_constant(self) -> None:
