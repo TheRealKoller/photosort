@@ -508,6 +508,10 @@ class MotifSensitivityRow:
     `confirming_photos` und `strength_threshold` sind `None` in der Zeile des BETRIEBSWERTS - sie
     entsteht ohne jede Ueberschreibung und ist damit die Gliederung, die auch der Lauf bildete.
 
+    `motif_change_is_off` kennzeichnet die andere Randzeile: den Motivwechsel ganz ohne Wirkung.
+    Sie fuehrt in `confirming_photos` das tatsaechlich gerechnete Fenster mit, wird aber als "aus"
+    beschriftet - die Zahl ist ein Rechenmittel, kein messbarer Betriebspunkt.
+
     DIE LETZTEN BEIDEN FELDER SIND DIE GEGENANZEIGE: Eventzahl und Ein-Bild-Anteil wuerden von
     einem zu groben Zusammenfassen BESSER erfuellt; groesstes Event und laengste Dauer stehen
     deshalb in derselben Zeile, nicht daneben. `longest_seconds` ist `None`, wenn es kein Event
@@ -520,12 +524,30 @@ class MotifSensitivityRow:
     sole_motif_boundaries: int
     largest_event_photos: int
     longest_seconds: float | None
+    motif_change_is_off: bool = False
+
+
+def motif_change_off_window(candidates: Sequence[EventCandidate]) -> int:
+    """Ein Bestaetigungsfenster, das diese Kandidatenmenge NIE bestaetigen kann - der Motivwechsel
+    damit aus, OHNE einen Abschaltpfad im Produktivcode.
+
+    `motif_change_starts` bestaetigt einen Wechsel erst, wenn so viele aufeinanderfolgende
+    mitredende Fotos ihn zeigen, wie das Fenster lang ist; mehr als alle Kandidatenfotos koennen
+    das nie sein. Ein Fenster von "Kandidatenzahl plus eins" ist deshalb unerreichbar, und es
+    entsteht keine einzige Motivgrenze.
+
+    Bewusst kein Schalter an `motif_change_starts` und kein weiterer Parameter: Ein Abschaltpfad im
+    Produktivcode waere ein Zweig, den nur die Messung betritt und den ab dann jeder Aufrufer
+    setzen koennte."""
+    return len(candidates) + 1
 
 
 def _sensitivity_row(
     candidates: Sequence[EventCandidate],
     confirming_photos: int | None,
     strength_threshold: float | None,
+    *,
+    motif_change_is_off: bool = False,
 ) -> MotifSensitivityRow:
     """Eine Kombination, gerechnet mit den MITTELN DES LAUFS.
 
@@ -547,11 +569,16 @@ def _sensitivity_row(
         sole_motif_boundaries=causes.sole[BOUNDARY_MOTIF_CHANGE],
         largest_event_photos=sizes.largest_event_photos,
         longest_seconds=sizes.longest_seconds,
+        motif_change_is_off=motif_change_is_off,
     )
 
 
 def motif_sensitivity(candidates: Sequence[EventCandidate]) -> tuple[MotifSensitivityRow, ...]:
-    """Das ganze Raster, die Zeile des Betriebswerts voran.
+    """Das ganze Raster, die beiden Randzeilen voran: der Betriebswert, dann der Motivwechsel aus.
+
+    ZWEI BEZUGSZEILEN STATT EINER: Das Raster zeigt, wie empfindlich der Motivwechsel ist; erst die
+    Zeile "aus" zeigt, wie viel er insgesamt traegt. Ohne sie bliebe offen, wie die Gliederung ganz
+    ohne ihn aussaehe, und die Antwort waere aus keiner Rasterzeile zu erschliessen.
 
     NUR DIE ALLEINIGE URSACHE ist handlungsleitend (wie in Block B): Eine Motivgrenze zu lockern
     loest dort eine Grenze auf, wo der Motivwechsel ALLEIN getrennt hat - an einer Doppelgrenze
@@ -560,6 +587,9 @@ def motif_sensitivity(candidates: Sequence[EventCandidate]) -> tuple[MotifSensit
     Rein: Kein Aufruf dieser Funktion aendert eine Konstante, eine Zeile oder einen Zustand."""
     return (
         _sensitivity_row(candidates, None, None),
+        _sensitivity_row(
+            candidates, motif_change_off_window(candidates), None, motif_change_is_off=True
+        ),
         *(
             _sensitivity_row(candidates, confirming, strength)
             for confirming in MOTIF_CONFIRMING_VARIANTS
@@ -884,7 +914,9 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
     wird die Projekt-Id. Dauern stehen als DAUER, nie als Anfang oder Ende.
 
     Die Zeile des Betriebswerts nennt ihre beiden Werte NICHT: Sie entsteht ohne Ueberschreibung,
-    und eine ausgeschriebene Zahl daneben behauptete, gemessen zu haben, welcher Wert gerade gilt."""
+    und eine ausgeschriebene Zahl daneben behauptete, gemessen zu haben, welcher Wert gerade gilt.
+    Die Zeile "aus" nennt ihr Fenster aus demselben Grund nicht: Es ist ein Rechenmittel, und als
+    Zahl gelesen sieht es aus wie ein weiterer messbarer Betriebspunkt."""
     lines = [
         f"# Empfindlichkeit des Motivwechsels, Projekt {probe.project_id}",
         "",
@@ -901,8 +933,14 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
     ]
     for row in rows:
         operating = row.confirming_photos is None and row.strength_threshold is None
-        confirming = "Betriebswert" if operating else str(row.confirming_photos)
-        strength = "Betriebswert" if operating else f"{row.strength_threshold}"
+        if row.motif_change_is_off:
+            # "aus" statt der gerechneten Fensterlaenge - und die Staerke-Grenze steht dort
+            # unveraendert, wie in der Zeile des Betriebswerts.
+            confirming, strength = "aus", "Betriebswert"
+        elif operating:
+            confirming, strength = "Betriebswert", "Betriebswert"
+        else:
+            confirming, strength = str(row.confirming_photos), f"{row.strength_threshold}"
         lines.append(
             f"| {confirming} | {strength} | {row.events_total} "
             f"| {row.single_photo_events} "
@@ -918,6 +956,11 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
         'allein" zaehlt',
         "nur die Grenzen, an denen keine andere Ursache mitgemeldet hat - nur dort loest eine",
         "gelockerte Motivgrenze ueberhaupt etwas auf.",
+        "",
+        'Die Zeile "aus" ist keine Rasterzelle und kein Betriebspunkt, sondern der andere Rand: ein',
+        "Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos, nie bestaetigbar. Der",
+        "Produktivcode bekommt dafuer keinen Abschalter und keinen weiteren Parameter; die",
+        "Motivstaerke-Grenze steht dort unveraendert - ohne Wechsel wirkt sie ohnehin nicht.",
     ]
     return "\n".join(lines) + "\n"
 

@@ -34,6 +34,7 @@ from photosort.event_probe import (
     landmark_counts,
     main,
     match_distance_counts,
+    motif_change_off_window,
     motif_sensitivity,
     quota_reach,
     read_event_probe_input,
@@ -714,14 +715,19 @@ class TestBlockEMotifSensitivity:
     Gemessen wird mit den Mitteln des Laufs: `explain_events` unter variierten Werten, nie eine
     Nachbildung - eine zweite Fassung maesse etwas anderes, als der Lauf tut."""
 
-    def test_the_grid_is_the_cross_product_plus_the_operating_point(self) -> None:
-        rows = motif_sensitivity(_motif_sequence(2))
+    def test_the_grid_is_the_cross_product_plus_two_reference_rows(self) -> None:
+        candidates = _motif_sequence(2)
 
-        assert len(rows) == 1 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
+        rows = motif_sensitivity(candidates)
+
+        assert len(rows) == 2 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
         # Die erste Zeile ist der Betriebswert - die Tabelle traegt ihren eigenen Nullpunkt.
         assert rows[0].confirming_photos is None
         assert rows[0].strength_threshold is None
-        assert {(row.confirming_photos, row.strength_threshold) for row in rows[1:]} == {
+        assert rows[0].motif_change_is_off is False
+        # Die zweite ist der andere Rand: der Motivwechsel ganz aus.
+        assert rows[1].motif_change_is_off is True
+        assert {(row.confirming_photos, row.strength_threshold) for row in rows[2:]} == {
             (confirming, strength)
             for confirming in MOTIF_CONFIRMING_VARIANTS
             for strength in MOTIF_STRENGTH_VARIANTS
@@ -779,6 +785,66 @@ class TestBlockEMotifSensitivity:
             assert row.longest_seconds is None
             assert row.largest_event_photos == 0
             assert row.sole_motif_boundaries == 0
+
+    def test_the_switched_off_row_confirms_no_change_at_all(self) -> None:
+        """ "Aus" entsteht OHNE Abschaltpfad im Produktivcode: Ein Bestaetigungsfenster groesser als
+        die Zahl der Kandidatenfotos kann nie bestaetigt werden - `motif_change_starts` zaehlt
+        hoechstens so viele aufeinanderfolgende Fotos, wie es Fotos gibt.
+
+        Die Gegenprobe steht daneben: Am Betriebswert trennt dieselbe Folge sehr wohl, sonst
+        bestuende der Fall auch gegen ein wirkungsloses Fenster."""
+        candidates = _motif_sequence(6)
+
+        assert events_module.motif_change_starts(candidates), "sonst misst der Fall nichts"
+        assert (
+            events_module.motif_change_starts(
+                candidates, confirming_photos=motif_change_off_window(candidates)
+            )
+            == frozenset()
+        )
+
+    def test_the_switched_off_row_carries_the_window_it_used(self) -> None:
+        """Die Zeile fuehrt den tatsaechlich gerechneten Wert mit - beschriftet wird sie als "aus",
+        aber gemessen wurde mit einer Zahl, und die steht in den Daten."""
+        candidates = _motif_sequence(6)
+
+        [switched_off] = [row for row in motif_sensitivity(candidates) if row.motif_change_is_off]
+
+        assert switched_off.confirming_photos == motif_change_off_window(candidates)
+        assert switched_off.strength_threshold is None
+        assert switched_off.sole_motif_boundaries == 0
+
+    def test_the_switched_off_row_carries_the_same_columns_as_every_other(self) -> None:
+        """Dieselben Spalten, auch die Gegenanzeige: Ein ausgeschalteter Motivwechsel fasst am
+        groebsten zusammen, und genau dort muessen groesstes Event und laengste Dauer ablesbar
+        sein."""
+        candidates = _motif_sequence(6)
+
+        [switched_off] = [row for row in motif_sensitivity(candidates) if row.motif_change_is_off]
+
+        assert switched_off.events_total >= 1
+        assert switched_off.largest_event_photos == len(candidates)
+        assert switched_off.longest_seconds is not None
+
+    def test_switching_the_motif_change_off_never_splits_more_than_the_operating_point(
+        self,
+    ) -> None:
+        """Die Aussage, um derentwillen die Zeile existiert - als Ungleichung zwischen zwei Zeilen,
+        nie als Zahlwert."""
+        candidates = _motif_sequence(6)
+        rows = motif_sensitivity(candidates)
+        operating, switched_off = rows[0], rows[1]
+
+        assert switched_off.events_total < operating.events_total
+        assert switched_off.sole_motif_boundaries < operating.sole_motif_boundaries
+
+    def test_a_run_without_candidates_switches_off_without_an_invented_row(self) -> None:
+        """Der entartete Fall: Ohne Kandidat gibt es nichts zu bestaetigen - das Fenster bleibt
+        wohldefiniert, und die Zeile entsteht trotzdem."""
+        [switched_off] = [row for row in motif_sensitivity([]) if row.motif_change_is_off]
+
+        assert switched_off.events_total == 0
+        assert switched_off.longest_seconds is None
 
     def test_the_grid_varies_both_festlegungen_not_just_one(self) -> None:
         """Gegenprobe gegen eine wirkungslose Variation: Beide Achsen muessen mehr als einen Wert
@@ -1402,7 +1468,7 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         with pytest.raises(SystemExit):
             main(["--project-id", str(project_id), "--motiv", "--riegel"], database_url=url)
 
-    def test_the_motif_report_carries_a_row_per_combination_plus_the_operating_point(
+    def test_the_motif_report_carries_a_row_per_combination_plus_both_reference_rows(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         url, project_id = _prepared(tmp_path)
@@ -1413,9 +1479,24 @@ class TestTheOutputSeparatesNumbersFromPlaces:
         report = capsys.readouterr().out
         assert "Betriebswert" in report
         rows = [line for line in report.splitlines() if line.startswith("| ")]
-        # Kopfzeile, die Zeile des Betriebswerts und je eine Zeile je Kombination (die Trennzeile
-        # der Tabelle beginnt mit `|---` und zaehlt hier nicht mit).
-        assert len(rows) == 2 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
+        # Kopfzeile, die Zeile des Betriebswerts, die Zeile "aus" und je eine Zeile je Kombination
+        # (die Trennzeile der Tabelle beginnt mit `|---` und zaehlt hier nicht mit).
+        assert len(rows) == 3 + len(MOTIF_CONFIRMING_VARIANTS) * len(MOTIF_STRENGTH_VARIANTS)
+
+    def test_the_switched_off_row_is_labelled_not_numbered(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """ "Aus" ist eine Aussage, keine Fensterlaenge: Die gerechnete Zahl (Kandidatenzahl plus
+        eins) im Bericht laese sich als messbarer Betriebspunkt missverstehen."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id), "--motiv"], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        [switched_off] = [line for line in report.splitlines() if line.startswith("| aus |")]
+        # Die Messlage traegt vier Kandidaten; das Fenster waere also 5.
+        assert "| 5 |" not in switched_off
+        assert "Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos" in report
 
     def test_the_motif_mode_measures_nothing_of_the_place_blocks(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
