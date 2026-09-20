@@ -54,6 +54,10 @@ und die Albumauswahl nicht von Ein-Bild-Ausreißern verzerrt wird.
 Auf Testbarkeit geschärft gegenüber dem Issue-Body; die Aussage ist unverändert, außer beim
 Ortsfehler (siehe „Entscheidungen").
 
+**20 von 21 erfüllt.** Das eine offene ist das vierte — die fehlende Laufkennung im
+Messprotokoll; es trägt seine Begründung und Daniels Entscheidung bei sich und bleibt bewusst
+unabgehakt, statt nachträglich weichgeschrieben zu werden.
+
 **Zuerst belegen, was ist**
 
 - [x] `python -m photosort.event_probe --project-id <N>` gibt für den letzten erfolgreichen
@@ -69,9 +73,19 @@ Ortsfehler (siehe „Entscheidungen").
       nachvollziehbar, wie weit die Ortsaussage von der Aufnahmeposition abweicht und in welchem
       Anteil der Fälle sie eine festgelegte Entfernungsschwelle überschreitet; diese Schwelle
       vertritt „falsches Land", weil der Ländercode im Ortsauszug nicht geführt wird.
-- [x] Diese Messergebnisse stehen als Blöcke A, B und C im Abschnitt „Messprotokoll" dieser Spec,
+- [ ] Diese Messergebnisse stehen als Blöcke A, B und C im Abschnitt „Messprotokoll" dieser Spec,
       mit Projekt-Id und Laufkennung — und ohne jede Koordinate, ohne Orts- oder
       Sehenswürdigkeitsnamen und ohne OpenCloud-Pfad.
+      **Als einziges Kriterium dieser Spec nicht erfüllt, und das bleibt so sichtbar stehen.** Die
+      Blöcke stehen im Messprotokoll, die Projekt-Id steht darin, und keine der vier verbotenen
+      Angaben ist darin — aber **keine Laufkennung**: Der Bericht hat sie bis PR 9 nicht
+      ausgegeben, obwohl `read_event_probe_input` sie intern ermittelt. Kein Eintrag des
+      Messprotokolls trägt sie deshalb; identifiziert wird der Lauf dort relativ („letzter
+      erfolgreicher Kriterien-Lauf"), was zum Zeitpunkt der Messung eindeutig ist und später nicht
+      mehr. **Von Daniel am 2026-09-20 entschieden:** Die Ursache wird beseitigt (PR 9 gibt die
+      Laufkennung ab jetzt aus), eine Wiederholung der Messungen allein dafür lohnt nicht. Das
+      Kriterium bleibt für die bereits festgehaltenen Einträge unerfüllt; jede künftige Messung
+      erfüllt es.
 
 **Einen Anlass zusammenhalten**
 
@@ -785,6 +799,11 @@ mehr gibt, macht die Gegenprobe an dieser Stelle still vakuum-grün.
 ## Messprotokoll
 
 Gegenstand der Abnahme.
+
+**Kein Eintrag dieses Protokolls trägt eine Laufkennung** — der Bericht hat sie bis PR 9 nicht
+ausgegeben. Jeder Eintrag identifiziert seinen Lauf relativ, als „letzter erfolgreicher
+Kriterien-Lauf" des genannten Projekts zum genannten Datum. Das ist die offene Flanke des vierten
+Akzeptanzkriteriums; ab PR 9 steht die Kennung im Kopf jedes Berichts.
 
 ### Ausgangsmessung (vor der Änderung)
 
