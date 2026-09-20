@@ -53,6 +53,7 @@ from photosort.demo_state import (
     rebuild_demo_state,
     render_demo_image,
 )
+from photosort.events import LANDMARK_MIN_SHARE
 from photosort.feedback_log import load_diagnosis
 from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
@@ -1447,8 +1448,15 @@ class TestDemoStateCoversAllFourHeadingStates:
     def _derived_kind(members: list[Photo], names: dict[int, str]) -> str | None:
         """Bildet die Stufenentscheidung aus `events.py::_place_of` nach - bewusst hier im Test
         und nicht durch einen Aufruf der Produktionsfunktion: geprueft gehoert, dass die DATEN
-        alle vier Zustaende hergeben, nicht dass die Funktion sich selbst gleicht."""
-        if any(photo.id in names for photo in members):
+        alle vier Zustaende hergeben, nicht dass die Funktion sich selbst gleicht.
+
+        MIT dem Rueckhalt aus Spec 0514: Ein einzelnes erkanntes Foto benennt sein Event nur, wenn
+        es mindestens `LANDMARK_MIN_SHARE` der Mitglieder ist. Ohne diese Bedingung behauptete die
+        Nachbildung fuer eine zu schwach gestuetzte Lage einen `landmark`-Zustand, den der Lauf nie
+        schriebe - und der Vergleich darunter bliebe still gruen."""
+        share = LANDMARK_MIN_SHARE
+        carriers = sum(1 for photo in members if photo.id in names)
+        if carriers > 0 and carriers * share.denominator >= len(members) * share.numerator:
             return "landmark"
         cells = {
             (round(photo.gps_lat, 2), round(photo.gps_lon, 2))
@@ -1602,43 +1610,67 @@ class TestTheDemoStateShowsTheDistrictRule(TestDemoStateCoversAllFourHeadingStat
             for event in events.values()
             if event.place_name is not None and ", " in event.place_name
         ]
-        assert len(composed) == 2
+        # Seit Spec 0514 traegt auch das Landmark-Event einen Ortsnamen - drei Events tragen die
+        # zusammengesetzte Form, zwei Viertel stehen darin.
+        assert len(composed) == 3
         localities = {name.split(", ")[0] for name in composed}
         districts = {name.split(", ")[1] for name in composed}
         assert len(localities) == 1
         assert len(districts) == 2
 
-    async def test_the_two_named_events_do_not_share_a_single_cell(
+    async def test_two_districts_never_come_out_of_a_single_cell(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         """Die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie schriebe: Dieselbe
         Zelle ergibt dieselbe Auskunft - zwei VERSCHIEDENE Viertel aus einer gemeinsamen Zelle
-        gaebe es nie."""
+        gaebe es nie.
+
+        Die Umkehrung gilt ausdruecklich NICHT: Zwei Events aus derselben Zelle tragen dasselbe
+        Viertel, und genau das ist seit Spec 0514 der Fall von Landmark- und
+        "Mehrere Orte"-Event. Geprueft wird deshalb JE VIERTEL gegen die uebrigen."""
         by_event, events, _names = await self._rated_state(db_session, tmp_path)
 
-        cells_per_named_event = [
-            {
+        named_events: dict[str, list[int]] = {}
+        cells_by_event: dict[int, set[tuple[float, float]]] = {}
+        for event_id, members in by_event.items():
+            name = events[event_id].place_name
+            if name is None:
+                continue
+            assert ", " in name, name
+            named_events.setdefault(name.split(", ")[1], []).append(event_id)
+            cells_by_event[event_id] = {
                 (round(photo.gps_lat, 2), round(photo.gps_lon, 2))
                 for photo in members
                 if photo.gps_lat is not None and photo.gps_lon is not None
             }
-            for event_id, members in by_event.items()
-            if events[event_id].place_name is not None
-        ]
-        assert len(cells_per_named_event) == 2
-        assert not cells_per_named_event[0] & cells_per_named_event[1]
 
-    async def test_the_landmark_event_and_the_placeless_event_carry_no_place_name(
+        assert len(named_events) == 2
+        # Der Fall, den die Zusage traegt: EIN Viertel wird von ZWEI Events getragen.
+        assert max(len(ids) for ids in named_events.values()) >= 2
+        [first, second] = named_events.values()
+        for left in first:
+            for right in second:
+                assert not cells_by_event[left] & cells_by_event[right]
+
+    async def test_the_landmark_event_carries_a_place_name_and_the_placeless_one_does_not(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
-        """Der Ortsname ersetzt eine Sehenswuerdigkeit nicht und tritt nicht daneben - und ohne
-        jede Ortsangabe gibt es nichts aufzuloesen. Ein Seeder, der das anders schriebe, erzeugte
-        einen Zustand, den die Anwendung selbst nie schreibt."""
+        """Spec 0514, ADR 0120: Der Ortsname tritt NEBEN die Sehenswuerdigkeit, statt von ihr
+        verdraengt zu werden - ohne diesen Fall zeigt `browse-app` die kombinierte Ueberschrift
+        nie. Und ohne jede Ortsangabe gibt es weiterhin nichts aufzuloesen. Ein Seeder, der das
+        anders schriebe, erzeugte einen Zustand, den die Anwendung selbst nie schreibt."""
         _by_event, events, _names = await self._rated_state(db_session, tmp_path)
 
+        landmark_events = [event for event in events.values() if event.place_kind == "landmark"]
+        assert landmark_events
         for event in events.values():
-            if event.place_kind == "landmark" or event.place_kind is None:
-                assert event.place_name is None, event.place_kind
+            if event.place_kind is None:
+                assert event.place_name is None
+            if event.place_kind == "landmark":
+                assert event.landmark_name is not None
+                assert event.place_name is not None
+                # Die KOORDINATENSTUFE bleibt verdraengt: der Name ist kein Ortsbezug.
+                assert (event.place_lat, event.place_lon) == (None, None)
 
     async def test_every_seeded_name_survives_the_sanitisation_unchanged(
         self, db_session: AsyncSession, tmp_path: Path

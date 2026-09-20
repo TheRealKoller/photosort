@@ -278,6 +278,50 @@ describe('AlbumDraftPage', () => {
     expect(heading.textContent).not.toContain('Position')
   })
 
+  it('setzt Name und Ortsnamen in EINEM Textknoten zusammen', async () => {
+    // Spec 0514, ADR 0120: Die Ueberschrift traegt beide Teile - als EIN Textknoten. Der
+    // Klammerzusatz mit der Fotozahl steht daneben in einem eigenen Element.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(
+      listOut([
+        photo({
+          event: eventOut({
+            place: { kind: 'landmark', landmark_name: 'Eiffelturm', lat: null, lon: null },
+            place_name: 'Paris, Gros-Caillou',
+          }),
+        }),
+      ]),
+    )
+
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { level: 3 })
+    expect(heading.textContent).toBe('Eiffelturm, Paris, Gros-Caillou (10:00–11:00 Uhr)')
+    expect(heading.childNodes).toHaveLength(1)
+    expect(heading.childNodes[0]?.nodeType).toBe(Node.TEXT_NODE)
+  })
+
+  it('rendert beide feindlichen Teile als Text, nicht als Markup', async () => {
+    // S1: Seit Spec 0514 treffen `landmark_name` und `place_name` in EINEM Wert zusammen - der
+    // Nachweis gilt jetzt fuer die zusammengesetzte Form, in beiden Feldern zugleich.
+    vi.mocked(photosApi.listPhotos).mockResolvedValue(
+      listOut([
+        photo({
+          event: eventOut({
+            place: { kind: 'landmark', landmark_name: hostile, lat: null, lon: null },
+            place_name: hostile,
+          }),
+        }),
+      ]),
+    )
+
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { level: 3 })
+    expect(heading.textContent).toBe(`${hostile}, ${hostile} (10:00–11:00 Uhr)`)
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+    expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
+  })
+
   describe('der Kopfbereich', () => {
     it('names the actual count and the target next to each other', async () => {
       vi.mocked(projectsApi.getProject).mockResolvedValue(

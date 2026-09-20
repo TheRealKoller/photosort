@@ -151,6 +151,48 @@ describe('DraftAlternativesDialog', () => {
     expect(await screen.findByRole('heading', { name: /Berlin, Kreuzberg/ })).toBeInTheDocument()
   })
 
+  it('setzt Name und Ortsnamen in EINEM Textknoten zusammen', async () => {
+    // Spec 0514, ADR 0120: Der Titel traegt beide Teile - und sie stehen als EIN Textknoten da.
+    // Zwei Kinder waeren eine zweite Darstellung derselben Ueberschrift.
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(listOut([]))
+
+    renderDialog({
+      photo: photo({
+        event: eventOut({
+          place: { kind: 'landmark', landmark_name: 'Eiffelturm', lat: null, lon: null },
+          place_name: 'Paris, Gros-Caillou',
+        }),
+      }),
+    })
+
+    const heading = await screen.findByRole('heading', { level: 2 })
+    expect(heading.textContent).toBe('Eiffelturm, Paris, Gros-Caillou (10:00–11:00 Uhr)')
+    expect(heading.childNodes).toHaveLength(1)
+    expect(heading.childNodes[0]?.nodeType).toBe(Node.TEXT_NODE)
+  })
+
+  it('rendert beide feindlichen Teile als Text, nicht als Markup', async () => {
+    // S1: Seit Spec 0514 treffen `landmark_name` (Modellantwort) und `place_name`
+    // (Ortsdatensatz Dritter) in EINEM Wert zusammen - der Nachweis gilt jetzt fuer die
+    // zusammengesetzte Form.
+    const hostile = '<img src=x onerror="window.__pwned = true">'
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(listOut([]))
+
+    renderDialog({
+      photo: photo({
+        event: eventOut({
+          place: { kind: 'landmark', landmark_name: hostile, lat: null, lon: null },
+          place_name: hostile,
+        }),
+      }),
+    })
+
+    const heading = await screen.findByRole('heading', { level: 2 })
+    expect(heading.textContent).toBe(`${hostile}, ${hostile} (10:00–11:00 Uhr)`)
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+    expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
+  })
+
   it('keeps the ORDER OF THE ANSWER and does not sort again', async () => {
     // Die Reihenfolge hängt an den Motiven des Bezugsbildes und entsteht im Backend. Eine zweite
     // Sortierung hier wäre eine zweite Wahrheit - und sie fiele nicht auf, weil beide plausibel

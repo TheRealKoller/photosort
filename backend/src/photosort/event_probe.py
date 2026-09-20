@@ -45,6 +45,7 @@ import sys
 from bisect import bisect_right
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 
 from sqlalchemy import select
@@ -843,6 +844,12 @@ class LandmarkCounts:
     """Block C3. Der Weg, ueber den eine Ortsaussage am weitesten danebenliegen kann: Ein Name
     benennt das GANZE Event und verdraengt dessen Koordinatenstufe.
 
+    Seit Spec 0514 (ADR 0120) benennt er es nur noch, wenn ihn mindestens `LANDMARK_MIN_SHARE`
+    seiner Mitglieder bezeugt. Die drei Zeilen `events_named`, `smallest_carrier_share` und
+    `events_below_share` sind die GEGENANZEIGE dazu: Eine Schwelle, die jede Benennung abschaltet,
+    waere mit den Widerspruchszahlen allein nicht zu bemerken. Der kleinste Anteil steht als
+    BRUCH - die Grenze ist der Gegenstand, und eine gerundete Zahl verloere sie.
+
     Gezaehlt werden WIDERSPRUECHE, nie Namen (S3): Ein in sich stimmiger Name ist ohne Rueckfrage
     bei einem bezahlten Dienst nicht ueberpruefbar. Dieser Block BELEGT diesen Weg, wo Widersprueche
     auftreten, und kann ihn nicht widerlegen."""
@@ -852,6 +859,9 @@ class LandmarkCounts:
     names_total: int
     names_spread_beyond_threshold: int
     events_named_by_a_single_photo: int
+    events_named: int
+    smallest_carrier_share: Fraction | None
+    events_below_share: int
 
 
 def _max_pairwise_meters(cells: Sequence[Cell]) -> float:
@@ -880,7 +890,18 @@ def landmark_counts(
 
     "Ohne jeden Ortshinweis" entscheidet `landmark.py::place_hint_for` - dieselbe eine Stelle, die
     auch im Betrieb entscheidet, was einer Erkennung beigelegt wird. Ein Foto ohne eigene
-    Koordinate bekommt dort `None`; ein uebernommener Ort erreicht die Funktion nie."""
+    Koordinate bekommt dort `None`; ein uebernommener Ort erreicht die Funktion nie.
+
+    DIE SCHWELLE WIRD BEI JEDER NUTZUNG FRISCH ALS MODULATTRIBUT GELESEN: Eine hier gebundene
+    Fassung pruefte gegen den Wert vom Importzeitpunkt, waehrend die vorgelegte Gliederung unter
+    einer anderen entstanden sein kann - und das ist genau der Fall, den `events_below_share`
+    sichtbar machen soll.
+
+    Traeger eines Eventnamens ist ein Foto mit GENAU diesem Namen; der Anteil ist Traeger geteilt
+    durch ALLE Mitglieder, nicht durch die Fotos mit Namen. Gerechnet wird ueber die
+    Traegerzaehlung, die dieser Block ohnehin fuehrt (`name_by_photo`) - NACHGEBAUT und nicht bei
+    `_name_of` erfragt, weil genau der Abstand zwischen der vorgelegten Gliederung und der heute
+    geltenden Schwelle der Messgegenstand ist."""
     named = [candidate for candidate in candidates if candidate.landmark_name is not None]
 
     without_hint = 0
@@ -904,13 +925,20 @@ def landmark_counts(
 
     name_by_photo = {candidate.photo_id: candidate.landmark_name for candidate in named}
     single_photo_named = 0
+    shares: list[Fraction] = []
+    below_share = 0
+    share = events_module.LANDMARK_MIN_SHARE
     for event in formation.events:
-        if event.landmark_name is None or len(event.photo_ids) < 2:
+        if event.landmark_name is None:
             continue
         carriers = sum(
             1 for photo_id in event.photo_ids if name_by_photo.get(photo_id) == event.landmark_name
         )
-        if carriers == 1:
+        carrier_share = Fraction(carriers, len(event.photo_ids))
+        shares.append(carrier_share)
+        if carrier_share < share:
+            below_share += 1
+        if carriers == 1 and len(event.photo_ids) >= 2:
             single_photo_named += 1
 
     return LandmarkCounts(
@@ -919,6 +947,11 @@ def landmark_counts(
         names_total=len({candidate.landmark_name for candidate in named}),
         names_spread_beyond_threshold=spread,
         events_named_by_a_single_photo=single_photo_named,
+        events_named=len(shares),
+        # KEIN `min()` UEBER EINE LEERE FOLGE: ohne benanntes Event ist der kleinste Anteil
+        # undefiniert, nicht null.
+        smallest_carrier_share=min(shares) if shares else None,
+        events_below_share=below_share,
     )
 
 
@@ -982,6 +1015,15 @@ def _percent(part: int, whole: int) -> str:
     if whole == 0:
         return "-"
     return f"{100.0 * part / whole:.1f} %"
+
+
+def _share(share: Fraction | None) -> str:
+    """Ein ANTEIL als BRUCH, nie in Prozent: An der Grenze selbst entscheidet der Nenner, und eine
+    gerundete Zahl verloere genau die Aussage, um die es in Block C3 geht. `None` heisst "kein
+    benanntes Event" - kein Wert, und ausdruecklich nicht die Null."""
+    if share is None:
+        return "kein benanntes Event"
+    return f"{share.numerator}/{share.denominator}"
 
 
 def _duration(seconds: float | None) -> str:
@@ -1400,6 +1442,10 @@ def render_report(
         f"{landmarks.names_spread_beyond_threshold}",
         f"- Events, deren Name auf genau einem von vielen Fotos beruht: "
         f"{landmarks.events_named_by_a_single_photo}",
+        f"- benannte Events: {landmarks.events_named}",
+        f"- kleinster Traegeranteil eines benannten Events: "
+        f"{_share(landmarks.smallest_carrier_share)}",
+        f"- Events UNTER dem Mindestanteil: {landmarks.events_below_share}",
         "",
         'Die Entfernungsschwelle vertritt "falsches Land": Der Laendercode steht nicht in den '
         "behaltenen",
