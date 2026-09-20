@@ -544,6 +544,14 @@ Ausgewiesen werden die Verteilung der Events nach Fotozahl (Block A), die Trennu
 er von seinem Hash ab, sagt Block C das ausdrücklich („NICHT GEMESSEN"), statt eine Null zu zeigen,
 die als gutes Messergebnis gelesen würde.
 
+Block A trägt zusätzlich den **Album-Richtwert** des Projekts und die Eventzahl gegen ihn. Der
+Richtwert kommt aus derselben Stelle, aus der ihn auch die Albumauswahl nimmt
+(`selection.py::effective_target`), und rechnet auf jedem Foto des Projekts; fällt diese Menge mit
+der gemessenen Kandidatenmenge auseinander, sagt der Bericht es. Der Block schreibt als Satz aus,
+was daraus folgt: Sind es mindestens so viele Events wie Plätze, vergibt „Abdeckung zuerst" jeden
+Platz, bevor die Gewichtung nach Größe überhaupt beginnt — jedes Event bekommt dann genau einen,
+und die Gewichtung bleibt wirkungslos.
+
 Block B trägt zusätzlich die **Gegenanzeige** des Zusammenlegens: wie viele Grenzen die dritte
 Stufe der Event-Bildung wieder aufgelöst hat und wie viele Fotos dadurch ihr Event gewechselt
 haben. Beides gehört zur Beurteilung dazu — der Anteil der Ein-Bild-Cluster und die Eventzahl
@@ -562,6 +570,12 @@ Ein-Bild-Cluster, Zahl der Grenzen mit `motivwechsel` als alleiniger Ursache sow
 Gegenanzeige gegen zu grobes Zusammenfassen — größtes Event und längste Dauer. **Beide Konstanten
 bleiben dabei unverändert:** Der Modus rechnet nur variiert durch und ist wie die Blöcke A–C rein
 lesend. Den Ortsauszug fragt er gar nicht.
+
+Neben dem Betriebswert trägt die Tabelle eine zweite Bezugszeile, beschriftet mit **`aus`**: den
+Motivwechsel ganz ohne Wirkung. Sie entsteht über ein Bestätigungsfenster, das größer ist als die
+Zahl der Kandidatenfotos und deshalb nie bestätigt werden kann — **einen Abschalter im
+Produktivcode gibt es dafür nicht und soll es nicht geben.** Die Zeile zeigt, wie die Gliederung
+ohne den Motivwechsel aussähe; aus keiner Rasterzeile ließe sich das erschließen.
 
 Mit `--riegel` weist dasselbe Kommando stattdessen aus, woran eine Zusammenlegung scheitert
 (Block F):
