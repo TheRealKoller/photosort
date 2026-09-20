@@ -1011,10 +1011,9 @@ def _class_lines(counts: Sequence[int], labels: Sequence[str]) -> list[str]:
 def _report_head(title: str, probe: EventProbeInput) -> str:
     """DIE EINE KOPFZEILE jedes Berichts dieses Kommandos: Titel, Projekt-Id, Laufkennung.
 
-    An einer Stelle, nicht je Modus: Vier Fassungen derselben Aussage waren vier Gelegenheiten,
-    eine davon zu vergessen - und genau so hat die Laufkennung neun PRs lang gefehlt, obwohl
-    Akzeptanzkriterium 4 der Spec 0506 sie verlangt. Ein kuenftiger Modus bekommt seinen Kopf von
-    hier oder wird von `TestEveryReportHeadComesFromTheOnePlace` rot gemeldet.
+    An einer Stelle, nicht je Modus: Vier Fassungen derselben Aussage sind vier Gelegenheiten, eine
+    davon zu vergessen. Ein kuenftiger Modus bekommt seinen Kopf von hier oder wird von
+    `TestEveryReportHeadComesFromTheOnePlace` rot gemeldet.
 
     BEIDE ZAHLEN SIND INTERNE KENNUNGEN und fallen unter keine der sechs Klassen aus S2: keine
     Koordinate, kein Orts-, Sehenswuerdigkeit- oder Projektname, kein OpenCloud-Pfad, kein
