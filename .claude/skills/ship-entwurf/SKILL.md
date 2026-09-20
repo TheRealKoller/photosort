@@ -1,6 +1,6 @@
 ---
 name: ship-entwurf
-description: Liefert aus, was ein abgeschlossener Penpot-Entwurfsrundenlauf im Repository verändert hat — misst den Diff selbst, prüft ihn gegen eine geschlossene Pfad-Zulassungsmenge, committet pfadgenau, gleicht mit `main` ab, pusht, eröffnet einen Pull Request und wartet danach auf das Ergebnis des CI-Laufs. Nutze diesen Skill, wenn ein Rundenlauf mit der Zeile `## Entwurfslauf abgeschlossen: Pull Request erwünscht` endet, oder wenn Daniel direkt danach fragt ("mach aus dem Entwurfslauf einen Pull Request"). Nicht nutzen für die Nachbereitung eines `developer`-Laufs (dafür `ship-feature`) und nicht, um einen Entwurf selbst zu bauen (dafür `penpot-entwurfsrunden`).
+description: 'Liefert aus, was ein abgeschlossener Penpot-Entwurfsrundenlauf im Repository verändert hat — misst den Diff selbst, prüft ihn gegen eine geschlossene Pfad-Zulassungsmenge, committet pfadgenau, gleicht mit `main` ab, pusht, eröffnet einen Pull Request und wartet danach auf das Ergebnis des CI-Laufs. Nutze diesen Skill, wenn ein Rundenlauf mit der Zeile `## Entwurfslauf abgeschlossen: Pull Request erwünscht` endet, oder wenn Daniel direkt danach fragt ("mach aus dem Entwurfslauf einen Pull Request"). Nicht nutzen für die Nachbereitung eines `developer`-Laufs (dafür `ship-feature`) und nicht, um einen Entwurf selbst zu bauen (dafür `penpot-entwurfsrunden`).'
 ---
 
 # Ship Entwurf — ein Entwurfsrundenlauf endet im Pull Request
