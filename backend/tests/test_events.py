@@ -1204,26 +1204,27 @@ class TestTheMotifChangeOnlyMarksABoundaryAndNeverOpensOne(_UnderEveryConfirming
         """Der rueckwirkende Beginn liegt auf dem VORTAG, das bestaetigende Foto dahinter - und
         KEINE der beiden Stellen trennt noch: die Mitternachtsgrenze nicht (seit ADR 0117) und der
         Motivwechsel nicht mehr (seit ADR 0119). Braucht `default_signals()`, weil genau dieser
-        Satz die Dauergrenze anstelle des Kalendertags fuehrt."""
-        before_midnight = datetime(2026, 7, 20, 23, 30, 0)
-        last_of_the_day = datetime(2026, 7, 20, 23, 59, 59)
-        after_midnight = datetime(2026, 7, 21, 0, 0, 0)
-        times = [before_midnight, before_midnight + EPSILON_TIME, last_of_the_day] + [
-            after_midnight + index * EPSILON_TIME for index in range(_window() - 1)
-        ]
+        Satz die Dauergrenze anstelle des Kalendertags fuehrt.
+
+        Die Fotos liegen einen Sekundenschritt auseinander, der Wechsel faellt auf das erste nach
+        Mitternacht. KEIN Abstand dieser Lage ist aus einer Uhrzeit gebaut: Ein Sprung von
+        `23:30` auf `23:59:59` risse unter einer kleineren Zeitluecken-Schwelle eine Grenze auf,
+        und der Fall maesse dann den Kalendertag gar nicht mehr."""
+        midnight = datetime(2026, 7, 21, 0, 0, 0)
         candidates = [
-            EventCandidate(photo_id=index, taken_at=taken_at, motif_strengths=picture)
-            for index, (taken_at, picture) in enumerate(
-                zip(
-                    times,
-                    [_picture("a")] * 2 + [_picture("a", "b")] * _window(),
-                    strict=True,
-                )
+            EventCandidate(
+                photo_id=index,
+                taken_at=midnight + (index - 2) * EPSILON_TIME,
+                motif_strengths=picture,
             )
+            for index, picture in enumerate([_picture("a")] * 2 + [_picture("a", "b")] * _window())
         ]
 
         events = _build(candidates, default_signals())
 
+        assert candidates[1].taken_at.date() != candidates[2].taken_at.date(), (
+            "sonst laeuft der Fall gar nicht ueber Mitternacht"
+        )
         assert motif_change_starts(candidates) == frozenset({2}), "sonst misst der Fall nichts"
         assert [event.photo_ids for event in events] == [tuple(range(_window() + 2))]
         assert events[0].started_at.date() != events[0].ended_at.date()
@@ -2195,13 +2196,18 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
     _MIDDLE = 0.8
     _ABSENT = 0.0
 
-    def _sequence(self, length: int) -> list[EventCandidate]:
+    def _sequence(self, length: int, *, strength: float | None = None) -> list[EventCandidate]:
         """Ein Bezugsfoto, dann `length` Fotos, in denen "b" mit mittlerer Staerke dazukommt.
 
         Ob daraus ein Wechsel wird, entscheidet allein die mitgegebene Grenze; wie viele Fotos ihn
-        bestaetigen muessen, allein die mitgegebene Fensterlaenge."""
+        bestaetigen muessen, allein die mitgegebene Fensterlaenge.
+
+        `strength` waehlt die Staerke von "b". Ein Fall, der KEINE Grenze mitgibt und trotzdem
+        einen Wechsel braucht, gibt `_CARRIED` mit: Diese Staerke liegt am oberen Rand der Skala
+        und wird unter JEDEM Betriebswert getragen. Mit der mittleren Staerke haenge er still am
+        heutigen `MOTIF_PRESENCE_THRESHOLD` und bliebe nach einer Verschiebung vakuum-gruen."""
         reference = {"a": self._CARRIED, "b": self._ABSENT}
-        deviating = {"a": self._CARRIED, "b": self._MIDDLE}
+        deviating = {"a": self._CARRIED, "b": self._MIDDLE if strength is None else strength}
         return _motif_candidates([reference, *([deviating] * length)])
 
     def _sequence_behind_a_gap(self, length: int) -> list[EventCandidate]:
@@ -2251,7 +2257,7 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
     ) -> None:
         """Der Zwilling gegen einen gebundenen Default: Das verschobene Modulattribut MUSS wirken,
         sonst ist die Konstante beim Import eingefroren."""
-        candidates = self._sequence(4)
+        candidates = self._sequence(4, strength=self._CARRIED)
         monkeypatch.setattr(events_module, "MOTIF_CHANGE_CONFIRMING_PHOTOS", 2)
 
         with_two = motif_change_starts(candidates)
@@ -2267,7 +2273,9 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
         Injizierbarkeit ueberhaupt eingebaut werden durfte. Geprueft ueber eine Folge, die unter
         den Betriebswerten tatsaechlich trennt: eine Folge ohne jeden Start waere hier
         vakuum-gruen."""
-        candidates = self._sequence(events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS)
+        candidates = self._sequence(
+            events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS, strength=self._CARRIED
+        )
         threshold = MOTIF_PRESENCE_THRESHOLD
 
         assert motif_change_starts(candidates) == motif_change_starts(
@@ -2306,7 +2314,9 @@ class TestTheMotifRuleTakesItsTwoFestlegungenInjectably:
         assert wide.causes[1] == frozenset({BOUNDARY_TIME_GAP})
 
     def test_the_explaining_form_without_arguments_is_the_run_itself(self) -> None:
-        candidates = self._sequence(events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS)
+        candidates = self._sequence(
+            events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS, strength=self._CARRIED
+        )
 
         assert explain_events(candidates) == explain_events(
             candidates,

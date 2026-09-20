@@ -749,10 +749,16 @@ def _motif_candidate(index: int, motifs: dict[str, float]) -> EventCandidate:
     )
 
 
-def _motif_sequence(deviating: int) -> list[EventCandidate]:
-    """Ein Bezugsfoto, dann `deviating` Fotos, die zusaetzlich das Motiv "b" tragen."""
+def _motif_sequence() -> list[EventCandidate]:
+    """Ein Bezugsfoto, dann Fotos, die zusaetzlich das Motiv "b" tragen - genug fuer eine
+    BESTAETIGUNG: eines mehr, als das Fenster verlangt.
+
+    Die Laenge kommt als MODULATTRIBUT aus `MOTIF_CHANGE_CONFIRMING_PHOTOS`, nie als Zahl. Eine
+    feste Zahl waere eine Zeitbombe: Unter einem groesseren Fenster bestaetigte kein Wechsel mehr,
+    und jeder Fall, der einen braucht, maesse still nichts."""
     reference = {"a": _CARRIED, "b": _ABSENT}
     changed = {"a": _CARRIED, "b": _CARRIED}
+    deviating = events_module.MOTIF_CHANGE_CONFIRMING_PHOTOS + 1
     return [
         _motif_candidate(index, picture)
         for index, picture in enumerate([reference, *([changed] * deviating)])
@@ -766,7 +772,7 @@ class TestBlockEMotifSensitivity:
     Nachbildung - eine zweite Fassung maesse etwas anderes, als der Lauf tut."""
 
     def test_the_grid_is_the_cross_product_plus_two_reference_rows(self) -> None:
-        candidates = _motif_sequence(2)
+        candidates = _motif_sequence()
 
         rows = motif_sensitivity(candidates)
 
@@ -786,7 +792,7 @@ class TestBlockEMotifSensitivity:
     def test_the_operating_row_is_the_run_itself(self) -> None:
         """Der Nullpunkt entsteht OHNE Ueberschreibung: Er muss die Gliederung sein, die auch der
         Lauf gebildet haette - sonst haette die Tabelle keinen Bezug, gegen den sie liest."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
         formation = explain_events(candidates)
 
         [operating] = [
@@ -808,7 +814,7 @@ class TestBlockEMotifSensitivity:
 
         Frueher stand hier die Ungleichung "ein kuerzeres Fenster trennt haeufiger". Sie ist mit
         der Trennwirkung entfallen und wurde ERSETZT statt angepasst."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
 
         rows = motif_sensitivity(candidates)
 
@@ -834,7 +840,7 @@ class TestBlockEMotifSensitivity:
     def test_the_motif_change_is_never_the_sole_cause_in_any_row(self) -> None:
         """Die Spalte "alleinige Ursache" steht seit ADR 0119 dauerhaft auf 0 - in JEDER Zeile,
         nicht nur in der Zeile "aus". Sie bleibt im Bericht: Die Null ist der Nachweis."""
-        rows = motif_sensitivity(_motif_sequence(6))
+        rows = motif_sensitivity(_motif_sequence())
 
         for row in rows:
             assert row.sole_motif_boundaries == 0
@@ -842,7 +848,7 @@ class TestBlockEMotifSensitivity:
     def test_every_row_carries_the_counter_indication_against_coarse_grouping(self) -> None:
         """Beide Abnahmezahlen wuerden von einem zu groben Zusammenfassen BESSER erfuellt - die
         Gegenanzeige steht deshalb in derselben Zeile, nicht daneben."""
-        candidates = _motif_sequence(4)
+        candidates = _motif_sequence()
 
         for row in motif_sensitivity(candidates):
             assert row.largest_event_photos >= 1
@@ -868,7 +874,7 @@ class TestBlockEMotifSensitivity:
 
         Die Gegenprobe steht daneben: Am Betriebswert trennt dieselbe Folge sehr wohl, sonst
         bestuende der Fall auch gegen ein wirkungsloses Fenster."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
 
         assert events_module.motif_change_starts(candidates), "sonst misst der Fall nichts"
         assert (
@@ -881,7 +887,7 @@ class TestBlockEMotifSensitivity:
     def test_the_switched_off_row_carries_the_window_it_used(self) -> None:
         """Die Zeile fuehrt den tatsaechlich gerechneten Wert mit - beschriftet wird sie als "aus",
         aber gemessen wurde mit einer Zahl, und die steht in den Daten."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
 
         [switched_off] = [row for row in motif_sensitivity(candidates) if row.motif_change_is_off]
 
@@ -893,7 +899,7 @@ class TestBlockEMotifSensitivity:
         """Dieselben Spalten, auch die Gegenanzeige: Ein ausgeschalteter Motivwechsel fasst am
         groebsten zusammen, und genau dort muessen groesstes Event und laengste Dauer ablesbar
         sein."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
 
         [switched_off] = [row for row in motif_sensitivity(candidates) if row.motif_change_is_off]
 
@@ -911,7 +917,7 @@ class TestBlockEMotifSensitivity:
         Frueher stand hier die Ungleichung "aus trennt nie mehr als der Betriebswert". Sie war
         wahr, solange die Stufe Grenzen erzeugte; sie ist mit ihr entfallen und ERSETZT statt
         angepasst."""
-        candidates = _motif_sequence(6)
+        candidates = _motif_sequence()
         rows = motif_sensitivity(candidates)
         operating, switched_off = rows[0], rows[1]
 
