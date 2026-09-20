@@ -1239,8 +1239,11 @@ def explain_events(
         # Die Liste wird VOLLSTAENDIG gebaut, bevor `any` sie liest - und sie traegt zugleich, WER
         # gemeldet hat. Ein `any` ueber einen Generator schnitte beides gleichzeitig ab.
         reporting = [signal.name for signal in active if signal.is_boundary(candidate)]
-        forced = index in forced_starts
-        if reporting or forced or not events:
+        # DER VERMERK, NICHT DER ERZWUNGENE START (ADR 0119): `noted` steht NICHT in der Bedingung
+        # darunter. Er faellt mit einer Grenze zusammen oder er ist wirkungslos; auf die naechste
+        # Grenze uebertragen wird er nie.
+        noted = index in forced_starts
+        if reporting or not events:
             for signal in active:
                 signal.begin(candidate)
             events.append([])
@@ -1249,7 +1252,7 @@ def explain_events(
             causes.append(
                 frozenset()
                 if index == 0
-                else frozenset(reporting) | ({BOUNDARY_MOTIF_CHANGE} if forced else set())
+                else frozenset(reporting) | ({BOUNDARY_MOTIF_CHANGE} if noted else set())
             )
         else:
             for signal in active:

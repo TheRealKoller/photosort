@@ -800,19 +800,44 @@ class TestBlockEMotifSensitivity:
             operating.sole_motif_boundaries == cause_counts(formation).sole[BOUNDARY_MOTIF_CHANGE]
         )
 
-    def test_a_shorter_window_splits_more_often_than_a_longer_one(self) -> None:
-        """Die Aussage, um derentwillen der Block gebaut ist - und sie steht als Ungleichung
-        zwischen zwei Zeilen, nie als Zahlwert."""
-        rows = {
-            row.confirming_photos: row
-            for row in motif_sensitivity(_motif_sequence(4))
-            if row.strength_threshold == MOTIF_STRENGTH_VARIANTS[0]
-        }
-        shortest = rows[min(MOTIF_CONFIRMING_VARIANTS)]
-        longest = rows[max(MOTIF_CONFIRMING_VARIANTS)]
+    def test_no_row_splits_differently_from_any_other(self) -> None:
+        """DIE AUSSAGE, UM DERENTWILLEN DER BLOCK SEIT ADR 0119 STEHT - und sie ist die Gleichheit
+        selbst: Der Motivwechsel eroeffnet kein Event mehr, also gliedert jede Kombination gleich,
+        die Zeile "aus" eingeschlossen. Waere eine Zeile verschieden, eroeffnete die erste Stufe
+        doch noch eine Grenze.
 
-        assert shortest.events_total > longest.events_total
-        assert shortest.sole_motif_boundaries > longest.sole_motif_boundaries
+        Frueher stand hier die Ungleichung "ein kuerzeres Fenster trennt haeufiger". Sie ist mit
+        der Trennwirkung entfallen und wurde ERSETZT statt angepasst."""
+        candidates = _motif_sequence(6)
+
+        rows = motif_sensitivity(candidates)
+
+        assert events_module.motif_change_starts(candidates), "sonst misst der Fall nichts"
+        assert len(rows) > 1
+        assert {
+            (
+                row.events_total,
+                row.single_photo_events,
+                row.largest_event_photos,
+                row.longest_seconds,
+            )
+            for row in rows
+        } == {
+            (
+                rows[0].events_total,
+                rows[0].single_photo_events,
+                rows[0].largest_event_photos,
+                rows[0].longest_seconds,
+            )
+        }
+
+    def test_the_motif_change_is_never_the_sole_cause_in_any_row(self) -> None:
+        """Die Spalte "alleinige Ursache" steht seit ADR 0119 dauerhaft auf 0 - in JEDER Zeile,
+        nicht nur in der Zeile "aus". Sie bleibt im Bericht: Die Null ist der Nachweis."""
+        rows = motif_sensitivity(_motif_sequence(6))
+
+        for row in rows:
+            assert row.sole_motif_boundaries == 0
 
     def test_every_row_carries_the_counter_indication_against_coarse_grouping(self) -> None:
         """Beide Abnahmezahlen wuerden von einem zu groben Zusammenfassen BESSER erfuellt - die
@@ -876,17 +901,25 @@ class TestBlockEMotifSensitivity:
         assert switched_off.largest_event_photos == len(candidates)
         assert switched_off.longest_seconds is not None
 
-    def test_switching_the_motif_change_off_never_splits_more_than_the_operating_point(
+    def test_switching_the_motif_change_off_groups_exactly_like_the_operating_point(
         self,
     ) -> None:
-        """Die Aussage, um derentwillen die Zeile existiert - als Ungleichung zwischen zwei Zeilen,
-        nie als Zahlwert."""
+        """DIE ZEILE, AN DER DIE ENTSCHEIDUNG ABZULESEN IST (ADR 0119): Der ausgeschaltete
+        Motivwechsel gliedert wie der Betriebswert - dieselbe Eventzahl, derselbe Ein-Bild-Anteil,
+        dasselbe groesste Event, dieselbe laengste Dauer.
+
+        Frueher stand hier die Ungleichung "aus trennt nie mehr als der Betriebswert". Sie war
+        wahr, solange die Stufe Grenzen erzeugte; sie ist mit ihr entfallen und ERSETZT statt
+        angepasst."""
         candidates = _motif_sequence(6)
         rows = motif_sensitivity(candidates)
         operating, switched_off = rows[0], rows[1]
 
-        assert switched_off.events_total < operating.events_total
-        assert switched_off.sole_motif_boundaries < operating.sole_motif_boundaries
+        assert events_module.motif_change_starts(candidates), "sonst misst der Fall nichts"
+        assert switched_off.events_total == operating.events_total
+        assert switched_off.single_photo_events == operating.single_photo_events
+        assert switched_off.largest_event_photos == operating.largest_event_photos
+        assert switched_off.longest_seconds == operating.longest_seconds
 
     def test_a_run_without_candidates_switches_off_without_an_invented_row(self) -> None:
         """Der entartete Fall: Ohne Kandidat gibt es nichts zu bestaetigen - das Fenster bleibt

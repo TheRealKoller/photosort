@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 import math
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -32,6 +32,7 @@ from photosort.cloud_vision import (
     default_vision_model_for_provider,
 )
 from photosort.criteria import CRITERIA_REGISTRY
+from photosort.event_inputs import read_event_inputs
 from photosort.landmark import (
     LANDMARK_CONFIDENCE_THRESHOLD,
     MAX_LANDMARK_NAME_LENGTH,
@@ -6657,8 +6658,12 @@ class TestTheRegisterMakesTheNamesUniform:
 
 # --------------------------------------------------------------------------------------
 # Die VERDRAHTUNG des Motivwechsels (Spec 0477). Die Regel selbst steht DB-frei in
-# tests/test_events.py; hier wird ausschliesslich geprueft, dass wirksame Staerken und
-# Dokument-Ausschluss tatsaechlich an `build_events` ankommen.
+# tests/test_events.py; hier wird ausschliesslich geprueft, dass wirksame Staerken
+# tatsaechlich an `build_events` ankommen - und dass sie die Gliederung seit ADR 0119 nicht mehr
+# bewegen. Was der Kandidat aus der Datenbank traegt (fehlende Kopfzeile gegen leeres Motivbild,
+# Dokument-Ausschluss, Handkorrektur), steht in tests/test_event_inputs.py: Seit dem Umzug nach
+# `event_inputs.py` ist das die Aufrufstelle, und ueber die Gliederung ist es nicht mehr
+# beobachtbar.
 # --------------------------------------------------------------------------------------
 
 _MOTIF_GROUPING_BASE = datetime(2026, 8, 12, 9, 0, 0)
@@ -6682,7 +6687,6 @@ async def _motif_grouping_run(
     *,
     vectors: Sequence[Mapping[str, float] | None],
     name: str,
-    excluded: Collection[int] = (),
 ) -> tuple[Project, CriterionScoringRun, list[Photo]]:
     """Ein bereits erfolgreicher Kriterien-Lauf samt Rangzeilen, bereit fuer
     `rebuild_run_grouping` - derselbe Weg zur Gliederung wie der Lauf selbst, aber ohne
@@ -6732,7 +6736,7 @@ async def _motif_grouping_run(
                 photo.id,
                 source=MotifAssessmentSource.CLOUD,
                 strengths=dict(vector),
-                excluded_document=index in excluded,
+                excluded_document=False,
                 provider="testanbieter",
                 computed_at=_MOTIF_GROUPING_BASE,
             )
@@ -6757,11 +6761,19 @@ async def _event_membership(session: AsyncSession, run_id: int) -> list[tuple[in
     return [tuple(grouped[position]) for position in sorted(grouped)]
 
 
-async def test_a_motif_change_alone_splits_the_grouping_of_a_run(
+async def test_a_motif_change_no_longer_splits_the_grouping_of_a_run(
     db_session: AsyncSession,
 ) -> None:
-    """Der ROT-ANKER steht daneben: dieselbe Folge ohne Motiv-Kopfzeilen ergibt genau EIN Event.
-    Minutenabstand, kein Ort, derselbe Kalendertag - kein anderes Signal kann hier trennen."""
+    """Seit ADR 0119 bewegt der Motivwechsel keine Grenze mehr - auch nicht durch den
+    Kriterien-Lauf hindurch. Ruinenbesuch, danach Mittagessen um die Ecke: Minutenabstand, kein
+    Ort, derselbe Kalendertag - kein Signal trennt, und die Gliederung ist EIN Event.
+
+    DER ROT-ANKER STEHT DAVOR, und er misst zugleich das Verdrahten: Die Kandidatenmenge, die der
+    Lauf baut, traegt einen BESTAETIGTEN Wechsel. Ohne ihn bestuende der Fall auch dann, wenn die
+    Motivstaerken den Durchlauf gar nicht erst erreichten.
+
+    Der Zwilling ohne Motiv-Kopfzeilen steht daneben: Er gliedert identisch, und genau das ist die
+    Zusage "die Gliederung haengt nicht mehr an der ersten Stufe" in ihrer Integrationsform."""
     window = _confirming_window()
     ruins = _motif_vector("bauwerk_sehenswuerdigkeit")
     lunch = _motif_vector("essen_trinken")
@@ -6772,6 +6784,11 @@ async def test_a_motif_change_alone_splits_the_grouping_of_a_run(
         db_session, vectors=[None] * (window + 2), name="ohne-motive"
     )
 
+    inputs = await read_event_inputs(db_session, with_motifs.id, [photo.id for photo in photos])
+    assert events_module.motif_change_starts(inputs.candidates) == frozenset({2}), (
+        "sonst misst der Fall nichts"
+    )
+
     await rebuild_run_grouping(db_session, with_motifs.id)
     await rebuild_run_grouping(db_session, without_motifs.id)
     await db_session.commit()
@@ -6779,112 +6796,7 @@ async def test_a_motif_change_alone_splits_the_grouping_of_a_run(
     assert await _event_membership(db_session, plain_run.id) == [
         tuple(photo.id for photo in plain_photos)
     ]
-    assert await _event_membership(db_session, run.id) == [
-        tuple(photo.id for photo in photos[:2]),
-        tuple(photo.id for photo in photos[2:]),
-    ]
-
-
-async def test_a_missing_motif_header_is_not_an_empty_motif_picture(
-    db_session: AsyncSession,
-) -> None:
-    """DAS ZWILLINGSPAAR an der Aufrufstelle: identisch gebaute Laeufe, die sich nur in "keine
-    Kopfzeile" gegen "Kopfzeile ohne getragenes Motiv" unterscheiden, mit ENTGEGENGESETZTER
-    Erwartung.
-
-    `.get(photo_id, {})` - die naheliegende Uebernahme aus `_apply_run_selection`, wo genau das
-    richtig ist - liesse beide Zustaende zusammenfallen, und keine Pruefung des privaten
-    Umwandlungshelfers allein saehe das. Im vollen Kriterien-Lauf ist die fehlende Kopfzeile nicht
-    herstellbar (die lokale Phase schreibt fuer jeden Kandidaten eine); der Fall laeuft deshalb
-    ueber `rebuild_run_grouping` und deckt damit zugleich den zweiten Aufrufer ab."""
-    window = _confirming_window()
-    carried = _motif_vector("menschen")
-    headerless_project, headerless_run, headerless_photos = await _motif_grouping_run(
-        db_session, vectors=[carried] + [None] * window, name="ohne-kopfzeile"
-    )
-    empty_project, empty_run, empty_photos = await _motif_grouping_run(
-        db_session, vectors=[carried] + [_motif_vector()] * window, name="leeres-motivbild"
-    )
-
-    await rebuild_run_grouping(db_session, headerless_project.id)
-    await rebuild_run_grouping(db_session, empty_project.id)
-    await db_session.commit()
-
-    assert await _event_membership(db_session, headerless_run.id) == [
-        tuple(photo.id for photo in headerless_photos)
-    ]
-    assert await _event_membership(db_session, empty_run.id) == [
-        (empty_photos[0].id,),
-        tuple(photo.id for photo in empty_photos[1:]),
-    ]
-
-
-async def test_a_user_correction_moves_an_event_boundary_like_a_model_statement(
-    db_session: AsyncSession,
-) -> None:
-    """Die Modellstaerken ALLEIN ergaeben ein Event; erst die Korrekturzeilen erzeugen die
-    Grenze. Rot-Anker gegen ein Lesen der rohen Staerkezeile statt `load_effective_strengths`."""
-    window = _confirming_window()
-    carried = _motif_vector("menschen")
-    corrected_project, corrected_run, corrected_photos = await _motif_grouping_run(
-        db_session, vectors=[carried] * (window + 1), name="mit-korrektur"
-    )
-    plain_project, plain_run, plain_photos = await _motif_grouping_run(
-        db_session, vectors=[carried] * (window + 1), name="ohne-korrektur"
-    )
-    user = User(username="daniel", password_hash="hashed-value")
-    db_session.add(user)
-    await db_session.flush()
-    for photo in corrected_photos[1:]:
-        db_session.add(
-            PhotoMotifCorrection(
-                photo_id=photo.id, user_id=user.id, motif_key="tiere", applies=True
-            )
-        )
-    await db_session.commit()
-
-    await rebuild_run_grouping(db_session, corrected_project.id)
-    await rebuild_run_grouping(db_session, plain_project.id)
-    await db_session.commit()
-
-    assert await _event_membership(db_session, plain_run.id) == [
-        tuple(photo.id for photo in plain_photos)
-    ]
-    assert await _event_membership(db_session, corrected_run.id) == [
-        (corrected_photos[0].id,),
-        tuple(photo.id for photo in corrected_photos[1:]),
-    ]
-
-
-async def test_an_excluded_document_never_moves_an_event_boundary(
-    db_session: AsyncSession,
-) -> None:
-    """Der einzige Fremdwert mit fotoweitem Hebel und ohne Handkorrekturpfad nimmt eine Aufnahme
-    auch aus diesem Trennsignal. Der Zwilling ohne das Flag steht daneben - sonst bestuende die
-    erste Haelfte auch bei einer durchgehend ungeteilten Gliederung.
-
-    UEBERGANGEN HEISST NIE AUSGESCHLOSSEN: die ausgeschlossenen Fotos stehen weiterhin in genau
-    einem Event."""
-    window = _confirming_window()
-    vectors = [_motif_vector("menschen")] + [_motif_vector("tiere")] * window
-    excluded_project, excluded_run, excluded_photos = await _motif_grouping_run(
-        db_session, vectors=vectors, name="ausgeschlossen", excluded=range(1, window + 1)
-    )
-    included_project, included_run, included_photos = await _motif_grouping_run(
-        db_session, vectors=vectors, name="nicht-ausgeschlossen"
-    )
-
-    await rebuild_run_grouping(db_session, excluded_project.id)
-    await rebuild_run_grouping(db_session, included_project.id)
-    await db_session.commit()
-
-    assert await _event_membership(db_session, excluded_run.id) == [
-        tuple(photo.id for photo in excluded_photos)
-    ]
-    assert await _event_membership(db_session, included_run.id) == [
-        (included_photos[0].id,),
-        tuple(photo.id for photo in included_photos[1:]),
-    ]
+    assert await _event_membership(db_session, run.id) == [tuple(photo.id for photo in photos)]
 
 
 class _AnimalOnlyInMarkedPhotos:
@@ -6912,11 +6824,14 @@ class _AnimalOnlyInMarkedPhotos:
         )
 
 
-async def test_the_local_motif_basis_alone_splits_a_run_without_any_cloud_phase(
+async def test_the_local_motif_basis_reaches_the_run_without_moving_a_boundary(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     """Eine Cloud-Klassifizierung wird NICHT vorausgesetzt: die Motivbilder dieses Laufs entstehen
-    aus dem echten `local_motif_strengths` ueber die eingespielten Detektoren."""
+    aus dem echten `local_motif_strengths` ueber die eingespielten Detektoren.
+
+    Gemessen wird das VERDRAHTEN, nicht mehr eine Trennung: Die lokal gerechneten Staerken stehen
+    an den Fotos, und die Gliederung bleibt trotzdem ein einziges Event (ADR 0119)."""
     window = _confirming_window()
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
@@ -6952,7 +6867,4 @@ async def test_the_local_motif_basis_alone_splits_a_run_without_any_cloud_phase(
     assert [strengths[photo.id]["tiere"].strength for photo in photos] == [0.0, 0.0] + [1.0] * (
         window
     ), "ohne zwei verschiedene LOKALE Motivbilder prueft der Fall nichts"
-    assert await _event_membership(db_session, run.id) == [
-        tuple(photo.id for photo in photos[:2]),
-        tuple(photo.id for photo in photos[2:]),
-    ]
+    assert await _event_membership(db_session, run.id) == [tuple(photo.id for photo in photos)]
