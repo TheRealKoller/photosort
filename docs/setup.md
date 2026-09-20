@@ -544,6 +544,92 @@ Ausgewiesen werden die Verteilung der Events nach Fotozahl (Block A), die Trennu
 er von seinem Hash ab, sagt Block C das ausdrücklich („NICHT GEMESSEN"), statt eine Null zu zeigen,
 die als gutes Messergebnis gelesen würde.
 
+Block A trägt zusätzlich den **Album-Richtwert** des Projekts und die Eventzahl gegen ihn. Der
+Richtwert kommt aus derselben Stelle, aus der ihn auch die Albumauswahl nimmt
+(`selection.py::effective_target`), und rechnet auf jedem Foto des Projekts; fällt diese Menge mit
+der gemessenen Kandidatenmenge auseinander, sagt der Bericht es. Der Block schreibt als Satz aus,
+was daraus folgt: Sind es mindestens so viele Events wie Plätze, vergibt „Abdeckung zuerst" jeden
+Platz, bevor die Gewichtung nach Größe überhaupt beginnt — jedes Event bekommt dann genau einen,
+und die Gewichtung bleibt wirkungslos.
+
+Block B trägt zusätzlich die **Gegenanzeige** des Zusammenlegens: wie viele Grenzen die dritte
+Stufe der Event-Bildung wieder aufgelöst hat und wie viele Fotos dadurch ihr Event gewechselt
+haben. Beides gehört zur Beurteilung dazu — der Anteil der Ein-Bild-Cluster und die Eventzahl
+würden von einer zu aggressiven Verschmelzung *besser* aussehen.
+
+Mit `--motiv` misst dasselbe Kommando stattdessen, wie empfindlich die Gliederung auf den
+Motivwechsel reagiert (Block E):
+
+```bash
+docker compose exec -T backend python -m photosort.event_probe --project-id <N> --motiv
+```
+
+Dieselbe Kandidatenmenge wird dafür unter mehreren Kombinationen aus der Zahl der bestätigenden
+Fotos und der Motivstärke-Grenze durchgerechnet; je Kombination stehen Eventzahl, Anteil der
+Ein-Bild-Cluster, Zahl der Grenzen mit `motivwechsel` als alleiniger Ursache sowie — als
+Gegenanzeige gegen zu grobes Zusammenfassen — größtes Event und längste Dauer. **Beide Konstanten
+bleiben dabei unverändert:** Der Modus rechnet nur variiert durch und ist wie die Blöcke A–C rein
+lesend. Den Ortsauszug fragt er gar nicht.
+
+Neben dem Betriebswert trägt die Tabelle eine zweite Bezugszeile, beschriftet mit **`aus`**: den
+Motivwechsel ganz ohne Wirkung. Sie entsteht über ein Bestätigungsfenster, das größer ist als die
+Zahl der Kandidatenfotos und deshalb nie bestätigt werden kann — **einen Abschalter im
+Produktivcode gibt es dafür nicht und soll es nicht geben.** Die Zeile zeigt, wie die Gliederung
+ohne den Motivwechsel aussähe; aus keiner Rasterzeile ließe sich das erschließen.
+
+Mit `--riegel` weist dasselbe Kommando stattdessen aus, woran eine Zusammenlegung scheitert
+(Block F):
+
+```bash
+docker compose exec -T backend python -m photosort.event_probe --project-id <N> --riegel
+```
+
+Je zu kleinem Segment, das die dritte Stufe **nicht** zuschlagen konnte, stehen die Gründe an
+seinen Kanten — `unantastbar`, `zeitluecke`, `dauer`, `ausdehnung` oder `kein_nachbar`. Ein Segment
+hat so viele Kanten, wie es Nachbarn hat, und an einer Kante dürfen **mehrere** Gründe gleichzeitig
+stehen; ausgewiesen werden alle. `kein_nachbar` greift nur, wenn es überhaupt keinen Nachbarn gibt.
+
+Gezählt wird zweifach wie in Block B: „an einer Kante beteiligt" und „an allen Kanten der Grund".
+**Nur die zweite Spalte ist handlungsleitend** — sie zählt die Segmente, an deren *jeder* Kante
+dieser Grund stand und sonst keiner; allein dort löst seine Behebung die Zusammenlegung aus. Steht
+daneben ein zweiter Grund, bleibt die Kante auch ohne diesen gesperrt.
+
+Der Modus rechnet dieselbe Gliederung wie die Blöcke A und B, beobachtet dabei nur — an Riegeln,
+Schwellen und Gliederung ändert er nichts — und fragt den Ortsauszug so wenig wie `--motiv`.
+
+Mit `--kohaerenz` misst dasselbe Kommando stattdessen, ob die größten Events jeweils einem Anlass
+entsprechen:
+
+```bash
+docker compose exec -T backend python -m photosort.event_probe --project-id <N> --kohaerenz
+```
+
+Der Bericht stellt **zwei Gliederungen nebeneinander**: den Betriebswert und den Motivwechsel
+`aus`. Je Gliederung stehen höchstens die acht größten Events nach Fotozahl mit **fünf Anzahlen** —
+Fotozahl, davon mit gemessener Koordinate, Dauer, Zahl der verschiedenen Ortszellen und Zahl der
+verschiedenen getragenen Motive —, darüber die Verteilung der Zell- und Motivzahlen über *alle*
+Events.
+
+**Nur Anzahlen, keine Zelle und kein Name:** Die Aussage entsteht aus den Zahlen selbst. Ein Event
+über fünf Stunden mit *zwei* Ortszellen ist ein Ausflug, eines mit *sechs* sind mehrere
+verschmolzene Anlässe. Die Tabelle ist bewusst ein **Ausschnitt** und sagt das auch — eine Zeile je
+Event wäre über die Zellzahlen eine Bewegungsspur. Sortiert wird nach den gemessenen Werten, nie
+nach der Position im Lauf; eine Position oder Kennung des Events steht nirgends.
+
+**Diese Lesart gilt nur, soweit die Fotos des Events gemessen sind.** In die Ortszellen gehen
+ausschließlich Fotos mit eigener Koordinate ein — ein übernommener Ort speist sie nie. Liegt die
+Spalte „davon gemessen" weit unter der Fotozahl, ist eine kleine Zellzahl keine Aussage über den
+Anlass, sondern eine Lücke in der Messung, und sie sieht genauso aus wie ein Befund. Wie groß der
+Anteil insgesamt ist, steht in Block C1 des Hauptberichts.
+
+Die zweite Gliederung entsteht über dasselbe unerreichbare Bestätigungsfenster wie die Zeile `aus`
+bei `--motiv` — **einen Abschalter im Produktivcode gibt es dafür nicht.** Wie `--motiv` und
+`--riegel` rechnet der Modus nur, ändert an Gliederung und Schwellen nichts und fragt den
+Ortsauszug gar nicht.
+
+`--motiv`, `--riegel` und `--kohaerenz` schließen einander paarweise aus; zwei davon zusammen
+brechen mit einer Meldung ab.
+
 ## Lokal ausprobieren ohne echten OpenCloud-Server
 
 Für einen ersten Eindruck (Ordner-Browsing, Foto-Scan, automatische Bewertung) braucht es keinen

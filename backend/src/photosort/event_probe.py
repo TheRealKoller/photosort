@@ -51,16 +51,25 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# `events_module` STEHT NEBEN DER NAMENSLISTE UNTEN, NICHT STATT IHRER, und traegt genau die
+# aenderbaren Festlegungen: `MIN_EVENT_PHOTOS` wird bei jeder Nutzung frisch als MODULATTRIBUT
+# gelesen. Ein `from ... import` baende den Wert beim Import - jede Fixture, die die Konstante
+# verschiebt, liefe hier ins Leere, und der Bericht zaehlte still gegen eine andere Mindestgroesse
+# als die, nach der gegliedert wurde. Die Namen in der Liste sind Typen, Funktionen und
+# geschlossene Wortschaetze, keine Festlegungen.
+from photosort import events as events_module
 from photosort.config import settings
 from photosort.db import make_engine, make_session_factory
 from photosort.event_inputs import read_event_inputs
 from photosort.events import (
     BOUNDARY_CAUSES,
-    MIN_EVENT_PHOTOS,
+    BOUNDARY_MOTIF_CHANGE,
+    MERGE_BLOCK_REASONS,
     EventCandidate,
     EventFormation,
     LocationEntry,
     explain_events,
+    has_measured_coordinate,
     inherited_locations,
 )
 from photosort.geonames import GeoNamesResolver, PlaceDatasetError, build_geonames_resolver
@@ -73,6 +82,7 @@ from photosort.models import (
 )
 from photosort.places import PlaceInfo, place_cell, usable_locality
 from photosort.scoring import haversine_meters
+from photosort.selection import carried_motifs, effective_target
 
 Cell = tuple[float, float]
 
@@ -101,6 +111,17 @@ DISTANCE_CLASS_LABELS = (
     "5 km bis unter 10 km",
     "10 km und mehr",
 )
+
+# DAS RASTER DER EMPFINDLICHKEITSMESSUNG (Block E). Beide Achsen sind Messparameter,
+# keine Schwellen des Produkts: Sie legen fest, WO gemessen wird, und aendern an keinem Betriebswert
+# etwas. `MOTIF_CHANGE_CONFIRMING_PHOTOS` (events.py) und die Motivstaerke-Grenze (selection.py)
+# bleiben in diesem Schritt unveraendert und werden ausschliesslich variiert durchgerechnet.
+#
+# DER BETRIEBSWERT LAEUFT NICHT ALS RASTERZELLE MIT, sondern als eigene erste Zeile ohne jede
+# Ueberschreibung - so traegt die Tabelle ihren eigenen Nullpunkt auch dann noch, wenn einer der
+# beiden Werte spaeter wandert und in keiner Rasterzelle mehr steht.
+MOTIF_CONFIRMING_VARIANTS = (2, 3, 4, 5, 6)
+MOTIF_STRENGTH_VARIANTS = (0.3, 0.4, 0.5, 0.6, 0.7)
 
 TIME_CLASS_BOUNDS = (60.0, 300.0, 1800.0, 7200.0, 43200.0)
 TIME_CLASS_LABELS = (
@@ -132,6 +153,15 @@ def _class_counts(values: Iterable[float], bounds: Sequence[float]) -> tuple[int
     return tuple(counts)
 
 
+def _tally(values: Iterable[int]) -> dict[int, int]:
+    """Wie oft jeder Wert vorkommt - eine VERTEILUNG, keine Folge. Ein Aggregat ueber eine Menge
+    sagt nichts ueber die Reihenfolge, in der ihre Werte entstanden sind."""
+    counts: dict[int, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
 def _beyond_threshold(meters: float) -> bool:
     """Oberhalb der Entfernungsschwelle - DIE EINE Stelle, an der der Vergleich steht.
 
@@ -151,13 +181,38 @@ class EventProbeInput:
     Inferenzbasis der Ortsherleitung (jedes Foto des Projekts). Beide kommen aus
     `event_inputs.py` - derselben Stelle, aus der sie auch der Lauf bezieht (ADR 0117 Punkt 5).
 
-    `run_found` unterscheidet "Projekt ohne erfolgreichen Kriterien-Lauf" von "Lauf ohne
-    Kandidaten"."""
+    `run_id` ist die Kennung des gemessenen Kriterien-Laufs; `None` heisst "dieses Projekt hat
+    keinen erfolgreichen Lauf" und ist etwas anderes als "ein Lauf ohne Kandidaten". Sie steht in
+    jedem Berichtskopf: Ohne sie laesst sich ein Protokolleintrag keinem Lauf mehr zuordnen, und
+    zwei Messungen desselben Projekts sehen aus wie dieselbe (Akzeptanzkriterium 4 der Spec 0506).
+
+    EIN FELD, NICHT ZWEI: `run_found` ist abgeleitet, nicht daneben gespeichert. Zwei unabhaengige
+    Angaben koennten dasselbe Verschiedenes behaupten - ein `run_found=True` ohne Kennung ergaebe
+    einen Berichtskopf ohne Lauf, ein `run_found=False` mit Kennung einen Abbruch trotz messbarer
+    Gliederung. Abgeleitet ist der Widerspruch nicht darstellbar.
+
+    `selection_target` ist der EINGESTELLTE Richtwert des Projekts; `None` heisst "nicht selbst
+    eingestellt" und ist etwas anderes als "kein Richtwert" (`models.py::Project`)."""
 
     project_id: int
     candidates: tuple[EventCandidate, ...]
     entries: tuple[LocationEntry, ...]
-    run_found: bool
+    run_id: int | None
+    selection_target: int | None = None
+
+    @property
+    def run_found(self) -> bool:
+        return self.run_id is not None
+
+    @property
+    def project_photos(self) -> int:
+        """Die Bilderzahl, auf der der Album-Richtwert rechnet.
+
+        DIESELBE MENGE, DIE AUCH DER LAUF ZAEHLT: `entries` ist jedes Foto dieses Projekts
+        (`event_inputs.py`, Bindung an `Photo.project_id` ohne weitere Einschraenkung), also genau
+        die Menge hinter `count(Photo where project_id)` in `worker.py`. Eine zweite Zaehlung
+        daneben koennte mit ihr auseinanderlaufen."""
+        return len(self.entries)
 
 
 # --- Block A: wie sich die Bilder ueber die Cluster verteilen ------------------------------------
@@ -181,6 +236,63 @@ class SizeCounts:
     shortest_seconds: float | None
 
 
+@dataclass(frozen=True)
+class QuotaReach:
+    """Ob die Kontingentvergabe der Albumauswahl ueberhaupt gewichten kann - Block A.
+
+    DIE EIGENTLICHE ABNAHMEZAHL dieser Messung. `selection.py::_quotas` vergibt nach "Abdeckung
+    zuerst" jedem Event zuerst einen Platz und verteilt erst den REST nach Groesse. Ist die
+    Eventzahl mindestens so gross wie der Richtwert, ist nach diesem ersten Schritt kein Platz mehr
+    uebrig (`remaining <= 0`, `selection.py`): Jedes Event bekommt genau einen, und die Gewichtung
+    kommt nie zum Zug. Der Anteil der Ein-Bild-Cluster sagt darueber nichts - er faellt auch dann,
+    wenn die Grundmenge mitschrumpft.
+
+    `target` kommt aus `selection.effective_target`, NICHT aus einer zweiten Fassung der
+    Ableitung: Zwei Formeln liefen beim naechsten Grenzfall auseinander, und der Bericht behauptete
+    dann einen Richtwert, nach dem die Auswahl gar nicht arbeitet.
+
+    `project_photos` und `candidates_total` stehen NEBENEINANDER, weil sie verschiedene Mengen sind
+    (Auswertungsgrenze): Der Richtwert rechnet auf jedem Foto des Projekts, die gemessene
+    Gliederung auf der Kandidatenmenge des letzten erfolgreichen Laufs. Fallen sie auseinander,
+    gehoert das in den Bericht statt verrechnet zu werden."""
+
+    target: int
+    target_is_configured: bool
+    project_photos: int
+    candidates_total: int
+    events_total: int
+
+    @property
+    def free_seats(self) -> int:
+        """Die Plaetze, die nach "Abdeckung zuerst" noch zu verteilen sind - nie negativ: `_quotas`
+        vergibt keine Plaetze zurueck, es bleibt bei einem je Event."""
+        return max(self.target - self.events_total, 0)
+
+    @property
+    def weighting_is_effective(self) -> bool:
+        """Gleichstand zaehlt schon als "wirkungslos": `_quotas` bricht ab, sobald nach der
+        Abdeckung nichts mehr uebrig ist."""
+        return self.events_total < self.target
+
+    @property
+    def measured_on_the_same_set(self) -> bool:
+        return self.project_photos == self.candidates_total
+
+
+def quota_reach(probe: EventProbeInput, events_total: int) -> QuotaReach:
+    """Der Album-Richtwert dieses Projekts und die Eventzahl gegen ihn - rein.
+
+    Rein lesend wie der ganze Bericht: `effective_target` rechnet, es schreibt nichts, und an
+    `selection.py` aendert dieser Lauf nichts."""
+    return QuotaReach(
+        target=effective_target(probe.selection_target, probe.project_photos),
+        target_is_configured=probe.selection_target is not None,
+        project_photos=probe.project_photos,
+        candidates_total=len(probe.candidates),
+        events_total=events_total,
+    )
+
+
 async def read_event_probe_input(session: AsyncSession, project_id: int) -> EventProbeInput:
     """Der EINZIGE Datenbankzugriff dieses Moduls, und er liest ausschliesslich.
 
@@ -194,11 +306,14 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
 
     Alles Weitere kommt aus `event_inputs.py` - derselben Stelle, aus der auch der Lauf es bezieht
     (ADR 0117 Punkt 5)."""
-    project_id_found = (
-        await session.execute(select(Project.id).where(Project.id == project_id))
-    ).scalar_one_or_none()
-    if project_id_found is None:
+    project_row = (
+        await session.execute(
+            select(Project.id, Project.selection_target).where(Project.id == project_id)
+        )
+    ).one_or_none()
+    if project_row is None:
         raise EventProbeError(f"Es gibt kein Projekt mit der Id {project_id}.")
+    selection_target = project_row.selection_target
 
     run_id = (
         await session.execute(
@@ -217,7 +332,8 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
             project_id=project_id,
             candidates=(),
             entries=inputs.entries,
-            run_found=False,
+            run_id=None,
+            selection_target=selection_target,
         )
 
     photo_ids = list(
@@ -236,7 +352,8 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
         project_id=project_id,
         candidates=inputs.candidates,
         entries=inputs.entries,
-        run_found=True,
+        run_id=run_id,
+        selection_target=selection_target,
     )
 
 
@@ -250,9 +367,7 @@ def size_counts(formation: EventFormation) -> SizeCounts:
     dieser Spec, und ein Mittelwert verbirgt ihn."""
     sizes = [len(event.photo_ids) for event in formation.events]
     durations = [(event.ended_at - event.started_at).total_seconds() for event in formation.events]
-    by_size: dict[int, int] = {}
-    for size in sizes:
-        by_size[size] = by_size.get(size, 0) + 1
+    by_size = _tally(sizes)
     return SizeCounts(
         events_total=len(sizes),
         photos_total=sum(sizes),
@@ -277,12 +392,25 @@ class CauseCounts:
     Alle drei Abbildungen fuehren JEDE Ursache aus `BOUNDARY_CAUSES`, auch die nie gemeldete. Eine
     fehlende Zeile waere ein still unvollstaendiger Bericht, ohne dass eine Summe kleiner wuerde.
 
-    `boundaries_total` ist `Eventzahl - 1`: Das erste Segment eines Laufs traegt keine Ursache."""
+    `boundaries_total` ist `Eventzahl - 1`: Das erste Segment eines Laufs traegt keine Ursache.
+
+    DIE GEGENANZEIGE steht daneben, und sie gehoert zu Block B: Beide Abnahmezahlen dieser Spec -
+    der Anteil der Ein-Bild-Cluster und die Eventzahl - wuerden von einer zu aggressiven
+    Verschmelzung BESSER erfuellt. Ohne `dissolved_by_merge` und `photos_moved_by_merge` misst eine
+    Nachmessung nur die Unter-Zerstueckelung und bemerkte die Ueberverschmelzung nicht.
+
+    `boundaries_before_merge` ist die Bezugsgroesse der Aufloesungen - die Zahl der Grenzen, die
+    der Durchlauf erzeugt hat. Gegen `boundaries_total` gerechnet wuerde der Anteil mit jeder
+    weiteren Aufloesung groesser statt aussagekraeftiger."""
 
     boundaries_total: int
     involved: dict[str, int]
     sole: dict[str, int]
     opening_a_small_segment: dict[str, int]
+    photos_total: int
+    boundaries_before_merge: int
+    dissolved_by_merge: int
+    photos_moved_by_merge: int
 
 
 def cause_counts(formation: EventFormation) -> CauseCounts:
@@ -307,19 +435,317 @@ def cause_counts(formation: EventFormation) -> CauseCounts:
     sole = {cause: 0 for cause in BOUNDARY_CAUSES}
     opening_small = {cause: 0 for cause in BOUNDARY_CAUSES}
     for event, causes in zip(formation.events[1:], formation.causes[1:], strict=True):
-        small = len(event.photo_ids) < MIN_EVENT_PHOTOS
+        small = len(event.photo_ids) < events_module.MIN_EVENT_PHOTOS
         for cause in causes:
             involved[cause] += 1
             if len(causes) == 1:
                 sole[cause] += 1
             if small:
                 opening_small[cause] += 1
+    # `max(..., 0)`: Ein Lauf ohne ein einziges Event hat null Grenzen, nicht minus eine.
+    boundaries_total = max(len(formation.events) - 1, 0)
     return CauseCounts(
-        # `max(..., 0)`: Ein Lauf ohne ein einziges Event hat null Grenzen, nicht minus eine.
-        boundaries_total=max(len(formation.events) - 1, 0),
+        boundaries_total=boundaries_total,
         involved=involved,
         sole=sole,
         opening_a_small_segment=opening_small,
+        photos_total=sum(len(event.photo_ids) for event in formation.events),
+        boundaries_before_merge=boundaries_total + formation.dissolved_boundaries,
+        dissolved_by_merge=formation.dissolved_boundaries,
+        photos_moved_by_merge=formation.moved_photos,
+    )
+
+
+# --- Block F: woran eine Zusammenlegung scheitert ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BlockCounts:
+    """Block F. ZWEI Zahlen je Grund, und nur die zweite ist handlungsleitend.
+
+    `involved` - der Grund stand an mindestens einer Kante des Segments.
+
+    `at_every_edge` - er stand an JEDER Kante, und an keiner stand etwas daneben. Nur dann loest
+    seine Behebung dieses Segment tatsaechlich auf: Bleibt an einer Kante ein zweiter Grund
+    stehen, bleibt die Kante gesperrt; und ein Grund, der nur an einer von zwei Kanten stand, hat
+    die Zusammenlegung nicht fuer sich verhindert. Das ist dieselbe Bedeutung wie "alleinige
+    Ursache" in Block B, eine Ebene tiefer angewandt.
+
+    Beide Abbildungen fuehren JEDEN Grund aus `MERGE_BLOCK_REASONS`, auch den nie aufgetretenen.
+    Eine fehlende Zeile waere ein still unvollstaendiger Bericht, ohne dass eine Summe kleiner
+    wuerde.
+
+    Gezaehlt werden SEGMENTE, nie Kanten: Die Frage ist, wie viele Zusammenlegungen ein Grund
+    verhindert hat, nicht wie oft er auftrat."""
+
+    blocked_segments: int
+    involved: dict[str, int]
+    at_every_edge: dict[str, int]
+
+
+def block_counts(formation: EventFormation) -> BlockCounts:
+    """Block F ueber die Beobachtung DESSELBEN Durchlaufs, der auch die Gliederung gebildet hat.
+
+    Ein Grund ausserhalb des geschlossenen Vorrats laesst diese Zaehlung LAUT scheitern statt sie
+    zu uebergehen: ein kuenftiger Riegel ohne Eintrag in `MERGE_BLOCK_REASONS` verschwaende sonst
+    aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
+    known = set(MERGE_BLOCK_REASONS)
+    unknown = sorted(
+        {
+            reason
+            for blocked in formation.blocked_segments
+            for edge in blocked.edges
+            for reason in edge
+        }
+        - known
+    )
+    if unknown:
+        raise EventProbeError(
+            "Grund ausserhalb des geschlossenen Vorrats: "
+            f"{', '.join(unknown)}. Der Bericht waere still unvollstaendig - erst "
+            "MERGE_BLOCK_REASONS ergaenzen."
+        )
+
+    involved = {reason: 0 for reason in MERGE_BLOCK_REASONS}
+    at_every_edge = {reason: 0 for reason in MERGE_BLOCK_REASONS}
+    for blocked in formation.blocked_segments:
+        for reason in {reason for edge in blocked.edges for reason in edge}:
+            involved[reason] += 1
+        # "An allen Kanten DER Grund": jede Kante traegt genau einen Grund, und ueberall denselben.
+        alone = {next(iter(edge)) for edge in blocked.edges if len(edge) == 1}
+        if len(alone) == 1 and all(len(edge) == 1 for edge in blocked.edges):
+            [only] = alone
+            at_every_edge[only] += 1
+    return BlockCounts(
+        blocked_segments=len(formation.blocked_segments),
+        involved=involved,
+        at_every_edge=at_every_edge,
+    )
+
+
+# --- Block E: die Empfindlichkeit des Motivwechsels ----------------------------------------------
+
+
+@dataclass(frozen=True)
+class MotifSensitivityRow:
+    """Eine Zeile des Rasters: dieselbe Kandidatenmenge unter einer Kombination durchgerechnet.
+
+    `confirming_photos` und `strength_threshold` sind `None` in der Zeile des BETRIEBSWERTS - sie
+    entsteht ohne jede Ueberschreibung und ist damit die Gliederung, die auch der Lauf bildete.
+
+    `motif_change_is_off` kennzeichnet die andere Randzeile: den Motivwechsel ganz ohne Wirkung.
+    Sie fuehrt in `confirming_photos` das tatsaechlich gerechnete Fenster mit, wird aber als "aus"
+    beschriftet - die Zahl ist ein Rechenmittel, kein messbarer Betriebspunkt.
+
+    DIE LETZTEN BEIDEN FELDER SIND DIE GEGENANZEIGE: Eventzahl und Ein-Bild-Anteil wuerden von
+    einem zu groben Zusammenfassen BESSER erfuellt; groesstes Event und laengste Dauer stehen
+    deshalb in derselben Zeile, nicht daneben. `longest_seconds` ist `None`, wenn es kein Event
+    gibt - eine Null hiesse "das laengste Event dauert nichts"."""
+
+    confirming_photos: int | None
+    strength_threshold: float | None
+    events_total: int
+    single_photo_events: int
+    sole_motif_boundaries: int
+    largest_event_photos: int
+    longest_seconds: float | None
+    motif_change_is_off: bool = False
+
+
+def motif_change_off_window(candidates: Sequence[EventCandidate]) -> int:
+    """Ein Bestaetigungsfenster, das diese Kandidatenmenge NIE bestaetigen kann - der Motivwechsel
+    damit aus, OHNE einen Abschaltpfad im Produktivcode.
+
+    `motif_change_starts` bestaetigt einen Wechsel erst, wenn so viele aufeinanderfolgende
+    mitredende Fotos ihn zeigen, wie das Fenster lang ist; mehr als alle Kandidatenfotos koennen
+    das nie sein. Ein Fenster von "Kandidatenzahl plus eins" ist deshalb unerreichbar, und es
+    entsteht keine einzige Motivgrenze.
+
+    Bewusst kein Schalter an `motif_change_starts` und kein weiterer Parameter: Ein Abschaltpfad im
+    Produktivcode waere ein Zweig, den nur die Messung betritt und den ab dann jeder Aufrufer
+    setzen koennte."""
+    return len(candidates) + 1
+
+
+def _sensitivity_row(
+    candidates: Sequence[EventCandidate],
+    confirming_photos: int | None,
+    strength_threshold: float | None,
+    *,
+    motif_change_is_off: bool = False,
+) -> MotifSensitivityRow:
+    """Eine Kombination, gerechnet mit den MITTELN DES LAUFS.
+
+    `explain_events` ist derselbe Durchlauf, den auch der Lauf nimmt - die beiden Festlegungen
+    gehen als Parameter hinein, statt dass hier eine zweite Fassung der Motivregel entstuende. Eine
+    Nachbildung maesse etwas anderes, als der Lauf tut, waehrend beide fuer sich gruen blieben."""
+    formation = explain_events(
+        candidates,
+        confirming_photos=confirming_photos,
+        motif_presence_threshold=strength_threshold,
+    )
+    sizes = size_counts(formation)
+    causes = cause_counts(formation)
+    return MotifSensitivityRow(
+        confirming_photos=confirming_photos,
+        strength_threshold=strength_threshold,
+        events_total=sizes.events_total,
+        single_photo_events=sizes.single_photo_events,
+        sole_motif_boundaries=causes.sole[BOUNDARY_MOTIF_CHANGE],
+        largest_event_photos=sizes.largest_event_photos,
+        longest_seconds=sizes.longest_seconds,
+        motif_change_is_off=motif_change_is_off,
+    )
+
+
+def motif_sensitivity(candidates: Sequence[EventCandidate]) -> tuple[MotifSensitivityRow, ...]:
+    """Das ganze Raster, die beiden Randzeilen voran: der Betriebswert, dann der Motivwechsel aus.
+
+    ZWEI BEZUGSZEILEN STATT EINER: Das Raster zeigt, wie empfindlich der Motivwechsel ist; erst die
+    Zeile "aus" zeigt, wie viel er insgesamt traegt. Ohne sie bliebe offen, wie die Gliederung ganz
+    ohne ihn aussaehe, und die Antwort waere aus keiner Rasterzeile zu erschliessen.
+
+    DIE SPALTE "ALLEINIGE URSACHE" STEHT SEIT ADR 0119 IN JEDER ZEILE AUF 0, und das ist hier der
+    Nachweis, nicht ein Ausfall: Der Motivwechsel vermerkt eine Grenze, die ein Signal ohnehin
+    gemeldet hat, und eroeffnet keine. Eine gelockerte Motivgrenze loest deshalb nirgends mehr eine
+    Grenze auf. Handlungsleitend ist damit die Gleichheit der Gliederungsspalten ueber alle Zeilen
+    einschliesslich "aus"; weichen sie voneinander ab, ist das ein Befund.
+
+    Rein: Kein Aufruf dieser Funktion aendert eine Konstante, eine Zeile oder einen Zustand."""
+    return (
+        _sensitivity_row(candidates, None, None),
+        _sensitivity_row(
+            candidates, motif_change_off_window(candidates), None, motif_change_is_off=True
+        ),
+        *(
+            _sensitivity_row(candidates, confirming, strength)
+            for confirming in MOTIF_CONFIRMING_VARIANTS
+            for strength in MOTIF_STRENGTH_VARIANTS
+        ),
+    )
+
+
+# --- Der Kohaerenz-Modus: vier Zahlen je Event ---------------------------------------------------
+
+# WIE VIELE EVENTS DIE LISTE ZEIGT - die groessten, und bewusst keine Vollliste.
+#
+# EINE ZEILE JE EVENT WAERE UEBER DIE ZELLZAHLEN EINE BEWEGUNGSSPUR: Wie viele verschiedene Orte ein
+# Anlass beruehrt hat, ist je Event eine Anzahl; ueber den ganzen Lauf gelesen ist es das Profil
+# einer Reise. Die Frage dieses Modus - ein langer Ausflug oder mehrere verschmolzene Anlaesse -
+# haengt an den GROESSTEN Events und ist mit wenigen Zeilen beantwortet. Der Bericht schreibt
+# ausdruecklich hin, wonach ausgewaehlt wurde, damit niemand die Liste fuer vollstaendig haelt.
+COHERENCE_TOP_EVENTS = 8
+
+
+@dataclass(frozen=True)
+class CoherenceRow:
+    """Ein Event in FUENF ANZAHLEN, und in nichts sonst.
+
+    Keine Zelle, keine Koordinate, kein Orts- oder Motivname, kein Zeitstempel, keine Position im
+    Lauf (S2/S3). Die Aussagekraft entsteht aus den Zahlen selbst: Ein Event ueber fuenf Stunden mit
+    ZWEI Ortszellen ist ein Ausflug, eines mit sechs sind verschmolzene Anlaesse.
+
+    `measured_photos` TRAEGT GENAU DIESE DEUTUNG, und ohne sie ist `place_cells` nicht lesbar:
+    `events.py::_cells_of` nimmt ausschliesslich Fotos mit GEMESSENER Koordinate, ein uebernommener
+    Ort speist die Zellen nie. Ein Event, dessen Fotos ueberwiegend geerbt haben, zeigt deshalb eine
+    kleine Zellzahl oder null - und die sieht aus wie "ein Ort, also ein Ausflug", waehrend
+    tatsaechlich nichts gemessen wurde. In der Ausgangsmessung dieser Spec trugen 30,0 % der
+    Kandidatenfotos keine eigene Koordinate, und sie koennen sich in einem einzigen Event ballen;
+    eine Gesamtzahl je Gliederung finge genau diesen Fall nicht. Sie ist selbst eine Anzahl und
+    damit S2-konform.
+
+    `duration_seconds` steht als DAUER, nie als Anfang oder Ende (S2)."""
+
+    photos: int
+    measured_photos: int
+    duration_seconds: float
+    place_cells: int
+    motifs: int
+
+
+@dataclass(frozen=True)
+class CoherenceCounts:
+    """Die groessten Events einer Gliederung, dazu die Verteilung ueber ALLE.
+
+    `largest` ist ausdruecklich ein Ausschnitt (`COHERENCE_TOP_EVENTS`); `cells_per_event` und
+    `motifs_per_event` laufen dagegen ueber jedes Event - sonst behauptete der Bericht eine
+    Verteilung, die nur fuer die groessten gilt. Beide sind Abbildungen "Anzahl -> Zahl der Events",
+    also selbst Aggregate und keine Folge je Event."""
+
+    events_total: int
+    largest: tuple[CoherenceRow, ...]
+    cells_per_event: dict[int, int]
+    motifs_per_event: dict[int, int]
+
+
+def coherence_counts(
+    formation: EventFormation, candidates: Sequence[EventCandidate]
+) -> CoherenceCounts:
+    """Die Kohaerenz der Events einer Gliederung - rein, und ausschliesslich in Anzahlen.
+
+    DIE ZELLEN LIEST DIESE FUNKTION, SIE BILDET SIE NICHT: `BuiltEvent.place_cells` traegt die
+    verschiedenen gerundeten GEMESSENEN Zellen bereits sortiert und dublettenfrei
+    (`events.py::_cells_of`); `len` darauf ist damit genau die Zahl der VERSCHIEDENEN Zellen. Eine
+    zweite Bildung hier maesse die Zellen einer Gliederung, die so nie entstanden ist.
+
+    WIE VIELE FOTOS DIESE ZELLEN UEBERHAUPT TRAGEN, steht daneben und entscheidet
+    `events.py::has_measured_coordinate` - dieselbe eine Stelle, die auch `_cells_of` fragt. Ohne
+    diese Zahl liesse sich eine kleine Zellzahl nicht von einer ungemessenen unterscheiden.
+
+    WAS EIN FOTO TRAEGT, BEANTWORTET `selection.py::carried_motifs`, nicht diese Funktion - dieselbe
+    eine Stelle und dieselbe eine Grenze wie im Lauf. `motif_strengths is None` heisst "keine
+    Motiv-Kopfzeile" und traegt nichts bei; das ist etwas anderes als eine leere Kopfzeile, und
+    beides ist hier gleich folgenlos.
+
+    GEORDNET WIRD UEBER DIE GEMESSENEN WERTE, NIE UEBER DIE POSITION IM LAUF: Fotozahl, dann Dauer,
+    dann Zellzahl, dann Motivzahl, jeweils absteigend. Eine nach Zeit geordnete Folge von Zellzahlen
+    waere ein Bewegungsabdruck; eine nach Groesse geordnete ist es nicht, und die Position steht
+    deshalb weder im Schluessel noch im Bericht."""
+    motifs_by_photo = {
+        candidate.photo_id: carried_motifs(candidate.motif_strengths)
+        for candidate in candidates
+        if candidate.motif_strengths is not None
+    }
+    measured_photo_ids = {
+        candidate.photo_id for candidate in candidates if has_measured_coordinate(candidate)
+    }
+
+    rows = []
+    for event in formation.events:
+        carried: frozenset[str] = frozenset()
+        for photo_id in event.photo_ids:
+            carried |= motifs_by_photo.get(photo_id, frozenset())
+        rows.append(
+            CoherenceRow(
+                photos=len(event.photo_ids),
+                measured_photos=sum(
+                    1 for photo_id in event.photo_ids if photo_id in measured_photo_ids
+                ),
+                duration_seconds=(event.ended_at - event.started_at).total_seconds(),
+                place_cells=len(event.place_cells),
+                motifs=len(carried),
+            )
+        )
+
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            row.photos,
+            row.duration_seconds,
+            row.place_cells,
+            row.motifs,
+            # ZULETZT, damit die oben beschriebene Rangfolge unveraendert bleibt - aber ueberhaupt
+            # im Schluessel, weil die Ordnung sonst bei sonst gleichen Zeilen auf die stabile
+            # Eingabefolge zurueckfiele, und die ist die des Laufs.
+            row.measured_photos,
+        ),
+        reverse=True,
+    )
+    return CoherenceCounts(
+        events_total=len(rows),
+        largest=tuple(ordered[:COHERENCE_TOP_EVENTS]),
+        cells_per_event=_tally(row.place_cells for row in rows),
+        motifs_per_event=_tally(row.motifs for row in rows),
     )
 
 
@@ -582,6 +1008,283 @@ def _class_lines(counts: Sequence[int], labels: Sequence[str]) -> list[str]:
     ]
 
 
+def _report_head(title: str, probe: EventProbeInput) -> str:
+    """DIE EINE KOPFZEILE jedes Berichts dieses Kommandos: Titel, Projekt-Id, Laufkennung.
+
+    An einer Stelle, nicht je Modus: Vier Fassungen derselben Aussage sind vier Gelegenheiten, eine
+    davon zu vergessen. Ein kuenftiger Modus bekommt seinen Kopf von hier oder wird von
+    `TestEveryReportHeadComesFromTheOnePlace` rot gemeldet.
+
+    BEIDE ZAHLEN SIND INTERNE KENNUNGEN und fallen unter keine der sechs Klassen aus S2: keine
+    Koordinate, kein Orts-, Sehenswuerdigkeit- oder Projektname, kein OpenCloud-Pfad, kein
+    Zeitstempel. Der Projekt-NAME waere eine Ortsangabe, die Id ist keine.
+
+    Ohne Laufkennung gibt es keinen Bericht: `main()` bricht vor jedem Rendern ab, wenn das Projekt
+    keinen erfolgreichen Lauf hat. Ein stilles "Lauf None" waere die einzige Art, wie diese Lage
+    doch in ein Protokoll geriete - deshalb die Zusicherung statt eines Ersatzzeichens."""
+    assert probe.run_id is not None, (
+        "Ein Bericht ohne Laufkennung ist keine Ausgabe, sondern ein Programmierfehler - "
+        "main() bricht ohne erfolgreichen Lauf vorher ab."
+    )
+    return f"# {title}, Projekt {probe.project_id}, Lauf {probe.run_id}"
+
+
+def _quota_lines(reach: QuotaReach) -> list[str]:
+    """Der Album-Richtwert und die Eventzahl gegen ihn - AUSGESCHRIEBEN ALS AUSSAGE.
+
+    Ein Zahlenpaar allein liesse den Schluss beim Leser, und genau dieser Schluss ist das Mass:
+    Sind es mindestens so viele Events wie Plaetze, ist die Gewichtung der Albumauswahl
+    wirkungslos."""
+    origin = (
+        "eingestellt"
+        if reach.target_is_configured
+        else f"abgeleitet aus {reach.project_photos} Fotos des Projekts, ein Zehntel aufgerundet"
+    )
+    verdict = (
+        (
+            f"Die Kontingentvergabe kann gewichten: {reach.events_total} Events auf "
+            f'{reach.target} Plaetze - nach "Abdeckung zuerst" bleiben {reach.free_seats} '
+            "Plaetze, die nach Groesse verteilt werden."
+        )
+        if reach.weighting_is_effective
+        else (
+            f"Die Kontingentvergabe kann nicht gewichten: {reach.events_total} Events auf "
+            f"{reach.target} Plaetze - jedes Event bekommt genau einen Platz, und kein Restplatz "
+            "bleibt uebrig, bevor die Gewichtung nach Groesse ueberhaupt beginnt."
+        )
+    )
+    lines = [
+        "",
+        "### Reicht der Album-Richtwert fuer eine Gewichtung?",
+        "",
+        f"- Album-Richtwert: {reach.target} Bild(er) ({origin})",
+        f"- Events: {reach.events_total}",
+        f'- freie Plaetze nach "Abdeckung zuerst": {reach.free_seats}',
+        "",
+        verdict,
+    ]
+    if not reach.measured_on_the_same_set:
+        lines += [
+            "",
+            f"Auswertungsgrenze: Der Richtwert rechnet auf den {reach.project_photos} Fotos des "
+            f"Projekts, die gemessene Gliederung auf den {reach.candidates_total} Kandidaten des "
+            "letzten erfolgreichen Kriterien-Laufs. Die beiden Mengen fallen hier auseinander.",
+        ]
+    return lines + [
+        "",
+        "Die Kontingentvergabe sieht ausserdem nur Events mit mindestens einem auswaehlbaren Foto",
+        "(Ausschuss und Rangzeilen ohne Wert fallen dort weg); die Eventzahl hier ist ihre",
+        "Obergrenze, nie eine kleinere Zahl.",
+    ]
+
+
+def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityRow]) -> str:
+    """Block E als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+
+    Derselbe Bericht-Rand wie der Hauptbericht: keine Koordinate, kein Orts- oder
+    Sehenswuerdigkeit-Name, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen
+    wird die Projekt-Id. Dauern stehen als DAUER, nie als Anfang oder Ende.
+
+    Die Zeile des Betriebswerts nennt ihre beiden Werte NICHT: Sie entsteht ohne Ueberschreibung,
+    und eine ausgeschriebene Zahl daneben behauptete, gemessen zu haben, welcher Wert gerade gilt.
+    Die Zeile "aus" nennt ihr Fenster aus demselben Grund nicht: Es ist ein Rechenmittel, und als
+    Zahl gelesen sieht es aus wie ein weiterer messbarer Betriebspunkt."""
+    lines = [
+        _report_head("Empfindlichkeit des Motivwechsels", probe),
+        "",
+        "Dieselbe Kandidatenmenge, durchgerechnet unter mehreren Kombinationen aus der Zahl der",
+        "bestaetigenden Fotos und der Motivstaerke-Grenze. BEIDE KONSTANTEN BLEIBEN UNVERAENDERT -",
+        "dieser Lauf misst, er aendert nichts.",
+        "",
+        "Die letzten beiden Spalten sind die GEGENANZEIGE gegen zu grobes Zusammenfassen: Eventzahl",
+        "und Ein-Bild-Anteil wuerden von einer zu groben Gliederung besser erfuellt.",
+        "",
+        "| bestaetigende Fotos | Motivstaerke-Grenze | Events | Ein-Bild-Cluster | "
+        "motivwechsel allein | groesstes Event | laengste Dauer |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        operating = row.confirming_photos is None and row.strength_threshold is None
+        if row.motif_change_is_off:
+            # "aus" statt der gerechneten Fensterlaenge - und die Staerke-Grenze steht dort
+            # unveraendert, wie in der Zeile des Betriebswerts.
+            confirming, strength = "aus", "Betriebswert"
+        elif operating:
+            confirming, strength = "Betriebswert", "Betriebswert"
+        else:
+            confirming, strength = str(row.confirming_photos), f"{row.strength_threshold}"
+        lines.append(
+            f"| {confirming} | {strength} | {row.events_total} "
+            f"| {row.single_photo_events} "
+            f"({_percent(row.single_photo_events, row.events_total)}) "
+            f"| {row.sole_motif_boundaries} "
+            f"({_percent(row.sole_motif_boundaries, max(row.events_total - 1, 0))}) "
+            f"| {row.largest_event_photos} Foto(s) | {_duration(row.longest_seconds)} |"
+        )
+
+    lines += [
+        "",
+        'Der Anteil bezieht sich auf die Grenzen MIT Ursache (Eventzahl - 1); "motivwechsel '
+        'allein" zaehlt',
+        "nur die Grenzen, an denen keine andere Ursache mitgemeldet hat. Diese Spalte steht seit",
+        "ADR 0119 in JEDER Zeile auf 0 - der Motivwechsel vermerkt eine ohnehin gezogene Grenze und",
+        "eroeffnet keine. Das ist der Nachweis der Aenderung, kein Messausfall: Wonach hier zu sehen",
+        "ist, ist die Gleichheit von Eventzahl, Ein-Bild-Anteil, groesstem Event und laengster Dauer",
+        'ueber ALLE Zeilen einschliesslich "aus". Weichen sie ab, ist das ein Befund.',
+        "",
+        'Die Zeile "aus" ist keine Rasterzelle und kein Betriebspunkt, sondern der andere Rand: ein',
+        "Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos, nie bestaetigbar. Der",
+        "Produktivcode bekommt dafuer keinen Abschalter und keinen weiteren Parameter; die",
+        "Motivstaerke-Grenze steht dort unveraendert - ohne Wechsel wirkt sie ohnehin nicht.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _distribution(counts: Mapping[int, int], unit: str) -> str:
+    """Eine Verteilung "Anzahl -> Zahl der Events", aufsteigend nach der Anzahl.
+
+    Die Ordnung ist die der ANZAHL, nie die des Laufs: Eine Verteilung sagt nichts darueber, in
+    welcher Reihenfolge ihre Werte entstanden sind."""
+    return ", ".join(f"{value} {unit}: {events}" for value, events in sorted(counts.items())) or "-"
+
+
+def _coherence_block(title: str, counts: CoherenceCounts) -> list[str]:
+    """Eine Gliederung: ihre Eventzahl, die groessten Events und die Verteilung ueber ALLE.
+
+    Die beiden Verteilungszeilen laufen ueber JEDES Event, die Tabelle ist ein Ausschnitt. Ohne sie
+    liesse sich an der Tabelle nicht ablesen, ob sie den Regelfall zeigt oder die Ausnahme."""
+    lines = [
+        f"## {title}",
+        "",
+        f"- Events: {counts.events_total}",
+        f"- Ortszellen je Event: {_distribution(counts.cells_per_event, 'Zelle(n)')}",
+        f"- Motive je Event: {_distribution(counts.motifs_per_event, 'Motiv(e)')}",
+        "",
+        "| Fotos | davon gemessen | Dauer | Ortszellen | Motive |",
+        "|---|---|---|---|---|",
+    ]
+    if not counts.largest:
+        return [*lines, "| - | - | - | - | - |"]
+    return lines + [
+        f"| {row.photos} | {row.measured_photos} | {_duration(row.duration_seconds)} "
+        f"| {row.place_cells} | {row.motifs} |"
+        for row in counts.largest
+    ]
+
+
+def render_coherence_report(
+    probe: EventProbeInput, operating: CoherenceCounts, switched_off: CoherenceCounts
+) -> str:
+    """Der Kohaerenz-Modus als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+
+    Derselbe Bericht-Rand wie die uebrigen Modi: keine Koordinate, kein Orts-, Sehenswuerdigkeit-
+    oder Motivname, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen wird die
+    Projekt-Id. Dauern stehen als DAUER, nie als Anfang oder Ende.
+
+    BEIDE GLIEDERUNGEN NEBENEINANDER, weil die Frage ein Vergleich ist: Das grosse Event der
+    Gliederung "aus" ist nur gegen den Betriebswert zu beurteilen.
+
+    DASS DIE TABELLE EIN AUSSCHNITT IST, STEHT AUSGESCHRIEBEN DARIN. Eine Liste ueber alle Events
+    waere ueber die Zellzahlen eine Bewegungsspur; eine Liste ueber die groessten ohne diesen Satz
+    laese sich fuer die vollstaendige halten und die uebrigen Events fuer nicht vorhanden."""
+    return (
+        "\n".join(
+            [
+                _report_head("Kohaerenz der Events", probe),
+                "",
+                "Je Event fuenf ANZAHLEN: Fotozahl, davon mit gemessener Koordinate, Dauer, Zahl",
+                "der verschiedenen Ortszellen und Zahl der verschiedenen getragenen Motive. Weder",
+                "Zelle noch Koordinate, weder Orts- noch Motivname, kein Zeitpunkt - die Aussage",
+                "entsteht aus den Zahlen selbst: Ein langes Event mit ZWEI Ortszellen ist ein",
+                "Ausflug, eines mit sechs sind mehrere verschmolzene Anlaesse.",
+                "",
+                'Diese Lesart gilt nur soweit gemessen wurde, und die Spalte "davon gemessen" ist',
+                "deshalb keine Beigabe: In die Ortszellen gehen AUSSCHLIESSLICH Fotos mit eigener",
+                "Koordinate ein - ein uebernommener Ort speist sie nie. Liegt sie weit unter der",
+                "Fotozahl, ist eine kleine Zellzahl keine Aussage ueber den Anlass, sondern eine",
+                "Luecke in der Messung - und sie sieht genauso aus wie ein Befund.",
+                "",
+                f"Die Tabelle zeigt je Gliederung hoechstens die {COHERENCE_TOP_EVENTS} groessten",
+                "Events nach FOTOZAHL, absteigend; bei gleicher Fotozahl entscheiden Dauer,",
+                "Zellzahl und Motivzahl. Sie ist damit bewusst nicht vollstaendig, sobald die",
+                "Gliederung mehr Events traegt - eine Zeile je Event waere ueber die Zellzahlen",
+                "eine Bewegungsspur. Die beiden Verteilungszeilen ueber der Tabelle laufen dagegen",
+                "immer ueber JEDES Event.",
+                "",
+                "Die Reihenfolge der Zeilen ist die der Groesse, nie die des Laufs; eine Position",
+                "oder Kennung des Events steht nirgends.",
+                "",
+                *_coherence_block("Betriebswert", operating),
+                "",
+                *_coherence_block("Motivwechsel aus", switched_off),
+                "",
+                'Die zweite Gliederung entsteht wie die Zeile "aus" der Empfindlichkeitsmessung:',
+                "ueber ein Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos, das nie",
+                "bestaetigt werden kann. Der Produktivcode bekommt dafuer keinen Abschalter und",
+                "keinen weiteren Parameter, und an der Gliederung aendert dieser Lauf nichts - er",
+                "misst.",
+            ]
+        )
+        + "\n"
+    )
+
+
+def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str:
+    """Block F als Markdown nach stdout - ZAHLEN OHNE ORTE UND OHNE ZEITPUNKTE (S2).
+
+    Derselbe Bericht-Rand wie die uebrigen Modi: keine Koordinate, kein Orts- oder
+    Sehenswuerdigkeit-Name, kein OpenCloud-Pfad, kein Projektname, kein Zeitstempel; ausgewiesen
+    wird die Projekt-Id. Die Gruende selbst sind interne Kennungen aus geschlossenem Vorrat.
+
+    Die beiden Bezugszeilen oben (Events, Ein-Bild-Cluster) stehen dabei, weil der Bericht sonst
+    nicht fuer sich stuende: "vier gesperrte Segmente" heisst etwas anderes bei 91 Events als bei
+    10."""
+    sizes = size_counts(formation)
+    blocks = block_counts(formation)
+
+    lines = [
+        _report_head("Woran eine Zusammenlegung scheitert", probe),
+        "",
+        f"- Events: {sizes.events_total}",
+        f"- Ein-Bild-Cluster: {sizes.single_photo_events} "
+        f"({_percent(sizes.single_photo_events, sizes.events_total)})",
+        f"- durch Stufe 3 aufgeloeste Grenzen: {formation.dissolved_boundaries}",
+        f"- zu kleine Segmente, die bestehen blieben: {blocks.blocked_segments}",
+        f"- Mindestgroesse eines Segments: {events_module.MIN_EVENT_PHOTOS} Fotos",
+        "",
+        "| Grund | an einer Kante beteiligt | an allen Kanten der Grund |",
+        "|---|---|---|",
+    ]
+    for reason in MERGE_BLOCK_REASONS:
+        involved = blocks.involved[reason]
+        at_every_edge = blocks.at_every_edge[reason]
+        lines.append(
+            f"| {reason} | {involved} ({_percent(involved, blocks.blocked_segments)}) "
+            f"| {at_every_edge} ({_percent(at_every_edge, blocks.blocked_segments)}) |"
+        )
+
+    lines += [
+        "",
+        "Gezaehlt werden SEGMENTE, nie Kanten, und ein Segment hat so viele Kanten, wie es Nachbarn",
+        "hat. An einer Kante duerfen mehrere Gruende gleichzeitig stehen; ausgewiesen werden alle.",
+        "",
+        "Nur die zweite Spalte ist handlungsleitend: Sie zaehlt die Segmente, an deren JEDER Kante",
+        "dieser Grund stand und sonst keiner - allein dort loest seine Behebung die Zusammenlegung",
+        "aus. Steht daneben ein zweiter Grund, bleibt die Kante auch ohne diesen gesperrt; stand er",
+        "nur an einer von zwei Kanten, hat er die Zusammenlegung nicht fuer sich verhindert.",
+        "",
+        "`kein_nachbar` greift nur, wenn es UEBERHAUPT keinen Nachbarn gibt. Eine fehlende Seite am",
+        "Rand ist kein Hindernis und zaehlt nicht als Kante.",
+        "",
+        "`unantastbar` ist kein Riegel, sondern die Zusage, dass eine Grenze mit der Ursache",
+        "`motivwechsel` nie aufgeloest wird. Ihre Behebung waere eine andere Entscheidung als die",
+        "Aenderung einer Zahl.",
+        "",
+        "Dieser Lauf beobachtet nur: An der Gliederung und an den Riegeln aendert er nichts.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def render_report(
     probe: EventProbeInput,
     formation: EventFormation,
@@ -595,11 +1298,12 @@ def render_report(
     Projekt-Id. Damit sind die Zahlen als Ganzes weitergebbar, ohne Einzelfallpruefung."""
     sizes = size_counts(formation)
     causes = cause_counts(formation)
+    reach = quota_reach(probe, sizes.events_total)
     inheritance = inheritance_counts(probe.entries, probe.candidates)
     landmarks = landmark_counts(probe.candidates, formation, locality_by_cell)
 
     lines = [
-        f"# Event-Messung, Projekt {probe.project_id}",
+        _report_head("Event-Messung", probe),
         "",
         "## A - Verteilung der Events nach Fotozahl",
         "",
@@ -619,12 +1323,13 @@ def render_report(
             )
             or "-"
         ),
+        *_quota_lines(reach),
         "",
         "## B - Trennursachen",
         "",
         f"- Grenzen mit Ursache: {causes.boundaries_total} (Eventzahl - 1; das erste Segment "
         "eines Laufs traegt keine)",
-        f"- Mindestgroesse eines Segments: {MIN_EVENT_PHOTOS} Fotos",
+        f"- Mindestgroesse eines Segments: {events_module.MIN_EVENT_PHOTOS} Fotos",
         "",
         "| Ursache | beteiligt | alleinige Ursache | eroeffnet ein zu kleines Segment |",
         "|---|---|---|---|",
@@ -639,6 +1344,19 @@ def render_report(
         )
 
     lines += [
+        "",
+        "### Gegenanzeige: was Stufe 3 wieder zusammengelegt hat",
+        "",
+        f"- Grenzen vor dem Zusammenlegen: {causes.boundaries_before_merge}",
+        f"- davon durch Stufe 3 aufgeloest: {causes.dissolved_by_merge} "
+        f"({_percent(causes.dissolved_by_merge, causes.boundaries_before_merge)})",
+        f"- Fotos, die dadurch ihr Event gewechselt haben: {causes.photos_moved_by_merge} "
+        f"von {causes.photos_total} "
+        f"({_percent(causes.photos_moved_by_merge, causes.photos_total)})",
+        "",
+        "Beide Abnahmezahlen dieser Messung - der Anteil der Ein-Bild-Cluster und die Eventzahl -",
+        "wuerden von einer zu aggressiven Verschmelzung besser erfuellt. Diese zwei Zahlen sind die",
+        "Gegenprobe dazu.",
         "",
         "## C1 - uebernommener Ort",
         "",
@@ -704,6 +1422,37 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--project-id", type=int, required=True)
+    # EINANDER AUSSCHLIESSEND: Zwei Modi gleichzeitig ist keine Frage, die eine Antwort hat, und
+    # eine stille Vorrangregel gaebe einen Bericht aus, den niemand angefordert hat.
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
+        "--motiv",
+        action="store_true",
+        help=(
+            "Statt der Bloecke A-C: die Empfindlichkeit des Motivwechsels. Dieselbe "
+            "Kandidatenmenge unter mehreren Kombinationen aus der Zahl der bestaetigenden Fotos "
+            "und der Motivstaerke-Grenze. Beide Konstanten bleiben dabei unveraendert."
+        ),
+    )
+    modes.add_argument(
+        "--riegel",
+        action="store_true",
+        help=(
+            "Statt der Bloecke A-C: woran eine Zusammenlegung scheitert. Je zu kleinem Segment, "
+            "das nicht zugeschlagen werden konnte, der Grund an seinen Kanten. Dieselbe "
+            "Gliederung wie ohne Schalter - der Modus beobachtet, er aendert nichts."
+        ),
+    )
+    modes.add_argument(
+        "--kohaerenz",
+        action="store_true",
+        help=(
+            "Statt der Bloecke A-C: die Kohaerenz der groessten Events, fuer den Betriebswert und "
+            "fuer den Motivwechsel 'aus' nebeneinander. Je Event vier Anzahlen - Fotozahl, Dauer, "
+            "Zahl der verschiedenen Ortszellen, Zahl der verschiedenen getragenen Motive. Rein "
+            "lesend wie die uebrigen Modi."
+        ),
+    )
     parser.add_argument(
         "--ortsdatensatz",
         default=None,
@@ -715,7 +1464,15 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _probe_with_own_session(database_url: str, *, project_id: int, dataset_path: Path) -> str:
+async def _probe_with_own_session(
+    database_url: str,
+    *,
+    project_id: int,
+    dataset_path: Path,
+    motif: bool = False,
+    bolts: bool = False,
+    coherence: bool = False,
+) -> str:
     engine = make_engine(database_url)
     try:
         session_factory = make_session_factory(engine)
@@ -730,8 +1487,35 @@ async def _probe_with_own_session(database_url: str, *, project_id: int, dataset
             "nichts zu messen - erst einen Lauf durchfuehren."
         )
 
+    if motif:
+        # Block E fragt den Ortsauszug GAR NICHT: Die Empfindlichkeit des Motivwechsels haengt an
+        # keiner Ortsangabe, und ein hier gebauter Auflöser laese Daten, die in diesen Bericht
+        # ohnehin nie eingehen.
+        return render_motif_report(probe, motif_sensitivity(probe.candidates))
+
     # DERSELBE Durchlauf, den auch der Lauf nimmt - nur zusaetzlich mit den Ursachen.
     formation = explain_events(probe.candidates)
+
+    if bolts:
+        # DIESELBE Gliederung wie ohne Schalter, aus demselben Aufruf: Ein eigener Rechenweg
+        # maesse die Blockaden einer Gliederung, die so nie entstanden ist. Den Ortsauszug fragt
+        # Block F ebensowenig wie Block E - keine seiner Zahlen haengt an einer Ortsangabe.
+        return render_bolt_report(probe, formation)
+
+    if coherence:
+        # ZWEI Gliederungen, beide ueber `explain_events`: die des Betriebswerts (dieselbe wie
+        # oben) und die ohne wirksamen Motivwechsel. Die zweite entsteht ueber dasselbe
+        # unerreichbare Bestaetigungsfenster wie die Zeile "aus" in Block E - kein Abschaltpfad im
+        # Produktivcode, kein weiterer Parameter. Den Ortsauszug fragt auch dieser Modus nicht:
+        # Gezaehlt wird die ZAHL der Zellen, und die traegt das Event bereits.
+        without_motif_change = explain_events(
+            probe.candidates, confirming_photos=motif_change_off_window(probe.candidates)
+        )
+        return render_coherence_report(
+            probe,
+            coherence_counts(formation, probe.candidates),
+            coherence_counts(without_motif_change, probe.candidates),
+        )
 
     cells = sorted(
         {
@@ -777,6 +1561,9 @@ def main(argv: Sequence[str] | None = None, *, database_url: str | None = None) 
                 database_url or settings.database_url,
                 project_id=args.project_id,
                 dataset_path=Path(args.ortsdatensatz or settings.place_dataset_path),
+                motif=args.motiv,
+                bolts=args.riegel,
+                coherence=args.kohaerenz,
             )
         )
     except (EventProbeError, PlaceDatasetError) as exc:

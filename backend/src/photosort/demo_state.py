@@ -1127,9 +1127,10 @@ async def _seed_rated_project(
                 computed_at=_BASE_SCORING_AT,
             )
         )
-        # GENAU EIN erkannter Name im Landmark-Event. Genau einer, nicht mehrere: ein zweiter
-        # Name im selben Event traennte es (LandmarkChangeSignal), und der Demo-Zustand soll das
-        # ungeteilte Event mit `kind="landmark"` zeigen, nicht seine Trennung. Die uebrigen Fotos
+        # GENAU EIN erkannter Name im Landmark-Event. Genau einer, nicht mehrere: Ein zweiter Name
+        # im selben Event bliebe zwar drin (er trennt seit ADR 0118 nichts mehr), waere aber ohne
+        # Wirkung auf die Anzeige - das Event traegt den fruehesten. Der Demo-Zustand soll das
+        # Event mit `kind="landmark"` zeigen, nicht einen unsichtbaren zweiten Namen. Die uebrigen Fotos
         # des Events tragen den Namen ueber `PhotoOut.event.place` mit - genau das ist der Zustand,
         # den die Sichtpruefung sehen soll.
         if index == _DEMO_LANDMARK_PHOTO_INDEX:

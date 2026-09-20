@@ -1626,8 +1626,11 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     nebeneinander wären eine zweite, driftende Abbildung. Die nachträgliche Landmark-Verfeinerung
     (`scoring.py::refine_clusters_by_landmark`, Schlüsselform `cluster-<n>-<i>`) entfällt
     **ersatzlos**: sie erzeugte zeitlich zerrissene Gruppen, in denen „überschneidungsfrei" gar
-    nicht herstellbar war. Die Sehenswürdigkeit wirkt seither als **Trennsignal** im einen
-    Durchlauf der Event-Bildung. **Die Migration löscht alle Zeilen dieser Tabelle** und legt für
+    nicht herstellbar war. Die Sehenswürdigkeit wirkte seither als **Trennsignal** im einen
+    Durchlauf der Event-Bildung — bis ADR
+    [`0118`](../specs/decisions/0118-sehenswuerdigkeit-trennt-nicht-mehr-und-eine-eigene-ausdehnungsgrenze-fuers-zusammenlegen.md)
+    auch diese Trennwirkung ersatzlos aufhob; der Name bleibt am Event, er bewegt nur keine Grenze
+    mehr. **Die Migration löscht alle Zeilen dieser Tabelle** und legt für
     Altläufe keine Events an (die Lauf-Zeilen selbst bleiben unangetastet — sie tragen die nicht
     wiederherstellbaren Ist-Kosten der Cloud-Aufrufe). Ein Lauf von vor dieser Änderung **muss
     einmal neu berechnet werden**; bis dahin zeigt die Kuratierung für ihn nichts, und der
@@ -1705,18 +1708,25 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     [`0477`](../specs/features/0477-motivwechsel-trennsignal.md) / ADR
     [`0109`](../specs/decisions/0109-motivwechsel-trennt-in-einem-vorgelagerten-durchlauf.md) eine
     **zweite Stufe vorausgeht**: `events.py::motif_change_starts(ordered)` bestimmt rein und vorab
-    die Indizes, an denen ein **bestätigter Motivwechsel** ein neues Event erzwingt. Ein solcher
-    Index wirkt im Durchlauf wie eine gemeldete Grenze — `begin` läuft auf allen Signalen und ist
-    deren vollständige Rücksetzung —, und die Signalkette selbst bleibt unverändert. Der Wechsel
-    ist die symmetrische Differenz der getragenen Motive gegenüber dem **eröffnenden** Foto des
+    die Indizes, an denen ein **bestätigter Motivwechsel** vorliegt. **Seit ADR
+    [`0119`](../specs/decisions/0119-der-motivwechsel-vermerkt-eine-grenze-statt-eine-zu-eroeffnen.md)
+    eröffnet ein solcher Index kein Event mehr**: Er fügt `motivwechsel` der Ursachenmenge einer
+    Grenze hinzu, die der Signal-Durchlauf an derselben Stelle ohnehin zieht, und bleibt sonst
+    wirkungslos — verworfen, nie auf eine spätere Grenze übertragen. Daraus folgen zwei geprüfte
+    Zusagen: `motivwechsel` steht nie allein in einer Ursachenmenge, und die Gliederung ist von
+    dieser Stufe **vollständig unabhängig** (dieselbe Eventfolge unter einem nie erreichbaren
+    Bestätigungsfenster). Mit dem erzwungenen Start ist auch die Rücksetzung entfallen —
+    `ExtentSignal` und `EventSpanSignal` laufen über einen Motivwechsel hinweg weiter und können
+    dadurch **später** trennen. Der Wechselbegriff selbst ist unverändert: die symmetrische
+    Differenz der getragenen Motive gegenüber dem **eröffnenden** Foto des
     laufenden Abschnitts; getragen heißt `selection.py::carried_motifs`, also dieselbe eine Grenze
-    wie im Auswahlvorschlag, nie eine eigene. Getrennt wird erst, wenn
+    wie im Auswahlvorschlag, nie eine eigene. Vermerkt wird erst, wenn
     `MOTIF_CHANGE_CONFIRMING_PHOTOS` aufeinanderfolgende mitredende Fotos den Wechsel zeigen
-    (unkalibriert, durch keinen Test gepinnt), und die Grenze fällt **rückwirkend** auf das erste
+    (unkalibriert, durch keinen Test gepinnt), und der Vermerk fällt **rückwirkend** auf das erste
     Foto dieses Fensters. Ein Foto ohne Motiv-Kopfzeile oder mit `excluded_document` wird dabei
-    übergangen — es löst keine Grenze aus und bleibt Mitglied seines Events; eine vorhandene
+    übergangen — es redet nicht mit und bleibt Mitglied seines Events; eine vorhandene
     Kopfzeile ohne getragenes Motiv ist davon verschieden und redet voll mit. Ohne Motivangabe
-    liefert die Stufe die leere Menge und der Durchlauf ist der bisherige.
+    liefert die Stufe die leere Menge.
   - **Zwei Aufrufer, EIN Weg zur Gliederung** *(Spec
     [`0426`](../specs/features/0426-zeitversatz-je-kamera.md))*: Event-Bildung, Partitionen,
     Kategorieableitung und Rangzeilen stehen seither gemeinsam in
@@ -1733,12 +1743,38 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Funktion liest alles selbst aus persistierten Werten (zwei Abfragen mehr je Lauf) und
     committet nicht — die Transaktionsgrenze gehört dem Aufrufer, der genau einmal committet. Ein
     Versatzwechsel vergibt dabei **neue Event-Ids**; ein Client, der sie zwischenspeichert, hält
-    sie nicht über die Änderung hinweg. Die Grenzen entstehen aus einer **Liste
-    gleichrangiger Trennsignale**: Zeitlücke (`TIME_CLUSTER_GAP`), Kalendertag (Vergleich der
-    ersten zehn Zeichen des zonenlosen Zeitstempels — neu, eine Nacht ohne Zeitlücke trennt
-    seither), Schrittabstand (`GPS_CLUSTER_SPLIT_DISTANCE_METERS`), **Ausdehnung**
-    (`EVENT_EXTENT_MAX_METERS`, 1000,0 — Diagonale der umschließenden Box **einschließlich** des
-    betrachteten Fotos; unkalibriert und durch keinen Test gepinnt) und Sehenswürdigkeit-Wechsel.
+    sie nicht über die Änderung hinweg.
+  - **Die Event-Bildung läuft in drei Stufen** *(Spec
+    [`0506`](../specs/features/0506-cluster-als-anlass.md), ADR
+    [`0117`](../specs/decisions/0117-der-anlass-als-einheit-eigene-schwellen-dauergrenze-und-mindestgroesse.md))*:
+    der Motiv-Vermerk (`motif_change_starts`), der Signal-Durchlauf, und das **Zusammenlegen zu
+    kleiner Segmente**. **Grenzen zieht allein die zweite Stufe** (ADR 0119); die erste begründet
+    nur mit, die dritte löst wieder auf. Erst danach entstehen die `BuiltEvent`s — weil `_built` die einzige Stelle
+    bleibt, an der Name, Zellen und `place_kind` gebildet werden, stimmen diese Werte für ein
+    zusammengelegtes Event ohne eigenen Zweig, und `position` läuft lückenlos ab 1.
+  - **`events.py` führt seine SIEBEN EIGENEN Schwellen**, keine davon aus `scoring.py`:
+    `EVENT_TIME_GAP` (1 h), `EVENT_STEP_MAX_METERS` (500,0), `EVENT_EXTENT_MAX_METERS` (1000,0),
+    `EVENT_MAX_SPAN` (8 h), `MERGE_MAX_GAP` (2 h), `MIN_EVENT_PHOTOS` (2),
+    `MERGE_EXTENT_MAX_METERS` (1500,0). Grund: Dieselben
+    Konstanten steuerten zuvor **`assign_clusters`**, also Phase A vor dem Ausschuss-Gate — eine
+    Kalibrierung an ihnen verschöbe still, welche Fotos überhaupt Kandidaten werden. Phase A ist
+    von diesen sieben Werten unberührt. Sie bleiben Modulkonstanten (kein Settings-/Env-Wert),
+    werden überall als **Modulattribut** gelesen und sind **unkalibriert**: Kein Test pinnt einen
+    Zahlwert, zulässig sind genau die vier Ungleichungen `MERGE_MAX_GAP > EVENT_TIME_GAP`,
+    `MIN_EVENT_PHOTOS >= 2`, `EVENT_MAX_SPAN < 24 h`,
+    `MERGE_EXTENT_MAX_METERS > EVENT_EXTENT_MAX_METERS`.
+  - Die Grenzen des Durchlaufs entstehen aus einer **Liste gleichrangiger Trennsignale**:
+    Zeitlücke (`EVENT_TIME_GAP`), **Dauer** (`EVENT_MAX_SPAN` — die Spanne vom eröffnenden bis zum
+    betrachteten Foto, einschließlich dieses Fotos), Schrittabstand (`EVENT_STEP_MAX_METERS`),
+    **Ausdehnung** (`EVENT_EXTENT_MAX_METERS` — Diagonale der umschließenden Box **einschließlich**
+    des betrachteten Fotos) — **vier** Signale, seit ADR 0118 ohne den Sehenswürdigkeit-Wechsel. Die
+    Liste führt ausschließlich Signale, die trennen; ein nie meldender Eintrag machte aus ihr eine
+    Liste mit zwei Bedeutungen. **Die Kalendertagsgrenze ist entfallen:**
+    Ein Anlass über Mitternacht (Silvester, langer Abend, Nachtflug) bleibt **ein** Event, mehrere
+    Reisetage werden es nicht — die Grenze ist die Dauer, nicht das Datum, und eine Zeitspanne ist
+    zonenfrei richtig, wo ein Kalendertag eine Aussage der lokalen Zeitzone war. Eine Überschrift
+    kann dadurch `23:40–01:15 Uhr` lauten; das Event steht im Abschnitt seines **Anfangstags**
+    (`dayKey` kommt aus `started_at`).
     Der Durchlauf fragt **alle** Signale bei jedem Kandidaten (`any` über eine gebaute Liste,
     ausdrücklich nicht kurzgeschlossen) und ruft danach genau eine der schreibenden Methoden auf
     allen auf. Nur diese Trennung von reiner Frage (`is_boundary`) und Fortschreibung
@@ -1747,7 +1783,35 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Signal ist danach eine Klasse und ein Listeneintrag. Die Liste bleibt genau dafür der
     Erweiterungspunkt: Der Motivwechsel ist keine paarweise Frage, sondern eine Segmentierung über
     die ganze Folge (Bestätigungsfenster, rückwirkender Beginn), und steht deshalb als eigene Stufe
-    davor statt als sechster Eintrag.
+    davor statt als fünfter Eintrag.
+  - **Stufe 3 — `events.py::merge_small_segments`**, eine öffentliche reine Funktion über den
+    Segmenten: Ein Segment mit weniger als `MIN_EVENT_PHOTOS` Fotos wird genau einem
+    **angrenzenden** zugeschlagen — dem mit der kleineren Zeitlücke, bei Gleichstand der kleineren
+    Entfernung, danach dem früheren. Zugeschlagen wird nur, wenn **vier Riegel** halten: (a) die
+    Zeitlücke zum Nachbarn überschreitet `MERGE_MAX_GAP` nicht, (b) die Dauer des Ergebnisses
+    überschreitet `EVENT_MAX_SPAN` nicht, (c) die Ausdehnung des Ergebnisses überschreitet
+    **`MERGE_EXTENT_MAX_METERS`** nicht und (d) das Segment liegt selbst unter der Mindestgröße.
+    Riegel (c) prüft seit ADR 0118 eine **eigene, größere** Grenze als der Durchlauf: Prüfte er
+    `EVENT_EXTENT_MAX_METERS`, prüfte er dieselbe Bedingung, deren Überschreitung die Trennung
+    ausgelöst hat, und die Stufe wäre für ausdehnungsgetrennte Segmente strukturell unpassierbar.
+    Daraus folgen **zwei** Zusagen statt einer: Kein Event überschreitet
+    `MERGE_EXTENT_MAX_METERS`, und kein Event **aus dem Durchlauf** überschreitet
+    `EVENT_EXTENT_MAX_METERS`.
+    Hält kein Nachbar, **bleibt das Segment allein** — ein gültiges Ergebnis, kein Fehlerfall.
+    **Keine Grenze ist unantastbar** (ADR 0119): `UNBREAKABLE_CAUSES` ist entfallen, und die Stufe
+    liest keine Ursachenmenge mehr — die vier Riegel sind der ganze Schutz gegen Überverschmelzung.
+    Die beiden Berichtswortschätze bleiben dagegen bestehen und führen ihre ehrliche Null:
+    `sehenswuerdigkeit` in `BOUNDARY_CAUSES` und `unantastbar` in `MERGE_BLOCK_REASONS` — ein
+    Wortschatz darf eine Null führen, eine an jeder Kante gelesene Regel nicht, und ohne die beiden
+    Zeilen wäre keine Nachmessung mehr gegen die früheren zu halten. Je Runde wird das kleinste
+    Segment behandelt, **das nicht bereits als gesperrt feststeht** — dieser Zusatz trägt die
+    Terminierung, weil die Riegel (a) bis (c) an der *Kante* hängen und damit für beide Richtungen
+    gleich ausfallen; Riegel (d) hängt am Segment selbst und wird durch Zuwachs nur strenger. Die Rundenobergrenze **wirft** (`EventMergeError`) statt abzubrechen: Ein stiller
+    Frühabbruch ließe eine halb zusammengelegte Gliederung zurück, die niemandem auffiele.
+    `build_events`/`explain_events` nehmen `min_event_photos` und `merge_max_gap` injizierbar
+    entgegen (`None` = Modulkonstante), und `EventFormation` führt die **Gegenanzeige**
+    (`dissolved_boundaries`, `moved_photos`) mit — beide Abnahmezahlen der Gliederung würden von
+    einer zu aggressiven Verschmelzung besser erfüllt.
   - **Die Ausdehnung ist der fachliche Kern:** die bisherige Schwelle begrenzte den *Schritt*, nicht
     den Durchmesser — ein Spaziergang in 400-m-Schritten trennte nie und überspannte Kilometer.
   - **Der Ortsbezug entsteht ausschließlich aus GEMESSENEN Koordinaten und Namen** (Rangfolge

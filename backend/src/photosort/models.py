@@ -1363,9 +1363,9 @@ class LandmarkName(Base):
     """Das kanonische Namensregister der Sehenswürdigkeiten eines Projekts - PROJEKTGEBUNDEN.
 
     Es trägt die Einheitlichkeit: Zwei Schreibweisen derselben Sehenswürdigkeit lösen auf denselben
-    Eintrag auf, und `photo_landmark_detections.canonical_name` bekommt dessen Anzeigeform.
-    `events.py::LandmarkChangeSignal` vergleicht weiter zeichengenau - die Vereinheitlichung liegt
-    jetzt davor.
+    Eintrag auf, und `photo_landmark_detections.canonical_name` bekommt dessen Anzeigeform. Das
+    Register entscheidet damit, WELCHEN Namen ein Event unter `events.landmark_name` trägt und
+    anzeigt - die Vereinheitlichung liegt vor der Event-Bildung.
 
     AM PROJEKT und ausdrücklich NICHT projektübergreifend wie `fine_labels`: Ein
     Sehenswürdigkeitsname ist ein personenbezogenes Datum - er benennt einen Ort, an dem diese

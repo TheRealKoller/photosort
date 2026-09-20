@@ -19,8 +19,10 @@ from photosort.models import (
     Photo,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
+    PhotoMotifCorrection,
     PhotoMotifStrength,
     Project,
+    User,
 )
 
 NOW = datetime(2026, 7, 20, 10, 0, 0)
@@ -231,3 +233,27 @@ class TestTheMotifPictureKeepsItsThreeStates:
         [candidate] = (await read_event_inputs(db_session, project_id, [photo_id])).candidates
 
         assert candidate.excluded_document is True
+
+    async def test_a_hand_correction_reaches_the_candidate(self, db_session: AsyncSession) -> None:
+        """WIRKSAME Staerken, nicht die rohe Staerkezeile: Eine Handkorrektur setzt sich hier
+        durch, weil der Aufbau ueber `load_effective_strengths` liest. Ein Zugriff auf
+        `PhotoMotifStrength` allein liesse die Korrektur unter den Tisch fallen, und das faende
+        seit ADR 0119 kein Fall mehr ueber die Gliederung - der Motivwechsel bewegt dort nichts
+        mehr, und `selection.py` liest dieselben Staerken."""
+        project_id = await _project(db_session)
+        photo_id = await _photo(db_session, project_id, minutes=0)
+        await _motifs(db_session, photo_id, strengths={"tiere": 0.0})
+        user = User(username="daniel", password_hash="hashed-value")
+        db_session.add(user)
+        await db_session.flush()
+        db_session.add(
+            PhotoMotifCorrection(
+                photo_id=photo_id, user_id=user.id, motif_key="tiere", applies=True
+            )
+        )
+        await db_session.flush()
+
+        [candidate] = (await read_event_inputs(db_session, project_id, [photo_id])).candidates
+
+        assert candidate.motif_strengths is not None
+        assert candidate.motif_strengths["tiere"] > 0.0

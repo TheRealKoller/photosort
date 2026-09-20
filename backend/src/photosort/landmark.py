@@ -46,9 +46,9 @@ _MAX_RESPONSE_TOKENS = 256
 
 # Sicherheits-Muss-Kriterium: Obergrenze eines verwendbaren Sehenswuerdigkeit-Namens. Wie
 # `MAX_FINE_LABEL_LENGTH` eine DEGENERATIONSGRENZE, keine Sanitisierungsmassnahme - und wie dort
-# wird VERWORFEN statt abgeschnitten: `events.py::LandmarkChangeSignal` vergleicht exakt, ein
-# abgeschnittener Name fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Event zusammen.
-# Das Event faellt dann auf die Koordinatenstufe zurueck.
+# wird VERWORFEN statt abgeschnitten: Ein abgeschnittener Name landete als `events.landmark_name`
+# in der Event-Ueberschrift und benennte das Event falsch. Verworfen faellt das Event stattdessen
+# auf die Koordinatenstufe zurueck.
 #
 # 80 statt der 60 des Feinlabel-Pfads: Sehenswuerdigkeitsnamen sind laenger.
 MAX_LANDMARK_NAME_LENGTH = 80
@@ -286,8 +286,8 @@ def _landmark_detection_from_json(
     # Sicherheits-Muss-Kriterium: Sanitisierung und Laengengrenze AN DER QUELLE. Solange der Name
     # nirgends gerendert wurde, ging er als Rohwert in die Datenbank - mit dem Rendern in der
     # Event-Ueberschrift faellt dieser Schutz weg. Ein zu langer Name wird GANZ verworfen, nie
-    # abgeschnitten: `events.py::LandmarkChangeSignal` vergleicht exakt, ein abgeschnittener Name
-    # fuehrte zwei verschiedene Sehenswuerdigkeiten in einem Event zusammen.
+    # abgeschnitten: Ein abgeschnittener Name landete als `events.landmark_name` in der
+    # Event-Ueberschrift und benennte das Event falsch.
     name = sanitize_landmark_name(name)
     # Das Vision-LLM-JSON ist nicht garantiert auf [0, 1] begrenzt - geklemmt bereits HIER (an der
     # Quelle), nicht erst in criteria.py::compute_landmark_score.
