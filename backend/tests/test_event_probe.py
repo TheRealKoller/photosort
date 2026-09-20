@@ -2240,6 +2240,120 @@ class TestTheProbeIsReadOnly:
         assert write_statements(tree) == []
 
 
+def _adjustable_constants_of_events() -> frozenset[str]:
+    """Die Stellschrauben von `events.py` - AUS DEM MODUL GELESEN, nie von Hand gefuehrt.
+
+    Zwei Achsen, beide gemessen: der NAME muss in `events.py` auf Modulebene zugewiesen sein (die
+    Syntaxbaum-Seite - ein von anderswo importierter Name wie `MAX_PLACE_NAME_LENGTH` ist keine
+    Stellschraube dieses Moduls), und der WERT muss eine Zahl oder ein `timedelta` sein (die
+    Laufzeit-Seite). Die geschlossenen Wortschaetze (`BOUNDARY_*`, `BOUNDARY_CAUSES`,
+    `MERGE_BLOCK_REASONS`, `PLACE_KINDS`, `UNBREAKABLE_CAUSES`) fallen dadurch heraus und duerfen
+    weiter importiert werden - sie aendern sich nicht unter der Hand, und ein Test verschiebt sie
+    nicht.
+
+    Ein handgefuehrter Namensvorrat waere beim naechsten Zuwachs still vakuum-gruen: Genau die neue
+    Stellschraube waere die ungeprueфte."""
+    path = module_file("photosort.events")
+    assert path is not None
+    assigned = {
+        target.id
+        # NUR `.body`, also Modulebene: eine Zuweisung in einer Funktion ist keine Modulkonstante.
+        for node in ast.parse(path.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.Assign | ast.AnnAssign)
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(target, ast.Name) and target.id.isupper()
+    }
+    return frozenset(
+        name
+        for name in assigned
+        if isinstance(getattr(events_module, name), int | float | timedelta)
+    )
+
+
+def _names_bound_from_events(source: str) -> frozenset[str]:
+    """Die Namen, die `source` per `from photosort.events import ...` BEIM IMPORT BINDET.
+
+    `import photosort.events as ...` bindet nichts davon - der Zugriff laeuft dann bei jeder
+    Nutzung ueber das Modul und folgt einer Verschiebung."""
+    return frozenset(
+        alias.name
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom) and node.module == "photosort.events"
+        for alias in node.names
+    )
+
+
+class TestNoAdjustableConstantIsBoundAtImport:
+    """Die Fehlerklasse hinter einem Befund, der fuenf PRs und zwei veroeffentlichte Messungen lang
+    still eine falsche Spalte gezaehlt hat: `event_probe.py` band `MIN_EVENT_PHOTOS` per
+    `from photosort.events import ...` und las damit den Wert vom Importzeitpunkt.
+
+    Ein Kommentar ist dagegen kein Waechter, und ein einzelner Verhaltensfall deckt nur die eine
+    Konstante ab, die er benutzt. Dieser Fall deckt ALLE - auch die, die es noch nicht gibt."""
+
+    def test_the_adjustable_constants_are_actually_found(self) -> None:
+        """Gegenprobe gegen einen Detektor, der nichts findet: Ein leerer Vorrat machte jede
+        Zusage unten vakuum-gruen. Geprueft wird eine TEILMENGE, kein Gleichstand - eine neue
+        Stellschraube soll den Waechter erweitern, nicht diesen Fall rot machen."""
+        found = _adjustable_constants_of_events()
+
+        assert {
+            "EVENT_TIME_GAP",
+            "EVENT_STEP_MAX_METERS",
+            "EVENT_EXTENT_MAX_METERS",
+            "EVENT_MAX_SPAN",
+            "MERGE_MAX_GAP",
+            "MERGE_EXTENT_MAX_METERS",
+            "MIN_EVENT_PHOTOS",
+            "MOTIF_CHANGE_CONFIRMING_PHOTOS",
+        } <= found
+
+    def test_the_closed_vocabularies_are_not_mistaken_for_adjustable(self) -> None:
+        """Die Gegenrichtung: Waeren sie mit drin, muesste der Waechter entschaerft werden - und
+        entschaerft faengt er die Stellschrauben auch nicht mehr."""
+        found = _adjustable_constants_of_events()
+
+        assert found.isdisjoint(
+            {
+                "PLACE_KINDS",
+                "BOUNDARY_CAUSES",
+                "BOUNDARY_TIME_GAP",
+                "MERGE_BLOCK_REASONS",
+                "MERGE_BLOCK_UNBREAKABLE",
+                "UNBREAKABLE_CAUSES",
+                # Von `places.py` importiert, nicht hier zugewiesen: keine Stellschraube DIESES
+                # Moduls, und die Namensseite des Kriteriums haelt sie heraus.
+                "MAX_PLACE_NAME_LENGTH",
+            }
+        )
+
+    def test_the_guard_recognises_a_bound_constant(self) -> None:
+        """Gegenprobe gegen einen Waechter, der die Importliste gar nicht liest."""
+        bound = _names_bound_from_events(
+            "from photosort.events import EventCandidate, MIN_EVENT_PHOTOS\n"
+        )
+
+        assert bound & _adjustable_constants_of_events() == {"MIN_EVENT_PHOTOS"}
+
+    def test_the_module_alias_form_binds_nothing(self) -> None:
+        """Die zulaessige Form muss zulaessig BLEIBEN, sonst ist der Waechter unerfuellbar."""
+        bound = _names_bound_from_events("from photosort import events as events_module\n")
+
+        assert bound == frozenset()
+
+    @pytest.mark.parametrize("module", ["photosort.event_probe", "photosort.event_inputs"])
+    def test_the_module_binds_no_adjustable_constant(self, module: str) -> None:
+        """JE MODUL, wie der Formwaechter: Eine Stellschraube gehoert bei jeder Nutzung frisch als
+        Modulattribut gelesen. Gebunden zaehlte der Bericht still gegen einen Wert, nach dem gar
+        nicht gegliedert wurde, und jede Fixture, die sie verschiebt, liefe ins Leere."""
+        path = module_file(module)
+        assert path is not None
+
+        bound = _names_bound_from_events(path.read_text(encoding="utf-8"))
+
+        assert bound & _adjustable_constants_of_events() == frozenset()
+
+
 async def _table_snapshot(session: AsyncSession) -> dict[str, list[tuple[object, ...]]]:
     """JEDE Tabelle aus `Base.metadata.sorted_tables` - GEMESSEN, nie als handgeschriebene Liste.
 
