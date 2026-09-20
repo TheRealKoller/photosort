@@ -15,6 +15,7 @@ from bisect import bisect_left
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from fractions import Fraction
 from typing import Protocol
 
 from photosort.places import (
@@ -101,6 +102,19 @@ MERGE_EXTENT_MAX_METERS = 1500.0
 # Der geschlossene Vorrat von `events.place_kind`. Ein Wert ausserhalb ist ein Datenfehler und
 # wird im Lesepfad zu "kein Ortsbezug", nie zu einer 500.
 PLACE_KINDS = ("landmark", "coordinate", "multiple")
+
+# Der RUECKHALT, den ein Sehenswuerdigkeitsname braucht, um sein Event zu benennen: der Anteil
+# seiner Mitglieder, der ihn bezeugen muss. Ein Zehntel EINSCHLIESSLICH.
+#
+# EIN EXAKTER BRUCH, kein Zahlenwert: Verglichen wird kreuzmultipliziert in ganzen Zahlen
+# (`Traeger * denominator >= Mitglieder * numerator`) - ein Float-Vergleich entschiede ueber genau
+# diesen Anteil an der Rundungsgrenze. Der Wert ist der Nenner des Kriteriums selbst und wird NICHT
+# kalibriert.
+#
+# Wie jede andere Schwelle dieses Moduls wird sie ueberall als MODULATTRIBUT gelesen, nie als
+# Default-Parameterwert gebunden: sonst liefe `monkeypatch.setattr` ins Leere und ein Pruefsatz
+# koennte sie nicht verschieben.
+LANDMARK_MIN_SHARE = Fraction(1, 10)
 
 # --- Der geschlossene Vorrat der TRENNURSACHEN (ADR 0117 Punkt 4) -------------------------------
 #
@@ -457,8 +471,8 @@ class BuiltEvent:
 
 def _usable_name(name: str | None) -> str | None:
     """Ein Name, der nach Sanitisierung leer ist, gilt als NICHT VORHANDEN - er wird nicht
-    geschrieben, und das Event traegt stattdessen den naechsten vorhandenen. Verworfen, nie
-    abgeschnitten: Ein gekuerzter Name benennte ein Event falsch."""
+    geschrieben und zaehlt auch nicht als Traeger eines Eventnamens. Verworfen, nie abgeschnitten:
+    Ein gekuerzter Name benennte ein Event falsch."""
     return (name or "").strip() or None
 
 
@@ -735,18 +749,37 @@ def motif_change_starts(
 def _name_of(members: Sequence[EventCandidate]) -> str | None:
     """Der Name eines Events, oder `None`.
 
-    DIE REGEL, nicht mehr eine Vorsichtsmassnahme: Ein Event DARF Fotos mit verschiedenen Namen
-    enthalten, und der FRUEHESTE gewinnt. `members` ist nach `(taken_at, photo_id)` sortiert; die
-    erste Fundstelle ist damit die chronologisch erste.
+    DIE REGEL, in zwei Schritten: Zuerst gewinnt der Name mit den MEISTEN Traegern unter den
+    Mitgliedern, bei gleicher Traegerzahl der FRUEHERE. `members` ist nach `(taken_at, photo_id)`
+    sortiert; der erste Index ist damit der chronologisch erste, und die Reihenfolge wird fuer den
+    Gleichstand nicht ein zweites Mal hergestellt. DANACH wird der Anteil des Gewinners geprueft:
+    Er benennt das Event nur, wenn er mindestens `LANDMARK_MIN_SHARE` der Mitglieder traegt.
 
-    Ausgefuehrt NACH Stufe 3 und ausschliesslich hier, an der einen Aufrufstelle `_built` - der
-    fruehste Name gewinnt deshalb auch ueber eine Zusammenlegung hinweg, und die Feldinvariante
+    KEIN NACHRUECKEN: Der Gewinner hat per Konstruktion das Maximum der Traegerzahlen - reisst
+    sein Anteil den Wert, ist jeder andere es erst recht, und das Event traegt keinen Namen.
+
+    Traeger ist ein Foto, dessen Name nach `_usable_name` GENAU der Gewinnername ist. Ein danach
+    leerer Name zaehlt weder als Traeger noch kann er gewinnen.
+
+    Ausgefuehrt NACH Stufe 3 und ausschliesslich hier, an der einen Aufrufstelle `_built`: Gezaehlt
+    wird ueber die Mitglieder des FERTIGEN Events, und die Feldinvariante
     `place_kind='landmark'` ⇒ `landmark_name` gesetzt kann nicht auseinanderlaufen."""
-    for member in members:
+    carriers: dict[str, int] = {}
+    first_index: dict[str, int] = {}
+    for index, member in enumerate(members):
         name = _usable_name(member.landmark_name)
-        if name is not None:
-            return name
-    return None
+        if name is None:
+            continue
+        carriers[name] = carriers.get(name, 0) + 1
+        first_index.setdefault(name, index)
+    if not carriers:
+        return None
+
+    winner = max(carriers, key=lambda name: (carriers[name], -first_index[name]))
+    share = LANDMARK_MIN_SHARE
+    if carriers[winner] * share.denominator < len(members) * share.numerator:
+        return None
+    return winner
 
 
 def measured_position(candidate: EventCandidate) -> tuple[float, float] | None:
