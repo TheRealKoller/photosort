@@ -1136,8 +1136,9 @@ die dauerhaft in ein **öffentliches** Repository gehen.
   ADR 0091 Punkt 1 bleibt in `events.py` **Muss**, obwohl sein Gegenstand dort auf ein
   Berichtssymbol schrumpft — `carried_motifs` bleibt geteilt, und ein zweiter Begriff von „dieses
   Foto zeigt X" bekäme seine Wirkung beim nächsten Leser zurück. (b) M9-e wird **umformuliert, nicht
-  aufgehoben**: Sie nennt ab jetzt die drei verbliebenen Riegel statt `UNBREAKABLE_CAUSES`, sonst
-  verwiese ein Muss auf ein Symbol, das es nicht mehr gibt. (c) `MERGE_BLOCK_UNBREAKABLE` nennt
+  aufgehoben**: Sie nennt die vier Riegel statt `UNBREAKABLE_CAUSES`, sonst verwiese ein Muss auf
+  ein Symbol, das es nicht mehr gibt. Die Zahl der Riegel bleibt vier — die Unantastbarkeit war
+  keiner von ihnen, sondern ein eigener Sperrgrund daneben. (c) `MERGE_BLOCK_UNBREAKABLE` nennt
   nichts mehr und führt eine ehrliche Null; er bleibt als Berichtswortschatz stehen, damit ein
   Block-F-Lauf gegen den vom 2026-09-19 zu halten ist. Neu als Muss: `COHERENCE_TOP_EVENTS` bleibt
   eine **absolute** Zahl — hinter derselben Zeile stehen danach mehr Fotos, und ein als Anteil

@@ -1799,14 +1799,14 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `EVENT_EXTENT_MAX_METERS`.
     Hält kein Nachbar, **bleibt das Segment allein** — ein gültiges Ergebnis, kein Fehlerfall.
     **Keine Grenze ist unantastbar** (ADR 0119): `UNBREAKABLE_CAUSES` ist entfallen, und die Stufe
-    liest keine Ursachenmenge mehr — die drei Riegel sind der ganze Schutz gegen Überverschmelzung.
+    liest keine Ursachenmenge mehr — die vier Riegel sind der ganze Schutz gegen Überverschmelzung.
     Die beiden Berichtswortschätze bleiben dagegen bestehen und führen ihre ehrliche Null:
     `sehenswuerdigkeit` in `BOUNDARY_CAUSES` und `unantastbar` in `MERGE_BLOCK_REASONS` — ein
     Wortschatz darf eine Null führen, eine an jeder Kante gelesene Regel nicht, und ohne die beiden
     Zeilen wäre keine Nachmessung mehr gegen die früheren zu halten. Je Runde wird das kleinste
     Segment behandelt, **das nicht bereits als gesperrt feststeht** — dieser Zusatz trägt die
-    Terminierung, weil die vier Riegel an der *Kante* hängen und damit für beide Richtungen gleich
-    ausfallen. Die Rundenobergrenze **wirft** (`EventMergeError`) statt abzubrechen: Ein stiller
+    Terminierung, weil die Riegel (a) bis (c) an der *Kante* hängen und damit für beide Richtungen
+    gleich ausfallen; Riegel (d) hängt am Segment selbst und wird durch Zuwachs nur strenger. Die Rundenobergrenze **wirft** (`EventMergeError`) statt abzubrechen: Ein stiller
     Frühabbruch ließe eine halb zusammengelegte Gliederung zurück, die niemandem auffiele.
     `build_events`/`explain_events` nehmen `min_event_photos` und `merge_max_gap` injizierbar
     entgegen (`None` = Modulkonstante), und `EventFormation` führt die **Gegenanzeige**

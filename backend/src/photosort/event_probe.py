@@ -594,9 +594,11 @@ def motif_sensitivity(candidates: Sequence[EventCandidate]) -> tuple[MotifSensit
     Zeile "aus" zeigt, wie viel er insgesamt traegt. Ohne sie bliebe offen, wie die Gliederung ganz
     ohne ihn aussaehe, und die Antwort waere aus keiner Rasterzeile zu erschliessen.
 
-    NUR DIE ALLEINIGE URSACHE ist handlungsleitend (wie in Block B): Eine Motivgrenze zu lockern
-    loest dort eine Grenze auf, wo der Motivwechsel ALLEIN getrennt hat - an einer Doppelgrenze
-    traegt die andere Ursache weiter.
+    DIE SPALTE "ALLEINIGE URSACHE" STEHT SEIT ADR 0119 IN JEDER ZEILE AUF 0, und das ist hier der
+    Nachweis, nicht ein Ausfall: Der Motivwechsel vermerkt eine Grenze, die ein Signal ohnehin
+    gemeldet hat, und eroeffnet keine. Eine gelockerte Motivgrenze loest deshalb nirgends mehr eine
+    Grenze auf. Handlungsleitend ist damit die Gleichheit der Gliederungsspalten ueber alle Zeilen
+    einschliesslich "aus"; weichen sie voneinander ab, ist das ein Befund.
 
     Rein: Kein Aufruf dieser Funktion aendert eine Konstante, eine Zeile oder einen Zustand."""
     return (
@@ -1092,8 +1094,11 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
         "",
         'Der Anteil bezieht sich auf die Grenzen MIT Ursache (Eventzahl - 1); "motivwechsel '
         'allein" zaehlt',
-        "nur die Grenzen, an denen keine andere Ursache mitgemeldet hat - nur dort loest eine",
-        "gelockerte Motivgrenze ueberhaupt etwas auf.",
+        "nur die Grenzen, an denen keine andere Ursache mitgemeldet hat. Diese Spalte steht seit",
+        "ADR 0119 in JEDER Zeile auf 0 - der Motivwechsel vermerkt eine ohnehin gezogene Grenze und",
+        "eroeffnet keine. Das ist der Nachweis der Aenderung, kein Messausfall: Wonach hier zu sehen",
+        "ist, ist die Gleichheit von Eventzahl, Ein-Bild-Anteil, groesstem Event und laengster Dauer",
+        'ueber ALLE Zeilen einschliesslich "aus". Weichen sie ab, ist das ein Befund.',
         "",
         'Die Zeile "aus" ist keine Rasterzelle und kein Betriebspunkt, sondern der andere Rand: ein',
         "Bestaetigungsfenster groesser als die Zahl der Kandidatenfotos, nie bestaetigbar. Der",
