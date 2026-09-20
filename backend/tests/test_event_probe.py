@@ -522,6 +522,21 @@ class TestBlockBCauses:
 
         assert counts.boundaries_total == 0
 
+    def test_the_minimum_size_is_read_as_a_module_attribute_not_bound_at_import(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`MIN_EVENT_PHOTOS` wird bei JEDER Zaehlung frisch aus `events.py` gelesen.
+
+        Ein `from photosort.events import MIN_EVENT_PHOTOS` baende den Wert beim Import: Jede
+        Fixture, die die Konstante verschiebt, liefe hier ins Leere, und die Spalte "eroeffnet ein
+        zu kleines Segment" zaehlte still gegen eine andere Mindestgroesse als die, nach der
+        gegliedert wurde. Aufgefallen beim Probelauf mit verschobenen Konstanten."""
+        monkeypatch.setattr(events_module, "MIN_EVENT_PHOTOS", 3)
+
+        counts = cause_counts(_formation((5, frozenset()), (2, frozenset({BOUNDARY_TIME_GAP}))))
+
+        assert counts.opening_a_small_segment[BOUNDARY_TIME_GAP] == 1
+
     def test_a_cause_outside_the_closed_supply_refuses_loudly(self) -> None:
         """Nicht stillschweigend uebergehen: Ein kuenftiges Signal ohne Eintrag in
         `BOUNDARY_CAUSES` verschwaende sonst aus dem Bericht, ohne dass eine Summe kleiner wuerde."""
@@ -1153,6 +1168,25 @@ class TestTheCoherenceReport:
         assert "1 Zelle(n): 2, 2 Zelle(n): 1" in report
         assert "Motive je Event" in report
         assert "0 Motiv(e): 1, 1 Motiv(e): 2" in report
+
+    def test_no_motif_name_can_reach_the_report(self) -> None:
+        """DIE SIEBTE KLASSE, die erst dieser Modus beruehrt. Ein Motivname ist zwar keine der
+        sechs aus S2, aber er beschreibt, was auf einem Familienfoto zu sehen ist - und dieser
+        Modus ist der erste, der Motive ueberhaupt liest.
+
+        Der Weg dorthin ist durch die Form verschlossen, nicht durch Sorgfalt: `CoherenceRow` traegt
+        vier `int`/`float`, und zwischen `carried_motifs` und der Ausgabe steht nur noch `len`.
+        Dieser Fall haelt genau das fest."""
+        formation = EventFormation(events=(_coherent(1, (1,)),), causes=(frozenset(),))
+        candidates = (_with_motifs(1, **{"geheimmotiv": CARRIED}),)
+
+        counts = coherence_counts(formation, candidates)
+        report = render_coherence_report(
+            _probe_input(selection_target=None), counts, _coherence_counts()
+        )
+
+        assert counts.largest[0].motifs == 1
+        assert "geheimmotiv" not in report
 
     def test_a_grouping_without_a_single_event_says_so_instead_of_an_empty_table(self) -> None:
         report = render_coherence_report(

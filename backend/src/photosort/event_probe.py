@@ -51,6 +51,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# `events_module` STEHT NEBEN DER NAMENSLISTE UNTEN, NICHT STATT IHRER, und traegt genau die
+# aenderbaren Festlegungen: `MIN_EVENT_PHOTOS` wird bei jeder Nutzung frisch als MODULATTRIBUT
+# gelesen. Ein `from ... import` baende den Wert beim Import - jede Fixture, die die Konstante
+# verschiebt, liefe hier ins Leere, und der Bericht zaehlte still gegen eine andere Mindestgroesse
+# als die, nach der gegliedert wurde. Die Namen in der Liste sind Typen, Funktionen und
+# geschlossene Wortschaetze, keine Festlegungen.
+from photosort import events as events_module
 from photosort.config import settings
 from photosort.db import make_engine, make_session_factory
 from photosort.event_inputs import read_event_inputs
@@ -58,7 +65,6 @@ from photosort.events import (
     BOUNDARY_CAUSES,
     BOUNDARY_MOTIF_CHANGE,
     MERGE_BLOCK_REASONS,
-    MIN_EVENT_PHOTOS,
     EventCandidate,
     EventFormation,
     LocationEntry,
@@ -417,7 +423,7 @@ def cause_counts(formation: EventFormation) -> CauseCounts:
     sole = {cause: 0 for cause in BOUNDARY_CAUSES}
     opening_small = {cause: 0 for cause in BOUNDARY_CAUSES}
     for event, causes in zip(formation.events[1:], formation.causes[1:], strict=True):
-        small = len(event.photo_ids) < MIN_EVENT_PHOTOS
+        small = len(event.photo_ids) < events_module.MIN_EVENT_PHOTOS
         for cause in causes:
             involved[cause] += 1
             if len(causes) == 1:
@@ -1170,7 +1176,7 @@ def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str
         f"({_percent(sizes.single_photo_events, sizes.events_total)})",
         f"- durch Stufe 3 aufgeloeste Grenzen: {formation.dissolved_boundaries}",
         f"- zu kleine Segmente, die bestehen blieben: {blocks.blocked_segments}",
-        f"- Mindestgroesse eines Segments: {MIN_EVENT_PHOTOS} Fotos",
+        f"- Mindestgroesse eines Segments: {events_module.MIN_EVENT_PHOTOS} Fotos",
         "",
         "| Grund | an einer Kante beteiligt | an allen Kanten der Grund |",
         "|---|---|---|",
@@ -1249,7 +1255,7 @@ def render_report(
         "",
         f"- Grenzen mit Ursache: {causes.boundaries_total} (Eventzahl - 1; das erste Segment "
         "eines Laufs traegt keine)",
-        f"- Mindestgroesse eines Segments: {MIN_EVENT_PHOTOS} Fotos",
+        f"- Mindestgroesse eines Segments: {events_module.MIN_EVENT_PHOTOS} Fotos",
         "",
         "| Ursache | beteiligt | alleinige Ursache | eroeffnet ein zu kleines Segment |",
         "|---|---|---|---|",
