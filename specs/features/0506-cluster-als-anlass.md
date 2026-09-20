@@ -1,6 +1,14 @@
 # 0506 - Cluster entsprechen einem zusammenhängenden Anlass
 
-**Status:** Accepted
+**Status:** Implemented — neun Pull Requests:
+[#512](https://github.com/TheRealKoller/photosort/pull/512),
+[#515](https://github.com/TheRealKoller/photosort/pull/515),
+[#516](https://github.com/TheRealKoller/photosort/pull/516),
+[#517](https://github.com/TheRealKoller/photosort/pull/517),
+[#518](https://github.com/TheRealKoller/photosort/pull/518),
+[#519](https://github.com/TheRealKoller/photosort/pull/519),
+[#520](https://github.com/TheRealKoller/photosort/pull/520),
+[#521](https://github.com/TheRealKoller/photosort/pull/521)
 **Erstellt:** 2026-09-18
 **Bezug:** [Issue #506](https://github.com/TheRealKoller/photosort/issues/506), ADR
 [`0117`](../decisions/0117-der-anlass-als-einheit-eigene-schwellen-dauergrenze-und-mindestgroesse.md),
@@ -48,61 +56,61 @@ Ortsfehler (siehe „Entscheidungen").
 
 **Zuerst belegen, was ist**
 
-- [ ] `python -m photosort.event_probe --project-id <N>` gibt für den letzten erfolgreichen
+- [x] `python -m photosort.event_probe --project-id <N>` gibt für den letzten erfolgreichen
       Kriterien-Lauf eines echten Projekts die Verteilung der Events nach Fotozahl aus (je Fotozahl
       die Eventzahl), dazu den Anteil der Ein-Bild-Cluster, den Median, das größte Event sowie die
       längste und kürzeste Eventdauer.
-- [ ] Dieselbe Ausgabe weist je Trennursache aus dem geschlossenen Vorrat zwei Zahlen aus — „war
+- [x] Dieselbe Ausgabe weist je Trennursache aus dem geschlossenen Vorrat zwei Zahlen aus — „war
       beteiligt" und „war alleinige Ursache" — sowie den Anteil der Grenzen, die ein Segment unter
       `MIN_EVENT_PHOTOS` eröffnet haben. Die Zahl der Grenzen mit Ursache ist stets
       `Eventzahl − 1`: Das erste Segment eines Laufs trägt keine Ursache.
-- [ ] Der beobachtete Ortsfehler ist **je Mechanismus getrennt** belegt oder widerlegt —
+- [x] Der beobachtete Ortsfehler ist **je Mechanismus getrennt** belegt oder widerlegt —
       übernommener Ort, aufgelöster Ortsname, Sehenswürdigkeitsname. Je Mechanismus ist
       nachvollziehbar, wie weit die Ortsaussage von der Aufnahmeposition abweicht und in welchem
       Anteil der Fälle sie eine festgelegte Entfernungsschwelle überschreitet; diese Schwelle
       vertritt „falsches Land", weil der Ländercode im Ortsauszug nicht geführt wird.
-- [ ] Diese Messergebnisse stehen als Blöcke A, B und C im Abschnitt „Messprotokoll" dieser Spec,
+- [x] Diese Messergebnisse stehen als Blöcke A, B und C im Abschnitt „Messprotokoll" dieser Spec,
       mit Projekt-Id und Laufkennung — und ohne jede Koordinate, ohne Orts- oder
       Sehenswürdigkeitsnamen und ohne OpenCloud-Pfad.
 
 **Einen Anlass zusammenhalten**
 
-- [ ] Eine Folge von Aufnahmen, deren größte Einzel-Zeitlücke unter `EVENT_TIME_GAP`, deren größter
+- [x] Eine Folge von Aufnahmen, deren größte Einzel-Zeitlücke unter `EVENT_TIME_GAP`, deren größter
       Einzelschritt unter `EVENT_STEP_MAX_METERS`, deren Ausdehnung unter
       `EVENT_EXTENT_MAX_METERS` und deren Gesamtdauer unter `EVENT_MAX_SPAN` liegt, bildet genau
       ein Event — gleich über wie viele Stunden, Kilometer und Kalendertage sie läuft.
-- [ ] Eine Kalendertagsgrenze allein trennt nicht mehr: Zwei Aufnahmen beiderseits von Mitternacht,
+- [x] Eine Kalendertagsgrenze allein trennt nicht mehr: Zwei Aufnahmen beiderseits von Mitternacht,
       deren Zeitlücke unter `EVENT_TIME_GAP` liegt und deren Event-Gesamtdauer unter
       `EVENT_MAX_SPAN` bleibt, stehen im selben Event. Dessen Überschrift zeigt dann eine Spanne
       der Form `23:40–01:15 Uhr` und steht im Abschnitt seines **Anfangstags**.
-- [ ] Ein Segment mit weniger als `MIN_EVENT_PHOTOS` Fotos wird genau einem **angrenzenden**
+- [x] Ein Segment mit weniger als `MIN_EVENT_PHOTOS` Fotos wird genau einem **angrenzenden**
       Segment zugeschlagen: dem mit der kleineren Zeitlücke, bei Gleichstand dem mit der kleineren
       Entfernung, danach dem früheren — und nur, wenn alle vier Riegel halten. Hält keiner der
       beiden Nachbarn, bleibt das Segment unverändert bestehen; das ist ein gültiges Ergebnis, kein
       Fehlerfall.
-- [ ] Ein Wechsel des Sehenswürdigkeitsnamens trennt keine Events mehr. Zwei Fotos, die sich
+- [x] Ein Wechsel des Sehenswürdigkeitsnamens trennt keine Events mehr. Zwei Fotos, die sich
       allein in ihrem Namen unterscheiden, stehen im selben Event.
-- [ ] Der Name bleibt am Event: `events.landmark_name`, `place_kind` und die Anzeige sind
+- [x] Der Name bleibt am Event: `events.landmark_name`, `place_kind` und die Anzeige sind
       unverändert. Ein Event, dessen Fotos verschiedene Namen tragen, trägt den des **frühesten**
       benannten Fotos — das ist ab jetzt die Regel, nicht mehr ein defensiver Zweig.
-- [ ] `sehenswuerdigkeit` bleibt im Ursachenvorrat und steht in der Nachmessung bei 0 (0,0 %).
+- [x] `sehenswuerdigkeit` bleibt im Ursachenvorrat und steht in der Nachmessung bei 0 (0,0 %).
       Die Zeile ist der Nachweis der Änderung; sie verschwindet nicht aus dem Bericht.
-- [ ] **Ein Motivwechsel trennt keine Events mehr allein.** Zwei Fotos, die sich allein im
+- [x] **Ein Motivwechsel trennt keine Events mehr allein.** Zwei Fotos, die sich allein im
       getragenen Motiv unterscheiden und zwischen denen kein anderes Signal trennt, stehen im
       selben Event — gleich wie lange der Wechsel bestätigt bleibt.
-- [ ] **Die Gliederung hängt nicht mehr an der ersten Stufe.** `explain_events` liefert unter einem
+- [x] **Die Gliederung hängt nicht mehr an der ersten Stufe.** `explain_events` liefert unter einem
       nie erreichbaren Bestätigungsfenster dieselbe Eventfolge wie am Betriebswert; verschieden
       sind allein die Ursachenmengen. Das ist die starke Form des Kriteriums darüber und die
       eigentliche Zusage. Sichtbar wird sie auch im Bericht: In Block E sind die Spalten „Events",
       „Ein-Bild-Cluster", „größtes Event" und „längste Dauer" über **alle** Zeilen einschließlich
       „aus" gleich.
-- [ ] **`motivwechsel` steht nie allein.** Der Name bleibt im Ursachenvorrat und wird weiter als
+- [x] **`motivwechsel` steht nie allein.** Der Name bleibt im Ursachenvorrat und wird weiter als
       „beteiligt" gezählt; in der Spalte „alleinige Ursache" steht er auf 0 (0,0 %). Jede
       Ursachenmenge, die ihn enthält, enthält mindestens eine weitere Ursache.
-- [ ] **Der Vermerk wird nicht aufgeschoben.** Fällt ein bestätigter Motivwechsel auf einen Index,
+- [x] **Der Vermerk wird nicht aufgeschoben.** Fällt ein bestätigter Motivwechsel auf einen Index,
       an dem kein Signal meldet, trägt **keine** spätere Grenze deswegen `motivwechsel`. Die
       Ursachenmenge einer Grenze nennt nur, was an ihr selbst gemeldet hat.
-- [ ] **Das Abnahmemaß ist der Album-Richtwert.** Nach der Änderung weist Block A an denselben
+- [x] **Das Abnahmemaß ist der Album-Richtwert.** Nach der Änderung weist Block A an denselben
       Daten (Projekt 3, letzter erfolgreicher Kriterien-Lauf) alle drei Größen zugleich aus:
       Eventzahl **echt kleiner** als der Richtwert, freie Plätze **echt größer** als 0, und das
       Urteil, dass die Gewichtung nach Größe beginnt. Die drei sind nicht unabhängig — die dritte
@@ -118,30 +126,30 @@ Ortsfehler (siehe „Entscheidungen").
 
 **Dabei nicht zu viel verschmelzen**
 
-- [ ] Kein Event überschreitet `EVENT_MAX_SPAN`. Kein Event überschreitet
+- [x] Kein Event überschreitet `EVENT_MAX_SPAN`. Kein Event überschreitet
       `MERGE_EXTENT_MAX_METERS`, und kein Event **aus dem Signal-Durchlauf** überschreitet
       `EVENT_EXTENT_MAX_METERS`. Die frühere Fassung — beide Stufen gegen dieselbe Zahl — gilt
       seit ADR 0118 nicht mehr; sie machte Stufe 3 für ausdehnungsgetrennte Segmente strukturell
       unpassierbar.
-- [ ] **Keine Grenze ist mehr unantastbar.** Eine Grenze, deren Ursachenmenge `motivwechsel`
+- [x] **Keine Grenze ist mehr unantastbar.** Eine Grenze, deren Ursachenmenge `motivwechsel`
       enthält, wird vom Zusammenlegen aufgelöst wie jede andere, sobald die drei Riegel halten.
       Die frühere Fassung — eine solche Grenze wird nie aufgelöst — gilt seit ADR 0119 nicht mehr,
       und mit ihr ist `UNBREAKABLE_CAUSES` entfallen. Der Berichtsgrund `unantastbar` bleibt in der
       Riegel-Diagnose stehen und steht dort dauerhaft auf 0; die Zeile ist der Nachweis, nicht ein
       Rest. Der Schutz gegen Überverschmelzung liegt damit **allein** bei den drei Schwellen des
       Kriteriums darüber — sie gelten unverändert und sind ab jetzt der ganze Schutz.
-- [ ] Die Nachmessung weist aus, welcher Anteil der Grenzen durch das Zusammenlegen aufgelöst wurde
+- [x] Die Nachmessung weist aus, welcher Anteil der Grenzen durch das Zusammenlegen aufgelöst wurde
       und welcher Anteil der Fotos dadurch das Event gewechselt hat.
-- [ ] Weder Datenmodell noch API-Antwort noch Oberfläche bekommen ein Feld, einen Endpunkt oder
+- [x] Weder Datenmodell noch API-Antwort noch Oberfläche bekommen ein Feld, einen Endpunkt oder
       eine Geste zum Bestätigen, Verschieben oder Korrigieren eines Clusters. Das Zusammenlegen
       wirkt allein im Lauf bzw. beim Neuaufbau.
 
 **Die Ortszuordnung**
 
-- [ ] Block C weist je Mechanismus aus, ob eine Auffälligkeit vorliegt. Ob sie eine Behebung
+- [x] Block C weist je Mechanismus aus, ob eine Auffälligkeit vorliegt. Ob sie eine Behebung
       innerhalb dieser Spec auslöst, entscheidet Daniel anhand der festgehaltenen Zahlen; der
       Umsetzungslauf hält an dieser Stelle an, statt selbst zu entscheiden.
-- [ ] Bleibt es bei „keine Behebung", steht das mit Begründung im Messprotokoll, und an der
+- [x] Bleibt es bei „keine Behebung", steht das mit Begründung im Messprotokoll, und an der
       Ortsbestimmung wird nichts geändert. Löst Daniel eine Behebung aus, ist der belegte Anteil
       nach der Änderung messbar gesunken.
 
@@ -1035,6 +1043,77 @@ erschienen.
 **Offen und Gegenstand der nächsten Messung:** ob das 80-Foto-Event ein langer Ausflug ist oder
 mehrere verschmolzene Anlässe. Entschieden wird das an der Zahl der Ortszellen und der Motive je
 Event — Anzahlen, keine Namen (Security S2/S3).
+
+### Abnahmemessung nach PR 8, gemessen am 2026-09-20 — die Vorhersage ist eingetroffen
+
+Vorgabe-Aufruf ohne Schalter, Projekt 3, letzter erfolgreicher Kriterien-Lauf (373 Kandidaten).
+
+> **Die Kontingentvergabe kann gewichten: 26 Events auf 41 Plaetze — nach „Abdeckung zuerst"
+> bleiben 15 Plaetze, die nach Groesse verteilt werden.**
+
+Damit ist das Abnahmemaß erfüllt: Eventzahl echt kleiner als der Richtwert, freie Plätze echt
+größer als 0, und das Urteil steht ausgeschrieben im Bericht.
+
+**Die Gliederung ist bitgleich die vorhergesagte.** ADR 0119 sagte zu, dass die neue
+Betriebsgliederung dieselbe ist wie die Zeile „aus" der Empfindlichkeitsmessung, weil der Vermerk
+die Gliederung nicht anfasst und die Unantastbarkeit mit entfällt. Alle vier Größen treffen zu:
+
+| | vorhergesagt | gemessen |
+|---|---|---|
+| Events | 26 | **26** |
+| größtes Event | 80 Fotos | **80** |
+| längste Dauer | 5 h 3 min | **5 h 3 min 34 s** |
+| Ein-Bild-Anteil | 26,9 % | **26,9 % (7 von 26)** |
+
+**Block A:** Median 3, kürzeste Eventdauer 0 s. Verteilung: 1 Foto: 7, 2: 4, 3: 3, 6: 2, 7: 1,
+11: 1, 15: 1, 16: 1, 25: 1, 26: 1, 38: 1, 43: 1, 76: 1, 80: 1.
+
+**Block B — beide Zusagen von ADR 0119 sind gemessen eingelöst.** 25 Grenzen mit Ursache
+(Eventzahl − 1):
+
+| Ursache | beteiligt | alleinige Ursache | eröffnet ein zu kleines Segment |
+|---|---|---|---|
+| zeitluecke | 12 (48,0 %) | **4 (16,0 %)** | 2 |
+| dauer | 4 (16,0 %) | 0 (0,0 %) | 1 |
+| schritt | 16 (64,0 %) | 0 (0,0 %) | 5 |
+| ausdehnung | 16 (64,0 %) | 0 (0,0 %) | 5 |
+| sehenswuerdigkeit | 0 (0,0 %) | 0 (0,0 %) | 0 |
+| **motivwechsel** | **5 (20,0 %)** | **0 (0,0 %)** | 1 |
+
+`motivwechsel` steht bei 0 allein und wird weiter als „beteiligt" gezählt — genau die bewegliche
+Zahl, an der eine spätere Änderung dieser Entscheidung gemessen würde. `sehenswuerdigkeit` steht
+seit PR 5 auf 0 und bleibt im Vorrat.
+
+**Die Gliederung ist mehrfach belegt statt einfach.** Über 25 Grenzen verteilen sich 53
+Beteiligungen, also gut zwei Ursachen je Grenze; nur **4** Grenzen tragen eine einzige Ursache, und
+das ist jedes Mal die Zeitlücke. Die Ortssignale `schritt` und `ausdehnung` sind mit je 64 %
+beteiligt, trennen aber weiterhin **nie allein** — dieselbe Aussage wie in der Ausgangsmessung,
+jetzt aber bei einer Gliederung, die überhaupt erst von der Geografie bestimmt wird.
+
+**Gegenanzeige gegen Überverschmelzung:** Stufe 3 löst **1 von 26** Grenzen auf (3,8 %), **1 von
+373** Fotos wechselt dadurch das Event (0,3 %). Die Stufe greift damit fast nicht mehr — nicht,
+weil sie gesperrt wäre (die Unantastbarkeit ist entfallen), sondern weil kaum noch zu kleine
+Segmente entstehen.
+
+**Die sieben Ein-Bild-Cluster bleiben, und das ist hier kein Rest.** Sie überstehen Stufe 3, obwohl
+keine Grenze mehr unantastbar ist — es halten die Schwellen selbst. Ein einzelnes Foto, dessen
+Nachbarn jenseits von `MERGE_EXTENT_MAX_METERS` liegen, ist ein eigener Ort und kein Ausreißer. Der
+Anteil steigt gegenüber der Ausgangsmessung (24,2 % → 26,9 %), die absolute Zahl fällt von **22 auf
+7**; beides war im Akzeptanzkriterium vorweggenommen.
+
+**Block C ist gegenüber der Ausgangsmessung unverändert** und bestätigt sie: C1 112 von 373 ohne
+eigene Koordinate (30,0 %), alle mit Übernahme, 7 mit 12 h und mehr Abstand zum Anker, 2 mit einer
+Ankerspanne über 10 km. C2 10 gefragte Zellen, alle mit Namen, **0** über der Entfernungsschwelle.
+C3 26 Erkennungen, davon 11 ohne jeden Ortshinweis (42,3 %), 18 verschiedene Namen, **0** mit
+Trägerfotos über der Schwelle auseinander.
+
+**Eine Zahl aus C3 hat sich mit der Gliederung bewegt:** Events, deren Name auf genau einem von
+vielen Fotos beruht, gehen von 18 auf **8** zurück — bei zugleich weniger und größeren Events. Der
+Befund selbst bleibt bestehen und gehört zu Issue
+[#514](https://github.com/TheRealKoller/photosort/issues/514): Ein Name beruht weiterhin
+regelmäßig auf einem einzigen, zu 42,3 % ortsblind erkannten Foto, und er reicht jetzt über ein
+größeres Event. Genau dafür trägt das Sicherheitskonzept seit PR 8 einen eigenen Auslöser.
+
 
 ### Befund zur Ortszuordnung
 
