@@ -28,6 +28,7 @@ from photosort.event_probe import (
     MOTIF_STRENGTH_VARIANTS,
     EventProbeError,
     EventProbeInput,
+    _quota_lines,
     block_counts,
     cause_counts,
     inheritance_counts,
@@ -302,25 +303,26 @@ class TestBlockASizes:
 
 class TestBlockAQuotaReach:
     """Ob die Kontingentvergabe ueberhaupt gewichten kann - das Mass, an dem die Zerstueckelung
-    haengt. Der Anteil der Ein-Bild-Cluster ist nur ein Hilfsmass daneben."""
+    haengt. Der Anteil der Ein-Bild-Cluster ist nur ein Hilfsmass daneben.
+
+    DIE LAGEN STEHEN UEBER EINEN EINGESTELLTEN RICHTWERT, nie ueber eine Bilderzahl, aus der er
+    sich ergaebe: Eine Lage aus Fotozahlen haenge am Zahlwert von `DEFAULT_TARGET_DIVISOR` und
+    ginge nur gegen den heutigen Wert auf. Die Ableitung selbst prueft der Fall darunter, und zwar
+    gegen `effective_target` statt gegen eine Zahl."""
 
     def test_more_events_than_seats_leaves_nothing_to_weight(self) -> None:
-        """Der gemessene Fall: 81 Events auf einen Richtwert von 38. "Abdeckung zuerst" vergibt
-        jeden Platz, bevor die Gewichtung beginnt - kein Restplatz bleibt."""
-        reach = quota_reach(
-            _probe_input(selection_target=None, project_photos=373), events_total=81
-        )
+        """Die gemessene Lage: deutlich mehr Events als Plaetze. "Abdeckung zuerst" vergibt jeden
+        Platz, bevor die Gewichtung beginnt - kein Restplatz bleibt."""
+        reach = quota_reach(_probe_input(selection_target=38, project_photos=373), events_total=81)
 
         assert reach.target == 38
-        assert reach.target_is_configured is False
+        assert reach.target_is_configured is True
         assert reach.events_total == 81
         assert reach.free_seats == 0
         assert reach.weighting_is_effective is False
 
     def test_fewer_events_than_seats_leaves_seats_to_weight(self) -> None:
-        reach = quota_reach(
-            _probe_input(selection_target=None, project_photos=373), events_total=20
-        )
+        reach = quota_reach(_probe_input(selection_target=38, project_photos=373), events_total=20)
 
         assert reach.free_seats == 18
         assert reach.weighting_is_effective is True
@@ -328,9 +330,7 @@ class TestBlockAQuotaReach:
     def test_as_many_events_as_seats_already_exhausts_them(self) -> None:
         """Die Grenze liegt bei Gleichstand, nicht darueber: `_quotas` bricht ab, sobald nach der
         Abdeckung nichts mehr uebrig ist (`remaining <= 0`)."""
-        reach = quota_reach(
-            _probe_input(selection_target=None, project_photos=373), events_total=38
-        )
+        reach = quota_reach(_probe_input(selection_target=38, project_photos=373), events_total=38)
 
         assert reach.free_seats == 0
         assert reach.weighting_is_effective is False
@@ -345,6 +345,7 @@ class TestBlockAQuotaReach:
             )
 
             assert reach.target == effective_target(None, photo_count)
+            assert reach.target_is_configured is False
 
     def test_a_configured_target_is_reported_as_configured(self) -> None:
         """Eine eingestellte Zahl gilt absolut - und der Bericht sagt, dass sie eingestellt ist:
@@ -371,9 +372,35 @@ class TestBlockAQuotaReach:
 
         assert quota_reach(probe, events_total=1).measured_on_the_same_set is True
 
+    def test_the_verdict_is_written_out_as_a_sentence(self) -> None:
+        """Ein Zahlenpaar liesse den Schluss beim Leser, und genau dieser Schluss ist das Mass -
+        er gehoert ausgeschrieben."""
+        lines = _quota_lines(quota_reach(_probe_input(selection_target=38), events_total=81))
+
+        text = "\n".join(lines)
+        assert "kann nicht gewichten" in text
+        assert "jedes Event bekommt genau einen Platz" in text
+        assert "kann gewichten:" not in text
+
+    def test_the_other_direction_says_so_too(self) -> None:
+        lines = _quota_lines(quota_reach(_probe_input(selection_target=38), events_total=20))
+
+        text = "\n".join(lines)
+        assert "kann gewichten" in text
+        assert "kann nicht gewichten" not in text
+
+    def test_the_diverging_sets_are_named_in_the_report(self) -> None:
+        """Faellt die Bilderzahl mit der Kandidatenmenge auseinander, sagt der Bericht es - sonst
+        laese sich der Richtwert fuer eine Aussage ueber die gemessene Menge halten."""
+        diverging = _probe_input(selection_target=38, project_photos=400, candidates=3)
+        same = _probe_input(selection_target=38, project_photos=3, candidates=3)
+
+        assert "Auswertungsgrenze" in "\n".join(_quota_lines(quota_reach(diverging, 5)))
+        assert "Auswertungsgrenze" not in "\n".join(_quota_lines(quota_reach(same, 5)))
+
 
 def _probe_input(
-    *, selection_target: int | None, project_photos: int, candidates: int = 0
+    *, selection_target: int | None, project_photos: int = 0, candidates: int = 0
 ) -> EventProbeInput:
     """Ein gelesener Bestand ohne Datenbank - `quota_reach` rechnet rein ueber diese Felder."""
     return EventProbeInput(
@@ -1326,6 +1353,21 @@ class TestMainRefusesLoudly:
         assert "Fotos, die dadurch ihr Event gewechselt haben:" in report
 
 
+def _add_one_unranked_photo(url: str, project_id: int) -> None:
+    """Ein Foto ohne Rangzeile - es zaehlt zum Bestand des Projekts, wird aber nie Kandidat.
+    SCHREIBT, aber im TEST, nie im Kommando."""
+
+    async def add() -> None:
+        engine = make_engine(url)
+        factory = make_session_factory(engine)
+        async with factory() as session:
+            await _photo(session, project_id, minutes=4711)
+            await session.commit()
+        await engine.dispose()
+
+    asyncio.run(add())
+
+
 class TestTheReportNamesWhetherTheQuotaCanWeigh:
     """Ohne diese Zeilen im BERICHT bliebe das eigentliche Mass ungemessen: Der Anteil der
     Ein-Bild-Cluster sagt nichts darueber, ob die Kontingentvergabe ueberhaupt gewichten kann."""
@@ -1333,8 +1375,10 @@ class TestTheReportNamesWhetherTheQuotaCanWeigh:
     def test_the_report_carries_the_target_and_the_verdict(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Die Messlage: vier Fotos, zwei Events. Der abgeleitete Richtwert ist damit 1, und zwei
-        Events auf einen Platz heisst "die Gewichtung kommt nie zum Zug"."""
+        """Die Messlage traegt vier Fotos; der Richtwert kommt aus `effective_target` und wird
+        deshalb auch hier von dort geholt statt als Zahl hingeschrieben. Der Wortlaut des Urteils
+        steht in den reinen Faellen - hier geht es darum, dass der Block den Bericht ueberhaupt
+        erreicht."""
         url, project_id = _prepared(tmp_path)
 
         assert main(["--project-id", str(project_id)], database_url=url) == 0
@@ -1342,19 +1386,22 @@ class TestTheReportNamesWhetherTheQuotaCanWeigh:
         report = capsys.readouterr().out
         assert f"Album-Richtwert: {effective_target(None, 4)}" in report
         assert "freie Plaetze" in report
-        assert "kann nicht gewichten" in report
+        assert "Die Kontingentvergabe kann" in report
 
-    def test_the_verdict_is_a_sentence_not_only_a_pair_of_numbers(
+    def test_the_target_rests_on_the_photos_of_the_project_not_on_the_candidates(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Ein Zahlenpaar laesst die Aussage beim Leser; sie gehoert ausgeschrieben - das ist der
-        Punkt, an dem die Abnahmezahl dieser Spec haengt."""
+        """Die Auswertungsgrenze am echten Lesepfad: Ein nach dem Lauf hinzugekommenes Foto zaehlt
+        fuer den Richtwert mit - er rechnet auf dem Bestand, nicht auf der Kandidatenmenge - und
+        der Bericht sagt, dass die beiden Mengen auseinanderfallen."""
         url, project_id = _prepared(tmp_path)
+        _add_one_unranked_photo(url, project_id)
 
-        main(["--project-id", str(project_id)], database_url=url)
+        assert main(["--project-id", str(project_id)], database_url=url) == 0
 
         report = capsys.readouterr().out
-        assert "jedes Event bekommt genau einen Platz" in report
+        assert f"Album-Richtwert: {effective_target(None, 5)}" in report
+        assert "Auswertungsgrenze" in report
 
 
 class TestTheOutputSeparatesNumbersFromPlaces:
