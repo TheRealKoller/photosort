@@ -33,6 +33,7 @@ from photosort.event_probe import (
     EventProbeError,
     EventProbeInput,
     _quota_lines,
+    _report_head,
     _tally,
     block_counts,
     cause_counts,
@@ -206,7 +207,39 @@ class TestTheReadPath:
         probe = await read_event_probe_input(db_session, project_id)
 
         assert probe.run_found is False
+        assert probe.run_id is None
         assert probe.candidates == ()
+
+    async def test_the_run_identifier_reaches_the_measurement(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Akzeptanzkriterium 4 verlangt die Messergebnisse "mit Projekt-Id UND Laufkennung". Die
+        Kennung wurde bisher fuer die Kandidatenabfrage ermittelt und danach weggeworfen - ohne sie
+        laesst sich ein Protokolleintrag keinem Lauf mehr zuordnen, und ein zweiter Lauf am selben
+        Projekt sieht aus wie derselbe."""
+        project_id = await _project(db_session)
+        ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
+        run = await _successful_run(db_session, project_id, [ranked])
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.run_id == run.id
+
+    async def test_only_the_identifier_of_the_latest_successful_run_is_reported(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Dieselbe Wahl wie bei der Kandidatenmenge - sonst stuende die Kennung des einen Laufs
+        ueber den Zahlen eines anderen, und genau das soll sie ausschliessen."""
+        project_id = await _project(db_session)
+        older_photo = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
+        newer_photo = await _photo(db_session, project_id, minutes=5, gps=(43.52, 16.45))
+        older = await _successful_run(db_session, project_id, [older_photo])
+        newer = await _successful_run(db_session, project_id, [newer_photo])
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.run_id == newer.id
+        assert probe.run_id != older.id
 
     async def test_the_candidates_are_the_ranked_photos_of_the_run(
         self, db_session: AsyncSession
@@ -407,8 +440,15 @@ class TestBlockAQuotaReach:
         assert "Auswertungsgrenze" not in "\n".join(_quota_lines(quota_reach(same, 5)))
 
 
+MEASURED_RUN_ID = 42
+
+
 def _probe_input(
-    *, selection_target: int | None, project_photos: int = 0, candidates: int = 0
+    *,
+    selection_target: int | None,
+    project_photos: int = 0,
+    candidates: int = 0,
+    run_id: int | None = MEASURED_RUN_ID,
 ) -> EventProbeInput:
     """Ein gelesener Bestand ohne Datenbank - `quota_reach` rechnet rein ueber diese Felder."""
     return EventProbeInput(
@@ -420,9 +460,33 @@ def _probe_input(
             )
             for index in range(project_photos)
         ),
-        run_found=True,
+        run_id=run_id,
         selection_target=selection_target,
     )
+
+
+class TestTheRunMarkerCannotDivergeFromTheIdentifier:
+    """EIN Feld, nicht zwei."""
+
+    def test_the_marker_is_derived_from_the_identifier_not_stored_beside_it(self) -> None:
+        """`run_found` ist die Frage "gibt es eine Laufkennung", und genau so wird sie beantwortet.
+        Zwei unabhaengige Felder koennten dasselbe Verschiedenes behaupten - ein `run_found=True`
+        ohne Kennung ergaebe einen Berichtskopf ohne Lauf, ein `run_found=False` mit Kennung einen
+        Abbruch trotz messbarer Gliederung. Abgeleitet ist der Widerspruch nicht darstellbar."""
+        assert _probe_input(selection_target=None, run_id=7).run_found is True
+        assert _probe_input(selection_target=None, run_id=None).run_found is False
+
+    def test_the_marker_cannot_be_set_against_the_identifier(self) -> None:
+        """Gegenprobe: Es gibt keinen Weg, das eine ohne das andere zu setzen. Waere `run_found`
+        noch ein Feld, ginge genau das - und niemandem fiele es auf."""
+        with pytest.raises(TypeError):
+            EventProbeInput(
+                project_id=1,
+                candidates=(),
+                entries=(),
+                run_id=None,
+                run_found=True,  # type: ignore[call-arg]
+            )
 
 
 def _segment(position: int, photo_count: int, duration_minutes: int = 0) -> BuiltEvent:
@@ -1646,6 +1710,92 @@ def _prepared(tmp_path: Path) -> tuple[str, int]:
     return url, asyncio.run(prepare())
 
 
+def _prepared_with_distinct_ids(tmp_path: Path) -> tuple[str, int]:
+    """Wie `_prepared`, aber mit einem vorgelagerten Projekt ohne Lauf: Die Messlage bekommt
+    dadurch die Projekt-Id 2 und ihr Lauf die Kennung 1. In `_prepared` tragen beide die 1, und
+    dann sagt ein Kopf mit zweimal derselben Zahl nichts darueber, ob die zweite wirklich der Lauf
+    ist."""
+    url = f"sqlite+aiosqlite:///{tmp_path / 'probe.db'}"
+
+    async def prepare() -> int:
+        engine = make_engine(url)
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        factory = make_session_factory(engine)
+        async with factory() as session:
+            await _project(session, "Vorgelagert")
+            project_id = await _seed_measured_project(session)
+            await session.commit()
+        await engine.dispose()
+        return project_id
+
+    return url, asyncio.run(prepare())
+
+
+def _run_id_of(url: str, project_id: int) -> int:
+    """Die Laufkennung der Messlage - aus DEM Lesepfad geholt, den auch das Kommando nimmt, statt
+    sie im Test ein zweites Mal zu bestimmen."""
+
+    async def read() -> int | None:
+        engine = make_engine(url)
+        factory = make_session_factory(engine)
+        async with factory() as session:
+            probe = await read_event_probe_input(session, project_id)
+        await engine.dispose()
+        return probe.run_id
+
+    run_id = asyncio.run(read())
+    assert run_id is not None
+    return run_id
+
+
+class TestTheReportHead:
+    """Titel, Projekt-Id und Laufkennung - an genau einer Stelle gebaut."""
+
+    def test_the_head_carries_the_title_the_project_and_the_run(self) -> None:
+        head = _report_head("Event-Messung", _probe_input(selection_target=None, run_id=7))
+
+        assert head == "# Event-Messung, Projekt 1, Lauf 7"
+
+    def test_a_probe_without_a_run_never_reaches_the_head(self) -> None:
+        """Ein Bericht ueber einen Lauf, den es nicht gibt, ist keine Ausgabe, sondern ein
+        Programmierfehler: `main()` bricht vorher ab. Still "Lauf None" zu schreiben waere die
+        einzige Art, wie diese Lage doch in ein Protokoll geraten koennte."""
+        with pytest.raises(AssertionError):
+            _report_head("Event-Messung", _probe_input(selection_target=None, run_id=None))
+
+
+class TestEveryReportNamesItsRun:
+    """Akzeptanzkriterium 4: die Messergebnisse mit Projekt-Id UND Laufkennung. Je Argumentform,
+    weil jeder Modus seinen Bericht an einer anderen Stelle zusammensetzt."""
+
+    @pytest.mark.parametrize("mode", [[], ["--motiv"], ["--riegel"], ["--kohaerenz"]])
+    def test_the_head_names_project_and_run(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], mode: list[str]
+    ) -> None:
+        url, project_id = _prepared(tmp_path)
+        run_id = _run_id_of(url, project_id)
+
+        assert main(["--project-id", str(project_id), *mode], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert f"Projekt {project_id}, Lauf {run_id}" in report
+
+    def test_the_run_identifier_is_not_the_project_identifier(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Gegenprobe: In der gewoehnlichen Messlage tragen Projekt und Lauf beide die 1, und der
+        Fall darueber liesse deshalb auch einen Kopf durch, der die Projekt-Id zweimal nennt. Hier
+        fallen die beiden Zahlen auseinander - und zwar vertauscht."""
+        url, project_id = _prepared_with_distinct_ids(tmp_path)
+        run_id = _run_id_of(url, project_id)
+        assert run_id != project_id
+
+        assert main(["--project-id", str(project_id)], database_url=url) == 0
+
+        assert f"Projekt {project_id}, Lauf {run_id}" in capsys.readouterr().out
+
+
 class TestMainRefusesLoudly:
     """Nicht Traceback und nicht stille Null."""
 
@@ -2319,6 +2469,67 @@ def _names_bound_from_events(source: str) -> frozenset[str]:
         if isinstance(node, ast.ImportFrom) and node.module == "photosort.events"
         for alias in node.names
     )
+
+
+def _report_functions() -> dict[str, ast.FunctionDef]:
+    """Jede Funktion des Moduls, die einen Bericht baut - GEMESSEN am Namen `render_*`, nie als
+    handgeschriebene Liste. Ein kuenftiger fuenfter Modus bringt seine Funktion mit und ist damit
+    ohne Zutun erfasst."""
+    path = module_file("photosort.event_probe")
+    assert path is not None
+    return {
+        node.name: node
+        for node in ast.parse(path.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("render_")
+    }
+
+
+def _called_names(node: ast.AST) -> frozenset[str]:
+    return frozenset(
+        call.func.id
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+    )
+
+
+class TestEveryReportHeadComesFromTheOnePlace:
+    """Die Kopfzeile stand viermal im Modul - vier Fassungen derselben Aussage. Mit der
+    Laufkennung waeren es vier Gelegenheiten gewesen, sie zu vergessen, und genau so ist sie neun
+    PRs lang gefehlt: Jeder Modus schrieb seinen Kopf selbst, und keiner davon nannte den Lauf."""
+
+    def test_the_report_functions_are_actually_found(self) -> None:
+        """Gegenprobe gegen einen Detektor, der nichts findet: Ein leerer Vorrat machte beide
+        Zusagen unten vakuum-gruen. Teilmenge, kein Gleichstand - ein fuenfter Modus soll den
+        Waechter erweitern, nicht diesen Fall rot machen."""
+        found = _report_functions()
+
+        assert {
+            "render_report",
+            "render_motif_report",
+            "render_bolt_report",
+            "render_coherence_report",
+        } <= set(found)
+
+    def test_every_report_function_asks_for_its_head(self) -> None:
+        """Ein fuenfter Modus, der seinen Kopf selbst baut, wird hier rot - und nicht erst, wenn
+        jemand einen Protokolleintrag keinem Lauf mehr zuordnen kann."""
+        for name, node in _report_functions().items():
+            assert "_report_head" in _called_names(node), name
+
+    def test_no_report_function_writes_a_head_of_its_own(self) -> None:
+        """Die Gegenrichtung zum Fall darueber: Wer `_report_head` ruft UND daneben eine eigene
+        Ueberschrift der ersten Ebene setzt, hat zwei Koepfe. Abschnitte (`## …`) bleiben
+        unberuehrt - gesucht ist genau die eine Raute."""
+        for name, node in _report_functions().items():
+            own = [
+                text
+                for text in ast.walk(node)
+                if isinstance(text, ast.Constant)
+                and isinstance(text.value, str)
+                and text.value.startswith("# ")
+            ]
+
+            assert own == [], f"{name}: {own}"
 
 
 class TestNoAdjustableConstantIsBoundAtImport:

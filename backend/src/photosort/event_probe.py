@@ -181,8 +181,15 @@ class EventProbeInput:
     Inferenzbasis der Ortsherleitung (jedes Foto des Projekts). Beide kommen aus
     `event_inputs.py` - derselben Stelle, aus der sie auch der Lauf bezieht (ADR 0117 Punkt 5).
 
-    `run_found` unterscheidet "Projekt ohne erfolgreichen Kriterien-Lauf" von "Lauf ohne
-    Kandidaten".
+    `run_id` ist die Kennung des gemessenen Kriterien-Laufs; `None` heisst "dieses Projekt hat
+    keinen erfolgreichen Lauf" und ist etwas anderes als "ein Lauf ohne Kandidaten". Sie steht in
+    jedem Berichtskopf: Ohne sie laesst sich ein Protokolleintrag keinem Lauf mehr zuordnen, und
+    zwei Messungen desselben Projekts sehen aus wie dieselbe (Akzeptanzkriterium 4 der Spec 0506).
+
+    EIN FELD, NICHT ZWEI: `run_found` ist abgeleitet, nicht daneben gespeichert. Zwei unabhaengige
+    Angaben koennten dasselbe Verschiedenes behaupten - ein `run_found=True` ohne Kennung ergaebe
+    einen Berichtskopf ohne Lauf, ein `run_found=False` mit Kennung einen Abbruch trotz messbarer
+    Gliederung. Abgeleitet ist der Widerspruch nicht darstellbar.
 
     `selection_target` ist der EINGESTELLTE Richtwert des Projekts; `None` heisst "nicht selbst
     eingestellt" und ist etwas anderes als "kein Richtwert" (`models.py::Project`)."""
@@ -190,8 +197,12 @@ class EventProbeInput:
     project_id: int
     candidates: tuple[EventCandidate, ...]
     entries: tuple[LocationEntry, ...]
-    run_found: bool
+    run_id: int | None
     selection_target: int | None = None
+
+    @property
+    def run_found(self) -> bool:
+        return self.run_id is not None
 
     @property
     def project_photos(self) -> int:
@@ -321,7 +332,7 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
             project_id=project_id,
             candidates=(),
             entries=inputs.entries,
-            run_found=False,
+            run_id=None,
             selection_target=selection_target,
         )
 
@@ -341,7 +352,7 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
         project_id=project_id,
         candidates=inputs.candidates,
         entries=inputs.entries,
-        run_found=True,
+        run_id=run_id,
         selection_target=selection_target,
     )
 
@@ -997,6 +1008,28 @@ def _class_lines(counts: Sequence[int], labels: Sequence[str]) -> list[str]:
     ]
 
 
+def _report_head(title: str, probe: EventProbeInput) -> str:
+    """DIE EINE KOPFZEILE jedes Berichts dieses Kommandos: Titel, Projekt-Id, Laufkennung.
+
+    An einer Stelle, nicht je Modus: Vier Fassungen derselben Aussage waren vier Gelegenheiten,
+    eine davon zu vergessen - und genau so hat die Laufkennung neun PRs lang gefehlt, obwohl
+    Akzeptanzkriterium 4 der Spec 0506 sie verlangt. Ein kuenftiger Modus bekommt seinen Kopf von
+    hier oder wird von `TestEveryReportHeadComesFromTheOnePlace` rot gemeldet.
+
+    BEIDE ZAHLEN SIND INTERNE KENNUNGEN und fallen unter keine der sechs Klassen aus S2: keine
+    Koordinate, kein Orts-, Sehenswuerdigkeit- oder Projektname, kein OpenCloud-Pfad, kein
+    Zeitstempel. Der Projekt-NAME waere eine Ortsangabe, die Id ist keine.
+
+    Ohne Laufkennung gibt es keinen Bericht: `main()` bricht vor jedem Rendern ab, wenn das Projekt
+    keinen erfolgreichen Lauf hat. Ein stilles "Lauf None" waere die einzige Art, wie diese Lage
+    doch in ein Protokoll geriete - deshalb die Zusicherung statt eines Ersatzzeichens."""
+    assert probe.run_id is not None, (
+        "Ein Bericht ohne Laufkennung ist keine Ausgabe, sondern ein Programmierfehler - "
+        "main() bricht ohne erfolgreichen Lauf vorher ab."
+    )
+    return f"# {title}, Projekt {probe.project_id}, Lauf {probe.run_id}"
+
+
 def _quota_lines(reach: QuotaReach) -> list[str]:
     """Der Album-Richtwert und die Eventzahl gegen ihn - AUSGESCHRIEBEN ALS AUSSAGE.
 
@@ -1058,7 +1091,7 @@ def render_motif_report(probe: EventProbeInput, rows: Sequence[MotifSensitivityR
     Die Zeile "aus" nennt ihr Fenster aus demselben Grund nicht: Es ist ein Rechenmittel, und als
     Zahl gelesen sieht es aus wie ein weiterer messbarer Betriebspunkt."""
     lines = [
-        f"# Empfindlichkeit des Motivwechsels, Projekt {probe.project_id}",
+        _report_head("Empfindlichkeit des Motivwechsels", probe),
         "",
         "Dieselbe Kandidatenmenge, durchgerechnet unter mehreren Kombinationen aus der Zahl der",
         "bestaetigenden Fotos und der Motivstaerke-Grenze. BEIDE KONSTANTEN BLEIBEN UNVERAENDERT -",
@@ -1158,7 +1191,7 @@ def render_coherence_report(
     return (
         "\n".join(
             [
-                f"# Kohaerenz der Events, Projekt {probe.project_id}",
+                _report_head("Kohaerenz der Events", probe),
                 "",
                 "Je Event fuenf ANZAHLEN: Fotozahl, davon mit gemessener Koordinate, Dauer, Zahl",
                 "der verschiedenen Ortszellen und Zahl der verschiedenen getragenen Motive. Weder",
@@ -1211,7 +1244,7 @@ def render_bolt_report(probe: EventProbeInput, formation: EventFormation) -> str
     blocks = block_counts(formation)
 
     lines = [
-        f"# Woran eine Zusammenlegung scheitert, Projekt {probe.project_id}",
+        _report_head("Woran eine Zusammenlegung scheitert", probe),
         "",
         f"- Events: {sizes.events_total}",
         f"- Ein-Bild-Cluster: {sizes.single_photo_events} "
@@ -1271,7 +1304,7 @@ def render_report(
     landmarks = landmark_counts(probe.candidates, formation, locality_by_cell)
 
     lines = [
-        f"# Event-Messung, Projekt {probe.project_id}",
+        _report_head("Event-Messung", probe),
         "",
         "## A - Verteilung der Events nach Fotozahl",
         "",
