@@ -25,7 +25,6 @@ from photosort.events import (
     MERGE_BLOCK_SPAN,
     MERGE_BLOCK_TIME_GAP,
     MERGE_BLOCK_UNBREAKABLE,
-    UNBREAKABLE_CAUSES,
     BoundarySignal,
     BuiltEvent,
     EffectiveLocation,
@@ -2587,13 +2586,14 @@ class TestTheFourBoltsAgainstOverMerging(_UnderShiftedEventConstants):
         assert outcome.dissolved_boundaries == 0
 
 
-class TestTheOneUntouchableBoundary(_UnderShiftedEventConstants):
-    """Eine Grenze, deren Ursachenmenge `motivwechsel` enthaelt, wird NIE aufgeloest - auch nicht,
-    wenn beide Nachbarn alle vier Riegel erfuellen und das Segment aus einem einzigen Foto besteht.
+class TestNoBoundaryIsUntouchableAnyMore(_UnderShiftedEventConstants):
+    """Seit ADR 0119 liest die dritte Stufe ueberhaupt keine Ursachenmenge mehr: `motivwechsel`
+    haelt eine Grenze nicht mehr fest, und `UNBREAKABLE_CAUSES` ist ersatzlos entfallen.
 
-    Seit ADR 0118 ist das die EINE unantastbare Grenze. `sehenswuerdigkeit` steht nicht mehr
-    daneben: Der Vorrat ist keine Wortliste, sondern eine an jeder Kante gelesene Regel, und ein
-    Eintrag, der nie treffen kann, behauptete dort eine Sperre ohne Gegenstand."""
+    Die Faelle hier ERSETZEN die frueheren zur unantastbaren Grenze - sie sind deren woertliche
+    Umkehrung. Der Berichtsgrund `MERGE_BLOCK_UNBREAKABLE` bleibt im Vorrat und steht dauerhaft auf
+    0; ohne die Zeile waere eine Riegel-Diagnose nicht mehr gegen die frueheren zu halten, in denen
+    `unantastbar` der groesste Blocker war."""
 
     def _enclosed(self, causes: Collection[str]) -> list[Segment]:
         return [
@@ -2602,66 +2602,76 @@ class TestTheOneUntouchableBoundary(_UnderShiftedEventConstants):
             _normal_from(2 * EPSILON_TIME, first_id=20, causes=causes),
         ]
 
-    @pytest.mark.parametrize("cause", sorted(UNBREAKABLE_CAUSES))
-    def test_a_single_photo_between_two_untouchable_boundaries_stays_alone(
-        self, cause: str
-    ) -> None:
-        outcome = merge_small_segments(self._enclosed({cause}))
+    def test_a_segment_opened_by_a_motif_change_is_absorbed_like_any_other(self) -> None:
+        """DIE UMKEHRUNG: Genau die Lage, die den Motivwechsel frueher festgehalten hat - ein
+        einzelnes Foto zwischen zwei Grenzen mit `motivwechsel`, beide Nachbarn erfuellen alle drei
+        Riegel - wird jetzt zugeschlagen."""
+        outcome = merge_small_segments(self._enclosed({BOUNDARY_MOTIF_CHANGE}))
 
-        assert _ids(outcome) == [_block(1), (10,), _block(20)]
-        assert outcome.dissolved_boundaries == 0
-        assert outcome.moved_photo_ids == frozenset()
-
-    def test_the_same_lage_with_a_dissolvable_cause_is_merged(self) -> None:
-        """Der ROT-ANKER zu den beiden Faellen darueber: Es liegt an der URSACHE, nicht an der
-        Lage."""
-        outcome = merge_small_segments(self._enclosed({BOUNDARY_TIME_GAP}))
-
+        assert _ids(outcome) == [(*_block(1), 10), _block(20)]
         assert outcome.dissolved_boundaries == 1
+        assert outcome.moved_photo_ids == frozenset({10})
 
-    def test_the_stock_of_untouchable_causes_is_exactly_this_one(self) -> None:
-        """Er ist das einzige Signal, das zwei Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennt. Ein
-        zweiter Eintrag hier waere eine stille Ausweitung der Sperre."""
-        assert UNBREAKABLE_CAUSES == frozenset({BOUNDARY_MOTIF_CHANGE})
-        assert UNBREAKABLE_CAUSES <= set(BOUNDARY_CAUSES)
+    def test_the_lage_is_decided_by_the_bolts_alone_not_by_the_cause(self) -> None:
+        """Dieselbe Lage unter JEDER Ursachenmenge des Vorrats - das Ergebnis ist immer dasselbe.
+        Ein einzelner Eintrag, der die Stufe doch noch liest, wird hier rot, nicht erst im
+        Bericht."""
+        reference = _ids(merge_small_segments(self._enclosed({BOUNDARY_TIME_GAP})))
 
-    def test_the_landmark_is_in_the_vocabulary_but_not_in_the_rule(self) -> None:
-        """Die UNGLEICHBEHANDLUNG der beiden Vorraete (ADR 0118 Punkt 2), in einem Fall festgehalten:
-        Ein Berichtswortschatz darf eine ehrliche Null fuehren, eine an jeder Kante gelesene Regel
-        nicht. Faellt eine der beiden Seiten weg, wird `MERGE_BLOCK_UNBREAKABLE` wieder
-        mehrdeutig."""
-        assert BOUNDARY_LANDMARK in BOUNDARY_CAUSES
-        assert BOUNDARY_LANDMARK not in UNBREAKABLE_CAUSES
+        for cause in BOUNDARY_CAUSES:
+            assert _ids(merge_small_segments(self._enclosed({cause}))) == reference, cause
 
-    def test_a_segment_opened_by_a_landmark_cause_is_merged_again(self) -> None:
-        """Der Gegenfall zur Sperre: Dieselbe Lage, die `motivwechsel` festhaelt, loest sich mit
-        `sehenswuerdigkeit` auf. Solche Grenzen entstehen zwar nicht mehr; bliebe der Eintrag in
-        der Sperre, faende dieser Fall es und nicht erst die naechste Messung."""
-        outcome = merge_small_segments(self._enclosed({BOUNDARY_LANDMARK}))
-
-        assert outcome.dissolved_boundaries == 1
-
-    def test_an_untouchable_cause_inside_a_set_of_two_still_blocks(self) -> None:
-        """Die Grenze traegt eine MENGE. Eine Pruefung auf Gleichheit statt auf Enthaltensein
-        liesse jede Doppelgrenze durch."""
+    def test_a_motif_change_inside_a_set_of_two_dissolves_too(self) -> None:
+        """Die Grenze traegt eine MENGE - und keine Teilmenge davon haelt sie mehr fest."""
         segments = [
             _normal_until(timedelta(0), first_id=1),
             _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP, BOUNDARY_MOTIF_CHANGE}),
         ]
 
-        assert _ids(merge_small_segments(segments)) == [_block(1), (10,)]
+        assert _ids(merge_small_segments(segments)) == [(*_block(1), 10)]
+
+    def test_the_block_reason_stays_in_the_supply_with_an_honest_zero(self) -> None:
+        """Der Berichtswortschatz behaelt seinen Eintrag, und die Stufe liefert ihn unter KEINER
+        Lage - auch nicht an einer Kante, an der alle drei Riegel zugleich sperren."""
+        assert MERGE_BLOCK_UNBREAKABLE in MERGE_BLOCK_REASONS
+
+        for cause in BOUNDARY_CAUSES:
+            segments = [
+                _normal_spanning_the_maximum(first_id=1),
+                _tiny(
+                    _max_span() + _merge_gap() + EPSILON_TIME,
+                    first_id=10,
+                    causes={cause},
+                    meters_north=_merge_extent_max() + EPSILON_METERS,
+                ),
+            ]
+
+            [blocked] = merge_small_segments(segments).blocked_segments
+
+            for edge in blocked.edges:
+                assert MERGE_BLOCK_UNBREAKABLE not in edge, cause
+
+    def test_the_landmark_keeps_its_place_in_the_cause_vocabulary(self) -> None:
+        """Was von der Ungleichbehandlung aus ADR 0118 Punkt 2 bleibt: Der Berichtswortschatz der
+        URSACHEN fuehrt weiter beide Namen mit ehrlicher Null bzw. beweglicher Zahl, waehrend die
+        an jeder Kante gelesene Regel ganz entfallen ist."""
+        assert {BOUNDARY_LANDMARK, BOUNDARY_MOTIF_CHANGE} <= set(BOUNDARY_CAUSES)
+        assert not hasattr(events_module, "UNBREAKABLE_CAUSES")
 
 
 class TestTheThirdStageComesToAStandstill(_UnderShiftedEventConstants):
     """Der Stillstand, maschinenpruefbar - nicht als Behauptung ueber den Ablauf."""
 
     def _a_blocked_and_a_mergeable_segment(self) -> list[Segment]:
-        """Ein Einzelfoto, dessen EINZIGE Kante unantastbar ist (es bleibt gesperrt), davor - und
-        danach ein zweites Einzelfoto, das zugeschlagen werden darf."""
+        """Ein Einzelfoto, dessen EINZIGE Kante die Ueberbrueckungsgrenze reisst (es bleibt
+        gesperrt), und dahinter ein zweites Einzelfoto, das zugeschlagen werden darf.
+
+        Gesperrt wird hier ueber einen RIEGEL, nicht mehr ueber eine Ursache: Seit ADR 0119 haelt
+        keine Ursachenmenge eine Kante mehr fest."""
         return [
             _tiny(timedelta(0), first_id=1),
-            _tiny(EPSILON_TIME, first_id=10, causes={BOUNDARY_MOTIF_CHANGE}),
-            _normal_from(2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}),
+            _tiny(_merge_gap() + EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
+            _normal_from(_merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}),
         ]
 
     def test_a_blocked_segment_does_not_stall_the_rest(self) -> None:
@@ -2837,19 +2847,6 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
 
         assert merge_small_segments(segments).blocked_segments == ()
 
-    def test_an_untouchable_boundary_is_a_reason_of_its_own(self) -> None:
-        """Die Unantastbarkeit ist keine Schwelle, sondern eine Zusage - ihre Behebung waere eine
-        andere Entscheidung als die Aenderung einer Zahl."""
-        segments = self._tiny_between(causes={BOUNDARY_MOTIF_CHANGE})
-        segments[2] = _normal_from(2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_MOTIF_CHANGE})
-
-        [blocked] = merge_small_segments(segments).blocked_segments
-
-        assert blocked.edges == (
-            frozenset({MERGE_BLOCK_UNBREAKABLE}),
-            frozenset({MERGE_BLOCK_UNBREAKABLE}),
-        )
-
     def test_the_gap_to_the_neighbour(self) -> None:
         segments = [
             _normal_until(timedelta(0), first_id=1),
@@ -2930,15 +2927,15 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
 
     def test_an_edge_that_violates_several_bolts_reports_them_all(self) -> None:
         """NICHT KURZGESCHLOSSEN, dieselbe Zusage wie fuer die Signale des Durchlaufs
-        (`TestSignalsAreNeverShortCircuited`): Alle vier werden ausgewertet. Sonst verschwaende
+        (`TestSignalsAreNeverShortCircuited`): Alle drei werden ausgewertet. Sonst verschwaende
         `ausdehnung` als zuletzt geprueftes hinter jedem frueheren Grund - und das ist genau die
-        Zahl, an der die Frage dieses Blocks haengt. Eine Lage, die ALLE VIER zugleich verletzt."""
+        Zahl, an der die Frage dieses Blocks haengt. Eine Lage, die ALLE DREI zugleich verletzt."""
         segments = [
             _normal_spanning_the_maximum(first_id=1),
             _tiny(
                 _max_span() + _merge_gap() + EPSILON_TIME,
                 first_id=10,
-                causes={BOUNDARY_MOTIF_CHANGE},
+                causes={BOUNDARY_TIME_GAP},
                 meters_north=_merge_extent_max() + EPSILON_METERS,
             ),
         ]
@@ -2946,14 +2943,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
         [blocked] = merge_small_segments(segments).blocked_segments
 
         assert blocked.edges == (
-            frozenset(
-                {
-                    MERGE_BLOCK_UNBREAKABLE,
-                    MERGE_BLOCK_TIME_GAP,
-                    MERGE_BLOCK_SPAN,
-                    MERGE_BLOCK_EXTENT,
-                }
-            ),
+            frozenset({MERGE_BLOCK_TIME_GAP, MERGE_BLOCK_SPAN, MERGE_BLOCK_EXTENT}),
         )
 
     def test_the_extent_is_reported_next_to_an_earlier_bolt(self) -> None:
@@ -2982,7 +2972,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
             [_tiny(timedelta(0), first_id=1)],
             [
                 _normal_spanning_the_maximum(first_id=1),
-                _tiny(_max_span() + EPSILON_TIME, first_id=10, causes={BOUNDARY_MOTIF_CHANGE}),
+                _tiny(_max_span() + EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
             ],
         ):
             for blocked in merge_small_segments(segments).blocked_segments:
@@ -3005,7 +2995,7 @@ class TestWhyASegmentCouldNotBeMerged(_UnderShiftedEventConstants):
         stehen geblieben ist - nicht mehr und nicht weniger."""
         segments = [
             _tiny(timedelta(0), first_id=1, causes=()),
-            _tiny(_merge_gap() + EPSILON_TIME, first_id=10, causes={BOUNDARY_MOTIF_CHANGE}),
+            _tiny(_merge_gap() + EPSILON_TIME, first_id=10, causes={BOUNDARY_TIME_GAP}),
             _normal_from(
                 2 * _merge_gap() + 2 * EPSILON_TIME, first_id=20, causes={BOUNDARY_TIME_GAP}
             ),

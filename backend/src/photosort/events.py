@@ -117,9 +117,11 @@ BOUNDARY_EXTENT = "ausdehnung"
 # die Ausgangsmessung, und kein Leser koennte unterscheiden, ob die Ursache weggefallen oder nie
 # gemessen worden ist.
 BOUNDARY_LANDMARK = "sehenswuerdigkeit"
-# Kein Eintrag in `default_signals()`: Der Motivwechsel ist eine Segmentierung ueber die ganze
-# Folge (ADR 0109) und trennt als ERZWUNGENER START. Er braucht trotzdem seinen Namen, sonst
-# stuende in der Statistik eine Grenze ohne Ursache.
+# Kein Eintrag in `default_signals()`, und seit ADR 0119 eroeffnet er auch kein Event mehr: Der
+# Motivwechsel VERMERKT eine Grenze, die ein Signal ohnehin gemeldet hat. Sein Name bleibt im
+# Vorrat, weil "war beteiligt" eine bewegliche Zahl bleibt - genau die Groesse, an der eine
+# spaetere Aenderung dieser Entscheidung gemessen wuerde. In der Spalte "alleinige Ursache" steht
+# er dauerhaft auf 0.
 BOUNDARY_MOTIF_CHANGE = "motivwechsel"
 
 BOUNDARY_CAUSES = (
@@ -131,18 +133,6 @@ BOUNDARY_CAUSES = (
     BOUNDARY_MOTIF_CHANGE,
 )
 
-# Die EINE Ursache, die das Zusammenlegen NIE aufloest. Sie ist das einzige Signal, das zwei
-# verschiedene Anlaesse AM SELBEN ORT ZUR SELBEN ZEIT trennt; ohne ihren Vorrang waere die Zusage
-# "zwei erkennbar verschiedene Anlaesse bleiben getrennt" nicht durchsetzbar. Ein durch Motivwechsel
-# abgetrenntes Einzelbild bleibt dadurch allein - genau das sagt ADR 0109 bereits zu.
-#
-# `BOUNDARY_LANDMARK` steht hier NICHT, obwohl es in `BOUNDARY_CAUSES` steht, und die
-# Ungleichbehandlung ist gewollt (ADR 0118 Punkt 2): Dieser Vorrat ist kein Wortschatz, sondern eine
-# an JEDER KANTE gelesene Regel. Ein Eintrag, der nie treffen kann, waere hier keine ehrliche Null,
-# sondern eine falsche Aussage ueber das laufende System - er behauptete eine Sperre ohne
-# Gegenstand und machte `MERGE_BLOCK_UNBREAKABLE` mehrdeutig.
-UNBREAKABLE_CAUSES = frozenset({BOUNDARY_MOTIF_CHANGE})
-
 # WORAN EINE ZUSAMMENLEGUNG SCHEITERT - der geschlossene Vorrat der Gruende, die an einer KANTE
 # eines zu kleinen Segments stehen koennen. Die Reihenfolge ist die der Riegel in `_may_merge` und
 # legt die Zeilenfolge des Berichts fest - sie ist KEIN Vorrang: Die Pruefung ist nicht
@@ -152,9 +142,10 @@ UNBREAKABLE_CAUSES = frozenset({BOUNDARY_MOTIF_CHANGE})
 # Nachbarn". Eine bloss fehlende SEITE eines Randsegments faellt nicht darunter - sie ist kein
 # Hindernis und keine Kante.
 #
-# DIE UNANTASTBARKEIT ZAEHLT ALS EIGENER GRUND, NICHT ALS VIERTER RIEGEL. Sie ist keine Schwelle,
-# sondern eine Zusage, und ihre Behebung waere eine andere Entscheidung als die Aenderung einer
-# Zahl. Ohne diese Trennung bliebe offen, ob eine Schwelle oder die Sperre blockiert hat.
+# `MERGE_BLOCK_UNBREAKABLE` wird seit ADR 0119 von KEINER Lage mehr geliefert und steht dauerhaft
+# auf 0: Die Unantastbarkeit ist mit ihrem Vorrat entfallen. Der Eintrag bleibt, weil dieser Vorrat
+# ein BERICHTSWORTSCHATZ ist und die Null der Nachweis - ohne die Zeile waere eine Riegel-Diagnose
+# nicht mehr gegen die frueheren zu halten, in denen `unantastbar` der groesste Blocker war.
 #
 # Riegel (d) - das Segment liegt selbst unter der Mindestgroesse - steht hier NICHT: Er haengt an
 # der Auswahl, nicht an einer Kante, und ein Segment, das nicht zu klein ist, wird gar nicht erst
@@ -675,8 +666,12 @@ def motif_change_starts(
     confirming_photos: int | None = None,
     motif_presence_threshold: float | None = None,
 ) -> frozenset[int]:
-    """Die Indizes der BEREITS SORTIERTEN Folge, an denen ein bestaetigter Motivwechsel ein neues
-    Event erzwingt - die erste Stufe der Event-Bildung, REIN und ohne Kenntnis der Signale.
+    """Die Indizes der BEREITS SORTIERTEN Folge, an denen ein Motivwechsel BESTAETIGT ist - die
+    erste Stufe der Event-Bildung, REIN und ohne Kenntnis der Signale.
+
+    WAS DER AUFRUFER DAMIT TUT, STEHT IN `explain_events`, nicht hier: Seit ADR 0119 eroeffnet ein
+    gelieferter Index kein Event mehr, er vermerkt eine ohnehin gezogene Grenze. Der Begriff des
+    Wechsels unten ist davon unberuehrt.
 
     Der Motivwechsel ist kein Eintrag in `default_signals()`: Er ist keine paarweise Frage,
     sondern eine Segmentierung ueber die ganze Folge, und das vorwaerts entscheidende
@@ -698,7 +693,7 @@ def motif_change_starts(
 
     GELIEFERT wird der Index des ERSTEN Fotos des Fensters, nicht des bestaetigenden; sein
     Motivbild wird der neue Bezug. Der Index ist nie `0` - er setzt einen bereits gesetzten Bezug
-    voraus, ein leeres fuehrendes Event kann also nicht entstehen.
+    voraus.
 
     BEIDE FESTLEGUNGEN SIND INJIZIERBAR (`None` = Modulkonstante bzw. Betriebswert): Die
     Empfindlichkeitsmessung in `event_probe.py` rechnet dieselbe Kandidatenmenge unter mehreren
@@ -941,8 +936,8 @@ def _step_over(earlier: Segment, later: Segment) -> float:
 
 
 def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) -> frozenset[str]:
-    """Drei der VIER RIEGEL plus die unantastbare Grenze - alles, was an einer KANTE haengt und
-    deshalb fuer beide Richtungen ueber sie gleich ausfaellt.
+    """Drei der VIER RIEGEL - alles, was an einer KANTE haengt und deshalb fuer beide Richtungen
+    ueber sie gleich ausfaellt.
 
     RUECKGABE: die MENGE der Gruende aus `MERGE_BLOCK_REASONS`, die diese Kante sperren - die LEERE
     Menge, wenn sie offen ist. `_neighbour_for` fragt nur, ob die Menge leer ist; die Gruende
@@ -966,13 +961,13 @@ def _may_merge(earlier: Segment, later: Segment, *, merge_max_gap: timedelta) ->
     eine Kante fuer beide Richtungen gleichzeitig zulaessig oder gleichzeitig gesperrt: Daran haengt
     die Terminierung (siehe `_round_limit`).
 
-    Aufgeloest wird die EROEFFNENDE Grenze des SPAETEREN Segments - `later.causes` ist also die
-    Menge, die ueber die Unantastbarkeit entscheidet."""
+    KEINE URSACHENMENGE WIRD GELESEN (ADR 0119): Die Unantastbarkeit ist ersatzlos entfallen, und
+    damit entscheidet ueber eine Kante allein, was an ihr gemessen wird. Eine Grenze mit
+    `motivwechsel` wird aufgeloest wie jede andere, sobald die drei Riegel halten."""
     combined = earlier.members + later.members
     # Die Paare werden VOLLSTAENDIG gebaut, bevor die Auswahl sie liest - eine Kette aus
     # `if ... return` waere der Kurzschluss, den diese Stufe gerade nicht haben darf.
     checked = (
-        (MERGE_BLOCK_UNBREAKABLE, bool(later.causes & UNBREAKABLE_CAUSES)),
         (MERGE_BLOCK_TIME_GAP, _gap_between(earlier, later) > merge_max_gap),  # (a)
         (MERGE_BLOCK_SPAN, combined[-1].taken_at - combined[0].taken_at > EVENT_MAX_SPAN),  # (b)
         (MERGE_BLOCK_EXTENT, _extent_meters(combined) > MERGE_EXTENT_MAX_METERS),  # (c)
@@ -1198,7 +1193,7 @@ def explain_events(
     min_event_photos: int | None = None,
     merge_max_gap: timedelta | None = None,
 ) -> EventFormation:
-    """Die Event-Bildung in DREI Stufen: die Motivgrenzen, der Durchlauf ueber die Signale und das
+    """Die Event-Bildung in DREI Stufen: die Motivwechsel, der Durchlauf ueber die Signale und das
     Zusammenlegen zu kleiner Segmente - samt der Ursache jeder Grenze.
 
     Das Ergebnis ist chronologisch geordnet und ueberschneidungsfrei, `position` laeuft
@@ -1208,13 +1203,19 @@ def explain_events(
     ausdruecklich NICHT kurzgeschlossen - und ruft danach genau eine der schreibenden Methoden auf
     ALLEN auf. Wuerde die Auswertung beim ersten Treffer abbrechen, haenge die
     Zustandsfortschreibung eines Signals an seiner Listenposition, und die Ursachenmenge naehme
-    nur das erste meldende Signal auf. Aus demselben Grund steht `index in forced_starts` in einer
-    eigenen Anweisung NACH der Signalauswertung: davor wuerde an einem erzwungenen Start kein
-    Signal mehr gefragt.
+    nur das erste meldende Signal auf.
 
-    Ein erzwungener Start wirkt wie jede gemeldete Grenze - `begin` laeuft auf allen Signalen und
-    ist deren vollstaendige Ruecksetzung. Eine erst spaeter faellige Grenze von Ausdehnung oder
-    Schritt kann dadurch entfallen, weil an der frueheren Stelle bereits getrennt wurde.
+    DIE ERSTE STUFE VERMERKT, SIE EROEFFNET NICHT (ADR 0119). Ein gelieferter Index oeffnet kein
+    Segment; er fuegt `motivwechsel` der Ursachenmenge einer Grenze hinzu, die der Durchlauf an
+    derselben Stelle ohnehin zieht. Faellt er auf keine, wird er VERWORFEN - nie auf die naechste
+    Grenze uebertragen, sonst behauptete die Statistik eine Mitursache an einer Stelle, an der der
+    Wechsel nicht stattgefunden hat. Daraus folgt: `motivwechsel` steht nie allein, und die
+    Gliederung haengt ueberhaupt nicht mehr an der ersten Stufe.
+
+    DIE SIGNAL-RUECKSETZUNG FAELLT DAMIT WEG, und das ist die eine Richtung, in der die
+    Vermerk-Regel eine Grenze HINZUFUEGT: Ausdehnung und Dauer laufen ueber den Motivwechsel hinweg
+    weiter und koennen an SPAETERER Stelle melden, wo der frueher erzwungene Start sie
+    zurueckgesetzt hatte.
 
     Erst NACH Stufe 3 bildet `_built` die Events. Weil das die einzige Stelle bleibt, an der Name,
     Zellen und `place_kind` entstehen, stimmen diese Werte fuer ein zusammengelegtes Event ohne
@@ -1226,7 +1227,7 @@ def explain_events(
     Empfindlichkeitsmessung braucht die Ursachenmengen DIESES Durchlaufs unter variierten Werten,
     nicht die einer Nachbildung."""
     ordered = sorted(candidates, key=lambda candidate: (candidate.taken_at, candidate.photo_id))
-    forced_starts = motif_change_starts(
+    noted_starts = motif_change_starts(
         ordered,
         confirming_photos=confirming_photos,
         motif_presence_threshold=motif_presence_threshold,
@@ -1242,7 +1243,7 @@ def explain_events(
         # DER VERMERK, NICHT DER ERZWUNGENE START (ADR 0119): `noted` steht NICHT in der Bedingung
         # darunter. Er faellt mit einer Grenze zusammen oder er ist wirkungslos; auf die naechste
         # Grenze uebertragen wird er nie.
-        noted = index in forced_starts
+        noted = index in noted_starts
         if reporting or not events:
             for signal in active:
                 signal.begin(candidate)

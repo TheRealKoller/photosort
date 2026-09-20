@@ -2280,9 +2280,8 @@ def _adjustable_constants_of_events() -> frozenset[str]:
     Syntaxbaum-Seite - ein von anderswo importierter Name wie `MAX_PLACE_NAME_LENGTH` ist keine
     Stellschraube dieses Moduls), und der WERT muss eine Zahl oder ein `timedelta` sein (die
     Laufzeit-Seite). Die geschlossenen Wortschaetze (`BOUNDARY_*`, `BOUNDARY_CAUSES`,
-    `MERGE_BLOCK_REASONS`, `PLACE_KINDS`, `UNBREAKABLE_CAUSES`) fallen dadurch heraus und duerfen
-    weiter importiert werden - sie aendern sich nicht unter der Hand, und ein Test verschiebt sie
-    nicht.
+    `MERGE_BLOCK_*`, `MERGE_BLOCK_REASONS`, `PLACE_KINDS`) fallen dadurch heraus und duerfen weiter
+    importiert werden - sie aendern sich nicht unter der Hand, und ein Test verschiebt sie nicht.
 
     Ein handgefuehrter Namensvorrat waere beim naechsten Zuwachs still vakuum-gruen: Genau die neue
     Stellschraube waere die ungeprueфte."""
@@ -2343,21 +2342,28 @@ class TestNoAdjustableConstantIsBoundAtImport:
 
     def test_the_closed_vocabularies_are_not_mistaken_for_adjustable(self) -> None:
         """Die Gegenrichtung: Waeren sie mit drin, muesste der Waechter entschaerft werden - und
-        entschaerft faengt er die Stellschrauben auch nicht mehr."""
+        entschaerft faengt er die Stellschrauben auch nicht mehr.
+
+        JEDER GENANNTE NAME MUSS ES GEBEN: Ein Name, den `events.py` nicht mehr fuehrt, machte
+        diese Zeile still vakuum-gruen - die Gegenprobe darunter faengt das."""
+        vocabularies = {
+            "PLACE_KINDS",
+            "BOUNDARY_CAUSES",
+            "BOUNDARY_TIME_GAP",
+            "BOUNDARY_MOTIF_CHANGE",
+            "MERGE_BLOCK_REASONS",
+            "MERGE_BLOCK_UNBREAKABLE",
+        }
+
         found = _adjustable_constants_of_events()
 
+        for name in vocabularies:
+            assert hasattr(events_module, name), name
         assert found.isdisjoint(
-            {
-                "PLACE_KINDS",
-                "BOUNDARY_CAUSES",
-                "BOUNDARY_TIME_GAP",
-                "MERGE_BLOCK_REASONS",
-                "MERGE_BLOCK_UNBREAKABLE",
-                "UNBREAKABLE_CAUSES",
-                # Von `places.py` importiert, nicht hier zugewiesen: keine Stellschraube DIESES
-                # Moduls, und die Namensseite des Kriteriums haelt sie heraus.
-                "MAX_PLACE_NAME_LENGTH",
-            }
+            vocabularies
+            # Von `places.py` importiert, nicht hier zugewiesen: keine Stellschraube DIESES
+            # Moduls, und die Namensseite des Kriteriums haelt sie heraus.
+            | {"MAX_PLACE_NAME_LENGTH"}
         )
 
     def test_the_guard_recognises_a_bound_constant(self) -> None:
