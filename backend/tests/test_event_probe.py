@@ -19,10 +19,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import events as events_module
+from photosort import selection as selection_module
 from photosort import worker
 from photosort.db import Base, make_engine, make_session_factory
 from photosort.event_inputs import EventInputs
 from photosort.event_probe import (
+    COHERENCE_TOP_EVENTS,
     DISTANCE_THRESHOLD_METERS,
     MOTIF_CONFIRMING_VARIANTS,
     MOTIF_STRENGTH_VARIANTS,
@@ -31,6 +33,7 @@ from photosort.event_probe import (
     _quota_lines,
     block_counts,
     cause_counts,
+    coherence_counts,
     inheritance_counts,
     landmark_counts,
     main,
@@ -71,7 +74,7 @@ from photosort.models import (
     ScoringRun,
 )
 from photosort.place_dataset import write_extract
-from photosort.selection import effective_target
+from photosort.selection import carried_motifs, effective_target
 from tests.import_closure import import_closure, module_file
 from tests.write_guard import write_statements
 
@@ -878,6 +881,204 @@ class TestBlockEMotifSensitivity:
         tragen, sonst misst die Tabelle eine Dimension gar nicht."""
         assert len(set(MOTIF_CONFIRMING_VARIANTS)) > 1
         assert len(set(MOTIF_STRENGTH_VARIANTS)) > 1
+
+
+# --- Der Kohaerenz-Modus: vier Zahlen je Event ---------------------------------------------------
+#
+# DIE BEIDEN STAERKEN DER TESTLAGE SIND KEINE SCHWELLE, sondern die beiden Raender: 1,0 wird
+# getragen, 0,0 nicht. Welche Zahl dazwischen getragen wird, entscheidet allein
+# `selection.carried_motifs`; die Lage pinnt sie nirgends, und ein Waechterfall haelt die beiden
+# Raender selbst gegen `carried_motifs` fest, statt sie zu behaupten.
+CARRIED = 1.0
+NOT_CARRIED = 0.0
+
+
+def _coherent(
+    position: int,
+    photo_ids: tuple[int, ...],
+    *,
+    minutes: float = 0.0,
+    cells: tuple[tuple[float, float], ...] = (),
+) -> BuiltEvent:
+    """Ein fertiges Event mit seinen Zellen - von Hand gestellt wie in Block B.
+
+    `place_cells` traegt `_cells_of` bereits sortiert und dublettenfrei bei; hier steht die Menge
+    deshalb so, wie das Event sie traegt, und der Zaehlblock liest sie, statt sie nachzubilden."""
+    return BuiltEvent(
+        position=position,
+        photo_ids=photo_ids,
+        started_at=NOW,
+        ended_at=NOW + timedelta(minutes=minutes),
+        place_cells=cells,
+    )
+
+
+def _with_motifs(photo_id: int, **strengths: float) -> EventCandidate:
+    return EventCandidate(photo_id=photo_id, taken_at=NOW, motif_strengths=dict(strengths))
+
+
+class TestCoherenceOfTheEvents:
+    """Vier Zahlen je Event - Fotozahl, Dauer, Zahl der verschiedenen Ortszellen, Zahl der
+    verschiedenen getragenen Motive.
+
+    NUR ANZAHLEN, das ist die tragende Auflage dieses Modus (S2/S3): keine Zelle, keine Koordinate,
+    kein Orts- oder Motivname, kein Zeitstempel. Die Aussagekraft entsteht aus den Zahlen selbst -
+    ein langes Event mit ZWEI Ortszellen ist ein Ausflug, eines mit sechs sind verschmolzene
+    Anlaesse."""
+
+    def test_the_lay_itself_rests_on_selection_not_on_a_number(self) -> None:
+        """Der Waechter unter dieser Testklasse: Traegt 1,0 nicht mehr und 0,0 doch, geht die ganze
+        Lage schief - und zwar hier, mit Ansage, statt verstreut in jedem Fall darunter."""
+        assert carried_motifs({"getragen": CARRIED, "nicht": NOT_CARRIED}) == {"getragen"}
+
+    def test_the_hand_computed_graph(self) -> None:
+        formation = EventFormation(
+            events=(
+                _coherent(1, (1, 2, 3), minutes=90, cells=((43.51, 16.44), (43.52, 16.45))),
+                _coherent(2, (4,), minutes=0, cells=((44.0, 15.0),)),
+            ),
+            causes=(frozenset(), frozenset({BOUNDARY_TIME_GAP})),
+        )
+        candidates = (
+            _with_motifs(1, strand=CARRIED),
+            _with_motifs(2, strand=CARRIED, essen=CARRIED),
+            _with_motifs(3, berge=CARRIED),
+            _with_motifs(4, essen=CARRIED),
+        )
+
+        counts = coherence_counts(formation, candidates)
+
+        assert counts.events_total == 2
+        first, second = counts.largest
+        assert (first.photos, first.place_cells, first.motifs) == (3, 2, 3)
+        assert first.duration_seconds == 90 * 60
+        assert (second.photos, second.place_cells, second.motifs) == (1, 1, 1)
+        assert second.duration_seconds == 0.0
+
+    def test_only_the_distinct_cells_are_counted(self) -> None:
+        """Gezaehlt werden VERSCHIEDENE Zellen: Zwoelf Aufnahmen an einem Ort sind ein Ort, nicht
+        zwoelf - sonst maesse die Spalte die Fotozahl ein zweites Mal."""
+        formation = EventFormation(
+            events=(_coherent(1, (1, 2), cells=((43.51, 16.44),)),), causes=(frozenset(),)
+        )
+
+        [row] = coherence_counts(formation, (_with_motifs(1), _with_motifs(2))).largest
+
+        assert row.place_cells == 1
+
+    def test_an_event_without_a_single_measured_coordinate_counts_no_cell(self) -> None:
+        formation = EventFormation(events=(_coherent(1, (1,)),), causes=(frozenset(),))
+
+        [row] = coherence_counts(formation, (_with_motifs(1),)).largest
+
+        assert row.place_cells == 0
+
+    def test_only_the_distinct_motifs_are_counted(self) -> None:
+        formation = EventFormation(events=(_coherent(1, (1, 2)),), causes=(frozenset(),))
+        candidates = (_with_motifs(1, strand=CARRIED), _with_motifs(2, strand=CARRIED))
+
+        [row] = coherence_counts(formation, candidates).largest
+
+        assert row.motifs == 1
+
+    def test_a_motif_that_is_not_carried_is_not_counted(self) -> None:
+        formation = EventFormation(events=(_coherent(1, (1,)),), causes=(frozenset(),))
+        candidates = (_with_motifs(1, strand=CARRIED, essen=NOT_CARRIED),)
+
+        [row] = coherence_counts(formation, candidates).largest
+
+        assert row.motifs == 1
+
+    def test_the_carried_motifs_come_from_selection_not_from_a_second_comparison(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die eine Stelle, die "dieses Foto zeigt X" beantwortet, ist
+        `selection.py::carried_motifs`. Wandert ihre Grenze, wandert diese Spalte mit - eine eigene
+        Fassung hier waere ein zweiter Begriff desselben im selben Produkt."""
+        formation = EventFormation(events=(_coherent(1, (1,)),), causes=(frozenset(),))
+        candidates = (_with_motifs(1, strand=CARRIED),)
+        assert coherence_counts(formation, candidates).largest[0].motifs == 1
+
+        monkeypatch.setattr(selection_module, "MOTIF_PRESENCE_THRESHOLD", CARRIED + 1.0)
+
+        assert coherence_counts(formation, candidates).largest[0].motifs == 0
+
+    def test_a_photo_without_a_motif_header_carries_nothing(self) -> None:
+        """`motif_strengths is None` heisst "keine Motiv-Kopfzeile" und ist etwas anderes als eine
+        leere Kopfzeile. Beide tragen hier null Motive bei, und keines von beiden ist ein Fehler."""
+        formation = EventFormation(events=(_coherent(1, (1, 2, 3)),), causes=(frozenset(),))
+        candidates = (
+            EventCandidate(photo_id=1, taken_at=NOW),
+            _with_motifs(2),
+            _with_motifs(3, strand=CARRIED),
+        )
+
+        [row] = coherence_counts(formation, candidates).largest
+
+        assert row.motifs == 1
+
+    def test_the_list_shows_the_largest_events_not_all_of_them(self) -> None:
+        """Eine Vollliste waere ueber die Zellzahlen eine Bewegungsspur. Die Liste beantwortet die
+        Frage "ein langer Ausflug oder mehrere verschmolzene Anlaesse", ohne vollstaendig zu sein -
+        und der Bericht sagt, wonach ausgewaehlt wurde."""
+        events = tuple(
+            _coherent(position, tuple(range(position * 100, position * 100 + position)))
+            for position in range(1, COHERENCE_TOP_EVENTS + 4)
+        )
+        formation = EventFormation(events=events, causes=tuple(frozenset() for _ in events))
+
+        counts = coherence_counts(formation, ())
+
+        assert counts.events_total == len(events)
+        assert len(counts.largest) == COHERENCE_TOP_EVENTS
+        # Die groessten zuerst, absteigend - und das kleinste Event ist nicht dabei.
+        assert [row.photos for row in counts.largest] == sorted(
+            (len(event.photo_ids) for event in events), reverse=True
+        )[:COHERENCE_TOP_EVENTS]
+
+    def test_the_order_rests_on_the_measured_values_not_on_the_chronology(self) -> None:
+        """Sortiert wird nach Fotozahl, dann Dauer, dann Zellzahl, dann Motivzahl - ausschliesslich
+        ueber gemessene Werte. Die Position im Lauf geht NICHT ein und steht auch nicht im Bericht:
+        eine nach Zeit geordnete Folge von Zellzahlen waere ein Bewegungsabdruck."""
+        formation = EventFormation(
+            events=(
+                _coherent(1, (1, 2), minutes=10),
+                _coherent(2, (3, 4), minutes=90),
+                _coherent(3, (5, 6, 7), minutes=1),
+            ),
+            causes=(frozenset(), frozenset(), frozenset()),
+        )
+
+        counts = coherence_counts(formation, ())
+
+        assert [(row.photos, row.duration_seconds) for row in counts.largest] == [
+            (3, 60.0),
+            (2, 90 * 60.0),
+            (2, 10 * 60.0),
+        ]
+
+    def test_the_distributions_cover_every_event_not_only_the_listed_ones(self) -> None:
+        """Die Verteilungszeile laeuft ueber ALLE Events - sonst behauptete der Bericht eine
+        Verteilung, die nur fuer die groessten gilt."""
+        events = tuple(
+            _coherent(position, (position,), cells=((43.5, 16.4),) * min(position, 2))
+            for position in range(1, COHERENCE_TOP_EVENTS + 3)
+        )
+        formation = EventFormation(events=events, causes=tuple(frozenset() for _ in events))
+
+        counts = coherence_counts(formation, ())
+
+        assert sum(counts.cells_per_event.values()) == len(events)
+        assert sum(counts.motifs_per_event.values()) == len(events)
+        assert counts.motifs_per_event == {0: len(events)}
+
+    def test_a_run_without_events_yields_no_invented_row(self) -> None:
+        counts = coherence_counts(explain_events([]), ())
+
+        assert counts.events_total == 0
+        assert counts.largest == ()
+        assert counts.cells_per_event == {}
+        assert counts.motifs_per_event == {}
 
 
 # --- Block C: die Ortszuordnung, je Mechanismus getrennt -----------------------------------------

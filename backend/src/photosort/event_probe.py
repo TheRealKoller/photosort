@@ -75,7 +75,7 @@ from photosort.models import (
 )
 from photosort.places import PlaceInfo, place_cell, usable_locality
 from photosort.scoring import haversine_meters
-from photosort.selection import effective_target
+from photosort.selection import carried_motifs, effective_target
 
 Cell = tuple[float, float]
 
@@ -144,6 +144,15 @@ def _class_counts(values: Iterable[float], bounds: Sequence[float]) -> tuple[int
     for value in values:
         counts[bisect_right(bounds, value)] += 1
     return tuple(counts)
+
+
+def _tally(values: Iterable[int]) -> dict[int, int]:
+    """Wie oft jeder Wert vorkommt - eine VERTEILUNG, keine Folge. Ein Aggregat ueber eine Menge
+    sagt nichts ueber die Reihenfolge, in der ihre Werte entstanden sind."""
+    counts: dict[int, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return counts
 
 
 def _beyond_threshold(meters: float) -> bool:
@@ -340,9 +349,7 @@ def size_counts(formation: EventFormation) -> SizeCounts:
     dieser Spec, und ein Mittelwert verbirgt ihn."""
     sizes = [len(event.photo_ids) for event in formation.events]
     durations = [(event.ended_at - event.started_at).total_seconds() for event in formation.events]
-    by_size: dict[int, int] = {}
-    for size in sizes:
-        by_size[size] = by_size.get(size, 0) + 1
+    by_size = _tally(sizes)
     return SizeCounts(
         events_total=len(sizes),
         photos_total=sum(sizes),
@@ -595,6 +602,101 @@ def motif_sensitivity(candidates: Sequence[EventCandidate]) -> tuple[MotifSensit
             for confirming in MOTIF_CONFIRMING_VARIANTS
             for strength in MOTIF_STRENGTH_VARIANTS
         ),
+    )
+
+
+# --- Der Kohaerenz-Modus: vier Zahlen je Event ---------------------------------------------------
+
+# WIE VIELE EVENTS DIE LISTE ZEIGT - die groessten, und bewusst keine Vollliste.
+#
+# EINE ZEILE JE EVENT WAERE UEBER DIE ZELLZAHLEN EINE BEWEGUNGSSPUR: Wie viele verschiedene Orte ein
+# Anlass beruehrt hat, ist je Event eine Anzahl; ueber den ganzen Lauf gelesen ist es das Profil
+# einer Reise. Die Frage dieses Modus - ein langer Ausflug oder mehrere verschmolzene Anlaesse -
+# haengt an den GROESSTEN Events und ist mit wenigen Zeilen beantwortet. Der Bericht schreibt
+# ausdruecklich hin, wonach ausgewaehlt wurde, damit niemand die Liste fuer vollstaendig haelt.
+COHERENCE_TOP_EVENTS = 8
+
+
+@dataclass(frozen=True)
+class CoherenceRow:
+    """Ein Event in VIER ANZAHLEN, und in nichts sonst.
+
+    Keine Zelle, keine Koordinate, kein Orts- oder Motivname, kein Zeitstempel, keine Position im
+    Lauf (S2/S3). Die Aussagekraft entsteht aus den Zahlen selbst: Ein Event ueber fuenf Stunden mit
+    ZWEI Ortszellen ist ein Ausflug, eines mit sechs sind verschmolzene Anlaesse.
+
+    `duration_seconds` steht als DAUER, nie als Anfang oder Ende (S2)."""
+
+    photos: int
+    duration_seconds: float
+    place_cells: int
+    motifs: int
+
+
+@dataclass(frozen=True)
+class CoherenceCounts:
+    """Die groessten Events einer Gliederung, dazu die Verteilung ueber ALLE.
+
+    `largest` ist ausdruecklich ein Ausschnitt (`COHERENCE_TOP_EVENTS`); `cells_per_event` und
+    `motifs_per_event` laufen dagegen ueber jedes Event - sonst behauptete der Bericht eine
+    Verteilung, die nur fuer die groessten gilt. Beide sind Abbildungen "Anzahl -> Zahl der Events",
+    also selbst Aggregate und keine Folge je Event."""
+
+    events_total: int
+    largest: tuple[CoherenceRow, ...]
+    cells_per_event: dict[int, int]
+    motifs_per_event: dict[int, int]
+
+
+def coherence_counts(
+    formation: EventFormation, candidates: Sequence[EventCandidate]
+) -> CoherenceCounts:
+    """Die Kohaerenz der Events einer Gliederung - rein, und ausschliesslich in Anzahlen.
+
+    DIE ZELLEN LIEST DIESE FUNKTION, SIE BILDET SIE NICHT: `BuiltEvent.place_cells` traegt die
+    verschiedenen gerundeten GEMESSENEN Zellen bereits sortiert und dublettenfrei
+    (`events.py::_cells_of`); `len` darauf ist damit genau die Zahl der VERSCHIEDENEN Zellen. Eine
+    zweite Bildung hier maesse die Zellen einer Gliederung, die so nie entstanden ist.
+
+    WAS EIN FOTO TRAEGT, BEANTWORTET `selection.py::carried_motifs`, nicht diese Funktion - dieselbe
+    eine Stelle und dieselbe eine Grenze wie im Lauf. `motif_strengths is None` heisst "keine
+    Motiv-Kopfzeile" und traegt nichts bei; das ist etwas anderes als eine leere Kopfzeile, und
+    beides ist hier gleich folgenlos.
+
+    GEORDNET WIRD UEBER DIE GEMESSENEN WERTE, NIE UEBER DIE POSITION IM LAUF: Fotozahl, dann Dauer,
+    dann Zellzahl, dann Motivzahl, jeweils absteigend. Eine nach Zeit geordnete Folge von Zellzahlen
+    waere ein Bewegungsabdruck; eine nach Groesse geordnete ist es nicht, und die Position steht
+    deshalb weder im Schluessel noch im Bericht."""
+    motifs_by_photo = {
+        candidate.photo_id: carried_motifs(candidate.motif_strengths)
+        for candidate in candidates
+        if candidate.motif_strengths is not None
+    }
+
+    rows = []
+    for event in formation.events:
+        carried: frozenset[str] = frozenset()
+        for photo_id in event.photo_ids:
+            carried |= motifs_by_photo.get(photo_id, frozenset())
+        rows.append(
+            CoherenceRow(
+                photos=len(event.photo_ids),
+                duration_seconds=(event.ended_at - event.started_at).total_seconds(),
+                place_cells=len(event.place_cells),
+                motifs=len(carried),
+            )
+        )
+
+    ordered = sorted(
+        rows,
+        key=lambda row: (row.photos, row.duration_seconds, row.place_cells, row.motifs),
+        reverse=True,
+    )
+    return CoherenceCounts(
+        events_total=len(rows),
+        largest=tuple(ordered[:COHERENCE_TOP_EVENTS]),
+        cells_per_event=_tally(row.place_cells for row in rows),
+        motifs_per_event=_tally(row.motifs for row in rows),
     )
 
 
