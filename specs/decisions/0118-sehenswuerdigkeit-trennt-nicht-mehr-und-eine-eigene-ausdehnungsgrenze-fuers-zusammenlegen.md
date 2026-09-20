@@ -1,6 +1,13 @@
 # 0118 - Die Sehenswürdigkeit trennt nicht mehr, und das Zusammenlegen bekommt seine eigene Ausdehnungsgrenze
 
 **Status:** Accepted
+**Teilweise abgelöst:** Punkt 2, zweiter Absatz — der dort festgelegte Inhalt von
+`UNBREAKABLE_CAUSES` („dort bleibt allein `motivwechsel`") entfällt mit dem Vorrat selbst; die
+Unterscheidung Wortschatz/Regel, die ihn begründet, gilt weiter und trägt in ADR
+[`0119`](./0119-der-motivwechsel-vermerkt-eine-grenze-statt-eine-zu-eroeffnen.md) dessen
+Abschaffung. Unverändert gelten Punkt 2 erster Absatz (`BOUNDARY_LANDMARK` bleibt in
+`BOUNDARY_CAUSES`), Punkt 1, Punkt 3 und Punkt 4. Der Berichtsgrund `MERGE_BLOCK_UNBREAKABLE` bleibt
+bestehen und steht ab dann dauerhaft auf 0, statt eindeutig den Motivwechsel zu nennen.
 **Datum:** 2026-09-19
 **Bezug:** Spec [`0506`](../features/0506-cluster-als-anlass.md), ADR
 [`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md) (Abschnitt 3,

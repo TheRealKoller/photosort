@@ -1,6 +1,16 @@
 # 0109 - Der Motivwechsel trennt in einem vorgelagerten Durchlauf, nicht als Eintrag der Signalliste
 
 **Status:** Accepted
+**Teilweise abgelöst:** Punkt 1, die **Wirkung** des erzwungenen Starts — ein Index aus
+`motif_change_starts` eröffnet kein Event mehr und setzt kein Signal zurück, er vermerkt
+`motivwechsel` nur noch an einer Grenze, die der Durchlauf ohnehin zieht — durch ADR
+[`0119`](./0119-der-motivwechsel-vermerkt-eine-grenze-statt-eine-zu-eroeffnen.md). Der Titel dieser
+ADR beschreibt damit die **Berechnung**, nicht mehr die Wirkung. Unverändert gelten die zweistufige
+Anlage samt der Begründung, warum der Motivwechsel kein Eintrag der Signalliste ist (Punkt 1, erster
+und dritter Absatz), der Wechselbegriff (Punkt 2), Bestätigungsfenster und rückwirkende Lage
+(Punkt 3), wer mitredet (Punkt 4) und die geteilte Grenze (Punkt 5). Von den Konsequenzen fallen
+zwei: dass `MOTIF_PRESENCE_THRESHOLD` zweierlei verschiebt, und dass ein motivgetrenntes Einzelbild
+allein bestehen kann.
 **Datum:** 2026-09-14
 **Bezug:** Spec [`features/0477-motivwechsel-trennsignal.md`](../features/0477-motivwechsel-trennsignal.md),
 ADR [`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md) (das Protokoll der

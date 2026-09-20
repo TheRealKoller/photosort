@@ -1708,18 +1708,25 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     [`0477`](../specs/features/0477-motivwechsel-trennsignal.md) / ADR
     [`0109`](../specs/decisions/0109-motivwechsel-trennt-in-einem-vorgelagerten-durchlauf.md) eine
     **zweite Stufe vorausgeht**: `events.py::motif_change_starts(ordered)` bestimmt rein und vorab
-    die Indizes, an denen ein **bestätigter Motivwechsel** ein neues Event erzwingt. Ein solcher
-    Index wirkt im Durchlauf wie eine gemeldete Grenze — `begin` läuft auf allen Signalen und ist
-    deren vollständige Rücksetzung —, und die Signalkette selbst bleibt unverändert. Der Wechsel
-    ist die symmetrische Differenz der getragenen Motive gegenüber dem **eröffnenden** Foto des
+    die Indizes, an denen ein **bestätigter Motivwechsel** vorliegt. **Seit ADR
+    [`0119`](../specs/decisions/0119-der-motivwechsel-vermerkt-eine-grenze-statt-eine-zu-eroeffnen.md)
+    eröffnet ein solcher Index kein Event mehr**: Er fügt `motivwechsel` der Ursachenmenge einer
+    Grenze hinzu, die der Signal-Durchlauf an derselben Stelle ohnehin zieht, und bleibt sonst
+    wirkungslos — verworfen, nie auf eine spätere Grenze übertragen. Daraus folgen zwei geprüfte
+    Zusagen: `motivwechsel` steht nie allein in einer Ursachenmenge, und die Gliederung ist von
+    dieser Stufe **vollständig unabhängig** (dieselbe Eventfolge unter einem nie erreichbaren
+    Bestätigungsfenster). Mit dem erzwungenen Start ist auch die Rücksetzung entfallen —
+    `ExtentSignal` und `EventSpanSignal` laufen über einen Motivwechsel hinweg weiter und können
+    dadurch **später** trennen. Der Wechselbegriff selbst ist unverändert: die symmetrische
+    Differenz der getragenen Motive gegenüber dem **eröffnenden** Foto des
     laufenden Abschnitts; getragen heißt `selection.py::carried_motifs`, also dieselbe eine Grenze
-    wie im Auswahlvorschlag, nie eine eigene. Getrennt wird erst, wenn
+    wie im Auswahlvorschlag, nie eine eigene. Vermerkt wird erst, wenn
     `MOTIF_CHANGE_CONFIRMING_PHOTOS` aufeinanderfolgende mitredende Fotos den Wechsel zeigen
-    (unkalibriert, durch keinen Test gepinnt), und die Grenze fällt **rückwirkend** auf das erste
+    (unkalibriert, durch keinen Test gepinnt), und der Vermerk fällt **rückwirkend** auf das erste
     Foto dieses Fensters. Ein Foto ohne Motiv-Kopfzeile oder mit `excluded_document` wird dabei
-    übergangen — es löst keine Grenze aus und bleibt Mitglied seines Events; eine vorhandene
+    übergangen — es redet nicht mit und bleibt Mitglied seines Events; eine vorhandene
     Kopfzeile ohne getragenes Motiv ist davon verschieden und redet voll mit. Ohne Motivangabe
-    liefert die Stufe die leere Menge und der Durchlauf ist der bisherige.
+    liefert die Stufe die leere Menge.
   - **Zwei Aufrufer, EIN Weg zur Gliederung** *(Spec
     [`0426`](../specs/features/0426-zeitversatz-je-kamera.md))*: Event-Bildung, Partitionen,
     Kategorieableitung und Rangzeilen stehen seither gemeinsam in
@@ -1740,8 +1747,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   - **Die Event-Bildung läuft in drei Stufen** *(Spec
     [`0506`](../specs/features/0506-cluster-als-anlass.md), ADR
     [`0117`](../specs/decisions/0117-der-anlass-als-einheit-eigene-schwellen-dauergrenze-und-mindestgroesse.md))*:
-    die Motivgrenzen (`motif_change_starts`), der Signal-Durchlauf, und das **Zusammenlegen zu
-    kleiner Segmente**. Erst danach entstehen die `BuiltEvent`s — weil `_built` die einzige Stelle
+    der Motiv-Vermerk (`motif_change_starts`), der Signal-Durchlauf, und das **Zusammenlegen zu
+    kleiner Segmente**. **Grenzen zieht allein die zweite Stufe** (ADR 0119); die erste begründet
+    nur mit, die dritte löst wieder auf. Erst danach entstehen die `BuiltEvent`s — weil `_built` die einzige Stelle
     bleibt, an der Name, Zellen und `place_kind` gebildet werden, stimmen diese Werte für ein
     zusammengelegtes Event ohne eigenen Zweig, und `position` läuft lückenlos ab 1.
   - **`events.py` führt seine SIEBEN EIGENEN Schwellen**, keine davon aus `scoring.py`:
@@ -1790,11 +1798,12 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `MERGE_EXTENT_MAX_METERS`, und kein Event **aus dem Durchlauf** überschreitet
     `EVENT_EXTENT_MAX_METERS`.
     Hält kein Nachbar, **bleibt das Segment allein** — ein gültiges Ergebnis, kein Fehlerfall.
-    **Eine Grenze ist unantastbar** (`UNBREAKABLE_CAUSES`): Eine Grenze, deren Ursachenmenge
-    `motivwechsel` enthält, wird nie aufgelöst; er ist das einzige Signal, das zwei Anlässe am
-    selben Ort zur selben Zeit trennt. `sehenswuerdigkeit` bleibt dagegen im Berichtsvorrat
-    `BOUNDARY_CAUSES` — ein Wortschatz darf eine ehrliche Null führen, eine an jeder Kante gelesene
-    Regel nicht. Je Runde wird das kleinste
+    **Keine Grenze ist unantastbar** (ADR 0119): `UNBREAKABLE_CAUSES` ist entfallen, und die Stufe
+    liest keine Ursachenmenge mehr — die drei Riegel sind der ganze Schutz gegen Überverschmelzung.
+    Die beiden Berichtswortschätze bleiben dagegen bestehen und führen ihre ehrliche Null:
+    `sehenswuerdigkeit` in `BOUNDARY_CAUSES` und `unantastbar` in `MERGE_BLOCK_REASONS` — ein
+    Wortschatz darf eine Null führen, eine an jeder Kante gelesene Regel nicht, und ohne die beiden
+    Zeilen wäre keine Nachmessung mehr gegen die früheren zu halten. Je Runde wird das kleinste
     Segment behandelt, **das nicht bereits als gesperrt feststeht** — dieser Zusatz trägt die
     Terminierung, weil die vier Riegel an der *Kante* hängen und damit für beide Richtungen gleich
     ausfallen. Die Rundenobergrenze **wirft** (`EventMergeError`) statt abzubrechen: Ein stiller
