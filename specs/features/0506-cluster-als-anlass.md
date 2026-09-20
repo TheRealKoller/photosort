@@ -447,6 +447,31 @@ aggressiven Verschmelzung *besser* erfüllt würden: Anteil der Grenzen, die Stu
 und Anteil der Fotos, die dadurch ihr Event gewechselt haben. Beides ohne willkürliche Schwelle,
 rein messend, in Block B und D.
 
+#### Block H — entspricht ein Event einem Anlass? (`--kohaerenz`)
+
+Beantwortet die eine Frage, die die Abnahmezahlen offenlassen: Ist ein großes, langes Event **ein**
+Ausflug oder sind darin mehrere Anlässe verschmolzen? Der Ein-Bild-Anteil kann das nicht sagen, und
+die Eventzahl auch nicht.
+
+Der Bericht stellt **zwei Gliederungen nebeneinander** — Betriebswert und Motivwechsel „aus" —,
+weil die Frage ein Vergleich ist: Das große Event der zweiten Gliederung ist nur gegen die erste zu
+beurteilen. Je Gliederung stehen höchstens `COHERENCE_TOP_EVENTS` Events mit **Anzahlen, sonst
+nichts**: Fotozahl, Dauer, Zahl der verschiedenen Ortszellen, Zahl der verschiedenen getragenen
+Motive. Darüber je Gliederung die Klassenverteilung der Zell- und der Motivzahlen über *alle*
+Events — ohne sie ließe sich am Ausschnitt nicht ablesen, ob er den Regelfall zeigt oder die
+Ausnahme.
+
+**Die Zellzahl gilt nur, soweit gemessen wurde.** `_cells_of` zählt ausschließlich Fotos mit
+eigener Koordinate; ein übernommener Ort speist den Ortsbezug eines Events nie. Bei einem gemessenen
+Anteil von 30,0 % Kandidatenfotos ohne eigene Koordinate (Block C1) wäre eine kleine Zellzahl sonst
+nicht von „wenig gemessen" zu unterscheiden. Der Bericht führt deshalb je Event die **Zahl der
+Fotos mit gemessener Koordinate** mit; ohne sie trüge eine unbelegte Zahl die Entscheidung.
+
+**Gemessen mit den Mitteln des Laufs** (ADR 0117 Punkt 5): Zellen aus `BuiltEvent.place_cells`,
+Motive über `selection.carried_motifs`, die zweite Gliederung über `explain_events` mit dem
+unerreichbaren Bestätigungsfenster aus Block E. Kein Abschalter im Produktivcode, kein weiterer
+Parameter, keine Nachbildung. Was die Ausgabe nie trägt, steht als S9 im Security-Abschnitt.
+
 ### PR 5 — die Sehenswürdigkeit trennt nicht mehr, Stufe 3 bekommt ihre eigene Ausdehnungsgrenze
 
 Entschieden von Daniel am 2026-09-19 an den Zahlen der Blöcke B, C3 und F; festgehalten als ADR
@@ -515,7 +540,7 @@ Lockerung gäbe die Schranke des Durchlaufs stillschweigend mit auf.
 - `docs/architecture.md`, Abschnitt **Event**: die Signalliste (Kalendertag raus, Dauer rein), die
   dritte Stufe, die eigenen Konstanten und der Wegfall des Vermerks „unkalibriert".
 - `docs/setup.md`: das Messkommando neben dem Abschnitt zu `place_probe`.
-- `specs/architecture/0003-securitykonzept.md`: Fortschreibung unter „Standortdaten" und zwei
+- `specs/architecture/0003-securitykonzept.md`: Fortschreibung unter „Standortdaten" und vier
   Zeilen in der Ankerliste (Security-Abschnitt, letzter Absatz).
 
 **Nicht betroffen:** `models.py`, Alembic, jede API-Antwort, `frontend/`-**Produktivcode** (zwei
@@ -889,9 +914,13 @@ die dauerhaft in ein **öffentliches** Repository gehen.
 - **S1 — Rein lesend, dreiteilig nachgewiesen wie `place_probe`, mit einer Stelle mehr.** Der
   Syntaxbaum-Wächter läuft über `event_probe.py` **und** `event_inputs.py`; die Import-Graph-Zusage
   gilt nur für `event_probe.py`, weil `event_inputs.py` per Konstruktion im Graph von `worker.py`
-  liegt — eine Gegenprobe pinnt diese Richtung. Der Schnappschuss-Lauf deckt **beide** Modi, auch
-  `--schwellen`. Der Wächter wird nicht entschärft: beide Module verzichten auf `add`/`update`/
-  `merge`/`delete` auch als Sammlungs-Methoden.
+  liegt — eine Gegenprobe pinnt diese Richtung. Der Schnappschuss-Lauf deckt **jeden** Modus, die
+  Vorgabe wie `--motiv`, `--riegel` und `--kohaerenz`; ein Modus ohne eigenen Fall liefe ungeprüft
+  mit. Der Wächter wird nicht entschärft: beide Module verzichten auf `add`/`update`/
+  `merge`/`delete` auch als Sammlungs-Methoden. Keine Stellschraube aus `events.py` wird beim
+  Import gebunden — sie werden als Modulattribut gelesen, sonst zählt der Bericht gegen eine andere
+  Größe als die, nach der gegliedert wurde. Der Syntaxbaum-Wächter erzwingt das und liest den
+  Vorrat der Stellschrauben aus `events.py`, statt ihn zu führen.
 - **S2 — Was die Ausgabe nie trägt:** keine Koordinate, keinen Orts- oder Sehenswürdigkeitsnamen,
   keinen OpenCloud-Pfad, **keinen Projektnamen** und **keinen Zeitstempel**. Ein Projektname ist
   eine Ortsangabe, ein `taken_at` ist der Zeitpunkt; ausgewiesen wird die Projekt-**Id**. Geprüft
@@ -927,12 +956,23 @@ die dauerhaft in ein **öffentliches** Repository gehen.
   `events.py`/`event_inputs.py`/`event_probe.py` (festes Grund-Token plus Id); ein
   `SQLAlchemyError` nur mit Typnamen, nie `str(exc)` (die `DATABASE_URL` kann Zugangsdaten tragen);
   kein Compose-`command`, kein Endpunkt, kein automatischer Pfad.
+- **S9 — Eine Ortsgröße je Event verlässt das System nur als Anzahl, nur für die größten wenigen,
+  und nie in der Reihenfolge des Laufs.** Betroffen ist die Zahl der verschiedenen Ortszellen eines
+  Events (Block H). Eine Zeile je Event wäre über diese Zahlen eine Bewegungsspur: Wie viele Orte
+  ein Anlass berührt hat, ist einzeln eine Anzahl, über den ganzen Lauf gelesen das Profil einer
+  Reise. Deshalb drei Riegel zugleich: **höchstens `COHERENCE_TOP_EVENTS` Zeilen** je Gliederung,
+  **geordnet nach den gemessenen Werten statt nach der Zeit**, und **keine Position und keine
+  Kennung des Events** — sonst ließen sich zwei Zeilen wieder einem Zeitpunkt zuordnen. Über
+  *alle* Events geht ausschließlich die Klassenverteilung „Zellzahl → Zahl der Events", die selbst
+  keine Reihenfolge trägt. Die Dauer daneben steht als Dauer (S5); aus ihr und der Zellzahl ist
+  eine mittlere Verweildauer je Zelle ableitbar, und das trägt nur, solange keine Zelle benannt ist
+  — eine Verweildauer ohne Ort lokalisiert nichts.
 
 **Sicherheitskonzept:** `specs/architecture/0003-securitykonzept.md` wird im selben Pull Request
 fortgeschrieben — unter „Standortdaten" (erstmals gehen Messzahlen aus echten Familiendaten
-dauerhaft ins öffentliche Repository; S2, S4 und S5 als neue Auflagen) und mit zwei Zeilen in der
-Ankerliste (Messkommando rein lesend einschließlich `event_inputs.py`; Trefferentfernung namenlos
-und unpersistiert).
+dauerhaft ins öffentliche Repository; S2, S4, S5 und S9 als neue Auflagen) und mit drei Zeilen in
+der Ankerliste (Messkommando rein lesend einschließlich `event_inputs.py`; Trefferentfernung
+namenlos und unpersistiert; Ortsgröße je Event nur als gedeckelte, größengeordnete Anzahl).
 
 ## Teststrategie
 
