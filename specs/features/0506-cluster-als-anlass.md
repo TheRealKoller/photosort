@@ -811,6 +811,43 @@ genau drei Fotos**, größtes Event 28, längste Dauer 2 h 8 min. Der Anteil war
 „ein Cluster = ein Anlass"; ob das Zielbild getroffen ist, entscheidet der Blick in die
 Kuratierung, nicht diese Tabelle.
 
+### Der Richtwert und der Motivwechsel, gemessen am 2026-09-20
+
+Das korrigierte Maß, an denselben Daten. **Der Album-Richtwert beträgt 41** (abgeleitet aus 408
+Fotos des Projekts, ein Zehntel aufgerundet). Daniel hatte zwischenzeitlich 60 eingestellt; ohne
+diese Einstellung ist der Konflikt **größer**, nicht kleiner.
+
+> Die Kontingentvergabe kann nicht gewichten: 81 Events auf 41 Plätze — jedes Event bekommt genau
+> einen Platz, und kein Restplatz bleibt übrig, bevor die Gewichtung nach Größe überhaupt beginnt.
+
+Dazu die Auswertungsgrenze aus dem Bericht: Der Richtwert rechnet auf **408** Fotos des Projekts,
+die Gliederung auf den **373** Kandidaten des letzten erfolgreichen Laufs. Beide Mengen fallen hier
+auseinander.
+
+**Block E mit der Zeile „aus":**
+
+| | Events | Ein-Bild-Cluster | `motivwechsel` allein | größtes Event | längste Dauer |
+|---|---|---|---|---|---|
+| Betriebswert (3 / 0,5) | 81 | 11 (13,6 %) | 57 (71,2 %) | 28 | 2 h 8 min |
+| **aus** | **26** | 7 (26,9 %) | 0 (0,0 %) | **80** | **5 h 3 min** |
+| 6 / 0,4 (bester Rasterwert) | 44 | 8 (18,2 %) | 18 (41,9 %) | 38 | 3 h 24 min |
+
+**Nur das Abschalten bringt die Eventzahl unter den Richtwert.** Das Minimum über das ganze Raster
+ist 44 — immer noch über 41. Die Empfindlichkeit zu verstellen reicht damit grundsätzlich nicht;
+das ist die dritte Maßnahme dieser Story, die eine Messung ausschließt.
+
+**Der Preis steht daneben:** ein Event mit 80 Fotos über 5 Stunden, gegen 28 Fotos und 2 h 8 min am
+Betriebswert. Ein Fünftel der Kandidaten läge in einem einzigen Cluster.
+
+**Ein Hinweis darauf, warum das Maß korrigiert werden musste:** Der Ein-Bild-Anteil **steigt** bei
+„aus" auf 26,9 %, während er absolut von 11 auf 7 fällt — die Grundmenge schrumpft stärker als der
+Zähler. Nach dem alten Maß wäre die einzige wirksame Maßnahme als deutliche Verschlechterung
+erschienen.
+
+**Offen und Gegenstand der nächsten Messung:** ob das 80-Foto-Event ein langer Ausflug ist oder
+mehrere verschmolzene Anlässe. Entschieden wird das an der Zahl der Ortszellen und der Motive je
+Event — Anzahlen, keine Namen (Security S2/S3).
+
 ### Befund zur Ortszuordnung
 
 Je Mechanismus getrennt, wie das Akzeptanzkriterium es verlangt:
