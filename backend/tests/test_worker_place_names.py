@@ -16,24 +16,27 @@ from __future__ import annotations
 import ast
 import logging
 from datetime import UTC, datetime, timedelta
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
 from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort import events as events_module
 from photosort.landmark import LANDMARK_CONFIDENCE_THRESHOLD
 from photosort.models import (
     CriterionScoringRun,
     Event,
     Photo,
+    PhotoLandmarkDetection,
     PlaceLookup,
     Project,
     ScanStatus,
     ScoringRun,
 )
 from photosort.places import PlaceAnswer, PlaceResolver
-from photosort.worker import _build_grouping_and_rankings, _place_infos
+from photosort.worker import _build_grouping_and_rankings, _place_infos, rebuild_run_grouping
 from tests.import_closure import module_file
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
@@ -304,6 +307,22 @@ async def _run_with_photos(
     return project, run, values
 
 
+async def _collapse_into_one_event(session: AsyncSession, project: Project) -> None:
+    """Setzt ALLE Fotos eines Projekts auf denselben Aufnahmezeitpunkt - aus getrennten Tagen wird
+    EIN Event.
+
+    `_run_with_photos` legt je Foto einen Tag Abstand an, damit jede Zelle auch als eigenes Event
+    gemessen wird. Wo der Fall stattdessen INNERHALB eines Events liegt (Anteil, Namensverlust),
+    muss diese Trennung weg: sonst bestuende der Aufbau still aus lauter Ein-Foto-Events, und
+    jeder Anteil waere 1/1."""
+    photos = (
+        (await session.execute(select(Photo).where(Photo.project_id == project.id))).scalars().all()
+    )
+    for photo in photos:
+        photo.taken_at = _BASE
+    await session.flush()
+
+
 async def _events_of(session: AsyncSession, run: CriterionScoringRun) -> list[Event]:
     return list(
         (
@@ -342,12 +361,15 @@ class TestTheRunWritesTheNames:
             "Split",
         ]
 
-    async def test_only_events_without_a_landmark_are_asked_for(
+    async def test_the_cell_of_a_named_event_is_asked_as_well(
         self, db_session: AsyncSession
     ) -> None:
-        """Gefragt wird nur fuer Events OHNE Sehenswuerdigkeit - das spart Anfragen und setzt das
-        Akzeptanzkriterium strukturell um. Die Zelle des Landmark-Events kommt nirgends sonst vor;
-        ohne diese Bedingung waere der Fall leer."""
+        """Der Ortsname TRITT NEBEN den Sehenswuerdigkeitsnamen - also braucht auch ein benanntes
+        Event seine Ortsaufloesung. Bis Spec 0514 wurde seine Zelle gar nicht erst gefragt, weil
+        der Name den Ortsnamen verdeckte (ADR 0120).
+
+        Die Zelle des Landmark-Events kommt nirgends sonst vor; ohne die gefallene Sperre waere der
+        Fall leer. Beide Events tragen hier genau ein Foto, der Anteil ist also 1/1."""
         project, run, values = await _run_with_photos(db_session, "landmark", [MITTE, SPLIT])
         landmark_photo = min(values)
         await _add_landmark(db_session, landmark_photo, "Brandenburger Tor")
@@ -355,11 +377,17 @@ class TestTheRunWritesTheNames:
 
         await _build_grouping_and_rankings(db_session, run, project.id, values, _factory(resolver))  # type: ignore[arg-type]
 
-        assert resolver.asked == [SPLIT]
-        names = [
-            (event.landmark_name, event.place_name) for event in await _events_of(db_session, run)
+        # Die Zellen kommen aus einer MENGE; verglichen wird deshalb als Menge.
+        assert sorted(resolver.asked) == sorted([MITTE, SPLIT])
+        events = await _events_of(db_session, run)
+        assert [(event.landmark_name, event.place_name) for event in events] == [
+            ("Brandenburger Tor", "Berlin"),
+            (None, "Split"),
         ]
-        assert names == [("Brandenburger Tor", None), (None, "Split")]
+        # Die Koordinatenstufe bleibt verdraengt: der Name ist KEIN Ortsbezug, sondern steht
+        # daneben - `place_kind` bleibt `landmark` und traegt keine Koordinate.
+        named = events[0]
+        assert (named.place_kind, named.place_lat, named.place_lon) == ("landmark", None, None)
 
     async def test_a_resolver_that_yields_nothing_leaves_the_run_successful(
         self, db_session: AsyncSession
@@ -426,14 +454,7 @@ class TestTheRunWritesTheNames:
         project, run, values = await _run_with_photos(
             db_session, "zwei-namen", [DIESSEITS_DER_ZELLGRENZE, JENSEITS_DER_ZELLGRENZE]
         )
-        photos = (
-            (await db_session.execute(select(Photo).where(Photo.project_id == project.id)))
-            .scalars()
-            .all()
-        )
-        for photo in photos:
-            photo.taken_at = _BASE
-        await db_session.flush()
+        await _collapse_into_one_event(db_session, project)
         resolver = CountingResolver(
             {(52.52, 13.4): _answer("Berlin"), (52.53, 13.4): _answer("Hamburg")}
         )
@@ -484,11 +505,136 @@ class TestTheRunWritesTheNames:
         assert await _lookup_rows(db_session, project.id) == []
 
 
+class TestTheShareOfThePhotosDecides:
+    """Spec 0514, ADR 0120: Den Namen traegt nur, wer genug Mitglieder hinter sich hat.
+
+    Der Anteil ist die Zahl der TRAEGENDEN Fotos geteilt durch ALLE Mitglieder des Events - nicht
+    geteilt durch die Fotos mit Namen, sonst waere eine einzelne Erkennung unter namenlosen Fotos
+    immer eine Mehrheit.
+
+    Gemessen wird hier die Wirkung im LAUF (Zellenfilter, Zellen, `place_kind`); die Schwelle
+    selbst samt Gewinner und Gleichstand liegt in `test_events.py`."""
+
+    async def test_a_name_that_just_meets_the_share_names_the_event(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Die inklusive Grenze: `denominator` Fotos und EIN Traeger genuegt - 1/10 reisst nicht."""
+        members = events_module.LANDMARK_MIN_SHARE.denominator
+        project, run, values = await _run_with_photos(db_session, "genau-anteil", [SPLIT] * members)
+        await _collapse_into_one_event(db_session, project)
+        await _add_landmark(db_session, min(values), "Brandenburger Tor")
+        resolver = CountingResolver({SPLIT: _answer("Split")})
+
+        await _build_grouping_and_rankings(db_session, run, project.id, values, _factory(resolver))  # type: ignore[arg-type]
+
+        [event] = await _events_of(db_session, run)
+        assert event.landmark_name == "Brandenburger Tor"
+        assert (event.place_kind, event.place_lat, event.place_lon) == ("landmark", None, None)
+        assert event.place_name == "Split"
+
+    async def test_a_name_below_the_share_falls_back_to_the_coordinate(
+        self, db_session: AsyncSession
+    ) -> None:
+        """DER NAMENSVERLUST, ein Foto mehr als oben. Der Name faellt weg - und mit ihm die
+        Benennung: das Event rueckt in die KOORDINATENSTUFE, die der Name bis Spec 0514 dauerhaft
+        verdeckt haette."""
+        members = events_module.LANDMARK_MIN_SHARE.denominator + 1
+        project, run, values = await _run_with_photos(db_session, "unter-anteil", [SPLIT] * members)
+        await _collapse_into_one_event(db_session, project)
+        await _add_landmark(db_session, min(values), "Brandenburger Tor")
+        resolver = CountingResolver({SPLIT: _answer("Split")})
+
+        await _build_grouping_and_rankings(db_session, run, project.id, values, _factory(resolver))  # type: ignore[arg-type]
+
+        [event] = await _events_of(db_session, run)
+        assert event.landmark_name is None
+        assert (event.place_kind, event.place_lat, event.place_lon) == ("coordinate", *SPLIT)
+        assert event.place_name == "Split"
+
+    async def test_a_name_below_the_share_is_indistinguishable_from_no_hit_at_all(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Die zwei Datenlagen sind EINE Lage: ein zu schwach gestuetzter Treffer und gar kein
+        Treffer ergeben dieselbe Event-Zeile - ueber ALLE Spalten, nicht ueber eine Handliste.
+
+        Geprueft als GLEICHHEIT ZWEIER LAEUFE in EINEM Fall: zwei getrennte Faelle mit je einem
+        erwarteten Wert bestuenden auch dann, wenn die beiden Lagen auseinanderliefen und beide
+        Erwartungen mitgezogen wuerden."""
+        members = events_module.LANDMARK_MIN_SHARE.denominator + 1
+        mit_treffer, run_a, values_a = await _run_with_photos(
+            db_session, "anteil-verworfen", [SPLIT] * members
+        )
+        await _collapse_into_one_event(db_session, mit_treffer)
+        await _add_landmark(db_session, min(values_a), "Brandenburger Tor")
+        ohne_treffer, run_b, values_b = await _run_with_photos(
+            db_session, "anteil-keiner", [SPLIT] * members
+        )
+        await _collapse_into_one_event(db_session, ohne_treffer)
+
+        await _build_grouping_and_rankings(
+            db_session,
+            run_a,
+            mit_treffer.id,
+            values_a,
+            _factory(CountingResolver({SPLIT: _answer("Split")})),  # type: ignore[arg-type]
+        )
+        await _build_grouping_and_rankings(
+            db_session,
+            run_b,
+            ohne_treffer.id,
+            values_b,
+            _factory(CountingResolver({SPLIT: _answer("Split")})),  # type: ignore[arg-type]
+        )
+
+        events_a = [_event_shape(event) for event in await _events_of(db_session, run_a)]
+        events_b = [_event_shape(event) for event in await _events_of(db_session, run_b)]
+
+        assert events_a == events_b
+        # Gegenprobe zur Selbsterfuellung: zwei Laeufe ganz ohne Events bestuenden die Gleichheit.
+        assert len(events_a) == 1
+
+
+class TestTheRebuildObeysTheThresholdOfTheDay:
+    """Spec 0514, ADR 0120: Geprueft wird beim BENENNEN, nicht beim Erkennen.
+
+    Eine verschobene Schwelle wirkt beim naechsten `rebuild_run_grouping` - ohne einen einzigen
+    bezahlten Erkennungsaufruf, und ohne dass die bereits bezahlten Zeilen sich veraendern."""
+
+    async def test_a_changed_threshold_renames_without_a_new_detection(
+        self, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project, run, values = await _run_with_photos(db_session, "schwelle", [SPLIT] * 3)
+        await _collapse_into_one_event(db_session, project)
+        await _add_landmark(db_session, min(values), "Brandenburger Tor")
+        resolver = CountingResolver({SPLIT: _answer("Split")})
+
+        await _build_grouping_and_rankings(db_session, run, project.id, values, _factory(resolver))  # type: ignore[arg-type]
+
+        detections_before = await _detections_of(db_session, project.id)
+        counters_before = (run.landmark_api_calls, run.landmark_photos_processed)
+        [before] = await _events_of(db_session, run)
+        assert before.landmark_name == "Brandenburger Tor"  # 1 von 3 reisst das Zehntel
+
+        # Die Schwelle als MODULATTRIBUT verschoben - genau das, was ein Default-Parameterwert
+        # still unwirksam machte.
+        monkeypatch.setattr(events_module, "LANDMARK_MIN_SHARE", Fraction(1, 2))
+        await rebuild_run_grouping(db_session, project.id)
+
+        assert (run.landmark_api_calls, run.landmark_photos_processed) == counters_before
+        # Kein bezahlter Aufruf, weder jetzt noch vorher: dieser Pfad kennt die Cloud nicht.
+        assert run.landmark_api_calls == 0
+
+        db_session.expunge_all()
+        [after] = await _events_of(db_session, run)
+        assert after.landmark_name is None
+        assert (after.place_kind, after.place_lat, after.place_lon) == ("coordinate", *SPLIT)
+        assert after.place_name == "Split"
+        assert await _detections_of(db_session, project.id) == detections_before
+
+
 async def _add_landmark(
     session: AsyncSession, photo_id: int, name: str, *, confidence: float = 0.9
 ) -> None:
-    from photosort.models import PhotoLandmarkDetection
-
     session.add(
         PhotoLandmarkDetection(
             photo_id=photo_id,
@@ -498,6 +644,29 @@ async def _add_landmark(
         )
     )
     await session.flush()
+
+
+async def _detections_of(
+    session: AsyncSession, project_id: int
+) -> list[tuple[int, str, float, datetime]]:
+    """Die Erkennungszeilen eines Projekts - ZEILEN- UND WERTGLEICH vergleichbar.
+
+    Eine bezahlte Antwort ist ein Bestand, keine Zwischenrechnung: was ein Neuaufbau der
+    Gruppierung an ihr aendert, waere verlorenes Geld."""
+    rows = (
+        await session.execute(
+            select(
+                PhotoLandmarkDetection.photo_id,
+                PhotoLandmarkDetection.name,
+                PhotoLandmarkDetection.confidence,
+                PhotoLandmarkDetection.computed_at,
+            )
+            .join(Photo, Photo.id == PhotoLandmarkDetection.photo_id)
+            .where(Photo.project_id == project_id)
+            .order_by(PhotoLandmarkDetection.photo_id)
+        )
+    ).all()
+    return [tuple(row) for row in rows]
 
 
 def _event_shape(event: Event) -> dict[str, object]:

@@ -391,12 +391,20 @@ Verarbeitungs-Cache (Thumbnails).
     abgeschnitten**; das Event fällt dann auf die Koordinatenstufe zurück. Im Frontend bildet
     `utils/timeOfDay.ts::formatEventHeading()` daraus seit Spec
     [`0434`](../specs/features/0434-ortsnamen-fuer-events.md) **drei** Formen, sequenziell:
-    `"<Sehenswürdigkeit> (<Zeitspanne>)"` → `"<Ortsname> (<Zeitspanne>)"` →
+    `"<Name> (<Zeitspanne>)"` → `"<Ortsname> (<Zeitspanne>)"` →
     `"Position <n> (<Zeitspanne>)"`. Der Ortsname kommt aus `EventOut.place_name` und steht dort
     **neben** `place`, nicht darin: `place` ist bei unbekanntem `place_kind` `null`, und der Name
-    fiele sonst still mit. Die zusammengesetzte Form `"Ort, Viertel"` kommt fertig vom Server; das
-    Frontend setzt nichts zusammen. Tageszeit-Kategorien und die Koordinate als Name entfallen mit
-    Spec 0425.
+    fiele sonst still mit. Die Ortsform `"Ort, Viertel"` kommt fertig vom Server; das Frontend setzt
+    sie nicht zusammen. Seit Spec
+    [`0514`](../specs/features/0514-sehenswuerdigkeitsname-braucht-rueckhalt.md) / ADR
+    [`0120`](../specs/decisions/0120-der-sehenswuerdigkeitsname-braucht-rueckhalt-und-der-ortsname-tritt-daneben.md)
+    ist der erste Platz **zweiteilig**: `utils/timeOfDay.ts::eventPlaceName()` — die eine Stelle,
+    an der beide Felder zusammentreffen — setzt Sehenswürdigkeitsnamen und Ortsnamen zu
+    `"<Name>, <Ortsname>"` zusammen und lässt bei fehlendem Ortsnamen den Namen allein stehen;
+    `formatEventHeading` selbst bleibt unangetastet und hängt nur die Zeitspanne an. Die Überschrift
+    steht je Stelle in **einem** Textknoten (`Eiffelturm, Paris, Gros-Caillou (14:00–16:30 Uhr)` —
+    zwei Kommata, das zweite trägt die Serverform des Orts). Tageszeit-Kategorien und die Koordinate
+    als Name entfallen mit Spec 0425.
   - **Der Kuratierungsparameter wird ein Schalter, und ein neuer Schreib-Endpunkt setzt den
     Richtwert** *(Spec [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
     [`decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md))*:
@@ -1829,11 +1837,24 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `events.py::assign_place_names` aus den Ortsauskünften der Zellen des Events (`PlaceLookup`,
     siehe unten) und ist ausdrücklich **kein Ortswissen**: Ob ein Event „Berlin" oder „Berlin,
     Kreuzberg" heißt, hängt davon ab, was sonst im selben Lauf liegt. Regeln: genau ein Ortsname
-    über alle Zellen ⇒ dieser Name, null oder mehrere ⇒ keiner; ein Event **mit** Sehenswürdigkeit
-    bekommt keinen und löst auch bei keinem anderen die Viertel-Ergänzung aus; mehrfach vergebene
-    Namen bekommen je Event einzeln ihr Viertel, sofern genau eines vorliegt und `"Ort, Viertel"`
-    die Längengrenze hält — **gekürzt wird nie**, zwei gekappte Namen wären ein Name und die
-    Viertel-Regel griffe für Events an verschiedenen Orten.
+    über alle Zellen ⇒ dieser Name, null oder mehrere ⇒ keiner; gelesen werden **alle** Zellen des
+    Events (`events.py::locality_of_event`, öffentlich, weil das Messkommando die Gleichnamigkeit
+    über genau diesen Wert zählt); mehrfach vergebene Namen bekommen je Event einzeln ihr Viertel,
+    sofern genau eines vorliegt und `"Ort, Viertel"` die Längengrenze hält — **gekürzt wird nie**,
+    zwei gekappte Namen wären ein Name und die Viertel-Regel griffe für Events an verschiedenen
+    Orten.
+    Seit Spec
+    [`0514`](../specs/features/0514-sehenswuerdigkeitsname-braucht-rueckhalt.md) / ADR
+    [`0120`](../specs/decisions/0120-der-sehenswuerdigkeitsname-braucht-rueckhalt-und-der-ortsname-tritt-daneben.md)
+    gilt dabei **eine** Ortsregel für **alle** Events: Die frühere Sperre „ein Event **mit**
+    Sehenswürdigkeit bekommt keinen Ortsnamen und löst auch bei keinem anderen die Viertel-Ergänzung
+    aus" ist entfallen — `landmark_name` wird an keiner Stelle dieses Wegs mehr gelesen. Der
+    Ortsname eines benannten Events ist derselbe, den dasselbe Event ohne den Namen trüge. Daraus
+    folgt für den Lauf, dass `worker.py::_build_grouping_and_rankings` die Zellen **auch** der
+    benannten Events auflöst; verdrängt bleibt allein die **Koordinatenstufe** — ein Event mit
+    tragendem Namen bleibt `place_kind='landmark'` mit `place_lat`/`place_lon = NULL`. In der
+    Überschrift steht der Name **neben** dem Ortsnamen, nie darin: `events.place_name` führt
+    weiterhin nur die Ortsform (siehe die Antwortbeschreibung oben).
 - **Rating** *(implementiert, Spec 0002, `models.py`; Neufassung mit Spec
   [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md) / ADR
   [`0098`](../specs/decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md))*: Die

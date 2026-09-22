@@ -503,14 +503,19 @@ export interface PhotoLocation {
  * Frontend bildet die Rangfolge (Sehenswürdigkeit -> Koordinate -> mehrere Orte) NICHT nach.
  * `kind: 'multiple'` trägt strukturell keine Koordinate.
  *
- * In der Überschrift erscheint allein `kind: 'landmark'`; Koordinate und "mehrere Orte" fallen
- * auf "Position N" zurück. Die Werte bleiben trotzdem in der Antwort - aus ihnen wird mit
- * Reverse-Geocoding später wieder ein Name.
+ * `kind` benennt die STUFE, nicht den einzigen Text des Events: Seit Spec 0514 steht
+ * `landmark_name` NEBEN `place_name`, statt ihn zu verdrängen -
+ * `utils/timeOfDay.ts::eventPlaceName` setzt beide zur Form "<Name>, <Ort>" zusammen. Verdrängt
+ * bleibt allein die KOORDINATENSTUFE: `kind: 'coordinate'` erscheint nie als Name, und ohne
+ * Ortsnamen fällt ein Event auf "Position N" zurück. `kind` bleibt `'landmark'` auch dann, wenn
+ * daneben ein Ortsname steht.
  *
  * `landmark_name` ist freier, extern erzeugter LLM-Text: ausschließlich als regulärer
  * React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als HTML-String-Prop, nie in
  * `href`/`src`/`style`, nie als React-`key` (dieselbe Auflage wie bei
- * `FineLabelOut.raw_label`). */
+ * `FineLabelOut.raw_label`). Seit Spec 0514 trägt ihn ein Event nur, wenn ihn mindestens ein
+ * Zehntel seiner Fotos bezeugt (Backend `events.LANDMARK_MIN_SHARE`); ein zu schwach gestützter
+ * Name ist von "nie erkannt" nicht zu unterscheiden und hat keinen eigenen Anzeigezustand. */
 export interface EventPlace {
   kind: 'landmark' | 'coordinate' | 'multiple'
   landmark_name: string | null
@@ -526,8 +531,11 @@ export interface EventPlace {
  *
  * `place_name` ist der aufgelöste Ortsname dieses Events, `null` heißt "keiner". Er steht bewusst
  * NEBEN `place` und nicht darin: `place` ist `null`, sobald der Server die Ortsstufe nicht kennt,
- * und der Name fiele dort still mit. Die zusammengesetzte Form "Ort, Viertel" kommt FERTIG vom
- * Server; hier wird nichts zusammengesetzt.
+ * und der Name fiele dort still mit. Die Form "Ort, Viertel" kommt FERTIG vom Server.
+ *
+ * Und er steht seit Spec 0514 auch NEBEN dem Sehenswürdigkeitsnamen: Der Server setzt die
+ * Überschrift NICHT zusammen - `utils/timeOfDay.ts::eventPlaceName` verbindet beide Teile. Eine
+ * zweite Quelle derselben Form liefe mit ihr auseinander.
  *
  * Es ist freier, extern erzeugter Text und trägt dieselbe Auflage wie `landmark_name`:
  * ausschließlich als regulärer React-Textknoten rendern - nie `dangerouslySetInnerHTML`, nie als

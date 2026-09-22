@@ -3795,6 +3795,7 @@ class TestPhotoEvent:
             ended_at=datetime(2023, 1, 1, 11, 45),
             landmark_name="Eiffelturm",
             place_kind="landmark",
+            place_name="Paris",
         )
         for index in range(3):
             photo = await _make_photo(
@@ -3815,9 +3816,10 @@ class TestPhotoEvent:
             "started_at": "2023-01-01T10:30:00",
             "ended_at": "2023-01-01T11:45:00",
             "place": {"kind": "landmark", "landmark_name": "Eiffelturm", "lat": None, "lon": None},
-            # Ein Event MIT Sehenswuerdigkeit traegt keinen Ortsnamen: er ersetzt sie nicht und
-            # tritt nicht daneben.
-            "place_name": None,
+            # Ein Event MIT Sehenswuerdigkeit darf daneben einen Ortsnamen tragen (Spec 0514,
+            # ADR 0120): er verdeckt ihn nicht mehr. Beide Felder stehen NEBENEINANDER, die
+            # Ueberschrift "Name, Ort" setzt erst das Frontend zusammen.
+            "place_name": "Paris",
         }
 
     async def test_the_event_is_identical_across_both_read_paths(

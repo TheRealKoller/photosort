@@ -1838,12 +1838,12 @@ async def _build_grouping_and_rankings(
     # Die Divergenz zu `PhotoRanking.event_id` ist gewollt.
     built_events = build_events(event_inputs.candidates)
 
-    # DIE ORTSNAMEN, zwischen Event-Bildung und Schreiben der Zeilen. Gefragt wird nur fuer Events
-    # OHNE Sehenswuerdigkeit: der Ortsname ersetzt sie nicht und tritt nicht daneben - das spart
-    # Anfragen und setzt das Akzeptanzkriterium strukturell um.
-    cells = {
-        cell for built in built_events if built.landmark_name is None for cell in built.place_cells
-    }
+    # DIE ORTSNAMEN, zwischen Event-Bildung und Schreiben der Zeilen. Gefragt wird fuer JEDES
+    # Event mit einer gemessenen Zelle - auch fuer ein benanntes (Spec 0514, ADR 0120): der
+    # Sehenswuerdigkeitsname steht seitdem NEBEN dem Ortsnamen und verdeckt ihn nicht mehr, also
+    # braucht auch ein benanntes Event seine Ortsaufloesung. Seine `place_kind` bleibt trotzdem
+    # `landmark` - verdraengt bleibt allein die KOORDINATENSTUFE (`_place_of`).
+    cells = {cell for built in built_events for cell in built.place_cells}
     info_by_cell = await _place_infos(session, project_id, cells, build_place_resolver)
     place_names = assign_place_names(built_events, info_by_cell)
 

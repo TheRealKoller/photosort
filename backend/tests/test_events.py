@@ -5,6 +5,7 @@ import math
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime, timedelta
+from fractions import Fraction
 from itertools import permutations, product
 from pathlib import Path
 
@@ -109,6 +110,12 @@ def _max_span() -> timedelta:
 def _merge_gap() -> timedelta:
     """Die geltende Ueberbrueckungsgrenze von Stufe 3 - als Modulattribut gelesen."""
     return events_module.MERGE_MAX_GAP
+
+
+def _min_share() -> Fraction:
+    """Der geltende Rueckhalt eines Sehenswuerdigkeitsnamens - als MODULATTRIBUT gelesen, nie als
+    Zahl. Die Faelle bauen ihre Foto- und Traegermengen aus Zaehler und Nenner dieses Bruchs."""
+    return events_module.LANDMARK_MIN_SHARE
 
 
 def _at(**delta: float) -> datetime:
@@ -293,7 +300,7 @@ class _UnderShiftedEventConstants:
 def assert_event_invariants(
     candidates: Sequence[EventCandidate], events: Sequence[BuiltEvent]
 ) -> None:
-    """Die vier Zusagen ueber JEDE Event-Folge eines Laufs - laeuft am Ende JEDES
+    """Die FUENF Zusagen ueber JEDE Event-Folge eines Laufs - laeuft am Ende JEDES
     `build_events`-Falls, nicht nur dort, wo der Fall sie zum Gegenstand hat.
 
     Kein Property-Testing: `hypothesis` waere eine ADR-pflichtige neue Abhaengigkeit."""
@@ -309,6 +316,22 @@ def assert_event_invariants(
     assigned = [photo_id for event in events for photo_id in event.photo_ids]
     assert sorted(assigned) == sorted(candidate.photo_id for candidate in candidates)
     assert len(assigned) == len(set(assigned)), "ein Foto gehoert zu genau einem Event"
+
+    # Die GEGENANZEIGE der Namensregel (Spec 0514): Traegt ein Event ueberhaupt einen Namen, dann
+    # bezeugt ihn mindestens `LANDMARK_MIN_SHARE` seiner Mitglieder. Gezaehlt ueber `_usable_name` -
+    # dieselbe Traegerdefinition, die die Produktion benutzt, statt einer zweiten Fassung hier.
+    name_by_photo = {
+        candidate.photo_id: events_module._usable_name(candidate.landmark_name)
+        for candidate in candidates
+    }
+    share = _min_share()
+    for event in events:
+        if event.landmark_name is None:
+            continue
+        carriers = sum(
+            1 for photo_id in event.photo_ids if name_by_photo.get(photo_id) == event.landmark_name
+        )
+        assert carriers * share.denominator >= len(event.photo_ids) * share.numerator
 
 
 def _diagonal_of(
@@ -1409,7 +1432,9 @@ class TestEventPlace:
         assert event.landmark_name == "Eiffelturm"
         assert (event.place_lat, event.place_lon) == (None, None)
 
-    def test_an_event_takes_the_name_of_its_first_named_photo(self) -> None:
+    def test_an_event_takes_a_name_that_one_of_its_photos_backs(self) -> None:
+        """Der Rueckhalt, nicht die Reihenfolge: Ein einzelner benannter unter zwei Fotos genuegt
+        (die Haelfte liegt ueber dem Zehntel) - auch wenn er nicht das erste ist."""
         candidates = [
             _placeless_candidate(1, T0),
             _placeless_candidate(2, _at(minutes=1), landmark_name="Eiffelturm"),
@@ -1419,10 +1444,9 @@ class TestEventPlace:
 
         assert event.landmark_name == "Eiffelturm"
 
-    def test_an_event_with_two_different_names_carries_the_earlier_one(self) -> None:
-        """Seit ADR 0118 Punkt 3 ist das eine REGEL, kein defensiver Zweig mehr: Ein Event DARF
-        Fotos mit verschiedenen Namen enthalten, weil kein Signal sie mehr trennt, und der frueheste
-        gewinnt. Vorher war dieser Zweig nur defensiv erreichbar und damit ungeprueft."""
+    def test_two_names_with_the_same_support_leave_the_earlier_one_winning(self) -> None:
+        """Der GLEICHSTAND: Zwei Namen mit JE einem Traegerfoto. Der Rueckhalt entscheidet zuerst,
+        die Reihenfolge erst bei Gleichstand - hier gewinnt deshalb der fruehere."""
         candidates = [
             _placeless_candidate(1, T0, landmark_name="Zugspitze"),
             _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Eibsee"),
@@ -1434,10 +1458,10 @@ class TestEventPlace:
         assert event.landmark_name == "Zugspitze"
         assert event.place_kind == "landmark"
 
-    def test_the_earliest_name_wins_across_a_merge_of_the_third_stage(self) -> None:
-        """`_built` laeuft NACH Stufe 3, der fruehste Name gewinnt also auch ueber eine
-        Zusammenlegung hinweg. Der Fall stellt das zu kleine Segment VORAN: Wuerde der Name aus
-        dem aufnehmenden Nachbarn statt aus dem Ergebnis gebildet, stuende hier der spaetere."""
+    def test_the_name_with_more_support_wins_across_a_merge_of_the_third_stage(self) -> None:
+        """`_built` laeuft NACH Stufe 3, gezaehlt wird also ueber die Mitglieder des FERTIGEN
+        Events. Das zu kleine Segment stellt den FRUEHEREN Namen voran - er verliert trotzdem, weil
+        ihn nur ein Foto bezeugt und den anderen beide Fotos des Nachbarn."""
         big = events_module.MIN_EVENT_PHOTOS
         opening = _time_gap() + EPSILON_TIME
         candidates = [
@@ -1453,7 +1477,7 @@ class TestEventPlace:
         [event] = _build(candidates, min_event_photos=None)
 
         assert len(event.photo_ids) == big + 1
-        assert event.landmark_name == "Zugspitze"
+        assert event.landmark_name == "Eibsee"
 
     def test_an_event_without_any_name_carries_none(self) -> None:
         [event] = _build([_measured_candidate(1, T0)])
@@ -1469,6 +1493,122 @@ class TestEventPlace:
         [event] = _build(candidates, [])
 
         assert (event.place_kind, event.place_lat, event.place_lon) == ("coordinate", 48.85, 2.29)
+
+
+class TestTheNameNeedsTheSupportOfItsPhotos:
+    """Spec 0514/ADR 0120: Ein Sehenswuerdigkeitsname benennt ein Event nur, wenn ihn mindestens
+    `LANDMARK_MIN_SHARE` seiner Mitglieder bezeugt - genau der Anteil genuegt (inklusiv), kein
+    zweiter Kandidat rueckt nach.
+
+    Alle Mengen entstehen aus Zaehler und Nenner des Bruchs; kein Fall nennt die Zehntel als Zahl.
+    """
+
+    def test_a_name_with_more_carriers_beats_an_earlier_one(self) -> None:
+        """Der Rueckhalt steht VOR der Reihenfolge: Der fruehere Eibsee hat ein Traegerfoto, der
+        spaetere Zugspitze zwei - Zugspitze benennt das Event."""
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name="Eibsee"),
+            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Zugspitze"),
+            _placeless_candidate(3, T0 + 2 * EPSILON_TIME, landmark_name="Zugspitze"),
+        ]
+
+        [event] = _build(candidates)
+
+        assert event.landmark_name == "Zugspitze"
+
+    def test_the_share_boundary_is_inclusive(self) -> None:
+        """Genau `numerator` Traeger unter `denominator` Mitgliedern: das genuegt."""
+        share = _min_share()
+        candidates = [
+            _placeless_candidate(
+                index,
+                T0 + index * EPSILON_TIME,
+                landmark_name="Eiffelturm" if index < share.numerator else None,
+            )
+            for index in range(share.denominator)
+        ]
+
+        [event] = _build(candidates)
+
+        assert event.landmark_name == "Eiffelturm"
+
+    def test_one_photo_more_than_the_boundary_falls_short(self) -> None:
+        """Ein Foto mehr im Nenner und derselbe eine Traeger: der Anteil reisst. Der verworfene
+        Name hinterlaesst keine Spur - das Event faellt in die gewohnte Reihenfolge."""
+        share = _min_share()
+        candidates = [
+            _placeless_candidate(
+                index,
+                T0 + index * EPSILON_TIME,
+                landmark_name="Eiffelturm" if index < share.numerator else None,
+            )
+            for index in range(share.denominator + 1)
+        ]
+
+        [event] = _build(candidates)
+
+        assert event.landmark_name is None
+        assert (event.place_kind, event.place_lat, event.place_lon) == (None, None, None)
+
+    def test_the_denominator_is_the_whole_membership_not_only_the_named_photos(self) -> None:
+        """Ein Traeger unter DREI Fotos genuegt (1/3 ueber 1/10). Eine Zaehlung ueber nur die
+        benannten Fotos ergaebe 1/1 und liesse die Schwelle wirkungslos."""
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name="Eiffelturm"),
+            _placeless_candidate(2, T0 + EPSILON_TIME),
+            _placeless_candidate(3, T0 + 2 * EPSILON_TIME),
+        ]
+
+        [event] = _build(candidates)
+
+        assert event.landmark_name == "Eiffelturm"
+
+    def test_no_other_name_moves_up_when_the_winner_falls_short(self) -> None:
+        """Der Gewinner traegt das Maximum der Traegerzahlen - reisst ER den Anteil, ist jeder
+        andere es erst recht. Hier steht der Zweitplatzierte bei einem einzigen Foto und rueckt
+        ausdruecklich nicht nach."""
+        many = _min_share().denominator * 3
+        candidates = [
+            _placeless_candidate(
+                index,
+                T0 + index * EPSILON_TIME,
+                landmark_name={0: "Zugspitze", 1: "Zugspitze", 2: "Eibsee"}.get(index),
+            )
+            for index in range(many)
+        ]
+
+        [event] = _build(candidates)
+
+        assert len(event.photo_ids) == many
+        assert event.landmark_name is None
+
+    def test_a_single_photo_event_carries_its_name(self) -> None:
+        """1 von 1 erfuellt jeden Anteil - der Einzelfall braucht keinen eigenen Zweig."""
+        [event] = _build([_placeless_candidate(1, T0, landmark_name="Eiffelturm")])
+
+        assert event.landmark_name == "Eiffelturm"
+
+    def test_a_blank_name_neither_carries_nor_wins(self) -> None:
+        """Ein nach der Sanitisierung leerer Name zaehlt nicht als Traeger - und kann deshalb auch
+        nicht gewinnen, obwohl er der fruehere ist."""
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name="   "),
+            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Eiffelturm"),
+        ]
+
+        [event] = _build(candidates)
+
+        assert event.landmark_name == "Eiffelturm"
+
+    def test_a_run_of_blank_names_carries_none(self) -> None:
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name=""),
+            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="  "),
+        ]
+
+        [event] = _build(candidates)
+
+        assert event.landmark_name is None
 
 
 class TestDefaultSignals:
@@ -1879,17 +2019,34 @@ class TestAssignPlaceNames:
 
         assert assign_place_names(events, infos) == ["Berlin", "Berlin, Mitte"]
 
-    def test_a_landmark_event_gets_no_place_name_and_triggers_no_district(self) -> None:
-        """Zwei Haelften in einem Fall: Das Landmark-Event bekaeme einen Namen (seine Zelle loest
-        auf), bekommt aber keinen - und es loest bei dem gleichnamigen Nicht-Landmark-Event auch
-        keine Viertel-Ergaenzung aus."""
+    def test_a_named_event_takes_the_same_place_name_as_without_its_name(self) -> None:
+        """Die EINE Ortsregel (ADR 0120 Punkt 2): `assign_place_names` liest `landmark_name`
+        ueberhaupt nicht mehr. Geprueft als DIFFERENTIELLE PROBE - dieselbe Eventliste einmal MIT
+        und einmal OHNE den Namen, positionsweise dasselbe Ergebnis. Zwei getrennte Erwartungen
+        bestuenden auch dann, wenn beide Lagen auseinanderliefen."""
         events = [
             _place_event(1, BERLIN, landmark_name="Brandenburger Tor"),
             _place_event(2, BERLIN_OST),
         ]
         infos = {BERLIN: _info("Berlin", "Mitte"), BERLIN_OST: _info("Berlin", "Kreuzberg")}
 
-        assert assign_place_names(events, infos) == [None, "Berlin"]
+        mit_namen = assign_place_names(events, infos)
+        ohne_namen = assign_place_names(
+            [replace(event, landmark_name=None) for event in events], infos
+        )
+
+        assert mit_namen == ohne_namen
+        # Gegenprobe gegen eine leere Zusage: hier entsteht tatsaechlich je ein zusammengesetzter
+        # Name, und zwar weil das benannte Event jetzt mitzaehlt.
+        assert mit_namen == ["Berlin, Mitte", "Berlin, Kreuzberg"]
+
+    def test_a_named_event_alone_in_one_locality_keeps_the_plain_locality(self) -> None:
+        """Ein benanntes Event verliert seinen Ortsnamen nicht und bekommt auch keine
+        Viertel-Ergaenzung, wo kein zweiter Namenstraeger liegt."""
+        events = [_place_event(1, BERLIN, landmark_name="Brandenburger Tor")]
+        infos = {BERLIN: _info("Berlin", "Mitte")}
+
+        assert assign_place_names(events, infos) == ["Berlin"]
 
     def test_the_result_is_aligned_with_the_input_positionwise(self) -> None:
         """Eine um eins verschobene Zuordnung ist der zweite stille Fehler dieser Form."""

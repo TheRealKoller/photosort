@@ -12,6 +12,7 @@ import ast
 import asyncio
 from collections.abc import Collection
 from datetime import datetime, timedelta
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -120,6 +121,16 @@ def _named_candidate(
         gps_lon=None if gps is None else gps[1],
         landmark_name=name,
     )
+
+
+def _one_event_with_a_share_of(members: int) -> list[EventCandidate]:
+    """EIN Event aus `members` Fotos, von denen GENAU EINES den Namen traegt - der Traegeranteil
+    ist damit 1/`members`.
+
+    Die uebrigen liegen je eine Minute auseinander: dicht genug, dass die Zeitluecke sie nicht
+    trennt, und die Zeitreihenfolge bleibt die der Uebergabe."""
+    named = _named_candidate(1_000_000, 0, "Palast")
+    return [named, *(_candidate(minutes) for minutes in range(1, members))]
 
 
 async def _project(session: AsyncSession, name: str = "Reise") -> int:
@@ -1578,6 +1589,52 @@ class TestBlockC3LandmarkNames:
 
         assert counts.events_named_by_a_single_photo == 0
 
+    def test_the_named_events_and_their_smallest_share_are_counted(self) -> None:
+        """Die GEGENANZEIGE des Kriteriums in Zahlen: es gibt benannte Events - sonst haette eine
+        Schwelle jede Benennung abgeschaltet - und der kleinste Traegeranteil steht als BRUCH da.
+        Auf Prozent gerundet verloere genau die Grenze ihre Aussage."""
+        members = events_module.LANDMARK_MIN_SHARE.denominator
+        candidates = _one_event_with_a_share_of(members)
+        formation = explain_events(candidates)
+
+        counts = landmark_counts(candidates, formation, {})
+
+        assert len(formation.events) == 1
+        assert counts.events_named == 1
+        # GENAU auf der Schwelle - und damit nicht "unter" ihr.
+        assert counts.smallest_carrier_share == events_module.LANDMARK_MIN_SHARE
+        assert counts.events_below_share == 0
+
+    def test_without_a_named_event_the_smallest_share_stays_undefined(self) -> None:
+        """Kein `min()` ueber eine leere Folge: ohne benanntes Event ist der kleinste Anteil
+        UNDEFINIERT, nicht null. Eine 0 hiesse "ein Event mit dem Anteil null" und truege die
+        Gegenanzeige, obwohl gar nichts benannt wurde."""
+        candidates = [_candidate(minutes) for minutes in (0, 1, 2)]
+        formation = explain_events(candidates)
+
+        counts = landmark_counts(candidates, formation, {})
+
+        assert counts.events_named == 0
+        assert counts.smallest_carrier_share is None
+        assert counts.events_below_share == 0
+
+    def test_an_event_below_the_share_sets_the_counter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die strengere Schwelle als Gegenprobe: Der Block zaehlt gegen die Schwelle, die JETZT
+        gilt - nicht gegen die, unter der die vorgelegte Gliederung entstanden ist. Ohne diese
+        Zeile fielen "kein Event unter der Schwelle" und "es gibt benannte Events" in eine einzige
+        Zahl zusammen, und die Gegenanzeige waere mit einem Namensschalter erfuellbar."""
+        candidates = _one_event_with_a_share_of(3)  # 1 von 3 traegt
+        formation = explain_events(candidates)
+        monkeypatch.setattr(events_module, "LANDMARK_MIN_SHARE", Fraction(1, 2))
+
+        counts = landmark_counts(candidates, formation, {})
+
+        assert counts.events_named == 1
+        assert counts.events_below_share == 1
+        assert counts.smallest_carrier_share == Fraction(1, 3)
+
 
 # --- main() gegen eine echte, dateibasierte SQLite ------------------------------------------------
 #
@@ -2434,13 +2491,17 @@ def _adjustable_constants_of_events() -> frozenset[str]:
 
     Zwei Achsen, beide gemessen: der NAME muss in `events.py` auf Modulebene zugewiesen sein (die
     Syntaxbaum-Seite - ein von anderswo importierter Name wie `MAX_PLACE_NAME_LENGTH` ist keine
-    Stellschraube dieses Moduls), und der WERT muss eine Zahl oder ein `timedelta` sein (die
-    Laufzeit-Seite). Die geschlossenen Wortschaetze (`BOUNDARY_*`, `BOUNDARY_CAUSES`,
+    Stellschraube dieses Moduls), und der WERT muss eine Zahl, ein `timedelta` oder ein `Fraction`
+    sein (die Laufzeit-Seite). Die geschlossenen Wortschaetze (`BOUNDARY_*`, `BOUNDARY_CAUSES`,
     `MERGE_BLOCK_*`, `MERGE_BLOCK_REASONS`, `PLACE_KINDS`) fallen dadurch heraus und duerfen weiter
     importiert werden - sie aendern sich nicht unter der Hand, und ein Test verschiebt sie nicht.
 
+    `Fraction` steht ausdruecklich daneben, nicht als `numbers.Rational`: `LANDMARK_MIN_SHARE` ist
+    ein exakter Bruch (Spec 0514, ADR 0120), und ohne ihn fiele die juengste Stellschraube still
+    durch das Raster, waehrend der Waechter gruen bliebe.
+
     Ein handgefuehrter Namensvorrat waere beim naechsten Zuwachs still vakuum-gruen: Genau die neue
-    Stellschraube waere die ungeprueфte."""
+    Stellschraube waere die ungepruefte."""
     path = module_file("photosort.events")
     assert path is not None
     assigned = {
@@ -2454,7 +2515,7 @@ def _adjustable_constants_of_events() -> frozenset[str]:
     return frozenset(
         name
         for name in assigned
-        if isinstance(getattr(events_module, name), int | float | timedelta)
+        if isinstance(getattr(events_module, name), int | float | timedelta | Fraction)
     )
 
 
@@ -2555,6 +2616,7 @@ class TestNoAdjustableConstantIsBoundAtImport:
             "MERGE_EXTENT_MAX_METERS",
             "MIN_EVENT_PHOTOS",
             "MOTIF_CHANGE_CONFIRMING_PHOTOS",
+            "LANDMARK_MIN_SHARE",
         } <= found
 
     def test_the_closed_vocabularies_are_not_mistaken_for_adjustable(self) -> None:

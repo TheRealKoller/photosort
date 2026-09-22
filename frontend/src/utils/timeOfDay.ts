@@ -32,17 +32,19 @@ export function formatTimeRange(minIso: string, maxIso: string): string {
 /**
  * Tag und fertige Ueberschrift EINES Events - eine reine Funktion ueber der `events`-Zeile.
  *
- * DREI STUFEN, sequenziell: die erkannte Sehenswuerdigkeit (`Eiffelturm (10:30–11:45 Uhr)`), der
- * aufgeloeste Ortsname (`Berlin, Kreuzberg (10:30–11:45 Uhr)`), sonst die Nummer
- * (`Position 3 (10:30–11:45 Uhr)`). Die Zeitspanne bleibt in JEDEM Fall Teil der Ueberschrift -
- * sie traegt die Unterscheidbarkeit, wenn mehrere Events denselben Namen tragen und kein Viertel
- * vorliegt.
+ * SIE SETZT SELBST NICHTS ZUSAMMEN UND ZERLEGT NICHTS: Den Namen holt sie aus `eventPlaceName` -
+ * der einen Stelle, an der Sehenswuerdigkeitsname und Ortsname zusammenkommen (Spec 0514,
+ * ADR 0120) -, und haengt hier nur die Zeitspanne an. Vier Textformen entstehen so:
+ * `Eiffelturm, Paris, Gros-Caillou (10:30–11:45 Uhr)`, `Eiffelturm (…)`, `Paris (…)` und
+ * `Position 3 (…)`, wenn keine Ortsangabe aufloest.
+ *
+ * Die Zeitspanne bleibt in JEDEM Fall Teil der Ueberschrift - sie traegt die Unterscheidbarkeit,
+ * wenn mehrere Events denselben Namen tragen.
  *
  * Eine Koordinate erscheint ausdruecklich NICHT als Name - sie bleibt in `place`.
  *
- * Die zusammengesetzte Form "Ort, Viertel" kommt FERTIG vom Server (ADR 0102 Punkt 4): Sie ist
- * eine Aussage ueber alle Events eines Laufs, die das Frontend gar nicht treffen koennte. Hier
- * wird nichts zusammengesetzt und nichts zerlegt.
+ * Die Form "Ort, Viertel" kommt FERTIG vom Server (ADR 0102 Punkt 4): Sie ist eine Aussage ueber
+ * alle Events eines Laufs, die das Frontend gar nicht treffen koennte.
  *
  * Anders als die frueher hier stehende Cluster-Ueberschrift haengt nichts davon ab, welche Fotos
  * gerade sichtbar sind: Nummer, Zeitspanne und Name stehen in der Zeile des Events.
@@ -57,29 +59,40 @@ export function formatEventHeading(event: EventOut): { dayKey: string; heading: 
 }
 
 /**
- * Der Name des Ortes EINES Events - die ersten zwei der drei Stufen aus `formatEventHeading`,
- * ohne die Zeitspanne und ohne den Rückfall auf die Nummer. `null` heißt "kein Ortsname".
+ * Der Ort EINES Events als Ueberschriftsname - ohne die Zeitspanne und ohne den Rückfall auf die
+ * Nummer. `null` heißt "keine Ortsangabe".
  *
- * ZWEI STUFEN, sequenziell: die erkannte Sehenswürdigkeit (`place.landmark_name`, Modellantwort),
- * sonst der aufgelöste Ortsname (`place_name`, Ortsdatensatz Dritter). Eine Koordinate erscheint
- * ausdrücklich NICHT als Name - sie bleibt in `place`.
+ * SEIT SPEC 0514 (ADR 0120) STEHEN DIE BEIDEN TEILE NEBENEINANDER, der Name zuerst:
+ * `Eiffelturm, Paris, Gros-Caillou`. Der Sehenswürdigkeitsname (`place.landmark_name`,
+ * Modellantwort) verdrängt den aufgelösten Ortsnamen (`place_name`, Ortsdatensatz Dritter) nicht
+ * mehr; er tritt daneben. Vier Ausgänge: beide → `"<Name>, <Ort>"`, nur Name → `"<Name>"`, nur Ort
+ * → `"<Ort>"`, keins → `null`. Eine Koordinate erscheint ausdrücklich NICHT als Name - sie bleibt
+ * in `place` (verdrängt bleibt allein die KOORDINATENSTUFE).
  *
- * Der `null`/`''`-Rückfall je Stufe ist defensiv: Der Server liefert diese Kombinationen nicht,
- * aber `"null"` als Ortsangabe wäre schlimmer als gar keine. Fällt eine Stufe aus, gewinnt die
- * NÄCHSTE - nicht sofort `null`.
+ * Das Komma steht hinter einem Leerzeichen und damit an einer Umbruchstelle; gekürzt wird nicht -
+ * `MAX_PLACE_NAME_LENGTH` ist eine Servergrenze für die Serverform "Ort, Viertel".
+ *
+ * Der `null`/`''`-Rückfall gilt JE TEIL (`usableName`): Der Server liefert diese Kombinationen
+ * nicht, aber `"null"` als Ortsangabe wäre schlimmer als gar keine. Fehlt ein Teil, steht der
+ * andere ALLEIN - kein Trennzeichen ohne zweiten Teil, keine leere Klammer.
  *
  * EINE FUNKTION FÜR BEIDE AUFRUFSTELLEN (Ereignis-Überschrift und Bilddetailansicht): Entstünde die
- * Rangfolge ein zweites Mal, liefe sie mit dieser auseinander. Der strukturelle Wächter
+ * Zusammensetzung ein zweites Mal, liefe sie mit dieser auseinander. Der strukturelle Wächter
  * `photoDetail.structure.test.ts` bindet das fest.
  *
- * S2 — REINE FUNKTION ÜBER DER EVENT-ZEILE: Sie setzt nichts zusammen und interpretiert nichts;
- * die Form "Ort, Viertel" kommt fertig vom Server. Beide gelesenen Felder tragen S1 (extern
- * erzeugter Text, ausschließlich als regulärer React-Textknoten rendern). Der Nachweis dafür gehört
- * an die Renderstelle, nicht in den Test dieser Funktion.
+ * S1/S2 — KEIN INTERPRETIEREN: Beide Teile sind fremderzeugter Text und treffen hier in EINEM Wert
+ * zusammen. Sie werden ausschließlich zu einer Zeichenkette verbunden und nirgends ausgewertet -
+ * das Escaping leistet React an der Renderstelle, und der Nachweis dafür gehört dorthin, nicht in
+ * den Test dieser Funktion.
  */
 export function eventPlaceName(event: EventOut): string | null {
   const landmark = event.place?.kind === 'landmark' ? (event.place.landmark_name ?? null) : null
-  return usableName(landmark) ?? usableName(event.place_name)
+  const name = usableName(landmark)
+  const place = usableName(event.place_name)
+  if (name === null) {
+    return place
+  }
+  return place === null ? name : `${name}, ${place}`
 }
 
 function usableName(value: string | null | undefined): string | null {

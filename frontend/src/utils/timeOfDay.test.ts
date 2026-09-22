@@ -116,12 +116,23 @@ describe('formatEventHeading', () => {
     expect(result.heading).toBe('Garmisch-Partenkirchen (10:30–11:45 Uhr)')
   })
 
-  it('laesst der Sehenswuerdigkeit den Vorrang, wenn beide vorliegen', () => {
+  // Spec 0514, ADR 0120: Der Sehenswuerdigkeitsname verdraengt den Ortsnamen nicht mehr - er tritt
+  // daneben. Die Zeitspanne bleibt in jedem Fall Teil der Ueberschrift.
+  it('setzt Name und Ortsnamen zusammen, wenn beide vorliegen', () => {
     const result = formatEventHeading(
       eventOut({
         place: place({ kind: 'landmark', landmark_name: 'Eiffelturm' }),
         place_name: 'Paris, Gros-Caillou',
       }),
+    )
+
+    // ZWEI Kommata: das erste trennt Name und Ort, das zweite traegt die bestehende Ortsform.
+    expect(result.heading).toBe('Eiffelturm, Paris, Gros-Caillou (10:30–11:45 Uhr)')
+  })
+
+  it('laesst den Namen allein, wenn sich kein Ortsname aufloest', () => {
+    const result = formatEventHeading(
+      eventOut({ place: place({ kind: 'landmark', landmark_name: 'Eiffelturm' }) }),
     )
 
     expect(result.heading).toBe('Eiffelturm (10:30–11:45 Uhr)')
@@ -152,9 +163,10 @@ describe('formatEventHeading', () => {
     )
   })
 
-  it('gibt die zusammengesetzte Form unveraendert weiter', () => {
+  it('gibt die vom Server zusammengesetzte Ortsform unveraendert weiter', () => {
     // "Ort, Viertel" entsteht AUSSCHLIESSLICH auf dem Server (ADR 0102 Punkt 4) - das Frontend
-    // setzt nichts zusammen und zerlegt nichts.
+    // zerlegt sie nicht und setzt sie nicht nach. Seit Spec 0514 setzt es davor den Namen
+    // zusammen; an der SERVERFORM aendert das nichts.
     const result = formatEventHeading(eventOut({ place_name: 'Berlin, Kreuzberg' }))
 
     expect(result.heading).toBe('Berlin, Kreuzberg (10:30–11:45 Uhr)')
@@ -226,7 +238,9 @@ describe('formatEventHeading', () => {
    Bilddetailansicht den Ortsnamen OHNE Zeitspanne zeigt - die Aufnahmezeit steht dort direkt
    darüber. Entstünde die Rangfolge dort ein zweites Mal, liefe sie mit dieser auseinander. */
 describe('eventPlaceName', () => {
-  it('nimmt die erkannte Sehenswürdigkeit zuerst', () => {
+  /* Spec 0514, ADR 0120: Die beiden Teile stehen NEBENEINANDER - der Name zuerst, der Ortsname
+     daneben, durch ein Komma getrennt. Vier Ausgänge, sonst nichts. */
+  it('setzt Name und Ortsnamen zusammen', () => {
     expect(
       eventPlaceName(
         eventOut({
@@ -234,10 +248,16 @@ describe('eventPlaceName', () => {
           place_name: 'Paris, 7. Arrondissement',
         }),
       ),
+    ).toBe('Eiffelturm, Paris, 7. Arrondissement')
+  })
+
+  it('nimmt den Namen allein, wenn sich kein Ortsname auflösen lässt', () => {
+    expect(
+      eventPlaceName(eventOut({ place: place({ kind: 'landmark', landmark_name: 'Eiffelturm' }) })),
     ).toBe('Eiffelturm')
   })
 
-  it('nimmt den aufgelösten Ortsnamen als zweite Stufe', () => {
+  it('nimmt den aufgelösten Ortsnamen allein, wenn kein Name daneben steht', () => {
     expect(eventPlaceName(eventOut({ place_name: 'Berlin, Kreuzberg' }))).toBe('Berlin, Kreuzberg')
   })
 
@@ -250,13 +270,33 @@ describe('eventPlaceName', () => {
     expect(eventPlaceName(eventOut({ place: place({ kind: 'coordinate' }) }))).toBeNull()
   })
 
-  /* Fällt eine Stufe aus, gewinnt die NÄCHSTE - nicht sofort `null`. Leerer String und `null`
-     gelten dabei gleich: `""` als Ortsname wäre eine Lücke, kein Name. */
+  /* Beide Teile sind einzeln defensiv: `null` und `""` gelten gleich (`usableName`), und ein
+     fehlender zweiter Teil lässt den ersten ALLEIN stehen - kein Trennzeichen ohne zweiten Teil,
+     keine leere Klammer. */
   it.each([
     { name: 'landmark null', landmark: null, placeName: 'Berlin', erwartet: 'Berlin' },
     { name: 'landmark leer', landmark: '', placeName: 'Berlin', erwartet: 'Berlin' },
     { name: 'place_name leer', landmark: null, placeName: '', erwartet: null },
-  ])('fällt bei $name auf die nächste Stufe', ({ landmark, placeName, erwartet }) => {
+    { name: 'beide null', landmark: null, placeName: null, erwartet: null },
+    {
+      name: 'landmark ohne place_name',
+      landmark: 'Eiffelturm',
+      placeName: null,
+      erwartet: 'Eiffelturm',
+    },
+    {
+      name: 'landmark mit leerem place_name',
+      landmark: 'Eiffelturm',
+      placeName: '',
+      erwartet: 'Eiffelturm',
+    },
+    {
+      name: 'beide gesetzt',
+      landmark: 'Eiffelturm',
+      placeName: 'Paris, Gros-Caillou',
+      erwartet: 'Eiffelturm, Paris, Gros-Caillou',
+    },
+  ])('ergibt für $name: $erwartet', ({ landmark, placeName, erwartet }) => {
     expect(
       eventPlaceName(
         eventOut({
@@ -267,16 +307,20 @@ describe('eventPlaceName', () => {
     ).toBe(erwartet)
   })
 
-  /* REINE FUNKTION ÜBER DER EVENT-ZEILE (S2): Sie setzt nichts zusammen und interpretiert nichts -
-     die Form "Ort, Viertel" kommt fertig vom Server. Der XSS-Nachweis gehört an die RENDERSTELLE,
-     nicht hierher; dass die Funktion nichts interpretiert, sagt nichts darüber, was das Markup
-     daraus macht. Hier steht deshalb nur: der Text kommt unverändert zurück. */
-  it('gibt einen HTML-artigen Namen unverändert zurück, ohne ihn zusammenzusetzen', () => {
+  /* S1: Beide Teile sind fremderzeugter Text und treffen hier in EINEM Wert zusammen. Die Funktion
+     setzt zusammen, aber sie INTERPRETIERT nichts - das Escaping leistet React an der
+     Rendering-Stelle, und der Nachweis dafür gehört dorthin, nicht in den Test dieser Funktion. */
+  it('setzt zwei HTML-artige Teile zusammen, ohne sie zu interpretieren', () => {
     const payload = '<img src=x onerror="window.__pwned = true">'
 
     expect(
-      eventPlaceName(eventOut({ place: place({ kind: 'landmark', landmark_name: payload }) })),
-    ).toBe(payload)
+      eventPlaceName(
+        eventOut({
+          place: place({ kind: 'landmark', landmark_name: payload }),
+          place_name: payload,
+        }),
+      ),
+    ).toBe(`${payload}, ${payload}`)
   })
 
   /* Die Rangfolge ist DIESELBE, die die Überschrift benutzt - beide lesen diese eine Funktion. */
