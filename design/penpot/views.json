@@ -582,6 +582,69 @@
           "grund": "Der Puls ist Bewegung. Penpot bildet Bewegung nicht ab, und der Satz photosort führt kein Token dafür. Der Entwurf zeigt die Platzhalter deshalb ruhend; das ist eine ausgewiesene Lücke, kein erledigter Punkt."
         }
       ]
+    },
+    {
+      "schluessel": "ausschuss",
+      "anzeigename": "Ausschuss",
+      "seite": "Ansicht — Ausschuss",
+      "produktdateien": [
+        "src/pages/pipeline/AusschussStepPage.tsx"
+      ],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "gefuellt",
+        "leer",
+        "ladend",
+        "fehler"
+      ],
+      "variantenachse": "zustand",
+      "bausteine": [
+        "button",
+        "card",
+        "badge",
+        "skeleton",
+        "alert"
+      ],
+      "luecken": [
+        {
+          "schluessel": "behaelter",
+          "stelle": "Kachel und Stapel als Behälter für Bildfläche, Dateiname und Grund-Kennzeichen",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Kachel und Stapel sind im Entwurf deshalb tokengebundene Rahmen statt Instanzen."
+        },
+        {
+          "schluessel": "stapel",
+          "stelle": "Versatz und Kartenmaß der übereinandergelegten Karten eines Duplikat-Stapels",
+          "grund": "Für den Versatz und die Kartenhöhe des Stapels gibt es kein Token, und die Bibliothek führt keinen Stapel-Baustein. Der Versatz steht als Wert im Entwurf; die hinteren Karten bleiben sichtbar, damit der Stapel als mehrere gleiche Aufnahmen lesbar ist statt als eine."
+        },
+        {
+          "schluessel": "detailansicht",
+          "stelle": "Großbild einer Aufnahme mit der Duplikatgruppe daneben",
+          "grund": "Diese Ansicht ist die Übersicht der Vorschläge; die Einzelprüfung einer Aufnahme liegt in den Ansichten Duplikate vergleichen und Bilddetail und wird hier nicht nachgebaut. Der Entwurf zeigt nur den Weg dorthin, nicht die Ziele selbst."
+        },
+        {
+          "schluessel": "bewegung",
+          "stelle": "Puls der Platzhalter im Zustand ladend",
+          "grund": "Der Puls ist Bewegung. Penpot bildet Bewegung nicht ab, und der Satz photosort führt kein Token dafür. Der Entwurf zeigt die Platzhalter ruhend in color.text-disabled; das ist eine ausgewiesene Lücke, kein erledigter Punkt."
+        },
+        {
+          "schluessel": "kachelmasse",
+          "stelle": "Kachelbreite, Bildhöhe und Spaltenzahl des Rasters",
+          "grund": "Diese Maße sind gerechnete Layoutgrößen ohne Token; der Satz photosort deckt allein die Zwischenräume über die Abstandsstufen. Sie stehen im Entwurf als Werte, damit die Bretter die tatsächliche Aufteilung zeigen — sieben Kacheln je Zeile in der breiten, zwei in der schmalen Fassung."
+        },
+        {
+          "schluessel": "seitengrund",
+          "stelle": "Hintergrund der Ansichtsseite",
+          "grund": "Eine Penpot-Seite ist keine Form; eine Tokenbindung greift dort nicht. Der Grund ist aus dem Flächentoken gelesen und gesetzt, damit die Sichtprüfung gegen denselben Untergrund urteilt, gegen den der Kontrast gerechnet ist."
+        },
+        {
+          "schluessel": "grundfarbe",
+          "stelle": "Farbgebung des Grund-Kennzeichens an einer vorgeschlagenen Aufnahme",
+          "grund": "Die Bibliothek führt für einen Grund kein eigenes Kennzeichen; der Entwurf setzt den Kennzeichen-Baustein und leiht sich dessen Bewertungsfarben — die Zurückweisungsstufe für geringe Qualität, die Akzentstufe für einen Duplikat-Stapel. Die Farbe benennt damit keinen Bewertungszustand der Aufnahme, sondern nur die Art des Vorschlags."
+        }
+      ]
     }
   ]
 }
