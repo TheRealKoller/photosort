@@ -26,6 +26,7 @@ from photosort.duplicates import (
     all_group_representative_ids,
     effective_decision_for,
     group_standing,
+    has_ausschuss_entry,
     has_open_suggestion,
     has_open_suggestion_for,
     keep_possible_for,
@@ -1920,6 +1921,207 @@ async def duplicate_group(
     Datenbank und wird jenseits von 2^63 zu `500` statt `404`."""
     project = await _get_project_or_404(project_id, session)
     return await build_duplicate_group_out(session, project, photo_id, current_user.id)
+
+
+class AusschussEntryOut(BaseModel):
+    """EIN Eintrag der Ausschuss-Uebersicht (Spec 0525).
+
+    `reason` ist der GRUND der Markierung und kommt vom Server, nicht aus einer TypeScript-Ableitung
+    (Auflage S7): `duplicate` genau dann, wenn `PhotoScore.duplicate_of IS NOT NULL`, sonst
+    `low_quality` - dieselbe Ableitung wie `_suggestion_reason`, keine zweite. Der Grund ist damit
+    unterscheidbar, statt ein Sammelzustand zu sein (AK4).
+
+    `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdruecklich NICHT
+    `duplicates.py::effective_decision_for` (ADR 0111 Punkt 1): Die Uebersicht zeigt den
+    Sichtungsfortschritt, und ein unwirksames `keep` (Unschaerfe-Ablehnung ohne Gruppe) bleibt als
+    gespeicherte Handlung sichtbar. Die Detailansicht zieht dieselbe Groesse, damit Uebersicht und
+    Detail ueber denselben Bildzustand sprechen. Ein `null` heisst "noch nicht entschieden"; es gibt
+    keinen Weg zurueck in diesen Zustand.
+
+    `group_anchor_photo_id` ist der Repraesentant der Duplikatgruppe des Fotos oder `null`. Er
+    entsteht ueber `duplicates.py::representative_of` aus der PROJEKTBEGRENZTEN Kantenliste (Auflage
+    S6): `PhotoScore.duplicate_of` zeigt auf `photos.id` ohne Projektbedingung, eine eigene Abfrage
+    darauf koennte den Gewinner eines fremden Projekts nennen. Eine Zugriffsmarke ist die Id nicht -
+    die Folgeanfrage laeuft erneut ueber `project_id`."""
+
+    photo: PhotoOut
+    reason: Literal["duplicate", "low_quality"]
+    decision: DuplicateDecision | None
+    group_anchor_photo_id: int | None
+
+
+class AusschussOut(BaseModel):
+    """Die Antwort des Ausschuss-Lesepfads: der Bestand, seine Groesse und die Zahl der offenen
+    Vorschlaege.
+
+    `total` ist die Groesse des GESAMTBESTANDS (paginierbar), `open_count` die projektweite Zahl der
+    OFFENEN Vorschlaege - unabhaengig von `limit`/`offset`. Der Bestaetigungsbutton nennt genau
+    `open_count` (AK9); aus `len(items)` gebildet nennte er auf der zweiten Seite eine andere Zahl,
+    und ein bereits entschiedenes Bild zaehlte mit.
+
+    Die Antwort traegt `PhotoOut` samt `suggestion`/`ratings` und ist damit eine Funktion des
+    ANFRAGENDEN Nutzers (Auflage S8): Bekaeme sie je eine Zwischenspeicherung, ein `ETag` oder ein
+    `Cache-Control` ueber `no-store` hinaus, muss der Schluessel den Nutzer enthalten."""
+
+    items: list[AusschussEntryOut]
+    total: int
+    open_count: int
+
+
+async def _ausschuss_entries_out(
+    session: AsyncSession,
+    project: Project,
+    ids: list[int],
+    current_user_id: int,
+) -> list[AusschussEntryOut]:
+    """Hydratisiert die Ausschuss-Eintraege einer Seite - dieselbe Kontextbeschaffung wie die
+    Fotoliste (Rang, Partition, Ort/Event, Motive, Endauswahl), damit ein Eintrag dieselben
+    `PhotoOut`-Felder traegt wie jedes andere Foto.
+
+    `links` wird EINMAL fuer die ganze Seite geladen und nicht je Foto: Die Gruppenaufloesung ist
+    ohnehin eine Abfrage ueber das ganze Projekt, und je Eintrag gestellt waere sie ein Query pro
+    Kachel."""
+    if not ids:
+        return []
+    photos_by_id = await _photos_by_id(session, ids)
+    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project.id)
+    rankings_by_id = (
+        await _ranking_by_photo_id(session, latest_run_id, ids) if latest_run_id is not None else {}
+    )
+    partition_sizes = (
+        await _partition_sizes(session, latest_run_id) if latest_run_id is not None else {}
+    )
+    place_by_id = await _event_and_location_by_photo_id(
+        session, project.id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
+    )
+    motifs_by_id = await load_effective_strengths(session, ids)
+    decisions = await _final_selection_decisions(session, ids)
+    user_count = await _user_count(session)
+    links = await load_duplicate_links(session, project.id)
+
+    entries: list[AusschussEntryOut] = []
+    for photo_id in ids:
+        photo = photos_by_id[photo_id]
+        score = photo.score
+        # Der Bestand ist ueber den inneren Join auf `PhotoScore` gebildet - hier kann die Zeile
+        # nicht fehlen. Der Zweig steht trotzdem, weil `mypy --strict` sonst das `None` durchliesse.
+        assert score is not None
+        entscheidung = photo.duplicate_decision
+        entries.append(
+            AusschussEntryOut(
+                photo=_to_photo_out(
+                    photo,
+                    current_user_id,
+                    project,
+                    rankings_by_id.get(photo_id),
+                    partition_sizes,
+                    # Keine `curation_position`: Der Ausschuss ist keine numerierte Auswahl.
+                    None,
+                    place_by_id.get(photo_id, NO_PLACE),
+                    motifs_by_id.get(photo_id),
+                    decisions=decisions,
+                    user_count=user_count,
+                ),
+                # SICHERHEIT (S7): die vorhandene Ableitung, nicht eine zweite Fassung davon.
+                reason=_suggestion_reason(score),
+                decision=None if entscheidung is None else entscheidung.decision,
+                group_anchor_photo_id=representative_of(photo_id, links),
+            )
+        )
+    return entries
+
+
+@router.get("/projects/{project_id}/ausschuss", response_model=AusschussOut)
+async def list_ausschuss(
+    # SICHERHEIT (S5): deklarativ begrenzt wie der Gruppen-Index daneben - ein unbeschraenkter
+    # Pydantic-`int` erreicht die Datenbank und wird jenseits von 2^63 zu `500` statt `404`.
+    project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
+    # Die Detailansicht der Schritt-Route ist derselbe Endpunkt mit gesetztem Filter (AK5, AK8):
+    # `items` traegt dann GENAU den passenden Eintrag oder eine leere Liste, `total`/`open_count`
+    # bleiben projektweit, und `limit`/`offset` sind in diesem Zweig ohne Wirkung - das Muster des
+    # Alternativ-Zweigs der Fotoliste. Damit ist der Deep-Link `?photo=<id>` auch fuer eine Aufnahme
+    # ausserhalb der geladenen Seite definiert.
+    #
+    # SICHERHEIT (S5): deklarativ begrenzt, BEVOR der Wert die Datenbank erreicht - ein
+    # unbeschraenkter Pydantic-`int` wird jenseits von 2^63 zu `500` statt einer leeren Liste.
+    photo_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
+    limit: int = Query(60, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (S5): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei), und
+    # `_protected_router_operations()` in `test_auth_guard.py` fuehrt ihn nicht - fuer ihn gibt es
+    # KEIN Vollstaendigkeitsnetz. Ein Endpunkt, der diesen Parameter vergisst, waere STILL
+    # OEFFENTLICH: kein Fehler, keine 401, nur Daten. Der eigene, pfadbenannte 401-Fall steht in
+    # `tests/test_api_ausschuss.py`.
+    current_user: User = Depends(get_current_user),
+) -> AusschussOut:
+    """Der Ausschuss-BESTAND dieses Projekts: offene Vorschlaege und getroffene Entscheidungen,
+    mit Grund, gespeicherter Entscheidung und Gruppenanker.
+
+    Der Bestand ist die VEREINIGUNG beider Ursachen - "offener Vorschlag" UND
+    "Entscheidungszeile", also offen, angenommen und aufgehoben zusammen (AK1, AK3). Er ist
+    ausdruecklich NICHT `NOT ueberlebt`: Eine mit `Ausschuss` entschiedene Aufnahme ist weder
+    Ueberlebende noch offener Vorschlag.
+
+    SICHERHEIT (S1/S6): Projektbindung und Bestandsbedingung stehen als UND-Glieder in DERSELBEN
+    Anweisung, nie als nachgelagerter Filter ueber einer bereits gebildeten Menge.
+    `duplicates.py::has_open_suggestion` traegt selbst keine Projektbedingung - ohne
+    `Photo.project_id == project_id` daneben lieferte der Endpunkt jeden offenen Vorschlag der
+    ganzen Instanz aus. `PhotoScore.duplicate_of` zeigt auf `photos.id` ohne Projektbedingung; der
+    Gruppenanker stammt deshalb aus der bereits projektbegrenzten Kantenliste. Eine unbekannte oder
+    fremde `photo_id` liefert eine leere Liste, ununterscheidbar von einer unbekannten.
+
+    KEIN `404`/`409` fuer "nichts gefunden": Der leere Ausschuss ist ein regulaerer Zustand (AK14) -
+    auch ohne erfolgreichen `ScoringRun` und bei einem Projekt ganz ohne Fotos. `404` gibt es allein
+    fuer ein unbekanntes Projekt, ohne den uebergebenen Wert zu spiegeln; `422` fuer eine Id
+    ausserhalb der Grenzen.
+
+    Reihenfolge und Paginierung wie die Fotoliste: `Photo.taken_at, Photo.id`, `total` ueber den
+    ganzen Bestand. `open_count` ist davon unabhaengig und nennt die Zahl, die der
+    Bestaetigungsbutton traegt (AK9)."""
+    project = await _get_project_or_404(project_id, session)
+
+    # Eine Anweisung, zwei UND-Glieder: die Projektbindung und der Bestand. `has_ausschuss_entry`
+    # zieht dieselbe Praesenzgrenze wie das Ueberlebenden-Praedikat und steht NICHT ausgeschrieben
+    # hier (Auflage S9 - eine zweite Fassung daneben liefe ohne Fehler und ohne Meldung weg).
+    bestand = (
+        select(Photo.id)
+        .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+        .where(Photo.project_id == project_id, has_ausschuss_entry())
+    )
+    total = (
+        await session.execute(select(func.count()).select_from(bestand.subquery()))
+    ).scalar_one()
+
+    # SICHERHEIT (S1): dieselbe ausgeschriebene Projektbindung wie der Bestand - eine Zaehlung ohne
+    # sie gaebe dem Button eine Zahl, die auf dieser Seite niemand einloesen kann.
+    open_count = (
+        await session.execute(
+            select(func.count())
+            .select_from(Photo)
+            .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+            .where(Photo.project_id == project_id, has_open_suggestion())
+        )
+    ).scalar_one()
+
+    if photo_id is not None:
+        # Der Detail-Zweig: GENAU der passende Eintrag oder gar keiner. `limit`/`offset` sind hier
+        # bewusst ohne Wirkung - die Antwort ist der eine Eintrag, nicht eine Seite.
+        ids = [
+            row for row in (await session.execute(bestand.where(Photo.id == photo_id))).scalars()
+        ]
+    else:
+        ids = list(
+            (
+                await session.execute(
+                    bestand.order_by(Photo.taken_at, Photo.id).offset(offset).limit(limit)
+                )
+            ).scalars()
+        )
+
+    items = await _ausschuss_entries_out(session, project, ids, current_user.id)
+    return AusschussOut(items=items, total=total, open_count=open_count)
 
 
 def _strength_values(effective: Mapping[str, EffectiveStrength] | None) -> dict[str, float]:

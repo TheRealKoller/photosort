@@ -361,10 +361,11 @@ _HANDGESCHRIEBEN = re.compile(
 # * ERSETZTE VORKOMMEN: SECHS. So zaehlen Spec 0374, ADR 0104 Punkt 3 und das Sicherheitskonzept,
 #   und so stand `PhotoScore.suggested_status IS NULL` vorher ausgeschrieben da. Diese Zahl wird
 #   in den Dokumenten NICHT nachgezogen - sie beschreibt den abgeloesten Zustand.
-# * NEUE AUFRUFSTELLEN: SIEBEN, die Sollgroesse dieses Waechters. Die eine Bedingung zerfaellt in
-#   ZWEI Funktionen ("ueberlebt" und "offener Vorschlag", seit ADR 0104 nicht mehr komplementaer),
-#   und "der Vorschlags-Zweig" war schon vorher zwei Codeformen - eine SQL- und eine Objektfassung,
-#   die der Paritaetstest aneinander band.
+# * NEUE AUFRUFSTELLEN: die Sollgroesse dieses Waechters (die Tabelle direkt darunter). Die eine
+#   Bedingung zerfaellt in ZWEI Funktionen ("ueberlebt" und "offener Vorschlag", seit ADR 0104 nicht
+#   mehr komplementaer), und "der Vorschlags-Zweig" war schon vorher zwei Codeformen - eine SQL- und
+#   eine Objektfassung, die der Paritaetstest aneinander band. Seit Spec 0525 treten der Massenweg,
+#   die projektweite `open_count` und der neue Bestand `has_ausschuss_entry` hinzu.
 #
 # Wer beide verwechselt, "korrigiert" die Tabelle unten auf sechs und haelt den dann roten Test
 # fuer einen Fund.
@@ -382,15 +383,20 @@ _ERWARTETE_VERWENDUNGEN = {
     ("api/projects.py", "survives_ausschuss"): 2,
     # `is_candidate` - Anzeige, keine Grenze.
     ("api/photos.py", "survives_ausschuss_for"): 1,
-    # Der Vorschlags-Zweig von `_filtered_photo_ids` und sein Objekt-Zwilling `has_suggestion`.
-    ("api/photos.py", "has_open_suggestion"): 1,
+    # Der Vorschlags-Zweig von `_filtered_photo_ids` und der Objekt-Zwilling `has_suggestion`; dazu
+    # seit Spec 0525 die projektweite `open_count` des Ausschuss-Lesepfads.
+    ("api/photos.py", "has_open_suggestion"): 2,
     ("api/photos.py", "has_open_suggestion_for"): 1,
+    # Spec 0525: der Ausschuss-BESTAND der Uebersicht - die VEREINIGUNG beider Ursachen, eine eigene
+    # Praesenzgrenze neben den vier obigen und deshalb hier als eigener Name gefuehrt (Auflage S9:
+    # keine zweite, von Hand geschriebene Fassung von `PhotoScore.suggested_status` im Lesepfad).
+    ("api/photos.py", "has_ausschuss_entry"): 1,
 }
 
 # Die beiden Fassungen, getrennt gezaehlt: Nur die SQL-Fassungen treten als weiterer
 # Konjunktionsteil in eine bestehende Anweisung ein (Auflage S2) - die Objektfassungen lesen ein
 # bereits geladenes Foto.
-_SQL_FASSUNGEN = frozenset({"survives_ausschuss", "has_open_suggestion"})
+_SQL_FASSUNGEN = frozenset({"survives_ausschuss", "has_open_suggestion", "has_ausschuss_entry"})
 
 
 def _quelldateien() -> list[Path]:
@@ -417,6 +423,10 @@ _PRAEDIKATSNAMEN = frozenset(
         "survives_ausschuss_for",
         "has_open_suggestion",
         "has_open_suggestion_for",
+        # Spec 0525: der Ausschuss-Bestand (die VEREINIGUNG beider Ursachen) - eine eigene
+        # Praesenzgrenze neben den vier obigen, hier gefuehrt, damit ihre Aufrufstelle nicht
+        # unbemerkt wegfaellt.
+        "has_ausschuss_entry",
     }
 )
 
@@ -445,7 +455,7 @@ def _gemessene_verwendungen() -> dict[tuple[str, str], int]:
     }
 
 
-def test_the_two_predicates_are_drawn_at_exactly_the_seven_expected_call_sites() -> None:
+def test_the_predicates_are_drawn_at_exactly_the_expected_call_sites() -> None:
     """Die Zahl der Verwendungsstellen ist selbst eine Sollgroesse. Ein Wegfall faellt sonst nicht
     auf: Eine Stelle, die das Praedikat schlicht nicht mehr zieht, liefert weiterhin eine
     plausible Menge.
@@ -456,19 +466,20 @@ def test_the_two_predicates_are_drawn_at_exactly_the_seven_expected_call_sites()
     assert _gemessene_verwendungen() == _ERWARTETE_VERWENDUNGEN
 
 
-def test_the_six_replaced_occurrences_became_seven_call_sites_and_that_is_no_drift() -> None:
+def test_the_six_replaced_occurrences_and_the_written_call_sites_are_held_side_by_side() -> None:
     """Die beiden Zaehlweisen stehen hier NEBENEINANDER, damit ihre Differenz eine erklaerte
     Groesse ist statt eines Verdachts.
 
-    Die sechs ersetzten Vorkommen der Dokumente werden zu sieben Aufrufstellen, weil die eine
+    Die sechs ersetzten Vorkommen der Dokumente werden zu mehr Aufrufstellen, weil die eine
     Bedingung in ZWEI Funktionen zerfaellt und "der Vorschlags-Zweig" schon vorher zwei Codeformen
-    war. Genau FUENF davon sind SQL-Fassungen und treten als weiterer Konjunktionsteil in eine
-    bestehende Anweisung ein (Auflage S2); die zwei Objektfassungen lesen ein bereits geladenes
-    Foto."""
+    war; seit Spec 0525 treten Massenweg, projektweite `open_count` und der Bestand
+    `has_ausschuss_entry` hinzu. Ein Teil davon sind SQL-Fassungen und treten als weiterer
+    Konjunktionsteil in eine bestehende Anweisung ein (Auflage S2); die zwei Objektfassungen lesen
+    ein bereits geladenes Foto."""
     gemessen = _gemessene_verwendungen()
     sql = sum(anzahl for (_datei, name), anzahl in gemessen.items() if name in _SQL_FASSUNGEN)
 
     assert _ERSETZTE_VORKOMMEN == 6
-    assert sum(gemessen.values()) == 7
-    assert sql == 5
+    assert sum(gemessen.values()) == 9
+    assert sql == 7
     assert sum(gemessen.values()) - sql == 2
