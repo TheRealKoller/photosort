@@ -588,7 +588,8 @@
       "anzeigename": "Ausschuss",
       "seite": "Ansicht — Ausschuss",
       "produktdateien": [
-        "src/pages/pipeline/AusschussStepPage.tsx"
+        "src/pages/pipeline/AusschussStepPage.tsx",
+        "src/components/DuplicatePhotoTile.tsx"
       ],
       "breiten": [
         "mobile",
@@ -618,11 +619,6 @@
           "schluessel": "stapel",
           "stelle": "Versatz und Kartenmaß der übereinandergelegten Karten eines Duplikat-Stapels",
           "grund": "Für den Versatz und die Kartenhöhe des Stapels gibt es kein Token, und die Bibliothek führt keinen Stapel-Baustein. Der Versatz steht als Wert im Entwurf; die hinteren Karten bleiben sichtbar, damit der Stapel als mehrere gleiche Aufnahmen lesbar ist statt als eine."
-        },
-        {
-          "schluessel": "detailansicht",
-          "stelle": "Großbild einer Aufnahme mit der Duplikatgruppe daneben",
-          "grund": "Diese Ansicht ist die Übersicht der Vorschläge; die Einzelprüfung einer Aufnahme liegt in den Ansichten Duplikate vergleichen und Bilddetail und wird hier nicht nachgebaut. Der Entwurf zeigt nur den Weg dorthin, nicht die Ziele selbst."
         },
         {
           "schluessel": "bewegung",
