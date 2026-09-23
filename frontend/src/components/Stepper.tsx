@@ -237,10 +237,16 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
         Bewusst KEIN gemeinsamer Behaelter mit dem `<nav>`: ein haftendes Element kann seinen
         Elternkasten nicht verlassen: in einem nur zwei Zeilen hohen Wrapper waere die Leiste gar
         nicht mehr haftend. Der Abstand zur Leiste kommt deshalb aus dem Spaltenraster der Seite.
+
+        Die SchrittZAHL kommt aus dem Modell (`PIPELINE_STEPS.length`), nicht als Ziffer: Ein
+        weiterer oder wegfallender Schritt verschiebt sie damit von selbst, statt eine zweite,
+        still driftende Fassung neben der Liste zu fuehren. Der sichtbare Wortlaut ist derselbe -
+        die benannten Erwartungsaenderungen der abgeloesten "von 5"-Fassung stehen in den Tests,
+        nicht in einer zweiten Rechnung hier.
       */}
       {activeIndex >= 0 && (
         <p className="text-xs text-text-muted sm:hidden" aria-hidden="true">
-          {`Schritt ${activeIndex + 1} von 4: ${activeLabel}`}
+          {`Schritt ${activeIndex + 1} von ${PIPELINE_STEPS.length}: ${activeLabel}`}
         </p>
       )}
       <nav
@@ -285,7 +291,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
                 : isDone
                   ? 'erledigt'
                   : 'ausstehend'
-            const stepLabel = `Schritt ${index + 1} von 4: ${definition.label}`
+            const stepLabel = `Schritt ${index + 1} von ${PIPELINE_STEPS.length}: ${definition.label}`
             const ariaLabel = `${stepLabel}, ${auspraegung}`
 
             const inhalt = (
