@@ -363,6 +363,40 @@ async def test_the_group_anchor_names_the_representative_of_the_duplicate_group(
     assert _entry(body, unscharf.id)["group_anchor_photo_id"] is None
 
 
+async def test_keep_possible_comes_from_the_server_and_not_from_the_reason(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """D1: Grund und Wirksamkeit sind zwei verschiedene Aussagen ueber dieselbe Aufnahme.
+
+    `reason` ist `low_quality` genau dann, wenn `duplicate_of IS NULL`. `keep_possible` ist die
+    Wirksamkeit eines hypothetischen `keep` (`duplicates.py::keep_possible_for`). Beides faellt
+    auseinander, wenn eine Entscheidungszeile einen Lauf ueberlebt, in dem `suggested_status` UND
+    `duplicate_of` zurueckgesetzt wurden: Der Eintrag traegt dann `low_quality` und trotzdem
+    `keep_possible`. Wer das Feld aus dem Grund ableitet, naehme dem Nutzer dort die einzige
+    Handlung, die die Aufnahme zurueckholt - und die Ansicht widerspraeche dem Schreibweg."""
+    project = await _project(db_session)
+    zeile_ohne_vorschlag = await _photo(
+        db_session,
+        project,
+        "zeile.jpg",
+        seconds=0,
+        suggested_status=None,
+        duplicate_of=None,
+        decision=DuplicateDecision.DISCARD,
+    )
+    unscharf = await _photo(
+        db_session, project, "unscharf.jpg", seconds=1, suggested_status=RatingStatus.REJECTED
+    )
+    await db_session.commit()
+
+    body = (await authenticated_api_client.get(_url(project.id))).json()
+
+    assert _entry(body, zeile_ohne_vorschlag.id)["reason"] == "low_quality"
+    assert _entry(body, zeile_ohne_vorschlag.id)["keep_possible"] is True
+    assert _entry(body, unscharf.id)["reason"] == "low_quality"
+    assert _entry(body, unscharf.id)["keep_possible"] is False
+
+
 async def test_a_vanished_group_leaves_the_entry_with_a_null_anchor(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -564,11 +598,13 @@ async def test_a_photo_filter_outside_the_stock_answers_an_empty_list(
     assert unbekannt["total"] == fremd["total"] == 1
 
 
-async def test_the_answer_carries_exactly_the_three_agreed_fields(
+async def test_the_answer_carries_exactly_the_agreed_fields(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """Als Gleichheit der Feldmenge, damit ein spaeter angehaengtes Feld auffaellt, bevor es
-    stillschweigend mitreist."""
+    stillschweigend mitreist. Die Menge ist mit D1 um `keep_possible` gewachsen - die Wirksamkeit
+    des angebotenen "behalten" kommt vom Server, statt im Client aus `reason` nachgebaut zu
+    werden."""
     project = await _project(db_session)
     await _photo(db_session, project, "foto.jpg", suggested_status=RatingStatus.REJECTED)
     await db_session.commit()
@@ -581,4 +617,5 @@ async def test_the_answer_carries_exactly_the_three_agreed_fields(
         "reason",
         "decision",
         "group_anchor_photo_id",
+        "keep_possible",
     }

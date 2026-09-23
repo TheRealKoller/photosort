@@ -142,7 +142,8 @@ Bild. Es wird **kein** neues Datenmodell-Feld eingeführt: der Schritt hängt we
 1. **Neuer Lese-Endpunkt** `GET /projects/{project_id}/ausschuss` in `api/photos.py` (dort liegt
    bereits der Gruppen-Index aus Spec 0486). Antwortmodell `AusschussOut { items: [AusschussEntryOut],
    total: int, open_count: int }` und `AusschussEntryOut { photo: PhotoOut, reason: "duplicate" |
-   "low_quality", decision: "keep" | "discard" | null, group_anchor_photo_id: int | null }`.
+   "low_quality", decision: "keep" | "discard" | null, group_anchor_photo_id: int | null,
+   keep_possible: bool }`.
 
    - **Bestand (projektweit):** jede Aufnahme mit `PhotoScore.suggested_status IS NOT NULL` **oder**
      einer Zeile in `photo_duplicate_decisions` — offen, angenommen und aufgehoben zusammen. Der
@@ -155,6 +156,11 @@ Bild. Es wird **kein** neues Datenmodell-Feld eingeführt: der Schritt hängt we
      ein unwirksames `keep` (Unschärfe-Ablehnung ohne Gruppe) bleibt als gespeicherte Handlung
      sichtbar. Die Detailansicht zieht dieselbe Größe, damit Übersicht und Detail über denselben
      Bildzustand sprechen.
+   - **`keep_possible`** ist die **Wirksamkeit** des angebotenen „behalten" und kommt aus
+     `duplicates.py::keep_possible_for` — dieselbe Regel wie im Schreibweg, ausdrücklich **nicht**
+     aus `reason` abgeleitet: Ein Eintrag, dessen Entscheidungszeile einen Lauf überlebt hat, in
+     dem `suggested_status` und `duplicate_of` zurückgesetzt wurden, trägt `low_quality` und
+     trotzdem `true`.
    - **`open_count`** ist projektweit die Anzahl der Aufnahmen mit **offenem Vorschlag**
      (`duplicates.py::has_open_suggestion`) — unabhängig von `limit`/`offset`. Der Bestätigungsbutton
      nennt genau diese Zahl.

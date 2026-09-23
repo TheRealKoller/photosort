@@ -1959,12 +1959,21 @@ class AusschussEntryOut(BaseModel):
     entsteht ueber `duplicates.py::representative_of` aus der PROJEKTBEGRENZTEN Kantenliste (Auflage
     S6): `PhotoScore.duplicate_of` zeigt auf `photos.id` ohne Projektbedingung, eine eigene Abfrage
     darauf koennte den Gewinner eines fremden Projekts nennen. Eine Zugriffsmarke ist die Id nicht -
-    die Folgeanfrage laeuft erneut ueber `project_id`."""
+    die Folgeanfrage laeuft erneut ueber `project_id`.
+
+    `keep_possible` ist die WIRKSAMKEIT des angebotenen "behalten" und kommt vom Server
+    (`duplicates.py::keep_possible_for`, Auflage S7): Ein `keep` wirkt nur ueber eine Gruppe
+    (`duplicate_of IS NOT NULL`), sonst hebt es eine Ablehnung nicht auf. Aus `reason` ist das
+    AUSDRUECKLICH NICHT ableitbar - ein Eintrag, dessen Entscheidungszeile einen Lauf ueberlebt hat,
+    in dem `suggested_status` UND `duplicate_of` zurueckgesetzt wurden, traegt `low_quality` und
+    trotzdem `true`. Eine zweite Ableitung im Client naehme dem Nutzer dort die einzige Handlung,
+    die die Aufnahme zurueckholt."""
 
     photo: PhotoOut
     reason: Literal["duplicate", "low_quality"]
     decision: DuplicateDecision | None
     group_anchor_photo_id: int | None
+    keep_possible: bool
 
 
 class AusschussOut(BaseModel):
@@ -2043,6 +2052,10 @@ async def _ausschuss_entries_out(
                 reason=_suggestion_reason(score),
                 decision=None if entscheidung is None else entscheidung.decision,
                 group_anchor_photo_id=representative_of(photo_id, links),
+                # SICHERHEIT (S7), zweite Aussage: die Wirksamkeit des angebotenen "behalten"
+                # stammt aus derselben Regel wie im Schreibweg. Aus `reason` ist sie nicht
+                # ableitbar (siehe `AusschussEntryOut`).
+                keep_possible=keep_possible_for(photo),
             )
         )
     return entries

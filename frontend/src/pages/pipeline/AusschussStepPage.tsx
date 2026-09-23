@@ -509,10 +509,12 @@ function AusschussDetail({
   /* „Aufheben" gibt es nur, wo es etwas bewirkt: Bei einer Ablehnung wegen geringer Bildqualitaet
      gibt es keine Gruppe, und kein Wert der Entscheidungszeile aendert den Zustand dieser
      Aufnahme. Die Anzeige bietet den Wert deshalb nicht an - der Server weist ihn trotzdem NICHT
-     ab (Auflage S4 der Spec 0486 bleibt unveraendert in Kraft). Die Bedingung ist dieselbe
-     Ableitung wie `duplicates.py::keep_possible_for`: ein Duplikat hat eine Gruppe, eine
-     Unschaerfe-Ablehnung nicht. */
-  const keepPossible = eintrag.reason === 'duplicate'
+     ab (Auflage S4 der Spec 0486 bleibt unveraendert in Kraft). Die Bedingung ist der SERVERWERT
+     `keep_possible` (`duplicates.py::keep_possible_for`, Auflage S7) - NICHT eine Ableitung aus
+     `reason`: Traegt der Eintrag eine Entscheidungszeile, die einen Lauf ueberlebt hat, in dem
+     `suggested_status` und `duplicate_of` zurueckgesetzt wurden, ist der Grund `low_quality` und
+     "behalten" wirkt trotzdem. */
+  const keepPossible = eintrag.keep_possible
 
   return (
     <div className="flex w-full flex-col items-start gap-3">

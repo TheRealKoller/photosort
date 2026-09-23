@@ -327,12 +327,19 @@ export interface DuplicateGroupIndexOut {
  * `group_anchor_photo_id` ist der Anker der Duplikat-Gruppe, in der diese Aufnahme liegt, oder
  * `null`. Die Detailansicht löst die Serie darüber auf — nicht über das angeklickte Foto, damit
  * die Gruppe dieselbe bleibt, egal welches Mitglied man geöffnet hat.
+ *
+ * `keep_possible` ist die WIRKSAMKEIT des angebotenen „behalten" und kommt vom Server
+ * (`duplicates.py::keep_possible_for`, Auflage S7). Aus `reason` ist sie **nicht** ableitbar: Ein
+ * Eintrag, dessen Entscheidungszeile einen Lauf überlebt hat, in dem `suggested_status` und
+ * `duplicate_of` zurückgesetzt wurden, trägt `low_quality` und trotzdem `true`. Eine zweite
+ * Ableitung hier nähme dem Nutzer dort die einzige Handlung, die die Aufnahme zurückholt.
  */
 export interface AusschussEntryOut {
   photo: PhotoOut
   reason: SuggestionReason
   decision: DuplicateDecision | null
   group_anchor_photo_id: number | null
+  keep_possible: boolean
 }
 
 /**

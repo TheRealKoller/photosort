@@ -60,17 +60,24 @@ function entry(
     reason = 'duplicate',
     decision = null,
     groupAnchorPhotoId = id,
+    keepPossible = reason === 'duplicate',
   }: {
     reason?: SuggestionReason
     decision?: DuplicateDecision | null
     groupAnchorPhotoId?: number | null
+    keepPossible?: boolean
   } = {},
 ): AusschussOut['items'][number] {
+  // `keepPossible` ist der SERVERWERT (`duplicates.py::keep_possible_for`). Der Vorgabewert bildet
+  // nur den Regelfall ab - ein Duplikat hat eine Gruppe, eine Unscharfe-Ablehnung nicht - und darf
+  // nicht als Ableitungsregel gelesen werden: Der Fall "Entscheidungszeile ohne offenen Vorschlag"
+  // traegt `true` bei `reason === 'low_quality'` (siehe der Test dazu).
   return {
     photo: photo(id),
     reason,
     decision,
     group_anchor_photo_id: groupAnchorPhotoId,
+    keep_possible: keepPossible,
   }
 }
 
@@ -581,6 +588,34 @@ describe('AusschussStepPage - Detailansicht', () => {
     await user.click(screen.getByRole('button', { name: /^Ausschuss \(Detailansicht\):/ }))
 
     expect(duplicatesApi.setDuplicateDecision).toHaveBeenCalledWith(1, 42, 'discard')
+  })
+
+  it('bietet "Behalten" nach dem Serverwert an, nicht nach dem Grund', async () => {
+    // D1: `keep_possible` kommt vom Server (`duplicates.py::keep_possible_for`) und ist nicht aus
+    // `reason` ableitbar. Beides faellt auseinander, wenn eine Entscheidungszeile einen Lauf
+    // ueberlebt, in dem `suggested_status` UND `duplicate_of` zurueckgesetzt wurden (worker.py):
+    // Der Grund ist dann `low_quality`, "behalten" wirkt aber. Eine TypeScript-Ableitung aus dem
+    // Grund naehme dem Nutzer dort die EINZIGE Handlung, die die Aufnahme zurueckholt.
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
+      stand([
+        entry(42, {
+          reason: 'low_quality',
+          decision: 'discard',
+          groupAnchorPhotoId: null,
+          keepPossible: true,
+        }),
+      ]),
+    )
+    vi.mocked(duplicatesApi.setDuplicateDecision).mockResolvedValue(group([42]))
+    const user = userEvent.setup()
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }), '/x?photo=42')
+
+    await screen.findByRole('img', { name: 'Reise/serie-42.jpg' })
+    const behalten = screen.getByRole('button', { name: /^Behalten \(Detailansicht\):/i })
+
+    await user.click(behalten)
+
+    expect(duplicatesApi.setDuplicateDecision).toHaveBeenCalledWith(1, 42, 'keep')
   })
 
   it('zeigt beim Duplikat die ganze Gruppe ueber den Gruppenanker', async () => {

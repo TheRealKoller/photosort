@@ -217,7 +217,10 @@ Verarbeitungs-Cache (Thumbnails).
     [`0525`](../specs/features/0525-ausschuss-ein-schritt.md)**) — der Bestand des
     Ausschuss-Schritts: „offener Vorschlag" **und** „Entscheidungszeile" zusammen (ausdrücklich
     **nicht** `NOT ueberlebt`), je Eintrag der Grund (`duplicate`/`low_quality`), die
-    **gespeicherte** Entscheidung und der Gruppenanker, dazu `total` und die projektweite
+    **gespeicherte** Entscheidung, der Gruppenanker und die Wirksamkeit des angebotenen
+    „behalten" (`keep_possible` aus derselben Regel wie der Schreibweg — ausdrücklich nicht im
+    Client aus dem Grund abgeleitet, weil beide bei einer überlebenden Entscheidungszeile
+    auseinanderfallen), dazu `total` und die projektweite
     `open_count`. Über `?photo_id=<id>` wird derselbe Endpunkt zum Detail-Zweig (genau der
     passende Eintrag oder eine leere Liste). Der Router trägt keine router-weite
     `dependencies`-Liste, der Torwächter steht deshalb **ausgeschrieben** am Endpunkt, und die
