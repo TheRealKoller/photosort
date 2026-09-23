@@ -1,7 +1,7 @@
 import type { ProjectOut, ScanStatus } from '../api/types'
 import { deriveScanStatus } from './scanStatus'
 
-export type StepId = 'scan' | 'ausschuss' | 'gate' | 'kriterien' | 'kuratierung'
+export type StepId = 'scan' | 'ausschuss' | 'kriterien' | 'kuratierung'
 
 export interface PipelineStepDefinition {
   id: StepId
@@ -10,12 +10,15 @@ export interface PipelineStepDefinition {
 
 // Einzige Quelle der Wahrheit fuer Anzeigereihenfolge UND Routing-Zuordnung - sowohl der Stepper
 // (Anzeigereihenfolge) als auch PipelineStepView (Komponenten-Zuordnung) und App.tsx
-// (Routing-Erzeugung) leiten sich aus dieser Liste ab, statt die fuenf IDs an mehreren Stellen
+// (Routing-Erzeugung) leiten sich aus dieser Liste ab, statt die IDs an mehreren Stellen
 // unabhaengig zu wiederholen.
+//
+// `gate` ist mit Spec 0525 entfallen: Erkennung und Sichtung sind EIN Schritt. Das Label nennt
+// deshalb den ganzen Schritt und nicht mehr nur seinen ersten Teil; der fruehere eigene
+// "Ausschuss-Gate"-Schritt hatte keinen eigenen Lauf und keinen eigenen Ort.
 export const PIPELINE_STEPS: readonly PipelineStepDefinition[] = [
   { id: 'scan', label: 'Scan' },
-  { id: 'ausschuss', label: 'Ausschuss-Erkennung' },
-  { id: 'gate', label: 'Ausschuss-Gate' },
+  { id: 'ausschuss', label: 'Ausschuss' },
   { id: 'kriterien', label: 'Kriterien-Bewertung' },
   { id: 'kuratierung', label: 'Kuratierung' },
 ]
@@ -36,7 +39,6 @@ export function isStepId(value: string): value is StepId {
  */
 export function computeStepStates(project: ProjectOut): PipelineStepState[] {
   const gateConfirmedAt = project.last_scoring_run?.gate_confirmed_at ?? null
-  const isAusschussDone = project.last_scoring_run?.status === 'success'
   const isKriterienDone = project.last_criterion_scoring_run?.status === 'success'
   const isKriterienReachable =
     project.category_selection_enabled === true && gateConfirmedAt !== null
@@ -44,8 +46,13 @@ export function computeStepStates(project: ProjectOut): PipelineStepState[] {
   return [
     { id: 'scan', isDone: project.last_scan?.status === 'success', isReachable: true },
     // Bewusst ungegatet: `ausschuss` wird nicht an last_scan.status gekoppelt.
-    { id: 'ausschuss', isDone: isAusschussDone, isReachable: true },
-    { id: 'gate', isDone: gateConfirmedAt !== null, isReachable: isAusschussDone },
+    //
+    // ERLEDIGT ERST MIT DER BESTAETIGUNG (Spec 0525, AK13). Ein erfolgreicher Erkennungslauf
+    // schliesst den Schritt nicht mehr ab - er ist seit der Zusammenlegung nur noch seine erste
+    // Haelfte. `isDone` haengt deshalb allein an `gate_confirmed_at` und NICHT an
+    // `last_scoring_run.status`: die Bestaetigung ist die Zusage des Nutzers, dass gesichtet ist,
+    // und genau sie gibt den naechsten Schritt frei.
+    { id: 'ausschuss', isDone: gateConfirmedAt !== null, isReachable: true },
     { id: 'kriterien', isDone: isKriterienDone, isReachable: isKriterienReachable },
     // Kein Abschlusssignal im Datenmodell fuer einen offenen Review-Prozess - isDone bleibt
     // konstant false, unabhaengig vom Kriterien-Bewertungsstatus.
@@ -94,8 +101,6 @@ export function getHighestReachableStepId(states: PipelineStepState[]): StepId {
  */
 export function getBlockedReason(id: StepId, project: ProjectOut): string {
   switch (id) {
-    case 'gate':
-      return 'Sichte zuerst den Ausschuss oben.'
     case 'kriterien':
       return project.category_selection_enabled === false
         ? 'Diese Funktion ist derzeit nicht aktiviert.'
@@ -124,13 +129,12 @@ export type ProjectStand =
  * Welcher Lauf zu welchem Schritt gehört; `null` heißt „dieser Schritt trägt keinen Lauf".
  *
  * Die Zuordnung ist die unabhängige Sollgröße der Stand-Zeile - nicht der Wortlaut, der aus
- * `PIPELINE_STEPS[].label` kommt. Als `Record<StepId, …>` typisiert, damit ein sechster Schritt
+ * `PIPELINE_STEPS[].label` kommt. Als `Record<StepId, …>` typisiert, damit ein weiterer Schritt
  * hier einen Typfehler auslöst statt ohne Zuordnung durchzurutschen.
  */
 export const RUN_FIELD_BY_STEP = {
   scan: 'last_scan',
   ausschuss: 'last_scoring_run',
-  gate: null,
   kriterien: 'last_criterion_scoring_run',
   kuratierung: null,
 } as const satisfies Record<
@@ -184,10 +188,10 @@ function runStatusOfStep(project: ProjectOut, id: StepId): ScanStatus | null {
  * - **C** (`hinweis`): die Frontier-Suche ist auf einen bereits ERLEDIGTEN Schritt
  *   zurückgefallen. Das kann nur bei ausgeschaltetem `category_selection_enabled` passieren (mit
  *   eingeschaltetem Flag gibt es immer einen erreichbaren offenen Schritt), und dort stünde sonst
- *   ein irreführendes „Weiter: Ausschuss-Gate" auf einem Schritt, der längst erledigt ist. Die
- *   Zeile benennt in diesem Fall keinen Schritt; das Klickziel bleibt unverändert das Gate.
+ *   ein irreführendes „Weiter: Ausschuss" auf einem Schritt, der längst erledigt ist. Die
+ *   Zeile benennt in diesem Fall keinen Schritt; das Klickziel bleibt unverändert der Ausschuss.
  *   Geprüft wird der Rückfall selbst und nicht das Flag, weil genau der Rückfall die irreführende
- *   Lage ist: ein abgeschaltetes Flag bei noch offenem Gate oder erreichbarer Kuratierung hat
+ *   Lage ist: ein abgeschaltetes Flag bei noch offenem Ausschuss oder erreichbarer Kuratierung hat
  *   sehr wohl einen nächsten Schritt und nennt ihn.
  */
 export function deriveProjectStand(project: ProjectOut): ProjectStand {
@@ -214,8 +218,11 @@ export function deriveProjectStand(project: ProjectOut): ProjectStand {
       return { kind: 'lauf', status: 'running', label: `${stepLabel} läuft…` }
     case 'failed':
       return { kind: 'lauf', status: 'failed', label: `${stepLabel} fehlgeschlagen` }
-    // `success` kann am Frontier-Schritt nicht auftreten: ein erfolgreicher Lauf macht seinen
-    // Schritt `isDone`, und ein erledigter Schritt ist nicht Frontier.
+    // `success` bedeutet am Frontier-Schritt „noch kein Ergebnis, das ihn abschliesst" und
+    // liefert damit denselben Wortlaut wie ein Schritt ohne Lauf. Seit Spec 0525 ist das der
+    // Regelfall des Ausschuss-Schritts: Ein erfolgreicher ERKENNUNGSlauf schliesst ihn nicht mehr
+    // ab - erst die Bestaetigung tut das (AK13) - und die Erkennung ist genau der Lauf, den
+    // `RUN_FIELD_BY_STEP` diesem Schritt zuordnet.
     default:
       return { kind: 'weiter', stepLabel }
   }
@@ -232,12 +239,12 @@ export interface StepProgress {
  * REINE FUNKTION STATT AUSDRUCK IM JSX: Der Balken ist ein natives `<progress value max>`, ein
  * berechneter Prozentwert liesse sich weder als Tailwind-Klasse noch als Inline-Style
  * ausdruecken. Die Skala ist bewusst doppelt so fein wie die Schrittzahl: `2 * index + 1` von
- * `2 * n` ist exakt die MITTE der `index`-ten von `n` gleich breiten Spalten - also
- * 10/30/50/70/90 % bei fuenf Schritten. Genau darauf beruht die Zusage, dass die rechte Kante der
+ * `2 * n` ist exakt die MITTE der `index`-ten von `n` gleich breiten Spalten - bei vier Schritten
+ * also 1/8, 3/8, 5/8 und 7/8 von 8. Genau darauf beruht die Zusage, dass die rechte Kante der
  * Fuellung unter der Mitte des aktuellen Schritts liegt; die gleich breiten, abstandslosen
  * Spalten in Stepper.tsx sind dafuer tragende Geometrie.
  *
- * `max` wird aus PIPELINE_STEPS abgeleitet, nicht als Konstante gefuehrt - eine sechste Stufe
+ * `max` wird aus PIPELINE_STEPS abgeleitet, nicht als Konstante gefuehrt - eine weitere Stufe
  * veraendert damit automatisch die Skala statt sie still zu verschieben. Ein unbrauchbarer Index
  * (kein aktiver Schritt, Deep-Link auf eine unbekannte Stufe) liefert 0: der Balken ist dann leer
  * statt zufaellig gefuellt.

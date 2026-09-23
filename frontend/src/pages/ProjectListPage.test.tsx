@@ -200,7 +200,7 @@ describe('ProjectListPage', () => {
       expect(screen.getByTestId('project-taken-at-4')).toHaveTextContent(
         'Aufnahmen 02.04.2019 – 17.08.2019',
       )
-      expect(screen.getByTestId('project-stand-4')).toHaveTextContent('Weiter: Ausschuss-Erkennung')
+      expect(screen.getByTestId('project-stand-4')).toHaveTextContent('Weiter: Ausschuss')
     })
 
     it('zeigt "0 Fotos" neben "Aufnahmen —" am ungescannten Projekt', async () => {

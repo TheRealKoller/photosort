@@ -72,29 +72,42 @@ export function duplicateTiles(page: Page) {
 }
 
 /**
- * Oeffnet eine Duplikat-Gruppe des Demo-Projekts ueber den ECHTEN Einstieg: die
- * Ausschuss-Sichtung. Nicht ueber eine zusammengebaute URL - die Foto-Ids vergibt der Seeder bei
- * jedem Lauf neu, und der Weg ueber die Kachel prueft den Einstieg gleich mit.
+ * Oeffnet eine Duplikat-Gruppe des Demo-Projekts ueber den ECHTEN Einstieg: den listenweiten Weg in
+ * der nach Vorschlaegen gefilterten Fotoliste. Nicht ueber eine zusammengebaute URL - die Foto-Ids
+ * vergibt der Seeder bei jedem Lauf neu, und der Weg ueber den Einstieg prueft den Einstieg gleich
+ * mit.
+ *
+ * Bis Spec 0525 fuehrte er ueber `&gate=1` plus den kachelgenauen Link unter dem Bild; mit dem
+ * Gate-Modus der Fotoliste sind beide entfallen, der listenweite Einstieg ist der gebliebene Weg.
  *
  * Der Demo-Bestand fuehrt zwei Gruppen in fester zeitlicher Reihenfolge: erst die grosse (sieben
- * Aufnahmen), dann die kleine (drei). `gruppe` waehlt zwischen ihnen.
+ * Aufnahmen), dann die kleine (drei). `gruppe` waehlt zwischen ihnen; die kleine liegt hinter der
+ * Gruppen-Navigation der Vergleichsansicht.
  */
 export async function openDuplicateGroup(
   page: Page,
   projectId: number,
   gruppe: 'gross' | 'klein',
 ): Promise<void> {
-  // `&gate=1` ist seit Spec 0489 Bedingung, nicht Beiwerk: "Übernehmen" und "Vergleichen" stehen
-  // ausschliesslich im Gate-Modus unter dem Bild, in der normalen Uebersicht gar nicht. Ohne den
-  // Parameter faende der Einstieg unten kein Element.
-  await page.goto(`/projects/${projectId}/photos?filter=suggested&gate=1`)
-  const einstiege = page.getByRole('link', { name: /^Duplikate vergleichen:/ })
-  await expect(einstiege.first(), 'Einstieg in den Duplikat-Vergleich').toBeVisible()
-  await (gruppe === 'gross' ? einstiege.first() : einstiege.last()).click()
+  await page.goto(`/projects/${projectId}/photos?filter=suggested`)
+  const einstieg = page.getByRole('link', { name: /^Duplikate vergleichen —/ })
+  await expect(einstieg, 'listenweiter Einstieg in den Duplikat-Vergleich').toBeVisible()
+  await einstieg.click()
+
+  if (gruppe === 'klein') {
+    await page.getByRole('button', { name: 'Vor zur nächsten Gruppe' }).click()
+  }
+
   await expect(
     page.getByRole('heading', { name: /^Duplikat-Gruppe \d+ von \d+$/ }),
     'Ueberschrift der Vergleichsansicht',
   ).toBeVisible()
+  // Die Mitgliederzahl ist die eigentliche Unterscheidung der beiden Gruppen: Sie steht im
+  // Seeder (`_DEMO_DUPLICATE_GROUP_SIZES`), und zwei Gruppen mit gleicher Zahl gaebe es dort
+  // nicht - ein Fehlgriff in die falsche Gruppe faellt damit sofort auf.
+  await expect(duplicateTiles(page), `Mitglieder der ${gruppe}en Demo-Gruppe`).toHaveCount(
+    gruppe === 'gross' ? 7 : 3,
+  )
 }
 
 export interface Box {

@@ -42,14 +42,22 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
 }
 
 describe('PIPELINE_STEPS', () => {
-  it('lists all 5 steps in the fixed order (Akzeptanzkriterium 2)', () => {
+  it('lists all 4 steps in the fixed order (Akzeptanzkriterium 1/2, Spec 0525)', () => {
     expect(PIPELINE_STEPS.map((step) => step.id)).toEqual([
       'scan',
       'ausschuss',
-      'gate',
       'kriterien',
       'kuratierung',
     ])
+  })
+
+  it('traegt den zusammengelegten Schritt unter dem Label "Ausschuss"', () => {
+    expect(PIPELINE_STEPS.find((step) => step.id === 'ausschuss')?.label).toBe('Ausschuss')
+  })
+
+  it('kennt kein gate mehr - der Schritt ist entfallen, nicht umbenannt', () => {
+    expect(PIPELINE_STEPS.map((step) => step.label)).not.toContain('Ausschuss-Gate')
+    expect(PIPELINE_STEPS.map((step) => step.id)).not.toContain('gate')
   })
 })
 
@@ -64,6 +72,10 @@ describe('isStepId', () => {
     expect(isStepId('kriterien-typo')).toBe(false)
     expect(isStepId('')).toBe(false)
   })
+
+  it('lehnt das entfallene "gate" ab - ein alter Deep-Link laeuft in den Leerzustand', () => {
+    expect(isStepId('gate')).toBe(false)
+  })
 })
 
 describe('computeStepStates (Akzeptanzkriterium 3)', () => {
@@ -73,7 +85,6 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
     expect(states).toEqual([
       { id: 'scan', isDone: false, isReachable: true },
       { id: 'ausschuss', isDone: false, isReachable: true },
-      { id: 'gate', isDone: false, isReachable: false },
       { id: 'kriterien', isDone: false, isReachable: false },
       { id: 'kuratierung', isDone: false, isReachable: false },
     ])
@@ -101,75 +112,35 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
     },
   )
 
-  it('marks ausschuss done once the last scoring run succeeded', () => {
-    const states = computeStepStates(
-      project({
-        last_scoring_run: {
-          id: 1,
-          status: 'success',
-          started_at: '2026-07-20T10:00:00Z',
-          finished_at: '2026-07-20T10:05:00Z',
-          photos_total: 10,
-          photos_processed: 10,
-          suggestions_found: 0,
-          error_message: null,
-          gate_confirmed_at: null,
-        },
-      }),
-    )
+  it(
+    'haelt ausschuss nach einem erfolgreichen Lauf offen, solange nicht bestaetigt ist ' +
+      '(Spec 0525, AK13: die Erkennung ist nur die erste Haelfte des Schritts)',
+    () => {
+      const states = computeStepStates(
+        project({
+          last_scoring_run: {
+            id: 1,
+            status: 'success',
+            started_at: '2026-07-20T10:00:00Z',
+            finished_at: '2026-07-20T10:05:00Z',
+            photos_total: 10,
+            photos_processed: 10,
+            suggestions_found: 0,
+            error_message: null,
+            gate_confirmed_at: null,
+          },
+        }),
+      )
 
-    expect(states.find((s) => s.id === 'ausschuss')).toEqual({
-      id: 'ausschuss',
-      isDone: true,
-      isReachable: true,
-    })
-  })
+      expect(states.find((s) => s.id === 'ausschuss')).toEqual({
+        id: 'ausschuss',
+        isDone: false,
+        isReachable: true,
+      })
+    },
+  )
 
-  it('makes gate reachable exactly once ausschuss succeeded, unconfirmed by default', () => {
-    const states = computeStepStates(
-      project({
-        last_scoring_run: {
-          id: 1,
-          status: 'success',
-          started_at: '2026-07-20T10:00:00Z',
-          finished_at: '2026-07-20T10:05:00Z',
-          photos_total: 10,
-          photos_processed: 10,
-          suggestions_found: 3,
-          error_message: null,
-          gate_confirmed_at: null,
-        },
-      }),
-    )
-
-    expect(states.find((s) => s.id === 'gate')).toEqual({
-      id: 'gate',
-      isDone: false,
-      isReachable: true,
-    })
-  })
-
-  it('marks gate done for an automatically confirmed gate (suggestions_found === 0)', () => {
-    const states = computeStepStates(
-      project({
-        last_scoring_run: {
-          id: 1,
-          status: 'success',
-          started_at: '2026-07-20T10:00:00Z',
-          finished_at: '2026-07-20T10:05:00Z',
-          photos_total: 10,
-          photos_processed: 10,
-          suggestions_found: 0,
-          error_message: null,
-          gate_confirmed_at: '2026-07-20T10:05:00Z',
-        },
-      }),
-    )
-
-    expect(states.find((s) => s.id === 'gate')?.isDone).toBe(true)
-  })
-
-  it('marks gate done identically for a manually confirmed gate (suggestions_found > 0)', () => {
+  it('marks ausschuss done exactly when the gate is confirmed', () => {
     const states = computeStepStates(
       project({
         last_scoring_run: {
@@ -186,7 +157,54 @@ describe('computeStepStates (Akzeptanzkriterium 3)', () => {
       }),
     )
 
-    expect(states.find((s) => s.id === 'gate')?.isDone).toBe(true)
+    expect(states.find((s) => s.id === 'ausschuss')).toEqual({
+      id: 'ausschuss',
+      isDone: true,
+      isReachable: true,
+    })
+  })
+
+  it.each([
+    ['automatisch (suggestions_found === 0)', 0],
+    ['manuell (suggestions_found > 0)', 3],
+  ])('marks ausschuss done identically for a %s confirmation', (_name, suggestionsFound) => {
+    const states = computeStepStates(
+      project({
+        last_scoring_run: {
+          id: 1,
+          status: 'success',
+          started_at: '2026-07-20T10:00:00Z',
+          finished_at: '2026-07-20T10:05:00Z',
+          photos_total: 10,
+          photos_processed: 10,
+          suggestions_found: suggestionsFound,
+          error_message: null,
+          gate_confirmed_at: '2026-07-20T10:05:00Z',
+        },
+      }),
+    )
+
+    expect(states.find((s) => s.id === 'ausschuss')?.isDone).toBe(true)
+  })
+
+  it('bleibt nach der Bestaetigung erreichbar (AK11: der Schritt bleibt erneut aufrufbar)', () => {
+    const states = computeStepStates(
+      project({
+        last_scoring_run: {
+          id: 1,
+          status: 'success',
+          started_at: '2026-07-20T10:00:00Z',
+          finished_at: '2026-07-20T10:05:00Z',
+          photos_total: 10,
+          photos_processed: 10,
+          suggestions_found: 3,
+          error_message: null,
+          gate_confirmed_at: '2026-07-20T10:06:00Z',
+        },
+      }),
+    )
+
+    expect(states.find((s) => s.id === 'ausschuss')?.isReachable).toBe(true)
   })
 
   it('blocks kriterien while category_selection_enabled is false, even with a confirmed gate', () => {
@@ -289,7 +307,7 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
       expected: 'ausschuss',
     },
     {
-      name: 'Scan+Ausschuss-Erkennung erledigt, Gate ausstehend',
+      name: 'Scan erledigt, Erkennung gelaufen, Bestaetigung ausstehend',
       project: {
         last_scan: { status: 'success' } as ProjectOut['last_scan'],
         last_scoring_run: {
@@ -304,7 +322,7 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
           gate_confirmed_at: null,
         },
       },
-      expected: 'gate',
+      expected: 'ausschuss',
     },
     {
       name: 'Gate automatisch bestaetigt (suggestions_found === 0)',
@@ -377,7 +395,7 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
       expected: 'kuratierung',
     },
     {
-      name: 'alle 5 Schritte bereits erledigt/erreicht',
+      name: 'alle erreichbaren Schritte bereits erledigt/erreicht',
       project: {
         last_scan: { status: 'success' } as ProjectOut['last_scan'],
         last_scoring_run: {
@@ -426,8 +444,8 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
  * specs/features/0387-schrittleiste-fortschritt.md, Teststrategie "Unit: stepProgress".
  *
  * Die Funktion liefert die Fuellung des Fortschrittsbalkens unter der Schrittleiste. `max` wird
- * IMMER aus `PIPELINE_STEPS.length` hergeleitet und nie als `10` erwartet - sonst waere der Test
- * bei einer sechsten Pipeline-Stufe still falsch statt rot.
+ * IMMER aus `PIPELINE_STEPS.length` hergeleitet und nie fest erwartet - sonst waere der Test
+ * bei einer weiteren Pipeline-Stufe still falsch statt rot.
  */
 describe('stepProgress', () => {
   const MAX = 2 * PIPELINE_STEPS.length
@@ -437,7 +455,6 @@ describe('stepProgress', () => {
     { activeIndex: 1, value: 3 },
     { activeIndex: 2, value: 5 },
     { activeIndex: 3, value: 7 },
-    { activeIndex: 4, value: 9 },
   ])('liefert fuer Index $activeIndex die Spaltenmitte $value/$max', ({ activeIndex, value }) => {
     expect(stepProgress(activeIndex)).toEqual({ value, max: MAX })
   })
@@ -450,7 +467,7 @@ describe('stepProgress', () => {
   )
 
   /*
-   * Invariante statt fuenf Einzelwerte: der Balken waechst streng monoton und ist NIE voll -
+   * Invariante statt vier Einzelwerte: der Balken waechst streng monoton und ist NIE voll -
    * "fertig" gibt es in dieser Pipeline nicht (siehe `isDone: false` fuer `kuratierung`).
    */
   it('waechst streng monoton und bleibt echt zwischen 0 und max', () => {
@@ -530,7 +547,7 @@ function enumerateProjects(): ProjectOut[] {
 /** Die zwei Wortlaute, die KEINEN Schritt benennen, mit der Tabellenzeile, zu der sie gehoeren. */
 const SONDERWORTLAUTE: Readonly<Record<string, StepId>> = {
   [STAND_OHNE_SCAN]: 'scan',
-  [STAND_KATEGORIE_ABGESCHALTET]: 'gate',
+  [STAND_KATEGORIE_ABGESCHALTET]: 'ausschuss',
 }
 
 const SUFFIXES = [' läuft…', ' fehlgeschlagen'] as const
@@ -583,7 +600,7 @@ function descriptorOf(stand: ProjectStand): Descriptor {
 }
 
 /**
- * Die dreizehn Zeilen der Wortlaut-Tabelle aus dem Abschnitt UI/UX der Spec 0375.
+ * Die zwoelf Zeilen der Wortlaut-Tabelle aus dem Abschnitt UI/UX der Spec 0375.
  *
  * `erreichbar: false` bei Randfall B ist kein Schlupfloch, sondern die Buchfuehrung ueber einen
  * BEWUSST vorweggenommenen Zustand: `kuratierung.isDone` ist ohne Abschlusssignal im Datenmodell
@@ -598,12 +615,11 @@ const WORTLAUT_TABELLE: readonly { descriptor: Descriptor; erreichbar: boolean }
   { descriptor: 'lauf|ausschuss|running', erreichbar: true },
   { descriptor: 'lauf|ausschuss|failed', erreichbar: true },
   { descriptor: 'weiter|ausschuss|-', erreichbar: true },
-  { descriptor: 'weiter|gate|-', erreichbar: true },
   { descriptor: 'lauf|kriterien|running', erreichbar: true },
   { descriptor: 'lauf|kriterien|failed', erreichbar: true },
   { descriptor: 'weiter|kriterien|-', erreichbar: true },
   { descriptor: 'weiter|kuratierung|-', erreichbar: true },
-  { descriptor: 'hinweis|gate|-', erreichbar: true }, // Randfall C: Kategorie-Bewertung aus
+  { descriptor: 'hinweis|ausschuss|-', erreichbar: true }, // Randfall C: Kategorie-Bewertung aus
   { descriptor: 'fertig|-|-', erreichbar: false }, // Randfall B: Alles erledigt
 ]
 
@@ -634,12 +650,11 @@ describe('deriveProjectStand', () => {
   })
 
   it('haelt den Schluesselvorrat der Lauf-Zuordnung gegen PIPELINE_STEPS', () => {
-    // Ein sechster Schritt macht diesen Test rot, statt ohne Lauf-Zuordnung durchzurutschen.
+    // Ein weiterer Schritt macht diesen Test rot, statt ohne Lauf-Zuordnung durchzurutschen.
     expect(Object.keys(RUN_FIELD_BY_STEP).sort()).toEqual(PIPELINE_STEPS.map((s) => s.id).sort())
   })
 
-  it('laesst gate und kuratierung nie in kind:"lauf" landen - sie tragen keinen Lauf', () => {
-    expect(RUN_FIELD_BY_STEP.gate).toBeNull()
+  it('laesst kuratierung nie in kind:"lauf" landen - nur sie traegt keinen Lauf', () => {
     expect(RUN_FIELD_BY_STEP.kuratierung).toBeNull()
 
     for (const entry of projects) {
@@ -707,7 +722,7 @@ describe('deriveProjectStand', () => {
     }
   })
 
-  it('greift Randfall C nur bei ERLEDIGTEM Gate, nie bei bloss ausgeschaltetem Flag', () => {
+  it('greift Randfall C nur bei ERLEDIGTEM Ausschuss, nie bei bloss ausgeschaltetem Flag', () => {
     const stand = deriveProjectStand(
       project({
         category_selection_enabled: false,
@@ -716,7 +731,7 @@ describe('deriveProjectStand', () => {
       }),
     )
 
-    expect(stand).toEqual({ kind: 'weiter', stepLabel: 'Ausschuss-Gate' })
+    expect(stand).toEqual({ kind: 'weiter', stepLabel: 'Ausschuss' })
   })
 
   /*

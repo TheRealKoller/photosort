@@ -524,21 +524,91 @@ async def test_a_photo_of_another_project_is_a_404_and_is_never_written(
 
 
 @pytest.mark.parametrize("url_builder", [_single_url, _group_url])
-async def test_a_low_quality_suggestion_cannot_be_decided(
+async def test_a_photo_without_a_group_and_without_a_suggestion_is_a_404(
     authenticated_api_client: httpx.AsyncClient,
     db_session: AsyncSession,
     url_builder: object,
 ) -> None:
-    """AK13: Fuer Vorschlaege wegen geringer Bildqualitaet aendert sich nichts - es gibt keine
-    Gruppe, also auch keinen Schreibweg."""
+    """SICHERHEIT (S10): Die Vorbedingung beider Wege heisst "Gruppe ODER offener Vorschlag".
+    Trifft KEINES von beiden zu, bleibt es beim `404` - und es wird nichts geschrieben."""
+    project = await _project(db_session)
+    ohne_alles = await _photo(db_session, project, "ohne-alles.jpg")
+
+    response = await authenticated_api_client.put(
+        url_builder(project.id, ohne_alles.id),  # type: ignore[operator]
+        json={"decision": "discard"},
+    )
+
+    assert response.status_code == 404
+    assert await _stored(db_session, ohne_alles.id) is None
+
+
+async def test_a_low_quality_suggestion_is_decidable_on_the_single_path(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SPEC 0525, ERWEITERTE VORBEDINGUNG (S10, bewusst benannte Erwartungsaenderung): Der
+    Einzelweg nimmt auch die Unschaerfe-Ablehnung an, die in KEINEM Stern liegt - die
+    Detailansicht der Ausschuss-Uebersicht entscheidet genau dort.
+
+    Die Antwort ist der leere Gruppenstand (AK6), kein `404`: Der Aufruf hat eine Entscheidung
+    getragen, und die Oberflaeche schreibt ihn unmittelbar fort. Die geschriebene Zeile ist der
+    Beweis, dass der Weg wirklich gegangen wurde."""
     project = await _project(db_session)
     unscharf = await _photo(
         db_session, project, "unscharf.jpg", suggested_status=RatingStatus.REJECTED
     )
 
     response = await authenticated_api_client.put(
-        url_builder(project.id, unscharf.id),  # type: ignore[operator]
-        json={"decision": "keep"},
+        _single_url(project.id, unscharf.id), json={"decision": "discard"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [],
+        "position": 0,
+        "total": 0,
+        "previous_photo_id": None,
+        "next_photo_id": None,
+    }
+    assert await _stored(db_session, unscharf.id) == DuplicateDecision.DISCARD
+
+
+async def test_an_ineffective_keep_on_a_low_quality_suggestion_is_accepted(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S10), DIE ZUSAGE: Ein `keep` auf eine Unschaerfe-Ablehnung ohne Gruppe ist
+    wirkungslos - der Server weist es trotzdem NICHT ab (Auflage S4 der Spec 0486).
+
+    Die Anzeige versteckt den Knopf; kaeme der Aufruf trotzdem, entstuende sonst eine zweite Regel
+    neben ADR 0104 Punkt 3 und ein Widerspruch zum gruppenweiten Weg, der dieselbe Zeile fuer
+    dasselbe Mitglied schreibt. Der Schaden bliebe sichtbar, aber begrenzt: Die Aufnahme verlaesst
+    den Homeserver nicht."""
+    project = await _project(db_session)
+    unscharf = await _photo(
+        db_session, project, "unscharf.jpg", suggested_status=RatingStatus.REJECTED
+    )
+
+    response = await authenticated_api_client.put(
+        _single_url(project.id, unscharf.id), json={"decision": "keep"}
+    )
+
+    assert response.status_code == 200
+    assert await _stored(db_session, unscharf.id) == DuplicateDecision.KEEP
+
+
+async def test_a_low_quality_suggestion_has_no_group_path(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Der GRUPPENWEITE Weg bleibt unveraendert: Die erweiterte Vorbedingung gilt nur fuer den
+    Einzelweg (S10). Ein `None` als Gruppenpraedikat traefe jede nicht aussortierte Aufnahme des
+    Projekts - hier ist die Aufnahme gar nicht im Stern, also `404` vor jedem Schreiben."""
+    project = await _project(db_session)
+    unscharf = await _photo(
+        db_session, project, "unscharf.jpg", suggested_status=RatingStatus.REJECTED
+    )
+
+    response = await authenticated_api_client.put(
+        _group_url(project.id, unscharf.id), json={"decision": "keep"}
     )
 
     assert response.status_code == 404

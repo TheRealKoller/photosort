@@ -90,6 +90,13 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # SERVER stammt und nicht aus dem Koerper, und dass es kein `DELETE` gibt.
     ("put", "/projects/{project_id}/photos/{photo_id}/duplicate-decision"),
     ("put", "/projects/{project_id}/duplicate-groups/{photo_id}/decision"),
+    # specs/features/0525-ausschuss-ein-schritt.md: der Lesepfad des Ausschuss-Schritts, aus dem
+    # zugleich die Detailansicht kommt (`photo_id`-Filter). Seine Beschreibung traegt, was der
+    # Signatur nicht anzusehen ist - dass der Bestand die VEREINIGUNG beider Ursachen ist (nicht
+    # `NOT ueberlebt`), dass `decision` der GESPEICHERTE Zeilenwert ist und nicht
+    # `effective_decision_for`, dass `open_count` projektweit und von `limit`/`offset` unabhaengig
+    # ist, und dass ein unbekanntes Projekt `404` gibt, "nichts gefunden" aber eine leere Liste.
+    ("get", "/projects/{project_id}/ausschuss"),
 )
 
 

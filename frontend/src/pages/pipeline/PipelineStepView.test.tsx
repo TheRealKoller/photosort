@@ -59,7 +59,6 @@ function renderAt(step: StepId) {
 const EXPECTED_MARKERS: Record<StepId, RegExp> = {
   scan: /durchsucht den verknüpften opencloud-ordner/i,
   ausschuss: /erkennt automatisch unscharfe/i,
-  gate: /bestätige einmalig/i,
   kriterien: /bewertet jedes verbleibende foto/i,
   kuratierung: /deckt alle foto-momente ab/i,
 }

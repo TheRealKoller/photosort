@@ -310,6 +310,53 @@ export interface DuplicateGroupIndexOut {
   first_photo_id: number | null
 }
 
+/**
+ * EIN Eintrag der Ausschuss-Übersicht (Spec 0525, `api/photos.py::AusschussEntryOut`).
+ *
+ * `reason` ist der Grund der Markierung und kommt vom Server, nicht aus einer TypeScript-Ableitung
+ * (Auflage S7): `duplicate` genau dann, wenn das Foto ein Duplikat ist, sonst `low_quality`. Der
+ * Grund ist damit unterscheidbar, statt ein Sammelzustand zu sein (AK4) — Grund und Entscheidung
+ * sind zwei verschiedene Aussagen über dieselbe Aufnahme.
+ *
+ * `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdrücklich NICHT
+ * die Auswertung des Überlebens-Prädikats (ADR 0111 Punkt 1): Diese Übersicht zeigt den
+ * Sichtungsfortschritt, und ein unwirksames `keep` (Unschärfe-Ablehnung ohne Gruppe) bleibt als
+ * gespeicherte Handlung sichtbar. `null` heißt „noch nicht entschieden" — der einzige der drei
+ * Zustände, in dem es keinen Rückweg gibt, weil er noch nie verlassen wurde.
+ *
+ * `group_anchor_photo_id` ist der Anker der Duplikat-Gruppe, in der diese Aufnahme liegt, oder
+ * `null`. Die Detailansicht löst die Serie darüber auf — nicht über das angeklickte Foto, damit
+ * die Gruppe dieselbe bleibt, egal welches Mitglied man geöffnet hat.
+ *
+ * `keep_possible` ist die WIRKSAMKEIT des angebotenen „behalten" und kommt vom Server
+ * (`duplicates.py::keep_possible_for`, Auflage S7). Aus `reason` ist sie **nicht** ableitbar: Ein
+ * Eintrag, dessen Entscheidungszeile einen Lauf überlebt hat, in dem `suggested_status` und
+ * `duplicate_of` zurückgesetzt wurden, trägt `low_quality` und trotzdem `true`. Eine zweite
+ * Ableitung hier nähme dem Nutzer dort die einzige Handlung, die die Aufnahme zurückholt.
+ */
+export interface AusschussEntryOut {
+  photo: PhotoOut
+  reason: SuggestionReason
+  decision: DuplicateDecision | null
+  group_anchor_photo_id: number | null
+  keep_possible: boolean
+}
+
+/**
+ * Die Antwort des Ausschuss-Lesepfads: der Bestand, seine Größe und die Zahl der offenen
+ * Vorschläge.
+ *
+ * `total` ist die Größe des Gesamtbestands, nicht der geladenen Seite; `open_count` ist
+ * projektweit und von `limit`/`offset` unabhängig — es ist die Zahl, die der Bestätigungsbutton
+ * trägt. Beide bleiben auch im Filterzweig (`photo_id`) projektweit, `items` trägt dann genau den
+ * gefilterten Eintrag oder nichts.
+ */
+export interface AusschussOut {
+  items: AusschussEntryOut[]
+  total: number
+  open_count: number
+}
+
 // Das Motivset (specs/features/0427-motive-mit-staerke.md). Die Menge ist fachlich
 // GESCHLOSSEN (acht Einträge, backend motifs.py::MOTIF_REGISTRY), der TypeScript-Typ bleibt
 // aber bewusst `string`: das Set kommt zur Laufzeit über `GET /motifs` vom Server, eine hier

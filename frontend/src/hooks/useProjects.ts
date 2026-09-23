@@ -110,6 +110,10 @@ export function useConfirmAusschussGateMutation(id: number) {
     mutationFn: () => confirmAusschussGate(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      // Der Abschluss veraendert Entscheidungszeilen und damit den Ausschuss-BESTAND: Ohne diese
+      // Invalidierung zeigte die Uebersicht unter dem Button weiter die offenen Vorschlaege, die
+      // gerade uebernommen wurden, und die Zahl am Button bliebe stehen.
+      void queryClient.invalidateQueries({ queryKey: ['photos', id] })
     },
   })
 }

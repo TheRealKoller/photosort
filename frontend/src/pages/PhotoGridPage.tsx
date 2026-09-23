@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { RatingFilter } from '../api/types'
@@ -12,8 +12,7 @@ import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { useDuplicateGroupIndexQuery } from '../hooks/useDuplicates'
 import { useElementWidth } from '../hooks/useElementWidth'
-import { useConfirmAusschussGateMutation } from '../hooks/useProjects'
-import { usePhotoSequenceQuery, useSetRatingMutation } from '../hooks/usePhotos'
+import { usePhotoSequenceQuery } from '../hooks/usePhotos'
 import {
   GRID_GAP_PX,
   MIN_ROW_HEIGHT_PX,
@@ -51,19 +50,14 @@ const FILTERS: { value: RatingFilter | ''; label: string }[] = [
 export function PhotoGridPage() {
   const { projectId } = useParams()
   const id = Number(projectId)
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const filterParam = parseRatingFilter(searchParams.get('filter'))
   const ratingStatus = filterParam === '' ? undefined : filterParam
-  // Ausschuss-Gate-Modus: kein neuer Screen, sondern diese bestehende Seite um `&gate=1` erweitert.
-  const isGateMode = searchParams.get('gate') === '1'
 
   const token = getToken()
   const username = token ? decodeUsername(token) : null
 
   const query = usePhotoSequenceQuery(id, ratingStatus)
-  const setRatingMutation = useSetRatingMutation(id)
-  const gateMutation = useConfirmAusschussGateMutation(id)
   // Nur unter dem Vorschlags-Filter: Dort wird der Ausschuss gesichtet, und nur dort gehoert der
   // Weg durch die Serien hin. Unter jedem anderen Filter liefe die Anfrage ohne Adressaten.
   const duplicateGroupIndex = useDuplicateGroupIndexQuery(id, {
@@ -73,8 +67,7 @@ export function PhotoGridPage() {
     () => query.data?.pages.flatMap((page) => page.items) ?? [],
     [query.data?.pages],
   )
-  // Die Gesamtzahl der gefilterten Menge. Sie traegt ZWEI Aussagen: den Kandidatenzaehler des
-  // Gate-Hinweises und das "y" der Zaehlzeile unter dem Raster.
+  // Die Gesamtzahl der gefilterten Menge - das "y" der Zaehlzeile unter dem Raster.
   const total = query.data?.pages[0]?.total ?? 0
 
   // Die Containerbreite kommt aus dem Beobachter-Eintrag, nie aus dem Element - siehe
@@ -97,26 +90,6 @@ export function PhotoGridPage() {
       rows.flatMap((row) => row.tiles.map((tile) => [tile.index, tile] as const)),
     )
   }, [photos, containerWidth])
-
-  function handleConfirmGate(): void {
-    if (gateMutation.isPending) {
-      return
-    }
-    gateMutation.mutate(undefined, {
-      // Redirect-Ziel ist /projects/:id/pipeline statt /projects/:id (feste Einzelseite) (ohne
-      // festen :step) - landet ueber getDefaultStepId automatisch beim naechsten sinnvollen
-      // Schritt, statt immer auf der (jetzt entfallenen) statischen Projekt-Detailseite.
-      onSuccess: () => navigate(`/projects/${id}/pipeline`),
-    })
-  }
-
-  // UI/UX-Review-Fund: setRatingMutation ist EINE Instanz fuer die ganze Seite (ein einzelner
-  // useMutation-Hook) - ihr eigenes `isPending` haette bei jedem weiteren Klick, waehrend
-  // irgendeine ANDERE Kachel noch unterwegs ist, den Klick stillschweigend blockiert. Das
-  // widerspricht dem in der Spec genannten Zweck des Buttons ("zuegiges Batch-Bestaetigen vieler
-  // aehnlicher Ausschuss-Kandidaten"). Eigener, photo-spezifischer Pending-Zustand statt dessen:
-  // jede Kachel trackt unabhaengig, ob IHR EIGENER Bestaetigungs-Request noch laeuft.
-  const [confirmingPhotoIds, setConfirmingPhotoIds] = useState<ReadonlySet<number>>(new Set())
 
   function handleFilterChange(value: RatingFilter | ''): void {
     const next = new URLSearchParams(searchParams)
@@ -186,32 +159,6 @@ export function PhotoGridPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-xl sm:text-2xl">Fotos</h1>
 
-      {isGateMode && (
-        <div className="flex flex-col items-start gap-3 rounded-md border border-accent bg-elevated p-3 text-sm">
-          <p className="text-text-h">
-            Sichte den erkannten Ausschuss ({total} {total === 1 ? 'Kandidat' : 'Kandidaten'}),
-            bevor du fortfährst. Einzelne Fotos kannst du hier korrigieren
-            ("Übernehmen"-Button/Bewertung in der Detailansicht) - das ist aber nicht Voraussetzung,
-            um fortzufahren.
-          </p>
-          <Button
-            type="button"
-            onClick={handleConfirmGate}
-            disabled={gateMutation.isPending}
-            busy={gateMutation.isPending}
-          >
-            {gateMutation.isPending ? 'Wird bestätigt…' : 'Ausschuss gesichtet, weiter'}
-          </Button>
-          {gateMutation.isError && (
-            <Alert>
-              {gateMutation.error instanceof ApiError
-                ? gateMutation.error.detail
-                : 'Fehler beim Bestätigen des Ausschuss-Gates.'}
-            </Alert>
-          )}
-        </div>
-      )}
-
       {/* Am Telefon (< 640px) ist die Leiste ein EIGENER horizontaler Scrollbereich, einzeilig und
           am Rand angeschnitten - die Seite selbst scrollt nie seitlich (AK11). Ab `sm:` fliesst
           sie wieder um. */}
@@ -235,16 +182,13 @@ export function PhotoGridPage() {
         ))}
       </div>
 
-      {/* EIN Weg für die ganze Liste, außerhalb des Kachelrasters — der kachelgenaue Einstieg
-          bleibt daneben bestehen.
+      {/* EIN Weg für die ganze Liste, außerhalb des Kachelrasters. Bis Spec 0525 stand daneben ein
+          zweiter, kachelgenauer Einstieg auf dieselbe Ansicht; er ist mit dem Gate-Modus
+          entfallen. Der Durchgang durch die Serien bleibt über diese eine Stelle erreichbar.
 
-          DIE SICHTBARE BESCHRIFTUNG IST DIESELBE wie am Ausschuss-Schritt: Es ist derselbe Weg an
-          einer zweiten Stelle, und zwei Namen dafür arbeiteten gegen die Wiedererkennung, die
-          dieser Einstieg gerade herstellen soll. Unterschieden wird über den ZUGÄNGLICHEN Namen —
-          mit dem sichtbaren Text als Anfang (WCAG 2.5.3) und dem Zusatz nach einem
-          GEDANKENSTRICH, nie nach einem Doppelpunkt: Der kachelgenaue Einstieg heißt
-          `Duplikate vergleichen: <Dateiname>`, und der Prüfstack wählt ihn über genau dieses
-          Präfixmuster.
+          Der ZUGÄNGLICHE NAME beginnt mit der sichtbaren Beschriftung (WCAG 2.5.3) und sagt nach
+          einem GEDANKENSTRICH, was der Weg tut: Er führt durch ALLE Gruppen, beginnend bei der
+          ersten.
 
           Bei `total === 0` und während des Ladens ausgeblendet, nicht deaktiviert (AK8): Ein Weg,
           der auf einen Leerzustand führt, ist kein Weg, und ein kurz aufblitzender Einstieg wäre
@@ -303,26 +247,6 @@ export function PhotoGridPage() {
             // solange keine eigene existiert. Der Server garantiert das bereits, `ownStatus` wird
             // hier zusaetzlich geprueft statt sich blind darauf zu verlassen.
             const suggestedStatus = ownStatus === null ? (photo.suggestion?.status ?? null) : null
-            const isConfirming = confirmingPhotoIds.has(photo.id)
-
-            function handleConfirmSuggestion(): void {
-              if (photo.suggestion === null || isConfirming) {
-                return
-              }
-              setConfirmingPhotoIds((prev) => new Set(prev).add(photo.id))
-              setRatingMutation.mutate(
-                { photoId: photo.id, status: photo.suggestion.status },
-                {
-                  onSettled: () => {
-                    setConfirmingPhotoIds((prev) => {
-                      const next = new Set(prev)
-                      next.delete(photo.id)
-                      return next
-                    })
-                  },
-                },
-              )
-            }
 
             return (
               <PhotoGridTile
@@ -343,42 +267,6 @@ export function PhotoGridPage() {
                     // tailwind-merge laesst die durchgereichte Utility gewinnen.
                     className="size-full object-contain"
                   />
-                }
-                /* NUR im Gate-Modus (AK12, Daniels Entscheidung vom 2026-09-14): "Übernehmen" und
-                   "Vergleichen" stehen dort dauerhaft unter dem Bild, in der normalen Übersicht
-                   gar nicht. Damit bleiben AK3 ("genau zwei Zeichen") und AK12 gleichzeitig
-                   wörtlich wahr.
-
-                   ZWEI Wege nebeneinander, nicht einer statt des anderen: "Übernehmen" bestätigt
-                   den Vorschlag hier, der Vergleich öffnet die ganze Serie. Der Einstieg
-                   erscheint NUR bei `reason === 'duplicate'` - eine wegen Unschärfe abgelehnte
-                   Aufnahme hat keine Gruppe, und ein Weg, der auf einen Leerzustand führt, ist
-                   kein Weg. */
-                actions={
-                  isGateMode && suggestedStatus !== null ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Vorschlag übernehmen: ${photo.relative_path}`}
-                        busy={isConfirming}
-                        onClick={handleConfirmSuggestion}
-                      >
-                        {isConfirming ? 'Wird übernommen…' : 'Übernehmen'}
-                      </Button>
-                      {photo.suggestion?.reason === 'duplicate' && (
-                        <Button asChild variant="ghost" size="sm">
-                          <Link
-                            to={`/projects/${id}/photos/${photo.id}/duplicates`}
-                            aria-label={`Duplikate vergleichen: ${photo.relative_path}`}
-                          >
-                            Vergleichen
-                          </Link>
-                        </Button>
-                      )}
-                    </>
-                  ) : undefined
                 }
               />
             )

@@ -164,11 +164,15 @@ def group_standing(representative_id: int, links: list[DuplicateLink]) -> GroupS
 #
 # * ERSETZTE VORKOMMEN: SECHS. So zaehlen Spec 0374, ADR 0104 Punkt 3 und das Sicherheitskonzept,
 #   und so stand `PhotoScore.suggested_status IS NULL` vorher ausgeschrieben da.
-# * NEUE AUFRUFSTELLEN: SIEBEN. Die eine Bedingung zerfaellt in ZWEI Funktionen ("ueberlebt" und
-#   "offener Vorschlag", die seit ADR 0104 nicht mehr komplementaer sind), und "der Vorschlags-
-#   Zweig" war schon vorher zwei Codeformen - eine SQL- und eine Objektfassung, die der
-#   Paritaetstest aneinander band. Vier Aufrufe von `survives_ausschuss`, einer von
-#   `survives_ausschuss_for`, je einer von `has_open_suggestion`/`_for`.
+# * NEUE AUFRUFSTELLEN: die Sollgroesse des Waechters unten. Sie ist groesser als sechs, weil die
+#   eine Bedingung in ZWEI Funktionen zerfaellt ("ueberlebt" und "offener Vorschlag", die seit
+#   ADR 0104 nicht mehr komplementaer sind) und "der Vorschlags-Zweig" schon vorher zwei Codeformen
+#   hatte - eine SQL- und eine Objektfassung, die der Paritaetstest aneinander band. Vier Aufrufe von
+#   `survives_ausschuss`, einer von `survives_ausschuss_for`, je einer von
+#   `has_open_suggestion`/`_for`. Seit Spec 0525 treten vier hinzu: der Massenweg
+#   (`api/projects.py`), die erweiterte Vorbedingung des Einzel-Schreibwegs
+#   (`api/duplicate_decisions.py`, Auflage S10), die projektweite `open_count` des neuen Lesepfads
+#   und `has_ausschuss_entry` (der Bestand der Uebersicht, die VEREINIGUNG beider Ursachen).
 #
 # Die Sollgroesse des Waechters ist die ZWEITE Zahl (`tests/test_ausschuss_ueberlebende.py`); die
 # erste steht in den Dokumenten und wird dort nicht nachgezogen. Wer beide verwechselt, "korrigiert"
@@ -201,7 +205,7 @@ def _decision_subquery() -> ColumnElement[DuplicateDecision | None]:
     """Die Entscheidung zu DIESEM `PhotoScore`, als korrelierte Skalar-Unterabfrage.
 
     Skalar und nicht als Join, damit keine Aufrufstelle eine Join-Buchfuehrung erbt: Die
-    SQL-Fassungen treten an jeder ihrer FUENF Aufrufstellen als weiterer Konjunktionsteil in die
+    SQL-Fassungen treten an jeder ihrer Aufrufstellen als weiterer Konjunktionsteil in die
     BESTEHENDE Anweisung. Die beiden Objektfassungen in `api/photos.py` tun das gerade nicht - sie
     lesen ein bereits geladenes Foto und kommen hier nie vorbei."""
     return (
@@ -245,6 +249,29 @@ def has_open_suggestion() -> ColumnElement[bool]:
     entschiedene Aufnahme ist weder Ueberlebende noch offener Vorschlag. Eine Umsetzung, die die
     eine Menge als Verneinung der anderen bildet, liefert plausible, falsche Listen."""
     return and_(PhotoScore.suggested_status.is_not(None), _decision_subquery().is_(None))
+
+
+def has_ausschuss_entry() -> ColumnElement[bool]:
+    """Die SQL-Fassung des Ausschuss-BESTANDS: wer ueberhaupt einen Eintrag traegt (Spec 0525).
+
+    Die VEREINIGUNG beider Ursachen - offener Vorschlag UND Entscheidungszeile, also offen,
+    angenommen und aufgehoben zusammen. Sie steht hier und nicht ausgeschrieben im Lesepfad, weil
+    `PhotoScore.suggested_status` genau die Spalte ist, an der das Ueberlebenden-Praedikat haengt:
+    eine zweite, von Hand geschriebene Fassung daneben liefe an dem Tag von dieser weg, an dem sich
+    die Praesenzgrenze aendert - ohne Fehler und ohne Meldung (Auflage S9, `_HANDGESCHRIEBEN` in
+    `tests/test_ausschuss_ueberlebende.py` faengt sie ab).
+
+    AUSDRUECKLICH NICHT `NOT survives_ausschuss()`: Ein Foto ohne eigenen Vorschlag, das von einer
+    Entscheidungszeile getragen wird, ist Eintrag UND trotzdem kein offener Vorschlag - die beiden
+    Mengen sind nicht komplementaer (AK5).
+
+    Setzt wie `survives_ausschuss()`/`has_open_suggestion()` einen inneren Join auf `PhotoScore` in
+    derselben Anweisung voraus; ein Foto ohne Bewertungsgrundlage traegt weder Grund noch
+    Entscheidung im Sinne dieser Ansicht."""
+    return or_(
+        PhotoScore.suggested_status.is_not(None),
+        _decision_subquery().is_not(None),
+    )
 
 
 def _survives(

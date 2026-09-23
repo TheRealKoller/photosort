@@ -73,11 +73,11 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
 
   // Dieselbe Ableitung wie oben, fuer die Duplikat-Vergleichsansicht: Der Pfad traegt eine
   // Foto-Id, und die vergibt der Seeder bei jedem Lauf neu. Genommen wird der ECHTE Einstieg aus
-  // der Ausschuss-Sichtung.
+  // der nach Vorschlaegen gefilterten Fotoliste - seit Spec 0525 der einzige Weg dorthin; der
+  // `&gate=1`-Modus samt kachelgenauem Link ist entfallen.
   const duplicatesId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
-  // `&gate=1` seit Spec 0489: Der Einstieg steht ausschliesslich im Gate-Modus unter dem Bild.
-  await page.goto(`/projects/${duplicatesId}/photos?filter=suggested&gate=1`)
-  const compareLink = page.getByRole('link', { name: /^Duplikate vergleichen:/ }).first()
+  await page.goto(`/projects/${duplicatesId}/photos?filter=suggested`)
+  const compareLink = page.getByRole('link', { name: /^Duplikate vergleichen —/ })
   await expect(compareLink, 'Einstieg in den Duplikat-Vergleich').toBeVisible()
   const compareHref = await compareLink.getAttribute('href')
   expect(compareHref, 'Ziel des Vergleichs-Einstiegs').toMatch(/\/photos\/\d+\/duplicates$/)

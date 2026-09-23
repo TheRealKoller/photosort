@@ -187,18 +187,33 @@ describe('ProjectPipelineLayout', () => {
     expect(await screen.findByText(/schritt-inhalt: ausschuss/i)).toBeInTheDocument()
   })
 
+  /*
+   * Spec 0525: Das Wegfallen des eigenen `gate`-Schritts wird an seinem NAMEN nachgezogen, nicht
+   * still - `isStepId('gate')` ist falsch, und ein alter Lesezeichen-Link landet auf dem
+   * hoechsten erreichbaren Schritt statt in einem Leerzustand.
+   */
+  it('leitet den entfallenen "gate"-Deeplink auf den hoechsten erreichbaren Schritt', async () => {
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project({ last_scan: scan() }))
+
+    renderLayout('/projects/1/pipeline/gate')
+
+    expect(await screen.findByText(/schritt-inhalt: ausschuss/i)).toBeInTheDocument()
+  })
+
   it('renders the requested step content when it is currently reachable, via useOutletContext', async () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(
       project({
         last_scan: scan(),
-        last_scoring_run: scoringRun(),
+        // Unbestaetigt: der Ausschuss-Schritt ist damit selbst der offene Frontier-Schritt und
+        // wird nicht weggeleitet.
+        last_scoring_run: scoringRun({ gate_confirmed_at: null }),
       }),
     )
 
-    renderLayout('/projects/1/pipeline/gate')
+    renderLayout('/projects/1/pipeline/ausschuss')
 
     expect(
-      await screen.findByText('Schritt-Inhalt: gate / Projekt: Costa Rica'),
+      await screen.findByText('Schritt-Inhalt: ausschuss / Projekt: Costa Rica'),
     ).toBeInTheDocument()
   })
 

@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-09-10
+**Letzte Aktualisierung:** 2026-09-23 (Spec 0525/ADR 0121 — der Ausschuss wird ein Schritt: vier statt fünf Schritte, projektweiter Massenabschluss, Ausschuss-Bestand als Lese-Endpunkt; davor 2026-09-10)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -168,6 +168,22 @@ Verarbeitungs-Cache (Thumbnails).
     `hooks/useSteadyEtaText.ts` übernimmt einen geänderten Stufentext erst, wenn er in zwei
     aufeinanderfolgenden Antworten steht, und setzt beim Wechsel des Teilschritts sofort zurück —
     ohne das pendelte ein Wert dicht an einer Stufengrenze im Zwei-Sekunden-Takt hin und her.
+  - **Das Schrittmodell der Projekt-Pipeline ist eine reine Frontend-Ableitung**
+    (`utils/pipelineSteps.ts`): Anzeigereihenfolge **und** Routing kommen aus EINER
+    `PIPELINE_STEPS`-Liste, aus der sowohl die Schrittleiste als auch `PipelineStepView` und
+    `App.tsx` (Routen `/projects/:id/pipeline/:step`) abgeleitet werden — kein zweiter Ort führt
+    die Schrittmenge. **Seit Spec
+    [`0525`](../specs/features/0525-ausschuss-ein-schritt.md) zählt das Modell vier Schritte:**
+    Scan, Ausschuss, Kriterien-Bewertung, Kuratierung; der frühere eigene Schritt „Ausschuss-Gate"
+    ist entfallen, weil er weder einen eigenen Lauf noch einen eigenen Ort trug. Erkennung und
+    Sichtung sind EIN Schritt — sein Label (`Ausschuss`) nennt deshalb den ganzen Schritt und nicht
+    mehr nur seinen ersten Teil, und die Orientierungszeile lautet „von 4". **Der Abschluss dieses
+    Schritts hängt allein an `last_scoring_run.gate_confirmed_at` und ausdrücklich NICHT an
+    `last_scoring_run.status`:** ein erfolgreicher Erkennungslauf ist nur noch dessen erste Hälfte
+    und schließt nichts ab; die Bestätigung des Nutzers gibt den nächsten Schritt frei. Deshalb
+    ordnet `RUN_FIELD_BY_STEP` dem Schritt weiterhin `last_scoring_run` zu — die Stand-Zeile der
+    Projektkarte nennt ihn auch nach einem erfolgreichen Lauf als offenen Schritt „Weiter:
+    Ausschuss" — und `StepId` führt kein `gate` mehr.
 - **Backend** (`backend/`): FastAPI. REST-API für Projekte, Fotos, Bewertungen; Auth (JWT,
   `Authorization: Bearer`-Header, kein Cookie); Anbindung an OpenCloud via WebDAV; stößt
   Hintergrund-Jobs im Worker an.
@@ -186,10 +202,29 @@ Verarbeitungs-Cache (Thumbnails).
   - `POST /projects/{id}/score` (`api/projects.py`, analog `POST /projects/{id}/scan`, gleicher
     Router-Level-Auth-Guard), `PhotoOut.suggestion` (`api/photos.py`, nur befüllt ohne eigenes
     `Rating`), `ProjectOut.last_scoring_run` (analog `last_scan`). `POST
-    /projects/{id}/confirm-ausschuss-gate` (synchron, idempotent, projektweit), `GET
+    /projects/{id}/confirm-ausschuss-gate` (synchron, idempotent, projektweit; **seit Spec
+    [`0525`](../specs/features/0525-ausschuss-ein-schritt.md) übernimmt der Aufruf in einer
+    Transaktion alle offenen Vorschläge des Projekts als `discard` und setzt `gate_confirmed_at`
+    nur bei `NULL`** — die Menge bestimmt der Server aus derselben Anweisung, die das Projekt
+    bindet; der Aufruf bleibt bodyfrei und setzt den Zeitstempel **auch bei leerer Menge** (er ist
+    neben dem Autoset des Laufs bei null gefundenen Vorschlägen der **einzige** Setzer; ohne ihn
+    bliebe der Schritt für einen Nutzer unabschließbar, der zuletzt alle Vorschläge einzeln
+    entschieden hat), `GET
     /projects/{id}/photos?top_n_per_category=N` (Top-N je Partition),
     `ProjectOut.last_criterion_scoring_run`, `ScoringRunSummary.id`/`.gate_confirmed_at`,
     `PhotoOut.ranking`/`RankingOut`.
+  - `GET /projects/{id}/ausschuss` (`api/photos.py`; **seit Spec
+    [`0525`](../specs/features/0525-ausschuss-ein-schritt.md)**) — der Bestand des
+    Ausschuss-Schritts: „offener Vorschlag" **und** „Entscheidungszeile" zusammen (ausdrücklich
+    **nicht** `NOT ueberlebt`), je Eintrag der Grund (`duplicate`/`low_quality`), die
+    **gespeicherte** Entscheidung, der Gruppenanker und die Wirksamkeit des angebotenen
+    „behalten" (`keep_possible` aus derselben Regel wie der Schreibweg — ausdrücklich nicht im
+    Client aus dem Grund abgeleitet, weil beide bei einer überlebenden Entscheidungszeile
+    auseinanderfallen), dazu `total` und die projektweite
+    `open_count`. Über `?photo_id=<id>` wird derselbe Endpunkt zum Detail-Zweig (genau der
+    passende Eintrag oder eine leere Liste). Der Router trägt keine router-weite
+    `dependencies`-Liste, der Torwächter steht deshalb **ausgeschrieben** am Endpunkt, und die
+    Route ist in `test_openapi_beschreibungen.py::DOCUMENTED_ROUTES` eingetragen.
   - `GET /opencloud/folder-counts?path=<Pfad>` (gleicher Router-Level-Auth-Guard wie
     `/opencloud/browse`) zählt parallel
     (`asyncio.Semaphore(settings.opencloud_folder_count_concurrency)`, Default 4) die rekursive
@@ -657,16 +692,30 @@ Verarbeitungs-Cache (Thumbnails).
       > `discard` überlebt nie · `keep` überlebt, solange `duplicate_of IS NOT NULL` · sonst
       > entscheidet `suggested_status`
 
-      Aus den sechs ersetzten Vorkommen werden **sieben** Aufrufstellen — die eine Bedingung
+      Aus den sechs ersetzten Vorkommen werden **mehr** Aufrufstellen — die eine Bedingung
       zerfällt in zwei Funktionen („überlebt" und „offener Vorschlag", seit ADR 0104 nicht mehr
       komplementär), und „der Vorschlags-Zweig" war schon vorher eine SQL- und eine Objektfassung.
-      **Vier** der sieben Aufrufstellen bestimmen unmittelbar, welche Fotos den Homeserver
+      **Vier** Aufrufstellen bestimmen unmittelbar, welche Fotos den Homeserver
       Richtung Cloud-Anbieter verlassen: `worker.py::run_criterion_scoring` (speist zugleich den
       Sehenswürdigkeits-Teilschritt), `worker.py::select_remote_category_candidates` und die beiden
       **vorgelagerten Kostenschätzungen** in `api/projects.py`. Die Schätzungen folgen der Auswahl
       nicht von selbst — sie sind eigene Anweisungen und müssen dieselbe Menge zählen, die der Lauf
       sendet, sonst beruht die Freigabe eines kostenpflichtigen Laufs auf einer Zahl, die nicht
-      gilt. Die übrigen drei (`api/photos.py`) sind Anzeige. Das Prädikat prüft **positiv auf
+      gilt. Alle übrigen Aufrufstellen sind Anzeige, Entscheidung oder Schreibweg der Oberfläche.
+      **Die Sollzahl je (Datei, Funktion) wird hier nicht nachgeführt:** sie steht als
+      Wächter-Wörterbuch in `backend/tests/test_ausschuss_ueberlebende.py::_ERWARTETE_VERWENDUNGEN`
+      und wird dort als Ganzes gegen den Syntaxbaum gemessen
+      (`::test_the_predicates_are_drawn_at_exactly_the_expected_call_sites`, je (Datei, Funktion)
+      statt je Datei, damit ein Vertauschen der beiden Prädikate auffällt) — **kein Eintrag wird
+      gesenkt oder entfernt**, um ihn grün zu bekommen. **Seit Spec
+      [`0525`](../specs/features/0525-ausschuss-ein-schritt.md) kommen drei Aufrufstellen hinzu:**
+      der projektweite Massenabschluss (`api/projects.py::confirm_ausschuss_gate`, Auswahl über
+      `has_open_suggestion`), die erweiterte Vorbedingung des Einzel-Schreibwegs
+      (`api/duplicate_decisions.py`, pro Foto und projektgebunden) und der Bestand der
+      Ausschuss-Übersicht (`api/photos.py::has_ausschuss_entry`, die **Vereinigung** beider
+      Ursachen — ausdrücklich **nicht** `NOT survives_ausschuss`, weil eine mit `Ausschuss`
+      entschiedene Aufnahme weder überlebt noch offener Vorschlag ist). Das Prädikat prüft
+      **positiv auf
       `keep`** und behandelt „keine Zeile" als ausdrückliches `IS NULL` auf die Unterabfrage: Die
       Spalte ist eine Zeichenkette ohne DB-seitigen Wertevorrat, ein unerwarteter Wert muss zur
       zurückhaltenden Seite fallen, und `<Unterabfrage> != 'discard'` ergäbe bei fehlender Zeile
@@ -723,8 +772,15 @@ Verarbeitungs-Cache (Thumbnails).
       überschreibt, statt am Primärschlüssel in eine 500 zu laufen. Es gibt **kein `DELETE`**: „noch
       nicht entschieden" ist kein Zustand, in den man zurückkehrt.
     - **Die Ansicht** ist `pages/DuplicateComparePage.tsx` unter
-      `PROJECT_ROUTE_PATHS.photoDuplicates`, erreichbar aus dem Ausschuss-Schritt, aus der nach
-      Vorschlägen gefilterten Fotoliste und je Kachel bei `suggestion.reason === 'duplicate'`. Die
+      `PROJECT_ROUTE_PATHS.photoDuplicates`. **Es gibt genau einen Einstieg** — den listenweiten
+      Link der nach Vorschlägen gefilterten Fotoliste (abhängig nur von `filterParam === 'suggested'`
+      und `first_photo_id !== null`). Die beiden früheren Einstiege sind mit Spec
+      [`0525`](../specs/features/0525-ausschuss-ein-schritt.md) entfallen: der aus dem
+      Ausschuss-Schritt und der je Kachel bei `suggestion.reason === 'duplicate'` samt dem
+      `?gate=1`-Modus der Fotoliste. Die Einzelprüfung des Ausschusses liegt seither in dessen
+      eigener Übersicht mit **eingebetteter** Detailansicht (`?photo=<id>`), die dieselbe Kachel
+      wiederverwendet; die Vergleichsansicht bleibt der **Durchgang über alle Gruppen** und wird von
+      dieser Story nicht entfernt. Die
       Kachel `components/DuplicatePhotoTile.tsx` steht bewusst **neben**
       `PhotoCard`/`CurationPhotoTile`/`RatingBadge` statt auf ihnen: Deren Vokabular ist die
       Albumentscheidung eines Nutzers. Die Vergrößerung ist **kein Dialog** — die gewählte Kachel
@@ -752,10 +808,13 @@ Verarbeitungs-Cache (Thumbnails).
       „fehlt" am Rand vermeidet.
     - **Der zugängliche Name beginnt an allen neuen Bedienelementen mit der sichtbaren
       Beschriftung** (WCAG 2.5.3, `specs/architecture/0004-design-system.md`); sonst sind sie per
-      Spracheingabe nicht ansprechbar. Beide Einstiege heißen sichtbar gleich („Duplikate
-      vergleichen") — es ist derselbe Weg an zwei Stellen — und tragen ihren Zusatz nach einem
-      **Gedankenstrich, nie nach einem Doppelpunkt**: Der kachelgenaue Einstieg heißt `Duplikate
-      vergleichen: <Dateiname>`, und der Prüfstack wählt ihn über genau dieses Präfixmuster.
+      Spracheingabe nicht ansprechbar. Nach dem Wegfall der kachelgenauen Fassung (Spec
+      [`0525`](../specs/features/0525-ausschuss-ein-schritt.md)) trägt der verbliebene listenweite
+      Einstieg seinen Zusatz nach einem **Gedankenstrich, nie nach einem Doppelpunkt**: sichtbar
+      `Duplikate vergleichen`, zugänglich `Duplikate vergleichen — alle Gruppen der Reihe nach
+      durchgehen`, und der Prüfstack wählt ihn über genau dieses Präfixmuster. Ein Doppelpunkt
+      bliebe dem entfallenen kachelgenauen Namen vorbehalten — ein Test hält fest, dass kein Link
+      mehr mit `Duplikate vergleichen:` existiert.
   - **Die laufende Diagnose der Modellfehler** *(Spec
     [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
     [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md))*:
