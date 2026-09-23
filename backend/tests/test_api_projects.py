@@ -451,10 +451,12 @@ async def test_get_project_reports_last_scoring_run_suggestions_found(
 
 # specs/features/0044-projekte-loeschen.md - DELETE /projects/{project_id} ab hier.
 #
-# WICHTIG fuer jede Assertion hier: die Suite laeuft gegen SQLite OHNE PRAGMA foreign_keys=ON
-# (conftest.py). Fremdschluessel werden dort nicht durchgesetzt - jede Lösch-Zusage wird deshalb
-# ueber ZEILENZAEHLUNGEN geprueft, nie ueber einen erwarteten IntegrityError oder ein "es ist kein
-# Fehler geflogen" (Teststrategie der Spec; das Pragma selbst laeuft als eigenes Issue #350).
+# WICHTIG fuer jede Assertion hier: Fremdschluessel werden in der Suite seit Spec 0350
+# durchgesetzt (PRAGMA foreign_keys=ON je Verbindung, db.py::make_engine) - die Zeilenzaehlung
+# bleibt trotzdem die einzige Form fuer eine Loesch-Zusage: sie nennt die Tabelle und deckt alle
+# betroffenen in einem Durchgang ab, waehrend ein Fremdschluesselfehler bei der ersten vergessenen
+# Anweisung abbricht. Nie ueber einen erwarteten IntegrityError oder ein "es ist kein Fehler
+# geflogen" (Teststrategie der Spec).
 
 DEPENDENT_TABLES = sorted(tables_reachable_from_projects())
 

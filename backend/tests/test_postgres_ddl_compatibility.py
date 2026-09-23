@@ -1149,10 +1149,11 @@ def test_the_final_selection_downgrade_renders_for_postgres_too() -> None:
 
 # specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md, ADR 0100: das append-only
 # Ereignis-Log. Hier steht der ZWEITE der vier Nachweise dafuer, dass `event_id` wie eine Referenz
-# AUSSIEHT und keine ist. Er gehoert an die gerenderte Postgres-DDL, weil die Suite gegen SQLite
-# ohne `PRAGMA foreign_keys=ON` laeuft: Ein spaeter ergaenzter Fremdschluessel auf `events` fiele
-# dort zur Laufzeit nicht auf, und `rebuild_run_grouping` - das die `events`-Zeilen eines Laufs
-# loescht und neu anlegt - risse dann entweder Log-Zeilen mit oder bliebe stehen.
+# AUSSIEHT und keine ist. Er gehoert an die gerenderte Postgres-DDL, weil ein spaeter ergaenzter
+# Fremdschluessel auf `events` nur im Verhalten auffiele, und auch dort erst, wenn der Fall mit
+# vorhandenen Log-Zeilen liefe: `rebuild_run_grouping` - das die `events`-Zeilen eines Laufs
+# loescht und neu anlegt - risse dann entweder Log-Zeilen mit oder bliebe stehen. Die Zusage gilt
+# unabhaengig von der Datenlage; die DDL sagt sie direkt.
 
 _FEEDBACK_EVENTS_REVISION = "b1c2d3e4f5a6_feedback_events.py"
 
@@ -1279,8 +1280,7 @@ def test_the_anchor_renders_without_a_foreign_key_while_the_author_renders_with_
     weight_sets_upgrade_ddl: list[str],
 ) -> None:
     """`based_on_event_id` ist ein Zustimmungs-Token (S6) und traegt bei leerem Log den Wert `0` -
-    ein Fremdschluessel wiese ihn unter Postgres ab, waehrend SQLite ohne
-    `PRAGMA foreign_keys=ON` klaglos schriebe."""
+    ein Fremdschluessel wiese ihn ab, unter Postgres wie seit Spec 0350 auch in der Testsuite."""
     statement = _create_table_statement(weight_sets_upgrade_ddl, "quality_weight_sets")
 
     assert "FOREIGN KEY(based_on_event_id)" not in statement

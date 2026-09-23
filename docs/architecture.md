@@ -1233,9 +1233,12 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     den ein anderes Projekt weiterhin referenziert, überlebt. Kein Soft-Delete, kein Undo, keine
     Audit-Tabelle. Die Liste steht nicht doppelt im Code: sie wird von zwei Tests aus
     `Base.metadata` abgeleitet (Reihenfolge gegen `reversed(sorted_tables)`, Vollständigkeit über
-    die Erreichbarkeit von `projects` entlang der Fremdschlüsselkanten) — nötig, weil die Testsuite
-    gegen SQLite **ohne** `PRAGMA foreign_keys=ON` läuft und eine falsche Reihenfolge dort
-    strukturell nicht auffiele. `feedback_events` ist seit Spec 0432 dabei und ist zugleich die
+    die Erreichbarkeit von `projects` entlang der Fremdschlüsselkanten) — nötig, weil ein
+    Fremdschlüsselfehler die **erste** vergessene Anweisung nennt und über die übrigen schweigt;
+    die Reihenfolge deckt seit Spec 0350 die Fremdschlüssel-Durchsetzung der Testsuite ab
+    (`PRAGMA foreign_keys=ON` je Verbindung, gesetzt in `db.py::make_engine`, siehe
+    `specs/architecture/0002-testkonzept.md`). `feedback_events` ist seit Spec 0432 dabei und ist
+    zugleich die
     **einzige Ausnahme** der Append-only-Zusage dieser Tabelle: Ohne die Anweisung überlebten
     Aussagen über gelöschte Familienfotos ihr Projekt. `quality_weight_sets` und
     `quality_weight_entries` bleiben dagegen **bewusst stehen** — sie hängen an keinem Projekt,

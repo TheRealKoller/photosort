@@ -1685,8 +1685,10 @@ async def test_photo_motif_strength_unique_per_photo_and_motif_key(
 
 def test_a_motif_strength_hangs_on_the_assessment_and_not_on_the_photo() -> None:
     """Eine Staerke kann ohne Kopfzeile nicht existieren - der Fremdschluessel zeigt deshalb auf
-    `photo_motif_assessments.photo_id` und NICHT auf `photos.id`. Unter SQLite ohne
-    `PRAGMA foreign_keys=ON` faellt die falsche Richtung zur Laufzeit nicht auf."""
+    `photo_motif_assessments.photo_id` und NICHT auf `photos.id`. Auch mit durchgesetztem
+    `PRAGMA foreign_keys=ON` (Spec 0350) faellt sie nur dort auf, wo der eingetragene Wert
+    zufaellig kein Foto trifft - die Richtung selbst ist eine Strukturaussage und wird deshalb
+    am Fremdschluessel gelesen."""
     targets = {
         foreign_key.column.table.name for foreign_key in PhotoMotifStrength.__table__.foreign_keys
     }
