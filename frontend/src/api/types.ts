@@ -310,6 +310,46 @@ export interface DuplicateGroupIndexOut {
   first_photo_id: number | null
 }
 
+/**
+ * EIN Eintrag der Ausschuss-Übersicht (Spec 0525, `api/photos.py::AusschussEntryOut`).
+ *
+ * `reason` ist der Grund der Markierung und kommt vom Server, nicht aus einer TypeScript-Ableitung
+ * (Auflage S7): `duplicate` genau dann, wenn das Foto ein Duplikat ist, sonst `low_quality`. Der
+ * Grund ist damit unterscheidbar, statt ein Sammelzustand zu sein (AK4) — Grund und Entscheidung
+ * sind zwei verschiedene Aussagen über dieselbe Aufnahme.
+ *
+ * `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdrücklich NICHT
+ * die Auswertung des Überlebens-Prädikats (ADR 0111 Punkt 1): Diese Übersicht zeigt den
+ * Sichtungsfortschritt, und ein unwirksames `keep` (Unschärfe-Ablehnung ohne Gruppe) bleibt als
+ * gespeicherte Handlung sichtbar. `null` heißt „noch nicht entschieden" — der einzige der drei
+ * Zustände, in dem es keinen Rückweg gibt, weil er noch nie verlassen wurde.
+ *
+ * `group_anchor_photo_id` ist der Anker der Duplikat-Gruppe, in der diese Aufnahme liegt, oder
+ * `null`. Die Detailansicht löst die Serie darüber auf — nicht über das angeklickte Foto, damit
+ * die Gruppe dieselbe bleibt, egal welches Mitglied man geöffnet hat.
+ */
+export interface AusschussEntryOut {
+  photo: PhotoOut
+  reason: SuggestionReason
+  decision: DuplicateDecision | null
+  group_anchor_photo_id: number | null
+}
+
+/**
+ * Die Antwort des Ausschuss-Lesepfads: der Bestand, seine Größe und die Zahl der offenen
+ * Vorschläge.
+ *
+ * `total` ist die Größe des Gesamtbestands, nicht der geladenen Seite; `open_count` ist
+ * projektweit und von `limit`/`offset` unabhängig — es ist die Zahl, die der Bestätigungsbutton
+ * trägt. Beide bleiben auch im Filterzweig (`photo_id`) projektweit, `items` trägt dann genau den
+ * gefilterten Eintrag oder nichts.
+ */
+export interface AusschussOut {
+  items: AusschussEntryOut[]
+  total: number
+  open_count: number
+}
+
 // Das Motivset (specs/features/0427-motive-mit-staerke.md). Die Menge ist fachlich
 // GESCHLOSSEN (acht Einträge, backend motifs.py::MOTIF_REGISTRY), der TypeScript-Typ bleibt
 // aber bewusst `string`: das Set kommt zur Laufzeit über `GET /motifs` vom Server, eine hier

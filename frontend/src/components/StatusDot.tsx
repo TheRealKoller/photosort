@@ -10,9 +10,11 @@ import type { ProcessStatus } from '../utils/processStatus'
  *
  * Eigene Datei statt dateilokaler Ableitung: zuvor in ProjectDetailPage.tsx, dort von den vier
  * Sections Scan/Ausschuss-Erkennung/Ausschuss-Gate/Kriterien-Bewertung gemeinsam genutzt. Mit der
- * Aufteilung in fuenf eigenstaendige Detailseiten-Dateien entstehen daraus vier getrennte
- * Konsumenten-Dateien (ScanStepPage/AusschussStepPage/GateStepPage/KriterienStepPage) - die
- * bisherige Dateilokal-Voraussetzung entfaellt, analog zu hooks/useTriggerConfirmation.ts.
+ * Aufteilung in eigenstaendige Detailseiten-Dateien entstehen daraus drei getrennte
+ * Konsumenten-Dateien (ScanStepPage/AusschussStepPage/KriterienStepPage) - die bisherige
+ * Dateilokal-Voraussetzung entfaellt, analog zu hooks/useTriggerConfirmation.ts. Der frueher vierte
+ * Konsument (GateStepPage) ist mit Spec 0525 entfallen: Der Ausschuss ist seitdem EIN Schritt aus
+ * Erkennung und Sichtung.
  */
 export function StatusDot({ status }: { status: ProcessStatus | null | undefined }) {
   return (
