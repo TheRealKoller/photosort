@@ -906,6 +906,11 @@ async def confirm_ausschuss_gate(
     waere eine willkuerliche Teilmenge in der Menge, die den Homeserver verlaesst, und ein gesetzter
     Zeitstempel ohne die Uebernahme oeffnete den naechsten Schritt ohne sie.
 
+    Ein LEERER offener Bestand ist kein Fehler und kein Nichtstun: Auch dann setzt der Aufruf den
+    Zeitstempel (siehe die Bedingung unten). Er ist neben dem Autoset des Laufs der EINZIGE Setzer -
+    ein Nutzer, der zuletzt alle Vorschlaege einzeln entschieden hat (AK6), stuende sonst ohne
+    Abschluss-Aktion fest und der naechste Schritt bliebe dauerhaft gesperrt (M1, AK13).
+
     SICHERHEIT (S1): Die Menge bestimmt der SERVER, projektweit und in DERSELBEN Anweisung wie die
     Projektbindung - ein Aufruf ohne Body schriebe sonst `discard` ueber alle Projekte der Instanz.
     `has_open_suggestion` traegt selbst keine Projektbedingung; sie kommt allein aus dem Join auf

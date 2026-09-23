@@ -206,7 +206,10 @@ Verarbeitungs-Cache (Thumbnails).
     [`0525`](../specs/features/0525-ausschuss-ein-schritt.md) übernimmt der Aufruf in einer
     Transaktion alle offenen Vorschläge des Projekts als `discard` und setzt `gate_confirmed_at`
     nur bei `NULL`** — die Menge bestimmt der Server aus derselben Anweisung, die das Projekt
-    bindet; der Aufruf bleibt bodyfrei), `GET
+    bindet; der Aufruf bleibt bodyfrei und setzt den Zeitstempel **auch bei leerer Menge** (er ist
+    neben dem Autoset des Laufs bei null gefundenen Vorschlägen der **einzige** Setzer; ohne ihn
+    bliebe der Schritt für einen Nutzer unabschließbar, der zuletzt alle Vorschläge einzeln
+    entschieden hat), `GET
     /projects/{id}/photos?top_n_per_category=N` (Top-N je Partition),
     `ProjectOut.last_criterion_scoring_run`, `ScoringRunSummary.id`/`.gate_confirmed_at`,
     `PhotoOut.ranking`/`RankingOut`.

@@ -19,6 +19,7 @@ import type {
   SuggestionReason,
 } from '../../api/types'
 import {
+  AUSSCHUSS_ALL_DECIDED_TEXT,
   AUSSCHUSS_EMPTY_TEXT,
   AUSSCHUSS_MISSING_ENTRY_TEXT,
   AUSSCHUSS_NOTHING_TO_CONFIRM_TEXT,
@@ -417,11 +418,42 @@ describe('AusschussStepPage - Uebersicht', () => {
     )
   })
 
-  it('sperrt den Button mit neutralem Erklaertext, wenn es nichts zu bestaetigen gibt', async () => {
+  it('bietet den Abschluss an, wenn alle Vorschlaege einzeln entschieden sind, aber nicht bestaetigt', async () => {
+    // DIE SACKGASSE, DIE ES NICHT GEBEN DARF: Ein erfolgreicher Lauf meldet Vorschlaege, der
+    // Nutzer entscheidet sie ALLE einzeln (AK6 erlaubt das, AK12 verlangt es nicht), danach ist
+    // `open_count` 0 und `gate_confirmed_at` weiterhin null. Ein an `open_count` gebundener
+    // gesperrter Button liesse den Schritt nie abschliessen - und weil allein `gate_confirmed_at`
+    // den naechsten Schritt freigibt (AK13), stuende die ganze Pipeline still.
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
+      stand([entry(42, { decision: 'keep' }), entry(43, { decision: 'discard' })], {
+        openCount: 0,
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    const button = await screen.findByRole('button', { name: /ausschuss gesichtet, weiter/i })
+    expect(button).toBeEnabled()
+    expect(screen.getByText(AUSSCHUSS_ALL_DECIDED_TEXT)).toBeInTheDocument()
+    expect(screen.queryByText(AUSSCHUSS_NOTHING_TO_CONFIRM_TEXT)).not.toBeInTheDocument()
+
+    await user.click(button)
+
+    expect(projectsApi.confirmAusschussGate).toHaveBeenCalledWith(1)
+  })
+
+  it('sperrt den Button mit neutralem Erklaertext erst nach bestaetigtem Abschluss ohne offene Vorschlaege', async () => {
+    // Der einzige Zustand, in dem es wirklich nichts zu tun gibt: Der Abschluss steht, und offen
+    // ist nichts. Hier bleibt der neutrale Erklaertext richtig - vorher sagte er dasselbe ueber
+    // einen Zustand, in dem sehr wohl etwas zu tun war (siehe der Test darueber).
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
       stand([entry(42, { decision: 'keep' })], { openCount: 0 }),
     )
-    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+    renderPage(
+      project({
+        last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: '2026-07-20T11:00:00Z' },
+      }),
+    )
 
     const button = await screen.findByRole('button', { name: /ausschuss gesichtet, weiter/i })
     expect(button).toBeDisabled()
@@ -440,6 +472,21 @@ describe('AusschussStepPage - Uebersicht', () => {
 
     expect(await screen.findByText(/bestätigt am/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /ausschuss gesichtet, weiter/i })).toBeInTheDocument()
+  })
+
+  it('laesst offene Vorschlaege auch nach der Bestaetigung erneut abschliessen', async () => {
+    // AK11, die andere Haelfte: Ein neuer Lauf nach der Bestaetigung findet neue Vorschlaege -
+    // der Abschluss bleibt bedienbar und nennt weiter die Zahl der offenen.
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
+    renderPage(
+      project({
+        last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: '2026-07-20T11:00:00Z' },
+      }),
+    )
+
+    expect(
+      await screen.findByRole('button', { name: /ausschuss gesichtet, weiter \(1\)/i }),
+    ).toBeEnabled()
   })
 
   it('laedt bei mehr Bestand als einer Seite nach', async () => {

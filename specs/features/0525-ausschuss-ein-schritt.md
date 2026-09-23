@@ -262,7 +262,13 @@ hat. Die Nutzlast wird im Umsetzungs-PR entsprechend nachgezogen.
 - **Entscheidungszeile je Kachel**, getrennt vom Grund: „Vorgeschlagen" (offen) / „Ausschuss" /
   „Behalten".
 - **Bestätigungsbutton** in der Übersicht, beschriftet mit der Zahl der offenen Vorschläge
-  (`open_count`). Bei `open_count == 0` ist er `disabled` mit neutralem Erklärtext.
+  (`open_count`; ohne Zähler, wenn keine offen sind). **Gesperrt ist er nur, wenn der Abschluss
+  bereits steht und nichts mehr offen ist.** Solange `gate_confirmed_at` `null` ist, bleibt er
+  bedienbar — **auch bei `open_count == 0`**: Die Freigabe des nächsten Schritts hängt allein an der
+  Bestätigung (AK13), und wer zuletzt alle Vorschläge einzeln entschieden hat (AK6, AK12 verlangt
+  keine Einzelpflicht), stünde sonst ohne jede Abschluss-Aktion fest — der Zeitstempel hat keinen
+  zweiten Setzer. Der Erklärtext unterscheidet beide Fälle („alle entschieden, Abschluss offen"
+  gegen „nichts offen, bereits bestätigt").
 
 ### Detailansicht (inline, `?photo=<id>`)
 
@@ -282,7 +288,10 @@ hat. Die Nutzlast wird im Umsetzungs-PR entsprechend nachgezogen.
 - **ladend:** Skeleton-Platzhalter mit `role="status"`.
 - **Fehler der Übersicht:** Alert mit „Erneut versuchen".
 - **leer / kein Ausschuss gefunden / automatisch übersprungen:** dauerhaft sichtbare, erklärende
-  Zeile (kein flüchtiger Hinweis); der Bestätigungsbutton ist `disabled` mit neutralem Text.
+  Zeile (kein flüchtiger Hinweis); der Bestätigungsbutton ist `disabled` mit neutralem Text — in
+  diesem Fall setzt der Erkennungslauf den Abschluss selbst, es ist also wirklich nichts zu tun.
+- **alle Vorschläge einzeln entschieden, Abschluss noch offen:** der Button bleibt bedienbar; die
+  erklärende Zeile sagt, dass allein die Bestätigung den nächsten Schritt freigibt.
 - **bereits bestätigt:** Zustand samt Zeitstempel, Schritt bleibt erneut aufrufbar.
 
 ### Barrierefreiheit und Responsivität

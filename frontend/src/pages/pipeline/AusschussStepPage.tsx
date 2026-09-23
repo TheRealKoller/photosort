@@ -42,9 +42,16 @@ const SKELETON_TILE_COUNT = 6
 export const AUSSCHUSS_EMPTY_TEXT = 'Kein Ausschuss gefunden — es gibt derzeit nichts zu sichten.'
 
 /** Der neutrale Erklaertext bei `open_count === 0`: Es gibt nichts zu bestaetigen, der Abschluss
- * ist keine Pflicht, die noch offen waere. */
+ * ist keine Pflicht, die noch offen waere - er steht bereits. */
 export const AUSSCHUSS_NOTHING_TO_CONFIRM_TEXT =
   'Keine offenen Vorschläge — es gibt nichts zu bestätigen.'
+
+/** Der Erklaertext, wenn zwar nichts mehr OFFEN, der Abschluss aber noch nicht bestaetigt ist:
+ * Hier gibt es sehr wohl etwas zu tun - genau dieser eine Klick gibt den naechsten Schritt frei
+ * (AK13). Ohne ihn stuende die Pipeline still, sobald der Nutzer zuletzt alle Vorschlaege einzeln
+ * entschieden hat (AK6). */
+export const AUSSCHUSS_ALL_DECIDED_TEXT =
+  'Alle Vorschläge sind entschieden — bestätige den Abschluss, um den nächsten Schritt freizugeben.'
 
 /** Der benannte Zustand der Detailansicht, wenn die Aufnahme nicht (mehr) im Bestand liegt: Die
  * Antwort des `photo_id`-Filters ist leer, weil ein neuer Lauf die Entscheidung aufgeloest hat -
@@ -394,10 +401,18 @@ export function AusschussStepPage() {
               </p>
             )}
 
+            {/*
+              DER ABSCHLUSS IST DIE EINZIGE FREIGABE DES NAECHSTEN SCHRITTS (AK13), und `open_count`
+              ist dafuer die FALSCHE BEDINGUNG: Ein Nutzer, der zuletzt alle Vorschlaege einzeln
+              entschieden hat (AK6), hat `open_count === 0` und `gate_confirmed_at === null` - ein
+              daran gesperrter Button liesse den Schritt nie abschliessen und die Pipeline still
+              stehen. Gesperrt ist er deshalb erst, wenn beides erledigt ist: bestaetigt UND nichts
+              mehr offen. Der Server setzt den Zeitstempel ohnehin auch bei leerer Menge.
+            */}
             <Button
               type="button"
               onClick={() => confirmMutation.mutate()}
-              disabled={openCount === 0 || confirmMutation.isPending}
+              disabled={confirmMutation.isPending || (gateConfirmedAt !== null && openCount === 0)}
               busy={confirmMutation.isPending}
             >
               {confirmMutation.isPending
@@ -406,8 +421,11 @@ export function AusschussStepPage() {
                   ? AUSSCHUSS_CONFIRM_TEXT
                   : `${AUSSCHUSS_CONFIRM_TEXT} (${openCount})`}
             </Button>
-            {openCount === 0 && (
+            {gateConfirmedAt !== null && openCount === 0 && (
               <p className="text-sm text-text">{AUSSCHUSS_NOTHING_TO_CONFIRM_TEXT}</p>
+            )}
+            {gateConfirmedAt === null && openCount === 0 && (
+              <p className="text-sm text-text">{AUSSCHUSS_ALL_DECIDED_TEXT}</p>
             )}
 
             {confirmMutation.isError && (

@@ -177,6 +177,35 @@ class TestConfirmAusschussGate:
         detail = await authenticated_api_client.get(f"/projects/{project_id}")
         assert detail.json()["last_scoring_run"]["gate_confirmed_at"] is not None
 
+    async def test_a_gate_with_nothing_open_still_confirms(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK13 (M1): Der Abschluss ist der EINZIGE Setzer des Zeitstempels - neben dem Autoset
+        des Laufs, das nur bei null gefundenen Vorschlaegen greift. Sind alle Vorschlaege einzeln
+        entschieden (`open_count == 0`, Zeitstempel noch leer), MUSS der Aufruf ihn setzen: Sonst
+        bliebe der Schritt fuer jeden Nutzer unabschliessbar, der zuletzt jedes Bild einzeln
+        entschieden hat (AK6), und der naechste Schritt laege dauerhaft hinter einer Wand."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_successful_scoring_run(db_session, project_id)
+        einzeln = await _add_photo(
+            db_session,
+            project_id,
+            "einzeln.jpg",
+            open_suggestion=True,
+            decision=DuplicateDecision.KEEP,
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/confirm-ausschuss-gate"
+        )
+
+        assert response.status_code == 200
+        detail = await authenticated_api_client.get(f"/projects/{project_id}")
+        assert detail.json()["last_scoring_run"]["gate_confirmed_at"] is not None
+        # Und die bestehende Zeile bleibt die Handlung des Nutzers (S4).
+        assert await _stored_decision(db_session, einzeln) is DuplicateDecision.KEEP
+
     async def test_is_idempotent(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
