@@ -55,9 +55,6 @@ export interface PhotoGridTileProps {
   height: number
   /** Inhalt der Bildflaeche - `PhotoImage` oder ein Platzhalter. */
   image: ReactNode
-  /** DAUERHAFT sichtbare Aktionen am unteren Rand. Ausschliesslich der Gate-Modus setzt sie; in
-   * der normalen Uebersicht gibt es sie gar nicht (AK3/AK12). */
-  actions?: ReactNode
 }
 
 /** Die Farbe des Punktes - in BEIDEN Formen dieselbe, sodass auch bei einem Vorschlag erkennbar
@@ -80,7 +77,6 @@ export function PhotoGridTile({
   width,
   height,
   image,
-  actions,
 }: PhotoGridTileProps) {
   /*
    * WOHER die Zeile kam, nicht nur DASS sie da ist. Die drei Auslöser haben verschiedene
@@ -236,20 +232,13 @@ export function PhotoGridTile({
         </span>
       )}
 
-      {(detailsVisible || actions !== undefined) && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col">
-          {detailsVisible && (
-            <p
-              style={{ maxHeight: Math.round(height / DETAILS_HEIGHT_SHARE) }}
-              className="overflow-hidden truncate bg-overlay px-2 py-1 font-mono text-xs text-text-h"
-            >
-              {fileName}
-            </p>
-          )}
-          {actions !== undefined && (
-            <div className="pointer-events-auto flex flex-wrap gap-2 bg-overlay p-1">{actions}</div>
-          )}
-        </div>
+      {detailsVisible && (
+        <p
+          style={{ maxHeight: Math.round(height / DETAILS_HEIGHT_SHARE) }}
+          className="pointer-events-none absolute inset-x-0 bottom-0 overflow-hidden truncate bg-overlay px-2 py-1 font-mono text-xs text-text-h"
+        >
+          {fileName}
+        </p>
       )}
     </li>
   )

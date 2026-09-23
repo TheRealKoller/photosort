@@ -418,17 +418,3 @@ describe('PhotoGridTile: die Angabenzeile (AK7, AK8)', () => {
     expect(screen.queryByText('Detailansicht')).not.toBeInTheDocument()
   })
 })
-
-describe('PhotoGridTile: die Gate-Aktionen (AK12)', () => {
-  it('shows nothing below the image without actions', () => {
-    renderTile()
-
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-  })
-
-  it('shows the handed-in actions permanently', () => {
-    renderTile({ actions: <button type="button">Übernehmen</button> })
-
-    expect(screen.getByRole('button', { name: 'Übernehmen' })).toBeVisible()
-  })
-})

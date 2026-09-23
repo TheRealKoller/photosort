@@ -564,34 +564,33 @@ describe('PhotoGridPage', () => {
     })
   })
 
-  describe('die Gate-Aktionen stehen ausschliesslich im Gate-Modus (AK3, AK12)', () => {
+  describe('der Rueckbau des Gate-Modus (Spec 0525)', () => {
     /*
-     * DIESE FAELLE SIND UMGEZOGEN, NICHT GESTRICHEN. Ohne `gate=1` waeren sie ab sofort nicht
-     * mehr rot zu bekommen - "Übernehmen" und "Vergleichen" gibt es in der normalen Übersicht
-     * gar nicht mehr, ein Test dort bestuende auch gegen eine Umsetzung, die sie ueberall
-     * weglaesst.
+     * DIE FRUEHEREN FAELLE DIESES BLOCKS SIND ERSATZLOS ENTFALLEN, NICHT STILL. "Übernehmen" und
+     * "Vergleichen" unter der Kachel sowie der Knopf "Ausschuss gesichtet, weiter" hat Spec 0525
+     * mit dem `?gate=1`-Modus aufgehoben; die Sichtung und ihr Abschluss stehen seitdem im
+     * Ausschuss-Schritt. An ihre Stelle tritt hier die GEGENPROBE: Der Parameter in der Adresse
+     * darf nichts mehr ausloesen.
      */
-    const GATE = '/projects/1/photos?filter=suggested&gate=1'
+    const ALTE_GATE_ADRESSE = '/projects/1/photos?filter=suggested&gate=1'
 
-    it('shows an "Übernehmen" button when a photo has an open suggestion', async () => {
+    it('setzt den Gate-Bestaetigungsaufruf auch unter `?gate=1` nie ab', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [
-          photo({ id: 1, relative_path: 'sunset.jpg', ratings: [], suggestion: suggestion() }),
-        ],
+        items: [photo({ id: 1, ratings: [], suggestion: suggestion() })],
         total: 1,
       })
 
-      renderPage(GATE)
+      renderPage(ALTE_GATE_ADRESSE)
+      await screen.findAllByRole('listitem')
 
-      // Photo-spezifisches aria-label (UI/UX-Review-Fund): mehrere offene Vorschlaege in einem
-      // Raster sind sonst per Tastatur/Screenreader nicht auseinanderzuhalten, da alle Buttons
-      // denselben sichtbaren Text "Uebernehmen" tragen.
-      expect(
-        await screen.findByRole('button', { name: 'Vorschlag übernehmen: sunset.jpg' }),
-      ).toBeInTheDocument()
+      // UEBER DEN AUFRUFZAEHLER, nicht ueber ein Suchelement: Der Knopf hiess "Ausschuss
+      // gesichtet, weiter", sein Fehlen belegte nur die halbe Zusage - ein Aufruf koennte auch
+      // ohne ihn laufen.
+      expect(projectsApi.confirmAusschussGate).not.toHaveBeenCalled()
+      expect(screen.queryByRole('button', { name: /ausschuss gesichtet/i })).not.toBeInTheDocument()
     })
 
-    it('shows no action at all in the normal overview', async () => {
+    it('zeigt unter keinem Filter eine Aktion unter der Kachel', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [
           photo({
@@ -604,112 +603,13 @@ describe('PhotoGridPage', () => {
         total: 1,
       })
 
-      renderPage()
-
+      renderPage(ALTE_GATE_ADRESSE)
       await screen.findAllByRole('listitem')
+
       expect(screen.queryByRole('button', { name: /übernehmen/i })).not.toBeInTheDocument()
-      expect(screen.queryByRole('link', { name: /Duplikate vergleichen/ })).not.toBeInTheDocument()
-    })
-
-    it('zeigt den Duplikat-Einstieg GENAU DANN, wenn der Vorschlagsgrund `duplicate` ist', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [
-          photo({
-            id: 7,
-            relative_path: 'serie.jpg',
-            ratings: [],
-            suggestion: suggestion({ reason: 'duplicate', duplicate_of: 3 }),
-          }),
-        ],
-        total: 1,
-      })
-
-      renderPage(GATE)
-
-      const einstieg = await screen.findByRole('link', { name: 'Duplikate vergleichen: serie.jpg' })
-      expect(einstieg).toHaveAttribute('href', '/projects/1/photos/7/duplicates')
-    })
-
-    it.each([
-      ['low_quality', suggestion({ reason: 'low_quality' })],
-      ['kein Vorschlag', null],
-    ])('zeigt ihn NICHT bei %s', async (_fall, eingabe) => {
-      // Fuer Vorschlaege wegen geringer Bildqualitaet aendert sich nichts - kein Einstieg an der
-      // Kachel. Ohne die Gegenprobe bestuende der Fall darueber auch gegen eine Umsetzung, die
-      // den Einstieg an JEDER Kachel zeigt.
-      //
-      // AUF DAS KACHELGENAUE LABEL EINGEENGT (Spec 0486): Ein `/Duplikate vergleichen/` griffe
-      // seit dem listenweiten Einstieg auch jenen ab - und der steht unter `?filter=suggested`
-      // gleichzeitig im Dokument.
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 7, ratings: [], suggestion: eingabe })],
-        total: 1,
-      })
-
-      renderPage(GATE)
-
-      await screen.findAllByRole('listitem')
       expect(
         screen.queryByRole('link', { name: /^Duplikate vergleichen:/ }),
       ).not.toBeInTheDocument()
-    })
-
-    it('steht NEBEN dem Uebernehmen-Einstieg, nicht an seiner Stelle', async () => {
-      // Der Vorschlag bleibt uebernehmbar, ohne die Vergleichsansicht zu oeffnen - der zweite
-      // Weg steht daneben, er ersetzt den ersten nicht.
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [
-          photo({
-            id: 7,
-            relative_path: 'serie.jpg',
-            ratings: [],
-            suggestion: suggestion({ reason: 'duplicate', duplicate_of: 3 }),
-          }),
-        ],
-        total: 1,
-      })
-
-      renderPage(GATE)
-
-      expect(
-        await screen.findByRole('button', { name: 'Vorschlag übernehmen: serie.jpg' }),
-      ).toBeInTheDocument()
-      expect(
-        screen.getByRole('link', { name: 'Duplikate vergleichen: serie.jpg' }),
-      ).toBeInTheDocument()
-    })
-
-    it('does not show an action when the photo has no open suggestion', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1, ratings: [], suggestion: null })],
-        total: 1,
-      })
-
-      renderPage(GATE)
-
-      await screen.findAllByRole('listitem')
-      expect(screen.queryByRole('button', { name: /übernehmen/i })).not.toBeInTheDocument()
-    })
-
-    it("shows a busy state only on the confirming tile's own button while its request is in flight", async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [
-          photo({ id: 1, ratings: [], suggestion: suggestion() }),
-          photo({ id: 2, ratings: [], suggestion: suggestion() }),
-        ],
-        total: 2,
-      })
-      vi.mocked(ratingsApi.setRating).mockReturnValue(new Promise(() => {}))
-      const user = userEvent.setup()
-
-      renderPage(GATE)
-      const [firstButton, secondButton] = await screen.findAllByRole('button', {
-        name: /vorschlag übernehmen/i,
-      })
-      await user.click(firstButton)
-
-      await waitFor(() => expect(firstButton).toBeDisabled())
-      expect(secondButton).toBeEnabled()
     })
   })
 
@@ -748,10 +648,12 @@ describe('PhotoGridPage', () => {
       expect(einstiege[0]).toHaveAttribute('href', '/projects/1/photos/42/duplicates')
     })
 
-    it('heisst sichtbar wie am Ausschuss-Schritt - es ist derselbe Weg', async () => {
-      // AK7 spricht von EINEM Einstieg an zwei Stellen. Zwei sichtbare Namen fuer dieselbe Sache
-      // arbeiteten gegen die Wiedererkennung, die dieser Einstieg gerade herstellen soll.
-      // Unterschieden wird ueber den ZUGAENGLICHEN Namen, nicht ueber die Beschriftung.
+    it('heisst sichtbar `Duplikate vergleichen` und traegt den Zusatz nach einem Gedankenstrich', async () => {
+      // Der Zusatz im zugaenglichen Namen folgt nach einem GEDANKENSTRICH, nie nach einem
+      // Doppelpunkt: `/^Duplikate vergleichen:/` kennzeichnet die kachelgenaue Fassung dieses
+      // Wegs, die Spec 0525 mit dem Gate-Modus entfernt hat. Ein Name nach demselben Muster waere
+      // von ihr nicht zu unterscheiden, sobald sie zurueckkaeme; der Anfang bleibt trotzdem die
+      // sichtbare Beschriftung (WCAG 2.5.3).
       vi.mocked(photosApi.listPhotos).mockResolvedValue(VORGESCHLAGENE_LISTE)
       vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
         total: 2,
@@ -762,33 +664,10 @@ describe('PhotoGridPage', () => {
 
       const einstieg = await screen.findByRole('link', { name: /durchgehen$/ })
       expect(einstieg.textContent).toBe('Duplikate vergleichen')
-    })
-
-    it('traegt einen Namen, der den kachelgenauen Einstieg NICHT mittrifft', async () => {
-      // AK7: Der Prüfstack waehlt den Kachel-Einstieg ueber `/^Duplikate vergleichen:/` und
-      // `.last()`. Truege der listenweite Weg dasselbe Muster, waehlte er beim Durchklicken IHN -
-      // drei Pruefstack-Spezifikationen liefen dann gegen die falsche Ansicht. Der Zusatz folgt
-      // deshalb nach einem GEDANKENSTRICH, nie nach einem Doppelpunkt - und beginnt trotzdem mit
-      // der sichtbaren Beschriftung (WCAG 2.5.3).
-      //
-      // IM GATE-MODUS gemessen: Seit Spec 0489 steht der kachelgenaue Einstieg ausschliesslich
-      // dort. Nur in diesem Modus sind beide Wege gleichzeitig im Dokument - und genau darueber
-      // redet die Abgrenzung.
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(VORGESCHLAGENE_LISTE)
-      vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
-        total: 2,
-        first_photo_id: 42,
-      })
-
-      renderPage('/projects/1/photos?filter=suggested&gate=1')
-
-      const einstieg = await screen.findByRole('link', { name: /durchgehen$/ })
       expect(einstieg.getAttribute('aria-label')).toMatch(/^Duplikate vergleichen\b/)
+      expect(einstieg.getAttribute('aria-label')).toMatch(/—/)
       expect(einstieg.getAttribute('aria-label')).not.toMatch(/^Duplikate vergleichen:/)
-      expect(screen.getAllByRole('link', { name: /^Duplikate vergleichen:/ })).toHaveLength(1)
-      expect(
-        screen.getByRole('link', { name: 'Duplikate vergleichen: serie.jpg' }),
-      ).toHaveAttribute('href', '/projects/1/photos/7/duplicates')
+      expect(screen.queryAllByRole('link', { name: /^Duplikate vergleichen:/ })).toHaveLength(0)
     })
 
     it('steht NICHT da, wenn es keine einzige Gruppe gibt', async () => {
@@ -830,65 +709,6 @@ describe('PhotoGridPage', () => {
       expect(screen.queryByRole('link', { name: /durchgehen/i })).not.toBeInTheDocument()
       expect(duplicatesApi.getDuplicateGroupIndex).not.toHaveBeenCalled()
     })
-  })
-
-  // Die beiden folgenden Faelle ziehen ebenfalls in den Gate-Modus um - sie pruefen dieselbe
-  // Schaltflaeche und waeren in der normalen Uebersicht nicht mehr rot zu bekommen.
-  it("allows confirming a second tile while an earlier tile's confirm is still in flight", async () => {
-    // Regression fuer einen im UI/UX-Review gefundenen Bug: eine gemeinsam genutzte
-    // useSetRatingMutation-Instanz fuer die ganze Seite hat frueher jeden weiteren Klick
-    // stillschweigend ignoriert, solange irgendeine andere Kachel noch "isPending" war - genau
-    // das Batch-Bestaetigen, das dieser Button laut Spec ermoeglichen soll, war dadurch kaputt.
-    vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [
-        photo({ id: 1, ratings: [], suggestion: suggestion() }),
-        photo({ id: 2, ratings: [], suggestion: suggestion() }),
-      ],
-      total: 2,
-    })
-    vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
-      photoId === 1
-        ? new Promise(() => {})
-        : Promise.resolve({
-            photo_id: photoId,
-            user_id: 1,
-            status: 'rejected' as const,
-            favorite: false,
-            updated_at: '2026-09-13T10:00:00',
-          }),
-    )
-    const user = userEvent.setup()
-
-    renderPage('/projects/1/photos?filter=suggested&gate=1')
-    const [firstButton, secondButton] = await screen.findAllByRole('button', {
-      name: /vorschlag übernehmen/i,
-    })
-    await user.click(firstButton)
-    await user.click(secondButton)
-
-    await waitFor(() => expect(ratingsApi.setRating).toHaveBeenCalledWith(2, 'rejected'))
-  })
-
-  it('confirms a suggestion on click without navigating to the detail view', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue({
-      items: [photo({ id: 7, ratings: [], suggestion: suggestion({ status: 'rejected' }) })],
-      total: 1,
-    })
-    vi.mocked(ratingsApi.setRating).mockResolvedValue({
-      photo_id: 7,
-      user_id: 1,
-      status: 'rejected',
-      favorite: false,
-      updated_at: '2026-09-13T10:00:00',
-    })
-    const user = userEvent.setup()
-
-    renderPage('/projects/1/photos?filter=suggested&gate=1')
-    const confirmButton = await screen.findByRole('button', { name: /vorschlag übernehmen/i })
-    await user.click(confirmButton)
-
-    expect(ratingsApi.setRating).toHaveBeenCalledWith(7, 'rejected')
-    expect(screen.queryByText('Einzelbild-Seite')).not.toBeInTheDocument()
   })
 
   /*
@@ -942,67 +762,6 @@ describe('PhotoGridPage', () => {
         /\/photos\/\d+(\?|$)/.test(anchor.getAttribute('href') ?? ''),
       )
       expect(photoLinks).toHaveLength(1)
-    })
-  })
-  describe('gate mode (&gate=1)', () => {
-    it('shows a banner with candidate count and confirm button, hidden without the gate param', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1 }), photo({ id: 2 })],
-        total: 2,
-      })
-
-      renderPage('/projects/1/photos?filter=suggested')
-      await screen.findAllByRole('listitem')
-      expect(screen.queryByRole('button', { name: /ausschuss gesichtet/i })).not.toBeInTheDocument()
-    })
-
-    it('shows the banner and candidate count when gate=1', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1 }), photo({ id: 2 })],
-        total: 2,
-      })
-
-      renderPage('/projects/1/photos?filter=suggested&gate=1')
-
-      expect(await screen.findByText(/2 kandidaten/i)).toBeInTheDocument()
-      expect(
-        screen.getByRole('button', { name: 'Ausschuss gesichtet, weiter' }),
-      ).toBeInTheDocument()
-    })
-
-    it('confirms the gate and navigates to the project pipeline overview on click (Spec 0042, AK9)', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({
-        items: [photo({ id: 1 })],
-        total: 1,
-      })
-      const user = userEvent.setup()
-
-      renderPage('/projects/1/photos?filter=suggested&gate=1')
-      const confirmButton = await screen.findByRole('button', {
-        name: 'Ausschuss gesichtet, weiter',
-      })
-      await user.click(confirmButton)
-
-      await waitFor(() => expect(projectsApi.confirmAusschussGate).toHaveBeenCalledWith(1))
-      expect(await screen.findByText('Projekt-Pipeline-Uebersicht')).toBeInTheDocument()
-    })
-
-    it('shows an error alert when confirming the gate fails', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 1 })], total: 1 })
-      vi.mocked(projectsApi.confirmAusschussGate).mockRejectedValue(
-        new ApiError(409, 'Kein erfolgreicher Ausschuss-Lauf.'),
-      )
-      const user = userEvent.setup()
-
-      renderPage('/projects/1/photos?filter=suggested&gate=1')
-      const confirmButton = await screen.findByRole('button', {
-        name: 'Ausschuss gesichtet, weiter',
-      })
-      await user.click(confirmButton)
-
-      expect(await screen.findByRole('alert')).toHaveTextContent(
-        'Kein erfolgreicher Ausschuss-Lauf.',
-      )
     })
   })
 

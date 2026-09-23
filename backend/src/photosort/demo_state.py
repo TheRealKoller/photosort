@@ -1639,8 +1639,10 @@ async def _seed_duplicate_project(
             photos_total=len(photos),
             photos_processed=len(photos),
             suggestions_found=mit_vorschlag,
-            # Das Gate bleibt UNBESTAETIGT: Die Vergleichsansicht ist der Weg durch die Sichtung,
-            # und ein bereits bestaetigtes Gate zeigte den Einstieg in sie nie.
+            # Das Gate bleibt UNBESTAETIGT: Der Ausschuss-Schritt zeigt seine Uebersicht samt
+            # Abschluss-Aktion nur, solange nicht bestaetigt wurde (Spec 0525) - und genau diese
+            # Ansicht soll der Demo-Bestand vorfuehrbar machen. Der listenweite Einstieg in die
+            # Vergleichsansicht haengt seit Spec 0525 nicht mehr am Gate.
             gate_confirmed_at=None,
         )
     )
