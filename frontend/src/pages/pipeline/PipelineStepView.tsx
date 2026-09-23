@@ -3,7 +3,6 @@ import { useParams } from 'react-router'
 
 import type { StepId } from '../../utils/pipelineSteps'
 import { AusschussStepPage } from './AusschussStepPage'
-import { GateStepPage } from './GateStepPage'
 import { KriterienStepPage } from './KriterienStepPage'
 import { KuratierungStepPage } from './KuratierungStepPage'
 import { ScanStepPage } from './ScanStepPage'
@@ -13,10 +12,12 @@ import { ScanStepPage } from './ScanStepPage'
 // Logik-Datei dokumentiert (analog utils/timeOfDay.ts) - eine Komponenten-/JSX-Zuordnung dort würde
 // diese Eigenschaft aufweichen und pipelineSteps.test.ts unnötig an React koppeln. Technische
 // Detailentscheidung innerhalb der akzeptierten Spec.
+//
+// Der frühere eigene `gate`-Eintrag ist mit Spec 0525 entfallen: Erkennung und Sichtung liegen
+// beide in `AusschussStepPage`.
 const STEP_COMPONENTS: Record<StepId, ComponentType> = {
   scan: ScanStepPage,
   ausschuss: AusschussStepPage,
-  gate: GateStepPage,
   kriterien: KriterienStepPage,
   kuratierung: KuratierungStepPage,
 }

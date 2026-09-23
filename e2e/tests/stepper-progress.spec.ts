@@ -35,7 +35,7 @@ const TOLERANCE = 1
 
 /** Die Zahl der Pipeline-Schritte. Steht auch im Produkt als `PIPELINE_STEPS.length`; hier
  * bewusst als eigene Erwartung, damit ein stiller Wegfall eines Schritts auffaellt. */
-const STEP_COUNT = 5
+const STEP_COUNT = 4
 
 interface Messung {
   /** Waagerechte Mitte der Spalte des aktuellen Schritts, im Viewport. */
@@ -65,7 +65,7 @@ async function messe(page: Page, erwarteterIndex: number): Promise<Messung> {
     }),
   )
 
-  // VORBEDINGUNG SPALTENGEOMETRIE: fuenf Spalten mit Breite > 0, paarweise gleich breit und
+  // VORBEDINGUNG SPALTENGEOMETRIE: vier Spalten mit Breite > 0, paarweise gleich breit und
   // lueckenlos aneinander. Das ist die Zusicherung, die ein `gap-*` am `<ol>` unmittelbar rot
   // macht.
   for (const [index, kasten] of kaesten.entries()) {

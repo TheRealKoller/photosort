@@ -250,7 +250,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   await expect(stepper).toBeVisible()
 
   await assertTappable(
-    stepper.getByRole('link', { name: /^Schritt 1 von 5: Scan/ }),
+    stepper.getByRole('link', { name: /^Schritt 1 von 4: Scan/ }),
     'Schritt 1 der Schrittleiste (Randspalte)',
   )
   checked.push('Schritt 1 der Schrittleiste')

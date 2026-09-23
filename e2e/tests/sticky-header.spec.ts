@@ -194,7 +194,7 @@ test('Stepper-Leiste und Kopfzeile stehen im gescrollten Zustand fugenlos untere
       'Projektbereiche (Ausloeser der Projektnavigation)',
       page.getByRole('button', { name: 'Projektbereiche' }),
     ],
-    ['erster Schritt der Leiste', page.getByRole('link', { name: /^Schritt 1 von 5: Scan/ })],
+    ['erster Schritt der Leiste', page.getByRole('link', { name: /^Schritt 1 von 4: Scan/ })],
   ]
   for (const [name, control] of bedienelemente) {
     expect(await trefferInDerMitte(control), `Treffer in der Mitte von "${name}"`).toBe(
@@ -206,7 +206,7 @@ test('Stepper-Leiste und Kopfzeile stehen im gescrollten Zustand fugenlos untere
   //    seit Spec 0387 nicht mehr zum fixierten Bereich und scrollt mit dem Inhalt weg. Ab `sm:`
   //    ist sie ueberhaupt nicht dargestellt, dort waere die Messung gegenstandslos.
   if (width < 640) {
-    const orientierung = page.getByText('Schritt 1 von 5: Scan', { exact: true })
+    const orientierung = page.getByText('Schritt 1 von 4: Scan', { exact: true })
     await expect(orientierung, 'Orientierungszeile im schmalen Viewport').toHaveCount(1)
     const zeile = await orientierung.boundingBox()
     expect(zeile, 'Kasten der Orientierungszeile').not.toBeNull()
