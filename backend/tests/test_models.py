@@ -41,7 +41,7 @@ from photosort.models import (
     ScoringRun,
     User,
 )
-from tests.event_rows import event_id_of_run
+from tests.event_rows import event_id_of_run, event_of_run
 
 
 async def test_create_project(db_session: AsyncSession) -> None:
@@ -604,18 +604,52 @@ async def _count_photo_rankings(db_session: AsyncSession) -> int:
     return (await db_session.execute(select(func.count()).select_from(PhotoRanking))).scalar_one()
 
 
+async def _count_events(db_session: AsyncSession) -> int:
+    return (await db_session.execute(select(func.count()).select_from(Event))).scalar_one()
+
+
 async def test_deleting_criterion_scoring_run_cascades_to_photo_rankings(
     db_session: AsyncSession,
 ) -> None:
     """specs/features/0044-projekte-loeschen.md, AK "Voraussetzung (Cascade-Fix)", Run-Seite.
 
     Assertion bewusst als ZEILENZAEHLUNG und nicht als "es ist keine Ausnahme geflogen": die
-    Suite laeuft gegen SQLite OHNE `PRAGMA foreign_keys=ON` (siehe conftest.py), eine fehlende
-    Kaskade erzeugt dort keinen IntegrityError, sondern verwaiste Zeilen."""
+    Zeilenzahl nennt auch die verwaiste Zeile, die ein fehlender Fremdschluessel selbst mit
+    gesetztem `PRAGMA foreign_keys=ON` nicht meldet."""
     run, _photo = await _make_ranking_graph(db_session)
     assert await _count_photo_rankings(db_session) == 1
 
     await db_session.delete(run)
+    await db_session.commit()
+
+    assert await _count_photo_rankings(db_session) == 0
+
+
+async def test_deleting_criterion_scoring_run_cascades_to_events(
+    db_session: AsyncSession,
+) -> None:
+    """Das Event ist der dritte Elternteil von `PhotoRanking` (`photo_rankings.event_id`).
+
+    SQLAlchemy leitet die Loeschreihenfolge von Tabellen aus RELATIONSHIPS ab, nicht aus
+    Fremdschluesseln: ohne `CriterionScoringRun.events` bliebe die Event-Zeile nach dem Loeschen
+    des Laufs stehen (und der Flush liefe mit gesetztem Pragma in eine Fremdschluesselverletzung)."""
+    run, _photo = await _make_ranking_graph(db_session)
+    assert await _count_events(db_session) == 1
+
+    await db_session.delete(run)
+    await db_session.commit()
+
+    assert await _count_events(db_session) == 0
+
+
+async def test_deleting_event_cascades_to_photo_rankings(db_session: AsyncSession) -> None:
+    """Die zweite Kante derselben Kaskade: `Event.rankings` muss die Rangzeilen mitnehmen, sonst
+    blieben sie als verwaiste Zeilen stehen."""
+    run, _photo = await _make_ranking_graph(db_session)
+    event = await event_of_run(db_session, run)
+    assert await _count_photo_rankings(db_session) == 1
+
+    await db_session.delete(event)
     await db_session.commit()
 
     assert await _count_photo_rankings(db_session) == 0

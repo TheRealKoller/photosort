@@ -629,6 +629,12 @@ class CriterionScoringRun(Base):
     # PhotoRanking hängt an ZWEI Elternteilen. Ohne diese Kaskade bleiben beim Löschen eines
     # Kuratierungslaufs verwaiste photo_rankings-Zeilen zurück.
     rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
+    # Das Event ist der DRITTE Elternteil von PhotoRanking (`photo_rankings.event_id`).
+    # SQLAlchemy leitet die Löschreihenfolge von Tabellen aus RELATIONSHIPS ab, nicht aus
+    # Fremdschlüsseln: ohne diese Kaskade löscht der Flush `events` nach `criterion_scoring_runs`
+    # und läuft unter durchgesetztem `PRAGMA foreign_keys=ON` in eine Fremdschlüsselverletzung,
+    # statt die Event-Zeilen mitzunehmen.
+    events: Mapped[list[Event]] = relationship(cascade="all, delete-orphan")
 
 
 class Event(Base):
@@ -691,6 +697,12 @@ class Event(Base):
     # ausschließlich über `places.sanitize_place_name` hierher (verworfen, nie abgeschnitten), und
     # beim Rendern ausschließlich als regulärer React-Textknoten.
     place_name: Mapped[str | None] = mapped_column(default=None)
+
+    # Die Rangzeilen DIESES Events - die zweite Kante derselben Kaskade wie
+    # CriterionScoringRun.rankings. Ohne sie bliebe `session.delete(event)` an den
+    # photo_rankings-Zeilen hängen (und der Flush liefe mit gesetztem Pragma in eine
+    # Fremdschlüsselverletzung).
+    rankings: Mapped[list[PhotoRanking]] = relationship(cascade="all, delete-orphan")
 
 
 class PhotoRanking(Base):
