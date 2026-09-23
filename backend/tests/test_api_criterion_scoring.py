@@ -5,6 +5,8 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.deps import get_job_enqueuer, get_opencloud_client
@@ -13,6 +15,11 @@ from photosort.main import app
 from photosort.models import (
     ClassificationPhase,
     CriterionScoringRun,
+    DuplicateDecision,
+    Photo,
+    PhotoDuplicateDecision,
+    PhotoScore,
+    RatingStatus,
     ScanStatus,
     ScoringRun,
 )
@@ -48,9 +55,11 @@ class FakeEnqueuer:
         self.calls.append((function, args))
 
 
-async def _create_project(client: httpx.AsyncClient) -> int:
+async def _create_project(
+    client: httpx.AsyncClient, name: str = "Costa Rica", path: str = "A"
+) -> int:
     app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
-    created = await client.post("/projects", json={"name": "Costa Rica", "opencloud_path": "A"})
+    created = await client.post("/projects", json={"name": name, "opencloud_path": path})
     result: int = created.json()["id"]
     return result
 
@@ -71,6 +80,65 @@ async def _add_successful_scoring_run(
     await session.commit()
     await session.refresh(run)
     return run
+
+
+_PHOTO_MOMENT = datetime(2023, 5, 1, 12, 0, 0, tzinfo=UTC)
+
+
+async def _add_photo(
+    session: AsyncSession,
+    project_id: int,
+    path: str,
+    *,
+    open_suggestion: bool = False,
+    duplicate_of: int | None = None,
+    decision: DuplicateDecision | None = None,
+) -> int:
+    """Ein Foto mit Bewertungszeile, wahlweise mit offenem Vorschlag und/oder Entscheidungszeile.
+
+    Beide Ursachen sind EINZELN schaltbar, weil der Ausschuss-Bestand des Massenwegs (wie der
+    Lesepfad) ihre VEREINIGUNG ist und `has_open_suggestion` nur die Aufnahmen OHNE Zeile trifft."""
+    photo = Photo(
+        project_id=project_id,
+        relative_path=path,
+        etag=f"etag-{path}",
+        content_length=1,
+        taken_at=_PHOTO_MOMENT,
+        taken_at_original=_PHOTO_MOMENT,
+        last_modified=_PHOTO_MOMENT,
+    )
+    session.add(photo)
+    await session.flush()
+    session.add(
+        PhotoScore(
+            photo_id=photo.id,
+            sharpness=100.0,
+            exposure=0.0,
+            suggested_status=RatingStatus.REJECTED if open_suggestion else None,
+            duplicate_of=duplicate_of,
+            computed_at=_PHOTO_MOMENT,
+        )
+    )
+    if decision is not None:
+        session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=decision))
+    await session.flush()
+    return photo.id
+
+
+async def _stored_decision(session: AsyncSession, photo_id: int) -> DuplicateDecision | None:
+    return (
+        await session.execute(
+            select(PhotoDuplicateDecision.decision).where(
+                PhotoDuplicateDecision.photo_id == photo_id
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def _decision_count(session: AsyncSession) -> int:
+    return (
+        await session.execute(select(func.count()).select_from(PhotoDuplicateDecision))
+    ).scalar_one()
 
 
 class TestConfirmAusschussGate:
@@ -129,6 +197,217 @@ class TestConfirmAusschussGate:
         assert first.status_code == 200
         assert second.status_code == 200
         assert second_detail.json()["last_scoring_run"]["gate_confirmed_at"] == first_timestamp
+
+    async def test_writes_discard_for_every_open_suggestion(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK9/AK10 (Spec 0525): Die Bestaetigung uebernimmt alle zu diesem Zeitpunkt OFFENEN
+        Vorschlaege in einem Zug - die Menge bestimmt der Server aus `has_open_suggestion`.
+
+        Geprueft wird die ZAHL DER ZEILEN, nicht nur der Antwortcode: Eine Umsetzung, die nur den
+        Zeitstempel setzt (das Verhalten vor dieser Spec), antwortet ebenfalls `200`."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_successful_scoring_run(db_session, project_id)
+        offene = [
+            await _add_photo(db_session, project_id, f"offen-{index}.jpg", open_suggestion=True)
+            for index in range(3)
+        ]
+        await db_session.commit()
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/confirm-ausschuss-gate"
+        )
+
+        assert response.status_code == 200
+        assert await _decision_count(db_session) == 3
+        for photo_id in offene:
+            assert await _stored_decision(db_session, photo_id) is DuplicateDecision.DISCARD
+
+    async def test_leaves_an_already_decided_photo_untouched(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEIT (S4): Eine bestehende Entscheidungszeile bleibt unveraendert - und zwar durch
+        die AUSWAHLBEDINGUNG, nicht durch Nachfilterung. Ein `discard` auf eine manuell behaltene
+        Aufnahme waere deren stille Ruecknahme; sie verschwaende aus Bewertung und Album, ohne dass
+        jemand sie angeruehrt haette.
+
+        Der Fall traegt Vorschlag UND Zeile (die Schnittmenge): Genau dort fiele eine Umsetzung auf,
+        die ohne `has_open_suggestion` ueber den Bestand liefe."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_successful_scoring_run(db_session, project_id)
+        behalten = await _add_photo(
+            db_session,
+            project_id,
+            "behalten.jpg",
+            open_suggestion=True,
+            decision=DuplicateDecision.KEEP,
+        )
+        aussortiert = await _add_photo(
+            db_session,
+            project_id,
+            "aussortiert.jpg",
+            open_suggestion=True,
+            decision=DuplicateDecision.DISCARD,
+        )
+        offen = await _add_photo(db_session, project_id, "offen.jpg", open_suggestion=True)
+        await db_session.commit()
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/confirm-ausschuss-gate"
+        )
+
+        assert response.status_code == 200
+        assert await _stored_decision(db_session, behalten) is DuplicateDecision.KEEP
+        assert await _stored_decision(db_session, aussortiert) is DuplicateDecision.DISCARD
+        assert await _stored_decision(db_session, offen) is DuplicateDecision.DISCARD
+        assert await _decision_count(db_session) == 3
+
+    async def test_is_idempotent_on_the_decision_rows_too(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK11: Der zweite Aufruf ist auch in den ZEILEN idempotent. Ohne `has_open_suggestion`
+        schriebe er denselben `discard` erneut - sichtbar waere das kaum, ausser an einem
+        Primaerschluessel, der wirft (dann waere es eine `500`)."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_successful_scoring_run(db_session, project_id)
+        await _add_photo(db_session, project_id, "offen.jpg", open_suggestion=True)
+        await db_session.commit()
+
+        first = await authenticated_api_client.post(
+            f"/projects/{project_id}/confirm-ausschuss-gate"
+        )
+        zweite = await authenticated_api_client.post(
+            f"/projects/{project_id}/confirm-ausschuss-gate"
+        )
+
+        assert first.status_code == zweite.status_code == 200
+        assert await _decision_count(db_session) == 1
+
+    async def test_a_second_run_writes_only_the_then_open_ones(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK11 zweite Haelfte: Nach einem NEUEN Lauf sind genau die dann offenen dabei - die alten
+        Zeilen ueberleben ihn unangetastet (die Entscheidungstabelle ist keine Lauf-Tabelle). Eine
+        Umsetzung, die je Lauf ueberschreibt, holte die manuelle `keep`-Entscheidung hier zurueck auf
+        `discard`."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_successful_scoring_run(db_session, project_id)
+        gewinner = await _add_photo(db_session, project_id, "gewinner.jpg")
+        verlierer = await _add_photo(
+            db_session, project_id, "verlierer.jpg", open_suggestion=True, duplicate_of=gewinner
+        )
+        await db_session.commit()
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        zurueckgenommen = await authenticated_api_client.put(
+            f"/projects/{project_id}/photos/{verlierer}/duplicate-decision",
+            json={"decision": "keep"},
+        )
+        assert zurueckgenommen.status_code == 200, "Vorbedingung des Falls: die Handlung greift"
+        nachzuegler = await _add_photo(
+            db_session, project_id, "nachzuegler.jpg", open_suggestion=True
+        )
+        await db_session.commit()
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/confirm-ausschuss-gate"
+        )
+
+        assert response.status_code == 200
+        assert await _stored_decision(db_session, verlierer) is DuplicateDecision.KEEP
+        assert await _stored_decision(db_session, nachzuegler) is DuplicateDecision.DISCARD
+        assert await _decision_count(db_session) == 2
+
+    async def test_never_touches_another_project(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEIT (S1): `has_open_suggestion` traegt selbst KEINE Projektbedingung - sie kommt
+        allein aus dem umgebenden Join auf `Photo`. Ohne ihn schriebe ein Aufruf ohne Body `discard`
+        ueber ALLE Projekte der Instanz.
+
+        Der stille Schaden waere der groessere: Die fremden Aufnahmen ueberlebten den Ausschuss
+        nicht mehr, ohne dass in jenem Projekt je jemand bestaetigt haette."""
+        other_id = await _create_project(authenticated_api_client, "Island", "B")
+        home_id = await _create_project(authenticated_api_client)
+        await _add_successful_scoring_run(db_session, home_id)
+        await _add_successful_scoring_run(db_session, other_id)
+        fremd = await _add_photo(db_session, other_id, "fremd.jpg", open_suggestion=True)
+        await _add_photo(db_session, home_id, "eigen.jpg", open_suggestion=True)
+        await db_session.commit()
+
+        response = await authenticated_api_client.post(
+            f"/projects/{home_id}/confirm-ausschuss-gate"
+        )
+
+        assert response.status_code == 200
+        assert await _decision_count(db_session) == 1
+        assert await _stored_decision(db_session, fremd) is None
+        fremd_detail = await authenticated_api_client.get(f"/projects/{other_id}")
+        assert fremd_detail.json()["last_scoring_run"]["gate_confirmed_at"] is None
+
+    async def test_a_forced_abort_writes_neither_rows_nor_timestamp(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SICHERHEIT (S3): Massenweg und Zeitstempel liegen in EINER Transaktion.
+
+        Ein halb geschriebener Bestand waere eine willkuerliche Teilmenge in der Menge, die den
+        Homeserver verlaesst - und ein gesetzter Zeitstempel oeffnete den naechsten Schritt, ohne
+        dass die Uebernahme je stattgefunden haette.
+
+        Der Abbruch wird EINGESETZT statt nachgestellt (Muster
+        `test_api_duplicate_decisions.py::test_a_concurrent_write_on_the_same_photo_is_a_409_and_never_a_500`):
+        Das Fenster zwischen den Anweisungen einer Transaktion ist in einer Testsitzung mit
+        derselben Verbindung nicht herstellbar, und der Testgegenstand ist der Zweig, nicht das
+        Scheduling. `calls` belegt, dass er betreten wurde - ohne diese Zusicherung bestuende der
+        Fall auch gegen eine Umsetzung, die den Schreibweg gar nicht erst betritt."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_successful_scoring_run(db_session, project_id)
+        offen = await _add_photo(db_session, project_id, "offen.jpg", open_suggestion=True)
+        await db_session.commit()
+        calls = {"count": 0}
+        original_flush = AsyncSession.flush
+
+        async def _always_failing(self: AsyncSession, *args: object, **kwargs: object) -> None:
+            calls["count"] += 1
+            raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed"))
+
+        monkeypatch.setattr(AsyncSession, "flush", _always_failing)
+        try:
+            response = await authenticated_api_client.post(
+                f"/projects/{project_id}/confirm-ausschuss-gate"
+            )
+        finally:
+            monkeypatch.setattr(AsyncSession, "flush", original_flush)
+
+        assert calls["count"] >= 1, "der IntegrityError-Zweig wurde gar nicht betreten"
+        assert response.status_code == 409
+        # Der Rueckzug ist vollstaendig: keine Zeile, kein Zeitstempel.
+        assert await _stored_decision(db_session, offen) is None
+        assert await _decision_count(db_session) == 0
+        detail = await authenticated_api_client.get(f"/projects/{project_id}")
+        assert detail.json()["last_scoring_run"]["gate_confirmed_at"] is None
+
+    async def test_a_body_of_ids_is_never_read(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """SICHERHEIT (S2): Der Aufruf bleibt bodyfrei. Eine mitgeschickte Id-Liste wird NIE gelesen -
+        die Menge bestimmt allein der Server aus `has_open_suggestion`. Waere sie eine Anweisung,
+        waere das ein Massen-Schreibweg auf beliebige Fotos des Projekts."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_successful_scoring_run(db_session, project_id)
+        ausserhalb = await _add_photo(db_session, project_id, "ohne-vorschlag.jpg")
+        await _add_photo(db_session, project_id, "offen.jpg", open_suggestion=True)
+        await db_session.commit()
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/confirm-ausschuss-gate", json={"photo_ids": [ausserhalb]}
+        )
+
+        assert response.status_code == 200
+        assert await _stored_decision(db_session, ausserhalb) is None
+        assert await _decision_count(db_session) == 1
 
 
 class TestClassify:

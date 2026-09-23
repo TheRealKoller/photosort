@@ -24,16 +24,18 @@ from photosort.clock import now_utc
 from photosort.cloud_vision import provider_for_vision_model
 from photosort.config import settings
 from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
-from photosort.duplicates import survives_ausschuss
+from photosort.duplicates import has_open_suggestion, survives_ausschuss
 from photosort.models import (
     ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
+    DuplicateDecision,
     FineLabel,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
     PhotoCriterionScore,
+    PhotoDuplicateDecision,
     PhotoFineLabel,
     PhotoMotifAssessment,
     PhotoScore,
@@ -895,10 +897,35 @@ async def confirm_ausschuss_gate(
     project_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, str]:
-    """Ausschuss-Gate: `409` ohne erfolgreichen `ScoringRun`; setzt bei vorhandenem
-    erfolgreichem `ScoringRun` `gate_confirmed_at`; wiederholter Aufruf ist idempotent (kein
-    Fehler, kein zweiter Effekt - ein bereits gesetzter Zeitstempel wird nicht ueberschrieben).
-    Projektweit, nicht personenbezogen: kein user_id-Bezug."""
+    """Abschluss des Ausschuss-Schritts: uebernimmt ALLE offenen Vorschlaege und gibt den
+    naechsten Schritt frei.
+
+    `409` ohne erfolgreichen `ScoringRun`. Mit erfolgreichem Lauf schreibt der Aufruf in EINER
+    Transaktion fuer jede Aufnahme mit `duplicates.py::has_open_suggestion` die Zeile `discard` und
+    setzt danach `gate_confirmed_at`, falls es leer ist (Auflage S3): Ein halb geschriebener Bestand
+    waere eine willkuerliche Teilmenge in der Menge, die den Homeserver verlaesst, und ein gesetzter
+    Zeitstempel ohne die Uebernahme oeffnete den naechsten Schritt ohne sie.
+
+    SICHERHEIT (S1): Die Menge bestimmt der SERVER, projektweit und in DERSELBEN Anweisung wie die
+    Projektbindung - ein Aufruf ohne Body schriebe sonst `discard` ueber alle Projekte der Instanz.
+    `has_open_suggestion` traegt selbst keine Projektbedingung; sie kommt allein aus dem Join auf
+    `Photo`.
+
+    SICHERHEIT (S2): Der Aufruf bleibt bodyfrei. Eine mitgeschickte Id-Liste wird nie gelesen. Ein
+    Massen-`keep` gibt es nicht: Nur `discard` verkleinert den abfliessenden Bestand (ADR 0104
+    Punkt 3, fail-closed) - die einzige Richtung, die ihn vergroesserte, waere zugleich ein
+    Massen-Schreibweg auf beliebige Fotos.
+
+    SICHERHEIT (S4): Bestehende Entscheidungszeilen bleiben unangetastet, und zwar durch die
+    Auswahlbedingung statt durch Nachfilterung: Wer eine Zeile traegt, ist kein offener Vorschlag. Ein
+    `discard` auf eine manuell behaltene Aufnahme waere deren stille Ruecknahme. Deshalb auch KEIN
+    `DELETE` vor dem Schreiben - anders als beim Einzel- und Gruppenweg wird hier nie ueberschrieben.
+
+    Wiederholter Aufruf ist idempotent (kein Fehler, kein zweiter Effekt, der Zeitstempel wird nie
+    ueberschrieben); nach einem neuen Lauf schreibt er genau die dann offenen. Ein gleichzeitiger
+    Einzel-Schreibvorgang auf dieselbe Aufnahme wird `409`, nie `500`: Der Primaerschluessel ist
+    `photo_id`, und der `flush` VOR dem `commit` holt den Fehler an eine Stelle, an der er sich
+    uebersetzen laesst. Projektweit, nicht personenbezogen: kein user_id-Bezug."""
     await _get_project_or_404(project_id, session)
 
     latest_scoring_run = await _latest_scoring_run(session, project_id)
@@ -908,8 +935,45 @@ async def confirm_ausschuss_gate(
             detail="Fuehre zuerst die Ausschuss-Erkennung erfolgreich aus.",
         )
 
+    # EINE Anweisung, zwei UND-Glieder: die Projektbindung und der offene Vorschlag. Stuende die
+    # Projektbedingung in einer zweiten Anweisung daneben, waere sie in einer Auswahl ohne sie
+    # wirkungslos - und der Schreibweg traefe jeden offenen Vorschlag der ganzen Instanz.
+    offene_ids = list(
+        (
+            await session.execute(
+                select(Photo.id)
+                .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+                .where(Photo.project_id == project_id, has_open_suggestion())
+            )
+        ).scalars()
+    )
+
+    if offene_ids:
+        session.add_all(
+            [
+                PhotoDuplicateDecision(photo_id=photo_id, decision=DuplicateDecision.DISCARD)
+                for photo_id in offene_ids
+            ]
+        )
+        try:
+            await session.flush()
+        except IntegrityError:
+            # Das schmale Fenster der Auflage S3: Die andere Sitzung hat zwischen unserer Auswahl
+            # und unserem `INSERT` dieselbe Aufnahme entschieden. Der Primaerschluessel wirft; der
+            # Rueckzug umfasst AUCH den Zeitstempel unten, der noch gar nicht gesetzt ist.
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Die Entscheidung zu dieser Duplikat-Gruppe wurde gerade veraendert. "
+                    "Bitte erneut versuchen."
+                ),
+            ) from None
+
     if latest_scoring_run.gate_confirmed_at is None:
         latest_scoring_run.gate_confirmed_at = datetime.now(UTC).replace(tzinfo=None)
+        await session.commit()
+    elif offene_ids:
         await session.commit()
 
     return {"status": "confirmed"}
