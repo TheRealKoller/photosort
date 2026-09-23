@@ -1,6 +1,6 @@
 # 0525 - Der Ausschuss wird ein Schritt: Übersicht, Detailansicht, Sammelbestätigung
 
-**Status:** Accepted
+**Status:** Implemented ([PR #527](https://github.com/TheRealKoller/photosort/pull/527))
 **Erstellt:** 2026-09-23
 **Bezug:** [Issue #525](https://github.com/TheRealKoller/photosort/issues/525), ADR
 [`0121`](../decisions/0121-der-ausschuss-wird-ein-schritt-uebersicht-detail-und-abschluss-aktion.md),
