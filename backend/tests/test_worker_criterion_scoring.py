@@ -63,6 +63,7 @@ from photosort.models import (
     PhotoScore,
     Project,
     RatingStatus,
+    RemoteCategoryClassificationRun,
     ScanStatus,
     ScoringRun,
     User,
@@ -274,22 +275,37 @@ class FaceLandmarkerStub:
 async def test_guard_fails_run_when_scoring_run_id_does_not_exist(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
+    # Spec 0350/AK3: Beruf sich ein Kriterien-Lauf auf einen ScoringRun, den es NICHT gibt, legt
+    # er gar nichts mehr an. Frueher entstand hier ein FAILED-Lauf als "sauberer Fehlschlag" - auf
+    # der Zieldatenbank haette das INSERT keine Zeile gehabt, auf die sein Fremdschluessel zeigen
+    # kann, und die Transaktion abgerissen (ADR 0122 Punkt 4). Die Ausnahme verlaesst die Funktion.
     project = await _make_project(db_session)
 
-    run = await run_criterion_scoring(
-        db_session,
-        project,
-        scoring_run_id=999,
-        cache_dir=tmp_path,
-        build_detector=_no_face_detector,
-        build_animal_detector=_no_animal_detector,
-        build_classifier=_no_scene_classifier,
-        build_aesthetics=_no_aesthetics_model,
-        build_landmarker=_no_face_landmarker,
-    )
+    with pytest.raises(worker.CriterionScoringReferenceError, match="999"):
+        await run_criterion_scoring(
+            db_session,
+            project,
+            scoring_run_id=999,
+            cache_dir=tmp_path,
+            build_detector=_no_face_detector,
+            build_animal_detector=_no_animal_detector,
+            build_classifier=_no_scene_classifier,
+            build_aesthetics=_no_aesthetics_model,
+            build_landmarker=_no_face_landmarker,
+        )
 
-    assert run.status == ScanStatus.FAILED
-    assert run.error_message is not None
+    # Die vier Zeilentypen, die AK3 namentlich als leer fordert: der Abbruch passiert VOR jeder
+    # Zeile, statt wie frueher eine FAILED-Zeile zu hinterlassen.
+    assert (
+        await db_session.execute(select(func.count()).select_from(CriterionScoringRun))
+    ).scalar_one() == 0
+    assert (
+        await db_session.execute(select(func.count()).select_from(RemoteCategoryClassificationRun))
+    ).scalar_one() == 0
+    assert (await db_session.execute(select(func.count()).select_from(Event))).scalar_one() == 0
+    assert (
+        await db_session.execute(select(func.count()).select_from(PhotoRanking))
+    ).scalar_one() == 0
 
 
 async def test_guard_fails_run_when_scoring_run_id_is_stale(

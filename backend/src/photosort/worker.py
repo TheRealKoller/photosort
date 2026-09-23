@@ -1125,6 +1125,16 @@ class CriterionScoringGuardError(Exception):
     zusaetzlich zum eigenen 409 der API-Schicht."""
 
 
+class CriterionScoringReferenceError(Exception):
+    """Der in `scoring_run_id` referenzierte Bewertungslauf existiert nicht (mehr).
+
+    Der andere Fall als `CriterionScoringGuardError`: hier gibt es NICHTS anzulegen und nichts als
+    FAILED zu markieren. Dieses INSERT haette keine Zeile, auf die sein Fremdschluessel zeigen
+    koennte, und risse auf der Zieldatenbank die Transaktion ab - der bisher gepruefte "saubere
+    Fehlschlag" mit FAILED-Lauf ist dort kein erreichbarer Zustand. Die Ausnahme verlaesst die
+    Funktion deshalb, statt als FAILED-Lauf verschluckt zu werden (Spec 0350, ADR 0122 Punkt 4)."""
+
+
 # Die von _compute_content_criteria best-effort berechneten Kriterien-Keys - eine Liste statt
 # einzelner if-Blöcke im Aufrufer, damit ein weiteres bildbasiertes Kriterium keine Kopie des
 # Upsert-Codes braucht. Die zugehoerige CriterionSource wird bewusst NICHT hier dupliziert, sondern
@@ -2163,6 +2173,43 @@ async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
     await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id, None)
 
 
+async def _start_criterion_scoring_run(
+    session: AsyncSession,
+    project: Project,
+    scoring_run_id: int,
+    *,
+    cloud_requested: bool,
+    estimated_cost_usd: float | None = None,
+) -> CriterionScoringRun:
+    """Legt die Lauf-Zeile an - fuer BEIDE Aufrufer, und erst nach der Existenzpruefung des
+    referenzierten Bewertungslaufs.
+
+    Die Pruefung ist GLOBAL (`session.get(ScoringRun, ...)`), nicht projektgebunden: ein ScoringRun
+    existiert projektunabhaengig, und eine vorhandene, aber projektfremde oder veraltete id
+    "existiert" - sie gehoert damit in den Aktualitaets-Guard hinter dem INSERT (FAILED-Lauf) und
+    nicht in den ReferenceError (Spec 0350, ADR 0122 Punkt 4).
+
+    Das INSERT selbst bleibt ungeschuetzt: das Restfenster, in dem der Bewertungslauf zwischen
+    Pruefung und INSERT verschwindet, wird benannt und nicht zugedeckt (ADR 0122 Punkt 5)."""
+    if await session.get(ScoringRun, scoring_run_id) is None:
+        raise CriterionScoringReferenceError(
+            f"Der referenzierte Bewertungslauf {scoring_run_id} existiert nicht (mehr); es wird "
+            "keine Lauf-Zeile angelegt."
+        )
+
+    run = CriterionScoringRun(
+        project_id=project.id,
+        scoring_run_id=scoring_run_id,
+        status=ScanStatus.RUNNING,
+        cloud_requested=cloud_requested,
+        estimated_cost_usd=estimated_cost_usd,
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
 async def run_criterion_scoring(
     session: AsyncSession,
     project: Project,
@@ -2207,15 +2254,9 @@ async def run_criterion_scoring(
       die Cloud-Anreicherung, statt ungewollte Kosten und einen ungewollten Datenabfluss
       auszuloesen."""
     if run is None:
-        run = CriterionScoringRun(
-            project_id=project.id,
-            scoring_run_id=scoring_run_id,
-            status=ScanStatus.RUNNING,
-            cloud_requested=use_cloud,
+        run = await _start_criterion_scoring_run(
+            session, project, scoring_run_id, cloud_requested=use_cloud
         )
-        session.add(run)
-        await session.commit()
-        await session.refresh(run)
     _set_phase(run, ClassificationPhase.CRITERIA)
     await session.commit()
 
@@ -2822,16 +2863,13 @@ async def run_classification(
       ein BELEG, keine Eingabe - kein spaeterer Rechenweg liest sie."""
     cloud_active = use_cloud and project.cloud_vision_detection_enabled
 
-    run = CriterionScoringRun(
-        project_id=project.id,
-        scoring_run_id=scoring_run_id,
-        status=ScanStatus.RUNNING,
+    run = await _start_criterion_scoring_run(
+        session,
+        project,
+        scoring_run_id,
         cloud_requested=use_cloud,
         estimated_cost_usd=estimated_cost_usd,
     )
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
     # Die ERSTE Phase geht ueber denselben Weg wie jede spaetere, statt als
     # Konstruktor-Schluesselwort mitzulaufen. Sonst entkaeme genau sie der Bindung aus ADR 0116
     # Punkt 1, und die erste Phase JEDES Laufs - bei einem Lauf ohne Cloud die laengste - zeigte
