@@ -384,6 +384,9 @@ _ERWARTETE_VERWENDUNGEN = {
     # Spec 0525: die Auswahlmenge des Massenwegs im Abschluss des Ausschuss-Schritts. Die Menge
     # bestimmt der SERVER aus dem offenen Vorschlag - eine mitgeschickte Id-Liste wird nie gelesen.
     ("api/projects.py", "has_open_suggestion"): 1,
+    # Spec 0525: die zweite Haelfte der erweiterten Vorbedingung des EINZEL-Schreibwegs. Sie wird
+    # pro Foto und projektgebunden beantwortet (Auflage S10) - ein Sammelweg entsteht daraus nicht.
+    ("api/duplicate_decisions.py", "has_open_suggestion"): 1,
     # `is_candidate` - Anzeige, keine Grenze.
     ("api/photos.py", "survives_ausschuss_for"): 1,
     # Der Vorschlags-Zweig von `_filtered_photo_ids` und der Objekt-Zwilling `has_suggestion`; dazu
@@ -483,6 +486,6 @@ def test_the_six_replaced_occurrences_and_the_written_call_sites_are_held_side_b
     sql = sum(anzahl for (_datei, name), anzahl in gemessen.items() if name in _SQL_FASSUNGEN)
 
     assert _ERSETZTE_VORKOMMEN == 6
-    assert sum(gemessen.values()) == 10
-    assert sql == 8
+    assert sum(gemessen.values()) == 11
+    assert sql == 9
     assert sum(gemessen.values()) - sql == 2

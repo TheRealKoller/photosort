@@ -1835,6 +1835,23 @@ async def build_duplicate_group_out(
     )
 
 
+def empty_duplicate_group_out() -> DuplicateGroupOut:
+    """Der leere Gruppenstand fuer eine Aufnahme OHNE Gruppe (Spec 0525, AK6).
+
+    Der Einzel-Schreibweg nimmt seit Spec 0525 auch die Unschaerfe-Ablehnung an, die in keinem
+    Stern liegt: Dort ist die Entscheidung selbst das Ergebnis und es gibt keine Gruppe, die man
+    zurueckgeben koennte. Die Antwortform bleibt trotzdem dieselbe `DuplicateGroupOut` - die
+    Oberflaeche schreibt den Rueckgabewert der Entscheidung unmittelbar fort und braucht eine
+    zweite Anfrage sonst nur, um zu erfahren, dass es nichts zu zeigen gibt.
+
+    `position = 0` ist der eine Wert, der NICHT der 1-basierten Zaehlung der gefuellten Antwort
+    folgt, und er ist genau dafuer da: Ein Platz in einer Reihenfolge, die es nicht gibt, waere
+    eine erfundene Auskunft. `total = 0` sagt dasselbe ueber die Gesamtzahl."""
+    return DuplicateGroupOut(
+        items=[], position=0, total=0, previous_photo_id=None, next_photo_id=None
+    )
+
+
 class DuplicateGroupIndexOut(BaseModel):
     """Die Auskunft fuer den EINSTIEG: wie viele Duplikat-Gruppen es gibt und wo der Durchgang
     beginnt.

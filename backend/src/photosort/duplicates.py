@@ -169,9 +169,10 @@ def group_standing(representative_id: int, links: list[DuplicateLink]) -> GroupS
 #   ADR 0104 nicht mehr komplementaer sind) und "der Vorschlags-Zweig" schon vorher zwei Codeformen
 #   hatte - eine SQL- und eine Objektfassung, die der Paritaetstest aneinander band. Vier Aufrufe von
 #   `survives_ausschuss`, einer von `survives_ausschuss_for`, je einer von
-#   `has_open_suggestion`/`_for`. Seit Spec 0525 treten drei hinzu: der Massenweg
-#   (`api/projects.py`), die projektweite `open_count` des neuen Lesepfads und `has_ausschuss_entry`
-#   (der Bestand der Uebersicht, die VEREINIGUNG beider Ursachen).
+#   `has_open_suggestion`/`_for`. Seit Spec 0525 treten vier hinzu: der Massenweg
+#   (`api/projects.py`), die erweiterte Vorbedingung des Einzel-Schreibwegs
+#   (`api/duplicate_decisions.py`, Auflage S10), die projektweite `open_count` des neuen Lesepfads
+#   und `has_ausschuss_entry` (der Bestand der Uebersicht, die VEREINIGUNG beider Ursachen).
 #
 # Die Sollgroesse des Waechters ist die ZWEITE Zahl (`tests/test_ausschuss_ueberlebende.py`); die
 # erste steht in den Dokumenten und wird dort nicht nachgezogen. Wer beide verwechselt, "korrigiert"
