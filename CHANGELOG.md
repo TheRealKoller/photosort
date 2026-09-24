@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.48.0](https://github.com/TheRealKoller/photosort/compare/v0.47.0...v0.48.0) (2026-09-24)
+
+
+### Features
+
+* Ausschuss wird ein Schritt mit Uebersicht, Detailansicht und Sammelbestaetigung (Spec 0525) ([#527](https://github.com/TheRealKoller/photosort/issues/527)) ([ed358d0](https://github.com/TheRealKoller/photosort/commit/ed358d08aca707ab5da5cbe71ed265c1cbcf4800))
+* **backend:** Sehenswürdigkeitsname benennt ein Event nur bei passendem Aufnahmeort ([#530](https://github.com/TheRealKoller/photosort/issues/530)) ([26bc58c](https://github.com/TheRealKoller/photosort/commit/26bc58c747ca2cf225c086a03ced6b86910c9c15))
+* **event-probe:** den Album-Richtwert ausweisen und den Motivwechsel abschaltbar messen (Spec 0506) ([#519](https://github.com/TheRealKoller/photosort/issues/519)) ([81ce1ca](https://github.com/TheRealKoller/photosort/commit/81ce1cad7513736baf704a863698723348075e92))
+* **event-probe:** die Kohärenz eines Events in fünf Anzahlen messen (Spec 0506, PR 7) ([#520](https://github.com/TheRealKoller/photosort/issues/520)) ([659eefd](https://github.com/TheRealKoller/photosort/commit/659eefd00de2a2bb07ecc10edb066ba34067a600))
+* **event-probe:** Empfindlichkeit des Motivwechsels messen (Spec 0506, PR 2 von 3) ([#515](https://github.com/TheRealKoller/photosort/issues/515)) ([1e5c2c6](https://github.com/TheRealKoller/photosort/commit/1e5c2c6cd56edef2f0ef2c9b1662c2c2b89ab427))
+* **event-probe:** jeder Bericht nennt seinen Lauf, und Spec 0506 ist abgenommen ([#522](https://github.com/TheRealKoller/photosort/issues/522)) ([dc37a2c](https://github.com/TheRealKoller/photosort/commit/dc37a2c558e26684eb0ed2f214d9d94a5942380d))
+* **event-probe:** messen, woran eine Zusammenlegung scheitert (Spec 0506, PR 4) ([#517](https://github.com/TheRealKoller/photosort/issues/517)) ([6abf896](https://github.com/TheRealKoller/photosort/commit/6abf8967bf9593a19ef165ddde8120a6e50ca3d7))
+* **events:** Dauergrenze statt Kalendertag und zu kleine Cluster zusammenlegen (Spec 0506, PR 3 von 3) ([#516](https://github.com/TheRealKoller/photosort/issues/516)) ([9abe221](https://github.com/TheRealKoller/photosort/commit/9abe2218086e51d7bdb7f6efd3f47509a337213e))
+* **events:** der Motivwechsel begründet nur noch mit (Spec 0506, PR 8) ([#521](https://github.com/TheRealKoller/photosort/issues/521)) ([e4cb7ab](https://github.com/TheRealKoller/photosort/commit/e4cb7abb085ba5f8e93dfaff1677ffef095a1aca))
+* **events:** die Sehenswürdigkeit trennt nicht mehr, Stufe 3 bekommt ihre eigene Grenze (Spec 0506, PR 5) ([#518](https://github.com/TheRealKoller/photosort/issues/518)) ([64d1789](https://github.com/TheRealKoller/photosort/commit/64d1789314f72c5fbeca0683911912ce36d22fcc))
+* **events:** Messkommando für die Event-Gliederung (Spec 0506, PR 1 von 2) ([#512](https://github.com/TheRealKoller/photosort/issues/512)) ([de02a40](https://github.com/TheRealKoller/photosort/commit/de02a40242b3ba3b528c19bc193b9099a4d6bce1))
+* **frontend:** Bilddetailansicht zeigt das Foto groß und das Urteil zuerst (Spec 0497) ([#509](https://github.com/TheRealKoller/photosort/issues/509)) ([3e767a0](https://github.com/TheRealKoller/photosort/commit/3e767a0d427c5e39d447270c0a940ca658ff808f))
+* Sehenswürdigkeitsname braucht Rückhalt (Spec 0514) ([#524](https://github.com/TheRealKoller/photosort/issues/524)) ([9abab2b](https://github.com/TheRealKoller/photosort/commit/9abab2bf558fb9ccb28c6cc37c180ca42853cd0b))
+
+
+### Bug Fixes
+
+* **backend:** Fremdschluessel in der Testsuite durchsetzen (Spec 0350) ([#528](https://github.com/TheRealKoller/photosort/issues/528)) ([7b53295](https://github.com/TheRealKoller/photosort/commit/7b5329565e3232fe7a3a0e80f72c20202b6005af))
+* **frontend:** Texte und Typografie der Bilddetailansicht an den Entwurf angleichen ([#513](https://github.com/TheRealKoller/photosort/issues/513)) ([4812dba](https://github.com/TheRealKoller/photosort/commit/4812dbac189588bd46cdadc4c8404f8c1c10f336))
+
 ## [0.47.0](https://github.com/TheRealKoller/photosort/compare/v0.46.0...v0.47.0) (2026-09-17)
 
 
