@@ -1,6 +1,6 @@
 # 0529 - Sehenswürdigkeit benennt ein Event nur bei passendem Aufnahmeort
 
-**Status:** Accepted
+**Status:** Implemented ([PR #530](https://github.com/TheRealKoller/photosort/pull/530))
 **Erstellt:** 2026-09-24
 **Bezug:** [Issue #529](https://github.com/TheRealKoller/photosort/issues/529)
 
