@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from photosort import events as events_module
+from photosort import scoring as scoring_module
 from photosort.events import (
     BOUNDARY_CAUSES,
     BOUNDARY_DURATION,
@@ -125,6 +126,22 @@ def _at(**delta: float) -> datetime:
 def _north(meters: float) -> float:
     """Breitengrad `meters` noerdlich von `BASE_LAT`."""
     return BASE_LAT + meters / _METERS_PER_DEGREE_LATITUDE
+
+
+def _radius() -> float:
+    """Der gueltige Umkreis eines Sehenswuerdigkeitsnamens - als MODULATTRIBUT gelesen, nie als
+    Zahl. Alle Faelle dieser Datei rechnen die Grenze an diesem Symbol."""
+    return events_module.LANDMARK_PLAUSIBILITY_RADIUS_METERS
+
+
+def _latitude_at(distance_meters: float) -> float:
+    """Der Breitengrad, dessen Nordabstand von `BASE_LAT` GENAU `distance_meters` betraegt.
+
+    Gebildet ueber den Erdradius, mit dem `haversine_meters` rechnet - NICHT ueber `_north`. Die
+    beiden weichen um den Unterschied zwischen `_METERS_PER_DEGREE_LATITUDE` (111195.0) und dem
+    tatsaechlichen Bogen (R * pi/180 ~ 111194.93) ab; das sind 7e-8 relativ, genug, um den Fall
+    "genau auf der Grenze" unbemerkt nach innen zu schieben."""
+    return BASE_LAT + math.degrees(distance_meters / scoring_module._EARTH_RADIUS_METERS)
 
 
 def _measured_candidate(
@@ -397,13 +414,22 @@ def _build(
     signals: list[BoundarySignal] | None = None,
     *,
     min_event_photos: int | None = _NO_MERGING,
+    landmark_points_by_name: Mapping[str, tuple[tuple[float, float], ...]] | None = None,
 ) -> list[BuiltEvent]:
     """`build_events` plus die Invarianten - jeder Fall dieser Datei laeuft hierueber.
 
     `min_event_photos` steht VORGABEWEISE auf `_NO_MERGING`: Ein Fall ueber ein Signal soll genau
     dieses Signal messen. Wer Stufe 3 zum Gegenstand hat, gibt `None` (Betriebswert) oder einen
-    eigenen Wert mit."""
-    events = build_events(candidates, signals, min_event_photos=min_event_photos)
+    eigenen Wert mit.
+
+    `landmark_points_by_name` ist die Ortsauskunft der Sehenswuerdigkeitsnamen (Spec 0529). Die
+    Vorgabe `None` heisst "keine Auskunft vorhanden" und laesst jeden bestehenden Fall unveraendert."""
+    events = build_events(
+        candidates,
+        signals,
+        min_event_photos=min_event_photos,
+        landmark_points_by_name=landmark_points_by_name,
+    )
     assert_event_invariants(candidates, events)
     if _is_the_full_signal_set(signals):
         assert_full_signal_invariants(candidates, events)
@@ -1609,6 +1635,213 @@ class TestTheNameNeedsTheSupportOfItsPhotos:
         [event] = _build(candidates)
 
         assert event.landmark_name is None
+
+
+class TestTheLandmarkNameNeedsAPlausiblePlace:
+    """Spec 0529: Ein erkannter Sehenswuerdigkeitsname benennt ein Event nur, wenn mindestens einer
+    seiner Gazetteer-Fundorte im Umkreis des Aufnahmeorts liegt.
+
+    Die Prueffunktion ist ABSICHTLICH direkt aufgerufen: ihre fuenf Zweige sind eine REIHENFOLGE,
+    und drei davon liefern wahr - ueber `_build` allein waeren "keine Auskunft", "keine gemessene
+    Zelle" und "Schluessel fehlt" nicht auseinanderzuhalten. Die Grenze wird am SYMBOL gerechnet;
+    kein Fall nennt den Zahlwert."""
+
+    NAME = "Zugspitze"
+
+    def _cell(self) -> tuple[float, float]:
+        return (BASE_LAT, BASE_LON)
+
+    def _inside(self) -> tuple[float, float]:
+        return (_latitude_at(_radius() / 2), BASE_LON)
+
+    def _outside(self) -> tuple[float, float]:
+        return (_latitude_at(_radius() * 2), BASE_LON)
+
+    def test_without_any_lookup_every_name_stays(self) -> None:
+        """Zustand 1 (ADR 0123 Punkt 2): Es gibt keine Auskunft - der Name bleibt."""
+        assert events_module._landmark_name_is_plausible(self.NAME, (self._cell(),), None) is True
+
+    def test_without_a_measured_cell_the_name_stays_even_beside_an_empty_point_set(self) -> None:
+        """Der Pflichtfall "keine Zelle UND leere Punktmenge": Der Zellen-Zweig schlaegt den
+        Fund-Zweig, sonst verwuerfe ein Lauf ohne Koordinaten jeden Namen."""
+        assert events_module._landmark_name_is_plausible(self.NAME, (), {self.NAME: ()}) is True
+
+    def test_a_name_without_an_entry_keeps_its_name(self) -> None:
+        """Zustand 1 am Datenbestand: eine nicht leere Auskunft, in der DIESER Name fehlt, ist
+        "nie nachgeschlagen" - niemals "ohne Fund"."""
+        assert (
+            events_module._landmark_name_is_plausible(
+                self.NAME, (self._cell(),), {"Andere Sehenswuerdigkeit": (self._inside(),)}
+            )
+            is True
+        )
+
+    def test_a_looked_up_name_without_a_single_point_falls(self) -> None:
+        """Zustand 2 (ADR 0123 Punkt 2): nachgeschlagen, kein Fund - der Name faellt."""
+        assert (
+            events_module._landmark_name_is_plausible(self.NAME, (self._cell(),), {self.NAME: ()})
+            is False
+        )
+
+    def test_a_point_inside_the_radius_keeps_the_name(self) -> None:
+        assert (
+            events_module._landmark_name_is_plausible(
+                self.NAME, (self._cell(),), {self.NAME: (self._inside(),)}
+            )
+            is True
+        )
+
+    def test_a_point_outside_the_radius_drops_the_name(self) -> None:
+        assert (
+            events_module._landmark_name_is_plausible(
+                self.NAME, (self._cell(),), {self.NAME: (self._outside(),)}
+            )
+            is False
+        )
+
+    def test_the_radius_itself_does_not_count(self) -> None:
+        """`<`, nicht `<=`: Die Grenze selbst gehoert nicht mehr zum Umkreis.
+
+        Gerechnet wird am SYMBOL und in beide Richtungen exakt: der Radius ist genau der gemessene
+        Abstand dieses Punktes, "knapp darunter" und "knapp darueber" sind die beiden
+        Nachbarzahlen (`math.nextafter`) - so steht der Grenzfall ohne jede Zahl im Fall."""
+        point = (BASE_LAT + 0.5, BASE_LON)
+        at_the_radius = haversine_meters(BASE_LAT, BASE_LON, *point)
+        args = (self.NAME, (self._cell(),), {self.NAME: (point,)})
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(events_module, "LANDMARK_PLAUSIBILITY_RADIUS_METERS", at_the_radius)
+            assert events_module._landmark_name_is_plausible(*args) is False
+
+            patch.setattr(
+                events_module,
+                "LANDMARK_PLAUSIBILITY_RADIUS_METERS",
+                math.nextafter(at_the_radius, math.inf),
+            )
+            assert events_module._landmark_name_is_plausible(*args) is True
+
+            patch.setattr(
+                events_module,
+                "LANDMARK_PLAUSIBILITY_RADIUS_METERS",
+                math.nextafter(at_the_radius, 0.0),
+            )
+            assert events_module._landmark_name_is_plausible(*args) is False
+
+    def test_one_fitting_pair_is_enough_across_several_points(self) -> None:
+        """Verglichen wird jedes Paar (Zelle, Fundort): ein einziger Fund im Umkreis genuegt."""
+        assert (
+            events_module._landmark_name_is_plausible(
+                self.NAME,
+                (self._cell(),),
+                {self.NAME: (self._outside(), self._inside())},
+            )
+            is True
+        )
+
+    def test_one_fitting_pair_is_enough_across_several_cells(self) -> None:
+        cells = ((BASE_LAT + 2.0, BASE_LON), self._cell())
+
+        assert (
+            events_module._landmark_name_is_plausible(
+                self.NAME, cells, {self.NAME: (self._inside(),)}
+            )
+            is True
+        )
+
+    # --- ueber `build_events`: die Pruefung wirkt am fertigen Event ----------------------------
+
+    def test_a_name_without_a_place_in_the_radius_is_dropped(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0, landmark_name=self.NAME),
+            _measured_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
+        ]
+
+        [event] = _build(candidates, landmark_points_by_name={self.NAME: (self._outside(),)})
+
+        assert event.landmark_name is None
+
+    def test_a_fitting_place_keeps_the_name(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0, landmark_name=self.NAME),
+            _measured_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
+        ]
+
+        [event] = _build(candidates, landmark_points_by_name={self.NAME: (self._inside(),)})
+
+        assert event.landmark_name == self.NAME
+
+    def test_without_a_lookup_the_name_stays(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0, landmark_name=self.NAME),
+            _measured_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
+        ]
+
+        [event] = _build(candidates, landmark_points_by_name=None)
+
+        assert event.landmark_name == self.NAME
+
+    def test_a_dropped_name_leaves_the_event_as_unnamed_as_a_never_named_one(self) -> None:
+        """Zwillings-Tripel der Auskunft (ADR 0123 Punkt 2): kein Eintrag / leere Punktmenge /
+        Punkte. Zustand 1 und 3 liefern DASSELBE Event; unterschieden werden sie an der Abwesenheit
+        der Zeile, nicht am Ergebnis - der Zustand 2 faellt allein am Namen."""
+        candidates = [
+            _measured_candidate(1, T0, landmark_name=self.NAME),
+            _measured_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
+        ]
+        never_looked_up = _build(candidates)  # Zustand 1: gar keine Auskunft
+        without_a_find = _build(candidates, landmark_points_by_name={self.NAME: ()})
+        with_a_find = _build(candidates, landmark_points_by_name={self.NAME: (self._inside(),)})
+        missing_entry = _build(
+            candidates, landmark_points_by_name={"Andere Sehenswuerdigkeit": (self._outside(),)}
+        )
+
+        assert never_looked_up == with_a_find == missing_entry
+        assert without_a_find[0].landmark_name is None
+        assert never_looked_up[0] != without_a_find[0]
+
+    def test_a_name_without_a_measured_cell_survives_an_empty_point_set(self) -> None:
+        """Der Zellen-Fall schlaegt den Fund-Fall auch ueber den vollen Weg: ein Event ohne jede
+        gemessene Zelle behaelt seinen Namen, selbst wenn eine leere Zeile vorliegt."""
+        candidates = [
+            _placeless_candidate(1, T0, landmark_name=self.NAME),
+            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
+        ]
+
+        [event] = _build(candidates, landmark_points_by_name={self.NAME: ()})
+
+        assert event.landmark_name == self.NAME
+
+    def test_the_second_best_name_does_not_move_up(self) -> None:
+        """KEIN NACHRUECKEN: faellt der Gewinner an der Ortspruefung, traegt das Event gar keinen
+        Namen - auch wenn der zweitbeste Kandidat einen Fund im Umkreis haette."""
+        candidates = [
+            _measured_candidate(1, T0, landmark_name=self.NAME),
+            _measured_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
+            _measured_candidate(3, T0 + 2 * EPSILON_TIME, landmark_name="Eibsee"),
+        ]
+
+        [event] = _build(
+            candidates,
+            landmark_points_by_name={self.NAME: (self._outside(),), "Eibsee": (self._inside(),)},
+        )
+
+        assert event.landmark_name is None
+
+    def test_the_same_name_is_judged_against_each_events_own_cell(self) -> None:
+        """Ein Name in zwei Events wird gegen die Zelle SEINES Events geprueft: derselbe Name am
+        passenden Ort bleibt, am fernen faellt er."""
+        near = _latitude_at(_radius() / 2)
+        far = _latitude_at(_radius() * 2)
+        candidates = [
+            _measured_candidate(1, T0, lat=near, landmark_name=self.NAME),
+            _measured_candidate(
+                2, T0 + _time_gap() + EPSILON_TIME, lat=far, landmark_name=self.NAME
+            ),
+        ]
+
+        events = _build(candidates, landmark_points_by_name={self.NAME: (self._inside(),)})
+
+        assert [event.landmark_name for event in events] == [self.NAME, None]
 
 
 class TestDefaultSignals:
