@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from datetime import datetime, timedelta
 from fractions import Fraction
 from pathlib import Path
@@ -69,10 +69,15 @@ from photosort.events import (
     explain_events,
     has_measured_coordinate,
 )
-from photosort.geonames import GEONAMES_MAX_DISTANCE_METERS, dataset_hash_path
+from photosort.geonames import (
+    GEONAMES_MAX_DISTANCE_METERS,
+    dataset_hash_path,
+    fold_landmark_name,
+)
 from photosort.models import (
     CriterionScoringRun,
     Event,
+    LandmarkPlaceLookup,
     Photo,
     PhotoLandmarkDetection,
     PhotoRanking,
@@ -199,6 +204,33 @@ async def _successful_run(
     return run
 
 
+async def _add_landmark(session: AsyncSession, photo_id: int, name: str) -> None:
+    """Eine Erkenntnis des bezahlten Dienstes, wie sie der Lauf vorfindet."""
+    session.add(
+        PhotoLandmarkDetection(photo_id=photo_id, name=name, confidence=0.9, computed_at=NOW)
+    )
+    await session.flush()
+
+
+async def _store_auskunft(
+    session: AsyncSession,
+    project_id: int,
+    name: str,
+    points: Sequence[tuple[float, float]] = (),
+) -> None:
+    """Eine abgelegte Sehenswuerdigkeitsauskunft, wie der Lauf sie hinterlaesst: unter dem
+    GEFALTETEN Namen, mit der Punktliste - leer heisst "nachgeschlagen, ohne Fund"."""
+    session.add(
+        LandmarkPlaceLookup(
+            project_id=project_id,
+            folded_name=fold_landmark_name(name),
+            points=[[lat, lon] for lat, lon in points],
+            looked_up_at=NOW,
+        )
+    )
+    await session.flush()
+
+
 @pytest.mark.asyncio
 class TestTheReadPath:
     """Der einzige Datenbankzugriff des Kommandos - und er liest ausschliesslich."""
@@ -315,6 +347,81 @@ class TestTheReadPath:
         probe = await read_event_probe_input(db_session, project_id)
 
         assert [candidate.photo_id for candidate in probe.candidates] == [newer]
+
+    async def test_the_stored_auskunft_reaches_the_candidate_under_its_raw_name(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Die abgelegte Auskunft wird GELESEN, nicht beschafft: kein Dateidurchgang, kein
+        Nachschlagen. Der SCHLUESSEL ist der Name des Kandidaten, nicht der gefaltete, unter dem
+        die Zeile liegt - `events.py::_name_of` liefert den Rohnamen, und mit dem schlaegt die
+        Ortspruefung nach. Laege hier der gefaltete Name, truege die Zuordnung keinen einzigen
+        Namen und die Pruefung fiele fuer alle auf "keine Auskunft"."""
+        project_id = await _project(db_session)
+        ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
+        await _add_landmark(db_session, ranked, "Trevi-Brunnen")
+        await _successful_run(db_session, project_id, [ranked])
+        await _store_auskunft(db_session, project_id, "Trevi-Brunnen", [(41.9, 12.48)])
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.landmark_points_by_name == {"Trevi-Brunnen": ((41.9, 12.48),)}
+
+    async def test_only_the_names_of_the_candidates_are_read(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Was niemand erkannt hat, wird nicht gelesen - die Auskunft dieses Projekts reicht genau
+        so weit wie die Namen des gemessenen Laufs."""
+        project_id = await _project(db_session)
+        ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
+        await _add_landmark(db_session, ranked, "Trevi-Brunnen")
+        await _successful_run(db_session, project_id, [ranked])
+        await _store_auskunft(db_session, project_id, "Brandenburger Tor", [(52.52, 13.38)])
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.landmark_points_by_name == {}
+
+    async def test_a_name_without_a_row_stays_absent(self, db_session: AsyncSession) -> None:
+        """Der dritte Zustand: Ein anderer Name DESSELBEN Projekts hat eine Zeile, der eigene
+        nicht - nur der eigene fehlt im Ergebnis, und genau daran haengt "nie nachgeschlagen"
+        (fail-open, S4)."""
+        project_id = await _project(db_session)
+        ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
+        await _add_landmark(db_session, ranked, "Trevi-Brunnen")
+        await _successful_run(db_session, project_id, [ranked])
+        await _store_auskunft(db_session, project_id, "Wolkenpalast", [(43.5, 16.4)])
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.landmark_points_by_name == {}
+
+    async def test_a_row_of_another_project_is_never_read(self, db_session: AsyncSession) -> None:
+        """S1 gilt auch für den Messpfad: Die Auskunft ist projektgebunden, und ein Rueckfall auf
+        die Zeile eines fremden Projekts waere der stille Weg, auf dem der Name eines Projekts an
+        den Fotos eines anderen haengt."""
+        mine = await _project(db_session)
+        ranked = await _photo(db_session, mine, minutes=0, gps=(43.51, 16.44))
+        await _add_landmark(db_session, ranked, "Trevi-Brunnen")
+        await _successful_run(db_session, mine, [ranked])
+        other = await _project(db_session, name="Fremd")
+        await _store_auskunft(db_session, other, "Trevi-Brunnen", [(41.9, 12.48)])
+
+        probe = await read_event_probe_input(db_session, mine)
+
+        assert probe.landmark_points_by_name == {}
+
+    async def test_the_auskunft_carries_no_row_for_a_project_without_a_run(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Ohne Lauf gibt es keine Kandidaten und damit auch keine Namen, die zu beantworten
+        waeren - die Auskunft ist dann leer und nicht etwa die des letzten Laufs."""
+        project_id = await _project(db_session)
+        await _store_auskunft(db_session, project_id, "Trevi-Brunnen", [(41.9, 12.48)])
+
+        probe = await read_event_probe_input(db_session, project_id)
+
+        assert probe.run_found is False
+        assert probe.landmark_points_by_name == {}
 
 
 class TestBlockASizes:
@@ -1534,7 +1641,7 @@ class TestBlockC3LandmarkNames:
         with_gps = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
         without_gps = _named_candidate(2, 1, "Palast")
 
-        counts = landmark_counts([with_gps, without_gps], explain_events([]), {})
+        counts = landmark_counts([with_gps, without_gps], explain_events([]), {}, {})
 
         assert counts.detections_total == 2
         assert counts.detections_without_place_hint == 1
@@ -1550,7 +1657,7 @@ class TestBlockC3LandmarkNames:
             _named_candidate(4, 3, "Nah", gps=(0.01, 0.0)),
         ]
 
-        counts = landmark_counts(candidates, explain_events([]), {})
+        counts = landmark_counts(candidates, explain_events([]), {}, {})
 
         assert counts.names_total == 2
         assert counts.names_spread_beyond_threshold == 1
@@ -1562,7 +1669,7 @@ class TestBlockC3LandmarkNames:
         others = [_candidate(minutes) for minutes in (1, 2)]
         formation = explain_events([named, *others])
 
-        counts = landmark_counts([named, *others], formation, {})
+        counts = landmark_counts([named, *others], formation, {}, {})
 
         assert len(formation.events) == 1
         assert counts.events_named_by_a_single_photo == 1
@@ -1574,7 +1681,7 @@ class TestBlockC3LandmarkNames:
         ]
         formation = explain_events(candidates)
 
-        counts = landmark_counts(candidates, formation, {})
+        counts = landmark_counts(candidates, formation, {}, {})
 
         assert len(formation.events) == 1
         assert counts.events_named_by_a_single_photo == 0
@@ -1585,7 +1692,7 @@ class TestBlockC3LandmarkNames:
         named = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
         formation = explain_events([named])
 
-        counts = landmark_counts([named], formation, {})
+        counts = landmark_counts([named], formation, {}, {})
 
         assert counts.events_named_by_a_single_photo == 0
 
@@ -1597,7 +1704,7 @@ class TestBlockC3LandmarkNames:
         candidates = _one_event_with_a_share_of(members)
         formation = explain_events(candidates)
 
-        counts = landmark_counts(candidates, formation, {})
+        counts = landmark_counts(candidates, formation, {}, {})
 
         assert len(formation.events) == 1
         assert counts.events_named == 1
@@ -1612,7 +1719,7 @@ class TestBlockC3LandmarkNames:
         candidates = [_candidate(minutes) for minutes in (0, 1, 2)]
         formation = explain_events(candidates)
 
-        counts = landmark_counts(candidates, formation, {})
+        counts = landmark_counts(candidates, formation, {}, {})
 
         assert counts.events_named == 0
         assert counts.smallest_carrier_share is None
@@ -1629,11 +1736,85 @@ class TestBlockC3LandmarkNames:
         formation = explain_events(candidates)
         monkeypatch.setattr(events_module, "LANDMARK_MIN_SHARE", Fraction(1, 2))
 
-        counts = landmark_counts(candidates, formation, {})
+        counts = landmark_counts(candidates, formation, {}, {})
 
         assert counts.events_named == 1
         assert counts.events_below_share == 1
         assert counts.smallest_carrier_share == Fraction(1, 3)
+
+
+class TestTheNamesWithoutAKnownLocation:
+    """Die GEGENANZEIGE der Ortspruefung (Spec 0529, ADR 0123): Eine Auskunft, die den zweiten
+    Auszug gelesen hat und fuer keinen Namen eine Lage findet, nimmt jedem Namen sein Event - und
+    keine andere Zahl dieses Blocks verriete das. Gezaehlt werden NAMEN des Laufs, keine Zeilen je
+    Name und keine je Event (S10).
+
+    Der Zaehler misst die AUSKUNFT, nicht das Ergebnis der Pruefung: Punkte außerhalb des Umkreises
+    sind ein Fund, der die Regel arbeiten laesst; erst "nachgeschlagen, kein Fund" ist die Lage,
+    die aus einem vorhandenen Auszug still einen namenlosen Lauf macht."""
+
+    def test_a_name_the_lookup_answered_without_a_find(self) -> None:
+        candidate = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
+
+        counts = landmark_counts([candidate], explain_events([]), {}, {"Palast": ()})
+
+        assert counts.names_total == 1
+        assert counts.names_without_a_location == 1
+
+    def test_a_name_with_a_find_is_not_counted(self) -> None:
+        """Der Fund liegt weit außerhalb des Umkreises - gezaehlt wird er trotzdem nicht: Ob er
+        reicht, entscheidet die Event-Bildung, und genau dort sitzt die Regel."""
+        candidate = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
+
+        counts = landmark_counts([candidate], explain_events([]), {}, {"Palast": ((50.0, 50.0),)})
+
+        assert counts.names_without_a_location == 0
+
+    def test_the_three_states_of_the_auskunft_do_not_collapse(self) -> None:
+        """Dieselbe Kandidatenlage, drei Auskuenfte: keine Zeile, leere Punktmenge, Punkte. Nur die
+        leere Punktmenge zaehlt - "nie nachgeschlagen" ist der Zustand, in dem ein fehlender Auszug
+        alle Namen stehen laesst (fail-open, S4), und er darf hier nicht als Widerspruch
+        erscheinen."""
+        candidate = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
+        formation = explain_events([])
+
+        never = landmark_counts([candidate], formation, {}, {})
+        without_a_find = landmark_counts([candidate], formation, {}, {"Palast": ()})
+        with_a_find = landmark_counts([candidate], formation, {}, {"Palast": ((0.0, 0.0),)})
+
+        assert [
+            never.names_without_a_location,
+            without_a_find.names_without_a_location,
+            with_a_find.names_without_a_location,
+        ] == [0, 1, 0]
+        assert {each.names_total for each in (never, without_a_find, with_a_find)} == {1}
+
+    def test_the_counter_counts_names_and_not_detections(self) -> None:
+        """DERSELBE Name auf mehreren Fotos: Die Zahl ist eine Aussage ueber den Lauf, nicht je
+        Foto - und ausdruecklich auch nicht je Event (S10). Ohne diese Zeile waere die
+        Erkennungszahl von der Namenszahl nicht zu unterscheiden."""
+        candidates = [
+            _named_candidate(1, 0, "Palast", gps=(0.0, 0.0)),
+            _named_candidate(2, 1, "Palast", gps=(0.0, 0.0)),
+        ]
+
+        counts = landmark_counts(candidates, explain_events([]), {}, {"Palast": ()})
+
+        assert counts.detections_total == 2
+        assert counts.names_total == 1
+        assert counts.names_without_a_location == 1
+
+    def test_a_nameless_detection_is_not_a_name_without_a_location(self) -> None:
+        """Ein Kandidat ohne Namen ist kein Name ohne Lage - sonst truege der Zaehler Fotos, die
+        gar nichts mit der Ortspruefung zu tun haben."""
+        candidates = [
+            _candidate(0, gps=(0.0, 0.0)),
+            _named_candidate(1, 1, "Palast", gps=(0.0, 0.0)),
+        ]
+
+        counts = landmark_counts(candidates, explain_events([]), {}, {"Palast": ()})
+
+        assert counts.names_without_a_location == 1
 
 
 # --- main() gegen eine echte, dateibasierte SQLite ------------------------------------------------
@@ -2351,6 +2532,75 @@ class TestTheOutputSeparatesNumbersFromPlaces:
 
         with pytest.raises(SystemExit):
             main(["--project-id", str(project_id), "--namen"], database_url=url)
+
+
+def _store_auskunft_directly(
+    url: str, project_id: int, name: str, points: Sequence[tuple[float, float]] = ()
+) -> None:
+    """Schreibt eine abgelegte Auskunft in die dateibasierte Messlage - als VORZUSTAND.
+
+    Die eine Stelle, an der ein Test in die Messdatei schreibt: Sie stellt den Bestand her, den ein
+    frueherer Lauf hinterlassen haette. Der Messlauf selbst bleibt rein lesend, und der
+    Schnappschuss in `TestARealRunChangesNothing` misst genau das."""
+
+    async def store() -> None:
+        engine = make_engine(url)
+        factory = make_session_factory(engine)
+        async with factory() as session:
+            await _store_auskunft(session, project_id, name, points)
+            await session.commit()
+        await engine.dispose()
+
+    asyncio.run(store())
+
+
+class TestTheStoredAuskunftReachesTheReport:
+    """Spec 0529: Der Messlauf bildet seine Gliederung mit DERSELBEN Auskunft, die der Lauf liest -
+    aus `landmark_place_lookups` und ohne jeden Dateidurchgang. Ohne sie stuende im Bericht ein
+    benanntes Event, das der Lauf so nie benennt; die Messung beschriebe dann einen Betrieb, den es
+    nicht gibt."""
+
+    def test_the_name_without_a_location_loses_its_event(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        url, project_id = _prepared(tmp_path)
+        _store_auskunft_directly(url, project_id, MEASURED_LANDMARK, [])
+
+        assert main(["--project-id", str(project_id)], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "- verschiedene Namen: 1" in report
+        assert "- davon ohne bekannte Lage: 1" in report
+        assert "- benannte Events: 0" in report
+
+    def test_without_a_stored_auskunft_the_name_stays(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Der Gegenfall zur Zeile darueber, und zugleich der Zustand "nie nachgeschlagen": Ohne
+        Zeile bleibt der Name - ein fehlender Sehenswuerdigkeitsauszug verwirft keinen Namen
+        (S4, fail-open)."""
+        url, project_id = _prepared(tmp_path)
+
+        assert main(["--project-id", str(project_id)], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "- davon ohne bekannte Lage: 0" in report
+        assert "- benannte Events: 1" in report
+
+    def test_a_find_at_the_place_of_recording_keeps_the_name(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Punkte vorhanden, und der Fundort liegt am Aufnahmeort: Der Name bleibt, gezaehlt wird
+        nichts. Damit sind die drei Ausgaenge des Berichts an derselben Kandidatenlage
+        auseinandergehalten."""
+        url, project_id = _prepared(tmp_path)
+        _store_auskunft_directly(url, project_id, MEASURED_LANDMARK, [(MEASURED_LAT, MEASURED_LON)])
+
+        assert main(["--project-id", str(project_id)], database_url=url) == 0
+
+        report = capsys.readouterr().out
+        assert "- davon ohne bekannte Lage: 0" in report
+        assert "- benannte Events: 1" in report
 
 
 class TestAnAbsentDatasetIsReportedNotShownAsZero:

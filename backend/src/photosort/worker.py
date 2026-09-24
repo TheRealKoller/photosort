@@ -74,7 +74,7 @@ from photosort.geonames import (
     LandmarkGazetteer,
     build_landmark_gazetteer,
     build_place_resolver,
-    fold_landmark_name,
+    folded_landmark_names,
 )
 from photosort.horizon import compute_horizon_tilt_score
 from photosort.label_embedding import LabelEmbedderLike, build_label_embedder
@@ -1617,14 +1617,7 @@ async def _landmark_points_by_name(
     Gefragt und abgelegt wird dagegen der GEFALTETE Name: `Trevi-Brunnen` trifft `trevi brunnen`.
 
     Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
-    folded_by_name: dict[str, str] = {}
-    for raw in names:
-        usable = (raw or "").strip()
-        if not usable:
-            continue
-        folded = fold_landmark_name(usable)
-        if folded:
-            folded_by_name[usable] = folded
+    folded_by_name = folded_landmark_names(names)
     if not folded_by_name:
         return {}
 

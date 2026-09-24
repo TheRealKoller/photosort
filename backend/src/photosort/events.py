@@ -28,7 +28,9 @@ from photosort.places import (
 from photosort.scoring import haversine_meters
 from photosort.selection import carried_motifs
 
-# Die Sehenswuerdigkeitsauskunft des Laufs (Spec 0529): gefalteter Name -> Gazetteer-Fundorte.
+# Die Sehenswuerdigkeitsauskunft des Laufs (Spec 0529): Name -> Gazetteer-Fundorte, geschluesselt
+# mit GENAU dem Namen, den `_name_of` liefert (also der bereits sanierte Rohname des Kandidaten) -
+# die Faltung liegt auf der Abfrage- und Ablageseite in `worker.py::_landmark_points_by_name`.
 # `None` als Ganzes heisst "keine Auskunft vorhanden"; ein Eintrag mit leerer Punktmenge heisst
 # "nachgeschlagen, ohne Fund" - die beiden duerfen nie zusammenfallen (ADR 0123 Punkt 2).
 LandmarkPointsByName = Mapping[str, tuple[tuple[float, float], ...]]

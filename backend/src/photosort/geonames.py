@@ -200,6 +200,24 @@ def fold_landmark_name(raw: str) -> str:
     return " ".join(separated.split())
 
 
+def folded_landmark_names(names: Iterable[str]) -> dict[str, str]:
+    """Je brauchbarem Namen der gefaltete Aufsuchschluessel - die EINE Zuordnung, unter der eine
+    Auskunft abgelegt und wiedergefunden wird.
+
+    Der SCHLUESSEL des Ergebnisses ist der uebergebene Name, der WERT der gefaltete: Abgelegt wird
+    der gefaltete, nachgefragt wird mit dem Namen, den `events.py::_name_of` liefert. Liefen die
+    beiden Seiten in getrennten Fassungen, traege die Zuordnung beim naechsten Sonderzeichen keinen
+    einzigen Namen mehr, und die Pruefung fiele still auf "keine Auskunft" zurueck (fail-open).
+
+    Ein Name, der nach dem Trimmen leer ist, faellt weg: Er traegt keinen Aufsuchschluessel und
+    bekaeme unter `""` eine Zeile, die kein Kandidat je wieder trifft."""
+    return {
+        usable: folded
+        for name in names
+        if (usable := (name or "").strip()) and (folded := fold_landmark_name(usable))
+    }
+
+
 @dataclass(frozen=True)
 class LandmarkEntry:
     """Ein Eintrag des zweiten Auszugs: alle gefalteten Namen und der eine Fundort.

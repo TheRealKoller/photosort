@@ -44,7 +44,7 @@ import statistics
 import sys
 from bisect import bisect_right
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 
@@ -68,15 +68,22 @@ from photosort.events import (
     MERGE_BLOCK_REASONS,
     EventCandidate,
     EventFormation,
+    LandmarkPointsByName,
     LocationEntry,
     explain_events,
     has_measured_coordinate,
     inherited_locations,
 )
-from photosort.geonames import GeoNamesResolver, PlaceDatasetError, build_geonames_resolver
+from photosort.geonames import (
+    GeoNamesResolver,
+    PlaceDatasetError,
+    build_geonames_resolver,
+    folded_landmark_names,
+)
 from photosort.landmark import place_hint_for
 from photosort.models import (
     CriterionScoringRun,
+    LandmarkPlaceLookup,
     PhotoRanking,
     Project,
     ScanStatus,
@@ -193,13 +200,21 @@ class EventProbeInput:
     Gliederung. Abgeleitet ist der Widerspruch nicht darstellbar.
 
     `selection_target` ist der EINGESTELLTE Richtwert des Projekts; `None` heisst "nicht selbst
-    eingestellt" und ist etwas anderes als "kein Richtwert" (`models.py::Project`)."""
+    eingestellt" und ist etwas anderes als "kein Richtwert" (`models.py::Project`).
+
+    `landmark_points_by_name` ist die abgelegte Sehenswuerdigkeitsauskunft dieses Projekts
+    (Spec 0529), geschluesselt mit dem ROhen Kandidatennamen (so, wie `events.py::_name_of` ihn
+    liefert). Sie wird hier GELESEN, nicht beschafft: kein Dateidurchgang, kein Nachschlagen. Die
+    Vorgabe `{}` bedeutet "keine Zeile" und laesst jeden Namen stehen (S4, fail-open) - dieselbe
+    Ausfallrichtung wie ein fehlender zweiter Auszug. Ein leerer Punktwert `()` heisst dagegen
+    "nachgeschlagen, ohne Fund" und verwirft den Namen."""
 
     project_id: int
     candidates: tuple[EventCandidate, ...]
     entries: tuple[LocationEntry, ...]
     run_id: int | None
     selection_target: int | None = None
+    landmark_points_by_name: LandmarkPointsByName = field(default_factory=dict)
 
     @property
     def run_found(self) -> bool:
@@ -294,6 +309,53 @@ def quota_reach(probe: EventProbeInput, events_total: int) -> QuotaReach:
     )
 
 
+async def _landmark_points_by_name(
+    session: AsyncSession,
+    project_id: int,
+    candidates: Sequence[EventCandidate],
+) -> LandmarkPointsByName:
+    """Die ABGELEGTE Sehenswuerdigkeitsauskunft dieses Projekts, geschluesselt mit dem ROHEN
+    Kandidatennamen.
+
+    REIN LESEND, wie das ganze Kommando: kein Dateidurchgang, kein `LandmarkGazetteer`, kein
+    Nachschlagen. Waere hier eine Beschaffung, koennte ein Messlauf den Bestand aendern, und die
+    Messung naehme die Auskunft eines spaeteren Laufs vorweg - genau das, was die Zusage dieses
+    Moduls ausschliesst.
+
+    Die Bindung an `project_id` steht in der Abfrage ausgeschrieben (S1): Kein Rueckfall auf die
+    Zeile eines anderen Projekts - ein solcher waere der stille Weg, auf dem der Name eines Projekts
+    an den Fotos eines anderen haengt.
+
+    Gefragt wird mit der Faltung der Schreibseite (`geonames.py::folded_landmark_names`); der
+    SCHLUESSEL des Ergebnisses ist der ROHENAME, denn `events.py::_name_of` liefert den Rohnamen,
+    und mit ihm schlaegt die Ortspruefung nach. Ein Name OHNE Zeile fehlt im Ergebnis und bleibt
+    stehen (S4, fail-open); ein Name mit leerem Punktwert ist darin und faellt."""
+    folded_by_name = folded_landmark_names(
+        candidate.landmark_name for candidate in candidates if candidate.landmark_name is not None
+    )
+    if not folded_by_name:
+        return {}
+
+    rows = (
+        await session.execute(
+            select(LandmarkPlaceLookup).where(
+                LandmarkPlaceLookup.project_id == project_id,
+                LandmarkPlaceLookup.folded_name.in_(set(folded_by_name.values())),
+            )
+        )
+    ).scalars()
+    points_by_folded: dict[str, tuple[tuple[float, float], ...]] = {
+        row.folded_name: tuple((float(point[0]), float(point[1])) for point in row.points)
+        for row in rows
+    }
+
+    return {
+        usable: points_by_folded[folded]
+        for usable, folded in folded_by_name.items()
+        if folded in points_by_folded
+    }
+
+
 async def read_event_probe_input(session: AsyncSession, project_id: int) -> EventProbeInput:
     """Der EINZIGE Datenbankzugriff dieses Moduls, und er liest ausschliesslich.
 
@@ -355,6 +417,9 @@ async def read_event_probe_input(session: AsyncSession, project_id: int) -> Even
         entries=inputs.entries,
         run_id=run_id,
         selection_target=selection_target,
+        landmark_points_by_name=await _landmark_points_by_name(
+            session, project_id, inputs.candidates
+        ),
     )
 
 
@@ -852,11 +917,18 @@ class LandmarkCounts:
 
     Gezaehlt werden WIDERSPRUECHE, nie Namen (S3): Ein in sich stimmiger Name ist ohne Rueckfrage
     bei einem bezahlten Dienst nicht ueberpruefbar. Dieser Block BELEGT diesen Weg, wo Widersprueche
-    auftreten, und kann ihn nicht widerlegen."""
+    auftreten, und kann ihn nicht widerlegen.
+
+    Seit Spec 0529 (ADR 0123) benennt er es ausserdem nur noch, wenn ein Fundort seines Namens im
+    Umkreis des Aufnahmeorts liegt. `names_without_a_location` ist die GEGENANZEIGE dazu: Eine
+    Auskunft, die den zweiten Auszug gelesen und zu keinem Namen einen Fundort gefunden hat, nimmt
+    jedem Namen sein Event - und keine andere Zahl dieses Blocks verriete das. Gezaehlt werden
+    NAMEN ueber den Lauf, nie eine Zeile je Name und nie eine je Event (S10)."""
 
     detections_total: int
     detections_without_place_hint: int
     names_total: int
+    names_without_a_location: int
     names_spread_beyond_threshold: int
     events_named_by_a_single_photo: int
     events_named: int
@@ -885,6 +957,7 @@ def landmark_counts(
     candidates: Sequence[EventCandidate],
     formation: EventFormation,
     locality_by_cell: Mapping[Cell, str],
+    landmark_points_by_name: LandmarkPointsByName,
 ) -> LandmarkCounts:
     """Block C3 ueber die Kandidaten des Laufs und die Gliederung, die aus ihnen entstand.
 
@@ -901,8 +974,23 @@ def landmark_counts(
     durch ALLE Mitglieder, nicht durch die Fotos mit Namen. Gerechnet wird ueber die
     Traegerzaehlung, die dieser Block ohnehin fuehrt (`name_by_photo`) - NACHGEBAUT und nicht bei
     `_name_of` erfragt, weil genau der Abstand zwischen der vorgelegten Gliederung und der heute
-    geltenden Schwelle der Messgegenstand ist."""
+    geltenden Schwelle der Messgegenstand ist.
+
+    `landmark_points_by_name` ist die Auskunft des Laufs (Spec 0529). Sie geht in GENAU EINE Zahl
+    ein, `names_without_a_location`: die Zahl der VERSCHIEDENEN Namen, zu denen sie eine LEERE
+    Punktmenge traegt - radius-unabhaengig. Gezaehlt werden NAMEN des Laufs, keine Zeilen je Name
+    und keine je Event (S10). Der Zaehler misst die AUSKUNFT, nicht das Ergebnis der Pruefung: Ein
+    Fund weit ausserhalb des Umkreises ist ein Fund, der die Regel arbeiten laesst; erst
+    "nachgeschlagen, ohne Fund" ist die Lage, die aus einem VORHANDENEN Auszug still einen
+    namenlosen Lauf macht - und keine andere Zahl dieses Blocks verriete sie. Eine FEHLENDE Zeile
+    zaehlt ausdruecklich nicht: das ist "nie nachgeschlagen", und es laesst den Namen stehen
+    (fail-open, S4)."""
     named = [candidate for candidate in candidates if candidate.landmark_name is not None]
+    names_without_a_location = sum(
+        1
+        for name in {candidate.landmark_name for candidate in named}
+        if name is not None and landmark_points_by_name.get(name) == ()
+    )
 
     without_hint = 0
     cells_by_name: dict[str, list[Cell]] = {}
@@ -945,6 +1033,7 @@ def landmark_counts(
         detections_total=len(named),
         detections_without_place_hint=without_hint,
         names_total=len({candidate.landmark_name for candidate in named}),
+        names_without_a_location=names_without_a_location,
         names_spread_beyond_threshold=spread,
         events_named_by_a_single_photo=single_photo_named,
         events_named=len(shares),
@@ -1342,7 +1431,9 @@ def render_report(
     causes = cause_counts(formation)
     reach = quota_reach(probe, sizes.events_total)
     inheritance = inheritance_counts(probe.entries, probe.candidates)
-    landmarks = landmark_counts(probe.candidates, formation, locality_by_cell)
+    landmarks = landmark_counts(
+        probe.candidates, formation, locality_by_cell, probe.landmark_points_by_name
+    )
 
     lines = [
         _report_head("Event-Messung", probe),
@@ -1438,6 +1529,8 @@ def render_report(
         f"- davon ohne jeden Ortshinweis: {landmarks.detections_without_place_hint} "
         f"({_percent(landmarks.detections_without_place_hint, landmarks.detections_total)})",
         f"- verschiedene Namen: {landmarks.names_total}",
+        f"- davon ohne bekannte Lage: {landmarks.names_without_a_location} "
+        f"({_percent(landmarks.names_without_a_location, landmarks.names_total)})",
         "- davon mit Traegerfotos ueber der Entfernungsschwelle auseinander: "
         f"{landmarks.names_spread_beyond_threshold}",
         f"- Events, deren Name auf genau einem von vielen Fotos beruht: "
@@ -1539,8 +1632,12 @@ async def _probe_with_own_session(
         # ohnehin nie eingehen.
         return render_motif_report(probe, motif_sensitivity(probe.candidates))
 
-    # DERSELBE Durchlauf, den auch der Lauf nimmt - nur zusaetzlich mit den Ursachen.
-    formation = explain_events(probe.candidates)
+    # DERSELBE Durchlauf, den auch der Lauf nimmt - nur zusaetzlich mit den Ursachen. Die Auskunft
+    # kommt aus dem Bestand (`landmark_place_lookups`), NICHT aus einem Dateidurchgang: Ohne sie
+    # stuende hier ein benanntes Event, das der Lauf so nie benennt.
+    formation = explain_events(
+        probe.candidates, landmark_points_by_name=probe.landmark_points_by_name
+    )
 
     if bolts:
         # DIESELBE Gliederung wie ohne Schalter, aus demselben Aufruf: Ein eigener Rechenweg
@@ -1555,7 +1652,9 @@ async def _probe_with_own_session(
         # Produktivcode, kein weiterer Parameter. Den Ortsauszug fragt auch dieser Modus nicht:
         # Gezaehlt wird die ZAHL der Zellen, und die traegt das Event bereits.
         without_motif_change = explain_events(
-            probe.candidates, confirming_photos=motif_change_off_window(probe.candidates)
+            probe.candidates,
+            confirming_photos=motif_change_off_window(probe.candidates),
+            landmark_points_by_name=probe.landmark_points_by_name,
         )
         return render_coherence_report(
             probe,
