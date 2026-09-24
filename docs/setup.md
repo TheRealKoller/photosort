@@ -466,35 +466,64 @@ Die Auflösung entsteht **vollständig innerhalb des Systems**: aus einem lokal 
 GeoNames-Datensatzes. Es gibt keinen externen Ortsdienst und keinen Schalter, der einen aufmachen
 könnte.
 
-### Den Auszug einmal je Volume erzeugen
+### Die Auszüge einmal je Volume erzeugen
 
 ```bash
 docker compose exec backend python -m photosort.place_dataset
 ```
 
-Das Kommando bezieht `allCountries.zip` (rund 400 MB), bildet daraus den Auszug, löscht das Archiv
-wieder und legt den SHA256 des Auszugs daneben. Der Auszug misst gepackt rund 69 MB und liegt auf
-dem Volume `place_dataset` — im Backend-Dienst schreibbar, im Worker **nur lesend**. Er gehört
-weder ins Repository noch ins Docker-Image.
+Das Kommando bezieht `allCountries.zip` (rund 400 MB), bildet daraus in **einem** Durchgang **zwei**
+Auszüge, löscht das Archiv wieder und legt neben jeden Auszug seinen SHA256. Beide liegen auf dem
+Volume `place_dataset` — im Backend-Dienst schreibbar, im Worker **nur lesend** —, gehören weder ins
+Repository noch ins Docker-Image und messen gepackt zusammen rund 273 MB:
+
+| Datei | wofür | Größe (gepackt) |
+|---|---|---|
+| `geonames-auszug.txt.gz` | Ortsnamen je Zelle (Events ohne erkannte Sehenswürdigkeit) | ~69 MB |
+| `sehenswuerdigkeits-auszug.txt.gz` | Fundorte je Sehenswürdigkeitsname (Spec [`0529`](../specs/features/0529-sehenswuerdigkeitsname-ortsplausibel.md), ADR [`0123`](../specs/decisions/0123-der-sehenswuerdigkeitsname-wird-lokal-verortet-und-am-event-geprueft.md)) | ~204 MB |
+
+Der zweite Auszug ist deshalb so viel größer, weil er neben dem Hauptnamen auch die
+`alternatenames` jeder Zeile behält — ein Name wird dort **gesucht**, nicht ausgegeben, und ein
+Treffer nur über einen Alternativnamen ist genauso gültig wie einer über den Hauptnamen.
+
+Gelesen wird er **lokal und ohne externen Dienst**: Ein erkannter Sehenswürdigkeitsname benennt ein
+Event nur noch, wenn ein Fundort seines Namens im Umkreis des Aufnahmeorts liegt (Spec
+[`0529`](../specs/features/0529-sehenswuerdigkeitsname-ortsplausibel.md)). Jeder nachgeschlagene
+Name wird projektgebunden in der Tabelle `landmark_place_lookups` abgelegt und in späteren Läufen
+wiederverwendet, statt den Auszug erneut zu durchlaufen.
+
+Der Pfad des **Ortsauszugs** steht in `PLACE_DATASET_PATH`; der Sehenswürdigkeitsauszug liegt als
+**Geschwisterdatei daneben** und hat bewusst **keine** eigene Betriebseinstellung — zwei Pfade, die
+auseinanderlaufen können, wären zwei Gelegenheiten, den falschen zu setzen. Für einen Sonderfall
+beim Erzeugen nimmt das Kommando `--sehenswuerdigkeits-pfad <pfad>`.
 
 **Es gibt bewusst kein Shellskript dafür:** Auf dem Server steht keine Shell zur Verfügung, nur
 eine Oberfläche für Docker Compose und eine Container-Konsole. Eine zweite Fassung desselben
 Ablaufs driftete, und die dort unbrauchbare wäre die schlechtere.
 
-**Bis der Auszug liegt, heißen Events wie bisher** nach Nummer und Zeitspanne. Das ist ein
-arbeitsfähiger Zustand, kein Fehler: Fehlt die Datei oder weicht sie von ihrem Hash ab, wird **kein
-Auflöser gebaut**, es entsteht **kein Ersatzweg**, und jeder Lauf schreibt eine laute Zeile mit
-festem Grund-Token. Der Pfad lässt sich über `PLACE_DATASET_PATH` verlegen (Vorgabe: der Pfad auf
-dem Volume).
+**Bis die Auszüge liegen, heißen Events wie bisher** nach Nummer und Zeitspanne. Das ist ein
+arbeitsfähiger Zustand, kein Fehler — und die beiden Auszüge fallen **getrennt** aus, mit je eigenem
+Grund-Token: „der Ortsauszug fehlt" ist von „der Sehenswürdigkeitsauszug fehlt" unterscheidbar.
+
+- Fehlt der **Ortsauszug** oder weicht er von seinem Hash ab, wird **kein Auflöser gebaut**, es
+  entsteht **kein Ersatzweg**, und jeder Lauf schreibt eine laute Zeile.
+- Fehlt der **Sehenswürdigkeitsauszug** oder weicht er ab, ist die Ausfallrichtung **fail-open**:
+  es wird **kein** Sehenswürdigkeitsname verworfen, und der Lauf bleibt `SUCCESS`. So entfernt ein
+  einzelner fehlender Auszug nie alle Namen eines Laufs auf einmal.
+
+Der Pfad des Ortsauszugs lässt sich über `PLACE_DATASET_PATH` verlegen (Vorgabe: der Pfad auf dem
+Volume); der Sehenswürdigkeitsauszug folgt ihm als Geschwisterdatei.
 
 **Ein Neubezug geschieht auf Anlass, nicht nach Kalender** (ein falscher oder fehlender Name fällt
-auf). Bereits abgelegte Ortsauskünfte berührt ein neuerer Datensatz ohnehin nicht rückwirkend.
+auf). Bereits abgelegte Orts- und Sehenswürdigkeitsauskünfte berührt ein neuerer Datensatz ohnehin
+nicht rückwirkend — ein einmal nachgeschlagener Name wird nicht erneut gesucht.
 
-**Geprüft wird der Auszug selbst**, also genau die Datei, die gelesen wird — vor jedem Gebrauch
-gegen den beim Bezug gebildeten Hash. GeoNames erzeugt die Quelldatei nächtlich neu und
-veröffentlicht **keine Prüfsummen**; ein fest eingetragener Hash wie bei
-`fetch-label-embedder-model.sh` ist deshalb nicht möglich. Der **Erstbezug** bleibt damit
-ungeschützt — dort tragen allein HTTPS und das Vertrauen in GeoNames.
+**Geprüft wird jeder Auszug selbst**, also genau die Datei, die gelesen wird — vor jedem Gebrauch
+gegen den beim Bezug gebildeten Hash, **jeder gegen seinen eigenen**. Ein Auszug ohne seine
+Hash-Datei gilt als unbenutzbar, damit die beiden Dateien nicht unbemerkt auseinanderlaufen.
+GeoNames erzeugt die Quelldatei nächtlich neu und veröffentlicht **keine Prüfsummen**; ein fest
+eingetragener Hash wie bei `fetch-label-embedder-model.sh` ist deshalb nicht möglich. Der
+**Erstbezug** bleibt damit ungeschützt — dort tragen allein HTTPS und das Vertrauen in GeoNames.
 
 **Namensnennung:** GeoNames steht unter CC BY 4.0. Die Anwendung erfüllt die Pflicht sichtbar mit
 einer Zeile am Fuß der Projektliste; sie ist nicht zu entfernen.

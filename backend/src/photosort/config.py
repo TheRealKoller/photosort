@@ -164,8 +164,11 @@ class Settings(BaseSettings):
     # Betriebseinstellung wie `photo_cache_dir`, nie ein Wert aus Datenbank oder Request. Fehlt
     # die Datei oder weicht sie von ihrem Hash ab, wird kein Auflöser gebaut, es entsteht kein
     # Ersatzweg, und die Events behalten Nummer und Zeitspanne - ein arbeitsfähiger Zustand, kein
-    # Startfehler. Erzeugt wird der Auszug einmal je Volume über
-    # `python -m photosort.place_dataset`.
+    # Startfehler. Erzeugt werden die Auszüge einmal je Volume über
+    # `python -m photosort.place_dataset`. Der zweite, der Sehenswürdigkeitsauszug (Spec 0529),
+    # liegt als GESCHWISTERDATEI neben dieser (`geonames.landmark_dataset_path`) - dieselbe
+    # Quelle, derselbe Durchgang, aber eine eigene Datei mit eigener Hashprüfung und eigenen
+    # Grund-Token; er hat keine eigene Betriebseinstellung.
     place_dataset_path: str = "/data/place-dataset/geonames-auszug.txt.gz"
 
     # Obergrenze für die begrenzte Parallelisierung der Cloud-Aufrufe der
