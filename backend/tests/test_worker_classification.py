@@ -330,6 +330,35 @@ async def test_a_single_trigger_produces_both_run_records(
     assert remote_runs[0].status == ScanStatus.SUCCESS
 
 
+async def test_a_missing_scoring_run_aborts_before_any_row_is_written(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Spec 0350/AK3 fuer den VERKETTETEN Aufrufer: fehlt der referenzierte Bewertungslauf, endet
+    der Lauf mit `CriterionScoringReferenceError`, BEVOR eine Zeile entsteht. Der Remote-Lauf
+    entsteht in `run_classification` bewusst frueh (er traegt die Kostenzuordnung) - ohne die
+    Existenzpruefung davor zeigte sein Fremdschluessel auf eine Kriterien-Lauf-Zeile, die es nie
+    geben wird."""
+    project = await _make_project(db_session, cloud_consent=True)
+    # Absichtlich NICHT zur Session hinzugefuegt: die id zeigt auf keine Zeile; das Objekt ist nur
+    # der Traeger der id fuer die `_run`-Signatur.
+    missing_run = ScoringRun(id=999, project_id=project.id, status=ScanStatus.SUCCESS)
+
+    with pytest.raises(worker.CriterionScoringReferenceError, match="999"):
+        await _run(
+            db_session,
+            project,
+            missing_run,
+            tmp_path,
+            use_cloud=True,
+            # Der Exploding-Client belegt zusaetzlich, dass der Abbruch VOR jedem Cloud-Versuch
+            # kommt - es gibt nichts zu klassifizieren, weil es keinen Lauf gibt.
+            build_category_client=_exploding_category_client_builder,
+        )
+
+    assert (await db_session.execute(select(CriterionScoringRun))).scalars().all() == []
+    assert (await db_session.execute(select(RemoteCategoryClassificationRun))).scalars().all() == []
+
+
 async def test_the_run_record_reports_phase_and_cloud_request(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

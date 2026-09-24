@@ -1,17 +1,21 @@
 import io
 from contextlib import redirect_stderr, redirect_stdout
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.engine import Connection
 
 from photosort.config import Settings
-from photosort.db import Base
+from photosort.db import Base, enable_sqlite_foreign_keys
 from photosort.security import verify_password
 from photosort.seed import configured_seed_users, seed_configured_users, users_table
 
 
 def _make_connection() -> Connection:
     engine = create_engine("sqlite:///:memory:")
+    # Dieselbe Durchsetzung wie jede ueber `make_engine` gebaute Engine (Spec 0350, ADR 0122):
+    # dieses Modul baut seine Engine zwar selbst, ist aber kein Ausnahmefall - nur die
+    # Migrationstests bauen bewusst einen Schemastand OHNE Fremdschluessel nach.
+    event.listen(engine, "connect", enable_sqlite_foreign_keys)
     Base.metadata.create_all(engine)
     return engine.connect()
 

@@ -1,8 +1,9 @@
 """specs/features/0044-projekte-loeschen.md / ADR 0062 - die beiden Metadaten-Tests.
 
-Sie sind der Ersatz fuer die fehlende Fremdschluessel-Durchsetzung der Testdatenbank: die Suite
-laeuft gegen SQLite In-Memory OHNE `PRAGMA foreign_keys=ON` (siehe conftest.py), eine falsche
-Loeschreihenfolge faellt dort zur Laufzeit NICHT auf.
+Sie sind die tragende Zusicherung fuer Reihenfolge UND Vollstaendigkeit. Die Fremdschluessel-
+Durchsetzung der Testdatenbank (Spec 0350) macht eine falsche Loeschreihenfolge zwar ebenfalls
+laut, sie nennt aber nur die verletzte Zusage: welcher der beiden Saetze zu frueh lief, sagt erst
+die Reihenfolgepruefung - und die greift auch dort, wo kein Datensatz die Kante verletzt.
 
 Beide leiten ihre Erwartung aus `Base.metadata` ab und wiederholen keine Tabellenliste - auch
 keine Ausnahmeliste fuer `users`/`fine_labels`: die beiden sind Fremdschluessel-ELTERN und fallen
@@ -230,10 +231,10 @@ async def test_a_project_with_a_linked_remote_run_stays_fully_deletable(
 
     Die Loeschreihenfolge in project_deletion.py passt bereits (`criterion_scoring_runs` VOR
     `remote_category_classification_runs`) - dieser Testfall haelt fest, dass das eine Zusage ist
-    und kein Zufall. Ohne ihn liesse sich die Reihenfolge spaeter umsortieren, ohne dass etwas
-    rot wuerde: die Suite laeuft gegen SQLite OHNE `PRAGMA foreign_keys=ON` (siehe Modul-
-    Docstring), eine verletzte Kante faellt zur Laufzeit nicht auf. Der Nachweis laeuft deshalb
-    ueber die REIHENFOLGE der abgesetzten Anweisungen, nicht ueber einen Integritaetsfehler."""
+    und kein Zufall. Ohne ihn liesse sich die Reihenfolge spaeter umsortieren: Die Durchsetzung
+    der Testdatenbank (Spec 0350) macht den Fehler zwar inzwischen laut, sie nennt aber nur die
+    verletzte Kante - welcher der beiden Saetze zu frueh lief, sagt erst die REIHENFOLGE der
+    abgesetzten Anweisungen, und die greift auch dann, wenn kein Datensatz die Kante verletzt."""
     graph = await build_project_graph(db_session, "Costa Rica")
     await db_session.commit()
 

@@ -8,8 +8,10 @@ Fremdschluessel-Reihenfolge - unabhaengig von der Datenmenge.
 Genutzt von `api/projects.py::delete_project` UND `demo_state.py::purge_demo_state`; es gibt
 danach genau eine Stelle, die weiss, welche Tabellen am Projekt haengen. Zwei Tests in
 `tests/test_project_deletion.py` sichern Reihenfolge und Vollstaendigkeit gegen `Base.metadata`
-ab - noetig, weil die Testsuite gegen SQLite ohne `PRAGMA foreign_keys=ON` laeuft und eine
-falsche Reihenfolge dort strukturell nicht auffiele.
+ab - noetig, weil ein Fremdschluesselfehler die ERSTE vergessene Anweisung nennt und ueber die
+uebrigen schweigt. Die FK-Durchsetzung der Testdatenbank (Spec 0350, `db.py::make_engine`) deckt
+die Reihenfolge zusaetzlich ab; nur die Zeilenzaehlung nennt aber die Tabelle, die eine Kaskade
+stehen liess.
 
 Nicht geloescht werden `users` und `fine_labels`: beide sind Fremdschluessel-ELTERN (die
 Feinlabel-Registry ist projektuebergreifendes Vokabular) und fallen aus der
@@ -116,9 +118,9 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     )
     # Die drei Motiv-Tabellen, in Fremdschluessel-Reihenfolge: `photo_motif_strengths` haengt an
     # `photo_motif_assessments` und muss VOR ihr fallen. Ohne diese drei Anweisungen ueberleben
-    # Aussagen ueber den Bildinhalt geloeschter Familienfotos die Projektloeschung. Die Testsuite
-    # laeuft ohne `PRAGMA foreign_keys=ON` - eine falsche Reihenfolge faellt dort strukturell nicht
-    # auf, dafuer gibt es die beiden Waechtertests dieses Moduls.
+    # Aussagen ueber den Bildinhalt geloeschter Familienfotos die Projektloeschung. Eine falsche
+    # Reihenfolge macht die Durchsetzung der Testdatenbank (Spec 0350) zwar laut, sie nennt aber
+    # nicht die vergessene Anweisung - dafuer gibt es die beiden Waechtertests dieses Moduls.
     await _run(
         "photo_motif_strengths",
         delete(PhotoMotifStrength).where(PhotoMotifStrength.photo_id.in_(photo_ids)),
