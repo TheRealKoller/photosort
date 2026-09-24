@@ -1,6 +1,6 @@
 # 0350 - Fremdschlüssel in der Testsuite durchsetzen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #528](https://github.com/TheRealKoller/photosort/pull/528))
 **Erstellt:** 2026-09-23
 **Bezug:** [Issue #350](https://github.com/TheRealKoller/photosort/issues/350), ADR
 [`0122`](../decisions/0122-fremdschluessel-werden-in-der-testsuite-durchgesetzt.md).
