@@ -1219,14 +1219,14 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     auch die neue Remote-Kategorie-Klassifizierung. **Löschumfang (Spec
     [`0044`](../specs/features/0044-projekte-loeschen.md), ADR
     [`decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md`](../specs/decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md)):**
-    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller dreiundzwanzig am
+    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller vierundzwanzig am
     Projekt hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
     `criterion_scoring_runs`, `remote_category_classification_runs`, `ratings`, `photo_scores`,
     `photo_criterion_scores`, `photo_rankings`, `events`, `photo_landmark_detections`,
     `photo_fine_labels`, `photo_duplicate_decisions`, `photo_motif_assessments`,
     `photo_motif_strengths`, `photo_motif_corrections`, `photo_album_suitability`,
     `photo_cloud_vision_errors`, `final_selection_decisions`, `feedback_events`, `place_lookups`,
-    `landmark_names`) sowie das Projekt selbst, dazu
+    `landmark_names`, `landmark_place_lookups`) sowie das Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
     Erreichbarkeitsprüfung automatisch heraus, ohne eigene Ausnahmeliste; ein `fine_labels`-Eintrag,
@@ -1917,6 +1917,15 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     tragendem Namen bleibt `place_kind='landmark'` mit `place_lat`/`place_lon = NULL`. In der
     Überschrift steht der Name **neben** dem Ortsnamen, nie darin: `events.place_name` führt
     weiterhin nur die Ortsform (siehe die Antwortbeschreibung oben).
+    Seit Spec
+    [`0529`](../specs/features/0529-sehenswuerdigkeitsname-ortsplausibel.md) / ADR
+    [`0123`](../specs/decisions/0123-der-sehenswuerdigkeitsname-wird-lokal-verortet-und-am-event-geprueft.md)
+    trägt der Name zusätzlich eine **Ortsbedingung**: `events.py::_built` verwirft `landmark_name`
+    (auf `None`), wenn die Fundorte des Namens laut `landmark_place_lookups` **keinen** Punkt näher
+    als `geonames.LANDMARK_PLAUSIBILITY_RADIUS_METERS` an einer gemessenen Zelle des Events haben.
+    `place_kind` fällt dadurch auf `coordinate`/`multiple`/`None`, die Koordinatenstufe greift
+    wieder. Die Prüfung sitzt **hinter** den bestehenden Regeln (Konfidenzgrenze, Trägeranteil) und
+    rückt nichts nach; die Zellen eines Events mit Namen sind dafür bereits aufgelöst.
 - **Rating** *(implementiert, Spec 0002, `models.py`; Neufassung mit Spec
   [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md) / ADR
   [`0098`](../specs/decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md))*: Die
@@ -2159,6 +2168,30 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     erreichen die Tabelle nie. `matched_level` ist die Aussage der Quelle, nicht die Ableitung aus
     gefüllten Spalten, und wird an beiden Rändern gegen `places.PLACE_LEVELS` geprüft; ein Treffer
     auf `region`/`country` gilt als „kein Name aufgelöst".
+- **LandmarkPlaceLookup** *(Spec
+  [`0529`](../specs/features/0529-sehenswuerdigkeitsname-ortsplausibel.md), ADR
+  [`0123`](../specs/decisions/0123-der-sehenswuerdigkeitsname-wird-lokal-verortet-und-am-event-geprueft.md),
+  `models.py`; Tabelle `landmark_place_lookups`)*: die Auskunft darüber, **wo eine benannte
+  Sehenswürdigkeit laut Gazetteer liegt** — `project_id` (echter Fremdschlüssel, NOT NULL),
+  `folded_name` (über `geonames.fold_landmark_name`), die Fundorte als JSON-Liste von `[lat, lon]`,
+  `looked_up_at`; `UniqueConstraint(project_id, folded_name)`. Projektgebunden wie `landmark_names`
+  und aus demselben Grund, in `project_deletion.py` mitgelöscht und in `tests/project_graph.py`
+  geführt.
+  - **Dreiwertig, und die drei Zustände fallen nie zusammen.** **Keine Zeile** heißt „nie
+    nachgeschlagen" und lässt den Namen unverändert; eine Zeile mit **leerer** Punktliste heißt
+    „nachgeschlagen, kein Fund" und verwirft ihn; eine Zeile **mit** Punkten bestätigt ihn, sofern
+    einer davon näher als `geonames.LANDMARK_PLAUSIBILITY_RADIUS_METERS` an einer gemessenen Zelle
+    des Events liegt. Die Punktliste ist deshalb **nicht nullbar, aber leer erlaubt**: Fiele (1) mit
+    (2) zusammen, verwürfe ein Lauf ohne Datensatz jeden Namen.
+  - **Die Punkte sind reine Gazetteer-Koordinaten.** In die Liste gelangt nie eine Foto-, Event- oder
+    Zellkoordinate; die Tabelle trägt keine Entfernung, kein Prüfergebnis und keine `event_id` — sonst
+    würde aus einer Namensauskunft eine persistierte Aufenthaltsaussage mit feinerer Körnung, als
+    `places.PLACE_CELL_DIGITS` sie zusichert.
+  - **Beschafft wird ausschließlich im Worker** (`worker.py::_landmark_points_by_name`, Muster
+    `_place_infos`), am Ende der Landmark-Phase und für die **Kandidaten**-, nicht die
+    Gewinnernamen — der Gewinner entsteht erst in `events.py::_built`. `rebuild_run_grouping`
+    bekommt **kein** Verzeichnis: es läuft in einem Request, liest nur den Bestand und fragt
+    niemanden.
 - **Der Ortsdatensatz als Betriebsartefakt** *(ADR
   [`0105`](../specs/decisions/0105-ortsnamen-aus-dem-lokalen-datensatz-als-auszug-auf-einem-volume.md))*:
   Die Ortsauskunft entsteht **vollständig innerhalb des Systems**, aus einem vorbereiteten Auszug
@@ -2173,6 +2206,15 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   und jeder Lauf schreibt eine laute Zeile mit festem Grund-Token. Das ist der Zustand von heute —
   Events heißen dann nach Nummer und Zeitspanne —, kein Fehlerzustand. Weder Rohdatei noch Auszug
   liegen im Image oder im Repository.
+  - **Seit Spec 0529 zwei Dateien aus einem Bezug.** Neben dem Ortsauszug (`P`+`A`, unverändert rund
+    69 MB) entsteht ein **Sehenswürdigkeitsauszug** (Klassen `S`/`T`/`L`/`H`/`V`, **mit**
+    `alternatenames`, rund 273 MB) als Geschwisterdatei neben `PLACE_DATASET_PATH`; seine Lage leitet
+    `geonames.py::landmark_dataset_path` ab, es gibt **keine** eigene Betriebseinstellung. Beide
+    entstehen in **einem** Kommandoaufruf und **einem** Durchgang, jede mit eigener `*.sha256`.
+    Gelesen wird er über `geonames.py::LandmarkGazetteer` — namensgeschlüsselt, nicht kachelweise,
+    über die eine Faltung `fold_landmark_name`, **kein** Ähnlichkeitsrückfall. Fehlt er oder weicht
+    sein Hash ab, liefert `build_landmark_gazetteer` `None`: es wird **kein** Name verworfen
+    (fail-open), mit **eigenen** Grund-Token, getrennt von denen des Ortsauszugs.
 - **FineLabel** *(implementiert, Spec
   [`0055`](../specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md),
   `models.py`; Tabelle `fine_labels`, bis Spec 0289 `category_labels`/`CategoryLabel`, ADR
