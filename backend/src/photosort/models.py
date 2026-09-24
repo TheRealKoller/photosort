@@ -1413,6 +1413,44 @@ class LandmarkName(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class LandmarkPlaceLookup(Base):
+    """Die Auskunft über die Fundorte eines gefalteten Sehenswürdigkeitsnamens - projektgebunden und
+    LAUF-UNABHÄNGIG.
+
+    Einmal nachgeschlagen, danach wiederverwendet: derselbe Name wird in einem zweiten Lauf nicht
+    erneut im zweiten Auszug gesucht. Der Schlüssel ist der über
+    `geonames.py::fold_landmark_name` gefaltete Name - DIESELBE Faltung auf Schreib- und Leseseite;
+    zwei Fassungen liefen auseinander und die Suche schlüge still fehl.
+
+    AM PROJEKT und nicht projektübergreifend: Der Inhalt (die Fundorte eines Namens) ist
+    projektunabhängig, der NAME ist es nicht - er benennt einen Ort, an dem diese Familie war. Die
+    Projektbindung (echter Fremdschlüssel, NOT NULL) hält ihre Lebensdauer an der des Projekts fest
+    und lässt sie aus der Erreichbarkeitsprüfung der Projektlöschung nicht herausfallen.
+
+    `points` ist die JSON-Liste von `[lat, lon]` der gefundenen Gazetteer-Punkte - NICHT nullbar und
+    darf LEER sein (ADR 0123 Punkt 2). Die drei Zustände fallen sonst zusammen: **keine Zeile**
+    heißt „nie nachgeschlagen" (fail-open, der Name bleibt), eine **leere Liste** „nachgeschlagen,
+    ohne Fund" (der Name fällt), eine **gefüllte Liste** „nachgeschlagen, mit Fund" (der Name bleibt,
+    wenn ein Fundort im Umkreis des Aufnahmeorts liegt). Wäre die Spalte nullbar, verwürfe ein Lauf
+    ohne Sehenswürdigkeits-Auszug jeden Namen (S4).
+
+    KEINE Spalte für eine Entfernung, ein Prüfergebnis oder eine `event_id` (S1): eine persistierte
+    Entfernung machte aus einer Namensauskunft eine Aufenthaltsaussage mit feinerer Körnung, als
+    `PLACE_CELL_DIGITS = 2` sie zusichert. Die Punkte selbst sind öffentlich enumerierbare
+    Gazetteer-Koordinaten, keine Koordinate eines Fotos, eines Events oder einer Zelle."""
+
+    __tablename__ = "landmark_place_lookups"
+    __table_args__ = (
+        UniqueConstraint("project_id", "folded_name", name="uq_landmark_place_lookup_project_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    folded_name: Mapped[str]
+    points: Mapped[list[list[float]]] = mapped_column(SQLJSON)
+    looked_up_at: Mapped[datetime]
+
+
 class QualityWeightEntry(Base):
     """Ein Gewicht je Kriterium innerhalb EINER Fassung.
 

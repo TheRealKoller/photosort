@@ -69,8 +69,13 @@ from photosort.criteria import (
 from photosort.db import async_session_factory
 from photosort.duplicates import survives_ausschuss
 from photosort.event_inputs import read_event_inputs
-from photosort.events import assign_place_names, build_events
-from photosort.geonames import build_place_resolver
+from photosort.events import LandmarkPointsByName, assign_place_names, build_events
+from photosort.geonames import (
+    LandmarkGazetteer,
+    build_landmark_gazetteer,
+    build_place_resolver,
+    folded_landmark_names,
+)
 from photosort.horizon import compute_horizon_tilt_score
 from photosort.label_embedding import LabelEmbedderLike, build_label_embedder
 from photosort.landmark import (
@@ -91,6 +96,7 @@ from photosort.models import (
     Event,
     FineLabel,
     LandmarkName,
+    LandmarkPlaceLookup,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
@@ -1578,6 +1584,80 @@ async def _place_infos(
     return by_cell
 
 
+# Die Fabrik des Namensverzeichnisses: aus der Menge der noch offenen, bereits GEFALTETEN Namen
+# entsteht ein Verzeichnis oder `None`. `None` heisst "es wird keines gebaut" - weil der zweite
+# Auszug fehlt oder von seinem Hash abweicht - und ist ein arbeitsfaehiger Zustand (S4, fail-open).
+LandmarkGazetteerFactory = Callable[[Collection[str]], LandmarkGazetteer | None]
+
+
+async def _landmark_points_by_name(
+    session: AsyncSession,
+    project_id: int,
+    names: Collection[str],
+    build_gazetteer: LandmarkGazetteerFactory | None,
+) -> LandmarkPointsByName:
+    """Die Fundorte je Sehenswuerdigkeitsname - aus dem Bestand gelesen, nur fuer die FEHLENDEN
+    gefragt (Muster `event_inputs.py::_landmark_names`).
+
+    S7: Die Bindung an `project_id` steht in der Abfrage ausgeschrieben, und es gibt KEINEN
+    Rueckfall auf die Zeile eines anderen Projekts - ein solcher Rueckfall waere der stille Weg, auf
+    dem die Lebensdauer-Bindung der Fundorte aufhoert zu gelten.
+
+    `build_gazetteer` ist `None` im Request-Pfad (S8) und wird sonst erst gerufen, wenn es
+    tatsaechlich etwas zu fragen gibt: ein Durchgang durch den zweiten Auszug ohne offenen Namen
+    waere reine Arbeit. Liefert die Fabrik `None` (Auszug fehlt oder weicht von seinem Hash ab),
+    wird nichts beschafft und nichts geschrieben; die Namen fehlen im ERGEBNIS und passieren damit
+    die Ortspruefung unbeschadet (S4, fail-open).
+
+    DREI AUSGAENGE, und sie sind verschieden (ADR 0123 Punkt 2): **keine Zeile** heisst "nie
+    nachgeschlagen" und der Name bleibt; eine **nachgeschlagene, leere Punktmenge** heisst
+    "nachgeschlagen, ohne Fund" und der Name faellt; eine **gefuellte Punktmenge** entscheidet die
+    Umkreispruefung. Geschluesselt ist das Ergebnis mit dem ROhen Namen - genau der, den
+    `events.py::_name_of` spaeter als Gewinnername liefert und mit dem die Pruefung nachschlaegt.
+    Gefragt und abgelegt wird dagegen der GEFALTETE Name: `Trevi-Brunnen` trifft `trevi brunnen`.
+
+    Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer."""
+    folded_by_name = folded_landmark_names(names)
+    if not folded_by_name:
+        return {}
+
+    rows = (
+        await session.execute(
+            select(LandmarkPlaceLookup).where(
+                LandmarkPlaceLookup.project_id == project_id,
+                LandmarkPlaceLookup.folded_name.in_(set(folded_by_name.values())),
+            )
+        )
+    ).scalars()
+    points_by_folded: dict[str, tuple[tuple[float, float], ...]] = {
+        row.folded_name: tuple((float(point[0]), float(point[1])) for point in row.points)
+        for row in rows
+    }
+
+    missing = sorted(set(folded_by_name.values()) - set(points_by_folded))
+    if missing and build_gazetteer is not None:
+        gazetteer = build_gazetteer(missing)
+        if gazetteer is not None:
+            now = _now_utc()
+            for folded in missing:
+                points = gazetteer.points(folded)
+                session.add(
+                    LandmarkPlaceLookup(
+                        project_id=project_id,
+                        folded_name=folded,
+                        points=[[lat, lon] for lat, lon in points],
+                        looked_up_at=now,
+                    )
+                )
+                points_by_folded[folded] = points
+
+    return {
+        usable: points_by_folded[folded]
+        for usable, folded in folded_by_name.items()
+        if folded in points_by_folded
+    }
+
+
 @dataclass(frozen=True)
 class ContentCriteria:
     """Das Ergebnis der bildbasierten Analyse EINES Fotos: die Kriterien-Werte und die
@@ -1810,6 +1890,7 @@ async def _build_grouping_and_rankings(
     project_id: int,
     values_by_photo_id: Mapping[int, dict[str, float]],
     build_place_resolver: PlaceResolverFactory | None,
+    build_landmark_gazetteer: LandmarkGazetteerFactory | None,
 ) -> None:
     """Die Gliederung eines Laufs samt seiner Rangzeilen: Event-Bildung, Partitionen und
     `PhotoRanking`-Zeilen.
@@ -1826,6 +1907,11 @@ async def _build_grouping_and_rankings(
     vergessene Aufrufstelle ein stiller Totalausfall der Ortsauflösung; ohne Vorgabe meldet ihn
     `mypy --strict`. `None` heisst hier "liest nur den Bestand und fragt niemanden" und ist der
     Request-Pfad (S10).
+
+    `build_landmark_gazetteer` hat aus DEMSELBEN Grund KEINEN Vorgabewert (S8): `None` heisst
+    "liest nur die abgelegte Auskunft, baut kein Verzeichnis" - auch das ist der Request-Pfad. Eine
+    Vorgabe waere der stille Weg, auf dem eine vergessene Aufrufstelle den zweiten Auszug nie
+    oeffnete und jeden Namen durchliesse.
 
     DIE PARTITION IST ALLEIN DAS EVENT. Ein Foto bekommt je Lauf genau eine Rangzeile; es gibt
     keine Kategorie-Ebene und keine Uebersteuerung mehr, und die Motivstaerken bilden
@@ -1846,7 +1932,22 @@ async def _build_grouping_and_rankings(
     # `PhotoScore.cluster_key` wird dabei NIE mutiert (Ownership-Grenze): der dort stehende
     # Phase-A-Basiswert bleibt stabil, unabhaengig davon, ob und wann Kriterien-Scoring laeuft.
     # Die Divergenz zu `PhotoRanking.event_id` ist gewollt.
-    built_events = build_events(event_inputs.candidates)
+    # DIE ORTSPLAUSIBILITAET DES SEHENSWUERDIGKEITSNAMENS (Spec 0529), zwischen dem Einlesen und
+    # der Event-Bildung: gefragt wird die KANDIDATENMENGE, nicht nur die Gewinnermenge - der
+    # Gewinner entsteht erst INNERHALB von `_built`, und nur-Gewinner hiesse, die Eventbildung
+    # zweimal zu rechnen oder die Namenswahl aus `_built` herauszuziehen.
+    landmark_names = {
+        candidate.landmark_name
+        for candidate in event_inputs.candidates
+        if candidate.landmark_name is not None
+    }
+    landmark_points_by_name = await _landmark_points_by_name(
+        session, project_id, landmark_names, build_landmark_gazetteer
+    )
+
+    built_events = build_events(
+        event_inputs.candidates, landmark_points_by_name=landmark_points_by_name
+    )
 
     # DIE ORTSNAMEN, zwischen Event-Bildung und Schreiben der Zeilen. Gefragt wird fuer JEDES
     # Event mit einer gemessenen Zelle - auch fuer ein benanntes (Spec 0514, ADR 0120): der
@@ -2170,7 +2271,12 @@ async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
     # Er baut die Namen ausschliesslich aus bereits abgelegten Auskuenften neu und fragt niemanden;
     # eine noch nie gefragte Zelle bleibt hier ohne Namen, bis der naechste Kriterien-Lauf sie
     # beschafft. Ohne diese Grenze koennte ein Request-Pfad nach aussen wirken.
-    await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id, None)
+    #
+    # `None` STATT EINES VERZEICHNISSES (S8): dasselbe Argument fuer die Ortsplausibilitaet des
+    # Sehenswuerdigkeitsnamens - ein Durchgang ueber den zweiten Auszug dauerte gemessen 43 s und
+    # waere ueber eine authentifizierte Anfrage beliebig oft wiederholbar. Der Neuaufbau liest die
+    # abgelegte Auskunft; unbekannte Namen behalten ihre Namen (Zustand 1).
+    await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id, None, None)
 
 
 async def _start_criterion_scoring_run(
@@ -2222,6 +2328,7 @@ async def run_criterion_scoring(
     build_landmarker: Callable[[], FaceLandmarkerLike] = build_face_landmarker,
     build_landmark_client: Callable[[str], LandmarkClientLike] = build_landmark_client,
     build_place_resolver: PlaceResolverFactory = build_place_resolver,
+    build_landmark_gazetteer: LandmarkGazetteerFactory = build_landmark_gazetteer,
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
     *,
     run: CriterionScoringRun | None = None,
@@ -2786,7 +2893,12 @@ async def run_criterion_scoring(
         await session.commit()
 
         await _build_grouping_and_rankings(
-            session, run, project.id, candidate_values, build_place_resolver
+            session,
+            run,
+            project.id,
+            candidate_values,
+            build_place_resolver,
+            build_landmark_gazetteer,
         )
 
         run.status = ScanStatus.SUCCESS

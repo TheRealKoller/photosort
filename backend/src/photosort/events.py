@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from fractions import Fraction
 from typing import Protocol
 
+from photosort.geonames import LANDMARK_PLAUSIBILITY_RADIUS_METERS
 from photosort.places import (
     MAX_PLACE_NAME_LENGTH,
     PlaceInfo,
@@ -26,6 +27,13 @@ from photosort.places import (
 )
 from photosort.scoring import haversine_meters
 from photosort.selection import carried_motifs
+
+# Die Sehenswuerdigkeitsauskunft des Laufs (Spec 0529): Name -> Gazetteer-Fundorte, geschluesselt
+# mit GENAU dem Namen, den `_name_of` liefert (also der bereits sanierte Rohname des Kandidaten) -
+# die Faltung liegt auf der Abfrage- und Ablageseite in `worker.py::_landmark_points_by_name`.
+# `None` als Ganzes heisst "keine Auskunft vorhanden"; ein Eintrag mit leerer Punktmenge heisst
+# "nachgeschlagen, ohne Fund" - die beiden duerfen nie zusammenfallen (ADR 0123 Punkt 2).
+LandmarkPointsByName = Mapping[str, tuple[tuple[float, float], ...]]
 
 # --- Die SIEBEN eigenen Schwellen der Event-Bildung ----------------------------------------------
 #
@@ -849,9 +857,69 @@ def _place_of(
     return "coordinate", lat, lon
 
 
-def _built(position: int, members: Sequence[EventCandidate]) -> BuiltEvent:
+def _landmark_name_is_plausible(
+    landmark_name: str,
+    cells: Sequence[tuple[float, float]],
+    landmark_points_by_name: LandmarkPointsByName | None,
+) -> bool:
+    """Ob ein Sehenswuerdigkeitsname zu den GEMESSENEN Zellen eines Events passt (Spec 0529).
+
+    Die Reihenfolge ist die Regel, nicht die Auswertung von oben nach unten:
+
+    1. **Keine Auskunft** (`landmark_points_by_name is None`) -> wahr. Ein Lauf ohne
+       Sehenswuerdigkeits-Auszug verwirft KEINEN Namen (S4, fail-open) - die Alternative waere ein
+       Betriebszustand, in dem ein einzelner fehlender Auszug alle Namen eines Laufs auf einmal
+       entfernte.
+    2. **Keine einzige gemessene Zelle** -> wahr. Ohne Aufnahmeort gibt es nichts zu pruefen; das
+       schlaegt den Fund-Fall, deshalb steht es VOR ihm.
+    3. **Kein Eintrag zum Namen** -> wahr. Das ist Zustand 1 am Datenbestand ("nie nachgeschlagen")
+       und strikt verschieden von Zustand 2 "nachgeschlagen, ohne Fund" - unterschieden wird an der
+       ABWESENHEIT des Eintrags, nicht am Ergebnis (ADR 0123 Punkt 2).
+    4. **Leere Punktmenge** -> falsch. Nachgeschlagen und nichts gefunden.
+    5. Sonst: wahr, wenn mindestens EIN Fundort mindestens EINER gemessenen Zelle naeher liegt als
+       `LANDMARK_PLAUSIBILITY_RADIUS_METERS` - STRENG, die Grenze selbst gehoert nicht mehr dazu.
+       Eine Entfernung wird dabei nicht abgelegt und nicht geloggt (S1); sie ist ein reiner
+       Zwischenwert dieser Entscheidung.
+
+    Rein: sie liest nichts nach, sie greift nur auf die uebergebene Auskunft zu. Der Name selbst
+    kommt gefaltet von der Schreibseite (`landmark_place_lookups.folded_name`), sodass hier nur der
+    Schluesselvergleich steht und keine zweite Faltung entsteht."""
+    if landmark_points_by_name is None:
+        return True
+    if not cells:
+        return True
+    points = landmark_points_by_name.get(landmark_name)
+    if points is None:
+        return True
+    if not points:
+        return False
+    radius = LANDMARK_PLAUSIBILITY_RADIUS_METERS
+    return any(
+        haversine_meters(cell[0], cell[1], point[0], point[1]) < radius
+        for cell in cells
+        for point in points
+    )
+
+
+def _built(
+    position: int,
+    members: Sequence[EventCandidate],
+    landmark_points_by_name: LandmarkPointsByName | None = None,
+) -> BuiltEvent:
+    """Ein Event aus seinen Mitgliedern.
+
+    Die Ortsplausibilitaet des Sehenswuerdigkeitsnamens (Spec 0529) sitzt NACH `_name_of` und VOR
+    `_place_of`: erst steht der Gewinnername fest, dann faellt er gegebenenfalls, und erst danach
+    entscheidet `_place_of` ueber den Ortsbezug. Faellt der Name, hat das Event exakt dieselben
+    Werte wie eines, dessen Kandidaten von vornherein namenlos waren - die Zellen sind dieselben und
+    `_place_of` bekommt denselben `None`-Namen. Es entsteht nie ein Cluster ohne jede Benennung, wo
+    vorher einer mit Ortsbezug stand."""
     landmark_name = _name_of(members)
     cells = _cells_of(members)
+    if landmark_name is not None and not _landmark_name_is_plausible(
+        landmark_name, cells, landmark_points_by_name
+    ):
+        landmark_name = None
     place_kind, place_lat, place_lon = _place_of(cells, landmark_name)
     return BuiltEvent(
         position=position,
@@ -1201,6 +1269,7 @@ def build_events(
     *,
     min_event_photos: int | None = None,
     merge_max_gap: timedelta | None = None,
+    landmark_points_by_name: LandmarkPointsByName | None = None,
 ) -> list[BuiltEvent]:
     """Die Event-Bildung - die Gliederung ohne ihre Erklaerung.
 
@@ -1213,6 +1282,7 @@ def build_events(
             signals,
             min_event_photos=min_event_photos,
             merge_max_gap=merge_max_gap,
+            landmark_points_by_name=landmark_points_by_name,
         ).events
     )
 
@@ -1225,6 +1295,7 @@ def explain_events(
     motif_presence_threshold: float | None = None,
     min_event_photos: int | None = None,
     merge_max_gap: timedelta | None = None,
+    landmark_points_by_name: LandmarkPointsByName | None = None,
 ) -> EventFormation:
     """Die Event-Bildung in DREI Stufen: die Motivwechsel, der Durchlauf ueber die Signale und das
     Zusammenlegen zu kleiner Segmente - samt der Ursache jeder Grenze.
@@ -1258,7 +1329,12 @@ def explain_events(
     Festlegungen der ersten Stufe (`confirming_photos`, `motif_presence_threshold`) und die beiden
     der dritten (`min_event_photos`, `merge_max_gap`), jeweils `None` = Modulkonstante. Die
     Empfindlichkeitsmessung braucht die Ursachenmengen DIESES Durchlaufs unter variierten Werten,
-    nicht die einer Nachbildung."""
+    nicht die einer Nachbildung.
+
+    `landmark_points_by_name` ist die Sehenswuerdigkeitsauskunft des Laufs (Spec 0529): gefalteter
+    Name -> Gazetteer-Fundorte. `None` (die Vorgabe) heisst "keine Auskunft vorhanden" und laesst
+    jeden bestehenden Aufruf gueltig; ein Eintrag mit LEERER Punktmenge heisst "nachgeschlagen, ohne
+    Fund". Der Unterschied der beiden ist die ganze Regel - siehe `_landmark_name_is_plausible`."""
     ordered = sorted(candidates, key=lambda candidate: (candidate.taken_at, candidate.photo_id))
     noted_starts = motif_change_starts(
         ordered,
@@ -1304,7 +1380,7 @@ def explain_events(
 
     return EventFormation(
         events=tuple(
-            _built(position, segment.members)
+            _built(position, segment.members, landmark_points_by_name)
             for position, segment in enumerate(outcome.segments, start=1)
         ),
         causes=tuple(segment.causes for segment in outcome.segments),

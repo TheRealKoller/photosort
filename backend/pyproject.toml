@@ -6,7 +6,12 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "sqlalchemy[asyncio]>=2.0",
+    # Obergrenze (2026-09-24): sqlalchemy 2.1.0 erschien sdist-only und mit einem doppelten
+    # normalisierten Extra (`mssql-pymssql`) in seiner pyproject.toml. uv verwirft die Datei
+    # ("duplicate normalized extra name `mssql-pymssql`"), damit faellt der CI-Installations-
+    # schritt ohne jede Codeaenderung aus. Die Grenze faellt, sobald ein Wheel vorliegt oder uv
+    # das sdist parst.
+    "sqlalchemy[asyncio]>=2.0,<2.1",
     "alembic>=1.13",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.6",

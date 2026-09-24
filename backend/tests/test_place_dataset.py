@@ -1,12 +1,14 @@
-"""Der lokale Ortsdatensatz: der Auflöser im Produktivpfad (`geonames.py`) und das getippte
-Bezugskommando, das seinen Auszug bildet (`place_dataset.py`).
+"""Die lokalen GeoNames-Auszuüge: der Ortsauflöser im Produktivpfad (`geonames.py`) und das
+getippte Bezugskommando, das AUS EINEM BEZUG ZWEI Auszüge bildet (`place_dataset.py`).
 
-Grundlage: ADR 0105 (Wegwahl und Betriebsweg), Spec 0434 Abschnitt 8.
+Grundlage: ADR 0105 (Wegwahl und Betriebsweg), Spec 0434 Abschnitt 8, Spec 0529/ADR 0123 (zweiter
+Auszug für die Ortsplausibilität der Sehenswürdigkeitsnamen).
 
-KEIN Test bezieht die echte Datei - die Rohzeilen stehen literal. Die beiden tragenden Nachweise
-dieser Datei sind: die GLEICHHEIT von Rohzeilen und Auszug (ohne sie waere "der Auszug verhaelt
-sich wie die Rohdatei" eine Behauptung) und das FERNHALTEN des Bezugskommandos von jedem
-automatischen Pfad (ein 400-MB-Abruf tritt nur ein, wenn er getippt wird).
+KEIN Test bezieht die echte Datei - die Rohzeilen stehen literal. Die drei tragenden Nachweise
+dieser Datei sind: die GLEICHHEIT von Rohzeilen und Auszug für JEDEN der beiden Auszüge (ohne sie
+waere "der Auszug verhaelt sich wie die Rohdatei" eine Behauptung), die Unveraendertheit des
+Ortsauszugs aus demselben Durchgang und das FERNHALTEN des Bezugskommandos von jedem automatischen
+Pfad (ein 400-MB-Abruf tritt nur ein, wenn er getippt wird).
 """
 
 from __future__ import annotations
@@ -15,10 +17,12 @@ import ast
 import dataclasses
 import gzip
 import logging
+import zipfile
 from pathlib import Path
 
 import pytest
 
+from photosort import place_dataset
 from photosort.geonames import (
     DATASET_REASON_HASH_MISMATCH,
     DATASET_REASON_HASH_MISSING,
@@ -31,13 +35,17 @@ from photosort.geonames import (
     geonames_level,
     geonames_match_distances,
     parse_geonames_line,
+    parse_landmark_line,
     sha256_of,
 )
 from photosort.models import PlaceLookup
 from photosort.place_dataset import (
+    GEONAMES_ARCHIVE_MEMBER,
     GEONAMES_ARCHIVE_URL,
+    build_dataset,
+    extract_landmark_line,
     extract_line,
-    write_extract,
+    write_extracts,
 )
 from photosort.places import PlaceAnswer, PlaceInfo, usable_locality
 from photosort.scoring import haversine_meters
@@ -270,9 +278,9 @@ class TestTheExtractBehavesLikeTheRawFile:
     ) -> None:
         target = tmp_path / "auszug.txt.gz"
 
-        kept = write_extract([*BERLIN_LINES, BERG_LINE], target)
+        kept = write_extracts([*BERLIN_LINES, BERG_LINE], {target: extract_line})
 
-        assert kept == len(BERLIN_LINES)
+        assert kept[target] == len(BERLIN_LINES)
         with gzip.open(target, "rt", encoding="utf-8") as handle:
             lines = handle.read().splitlines()
         assert len(lines) == len(BERLIN_LINES)
@@ -282,15 +290,154 @@ class TestTheExtractBehavesLikeTheRawFile:
         """Geprueft wird der AUSZUG selbst, also genau die Datei, die gelesen wird."""
         target = tmp_path / "auszug.txt.gz"
 
-        write_extract(BERLIN_LINES, target)
+        write_extracts(BERLIN_LINES, {target: extract_line})
 
         assert dataset_hash_path(target).read_text(encoding="utf-8").strip() == sha256_of(target)
+
+
+# Der zweite Auszug: Klassen `S`/`T`/`L`/`H`/`V` und zusaetzlich `alternatenames`. `BERG_LINE`
+# steht bewusst in beiden Lagen - der Ortsauszug wirft sie weg, der Sehenswuerdigkeitsauszug
+# behaelt sie.
+LANDMARK_LINES = [
+    _geonames_line("Eiffelturm", 48.8584, 2.2945, "S", "TOWER"),
+    _geonames_line("Ben Nevis", 56.7969, -5.0036, "T", "MT"),
+    _geonames_line("Genfersee", 46.4500, 6.5500, "H", "LK"),
+    _geonames_line("Englischer Garten", 48.1640, 11.6050, "L", "PRK"),
+    _geonames_line("Bayerischer Wald", 48.9000, 13.4000, "V", "FRST"),
+]
+
+
+class TestTheSecondExtractBehavesLikeTheRawFile:
+    """DER GLEICHHEITSNACHWEIS des zweiten Auszugs. Dieselbe Formatregel wie beim Ortsauszug,
+    derselbe Leser (`geonames.parse_landmark_line`) - und der Ortsauszug entsteht aus DEMSELBEN
+    Durchgang zeichengleich wie zuvor."""
+
+    @pytest.mark.parametrize("feature_class", ["S", "T", "L", "H", "V"])
+    def test_every_landmark_class_is_kept(self, feature_class: str) -> None:
+        assert extract_landmark_line(_geonames_line("X", 1.0, 2.0, feature_class, "X")) is not None
+
+    def test_a_place_line_is_dropped(self) -> None:
+        assert extract_landmark_line(BERLIN_LINES[0]) is None
+
+    def test_the_alternates_are_written_and_the_asciiname_is_not(self) -> None:
+        """Ohne `alternatenames` fielen 33 von 50 gemessenen Namen durch (ADR 0123 Punkt 1);
+        `asciiname` wurde bewusst nicht mitgelesen."""
+        line = extract_landmark_line(LANDMARK_LINES[0])
+        assert line is not None
+        raw_fields = LANDMARK_LINES[0].split("\t")
+        fields = line.split("\t")
+
+        assert len(fields) == len(raw_fields)
+        assert fields[3] == "Berlino,Berlijn"
+        assert fields[2] == ""
+        assert [index for index, value in enumerate(fields) if value] == [1, 3, 4, 5, 6, 7]
+
+    def test_the_same_name_gets_the_same_entry_from_both_versions(self) -> None:
+        raw = [*LANDMARK_LINES, BERG_LINE]
+        extracted = [
+            line
+            for line in (extract_landmark_line(raw_line) for raw_line in raw)
+            if line is not None
+        ]
+
+        assert [parse_landmark_line(line) for line in raw] == [
+            parse_landmark_line(line) for line in extracted
+        ]
+
+    def test_the_place_extract_from_the_same_pass_is_unchanged(self, tmp_path: Path) -> None:
+        """Ein Durchgang, zwei Zieldateien: der Ortsauszug ist zeichengleich zu dem, was
+        `extract_line` allein ergaebe."""
+        place = tmp_path / "geonames-auszug.txt.gz"
+        landmarks = tmp_path / "sehenswuerdigkeits-auszug.txt.gz"
+        source = [*BERLIN_LINES, BERG_LINE, *LANDMARK_LINES]
+
+        counts = write_extracts(source, {place: extract_line, landmarks: extract_landmark_line})
+
+        expected_place = [
+            line for line in (extract_line(raw_line) for raw_line in source) if line is not None
+        ]
+        expected_landmark = [
+            line
+            for line in (extract_landmark_line(raw_line) for raw_line in source)
+            if line is not None
+        ]
+        with gzip.open(place, "rt", encoding="utf-8") as handle:
+            written_place = handle.read().splitlines()
+        with gzip.open(landmarks, "rt", encoding="utf-8") as handle:
+            written_landmark = handle.read().splitlines()
+
+        assert written_place == expected_place
+        assert written_landmark == expected_landmark
+        assert counts == {place: len(expected_place), landmarks: len(expected_landmark)}
+
+    def test_each_extract_gets_its_own_hash(self, tmp_path: Path) -> None:
+        place = tmp_path / "geonames-auszug.txt.gz"
+        landmarks = tmp_path / "sehenswuerdigkeits-auszug.txt.gz"
+
+        write_extracts(LANDMARK_LINES, {place: extract_line, landmarks: extract_landmark_line})
+
+        assert dataset_hash_path(place).read_text(encoding="utf-8").strip() == sha256_of(place)
+        assert dataset_hash_path(landmarks).read_text(encoding="utf-8").strip() == sha256_of(
+            landmarks
+        )
+
+
+class TestTheFetchCommandWritesBothExtracts:
+    """Ein Bezug, ein Durchgang, zwei Zieldateien samt je eigener `*.sha256` (ADR 0123 Punkt 1)."""
+
+    def test_one_run_creates_both_files(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        source = "\n".join([*BERLIN_LINES, BERG_LINE, *LANDMARK_LINES]) + "\n"
+
+        def fake_download(archive: Path) -> None:
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr(GEONAMES_ARCHIVE_MEMBER, source)
+
+        monkeypatch.setattr(place_dataset, "_download_archive", fake_download)
+        target = tmp_path / "geonames-auszug.txt.gz"
+        landmark = tmp_path / "sehenswuerdigkeits-auszug.txt.gz"
+
+        counts = build_dataset(target, landmark)
+
+        assert counts == {
+            target: len(BERLIN_LINES),
+            landmark: len(LANDMARK_LINES) + 1,
+        }
+        assert target.is_file()
+        assert landmark.is_file()
+        assert not (tmp_path / "allCountries.zip").exists()
+
+    def test_the_second_target_is_a_flag_and_defaults_to_the_sibling(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Path] = {}
+
+        def fake_build(target: Path, landmark: Path) -> dict[Path, int]:
+            captured["landmark"] = landmark
+            return {target: 1, landmark: 2}
+
+        monkeypatch.setattr(place_dataset, "build_dataset", fake_build)
+
+        exit_code = place_dataset.main(["--pfad", "/daten/geonames-auszug.txt.gz"])
+
+        assert exit_code == 0
+        assert captured["landmark"] == Path("/daten/sehenswuerdigkeits-auszug.txt.gz")
+
+    def test_an_explicit_second_path_wins(self) -> None:
+        parser = place_dataset._build_parser()
+
+        assert parser.parse_args([]).sehenswuerdigkeits_pfad is None
+        assert (
+            parser.parse_args(["--sehenswuerdigkeits-pfad", "/x/y.txt.gz"]).sehenswuerdigkeits_pfad
+            == "/x/y.txt.gz"
+        )
 
 
 class TestTheResolverReadsTheExtract:
     async def test_it_answers_from_a_gzip_packed_extract(self, tmp_path: Path) -> None:
         target = tmp_path / "auszug.txt.gz"
-        write_extract(BERLIN_LINES, target)
+        write_extracts(BERLIN_LINES, {target: extract_line})
 
         resolver = GeoNamesResolver(target, [BERLIN_KREUZBERG])
         answer = await resolver.resolve(BERLIN_KREUZBERG)
@@ -313,7 +460,7 @@ class TestTheResolverReadsTheExtract:
     async def test_a_cell_nobody_asked_for_gets_no_answer(self, tmp_path: Path) -> None:
         """Der Auflöser behaelt nur die Nachbarschaft der GEFRAGTEN Zellen - er erzeugt keine."""
         target = tmp_path / "auszug.txt.gz"
-        write_extract(BERLIN_LINES, target)
+        write_extracts(BERLIN_LINES, {target: extract_line})
 
         resolver = GeoNamesResolver(target, [BERLIN_KREUZBERG])
 
@@ -331,7 +478,7 @@ class TestTheFactoryChecksTheExtractBeforeEveryUse:
 
     def _prepared(self, tmp_path: Path) -> Path:
         target = tmp_path / "auszug.txt.gz"
-        write_extract(BERLIN_LINES, target)
+        write_extracts(BERLIN_LINES, {target: extract_line})
         return target
 
     async def test_a_matching_hash_yields_a_working_resolver(self, tmp_path: Path) -> None:
@@ -371,7 +518,9 @@ class TestTheFactoryChecksTheExtractBeforeEveryUse:
         """Eine Beschaedigung NACH dem Bezug faellt an der Datei auf, die tatsaechlich gelesen
         wird - das ist genau die Luecke, die der Bezug in Teil 1 offen liess."""
         target = self._prepared(tmp_path)
-        write_extract([_geonames_line("Anderswo", 52.50, 13.40, "P", "PPL")], target)
+        write_extracts(
+            [_geonames_line("Anderswo", 52.50, 13.40, "P", "PPL")], {target: extract_line}
+        )
         dataset_hash_path(target).write_text("0" * 64 + "\n", encoding="utf-8")
 
         with caplog.at_level(logging.ERROR, logger="photosort.geonames"):

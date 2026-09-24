@@ -29,6 +29,7 @@ from photosort.models import (
     FinalSelectionDecision,
     FineLabel,
     LandmarkName,
+    LandmarkPlaceLookup,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
@@ -105,7 +106,7 @@ async def get_or_create_fine_label(
 async def build_project_graph(
     session: AsyncSession, name: str, *, fine_label_key: str = "strand"
 ) -> ProjectGraph:
-    """Legt ein Projekt mit genau einer Zeile in jeder der fuenfzehn abhaengigen Tabellen an."""
+    """Legt ein Projekt mit genau einer Zeile in jeder der sechzehn abhaengigen Tabellen an."""
     now = datetime.now(UTC).replace(tzinfo=None)
     user = await get_or_create_user(session)
     fine_label = await get_or_create_fine_label(session, fine_label_key)
@@ -269,6 +270,18 @@ async def build_project_graph(
                 matched_level="neighbourhood",
                 source="geonames",
                 resolved_at=now,
+            ),
+            # specs/features/0529-sehenswuerdigkeitsname-ortsplausibel.md, S2: die Auskunft ueber die
+            # Fundorte eines Sehenswuerdigkeitsnamens haengt am PROJEKT und nicht am Lauf. Ohne
+            # diese Zeile pruefen die beiden Vollstaendigkeitstests der Projektloeschung die neue
+            # Kante nicht, und "mit dem Projekt verschwindet die Auskunft ueber die Fundorte" waere
+            # unbelegt. `points` ist leer und trotzdem vorhanden - genau der Zustand "nachgeschlagen,
+            # ohne Fund", der sich von "nie nachgeschlagen" (fehlende Zeile) unterscheiden muss.
+            LandmarkPlaceLookup(
+                project_id=project.id,
+                folded_name="zugspitze",
+                points=[],
+                looked_up_at=now,
             ),
             FeedbackEvent(
                 project_id=project.id,

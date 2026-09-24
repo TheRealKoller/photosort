@@ -2685,8 +2685,11 @@ async def test_multiple_simultaneously_failing_landmark_calls_each_log_their_own
 
     assert run.status == ScanStatus.SUCCESS
     assert client.calls == 3
-    assert len(caplog.records) == 2
-    messages = [record.message for record in caplog.records]
+    # Spec 0529: ohne Sehenswuerdigkeitsauszug meldet sich die Ortsprüfung einmal zusaetzlich
+    # (fail-open) - hier zaehlen nur die Worker-Zeilen der fehlgeschlagenen Cloud-Aufrufe.
+    worker_records = [record for record in caplog.records if record.name == "photosort.worker"]
+    assert len(worker_records) == 2
+    messages = [record.message for record in worker_records]
     assert any(
         str(photo_a.id) in message and photo_a.relative_path in message for message in messages
     )
