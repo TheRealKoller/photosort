@@ -29,7 +29,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
-from photosort.place_dataset import write_extract
+from photosort.place_dataset import extract_line, write_extracts
 from photosort.place_probe import (
     Cell,
     ProbeEvent,
@@ -619,10 +619,10 @@ SPLIT_DATASET_LINES = [
 @pytest.fixture
 def dataset(tmp_path: Path) -> Path:
     """Der Auszug in genau der Form, die auch im Betrieb liegt - gepackt und mit seinem Hash
-    daneben. Ueber `write_extract` statt von Hand geschrieben: das Messkommando liest ab hier
+    daneben. Ueber `write_extracts` statt von Hand geschrieben: das Messkommando liest ab hier
     dieselbe Datei wie ein Lauf, und ein von Hand gebauter Beinahe-Auszug bewiese das nicht."""
     path = tmp_path / "geonames-auszug.txt.gz"
-    write_extract(SPLIT_DATASET_LINES, path)
+    write_extracts(SPLIT_DATASET_LINES, {path: extract_line})
     return path
 
 

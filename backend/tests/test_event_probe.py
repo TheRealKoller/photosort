@@ -80,7 +80,7 @@ from photosort.models import (
     ScanStatus,
     ScoringRun,
 )
-from photosort.place_dataset import write_extract
+from photosort.place_dataset import extract_line, write_extracts
 from photosort.selection import carried_motifs, effective_target
 from tests.import_closure import import_closure, module_file
 from tests.write_guard import write_statements
@@ -1666,10 +1666,10 @@ MEASURED_DATASET_LINES = [
 @pytest.fixture
 def dataset(tmp_path: Path) -> Path:
     """Der Auszug in genau der Form, die auch im Betrieb liegt - gepackt und mit seinem Hash
-    daneben. Ueber `write_extract` statt von Hand geschrieben: das Messkommando liest ab hier
+    daneben. Ueber `write_extracts` statt von Hand geschrieben: das Messkommando liest ab hier
     dieselbe Datei wie ein Lauf."""
     path = tmp_path / "geonames-auszug.txt.gz"
-    write_extract(MEASURED_DATASET_LINES, path)
+    write_extracts(MEASURED_DATASET_LINES, {path: extract_line})
     return path
 
 
@@ -2386,7 +2386,7 @@ class TestAnAbsentDatasetIsReportedNotShownAsZero:
         also, findet aber nichts."""
         url, project_id = _prepared(tmp_path)
         far_away = tmp_path / "nur-fern.txt.gz"
-        write_extract([_geonames_line("Anderswo", 0.0, 0.0, "P", "PPL")], far_away)
+        write_extracts([_geonames_line("Anderswo", 0.0, 0.0, "P", "PPL")], {far_away: extract_line})
 
         exit_code = main(
             ["--project-id", str(project_id), "--ortsdatensatz", str(far_away)], database_url=url
