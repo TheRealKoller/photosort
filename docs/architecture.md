@@ -2208,7 +2208,8 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   liegen im Image oder im Repository.
   - **Seit Spec 0529 zwei Dateien aus einem Bezug.** Neben dem Ortsauszug (`P`+`A`, unverändert rund
     69 MB) entsteht ein **Sehenswürdigkeitsauszug** (Klassen `S`/`T`/`L`/`H`/`V`, **mit**
-    `alternatenames`, rund 273 MB) als Geschwisterdatei neben `PLACE_DATASET_PATH`; seine Lage leitet
+    `alternatenames`, rund 204 MB; das Volume trägt danach rund 273 MB) als Geschwisterdatei
+    neben `PLACE_DATASET_PATH`; seine Lage leitet
     `geonames.py::landmark_dataset_path` ab, es gibt **keine** eigene Betriebseinstellung. Beide
     entstehen in **einem** Kommandoaufruf und **einem** Durchgang, jede mit eigener `*.sha256`.
     Gelesen wird er über `geonames.py::LandmarkGazetteer` — namensgeschlüsselt, nicht kachelweise,

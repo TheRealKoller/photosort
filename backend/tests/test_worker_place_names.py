@@ -364,10 +364,11 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
     async def test_the_raw_name_is_the_key_while_the_folded_one_is_looked_up(
         self, db_session: AsyncSession
     ) -> None:
-        """DER VORFILTER-FALL. Gefragt wird gefaltet (`Trevi-Brunnen` -> `trevi brunnen`),
-        getroffen wird der ROHE Gewinnername aus `_name_of` - sonst schluege die Pruefung fuer
-        jeden Namen fehl, der nicht schon gefaltet im Event steht."""
-        project = await _project(db_session, "landmark-vorfilter")
+        """ROHER SCHLUESSEL, GEFALTETES NACH SCHLAGEWORT. Gefragt wird gefaltet
+        (`Trevi-Brunnen` -> `trevi brunnen`), getroffen wird der ROHE Gewinnername aus
+        `_name_of` - sonst schluege die Pruefung fuer jeden Namen fehl, der nicht schon
+        gefaltet im Event steht. Ein Vorfilter ist daran unbeteiligt; es gibt keinen."""
+        project = await _project(db_session, "landmark-roh-und-gefaltet")
         gazetteer = CountingGazetteer({"trevi brunnen": ((41.9009, 12.4833),)})
 
         points = await _landmark_points_by_name(

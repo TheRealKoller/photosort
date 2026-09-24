@@ -151,8 +151,11 @@ werden könnte. Erkennungsweg ist die Abnahme an einer echten Reise.
   vollem `alternatenames`-Zerlegen: 43 s für 13,47 Mio. Zeilen — für den Auszug dieselbe
   Größenordnung. Er läuft einmal je Lauf, nach der Landmark-Phase, und nur, wenn ein Name noch
   nicht nachgeschlagen ist; ein zweiter Lauf über dasselbe Projekt löst keinen aus. Ein billiger
-  Vorfilter vor der vollen Namensfaltung ist zulässig und erwartet — die Größenordnung bleibt
-  Sekunden, nicht Minuten.
+  Vorfilter vor der vollen Namensfaltung ist **zulässig, aber entbehrlich**, solange die
+  Größenordnung Sekunden bleibt und nicht Minuten — die Umsetzung faltet deshalb jeden Namen ohne
+  Vorauswahl. Er wird nötig, sobald der Durchgang die Sekunden-Größenordnung verlässt; dann tritt
+  mit ihm auch sein Pflichtfall in Kraft („vom Vorfilter verworfen, von der Normalisierung
+  gefunden", siehe `specs/architecture/0002-testkonzept.md`).
 - **Der Request-Pfad bleibt unberührt.** `rebuild_run_grouping` liest die abgelegte Auskunft und
   schlägt nichts nach; ein dort unbekannter Name bleibt im Zustand (1) und behält seinen Namen.
   Keine Datei, kein Modell, kein Netz in einem Request (Spec 0469 S10).
