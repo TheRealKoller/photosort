@@ -641,6 +641,91 @@
           "grund": "Die Bibliothek führt für einen Grund kein eigenes Kennzeichen; der Entwurf setzt den Kennzeichen-Baustein und leiht sich dessen Bewertungsfarben — die Zurückweisungsstufe für geringe Qualität, die Akzentstufe für einen Duplikat-Stapel. Die Farbe benennt damit keinen Bewertungszustand der Aufnahme, sondern nur die Art des Vorschlags."
         }
       ]
+    },
+    {
+      "schluessel": "kuratierung-grossansicht",
+      "anzeigename": "Kuratierung Großansicht",
+      "seite": "Ansicht — Kuratierung Großansicht",
+      "produktdateien": [
+        "src/pages/AlbumDraftPage.tsx",
+        "src/pages/AlbumSelectionPage.tsx",
+        "src/components/CurationPhotoTile.tsx",
+        "src/components/SelectionPhotoTile.tsx"
+      ],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "gefuellt",
+        "details-offen",
+        "ladend",
+        "fehler"
+      ],
+      "variantenachse": "zustand",
+      "bausteine": [
+        "button",
+        "motiv-reihe",
+        "alert",
+        "skeleton"
+      ],
+      "luecken": [
+        {
+          "schluessel": "behaelter",
+          "stelle": "Großbildfläche und Detailblock als Behälter für ihren Inhalt",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Großbild und Detailblock sind im Entwurf deshalb tokengebundene Rahmen statt Instanzen."
+        },
+        {
+          "schluessel": "chipbaustein",
+          "stelle": "Feinlabels als Chips im aufgeklappten Detailblock",
+          "grund": "Der Chip liegt als Komponente in der Design-Datei, wird in der Bausteinliste des Repositories aber nicht geführt. Der Entwurf setzt ihn als Instanz ein; die Bausteinliste dieser Ansicht nennt ihn deshalb nicht, und die Abweichung steht hier statt unbemerkt zu bleiben."
+        },
+        {
+          "schluessel": "bildschirmfuellend",
+          "stelle": "Bildschirmfüllende Ausdehnung der Großansicht auf der schmalen Prüfbreite",
+          "grund": "Dass die Großansicht auf Telefonbreite den ganzen Sichtbereich einnimmt und auf der breiten Prüfbreite als Überlagerung über der abgedunkelten Kuratierung steht, ist eine Umbruchentscheidung ohne Token. Sie steht als gesetzte Breite und Höhe in beiden Fassungen des Entwurfs."
+        },
+        {
+          "schluessel": "bildmasse",
+          "stelle": "Bildfläche der Großansicht auf beiden Prüfbreiten",
+          "grund": "Die Größe der Bildfläche ist aus der Breite der Großbildfläche abzüglich ihres Innenabstands gerechnet, damit die Motivreihe in der Kopfzeile und die Fußzeile mit dem Dateipfad zusammen sichtbar bleiben. Für diese Maße gibt es kein Token; sie stehen im Entwurf als Werte."
+        },
+        {
+          "schluessel": "abdunklung",
+          "stelle": "Abdunklung der Kuratierung hinter der Großansicht",
+          "grund": "Für die Abdunklung hinter einer Überlagerung gibt es keinen benannten Wert im Tokensatz. Sie wird auf der breiten Prüfbreite als Deckkraft über dem dunklen Grund gesetzt und bleibt eine ausgewiesene Lücke."
+        },
+        {
+          "schluessel": "fokus",
+          "stelle": "Fokusring und Öffnen und Schließen mit der Tastatur",
+          "grund": "Die Großansicht ist ohne Maus zu öffnen und zu schließen; der Weg dorthin und der Fokusring sind Bedienbarkeitsvorgaben ohne Token. Penpot bildet keinen Fokusring und keine Tastenfolge ab, deshalb zeigt der Entwurf nur den ruhenden Zustand und weist den Rest hier aus."
+        },
+        {
+          "schluessel": "trefferflaeche",
+          "stelle": "Mindesthöhe der Schließen- und der Detail-Schaltfläche als Trefferfläche",
+          "grund": "Die Mindesthöhe einer Trefferfläche ist eine Vorgabe der Bedienbarkeit und hat kein eigenes Token; sie wird gesetzt und hier ausgewiesen statt stillschweigend übernommen."
+        },
+        {
+          "schluessel": "schriftschnitt",
+          "stelle": "Halbfetter Schnitt des Dateinamens in der Kopfzeile",
+          "grund": "Die Schriftstufen tragen selbst keinen Schnitt, und einen eigenen Token dafür gibt es nicht. Der halbfette Schnitt wird im Entwurf gesetzt und bleibt eine Lücke des Tokensatzes."
+        },
+        {
+          "schluessel": "seitengrund",
+          "stelle": "Hintergrund der Ansichtsseite",
+          "grund": "Eine Penpot-Seite ist keine Form; eine Tokenbindung greift dort nicht. Der Grund ist aus dem Flächentoken gelesen und gesetzt, damit die Sichtprüfung gegen denselben Untergrund urteilt, gegen den der Kontrast gerechnet ist."
+        },
+        {
+          "schluessel": "rueckweg",
+          "stelle": "Erhalt von Scroll-Position und Filtersicht beim Schließen",
+          "grund": "Dass die Rückkehr an genau dieselbe Stelle im Raster führt und die Großansicht nichts bewertet oder aussortiert, ist Verhalten, nicht Gestalt. Penpot zeigt nur das ruhende Bild; der Rückweg und das Unterlassen jeder Bewertung sind im Entwurf nicht abbildbar und werden hier ausgewiesen statt stillschweigend zu fehlen."
+        },
+        {
+          "schluessel": "bewegung",
+          "stelle": "Puls des Platzhalters im Zustand ladend",
+          "grund": "Der Puls ist Bewegung. Penpot bildet Bewegung nicht ab, und der Satz photosort führt kein Token dafür. Der Entwurf zeigt den Platzhalter deshalb ruhend; das ist eine ausgewiesene Lücke, kein erledigter Punkt."
+        }
+      ]
     }
   ]
 }
