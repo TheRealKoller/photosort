@@ -1,6 +1,6 @@
 # 0283 - Gebäude-Allow-Liste läuft nicht mehr ins Leere
 
-**Status:** Accepted
+**Status:** Implemented ([PR #534](https://github.com/TheRealKoller/photosort/pull/534))
 **Erstellt:** 2026-09-25
 **Bezug:** [Issue #283](https://github.com/TheRealKoller/photosort/issues/283)
 
