@@ -2317,7 +2317,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   [`decisions/0025-cloud-landmark-erkennung.md`](../specs/decisions/0025-cloud-landmark-erkennung.md))
   erstmals tatsächlich eingelöst statt nur vorgesehen: das `landmark`-Kriterium ist die **erste
   produktive, aber projektweit standardmäßig deaktivierte** Cloud-Anbindung im
-  Kriterien-Scoring-Pfad (Default `Project.cloud_landmark_detection_enabled=False`) — alle sieben
+  Kriterien-Scoring-Pfad (Default `Project.cloud_vision_detection_enabled=False`) — alle sieben
   übrigen Kriterien bleiben rein lokal, kein Projekt verlässt ohne explizite Einwilligung den
   Homeserver. Setzt den in ADR 0015 als vorübergehend markierten "vorerst keine remote
   Modelle"-Grundsatz bewusst und einmalig außer Kraft, genau für den einen Fall, für den lokale
