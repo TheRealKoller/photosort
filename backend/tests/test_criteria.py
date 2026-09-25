@@ -570,6 +570,51 @@ class TestComputeGebaeudeScore:
         ]
         assert compute_gebaeude_score(labels) == 0.7
 
+    def test_the_allow_list_is_exactly_the_twenty_two_documented_entries(self) -> None:
+        """AK1/AK2 der Spec 0283 - die konkrete Zusammensetzung, nicht nur die Wirksamkeit: vier
+        Eintraege sind ERSETZT (nicht gestrichen), sechs hinzugekommen, die sechzehn uebrigen
+        geblieben.
+
+        Das ist der Testfall, den die Teilmengenpruefung aus AK4 nicht traegt: eine versehentlich
+        geleerte oder halb gefuellte Liste waere dort vakuum- bzw. teilgruen."""
+        assert ARCHITECTURE_CATEGORIES == frozenset(
+            {
+                # die sechzehn bisherigen Eintraege
+                "church",
+                "castle",
+                "palace",
+                "dome",
+                "library",
+                "barn",
+                "mosque",
+                "monastery",
+                "boathouse",
+                "obelisk",
+                "stupa",
+                "viaduct",
+                # die vier korrigierten Schreibweisen bzw. Klassennamen (AK1)
+                "beacon",  # bisher "lighthouse"
+                "bell cote",  # bisher "bell_cote"
+                "triumphal arch",  # bisher "triumphal_arch"
+                "suspension bridge",  # bisher "suspension_bridge"
+                # die sechs neu aufgenommenen Bauwerkstypen (AK2)
+                "steel arch bridge",
+                "water tower",
+                "dam",
+                "pier",
+                "fountain",
+                "planetarium",
+            }
+        )
+        assert len(ARCHITECTURE_CATEGORIES) == 22
+
+    def test_the_dead_spellings_are_replaced_and_not_kept_alongside_the_new_ones(self) -> None:
+        """Ersetzung, nicht Doppelung: die vier wirkungslosen Schreibweisen sind WEG, nicht
+        zusaetzlich zu ihren Korrekturen stehen geblieben."""
+        assert ARCHITECTURE_CATEGORIES.isdisjoint(
+            {"lighthouse", "bell_cote", "triumphal_arch", "suspension_bridge"}
+        )
+
 
 class TestComputeLandschaftScore:
     """specs/features/0217, ADR decisions/0047 Punkt 1: echte, inhaltsbasierte Landschafts-

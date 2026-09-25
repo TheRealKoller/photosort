@@ -375,13 +375,16 @@ def compute_tier_score(objects: Sequence[ObjectDetection]) -> float:
 
 
 # Kuratierte Allow-Listen der COCO-80-Klassen für die beiden Objekt-Kriterien - dasselbe Muster
-# wie ARCHITECTURE_CATEGORIES/LANDSCAPE_SCENE_CATEGORIES, ebenfalls ohne modell-ladenden Test.
+# wie ARCHITECTURE_CATEGORIES/LANDSCAPE_SCENE_CATEGORIES.
 #
 # Maßgeblich für die exakte Schreibweise ist die im gebündelten Modell-Asset mitgelieferte
-# Label-Datei `labelmap.txt` in backend/src/photosort/assets/efficientdet_lite0.tflite (die
+# Label-Datei `labels.txt` in backend/src/photosort/assets/efficientdet_lite0.tflite (die
 # .tflite-Datei enthält ihre Metadaten als angehängtes ZIP-Archiv). Mehrteilige COCO-Klassennamen
 # stehen dort mit LEERZEICHEN ("hot dog", "wine glass"), nie mit Unterstrich - genau diesen String
-# liefert mediapipe als `category_name`.
+# liefert mediapipe als `category_name`. Dass jeder Eintrag dort wirklich steht, hält seit ADR 0124
+# ein Test fest (test_criteria.py::TestEveryCuratedAllowListMatchesItsModelLabels); der Dateiname
+# kommt dort aus dem ZIP-Inventar des Assets, nicht aus diesem Kommentar - er hieß hier bis Spec
+# 0283 fälschlich `labelmap.txt`, ohne dass das auffiel.
 VEHICLE_CATEGORIES = frozenset(
     {"bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat"}
 )
@@ -440,17 +443,53 @@ def compute_essen_trinken_score(objects: Sequence[ObjectDetection]) -> float:
 
 # Kuratierte Allow-Liste architekturbezogener ImageNet-1k-Klassen; siehe den Modul-Kommentar in
 # classification.py dazu, warum die Filterung HIER und nicht in classify_scene selbst passiert.
-# Dokumentierte, bewusst akzeptierte Lücke: ImageNet hat kaum Innenraum-Klassen,
-# `living_room`/`kitchen`/`office` werden strukturell nicht erkannt - nur Außenarchitektur wird
-# zuverlässig erfasst.
+# Ein Eintrag deckt jeweils ein Motiv ab; die bloße Anwesenheit einer Klasse ist der Treffer.
+#
+# AUFNAHMEKRITERIUM (Spec 0283, AK3): Aufgenommen wird eine Bauwerksart, wenn sie ein eigenständiges
+# Bauwerk im Außenraum ist, das als Motiv für sich steht. Nicht aufgenommen werden Innenräume,
+# Ladeneinrichtungen und einzelne Bauteile wie Dächer, Mauern oder Zäune. Im Zweifel wird eine
+# Bauwerksart weggelassen statt aufgenommen.
 #
 # Maßgeblich für die exakte Schreibweise ist die im Asset mitgelieferte Label-Datei
 # `labels_without_background.txt` in backend/src/photosort/assets/efficientnet_lite0.tflite: jeder
-# Eintrag dieser Liste steht dort WÖRTLICH. Dass das so bleibt, hält ein Test fest
-# (test_criteria.py::TestEveryCuratedAllowListMatchesItsModelLabels, ADR 0124) - die früheren
-# Einträge `bell_cote`/`suspension_bridge`/`triumphal_arch` (Label-Datei: mit LEERZEICHEN) und
-# `lighthouse` (Label-Datei: `beacon`) entsprachen keiner Modellbezeichnung und konnten deshalb nie
-# zutreffen; ein neuer Eintrag in falscher Schreibweise fiele genauso stumm auf 0.0.
+# Eintrag steht dort WÖRTLICH (ADR 0124). Ein Test hält das fest
+# (test_criteria.py::TestEveryCuratedAllowListMatchesItsModelLabels) - die früheren Einträge
+# `bell_cote`/`suspension_bridge`/`triumphal_arch` (Label-Datei: mit LEERZEICHEN) und `lighthouse`
+# (Label-Datei: `beacon`) entsprachen keiner Modellbezeichnung und konnten deshalb nie zutreffen; ein
+# neuer Eintrag in falscher Schreibweise fiele genauso stumm auf 0.0.
+#
+# NEU AUFGENOMMEN (Spec 0283, AK2) - jede dieser Klassen ist im Asset nachgewiesen:
+#   `steel arch bridge` - eigenständiges Brückenbauwerk; schließt die Lücke zur bereits
+#                         aufgenommenen `suspension bridge`
+#   `water tower`       - eigenständiges Bauwerk im Außenraum, weithin sichtbares Einzelmotiv
+#   `dam`               - eigenständiges Großbauwerk im Außenraum
+#   `pier`              - Seebrücke, eigenständiges Bauwerk im Außenraum
+#   `fountain`          - eigenständiger Brunnen im Außenraum
+#   `planetarium`       - eigenständiger Gebäudebau
+#
+# GRENZFÄLLE, bewusst MIT Begründung geführt statt stillschweigend mitgeschleppt: `dome` (die
+# ImageNet-Klasse meint den Kuppelbau als Ganzes, nicht das Bauteil), `bell cote` (streng genommen
+# ein Dachaufsatz, aber die einzige Klasse, die das Modell für den Glockenturm anbietet) und
+# `library` (kann Innenräume zeigen - siehe die Lücke unten).
+#
+# GEPRÜFT UND VERWORFEN (Auswahl aus 161 nach Bildinhalten durchsuchten Label-Kandidaten):
+#   `breakwater`, `stone wall`, `picket fence`, `chainlink fence`, `worm fence`, `tile roof`
+#                          - Mauern, Zäune, Dächer: einzelne Bauteile
+#   `bakery`, `barbershop`, `bookshop`, `butcher shop`, `confectionery`, `grocery store`,
+#   `shoe shop`, `tobacco shop`, `toyshop`, `restaurant`, `cinema`, `prison`
+#                          - Ladeneinrichtungen bzw. Innenräume; die Klassen zeigen überwiegend
+#                            Interieurs
+#   `greenhouse`           - Klasse zeigt typischerweise den Innenraum unter Glas
+#   `window screen`, `window shade`, `sliding door`, `pedestal`, `vault`, `turnstile`,
+#   `theater curtain`      - Bauteile bzw. Innenraum
+#   `megalith`             - Grenzfall mit Fehltrefferrisiko (Findlinge, Naturformationen)
+#   `cliff dwelling`, `drilling platform`, `lumbermill`, `dock`, `solar dish`
+#                          - Grenzfälle (Stätte, Industrieanlage, Bauteil einer Anlage)
+#   `yurt`, `mobile home`, `mountain tent` - Behausungen ohne ortsfestes Bauwerk
+#
+# DOKUMENTIERTE, BEWUSST AKZEPTIERTE LÜCKE (Spec 0283, AK5): ImageNet-1k hat kaum Innenraum-Klassen;
+# `living_room`, `kitchen` und `office` werden strukturell nicht erkannt. Diese Überarbeitung nimmt
+# deshalb keine Innenraum-Klasse auf - nur Außenarchitektur wird zuverlässig erfasst.
 ARCHITECTURE_CATEGORIES = frozenset(
     {
         "church",
@@ -469,6 +508,12 @@ ARCHITECTURE_CATEGORIES = frozenset(
         "triumphal arch",
         "viaduct",
         "suspension bridge",
+        "steel arch bridge",
+        "water tower",
+        "dam",
+        "pier",
+        "fountain",
+        "planetarium",
     }
 )
 
