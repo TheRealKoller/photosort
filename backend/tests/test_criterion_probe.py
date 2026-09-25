@@ -717,15 +717,41 @@ class TestTheProbeIsReadOnly:
 
     def test_the_module_writes_no_file_and_no_log(self) -> None:
         """S2: Ausgabe ausschliesslich auf stdout. Kein Dateischreiben, nichts ueber den
-        strukturierten Anwendungs-Logger und damit nichts in persistente Container-Logs."""
+        strukturierten Anwendungs-Logger und damit nichts in persistente Container-Logs.
+
+        Ueber den Syntaxbaum, nicht per Substring: ein Kommentar oder Docstring, der `logging`,
+        `open(` oder `Path(` nur ERWAEHNT, darf den Waechter nicht brechen - dieselbe Bauart wie
+        der Nachbartest. Ein Waechter, der auf Prosa anschlaegt, wird beim ersten Fluchtwort
+        abgeschaltet."""
         path = module_file("photosort.criterion_probe")
         assert path is not None
-        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(path.read_text(encoding="utf-8"))
 
-        assert "logging" not in source
-        assert "open(" not in source
-        assert "write_text" not in source
-        assert "Path(" not in source
+        imported = {
+            alias.name.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        } | {
+            (node.module or "").split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+        }
+        called = {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        attributes = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+
+        assert "logging" not in imported
+        assert "open" not in called
+        assert "Path" not in called
+        assert attributes.isdisjoint({"write_text", "write_bytes", "open"})
 
 
 async def _table_snapshot(session: AsyncSession) -> dict[str, list[tuple[object, ...]]]:

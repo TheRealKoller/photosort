@@ -970,6 +970,27 @@ def _labels_of(asset: Path) -> frozenset[str]:
     return frozenset(raw.decode("utf-8").splitlines())
 
 
+def _assert_allow_list_is_covered_by_label_file(
+    categories: frozenset[str], asset: Path, list_name: str | None = None
+) -> None:
+    """Die Pruefung selbst (AK4): jeder Eintrag von `categories` steht als EXAKTE Zeichenkette in
+    der Label-Datei von `asset`. Sie ist eine eigene Funktion und kein Schleifenrumpf im Testfall,
+    weil die Gegenprobe dieselbe Funktion mit einer verfaelschten Liste aufrufen muss (Spec 0283,
+    "Gegenproben").
+
+    Ohne jede Normalisierung - `casefold`, `strip`, `_`->` ` sind verboten, sonst waeren die
+    mehrteiligen Klassen nicht sicher getrennt (`dam`/`damselfly`, `pier`/`photocopier`). Die
+    Meldung nennt Liste, fehlende Eintraege und Asset-Dateinamen; der Listenname ist optional, weil
+    die Gegenprobe keine echte Liste prueft."""
+    labels = _labels_of(asset)
+    missing = sorted(entry for entry in categories if entry not in labels)
+
+    assert missing == [], (
+        f"{list_name or sorted(categories)} enthaelt Eintraege, "
+        f"die {asset.name} nie ausgibt: {missing}"
+    )
+
+
 class TestTheAllowListDerivation:
     """Gegenproben zur Ableitung der zu pruefenden Listen: ohne sie bestuende der
     Vollstaendigkeitswaechter unten auch gegen eine Sammlung, die nichts oder das Falsche findet."""
@@ -1027,14 +1048,28 @@ class TestEveryCuratedAllowListMatchesItsModelLabels:
     def test_every_entry_of_a_curated_allow_list_is_a_label_of_its_asset(
         self, list_name: str
     ) -> None:
-        allow_list = _all_curated_allow_lists()[list_name]
-        asset = _ALLOW_LIST_ASSETS[list_name]
-        labels = _labels_of(asset)
-        missing = sorted(entry for entry in allow_list if entry not in labels)
-
-        assert missing == [], (
-            f"{list_name} enthaelt Eintraege, die {asset.name} nie ausgibt: {missing}"
+        _assert_allow_list_is_covered_by_label_file(
+            _all_curated_allow_lists()[list_name], _ALLOW_LIST_ASSETS[list_name], list_name
         )
+
+    def test_a_falsified_list_turns_the_assertion_red_and_names_the_entry(self) -> None:
+        """Gegenproben 1 UND 2 der Spec - ein Fall, zwei Fehlermodi. `frozenset({"bell_cote"})`
+        gegen die Szenen-Assets: die Zusicherung muss rot werden und GENAU diesen Eintrag nennen.
+
+        Fehlermodus 1 ("der Test liest die Liste gar nicht"): waere der Vergleich vakuum-gruen -
+        leere Menge, Vergleich gegen die falsche Quelle -, bliebe dieser Fall still, waehrend der
+        parametrisierte Fall weiter gruen meldete.
+
+        Fehlermodus 2 (stilles Falten): dieselbe Klasse steht als `bell cote` in derselben Datei.
+        Eine normalisierende Pruefung (`_`->` `, `casefold`, `strip`) liesse `bell_cote` durchgehen;
+        dass dieser Fall trotzdem scheitert, ist der Positiv-Beleg fuer das Normalisierungsverbot."""
+        asset = _SCENE_CLASSIFIER_MODEL_PATH
+        assert "bell cote" in _labels_of(asset)
+
+        with pytest.raises(AssertionError) as excinfo:
+            _assert_allow_list_is_covered_by_label_file(frozenset({"bell_cote"}), asset)
+
+        assert "['bell_cote']" in str(excinfo.value)
 
     def test_a_new_curated_allow_list_cannot_stay_unchecked(self) -> None:
         """Der Vollstaendigkeitswaechter: die Menge der abgeleiteten Listen muss der
