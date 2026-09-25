@@ -444,11 +444,13 @@ def compute_essen_trinken_score(objects: Sequence[ObjectDetection]) -> float:
 # `living_room`/`kitchen`/`office` werden strukturell nicht erkannt - nur Außenarchitektur wird
 # zuverlässig erfasst.
 #
-# BEKANNTER BEFUND, bewusst NICHT hier korrigiert: die Label-Datei schreibt mehrteilige
-# Klassennamen mit LEERZEICHEN, nicht mit Unterstrich - die Einträge
-# "bell_cote"/"suspension_bridge"/"triumphal_arch" (Label-Datei: "bell cote", "suspension bridge",
-# "triumphal arch") und "lighthouse" (Label-Datei: "beacon") können deshalb nie matchen. Eine
-# Korrektur wäre eine Verhaltensänderung am gebaeude-Kriterium und gehört in eine eigene Story.
+# Maßgeblich für die exakte Schreibweise ist die im Asset mitgelieferte Label-Datei
+# `labels_without_background.txt` in backend/src/photosort/assets/efficientnet_lite0.tflite: jeder
+# Eintrag dieser Liste steht dort WÖRTLICH. Dass das so bleibt, hält ein Test fest
+# (test_criteria.py::TestEveryCuratedAllowListMatchesItsModelLabels, ADR 0124) - die früheren
+# Einträge `bell_cote`/`suspension_bridge`/`triumphal_arch` (Label-Datei: mit LEERZEICHEN) und
+# `lighthouse` (Label-Datei: `beacon`) entsprachen keiner Modellbezeichnung und konnten deshalb nie
+# zutreffen; ein neuer Eintrag in falscher Schreibweise fiele genauso stumm auf 0.0.
 ARCHITECTURE_CATEGORIES = frozenset(
     {
         "church",
@@ -456,17 +458,17 @@ ARCHITECTURE_CATEGORIES = frozenset(
         "palace",
         "dome",
         "library",
-        "lighthouse",
+        "beacon",
         "barn",
         "mosque",
         "monastery",
-        "bell_cote",
+        "bell cote",
         "boathouse",
         "obelisk",
         "stupa",
-        "triumphal_arch",
+        "triumphal arch",
         "viaduct",
-        "suspension_bridge",
+        "suspension bridge",
     }
 )
 

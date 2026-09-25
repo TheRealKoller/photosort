@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import dataclasses
+import importlib
+import zipfile
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from PIL import Image, ImageDraw
 
 from photosort.classification import (
+    _OBJECT_DETECTOR_MODEL_PATH,
+    _SCENE_CLASSIFIER_MODEL_PATH,
     ANIMAL_CATEGORIES,
     SCENE_CLASSIFICATION_CONFIDENCE_THRESHOLD,
     SCENE_LABEL_MIN_CONFIDENCE,
@@ -842,3 +848,163 @@ class TestAllowListedAreaFraction:
         assert allow_listed_area_fraction(small_but_certain, ANIMAL_CATEGORIES) < (
             allow_listed_area_fraction(large_but_unsure, ANIMAL_CATEGORIES)
         )
+
+
+# --- AK4 der Spec 0283: keine kuratierte Allow-Liste laeuft ins Leere ---------------------------
+#
+# Geprueft wird jeder Eintrag jeder kuratierten Allow-Liste gegen die Label-Datei des Modell-Assets,
+# gegen das die Liste filtert (ADR 0124). Gelesen wird das ASSET, nicht das Modell: eine
+# .tflite-Datei traegt ihre Metadaten als angehaengtes ZIP-Archiv, `zipfile` aus der
+# Standardbibliothek liest die Label-Datei daraus - kein `mediapipe`, kein TensorFlow, keine
+# Modellinstanziierung, keine Inferenz. Dieselbe Groessenklasse wie der SHA-256-Integritaetstest in
+# test_classification.py, der dieselbe Datei liest; die Konvention "kein modellladender Test" aus
+# Spec 0217 verbietet das Modell, nicht das Asset.
+#
+# Suchraum und Auslassungen: die kuratierten Listen sind die oeffentlichen `frozenset[str]`-Konstanten
+# aus `photosort.criteria` UND `photosort.classification` (vier bzw. eine). NICHT dazu gehoeren die
+# uebrigen frozensets des Pakets: `cameras._INVISIBLE_CATEGORIES` filtert Codepoints, keine
+# Modelllabels, und die Mengen aus `event_inputs.py`/`event_probe.py` gehoeren zu keinem Modell-Asset.
+# Deshalb genau diese zwei Modulpfade, nicht das ganze Paket.
+_CURATED_ALLOW_LIST_MODULES = ("photosort.criteria", "photosort.classification")
+
+# Je Liste das Asset, gegen dessen Labels sie filtert (Spec 0283, Abschnitt 2). Der Pfad kommt aus
+# den Modulkonstanten, nicht als Zeichenkette aus dem Test: der SHA-256-Integritaetstest in
+# test_classification.py bindet dieselben Konstanten, und beide Tests muessen dieselbe Datei meinen.
+_ALLOW_LIST_ASSETS: dict[str, Path] = {
+    "ARCHITECTURE_CATEGORIES": _SCENE_CLASSIFIER_MODEL_PATH,
+    "LANDSCAPE_SCENE_CATEGORIES": _SCENE_CLASSIFIER_MODEL_PATH,
+    "VEHICLE_CATEGORIES": _OBJECT_DETECTOR_MODEL_PATH,
+    "FOOD_CATEGORIES": _OBJECT_DETECTOR_MODEL_PATH,
+    "ANIMAL_CATEGORIES": _OBJECT_DETECTOR_MODEL_PATH,
+}
+
+
+def _curated_allow_lists(namespace: Mapping[str, object]) -> dict[str, frozenset[str]]:
+    """Die kuratierten Allow-Listen eines Modul-Namensraums. Als Funktion ueber ein
+    Namespace-Abbild, nicht als direkter `modul.__dict__`-Zugriff: nur so ist sie
+    gegenprobefaehig (siehe `TestTheAllowListDerivation`)."""
+    return {
+        name: value
+        for name, value in namespace.items()
+        if isinstance(value, frozenset) and value and all(isinstance(item, str) for item in value)
+    }
+
+
+def _all_curated_allow_lists() -> dict[str, frozenset[str]]:
+    """Alle kuratierten Listen ueber beide Modulpfade, DEDUPLIZIERT UEBER OBJEKTIDENTITAET:
+    `criteria.py` importiert `ANIMAL_CATEGORIES`, ein naives Sammeln faende sie sonst zweimal."""
+    found: dict[str, frozenset[str]] = {}
+    seen: list[frozenset[str]] = []
+    for module_name in _CURATED_ALLOW_LIST_MODULES:
+        namespace = vars(importlib.import_module(module_name))
+        for name, value in _curated_allow_lists(namespace).items():
+            if any(value is existing for existing in seen):
+                continue
+            seen.append(value)
+            found[name] = value
+    return found
+
+
+def _label_file_entry(asset: Path) -> str:
+    """Der Name der Label-Datei kommt aus dem ZIP-INVENTAR des Assets, nicht aus dem Test (ADR 0124
+    Punkt 2) - eine Umbenennung im Asset darf den Test nicht still ins Leere laufen lassen. Genau
+    eine `.txt`: keine oder mehrere sind ein harter Fehler statt einer stillen Leerpruefung."""
+    with zipfile.ZipFile(asset) as archive:
+        entries = [entry for entry in archive.namelist() if entry.endswith(".txt")]
+    assert len(entries) == 1, f"{asset.name}: erwartet genau eine .txt im ZIP-Inventar, {entries}"
+    return entries[0]
+
+
+def _labels_of(asset: Path) -> frozenset[str]:
+    """Die Labels als EXAKTE Zeichenketten. Gelesen wird ueber `ZipFile.read()` auf einem
+    Inventar-Eintrag, nie ueber `extract()`/`extractall()` in ein Verzeichnis: Zip-Slip und
+    Pfad-Traversal entstehen erst beim Schreiben auf die Platte, und ein Auspacken hat hier keinen
+    Zweck (Spec 0283, S3)."""
+    with zipfile.ZipFile(asset) as archive:
+        raw = archive.read(_label_file_entry(asset))
+    return frozenset(raw.decode("utf-8").splitlines())
+
+
+class TestTheAllowListDerivation:
+    """Gegenproben zur Ableitung der zu pruefenden Listen: ohne sie bestuende der
+    Vollstaendigkeitswaechter unten auch gegen eine Sammlung, die nichts oder das Falsche findet."""
+
+    def test_only_nonempty_frozensets_of_strings_count(self) -> None:
+        namespace = {
+            "A_FROZENSET": frozenset({"a", "b"}),
+            "A_PLAIN_SET": {"a", "b"},
+            "A_TUPLE": ("a", "b"),
+            "A_LIST": ["a", "b"],
+            "SOMETHING_ELSE": 42,
+        }
+
+        assert _curated_allow_lists(namespace) == {"A_FROZENSET": frozenset({"a", "b"})}
+
+    def test_a_frozenset_of_something_other_than_strings_does_not_count(self) -> None:
+        assert _curated_allow_lists({"A_FROZENSET": frozenset({1, 2, 3})}) == {}
+
+    def test_an_empty_frozenset_does_not_count(self) -> None:
+        """Eine leere Liste waere in der Teilmengenpruefung vakuum-gruen - sie ist keine kuratierte
+        Liste, sondern eine, die niemand ausgefuellt hat."""
+        assert _curated_allow_lists({"A_FROZENSET": frozenset()}) == {}
+
+    def test_the_shared_animal_categories_are_collected_exactly_once(self) -> None:
+        """`criteria.py` importiert `ANIMAL_CATEGORIES`: ueber beide Modulpfade hinweg muss sie
+        genau einmal vorkommen, und zwar als DASSELBE Objekt."""
+        derived = _all_curated_allow_lists()
+
+        assert list(derived).count("ANIMAL_CATEGORIES") == 1
+        assert derived["ANIMAL_CATEGORIES"] is ANIMAL_CATEGORIES
+
+
+class TestEveryCuratedAllowListMatchesItsModelLabels:
+    """AK4 der Spec 0283. Die Pruefrichtung ist Liste ⊆ Label-Datei, nicht Gleichheit: die Assets
+    fuehren 1000 bzw. 90 Klassen, jede Liste ist eine kuratierte Auswahl daraus.
+
+    ROT-BELEG der Regel-Ebene (AK6, TDD-Zyklus Schritt 1), waehrend die vier toten Eintraege noch
+    im Bestand standen - Befehl und vollstaendige Meldung des Laufs gegen den unveraenderten
+    Bestand, woertlich:
+
+        $ cd backend && .venv/bin/python -m pytest tests/test_criteria.py \\
+              -k every_entry_of_a_curated_allow_list -q
+
+        E       AssertionError: ARCHITECTURE_CATEGORIES enthaelt Eintraege, die \\
+        efficientnet_lite0.tflite nie ausgibt: ['bell_cote', 'lighthouse', \\
+        'suspension_bridge', 'triumphal_arch']
+        E       assert ['bell_cote',...iumphal_arch'] == []
+        E         Left contains 4 more items, first extra item: 'bell_cote'
+
+    Die Meldung nennt Liste, Eintraege und Asset - genau die vier Eintraege, die keiner
+    Modellbezeichnung entsprachen (drei mit Unterstrich statt Leerzeichen, `lighthouse` statt
+    `beacon`)."""
+
+    @pytest.mark.parametrize("list_name", sorted(_ALLOW_LIST_ASSETS))
+    def test_every_entry_of_a_curated_allow_list_is_a_label_of_its_asset(
+        self, list_name: str
+    ) -> None:
+        allow_list = _all_curated_allow_lists()[list_name]
+        asset = _ALLOW_LIST_ASSETS[list_name]
+        labels = _labels_of(asset)
+        missing = sorted(entry for entry in allow_list if entry not in labels)
+
+        assert missing == [], (
+            f"{list_name} enthaelt Eintraege, die {asset.name} nie ausgibt: {missing}"
+        )
+
+    def test_a_new_curated_allow_list_cannot_stay_unchecked(self) -> None:
+        """Der Vollstaendigkeitswaechter: die Menge der abgeleiteten Listen muss der
+        Parametrisierung entsprechen. Eine kuenftige sechste Liste faerbt diesen Lauf rot, bis sie
+        in `_ALLOW_LIST_ASSETS` steht - sie kann nicht ungeprueft hinzukommen."""
+        assert set(_all_curated_allow_lists()) == set(_ALLOW_LIST_ASSETS)
+
+    def test_the_label_file_really_is_read_through_the_zip_inventory(self) -> None:
+        """Gegenprobe zum Lesen selbst: das Inventar jeder Asset-Datei traegt genau eine `.txt`, und
+        die gelesenen Labels sind genau die Zeilen dieser Datei - nicht die eines leeren Archivs.
+        Der Umfang ist die bekannte 90er/1000er-Marke; die COCO-Datei traegt ihren Platzhalter
+        (`???`) mehrfach, deshalb der Vergleich ueber `frozenset`."""
+        for asset in sorted(set(_ALLOW_LIST_ASSETS.values())):
+            with zipfile.ZipFile(asset) as archive:
+                lines = archive.read(_label_file_entry(asset)).decode("utf-8").splitlines()
+
+            assert len(lines) in {90, 1000}, asset.name
+            assert _labels_of(asset) == frozenset(lines)
