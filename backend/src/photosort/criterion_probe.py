@@ -4,12 +4,15 @@ Aufruf::
 
     docker compose exec -T backend python -m photosort.criterion_probe --project-id 3
 
-Gemessen wird der Vorher/Nachher-Beleg der Spec 0283 auf Material-Ebene: die Verteilung der
-gespeicherten Werte der Kriterien ``gebaeude`` und ``landschaft`` und die Zahl der
-Landmark-Kandidaten, die daraus folgt. Ein Vorher-Stand liegt NICHT in der Datenbank -
-``PhotoCriterionScore`` traegt keinen Laufbezug und wird bei jedem Lauf ueberschrieben
-(``UniqueConstraint(photo_id, criterion_key)``). Er wird deshalb GEZOGEN, bevor er ueberschrieben
-wird, und nach der Aenderung ein zweites Mal.
+Gemessen wird die Verteilung der gespeicherten Werte der Kriterien ``gebaeude`` und ``landschaft``
+und die Zahl der Landmark-Kandidaten, die daraus folgt.
+
+WOFUER: fuer jede kuenftige Aenderung an einer Kriterien-Allow-Liste - ein Lauf davor, ein Lauf
+danach. Die Aenderung, mit der dieses Modul entstand (Spec 0283), belegt es NICHT; deren
+Material-Messung wurde fallengelassen, weil sie auf der Zielinstanz nicht durchfuehrbar ist
+(Spec 0283, Abschnitt 6 und ``## Entscheidungen``). Der Grund, warum ein Vorher-Stand ueberhaupt
+GEZOGEN werden muss, bevor er verschwindet: ``PhotoCriterionScore`` traegt keinen Laufbezug und
+wird bei jedem Lauf ueberschrieben (``UniqueConstraint(photo_id, criterion_key)``).
 
 Gemessen wird mit den Mitteln des Laufs: ``criteria.py::is_landmark_candidate`` ist dieselbe reine
 Schwellenwert-Pruefung, die auch ``worker.py::_select_landmark_candidates`` nimmt, und
@@ -37,9 +40,9 @@ SICHERHEIT (S2 der Spec 0283):
   eine Aussage darueber, was auf einem bestimmten Familienfoto zu sehen ist; eine Auszaehlung ist
   es nicht. Deshalb KEIN ``--namen``-Schalter (anders als ``place_probe.py``).
 * AUSFALLRICHTUNG - "NICHT GEMESSEN" IST NICHT "0": Liegt kein erfolgreicher Kriterien-Lauf vor,
-  meldet der Bericht ``NICHT GEMESSEN``, nie eine Null. Eine Null truege hier die Aussage "der
-  Zuwachs ist klein" und damit die Abnahme der Spec - dieselbe Regel, die ``api/projects.py`` mit
-  ``landmark_candidate_count: int | None`` bereits durchsetzt.
+  meldet der Bericht ``NICHT GEMESSEN``, nie eine Null. Eine Null truege hier die guenstigste
+  aller Aussagen ("der Zuwachs ist klein") ueber eine Menge, die niemand gemessen hat - dieselbe
+  Regel, die ``api/projects.py`` mit ``landmark_candidate_count: int | None`` bereits durchsetzt.
 * AUSGABEKANAL: ausschliesslich stdout. Keine Datei-Ausgabe, nichts ueber den strukturierten
   Anwendungs-Logger und damit nichts in persistente Container-Logs. Dieses Modul schreibt kein
   Log.
@@ -306,8 +309,8 @@ def render_report(probe: CriterionProbeInput) -> str:
     Einzelfallpruefung.
 
     OHNE ERFOLGREICHEN LAUF STEHT UEBERALL `NICHT GEMESSEN`, nie eine Null: Eine Null waere hier
-    das guenstigste aller Messergebnisse ("der Zuwachs ist klein") und truege die Abnahme der
-    Spec."""
+    das guenstigste aller Messergebnisse ("der Zuwachs ist klein") - behauptet ueber eine Menge,
+    die niemand gemessen hat."""
     lines = [
         _report_head(probe),
         "",

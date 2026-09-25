@@ -50,10 +50,11 @@ müssen.
       `living_room`, `kitchen`, `office` werden von ImageNet-1k strukturell nicht erkannt; die
       Überarbeitung nimmt keine Innenraum-Klasse auf und führt die Lücke im Kommentar unverändert
       als bewusst akzeptiert.
-- [ ] **AK6 — Die Verhaltensänderung ist vorher/nachher belegt, bevor sie als fertig gilt.** Auf
-      Regel-Ebene durch den Rot-Lauf des Tests aus AK4, der die vier unwirksamen Einträge namentlich
-      nennt. Auf Material-Ebene durch je eine Messung vor und nach der Änderung an einem echten
-      Projekt, ausgegeben als Zahlen, festgehalten in der PR-Beschreibung.
+- [ ] **AK6 — Die Verhaltensänderung ist auf Regel-Ebene belegt, bevor sie als fertig gilt.** Durch
+      den Rot-Lauf des Tests aus AK4, der die vier unwirksamen Einträge namentlich nennt, wörtlich im
+      Docstring der Prüfklasse. Er ist damit der einzige Beleg. Eine Messung an einem echten Projekt
+      gehört **nicht** zur Abnahme: Sie ist auf der Zielinstanz nicht durchführbar, und ein
+      Vorher-Wert fällt nach dem Merge nicht mehr an.
 - [ ] **AK7 — Die Kostenfolge ist benannt, nicht begrenzt.** Festgehalten ist, dass mehr erkannte
       Gebäude bei eingeschalteter Cloud-Erkennung zu mehr kostenpflichtigen Abfragen führen — als
       bewusst in Kauf genommene Folge. Es entsteht keine neue Schwelle und kein Deckel.
@@ -171,7 +172,7 @@ mit dem Grund, der im Kommentar steht):
 |---|---|
 | `backend/src/photosort/criteria.py` | `ARCHITECTURE_CATEGORIES` korrigiert und erweitert; Kommentarblock 441-451 ersetzt durch Aufnahmekriterium und Aufnahme-/Ablehnungstabelle; Kommentar 377-384 korrigiert (`labels.txt` statt `labelmap.txt`); Verweis auf ADR 0124 |
 | `backend/tests/test_criteria.py` | Prüfung jedes Paares (Liste, Asset) gegen die Label-Datei aus dem ZIP-Inventar; Vollständigkeits-Wächter über fünf Listen aus zwei Modulpfaden (`photosort.criteria`, `photosort.classification`); Gegenproben |
-| `backend/src/photosort/criterion_probe.py` | **neu** — rein lesendes Messkommando für AK6 |
+| `backend/src/photosort/criterion_probe.py` | **neu** — rein lesendes Messkommando für künftige Änderungen an einer Kriterienliste |
 | `specs/decisions/0124-*.md` | **neu** (angelegt) |
 | `specs/architecture/0002-testkonzept.md` | 0217-Konvention um das Asset-Lesen ergänzt; `category_diff.py`-Verweise auf `place_probe`/`event_probe` umgehängt |
 | `specs/architecture/0003-securitykonzept.md` | Fortschreibung (siehe `## Security`) und die Namenskorrekturen aus Abschnitt 7 |
@@ -202,7 +203,9 @@ sich grünen Schritten, weil ein Zwischenstand mit rotem CI kein Zwischenstand i
 Sechs Einträge gemäß Abschnitt 3, Aufnahmekriterium und Tabellen als Kommentar, die verworfenen
 Kandidaten namentlich. Der Test aus Schritt 1 deckt die Erweiterung ohne Änderung mit ab.
 
-**Schritt 3 — Vorher/Nachher-Beleg und Kostenfolge** (Abschnitt 6).
+**Schritt 3 — Messwerkzeug und Kostenfolge** (Abschnitt 6). Das rein lesende Messkommando
+`criterion_probe.py` entsteht als Werkzeug künftiger Änderungen an einer Kriterienliste; diese
+Erweiterung belegt es nicht.
 
 **Schritt 4 — Sicherheitskonzept- und Doku-Namen** (Abschnitt 7), eigener `docs:`-Commit. Reine
 Textänderung, getrennt gehalten, damit die Änderung am Gebäude-Kriterium einen unvermischten Diff
@@ -212,7 +215,7 @@ Reihenfolge-Begründung: erst die dauerhafte Zusicherung, dann die inhaltliche E
 der nach der Erweiterung geschrieben wird, prüft nur die neue Liste; in dieser Reihenfolge belegt er
 den Befund selbst.
 
-### 6. Kostenfolge (AK7) und der Vorher/Nachher-Beleg (AK6)
+### 6. Kostenfolge (AK7) und der Regel-Beleg (AK6)
 
 **Wo die vergrößerte Trefferliste durchschlägt.** `compute_gebaeude_score` gibt entweder exakt `0.0`
 oder einen Wert `>= 0.5` zurück; `is_landmark_candidate` vergleicht `gebaeude >= 0.01`. Beide Zahlen
@@ -229,29 +232,24 @@ keine zweite, dämpfende Stufe. Zwei Stellen lesen das:
 Begrenzung der Kandidatenzahl oder eine zweite Kostenschwelle wäre eine eigene Produktentscheidung
 und verschlechterte die Erkennung wieder. Der Preis wird benannt, nicht begrenzt.
 
-**AK6 hat zwei Ebenen, und die erste ist neu:**
+**AK6 ist Regel-Ebene, und zwar ausschließlich.** Der Prüftest belegt exakt, welche Einträge vorher
+unwirksam waren und welche hinzukommen. Die Aussage „12 von 16 wirksam, danach 22 von 22" ist damit
+eine geprüfte, keine behauptete — unabhängig von jedem Fotobestand. **Eine Material-Messung ist
+nicht Teil der Abnahme, weil sie strukturell nicht durchführbar ist.** Die Zielinstanz ist
+ausschließlich über die Weboberfläche bedienbar — kein getipptes Kommando, keine Datei in einen
+Container —, deployen lässt sich nur ein gemergter Stand, und ein Vorher-Wert existiert nur bis zum
+nächsten Kriterien-Lauf: `PhotoCriterionScore` speichert allein den Score und überschreibt ihn
+(`UniqueConstraint(photo_id, criterion_key)`, kein Laufbezug). Der Zuwachs dieser Erweiterung bleibt
+deshalb unbeziffert, auch nachträglich; die Lücke ist ohne Träger in
+[`specs/architecture/0002-testkonzept.md`](../architecture/0002-testkonzept.md) geführt.
 
-- **(a) Regel-Ebene, dauerhaft und automatisch.** Der Prüftest belegt exakt, welche Einträge vorher
-  unwirksam waren und welche hinzukommen. Die Aussage „12 von 16 wirksam, danach 22 von 22" ist damit
-  eine geprüfte, keine behauptete — unabhängig von jedem Fotobestand.
-- **(b) Material-Ebene, einmalig, im PR dokumentiert.** Ein Vorher-Stand liegt **nicht** in der
-  Datenbank: `PhotoCriterionScore` speichert nur den Score und überschreibt ihn
-  (`UniqueConstraint(photo_id, criterion_key)`, kein Laufbezug), und `category_diff.py` ist mit ADR
-  0091 ersatzlos entfallen. Er wird deshalb gezogen, bevor er überschrieben wird.
-
-  **Verfahren:** Für ein Projekt mit Bauwerksmotiven werden vor der Änderung die gespeicherten Werte
-  der Kriterien `gebaeude` und `landschaft` als Zahlen-Verteilung festgehalten (Anzahl Fotos mit Wert
-  `0` bzw. `> 0`, Zahl der Landmark-Kandidaten nach `is_landmark_candidate`, `landmark_candidate_count`
-  aus der Projekt-Antwort), danach wird derselbe Kriterien-Lauf nach der Änderung wiederholt und
-  dieselbe Verteilung gezogen. Der Vergleich steht als Tabelle (vorher/nachher/Differenz) in der
-  PR-Beschreibung. Ausgegeben werden ausschließlich Zahlen — siehe `## Security`, S2.
-
-  **Werkzeug:** ein rein lesendes Messkommando `backend/src/photosort/criterion_probe.py` nach dem
-  Muster von `event_probe.py`/`place_probe.py` (read-only je Modul, eigener Wächterfall,
-  `main(argv, *, database_url)`), Aufruf `python -m photosort.criterion_probe --project-id N`. Es
-  liest nur die Datenbank, lädt kein Modell, schreibt nichts. Das Testkonzept verlangt für
-  Vorher/Nachher-Belege ein dafür gebautes Werkzeug, und der Nutzen ist nicht einmalig — nach jeder
-  künftigen Änderung an einer Kriterienliste ist derselbe Beleg in zwei Aufrufen wiederholbar.
+**Werkzeug:** ein rein lesendes Messkommando `backend/src/photosort/criterion_probe.py` nach dem
+Muster von `event_probe.py`/`place_probe.py` (read-only je Modul, eigener Wächterfall,
+`main(argv, *, database_url)`), Aufruf `python -m photosort.criterion_probe --project-id N`. Es
+liest nur die Datenbank, lädt kein Modell, schreibt nichts. Es belegt diese Änderung nicht, sondern
+ist das Messwerkzeug jeder künftigen Änderung an einer Kriterienliste — nach Merge und Deploy über
+die Container-Konsole aufrufbar. Ausgegeben werden ausschließlich Zahlen; die Auflagen aus
+`## Security` gelten unverändert.
 
 ### 7. AK8 — die veralteten Namen: letzter, isolierter Schritt
 
@@ -307,11 +305,23 @@ Betriebseinstellung, keine neue Eingabe von außen.
   neuen Klassen (`pier`, `dam`, `steel arch bridge`, `fountain`) feuern erfahrungsgemäß auch auf
   Wasser- und Weitwinkelszenen ohne erkennbares Bauwerk; die Zahl zusätzlich hinausgehender Fotos ist
   damit **nicht aus der Listenlänge ableitbar**.
-  **Muss:** Der Zuwachs ist zu **beziffern, bevor diese Spec als erfüllt gilt** — an einem echten
-  Projekt, mit dem Werkzeug aus S2, Ergebnis im Pull Request. Eine Schätzung oder eine Hochrechnung
-  aus der Listenlänge genügt ausdrücklich nicht: Das ist die einzige Zahl, die aussagt, wie viele
-  zusätzliche Familienfotos einen Dritten erreichen, und sie fällt nach dem Merge nicht mehr an.
-  **Bei Verletzung** wird die Ausweitung eines Datenabflusses ohne Messung ausgeliefert.
+  **Der Zuwachs bleibt unbeziffert — entschieden von Daniel, bewusst so angenommen.** Die Messung
+  an einem echten Projekt ist strukturell nicht durchführbar: Die Zielinstanz ist ausschließlich
+  über die Weboberfläche bedienbar, `criterion_probe.py` ist ein getipptes Kommando; deployen lässt
+  sich nur ein gemergter Stand; und der Vorher-Wert fällt mit dem ersten Re-Scan weg, weil
+  `PhotoCriterionScore` keinen Laufbezug trägt und überschrieben wird. Belegt ist die Änderung
+  deshalb allein auf Regel-Ebene (AK6, der Rot-Lauf des Prüftests, der die vier toten Einträge
+  namentlich nennt). **Die fehlende Zahl wird nicht ersetzt:** keine Schätzung, keine Hochrechnung
+  aus der Listenlänge, keine `0` — unbeziffert heißt benannt-unbeziffert.
+  **Was das trägt:** Die Vorab-Kostenvorschau zeigt `landmark_candidate_count` vor jedem
+  kostenpflichtigen Lauf als „Sehenswürdigkeits-Erkennung: N Fotos" und speist sich aus derselben
+  Funktion `is_landmark_candidate`, die der Live-Lauf benutzt — die Menge, die den Homeserver
+  verlässt, steht vor dem Auslösen da, und ohne erfolgreichen Vorlauf steht dort „Menge noch
+  unbekannt" statt einer Null. **Ungedeckt bleibt der Vergleich vorher/nachher:** Wie groß diese
+  eine Öffnung war, ist nachträglich nicht mehr feststellbar. Geführt als eigener Punkt unter
+  „Bewusst akzeptierte Restrisiken" im Sicherheitskonzept. **Für jede künftige Erweiterung einer
+  Kriterien-Allow-Liste bleibt die Messung die Regel** — eine erneute Abweichung ist wieder eine
+  ausgesprochene Produktentscheidung, nie eine Entscheidung des umsetzenden Laufs.
   **Die Einwilligung bleibt unberührt, aus derselben Begründung wie bei Spec 0217:** Empfänger,
   Zweck, Datenumfang pro Foto und Consent-Mechanik ändern sich nicht — ausschließlich die Auswahl der
   Fotos innerhalb derselben, bereits eingewilligten Verarbeitung. `cloud_vision_consent_at` wird
@@ -325,9 +335,12 @@ Betriebseinstellung, keine neue Eingabe von außen.
   Der bereits geführte Eskalationspunkt „gestohlenes JWT löst kostenpflichtige Läufe aus" wird
   quantitativ größer, nicht qualitativ anders — unverändert kein Blocker, kein Rate-Limiting nötig.
 
-- **S2 — `criterion_probe.py` gibt Zahlen aus, und die Zahlen gehen in ein öffentliches
-  Repository.** Die Messausgabe wird im Pull Request dokumentiert (S1), also unwiderruflich und ohne
-  Empfängerkreis veröffentlicht. Es gilt die schärfere Auflage von `event_probe.py`.
+- **S2 — `criterion_probe.py` gibt Zahlen aus, und diese Zahlen landen dort, wo sie jemand hinstellt.**
+  Das Werkzeug misst jede künftige Änderung an einer Kriterienliste; seine Ausgabe ist zum
+  Weitergeben gedacht — in einen Pull Request, in einen Issue-Kommentar, in einen Bericht — also
+  potenziell unwiderruflich und ohne Empfängerkreis veröffentlicht. Die Auflagen gelten deshalb an
+  der Ausgabe selbst, nicht an einem einzelnen Anlass. Es gilt die schärfere Auflage von
+  `event_probe.py`.
   **Muss:** Die Ausgabe trägt **keinen** `relative_path` und keinen Dateinamen, keinen
   OpenCloud-Pfad, keinen Projektnamen, keinen Zeitstempel, keine Koordinate, keinen Orts- oder
   Sehenswürdigkeitsnamen; ausgewiesen wird die Projekt-**Id**. Ausgegeben werden ausschließlich
@@ -342,7 +355,8 @@ Betriebseinstellung, keine neue Eingabe von außen.
   **Ausfallrichtung — „nicht gemessen" ist nicht „null":** Liegt kein erfolgreicher Kriterien-Lauf
   vor, meldet das Werkzeug `NICHT GEMESSEN`, nie `0` — dieselbe Regel, die `api/projects.py` mit
   `landmark_candidate_count: int | None` bereits durchsetzt. Eine `0`, die als Messergebnis gelesen
-  wird, trüge hier die Aussage „der Zuwachs ist klein" und damit die Abnahme dieser Spec.
+  wird, behauptet „nichts verlässt den Homeserver" für einen Anteil, der gleich Geld kostet, und
+  trüge damit eine Entscheidung, die niemand getroffen hat.
   **Muss (rein lesend, wie die beiden Vorbilder dreifach abgesichert):** kein
   `INSERT`/`UPDATE`/`DELETE`, kein Aufrufpfad aus `main.py`/`worker.py`, kein Endpunkt, kein
   Compose-`command` — festgehalten über Import-Graph, Syntaxbaum-Wächter und einen echten
@@ -395,10 +409,11 @@ Frontend-Renderstelle, kein Log-Kanal für eine neue Datenklasse.
 1. **Abschnitt „Cloud-Vision-API", nach dem Bullet zur Vorfilterungs-Verschiebung (ADR 0047):** eine
    Fortschreibung zu dieser Spec — die Kandidatenmenge wächst erneut, diesmal durch eine reparierte
    und erweiterte Allow-Liste; Zweck, Empfänger, Datenumfang pro Foto und Consent-Mechanik
-   unverändert; **der Zuwachs ist mit der gemessenen Zahl aus S1 einzutragen**. Ausdrücklich
-   festhalten: zwischen Allow-Listen-Treffer und Cloud-Aufruf liegt keine dämpfende Schwelle — jede
-   künftige Erweiterung dieser Liste ist damit unmittelbar eine Ausweitung des Abflusses und braucht
-   dieselbe Messung.
+   unverändert; **der Zuwachs bleibt unbeziffert und ist als solcher einzutragen**, nie als `0` und
+   nie als Schätzung. Ausdrücklich festhalten: zwischen Allow-Listen-Treffer und Cloud-Aufruf liegt
+   keine dämpfende Schwelle — jede künftige Erweiterung dieser Liste ist damit unmittelbar eine
+   Ausweitung des Abflusses und wird beziffert; die Abweichung hier ist eine ausgesprochene
+   Produktentscheidung und steht mit eigenem Eintrag unter „Bewusst akzeptierte Restrisiken".
 2. **Ankerliste:** eine Zeile für die Ausgabe-Hygiene von `criterion_probe.py` (verbotene Klassen
    plus die verbotene Verbindung Klassenname ↔ einzelnes Foto, Ausfallrichtung `NICHT GEMESSEN`),
    rein lesend dreifach gesichert, samt Testnamen — nach dem Muster der bestehenden Zeilen zu
@@ -417,8 +432,8 @@ neuer Aufrufpfad; die Story ist eine Konstantenänderung mit einer Regelschicht 
 |---|---|
 | AK4 — jeder Eintrag jeder kuratierten Liste steht in der Label-Datei ihres Assets | automatisierter Test, parametrisiert über fünf Paare |
 | AK1/AK2/AK3 — die konkrete neue Zusammensetzung: vier Umbenennungen, sechs Ergänzungen, 22 Einträge | automatisierter Test, exakte Mengenprüfung |
-| AK6 Regel-Ebene — welche Einträge vorher unwirksam waren | der Rot-Lauf desselben Tests, wörtlich im Test-Docstring |
-| AK6 Material-Ebene — mehr Gebäude-Erkennung an echten Fotos | **kein Test.** Einziger Träger ist der dokumentierte Messlauf. |
+| AK6 — welche Einträge vorher unwirksam waren | der Rot-Lauf desselben Tests, wörtlich im Test-Docstring; einziger Beleg der Verhaltensänderung |
+| mehr Gebäude-Erkennung an echten Fotos | **kein Träger.** Keine Messung, kein Test — als trägerlose Lücke im Testkonzept geführt |
 | AK5/AK7/AK8 | Text und Kommentar, kein Test |
 | Erkennungsgüte an echten Fotos, Vollständigkeit der kuratierten Auswahl, Index-Behauptung zu `LANDSCAPE_SCENE_CATEGORIES` | bewusst nicht geprüft (ADR 0124 Punkt 4) |
 
@@ -447,7 +462,7 @@ Codepoints, keine Modelllabels) gehören in den Testkommentar.
 
 **Rot-Beleg im TDD-Zyklus.** Der Test wird zuerst gegen den unveränderten Bestand geschrieben und rot
 gesehen; die Fehlermeldung muss genau die vier toten Einträge und das Asset benennen. Dieser Rot-Lauf
-ist zugleich der Vorher-Beleg der Regel-Ebene und gehört mit Befehl und vollständiger Meldung
+ist der Beleg der Verhaltensänderung und gehört mit Befehl und vollständiger Meldung
 wörtlich in den Test-Docstring. **Er trägt zugleich das Normalisierungsverbot:** Er ist nur
 reproduzierbar, solange exakt verglichen wird — die vier toten Einträge scheitern *an der
 Schreibweise*. Wer die Prüfung später normalisiert, kann den Rot-Beleg nicht mehr erzeugen und hat
@@ -497,7 +512,8 @@ eine lokale Datei öffnet keinen Socket.
    entfiel mit ADR 0091; die Verweise gehen auf `place_probe.py`/`event_probe.py`, das Muster bleibt
    wörtlich gültig.
 4. **Sektion „Bekannte Lücken"** ergänzen: die inhaltliche Erkennungsgüte der kuratierten Listen
-   bleibt außerhalb jeder Automatisierung; Träger ist das `criterion_probe.py`-Kommando.
+   bleibt außerhalb jeder Automatisierung; für diese Erweiterung ist die Lücke **ohne Träger** — es
+   wird nicht gemessen, auch das `criterion_probe.py`-Kommando belegt sie nicht.
 
 ## Entscheidungen
 
@@ -522,9 +538,16 @@ eine lokale Datei öffnet keinen Socket.
   Spec-Anlage entsprechend korrigiert.
 - **Selbst entschieden (test-engineer):** exakte Mengenprüfung zusätzlich zur ⊆-Prüfung; harter
   Fehler statt `pytest.skip` bei fehlendem Asset; Normalisierung ausgeschlossen.
-- **Selbst entschieden (security-engineer):** die Bezifferung des Kandidaten-Zuwachses ist
-  Abnahmebedingung, nicht Empfehlung; für `criterion_probe.py` gilt die schärfere `event_probe`-Regel
-  statt der `place_probe`-Regel.
+- **Selbst entschieden (security-engineer):** für `criterion_probe.py` gilt die schärfere
+  `event_probe`-Regel statt der `place_probe`-Regel.
+- **Entschieden durch Daniel (Umsetzung, nach der ersten Review-Runde):** die Material-Messung des
+  Kandidaten-Zuwachses (AK6(b)) entfällt. Die Zielinstanz ist ausschließlich über die Weboberfläche
+  zugänglich — kein getipptes Kommando, keine Datei in den Container —, deployt werden nur gemergte
+  Stände, und ein Vorher-Wert wird vom nächsten Kriterien-Lauf überschrieben
+  (`PhotoCriterionScore`, kein Laufbezug). Der Zuwachs bleibt damit unbeziffert; die Regel-Ebene
+  (Rot-Lauf) gilt als alleiniger Beleg. Das Messkommando `criterion_probe.py` bleibt im Code,
+  umgewidmet zum Messwerkzeug jeder künftigen Änderung an einer Kriterienliste. Sicherheitlich ist das
+  eine bewusste, im Sicherheitskonzept ausgewiesene Risikoübernahme, kein Versehen.
 
 ## Offene Fragen
 
@@ -540,6 +563,8 @@ eine lokale Datei öffnet keinen Socket.
 - Die Index-Behauptung zu `LANDSCAPE_SCENE_CATEGORIES` (Positionen 970, 972-980) und die
   Erkennungsgüte an echten Fotos.
 - Manuell gesetzte Kategorie-Korrekturen bleiben unberührt.
+- Eine Messung des Kandidaten-Zuwachses an einem echten Projekt — sie ist auf der Zielinstanz
+  nicht durchführbar und wurde mit der Umsetzungs-Entscheidung fallengelassen.
 
 ---
 
