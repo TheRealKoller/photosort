@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.1](https://github.com/TheRealKoller/photosort/compare/v0.48.0...v0.48.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **backend:** Gebäude-Allow-Liste gegen die Modell-Labels repariert und erweitert (Spec 0283) ([#534](https://github.com/TheRealKoller/photosort/issues/534)) ([665c3a1](https://github.com/TheRealKoller/photosort/commit/665c3a1a2c5a9627c926c91ac7edab6cb2cf7219))
+
 ## [0.48.0](https://github.com/TheRealKoller/photosort/compare/v0.47.0...v0.48.0) (2026-09-24)
 
 
