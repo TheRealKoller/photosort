@@ -12,6 +12,8 @@ interface CriterionScoreGridProps {
   contentRows?: { label: string; value: string }[]
   /** Klassen des Behaelters; `contents` reiht beide Bloecke in das Raster des Aufrufers ein. */
   className?: string
+  /** Klassen der beiden Blockueberschriften. */
+  headingClassName?: string
 }
 
 const DEFAULT_TITLES = { quality: 'Qualität — Einzelwerte', content: 'Bildinhalt — Einzelwerte' }
@@ -55,6 +57,7 @@ export function CriterionScoreGrid({
   titles = DEFAULT_TITLES,
   contentRows = [],
   className = 'grid gap-6 sm:grid-cols-2',
+  headingClassName = 'text-xs font-semibold tracking-wide text-text-h uppercase',
 }: CriterionScoreGridProps) {
   const { quality: qualityScores, content: contentScores } =
     partitionByPresenceThreshold(criterionScores)
@@ -78,10 +81,7 @@ export function CriterionScoreGrid({
         // Toolchain keine namensfaehige Rolle, die Beschriftung kaeme dort weder im
         // Accessibility-Tree noch in einer Rollenabfrage an.
         <div role="group" aria-labelledby={qualityHeadingId} className="flex flex-col gap-2">
-          <h3
-            id={qualityHeadingId}
-            className="text-xs font-semibold tracking-wide text-text-h uppercase"
-          >
+          <h3 id={qualityHeadingId} className={headingClassName}>
             {titles.quality}
           </h3>
           <dl className="flex flex-col gap-2">
@@ -98,10 +98,7 @@ export function CriterionScoreGrid({
       )}
       {showContentBlock && (
         <div role="group" aria-labelledby={contentHeadingId} className="flex flex-col gap-2">
-          <h3
-            id={contentHeadingId}
-            className="text-xs font-semibold tracking-wide text-text-h uppercase"
-          >
+          <h3 id={contentHeadingId} className={headingClassName}>
             {titles.content}
           </h3>
           <dl className="flex flex-col gap-2">

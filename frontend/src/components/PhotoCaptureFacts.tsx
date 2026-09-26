@@ -14,6 +14,10 @@ interface PhotoCaptureFactsProps {
   heading?: string
   /** `false`, wo der Ort an anderer Stelle derselben Ansicht steht. */
   showPlace?: boolean
+  /** `compact`: Zeit in der Textschrift, Kamera in `--text` - die Fassung des Detailblocks der
+   * Grossansicht. */
+  appearance?: 'page' | 'compact'
+  headingClassName?: string
 }
 
 /**
@@ -25,7 +29,10 @@ export function PhotoCaptureFacts({
   headingLevel: Heading,
   heading = 'Aufnahmezeit',
   showPlace = true,
+  appearance = 'page',
+  headingClassName = 'text-xs font-semibold tracking-wide text-text-h uppercase',
 }: PhotoCaptureFactsProps) {
+  const compact = appearance === 'compact'
   // Der Ort eines Fotos ist der Ort seines EREIGNISSES. Wie Name und Ortsname zusammengesetzt
   // werden, steht in `utils/timeOfDay.ts::eventPlaceName` und entsteht hier ausdruecklich NICHT ein
   // zweites Mal - sonst liefe die Zeile mit der Ereignis-Ueberschrift auseinander. Ohne Ortsangabe
@@ -34,11 +41,11 @@ export function PhotoCaptureFacts({
 
   return (
     <section className="flex flex-col gap-1 text-sm" data-testid="taken-at-section">
-      <Heading className="text-xs font-semibold tracking-wide text-text-h uppercase">
-        {heading}
-      </Heading>
+      <Heading className={headingClassName}>{heading}</Heading>
       <p className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-text">{formatDateTime(photo.taken_at)}</span>
+        <span className={compact ? 'text-text-h' : 'font-mono text-text'}>
+          {formatDateTime(photo.taken_at)}
+        </span>
         {/* Die Marke NUR im Korrekturfall, im zurueckhaltenden Metadatenton: eine Korrektur
             ist der GEWOLLTE Zustand, kein Alarm. */}
         {photo.time_offset_minutes !== 0 && (
@@ -56,7 +63,7 @@ export function PhotoCaptureFacts({
         </p>
       )}
       {/* Ist keine Kamera bestimmbar, steht das als RUHIGER SATZ da und nicht als Fehlen. */}
-      <p className="text-xs text-text-muted">
+      <p className={compact ? 'text-sm text-text' : 'text-xs text-text-muted'}>
         {photo.camera === null
           ? 'Die Kamera dieses Fotos ist nicht bestimmbar.'
           : photo.camera.label}

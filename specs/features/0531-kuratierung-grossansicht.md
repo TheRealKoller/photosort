@@ -194,7 +194,7 @@ Maße nach dem Penpot-Entwurf (gemessen 2026-09-26). **Umbruch bei Tailwind `sm`
 | Innenabstand / Zeilenabstand | `p-4` / `gap-4` | `sm:p-6` / `gap-4` |
 | Abdunklung | Nicht sichtbar, weil alles verdeckt ist | `backdrop:bg-bg/72` |
 | Kopfzeile | Dateiname und „Schließen“, darunter die Motivreihe | Dateiname links, Motivreihe rechts; kein „Schließen“ |
-| „Schließen“ | in der Kopfzeile | rechts in der Bedienzeile (dasselbe Element, `sm:absolute sm:right-6 sm:bottom-6`) |
+| „Schließen“ | in der Kopfzeile | rechts in der Bedienzeile (dasselbe Element; positioniert wird ein Wrapper mit `sm:absolute sm:right-6 sm:bottom-6`, weil `tap-target` am Button selbst `position: relative` setzt) |
 | Fußzeile | Pfad und Ort untereinander | Pfad links, Ort ab Panelmitte (`sm:grid-cols-2`) |
 | Detailblock | einspaltig | drei Spalten |
 
@@ -213,6 +213,7 @@ Gemeinsam für beide Breiten:
 - **`gefuellt`:** Kopfzeile mit Dateiname und Motivreihe; Bild eingepasst; Fußzeile mit Pfad und Ort; Details zugeklappt. Die Großansicht zeigt weder Bewertungszustand noch Bewertungskennzeichen noch Entscheidungsschaltfläche.
 - **`details-offen`:** Zwischen Bühne und Fußzeile steht ein Bereich (`<section aria-label="Bilddetails" tabIndex={0}>`), weil er ohne Tastaturfokus nicht scrollbar wäre.
   - Inhalt (ab `sm` drei Spalten, darunter einspaltig in dieser Reihenfolge): „Qualität“ mit Einzelwerten, „Bildinhalt“ mit Einzelwerten und „Rang im Ereignis“ (`rank_position` von `partition_size`, entfällt ohne Rang) — beides über `CriterionScoreGrid` mit eigenen Überschriften; dann „Feinlabels“ (`h3`, fehlt ganz ohne Feinlabels) mit `FineLabelList` und „Aufnahme“ (`PhotoCaptureFacts` ohne Ort).
+  - Überschriften „Qualität“, „Bildinhalt“, „Feinlabels“ und „Aufnahme“ in normaler Schreibung, `text-sm font-medium text-text-h`; Zeilen: Name in `--text`, Wert in `--text-h`; Aufnahmezeit in Inter (nicht Monospace), Kamera in `--text` (`PhotoCaptureFacts appearance="compact"`, `headingClassName` an beiden Bausteinen).
   - Belichtungsdaten des Entwurfs entfallen; es gibt sie im Datenmodell nicht.
   - Der Bereich nimmt höchstens die halbe Panelhöhe ein und scrollt darüber hinaus in sich. Die Bühne schrumpft entsprechend, und das Bild passt sich neu ein.
   - Der Container steht immer im DOM und ist zugeklappt `hidden`. So zeigt `aria-controls` nie ins Leere.

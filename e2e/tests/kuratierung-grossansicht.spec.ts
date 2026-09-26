@@ -215,6 +215,43 @@ test.describe('Kuratierung: die Großansicht', () => {
     await expect(page.getByRole('heading', { level: 1, includeHidden: true })).toBeAttached()
   })
 
+  test('stellt „Schließen“ ab 640 px rechts in die Bedienzeile, darunter über die Bühne', async ({
+    page,
+  }) => {
+    await oeffneEntwurf(page)
+    await ausloeser(page).first().click()
+    await expect(dialog(page)).toBeVisible()
+    const schliessen = await rechteck(
+      dialog(page).getByRole('button', { name: 'Schließen', exact: true }),
+    )
+
+    if (page.viewportSize()!.width >= 640) {
+      const details = await rechteck(
+        dialog(page).getByRole('button', { name: 'Details', exact: true }),
+      )
+      const panel = await rechteck(page.getByTestId('lightbox-panel'))
+      const mitte = (kasten: Rechteck) => kasten.y + kasten.height / 2
+      expect(
+        Math.abs(mitte(schliessen) - mitte(details)),
+        'in derselben Zeile wie „Details“',
+      ).toBeLessThanOrEqual(2)
+      expect(schliessen.x, 'rechts von „Details“').toBeGreaterThan(details.x + details.width)
+      expect(schliessen.x, 'im Panel links').toBeGreaterThanOrEqual(panel.x - TOLERANZ)
+      expect(schliessen.y, 'im Panel oben').toBeGreaterThanOrEqual(panel.y - TOLERANZ)
+      expect(schliessen.x + schliessen.width, 'im Panel rechts').toBeLessThanOrEqual(
+        panel.x + panel.width + TOLERANZ,
+      )
+      expect(schliessen.y + schliessen.height, 'im Panel unten').toBeLessThanOrEqual(
+        panel.y + panel.height + TOLERANZ,
+      )
+    } else {
+      const flaeche = await rechteck(buehne(page))
+      expect(schliessen.y + schliessen.height, 'oberhalb der Bühne').toBeLessThanOrEqual(
+        flaeche.y + TOLERANZ,
+      )
+    }
+  })
+
   test('passt das Bild in zwei Formaten und mit aufgeklappten Details in die Bühne ein', async ({
     page,
   }) => {

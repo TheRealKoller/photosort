@@ -15,6 +15,9 @@ import type { PhotoImageStatus } from './PhotoImage'
 import { Button } from './ui/button'
 import { Icon } from './ui/icon'
 
+/** Ueberschriften des Detailblocks nach Entwurf: normale Schreibung, 14px, Schnitt 500. */
+const DETAIL_HEADING_CLASS = 'text-sm font-medium text-text-h'
+
 interface CurationLightboxProps {
   photo: PhotoOut
   /** Schliesswunsch aus „Schließen", Esc, nativer Schliessanfrage und Klick neben das Bild. */
@@ -123,15 +126,13 @@ export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
           {/* EIN Element fuer beide Breiten: am Telefon neben dem Dateinamen, ab `sm` rechts in der
               Bedienzeile - dort steht es als letzte Zeile des Panels bündig auf dessen
               Innenabstand. Zuerst im DOM, weil es den Erstfokus traegt. */}
-          <Button
-            ref={closeRef}
-            type="button"
-            size="sm"
-            className="shrink-0 sm:absolute sm:right-6 sm:bottom-6"
-            onClick={onClose}
-          >
-            Schließen
-          </Button>
+          {/* Positioniert wird der Wrapper, nicht die Schaltflaeche: deren `tap-target` setzt selbst
+              `position: relative` und schluege ein `absolute` am selben Element. */}
+          <div className="shrink-0 sm:absolute sm:right-6 sm:bottom-6">
+            <Button ref={closeRef} type="button" size="sm" onClick={onClose}>
+              Schließen
+            </Button>
+          </div>
         </div>
 
         {/* Die Buehne: `container-type: size`, damit der Bildkasten sich ueber Container-Einheiten
@@ -180,13 +181,12 @@ export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
               titles={{ quality: 'Qualität', content: 'Bildinhalt' }}
               contentRows={rankRows}
               className="contents"
+              headingClassName={DETAIL_HEADING_CLASS}
             />
             <div className="flex flex-col gap-4">
               {photo.fine_labels.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  <h3 className="text-xs font-semibold tracking-wide text-text-h uppercase">
-                    Feinlabels
-                  </h3>
+                  <h3 className={DETAIL_HEADING_CLASS}>Feinlabels</h3>
                   <FineLabelList fineLabels={photo.fine_labels} />
                 </div>
               )}
@@ -195,6 +195,8 @@ export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
                 headingLevel="h3"
                 heading="Aufnahme"
                 showPlace={false}
+                appearance="compact"
+                headingClassName={DETAIL_HEADING_CLASS}
               />
             </div>
           </div>
