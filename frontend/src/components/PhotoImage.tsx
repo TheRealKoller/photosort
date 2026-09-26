@@ -19,11 +19,14 @@ interface PhotoImageProps {
   /** Wird nach dem Druck auf „Erneut versuchen" gerufen - die Schaltflaeche verschwindet dabei,
    * und der Aufrufer entscheidet, wohin der Fokus geht. */
   onRetry?: () => void
+  /** Meldet jeden Wechsel des Ladezustands - fuer Aufrufer, die ihn neben dem Bild anzeigen. */
+  onStatusChange?: (status: PhotoImageStatus) => void
 }
 
-/** Beitext des wiederholbaren Fehlerzustands, wenn der Fehlschlag kein `detail` des Servers
- * traegt. */
-export const IMAGE_UNAVAILABLE_TEXT = 'Das große Bild ist gerade nicht abrufbar.'
+export type PhotoImageStatus = 'loading' | 'ready' | 'placeholder' | 'error'
+
+/** Titel des wiederholbaren Fehlerzustands; das Server-`detail` steht, falls vorhanden, darunter. */
+export const IMAGE_UNAVAILABLE_TEXT = 'Das Bild lässt sich nicht laden.'
 
 type PhotoImageState =
   | { status: 'loading' }
@@ -45,6 +48,7 @@ export function PhotoImage({
   className,
   retryable = false,
   onRetry,
+  onStatusChange,
 }: PhotoImageProps) {
   const [state, setState] = useState<PhotoImageState>({ status: 'loading' })
   // Jeder Druck auf „Erneut versuchen" erhoeht den Zaehler und startet damit den Lade-Effekt neu.
@@ -84,6 +88,10 @@ export function PhotoImage({
     }
   }, [photoId, variant, attempt])
 
+  useEffect(() => {
+    onStatusChange?.(state.status)
+  }, [state.status, onStatusChange])
+
   if (state.status === 'loading') {
     return (
       <div className={className} role="status" aria-label={`${alt} wird geladen…`}>
@@ -109,7 +117,7 @@ export function PhotoImage({
         )}
       >
         <p>Bild wird noch verarbeitet.</p>
-        <Button type="button" variant="secondary" size="sm" onClick={retry}>
+        <Button type="button" size="sm" onClick={retry}>
           Erneut versuchen
         </Button>
       </div>
@@ -134,11 +142,15 @@ export function PhotoImage({
 
   if (state.status === 'error' && retryable) {
     return (
-      <div className={cn('flex items-center justify-center p-4', className)}>
-        {/* `detail` des Servers ausschliesslich als React-Textknoten (Alert rendert ihn so). */}
-        <Alert title="Bild konnte nicht geladen werden" onRetry={retry} className="max-w-md">
-          {state.detail ?? IMAGE_UNAVAILABLE_TEXT}
+      <div className={cn('flex flex-col items-center justify-center gap-3 p-4', className)}>
+        {/* `detail` des Servers ausschliesslich als React-Textknoten (Alert rendert ihn so). Die
+            Wiederholung ist eine eigene Hauptschaltflaeche unter der Meldung, nicht im Alert. */}
+        <Alert title={IMAGE_UNAVAILABLE_TEXT} className="max-w-md">
+          {state.detail}
         </Alert>
+        <Button type="button" size="sm" onClick={retry}>
+          Erneut versuchen
+        </Button>
       </div>
     )
   }

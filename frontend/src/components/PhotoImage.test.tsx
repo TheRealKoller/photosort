@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -84,6 +84,18 @@ describe('PhotoImage', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
+  it('reports every change of its loading state', async () => {
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    const onStatusChange = vi.fn()
+
+    render(
+      <PhotoImage photoId={1} variant="display" alt="Foto 1" onStatusChange={onStatusChange} />,
+    )
+
+    await screen.findByRole('img', { name: 'Foto 1' })
+    expect(onStatusChange.mock.calls.map(([status]) => status)).toEqual(['loading', 'ready'])
+  })
+
   describe('retryable (Spec 0531, AK13)', () => {
     it('shows the server detail with a retry that starts a new fetch', async () => {
       vi.mocked(photosApi.fetchPhotoImageBlobUrl)
@@ -94,8 +106,10 @@ describe('PhotoImage', () => {
       render(<PhotoImage photoId={7} variant="display" alt="a/b.jpg" retryable onRetry={onRetry} />)
 
       const alert = await screen.findByRole('alert')
-      expect(alert).toHaveTextContent('Bild konnte nicht geladen werden')
+      expect(alert).toHaveTextContent('Das Bild lässt sich nicht laden.')
       expect(alert).toHaveTextContent('Speicher nicht erreichbar')
+      // Die Wiederholung ist eine eigene Schaltflaeche, nicht Teil der Meldung.
+      expect(within(alert).queryByRole('button')).not.toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
 
       expect(await screen.findByRole('img', { name: 'a/b.jpg' })).toHaveAttribute(
@@ -107,14 +121,13 @@ describe('PhotoImage', () => {
       expect(onRetry).toHaveBeenCalledTimes(1)
     })
 
-    it('falls back to a fixed sentence when the failure is no ApiError', async () => {
+    it('shows only the title when the failure is no ApiError', async () => {
       vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockRejectedValue(new TypeError('offline'))
 
       render(<PhotoImage photoId={7} variant="display" alt="a/b.jpg" retryable />)
 
       const alert = await screen.findByRole('alert')
-      expect(alert).toHaveTextContent('Das große Bild ist gerade nicht abrufbar.')
-      expect(alert).not.toHaveTextContent('offline')
+      expect(alert).toHaveTextContent(/^Das Bild lässt sich nicht laden\.$/)
     })
 
     /* Kinder von `role=img` sind praesentational: Laege der Knopf darunter, waere er fuer

@@ -10,13 +10,22 @@ interface PhotoCaptureFactsProps {
   >
   /** Stufe der Ueberschrift „Aufnahmezeit" - sie haengt an der Gliederung des Aufrufers. */
   headingLevel: 'h2' | 'h3'
+  /** Text der Ueberschrift. */
+  heading?: string
+  /** `false`, wo der Ort an anderer Stelle derselben Ansicht steht. */
+  showPlace?: boolean
 }
 
 /**
  * Die Aufnahmeangaben eines Fotos: Aufnahmezeit mit Korrekturzeile, Kamera und Ort. Eine
  * Renderstelle fuer Bilddetailseite und Großansicht.
  */
-export function PhotoCaptureFacts({ photo, headingLevel: Heading }: PhotoCaptureFactsProps) {
+export function PhotoCaptureFacts({
+  photo,
+  headingLevel: Heading,
+  heading = 'Aufnahmezeit',
+  showPlace = true,
+}: PhotoCaptureFactsProps) {
   // Der Ort eines Fotos ist der Ort seines EREIGNISSES. Wie Name und Ortsname zusammengesetzt
   // werden, steht in `utils/timeOfDay.ts::eventPlaceName` und entsteht hier ausdruecklich NICHT ein
   // zweites Mal - sonst liefe die Zeile mit der Ereignis-Ueberschrift auseinander. Ohne Ortsangabe
@@ -26,7 +35,7 @@ export function PhotoCaptureFacts({ photo, headingLevel: Heading }: PhotoCapture
   return (
     <section className="flex flex-col gap-1 text-sm" data-testid="taken-at-section">
       <Heading className="text-xs font-semibold tracking-wide text-text-h uppercase">
-        Aufnahmezeit
+        {heading}
       </Heading>
       <p className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-text">{formatDateTime(photo.taken_at)}</span>
@@ -61,9 +70,11 @@ export function PhotoCaptureFacts({ photo, headingLevel: Heading }: PhotoCapture
           React-Textknoten, nie `dangerouslySetInnerHTML`, nie in `href`/`src`/`style`. Bricht in
           `PhotoDetailPage.test.tsx > rendert einen feindlich belegten Ortsnamen aus $name als
           reinen Textknoten`. */}
-      <p className="text-xs text-text-muted" data-testid="place-line">
-        {placeName ?? 'nicht bestimmbar'}
-      </p>
+      {showPlace && (
+        <p className="text-xs text-text-muted" data-testid="place-line">
+          {placeName ?? 'nicht bestimmbar'}
+        </p>
+      )}
     </section>
   )
 }

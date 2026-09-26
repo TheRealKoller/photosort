@@ -917,11 +917,11 @@ describe('AlbumDraftPage', () => {
       renderWithHistory()
 
       fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: a.jpg' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Bilddetails' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Details' }))
       fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
       fireEvent.click(screen.getByRole('button', { name: 'Großansicht: b.jpg' }))
 
-      expect(screen.getByRole('button', { name: 'Bilddetails' })).toHaveAttribute(
+      expect(screen.getByRole('button', { name: 'Details' })).toHaveAttribute(
         'aria-expanded',
         'false',
       )

@@ -5,11 +5,13 @@ import type { PhotoOut } from '../api/types'
 import { useModalDialog } from '../lib/useModalDialog'
 import { cn } from '../lib/utils'
 import { fittedImageBoxStyle } from '../utils/imageFit'
+import { eventPlaceName } from '../utils/timeOfDay'
 import { CriterionScoreGrid } from './CriterionScoreGrid'
 import { FineLabelList } from './FineLabelList'
 import { MotifStrengthRow } from './MotifStrengthRow'
 import { PhotoCaptureFacts } from './PhotoCaptureFacts'
-import { PhotoImage } from './PhotoImage'
+import { IMAGE_UNAVAILABLE_TEXT, PhotoImage } from './PhotoImage'
+import type { PhotoImageStatus } from './PhotoImage'
 import { Button } from './ui/button'
 import { Icon } from './ui/icon'
 
@@ -54,10 +56,28 @@ export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
   const titleId = useId()
   const detailsId = useId()
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [imageStatus, setImageStatus] = useState<PhotoImageStatus>('loading')
   const pointerDownOnClosingAreaRef = useRef(false)
 
   const fileName = photo.relative_path.split('/').pop() ?? photo.relative_path
   const boxStyle = fittedImageBoxStyle(photo.aspect_ratio)
+  const placeName = photo.event ? eventPlaceName(photo.event) : null
+  // Auf `!== null` geprueft, nie auf Falsyness: „- von 12" waere eine Rangaussage ohne Rang.
+  const rankRows =
+    photo.ranking != null && photo.ranking.rank_position !== null
+      ? [
+          {
+            label: 'Rang im Ereignis',
+            value: `${photo.ranking.rank_position} von ${photo.ranking.partition_size}`,
+          },
+        ]
+      : []
+  const pathLine =
+    imageStatus === 'loading'
+      ? 'Bild wird geladen …'
+      : imageStatus === 'error'
+        ? IMAGE_UNAVAILABLE_TEXT
+        : photo.relative_path
 
   function isClosingArea(target: EventTarget): boolean {
     return target === modal.ref.current || target === stageRef.current
@@ -78,24 +98,21 @@ export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
           onClose()
         }
       }}
-      // Unter `sm` fuellt das Panel den Sichtbereich randlos, darueber steht es mit 32px Rand
-      // ueber der abgedunkelten Kuratierung. Die UA-Masse des <dialog> sind aufgehoben; die
-      // Ausdehnung kommt allein aus `inset`.
+      // Unter `sm` fuellt das Panel den Sichtbereich randlos, darueber steht es mit 48px seitlichem
+      // und 24px oberem/unterem Rand ueber der abgedunkelten Kuratierung. Die UA-Masse des
+      // <dialog> sind aufgehoben; die Ausdehnung kommt allein aus `inset`.
       className={cn(
-        'fixed inset-0 m-0 h-auto max-h-none w-auto max-w-none bg-surface p-0 text-text',
-        'sm:inset-8 sm:rounded-xl sm:border sm:border-border',
-        'backdrop:bg-bg/85',
+        'fixed inset-0 m-0 h-auto max-h-none w-auto max-w-none bg-elevated p-0 text-text',
+        'sm:inset-x-12 sm:inset-y-6 sm:rounded-lg sm:border sm:border-border',
+        'backdrop:bg-bg/72',
       )}
     >
       <div
         data-testid="lightbox-panel"
-        className="flex size-full min-h-0 flex-col gap-3 p-2 sm:p-4"
+        className="relative flex size-full min-h-0 flex-col gap-4 p-4 sm:p-6"
       >
         <div data-testid="lightbox-header" className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <h2
-            id={titleId}
-            className="min-w-0 flex-1 truncate text-base font-semibold text-text-h sm:text-lg"
-          >
+          <h2 id={titleId} className="min-w-0 flex-1 truncate text-lg font-medium text-text-h">
             {fileName}
           </h2>
           <MotifStrengthRow
@@ -103,12 +120,14 @@ export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
             motifs={photo.motifs}
             className="order-last w-full sm:order-none sm:w-auto"
           />
+          {/* EIN Element fuer beide Breiten: am Telefon neben dem Dateinamen, ab `sm` rechts in der
+              Bedienzeile - dort steht es als letzte Zeile des Panels bündig auf dessen
+              Innenabstand. Zuerst im DOM, weil es den Erstfokus traegt. */}
           <Button
             ref={closeRef}
             type="button"
-            variant="secondary"
             size="sm"
-            className="shrink-0"
+            className="shrink-0 sm:absolute sm:right-6 sm:bottom-6"
             onClick={onClose}
           >
             Schließen
@@ -117,14 +136,14 @@ export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
 
         {/* Die Buehne: `container-type: size`, damit der Bildkasten sich ueber Container-Einheiten
             genau auf die eingepasste Bildgroesse setzen kann - so gross, wie die Buehne zulaesst,
-            auch hochskaliert. Ihre freie Flaeche neben dem Kasten schliesst. `tabIndex=-1`: Nach
-            „Erneut versuchen" verschwindet die Schaltflaeche, und der Fokus geht hierher statt auf
-            `<body>`. */}
+            auch hochskaliert. Sie hat keine eigene Grundflaeche; ihre freie Flaeche neben dem
+            Kasten schliesst. `tabIndex=-1`: Nach „Erneut versuchen" verschwindet die Schaltflaeche,
+            und der Fokus geht hierher statt auf `<body>`. */}
         <div
           ref={stageRef}
           data-testid="lightbox-stage"
           tabIndex={-1}
-          className="@container-size flex min-h-0 flex-1 cursor-zoom-out items-center justify-center rounded-md bg-bg"
+          className="@container-size flex min-h-0 flex-1 cursor-zoom-out items-center justify-center"
         >
           <div
             data-testid="lightbox-image-box"
@@ -138,53 +157,79 @@ export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
               className="size-full object-contain"
               retryable
               onRetry={() => stageRef.current?.focus()}
+              onStatusChange={setImageStatus}
             />
           </div>
         </div>
 
-        <div data-testid="lightbox-footer" className="flex items-center gap-3">
-          <p className="min-w-0 flex-1 truncate font-mono text-xs text-text-muted">
-            {photo.relative_path}
-          </p>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="shrink-0"
-            aria-expanded={detailsOpen}
-            aria-controls={detailsId}
-            onClick={() => setDetailsOpen((open) => !open)}
-          >
-            <Icon
-              name="chevron-down"
-              size={16}
-              className={detailsOpen ? 'rotate-180' : undefined}
-            />
-            Bilddetails
-          </Button>
-        </div>
-
         {/* Steht immer im DOM, damit `aria-controls` nie ins Leere zeigt. Fokussierbar nur
             aufgeklappt - ohne Tastaturfokus waere der Bereich nicht scrollbar. Hoechstens die
-            halbe Panelhoehe; die Buehne schrumpft entsprechend und das Bild passt sich neu ein. */}
+            halbe Panelhoehe; die Buehne schrumpft entsprechend und das Bild passt sich neu ein.
+            Ab `sm` drei Spalten: Qualitaet, Bildinhalt samt Rang, Feinlabels und Aufnahme. Der Ort
+            steht in der Fusszeile, nicht hier. */}
         <section
           id={detailsId}
           aria-label="Bilddetails"
           hidden={!detailsOpen}
           tabIndex={detailsOpen ? 0 : undefined}
-          className="flex max-h-1/2 flex-col gap-4 overflow-y-auto border-t border-separator pt-3"
+          className="max-h-1/2 overflow-y-auto rounded-md border border-border bg-surface p-6"
         >
-          <CriterionScoreGrid criterionScores={photo.criterion_scores} />
-          {photo.fine_labels.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <h3 className="text-xs font-semibold tracking-wide text-text-h uppercase">
-                Feinlabels
-              </h3>
-              <FineLabelList fineLabels={photo.fine_labels} />
+          <div className="grid gap-6 sm:grid-cols-3">
+            <CriterionScoreGrid
+              criterionScores={photo.criterion_scores}
+              titles={{ quality: 'Qualität', content: 'Bildinhalt' }}
+              contentRows={rankRows}
+              className="contents"
+            />
+            <div className="flex flex-col gap-4">
+              {photo.fine_labels.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-xs font-semibold tracking-wide text-text-h uppercase">
+                    Feinlabels
+                  </h3>
+                  <FineLabelList fineLabels={photo.fine_labels} />
+                </div>
+              )}
+              <PhotoCaptureFacts
+                photo={photo}
+                headingLevel="h3"
+                heading="Aufnahme"
+                showPlace={false}
+              />
             </div>
-          )}
-          <PhotoCaptureFacts photo={photo} headingLevel="h3" />
+          </div>
         </section>
+
+        <div data-testid="lightbox-footer" className="flex flex-col gap-3">
+          <div className="grid gap-1 text-sm text-text sm:grid-cols-2 sm:gap-3">
+            <p className="min-w-0 truncate">{pathLine}</p>
+            {/* ORTSNAME - `place.landmark_name` (Modellantwort) und `place_name` (Ortsdatensatz
+                Dritter) in EINEM Wert aus `eventPlaceName`. Reiner React-Textknoten, nie
+                `dangerouslySetInnerHTML`, nie in `href`/`src`/`style`; ein eingeschleustes Skript
+                laese das Session-Token aus `localStorage`. Bricht in `CurationLightbox.test.tsx >
+                renders a hostile place name only as text`. */}
+            <p className="min-w-0 truncate" data-testid="lightbox-place">
+              {placeName ?? 'nicht bestimmbar'}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-expanded={detailsOpen}
+              aria-controls={detailsId}
+              onClick={() => setDetailsOpen((open) => !open)}
+            >
+              <Icon
+                name="chevron-down"
+                size={16}
+                className={detailsOpen ? 'rotate-180' : undefined}
+              />
+              Details
+            </Button>
+          </div>
+        </div>
       </div>
     </dialog>
   )

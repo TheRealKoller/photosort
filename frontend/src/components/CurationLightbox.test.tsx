@@ -125,7 +125,8 @@ describe('CurationLightbox', () => {
       'src',
       'blob:display',
     )
-    expect(within(dialog()).getByText('2024/07/IMG_0042.jpg')).toBeInTheDocument()
+    expect(screen.getByTestId('lightbox-footer')).toHaveTextContent('2024/07/IMG_0042.jpg')
+    expect(screen.getByTestId('lightbox-place')).toHaveTextContent('Kap Arkona')
     expect(photosApi.fetchPhotoImageBlobUrl).toHaveBeenCalledTimes(1)
     expect(photosApi.fetchPhotoImageBlobUrl).toHaveBeenCalledWith(42, 'display')
   })
@@ -136,11 +137,11 @@ describe('CurationLightbox', () => {
     expect(screen.getByRole('button', { name: 'Schließen' })).toHaveFocus()
   })
 
-  it('offers exactly "Schließen" and "Bilddetails" and no link', async () => {
+  it('offers exactly "Schließen" and "Details" and no link', async () => {
     renderLightbox()
 
     await screen.findByRole('img', { name: '2024/07/IMG_0042.jpg' })
-    expect(buttonNames()).toEqual(['Schließen', 'Bilddetails'])
+    expect(buttonNames()).toEqual(['Schließen', 'Details'])
     expect(screen.queryAllByRole('link')).toEqual([])
   })
 
@@ -193,7 +194,7 @@ describe('CurationLightbox', () => {
     ])('does not close on a click on %s', async (_, target) => {
       const { onClose } = renderLightbox()
       await screen.findByRole('img', { name: '2024/07/IMG_0042.jpg' })
-      fireEvent.click(screen.getByRole('button', { name: 'Bilddetails' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Details' }))
 
       clickOn(target())
 
@@ -220,19 +221,19 @@ describe('CurationLightbox', () => {
 
   it('closes on Escape also with the details open', () => {
     const { onClose } = renderLightbox()
-    fireEvent.click(screen.getByRole('button', { name: 'Bilddetails' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }))
 
     fireEvent.keyDown(screen.getByRole('region', { name: 'Bilddetails' }), { key: 'Escape' })
 
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('cycles Tab through Schließen, Bilddetails and the open detail region', async () => {
+  it('cycles Tab through Schließen, the open detail region and Details', async () => {
     const user = userEvent.setup()
     renderLightbox()
     await screen.findByRole('img', { name: '2024/07/IMG_0042.jpg' })
     const close = screen.getByRole('button', { name: 'Schließen' })
-    const details = screen.getByRole('button', { name: 'Bilddetails' })
+    const details = screen.getByRole('button', { name: 'Details' })
 
     await user.tab()
     expect(details).toHaveFocus()
@@ -241,16 +242,18 @@ describe('CurationLightbox', () => {
 
     await user.click(details)
     await user.tab()
+    expect(close).toHaveFocus()
+    await user.tab()
     expect(screen.getByRole('region', { name: 'Bilddetails' })).toHaveFocus()
     await user.tab()
-    expect(close).toHaveFocus()
+    expect(details).toHaveFocus()
   })
 
   describe('Bilddetails', () => {
     it('starts collapsed and controls an existing, hidden region', () => {
       renderLightbox()
 
-      const toggle = screen.getByRole('button', { name: 'Bilddetails' })
+      const toggle = screen.getByRole('button', { name: 'Details' })
       expect(toggle).toHaveAttribute('aria-expanded', 'false')
       const controlled = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
       expect(controlled).not.toBeNull()
@@ -259,18 +262,19 @@ describe('CurationLightbox', () => {
 
     it('shows criteria, fine labels and capture facts when expanded, and hides them again', () => {
       renderLightbox()
-      const toggle = screen.getByRole('button', { name: 'Bilddetails' })
+      const toggle = screen.getByRole('button', { name: 'Details' })
 
       fireEvent.click(toggle)
 
       expect(toggle).toHaveAttribute('aria-expanded', 'true')
       const region = screen.getByRole('region', { name: 'Bilddetails' })
-      expect(within(region).getByTestId('criterion-score-grid')).toBeInTheDocument()
+      expect(within(region).getByRole('group', { name: 'Qualität' })).toHaveTextContent('Schärfe')
       expect(within(region).getByRole('heading', { level: 3, name: 'Feinlabels' })).toBeVisible()
       expect(within(region).getByText('Leuchtturm')).toBeInTheDocument()
-      expect(within(region).getByRole('heading', { level: 3, name: 'Aufnahmezeit' })).toBeVisible()
+      expect(within(region).getByRole('heading', { level: 3, name: 'Aufnahme' })).toBeVisible()
       expect(within(region).getByTestId('taken-at-section')).toHaveTextContent('Pixel 8')
-      expect(within(region).getByTestId('place-line')).toHaveTextContent('Kap Arkona')
+      // Der Ort steht in der Fusszeile, nicht im Detailblock.
+      expect(within(region).queryByText('Kap Arkona')).not.toBeInTheDocument()
 
       fireEvent.click(toggle)
 
@@ -278,10 +282,32 @@ describe('CurationLightbox', () => {
       expect(screen.queryByRole('region', { name: 'Bilddetails' })).not.toBeInTheDocument()
     })
 
+    it('adds the rank in the event to the image content, and leaves it out without one', () => {
+      const { unmount } = renderLightbox({
+        ranking: {
+          event_id: 3,
+          rank_score: 0.7,
+          rank_position: 2,
+          proposed: true,
+          partition_size: 9,
+          curation_position: 2,
+        },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+      expect(screen.getByRole('group', { name: 'Bildinhalt' })).toHaveTextContent(
+        'Rang im Ereignis2 von 9',
+      )
+      unmount()
+
+      renderLightbox({ ranking: null })
+      fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+      expect(screen.queryByText('Rang im Ereignis')).not.toBeInTheDocument()
+    })
+
     it('leaves out the fine-label heading when there are none', () => {
       renderLightbox({ fine_labels: [] })
 
-      fireEvent.click(screen.getByRole('button', { name: 'Bilddetails' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Details' }))
 
       const region = screen.getByRole('region', { name: 'Bilddetails' })
       expect(within(region).queryByRole('heading', { name: 'Feinlabels' })).not.toBeInTheDocument()
@@ -295,7 +321,8 @@ describe('CurationLightbox', () => {
       renderLightbox()
 
       expect(screen.getByRole('heading', { name: 'IMG_0042.jpg' })).toBeInTheDocument()
-      expect(screen.getByTestId('lightbox-footer')).toHaveTextContent('2024/07/IMG_0042.jpg')
+      expect(screen.getByTestId('lightbox-footer')).toHaveTextContent('Bild wird geladen …')
+      expect(screen.getByTestId('lightbox-footer')).not.toHaveTextContent('2024/07/IMG_0042.jpg')
       expect(
         within(screen.getByTestId('lightbox-image-box')).getByRole('status', {
           name: '2024/07/IMG_0042.jpg wird geladen…',
@@ -310,10 +337,13 @@ describe('CurationLightbox', () => {
       renderLightbox()
 
       const alert = await screen.findByRole('alert')
-      expect(alert).toHaveTextContent('Bild konnte nicht geladen werden')
+      expect(alert).toHaveTextContent('Das Bild lässt sich nicht laden.')
       expect(alert).toHaveTextContent('Speicher nicht erreichbar')
-      expect(buttonNames()).toEqual(['Schließen', 'Erneut versuchen', 'Bilddetails'])
-      fireEvent.click(within(alert).getByRole('button', { name: 'Erneut versuchen' }))
+      expect(screen.getByTestId('lightbox-footer')).toHaveTextContent(
+        'Das Bild lässt sich nicht laden.',
+      )
+      expect(buttonNames()).toEqual(['Schließen', 'Erneut versuchen', 'Details'])
+      fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
 
       expect(stage()).toHaveFocus()
       expect(await screen.findByRole('img', { name: '2024/07/IMG_0042.jpg' })).toBeInTheDocument()
@@ -336,7 +366,7 @@ describe('CurationLightbox', () => {
 
       expect(await screen.findByText('Bild wird noch verarbeitet.')).toBeVisible()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-      expect(buttonNames()).toEqual(['Schließen', 'Erneut versuchen', 'Bilddetails'])
+      expect(buttonNames()).toEqual(['Schließen', 'Erneut versuchen', 'Details'])
       expect(screen.queryAllByRole('link')).toEqual([])
     })
   })
@@ -348,11 +378,39 @@ describe('CurationLightbox', () => {
       const hostile = '<img src=x onerror="window.__pwned = true">'
       renderLightbox({ relative_path: `2024/${hostile}` })
 
+      expect(await screen.findByRole('img', { name: `2024/${hostile}` })).toBeInTheDocument()
       expect(screen.getByRole('heading', { name: hostile })).toBeInTheDocument()
       expect(
         within(screen.getByTestId('lightbox-footer')).getByText(`2024/${hostile}`),
       ).toBeInTheDocument()
-      expect(await screen.findByRole('img', { name: `2024/${hostile}` })).toBeInTheDocument()
+      expect(document.querySelector('img[src="x"]')).toBeNull()
+      expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
+    })
+
+    /* Der Ortsname vereint Modellantwort und Ortsdatensatz Dritter (`eventPlaceName`) - an dieser
+       Renderstelle ebenso reiner Textknoten wie auf der Detailseite. */
+    const HOSTILE = '<img src=x onerror="window.__pwned = true">'
+    it.each([
+      ['place_name', { place: null, place_name: HOSTILE }],
+      [
+        'landmark_name',
+        {
+          place: { kind: 'landmark' as const, landmark_name: HOSTILE, lat: null, lon: null },
+          place_name: null,
+        },
+      ],
+    ])('renders a hostile place name from %s only as text', (_, place) => {
+      renderLightbox({
+        event: {
+          id: 3,
+          position: 1,
+          started_at: '2024-07-20T09:00:00',
+          ended_at: '2024-07-20T12:00:00',
+          ...place,
+        },
+      })
+
+      expect(screen.getByTestId('lightbox-place')).toHaveTextContent(HOSTILE)
       expect(document.querySelector('img[src="x"]')).toBeNull()
       expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
     })

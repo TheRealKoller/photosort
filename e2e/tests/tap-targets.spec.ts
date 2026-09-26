@@ -169,8 +169,8 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   checked.push('Alternativen der Entwurfskachel')
 
   // --- Die Großansicht aus dem Entwurf (specs/features/0531-...) ------------------------------
-  // „Schließen" und „Bilddetails" beziehen ihre 44 px aus der Aufspannung, und beide liegen nur
-  // 12 px neben der Bühne, deren freie Fläche SCHLIESST: Ein Fehlgriff neben „Bilddetails"
+  // „Schließen" und „Details" beziehen ihre 44 px aus der Aufspannung, und beide liegen nur
+  // 12 px neben der Bühne, deren freie Fläche SCHLIESST: Ein Fehlgriff neben „Details"
   // schlösse die Großansicht, statt die Details aufzuklappen.
   await page
     .getByRole('button', { name: /^Großansicht: / })
@@ -178,7 +178,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     .click()
   const lightbox = page.getByRole('dialog')
   await expect(lightbox, 'Großansicht').toBeVisible()
-  for (const label of ['Schließen', 'Bilddetails']) {
+  for (const label of ['Schließen', 'Details']) {
     await assertTappable(lightbox.getByRole('button', { name: label, exact: true }), label)
     checked.push(`${label} (Großansicht)`)
   }

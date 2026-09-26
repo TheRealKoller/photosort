@@ -1641,10 +1641,9 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/components/CurationLightbox.tsx',
-      snippet: "'backdrop:bg-bg/85'",
+      snippet: "'backdrop:bg-bg/72'",
       reason:
-        'Abdunklung der Kuratierung hinter der Grossansicht - Deckkraft ueber --bg, dieselbe ' +
-        'Stufe wie die freigegebenen Hinterlegungen ueber einer Kachel',
+        'Abdunklung der Kuratierung hinter der Grossansicht - Deckkraft 0.72 ueber --bg (Entwurf)',
     },
     {
       file: 'src/components/Stepper.tsx',

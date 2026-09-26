@@ -5,7 +5,7 @@
  *
  * SECHS FÄLLE im Album-Entwurf des Demo-Projekts „Bewertet":
  *
- * 1. Ausdehnung an der `sm`-Grenze (AK6/AK7) — 639 px randlos, 640 px mit 32 px Rand.
+ * 1. Ausdehnung an der `sm`-Grenze (AK6/AK7) — 639 px randlos, 640 px mit 48/24 px Rand.
  * 2. Das Bild füllt die Bühne (AK5) — zwei verschiedene Formate, dazu mit aufgeklappten Details.
  * 3. Klick neben bzw. auf das Bild (AK10) — nur breit, an einem Hochformat.
  * 4. Schließwege, Platz und Fokus (AK10/AK11) — scrollY, URL und Fokus je Schließweg.
@@ -29,8 +29,9 @@ import { expect, test } from '../lib/fixtures.ts'
 /** Zulässige Abweichung in px. Subpixel-Layout macht exakte Gleichheit unerreichbar. */
 const TOLERANZ = 1
 
-/** Der Rand der Überlagerung ab `sm` (`sm:inset-8`). */
-const RAND = 32
+/** Der Rand der Überlagerung ab `sm` (`sm:inset-x-12 sm:inset-y-6`). */
+const RAND_X = 48
+const RAND_Y = 24
 
 interface Rechteck {
   x: number
@@ -179,14 +180,14 @@ test.describe('Kuratierung: die Großansicht', () => {
 
     await page.setViewportSize({ width: 640, height: hoehe })
     const breit = await rechteck(dialog(page))
-    expect(Math.abs(breit.x - RAND), '640: Rand links').toBeLessThanOrEqual(TOLERANZ)
-    expect(Math.abs(breit.y - RAND), '640: Rand oben').toBeLessThanOrEqual(TOLERANZ)
+    expect(Math.abs(breit.x - RAND_X), '640: Rand links').toBeLessThanOrEqual(TOLERANZ)
+    expect(Math.abs(breit.y - RAND_Y), '640: Rand oben').toBeLessThanOrEqual(TOLERANZ)
     expect(
-      Math.abs(breit.width - (640 - 2 * RAND)),
+      Math.abs(breit.width - (640 - 2 * RAND_X)),
       '640: Rand links und rechts',
     ).toBeLessThanOrEqual(TOLERANZ)
     expect(
-      Math.abs(breit.height - (hoehe - 2 * RAND)),
+      Math.abs(breit.height - (hoehe - 2 * RAND_Y)),
       '640: Rand oben und unten',
     ).toBeLessThanOrEqual(TOLERANZ)
     expect(breit, 'die beiden Ausdehnungen unterscheiden sich').not.toEqual(schmal)
@@ -238,7 +239,7 @@ test.describe('Kuratierung: die Großansicht', () => {
       await pruefeEinpassung(page, `Foto ${index}`)
 
       const vorher = await rechteck(buehne(page))
-      await page.getByRole('button', { name: 'Bilddetails' }).click()
+      await dialog(page).getByRole('button', { name: 'Details', exact: true }).click()
       await expect(page.getByRole('region', { name: 'Bilddetails' })).toBeVisible()
       await expect
         .poll(async () => (await rechteck(buehne(page))).height, 'Bühne schrumpft')

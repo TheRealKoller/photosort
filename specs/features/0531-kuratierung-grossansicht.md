@@ -34,7 +34,7 @@ Platz in der Kuratierung zu verlieren, damit ich sicher entscheiden kann, ob es 
   - Die Überschrift des Dialogs ist der Basisname des angeklickten Fotos. Das Bild ist dessen Display-Variante, `alt` ist der volle `relative_path`, und die Fußzeile zeigt diesen Pfad.
   - Weder eine Taste (Pfeiltasten, Bild↑/↓, Pos1/Ende) noch eine Wischgeste noch ein Bedienelement wechselt zu einem anderen Foto. Es wird kein anderes Bild angefragt.
 - [ ] **AK4 – Keine Bewertung.**
-  - Die Großansicht enthält genau diese Bedienelemente: „Schließen“ und „Bilddetails“, dazu nur im Fehler- oder 404-Zustand „Erneut versuchen“. Sie hat weder ein Bewertungs- noch ein Entscheidungskennzeichen.
+  - Die Großansicht enthält genau diese Bedienelemente: „Schließen“ und „Details“, dazu nur im Fehler- oder 404-Zustand „Erneut versuchen“. Sie hat weder ein Bewertungs- noch ein Entscheidungskennzeichen.
   - Öffnen, Betrachten, Aufklappen und Schließen senden keinen schreibenden Request.
   - Nach dem Schließen trägt die Kachel denselben Album- bzw. Endauswahl-Zustand wie vorher.
 - [ ] **AK5 – Bildgröße.**
@@ -42,7 +42,7 @@ Platz in der Kuratierung zu verlieren, damit ich sicher entscheiden kann, ob es 
   - Es füllt die Bühne in mindestens einer Richtung ganz aus (±1 px), auch wenn die Display-Variante dafür hochskaliert werden muss.
   - Das gilt auch bei aufgeklappten Details: Die Bühne wird kleiner, und das Bild passt sich neu ein.
 - [ ] **AK6 – Ab 640 px Fensterbreite.**
-  - Die Großansicht liegt als Überlagerung mit 32 px Rand zu jedem Fensterrand über der Kuratierung.
+  - Die Großansicht liegt als Überlagerung mit 48 px Rand links und rechts und 24 px Rand oben und unten über der Kuratierung.
   - Die Kuratierung bleibt darunter montiert und ist abgedunkelt: Die Abdunklung hat eine Deckkraft > 0.
   - Ein Treffer auf dem Rand liefert den Dialog-Hintergrund (Backdrop), nicht die Seite.
 - [ ] **AK7 – Unter 640 px.** Die Großansicht deckt das Fenster randlos vollständig ab (±1 px). Grenzfall: 639 px ist randlos, 640 px hat den Rand.
@@ -52,8 +52,8 @@ Platz in der Kuratierung zu verlieren, damit ich sicher entscheiden kann, ob es 
   - `motif_assessment = null` ergibt statt der Liste den Satz „Noch nicht klassifiziert — …“.
   - Solange das Motivset lädt, stehen Platzhalter da. Scheitert es, erscheint eine Meldung mit „Erneut versuchen“.
 - [ ] **AK9 – Bilddetails.**
-  - „Bilddetails“ hat bei **jedem** Öffnen `aria-expanded="false"`. `aria-controls` zeigt auf einen vorhandenen, verborgenen Bereich.
-  - Aufgeklappt zeigt der Bereich Bewertungskriterien (Einzelwerte-Raster), „Feinlabels“ (die Überschrift fehlt ganz, wenn es keine gibt) und die Aufnahmeangaben (Zeit mit Korrekturzeile, Kamera, Ort).
+  - „Details“ hat bei **jedem** Öffnen `aria-expanded="false"`. `aria-controls` zeigt auf einen vorhandenen, verborgenen Bereich.
+  - Aufgeklappt steht der Bereich zwischen Bühne und Fußzeile und zeigt „Qualität“ und „Bildinhalt“ mit ihren Einzelwerten (im Bildinhalt zusätzlich „Rang im Ereignis“, entfällt ohne Rang), „Feinlabels“ (die Überschrift fehlt ganz, wenn es keine gibt) und „Aufnahme“ (Zeit mit Korrekturzeile, Kamera). Der Ort steht in der Fußzeile, nicht im Bereich.
   - Zuklappen verbirgt den Bereich wieder.
 - [ ] **AK10 – Schließwege.**
   - Die Großansicht schließt über (a) „Schließen“, (b) Escape, auch bei aufgeklappten Details, (c) einen Klick auf die Abdunklung oder auf die freie Bühnenfläche neben dem Bild und (d) Browser-Zurück.
@@ -66,10 +66,10 @@ Platz in der Kuratierung zu verlieren, damit ich sicher entscheiden kann, ob es 
   - Gibt es diesen Auslöser nicht mehr, weil das Foto aus der Liste verschwunden oder in der aktuellen Sicht nicht gerendert ist, liegt der Fokus auf der Seitenüberschrift.
 - [ ] **AK12 – Bedienung ohne Maus.**
   - Der Auslöser ist per Tab erreichbar und steht in der Tab-Folge vor den übrigen Bedienelementen der Kachel. Enter und Leertaste öffnen.
-  - Der Erstfokus liegt auf „Schließen“. Tab bleibt in der Großansicht und erreicht „Schließen“, gegebenenfalls „Erneut versuchen“, „Bilddetails“ und den aufgeklappten Detailbereich. Escape schließt (AK10/AK11).
+  - Der Erstfokus liegt auf „Schließen“. Tab bleibt in der Großansicht und erreicht „Schließen“, gegebenenfalls „Erneut versuchen“, „Details“ und den aufgeklappten Detailbereich. Escape schließt (AK10/AK11).
 - [ ] **AK13 – Laden und Fehler.**
   - Kopf- und Fußzeile stehen sofort. Die Bildfläche hat schon ihre endgültige Größe und zeigt einen Ladezustand mit dem Namen „{relative_path} wird geladen…“.
-  - Ein Fehlschlag ≠ 404 zeigt eine Meldung (`role=alert`) mit dem Titel „Bild konnte nicht geladen werden“, dem Server-`detail` (sonst „Das große Bild ist gerade nicht abrufbar.“) und „Erneut versuchen“. Das Erneut-Versuchen startet einen neuen Abruf, und der Fokus geht danach auf die Bühne, nicht auf `<body>`.
+  - Ein Fehlschlag ≠ 404 zeigt eine Meldung (`role=alert`) mit dem Titel „Das Bild lässt sich nicht laden.“ und darunter, falls vorhanden, dem Server-`detail`; unter der Meldung steht eine eigene Schaltfläche „Erneut versuchen“. Die Pfadzeile der Fußzeile zeigt während des Ladens „Bild wird geladen …“ und im Fehlerzustand „Das Bild lässt sich nicht laden.“. Das Erneut-Versuchen startet einen neuen Abruf, und der Fokus geht danach auf die Bühne, nicht auf `<body>`.
   - Ein 404 zeigt sichtbar „Bild wird noch verarbeitet.“ mit „Erneut versuchen“, **ohne** Fehleroptik und ohne `role=alert`.
   - Alle Schließwege funktionieren in jedem Zustand.
 - [ ] **AK14 – Kein Weg zur Detailseite.** Die Großansicht enthält keinen Link. Die Kacheln der Kuratierung verlinken wie bisher nicht auf die Detailseite. Die Detailseite ist wie bisher über die Fotoübersicht erreichbar und sieht unverändert aus: ihre bestehenden Tests bleiben ohne Änderung grün.
@@ -126,7 +126,7 @@ Der neue Hook `hooks/useCurationLightbox.ts` wird von beiden Seiten gleich benut
 | `frontend/src/components/MotifStrengthRow.tsx` (neu) | Schreibgeschützte Motivreihe für die Kopfzeile (Baustein `motiv-reihe`). Zeigt acht `MotifStrengthSymbol` in Registry-Reihenfolge, nicht bedienbar, jedes mit dem zugänglichen Namen „Motiv: Wert“. Während des Ladens erscheint ein Skeleton, bei einem Fehler des Motivsets ein `Alert` mit Retry. Bei `motif_assessment === null` steht der Satz statt der Reihe. |
 | `frontend/src/utils/motifStrength.ts` | Die Ableitung je Motiv zieht aus `MotifStrengthSection.tsx` hierher: Anzeigename, Füllstufe, Füllhöhe und Werttext samt Korrektur und „lokal nicht beurteilbar“. Reihe **und** Bereich lesen sie von hier, damit der zugängliche Name nur an einer Stelle entsteht. Auch `UNASSESSED_TEXT` wird hier geteilt. |
 | `frontend/src/components/PhotoCaptureFacts.tsx` (neu) | Wird aus `PhotoDetailPage.tsx` herausgelöst: Aufnahmezeit mit Korrekturzeile, Kamera und Ort (`eventPlaceName`). Die Test-Handles `taken-at-section` und `place-line` bleiben, die Überschriftenstufe kommt als Prop. Die Detailseite rendert die Komponente und sieht unverändert aus. |
-| Inhalt der Details | `CriterionScoreGrid` (Bewertungskriterien), `FineLabelList` und `PhotoCaptureFacts`. **Nicht** `CriterionDetailsList`, die bleibt dem Kachel-Popover vorbehalten (`photoDetail.structure.test.ts`). |
+| Inhalt der Details | `CriterionScoreGrid` (Bewertungskriterien; neue Props `titles`, `contentRows` für „Rang im Ereignis“ und `className`, mit `contents` reihen sich beide Blöcke in das Dreispaltenraster der Großansicht ein; Detailseite unverändert), `FineLabelList` und `PhotoCaptureFacts` (neue Props `heading` und `showPlace`; die Großansicht zeigt „Aufnahme“ ohne Ort). Den Ort zeigt die Fußzeile über `eventPlaceName`; `PhotoImage` meldet seinen Ladezustand über `onStatusChange` für die Pfadzeile. **Nicht** `CriterionDetailsList`, die bleibt dem Kachel-Popover vorbehalten (`photoDetail.structure.test.ts`). |
 | `frontend/src/components/PhotoCard.tsx` | Die Bildfläche wird zum Auslöser: `onImageActivate`, `imageTriggerRef` und `imageTriggerLabel` legen einen `<button type="button">` um die Bildfläche. Die Ecken-Overlays bleiben Geschwister. Die Prop `to` (Link) entfällt, weil sie keinen Aufrufer im Produktionscode mehr hat. Die Bildfläche behält so genau einen Aktivierungsweg. |
 | `frontend/src/components/CurationPhotoTile.tsx`, `frontend/src/components/SelectionPhotoTile.tsx` | Neue Props `onOpenLarge` und `largeTriggerRef`, durchgereicht an `PhotoCard`. Der zugängliche Name des Auslösers enthält den Dateinamen, wie die übrigen Schaltflächen der Kachel. |
 | `frontend/src/pages/AlbumDraftPage.tsx`, `frontend/src/pages/AlbumSelectionPage.tsx` | Rufen `useCurationLightbox({ items, headingRef })` auf (`items` ist die geladene Liste, `undefined` während des Ladens) und verdrahten die Kacheln. Der Hook schlägt das Foto per `items.find(…)` nach und liefert es als `photo`; am Seitenende steht `{photo && <CurationLightbox key={photo.id} … />}`. In der Endauswahl kommt das Foto aus `items`, nicht aus der gefilterten Sicht. |
@@ -185,47 +185,40 @@ Der Entwurf ist in beiden Prüfbreiten `mobile` (360 × 740) und `desktop` (1280
 
 ### Layout je Breite
 
-**Umbruch bei Tailwind `sm` (640 px).** Das ist derselbe Umbruch zwischen Telefon und Desktop wie bei der Bewertungsleiste, der Kartenpolsterung und der Überschriftenleiter.
+Maße nach dem Penpot-Entwurf (gemessen 2026-09-26). **Umbruch bei Tailwind `sm` (640 px).**
 
 | | unter `sm` (Telefon) | ab `sm` |
 |---|---|---|
-| Ausdehnung | Füllt den Sichtbereich: `inset-0` | Überlagerung mit 32 px Rand: `sm:inset-8` |
-| Form | Kein Radius, kein Rand | `sm:rounded-xl sm:border sm:border-border` |
-| Innenabstand / Zeilenabstand | `p-2` / `gap-3` | `sm:p-4` / `gap-3` |
-| Abdunklung | Nicht sichtbar, weil alles verdeckt ist | `backdrop:bg-bg/85` |
+| Ausdehnung | Füllt den Sichtbereich: `inset-0` | Überlagerung mit 48 px seitlich und 24 px oben/unten: `sm:inset-x-12 sm:inset-y-6` |
+| Form | Kein Radius, kein Rand | `sm:rounded-lg sm:border sm:border-border` |
+| Innenabstand / Zeilenabstand | `p-4` / `gap-4` | `sm:p-6` / `gap-4` |
+| Abdunklung | Nicht sichtbar, weil alles verdeckt ist | `backdrop:bg-bg/72` |
+| Kopfzeile | Dateiname und „Schließen“, darunter die Motivreihe | Dateiname links, Motivreihe rechts; kein „Schließen“ |
+| „Schließen“ | in der Kopfzeile | rechts in der Bedienzeile (dasselbe Element, `sm:absolute sm:right-6 sm:bottom-6`) |
+| Fußzeile | Pfad und Ort untereinander | Pfad links, Ort ab Panelmitte (`sm:grid-cols-2`) |
+| Detailblock | einspaltig | drei Spalten |
 
 Gemeinsam für beide Breiten:
 
-- Das `<dialog>` hebt die UA-Maße auf (`m-0 h-auto w-auto max-h-none max-w-none`). Die Ausdehnung kommt allein aus `inset`, dafür ist kein willkürlicher Wert nötig. Das Panel ist `bg-surface`. Es gibt keine Öffnungs- oder Schließanimation und keinen Weichzeichner.
+- Das `<dialog>` hebt die UA-Maße auf (`m-0 h-auto w-auto max-h-none max-w-none`); die Ausdehnung kommt allein aus `inset`. Panel `bg-elevated`. Keine Öffnungs- oder Schließanimation, kein Weichzeichner.
 - **Aufbau von oben nach unten** als Flex-Spalte:
-  1. **Kopfzeile:** `flex flex-wrap items-center gap-x-3 gap-y-2`.
-     - Dateiname als `h2`: Basisname, `min-w-0 flex-1 truncate text-base sm:text-lg font-semibold text-text-h`, Inter. JetBrains Mono gibt es nur in 400, ein halbfetter Mono-Schnitt wäre künstlich.
-     - Motivreihe: `order-last w-full sm:order-none sm:w-auto`. Auf dem Telefon steht sie damit in einer eigenen zweiten Zeile, ab `sm` zwischen Dateiname und Schließen.
-     - Schaltfläche „Schließen“: `shrink-0`.
-  2. **Bühne:** `flex-1 min-h-0` mit Bildkasten nach Architektur. Grund `bg-bg`, `rounded-md`. Der Bildkasten ist zentriert und `rounded-md`. Zeiger in der freien Bühnenfläche: `cursor-zoom-out`.
-  3. **Fußzeile:** Links steht der volle `relative_path` in `min-w-0 flex-1 truncate font-mono text-xs text-text-muted`, rechts die Schaltfläche „Bilddetails“.
-  4. **Detailblock** (nur aufgeklappt): `max-h-1/2 overflow-y-auto border-t border-separator pt-3`.
+  1. **Kopfzeile:** Dateiname als `h2`, Basisname, `min-w-0 flex-1 truncate text-lg font-medium text-text-h` (20 px, Schnitt 500, auf beiden Breiten gleich). Motivreihe `order-last w-full sm:order-none sm:w-auto`.
+  2. **Bühne:** `flex-1 min-h-0` ohne eigene Grundfläche, Bildkasten nach Architektur, das Bild `rounded-md`. Zeiger in der freien Bühnenfläche: `cursor-zoom-out`.
+  3. **Detailblock** (nur aufgeklappt): eigene Karte `max-h-1/2 overflow-y-auto rounded-md border border-border bg-surface p-6`.
+  4. **Fußzeile:** Pfadzeile mit `relative_path` und Ortsname (`eventPlaceName`, sonst „nicht bestimmbar“), beide `text-sm text-text`, keine Monospace-Schrift; darunter die Bedienzeile mit „Details“ links.
 - **Bildgröße:** Das Bild ist so groß, wie die Bühne zulässt. Es gibt keine Obergrenze, auch wenn die Display-Variante dafür hochskaliert wird.
-- **Richtmaße:** Auf `desktop` misst die Bühne etwa 1180 × 610 px, ein Querformat 3:2 also etwa 915 × 610 px. Auf `mobile` misst die Bühne etwa 344 × 600 px.
 
 ### Zustände
 
-- **`gefuellt`:** Kopfzeile mit Dateiname, Motivreihe und „Schließen“; Bild eingepasst; Fußzeile mit Pfad; Details zugeklappt. Die Großansicht zeigt weder Bewertungszustand noch Bewertungskennzeichen noch Entscheidungsschaltfläche.
-- **`details-offen`:** Unter der Fußzeile erscheint ein Bereich (`<section aria-label="Bilddetails" tabIndex={0}>`), weil er ohne Tastaturfokus nicht scrollbar wäre.
-  - Inhalt: `CriterionScoreGrid`, dann „Feinlabels“ (`h3` im Stil der Panelköpfe; fehlt ganz, wenn es keine Feinlabels gibt) mit `FineLabelList`, dann `PhotoCaptureFacts` mit `h3`. Abstand zwischen den Blöcken: `gap-4`.
-  - Der Bereich nimmt höchstens die halbe Panelhöhe ein und scrollt darüber hinaus in sich. Die Bühne schrumpft entsprechend, und das Bild passt sich neu ein. Ein Aufklappen, dessen Inhalt unterhalb des Sichtbereichs verschwände, gibt es nicht.
+- **`gefuellt`:** Kopfzeile mit Dateiname und Motivreihe; Bild eingepasst; Fußzeile mit Pfad und Ort; Details zugeklappt. Die Großansicht zeigt weder Bewertungszustand noch Bewertungskennzeichen noch Entscheidungsschaltfläche.
+- **`details-offen`:** Zwischen Bühne und Fußzeile steht ein Bereich (`<section aria-label="Bilddetails" tabIndex={0}>`), weil er ohne Tastaturfokus nicht scrollbar wäre.
+  - Inhalt (ab `sm` drei Spalten, darunter einspaltig in dieser Reihenfolge): „Qualität“ mit Einzelwerten, „Bildinhalt“ mit Einzelwerten und „Rang im Ereignis“ (`rank_position` von `partition_size`, entfällt ohne Rang) — beides über `CriterionScoreGrid` mit eigenen Überschriften; dann „Feinlabels“ (`h3`, fehlt ganz ohne Feinlabels) mit `FineLabelList` und „Aufnahme“ (`PhotoCaptureFacts` ohne Ort).
+  - Belichtungsdaten des Entwurfs entfallen; es gibt sie im Datenmodell nicht.
+  - Der Bereich nimmt höchstens die halbe Panelhöhe ein und scrollt darüber hinaus in sich. Die Bühne schrumpft entsprechend, und das Bild passt sich neu ein.
   - Der Container steht immer im DOM und ist zugeklappt `hidden`. So zeigt `aria-controls` nie ins Leere.
-- **`ladend`:** Kopf- und Fußzeile stehen sofort, denn ihre Daten sind schon geladen.
-  - Der Bildkasten hat bereits seine endgültige Größe und trägt den `Skeleton` (`rounded-md`, Puls, `motion-reduce:animate-none`). Zugänglicher Name: „{relative_path} wird geladen…“.
-  - Solange das Motivset lädt, stehen an Stelle der Reihe acht Platzhalter in Reihenform, `size-6`, `gap-2`.
-- **`fehler`:** Die Bühne bleibt stehen. Mittig im Bildkasten steht ein `Alert` (Ausprägung `error`):
-  - Titel „Bild konnte nicht geladen werden“.
-  - Beitext: `ApiError.detail` wörtlich, sonst „Das große Bild ist gerade nicht abrufbar.“
-  - Schaltfläche „Erneut versuchen“.
-  - Kopfzeile, Details und alle Schließwege bleiben benutzbar.
-  - Nach „Erneut versuchen“ geht der Fokus auf die Bühne (`tabIndex={-1}`), nicht auf `<body>`.
-  - Scheitert das Laden des Motivsets, ersetzt das bestehende `Alert` mit Retry die Motivreihe in voller Breite der Kopfzeile.
-- **Platzhalter bei 404** (Display-Variante noch nicht erzeugt; im Entwurf kein eigener Zustand): Mit `retryable` trägt die Platzhalterfläche sichtbar „Bild wird noch verarbeitet.“ und „Erneut versuchen“. Es erscheint keine Fehleroptik, weil das kein Fehler ist.
+- **`ladend`:** Kopf- und Fußzeile stehen sofort. Der Bildkasten hat bereits seine endgültige Größe und trägt den `Skeleton` (Zugänglicher Name: „{relative_path} wird geladen…“); die Pfadzeile zeigt „Bild wird geladen …“. Solange das Motivset lädt, stehen an Stelle der Reihe acht Platzhalter, `size-6`, `gap-2`.
+- **`fehler`:** In der Bühne ein `Alert` (Ausprägung `error`) mit dem Titel „Das Bild lässt sich nicht laden.“ und, falls vorhanden, `ApiError.detail` wörtlich; darunter eine eigene Hauptschaltfläche „Erneut versuchen“. Die Pfadzeile zeigt „Das Bild lässt sich nicht laden.“. Nach „Erneut versuchen“ geht der Fokus auf die Bühne (`tabIndex={-1}`). Scheitert das Laden des Motivsets, ersetzt das bestehende `Alert` mit Retry die Motivreihe.
+- **Platzhalter bei 404** (kein eigener Entwurfszustand): „Bild wird noch verarbeitet.“ und darunter die Hauptschaltfläche „Erneut versuchen“, ohne Fehleroptik.
 
 ### Motivreihe (`MotifStrengthRow`)
 
@@ -243,8 +236,8 @@ Die schreibgeschützte Reihe genügt dem Entwurf und der Anforderung „Motivken
 |---|---|---|
 | Auslöser in der Kachel | – (Bildfläche) | „Großansicht: {relative_path}“ |
 | Dialog | – | `aria-labelledby` → `h2` (Basisname), `aria-modal="true"` |
-| Schließen | „Schließen“, `secondary`, 32 px mit `tap-target` | derselbe Text, kein abweichendes `aria-label` |
-| Details | Symbol `chevron-down` (offen: `rotate-180`, ohne Übergang) und „Bilddetails“; `ghost`, 32 px mit `tap-target` | „Bilddetails“, `aria-expanded`, `aria-controls` |
+| Schließen | „Schließen“, Hauptschaltfläche (`default`), 32 px mit `tap-target` | derselbe Text, kein abweichendes `aria-label` |
+| Details | Symbol `chevron-down` (offen: `rotate-180`, ohne Übergang) und „Details“; `ghost`, 32 px mit `tap-target` | „Details“, `aria-expanded`, `aria-controls` |
 | Bild | – | `alt` = `relative_path` |
 | Detailbereich | – | `section`, „Bilddetails“ |
 
@@ -255,7 +248,7 @@ Dateiname, Pfad, Feinlabels und Orts- bzw. Kameratexte erscheinen ausschließlic
 - **Schließwege:** „Schließen“, Escape (schließt auch bei offenen Details sofort), Browser-Zurück, Klick auf die **Abdunklung** oder auf die **freie Bühnenfläche** neben dem Bildkasten.
 - **Kein Schließweg:** ein Klick auf das Bild selbst, auf Kopf- oder Fußzeile, auf den Detailbereich oder in den Innenabstand des Panels. Der Klick auf `::backdrop` trifft das `<dialog>`-Element selbst; der Innenabstand liegt deshalb auf einem inneren Container, damit ihn keine Schließprüfung mit dem Backdrop verwechselt.
 - **Bewusste Abweichung vom `Dialog`:** Ein Klick auf den Hintergrund schließt hier. Es geht nichts verloren, und der Klick neben das Bild ist ein Akzeptanzkriterium.
-- **Erstfokus** liegt auf „Schließen“. Die Fokusfalle umfasst Schließen → ggf. Retry-Schaltflächen → „Bilddetails“ → ggf. Detailbereich.
+- **Erstfokus** liegt auf „Schließen“. Die Fokusfalle umfasst Schließen → ggf. „Erneut versuchen“ → ggf. Detailbereich → „Details“.
 - **Nach jedem Schließweg** liegt der Fokus auf dem Auslöser des geöffneten Bildes (`preventScroll`). Die globale Fokuskontur erscheint dort nach Heuristik von `:focus-visible`. Scroll-Position, Tagesklappung, Sicht und Auswahl bleiben unverändert.
 - Pfeiltasten und Wischgesten haben keine Funktion. Es gibt kein nächstes oder voriges Bild und keinen Weg zur Detailseite.
 
@@ -263,14 +256,14 @@ Dateiname, Pfad, Feinlabels und Orts- bzw. Kameratexte erscheinen ausschließlic
 
 | Lücke | Festlegung |
 |---|---|
-| `behaelter` | Panel `bg-surface` (ab `sm` `rounded-xl`, Rand `--border`); Bühne `bg-bg rounded-md`; Detailblock mit `border-t border-separator`. |
+| `behaelter` | Panel `bg-elevated` (ab `sm` `rounded-lg`, Rand `--border`); Bühne ohne Grundfläche, Bild `rounded-md`; Detailblock als Karte `bg-surface rounded-md border-border p-6`. |
 | `chipbaustein` | Umgesetzt über die bestehende `FineLabelList`; kein neuer Baustein. |
-| `bildschirmfuellend` | Umbruch bei `sm` (640 px): darunter `inset-0` ohne Rand, darüber `sm:inset-8` mit Radius und Rand. |
+| `bildschirmfuellend` | Umbruch bei `sm` (640 px): darunter `inset-0` ohne Rand, darüber `sm:inset-x-12 sm:inset-y-6` mit Radius und Rand. |
 | `bildmasse` | Keine festen Maße: Bühne `flex-1 min-h-0`, Bildkasten per Container-Einheiten eingepasst. |
-| `abdunklung` | `backdrop:bg-bg/85`. Das ist die Deckkraft über `--bg` wie im Entwurf und dieselbe Stufe wie die freigegebenen Hinterlegungen über einer Kachel. |
+| `abdunklung` | `backdrop:bg-bg/72` — Deckkraft 0.72 über `--bg` nach Entwurf. |
 | `fokus` | Siehe „Schließen, Fokus, Tastatur“; es gilt ausschließlich die globale Fokuskontur. |
-| `trefferflaeche` | „Schließen“ und „Bilddetails“: 32 px sichtbar, `tap-target` auf der kurzen Achse. Abstand zur schließenden Bühnenfläche 12 px (`gap-3`), damit die Aufspannung nicht in die Bühne ragt. |
-| `schriftschnitt` | Dateiname `font-semibold` in Inter. |
+| `trefferflaeche` | „Schließen“ und „Details“: 32 px sichtbar, `tap-target` auf der kurzen Achse. Abstand zur schließenden Bühnenfläche 12 px (`gap-3`), damit die Aufspannung nicht in die Bühne ragt. |
+| `schriftschnitt` | Dateiname `font-medium` (500) in Inter, `text-lg`. |
 | `seitengrund` | Betrifft nur Penpot; nichts umzusetzen. |
 | `rueckweg` | Verhalten nach Architektur; die Großansicht zeigt keinerlei Bewertungselement. |
 | `bewegung` | Puls des `Skeleton` mit `motion-reduce:animate-none`; sonst keine Bewegung. |
@@ -281,12 +274,12 @@ Im selben Pull Request ergänzen, in `specs/architecture/0004-design-system.md` 
 
 - **Neues Muster „Großansicht aus dem Raster“:**
   - Bildfläche als Auslöser mit `cursor-zoom-in`.
-  - Unter `sm` bildschirmfüllend, darüber Überlagerung mit `inset-8`.
-  - Panel `bg-surface`, Bühne `bg-bg`.
+  - Unter `sm` bildschirmfüllend, darüber Überlagerung mit `inset-x-12`/`inset-y-6`.
+  - Panel `bg-elevated`, Bühne ohne Grundfläche, Detailblock als Karte `bg-surface`.
   - Schließt auch per Hintergrundklick und Browser-Zurück, als bewusste Abweichung vom `Dialog`.
   - Erstfokus auf „Schließen“; Fokus-Rückgabe an den Auslöser.
   - Bewertet nichts.
-- **Freigabeliste der Abdunklungen** um `backdrop:bg-bg/85` der Großansicht erweitern.
+- **Freigabeliste der Abdunklungen** um `backdrop:bg-bg/72` der Großansicht erweitern.
 - **Muster „Füllstandsreihe“:** schreibgeschützte, nicht bedienbare Kopfzeilenfassung mit `role="img"` je Symbol als dritte Verwendungsstelle aufnehmen.
 
 ## Security
@@ -376,7 +369,7 @@ Leitsatz aus dem Testkonzept: Jede Zusage wird auf der niedrigsten Ebene geprüf
 | AK9 | – | `CurationLightbox.test.tsx` | Nur die Bühnenschrumpfung (unter AK5) |
 | AK10 | `useCurationLightbox.test.tsx`: push/back/replace, Riegel | Lightbox: Aufteilung der Klickziele in schließend und nicht schließend. Seiten: alle vier Wege, Zurück über eine Verlaufssonde | Klick neben/auf das Bild geometrisch, zweimal Escape (echt und synthetisch), `page.goBack()` |
 | AK11 | Fokus-Rückgabe an das registrierte Element | Seiten: Fokus je Schließweg, lokaler Zustand, keine Neuladung | scrollY je Schließweg, Auslöser teilweise außerhalb des Sichtbereichs (`preventScroll` selbst: Unit) |
-| AK12 | – | Kachel: Tab-Folge, Enter/Leertaste. Lightbox: Erstfokus, Tab-Zyklus einschließlich Detailbereich | `tap-targets` (schmal): „Schließen“ und „Bilddetails“ |
+| AK12 | – | Kachel: Tab-Folge, Enter/Leertaste. Lightbox: Erstfokus, Tab-Zyklus einschließlich Detailbereich | `tap-targets` (schmal): „Schließen“ und „Details“ |
 | AK13 | – | `PhotoImage.test.tsx` (`retryable`), `CurationLightbox.test.tsx` | – (Skelett-/Ladezustände sind laut Testkonzept kein E2E-Gegenstand) |
 | AK14 | – | Lightbox: 0 Links. Detailseite: bestehende Tests ohne Diff | – |
 | AK15 | Hook: Zustand aus dem Eintrag, `replace` beim Schließen | Seiten: `initialEntries` mit State, Liste pending → resolve | Ein Fall mit `page.reload()` |
@@ -403,7 +396,7 @@ Fokusfalle, Scroll-Sperre und die Absprache zwischen Esc und `cancel` werden **n
 - Exakte Menge der Schaltflächen je Zustand (gefüllt, Fehler, 404); `queryAllByRole('link')` ist leer.
 - **Aufteilung der Klickziele:** Ein Klick mit dem Ziel `<dialog>` oder dem Bühnenelement ruft `onClose` genau einmal. Klicks auf `img`/Bildkasten, Kopf-, Fußzeile, Detailbereich und den inneren Panel-Container rufen ihn nicht (`fireEvent.click` auf das jeweilige Element; ein Klick auf das Bild erreicht die Bühne per Bubbling, und genau das ist der Rot-Fall).
 - Escape schließt auch bei aufgeklappten Details.
-- Tab-Zyklus: Schließen → Bilddetails → (aufgeklappt) Detailbereich → Schließen.
+- Tab-Zyklus: Schließen → (aufgeklappt) Detailbereich → Details → Schließen.
 - Details: anfangs zu, `aria-controls` zeigt auf ein vorhandenes, verborgenes Element; Inhalt nach dem Aufklappen (Raster, „Feinlabels“ als `h3`, Aufnahmeangaben mit `h3` und den Handles `taken-at-section`/`place-line`); ohne Feinlabels fehlt die Überschrift.
 - Lade- und Fehlerzustände aus AK13, einschließlich Fokus auf der Bühne nach „Erneut versuchen“ und Escape im Fehlerzustand.
 - Feindlicher `relative_path` in Überschrift, Fußzeile und `alt` bleibt reiner Textknoten (Muster aus `PhotoCard.test.tsx`).
@@ -441,21 +434,21 @@ Fokusfalle, Scroll-Sperre und die Absprache zwischen Esc und `cancel` werden **n
 
 **Neu: `e2e/tests/kuratierung-grossansicht.spec.ts`** (lesend, Demo-Projekt „bewertet“, läuft in beiden Breiten; in `toolchain.spec.ts` unter `beidbreitig` eintragen)
 
-1. **Ausdehnung an der `sm`-Grenze.** Bei geöffnetem Dialog `setViewportSize` 639 → Dialogrechteck = Viewport (±1); 640 → Einrückung 32 px je Seite (±1). Die beiden Messungen **müssen sich unterscheiden**. Bei 640 liefert `elementFromPoint(8,8)` das `<dialog>`, der Alphawert von `getComputedStyle(dialog,'::backdrop').backgroundColor` ist > 0, und die Seitenüberschrift ist weiter `attached`.
+1. **Ausdehnung an der `sm`-Grenze.** Bei geöffnetem Dialog `setViewportSize` 639 → Dialogrechteck = Viewport (±1); 640 → Einrückung 48 px links/rechts und 24 px oben/unten (±1). Die beiden Messungen **müssen sich unterscheiden**. Bei 640 liefert `elementFromPoint(8,8)` das `<dialog>`, der Alphawert von `getComputedStyle(dialog,'::backdrop').backgroundColor` ist > 0, und die Seitenüberschrift ist weiter `attached`.
 2. **Bild füllt die Bühne.** Vorbedingung: zwei Fotos mit paarweise verschiedenem natürlichem Format, aus `naturalWidth/Height` gelesen. Je Foto liegt das Inhaltsrechteck in der Bühne, ist in einer Achse bündig (±1) und hat ein Verhältnis gleich dem natürlichen (±1 %). Nach dem Aufklappen der Details: Vorbedingung, dass der Bereich sichtbar ist und die Bühne kleiner als vorher; die Einpassung gilt weiter.
 3. **Klick neben das Bild bzw. auf das Bild** (breite Ansicht, Hochformat). Vorbedingung: Die seitliche Lücke ist ≥ 20 px, und `elementFromPoint` liefert dort die Bühne. Klick in die Bildmitte → bleibt offen; Klick auf die Kopfzeile → bleibt offen; Klick in die Lücke → geschlossen; neu öffnen, Klick auf (8,8) → geschlossen.
 4. **Schließwege, Platz und Fokus.** Einstieg über `/projects/{id}` → Album. Scrollen, bis der Auslöser **teilweise** unter dem Fensterrand liegt (Vorbedingungen: `scrollY > 0` und Auslöser-Unterkante > `innerHeight`), dann auf den sichtbaren Teil klicken. Für jeden der vier Wege (Schließen, Escape, Klick daneben, `page.goBack()`): scrollY gleich (±1) während offen und nach dem Schließen, URL gleich, Auslöser `toBeFocused()`. Danach genau **ein** `goBack()` → `/projects/{id}`. Das belegt, dass kein Eintrag übrig bleibt. Dieselben Zusagen gelten bei einem Öffnen über einen Klick ohne Fokus (wie Safari). Dass die Fokus-Rückgabe mit `preventScroll` fokussiert, erzwingt nicht dieser Fall, sondern der Unit-Test `useCurationLightbox.test.tsx > focuses the registered trigger without scrolling when the photo closes`: Chromium scrollt hier auch ohne `preventScroll` nicht.
 5. **Zweimal Escape.** (a) Zwei synthetische `keydown`-Escape in **einem** `page.evaluate` am Dialog, also sicher vor dem asynchronen `popstate`. (b) Zweimal nativ `keyboard.press('Escape')`: Das ist der CloseWatcher-Pfad von Chromium, der ein zweites Esc nicht mehr abbrechen lässt. In beiden Fällen bleibt die Album-URL, die Überschrift ist sichtbar, und ein `goBack()` → `/projects/{id}`.
 6. **Reload.** Öffnen, `page.reload()` → der Dialog mit demselben Dateinamen ist wieder offen. Escape → der Fokus liegt auf dem Auslöser. Ein zweites `reload()` → kein Dialog.
 
-Dazu kommen die Regeln des Testkonzepts: exakte Kardinalität, eine Vorbedingung je Fall und ein Rot-Nachweis im PR. Vorschlag für den Rot-Nachweis: `width:min(…)` aus dem Bildkasten streichen (Fall 2 wird rot) und `sm:inset-8` entfernen (Fall 1 wird rot).
+Dazu kommen die Regeln des Testkonzepts: exakte Kardinalität, eine Vorbedingung je Fall und ein Rot-Nachweis im PR. Vorschlag für den Rot-Nachweis: `width:min(…)` aus dem Bildkasten streichen (Fall 2 wird rot) und `sm:inset-x-12` entfernen (Fall 1 wird rot).
 
-**Erweitert: `e2e/tests/tap-targets.spec.ts`** (schmal): Großansicht öffnen, dann `assertTappable` für „Schließen“ und „Bilddetails“. Ihre Aufspannung liegt 12 px neben der schließenden Bühne, ein Fehlgriff schließt dort statt aufzuklappen.
+**Erweitert: `e2e/tests/tap-targets.spec.ts`** (schmal): Großansicht öffnen, dann `assertTappable` für „Schließen“ und „Details“. Ihre Aufspannung liegt 12 px neben der schließenden Bühne, ein Fehlgriff schließt dort statt aufzuklappen.
 
 **Strukturwächter und Design-Vertrag**
 
 - `albumSelection.structure.test.ts`: `components/CurationLightbox.tsx` kommt in `DRAFT_FILES` (nennt keines der drei Endauswahl-Felder) **und** in `SELECTION_FILES` (importiert `isInAlbum` nicht). Beide Seiten montieren die Komponente, und die Architektur sagt genau das zu.
-- `designSystem.contract.test.ts`: `COLOR_OPACITY_ALLOWLIST` bekommt einen Eintrag `CurationLightbox.tsx`/`backdrop:bg-bg/85`. Die Bilddämpfungsregel greift ohne Zutun, weil die Datei `PhotoImage` nennt, und muss ohne Ausnahme grün bleiben. Braucht `container-type: size` eine willkürliche Tailwind-Klasse, ist das ein eigener, begründeter Eintrag in `ARBITRARY_VALUE_ALLOWLIST`.
+- `designSystem.contract.test.ts`: `COLOR_OPACITY_ALLOWLIST` bekommt einen Eintrag `CurationLightbox.tsx`/`backdrop:bg-bg/72`. Die Bilddämpfungsregel greift ohne Zutun, weil die Datei `PhotoImage` nennt, und muss ohne Ausnahme grün bleiben. Braucht `container-type: size` eine willkürliche Tailwind-Klasse, ist das ein eigener, begründeter Eintrag in `ARBITRARY_VALUE_ALLOWLIST`.
 
 ### Wichtigste Edge Cases
 
@@ -510,9 +503,11 @@ Dazu kommen die Regeln des Testkonzepts: exakte Kardinalität, eine Vorbedingung
   Varianten zu erweitern: Die Großansicht schließt per Hintergrundklick, `Dialog` bewusst nicht.
 - AK15 (Neuladen bei offener Großansicht) und AK16 (Foto verschwindet) sind aus dem
   Verlaufszustand abgeleitet, kein neues Produktverhalten.
-- Maße und Abdunklung (`sm`-Umbruch, `sm:inset-8`, `p-2`/`sm:p-4`, `backdrop:bg-bg/85`) setzt diese
-  Spec. Das Penpot-Brett war beim Anlegen nicht gegenprüfbar (Plugin nicht verbunden); weicht es
-  ab, gilt der Entwurf und die Spec wird nachgezogen.
+- Maße, Flächen und Abdunklung folgen dem Penpot-Entwurf (gemessen 2026-09-26). Daniels Entscheidungen
+  dazu (2026-09-26): Angleichung im selben Pull Request; die Belichtungsdaten des Entwurfs
+  (Verschlusszeit/Blende/ISO) entfallen, weil es sie im Datenmodell nicht gibt; die Überlagerung ab
+  `sm` hat 48 px seitlich und 24 px oben/unten (`sm:inset-x-12 sm:inset-y-6`) statt der
+  rasterfremden 40/20 px des Bretts.
 - Ein Doppelklick auf eine Kachel öffnet mit dem ersten Klick; trifft der zweite die freie Bühne
   oder den Rand, schließt er wieder. Der Verlauf bleibt konsistent; kein eigener Schutz.
 - Kein eigener E2E-Fall für die Endauswahl: dieselbe Komponente und derselbe Hook sind im Entwurf
