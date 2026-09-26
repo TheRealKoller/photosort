@@ -1977,7 +1977,7 @@ async def duplicate_group(
 
 
 class AusschussPhotoEntryOut(BaseModel):
-    """EIN Einzel-Eintrag der Ausschuss-Uebersicht (Spec 0525, `kind = "photo"` seit Spec 0533).
+    """EIN Einzel-Eintrag der Ausschuss-Uebersicht (`kind = "photo"`).
 
     Im Listenzweig steht er fuer jede Bestandsaufnahme OHNE aufloesbare Duplikatgruppe; eine
     Aufnahme mit Gruppe liegt im Stapel ihrer Gruppe (`AusschussGroupEntryOut`). Am Detailfilter
@@ -2028,8 +2028,7 @@ class DecisionCountsOut(BaseModel):
 
 
 class AusschussGroupEntryOut(BaseModel):
-    """EIN Stapel der Ausschuss-Uebersicht: alle Bestandsaufnahmen EINER Duplikatgruppe
-    (ADR 0125 Punkt 2).
+    """EIN Stapel der Ausschuss-Uebersicht: alle Bestandsaufnahmen EINER Duplikatgruppe.
 
     `group_anchor_photo_id` ist der Repraesentant - dieselbe Id, unter der die Gruppenantwort
     erreichbar ist. `cover` ist die erste Bestandsaufnahme der Gruppe nach (`taken_at`, `id`), nicht
@@ -2207,7 +2206,7 @@ async def list_ausschuss(
     fuer ein unbekanntes Projekt, ohne den uebergebenen Wert zu spiegeln; `422` fuer eine Id
     ausserhalb der Grenzen.
 
-    Reihenfolge und Paginierung nach EINTRAEGEN (ADR 0125 Punkt 2): Jeder Eintrag steht an der
+    Reihenfolge und Paginierung nach EINTRAEGEN: Jeder Eintrag steht an der
     Stelle seiner ersten Bestandsaufnahme (`Photo.taken_at, Photo.id`), `limit`/`offset`/`total`
     zaehlen Einzel-Eintraege und Stapel. Geschnitten wird erst NACH dem Gruppieren - ein
     SQL-`LIMIT` davor zerlegte eine Gruppe ueber zwei Seiten in zwei Stapel. `open_count` ist

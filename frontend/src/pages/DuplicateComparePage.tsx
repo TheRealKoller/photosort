@@ -107,16 +107,20 @@ export function DuplicateComparePage() {
   const [lastGroupSaved, setLastGroupSaved] = useState(false)
   const confirmRunning = useRef(false)
 
-  /* DIE SEITE BLEIBT BEIM GRUPPENWECHSEL MONTIERT — gleiche Route, anderer Parameter. Alle drei
+  /* DIE SEITE BLEIBT BEIM GRUPPENWECHSEL MONTIERT — gleiche Route, anderer Parameter. Alle diese
      Zustände gehören zur alten Gruppe: Ohne Rücksetzung bliebe eine Kachel der neuen Gruppe
-     gesperrt, deren Entscheidung nie lief, die Vergrößerung zeigte auf ein fremdes Foto, und die
-     Abschlussmeldung spräche über eine andere Gruppe. */
+     gesperrt, deren Entscheidung nie lief, die Vergrößerung zeigte auf ein fremdes Foto, und
+     Abschlussmeldung oder Fehler sprächen über eine andere Gruppe. */
+  const resetConfirm = confirmMutation.reset
+  const resetGroupDecision = groupMutation.reset
   useEffect(() => {
     setEnlargedId(null)
     setReturnFocusId(null)
     setDecidingIds(new Set())
     setLastGroupSaved(false)
-  }, [anchorId])
+    resetConfirm()
+    resetGroupDecision()
+  }, [anchorId, resetConfirm, resetGroupDecision])
 
   const enlargedItem = items.find((item) => item.photo.id === enlargedId)
 
@@ -388,11 +392,11 @@ export function DuplicateComparePage() {
             >
               {confirmLabel}
             </Button>
-            {lastGroupSaved && (
-              <p aria-live="polite" className="text-sm text-text">
-                {LAST_GROUP_TEXT}
-              </p>
-            )}
+            {/* Die Live-Region steht im gefüllten Zustand IMMER da, nur ihr Text wechselt: Eine
+                Region, die erst zusammen mit ihrem Text erscheint, sagen Screenreader oft nicht an. */}
+            <p aria-live="polite" data-testid="duplicate-last-group" className="text-sm text-text">
+              {lastGroupSaved ? LAST_GROUP_TEXT : ''}
+            </p>
             {confirmMutation.isError && (
               <Alert>
                 {confirmMutation.error instanceof ApiError

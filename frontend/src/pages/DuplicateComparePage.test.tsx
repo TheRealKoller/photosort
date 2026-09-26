@@ -772,11 +772,20 @@ describe('DuplicateComparePage - der Abschluss', () => {
     )
     renderPage()
     await waitFor(() => expect(tiles()).toHaveLength(2))
+    // Die Live-Region steht VOR der Meldung leer im Dokument: Eine Region, die erst mit ihrem Text
+    // erscheint, sagen Screenreader oft gar nicht an.
+    const region = screen.getByTestId('duplicate-last-group')
+    expect(region.getAttribute('aria-live')).toBe('polite')
+    expect(region.textContent).toBe('')
 
     await userEvent.click(confirmButton())
 
-    const meldung = await screen.findByText('Gespeichert — das war die letzte Gruppe.')
-    expect(meldung.getAttribute('aria-live')).toBe('polite')
+    await waitFor(() =>
+      expect(screen.getByTestId('duplicate-last-group').textContent).toBe(
+        'Gespeichert — das war die letzte Gruppe.',
+      ),
+    )
+    expect(screen.getByTestId('duplicate-last-group')).toBe(region)
     expect(pfad()).toBe('/projects/1/photos/10/duplicates')
 
     await userEvent.click(screen.getByRole('button', { name: 'Vorherige Gruppe' }))
@@ -802,6 +811,50 @@ describe('DuplicateComparePage - der Abschluss', () => {
     expect(pfad()).toBe('/projects/1/photos/10/duplicates')
     expect(confirmButton()).toBeEnabled()
   })
+
+  it.each([
+    [
+      'Abschluss',
+      () =>
+        vi
+          .mocked(duplicatesApi.confirmDuplicateGroup)
+          .mockRejectedValue(new ApiError(409, 'Die Entscheidung wurde gerade verändert.')),
+      () => userEvent.click(confirmButton()),
+    ],
+    [
+      'Gruppenentscheidung',
+      () =>
+        vi
+          .mocked(duplicatesApi.setDuplicateGroupDecision)
+          .mockRejectedValue(new ApiError(409, 'Die Entscheidung wurde gerade verändert.')),
+      () => userEvent.click(screen.getByRole('button', { name: 'Alle behalten' })),
+    ],
+  ])(
+    'nimmt einen Fehler der %s beim Wechsel der Gruppe zurueck',
+    async (_fall, scheitern, ausloesen) => {
+      // Die Seite bleibt beim Ankerwechsel montiert. Ein stehengebliebener Fehler spraeche unter
+      // der neuen Gruppe von einer Handlung, die sie nie betraf.
+      vi.mocked(duplicatesApi.getDuplicateGroup).mockImplementation((_projectId, photoId) =>
+        Promise.resolve(
+          photoId === 10
+            ? group([11, 12], { position: 1, total: 2, nextPhotoId: 20 })
+            : group([21, 22], { position: 2, total: 2, previousPhotoId: 10 }),
+        ),
+      )
+      scheitern()
+      renderPage()
+      await waitFor(() => expect(tiles()).toHaveLength(2))
+
+      await ausloesen()
+      expect(await screen.findByRole('alert')).toHaveTextContent('gerade verändert')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Nächste Gruppe' }))
+      await waitFor(() => expect(pfad()).toBe('/projects/1/photos/20/duplicates'))
+      expect(await screen.findByRole('img', { name: 'Reise/serie-21.jpg' })).toBeTruthy()
+
+      expect(screen.queryByRole('alert')).toBeNull()
+    },
+  )
 
   it.each([
     ['Einzelentscheidung', 'Behalten: Reise/serie-11.jpg'],

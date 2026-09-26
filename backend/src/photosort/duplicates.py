@@ -179,7 +179,7 @@ def group_standing(representative_id: int, links: list[DuplicateLink]) -> GroupS
 
 
 # ----------------------------------------------------------------------------------------------
-# Der Ausschuss-Bestand als Eintraege der Uebersicht (ADR 0125 Punkt 2)
+# Der Ausschuss-Bestand als Eintraege der Uebersicht
 # ----------------------------------------------------------------------------------------------
 
 

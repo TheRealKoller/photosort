@@ -269,7 +269,7 @@ async def confirm_duplicate_group(
 ) -> DuplicateGroupOut:
     """Schliesst EINE Duplikat-Gruppe ab: Jedes Mitglied mit offenem Vorschlag bekommt `discard`.
 
-    Das ist der Abschluss des Ausschuss-Schritts, auf eine Gruppe begrenzt (ADR 0125 Punkt 4). Ein
+    Das ist der Abschluss des Ausschuss-Schritts, auf eine Gruppe begrenzt. Ein
     offener Vorschlag zeigt bereits "Ausschuss"; der angezeigte Zustand aendert sich nicht, er wird
     festgeschrieben - mit derselben Wirkung, die der spaetere Abschluss des Ausschuss-Schritts
     gehabt haette. Mitglieder mit Entscheidungszeile oder ohne Vorschlag bleiben ungeschrieben: Ihr
