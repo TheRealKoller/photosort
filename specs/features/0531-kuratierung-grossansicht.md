@@ -1,6 +1,6 @@
 # 0531 - Bild in der Kuratierung groß ansehen, ohne die Stelle zu verlieren
 
-**Status:** Accepted
+**Status:** Implemented ([PR #538](https://github.com/TheRealKoller/photosort/pull/538))
 **Erstellt:** 2026-09-26
 **Bezug:** [Issue #531](https://github.com/TheRealKoller/photosort/issues/531)
 
