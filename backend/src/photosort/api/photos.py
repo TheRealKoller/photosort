@@ -1751,10 +1751,10 @@ class DuplicateGroupPhotoOut(BaseModel):
 
 
 class DuplicateGroupOut(BaseModel):
-    """Die Antwortform ALLER DREI Endpunkte der Vergleichsansicht - Lesepfad wie beide
-    Schreibwege. Ein Schreibvorgang liefert damit denselben vollstaendigen Stand zurueck, den ein
-    erneutes Laden liefern wuerde; die Oberflaeche braucht danach keine zweite Anfrage, um zu
-    wissen, was gilt.
+    """Die Antwortform ALLER VIER Endpunkte der Vergleichsansicht - Lesepfad, beide Schreibwege und
+    der Gruppenabschluss. Ein Schreibvorgang liefert damit denselben vollstaendigen Stand zurueck,
+    den ein erneutes Laden liefern wuerde; die Oberflaeche braucht danach keine zweite Anfrage, um
+    zu wissen, was gilt.
 
     `position`/`total` sind 1-basiert und beziehen sich auf ALLE Duplikat-Gruppen des Projekts.
     `previous_photo_id`/`next_photo_id` tragen die Repraesentanten-Id der jeweils benachbarten
@@ -1781,7 +1781,7 @@ async def build_duplicate_group_out(
 ) -> DuplicateGroupOut:
     """Bildet den Stern um `photo_id` und hydratisiert seine Mitglieder zur vollen Antwort.
 
-    VON ALLEN DREI ENDPUNKTEN GENUTZT, auch von den beiden Schreibwegen im eigenen Router - genau
+    VON ALLEN VIER ENDPUNKTEN GENUTZT, auch von den drei Schreibwegen im eigenen Router - genau
     deshalb steht der Aufbau hier und nicht im Endpunkt: Die Hydratation (`_photos_by_id`,
     `_to_photo_out` samt Event-, Orts- und Rang-Kontext) haengt an dieser Datei, und eine zweite
     Fassung davon liefe auseinander.

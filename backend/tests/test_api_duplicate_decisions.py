@@ -1,4 +1,4 @@
-"""Die beiden Schreibwege der Vergleichsansicht - je Aufnahme und je Gruppe.
+"""Die drei Schreibwege der Vergleichsansicht - je Aufnahme, je Gruppe und der Gruppenabschluss.
 
 Sie bestimmen mit, welche Bilddaten den Homeserver Richtung Cloud-Anbieter verlassen. Sie tragen
 deshalb DREI Sicherungen (S8): die Router-Dependency, den Eintrag in
@@ -14,11 +14,15 @@ wird.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +37,8 @@ from photosort.models import (
     Project,
     Rating,
     RatingStatus,
+    ScanStatus,
+    ScoringRun,
 )
 
 _BASE = datetime(2023, 5, 1, 12, 0, 0, tzinfo=UTC)
@@ -106,6 +112,10 @@ def _single_url(project_id: int, photo_id: int) -> str:
 
 def _group_url(project_id: int, photo_id: int) -> str:
     return f"/projects/{project_id}/duplicate-groups/{photo_id}/decision"
+
+
+def _confirm_url(project_id: int, photo_id: int) -> str:
+    return f"/projects/{project_id}/duplicate-groups/{photo_id}/confirm"
 
 
 async def _stored(session: AsyncSession, photo_id: int) -> DuplicateDecision | None:
@@ -483,19 +493,24 @@ async def test_an_unknown_decision_value_is_a_422(
     assert response.status_code == 422
 
 
-@pytest.mark.parametrize("url_builder", [_single_url, _group_url])
+@pytest.mark.parametrize(
+    ("method", "url_builder"),
+    [("put", _single_url), ("put", _group_url), ("post", _confirm_url)],
+)
 @pytest.mark.parametrize("photo_id", [0, -1, MAX_QUERY_POSITION + 1])
 async def test_a_photo_id_outside_the_declared_bounds_is_a_422(
     authenticated_api_client: httpx.AsyncClient,
     db_session: AsyncSession,
+    method: str,
     url_builder: object,
     photo_id: int,
 ) -> None:
     project = await _project(db_session)
 
-    response = await authenticated_api_client.put(
+    response = await authenticated_api_client.request(
+        method,
         url_builder(project.id, photo_id),  # type: ignore[operator]
-        json={"decision": "keep"},
+        json={"decision": "keep"} if method == "put" else None,
     )
 
     assert response.status_code == 422
@@ -619,26 +634,28 @@ async def test_a_low_quality_suggestion_has_no_group_path(
 async def test_both_write_paths_answer_in_the_same_form_as_the_read_path(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """GEPRUEFT ueber die Gleichheit der Antwortstruktur, nicht ueber drei getrennt
+    """GEPRUEFT ueber die Gleichheit der Antwortstruktur, nicht ueber vier getrennt
     hingeschriebene Feldlisten: Die Oberflaeche schreibt den Rueckgabewert unmittelbar fort, und
     eine abweichende Form faellt sonst erst in der Ansicht auf."""
     project = await _project(db_session)
     winner, _losers = await _star(db_session, project, 3)
 
-    # Reihenfolge so gewaehlt, dass alle drei Aufrufe DENSELBEN Zustand beschreiben: Der Gruppenweg
-    # setzt alles auf `keep`, der Einzelweg danach denselben Wert auf ein Mitglied, und der
-    # Lesepfad liest ihn ab. Ein Formunterschied ist damit der einzige moegliche Unterschied.
+    # Reihenfolge so gewaehlt, dass alle vier Aufrufe DENSELBEN Zustand beschreiben: Der
+    # Gruppenweg setzt alles auf `keep`, der Einzelweg danach denselben Wert auf ein Mitglied, der
+    # Gruppenabschluss findet keinen offenen Vorschlag mehr, und der Lesepfad liest ihn ab. Ein
+    # Formunterschied ist damit der einzige moegliche Unterschied.
     gruppe = await authenticated_api_client.put(
         _group_url(project.id, winner.id), json={"decision": "keep"}
     )
     einzeln = await authenticated_api_client.put(
         _single_url(project.id, winner.id), json={"decision": "keep"}
     )
+    abgeschlossen = await authenticated_api_client.post(_confirm_url(project.id, winner.id))
     gelesen = await authenticated_api_client.get(
         f"/projects/{project.id}/duplicate-groups/{winner.id}"
     )
 
-    assert einzeln.json() == gruppe.json() == gelesen.json()
+    assert einzeln.json() == gruppe.json() == abgeschlossen.json() == gelesen.json()
 
 
 # ------------------------------------------------------------------------------------------
@@ -741,3 +758,416 @@ async def test_a_stale_keep_becomes_ineffective_while_a_stale_discard_keeps_work
     ).status_code == 404
     assert await _stored(db_session, behalten_id) == DuplicateDecision.KEEP
     assert await _stored(db_session, verworfen_id) == DuplicateDecision.DISCARD
+
+
+# ------------------------------------------------------------------------------------------
+# Der Gruppenabschluss (Spec 0533, A9/A14, Auflagen S1-S7)
+# ------------------------------------------------------------------------------------------
+
+
+async def _decide(session: AsyncSession, photo: Photo, decision: DuplicateDecision) -> None:
+    session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=decision))
+    await session.commit()
+
+
+async def _all_rows(session: AsyncSession) -> dict[int, DuplicateDecision]:
+    rows = await session.execute(
+        select(PhotoDuplicateDecision.photo_id, PhotoDuplicateDecision.decision)
+    )
+    return {photo_id: decision for photo_id, decision in rows.tuples()}
+
+
+async def _successful_run(session: AsyncSession, project: Project) -> ScoringRun:
+    run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS, started_at=_BASE)
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
+@contextmanager
+def _recorded_statements() -> Iterator[list[str]]:
+    """Die TATSAECHLICH abgesetzten Anweisungen (Muster `test_api_cameras.py`)."""
+    statements: list[str] = []
+
+    def _listener(
+        conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool
+    ) -> None:
+        statements.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", _listener)
+    try:
+        yield statements
+    finally:
+        event.remove(Engine, "before_cursor_execute", _listener)
+
+
+async def test_the_group_confirm_requires_a_token(api_client: httpx.AsyncClient) -> None:
+    """SICHERHEIT (S6): eigener, pfadbenannter 401-Fall neben Router-Dependency und
+    Router-Iteration in `test_auth_guard.py`."""
+    response = await api_client.post(_confirm_url(1, 1))
+
+    assert response.status_code == 401
+
+
+async def test_an_unknown_project_is_a_404_for_the_group_confirm(
+    authenticated_api_client: httpx.AsyncClient,
+) -> None:
+    response = await authenticated_api_client.post(_confirm_url(999_999, 1))
+
+    assert response.status_code == 404
+    assert "999999" not in response.text
+
+
+async def test_the_group_confirm_resolves_the_group_before_writing(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S1): Ohne Gruppe ist die Antwort `404`, BEVOR geschrieben wird - auch fuer ein
+    Foto mit offenem Vorschlag. `member_ids_of(None, links)` liefert jedes Foto ohne
+    `duplicate_of`; zusammen mit dem offenen Vorschlag schriebe ein Aufruf auf ein einzelnes
+    unscharfes Foto sonst `discard` auf jede Unschaerfe-Ablehnung des Projekts."""
+    project = await _project(db_session)
+    erstes = await _photo(
+        db_session, project, "unscharf-1.jpg", suggested_status=RatingStatus.REJECTED
+    )
+    await _photo(
+        db_session, project, "unscharf-2.jpg", seconds=1, suggested_status=RatingStatus.REJECTED
+    )
+
+    response = await authenticated_api_client.post(_confirm_url(project.id, erstes.id))
+
+    assert response.status_code == 404
+    assert await _all_rows(db_session) == {}
+
+
+async def test_a_single_low_quality_photo_beside_a_group_is_a_404_for_the_group_confirm(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S1), der `None`-Repraesentant neben einer echten Gruppe: Auch dann entsteht
+    projektweit keine einzige Zeile."""
+    project = await _project(db_session)
+    await _star(db_session, project, 3)
+    unscharf = await _photo(
+        db_session, project, "unscharf.jpg", seconds=50, suggested_status=RatingStatus.REJECTED
+    )
+
+    response = await authenticated_api_client.post(_confirm_url(project.id, unscharf.id))
+
+    assert response.status_code == 404
+    assert await _all_rows(db_session) == {}
+
+
+async def test_the_group_confirm_writes_discard_only_for_the_open_suggestions_of_this_group(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S2/S3): Mitgliedschaft, Projektbindung und offener Vorschlag in EINER Anweisung
+    mit innerem Join auf `PhotoScore`. Danach traegt allein der offene Verlierer `discard`: Der
+    Gewinner ohne Vorschlag bekommt keine Zeile (das unterscheidet den Abschluss vom untersagten
+    Festschreiben aus dem Client), `keep` bleibt `keep`, und die zweite Gruppe sowie das zweite
+    Projekt bleiben leer. Ohne den Join wuerde die Bedingung fuer jedes Mitglied wahr, sobald
+    irgendein Foto der Instanz einen offenen Vorschlag traegt."""
+    home = await _project(db_session, "Costa Rica")
+    other = await _project(db_session, "Island")
+    winner, [offen, behalten] = await _star(db_session, home, 3)
+    await _decide(db_session, behalten, DuplicateDecision.KEEP)
+    _zweite_gruppe, zweite_verlierer = await _star(
+        db_session, home, 2, first_second=100, prefix="b"
+    )
+    _fremd_winner, fremd_verlierer = await _star(db_session, other, 2, prefix="f")
+    ids = {
+        "winner": winner.id,
+        "offen": offen.id,
+        "behalten": behalten.id,
+        "zweite": zweite_verlierer[0].id,
+        "fremd": fremd_verlierer[0].id,
+    }
+
+    response = await authenticated_api_client.post(_confirm_url(home.id, winner.id))
+
+    assert response.status_code == 200
+    assert await _all_rows(db_session) == {
+        ids["offen"]: DuplicateDecision.DISCARD,
+        ids["behalten"]: DuplicateDecision.KEEP,
+    }
+
+
+async def test_a_photo_of_another_project_is_a_404_for_the_group_confirm(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S2): Eine Foto-Id eines fremden Projekts loest sich in der projektbegrenzten
+    Kantenliste nicht auf - `404`, ohne den Wert zu spiegeln, und in keinem Projekt eine Zeile."""
+    home = await _project(db_session, "Costa Rica")
+    other = await _project(db_session, "Island")
+    await _star(db_session, home, 2)
+    _fremd_winner, fremd_verlierer = await _star(db_session, other, 3, prefix="f")
+    fremde_id = fremd_verlierer[0].id
+
+    response = await authenticated_api_client.post(_confirm_url(home.id, fremde_id))
+
+    assert response.status_code == 404
+    assert str(fremde_id) not in response.text
+    assert await _all_rows(db_session) == {}
+
+
+async def test_a_foreign_photo_pointing_into_the_group_is_never_confirmed(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S2), die scharfe Form: Eine fremde Aufnahme mit offenem Vorschlag und
+    `duplicate_of` auf den eigenen Gewinner bekommt keine Zeile."""
+    home = await _project(db_session, "Costa Rica")
+    other = await _project(db_session, "Island")
+    winner, [eigener] = await _star(db_session, home, 2)
+    fremd = await _photo(
+        db_session,
+        other,
+        "fremd.jpg",
+        seconds=5,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=winner.id,
+    )
+    eigener_id, fremd_id = eigener.id, fremd.id
+
+    response = await authenticated_api_client.post(_confirm_url(home.id, winner.id))
+
+    assert response.status_code == 200
+    assert await _all_rows(db_session) == {eigener_id: DuplicateDecision.DISCARD}
+    assert fremd_id not in await _all_rows(db_session)
+
+
+async def test_the_group_confirm_reads_no_body(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S4): Weder Menge noch Wert kommen vom Aufrufer. Ein Koerper mit Id-Liste und
+    `keep` wird nie gelesen: Das genannte Foto ausserhalb der Gruppe bleibt ohne Zeile, und
+    nirgends entsteht ein `keep`."""
+    project = await _project(db_session)
+    winner, [verlierer] = await _star(db_session, project, 2)
+    ausserhalb = await _photo(
+        db_session, project, "unscharf.jpg", seconds=50, suggested_status=RatingStatus.REJECTED
+    )
+    verlierer_id, ausserhalb_id = verlierer.id, ausserhalb.id
+
+    response = await authenticated_api_client.post(
+        _confirm_url(project.id, winner.id),
+        json={"photo_ids": [ausserhalb_id], "decision": "keep"},
+    )
+
+    assert response.status_code == 200
+    assert await _all_rows(db_session) == {verlierer_id: DuplicateDecision.DISCARD}
+
+
+async def test_the_group_confirm_never_issues_a_delete(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S3): nur einfuegen. Ein vorangestelltes `DELETE` raeumte eine im Wettlauf
+    committete `keep`-Zeile des anderen Nutzers weg und ersetzte seine Handlung durch
+    `discard`."""
+    project = await _project(db_session)
+    winner, [_offen, behalten] = await _star(db_session, project, 3)
+    await _decide(db_session, behalten, DuplicateDecision.KEEP)
+
+    with _recorded_statements() as statements:
+        response = await authenticated_api_client.post(_confirm_url(project.id, winner.id))
+
+    assert response.status_code == 200
+    assert any(statement.lstrip().upper().startswith("INSERT") for statement in statements)
+    assert not [s for s in statements if s.lstrip().upper().startswith("DELETE")]
+
+
+async def test_a_concurrent_write_during_the_group_confirm_is_a_409_and_writes_nothing(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SICHERHEIT (S3): Zwischen Auswahl und Schreiben kann der andere Nutzer eine Zeile
+    committen; der Primaerschluessel wirft. Das wird `409` mit vollstaendigem Rueckzug - keine
+    Teilmenge der Gruppe bleibt geschrieben. Eingesetzt statt nachgestellt, mit Zaehler auf den
+    betretenen Zweig (Muster des 409-Falls oben)."""
+    project = await _project(db_session)
+    winner, _losers = await _star(db_session, project, 4)
+    projekt_id, winner_id = project.id, winner.id
+    calls = {"count": 0}
+    original_flush = AsyncSession.flush
+
+    async def _always_failing(self: AsyncSession, *args: object, **kwargs: object) -> None:
+        calls["count"] += 1
+        raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed"))
+
+    monkeypatch.setattr(AsyncSession, "flush", _always_failing)
+    try:
+        response = await authenticated_api_client.post(_confirm_url(projekt_id, winner_id))
+    finally:
+        monkeypatch.setattr(AsyncSession, "flush", original_flush)
+
+    assert calls["count"] >= 1, "der IntegrityError-Zweig wurde gar nicht betreten"
+    assert response.status_code == 409
+    assert "erneut" in response.json()["detail"].lower()
+    assert await _all_rows(db_session) == {}
+
+
+async def test_the_group_confirm_is_idempotent(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Ein zweiter Aufruf findet keine offene Aufnahme mehr: `200` mit derselben Gruppe, gleiche
+    Zeilenzahl, kein `409`."""
+    project = await _project(db_session)
+    winner, _losers = await _star(db_session, project, 3)
+
+    erster = await authenticated_api_client.post(_confirm_url(project.id, winner.id))
+    zeilen = await _all_rows(db_session)
+    zweiter = await authenticated_api_client.post(_confirm_url(project.id, winner.id))
+
+    assert erster.status_code == zweiter.status_code == 200
+    assert zweiter.json() == erster.json()
+    assert await _all_rows(db_session) == zeilen
+    assert len(zeilen) == 2
+
+
+async def test_the_group_confirm_never_sets_the_gate(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S5): Die einzige Gruppe ist abgeschlossen, danach gibt es keinen offenen
+    Vorschlag mehr - und `gate_confirmed_at` bleibt trotzdem `NULL`. Setzte der Abschluss der
+    letzten Gruppe das Gate, liefe der Cloud-Teilschritt ohne die projektweite Bestaetigung an."""
+    project = await _project(db_session)
+    run = await _successful_run(db_session, project)
+    run_id, projekt_id = run.id, project.id
+    winner, _losers = await _star(db_session, project, 3)
+
+    response = await authenticated_api_client.post(_confirm_url(projekt_id, winner.id))
+    uebersicht = (await authenticated_api_client.get(f"/projects/{projekt_id}/ausschuss")).json()
+
+    assert response.status_code == 200
+    assert uebersicht["open_count"] == 0
+    db_session.expire_all()
+    gate = (
+        await db_session.execute(
+            select(ScoringRun.gate_confirmed_at).where(ScoringRun.id == run_id)
+        )
+    ).scalar_one()
+    assert gate is None
+
+
+async def test_the_group_confirm_via_a_loser_writes_the_same_set_as_via_the_winner(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Die Gruppe ist ueber JEDES Mitglied erreichbar - der Abschluss auch. Zwei gleich gebaute
+    Projekte, einmal ueber den Gewinner, einmal ueber einen Verlierer abgeschlossen."""
+    ueber_gewinner = await _project(db_session, "Costa Rica")
+    ueber_verlierer = await _project(db_session, "Island")
+    winner_a, _ = await _star(db_session, ueber_gewinner, 3)
+    _winner_b, losers_b = await _star(db_session, ueber_verlierer, 3)
+
+    await authenticated_api_client.post(_confirm_url(ueber_gewinner.id, winner_a.id))
+    await authenticated_api_client.post(_confirm_url(ueber_verlierer.id, losers_b[1].id))
+
+    assert await _decided_paths(db_session, ueber_gewinner.id) == await _decided_paths(
+        db_session, ueber_verlierer.id
+    )
+    assert len(await _decided_paths(db_session, ueber_gewinner.id)) == 2
+
+
+async def _decided_paths(session: AsyncSession, project_id: int) -> set[tuple[str, str]]:
+    rows = await session.execute(
+        select(Photo.relative_path, PhotoDuplicateDecision.decision)
+        .join(PhotoDuplicateDecision, PhotoDuplicateDecision.photo_id == Photo.id)
+        .where(Photo.project_id == project_id)
+    )
+    return {(path, str(decision)) for path, decision in rows.tuples()}
+
+
+async def test_the_group_confirm_changes_no_displayed_state_and_no_standing(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """A9/A1/A12: Ein offener Vorschlag zeigt schon `discard` - der Abschluss schreibt den
+    angezeigten Zustand fest, statt ihn zu aendern. Zustand je Mitglied, Position, Gesamtzahl und
+    Nachbarn sind vor und nach dem Abschluss gleich, ueber den Schreibweg des Produkts; die
+    abgeschlossene Gruppe bleibt erreichbar, und die Nachbargruppe behaelt ihren Platz. Dabei ist
+    der Gewinner mit Schaerfe-Ablehnung, der `discard` bekommt und "Ausschuss" bleibt."""
+    project = await _project(db_session)
+    unscharfer_gewinner = await _photo(
+        db_session, project, "u-w.jpg", suggested_status=RatingStatus.REJECTED
+    )
+    await _photo(
+        db_session,
+        project,
+        "u-v.jpg",
+        seconds=1,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=unscharfer_gewinner.id,
+    )
+    nachbar, _ = await _star(db_session, project, 2, first_second=100, prefix="b")
+    gruppe_url = f"/projects/{project.id}/duplicate-groups/{unscharfer_gewinner.id}"
+    nachbar_url = f"/projects/{project.id}/duplicate-groups/{nachbar.id}"
+    confirm_url = _confirm_url(project.id, unscharfer_gewinner.id)
+    gewinner_id = unscharfer_gewinner.id
+
+    vorher = (await authenticated_api_client.get(gruppe_url)).json()
+    nachbar_vorher = (await authenticated_api_client.get(nachbar_url)).json()
+    antwort = (await authenticated_api_client.post(confirm_url)).json()
+    db_session.expire_all()
+    nachher = await authenticated_api_client.get(gruppe_url)
+    nachbar_nachher = (await authenticated_api_client.get(nachbar_url)).json()
+
+    def zustand(body: dict[str, Any]) -> list[tuple[int, str]]:
+        return [(item["photo"]["id"], item["effective_decision"]) for item in body["items"]]
+
+    def stellung(body: dict[str, Any]) -> tuple[Any, ...]:
+        return (body["position"], body["total"], body["previous_photo_id"], body["next_photo_id"])
+
+    assert nachher.status_code == 200
+    assert zustand(vorher) == zustand(antwort) == zustand(nachher.json())
+    assert stellung(vorher) == stellung(antwort) == stellung(nachher.json())
+    assert stellung(nachbar_vorher) == stellung(nachbar_nachher)
+    assert await _stored(db_session, gewinner_id) == DuplicateDecision.DISCARD
+    assert dict(zustand(nachher.json()))[gewinner_id] == "discard"
+
+
+async def test_the_open_count_drops_by_exactly_the_open_suggestions_of_the_group(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    winner, _ = await _star(db_session, project, 4)
+    await _star(db_session, project, 3, first_second=100, prefix="b")
+    uebersicht_url = f"/projects/{project.id}/ausschuss"
+    confirm_url = _confirm_url(project.id, winner.id)
+
+    vorher = (await authenticated_api_client.get(uebersicht_url)).json()["open_count"]
+    await authenticated_api_client.post(confirm_url)
+    db_session.expire_all()
+    nachher = (await authenticated_api_client.get(uebersicht_url)).json()["open_count"]
+
+    assert (vorher, nachher) == (5, 2)
+
+
+async def test_the_group_confirm_has_the_effect_the_gate_confirm_would_have_had(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """A14 als ZWILLINGSPROJEKT-DIFFERENZ: P1 schliesst eine Gruppe ab und danach den
+    Ausschuss-Schritt, P2 nur den Ausschuss-Schritt. Die geschriebenen Mengen (`relative_path`,
+    `decision`) sind gleich, und kein `409` tritt auf. Einzelne Erwartungswerte bestuenden auch
+    dann, wenn beide Wege auseinanderliefen und beide Erwartungen mitgezogen wuerden."""
+    zwillinge = [await _project(db_session, "Costa Rica"), await _project(db_session, "Island")]
+    winner_ids: list[int] = []
+    for zwilling in zwillinge:
+        await _successful_run(db_session, zwilling)
+        winner, [_offen, behalten] = await _star(db_session, zwilling, 3)
+        await _decide(db_session, behalten, DuplicateDecision.KEEP)
+        await _star(db_session, zwilling, 2, first_second=100, prefix="b")
+        await _photo(
+            db_session,
+            zwilling,
+            "unscharf.jpg",
+            seconds=500,
+            suggested_status=RatingStatus.REJECTED,
+        )
+        winner_ids.append(winner.id)
+    p1, p2 = (zwilling.id for zwilling in zwillinge)
+
+    abschluss = await authenticated_api_client.post(_confirm_url(p1, winner_ids[0]))
+    gate_p1 = await authenticated_api_client.post(f"/projects/{p1}/confirm-ausschuss-gate")
+    gate_p2 = await authenticated_api_client.post(f"/projects/{p2}/confirm-ausschuss-gate")
+
+    assert [abschluss.status_code, gate_p1.status_code, gate_p2.status_code] == [200, 200, 200]
+    assert await _decided_paths(db_session, p1) == await _decided_paths(db_session, p2)
+    assert len(await _decided_paths(db_session, p1)) == 4

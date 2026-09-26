@@ -386,7 +386,9 @@ _ERWARTETE_VERWENDUNGEN = {
     ("api/projects.py", "has_open_suggestion"): 1,
     # Spec 0525: die zweite Haelfte der erweiterten Vorbedingung des EINZEL-Schreibwegs. Sie wird
     # pro Foto und projektgebunden beantwortet (Auflage S10) - ein Sammelweg entsteht daraus nicht.
-    ("api/duplicate_decisions.py", "has_open_suggestion"): 1,
+    # Spec 0533: die Auswahl des GRUPPENABSCHLUSSES - Mitgliedschaft, Projektbindung und offener
+    # Vorschlag in einer Anweisung (Auflage S2); die Menge bestimmt der Server, nie der Koerper.
+    ("api/duplicate_decisions.py", "has_open_suggestion"): 2,
     # `is_candidate` - Anzeige, keine Grenze.
     ("api/photos.py", "survives_ausschuss_for"): 1,
     # Der Vorschlags-Zweig von `_filtered_photo_ids` und der Objekt-Zwilling `has_suggestion`; dazu
@@ -479,13 +481,13 @@ def test_the_six_replaced_occurrences_and_the_written_call_sites_are_held_side_b
     Die sechs ersetzten Vorkommen der Dokumente werden zu mehr Aufrufstellen, weil die eine
     Bedingung in ZWEI Funktionen zerfaellt und "der Vorschlags-Zweig" schon vorher zwei Codeformen
     war; seit Spec 0525 treten Massenweg, projektweite `open_count` und der Bestand
-    `has_ausschuss_entry` hinzu. Ein Teil davon sind SQL-Fassungen und treten als weiterer
-    Konjunktionsteil in eine bestehende Anweisung ein (Auflage S2); die zwei Objektfassungen lesen
-    ein bereits geladenes Foto."""
+    `has_ausschuss_entry` hinzu, seit Spec 0533 die Auswahl des Gruppenabschlusses. Ein Teil davon
+    sind SQL-Fassungen und treten als weiterer Konjunktionsteil in eine bestehende Anweisung ein
+    (Auflage S2); die zwei Objektfassungen lesen ein bereits geladenes Foto."""
     gemessen = _gemessene_verwendungen()
     sql = sum(anzahl for (_datei, name), anzahl in gemessen.items() if name in _SQL_FASSUNGEN)
 
     assert _ERSETZTE_VORKOMMEN == 6
-    assert sum(gemessen.values()) == 11
-    assert sql == 9
+    assert sum(gemessen.values()) == 12
+    assert sql == 10
     assert sum(gemessen.values()) - sql == 2

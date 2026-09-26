@@ -90,6 +90,11 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # SERVER stammt und nicht aus dem Koerper, und dass es kein `DELETE` gibt.
     ("put", "/projects/{project_id}/photos/{photo_id}/duplicate-decision"),
     ("put", "/projects/{project_id}/duplicate-groups/{photo_id}/decision"),
+    # specs/features/0533-duplikatstapel-vergleichsansicht.md: der Gruppenabschluss. Seine
+    # Beschreibung traegt, was der Signatur nicht anzusehen ist - dass die Menge der SERVER bildet
+    # (offene Vorschlaege genau dieser Gruppe), dass nur `discard` eingefuegt und nie
+    # ueberschrieben wird, und dass `gate_confirmed_at` unberuehrt bleibt.
+    ("post", "/projects/{project_id}/duplicate-groups/{photo_id}/confirm"),
     # specs/features/0525-ausschuss-ein-schritt.md: der Lesepfad des Ausschuss-Schritts, aus dem
     # zugleich die Detailansicht kommt (`photo_id`-Filter). Seine Beschreibung traegt, was der
     # Signatur nicht anzusehen ist - dass der Bestand die VEREINIGUNG beider Ursachen ist (nicht
