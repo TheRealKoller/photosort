@@ -301,16 +301,16 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   // Die ERSTE Gruppe ist offen, "zurueck" dort also `disabled` und von `assertTappable` nicht
   // messbar - gemessen wird deshalb "vor". Ohne Aufnahme hier fehlte der einzige Nachweis der
   // 44-px-Zusage fuer diese beiden.
-  const weiter = page.getByRole('button', { name: 'Vor zur nächsten Gruppe' })
+  const weiter = page.getByRole('button', { name: 'Nächste Gruppe' })
   await expect(weiter, 'Gruppennavigation der Vergleichsansicht').toBeVisible()
-  await assertTappable(weiter, 'Vor zur naechsten Gruppe')
-  checked.push('Vor zur naechsten Gruppe')
+  await assertTappable(weiter, 'Naechste Gruppe')
+  checked.push('Naechste Gruppe')
 
   await weiter.click()
-  const zurueck = page.getByRole('button', { name: 'Zurück zur vorherigen Gruppe' })
+  const zurueck = page.getByRole('button', { name: 'Vorherige Gruppe' })
   await expect(zurueck, 'Gruppennavigation nach dem Blaettern').toBeEnabled()
-  await assertTappable(zurueck, 'Zurueck zur vorherigen Gruppe')
-  checked.push('Zurueck zur vorherigen Gruppe')
+  await assertTappable(zurueck, 'Vorherige Gruppe')
+  checked.push('Vorherige Gruppe')
 
   // Ohne diese Zusicherung bestuende der Spec auch dann, wenn keine der Lokalisierungen oben noch
   // etwas faende und jede Schleife ueber eine leere Menge liefe.
