@@ -26,3 +26,12 @@ wie in Claude Code.
   geschrieben. Ihre OpenCode-Fassung (Subagenten mit denselben Rollen und Werkzeuggrenzen)
   liegt unter [`.opencode/agents/`](./.opencode/agents/) und verweist auf die jeweilige
   Rollendatei als einzige inhaltliche Quelle.
+
+## omp
+
+omp liest statt dieser Datei [`.omp/AGENTS.md`](./.omp/AGENTS.md): Sie bindet `CLAUDE.md`
+vollständig ein und übersetzt die Claude-Code-Werkzeuge der Skills und Rollendateien auf die von
+omp. Die Skills unter `.claude/skills/` lädt omp unverändert; die Rollen-Agenten liegen in
+omp-Fassung unter [`.omp/agents/`](./.omp/agents/) und verweisen wie die OpenCode-Fassung auf die
+jeweilige Rollendatei als einzige inhaltliche Quelle. Für ihren YAML-Kopf gilt dieselbe
+Strenge-Bedingung wie oben.

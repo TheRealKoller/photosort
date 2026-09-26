@@ -1,18 +1,18 @@
 """Waechter: jeder `description:`-Skalar, den ein strenger YAML-Leser liest, bleibt gueltig.
 
 **Zusicherung.** Fuer jede `SKILL.md` unter `.claude/skills/`, jede Rollendatei unter
-`.claude/agents/` und jede Agentendatei unter `.opencode/agents/` ist der Wert der
-`description:`-Zeile ein gueltiger YAML-Skalar: gequotet, ein Block-Skalar (`>-`, `|`) oder
-ein Klartext **ohne** `: `.
+`.claude/agents/` und jede Agentendatei unter `.opencode/agents/` und `.omp/agents/` ist der
+Wert der `description:`-Zeile ein gueltiger YAML-Skalar: gequotet, ein Block-Skalar (`>-`, `|`)
+oder ein Klartext **ohne** `: `.
 
-**Wofuer.** OpenCode liest denselben Frontmatter-Kopf wie Claude Code, parst ihn aber streng.
-Ein `: ` im unquotierten Klartext - etwa in einem woertlich zitierten Anker - ist kein
-gueltiger YAML-Skalar, und der betroffene Skill faellt **still** aus dem Register, waehrend
-Claude Code ihn unveraendert weiter laedt.
+**Wofuer.** OpenCode und omp lesen denselben Frontmatter-Kopf wie Claude Code, parsen ihn aber
+streng. Ein `: ` im unquotierten Klartext - etwa in einem woertlich zitierten Anker - ist kein
+gueltiger YAML-Skalar, und der betroffene Skill oder Agent faellt **still** aus dem Register,
+waehrend Claude Code ihn unveraendert weiter laedt.
 
-**Was bei Verletzung passiert.** Kein Werkzeug meldet etwas. Der Skill ist in der
-OpenCode-Sitzung schlicht nicht vorhanden, und jeder Ablauf, der ihn aufruft, greift ins
-Leere. Deshalb steht die Regel hier als Test und nicht als Konvention.
+**Was bei Verletzung passiert.** Kein Werkzeug meldet etwas. Der Skill oder Agent ist in der
+OpenCode- bzw. omp-Sitzung schlicht nicht vorhanden, und jeder Ablauf, der ihn aufruft, greift
+ins Leere. Deshalb steht die Regel hier als Test und nicht als Konvention.
 
 Die Pruefung kommt ohne zusaetzliche Abhaengigkeit aus: PyYAML gehoert bewusst nicht zu den
 `scripts`-Abhaengigkeiten (siehe `scripts/pyproject.toml`), und geprueft wird genau die Regel,
@@ -32,7 +32,7 @@ REPO_WURZEL = Path(__file__).resolve().parent.parent.parent
 MINDESTZAHL_DATEIEN = 20
 
 SKILL_MUSTER = ".claude/skills/*/SKILL.md"
-AGENT_MUSTER = (".claude/agents/*.md", ".opencode/agents/*.md")
+AGENT_MUSTER = (".claude/agents/*.md", ".opencode/agents/*.md", ".omp/agents/*.md")
 
 _FRONTMATTER = re.compile(r"\A---\n(?P<kopf>.*?)\n---\n", re.DOTALL)
 _BESCHREIBUNG = re.compile(r"^description:(?P<wert>.*)$", re.MULTILINE)
