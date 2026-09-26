@@ -12,6 +12,9 @@ interface ModalDialogOptions {
   onClose: () => void
   /** Das Element, das beim Oeffnen den Fokus bekommt. */
   initialFocusRef: RefObject<HTMLElement | null>
+  /** `false`, wenn der Aufrufer den Fokus nach dem Schliessen selbst setzt: Die Rueckgabe hier
+   * fokussiert ohne `preventScroll` und scrollte einen teilweise verdeckten Ausloeser ins Bild. */
+  returnFocus?: boolean
 }
 
 interface ModalDialogProps {
@@ -34,7 +37,8 @@ interface ModalDialogProps {
  * Verbindlich:
  *  - Esc ruft `onClose` bei JEDEM Druck; ein Riegel gegen wiederholtes Schliessen gehoert dem
  *    Aufrufer (siehe unten).
- *  - Der Fokus kehrt beim Schliessen zum vorher fokussierten Element zurueck.
+ *  - Der Fokus kehrt beim Schliessen zum vorher fokussierten Element zurueck, ausser der Aufrufer
+ *    setzt ihn selbst (`returnFocus: false`).
  *  - Der Hintergrund scrollt nicht mit.
  *
  * Die zurueckgegebenen Props gehoeren unveraendert an das `<dialog>`.
@@ -43,6 +47,7 @@ export function useModalDialog({
   open,
   onClose,
   initialFocusRef,
+  returnFocus = true,
 }: ModalDialogOptions): ModalDialogProps {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const previouslyFocusedRef = useRef<HTMLElement | null>(null)
@@ -88,9 +93,11 @@ export function useModalDialog({
       if (dialog.open) {
         dialog.close()
       }
-      previouslyFocusedRef.current?.focus()
+      if (returnFocus) {
+        previouslyFocusedRef.current?.focus()
+      }
     }
-  }, [open, initialFocusRef])
+  }, [open, initialFocusRef, returnFocus])
 
   function onKeyDown(event: KeyboardEvent<HTMLDialogElement>): void {
     if (event.key === 'Escape') {

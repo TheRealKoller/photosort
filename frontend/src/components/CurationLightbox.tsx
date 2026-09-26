@@ -41,7 +41,13 @@ interface CurationLightboxProps {
 export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
-  const modal = useModalDialog({ open: true, onClose, initialFocusRef: closeRef })
+  // Den Fokus nach dem Schliessen setzt die Seite (`useCurationLightbox`) auf den Ausloeser.
+  const modal = useModalDialog({
+    open: true,
+    onClose,
+    initialFocusRef: closeRef,
+    returnFocus: false,
+  })
   const titleId = useId()
   const detailsId = useId()
   const [detailsOpen, setDetailsOpen] = useState(false)
