@@ -5,15 +5,11 @@ import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 import { Skeleton } from './ui/skeleton'
 import { MotifStrengthSymbol } from './MotifStrengthSymbol'
-import {
-  criterionPercentValue,
-  formatCriterionPercent,
-  formatDateTime,
-  formatProviderLabel,
-} from '../utils/formatStats'
+import { formatDateTime, formatProviderLabel } from '../utils/formatStats'
 import { motifIconName } from '../utils/motifIcons'
-import { formatMotifKey, isLocallyAssessable } from '../utils/motifLabels'
-import { motifFillStep } from '../utils/motifStrength'
+import { formatMotifKey } from '../utils/motifLabels'
+import type { MotifCorrectionState, MotifValueText } from '../utils/motifStrength'
+import { motifStrengthEntries, UNASSESSED_TEXT } from '../utils/motifStrength'
 import type { MotifCorrectionError } from '../hooks/useMotifCorrection'
 
 /**
@@ -63,17 +59,12 @@ interface MotifStrengthSectionProps {
   error?: MotifCorrectionError | null
 }
 
-const UNASSESSED_TEXT =
-  'Noch nicht klassifiziert — dieses Foto hat noch keinen Klassifizierungslauf gesehen.'
-
 const EXCLUDED_TEXT =
   'Als Dokument oder Bildschirmabbildung erkannt — dieses Foto erscheint in keiner ' +
   'Motivauswahl. Diese Einstufung lässt sich nicht von Hand ändern; ein neuer ' +
   'Klassifizierungslauf beurteilt das Foto erneut.'
 
 const LOCAL_BASIS_TEXT = 'Grundlage: lokale Erkennung — sie kann nicht jedes Motiv beurteilen.'
-
-const NOT_LOCALLY_ASSESSABLE_TEXT = 'lokal nicht beurteilbar'
 
 const DETAIL_PROMPT_TEXT = 'Symbol antippen für Details'
 
@@ -157,44 +148,12 @@ function Glossary({ motifSet }: { motifSet: MotifSetOut }) {
   )
 }
 
-function correctionState(correction: boolean | null): 'applies' | 'rejected' | undefined {
-  // Auf `=== null` geprueft, nie auf Falsyness: `false` ist eine Aussage, keine Abwesenheit.
-  if (correction === null) {
-    return undefined
-  }
-  return correction ? 'applies' : 'rejected'
-}
-
-/**
- * Was an der Stelle des Werts steht - EINE Quelle fuer den zugaenglichen Namen des Symbols UND
- * fuer die Detailzeile. Zwei getrennte Ableitungen liefen auseinander, und die eine von beiden,
- * die niemand sieht, ist der zugaengliche Name.
- */
-function valueText(
-  strength: MotifStrengthOut | undefined,
-  showLocalGap: boolean,
-): { text: string; mono: boolean } {
-  const state = correctionState(strength?.correction ?? null)
-  if (state !== undefined) {
-    // STATT der Prozentzahl - die ueberstimmte Modellzahl steht nicht daneben.
-    return {
-      text: state === 'applies' ? 'Trifft zu (korrigiert)' : 'Trifft nicht zu (korrigiert)',
-      mono: false,
-    }
-  }
-  if (showLocalGap) {
-    // Ein `0 %` waere hier die Aussage "nicht zu sehen" statt "nicht angesehen".
-    return { text: NOT_LOCALLY_ASSESSABLE_TEXT, mono: false }
-  }
-  return { text: formatCriterionPercent(strength?.strength ?? 0), mono: true }
-}
-
 interface DetailRowProps {
   id: string
   displayName: string | undefined
-  value: { text: string; mono: boolean } | undefined
+  value: MotifValueText | undefined
   motifKey: MotifKey | undefined
-  correctionState: 'applies' | 'rejected' | undefined
+  correctionState: MotifCorrectionState
   editable: boolean
   busy: boolean
   onCorrect?: (motifKey: MotifKey, applies: boolean) => void
@@ -370,93 +329,64 @@ export function MotifStrengthSection({
   // Eine ausgeschlossene Einstufung ist nicht von Hand korrigierbar: die Reihe bleibt EINSEHBAR,
   // aber ohne Bedienelemente. Kein deaktivierter Schalter, nach dem niemand suchen soll.
   const rowsEditable = editable && !excluded
-  const byKey = new Map((motifs ?? []).map((entry) => [entry.key, entry]))
-
+  const entries = motifStrengthEntries(motifSet, assessment, motifs)
   const activeKey = pinnedKey ?? previewKey
-  const activeItem = motifSet.items.find((item) => item.key === activeKey)
-  const activeLocalGap =
-    activeItem !== undefined &&
-    assessment.source === 'local' &&
-    !isLocallyAssessable(activeItem.key, motifSet.items)
+  const activeEntry = entries.find((entry) => entry.key === activeKey)
 
   return (
     <div className="flex flex-col gap-3">
       {excluded && <p className="text-sm text-text">{EXCLUDED_TEXT}</p>}
       <BasisLine assessment={assessment} />
       <ul aria-label="Motive" className="flex items-stretch">
-        {motifSet.items.map((item) => {
-          const strength = byKey.get(item.key)
-          const displayName = formatMotifKey(item.key, motifSet.items)
-          const showLocalGap =
-            assessment.source === 'local' && !isLocallyAssessable(item.key, motifSet.items)
-          const step = motifFillStep(
-            strength?.strength ?? 0,
-            motifSet.strength_bands,
-            !showLocalGap,
-          )
-          return (
-            <li key={item.key} className="flex-1">
-              <button
-                type="button"
-                // `tap-target` spannt NUR die kurze (senkrechte) Achse auf: acht waagerechte
-                // 44px-Flaechen brauchten 352px und vertrugen sich nicht mit der Zusage "alle
-                // acht in einer Zeile ohne waagerechtes Scrollen". WCAG 2.5.8 (24x24px) bleibt
-                // auf beiden Achsen deutlich ueberschritten (ADR 0113 Punkt 5).
-                //
-                // Das ANGEHEFTETE Symbol traegt zusaetzlich die Board-Flaeche `bg-overlay`: ohne
-                // ein sichtbares Merkmal ist am Bildschirm nicht zu sehen, welches der acht
-                // Symbole zu der Zeile darunter gehoert - `aria-expanded` traegt das nur fuer
-                // assistive Technik. Das blosse Zeigen markiert NICHT: es heftet nichts an.
-                className={`tap-target flex w-full items-center justify-center rounded-sm py-1 ${
-                  pinnedKey === item.key ? 'bg-overlay' : ''
-                }`}
-                aria-label={`${displayName}: ${valueText(strength, showLocalGap).text}`}
-                aria-expanded={pinnedKey === item.key}
-                aria-controls={detailId}
-                data-motif-key={item.key}
-                data-motif-corrected={correctionState(strength?.correction ?? null)}
-                onClick={() => setPinnedKey((current) => (current === item.key ? null : item.key))}
-                // Zeigen UND Tastaturfokus speisen dieselbe Vorschau: Ohne `onFocus` bekaeme ein
-                // sehender Tastaturnutzer beim Durchtabben nichts zu sehen - der zugaengliche
-                // Name traegt zwar alle Angaben, ist aber genau fuer ihn unsichtbar.
-                onMouseEnter={() => setPreviewKey(item.key)}
-                onMouseLeave={() =>
-                  setPreviewKey((current) => (current === item.key ? null : current))
-                }
-                onFocus={() => setPreviewKey(item.key)}
-                onBlur={() => setPreviewKey((current) => (current === item.key ? null : current))}
-              >
-                <MotifStrengthSymbol
-                  iconName={motifIconName(item.key)}
-                  step={step}
-                  // Fuellhoehe und angezeigte Zahl stammen aus DERSELBEN Rundung. Bei `none`
-                  // (Staerke 0 oder lokal nicht beurteilbar) bleibt die Fuellebene leer - eine
-                  // ungefaerbte Fuellung erbte sonst die Textfarbe und behauptete eine Staerke.
-                  fillPercent={step === 'none' ? 0 : criterionPercentValue(strength?.strength ?? 0)}
-                />
-              </button>
-            </li>
-          )
-        })}
+        {entries.map((entry) => (
+          <li key={entry.key} className="flex-1">
+            <button
+              type="button"
+              // `tap-target` spannt NUR die kurze (senkrechte) Achse auf: acht waagerechte
+              // 44px-Flaechen brauchten 352px und vertrugen sich nicht mit der Zusage "alle
+              // acht in einer Zeile ohne waagerechtes Scrollen". WCAG 2.5.8 (24x24px) bleibt
+              // auf beiden Achsen deutlich ueberschritten (ADR 0113 Punkt 5).
+              //
+              // Das ANGEHEFTETE Symbol traegt zusaetzlich die Board-Flaeche `bg-overlay`: ohne
+              // ein sichtbares Merkmal ist am Bildschirm nicht zu sehen, welches der acht
+              // Symbole zu der Zeile darunter gehoert - `aria-expanded` traegt das nur fuer
+              // assistive Technik. Das blosse Zeigen markiert NICHT: es heftet nichts an.
+              className={`tap-target flex w-full items-center justify-center rounded-sm py-1 ${
+                pinnedKey === entry.key ? 'bg-overlay' : ''
+              }`}
+              aria-label={`${entry.displayName}: ${entry.value.text}`}
+              aria-expanded={pinnedKey === entry.key}
+              aria-controls={detailId}
+              data-motif-key={entry.key}
+              data-motif-corrected={entry.correctionState}
+              onClick={() => setPinnedKey((current) => (current === entry.key ? null : entry.key))}
+              // Zeigen UND Tastaturfokus speisen dieselbe Vorschau: Ohne `onFocus` bekaeme ein
+              // sehender Tastaturnutzer beim Durchtabben nichts zu sehen - der zugaengliche
+              // Name traegt zwar alle Angaben, ist aber genau fuer ihn unsichtbar.
+              onMouseEnter={() => setPreviewKey(entry.key)}
+              onMouseLeave={() =>
+                setPreviewKey((current) => (current === entry.key ? null : current))
+              }
+              onFocus={() => setPreviewKey(entry.key)}
+              onBlur={() => setPreviewKey((current) => (current === entry.key ? null : current))}
+            >
+              <MotifStrengthSymbol
+                iconName={motifIconName(entry.key)}
+                step={entry.step}
+                fillPercent={entry.fillPercent}
+              />
+            </button>
+          </li>
+        ))}
       </ul>
       <DetailRow
         id={detailId}
-        displayName={
-          activeItem === undefined ? undefined : formatMotifKey(activeItem.key, motifSet.items)
-        }
-        value={
-          activeItem === undefined
-            ? undefined
-            : valueText(byKey.get(activeItem.key), activeLocalGap)
-        }
-        motifKey={activeItem?.key}
-        correctionState={
-          activeItem === undefined
-            ? undefined
-            : correctionState(byKey.get(activeItem.key)?.correction ?? null)
-        }
+        displayName={activeEntry?.displayName}
+        value={activeEntry?.value}
+        motifKey={activeEntry?.key}
+        correctionState={activeEntry?.correctionState}
         editable={rowsEditable}
-        busy={activeItem !== undefined && pendingMotifKey === activeItem.key}
+        busy={activeEntry !== undefined && pendingMotifKey === activeEntry.key}
         onCorrect={onCorrect}
         onWithdraw={onWithdraw}
       />

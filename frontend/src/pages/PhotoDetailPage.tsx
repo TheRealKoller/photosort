@@ -8,6 +8,7 @@ import { getToken } from '../auth/token'
 import { CloudVisionStatusList } from '../components/CloudVisionStatusList'
 import { CriterionScoreGrid } from '../components/CriterionScoreGrid'
 import { MotifStrengthSection } from '../components/MotifStrengthSection'
+import { PhotoCaptureFacts } from '../components/PhotoCaptureFacts'
 import { PhotoDetailStage } from '../components/PhotoDetailStage'
 import { PhotoVerdict } from '../components/PhotoVerdict'
 import { Button } from '../components/ui/button'
@@ -19,12 +20,9 @@ import {
   useSetFavoriteMutation,
   useSetRatingMutation,
 } from '../hooks/usePhotos'
-import { formatDateTime } from '../utils/formatStats'
 import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
 import { parseRatingFilter } from '../utils/ratingFilter'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
-import { eventPlaceName } from '../utils/timeOfDay'
-import { formatTimeOffset } from '../utils/timeOffset'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching for
 // the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic project size
@@ -342,12 +340,6 @@ export function PhotoDetailPage() {
 
   const isMutating = setMutation.isPending || deleteMutation.isPending || favoriteMutation.isPending
 
-  // Der Ort eines Fotos ist der Ort seines EREIGNISSES. Wie Name und Ortsname zusammengesetzt
-  // werden, steht in `utils/timeOfDay.ts::eventPlaceName` und entsteht hier ausdruecklich NICHT ein
-  // zweites Mal - sonst liefe die Zeile mit der Ereignis-Ueberschrift auseinander. Ohne Ortsangabe
-  // steht der Satz statt einer Luecke; eine Koordinate erscheint nie als Name.
-  const placeName = currentPhoto.event ? eventPlaceName(currentPhoto.event) : null
-
   return (
     <div className="flex flex-col gap-4">
       {/* DIE BUEHNE steht als ERSTES und ohne irgendetwas darueber: Ihre Hoehe ist aus dem
@@ -472,47 +464,7 @@ export function PhotoDetailPage() {
       {/* AUFNAHMEZEIT - eine NEUE Anzeigestelle, keine Kennzeichnung an einer bestehenden: eine
           Aufnahmezeit je Foto wurde vor Spec 0426 nirgends gezeigt. Sie steht im
           Informationsteil, weil sie sagt, was das System über dieses Foto weiß. */}
-      <section className="flex flex-col gap-1 text-sm" data-testid="taken-at-section">
-        <h2 className="text-xs font-semibold tracking-wide text-text-h uppercase">Aufnahmezeit</h2>
-        <p className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-text">{formatDateTime(currentPhoto.taken_at)}</span>
-          {/* Die Marke NUR im Korrekturfall, im zurueckhaltenden Metadatenton: eine Korrektur
-              ist der GEWOLLTE Zustand, kein Alarm. */}
-          {currentPhoto.time_offset_minutes !== 0 && (
-            <span className="text-xs text-text-muted" data-corrected="true">
-              korrigiert
-            </span>
-          )}
-        </p>
-        {/* Die zweite Zeile nur im Korrekturfall - bei Versatz `0` wäre sie eine Wiederholung
-            derselben Zeit und damit eine Aussage ohne Inhalt. */}
-        {currentPhoto.time_offset_minutes !== 0 && (
-          <p className="text-xs text-text-muted">
-            aufgezeichnet{' '}
-            <span className="font-mono">{formatDateTime(currentPhoto.taken_at_original)}</span> ·{' '}
-            {formatTimeOffset(currentPhoto.time_offset_minutes)}
-          </p>
-        )}
-        {/* Ist keine Kamera bestimmbar, steht das als RUHIGER SATZ da und nicht als Fehlen. */}
-        <p className="text-xs text-text-muted">
-          {currentPhoto.camera === null
-            ? 'Die Kamera dieses Fotos ist nicht bestimmbar.'
-            : currentPhoto.camera.label}
-        </p>
-        {/* DER ORT - Name und Ortsname, OHNE Zeitspanne: die Aufnahmezeit steht direkt darueber,
-            und eine zweite Zeitangabe daneben waere eine Wiederholung. Ohne Ortsangabe steht der
-            Satz statt einer Luecke.
-
-            S2 - RENDERSTELLE ZWEIER FREMDTEXTFELDER: `place.landmark_name` (Modellantwort) und
-            `place_name` (Ortsdatensatz Dritter) treten hier zum ersten Mal auf dieser Route auf -
-            seit Spec 0514 in EINEM Wert, den `eventPlaceName` bildet. Reiner React-Textknoten, nie
-            `dangerouslySetInnerHTML`, nie in `href`/`src`/`style`. Bricht in
-            `PhotoDetailPage.test.tsx > rendert einen feindlich belegten Ortsnamen als reinen
-            Textknoten`. */}
-        <p className="text-xs text-text-muted" data-testid="place-line">
-          {placeName ?? 'nicht bestimmbar'}
-        </p>
-      </section>
+      <PhotoCaptureFacts photo={currentPhoto} headingLevel="h2" />
 
       {/* Layout & Platzierung: unmittelbar vor der CriterionDetailsList UND nach den
           Bewertungs-Buttons - beides zusammen ist erst seit der Umordnung der Seite erfuellbar
