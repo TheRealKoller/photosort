@@ -22,6 +22,7 @@ import {
 } from '../utils/justifiedRows'
 import type { JustifiedTile } from '../utils/justifiedRows'
 import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
+import { duplicateComparePath } from '../utils/projectRoutes'
 import { parseRatingFilter } from '../utils/ratingFilter'
 
 // Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln" statt
@@ -196,7 +197,7 @@ export function PhotoGridPage() {
       {duplicateGroupIndex.isSuccess && duplicateGroupIndex.data.first_photo_id !== null && (
         <Button asChild variant="secondary" size="sm" className="self-start">
           <Link
-            to={`/projects/${id}/photos/${duplicateGroupIndex.data.first_photo_id}/duplicates`}
+            to={duplicateComparePath(id, duplicateGroupIndex.data.first_photo_id)}
             aria-label="Duplikate vergleichen — alle Gruppen der Reihe nach durchgehen"
           >
             Duplikate vergleichen
