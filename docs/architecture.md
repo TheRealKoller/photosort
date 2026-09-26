@@ -221,8 +221,18 @@ Verarbeitungs-Cache (Thumbnails).
     „behalten" (`keep_possible` aus derselben Regel wie der Schreibweg — ausdrücklich nicht im
     Client aus dem Grund abgeleitet, weil beide bei einer überlebenden Entscheidungszeile
     auseinanderfallen), dazu `total` und die projektweite
-    `open_count`. Über `?photo_id=<id>` wird derselbe Endpunkt zum Detail-Zweig (genau der
-    passende Eintrag oder eine leere Liste). Der Router trägt keine router-weite
+    `open_count`. **Seit Spec [`0533`](../specs/features/0533-duplikatstapel-vergleichsansicht.md)
+    zwei Eintragsarten über `kind`:** `photo` (die obige Form) für jede Bestandsaufnahme ohne
+    auflösbare Gruppe, `group` genau einmal je Duplikatgruppe mit Bestandsaufnahmen
+    (`group_anchor_photo_id`, `cover` als `PhotoOut` der ersten Bestandsaufnahme nach
+    `taken_at`/`id`, `member_count`, `group_size`, `decision_counts` über den gespeicherten
+    Zeilen). Gruppiert wird nach Mitgliedschaft über `duplicates.py::group_ausschuss_stock`
+    (Schlüssel allein `representative_of` über die projektbegrenzten Kanten, nie `None`);
+    `limit`/`offset`/`total` zählen **Einträge**, geschnitten wird erst nach dem Gruppieren,
+    hydratisiert nur die Seite; `open_count` zählt weiter Aufnahmen. Im Listenzweig trägt kein
+    `photo`-Eintrag einen Anker. Über `?photo_id=<id>` wird derselbe Endpunkt zum Detail-Zweig
+    (genau der passende `photo`-Eintrag — beim Gruppenmitglied mit Anker — oder eine leere Liste).
+    Der Router trägt keine router-weite
     `dependencies`-Liste, der Torwächter steht deshalb **ausgeschrieben** am Endpunkt, und die
     Route ist in `test_openapi_beschreibungen.py::DOCUMENTED_ROUTES` eingetragen.
   - `GET /opencloud/folder-counts?path=<Pfad>` (gleicher Router-Level-Auth-Guard wie
@@ -798,20 +808,30 @@ Verarbeitungs-Cache (Thumbnails).
       Aufnahme des Projekts. Geschrieben wird in **einer** Transaktion; ein wiederholtes `PUT`
       überschreibt, statt am Primärschlüssel in eine 500 zu laufen. Es gibt **kein `DELETE`**: „noch
       nicht entschieden" ist kein Zustand, in den man zurückkehrt.
+    - `POST /projects/{project_id}/duplicate-groups/{photo_id}/confirm` (**seit Spec 0533**,
+      derselbe Router, ohne Body, Antwort `DuplicateGroupOut`) — der **Gruppenabschluss**: Der
+      Stern wird zuerst aufgelöst (`404` vor jedem Schreiben, auch bei offenem Vorschlag), die
+      Menge bildet **eine** Anweisung aus Projektbindung, Mitgliedschaft und
+      `has_open_suggestion()`; für sie wird ausschließlich `discard` eingefügt (kein `DELETE`, kein
+      Überschreiben, `IntegrityError` → `409`). `gate_confirmed_at` bleibt unberührt. Die
+      Gruppenantwort trägt seither je Mitglied `sharpness`/`exposure` (aus `PhotoScore`, `null`
+      ohne Zeile) und je Gruppe `span_seconds`.
     - **Die Ansicht** ist `pages/DuplicateComparePage.tsx` unter
-      `PROJECT_ROUTE_PATHS.photoDuplicates`. **Es gibt genau einen Einstieg** — den listenweiten
-      Link der nach Vorschlägen gefilterten Fotoliste (abhängig nur von `filterParam === 'suggested'`
-      und `first_photo_id !== null`). Die beiden früheren Einstiege sind mit Spec
-      [`0525`](../specs/features/0525-ausschuss-ein-schritt.md) entfallen: der aus dem
-      Ausschuss-Schritt und der je Kachel bei `suggestion.reason === 'duplicate'` samt dem
-      `?gate=1`-Modus der Fotoliste. Die Einzelprüfung des Ausschusses liegt seither in dessen
-      eigener Übersicht mit **eingebetteter** Detailansicht (`?photo=<id>`), die dieselbe Kachel
-      wiederverwendet; die Vergleichsansicht bleibt der **Durchgang über alle Gruppen** und wird von
-      dieser Story nicht entfernt. Die
+      `PROJECT_ROUTE_PATHS.photoDuplicates`, Pfad gebaut ausschließlich über
+      `utils/projectRoutes.ts::duplicateComparePath`. **Zwei Einstiege:** der listenweite Link der
+      nach Vorschlägen gefilterten Fotoliste (ohne Parameter) und — seit Spec 0533 — der
+      Duplikat-Stapel der Ausschuss-Übersicht (`components/DuplicateStackTile.tsx`, ein Link je
+      Gruppe) mit `?from=ausschuss`. Der Parameter wählt nur die Variante „Zurück zum Ausschuss";
+      das Ziel ist fest `/projects/{id}/pipeline/ausschuss` und wird nie aus dem Wert gebildet. Die
+      Ausschuss-Detailansicht (`?photo=<id>`) bettet keine Gruppe mehr ein, sondern verweist bei
+      gesetztem Anker in die Vergleichsansicht. Die
       Kachel `components/DuplicatePhotoTile.tsx` steht bewusst **neben**
       `PhotoCard`/`CurationPhotoTile`/`RatingBadge` statt auf ihnen: Deren Vokabular ist die
-      Albumentscheidung eines Nutzers. Die Vergrößerung ist **kein Dialog** — die gewählte Kachel
-      spannt die Rasterbreite, die übrige Gruppe bleibt sichtbar, und genau das ist der Zweck.
+      Albumentscheidung eines Nutzers. Sie zeigt Bildfläche, Dateiname, Zustand, Bewertungszeile und
+      Wahl gleichzeitig, ohne Dämpfung. Die **Großansicht** (`components/DuplicateEnlargedView.tsx`)
+      ist **kein Dialog** — sie ersetzt das Raster an derselben Stelle (Bühne, Seitenspalte mit
+      Zustand und Wahl, Streifen aller Mitglieder); Kopf, Hinweise, Gruppenaktionen und der
+      Abschluss je Gruppe bleiben stehen.
     - **Jede Aufnahme trägt beim Öffnen bereits ihren Zustand** (`effective_decision`), und zwar in
       derselben Form wie eine selbst getroffene Wahl; einen sichtbaren Zustand „noch nicht
       entschieden" gibt es nicht mehr. Bei `keep_possible === false` rendert die Kachel **gar
