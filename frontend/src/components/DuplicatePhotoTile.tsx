@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react'
+import type { Ref } from 'react'
 
 import type { DuplicateDecision, PhotoOut } from '../api/types'
 import { cn } from '../lib/utils'
+import { formatExposure, formatSharpness } from '../utils/duplicateMetrics'
 import { PhotoImage } from './PhotoImage'
 import { Button } from './ui/button'
 import { Icon, type IconName } from './ui/icon'
@@ -12,9 +13,10 @@ import { Icon, type IconName } from './ui/icon'
  *
  * DIE DREIFACHE CODIERUNG IST DIE ZUSAGE, nicht die Farbe: In Graustufen liegen die
  * Umrissfarben dicht beieinander, und ein Zustand, den nur der Umriss trägt, ist ohne
- * Farbwahrnehmung nicht ablesbar.
+ * Farbwahrnehmung nicht ablesbar. Helligkeit trägt ihn nie — beide Zustände zeigen das Bild
+ * unverfälscht.
  *
- * ES GIBT KEINEN DRITTEN EINTRAG. „Noch offen" ist kein Zustand mehr: Die Ansicht zeigt die
+ * ES GIBT KEINEN DRITTEN EINTRAG. „Noch offen" ist kein Zustand: Die Ansicht zeigt die
  * Auswertung des Überlebens-Prädikats, und jede Aufnahme trägt beim Öffnen bereits das, was ohne
  * weiteres Zutun eintritt (ADR 0111). Exportiert, damit die Schlüsselmenge selbst prüfbar ist.
  */
@@ -49,6 +51,117 @@ export const DUPLICATE_ZUSTAENDE: Record<
 export const DUPLICATE_IMMUTABLE_TEXT =
   'Abgelehnt wegen geringer Bildqualität — lässt sich nicht ändern.'
 
+/** Zustandskennzeichen aus Symbol und Wort — auf der Karte und in der Seitenspalte. */
+export function DuplicateStateLabel({ decision }: { decision: DuplicateDecision }) {
+  const zustand = DUPLICATE_ZUSTAENDE[decision]
+  return (
+    <span
+      data-testid="duplicate-state"
+      className={cn('flex items-center gap-1 text-xs', zustand.schrift)}
+    >
+      <Icon name={zustand.icon} size={14} />
+      {zustand.text}
+    </span>
+  )
+}
+
+/**
+ * Die Bewertungszeile (A7): Schärfe immer, Belichtung nur mit Wert.
+ *
+ * Die Werte kommen aus `sharpness`/`exposure` der Gruppenantwort, NIE aus `PhotoOut.suggestion` —
+ * jenes Feld fällt nach jeder Entscheidung auf `null`. Die Auszeichnung ist nur ein Wort: kein
+ * Akzent (der heißt hier „Behalten"), kein Symbol, kein Rahmen, und sie ändert nichts an Zustand
+ * oder Wahl.
+ */
+export function DuplicateMetrics({
+  sharpness,
+  exposure,
+  bestSharpness,
+  bestExposure,
+}: {
+  sharpness: number | null
+  exposure: number | null
+  bestSharpness: boolean
+  bestExposure: boolean
+}) {
+  return (
+    <dl className="flex flex-col gap-1 text-xs">
+      <div className="flex flex-wrap gap-x-1">
+        <dt className="text-text-muted">Schärfe</dt>
+        <dd className="text-text">
+          {formatSharpness(sharpness)}
+          {bestSharpness && <span className="font-semibold text-text-h"> — schärfste</span>}
+        </dd>
+      </div>
+      {exposure !== null && (
+        <div className="flex flex-wrap gap-x-1">
+          <dt className="text-text-muted">Belichtung</dt>
+          <dd className="text-text">
+            {formatExposure(exposure)}
+            {bestExposure && <span className="font-semibold text-text-h"> — beste Belichtung</span>}
+          </dd>
+        </div>
+      )}
+    </dl>
+  )
+}
+
+/**
+ * Die Wahlzeile — oder, bei `keepPossible === false`, der Grund an ihrer Stelle.
+ *
+ * ZWEI Trefferflächen mit 12px Abstand (`gap-3`) — die Pflichtgrenze zwischen aufgespannten
+ * Bedienelementen: In einer Überlappung gewinnt das obenliegende Element, und ein Fehlgriff
+ * schreibt hier, welche Bilder den Homeserver verlassen. Heißer Pfad: am Telefon sichtbar 44px.
+ * Ist die Karte schmal, brechen die Schaltflächen untereinander um, statt überzulaufen.
+ *
+ * KEINE DRITTE SCHALTFLÄCHE: Eine Rücknahme nach „noch nicht entschieden" gibt es nicht.
+ * `aria-pressed` folgt dem WIRKSAMEN Zustand; die gedrückte Schaltfläche trägt zusätzlich ihr
+ * Symbol. Beide zugänglichen Namen tragen den Dateinamen, sonst hießen im selben Raster alle
+ * Schaltflächen gleich.
+ *
+ * BEI `keepPossible === false` STEHT HIER GAR KEINE WAHL, auch nicht „Ausschuss": Kein Wert der
+ * Entscheidungszeile ändert den Zustand, und ein angenommener Klick bliebe still wirkungslos.
+ * Bewusst NICHT `disabled` — ein gesperrter Knopf verspräche, später zu wirken.
+ */
+export function DuplicateChoice({
+  photo,
+  effectiveDecision,
+  keepPossible,
+  deciding,
+  onDecide,
+}: {
+  photo: PhotoOut
+  effectiveDecision: DuplicateDecision
+  keepPossible: boolean
+  deciding: boolean
+  onDecide: (decision: DuplicateDecision) => void
+}) {
+  if (!keepPossible) {
+    return <p className="text-xs text-text-muted">{DUPLICATE_IMMUTABLE_TEXT}</p>
+  }
+  return (
+    <div role="group" aria-label={`Wahl: ${photo.relative_path}`} className="flex flex-wrap gap-3">
+      {(['keep', 'discard'] as const).map((wert) => (
+        <Button
+          key={wert}
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-11 grow sm:h-8"
+          aria-pressed={effectiveDecision === wert}
+          disabled={deciding}
+          busy={deciding && effectiveDecision !== wert}
+          aria-label={`${DUPLICATE_ZUSTAENDE[wert].text}: ${photo.relative_path}`}
+          onClick={() => onDecide(wert)}
+        >
+          {effectiveDecision === wert && <Icon name={DUPLICATE_ZUSTAENDE[wert].icon} size={14} />}
+          {DUPLICATE_ZUSTAENDE[wert].text}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
 export interface DuplicatePhotoTileProps {
   photo: PhotoOut
   /** Der Zustand, der ohne weiteres Zutun eintritt — nicht die gespeicherte Entscheidungszeile.
@@ -57,97 +170,83 @@ export interface DuplicatePhotoTileProps {
   /** Ob „behalten" hier überhaupt etwas bewirken kann. Bei `false` rendert die Kachel KEINE
    * Wahlschaltflächen und zeigt stattdessen den Grund. */
   keepPossible: boolean
-  enlarged: boolean
+  sharpness: number | null
+  exposure: number | null
+  /** Auszeichnungen über den ANGEZEIGTEN Werten der ganzen Gruppe — gebildet von der Seite. */
+  bestSharpness: boolean
+  bestExposure: boolean
   /** true, solange die Entscheidung DIESER Aufnahme läuft. Andere Kacheln bleiben bedienbar. */
   deciding: boolean
-  onToggle: () => void
+  onOpen: () => void
   onDecide: (decision: DuplicateDecision) => void
-  /** Die Bedienleiste der Vergrößerung (Vor/Zurück/Schließen) — von der Seite gestellt, weil
-   * Blättern eine Aussage über die GRUPPE ist und nicht über diese eine Aufnahme. */
-  controls?: ReactNode
+  /** Die Bildfläche — die Seite setzt dorthin den Fokus zurück, wenn die Großansicht schließt. */
+  imageRef?: Ref<HTMLButtonElement>
 }
 
 /**
- * EINE Aufnahme der Duplikat-Gruppe.
+ * EINE Aufnahme der Duplikat-Gruppe als Karte des Rasters.
  *
  * KEIN Aufbau auf `PhotoCard`/`CurationPhotoTile`/`RatingBadge`: Deren Vokabular ist die
  * Albumentscheidung eines Nutzers. Hier steht die andere Frage — ob die Aufnahme den
  * Ausschuss-Schritt überlebt —, und ein geteilter Baustein machte die beiden an jeder Lesestelle
  * verwechselbar.
  *
- * ALLE MITGLIEDER SIND GLEICHRANGIG: Diese eine Komponente rendert jedes von ihnen, und keines
- * trägt eine Auszeichnung als Gewinner, Original oder Vorgeschlagener. Die Kachel weiß nicht,
- * welche Rolle ihre Aufnahme im Stern hat, und kann sie deshalb auch nicht zeigen. Der Zustand,
- * den sie zeigt, ist keine solche Auszeichnung — er sagt, was ohne Zutun geschieht.
+ * ALLE MITGLIEDER SIND GLEICHRANGIG: Keine Karte trägt eine Auszeichnung als Gewinner, Original
+ * oder Vorgeschlagener. Der Zustand, den sie zeigt, sagt, was ohne Zutun geschieht.
  *
- * DIE BILDFLÄCHE IST EIN NATIVES `<button>` — Enter und Leertaste wirken ohne eigenen
- * Tastatur-Handler, und der zugängliche Name nennt die Aktion samt Dateiname. Die Wahlzeile liegt
+ * ALLES STEHT GLEICHZEITIG DA (A4): Bildfläche, Dateiname, Zustandskennzeichen, Bewertungszeile
+ * und Wahl — nichts liegt hinter einem Aufklappen.
+ *
+ * DIE BILDFLÄCHE IST EIN NATIVES `<button>` und öffnet die Großansicht. Die Wahlzeile liegt
  * daneben, nie darin: verschachtelte Schaltflächen sind kein gültiges HTML.
  */
 export function DuplicatePhotoTile({
   photo,
   effectiveDecision,
   keepPossible,
-  enlarged,
+  sharpness,
+  exposure,
+  bestSharpness,
+  bestExposure,
   deciding,
-  onToggle,
+  onOpen,
   onDecide,
-  controls,
+  imageRef,
 }: DuplicatePhotoTileProps) {
-  const zustand = DUPLICATE_ZUSTAENDE[effectiveDecision]
-
   return (
     <li
       data-duplicate-decision={effectiveDecision}
       className={cn(
         'flex flex-col gap-3 rounded-lg bg-elevated p-2 sm:p-3',
-        zustand.rahmen,
-        enlarged && 'col-span-full',
+        DUPLICATE_ZUSTAENDE[effectiveDecision].rahmen,
       )}
     >
       {/* Die Bildfläche beschneidet - Trefferflächen-Utilities haben hier nichts zu suchen, sie
           würden still abgeschnitten. Sie ist ohnehin deutlich größer als 44px.
 
-          JEDE AUFNAHME STEHT IN VOLLER HELLIGKEIT, in beiden Zuständen und in beiden
-          Darstellungen (ADR 0112): Hier liegen mehrere ähnliche Aufnahmen nebeneinander, und
-          genau ihr Helligkeits- und Qualitätsunterschied soll beurteilt werden. Den Zustand
-          tragen der Rahmen der Kachel und das Zustandsfeld aus Symbol und Wort — beide außerhalb
-          der Bildfläche. */}
+          JEDE AUFNAHME STEHT IN VOLLER HELLIGKEIT, in beiden Zuständen (A6): Hier liegen
+          ähnliche Aufnahmen nebeneinander, und genau ihr Helligkeits- und Qualitätsunterschied
+          soll beurteilt werden. Den Zustand tragen Rahmen und Kennzeichen außerhalb des Bildes.
+
+          `aspect-square` reserviert die Höhe, bevor das authentifiziert geladene Bild eintrifft. */}
       <button
+        ref={imageRef}
         type="button"
-        onClick={onToggle}
-        aria-label={`${photo.relative_path} ${enlarged ? 'verkleinern' : 'vergrößern'}`}
+        onClick={onOpen}
+        aria-label={`${photo.relative_path} vergrößern`}
         data-testid="duplicate-image"
-        /* BEIDE ZUSTÄNDE RESERVIEREN IHRE HÖHE, BEVOR DAS BILD DA IST — `h-96` in der
-           Vergrößerung, nicht `max-h-96`. Die Bildfläche lädt über einen authentifizierten Abruf
-           und trifft damit immer erst nach dem ersten Rendern ein; ohne reservierte Höhe ist die
-           vergrößerte Kachel bis dahin 145px hoch und wächst beim Eintreffen um 384px. Alles
-           darunter rutscht dann aus dem Sichtbereich, nachdem bereits gescrollt wurde — die
-           übrige Gruppe verschwindet, und die Vergrößerung ist faktisch doch ein Vollbild
-           (`e2e/tests/grid-columns.spec.ts`, „laesst die Gruppe im Blick"). */
-        className={cn(
-          'block w-full overflow-hidden rounded-md',
-          enlarged ? 'h-96' : 'aspect-square',
-        )}
+        className="block aspect-square w-full overflow-hidden rounded-md"
       >
         <PhotoImage
           photoId={photo.id}
-          /* In der Vergrößerung die große Variante: Dort wird beurteilt, und ein hochskaliertes
-             Vorschaubild entschiede die Frage nach der Schärfe falsch. */
-          variant={enlarged ? 'display' : 'thumbnail'}
+          variant="thumbnail"
           alt={photo.relative_path}
-          className={cn('size-full', enlarged ? 'object-contain' : 'object-cover')}
+          className="size-full object-cover"
         />
       </button>
 
       <div className="flex items-center justify-between gap-2">
-        <span
-          data-testid="duplicate-state"
-          className={cn('flex items-center gap-1 text-xs', zustand.schrift)}
-        >
-          <Icon name={zustand.icon} size={14} />
-          {zustand.text}
-        </span>
+        <DuplicateStateLabel decision={effectiveDecision} />
         {/* Nur der Basisname, außerhalb jeder Trefferfläche. Extern entstandener Text,
             ausschließlich als React-Textknoten. */}
         <span className="min-w-6 truncate font-mono text-xs text-text-muted">
@@ -155,45 +254,20 @@ export function DuplicatePhotoTile({
         </span>
       </div>
 
-      {/* ZWEI Trefferflächen mit 12px Abstand (`gap-3`) - die Pflichtgrenze zwischen
-          aufgespannten Bedienelementen, kein Gestaltungsspielraum: In einer Überlappung gewinnt
-          das obenliegende Element, und ein Fehlgriff schreibt hier, welche Bilder den Homeserver
-          verlassen.
+      <DuplicateMetrics
+        sharpness={sharpness}
+        exposure={exposure}
+        bestSharpness={bestSharpness}
+        bestExposure={bestExposure}
+      />
 
-          KEINE DRITTE SCHALTFLÄCHE: Eine Rücknahme nach „noch nicht entschieden" gibt es nicht,
-          und die Ansicht bietet sie deshalb auch nicht an. `aria-pressed` folgt dem WIRKSAMEN
-          Zustand, nicht einer gespeicherten Zeile; beide zugänglichen Namen tragen den Dateinamen,
-          sonst hießen im selben Raster alle Schaltflächen gleich.
-
-          BEI `keepPossible === false` STEHT HIER GAR KEINE WAHL, auch nicht „Ausschuss": Kein
-          Wert der Entscheidungszeile ändert den Zustand dieser Aufnahme, und ein angenommener
-          Klick bliebe still wirkungslos. Bewusst NICHT `disabled` — „nicht anwendbar" ist etwas
-          anderes als „kurzzeitig gesperrt", und ein gesperrter Knopf verspräche, später zu
-          wirken. */}
-      {keepPossible ? (
-        <div className="flex gap-3">
-          {(['keep', 'discard'] as const).map((wert) => (
-            <Button
-              key={wert}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="flex-1"
-              aria-pressed={effectiveDecision === wert}
-              disabled={deciding}
-              busy={deciding && effectiveDecision !== wert}
-              aria-label={`${DUPLICATE_ZUSTAENDE[wert].text}: ${photo.relative_path}`}
-              onClick={() => onDecide(wert)}
-            >
-              {DUPLICATE_ZUSTAENDE[wert].text}
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-text-muted">{DUPLICATE_IMMUTABLE_TEXT}</p>
-      )}
-
-      {enlarged && controls}
+      <DuplicateChoice
+        photo={photo}
+        effectiveDecision={effectiveDecision}
+        keepPossible={keepPossible}
+        deciding={deciding}
+        onDecide={onDecide}
+      />
     </li>
   )
 }

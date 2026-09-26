@@ -1,39 +1,46 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { DuplicateDecision } from '../api/types'
+import { DuplicateEnlargedView } from '../components/DuplicateEnlargedView'
 import { DuplicatePhotoTile } from '../components/DuplicatePhotoTile'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
+import { Progress } from '../components/ui/progress'
 import { Skeleton } from '../components/ui/skeleton'
 import {
   useDuplicateDecisionMutation,
+  useDuplicateGroupConfirmMutation,
   useDuplicateGroupDecisionMutation,
   useDuplicateGroupQuery,
 } from '../hooks/useDuplicates'
+import { useEdgeFocusHandoff } from '../hooks/useEdgeFocusHandoff'
+import { bestExposureIndices, bestSharpnessIndices, formatSpan } from '../utils/duplicateMetrics'
+import { ausschussStepPath, duplicateComparePath } from '../utils/projectRoutes'
 
 const SKELETON_TILE_COUNT = 4
 
 /**
- * Die unveränderliche Hinweiszeile (AK4).
+ * Der erste Hinweis (A3): Antippen speichert sofort, und es gilt der ANGEZEIGTE Zustand.
  *
- * Sie benennt einen BESTEHENDEN Zustand, keine ausstehende Entscheidung: Jede Aufnahme trägt beim
- * Öffnen bereits das, was ohne weiteres Zutun eintritt. Die Zeile darf deshalb weder behaupten, es
- * liege noch keine Entscheidung vor, noch zusichern, dass „unentschiedene" Aufnahmen erhalten
- * bleiben — ein unentschiedener Duplikat-Verlierer fällt am Gate heraus, und ein Satz wie „ohne
- * Entscheidung bleibt alles" wäre eine Zusage, die die Ansicht nicht halten kann.
+ * „Bleibt erhalten" hängt am angezeigten „Behalten" — nie an „nicht angetippt" oder
+ * „unentschieden": Ein unentschiedener Duplikat-Verlierer zeigt bereits „Ausschuss" und scheidet
+ * ohne weiteres Zutun aus. Eine Zusage über nicht Angetipptes wäre eine, die die Ansicht nicht
+ * halten kann.
  */
 export const DUPLICATE_HINT_TEXT =
-  'Der angezeigte Zustand jeder Aufnahme gilt, falls du ihn nicht änderst.'
+  'Antippen von „Behalten“ oder „Ausschuss“ wird sofort gespeichert. Es gilt der angezeigte ' +
+  'Zustand: Was „Behalten“ zeigt, bleibt erhalten; nur was „Ausschuss“ zeigt, scheidet aus der ' +
+  'weiteren Bearbeitung aus.'
 
 /**
- * Die Folge von „behalten", an der Handlung selbst (Auflage S4).
+ * Die Folge von „behalten", an der Handlung selbst (Auflage S4 der Spec 0486, S12 der Spec 0533).
  *
  * „Behalten" ist keine ansichtsinterne Buchführung: Die Aufnahme läuft danach in die
  * Kriterien-Bewertung und, bei erteilter Einwilligung, in die Cloud-Klassifizierung. Steht das
- * nicht hier, trifft der Nutzer eine Entscheidung über einen Datenabfluss, von dem er nichts
- * weiß.
+ * nicht hier — im Raster wie in der Großansicht —, trifft der Nutzer eine Entscheidung über einen
+ * Datenabfluss, von dem er nichts weiß.
  */
 export const DUPLICATE_CONSEQUENCE_TEXT =
   '„Behalten" heißt: Die Aufnahme läuft in die Bewertung weiter — und, solange die ' +
@@ -47,88 +54,98 @@ export const DUPLICATE_EMPTY_TEXT =
   'Zu dieser Aufnahme gibt es keine Duplikat-Gruppe. Möglicherweise hat ein neuer Lauf sie ' +
   'aufgelöst.'
 
+const LAST_GROUP_TEXT = 'Gespeichert — das war die letzte Gruppe.'
+
 /**
- * Alle Aufnahmen einer Duplikat-Gruppe nebeneinander — je Aufnahme einzeln entscheidbar.
+ * Alle Aufnahmen einer Duplikat-Gruppe — als Raster oder in der Großansicht, je Aufnahme
+ * entscheidbar, und als Ganzes abschließbar.
  *
- * DAS RASTER BRICHT UM, STATT DIE BILDER ZU VERKLEINERN: zwei Spalten schmal, drei breit. Die
- * Kachelbreite hängt damit an der Fensterbreite, nicht an der Mitgliederzahl — eine Serie mit
- * sieben Aufnahmen zeigt dieselben Kacheln wie eine mit dreien, nur in mehr Zeilen. jsdom kennt
- * keine Layout-Engine; gemessen wird das im Prüfstack (`e2e/tests/grid-columns.spec.ts`).
+ * DAS RASTER BRICHT UM, STATT DIE BILDER ZU VERKLEINERN: zwei Spalten schmal, drei breit.
  *
- * DIE VERGRÖSSERUNG IST KEIN DIALOG: Die gewählte Kachel spannt die Rasterbreite, die übrigen
- * bleiben darüber und darunter stehen. Genau das ist der Zweck — man vergleicht, man betrachtet
- * nicht einzeln. Ein Dialog nähme die Gruppe aus dem Blick, und ein Dialog fängt den Fokus, was
- * das Blättern innerhalb der Gruppe zu einer zweiten Bedienebene machte.
+ * DIE GROSSANSICHT IST KEIN DIALOG: Sie ersetzt das Raster an derselben Stelle; Kopf, Hinweise,
+ * Gruppenaktionen und Abschluss bleiben stehen. Die vergrößerte Aufnahme ist eine FOTO-ID, nie
+ * ein Index — eine umsortierte Antwort hält dieselbe Aufnahme, eine fehlende fällt aufs Raster
+ * zurück.
+ *
+ * SICHERHEIT (S11): Der Rückweg-Parameter `from` wählt eine Variante und nennt kein Ziel. Es
+ * zählt allein der wörtliche Wert `ausschuss`; das Ziel ist fest `ausschussStepPath` aus der
+ * numerischen Projekt-Id — nie der Parameterwert, `document.referrer` oder `navigate(-1)`. Sonst
+ * führte ein präparierter Link einen angemeldeten Nutzer auf eine fremde Seite (offene
+ * Weiterleitung). Weitergetragen wird er nur als Bool über `duplicateComparePath`.
  */
 export function DuplicateComparePage() {
   const { projectId, photoId } = useParams()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const id = Number(projectId)
   const anchorId = Number(photoId)
+  const fromAusschuss = searchParams.get('from') === 'ausschuss'
 
   const query = useDuplicateGroupQuery(id, anchorId)
   const decisionMutation = useDuplicateDecisionMutation(id, anchorId)
   const groupMutation = useDuplicateGroupDecisionMutation(id, anchorId)
+  const confirmMutation = useDuplicateGroupConfirmMutation(id, anchorId)
 
-  const items = query.data?.items ?? []
-
-  /** Die vergrößerte Aufnahme als FOTO-ID, nie als Index: Ein Index zeigte nach einem Neuladen
-   * der Gruppe auf eine andere Aufnahme, ohne dass etwas auffiele. `null` heißt „nichts
-   * vergrößert" — es ist höchstens eine. */
-  const [enlargedId, setEnlargedId] = useState<number | null>(null)
-
-  /** Die laufenden Entscheidungen als MENGE von Foto-Ids: Verschiedene Aufnahmen entscheiden
-   * unabhängig voneinander, und eine seitenweite Sperre blockierte den zügigen Durchlauf, den
-   * diese Ansicht gerade ermöglichen soll. */
-  const [decidingIds, setDecidingIds] = useState<ReadonlySet<number>>(new Set())
-
-  /* DIE SEITE BLEIBT BEIM GRUPPENWECHSEL MONTIERT — gleiche Route, anderer Parameter. Beide
-     Zustände zeigen auf Foto-Ids der alten Gruppe und müssen deshalb zurückgesetzt werden: Ohne
-     das bliebe eine Kachel der neuen Gruppe gesperrt, deren Entscheidung nie lief, und die
-     Vergrößerung zeigte auf ein Foto, das hier nicht vorkommt. */
-  useEffect(() => {
-    setEnlargedId(null)
-    setDecidingIds(new Set())
-  }, [anchorId])
-
-  const enlargedIndex = items.findIndex((item) => item.photo.id === enlargedId)
-
-  const moveEnlarged = useCallback(
-    (schritt: -1 | 1) => {
-      setEnlargedId((current) => {
-        const index = items.findIndex((item) => item.photo.id === current)
-        if (index === -1) {
-          return current
-        }
-        // KEIN Rundlauf: Am ersten bzw. letzten Mitglied bleibt die Vergrößerung stehen. Ein
-        // Sprung ans andere Ende wäre in einer Vergleichsansicht ein verlorener Überblick.
-        const ziel = index + schritt
-        return ziel < 0 || ziel >= items.length ? current : (items[ziel]?.photo.id ?? current)
-      })
-    },
+  const items = useMemo(() => query.data?.items ?? [], [query.data])
+  const bestSharpness = useMemo(
+    () => bestSharpnessIndices(items.map((item) => item.sharpness)),
+    [items],
+  )
+  const bestExposure = useMemo(
+    () => bestExposureIndices(items.map((item) => item.exposure)),
     [items],
   )
 
-  // Esc verkleinert, Pfeil links/rechts blättert. Das ersetzt KEINEN nativen Tastatur-Handler:
-  // Enter und Leertaste wirken weiterhin über das `<button>` der Kachel selbst. Der Effekt läuft
-  // nur, solange etwas vergrößert ist - sonst hörte die Seite dauerhaft auf Tasten mit, die sie
-  // nichts angehen.
+  const [enlargedId, setEnlargedId] = useState<number | null>(null)
+  /** Die Aufnahme, deren Bildfläche nach dem Schließen der Großansicht den Fokus bekommt. */
+  const [returnFocusId, setReturnFocusId] = useState<number | null>(null)
+  const imageRefs = useRef(new Map<number, HTMLButtonElement>())
+
+  /** Die laufenden Entscheidungen als MENGE von Foto-Ids: Verschiedene Aufnahmen entscheiden
+   * unabhängig voneinander, eine seitenweite Sperre blockierte den zügigen Durchlauf. */
+  const [decidingIds, setDecidingIds] = useState<ReadonlySet<number>>(new Set())
+  const [lastGroupSaved, setLastGroupSaved] = useState(false)
+  const confirmRunning = useRef(false)
+
+  /* DIE SEITE BLEIBT BEIM GRUPPENWECHSEL MONTIERT — gleiche Route, anderer Parameter. Alle drei
+     Zustände gehören zur alten Gruppe: Ohne Rücksetzung bliebe eine Kachel der neuen Gruppe
+     gesperrt, deren Entscheidung nie lief, die Vergrößerung zeigte auf ein fremdes Foto, und die
+     Abschlussmeldung spräche über eine andere Gruppe. */
   useEffect(() => {
-    if (enlargedId === null) {
+    setEnlargedId(null)
+    setReturnFocusId(null)
+    setDecidingIds(new Set())
+    setLastGroupSaved(false)
+  }, [anchorId])
+
+  const enlargedItem = items.find((item) => item.photo.id === enlargedId)
+
+  useEffect(() => {
+    if (enlargedItem !== undefined || returnFocusId === null) {
       return
     }
-    function handleKey(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
-        setEnlargedId(null)
-      } else if (event.key === 'ArrowLeft') {
-        moveEnlarged(-1)
-      } else if (event.key === 'ArrowRight') {
-        moveEnlarged(1)
-      }
+    const bildflaeche = imageRefs.current.get(returnFocusId)
+    bildflaeche?.focus()
+    bildflaeche?.scrollIntoView?.({ block: 'nearest' })
+    setReturnFocusId(null)
+  }, [enlargedItem, returnFocusId])
+
+  // Fehlt die vergrößerte Aufnahme in einer neuen Antwort, gilt das Raster - und zwar dauerhaft,
+  // nicht bis sie in einer späteren Antwort zufällig wieder auftaucht.
+  useEffect(() => {
+    if (enlargedId !== null && enlargedItem === undefined) {
+      setEnlargedId(null)
     }
-    document.addEventListener('keydown', handleKey)
-    return () => document.removeEventListener('keydown', handleKey)
-  }, [enlargedId, moveEnlarged])
+  }, [enlargedId, enlargedItem])
+
+  const previousGroupId = query.data?.previous_photo_id ?? null
+  const nextGroupId = query.data?.next_photo_id ?? null
+  const groupNav = useEdgeFocusHandoff(previousGroupId === null, nextGroupId === null)
+
+  function closeEnlarged(): void {
+    setReturnFocusId(enlargedId)
+    setEnlargedId(null)
+  }
 
   function handleDecide(decidedPhotoId: number, decision: DuplicateDecision): void {
     setDecidingIds((current) => new Set(current).add(decidedPhotoId))
@@ -146,73 +163,129 @@ export function DuplicateComparePage() {
     )
   }
 
+  function goToGroup(zielId: number | null): void {
+    if (zielId === null) {
+      return
+    }
+    groupNav.remember()
+    // Push, kein `replace`: Der Zurück-Knopf des Browsers ist damit „vorherige Gruppe".
+    navigate(duplicateComparePath(id, zielId, { fromAusschuss }))
+  }
+
+  const confirmBlocked =
+    confirmMutation.isPending || groupMutation.isPending || decidingIds.size > 0
+
+  function handleConfirm(): void {
+    // Ein Doppelklick kommt schneller als das `disabled` des ersten: EIN Aufruf, nie zwei.
+    if (confirmBlocked || confirmRunning.current) {
+      return
+    }
+    confirmRunning.current = true
+    confirmMutation.mutate(undefined, {
+      onSettled: () => {
+        confirmRunning.current = false
+      },
+      onSuccess: () => {
+        if (nextGroupId !== null) {
+          navigate(duplicateComparePath(id, nextGroupId, { fromAusschuss }))
+        } else if (fromAusschuss) {
+          navigate(ausschussStepPath(id))
+        } else {
+          setLastGroupSaved(true)
+        }
+      },
+    })
+  }
+
   // Ein `404` ist keine Störung, sondern die Aussage „zu dieser Aufnahme gibt es keine Gruppe".
-  // Ein Fehler-Alert behauptete einen Vorfall und böte „Erneut versuchen" für etwas an, das beim
-  // nächsten Versuch genauso ausgeht.
-  const istLeer = query.isError && query.error instanceof ApiError && query.error.status === 404
+  const istLeer =
+    (query.isError && query.error instanceof ApiError && query.error.status === 404) ||
+    (query.isSuccess && items.length === 0)
+  const istGefuellt = query.isSuccess && items.length > 0
+
+  const confirmLabel = confirmMutation.isPending
+    ? 'Wird abgeschlossen…'
+    : nextGroupId !== null
+      ? 'Gruppe abschließen, nächste'
+      : fromAusschuss
+        ? 'Gruppe abschließen, zum Ausschuss'
+        : 'Gruppe abschließen'
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        {/* DIE GRUPPENNAVIGATION LIEGT IM SEITENKOPF UND IST IMMER SICHTBAR — ausdrücklich nicht
-            an die Bildvergrößerung gekoppelt: Der Durchgang ist eine Aussage über die ANSICHT,
-            nicht über eine vergrößerte Aufnahme, und an die Vergrößerungssteuerung gehängt wäre
-            er ohne Vergrößerung unerreichbar.
+      {fromAusschuss && (
+        <Button asChild variant="ghost" size="sm" className="self-start">
+          <Link to={ausschussStepPath(id)}>Zurück zum Ausschuss</Link>
+        </Button>
+      )}
 
-            Am Rand `disabled` statt abwesend: Ein verschwindender Knopf verschöbe die übrigen
-            unter dem Finger. Die zugänglichen Namen unterscheiden sich bewusst von den
-            `Vorherige/Nächste Aufnahme der Gruppe` der Vergrößerung, die gleichzeitig im Dokument
-            stehen können — und beginnen mit der sichtbaren Beschriftung (WCAG 2.5.3): Ein
-            zugänglicher Name, der den sichtbaren Text nicht als zusammenhängende Kette enthält,
-            ist per Spracheingabe nicht ansprechbar. */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl sm:text-2xl">
-            {query.isSuccess
-              ? `Duplikat-Gruppe ${query.data.position} von ${query.data.total}`
-              : 'Duplikate vergleichen'}
-          </h1>
-          {query.isSuccess && (
-            <div role="group" aria-label="Duplikat-Gruppen" className="flex gap-3">
-              {(
-                [
-                  ['Zurück zur vorherigen Gruppe', 'Zurück', query.data.previous_photo_id],
-                  ['Vor zur nächsten Gruppe', 'Vor', query.data.next_photo_id],
-                ] as const
-              ).map(([name, beschriftung, ziel]) => (
-                <Button
-                  key={name}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={ziel === null}
-                  aria-label={name}
-                  // Push, kein `replace`: Der Zurück-Knopf des Browsers ist damit „vorherige
-                  // Gruppe" statt „raus aus dem Durchgang".
-                  onClick={() =>
-                    ziel !== null && navigate(`/projects/${id}/photos/${ziel}/duplicates`)
-                  }
-                >
-                  {beschriftung}
-                </Button>
-              ))}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {istGefuellt ? (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-xl sm:text-2xl">
+                Gruppe {query.data.position} von {query.data.total}{' '}
+                <span className="text-base font-normal text-text sm:text-lg">
+                  {`· ${items.length} Aufnahmen in ${formatSpan(query.data.span_seconds)}`}
+                </span>
+              </h1>
+              {/* Nie die einzige Quelle der Zahl - beide stehen als Text im h1. */}
+              <Progress
+                aria-hidden="true"
+                value={query.data.position}
+                max={query.data.total}
+                className="w-24 sm:w-40"
+              />
             </div>
-          )}
-        </div>
-        <p className="text-sm text-text">{DUPLICATE_HINT_TEXT}</p>
-        <p data-testid="duplicate-consequence" className="text-sm text-text">
-          {DUPLICATE_CONSEQUENCE_TEXT}
-        </p>
+            {/* Am Rand `disabled` statt abwesend: Ein verschwindender Knopf verschöbe die übrigen
+                unter dem Finger. Der zugängliche Name ist der sichtbare Text (WCAG 2.5.3). */}
+            <div role="group" aria-label="Duplikat-Gruppen" className="flex flex-wrap gap-3">
+              <Button
+                ref={groupNav.previousRef}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-11 sm:h-8"
+                disabled={previousGroupId === null}
+                onClick={() => goToGroup(previousGroupId)}
+              >
+                Vorherige Gruppe
+              </Button>
+              <Button
+                ref={groupNav.nextRef}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-11 sm:h-8"
+                disabled={nextGroupId === null}
+                onClick={() => goToGroup(nextGroupId)}
+              >
+                Nächste Gruppe
+              </Button>
+            </div>
+          </>
+        ) : (
+          <h1 className="text-xl sm:text-2xl">Duplikate vergleichen</h1>
+        )}
       </div>
 
       {query.isLoading && (
         <ul
           role="status"
           aria-label="Duplikat-Gruppe wird geladen…"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3"
+          className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3"
         >
           {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
-            <li key={index} aria-hidden="true">
+            <li
+              key={index}
+              aria-hidden="true"
+              className="flex flex-col gap-3 rounded-lg bg-elevated p-2 sm:p-3"
+            >
               <Skeleton className="aspect-square w-full rounded-md" />
+              <Skeleton className="h-3 w-full rounded-xs" />
+              <Skeleton className="h-3 w-full rounded-xs" />
+              <Skeleton className="h-3 w-full rounded-xs" />
+              <Skeleton className="h-8 w-full rounded-sm" />
             </li>
           ))}
         </ul>
@@ -228,86 +301,106 @@ export function DuplicateComparePage() {
         </Alert>
       )}
 
-      {query.isSuccess && items.length === 0 && (
-        <p className="text-sm text-text">{DUPLICATE_EMPTY_TEXT}</p>
-      )}
-
-      {query.isSuccess && items.length > 0 && (
+      {istGefuellt && (
         <>
-          {/* Beschriftete Schaltflächen, keine Symbole: Beide setzen in EINEM Aufruf den Zustand
-              jeder Aufnahme der Gruppe, und eine Glyphe sagte nicht, welche Richtung. */}
-          <div role="group" aria-label="Ganze Gruppe" className="flex flex-wrap gap-3">
-            {(['keep', 'discard'] as const).map((wert) => (
-              <Button
-                key={wert}
-                type="button"
-                variant="outline"
-                disabled={groupMutation.isPending}
-                busy={groupMutation.isPending}
-                onClick={() => groupMutation.mutate(wert)}
-              >
-                {wert === 'keep' ? 'Alle behalten' : 'Alle in den Ausschuss'}
-              </Button>
-            ))}
+          {/* Immer sichtbar, nie eingeklappt, kein `Alert` - und unmittelbar an der Handlung. */}
+          <div className="flex max-w-3xl flex-col gap-2">
+            <p className="text-sm text-text">{DUPLICATE_HINT_TEXT}</p>
+            <p data-testid="duplicate-consequence" className="text-sm text-text">
+              {DUPLICATE_CONSEQUENCE_TEXT}
+            </p>
           </div>
 
-          {groupMutation.isError && (
-            <Alert>
-              {groupMutation.error instanceof ApiError
-                ? groupMutation.error.detail
-                : 'Die Entscheidung für die Gruppe konnte nicht gespeichert werden.'}
-            </Alert>
+          {/* Beschriftete Schaltflächen, keine Symbole: Beide setzen in EINEM Aufruf den Zustand
+              jeder Aufnahme der Gruppe, und eine Glyphe sagte nicht, welche Richtung. */}
+          <div className="flex flex-col gap-3">
+            <div role="group" aria-label="Ganze Gruppe" className="flex flex-wrap gap-3">
+              {(['keep', 'discard'] as const).map((wert) => (
+                <Button
+                  key={wert}
+                  type="button"
+                  variant="outline"
+                  disabled={groupMutation.isPending}
+                  busy={groupMutation.isPending}
+                  onClick={() => groupMutation.mutate(wert)}
+                >
+                  {wert === 'keep' ? 'Alle behalten' : 'Alle in den Ausschuss'}
+                </Button>
+              ))}
+            </div>
+            {groupMutation.isError && (
+              <Alert>
+                {groupMutation.error instanceof ApiError
+                  ? groupMutation.error.detail
+                  : 'Die Entscheidung für die Gruppe konnte nicht gespeichert werden.'}
+              </Alert>
+            )}
+          </div>
+
+          {enlargedItem !== undefined ? (
+            <DuplicateEnlargedView
+              items={items}
+              currentId={enlargedItem.photo.id}
+              bestSharpness={bestSharpness}
+              bestExposure={bestExposure}
+              decidingIds={decidingIds}
+              onSelect={setEnlargedId}
+              onClose={closeEnlarged}
+              onDecide={handleDecide}
+            />
+          ) : (
+            <ul className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3">
+              {items.map((item, index) => (
+                <DuplicatePhotoTile
+                  key={item.photo.id}
+                  photo={item.photo}
+                  effectiveDecision={item.effective_decision}
+                  keepPossible={item.keep_possible}
+                  sharpness={item.sharpness}
+                  exposure={item.exposure}
+                  bestSharpness={bestSharpness.has(index)}
+                  bestExposure={bestExposure.has(index)}
+                  deciding={decidingIds.has(item.photo.id)}
+                  onOpen={() => setEnlargedId(item.photo.id)}
+                  onDecide={(decision) => handleDecide(item.photo.id, decision)}
+                  imageRef={(element) => {
+                    if (element === null) {
+                      imageRefs.current.delete(item.photo.id)
+                    } else {
+                      imageRefs.current.set(item.photo.id, element)
+                    }
+                  }}
+                />
+              ))}
+            </ul>
           )}
 
-          <ul className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3">
-            {items.map((item) => (
-              <DuplicatePhotoTile
-                key={item.photo.id}
-                photo={item.photo}
-                effectiveDecision={item.effective_decision}
-                keepPossible={item.keep_possible}
-                enlarged={item.photo.id === enlargedId}
-                deciding={decidingIds.has(item.photo.id)}
-                onToggle={() =>
-                  setEnlargedId((current) => (current === item.photo.id ? null : item.photo.id))
-                }
-                onDecide={(decision) => handleDecide(item.photo.id, decision)}
-                controls={
-                  <div className="flex flex-wrap gap-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={enlargedIndex <= 0}
-                      aria-label="Vorherige Aufnahme der Gruppe"
-                      onClick={() => moveEnlarged(-1)}
-                    >
-                      Zurück
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={enlargedIndex === items.length - 1}
-                      aria-label="Nächste Aufnahme der Gruppe"
-                      onClick={() => moveEnlarged(1)}
-                    >
-                      Vor
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Vergrößerung schließen"
-                      onClick={() => setEnlargedId(null)}
-                    >
-                      Schließen
-                    </Button>
-                  </div>
-                }
-              />
-            ))}
-          </ul>
+          {/* Der Abschluss schreibt den angezeigten Zustand fest, statt ihn zu ändern - es
+              entsteht kein Gruppenzustand „erledigt". Gesperrt, solange eine Einzel- oder
+              Gruppenentscheidung läuft: Er schriebe sonst gegen einen Stand, der gerade wechselt.
+              Die Schaltfläche selbst ist die Wiederholung nach einem Fehler. */}
+          <div className="flex flex-col items-start gap-3">
+            <Button
+              type="button"
+              disabled={confirmBlocked}
+              busy={confirmMutation.isPending}
+              onClick={handleConfirm}
+            >
+              {confirmLabel}
+            </Button>
+            {lastGroupSaved && (
+              <p aria-live="polite" className="text-sm text-text">
+                {LAST_GROUP_TEXT}
+              </p>
+            )}
+            {confirmMutation.isError && (
+              <Alert>
+                {confirmMutation.error instanceof ApiError
+                  ? confirmMutation.error.detail
+                  : 'Die Gruppe konnte nicht abgeschlossen werden.'}
+              </Alert>
+            )}
+          </div>
         </>
       )}
     </div>
