@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as ausschussApi from '../api/ausschuss'
-import type { AusschussOut, PhotoOut } from '../api/types'
+import type { AusschussGroupEntry, AusschussOut, PhotoOut } from '../api/types'
 import { AUSSCHUSS_PAGE_SIZE, useAusschussEntryQuery, useAusschussQuery } from './useAusschuss'
 
 vi.mock('../api/ausschuss')
@@ -32,11 +32,12 @@ function photo(id: number): PhotoOut {
 function stand(ids: number[], total: number): AusschussOut {
   return {
     items: ids.map((id) => ({
+      kind: 'photo',
       photo: photo(id),
-      reason: 'duplicate',
+      reason: 'low_quality',
       decision: null,
-      group_anchor_photo_id: id,
-      keep_possible: true,
+      group_anchor_photo_id: null,
+      keep_possible: false,
     })),
     total,
     open_count: 0,
@@ -92,6 +93,34 @@ describe('useAusschussQuery', () => {
     })
   })
 
+  it('zaehlt den Offset in EINTRAEGEN - ein Stapel ist einer, gleich wie viele er traegt', async () => {
+    // Paginiert wird nach Eintraegen (B8): Die erste Seite traegt eine Einzelaufnahme und einen
+    // Stapel aus fuenf Aufnahmen, die naechste beginnt deshalb bei 2, nicht bei 6.
+    const stapel: AusschussGroupEntry = {
+      kind: 'group',
+      group_anchor_photo_id: 50,
+      cover: photo(51),
+      member_count: 5,
+      group_size: 6,
+      decision_counts: { undecided: 5, keep: 0, discard: 0 },
+    }
+    const ersteSeite = stand([42], 3)
+    vi.mocked(ausschussApi.listAusschuss)
+      .mockResolvedValueOnce({ ...ersteSeite, items: [...ersteSeite.items, stapel] })
+      .mockResolvedValueOnce(stand([43], 3))
+    const { wrapper } = sharedClient()
+
+    const { result } = renderHook(() => useAusschussQuery(7, { enabled: true }), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    await result.current.fetchNextPage()
+
+    expect(ausschussApi.listAusschuss).toHaveBeenLastCalledWith(7, {
+      limit: AUSSCHUSS_PAGE_SIZE,
+      offset: 2,
+    })
+  })
+
   it('fragt gar nicht, solange der Aufrufer es nicht freigibt', async () => {
     // Ohne erfolgreichen Erkennungslauf gibt es keinen Ausschuss-Bestand zu lesen.
     const { wrapper } = sharedClient()
@@ -122,5 +151,16 @@ describe('useAusschussEntryQuery', () => {
       stand([42], 9),
     )
     expect(queryClient.getQueryData(['photos', 7, 'ausschuss', 'photo', 43])).toBeUndefined()
+    expect(result.current.data).toEqual(stand([42], 9).items[0])
+  })
+
+  it('liefert keinen Eintrag, wenn der Filter nichts trifft', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([], 9))
+    const { wrapper } = sharedClient()
+
+    const { result } = renderHook(() => useAusschussEntryQuery(7, 42), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toBeNull()
   })
 })

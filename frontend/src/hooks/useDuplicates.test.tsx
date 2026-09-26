@@ -7,6 +7,7 @@ import * as duplicatesApi from '../api/duplicates'
 import type { DuplicateGroupOut } from '../api/types'
 import {
   useDuplicateDecisionMutation,
+  useDuplicateGroupConfirmMutation,
   useDuplicateGroupDecisionMutation,
   useDuplicateGroupIndexQuery,
   useDuplicateGroupQuery,
@@ -20,6 +21,7 @@ const GROUP: DuplicateGroupOut = {
   total: 2,
   previous_photo_id: null,
   next_photo_id: 43,
+  span_seconds: 0,
 }
 
 function sharedClient() {
@@ -35,6 +37,7 @@ beforeEach(() => {
   vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockReset()
   vi.mocked(duplicatesApi.setDuplicateDecision).mockReset()
   vi.mocked(duplicatesApi.setDuplicateGroupDecision).mockReset()
+  vi.mocked(duplicatesApi.confirmDuplicateGroup).mockReset()
 })
 
 describe('useDuplicateGroupIndexQuery', () => {
@@ -99,6 +102,7 @@ describe('useDuplicateDecisionMutation', () => {
       total: 1,
       previous_photo_id: null,
       next_photo_id: null,
+      span_seconds: 0,
     }
     vi.mocked(duplicatesApi.setDuplicateDecision).mockResolvedValue(written)
     const { queryClient, wrapper } = sharedClient()
@@ -146,5 +150,27 @@ describe('useDuplicateGroupDecisionMutation', () => {
     expect(duplicatesApi.setDuplicateGroupDecision).toHaveBeenCalledWith(7, 42, 'keep')
     expect(queryClient.getQueryData(['photos', 7, 'duplicates', 42])).toEqual(GROUP)
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['photos', 7] })
+  })
+})
+
+describe('useDuplicateGroupConfirmMutation', () => {
+  it('schreibt die Antwort fort und invalidiert unter dem Projekt auch den Ausschuss', async () => {
+    // Der Abschluss schreibt `discard` auf offene Vorschlaege: Stapel-Zusammenfassung und
+    // `open_count` der Ausschuss-Uebersicht aendern sich damit. Beide liegen unter
+    // `['photos', projectId]` und fallen mit der breiten Invalidierung.
+    vi.mocked(duplicatesApi.confirmDuplicateGroup).mockResolvedValue(GROUP)
+    const { queryClient, wrapper } = sharedClient()
+    queryClient.setQueryData(['photos', 7, 'ausschuss', 'liste'], { pages: [], pageParams: [] })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useDuplicateGroupConfirmMutation(7, 42), { wrapper })
+    result.current.mutate()
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(duplicatesApi.confirmDuplicateGroup).toHaveBeenCalledTimes(1)
+    expect(duplicatesApi.confirmDuplicateGroup).toHaveBeenCalledWith(7, 42)
+    expect(queryClient.getQueryData(['photos', 7, 'duplicates', 42])).toEqual(GROUP)
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['photos', 7] })
+    expect(queryClient.getQueryState(['photos', 7, 'ausschuss', 'liste'])?.isInvalidated).toBe(true)
   })
 })

@@ -11,6 +11,7 @@ import * as duplicatesApi from '../../api/duplicates'
 import * as projectsApi from '../../api/projects'
 import type {
   AusschussOut,
+  AusschussPhotoEntry,
   DuplicateDecision,
   DuplicateGroupOut,
   PhotoOut,
@@ -67,12 +68,13 @@ function entry(
     groupAnchorPhotoId?: number | null
     keepPossible?: boolean
   } = {},
-): AusschussOut['items'][number] {
+): AusschussPhotoEntry {
   // `keepPossible` ist der SERVERWERT (`duplicates.py::keep_possible_for`). Der Vorgabewert bildet
   // nur den Regelfall ab - ein Duplikat hat eine Gruppe, eine Unscharfe-Ablehnung nicht - und darf
   // nicht als Ableitungsregel gelesen werden: Der Fall "Entscheidungszeile ohne offenen Vorschlag"
   // traegt `true` bei `reason === 'low_quality'` (siehe der Test dazu).
   return {
+    kind: 'photo',
     photo: photo(id),
     reason,
     decision,
@@ -88,7 +90,9 @@ function stand(
   return {
     items,
     total: total ?? items.length,
-    open_count: openCount ?? items.filter((eintrag) => eintrag.decision === null).length,
+    open_count:
+      openCount ??
+      items.filter((eintrag) => eintrag.kind === 'photo' && eintrag.decision === null).length,
   }
 }
 
@@ -98,11 +102,14 @@ function group(ids: number[], decisions: DuplicateDecision[] = []): DuplicateGro
       photo: photo(id),
       effective_decision: decisions[index] ?? 'keep',
       keep_possible: true,
+      sharpness: null,
+      exposure: null,
     })),
     position: 1,
     total: 1,
     previous_photo_id: null,
     next_photo_id: null,
+    span_seconds: 0,
   }
 }
 

@@ -272,17 +272,23 @@ export type DuplicateDecision = 'keep' | 'discard'
  * `keep_possible === false` heißt: Kein Wert der Entscheidungszeile ändert diesen Zustand. Der
  * Grund reist nicht mit — er folgt aus der Bedingung selbst, und die Oberfläche rendert dort einen
  * festen Text.
+ *
+ * `sharpness`/`exposure` sind die Rohwerte aus `PhotoScore` (Schärfe: höher = schärfer;
+ * Belichtung: Anteil geclippter Pixel, niedriger = besser), `null` ohne Messung. Die Bewertungszeile
+ * liest sie **nie aus `PhotoOut.suggestion`** — jenes Feld fällt nach jeder Entscheidung auf `null`.
  */
 export interface DuplicateGroupItem {
   photo: PhotoOut
   effective_decision: DuplicateDecision
   keep_possible: boolean
+  sharpness: number | null
+  exposure: number | null
 }
 
 /**
- * Die Antwortform ALLER DREI Endpunkte der Vergleichsansicht — Lesepfad wie beide Schreibwege.
- * Ein Schreibvorgang liefert damit denselben vollständigen Stand zurück, den ein erneutes Laden
- * liefern würde.
+ * Die Antwortform ALLER VIER Endpunkte der Vergleichsansicht — Lesepfad, beide Schreibwege und der
+ * Gruppenabschluss. Ein Schreibvorgang liefert damit denselben vollständigen Stand zurück, den ein
+ * erneutes Laden liefern würde.
  *
  * `position`/`total` sind 1-basiert mit `1 <= position <= total` und beziehen sich auf ALLE
  * Duplikat-Gruppen des Projekts — eine vollständig entschiedene zählt weiter mit.
@@ -290,6 +296,9 @@ export interface DuplicateGroupItem {
  * `previous_photo_id`/`next_photo_id` tragen die Repräsentanten-Id der jeweils benachbarten
  * Gruppe, `null` am Rand. Die Ansicht schaltet dort auf `disabled`, statt die Schaltfläche
  * wegzulassen.
+ *
+ * `span_seconds` ist der Abstand zwischen frühester und spätester Aufnahme der Serie in ganzen
+ * Sekunden (abgerundet), `0` im leeren Stand.
  */
 export interface DuplicateGroupOut {
   items: DuplicateGroupItem[]
@@ -297,6 +306,7 @@ export interface DuplicateGroupOut {
   total: number
   previous_photo_id: number | null
   next_photo_id: number | null
+  span_seconds: number
 }
 
 /**
@@ -311,7 +321,11 @@ export interface DuplicateGroupIndexOut {
 }
 
 /**
- * EIN Eintrag der Ausschuss-Übersicht (Spec 0525, `api/photos.py::AusschussEntryOut`).
+ * EIN Einzel-Eintrag der Ausschuss-Übersicht (`api/photos.py::AusschussPhotoEntryOut`).
+ *
+ * In der Liste steht er für jede Aufnahme OHNE auflösbare Duplikatgruppe — eine Aufnahme mit
+ * Gruppe liegt im Stapel ihrer Gruppe. Am Detailfilter (`photo_id`) steht er für jede Aufnahme des
+ * Bestands, auch für ein Gruppenmitglied; nur dort trägt er einen Gruppenanker.
  *
  * `reason` ist der Grund der Markierung und kommt vom Server, nicht aus einer TypeScript-Ableitung
  * (Auflage S7): `duplicate` genau dann, wenn das Foto ein Duplikat ist, sonst `low_quality`. Der
@@ -325,8 +339,7 @@ export interface DuplicateGroupIndexOut {
  * Zustände, in dem es keinen Rückweg gibt, weil er noch nie verlassen wurde.
  *
  * `group_anchor_photo_id` ist der Anker der Duplikat-Gruppe, in der diese Aufnahme liegt, oder
- * `null`. Die Detailansicht löst die Serie darüber auf — nicht über das angeklickte Foto, damit
- * die Gruppe dieselbe bleibt, egal welches Mitglied man geöffnet hat.
+ * `null`. Die Detailansicht verweist darüber in die Vergleichsansicht.
  *
  * `keep_possible` ist die WIRKSAMKEIT des angebotenen „behalten" und kommt vom Server
  * (`duplicates.py::keep_possible_for`, Auflage S7). Aus `reason` ist sie **nicht** ableitbar: Ein
@@ -334,7 +347,8 @@ export interface DuplicateGroupIndexOut {
  * `duplicate_of` zurückgesetzt wurden, trägt `low_quality` und trotzdem `true`. Eine zweite
  * Ableitung hier nähme dem Nutzer dort die einzige Handlung, die die Aufnahme zurückholt.
  */
-export interface AusschussEntryOut {
+export interface AusschussPhotoEntry {
+  kind: 'photo'
   photo: PhotoOut
   reason: SuggestionReason
   decision: DuplicateDecision | null
@@ -343,13 +357,34 @@ export interface AusschussEntryOut {
 }
 
 /**
- * Die Antwort des Ausschuss-Lesepfads: der Bestand, seine Größe und die Zahl der offenen
+ * EIN Stapel der Ausschuss-Übersicht: alle Ausschuss-Aufnahmen einer Duplikatgruppe
+ * (`api/photos.py::AusschussGroupEntryOut`).
+ *
+ * `cover` ist die erste Ausschuss-Aufnahme der Gruppe, nicht zwingend der Gewinner.
+ * `group_size` zählt alle Mitglieder der Gruppe (dieselbe Zahl wie im Kopf der Vergleichsansicht),
+ * `member_count` nur die Ausschuss-Aufnahmen. `decision_counts` zählt deren GESPEICHERTE Zeilen —
+ * dieselbe Größe wie `decision` am Einzel-Eintrag, nie eine Ableitung in TypeScript.
+ */
+export interface AusschussGroupEntry {
+  kind: 'group'
+  group_anchor_photo_id: number
+  cover: PhotoOut
+  member_count: number
+  group_size: number
+  decision_counts: { undecided: number; keep: number; discard: number }
+}
+
+export type AusschussEntryOut = AusschussPhotoEntry | AusschussGroupEntry
+
+/**
+ * Die Antwort des Ausschuss-Lesepfads: die Einträge, ihre Zahl und die Zahl der offenen
  * Vorschläge.
  *
- * `total` ist die Größe des Gesamtbestands, nicht der geladenen Seite; `open_count` ist
- * projektweit und von `limit`/`offset` unabhängig — es ist die Zahl, die der Bestätigungsbutton
- * trägt. Beide bleiben auch im Filterzweig (`photo_id`) projektweit, `items` trägt dann genau den
- * gefilterten Eintrag oder nichts.
+ * `total` zählt die EINTRÄGE des Gesamtbestands (Einzel-Einträge und Stapel), nicht der geladenen
+ * Seite; `open_count` zählt die AUFNAHMEN mit offenem Vorschlag, projektweit und von
+ * `limit`/`offset` unabhängig — es ist die Zahl, die der Bestätigungsbutton trägt. Beide bleiben
+ * auch im Filterzweig (`photo_id`) dieselben, `items` trägt dann genau den gefilterten
+ * Einzel-Eintrag oder nichts.
  */
 export interface AusschussOut {
   items: AusschussEntryOut[]

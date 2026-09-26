@@ -55,11 +55,14 @@ function group(
       photo: photo(id),
       effective_decision: overrides.decisions?.[index] ?? 'keep',
       keep_possible: overrides.keepPossible?.[index] ?? true,
+      sharpness: null,
+      exposure: null,
     })),
     position: overrides.position ?? 1,
     total: overrides.total ?? 1,
     previous_photo_id: overrides.previousPhotoId ?? null,
     next_photo_id: overrides.nextPhotoId ?? null,
+    span_seconds: 0,
   }
 }
 

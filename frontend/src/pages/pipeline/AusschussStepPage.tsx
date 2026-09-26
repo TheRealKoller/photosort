@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useOutletContext, useSearchParams } from 'react-router'
 
 import { ApiError } from '../../api/client'
-import type { AusschussEntryOut, DuplicateDecision, SuggestionReason } from '../../api/types'
+import type { AusschussPhotoEntry, DuplicateDecision, SuggestionReason } from '../../api/types'
 import {
   DUPLICATE_IMMUTABLE_TEXT,
   DUPLICATE_ZUSTAENDE,
@@ -170,7 +170,10 @@ export function AusschussStepPage() {
   const { ref: gridRef, width: containerWidth } = useElementWidth<HTMLUListElement>()
 
   const entries = useMemo(
-    () => ausschussQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    () =>
+      ausschussQuery.data?.pages
+        .flatMap((page) => page.items)
+        .filter((eintrag): eintrag is AusschussPhotoEntry => eintrag.kind === 'photo') ?? [],
     [ausschussQuery.data],
   )
   const total = ausschussQuery.data?.pages[0]?.total ?? 0
@@ -459,7 +462,7 @@ function AusschussDetail({
   onClose: () => void
 }) {
   const query = useAusschussEntryQuery(projectId, photoId)
-  const eintrag: AusschussEntryOut | null = query.data?.items[0] ?? null
+  const eintrag: AusschussPhotoEntry | null = query.data ?? null
 
   /* Der Schreibweg ist der EINZELNE: Er trifft genau diese Aufnahme. Der Anker der Gruppe ist
      dabei nur der Ort, an dem die Antwort im Zwischenspeicher landet - die Menge der betroffenen
