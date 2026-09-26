@@ -14,17 +14,27 @@ interface CriterionScoreGridProps {
   className?: string
   /** Klassen der beiden Blockueberschriften. */
   headingClassName?: string
+  /** Klassen der Werte je Zeile. */
+  valueClassName?: string
 }
 
 const DEFAULT_TITLES = { quality: 'Qualität — Einzelwerte', content: 'Bildinhalt — Einzelwerte' }
 
 /** Eine Nachschlagzeile: Name links, Wert rechts. `text-sm` ist die Bezugsgröße von AK5 - die
  *  Albumtauglichkeits-Zeile des Urteils steht mindestens beim 1,4-fachen davon. */
-function ScoreRow({ label, value }: { label: string; value: string }) {
+function ScoreRow({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string
+  value: string
+  valueClassName: string
+}) {
   return (
     <div className="flex items-baseline justify-between gap-3 text-sm">
       <dt className="text-text">{label}</dt>
-      <dd className="font-medium text-text-h" data-criterion-value="">
+      <dd className={valueClassName} data-criterion-value="">
         {value}
       </dd>
     </div>
@@ -58,6 +68,7 @@ export function CriterionScoreGrid({
   contentRows = [],
   className = 'grid gap-6 sm:grid-cols-2',
   headingClassName = 'text-xs font-semibold tracking-wide text-text-h uppercase',
+  valueClassName = 'font-medium text-text-h',
 }: CriterionScoreGridProps) {
   const { quality: qualityScores, content: contentScores } =
     partitionByPresenceThreshold(criterionScores)
@@ -91,6 +102,7 @@ export function CriterionScoreGrid({
                 key={score.criterion_key}
                 label={score.display_name}
                 value={formatCriterionPercent(score.value)}
+                valueClassName={valueClassName}
               />
             ))}
           </dl>
@@ -107,10 +119,16 @@ export function CriterionScoreGrid({
                 key={score.criterion_key}
                 label={score.display_name}
                 value={formatCriterionPercent(score.value)}
+                valueClassName={valueClassName}
               />
             ))}
             {contentRows.map((row) => (
-              <ScoreRow key={row.label} label={row.label} value={row.value} />
+              <ScoreRow
+                key={row.label}
+                label={row.label}
+                value={row.value}
+                valueClassName={valueClassName}
+              />
             ))}
           </dl>
         </div>

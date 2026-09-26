@@ -15,8 +15,8 @@ import type { PhotoImageStatus } from './PhotoImage'
 import { Button } from './ui/button'
 import { Icon } from './ui/icon'
 
-/** Ueberschriften des Detailblocks nach Entwurf: normale Schreibung, 14px, Schnitt 500. */
-const DETAIL_HEADING_CLASS = 'text-sm font-medium text-text-h'
+/** Ueberschriften des Detailblocks nach Entwurf: normale Schreibung, 14px, Schnitt 400. */
+const DETAIL_HEADING_CLASS = 'text-sm text-text-h'
 
 interface CurationLightboxProps {
   photo: PhotoOut
@@ -182,6 +182,7 @@ export function CurationLightbox({ photo, onClose }: CurationLightboxProps) {
               contentRows={rankRows}
               className="contents"
               headingClassName={DETAIL_HEADING_CLASS}
+              valueClassName="text-text-h"
             />
             <div className="flex flex-col gap-4">
               {photo.fine_labels.length > 0 && (

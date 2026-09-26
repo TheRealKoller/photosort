@@ -43,7 +43,7 @@ export function PhotoCaptureFacts({
     <section className="flex flex-col gap-1 text-sm" data-testid="taken-at-section">
       <Heading className={headingClassName}>{heading}</Heading>
       <p className="flex flex-wrap items-center gap-2">
-        <span className={compact ? 'text-text-h' : 'font-mono text-text'}>
+        <span className={compact ? 'text-text' : 'font-mono text-text'}>
           {formatDateTime(photo.taken_at)}
         </span>
         {/* Die Marke NUR im Korrekturfall, im zurueckhaltenden Metadatenton: eine Korrektur
