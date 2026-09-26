@@ -13,7 +13,7 @@ interface ModalDialogOptions {
   /** Das Element, das beim Oeffnen den Fokus bekommt. */
   initialFocusRef: RefObject<HTMLElement | null>
   /** `false`, wenn der Aufrufer den Fokus nach dem Schliessen selbst setzt: Die Rueckgabe hier
-   * fokussiert ohne `preventScroll` und scrollte einen teilweise verdeckten Ausloeser ins Bild. */
+   * fokussiert ohne `preventScroll` und koennte einen verdeckten Ausloeser ins Bild scrollen. */
   returnFocus?: boolean
 }
 
