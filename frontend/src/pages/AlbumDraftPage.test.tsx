@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
+import type { InitialEntry, Location, NavigateFunction } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -770,5 +771,247 @@ describe('AlbumDraftPage', () => {
 
     expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument()
     expect(screen.queryByLabelText('Im Album: a.jpg')).toBeNull()
+  })
+
+  /*
+   * specs/features/0531-kuratierung-grossansicht.md - die Grossansicht in der Seite. Vor der Seite
+   * liegt eine Stub-Route als Verlaufssonde: Jeder Fall endet mit einem Zurueck, das dort ankommen
+   * muss - so faellt ein verwaister oder ueberzaehliger Verlaufseintrag auf. Geoeffnet wird ueber
+   * `fireEvent.click`, das (wie Safari) den Button NICHT fokussiert: Eine Fokus-Rueckgabe ueber das
+   * vorher fokussierte Element waere damit rot.
+   */
+  describe('Großansicht', () => {
+    const probe: { location?: Location; navigate?: NavigateFunction } = {}
+
+    function Probe() {
+      probe.location = useLocation()
+      probe.navigate = useNavigate()
+      return null
+    }
+
+    function renderWithHistory(entry: InitialEntry = '/projects/1/album') {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/stub', entry]} initialIndex={1}>
+            <Probe />
+            <Routes>
+              <Route path="/stub" element={<p>Stub</p>} />
+              <Route path="/projects/:projectId/album" element={<AlbumDraftPage />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      )
+      return queryClient
+    }
+
+    function back(): void {
+      act(() => {
+        void probe.navigate!(-1)
+      })
+    }
+
+    function writeCalls(): number {
+      return (
+        vi.mocked(ratingsApi.setRating).mock.calls.length +
+        vi.mocked(ratingsApi.deleteRating).mock.calls.length +
+        vi.mocked(ratingsApi.setFavorite).mock.calls.length +
+        vi.mocked(photosApi.exchangeDraftPhoto).mock.calls.length +
+        vi.mocked(photosApi.setMotifCorrection).mock.calls.length +
+        vi.mocked(photosApi.deleteMotifCorrection).mock.calls.length
+      )
+    }
+
+    const closeWays: [string, () => void][] = [
+      ['Schließen', () => fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))],
+      ['Escape', () => fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })],
+      [
+        'Klick neben das Bild',
+        () => {
+          const stage = screen.getByTestId('lightbox-stage')
+          fireEvent.pointerDown(stage)
+          fireEvent.click(stage)
+        },
+      ],
+      ['Browser-Zurück', back],
+    ]
+
+    it.each(closeWays)(
+      'opens exactly the clicked photo and closes via %s back to the same place',
+      async (_, closeLightbox) => {
+        vi.mocked(photosApi.listPhotos).mockResolvedValue(
+          listOut([
+            photo({ id: 1, relative_path: 'reise/a.jpg' }),
+            photo({ id: 2, relative_path: 'reise/b.jpg' }),
+          ]),
+        )
+        renderWithHistory()
+        const trigger = await screen.findByRole('button', { name: 'Großansicht: reise/b.jpg' })
+        const callsBefore = draftCalls()
+
+        fireEvent.click(trigger)
+
+        expect(screen.getByRole('dialog', { name: 'b.jpg' })).toBeInTheDocument()
+        expect(probe.location).toMatchObject({
+          pathname: '/projects/1/album',
+          state: { grossansicht: 2 },
+        })
+
+        closeLightbox()
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(trigger).toHaveFocus()
+        expect(trigger.isConnected).toBe(true)
+        expect(screen.getByRole('button', { name: 'Im Album: reise/b.jpg' })).toHaveAttribute(
+          'aria-pressed',
+          'true',
+        )
+        expect(draftCalls()).toBe(callsBefore)
+        expect(writeCalls()).toBe(0)
+        expect(probe.location).toMatchObject({ pathname: '/projects/1/album', state: null })
+        back()
+        expect(probe.location?.pathname).toBe('/stub')
+      },
+    )
+
+    it('keeps a collapsed day collapsed while a photo of another day was open', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([
+          photo({
+            id: 1,
+            relative_path: 'a.jpg',
+            taken_at: '2026-07-20T10:00:00',
+            event: eventOut({ id: 10 }),
+          }),
+          photo({
+            id: 2,
+            relative_path: 'b.jpg',
+            taken_at: '2026-07-21T10:00:00',
+            event: eventOut({ id: 11, position: 2, started_at: '2026-07-21T09:00:00' }),
+          }),
+        ]),
+      )
+      renderWithHistory()
+      await screen.findByRole('button', { name: 'Großansicht: b.jpg' })
+      const dayToggles = screen.getAllByRole('button', { expanded: true })
+      fireEvent.click(dayToggles[1])
+      expect(screen.queryByRole('button', { name: 'Großansicht: b.jpg' })).toBeNull()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Großansicht: a.jpg' }))
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(1)
+      expect(screen.queryByRole('button', { name: 'Großansicht: b.jpg' })).toBeNull()
+    })
+
+    it('starts with collapsed details on every opening', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([
+          photo({ id: 1, relative_path: 'a.jpg' }),
+          photo({ id: 2, relative_path: 'b.jpg' }),
+        ]),
+      )
+      renderWithHistory()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: a.jpg' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Großansicht: b.jpg' }))
+
+      expect(screen.getByRole('button', { name: 'Details' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+    })
+
+    /* AK15: Nach einem Reload steht der Zustand noch im Verlaufseintrag. Solange die Liste laedt,
+       ist „noch nicht da" nicht „verschwunden" - es wird nichts geschlossen. */
+    it('reopens the photo after a reload once the list has loaded', async () => {
+      let resolveList: (list: PhotoListOut) => void = () => {}
+      vi.mocked(photosApi.listPhotos).mockReturnValue(
+        new Promise((resolve) => {
+          resolveList = resolve
+        }),
+      )
+      renderWithHistory({ pathname: '/projects/1/album', state: { grossansicht: 2 } })
+
+      await screen.findByRole('status', { name: 'Fotos werden geladen…' })
+      expect(probe.location?.state).toEqual({ grossansicht: 2 })
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      await act(async () => {
+        resolveList(
+          listOut([
+            photo({ id: 1, relative_path: 'a.jpg' }),
+            photo({ id: 2, relative_path: 'b.jpg' }),
+          ]),
+        )
+      })
+
+      expect(await screen.findByRole('dialog', { name: 'b.jpg' })).toBeInTheDocument()
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+      expect(screen.getByRole('button', { name: 'Großansicht: b.jpg' })).toHaveFocus()
+      expect(probe.location?.state).toBeNull()
+      back()
+      expect(probe.location?.pathname).toBe('/stub')
+    })
+
+    it('shows nothing and clears the entry when the reloaded photo is not in the list', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([photo({ id: 1, relative_path: 'a.jpg' })]),
+      )
+      renderWithHistory({ pathname: '/projects/1/album', state: { grossansicht: 99 } })
+
+      await screen.findByRole('button', { name: 'Großansicht: a.jpg' })
+
+      await waitFor(() => expect(probe.location?.state).toBeNull())
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(photosApi.fetchPhotoImageBlobUrl).not.toHaveBeenCalledWith(99, 'display')
+      back()
+      expect(probe.location?.pathname).toBe('/stub')
+    })
+
+    /* AK16: Das Foto verschwindet bei offener Grossansicht aus der Liste. */
+    it('closes without a leftover entry and focuses the heading when the photo disappears', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([
+          photo({ id: 1, relative_path: 'a.jpg' }),
+          photo({ id: 2, relative_path: 'b.jpg' }),
+        ]),
+      )
+      const queryClient = renderWithHistory()
+      fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: b.jpg' }))
+      expect(screen.getByRole('dialog', { name: 'b.jpg' })).toBeInTheDocument()
+
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([photo({ id: 1, relative_path: 'a.jpg' })]),
+      )
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: ['photos', 1, 'draft'] })
+      })
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      await waitFor(() =>
+        expect(screen.getByRole('heading', { level: 1, name: 'Album-Entwurf' })).toHaveFocus(),
+      )
+      expect(probe.location?.state).toBeNull()
+      back()
+      expect(probe.location?.pathname).toBe('/stub')
+    })
+
+    it('has no link in the large view', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(
+        listOut([photo({ id: 1, relative_path: 'a.jpg' })]),
+      )
+      renderWithHistory()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: a.jpg' }))
+
+      expect(within(screen.getByRole('dialog')).queryAllByRole('link')).toEqual([])
+    })
   })
 })

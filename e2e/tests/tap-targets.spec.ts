@@ -33,7 +33,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 21
+const EXPECTED_CONTROL_COUNT = 23
 
 async function assertTappable(
   control: Locator,
@@ -167,6 +167,23 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     'Alternativen (Entwurfskachel)',
   )
   checked.push('Alternativen der Entwurfskachel')
+
+  // --- Die Großansicht aus dem Entwurf (specs/features/0531-...) ------------------------------
+  // „Schließen" und „Details" beziehen ihre 44 px aus der Aufspannung, und beide liegen nur
+  // 12 px neben der Bühne, deren freie Fläche SCHLIESST: Ein Fehlgriff neben „Details"
+  // schlösse die Großansicht, statt die Details aufzuklappen.
+  await page
+    .getByRole('button', { name: /^Großansicht: / })
+    .first()
+    .click()
+  const lightbox = page.getByRole('dialog')
+  await expect(lightbox, 'Großansicht').toBeVisible()
+  for (const label of ['Schließen', 'Details']) {
+    await assertTappable(lightbox.getByRole('button', { name: label, exact: true }), label)
+    checked.push(`${label} (Großansicht)`)
+  }
+  await page.keyboard.press('Escape')
+  await expect(lightbox).toBeHidden()
 
   // --- Die Bedienelemente der Endauswahl (specs/features/0431-...) ---------------------------
   // ERGAENZUNG, kein Nachziehen: Die abgeloeste Vergleichsseite stand nie in diesem Spec, weil

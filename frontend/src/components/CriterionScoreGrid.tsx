@@ -6,15 +6,35 @@ import { formatCriterionPercent } from '../utils/formatStats'
 
 interface CriterionScoreGridProps {
   criterionScores: CriterionScoreOut[]
+  /** Ueberschriften der beiden Bloecke. */
+  titles?: { quality: string; content: string }
+  /** Weitere Zeilen am Ende des Bildinhalt-Blocks (Beschriftung und fertiger Wert). */
+  contentRows?: { label: string; value: string }[]
+  /** Klassen des Behaelters; `contents` reiht beide Bloecke in das Raster des Aufrufers ein. */
+  className?: string
+  /** Klassen der beiden Blockueberschriften. */
+  headingClassName?: string
+  /** Klassen der Werte je Zeile. */
+  valueClassName?: string
 }
+
+const DEFAULT_TITLES = { quality: 'Qualität — Einzelwerte', content: 'Bildinhalt — Einzelwerte' }
 
 /** Eine Nachschlagzeile: Name links, Wert rechts. `text-sm` ist die Bezugsgröße von AK5 - die
  *  Albumtauglichkeits-Zeile des Urteils steht mindestens beim 1,4-fachen davon. */
-function ScoreRow({ label, value }: { label: string; value: string }) {
+function ScoreRow({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string
+  value: string
+  valueClassName: string
+}) {
   return (
     <div className="flex items-baseline justify-between gap-3 text-sm">
       <dt className="text-text">{label}</dt>
-      <dd className="font-medium text-text-h" data-criterion-value="">
+      <dd className={valueClassName} data-criterion-value="">
         {value}
       </dd>
     </div>
@@ -42,11 +62,18 @@ function ScoreRow({ label, value }: { label: string; value: string }) {
  * entgegen, stünde dieselbe Angabe an zwei Stellen der Seite - die beiden liefen früher oder
  * später auseinander, und der Nutzer läse denselben Rang zweimal untereinander.
  */
-export function CriterionScoreGrid({ criterionScores }: CriterionScoreGridProps) {
+export function CriterionScoreGrid({
+  criterionScores,
+  titles = DEFAULT_TITLES,
+  contentRows = [],
+  className = 'grid gap-6 sm:grid-cols-2',
+  headingClassName = 'text-xs font-semibold tracking-wide text-text-h uppercase',
+  valueClassName = 'font-medium text-text-h',
+}: CriterionScoreGridProps) {
   const { quality: qualityScores, content: contentScores } =
     partitionByPresenceThreshold(criterionScores)
   const showQualityBlock = qualityScores.length > 0
-  const showContentBlock = contentScores.length > 0
+  const showContentBlock = contentScores.length > 0 || contentRows.length > 0
 
   // Ein einzelnes useId() mit Suffixen: Die Ids muessen auch dann eindeutig bleiben, wenn eine
   // zweite Instanz gleichzeitig im DOM steht.
@@ -59,17 +86,14 @@ export function CriterionScoreGrid({ criterionScores }: CriterionScoreGridProps)
   }
 
   return (
-    <div className="grid gap-6 sm:grid-cols-2" data-testid="criterion-score-grid">
+    <div className={className} data-testid="criterion-score-grid">
       {showQualityBlock && (
         // role="group" + aria-labelledby am Wrapper, NICHT am <dl>: Ein <dl> hat in dieser
         // Toolchain keine namensfaehige Rolle, die Beschriftung kaeme dort weder im
         // Accessibility-Tree noch in einer Rollenabfrage an.
         <div role="group" aria-labelledby={qualityHeadingId} className="flex flex-col gap-2">
-          <h3
-            id={qualityHeadingId}
-            className="text-xs font-semibold tracking-wide text-text-h uppercase"
-          >
-            Qualität — Einzelwerte
+          <h3 id={qualityHeadingId} className={headingClassName}>
+            {titles.quality}
           </h3>
           <dl className="flex flex-col gap-2">
             {qualityScores.map((score) => (
@@ -78,6 +102,7 @@ export function CriterionScoreGrid({ criterionScores }: CriterionScoreGridProps)
                 key={score.criterion_key}
                 label={score.display_name}
                 value={formatCriterionPercent(score.value)}
+                valueClassName={valueClassName}
               />
             ))}
           </dl>
@@ -85,11 +110,8 @@ export function CriterionScoreGrid({ criterionScores }: CriterionScoreGridProps)
       )}
       {showContentBlock && (
         <div role="group" aria-labelledby={contentHeadingId} className="flex flex-col gap-2">
-          <h3
-            id={contentHeadingId}
-            className="text-xs font-semibold tracking-wide text-text-h uppercase"
-          >
-            Bildinhalt — Einzelwerte
+          <h3 id={contentHeadingId} className={headingClassName}>
+            {titles.content}
           </h3>
           <dl className="flex flex-col gap-2">
             {contentScores.map((score) => (
@@ -97,6 +119,15 @@ export function CriterionScoreGrid({ criterionScores }: CriterionScoreGridProps)
                 key={score.criterion_key}
                 label={score.display_name}
                 value={formatCriterionPercent(score.value)}
+                valueClassName={valueClassName}
+              />
+            ))}
+            {contentRows.map((row) => (
+              <ScoreRow
+                key={row.label}
+                label={row.label}
+                value={row.value}
+                valueClassName={valueClassName}
               />
             ))}
           </dl>

@@ -678,6 +678,33 @@ Verarbeitungs-Cache (Thumbnails).
       verlinkt dorthin. Backendseitig entfällt nichts — die Seite las das Standard-Listing.
       `groupDraftByDay` zieht dabei nach `utils/eventGrouping.ts::groupPhotosByDay`, weil beide
       Ansichten dieselbe Antwortform gliedern.
+  - **Die Großansicht aus der Kuratierung** *(Spec
+    [`0531`](../specs/features/0531-kuratierung-grossansicht.md))*: rein Frontend, kein Endpunkt,
+    kein Feld. Die Bildfläche jeder Kachel in Album-Entwurf und Endauswahl ist ein Auslöser
+    (`PhotoCard` mit `onImageActivate`; `PhotoCard` hat keinen Link mehr), der
+    `components/CurationLightbox.tsx` öffnet: ein natives modales `<dialog>`, das genau dieses
+    eine Foto über `PhotoImage variant="display"` zeigt, dazu die schreibgeschützte
+    `MotifStrengthRow` und aufklappbar `CriterionScoreGrid`, `FineLabelList` und
+    `PhotoCaptureFacts`. Sie bewertet nichts und führt nirgendwohin (kein Link, kein Blättern).
+    - **Modal-Mechanik** (`showModal`, Fokusfalle, Esc/`cancel`, Scroll-Sperre, Erstfokus) liegt in
+      `lib/useModalDialog.ts`; `ui/dialog.tsx` und die Großansicht nutzen denselben Hook.
+      Abweichend vom `Dialog` schließt die Großansicht auch per Klick auf Backdrop oder freie
+      Bühne — nur wenn `pointerdown` **und** `click` dort liegen.
+    - **Der Öffnungszustand ist der Verlaufseintrag** (`hooks/useCurationLightbox.ts`): `open`
+      legt auf derselben URL einen Eintrag mit `state: { grossansicht: <id> }` an, die Seite bleibt
+      montiert (Sicht, Tagesklappung, laufende Entscheidungen, Query-Cache unberührt). Der
+      Zustand trägt nur die Id und wird als nicht vertrauenswürdige Eingabe gelesen
+      (`Number.isSafeInteger`, dann Nachschlagen in der **geladenen** Liste — in der Endauswahl
+      `items`, nicht die gefilterte Sicht). `close` verlässt einen selbst angelegten Eintrag mit
+      einem Schritt zurück und ersetzt einen aus Reload oder Vorwärts-Navigation; ein Riegel lässt
+      es je Eintrag nur einmal wirken, sonst verließen zwei Esc vor dem `popstate` die Seite. Steht
+      das Foto nach dem Laden nicht in der Liste, schließt der Hook selbst; während sie lädt,
+      nicht.
+    - **Fokus-Rückgabe:** Wechselt die offene Id auf `null` (jeder Schließweg, auch
+      Browser-Zurück), fokussiert der Hook den per Callback-Ref registrierten Auslöser mit
+      `preventScroll`, sonst die Seitenüberschrift `h1` (`tabIndex={-1}`). Sie hängt nicht am
+      vorher fokussierten Element; die Großansicht schaltet die Rückgabe des Modal-Hooks deshalb ab
+      (`returnFocus: false`), weil jene ohne `preventScroll` fokussiert.
   - **Duplikate vergleichen und einzeln entscheiden** *(Spec
     [`0374`](../specs/features/0374-duplikate-vergleichen.md), ADR
     [`decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md`](../specs/decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md))*:

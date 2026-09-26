@@ -8,7 +8,8 @@ import { cn } from '../../lib/utils'
 export type AlertVariant = 'success' | 'warning' | 'error'
 
 interface AlertProps {
-  children: ReactNode
+  /** Beitext. Fehlt er, traegt der Titel die Meldung allein. */
+  children?: ReactNode
   variant?: AlertVariant
   /** Kuratierter Titel. Fehlt er, greift der Standardtitel der Auspraegung - ein Titel ist
    * Pflicht, die Meldung darf ihre Bedeutung nie allein ueber die Umrissfarbe tragen. */
@@ -87,7 +88,7 @@ export function Alert({
         <p className="font-semibold text-text-h">{title ?? config.title}</p>
         {/* Fremdtext (`detail` des Servers) ausschliesslich als regulaerer React-Textknoten - nie
             dangerouslySetInnerHTML, kein Markdown-/Rich-Text-Rendering, keine Verlinkung. */}
-        <p className={config.body}>{children}</p>
+        {children !== undefined && children !== null && <p className={config.body}>{children}</p>}
       </div>
       {onRetry && (
         <Button type="button" variant="secondary" size="sm" onClick={onRetry}>

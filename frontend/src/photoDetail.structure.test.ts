@@ -147,7 +147,7 @@ describe('Die dreistufige Ortsnamen-Wahl steht in genau einer Funktion', () => {
   })
 
   it('lässt beide Aufrufstellen die Funktion importieren', () => {
-    const seite = readFileSync(join(SRC_DIR, 'pages/PhotoDetailPage.tsx'), 'utf8')
+    const seite = readFileSync(join(SRC_DIR, 'components/PhotoCaptureFacts.tsx'), 'utf8')
     const quelle = readFileSync(join(SRC_DIR, 'utils/timeOfDay.ts'), 'utf8')
 
     expect(seite).toMatch(/import\s*\{[^}]*\beventPlaceName\b[^}]*\}\s*from\s*'[^']*timeOfDay'/)

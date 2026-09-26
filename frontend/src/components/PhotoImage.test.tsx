@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -73,5 +73,81 @@ describe('PhotoImage', () => {
     await waitFor(() => expect(screen.getByRole('img')).toHaveAttribute('src', 'blob:url-2'))
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:url-1')
     expect(photosApi.fetchPhotoImageBlobUrl).toHaveBeenCalledWith(2, 'display')
+  })
+
+  it('offers no retry without `retryable`', async () => {
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockRejectedValue(new ApiError(500, 'Serverfehler'))
+
+    render(<PhotoImage photoId={1} variant="thumbnail" alt="Foto 1" />)
+
+    await screen.findByRole('alert')
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('reports every change of its loading state', async () => {
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    const onStatusChange = vi.fn()
+
+    render(
+      <PhotoImage photoId={1} variant="display" alt="Foto 1" onStatusChange={onStatusChange} />,
+    )
+
+    await screen.findByRole('img', { name: 'Foto 1' })
+    expect(onStatusChange.mock.calls.map(([status]) => status)).toEqual(['loading', 'ready'])
+  })
+
+  describe('retryable (Spec 0531, AK13)', () => {
+    it('shows the server detail with a retry that starts a new fetch', async () => {
+      vi.mocked(photosApi.fetchPhotoImageBlobUrl)
+        .mockRejectedValueOnce(new ApiError(500, 'Speicher nicht erreichbar'))
+        .mockResolvedValueOnce('blob:url-2')
+      const onRetry = vi.fn()
+
+      render(<PhotoImage photoId={7} variant="display" alt="a/b.jpg" retryable onRetry={onRetry} />)
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('Das Bild lässt sich nicht laden.')
+      expect(alert).toHaveTextContent('Speicher nicht erreichbar')
+      // Die Wiederholung ist eine eigene Schaltflaeche, nicht Teil der Meldung.
+      expect(within(alert).queryByRole('button')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+
+      expect(await screen.findByRole('img', { name: 'a/b.jpg' })).toHaveAttribute(
+        'src',
+        'blob:url-2',
+      )
+      expect(photosApi.fetchPhotoImageBlobUrl).toHaveBeenCalledTimes(2)
+      expect(photosApi.fetchPhotoImageBlobUrl).toHaveBeenLastCalledWith(7, 'display')
+      expect(onRetry).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows only the title when the failure is no ApiError', async () => {
+      vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockRejectedValue(new TypeError('offline'))
+
+      render(<PhotoImage photoId={7} variant="display" alt="a/b.jpg" retryable />)
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(/^Das Bild lässt sich nicht laden\.$/)
+    })
+
+    /* Kinder von `role=img` sind praesentational: Laege der Knopf darunter, waere er fuer
+       Hilfstechnik unsichtbar. Ein 404 ist kein Fehler - deshalb auch kein `alert`. */
+    it('shows the processing placeholder with a reachable retry and without error semantics', async () => {
+      vi.mocked(photosApi.fetchPhotoImageBlobUrl)
+        .mockRejectedValueOnce(new ApiError(404, 'nicht da'))
+        .mockResolvedValueOnce('blob:url-2')
+
+      render(<PhotoImage photoId={7} variant="display" alt="a/b.jpg" retryable />)
+
+      expect(await screen.findByText('Bild wird noch verarbeitet.')).toBeVisible()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      const retry = screen.getByRole('button', { name: 'Erneut versuchen' })
+      expect(retry.closest('[role="img"]')).toBeNull()
+
+      fireEvent.click(retry)
+
+      expect(await screen.findByRole('img', { name: 'a/b.jpg' })).toBeInTheDocument()
+      expect(photosApi.fetchPhotoImageBlobUrl).toHaveBeenCalledTimes(2)
+    })
   })
 })

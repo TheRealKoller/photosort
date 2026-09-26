@@ -1,3 +1,5 @@
+import type { Ref } from 'react'
+
 import type { AlbumParticipantOut, PhotoOut } from '../api/types'
 import type { ParticipantStance } from '../utils/albumSelection'
 import { participantStance } from '../utils/albumSelection'
@@ -33,6 +35,10 @@ export interface SelectionPhotoTileProps {
    */
   decidingIncluded: boolean | null
   onDecide: (included: boolean) => void
+  /** Oeffnet die Grossansicht dieses Fotos - Ausloeser ist die Bildflaeche. */
+  onOpenLarge: (photoId: number) => void
+  /** Erhaelt den Ausloeser der Grossansicht - Ziel der Fokus-Rueckgabe nach dem Schliessen. */
+  largeTriggerRef: Ref<HTMLButtonElement>
 }
 
 /** Das Kennzeichen einer Haltung - der bestehende `RatingBadge`, nie ein neues Symbol. */
@@ -78,6 +84,8 @@ export function SelectionPhotoTile({
   participants,
   decidingIncluded,
   onDecide,
+  onOpenLarge,
+  largeTriggerRef,
 }: SelectionPhotoTileProps) {
   // Die drei Anzeigezustände liegen ausschließlich in den Serverfeldern. Die Oberfläche leitet die
   // Zugehörigkeit nie selbst her - `utils/albumDraft.ts::isInAlbum` gilt nur innerhalb der
@@ -109,6 +117,10 @@ export function SelectionPhotoTile({
   return (
     <PhotoCard
       relativePath={photo.relative_path}
+      // Der zugängliche Name trägt den Dateinamen wie die übrigen Schaltflächen der Kachel.
+      onImageActivate={() => onOpenLarge(photo.id)}
+      imageTriggerLabel={`Großansicht: ${photo.relative_path}`}
+      imageTriggerRef={largeTriggerRef}
       image={
         <PhotoImage
           photoId={photo.id}

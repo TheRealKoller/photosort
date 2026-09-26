@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
 import { fetchPhotoImageBlobUrl } from '../api/photos'
 import type { PhotoVariant } from '../api/types'
+import { Alert } from './ui/alert'
+import { Button } from './ui/button'
 import { Skeleton } from './ui/skeleton'
 import { cn } from '../lib/utils'
 
@@ -11,13 +13,26 @@ interface PhotoImageProps {
   variant: PhotoVariant
   alt: string
   className?: string
+  /** Fehler- und Platzhalterzustand bieten „Erneut versuchen" an. Ohne die Prop bleiben beide
+   * Zustaende reine Anzeige. */
+  retryable?: boolean
+  /** Wird nach dem Druck auf „Erneut versuchen" gerufen - die Schaltflaeche verschwindet dabei,
+   * und der Aufrufer entscheidet, wohin der Fokus geht. */
+  onRetry?: () => void
+  /** Meldet jeden Wechsel des Ladezustands - fuer Aufrufer, die ihn neben dem Bild anzeigen. */
+  onStatusChange?: (status: PhotoImageStatus) => void
 }
+
+export type PhotoImageStatus = 'loading' | 'ready' | 'placeholder' | 'error'
+
+/** Titel des wiederholbaren Fehlerzustands; das Server-`detail` steht, falls vorhanden, darunter. */
+export const IMAGE_UNAVAILABLE_TEXT = 'Das Bild lässt sich nicht laden.'
 
 type PhotoImageState =
   | { status: 'loading' }
   | { status: 'ready'; url: string }
   | { status: 'placeholder' }
-  | { status: 'error' }
+  | { status: 'error'; detail: string | null }
 
 /**
  * Laedt ein Foto-Bild authentifiziert (siehe api/client.ts::apiFetchBlob) und deckt die vier vom
@@ -26,8 +41,19 @@ type PhotoImageState =
  * Fehler (jede andere Fehlerantwort). Object-URLs werden beim Unmount bzw. bei
  * photoId/variant-Wechsel wieder freigegeben, um keine Blob-URLs zu leaken.
  */
-export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps) {
+export function PhotoImage({
+  photoId,
+  variant,
+  alt,
+  className,
+  retryable = false,
+  onRetry,
+  onStatusChange,
+}: PhotoImageProps) {
   const [state, setState] = useState<PhotoImageState>({ status: 'loading' })
+  // Jeder Druck auf „Erneut versuchen" erhoeht den Zaehler und startet damit den Lade-Effekt neu.
+  // Es gibt keine automatische oder periodische Wiederholung.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -50,7 +76,7 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
         if (error instanceof ApiError && error.status === 404) {
           setState({ status: 'placeholder' })
         } else {
-          setState({ status: 'error' })
+          setState({ status: 'error', detail: error instanceof ApiError ? error.detail : null })
         }
       })
 
@@ -60,12 +86,40 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
         URL.revokeObjectURL(objectUrl)
       }
     }
-  }, [photoId, variant])
+  }, [photoId, variant, attempt])
+
+  useEffect(() => {
+    onStatusChange?.(state.status)
+  }, [state.status, onStatusChange])
 
   if (state.status === 'loading') {
     return (
       <div className={className} role="status" aria-label={`${alt} wird geladen…`}>
         <Skeleton className="size-full" />
+      </div>
+    )
+  }
+
+  function retry(): void {
+    setAttempt((current) => current + 1)
+    onRetry?.()
+  }
+
+  if (state.status === 'placeholder' && retryable) {
+    // Kein `role="img"` um die Schaltflaeche: Kinder von `role=img` sind praesentational, der Knopf
+    // waere fuer Hilfstechnik unsichtbar. Kein `alert` und keine Fehleroptik - eine noch nicht
+    // erzeugte Variante ist kein Fehler.
+    return (
+      <div
+        className={cn(
+          'flex flex-col items-center justify-center gap-3 rounded-md bg-separator p-4 text-center text-sm text-text',
+          className,
+        )}
+      >
+        <p>Bild wird noch verarbeitet.</p>
+        <Button type="button" size="sm" onClick={retry}>
+          Erneut versuchen
+        </Button>
       </div>
     )
   }
@@ -83,6 +137,21 @@ export function PhotoImage({ photoId, variant, alt, className }: PhotoImageProps
         role="img"
         aria-label={`${alt}: wird noch verarbeitet`}
       />
+    )
+  }
+
+  if (state.status === 'error' && retryable) {
+    return (
+      <div className={cn('flex flex-col items-center justify-center gap-3 p-4', className)}>
+        {/* `detail` des Servers ausschliesslich als React-Textknoten (Alert rendert ihn so). Die
+            Wiederholung ist eine eigene Hauptschaltflaeche unter der Meldung, nicht im Alert. */}
+        <Alert title={IMAGE_UNAVAILABLE_TEXT} className="max-w-md">
+          {state.detail}
+        </Alert>
+        <Button type="button" size="sm" onClick={retry}>
+          Erneut versuchen
+        </Button>
+      </div>
     )
   }
 

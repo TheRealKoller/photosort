@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -34,8 +34,12 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
   }
 }
 
-function renderTile(overrides: Partial<PhotoOut> = {}, props: { onDecide?: () => void } = {}) {
+function renderTile(
+  overrides: Partial<PhotoOut> = {},
+  props: { onDecide?: () => void; largeTriggerRef?: (element: HTMLElement | null) => void } = {},
+) {
   const onDecide = props.onDecide ?? vi.fn()
+  const onOpenLarge = vi.fn()
   render(
     <ul>
       <SelectionPhotoTile
@@ -43,10 +47,17 @@ function renderTile(overrides: Partial<PhotoOut> = {}, props: { onDecide?: () =>
         participants={PARTICIPANTS}
         decidingIncluded={null}
         onDecide={onDecide}
+        onOpenLarge={onOpenLarge}
+        largeTriggerRef={props.largeTriggerRef ?? (() => {})}
       />
     </ul>,
   )
-  return { onDecide }
+  return { onDecide, onOpenLarge }
+}
+
+/** Die Entscheidungsflaechen der Kachel - ohne den Bild-Ausloeser der Grossansicht. */
+function decisionButtons(): HTMLElement[] {
+  return screen.getAllByRole('button', { name: /^(Aufnehmen|Nicht aufnehmen|Herausnehmen): / })
 }
 
 /** Die Haltungsliste EINER Kachel - sie trägt den Dateinamen, damit sie je Kachel eindeutig ist. */
@@ -147,7 +158,7 @@ describe('SelectionPhotoTile - die Trefferfläche', () => {
   it('offers exactly one button in the result view: taking a photo out', async () => {
     const { onDecide } = renderTile({ in_final_selection: true })
 
-    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(decisionButtons()).toHaveLength(1)
     await userEvent.click(screen.getByRole('button', { name: 'Herausnehmen: reise/a.jpg' }))
     expect(onDecide).toHaveBeenCalledWith(false)
   })
@@ -155,7 +166,7 @@ describe('SelectionPhotoTile - die Trefferfläche', () => {
   it('offers exactly one button for a photo that was explicitly taken out', async () => {
     const { onDecide } = renderTile({ final_selection_decision: false, in_final_selection: false })
 
-    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(decisionButtons()).toHaveLength(1)
     await userEvent.click(screen.getByRole('button', { name: 'Aufnehmen: reise/a.jpg' }))
     expect(onDecide).toHaveBeenCalledWith(true)
   })
@@ -168,6 +179,8 @@ describe('SelectionPhotoTile - die Trefferfläche', () => {
           participants={PARTICIPANTS}
           decidingIncluded={true}
           onDecide={vi.fn()}
+          onOpenLarge={vi.fn()}
+          largeTriggerRef={() => {}}
         />
       </ul>,
     )
@@ -181,7 +194,7 @@ describe('SelectionPhotoTile - die Trefferfläche', () => {
   it('builds no own height class - the 44px come from the button primitive', () => {
     renderTile({ contested: true })
 
-    for (const control of screen.getAllByRole('button')) {
+    for (const control of decisionButtons()) {
       expect(control.className).not.toMatch(/\bh-11\b/)
       expect(control.className).toMatch(/\btap-target\b/)
     }
@@ -264,6 +277,8 @@ describe('SelectionPhotoTile - die drei Anzeigezustände', () => {
           participants={PARTICIPANTS}
           decidingIncluded={null}
           onDecide={vi.fn()}
+          onOpenLarge={vi.fn()}
+          largeTriggerRef={() => {}}
         />
       </ul>,
     )
@@ -295,6 +310,8 @@ describe('SelectionPhotoTile - was hier nicht stehen darf', () => {
             participants={PARTICIPANTS}
             decidingIncluded={null}
             onDecide={vi.fn()}
+            onOpenLarge={vi.fn()}
+            largeTriggerRef={() => {}}
           />
         </ul>,
       )
@@ -314,6 +331,8 @@ describe('SelectionPhotoTile - was hier nicht stehen darf', () => {
           participants={PARTICIPANTS}
           decidingIncluded={null}
           onDecide={vi.fn()}
+          onOpenLarge={vi.fn()}
+          largeTriggerRef={() => {}}
         />
       </ul>,
     )
@@ -328,5 +347,40 @@ describe('SelectionPhotoTile - was hier nicht stehen darf', () => {
 
     expect(screen.queryByRole('button', { name: /Details/ })).toBeNull()
     expect(screen.queryByRole('list', { name: 'Motive' })).toBeNull()
+  })
+})
+
+describe('SelectionPhotoTile - die Grossansicht (Spec 0531)', () => {
+  it('opens the large view of exactly this photo from the image area, without deciding', () => {
+    const { onDecide, onOpenLarge } = renderTile({ id: 17, contested: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Großansicht: reise/a.jpg' }))
+
+    expect(onOpenLarge).toHaveBeenCalledTimes(1)
+    expect(onOpenLarge).toHaveBeenCalledWith(17)
+    expect(onDecide).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [{ contested: true }, 'Aufnehmen'],
+    [{ contested: true }, 'Nicht aufnehmen'],
+    [{ in_final_selection: true }, 'Herausnehmen'],
+  ])('does not open the large view from the decision %j / %s', (overrides, label) => {
+    const { onOpenLarge } = renderTile(overrides)
+
+    fireEvent.click(screen.getByRole('button', { name: `${label}: reise/a.jpg` }))
+
+    expect(onOpenLarge).not.toHaveBeenCalled()
+  })
+
+  it('makes the image trigger the first tabbable element and hands it out', async () => {
+    const largeTriggerRef = vi.fn()
+    renderTile({ contested: true }, { largeTriggerRef })
+
+    await userEvent.tab()
+
+    const trigger = screen.getByRole('button', { name: 'Großansicht: reise/a.jpg' })
+    expect(trigger).toHaveFocus()
+    expect(largeTriggerRef).toHaveBeenLastCalledWith(trigger)
   })
 })

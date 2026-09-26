@@ -650,7 +650,8 @@
         "src/pages/AlbumDraftPage.tsx",
         "src/pages/AlbumSelectionPage.tsx",
         "src/components/CurationPhotoTile.tsx",
-        "src/components/SelectionPhotoTile.tsx"
+        "src/components/SelectionPhotoTile.tsx",
+        "src/components/CurationLightbox.tsx"
       ],
       "breiten": [
         "mobile",

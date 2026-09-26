@@ -65,6 +65,10 @@ test('die beidbreitigen Specs stehen in keiner Ausschlussliste', () => {
     // Buehne gelten AUSDRUECKLICH fuer beide Pruefbreiten - die Abschnittsfolge ist auf
     // beiden dieselbe, und die Buehne muss gerade auf Telefonbreite ohne Scrollen passen.
     'tests/bilddetail-buehne.spec.ts',
+    // specs/features/0531-kuratierung-grossansicht.md, AK5-AK7/AK10/AK11: Die Ausdehnung der
+    // Großansicht wechselt an der `sm`-Grenze, und Einpassung, Schließwege und Fokus gelten für
+    // die randlose wie für die eingerückte Fassung.
+    'tests/kuratierung-grossansicht.spec.ts',
   ]
 
   for (const spec of beidbreitig) {

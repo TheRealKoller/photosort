@@ -1,19 +1,23 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
+import type { InitialEntry, Location, NavigateFunction } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as albumSelectionApi from '../api/albumSelection'
 import { ApiError } from '../api/client'
+import * as motifsApi from '../api/motifs'
 import type { AlbumSelectionOut, EventOut, PhotoOut } from '../api/types'
 import { SELECTION_DECIDED_BADGE_TEXT } from '../components/SelectionPhotoTile'
+import { MOTIF_SET } from '../test/motifSetFixture'
 import { SELECTION_NOTHING_CONTESTED_TEXT } from '../utils/albumSelection'
 import { DRAFT_EMPTY_TEXT } from './AlbumDraftPage'
 import { AlbumSelectionPage } from './AlbumSelectionPage'
 
 vi.mock('../api/albumSelection')
+vi.mock('../api/motifs')
 vi.mock('../components/PhotoImage', () => ({
   PhotoImage: ({ alt }: { alt: string }) => <img alt={alt} />,
 }))
@@ -423,5 +427,140 @@ describe('AlbumSelectionPage - was hier nicht stehen darf', () => {
     expect(stances.getAllByRole('listitem')).toHaveLength(2)
     expect(stances.getByText('daniel:')).toBeInTheDocument()
     expect(stances.getByText('nora:')).toBeInTheDocument()
+  })
+})
+
+/*
+ * specs/features/0531-kuratierung-grossansicht.md - die Grossansicht in der Endauswahl. Vor der
+ * Seite liegt eine Stub-Route als Verlaufssonde; geoeffnet wird ueber `fireEvent.click`, das den
+ * Button (wie Safari) nicht fokussiert.
+ */
+describe('AlbumSelectionPage - die Großansicht', () => {
+  const probe: { location?: Location; navigate?: NavigateFunction } = {}
+
+  function Probe() {
+    probe.location = useLocation()
+    probe.navigate = useNavigate()
+    return null
+  }
+
+  function renderWithHistory(entry: InitialEntry = '/projects/1/selection') {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/stub', entry]} initialIndex={1}>
+          <Probe />
+          <Routes>
+            <Route path="/stub" element={<p>Stub</p>} />
+            <Route path="/projects/:projectId/selection" element={<AlbumSelectionPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    return queryClient
+  }
+
+  function back(): void {
+    act(() => {
+      void probe.navigate!(-1)
+    })
+  }
+
+  const CONTESTED = photo({ id: 1, relative_path: 'reise/strittig.jpg', contested: true })
+  const AGREED = photo({ id: 2, relative_path: 'reise/einig.jpg', in_final_selection: true })
+
+  beforeEach(() => {
+    vi.mocked(motifsApi.listMotifs).mockReset()
+    vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
+    vi.mocked(albumSelectionApi.getAlbumSelection).mockResolvedValue(
+      selection({ items: [CONTESTED, AGREED] }),
+    )
+  })
+
+  const closeWays: [string, () => void][] = [
+    ['Schließen', () => fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))],
+    ['Escape', () => fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })],
+    [
+      'Klick neben das Bild',
+      () => {
+        const stage = screen.getByTestId('lightbox-stage')
+        fireEvent.pointerDown(stage)
+        fireEvent.click(stage)
+      },
+    ],
+    ['Browser-Zurück', back],
+  ]
+
+  it.each(closeWays)(
+    'opens and closes via %s in both views without losing them',
+    async (_, closeLightbox) => {
+      renderWithHistory()
+
+      for (const [view, path, name] of [
+        ['Unterschiede', 'reise/strittig.jpg', 'strittig.jpg'],
+        ['Endauswahl', 'reise/einig.jpg', 'einig.jpg'],
+      ] as const) {
+        fireEvent.click(viewSwitch(view))
+        const trigger = await screen.findByRole('button', { name: `Großansicht: ${path}` })
+        const callsBefore = vi.mocked(albumSelectionApi.getAlbumSelection).mock.calls.length
+
+        fireEvent.click(trigger)
+        expect(screen.getByRole('dialog', { name })).toBeInTheDocument()
+        closeLightbox()
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(trigger).toHaveFocus()
+        expect(viewSwitch(view)).toHaveAttribute('aria-pressed', 'true')
+        expect(vi.mocked(albumSelectionApi.getAlbumSelection).mock.calls.length).toBe(callsBefore)
+        expect(albumSelectionApi.setAlbumDecision).not.toHaveBeenCalled()
+        expect(probe.location).toMatchObject({ pathname: '/projects/1/selection', state: null })
+      }
+      back()
+      expect(probe.location?.pathname).toBe('/stub')
+    },
+  )
+
+  it('does not open the large view from a decision', async () => {
+    vi.mocked(albumSelectionApi.setAlbumDecision).mockReturnValue(new Promise(() => {}))
+    renderWithHistory()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Aufnehmen: reise/strittig.jpg' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(probe.location?.state).toBeNull()
+  })
+
+  /* Das Foto kommt aus `items`, nicht aus der gefilterten Sicht: Es oeffnet sich auch dann, wenn
+     sein Ausloeser in der aktuellen Sicht gar nicht steht - der Fokus faellt dann auf `h1`. */
+  it('opens a reloaded photo that only the other view shows and falls back to the heading', async () => {
+    renderWithHistory({ pathname: '/projects/1/selection', state: { grossansicht: 2 } })
+
+    expect(await screen.findByRole('dialog', { name: 'einig.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Großansicht: reise/einig.jpg' })).toBeNull()
+
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Endauswahl' })).toHaveFocus()
+    expect(viewSwitch('Unterschiede')).toHaveAttribute('aria-pressed', 'true')
+    back()
+    expect(probe.location?.pathname).toBe('/stub')
+  })
+
+  /* AK16 - z. B. nach einem Neuladen der Endauswahl ist das Foto nicht mehr in der Liste. */
+  it('closes without a leftover entry when the photo leaves the list', async () => {
+    const queryClient = renderWithHistory()
+    fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: reise/strittig.jpg' }))
+
+    vi.mocked(albumSelectionApi.getAlbumSelection).mockResolvedValue(selection({ items: [AGREED] }))
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Endauswahl' })).toHaveFocus(),
+    )
+    back()
+    expect(probe.location?.pathname).toBe('/stub')
   })
 })
