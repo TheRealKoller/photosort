@@ -1640,6 +1640,13 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Abdunklung des Hintergrunds hinter dem Modal - kein Vorder-/Hintergrundpaar',
     },
     {
+      file: 'src/components/CurationLightbox.tsx',
+      snippet: "'backdrop:bg-bg/85'",
+      reason:
+        'Abdunklung der Kuratierung hinter der Grossansicht - Deckkraft ueber --bg, dieselbe ' +
+        'Stufe wie die freigegebenen Hinterlegungen ueber einer Kachel',
+    },
+    {
       file: 'src/components/Stepper.tsx',
       snippet: 'border-b border-separator bg-bg/95',
       reason: 'durchscheinende sticky Kopfzeile der Schrittnavigation',
