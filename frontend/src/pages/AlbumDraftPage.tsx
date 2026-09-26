@@ -5,11 +5,13 @@ import { ApiError } from '../api/client'
 import type { PhotoOut, RatingStatus } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
+import { CurationLightbox } from '../components/CurationLightbox'
 import { CurationPhotoTile } from '../components/CurationPhotoTile'
 import { DraftAlternativesDialog } from '../components/DraftAlternativesDialog'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
+import { useCurationLightbox } from '../hooks/useCurationLightbox'
 import { useMotifsQuery } from '../hooks/useMotifs'
 import {
   useDraftDecisionMutation,
@@ -90,6 +92,11 @@ export function AlbumDraftPage() {
   const decisionMutation = useDraftDecisionMutation(id, username)
   const exchangeMutation = useDraftExchangeMutation(id, username)
   const items = useMemo(() => query.data?.items ?? [], [query.data])
+
+  // Die Grossansicht: offen ist, was im Verlaufseintrag steht - nachgeschlagen in der GELADENEN
+  // Liste. Die Ueberschrift ist Fokusziel, wenn der Ausloeser des Fotos nicht mehr im Raster steht.
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const lightbox = useCurationLightbox({ items: query.data?.items, headingRef })
 
   // Das Bild, dessen Alternativen gerade offen stehen - EIN Dialog fuer die ganze Seite, nicht
   // einer je Kachel: sonst liefe beim Laden eine Abfrage je Kachel (Durchsatz-Zusage der Story).
@@ -210,6 +217,8 @@ export function AlbumDraftPage() {
         onDecide={(status) => handleDecide(photo, status)}
         onOpenAlternatives={() => setAlternativesPhotoId(photo.id)}
         focusDecision={focusPhotoId === photo.id}
+        onOpenLarge={lightbox.open}
+        largeTriggerRef={lightbox.triggerRef(photo.id)}
       />
     )
   }
@@ -248,7 +257,9 @@ export function AlbumDraftPage() {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-xl sm:text-2xl">Album-Entwurf</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-xl sm:text-2xl">
+          Album-Entwurf
+        </h1>
         {/* Richtwert und Ist-Anzahl NEBENEINANDER, in der Farbe des Fliesstextes. Eine Abweichung
             nach oben wie nach unten ist ein neutraler Hinweis - kein Warnton, kein Fehlerzustand,
             keine Schaltflaeche, die sie beseitigt. Der Text erscheint erst, wenn beide Zahlen
@@ -381,6 +392,10 @@ export function AlbumDraftPage() {
           onChoose={(alternative) => handleExchange(alternativesPhoto, alternative)}
           exchanging={exchangeMutation.isPending}
         />
+      )}
+
+      {lightbox.photo !== undefined && (
+        <CurationLightbox key={lightbox.photo.id} photo={lightbox.photo} onClose={lightbox.close} />
       )}
     </div>
   )

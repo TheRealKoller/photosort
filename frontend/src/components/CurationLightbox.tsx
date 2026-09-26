@@ -35,6 +35,9 @@ interface CurationLightboxProps {
  * UND `click` auf einer schliessenden Flaeche liegen: Ein auf dem Bild oder der Kopfzeile
  * begonnener Zug (etwa das Markieren des Dateinamens) schliesst nicht.
  *
+ * Beide Kuratierungsschritte montieren sie: Sie liest keines der drei Endauswahl-Felder und leitet
+ * keine Zugehoerigkeit ueber `isInAlbum` her.
+ *
  * Dateiname, Pfad, Feinlabels, Orts- und Kameratext stehen ausschliesslich als React-Textknoten;
  * `relative_path` sonst nur in `alt` (Sicherheitsauflage S3 der Spec 0531).
  */

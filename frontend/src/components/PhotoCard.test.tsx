@@ -1,6 +1,6 @@
-import { render, screen, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { createRef } from 'react'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { RatingStatus } from '../api/types'
 import { PhotoCard } from './PhotoCard'
@@ -15,16 +15,15 @@ import { PhotoCard } from './PhotoCard'
  */
 function renderCard(props: Partial<Parameters<typeof PhotoCard>[0]> = {}) {
   return render(
-    <MemoryRouter>
-      <ul>
-        <PhotoCard
-          to="/projects/1/photos/42"
-          relativePath="2024/07/IMG_0042.jpg"
-          image={<img alt="2024/07/IMG_0042.jpg" src="blob:x" />}
-          {...props}
-        />
-      </ul>
-    </MemoryRouter>,
+    <ul>
+      <PhotoCard
+        relativePath="2024/07/IMG_0042.jpg"
+        image={<img alt="2024/07/IMG_0042.jpg" src="blob:x" />}
+        onImageActivate={() => {}}
+        imageTriggerLabel="Großansicht: 2024/07/IMG_0042.jpg"
+        {...props}
+      />
+    </ul>,
   )
 }
 
@@ -50,17 +49,14 @@ describe('PhotoCard', () => {
 
     const signatures = states.map(({ status, favorite }) => {
       const { container, unmount } = render(
-        <MemoryRouter>
-          <ul>
-            <PhotoCard
-              to="/projects/1/photos/42"
-              relativePath="2024/07/IMG_0042.jpg"
-              status={status}
-              favorite={favorite}
-              image={<img alt="2024/07/IMG_0042.jpg" src="blob:x" />}
-            />
-          </ul>
-        </MemoryRouter>,
+        <ul>
+          <PhotoCard
+            relativePath="2024/07/IMG_0042.jpg"
+            status={status}
+            favorite={favorite}
+            image={<img alt="2024/07/IMG_0042.jpg" src="blob:x" />}
+          />
+        </ul>,
       )
       const item = container.querySelector('li')!
       const signature = [
@@ -143,19 +139,25 @@ describe('PhotoCard', () => {
     expect(screen.queryByText('Neu')).not.toBeInTheDocument()
   })
 
-  // e2e-Vertragsflaeche: `photoTiles` = listitem, das ein a[href*="/photos/"] enthaelt.
-  it('renders as a listitem containing the tile link', () => {
-    renderCard()
-
-    const item = screen.getByRole('listitem')
-    expect(within(item).getByRole('link')).toHaveAttribute('href', '/projects/1/photos/42')
-  })
-
-  it('renders the image area as a non-link when no target is given', () => {
-    renderCard({ to: undefined })
+  it('renders the image area as neither link nor button without onImageActivate', () => {
+    renderCard({ onImageActivate: undefined })
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.getByRole('listitem')).toBeInTheDocument()
+  })
+
+  it('makes the image area a button that activates once and hands out its element', () => {
+    const onImageActivate = vi.fn()
+    const imageTriggerRef = createRef<HTMLButtonElement>()
+    renderCard({ onImageActivate, imageTriggerRef })
+
+    const trigger = screen.getByRole('button', { name: 'Großansicht: 2024/07/IMG_0042.jpg' })
+    fireEvent.click(trigger)
+
+    expect(onImageActivate).toHaveBeenCalledTimes(1)
+    expect(trigger).toHaveAttribute('type', 'button')
+    expect(imageTriggerRef.current).toBe(trigger)
   })
 
   /*
@@ -164,27 +166,27 @@ describe('PhotoCard', () => {
    * bekommen. Die Zusicherung wandert mit dem Baustein aus PhotoGridPage.test.tsx eine Ebene nach
    * unten - sie ist zugleich der Ersatz fuer den entfallenen `pointer-events-none`-Test.
    */
-  it('keeps the corner slots siblings of the tile link, never children of it', () => {
+  it('keeps the corner slots siblings of the image trigger, never children of it', () => {
     renderCard({
       topLeft: <button type="button">Marker</button>,
       topRight: <button type="button">Details</button>,
     })
 
     const item = screen.getByRole('listitem')
-    const link = within(item).getByRole('link')
+    const imageTrigger = screen.getByRole('button', { name: /^Großansicht: / })
     for (const name of ['Marker', 'Details']) {
       const trigger = screen.getByRole('button', { name })
-      expect(link.contains(trigger), name).toBe(false)
+      expect(imageTrigger.contains(trigger), name).toBe(false)
       expect(item.contains(trigger), name).toBe(true)
     }
   })
 
-  it('renders footer children outside the tile link', () => {
+  it('renders footer children outside the image trigger', () => {
     renderCard({ footer: <button type="button">Übernehmen</button> })
 
     const item = screen.getByRole('listitem')
     const action = screen.getByRole('button', { name: 'Übernehmen' })
-    expect(within(item).getByRole('link').contains(action)).toBe(false)
+    expect(screen.getByRole('button', { name: /^Großansicht: / }).contains(action)).toBe(false)
     expect(item.contains(action)).toBe(true)
   })
 
@@ -195,14 +197,13 @@ describe('PhotoCard', () => {
     expect(screen.queryByText(/2024\/07/)).not.toBeInTheDocument()
   })
 
-  it('keeps the file name outside the link and out of its accessible name', () => {
+  it('keeps the file name outside the image trigger and out of its accessible name', () => {
     renderCard()
 
-    const link = screen.getByRole('link')
+    const trigger = screen.getByRole('button', { name: /^Großansicht: / })
     const fileName = screen.getByText('IMG_0042.jpg')
-    expect(link.contains(fileName)).toBe(false)
-    // Der Name des Kachel-Links bleibt der alt-Text des Bildes, nicht der Dateiname daneben.
-    expect(link).toHaveAccessibleName('2024/07/IMG_0042.jpg')
+    expect(trigger.contains(fileName)).toBe(false)
+    expect(trigger).toHaveAccessibleName('Großansicht: 2024/07/IMG_0042.jpg')
     // Der Dateiname ist Inhalt, kein Dekor - er wird NICHT vor Screenreadern versteckt.
     expect(fileName).not.toHaveAttribute('aria-hidden')
   })

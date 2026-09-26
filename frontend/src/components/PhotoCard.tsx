@@ -1,13 +1,16 @@
-import type { ReactNode } from 'react'
-import { Link } from 'react-router'
+import type { ReactNode, Ref } from 'react'
 
 import type { RatingStatus } from '../api/types'
 import { cn } from '../lib/utils'
 import { RatingBadge } from './RatingBadge'
 
 export interface PhotoCardProps {
-  /** Ziel des Kachel-Links. Fehlt es, ist die Bildflaeche KEIN Link. */
-  to?: string
+  /** Macht die Bildflaeche zu einer Schaltflaeche mit genau diesem einen Aktivierungsweg. Fehlt
+   * die Prop, ist die Bildflaeche weder Link noch Schaltflaeche. */
+  onImageActivate?: () => void
+  /** Zugaenglicher Name der Bildflaeche als Schaltflaeche, z. B. „Großansicht: {Pfad}". */
+  imageTriggerLabel?: string
+  imageTriggerRef?: Ref<HTMLButtonElement>
   /** Vollstaendiger Pfad des Fotos. Sichtbar wird ausschliesslich der Basisname. */
   relativePath: string
   /**
@@ -66,7 +69,9 @@ export interface PhotoCardProps {
  * keine Vorbereitung darauf.
  */
 export function PhotoCard({
-  to,
+  onImageActivate,
+  imageTriggerLabel,
+  imageTriggerRef,
   relativePath,
   status,
   favorite = false,
@@ -106,12 +111,20 @@ export function PhotoCard({
       className="flex flex-col gap-2 rounded-lg border border-border bg-elevated p-2 sm:p-3"
     >
       <div className="relative">
-        {to === undefined ? (
+        {onImageActivate === undefined ? (
           <div className={imageAreaClassName}>{image}</div>
         ) : (
-          <Link to={to} className={imageAreaClassName}>
+          // Der Zeiger kuendigt die Grossansicht an; sonst aendert die Bildflaeche beim
+          // Ueberfahren nichts. Fokus zeigt allein die globale Kontur.
+          <button
+            ref={imageTriggerRef}
+            type="button"
+            aria-label={imageTriggerLabel}
+            onClick={onImageActivate}
+            className={cn(imageAreaClassName, 'w-full cursor-zoom-in')}
+          >
             {image}
-          </Link>
+          </button>
         )}
         {topLeft !== undefined && <div className="absolute left-2 top-2">{topLeft}</div>}
         {topRight !== undefined && <div className="absolute right-2 top-2">{topRight}</div>}

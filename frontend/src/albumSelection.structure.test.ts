@@ -44,12 +44,17 @@ function walk(dir: string): string[] {
 const SELECTION_FIELDS = ['final_selection_decision', 'in_final_selection', 'contested'] as const
 
 /** Die Dateien des EINZELENTWURFS - sie dürfen keines der drei Felder lesen. */
-const DRAFT_FILES = ['pages/AlbumDraftPage.tsx', 'components/CurationPhotoTile.tsx'] as const
+const DRAFT_FILES = [
+  'pages/AlbumDraftPage.tsx',
+  'components/CurationPhotoTile.tsx',
+  'components/CurationLightbox.tsx',
+] as const
 
 /** Die Dateien der ENDAUSWAHL - sie dürfen `isInAlbum` nicht importieren. */
 const SELECTION_FILES = [
   'pages/AlbumSelectionPage.tsx',
   'components/SelectionPhotoTile.tsx',
+  'components/CurationLightbox.tsx',
 ] as const
 
 describe('Der Einzelentwurf bleibt von der Endauswahl unberührt', () => {

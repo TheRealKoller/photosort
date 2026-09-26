@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -66,6 +66,8 @@ function renderTile(
     onDecide?: () => void
     onOpenAlternatives?: () => void
     focusDecision?: boolean
+    onOpenLarge?: (photoId: number) => void
+    largeTriggerRef?: (element: HTMLElement | null) => void
   } = {},
 ) {
   return render(
@@ -80,6 +82,8 @@ function renderTile(
       onDecide={tile.onDecide ?? (() => {})}
       onOpenAlternatives={tile.onOpenAlternatives ?? (() => {})}
       focusDecision={tile.focusDecision ?? false}
+      onOpenLarge={tile.onOpenLarge ?? (() => {})}
+      largeTriggerRef={tile.largeTriggerRef ?? (() => {})}
     />,
   )
 }
@@ -323,5 +327,39 @@ describe('CurationPhotoTile: der Fokus nach einem Austausch', () => {
     renderTile({}, { focusDecision: false })
 
     expect(screen.getByRole('button', { name: 'Im Album: a.jpg' })).not.toHaveFocus()
+  })
+})
+
+describe('CurationPhotoTile: die Grossansicht (Spec 0531)', () => {
+  it('opens the large view of exactly this photo from the image area, without deciding', () => {
+    const onOpenLarge = vi.fn()
+    const onDecide = vi.fn()
+    renderTile({ id: 17, relative_path: '2024/07/IMG_0042.jpg' }, { onOpenLarge, onDecide })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Großansicht: 2024/07/IMG_0042.jpg' }))
+
+    expect(onOpenLarge).toHaveBeenCalledTimes(1)
+    expect(onOpenLarge).toHaveBeenCalledWith(17)
+    expect(onDecide).not.toHaveBeenCalled()
+  })
+
+  it.each([/^Im Album: /, /^Alternativen: /])('does not open the large view from %s', (name) => {
+    const onOpenLarge = vi.fn()
+    renderTile({}, { onOpenLarge, ownStatus: 'album_worthy' })
+
+    fireEvent.click(screen.getByRole('button', { name }))
+
+    expect(onOpenLarge).not.toHaveBeenCalled()
+  })
+
+  it('makes the image trigger the first tabbable element and hands it out', async () => {
+    const largeTriggerRef = vi.fn()
+    renderTile({}, { largeTriggerRef })
+
+    await userEvent.tab()
+
+    const trigger = screen.getByRole('button', { name: 'Großansicht: a.jpg' })
+    expect(trigger).toHaveFocus()
+    expect(largeTriggerRef).toHaveBeenLastCalledWith(trigger)
   })
 })

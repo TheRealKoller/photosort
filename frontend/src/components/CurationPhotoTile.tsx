@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import type { Ref } from 'react'
 
 import type { MotifSetOut, PhotoOut, RatingStatus } from '../api/types'
 import { isInAlbum, isTakenWithoutProposal } from '../utils/albumDraft'
@@ -49,6 +50,10 @@ export interface CurationPhotoTileProps {
    * deshalb gegen die Rueckgabe des Dialogs, unabhaengig von der Reihenfolge im Baum.
    */
   focusDecision: boolean
+  /** Oeffnet die Grossansicht dieses Fotos - Ausloeser ist die Bildflaeche. */
+  onOpenLarge: (photoId: number) => void
+  /** Erhaelt den Ausloeser der Grossansicht - Ziel der Fokus-Rueckgabe nach dem Schliessen. */
+  largeTriggerRef: Ref<HTMLButtonElement>
 }
 
 /**
@@ -70,6 +75,8 @@ export function CurationPhotoTile({
   onDecide,
   onOpenAlternatives,
   focusDecision,
+  onOpenLarge,
+  largeTriggerRef,
 }: CurationPhotoTileProps) {
   const decisionRef = useRef<HTMLButtonElement>(null)
 
@@ -92,6 +99,10 @@ export function CurationPhotoTile({
   return (
     <PhotoCard
       relativePath={photo.relative_path}
+      // Der zugaengliche Name traegt den Dateinamen wie die uebrigen Schaltflaechen der Kachel.
+      onImageActivate={() => onOpenLarge(photo.id)}
+      imageTriggerLabel={`Großansicht: ${photo.relative_path}`}
+      imageTriggerRef={largeTriggerRef}
       image={
         <PhotoImage
           photoId={photo.id}

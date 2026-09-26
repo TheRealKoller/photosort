@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
+import { CurationLightbox } from '../components/CurationLightbox'
 import { SelectionPhotoTile } from '../components/SelectionPhotoTile'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { useAlbumDecisionMutation, useAlbumSelectionQuery } from '../hooks/useAlbumSelection'
+import { useCurationLightbox } from '../hooks/useCurationLightbox'
 import { SELECTION_NOTHING_CONTESTED_TEXT, SELECTION_VIEW_LABELS } from '../utils/albumSelection'
 import type { PhotoEventGroup } from '../utils/eventGrouping'
 import { groupPhotosByDay } from '../utils/eventGrouping'
@@ -58,6 +60,11 @@ export function AlbumSelectionPage() {
   const participants = selection?.participants ?? []
   const items = selection?.items ?? []
 
+  // Die Grossansicht schlaegt in `items` nach, NICHT in der gefilterten Sicht: Ein Foto, das nur
+  // die andere Sicht zeigt, oeffnet sich trotzdem; ohne Ausloeser geht der Fokus danach auf `h1`.
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const lightbox = useCurationLightbox({ items: selection?.items, headingRef })
+
   // Die beiden Filter. Die Ergebnissicht führt die ausdrücklich Herausgenommenen mit: Ein
   // herausgenommenes Bild verschwände sonst aus beiden Sichten, und die Entscheidung ließe sich
   // nicht mehr ändern (ADR 0099 Punkt 5).
@@ -99,6 +106,8 @@ export function AlbumSelectionPage() {
               participants={participants}
               decidingIncluded={decidingByPhotoId.get(photo.id) ?? null}
               onDecide={(included) => handleDecide(photo, included)}
+              onOpenLarge={lightbox.open}
+              largeTriggerRef={lightbox.triggerRef(photo.id)}
             />
           ))}
         </ul>
@@ -136,7 +145,9 @@ export function AlbumSelectionPage() {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-3">
-        <h1 className="text-xl sm:text-2xl">Endauswahl</h1>
+        <h1 ref={headingRef} tabIndex={-1} className="text-xl sm:text-2xl">
+          Endauswahl
+        </h1>
         {/* Der Umschalter steht ÜBER der Liste und bleibt in jedem Zustand bedienbar - auch
             während des Ladens und im Fehlerfall. */}
         <div className="flex flex-wrap gap-2">
@@ -194,6 +205,10 @@ export function AlbumSelectionPage() {
           {day.events.map((group) => renderEventGroup(group))}
         </section>
       ))}
+
+      {lightbox.photo !== undefined && (
+        <CurationLightbox key={lightbox.photo.id} photo={lightbox.photo} onClose={lightbox.close} />
+      )}
     </div>
   )
 }
