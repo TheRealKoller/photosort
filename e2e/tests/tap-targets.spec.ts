@@ -22,7 +22,13 @@
 
 import type { Locator } from '@playwright/test'
 
-import { DEMO_PROJECTS, demoProjectId, openDuplicateGroup, photoTiles } from '../lib/demo.ts'
+import {
+  DEMO_PROJECTS,
+  demoProjectId,
+  duplicateTiles,
+  openDuplicateGroup,
+  photoTiles,
+} from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
 /** Zugesicherte Mindest-Trefferflaeche in px (Design-System). */
@@ -33,7 +39,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 23
+const EXPECTED_CONTROL_COUNT = 25
 
 async function assertTappable(
   control: Locator,
@@ -311,6 +317,20 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   await expect(zurueck, 'Gruppennavigation nach dem Blaettern').toBeEnabled()
   await assertTappable(zurueck, 'Vorherige Gruppe')
   checked.push('Vorherige Gruppe')
+
+  // --- Das Blaettern innerhalb der Grossansicht (specs/features/0533-...) --------------------
+  // Dieselbe Begruendung wie die Gruppennavigation, unmittelbar neben der Wahlzeile der
+  // Seitenspalte. Geoeffnet wird das MITTLERE Mitglied der kleinen Gruppe, damit keine der beiden
+  // Schaltflaechen am Rand `disabled` ist.
+  await duplicateTiles(page)
+    .nth(1)
+    .getByRole('button', { name: /vergrößern$/ })
+    .click()
+  await expect(page.getByRole('heading', { level: 2, name: 'Aufnahme 2 von 3' })).toBeVisible()
+  for (const label of ['Vorherige Aufnahme', 'Nächste Aufnahme']) {
+    await assertTappable(page.getByRole('button', { name: label, exact: true }), label)
+    checked.push(`${label} der Grossansicht`)
+  }
 
   // Ohne diese Zusicherung bestuende der Spec auch dann, wenn keine der Lokalisierungen oben noch
   // etwas faende und jede Schleife ueber eine leere Menge liefe.

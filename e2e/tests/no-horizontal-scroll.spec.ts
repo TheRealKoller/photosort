@@ -19,7 +19,13 @@
  * samt Fundstelle des ueberstehenden Elements.
  */
 
-import { DEMO_PROJECTS, demoProjectId, photoTiles } from '../lib/demo.ts'
+import {
+  DEMO_PROJECTS,
+  demoProjectId,
+  duplicateTiles,
+  openDuplicateGroup,
+  photoTiles,
+} from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
 /** Mindesthoehe des Inhaltsbereichs, ab der eine Route als "traegt wirklich Inhalt" gilt. */
@@ -33,7 +39,7 @@ const TOLERANCE = 1
  * Textseite) - dort traegt stattdessen die Bewertungsgruppe die Vorbedingung. Eine Route ohne
  * wirksame Vorbedingung waere genau der immer-gruene Spec, den das Testkonzept ausschliesst.
  */
-type Precondition = { heading: string } | { role: 'group'; name: string }
+type Precondition = { heading: string } | { role: 'group' | 'link'; name: string | RegExp }
 
 /**
  * Der zugaengliche Name des Zweizustands einer Entwurfskachel. Die Kacheln des Album-Entwurfs
@@ -132,6 +138,16 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       role: 'group' as const,
       name: 'Ganze Gruppe',
     },
+    // specs/features/0533-duplikatstapel-vergleichsansicht.md (B5): die Ausschuss-Uebersicht mit
+    // Duplikat-Stapeln. Vorbedingung ist ein SICHTBARER Stapel - ohne ihn bestuende die Messung
+    // gegen eine Uebersicht aus lauter Einzelkacheln, und der Versatz der hinteren Karten, der
+    // hier ueberstehen koennte, waere gar nicht im Dokument.
+    {
+      label: 'Ausschuss mit Stapeln',
+      path: `/projects/${duplicatesId}/pipeline/ausschuss`,
+      role: 'link' as const,
+      name: /^Duplikat-Gruppe mit \d+ Aufnahmen vergleichen/,
+    },
   ] satisfies ({ label: string; path: string; requiresTile?: RegExp } & Precondition)[]
 
   const viewportWidth = page.viewportSize()?.width
@@ -146,7 +162,7 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     const marker =
       'heading' in route
         ? page.getByRole('heading', { name: route.heading })
-        : page.getByRole(route.role, { name: route.name })
+        : page.getByRole(route.role, { name: route.name }).first()
     await expect(marker, `Vorbedingung auf "${route.label}"`).toBeVisible()
 
     // Vorbedingung 1b, nur wo die Ueberschrift zu wenig sagt: Die Seite traegt tatsaechlich
@@ -158,6 +174,16 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
         `Kachel-Vorbedingung auf "${route.label}"`,
       ).toBeVisible()
     }
+
+    // Zwei Bildwechsel abwarten: Gerechnete Kachelmaesse (`justifiedRows`) entstehen erst, wenn
+    // der ResizeObserver die Rasterbreite gemeldet hat. Davor steht fuer einen Bildwechsel die
+    // natuerliche Kachelbreite, und die Messung faenge diesen Zwischenstand statt der Seite.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        }),
+    )
 
     const metrics: PageMetrics = await page.evaluate(() => {
       const root = document.documentElement
@@ -412,5 +438,57 @@ test('die acht Motivsymbole liegen bei 360 px in einer Zeile', async ({ page }) 
   }))
   expect(dokument.scrollWidth, 'Dokumentbreite auf der Foto-Detailseite').toBeLessThanOrEqual(
     dokument.clientWidth + TOLERANCE,
+  )
+})
+
+/**
+ * Die GROSSANSICHT der Vergleichsansicht bei 360 px (specs/features/0533-..., A11) - ein anderes
+ * DOM an derselben Route und deshalb eine eigene Messung statt eines zweiten Routeneintrags.
+ *
+ * Gemessen wird in der Gruppe mit der LANGEN Spanne: Ihr Kopf („... in 1 Stunde 42 Minuten") muss
+ * umbrechen, statt ueberzustehen - die Ueberschrift ist deshalb selbst Teil der Messung.
+ */
+test('die Grossansicht und ein langer Kopf erzeugen kein horizontales Scrollen bei 360 px', async ({
+  page,
+}) => {
+  const duplicatesId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
+  await openDuplicateGroup(page, duplicatesId, 'gross')
+
+  const kopf = page.getByRole('heading', { level: 1, name: /Stunde/ })
+  if ((await kopf.count()) === 0) {
+    await openDuplicateGroup(page, duplicatesId, 'klein')
+  }
+  // Vorbedingung: der Kopf traegt WIRKLICH eine Spanne in Stunden - sonst waere er kurz genug,
+  // um in eine Zeile zu passen, und die Messung saehe den Umbruch nie.
+  await expect(kopf, 'Kopf mit Spanne in Stunden').toBeVisible()
+
+  await duplicateTiles(page)
+    .nth(1)
+    .getByRole('button', { name: /vergrößern$/ })
+    .click()
+  await expect(
+    page.getByRole('heading', { level: 2, name: /^Aufnahme 2 von \d+$/ }),
+    'Grossansicht offen',
+  ).toBeVisible()
+
+  const messung = await page.evaluate(() => {
+    const root = document.documentElement
+    const ueberschrift = document.querySelector('h1')
+    return {
+      scrollWidth: root.scrollWidth,
+      clientWidth: root.clientWidth,
+      kopfRechts: ueberschrift?.getBoundingClientRect().right ?? Number.POSITIVE_INFINITY,
+      kopfUeberlauf: (ueberschrift?.scrollWidth ?? 0) - (ueberschrift?.clientWidth ?? 0),
+    }
+  })
+
+  expect(messung.kopfUeberlauf, 'Ueberschrift laeuft nicht in sich ueber').toBeLessThanOrEqual(
+    TOLERANCE,
+  )
+  expect(messung.kopfRechts, 'Ueberschrift endet im Sichtbereich').toBeLessThanOrEqual(
+    messung.clientWidth + TOLERANCE,
+  )
+  expect(messung.scrollWidth, 'Dokumentbreite in der Grossansicht').toBeLessThanOrEqual(
+    messung.clientWidth + TOLERANCE,
   )
 })
