@@ -333,12 +333,12 @@ test.describe('Kuratierung: die Großansicht', () => {
       ['Browser-Zurück', () => page.goBack().then(() => undefined)],
     ]
 
-    // Zwei Arten zu öffnen: Chromium fokussiert einen angeklickten Button, und das native
-    // Schließen des <dialog> gibt ihm den Fokus ohne Scrollen zurück. Safari fokussiert ihn nicht -
-    // dann setzt allein die Fokus-Rückgabe der Seite den Fokus, und nur dort bricht ein
-    // vergessenes `preventScroll`. Nachgebildet über einen Klick, der nicht fokussiert, bei
-    // ungescrollter Seite und VOLLSTÄNDIG verdecktem Auslöser: Einen teilweise sichtbaren scrollt
-    // Chromium beim Fokussieren nicht.
+    // Zwei Arten zu öffnen: per Mausklick (Chromium fokussiert den Button) und per Klick, der
+    // nicht fokussiert (wie Safari), bei ungescrollter Seite und vollständig verdecktem Auslöser.
+    // Geprüft wird je Schließweg, dass scrollY, URL und Fokus unverändert bleiben. Dass die
+    // Fokus-Rückgabe mit `preventScroll` fokussiert, erzwingt der Unit-Test
+    // `useCurationLightbox.test.tsx > focuses the registered trigger without scrolling when the
+    // photo closes`; in Chromium wird dieser Fall ohne `preventScroll` nicht rot.
     const oeffnungen: [string, number, () => Promise<void>][] = [
       ['Mausklick', vorher, () => page.mouse.click(kasten.x + kasten.width / 2, sichtHoehe - 20)],
       [
