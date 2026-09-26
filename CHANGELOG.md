@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.0](https://github.com/TheRealKoller/photosort/compare/v0.48.1...v0.49.0) (2026-09-26)
+
+
+### Features
+
+* **frontend:** Großansicht in der Kuratierung (Spec 0531) ([#538](https://github.com/TheRealKoller/photosort/issues/538)) ([1768c2b](https://github.com/TheRealKoller/photosort/commit/1768c2b10f67448e77f6f5c07f9525396982995d))
+
 ## [0.48.1](https://github.com/TheRealKoller/photosort/compare/v0.48.0...v0.48.1) (2026-09-25)
 
 
