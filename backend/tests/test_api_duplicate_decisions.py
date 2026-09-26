@@ -569,6 +569,7 @@ async def test_a_low_quality_suggestion_is_decidable_on_the_single_path(
         "total": 0,
         "previous_photo_id": None,
         "next_photo_id": None,
+        "span_seconds": 0,
     }
     assert await _stored(db_session, unscharf.id) == DuplicateDecision.DISCARD
 

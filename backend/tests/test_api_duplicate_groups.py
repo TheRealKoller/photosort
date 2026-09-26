@@ -499,13 +499,20 @@ async def test_the_item_carries_an_unextended_photo_out(
     assert set(vom_vergleich) == set(aus_der_liste)
     # Als GLEICHHEIT, nicht als Teilmenge: zugleich der Waechter dagegen, dass der Rohwert
     # `decision` spaeter als Zusatzfeld wieder mitreist.
-    assert set(gruppe["items"][0]) == {"photo", "effective_decision", "keep_possible"}
+    assert set(gruppe["items"][0]) == {
+        "photo",
+        "effective_decision",
+        "keep_possible",
+        "sharpness",
+        "exposure",
+    }
     assert set(gruppe) == {
         "items",
         "position",
         "total",
         "previous_photo_id",
         "next_photo_id",
+        "span_seconds",
     }
 
 
@@ -612,7 +619,99 @@ async def test_a_member_without_a_score_row_reads_as_keep_instead_of_tearing_the
     eintraege = {item["photo"]["id"]: item for item in response.json()["items"]}
     assert eintraege[winner.id]["effective_decision"] == "keep"
     assert eintraege[winner.id]["keep_possible"] is True
+    assert eintraege[winner.id]["sharpness"] is None
+    assert eintraege[winner.id]["exposure"] is None
     assert eintraege[verlierer.id]["effective_decision"] == "discard"
+    assert eintraege[verlierer.id]["sharpness"] == 100.0
+
+
+# ------------------------------------------------------------------------------------------
+# Messwerte und Serienspanne (Spec 0533, A1/A7)
+# ------------------------------------------------------------------------------------------
+
+
+async def _set_score(
+    session: AsyncSession, photo: Photo, sharpness: float, exposure: float
+) -> None:
+    score = await session.get(PhotoScore, photo.id)
+    assert score is not None
+    score.sharpness = sharpness
+    score.exposure = exposure
+    await session.commit()
+
+
+async def test_the_metrics_come_from_the_score_row_of_each_member(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    winner, [loser] = await _star(db_session, project, 2)
+    await _set_score(db_session, winner, 412.7, 0.0004)
+    await _set_score(db_session, loser, 88.25, 0.2)
+
+    body = (await authenticated_api_client.get(_url(project.id, winner.id))).json()
+
+    messwerte = {
+        item["photo"]["id"]: (item["sharpness"], item["exposure"]) for item in body["items"]
+    }
+    assert messwerte == {winner.id: (412.7, 0.0004), loser.id: (88.25, 0.2)}
+
+
+async def test_the_metrics_survive_a_decision_and_an_own_album_rating(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """DER TRAGENDE FALL (A7): `PhotoOut.suggestion` faellt nach jeder Entscheidung und bei eigener
+    Albumbewertung auf `null`. Die Messwerte der Gruppenantwort bleiben davon unberuehrt - aus
+    `suggestion` gelesen verloere die Bewertungszeile ihre Werte mitten im Durchgang."""
+    project = await _project(db_session)
+    winner, [entschieden, bewertet] = await _star(db_session, project, 3)
+    await _set_score(db_session, entschieden, 55.5, 0.125)
+    await _set_score(db_session, bewertet, 66.5, 0.25)
+    gruppe_url = _url(project.id, winner.id)
+    entschieden_id, bewertet_id = entschieden.id, bewertet.id
+
+    vorher = (await authenticated_api_client.get(gruppe_url)).json()
+    await authenticated_api_client.put(
+        f"/projects/{project.id}/photos/{entschieden_id}/duplicate-decision",
+        json={"decision": "keep"},
+    )
+    await authenticated_api_client.put(
+        f"/photos/{bewertet_id}/rating", json={"status": "album_worthy"}
+    )
+    # Der Testclient teilt die Sitzung mit dem Aufbau; geladene Beziehungen wuerden sonst ueber die
+    # beiden Schreibvorgaenge hinweg stehen bleiben.
+    db_session.expire_all()
+    nachher = (await authenticated_api_client.get(gruppe_url)).json()
+
+    vorher_nach_id = {item["photo"]["id"]: item for item in vorher["items"]}
+    nach_id = {item["photo"]["id"]: item for item in nachher["items"]}
+    assert vorher_nach_id[entschieden_id]["photo"]["suggestion"] is not None
+    assert vorher_nach_id[bewertet_id]["photo"]["suggestion"] is not None
+    assert nach_id[entschieden_id]["photo"]["suggestion"] is None
+    assert nach_id[bewertet_id]["photo"]["suggestion"] is None
+    for photo_id, item in nach_id.items():
+        vorher_item = vorher_nach_id[photo_id]
+        assert (item["sharpness"], item["exposure"]) == (
+            vorher_item["sharpness"],
+            vorher_item["exposure"],
+        )
+    assert (nach_id[entschieden_id]["sharpness"], nach_id[entschieden_id]["exposure"]) == (
+        55.5,
+        0.125,
+    )
+
+
+async def test_the_span_runs_from_the_earliest_to_the_latest_member(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """A1: Die Spanne der Serie in ganzen Sekunden - ueber ALLE Mitglieder, nicht nur ueber den
+    Gewinner und seinen naechsten Nachbarn. Eine zweite Gruppe daneben zaehlt nicht mit."""
+    project = await _project(db_session)
+    winner, _ = await _star(db_session, project, 4, first_second=10)
+    await _star(db_session, project, 2, first_second=5000, prefix="b")
+
+    body = (await authenticated_api_client.get(_url(project.id, winner.id))).json()
+
+    assert body["span_seconds"] == 3
 
 
 # ------------------------------------------------------------------------------------------

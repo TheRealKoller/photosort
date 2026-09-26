@@ -29,6 +29,7 @@ from photosort.duplicates import (
     all_group_representative_ids,
     effective_decision_for,
     group_ausschuss_stock,
+    group_span_seconds,
     group_standing,
     has_ausschuss_entry,
     has_open_suggestion,
@@ -1733,11 +1734,20 @@ class DuplicateGroupPhotoOut(BaseModel):
     Ablehnung folgt nicht aus dem Duplikat. Der GRUND reist nicht als Feld, weil er aus der
     Bedingung selbst folgt; die Oberflaeche rendert dort einen festen Text. Entstuende ein dritter
     Ablehnungsgrund, gehoert er ab dann als eigenes Feld hierher (ADR 0111, Konsequenzen) -
-    `tests/test_duplikat_anzeigezustand.py` laesst das laut auffallen."""
+    `tests/test_duplikat_anzeigezustand.py` laesst das laut auffallen.
+
+    `sharpness`/`exposure` sind die Rohwerte aus `PhotoScore` (Laplace-Varianz, hoeher = schaerfer;
+    Anteil geclippter Pixel, niedriger = besser), `null` ohne Zeile. Sie kommen NIE aus
+    `PhotoOut.suggestion`: Das Feld faellt nach jeder Entscheidung und bei eigener Albumbewertung
+    auf `null`, und die Bewertungszeile verloere ihre Werte mitten im Durchgang. Keines der
+    Mitglieder ist als "bestes" ausgezeichnet - die Auszeichnung bildet die Oberflaeche ueber den
+    angezeigten, gerundeten Werten."""
 
     photo: PhotoOut
     effective_decision: DuplicateDecision
     keep_possible: bool
+    sharpness: float | None
+    exposure: float | None
 
 
 class DuplicateGroupOut(BaseModel):
@@ -1753,13 +1763,17 @@ class DuplicateGroupOut(BaseModel):
     SICHERHEIT (S6): Beide Nachbar-Ids stammen aus derselben projektbegrenzten Kantenliste wie die
     Gruppe selbst, nie aus einer eigenen Abfrage auf `photo_scores` - dessen `duplicate_of` zeigt
     auf `photos.id` ohne Projektbedingung. Zugriffsmarken sind sie nicht: Die Folgeanfrage laeuft
-    erneut ueber `project_id` und loest eine fremde Id nicht auf."""
+    erneut ueber `project_id` und loest eine fremde Id nicht auf.
+
+    `span_seconds` ist der Abstand zwischen fruehestem und spaetestem korrigiertem `taken_at` der
+    Mitglieder in ganzen Sekunden, abgerundet - aus derselben projektbegrenzten Kantenliste."""
 
     items: list[DuplicateGroupPhotoOut]
     position: int
     total: int
     previous_photo_id: int | None
     next_photo_id: int | None
+    span_seconds: int
 
 
 async def build_duplicate_group_out(
@@ -1830,6 +1844,11 @@ async def build_duplicate_group_out(
                 # Fassung an.
                 effective_decision=effective_decision_for(photos_by_id[member_id]),
                 keep_possible=keep_possible_for(photos_by_id[member_id]),
+                # SICHERHEIT (S10): ueber `_score_metrics`, das die fehlende Zeile kennt - ein
+                # blosser Attributzugriff wuerfe fuer den Repraesentanten ohne `PhotoScore` und
+                # machte die ganze Gruppenantwort zur `500`.
+                sharpness=_score_metrics(photos_by_id[member_id])[0],
+                exposure=_score_metrics(photos_by_id[member_id])[1],
             )
             for member_id in ids
         ],
@@ -1837,7 +1856,14 @@ async def build_duplicate_group_out(
         total=stellung.total,
         previous_photo_id=stellung.previous_id,
         next_photo_id=stellung.next_id,
+        span_seconds=group_span_seconds(representative_id, links),
     )
+
+
+def _score_metrics(photo: Photo) -> tuple[float | None, float | None]:
+    """`(sharpness, exposure)` aus der `PhotoScore`-Zeile, `(None, None)` ohne Zeile."""
+    score = photo.score
+    return (None, None) if score is None else (score.sharpness, score.exposure)
 
 
 def empty_duplicate_group_out() -> DuplicateGroupOut:
@@ -1853,7 +1879,12 @@ def empty_duplicate_group_out() -> DuplicateGroupOut:
     folgt, und er ist genau dafuer da: Ein Platz in einer Reihenfolge, die es nicht gibt, waere
     eine erfundene Auskunft. `total = 0` sagt dasselbe ueber die Gesamtzahl."""
     return DuplicateGroupOut(
-        items=[], position=0, total=0, previous_photo_id=None, next_photo_id=None
+        items=[],
+        position=0,
+        total=0,
+        previous_photo_id=None,
+        next_photo_id=None,
+        span_seconds=0,
     )
 
 
