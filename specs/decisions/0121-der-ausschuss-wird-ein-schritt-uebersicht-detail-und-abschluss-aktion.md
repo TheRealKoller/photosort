@@ -1,6 +1,13 @@
 # 0121 - Der Ausschuss wird ein Schritt: eine Übersicht, eine Detailansicht, eine Abschluss-Aktion
 
 **Status:** Accepted
+**Teilweise abgelöst:** aus Punkt 2 die Form der Einträge (je Eintrag eine Aufnahme) und die
+Paginierung nach Aufnahmen, aus Punkt 3 der Teil ab „Die Duplikat-Gruppe eines Bildes kommt in der
+Detailansicht aus …" samt Grund — beides durch ADR
+[`0125`](./0125-duplikatentscheidung-des-ausschusses-in-der-vergleichsansicht.md): Die Übersicht
+fasst jede Duplikatgruppe zu einem Stapel zusammen, der die Vergleichsansicht öffnet, und die
+Detailansicht verweist dorthin. Bestand, Ableitung von `reason`, die Form der Detailansicht
+(Query-Parameter der Schritt-Route) und alle übrigen Punkte gelten unverändert.
 **Datum:** 2026-09-23
 **Bezug:** [GitHub-Issue #525](https://github.com/TheRealKoller/photosort/issues/525), Spec 0525
 
