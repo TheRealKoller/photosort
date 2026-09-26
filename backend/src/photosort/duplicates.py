@@ -20,8 +20,9 @@ aus ihr herauszeigt, loest sich nicht auf.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,25 +62,36 @@ class GroupStanding:
     next_id: int | None
 
 
+def _representative_resolver(links: list[DuplicateLink]) -> Callable[[int], int | None]:
+    """`representative_of` ueber EINER einmal indizierten Kantenliste - fuer Aufrufer, die viele
+    Fotos gegen dieselben Kanten aufloesen, ohne je Foto neu zu indizieren."""
+    by_id = {link.photo_id: link for link in links}
+    pointed_at = {link.duplicate_of for link in links if link.duplicate_of is not None}
+
+    def resolve(photo_id: int) -> int | None:
+        link = by_id.get(photo_id)
+        if link is None:
+            return None
+        if link.duplicate_of is not None:
+            # SICHERHEIT (S7): Ein Zeiger, der aus der projektbegrenzten Kantenliste herausfuehrt,
+            # wird NICHT aufgeloest. `photo_scores.duplicate_of` zeigt auf `photos.id` ohne
+            # Projektbedingung; ohne diese Pruefung entschiede eine Aufnahme des einen Projekts
+            # ueber den abfliessenden Bestand eines anderen.
+            return link.duplicate_of if link.duplicate_of in by_id else None
+        # Der entartete Fall: Ein Foto ohne `duplicate_of`, auf das niemand zeigt, ist keine Gruppe
+        # der Groesse eins - es ist gar keine.
+        return photo_id if photo_id in pointed_at else None
+
+    return resolve
+
+
 def representative_of(photo_id: int, links: list[DuplicateLink]) -> int | None:
     """Der Repraesentant der Gruppe, in der `photo_id` liegt - oder `None`, wenn es keine gibt.
 
     `None` deckt DREI Faelle, und alle drei muenden in dieselbe Antwort `404`, ohne voneinander
     unterscheidbar zu sein: das Foto gibt es nicht, das Foto gehoert einem anderen Projekt (es
     steht dann nicht in der bereits begrenzten Kantenliste), oder es liegt in keinem Stern."""
-    by_id = {link.photo_id: link for link in links}
-    link = by_id.get(photo_id)
-    if link is None:
-        return None
-    if link.duplicate_of is not None:
-        # SICHERHEIT (S7): Ein Zeiger, der aus der projektbegrenzten Kantenliste herausfuehrt, wird
-        # NICHT aufgeloest. `photo_scores.duplicate_of` zeigt auf `photos.id` ohne
-        # Projektbedingung; ohne diese Pruefung entschiede eine Aufnahme des einen Projekts ueber
-        # den abfliessenden Bestand eines anderen.
-        return link.duplicate_of if link.duplicate_of in by_id else None
-    # Der entartete Fall: Ein Foto ohne `duplicate_of`, auf das niemand zeigt, ist keine Gruppe der
-    # Groesse eins - es ist gar keine.
-    return photo_id if any(other.duplicate_of == photo_id for other in links) else None
+    return _representative_resolver(links)(photo_id)
 
 
 def member_ids_of(representative_id: int, links: list[DuplicateLink]) -> list[int]:
@@ -95,6 +107,19 @@ def member_ids_of(representative_id: int, links: list[DuplicateLink]) -> list[in
     return [
         link.photo_id for link in sorted(members, key=lambda link: (link.taken_at, link.photo_id))
     ]
+
+
+def group_span_seconds(representative_id: int, links: list[DuplicateLink]) -> int:
+    """Der Abstand zwischen fruehestem und spaetestem `taken_at` der Mitglieder in ganzen
+    Sekunden, abgerundet. `taken_at` ist die KORRIGIERTE Zeit (siehe `load_duplicate_links`)."""
+    zeiten = [
+        link.taken_at
+        for link in links
+        if link.photo_id == representative_id or link.duplicate_of == representative_id
+    ]
+    if not zeiten:
+        return 0
+    return (max(zeiten) - min(zeiten)) // timedelta(seconds=1)
 
 
 def _members_by_representative(links: list[DuplicateLink]) -> dict[int, list[DuplicateLink]]:
@@ -150,6 +175,105 @@ def group_standing(representative_id: int, links: list[DuplicateLink]) -> GroupS
         total=len(geordnet),
         previous_id=geordnet[index - 1] if index > 0 else None,
         next_id=geordnet[index + 1] if index + 1 < len(geordnet) else None,
+    )
+
+
+# ----------------------------------------------------------------------------------------------
+# Der Ausschuss-Bestand als Eintraege der Uebersicht (ADR 0125 Punkt 2)
+# ----------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DecisionCounts:
+    """Die GESPEICHERTEN Entscheidungszeilen der Bestandsmitglieder eines Stapels - dieselbe
+    Groesse wie `decision` am Einzeleintrag, nicht der angezeigte Zustand. `undecided` zaehlt die
+    Mitglieder ohne Zeile; die Summe ist die Zahl der Bestandsmitglieder."""
+
+    undecided: int
+    keep: int
+    discard: int
+
+
+@dataclass(frozen=True)
+class SingleSlot:
+    """Eine Bestandsaufnahme ohne aufloesbare Gruppe - ein Einzel-Eintrag."""
+
+    photo_id: int
+
+
+@dataclass(frozen=True)
+class GroupSlot:
+    """ALLE Bestandsaufnahmen einer Duplikatgruppe als EIN Eintrag.
+
+    `member_ids` sind nur die Bestandsmitglieder in Anzeigereihenfolge (`taken_at`, `id`);
+    `group_size` zaehlt dagegen alle Mitglieder der Gruppe, also auch den Gewinner ohne
+    Vorschlag."""
+
+    anchor_id: int
+    member_ids: tuple[int, ...]
+    decision_counts: DecisionCounts
+    group_size: int
+
+    @property
+    def cover_id(self) -> int:
+        return self.member_ids[0]
+
+
+AusschussSlot = SingleSlot | GroupSlot
+
+
+def group_ausschuss_stock(
+    rows: Sequence[tuple[int, datetime, DuplicateDecision | None]],
+    links: list[DuplicateLink],
+) -> list[AusschussSlot]:
+    """Fasst den Ausschuss-Bestand `(photo_id, taken_at, gespeicherte Entscheidung)` zu den
+    Eintraegen der Uebersicht zusammen.
+
+    Gruppiert wird nach MITGLIEDSCHAFT, nicht nach dem Grund: Auch der Gewinner mit
+    Schaerfe-Ablehnung und der nur von einer `keep`-Zeile getragene Gewinner liegen im Stapel
+    ihrer Gruppe. Jeder Eintrag steht an der Stelle seiner ersten Bestandsaufnahme (`taken_at`,
+    `id`); jede Bestandsaufnahme steht genau einmal.
+
+    SICHERHEIT (S8): Schluessel ist allein `representative_of` ueber der projektbegrenzten
+    Kantenliste, nie das rohe `duplicate_of` und nie `None`. `duplicate_of` zeigt ohne
+    Projektbedingung auf `photos.id` - ein Stapel naehme sonst fremde Aufnahmen auf oder nennte eine
+    fremde Id als Anker, und ein `None`-Schluessel fasste alle Aufnahmen ohne Gruppe zu einem
+    Stapel zusammen, dessen Link ins Leere fuehrt. Wer sich nicht aufloest, bleibt Einzel-Eintrag.
+    """
+    resolve = _representative_resolver(links)
+    order: list[int | SingleSlot] = []
+    members: dict[int, list[tuple[int, DuplicateDecision | None]]] = {}
+    for photo_id, _taken_at, decision in sorted(rows, key=lambda row: (row[1], row[0])):
+        representative_id = resolve(photo_id)
+        if representative_id is None:
+            order.append(SingleSlot(photo_id=photo_id))
+            continue
+        if representative_id not in members:
+            members[representative_id] = []
+            order.append(representative_id)
+        members[representative_id].append((photo_id, decision))
+
+    return [
+        entry if isinstance(entry, SingleSlot) else _group_slot(entry, members[entry], links)
+        for entry in order
+    ]
+
+
+def _group_slot(
+    representative_id: int,
+    stock: list[tuple[int, DuplicateDecision | None]],
+    links: list[DuplicateLink],
+) -> GroupSlot:
+    decisions = [decision for _photo_id, decision in stock]
+    return GroupSlot(
+        anchor_id=representative_id,
+        member_ids=tuple(photo_id for photo_id, _decision in stock),
+        decision_counts=DecisionCounts(
+            undecided=sum(1 for decision in decisions if decision is None),
+            keep=sum(1 for decision in decisions if decision is DuplicateDecision.KEEP),
+            discard=sum(1 for decision in decisions if decision is DuplicateDecision.DISCARD),
+        ),
+        group_size=len(member_ids_of(representative_id, links)),
     )
 
 

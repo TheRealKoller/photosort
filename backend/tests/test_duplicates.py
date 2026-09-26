@@ -18,15 +18,20 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.duplicates import (
+    DecisionCounts,
     DuplicateLink,
+    GroupSlot,
     GroupStanding,
+    SingleSlot,
     all_group_representative_ids,
+    group_ausschuss_stock,
+    group_span_seconds,
     group_standing,
     load_duplicate_links,
     member_ids_of,
     representative_of,
 )
-from photosort.models import Photo, PhotoScore, Project
+from photosort.models import DuplicateDecision, Photo, PhotoScore, Project
 
 _BASE = datetime(2023, 5, 1, 12, 0, 0)
 
@@ -357,3 +362,136 @@ async def test_a_photo_of_another_project_pointing_into_this_one_never_joins_the
 
     assert member_ids_of(winner.id, links) == [winner.id, own_loser.id]
     assert foreign_loser.id not in {link.photo_id for link in links}
+
+
+# ------------------------------------------------------------------------------------------
+# Zeitspanne der Serie (Spec 0533, A1)
+# ------------------------------------------------------------------------------------------
+
+
+def _link_at(photo_id: int, duplicate_of: int | None, offset: timedelta) -> DuplicateLink:
+    return DuplicateLink(photo_id=photo_id, duplicate_of=duplicate_of, taken_at=_BASE + offset)
+
+
+def test_the_span_is_rounded_down_to_whole_seconds() -> None:
+    links = [
+        _link_at(10, None, timedelta(seconds=3)),
+        _link_at(11, 10, timedelta(0)),
+        _link_at(12, 10, timedelta(seconds=9, milliseconds=999)),
+    ]
+
+    assert group_span_seconds(10, links) == 9
+
+
+def test_the_span_of_a_burst_with_one_timestamp_is_zero() -> None:
+    links = [_link_at(10, None, timedelta(0)), _link_at(11, 10, timedelta(0))]
+
+    assert group_span_seconds(10, links) == 0
+
+
+def test_the_span_ignores_the_members_of_another_group() -> None:
+    links = [
+        _link_at(10, None, timedelta(0)),
+        _link_at(11, 10, timedelta(seconds=4)),
+        _link_at(20, None, timedelta(hours=2)),
+        _link_at(21, 20, timedelta(hours=3)),
+    ]
+
+    assert group_span_seconds(10, links) == 4
+
+
+async def test_the_span_reads_the_corrected_taken_at(db_session: AsyncSession) -> None:
+    """Die Spanne kommt aus der KORRIGIERTEN Zeit. Weicht `taken_at_original` ab (Kamera mit
+    Zeitversatz), darf die Serie nicht ueber die Rohzeit gemessen werden."""
+    project = await _project(db_session, "Costa Rica")
+    winner = await _photo(db_session, project, "a.jpg")
+    loser = await _photo(db_session, project, "b.jpg", minutes=2, duplicate_of=winner.id)
+    loser.taken_at_original = _BASE + timedelta(hours=5)
+    await db_session.flush()
+
+    links = await load_duplicate_links(db_session, project.id)
+
+    assert group_span_seconds(winner.id, links) == 120
+
+
+# ------------------------------------------------------------------------------------------
+# Der Ausschuss-Bestand als Eintraege (Spec 0533, B6/B7)
+# ------------------------------------------------------------------------------------------
+
+
+def _row(
+    photo_id: int, minutes: int, decision: DuplicateDecision | None = None
+) -> tuple[int, datetime, DuplicateDecision | None]:
+    return (photo_id, _BASE + timedelta(minutes=minutes), decision)
+
+
+def test_every_stock_photo_is_exactly_one_single_slot_or_counted_in_exactly_one_group() -> None:
+    """B6 als PARTITION: Jede Bestandsaufnahme steht genau einmal - als Einzel-Eintrag oder in
+    genau einem Stapel. Zwei Gruppen und zwei Einzelaufnahmen nebeneinander, damit ein
+    Zusammenfassen aller Gruppen oder aller Einzelaufnahmen auffaellt."""
+    links = _star(3, representative_id=10) + _star(2, representative_id=20, first_minute=10)
+    rows = [_row(11, 1), _row(12, 2), _row(5, 3), _row(21, 11), _row(6, 12)]
+
+    slots = group_ausschuss_stock(rows, links)
+
+    einzeln = [slot.photo_id for slot in slots if isinstance(slot, SingleSlot)]
+    gruppiert = [pid for slot in slots if isinstance(slot, GroupSlot) for pid in slot.member_ids]
+    assert sorted(einzeln + gruppiert) == sorted(row[0] for row in rows)
+    assert [slot.anchor_id for slot in slots if isinstance(slot, GroupSlot)] == [10, 20]
+
+
+def test_a_slot_stands_at_the_place_of_its_first_stock_photo() -> None:
+    """Verschraenkte Lage: Gruppe bei t = 0 und t = 5, Einzelaufnahme bei t = 3. Die Gruppe
+    zerfaellt nicht um die Einzelaufnahme herum in zwei Eintraege."""
+    links = [_link(10, None, minutes=0), _link(11, 10, minutes=5)]
+    rows = [_row(10, 0), _row(99, 3), _row(11, 5)]
+
+    slots = group_ausschuss_stock(rows, links)
+
+    assert len(slots) == 2
+    assert isinstance(slots[0], GroupSlot)
+    assert slots[0].member_ids == (10, 11)
+    assert slots[1] == SingleSlot(photo_id=99)
+
+
+def test_the_cover_is_the_first_stock_photo_and_not_the_winner() -> None:
+    """Der Gewinner ohne Vorschlag ist nicht im Bestand und zeitlich zuerst: `cover` ist die erste
+    BESTANDSaufnahme, `group_size` zaehlt ihn trotzdem mit."""
+    links = [_link(10, None, minutes=0), _link(12, 10, minutes=2), _link(11, 10, minutes=2)]
+    rows = [_row(12, 2), _row(11, 2)]
+
+    [slot] = group_ausschuss_stock(rows, links)
+
+    assert isinstance(slot, GroupSlot)
+    assert slot.anchor_id == 10
+    assert slot.cover_id == 11
+    assert slot.member_ids == (11, 12)
+    assert slot.group_size == 3
+
+
+def test_the_decision_counts_follow_the_stored_rows() -> None:
+    links = _star(4, representative_id=10)
+    rows = [
+        _row(10, 0, DuplicateDecision.KEEP),
+        _row(11, 1),
+        _row(12, 2, DuplicateDecision.DISCARD),
+        _row(13, 3),
+    ]
+
+    [slot] = group_ausschuss_stock(rows, links)
+
+    assert isinstance(slot, GroupSlot)
+    assert slot.decision_counts == DecisionCounts(undecided=2, keep=1, discard=1)
+    assert slot.group_size == len(slot.member_ids) == 4
+
+
+def test_photos_without_a_group_are_never_collected_under_a_none_key() -> None:
+    """SICHERHEIT (S8): `None` ist nie ein Gruppenschluessel. Zwei Unschaerfe-Ablehnungen ohne
+    Gruppe und ein Zeiger aus der Kantenliste hinaus bleiben drei Einzel-Eintraege, statt zu
+    einem Stapel zu verschmelzen, dessen Link ins Leere fuehrt."""
+    links = [_link(7, 4242)]
+    rows = [_row(1, 0), _row(2, 1), _row(7, 2)]
+
+    slots = group_ausschuss_stock(rows, links)
+
+    assert slots == [SingleSlot(photo_id=1), SingleSlot(photo_id=2), SingleSlot(photo_id=7)]
