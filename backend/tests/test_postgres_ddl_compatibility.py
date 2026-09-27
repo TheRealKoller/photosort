@@ -1565,3 +1565,72 @@ def test_the_namensregister_downgrade_renders_for_postgres_too() -> None:
 
     assert "DROP COLUMN CANONICAL_NAME" in rendered
     assert "DROP TABLE LANDMARK_NAMES" in rendered
+
+
+# --- Spec 0292, Migration `1f4027405ea5`: Personen ------------------------------------------------
+
+_PERSONEN_REVISION = "1f4027405ea5_personen.py"
+
+
+@pytest.fixture(scope="module")
+def personen_upgrade_ddl() -> list[str]:
+    return _render_postgres_ddl(_PERSONEN_REVISION)
+
+
+def test_the_slot_is_a_checked_unique_smallint(personen_upgrade_ddl: list[str]) -> None:
+    statement = _create_table_statement(personen_upgrade_ddl, "persons")
+
+    assert "slot SMALLINT NOT NULL" in statement
+    assert "CONSTRAINT ck_persons_slot CHECK (slot IN (1, 2))" in statement
+    assert "CONSTRAINT uq_persons_slot UNIQUE (slot)" in statement
+    assert "CONSTRAINT uq_persons_name_key UNIQUE (name_key)" in statement
+
+
+def test_the_embedding_renders_as_not_null_json(personen_upgrade_ddl: list[str]) -> None:
+    statement = _create_table_statement(personen_upgrade_ddl, "person_references")
+
+    assert "embedding JSON NOT NULL" in statement
+    assert "REFERENCES photos" not in statement
+    assert "REFERENCES projects" not in statement
+
+
+def test_the_applies_column_is_a_boolean_without_default(personen_upgrade_ddl: list[str]) -> None:
+    statement = _create_table_statement(personen_upgrade_ddl, "photo_person_corrections")
+
+    assert "applies BOOLEAN NOT NULL" in statement
+    assert "UNIQUE (photo_id, person_id)" in statement
+    assert "CONSTRAINT fk_photo_person_corrections_person_id FOREIGN KEY(person_id)" in statement
+
+
+def test_the_person_timestamps_are_zoneless(personen_upgrade_ddl: list[str]) -> None:
+    rendered = " ".join(personen_upgrade_ddl).upper()
+
+    assert "WITH TIME ZONE" not in rendered
+
+
+def test_the_person_counters_are_added_nullable_without_default(
+    personen_upgrade_ddl: list[str],
+) -> None:
+    for column in ("persons_photos_total", "persons_photos_processed"):
+        statement = _add_column_statement(personen_upgrade_ddl, column).upper()
+
+        assert "INTEGER" in statement
+        assert "NOT NULL" not in statement
+        assert "DEFAULT" not in statement
+
+
+def test_the_personen_upgrade_touches_no_data(personen_upgrade_ddl: list[str]) -> None:
+    rendered = " ".join(personen_upgrade_ddl).upper()
+
+    assert "INSERT " not in rendered
+    assert "UPDATE " not in rendered
+    assert "DELETE " not in rendered
+
+
+def test_the_personen_downgrade_renders_for_postgres_too() -> None:
+    rendered = " ".join(_render_postgres_ddl(_PERSONEN_REVISION, direction="downgrade")).upper()
+
+    for table in ("PHOTO_PERSON_CORRECTIONS", "PHOTO_PERSON_DETECTIONS", "PERSON_REFERENCES"):
+        assert f"DROP TABLE {table}" in rendered
+    assert "DROP TABLE PERSONS" in rendered
+    assert "DROP COLUMN PERSONS_PHOTOS_TOTAL" in rendered

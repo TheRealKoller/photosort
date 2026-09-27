@@ -51,6 +51,8 @@ from photosort.models import (
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
+    PhotoPersonCorrection,
+    PhotoPersonDetection,
     PhotoRanking,
     PhotoScore,
     PlaceLookup,
@@ -128,6 +130,17 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     )
     await _run("ratings", delete(Rating).where(Rating.photo_id.in_(photo_ids)))
     await _run("photo_scores", delete(PhotoScore).where(PhotoScore.photo_id.in_(photo_ids)))
+    # Erkennungen und Korrekturen der Personen haengen am FOTO und fallen mit ihm. Die Personen
+    # selbst und ihre gezeigten Gesichter sind GLOBAL und von `projects` aus nicht erreichbar -
+    # sie bleiben, auch wenn ein Gesicht von einem Foto dieses Projekts stammt (ADR 0126).
+    await _run(
+        "photo_person_detections",
+        delete(PhotoPersonDetection).where(PhotoPersonDetection.photo_id.in_(photo_ids)),
+    )
+    await _run(
+        "photo_person_corrections",
+        delete(PhotoPersonCorrection).where(PhotoPersonCorrection.photo_id.in_(photo_ids)),
+    )
     # `photo_motif_corrections` haengt zugleich an `users` - der Nutzer wird dabei NICHT
     # mitgeloescht (er ist Fremdschluessel-ELTERN und faellt aus der Erreichbarkeitspruefung
     # heraus).
