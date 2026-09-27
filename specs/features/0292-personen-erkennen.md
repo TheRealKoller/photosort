@@ -1,6 +1,6 @@
 # 0292 - Die beiden Nutzer auf Fotos erkennen und benennen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #549](https://github.com/TheRealKoller/photosort/pull/549))
 **Erstellt:** 2026-09-27
 **Bezug:** [Issue #292](https://github.com/TheRealKoller/photosort/issues/292), ADR [`0126`](../decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md)
 
