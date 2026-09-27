@@ -1,7 +1,7 @@
 # Design-System
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-09-26
+**Letzte Aktualisierung:** 2026-09-27
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil jeder Eintrag ein Muster oder einen
 Wert festhält, den eine Komponente ohne ihn neu erfinden würde.
 
@@ -402,6 +402,11 @@ Werden mit Spec 0006 (Login-Formular, App-Shell) erstmals konkret gebraucht und 
 - **Großansicht der Vergleichsansicht** (Spec 0533, `components/DuplicateEnlargedView.tsx`): **am Ort statt als Dialog** — sie ersetzt das Raster; Kopf, Hinweise, Gruppenaktionen und Abschluss bleiben stehen. Bühne unverfälscht (`display`, `object-contain`, feste Höhe `h-96 lg:h-144`, kein Zustandsrahmen am Bild), die Seitenspalte trägt Zustand und Wahl. Abgrenzung zur „Großansicht aus dem Raster“: Jene bewertet nichts, diese entscheidet. **Begründete Abweichung von „Auswahl = Akzentkante“:** Wo Akzent schon „Behalten“ heißt, trägt die aktuelle Position im Streifen `--text-h` plus `aria-current`.
 - **Auszeichnung je Messwert** (Spec 0533, `utils/duplicateMetrics.ts`): nur ein Wort („— schärfste“, „— beste Belichtung“) in `font-semibold text-text-h`, nie Akzent, Symbol oder Rahmen; gebildet über den **angezeigten, gerundeten** Werten.
 - **Heißer Pfad der Vergleichsansicht:** Wahlzeile, Aufnahme- und Gruppennavigation tragen `h-11 sm:h-8`. `Progress` hat dort eine weitere Aufrufstelle als Positionsanzeige mit bestimmtem Wert (`aria-hidden`, die Zahl steht als Text im `h1`).
+- **Suche und Sortierung über einer Liste** (Spec [`0532`](../features/0532-ordnerauswahl-sortieren-suchen.md), `components/FolderBrowser.tsx` mit `utils/folderListing.ts`): Eine Bedienzeile über der Liste mit zwei beschrifteten Feldern (`<label htmlFor>` in `text-xs font-medium text-text-h` über dem Feld, `gap-3`), unter `sm` untereinander in voller Breite, ab `sm` nebeneinander und unten bündig. Sie steht in jedem Zustand der Liste (Laden, Fehler, leer, Treffer) und ist nie deaktiviert.
+  - **Suchfeld zuerst:** `Input type="text"` ohne `name`, ohne Autokorrektur und Autovervollständigung. Gefiltert wird im Client bei jedem Tastendruck, ohne Anfrage; Enter löst nichts aus (im Formular wird es abgewehrt, sonst sendet es implizit ab), Esc leert einen nicht leeren Begriff und lässt den Fokus im Feld. Keine `search`-Landmarke innerhalb eines Formulars.
+  - **Sortierung als natives `<select>`** im Stil des Auswahlfelds „Referenzkamera“ (`h-11`, Kategorie Eingabefeld, zusätzlich `sm:w-auto`), mit sichtbarer Beschriftung; zugeklappt zeigt es das wirksame Kriterium.
+  - **Zwei getrennte Leerzustände** in `text-sm text-text`, ohne `Alert` und ohne Fehlerfarbe: Die Liste ist leer („Dieser Ordner hat keine Unterordner.“, gilt auch mit Begriff), oder der Begriff trifft nichts. Der Kein-Treffer-Zustand nennt den getrimmten Begriff als Textknoten (`break-words`), lässt ihn im Feld stehen und bietet darunter „Suche zurücksetzen“ (`Button variant="outline"`) an; ein Klick leert den Begriff und setzt den Fokus ins Suchfeld. Beide Meldungen erscheinen nie zugleich.
+  - **Eine noch nicht endgültige Reihenfolge wird als Status-Zeile ausgewiesen**: ein ständig vorhandenes `<p role="status">` zwischen Bedienzeile und Liste, das nur im vorläufigen Zustand Text trägt (`text-sm text-text`, kein `Alert`, kein Symbol) und ohne Text weder Höhe noch Abstand hat. Hinweis, Ladeanzeige und endgültige Reihenfolge wechseln im selben Render; die Liste wird genau einmal umsortiert, ohne Animation und ohne Eingriff in Fokus oder Scroll-Position. Der Listenschlüssel ist die Identität des Eintrags, nie der Index, sonst wandert der Fokus beim Umsortieren auf einen anderen Eintrag.
 
 ## Barrierefreiheit
 

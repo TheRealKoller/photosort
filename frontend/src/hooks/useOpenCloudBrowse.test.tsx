@@ -15,14 +15,16 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe('useOpenCloudBrowseQuery', () => {
   it('fetches entries for the given path and keys the query by path', async () => {
-    vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
+    vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
+      { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
+    ])
 
     const { result } = renderHook(() => useOpenCloudBrowseQuery('CostaRica'), { wrapper })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(opencloudApi.browseFolder).toHaveBeenCalledWith('CostaRica')
-    expect(result.current.data).toEqual([{ name: 'Sub', path: 'CostaRica/Sub' }])
+    expect(result.current.data).toEqual([{ name: 'Sub', path: 'CostaRica/Sub', modified_at: null }])
   })
 
   it('loads the root level for an empty path', async () => {

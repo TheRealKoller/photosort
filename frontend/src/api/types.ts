@@ -174,6 +174,8 @@ export interface ClassificationEstimateOut {
 export interface BrowseEntry {
   name: string
   path: string
+  // ISO 8601 mit Zeitzone; null, wenn OpenCloud fuer den Ordner kein Datum geliefert hat.
+  modified_at: string | null
 }
 
 // Rekursive Bilddatei-Anzahl (mit Obergrenze) pro direktem Unterordner, wie von

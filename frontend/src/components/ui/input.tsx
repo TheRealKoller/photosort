@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from 'react'
+import type { InputHTMLAttributes, Ref } from 'react'
 
 import { cn } from '../../lib/utils'
 
@@ -37,7 +37,13 @@ import { cn } from '../../lib/utils'
  * nichts tun. Wo 44px nicht ueber die Aufspannung erreichbar sind, wird das Element sichtbar gross
  * genug gemacht, statt die Aufspannung heimlich wegzulassen.
  */
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({
+  className,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & {
+  // React 19 reicht `ref` als reguläre Prop durch; `InputHTMLAttributes` deklariert sie nicht.
+  ref?: Ref<HTMLInputElement>
+}) {
   return (
     <input
       className={cn(

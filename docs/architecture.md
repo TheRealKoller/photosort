@@ -206,10 +206,12 @@ Verarbeitungs-Cache (Thumbnails).
 - **Backend** (`backend/`): FastAPI. REST-API für Projekte, Fotos, Bewertungen; Auth (JWT,
   `Authorization: Bearer`-Header, kein Cookie); Anbindung an OpenCloud via WebDAV; stößt
   Hintergrund-Jobs im Worker an.
-  - `/opencloud/browse`, `/projects` (CRUD + Scan-Trigger), OpenCloud-Client (`opencloud/client.py`,
-    `opencloud/webdav_xml.py`, `opencloud/exif.py`). `ProjectOut` trägt die Bestandszahlen
-    `photo_count`/`taken_at_earliest`/`taken_at_latest`; `GET /projects` lädt sie für **alle**
-    Projekte in **einer** gruppierten Abfrage (`photo_aggregates.py`), nicht je Projekt.
+  - `/opencloud/browse` (direkte Unterordner als `name`/`path`/`modified_at`; `modified_at` ist
+    `getlastmodified` derselben PROPFIND-Antwort, `null` ohne Angabe — keine Zählung, keine
+    zusätzliche WebDAV-Anfrage), `/projects` (CRUD + Scan-Trigger), OpenCloud-Client
+    (`opencloud/client.py`, `opencloud/webdav_xml.py`, `opencloud/exif.py`). `ProjectOut` trägt die
+    Bestandszahlen `photo_count`/`taken_at_earliest`/`taken_at_latest`; `GET /projects` lädt sie für
+    **alle** Projekte in **einer** gruppierten Abfrage (`photo_aggregates.py`), nicht je Projekt.
   - `POST /auth/login`, `get_current_user`-Dependency (Argon2/PyJWT gemäß
     [`decisions/0005-auth-implementation.md`](../specs/decisions/0005-auth-implementation.md)),
     `/projects`- und `/opencloud`-Router sind auth-pflichtig (Router-Level-Dependency).
@@ -259,7 +261,7 @@ Verarbeitungs-Cache (Thumbnails).
     (`asyncio.Semaphore(settings.opencloud_folder_count_concurrency)`, Default 4) die rekursive
     Bilddatei-Anzahl je direktem Unterordner über einen Early-Exit-Konsum von
     `OpenCloudClient.walk()` (`api/opencloud.py::_count_images_up_to_limit`, Obergrenze
-    `FOLDER_COUNT_LIMIT = 500`) — `GET /opencloud/browse` selbst unverändert. `IMAGE_EXTENSIONS`
+    `FOLDER_COUNT_LIMIT = 500`). `IMAGE_EXTENSIONS`
     liegt öffentlich in `opencloud/client.py`: Der Request-Pfad (`api/opencloud.py`) darf
     strukturell nicht von `worker.py` abhängen, das `mediapipe`/`tensorflow` nachzieht. `PUT
     /projects/{id}/cloud-vision-consent` (`api/projects.py`, Body `{"enabled": bool}`, am

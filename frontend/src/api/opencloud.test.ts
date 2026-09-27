@@ -8,7 +8,7 @@ vi.mock('./client', () => ({
   apiFetch: vi.fn(),
 }))
 
-const ENTRIES: BrowseEntry[] = [{ name: 'Sub', path: 'CostaRica/Sub' }]
+const ENTRIES: BrowseEntry[] = [{ name: 'Sub', path: 'CostaRica/Sub', modified_at: null }]
 const COUNTS: FolderCountOut[] = [
   { path: 'CostaRica/Sub', count: 42, at_limit: false, error: false },
 ]
