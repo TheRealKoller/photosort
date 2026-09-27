@@ -34,7 +34,8 @@ export interface ScoringRunSummary {
 //
 // 'landmark' ist die Sehenswürdigkeits-Erkennung. 'ranking' (Kategorieableitung und Rangfolge)
 // gehört fachlich zur Kriterien-Phase, läuft aber DANACH.
-export type ClassificationPhase = 'remote_categories' | 'criteria' | 'landmark' | 'ranking'
+export type ClassificationPhase =
+  'remote_categories' | 'criteria' | 'landmark' | 'ranking' | 'persons'
 
 // Ein Cloud-Teilschritt EINES Klassifizierungslaufs: während des Laufs die Fortschrittsanzeige,
 // danach die Bilanz.
@@ -109,6 +110,10 @@ export interface CriterionScoringRunSummary {
   // PFLICHTFELD ohne Vorgabewert - dann erzwingt `tsc` die Ergaenzung jeder lokalen Testfabrik,
   // und es braucht keinen Test ueber deren Vollzaehligkeit.
   phase_remaining_seconds: number | null
+  // Die Zaehler der Phase `persons`. `null` heisst "die Phase lief nicht" - nach
+  // Laufende wird der Teilschritt dann ausgeblendet. Keine Namen, keine Trefferzahl.
+  persons_photos_total: number | null
+  persons_photos_processed: number | null
 }
 
 export interface ProjectOut {
@@ -731,6 +736,32 @@ export interface PhotoOut {
   in_final_selection: boolean
   /** Sind sich die Nutzer über dieses Foto uneins und ist noch nicht gemeinsam entschieden? */
   contested: boolean
+  /**
+   * Die WIRKSAM zugeordneten Personen: Korrektur vor Erkennung, vom Server
+   * berechnet. Nur Id und Herkunft - die Namen kommen aus `GET /persons`.
+   */
+  persons: PhotoPersonOut[]
+}
+
+/** Herkunft einer Zuordnung: `recognized` = erkannt, `corrected` = von Hand zugeordnet. */
+export type PersonOrigin = 'recognized' | 'corrected'
+
+export interface PhotoPersonOut {
+  person_id: number
+  origin: PersonOrigin
+}
+
+/** Eine festgelegte Person. `reference_count` zählt die gezeigten Gesichter. */
+export interface PersonOut {
+  id: number
+  name: string
+  reference_count: number
+}
+
+/** Ein gefundenes Gesicht - die Box ist auf das Bild normiert (0..1). */
+export interface FaceOut {
+  index: number
+  box: { x: number; y: number; width: number; height: number }
 }
 
 /*

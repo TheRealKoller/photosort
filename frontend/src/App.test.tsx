@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
 import { apiFetch } from './api/client'
+import * as personsApi from './api/persons'
 import * as photosApi from './api/photos'
 import * as projectsApi from './api/projects'
 import type { ProjectOut, ProjectStatsOut } from './api/types'
@@ -14,6 +15,13 @@ import { getToken, setToken } from './auth/token'
 
 vi.mock('./api/projects')
 vi.mock('./api/photos')
+vi.mock('./api/persons')
+
+// Bildbestand und Detailansicht laden `GET /persons` - ohne Vorgabe liefe die Anfrage
+// ins Leere und der Personenfilter stuende im Fehlerzustand.
+beforeEach(() => {
+  vi.mocked(personsApi.listPersons).mockResolvedValue([])
+})
 
 function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
   return {
@@ -263,6 +271,16 @@ describe('App', () => {
 
     expect(screen.getByText('PhotoSort')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Album-Entwurf' })).toBeInTheDocument()
+  })
+
+  it('routes /persons to the persons page within the app shell', async () => {
+    // Global, fuer alle Projekte - kein Projektkontext, keine Projektnavigation.
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+
+    renderApp(['/persons'])
+
+    expect(screen.getByText('PhotoSort')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Personen', level: 1 })).toBeInTheDocument()
   })
 
   it('does not resolve the abolished /curate route - and redirects it nowhere', async () => {

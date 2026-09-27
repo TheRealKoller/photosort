@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
+import * as personsApi from '../api/persons'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import * as motifsApi from '../api/motifs'
@@ -27,8 +28,17 @@ import { PhotoDetailPage } from './PhotoDetailPage'
 // specs/features/0427-motive-mit-staerke.md: dasselbe fuer das Motivset (`useMotifsQuery`) - ohne
 // Mock stuende die Staerkeliste dauerhaft im Skeleton-Zustand.
 vi.mock('../api/motifs')
+vi.mock('../api/persons')
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
+
+// Der Personenabschnitt und der Personenfilter laden `GET /persons` in JEDEM Block
+// dieser Datei. Die Vorgabe "keine Person festgelegt" gilt dateiweit; ein Block, der Personen
+// braucht, setzt sie selbst.
+beforeEach(() => {
+  vi.mocked(personsApi.listPersons).mockReset()
+  vi.mocked(personsApi.listPersons).mockResolvedValue([])
+})
 
 function makeToken(payload: unknown): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -53,6 +63,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     final_selection_decision: null,
     in_final_selection: false,
     contested: false,
+    persons: [],
     ...overrides,
   }
 }
@@ -237,6 +248,148 @@ describe('PhotoDetailPage', () => {
       1,
       expect.objectContaining({ ratingStatus: undefined }),
     )
+  })
+
+  /* Die Detailansicht blättert in der nach `person` gefilterten Folge, ihr Zähler
+     bezieht sich auf diese Folge, und jeder Weg zurück trägt `person` weiter. Eine Korrektur lässt
+     das aktuelle Foto stehen; die Gesichterwahl gehört zum Foto, nicht zur Folge. */
+  describe('Personen: Folge, Abschnitt und Gesichterwahl', () => {
+    beforeEach(() => {
+      vi.mocked(personsApi.listPersons).mockResolvedValue([
+        { id: 7, name: 'Anna', reference_count: 1 },
+      ])
+    })
+
+    it('lädt die gefilterte Folge, zählt in ihr und blättert mit dem Filter weiter', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 4 }), photo({ id: 9 })],
+        total: 2,
+      })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/4?filter=unrated&person=7')
+      await screen.findByText('1/2')
+
+      expect(photosApi.listPhotos).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ ratingStatus: 'unrated', personIds: [7] }),
+      )
+      await user.click(screen.getByRole('button', { name: /weiter|nächst/i }))
+      await screen.findByText('2/2')
+      expect(screen.getByRole('link', { name: 'Zurück zum Grid' })).toHaveAttribute(
+        'href',
+        '/projects/1/photos?filter=unrated&person=7',
+      )
+    })
+
+    it('trägt "Beide" (zweimal person) in "Zurück zum Grid" weiter', async () => {
+      vi.mocked(personsApi.listPersons).mockResolvedValue([
+        { id: 7, name: 'Anna', reference_count: 1 },
+        { id: 8, name: 'Ben', reference_count: 1 },
+      ])
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 4 })], total: 1 })
+
+      renderPage('/projects/1/photos/4?person=7&person=8')
+      await screen.findByText('1/1')
+
+      expect(screen.getByRole('link', { name: 'Zurück zum Grid' })).toHaveAttribute(
+        'href',
+        '/projects/1/photos?person=7&person=8',
+      )
+    })
+
+    it('lässt das Foto nach dem Entfernen des Namens stehen, ohne die Folge neu zu laden', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({ id: 4, persons: [{ person_id: 7, origin: 'recognized' }] }),
+          photo({ id: 9, persons: [{ person_id: 7, origin: 'recognized' }] }),
+        ],
+        total: 2,
+      })
+      vi.mocked(personsApi.setPhotoPerson).mockResolvedValue([])
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/4?person=7')
+      await screen.findByText('1/2')
+      const requests = vi.mocked(photosApi.listPhotos).mock.calls.length
+
+      await user.click(await screen.findByRole('button', { name: 'Entfernen: Anna' }))
+
+      expect(await screen.findByText('Nicht zugeordnet')).toBeInTheDocument()
+      expect(screen.getByText('1/2')).toBeInTheDocument()
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(requests)
+      await user.click(screen.getByRole('button', { name: /weiter|nächst/i }))
+      await screen.findByText('2/2')
+      expect(screen.getByText('Erkannt')).toBeInTheDocument()
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(requests)
+    })
+
+    it('stellt den Personenabschnitt hinter die Urteilsfläche, nicht in den Motivbereich', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 4 })], total: 1 })
+
+      renderPage('/projects/1/photos/4')
+      const persons = await screen.findByRole('region', { name: 'Personen' })
+
+      expect(screen.getByTestId('verdict-section')).not.toContainElement(persons)
+      expect(screen.getByTestId('motifs-section')).not.toContainElement(persons)
+    })
+
+    it('fragt beim Blättern keine Gesichter ab, klappt beim Fotowechsel zu und gibt die Ausschnitte frei', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 4 }), photo({ id: 9 })],
+        total: 2,
+      })
+      vi.mocked(personsApi.listFaces).mockResolvedValue([
+        { index: 0, box: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+      ])
+      vi.mocked(personsApi.fetchFaceImage).mockResolvedValue(new Blob(['x']))
+      const revokeObjectURL = vi.fn()
+      Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:face-4'), revokeObjectURL })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/4')
+      await screen.findByText('1/2')
+      await user.click(await screen.findByRole('button', { name: 'Gesicht zeigen' }))
+      await screen.findByRole('button', { name: 'Gesicht 1 von 1' })
+      await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1))
+      await user.click(screen.getByRole('button', { name: /weiter|nächst/i }))
+      await screen.findByText('2/2')
+
+      expect(screen.getByRole('button', { name: 'Gesicht zeigen' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:face-4')
+      expect(personsApi.listFaces).toHaveBeenCalledExactlyOnceWith(4)
+    })
+
+    it('stellt die Zeile nach dem Zeigen eines Gesichts auf "Von Hand zugeordnet"', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 4 })], total: 1 })
+      vi.mocked(personsApi.listFaces).mockResolvedValue([
+        { index: 2, box: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+      ])
+      vi.mocked(personsApi.fetchFaceImage).mockResolvedValue(new Blob(['x']))
+      vi.mocked(personsApi.addReference).mockResolvedValue({
+        id: 7,
+        name: 'Anna',
+        reference_count: 2,
+      })
+      Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:face'), revokeObjectURL: vi.fn() })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/4')
+      await user.click(await screen.findByRole('button', { name: 'Gesicht zeigen' }))
+      await user.click(await screen.findByRole('button', { name: 'Gesicht 1 von 1' }))
+      await user.click(
+        within(screen.getByRole('group', { name: 'Wer ist das?' })).getByRole('button', {
+          name: 'Anna',
+        }),
+      )
+
+      expect(await screen.findByText('Von Hand zugeordnet')).toBeInTheDocument()
+      expect(personsApi.addReference).toHaveBeenCalledWith(7, 4, 2)
+      expect(screen.getByText('Gesicht als Anna gezeigt.')).toBeInTheDocument()
+    })
   })
 
   it('navigates to the next photo on ArrowRight', async () => {
@@ -882,6 +1035,8 @@ describe('PhotoDetailPage', () => {
         { name: 'Navigation', element: screen.getByRole('button', { name: 'Vorheriges Foto' }) },
         { name: 'Urteilsfläche', element: screen.getByTestId('verdict-section') },
         { name: 'Motive', element: screen.getByTestId('motifs-section') },
+        // Nach der Urteilsfläche, vor dem Einzelwerte-Raster - und NICHT in ihr.
+        { name: 'Personen', element: await screen.findByRole('region', { name: 'Personen' }) },
         { name: 'Einzelwerte-Raster', element: screen.getByTestId('criterion-score-grid') },
         { name: 'Aufnahmezeit', element: screen.getByTestId('taken-at-section') },
         { name: 'Ort', element: screen.getByTestId('place-line') },
@@ -911,6 +1066,7 @@ describe('PhotoDetailPage', () => {
         'Automatischer Vorschlag',
         'Urteilsfläche',
         'Motive',
+        'Personen',
         'Einzelwerte-Raster',
         'Aufnahmezeit',
         'Ort',
@@ -939,6 +1095,7 @@ describe('PhotoDetailPage', () => {
         'Navigation',
         'Urteilsfläche',
         'Motive',
+        'Personen',
         'Einzelwerte-Raster',
         'Aufnahmezeit',
         'Ort',
@@ -1553,9 +1710,10 @@ describe('PhotoDetailPage: die Maximal-Fixture (AK4)', () => {
     expect(sichtbareAngaben()).toEqual(sollmenge())
   })
 
-  /* Hinter GENAU EINER Aufklapphandlung stehen NUR das Motiv-Glossar und die Detailzeile eines
-     Motivs samt Korrekturschaltern. Alles andere steht offen da. */
-  it('hält nur Glossar und Motiv-Detailzeile hinter einer Aufklapphandlung', async () => {
+  /* Hinter GENAU EINER Aufklapphandlung stehen NUR das Motiv-Glossar, die Detailzeile eines
+     Motivs samt Korrekturschaltern und die Gesichterwahl des Personenabschnitts.
+     Alles andere steht offen da. */
+  it('hält nur Glossar, Motiv-Detailzeile und Gesichterwahl hinter einer Aufklapphandlung', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [maximalPhoto()], total: 1 })
 
     renderPage('/projects/1/photos/1')
@@ -1567,10 +1725,11 @@ describe('PhotoDetailPage: die Maximal-Fixture (AK4)', () => {
     expect(alleDetails).toHaveLength(1)
     expect(motifSection().contains(alleDetails[0])).toBe(true)
 
-    // Die einzigen aufklappbaren Bedienelemente sind die acht Motivsymbole.
+    // Die einzigen aufklappbaren Bedienelemente sind die acht Motivsymbole und "Gesicht zeigen".
+    const gesichtZeigen = await screen.findByRole('button', { name: 'Gesicht zeigen' })
     const aufklappbar = [...document.querySelectorAll('[aria-expanded]')]
-    expect(aufklappbar).toHaveLength(MOTIF_KEYS.length)
-    for (const node of aufklappbar) {
+    expect(aufklappbar).toHaveLength(MOTIF_KEYS.length + 1)
+    for (const node of aufklappbar.filter((node) => node !== gesichtZeigen)) {
       expect(node.getAttribute('data-motif-key')).not.toBeNull()
     }
 

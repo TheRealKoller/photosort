@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { PhotoOut, RatingStatus } from '../api/types'
@@ -8,11 +8,13 @@ import { getToken } from '../auth/token'
 import { CurationLightbox } from '../components/CurationLightbox'
 import { CurationPhotoTile } from '../components/CurationPhotoTile'
 import { DraftAlternativesDialog } from '../components/DraftAlternativesDialog'
+import { PersonFilterGroup } from '../components/PersonFilterGroup'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { useCurationLightbox } from '../hooks/useCurationLightbox'
 import { useMotifsQuery } from '../hooks/useMotifs'
+import { usePersonFilter } from '../hooks/usePersonFilter'
 import {
   useDraftDecisionMutation,
   useDraftExchangeMutation,
@@ -20,6 +22,7 @@ import {
 } from '../hooks/usePhotos'
 import { useProjectQuery } from '../hooks/useProjects'
 import { draftMotifText, draftSizeText, formatDraftPhotoCount } from '../utils/albumDraft'
+import { carriesPersons, filterByPersons } from '../utils/personFilter'
 import type { PhotoEventGroup } from '../utils/eventGrouping'
 import { groupPhotosByDay } from '../utils/eventGrouping'
 import { ownRatingStatus } from '../utils/ownRating'
@@ -93,6 +96,18 @@ export function AlbumDraftPage() {
   const exchangeMutation = useDraftExchangeMutation(id, username)
   const items = useMemo(() => query.data?.items ?? [], [query.data])
 
+  // Der Personenfilter blendet NUR clientseitig aus: Der Kopf zählt weiter den ganzen
+  // Entwurf, und die Entwurfsliste wird durch den Filter weder neu geladen noch beschrieben.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { personsQuery, personIds, setPersonIds } = usePersonFilter(searchParams, setSearchParams)
+  const isFiltered = personIds.length > 0
+  const filterKey = personIds.join(',')
+  const visibleItems = filterByPersons(items, personIds)
+  // Das eingetauschte Foto fiel aus dem Filter - gemerkt mit dem Filter, unter dem es geschah, damit
+  // die Meldung mit dem nächsten Filterwechsel von selbst entfällt. Ein neues Objekt je Austausch
+  // setzt den Fokus auch beim zweiten Mal.
+  const [hiddenExchange, setHiddenExchange] = useState<{ filterKey: string } | null>(null)
+
   // Die Grossansicht: offen ist, was im Verlaufseintrag steht - nachgeschlagen in der GELADENEN
   // Liste. Die Ueberschrift ist Fokusziel, wenn der Ausloeser des Fotos nicht mehr im Raster steht.
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -127,8 +142,9 @@ export function AlbumDraftPage() {
   // Ueberschrift und einem eigenen Leerzustand stehenzubleiben.
   const knownEventGroupsRef = useRef<Map<number, KnownEventGroup>>(new Map())
 
-  const days = groupPhotosByDay(items)
-  for (const day of days) {
+  // Bekannt wird eine Gruppe aus dem GANZEN Entwurf, nicht aus der gefilterten Sicht: Sonst stünde
+  // nach dem Aufheben des Filters jede nur ausgeblendete Gruppe als "leergeräumt" da.
+  for (const day of groupPhotosByDay(items)) {
     for (const group of day.events) {
       knownEventGroupsRef.current.set(group.eventId, {
         dayKey: day.dayKey,
@@ -137,21 +153,34 @@ export function AlbumDraftPage() {
       })
     }
   }
-  const presentEventIds = new Set(days.flatMap((day) => day.events.map((group) => group.eventId)))
-  for (const known of knownEventGroupsRef.current.values()) {
-    if (presentEventIds.has(known.eventId)) {
-      continue
+  const days = groupPhotosByDay(visibleItems)
+  // Bei aktivem Filter entfallen Tage und Gruppen ohne sichtbares Foto - "Kein Bild im Entwurf"
+  // wäre dort eine falsche Aussage.
+  if (!isFiltered) {
+    const presentEventIds = new Set(days.flatMap((day) => day.events.map((group) => group.eventId)))
+    for (const known of knownEventGroupsRef.current.values()) {
+      if (presentEventIds.has(known.eventId)) {
+        continue
+      }
+      let day = days.find((candidate) => candidate.dayKey === known.dayKey)
+      if (day === undefined) {
+        day = { dayKey: known.dayKey, events: [] }
+        days.push(day)
+      }
+      day.events.push({ eventId: known.eventId, heading: known.heading, photos: [] })
     }
-    let day = days.find((candidate) => candidate.dayKey === known.dayKey)
-    if (day === undefined) {
-      day = { dayKey: known.dayKey, events: [] }
-      days.push(day)
-    }
-    day.events.push({ eventId: known.eventId, heading: known.heading, photos: [] })
+    // dayKey-Format YYYY-MM-DD sortiert lexikographisch = chronologisch. Nachtraeglich angehaengte
+    // Leergruppen stuenden sonst hinter den gefuellten Tagen.
+    days.sort((left, right) => left.dayKey.localeCompare(right.dayKey))
   }
-  // dayKey-Format YYYY-MM-DD sortiert lexikographisch = chronologisch. Nachtraeglich angehaengte
-  // Leergruppen stuenden sonst hinter den gefuellten Tagen.
-  days.sort((left, right) => left.dayKey.localeCompare(right.dayKey))
+
+  // Als Effekt statt direkt im Erfolgsfall: Das Schließen des Dialogs gibt den Fokus in seiner
+  // Aufräumfunktion an den Auslöser zurück, und die läuft vor den Effekten des nächsten Renderns.
+  useEffect(() => {
+    if (hiddenExchange !== null) {
+      headingRef.current?.focus()
+    }
+  }, [hiddenExchange])
 
   function handleDecide(photo: PhotoOut, status: RatingStatus): void {
     if (decidingPhotoIdsRef.current.has(photo.id)) {
@@ -181,9 +210,14 @@ export function AlbumDraftPage() {
         onSuccess: () => {
           // Erst schliessen, dann den Fokus umlenken: Die Aufraeumfunktion des Dialogs gibt ihn
           // an das ausloesende Element zurueck, und React fuehrt ALLE Aufraeumfunktionen vor
-          // allen neuen Effekten aus - die Fokusnahme der Kachel gewinnt deshalb.
+          // allen neuen Effekten aus - die Fokusnahme der Kachel gewinnt deshalb. Fällt das
+          // eingetauschte Foto aus dem Filter, gibt es keine Kachel - der Fokus geht aufs `h1`.
           setAlternativesPhotoId(null)
-          setFocusPhotoId(chosen.id)
+          if (carriesPersons(chosen, personIds)) {
+            setFocusPhotoId(chosen.id)
+          } else {
+            setHiddenExchange({ filterKey })
+          }
         },
       },
     )
@@ -250,6 +284,8 @@ export function AlbumDraftPage() {
   }
 
   const dayKeys = days.map((day) => day.dayKey)
+  // Leer ist der ENTWURF, nicht die gefilterte Sicht - bekannte, leergeräumte Gruppen zählen mit.
+  const draftIsEmpty = items.length === 0 && knownEventGroupsRef.current.size === 0
   // Das Bezugsbild kommt aus der GELADENEN Liste, nicht aus einer Kopie im Zustand: Bewertet es
   // jemand zwischendurch, zeigte eine Kopie den Stand von vorhin.
   const alternativesPhoto = items.find((item) => item.id === alternativesPhotoId)
@@ -304,7 +340,7 @@ export function AlbumDraftPage() {
         </div>
       )}
 
-      {query.isSuccess && projectQuery.isSuccess && cloudConsentGiven && dayKeys.length === 0 && (
+      {query.isSuccess && projectQuery.isSuccess && cloudConsentGiven && draftIsEmpty && (
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_EMPTY_TEXT}</p>
           <Button asChild variant="secondary" size="sm">
@@ -313,13 +349,46 @@ export function AlbumDraftPage() {
         </div>
       )}
 
+      {query.isSuccess && items.length > 0 && (
+        <PersonFilterGroup
+          persons={personsQuery.data}
+          isError={personsQuery.isError}
+          onRetry={() => void personsQuery.refetch()}
+          selected={personIds}
+          onChange={setPersonIds}
+        />
+      )}
+
+      {query.isSuccess && !draftIsEmpty && isFiltered && (
+        <p role="status" className="text-sm text-text">
+          {hiddenExchange?.filterKey === filterKey
+            ? 'Das eingetauschte Foto ist durch den Filter ausgeblendet.'
+            : `${visibleItems.length} von ${items.length} Fotos des Entwurfs sichtbar.`}
+        </p>
+      )}
+
+      {query.isSuccess && !draftIsEmpty && isFiltered && visibleItems.length === 0 && (
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-sm text-text">Keine Fotos des Entwurfs mit diesem Filter.</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => setPersonIds([])}>
+            Filter zurücksetzen
+          </Button>
+        </div>
+      )}
+
+      {/* Auf- und Zuklappen wirken nur auf die SICHTBAREN Tage: Der Zustand eines ausgeblendeten
+          Tages steht nach dem Aufheben des Filters unverändert wieder da. */}
       {dayKeys.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() => setCollapsedDayKeys(new Set())}
+            onClick={() =>
+              setCollapsedDayKeys(
+                (prev) => new Set([...prev].filter((key) => !dayKeys.includes(key))),
+              )
+            }
           >
             Alle Tage aufklappen
           </Button>
@@ -327,7 +396,7 @@ export function AlbumDraftPage() {
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() => setCollapsedDayKeys(new Set(dayKeys))}
+            onClick={() => setCollapsedDayKeys((prev) => new Set([...prev, ...dayKeys]))}
           >
             Alle Tage zuklappen
           </Button>

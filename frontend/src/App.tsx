@@ -21,6 +21,7 @@ import { AlbumSelectionPage } from './pages/AlbumSelectionPage'
 import { DuplicateComparePage } from './pages/DuplicateComparePage'
 import { LoginPage } from './pages/LoginPage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
+import { PersonsPage } from './pages/PersonsPage'
 import { PhotoGridPage } from './pages/PhotoGridPage'
 import { PipelineStepView } from './pages/pipeline/PipelineStepView'
 import { ProjectPipelineLayout } from './pages/pipeline/ProjectPipelineLayout'
@@ -169,6 +170,7 @@ function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<ProjectListPage />} />
           <Route path="/projects/new" element={<ProjectCreatePage />} />
+          <Route path="/persons" element={<PersonsPage />} />
           {PROJECT_ROUTES.map(({ path, element }) => (
             <Route key={path} path={path} element={element} />
           ))}

@@ -31,6 +31,8 @@ from photosort.models import (
     LandmarkName,
     LandmarkPlaceLookup,
     MotifAssessmentSource,
+    Person,
+    PersonReference,
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
@@ -41,6 +43,8 @@ from photosort.models import (
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
+    PhotoPersonCorrection,
+    PhotoPersonDetection,
     PhotoRanking,
     PhotoScore,
     PlaceLookup,
@@ -103,6 +107,25 @@ async def get_or_create_fine_label(
     return fine_label
 
 
+async def get_or_create_person(session: AsyncSession) -> Person:
+    """Die GLOBALE Person samt einer Referenz - wiederverwendbar, damit zwei
+    Projekte auf DIESELBE Person zeigen. Ohne Projekt- und Fotobezug: eine Projektloeschung
+    darf sie nicht beruehren."""
+    existing = (await session.execute(select(Person).where(Person.slot == 1))).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    person = Person(slot=1, name="Graph-Person", name_key="graph-person")
+    session.add(person)
+    await session.flush()
+    session.add(
+        PersonReference(
+            person_id=person.id, embedding=[1.0] + [0.0] * 127, model_key="graph-modell"
+        )
+    )
+    await session.flush()
+    return person
+
+
 async def build_project_graph(
     session: AsyncSession, name: str, *, fine_label_key: str = "strand"
 ) -> ProjectGraph:
@@ -110,6 +133,7 @@ async def build_project_graph(
     now = datetime.now(UTC).replace(tzinfo=None)
     user = await get_or_create_user(session)
     fine_label = await get_or_create_fine_label(session, fine_label_key)
+    person = await get_or_create_person(session)
 
     project = Project(
         name=name, opencloud_drive_id="drive-1", opencloud_path=f"/{name.replace(' ', '')}"
@@ -292,6 +316,13 @@ async def build_project_graph(
                 event_id=event.id,
                 level=4,
                 quality=0.61,
+            ),
+            # S10: Erkennung und Korrektur haengen am
+            # FOTO. Ohne diese beiden Zeilen pruefen die Vollstaendigkeitstests der
+            # Projektloeschung die neuen Kanten nicht. Die Person selbst ist global und bleibt.
+            PhotoPersonDetection(photo_id=photo.id, person_id=person.id, computed_at=now),
+            PhotoPersonCorrection(
+                photo_id=photo.id, person_id=person.id, user_id=user.id, applies=False
             ),
         ]
     )

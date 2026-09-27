@@ -102,6 +102,17 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # `effective_decision_for`, dass `open_count` projektweit und von `limit`/`offset` unabhaengig
     # ist, und dass ein unbekanntes Projekt `404` gibt, "nichts gefunden" aber eine leere Liste.
     ("get", "/projects/{project_id}/ausschuss"),
+    # Die sieben Personen-Endpunkte. Ihre Beschreibungen
+    # tragen, was der Signatur nicht anzusehen ist - dass eine Person nur mit ihrer ersten Referenz
+    # entsteht, dass ein gezeigtes Gesicht zugleich zuordnet, dass die Korrektur fuer beide Nutzer
+    # gilt und jeder Erkennung vorgeht, und dass kein Endpunkt ein Merkmal ausliefert.
+    ("get", "/persons"),
+    ("post", "/persons"),
+    ("post", "/persons/{person_id}/references"),
+    ("delete", "/persons/{person_id}"),
+    ("get", "/photos/{photo_id}/faces"),
+    ("get", "/photos/{photo_id}/faces/{index}/image"),
+    ("put", "/photos/{photo_id}/persons/{person_id}"),
 )
 
 

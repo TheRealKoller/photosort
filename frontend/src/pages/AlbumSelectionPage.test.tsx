@@ -51,6 +51,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     final_selection_decision: null,
     in_final_selection: false,
     contested: false,
+    persons: [],
     event: eventOut(),
     ...overrides,
   }
@@ -382,6 +383,7 @@ describe('AlbumSelectionPage - was hier nicht stehen darf', () => {
             id: 1,
             relative_path: 'strittig.jpg',
             contested: true,
+            persons: [],
             ratings: [
               { user_id: 2, username: 'nora', status: 'album_worthy', favorite: false },
               { user_id: 1, username: 'daniel', status: 'rejected', favorite: false },
@@ -415,6 +417,7 @@ describe('AlbumSelectionPage - was hier nicht stehen darf', () => {
             id: 1,
             relative_path: 'strittig.jpg',
             contested: true,
+            persons: [],
             ratings: [{ user_id: 2, username: 'nora', status: 'album_worthy', favorite: false }],
           }),
         ],

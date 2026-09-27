@@ -20,6 +20,7 @@
  */
 
 import {
+  DEMO_PERSONS,
   DEMO_PROJECTS,
   demoProjectId,
   duplicateTiles,
@@ -148,6 +149,10 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       role: 'link' as const,
       name: /^Duplikat-Gruppe mit \d+ Aufnahmen vergleichen/,
     },
+    // Die globale Personenseite mit zwei Karten und der
+    // Gefahrenzone. Die Karte des 40-Zeichen-Namens bricht um statt zu kuerzen - genau dort
+    // stuende die Seite ueber.
+    { label: 'Personen', path: '/persons', heading: 'Personen' },
   ] satisfies ({ label: string; path: string; requiresTile?: RegExp } & Precondition)[]
 
   const viewportWidth = page.viewportSize()?.width
@@ -262,6 +267,62 @@ test('die Filterleiste ist bei 360 px ein eigener Scrollbereich', async ({ page 
     clientWidth: document.documentElement.clientWidth,
   }))
   expect(dokument.scrollWidth, 'Dokumentbreite neben der scrollenden Leiste').toBeLessThanOrEqual(
+    dokument.clientWidth + TOLERANCE,
+  )
+})
+
+/**
+ * Die Personen-Filtergruppe bei 360 px.
+ *
+ * Dieselben zwei Messungen wie bei der Filterleiste: Die Gruppe scrollt nachweislich selbst, und
+ * das Dokument daneben nicht. Der Anlass ist der Demo-Name mit der Hoechstlaenge von 40 Zeichen -
+ * Namen werden nie gekuerzt, also muss die Gruppe ihn in sich aufnehmen. Zusaetzlich steht der
+ * Name in seiner Schaltflaeche vollstaendig: Eine Gruppe, die ihn abschnitte, braeuchte gar
+ * keinen Scrollbereich.
+ */
+test('die Personen-Filtergruppe mit dem laengsten Namen scrollt bei 360 px in sich', async ({
+  page,
+}) => {
+  const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.goto(`/projects/${ratedId}/photos`)
+
+  const gruppe = page.getByRole('group', { name: 'Personen' })
+  await expect(gruppe, 'Personen-Filtergruppe').toBeVisible()
+  // Vorbedingung: "Alle", beide Namen und "Beide" - exakt, gegen den trivialen Gruen-Fall einer
+  // Gruppe, die den langen Namen gar nicht traegt.
+  await expect(gruppe.getByRole('button')).toHaveCount(4)
+  const langerName = gruppe.getByRole('button', { name: DEMO_PERSONS.longest, exact: true })
+  await expect(langerName, 'Eintrag mit dem 40-Zeichen-Namen').toBeVisible()
+
+  const name = await langerName.evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+  }))
+  expect(
+    name.scrollWidth,
+    'der lange Name steht ungekuerzt in seiner Schaltflaeche',
+  ).toBeLessThanOrEqual(name.clientWidth + TOLERANCE)
+
+  const vorher = await gruppe.evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+  }))
+  expect(
+    vorher.scrollWidth,
+    'Inhaltsbreite der Personen-Filtergruppe gegen ihre sichtbare Breite',
+  ).toBeGreaterThan(vorher.clientWidth + TOLERANCE)
+
+  const scrollLeft = await gruppe.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth
+    return element.scrollLeft
+  })
+  expect(scrollLeft, 'die Gruppe laesst sich tatsaechlich seitlich rollen').toBeGreaterThan(0)
+
+  const dokument = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }))
+  expect(dokument.scrollWidth, 'Dokumentbreite neben der scrollenden Gruppe').toBeLessThanOrEqual(
     dokument.clientWidth + TOLERANCE,
   )
 })

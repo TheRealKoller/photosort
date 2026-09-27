@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import * as duplicatesApi from '../api/duplicates'
 import * as motifsApi from '../api/motifs'
+import * as personsApi from '../api/persons'
 import * as photosApi from '../api/photos'
 import * as projectsApi from '../api/projects'
 import * as ratingsApi from '../api/ratings'
@@ -23,6 +24,7 @@ import { PhotoGridPage } from './PhotoGridPage'
 // (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
 // stuende dauerhaft im Fallback-Zustand, statt in einem bewusst gewaehlten.
 vi.mock('../api/motifs')
+vi.mock('../api/persons')
 vi.mock('../api/photos')
 vi.mock('../api/projects')
 vi.mock('../api/ratings')
@@ -51,6 +53,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     final_selection_decision: null,
     in_final_selection: false,
     contested: false,
+    persons: [],
     // Basiszustand: klassifiziert per Cloud-Grundlage, ohne Ausschluss.
     motif_assessment: {
       source: 'cloud' as const,
@@ -149,6 +152,8 @@ describe('PhotoGridPage', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(ratingsApi.setRating).mockReset()
+    vi.mocked(personsApi.listPersons).mockReset()
+    vi.mocked(personsApi.listPersons).mockResolvedValue([])
     vi.mocked(motifsApi.listMotifs).mockReset()
     vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
     vi.mocked(projectsApi.confirmAusschussGate).mockReset()
@@ -783,5 +788,107 @@ describe('PhotoGridPage', () => {
       }
       expect(screen.queryByRole('list', { name: 'Motive' })).toBeNull()
     })
+  })
+})
+
+describe('PhotoGridPage: Personenfilter (Spec 0292)', () => {
+  const ANNA = { id: 7, name: 'Anna <b>', reference_count: 1 }
+  const BERTA = { id: 8, name: 'Berta', reference_count: 2 }
+
+  beforeEach(() => {
+    setToken(makeToken({ sub: '1', username: 'testuser' }))
+    vi.mocked(photosApi.listPhotos).mockReset()
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 5 })], total: 1 })
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+    vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
+    vi.mocked(personsApi.listPersons).mockReset()
+    vi.mocked(duplicatesApi.getDuplicateGroupIndex).mockResolvedValue({
+      total: 0,
+      first_photo_id: null,
+    })
+  })
+
+  it('zeigt die Gruppe erst ab einer Person, Beide nur bei zwei', async () => {
+    vi.mocked(personsApi.listPersons).mockResolvedValue([])
+    const { unmount } = renderPage()
+    await screen.findByText('1 von 1 geladen')
+    expect(screen.queryByText('Personen')).toBeNull()
+    unmount()
+
+    vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA])
+    const single = renderPage()
+    expect(await screen.findByRole('button', { name: 'Anna <b>' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Beide/ })).toBeNull()
+    single.unmount()
+
+    vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA, BERTA])
+    renderPage()
+    expect(
+      await screen.findByRole('button', { name: 'Beide: Anna <b> und Berta' }),
+    ).toBeInTheDocument()
+  })
+
+  it('schickt person_id zusammen mit dem Bewertungsfilter an den Server', async () => {
+    vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA, BERTA])
+    renderPage('/projects/1/photos?filter=album_worthy&person=7&person=8')
+
+    await waitFor(() =>
+      expect(photosApi.listPhotos).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ ratingStatus: 'album_worthy', personIds: [7, 8] }),
+      ),
+    )
+    const tile = await screen.findByRole('link')
+    expect(tile.getAttribute('href')).toBe(
+      '/projects/1/photos/5?filter=album_worthy&person=7&person=8',
+    )
+  })
+
+  it('setzt mit Filter zurücksetzen beide Filter zurück', async () => {
+    vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA])
+    vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [], total: 0 })
+    renderPage('/projects/1/photos?person=7')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Filter zurücksetzen' }))
+
+    await waitFor(() =>
+      expect(photosApi.listPhotos).toHaveBeenLastCalledWith(
+        1,
+        expect.objectContaining({ ratingStatus: undefined, personIds: [] }),
+      ),
+    )
+  })
+
+  it('entfernt eine unbekannte Id erst nach dem Laden der Personen', async () => {
+    let resolve: (value: (typeof ANNA)[]) => void = () => {}
+    vi.mocked(personsApi.listPersons).mockReturnValue(
+      new Promise((done) => {
+        resolve = done
+      }),
+    )
+    renderPage('/projects/1/photos?person=99')
+    await waitFor(() => expect(photosApi.listPhotos).toHaveBeenCalled())
+    expect(photosApi.listPhotos).toHaveBeenLastCalledWith(
+      1,
+      expect.objectContaining({ personIds: [99] }),
+    )
+
+    await act(async () => resolve([ANNA]))
+
+    await waitFor(() =>
+      expect(photosApi.listPhotos).toHaveBeenLastCalledWith(
+        1,
+        expect.objectContaining({ personIds: [] }),
+      ),
+    )
+  })
+
+  it('zeigt bei einem Ladefehler der Personen einen Alert', async () => {
+    vi.mocked(personsApi.listPersons).mockRejectedValue(new ApiError(500, 'kaputt'))
+    renderPage()
+
+    expect(
+      await screen.findByText('Die Personen konnten nicht geladen werden.'),
+    ).toBeInTheDocument()
   })
 })

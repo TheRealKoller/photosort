@@ -20,6 +20,8 @@ export interface ListPhotosParams {
   /** Nur die Fotos DIESER Kamera. Traegt die Fotoauswahl des Versatz-Vorschlags - ohne den
    * Filter kann die Oberflaeche die beiden Fotos desselben Moments nicht anbieten. */
   cameraId?: number
+  /** Nur Fotos, die JEDE dieser Personen wirksam tragen (höchstens zwei). */
+  personIds?: readonly number[]
 }
 
 export interface ListDraftAlternativesParams {
@@ -49,6 +51,9 @@ export function listPhotos(
   }
   if (params.cameraId !== undefined) {
     query.set('camera_id', String(params.cameraId))
+  }
+  for (const personId of params.personIds ?? []) {
+    query.append('person_id', String(personId))
   }
   const queryString = query.toString()
   return apiFetch<PhotoListOut>(

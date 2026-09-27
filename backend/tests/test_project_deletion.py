@@ -172,6 +172,38 @@ class TestTheWeightSetsSurviveEveryProjectDeletion:
         assert await count_rows(db_session, "quality_weight_entries") == 1
 
 
+class TestThePersonsSurviveEveryProjectDeletion:
+    """S10: Die Festlegung ist GLOBAL. Die
+    Projektloeschung nimmt Erkennungen und Korrekturen ihrer Fotos mit, laesst Personen und
+    gezeigte Gesichter aber unberuehrt - auch wenn diese Gesichter von Fotos des geloeschten
+    Projekts stammen."""
+
+    _TABLES = ("persons", "person_references")
+
+    @pytest.mark.parametrize("table_name", _TABLES)
+    def test_the_table_is_not_reachable_from_projects(self, table_name: str) -> None:
+        assert table_name not in tables_reachable_from_projects()
+
+    async def test_detections_and_corrections_go_persons_and_references_stay(
+        self, db_session: AsyncSession
+    ) -> None:
+        graph = await build_project_graph(db_session, "Weg")
+        await db_session.commit()
+        assert await count_rows(db_session, "photo_person_detections") == 1
+        assert await count_rows(db_session, "photo_person_corrections") == 1
+
+        with _recorded_delete_targets() as targets:
+            await delete_projects(db_session, [graph.project_id])
+        await db_session.commit()
+
+        assert "persons" not in targets
+        assert "person_references" not in targets
+        assert await count_rows(db_session, "photo_person_detections") == 0
+        assert await count_rows(db_session, "photo_person_corrections") == 0
+        assert await count_rows(db_session, "persons") == 1
+        assert await count_rows(db_session, "person_references") == 1
+
+
 async def test_delete_projects_without_ids_deletes_nothing(db_session: AsyncSession) -> None:
     kept = await build_project_graph(db_session, "Behalten")
     await db_session.commit()

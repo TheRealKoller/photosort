@@ -1,5 +1,10 @@
 import os
 
+# Ganz oben, vor jedem Import: `TestRealAssetOutputDimension` importiert `onnxruntime` direkt und
+# geht damit an der Abschaltung in `label_embedding.py::build_label_embedder` vorbei. Zuweisend,
+# nie `setdefault`.
+os.environ["ORT_DISABLE_TELEMETRY"] = "1"
+
 # Muss vor jedem "photosort.*"-Import gesetzt werden: main.py verweigert den Start bei einem zu
 # kurzen/Platzhalter-secret_key (siehe security-Startup-Guard, specs/features/0006-auth.md), und
 # der Rate-Limiter soll in Tests ohne echtes Redis auskommen (architecture/0002-testkonzept.md).
@@ -66,6 +71,38 @@ def _reset_rate_limiter() -> Iterator[None]:
     # Reset zwischen Tests wuerden sich Login-Versuche verschiedener Testfaelle gegenseitig
     # beeinflussen, da alle denselben Client-IP-Schluessel benutzen.
     limiter.reset()
+    yield
+
+
+class RealFaceModelInTestError(RuntimeError):
+    """Ein Test hat versucht, das echte Gesichtsmodell zu bauen - ihm fehlt das Double."""
+
+
+@pytest.fixture(autouse=True)
+def _no_real_face_models(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """SPERRE wie die Netzsperre oben: Kein Test baut YuNet oder SFace, ausgenommen allein die
+    mit `real_face_models` markierte Klasse gegen die echten Assets (nur synthetische Bilder).
+
+    Die Sperre sitzt am `cv2`-Konstruktor und nicht an `face_analysis.build_face_analyzer`: Ein
+    Default-Argument `build_face_analyzer=build_face_analyzer` bindet die Funktion beim Import,
+    ein Patch am Modulattribut erreichte es nicht. Wird ein Fall hier rot, fehlt ihm das Double;
+    die Sperre wird nicht gelockert."""
+    if request.node.get_closest_marker("real_face_models") is not None:
+        yield
+        return
+    import cv2
+
+    def _verweigert(*args: Any, **kwargs: Any) -> Any:
+        raise RealFaceModelInTestError(
+            "Echtes Gesichtsmodell in einem Test. Einen Fake-Analyzer injizieren."
+        )
+
+    monkeypatch.setattr(cv2.FaceDetectorYN, "create", staticmethod(_verweigert))
+    monkeypatch.setattr(cv2.FaceRecognizerSF, "create", staticmethod(_verweigert))
+    monkeypatch.setattr(cv2, "FaceDetectorYN_create", _verweigert)
+    monkeypatch.setattr(cv2, "FaceRecognizerSF_create", _verweigert)
     yield
 
 

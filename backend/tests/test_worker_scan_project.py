@@ -328,6 +328,48 @@ async def test_scan_removes_photos_no_longer_present(
     assert result.scalars().all() == []
 
 
+async def test_a_vanished_photo_takes_its_person_detection_and_correction_along(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Erkennung und Korrektur haengen am Foto und fallen beim Scan ueber die Kaskade
+    mit ihm - unter durchgesetzten Fremdschluesseln. Die Person selbst bleibt."""
+    from photosort.models import Person, PhotoPersonCorrection, PhotoPersonDetection, User
+
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="CostaRica/gone.jpg",
+        etag="etag",
+        content_length=10,
+        taken_at=modified,
+        taken_at_original=modified,
+        last_modified=modified,
+    )
+    user = User(username="u", password_hash="h")
+    person = Person(slot=1, name="Anna", name_key="anna")
+    db_session.add_all([photo, user, person])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            PhotoPersonDetection(photo_id=photo.id, person_id=person.id, computed_at=modified),
+            PhotoPersonCorrection(
+                photo_id=photo.id, person_id=person.id, user_id=user.id, applies=False
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    scan_run = await run_project_scan(
+        db_session, FakeOpenCloudClient(entries=[]), project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.photos_removed == 1
+    assert (await db_session.execute(select(PhotoPersonDetection))).scalars().all() == []
+    assert (await db_session.execute(select(PhotoPersonCorrection))).scalars().all() == []
+    assert len((await db_session.execute(select(Person))).scalars().all()) == 1
+
+
 async def test_scan_skips_non_image_files(db_session: AsyncSession, tmp_path: Path) -> None:
     project = await _make_project(db_session)
     modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)

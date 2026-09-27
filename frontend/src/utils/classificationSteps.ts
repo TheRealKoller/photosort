@@ -51,6 +51,7 @@ export const CLASSIFICATION_STEP_ORDER = [
   'criteria',
   'landmark',
   'ranking',
+  'persons',
 ] as const satisfies readonly ClassificationStepId[]
 
 const STEP_LABELS: Record<ClassificationStepId, string> = {
@@ -58,6 +59,7 @@ const STEP_LABELS: Record<ClassificationStepId, string> = {
   criteria: 'Kriterien-Bewertung',
   landmark: 'Sehenswürdigkeits-Erkennung',
   ranking: 'Rangfolge',
+  persons: 'Personen-Erkennung',
 }
 
 /** Die beiden Teilschritte, die Fotos an einen Cloud-Anbieter senden, samt ihres Bilanz-Zwecks. */
@@ -92,6 +94,11 @@ export function deriveClassificationSteps(run: CriterionScoringRunSummary): Clas
   const steps: ClassificationStep[] = []
 
   for (const [index, id] of CLASSIFICATION_STEP_ORDER.entries()) {
+    // Die Personen-Erkennung läuft nur, wenn eine Person gezeigte Gesichter hat. Vor ihr steht sie
+    // auf "ausstehend"; nach Laufende ohne Zähler (`null`) lief sie nicht und wird ausgeblendet.
+    if (id === 'persons' && isFinished && run.persons_photos_total === null) {
+      continue
+    }
     if (isCloudStep(id) && !run.cloud_requested) {
       // Ohne angeforderte Cloud-Nutzung hat der Teilschritt nie zur Disposition gestanden. Ihn
       // als "übersprungen" zu zeigen behauptete eine Auslassung, wo es keine Absicht gab.
@@ -195,6 +202,9 @@ function progressOf(
   }
   if (id === 'criteria') {
     return { processed: run.photos_processed, total: run.photos_total }
+  }
+  if (id === 'persons') {
+    return { processed: run.persons_photos_processed, total: run.persons_photos_total }
   }
   // `ranking` kennt kein Total: die Kategorieableitung läuft über Partitionen, nicht über eine
   // gezählte Fotomenge. `null` heisst hier "unbestimmter Fortschritt", und die Anzeige zeichnet

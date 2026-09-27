@@ -19,8 +19,12 @@ import { insertDraftPhoto } from '../utils/albumDraft'
  */
 export const PHOTOS_PAGE_SIZE = 60
 
-function photosQueryKey(projectId: number, ratingStatus?: RatingFilter) {
-  return ['photos', projectId, ratingStatus ?? null] as const
+function photosQueryKey(
+  projectId: number,
+  ratingStatus?: RatingFilter,
+  personIds: readonly number[] = [],
+) {
+  return ['photos', projectId, ratingStatus ?? null, ...personIds] as const
 }
 
 /**
@@ -142,11 +146,12 @@ export function usePhotoSequenceQuery(
   projectId: number,
   ratingStatus?: RatingFilter,
   pageSize: number = PHOTOS_PAGE_SIZE,
+  personIds: readonly number[] = [],
 ) {
   return useInfiniteQuery({
-    queryKey: photosQueryKey(projectId, ratingStatus),
+    queryKey: photosQueryKey(projectId, ratingStatus, personIds),
     queryFn: ({ pageParam }: { pageParam: number }) =>
-      listPhotos(projectId, { ratingStatus, limit: pageSize, offset: pageParam }),
+      listPhotos(projectId, { ratingStatus, limit: pageSize, offset: pageParam, personIds }),
     initialPageParam: 0,
     getNextPageParam: (lastPage: PhotoListOut, allPages: PhotoListOut[]) => {
       const loaded = allPages.reduce((sum, loadedPage) => sum + loadedPage.items.length, 0)

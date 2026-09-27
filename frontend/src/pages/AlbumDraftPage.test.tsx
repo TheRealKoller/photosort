@@ -8,10 +8,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as motifsApi from '../api/motifs'
+import * as personsApi from '../api/persons'
 import * as photosApi from '../api/photos'
 import * as projectsApi from '../api/projects'
 import * as ratingsApi from '../api/ratings'
-import type { EventOut, PhotoListOut, PhotoOut, ProjectOut, RankingOut } from '../api/types'
+import type {
+  EventOut,
+  PersonOut,
+  PhotoListOut,
+  PhotoOut,
+  ProjectOut,
+  RankingOut,
+} from '../api/types'
 import { NOT_PROPOSED_BADGE_TEXT } from '../components/CurationPhotoTile'
 import { PREVIOUSLY_IN_ALBUM_BADGE_TEXT } from '../components/DraftAlternativesDialog'
 import { setToken } from '../auth/token'
@@ -33,6 +41,7 @@ vi.mock('../api/photos')
 vi.mock('../api/projects')
 vi.mock('../api/ratings')
 vi.mock('../api/motifs')
+vi.mock('../api/persons')
 
 function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
   return {
@@ -103,6 +112,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     final_selection_decision: null,
     in_final_selection: false,
     contested: false,
+    persons: [],
     motif_assessment: {
       source: 'cloud' as const,
       provider: 'anthropic',
@@ -175,6 +185,7 @@ describe('AlbumDraftPage', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
     vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
     vi.mocked(projectsApi.getProject).mockResolvedValue(projectOut())
+    vi.mocked(personsApi.listPersons).mockResolvedValue([])
     vi.stubGlobal(
       'matchMedia',
       vi.fn().mockReturnValue({
@@ -1012,6 +1023,196 @@ describe('AlbumDraftPage', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: a.jpg' }))
 
       expect(within(screen.getByRole('dialog')).queryAllByRole('link')).toEqual([])
+    })
+  })
+
+  /*
+   * Der Personenfilter blendet NUR clientseitig aus -
+   * die Entwurfsliste wird weder neu geladen noch beschrieben, und der Kopf zaehlt weiter den
+   * ganzen Entwurf.
+   */
+  describe('der Personenfilter', () => {
+    const anna: PersonOut = { id: 1, name: 'Anna', reference_count: 2 }
+    const ben: PersonOut = { id: 2, name: 'Ben', reference_count: 2 }
+    const morning = eventOut({ id: 10, position: 1, started_at: '2026-07-20T09:00:00' })
+    const nextDay = eventOut({ id: 12, position: 2, started_at: '2026-07-21T09:00:00' })
+
+    function motifsWith(present: string[]) {
+      return MOTIF_SET.items.map((item) => ({
+        key: item.key,
+        strength: 0.5,
+        correction: null,
+        present: present.includes(item.key),
+      }))
+    }
+
+    const withAnna = photo({
+      id: 1,
+      relative_path: 'a.jpg',
+      event: morning,
+      persons: [{ person_id: 1, origin: 'recognized' }],
+      motifs: motifsWith(['menschen']),
+    })
+    const nobody = photo({
+      id: 2,
+      relative_path: 'b.jpg',
+      taken_at: '2026-07-20T09:30:00',
+      event: morning,
+      motifs: motifsWith(['tiere']),
+    })
+    const withBen = photo({
+      id: 3,
+      relative_path: 'c.jpg',
+      taken_at: '2026-07-21T09:00:00',
+      event: nextDay,
+      persons: [{ person_id: 2, origin: 'corrected' }],
+    })
+
+    beforeEach(() => {
+      vi.mocked(personsApi.listPersons).mockResolvedValue([anna, ben])
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([withAnna, nobody, withBen]))
+    })
+
+    it('zaehlt im Kopf den ganzen Entwurf und meldet die sichtbaren Fotos', async () => {
+      renderPage('/projects/1/album?person=1')
+
+      expect(await screen.findByText('1 von 3 Fotos des Entwurfs sichtbar.')).toHaveAttribute(
+        'role',
+        'status',
+      )
+      expect(screen.getByText(draftSizeText(3, 1))).toBeInTheDocument()
+    })
+
+    it('laesst Tage und Gruppen ohne sichtbares Foto entfallen und zaehlt nur Sichtbares', async () => {
+      renderPage('/projects/1/album?person=1')
+
+      expect(await screen.findByLabelText('Im Album: a.jpg')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Im Album: b.jpg')).toBeNull()
+      expect(screen.queryByLabelText('Im Album: c.jpg')).toBeNull()
+      expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(1)
+      expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(1)
+      expect(screen.getByText(`(${formatDraftPhotoCount(1)})`)).toBeInTheDocument()
+      expect(screen.getByText('Menschen')).toBeInTheDocument()
+      expect(screen.queryByText('Menschen, Tiere')).toBeNull()
+      expect(screen.queryByText(DRAFT_EMPTY_EVENT_TEXT)).toBeNull()
+    })
+
+    it('stellt nach Filter ein und aus alle Tage samt Aufklappzustand wieder her', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByLabelText('Im Album: c.jpg')
+      const secondDay = () => screen.getAllByRole('heading', { level: 2 })[1]
+      await user.click(within(secondDay()).getByRole('button'))
+
+      await user.click(await screen.findByRole('button', { name: 'Anna' }))
+      expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(1)
+      // Aufklappen wirkt nur auf die sichtbaren Tage - der ausgeblendete bleibt zugeklappt.
+      await user.click(screen.getByRole('button', { name: 'Alle Tage aufklappen' }))
+      await user.click(screen.getByRole('button', { name: 'Alle' }))
+
+      expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(2)
+      expect(within(secondDay()).getByRole('button')).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.getByLabelText('Im Album: a.jpg')).toBeInTheDocument()
+      expect(screen.getByLabelText('Im Album: b.jpg')).toBeInTheDocument()
+      expect(screen.queryByText(/Fotos des Entwurfs sichtbar/)).toBeNull()
+    })
+
+    it('zeigt ohne Treffer einen Leerzustand, dessen "Filter zurücksetzen" alles zurueckbringt', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([withAnna, nobody]))
+      const user = userEvent.setup()
+      renderPage('/projects/1/album?person=2')
+
+      expect(
+        await screen.findByText('Keine Fotos des Entwurfs mit diesem Filter.'),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Alle Tage aufklappen' })).toBeNull()
+
+      await user.click(screen.getByRole('button', { name: 'Filter zurücksetzen' }))
+
+      expect(await screen.findByLabelText('Im Album: b.jpg')).toBeInTheDocument()
+      expect(screen.queryByText('Keine Fotos des Entwurfs mit diesem Filter.')).toBeNull()
+    })
+
+    it('zeigt die Filtergruppe nur, wenn der Entwurf Fotos hat', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
+      renderPage()
+
+      expect(await screen.findByText(DRAFT_EMPTY_TEXT)).toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: 'Personen' })).toBeNull()
+    })
+
+    it('loest keine schreibende Anfrage und kein Neuladen des Entwurfs aus', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await screen.findByLabelText('Im Album: a.jpg')
+      const callsBefore = draftCalls()
+
+      await user.click(await screen.findByRole('button', { name: 'Anna' }))
+      await user.click(screen.getByRole('button', { name: 'Beide: Anna und Ben' }))
+      await user.click(screen.getByRole('button', { name: 'Alle' }))
+
+      expect(draftCalls()).toBe(callsBefore)
+      expect(ratingsApi.setRating).not.toHaveBeenCalled()
+      expect(photosApi.exchangeDraftPhoto).not.toHaveBeenCalled()
+      expect(personsApi.setPhotoPerson).not.toHaveBeenCalled()
+    })
+
+    it('filtert den Alternativen-Dialog nicht', async () => {
+      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+        listOut([photo({ id: 5, relative_path: 'x.jpg', event: morning })]),
+      )
+      renderPage('/projects/1/album?person=1')
+
+      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
+
+      expect(await screen.findByLabelText('Austauschen gegen: x.jpg')).toBeInTheDocument()
+    })
+
+    it('fokussiert die Ueberschrift und meldet es, wenn das eingetauschte Foto ausgeblendet ist', async () => {
+      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+        listOut([photo({ id: 5, relative_path: 'x.jpg', event: morning })]),
+      )
+      vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValue({
+        taken: {
+          photo_id: 5,
+          user_id: 7,
+          status: 'album_worthy',
+          favorite: false,
+          updated_at: '2026-09-13T10:00:00',
+        },
+        struck: {
+          photo_id: 1,
+          user_id: 7,
+          status: 'rejected',
+          favorite: false,
+          updated_at: '2026-09-13T10:00:00',
+        },
+      })
+      renderPage('/projects/1/album?person=1')
+
+      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
+      await userEvent.click(await screen.findByLabelText('Austauschen gegen: x.jpg'))
+
+      await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveFocus())
+      expect(
+        screen.getByText('Das eingetauschte Foto ist durch den Filter ausgeblendet.'),
+      ).toHaveAttribute('role', 'status')
+      expect(screen.queryByLabelText('Im Album: x.jpg')).toBeNull()
+      expect(screen.getByLabelText('Gestrichen: a.jpg')).toBeInTheDocument()
+    })
+
+    it('rendert einen Namen mit Markup in der Filtergruppe als reinen Text', async () => {
+      vi.mocked(personsApi.listPersons).mockResolvedValue([{ ...anna, name: hostile }, ben])
+      renderPage()
+
+      const group = await screen.findByRole('group', { name: 'Personen' })
+      expect(within(group).getByRole('button', { name: hostile })).toBeInTheDocument()
+      expect(
+        within(group).getByRole('button', { name: `Beide: ${hostile} und Ben` }),
+      ).toBeInTheDocument()
+      expect(document.querySelector('img[src="x"]')).toBeNull()
+      expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
     })
   })
 })

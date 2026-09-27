@@ -43,6 +43,8 @@ function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScor
     estimated_cost_usd: null,
     cloud_cost_total_usd: null,
     phase_remaining_seconds: null,
+    persons_photos_total: null,
+    persons_photos_processed: null,
     ...overrides,
   }
 }
@@ -52,7 +54,7 @@ function stepRow(id: string): HTMLElement {
 }
 
 describe('ClassificationProgress: die Teilschrittliste', () => {
-  it('zeigt vier Zeilen in fester Reihenfolge bei angeforderter Cloud-Nutzung', () => {
+  it('zeigt fünf Zeilen in fester Reihenfolge bei angeforderter Cloud-Nutzung', () => {
     render(<ClassificationProgress run={run()} />)
 
     const items = screen.getAllByRole('listitem')
@@ -61,6 +63,7 @@ describe('ClassificationProgress: die Teilschrittliste', () => {
       'criteria',
       'landmark',
       'ranking',
+      'persons',
     ])
   })
 
@@ -68,7 +71,11 @@ describe('ClassificationProgress: die Teilschrittliste', () => {
     render(<ClassificationProgress run={run({ cloud_requested: false, cloud_phases: [] })} />)
 
     const items = screen.getAllByRole('listitem')
-    expect(items.map((item) => item.getAttribute('data-step-id'))).toEqual(['criteria', 'ranking'])
+    expect(items.map((item) => item.getAttribute('data-step-id'))).toEqual([
+      'criteria',
+      'ranking',
+      'persons',
+    ])
   })
 
   it('benennt die Sehenswürdigkeits-Erkennung als eigenen Teilschritt', () => {
@@ -323,6 +330,8 @@ describe('ClassificationProgress: die Restdauer', () => {
         run={run({
           phase: 'criteria',
           phase_remaining_seconds: 240,
+          persons_photos_total: null,
+          persons_photos_processed: null,
           photos_total: 10,
           photos_processed: 4,
         })}

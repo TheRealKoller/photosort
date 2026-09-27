@@ -51,6 +51,8 @@ function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScor
     estimated_cost_usd: 2.5,
     cloud_cost_total_usd: 1.23,
     phase_remaining_seconds: null,
+    persons_photos_total: null,
+    persons_photos_processed: null,
     ...overrides,
   }
 }

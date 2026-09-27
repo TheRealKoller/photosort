@@ -1388,6 +1388,9 @@ async def test_the_response_carries_no_further_configuration_fields(
         # Spec 0481: die Restdauer des laufenden Teilschritts - eine ABLEITUNG aus Werten, die
         # dieselbe Antwort schon heute liefert, kein neues Datum.
         "phase_remaining_seconds",
+        # Die beiden Zaehler der Phase `persons` - Anzahlen, keine Namen.
+        "persons_photos_total",
+        "persons_photos_processed",
     }
     assert set(run["cloud_phases"][0]) == {
         "purpose",

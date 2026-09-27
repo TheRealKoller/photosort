@@ -53,6 +53,7 @@ function photo(id: number): PhotoOut {
     final_selection_decision: null,
     in_final_selection: false,
     contested: false,
+    persons: [],
   }
 }
 

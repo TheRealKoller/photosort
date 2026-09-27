@@ -4,8 +4,8 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import JSON as SQLJSON
+from sqlalchemy import CheckConstraint, ForeignKey, SmallInteger, UniqueConstraint, func
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy import ForeignKey, UniqueConstraint, func
 from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -253,6 +253,15 @@ class Photo(Base):
     motif_corrections: Mapped[list[PhotoMotifCorrection]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
+    # Erkennung und Korrektur der Personen, beide am FOTO: verschwindet das
+    # Foto beim Scan, verschwinden beide mit. Ohne Rueckrichtung - der Lesepfad fragt ueber
+    # `persons.py::effective_person_assignments`, nie ueber diese Sammlungen.
+    person_detections: Mapped[list[PhotoPersonDetection]] = relationship(
+        cascade="all, delete-orphan"
+    )
+    person_corrections: Mapped[list[PhotoPersonCorrection]] = relationship(
+        cascade="all, delete-orphan"
+    )
     # 1:1 und optional wie die Motiv-Kopfzeile, aber an einer EIGENEN Tabelle: die
     # Albumtauglichkeit ist eine Aussage über die Bildgüte und gibt es nur mit Cloud-Grundlage,
     # die Motiv-Kopfzeile ist eine über den Bildinhalt und existiert auch lokal (ADR 0095).
@@ -449,13 +458,14 @@ class PhotoCriterionScore(Base):
 
 
 class ClassificationPhase(enum.StrEnum):
-    """Die VIER Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser
+    """Die FUENF Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser
     Reihenfolge, damit die Remote-Ergebnisse noch im selben Lauf in die Kategorieableitung
     einfließen.
 
     REMOTE_CATEGORIES und LANDMARK laufen nur bei angeforderter UND eingewilligter Cloud-Nutzung;
-    CRITERIA und RANKING laufen immer. Getragen von CriterionScoringRun.phase, dort NULL sobald
-    der Lauf beendet ist.
+    CRITERIA und RANKING laufen immer. PERSONS laeuft immer lokal, aber nur, wenn mindestens eine
+    Person eine Referenz des geladenen Modells hat und der Adapter baubar ist. Getragen von
+    CriterionScoringRun.phase, dort NULL sobald der Lauf beendet ist.
 
     RANKING (Kategorieableitung, rank_photos je Partition, Schreiben der PhotoRanking-Zeilen)
     gehört fachlich zur Kriterien-Phase, läuft aber NACH der Landmark-Phase und trägt deshalb
@@ -470,6 +480,7 @@ class ClassificationPhase(enum.StrEnum):
     CRITERIA = "criteria"
     LANDMARK = "landmark"
     RANKING = "ranking"
+    PERSONS = "persons"
 
 
 class CriterionScoringRun(Base):
@@ -588,6 +599,14 @@ class CriterionScoringRun(Base):
     landmark_photos_total: Mapped[int | None] = mapped_column(default=None)
     landmark_photos_processed: Mapped[int | None] = mapped_column(default=None)
     landmark_failed_calls: Mapped[int | None] = mapped_column(default=None)
+
+    # Die LIVE-Zaehler der Phase `persons`, je Block fortgeschrieben und committet, gemeinsam mit
+    # `last_progress_at`. `NULL` heisst "die Phase lief nicht" (keine Referenz des aktuellen
+    # Modells, Adapter nicht baubar, oder Altzeile) - nie "null Fotos". Gesetzt werden sie beim
+    # BETRETEN der Phase; die Oberflaeche blendet den Teilschritt eines beendeten Laufs mit
+    # `NULL` aus.
+    persons_photos_total: Mapped[int | None] = mapped_column(default=None)
+    persons_photos_processed: Mapped[int | None] = mapped_column(default=None)
 
     # Die Kostenschätzung, mit der GENAU DIESER Lauf gestartet wurde - serverseitig im
     # Auslöse-Endpunkt berechnet und als Job-Argument durchgereicht. Festgehalten, weil die
@@ -1041,6 +1060,97 @@ class PhotoMotifCorrection(Base):
 
     photo: Mapped[Photo] = relationship(back_populates="motif_corrections")
     user: Mapped[User] = relationship()
+
+
+class Person(Base):
+    """Eine der hoechstens zwei benannten Personen - GLOBAL, ohne Projekt- und ohne Fotobezug.
+
+    "Hoechstens zwei" und "kein Name doppelt" sind STRUKTURELL wahr, auch bei gleichzeitigen
+    Anlagen: `slot IN (1, 2)` mit `UNIQUE(slot)`, und `UNIQUE(name_key)` ueber NFC + `casefold`
+    des Namens. Ein gleichzeitiges Anlegen scheitert an einem der Constraints und wird `409`.
+
+    Geloescht wird ausschliesslich ueber `persons.py::delete_person`, in einer Transaktion samt
+    Referenzen, Erkennungen und Korrekturen. Die Phase `persons` liest nie `name`."""
+
+    __tablename__ = "persons"
+    __table_args__ = (
+        CheckConstraint("slot IN (1, 2)", name="ck_persons_slot"),
+        UniqueConstraint("slot", name="uq_persons_slot"),
+        UniqueConstraint("name_key", name="uq_persons_name_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slot: Mapped[int] = mapped_column(SmallInteger)
+    name: Mapped[str]
+    name_key: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class PersonReference(Base):
+    """Das Merkmal eines ausdruecklich GEZEIGTEN Gesichts - biometrische Referenz einer Person.
+
+    KEIN Bezug auf Foto oder Projekt: eine Projektloeschung beruehrt die Festlegung nicht.
+    Geschrieben an genau einer Stelle (`persons.py::add_reference`), nur aus den beiden
+    Referenz-Endpunkten und nur fuer 128 endliche Werte mit Norm nahe 1. Erkannte Gesichter
+    werden nie von selbst zu Referenzen. Referenzen eines anderen `model_key` gehen in keinen
+    Vergleich und keine Zaehlung ein."""
+
+    __tablename__ = "person_references"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int] = mapped_column(
+        ForeignKey("persons.id", name="fk_person_references_person_id")
+    )
+    embedding: Mapped[list[float]] = mapped_column(SQLJSON)
+    model_key: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class PhotoPersonDetection(Base):
+    """Die Erkennung: diese Person ist auf diesem Foto sicher erkannt. Schreibt nur die Phase
+    `persons`, und nur fuer Fotos, die sie tatsaechlich verarbeitet hat.
+
+    KEIN Wert, keine Box, kein Merkmal - der Spaltensatz ist per Test auf Gleichheit
+    festgehalten. Eine weitere Spalte machte aus einer Zuordnung eine Wiedererkennungsgrundlage
+    (fuer Dritte, wenn sie ein unbekanntes Gesicht betraefe)."""
+
+    __tablename__ = "photo_person_detections"
+
+    photo_id: Mapped[int] = mapped_column(
+        ForeignKey("photos.id", name="fk_photo_person_detections_photo_id"), primary_key=True
+    )
+    person_id: Mapped[int] = mapped_column(
+        ForeignKey("persons.id", name="fk_photo_person_detections_person_id"), primary_key=True
+    )
+    computed_at: Mapped[datetime]
+
+
+class PhotoPersonCorrection(Base):
+    """Die Korrektur eines Nutzers: diese Person ist auf diesem Foto (`applies`) oder nicht.
+
+    Muster `PhotoMotifCorrection`: Kein Lauf schreibt oder loescht sie, deshalb kehrt ein
+    entfernter Name nie von selbst zurueck. `user_id` ist AUDIT, nie Aufsuch- oder
+    Zugriffsschluessel - der Unique-Constraint lautet `(photo_id, person_id)` OHNE `user_id`, und
+    die zuletzt geschriebene Korrektur gilt fuer beide Nutzer. Die wirksame Zuordnung entsteht nur
+    im Lesepfad (`persons.py::effective_person_assignments`), Korrektur vor Erkennung."""
+
+    __tablename__ = "photo_person_corrections"
+    __table_args__ = (
+        UniqueConstraint("photo_id", "person_id", name="uq_photo_person_correction_photo_person"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(
+        ForeignKey("photos.id", name="fk_photo_person_corrections_photo_id")
+    )
+    person_id: Mapped[int] = mapped_column(
+        ForeignKey("persons.id", name="fk_photo_person_corrections_person_id")
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", name="fk_photo_person_corrections_user_id")
+    )
+    applies: Mapped[bool]
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
 class PhotoAlbumSuitability(Base):

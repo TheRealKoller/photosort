@@ -32,6 +32,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     final_selection_decision: null,
     in_final_selection: false,
     contested: false,
+    persons: [],
     ...overrides,
   }
 }

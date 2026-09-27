@@ -33,6 +33,7 @@ const PHOTO_LIST: PhotoListOut = {
       final_selection_decision: null,
       in_final_selection: false,
       contested: false,
+      persons: [],
     },
   ],
   total: 1,

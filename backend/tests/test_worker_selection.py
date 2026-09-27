@@ -502,12 +502,14 @@ class TestADraftDoesNotMoveWhileTheViewIsUsed:
 class TestTheDraftIsPartOfTheRankingPhase:
     async def test_no_new_classification_phase_value_was_introduced(self) -> None:
         """Der Vorschlag ist die Fortsetzung der Phase `RANKING`, kein eigener Teilschritt mit
-        eigener Fortschrittsstufe in der Oberflaeche."""
+        eigener Fortschrittsstufe in der Oberflaeche. `persons` ist der eigene
+        Teilschritt der Personen-Erkennung, nicht der Vorschlag."""
         assert [phase.value for phase in ClassificationPhase] == [
             "remote_categories",
             "criteria",
             "landmark",
             "ranking",
+            "persons",
         ]
 
     async def test_rebuilding_the_grouping_also_produces_the_draft(

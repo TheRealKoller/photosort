@@ -102,9 +102,16 @@ export function ProjectListPage() {
             </p>
           )}
         </div>
-        <Button asChild>
-          <Link to="/projects/new">Neues Projekt anlegen</Link>
-        </Button>
+        {/* "Personen" gilt projektübergreifend und hat deshalb keinen Platz in der
+            Kopfzeile, die nicht umbricht - er steht hier, links neben der Hauptaktion. */}
+        <div className="flex flex-wrap gap-3">
+          <Button asChild variant="secondary">
+            <Link to="/persons">Personen</Link>
+          </Button>
+          <Button asChild>
+            <Link to="/projects/new">Neues Projekt anlegen</Link>
+          </Button>
+        </div>
       </header>
 
       {query.isLoading && (

@@ -376,15 +376,18 @@ deaktiviert (`PUT /projects/{id}/cloud-vision-consent`), ohne aktivierte Einwill
 API-Key verwendet und kein Netzwerkaufruf ausgeführt (die Env-Variablen selbst werden wie jede
 andere `Settings`-Konfiguration bereits beim Prozessstart eingelesen, das ist unabhängig von
 Einwilligung/Provider). Die Remote-Kategorie-Klassifizierung braucht zusätzlich ein lokales,
-gepinntes Text-Embedding-Modell (`onnxruntime`+`tokenizers`, keine Cloud-Abhängigkeit zur
-Laufzeit). Das ONNX-Modell-Asset selbst überschreitet GitHubs 100-MB-Push-Limit und ist daher
-**nicht** im Repository eingecheckt (siehe [`specs/decisions/0033-modell-asset-download-statt-commit-label-embedder.md`](../specs/decisions/0033-modell-asset-download-statt-commit-label-embedder.md)) —
-`docker compose up --build` lädt es automatisch beim Image-Build (`backend/Dockerfile` ruft
-`scripts/fetch-label-embedder-model.sh` auf, SHA256-verifiziert). Nur für ein Bare-Metal-Dev-Setup
-ohne Docker (`pip install -e .` direkt im `backend/`-Ordner) einmalig manuell nötig:
+gepinntes Text-Embedding-Modell (`onnxruntime`+`tokenizers`). Es braucht zur Laufzeit keine
+Cloud; die Telemetrie, die offizielle `onnxruntime`-Builds standardmäßig an Microsoft senden,
+schaltet `label_embedding.py` vor dem Laden ab (`ORT_DISABLE_TELEMETRY=1`, ADR 0126 Punkt 2).
+Das ONNX-Modell-Asset selbst ist **nicht** im Repository eingecheckt — wie alle Assets
+im Manifest `backend/src/photosort/model_assets.py` (ADR
+[`0126`](../specs/decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md)
+Punkt 2) lädt `docker compose up --build` es beim Image-Build und prüft den SHA256. Nur für ein
+Bare-Metal-Dev-Setup ohne Docker (`pip install -e .` direkt im `backend/`-Ordner) einmalig manuell
+nötig, im Ordner `backend/`:
 
 ```bash
-scripts/fetch-label-embedder-model.sh
+python scripts/fetch_model_assets.py
 ```
 
 Um beide Funktionen tatsächlich zu nutzen, in `.env`:
@@ -547,7 +550,7 @@ nicht rückwirkend — ein einmal nachgeschlagener Name wird nicht erneut gesuch
 gegen den beim Bezug gebildeten Hash, **jeder gegen seinen eigenen**. Ein Auszug ohne seine
 Hash-Datei gilt als unbenutzbar, damit die beiden Dateien nicht unbemerkt auseinanderlaufen.
 GeoNames erzeugt die Quelldatei nächtlich neu und veröffentlicht **keine Prüfsummen**; ein fest
-eingetragener Hash wie bei `fetch-label-embedder-model.sh` ist deshalb nicht möglich. Der
+eingetragener Hash wie bei den Modell-Assets (`model_assets.py`) ist deshalb nicht möglich. Der
 **Erstbezug** bleibt damit ungeschützt — dort tragen allein HTTPS und das Vertrauen in GeoNames.
 
 **Namensnennung:** GeoNames steht unter CC BY 4.0. Die Anwendung erfüllt die Pflicht sichtbar mit
@@ -684,6 +687,37 @@ Ortsauszug gar nicht.
 `--motiv`, `--riegel` und `--kohaerenz` schließen einander paarweise aus; zwei davon zusammen
 brechen mit einer Meldung ab.
 
+## Personen erkennen (lokal)
+
+Die beiden Nutzer werden ausschließlich auf dem eigenen Server erkannt (Spec 0292, ADR
+[`0126`](../specs/decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md)),
+mit YuNet und SFace über das ohnehin installierte OpenCV — kein API-Key, keine Einwilligung,
+kein Netzwerkaufruf zur Laufzeit. Die beiden Modelldateien stehen im Manifest und kommen mit dem
+Image-Build bzw. mit `python scripts/fetch_model_assets.py` (siehe oben).
+
+Eine Person entsteht in der Detailansicht eines Fotos: Gesicht wählen, Namen geben; weitere Fotos
+mit ihr machen die Erkennung verlässlicher. Namen erscheinen auf den Fotos eines Projekts mit dem
+nächsten Klassifizierungslauf (Teilschritt „Personen-Erkennung"), auch in bestehenden Projekten.
+
+### Die Erkennung im laufenden Betrieb prüfen
+
+Abgenommen wird an einem echten Projekt, gerade mit Verwandten und Kindern: nach einem
+Klassifizierungslauf je Person die Filteransicht des Bildbestands durchsehen und jeden falschen
+Namen am Foto entfernen, übersehene Fotos gern ergänzen. Musste kein erkannter Name entfernt werden,
+ist die Prüfung bestanden. Sonst werden die festen Schwellen in `person_matching.py` verschärft,
+der Lauf wiederholt und erneut geprüft. Danach zählt:
+
+```bash
+docker compose exec -T backend python -m photosort.person_probe --project-id <N>
+```
+
+Das Messkommando ist **rein lesend**, braucht kein Modell und liest nur die gespeicherten
+Erkennungen und Korrekturen. Die Ausgabe ist Markdown auf stdout und trägt **nur Anzahlen**, die
+Personen als „Person 1/2" — keinen Pfad, keinen Namen, keine Zeile je Foto; so ist sie als Ganzes
+weitergebbar. Je Person stehen dort: erkannt, davon von Hand entfernt (falsch), von Hand ergänzt
+(übersehen), entfernt und nicht mehr erkannt, und die Erkennungsquote als **Obergrenze** —
+übersehene Fotos, die niemand ergänzt hat, fehlen im Nenner, die wahre Quote ist höchstens so hoch.
+
 ## Lokal ausprobieren ohne echten OpenCloud-Server
 
 Für einen ersten Eindruck (Ordner-Browsing, Foto-Scan, automatische Bewertung) braucht es keinen
@@ -741,10 +775,15 @@ docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \
 
 Der Seeder legt fünf Projekte mit dem Präfix `Demo — ` an (leer / große Sammlung / bewertet /
 Fehlerzustand / Duplikate) und ist zielzustands-idempotent: er löscht seine eigenen Projekte und legt sie neu
-an. Er **bricht ab**, wenn die Freigabe-Variable fehlt, die Datenbank irgendein Projekt ohne
-diesen Präfix enthält oder eine echte OpenCloud-Adresse konfiguriert ist — die drei Bedingungen
-werden vollständig vor dem ersten Schreibzugriff ausgewertet. Anmelden danach mit
-`e2e-daniel` / `e2e-only-password-1` (aus dem Overlay, kein Geheimnis).
+an. Dazu kommen zwei frei erfundene Personen mit synthetischen Referenzen (Spec 0292), eine davon
+mit einem Namen von 40 Zeichen; im bewerteten Projekt sind Fotos erkannt, von Hand zugeordnet und
+von Hand entfernt. Personen entstehen nur, wenn ein Konto existiert, und beim Neuaufbau entfernt
+er ausschließlich die Personen mit den Demo-Namen. Er **bricht ab**, wenn die Freigabe-Variable
+fehlt, die Datenbank irgendein Projekt ohne diesen Präfix enthält oder eine echte OpenCloud-Adresse
+konfiguriert ist — die drei Bedingungen werden vollständig vor dem ersten Schreibzugriff
+ausgewertet. Belegt eine fremde Person einen der beiden Plätze, bricht er ebenfalls ab, ohne etwas
+festzuschreiben. Anmelden danach mit `e2e-daniel` / `e2e-only-password-1` (aus dem Overlay, kein
+Geheimnis).
 
 Prüfungen und Ad-hoc-Blick:
 

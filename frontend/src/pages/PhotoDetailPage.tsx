@@ -10,6 +10,7 @@ import { CriterionScoreGrid } from '../components/CriterionScoreGrid'
 import { MotifStrengthSection } from '../components/MotifStrengthSection'
 import { PhotoCaptureFacts } from '../components/PhotoCaptureFacts'
 import { PhotoDetailStage } from '../components/PhotoDetailStage'
+import { PhotoPersonsSection } from '../components/PhotoPersonsSection'
 import { PhotoVerdict } from '../components/PhotoVerdict'
 import { Button } from '../components/ui/button'
 import { useMotifCorrectionControls } from '../hooks/useMotifCorrection'
@@ -20,7 +21,9 @@ import {
   useSetFavoriteMutation,
   useSetRatingMutation,
 } from '../hooks/usePhotos'
+import { usePersonFilter } from '../hooks/usePersonFilter'
 import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
+import { withPersonIds } from '../utils/personFilter'
 import { parseRatingFilter } from '../utils/ratingFilter'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 
@@ -53,15 +56,22 @@ export function PhotoDetailPage() {
   const id = Number(projectId)
   const currentPhotoId = Number(photoId)
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const filterParam = parseRatingFilter(searchParams.get('filter'))
   const ratingStatus = filterParam === '' ? undefined : filterParam
-  const filterQuery = filterParam ? `?filter=${filterParam}` : ''
+  // Blättern und Zähler laufen in der nach `person` gefilterten Folge - derselbe
+  // Query-Key wie im Bildbestand, also dieselbe Folge. Jeder Weg zurück trägt beide Filter.
+  const { personIds } = usePersonFilter(searchParams, setSearchParams)
+  const filterSearch = withPersonIds(
+    new URLSearchParams(filterParam ? { filter: filterParam } : {}),
+    personIds,
+  ).toString()
+  const filterQuery = filterSearch ? `?${filterSearch}` : ''
 
   const token = getToken()
   const username = token ? decodeUsername(token) : null
 
-  const query = usePhotoSequenceQuery(id, ratingStatus)
+  const query = usePhotoSequenceQuery(id, ratingStatus, undefined, personIds)
   const setMutation = useSetRatingMutation(id)
   const deleteMutation = useDeleteRatingMutation(id)
   const favoriteMutation = useSetFavoriteMutation(id)
@@ -445,6 +455,11 @@ export function PhotoDetailPage() {
           />
         </section>
       </section>
+
+      {/* DER PERSONENABSCHNITT - nach der Urteilsfläche, nicht in ihr: eine Person ist
+          kein Motiv. Je Foto neu eingebunden, damit ein Fotowechsel Busy, Meldung und
+          Gesichterwahl zurücksetzt. */}
+      <PhotoPersonsSection key={currentPhoto.id} projectId={id} photo={currentPhoto} />
 
       {/* DAS EINZELWERTE-RASTER - Nachschlagwerk hinter dem Urteil. Gleiche Sichtbarkeitsregel wie
           bisher: KEIN leerer Bereich bei leerer Liste. Ohne Wrapper-`div` eingebunden, damit auch

@@ -19,6 +19,8 @@ from photosort.models import (
     FinalSelectionDecision,
     FineLabel,
     MotifAssessmentSource,
+    Person,
+    PersonReference,
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
@@ -28,6 +30,8 @@ from photosort.models import (
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
+    PhotoPersonCorrection,
+    PhotoPersonDetection,
     PhotoRanking,
     PhotoScore,
     PlaceLookup,
@@ -2496,3 +2500,173 @@ async def test_criterion_scoring_run_phase_start_is_nullable_and_defaults_to_non
     assert stored.phase_started_at is None
     assert inspect(CriterionScoringRun).columns["phase_started_at"].nullable
     assert CriterionScoringRun.__table__.c.phase_started_at.server_default is None
+
+
+# --- Personen ------------------------------------------------------------------------------------
+
+
+def _person(slot: int, name: str) -> Person:
+    return Person(slot=slot, name=name, name_key=name.casefold())
+
+
+async def test_a_third_slot_is_refused_by_the_check_constraint(db_session: AsyncSession) -> None:
+    """ "Hoechstens zwei" ist strukturell wahr: `slot IN (1, 2)` und `UNIQUE(slot)`."""
+    db_session.add(_person(3, "Dritte"))
+
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_a_slot_can_be_taken_only_once(db_session: AsyncSession) -> None:
+    db_session.add(_person(1, "Anna"))
+    await db_session.commit()
+
+    db_session.add(_person(1, "Berta"))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_a_name_key_can_be_taken_only_once(db_session: AsyncSession) -> None:
+    db_session.add(_person(1, "Anna"))
+    await db_session.commit()
+
+    db_session.add(Person(slot=2, name="ANNA", name_key="anna"))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+def test_the_detection_carries_only_photo_person_and_time() -> None:
+    """S5: Fuer ein Gesicht gibt es keinen Speicherort. Eine Spalte fuer Box, Wert oder Merkmal
+    machte aus einer Zuordnung eine Wiedererkennungsgrundlage fuer Dritte."""
+    assert {column.name for column in PhotoPersonDetection.__table__.columns} == {
+        "photo_id",
+        "person_id",
+        "computed_at",
+    }
+
+
+def test_the_correction_carries_only_the_fields_of_the_data_model() -> None:
+    assert {column.name for column in PhotoPersonCorrection.__table__.columns} == {
+        "id",
+        "photo_id",
+        "person_id",
+        "user_id",
+        "applies",
+        "updated_at",
+    }
+
+
+def test_the_reference_has_no_photo_and_no_project() -> None:
+    """Eine Projektloeschung beruehrt die Festlegung nicht - es gibt keine Kante dorthin."""
+    targets = {fk.column.table.name for fk in PersonReference.__table__.foreign_keys}
+
+    assert targets == {"persons"}
+    assert {column.name for column in PersonReference.__table__.columns} == {
+        "id",
+        "person_id",
+        "embedding",
+        "model_key",
+        "created_at",
+    }
+
+
+def test_every_person_foreign_key_is_real_and_named() -> None:
+    """S10: Ein Schreiben der Phase nach einer Personenloeschung scheitert nur, weil der
+    Fremdschluessel echt ist."""
+    edges = {
+        (fk.parent.table.name, fk.column.table.name, fk.constraint.name)
+        for model in (PersonReference, PhotoPersonDetection, PhotoPersonCorrection)
+        for fk in model.__table__.foreign_keys
+    }
+
+    assert edges == {
+        ("person_references", "persons", "fk_person_references_person_id"),
+        ("photo_person_detections", "photos", "fk_photo_person_detections_photo_id"),
+        ("photo_person_detections", "persons", "fk_photo_person_detections_person_id"),
+        ("photo_person_corrections", "photos", "fk_photo_person_corrections_photo_id"),
+        ("photo_person_corrections", "persons", "fk_photo_person_corrections_person_id"),
+        ("photo_person_corrections", "users", "fk_photo_person_corrections_user_id"),
+    }
+
+
+def test_the_person_constraints_carry_explicit_names() -> None:
+    names = {constraint.name for constraint in Person.__table__.constraints}
+    correction_names = {
+        constraint.name for constraint in PhotoPersonCorrection.__table__.constraints
+    }
+
+    assert {"ck_persons_slot", "uq_persons_slot", "uq_persons_name_key"} <= names
+    assert "uq_photo_person_correction_photo_person" in correction_names
+
+
+async def test_a_person_correction_is_unique_per_photo_and_person_without_the_user(
+    db_session: AsyncSession,
+) -> None:
+    """Die zuletzt geschriebene Korrektur gilt fuer beide Nutzer - `user_id` ist Audit."""
+    photo, user = await _make_photo_and_user(db_session)
+    other = User(username="partnerin", password_hash="hashed-value")
+    person = _person(1, "Anna")
+    db_session.add_all([other, person])
+    await db_session.flush()
+    db_session.add(
+        PhotoPersonCorrection(photo_id=photo.id, person_id=person.id, user_id=user.id, applies=True)
+    )
+    await db_session.commit()
+
+    db_session.add(
+        PhotoPersonCorrection(
+            photo_id=photo.id, person_id=person.id, user_id=other.id, applies=False
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_deleting_a_photo_takes_its_detection_and_correction_but_keeps_the_person(
+    db_session: AsyncSession,
+) -> None:
+    """Ein beim Scan verschwundenes Foto nimmt Erkennung und Korrektur mit (ORM-Kaskade)."""
+    photo, user = await _make_photo_and_user(db_session)
+    person = _person(1, "Anna")
+    db_session.add(person)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            PersonReference(person_id=person.id, embedding=[1.0] + [0.0] * 127, model_key="m"),
+            PhotoPersonDetection(
+                photo_id=photo.id, person_id=person.id, computed_at=datetime.now()
+            ),
+            PhotoPersonCorrection(
+                photo_id=photo.id, person_id=person.id, user_id=user.id, applies=False
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    assert (await db_session.execute(select(PhotoPersonDetection))).scalars().all() == []
+    assert (await db_session.execute(select(PhotoPersonCorrection))).scalars().all() == []
+    assert len((await db_session.execute(select(Person))).scalars().all()) == 1
+    assert len((await db_session.execute(select(PersonReference))).scalars().all()) == 1
+
+
+async def test_the_person_counters_of_a_run_start_as_null(db_session: AsyncSession) -> None:
+    """`NULL` heisst "die Phase lief nicht" - und nicht "null Fotos"."""
+    project = Project(name="Lauf", opencloud_drive_id="d", opencloud_path="/l")
+    db_session.add(project)
+    await db_session.flush()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    db_session.add(scoring_run)
+    await db_session.flush()
+    run = CriterionScoringRun(
+        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.RUNNING
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    assert run.persons_photos_total is None
+    assert run.persons_photos_processed is None
+    assert ClassificationPhase.PERSONS.value == "persons"
+    assert list(ClassificationPhase)[-1] is ClassificationPhase.PERSONS

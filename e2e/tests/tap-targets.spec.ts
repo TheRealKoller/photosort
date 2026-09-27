@@ -23,6 +23,7 @@
 import type { Locator } from '@playwright/test'
 
 import {
+  DEMO_PERSONS,
   DEMO_PROJECTS,
   demoProjectId,
   duplicateTiles,
@@ -39,7 +40,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 25
+const EXPECTED_CONTROL_COUNT = 28
 
 async function assertTappable(
   control: Locator,
@@ -124,6 +125,22 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   for (const label of ['Vorheriges Foto', 'Nächstes Foto']) {
     await assertTappable(page.getByRole('button', { name: label }), label)
     checked.push(label)
+  }
+
+  // --- Personenabschnitt derselben Detailansicht -------------------------------------------
+  // Die zweite Kachel ist im Demo-Bestand das Foto, dem die erste Person von Hand zugeordnet ist
+  // und die zweite nicht - dort stehen "Entfernen" und "Ergänzen" in zwei Zeilen UNTEREINANDER,
+  // also genau die Fehlerklasse "ueberlappende aufgespannte Trefferflaechen" in der Senkrechten.
+  // Ein Fehlgriff schreibt eine Korrektur, die fuer beide Nutzer gilt.
+  for (const [label, name] of [
+    ['Entfernen', DEMO_PERSONS.short],
+    ['Ergänzen', DEMO_PERSONS.longest],
+  ] as const) {
+    await assertTappable(
+      page.getByRole('button', { name: `${label}: ${name}`, exact: true }),
+      `${label} (Personenabschnitt)`,
+    )
+    checked.push(`${label} im Personenabschnitt`)
   }
 
   // --- Motivkorrektur in der Einzelbildansicht ----------------------------------------------
@@ -228,6 +245,17 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   const navTrigger = page.getByRole('button', { name: 'Projektbereiche' })
   await assertTappable(navTrigger, 'Projektbereiche (Menue-Ausloeser der Kopfzeile)')
   checked.push('Projektbereiche')
+
+  // Ein Eintrag der Personen-Filtergruppe. Die Gruppe ist bei 360 px ein
+  // eigener waagerechter Scrollbereich - und ein Scrollbereich schneidet in BEIDEN Achsen ab. Ob
+  // die senkrechte Aufspannung dort ueberhaupt ankommt, zeigt nur der Treffertest.
+  await assertTappable(
+    page
+      .getByRole('group', { name: 'Personen' })
+      .getByRole('button', { name: DEMO_PERSONS.short, exact: true }),
+    'Eintrag der Personen-Filtergruppe',
+  )
+  checked.push('Eintrag der Personen-Filtergruppe')
 
   // Die PANELZEILEN werden bewusst NICHT aufgespannt (Design-System-Regel "zeilenweise Listen
   // werden nicht aufgespannt") - dort ist die Zeile selbst die Trefferflaeche und traegt `min-h-11`.

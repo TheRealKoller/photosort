@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import math
+import os
+import socket
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -9,7 +15,6 @@ import pytest
 from photosort.label_embedding import (
     EMBEDDING_DIMENSION,
     LABEL_EMBEDDER_ONNX_PATH,
-    LABEL_EMBEDDER_ONNX_SHA256,
     LABEL_EMBEDDER_TOKENIZER_PATH,
     LABEL_EMBEDDER_TOKENIZER_SHA256,
     LabelEmbedderLike,
@@ -17,6 +22,8 @@ from photosort.label_embedding import (
     cosine_similarity,
     normalize_label_text,
 )
+from photosort.model_assets import LABEL_EMBEDDER_ONNX
+from tests.import_closure import SRC_DIR
 
 # specs/decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md Punkt 4,
 # specs/architecture/0002-testkonzept.md ("label_embedding.py"): analog test_aesthetics.py/
@@ -26,7 +33,7 @@ from photosort.label_embedding import (
 class TestLabelEmbedderAssets:
     def test_committed_onnx_file_matches_the_documented_sha256(self) -> None:
         digest = hashlib.sha256(LABEL_EMBEDDER_ONNX_PATH.read_bytes()).hexdigest()
-        assert digest == LABEL_EMBEDDER_ONNX_SHA256
+        assert digest == LABEL_EMBEDDER_ONNX.sha256
 
     def test_committed_tokenizer_file_matches_the_documented_sha256(self) -> None:
         digest = hashlib.sha256(LABEL_EMBEDDER_TOKENIZER_PATH.read_bytes()).hexdigest()
@@ -140,3 +147,119 @@ class TestCosineSimilarity:
 
     def test_orthogonal_vectors_have_similarity_zero(self) -> None:
         assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+
+def _closed_local_port() -> int:
+    """Ein Port, auf dem niemand lauscht: gebunden, sofort wieder freigegeben. Ein Upload, der
+    trotz Abschaltung versucht wird, laeuft dort in eine Ablehnung statt ins Netz."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        port: int = probe.getsockname()[1]
+    return port
+
+
+class TestTelemetryIsOff:
+    """S15: `onnxruntime` uebertraegt keine Telemetrie, auch ausserhalb der CI.
+
+    Rot-Beleg (kein Testfall, weil er gegen einen fremden Dienst liefe): Ohne Abschaltung
+    entstehen unter `onnxruntime` 1.29.0 schon beim blossen `import onnxruntime`
+    `…/Microsoft/DeveloperTools/.onnxruntime/deviceid` und `onnxruntime.db`, gemessen lokal am
+    2026-09-27.
+
+    Der Unterprozess bekommt eine VON GRUND AUF gebaute Umgebung: kein `CI`/`GITHUB_ACTIONS`
+    (sonst schaltet sich das SDK selbst ab), kein geerbtes `ORT_DISABLE_TELEMETRY` aus
+    `conftest.py` oder dem Image (sonst bestuende der Fall auch ohne die Zeile im Code)."""
+
+    def test_building_the_embedder_leaves_home_cache_and_working_directory_empty(
+        self, tmp_path: Path
+    ) -> None:
+        home = tmp_path / "home"
+        cache = tmp_path / "cache"
+        work = tmp_path / "work"
+        for directory in (home, cache, work):
+            directory.mkdir()
+        proxy = f"http://127.0.0.1:{_closed_local_port()}"
+        environment = {
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(home),
+            "XDG_CACHE_HOME": str(cache),
+            "https_proxy": proxy,
+            "HTTPS_PROXY": proxy,
+        }
+        program = (
+            "from photosort.label_embedding import build_label_embedder\n"
+            "vector = build_label_embedder().embed('Hund')\n"
+            "assert len(vector) == 384\n"
+        )
+
+        completed = subprocess.run(
+            [sys.executable, "-c", program],
+            cwd=work,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        for directory in (home, cache, work):
+            assert sorted(path.name for path in directory.rglob("*")) == [], directory.name
+
+
+def _onnxruntime_imports() -> list[tuple[Path, ast.AST, list[ast.stmt]]]:
+    """Jede Importstelle von `onnxruntime` im Quellbaum, samt des Koerpers, in dem sie steht."""
+    found: list[tuple[Path, ast.AST, list[ast.stmt]]] = []
+    for path in sorted(SRC_DIR.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for parent in ast.walk(tree):
+            body = getattr(parent, "body", None)
+            if not isinstance(body, list):
+                continue
+            for statement in body:
+                names: list[str] = []
+                if isinstance(statement, ast.Import):
+                    names = [alias.name for alias in statement.names]
+                elif isinstance(statement, ast.ImportFrom):
+                    names = [statement.module or ""]
+                if any(name.split(".")[0] == "onnxruntime" for name in names):
+                    found.append((path, statement, body))
+    return found
+
+
+def _is_the_disabling_assignment(statement: ast.stmt) -> bool:
+    """`os.environ["ORT_DISABLE_TELEMETRY"] = "1"` - zuweisend, nie `setdefault`."""
+    if not isinstance(statement, ast.Assign) or len(statement.targets) != 1:
+        return False
+    target = statement.targets[0]
+    return (
+        isinstance(target, ast.Subscript)
+        and ast.unparse(target.value) == "os.environ"
+        and isinstance(target.slice, ast.Constant)
+        and target.slice.value == "ORT_DISABLE_TELEMETRY"
+        and isinstance(statement.value, ast.Constant)
+        and statement.value.value == "1"
+    )
+
+
+class TestTheOnlyImportOfOnnxruntimeIsPrecededByTheSwitch:
+    """Eine zweite Importstelle umginge die Abschaltung, ohne dass der Unterprozessfall rot wird."""
+
+    def test_onnxruntime_is_imported_at_exactly_one_place(self) -> None:
+        imports = _onnxruntime_imports()
+
+        assert [path.name for path, _statement, _body in imports] == ["label_embedding.py"]
+
+    def test_the_assignment_stands_before_it_in_the_same_body(self) -> None:
+        [(_path, statement, body)] = _onnxruntime_imports()
+        before = body[: body.index(statement)]  # type: ignore[arg-type]
+
+        assert any(_is_the_disabling_assignment(earlier) for earlier in before)
+
+    def test_the_guard_recognises_the_assignment_and_not_setdefault(self) -> None:
+        """Gegenprobe gegen Vakuum-Gruen des Waechters."""
+        assignment = ast.parse('os.environ["ORT_DISABLE_TELEMETRY"] = "1"').body[0]
+        setdefault = ast.parse('os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")').body[0]
+
+        assert _is_the_disabling_assignment(assignment)
+        assert not _is_the_disabling_assignment(setdefault)
