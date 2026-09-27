@@ -1287,9 +1287,11 @@ Verarbeitungs-Cache (Thumbnails).
   Volumes, alle Ports auf `127.0.0.1`) fährt `postgres`/`redis`/`backend`/`frontend`; seine Zustände
   stammen aus dem deterministischen Seeder `backend/src/photosort/demo_state.py`, der über die
   echten Modelle und die echte `thumbnails.py`-Logik schreibt (kein zweites Abbild des Datenmodells)
-  und durch eine dreiteilige, fail-closed Sperre gegen jede fremde Datenbank gesichert ist. Reine
-  Entwicklungs-/Prüf-Infrastruktur: kein Produktivpfad importiert dieses Modul, `docker-compose.yml`
-  bleibt unverändert. Siehe
+  und durch eine dreiteilige, fail-closed Sperre gegen jede fremde Datenbank gesichert ist. Die
+  beiden Demo-Personen (Spec 0292) entstehen über die echten Dienstfunktionen in `persons.py` mit
+  synthetischen Referenzen und werden beim Neuaufbau ausschließlich über ihre Demo-Namen entfernt.
+  Reine Entwicklungs-/Prüf-Infrastruktur: kein Produktivpfad importiert dieses Modul,
+  `docker-compose.yml` bleibt unverändert. Siehe
   [`specs/features/0174-browser-zugang-fuer-claude.md`](../specs/features/0174-browser-zugang-fuer-claude.md)
   und ADR
   [`decisions/0058-browsergestuetzte-oberflaechenpruefung.md`](../specs/decisions/0058-browsergestuetzte-oberflaechenpruefung.md).

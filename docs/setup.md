@@ -775,10 +775,15 @@ docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \
 
 Der Seeder legt fünf Projekte mit dem Präfix `Demo — ` an (leer / große Sammlung / bewertet /
 Fehlerzustand / Duplikate) und ist zielzustands-idempotent: er löscht seine eigenen Projekte und legt sie neu
-an. Er **bricht ab**, wenn die Freigabe-Variable fehlt, die Datenbank irgendein Projekt ohne
-diesen Präfix enthält oder eine echte OpenCloud-Adresse konfiguriert ist — die drei Bedingungen
-werden vollständig vor dem ersten Schreibzugriff ausgewertet. Anmelden danach mit
-`e2e-daniel` / `e2e-only-password-1` (aus dem Overlay, kein Geheimnis).
+an. Dazu kommen zwei frei erfundene Personen mit synthetischen Referenzen (Spec 0292), eine davon
+mit einem Namen von 40 Zeichen; im bewerteten Projekt sind Fotos erkannt, von Hand zugeordnet und
+von Hand entfernt. Personen entstehen nur, wenn ein Konto existiert, und beim Neuaufbau entfernt
+er ausschließlich die Personen mit den Demo-Namen. Er **bricht ab**, wenn die Freigabe-Variable
+fehlt, die Datenbank irgendein Projekt ohne diesen Präfix enthält oder eine echte OpenCloud-Adresse
+konfiguriert ist — die drei Bedingungen werden vollständig vor dem ersten Schreibzugriff
+ausgewertet. Belegt eine fremde Person einen der beiden Plätze, bricht er ebenfalls ab, ohne etwas
+festzuschreiben. Anmelden danach mit `e2e-daniel` / `e2e-only-password-1` (aus dem Overlay, kein
+Geheimnis).
 
 Prüfungen und Ad-hoc-Blick:
 
