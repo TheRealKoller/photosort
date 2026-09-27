@@ -74,15 +74,10 @@ services:
       AUTH_SEED_USER1_PASSWORD: e2e-only-password-1
       AUTH_SEED_USER2_USERNAME: e2e-zweiter-nutzer
       AUTH_SEED_USER2_PASSWORD: e2e-only-password-2
-      # Die Pruefungen sprechen http://localhost:8080 an - bewusst "localhost", nicht
-      # "127.0.0.1": die beiden Schreibweisen sind CORS-seitig verschiedene Origins.
+      # Fest gesetzt wie jede Variable des Basisstacks (M4). Die Oberflaeche ruft die API ueber
+      # /api auf derselben Origin auf und braucht den Eintrag selbst nicht.
       CORS_ALLOWED_ORIGINS: http://localhost:8080
       CATEGORY_SELECTION_ENABLED: "true"
-    # "!override" ist Pflicht, kein Stil: Compose ERGAENZT ports-Listen beim Ueberlagern, statt sie
-    # zu ersetzen. Eine naive Ueberlagerung ergaebe zwei Bindungen, davon weiterhin eine offene
-    # (der Hauptstack bindet bewusst ungebunden, PhotoSort soll produktiv erreichbar sein).
-    ports: !override
-      - "127.0.0.1:8000:8000"
 
   # Der Worker laeuft im Pruefstack nicht mit (kein Pruefschritt loest einen Hintergrundjob aus).
   # Das eigene Profil sorgt dafuer, dass ein schlichtes "up" ihn gar nicht erst startet; seine
@@ -114,9 +109,11 @@ services:
   frontend:
     build:
       args:
-        # Wird zur BAUZEIT ins Bundle eingebacken. Wird ADR 0027/Spec 0049 spaeter umgesetzt
-        # (/api-Proxy im Frontend-nginx), wird daraus "/api" und die Backend-Bindung oben
-        # entfaellt - eine Zeile, sonst nichts.
-        VITE_API_BASE_URL: http://localhost:8000
+        # Wird zur BAUZEIT ins Bundle eingebacken: die API liegt hinter dem nginx des Frontends
+        # unter /api, der backend-Service veroeffentlicht keinen Port.
+        VITE_API_BASE_URL: /api
+    # "!override" ist Pflicht, kein Stil: Compose ERGAENZT ports-Listen beim Ueberlagern, statt sie
+    # zu ersetzen. Eine naive Ueberlagerung ergaebe zwei Bindungen, davon weiterhin eine offene
+    # (der Hauptstack bindet bewusst ungebunden, PhotoSort soll produktiv erreichbar sein).
     ports: !override
       - "127.0.0.1:8080:80"
