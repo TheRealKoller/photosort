@@ -55,14 +55,17 @@ export function PersonFilterGroup({
     return selected.length === 1 && selected[0] === ids[0]
   }
   return (
-    <div className="flex flex-col gap-2" data-person-filter>
+    <div className="flex flex-col" data-person-filter>
       <span id={labelId} className="text-xs font-semibold tracking-wide text-text-h uppercase">
         Personen
       </span>
+      {/* Unter `sm` ein Scrollbereich, und der schneidet in BEIDEN Achsen ab: `py-2` gibt der
+          senkrechten Aufspannung der Einträge (6px je Seite) Platz im Scrollkasten, `-mb-2` nimmt
+          den unteren Innenabstand aus dem Fluss. Abstand zur Beschriftung bleibt 8px. */}
       <div
         role="group"
         aria-labelledby={labelId}
-        className="flex gap-2 overflow-x-auto sm:flex-wrap sm:overflow-x-visible"
+        className="-mb-2 flex gap-2 overflow-x-auto py-2 sm:flex-wrap sm:overflow-x-visible"
       >
         {entries.map((entry) => (
           <Button

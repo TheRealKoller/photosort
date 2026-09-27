@@ -32,6 +32,16 @@ export const DEMO_PROJECTS = {
 } as const
 
 /**
+ * Die beiden frei erfundenen Demo-Personen (`demo_state.py`, specs/features/0292-...). Der zweite
+ * Name hat genau die Hoechstlaenge von 40 Zeichen - an ihm zeigt sich, ob eine Leiste mit Namen
+ * bei schmaler Breite in sich scrollt, statt die Seite zu verbreitern.
+ */
+export const DEMO_PERSONS = {
+  short: 'Mara Lindqvist',
+  longest: 'Henrike Adelheid Sommerfeld-Wintergarten',
+} as const
+
+/**
  * Liefert die Projekt-ID des benannten Demo-Projekts, aufgeloest ueber die Projektliste.
  *
  * Die `toHaveCount(1)`-Zusicherung ist keine Formalie: sie schliesst sowohl den Fall "Seeder lief

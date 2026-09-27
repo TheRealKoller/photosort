@@ -21,7 +21,7 @@ import path from 'node:path'
 
 import { authStateCoversOrigin, TOKEN_STORAGE_KEY } from '../lib/authState.ts'
 import { DEFAULT_BASE_URL, resolveBaseUrl } from '../lib/baseUrl.ts'
-import { DEMO_PROJECTS } from '../lib/demo.ts'
+import { DEMO_PERSONS, DEMO_PROJECTS } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 import { PACKAGE_ROOT } from '../lib/paths.ts'
 import { DESKTOP_ONLY, MOBILE_ONLY } from '../playwright.config.ts'
@@ -236,6 +236,13 @@ test('die Demo-Projektnamen des Pruefsatzes stammen aus dem Seeder', () => {
       `f"{DEMO_PROJECT_PREFIX}${suffix}"`,
     )
   }
+
+  // Dasselbe fuer die beiden Demo-Personen (Spec 0292): Ihre Namen stehen im Seeder woertlich in
+  // `DEMO_PERSON_NAMES`, und der zweite traegt die Hoechstlaenge, auf die die Pruefungen zielen.
+  for (const [key, name] of Object.entries(DEMO_PERSONS)) {
+    expect(seeder, `Personenname "${key}" im Seeder`).toContain(`"${name}"`)
+  }
+  expect([...DEMO_PERSONS.longest], 'Laenge des laengsten Demo-Namens').toHaveLength(40)
 })
 
 /**
