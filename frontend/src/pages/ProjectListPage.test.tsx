@@ -55,6 +55,7 @@ function renderPage() {
       <Routes>
         <Route path="/" element={<ProjectListPage />} />
         <Route path="/projects/new" element={<p>Neues Projekt Seite</p>} />
+        <Route path="/persons" element={<p>Personen-Seite</p>} />
         <Route path="/projects/:id" element={<p>Projekt-Detail-Seite</p>} />
       </Routes>
     </MemoryRouter>,
@@ -133,6 +134,37 @@ describe('ProjectListPage', () => {
       expect(
         await screen.findByRole('link', { name: /neues projekt anlegen/i }),
       ).toBeInTheDocument()
+    })
+
+    it.each([
+      ['ladend', () => vi.mocked(projectsApi.listProjects).mockReturnValue(new Promise(() => {}))],
+      [
+        'fehler',
+        () =>
+          vi.mocked(projectsApi.listProjects).mockRejectedValue(new ApiError(500, 'Serverfehler')),
+      ],
+      ['leer', () => vi.mocked(projectsApi.listProjects).mockResolvedValue([])],
+      ['gefuellt', () => vi.mocked(projectsApi.listProjects).mockResolvedValue([scannedProject()])],
+    ])('fuehrt im Zustand %s ueber "Personen" auf /persons', async (_name, arrange) => {
+      arrange()
+      const user = userEvent.setup()
+
+      renderPage()
+
+      await user.click(await screen.findByRole('link', { name: 'Personen' }))
+      expect(await screen.findByText('Personen-Seite')).toBeInTheDocument()
+    })
+
+    it('stellt "Personen" links neben "Neues Projekt anlegen"', async () => {
+      vi.mocked(projectsApi.listProjects).mockResolvedValue([])
+
+      renderPage()
+
+      const persons = await screen.findByRole('link', { name: 'Personen' })
+      const create = screen.getByRole('link', { name: 'Neues Projekt anlegen' })
+      expect(
+        persons.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
     })
   })
 
