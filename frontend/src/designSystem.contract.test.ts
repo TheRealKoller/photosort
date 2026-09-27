@@ -1891,6 +1891,12 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Auswahlfeld der Referenzkamera: ersetztes Element ohne Pseudo-Element',
     },
     {
+      file: 'src/components/FolderBrowser.tsx',
+      snippet:
+        'className="h-11 w-full sm:w-auto rounded-sm border border-border-control bg-surface px-3',
+      reason: 'Sortierauswahl im Ordner-Browser: ersetztes Element ohne Pseudo-Element',
+    },
+    {
       file: 'src/pages/ProjectSettingsPage.tsx',
       snippet: '<Skeleton className="h-11 w-full rounded-lg" />',
       reason:

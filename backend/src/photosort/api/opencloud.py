@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -23,6 +24,8 @@ FOLDER_COUNT_LIMIT = 500
 class BrowseEntry(BaseModel):
     name: str
     path: str
+    # None: OpenCloud hat fuer den Ordner kein getlastmodified geliefert.
+    modified_at: datetime | None
 
 
 class FolderCountOut(BaseModel):
@@ -48,10 +51,22 @@ async def browse_folder(
 
     base = path.strip("/")
     return [
-        BrowseEntry(name=entry.name, path=f"{base}/{entry.name}".strip("/"))
+        BrowseEntry(
+            name=entry.name,
+            path=f"{base}/{entry.name}".strip("/"),
+            modified_at=_with_zone(entry.last_modified),
+        )
         for entry in entries
         if entry.is_collection
     ]
+
+
+def _with_zone(value: datetime | None) -> datetime | None:
+    """RFC 1123 mit `-0000` parst ohne Zeitzone. Ohne Offset im JSON liest der Browser den Wert
+    als Ortszeit und verschiebt die Sortierung nach Aenderungsdatum um den Zonenversatz."""
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
 
 
 async def _count_images_up_to_limit(
