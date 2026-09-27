@@ -1,6 +1,6 @@
 # 0049 - Nur Frontend nach außen exposen: Single-Origin-API-Proxy über Frontend-nginx
 
-**Status:** Accepted
+**Status:** Implemented ([PR #546](https://github.com/TheRealKoller/photosort/pull/546))
 **Erstellt:** 2026-08-19
 **Bezug:** Ursprünglich `specs/inbox/0018-nur-frontend-nach-aussen-exposen.md` (nach Anlage dieser Spec gelöscht), geschärft im `idea-sharpener`-Ablauf (interaktive Session mit Daniel, 2026-08-19). ADR [`decisions/0027-single-origin-api-proxy-ueber-frontend-nginx.md`](../decisions/0027-single-origin-api-proxy-ueber-frontend-nginx.md).
 
