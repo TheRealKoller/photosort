@@ -12,7 +12,10 @@ import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { useDuplicateGroupIndexQuery } from '../hooks/useDuplicates'
 import { useElementWidth } from '../hooks/useElementWidth'
+import { usePersonFilter } from '../hooks/usePersonFilter'
 import { usePhotoSequenceQuery } from '../hooks/usePhotos'
+import { withPersonIds } from '../utils/personFilter'
+import { PersonFilterGroup } from '../components/PersonFilterGroup'
 import {
   GRID_GAP_PX,
   MIN_ROW_HEIGHT_PX,
@@ -58,7 +61,13 @@ export function PhotoGridPage() {
   const token = getToken()
   const username = token ? decodeUsername(token) : null
 
-  const query = usePhotoSequenceQuery(id, ratingStatus)
+  const { personsQuery, personIds, setPersonIds } = usePersonFilter(searchParams, setSearchParams)
+  const query = usePhotoSequenceQuery(id, ratingStatus, undefined, personIds)
+  // Kachel-Links und "Zurück zum Grid" tragen beide Filter weiter.
+  const detailQuery = withPersonIds(
+    new URLSearchParams(filterParam ? { filter: filterParam } : {}),
+    personIds,
+  ).toString()
   // Nur unter dem Vorschlags-Filter: Dort wird der Ausschuss gesichtet, und nur dort gehoert der
   // Weg durch die Serien hin. Unter jedem anderen Filter liefe die Anfrage ohne Adressaten.
   const duplicateGroupIndex = useDuplicateGroupIndexQuery(id, {
@@ -183,6 +192,14 @@ export function PhotoGridPage() {
         ))}
       </div>
 
+      <PersonFilterGroup
+        persons={personsQuery.data}
+        isError={personsQuery.isError}
+        onRetry={() => void personsQuery.refetch()}
+        selected={personIds}
+        onChange={setPersonIds}
+      />
+
       {/* EIN Weg für die ganze Liste, außerhalb des Kachelrasters. Bis Spec 0525 stand daneben ein
           zweiter, kachelgenauer Einstieg auf dieselbe Ansicht; er ist mit dem Gate-Modus
           entfallen. Der Durchgang durch die Serien bleibt über diese eine Stelle erreichbar.
@@ -227,8 +244,16 @@ export function PhotoGridPage() {
       {query.isSuccess && photos.length === 0 && (
         <div className="flex flex-col items-start gap-3 text-sm text-text">
           <p>Keine Fotos mit diesem Filter.</p>
-          {filterParam !== '' && (
-            <Button type="button" variant="outline" onClick={() => handleFilterChange('')}>
+          {(filterParam !== '' || personIds.length > 0) && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                const next = withPersonIds(searchParams, [])
+                next.delete('filter')
+                setSearchParams(next)
+              }}
+            >
               Filter zurücksetzen
             </Button>
           )}
@@ -252,7 +277,7 @@ export function PhotoGridPage() {
             return (
               <PhotoGridTile
                 key={photo.id}
-                to={`/projects/${id}/photos/${photo.id}${filterParam ? `?filter=${filterParam}` : ''}`}
+                to={`/projects/${id}/photos/${photo.id}${detailQuery ? `?${detailQuery}` : ''}`}
                 relativePath={photo.relative_path}
                 status={ownStatus}
                 suggestedStatus={suggestedStatus}

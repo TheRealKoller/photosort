@@ -60,6 +60,8 @@ function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScor
     estimated_cost_usd: 1.2,
     cloud_cost_total_usd: 0.9,
     phase_remaining_seconds: null,
+    persons_photos_total: null,
+    persons_photos_processed: null,
     ...overrides,
   }
 }
@@ -77,19 +79,31 @@ function stateOf(
 
 describe('deriveClassificationSteps: Menge und Reihenfolge', () => {
   it('liefert bei angeforderter Cloud-Nutzung alle vier Teilschritte in Ausführungsreihenfolge', () => {
-    expect(idsOf(run())).toEqual(['remote_categories', 'criteria', 'landmark', 'ranking'])
+    expect(idsOf(run())).toEqual([
+      'remote_categories',
+      'criteria',
+      'landmark',
+      'ranking',
+      'persons',
+    ])
   })
 
   it('lässt beide Cloud-Teilschritte ohne angeforderte Cloud-Nutzung ganz weg', () => {
     // Ohne Cloud-Freigabe finden sie nicht statt - sie als "übersprungen" zu zeigen behauptete
     // eine Auslassung, wo gar keine Absicht bestand.
-    expect(idsOf(run({ cloud_requested: false }))).toEqual(['criteria', 'ranking'])
+    expect(idsOf(run({ cloud_requested: false }))).toEqual(['criteria', 'ranking', 'persons'])
   })
 
   it('folgt der Reihenfolge der Ableitung, nicht der der Serverantwort', () => {
     const reversed = run({ cloud_phases: [LANDMARK_PHASE, REMOTE_PHASE] })
 
-    expect(idsOf(reversed)).toEqual(['remote_categories', 'criteria', 'landmark', 'ranking'])
+    expect(idsOf(reversed)).toEqual([
+      'remote_categories',
+      'criteria',
+      'landmark',
+      'ranking',
+      'persons',
+    ])
   })
 })
 
@@ -324,5 +338,31 @@ describe('deriveClassificationSteps: die Restdauer', () => {
       expect(step.etaKind, step.id).toBeNull()
       expect(step.etaSeconds, step.id).toBeNull()
     }
+  })
+})
+
+describe('der Teilschritt Personen-Erkennung (Spec 0292)', () => {
+  it('ist der letzte Schritt und steht vor der Phase auf ausstehend', () => {
+    const steps = deriveClassificationSteps(run({ phase: 'ranking' }))
+    const last = steps[steps.length - 1]
+    expect(last.id).toBe('persons')
+    expect(last.label).toBe('Personen-Erkennung')
+    expect(last.state).toBe('pending')
+  })
+
+  it('zeigt den Fortschritt aus seinen eigenen Zaehlern', () => {
+    const persons = deriveClassificationSteps(
+      run({ phase: 'persons', persons_photos_total: 8, persons_photos_processed: 3 }),
+    ).find((step) => step.id === 'persons')
+    expect(persons?.state).toBe('running')
+    expect([persons?.processed, persons?.total]).toEqual([3, 8])
+  })
+
+  it('wird nach Laufende ohne Zaehler ausgeblendet und mit Zaehlern gezeigt', () => {
+    const finished = { status: 'success' as const, phase: null }
+    expect(idsOf(run(finished))).not.toContain('persons')
+    expect(
+      idsOf(run({ ...finished, persons_photos_total: 4, persons_photos_processed: 4 })),
+    ).toContain('persons')
   })
 })

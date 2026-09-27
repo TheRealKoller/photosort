@@ -41,6 +41,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     final_selection_decision: null,
     in_final_selection: false,
     contested: false,
+    persons: [],
     motif_assessment: {
       source: 'cloud' as const,
       provider: 'anthropic',

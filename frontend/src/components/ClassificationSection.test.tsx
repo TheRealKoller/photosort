@@ -71,6 +71,8 @@ function classificationRun(
     estimated_cost_usd: null,
     cloud_cost_total_usd: null,
     phase_remaining_seconds: null,
+    persons_photos_total: null,
+    persons_photos_processed: null,
     ...overrides,
   }
 }

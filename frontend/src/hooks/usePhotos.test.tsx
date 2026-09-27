@@ -40,6 +40,7 @@ function page(items: number[], total: number): PhotoListOut {
       final_selection_decision: null,
       in_final_selection: false,
       contested: false,
+      persons: [],
     })),
     total,
   }
@@ -62,6 +63,7 @@ describe('usePhotoSequenceQuery', () => {
       ratingStatus: 'unrated',
       limit: PHOTOS_PAGE_SIZE,
       offset: 0,
+      personIds: [],
     })
   })
 
@@ -80,6 +82,7 @@ describe('usePhotoSequenceQuery', () => {
       ratingStatus: undefined,
       limit: 2,
       offset: 2,
+      personIds: [],
     })
   })
 })

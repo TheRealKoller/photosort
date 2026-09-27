@@ -30,6 +30,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     final_selection_decision: null,
     in_final_selection: false,
     contested: false,
+    persons: [],
     ...overrides,
   }
 }
@@ -98,6 +99,7 @@ describe('SelectionPhotoTile - Zuordnung der Haltungen', () => {
     renderTile({
       ratings: [{ user_id: 1, username: 'daniel', status: 'rejected', favorite: false }],
       contested: true,
+      persons: [],
     })
 
     const row = stanceRow('daniel')
@@ -111,6 +113,7 @@ describe('SelectionPhotoTile - Zuordnung der Haltungen', () => {
     renderTile({
       ratings: [{ user_id: 1, username: 'daniel', status: 'album_worthy', favorite: false }],
       contested: true,
+      persons: [],
     })
 
     const badge = within(stanceRow('daniel')).getByLabelText('Album-würdig')
@@ -137,6 +140,7 @@ describe('SelectionPhotoTile - Kardinalität der Haltungszeilen', () => {
         { user_id: 99, username: 'fremd', status: 'rejected', favorite: false },
       ],
       contested: true,
+      persons: [],
     })
 
     expect(within(stanceList()).getAllByRole('listitem')).toHaveLength(2)
