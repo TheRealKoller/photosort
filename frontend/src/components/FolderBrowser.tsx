@@ -1,11 +1,26 @@
-import { useEffect } from 'react'
+import type { UseQueryResult } from '@tanstack/react-query'
+import { useEffect, useId, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 
 import { ApiError } from '../api/client'
-import type { FolderCountOut } from '../api/types'
+import type { BrowseEntry, FolderCountOut } from '../api/types'
+import { cn } from '../lib/utils'
+import { arrangeFolders, DEFAULT_FOLDER_SORT } from '../utils/folderListing'
+import type { FolderSort } from '../utils/folderListing'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
+import { Input } from './ui/input'
 import { useOpenCloudBrowseQuery } from '../hooks/useOpenCloudBrowse'
 import { useOpenCloudFolderCountsQuery } from '../hooks/useOpenCloudFolderCounts'
+
+const SORT_OPTIONS: { value: FolderSort; label: string }[] = [
+  { value: 'name_asc', label: 'Name A–Z' },
+  { value: 'name_desc', label: 'Name Z–A' },
+  { value: 'count_desc', label: 'Bildanzahl, meiste zuerst' },
+  { value: 'modified_desc', label: 'Änderungsdatum, neueste zuerst' },
+]
+
+const PROVISIONAL_HINT = 'Vorläufig nach Name sortiert – die Bildanzahl wird noch gezählt.'
 
 interface Breadcrumb {
   label: string
@@ -92,54 +107,132 @@ function breadcrumbsFor(path: string): Breadcrumb[] {
   return crumbs
 }
 
-/**
- * Kontrollierte Ordner-Navigation per Pfad-Drilldown. Laedt pro Aufruf nur die direkten Unterordner
- * von `value` - "Navigation" entsteht rein client-seitig, React Query cached jede Ebene unter ihrem
- * eigenen Query-Key, kein separater Bestaetigen-Schritt: der aktuell angezeigte Ordner ist immer
- * der Kandidat fuer opencloud_path.
- */
-export function FolderBrowser({ value, onChange, onErrorChange }: FolderBrowserProps) {
-  const query = useOpenCloudBrowseQuery(value)
-  // Loest eager parallel zum Browse-Request desselben Pfads aus - kein Klick noetig, die Liste
-  // rendert unveraendert sobald browseFolder zurueck ist, die Zaehler trudeln pro Zeile nach.
-  const counts = useOpenCloudFolderCountsQuery(value)
+interface FolderLevelProps {
+  browse: UseQueryResult<BrowseEntry[]>
+  counts: UseQueryResult<FolderCountOut[]>
+  sort: FolderSort
+  onSortChange: (sort: FolderSort) => void
+  onChange: (path: string) => void
+}
 
-  useEffect(() => {
-    onErrorChange?.(query.isError)
-  }, [query.isError, onErrorChange])
+/**
+ * Eine Ebene des Browsers: Bedienzeile, Hinweiszeile, Liste bzw. Leerzustand. Wird je `value` neu
+ * gemountet, damit der Suchbegriff bei jedem Ordnerwechsel leer beginnt.
+ *
+ * SICHERHEIT: Der Suchbegriff stammt allein aus dem Suchfeld und lebt nur in diesem Zustand - nie
+ * aus URL oder Query-Parameter. Er erscheint ausschließlich als React-Textknoten; ein Markup-String
+ * brächte über einen präparierten Link Skript in die Seite, das das JWT aus `localStorage` liest.
+ */
+function FolderLevel({ browse, counts, sort, onSortChange, onChange }: FolderLevelProps) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  const searchId = useId()
+  const sortId = useId()
+
+  // Reihenfolge, Hinweis und Zähler-Spinner hängen an derselben Bedingung im selben Render
+  // (`counts.isLoading`) - ein nachziehender Effekt zeigte einen Zwischenstand und sortierte
+  // zweimal.
+  const arranged = browse.isSuccess
+    ? arrangeFolders(browse.data, {
+        sort,
+        searchTerm,
+        counts: counts.isError ? undefined : counts.data,
+        countsSettled: !counts.isLoading,
+      })
+    : null
+  const levelHasFolders = browse.isSuccess && browse.data.length > 0
+  const showHint = levelHasFolders && arranged !== null && arranged.provisional
+  const trimmedTerm = searchTerm.trim()
 
   const errorDetail =
-    query.isError && query.error instanceof ApiError
-      ? query.error.detail
-      : query.isError
+    browse.isError && browse.error instanceof ApiError
+      ? browse.error.detail
+      : browse.isError
         ? 'Unerwarteter Fehler beim Laden der Ordner.'
         : null
 
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-      <nav aria-label="Ordnerpfad" className="flex flex-wrap items-center gap-1 text-sm text-text">
-        {breadcrumbsFor(value).map((crumb, index, all) => (
-          <span key={crumb.path} className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" onClick={() => onChange(crumb.path)}>
-              {crumb.label}
-            </Button>
-            {index < all.length - 1 && <span aria-hidden="true">/</span>}
-          </span>
-        ))}
-      </nav>
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    // Das Feld steht im Formular der Projektanlage: Enter löste dort implizit "Projekt anlegen"
+    // aus.
+    if (event.key === 'Enter') {
+      event.preventDefault()
+    } else if (event.key === 'Escape' && searchTerm !== '') {
+      setSearchTerm('')
+    }
+  }
 
-      {query.isLoading && (
+  function resetSearch(): void {
+    setSearchTerm('')
+    searchRef.current?.focus()
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex flex-col gap-2 sm:flex-1">
+            <label htmlFor={searchId} className="text-xs font-medium text-text-h">
+              Unterordner durchsuchen
+            </label>
+            <Input
+              id={searchId}
+              ref={searchRef}
+              type="text"
+              placeholder="Teil des Ordnernamens"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              onKeyDown={handleSearchKeyDown}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor={sortId} className="text-xs font-medium text-text-h">
+              Sortierung
+            </label>
+            <select
+              id={sortId}
+              value={sort}
+              onChange={(event) => onSortChange(event.target.value as FolderSort)}
+              className="h-11 w-full sm:w-auto rounded-sm border border-border-control bg-surface px-3 text-sm text-text-h"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {/* Ständig im DOM, damit das Erscheinen des Hinweises angesagt wird; ohne Text ohne Höhe
+            und Abstand. */}
+        <p role="status" className={cn('text-sm text-text', showHint && 'mt-2')}>
+          {showHint ? PROVISIONAL_HINT : null}
+        </p>
+      </div>
+
+      {browse.isLoading && (
         <p role="status" className="text-sm text-text">
           Ordner werden geladen…
         </p>
       )}
       {errorDetail && <Alert>{errorDetail}</Alert>}
-      {query.isSuccess && query.data.length === 0 && (
-        <p className="text-sm text-text">Keine Unterordner</p>
+      {browse.isSuccess && !levelHasFolders && (
+        <p className="text-sm text-text">Dieser Ordner hat keine Unterordner.</p>
       )}
-      {query.isSuccess && query.data.length > 0 && (
+      {levelHasFolders && arranged?.entries.length === 0 && trimmedTerm !== '' && (
+        <div className="flex flex-col gap-3 text-sm text-text">
+          <p className="break-words">Kein Unterordner enthält „{trimmedTerm}“ im Namen.</p>
+          <Button type="button" variant="outline" className="self-start" onClick={resetSearch}>
+            Suche zurücksetzen
+          </Button>
+        </div>
+      )}
+      {arranged !== null && arranged.entries.length > 0 && (
         <ul className="flex flex-col gap-1">
-          {query.data.map((entry) => (
+          {arranged.entries.map((entry) => (
             <li key={entry.path} className="flex items-center justify-between gap-3">
               <Button
                 type="button"
@@ -154,6 +247,50 @@ export function FolderBrowser({ value, onChange, onErrorChange }: FolderBrowserP
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+/**
+ * Kontrollierte Ordner-Navigation per Pfad-Drilldown. Laedt pro Aufruf nur die direkten Unterordner
+ * von `value` - "Navigation" entsteht rein client-seitig, React Query cached jede Ebene unter ihrem
+ * eigenen Query-Key, kein separater Bestaetigen-Schritt: der aktuell angezeigte Ordner ist immer
+ * der Kandidat fuer opencloud_path. Sortierung und Suche rufen nie `onChange` auf.
+ */
+export function FolderBrowser({ value, onChange, onErrorChange }: FolderBrowserProps) {
+  // Überdauert jeden Ordnerwechsel, weil diese Komponente über alle Werte von `value` gemountet
+  // bleibt; gespeichert wird sie nicht.
+  const [sort, setSort] = useState<FolderSort>(DEFAULT_FOLDER_SORT)
+  const query = useOpenCloudBrowseQuery(value)
+  // Loest eager parallel zum Browse-Request desselben Pfads aus - kein Klick noetig, die Liste
+  // rendert unveraendert sobald browseFolder zurueck ist, die Zaehler trudeln pro Zeile nach.
+  const counts = useOpenCloudFolderCountsQuery(value)
+
+  useEffect(() => {
+    onErrorChange?.(query.isError)
+  }, [query.isError, onErrorChange])
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+      <nav aria-label="Ordnerpfad" className="flex flex-wrap items-center gap-1 text-sm text-text">
+        {breadcrumbsFor(value).map((crumb, index, all) => (
+          <span key={crumb.path} className="flex items-center gap-1">
+            <Button type="button" variant="ghost" size="sm" onClick={() => onChange(crumb.path)}>
+              {crumb.label}
+            </Button>
+            {index < all.length - 1 && <span aria-hidden="true">/</span>}
+          </span>
+        ))}
+      </nav>
+
+      <FolderLevel
+        key={value}
+        browse={query}
+        counts={counts}
+        sort={sort}
+        onSortChange={setSort}
+        onChange={onChange}
+      />
     </div>
   )
 }
