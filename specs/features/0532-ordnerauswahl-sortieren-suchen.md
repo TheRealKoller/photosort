@@ -1,6 +1,6 @@
 # 0532 - Sortierbare und durchsuchbare Ordnerauswahl beim Projektanlegen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #544](https://github.com/TheRealKoller/photosort/pull/544))
 **Erstellt:** 2026-09-27
 **Bezug:** [Issue #532](https://github.com/TheRealKoller/photosort/issues/532)
 
