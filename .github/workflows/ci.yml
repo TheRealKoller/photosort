@@ -26,23 +26,20 @@ jobs:
         # test_classification.py) mit "OSError: libEGL.so.1/libGL.so.1/... cannot open
         # shared object file" fehl.
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libxcb1 libegl1 libgles2
-      # specs/decisions/0033-modell-asset-download-statt-commit-label-embedder.md: das
-      # label_embedder.onnx-Asset (~113 MiB) ueberschreitet GitHubs 100-MiB-Push-Limit und ist
-      # deshalb nicht mehr Teil des Repositorys - test_label_embedding.py::TestLabelEmbedderAssets/
-      # TestRealAssetOutputDimension laufen direkt gegen die Datei auf der Festplatte, muss also
-      # vor dem Testlauf vorliegen. actions/cache (Schluessel = der bereits im Code hinterlegte
-      # SHA256-Hash) haelt die tatsaechliche HuggingFace-Abrufhaeufigkeit gering - das Skript
-      # selbst ist ohnehin idempotent (ueberspringt den Download bei bereits passendem Hash), der
-      # Cache spart zusaetzlich den wiederholten Download bei einem Cache-Hit.
-      - name: Read pinned label-embedder model hash
-        id: label-embedder-hash
-        run: echo "sha256=$(sed -n 's/^LABEL_EMBEDDER_ONNX_SHA256 = "\([0-9a-f]\{64\}\)"$/\1/p' src/photosort/label_embedding.py)" >> "$GITHUB_OUTPUT"
+      # Die Modelldateien aus dem Manifest src/photosort/model_assets.py sind nicht eingecheckt;
+      # test_model_assets.py/test_label_embedding.py/test_face_analysis.py laufen gegen die
+      # Dateien auf der Festplatte. Der Cache schluesselt ueber den Inhalt des Manifests - eine
+      # geaenderte Revision oder ein geaenderter Hash laedt neu. Das Ladeprogramm prueft jede
+      # Datei auch bei einem Cache-Treffer und laedt nur, was fehlt oder abweicht.
       - uses: actions/cache@v4
         with:
-          path: backend/src/photosort/assets/label_embedder.onnx
-          key: label-embedder-onnx-${{ steps.label-embedder-hash.outputs.sha256 }}
+          path: |
+            backend/src/photosort/assets/label_embedder.onnx
+            backend/src/photosort/assets/face_detection_yunet_2023mar.onnx
+            backend/src/photosort/assets/face_recognition_sface_2021dec.onnx
+          key: model-assets-${{ hashFiles('backend/src/photosort/model_assets.py') }}
       - name: Download pinned model assets
-        run: ../scripts/fetch-label-embedder-model.sh
+        run: python scripts/fetch_model_assets.py
       - name: Install uv
         run: pip install uv
       - name: Install dependencies

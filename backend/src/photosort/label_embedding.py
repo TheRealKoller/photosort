@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import unicodedata
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Protocol
+
+from photosort.model_assets import ASSETS_DIR, LABEL_EMBEDDER_ONNX
 
 # Eigenes, isoliertes Modul (analog aesthetics.py) - haelt die onnxruntime/tokenizers-Abhaengigkeit
 # auf genau den Importpfad begrenzt, der sie tatsaechlich braucht (nur build_label_embedder()
@@ -24,14 +26,11 @@ from typing import Protocol
 # SICHERHEIT: beide Assets sind SHA256-gepinnt, kein unverifizierter Bezug. Eingecheckt ist nur
 # "tokenizer.json" (label_embedder_tokenizer.json, ~16 MiB); "model_int8.onnx"
 # (label_embedder.onnx, ~113 MiB) ueberschreitet GitHubs 100-MiB-Push-Limit und darf NICHT
-# committet werden - es wird per verifiziertem Download bezogen, siehe
-# scripts/fetch-label-embedder-model.sh (aufgerufen aus backend/Dockerfile,
-# .github/workflows/ci.yml, sowie einmalig manuell im lokalen Bare-Metal-Dev-Setup,
-# docs/setup.md).
-LABEL_EMBEDDER_ONNX_PATH = Path(__file__).parent / "assets" / "label_embedder.onnx"
-LABEL_EMBEDDER_TOKENIZER_PATH = Path(__file__).parent / "assets" / "label_embedder_tokenizer.json"
+# committet werden - Hash, Groesse und Bezugsadresse stehen im Manifest `model_assets.py`, geladen
+# wird ueber `backend/scripts/fetch_model_assets.py`, nie aus diesem Modul.
+LABEL_EMBEDDER_ONNX_PATH = ASSETS_DIR / LABEL_EMBEDDER_ONNX.filename
+LABEL_EMBEDDER_TOKENIZER_PATH = ASSETS_DIR / "label_embedder_tokenizer.json"
 
-LABEL_EMBEDDER_ONNX_SHA256 = "d6ea442ff6a891daefed7c83b2f596fc5dc66bf697e4d006236f64f34bbcf4c8"
 LABEL_EMBEDDER_TOKENIZER_SHA256 = "b60b6b43406a48bf3638526314f3d232d97058bc93472ff2de930d43686fa441"
 
 # hidden_size des Basismodells (config.json) - 384-dimensionale Sentence-Embeddings.
@@ -105,7 +104,14 @@ def build_label_embedder() -> LabelEmbedderLike:
     build_face_detector/build_aesthetics_model NIE in einem automatisierten Test (Ladezeit) -
     lokale Importe von onnxruntime/tokenizers (analog dem lokalen tensorflow-Import in
     aesthetics.py), damit die Abhaengigkeit nicht in einen leichteren Importpfad einsickert, der
-    sie nicht braucht."""
+    sie nicht braucht.
+
+    TELEMETRIE AUS, zuweisend und unmittelbar vor dem ersten Import: Offizielle
+    `onnxruntime`-Builds senden unter Linux standardmaessig Telemetrie an Microsoft und lesen die
+    Variable nur einmal beim ersten Import. Nie `setdefault` - eine geerbte `0` schaltete sie
+    sonst wieder ein. Jeder weitere Importort von `onnxruntime` braucht dieselbe Zeile davor;
+    `tests/test_label_embedding.py` haelt fest, dass es nur diesen einen gibt."""
+    os.environ["ORT_DISABLE_TELEMETRY"] = "1"
     import onnxruntime as ort
     from tokenizers import Tokenizer
 

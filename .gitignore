@@ -50,13 +50,14 @@ example-pictures/
 # Docker / data volumes
 photo-cache/
 
-# Modell-Assets per verifiziertem Download statt Git-Commit
-# (specs/decisions/0033-modell-asset-download-statt-commit-label-embedder.md): ueberschreitet
-# GitHubs 100-MiB-Push-Limit, wird stattdessen bei Bedarf per scripts/fetch-label-embedder-model.sh
-# heruntergeladen und SHA256-verifiziert (backend/Dockerfile, .github/workflows/ci.yml,
-# docs/setup.md). Nur dieses eine Asset - alle anderen Modell-Assets (*.tflite/*.hdf5/*.task,
-# label_embedder_tokenizer.json) bleiben unveraendert committet, kein pauschaler assets/-Ausschluss.
+# Geladene Modelldateien (Manifest backend/src/photosort/model_assets.py): nicht eingecheckt, per
+# backend/scripts/fetch_model_assets.py geladen und SHA256-geprueft. Nur diese Dateien - alle
+# anderen Modell-Assets (*.tflite/*.hdf5/*.task, label_embedder_tokenizer.json) bleiben
+# eingecheckt, kein pauschaler assets/-Ausschluss.
 backend/src/photosort/assets/label_embedder.onnx
+backend/src/photosort/assets/face_detection_yunet_2023mar.onnx
+backend/src/photosort/assets/face_recognition_sface_2021dec.onnx
+backend/src/photosort/assets/.*.onnx.*
 
 # Persoenliches Compose-Override, z.B. fuer "npm run dev" gegen einen dockerisierten Backend
 # (docs/setup.md). Es veroeffentlicht den Backend-Port, den docker-compose.yml bewusst nicht
