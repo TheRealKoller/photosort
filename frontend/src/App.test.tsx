@@ -273,6 +273,16 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Album-Entwurf' })).toBeInTheDocument()
   })
 
+  it('routes /persons to the persons page within the app shell', async () => {
+    // Spec 0292: global, fuer alle Projekte - kein Projektkontext, keine Projektnavigation.
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+
+    renderApp(['/persons'])
+
+    expect(screen.getByText('PhotoSort')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Personen', level: 1 })).toBeInTheDocument()
+  })
+
   it('does not resolve the abolished /curate route - and redirects it nowhere', async () => {
     /* Zusicherung 25: Die bisherige Kuratierungsroute entfaellt ERSATZLOS. Ohne diesen Fall waere
      * sowohl ein vergessener Wegfall (die alte Seite steht noch) als auch ein eingeschlichener
