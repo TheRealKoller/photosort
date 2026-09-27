@@ -10,7 +10,9 @@ Fuenf Projekte mit dem festen Namenspraefix ``Demo — `` decken die prueflohnen
 (leer, grosse Sammlung, bewertet, Fehlerzustand, Duplikate). Die Bilddateien entstehen mit Pillow
 und werden ueber die ECHTE ``thumbnails.py``-Logik in den lokalen Cache geschrieben - kein zweites
 Abbild von Datenmodell oder Cache-Schluessel, das bei einer Modelaenderung still abdriften
-koennte.
+koennte. Dazu kommen zwei frei erfundene Personen mit synthetischen Referenzen (Spec 0292): Sie
+sind global, entstehen ueber die echten Dienstfunktionen in ``persons.py`` und werden beim
+Neuaufbau ausschliesslich ueber ihre Demo-Namen entfernt.
 
 WARUM DIESES MODUL IM PRODUKTIV-PAKET LIEGT UND TROTZDEM UNGEFAEHRLICH IST: Es braucht die echten
 SQLAlchemy-Modelle und die echte Cache-Schluessel-Bildung, liegt damit im Produktiv-Image - und ist
@@ -61,6 +63,7 @@ from photosort.cloud_vision import default_vision_model_for_provider
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.db import make_engine, make_session_factory
+from photosort.face_analysis import MODEL_KEY
 from photosort.feedback_log import (
     FrozenContext,
     record_exchange,
@@ -74,6 +77,7 @@ from photosort.models import (
     FeedbackEventKind,
     FinalSelectionDecision,
     MotifAssessmentSource,
+    Person,
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
@@ -81,6 +85,7 @@ from photosort.models import (
     PhotoLandmarkDetection,
     PhotoMotifCorrection,
     PhotoMotifStrength,
+    PhotoPersonDetection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -95,6 +100,16 @@ from photosort.models import (
 )
 from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import LOCAL_MOTIF_SIGNALS, MOTIF_REGISTRY
+from photosort.person_matching import EMBEDDING_DIMENSION
+from photosort.persons import (
+    PersonRefusal,
+    add_reference,
+    clean_person_name,
+    create_person,
+    delete_person,
+    person_name_key,
+    set_correction,
+)
 from photosort.places import place_cell
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
 from photosort.quality import compute_quality_score
@@ -376,6 +391,46 @@ _DEMO_CAMERA_WITH_OFFSET = ("Canon", "Canon EOS 5D")
 # Kamera ueber ihre Nachbarn und erzeugte damit ueberlappende Events - denselben Zustand, den der
 # Kommentar zu `_demo_event_index` oben als "von der Anwendung selbst nie geschrieben" ablehnt.
 _DEMO_CAMERA_OFFSET_MINUTES = -13
+
+# specs/features/0292-personen-erkennen.md: zwei FREI ERFUNDENE Personen (S14 - kein echter Name,
+# kein echtes Gesicht). Der zweite Name hat genau die Hoechstlaenge `MAX_NAME_CODE_POINTS`: An ihm
+# zeigt der Pruefstack, dass die Personen-Filtergruppe bei schmaler Breite in sich scrollt und die
+# Seite nicht.
+DEMO_PERSON_NAMES = ("Mara Lindqvist", "Henrike Adelheid Sommerfeld-Wintergarten")
+
+
+def _demo_unit_embedding(*components: tuple[int, float]) -> tuple[float, ...]:
+    """Ein SYNTHETISCHER Einheitsvektor aus wenigen belegten Achsen - er stammt nie aus einem
+    Gesicht. Verschiedene Achsen je Person halten die Kosinus-Aehnlichkeit der beiden bei 0, fern
+    jeder Konfliktschwelle."""
+    vector = [0.0] * EMBEDDING_DIMENSION
+    for axis, value in components:
+        vector[axis] = value
+    return tuple(vector)
+
+
+# Je Person ihr erstes gezeigtes Gesicht: (Foto-Index im bewerteten Projekt, Merkmal). Die
+# Referenz entsteht ueber `persons.create_person` und ordnet das Foto zugleich von Hand zu.
+_DEMO_PERSON_FIRST_REFERENCES = (
+    (0, _demo_unit_embedding((0, 1.0))),
+    (3, _demo_unit_embedding((1, 1.0))),
+)
+# Ein weiteres gezeigtes Gesicht der ersten Person ueber `persons.add_reference`:
+# (Person, Foto-Index, Merkmal) - nahe an ihrer ersten Referenz, weit weg von der zweiten Person.
+_DEMO_PERSON_MORE_REFERENCES = ((0, 1, _demo_unit_embedding((0, 0.8), (2, 0.6))),)
+# Erkennungen (Person, Foto-Index): Foto 2 zeigt beide Personen.
+_DEMO_PERSON_RECOGNIZED = ((0, 2), (1, 2), (0, 4), (1, 5))
+# Von Hand entfernt (Person, Foto-Index): erkannt, aber per Korrektur herausgenommen.
+_DEMO_PERSON_REMOVED = ((1, 5),)
+_DEMO_PERSON_MAX_PHOTO_INDEX = max(
+    index
+    for index in (
+        *(photo_index for photo_index, _ in _DEMO_PERSON_FIRST_REFERENCES),
+        *(photo_index for _, photo_index, _ in _DEMO_PERSON_MORE_REFERENCES),
+        *(photo_index for _, photo_index in _DEMO_PERSON_RECOGNIZED),
+        *(photo_index for _, photo_index in _DEMO_PERSON_REMOVED),
+    )
+)
 
 
 def _demo_camera_slot(index: int) -> int | None:
@@ -663,6 +718,9 @@ async def purge_demo_state(session: AsyncSession, cache_dir: Path) -> int:
     mehr, aus denen sich die Pfade berechnen liessen.
 
     Rueckgabe: Anzahl entfernter Projekte."""
+    # Die Demo-Personen ZUERST und unabhaengig von den Projekten: Sie sind global und haengen an
+    # keinem Projekt. Entfernt werden ausschliesslich die mit einem Demo-Namen (M2).
+    await _delete_demo_persons(session)
     projects = await load_demo_projects(session)
     project_ids = [project.id for project in projects]
     if not project_ids:
@@ -927,6 +985,81 @@ async def _create_demo_events(
         await session.flush()
         event_by_index[event_index] = event.id
     return event_by_index
+
+
+async def _delete_demo_persons(session: AsyncSession) -> None:
+    """Entfernt die Personen mit einem der eigenen Demo-Namen - ueber `persons.delete_person`,
+    also samt Referenzen, Erkennungen und Korrekturen. Eine fremde Person bleibt unberuehrt."""
+    keys = [person_name_key(name) for name in DEMO_PERSON_NAMES]
+    person_ids = (
+        (await session.execute(select(Person.id).where(Person.name_key.in_(keys)))).scalars().all()
+    )
+    for person_id in person_ids:
+        await delete_person(session, person_id)
+
+
+async def _seed_demo_persons(
+    session: AsyncSession, photos: Sequence[Photo], user_ids: Sequence[int]
+) -> None:
+    """Die beiden Demo-Personen im bewerteten Projekt: Fotos in den Zustaenden erkannt, von Hand
+    zugeordnet und von Hand entfernt (Spec 0292).
+
+    Referenzen entstehen ueber DIESELBEN Dienstfunktionen wie aus der Oberflaeche
+    (`create_person`, `add_reference`) - kein zweiter Schreibweg fuer biometrische Referenzen,
+    und dieselben Pruefungen (Slot, Name, Merkmal, Abstand zur anderen Person) gelten auch hier.
+    Ohne vorhandenes Konto entsteht keine Person: Jedes gezeigte Gesicht schreibt eine Korrektur
+    dieses Kontos, und der Seeder legt nie selbst eines an."""
+    if not user_ids or len(photos) <= _DEMO_PERSON_MAX_PHOTO_INDEX:
+        return
+    user_id = user_ids[0]
+    persons: list[Person] = []
+    try:
+        for name, (photo_index, embedding) in zip(
+            DEMO_PERSON_NAMES, _DEMO_PERSON_FIRST_REFERENCES, strict=True
+        ):
+            persons.append(
+                await create_person(
+                    session,
+                    name=clean_person_name(name),
+                    embedding=embedding,
+                    model_key=MODEL_KEY,
+                    photo_id=photos[photo_index].id,
+                    user_id=user_id,
+                )
+            )
+        for person_index, photo_index, embedding in _DEMO_PERSON_MORE_REFERENCES:
+            await add_reference(
+                session,
+                person_id=persons[person_index].id,
+                embedding=embedding,
+                model_key=MODEL_KEY,
+                photo_id=photos[photo_index].id,
+                user_id=user_id,
+            )
+    except PersonRefusal as exc:
+        # Nur die Bedingung, nie ein Name: Personennamen sind Familiendaten.
+        raise DemoStateError(
+            "Die Datenbank enthaelt eine Person ausserhalb des Demo-Bestands. Abbruch - der "
+            "Demo-Seeder entfernt nur seine eigenen Personen."
+        ) from exc
+
+    session.add_all(
+        PhotoPersonDetection(
+            photo_id=photos[photo_index].id,
+            person_id=persons[person_index].id,
+            computed_at=_BASE_SCORING_AT,
+        )
+        for person_index, photo_index in _DEMO_PERSON_RECOGNIZED
+    )
+    await session.flush()
+    for person_index, photo_index in _DEMO_PERSON_REMOVED:
+        await set_correction(
+            session,
+            photo_id=photos[photo_index].id,
+            person_id=persons[person_index].id,
+            applies=False,
+            user_id=user_id,
+        )
 
 
 async def _seed_empty_project(
@@ -1224,6 +1357,9 @@ async def _seed_rated_project(
     # NACH dem `flush` der Bewertungen und ueber denselben Nutzerbestand: die Korrektur haengt an
     # einem vorhandenen Konto, genau wie sie.
     await _seed_motif_assessments(session, spec.slug, photos, [user.id for user in users])
+    # Die beiden Demo-Personen (Spec 0292) - ebenfalls nur mit einem vorhandenen Konto, weil jedes
+    # gezeigte Gesicht zugleich eine Korrektur dieses Kontos schreibt.
+    await _seed_demo_persons(session, photos, [user.id for user in users])
 
     # DER AUSWAHLVORSCHLAG ueber DIESELBE Worker-Funktion, nie ueber eine zweite Vergaberegel
     # hier: eine solche saehe im Ergebnis genauso aus und roetete keinen Test. Ohne diesen Aufruf

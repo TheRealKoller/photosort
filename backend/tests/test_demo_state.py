@@ -32,6 +32,7 @@ from photosort.db import Base, make_engine, make_session_factory
 from photosort.demo_state import (
     CONFIRM_ENV_VAR,
     CONFIRM_LITERAL,
+    DEMO_PERSON_NAMES,
     DEMO_PROJECT_PREFIX,
     DUPLICATE_PROJECT_NAME,
     EMPTY_PROJECT_NAME,
@@ -54,6 +55,7 @@ from photosort.demo_state import (
     render_demo_image,
 )
 from photosort.events import LANDMARK_MIN_SHARE
+from photosort.face_analysis import MODEL_KEY
 from photosort.feedback_log import load_diagnosis
 from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
@@ -63,6 +65,8 @@ from photosort.models import (
     FeedbackEventKind,
     FinalSelectionDecision,
     MotifAssessmentSource,
+    Person,
+    PersonReference,
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
@@ -72,6 +76,8 @@ from photosort.models import (
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
+    PhotoPersonCorrection,
+    PhotoPersonDetection,
     PhotoRanking,
     PhotoScore,
     Project,
@@ -85,6 +91,8 @@ from photosort.models import (
     User,
 )
 from photosort.motifs import MOTIF_REGISTRY, MOTIF_STRENGTH_BAND_STRONG, is_motif_key
+from photosort.person_matching import validated_embedding
+from photosort.persons import MAX_NAME_CODE_POINTS, load_effective_persons
 from photosort.places import sanitize_place_name
 from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.quality_weights import store_weights
@@ -962,6 +970,96 @@ class TestRebuildDemoStateTouchesNothingElse:
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
         assert (await db_session.execute(select(Rating))).scalars().all() == []
         assert len(await _photos_of(db_session, RATED_PROJECT_NAME)) == len(MOTIF_REGISTRY)
+
+
+class TestTheDemoStateNamesTwoInventedPersons:
+    """Spec 0292: zwei erfundene Personen mit synthetischen Referenzen, Fotos in allen drei
+    Zuordnungszustaenden und ein Name an der Laengengrenze - Stoff fuer Detailansicht, `/persons`
+    und die Personen-Filtergruppe im Pruefstack. S14: kein echtes Gesicht, kein echter Name."""
+
+    async def test_two_persons_carry_synthetic_unit_references_of_the_current_model(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await _make_user(db_session, "daniel")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        persons = (await db_session.execute(select(Person).order_by(Person.slot))).scalars().all()
+        assert [person.name for person in persons] == list(DEMO_PERSON_NAMES)
+        assert max(len(person.name) for person in persons) == MAX_NAME_CODE_POINTS
+        references = (await db_session.execute(select(PersonReference))).scalars().all()
+        assert {reference.person_id for reference in references} == {p.id for p in persons}
+        assert all(reference.model_key == MODEL_KEY for reference in references)
+        assert all(validated_embedding(reference.embedding) is not None for reference in references)
+        # Synthetisch statt aus einem Gesicht: hoechstens zwei Achsen sind belegt.
+        assert all(
+            sum(1 for value in reference.embedding if value != 0.0) <= 2 for reference in references
+        )
+
+    async def test_the_rated_project_shows_recognized_hand_assigned_and_hand_removed(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await _make_user(db_session, "daniel")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        photo_ids = [photo.id for photo in await _photos_of(db_session, RATED_PROJECT_NAME)]
+
+        effective = await load_effective_persons(db_session, photo_ids)
+        origins = {assignment.origin for rows in effective.values() for assignment in rows}
+        assert origins == {"recognized", "corrected"}
+        assert any(len(rows) == 2 for rows in effective.values())
+
+        removed = (
+            await db_session.execute(
+                select(PhotoPersonCorrection.photo_id, PhotoPersonCorrection.person_id)
+                .join(
+                    PhotoPersonDetection,
+                    (PhotoPersonDetection.photo_id == PhotoPersonCorrection.photo_id)
+                    & (PhotoPersonDetection.person_id == PhotoPersonCorrection.person_id),
+                )
+                .where(
+                    PhotoPersonCorrection.applies.is_(False),
+                    PhotoPersonCorrection.photo_id.in_(photo_ids),
+                )
+            )
+        ).all()
+        assert removed
+        for photo_id, person_id in removed:
+            assert person_id not in {row.person_id for row in effective.get(photo_id, [])}
+
+    async def test_a_second_rebuild_replaces_the_demo_persons_instead_of_hitting_the_limit(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await _make_user(db_session, "daniel")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        first_references = len((await db_session.execute(select(PersonReference))).all())
+
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        names = (await db_session.execute(select(Person.name).order_by(Person.slot))).scalars()
+        assert list(names) == list(DEMO_PERSON_NAMES)
+        assert len((await db_session.execute(select(PersonReference))).all()) == first_references
+
+    async def test_without_any_user_no_person_is_created(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        # Eine Person entsteht nur zusammen mit der Korrektur ihres gezeigten Gesichts, und die
+        # braucht ein vorhandenes Konto - der Seeder legt nie selbst eines an.
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        assert (await db_session.execute(select(Person))).scalars().all() == []
+
+    async def test_a_foreign_person_survives_and_the_rebuild_aborts(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        # M2 gilt auch fuer die globalen Personen: entfernt wird nur, was den Demo-Namen traegt.
+        # Belegt eine fremde Person einen Slot, ist der Demo-Bestand nicht herstellbar - Abbruch
+        # mit fachlicher Meldung statt eines Tracebacks aus dem Personendienst.
+        await _make_user(db_session, "daniel")
+        foreign = Person(slot=1, name="Echte Person", name_key="echte person")
+        db_session.add(foreign)
+        await db_session.flush()
+
+        with pytest.raises(DemoStateError):
+            await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        assert await db_session.get(Person, foreign.id) is not None
 
 
 class TestRebuildDemoStateAtProductionSize:
