@@ -246,4 +246,29 @@ describe('PersonsPage', () => {
       },
     )
   })
+
+  /* Namen sind Fremdtext (Spec 0292, UI/UX): An jeder Renderstelle der Seite - Karte,
+     Gefahrenzone, Dialogtext, Tippvorlage, Statusmeldung - stehen sie nur als Textknoten. */
+  it('rendert einen Namen mit Markup an jeder Stelle der Seite als reinen Text', async () => {
+    const hostile = '<img src=x onerror="window.__pwned = true">'
+    vi.mocked(personsApi.listPersons).mockResolvedValue([{ ...ANNA, name: hostile }])
+    vi.mocked(personsApi.deletePerson).mockResolvedValue(undefined)
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: hostile, level: 2 })).toBeInTheDocument()
+    const { user, dialog } = await openRemoveDialog(hostile)
+    expect(
+      within(dialog).getByText(`${hostile} wird auf allen Fotos`, { exact: false }),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText(hostile, { selector: '.font-mono' })).toBeInTheDocument()
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+
+    vi.mocked(personsApi.listPersons).mockResolvedValue([])
+    await user.type(within(dialog).getByRole('textbox'), hostile)
+    await user.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
+
+    expect(await screen.findByText(`${hostile} ist entfernt.`)).toBeInTheDocument()
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+    expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
+  })
 })
