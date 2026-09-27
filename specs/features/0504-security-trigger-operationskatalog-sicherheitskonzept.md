@@ -208,8 +208,22 @@ deshalb ausgeführt" gilt als Fehlschlag.
 | 3 | `.claude/skills/refinement/SKILL.md` | geskippt |
 | 4 | `specs/architecture/0002-testkonzept.md` | geskippt (Enge des Konzept-Eintrags) |
 
-**Ergebnis des Probelaufs:** wird nach dem Lauf hier als Tabelle (Szenario, Diff laut `--name-only`,
-erwartet, Protokollzeile wörtlich, Ergebnis) eingetragen.
+**Ergebnis des Probelaufs (2026-09-27):** vier lokale Branches `probe/0504-szenario-1` … `-4`, je von
+der Spitze des Feature-Branches mit einem Commit, der an genau eine Datei eine Leerzeile anhängt; nie
+gepusht, danach gelöscht. Je Szenario hat ein frischer Lauf ohne Kenntnis des erwarteten Ergebnisses
+`review` Schritt 1–3 ad hoc angewendet (ohne Feature-Spec), Diff-Basis der Feature-Branch statt
+`origin/main`. Schritt 4 (Aufruf der Perspektiven) entfiel; bewertet wird die Auswahl.
+
+|#|Diff laut `--name-only`|erwartet|Protokollzeile `review-security`|Ergebnis|
+|---|---|---|---|---|
+|1|`.claude/skills/github-access/SKILL.md`|gelaufen|gelaufen (Eintrag „**oder** eine Datei unter `.claude/skills/github-access/**`")|✓|
+|2|`specs/architecture/0003-securitykonzept.md`|gelaufen|gelaufen (Eintrag „`specs/architecture/0003-securitykonzept.md`")|✓|
+|3|`.claude/skills/refinement/SKILL.md`|geskippt|geskippt (kein Eintrag trifft zu; „das breitere `.claude/skills/**` bleibt außen vor")|✓|
+|4|`specs/architecture/0002-testkonzept.md`|geskippt|geskippt (kein Eintrag trifft zu; „das breitere `specs/architecture/**` bleibt außen vor")|✓|
+
+In keinem Szenario stand „Trigger unklar, deshalb ausgeführt". Übrige Perspektiven in allen vier:
+`review-requirements` gelaufen (rein diff-basiert), `review-tests`, `review-architecture`, `review-ux`
+geskippt.
 
 ## Entscheidungen
 
