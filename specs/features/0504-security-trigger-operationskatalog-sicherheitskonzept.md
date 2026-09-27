@@ -1,6 +1,6 @@
 # 0504 - Security-Review greift bei Operationskatalog und Sicherheitskonzept
 
-**Status:** Accepted
+**Status:** Implemented ([PR #547](https://github.com/TheRealKoller/photosort/pull/547))
 **Erstellt:** 2026-09-27
 **Bezug:** [Issue #504](https://github.com/TheRealKoller/photosort/issues/504)
 
