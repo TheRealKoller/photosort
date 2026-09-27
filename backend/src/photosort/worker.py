@@ -15,7 +15,7 @@ from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
 from sqlalchemy import delete, func, select, tuple_, update
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
@@ -70,6 +70,12 @@ from photosort.db import async_session_factory
 from photosort.duplicates import survives_ausschuss
 from photosort.event_inputs import read_event_inputs
 from photosort.events import LandmarkPointsByName, assign_place_names, build_events
+from photosort.face_analysis import (
+    MODEL_KEY,
+    FaceAnalyzerLike,
+    build_face_analyzer,
+    load_image,
+)
 from photosort.geonames import (
     LandmarkGazetteer,
     build_landmark_gazetteer,
@@ -105,6 +111,7 @@ from photosort.models import (
     PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
+    PhotoPersonDetection,
     PhotoRanking,
     PhotoScore,
     PlaceLookup,
@@ -124,6 +131,8 @@ from photosort.motifs import local_motif_strengths
 from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCloudError
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
+from photosort.person_matching import decide_assignments, similarities_to
+from photosort.persons import current_centroids
 from photosort.places import (
     PLACE_LEVELS,
     PlaceInfo,
@@ -208,6 +217,11 @@ SCAN_COMMIT_BATCH_SIZE = 1
 # damit Tests sie per monkeypatch.setattr(worker, "CRITERION_SCORING_COMMIT_BATCH_SIZE", ...)
 # verkleinern koennen.
 CRITERION_SCORING_COMMIT_BATCH_SIZE = 5
+
+# Analog, fuer CriterionScoringRun.persons_photos_processed: je Block werden die Erkennungen der
+# verarbeiteten Fotos geschrieben und committet. Ein Block ist zugleich die Einheit, die ein
+# Fremdschluesselfehler nach einer Personenloeschung verwirft.
+PERSONS_COMMIT_BATCH_SIZE = 5
 
 # Der Cloud-Aufruf nutzt ausschliesslich die bestehende display-Cache-Variante, die
 # thumbnails.py::generate_variants immer als JPEG schreibt - fester Wert statt einer
@@ -2279,6 +2293,116 @@ async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
     await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id, None, None)
 
 
+def _persons_on_photo(
+    analyzer: FaceAnalyzerLike,
+    cache_dir: Path,
+    photo_id: int,
+    etag: str,
+    centroids: Mapping[int, Sequence[float]],
+) -> frozenset[int] | None:
+    """Die auf einem Foto sicher erkannten Personen - oder `None`, wenn das Foto NICHT verarbeitet
+    wurde (keine Display-Variante, Analyzer wirft). Merkmale und Aehnlichkeiten leben nur hier im
+    Speicher; zurueck geht allein die Menge der Personen-Ids. Fuer unbekannte Gesichter entsteht
+    damit nichts.
+
+    LOG-HYGIENE (S11): Eine Ausnahme erscheint nur als Typname samt `photo_id` - nie ihr Text, der
+    einen Wert tragen koennte."""
+    image = load_image(variant_path(cache_dir, photo_id, etag, "display"))
+    if image is None:
+        return None
+    try:
+        faces = analyzer.detect(image)
+        similarities = [similarities_to(analyzer.embed(image, face), centroids) for face in faces]
+    except Exception as exc:
+        logger.warning(
+            "Personen-Erkennung: Foto %s uebersprungen (%s).", photo_id, type(exc).__name__
+        )
+        return None
+    return decide_assignments(similarities)
+
+
+async def _recognize_persons(
+    session: AsyncSession,
+    run: CriterionScoringRun,
+    project_id: int,
+    cache_dir: Path,
+    build_analyzer: Callable[[], FaceAnalyzerLike],
+) -> None:
+    """Die letzte Phase `persons`: ueber ALLE Fotos des Projekts (auch den Ausschuss), auf der
+    Display-Variante, immer lokal - unabhaengig von `use_cloud` und Einwilligung.
+
+    Sie laeuft NICHT, wenn keine Person eine gueltige Referenz des geladenen Modells hat oder der
+    Adapter nicht baubar ist; dann bleiben die Zaehler `NULL` und die vorhandenen Erkennungen
+    stehen. Die Schwerpunkte entstehen einmal zu Beginn frisch aus der Datenbank; gelesen werden
+    nur Id und Merkmal, NIE der Name.
+
+    Ersetzt werden die Erkennungen eines Fotos nur, wenn die Phase es tatsaechlich verarbeitet hat.
+    Korrekturen fasst sie nie an. Wird waehrend des Laufs eine Person geloescht, scheitert das
+    Schreiben eines Blocks am Fremdschluessel: verworfen wird nur dieser Block, alte Zeilen bleiben
+    stehen, und der Lauf geht weiter."""
+    centroids = await current_centroids(session, model_key=MODEL_KEY)
+    if not centroids:
+        logger.info("Personen-Erkennung entfaellt: keine gezeigten Gesichter des Modells.")
+        return
+    analyzer = _try_build(build_analyzer)
+    if analyzer is None:
+        logger.warning("Personen-Erkennung entfaellt: Modell nicht ladbar.")
+        return
+
+    photos = (
+        await session.execute(
+            select(Photo.id, Photo.etag).where(Photo.project_id == project_id).order_by(Photo.id)
+        )
+    ).all()
+    _set_phase(run, ClassificationPhase.PERSONS)
+    run.persons_photos_total = len(photos)
+    run.persons_photos_processed = 0
+    await session.commit()
+
+    processed = 0
+    discarded_blocks = 0
+    for start in range(0, len(photos), PERSONS_COMMIT_BATCH_SIZE):
+        block = photos[start : start + PERSONS_COMMIT_BATCH_SIZE]
+        recognised = {
+            photo_id: persons
+            for photo_id, etag in block
+            if (persons := _persons_on_photo(analyzer, cache_dir, photo_id, etag, centroids))
+            is not None
+        }
+        now = _now_utc()
+        if recognised:
+            await session.execute(
+                delete(PhotoPersonDetection).where(
+                    PhotoPersonDetection.photo_id.in_(list(recognised))
+                )
+            )
+            session.add_all(
+                PhotoPersonDetection(photo_id=photo_id, person_id=person_id, computed_at=now)
+                for photo_id, persons in recognised.items()
+                for person_id in sorted(persons)
+            )
+        processed += len(block)
+        run.persons_photos_processed = processed
+        run.last_progress_at = now
+        try:
+            await session.commit()
+        except IntegrityError:
+            # Eine Person wurde inzwischen entfernt. Nur dieser Block faellt; das Rollback hat
+            # jedes Objekt der Session expired, die Lauf-Zeile wird deshalb frisch gelesen.
+            await session.rollback()
+            await session.refresh(run)
+            discarded_blocks += 1
+            run.persons_photos_processed = processed
+            run.last_progress_at = _now_utc()
+            await session.commit()
+    logger.info(
+        "Personen-Erkennung: %d von %d Fotos durchlaufen, %d Bloecke verworfen.",
+        processed,
+        len(photos),
+        discarded_blocks,
+    )
+
+
 async def _start_criterion_scoring_run(
     session: AsyncSession,
     project: Project,
@@ -2333,6 +2457,7 @@ async def run_criterion_scoring(
     *,
     run: CriterionScoringRun | None = None,
     use_cloud: bool = False,
+    build_face_analyzer: Callable[[], FaceAnalyzerLike] = build_face_analyzer,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
     abgeleitete Rangfolge je Partition (event_id). Ablauf:
@@ -2901,6 +3026,10 @@ async def run_criterion_scoring(
             build_landmark_gazetteer,
         )
 
+        # Die LETZTE Phase, nach der Rangfolge: Die Personenangabe ist kein Motiv und geht in
+        # keine Motivstaerke, keine Rangfolge und keinen Auswahlvorschlag ein.
+        await _recognize_persons(session, run, project.id, cache_dir, build_face_analyzer)
+
         run.status = ScanStatus.SUCCESS
         _set_phase(run, None)
         run.finished_at = _now_utc()
@@ -2935,6 +3064,7 @@ async def run_classification(
         [str], CategoryDetectionClientLike
     ] = build_category_classification_client,
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
+    build_face_analyzer: Callable[[], FaceAnalyzerLike] = build_face_analyzer,
 ) -> CriterionScoringRun:
     """Der EINE, verkettete Klassifizierungslauf:
 
@@ -3050,6 +3180,7 @@ async def run_classification(
         build_embedder=build_embedder,
         run=run,
         use_cloud=use_cloud,
+        build_face_analyzer=build_face_analyzer,
     )
 
 
