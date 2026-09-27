@@ -18,6 +18,7 @@ from sqlalchemy.orm import aliased, selectinload
 
 from photosort.album_selection import SelectionState, selection_state
 from photosort.api.deps import get_current_user, get_session
+from photosort.api.persons import PhotoPersonOut, photo_person_outs
 from photosort.api.ratings import RatingWriteOut, write_own_rating
 from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
@@ -74,6 +75,7 @@ from photosort.models import (
 )
 from photosort.motif_strengths import EffectiveStrength, load_effective_strengths
 from photosort.motifs import MOTIF_REGISTRY, is_motif_key
+from photosort.persons import effective_person_assignments, load_effective_persons
 
 # AUSSCHLIESSLICH das Praedikat, nie die Konstante: Die Praesenzgrenze steht an genau einer Stelle,
 # und der inklusive Vergleich gehoert dort ebenso hin (Zusicherung 26). Dasselbe gilt fuer die
@@ -472,6 +474,11 @@ class PhotoOut(BaseModel):
     # Sind sich die Nutzer uneins und ist noch nicht gemeinsam entschieden?
     # `album_selection.py::selection_state(...).contested`.
     contested: bool
+    # Je WIRKSAM zugeordneter Person nur Id und Herkunft (`recognized`/`corrected`), nach Slot -
+    # nie ein Name, ein Merkmal oder eine Aehnlichkeit (Spec 0292, S5). Ohne Vorgabewert: wie
+    # `decisions` ist `persons` ein pflichtiger Schluesselwortparameter von `_to_photo_out`, damit
+    # ein vergessener Aufrufer vor der Laufzeit scheitert statt still eine leere Liste zu liefern.
+    persons: list[PhotoPersonOut]
 
 
 class PhotoListOut(BaseModel):
@@ -529,6 +536,7 @@ async def _filtered_photo_ids(
     limit: int,
     offset: int,
     camera_id: int | None = None,
+    person_ids: Sequence[int] = (),
 ) -> tuple[list[int], int]:
     own_rating = aliased(Rating)
     base = (
@@ -545,6 +553,15 @@ async def _filtered_photo_ids(
         # aus deren Fotos dann gelistet wird. Eine `camera_id` aus einem fremden Projekt trifft
         # damit kein Foto und ergibt eine LEERE Liste, ohne den Wert zu spiegeln.
         base = base.where(Photo.camera_id == camera_id)
+    # UND-verknuepft: ein Foto muss JEDE genannte Person wirksam tragen - ueber das EINE
+    # Konstrukt der wirksamen Zuordnung, Korrektur vor Erkennung. Eine unbekannte Id trifft kein
+    # Foto und ergibt eine leere Liste.
+    if person_ids:
+        effective = effective_person_assignments()
+        for person_id in person_ids:
+            base = base.where(
+                Photo.id.in_(select(effective.c.photo_id).where(effective.c.person_id == person_id))
+            )
     if rating_status is RatingFilter.UNRATED:
         # "Unbewertet" ist KEINE ALBUMENTSCHEIDUNG, nicht mehr "keine Zeile": seit `favorite`
         # eine eigene Spalte ist, kann eine Zeile ohne jede Albumentscheidung existieren. Ueber
@@ -1055,6 +1072,7 @@ def _to_photo_out(
     *,
     decisions: Mapping[int, bool],
     user_count: int,
+    persons: list[PhotoPersonOut],
 ) -> PhotoOut:
     """Baut die Antwortdarstellung EINES Fotos.
 
@@ -1178,6 +1196,7 @@ def _to_photo_out(
         final_selection_decision=decision,
         in_final_selection=state.included,
         contested=state.contested,
+        persons=persons,
     )
 
 
@@ -1469,6 +1488,13 @@ async def list_photos(
     # jenseits von 2^63 unter SQLite einen OverflowError und damit eine 500 statt einer leeren
     # Liste erzeugt (Muster `MAX_QUERY_POSITION`).
     camera_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
+    # Der Personenfilter (Spec 0292, S3): hoechstens zwei Werte je `ge=1, le=MAX_QUERY_POSITION`,
+    # danach dedupliziert. Gefiltert wird ueber die Id, nie ueber einen Namen - ein Name gehoerte
+    # sonst in Zugriffslog und Browserverlauf. Mit `draft=true` ist er `422`: der Entwurf wird
+    # immer vollstaendig geliefert und im Client eingeschraenkt, damit seine Zaehlung stimmt.
+    person_id: list[Annotated[int, Field(ge=1, le=MAX_QUERY_POSITION)]] = Query(
+        default_factory=list, max_length=2
+    ),
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -1476,6 +1502,11 @@ async def list_photos(
 ) -> PhotoListOut:
     project = await _get_project_or_404(project_id, session)
 
+    if draft and person_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Der Personenfilter gilt nicht fuer den Album-Entwurf.",
+        )
     if draft:
         content, criterion_scoring_run_id = await _draft_photo_ids(
             session, project_id, current_user.id
@@ -1503,6 +1534,7 @@ async def list_photos(
             content.event_id_by_photo_id,
         )
         motifs_by_id = await load_effective_strengths(session, ids)
+        persons_by_id = await load_effective_persons(session, ids)
         decisions = await _final_selection_decisions(session, ids)
         user_count = await _user_count(session)
         items = [
@@ -1517,13 +1549,21 @@ async def list_photos(
                 motifs_by_id.get(photo_id),
                 decisions=decisions,
                 user_count=user_count,
+                persons=photo_person_outs(persons_by_id.get(photo_id, [])),
             )
             for photo_id in ids
         ]
         return PhotoListOut(items=items, total=len(items))
 
     ids, total = await _filtered_photo_ids(
-        session, project_id, current_user.id, rating_status, limit, offset, camera_id
+        session,
+        project_id,
+        current_user.id,
+        rating_status,
+        limit,
+        offset,
+        camera_id,
+        sorted(set(person_id)),
     )
     photos_by_id = await _photos_by_id(session, ids)
     # RankingOut wird AUCH hier im Standard-Listing-Zweig befüllt, nicht nur bei
@@ -1540,6 +1580,7 @@ async def list_photos(
         session, project_id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
     )
     motifs_by_id = await load_effective_strengths(session, ids)
+    persons_by_id = await load_effective_persons(session, ids)
     decisions = await _final_selection_decisions(session, ids)
     user_count = await _user_count(session)
     items = [
@@ -1556,6 +1597,7 @@ async def list_photos(
             motifs_by_id.get(photo_id),
             decisions=decisions,
             user_count=user_count,
+            persons=photo_person_outs(persons_by_id.get(photo_id, [])),
         )
         for photo_id in ids
     ]
@@ -1699,6 +1741,7 @@ async def album_selection(
         {photo_id: photos_by_id[photo_id] for photo_id in ids},
         placed.event_id_by_photo_id,
     )
+    persons_by_id = await load_effective_persons(session, ids)
     motifs_by_id = await load_effective_strengths(session, ids)
     items = [
         _to_photo_out(
@@ -1714,6 +1757,7 @@ async def album_selection(
             motifs_by_id.get(photo_id),
             decisions=decisions,
             user_count=user_count,
+            persons=photo_person_outs(persons_by_id.get(photo_id, [])),
         )
         for photo_id in ids
     ]
@@ -1818,6 +1862,7 @@ async def build_duplicate_group_out(
         session, project.id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
     )
     motifs_by_id = await load_effective_strengths(session, ids)
+    persons_by_id = await load_effective_persons(session, ids)
     final_decisions = await _final_selection_decisions(session, ids)
     user_count = await _user_count(session)
     return DuplicateGroupOut(
@@ -1835,6 +1880,7 @@ async def build_duplicate_group_out(
                     motifs_by_id.get(member_id),
                     decisions=final_decisions,
                     user_count=user_count,
+                    persons=photo_person_outs(persons_by_id.get(member_id, [])),
                 ),
                 # BEIDE WERTE KOMMEN AUS `duplicates.py`, nie als ausgeschriebene Bedingung hier
                 # (Auflage S2): Sie ziehen dasselbe Praedikat, das bestimmt, welche Bilder den
@@ -2103,6 +2149,7 @@ async def _ausschuss_photo_outs(
         session, project.id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
     )
     motifs_by_id = await load_effective_strengths(session, ids)
+    persons_by_id = await load_effective_persons(session, ids)
     decisions = await _final_selection_decisions(session, ids)
     user_count = await _user_count(session)
     return photos_by_id, {
@@ -2118,6 +2165,7 @@ async def _ausschuss_photo_outs(
             motifs_by_id.get(photo_id),
             decisions=decisions,
             user_count=user_count,
+            persons=photo_person_outs(persons_by_id.get(photo_id, [])),
         )
         for photo_id in ids
     }
@@ -2438,6 +2486,7 @@ async def draft_alternatives(
     place_by_id = await _event_and_location_by_photo_id(
         session, project_id, latest_run_id, photos_by_id, _event_ids_from_rankings(rankings_by_id)
     )
+    persons_by_id = await load_effective_persons(session, ids)
     decisions = await _final_selection_decisions(session, ids)
     user_count = await _user_count(session)
     items = [
@@ -2455,6 +2504,7 @@ async def draft_alternatives(
             strengths_by_id.get(alternative_id),
             decisions=decisions,
             user_count=user_count,
+            persons=photo_person_outs(persons_by_id.get(alternative_id, [])),
         )
         # Eigener Name, nicht `photo_id`: der Query-Parameter gleichen Namens ist das BEZUGSBILD
         # und wird oben gebraucht; eine Ueberdeckung hier waere an keiner Stelle sichtbar.

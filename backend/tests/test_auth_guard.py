@@ -13,6 +13,7 @@ from photosort.api import (
     feedback,
     motifs,
     opencloud,
+    persons,
     projects,
     stats,
 )
@@ -172,6 +173,8 @@ def _protected_router_operations() -> list[tuple[str, str]]:
         album_decisions.router,
         duplicate_decisions.router,
         feedback.router,
+        # specs/features/0292-personen-erkennen.md, S1: alle sieben Personen-Endpunkte.
+        persons.router,
     ):
         for route in router.routes:
             path = getattr(route, "path", "")

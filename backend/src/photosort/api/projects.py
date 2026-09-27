@@ -198,6 +198,12 @@ class CriterionScoringRunSummary(BaseModel):
     # Feld zu zeigen. `null` steht auch immer bei `ranking` (keine gezaehlte Menge) und bei jedem
     # beendeten Lauf.
     phase_remaining_seconds: float | None
+    # Die Zaehler der Phase `persons`. `null` heisst "die Phase lief nicht" (keine gezeigten
+    # Gesichter des aktuellen Modells, Modell nicht ladbar, oder noch nicht erreicht) - die
+    # Oberflaeche blendet den Teilschritt eines beendeten Laufs mit `null` aus. Keine Namen und
+    # keine Trefferzahl.
+    persons_photos_total: int | None
+    persons_photos_processed: int | None
 
 
 class ClassificationEstimatePartOut(BaseModel):
@@ -475,6 +481,8 @@ def _phase_progress(
     """
     if run.phase is ClassificationPhase.CRITERIA:
         return run.photos_processed, run.photos_total
+    if run.phase is ClassificationPhase.PERSONS:
+        return run.persons_photos_processed, run.persons_photos_total
     purpose = _CLOUD_PURPOSE_BY_PHASE.get(run.phase) if run.phase is not None else None
     if purpose is None:
         return None, None
@@ -533,6 +541,8 @@ async def _criterion_scoring_run_summary(
         cloud_phases=phases,
         cloud_cost_total_usd=_cloud_cost_total(phases),
         phase_remaining_seconds=_phase_remaining_seconds(run, phases),
+        persons_photos_total=run.persons_photos_total,
+        persons_photos_processed=run.persons_photos_processed,
     )
 
 
