@@ -250,9 +250,10 @@ describe('PhotoDetailPage', () => {
     )
   })
 
-  /* Spec 0292, Personenfilter: Die Detailansicht blättert in der nach `person` gefilterten Folge,
-     ihr Zähler bezieht sich auf diese Folge, und jeder Weg zurück trägt `person` weiter. */
-  describe('in der nach Person gefilterten Folge', () => {
+  /* Spec 0292: Die Detailansicht blättert in der nach `person` gefilterten Folge, ihr Zähler
+     bezieht sich auf diese Folge, und jeder Weg zurück trägt `person` weiter. Eine Korrektur lässt
+     das aktuelle Foto stehen; die Gesichterwahl gehört zum Foto, nicht zur Folge. */
+  describe('Personen: Folge, Abschnitt und Gesichterwahl', () => {
     beforeEach(() => {
       vi.mocked(personsApi.listPersons).mockResolvedValue([
         { id: 7, name: 'Anna', reference_count: 1 },
@@ -331,6 +332,63 @@ describe('PhotoDetailPage', () => {
 
       expect(screen.getByTestId('verdict-section')).not.toContainElement(persons)
       expect(screen.getByTestId('motifs-section')).not.toContainElement(persons)
+    })
+
+    it('fragt beim Blättern keine Gesichter ab, klappt beim Fotowechsel zu und gibt die Ausschnitte frei', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 4 }), photo({ id: 9 })],
+        total: 2,
+      })
+      vi.mocked(personsApi.listFaces).mockResolvedValue([
+        { index: 0, box: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+      ])
+      vi.mocked(personsApi.fetchFaceImage).mockResolvedValue(new Blob(['x']))
+      const revokeObjectURL = vi.fn()
+      Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:face-4'), revokeObjectURL })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/4')
+      await screen.findByText('1/2')
+      await user.click(await screen.findByRole('button', { name: 'Gesicht zeigen' }))
+      await screen.findByRole('button', { name: 'Gesicht 1 von 1' })
+      await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1))
+      await user.click(screen.getByRole('button', { name: /weiter|nächst/i }))
+      await screen.findByText('2/2')
+
+      expect(screen.getByRole('button', { name: 'Gesicht zeigen' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:face-4')
+      expect(personsApi.listFaces).toHaveBeenCalledExactlyOnceWith(4)
+    })
+
+    it('stellt die Zeile nach dem Zeigen eines Gesichts auf "Von Hand zugeordnet"', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 4 })], total: 1 })
+      vi.mocked(personsApi.listFaces).mockResolvedValue([
+        { index: 2, box: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+      ])
+      vi.mocked(personsApi.fetchFaceImage).mockResolvedValue(new Blob(['x']))
+      vi.mocked(personsApi.addReference).mockResolvedValue({
+        id: 7,
+        name: 'Anna',
+        reference_count: 2,
+      })
+      Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:face'), revokeObjectURL: vi.fn() })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/4')
+      await user.click(await screen.findByRole('button', { name: 'Gesicht zeigen' }))
+      await user.click(await screen.findByRole('button', { name: 'Gesicht 1 von 1' }))
+      await user.click(
+        within(screen.getByRole('group', { name: 'Wer ist das?' })).getByRole('button', {
+          name: 'Anna',
+        }),
+      )
+
+      expect(await screen.findByText('Von Hand zugeordnet')).toBeInTheDocument()
+      expect(personsApi.addReference).toHaveBeenCalledWith(7, 4, 2)
+      expect(screen.getByText('Gesicht als Anna gezeigt.')).toBeInTheDocument()
     })
   })
 

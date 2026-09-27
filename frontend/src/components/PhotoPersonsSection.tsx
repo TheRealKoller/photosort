@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import type { PersonOrigin, PersonOut, PhotoOut } from '../api/types'
 import { usePhotoPersonControls } from '../hooks/usePhotoPersons'
 import { usePersonsQuery } from '../hooks/usePersons'
+import { PersonFacePicker } from './PersonFacePicker'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 import { Skeleton } from './ui/skeleton'
@@ -62,15 +63,7 @@ export function PhotoPersonsSection({ projectId, photo }: PhotoPersonsSectionPro
       ) : (
         <>
           <PersonRows projectId={projectId} photo={photo} persons={personsQuery.data} />
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="self-start"
-            aria-expanded={false}
-          >
-            Gesicht zeigen
-          </Button>
+          <PersonFacePicker projectId={projectId} photo={photo} persons={personsQuery.data} />
         </>
       )}
     </section>
