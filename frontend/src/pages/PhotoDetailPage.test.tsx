@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
+import * as personsApi from '../api/persons'
 import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import * as motifsApi from '../api/motifs'
@@ -27,8 +28,17 @@ import { PhotoDetailPage } from './PhotoDetailPage'
 // specs/features/0427-motive-mit-staerke.md: dasselbe fuer das Motivset (`useMotifsQuery`) - ohne
 // Mock stuende die Staerkeliste dauerhaft im Skeleton-Zustand.
 vi.mock('../api/motifs')
+vi.mock('../api/persons')
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
+
+// Spec 0292: Der Personenabschnitt und der Personenfilter laden `GET /persons` in JEDEM Block
+// dieser Datei. Die Vorgabe "keine Person festgelegt" gilt dateiweit; ein Block, der Personen
+// braucht, setzt sie selbst.
+beforeEach(() => {
+  vi.mocked(personsApi.listPersons).mockReset()
+  vi.mocked(personsApi.listPersons).mockResolvedValue([])
+})
 
 function makeToken(payload: unknown): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -238,6 +248,54 @@ describe('PhotoDetailPage', () => {
       1,
       expect.objectContaining({ ratingStatus: undefined }),
     )
+  })
+
+  /* Spec 0292, Personenfilter: Die Detailansicht blättert in der nach `person` gefilterten Folge,
+     ihr Zähler bezieht sich auf diese Folge, und jeder Weg zurück trägt `person` weiter. */
+  describe('in der nach Person gefilterten Folge', () => {
+    beforeEach(() => {
+      vi.mocked(personsApi.listPersons).mockResolvedValue([
+        { id: 7, name: 'Anna', reference_count: 1 },
+      ])
+    })
+
+    it('lädt die gefilterte Folge, zählt in ihr und blättert mit dem Filter weiter', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 4 }), photo({ id: 9 })],
+        total: 2,
+      })
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/4?filter=unrated&person=7')
+      await screen.findByText('1/2')
+
+      expect(photosApi.listPhotos).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ ratingStatus: 'unrated', personIds: [7] }),
+      )
+      await user.click(screen.getByRole('button', { name: /weiter|nächst/i }))
+      await screen.findByText('2/2')
+      expect(screen.getByRole('link', { name: 'Zurück zum Grid' })).toHaveAttribute(
+        'href',
+        '/projects/1/photos?filter=unrated&person=7',
+      )
+    })
+
+    it('trägt "Beide" (zweimal person) in "Zurück zum Grid" weiter', async () => {
+      vi.mocked(personsApi.listPersons).mockResolvedValue([
+        { id: 7, name: 'Anna', reference_count: 1 },
+        { id: 8, name: 'Ben', reference_count: 1 },
+      ])
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 4 })], total: 1 })
+
+      renderPage('/projects/1/photos/4?person=7&person=8')
+      await screen.findByText('1/1')
+
+      expect(screen.getByRole('link', { name: 'Zurück zum Grid' })).toHaveAttribute(
+        'href',
+        '/projects/1/photos?person=7&person=8',
+      )
+    })
   })
 
   it('navigates to the next photo on ArrowRight', async () => {

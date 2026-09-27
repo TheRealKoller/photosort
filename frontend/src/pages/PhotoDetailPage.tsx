@@ -20,7 +20,9 @@ import {
   useSetFavoriteMutation,
   useSetRatingMutation,
 } from '../hooks/usePhotos'
+import { usePersonFilter } from '../hooks/usePersonFilter'
 import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
+import { withPersonIds } from '../utils/personFilter'
 import { parseRatingFilter } from '../utils/ratingFilter'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 
@@ -53,15 +55,22 @@ export function PhotoDetailPage() {
   const id = Number(projectId)
   const currentPhotoId = Number(photoId)
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const filterParam = parseRatingFilter(searchParams.get('filter'))
   const ratingStatus = filterParam === '' ? undefined : filterParam
-  const filterQuery = filterParam ? `?filter=${filterParam}` : ''
+  // Spec 0292: Blättern und Zähler laufen in der nach `person` gefilterten Folge - derselbe
+  // Query-Key wie im Bildbestand, also dieselbe Folge. Jeder Weg zurück trägt beide Filter.
+  const { personIds } = usePersonFilter(searchParams, setSearchParams)
+  const filterSearch = withPersonIds(
+    new URLSearchParams(filterParam ? { filter: filterParam } : {}),
+    personIds,
+  ).toString()
+  const filterQuery = filterSearch ? `?${filterSearch}` : ''
 
   const token = getToken()
   const username = token ? decodeUsername(token) : null
 
-  const query = usePhotoSequenceQuery(id, ratingStatus)
+  const query = usePhotoSequenceQuery(id, ratingStatus, undefined, personIds)
   const setMutation = useSetRatingMutation(id)
   const deleteMutation = useDeleteRatingMutation(id)
   const favoriteMutation = useSetFavoriteMutation(id)
