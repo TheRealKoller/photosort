@@ -3,6 +3,11 @@
 **Status:** Accepted
 **Datum:** 2026-08-24
 **Bezug:** [`decisions/0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md`](./0032-remote-kategorie-klassifizierung-mit-kostenschaetzung.md) Punkt 4 (hier punktuell korrigiert, nicht vollständig ersetzt — der Rest von ADR 0032 bleibt unverändert gültig), `specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md`, [`decisions/0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md`](./0022-lokale-modellwahl-tier-gebaeude-aesthetik-kriterien.md) (etabliertes gepinntes-Asset-Muster, hier fortgeführt, nur der Transportweg ändert sich).
+**Teilweise abgelöst:** Abschnitt „Umsetzung (für `developer`)" Punkte 1 bis 3 (Skript
+`scripts/fetch-label-embedder-model.sh`, eigener `RUN`-Schritt im `backend/Dockerfile`, Hash-Leseschritt
+in CI) durch ADR [`0126`](./0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md)
+Punkt 2 (ein Manifest und ein Ladeprogramm für alle geladenen Assets). Die Entscheidung — Download
+mit SHA256-Prüfung statt Commit — und alle übrigen Abschnitte gelten unverändert.
 
 ## Kontext
 

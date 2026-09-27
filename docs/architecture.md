@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-09-27 (Spec 0049/ADR 0027 — der nginx des Frontend-Containers ist der einzige Einstiegspunkt und leitet `/api/` intern an das Backend weiter; der Backend-Host-Port entfällt; davor 2026-09-23)
+**Letzte Aktualisierung:** 2026-09-27 (Spec 0292/ADR 0126 — die beiden Nutzer werden lokal auf Fotos erkannt und benannt: globale Personen, Phase `persons` im Klassifizierungslauf, Filter in Bildbestand und Album-Entwurf, ein Manifest für alle geladenen Modell-Assets; davor Spec 0049/ADR 0027)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -184,6 +184,20 @@ Verarbeitungs-Cache (Thumbnails).
     ordnet `RUN_FIELD_BY_STEP` dem Schritt weiterhin `last_scoring_run` zu — die Stand-Zeile der
     Projektkarte nennt ihn auch nach einem erfolgreichen Lauf als offenen Schritt „Weiter:
     Ausschuss" — und `StepId` führt kein `gate` mehr.
+  - **Personen anzeigen, korrigieren, festlegen und filtern** *(Spec 0292, ADR
+    [`0126`](../specs/decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md))*:
+    `components/PhotoPersonsSection.tsx` in `PhotoDetailPage` zeigt je festgelegter Person, ob sie
+    zugeordnet ist und mit welcher Herkunft (erkannt/von Hand), und schaltet sie per Korrektur an
+    oder ab; darunter die aufklappbare Gesichterwahl (Ausschnitte als Kacheln, **keine** Boxen über
+    der Bühne — die Bühnengeometrie bleibt unberührt), aus der ein Gesicht einer Person als
+    Referenz zugewiesen oder eine neue Person angelegt wird. Die globale Route `/persons`
+    (`pages/PersonsPage.tsx`, außerhalb des Projektkontexts) listet die Personen samt Zahl der
+    Referenzen und entfernt eine Person. Der Personenfilter (`?person=<id>`, einmal oder zweimal
+    für „beide") liegt in **einer** reinen Funktion `utils/personFilter.ts`: im Bildbestand geht er
+    an den Server, weil die Liste seitenweise lädt; im Album-Entwurf blendet er clientseitig über
+    `PhotoOut.persons` aus, weil der Entwurf immer vollständig geliefert wird und seine Zählung
+    unverändert bleiben muss. Die Teilschrittliste des Klassifizierungslaufs führt `persons` als
+    letzten Schritt.
 - **Einstiegspunkt: der nginx des `frontend`-Containers** (`frontend/nginx.conf`): der einzige
   Dienst in `docker-compose.yml` mit Host-Port (`FRONTEND_PORT`, Default 8080). `backend`,
   `worker`, `postgres` und `redis` veröffentlichen keinen Port; ein externer Reverse-Proxy braucht
@@ -970,6 +984,21 @@ Verarbeitungs-Cache (Thumbnails).
       Belastbarkeit trägt allein die sichtbare Fallzahl; die Zustimmungsrate bleibt über den
       Endpunkt verfügbar und wird nicht dargestellt. Aufbereitung in `utils/feedbackWeights.ts`
       (rein), Mutationen in `hooks/useFeedbackDiagnosis.ts`.
+  - **Personen** *(Spec 0292, ADR
+    [`0126`](../specs/decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md))*:
+    Router `api/persons.py` mit router-weiter Auth-Dependency — `GET /persons` (nach Slot),
+    `POST /persons` (Body `{name, photo_id, face_index}`: eine Person entsteht nur zusammen mit
+    ihrer ersten Referenz), `DELETE /persons/{id}`, `POST /persons/{id}/references` (Body
+    `{photo_id, face_index}`), `GET /photos/{id}/faces` (`{index, box}`, höchstens
+    `MAX_FACES_PER_PHOTO`), `GET /photos/{id}/faces/{index}/image`,
+    `PUT /photos/{id}/persons/{person_id}` (Body `{applies}`). Wer ein Gesicht als Referenz zeigt,
+    ordnet die Person diesem Foto zugleich per Korrektur zu. `GET /projects/{id}/photos` nimmt
+    `person_id` (höchstens zweimal, dedupliziert, UND-verknüpft) im Listenzweig; zusammen mit
+    `draft=true` ist er `422`. `PhotoOut.persons[]` trägt je wirksam zugeordneter Person nur
+    `person_id` und `origin` (`recognized`/`corrected`); Namen kommen aus `GET /persons`. Die
+    Gesichts-Endpunkte lesen nur die lokale Display-Variante (fehlt sie: `404` ohne Modellaufruf),
+    rechnen über `face_analysis.py` auf einem eigenen Executor mit einem Thread und speichern
+    nichts; kein Endpunkt liefert ein Merkmal, einen Schwerpunkt oder eine Ähnlichkeit aus.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
@@ -1215,6 +1244,25 @@ Verarbeitungs-Cache (Thumbnails).
     sie verlässt das Backend einzig als `MotifStrengthOut.present`. Beides hält der strukturelle
     Wächter in `backend/tests/test_selection.py` fest, der seit Spec 0430 auch `api/photos.py`
     führt.
+  - **Phase `persons`** *(Spec 0292, ADR
+    [`0126`](../specs/decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md))*:
+    letzter Teilschritt von `run_criterion_scoring`, nach `ranking` und vor dem Erfolgsvermerk, rein
+    lokal und unabhängig von `use_cloud`. Er läuft über **alle** Fotos des Projekts (nicht nur die
+    Ausschuss-Überlebenden), sobald mindestens eine Person eine Referenz des geladenen Modells hat,
+    und ersetzt die `photo_person_detections` eines Fotos nur, wenn sie es tatsächlich verarbeitet
+    hat. Die Schwerpunkte der Referenzen bildet sie einmal zu Beginn frisch aus der Datenbank; den
+    Namen liest sie nie. Die Entscheidung trifft die reine Funktion
+    `person_matching.py::decide_assignments` über Ähnlichkeiten (feste Schwellen,
+    Eindeutigkeitsabstand, genau ein Kandidat je Person und Foto, unverwertbare Gesichter zählen
+    nicht); `face_analysis.py` kapselt YuNet und SFace über `cv2`. Ohne Referenz des geladenen
+    Modells oder bei nicht baubarem Adapter entfällt nur diese Phase. Fortschritt in
+    `criterion_scoring_runs.persons_photos_total/_processed` (`NULL` = Phase lief nicht).
+  - **Geladene Modell-Assets** stehen in einem Manifest (`model_assets.py`: Dateiname, URL mit
+    fester Revision, Größe, SHA256) und kommen über `backend/scripts/fetch_model_assets.py`
+    (Image-Build, CI, Bare-Metal-Setup): `label_embedder.onnx`,
+    `face_detection_yunet_2023mar.onnx`, `face_recognition_sface_2021dec.onnx`. Alle übrigen Assets
+    bleiben eingecheckt. `label_embedding.py` setzt `ORT_DISABLE_TELEMETRY=1` vor dem ersten
+    `import onnxruntime`; der Personenpfad lädt kein `onnxruntime`.
 - **Postgres**: Metadaten (Projekte, Fotos, Bewertungen, Nutzer), keine Bilddaten.
 - **Redis**: Job-Queue für den Worker.
 - **Lokaler Cache**: Docker-Volume für Thumbnails/Zwischenergebnisse, kein Ersatz für OpenCloud als
@@ -2206,6 +2254,25 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   Lesepfad (`applies=true` → `1.0`, `applies=false` → `0.0`, keine Zeile → Wert der Grundlage) und
   wird nie in die Stärkezeile materialisiert; der SQL-Ausdruck dafür lebt an genau einer Stelle
   (`motif_strengths.py`), gehalten von einem Wächtertest.
+- **Person / PersonReference** *(Spec 0292, ADR 0126, `models.py`; Tabellen `persons`,
+  `person_references`)*: **global**, ohne Projekt- und ohne Fotobezug — eine Projektlöschung
+  berührt sie nicht. `persons.slot ∈ {1, 2}` und `persons.name_key` (NFC + `casefold` des Namens)
+  sind je eindeutig und machen „höchstens zwei" und „kein Name doppelt" auch bei gleichzeitigen
+  Anfragen strukturell wahr. `person_references.embedding` ist das 128-dimensionale, normierte
+  SFace-Merkmal eines ausdrücklich gezeigten Gesichts (JSON-Liste; nur endliche Werte mit Norm
+  nahe 1), `model_key` das Modell, das es gebildet hat; Referenzen eines anderen Modells gehen in
+  keinen Vergleich und keine Zählung ein und fallen mit der ersten Referenz des aktuellen Modells.
+  Merkmale anderer Gesichter werden nie gespeichert, Schwerpunkte nie zwischengespeichert. Alle
+  drei abhängigen Tabellen tragen echte Fremdschlüssel auf `persons`; eine Person fällt in einer
+  Transaktion samt Referenzen, Erkennungen und Korrekturen (`persons.py::delete_person`).
+- **PhotoPersonDetection / PhotoPersonCorrection** *(dieselbe Spec und ADR; Tabellen
+  `photo_person_detections`, `photo_person_corrections`)*: Erkennung und Korrektur liegen getrennt
+  am Foto (Muster `PhotoMotifCorrection`). Die Erkennung (Schlüssel `photo_id`, `person_id`) schreibt
+  nur die Phase `persons`; die Korrektur (`applies`, `user_id` als Audit,
+  `UniqueConstraint(photo_id, person_id)` ohne `user_id`) schreibt nur der Nutzer, und kein Lauf
+  fasst sie an. Die wirksame Zuordnung entsteht im Lesepfad — Korrektur vor Erkennung — in genau
+  einem SQL-Konstrukt (`persons.py::effective_person_assignments`) für Filter und Anzeige. Beide
+  Tabellen fallen mit dem Foto und über `project_deletion.py` mit dem Projekt.
 - **PlaceLookup** *(Spec [`0434`](../specs/features/0434-ortsnamen-fuer-events.md), ADR
   [`0102`](../specs/decisions/0102-ortsauskunft-je-zelle-projektgebunden-eventname-als-laufartefakt.md),
   `models.py`; Tabelle `place_lookups`, Migration `d7e8f9a0b1c2`)*: die Auskunft darüber, **was an
