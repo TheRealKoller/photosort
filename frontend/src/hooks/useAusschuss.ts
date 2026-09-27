@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 
 import { listAusschuss } from '../api/ausschuss'
-import type { AusschussOut } from '../api/types'
+import type { AusschussOut, AusschussPhotoEntry } from '../api/types'
 
 /**
  * Seitengröße der Ausschuss-Übersicht — dieselbe Zahl wie in der Fotoliste und als Vorgabe des
@@ -56,19 +56,21 @@ export function useAusschussQuery(projectId: number, options: { enabled: boolean
 }
 
 /**
- * GENAU der Eintrag der Detailansicht, über den `photo_id`-Filter des Endpunkts.
+ * GENAU der Eintrag der Detailansicht, über den `photo_id`-Filter des Endpunkts — oder `null`.
  *
  * Ausdrücklich NICHT aus der geladenen Seite gesucht: Der Aufruf steht als Deep-Link `?photo=<id>`
  * im Browserverlauf und kann auf eine Aufnahme zeigen, die nicht in den geladenen Seiten liegt —
  * oder gar nicht mehr im Bestand ist. Beides ist ein regulärer Zustand mit definierter Antwort,
- * und keine davon ist ein Fehler.
+ * und keine davon ist ein Fehler. In der Liste läge ein Gruppenmitglied ohnehin nur im Stapel.
  *
- * Der Aufrufer setzt das Ergebnis zusammen: Die Antwort trägt `items` als Liste, weil es dieselbe
- * Antwortform wie die Übersicht ist.
+ * Der Filterzweig liefert ausschließlich Einzel-Einträge; die Abfrage verengt darauf, statt einen
+ * Stapel als Detaileintrag durchzureichen.
  */
 export function useAusschussEntryQuery(projectId: number, photoId: number) {
   return useQuery({
     queryKey: ausschussEntryQueryKey(projectId, photoId),
     queryFn: () => listAusschuss(projectId, { limit: AUSSCHUSS_PAGE_SIZE, offset: 0, photoId }),
+    select: (data: AusschussOut): AusschussPhotoEntry | null =>
+      data.items.find((entry): entry is AusschussPhotoEntry => entry.kind === 'photo') ?? null,
   })
 }

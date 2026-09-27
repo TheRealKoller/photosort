@@ -99,16 +99,35 @@ def _url(project_id: int, **params: int) -> str:
 
 
 def _ids(body: dict[str, object]) -> list[int]:
+    """Die Foto-Id je Eintrag: das Foto des Einzel-Eintrags, das Titelbild des Stapels."""
     items = body["items"]
     assert isinstance(items, list)
-    return [entry["photo"]["id"] for entry in items]
+    return [
+        entry["photo"]["id"] if entry["kind"] == "photo" else entry["cover"]["id"]
+        for entry in items
+    ]
 
 
 def _entry(body: dict[str, object], photo_id: int) -> dict[str, object]:
+    """Der EINZEL-Eintrag dieser Aufnahme."""
     items = body["items"]
     assert isinstance(items, list)
-    treffer = [entry for entry in items if entry["photo"]["id"] == photo_id]
+    treffer = [
+        entry for entry in items if entry["kind"] == "photo" and entry["photo"]["id"] == photo_id
+    ]
     assert len(treffer) == 1, "Der Eintrag fehlt oder steht doppelt in der Antwort."
+    return treffer[0]
+
+
+def _groups(body: dict[str, object]) -> list[dict[str, object]]:
+    items = body["items"]
+    assert isinstance(items, list)
+    return [entry for entry in items if entry["kind"] == "group"]
+
+
+def _group(body: dict[str, object], anchor_id: int) -> dict[str, object]:
+    treffer = [entry for entry in _groups(body) if entry["group_anchor_photo_id"] == anchor_id]
+    assert len(treffer) == 1, "Der Stapel fehlt oder steht doppelt in der Antwort."
     return treffer[0]
 
 
@@ -229,20 +248,30 @@ async def test_a_photo_without_a_score_is_never_an_entry(
 async def test_the_stock_of_another_project_never_shows_up(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """SICHERHEIT (S6): `has_open_suggestion` traegt selbst KEINE Projektbedingung - sie kommt
+    """SICHERHEIT (S6/S8): `has_open_suggestion` traegt selbst KEINE Projektbedingung - sie kommt
     allein aus dem umgebenden Join auf `Photo`. Ohne ihn liefert die Uebersicht jeden offenen
-    Vorschlag der ganzen Instanz aus."""
+    Vorschlag der ganzen Instanz aus - als Einzel-Eintrag wie als Stapel."""
     home = await _project(db_session, "Costa Rica")
     other = await _project(db_session, "Island")
     eigene = await _photo(db_session, home, "eigene.jpg", suggested_status=RatingStatus.REJECTED)
     fremde = await _photo(db_session, other, "fremde.jpg", suggested_status=RatingStatus.REJECTED)
+    fremder_gewinner = await _photo(db_session, other, "fremder-gewinner.jpg", seconds=1)
+    fremder_verlierer = await _photo(
+        db_session,
+        other,
+        "fremder-verlierer.jpg",
+        seconds=2,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=fremder_gewinner.id,
+    )
     await db_session.commit()
 
     body = (await authenticated_api_client.get(_url(home.id))).json()
 
     assert _ids(body) == [eigene.id]
     assert body["total"] == 1
-    assert fremde.id not in _ids(body)
+    assert _groups(body) == []
+    assert {fremde.id, fremder_verlierer.id}.isdisjoint(_ids(body))
 
 
 # ------------------------------------------------------------------------------------------
@@ -255,7 +284,8 @@ async def test_the_reason_matches_the_suggestion_reason_of_the_score(
 ) -> None:
     """AK4: `reason` ist eine ZWEITE Fassung derselben Ableitung - `duplicate` genau dann, wenn
     `duplicate_of IS NOT NULL`, sonst `low_quality`. Beide Gruende stehen nebeneinander, damit eine
-    Umsetzung auffaellt, die alle Eintraege gleich kennzeichnet."""
+    Umsetzung auffaellt, die alle Eintraege gleich kennzeichnet. Das Duplikat ist in der Liste
+    Teil seines Stapels und traegt seinen Grund deshalb am Detailfilter (Spec 0533, B6)."""
     project = await _project(db_session)
     gewinner = await _photo(db_session, project, "gewinner.jpg", seconds=0)
     duplikat = await _photo(
@@ -276,8 +306,9 @@ async def test_the_reason_matches_the_suggestion_reason_of_the_score(
     await db_session.commit()
 
     body = (await authenticated_api_client.get(_url(project.id))).json()
+    detail = (await authenticated_api_client.get(_url(project.id, photo_id=duplikat.id))).json()
 
-    assert _entry(body, duplikat.id)["reason"] == "duplicate"
+    assert _entry(detail, duplikat.id)["reason"] == "duplicate"
     assert _entry(body, unscharf.id)["reason"] == "low_quality"
 
 
@@ -334,8 +365,9 @@ async def test_a_foreign_rating_of_the_requester_never_changes_the_decision(
 async def test_the_group_anchor_names_the_representative_of_the_duplicate_group(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """AK8: Ist ein Bild wegen eines Duplikats im Ausschuss, zeigt die Detailansicht seine Gruppe.
-    Der Anker ist die Repraesentanten-Id - dieselbe, unter der die Gruppenantwort erreichbar ist."""
+    """Der Anker ist die Repraesentanten-Id - dieselbe, unter der die Gruppenantwort erreichbar
+    ist. In der Liste traegt ihn der Stapel, am Detailfilter der Einzel-Eintrag des Mitglieds
+    (Spec 0533, B6/B8); die Unschaerfe-Ablehnung ohne Gruppe traegt keinen."""
     project = await _project(db_session)
     gewinner = await _photo(db_session, project, "gewinner.jpg", seconds=0)
     verlierer = await _photo(
@@ -352,13 +384,15 @@ async def test_the_group_anchor_names_the_representative_of_the_duplicate_group(
     await db_session.commit()
 
     body = (await authenticated_api_client.get(_url(project.id))).json()
+    detail = (await authenticated_api_client.get(_url(project.id, photo_id=verlierer.id))).json()
     gruppe = (
         await authenticated_api_client.get(
             f"/projects/{project.id}/duplicate-groups/{verlierer.id}"
         )
     ).json()
 
-    assert _entry(body, verlierer.id)["group_anchor_photo_id"] == gewinner.id
+    assert _group(body, gewinner.id)["cover"]["id"] == verlierer.id
+    assert _entry(detail, verlierer.id)["group_anchor_photo_id"] == gewinner.id
     assert gruppe["items"][0]["photo"]["id"] == gewinner.id
     assert _entry(body, unscharf.id)["group_anchor_photo_id"] is None
 
@@ -423,9 +457,10 @@ async def test_a_vanished_group_leaves_the_entry_with_a_null_anchor(
 async def test_a_group_of_another_project_is_never_named_as_the_anchor(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """SICHERHEIT (S6): `duplicate_of` zeigt auf `photos.id` ohne Projektbedingung. Zeigt ein
-    eigener Verlierer auf den Gewinner eines FREMDEN Projekts, bleibt der Anker leer - er stammt aus
-    der projektbegrenzten Kantenliste, nie aus einer eigenen Abfrage auf `photo_scores`."""
+    """SICHERHEIT (S6/S8): `duplicate_of` zeigt auf `photos.id` ohne Projektbedingung. Zeigt ein
+    eigener Verlierer auf den Gewinner eines FREMDEN Projekts, bleibt er ein Einzel-Eintrag mit
+    leerem Anker, und kein Stapel nennt die fremde Id - Anker und Gruppe stammen aus der
+    projektbegrenzten Kantenliste, nie aus einer eigenen Abfrage auf `photo_scores`."""
     home = await _project(db_session, "Costa Rica")
     other = await _project(db_session, "Island")
     fremder_gewinner = await _photo(db_session, other, "fremd.jpg", seconds=0)
@@ -441,7 +476,316 @@ async def test_a_group_of_another_project_is_never_named_as_the_anchor(
 
     body = (await authenticated_api_client.get(_url(home.id))).json()
 
+    assert _entry(body, verlierer.id)["kind"] == "photo"
     assert _entry(body, verlierer.id)["group_anchor_photo_id"] is None
+    assert _groups(body) == []
+    assert fremder_gewinner.id not in [entry["group_anchor_photo_id"] for entry in body["items"]]
+
+
+# ------------------------------------------------------------------------------------------
+# Stapel je Duplikatgruppe (Spec 0533, B6/B7)
+# ------------------------------------------------------------------------------------------
+
+
+async def _group_with_losers(
+    session: AsyncSession, project: Project, count: int, *, first_second: int = 0
+) -> tuple[Photo, list[Photo]]:
+    """Ein Gewinner ohne Vorschlag, zeitlich zuerst, und `count` offene Verlierer."""
+    gewinner = await _photo(session, project, f"gewinner-{first_second}.jpg", seconds=first_second)
+    verlierer = [
+        await _photo(
+            session,
+            project,
+            f"verlierer-{first_second}-{index}.jpg",
+            seconds=first_second + 1 + index,
+            suggested_status=RatingStatus.REJECTED,
+            duplicate_of=gewinner.id,
+        )
+        for index in range(count)
+    ]
+    return gewinner, verlierer
+
+
+async def test_photos_without_a_resolvable_group_stay_single_entries(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S8): `None` ist nie ein Gruppenschluessel. Zwei Unschaerfe-Ablehnungen ohne
+    Gruppe bleiben zwei Einzel-Eintraege, statt zu einem Stapel zu verschmelzen, dessen Link ins
+    Leere fuehrt - auch neben einer echten Gruppe desselben Projekts."""
+    project = await _project(db_session)
+    erste = await _photo(
+        db_session, project, "unscharf-1.jpg", seconds=0, suggested_status=RatingStatus.REJECTED
+    )
+    zweite = await _photo(
+        db_session, project, "unscharf-2.jpg", seconds=1, suggested_status=RatingStatus.REJECTED
+    )
+    gewinner, _ = await _group_with_losers(db_session, project, 2, first_second=10)
+    await db_session.commit()
+
+    body = (await authenticated_api_client.get(_url(project.id))).json()
+
+    assert [entry["kind"] for entry in body["items"]] == ["photo", "photo", "group"]
+    assert _ids(body)[:2] == [erste.id, zweite.id]
+    assert [entry["group_anchor_photo_id"] for entry in _groups(body)] == [gewinner.id]
+
+
+async def test_the_stack_counts_the_whole_group_and_the_stock_members_separately(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """B7: `group_size` zaehlt ALLE Mitglieder und ist dieselbe Zahl wie die Mitgliederzahl der
+    Gruppenantwort; `member_count` zaehlt nur die Bestandsaufnahmen. Der Gewinner ohne Vorschlag
+    liegt nicht im Bestand und ist zeitlich zuerst - er ist deshalb auch nicht das Titelbild."""
+    project = await _project(db_session)
+    gewinner, verlierer = await _group_with_losers(db_session, project, 2)
+    await db_session.commit()
+
+    body = (await authenticated_api_client.get(_url(project.id))).json()
+    gruppe = (
+        await authenticated_api_client.get(f"/projects/{project.id}/duplicate-groups/{gewinner.id}")
+    ).json()
+
+    stapel = _group(body, gewinner.id)
+    assert stapel["group_size"] == len(gruppe["items"]) == 3
+    assert stapel["member_count"] == 2
+    assert stapel["cover"]["id"] == verlierer[0].id != gewinner.id
+    counts = stapel["decision_counts"]
+    assert counts == {"undecided": 2, "keep": 0, "discard": 0}
+    assert counts["undecided"] + counts["keep"] + counts["discard"] == stapel["member_count"]
+
+
+async def test_the_sharpness_rejected_winner_lies_in_the_stack_of_its_group(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """B6: Gruppiert wird nach Mitgliedschaft, nicht nach `reason`. Der Gewinner mit
+    Schaerfe-Ablehnung erscheint nicht als Einzelkachel "Geringe Bildqualitaet", sondern zaehlt in
+    `member_count` seines Stapels. Traegt er dazu eine `keep`-Zeile, zaehlt sie als gespeichertes
+    `keep`, obwohl sein angezeigter Zustand "Ausschuss" bleibt."""
+    project = await _project(db_session)
+    gewinner = await _photo(
+        db_session,
+        project,
+        "gewinner.jpg",
+        seconds=0,
+        suggested_status=RatingStatus.REJECTED,
+        decision=DuplicateDecision.KEEP,
+    )
+    await _photo(
+        db_session,
+        project,
+        "verlierer.jpg",
+        seconds=1,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=gewinner.id,
+    )
+    await db_session.commit()
+
+    body = (await authenticated_api_client.get(_url(project.id))).json()
+    gruppe = (
+        await authenticated_api_client.get(f"/projects/{project.id}/duplicate-groups/{gewinner.id}")
+    ).json()
+
+    assert [entry["kind"] for entry in body["items"]] == ["group"]
+    stapel = _group(body, gewinner.id)
+    assert stapel["member_count"] == stapel["group_size"] == 2
+    assert stapel["cover"]["id"] == gewinner.id
+    assert stapel["decision_counts"] == {"undecided": 1, "keep": 1, "discard": 0}
+    angezeigt = {item["photo"]["id"]: item["effective_decision"] for item in gruppe["items"]}
+    assert angezeigt[gewinner.id] == "discard"
+
+
+async def test_a_winner_carried_only_by_a_keep_row_lies_in_the_stack(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """B6, ueber den Schreibweg des Produkts: Nach "Alle behalten" traegt auch der Gewinner ohne
+    Vorschlag eine `keep`-Zeile und kommt so in den Bestand - er liegt dann im Stapel, nicht als
+    Einzelkachel daneben."""
+    project = await _project(db_session)
+    gewinner, _ = await _group_with_losers(db_session, project, 2)
+    await db_session.commit()
+
+    antwort = await authenticated_api_client.put(
+        f"/projects/{project.id}/duplicate-groups/{gewinner.id}/decision",
+        json={"decision": "keep"},
+    )
+    body = (await authenticated_api_client.get(_url(project.id))).json()
+
+    assert antwort.status_code == 200
+    assert [entry["kind"] for entry in body["items"]] == ["group"]
+    stapel = _group(body, gewinner.id)
+    assert stapel["member_count"] == stapel["group_size"] == 3
+    assert stapel["decision_counts"]["keep"] == stapel["group_size"]
+    assert stapel["cover"]["id"] == gewinner.id
+
+
+async def test_a_foreign_photo_pointing_into_the_own_group_never_enlarges_the_stack(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """SICHERHEIT (S8): Eine fremde Aufnahme mit `duplicate_of` auf den eigenen Gewinner zaehlt
+    weder in `group_size` noch in `member_count`."""
+    home = await _project(db_session, "Costa Rica")
+    other = await _project(db_session, "Island")
+    gewinner, _ = await _group_with_losers(db_session, home, 1)
+    await _photo(
+        db_session,
+        other,
+        "fremd.jpg",
+        seconds=5,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=gewinner.id,
+    )
+    await db_session.commit()
+
+    body = (await authenticated_api_client.get(_url(home.id))).json()
+
+    stapel = _group(body, gewinner.id)
+    assert stapel["group_size"] == 2
+    assert stapel["member_count"] == 1
+
+
+async def test_the_list_branch_never_carries_an_anchor_on_a_photo_entry(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """B6: Im Listenzweig traegt kein Einzel-Eintrag einen Gruppenanker - jede Aufnahme mit
+    aufloesbarer Gruppe liegt in deren Stapel. Ueber mehrere Gruppen und Einzelaufnahmen, auf
+    jeder Seite."""
+    project = await _project(db_session)
+    await _group_with_losers(db_session, project, 2, first_second=0)
+    await _photo(
+        db_session, project, "unscharf.jpg", seconds=5, suggested_status=RatingStatus.REJECTED
+    )
+    await _group_with_losers(db_session, project, 3, first_second=10)
+    await db_session.commit()
+
+    for offset in range(3):
+        seite = (
+            await authenticated_api_client.get(_url(project.id, limit=1, offset=offset))
+        ).json()
+        for entry in seite["items"]:
+            if entry["kind"] == "photo":
+                assert entry["group_anchor_photo_id"] is None
+
+
+# ------------------------------------------------------------------------------------------
+# Paginierung nach Eintraegen (Spec 0533, B8)
+# ------------------------------------------------------------------------------------------
+
+
+async def test_a_group_never_falls_apart_over_a_page_boundary(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Gruppe mit drei Bestandsaufnahmen (t = 1, 2, 3) und eine Einzelaufnahme (t = 4), `limit=2`:
+    Seite 1 ist [Stapel, Einzelaufnahme], und der Stapel zaehlt DREI Mitglieder. Ein SQL-Schnitt
+    vor dem Gruppieren ergaebe einen Stapel mit zwei - die Ids allein bestuenden auch dagegen."""
+    project = await _project(db_session)
+    gewinner, _ = await _group_with_losers(db_session, project, 3)
+    einzeln = await _photo(
+        db_session, project, "unscharf.jpg", seconds=4, suggested_status=RatingStatus.REJECTED
+    )
+    await db_session.commit()
+
+    erste = (await authenticated_api_client.get(_url(project.id, limit=2))).json()
+
+    assert [entry["kind"] for entry in erste["items"]] == ["group", "photo"]
+    assert _group(erste, gewinner.id)["member_count"] == 3
+    assert _entry(erste, einzeln.id)["kind"] == "photo"
+    assert erste["total"] == 2
+
+
+async def test_an_interleaved_group_stands_at_its_first_stock_photo(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Verschraenkte Lage: Gruppe bei t = 0 und t = 5, Einzelaufnahme bei t = 3. Die Reihenfolge
+    ist [Stapel, Einzelaufnahme]; die Folgeseite traegt keinen zweiten Eintrag derselben Gruppe."""
+    project = await _project(db_session)
+    gewinner = await _photo(
+        db_session, project, "gewinner.jpg", seconds=0, suggested_status=RatingStatus.REJECTED
+    )
+    einzeln = await _photo(
+        db_session, project, "unscharf.jpg", seconds=3, suggested_status=RatingStatus.REJECTED
+    )
+    await _photo(
+        db_session,
+        project,
+        "verlierer.jpg",
+        seconds=5,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=gewinner.id,
+    )
+    await db_session.commit()
+
+    alle = (await authenticated_api_client.get(_url(project.id))).json()
+    zweite = (await authenticated_api_client.get(_url(project.id, limit=1, offset=1))).json()
+
+    assert [entry["kind"] for entry in alle["items"]] == ["group", "photo"]
+    assert _ids(zweite) == [einzeln.id]
+    assert _groups(zweite) == []
+
+
+async def test_walking_all_pages_names_every_anchor_exactly_once(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Seitendurchlauf mit `limit=1`: Jeder Anker kommt genau einmal vor, jede Bestandsaufnahme
+    steht genau einmal (als Einzel-Eintrag oder in `member_count`), und die Zahl der Eintraege ist
+    `total`."""
+    project = await _project(db_session)
+    erste_gruppe, _ = await _group_with_losers(db_session, project, 2, first_second=0)
+    await _photo(
+        db_session, project, "unscharf.jpg", seconds=5, suggested_status=RatingStatus.REJECTED
+    )
+    zweite_gruppe, _ = await _group_with_losers(db_session, project, 3, first_second=10)
+    await db_session.commit()
+
+    total = (await authenticated_api_client.get(_url(project.id))).json()["total"]
+    eintraege: list[dict[str, object]] = []
+    for offset in range(total + 1):
+        seite = (
+            await authenticated_api_client.get(_url(project.id, limit=1, offset=offset))
+        ).json()
+        eintraege.extend(seite["items"])
+
+    anker = [entry["group_anchor_photo_id"] for entry in eintraege if entry["kind"] == "group"]
+    assert anker == [erste_gruppe.id, zweite_gruppe.id]
+    assert len(eintraege) == total == 3
+    aufnahmen = sum(
+        1 if entry["kind"] == "photo" else int(str(entry["member_count"])) for entry in eintraege
+    )
+    assert aufnahmen == 6
+
+
+async def test_entries_and_open_suggestions_are_two_different_counts(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Drei offene Verlierer in einer Gruppe: `total = 1` (Eintraege), `open_count = 3`
+    (Aufnahmen). Das ist die Lage, in der die beiden Einheiten auseinanderfallen."""
+    project = await _project(db_session)
+    await _group_with_losers(db_session, project, 3)
+    await db_session.commit()
+
+    body = (await authenticated_api_client.get(_url(project.id))).json()
+
+    assert body["total"] == 1
+    assert body["open_count"] == 3
+
+
+async def test_the_photo_filter_on_a_group_member_answers_a_photo_entry_with_its_anchor(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """B8: Der Detailfilter liefert fuer ein Gruppenmitglied genau einen Einzel-Eintrag mit
+    gesetztem Anker; `total` und `open_count` sind dieselben wie im Listenzweig."""
+    project = await _project(db_session)
+    gewinner, verlierer = await _group_with_losers(db_session, project, 2)
+    await _photo(
+        db_session, project, "unscharf.jpg", seconds=9, suggested_status=RatingStatus.REJECTED
+    )
+    await db_session.commit()
+
+    liste = (await authenticated_api_client.get(_url(project.id))).json()
+    detail = (await authenticated_api_client.get(_url(project.id, photo_id=verlierer[1].id))).json()
+
+    assert _ids(detail) == [verlierer[1].id]
+    assert _entry(detail, verlierer[1].id)["group_anchor_photo_id"] == gewinner.id
+    assert detail["total"] == liste["total"] == 2
+    assert detail["open_count"] == liste["open_count"] == 3
 
 
 # ------------------------------------------------------------------------------------------
@@ -506,8 +850,10 @@ async def test_the_open_count_of_another_project_is_never_counted_in(
 async def test_two_pages_do_not_overlap_and_the_total_counts_everything(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """AK3: Reihenfolge `Photo.taken_at, Photo.id` und ein `total` ueber den GANZEN Bestand - kein
-    aus `len(items)` gebildetes, das auf der ersten Seite nicht davon zu unterscheiden waere."""
+    """Reihenfolge `Photo.taken_at, Photo.id` und ein `total` ueber den GANZEN Bestand - kein aus
+    `len(items)` gebildetes, das auf der ersten Seite nicht davon zu unterscheiden waere. `total`
+    zaehlt Eintraege; hier der Spezialfall nur mit Einzelaufnahmen, in dem Eintraege und
+    Aufnahmen zusammenfallen."""
     project = await _project(db_session)
     fotos = [
         await _photo(
@@ -601,21 +947,34 @@ async def test_a_photo_filter_outside_the_stock_answers_an_empty_list(
 async def test_the_answer_carries_exactly_the_agreed_fields(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Als Gleichheit der Feldmenge, damit ein spaeter angehaengtes Feld auffaellt, bevor es
-    stillschweigend mitreist. Die Menge ist mit D1 um `keep_possible` gewachsen - die Wirksamkeit
-    des angebotenen "behalten" kommt vom Server, statt im Client aus `reason` nachgebaut zu
-    werden."""
+    """Als Gleichheit der Feldmenge je Eintragsart, damit ein spaeter angehaengtes Feld auffaellt,
+    bevor es stillschweigend mitreist. `cover` traegt dieselbe Feldmenge wie ein Eintrag der
+    Fotoliste - ein `PhotoOut`, weder erweitert noch gekuerzt."""
     project = await _project(db_session)
     await _photo(db_session, project, "foto.jpg", suggested_status=RatingStatus.REJECTED)
+    await _group_with_losers(db_session, project, 1, first_second=10)
     await db_session.commit()
 
     body = (await authenticated_api_client.get(_url(project.id))).json()
+    liste = (await authenticated_api_client.get(f"/projects/{project.id}/photos")).json()
 
     assert set(body) == {"items", "total", "open_count"}
-    assert set(_entry(body, _ids(body)[0])) == {
+    einzel, stapel = body["items"]
+    assert set(einzel) == {
+        "kind",
         "photo",
         "reason",
         "decision",
         "group_anchor_photo_id",
         "keep_possible",
     }
+    assert set(stapel) == {
+        "kind",
+        "group_anchor_photo_id",
+        "cover",
+        "member_count",
+        "group_size",
+        "decision_counts",
+    }
+    assert set(stapel["decision_counts"]) == {"undecided", "keep", "discard"}
+    assert set(stapel["cover"]) == set(liste["items"][0])

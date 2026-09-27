@@ -35,6 +35,29 @@ export const PROJECT_ROUTE_PATHS = {
 export const PROJECT_CONTEXT_ROUTE_PATHS: readonly string[] = Object.values(PROJECT_ROUTE_PATHS)
 
 /**
+ * Der Pfad der Duplikat-Vergleichsansicht an einem Anker — die einzige Stelle, die ihn baut.
+ *
+ * SICHERHEIT (S11): `fromAusschuss` ist ein Bool, kein Rohwert. Der Rückweg-Parameter wird hier
+ * als eigenes LITERAL geschrieben und nie aus einem empfangenen Wert weitergereicht: Ein
+ * durchgeschleuster Wert machte die Ansicht zur offenen Weiterleitung auf eine vom Link bestimmte
+ * Adresse.
+ */
+export function duplicateComparePath(
+  projectId: number,
+  photoId: number,
+  { fromAusschuss = false }: { fromAusschuss?: boolean } = {},
+): string {
+  const pfad = `/projects/${projectId}/photos/${photoId}/duplicates`
+  return fromAusschuss ? `${pfad}?from=ausschuss` : pfad
+}
+
+/** Das feste Ziel von „Zurück zum Ausschuss" — gebildet aus der numerischen Projekt-Id, nie aus
+ * einem Parameterwert, `document.referrer` oder dem Browserverlauf. */
+export function ausschussStepPath(projectId: number): string {
+  return `/projects/${projectId}/pipeline/ausschuss`
+}
+
+/**
  * Literale Geschwister-Segmente unter /projects/, die keine projectId sind. Anders als React
  * Routers eigentliches Routing (das statische Segmente vor dynamischen bevorzugt) matcht ein
  * isolierter matchPath-Aufruf "/projects/new" gegen "/projects/:projectId" mit projectId="new".

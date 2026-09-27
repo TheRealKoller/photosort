@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { apiFetch } from './client'
 import {
+  confirmDuplicateGroup,
   getDuplicateGroup,
   getDuplicateGroupIndex,
   setDuplicateDecision,
@@ -19,6 +20,7 @@ const GROUP: DuplicateGroupOut = {
   total: 2,
   previous_photo_id: null,
   next_photo_id: 43,
+  span_seconds: 0,
 }
 
 const INDEX: DuplicateGroupIndexOut = {
@@ -64,6 +66,19 @@ describe('api/duplicates', () => {
     expect(result).toEqual(GROUP)
   })
 
+  it('schliesst die Gruppe per POST OHNE Koerper ab - Menge und Wert bestimmt der Server', async () => {
+    // Weder eine Id-Liste noch ein Wert: Eine Menge waere ein Massen-Schreibweg auf beliebige
+    // Fotos, ein Wert ein Massen-`keep` (Auflage S4).
+    vi.mocked(apiFetch).mockResolvedValue(GROUP)
+
+    const result = await confirmDuplicateGroup(7, 42)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/7/duplicate-groups/42/confirm', {
+      method: 'POST',
+    })
+    expect(result).toEqual(GROUP)
+  })
+
   it('liest den Einstieg ueber das PROJEKT, nicht ueber ein Foto', async () => {
     // Der Einstieg kennt noch kein Mitglied - er fragt gerade, wo der Durchgang beginnt. Kein
     // `PhotoOut` in der Antwort, also auch kein nutzerabhaengiger Inhalt.
@@ -82,6 +97,7 @@ describe('api/duplicates', () => {
     const modul = await import('./duplicates')
 
     expect(Object.keys(modul).sort()).toEqual([
+      'confirmDuplicateGroup',
       'getDuplicateGroup',
       'getDuplicateGroupIndex',
       'setDuplicateDecision',

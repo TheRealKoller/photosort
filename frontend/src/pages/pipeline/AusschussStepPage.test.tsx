@@ -10,7 +10,9 @@ import { ApiError } from '../../api/client'
 import * as duplicatesApi from '../../api/duplicates'
 import * as projectsApi from '../../api/projects'
 import type {
+  AusschussGroupEntry,
   AusschussOut,
+  AusschussPhotoEntry,
   DuplicateDecision,
   DuplicateGroupOut,
   PhotoOut,
@@ -57,9 +59,9 @@ function photo(id: number): PhotoOut {
 function entry(
   id: number,
   {
-    reason = 'duplicate',
+    reason = 'low_quality',
     decision = null,
-    groupAnchorPhotoId = id,
+    groupAnchorPhotoId = null,
     keepPossible = reason === 'duplicate',
   }: {
     reason?: SuggestionReason
@@ -67,17 +69,29 @@ function entry(
     groupAnchorPhotoId?: number | null
     keepPossible?: boolean
   } = {},
-): AusschussOut['items'][number] {
+): AusschussPhotoEntry {
   // `keepPossible` ist der SERVERWERT (`duplicates.py::keep_possible_for`). Der Vorgabewert bildet
   // nur den Regelfall ab - ein Duplikat hat eine Gruppe, eine Unscharfe-Ablehnung nicht - und darf
   // nicht als Ableitungsregel gelesen werden: Der Fall "Entscheidungszeile ohne offenen Vorschlag"
   // traegt `true` bei `reason === 'low_quality'` (siehe der Test dazu).
   return {
+    kind: 'photo',
     photo: photo(id),
     reason,
     decision,
     group_anchor_photo_id: groupAnchorPhotoId,
     keep_possible: keepPossible,
+  }
+}
+
+function stapel(anchor: number, cover: number, groupSize = 3): AusschussGroupEntry {
+  return {
+    kind: 'group',
+    group_anchor_photo_id: anchor,
+    cover: photo(cover),
+    member_count: 2,
+    group_size: groupSize,
+    decision_counts: { undecided: 2, keep: 0, discard: 0 },
   }
 }
 
@@ -88,7 +102,9 @@ function stand(
   return {
     items,
     total: total ?? items.length,
-    open_count: openCount ?? items.filter((eintrag) => eintrag.decision === null).length,
+    open_count:
+      openCount ??
+      items.filter((eintrag) => eintrag.kind === 'photo' && eintrag.decision === null).length,
   }
 }
 
@@ -98,11 +114,14 @@ function group(ids: number[], decisions: DuplicateDecision[] = []): DuplicateGro
       photo: photo(id),
       effective_decision: decisions[index] ?? 'keep',
       keep_possible: true,
+      sharpness: null,
+      exposure: null,
     })),
     position: 1,
     total: 1,
     previous_photo_id: null,
     next_photo_id: null,
+    span_seconds: 0,
   }
 }
 
@@ -197,9 +216,6 @@ beforeEach(() => {
   vi.mocked(projectsApi.confirmAusschussGate).mockReset()
   vi.mocked(projectsApi.confirmAusschussGate).mockResolvedValue({ status: 'confirmed' })
   vi.mocked(duplicatesApi.getDuplicateGroup).mockReset()
-  // Vorgabe: keine Gruppe. Der Endpunkt antwortet auf eine Aufnahme ohne Duplikat mit einem leeren
-  // Stand - die Gruppen-Tests setzen ihre eigene Antwort.
-  vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(group([]))
   vi.mocked(duplicatesApi.setDuplicateDecision).mockReset()
   vi.mocked(ausschussApi.listAusschuss).mockReset()
   vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([]))
@@ -355,13 +371,24 @@ describe('AusschussStepPage - Uebersicht', () => {
   it('nennt den Grund je Kachel mit Zeichen UND Wort, unterscheidbar nach Art', async () => {
     // AK4: Duplikat gegen geringe Qualitaet - kein Sammelzustand. Die Farbe traegt die Aussage
     // nie allein, das Wort steht daneben.
-    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
-      stand([entry(42), entry(43, { reason: 'low_quality', groupAnchorPhotoId: null })]),
-    )
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([stapel(40, 41), entry(43)]))
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
 
     expect(await screen.findByText('Duplikat')).toBeInTheDocument()
     expect(screen.getByText('Geringe Bildqualität')).toBeInTheDocument()
+  })
+
+  it('mischt Einzelkacheln und Stapel im selben Raster', async () => {
+    // B3/B4: Eine Einzelaufnahme oeffnet die Detailansicht, ein Stapel die Vergleichsansicht am
+    // Anker - fuer ein Gruppenmitglied gibt es in der Uebersicht keinen "oeffnen"-Knopf.
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([stapel(40, 41), entry(43)]))
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    expect(await screen.findByRole('button', { name: /serie-43\.jpg öffnen/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /serie-41\.jpg öffnen/i })).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /^Duplikat-Gruppe mit 3 Aufnahmen vergleichen/ }),
+    ).toHaveAttribute('href', '/projects/1/photos/40/duplicates?from=ausschuss')
   })
 
   it('trennt die Entscheidungszeile vom Grund: vorgeschlagen, Ausschuss, behalten', async () => {
@@ -502,7 +529,7 @@ describe('AusschussStepPage - Uebersicht', () => {
     const user = userEvent.setup()
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
 
-    await screen.findByText(/60 von 61 geladen/i)
+    await screen.findByText('60 von 61 Einträgen geladen')
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValueOnce(stand([entry(200)], { total: 61 }))
     await user.click(screen.getByRole('button', { name: /mehr laden/i }))
 
@@ -618,19 +645,33 @@ describe('AusschussStepPage - Detailansicht', () => {
     expect(duplicatesApi.setDuplicateDecision).toHaveBeenCalledWith(1, 42, 'keep')
   })
 
-  it('zeigt beim Duplikat die ganze Gruppe ueber den Gruppenanker', async () => {
-    // AK8: kein separater Seitenwechsel - die Serie steht in der Detailansicht, aufgeloest ueber
-    // den Anker aus dem Eintrag (nicht ueber das angeklickte Foto).
-    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
-      stand([entry(42, { groupAnchorPhotoId: 41 })]),
-    )
-    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(group([41, 42]))
+  it.each([
+    ['Duplikat', 'duplicate' as const],
+    ['Gewinner mit Schaerfe-Ablehnung', 'low_quality' as const],
+  ])(
+    'verweist beim Gruppenmitglied (%s) in die Vergleichsansicht, statt die Gruppe zu laden',
+    async (_fall, reason) => {
+      // A10: Die eingebettete Gruppe entfaellt. Der Link haengt am Anker, nicht am Grund.
+      vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
+        stand([entry(42, { reason, groupAnchorPhotoId: 41 })]),
+      )
+      renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }), '/x?photo=42')
+
+      const link = await screen.findByRole('link', { name: 'Duplikat-Gruppe vergleichen' })
+      expect(link).toHaveAttribute('href', '/projects/1/photos/41/duplicates?from=ausschuss')
+      expect(duplicatesApi.getDuplicateGroup).not.toHaveBeenCalled()
+      expect(screen.queryByTestId('duplicate-image')).not.toBeInTheDocument()
+    },
+  )
+
+  it('bietet ohne Anker keinen Weg in die Vergleichsansicht', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)]))
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }), '/x?photo=42')
 
     await screen.findByRole('img', { name: 'Reise/serie-42.jpg' })
-
-    await waitFor(() => expect(duplicatesApi.getDuplicateGroup).toHaveBeenCalledWith(1, 41))
-    expect(screen.getAllByTestId('duplicate-image')).toHaveLength(2)
+    expect(
+      screen.queryByRole('link', { name: 'Duplikat-Gruppe vergleichen' }),
+    ).not.toBeInTheDocument()
   })
 
   it('zeigt einen benannten Zustand mit Rueckweg, wenn die Aufnahme nicht mehr im Bestand ist', async () => {

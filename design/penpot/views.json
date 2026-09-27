@@ -420,7 +420,8 @@
       "seite": "Ansicht — Duplikate vergleichen",
       "produktdateien": [
         "src/pages/DuplicateComparePage.tsx",
-        "src/components/DuplicatePhotoTile.tsx"
+        "src/components/DuplicatePhotoTile.tsx",
+        "src/components/DuplicateEnlargedView.tsx"
       ],
       "breiten": [
         "mobile",
@@ -444,23 +445,33 @@
       "luecken": [
         {
           "schluessel": "behaelter",
-          "stelle": "Aufnahmekarte und Großbildrahmen als Behälter für Bildfläche, Dateiname, Kennzeichen und Wahlzeile",
-          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Beide sind im Entwurf deshalb tokengebundene Rahmen statt Instanzen."
-        },
-        {
-          "schluessel": "daempfung",
-          "stelle": "Zurücktretende Bildfläche einer als Ausschuss markierten Aufnahme in der Übersicht",
-          "grund": "Für die Dämpfung gibt es keinen benannten Wert im Tokensatz; sie ist im Entwurf als Deckkraft gesetzt. Sie gilt ausschließlich in der Übersicht: Die vergrößerte Aufnahme bleibt unverfälscht, weil sie beurteilt werden soll. Kennzeichen, Dateiname und Rahmen bleiben in beiden Fällen voll deckend, damit der Zustand ohne Farbwahrnehmung lesbar ist."
+          "stelle": "Aufnahmekarte, Großbildrahmen und Seitenspalte der Großansicht als Behälter für Bildfläche, Dateiname, Kennzeichen, Bewertungszeile und Wahlzeile",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein: Karte und Dialog sind darin Blätter, also je ein Brett mit einer Beschriftung, und die Struktur einer Instanz lässt sich nicht ändern. Karte, Großbildrahmen und Seitenspalte sind im Entwurf deshalb tokengebundene Rahmen statt Instanzen."
         },
         {
           "schluessel": "umrissstaerke",
           "stelle": "Stärke des Zustandsrahmens einer Aufnahmekarte",
-          "grund": "Der Rahmen trägt den Bewertungszustand mit und ist bei getroffener Entscheidung stärker als im unentschiedenen Grundzustand. Für Linienstärken führt der Satz photosort kein Token; beide Werte stehen im Entwurf als Zahl."
+          "grund": "Der Rahmen trägt den Zustand mit — Behalten oder Ausschuss — in einer gemeinsamen Stärke für beide Zustände. Für Linienstärken führt der Satz photosort kein Token; der Wert steht im Entwurf als Zahl."
         },
         {
-          "schluessel": "neutralerumriss",
-          "stelle": "Umriss einer Aufnahme im Zustand noch nicht entschieden",
-          "grund": "Dieser Umriss hält den Kontrastwert für grafische Elemente gegen seine Fläche nicht ein. Das ist beabsichtigt: Er ist der Ruhezustand und nicht der Träger der Aussage — dass nichts entschieden ist, zeigt die Abwesenheit einer Auszeichnung, und die Aussage selbst trägt das Kennzeichen im Text. Ein auf den Kontrastwert angehobener Umriss ließe Unbearbeitetes auffälliger erscheinen als Entschiedenes."
+          "schluessel": "entwurfsabweichung",
+          "stelle": "Dritter Zustand und gedämpfte Ausschuss-Fläche der Penpot-Seite",
+          "grund": "Die Penpot-Seite zeigt noch den dritten Zustand mit neutralem Umriss und die gedämpfte Ausschuss-Fläche. Die Umsetzung kennt nach der Story zum Duplikat-Stapel zwei Zustände in voller Helligkeit; unterschieden wird über Zustandsrahmen und Wort samt Symbol, nie über Helligkeit."
+        },
+        {
+          "schluessel": "buehnenhoehe",
+          "stelle": "Reservierte Höhe der Bühne in der Großansicht",
+          "grund": "Die Bühne reserviert ihre Höhe, auf der breiten Prüfbreite eine größere als auf der schmalen, damit nichts springt, wenn das authentifiziert geladene Bild eintrifft. Für diese Höhe gibt es kein Token; sie steht als Wert."
+        },
+        {
+          "schluessel": "streifen",
+          "stelle": "Vorschaubilder im Streifen der Großansicht und Auszeichnung der aktuellen Aufnahme",
+          "grund": "Die Vorschaugröße der Streifenbilder hat kein Token. Die aktuelle Aufnahme ist in color.text-h statt Akzent ausgezeichnet, weil Akzent in dieser Ansicht Behalten heißt."
+        },
+        {
+          "schluessel": "trefferflaeche",
+          "stelle": "Wahlzeile, Aufnahme- und Gruppennavigation auf der schmalen Prüfbreite",
+          "grund": "Der heiße Pfad ist am Telefon sichtbar so hoch wie seine Trefferfläche. Die Mindesthöhe einer Trefferfläche ist eine Vorgabe der Bedienbarkeit und hat kein eigenes Token; sie wird gesetzt und hier ausgewiesen."
         },
         {
           "schluessel": "hoverzustand",
@@ -489,13 +500,8 @@
         },
         {
           "schluessel": "kennzeichenbaustein",
-          "stelle": "Zustandskennzeichen der Aufnahmekarte (behalten / Ausschuss / noch offen)",
+          "stelle": "Zustandskennzeichen der Aufnahmekarte (behalten / Ausschuss)",
           "grund": "Der Entwurf setzt dafür den Baustein badge; die Umsetzung tut es bewusst nicht. Eine voll gefüllte Fläche mit dunkler Tinte im Kennzeichen-Radius ist im Produkt die Form der Albumentscheidung, und ein Chip in der Aussortiert-Farbe wäre von ihr nicht zu unterscheiden — genau die Verwechslung, die der eigene Wertevorrat dieser Ansicht ausschließt. Das Kennzeichen steht stattdessen als Symbol plus Text im tokengebundenen Zustandsrahmen der Karte."
-        },
-        {
-          "schluessel": "zaehlerbaustein",
-          "stelle": "Gruppenzähler in der Seitenüberschrift",
-          "grund": "Der Entwurf setzt dafür den Baustein progress; die Umsetzung tut es bewusst nicht. Der Zähler nennt die Stelle in der Reihe der noch offenen Gruppen, nicht einen erledigten Anteil, und seine Bezugsmenge schrumpft mit jeder abgeschlossenen Gruppe. Ein Balken behauptete einen Fortschrittsanteil, den die Zahlen nicht tragen; der Zähler steht deshalb als Text."
         }
       ]
     },
@@ -589,7 +595,7 @@
       "seite": "Ansicht — Ausschuss",
       "produktdateien": [
         "src/pages/pipeline/AusschussStepPage.tsx",
-        "src/components/DuplicatePhotoTile.tsx"
+        "src/components/DuplicateStackTile.tsx"
       ],
       "breiten": [
         "mobile",
@@ -618,7 +624,7 @@
         {
           "schluessel": "stapel",
           "stelle": "Versatz und Kartenmaß der übereinandergelegten Karten eines Duplikat-Stapels",
-          "grund": "Für den Versatz und die Kartenhöhe des Stapels gibt es kein Token, und die Bibliothek führt keinen Stapel-Baustein. Der Versatz steht als Wert im Entwurf; die hinteren Karten bleiben sichtbar, damit der Stapel als mehrere gleiche Aufnahmen lesbar ist statt als eine."
+          "grund": "Der Versatz stammt in zwei Stufen aus der Abstandsskala und liegt innerhalb der gerechneten Kachelmaße, damit die Zeile auf der schmalen Prüfbreite nicht waagerecht scrollt. Die hinteren Karten sind Rahmen in color.border-control ohne Bild; die Bibliothek führt keinen Stapel-Baustein."
         },
         {
           "schluessel": "bewegung",

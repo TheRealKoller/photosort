@@ -23,8 +23,13 @@ from photosort.cameras import CameraIdentity, camera_label
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY, is_landmark_candidate
 from photosort.duplicates import (
+    DuplicateLink,
+    GroupSlot,
+    SingleSlot,
     all_group_representative_ids,
     effective_decision_for,
+    group_ausschuss_stock,
+    group_span_seconds,
     group_standing,
     has_ausschuss_entry,
     has_open_suggestion,
@@ -55,6 +60,7 @@ from photosort.models import (
     Photo,
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
+    PhotoDuplicateDecision,
     PhotoFineLabel,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -1728,18 +1734,27 @@ class DuplicateGroupPhotoOut(BaseModel):
     Ablehnung folgt nicht aus dem Duplikat. Der GRUND reist nicht als Feld, weil er aus der
     Bedingung selbst folgt; die Oberflaeche rendert dort einen festen Text. Entstuende ein dritter
     Ablehnungsgrund, gehoert er ab dann als eigenes Feld hierher (ADR 0111, Konsequenzen) -
-    `tests/test_duplikat_anzeigezustand.py` laesst das laut auffallen."""
+    `tests/test_duplikat_anzeigezustand.py` laesst das laut auffallen.
+
+    `sharpness`/`exposure` sind die Rohwerte aus `PhotoScore` (Laplace-Varianz, hoeher = schaerfer;
+    Anteil geclippter Pixel, niedriger = besser), `null` ohne Zeile. Sie kommen NIE aus
+    `PhotoOut.suggestion`: Das Feld faellt nach jeder Entscheidung und bei eigener Albumbewertung
+    auf `null`, und die Bewertungszeile verloere ihre Werte mitten im Durchgang. Keines der
+    Mitglieder ist als "bestes" ausgezeichnet - die Auszeichnung bildet die Oberflaeche ueber den
+    angezeigten, gerundeten Werten."""
 
     photo: PhotoOut
     effective_decision: DuplicateDecision
     keep_possible: bool
+    sharpness: float | None
+    exposure: float | None
 
 
 class DuplicateGroupOut(BaseModel):
-    """Die Antwortform ALLER DREI Endpunkte der Vergleichsansicht - Lesepfad wie beide
-    Schreibwege. Ein Schreibvorgang liefert damit denselben vollstaendigen Stand zurueck, den ein
-    erneutes Laden liefern wuerde; die Oberflaeche braucht danach keine zweite Anfrage, um zu
-    wissen, was gilt.
+    """Die Antwortform ALLER VIER Endpunkte der Vergleichsansicht - Lesepfad, beide Schreibwege und
+    der Gruppenabschluss. Ein Schreibvorgang liefert damit denselben vollstaendigen Stand zurueck,
+    den ein erneutes Laden liefern wuerde; die Oberflaeche braucht danach keine zweite Anfrage, um
+    zu wissen, was gilt.
 
     `position`/`total` sind 1-basiert und beziehen sich auf ALLE Duplikat-Gruppen des Projekts.
     `previous_photo_id`/`next_photo_id` tragen die Repraesentanten-Id der jeweils benachbarten
@@ -1748,13 +1763,17 @@ class DuplicateGroupOut(BaseModel):
     SICHERHEIT (S6): Beide Nachbar-Ids stammen aus derselben projektbegrenzten Kantenliste wie die
     Gruppe selbst, nie aus einer eigenen Abfrage auf `photo_scores` - dessen `duplicate_of` zeigt
     auf `photos.id` ohne Projektbedingung. Zugriffsmarken sind sie nicht: Die Folgeanfrage laeuft
-    erneut ueber `project_id` und loest eine fremde Id nicht auf."""
+    erneut ueber `project_id` und loest eine fremde Id nicht auf.
+
+    `span_seconds` ist der Abstand zwischen fruehestem und spaetestem korrigiertem `taken_at` der
+    Mitglieder in ganzen Sekunden, abgerundet - aus derselben projektbegrenzten Kantenliste."""
 
     items: list[DuplicateGroupPhotoOut]
     position: int
     total: int
     previous_photo_id: int | None
     next_photo_id: int | None
+    span_seconds: int
 
 
 async def build_duplicate_group_out(
@@ -1762,7 +1781,7 @@ async def build_duplicate_group_out(
 ) -> DuplicateGroupOut:
     """Bildet den Stern um `photo_id` und hydratisiert seine Mitglieder zur vollen Antwort.
 
-    VON ALLEN DREI ENDPUNKTEN GENUTZT, auch von den beiden Schreibwegen im eigenen Router - genau
+    VON ALLEN VIER ENDPUNKTEN GENUTZT, auch von den drei Schreibwegen im eigenen Router - genau
     deshalb steht der Aufbau hier und nicht im Endpunkt: Die Hydratation (`_photos_by_id`,
     `_to_photo_out` samt Event-, Orts- und Rang-Kontext) haengt an dieser Datei, und eine zweite
     Fassung davon liefe auseinander.
@@ -1825,6 +1844,11 @@ async def build_duplicate_group_out(
                 # Fassung an.
                 effective_decision=effective_decision_for(photos_by_id[member_id]),
                 keep_possible=keep_possible_for(photos_by_id[member_id]),
+                # SICHERHEIT (S10): ueber `_score_metrics`, das die fehlende Zeile kennt - ein
+                # blosser Attributzugriff wuerfe fuer den Repraesentanten ohne `PhotoScore` und
+                # machte die ganze Gruppenantwort zur `500`.
+                sharpness=_score_metrics(photos_by_id[member_id])[0],
+                exposure=_score_metrics(photos_by_id[member_id])[1],
             )
             for member_id in ids
         ],
@@ -1832,7 +1856,14 @@ async def build_duplicate_group_out(
         total=stellung.total,
         previous_photo_id=stellung.previous_id,
         next_photo_id=stellung.next_id,
+        span_seconds=group_span_seconds(representative_id, links),
     )
+
+
+def _score_metrics(photo: Photo) -> tuple[float | None, float | None]:
+    """`(sharpness, exposure)` aus der `PhotoScore`-Zeile, `(None, None)` ohne Zeile."""
+    score = photo.score
+    return (None, None) if score is None else (score.sharpness, score.exposure)
 
 
 def empty_duplicate_group_out() -> DuplicateGroupOut:
@@ -1848,7 +1879,12 @@ def empty_duplicate_group_out() -> DuplicateGroupOut:
     folgt, und er ist genau dafuer da: Ein Platz in einer Reihenfolge, die es nicht gibt, waere
     eine erfundene Auskunft. `total = 0` sagt dasselbe ueber die Gesamtzahl."""
     return DuplicateGroupOut(
-        items=[], position=0, total=0, previous_photo_id=None, next_photo_id=None
+        items=[],
+        position=0,
+        total=0,
+        previous_photo_id=None,
+        next_photo_id=None,
+        span_seconds=0,
     )
 
 
@@ -1940,8 +1976,12 @@ async def duplicate_group(
     return await build_duplicate_group_out(session, project, photo_id, current_user.id)
 
 
-class AusschussEntryOut(BaseModel):
-    """EIN Eintrag der Ausschuss-Uebersicht (Spec 0525).
+class AusschussPhotoEntryOut(BaseModel):
+    """EIN Einzel-Eintrag der Ausschuss-Uebersicht (`kind = "photo"`).
+
+    Im Listenzweig steht er fuer jede Bestandsaufnahme OHNE aufloesbare Duplikatgruppe; eine
+    Aufnahme mit Gruppe liegt im Stapel ihrer Gruppe (`AusschussGroupEntryOut`). Am Detailfilter
+    `?photo=<id>` steht er fuer jede Bestandsaufnahme, auch fuer ein Gruppenmitglied.
 
     `reason` ist der GRUND der Markierung und kommt vom Server, nicht aus einer TypeScript-Ableitung
     (Auflage S7): `duplicate` genau dann, wenn `PhotoScore.duplicate_of IS NOT NULL`, sonst
@@ -1969,6 +2009,7 @@ class AusschussEntryOut(BaseModel):
     trotzdem `true`. Eine zweite Ableitung im Client naehme dem Nutzer dort die einzige Handlung,
     die die Aufnahme zurueckholt."""
 
+    kind: Literal["photo"]
     photo: PhotoOut
     reason: Literal["duplicate", "low_quality"]
     decision: DuplicateDecision | None
@@ -1976,39 +2017,80 @@ class AusschussEntryOut(BaseModel):
     keep_possible: bool
 
 
+class DecisionCountsOut(BaseModel):
+    """Die GESPEICHERTEN Zeilen der Bestandsmitglieder eines Stapels - dieselbe Groesse wie
+    `decision` am Einzel-Eintrag, nicht der angezeigte Zustand. Es gilt
+    `undecided + keep + discard = member_count`."""
+
+    undecided: int
+    keep: int
+    discard: int
+
+
+class AusschussGroupEntryOut(BaseModel):
+    """EIN Stapel der Ausschuss-Uebersicht: alle Bestandsaufnahmen EINER Duplikatgruppe.
+
+    `group_anchor_photo_id` ist der Repraesentant - dieselbe Id, unter der die Gruppenantwort
+    erreichbar ist. `cover` ist die erste Bestandsaufnahme der Gruppe nach (`taken_at`, `id`), nicht
+    zwingend der Gewinner. `member_count` zaehlt die Bestandsaufnahmen der Gruppe, `group_size`
+    alle ihre Mitglieder (dieselbe Zahl wie die Mitgliederzahl der Gruppenantwort);
+    `1 <= member_count <= group_size`.
+
+    SICHERHEIT (S8): Anker, `cover` und beide Zahlen stammen aus dem projektbegrenzten Bestand und
+    `load_duplicate_links(session, project.id)`, gruppiert allein ueber `representative_of`
+    (`duplicates.py::group_ausschuss_stock`). Eine eigene SQL-Fassung des Sterns ist untersagt:
+    `duplicate_of` zeigt ohne Projektbedingung auf `photos.id`, der Stapel naehme sonst fremde
+    Aufnahmen auf oder nennte eine fremde Id als Anker."""
+
+    kind: Literal["group"]
+    group_anchor_photo_id: int
+    cover: PhotoOut
+    member_count: int
+    group_size: int
+    decision_counts: DecisionCountsOut
+
+
+AusschussEntryOut = Annotated[
+    AusschussPhotoEntryOut | AusschussGroupEntryOut, Field(discriminator="kind")
+]
+
+
 class AusschussOut(BaseModel):
     """Die Antwort des Ausschuss-Lesepfads: der Bestand, seine Groesse und die Zahl der offenen
     Vorschlaege.
 
-    `total` ist die Groesse des GESAMTBESTANDS (paginierbar), `open_count` die projektweite Zahl der
-    OFFENEN Vorschlaege - unabhaengig von `limit`/`offset`. Der Bestaetigungsbutton nennt genau
-    `open_count` (AK9); aus `len(items)` gebildet nennte er auf der zweiten Seite eine andere Zahl,
-    und ein bereits entschiedenes Bild zaehlte mit.
+    `total` zaehlt die EINTRAEGE des Gesamtbestands (Einzel-Eintraege und Stapel, paginierbar),
+    `open_count` die projektweite Zahl der AUFNAHMEN mit offenem Vorschlag - unabhaengig von
+    `limit`/`offset`. Die beiden Einheiten fallen auseinander, sobald ein Stapel mehr als eine
+    offene Aufnahme traegt. Der Bestaetigungsbutton nennt genau `open_count` (AK9), weil der
+    Abschluss je Aufnahme schreibt; aus `len(items)` gebildet nennte er auf der zweiten Seite eine
+    andere Zahl, und ein bereits entschiedenes Bild zaehlte mit.
 
-    Die Antwort traegt `PhotoOut` samt `suggestion`/`ratings` und ist damit eine Funktion des
-    ANFRAGENDEN Nutzers (Auflage S8): Bekaeme sie je eine Zwischenspeicherung, ein `ETag` oder ein
-    `Cache-Control` ueber `no-store` hinaus, muss der Schluessel den Nutzer enthalten."""
+    SICHERHEIT (S8 der Spec 0525, S9 der Spec 0533): Die Antwort traegt `PhotoOut` samt
+    `suggestion`/`ratings` - am Einzel-Eintrag als `photo`, am Stapel als `cover` - und ist damit in
+    BEIDEN Eintragsarten eine Funktion des ANFRAGENDEN Nutzers. Bekaeme sie je eine
+    Zwischenspeicherung, ein `ETag`, ein `Cache-Control` ueber `no-store` hinaus oder einen
+    clientseitigen Laufzeit-Cache, muss der Schluessel den Nutzer enthalten - sonst saehe der eine
+    Nutzer Vorschlagsanzeige und Bewertungen aus der Sicht des anderen. Dass `decision_counts`,
+    `total` und `open_count` nutzerunabhaengig sind, erlaubt nichts anderes."""
 
     items: list[AusschussEntryOut]
     total: int
     open_count: int
 
 
-async def _ausschuss_entries_out(
+async def _ausschuss_photo_outs(
     session: AsyncSession,
     project: Project,
     ids: list[int],
     current_user_id: int,
-) -> list[AusschussEntryOut]:
-    """Hydratisiert die Ausschuss-Eintraege einer Seite - dieselbe Kontextbeschaffung wie die
-    Fotoliste (Rang, Partition, Ort/Event, Motive, Endauswahl), damit ein Eintrag dieselben
-    `PhotoOut`-Felder traegt wie jedes andere Foto.
-
-    `links` wird EINMAL fuer die ganze Seite geladen und nicht je Foto: Die Gruppenaufloesung ist
-    ohnehin eine Abfrage ueber das ganze Projekt, und je Eintrag gestellt waere sie ein Query pro
-    Kachel."""
+) -> tuple[dict[int, Photo], dict[int, PhotoOut]]:
+    """Hydratisiert die Aufnahmen EINER Seite - Einzel-Eintraege und Titelbilder - mit derselben
+    Kontextbeschaffung wie die Fotoliste (Rang, Partition, Ort/Event, Motive, Endauswahl), damit
+    jede dieselben `PhotoOut`-Felder traegt wie jedes andere Foto. Nur die Seite, nie der ganze
+    Bestand."""
     if not ids:
-        return []
+        return {}, {}
     photos_by_id = await _photos_by_id(session, ids)
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project.id)
     rankings_by_id = (
@@ -2023,42 +2105,59 @@ async def _ausschuss_entries_out(
     motifs_by_id = await load_effective_strengths(session, ids)
     decisions = await _final_selection_decisions(session, ids)
     user_count = await _user_count(session)
-    links = await load_duplicate_links(session, project.id)
-
-    entries: list[AusschussEntryOut] = []
-    for photo_id in ids:
-        photo = photos_by_id[photo_id]
-        score = photo.score
-        # Der Bestand ist ueber den inneren Join auf `PhotoScore` gebildet - hier kann die Zeile
-        # nicht fehlen. Der Zweig steht trotzdem, weil `mypy --strict` sonst das `None` durchliesse.
-        assert score is not None
-        entscheidung = photo.duplicate_decision
-        entries.append(
-            AusschussEntryOut(
-                photo=_to_photo_out(
-                    photo,
-                    current_user_id,
-                    project,
-                    rankings_by_id.get(photo_id),
-                    partition_sizes,
-                    # Keine `curation_position`: Der Ausschuss ist keine numerierte Auswahl.
-                    None,
-                    place_by_id.get(photo_id, NO_PLACE),
-                    motifs_by_id.get(photo_id),
-                    decisions=decisions,
-                    user_count=user_count,
-                ),
-                # SICHERHEIT (S7): die vorhandene Ableitung, nicht eine zweite Fassung davon.
-                reason=_suggestion_reason(score),
-                decision=None if entscheidung is None else entscheidung.decision,
-                group_anchor_photo_id=representative_of(photo_id, links),
-                # SICHERHEIT (S7), zweite Aussage: die Wirksamkeit des angebotenen "behalten"
-                # stammt aus derselben Regel wie im Schreibweg. Aus `reason` ist sie nicht
-                # ableitbar (siehe `AusschussEntryOut`).
-                keep_possible=keep_possible_for(photo),
-            )
+    return photos_by_id, {
+        photo_id: _to_photo_out(
+            photos_by_id[photo_id],
+            current_user_id,
+            project,
+            rankings_by_id.get(photo_id),
+            partition_sizes,
+            # Keine `curation_position`: Der Ausschuss ist keine numerierte Auswahl.
+            None,
+            place_by_id.get(photo_id, NO_PLACE),
+            motifs_by_id.get(photo_id),
+            decisions=decisions,
+            user_count=user_count,
         )
-    return entries
+        for photo_id in ids
+    }
+
+
+def _ausschuss_photo_entry_out(
+    photo: Photo, photo_out: PhotoOut, links: list[DuplicateLink]
+) -> AusschussPhotoEntryOut:
+    score = photo.score
+    # Der Bestand ist ueber den inneren Join auf `PhotoScore` gebildet - hier kann die Zeile
+    # nicht fehlen. Der Zweig steht trotzdem, weil `mypy --strict` sonst das `None` durchliesse.
+    assert score is not None
+    entscheidung = photo.duplicate_decision
+    return AusschussPhotoEntryOut(
+        kind="photo",
+        photo=photo_out,
+        # SICHERHEIT (S7): die vorhandene Ableitung, nicht eine zweite Fassung davon.
+        reason=_suggestion_reason(score),
+        decision=None if entscheidung is None else entscheidung.decision,
+        group_anchor_photo_id=representative_of(photo.id, links),
+        # SICHERHEIT (S7), zweite Aussage: die Wirksamkeit des angebotenen "behalten" stammt aus
+        # derselben Regel wie im Schreibweg. Aus `reason` ist sie nicht ableitbar (siehe
+        # `AusschussPhotoEntryOut`).
+        keep_possible=keep_possible_for(photo),
+    )
+
+
+def _ausschuss_group_entry_out(slot: GroupSlot, cover: PhotoOut) -> AusschussGroupEntryOut:
+    return AusschussGroupEntryOut(
+        kind="group",
+        group_anchor_photo_id=slot.anchor_id,
+        cover=cover,
+        member_count=len(slot.member_ids),
+        group_size=slot.group_size,
+        decision_counts=DecisionCountsOut(
+            undecided=slot.decision_counts.undecided,
+            keep=slot.decision_counts.keep,
+            discard=slot.decision_counts.discard,
+        ),
+    )
 
 
 @router.get("/projects/{project_id}/ausschuss", response_model=AusschussOut)
@@ -2107,22 +2206,38 @@ async def list_ausschuss(
     fuer ein unbekanntes Projekt, ohne den uebergebenen Wert zu spiegeln; `422` fuer eine Id
     ausserhalb der Grenzen.
 
-    Reihenfolge und Paginierung wie die Fotoliste: `Photo.taken_at, Photo.id`, `total` ueber den
-    ganzen Bestand. `open_count` ist davon unabhaengig und nennt die Zahl, die der
-    Bestaetigungsbutton traegt (AK9)."""
+    Reihenfolge und Paginierung nach EINTRAEGEN: Jeder Eintrag steht an der
+    Stelle seiner ersten Bestandsaufnahme (`Photo.taken_at, Photo.id`), `limit`/`offset`/`total`
+    zaehlen Einzel-Eintraege und Stapel. Geschnitten wird erst NACH dem Gruppieren - ein
+    SQL-`LIMIT` davor zerlegte eine Gruppe ueber zwei Seiten in zwei Stapel. `open_count` ist
+    davon unabhaengig und nennt die Zahl der Aufnahmen, die der Bestaetigungsbutton traegt
+    (AK9)."""
     project = await _get_project_or_404(project_id, session)
 
     # Eine Anweisung, zwei UND-Glieder: die Projektbindung und der Bestand. `has_ausschuss_entry`
     # zieht dieselbe Praesenzgrenze wie das Ueberlebenden-Praedikat und steht NICHT ausgeschrieben
-    # hier (Auflage S9 - eine zweite Fassung daneben liefe ohne Fehler und ohne Meldung weg).
+    # hier (Auflage S9 - eine zweite Fassung daneben liefe ohne Fehler und ohne Meldung weg). Die
+    # gespeicherte Entscheidung kommt ueber einen ALIAS: `has_ausschuss_entry` korreliert seine
+    # Unterabfrage auf `photo_duplicate_decisions`, und dieselbe Tabelle unaliasiert im FROM
+    # zoege die Korrelation an sich.
+    entscheidung = aliased(PhotoDuplicateDecision)
     bestand = (
-        select(Photo.id)
-        .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-        .where(Photo.project_id == project_id, has_ausschuss_entry())
+        (
+            await session.execute(
+                select(Photo.id, Photo.taken_at, entscheidung.decision)
+                .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+                .outerjoin(entscheidung, entscheidung.photo_id == Photo.id)
+                .where(Photo.project_id == project_id, has_ausschuss_entry())
+                .order_by(Photo.taken_at, Photo.id)
+            )
+        )
+        .tuples()
+        .all()
     )
-    total = (
-        await session.execute(select(func.count()).select_from(bestand.subquery()))
-    ).scalar_one()
+    # SICHERHEIT (S8): Gruppenschluessel, Anker, Titelbild und Mitglieder stammen allein aus dem
+    # projektbegrenzten Bestand und diesen Kanten - nie aus einem eigenen SQL-Stern.
+    links = await load_duplicate_links(session, project.id)
+    slots = group_ausschuss_stock(bestand, links)
 
     # SICHERHEIT (S1): dieselbe ausgeschriebene Projektbindung wie der Bestand - eine Zaehlung ohne
     # sie gaebe dem Button eine Zahl, die auf dieser Seite niemand einloesen kann.
@@ -2136,22 +2251,27 @@ async def list_ausschuss(
     ).scalar_one()
 
     if photo_id is not None:
-        # Der Detail-Zweig: GENAU der passende Eintrag oder gar keiner. `limit`/`offset` sind hier
-        # bewusst ohne Wirkung - die Antwort ist der eine Eintrag, nicht eine Seite.
-        ids = [
-            row for row in (await session.execute(bestand.where(Photo.id == photo_id))).scalars()
+        # Der Detail-Zweig: GENAU der passende Einzel-Eintrag oder gar keiner, auch fuer ein
+        # Gruppenmitglied (dann mit Anker). `limit`/`offset` sind hier bewusst ohne Wirkung - die
+        # Antwort ist der eine Eintrag, nicht eine Seite. Eine fremde oder unbekannte Id steht nicht
+        # im projektbegrenzten Bestand und ergibt die leere Liste.
+        ids = [photo_id] if any(row[0] == photo_id for row in bestand) else []
+        photos_by_id, outs = await _ausschuss_photo_outs(session, project, ids, current_user.id)
+        detail: list[AusschussEntryOut] = [
+            _ausschuss_photo_entry_out(photos_by_id[pid], outs[pid], links) for pid in ids
         ]
-    else:
-        ids = list(
-            (
-                await session.execute(
-                    bestand.order_by(Photo.taken_at, Photo.id).offset(offset).limit(limit)
-                )
-            ).scalars()
-        )
+        return AusschussOut(items=detail, total=len(slots), open_count=open_count)
 
-    items = await _ausschuss_entries_out(session, project, ids, current_user.id)
-    return AusschussOut(items=items, total=total, open_count=open_count)
+    seite = slots[offset : offset + limit]
+    ids = [slot.photo_id if isinstance(slot, SingleSlot) else slot.cover_id for slot in seite]
+    photos_by_id, outs = await _ausschuss_photo_outs(session, project, ids, current_user.id)
+    items: list[AusschussEntryOut] = [
+        _ausschuss_photo_entry_out(photos_by_id[slot.photo_id], outs[slot.photo_id], links)
+        if isinstance(slot, SingleSlot)
+        else _ausschuss_group_entry_out(slot, outs[slot.cover_id])
+        for slot in seite
+    ]
+    return AusschussOut(items=items, total=len(slots), open_count=open_count)
 
 
 def _strength_values(effective: Mapping[str, EffectiveStrength] | None) -> dict[str, float]:

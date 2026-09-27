@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ALL_PROJECT_NAV_TARGETS,
+  ausschussStepPath,
+  duplicateComparePath,
   isSecondaryNavTargetId,
   matchProjectId,
   PROJECT_CONTEXT_ROUTE_PATHS,
@@ -78,6 +80,27 @@ describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
     expect(Object.values(PROJECT_ROUTE_PATHS)).not.toContain('/projects/:projectId/curate')
     expect(PROJECT_CONTEXT_ROUTE_PATHS).not.toContain('/projects/:projectId/curate')
     expect(matchProjectId('/projects/1/curate')).toBeNull()
+  })
+})
+
+describe('projectRoutes - duplicateComparePath', () => {
+  it('baut den Pfad der Vergleichsansicht ohne Parameter, solange kein Rueckweg gewuenscht ist', () => {
+    expect(duplicateComparePath(7, 42)).toBe('/projects/7/photos/42/duplicates')
+    expect(duplicateComparePath(7, 42, { fromAusschuss: false })).toBe(
+      '/projects/7/photos/42/duplicates',
+    )
+  })
+
+  it('traegt den Rueckweg als festes Literal weiter, nie als uebergebenen Wert', () => {
+    // Auflage S11: Der Aufrufer reicht einen Bool, keinen Rohwert - Gruppennavigation und
+    // Abschluss tragen `from=ausschuss` damit weiter, ohne einen fremden Wert durchzuschleusen.
+    expect(duplicateComparePath(7, 42, { fromAusschuss: true })).toBe(
+      '/projects/7/photos/42/duplicates?from=ausschuss',
+    )
+  })
+
+  it('fuehrt der Rueckweg fest in den Ausschuss-Schritt des Projekts', () => {
+    expect(ausschussStepPath(7)).toBe('/projects/7/pipeline/ausschuss')
   })
 })
 

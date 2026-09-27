@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
+  confirmDuplicateGroup,
   getDuplicateGroup,
   getDuplicateGroupIndex,
   setDuplicateDecision,
@@ -104,6 +105,20 @@ export function useDuplicateGroupDecisionMutation(projectId: number, photoId: nu
   return useMutation({
     mutationFn: (decision: DuplicateDecision) =>
       setDuplicateGroupDecision(projectId, photoId, decision),
+    onSuccess: (written) => applyGroup(queryClient, projectId, photoId, written),
+  })
+}
+
+/**
+ * Der Gruppenabschluss — GENAU EIN Aufruf ohne Körper; die Menge bildet der Server.
+ *
+ * Die breite Invalidierung unter `['photos', projectId]` trifft auch die Ausschuss-Übersicht:
+ * Stapel-Zusammenfassung und `open_count` ändern sich durch das festgeschriebene „Ausschuss".
+ */
+export function useDuplicateGroupConfirmMutation(projectId: number, photoId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => confirmDuplicateGroup(projectId, photoId),
     onSuccess: (written) => applyGroup(queryClient, projectId, photoId, written),
   })
 }

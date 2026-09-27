@@ -95,11 +95,11 @@ export async function openDuplicateGroup(
   await einstieg.click()
 
   if (gruppe === 'klein') {
-    await page.getByRole('button', { name: 'Vor zur nächsten Gruppe' }).click()
+    await page.getByRole('button', { name: 'Nächste Gruppe' }).click()
   }
 
   await expect(
-    page.getByRole('heading', { name: /^Duplikat-Gruppe \d+ von \d+$/ }),
+    page.getByRole('heading', { name: /^Gruppe \d+ von \d+ · / }),
     'Ueberschrift der Vergleichsansicht',
   ).toBeVisible()
   // Die Mitgliederzahl ist die eigentliche Unterscheidung der beiden Gruppen: Sie steht im

@@ -1,4 +1,5 @@
-"""Die beiden Schreibwege der Duplikat-Vergleichsansicht - je Aufnahme und je Gruppe.
+"""Die drei Schreibwege der Duplikat-Vergleichsansicht - je Aufnahme, je Gruppe und der
+Gruppenabschluss.
 
 EIGENES MODUL UND EIGENER ROUTER, weil die geschriebene Entscheidung keinen Nutzer kennt: Wer sie
 trifft, geht in keine Zeile ein (ADR 0104 Punkt 2). Sie gehoeren ausdruecklich nicht nach
@@ -37,7 +38,7 @@ from photosort.models import (
     User,
 )
 
-# SICHERHEIT (S8): Der Torwaechter haengt am ROUTER. Beide Endpunkte tragen damit DREI Sicherungen
+# SICHERHEIT (S8): Der Torwaechter haengt am ROUTER. Alle Endpunkte tragen damit DREI Sicherungen
 # statt einer: die Router-Dependency hier, den Eintrag in
 # `tests/test_auth_guard.py::_protected_router_operations()` und je einen eigenen, pfadbenannten
 # 401-Fall in `tests/test_api_duplicate_decisions.py`. Laege einer von ihnen stattdessen in
@@ -49,7 +50,7 @@ from photosort.models import (
 #
 # ABWEICHUNG ZUM MUSTER `api/album_decisions.py`, benannt statt stillschweigend: Dort nimmt der
 # Endpunkt KEIN `current_user` entgegen. Hier tut er es zusaetzlich zur Router-Dependency, weil
-# beide Schreibwege mit derselben `DuplicateGroupOut` antworten wie der Lesepfad - und die traegt
+# alle Schreibwege mit derselben `DuplicateGroupOut` antworten wie der Lesepfad - und die traegt
 # `PhotoOut` samt `suggestion`/`ratings`, die eine Funktion des ANFRAGENDEN Nutzers sind (S10).
 # Ohne den Nutzer waere die Antwort entweder eine andere Form als der Lesepfad oder eine, die die
 # Vorschlags- und Bewertungsanzeige einer fremden Person zeigt. Die ENTSCHEIDUNG selbst bleibt
@@ -252,4 +253,97 @@ async def set_duplicate_group_decision(
 
     await _write(session, member_ids_of(representative_id, links), payload.decision)
     await session.commit()
+    return await build_duplicate_group_out(session, project, photo_id, current_user.id)
+
+
+@router.post(
+    "/projects/{project_id}/duplicate-groups/{photo_id}/confirm",
+    response_model=DuplicateGroupOut,
+)
+async def confirm_duplicate_group(
+    project_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
+    photo_id: Annotated[int, Path(ge=1, le=MAX_QUERY_POSITION)],
+    session: AsyncSession = Depends(get_session),
+    # Wie beim Einzelweg: ausschliesslich fuer die Antwort (S10).
+    current_user: User = Depends(get_current_user),
+) -> DuplicateGroupOut:
+    """Schliesst EINE Duplikat-Gruppe ab: Jedes Mitglied mit offenem Vorschlag bekommt `discard`.
+
+    Das ist der Abschluss des Ausschuss-Schritts, auf eine Gruppe begrenzt. Ein
+    offener Vorschlag zeigt bereits "Ausschuss"; der angezeigte Zustand aendert sich nicht, er wird
+    festgeschrieben - mit derselben Wirkung, die der spaetere Abschluss des Ausschuss-Schritts
+    gehabt haette. Mitglieder mit Entscheidungszeile oder ohne Vorschlag bleiben ungeschrieben: Ihr
+    angezeigter Zustand gilt schon ohne Zeile. Es entsteht kein Gruppenzustand "erledigt".
+
+    SICHERHEIT (S1): Der Stern wird ZUERST aufgeloest; ohne Gruppe ist die Antwort `404`, bevor
+    irgendetwas geschrieben wird - auch fuer ein Foto mit offenem Vorschlag. Die erweiterte
+    Vorbedingung des Einzelwegs gilt hier nicht: `member_ids_of(None, ...)` liefert jedes Foto ohne
+    `duplicate_of`, und ein Aufruf auf ein einzelnes unscharfes Foto schriebe sonst `discard` auf
+    jede Unschaerfe-Ablehnung des Projekts - der projektweite Massenabschluss ohne dessen
+    Bestaetigung.
+
+    SICHERHEIT (S2): Projektbindung, Mitgliedschaft und `has_open_suggestion()` stehen als
+    UND-Glieder in EINER Anweisung mit innerem Join auf `PhotoScore`. `has_open_suggestion` traegt
+    keine eigene Projektbedingung und setzt den Join voraus; ohne ihn wuerde die Bedingung fuer
+    jedes Mitglied wahr, sobald irgendein Foto der Instanz einen offenen Vorschlag traegt, und der
+    Gewinner, der "Behalten" zeigt, verloere still seinen Platz in Bewertung und Album.
+
+    SICHERHEIT (S3): Nur einfuegen, nur `discard`, eine Transaktion; der `flush` liegt vor dem
+    `commit`, ein `IntegrityError` wird `409` mit vollstaendigem Rueckzug. KEIN `DELETE` und nie
+    `_write`: Zwischen Auswahl und Schreiben kann der andere Nutzer eine `keep`-Zeile committen,
+    und ein vorangestelltes `DELETE` ersetzte seine Handlung still durch `discard`. Ein zweiter
+    Aufruf findet keine offene Aufnahme mehr und antwortet `200` mit derselben Gruppe.
+
+    SICHERHEIT (S4): Weder Menge noch Wert kommen vom Aufrufer - der Endpunkt nimmt kein
+    Eingabeschema entgegen, ein mitgeschickter Koerper wird nie gelesen. Eine Id-Liste waere ein
+    Massen-Schreibweg auf beliebige Fotos, ein Wert ein Massen-`keep`.
+
+    SICHERHEIT (S5): `gate_confirmed_at` bleibt unberuehrt. Der Zeitstempel oeffnet den
+    Cloud-Teilschritt; ihn setzt allein der projektweite Abschluss, der auch die
+    Unschaerfe-Ablehnungen ausserhalb jeder Gruppe uebernimmt.
+
+    Antwort ist dieselbe `DuplicateGroupOut` wie auf dem Lesepfad. `404` fuer unbekanntes Projekt
+    und fuer ein Foto ohne Gruppe (unbekannt, fremdes Projekt und "keine Gruppe" sind nicht
+    unterscheidbar), `422` fuer eine Pfad-Id ausserhalb der Grenzen, `409` bei einem
+    gleichzeitigen Schreibversuch - nie eine `500`."""
+    project = await _project_or_404(project_id, session)
+    links = await load_duplicate_links(session, project.id)
+    representative_id = representative_of(photo_id, links)
+    if representative_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
+        )
+
+    offene_ids = list(
+        (
+            await session.execute(
+                select(Photo.id)
+                .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+                .where(
+                    Photo.project_id == project.id,
+                    Photo.id.in_(member_ids_of(representative_id, links)),
+                    has_open_suggestion(),
+                )
+            )
+        ).scalars()
+    )
+    if offene_ids:
+        session.add_all(
+            [
+                PhotoDuplicateDecision(photo_id=offen, decision=DuplicateDecision.DISCARD)
+                for offen in offene_ids
+            ]
+        )
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Die Entscheidung zu dieser Duplikat-Gruppe wurde gerade veraendert. "
+                    "Bitte erneut versuchen."
+                ),
+            ) from None
+        await session.commit()
     return await build_duplicate_group_out(session, project, photo_id, current_user.id)

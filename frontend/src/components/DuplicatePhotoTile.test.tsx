@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -39,9 +39,12 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
 interface TileOverrides {
   effectiveDecision?: DuplicateDecision
   keepPossible?: boolean
-  enlarged?: boolean
+  sharpness?: number | null
+  exposure?: number | null
+  bestSharpness?: boolean
+  bestExposure?: boolean
   deciding?: boolean
-  onToggle?: () => void
+  onOpen?: () => void
   onDecide?: (decision: DuplicateDecision) => void
 }
 
@@ -51,27 +54,36 @@ function tileElement(overrides: TileOverrides = {}) {
       photo={photo()}
       effectiveDecision={overrides.effectiveDecision ?? 'keep'}
       keepPossible={overrides.keepPossible ?? true}
-      enlarged={overrides.enlarged ?? false}
+      sharpness={overrides.sharpness === undefined ? 412.7 : overrides.sharpness}
+      exposure={overrides.exposure === undefined ? 0.125 : overrides.exposure}
+      bestSharpness={overrides.bestSharpness ?? false}
+      bestExposure={overrides.bestExposure ?? false}
       deciding={overrides.deciding ?? false}
-      onToggle={overrides.onToggle ?? vi.fn()}
+      onOpen={overrides.onOpen ?? vi.fn()}
       onDecide={overrides.onDecide ?? vi.fn()}
     />
   )
 }
 
 function renderTile(overrides: TileOverrides = {}) {
-  const onToggle = overrides.onToggle ?? vi.fn()
+  const onOpen = overrides.onOpen ?? vi.fn()
   const onDecide = overrides.onDecide ?? vi.fn()
-  render(<ul>{tileElement({ ...overrides, onToggle, onDecide })}</ul>)
-  return { onToggle, onDecide }
+  render(<ul>{tileElement({ ...overrides, onOpen, onDecide })}</ul>)
+  return { onOpen, onDecide }
 }
 
 function tile(): HTMLElement {
   return screen.getByRole('listitem')
 }
 
+/** Der Wert eines Messwerts in der Bewertungszeile, gefunden ueber seinen Begriff. */
+function metricValue(begriff: string): HTMLElement | null {
+  const term = within(tile()).queryByText(begriff, { selector: 'dt' })
+  return term?.nextElementSibling instanceof HTMLElement ? term.nextElementSibling : null
+}
+
 /* ------------------------------------------------------------------------------------------
- * AK1/AK2 - Zustand ohne Farbwahrnehmung, und es gibt nur noch zwei
+ * Zustand ohne Farbwahrnehmung, und es gibt nur zwei
  * ---------------------------------------------------------------------------------------- */
 
 describe('DuplicatePhotoTile - die zwei Zustaende', () => {
@@ -81,9 +93,6 @@ describe('DuplicatePhotoTile - die zwei Zustaende', () => {
     // Die dreifache Codierung ist die Zusage, nicht die Farbe: In Graustufen liegen die
     // Umrissfarben dicht beieinander. Geprueft als PAARWEISE Verschiedenheit ueber beide
     // Zustaende hinweg, nicht je Zustand einzeln.
-    //
-    // ZWEI, NICHT DREI (AK2, hebt AK6 der Spec 0374 auf): "Noch offen" gibt es nicht mehr - die
-    // Ansicht zeigt das Ueberlebens-Praedikat, und das kennt keinen dritten Wert.
     const gesehen = ZUSTAENDE.map((effectiveDecision) => {
       const { unmount } = render(<ul>{tileElement({ effectiveDecision })}</ul>)
       const kennzeichen = screen.getByTestId('duplicate-state')
@@ -110,116 +119,153 @@ describe('DuplicatePhotoTile - die zwei Zustaende', () => {
     expect(Object.keys(DUPLICATE_ZUSTAENDE).sort()).toEqual(['discard', 'keep'])
   })
 
-  it('traegt in keinem Zustand und in keiner Darstellung ein data-dimmed', () => {
-    // AK1 (Spec 0498): Jede Aufnahme wird in voller Helligkeit gezeigt - genau hier liegen
-    // mehrere aehnliche Aufnahmen nebeneinander, und ihr Helligkeitsunterschied SOLL beurteilt
-    // werden. `data-dimmed` hatte genau einen Zweck (einen berechneten Deckkraftwert gegen eine
-    // Absicht zu halten) und sagt ohne Daempfung nichts mehr.
-    //
-    // Ueber den GANZEN Kachelbaum, nicht nur ueber die Bildflaeche: Ein stehengebliebenes
-    // Attribut an einem beliebigen Kind bliebe sonst unbemerkt.
+  it('traegt in keinem Zustand ein data-dimmed', () => {
+    // A6: Jede Aufnahme steht in voller Helligkeit - hier liegen aehnliche Aufnahmen nebeneinander,
+    // und ihr Helligkeitsunterschied SOLL beurteilt werden. Ueber den GANZEN Kachelbaum.
     for (const effectiveDecision of ['keep', 'discard'] as const) {
-      for (const enlarged of [false, true]) {
-        const { unmount } = render(<ul>{tileElement({ effectiveDecision, enlarged })}</ul>)
+      const { unmount } = render(<ul>{tileElement({ effectiveDecision })}</ul>)
 
-        expect(tile().hasAttribute('data-dimmed')).toBe(false)
-        expect(tile().querySelectorAll('[data-dimmed]')).toHaveLength(0)
-        unmount()
-      }
-    }
-  })
-
-  it('reserviert die Hoehe der Bildflaeche in BEIDEN Zustaenden, bevor das Bild da ist', () => {
-    // Die Bildflaeche laedt ueber einen authentifizierten Abruf und trifft immer erst nach dem
-    // ersten Rendern ein. Ohne reservierte Hoehe waere die vergroesserte Kachel bis dahin flach
-    // und wuechse danach um die volle Bildhoehe - alles darunter rutschte aus dem Sichtbereich,
-    // nachdem bereits gescrollt wurde.
-    //
-    // Geprueft als Anwesenheit einer FESTEN Hoehe, nicht als Abwesenheit von `max-h-96`: Ein
-    // dritter Zustand ohne reservierte Hoehe faellt hier ebenfalls auf.
-    for (const [enlarged, erwartet] of [
-      [false, 'aspect-square'],
-      [true, 'h-96'],
-    ] as const) {
-      const { unmount } = render(<ul>{tileElement({ enlarged })}</ul>)
-      const flaeche = screen.getByTestId('duplicate-image')
-
-      expect(flaeche.className).toContain(erwartet)
-      expect(flaeche.className).not.toContain('max-h-')
+      expect(tile().hasAttribute('data-dimmed')).toBe(false)
+      expect(tile().querySelectorAll('[data-dimmed]')).toHaveLength(0)
       unmount()
     }
   })
 
-  it('zeigt Zustandsrahmen, Symbol und Wort auch in der Vergroesserung', () => {
-    // AK4 (Spec 0498): Seit die Bildflaeche in voller Helligkeit steht, tragen den Zustand
-    // ausschliesslich der zustandsabhaengige Rahmen und das Zustandsfeld aus Symbol UND Wort -
-    // beide auch in der Vergroesserung, sonst verloere man beim Beurteilen genau die Angabe, die
-    // man gerade setzt.
-    renderTile({ effectiveDecision: 'discard', enlarged: true })
+  it('reserviert die Hoehe der Bildflaeche, bevor das Bild da ist', () => {
+    // Die Bildflaeche laedt ueber einen authentifizierten Abruf und trifft erst nach dem ersten
+    // Rendern ein; ohne reservierte Hoehe spraenge das Raster beim Eintreffen.
+    renderTile()
 
-    expect(tile().dataset.duplicateDecision).toBe('discard')
-    const kennzeichen = screen.getByTestId('duplicate-state')
-    expect(kennzeichen).toHaveTextContent(DUPLICATE_ZUSTAENDE.discard.text)
-    expect(kennzeichen.querySelector('[data-icon]')).not.toBeNull()
+    expect(screen.getByTestId('duplicate-image').className).toContain('aspect-square')
   })
 })
 
 /* ------------------------------------------------------------------------------------------
- * AK3 - was sich nicht aendern laesst, sagt das
+ * A4 - alles gleichzeitig sichtbar
+ * ---------------------------------------------------------------------------------------- */
+
+describe('DuplicatePhotoTile - Aufbau', () => {
+  it.each([
+    ['mit Wahlzeile', true],
+    ['ohne Wahlzeile', false],
+  ])('zeigt alle fuenf Teile ohne Aufklappen (%s)', (_fall, keepPossible) => {
+    renderTile({ effectiveDecision: 'discard', keepPossible })
+
+    expect(screen.getByRole('button', { name: 'Reise/serie-01.jpg vergrößern' })).toBeTruthy()
+    expect(within(tile()).getByText('serie-01.jpg')).toBeTruthy()
+    expect(screen.getByTestId('duplicate-state')).toHaveTextContent(
+      DUPLICATE_ZUSTAENDE.discard.text,
+    )
+    expect(metricValue('Schärfe')).not.toBeNull()
+    if (keepPossible) {
+      expect(screen.getByRole('group', { name: /Wahl/ })).toBeTruthy()
+    } else {
+      expect(screen.getByText(DUPLICATE_IMMUTABLE_TEXT)).toBeTruthy()
+    }
+    expect(tile().querySelectorAll('[aria-expanded]')).toHaveLength(0)
+    expect(tile().querySelectorAll('details:not([open])')).toHaveLength(0)
+  })
+})
+
+/* ------------------------------------------------------------------------------------------
+ * A7 - die Bewertungszeile
+ * ---------------------------------------------------------------------------------------- */
+
+describe('DuplicatePhotoTile - die Bewertungszeile', () => {
+  it('nennt Schaerfe und Belichtung in der Formatierung der Ansicht', () => {
+    renderTile({ sharpness: 412.7, exposure: 0.125 })
+
+    expect(metricValue('Schärfe')).toHaveTextContent(/^413$/)
+    expect(metricValue('Belichtung')).toHaveTextContent(/^12,5 % ohne Zeichnung$/)
+  })
+
+  it('nennt eine fehlende Schaerfe als "nicht gemessen"', () => {
+    renderTile({ sharpness: null })
+
+    expect(metricValue('Schärfe')).toHaveTextContent('nicht gemessen')
+  })
+
+  it('laesst die Belichtungszeile weg, wenn der Wert fehlt', () => {
+    renderTile({ exposure: null })
+
+    expect(metricValue('Belichtung')).toBeNull()
+    expect(metricValue('Schärfe')).not.toBeNull()
+  })
+
+  it('zeigt 0 als Wert und nicht als Abwesenheit', () => {
+    renderTile({ sharpness: 0, exposure: 0 })
+
+    expect(metricValue('Schärfe')).toHaveTextContent(/^0$/)
+    expect(metricValue('Belichtung')).toHaveTextContent(/^0 % ohne Zeichnung$/)
+  })
+
+  it('traegt die Auszeichnung als Wort neben dem Wert', () => {
+    renderTile({ bestSharpness: true, bestExposure: true })
+
+    expect(metricValue('Schärfe')).toHaveTextContent('413 — schärfste')
+    expect(metricValue('Belichtung')).toHaveTextContent('12,5 % ohne Zeichnung — beste Belichtung')
+  })
+
+  it('aendert mit der Auszeichnung weder Zustand, Rahmen noch Bedienelemente', () => {
+    // Die Auszeichnung ist nur ein Wort. Sie steht widerspruchsfrei auf einer Ausschuss-Aufnahme,
+    // waehrend eine andere "Behalten" traegt.
+    const ohne = render(<ul>{tileElement({ effectiveDecision: 'discard' })}</ul>)
+    const vorher = {
+      zustand: tile().dataset.duplicateDecision,
+      rahmen: tile().className,
+      knoepfe: screen.getAllByRole('button').map((knopf) => knopf.getAttribute('aria-pressed')),
+    }
+    ohne.unmount()
+
+    render(
+      <ul>
+        {tileElement({ effectiveDecision: 'discard', bestSharpness: true, bestExposure: true })}
+      </ul>,
+    )
+
+    expect({
+      zustand: tile().dataset.duplicateDecision,
+      rahmen: tile().className,
+      knoepfe: screen.getAllByRole('button').map((knopf) => knopf.getAttribute('aria-pressed')),
+    }).toEqual(vorher)
+  })
+})
+
+/* ------------------------------------------------------------------------------------------
+ * A8 - was sich nicht aendern laesst, sagt das
  * ---------------------------------------------------------------------------------------- */
 
 describe('DuplicatePhotoTile - das unveraenderliche Mitglied', () => {
-  it('rendert GAR KEINE Wahlschaltflaechen, wenn keine Wahl wirkt', async () => {
+  it.each([
+    ['mit Wahl', true, 3],
+    ['ohne Wahl', false, 1],
+  ])('zaehlt die Bedienelemente der Karte (%s)', (_fall, keepPossible, anzahl) => {
     // Ueber die ANZAHL der Bedienelemente, nie ueber `queryByRole(name)`: Eine Abfrage nach dem
-    // Namen ist gegen ein umbenanntes Label blind und bestuende dann auch, wenn die Schaltflaeche
-    // sehr wohl da waere. Uebrig bleibt genau die Bildflaeche.
-    //
-    // AUCH "Ausschuss" FEHLT, nicht nur "behalten": Der waere ebenso wirkungslos - das Mitglied
-    // steht bereits unveraenderlich dort.
-    renderTile({ effectiveDecision: 'discard', keepPossible: false })
+    // Namen ist gegen ein umbenanntes Label blind. Ohne Wahl bleibt genau die Bildflaeche - auch
+    // "Ausschuss" fehlt, und keine Schaltflaeche ist bloss gesperrt.
+    renderTile({ effectiveDecision: 'discard', keepPossible })
 
-    expect(screen.getAllByRole('button')).toHaveLength(1)
-    expect(screen.getByRole('button').getAttribute('aria-label')).toMatch(/vergrößern$/)
-  })
-
-  it('nennt stattdessen den Grund als sichtbaren Text', () => {
-    renderTile({ effectiveDecision: 'discard', keepPossible: false })
-
-    expect(screen.getByText(DUPLICATE_IMMUTABLE_TEXT)).toBeTruthy()
-    expect(DUPLICATE_IMMUTABLE_TEXT).toMatch(/Bildqualität/i)
-  })
-
-  it('ist NICHT disabled - "nicht anwendbar" ist etwas anderes als "kurzzeitig gesperrt"', () => {
-    // Gegenprobe zum Fall darueber: Im Regelfall stehen drei Bedienelemente, und der Grundtext
-    // steht nicht da. Ohne sie bestuende der Fall oben auch gegen eine Kachel, die NIE eine Wahl
-    // anbietet.
-    renderTile({ effectiveDecision: 'discard', keepPossible: true })
-
-    expect(screen.getAllByRole('button')).toHaveLength(3)
-    expect(screen.queryByText(DUPLICATE_IMMUTABLE_TEXT)).toBeNull()
+    const knoepfe = screen.getAllByRole('button')
+    expect(knoepfe).toHaveLength(anzahl)
+    expect(knoepfe.filter((knopf) => knopf.hasAttribute('disabled'))).toHaveLength(0)
+    expect(screen.queryByText(DUPLICATE_IMMUTABLE_TEXT) !== null).toBe(!keepPossible)
   })
 })
 
 /* ------------------------------------------------------------------------------------------
- * AK7 - Vergroessern und Verkleinern
+ * A11 - die Bildflaeche oeffnet die Grossansicht
  * ---------------------------------------------------------------------------------------- */
 
 describe('DuplicatePhotoTile - vergroessern', () => {
   it('ist ein natives button und nennt die Aktion im zugaenglichen Namen', async () => {
-    const { onToggle } = renderTile()
+    const { onOpen } = renderTile()
     const knopf = screen.getByRole('button', { name: /vergrößern/i })
 
     expect(knopf.tagName).toBe('BUTTON')
     expect(knopf.getAttribute('type')).toBe('button')
     await userEvent.click(knopf)
 
-    expect(onToggle).toHaveBeenCalledTimes(1)
-  })
-
-  it('nennt in der Vergroesserung die Gegenaktion', () => {
-    renderTile({ enlarged: true })
-
-    expect(screen.getByRole('button', { name: /verkleinern/i })).toBeTruthy()
+    expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
   it.each([
@@ -230,9 +276,6 @@ describe('DuplicatePhotoTile - vergroessern', () => {
     (_fall, keepPossible, anzahl) => {
       // Mehrere Kacheln im selben Raster waeren per Tastatur und Screenreader sonst nicht
       // auseinanderzuhalten - "Behalten" allein sagt nicht, welches Bild gemeint ist.
-      //
-      // Die ANZAHL haengt seit AK3 an der Datenlage: Beim unveraenderlichen Mitglied bleibt nur die
-      // Bildflaeche. Beide Faelle stehen deshalb hier, statt eine feste Drei zu behaupten.
       renderTile({ effectiveDecision: 'discard', keepPossible })
 
       const namen = screen
@@ -246,21 +289,19 @@ describe('DuplicatePhotoTile - vergroessern', () => {
   )
 
   it('wirkt mit Enter und Leertaste, ohne eigenen Tastatur-Handler', async () => {
-    // AK7: Zugesichert ist, dass kein eigenes `onKeyDown` das native Element ersetzt - die
-    // Tastaturbedienbarkeit kommt vom `<button>` selbst.
-    const { onToggle } = renderTile()
+    const { onOpen } = renderTile()
     const knopf = screen.getByRole('button', { name: /vergrößern/i })
 
     knopf.focus()
     await userEvent.keyboard('{Enter}')
     await userEvent.keyboard(' ')
 
-    expect(onToggle).toHaveBeenCalledTimes(2)
+    expect(onOpen).toHaveBeenCalledTimes(2)
   })
 })
 
 /* ------------------------------------------------------------------------------------------
- * AK4 - Einzelentscheidung
+ * A5 - die Wahlzeile
  * ---------------------------------------------------------------------------------------- */
 
 describe('DuplicatePhotoTile - die Wahlzeile', () => {
@@ -275,23 +316,22 @@ describe('DuplicatePhotoTile - die Wahlzeile', () => {
     expect(onDecide).toHaveBeenCalledTimes(2)
   })
 
-  it('weist den geltenden Wert ueber aria-pressed aus', () => {
-    // `aria-pressed` folgt `effectiveDecision`, nicht einer gespeicherten Entscheidungszeile: Die
-    // Kachel weiss nicht, ob der Zustand vom System oder vom Nutzer stammt (AK2).
+  it('weist den geltenden Wert ueber aria-pressed und sein Symbol aus', () => {
+    // `aria-pressed` folgt `effectiveDecision`. Die gedrueckte Schaltflaeche traegt zusaetzlich
+    // ihr Zustandssymbol - so traegt die Form den Zustand, nicht nur die Farbe.
     renderTile({ effectiveDecision: 'keep' })
 
-    expect(screen.getByRole('button', { name: /^Behalten:/ }).getAttribute('aria-pressed')).toBe(
-      'true',
+    const behalten = screen.getByRole('button', { name: /^Behalten:/ })
+    const ausschuss = screen.getByRole('button', { name: /^Ausschuss:/ })
+    expect(behalten.getAttribute('aria-pressed')).toBe('true')
+    expect(ausschuss.getAttribute('aria-pressed')).toBe('false')
+    expect(behalten.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe(
+      DUPLICATE_ZUSTAENDE.keep.icon,
     )
-    expect(screen.getByRole('button', { name: /^Ausschuss:/ }).getAttribute('aria-pressed')).toBe(
-      'false',
-    )
+    expect(ausschuss.querySelector('[data-icon]')).toBeNull()
   })
 
-  it('bietet GENAU ZWEI Wahlschaltflaechen, solange eine Wahl wirkt', () => {
-    // Es gibt keine Ruecknahme nach "noch nicht entschieden" - jener Zustand existiert nicht mehr.
-    // Die Zaehlung ist die Zusage: ein dritter Knopf faellt hier auf, und genau einer ist
-    // gedrueckt.
+  it('bietet GENAU ZWEI Wahlschaltflaechen, genau eine gedrueckt', () => {
     renderTile({ effectiveDecision: 'keep' })
 
     expect(screen.getAllByRole('button', { pressed: false })).toHaveLength(1)
@@ -304,16 +344,5 @@ describe('DuplicatePhotoTile - die Wahlzeile', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Behalten:/ }))
 
     expect(onDecide).not.toHaveBeenCalled()
-  })
-
-  it('laesst die Entscheidung auch in der Vergroesserung zu', async () => {
-    // AK8: Eine Entscheidung in der Vergroesserung aendert den Zustand, hebt die Vergroesserung
-    // nicht auf und blaettert nicht weiter.
-    const { onDecide, onToggle } = renderTile({ enlarged: true })
-
-    await userEvent.click(screen.getByRole('button', { name: /^Ausschuss:/ }))
-
-    expect(onDecide).toHaveBeenCalledWith('discard')
-    expect(onToggle).not.toHaveBeenCalled()
   })
 })

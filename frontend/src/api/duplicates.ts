@@ -69,3 +69,21 @@ export function setDuplicateGroupDecision(
     { method: 'PUT', body: { decision } },
   )
 }
+
+/**
+ * Schließt EINE Gruppe ab: Jedes Mitglied mit offenem Vorschlag bekommt „Ausschuss"
+ * festgeschrieben. Kein angezeigter Zustand ändert sich — ein offener Vorschlag zeigt ihn schon.
+ *
+ * OHNE KÖRPER: Weder die Menge noch der Wert kommen von hier. Eine Id-Liste wäre ein
+ * Massen-Schreibweg auf beliebige Fotos, ein Wert ein Massen-„behalten". Ebenso untersagt ist, den
+ * angezeigten Zustand über `setDuplicateDecision`/`setDuplicateGroupDecision` festzuschreiben:
+ * Das schriebe „behalten" auf den Gewinner ohne Vorschlag und überschriebe gespeicherte Handlungen.
+ */
+export function confirmDuplicateGroup(
+  projectId: number,
+  photoId: number,
+): Promise<DuplicateGroupOut> {
+  return apiFetch<DuplicateGroupOut>(`/projects/${projectId}/duplicate-groups/${photoId}/confirm`, {
+    method: 'POST',
+  })
+}

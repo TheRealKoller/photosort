@@ -1,22 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useOutletContext, useSearchParams } from 'react-router'
+import { useCallback, useEffect, useMemo } from 'react'
+import { Link, useOutletContext, useSearchParams } from 'react-router'
 
 import { ApiError } from '../../api/client'
-import type { AusschussEntryOut, DuplicateDecision, SuggestionReason } from '../../api/types'
-import {
-  DUPLICATE_IMMUTABLE_TEXT,
-  DUPLICATE_ZUSTAENDE,
-  DuplicatePhotoTile,
-} from '../../components/DuplicatePhotoTile'
+import type { AusschussPhotoEntry, DuplicateDecision } from '../../api/types'
+import { GrundKennzeichen } from '../../components/AusschussGrund'
+import { DUPLICATE_IMMUTABLE_TEXT, DUPLICATE_ZUSTAENDE } from '../../components/DuplicatePhotoTile'
+import { DuplicateStackTile } from '../../components/DuplicateStackTile'
 import { PhotoImage } from '../../components/PhotoImage'
 import { StatusDot } from '../../components/StatusDot'
 import { Alert } from '../../components/ui/alert'
 import { Button } from '../../components/ui/button'
-import { Icon } from '../../components/ui/icon'
 import { Progress } from '../../components/ui/progress'
 import { Skeleton } from '../../components/ui/skeleton'
 import { useAusschussEntryQuery, useAusschussQuery } from '../../hooks/useAusschuss'
-import { useDuplicateDecisionMutation, useDuplicateGroupQuery } from '../../hooks/useDuplicates'
+import { useDuplicateDecisionMutation } from '../../hooks/useDuplicates'
 import { useConfirmAusschussGateMutation, useTriggerScoreMutation } from '../../hooks/useProjects'
 import { useTriggerConfirmation } from '../../hooks/useTriggerConfirmation'
 import { useElementWidth } from '../../hooks/useElementWidth'
@@ -30,6 +27,7 @@ import {
   naturalTiles,
 } from '../../utils/justifiedRows'
 import type { JustifiedTile } from '../../utils/justifiedRows'
+import { duplicateComparePath } from '../../utils/projectRoutes'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 
 // Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln" -
@@ -66,50 +64,12 @@ export const AUSSCHUSS_OPEN_LABEL = 'Vorgeschlagen'
 /** Die Beschriftung des Abschlusses - wortgleich mit dem frueheren Ausschuss-Gate. */
 export const AUSSCHUSS_CONFIRM_TEXT = 'Ausschuss gesichtet, weiter'
 
-/**
- * Das Grund-Kennzeichen je Kachel (AK4): Zeichen UND Wort, unterscheidbar nach Art.
- *
- * Die Farbe traegt die Aussage nie allein - das Wort steht daneben. `--danger-text` statt
- * `--danger`: Der grafische Ton haelt als Fliesstext kein AA.
- */
-const GRUND_KENNZEICHEN: Record<SuggestionReason, { text: string; schrift: string }> = {
-  duplicate: { text: 'Duplikat', schrift: 'text-accent' },
-  low_quality: { text: 'Geringe Bildqualität', schrift: 'text-danger-text' },
-}
-
 /** Die Farbe der Entscheidungszeile. `null` (noch offen) ist zurueckhaltend: Es ist der Zustand
  * ohne Handlung, nicht einer mit. */
 const ENTSCHEIDUNG_SCHRIFT: Record<DuplicateDecision | 'offen', string> = {
   keep: 'text-accent',
   discard: 'text-danger-text',
   offen: 'text-text-muted',
-}
-
-/**
- * Der Duplikat-Stapel: drei versetzte Kartenumrisse aus der Design-Nutzlast (Schluessel
- * `ausschuss`). DATEILOKALES SVG statt eines neuen Symbols im Zwanziger-Satz von `ui/icon.tsx`:
- * Der Satz des Boards fuehrt kein Stapel-Symbol, und ihn dafuer zu erweitern waere eine
- * Gestaltungsentscheidung ohne Vorlage - dieselbe Begruendung wie beim Schloss in `StepMarker`.
- */
-function StapelZeichen() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 16 16" width={14} height={14} className="shrink-0">
-      <rect x="1.5" y="5.5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" />
-      <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" />
-      <rect x="5.5" y="1.5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" />
-    </svg>
-  )
-}
-
-/** Grund-Kennzeichen als eigenes Element - einmal fuer die Kachel, einmal fuer die Detailansicht. */
-function GrundKennzeichen({ reason }: { reason: SuggestionReason }) {
-  const kennzeichen = GRUND_KENNZEICHEN[reason]
-  return (
-    <span className={cn('flex items-center gap-1 text-xs', kennzeichen.schrift)}>
-      {reason === 'duplicate' ? <StapelZeichen /> : <Icon name="image" size={14} />}
-      {kennzeichen.text}
-    </span>
-  )
 }
 
 /** Der gespeicherte Zeilenwert als Wort. `null` heisst "noch nicht entschieden" - es gibt keine
@@ -169,6 +129,7 @@ export function AusschussStepPage() {
 
   const { ref: gridRef, width: containerWidth } = useElementWidth<HTMLUListElement>()
 
+  // Einzel-Eintraege und Stapel stehen im selben Raster; gezaehlt wird nach Eintraegen.
   const entries = useMemo(
     () => ausschussQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [ausschussQuery.data],
@@ -177,7 +138,9 @@ export function AusschussStepPage() {
   const openCount = ausschussQuery.data?.pages[0]?.open_count ?? 0
 
   const tiles = useMemo(() => {
-    const ratios = entries.map((eintrag) => eintrag.photo.aspect_ratio ?? null)
+    const ratios = entries.map(
+      (eintrag) => (eintrag.kind === 'photo' ? eintrag.photo : eintrag.cover).aspect_ratio ?? null,
+    )
     if (containerWidth <= 0) {
       return new Map(naturalTiles(ratios, TARGET_ROW_HEIGHT_PX).map((tile) => [tile.index, tile]))
     }
@@ -333,6 +296,17 @@ export function AusschussStepPage() {
               <ul data-ausschuss-grid ref={gridRef} className="flex flex-wrap gap-3">
                 {entries.map((eintrag, index) => {
                   const tile = tiles.get(index)
+                  if (eintrag.kind === 'group') {
+                    return (
+                      <DuplicateStackTile
+                        key={`gruppe-${eintrag.group_anchor_photo_id}`}
+                        projectId={project.id}
+                        entry={eintrag}
+                        width={tile?.width ?? 0}
+                        height={tile?.height ?? 0}
+                      />
+                    )
+                  }
                   return (
                     <li
                       key={eintrag.photo.id}
@@ -397,7 +371,7 @@ export function AusschussStepPage() {
             )}
             {(ausschussQuery.hasNextPage || ausschussQuery.isFetchingNextPage) && (
               <p aria-live="polite" className="text-sm text-text">
-                {entries.length} von {total} geladen
+                {entries.length} von {total} Einträgen geladen
               </p>
             )}
 
@@ -443,8 +417,8 @@ export function AusschussStepPage() {
 }
 
 /**
- * Die Detailansicht: Grossbild, Entscheidungszeile, und beim Duplikat die ganze Gruppe daneben
- * (AK5/AK6/AK8).
+ * Die Detailansicht: Grossbild und Entscheidungszeile, beim Gruppenmitglied dazu der Weg in die
+ * Vergleichsansicht (A10). Die Gruppe selbst wird hier nicht geladen - sie wird dort entschieden.
  *
  * `Esc` schliesst nur, solange diese Ansicht ueberhaupt offen ist - das erledigt die Komponente
  * selbst statt der Seite, weil sie genau dann montiert ist.
@@ -459,7 +433,7 @@ function AusschussDetail({
   onClose: () => void
 }) {
   const query = useAusschussEntryQuery(projectId, photoId)
-  const eintrag: AusschussEntryOut | null = query.data?.items[0] ?? null
+  const eintrag: AusschussPhotoEntry | null = query.data ?? null
 
   /* Der Schreibweg ist der EINZELNE: Er trifft genau diese Aufnahme. Der Anker der Gruppe ist
      dabei nur der Ort, an dem die Antwort im Zwischenspeicher landet - die Menge der betroffenen
@@ -531,7 +505,7 @@ function AusschussDetail({
         </Button>
       </div>
 
-      <div className="grid w-full gap-4 lg:grid-cols-2">
+      <div className="flex w-full flex-col gap-4">
         <div className="flex flex-col items-start gap-3">
           {/* Grossbild in der Variante `display`: Hier wird beurteilt, und ein hochskaliertes
               Vorschaubild entschiede die Frage nach der Schaerfe falsch. `object-contain`, damit
@@ -595,6 +569,20 @@ function AusschussDetail({
 
           {!keepPossible && <p className="text-xs text-text-muted">{DUPLICATE_IMMUTABLE_TEXT}</p>}
 
+          {/* Am Anker, nicht am Grund: Auch der Gewinner mit Schaerfe-Ablehnung (`low_quality`)
+              liegt in einer Gruppe. Ohne Anker gibt es keinen Weg ins Leere. */}
+          {eintrag.group_anchor_photo_id !== null && (
+            <Button asChild variant="outline" size="sm">
+              <Link
+                to={duplicateComparePath(projectId, eintrag.group_anchor_photo_id, {
+                  fromAusschuss: true,
+                })}
+              >
+                Duplikat-Gruppe vergleichen
+              </Link>
+            </Button>
+          )}
+
           {decisionMutation.isError && (
             <Alert>
               {decisionMutation.error instanceof ApiError
@@ -603,108 +591,7 @@ function AusschussDetail({
             </Alert>
           )}
         </div>
-
-        {eintrag.reason === 'duplicate' && eintrag.group_anchor_photo_id !== null && (
-          <AusschussDetailGruppe
-            projectId={projectId}
-            anchorPhotoId={eintrag.group_anchor_photo_id}
-          />
-        )}
       </div>
-    </div>
-  )
-}
-
-/**
- * Die Duplikatgruppe der geoeffneten Aufnahme - aufgeloest ueber den Anker aus der Antwort, nicht
- * ueber das angeklickte Foto: Die Gruppe bleibt dieselbe, egal welches Mitglied man geoeffnet hat.
- *
- * Dieselben Bausteine wie die Vergleichsansicht, aber ohne deren Gruppen-Navigation: Der Weg
- * durch die Serien bleibt dort, hier steht die eine Serie zur geoeffneten Aufnahme.
- */
-function AusschussDetailGruppe({
-  projectId,
-  anchorPhotoId,
-}: {
-  projectId: number
-  anchorPhotoId: number
-}) {
-  const query = useDuplicateGroupQuery(projectId, anchorPhotoId)
-  const decisionMutation = useDuplicateDecisionMutation(projectId, anchorPhotoId)
-
-  /* Die laufenden Entscheidungen als MENGE von Foto-Ids: Verschiedene Aufnahmen entscheiden
-     unabhaengig voneinander, und eine gruppenweite Sperre blockierte den zuegigen Durchlauf. */
-  const [decidingIds, setDecidingIds] = useState<ReadonlySet<number>>(new Set())
-  /** Die vergroesserte Aufnahme als FOTO-ID, nie als Index - `null` heisst "keine". Die
-   * Vergroesserung bleibt INNERHALB der Gruppe: Sie zeigt ein Mitglied genauer, ohne die
-   * geoeffnete Aufnahme zu wechseln. */
-  const [enlargedId, setEnlargedId] = useState<number | null>(null)
-  const items = query.data?.items ?? []
-
-  function handleDecide(decidedPhotoId: number, decision: DuplicateDecision): void {
-    setDecidingIds((current) => new Set(current).add(decidedPhotoId))
-    decisionMutation.mutate(
-      { photoId: decidedPhotoId, decision },
-      {
-        onSettled: () => {
-          setDecidingIds((current) => {
-            const next = new Set(current)
-            next.delete(decidedPhotoId)
-            return next
-          })
-        },
-      },
-    )
-  }
-
-  return (
-    <div className="flex flex-col items-start gap-3">
-      <h4 className="text-base">Duplikat-Gruppe</h4>
-
-      {query.isLoading && (
-        <ul
-          role="status"
-          aria-label="Duplikat-Gruppe wird geladen…"
-          className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3"
-        >
-          {Array.from({ length: 2 }, (_, index) => (
-            <li key={index} aria-hidden="true">
-              <Skeleton className="aspect-square w-full rounded-md" />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {query.isError && (
-        <Alert onRetry={() => void query.refetch()}>
-          {query.error instanceof ApiError
-            ? query.error.detail
-            : 'Fehler beim Laden der Duplikat-Gruppe.'}
-        </Alert>
-      )}
-
-      {query.isSuccess && items.length === 0 && (
-        <p className="text-sm text-text">Zu dieser Aufnahme gibt es keine Duplikat-Gruppe.</p>
-      )}
-
-      {items.length > 0 && (
-        <ul className="grid w-full grid-cols-2 items-start gap-3 sm:grid-cols-3">
-          {items.map((item) => (
-            <DuplicatePhotoTile
-              key={item.photo.id}
-              photo={item.photo}
-              effectiveDecision={item.effective_decision}
-              keepPossible={item.keep_possible}
-              enlarged={item.photo.id === enlargedId}
-              deciding={decidingIds.has(item.photo.id)}
-              onToggle={() =>
-                setEnlargedId((current) => (current === item.photo.id ? null : item.photo.id))
-              }
-              onDecide={(decision) => handleDecide(item.photo.id, decision)}
-            />
-          ))}
-        </ul>
-      )}
     </div>
   )
 }

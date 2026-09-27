@@ -1804,10 +1804,17 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     // Gegenprobe auf eine nicht leere Kandidatenmenge, OHNE ihre Maechtigkeit festzuschreiben:
     // Eine neue bildtragende Datei soll in die Regel fallen, nicht die Gegenprobe rot faerben.
     expect(files.length).toBeGreaterThan(0)
-    // ... und die Ableitung erfasst tatsaechlich die drei Kacheln, um die es geht. Ohne diese
-    // Zeile bliebe unbemerkt, dass sie am Kern vorbeigreift, solange sie irgendetwas findet.
+    // ... und die Ableitung erfasst tatsaechlich die Kacheln und Bildflaechen, um die es geht.
+    // Ohne diese Zeile bliebe unbemerkt, dass sie am Kern vorbeigreift, solange sie irgendetwas
+    // findet.
     const labels = files.map((file) => file.label)
-    for (const kachel of ['PhotoCard', 'PhotoGridTile', 'DuplicatePhotoTile']) {
+    for (const kachel of [
+      'PhotoCard',
+      'PhotoGridTile',
+      'DuplicatePhotoTile',
+      'DuplicateEnlargedView',
+      'DuplicateStackTile',
+    ]) {
       expect(labels).toContain(`src/components/${kachel}.tsx`)
     }
 
@@ -1926,6 +1933,27 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason:
         'Panelzeile der Projekt-Navigation: Zeilenhoehe einer zeilenweisen Liste - die Zeile ' +
         'selbst ist die Trefferflaeche, deshalb bewusst NICHT zusaetzlich aufgespannt',
+    },
+    {
+      file: 'src/components/DuplicatePhotoTile.tsx',
+      snippet: 'className="h-11 grow sm:h-8"',
+      reason:
+        'heisser Pfad: die Wahlzeile der Vergleichsansicht (Karte und Seitenspalte der ' +
+        'Grossansicht) - ein Fehlgriff schreibt, welche Bilder den Homeserver verlassen',
+    },
+    {
+      file: 'src/components/DuplicateEnlargedView.tsx',
+      snippet: 'className="h-11 sm:h-8"',
+      reason:
+        'heisser Pfad: Vorherige/Naechste Aufnahme der Grossansicht werden viele Male ' +
+        'hintereinander gedrueckt, unmittelbar neben der Wahlzeile',
+    },
+    {
+      file: 'src/pages/DuplicateComparePage.tsx',
+      snippet: 'className="h-11 sm:h-8"',
+      reason:
+        'heisser Pfad: Vorherige/Naechste Gruppe beim Durchgang durch alle Gruppen - ' +
+        'dieselbe Begruendung wie beim Blaettern innerhalb der Gruppe',
     },
   ]
 
