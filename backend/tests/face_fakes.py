@@ -1,5 +1,4 @@
-"""Fake-Analyzer fuer die Personen-Erkennung (testkonzept 0002, Sektion "Biometrische Merkmale
-ohne echtes Modell", Punkt 1a).
+"""Fake-Analyzer fuer die Personen-Erkennung.
 
 Bewusst kein `test_*`-Modul (wird nicht eingesammelt): Worker- und API-Tests brauchen denselben
 Fake (Muster `project_graph.py`).

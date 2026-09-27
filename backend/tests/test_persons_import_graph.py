@@ -1,5 +1,4 @@
-"""Personendaten und Netzwerk-Clients bleiben getrennt, in beide Richtungen (Spec 0292, S6;
-ADR 0126 Punkt 1; testkonzept 0002, Sektion "Biometrische Merkmale ohne echtes Modell", Punkt 4).
+"""Personendaten und Netzwerk-Clients bleiben getrennt, in beide Richtungen (S6).
 
 `config.py` importiert `cloud_vision`; die Huelle jedes Moduls, das `models`, `db` oder `config`
 erreicht, enthaelt damit den Cloud-Client. Transitiv pruefbar ist deshalb nur: die reinen

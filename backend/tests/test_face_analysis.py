@@ -1,4 +1,4 @@
-"""Der Adapter um YuNet/SFace (Spec 0292, ADR 0126 Punkt 1).
+"""Der Adapter um YuNet/SFace.
 
 Geprueft gegen Attrappen seiner uebergebenen Detektor- und Erkennerprotokolle: Arbeitsfassung,
 Box, Klemmen, Verwertbarkeit, Obergrenze, Reihenfolge, Normierung. Die echten Modelle laufen allein

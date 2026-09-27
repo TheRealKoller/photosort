@@ -96,7 +96,7 @@ export function AlbumDraftPage() {
   const exchangeMutation = useDraftExchangeMutation(id, username)
   const items = useMemo(() => query.data?.items ?? [], [query.data])
 
-  // Der Personenfilter blendet NUR clientseitig aus (Spec 0292): Der Kopf zählt weiter den ganzen
+  // Der Personenfilter blendet NUR clientseitig aus: Der Kopf zählt weiter den ganzen
   // Entwurf, und die Entwurfsliste wird durch den Filter weder neu geladen noch beschrieben.
   const [searchParams, setSearchParams] = useSearchParams()
   const { personsQuery, personIds, setPersonIds } = usePersonFilter(searchParams, setSearchParams)

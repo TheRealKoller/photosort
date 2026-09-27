@@ -1,5 +1,5 @@
 """Die beiden benannten Personen: festlegen, gezeigte Gesichter, Korrekturen, entfernen, und die
-wirksame Zuordnung (Spec 0292, ADR 0126 Punkt 6).
+wirksame Zuordnung.
 
 DIE EINE STELLE fuer die wirksame Zuordnung: `effective_person_assignments()` ist das einzige
 SQL-Konstrukt, in dem die Korrekturspalte in die Zuordnung eingeht - Korrektur vor Erkennung.
@@ -10,7 +10,7 @@ DIE EINE SCHREIBSTELLE fuer `PersonReference`: `_store_reference`, erreicht nur 
 `create_person` und `add_reference` - und damit nur fuer ein ausdruecklich GEZEIGTES Gesicht.
 Erkannte Gesichter werden nie von selbst zu Referenzen.
 
-IMPORTREGEL (ADR 0126 Punkt 1): Dieses Modul importiert direkt keinen Netzwerk-Client.
+IMPORTREGEL: Dieses Modul importiert direkt keinen Netzwerk-Client.
 Schwerpunkte werden je Aufruf frisch aus der Datenbank gebildet und nie darueber hinaus gehalten -
 ein Zwischenspeicher erkennte eine entfernte Person weiter, bis der Prozess neu startet.
 

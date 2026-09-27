@@ -37,7 +37,7 @@ function withPhotoPersons(data: unknown, photoId: number, persons: PhotoPersonOu
 }
 
 /**
- * Schreibt die wirksame Personenliste eines Fotos nach einer Korrektur in den Cache (Spec 0292).
+ * Schreibt die wirksame Personenliste eines Fotos nach einer Korrektur in den Cache.
  *
  * DAS AKTUELLE FOTO BLEIBT STEHEN: Die Fotolisten des Projekts werden nur als veraltet markiert
  * (`refetchType: 'none'`), nicht neu geladen. Passt das Foto nach dem Entfernen eines Namens nicht

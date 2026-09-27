@@ -1027,7 +1027,7 @@ describe('AlbumDraftPage', () => {
   })
 
   /*
-   * Spec 0292, UI/UX Punkt 3 "Album-Entwurf": Der Personenfilter blendet NUR clientseitig aus -
+   * Der Personenfilter blendet NUR clientseitig aus -
    * die Entwurfsliste wird weder neu geladen noch beschrieben, und der Kopf zaehlt weiter den
    * ganzen Entwurf.
    */

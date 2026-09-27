@@ -2,7 +2,7 @@
 
 REIN: kein Modell, keine Datenbank, keine Umgebung, keine `settings`. Die Entscheidungsfunktion
 bekommt je verwertbarem Gesicht die Aehnlichkeiten zu den Personen, keine Merkmale. Ihr
-vollstaendiger Importgraph enthaelt keinen Netzwerk-Client (ADR 0126 Punkt 1).
+vollstaendiger Importgraph enthaelt keinen Netzwerk-Client.
 
 DIE KONSTANTEN SIND KEINE EINSTELLUNG - keine Umgebungsvariable, kein Endpunkt, keine Oberflaeche,
 und sie werden nur hier zugewiesen (Waechter in `tests/test_person_matching.py`). Nach einer
@@ -26,8 +26,7 @@ from dataclasses import dataclass
 # entsteht kein Merkmal.
 MIN_DETECTION_SCORE = 0.90
 MIN_FACE_SIDE_PX = 100
-# Kosinus zum Schwerpunkt der Referenzen, ab dem ein Gesicht Kandidat einer Person ist. Die
-# OpenCV-Schwelle 0.363 ist genauigkeitsoptimal und damit zu locker.
+# Kosinus zum Schwerpunkt der Referenzen, ab dem ein Gesicht Kandidat einer Person ist.
 ACCEPT_SIMILARITY = 0.50
 # Um so viel muss die Aehnlichkeit die zur anderen Person uebertreffen.
 DISTINCT_MARGIN = 0.10

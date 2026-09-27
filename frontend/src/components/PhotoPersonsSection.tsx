@@ -22,7 +22,7 @@ const STATE_WORDS: Record<PersonOrigin | 'unassigned', string> = {
 }
 
 /**
- * Der Personenabschnitt der Detailansicht (Spec 0292, UI/UX 1): je festgelegter Person eine Zeile
+ * Der Personenabschnitt der Detailansicht: je festgelegter Person eine Zeile
  * mit Zustand und Ergänzen/Entfernen, darunter die Gesichterwahl. Namen sind Fremdtext und stehen
  * nur als Textknoten.
  *

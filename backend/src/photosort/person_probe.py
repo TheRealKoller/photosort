@@ -1,4 +1,4 @@
-"""REIN LESENDES Messkommando der Personen-Erkennung (Spec 0292, Abschnitt "Abnahme", S12).
+"""REIN LESENDES Messkommando der Personen-Erkennung (S12).
 
 Aufruf::
 

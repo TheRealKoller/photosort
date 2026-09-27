@@ -4,7 +4,7 @@ Aufruf im Ordner `backend/` (Image-Build, CI, Bare-Metal-Setup)::
 
     python scripts/fetch_model_assets.py
 
-Zusagen (Spec 0292, Auflage S13):
+Zusagen (Auflage S13):
 
 * Nur Standardbibliothek. Das Manifest wird ueber seinen Dateipfad gelesen, nicht ueber das
   installierte Paket - das Programm laeuft vor `pip install .`.

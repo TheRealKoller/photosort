@@ -1,4 +1,4 @@
-"""Die rein ADDITIVE Migration der Personen (Spec 0292, ADR 0126 Punkt 6): vier Tabellen und
+"""Die rein ADDITIVE Migration der Personen: vier Tabellen und
 zwei Zaehlerspalten an `criterion_scoring_runs`.
 
 Geprueft am nachgebauten Schema-Stand unmittelbar davor, wie alle `test_migration_*.py`. Die

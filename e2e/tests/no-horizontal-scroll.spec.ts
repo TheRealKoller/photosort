@@ -149,7 +149,7 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       role: 'link' as const,
       name: /^Duplikat-Gruppe mit \d+ Aufnahmen vergleichen/,
     },
-    // specs/features/0292-personen-erkennen.md: die globale Personenseite mit zwei Karten und der
+    // Die globale Personenseite mit zwei Karten und der
     // Gefahrenzone. Die Karte des 40-Zeichen-Namens bricht um statt zu kuerzen - genau dort
     // stuende die Seite ueber.
     { label: 'Personen', path: '/persons', heading: 'Personen' },
@@ -272,7 +272,7 @@ test('die Filterleiste ist bei 360 px ein eigener Scrollbereich', async ({ page 
 })
 
 /**
- * Die Personen-Filtergruppe bei 360 px (specs/features/0292-personen-erkennen.md, UI/UX 3).
+ * Die Personen-Filtergruppe bei 360 px.
  *
  * Dieselben zwei Messungen wie bei der Filterleiste: Die Gruppe scrollt nachweislich selbst, und
  * das Dokument daneben nicht. Der Anlass ist der Demo-Name mit der Hoechstlaenge von 40 Zeichen -

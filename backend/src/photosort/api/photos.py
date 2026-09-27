@@ -475,7 +475,7 @@ class PhotoOut(BaseModel):
     # `album_selection.py::selection_state(...).contested`.
     contested: bool
     # Je WIRKSAM zugeordneter Person nur Id und Herkunft (`recognized`/`corrected`), nach Slot -
-    # nie ein Name, ein Merkmal oder eine Aehnlichkeit (Spec 0292, S5). Ohne Vorgabewert: wie
+    # nie ein Name, ein Merkmal oder eine Aehnlichkeit (S5). Ohne Vorgabewert: wie
     # `decisions` ist `persons` ein pflichtiger Schluesselwortparameter von `_to_photo_out`, damit
     # ein vergessener Aufrufer vor der Laufzeit scheitert statt still eine leere Liste zu liefern.
     persons: list[PhotoPersonOut]
@@ -1488,7 +1488,7 @@ async def list_photos(
     # jenseits von 2^63 unter SQLite einen OverflowError und damit eine 500 statt einer leeren
     # Liste erzeugt (Muster `MAX_QUERY_POSITION`).
     camera_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
-    # Der Personenfilter (Spec 0292, S3): hoechstens zwei Werte je `ge=1, le=MAX_QUERY_POSITION`,
+    # Der Personenfilter (S3): hoechstens zwei Werte je `ge=1, le=MAX_QUERY_POSITION`,
     # danach dedupliziert. Gefiltert wird ueber die Id, nie ueber einen Namen - ein Name gehoerte
     # sonst in Zugriffslog und Browserverlauf. Mit `draft=true` ist er `422`: der Entwurf wird
     # immer vollstaendig geliefert und im Client eingeschraenkt, damit seine Zaehlung stimmt.

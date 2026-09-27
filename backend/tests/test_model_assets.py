@@ -1,4 +1,4 @@
-"""Manifest und Ladeprogramm der geladenen Modell-Assets (Spec 0292, Auflage S13).
+"""Manifest und Ladeprogramm der geladenen Modell-Assets (Auflage S13).
 
 Das Manifest `model_assets.py` ist die einzige Stelle, an der Hash, Groesse und Bezugsadresse
 einer nicht eingecheckten Modelldatei stehen. Das Ladeprogramm `backend/scripts/

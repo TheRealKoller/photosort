@@ -10,7 +10,7 @@ Fuenf Projekte mit dem festen Namenspraefix ``Demo — `` decken die prueflohnen
 (leer, grosse Sammlung, bewertet, Fehlerzustand, Duplikate). Die Bilddateien entstehen mit Pillow
 und werden ueber die ECHTE ``thumbnails.py``-Logik in den lokalen Cache geschrieben - kein zweites
 Abbild von Datenmodell oder Cache-Schluessel, das bei einer Modelaenderung still abdriften
-koennte. Dazu kommen zwei frei erfundene Personen mit synthetischen Referenzen (Spec 0292): Sie
+koennte. Dazu kommen zwei frei erfundene Personen mit synthetischen Referenzen: Sie
 sind global, entstehen ueber die echten Dienstfunktionen in ``persons.py`` und werden beim
 Neuaufbau ausschliesslich ueber ihre Demo-Namen entfernt.
 
@@ -392,7 +392,7 @@ _DEMO_CAMERA_WITH_OFFSET = ("Canon", "Canon EOS 5D")
 # Kommentar zu `_demo_event_index` oben als "von der Anwendung selbst nie geschrieben" ablehnt.
 _DEMO_CAMERA_OFFSET_MINUTES = -13
 
-# specs/features/0292-personen-erkennen.md: zwei FREI ERFUNDENE Personen (S14 - kein echter Name,
+# Zwei FREI ERFUNDENE Personen (S14 - kein echter Name,
 # kein echtes Gesicht). Der zweite Name hat genau die Hoechstlaenge `MAX_NAME_CODE_POINTS`: An ihm
 # zeigt der Pruefstack, dass die Personen-Filtergruppe bei schmaler Breite in sich scrollt und die
 # Seite nicht.
@@ -1002,7 +1002,7 @@ async def _seed_demo_persons(
     session: AsyncSession, photos: Sequence[Photo], user_ids: Sequence[int]
 ) -> None:
     """Die beiden Demo-Personen im bewerteten Projekt: Fotos in den Zustaenden erkannt, von Hand
-    zugeordnet und von Hand entfernt (Spec 0292).
+    zugeordnet und von Hand entfernt.
 
     Referenzen entstehen ueber DIESELBEN Dienstfunktionen wie aus der Oberflaeche
     (`create_person`, `add_reference`) - kein zweiter Schreibweg fuer biometrische Referenzen,
@@ -1357,7 +1357,7 @@ async def _seed_rated_project(
     # NACH dem `flush` der Bewertungen und ueber denselben Nutzerbestand: die Korrektur haengt an
     # einem vorhandenen Konto, genau wie sie.
     await _seed_motif_assessments(session, spec.slug, photos, [user.id for user in users])
-    # Die beiden Demo-Personen (Spec 0292) - ebenfalls nur mit einem vorhandenen Konto, weil jedes
+    # Die beiden Demo-Personen - ebenfalls nur mit einem vorhandenen Konto, weil jedes
     # gezeigte Gesicht zugleich eine Korrektur dieses Kontos schreibt.
     await _seed_demo_persons(session, photos, [user.id for user in users])
 

@@ -1,7 +1,7 @@
-"""Die feste Entscheidungsregel "sicher erkannt" (Spec 0292, ADR 0126 Punkt 4).
+"""Die feste Entscheidungsregel "sicher erkannt".
 
 Die Grenzfaelle laufen auf Aehnlichkeitsebene unter einer `autouse`-Parametrierung mit binaer
-exakten Schwellen (testkonzept 0002, Sektion "Biometrische Merkmale ohne echtes Modell", Punkt 2):
+exakten Schwellen:
 Mit `0.1` waere `s_andere + ABSTAND` nicht exakt, und ein Fall genau auf der Schwelle waere je nach
 Rechenform rot oder gruen. Die Faelle lesen die Schwellen deshalb als MODULATTRIBUT. Die
 kalibrierten Werte stehen genau einmal als Literal (`TestTheCalibratedConstants`).
@@ -177,7 +177,7 @@ class TestTighteningIsNotMonotone:
 
 
 class TestARejectedReference:
-    """ADR 0126, Regel 6: Ein gezeigtes Gesicht, das der ANDEREN Person gleicht, wird abgelehnt."""
+    """Ein gezeigtes Gesicht, das der ANDEREN Person gleicht, wird abgelehnt."""
 
     def test_exactly_on_the_acceptance_threshold_is_rejected(self) -> None:
         assert conflicts_with_other_person(_accept()) is True
@@ -251,7 +251,7 @@ _RULE_CONSTANTS = (
 class TestTheCalibratedConstants:
     def test_the_start_values(self) -> None:
         """Der EINE Literalfall. Eine Lockerung wird hier laut und verlangt eine neue, fehlerfreie
-        Abnahme im laufenden Betrieb (ADR 0126 Punkt 4)."""
+        Abnahme im laufenden Betrieb."""
         source = (SRC_DIR / "photosort" / "person_matching.py").read_text(encoding="utf-8")
         assigned = {
             node.targets[0].id: ast.literal_eval(node.value)

@@ -973,7 +973,7 @@ class TestRebuildDemoStateTouchesNothingElse:
 
 
 class TestTheDemoStateNamesTwoInventedPersons:
-    """Spec 0292: zwei erfundene Personen mit synthetischen Referenzen, Fotos in allen drei
+    """Zwei erfundene Personen mit synthetischen Referenzen, Fotos in allen drei
     Zuordnungszustaenden und ein Name an der Laengengrenze - Stoff fuer Detailansicht, `/persons`
     und die Personen-Filtergruppe im Pruefstack. S14: kein echtes Gesicht, kein echter Name."""
 

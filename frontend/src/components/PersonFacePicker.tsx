@@ -38,7 +38,7 @@ interface Refusal {
 }
 
 /**
- * Die Gesichterwahl des Personenabschnitts (Spec 0292): ein Gesicht des Fotos als Person zeigen
+ * Die Gesichterwahl des Personenabschnitts: ein Gesicht des Fotos als Person zeigen
  * oder mit ihm eine neue Person festlegen - der einzige Weg, eine Person festzulegen.
  *
  * `GET /photos/{id}/faces` läuft erst beim Aufklappen, nie beim Blättern. Die Ausschnitte kommen

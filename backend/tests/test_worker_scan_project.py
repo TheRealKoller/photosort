@@ -331,7 +331,7 @@ async def test_scan_removes_photos_no_longer_present(
 async def test_a_vanished_photo_takes_its_person_detection_and_correction_along(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Spec 0292: Erkennung und Korrektur haengen am Foto und fallen beim Scan ueber die Kaskade
+    """Erkennung und Korrektur haengen am Foto und fallen beim Scan ueber die Kaskade
     mit ihm - unter durchgesetzten Fremdschluesseln. Die Person selbst bleibt."""
     from photosort.models import Person, PhotoPersonCorrection, PhotoPersonDetection, User
 

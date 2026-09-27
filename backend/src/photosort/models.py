@@ -253,7 +253,7 @@ class Photo(Base):
     motif_corrections: Mapped[list[PhotoMotifCorrection]] = relationship(
         back_populates="photo", cascade="all, delete-orphan"
     )
-    # Erkennung und Korrektur der Personen (ADR 0126 Punkt 6), beide am FOTO: verschwindet das
+    # Erkennung und Korrektur der Personen, beide am FOTO: verschwindet das
     # Foto beim Scan, verschwinden beide mit. Ohne Rueckrichtung - der Lesepfad fragt ueber
     # `persons.py::effective_person_assignments`, nie ueber diese Sammlungen.
     person_detections: Mapped[list[PhotoPersonDetection]] = relationship(

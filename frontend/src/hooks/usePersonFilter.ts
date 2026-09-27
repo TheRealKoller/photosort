@@ -5,7 +5,7 @@ import { parsePersonIds, withPersonIds } from '../utils/personFilter'
 import { usePersonsQuery } from './usePersons'
 
 /**
- * Der Personenfilter einer Ansicht über `?person=<id>` (Spec 0292). Eine unbekannte Id wird erst
+ * Der Personenfilter einer Ansicht über `?person=<id>`. Eine unbekannte Id wird erst
  * NACH dem Laden der Personen per `replace` aus der Adresse entfernt - solange die Liste lädt,
  * bleibt die Adresse unverändert.
  */

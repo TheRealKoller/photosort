@@ -127,7 +127,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     checked.push(label)
   }
 
-  // --- Personenabschnitt derselben Detailansicht (specs/features/0292-...) -------------------
+  // --- Personenabschnitt derselben Detailansicht -------------------------------------------
   // Die zweite Kachel ist im Demo-Bestand das Foto, dem die erste Person von Hand zugeordnet ist
   // und die zweite nicht - dort stehen "Entfernen" und "Ergänzen" in zwei Zeilen UNTEREINANDER,
   // also genau die Fehlerklasse "ueberlappende aufgespannte Trefferflaechen" in der Senkrechten.
@@ -246,7 +246,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   await assertTappable(navTrigger, 'Projektbereiche (Menue-Ausloeser der Kopfzeile)')
   checked.push('Projektbereiche')
 
-  // Ein Eintrag der Personen-Filtergruppe (specs/features/0292-...). Die Gruppe ist bei 360 px ein
+  // Ein Eintrag der Personen-Filtergruppe. Die Gruppe ist bei 360 px ein
   // eigener waagerechter Scrollbereich - und ein Scrollbereich schneidet in BEIDEN Achsen ab. Ob
   // die senkrechte Aufspannung dort ueberhaupt ankommt, zeigt nur der Treffertest.
   await assertTappable(

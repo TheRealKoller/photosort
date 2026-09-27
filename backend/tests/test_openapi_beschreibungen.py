@@ -102,7 +102,7 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # `effective_decision_for`, dass `open_count` projektweit und von `limit`/`offset` unabhaengig
     # ist, und dass ein unbekanntes Projekt `404` gibt, "nichts gefunden" aber eine leere Liste.
     ("get", "/projects/{project_id}/ausschuss"),
-    # specs/features/0292-personen-erkennen.md: die sieben Personen-Endpunkte. Ihre Beschreibungen
+    # Die sieben Personen-Endpunkte. Ihre Beschreibungen
     # tragen, was der Signatur nicht anzusehen ist - dass eine Person nur mit ihrer ersten Referenz
     # entsteht, dass ein gezeigtes Gesicht zugleich zuordnet, dass die Korrektur fuer beide Nutzer
     # gilt und jeder Erkennung vorgeht, und dass kein Endpunkt ein Merkmal ausliefert.

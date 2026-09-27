@@ -1,7 +1,7 @@
 import type { PhotoOut } from '../api/types'
 
 /**
- * Der Personenfilter (Spec 0292) als reine Funktionen: `?person=<id>`, einmal oder zweimal für
+ * Der Personenfilter als reine Funktionen: `?person=<id>`, einmal oder zweimal für
  * "Beide". Im Bildbestand geht die Auswahl an den Server; im Album-Entwurf blendet sie
  * clientseitig über `PhotoOut.persons` aus, damit die Zählung des Entwurfs unverändert bleibt.
  */

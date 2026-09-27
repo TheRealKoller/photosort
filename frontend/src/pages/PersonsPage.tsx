@@ -108,7 +108,7 @@ function RemovePersonDialog({ person, onClose, onRemoved }: RemovePersonDialogPr
 }
 
 /**
- * Die festgelegten Personen, global für alle Projekte (Spec 0292, UI/UX Punkt 2). Auf den Karten
+ * Die festgelegten Personen, global für alle Projekte. Auf den Karten
  * gibt es keine Aktion; entfernt wird ausschließlich über die Gefahrenzone am Seitenende.
  */
 export function PersonsPage() {

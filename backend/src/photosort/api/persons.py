@@ -1,4 +1,4 @@
-"""Die sieben Endpunkte der Personen (Spec 0292, ADR 0126).
+"""Die sieben Endpunkte der Personen.
 
 SICHERHEIT:
 * S1 - Der Router traegt `dependencies=[Depends(get_current_user)]`; jeder Endpunkt ist

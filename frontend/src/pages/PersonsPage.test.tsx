@@ -13,8 +13,7 @@ import { PersonsPage } from './PersonsPage'
 vi.mock('../api/persons')
 
 /*
- * specs/features/0292-personen-erkennen.md, UI/UX Punkt 2 und Teststrategie "Frontend >
- * PersonsPage". Erstfokus, Fokusfalle und Fokusrueckgabe des Dialog-Grundelements liegen in
+ * Erstfokus, Fokusfalle und Fokusrueckgabe des Dialog-Grundelements liegen in
  * `ui/dialog.test.tsx` und werden hier nicht wiederholt.
  */
 
@@ -247,7 +246,7 @@ describe('PersonsPage', () => {
     )
   })
 
-  /* Namen sind Fremdtext (Spec 0292, UI/UX): An jeder Renderstelle der Seite - Karte,
+  /* Namen sind Fremdtext: An jeder Renderstelle der Seite - Karte,
      Gefahrenzone, Dialogtext, Tippvorlage, Statusmeldung - stehen sie nur als Textknoten. */
   it('rendert einen Namen mit Markup an jeder Stelle der Seite als reinen Text', async () => {
     const hostile = '<img src=x onerror="window.__pwned = true">'

@@ -2502,7 +2502,7 @@ async def test_criterion_scoring_run_phase_start_is_nullable_and_defaults_to_non
     assert CriterionScoringRun.__table__.c.phase_started_at.server_default is None
 
 
-# --- Personen (Spec 0292, ADR 0126 Punkt 6) -------------------------------------------------------
+# --- Personen ------------------------------------------------------------------------------------
 
 
 def _person(slot: int, name: str) -> Person:

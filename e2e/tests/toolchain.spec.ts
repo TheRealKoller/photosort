@@ -237,7 +237,7 @@ test('die Demo-Projektnamen des Pruefsatzes stammen aus dem Seeder', () => {
     )
   }
 
-  // Dasselbe fuer die beiden Demo-Personen (Spec 0292): Ihre Namen stehen im Seeder woertlich in
+  // Dasselbe fuer die beiden Demo-Personen: Ihre Namen stehen im Seeder woertlich in
   // `DEMO_PERSON_NAMES`, und der zweite traegt die Hoechstlaenge, auf die die Pruefungen zielen.
   for (const [key, name] of Object.entries(DEMO_PERSONS)) {
     expect(seeder, `Personenname "${key}" im Seeder`).toContain(`"${name}"`)

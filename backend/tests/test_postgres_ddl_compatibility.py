@@ -1567,7 +1567,7 @@ def test_the_namensregister_downgrade_renders_for_postgres_too() -> None:
     assert "DROP TABLE LANDMARK_NAMES" in rendered
 
 
-# --- Spec 0292, Migration `1f4027405ea5`: Personen ------------------------------------------------
+# --- Migration `1f4027405ea5`: Personen ------------------------------------------------
 
 _PERSONEN_REVISION = "1f4027405ea5_personen.py"
 

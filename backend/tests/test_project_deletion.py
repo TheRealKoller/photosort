@@ -173,7 +173,7 @@ class TestTheWeightSetsSurviveEveryProjectDeletion:
 
 
 class TestThePersonsSurviveEveryProjectDeletion:
-    """specs/features/0292-personen-erkennen.md, S10: Die Festlegung ist GLOBAL. Die
+    """S10: Die Festlegung ist GLOBAL. Die
     Projektloeschung nimmt Erkennungen und Korrekturen ihrer Fotos mit, laesst Personen und
     gezeigte Gesichter aber unberuehrt - auch wenn diese Gesichter von Fotos des geloeschten
     Projekts stammen."""

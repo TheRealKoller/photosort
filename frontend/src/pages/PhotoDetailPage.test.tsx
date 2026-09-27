@@ -32,7 +32,7 @@ vi.mock('../api/persons')
 vi.mock('../api/photos')
 vi.mock('../api/ratings')
 
-// Spec 0292: Der Personenabschnitt und der Personenfilter laden `GET /persons` in JEDEM Block
+// Der Personenabschnitt und der Personenfilter laden `GET /persons` in JEDEM Block
 // dieser Datei. Die Vorgabe "keine Person festgelegt" gilt dateiweit; ein Block, der Personen
 // braucht, setzt sie selbst.
 beforeEach(() => {
@@ -250,7 +250,7 @@ describe('PhotoDetailPage', () => {
     )
   })
 
-  /* Spec 0292: Die Detailansicht blättert in der nach `person` gefilterten Folge, ihr Zähler
+  /* Die Detailansicht blättert in der nach `person` gefilterten Folge, ihr Zähler
      bezieht sich auf diese Folge, und jeder Weg zurück trägt `person` weiter. Eine Korrektur lässt
      das aktuelle Foto stehen; die Gesichterwahl gehört zum Foto, nicht zur Folge. */
   describe('Personen: Folge, Abschnitt und Gesichterwahl', () => {
@@ -1035,7 +1035,7 @@ describe('PhotoDetailPage', () => {
         { name: 'Navigation', element: screen.getByRole('button', { name: 'Vorheriges Foto' }) },
         { name: 'Urteilsfläche', element: screen.getByTestId('verdict-section') },
         { name: 'Motive', element: screen.getByTestId('motifs-section') },
-        // Spec 0292: nach der Urteilsfläche, vor dem Einzelwerte-Raster - und NICHT in ihr.
+        // Nach der Urteilsfläche, vor dem Einzelwerte-Raster - und NICHT in ihr.
         { name: 'Personen', element: await screen.findByRole('region', { name: 'Personen' }) },
         { name: 'Einzelwerte-Raster', element: screen.getByTestId('criterion-score-grid') },
         { name: 'Aufnahmezeit', element: screen.getByTestId('taken-at-section') },
@@ -1711,7 +1711,7 @@ describe('PhotoDetailPage: die Maximal-Fixture (AK4)', () => {
   })
 
   /* Hinter GENAU EINER Aufklapphandlung stehen NUR das Motiv-Glossar, die Detailzeile eines
-     Motivs samt Korrekturschaltern und - seit Spec 0292 - die Gesichterwahl des Personenabschnitts.
+     Motivs samt Korrekturschaltern und die Gesichterwahl des Personenabschnitts.
      Alles andere steht offen da. */
   it('hält nur Glossar, Motiv-Detailzeile und Gesichterwahl hinter einer Aufklapphandlung', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [maximalPhoto()], total: 1 })

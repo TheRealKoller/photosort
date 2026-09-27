@@ -5,7 +5,7 @@ Arbeitsfassung, Box, Klemmen, Verwertbarkeit, Obergrenze und Reihenfolge ohne Mo
 sind. `build_face_analyzer()` baut ihn mit den echten Modellen und laeuft in keinem Test ausser der
 markierten Klasse gegen die echten Assets.
 
-IMPORTREGEL (ADR 0126 Punkt 1): weder `models` noch `db` noch `config`, damit der vollstaendige
+IMPORTREGEL: weder `models` noch `db` noch `config`, damit der vollstaendige
 Importgraph keinen Netzwerk-Client enthaelt. Aus dem Manifest kennt dieses Modul nur Dateinamen,
 keine Bezugsadresse; es laedt nie selbst.
 

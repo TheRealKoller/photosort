@@ -102,7 +102,7 @@ export function ProjectListPage() {
             </p>
           )}
         </div>
-        {/* "Personen" gilt projektübergreifend (Spec 0292) und hat deshalb keinen Platz in der
+        {/* "Personen" gilt projektübergreifend und hat deshalb keinen Platz in der
             Kopfzeile, die nicht umbricht - er steht hier, links neben der Hauptaktion. */}
         <div className="flex flex-wrap gap-3">
           <Button asChild variant="secondary">

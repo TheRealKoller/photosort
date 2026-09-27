@@ -1,4 +1,4 @@
-"""Die Phase `persons` des Klassifizierungslaufs (Spec 0292, ADR 0126 Punkt 3).
+"""Die Phase `persons` des Klassifizierungslaufs.
 
 Der Analyzer ist durchweg der Fake aus `tests/face_fakes.py`; er erkennt ein Foto an der Vollfarbe
 seiner geschriebenen Display-Variante. Alle Merkmale liegen fern jeder Schwelle (Kosinus 1 bzw.

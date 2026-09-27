@@ -110,7 +110,7 @@ export interface CriterionScoringRunSummary {
   // PFLICHTFELD ohne Vorgabewert - dann erzwingt `tsc` die Ergaenzung jeder lokalen Testfabrik,
   // und es braucht keinen Test ueber deren Vollzaehligkeit.
   phase_remaining_seconds: number | null
-  // Die Zaehler der Phase `persons` (Spec 0292). `null` heisst "die Phase lief nicht" - nach
+  // Die Zaehler der Phase `persons`. `null` heisst "die Phase lief nicht" - nach
   // Laufende wird der Teilschritt dann ausgeblendet. Keine Namen, keine Trefferzahl.
   persons_photos_total: number | null
   persons_photos_processed: number | null
@@ -737,7 +737,7 @@ export interface PhotoOut {
   /** Sind sich die Nutzer über dieses Foto uneins und ist noch nicht gemeinsam entschieden? */
   contested: boolean
   /**
-   * Die WIRKSAM zugeordneten Personen (Spec 0292): Korrektur vor Erkennung, vom Server
+   * Die WIRKSAM zugeordneten Personen: Korrektur vor Erkennung, vom Server
    * berechnet. Nur Id und Herkunft - die Namen kommen aus `GET /persons`.
    */
   persons: PhotoPersonOut[]

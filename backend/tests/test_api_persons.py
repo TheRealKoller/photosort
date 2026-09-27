@@ -1,4 +1,4 @@
-"""Die sieben Personen-Endpunkte und `PhotoOut.persons`/der Personenfilter (Spec 0292, S1-S9).
+"""Die sieben Personen-Endpunkte und `PhotoOut.persons`/der Personenfilter (S1-S9).
 
 Der Analyzer kommt ueber die ueberschreibbare Dependency `get_face_analyzer` - die echten Modelle
 laufen hier nie (Sperre in `conftest.py`). Merkmale sind Basisvektoren fern jeder Schwelle.

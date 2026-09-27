@@ -17,7 +17,7 @@ vi.mock('./api/projects')
 vi.mock('./api/photos')
 vi.mock('./api/persons')
 
-// Spec 0292: Bildbestand und Detailansicht laden `GET /persons` - ohne Vorgabe liefe die Anfrage
+// Bildbestand und Detailansicht laden `GET /persons` - ohne Vorgabe liefe die Anfrage
 // ins Leere und der Personenfilter stuende im Fehlerzustand.
 beforeEach(() => {
   vi.mocked(personsApi.listPersons).mockResolvedValue([])
@@ -274,7 +274,7 @@ describe('App', () => {
   })
 
   it('routes /persons to the persons page within the app shell', async () => {
-    // Spec 0292: global, fuer alle Projekte - kein Projektkontext, keine Projektnavigation.
+    // Global, fuer alle Projekte - kein Projektkontext, keine Projektnavigation.
     setToken(makeToken({ sub: '1', username: 'daniel' }))
 
     renderApp(['/persons'])

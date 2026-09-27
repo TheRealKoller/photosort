@@ -108,7 +108,7 @@ async def get_or_create_fine_label(
 
 
 async def get_or_create_person(session: AsyncSession) -> Person:
-    """Die GLOBALE Person samt einer Referenz (ADR 0126 Punkt 6) - wiederverwendbar, damit zwei
+    """Die GLOBALE Person samt einer Referenz - wiederverwendbar, damit zwei
     Projekte auf DIESELBE Person zeigen. Ohne Projekt- und Fotobezug: eine Projektloeschung
     darf sie nicht beruehren."""
     existing = (await session.execute(select(Person).where(Person.slot == 1))).scalar_one_or_none()
@@ -317,7 +317,7 @@ async def build_project_graph(
                 level=4,
                 quality=0.61,
             ),
-            # specs/features/0292-personen-erkennen.md, S10: Erkennung und Korrektur haengen am
+            # S10: Erkennung und Korrektur haengen am
             # FOTO. Ohne diese beiden Zeilen pruefen die Vollstaendigkeitstests der
             # Projektloeschung die neuen Kanten nicht. Die Person selbst ist global und bleibt.
             PhotoPersonDetection(photo_id=photo.id, person_id=person.id, computed_at=now),

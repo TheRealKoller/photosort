@@ -59,7 +59,7 @@ export function PhotoDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const filterParam = parseRatingFilter(searchParams.get('filter'))
   const ratingStatus = filterParam === '' ? undefined : filterParam
-  // Spec 0292: Blättern und Zähler laufen in der nach `person` gefilterten Folge - derselbe
+  // Blättern und Zähler laufen in der nach `person` gefilterten Folge - derselbe
   // Query-Key wie im Bildbestand, also dieselbe Folge. Jeder Weg zurück trägt beide Filter.
   const { personIds } = usePersonFilter(searchParams, setSearchParams)
   const filterSearch = withPersonIds(
@@ -456,7 +456,7 @@ export function PhotoDetailPage() {
         </section>
       </section>
 
-      {/* DER PERSONENABSCHNITT (Spec 0292) - nach der Urteilsfläche, nicht in ihr: eine Person ist
+      {/* DER PERSONENABSCHNITT - nach der Urteilsfläche, nicht in ihr: eine Person ist
           kein Motiv. Je Foto neu eingebunden, damit ein Fotowechsel Busy, Meldung und
           Gesichterwahl zurücksetzt. */}
       <PhotoPersonsSection key={currentPhoto.id} projectId={id} photo={currentPhoto} />

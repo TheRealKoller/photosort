@@ -32,7 +32,7 @@ export const DEMO_PROJECTS = {
 } as const
 
 /**
- * Die beiden frei erfundenen Demo-Personen (`demo_state.py`, specs/features/0292-...). Der zweite
+ * Die beiden frei erfundenen Demo-Personen (`demo_state.py`). Der zweite
  * Name hat genau die Hoechstlaenge von 40 Zeichen - an ihm zeigt sich, ob eine Leiste mit Namen
  * bei schmaler Breite in sich scrollt, statt die Seite zu verbreitern.
  */

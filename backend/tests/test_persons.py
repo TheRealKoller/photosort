@@ -1,5 +1,4 @@
-"""Die wirksame Zuordnung, das Festlegen und das Entfernen von Personen (Spec 0292, ADR 0126
-Punkt 6).
+"""Die wirksame Zuordnung, das Festlegen und das Entfernen von Personen.
 
 Die Merkmale der Lagen sind Basisvektoren fern jeder Schwelle (Kosinus exakt 1 oder 0) - eine
 Kalibrierung der Konstanten in `person_matching.py` roetet hier nichts.

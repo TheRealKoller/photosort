@@ -2,7 +2,7 @@ import { apiFetch, apiFetchBlob } from './client'
 import type { FaceOut, PersonOut, PhotoPersonOut } from './types'
 
 /**
- * Die Personen-Endpunkte (Spec 0292). Namen gehen nur im JSON-Körper, nie in Pfad oder Query -
+ * Die Personen-Endpunkte. Namen gehen nur im JSON-Körper, nie in Pfad oder Query -
  * gefiltert und adressiert wird über die Id.
  */
 

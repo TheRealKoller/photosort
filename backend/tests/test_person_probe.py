@@ -1,4 +1,4 @@
-"""Das rein lesende Messkommando der Personen-Erkennung (Spec 0292, S12) - dieselben
+"""Das rein lesende Messkommando der Personen-Erkennung (S12) - dieselben
 Waechterklassen wie `test_criterion_probe.py`."""
 
 from __future__ import annotations
