@@ -288,12 +288,22 @@ jobs:
           test "$backend_restarts" = "0"
           test "$worker_restarts" = "0"
 
-          echo "--- login with the seeded user succeeds ---"
-          login_response_file=$(mktemp)
-          login_status=$(curl -s -o "$login_response_file" -w '%{http_code}' -X POST "http://localhost:${BACKEND_PORT:-8000}/auth/login" -H 'Content-Type: application/json' -d "{\"username\": \"$AUTH_SEED_USER1_USERNAME\", \"password\": \"$AUTH_SEED_USER1_PASSWORD\"}")
-          test "$login_status" = "200"
-          grep -q "access_token" "$login_response_file"
-          rm -f "$login_response_file"
+          echo "--- login with the seeded user succeeds (inside the backend container) ---"
+          # Der Backend-Port ist nicht mehr auf den Host gemappt (Spec 0049) - der Check laeuft
+          # deshalb im Container selbst. Python statt curl: das schlanke Backend-Image bringt kein
+          # curl mit (gleiches Muster wie der Healthcheck in docker-compose.yml).
+          login_result=$(docker compose exec -T \
+            -e LOGIN_USERNAME="$AUTH_SEED_USER1_USERNAME" \
+            -e LOGIN_PASSWORD="$AUTH_SEED_USER1_PASSWORD" \
+            backend python -c '
+          import json, os, urllib.request
+          body = json.dumps({"username": os.environ["LOGIN_USERNAME"], "password": os.environ["LOGIN_PASSWORD"]}).encode()
+          request = urllib.request.Request("http://localhost:8000/auth/login", data=body, headers={"Content-Type": "application/json"})
+          with urllib.request.urlopen(request, timeout=5) as response:
+              print(response.status, "access_token" in json.load(response))
+          ')
+          echo "login result: $login_result"
+          test "$login_result" = "200 True"
           # Kein explizites "docker compose down" hier nötig - der "trap ... EXIT" oben
           # räumt den Stack inkl. Volume bereits auf.
       - name: Functional check - SPA fallback in frontend nginx (spec 0016)
@@ -370,6 +380,105 @@ jobs:
           fetch "$base_url/assets/definitiv-nicht-vorhanden.js"
           echo "status: $FETCH_STATUS"
           test "$FETCH_STATUS" = "404"
+      - name: Functional check - single-origin API proxy via frontend nginx (spec 0049)
+        run: |
+          set -euo pipefail
+          # Isoliert vom vorherigen Schritt, siehe Kommentar oben zum IPv4-Check.
+          rm -f .env
+          trap 'docker compose down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
+
+          export AUTH_SEED_USER1_USERNAME=ci-user1
+          export AUTH_SEED_USER1_PASSWORD="ci-password-1-$RANDOM"
+          export AUTH_SEED_USER2_USERNAME=ci-user2
+          export AUTH_SEED_USER2_PASSWORD="ci-password-2-$RANDOM"
+          export SECRET_KEY="ci-only-secret-key-not-for-production-0049-$RANDOM"
+
+          docker compose up -d --build backend worker frontend
+
+          base_url="http://localhost:${FRONTEND_PORT:-8080}"
+
+          # Wartet, bis /api/health ueber den Frontend-nginx die JSON-Antwort des Backends liefert.
+          # Der Body ist Teil der Bedingung: ohne /api-Block faellt der Pfad auf den SPA-Fallback
+          # zurueck und antwortet ebenfalls 200 - mit index.html.
+          wait_for_proxied_backend() {
+            local attempts="$1"
+            for _ in $(seq 1 "$attempts"); do
+              if [ "$(curl -s "$base_url/api/health" || true)" = '{"status":"ok"}' ]; then
+                return 0
+              fi
+              sleep 1
+            done
+            echo "GET $base_url/api/health lieferte nach $attempts s nicht die Backend-Antwort" >&2
+            docker compose logs frontend backend >&2
+            return 1
+          }
+
+          login() {
+            local response
+            response=$(curl -s -w '\n%{http_code}' -X POST "$base_url/api/auth/login" \
+              -H 'Content-Type: application/json' \
+              -d "{\"username\": \"$AUTH_SEED_USER1_USERNAME\", \"password\": \"$AUTH_SEED_USER1_PASSWORD\"}")
+            LOGIN_STATUS="${response##*$'\n'}"
+            LOGIN_BODY="${response%$'\n'*}"
+          }
+
+          echo "Waiting for the backend behind the frontend nginx..."
+          wait_for_proxied_backend 90
+
+          echo "--- POST /api/auth/login ueber den Frontend-nginx liefert 200 + access_token ---"
+          login
+          echo "status: $LOGIN_STATUS"
+          test "$LOGIN_STATUS" = "200"
+          token=$(printf '%s' "$LOGIN_BODY" | jq -r '.access_token')
+          test -n "$token" && test "$token" != "null"
+
+          echo "--- Authorization: Bearer wird durchgereicht (mit Token 200, ohne Token 401) ---"
+          authed_status=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$base_url/api/projects")
+          anonymous_status=$(curl -s -o /dev/null -w '%{http_code}' "$base_url/api/projects")
+          echo "mit Token: $authed_status, ohne Token: $anonymous_status"
+          test "$authed_status" = "200"
+          test "$anonymous_status" = "401"
+
+          echo "--- GET /projects/3 (SPA-Route, kein /api-Praefix) bleibt beim SPA-Fallback ---"
+          index_response=$(curl -s -w '\n%{http_code}' "$base_url/")
+          spa_response=$(curl -s -w '\n%{http_code}' "$base_url/projects/3")
+          echo "status: ${spa_response##*$'\n'}"
+          test "${spa_response##*$'\n'}" = "200"
+          test "${spa_response%$'\n'*}" = "${index_response%$'\n'*}"
+
+          echo "--- der Backend-Host-Port ist geschlossen: Connection refused, kein Timeout ---"
+          set +e
+          curl -s -o /dev/null --max-time 5 "http://localhost:${BACKEND_PORT:-8000}/health"
+          curl_exit=$?
+          set -e
+          echo "curl exit code: $curl_exit (7 = connection refused, 28 = timeout, 0 = erreichbar)"
+          test "$curl_exit" = "7"
+
+          echo "--- RestartCount ist 0 fuer backend, worker und frontend ---"
+          for service in backend worker frontend; do
+            restarts=$(docker inspect --format '{{.RestartCount}}' "$(docker compose ps -q "$service")")
+            echo "$service: $restarts"
+            test "$restarts" = "0"
+          done
+
+          echo "--- Backend-only-Neuerstellung bei weiterlaufendem Frontend (dynamische DNS-Aufloesung) ---"
+          # "--force-recreate" statt "restart": nur ein neu erstellter Container bekommt eine neue
+          # IP. Ein Frontend, das die Start-Aufloesung behielte, proxyte danach gegen die alte.
+          frontend_cid=$(docker compose ps -q frontend)
+          old_backend_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose ps -q backend)")
+          docker compose up -d --force-recreate --no-deps backend
+          new_backend_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose ps -q backend)")
+          echo "backend IP: $old_backend_ip -> $new_backend_ip"
+          # Vorbedingungen: ohne neue IP bewiese der Schritt nichts; ein mit neu erstelltes
+          # Frontend haette die Aufloesung ohnehin frisch gemacht.
+          test "$old_backend_ip" != "$new_backend_ip"
+          test "$(docker compose ps -q frontend)" = "$frontend_cid"
+          # resolver valid=10s plus Puffer fuer den Start des neuen Backend-Containers.
+          wait_for_proxied_backend 60
+          login
+          echo "status nach der Neuerstellung: $LOGIN_STATUS"
+          test "$LOGIN_STATUS" = "200"
+          printf '%s' "$LOGIN_BODY" | grep -q "access_token"
 
   # Browsergestuetzte Oberflaechenpruefung gegen den REAL laufenden Pruefstack
   # (specs/features/0174-browser-zugang-fuer-claude.md, ADR
