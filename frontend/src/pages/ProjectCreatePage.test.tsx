@@ -178,4 +178,31 @@ describe('ProjectCreatePage', () => {
 
     expect(screen.getByRole('link', { name: /abbrechen/i })).toHaveAttribute('href', '/')
   })
+
+  it('legt bei Enter im Suchfeld des Ordner-Browsers nichts an und übernimmt danach den angesteuerten Ordner', async () => {
+    vi.mocked(opencloudApi.browseFolder).mockImplementation(async (path) =>
+      path === '' ? [{ name: 'Sub', path: 'Sub', modified_at: null }] : [],
+    )
+    vi.mocked(projectsApi.createProject).mockResolvedValue(project({ id: 42 }))
+    const user = userEvent.setup()
+
+    renderPage()
+
+    await user.type(screen.getByLabelText(/name/i), 'Costa Rica')
+    await user.click(await screen.findByRole('button', { name: 'Sub' }))
+    await screen.findByText('Dieser Ordner hat keine Unterordner.')
+    // Ohne aktivierten Absende-Button sendete Enter auch ohne Abwehr nichts ab.
+    expect(screen.getByRole('button', { name: /projekt anlegen/i })).toBeEnabled()
+
+    await user.type(screen.getByRole('textbox', { name: 'Unterordner durchsuchen' }), 'xyz{Enter}')
+    expect(projectsApi.createProject).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /projekt anlegen/i }))
+    await waitFor(() =>
+      expect(projectsApi.createProject).toHaveBeenCalledWith({
+        name: 'Costa Rica',
+        opencloud_path: 'Sub',
+      }),
+    )
+  })
 })
