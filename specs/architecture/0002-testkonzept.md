@@ -1,7 +1,7 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-09-26
+**Letzte Aktualisierung:** 2026-09-27
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil das Dokument je Testgegenstand das
 Muster führt, das beim nächsten gleichartigen Fall wiederverwendet wird — und die benannten
 Lücken, die nirgends sonst stehen.
@@ -1463,6 +1463,12 @@ Dritte reine Ableitungsdatei des Frontends nach `pipelineSteps.ts` und `utils/ra
 2. **„Vor `popstate`“ wird deterministisch als zwei Aufrufe in einem `act()` modelliert.** `MemoryRouter` navigiert synchron; ohne Riegel gehen zwei Aufrufe zwei Einträge zurück. Den echten asynchronen Fall und den CloseWatcher-Pfad von Chromium prüft E2E.
 3. **Die Fokus-Rückgabe hängt nicht am vorher fokussierten Element.** Geöffnet wird deshalb über `fireEvent.click`, das (wie Safari) nicht fokussiert. Ein Test mit `userEvent.click` bestünde auch gegen eine falsche Umsetzung. Setzt ein Effekt den Fokus nach einer Navigation, die außerhalb von `act` endet, wird auf den Fokus gewartet (`waitFor`), nicht unmittelbar geprüft.
 4. **Ein Effekt, der auf Abwesenheit in einer Liste reagiert, braucht einen Fall mit wartender Liste:** „noch nicht geladen“ ist nicht „verschwunden“.
+
+### Eine Zusage über die Folge der Commits, Enter in einem Formular und ein Listenschlüssel über ein Umsortieren (`utils/folderListing.ts`/`FolderBrowser.tsx`) — neu für Spec [`0532`](../features/0532-ordnerauswahl-sortieren-suchen.md)
+
+1. **„Genau einmal umsortiert“ und „im selben Render“ sind Aussagen über die Folge der Commits, nicht über zwei Zeitpunkte.** Ein Vorher-nachher-Vergleich besteht auch gegen eine Umsetzung, die die Reihenfolge per Effekt nachzieht und dabei einen Commit mit neuem Status und alter Reihenfolge zeigt; `waitFor` und Prüfungen nach `act()` sehen diesen Zwischenstand nicht verlässlich. Aufgezeichnet wird deshalb je Commit: Ein `<Profiler onRender>` um die geprüfte Komponente liest bei jedem Commit die beobachtbaren Größen aus dem DOM (Zeilenreihenfolge, Statustext, Ladeanzeige) in eine Liste. Zugesichert werden eine Invariante über **jeden** Eintrag und die exakte Folge der verschiedenen Reihenfolgen. Beim Einführen wird eine effektbasierte Variante einmal lokal rot gesehen; ohne diese Gegenprobe ist der Aufzeichner unbelegt.
+2. **Ein Fall „Enter sendet das Formular nicht ab“ braucht einen aktivierten Absende-Button als Vorbedingung im selben Fall.** `user-event` bildet Enter in einem Textfeld als Klick auf den ersten Absende-Button des Formulars nach und unterlässt das nur, wenn `keydown` abgewehrt ist. Ist der Button deaktiviert, sendet auch eine Umsetzung ohne Abwehr nichts ab, und der Fall besteht leer.
+3. **Ob ein Listenschlüssel ein Umsortieren übersteht, wird am Fokus geprüft:** Fokus auf eine Zeile, umsortieren, danach trägt das fokussierte Element denselben Namen. Ein Schlüssel über den Index behält den DOM-Knoten an seiner Position und tauscht nur den Text; eine Reihenfolge-Assertion bleibt dabei grün.
 
 ## E2E gegen die real laufende Anwendung (`e2e/`, Playwright/Chromium) — neu für ADR [`0058`](../decisions/0058-browsergestuetzte-oberflaechenpruefung.md) / Spec [`0174`](../features/0174-browser-zugang-fuer-claude.md)
 
