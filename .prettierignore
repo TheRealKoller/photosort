@@ -136,3 +136,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+
+# Gespiegelt aus der Wurzel-.gitignore wie alle Eintraege oben. Prettier hat einen YAML-Parser;
+# ohne den Eintrag schriebe ein lokaler --write-Lauf das persoenliche, unversionierte Override um.
+docker-compose.override.yml

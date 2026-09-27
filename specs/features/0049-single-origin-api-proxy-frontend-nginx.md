@@ -1,6 +1,6 @@
 # 0049 - Nur Frontend nach außen exposen: Single-Origin-API-Proxy über Frontend-nginx
 
-**Status:** Accepted
+**Status:** Implemented ([PR #546](https://github.com/TheRealKoller/photosort/pull/546))
 **Erstellt:** 2026-08-19
 **Bezug:** Ursprünglich `specs/inbox/0018-nur-frontend-nach-aussen-exposen.md` (nach Anlage dieser Spec gelöscht), geschärft im `idea-sharpener`-Ablauf (interaktive Session mit Daniel, 2026-08-19). ADR [`decisions/0027-single-origin-api-proxy-ueber-frontend-nginx.md`](../decisions/0027-single-origin-api-proxy-ueber-frontend-nginx.md).
 
@@ -38,7 +38,7 @@ Das Frontend-nginx bekommt einen zusätzlichen `location /api/`-Block, der Reque
 
 **Betroffene Dateien:**
 
-- `frontend/nginx.conf`: neuer `location /api/`-Block **vor** dem bestehenden SPA-Fallback (`location /`). Dynamische DNS-Auflösung statt literalem Host: `resolver 127.0.0.11 valid=10s;` + `set $backend_upstream backend:8000;` + `proxy_pass http://$backend_upstream/;` (schützt gegen einen Backend-only-Redeploy bei laufendem Frontend-Container — bekannter nginx+Docker-Fallstrick). Zusätzlich `proxy_set_header X-Real-IP $remote_addr;` / `X-Forwarded-For $proxy_add_x_forwarded_for;` (Logging-Hygiene, siehe Security-Abschnitt).
+- `frontend/nginx.conf`: neuer `location /api/`-Block **vor** dem bestehenden SPA-Fallback (`location /`). Dynamische DNS-Auflösung statt literalem Host: `resolver 127.0.0.11 valid=10s;` + `set $backend_upstream backend:8000;` + `rewrite ^/api/(.*)$ /$1 break;` + `proxy_pass http://$backend_upstream;` ohne URI-Teil — steht neben der Variablen ein URI-Teil, ersetzt er die gesamte Anfrage-URI und jede Anfrage ginge an `/` (schützt gegen einen Backend-only-Redeploy bei laufendem Frontend-Container — bekannter nginx+Docker-Fallstrick). Zusätzlich `proxy_set_header X-Real-IP $remote_addr;` / `X-Forwarded-For $proxy_add_x_forwarded_for;` (Logging-Hygiene, siehe Security-Abschnitt).
 - `docker-compose.yml`: `ports:` beim `backend`-Service entfällt vollständig (kein `BACKEND_PORT` mehr referenziert). `frontend`-Build-Arg-Default `VITE_API_BASE_URL` wechselt von `http://localhost:8000` auf `/api`.
 - `.env.example` und `.env.demo.example`: `BACKEND_PORT`-Zeile entfernen, `VITE_API_BASE_URL`-Default auf `/api` mit angepasstem Kommentar.
 - `.gitignore`: neuer Eintrag `docker-compose.override.yml` — für den optionalen, persönlichen lokalen Workaround (siehe unten).
@@ -50,7 +50,7 @@ Das Frontend-nginx bekommt einen zusätzlichen `location /api/`-Block, der Reque
 - `specs/architecture/0002-testkonzept.md`: neuer Unterabschnitt zum wiederverwendbaren Muster "nginx `proxy_pass` mit dynamischem Resolver — Verifikation via `--force-recreate`-Neustart", Ergänzung der E2E/Smoke-Tabellenzeile um den neuen CI-Schritt.
 - `specs/architecture/0003-securitykonzept.md`: neuer Bullet unter "Angriffsflächen" (Backend-Port entfällt, einziger Ingress ist Frontend-nginx) sowie unter "Bewusst akzeptierte Restrisiken" der Rate-Limit-Bucket-Punkt (siehe Security-Abschnitt unten).
 
-**Lokaler `npm run dev`-Workflow gegen den dockerisierten Backend:** kein neuer Mechanismus im Repo (kein Vite-Dev-Server-Proxy). Wer diesen Workflow braucht, legt sich eine eigene, nicht eingecheckte `docker-compose.override.yml` mit demselben `ports:`-Eintrag an, der jetzt aus dem Haupt-File entfernt wird, und setzt lokal `VITE_API_BASE_URL=http://localhost:8000`.
+**Lokaler `npm run dev`-Workflow gegen den dockerisierten Backend:** kein neuer Mechanismus im Repo (kein Vite-Dev-Server-Proxy). Wer diesen Workflow braucht, legt sich eine eigene, nicht eingecheckte `docker-compose.override.yml` an, die den Backend-Port auf `127.0.0.1` veröffentlicht (`"127.0.0.1:8000:8000"`), und setzt lokal `VITE_API_BASE_URL=http://localhost:8000`.
 
 **Reihenfolge der Umsetzung (Test First, Infrastruktur-Ebene, analog Spec 0016):**
 

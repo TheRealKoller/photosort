@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-09-23 (Spec 0525/ADR 0121 — der Ausschuss wird ein Schritt: vier statt fünf Schritte, projektweiter Massenabschluss, Ausschuss-Bestand als Lese-Endpunkt; davor 2026-09-10)
+**Letzte Aktualisierung:** 2026-09-27 (Spec 0049/ADR 0027 — der nginx des Frontend-Containers ist der einzige Einstiegspunkt und leitet `/api/` intern an das Backend weiter; der Backend-Host-Port entfällt; davor 2026-09-23)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -184,6 +184,25 @@ Verarbeitungs-Cache (Thumbnails).
     ordnet `RUN_FIELD_BY_STEP` dem Schritt weiterhin `last_scoring_run` zu — die Stand-Zeile der
     Projektkarte nennt ihn auch nach einem erfolgreichen Lauf als offenen Schritt „Weiter:
     Ausschuss" — und `StepId` führt kein `gate` mehr.
+- **Einstiegspunkt: der nginx des `frontend`-Containers** (`frontend/nginx.conf`): der einzige
+  Dienst in `docker-compose.yml` mit Host-Port (`FRONTEND_PORT`, Default 8080). `backend`,
+  `worker`, `postgres` und `redis` veröffentlichen keinen Port; ein externer Reverse-Proxy braucht
+  genau eine Route.
+  - Liefert das statische Build aus (SPA-Fallback auf `index.html`, `/assets/` ohne Fallback) und
+    leitet alles unter `/api/` über das Compose-Netzwerk an `backend:8000` weiter. Der Präfix wird
+    dabei abgeschnitten (`/api/projects` → `/projects`); das Backend selbst kennt kein `/api`. Nur
+    so bleiben Client-Routen wie `/projects/3` beim SPA-Fallback, obwohl das Backend ebenfalls
+    unter `/projects` antwortet.
+  - Das Proxy-Ziel wird zur Laufzeit über den Docker-DNS aufgelöst (`resolver 127.0.0.11
+    valid=10s`, Ziel in einer Variablen): Ein neu erstellter `backend`-Container mit neuer IP ist
+    nach spätestens zehn Sekunden wieder erreichbar, ohne das Frontend neu zu starten, und der
+    nginx startet auch ohne laufendes Backend.
+  - Das Frontend-Bundle ruft die API relativ unter `/api` auf (`VITE_API_BASE_URL`), Browser und
+    API teilen sich eine Origin. CORS (`CORS_ALLOWED_ORIGINS`) bleibt für Frontends auf einer
+    anderen Origin bestehen (Vite-Dev-Server, Anleitung in [`setup.md`](./setup.md)).
+  - Das Backend sieht als Client-Adresse die des Frontend-Containers, nicht die des Browsers —
+    das Login-Rate-Limit zählt damit alle Nutzer gemeinsam (siehe
+    [`0003-securitykonzept.md`](../specs/architecture/0003-securitykonzept.md)).
 - **Backend** (`backend/`): FastAPI. REST-API für Projekte, Fotos, Bewertungen; Auth (JWT,
   `Authorization: Bearer`-Header, kein Cookie); Anbindung an OpenCloud via WebDAV; stößt
   Hintergrund-Jobs im Worker an.

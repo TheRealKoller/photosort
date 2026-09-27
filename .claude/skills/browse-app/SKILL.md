@@ -25,12 +25,12 @@ Daraus folgt für die Deutung dessen, was zu sehen ist:
 docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
 ```
 
-Erreichbar unter `http://localhost:8080` (Oberfläche) und `http://localhost:8000` (API), beide **nur lokal** gebunden. Sind diese Ports durch einen bereits laufenden PhotoSort-Stack belegt, ist das kein Grund, den anderen Stack abzuschießen — stattdessen ein eigenes, temporäres Overlay mit anderen Host-Ports schreiben und dabei `CORS_ALLOWED_ORIGINS` (Backend) sowie `VITE_API_BASE_URL` (Frontend-Build-Argument) auf dieselben Ports ziehen; sonst blockiert der Browser jeden API-Aufruf als fremde Origin. Der abweichende Ort wird den Werkzeugen dann über `PHOTOSORT_E2E_BASE_URL=http://localhost:<port>` mitgegeben.
+Erreichbar unter `http://localhost:8080`, **nur lokal** gebunden; die API liegt auf demselben Port unter `/api` (der Backend-Container veröffentlicht keinen eigenen Port). Ist der Port durch einen bereits laufenden PhotoSort-Stack belegt, ist das kein Grund, den anderen Stack abzuschießen — stattdessen ein eigenes, temporäres Overlay schreiben, das dem `frontend` einen anderen Host-Port gibt (`ports: !override`, wieder auf `127.0.0.1`); die API zieht über `/api` automatisch mit. Der abweichende Ort wird den Werkzeugen dann über `PHOTOSORT_E2E_BASE_URL=http://localhost:<port>` mitgegeben.
 
-Warten, bis das Backend antwortet:
+Warten, bis das Backend hinter dem Frontend antwortet (Antwort `{"status":"ok"}`, nicht die HTML-Seite):
 
 ```bash
-curl -fsS http://localhost:8000/health
+curl -fsS http://localhost:8080/api/health
 ```
 
 ## 2. Demo-Daten seeden

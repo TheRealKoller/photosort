@@ -58,6 +58,11 @@ photo-cache/
 # label_embedder_tokenizer.json) bleiben unveraendert committet, kein pauschaler assets/-Ausschluss.
 backend/src/photosort/assets/label_embedder.onnx
 
+# Persoenliches Compose-Override, z.B. fuer "npm run dev" gegen einen dockerisierten Backend
+# (docs/setup.md). Es veroeffentlicht den Backend-Port, den docker-compose.yml bewusst nicht
+# mappt, und gehoert deshalb nie in einen Commit.
+docker-compose.override.yml
+
 # Editors / OS
 .vscode/
 .idea/
