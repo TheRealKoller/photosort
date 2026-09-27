@@ -1,6 +1,6 @@
 # 0533 - Duplikatgruppen im Ausschuss als Stapel und in einer Vergleichsansicht
 
-**Status:** Accepted
+**Status:** Implemented ([PR #540](https://github.com/TheRealKoller/photosort/pull/540))
 **Erstellt:** 2026-09-26
 **Bezug:** [Issue #533](https://github.com/TheRealKoller/photosort/issues/533), ADR
 [`0125`](../decisions/0125-duplikatentscheidung-des-ausschusses-in-der-vergleichsansicht.md)
