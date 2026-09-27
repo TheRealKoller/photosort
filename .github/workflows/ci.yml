@@ -289,8 +289,8 @@ jobs:
           test "$worker_restarts" = "0"
 
           echo "--- login with the seeded user succeeds (inside the backend container) ---"
-          # Der Backend-Port ist nicht mehr auf den Host gemappt (Spec 0049) - der Check laeuft
-          # deshalb im Container selbst. Python statt curl: das schlanke Backend-Image bringt kein
+          # Der Backend-Port ist nicht auf den Host gemappt - der Check laeuft deshalb im
+          # Container selbst. Python statt curl: das schlanke Backend-Image bringt kein
           # curl mit (gleiches Muster wie der Healthcheck in docker-compose.yml).
           login_result=$(docker compose exec -T \
             -e LOGIN_USERNAME="$AUTH_SEED_USER1_USERNAME" \
