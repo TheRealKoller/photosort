@@ -12,12 +12,37 @@ cp .env.example .env
 docker compose up --build
 ```
 
-- Backend: http://localhost:8000 (`/health`)
-- Frontend: http://localhost:8080 (per `docker compose up`, statisch über nginx gebaut; der Vite-Dev-Server aus `npm run dev` läuft dagegen auf http://localhost:5173 — beide Origins sind in `CORS_ALLOWED_ORIGINS`/`VITE_API_BASE_URL` in `.env.example` standardmäßig berücksichtigt)
+- Anwendung: http://localhost:8080 — der nginx des `frontend`-Containers liefert die statisch
+  gebaute Oberfläche aus und leitet alles unter `/api/` intern über das Docker-Netzwerk an den
+  `backend`-Service weiter (der Präfix wird dabei abgeschnitten: `/api/health` → Backend
+  `/health`). Der `backend`-Service veröffentlicht **keinen** Host-Port; `localhost:8000` ist im
+  `docker compose up`-Betrieb nicht erreichbar.
 
 Bis auf `/health` und `POST /auth/login` verlangt die API ein gültiges Login (siehe [`specs/decisions/0005-auth-implementation.md`](../specs/decisions/0005-auth-implementation.md)). Die beiden Konten werden beim ersten Start per Alembic-Seed-Migration aus `AUTH_SEED_USER1_*`/`AUTH_SEED_USER2_*` (siehe `.env.example`) angelegt.
 
-Das Frontend ruft die API cross-origin auf und braucht dafür zwei zusammenspielende Einstellungen aus `.env.example`: `VITE_API_BASE_URL` (Basis-URL der API aus Sicht des Browsers, wird zur Build-Zeit ins statische Frontend-Bundle eingebacken) und `CORS_ALLOWED_ORIGINS` (welche Frontend-Origin(s) das Backend akzeptiert). Die Defaults passen zueinander und funktionieren ohne weitere Anpassung für `docker compose up --build` auf `localhost`; für einen Deploy hinter einem eigenen Reverse-Proxy (TLS-Terminierung liegt außerhalb dieses Repos, siehe [`architecture.md`](./architecture.md)) beide Werte auf die tatsächlich öffentlich erreichbaren Origins anpassen.
+Oberfläche und API teilen sich damit eine Origin: `VITE_API_BASE_URL` (wird zur Build-Zeit ins Frontend-Bundle eingebacken) steht auf `/api`, relativ und ohne Host. Das gilt unverändert für `localhost:8080` wie für einen Deploy hinter einem eigenen Reverse-Proxy (TLS-Terminierung liegt außerhalb dieses Repos, siehe [`architecture.md`](./architecture.md)) — dort genügt **eine** Route auf den `frontend`-Container. `CORS_ALLOWED_ORIGINS` wird dafür nicht gebraucht; es bleibt für Frontends auf einer anderen Origin bestehen, etwa den Vite-Dev-Server.
+
+### `npm run dev` gegen den dockerisierten Backend
+
+Der Vite-Dev-Server (`npm run dev` in `frontend/`, http://localhost:5173) läuft auf einer eigenen
+Origin und braucht einen direkt erreichbaren Backend-Port. Den veröffentlicht nur ein
+persönliches, nicht eingechecktes `docker-compose.override.yml` im Repo-Wurzelverzeichnis (steht in
+`.gitignore`; Docker Compose liest es automatisch zusätzlich zu `docker-compose.yml`):
+
+```yaml
+services:
+  backend:
+    ports:
+      - "127.0.0.1:8000:8000"
+```
+
+```bash
+docker compose up -d --build
+(cd frontend && VITE_API_BASE_URL=http://localhost:8000 npm run dev)
+```
+
+`http://localhost:5173` steht im Default von `CORS_ALLOWED_ORIGINS` bereits drin. Die Bindung auf
+`127.0.0.1` hält den Port vom übrigen Netz fern.
 
 ### Tests
 
@@ -743,10 +768,10 @@ Bilddatei versioniert werden; auch das prüft CI.
   nachinstalliert.
 - **Node ≥ 22.18** ist Voraussetzung: die Werkzeuge unter `e2e/bin/` laufen ohne Build-Schritt
   direkt in Node (TypeScript-Type-Stripping).
-- Läuft bereits ein anderer PhotoSort-Stack auf 8000/8080, braucht der Prüfstack ein eigenes
-  Port-Overlay; die Werkzeuge nehmen den abweichenden Ort dann über
-  `PHOTOSORT_E2E_BASE_URL=http://localhost:<port>` entgegen (nur `localhost`/`127.0.0.1` sind
-  zulässig). `CORS_ALLOWED_ORIGINS` und `VITE_API_BASE_URL` müssen dabei mitgezogen werden.
+- Läuft bereits ein anderer PhotoSort-Stack auf 8080, braucht der Prüfstack ein eigenes
+  Port-Overlay für `frontend` (`ports: !override`, auf `127.0.0.1`); die Werkzeuge nehmen den
+  abweichenden Ort dann über `PHOTOSORT_E2E_BASE_URL=http://localhost:<port>` entgegen (nur
+  `localhost`/`127.0.0.1` sind zulässig). Die API zieht über `/api` auf demselben Port mit.
 
 Aufräumen:
 

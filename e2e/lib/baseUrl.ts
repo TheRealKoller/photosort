@@ -5,11 +5,11 @@
  * hinterlegte lokale Adresse an; eine frei ueberschreibbare Basis-URL ist ausdruecklich nicht
  * vorgesehen. Die hier erlaubte Ausnahme ist die dort genannte: eine Allowlist analog
  * `scripts/seed-opencloud-demo.py::validate_demo_base_url`, inklusive der dortigen Port-Pflicht.
- * Praktischer Anlass: laeuft auf demselben Rechner bereits ein normaler PhotoSort-Stack, sind
- * 8000/8080 belegt und der Pruefstack braucht andere Host-Ports.
+ * Praktischer Anlass: laeuft auf demselben Rechner bereits ein normaler PhotoSort-Stack, ist
+ * 8080 belegt und der Pruefstack braucht einen anderen Host-Port.
  *
- * BEWUSST "localhost" UND NICHT "127.0.0.1" ALS DEFAULT (Edge Case E5): Die Origin des Browsers
- * muss zu CORS_ALLOWED_ORIGINS des Backends passen, und die beiden Schreibweisen sind CORS-seitig
+ * "localhost" ALS DEFAULT, nicht "127.0.0.1": Der gespeicherte Anmeldezustand gilt nur fuer die
+ * Origin, unter der er entstanden ist (localStorage je Origin), und die beiden Schreibweisen sind
  * VERSCHIEDENE Origins. Die 127.0.0.1-Bindung der Container-Ports betrifft nur, wer von aussen
  * verbinden darf - nicht die im Browser verwendete Adresse.
  */
