@@ -296,6 +296,42 @@ describe('PhotoDetailPage', () => {
         '/projects/1/photos?person=7&person=8',
       )
     })
+
+    it('lässt das Foto nach dem Entfernen des Namens stehen, ohne die Folge neu zu laden', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({ id: 4, persons: [{ person_id: 7, origin: 'recognized' }] }),
+          photo({ id: 9, persons: [{ person_id: 7, origin: 'recognized' }] }),
+        ],
+        total: 2,
+      })
+      vi.mocked(personsApi.setPhotoPerson).mockResolvedValue([])
+      const user = userEvent.setup()
+
+      renderPage('/projects/1/photos/4?person=7')
+      await screen.findByText('1/2')
+      const requests = vi.mocked(photosApi.listPhotos).mock.calls.length
+
+      await user.click(await screen.findByRole('button', { name: 'Entfernen: Anna' }))
+
+      expect(await screen.findByText('Nicht zugeordnet')).toBeInTheDocument()
+      expect(screen.getByText('1/2')).toBeInTheDocument()
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(requests)
+      await user.click(screen.getByRole('button', { name: /weiter|nächst/i }))
+      await screen.findByText('2/2')
+      expect(screen.getByText('Erkannt')).toBeInTheDocument()
+      expect(photosApi.listPhotos).toHaveBeenCalledTimes(requests)
+    })
+
+    it('stellt den Personenabschnitt hinter die Urteilsfläche, nicht in den Motivbereich', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [photo({ id: 4 })], total: 1 })
+
+      renderPage('/projects/1/photos/4')
+      const persons = await screen.findByRole('region', { name: 'Personen' })
+
+      expect(screen.getByTestId('verdict-section')).not.toContainElement(persons)
+      expect(screen.getByTestId('motifs-section')).not.toContainElement(persons)
+    })
   })
 
   it('navigates to the next photo on ArrowRight', async () => {
@@ -941,6 +977,8 @@ describe('PhotoDetailPage', () => {
         { name: 'Navigation', element: screen.getByRole('button', { name: 'Vorheriges Foto' }) },
         { name: 'Urteilsfläche', element: screen.getByTestId('verdict-section') },
         { name: 'Motive', element: screen.getByTestId('motifs-section') },
+        // Spec 0292: nach der Urteilsfläche, vor dem Einzelwerte-Raster - und NICHT in ihr.
+        { name: 'Personen', element: await screen.findByRole('region', { name: 'Personen' }) },
         { name: 'Einzelwerte-Raster', element: screen.getByTestId('criterion-score-grid') },
         { name: 'Aufnahmezeit', element: screen.getByTestId('taken-at-section') },
         { name: 'Ort', element: screen.getByTestId('place-line') },
@@ -970,6 +1008,7 @@ describe('PhotoDetailPage', () => {
         'Automatischer Vorschlag',
         'Urteilsfläche',
         'Motive',
+        'Personen',
         'Einzelwerte-Raster',
         'Aufnahmezeit',
         'Ort',
@@ -998,6 +1037,7 @@ describe('PhotoDetailPage', () => {
         'Navigation',
         'Urteilsfläche',
         'Motive',
+        'Personen',
         'Einzelwerte-Raster',
         'Aufnahmezeit',
         'Ort',
@@ -1612,9 +1652,10 @@ describe('PhotoDetailPage: die Maximal-Fixture (AK4)', () => {
     expect(sichtbareAngaben()).toEqual(sollmenge())
   })
 
-  /* Hinter GENAU EINER Aufklapphandlung stehen NUR das Motiv-Glossar und die Detailzeile eines
-     Motivs samt Korrekturschaltern. Alles andere steht offen da. */
-  it('hält nur Glossar und Motiv-Detailzeile hinter einer Aufklapphandlung', async () => {
+  /* Hinter GENAU EINER Aufklapphandlung stehen NUR das Motiv-Glossar, die Detailzeile eines
+     Motivs samt Korrekturschaltern und - seit Spec 0292 - die Gesichterwahl des Personenabschnitts.
+     Alles andere steht offen da. */
+  it('hält nur Glossar, Motiv-Detailzeile und Gesichterwahl hinter einer Aufklapphandlung', async () => {
     vi.mocked(photosApi.listPhotos).mockResolvedValue({ items: [maximalPhoto()], total: 1 })
 
     renderPage('/projects/1/photos/1')
@@ -1626,10 +1667,11 @@ describe('PhotoDetailPage: die Maximal-Fixture (AK4)', () => {
     expect(alleDetails).toHaveLength(1)
     expect(motifSection().contains(alleDetails[0])).toBe(true)
 
-    // Die einzigen aufklappbaren Bedienelemente sind die acht Motivsymbole.
+    // Die einzigen aufklappbaren Bedienelemente sind die acht Motivsymbole und "Gesicht zeigen".
+    const gesichtZeigen = await screen.findByRole('button', { name: 'Gesicht zeigen' })
     const aufklappbar = [...document.querySelectorAll('[aria-expanded]')]
-    expect(aufklappbar).toHaveLength(MOTIF_KEYS.length)
-    for (const node of aufklappbar) {
+    expect(aufklappbar).toHaveLength(MOTIF_KEYS.length + 1)
+    for (const node of aufklappbar.filter((node) => node !== gesichtZeigen)) {
       expect(node.getAttribute('data-motif-key')).not.toBeNull()
     }
 

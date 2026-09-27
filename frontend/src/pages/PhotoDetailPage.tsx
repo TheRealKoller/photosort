@@ -10,6 +10,7 @@ import { CriterionScoreGrid } from '../components/CriterionScoreGrid'
 import { MotifStrengthSection } from '../components/MotifStrengthSection'
 import { PhotoCaptureFacts } from '../components/PhotoCaptureFacts'
 import { PhotoDetailStage } from '../components/PhotoDetailStage'
+import { PhotoPersonsSection } from '../components/PhotoPersonsSection'
 import { PhotoVerdict } from '../components/PhotoVerdict'
 import { Button } from '../components/ui/button'
 import { useMotifCorrectionControls } from '../hooks/useMotifCorrection'
@@ -454,6 +455,11 @@ export function PhotoDetailPage() {
           />
         </section>
       </section>
+
+      {/* DER PERSONENABSCHNITT (Spec 0292) - nach der Urteilsfläche, nicht in ihr: eine Person ist
+          kein Motiv. Je Foto neu eingebunden, damit ein Fotowechsel Busy, Meldung und
+          Gesichterwahl zurücksetzt. */}
+      <PhotoPersonsSection key={currentPhoto.id} projectId={id} photo={currentPhoto} />
 
       {/* DAS EINZELWERTE-RASTER - Nachschlagwerk hinter dem Urteil. Gleiche Sichtbarkeitsregel wie
           bisher: KEIN leerer Bereich bei leerer Liste. Ohne Wrapper-`div` eingebunden, damit auch
