@@ -33,7 +33,7 @@ describe('FolderBrowser', () => {
 
   it('loads the root level (no path) when value is empty', async () => {
     vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
-      { name: 'CostaRica', path: 'CostaRica' },
+      { name: 'CostaRica', path: 'CostaRica', modified_at: null },
     ])
 
     renderBrowser('')
@@ -43,7 +43,9 @@ describe('FolderBrowser', () => {
   })
 
   it('calls onChange with the child path when a folder entry is clicked', async () => {
-    vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
+    vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
+      { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
+    ])
     const user = userEvent.setup()
 
     const { onChange } = renderBrowser('CostaRica')
@@ -97,7 +99,9 @@ describe('FolderBrowser', () => {
   })
 
   it('does not refetch an already-loaded level when navigating back to it via the breadcrumb', async () => {
-    vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'CostaRica/Sub' }])
+    vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
+      { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
+    ])
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -123,7 +127,7 @@ describe('FolderBrowser', () => {
   describe('Dateianzahl pro Unterordner (specs/features/0050-dateianzahl-im-ordner-browser.md)', () => {
     it('eagerly fetches folder counts for the same path as the browse request, without a click', async () => {
       vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
-        { name: 'Sub', path: 'CostaRica/Sub' },
+        { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
       ])
       vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
         { path: 'CostaRica/Sub', count: 3, at_limit: false, error: false },
@@ -136,7 +140,7 @@ describe('FolderBrowser', () => {
 
     it('shows a loading indicator while the count request is pending', async () => {
       vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
-        { name: 'Sub', path: 'CostaRica/Sub' },
+        { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
       ])
       vi.mocked(opencloudApi.fetchFolderCounts).mockReturnValue(new Promise(() => {}))
 
@@ -147,7 +151,7 @@ describe('FolderBrowser', () => {
 
     it('shows the exact count once loaded', async () => {
       vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
-        { name: 'Sub', path: 'CostaRica/Sub' },
+        { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
       ])
       vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
         { path: 'CostaRica/Sub', count: 42, at_limit: false, error: false },
@@ -160,7 +164,7 @@ describe('FolderBrowser', () => {
 
     it('shows "0" (not hidden) for a folder with zero images', async () => {
       vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
-        { name: 'Sub', path: 'CostaRica/Sub' },
+        { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
       ])
       vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
         { path: 'CostaRica/Sub', count: 0, at_limit: false, error: false },
@@ -176,7 +180,7 @@ describe('FolderBrowser', () => {
       // von Screenreadern i.d.R. nicht vorgelesen - analog zum Fehlerzustand ("?") braucht "500+"
       // deshalb zusaetzlich ein aria-label, nicht nur title.
       vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
-        { name: 'Sub', path: 'CostaRica/Sub' },
+        { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
       ])
       vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
         { path: 'CostaRica/Sub', count: 500, at_limit: true, error: false },
@@ -191,8 +195,8 @@ describe('FolderBrowser', () => {
 
     it('shows an error indicator for a subfolder whose count failed, without affecting others', async () => {
       vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
-        { name: 'Good', path: 'CostaRica/Good' },
-        { name: 'Bad', path: 'CostaRica/Bad' },
+        { name: 'Good', path: 'CostaRica/Good', modified_at: null },
+        { name: 'Bad', path: 'CostaRica/Bad', modified_at: null },
       ])
       vi.mocked(opencloudApi.fetchFolderCounts).mockResolvedValue([
         { path: 'CostaRica/Good', count: 7, at_limit: false, error: false },
@@ -209,7 +213,7 @@ describe('FolderBrowser', () => {
 
     it('does not block or delay rendering the folder list while counts are still loading', async () => {
       vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
-        { name: 'Sub', path: 'CostaRica/Sub' },
+        { name: 'Sub', path: 'CostaRica/Sub', modified_at: null },
       ])
       vi.mocked(opencloudApi.fetchFolderCounts).mockReturnValue(new Promise(() => {}))
 
@@ -224,8 +228,8 @@ describe('FolderBrowser', () => {
       // Netzwerkfehler) - der Code behandelt das bereits ueber counts.isError, aber es fehlte
       // eine Testabsicherung dafuer.
       vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
-        { name: 'Sub1', path: 'CostaRica/Sub1' },
-        { name: 'Sub2', path: 'CostaRica/Sub2' },
+        { name: 'Sub1', path: 'CostaRica/Sub1', modified_at: null },
+        { name: 'Sub2', path: 'CostaRica/Sub2', modified_at: null },
       ])
       vi.mocked(opencloudApi.fetchFolderCounts).mockRejectedValue(new Error('Netzwerkfehler'))
 

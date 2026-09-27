@@ -83,7 +83,9 @@ describe('ProjectCreatePage', () => {
   })
 
   it('submits name and the currently selected folder path, then navigates to the new project on success', async () => {
-    vi.mocked(opencloudApi.browseFolder).mockResolvedValue([{ name: 'Sub', path: 'Sub' }])
+    vi.mocked(opencloudApi.browseFolder).mockResolvedValue([
+      { name: 'Sub', path: 'Sub', modified_at: null },
+    ])
     vi.mocked(projectsApi.createProject).mockResolvedValue(project({ id: 42 }))
     const user = userEvent.setup()
 
