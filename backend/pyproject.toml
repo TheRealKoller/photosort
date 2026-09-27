@@ -97,6 +97,9 @@ photosort = ["assets/*.tflite", "assets/*.hdf5", "assets/*.task", "assets/*.onnx
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "real_face_models: einzige Ausnahme von der Sperre der echten Gesichtsmodelle (conftest.py)",
+]
 
 [tool.ruff]
 line-length = 100

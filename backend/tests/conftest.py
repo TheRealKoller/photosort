@@ -74,6 +74,38 @@ def _reset_rate_limiter() -> Iterator[None]:
     yield
 
 
+class RealFaceModelInTestError(RuntimeError):
+    """Ein Test hat versucht, das echte Gesichtsmodell zu bauen - ihm fehlt das Double."""
+
+
+@pytest.fixture(autouse=True)
+def _no_real_face_models(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """SPERRE wie die Netzsperre oben: Kein Test baut YuNet oder SFace, ausgenommen allein die
+    mit `real_face_models` markierte Klasse gegen die echten Assets (nur synthetische Bilder).
+
+    Die Sperre sitzt am `cv2`-Konstruktor und nicht an `face_analysis.build_face_analyzer`: Ein
+    Default-Argument `build_face_analyzer=build_face_analyzer` bindet die Funktion beim Import,
+    ein Patch am Modulattribut erreichte es nicht. Wird ein Fall hier rot, fehlt ihm das Double;
+    die Sperre wird nicht gelockert."""
+    if request.node.get_closest_marker("real_face_models") is not None:
+        yield
+        return
+    import cv2
+
+    def _verweigert(*args: Any, **kwargs: Any) -> Any:
+        raise RealFaceModelInTestError(
+            "Echtes Gesichtsmodell in einem Test. Einen Fake-Analyzer injizieren."
+        )
+
+    monkeypatch.setattr(cv2.FaceDetectorYN, "create", staticmethod(_verweigert))
+    monkeypatch.setattr(cv2.FaceRecognizerSF, "create", staticmethod(_verweigert))
+    monkeypatch.setattr(cv2, "FaceDetectorYN_create", _verweigert)
+    monkeypatch.setattr(cv2, "FaceRecognizerSF_create", _verweigert)
+    yield
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
     engine = make_engine("sqlite+aiosqlite:///:memory:")
