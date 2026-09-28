@@ -1,6 +1,6 @@
 # 0551 - Personenübersicht je Projekt: Gesichter zuordnen, Namen prüfen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #552](https://github.com/TheRealKoller/photosort/pull/552))
 **Erstellt:** 2026-09-28
 **Bezug:** [Issue #551](https://github.com/TheRealKoller/photosort/issues/551), ADR [`0127`](../decisions/0127-personen-gesichtsbezug-nur-fuer-festgelegte-ohne-namen-auf-anfrage.md), Vorgänger [Spec 0292](./0292-personen-erkennen.md)
 
