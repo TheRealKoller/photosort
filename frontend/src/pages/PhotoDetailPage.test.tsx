@@ -301,8 +301,8 @@ describe('PhotoDetailPage', () => {
     it('lässt das Foto nach dem Entfernen des Namens stehen, ohne die Folge neu zu laden', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({
         items: [
-          photo({ id: 4, persons: [{ person_id: 7, origin: 'recognized' }] }),
-          photo({ id: 9, persons: [{ person_id: 7, origin: 'recognized' }] }),
+          photo({ id: 4, persons: [{ person_id: 7, origin: 'recognized', face: null }] }),
+          photo({ id: 9, persons: [{ person_id: 7, origin: 'recognized', face: null }] }),
         ],
         total: 2,
       })
@@ -370,9 +370,9 @@ describe('PhotoDetailPage', () => {
       ])
       vi.mocked(personsApi.fetchFaceImage).mockResolvedValue(new Blob(['x']))
       vi.mocked(personsApi.addReference).mockResolvedValue({
-        id: 7,
-        name: 'Anna',
-        reference_count: 2,
+        person: { id: 7, name: 'Anna', reference_count: 2 },
+        learned: true,
+        photo_persons: [{ person_id: 7, origin: 'corrected', face: 'shown' }],
       })
       Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:face'), revokeObjectURL: vi.fn() })
       const user = userEvent.setup()
@@ -386,7 +386,7 @@ describe('PhotoDetailPage', () => {
         }),
       )
 
-      expect(await screen.findByText('Von Hand zugeordnet')).toBeInTheDocument()
+      expect(await screen.findByText('Von Hand zugeordnet, Gesicht gezeigt')).toBeInTheDocument()
       expect(personsApi.addReference).toHaveBeenCalledWith(7, 4, 2)
       expect(screen.getByText('Gesicht als Anna gezeigt.')).toBeInTheDocument()
     })
