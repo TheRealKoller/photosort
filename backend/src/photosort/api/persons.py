@@ -33,6 +33,7 @@ from photosort.face_analysis import (
     MODEL_KEY,
     Face,
     FaceAnalyzerLike,
+    FaceBox,
     build_face_analyzer,
     face_crop_jpeg,
     load_image,
@@ -48,13 +49,14 @@ from photosort.persons import (
     PersonLimitReached,
     PersonNotFound,
     PersonRefusal,
-    add_reference,
+    assign_face,
     clean_person_name,
     create_person,
     delete_person,
     list_persons,
     load_effective_persons,
     person_name_key,
+    refuse_if_face_on_photo,
     set_correction,
 )
 from photosort.thumbnails import variant_path
@@ -111,14 +113,31 @@ class FaceOut(BaseModel):
 
 
 class PhotoPersonOut(BaseModel):
-    """Je wirksam zugeordneter Person nur Id und Herkunft - der Name kommt aus `GET /persons`."""
+    """Je wirksam zugeordneter Person nur Id, Herkunft und die Art des gebundenen Gesichts - der
+    Name kommt aus `GET /persons`. `face` ist ein Aufzaehlungswert und nie eine Box: `shown`
+    (gezeigt und gelernt), `assigned` (gewaehlt, nicht gelernt), `null` (Name fuer das ganze Foto
+    oder erkannt)."""
 
     person_id: int
     origin: Literal["recognized", "corrected"]
+    face: Literal["shown", "assigned"] | None
 
 
 def photo_person_outs(assignments: list[PersonAssignment]) -> list[PhotoPersonOut]:
-    return [PhotoPersonOut(person_id=entry.person_id, origin=entry.origin) for entry in assignments]
+    return [
+        PhotoPersonOut(person_id=entry.person_id, origin=entry.origin, face=entry.face)
+        for entry in assignments
+    ]
+
+
+class FaceAssignmentOut(BaseModel):
+    """Die Antwort auf Festlegen und Zeigen: die Person, ob PhotoSort aus dem Gesicht gelernt hat
+    (`false` an der Obergrenze), und die wirksame Personenliste des Fotos. Kein nutzerabhaengiges
+    Feld."""
+
+    person: PersonOut
+    learned: bool
+    photo_persons: list[PhotoPersonOut]
 
 
 # --- Modell und Executor ----------------------------------------------------------------------
@@ -174,14 +193,16 @@ def _faces(analyzer: FaceAnalyzerLike, path: Path) -> list[Face]:
     return order_faces(analyzer.detect(image))
 
 
-def _embedding_at(analyzer: FaceAnalyzerLike, path: Path, index: int) -> list[float]:
-    """Auflisten und Merkmal in EINEM Aufruf auf dem Modell-Thread - der Index zeigt auf das
-    Gesicht, das die Auflistung unter ihm zeigt."""
+def _embedding_at(
+    analyzer: FaceAnalyzerLike, path: Path, index: int
+) -> tuple[list[float], FaceBox]:
+    """Auflisten, Merkmal und Box in EINEM Aufruf auf dem Modell-Thread - aus demselben
+    Detektionslauf. Der Index zeigt auf das Gesicht, das die Auflistung unter ihm zeigt."""
     image = load_image(path)
     faces = [] if image is None else order_faces(analyzer.detect(image))
     if image is None or index >= len(faces):
         raise FaceNotFound()
-    return analyzer.embed(image, faces[index])
+    return analyzer.embed(image, faces[index]), faces[index].box
 
 
 def _crop_at(analyzer: FaceAnalyzerLike, path: Path, index: int) -> bytes | None:
@@ -204,6 +225,17 @@ async def _summary(session: AsyncSession, person_id: int) -> PersonOut:
     raise _refusal(PersonNotFound())
 
 
+async def _assignment(
+    session: AsyncSession, *, person_id: int, photo_id: int, learned: bool
+) -> FaceAssignmentOut:
+    effective = await load_effective_persons(session, [photo_id])
+    return FaceAssignmentOut(
+        person=await _summary(session, person_id),
+        learned=learned,
+        photo_persons=photo_person_outs(effective.get(photo_id, [])),
+    )
+
+
 # --- Endpunkte ---------------------------------------------------------------------------------
 
 
@@ -217,14 +249,14 @@ async def get_persons(session: AsyncSession = Depends(get_session)) -> list[Pers
     ]
 
 
-@router.post("/persons", response_model=PersonOut, status_code=status.HTTP_201_CREATED)
+@router.post("/persons", response_model=FaceAssignmentOut, status_code=status.HTTP_201_CREATED)
 async def post_person(
     body: PersonCreateIn,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
     executor: Executor = Depends(get_face_executor),
     analyzer: FaceAnalyzerLike = Depends(get_face_analyzer),
-) -> PersonOut:
+) -> FaceAssignmentOut:
     """Legt eine Person NUR zusammen mit ihrer ersten Referenz an - dem Gesicht unter
     `face_index` auf der Display-Variante des Fotos - und ordnet sie diesem Foto per Korrektur zu.
     Hoechstens zwei Personen, kein Name doppelt (nach NFC und `casefold`); ein gleichzeitiges
@@ -235,13 +267,15 @@ async def post_person(
         raise _refusal(refusal) from None
     path = await _display_path_or_404(session, body.photo_id)
     try:
-        embedding: list[float] = await _on_model_thread(
+        found: tuple[list[float], FaceBox] = await _on_model_thread(
             executor, _embedding_at, analyzer, path, body.face_index
         )
+        embedding, face_box = found
         person = await create_person(
             session,
             name=name,
             embedding=embedding,
+            face_box=face_box,
             model_key=MODEL_KEY,
             photo_id=body.photo_id,
             user_id=current_user.id,
@@ -254,7 +288,7 @@ async def post_person(
     except IntegrityError:
         await session.rollback()
         raise _refusal(await _conflict_after_integrity_error(session, name)) from None
-    return await _summary(session, person_id)
+    return await _assignment(session, person_id=person_id, photo_id=body.photo_id, learned=True)
 
 
 async def _conflict_after_integrity_error(session: AsyncSession, name: str) -> PersonRefusal:
@@ -268,7 +302,9 @@ async def _conflict_after_integrity_error(session: AsyncSession, name: str) -> P
 
 
 @router.post(
-    "/persons/{person_id}/references", response_model=PersonOut, status_code=status.HTTP_201_CREATED
+    "/persons/{person_id}/references",
+    response_model=FaceAssignmentOut,
+    status_code=status.HTTP_201_CREATED,
 )
 async def post_reference(
     person_id: _PersonId,
@@ -277,21 +313,29 @@ async def post_reference(
     current_user: User = Depends(get_current_user),
     executor: Executor = Depends(get_face_executor),
     analyzer: FaceAnalyzerLike = Depends(get_face_analyzer),
-) -> PersonOut:
+) -> FaceAssignmentOut:
     """Zeigt ein weiteres Gesicht einer Person und ordnet sie diesem Foto zugleich per Korrektur
-    zu. Abgelehnt (`409`), wenn das Gesicht der anderen Person gleicht, das Merkmal ungueltig ist
-    oder die Obergrenze gezeigter Gesichter erreicht ist. Schreibt kein Nacharbeits-Ereignis."""
+    zu. Abgelehnt (`409`), wenn diese Person hier schon ein Gesicht hat, das Gesicht der anderen
+    Person gleicht oder auf diesem Foto ihr gehoert, oder das Merkmal ungueltig ist. An der
+    Obergrenze gezeigter Gesichter wird nur benannt (`learned: false`). Schreibt kein
+    Nacharbeits-Ereignis."""
     if await session.get(Person, person_id) is None:
         raise _refusal(PersonNotFound())
     path = await _display_path_or_404(session, body.photo_id)
     try:
-        embedding: list[float] = await _on_model_thread(
+        await refuse_if_face_on_photo(session, photo_id=body.photo_id, person_id=person_id)
+    except PersonRefusal as refusal:
+        raise _refusal(refusal) from None
+    try:
+        found: tuple[list[float], FaceBox] = await _on_model_thread(
             executor, _embedding_at, analyzer, path, body.face_index
         )
-        await add_reference(
+        embedding, face_box = found
+        learned = await assign_face(
             session,
             person_id=person_id,
             embedding=embedding,
+            face_box=face_box,
             model_key=MODEL_KEY,
             photo_id=body.photo_id,
             user_id=current_user.id,
@@ -303,7 +347,7 @@ async def post_reference(
     except IntegrityError:
         await session.rollback()
         raise _refusal(ConcurrentPersonChange()) from None
-    return await _summary(session, person_id)
+    return await _assignment(session, person_id=person_id, photo_id=body.photo_id, learned=learned)
 
 
 @router.delete("/persons/{person_id}", status_code=status.HTTP_204_NO_CONTENT)

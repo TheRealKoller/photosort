@@ -114,6 +114,19 @@ def order_faces(faces: Sequence[Face]) -> list[Face]:
     return sorted(largest[:MAX_FACES_PER_PHOTO], key=_position_key)
 
 
+def is_valid_face_box(box: FaceBox) -> bool:
+    """Die Box, wie sie gespeichert werden darf: endlich, `0 <= x, y <= 1`, `0 < width, height
+    <= 1`. EINSCHLUSSFORM - ein NaN erfuellt keinen Vergleich und faellt auf "ungueltig"."""
+    values = (box.x, box.y, box.width, box.height)
+    return (
+        all(math.isfinite(value) for value in values)
+        and 0.0 <= box.x <= 1.0
+        and 0.0 <= box.y <= 1.0
+        and 0.0 < box.width <= 1.0
+        and 0.0 < box.height <= 1.0
+    )
+
+
 def box_overlap(a: FaceBox, b: FaceBox) -> float:
     """Die Ueberdeckung zweier Boxen als Schnitt durch Vereinigung (0..1). Ein NaN in einer Box
     ergibt NaN - und damit ueber `same_face` "nicht gleich"."""

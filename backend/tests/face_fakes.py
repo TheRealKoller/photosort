@@ -29,6 +29,9 @@ from photosort.thumbnails import display_path
 SENTINEL = 0.0123456789
 SENTINEL_TEXT = "0.0123456789"
 _SENTINEL_INDEX = EMBEDDING_DIMENSION - 1
+# Eine einpraegsame Box-Koordinate, nach der wie nach `SENTINEL` gesucht wird.
+BOX_SENTINEL = 0.0987654321
+BOX_SENTINEL_TEXT = "0.0987654321"
 
 Color = tuple[int, int, int]
 
@@ -42,6 +45,18 @@ def face_embedding(index: int) -> list[float]:
     return vector
 
 
+def face_box(index: int) -> FaceBox:
+    """Die feste Box des Gesichts an Stelle `index` - Vorgabe, solange `boxes_by_color` nichts
+    anderes setzt. Die Boxen zweier Stellen ueberdecken sich nie."""
+    return FaceBox(x=0.05 + 0.2 * index, y=0.2, width=0.15, height=0.3)
+
+
+def sentinel_box(offset: int = 0) -> FaceBox:
+    """Eine Box mit einpraegsamer Koordinate. `offset` verschiebt sie auf eine eigene Stelle
+    (je Offset ein eigener Sentinel)."""
+    return FaceBox(x=BOX_SENTINEL + 0.25 * offset, y=0.5, width=0.125, height=0.25)
+
+
 def write_display_variant(cache_dir: Path, photo_id: int, etag: str, color: Color) -> None:
     path = display_path(cache_dir, photo_id, etag)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,13 +66,18 @@ def write_display_variant(cache_dir: Path, photo_id: int, etag: str, color: Colo
 @dataclass
 class FakeFaceAnalyzer:
     """`faces_by_color`: je Vollfarbe die Merkmale der Gesichter darauf, in Reihenfolge links
-    nach rechts. `failing`: Farben, bei denen `detect` wirft. `shuffle`: jeder Aufruf liefert
-    dieselben Gesichter in anderer Reihenfolge. `on_detect`: Haken je `detect`-Aufruf."""
+    nach rechts. `boxes_by_color`: je Vollfarbe die Boxen dieser Gesichter (sonst `face_box`).
+    `failing`: Farben, bei denen `detect` wirft. `shuffle`: jeder zweite Aufruf liefert dieselben
+    Gesichter in umgekehrter Reihenfolge. `on_detect`: Haken je `detect`-Aufruf.
+    `before_detect_returns`: Haken kurz vor der Rueckgabe von `detect`, etwa um den Modell-Thread
+    an einem `threading.Event` festzuhalten."""
 
     faces_by_color: Mapping[Color, Sequence[Sequence[float]]]
+    boxes_by_color: Mapping[Color, Sequence[FaceBox]] = field(default_factory=dict)
     failing: frozenset[Color] = frozenset()
     shuffle: bool = False
     on_detect: Callable[[Color], None] | None = None
+    before_detect_returns: Callable[[Color], None] | None = None
     delay_seconds: float = 0.0
     calls: list[tuple[str, str]] = field(default_factory=list)
     spans: list[tuple[float, float]] = field(default_factory=list)
@@ -76,6 +96,10 @@ class FakeFaceAnalyzer:
         self.calls.append((method, threading.current_thread().name))
         return time.monotonic()
 
+    def _boxes(self, color: Color, count: int) -> list[FaceBox]:
+        boxes = self.boxes_by_color.get(color)
+        return list(boxes) if boxes is not None else [face_box(index) for index in range(count)]
+
     def detect(self, image: NDArray[np.uint8]) -> list[Face]:
         started = self._record("detect")
         color = self._color_of(image)
@@ -88,15 +112,14 @@ class FakeFaceAnalyzer:
             raise RuntimeError("simulierter Modellfehler")
         embeddings = self.faces_by_color.get(color, ())
         faces = [
-            Face(
-                box=FaceBox(x=0.05 + 0.2 * index, y=0.2, width=0.15, height=0.3),
-                detection=(float(index),),
-            )
-            for index in range(len(embeddings))
+            Face(box=box, detection=(float(index),))
+            for index, box in enumerate(self._boxes(color, len(embeddings)))
         ]
         self._detect_count += 1
         if self.shuffle and self._detect_count % 2 == 0:
             faces.reverse()
+        if self.before_detect_returns is not None:
+            self.before_detect_returns(color)
         return faces
 
     def embed(self, image: NDArray[np.uint8], face: Face) -> list[float]:

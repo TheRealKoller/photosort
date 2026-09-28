@@ -42,6 +42,7 @@ from tests.face_fakes import (
     SENTINEL_TEXT,
     Color,
     FakeFaceAnalyzer,
+    face_box,
     face_embedding,
     write_display_variant,
 )
@@ -116,6 +117,7 @@ async def _define(session: AsyncSession, name: str, axis: int, photo: Photo) -> 
         session,
         name=name,
         embedding=face_embedding(axis),
+        face_box=face_box(axis),
         model_key=MODEL_KEY,
         photo_id=photo.id,
         user_id=user.id,
@@ -138,9 +140,15 @@ async def test_a_person_is_created_with_its_first_reference(
     )
 
     assert response.status_code == 201
-    assert set(response.json()) == {"id", "name", "reference_count"}
-    assert response.json()["name"] == "Anna"
-    assert response.json()["reference_count"] == 1
+    assert set(response.json()) == {"person", "learned", "photo_persons"}
+    body = response.json()
+    assert set(body["person"]) == {"id", "name", "reference_count"}
+    assert body["person"]["name"] == "Anna"
+    assert body["person"]["reference_count"] == 1
+    assert body["learned"] is True
+    assert body["photo_persons"] == [
+        {"person_id": body["person"]["id"], "origin": "corrected", "face": "shown"}
+    ]
     assert await _count(db_session, PhotoPersonCorrection) == 1
 
 
@@ -322,34 +330,43 @@ async def test_without_display_variant_404_and_no_model_call(
 # --- POST /persons/{id}/references ----------------------------------------------------------
 
 
-async def test_a_reference_assigns_writes_no_feedback_event_and_is_capped(
+async def test_a_reference_assigns_writes_no_feedback_event_and_only_names_at_the_cap(
     client: httpx.AsyncClient,
     lay: Lay,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """An der Obergrenze `learned: false` statt `409`: benannt, gezeigt, aber nicht gelernt."""
     project = await lay.project()
     anchor = await lay.photo(project, "anker")
     other = await lay.photo(project, "b", GREEN)
+    third = await lay.photo(project, "c", GREEN)
     await db_session.commit()
     anna = await _define(db_session, "Anna", 0, anchor)
     monkeypatch.setattr(persons_module, "MAX_REFERENCES_PER_PERSON", 2)
-    project_id, other_id, anna_id = project.id, other.id, anna.id
+    project_id, other_id, third_id, anna_id = project.id, other.id, third.id, anna.id
 
     added = await client.post(
         f"/persons/{anna_id}/references", json={"photo_id": other_id, "face_index": 0}
     )
     capped = await client.post(
-        f"/persons/{anna_id}/references", json={"photo_id": other_id, "face_index": 0}
+        f"/persons/{anna_id}/references", json={"photo_id": third_id, "face_index": 0}
     )
 
     assert added.status_code == 201
-    assert added.json()["reference_count"] == 2
-    assert capped.status_code == 409
-    assert capped.json()["detail"] == persons_module.ReferenceLimitReached.detail
+    assert set(added.json()) == {"person", "learned", "photo_persons"}
+    assert added.json()["learned"] is True
+    assert added.json()["person"]["reference_count"] == 2
+    assert capped.status_code == 201
+    assert capped.json()["learned"] is False
+    assert capped.json()["person"]["reference_count"] == 2
+    assert capped.json()["photo_persons"] == [
+        {"person_id": anna_id, "origin": "corrected", "face": "assigned"}
+    ]
+    assert await _count(db_session, PersonReference) == 2
     listing = (await client.get(f"/projects/{project_id}/photos")).json()["items"]
     by_id = {item["id"]: item["persons"] for item in listing}
-    assert by_id[other_id] == [{"person_id": anna_id, "origin": "corrected"}]
+    assert by_id[other_id] == [{"person_id": anna_id, "origin": "corrected", "face": "shown"}]
     assert await _count(db_session, FeedbackEvent) == 0
 
 
@@ -513,7 +530,7 @@ async def test_put_returns_the_effective_list_and_the_last_writer_wins(
     client.headers["Authorization"] = f"Bearer {create_access_token(partner)}"
     added = await client.put(f"/photos/{photo.id}/persons/{anna.id}", json={"applies": True})
 
-    assert added.json() == [{"person_id": anna.id, "origin": "corrected"}]
+    assert added.json() == [{"person_id": anna.id, "origin": "corrected", "face": None}]
     assert "user_id" not in added.text
     rows = (
         (
@@ -617,13 +634,23 @@ async def test_the_filter_shows_exactly_the_photos_carrying_the_name(
     assert twice["total"] == len(only_anna)
     origins = {item["id"]: item["persons"] for item in everything}
     assert origins[ids["erkannt"]] == [
-        {"person_id": anna, "origin": "recognized"},
-        {"person_id": berta, "origin": "recognized"},
+        {"person_id": anna, "origin": "recognized", "face": None},
+        {"person_id": berta, "origin": "recognized", "face": None},
     ]
     assert origins[ids["erkannt-entfernt"]] == []
     assert all(
-        set(entry) == {"person_id", "origin"} for item in everything for entry in item["persons"]
+        set(entry) == {"person_id", "origin", "face"}
+        for item in everything
+        for entry in item["persons"]
     )
+
+
+def test_the_photo_person_schema_is_exactly_id_origin_and_face() -> None:
+    """Jeder Lesepfad (Liste, Entwurf, Detail, PUT) baut `PhotoPersonOut`; `face` ist ein
+    Aufzaehlungswert - eine gespeicherte Box verlaesst die Datenbank ueber keine Antwort."""
+    from photosort.api.persons import PhotoPersonOut
+
+    assert set(PhotoPersonOut.model_fields) == {"person_id", "origin", "face"}
 
 
 async def test_the_filter_combines_with_the_rating_filter(

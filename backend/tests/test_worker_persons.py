@@ -49,7 +49,7 @@ from photosort.models import (
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.persons import (
     PersonAssignment,
-    add_reference,
+    assign_face,
     create_person,
     delete_person,
     load_effective_persons,
@@ -62,6 +62,7 @@ from tests.face_fakes import (
     Color,
     ExplodingAnalyzer,
     FakeFaceAnalyzer,
+    face_box,
     face_embedding,
     write_display_variant,
 )
@@ -231,6 +232,7 @@ async def _define(session: AsyncSession, name: str, axis: int, anchor: Photo, us
         session,
         name=name,
         embedding=face_embedding(axis),
+        face_box=face_box(axis),
         model_key=MODEL_KEY,
         photo_id=anchor.id,
         user_id=user.id,
@@ -609,12 +611,14 @@ async def test_a_correction_outranks_the_recognition_over_runs(
     assert await _detections(db_session) == {(removed.id, anna.id)}
     assert await effective() == {added.id: [PersonAssignment(anna.id, "corrected")]}
 
-    await add_reference(
+    shown = await _photo(db_session, lay.project, tmp_path, "c", None)
+    await assign_face(
         db_session,
         person_id=anna.id,
         embedding=face_embedding(0),
+        face_box=face_box(0),
         model_key=MODEL_KEY,
-        photo_id=lay.anchor.id,
+        photo_id=shown.id,
         user_id=lay.user.id,
     )
     await db_session.commit()
