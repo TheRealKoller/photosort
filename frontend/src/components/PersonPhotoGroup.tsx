@@ -8,6 +8,12 @@ import type { PersonOut, PhotoOut } from '../api/types'
 import { PERSONS_QUERY_KEY } from '../hooks/usePersons'
 import { storePhotoPersons } from '../hooks/usePhotoPersons'
 import { usePersonGroupQuery } from '../hooks/usePersonGroupQuery'
+import {
+  baseName,
+  photoCount,
+  ROW_CARD_CLASSES,
+  ROW_CARD_LIST_CLASSES,
+} from '../utils/personOverview'
 import { PhotoImage } from './PhotoImage'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
@@ -15,20 +21,6 @@ import { Skeleton } from './ui/skeleton'
 
 const GROUP_LOAD_ERROR = 'Die Fotos konnten nicht geladen werden.'
 const REMOVE_ERROR = 'Die Zuordnung konnte nicht gespeichert werden.'
-
-/** Die Zeilenkarte beider Gruppen der Übersicht - Liste und Karte. */
-export const ROW_CARD_LIST_CLASSES = 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3'
-export const ROW_CARD_CLASSES =
-  'flex items-start gap-3 rounded-lg border border-border bg-elevated p-2'
-
-/** "1 Foto" bzw. "{n} Fotos" - die eine Zählform beider Gruppen. */
-export function photoCount(count: number): string {
-  return count === 1 ? '1 Foto' : `${count} Fotos`
-}
-
-export function baseName(path: string): string {
-  return path.split('/').pop() ?? path
-}
 
 interface PersonPhotoGroupProps {
   projectId: number

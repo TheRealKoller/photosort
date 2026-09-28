@@ -236,3 +236,6 @@ export function useUnnamedFaces(projectId: number) {
     retryRefresh,
   }
 }
+
+/** Der Zustand von "Ohne Namen", wie ihn die Seite an die Gruppe reicht. */
+export type UnnamedFaces = ReturnType<typeof useUnnamedFaces>
