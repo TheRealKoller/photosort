@@ -225,16 +225,15 @@ test('Stepper-Leiste und Kopfzeile stehen im gescrollten Zustand fugenlos untere
  * DER HAFTBEREICH IST KURZ: `sticky` wirkt nur innerhalb der eigenen Gruppe, und die Demo-Bilder
  * enthalten keine Gesichter - unter der Leiste steht nur "Kein Gesicht ohne Namen.". Gescrollt wird
  * deshalb genau so weit, dass die Leiste ohne Haften 12 px unter die Kopfzeile geraten waere. Die
- * flache Viewport-Hoehe macht diesen Scroll-Weg auf der kurzen Seite erst moeglich.
+ * Viewport-Hoehe wird dafuer aus dem gerenderten Abstand zwischen Leiste und Seitenende
+ * abgeleitet: Erst so reicht der Scroll-Weg auf der kurzen Seite bis in den Haftbereich.
  *
  * Rot-Nachweis: mit erzwungenem `position: static` an der Leiste ist "disjunkt" rot (sie laeuft
  * 12 px unter die Kopfzeile), und die Kardinalitaet faellt auf 1.
  */
 test('die Statusleiste von "Ohne Namen" haftet fugenlos unter der Kopfzeile', async ({ page }) => {
+  const UNTER_DIE_KOPFZEILE = 12
   const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
-  const width = page.viewportSize()?.width ?? 360
-  const viewportHeight = 200
-  await page.setViewportSize({ width, height: viewportHeight })
   await page.goto(`/projects/${projectId}/persons`)
 
   const header = page.getByRole('banner')
@@ -243,10 +242,22 @@ test('die Statusleiste von "Ohne Namen" haftet fugenlos unter der Kopfzeile', as
   await expect(leiste.getByText(/^Suche abgeschlossen: /)).toBeVisible()
 
   const headerHeight = (await header.boundingBox())!.height
-  const leisteOben = await leiste.evaluate(
-    (element) => element.getBoundingClientRect().top + window.scrollY,
+  const layout = await leiste.evaluate((element) => {
+    const rect = element.getBoundingClientRect()
+    return {
+      oben: rect.top + window.scrollY,
+      hoehe: rect.height,
+      seite: document.documentElement.scrollHeight,
+    }
+  })
+  const viewportHeight = Math.floor(layout.seite - layout.oben + headerHeight - UNTER_DIE_KOPFZEILE)
+  // Vorbedingung: Kopfzeile und haftende Leiste passen zusammen in den Sichtbereich.
+  expect(viewportHeight, 'Sichtbereich fuer Kopfzeile und Leiste').toBeGreaterThanOrEqual(
+    headerHeight + layout.hoehe,
   )
-  const ziel = Math.round(leisteOben - headerHeight + 12)
+  await page.setViewportSize({ width: page.viewportSize()?.width ?? 360, height: viewportHeight })
+
+  const ziel = Math.round(layout.oben - headerHeight + UNTER_DIE_KOPFZEILE)
   const maxScroll = await page.evaluate(
     () => document.documentElement.scrollHeight - window.innerHeight,
   )

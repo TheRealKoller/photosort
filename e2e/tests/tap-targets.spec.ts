@@ -129,11 +129,13 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
 
   // --- Personenabschnitt derselben Detailansicht -------------------------------------------
   // Die zweite Kachel ist im Demo-Bestand das Foto, dem die erste Person von Hand zugeordnet ist
-  // und die zweite nicht - dort stehen "Entfernen" und "Ergänzen" in zwei Zeilen UNTEREINANDER,
-  // also genau die Fehlerklasse "ueberlappende aufgespannte Trefferflaechen" in der Senkrechten.
-  // Ein Fehlgriff schreibt eine Korrektur, die fuer beide Nutzer gilt.
+  // und die zweite nicht - dort stehen die Aktion der ersten Person und "Ergänzen" in zwei Zeilen
+  // UNTEREINANDER, also genau die Fehlerklasse "ueberlappende aufgespannte Trefferflaechen" in der
+  // Senkrechten. Ein Fehlgriff schreibt eine Korrektur, die fuer beide Nutzer gilt. Seit Spec 0551
+  // traegt die erste Person dort ein gezeigtes Gesicht; ihre Aktion heisst deshalb "Gesicht
+  // zuruecknehmen" statt "Entfernen".
   for (const [label, name] of [
-    ['Entfernen', DEMO_PERSONS.short],
+    ['Gesicht zurücknehmen', DEMO_PERSONS.short],
     ['Ergänzen', DEMO_PERSONS.longest],
   ] as const) {
     await assertTappable(
