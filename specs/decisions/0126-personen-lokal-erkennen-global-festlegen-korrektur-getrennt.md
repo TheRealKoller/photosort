@@ -1,6 +1,13 @@
 # 0126 - Personen: lokal erkannt mit YuNet und SFace, global festgelegt, Erkennung und Korrektur getrennt
 
 **Status:** Accepted
+**Teilweise abgelöst:** Punkt 3, Absatz „API-Prozess" (nur zum Festlegen), und in Punkt 6 die
+Spaltensätze von `photo_person_detections` („keine Box") und `photo_person_corrections` durch ADR
+[`0127`](./0127-personen-gesichtsbezug-nur-fuer-festgelegte-ohne-namen-auf-anfrage.md): Erkennung
+und Korrektur tragen optional die Box des Gesichts einer festgelegten Person, die Korrektur
+zusätzlich die daraus entstandene Referenz, und der API-Prozess listet auch die unbenannten
+Gesichter eines Projekts auf. „Für unbekannte Gesichter wird nichts gespeichert" und alle übrigen
+Punkte gelten unverändert.
 **Datum:** 2026-09-27
 **Bezug:** [GitHub-Issue #292](https://github.com/TheRealKoller/photosort/issues/292), Spec 0292
 **Umfang:** über dem Richtwert, weil Verfahren und Datenmodell an denselben Zusicherungen hängen
