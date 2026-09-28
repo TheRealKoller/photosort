@@ -173,7 +173,7 @@ def _protected_router_operations() -> list[tuple[str, str]]:
         album_decisions.router,
         duplicate_decisions.router,
         feedback.router,
-        # S1: alle sieben Personen-Endpunkte.
+        # S1: alle acht Personen-Endpunkte, auch die Auflistung "Ohne Namen".
         persons.router,
     ):
         for route in router.routes:

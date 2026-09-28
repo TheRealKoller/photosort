@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import io
+import math
+import re
+import sqlite3
+import threading
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
@@ -21,9 +25,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import persons as persons_module
+from photosort.api import persons as persons_api
 from photosort.api.persons import get_face_analyzer
 from photosort.config import settings
-from photosort.face_analysis import MODEL_KEY
+from photosort.db import Base
+from photosort.face_analysis import MODEL_KEY, FaceBox
 from photosort.main import app
 from photosort.models import (
     FeedbackEvent,
@@ -46,6 +52,7 @@ from tests.face_fakes import (
     face_embedding,
     write_display_variant,
 )
+from tests.person_stack import PersonStack, person_stack
 
 NOW = datetime(2026, 9, 27, 12, 0, 0)
 RED: Color = (220, 20, 20)
@@ -756,3 +763,764 @@ async def test_the_summary_carries_null_or_the_count(db_session: AsyncSession) -
 
     assert (without.persons_photos_total, without.persons_photos_processed) == (None, None)
     assert (counted.persons_photos_total, counted.persons_photos_processed) == (5, 5)
+
+
+# --- Spec 0551: neue Abweisungen, Ruecknahme, Zusammenspiel -----------------------------------
+
+ANCHOR: Color = (240, 240, 20)
+BLUE: Color = (20, 20, 220)
+THREE: Color = (120, 20, 120)
+
+
+@pytest.fixture
+def stack_analyzer() -> FakeFaceAnalyzer:
+    return FakeFaceAnalyzer(
+        {
+            ANCHOR: TWO_FACES,
+            RED: [face_embedding(10)],
+            GREEN: [face_embedding(11), face_embedding(12)],
+            BLUE: [face_embedding(13)],
+            THREE: [face_embedding(14), face_embedding(15), face_embedding(16)],
+        }
+    )
+
+
+@pytest_asyncio.fixture
+async def stack(
+    tmp_path: Path, stack_analyzer: FakeFaceAnalyzer, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[PersonStack]:
+    monkeypatch.setattr(settings, "photo_cache_dir", str(tmp_path / "cache"))
+    async for built in person_stack(tmp_path, stack_analyzer):
+        yield built
+
+
+async def _two_persons(stack: PersonStack) -> tuple[int, int]:
+    """Anna und Berta, festgelegt auf einem Foto eines eigenen Anker-Projekts - mit einpraegsamen
+    Namen, nach denen in den Meldungen gesucht wird."""
+    anchor = await stack.photo(await stack.project("Anker"), "anker", ANCHOR)
+    return await stack.define("Annabell-Merkname", 0, anchor), await stack.define(
+        "Bertrude-Merkname", 1, anchor
+    )
+
+
+async def _stack_snapshot(stack: PersonStack) -> dict[str, list[tuple[Any, ...]]]:
+    async with stack.factory() as session:
+        return {
+            model.__tablename__: sorted(
+                (tuple(row) for row in (await session.execute(select(model.__table__))).all()),
+                key=repr,
+            )
+            for model in (Person, PersonReference, PhotoPersonDetection, PhotoPersonCorrection)
+        }
+
+
+async def _detect_on(stack: PersonStack, photo_id: int, person_id: int, index: int) -> None:
+    box = face_box(index)
+    async with stack.factory() as session:
+        session.add(
+            PhotoPersonDetection(
+                photo_id=photo_id,
+                person_id=person_id,
+                computed_at=NOW,
+                face_box_x=box.x,
+                face_box_y=box.y,
+                face_box_width=box.width,
+                face_box_height=box.height,
+            )
+        )
+        await session.commit()
+
+
+async def _boxes_on(stack: PersonStack, photo_id: int) -> list[tuple[int, float | None]]:
+    async with stack.factory() as session:
+        rows = await session.execute(
+            select(PhotoPersonCorrection.person_id, PhotoPersonCorrection.face_box_x).where(
+                PhotoPersonCorrection.photo_id == photo_id,
+                PhotoPersonCorrection.face_box_x.is_not(None),
+            )
+        )
+        return [(person_id, x) for person_id, x in rows.all()]
+
+
+async def _references_of(stack: PersonStack, person_id: int) -> int:
+    async with stack.factory() as session:
+        return (
+            await session.execute(
+                select(func.count())
+                .select_from(PersonReference)
+                .where(PersonReference.person_id == person_id)
+            )
+        ).scalar_one()
+
+
+async def test_a_second_face_of_the_person_on_the_photo_is_refused_before_the_model(
+    stack: PersonStack, stack_analyzer: FakeFaceAnalyzer
+) -> None:
+    anna, _ = await _two_persons(stack)
+    photo = await stack.photo(await stack.project(), "a", GREEN)
+    first = await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0}
+    )
+    assert first.status_code == 201
+    before = await _stack_snapshot(stack)
+    stack_analyzer.calls.clear()
+
+    second = await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 1}
+    )
+
+    assert second.status_code == 409
+    assert second.json()["detail"] == persons_module.FaceAlreadyAssignedOnPhoto.detail
+    assert stack_analyzer.calls == []
+    assert await _stack_snapshot(stack) == before
+
+
+async def test_a_recognised_box_of_the_same_person_does_not_block(stack: PersonStack) -> None:
+    anna, _ = await _two_persons(stack)
+    photo = await stack.photo(await stack.project(), "a", GREEN)
+    await _detect_on(stack, photo, anna, 0)
+
+    response = await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 1}
+    )
+
+    assert response.status_code == 201
+    assert response.json()["photo_persons"] == [
+        {"person_id": anna, "origin": "corrected", "face": "shown"}
+    ]
+
+
+async def _learn_more(stack: PersonStack, person_id: int, count: int, *, face_index: int) -> None:
+    """Weitere gezeigte Gesichter derselben Achse: Der Schwerpunkt bleibt dann so nah an ihr,
+    dass ein neu gelerntes fremdes Gesicht der Person nicht "gleicht"."""
+    project = await stack.project(f"Lernen-{person_id}")
+    for index in range(count):
+        photo = await stack.photo(project, f"l{index}", ANCHOR)
+        response = await stack.client.post(
+            f"/persons/{person_id}/references", json={"photo_id": photo, "face_index": face_index}
+        )
+        assert response.status_code == 201, response.text
+
+
+@pytest.mark.parametrize("bound_by", ["korrektur", "erkennung"])
+async def test_the_face_of_the_other_person_on_this_photo_is_refused(
+    stack: PersonStack, bound_by: str
+) -> None:
+    anna, berta = await _two_persons(stack)
+    await _learn_more(stack, anna, 2, face_index=0)
+    photo = await stack.photo(await stack.project(), "a", GREEN)
+    if bound_by == "korrektur":
+        assert (
+            await stack.client.post(
+                f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0}
+            )
+        ).status_code == 201
+    else:
+        await _detect_on(stack, photo, anna, 0)
+    before = await _stack_snapshot(stack)
+
+    response = await stack.client.post(
+        f"/persons/{berta}/references", json={"photo_id": photo, "face_index": 0}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == persons_module.FaceAssignedToOtherPerson.detail
+    assert "Merkname" not in response.text
+    assert await _stack_snapshot(stack) == before
+
+
+async def test_the_other_persons_face_is_also_refused_when_defining(stack: PersonStack) -> None:
+    anchor = await stack.photo(await stack.project("Anker"), "anker", ANCHOR)
+    anna = await stack.define("Annabell-Merkname", 0, anchor)
+    photo = await stack.photo(await stack.project(), "a", GREEN)
+    await _detect_on(stack, photo, anna, 0)
+
+    response = await stack.client.post(
+        "/persons", json={"name": "Clara", "photo_id": photo, "face_index": 0}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == persons_module.FaceAssignedToOtherPerson.detail
+    assert await stack.count(Person) == 1
+
+
+async def test_the_stored_box_belongs_to_the_face_whose_embedding_is_stored(
+    stack: PersonStack, stack_analyzer: FakeFaceAnalyzer
+) -> None:
+    """Merkmal und Box aus DEMSELBEN Detektionslauf, auch wenn der Detektor umordnet."""
+    stack_analyzer.shuffle = True
+    stack_analyzer.boxes_by_color = {THREE: [face_box(0), face_box(1), face_box(2)]}
+    anna, _ = await _two_persons(stack)
+    photo = await stack.photo(await stack.project(), "a", THREE)
+
+    for _ in range(2):
+        await stack.client.get(f"/photos/{photo}/faces")
+    response = await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 2}
+    )
+
+    assert response.status_code == 201
+    async with stack.factory() as session:
+        stored = (
+            await session.execute(
+                select(PersonReference.embedding)
+                .join(
+                    PhotoPersonCorrection, PhotoPersonCorrection.reference_id == PersonReference.id
+                )
+                .where(PhotoPersonCorrection.photo_id == photo)
+            )
+        ).scalar_one()
+    assert stored == pytest.approx(face_embedding(16))
+    assert await _boxes_on(stack, photo) == [(anna, face_box(2).x)]
+
+
+async def test_a_non_finite_box_behind_the_adapter_is_409_without_writing(
+    stack: PersonStack, stack_analyzer: FakeFaceAnalyzer
+) -> None:
+    stack_analyzer.boxes_by_color = {RED: [FaceBox(x=math.nan, y=0.2, width=0.15, height=0.3)]}
+    anna, _ = await _two_persons(stack)
+    photo = await stack.photo(await stack.project(), "a", RED)
+    before = await _stack_snapshot(stack)
+
+    response = await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == persons_module.InvalidEmbedding.detail
+    assert await _stack_snapshot(stack) == before
+
+
+@pytest.mark.parametrize("field", ["face_box_x", "box"])
+async def test_a_box_from_the_client_is_422(stack: PersonStack, field: str) -> None:
+    anna, _ = await _two_persons(stack)
+    photo = await stack.photo(await stack.project(), "a", RED)
+
+    response = await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0, field: 0.5}
+    )
+
+    assert response.status_code == 422
+
+
+async def test_the_revocation_removes_name_and_reference_and_frees_the_face(
+    stack: PersonStack,
+) -> None:
+    anna, _ = await _two_persons(stack)
+    project = await stack.project()
+    photo = await stack.photo(project, "a", GREEN)
+    await _detect_on(stack, photo, anna, 0)
+    await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 1}
+    )
+    counted = {
+        entry["id"]: entry["reference_count"]
+        for entry in (await stack.client.get("/persons")).json()
+    }
+
+    revoked = await stack.client.put(f"/photos/{photo}/persons/{anna}", json={"applies": False})
+    listing = await stack.client.get(f"/projects/{project}/unnamed-faces")
+
+    assert revoked.status_code == 200
+    assert revoked.json() == []
+    after = {
+        entry["id"]: entry["reference_count"]
+        for entry in (await stack.client.get("/persons")).json()
+    }
+    assert after[anna] == counted[anna] - 1
+    # Auch die erkannte Box haelt das Gesicht nicht mehr: Die Korrektur `false` geht vor.
+    assert [(face["photo_id"], face["face_index"]) for face in listing.json()["faces"]] == [
+        (photo, 0),
+        (photo, 1),
+    ]
+
+
+async def test_the_person_filter_is_the_group_including_rejected_photos(
+    stack: PersonStack,
+) -> None:
+    """Gleiche Menge wie bisher: ohne Bewertungsfilter, Reihenfolge `(taken_at, id)`, `total`,
+    auch im Ausschuss; ein Foto mit beiden Namen steht in beiden Abfragen."""
+    anna, berta = await _two_persons(stack)
+    project = await stack.project()
+    late = await stack.photo(project, "spaet", RED, taken_at=datetime(2026, 9, 29))
+    early = await stack.photo(project, "frueh", RED, rejected=True, taken_at=datetime(2026, 9, 1))
+    both = await stack.photo(project, "beide", GREEN, taken_at=datetime(2026, 9, 15))
+    await stack.photo(project, "keiner", RED)
+    await _detect_on(stack, late, anna, 0)
+    await _detect_on(stack, early, anna, 0)
+    await _detect_on(stack, both, anna, 0)
+    await _detect_on(stack, both, berta, 1)
+
+    for_anna = (
+        await stack.client.get(f"/projects/{project}/photos", params={"person_id": anna})
+    ).json()
+    for_berta = (
+        await stack.client.get(f"/projects/{project}/photos", params={"person_id": berta})
+    ).json()
+
+    assert [item["id"] for item in for_anna["items"]] == [early, both, late]
+    assert for_anna["total"] == 3
+    assert [item["id"] for item in for_berta["items"]] == [both]
+
+
+async def test_changes_from_either_view_show_everywhere_on_the_next_load(
+    stack: PersonStack,
+) -> None:
+    anna, _ = await _two_persons(stack)
+    project = await stack.project()
+    photo = await stack.photo(project, "a", GREEN)
+
+    await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0}
+    )
+    filtered = (
+        await stack.client.get(f"/projects/{project}/photos", params={"person_id": anna})
+    ).json()
+    listing = (await stack.client.get(f"/projects/{project}/unnamed-faces")).json()
+    assert [item["id"] for item in filtered["items"]] == [photo]
+    assert [item["persons"] for item in filtered["items"]] == [
+        [{"person_id": anna, "origin": "corrected", "face": "shown"}]
+    ]
+    assert [(face["photo_id"], face["face_index"]) for face in listing["faces"]] == [(photo, 1)]
+
+    # Umgekehrt: ein Entfernen aus der Detailansicht ist beim naechsten Laden der Auflistung da.
+    await stack.client.put(f"/photos/{photo}/persons/{anna}", json={"applies": False})
+    filtered = (
+        await stack.client.get(f"/projects/{project}/photos", params={"person_id": anna})
+    ).json()
+    listing = (await stack.client.get(f"/projects/{project}/unnamed-faces")).json()
+    assert filtered["items"] == []
+    assert len(listing["faces"]) == 2
+
+
+async def test_assigning_defining_removing_and_revoking_touch_nothing_else(
+    stack: PersonStack,
+) -> None:
+    """Zwilling in der Zeit: Bewertungen, Motive, Statistik, Rangzeilen und Auswahlvorschlag
+    stehen vor und nach allen vier Handlungen gleich, und kein Nacharbeits-Ereignis entsteht."""
+    anchor = await stack.photo(await stack.project("Anker"), "anker", ANCHOR)
+    anna = await stack.define("Anna", 0, anchor)
+    project = await stack.project()
+    photo = await stack.photo(project, "a", GREEN)
+    other = await stack.photo(project, "b", BLUE)
+    await stack.client.put(f"/photos/{photo}/rating", json={"status": "album_worthy"})
+    person_tables = {
+        "persons",
+        "person_references",
+        "photo_person_detections",
+        "photo_person_corrections",
+    }
+
+    async def everything_else() -> tuple[Any, ...]:
+        async with stack.factory() as session:
+            tables = {
+                table.name: sorted(
+                    (tuple(row) for row in (await session.execute(select(table))).all()),
+                    key=repr,
+                )
+                for table in Base.metadata.sorted_tables
+                if table.name not in person_tables
+            }
+        stats = (await stack.client.get(f"/projects/{project}/stats")).json()
+        items = (await stack.client.get(f"/projects/{project}/photos")).json()["items"]
+        return tables, stats, [{**item, "persons": None} for item in items]
+
+    before = await everything_else()
+    await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0}
+    )
+    await stack.client.post("/persons", json={"name": "Berta", "photo_id": other, "face_index": 0})
+    await stack.client.put(f"/photos/{other}/persons/{anna}", json={"applies": True})
+    await stack.client.put(f"/photos/{other}/persons/{anna}", json={"applies": False})
+    await stack.client.put(f"/photos/{photo}/persons/{anna}", json={"applies": False})
+
+    assert await everything_else() == before
+
+
+# --- Die Schreibsperre ------------------------------------------------------------------------
+
+
+class RecordingLock:
+    """Ersatz fuer `_person_write_lock`, der meldet, sobald jemand an ihr wartet."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self.waiting = asyncio.Event()
+
+    async def __aenter__(self) -> None:
+        if self._lock.locked():
+            self.waiting.set()
+        await self._lock.acquire()
+
+    async def __aexit__(self, *exc: object) -> None:
+        self._lock.release()
+
+
+class Gate:
+    """Haelt den ERSTEN Aufruf von `persons.assigned_face_boxes` fest - im kritischen Abschnitt -,
+    bis die zweite Anfrage entweder die Pruefungen betreten hat (Umsetzung ohne Sperre) oder an der
+    Sperre wartet. Beides ist beobachtet, keine Wartezeit."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, lock: RecordingLock | None) -> None:
+        self.calls = 0
+        self.second_entered = asyncio.Event()
+        self.first_held = asyncio.Event()
+        self.held_connections: list[int] = []
+        self._lock = lock
+        original = persons_module.assigned_face_boxes
+
+        async def gated(session: AsyncSession, photo_ids: Any, **kwargs: Any) -> Any:
+            self.calls += 1
+            if self.calls == 1:
+                self.first_held.set()
+                await self._wait_for_the_second()
+            else:
+                self.second_entered.set()
+            return await original(session, photo_ids, **kwargs)
+
+        monkeypatch.setattr(persons_module, "assigned_face_boxes", gated)
+
+    async def _wait_for_the_second(self) -> None:
+        waiters = [asyncio.ensure_future(self.second_entered.wait())]
+        if self._lock is not None:
+            waiters.append(asyncio.ensure_future(self._lock.waiting.wait()))
+        done, pending = await asyncio.wait(waiters, timeout=10, return_when=asyncio.FIRST_COMPLETED)
+        for waiter in pending:
+            waiter.cancel()
+        assert done, "die zweite Anfrage kam nie an"
+
+
+@pytest.fixture
+def recording_lock(monkeypatch: pytest.MonkeyPatch) -> RecordingLock:
+    lock = RecordingLock()
+    monkeypatch.setattr(persons_api, "_person_write_lock", lock)
+    return lock
+
+
+async def _second_after_first_is_held(gate: Gate, call: Any) -> httpx.Response:
+    await gate.first_held.wait()
+    response: httpx.Response = await call()
+    return response
+
+
+async def test_the_same_face_for_both_persons_at_once_gives_one_201_and_one_409(
+    stack: PersonStack, recording_lock: RecordingLock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    anna, berta = await _two_persons(stack)
+    await _learn_more(stack, anna, 2, face_index=0)
+    await _learn_more(stack, berta, 2, face_index=1)
+    photo = await stack.photo(await stack.project(), "a", RED)
+    references_before = await stack.count(PersonReference)
+    gate = Gate(monkeypatch, recording_lock)
+
+    first, second = await asyncio.gather(
+        stack.client.post(f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0}),
+        _second_after_first_is_held(
+            gate,
+            lambda: stack.client.post(
+                f"/persons/{berta}/references", json={"photo_id": photo, "face_index": 0}
+            ),
+        ),
+    )
+
+    assert sorted([first.status_code, second.status_code]) == [201, 409]
+    refused = first if first.status_code == 409 else second
+    assert refused.json()["detail"] == persons_module.FaceAssignedToOtherPerson.detail
+    assert len(await _boxes_on(stack, photo)) == 1
+    assert await stack.count(PersonReference) == references_before + 1
+
+
+async def test_two_assignments_at_the_cap_minus_one_learn_exactly_once(
+    stack: PersonStack, recording_lock: RecordingLock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Obergrenze minus eins, zwei gleichzeitige Zuordnungen: genau die Obergrenze an Referenzen,
+    und eine der beiden antwortet `learned: false`."""
+    anna, _ = await _two_persons(stack)
+    monkeypatch.setattr(persons_module, "MAX_REFERENCES_PER_PERSON", 2)
+    project = await stack.project()
+    one = await stack.photo(project, "a", RED)
+    two = await stack.photo(project, "b", BLUE)
+    gate = Gate(monkeypatch, recording_lock)
+
+    first, second = await asyncio.gather(
+        stack.client.post(f"/persons/{anna}/references", json={"photo_id": one, "face_index": 0}),
+        _second_after_first_is_held(
+            gate,
+            lambda: stack.client.post(
+                f"/persons/{anna}/references", json={"photo_id": two, "face_index": 0}
+            ),
+        ),
+    )
+
+    assert (first.status_code, second.status_code) == (201, 201)
+    assert sorted([first.json()["learned"], second.json()["learned"]]) == [False, True]
+    assert await _references_of(stack, anna) == 2
+
+
+async def test_two_definitions_at_once_with_one_person_create_exactly_one(
+    stack: PersonStack, recording_lock: RecordingLock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    anchor = await stack.photo(await stack.project("Anker"), "anker", ANCHOR)
+    await stack.define("Anna", 0, anchor)
+    project = await stack.project()
+    one = await stack.photo(project, "a", RED)
+    two = await stack.photo(project, "b", BLUE)
+    gate = Gate(monkeypatch, recording_lock)
+
+    first, second = await asyncio.gather(
+        stack.client.post("/persons", json={"name": "Berta", "photo_id": one, "face_index": 0}),
+        _second_after_first_is_held(
+            gate,
+            lambda: stack.client.post(
+                "/persons", json={"name": "Clara", "photo_id": two, "face_index": 0}
+            ),
+        ),
+    )
+
+    assert sorted([first.status_code, second.status_code]) == [201, 409]
+    assert await stack.count(Person) == 2
+
+
+async def test_a_revocation_racing_an_assignment_ends_in_a_serial_order(
+    stack: PersonStack, recording_lock: RecordingLock
+) -> None:
+    """Nie bleibt eine Referenz, deren Korrektur keine Box traegt, und nie eine Box ohne
+    `applies`: Jede Referenz der Person haengt an einer Korrektur mit Box."""
+    anna, _ = await _two_persons(stack)
+    photo = await stack.photo(await stack.project(), "a", GREEN)
+    assert (
+        await stack.client.post(
+            f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0}
+        )
+    ).status_code == 201
+
+    await asyncio.gather(
+        stack.client.put(f"/photos/{photo}/persons/{anna}", json={"applies": False}),
+        stack.client.post(f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 1}),
+    )
+
+    async with stack.factory() as session:
+        linked = (
+            await session.execute(
+                select(func.count())
+                .select_from(PhotoPersonCorrection)
+                .where(
+                    PhotoPersonCorrection.person_id == anna,
+                    PhotoPersonCorrection.reference_id.is_not(None),
+                    PhotoPersonCorrection.face_box_x.is_not(None),
+                    PhotoPersonCorrection.applies.is_(True),
+                )
+            )
+        ).scalar_one()
+    assert await _references_of(stack, anna) == linked
+
+
+async def test_a_correction_box_written_during_detect_is_seen_by_the_repeated_check(
+    stack: PersonStack, stack_analyzer: FakeFaceAnalyzer, tmp_path: Path
+) -> None:
+    """Erste Linie: Die Vorpruefung wird unter der Sperre wiederholt."""
+    anna, _ = await _two_persons(stack)
+    photo = await stack.photo(await stack.project(), "a", GREEN)
+    foreign = face_box(1)
+    references_before = await stack.count(PersonReference)
+
+    def write_meanwhile(color: Color) -> None:
+        if color != GREEN:
+            return
+        connection = sqlite3.connect(tmp_path / "personen.db")
+        connection.execute(
+            "INSERT INTO photo_person_corrections (photo_id, person_id, user_id, applies, "
+            "updated_at, face_box_x, face_box_y, face_box_width, face_box_height) "
+            "VALUES (?, ?, ?, 1, '2026-09-28 12:00:00', ?, ?, ?, ?)",
+            (photo, anna, stack.user_id, foreign.x, foreign.y, foreign.width, foreign.height),
+        )
+        connection.commit()
+        connection.close()
+
+    stack_analyzer.on_detect = write_meanwhile
+
+    response = await stack.client.post(
+        f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == persons_module.FaceAlreadyAssignedOnPhoto.detail
+    assert await _boxes_on(stack, photo) == [(anna, foreign.x)]
+    assert await stack.count(PersonReference) == references_before
+
+
+async def test_deleting_a_person_racing_an_assignment_leaves_no_row_of_her(
+    stack: PersonStack, recording_lock: RecordingLock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    anna, _ = await _two_persons(stack)
+    photo = await stack.photo(await stack.project(), "a", RED)
+    gate = Gate(monkeypatch, recording_lock)
+
+    assigned, deleted = await asyncio.gather(
+        stack.client.post(f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0}),
+        _second_after_first_is_held(gate, lambda: stack.client.delete(f"/persons/{anna}")),
+    )
+
+    assert deleted.status_code == 204
+    assert assigned.status_code in (201, 404)
+    async with stack.factory() as session:
+        for model in (PhotoPersonCorrection, PhotoPersonDetection):
+            remaining = (
+                await session.execute(
+                    select(func.count()).select_from(model).where(model.person_id == anna)
+                )
+            ).scalar_one()
+            assert remaining == 0, model.__tablename__
+    assert await _references_of(stack, anna) == 0
+    assert await stack.count(Person) == 1
+
+
+def _hold_detect(analyzer: FakeFaceAnalyzer, color: Color) -> tuple[threading.Event, asyncio.Event]:
+    loop = asyncio.get_running_loop()
+    release = threading.Event()
+    paused = asyncio.Event()
+
+    def before_return(seen: Color) -> None:
+        if seen == color and not release.is_set():
+            loop.call_soon_threadsafe(paused.set)
+            assert release.wait(timeout=10)
+
+    analyzer.before_detect_returns = before_return
+    return release, paused
+
+
+async def test_the_model_never_runs_under_the_lock(
+    stack: PersonStack, stack_analyzer: FakeFaceAnalyzer
+) -> None:
+    """Waehrend ein `detect` angehalten ist, laeuft ein PUT einer anderen Person durch."""
+    anna, berta = await _two_persons(stack)
+    photo = await stack.photo(await stack.project(), "a", RED)
+    release, paused = _hold_detect(stack_analyzer, RED)
+
+    assignment = asyncio.ensure_future(
+        stack.client.post(f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0})
+    )
+    await paused.wait()
+    put = await stack.client.put(f"/photos/{photo}/persons/{berta}", json={"applies": True})
+    release.set()
+
+    assert put.status_code == 200
+    assert (await assignment).status_code == 201
+
+
+async def test_no_connection_is_held_during_the_model_call_or_waiting_for_the_lock(
+    stack: PersonStack,
+    stack_analyzer: FakeFaceAnalyzer,
+    recording_lock: RecordingLock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    anna, berta = await _two_persons(stack)
+    project = await stack.project()
+    photo = await stack.photo(project, "a", RED)
+    other = await stack.photo(project, "b", BLUE)
+    release, paused = _hold_detect(stack_analyzer, RED)
+    checkouts = stack.pool.checkouts
+
+    single = asyncio.ensure_future(
+        stack.client.post(f"/persons/{anna}/references", json={"photo_id": photo, "face_index": 0})
+    )
+    await paused.wait()
+    held_during_model = stack.pool.held
+    borrowed_before_model = stack.pool.checkouts - checkouts
+    release.set()
+    assert (await single).status_code == 201
+
+    # Die zweite Zuordnung wartet an der Sperre, waehrend die erste im kritischen Abschnitt
+    # festgehalten ist: genau deren Verbindung ist ausgeliehen.
+    gate = Gate(monkeypatch, recording_lock)
+    observed: list[int] = []
+    original_wait = gate._wait_for_the_second
+
+    async def measuring_wait() -> None:
+        await original_wait()
+        observed.append(stack.pool.held)
+
+    monkeypatch.setattr(gate, "_wait_for_the_second", measuring_wait)
+    first, second = await asyncio.gather(
+        stack.client.post(
+            f"/persons/{berta}/references", json={"photo_id": other, "face_index": 0}
+        ),
+        _second_after_first_is_held(
+            gate,
+            lambda: stack.client.post(
+                f"/persons/{anna}/references", json={"photo_id": other, "face_index": 0}
+            ),
+        ),
+    )
+
+    assert held_during_model == 0
+    assert borrowed_before_model > 0
+    assert recording_lock.waiting.is_set()
+    assert observed == [1]
+    assert sorted([first.status_code, second.status_code]) == [201, 409]
+
+
+async def test_every_write_records_the_calling_user_after_the_connection_was_released(
+    stack: PersonStack,
+) -> None:
+    """Ueber den echten API-Weg, je Nutzer einmal: Zuordnung, Festlegung und Ruecknahme schreiben
+    die `user_id` des Aufrufers und enden nie in `500`."""
+    anchor = await stack.photo(await stack.project("Anker"), "anker", ANCHOR)
+    anna = await stack.define("Anna", 0, anchor)
+    project = await stack.project()
+    photos = [
+        await stack.photo(project, f"p{index}", color)
+        for index, color in enumerate((RED, BLUE, GREEN))
+    ]
+    partner_token = await stack.second_user_token()
+    async with stack.factory() as session:
+        partner_id = (
+            await session.execute(select(User.id).where(User.username == "partnerin"))
+        ).scalar_one()
+
+    async def writer(photo_id: int) -> int | None:
+        async with stack.factory() as session:
+            return (
+                await session.execute(
+                    select(PhotoPersonCorrection.user_id).where(
+                        PhotoPersonCorrection.photo_id == photo_id
+                    )
+                )
+            ).scalar_one_or_none()
+
+    for token, user_id in ((None, stack.user_id), (partner_token, partner_id)):
+        headers = {} if token is None else {"Authorization": f"Bearer {token}"}
+        assigned = await stack.client.post(
+            f"/persons/{anna}/references",
+            json={"photo_id": photos[0], "face_index": 0},
+            headers=headers,
+        )
+        assert assigned.status_code == 201
+        assert await writer(photos[0]) == user_id
+        revoked = await stack.client.put(
+            f"/photos/{photos[0]}/persons/{anna}", json={"applies": False}, headers=headers
+        )
+        assert revoked.status_code == 200
+        assert await writer(photos[0]) == user_id
+        if token is None:
+            defined = await stack.client.post(
+                "/persons", json={"name": "Berta", "photo_id": photos[1], "face_index": 0}
+            )
+            assert defined.status_code == 201
+            assert await writer(photos[1]) == user_id
+
+
+_REPO = Path(__file__).resolve().parents[2]
+
+
+def test_the_backend_runs_as_exactly_one_api_process() -> None:
+    """Voraussetzung der Schreibsperre: kein `--workers`, kein `WEB_CONCURRENCY`."""
+    files = [_REPO / "backend" / "Dockerfile", *sorted(_REPO.glob("docker-compose*.yml"))]
+    texts = {path.name: path.read_text(encoding="utf-8") for path in files}
+
+    for name, text in texts.items():
+        assert "--workers" not in text, name
+        assert "WEB_CONCURRENCY" not in text, name
+    # Gegenprobe: Der Waechter findet den Startaufruf dort, wo er steht - sonst waere er leer.
+    for name in ("Dockerfile", "docker-compose.yml"):
+        assert re.search(r"uvicorn[\"', ]+photosort\.main:app", texts[name]), name

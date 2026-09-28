@@ -424,6 +424,9 @@ _DEMO_PERSON_MORE_REFERENCES = ((0, 1, _demo_unit_embedding((0, 0.8), (2, 0.6)))
 _DEMO_FACE_BOX = FaceBox(x=0.375, y=0.25, width=0.25, height=0.375)
 # Erkennungen (Person, Foto-Index): Foto 2 zeigt beide Personen.
 _DEMO_PERSON_RECOGNIZED = ((0, 2), (1, 2), (0, 4), (1, 5))
+# Diese Erkennung traegt die erfundene Box ihres Kandidatengesichts; die uebrigen stehen fuer
+# Erkennungen aus Laeufen vor dem Gesichtsbezug.
+_DEMO_PERSON_RECOGNIZED_WITH_BOX = (0, 4)
 # Von Hand entfernt (Person, Foto-Index): erkannt, aber per Korrektur herausgenommen.
 _DEMO_PERSON_REMOVED = ((1, 5),)
 _DEMO_PERSON_MAX_PHOTO_INDEX = max(
@@ -1054,6 +1057,16 @@ async def _seed_demo_persons(
             photo_id=photos[photo_index].id,
             person_id=persons[person_index].id,
             computed_at=_BASE_SCORING_AT,
+            **(
+                {
+                    "face_box_x": _DEMO_FACE_BOX.x,
+                    "face_box_y": _DEMO_FACE_BOX.y,
+                    "face_box_width": _DEMO_FACE_BOX.width,
+                    "face_box_height": _DEMO_FACE_BOX.height,
+                }
+                if (person_index, photo_index) == _DEMO_PERSON_RECOGNIZED_WITH_BOX
+                else {}
+            ),
         )
         for person_index, photo_index in _DEMO_PERSON_RECOGNIZED
     )

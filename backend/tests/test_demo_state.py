@@ -1025,6 +1025,47 @@ class TestTheDemoStateNamesTwoInventedPersons:
         for photo_id, person_id in removed:
             assert person_id not in {row.person_id for row in effective.get(photo_id, [])}
 
+    async def test_a_detection_and_a_shown_correction_carry_a_synthetic_box(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Spec 0551: Im Pruefstack ist "Gesicht gezeigt" zu sehen - eine Korrektur mit Box und
+        einer Referenz des AKTUELLEN Modells (sonst stuende sie auf "gewaehlt, nicht gelernt") -
+        und eine Erkennung mit Box, deren "Name entfernen" das Gesicht freigibt."""
+        await _make_user(db_session, "daniel")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        photo_ids = [photo.id for photo in await _photos_of(db_session, RATED_PROJECT_NAME)]
+
+        boxed_detections = (
+            await db_session.execute(
+                select(PhotoPersonDetection.photo_id).where(
+                    PhotoPersonDetection.face_box_x.is_not(None),
+                    PhotoPersonDetection.photo_id.in_(photo_ids),
+                )
+            )
+        ).all()
+        shown_models = (
+            (
+                await db_session.execute(
+                    select(PersonReference.model_key)
+                    .join(
+                        PhotoPersonCorrection,
+                        PhotoPersonCorrection.reference_id == PersonReference.id,
+                    )
+                    .where(
+                        PhotoPersonCorrection.face_box_x.is_not(None),
+                        PhotoPersonCorrection.photo_id.in_(photo_ids),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        effective = await load_effective_persons(db_session, photo_ids)
+
+        assert boxed_detections
+        assert shown_models and set(shown_models) == {MODEL_KEY}
+        assert "shown" in {row.face for rows in effective.values() for row in rows}
+
     async def test_a_second_rebuild_replaces_the_demo_persons_instead_of_hitting_the_limit(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
