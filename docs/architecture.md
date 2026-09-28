@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-09-27 (Spec 0292/ADR 0126 — die beiden Nutzer werden lokal auf Fotos erkannt und benannt: globale Personen, Phase `persons` im Klassifizierungslauf, Filter in Bildbestand und Album-Entwurf, ein Manifest für alle geladenen Modell-Assets; davor Spec 0049/ADR 0027)
+**Letzte Aktualisierung:** 2026-09-28 (Spec 0551/ADR 0127 — Personenübersicht je Projekt: Gesichtsbox nur für die festgelegten Personen, Rücknahme eines gezeigten Gesichts, „Ohne Namen" als Auflistung auf Anfrage im API-Prozess, Schreibsperre der Personen-Schreibwege; davor Spec 0292/ADR 0126)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -198,6 +198,25 @@ Verarbeitungs-Cache (Thumbnails).
     `PhotoOut.persons` aus, weil der Entwurf immer vollständig geliefert wird und seine Zählung
     unverändert bleiben muss. Die Teilschrittliste des Klassifizierungslaufs führt `persons` als
     letzten Schritt.
+  - **Personenübersicht je Projekt** *(Spec 0551, ADR
+    [`0127`](../specs/decisions/0127-personen-gesichtsbezug-nur-fuer-festgelegte-ohne-namen-auf-anfrage.md))*:
+    Route `/projects/:projectId/persons` (`pages/ProjectPersonsPage.tsx`), Nebenziel „Personen"
+    der Projektnavigation hinter „Einstellungen" und „Statistik". Je festgelegter Person eine
+    Gruppe (`components/PersonPhotoGroup.tsx` über `hooks/usePersonGroupQuery.ts`, die
+    Personeneinschränkung des Bildbestands ohne Bewertungsfilter unter
+    `['photos', projectId, 'person-group', personId]`, Seitengröße 24, eigener Schlüssel wegen
+    der Seitengröße); „Name entfernen" bzw. „Gesicht zurücknehmen" ist dasselbe
+    `applies=false`, die Karte verlässt die Gruppe, nächster Offset = verbleibende Einträge.
+    Danach immer zuletzt „Ohne Namen" (`components/UnnamedFacesGroup.tsx` über
+    `hooks/useUnnamedFaces.ts`): Schlüssel `['unnamed-faces', projectId]` bewusst **außerhalb**
+    von `['photos', …]`, `gcTime: 0`, kein Neuladen bei Fokus oder Reconnect, Seiten selbsttätig
+    nacheinander; zugeordnete Gesichter entfernt der Hook lokal, ein zurückgenommenes Foto fragt
+    er einzeln neu ab (`max_photos = 1`). Beides liegt als Überlagerung mit logischem Zeitstempel
+    neben den Seiten, weil TanStack eine Seite im Flug auf die Seiten vom Anfragestart setzt.
+    Ausschnitte existieren nur als Blob-URL (`components/FaceCropTile.tsx`, statische
+    Ausprägung 96 px). Festlegen und Zeigen teilen `hooks/useFaceAssignment.ts` mit der
+    Gesichterwahl der Detailansicht; die Großansicht öffnet über `useCurationLightbox` mit dem
+    Auslöserschlüssel `${personId}:${photoId}`.
 - **Einstiegspunkt: der nginx des `frontend`-Containers** (`frontend/nginx.conf`): der einzige
   Dienst in `docker-compose.yml` mit Host-Port (`FRONTEND_PORT`, Default 8080). `backend`,
   `worker`, `postgres` und `redis` veröffentlichen keinen Port; ein externer Reverse-Proxy braucht
@@ -995,10 +1014,39 @@ Verarbeitungs-Cache (Thumbnails).
     ordnet die Person diesem Foto zugleich per Korrektur zu. `GET /projects/{id}/photos` nimmt
     `person_id` (höchstens zweimal, dedupliziert, UND-verknüpft) im Listenzweig; zusammen mit
     `draft=true` ist er `422`. `PhotoOut.persons[]` trägt je wirksam zugeordneter Person nur
-    `person_id` und `origin` (`recognized`/`corrected`); Namen kommen aus `GET /persons`. Die
+    `person_id`, `origin` (`recognized`/`corrected`) und `face` (`shown`/`assigned`/`null`, Spec
+    0551); Namen kommen aus `GET /persons`. Die
     Gesichts-Endpunkte lesen nur die lokale Display-Variante (fehlt sie: `404` ohne Modellaufruf),
     rechnen über `face_analysis.py` auf einem eigenen Executor mit einem Thread und speichern
     nichts; kein Endpunkt liefert ein Merkmal, einen Schwerpunkt oder eine Ähnlichkeit aus.
+    - **Gesichtsbezug und Rücknahme** *(Spec 0551, ADR 0127)*: Beide POST-Endpunkte antworten
+      `201 FaceAssignmentOut {person, learned, photo_persons}`. Die Korrektur speichert die Box
+      des gewählten Gesichts aus demselben Detektionslauf wie das Merkmal und die Id der neuen
+      Referenz; an der Obergrenze entsteht keine Referenz, nur die Korrektur mit Box
+      (`learned: false`). `applies=false` auf einem Paar mit Box ist die Rücknahme: Box und
+      `reference_id` leeren sich, die verknüpfte Referenz fällt in derselben Transaktion. Welches
+      Gesicht als zugeordnet gilt, entscheidet allein `persons.py::assigned_face_boxes`
+      (Korrektur `applies=false` → keines, Korrektur mit Box, Erkennung mit Box, sonst keines).
+      Zwei neue `409`: „schon ein Gesicht dieser Person auf diesem Foto" (nur per Korrektur) und
+      „Gesicht der anderen Person auf diesem Foto".
+    - **„Ohne Namen"** *(Spec 0551)*: `GET /projects/{id}/unnamed-faces?after_id=&max_photos=`
+      listet je Foto nach `Photo.id` die Gesichter, die `assigned_face_boxes` nicht abdeckt, als
+      `{photo_id, face_index, crop_jpeg}` (base64, höchstens 160 px), dazu
+      `not_ready_photo_ids`, `next_after_id`, `photos_done`, `photos_total`. Eine Seite endet
+      nach `UNNAMED_PAGE_MAX_PHOTOS = 24` Fotos oder am Ende des Fotos, mit dem
+      `UNNAMED_PAGE_MAX_FACES = 48` erreicht sind. Je Foto ein Auftrag auf dem Ein-Thread-Executor
+      (`detect`, nie `embed`), vorher eine kurze eigene Lesesitzung aus `get_session_factory`;
+      die Anfrage-Sitzung ist vor dem ersten Auftrag freigegeben, die Anfrage hält während des
+      Modellaufrufs keine Verbindung. Ein Wächter-Task liest `receive()` bis `http.disconnect`;
+      bei Trennung endet die Seite nach dem laufenden Foto mit einer leeren `204`. Die Auflistung
+      schreibt nichts, Antworten tragen `Cache-Control: no-store` und `nosniff`.
+    - **Schreibsperre** *(Spec 0551, ADR 0127 Punkt 2)*: `_person_write_lock`, eine prozessweite
+      `asyncio.Lock`, umschließt Prüfungen, Schreiben und Commit von `POST /persons`,
+      `POST /persons/{id}/references`, `PUT /photos/{id}/persons/{person_id}` und
+      `DELETE /persons/{id}`; `detect`/`embed` laufen vorher und nie darunter. Die Sperre setzt
+      **genau einen API-Prozess** voraus (`uvicorn` ohne `--workers`, ohne `WEB_CONCURRENCY`);
+      bei mehr Prozessen muss sie in die Datenbank. Zweite Linie: das bedingte Setzen der Box
+      (`… AND face_box_x IS NULL`) und `UNIQUE(photo_id, person_id)`.
 - **Worker** (`backend/`, eigener Container-Prozess): `arq`-basierte Jobs für Foto-Ingest (Listing,
   Download, Thumbnail-Erzeugung), lokale Heuristik-Berechnung und optionale Cloud-KI-Bewertung.
   Siehe [`decisions/0002-hybrid-ai-scoring.md`](../specs/decisions/0002-hybrid-ai-scoring.md).
@@ -1255,7 +1303,10 @@ Verarbeitungs-Cache (Thumbnails).
     `person_matching.py::decide_assignments` über Ähnlichkeiten (feste Schwellen,
     Eindeutigkeitsabstand, genau ein Kandidat je Person und Foto, unverwertbare Gesichter zählen
     nicht); `face_analysis.py` kapselt YuNet und SFace über `cv2`. Ohne Referenz des geladenen
-    Modells oder bei nicht baubarem Adapter entfällt nur diese Phase. Fortschritt in
+    Modells oder bei nicht baubarem Adapter entfällt nur diese Phase. Seit Spec 0551 schreibt sie
+    die Box des einen Kandidatengesichts je erkannter Person in die Erkennungszeile
+    (`decide_assignments` liefert Person → Gesichtsindex); ist die Box nicht endlich, benennt sie
+    die Person auf diesem Foto nicht. Fortschritt in
     `criterion_scoring_runs.persons_photos_total/_processed` (`NULL` = Phase lief nicht).
   - **Geladene Modell-Assets** stehen in einem Manifest (`model_assets.py`: Dateiname, URL mit
     fester Revision, Größe, SHA256) und kommen über `backend/scripts/fetch_model_assets.py`
@@ -2263,7 +2314,10 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   Anfragen strukturell wahr. `person_references.embedding` ist das 128-dimensionale, normierte
   SFace-Merkmal eines ausdrücklich gezeigten Gesichts (JSON-Liste; nur endliche Werte mit Norm
   nahe 1), `model_key` das Modell, das es gebildet hat; Referenzen eines anderen Modells gehen in
-  keinen Vergleich und keine Zählung ein und fallen mit der ersten Referenz des aktuellen Modells.
+  keinen Vergleich und keine Zählung ein und fallen mit der ersten Referenz des aktuellen Modells
+  (vorher leert `_store_reference` die `reference_id` der Korrekturen, die auf sie zeigen). Auch
+  seit Spec 0551 ohne Foto- und Projektspalte; der Fotobezug einer Referenz läuft nur über die
+  Korrektur.
   Merkmale anderer Gesichter werden nie gespeichert, Schwerpunkte nie zwischengespeichert. Alle
   drei abhängigen Tabellen tragen echte Fremdschlüssel auf `persons`; eine Person fällt in einer
   Transaktion samt Referenzen, Erkennungen und Korrekturen (`persons.py::delete_person`).
@@ -2273,8 +2327,18 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   nur die Phase `persons`; die Korrektur (`applies`, `user_id` als Audit,
   `UniqueConstraint(photo_id, person_id)` ohne `user_id`) schreibt nur der Nutzer, und kein Lauf
   fasst sie an. Die wirksame Zuordnung entsteht im Lesepfad — Korrektur vor Erkennung — in genau
-  einem SQL-Konstrukt (`persons.py::effective_person_assignments`) für Filter und Anzeige. Beide
-  Tabellen fallen mit dem Foto und über `project_deletion.py` mit dem Projekt.
+  einem SQL-Konstrukt (`persons.py::effective_person_assignments`, samt Spalte `face`) für Filter
+  und Anzeige. Beide Tabellen fallen mit dem Foto und über `project_deletion.py` mit dem Projekt.
+  - **Gesichtsbox** *(Spec 0551, ADR 0127, Migration `b0814fc600bf`)*: beide Tabellen tragen
+    `face_box_x/_y/_width/_height` (`FLOAT NULL`, auf die Display-Variante normiert), nur für das
+    Gesicht einer festgelegten Person; `ck_…_face_box` verlangt alle vier `NULL` oder alle vier
+    gesetzt mit `0 <= x, y <= 1` und `0 < width, height <= 1`. An der Korrektur zusätzlich
+    `ck_photo_person_corrections_face_requires_applies` (Box nur bei `applies`).
+  - **Kante Korrektur → Referenz:** `photo_person_corrections.reference_id → person_references`
+    (`fk_photo_person_corrections_reference_id` ohne `ON DELETE`, eindeutig, nur mit Box). Die
+    Rücknahme leert Box und Kante und löscht die Referenz; eine Projekt- oder Fotolöschung
+    löscht die Korrektur, die Referenz bleibt stehen (sie ist dann nur mit der Person
+    löschbar). Über ein nicht festgelegtes Gesicht wird weder Box noch Index gespeichert.
 - **PlaceLookup** *(Spec [`0434`](../specs/features/0434-ortsnamen-fuer-events.md), ADR
   [`0102`](../specs/decisions/0102-ortsauskunft-je-zelle-projektgebunden-eventname-als-laufartefakt.md),
   `models.py`; Tabelle `place_lookups`, Migration `d7e8f9a0b1c2`)*: die Auskunft darüber, **was an
