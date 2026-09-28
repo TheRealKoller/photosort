@@ -15,8 +15,10 @@ export interface FaceAssignmentVariables {
 
 /** Der Schlüssel der Gruppe einer Person in der Übersicht - unter `['photos', projectId]`, damit
  * `storePhotoPersons` und die breiten Invalidierungen sie erreichen. */
-export function personGroupQueryKey(projectId: number, personId: number) {
-  return ['photos', projectId, 'person-group', personId] as const
+export type PersonGroupQueryKey = readonly ['photos', number, 'person-group', number]
+
+export function personGroupQueryKey(projectId: number, personId: number): PersonGroupQueryKey {
+  return ['photos', projectId, 'person-group', personId]
 }
 
 /** Die Meldung nach einer gelungenen Zuordnung - bei `learned: false` mit dem Satz zur
