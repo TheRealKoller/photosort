@@ -216,3 +216,64 @@ test('Stepper-Leiste und Kopfzeile stehen im gescrollten Zustand fugenlos untere
     ).toBeLessThanOrEqual(0)
   }
 })
+
+/**
+ * specs/features/0551-personenuebersicht-je-projekt.md: Die Statusleiste von "Ohne Namen" haftet
+ * auf `top-header` - unter der Kopfzeile, disjunkt zu ihr, ohne Fuge. Sie ist das zweite haftende
+ * Element der Route; ein drittes waere unbeabsichtigt.
+ *
+ * DER HAFTBEREICH IST KURZ: `sticky` wirkt nur innerhalb der eigenen Gruppe, und die Demo-Bilder
+ * enthalten keine Gesichter - unter der Leiste steht nur "Kein Gesicht ohne Namen.". Gescrollt wird
+ * deshalb genau so weit, dass die Leiste ohne Haften 12 px unter die Kopfzeile geraten waere. Die
+ * flache Viewport-Hoehe macht diesen Scroll-Weg auf der kurzen Seite erst moeglich.
+ *
+ * Rot-Nachweis: mit erzwungenem `position: static` an der Leiste ist "disjunkt" rot (sie laeuft
+ * 12 px unter die Kopfzeile), und die Kardinalitaet faellt auf 1.
+ */
+test('die Statusleiste von "Ohne Namen" haftet fugenlos unter der Kopfzeile', async ({ page }) => {
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  const width = page.viewportSize()?.width ?? 360
+  const viewportHeight = 200
+  await page.setViewportSize({ width, height: viewportHeight })
+  await page.goto(`/projects/${projectId}/persons`)
+
+  const header = page.getByRole('banner')
+  const leiste = page.locator('[data-unnamed-status-bar]')
+  // Vorbedingung: die Suche ist abgeschlossen, die Hoehe der Gruppe steht fest.
+  await expect(leiste.getByText(/^Suche abgeschlossen: /)).toBeVisible()
+
+  const headerHeight = (await header.boundingBox())!.height
+  const leisteOben = await leiste.evaluate(
+    (element) => element.getBoundingClientRect().top + window.scrollY,
+  )
+  const ziel = Math.round(leisteOben - headerHeight + 12)
+  const maxScroll = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight,
+  )
+  expect(maxScroll, 'die Seite laesst sich bis in den Haftbereich scrollen').toBeGreaterThanOrEqual(
+    ziel,
+  )
+
+  await page.evaluate((y) => window.scrollTo(0, y), ziel)
+  await expect
+    .poll(async () => page.evaluate(() => Math.round(window.scrollY)), {
+      message: 'tatsaechliche Scroll-Position',
+    })
+    .toBe(ziel)
+
+  expect((await stickyElements(page)).length, 'sticky Elemente auf der Personenuebersicht').toBe(2)
+
+  const headerBox = await header.boundingBox()
+  const leisteBox = await leiste.boundingBox()
+  expect(headerBox, 'Kopfzeile im gescrollten Zustand').not.toBeNull()
+  expect(leisteBox, 'Statusleiste im gescrollten Zustand').not.toBeNull()
+  expect(Math.abs(headerBox!.y), 'Kopfzeile am oberen Rand').toBeLessThanOrEqual(TOP_TOLERANCE)
+
+  const naht = leisteBox!.y - (headerBox!.y + headerBox!.height)
+  expect(naht, 'Ueberlappung zwischen Kopfzeile und Statusleiste').toBeGreaterThanOrEqual(
+    -TOP_TOLERANCE,
+  )
+  expect(Math.abs(naht), 'Fuge zwischen Kopfzeile und Statusleiste').toBeLessThanOrEqual(
+    TOP_TOLERANCE,
+  )
+})

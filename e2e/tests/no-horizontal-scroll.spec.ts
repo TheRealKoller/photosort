@@ -153,7 +153,22 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
     // Gefahrenzone. Die Karte des 40-Zeichen-Namens bricht um statt zu kuerzen - genau dort
     // stuende die Seite ueber.
     { label: 'Personen', path: '/persons', heading: 'Personen' },
-  ] satisfies ({ label: string; path: string; requiresTile?: RegExp } & Precondition)[]
+    // specs/features/0551-personenuebersicht-je-projekt.md: Die Personenuebersicht eines Projekts.
+    // Vorbedingung ist die Gruppe mit dem 40-Zeichen-Namen - ihre Ueberschrift, ihr Eintrag in der
+    // Sprungleiste und ihre Karten brechen um statt zu kuerzen - UND die Statusleiste von "Ohne
+    // Namen", die die Inhaltsbreite spannt.
+    {
+      label: 'Personenuebersicht',
+      path: `/projects/${ratedId}/persons`,
+      heading: DEMO_PERSONS.longest,
+      requiresText: /^(Gesichter werden gesucht|Suche abgeschlossen)/,
+    },
+  ] satisfies ({
+    label: string
+    path: string
+    requiresTile?: RegExp
+    requiresText?: RegExp
+  } & Precondition)[]
 
   const viewportWidth = page.viewportSize()?.width
   expect(viewportWidth, 'Viewport-Breite des Projekts').toBe(360)
@@ -177,6 +192,14 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       await expect(
         page.getByRole('button', { name: route.requiresTile }).first(),
         `Kachel-Vorbedingung auf "${route.label}"`,
+      ).toBeVisible()
+    }
+
+    // Vorbedingung 1c: ein Textbaustein, ohne den die Route ihre breiteste Stelle nicht traegt.
+    if ('requiresText' in route && route.requiresText !== undefined) {
+      await expect(
+        page.getByText(route.requiresText).first(),
+        `Text-Vorbedingung auf "${route.label}"`,
       ).toBeVisible()
     }
 

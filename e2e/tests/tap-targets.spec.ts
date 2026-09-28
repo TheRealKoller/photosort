@@ -40,7 +40,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 28
+const EXPECTED_CONTROL_COUNT = 30
 
 async function assertTappable(
   control: Locator,
@@ -261,24 +261,36 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   // werden nicht aufgespannt") - dort ist die Zeile selbst die Trefferflaeche und traegt `min-h-11`.
   // Der Treffertest gilt trotzdem: 44 px sind 44 px, unabhaengig davon, woher sie kommen.
   //
-  // FUENF ZEILEN SEIT specs/features/0347-navigation-nebenbereich.md: unterhalb `lg:` fuehrt das
-  // Panel alle Ziele - erst die drei Hauptziele, dann die zwei Nebenziele.
+  // SECHS ZEILEN SEIT specs/features/0551-personenuebersicht-je-projekt.md: unterhalb `lg:` fuehrt
+  // das Panel alle Ziele - erst die drei Hauptziele, dann die drei Nebenziele.
   await navTrigger.click()
   const navPanel = page.getByRole('dialog')
   await expect(navPanel).toBeVisible()
   const navRows = navPanel.getByRole('link')
-  await expect(navRows, 'Ziele im Panel der Projekt-Navigation').toHaveCount(5)
+  await expect(navRows, 'Ziele im Panel der Projekt-Navigation').toHaveCount(6)
   await assertTappable(navRows.first(), 'Projekt (Panelzeile der Projekt-Navigation)')
   checked.push('Projekt (Panelzeile)')
 
-  // "Statistik" ist das mit Spec 0347 neu erreichbare Bedienelement und zugleich die LETZTE Zeile
-  // des Panels - die einzige, die unterhalb der Trennlinie und damit im zweiten Block liegt.
-  // Bewusst zusaetzlich geprueft: die Absetzung darf die Trefferflaeche nicht beschneiden.
+  // "Statistik" ist das mit Spec 0347 neu erreichbare Bedienelement und liegt unterhalb der
+  // Trennlinie im zweiten Block. Bewusst zusaetzlich geprueft: die Absetzung darf die
+  // Trefferflaeche nicht beschneiden.
   await assertTappable(
     navPanel.getByRole('link', { name: 'Statistik' }),
     'Statistik (Panelzeile der Projekt-Navigation)',
   )
   checked.push('Statistik (Panelzeile)')
+
+  // --- Personenuebersicht (specs/features/0551-personenuebersicht-je-projekt.md) ---------------
+  // Die Aktion einer Karte der Personengruppe, in beiden Beschriftungen. Die Demo-Daten tragen je
+  // eine Karte "Gesicht gezeigt" und eine "Erkannt"-Karte. Die Zuordnen-Schaltflaechen von "Ohne
+  // Namen" sind im Pruefstack nicht erreichbar: Die Demo-Bilder enthalten keine Gesichter.
+  await page.goto(`/projects/${projectId}/persons`)
+  for (const label of ['Gesicht zurücknehmen', 'Name entfernen']) {
+    const control = page.getByRole('button', { name: new RegExp(`^${label}: `) }).first()
+    await expect(control, `Aktion "${label}" einer Karte der Personengruppe`).toBeVisible()
+    await assertTappable(control, `${label} (Karte der Personengruppe)`)
+    checked.push(`${label} der Personengruppe`)
+  }
 
   // --- Schrittleiste der Pipeline (specs/features/0387-schrittleiste-fortschritt.md) -----------
   // Der Wechsel von `tap-target-square` am Marker auf `tap-target` am spaltenfuellenden
