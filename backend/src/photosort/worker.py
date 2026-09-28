@@ -73,7 +73,9 @@ from photosort.events import LandmarkPointsByName, assign_place_names, build_eve
 from photosort.face_analysis import (
     MODEL_KEY,
     FaceAnalyzerLike,
+    FaceBox,
     build_face_analyzer,
+    is_valid_face_box,
     load_image,
 )
 from photosort.geonames import (
@@ -2299,11 +2301,15 @@ def _persons_on_photo(
     photo_id: int,
     etag: str,
     centroids: Mapping[int, Sequence[float]],
-) -> frozenset[int] | None:
-    """Die auf einem Foto sicher erkannten Personen - oder `None`, wenn das Foto NICHT verarbeitet
-    wurde (keine Display-Variante, Analyzer wirft). Merkmale und Aehnlichkeiten leben nur hier im
-    Speicher; zurueck geht allein die Menge der Personen-Ids. Fuer unbekannte Gesichter entsteht
-    damit nichts.
+) -> dict[int, FaceBox] | None:
+    """Die auf einem Foto sicher erkannten Personen, je mit der Box ihres EINEN Kandidatengesichts
+    - oder `None`, wenn das Foto NICHT verarbeitet wurde (keine Display-Variante, Analyzer wirft).
+    Merkmale und Aehnlichkeiten leben nur hier im Speicher; zurueck geht allein je Person eine
+    Box. Fuer unbekannte Gesichter entsteht damit nichts.
+
+    Eine Box, die `is_valid_face_box` nicht besteht, benennt die Person auf diesem Foto NICHT:
+    Ein uebersehenes Foto ist zulaessig, eine Erkennung, deren Gesicht in "Ohne Namen" steht,
+    nicht.
 
     LOG-HYGIENE (S11): Eine Ausnahme erscheint nur als Typname samt `photo_id` - nie ihr Text, der
     einen Wert tragen koennte."""
@@ -2318,7 +2324,11 @@ def _persons_on_photo(
             "Personen-Erkennung: Foto %s uebersprungen (%s).", photo_id, type(exc).__name__
         )
         return None
-    return frozenset(decide_assignments(similarities))
+    return {
+        person_id: faces[index].box
+        for person_id, index in decide_assignments(similarities).items()
+        if is_valid_face_box(faces[index].box)
+    }
 
 
 async def _recognize_persons(
@@ -2377,9 +2387,17 @@ async def _recognize_persons(
                 )
             )
             session.add_all(
-                PhotoPersonDetection(photo_id=photo_id, person_id=person_id, computed_at=now)
+                PhotoPersonDetection(
+                    photo_id=photo_id,
+                    person_id=person_id,
+                    computed_at=now,
+                    face_box_x=box.x,
+                    face_box_y=box.y,
+                    face_box_width=box.width,
+                    face_box_height=box.height,
+                )
                 for photo_id, persons in recognised.items()
-                for person_id in sorted(persons)
+                for person_id, box in sorted(persons.items())
             )
         processed += len(block)
         run.persons_photos_processed = processed
