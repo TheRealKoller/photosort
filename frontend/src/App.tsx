@@ -27,6 +27,7 @@ import { PipelineStepView } from './pages/pipeline/PipelineStepView'
 import { ProjectPipelineLayout } from './pages/pipeline/ProjectPipelineLayout'
 import { ProjectCreatePage } from './pages/ProjectCreatePage'
 import { ProjectListPage } from './pages/ProjectListPage'
+import { ProjectPersonsPage } from './pages/ProjectPersonsPage'
 import { ProjectSettingsPage } from './pages/ProjectSettingsPage'
 import { ProjectStatsPage } from './pages/ProjectStatsPage'
 import { matchProjectId, PROJECT_ROUTE_PATHS } from './utils/projectRoutes'
@@ -75,6 +76,9 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   // Kuratierungsroute ist mit Spec 0430 ERSATZLOS entfallen - ohne Weiterleitung, damit ein alter
   // Link erkennbar ins Leere läuft statt still eine andere Ansicht zu zeigen.
   { path: PROJECT_ROUTE_PATHS.album, element: <AlbumDraftPage /> },
+  // Die Personenübersicht (Spec 0551): Gruppen je Person und "Ohne Namen", Nebenziel der
+  // Projektnavigation wie Einstellungen und Statistik.
+  { path: PROJECT_ROUTE_PATHS.persons, element: <ProjectPersonsPage /> },
 ]
 
 function useProjectIdFromRoute(): string | null {

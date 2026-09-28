@@ -20,7 +20,7 @@ import {
  * verschachtelte :photoId-Route) sind mit dieser Spec hierher gewandert.
  */
 
-/** Die zehn Muster mit eingesetzten Parametern - Grundlage beider Funktionen. */
+/** Die elf Muster mit eingesetzten Parametern - Grundlage beider Funktionen. */
 const PATHS_WITH_PROJECT_CONTEXT = [
   '/projects/1',
   '/projects/1/pipeline',
@@ -32,12 +32,13 @@ const PATHS_WITH_PROJECT_CONTEXT = [
   '/projects/1/settings',
   '/projects/1/stats',
   '/projects/1/album',
+  '/projects/1/persons',
 ]
 
 describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
-  it('fuehrt genau die zehn Muster mit Projektkontext', () => {
-    expect(Object.values(PROJECT_ROUTE_PATHS)).toHaveLength(10)
-    expect(PROJECT_CONTEXT_ROUTE_PATHS).toHaveLength(10)
+  it('fuehrt genau die elf Muster mit Projektkontext', () => {
+    expect(Object.values(PROJECT_ROUTE_PATHS)).toHaveLength(11)
+    expect(PROJECT_CONTEXT_ROUTE_PATHS).toHaveLength(11)
     expect([...PROJECT_CONTEXT_ROUTE_PATHS].sort()).toEqual(
       [
         '/projects/:projectId',
@@ -50,6 +51,7 @@ describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
         '/projects/:projectId/pipeline/:step',
         '/projects/:projectId/settings',
         '/projects/:projectId/stats',
+        '/projects/:projectId/persons',
       ].sort(),
     )
   })
@@ -169,18 +171,25 @@ describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
     ])
   })
 
-  it('fuehrt genau zwei Nebenziele in fixierter Reihenfolge (AK2)', () => {
-    expect(PROJECT_NAV_SECONDARY_TARGETS).toHaveLength(2)
-    expect(PROJECT_NAV_SECONDARY_TARGETS.map((target) => target.id)).toEqual(['settings', 'stats'])
+  // specs/features/0551: "Personen" steht HINTER Einstellungen und Statistik - die beiden
+  // bestehenden Ziele behalten ihren Platz.
+  it('fuehrt genau drei Nebenziele in fixierter Reihenfolge (AK2, Spec 0551)', () => {
+    expect(PROJECT_NAV_SECONDARY_TARGETS).toHaveLength(3)
+    expect(PROJECT_NAV_SECONDARY_TARGETS.map((target) => target.id)).toEqual([
+      'settings',
+      'stats',
+      'persons',
+    ])
     expect(PROJECT_NAV_SECONDARY_TARGETS.map((target) => target.label)).toEqual([
       'Einstellungen',
       'Statistik',
+      'Personen',
     ])
   })
 
   /*
    * INVARIANTE STATT DRITTER TABELLE (specs/features/0347, Teststrategie): ALL_ ist exakt die
-   * Verkettung beider Gruppen, fuehrt fuenf EINDEUTIGE ids, und die Gruppen sind disjunkt. Das ist
+   * Verkettung beider Gruppen, fuehrt sechs EINDEUTIGE ids, und die Gruppen sind disjunkt. Das ist
    * der Waechter gegen den realistischsten Fehler genau dieses Umbaus - ein Ziel landet per
    * Copy-Paste in BEIDEN Listen und erzeugt einen doppelten React-Key samt doppelter Panelzeile.
    * Eine ausgeschriebene Soll-Liste faende das nicht, sie waere selbst die Kopie.
@@ -192,8 +201,8 @@ describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
     ])
 
     const ids = ALL_PROJECT_NAV_TARGETS.map((target) => target.id)
-    expect(ids).toHaveLength(5)
-    expect(new Set(ids).size, `doppelte id in ${ids.join(', ')}`).toBe(5)
+    expect(ids).toHaveLength(6)
+    expect(new Set(ids).size, `doppelte id in ${ids.join(', ')}`).toBe(6)
 
     const primaryIds = new Set<string>(PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.id))
     expect(
@@ -210,6 +219,7 @@ describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
     ['selection', '/projects/1/selection'],
     ['settings', '/projects/1/settings'],
     ['stats', '/projects/1/stats'],
+    ['persons', '/projects/1/persons'],
   ])('baut fuer %s den Pfad %s', (id, expected) => {
     const target = ALL_PROJECT_NAV_TARGETS.find((candidate) => candidate.id === id)
     expect(target, `Ziel ${id}`).toBeDefined()
@@ -263,6 +273,7 @@ describe('projectRoutes - resolveActiveNavTargetId', () => {
     // geworden. Bewusst HIER als eigener Positivfall und nicht nur aus der Negativtabelle unten
     // gestrichen - beim blossen Streichen verschwaende die Zusage lautlos (Edge Case 2).
     ['/projects/1/stats', 'stats'],
+    ['/projects/1/persons', 'persons'],
   ])('markiert auf %s das Ziel %s als aktiv (AK8a)', (pathname, expected) => {
     expect(resolveActiveNavTargetId(pathname)).toBe(expected)
   })

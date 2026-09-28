@@ -20,7 +20,7 @@ import { ProjectNav } from './ProjectNav'
  * - auf einem Nebenziel liegt die Markierung zwangslaeufig doppelt vor (`true` am Ausloeser,
  * `page` an der Panelzeile), und das ist die Bauweise, kein Fehler.
  *
- * DAS PANEL HAT HIER IMMER FUENF ZEILEN (Edge Case 4 der Spec). Ein `toHaveLength(2)` waere in
+ * DAS PANEL HAT HIER IMMER SECHS ZEILEN (Edge Case 4 der Spec). Ein `toHaveLength(3)` waere in
  * jsdom schlicht falsch, und es darf ausdruecklich NICHT ueber ein `matchMedia`-Mock "repariert"
  * werden - das pruefte den Mock, nicht Tailwind.
  */
@@ -34,9 +34,11 @@ const PRIMARY_TARGETS = [
 const SECONDARY_TARGETS = [
   { label: 'Einstellungen', href: '/projects/1/settings' },
   { label: 'Statistik', href: '/projects/1/stats' },
+  // specs/features/0551: hinter Einstellungen und Statistik.
+  { label: 'Personen', href: '/projects/1/persons' },
 ]
 
-/** Die Reihenfolge im Panel unterhalb `lg:` - erst die drei Hauptziele, dann die zwei Nebenziele. */
+/** Die Reihenfolge im Panel unterhalb `lg:` - erst die drei Hauptziele, dann die drei Nebenziele. */
 const PANEL_TARGETS = [...PRIMARY_TARGETS, ...SECONDARY_TARGETS]
 
 function LocationProbe() {
@@ -142,16 +144,18 @@ describe('ProjectNav - Leiste', () => {
 
   // Auf einem Nebenziel traegt die LEISTE keinen Marker - dort steht das aktive Ziel gar nicht.
   // Die zugehoerige Positivaussage liegt am Ausloeser und im Panel, siehe unten.
-  it.each(['/projects/1/settings', '/projects/1/stats', '/projects/1/curate'])(
-    'markiert auf %s kein Ziel der Leiste (AK6/AK8b)',
-    (path) => {
-      renderNav(path)
+  it.each([
+    '/projects/1/settings',
+    '/projects/1/stats',
+    '/projects/1/persons',
+    '/projects/1/curate',
+  ])('markiert auf %s kein Ziel der Leiste (AK6/AK8b)', (path) => {
+    renderNav(path)
 
-      const links = within(bar()).getAllByRole('link')
-      expect(links).toHaveLength(PRIMARY_TARGETS.length)
-      expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([])
-    },
-  )
+    const links = within(bar()).getAllByRole('link')
+    expect(links).toHaveLength(PRIMARY_TARGETS.length)
+    expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([])
+  })
 
   it('zeichnet das aktive Ziel nicht allein farblich aus (AK8c)', () => {
     renderNav('/projects/1/photos')
@@ -196,6 +200,7 @@ describe('ProjectNav - Ausloeser des Nebenbereichs', () => {
   it.each([
     ['/projects/1/settings', 'Einstellungen'],
     ['/projects/1/stats', 'Statistik'],
+    ['/projects/1/persons', 'Personen'],
   ])(
     'markiert sich auf %s (aktives Nebenziel "%s") schon im geschlossenen Zustand (AK6)',
     (path) => {
@@ -315,6 +320,7 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
     // specs/features/0347 (AK6): /stats ist als Positivfall zurueck - beim blossen Streichen aus
     // der frueheren "kein Ziel aktiv"-Tabelle waere die Zusage lautlos verschwunden.
     ['/projects/1/stats', 'Statistik'],
+    ['/projects/1/persons', 'Personen'],
   ])(
     'markiert im Panel auf %s genau "%s" (AK6, je Darstellung eingegrenzt)',
     async (path, label) => {

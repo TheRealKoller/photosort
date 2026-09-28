@@ -18,9 +18,11 @@ vi.mock('./api/photos')
 vi.mock('./api/persons')
 
 // Bildbestand und Detailansicht laden `GET /persons` - ohne Vorgabe liefe die Anfrage
-// ins Leere und der Personenfilter stuende im Fehlerzustand.
+// ins Leere und der Personenfilter stuende im Fehlerzustand. Die Personenübersicht sucht
+// "Ohne Namen" - die Suche bleibt hier offen, sie ist nicht Gegenstand des Routings.
 beforeEach(() => {
   vi.mocked(personsApi.listPersons).mockResolvedValue([])
+  vi.mocked(personsApi.listUnnamedFaces).mockReturnValue(new Promise(() => {}))
 })
 
 function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
@@ -349,6 +351,8 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     // Umkehrung der ausdruecklichen Gegenfestlegung aus Spec 0033. Seit Spec 0430 ist das der
     // Album-Entwurf an der Stelle der abgeloesten Kuratierungsroute.
     '/projects/1/album',
+    // specs/features/0551: die Personenübersicht eines Projekts.
+    '/projects/1/persons',
   ]
 
   /** Die drei Hauptziele der Leiste (specs/features/0347: "Einstellungen" ist herausgewandert). */
@@ -358,10 +362,11 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     { label: 'Endauswahl', href: '/projects/1/selection' },
   ]
 
-  /** Die zwei Nebenziele - ausschliesslich ueber den Ausloeser erreichbar. */
+  /** Die drei Nebenziele - ausschliesslich ueber den Ausloeser erreichbar. */
   const SECONDARY_TARGETS = [
     { label: 'Einstellungen', href: '/projects/1/settings' },
     { label: 'Statistik', href: '/projects/1/stats' },
+    { label: 'Personen', href: '/projects/1/persons' },
   ]
 
   /** Der eine Landmark der Gruppe; das Panel liegt per Portal ausserhalb davon. */
@@ -477,7 +482,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
    * gestrichen: beim blossen Streichen waere die Zusage lautlos verschwunden (Edge Case 2 der
    * Spec). /album steht unveraendert als Negativfall daneben.
    */
-  it.each(['/projects/1/settings', '/projects/1/stats'])(
+  it.each(['/projects/1/settings', '/projects/1/stats', '/projects/1/persons'])(
     'markiert auf %s den geschlossenen Ausloeser statt eines Leistenziels (AK6)',
     async (path) => {
       renderApp([path])
@@ -554,14 +559,15 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
 
   /**
    * Kein Ziel, kein Ausloeser, kein Landmark - alle drei Haelften von AK4/AK3 einzeln. Geprueft
-   * ueber ALLE FUENF Beschriftungen: die beiden Nebenziele duerfen ohne Projektkontext ebenso
-   * wenig auftauchen wie die drei Hauptziele.
+   * ueber ALLE SECHS Ziele: die drei Nebenziele duerfen ohne Projektkontext ebenso wenig
+   * auftauchen wie die drei Hauptziele. Ueber das Ziel (`href`), nicht die Beschriftung: Die
+   * Projektliste fuehrt einen eigenen Link "Personen" auf die projektuebergreifende Seite.
    */
   function expectNoGroup(): void {
     expect(screen.queryByRole('navigation', { name: 'Projektbereiche' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Projektbereiche' })).not.toBeInTheDocument()
     for (const target of [...PRIMARY_TARGETS, ...SECONDARY_TARGETS]) {
-      expect(screen.queryByRole('link', { name: target.label })).not.toBeInTheDocument()
+      expect(document.querySelector(`a[href="${target.href}"]`), target.label).toBeNull()
     }
   }
 

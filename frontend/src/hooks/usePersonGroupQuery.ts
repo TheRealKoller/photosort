@@ -1,4 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import type { InfiniteData } from '@tanstack/react-query'
 
 import { listPhotos } from '../api/photos'
@@ -67,7 +68,12 @@ export function usePersonGroupQuery(projectId: number, personId: number) {
       return state.rest > 0 ? state.remaining.length : undefined
     },
   })
-  const { remaining, rest } = personGroupState(query.data, personId)
+  // Gemerkt: Die Seite reicht die Fotos an die Großansicht weiter und darf nicht bei jedem
+  // Rendern eine neue Liste bekommen.
+  const { remaining, rest } = useMemo(
+    () => personGroupState(query.data, personId),
+    [query.data, personId],
+  )
   return {
     ...query,
     photos: remaining,
