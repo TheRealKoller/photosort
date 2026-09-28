@@ -68,7 +68,7 @@ class TestTheCentroid:
         [similarity] = similarities_to(_basis(0), {P: person}).values()
 
         assert similarity < _accept()
-        assert decide_assignments([{P: similarity}]) == frozenset()
+        assert decide_assignments([{P: similarity}]) == {}
 
     def test_the_result_does_not_depend_on_the_length_of_the_vectors(self) -> None:
         short = centroid([_reference(_basis(0, scale=0.5)), _reference(_basis(1))], model_key=MODEL)
@@ -99,57 +99,66 @@ class TestTheCentroid:
         assert only_foreign is None
         assert only_broken is None
         assert similarities_to(_basis(0), {}) == {}
-        assert decide_assignments([{}]) == frozenset()
+        assert decide_assignments([{}]) == {}
 
 
 class TestAcceptanceAndMargin:
     def test_exactly_on_the_acceptance_threshold_counts_as_reached(self) -> None:
-        assert decide_assignments([{P: _accept()}]) == frozenset({P})
+        assert decide_assignments([{P: _accept()}]) == {P: 0}
 
     def test_just_below_the_acceptance_threshold_is_not_reached(self) -> None:
         below = math.nextafter(_accept(), 0.0)
 
-        assert decide_assignments([{P: below}]) == frozenset()
+        assert decide_assignments([{P: below}]) == {}
 
     def test_exactly_the_margin_above_the_other_person_counts_as_reached(self) -> None:
         other = _accept() - _margin()
 
-        assert decide_assignments([{P: _accept(), Q: other}]) == frozenset({P})
+        assert decide_assignments([{P: _accept(), Q: other}]) == {P: 0}
 
     def test_less_than_the_margin_above_the_other_person_is_not_reached(self) -> None:
         other = math.nextafter(_accept() - _margin(), 1.0)
 
-        assert decide_assignments([{P: _accept(), Q: other}]) == frozenset()
+        assert decide_assignments([{P: _accept(), Q: other}]) == {}
 
     def test_a_face_equally_similar_to_both_gets_neither(self) -> None:
-        assert decide_assignments([{P: 1.0, Q: 1.0}]) == frozenset()
+        assert decide_assignments([{P: 1.0, Q: 1.0}]) == {}
 
     def test_with_one_person_only_the_acceptance_threshold_applies(self) -> None:
         """Festgehaltenes Verhalten: ohne zweite Person gibt es keinen Abstand zu pruefen."""
-        assert decide_assignments([{P: _accept()}]) == frozenset({P})
+        assert decide_assignments([{P: _accept()}]) == {P: 0}
 
     def test_a_nan_similarity_never_names(self) -> None:
-        assert decide_assignments([{P: math.nan}]) == frozenset()
-        assert decide_assignments([{P: 1.0, Q: math.nan}]) == frozenset()
-        assert decide_assignments([{P: math.nan, Q: 0.0}]) == frozenset()
+        assert decide_assignments([{P: math.nan}]) == {}
+        assert decide_assignments([{P: 1.0, Q: math.nan}]) == {}
+        assert decide_assignments([{P: math.nan, Q: 0.0}]) == {}
 
 
 class TestOneToOne:
     def test_two_candidates_for_p_name_nobody_p_but_q_through_a_third_face(self) -> None:
         faces = [{P: 1.0, Q: 0.0}, {P: 1.0, Q: 0.0}, {P: 0.0, Q: 1.0}]
 
-        assert decide_assignments(faces) == frozenset({Q})
+        assert decide_assignments(faces) == {Q: 2}
 
     def test_a_face_is_never_assigned_to_both_persons(self) -> None:
-        assert decide_assignments([{P: 1.0, Q: 1.0 - _margin() / 2}]) == frozenset()
+        assert decide_assignments([{P: 1.0, Q: 1.0 - _margin() / 2}]) == {}
 
     def test_one_candidate_each_names_both(self) -> None:
-        assert decide_assignments([{P: 1.0, Q: 0.0}, {P: 0.0, Q: 1.0}]) == frozenset({P, Q})
+        assert decide_assignments([{P: 1.0, Q: 0.0}, {P: 0.0, Q: 1.0}]) == {P: 0, Q: 1}
 
     def test_no_faces_name_nobody(self) -> None:
-        assert decide_assignments([]) == frozenset()
+        assert decide_assignments([]) == {}
+
+    def test_the_index_is_that_of_the_candidate_not_of_the_first_face(self) -> None:
+        """Spec 0551: Die Phase schreibt die Box des Kandidatengesichts. Lage: der Kandidat an
+        Index 2 von 3."""
+        faces = [{P: 0.0}, {P: 0.1}, {P: 1.0}]
+
+        assert decide_assignments(faces) == {P: 2}
 
     def test_the_order_of_faces_and_references_does_not_matter(self) -> None:
+        """Vertauschte Gesichter ergeben fuer dasselbe Gesicht denselben Kandidaten - der Index
+        folgt dem Gesicht, nicht seiner Stelle."""
         faces = [{P: 1.0, Q: 0.0}, {P: 0.0, Q: 1.0}, {P: 0.2, Q: 0.1}]
         forward = decide_assignments(faces)
         backward = decide_assignments([dict(reversed(face.items())) for face in reversed(faces)])
@@ -158,7 +167,8 @@ class TestOneToOne:
         assert centroid(references, model_key=MODEL) == pytest.approx(
             centroid(list(reversed(references)), model_key=MODEL)
         )
-        assert forward == backward == frozenset({P, Q})
+        assert forward == {P: 0, Q: 1}
+        assert {person: len(faces) - 1 - index for person, index in backward.items()} == forward
 
 
 class TestTighteningIsNotMonotone:
@@ -169,11 +179,11 @@ class TestTighteningIsNotMonotone:
         und das Foto traegt danach einen Namen, den es vorher nicht trug. Nach jeder Verschaerfung
         ist die Durchsicht deshalb vollstaendig zu wiederholen."""
         faces = [{P: 0.75}, {P: 1.0}]
-        assert decide_assignments(faces) == frozenset()
+        assert decide_assignments(faces) == {}
 
         monkeypatch.setattr(person_matching, "ACCEPT_SIMILARITY", 0.875)
 
-        assert decide_assignments(faces) == frozenset({P})
+        assert decide_assignments(faces) == {P: 1}
 
 
 class TestARejectedReference:

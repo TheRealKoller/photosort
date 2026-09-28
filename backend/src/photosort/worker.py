@@ -2318,7 +2318,7 @@ def _persons_on_photo(
             "Personen-Erkennung: Foto %s uebersprungen (%s).", photo_id, type(exc).__name__
         )
         return None
-    return decide_assignments(similarities)
+    return frozenset(decide_assignments(similarities))
 
 
 async def _recognize_persons(

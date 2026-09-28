@@ -118,20 +118,21 @@ def _is_candidate(person_id: int, similarities: Mapping[int, float]) -> bool:
     )
 
 
-def decide_assignments(faces: Sequence[Mapping[int, float]]) -> frozenset[int]:
-    """Die auf einem Foto sicher erkannten Personen.
+def decide_assignments(faces: Sequence[Mapping[int, float]]) -> dict[int, int]:
+    """Die auf einem Foto sicher erkannten Personen, je Person mit dem Index ihres EINEN
+    Kandidatengesichts in `faces`.
 
     `faces` traegt je verwertbarem Gesicht die Aehnlichkeit zu jeder Person mit Schwerpunkt.
     Kandidat einer Person ist ein Gesicht, wenn es `ACCEPT_SIMILARITY` erreicht und die
     Aehnlichkeit zu jeder anderen Person um mindestens `DISTINCT_MARGIN` uebertrifft - damit ist
     jedes Gesicht hoechstens einer Person Kandidat. Erkannt ist eine Person nur, wenn GENAU EIN
     Gesicht ihr Kandidat ist; bei zweien ist eines sicher falsch."""
-    candidates: dict[int, int] = {}
-    for similarities in faces:
+    candidates: dict[int, list[int]] = {}
+    for index, similarities in enumerate(faces):
         for person_id in similarities:
             if _is_candidate(person_id, similarities):
-                candidates[person_id] = candidates.get(person_id, 0) + 1
-    return frozenset(person_id for person_id, count in candidates.items() if count == 1)
+                candidates.setdefault(person_id, []).append(index)
+    return {person_id: indices[0] for person_id, indices in candidates.items() if len(indices) == 1}
 
 
 def conflicts_with_other_person(similarity_to_other: float) -> bool:
