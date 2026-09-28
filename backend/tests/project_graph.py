@@ -107,6 +107,9 @@ async def get_or_create_fine_label(
     return fine_label
 
 
+GRAPH_MODEL_KEY = "graph-modell"
+
+
 async def get_or_create_person(session: AsyncSession) -> Person:
     """Die GLOBALE Person samt einer Referenz - wiederverwendbar, damit zwei
     Projekte auf DIESELBE Person zeigen. Ohne Projekt- und Fotobezug: eine Projektloeschung
@@ -119,7 +122,7 @@ async def get_or_create_person(session: AsyncSession) -> Person:
     await session.flush()
     session.add(
         PersonReference(
-            person_id=person.id, embedding=[1.0] + [0.0] * 127, model_key="graph-modell"
+            person_id=person.id, embedding=[1.0] + [0.0] * 127, model_key=GRAPH_MODEL_KEY
         )
     )
     await session.flush()
@@ -320,11 +323,36 @@ async def build_project_graph(
             # S10: Erkennung und Korrektur haengen am
             # FOTO. Ohne diese beiden Zeilen pruefen die Vollstaendigkeitstests der
             # Projektloeschung die neuen Kanten nicht. Die Person selbst ist global und bleibt.
-            PhotoPersonDetection(photo_id=photo.id, person_id=person.id, computed_at=now),
-            PhotoPersonCorrection(
-                photo_id=photo.id, person_id=person.id, user_id=user.id, applies=False
+            PhotoPersonDetection(
+                photo_id=photo.id,
+                person_id=person.id,
+                computed_at=now,
+                face_box_x=0.5,
+                face_box_y=0.25,
+                face_box_width=0.25,
+                face_box_height=0.25,
             ),
         ]
+    )
+    # Spec 0551: Die Korrektur traegt Box und die Kante auf eine EIGENE Referenz dieses Graphen -
+    # die Projektloeschung muss die Korrektur nehmen und die Referenz stehen lassen.
+    linked = PersonReference(
+        person_id=person.id, embedding=[0.0, 1.0] + [0.0] * 126, model_key=GRAPH_MODEL_KEY
+    )
+    session.add(linked)
+    await session.flush()
+    session.add(
+        PhotoPersonCorrection(
+            photo_id=photo.id,
+            person_id=person.id,
+            user_id=user.id,
+            applies=True,
+            face_box_x=0.125,
+            face_box_y=0.25,
+            face_box_width=0.25,
+            face_box_height=0.25,
+            reference_id=linked.id,
+        )
     )
     await session.flush()
 

@@ -2535,14 +2535,18 @@ async def test_a_name_key_can_be_taken_only_once(db_session: AsyncSession) -> No
         await db_session.commit()
 
 
-def test_the_detection_carries_only_photo_person_and_time() -> None:
-    """S5: Fuer ein Gesicht gibt es keinen Speicherort. Eine Spalte fuer Box, Wert oder Merkmal
-    machte aus einer Zuordnung eine Wiedererkennungsgrundlage fuer Dritte."""
+_FACE_BOX_COLUMNS = {"face_box_x", "face_box_y", "face_box_width", "face_box_height"}
+
+
+def test_the_detection_carries_only_photo_person_time_and_the_face_box() -> None:
+    """S5 fortgeschrieben (Spec 0551): Die Box beschreibt nur das eine Kandidatengesicht der
+    erkannten Person. Kein Wert und kein Merkmal - eine solche Spalte machte aus einer Zuordnung
+    eine Wiedererkennungsgrundlage."""
     assert {column.name for column in PhotoPersonDetection.__table__.columns} == {
         "photo_id",
         "person_id",
         "computed_at",
-    }
+    } | _FACE_BOX_COLUMNS
 
 
 def test_the_correction_carries_only_the_fields_of_the_data_model() -> None:
@@ -2553,7 +2557,8 @@ def test_the_correction_carries_only_the_fields_of_the_data_model() -> None:
         "user_id",
         "applies",
         "updated_at",
-    }
+        "reference_id",
+    } | _FACE_BOX_COLUMNS
 
 
 def test_the_reference_has_no_photo_and_no_project() -> None:
@@ -2586,6 +2591,11 @@ def test_every_person_foreign_key_is_real_and_named() -> None:
         ("photo_person_corrections", "photos", "fk_photo_person_corrections_photo_id"),
         ("photo_person_corrections", "persons", "fk_photo_person_corrections_person_id"),
         ("photo_person_corrections", "users", "fk_photo_person_corrections_user_id"),
+        (
+            "photo_person_corrections",
+            "person_references",
+            "fk_photo_person_corrections_reference_id",
+        ),
     }
 
 
@@ -2596,7 +2606,16 @@ def test_the_person_constraints_carry_explicit_names() -> None:
     }
 
     assert {"ck_persons_slot", "uq_persons_slot", "uq_persons_name_key"} <= names
-    assert "uq_photo_person_correction_photo_person" in correction_names
+    assert {
+        "uq_photo_person_correction_photo_person",
+        "uq_photo_person_corrections_reference_id",
+        "ck_photo_person_corrections_face_box",
+        "ck_photo_person_corrections_face_requires_applies",
+        "ck_photo_person_corrections_reference_requires_face",
+    } <= correction_names
+    assert "ck_photo_person_detections_face_box" in {
+        constraint.name for constraint in PhotoPersonDetection.__table__.constraints
+    }
 
 
 async def test_a_person_correction_is_unique_per_photo_and_person_without_the_user(
