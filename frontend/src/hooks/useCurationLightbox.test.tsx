@@ -222,3 +222,36 @@ describe('useCurationLightbox', () => {
     expect(result.current.location.pathname).toBe('/stub')
   })
 })
+
+describe('useCurationLightbox: Auslöserschlüssel (Spec 0551)', () => {
+  it('gibt den Fokus an den Auslöser mit dem Schlüssel, aus dem geöffnet wurde', () => {
+    const { result } = renderLightboxHook()
+    const first = document.createElement('button')
+    const second = document.createElement('button')
+    document.body.append(first, second)
+    act(() => result.current.lightbox.triggerRef('1:7')(first))
+    act(() => result.current.lightbox.triggerRef('2:7')(second))
+
+    act(() => result.current.lightbox.open(7, '2:7'))
+    expect(result.current.location.state).toEqual({ grossansicht: 7 })
+    act(() => result.current.lightbox.close())
+
+    expect(second).toHaveFocus()
+  })
+
+  it('fällt auf den Auslöser der Foto-Id zurück, dann auf die Überschrift', () => {
+    const { result, heading } = renderLightboxHook()
+    const byId = document.createElement('button')
+    document.body.append(byId)
+    act(() => result.current.lightbox.triggerRef(7)(byId))
+
+    act(() => result.current.lightbox.open(7, '9:7'))
+    act(() => result.current.lightbox.close())
+    expect(byId).toHaveFocus()
+
+    byId.remove()
+    act(() => result.current.lightbox.open(7, '9:7'))
+    act(() => result.current.lightbox.close())
+    expect(heading).toHaveFocus()
+  })
+})

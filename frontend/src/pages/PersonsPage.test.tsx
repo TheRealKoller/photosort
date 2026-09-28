@@ -85,8 +85,9 @@ describe('PersonsPage', () => {
 
       expect(
         await screen.findByText(
-          'Noch keine Person festgelegt. Eine Person legst du in der Detailansicht eines Fotos ' +
-            'fest, im Abschnitt „Personen“ mit „Gesicht zeigen“.',
+          'Noch keine Person festgelegt. Eine Person legst du in der Personenübersicht eines ' +
+            'Projekts fest oder in der Detailansicht eines Fotos im Abschnitt „Personen“ mit ' +
+            '„Gesicht zeigen“.',
         ),
       ).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
