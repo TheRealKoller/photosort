@@ -129,7 +129,7 @@ function cards(): HTMLElement[] {
 }
 
 function progressLine(): HTMLElement {
-  return screen.getByText(/Gesichter werden gesucht|Suche |Das Projekt hat/)
+  return screen.getByText(/^(Gesichter werden gesucht|Suche |Das Projekt hat)/)
 }
 
 beforeEach(() => {
@@ -187,6 +187,21 @@ describe('UnnamedFacesGroup - Statusleiste', () => {
 
     expect(progressLine()).toHaveTextContent('Suche abgeschlossen: 1 Foto durchgesehen.')
     expect(screen.getByText('Kein Gesicht ohne Namen.')).toBeInTheDocument()
+  })
+
+  it('meldet eine Unterbrechung vor der ersten Seite ohne Fotozahlen und setzt bei 0 fort', async () => {
+    const user = userEvent.setup()
+    await renderGroup()
+    await answer(0, new Error('netz'))
+
+    expect(progressLine()).toHaveTextContent(/^Suche unterbrochen\.$/)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Die Suche nach Gesichtern ist unterbrochen.',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+    await answer(0, page([], null, 2, 2))
+    expect(progressLine()).toHaveTextContent('Suche abgeschlossen: 2 Fotos durchgesehen.')
   })
 
   it('meldet ein Projekt ohne Fotos', async () => {

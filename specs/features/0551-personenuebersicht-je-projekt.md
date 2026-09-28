@@ -135,7 +135,7 @@ Keine neue Tabelle. `photo_person_detections` und `photo_person_corrections` bek
     - **Die Anfrage-Sitzung wird vorher freigegeben.** `get_current_user` liest den Nutzer über `get_session`. FastAPI gibt dem Endpunkt je Anfrage dieselbe Sitzung (`Depends(get_session)`), und ihre automatisch begonnene Transaktion hielte die Verbindung sonst bis zum Ende der Anfrage.
     - Der Endpunkt nimmt diese Sitzung als Parameter. Er liest mit ihr Projektprüfung (`404`), `photos_total` und die Foto-Ids der Seite und ruft dann `await session.close()` vor dem ersten Executor-Auftrag. Danach benutzt er sie nicht mehr.
     - Nachweis: `get_session` und `get_session_factory` auf derselben Test-Engine; während eines angehaltenen `detect` hält die Anfrage keine Verbindung (Pool-Saldo 0).
-  - Zwischen zwei Fotos prüft der Endpunkt `await request.is_disconnected()`. Bei getrennter Verbindung bricht er ab, ohne Antwort.
+  - **Trennung des Clients:** Ein Wächter-Task liest vor der ersten Detektion `request.receive()`, bis `http.disconnect` eintrifft (`request.is_disconnected()` meldet die Trennung hinter dem `BaseHTTPMiddleware` von slowapi nie). Zwischen zwei Fotos prüft der Endpunkt dieses Signal. Bei getrennter Verbindung endet die Seite nach dem laufenden Foto mit einer leeren `204` samt `Cache-Control: no-store` und `X-Content-Type-Options: nosniff`, ohne `ERROR`-Log. Der Wächter wird in jedem Fall beendet.
   - **`embed` läuft in der Auflistung nie.** Es entsteht kein Merkmal und keine Ähnlichkeit. Die Reihenfolge (Foto-Id, dann Gesichtsindex links→rechts) kann deshalb keine Ähnlichkeit verraten, und unbekannte Gesichter werden nie gruppiert.
   - Die Ausschnitte kommen base64-codiert in der Seitenantwort, damit nicht jede Kachel einen zweiten Detektionslauf auslöst.
   - Fehlt die Display-Variante, ist das Bild nicht lesbar oder wirft der Analyzer, steht das Foto in `not_ready_photo_ids`. Ohne Variante wird das Modell nicht gerufen. Eine Ausnahme wird nur mit Typname und `photo_id` protokolliert.
@@ -444,6 +444,7 @@ Zur Story gibt es keinen `## Design`-Block und keinen Penpot-Entwurf. Maßgeblic
 | vor der ersten Seite | „Gesichter werden gesucht…“ | unbestimmt |
 | Suche läuft | „Gesichter werden gesucht – {done} von {total} Fotos durchgesehen.“ | bestimmt (`value={done}`, `max={total}`) |
 | unterbrochen | „Suche unterbrochen – {done} von {total} Fotos durchgesehen.“ | entfällt; stattdessen `Alert` mit wörtlichem `detail` bzw. „Die Suche nach Gesichtern ist unterbrochen.“ und „Erneut versuchen“, das an der Stelle fortsetzt. Bereits gefundene Gesichter bleiben stehen und zuordenbar. |
+| unterbrochen, bevor die erste Seite da ist | „Suche unterbrochen.“ (ohne Fotozahlen, es gibt noch keine) | entfällt; `Alert` und „Erneut versuchen“ wie in der Zeile davor, die Wiederholung beginnt bei `after_id = 0` |
 | abgeschlossen | „Suche abgeschlossen: {total} Fotos durchgesehen.“ (bei 1 „1 Foto“) | entfällt |
 | Projekt ohne Fotos | „Das Projekt hat noch keine Fotos.“ | entfällt |
 
@@ -650,7 +651,7 @@ Es gibt kein neues Secret, keinen neuen Empfänger, keine neue Abhängigkeit, ke
   - Der Client lädt die Seiten streng nacheinander: höchstens eine Auflistungsanfrage gleichzeitig je geöffneter Seite, dazu nur die Einzelabfragen von `refreshPhoto` (`max_photos = 1`). Beim Verlassen der Seite und nach einem Fehler stellt er keine weitere Seitenanfrage, auch nicht bei Fokus oder Reconnect.
   - Es gibt kein eigenes Rate-Limit. Ein gestohlenes JWT gewinnt damit nichts Neues, wie in 0292 S7.
   - Die Anfrage hält keine Datenbankverbindung, während sie auf den Executor wartet. Je Foto öffnet sie eine kurze Lesesitzung aus `get_session_factory` (`api/deps.py`), liest Variantenpfad und zugeordnete Boxen, schließt die Sitzung und stellt erst dann den Executor-Auftrag. Sonst belegte jede gleichzeitig wartende Auflistung eine Verbindung des Pools (Vorgabe 5 + 10 Überlauf) für bis zu 24 Modellläufe, und alle anderen Endpunkte warteten mit.
-  - Zwischen zwei Fotos prüft der Endpunkt `await request.is_disconnected()` und bricht bei getrennter Verbindung ab. Eine verlassene Seite belegt den Modell-Thread dann noch höchstens ein Foto lang statt bis zu 24.
+  - Ein Wächter-Task liest `request.receive()`, bis `http.disconnect` eintrifft; `request.is_disconnected()` meldet eine Trennung hinter dem `BaseHTTPMiddleware` von slowapi nie. Zwischen zwei Fotos prüft der Endpunkt dieses Signal und endet bei getrennter Verbindung mit einer leeren `204` (`no-store`, `nosniff`), ohne `ERROR`-Log. Eine verlassene Seite belegt den Modell-Thread dann noch höchstens ein Foto lang statt bis zu 24.
   - Nachweis:
     - Mit einem blockierenden Fake kommt der Auftrag einer zweiten Anfrage zwischen zwei Detektionen einer laufenden Auflistung an die Reihe.
     - Eine fehlende Variante ergibt null Aufrufe des Fake-Analyzers.
@@ -901,9 +902,9 @@ Grundlage ist das Testkonzept 0002 mit den Sektionen „Biometrische Merkmale oh
   - Gegenprobe im selben Fall: Zwischen zwei Fotos wurde nachweislich ausgeliehen, der Zähler misst also.
 - **Zugeordnete Boxen werden je Foto frisch gelesen:** Während `detect` von Foto 1 (`on_detect`, zweite Verbindung) entsteht eine Korrektur mit Box auf Foto 2. In **derselben** Seite fehlt dieses Gesicht von Foto 2 bereits. Das ist rot gegen eine Umsetzung, die die Boxen einmal je Seite vorab liest.
 - **Abbruch bei getrennter Verbindung:**
-  - Der Endpunkt wird direkt als ASGI-App mit eigenem `receive` aufgerufen. `receive` liefert `http.disconnect`, sobald `on_detect` das erste Foto gemeldet hat, und blockiert vorher. `is_disconnected` fragt nur ab und wartet nicht.
-  - Bei einer Seite mit 5 Fotos gibt es danach keinen weiteren `detect`-Aufruf (genau 1). `send` bekommt kein `http.response.start`.
-  - Gegenprobe ohne Trennung: 5 Aufrufe und eine Antwort.
+  - Der Endpunkt wird direkt als ASGI-App mit eigenem `receive` aufgerufen. `receive` liefert zuerst die leere Anfrage und blockiert dann, bis `on_detect` das erste Foto gemeldet hat; danach liefert es `http.disconnect`. So wird die Trennung genau über den Wächter-Task erkannt, der `receive()` liest.
+  - Bei einer Seite mit 5 Fotos gibt es danach keinen weiteren `detect`-Aufruf (genau 1). Die Antwort ist eine `204` mit leerem Körper, `caplog` enthält kein `ERROR`, und kein Wächter-Task (`DISCONNECT_WATCHER_NAME`) läuft weiter.
+  - Gegenprobe ohne Trennung: 5 Aufrufe und eine `200`.
 
 **API – Zuordnen, Festlegen, Zurücknehmen (`test_api_persons.py`)**
 
@@ -1046,7 +1047,7 @@ Grundlage ist das Testkonzept 0002 mit den Sektionen „Biometrische Merkmale oh
   - Fehler-`Alert` mit `detail`. Bei `404` lädt die Personenliste neu, und der Fokus geht auf `h1`.
   - „Mehr laden“ mit „{geladen} von {n}“. Der leere Zustand gilt auch, nachdem die letzte Karte gegangen ist.
 - **`UnnamedFacesGroup`:**
-  - Der Fortschritt hat alle fünf Zustände der Tabelle. Die Fortschrittszeile ist nicht live.
+  - Der Fortschritt hat alle sechs Zustände der Tabelle, auch „Suche unterbrochen.“ vor der ersten Seite samt Wiederholung ab `after_id = 0`. Die Fortschrittszeile ist nicht live.
   - „nicht bereit“ zählt eindeutige Ids, steht schon während der Suche und bleibt nach dem Abschluss stehen.
   - Die Liste ist flach und in der Reihenfolge der Antwort, ohne Gruppierung je Foto: zwei Gesichter desselben Fotos als zwei Karten ohne gemeinsamen Container.
   - Die Personen-Schaltflächen stehen in der Reihenfolge von `GET /persons` und sind auf jeder Karte gleich: kein `aria-pressed`, keine abweichende Ausprägung, kein vorgewählter Fokus.
