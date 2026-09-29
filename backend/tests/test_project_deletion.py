@@ -23,10 +23,12 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.db import Base
-from photosort.models import CriterionScoringRun, Project
+from photosort.models import CriterionScoringRun, PersonReference, PhotoPersonCorrection, Project
+from photosort.persons import current_centroids
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
 from photosort.quality_weights import store_weights
 from tests.project_graph import (
+    GRAPH_MODEL_KEY,
     build_project_graph,
     count_rows,
     get_or_create_user,
@@ -187,10 +189,15 @@ class TestThePersonsSurviveEveryProjectDeletion:
     async def test_detections_and_corrections_go_persons_and_references_stay(
         self, db_session: AsyncSession
     ) -> None:
+        """Die Korrektur traegt Box und `reference_id` (Spec 0551): Sie faellt mit dem Foto, die
+        verknuepfte Referenz bleibt stehen und wirkt weiter - jetzt ohne Fotobezug."""
         graph = await build_project_graph(db_session, "Weg")
         await db_session.commit()
         assert await count_rows(db_session, "photo_person_detections") == 1
         assert await count_rows(db_session, "photo_person_corrections") == 1
+        linked = (await db_session.execute(select(PhotoPersonCorrection.reference_id))).scalar_one()
+        assert linked is not None
+        centroids_before = await current_centroids(db_session, model_key=GRAPH_MODEL_KEY)
 
         with _recorded_delete_targets() as targets:
             await delete_projects(db_session, [graph.project_id])
@@ -201,7 +208,9 @@ class TestThePersonsSurviveEveryProjectDeletion:
         assert await count_rows(db_session, "photo_person_detections") == 0
         assert await count_rows(db_session, "photo_person_corrections") == 0
         assert await count_rows(db_session, "persons") == 1
-        assert await count_rows(db_session, "person_references") == 1
+        assert await count_rows(db_session, "person_references") == 2
+        assert await db_session.get(PersonReference, linked) is not None
+        assert await current_centroids(db_session, model_key=GRAPH_MODEL_KEY) == centroids_before
 
 
 async def test_delete_projects_without_ids_deletes_nothing(db_session: AsyncSession) -> None:

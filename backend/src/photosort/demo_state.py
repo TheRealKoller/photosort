@@ -63,7 +63,7 @@ from photosort.cloud_vision import default_vision_model_for_provider
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.db import make_engine, make_session_factory
-from photosort.face_analysis import MODEL_KEY
+from photosort.face_analysis import MODEL_KEY, FaceBox
 from photosort.feedback_log import (
     FrozenContext,
     record_exchange,
@@ -103,7 +103,7 @@ from photosort.motifs import LOCAL_MOTIF_SIGNALS, MOTIF_REGISTRY
 from photosort.person_matching import EMBEDDING_DIMENSION
 from photosort.persons import (
     PersonRefusal,
-    add_reference,
+    assign_face,
     clean_person_name,
     create_person,
     delete_person,
@@ -415,11 +415,18 @@ _DEMO_PERSON_FIRST_REFERENCES = (
     (0, _demo_unit_embedding((0, 1.0))),
     (3, _demo_unit_embedding((1, 1.0))),
 )
-# Ein weiteres gezeigtes Gesicht der ersten Person ueber `persons.add_reference`:
+# Ein weiteres gezeigtes Gesicht der ersten Person ueber `persons.assign_face`:
 # (Person, Foto-Index, Merkmal) - nahe an ihrer ersten Referenz, weit weg von der zweiten Person.
 _DEMO_PERSON_MORE_REFERENCES = ((0, 1, _demo_unit_embedding((0, 0.8), (2, 0.6))),)
+# Die ERFUNDENE Box jedes gezeigten Gesichts (Spec 0551): Sie stammt aus keinem Detektor, die
+# Demo-Bilder enthalten keine Gesichter. Mit Box und Referenz stehen die Karten auf "Gesicht
+# gezeigt".
+_DEMO_FACE_BOX = FaceBox(x=0.375, y=0.25, width=0.25, height=0.375)
 # Erkennungen (Person, Foto-Index): Foto 2 zeigt beide Personen.
 _DEMO_PERSON_RECOGNIZED = ((0, 2), (1, 2), (0, 4), (1, 5))
+# Diese Erkennung traegt die erfundene Box ihres Kandidatengesichts; die uebrigen stehen fuer
+# Erkennungen aus Laeufen vor dem Gesichtsbezug.
+_DEMO_PERSON_RECOGNIZED_WITH_BOX = (0, 4)
 # Von Hand entfernt (Person, Foto-Index): erkannt, aber per Korrektur herausgenommen.
 _DEMO_PERSON_REMOVED = ((1, 5),)
 _DEMO_PERSON_MAX_PHOTO_INDEX = max(
@@ -1005,7 +1012,7 @@ async def _seed_demo_persons(
     zugeordnet und von Hand entfernt.
 
     Referenzen entstehen ueber DIESELBEN Dienstfunktionen wie aus der Oberflaeche
-    (`create_person`, `add_reference`) - kein zweiter Schreibweg fuer biometrische Referenzen,
+    (`create_person`, `assign_face`) - kein zweiter Schreibweg fuer biometrische Referenzen,
     und dieselben Pruefungen (Slot, Name, Merkmal, Abstand zur anderen Person) gelten auch hier.
     Ohne vorhandenes Konto entsteht keine Person: Jedes gezeigte Gesicht schreibt eine Korrektur
     dieses Kontos, und der Seeder legt nie selbst eines an."""
@@ -1022,16 +1029,18 @@ async def _seed_demo_persons(
                     session,
                     name=clean_person_name(name),
                     embedding=embedding,
+                    face_box=_DEMO_FACE_BOX,
                     model_key=MODEL_KEY,
                     photo_id=photos[photo_index].id,
                     user_id=user_id,
                 )
             )
         for person_index, photo_index, embedding in _DEMO_PERSON_MORE_REFERENCES:
-            await add_reference(
+            await assign_face(
                 session,
                 person_id=persons[person_index].id,
                 embedding=embedding,
+                face_box=_DEMO_FACE_BOX,
                 model_key=MODEL_KEY,
                 photo_id=photos[photo_index].id,
                 user_id=user_id,
@@ -1048,6 +1057,16 @@ async def _seed_demo_persons(
             photo_id=photos[photo_index].id,
             person_id=persons[person_index].id,
             computed_at=_BASE_SCORING_AT,
+            **(
+                {
+                    "face_box_x": _DEMO_FACE_BOX.x,
+                    "face_box_y": _DEMO_FACE_BOX.y,
+                    "face_box_width": _DEMO_FACE_BOX.width,
+                    "face_box_height": _DEMO_FACE_BOX.height,
+                }
+                if (person_index, photo_index) == _DEMO_PERSON_RECOGNIZED_WITH_BOX
+                else {}
+            ),
         )
         for person_index, photo_index in _DEMO_PERSON_RECOGNIZED
     )

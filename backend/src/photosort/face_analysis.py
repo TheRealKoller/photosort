@@ -36,6 +36,10 @@ ANALYSIS_MAX_SIDE = 1280
 # Kennt das Modell, das die gespeicherten Merkmale gebildet hat. Referenzen eines anderen Werts
 # gehen in keinen Vergleich ein.
 MODEL_KEY = "sface_2021dec"
+# Ab dieser Ueberdeckung (IoU) ist ein gefundenes Gesicht dasselbe wie eine gespeicherte Box. Fest,
+# keine Einstellung. YuNet unterdrueckt Ueberlappungen ab 0.3, zwei gefundene Gesichter erreichen
+# die Schwelle deshalb nie gemeinsam.
+SAME_FACE_MIN_OVERLAP = 0.5
 
 _YUNET_NMS_THRESHOLD = 0.3
 _YUNET_TOP_K = 5000
@@ -110,6 +114,60 @@ def order_faces(faces: Sequence[Face]) -> list[Face]:
     return sorted(largest[:MAX_FACES_PER_PHOTO], key=_position_key)
 
 
+def is_valid_face_box(box: FaceBox) -> bool:
+    """Die Box, wie sie gespeichert werden darf: endlich, `0 <= x, y <= 1`, `0 < width, height
+    <= 1`. EINSCHLUSSFORM - ein NaN erfuellt keinen Vergleich und faellt auf "ungueltig"."""
+    values = (box.x, box.y, box.width, box.height)
+    return (
+        all(math.isfinite(value) for value in values)
+        and 0.0 <= box.x <= 1.0
+        and 0.0 <= box.y <= 1.0
+        and 0.0 < box.width <= 1.0
+        and 0.0 < box.height <= 1.0
+    )
+
+
+def box_overlap(a: FaceBox, b: FaceBox) -> float:
+    """Die Ueberdeckung zweier Boxen als Schnitt durch Vereinigung (0..1). Ein NaN in einer Box
+    ergibt NaN - und damit ueber `same_face` "nicht gleich"."""
+    values = (a.x, a.y, a.width, a.height, b.x, b.y, b.width, b.height)
+    if any(math.isnan(value) for value in values):
+        return math.nan
+    left = max(a.x, b.x)
+    top = max(a.y, b.y)
+    right = min(a.x + a.width, b.x + b.width)
+    bottom = min(a.y + a.height, b.y + b.height)
+    intersection = max(0.0, right - left) * max(0.0, bottom - top)
+    union = a.width * a.height + b.width * b.height - intersection
+    if not union > 0.0:
+        return 0.0
+    return intersection / union
+
+
+def same_face(a: FaceBox, b: FaceBox) -> bool:
+    # EINSCHLUSSFORM: Ein NaN erfuellt den Vergleich nicht und gilt damit als "nicht gleich".
+    return box_overlap(a, b) >= SAME_FACE_MIN_OVERLAP
+
+
+def unassigned_faces(faces: Sequence[Face], taken: Sequence[FaceBox]) -> list[int]:
+    """Die Indizes der Gesichter, die nach Abzug der gespeicherten Boxen bleiben, aufsteigend.
+
+    Je gespeicherter Box faellt hoechstens EIN Gesicht weg - das mit der groessten Ueberdeckung,
+    und nur ab `SAME_FACE_MIN_OVERLAP`. Eine Box ohne passendes Gesicht (die Datei hat sich
+    geaendert) nimmt nichts weg."""
+    removed: set[int] = set()
+    for box in taken:
+        best_index: int | None = None
+        best_overlap = 0.0
+        for index, face in enumerate(faces):
+            overlap = box_overlap(box, face.box)
+            if overlap >= SAME_FACE_MIN_OVERLAP and (best_index is None or overlap > best_overlap):
+                best_index, best_overlap = index, overlap
+        if best_index is not None:
+            removed.add(best_index)
+    return [index for index in range(len(faces)) if index not in removed]
+
+
 def _clamped_box(
     x: float, y: float, width: float, height: float, image_width: int, image_height: int
 ) -> FaceBox:
@@ -141,6 +199,11 @@ class FaceAnalyzer:
         faces: list[Face] = []
         for raw in [] if rows is None else np.asarray(rows).reshape(-1, 15):
             row = tuple(float(value) for value in raw)
+            # EINSCHLUSSFORM, vor `is_usable` und vor der Obergrenze: Nur eine Zeile mit 15
+            # endlichen Werten ergibt ein Gesicht. Eine nicht endliche Box wird so nie benannt,
+            # gezaehlt, aufgelistet oder gespeichert.
+            if not all(math.isfinite(value) for value in row):
+                continue
             x, y, face_width, face_height, score = row[0], row[1], row[2], row[3], row[14]
             if not is_usable(score=score, width=face_width, height=face_height):
                 continue

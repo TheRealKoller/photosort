@@ -746,9 +746,37 @@ export interface PhotoOut {
 /** Herkunft einer Zuordnung: `recognized` = erkannt, `corrected` = von Hand zugeordnet. */
 export type PersonOrigin = 'recognized' | 'corrected'
 
+/** Das an den Namen gebundene Gesicht: `shown` = gezeigt und gelernt, `assigned` = gewählt, aber
+ * nicht gelernt (Obergrenze), `null` = Name für das ganze Foto oder erkannt. Nie eine Box. */
+export type PersonFace = 'shown' | 'assigned' | null
+
 export interface PhotoPersonOut {
   person_id: number
   origin: PersonOrigin
+  face: PersonFace
+}
+
+/** Die Antwort auf Festlegen und Zeigen. `learned: false` heißt: benannt, aber nicht gelernt. */
+export interface FaceAssignmentOut {
+  person: PersonOut
+  learned: boolean
+  photo_persons: PhotoPersonOut[]
+}
+
+/** Ein Gesicht ohne Namen - adressiert über (Foto, Index), der Ausschnitt als base64-JPEG. Kein
+ * Pfad, keine Box, kein Wert. */
+export interface UnnamedFaceOut {
+  photo_id: number
+  face_index: number
+  crop_jpeg: string
+}
+
+export interface UnnamedFacesPageOut {
+  faces: UnnamedFaceOut[]
+  not_ready_photo_ids: number[]
+  next_after_id: number | null
+  photos_done: number
+  photos_total: number
 }
 
 /** Eine festgelegte Person. `reference_count` zählt die gezeigten Gesichter. */

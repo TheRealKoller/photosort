@@ -90,7 +90,19 @@ function PersonRows({
           {persons.map((person) => {
             const assigned = photo.persons.find((entry) => entry.person_id === person.id)
             const state = assigned?.origin ?? 'unassigned'
-            const action = assigned ? 'Entfernen' : 'Ergänzen'
+            // "Gesicht zurücknehmen" ist der Hinweis, dass Entfernen hier auch Gelerntes entfernt.
+            const action =
+              assigned === undefined
+                ? 'Ergänzen'
+                : assigned.face === 'shown'
+                  ? 'Gesicht zurücknehmen'
+                  : 'Entfernen'
+            const faceWord =
+              assigned?.face === 'shown'
+                ? ', Gesicht gezeigt'
+                : assigned?.face === 'assigned'
+                  ? ', Gesicht gewählt – nicht gelernt'
+                  : ''
             return (
               <li
                 key={person.id}
@@ -99,7 +111,10 @@ function PersonRows({
               >
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                   <span className="text-sm font-medium text-text-h">{person.name}</span>
-                  <span className="text-sm text-text">{STATE_WORDS[state]}</span>
+                  <span className="text-sm text-text">
+                    {STATE_WORDS[state]}
+                    {faceWord}
+                  </span>
                 </div>
                 <Button
                   type="button"

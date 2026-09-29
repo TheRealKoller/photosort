@@ -2,7 +2,7 @@ import { matchPath } from 'react-router'
 
 /*
  * Einzige Quelle der Wahrheit für alles, was am Projektkontext einer Route hängt: welche
- * Routen es mit Projektbezug gibt, welcher Pfad Projektkontext hat, und welches der fünf
+ * Routen es mit Projektbezug gibt, welcher Pfad Projektkontext hat, und welches der sechs
  * Navigationsziele gerade aktiv ist.
  *
  * REINES TYPESCRIPT OHNE REACT-IMPORT. Bewusst NICHT in App.tsx: sonst importierte
@@ -10,7 +10,7 @@ import { matchPath } from 'react-router'
  */
 
 /**
- * Die zehn Pfadmuster mit Projektkontext, benannt statt nur aufgezählt - App.tsx bezieht
+ * Die elf Pfadmuster mit Projektkontext, benannt statt nur aufgezählt - App.tsx bezieht
  * daraus sowohl die <Route>-Deklarationen als auch die Matching-Liste, sodass eine neue
  * Route nicht mehr nur an einer der beiden Stellen landen kann.
  */
@@ -25,6 +25,7 @@ export const PROJECT_ROUTE_PATHS = {
   settings: '/projects/:projectId/settings',
   stats: '/projects/:projectId/stats',
   album: '/projects/:projectId/album',
+  persons: '/projects/:projectId/persons',
 } as const
 
 /**
@@ -86,7 +87,8 @@ export function matchProjectId(pathname: string): string | null {
   return null
 }
 
-export type ProjectNavTargetId = 'pipeline' | 'photos' | 'selection' | 'settings' | 'stats'
+export type ProjectNavTargetId =
+  'pipeline' | 'photos' | 'selection' | 'settings' | 'stats' | 'persons'
 
 export interface ProjectNavTarget {
   id: ProjectNavTargetId
@@ -99,7 +101,7 @@ export interface ProjectNavTarget {
 
 /*
  * ZWEI GRUPPEN STATT EINER FLACHEN LISTE: die drei Hauptziele, zwischen denen beim Sortieren
- * ständig gewechselt wird, und die zwei Nebenziele, die selten gebraucht werden und deshalb
+ * ständig gewechselt wird, und die drei Nebenziele, die selten gebraucht werden und deshalb
  * nicht denselben Platz in der Leiste beanspruchen. DIE REIHENFOLGE INNERHALB EINER GRUPPE
  * IST DIE ANZEIGEREIHENFOLGE (Leiste UND Panel).
  *
@@ -144,7 +146,9 @@ export const PROJECT_NAV_PRIMARY_TARGETS: readonly ProjectNavTarget[] = [
   },
 ]
 
-/** Die beiden Nebenziele. */
+/** Die drei Nebenziele. "Personen" steht HINTER Einstellungen und Statistik (Spec 0551): Die
+ * bestehenden Ziele behalten ihren Platz, das ist bei wiederkehrender Nutzung verlässlicher als
+ * eine Umsortierung. */
 export const PROJECT_NAV_SECONDARY_TARGETS: readonly ProjectNavTarget[] = [
   {
     id: 'settings',
@@ -157,6 +161,12 @@ export const PROJECT_NAV_SECONDARY_TARGETS: readonly ProjectNavTarget[] = [
     label: 'Statistik',
     buildPath: (projectId) => `/projects/${projectId}/stats`,
     activeRoutePaths: [PROJECT_ROUTE_PATHS.stats],
+  },
+  {
+    id: 'persons',
+    label: 'Personen',
+    buildPath: (projectId) => `/projects/${projectId}/persons`,
+    activeRoutePaths: [PROJECT_ROUTE_PATHS.persons],
   },
 ]
 
@@ -189,7 +199,7 @@ export function isSecondaryNavTargetId(id: ProjectNavTargetId | null): boolean {
 /**
  * Das aktuell aktive Navigationsziel, oder null. Null bedeutet zweierlei und ist in beiden
  * Fällen richtig: gar kein Projektkontext, ODER der Album-Entwurf (/album), der zu keinem der
- * fünf Ziele gehört - einen Link als aktiv zu markieren, der woanders hinführt, wäre
+ * sechs Ziele gehört - einen Link als aktiv zu markieren, der woanders hinführt, wäre
  * schlechter als gar kein Marker.
  */
 export function resolveActiveNavTargetId(pathname: string): ProjectNavTargetId | null {

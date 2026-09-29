@@ -1089,11 +1089,13 @@ class Person(Base):
 class PersonReference(Base):
     """Das Merkmal eines ausdruecklich GEZEIGTEN Gesichts - biometrische Referenz einer Person.
 
-    KEIN Bezug auf Foto oder Projekt: eine Projektloeschung beruehrt die Festlegung nicht.
-    Geschrieben an genau einer Stelle (`persons.py::add_reference`), nur aus den beiden
-    Referenz-Endpunkten und nur fuer 128 endliche Werte mit Norm nahe 1. Erkannte Gesichter
-    werden nie von selbst zu Referenzen. Referenzen eines anderen `model_key` gehen in keinen
-    Vergleich und keine Zaehlung ein."""
+    KEIN Bezug auf Foto oder Projekt: eine Projektloeschung beruehrt die Festlegung nicht. Die
+    Kante zum Foto liegt an der Korrektur (`PhotoPersonCorrection.reference_id`), deshalb bleibt
+    eine Referenz stehen, wenn ihre Korrektur mit Foto oder Projekt faellt.
+    Geschrieben an genau einer Stelle (`persons.py::_store_reference`), nur fuer ein gezeigtes
+    Gesicht mit 128 endlichen Werten und Norm nahe 1. Erkannte Gesichter werden nie von selbst zu
+    Referenzen. Referenzen eines anderen `model_key` gehen in keinen Vergleich und keine Zaehlung
+    ein."""
 
     __tablename__ = "person_references"
 
@@ -1106,15 +1108,34 @@ class PersonReference(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+def _face_box_check(table: str) -> CheckConstraint:
+    """Die Box ist vollstaendig oder leer, liegt in 0..1, Breite und Hoehe groesser als 0. Jede
+    Spalte steht ausdruecklich mit `IS NOT NULL`: Ein Vergleich mit `NULL` ergaebe sonst
+    "unbekannt", und eine unvollstaendige Box ginge durch."""
+    return CheckConstraint(
+        "(face_box_x IS NULL AND face_box_y IS NULL AND face_box_width IS NULL"
+        " AND face_box_height IS NULL)"
+        " OR (face_box_x IS NOT NULL AND face_box_y IS NOT NULL AND face_box_width IS NOT NULL"
+        " AND face_box_height IS NOT NULL"
+        " AND face_box_x >= 0 AND face_box_x <= 1 AND face_box_y >= 0 AND face_box_y <= 1"
+        " AND face_box_width > 0 AND face_box_width <= 1"
+        " AND face_box_height > 0 AND face_box_height <= 1)",
+        name=f"ck_{table}_face_box",
+    )
+
+
 class PhotoPersonDetection(Base):
     """Die Erkennung: diese Person ist auf diesem Foto sicher erkannt. Schreibt nur die Phase
     `persons`, und nur fuer Fotos, die sie tatsaechlich verarbeitet hat.
 
-    KEIN Wert, keine Box, kein Merkmal - der Spaltensatz ist per Test auf Gleichheit
+    Die Box (auf die Display-Variante normiert) ist die des EINEN Kandidatengesichts der
+    erkannten Person; eine Erkennung aus einem Lauf vor dieser Spalte traegt keine. Kein Wert,
+    kein Merkmal, keine Box eines anderen Gesichts - der Spaltensatz ist per Test auf Gleichheit
     festgehalten. Eine weitere Spalte machte aus einer Zuordnung eine Wiedererkennungsgrundlage
     (fuer Dritte, wenn sie ein unbekanntes Gesicht betraefe)."""
 
     __tablename__ = "photo_person_detections"
+    __table_args__ = (_face_box_check("photo_person_detections"),)
 
     photo_id: Mapped[int] = mapped_column(
         ForeignKey("photos.id", name="fk_photo_person_detections_photo_id"), primary_key=True
@@ -1123,6 +1144,10 @@ class PhotoPersonDetection(Base):
         ForeignKey("persons.id", name="fk_photo_person_detections_person_id"), primary_key=True
     )
     computed_at: Mapped[datetime]
+    face_box_x: Mapped[float | None] = mapped_column(default=None)
+    face_box_y: Mapped[float | None] = mapped_column(default=None)
+    face_box_width: Mapped[float | None] = mapped_column(default=None)
+    face_box_height: Mapped[float | None] = mapped_column(default=None)
 
 
 class PhotoPersonCorrection(Base):
@@ -1132,11 +1157,26 @@ class PhotoPersonCorrection(Base):
     entfernter Name nie von selbst zurueck. `user_id` ist AUDIT, nie Aufsuch- oder
     Zugriffsschluessel - der Unique-Constraint lautet `(photo_id, person_id)` OHNE `user_id`, und
     die zuletzt geschriebene Korrektur gilt fuer beide Nutzer. Die wirksame Zuordnung entsteht nur
-    im Lesepfad (`persons.py::effective_person_assignments`), Korrektur vor Erkennung."""
+    im Lesepfad (`persons.py::effective_person_assignments`), Korrektur vor Erkennung.
+
+    Die Box ist die des ausdruecklich gewaehlten Gesichts, nur mit `applies = true`;
+    `reference_id` die Referenz, die aus ihm entstand, nur zusammen mit einer Box und hoechstens
+    einmal je Referenz. Der Fremdschluessel hat KEINE DB-Aktion: Wer eine Referenz loescht, ohne
+    die Kante vorher zu leeren (Ruecknahme, Modellwechsel), scheitert laut statt still."""
 
     __tablename__ = "photo_person_corrections"
     __table_args__ = (
         UniqueConstraint("photo_id", "person_id", name="uq_photo_person_correction_photo_person"),
+        UniqueConstraint("reference_id", name="uq_photo_person_corrections_reference_id"),
+        _face_box_check("photo_person_corrections"),
+        CheckConstraint(
+            "face_box_x IS NULL OR applies",
+            name="ck_photo_person_corrections_face_requires_applies",
+        ),
+        CheckConstraint(
+            "reference_id IS NULL OR face_box_x IS NOT NULL",
+            name="ck_photo_person_corrections_reference_requires_face",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1151,6 +1191,14 @@ class PhotoPersonCorrection(Base):
     )
     applies: Mapped[bool]
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    face_box_x: Mapped[float | None] = mapped_column(default=None)
+    face_box_y: Mapped[float | None] = mapped_column(default=None)
+    face_box_width: Mapped[float | None] = mapped_column(default=None)
+    face_box_height: Mapped[float | None] = mapped_column(default=None)
+    reference_id: Mapped[int | None] = mapped_column(
+        ForeignKey("person_references.id", name="fk_photo_person_corrections_reference_id"),
+        default=None,
+    )
 
 
 class PhotoAlbumSuitability(Base):

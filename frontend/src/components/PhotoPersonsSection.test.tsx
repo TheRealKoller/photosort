@@ -7,13 +7,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as personsApi from '../api/persons'
-import type { PersonOut, PhotoOut, PhotoPersonOut } from '../api/types'
+import type { FaceAssignmentOut, PersonOut, PhotoOut, PhotoPersonOut } from '../api/types'
 import { PhotoPersonsSection } from './PhotoPersonsSection'
 
 vi.mock('../api/persons')
 
 const ANNA: PersonOut = { id: 7, name: 'Anna', reference_count: 2 }
 const BEN: PersonOut = { id: 8, name: 'Ben', reference_count: 1 }
+
+function assignment(person: PersonOut, learned: boolean): FaceAssignmentOut {
+  return {
+    person,
+    learned,
+    photo_persons: [
+      { person_id: person.id, origin: 'corrected', face: learned ? 'shown' : 'assigned' },
+    ],
+  }
+}
 
 function photo(persons: PhotoPersonOut[] = [], id = 1): PhotoOut {
   return {
@@ -78,7 +88,7 @@ describe('PhotoPersonsSection: Zeilen', () => {
   it('zeigt je Person eine Zeile in der Reihenfolge von GET /persons, nie nach Zustand sortiert', async () => {
     vi.mocked(personsApi.listPersons).mockResolvedValue([BEN, ANNA])
 
-    renderSection(photo([{ person_id: 7, origin: 'recognized' }]))
+    renderSection(photo([{ person_id: 7, origin: 'recognized', face: null }]))
 
     await screen.findByText('Ben')
     expect(rows().map((row) => within(row).getByText(/^(Anna|Ben)$/).textContent)).toEqual([
@@ -96,8 +106,8 @@ describe('PhotoPersonsSection: Zeilen', () => {
 
     renderSection(
       photo([
-        { person_id: 7, origin: 'recognized' },
-        { person_id: 8, origin: 'corrected' },
+        { person_id: 7, origin: 'recognized', face: null },
+        { person_id: 8, origin: 'corrected', face: null },
       ]),
     )
 
@@ -116,7 +126,7 @@ describe('PhotoPersonsSection: Zeilen', () => {
     vi.mocked(personsApi.setPhotoPerson).mockResolvedValue([])
     const user = userEvent.setup()
 
-    renderSection(photo([{ person_id: 7, origin: 'recognized' }], 5))
+    renderSection(photo([{ person_id: 7, origin: 'recognized', face: null }], 5))
 
     await user.click(await screen.findByRole('button', { name: 'Entfernen: Anna' }))
     await user.click(screen.getByRole('button', { name: 'Ergänzen: Ben' }))
@@ -138,7 +148,7 @@ describe('PhotoPersonsSection: Zeilen', () => {
 
     expect(screen.getByRole('button', { name: 'Ergänzen: Anna' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Ergänzen: Ben' })).toBeEnabled()
-    pending.resolve([{ person_id: 7, origin: 'corrected' }])
+    pending.resolve([{ person_id: 7, origin: 'corrected', face: null }])
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Ergänzen: Anna' })).toBeEnabled(),
     )
@@ -332,7 +342,7 @@ describe('PhotoPersonsSection: Gesichterwahl', () => {
 
   it('sperrt "Festlegen" bei getrimmt leerem Namen und sendet mit Enter ab', async () => {
     vi.mocked(personsApi.listPersons).mockResolvedValueOnce([]).mockResolvedValue([ANNA])
-    vi.mocked(personsApi.createPerson).mockResolvedValue(ANNA)
+    vi.mocked(personsApi.createPerson).mockResolvedValue(assignment(ANNA, true))
     const user = userEvent.setup()
 
     renderSection(photo([], 5))
@@ -355,7 +365,7 @@ describe('PhotoPersonsSection: Gesichterwahl', () => {
 
   it('sperrt während des Zeigens alle Kacheln und Wahl-Schaltflächen', async () => {
     vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA])
-    const pending = deferred<PersonOut>()
+    const pending = deferred<FaceAssignmentOut>()
     vi.mocked(personsApi.addReference).mockReturnValue(pending.promise)
     const user = userEvent.setup()
 
@@ -371,7 +381,7 @@ describe('PhotoPersonsSection: Gesichterwahl', () => {
     expect(screen.getByRole('button', { name: 'Wird gespeichert…' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Gesicht 1 von 2' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Gesicht 2 von 2' })).toBeDisabled()
-    pending.resolve(ANNA)
+    pending.resolve(assignment(ANNA, true))
     expect(await screen.findByText('Gesicht als Anna gezeigt.')).toBeInTheDocument()
     expect(trigger()).toHaveFocus()
   })
@@ -569,5 +579,98 @@ describe('PhotoPersonsSection: Gesichterwahl', () => {
       await user.click(broken)
       expect(broken).toHaveAttribute('aria-pressed', 'false')
     })
+  })
+})
+
+describe('PhotoPersonsSection: gebundenes Gesicht (Spec 0551)', () => {
+  beforeEach(() => {
+    vi.mocked(personsApi.addReference).mockReset()
+    vi.mocked(personsApi.fetchFaceImage).mockResolvedValue(new Blob(['x']))
+    vi.mocked(personsApi.listFaces).mockResolvedValue([
+      { index: 0, box: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
+    ])
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:f'), revokeObjectURL: vi.fn() })
+  })
+
+  it('nennt ein gezeigtes und ein gewähltes Gesicht im Zustandswort', async () => {
+    vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA, BEN])
+
+    renderSection(
+      photo([
+        { person_id: 7, origin: 'corrected', face: 'shown' },
+        { person_id: 8, origin: 'corrected', face: 'assigned' },
+      ]),
+    )
+
+    expect(await screen.findByText('Von Hand zugeordnet, Gesicht gezeigt')).toBeInTheDocument()
+    expect(
+      screen.getByText('Von Hand zugeordnet, Gesicht gewählt – nicht gelernt'),
+    ).toBeInTheDocument()
+  })
+
+  it('heißt bei einem gezeigten Gesicht "Gesicht zurücknehmen" und sendet applies=false', async () => {
+    vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA, BEN])
+    vi.mocked(personsApi.setPhotoPerson).mockResolvedValue([])
+    const user = userEvent.setup()
+
+    renderSection(
+      photo(
+        [
+          { person_id: 7, origin: 'corrected', face: 'shown' },
+          { person_id: 8, origin: 'corrected', face: 'assigned' },
+        ],
+        5,
+      ),
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Gesicht zurücknehmen: Anna' }))
+    expect(screen.getByRole('button', { name: 'Entfernen: Ben' })).toBeInTheDocument()
+    await waitFor(() => expect(personsApi.setPhotoPerson).toHaveBeenCalledWith(5, 7, false))
+  })
+
+  it('meldet bei learned=false den Satz zur Obergrenze und klappt zu', async () => {
+    vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA])
+    vi.mocked(personsApi.addReference).mockResolvedValue(assignment(ANNA, false))
+    const user = userEvent.setup()
+
+    renderSection()
+    await user.click(await screen.findByRole('button', { name: 'Gesicht zeigen' }))
+    await user.click(await screen.findByRole('button', { name: 'Gesicht 1 von 1' }))
+    await user.click(
+      within(screen.getByRole('group', { name: 'Wer ist das?' })).getByRole('button', {
+        name: 'Anna',
+      }),
+    )
+
+    expect(
+      await screen.findByText(
+        'Als Anna benannt, aber nicht gelernt: Für Anna sind schon genug Gesichter gezeigt.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Gesicht zeigen' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+  })
+
+  it.each([
+    personsApi.PERSON_REFUSALS.faceAlreadyOnPhoto,
+    personsApi.PERSON_REFUSALS.faceOfOtherPerson,
+  ])('zeigt die Abweisung "%s" als Alert und lässt die Wahl offen', async (detail) => {
+    vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA])
+    vi.mocked(personsApi.addReference).mockRejectedValue(new ApiError(409, detail))
+    const user = userEvent.setup()
+
+    renderSection()
+    await user.click(await screen.findByRole('button', { name: 'Gesicht zeigen' }))
+    await user.click(await screen.findByRole('button', { name: 'Gesicht 1 von 1' }))
+    await user.click(
+      within(screen.getByRole('group', { name: 'Wer ist das?' })).getByRole('button', {
+        name: 'Anna',
+      }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(detail)
+    expect(screen.getByRole('group', { name: 'Wer ist das?' })).toBeInTheDocument()
   })
 })

@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import logging
+import math
 import sqlite3
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -26,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import photosort.worker as worker
 from photosort.api.stats import get_project_stats
 from photosort.db import Base, make_engine, make_session_factory
-from photosort.face_analysis import MODEL_KEY, FaceAnalyzerLike
+from photosort.face_analysis import MODEL_KEY, FaceAnalyzerLike, FaceBox
 from photosort.label_embedding import LabelEmbedderLike
 from photosort.landmark import LandmarkDetection, PlaceHint
 from photosort.models import (
@@ -49,7 +50,7 @@ from photosort.models import (
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.persons import (
     PersonAssignment,
-    add_reference,
+    assign_face,
     create_person,
     delete_person,
     load_effective_persons,
@@ -62,7 +63,9 @@ from tests.face_fakes import (
     Color,
     ExplodingAnalyzer,
     FakeFaceAnalyzer,
+    face_box,
     face_embedding,
+    sentinel_box,
     write_display_variant,
 )
 from tests.import_closure import module_file
@@ -231,6 +234,7 @@ async def _define(session: AsyncSession, name: str, axis: int, anchor: Photo, us
         session,
         name=name,
         embedding=face_embedding(axis),
+        face_box=face_box(axis),
         model_key=MODEL_KEY,
         photo_id=anchor.id,
         user_id=user.id,
@@ -521,15 +525,27 @@ async def test_a_person_deleted_mid_run_leaves_no_row_and_the_other_blocks_are_w
 async def test_no_run_writes_or_deletes_a_correction(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
+    """Auch Box und `reference_id` der Korrekturen bleiben ueber zwei Laeufe gleich - ein
+    zugeordnetes Gesicht kehrt nie von selbst nach "Ohne Namen" zurueck."""
     lay = await _Lay(db_session, tmp_path).build()
     removed = await _photo(db_session, lay.project, tmp_path, "a", RED)
     added = await _photo(db_session, lay.project, tmp_path, "b", GREEN)
+    shown = await _photo(db_session, lay.project, tmp_path, "c", BLUE)
     anna = await _define(db_session, ANNA, 0, lay.anchor, lay.user)
     await set_correction(
         db_session, photo_id=removed.id, person_id=anna.id, applies=False, user_id=lay.user.id
     )
     await set_correction(
         db_session, photo_id=added.id, person_id=anna.id, applies=True, user_id=lay.user.id
+    )
+    await assign_face(
+        db_session,
+        person_id=anna.id,
+        embedding=face_embedding(0),
+        face_box=face_box(1),
+        model_key=MODEL_KEY,
+        photo_id=shown.id,
+        user_id=lay.user.id,
     )
     await db_session.commit()
     snapshot_query = select(
@@ -539,9 +555,17 @@ async def test_no_run_writes_or_deletes_a_correction(
         PhotoPersonCorrection.user_id,
         PhotoPersonCorrection.applies,
         PhotoPersonCorrection.updated_at,
+        PhotoPersonCorrection.face_box_x,
+        PhotoPersonCorrection.face_box_y,
+        PhotoPersonCorrection.face_box_width,
+        PhotoPersonCorrection.face_box_height,
+        PhotoPersonCorrection.reference_id,
     ).order_by(PhotoPersonCorrection.id)
     before = (await db_session.execute(snapshot_query)).all()
-    analyzer = FakeFaceAnalyzer({RED: [face_embedding(0)], GREEN: []})
+    assert any(row.reference_id is not None for row in before)
+    analyzer = FakeFaceAnalyzer(
+        {RED: [face_embedding(0)], GREEN: [], BLUE: [face_embedding(5), face_embedding(0)]}
+    )
 
     for _ in range(2):
         await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
@@ -609,18 +633,231 @@ async def test_a_correction_outranks_the_recognition_over_runs(
     assert await _detections(db_session) == {(removed.id, anna.id)}
     assert await effective() == {added.id: [PersonAssignment(anna.id, "corrected")]}
 
-    await add_reference(
+    shown = await _photo(db_session, lay.project, tmp_path, "c", None)
+    await assign_face(
         db_session,
         person_id=anna.id,
         embedding=face_embedding(0),
+        face_box=face_box(0),
         model_key=MODEL_KEY,
-        photo_id=lay.anchor.id,
+        photo_id=shown.id,
         user_id=lay.user.id,
     )
     await db_session.commit()
     await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
 
     assert await effective() == {added.id: [PersonAssignment(anna.id, "corrected")]}
+
+
+# --- Gesichtsbezug der Erkennung (Spec 0551) ----------------------------------------------------
+
+
+async def _detection_boxes(session: AsyncSession) -> dict[tuple[int, int], FaceBox | None]:
+    rows = (
+        await session.execute(
+            select(
+                PhotoPersonDetection.photo_id,
+                PhotoPersonDetection.person_id,
+                PhotoPersonDetection.face_box_x,
+                PhotoPersonDetection.face_box_y,
+                PhotoPersonDetection.face_box_width,
+                PhotoPersonDetection.face_box_height,
+            )
+        )
+    ).all()
+    return {
+        (photo_id, person_id): None if x is None else FaceBox(x=x, y=y, width=w, height=h)
+        for photo_id, person_id, x, y, w, h in rows
+    }
+
+
+async def test_the_detection_carries_the_box_of_the_candidate_not_of_the_first_face(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    lay = await _Lay(db_session, tmp_path).build()
+    photo = await _photo(db_session, lay.project, tmp_path, "a", RED)
+    anna = await _define(db_session, ANNA, 0, lay.anchor, lay.user)
+    analyzer = FakeFaceAnalyzer(
+        {RED: [face_embedding(10), face_embedding(0)]},
+        boxes_by_color={RED: [face_box(0), sentinel_box()]},
+    )
+
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+
+    assert await _detection_boxes(db_session) == {(photo.id, anna.id): sentinel_box()}
+
+
+async def test_one_known_and_two_unknown_faces_leave_exactly_one_box(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    lay = await _Lay(db_session, tmp_path).build()
+    await _photo(db_session, lay.project, tmp_path, "a", RED)
+    await _define(db_session, ANNA, 0, lay.anchor, lay.user)
+    analyzer = FakeFaceAnalyzer(
+        {RED: [face_embedding(10), face_embedding(0), face_embedding(11)]},
+        boxes_by_color={RED: [sentinel_box(0), sentinel_box(1), sentinel_box(2)]},
+    )
+
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+
+    snapshot = repr(await _table_snapshot(db_session))
+    assert list((await _detection_boxes(db_session)).values()) == [sentinel_box(1)]
+    assert repr(sentinel_box(0).x) not in snapshot
+    assert repr(sentinel_box(2).x) not in snapshot
+    assert repr(sentinel_box(1).x) in snapshot
+
+
+async def test_a_detection_without_box_from_an_earlier_run_is_replaced_with_one(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    lay = await _Lay(db_session, tmp_path).build()
+    photo = await _photo(db_session, lay.project, tmp_path, "a", RED)
+    anna = await _define(db_session, ANNA, 0, lay.anchor, lay.user)
+    await _old_detection(db_session, photo, anna)
+    assert await _detection_boxes(db_session) == {(photo.id, anna.id): None}
+    analyzer = FakeFaceAnalyzer({RED: [face_embedding(0)]})
+
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+
+    assert await _detection_boxes(db_session) == {(photo.id, anna.id): face_box(0)}
+
+
+async def test_a_non_finite_box_at_the_write_leaves_the_person_unnamed_on_that_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Zweite Linie hinter dem Adapter: Der Fake liefert eine NaN-Box fuer das Kandidatengesicht.
+    Ein uebersehenes Foto ist zulaessig, eine Erkennung ohne Box nicht."""
+    lay = await _Lay(db_session, tmp_path).build()
+    broken = await _photo(db_session, lay.project, tmp_path, "a", RED)
+    fine = await _photo(db_session, lay.project, tmp_path, "b", GREEN)
+    anna = await _define(db_session, ANNA, 0, lay.anchor, lay.user)
+    analyzer = FakeFaceAnalyzer(
+        {RED: [face_embedding(0)], GREEN: [face_embedding(0)]},
+        boxes_by_color={RED: [FaceBox(x=math.nan, y=0.2, width=0.15, height=0.3)]},
+    )
+
+    run = await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+
+    assert run.status is ScanStatus.SUCCESS
+    assert await _detection_boxes(db_session) == {(fine.id, anna.id): face_box(0)}
+    assert broken.id != fine.id
+
+
+async def test_a_removed_name_does_not_return_although_recognition_finds_it_again(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    lay = await _Lay(db_session, tmp_path).build()
+    photo = await _photo(db_session, lay.project, tmp_path, "a", RED)
+    anna = await _define(db_session, ANNA, 0, lay.anchor, lay.user)
+    analyzer = FakeFaceAnalyzer({RED: [face_embedding(0)]})
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+    await set_correction(
+        db_session, photo_id=photo.id, person_id=anna.id, applies=False, user_id=lay.user.id
+    )
+    await db_session.commit()
+
+    for _ in range(2):
+        await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+
+    assert await _detection_boxes(db_session) == {(photo.id, anna.id): face_box(0)}
+    assert await load_effective_persons(db_session, [photo.id]) == {}
+
+
+async def test_a_face_assigned_in_one_project_names_in_another(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die Zuordnung wirkt global: ein Gesicht mit demselben Merkmal in Projekt B."""
+    lay = await _Lay(db_session, tmp_path).build()
+    other_project = await _project(db_session, "Fremd")
+    shown = await _photo(db_session, other_project, tmp_path, "gezeigt", None)
+    target = await _photo(db_session, lay.project, tmp_path, "a", RED)
+    anna = await _define(db_session, ANNA, 0, lay.anchor, lay.user)
+    berta = await _define(db_session, BERTA, 1, lay.anchor, lay.user)
+    analyzer = FakeFaceAnalyzer({RED: [face_embedding(3)]})
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+    assert await _detections(db_session) == set()
+
+    await assign_face(
+        db_session,
+        person_id=berta.id,
+        embedding=face_embedding(3),
+        face_box=face_box(2),
+        model_key=MODEL_KEY,
+        photo_id=shown.id,
+        user_id=lay.user.id,
+    )
+    await db_session.commit()
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+
+    assert await _detections(db_session) == {(target.id, berta.id)}
+    assert anna.id != berta.id
+
+
+async def test_a_revocation_acts_from_the_next_run_on(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Referenzen X (Achse 0) und Y (Achse 2). Nach der Ruecknahme von X steht der Name in B bis
+    zum naechsten Lauf, danach ist er weg - der Kosinus zu Y ist 0."""
+    lay = await _Lay(db_session, tmp_path).build()
+    project_a = await _project(db_session, "A")
+    shown = await _photo(db_session, project_a, tmp_path, "x", None)
+    target = await _photo(db_session, lay.project, tmp_path, "b", RED)
+    anna = await _define(db_session, ANNA, 2, lay.anchor, lay.user)
+    await assign_face(
+        db_session,
+        person_id=anna.id,
+        embedding=face_embedding(0),
+        face_box=face_box(0),
+        model_key=MODEL_KEY,
+        photo_id=shown.id,
+        user_id=lay.user.id,
+    )
+    await db_session.commit()
+    analyzer = FakeFaceAnalyzer({RED: [face_embedding(0)]})
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+    assert await _detections(db_session) == {(target.id, anna.id)}
+
+    await set_correction(
+        db_session, photo_id=shown.id, person_id=anna.id, applies=False, user_id=lay.user.id
+    )
+    await db_session.commit()
+    assert await _detections(db_session) == {(target.id, anna.id)}
+
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+
+    assert await _detections(db_session) == set()
+
+
+async def test_a_face_assigned_at_the_cap_does_not_teach_the_recognition(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zwilling: dieselben Erkennungen wie ohne diese Zuordnung."""
+    from photosort import persons as persons_module
+
+    monkeypatch.setattr(persons_module, "MAX_REFERENCES_PER_PERSON", 1)
+    lay = await _Lay(db_session, tmp_path).build()
+    shown = await _photo(db_session, lay.project, tmp_path, "gezeigt", None)
+    target = await _photo(db_session, lay.project, tmp_path, "b", RED)
+    anna = await _define(db_session, ANNA, 0, lay.anchor, lay.user)
+    analyzer = FakeFaceAnalyzer({RED: [face_embedding(3)]})
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+    without = await _detections(db_session)
+
+    learned = await assign_face(
+        db_session,
+        person_id=anna.id,
+        embedding=face_embedding(3),
+        face_box=face_box(0),
+        model_key=MODEL_KEY,
+        photo_id=shown.id,
+        user_id=lay.user.id,
+    )
+    await db_session.commit()
+    await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+
+    assert learned is False
+    assert await _detections(db_session) == without
+    assert (target.id, anna.id) not in without
 
 
 # --- Unbekannte Gesichter ---------------------------------------------------------------------

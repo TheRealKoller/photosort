@@ -8,8 +8,9 @@ from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from photosort import db
 from photosort.config import settings
 from photosort.db import get_session
 from photosort.models import User
@@ -18,6 +19,7 @@ from photosort.security import decode_access_token
 
 __all__ = [
     "get_session",
+    "get_session_factory",
     "get_opencloud_client",
     "get_job_enqueuer",
     "get_current_user",
@@ -25,6 +27,13 @@ __all__ = [
 ]
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Die Fabrik fuer kurze, eigene Sitzungen eines Endpunkts, der zwischen zwei Lesevorgaengen
+    lange wartet und dabei keine Verbindung halten darf. In Tests per `dependency_overrides` auf
+    die Test-Engine gesetzt - dieselbe wie `get_session`."""
+    return db.async_session_factory
 
 
 def _unauthorized() -> HTTPException:

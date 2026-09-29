@@ -1961,6 +1961,14 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
         'heisser Pfad: Vorherige/Naechste Gruppe beim Durchgang durch alle Gruppen - ' +
         'dieselbe Begruendung wie beim Blaettern innerhalb der Gruppe',
     },
+    {
+      file: 'src/components/UnnamedFacesGroup.tsx',
+      snippet:
+        "const ASSIGN_BUTTON_CLASSES = 'h-auto min-h-11 whitespace-normal break-words sm:min-h-8'",
+      reason:
+        'heisser Pfad: die Zuordnen-Schaltflaechen in "Ohne Namen" (Spec 0551) - ein Fehlgriff ' +
+        'benennt nicht nur ein Foto, er lehrt PhotoSort ein falsches Gesicht',
+    },
   ]
 
   it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {

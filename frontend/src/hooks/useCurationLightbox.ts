@@ -27,15 +27,19 @@ interface CurationLightboxOptions<T extends { id: number }> {
   headingRef: RefObject<HTMLElement | null>
 }
 
+type TriggerKey = number | string
+
 interface CurationLightbox<T> {
   openPhotoId: number | null
   /** Das offene Foto aus der geladenen Liste; `undefined`, wenn keines offen ist oder die Id
    * dort nicht vorkommt. */
   photo: T | undefined
-  open: (photoId: number) => void
+  /** `triggerKey` nennt den Ausloeser, wenn ein Foto mehrere hat (Standard: die Foto-Id). Er lebt
+   * nur in einem Ref, NIE im Verlaufszustand - der traegt weiter nur die Id (Auflage S2). */
+  open: (photoId: number, triggerKey?: TriggerKey) => void
   close: () => void
-  /** Callback-Ref fuer den Ausloeser eines Fotos - Ziel der Fokus-Rueckgabe. */
-  triggerRef: (photoId: number) => (element: HTMLElement | null) => void
+  /** Callback-Ref fuer einen Ausloeser - Ziel der Fokus-Rueckgabe. */
+  triggerRef: (triggerKey: TriggerKey) => (element: HTMLElement | null) => void
 }
 
 /**
@@ -75,8 +79,9 @@ export function useCurationLightbox<T extends { id: number }>({
   const openingRef = useRef(false)
   const ownEntryKeysRef = useRef(new Set<string>())
   const closedEntryKeyRef = useRef<string | null>(null)
-  const triggersRef = useRef(new Map<number, HTMLElement>())
-  const triggerCallbacksRef = useRef(new Map<number, (element: HTMLElement | null) => void>())
+  const triggersRef = useRef(new Map<TriggerKey, HTMLElement>())
+  const triggerCallbacksRef = useRef(new Map<TriggerKey, (element: HTMLElement | null) => void>())
+  const openedFromRef = useRef<TriggerKey | null>(null)
   const previousOpenPhotoIdRef = useRef<number | null>(openPhotoId)
 
   useEffect(() => {
@@ -88,8 +93,9 @@ export function useCurationLightbox<T extends { id: number }>({
   }, [location.key])
 
   const open = useCallback(
-    (photoId: number) => {
+    (photoId: number, triggerKey: TriggerKey = photoId) => {
       openingRef.current = true
+      openedFromRef.current = triggerKey
       navigate(
         { pathname: location.pathname, search: location.search },
         { state: { grossansicht: photoId } },
@@ -127,22 +133,26 @@ export function useCurationLightbox<T extends { id: number }>({
     if (previous === null || openPhotoId !== null) {
       return
     }
-    const trigger = triggersRef.current.get(previous)
+    // Zuerst der Ausloeser, aus dem geoeffnet wurde; nach einem Reload gibt es ihn nicht.
+    const openedFrom = openedFromRef.current
+    openedFromRef.current = null
+    const keyed = openedFrom === null ? undefined : triggersRef.current.get(openedFrom)
+    const trigger = keyed?.isConnected ? keyed : triggersRef.current.get(previous)
     const target = trigger?.isConnected ? trigger : headingRef.current
     target?.focus({ preventScroll: true })
   }, [openPhotoId, headingRef])
 
-  const triggerRef = useCallback((photoId: number) => {
-    let callback = triggerCallbacksRef.current.get(photoId)
+  const triggerRef = useCallback((triggerKey: TriggerKey) => {
+    let callback = triggerCallbacksRef.current.get(triggerKey)
     if (callback === undefined) {
       callback = (element: HTMLElement | null) => {
         if (element === null) {
-          triggersRef.current.delete(photoId)
+          triggersRef.current.delete(triggerKey)
         } else {
-          triggersRef.current.set(photoId, element)
+          triggersRef.current.set(triggerKey, element)
         }
       }
-      triggerCallbacksRef.current.set(photoId, callback)
+      triggerCallbacksRef.current.set(triggerKey, callback)
     }
     return callback
   }, [])

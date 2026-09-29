@@ -20,13 +20,17 @@ from PIL import Image
 from photosort import person_matching
 from photosort.face_analysis import (
     ANALYSIS_MAX_SIDE,
+    SAME_FACE_MIN_OVERLAP,
     Face,
     FaceAnalyzer,
     FaceBox,
+    box_overlap,
     build_face_analyzer,
     face_crop_jpeg,
     load_image,
     order_faces,
+    same_face,
+    unassigned_faces,
 )
 from tests.conftest import RealFaceModelInTestError
 
@@ -272,6 +276,141 @@ class TestTheOrder:
 
         assert len(ordered) == person_matching.MAX_FACES_PER_PHOTO
         assert order_faces(ordered) == ordered
+
+
+class TestFiniteDetectorRows:
+    """Spec 0551: Ein Gesicht mit nicht endlicher Geometrie wird nie benannt, nie mitgezaehlt,
+    nie aufgelistet und nie gespeichert. Geprueft wird VOR `is_usable` und vor der Obergrenze."""
+
+    @pytest.mark.parametrize("position", [0, 2, 7, 14], ids=["x", "breite", "landmarke", "wert"])
+    @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf], ids=["nan", "inf", "-inf"])
+    def test_a_row_with_a_non_finite_value_gives_no_face(self, position: int, value: float) -> None:
+        row = _row(100, 100, 200, 200)
+        row[position] = value
+
+        faces = FaceAnalyzer(RecordingDetector([row]), RecordingRecognizer()).detect(
+            _image(1000, 800)
+        )
+
+        assert faces == []
+
+    def test_a_non_finite_row_does_not_count_towards_the_cap(self) -> None:
+        """21 Zeilen, eine davon die groesste und mit NaN in der Box: es bleiben alle 20
+        endlichen."""
+        rows = [_row(40.0 * index, 0, 100 + index, 100 + index) for index in range(20)]
+        broken = _row(900, 500, 300, 300)
+        broken[0] = math.nan
+
+        faces = FaceAnalyzer(RecordingDetector([*rows, broken]), RecordingRecognizer()).detect(
+            _image(1280, 1000)
+        )
+
+        assert len(faces) == person_matching.MAX_FACES_PER_PHOTO
+        assert sorted(round(face.box.width * 1280) for face in faces) == list(range(100, 120))
+        assert all(math.isfinite(value) for face in faces for value in face.detection)
+
+
+def _box(x: float, y: float, width: float, height: float) -> FaceBox:
+    return FaceBox(x=x, y=y, width=width, height=height)
+
+
+def _face(box: FaceBox) -> Face:
+    return Face(box=box, detection=())
+
+
+class TestTheSameFace:
+    """Dyadische Boxen, damit die IoU binaer exakt ist."""
+
+    def test_the_same_box_overlaps_fully_disjoint_ones_not_at_all(self) -> None:
+        a = _box(0.25, 0.25, 0.25, 0.25)
+        b = _box(0.75, 0.0, 0.125, 0.125)
+
+        assert box_overlap(a, a) == 1.0
+        assert box_overlap(a, b) == 0.0
+        assert box_overlap(b, a) == 0.0
+
+    def test_the_overlap_is_symmetric(self) -> None:
+        a = _box(0.0, 0.0, 0.5, 0.5)
+        b = _box(0.25, 0.0, 0.5, 0.5)
+
+        assert box_overlap(a, b) == box_overlap(b, a) == 1 / 3
+
+    def test_exactly_the_threshold_is_the_same_face_just_below_is_not(self) -> None:
+        stored = _box(0.0, 0.0, 0.5, 0.5)
+        half = _box(0.0, 0.0, 0.5, 0.25)
+        below = _box(0.0, 0.0, 0.5, 0.25 - 2**-11)
+
+        assert box_overlap(stored, half) == SAME_FACE_MIN_OVERLAP
+        assert same_face(stored, half)
+        assert box_overlap(stored, below) == SAME_FACE_MIN_OVERLAP - 2**-10
+        assert not same_face(stored, below)
+
+    @pytest.mark.parametrize("field", ["x", "y", "width", "height"])
+    def test_nan_in_either_box_is_never_the_same_face(self, field: str) -> None:
+        box = _box(0.25, 0.25, 0.25, 0.25)
+        broken = FaceBox(**{**box.__dict__, field: math.nan})
+
+        assert not same_face(box, broken)
+        assert not same_face(broken, box)
+
+
+class TestUnassignedFaces:
+    FACES = [
+        _face(_box(0.0, 0.0, 0.25, 0.25)),
+        _face(_box(0.5, 0.0, 0.25, 0.25)),
+        _face(_box(0.0, 0.5, 0.25, 0.25)),
+    ]
+
+    def test_without_a_stored_box_every_index_stays(self) -> None:
+        assert unassigned_faces(self.FACES, []) == [0, 1, 2]
+
+    def test_two_stored_boxes_on_different_faces_take_both(self) -> None:
+        taken = [self.FACES[2].box, self.FACES[0].box]
+
+        assert unassigned_faces(self.FACES, taken) == [1]
+
+    def test_a_stored_box_without_a_matching_face_takes_nothing(self) -> None:
+        """Die Datei hat sich geaendert: Das Gesicht an der gespeicherten Stelle ist weg."""
+        assert unassigned_faces(self.FACES, [_box(0.75, 0.75, 0.125, 0.125)]) == [0, 1, 2]
+
+    def test_a_box_over_two_faces_takes_only_the_one_with_the_largest_overlap(self) -> None:
+        stored = _box(0.0, 0.0, 0.5, 0.5)
+        faces = [
+            _face(_box(0.0, 0.0, 0.5, 0.25)),  # IoU 1/2
+            _face(_box(0.0, 0.0, 0.5, 0.375)),  # IoU 3/4
+        ]
+
+        assert unassigned_faces(faces, [stored]) == [0]
+
+    @pytest.mark.parametrize("seed", range(4))
+    def test_the_result_is_ascending_and_independent_of_the_stored_order(self, seed: int) -> None:
+        taken = [self.FACES[1].box, _box(0.75, 0.75, 0.125, 0.125)]
+        random.Random(seed).shuffle(taken)
+
+        assert unassigned_faces(self.FACES, taken) == [0, 2]
+
+
+class TestTheAdapterBoxIsTheCropBox:
+    def test_the_crop_of_a_detected_face_shows_the_detected_region(self) -> None:
+        """Die Box aus `detect` (auf die Arbeitsfassung bezogen, normiert) schneidet im
+        Originalbild genau die Stelle aus, die der Detektor meinte - auch bei verkleinerter
+        Arbeitsfassung. Attrappe statt Modell: ein weisses Feld auf Schwarz."""
+        image = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        image[200:600, 1000:1400] = 255
+        # Die Arbeitsfassung ist halb so gross: Das Feld liegt dort bei (500, 100), 200 px breit.
+        analyzer = FaceAnalyzer(
+            RecordingDetector([_row(500, 100, 200, 200)]), RecordingRecognizer()
+        )
+        [face] = analyzer.detect(image)
+
+        with Image.open(io.BytesIO(face_crop_jpeg(image, face))) as crop:
+            pixels = np.asarray(crop.convert("L"), dtype=np.float64)
+        height, width = pixels.shape
+
+        assert pixels[height // 2, width // 2] > 240
+        # Der Rand um die Box liegt ausserhalb des Felds: Die Ecken sind schwarz.
+        assert pixels[0, 0] < 15
+        assert pixels[-1, -1] < 15
 
 
 class TestImageIo:

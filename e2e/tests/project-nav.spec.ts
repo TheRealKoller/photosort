@@ -5,7 +5,7 @@
  * der-kopfzeile.md und specs/features/0347-navigation-nebenbereich.md, Teststrategie;
  * specs/architecture/0002-testkonzept.md, Sektion "Eine Zieltabelle, zwei Darstellungen"): In
  * jsdom greifen Tailwind-Klassen nicht, `hidden`/`lg:hidden` blenden dort nichts aus, das Panel
- * hat dort IMMER fuenf Zeilen. Ein `toBeVisible()` waere dort eine Zusicherung, die immer dasselbe
+ * hat dort IMMER sechs Zeilen. Ein `toBeVisible()` waere dort eine Zusicherung, die immer dasselbe
  * sagt - unabhaengig davon, ob die Utility ueberhaupt noch am Element haengt. Die
  * Breakpoint-Zusage lebt deshalb nur hier, ebenso die beiden gemessenen Abnahmemasse aus AK4/AK5
  * (Ausloeserbreite, Gruppenabstand) und die gerenderte Trennlinie. Die Verhaltenspruefungen (drei
@@ -93,8 +93,8 @@ async function visibleCount(locator: import('@playwright/test').Locator): Promis
 
 /** Die drei Hauptziele der Leiste, in Anzeigereihenfolge. */
 const PRIMARY_LABELS = ['Projekt', 'Fotos', 'Endauswahl']
-/** Die zwei Nebenziele des Panels, in Anzeigereihenfolge. */
-const SECONDARY_LABELS = ['Einstellungen', 'Statistik']
+/** Die drei Nebenziele des Panels, in Anzeigereihenfolge - "Personen" seit Spec 0551 dahinter. */
+const SECONDARY_LABELS = ['Einstellungen', 'Statistik', 'Personen']
 
 test('blendet an der exakten Grenze 1024 px die Leiste aus, ohne den Ausloeser anzutasten', async ({
   page,
@@ -156,8 +156,8 @@ test('zeigt im Panel ueber die Grenze hinweg unterschiedliche Inhalte aus demsel
 }) => {
   /*
    * `getByRole` sieht den ACCESSIBILITY-TREE: was `display: none` traegt, faellt heraus. Genau
-   * darauf beruht diese Zusage - im DOM liegen bei beiden Breiten dieselben fuenf Zeilen, im
-   * Accessibility-Tree ab 1024 px nur die zwei Nebenziele. Die DOM-Zaehlung daneben schliesst den
+   * darauf beruht diese Zusage - im DOM liegen bei beiden Breiten dieselben sechs Zeilen, im
+   * Accessibility-Tree ab 1024 px nur die drei Nebenziele. Die DOM-Zaehlung daneben schliesst den
    * trivialen Gruen-Fall aus: ohne sie bestuende der 1024-px-Durchlauf auch dann, wenn die drei
    * Hauptzeilen gar nicht mehr gerendert wuerden - und unterhalb `lg:` waeren sie dann weg.
    */
@@ -177,7 +177,7 @@ test('zeigt im Panel ueber die Grenze hinweg unterschiedliche Inhalte aus demsel
     const panel = page.getByRole('dialog')
     await expect(panel, `Panel bei ${width} px`).toBeVisible()
 
-    await expect(panel.locator('a'), `Panelzeilen im DOM bei ${width} px`).toHaveCount(5)
+    await expect(panel.locator('a'), `Panelzeilen im DOM bei ${width} px`).toHaveCount(6)
     await expect(panel.getByRole('link'), `dargestellte Panelzeilen bei ${width} px`).toHaveText(
       expectedLabels,
     )
@@ -229,7 +229,7 @@ test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, 
 }) => {
   /*
    * ZWEI EIGENSCHAFTEN, EINE ZUSAGE: die Absetzung besteht aus dem groesseren Abstand UND der
-   * gerenderten Linie. Einzeln waere jede angreifbar - ein Abstand ohne Linie ist bei fuenf
+   * gerenderten Linie. Einzeln waere jede angreifbar - ein Abstand ohne Linie ist bei sechs
    * gleichfoermigen Zeilen kaum als Gruppengrenze lesbar, und eine Linie mit Alphakanal 0 oder
    * `border-style: none` ist gar keine.
    *
@@ -273,7 +273,7 @@ test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, 
   /*
    * DAS TRENNENDE ELEMENT WIRD AUS DER STRUKTUR HERGELEITET, nicht ueber einen Klassennamen
    * lokalisiert (Selektor-Konvention): gesucht ist der naechstgelegene Vorfahre der drei
-   * Hauptzeilen, der keine der beiden Nebenzeilen enthaelt und nicht das Panel selbst ist. Genau
+   * Hauptzeilen, der keine der drei Nebenzeilen enthaelt und nicht das Panel selbst ist. Genau
    * dieses Element traegt die Trennlinie.
    *
    * DIE ZEILEN WERDEN UEBER IHRE BESCHRIFTUNG ZUGEORDNET, NICHT UEBER IHRE POSITION: ein
@@ -318,7 +318,7 @@ test(`setzt die Nebengruppe im Panel bei ${MOBILE_WIDTH} px sichtbar ab (AK5)`, 
     { primary: [...PRIMARY_LABELS], secondary: [...SECONDARY_LABELS] },
   )
 
-  expect(separator.resolved, 'alle fuenf Panelzeilen ueber ihre Beschriftung gefunden').toBe(true)
+  expect(separator.resolved, 'alle sechs Panelzeilen ueber ihre Beschriftung gefunden').toBe(true)
   expect(separator.found, 'eigener Block um die drei Hauptzeilen gefunden').toBe(true)
   expect(separator.width, `border-bottom-width des Trenners (${separator.color})`).toBeGreaterThan(
     0,
@@ -502,8 +502,8 @@ test('legt das geoeffnete Panel vollstaendig sichtbar ueber den Seiteninhalt', a
   // ausserhalb des Sichtbereichs ueberdeckte nichts, und ein Panel, das nichts ueberdeckt, belegt
   // die Stapelreihenfolge nicht.
   //
-  // Seit Spec 0347 traegt das Panel bei dieser Breite FUENF Zeilen plus Trenner statt vier - die
-  // Zusage "vollstaendig im Sichtbereich" wird dadurch erst richtig scharf.
+  // Seit Spec 0347 traegt das Panel bei dieser Breite FUENF Zeilen plus Trenner statt vier, seit
+  // Spec 0551 SECHS - die Zusage "vollstaendig im Sichtbereich" wird dadurch erst richtig scharf.
   await page.setViewportSize({ width: MOBILE_WIDTH, height: VIEWPORT_HEIGHT })
   const projectId = await demoProjectId(page, DEMO_PROJECTS.large)
   await page.goto(`/projects/${projectId}/photos`)

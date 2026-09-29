@@ -1050,7 +1050,7 @@ describe('AlbumDraftPage', () => {
       id: 1,
       relative_path: 'a.jpg',
       event: morning,
-      persons: [{ person_id: 1, origin: 'recognized' }],
+      persons: [{ person_id: 1, origin: 'recognized', face: null }],
       motifs: motifsWith(['menschen']),
     })
     const nobody = photo({
@@ -1065,7 +1065,7 @@ describe('AlbumDraftPage', () => {
       relative_path: 'c.jpg',
       taken_at: '2026-07-21T09:00:00',
       event: nextDay,
-      persons: [{ person_id: 2, origin: 'corrected' }],
+      persons: [{ person_id: 2, origin: 'corrected', face: null }],
     })
 
     beforeEach(() => {

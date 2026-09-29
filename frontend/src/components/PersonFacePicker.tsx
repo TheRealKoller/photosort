@@ -1,20 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { ApiError } from '../api/client'
-import {
-  PERSON_REFUSALS,
-  addReference,
-  createPerson,
-  fetchFaceImage,
-  listFaces,
-} from '../api/persons'
+import { PERSON_REFUSALS, fetchFaceImage, listFaces } from '../api/persons'
 import type { FaceOut, PersonOut, PhotoOut } from '../api/types'
+import { assignmentMessage, useFaceAssignment } from '../hooks/useFaceAssignment'
+import type { FaceChoice } from '../hooks/useFaceAssignment'
 import { PERSONS_QUERY_KEY } from '../hooks/usePersons'
-import { storePhotoPersons } from '../hooks/usePhotoPersons'
-import { cn } from '../lib/utils'
+import { SelectableFaceCropTile } from './FaceCropTile'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -29,7 +24,7 @@ interface PersonFacePickerProps {
   persons: PersonOut[]
 }
 
-type Choice = { kind: 'reference'; personId: number } | { kind: 'create'; name: string }
+type Choice = FaceChoice
 
 /** Die Ablehnung eines Festlegens oder Zeigens - `nameInvalid` markiert das Namensfeld. */
 interface Refusal {
@@ -39,7 +34,7 @@ interface Refusal {
 
 /**
  * Die Gesichterwahl des Personenabschnitts: ein Gesicht des Fotos als Person zeigen
- * oder mit ihm eine neue Person festlegen - der einzige Weg, eine Person festzulegen.
+ * oder mit ihm eine neue Person festlegen.
  *
  * `GET /photos/{id}/faces` läuft erst beim Aufklappen, nie beim Blättern. Die Ausschnitte kommen
  * nur als Blob-URL und werden beim Zuklappen freigegeben; beim Fotowechsel bindet der Aufrufer den
@@ -60,21 +55,7 @@ export function PersonFacePicker({ projectId, photo, persons }: PersonFacePicker
     enabled: expanded,
   })
 
-  const mutation = useMutation({
-    mutationFn: ({ choice, faceIndex }: { choice: Choice; faceIndex: number }) =>
-      choice.kind === 'create'
-        ? createPerson(choice.name, photo.id, faceIndex)
-        : addReference(choice.personId, photo.id, faceIndex),
-    // Am Hook, nicht am Aufruf: Auch nach einem Fotowechsel mitten in der Anfrage landet die
-    // Zuordnung im Cache. Eine gezeigte Referenz ordnet die Person dem Foto per Korrektur zu.
-    onSuccess: (person) => {
-      void queryClient.invalidateQueries({ queryKey: PERSONS_QUERY_KEY })
-      storePhotoPersons(queryClient, projectId, photo.id, [
-        ...photo.persons.filter((entry) => entry.person_id !== person.id),
-        { person_id: person.id, origin: 'corrected' },
-      ])
-    },
-  })
+  const mutation = useFaceAssignment(projectId)
 
   function collapse(): void {
     setExpanded(false)
@@ -86,12 +67,8 @@ export function PersonFacePicker({ projectId, photo, persons }: PersonFacePicker
   async function choose(choice: Choice, faceIndex: number): Promise<void> {
     setRefusal(null)
     try {
-      const person = await mutation.mutateAsync({ choice, faceIndex })
-      setStatus(
-        choice.kind === 'create'
-          ? `${person.name} ist festgelegt.`
-          : `Gesicht als ${person.name} gezeigt.`,
-      )
+      const result = await mutation.mutateAsync({ choice, photoId: photo.id, faceIndex })
+      setStatus(assignmentMessage(choice.kind, result.person.name, result.learned))
       collapse()
     } catch (cause) {
       const detail =
@@ -238,62 +215,44 @@ function FaceTiles({
   disabled: boolean
   onSelect: (index: number) => void
 }) {
-  const [urls, setUrls] = useState<Record<number, string>>({})
+  // Die Blobs werden hier abgefragt; die Kachel macht daraus die Blob-URL und gibt sie frei.
+  const [blobs, setBlobs] = useState<Record<number, Blob | typeof FAILED>>({})
 
   useEffect(() => {
     let cancelled = false
-    const created: string[] = []
     for (const face of faces) {
       fetchFaceImage(photoId, face.index).then(
         (blob) => {
-          const url = URL.createObjectURL(blob)
-          if (cancelled) {
-            URL.revokeObjectURL(url)
-            return
+          if (!cancelled) {
+            setBlobs((current) => ({ ...current, [face.index]: blob }))
           }
-          created.push(url)
-          setUrls((current) => ({ ...current, [face.index]: url }))
         },
         () => {
           if (!cancelled) {
-            setUrls((current) => ({ ...current, [face.index]: FAILED }))
+            setBlobs((current) => ({ ...current, [face.index]: FAILED }))
           }
         },
       )
     }
     return () => {
       cancelled = true
-      for (const url of created) {
-        URL.revokeObjectURL(url)
-      }
     }
   }, [faces, photoId])
 
   return (
     <ul className="flex flex-wrap gap-3">
       {faces.map((face, position) => {
-        const url = urls[face.index]
-        const failed = url === FAILED
-        const label = `Gesicht ${position + 1} von ${faces.length}`
+        const blob = blobs[face.index]
         return (
           <li key={face.index}>
-            <button
-              type="button"
-              className={cn(
-                'size-16 overflow-hidden rounded-md border-2',
-                selected === face.index ? 'border-accent' : 'border-border-control',
-                failed && 'bg-separator',
-              )}
-              aria-label={failed ? `${label} – Ausschnitt nicht verfügbar` : label}
-              aria-pressed={selected === face.index}
-              aria-disabled={failed || undefined}
+            <SelectableFaceCropTile
+              source={blob === FAILED ? undefined : blob}
+              failed={blob === FAILED}
+              label={`Gesicht ${position + 1} von ${faces.length}`}
+              pressed={selected === face.index}
               disabled={disabled}
-              onClick={failed ? undefined : () => onSelect(face.index)}
-            >
-              {url !== undefined && !failed && (
-                <img src={url} alt="" className="size-full object-cover" />
-              )}
-            </button>
+              onSelect={() => onSelect(face.index)}
+            />
           </li>
         )
       })}
