@@ -206,7 +206,7 @@ Der Orchestrator hält den Ablauf daraufhin an, pusht nichts und meldet an Danie
 
 ## Folgeauftrag: Abgleich mit `main` (nach `SendMessage` vom Orchestrator)
 
-Der Orchestrator gleicht den Feature-Branch nach deinem Abschlussbericht an zwei Zeitpunkten mit `main` ab — einmal vor dem Push/der PR-Eröffnung und einmal als erste Handlung vor der Finalisierung. Hat der Abgleich etwas verändert, meldet er sich per `SendMessage` an denselben, weiterhin offenen Subagenten-Kontext: kein neuer Lauf, du hast weiterhin Zugriff auf Branch, Commits und den bisherigen Kontext.
+Der Orchestrator gleicht den Feature-Branch nach deinem Abschlussbericht an zwei Zeitpunkten mit `main` ab — einmal vor dem Push/der PR-Eröffnung und einmal als erste Handlung von Schritt 8, vor dem letzten Push. Hat der Abgleich etwas verändert, meldet er sich per `SendMessage` an denselben, weiterhin offenen Subagenten-Kontext: kein neuer Lauf, du hast weiterhin Zugriff auf Branch, Commits und den bisherigen Kontext.
 
 Zu Beginn dieses Folgeauftrags gibst du den Block `## Laufstand` erneut aus, mit Auflösung und Qualitätscheck als Teilschritten — sonst behauptet der letzte sichtbare Stand „alles fertig", während noch gearbeitet wird.
 
