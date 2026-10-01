@@ -13,7 +13,7 @@ import re
 import sqlite3
 import threading
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -32,18 +32,26 @@ from photosort.db import Base
 from photosort.face_analysis import MODEL_KEY, FaceBox
 from photosort.main import app
 from photosort.models import (
+    CriterionScoringRun,
+    Event,
     FeedbackEvent,
+    MotifAssessmentSource,
     Person,
     PersonReference,
     Photo,
     PhotoMotifStrength,
     PhotoPersonCorrection,
     PhotoPersonDetection,
+    PhotoRanking,
     Project,
+    ScanStatus,
+    ScoringRun,
     User,
 )
+from photosort.motif_strengths import upsert_assessment
 from photosort.persons import create_person, set_correction
 from photosort.security import create_access_token, hash_password
+from photosort.worker import rebuild_run_selection
 from tests.face_fakes import (
     SENTINEL_TEXT,
     Color,
@@ -1135,6 +1143,146 @@ async def test_assigning_defining_removing_and_revoking_touch_nothing_else(
     await stack.client.put(f"/photos/{photo}/persons/{anna}", json={"applies": False})
 
     assert await everything_else() == before
+
+
+_WITHOUT_PERSON = {"leader": 1, "runner_up": 2, "weak": None}
+_WITH_PERSON_ON_WEAK = {"leader": 1, "runner_up": None, "weak": 2}
+
+
+class _DraftLay:
+    """Ein erfolgreicher Lauf mit einem Event und von Hand gesetzten Vorschlagsplaetzen. `leader`
+    und `runner_up` tragen Motiv `a`, `weak` (eine Vollfarbe mit einem Gesicht) traegt nichts und
+    hat den schwaechsten Rang: Ein Neuaufbau gibt Platz 2 an `weak`, sobald dort eine wirksame
+    Person steht, sonst an `runner_up`."""
+
+    async def build(self, stack: PersonStack, stale: dict[str, int | None]) -> _DraftLay:
+        self.stack = stack
+        self.project = await stack.project()
+        self.photos = {
+            "leader": await stack.photo(self.project, "leader", None, taken_at=NOW),
+            "runner_up": await stack.photo(
+                self.project, "runner_up", None, taken_at=NOW + timedelta(minutes=30)
+            ),
+            "weak": await stack.photo(self.project, "weak", RED, taken_at=NOW + timedelta(hours=1)),
+        }
+        async with stack.factory() as session:
+            # Zwei Plaetze: die Vorbelegung gaebe drei Fotos nur einen.
+            project = await session.get(Project, self.project)
+            assert project is not None
+            project.selection_target = 2
+            scoring_run = ScoringRun(
+                project_id=self.project, status=ScanStatus.SUCCESS, started_at=NOW
+            )
+            session.add(scoring_run)
+            await session.flush()
+            run = CriterionScoringRun(
+                project_id=self.project,
+                scoring_run_id=scoring_run.id,
+                status=ScanStatus.SUCCESS,
+                started_at=NOW,
+                finished_at=NOW,
+                last_progress_at=NOW,
+            )
+            session.add(run)
+            await session.flush()
+            event = Event(
+                criterion_scoring_run_id=run.id,
+                position=1,
+                started_at=NOW,
+                ended_at=NOW + timedelta(hours=1),
+            )
+            session.add(event)
+            await session.flush()
+            self.run = run.id
+            for role, rank in (("leader", 0.9), ("runner_up", 0.8), ("weak", 0.1)):
+                await upsert_assessment(
+                    session,
+                    self.photos[role],
+                    source=MotifAssessmentSource.CLOUD,
+                    strengths={"a": 0.0 if role == "weak" else 1.0},
+                    excluded_document=False,
+                    provider="testanbieter",
+                    computed_at=NOW,
+                )
+                session.add(
+                    PhotoRanking(
+                        criterion_scoring_run_id=run.id,
+                        photo_id=self.photos[role],
+                        event_id=event.id,
+                        rank_score=rank,
+                        rank_position=1,
+                        selection_position=stale[role],
+                    )
+                )
+            await session.commit()
+        return self
+
+    async def draft(self) -> dict[str, int | None]:
+        async with self.stack.factory() as session:
+            rows = await session.execute(
+                select(PhotoRanking.photo_id, PhotoRanking.selection_position).where(
+                    PhotoRanking.criterion_scoring_run_id == self.run
+                )
+            )
+            positions = {photo_id: position for photo_id, position in rows.all()}
+        return {role: positions[photo_id] for role, photo_id in self.photos.items()}
+
+    async def rebuild(self) -> None:
+        async with self.stack.factory() as session:
+            await rebuild_run_selection(session, self.project)
+            await session.commit()
+
+
+@pytest.mark.parametrize(
+    ("action", "anna_on_weak_before", "stale", "rebuilt"),
+    [
+        pytest.param("zuordnen", False, _WITHOUT_PERSON, _WITH_PERSON_ON_WEAK, id="put-zuordnung"),
+        pytest.param("festlegen", False, _WITHOUT_PERSON, _WITH_PERSON_ON_WEAK, id="post-person"),
+        pytest.param("referenz", False, _WITHOUT_PERSON, _WITH_PERSON_ON_WEAK, id="post-referenz"),
+        pytest.param("loeschen", True, _WITH_PERSON_ON_WEAK, _WITHOUT_PERSON, id="delete-person"),
+        pytest.param("filtern", True, _WITHOUT_PERSON, _WITH_PERSON_ON_WEAK, id="get-filter"),
+    ],
+)
+async def test_no_person_endpoint_moves_the_draft_but_the_next_rebuild_does(
+    stack: PersonStack,
+    action: str,
+    anna_on_weak_before: bool,
+    stale: dict[str, int | None],
+    rebuilt: dict[str, int | None],
+) -> None:
+    """Lage: ein veralteter Vorschlag, den ein Neuaufbau aendern wuerde. Der Endpunkt laesst ihn
+    stehen, der Neuaufbau danach aendert ihn - das Paar steht in einem Fall, weil die erste
+    Haelfte allein auch bei einem Vorschlag bestuende, der Personen nie liest."""
+    anchor = await stack.photo(await stack.project("Anker"), "anker", ANCHOR)
+    anna = await stack.define("Anna", 0, anchor)
+    lay = await _DraftLay().build(stack, stale)
+    weak = lay.photos["weak"]
+    if anna_on_weak_before:
+        await _detect_on(stack, weak, anna, 0)
+
+    if action == "zuordnen":
+        response = await stack.client.put(f"/photos/{weak}/persons/{anna}", json={"applies": True})
+    elif action == "festlegen":
+        response = await stack.client.post(
+            "/persons", json={"name": "Berta", "photo_id": weak, "face_index": 0}
+        )
+    elif action == "referenz":
+        response = await stack.client.post(
+            f"/persons/{anna}/references", json={"photo_id": weak, "face_index": 0}
+        )
+    elif action == "loeschen":
+        response = await stack.client.delete(f"/persons/{anna}")
+    else:
+        response = await stack.client.get(
+            f"/projects/{lay.project}/photos", params={"person_id": anna}
+        )
+
+    assert response.is_success, response.text
+    assert await lay.draft() == stale
+
+    await lay.rebuild()
+
+    assert await lay.draft() == rebuilt
 
 
 # --- Die Schreibsperre ------------------------------------------------------------------------

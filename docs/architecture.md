@@ -1114,14 +1114,15 @@ Verarbeitungs-Cache (Thumbnails).
     Sortierung**: der Qualitätswert selbst entsteht in `quality.py` — dort stehen die Gewichte
     (`QUALITY_CRITERION_WEIGHTS`) und `LOCAL_CORRECTION_SPAN` an genau einer Stelle, und
     `album_suitability.py` hält Stufenband, Ankertexte und den Parser der Modellaussage. Seit Spec
-    [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md) hängt am Ende desselben
-    Schritts — innerhalb der bestehenden Phase `RANKING`, unmittelbar hinter den Rangzeilen — der
-    Auswahlvorschlag aus dem vierten reinen Modul dieser Familie, `selection.py`: es trägt die
+    [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md) folgt dem Schritt der
+    Auswahlvorschlag aus dem vierten reinen Modul dieser Familie, `selection.py`. Seit Spec 0548 (ADR
+    [`0129`](../specs/decisions/0129-personen-als-abdeckungsziel-des-auswahlvorschlags-nach-der-phase-persons.md))
+    rechnet ihn der Kriterien-Lauf erst nach der Phase `persons` und vor dem Erfolgsvermerk; der
+    Versatz-Neuaufbau rechnet ihn direkt hinter den Rangzeilen. Das Modul trägt die
     Kontingent- und Vergabelogik samt ihren fünf Stellschrauben (`EVENT_SHARE_CAP`,
     `MOTIF_PRESENCE_THRESHOLD`, `SIMILARITY_DECAY`, `SIMILARITY_TIME_WINDOW`,
     `DEFAULT_TARGET_DIVISOR`) an genau einer Stelle und nennt `motifs.py` nicht — die Grenze, ab
     der ein Motiv als getragen gilt, ist **keines** der Anzeigebänder (ADR 0091 Punkt 8). Der
-    Klassifizierungs-Prompt lebt in `classification_prompt.py` (Motivblock plus
     Klassifizierungs-Prompt lebt in `classification_prompt.py` (Motivblock plus
     Albumtauglichkeits-Block); `motifs.py` bleibt reines Registermodul und weiß nichts über die
     Antwortform des Anbieters. `classification.py`s mediapipe Face Detector Task-API (gepinntes
@@ -1307,7 +1308,9 @@ Verarbeitungs-Cache (Thumbnails).
     die Box des einen Kandidatengesichts je erkannter Person in die Erkennungszeile
     (`decide_assignments` liefert Person → Gesichtsindex); ist die Box nicht endlich, benennt sie
     die Person auf diesem Foto nicht. Fortschritt in
-    `criterion_scoring_runs.persons_photos_total/_processed` (`NULL` = Phase lief nicht).
+    `criterion_scoring_runs.persons_photos_total/_processed` (`NULL` = Phase lief nicht). Erst nach
+    dieser Phase und im selben Commit wie der Erfolgsvermerk rechnet der Lauf den Auswahlvorschlag
+    (Spec 0548, ADR 0129). Er hat dafür keinen eigenen Teilschritt.
   - **Geladene Modell-Assets** stehen in einem Manifest (`model_assets.py`: Dateiname, URL mit
     fester Revision, Größe, SHA256) und kommen über `backend/scripts/fetch_model_assets.py`
     (Image-Build, CI, Bare-Metal-Setup): `label_embedder.onnx`,
@@ -1919,14 +1922,22 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `selection.py::select_album_draft` in zwei Stufen — Kontingente je Event (jedes Event
     mindestens ein Platz, der Rest nach `√n_i` im Größte-Reste-Verfahren, Obergrenze
     `min(n_i, max(⌈T/m⌉, ⌈0,25·T⌉))` mit Umverteilung der gekappten Plätze) und darin eine
-    motivgeführte Greedy-Vergabe mit Ähnlichkeitsabwertung
+    motiv- und personengeführte Greedy-Vergabe mit Ähnlichkeitsabwertung
     (`rank_score · 0,5^Σ ähnlichkeit`, `ähnlichkeit = geteiltes_motiv · max(0, 1 − |Δt|/15min)`).
+    Seit Spec 0548 (ADR
+    [`0129`](../specs/decisions/0129-personen-als-abdeckungsziel-des-auswahlvorschlags-nach-der-phase-persons.md))
+    sind die wirksam zugeordneten Personen eines Bildes (`SelectionCandidate.person_ids`, nur Ids,
+    über `persons.py::load_effective_persons`) Abdeckungsziele wie die Motive. Sie bilden eine
+    eigene Menge neben den Motiven, ändern weder Kontingente noch das Ähnlichkeitsmaß, und ohne
+    Person in einem Event ist die Vergabe dort unverändert.
     Auswahlfähig ist eine Rangzeile mit `rank_score IS NOT NULL` und ohne `excluded_document` am
-    Foto. **Geschrieben an genau einer Stelle** (`worker.py`, ein struktureller Wächter in
-    `test_models.py` hält das fest), mit drei Auslösern: dem Kriterien-Lauf und dem Neuaufbau nach
-    einer Versatz-Änderung (beide über `_build_grouping_and_rankings`, innerhalb der bestehenden
-    Phase `RANKING` — **kein** neuer `ClassificationPhase`-Wert) sowie `rebuild_run_selection`
-    hinter dem Richtwert-Endpunkt. **Der Wert ist lauf-global und hat keinen Nutzerbezug.**
+    Foto. **Geschrieben an genau einer Stelle** (`worker.py::_apply_run_selection`, ein
+    struktureller Wächter in `test_models.py` hält das fest), mit drei Auslösern: dem Kriterien-Lauf
+    (nach der Phase `persons`, vor dem Erfolgsvermerk), dem Neuaufbau nach einer Versatz-Änderung
+    (`rebuild_run_grouping`, hinter `_build_grouping_and_rankings`) — **kein** neuer
+    `ClassificationPhase`-Wert — sowie `rebuild_run_selection` hinter dem Richtwert-Endpunkt.
+    Personen anlegen, entfernen oder korrigieren löst keinen Neuaufbau aus. **Der Wert ist
+    lauf-global und hat keinen Nutzerbezug.**
     Bestandsläufe tragen überall `NULL` und zeigen einen leeren Vorschlag, bis ein neuer Lauf oder
     eine Richtwert-Änderung ihn erzeugt; eine rückwirkend rechnende Migration gibt es bewusst
     nicht.
@@ -2327,8 +2338,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   nur die Phase `persons`; die Korrektur (`applies`, `user_id` als Audit,
   `UniqueConstraint(photo_id, person_id)` ohne `user_id`) schreibt nur der Nutzer, und kein Lauf
   fasst sie an. Die wirksame Zuordnung entsteht im Lesepfad — Korrektur vor Erkennung — in genau
-  einem SQL-Konstrukt (`persons.py::effective_person_assignments`, samt Spalte `face`) für Filter
-  und Anzeige. Beide Tabellen fallen mit dem Foto und über `project_deletion.py` mit dem Projekt.
+  einem SQL-Konstrukt (`persons.py::effective_person_assignments`, samt Spalte `face`) für Filter,
+  Anzeige und Auswahlvorschlag. Beide Tabellen fallen mit dem Foto und über `project_deletion.py`
+  mit dem Projekt.
   - **Gesichtsbox** *(Spec 0551, ADR 0127, Migration `b0814fc600bf`)*: beide Tabellen tragen
     `face_box_x/_y/_width/_height` (`FLOAT NULL`, auf die Display-Variante normiert), nur für das
     Gesicht einer festgelegten Person; `ck_…_face_box` verlangt alle vier `NULL` oder alle vier
