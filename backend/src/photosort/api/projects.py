@@ -1105,10 +1105,11 @@ async def _reject_while_a_criterion_run_is_active(session: AsyncSession, project
     ENGER als `api/cameras.py::_reject_while_a_run_is_active`, das auch den Scan erfasst: nur
     dieser Lauftyp schreibt `selection_position`, der Scan nicht.
 
-    Der laufende Lauf liest den Richtwert am Ende seiner Phase `RANKING`. Ohne diesen Waechter
-    schreibt der Endpunkt den neuen Wert, waehrend der Lauf noch mit dem alten rechnet - Ergebnis
-    ist ein Vorschlag nach altem Richtwert unter einer Oberflaeche, die den neuen anzeigt. Die
-    Abweichung heilt erst beim naechsten Ausloeser und ist bis dahin nirgends als Fehler sichtbar.
+    Der laufende Lauf liest den Richtwert unmittelbar vor seinem Erfolgsvermerk. Ohne diesen
+    Waechter schreibt der Endpunkt den neuen Wert, waehrend der Lauf noch mit dem alten rechnet -
+    Ergebnis ist ein Vorschlag nach altem Richtwert unter einer Oberflaeche, die den neuen anzeigt.
+    Die Abweichung heilt erst beim naechsten Ausloeser und ist bis dahin nirgends als Fehler
+    sichtbar.
 
     Geprueft wird nur der NEUESTE Lauf (Muster `delete_project`), damit ein haengengebliebener
     Altlauf nicht dauerhaft blockiert - ein solcher wird ohnehin vom Watchdog auf FAILED

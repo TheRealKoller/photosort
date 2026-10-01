@@ -2,9 +2,10 @@
 
 Genau das, was die reine Funktion (tests/test_selection.py) nicht kennt - die Bildung der
 auswahlfaehigen Menge (letzter erfolgreicher Lauf, `rank_score IS NOT NULL`, kein
-`excluded_document`, wirksame Staerken ueber `load_effective_strengths`), das Schreiben von
-`selection_position`, die Einbettung in `_build_grouping_and_rankings` und
-`rebuild_run_selection`. Kein Fall hier wiederholt eine Aussage des Verfahrens selbst.
+`excluded_document`, wirksame Staerken ueber `load_effective_strengths`, wirksame Personen ueber
+`load_effective_persons`), das Schreiben von `selection_position` und die beiden Neuaufbauten
+`rebuild_run_selection` und `rebuild_run_grouping`. Kein Fall hier wiederholt eine Aussage des
+Verfahrens selbst.
 """
 
 from __future__ import annotations
@@ -505,11 +506,11 @@ class TestADraftDoesNotMoveWhileTheViewIsUsed:
         assert after[runner_up.id] == 2
 
 
-class TestTheDraftIsPartOfTheRankingPhase:
+class TestTheDraftHasNoPhaseOfItsOwn:
     async def test_no_new_classification_phase_value_was_introduced(self) -> None:
-        """Der Vorschlag ist die Fortsetzung der Phase `RANKING`, kein eigener Teilschritt mit
-        eigener Fortschrittsstufe in der Oberflaeche. `persons` ist der eigene
-        Teilschritt der Personen-Erkennung, nicht der Vorschlag."""
+        """Der Vorschlag ist kein eigener Teilschritt mit eigener Fortschrittsstufe in der
+        Oberflaeche: Er rechnet unter der zuletzt gesetzten Phase. `persons` ist der Teilschritt
+        der Personen-Erkennung, nicht der Vorschlag."""
         assert [phase.value for phase in ClassificationPhase] == [
             "remote_categories",
             "criteria",
@@ -521,10 +522,9 @@ class TestTheDraftIsPartOfTheRankingPhase:
     async def test_rebuilding_the_grouping_also_produces_the_draft(
         self, db_session: AsyncSession
     ) -> None:
-        """Die Einbettung am gemeinsamen Weg beider Auslöser: `rebuild_run_grouping` loescht
-        Events und Rangzeilen und baut sie ueber `_build_grouping_and_rankings` neu auf - dort
-        haengt der Vorschlag unmittelbar hinter den Rangzeilen. Ohne die Einbettung stuende die
-        Spalte danach ueberall auf `NULL`."""
+        """`rebuild_run_grouping` loescht Events und Rangzeilen und baut sie ueber
+        `_build_grouping_and_rankings` neu auf; den Vorschlag rechnet es danach ausdruecklich
+        selbst. Ohne diesen Aufruf stuende die Spalte danach ueberall auf `NULL`."""
         project = await _project(db_session)
         run = await _successful_run(db_session, project)
         event = await _event_row(db_session, run, 1)
