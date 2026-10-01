@@ -36,6 +36,7 @@ from photosort.models import (
     Person,
     PersonReference,
     Photo,
+    PhotoAlbumSuitability,
     PhotoMotifStrength,
     PhotoPersonCorrection,
     PhotoPersonDetection,
@@ -444,6 +445,88 @@ async def test_the_phase_does_not_run_and_leaves_old_detections(
     assert run.persons_photos_total is None
     assert run.persons_photos_processed is None
     assert await _detections(db_session) == expected
+
+
+# --- Der Auswahlvorschlag entsteht nach der Phase ---------------------------------------------
+
+
+async def _draft_lay(session: AsyncSession, cache_dir: Path) -> tuple[_Lay, Photo, Photo]:
+    """Ein Event, ein Platz, kein vorkommendes Motiv. `strong` hat die hoehere Modellstufe;
+    `weak` bekommt den Platz nur, wenn auf ihm eine Person steht. Die Stufen stehen als Bestand
+    in der Tabelle - ein lokaler Lauf liest sie dort, ohne die Cloud zu fragen."""
+    lay = await _Lay(session, cache_dir).build()
+    lay.project.selection_target = 1
+    strong = await _photo(session, lay.project, cache_dir, "stark", RED)
+    weak = await _photo(session, lay.project, cache_dir, "schwach", GREEN)
+    for photo, level in ((strong, 5), (weak, 1)):
+        session.add(
+            PhotoAlbumSuitability(
+                photo_id=photo.id,
+                level=level,
+                reason=None,
+                provider="testanbieter",
+                computed_at=TAKEN,
+            )
+        )
+    await session.commit()
+    return lay, strong, weak
+
+
+async def _selection_positions(session: AsyncSession, run: CriterionScoringRun) -> dict[int, int]:
+    rows = (
+        await session.execute(
+            select(PhotoRanking.photo_id, PhotoRanking.selection_position).where(
+                PhotoRanking.criterion_scoring_run_id == run.id,
+                PhotoRanking.selection_position.is_not(None),
+            )
+        )
+    ).all()
+    return {photo_id: position for photo_id, position in rows}
+
+
+@pytest.mark.parametrize("recognised", [True, False], ids=["erkannt", "unbekannt"])
+async def test_the_first_run_of_a_project_already_considers_its_own_recognitions(
+    db_session: AsyncSession, tmp_path: Path, recognised: bool
+) -> None:
+    """Vor diesem Lauf gibt es keine Erkennung. Steht der rangschwaechere Traeger von Anna im
+    Vorschlag, ist er nach der Phase `persons` gerechnet; die Gegenprobe mit einem unbekannten
+    Gesicht gibt den Platz dem staerkeren Bild."""
+    lay, strong, weak = await _draft_lay(db_session, tmp_path)
+    await _define(db_session, ANNA, 0, lay.anchor, lay.user)
+    faces = [face_embedding(0)] if recognised else UNKNOWN_FACES
+    analyzer = FakeFaceAnalyzer({RED: [], GREEN: faces})
+
+    run = await _run(db_session, lay.project, lay.scoring_run, tmp_path, lambda: analyzer)
+
+    assert run.status is ScanStatus.SUCCESS
+    assert await _selection_positions(db_session, run) == (
+        {weak.id: 1} if recognised else {strong.id: 1}
+    )
+
+
+@pytest.mark.parametrize("lage", ["nur-fremdes-modell", "builder-scheitert"])
+async def test_without_the_phase_the_draft_still_considers_the_standing_detection(
+    db_session: AsyncSession, tmp_path: Path, lage: str
+) -> None:
+    """Die Phase entfaellt, der Vorschlag nicht: er steht hinter der Phase, nicht in ihrem
+    Zweig, den ein frueher Ruecksprung mitnaehme. Die alte Erkennung zaehlt."""
+    lay, _strong, weak = await _draft_lay(db_session, tmp_path)
+    anna = await _define(db_session, ANNA, 0, lay.anchor, lay.user)
+    await _old_detection(db_session, weak, anna)
+    builder: Callable[[], FaceAnalyzerLike] = ExplodingAnalyzer
+    if lage == "nur-fremdes-modell":
+        await db_session.execute(PersonReference.__table__.update().values(model_key="alt"))
+        await db_session.commit()
+    else:
+
+        def builder() -> FaceAnalyzerLike:
+            raise RuntimeError("Modell nicht ladbar")
+
+    run = await _run(db_session, lay.project, lay.scoring_run, tmp_path, builder)
+
+    assert run.status is ScanStatus.SUCCESS
+    assert run.persons_photos_total is None
+    assert await _selection_positions(db_session, run) == {weak.id: 1}
 
 
 # --- Nur verarbeitete Fotos werden ersetzt ----------------------------------------------------
@@ -1003,7 +1086,6 @@ async def _motif_twin(cache_dir: Path, *, recognised: bool) -> tuple[object, ...
                     PhotoRanking.photo_id,
                     PhotoRanking.rank_score,
                     PhotoRanking.rank_position,
-                    PhotoRanking.selection_position,
                 ).order_by(PhotoRanking.photo_id)
             )
         ).all()
@@ -1019,6 +1101,8 @@ async def _motif_twin(cache_dir: Path, *, recognised: bool) -> tuple[object, ...
 
 
 async def test_a_recognised_person_is_no_motif(tmp_path: Path) -> None:
+    """Motivstaerken, Rangfolge und Statistik sind mit und ohne erkannte Person gleich. Den
+    Auswahlvorschlag bestimmt eine Person mit; das pruefen die Faelle zum Vorschlag oben."""
     assert await _motif_twin(tmp_path / "mit", recognised=True) == await _motif_twin(
         tmp_path / "ohne", recognised=False
     )

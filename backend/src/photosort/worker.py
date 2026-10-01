@@ -2051,16 +2051,10 @@ async def _build_grouping_and_rankings(
                 )
             )
 
-    # DER AUSWAHLVORSCHLAG ist die FORTSETZUNG dieses Schritts, kein eigener Teilschritt: er
-    # haengt unmittelbar hinter den Rangzeilen und innerhalb der bestehenden Phase `RANKING` -
-    # kein neuer `ClassificationPhase`-Wert, keine neue Fortschrittsstufe in der Oberflaeche.
-    # Damit sind beide Aufrufer dieser Funktion abgedeckt (Kriterien-Lauf und Neuaufbau nach
-    # einer Versatz-Aenderung).
-    #
-    # Das `flush` davor: `_apply_run_selection` liest die Rangzeilen aus der Datenbank, und die
-    # eben hinzugefuegten stehen dort erst danach.
+    # Das `flush` am Ende: Beide Aufrufer rechnen danach den Auswahlvorschlag
+    # (`_apply_run_selection`), und der liest die Rangzeilen aus der Datenbank - die eben
+    # hinzugefuegten stehen dort erst danach.
     await session.flush()
-    await _apply_run_selection(session, run, project_id)
 
 
 async def _apply_run_selection(
@@ -2302,6 +2296,9 @@ async def rebuild_run_grouping(session: AsyncSession, project_id: int) -> None:
     # waere ueber eine authentifizierte Anfrage beliebig oft wiederholbar. Der Neuaufbau liest die
     # abgelegte Auskunft; unbekannte Namen behalten ihre Namen (Zustand 1).
     await _build_grouping_and_rankings(session, run, project_id, values_by_photo_id, None, None)
+    # Der Vorschlag gehoert zur neuen Gliederung: ohne ihn stuende `selection_position` nach dem
+    # Loeschen der Rangzeilen ueberall auf `NULL`.
+    await _apply_run_selection(session, run, project_id)
 
 
 def _persons_on_photo(
@@ -3053,9 +3050,21 @@ async def run_criterion_scoring(
             build_landmark_gazetteer,
         )
 
+        # Die Id VOR der Phase: Ein verworfener Block rollt die Session zurueck und expired dabei
+        # jedes Objekt, auch `project` - ein `project.id` danach liefe in ein Nachladen ausserhalb
+        # des Async-Kontexts.
+        project_id = project.id
+
         # Die LETZTE Phase, nach der Rangfolge: Die Personenangabe ist kein Motiv und geht in
-        # keine Motivstaerke, keine Rangfolge und keinen Auswahlvorschlag ein.
-        await _recognize_persons(session, run, project.id, cache_dir, build_face_analyzer)
+        # keine Motivstaerke und keine Rangfolge ein.
+        await _recognize_persons(session, run, project_id, cache_dir, build_face_analyzer)
+
+        # DER AUSWAHLVORSCHLAG hinter der Phase `persons` und AUSSERHALB von
+        # `_recognize_persons`: Er liest die Namen, die dieser Lauf ergeben hat - auch beim ersten
+        # Lauf eines Projekts -, und entsteht auch dann, wenn die Phase entfaellt. Kein eigener
+        # `ClassificationPhase`-Wert: er rechnet unter der zuletzt gesetzten Phase und landet
+        # im selben Commit wie der Erfolgsvermerk.
+        await _apply_run_selection(session, run, project_id)
 
         run.status = ScanStatus.SUCCESS
         _set_phase(run, None)
