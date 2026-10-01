@@ -15,13 +15,12 @@ Zugesichert wird an zwei Dateien, Reihenfolgen jeweils ueber Zeichenoffsets:
 Nicht zugesichert und deshalb Dokumentdurchsicht: die Ruecknahme bei einem PR ohne Merge und dass
 GitHub den Lauf der Eroeffnung tatsaechlich abbricht (Beobachtung am Umsetzungs-PR).
 
-**Mutationsnachweis (2026-10-01, nach Gruen gefuehrt).** Am Text der echten `ship-feature`-Datei
-je einzeln gesetzt und rot bekommen: der Codeblock mit der Statuszeile aus Schritt 6 zurueck in
-Schritt 8 verschoben; eine zweite Setz-Anweisung `**Status:** Implemented` in Schritt 8 ergaenzt;
+**Mutationsprobe bei jeder Aenderung eines Musters.** Am Text der echten `ship-feature`-Datei muss
+jede dieser Mutationen einzeln rot werden: der Codeblock mit der Statuszeile aus Schritt 6 zurueck
+in Schritt 8 verschoben; eine zweite Setz-Anweisung `**Status:** Implemented` in Schritt 8;
 `copilot-review-anfordern` in Schritt 6 vor die Statuszeile gezogen; das `git push` hinter der
-Statuszeile entfernt. Die drei `ci.yml`-Mutationen laufen als Gegenproben unten mit. Die geforderte
-Nicht-Reaktion blieb gruen: die Ruecknahme mit `**Status:** Accepted` in Schritt 8. Wer ein Muster
-aendert, wiederholt diese Probe, statt sie zu glauben.
+Statuszeile entfernt. Die drei `ci.yml`-Mutationen laufen als Gegenproben unten mit. Gruen bleiben
+muss die Ruecknahme mit `**Status:** Accepted` in Schritt 8.
 
 Eigene duenne Leser, kein Import aus Nachbarmodulen; kein Netzwerk, gelesen werden ausschliesslich
 Dateien dieses Repositoriums.
