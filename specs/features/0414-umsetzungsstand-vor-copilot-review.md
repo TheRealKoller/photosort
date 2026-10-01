@@ -1,6 +1,6 @@
 # 0414 - Umsetzungsstand steht vor dem Copilot-Review im Pull Request
 
-**Status:** Accepted
+**Status:** Implemented ([PR #554](https://github.com/TheRealKoller/photosort/pull/554))
 **Erstellt:** 2026-10-01
 **Bezug:** [Issue #414](https://github.com/TheRealKoller/photosort/issues/414), ADR [`0128`](../decisions/0128-die-spec-statuszeile-steht-vor-dem-copilot-review-im-pull-request.md)
 
