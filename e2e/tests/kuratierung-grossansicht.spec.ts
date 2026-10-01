@@ -8,8 +8,10 @@
  * 1. Ausdehnung an der `sm`-Grenze (AK6/AK7) — 639 px randlos, 640 px mit 48/24 px Rand.
  * 2. Das Bild füllt die Bühne (AK5) — zwei verschiedene Formate, dazu mit aufgeklappten Details.
  * 3. Klick neben bzw. auf das Bild (AK10) — nur breit, an einem Hochformat.
- * 4. Schließwege, Platz und Fokus (AK10/AK11) — scrollY, URL und Fokus je Schließweg.
- * 5. Zweimal Escape (AK10) — synthetisch vor `popstate` und nativ über den CloseWatcher-Pfad.
+ * 4. Schließwege, Platz und Fokus (AK10/AK11) — scrollY, URL, Fokus und Verlaufsposition je
+ *    Schließweg.
+ * 5. Zweimal Escape (AK10) — synthetisch vor `popstate` und nativ über den CloseWatcher-Pfad, je
+ *    mit Verlaufsposition.
  * 6. Reload (AK15).
  *
  * DER SPEC IST LESEND: Die Großansicht schreibt nichts, und keine Entscheidungsfläche wird
@@ -160,6 +162,19 @@ async function punktNebenDemBild(page: Page): Promise<{ x: number; y: number } |
 
 async function scrollY(page: Page): Promise<number> {
   return page.evaluate(() => window.scrollY)
+}
+
+/** Position des aktuellen Verlaufseintrags (Navigation API) - nur relativ zu einem vorher
+ *  gelesenen Wert vergleichen, nie absolut. Nach dem Schließen wird sie SOFORT gelesen, sobald die
+ *  Großansicht verschwunden ist, nie per Poll: Sie verschwindet nur durch einen Eintragswechsel,
+ *  und der Index wechselt vor `popstate` - verschwunden heißt endgültig. Ein Poll würde das
+ *  zeitversetzte Verhalten nach dem Schließen abwarten, statt es zu prüfen. */
+async function verlaufsPosition(page: Page): Promise<number> {
+  const index = await page.evaluate(() => navigation.currentEntry?.index)
+  if (index === undefined) {
+    throw new Error('Navigation API: kein aktueller Verlaufseintrag')
+  }
+  return index
 }
 
 test.describe('Kuratierung: die Großansicht', () => {
@@ -333,6 +348,7 @@ test.describe('Kuratierung: die Großansicht', () => {
 
   test('hält über jeden Schließweg Platz, URL und Fokus', async ({ page }) => {
     const einstieg = await oeffneEntwurf(page)
+    const start = await verlaufsPosition(page)
     const sichtHoehe = page.viewportSize()!.height
     const alle = ausloeser(page)
 
@@ -413,6 +429,10 @@ test.describe('Kuratierung: die Großansicht', () => {
         await schliessen()
 
         await expect(dialog(page), `${name}: geschlossen`).toBeHidden()
+        expect(
+          await verlaufsPosition(page),
+          `Schließwege – ${name}: Verlaufsposition wie vor dem Öffnen`,
+        ).toBe(start)
         await expect(trigger, `${name}: Fokus auf dem Auslöser`).toBeFocused()
         expect(
           Math.abs((await scrollY(page)) - ausgang),
@@ -423,11 +443,12 @@ test.describe('Kuratierung: die Großansicht', () => {
     }
 
     await page.goBack()
-    await expect(page, 'genau ein Zurück führt zur Projektseite').toHaveURL(einstieg)
+    await expect(page, 'Schließwege: genau ein Zurück führt zur Projektseite').toHaveURL(einstieg)
   })
 
   test('verlässt die Kuratierung auch bei zweimal Escape nicht', async ({ page }) => {
     const einstieg = await oeffneEntwurf(page)
+    const start = await verlaufsPosition(page)
     const url = page.url()
     const ueberschrift = page.getByRole('heading', { level: 1, name: 'Album-Entwurf' })
 
@@ -440,6 +461,10 @@ test.describe('Kuratierung: die Großansicht', () => {
       }
     })
     await expect(dialog(page)).toBeHidden()
+    expect(
+      await verlaufsPosition(page),
+      'Zweimal Escape – synthetisch: Verlaufsposition wie vor dem Öffnen',
+    ).toBe(start)
     await expect(ueberschrift, 'synthetisch: Überschrift sichtbar').toBeVisible()
     expect(page.url(), 'synthetisch: URL der Kuratierung').toBe(url)
 
@@ -449,11 +474,17 @@ test.describe('Kuratierung: die Großansicht', () => {
     await page.keyboard.press('Escape')
     await page.keyboard.press('Escape')
     await expect(dialog(page)).toBeHidden()
+    expect(
+      await verlaufsPosition(page),
+      'Zweimal Escape – nativ: Verlaufsposition wie vor dem Öffnen',
+    ).toBe(start)
     await expect(ueberschrift, 'nativ: Überschrift sichtbar').toBeVisible()
     expect(page.url(), 'nativ: URL der Kuratierung').toBe(url)
 
     await page.goBack()
-    await expect(page, 'genau ein Zurück führt zur Projektseite').toHaveURL(einstieg)
+    await expect(page, 'Zweimal Escape: genau ein Zurück führt zur Projektseite').toHaveURL(
+      einstieg,
+    )
   })
 
   test('öffnet nach einem Reload dasselbe Foto wieder', async ({ page }) => {
