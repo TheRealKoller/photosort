@@ -1,6 +1,6 @@
 # 0550 - Zurück nach dem Schließen der Großansicht verlässlich und stabil geprüft
 
-**Status:** Accepted
+**Status:** Implemented ([PR #553](https://github.com/TheRealKoller/photosort/pull/553))
 **Erstellt:** 2026-10-01
 **Bezug:** [Issue #550](https://github.com/TheRealKoller/photosort/issues/550)
 
