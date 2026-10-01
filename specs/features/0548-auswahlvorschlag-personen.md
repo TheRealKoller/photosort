@@ -1,6 +1,6 @@
 # 0548 - Auswahlvorschlag berücksichtigt erkannte Personen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #557](https://github.com/TheRealKoller/photosort/pull/557))
 **Erstellt:** 2026-10-01
 **Bezug:** [Issue #548](https://github.com/TheRealKoller/photosort/issues/548), ADR [`0129`](../decisions/0129-personen-als-abdeckungsziel-des-auswahlvorschlags-nach-der-phase-persons.md), Vorgänger [Spec 0292](./0292-personen-erkennen.md)
 
