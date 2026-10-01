@@ -60,11 +60,14 @@ function bild(page: Page): Locator {
 }
 
 /** Öffnet den Album-Entwurf über einen eigenen Verlaufseintrag nach der Projektseite und liefert
- *  deren URL - Ziel des abschließenden Zurück. */
+ *  deren URL - Ziel des abschließenden Zurück. Das ist die URL nach der LETZTEN Weiterleitung
+ *  (`/projects/{id}` → `/pipeline` → `/pipeline/{schritt}`, erkannt an der Form, nicht an einem
+ *  Präfix): Eine Zwischenstufe macht die Zusage zufällig rot, sobald die Projektabfrage langsam
+ *  antwortet. */
 async function oeffneEntwurf(page: Page): Promise<string> {
   const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
   await page.goto(`/projects/${projectId}`)
-  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/pipeline`))
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/pipeline/[^/?#]+$`))
   const einstieg = page.url()
   await page.goto(`/projects/${projectId}/album`)
   await expect(ausloeser(page).first(), 'Auslöser der ersten Entwurfskachel').toBeVisible()
