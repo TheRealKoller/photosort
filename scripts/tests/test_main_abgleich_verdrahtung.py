@@ -26,8 +26,8 @@ deshalb ausschliesslich **Nachweisbares**:
    `CONFLICT`, `Automatic merge failed`) - der ehrliche Pruefer fuer die Locale-Unabhaengigkeit,
    die `test_merge_main_into_branch.py` bewusst nicht ueber `LC_ALL=C` erzwingt.
 5. `ship-feature` ruft das Skript an **genau zwei** Stellen auf, in Schritt 6 **nach** dem
-   Commit-Teilschritt und **vor** `git push`, in Schritt 8 **vor** der Verknuepfungspruefung und
-   **vor** dem Setzen der `**Status:**`-Zeile (Reihenfolge ueber Zeichenoffsets).
+   Commit-Teilschritt und **vor** `git push`, in Schritt 8 genau einmal und **vor** dem ersten
+   `git push` des Abschnitts (Reihenfolge ueber Zeichenoffsets).
 6. Beide neuen Anker stehen wortgleich in `developer.md` und werden **nur** dort definiert;
    `ship-feature` nennt sie in seiner Trigger-Liste, ohne das Format zu wiederholen.
 7. Die feste Merge-Nachricht kommt im Suchraum `scripts/` + `.claude/` **genau einmal** vor,
@@ -172,8 +172,7 @@ ZU_BEREINIGENDE_VARIABLEN = (
 # Ordnungsmarken fuer die Reihenfolge-Zusicherung (Zeichenoffsets innerhalb des Abschnitts).
 MARKE_COMMIT = "committen"
 MARKE_PUSH = "git push -u origin"
-MARKE_VERKNUEPFUNG = "pr-verknuepfung-lesen"
-MARKE_STATUSZEILE = "**Status:**"
+MARKE_LETZTER_PUSH = "git push"
 
 # Sicherheitskonzept, Bedrohung 4: pfadgenau schliessen, nie pauschal. Zugesichert wird die
 # **Anwesenheit** beider Befehle, nicht die Abwesenheit ihrer pauschalen Gegenstuecke - siehe die
@@ -842,14 +841,14 @@ def test_der_erste_aufruf_steht_nach_dem_commit_und_vor_dem_push() -> None:
 
 
 def test_der_zweite_aufruf_ist_die_erste_handlung_in_schritt_acht() -> None:
-    """AK 2 (Spec 0338): vor der Verknuepfungspruefung und vor dem Setzen der Statuszeile."""
+    """Vor dem ersten `git push` des Abschnitts, damit der Merge-Commit im letzten Push mitgeht."""
     schritt = abschnitt(dateitext(SHIP_FEATURE_PFAD), "## Schritt 8")
 
     assert schritt.count(SKRIPT_REPO_RELATIV) == 1
-    assert schritt.index(SKRIPT_REPO_RELATIV) < schritt.index(MARKE_VERKNUEPFUNG)
-    assert schritt.index(SKRIPT_REPO_RELATIV) < schritt.index(MARKE_STATUSZEILE), (
-        "Der Abgleich steht nach dem Setzen der Statuszeile. Der Finalisierungs-Commit soll aber "
-        "gebuendelt mit dem Merge-Commit in *einem* Push hinausgehen (ADR 0042/0063)."
+    assert MARKE_LETZTER_PUSH in schritt, "Schritt 8 nennt keinen 'git push' mehr."
+    assert schritt.index(SKRIPT_REPO_RELATIV) < schritt.index(MARKE_LETZTER_PUSH), (
+        "Der Abgleich steht in Schritt 8 hinter dem Push. Dann geht der letzte Stand ohne den "
+        "aktuellen main hinaus, und der Merge-Commit erzwingt einen weiteren CI-Lauf."
     )
 
 

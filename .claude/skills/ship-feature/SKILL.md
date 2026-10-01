@@ -106,12 +106,33 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
 
    **Der PR-Titel trägt die Conventional-Commit-Form** `typ(scope)!: Beschreibung` — Typ klein geschrieben aus `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `test`, Scope und `!` optional, nach dem Doppelpunkt genau ein Leerzeichen und eine nicht-leere Beschreibung (z.B. `feat: Projekte löschen mit Namensbestätigung (Spec 0044)`). Das ist keine Kosmetik: Das Repo squasht mit `COMMIT_OR_PR_TITLE`, der Titel wird zum Titel des Merge-Commits auf `main`, und nur daran wird die Änderung für Changelog und Versions-Bump klassifiziert — ohne zulässiges Präfix fällt sie still heraus. Ein Titel, der die Form verfehlt, lässt den Check pr-titel rot werden — und, sobald pr-titel als Required Status Check auf `main` eingetragen ist, blockiert er zusätzlich den Merge; korrigiert wird er durch Ändern des Titels am offenen PR, die Prüfung läuft danach von selbst erneut.
 
-   **Pflicht, kein Platzhalter zum Stehenlassen:** Der PR-**Body** enthält die ausgefüllte Zeile `Closes #<Issue-Nummer>` (die Vorlage bringt sie mit `#NNN` mit). Die Issue-Nummer ist bei neuen Specs identisch mit der Spec-Nummer; bei Altspecs `0001`–`0065` steht sie in der `**Bezug:**`-Zeile der Spec-Datei. Nur diese Zeile erzeugt die strukturierte Verknüpfung zwischen PR und Issue (beidseitig sichtbar als "Linked issues"/"Linked pull requests") und lässt GitHub das Issue beim Merge nach `main` selbst schließen; ein bloßer Fließtext-Verweis erzeugt nur einen Timeline-Eintrag. Fehlt sie, bricht die Finalisierung in Schritt 8 ab.
+   **Pflicht, kein Platzhalter zum Stehenlassen:** Der PR-**Body** enthält die ausgefüllte Zeile `Closes #<Issue-Nummer>` (die Vorlage bringt sie mit `#NNN` mit). Die Issue-Nummer ist bei neuen Specs identisch mit der Spec-Nummer; bei Altspecs `0001`–`0065` steht sie in der `**Bezug:**`-Zeile der Spec-Datei. Nur diese Zeile erzeugt die strukturierte Verknüpfung zwischen PR und Issue (beidseitig sichtbar als "Linked issues"/"Linked pull requests") und lässt GitHub das Issue beim Merge nach `main` selbst schließen; ein bloßer Fließtext-Verweis erzeugt nur einen Timeline-Eintrag. Fehlt sie, fällt das in der Prüfung aus 6.5 auf, bevor die Statuszeile entsteht.
 
    Das Keyword gehört ausschließlich in den Body — **nie** in eine Commit-Nachricht und **nie** in den PR-Titel: Das Repo squasht mit `COMMIT_MESSAGES` und `COMMIT_OR_PR_TITLE`, beide Texte wandern in Merge-Commit, Changelog und den Body des release-please-PRs, wo das Keyword beim nächsten Release-Merge erneut ausgewertet würde.
 
-   Direkt nach dem Eröffnen prüfbar, ohne auf den Merge zu warten: `pr-verknuepfung-lesen` muss einen Eintrag mit der Issue-Nummer und dem Repository dieser Story zeigen.
-5. **Lies den Board-Wert einmal zurück — setz ihn nicht.** `Review` schreibt GitHub selbst, ausgelöst durch die `Closes #NNN`-Zeile aus 6.4 (Workflow `Pull request linked to issue`). Lies ihn mit `board-status-und-prioritaet-lesen`; ausgewertet wird der Knoten mit `project.number == 8`, nie schlicht `nodes[0]`.
+5. **Verknüpfung prüfen** mit `pr-verknuepfung-lesen`, für die PR-Nummer aus 6.4:
+
+   Erwartet: `closingIssuesReferences` enthält einen Eintrag mit der Issue-Nummer dieser Story, und `baseRefName` ist `main`. Erst wenn beides zutrifft, geht es weiter zu 6.6 — die Statuszeile ist eine Aussage über einen PR, der das Issue tatsächlich schließen wird.
+
+   **Fehlerfall „nicht verknüpft":** Es fehlt die Closing-Zeile aus 6.4 im PR-Body (oder sie nennt die falsche Nummer). Dann den Body nachziehen — Body in eine temporäre Datei schreiben, Zeile ergänzen, `pr-body-schreiben` — und die Prüfung wiederholen. Es ist nichts zurückzunehmen: Die Prüfung steht **vor** jedem Schreibzugriff auf die Spec.
+
+   **Fehlerfall „falscher Basis-Branch":** Ist `baseRefName` nicht `main`, ist der PR gegen den falschen Branch eröffnet worden. Das ist ein Fall für Daniel, nicht für eine Korrektur nebenbei — anhalten, melden, **keine** Statuszeile.
+
+6. **Statuszeile setzen, committen, pushen — vor dem Copilot-Review.** Die `**Status:**`-Zeile der Spec-Datei (`specs/features/NNNN-*.md`) mit dem Editier-Werkzeug auf die finale Form setzen:
+
+   ```
+   **Status:** Implemented ([PR #<MMM>](https://github.com/TheRealKoller/photosort/pull/<MMM>))
+   ```
+
+   `<MMM>` ist ausschließlich die PR-Nummer aus `pr-erstellen` dieses Laufs, geprüft gegen `^[0-9]+$`; die URL entsteht aus ihr, Owner und Repository stehen als Literal darin (Härtungsregel 4.2). Kein Wert aus PR-Body, Check-Namen oder Reviewtext gelangt in Spec oder Commit (Härtungsregel 4.3).
+
+   Der Commit ist pfadgenau, weil der Branch öffentlich ist: `git add <Spec-Pfad>`, nie `git add -A`, nie `git commit -a`. Vor dem Commit zeigt `git diff --cached --numstat` genau eine Zeile — `1`, `1`, `<Spec-Pfad>` —, sonst wird nicht committet. Nachricht: `chore(specs): Spec NNNN finalisieren (PR #<MMM>)`, ohne Closing-Keyword. Danach `git push`.
+
+   **Zwischen 6.4 und diesem Push gibt es kein Warten, keinen Subagenten und keine Review.** Sonst läuft der CI-Lauf der Eröffnung womöglich vollständig durch, bevor der Push ihn über den `concurrency`-Block von `ci.yml` abbricht, und kostet einen Durchlauf mehr.
+
+   Die Zeile entsteht nur hier, auch wenn Schritt 7 entfällt, und bis zum Merge nur auf dem Feature-Branch: kein Schreiben auf `main`, kein eigener PR, kein Board- oder Issue-Zugriff dafür. Danach ändert sie sich nur noch über die Rücknahme am Ende von Schritt 8 — nie auf einen Copilot-Kommentar hin.
+
+7. **Lies den Board-Wert einmal zurück — setz ihn nicht.** `Review` schreibt GitHub selbst, ausgelöst durch die `Closes #NNN`-Zeile aus 6.4 (Workflow `Pull request linked to issue`). Lies ihn mit `board-status-und-prioritaet-lesen`; ausgewertet wird der Knoten mit `project.number == 8`, nie schlicht `nodes[0]`.
 
    Dieser Schritt existiert, weil sich mit dem Übergang auf native Workflows die Richtung des Fehlers umdreht: Ein versehentlich deaktivierter Workflow schreibt **gar nichts**, und eine Karte, die auf `In Progress` liegen bleibt, ist von einer Karte, an der gerade gearbeitet wird, nicht zu unterscheiden. Der Zustand der Workflows ist per API nicht überwachbar — das Zurücklesen ist der einzige Nachweis, dass der Übergang stattgefunden hat.
 
@@ -119,60 +140,44 @@ Nach Bestätigung geht es weiter zu Schritt 6 (PR-Erstellung) bzw., falls die Fi
    - **Steht etwas anderes:** GitHub verarbeitet die Verknüpfung asynchron, unmittelbar nach `pr-erstellen` kann der alte Wert noch stehen. Deshalb **einmal** kurz warten (wenige Sekunden) und ein zweites Mal lesen, bevor daraus ein Befund wird — sonst meldet jeder Lauf einen Fehlschlag, den es nicht gibt.
    - **Steht auch dann nicht `Review`** (oder scheitert die Leseoperation auf allen ihren Wegen): Der Übergang ist ausgeblieben, in aller Regel, weil der Workflow im Projekt deaktiviert wurde. Den Wert **nicht** stillschweigend selbst nachsetzen — das verdeckte genau die Ursache, die dieser Schritt sichtbar machen soll. Stattdessen `board-status-setzen` mit Wert `Review` in den Abschnitt `## Lokal nachzuholen` (PR-Body und Chat-Bericht), mit der Nachhol-Zeile aus dem Katalogeintrag. Regeln zu Form und Inhalt dieses Abschnitts vollständig im Skill `github-access` — hier nicht wiederholen. Ist der PR-Body zu diesem Zeitpunkt bereits geschrieben, wird er einmal per `pr-body-schreiben` nachgezogen.
 
-   Der Spec-Status wird hier **nicht** gesetzt: Die Finalisierung passiert erst in Schritt 8, nach Review und Copilot-Auswertung, aber noch **vor** dem Merge im selben PR.
-
 ## Schritt 7: Copilot-Review anfordern und auswerten
 
 Jeder PR mit mindestens einer Code-Datei im Diff (mind. eine Datei unter `backend/src`, `backend/tests`, `frontend/src`, `frontend/tests` oder Äquivalent) bekommt zusätzlich zur Review-Runde aus Schritt 3 ein automatisiertes Copilot-Review — feste Projektkonvention (`CLAUDE.md`), kein optionaler Schritt. **Ausnahme:** Ändert der PR ausschließlich Doku-/Spec-Dateien (`specs/`, `docs/`, `*.md`, reine Config-Kommentare) ohne jede Code-Datei, entfällt dieser gesamte Schritt (kein Anfordern, kein Warten, kein Auswerten) — im Abschlussbericht an den Nutzer kurz vermerken, dass Schritt 7 aus diesem Grund übersprungen wurde. Diese Nicht-Code-Definition ist **wortgleich identisch** mit dem Skip-Trigger von `review-tests` (siehe `.claude/skills/review-tests/SKILL.md`, Abschnitt "Wann dieser Skill übersprungen wird") — beide Stellen bei künftigen Änderungen synchron halten.
 
-1. **Anfordern:** `copilot-review-anfordern` direkt nach dem Eröffnen des PR in Schritt 6 (nur falls die obige Bedingung zutrifft).
+1. **Anfordern:** `copilot-review-anfordern` direkt nach dem Push der Statuszeile (Schritt 6.6) (nur falls die obige Bedingung zutrifft).
 2. **Warten:** Copilot braucht üblicherweise ein bis wenige Minuten. Poll in angemessenen Abständen (z.B. alle 20-30s, mit vernünftigem Timeout statt endlos) `pr-reviewstand-lesen` — fertig ist es, sobald der Copilot-Eintrag aus `reviewRequests` verschwunden bzw. in `reviews` aufgetaucht ist (maßgeblicher Anmeldename und Auswertungsgrenze stehen im Katalogeintrag). Nicht selbst raten/simulieren, was das Review ergibt.
 3. **Kommentare holen:** `pr-reviewkommentare-lesen` liefert die Inline-Findings am eigenen PR.
 4. **Bewerten wie jeden anderen Review-Fund:** Jeden Kommentar am tatsächlichen Code prüfen (lesen, nicht nur den Kommentartext glauben) — echtes Problem oder Fehlalarm/bereits abgedeckt? Bei echten Findings: per `SendMessage` an denselben, weiterhin offenen `developer`-Subagenten zur Behebung geben (Test zuerst, falls eine Testlücke der Grund war, dann Fix, dann Commit — gleicher Maßstab wie Schritt 4/5), warten auf den Folgebericht. Bei Fehlalarmen: kurz im Abschlussbericht an den Nutzer begründen, warum kein Fix nötig war, statt kommentarlos zu ignorieren.
 5. **Nach Fixes:** erneuter Push (kein neuer PR nötig, derselbe Branch).
 6. **Antworten:** Auf jeden Copilot-Kommentar mit `pr-reviewkommentar-beantworten` kurz antworten — was gefixt wurde (mit Commit-Referenz) oder warum bewusst nicht.
 
-## Schritt 8: Finalisierung im selben PR (vor dem Merge)
+## Schritt 8: Abgleich mit `main` und letzter Push (vor dem Merge)
 
-Regelweg: Der Spec-Status wird **im Feature-PR selbst** auf `Implemented` gesetzt, nicht in einem Nachzieh-PR nach dem Merge. Ohne diesen Schritt entsteht genau das separate Zwei-Zeilen-PR, das eine komplette CI-Pipeline für eine reine Metadaten-Änderung kostet.
-
-**Wann:** sobald die Review-Runde (Schritt 3–5) und das Copilot-Review (Schritt 7) ausgewertet und alle Muss-Fix-Findings behoben sind — und zwar **gebündelt mit dem Push dieser letzten Fixes** (erst finalisieren, dann beide Commits in einem `git push`), damit kein zusätzlicher CI-Lauf entsteht. Gab es keine Fixes mehr, ist es ein eigener, letzter Commit auf dem Feature-Branch. Nie früher: ein noch nicht reviewter Stand darf nie als umgesetzt geführt werden.
+**Wann:** sobald die Review-Runde (Schritt 3–5) und das Copilot-Review (Schritt 7) ausgewertet und alle Muss-Fix-Findings behoben sind. Die Statuszeile steht seit Schritt 6.6; dieser Schritt setzt keine.
 
 **Was hier ausdrücklich *nicht* passiert:** kein Schließen des Issues, kein Setzen von `Done`. Beides erledigt GitHub beim Merge — das Keyword `Closes #NNN` schließt das Issue, der Workflow `Item closed` zieht die Karte auf `Done`. Ein vorgezogenes `Done` würde eine Story als erledigt führen, die noch nicht in `main` ist.
 
-1. **Abgleich mit `main` (zweiter, tragender Zeitpunkt).** Führ als **erste** Handlung dieses Schritts `scripts/merge-main-into-branch.sh` aus, noch vor der Verknüpfungsprüfung und noch vor dem Setzen der Spec-Statuszeile. Auswertung identisch zu Schritt 6.2: `0` → weiter ohne Meldung; `10`/`20` → `SendMessage` an den weiterhin offenen `developer`-Subagenten und auf dessen Bericht warten; jeder andere Exit-Code oder der Blockiert-Anker → anhalten, nichts pushen, an Daniel melden.
+1. **Abgleich mit `main` (zweiter, tragender Zeitpunkt).** Führ als **erste** Handlung dieses Schritts `scripts/merge-main-into-branch.sh` aus. Auswertung identisch zu Schritt 6.2: `0` → weiter ohne Meldung; `10`/`20` → `SendMessage` an den weiterhin offenen `developer`-Subagenten und auf dessen Bericht warten; jeder andere Exit-Code oder der Blockiert-Anker → anhalten, nichts pushen, an Daniel melden.
 
-   Dieser Aufruf ist der entscheidende: Zwischen der Eröffnung des Pull Requests und Daniels Freigabe vergeht die meiste Zeit des Laufs, und genau darin läuft `main` weiter. Der Merge-Commit, ein etwaiger Konflikt-Fix und der Finalisierungs-Commit aus 8.4 gehen danach gebündelt in **einem** Push hinaus, damit kein zusätzlicher CI-Lauf entsteht.
+   Dieser Aufruf ist der entscheidende: Zwischen der Eröffnung des Pull Requests und Daniels Freigabe vergeht die meiste Zeit des Laufs, und genau darin läuft `main` weiter.
 
-2. **Verknüpfung prüfen** mit `pr-verknuepfung-lesen`, für die PR-Nummer aus Schritt 6:
+2. **Letzter Push.** Der Merge-Commit, ein etwaiger Konflikt-Fix und noch nicht gepushte Fix-Commits gehen in **einem** `git push` hinaus, damit kein zusätzlicher CI-Lauf entsteht. Ist nichts zu pushen, gibt es keinen Push.
 
-   Erwartet: `closingIssuesReferences` enthält einen Eintrag mit der Issue-Nummer dieser Story, und `baseRefName` ist `main`. Erst wenn beides zutrifft, wird finalisiert — die Statuszeile `Implemented` ist eine Aussage über einen PR, der das Issue tatsächlich schließen wird.
-
-   **Fehlerfall „nicht verknüpft":** Es fehlt die Closing-Zeile aus Schritt 6.4 im PR-Body (oder sie nennt die falsche Nummer). Dann den Body nachziehen — Body in eine temporäre Datei schreiben, Zeile ergänzen, `pr-body-schreiben` — und die Prüfung wiederholen. Es ist nichts zurückzunehmen: Die Prüfung steht **vor** jedem Schreibzugriff. Danach lohnt ein erneutes Zurücklesen des Board-Werts aus 6.5, denn erst mit der Verknüpfung kann der Workflow greifen.
-
-   **Fehlerfall „falscher Basis-Branch":** Ist `baseRefName` nicht `main`, ist der PR gegen den falschen Branch eröffnet worden. Das ist ein Fall für Daniel, nicht für eine Korrektur nebenbei — nicht finalisieren, melden.
-
-3. **Die `**Status:**`-Zeile der Spec-Datei** (`specs/features/NNNN-*.md`) lokal auf die finale Form setzen:
-
-   ```
-   **Status:** Implemented ([PR #<MMM>](https://github.com/TheRealKoller/photosort/pull/<MMM>))
-   ```
-
-   Eine rein lokale Textänderung mit dem Editier-Werkzeug — kein Board-Zugriff, kein Netzwerk, nichts, was fehlschlagen könnte.
-
-4. Die geänderte Spec-Datei committen, Konvention: `chore(specs): Spec NNNN finalisieren (PR #<MMM>)`, und zusammen mit ggf. noch offenen Fix-Commits pushen.
-
-5. Danach übernimmt Daniel: Freigabe und Merge. **Kein** automatisches Mergen durch dich.
+3. Danach übernimmt Daniel: Freigabe und Merge. **Kein** automatisches Mergen durch dich.
 
 **Wird der PR ohne Merge geschlossen** (Branch verworfen): Das Issue bleibt offen — es hing am Keyword, das nur beim Merge greift —, aber die Karte steht seit der PR-Verknüpfung auf `Review` und behauptet dort eine Prüfung, die es nicht mehr gibt. Diesen einen Übergang setzt die Session selbst zurück, weil GitHub für ein geschlossenes, nicht gemergtes PR keinen Workflow kennt: `board-status-setzen` mit Wert `In Progress`.
 
-`In Progress` und nicht `Ready`: Die Spec existiert, der Branch existiert, die Arbeit ist begonnen. Führt die Spec-Datei auf dem Branch bereits `Implemented`, gehört das ebenfalls zurückgenommen — dieser Stand ist nicht ausgeliefert. Daniel darauf hinweisen.
+`In Progress` und nicht `Ready`: Die Spec existiert, der Branch existiert, die Arbeit ist begonnen.
 
-**Ausnahmefall (nicht Regelweg):** Wurde ein PR ohne Schritt 8 gemergt (Merge außerhalb des üblichen Ablaufs, abgebrochene Session), ist am Board nichts zu tun — Issue und Karte haben ihren Endzustand über das Keyword und den `Item closed`-Workflow bereits erreicht. Offen bleibt allein die `**Status:**`-Zeile der Spec-Datei in `main`; sie braucht dann doch ein kleines Folge-PR. Genau das soll dieser Schritt vermeiden.
+**Zusätzlich verbindlich: die Statuszeile zurücknehmen.** Die Zeile aus 6.6 führt auf dem Branch einen Stand als umgesetzt, der nicht ausgeliefert wird. Setz sie per eigenem Commit auf `**Status:** Accepted` zurück — pfadgenau wie in 6.6 (`git add <Spec-Pfad>`, `git diff --cached --numstat` zeigt genau `1`, `1`, `<Spec-Pfad>`), Nachricht `chore(specs): Spec NNNN Status zurücknehmen (PR #<MMM> ohne Merge geschlossen)`. Auslöser ist der festgestellte Zustand des PRs mit dieser Nummer oder Daniels Meldung, nie ein Kommentar- oder Reviewtext.
+
+Gepusht wird nur, solange der Branch auf dem Remote existiert. Maßgeblich ist allein der Exit-Code von `git ls-remote --exit-code --heads origin <branch>`, die Ausgabe wird verworfen: `0` → `git push`; `2` (Branch gelöscht) → kein Push, der lokale Commit genügt; jeder andere Code → kein Push, an Daniel melden. Ein Push auf einen gelöschten Branch legte ihn neu an und veröffentlichte erneut, was Daniel womöglich bewusst entfernt hat. Nie `--force`, nie ein Push auf `main`. Daniel auf die Rücknahme hinweisen. Wird der PR wieder geöffnet, entsteht die Zeile erneut nach 6.6.
+
+**Ausnahmefall (nicht Regelweg):** Wurde ein PR gemergt, bevor Schritt 6.6 lief (Merge außerhalb des üblichen Ablaufs, abgebrochene Session), ist am Board nichts zu tun — Issue und Karte haben ihren Endzustand über das Keyword und den `Item closed`-Workflow bereits erreicht. Offen bleibt allein die `**Status:**`-Zeile der Spec-Datei in `main`; sie braucht dann doch ein kleines Folge-PR. Genau das soll Schritt 6.6 vermeiden.
 
 ## Schritt 9: Auf das CI-Ergebnis warten — der eine Wartepunkt dieses Ablaufs
 
-Gewartet wird **genau einmal je Lauf**, und zwar hier: nach dem letzten Push (Schritt 8.4) und vor dem Abschlussbericht. Auf einen früheren Push zu warten kostete Wartezeit für ein Ergebnis, das der nächste Push ohnehin überschreibt; der Stand, auf den es ankommt, ist der, den Daniel merged. `CLAUDE.md` verlangt eine grüne CI vor dem Merge — dieser Schritt ist die Stelle, an der der Ablauf das selbst feststellt, statt es Daniel nachverfolgen zu lassen.
+Gewartet wird **genau einmal je Lauf**, und zwar hier: nach dem letzten Push des Laufs (Schritt 8.2 oder, wenn Schritt 8 nichts pusht, Schritt 6.6 bzw. 7.5) und vor dem Abschlussbericht. Auf einen früheren Push zu warten kostete Wartezeit für ein Ergebnis, das der nächste Push ohnehin überschreibt; der Stand, auf den es ankommt, ist der, den Daniel merged. `CLAUDE.md` verlangt eine grüne CI vor dem Merge — dieser Schritt ist die Stelle, an der der Ablauf das selbst feststellt, statt es Daniel nachverfolgen zu lassen.
 
 1. **Warten:** `pr-pruefstand-abwarten` mit der Pull-Request-Nummer aus Schritt 6. Die Operation liefert einen der vier Ergebniswerte; ihre Zuordnung, die Betriebszahlen und die Ausgangslagen stehen vollständig im Katalogeintrag und werden hier nicht wiederholt.
 2. **`gruen`:** nichts weiter zu tun, weiter zum Abschlussbericht.
@@ -199,7 +204,7 @@ Schlug `SendMessage` nach einem Abgleich mit Exit `20` fehl, steht das Repositor
 
 ## Abschlussbericht an den Nutzer
 
-Nach Abschluss (PR eröffnet, Copilot-Review ausgewertet oder aus genanntem Grund übersprungen, Spec im PR finalisiert, CI-Ergebnis festgestellt) fasse für den Nutzer zusammen: PR-Link, Ergebnis der Finalisierung aus Schritt 8 (Statuszeile bzw. Fehlermeldung), das vom `review`-Skill gelieferte Protokoll (alle fünf Perspektiven, gelaufen ja/nein mit Begründung, Findings-Kurzfassung inkl. behobener/bewusst nicht behobener), Copilot-Ergebnis (falls gelaufen), sowie jede Stelle, an der du selbst eine technische Detailentscheidung getroffen hast (z.B. bei einem nicht-exakten Anker-Match oder einem SendMessage-Recovery-Fall).
+Nach Abschluss (PR eröffnet, Statuszeile im PR gesetzt, Copilot-Review ausgewertet oder aus genanntem Grund übersprungen, CI-Ergebnis festgestellt) fasse für den Nutzer zusammen: PR-Link, Statuszeile aus Schritt 6.6 (bzw. Fehlermeldung), das vom `review`-Skill gelieferte Protokoll (alle fünf Perspektiven, gelaufen ja/nein mit Begründung, Findings-Kurzfassung inkl. behobener/bewusst nicht behobener), Copilot-Ergebnis (falls gelaufen), sowie jede Stelle, an der du selbst eine technische Detailentscheidung getroffen hast (z.B. bei einem nicht-exakten Anker-Match oder einem SendMessage-Recovery-Fall).
 
 Der Bericht führt zusätzlich den Block `## CI-Ergebnis` aus Schritt 9 — Form und Feldnamen im Skill `github-access`, Abschnitt „Das CI-Ergebnis im Bericht"; hier keine Kopie. Er steht auch dann da, wenn der Ablauf in Schritt 9 angehalten hat: Dann trägt er den Endstand, der zum Halt geführt hat.
 
