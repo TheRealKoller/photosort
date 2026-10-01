@@ -2154,6 +2154,7 @@ async def _apply_run_selection(
                     motif_key: effective.strength
                     for motif_key, effective in strengths_by_photo_id.get(photo_id, {}).items()
                 },
+                person_ids=frozenset(),
             )
         )
 
