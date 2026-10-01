@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
+import type { Location, NavigateFunction } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -72,11 +73,12 @@ function unnamedPage(faces: [number, number][]): UnnamedFacesPageOut {
   }
 }
 
-let location: { pathname: string; hash: string } | null = null
+/** Verlaufssonde: Vor der Seite liegt eine Stub-Route, ein Zurück von der Seite landet dort. */
+const probe: { location?: Location; navigate?: NavigateFunction } = {}
 
-function LocationProbe() {
-  const current = useLocation()
-  location = current
+function Probe() {
+  probe.location = useLocation()
+  probe.navigate = useNavigate()
   return null
 }
 
@@ -86,11 +88,12 @@ function renderPage() {
   })
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/3/persons']}>
+      <MemoryRouter initialEntries={['/stub', '/projects/3/persons']} initialIndex={1}>
         <Routes>
+          <Route path="/stub" element={<p>Stub</p>} />
           <Route path="/projects/:projectId/persons" element={<ProjectPersonsPage />} />
         </Routes>
-        <LocationProbe />
+        <Probe />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -102,7 +105,8 @@ function groupHeadings(): string[] {
 }
 
 beforeEach(() => {
-  location = null
+  delete probe.location
+  delete probe.navigate
   Object.assign(URL, {
     createObjectURL: vi.fn(() => 'blob:crop'),
     revokeObjectURL: vi.fn(),
@@ -200,7 +204,7 @@ describe('ProjectPersonsPage - Gruppen', () => {
     await user.click(within(nav).getByRole('link', { name: 'Ohne Namen' }))
 
     expect(screen.getByRole('heading', { level: 2, name: 'Ohne Namen' })).toHaveFocus()
-    expect(location).toMatchObject({ pathname: '/projects/3/persons', hash: '' })
+    expect(probe.location).toMatchObject({ pathname: '/projects/3/persons', hash: '' })
   })
 
   it('lässt eine entfernte Person nach dem Neuladen überall verschwinden', async () => {
@@ -250,7 +254,7 @@ describe('ProjectPersonsPage - Gruppen', () => {
 })
 
 describe('ProjectPersonsPage - Großansicht', () => {
-  it('öffnet aus der zweiten Gruppe und gibt den Fokus an den Auslöser dieser Gruppe zurück', async () => {
+  it('öffnet aus der zweiten Gruppe, gibt den Fokus an den Auslöser dieser Gruppe zurück und lässt keinen Verlaufseintrag stehen', async () => {
     vi.mocked(personsApi.listPersons).mockResolvedValue([ANNA, BEN])
     const both = photo(1, [ANNA.id, BEN.id])
     photosFor({ [ANNA.id]: [both], [BEN.id]: [both, photo(2, [BEN.id])] })
@@ -268,6 +272,12 @@ describe('ProjectPersonsPage - Großansicht', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await waitFor(() => expect(second).toHaveFocus())
+    expect(probe.location).toMatchObject({ pathname: '/projects/3/persons', state: null })
+
+    act(() => {
+      void probe.navigate!(-1)
+    })
+    expect(probe.location?.pathname).toBe('/stub')
   })
 
   it('öffnet auch ein Foto, das nur in der zweiten Gruppe steht', async () => {
