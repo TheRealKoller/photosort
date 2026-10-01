@@ -194,7 +194,7 @@ Der Schwerpunkt liegt auf DB-freien Unit-Tests (`tests/test_selection.py`). Die 
 - Erster Lauf eines Projekts: Der rangschwächere Träger von Anna steht im Vorschlag. Gegenprobe ohne Erkennung: Er steht nicht darin. Dieser Fall wird rot, wenn der Vorschlag noch vor der Phase `persons` gerechnet wird.
 - Die Phase entfällt (Lagen `nur-fremdes-modell` und `builder-scheitert`, jeweils mit alter Erkennung): Es entsteht trotzdem ein Vorschlag, und er berücksichtigt die stehende Erkennung.
 
-**API, `tests/test_api_persons.py` und `tests/test_api_photos.py`.** Lage: ein veralteter Vorschlag mit einem von Hand gesetzten Platz, den ein Neuaufbau ändern würde.
+**API, `tests/test_api_persons.py`.** Lage: ein veralteter Vorschlag mit einem von Hand gesetzten Platz, den ein Neuaufbau ändern würde.
 - `PUT /photos/{id}/persons/{person_id}`, `POST /persons`, `POST /persons/{id}/references`, `DELETE /persons/{id}` und `GET /photos` mit Personen-Einschränkung lassen `selection_position` unverändert. Ein anschließendes `rebuild_run_selection` ändert ihn; beides steht als Paar in einem Fall.
 
 **Angepasst:** `test_worker_persons.py::test_a_recognised_person_is_no_motif` vergleicht ohne `selection_position`, weil die Zusage aus Spec 0292 aufgehoben ist. Motivstärken, `rank_score`/`rank_position` und Statistik vergleicht der Fall weiter. `test_worker_selection.py::TestTheDraftIsPartOfTheRankingPhase` wird umbenannt in `TestTheDraftHasNoPhaseOfItsOwn`; Docstrings und Moduldocstring ziehen nach, die Assertions bleiben.
@@ -205,7 +205,7 @@ Der Schwerpunkt liegt auf DB-freien Unit-Tests (`tests/test_selection.py`). Die 
 - `test_persons_import_graph.py`;
 - `test_models.py::test_exactly_the_one_known_module_writes_selection_position`;
 - `test_api_photos.py::TestTheDraft::test_only_untouched_places_follow_the_new_run`, der die Album-Entwurf-Entscheidungen unabhängig von der Ursache der Änderung prüft;
-- `test_worker_selection.py::TestTheDraftIsPartOfTheRankingPhase::test_rebuilding_the_grouping_also_produces_the_draft`;
+- `test_worker_selection.py::TestTheDraftHasNoPhaseOfItsOwn::test_rebuilding_the_grouping_also_produces_the_draft`;
 - `test_worker_rebuild_run_grouping.py`, `test_api_feedback_weights.py`, die Vorschlagsfälle in `test_demo_state.py`.
 
 ## Entscheidungen
