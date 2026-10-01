@@ -134,7 +134,7 @@ from photosort.opencloud.client import IMAGE_EXTENSIONS, OpenCloudClient, OpenCl
 from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.person_matching import decide_assignments, similarities_to
-from photosort.persons import current_centroids
+from photosort.persons import current_centroids, load_effective_persons
 from photosort.places import (
     PLACE_LEVELS,
     PlaceInfo,
@@ -2138,6 +2138,12 @@ async def _apply_run_selection(
     eligible_ids = [photo_id for photo_id in candidate_ids if photo_id not in excluded]
     # Die WIRKSAMEN Staerken, Korrekturen inbegriffen - nie die rohe Staerkezeile.
     strengths_by_photo_id = await load_effective_strengths(session, eligible_ids)
+    # Die WIRKSAMEN Personen (Korrektur vor Erkennung, dieselbe Menge wie der Personenfilter),
+    # LIVE gelesen und nur fuer `eligible_ids` - damit erbt das Laden die Projektbindung der
+    # Rangzeilen. Weiter geht ausschliesslich `person_id`, nie ein Name; ein Paar (Foto, Person)
+    # gehoert in keine Logzeile und keinen Fehlertext, denn beide ueberleben die Loeschung der
+    # Person.
+    persons_by_photo_id = await load_effective_persons(session, eligible_ids)
 
     candidates_by_event: dict[int, list[SelectionCandidate]] = {}
     position_by_event: dict[int, int] = {}
@@ -2154,7 +2160,9 @@ async def _apply_run_selection(
                     motif_key: effective.strength
                     for motif_key, effective in strengths_by_photo_id.get(photo_id, {}).items()
                 },
-                person_ids=frozenset(),
+                person_ids=frozenset(
+                    assignment.person_id for assignment in persons_by_photo_id.get(photo_id, [])
+                ),
             )
         )
 

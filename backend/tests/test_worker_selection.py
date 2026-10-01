@@ -9,11 +9,11 @@ auswahlfaehigen Menge (letzter erfolgreicher Lauf, `rank_score IS NOT NULL`, kei
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import (
@@ -21,8 +21,13 @@ from photosort.models import (
     CriterionScoringRun,
     Event,
     MotifAssessmentSource,
+    Person,
     Photo,
+    PhotoAlbumSuitability,
+    PhotoCriterionScore,
     PhotoMotifCorrection,
+    PhotoPersonCorrection,
+    PhotoPersonDetection,
     PhotoRanking,
     Project,
     ScanStatus,
@@ -30,8 +35,9 @@ from photosort.models import (
     User,
 )
 from photosort.motif_strengths import upsert_assessment
+from photosort.persons import delete_person
 from photosort.selection import MOTIF_PRESENCE_THRESHOLD, SIMILARITY_TIME_WINDOW
-from photosort.worker import rebuild_run_selection
+from photosort.worker import rebuild_run_grouping, rebuild_run_selection
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
 _FULL = 1.0
@@ -519,9 +525,6 @@ class TestTheDraftIsPartOfTheRankingPhase:
         Events und Rangzeilen und baut sie ueber `_build_grouping_and_rankings` neu auf - dort
         haengt der Vorschlag unmittelbar hinter den Rangzeilen. Ohne die Einbettung stuende die
         Spalte danach ueberall auf `NULL`."""
-        from photosort.models import PhotoAlbumSuitability, PhotoCriterionScore
-        from photosort.worker import rebuild_run_grouping
-
         project = await _project(db_session)
         run = await _successful_run(db_session, project)
         event = await _event_row(db_session, run, 1)
@@ -587,3 +590,213 @@ class TestTheThresholdComesFromTheSelectionModule:
         await rebuild_run_selection(db_session, project.id)
 
         assert (await _positions(db_session, run))[at_threshold.id] == 2
+
+
+_Rebuild = Callable[[AsyncSession, int], Awaitable[None]]
+
+
+async def _person(session: AsyncSession, slot: int, name: str) -> Person:
+    person = Person(slot=slot, name=name, name_key=name.casefold())
+    session.add(person)
+    await session.flush()
+    return person
+
+
+async def _detect(session: AsyncSession, photo: Photo, person: Person) -> None:
+    session.add(PhotoPersonDetection(photo_id=photo.id, person_id=person.id, computed_at=_BASE))
+    await session.flush()
+
+
+async def _correct(session: AsyncSession, photo: Photo, person: Person, *, applies: bool) -> None:
+    user = (await session.execute(select(User))).scalars().first()
+    if user is None:
+        user = User(username="daniel", password_hash="egal")
+        session.add(user)
+        await session.flush()
+    session.add(
+        PhotoPersonCorrection(
+            photo_id=photo.id,
+            person_id=person.id,
+            user_id=user.id,
+            applies=applies,
+            updated_at=_BASE,
+        )
+    )
+    await session.flush()
+
+
+class _PersonLay:
+    """Ein Event, zwei Plaetze. `leader` und `runner_up` tragen Motiv `a`, `weak` nichts und hat
+    den schwaechsten Rang. Ohne Person geht Platz 2 an `runner_up`; traegt `weak` eine wirksame
+    Person, geht er an `weak`.
+
+    Abstaende von 30 und 15 Minuten: ein Event auch nach einer Neugliederung, und `runner_up`
+    liegt ausserhalb von `SIMILARITY_TIME_WINDOW` und wird nicht abgewertet. Modellstufe und
+    Kriterienwert stehen dabei, damit auch `rebuild_run_grouping` dieselbe Rangfolge rechnet."""
+
+    async def build(self, session: AsyncSession, name: str = "Reise") -> _PersonLay:
+        self.session = session
+        self.project = await _project(session, name, target=2)
+        self.run = await _successful_run(session, self.project)
+        self.event = await _event_row(session, self.run, 1)
+        self.leader = await self._photo(1, timedelta(), level=5, strength=_FULL, rank=0.9)
+        self.runner_up = await self._photo(
+            2, 2 * SIMILARITY_TIME_WINDOW, level=4, strength=_FULL, rank=0.8
+        )
+        self.weak = await self._photo(
+            3, 3 * SIMILARITY_TIME_WINDOW, level=1, strength=_NONE, rank=0.1
+        )
+        return self
+
+    async def _photo(
+        self, index: int, offset: timedelta, *, level: int, strength: float, rank: float
+    ) -> Photo:
+        photo = await _photo(self.session, self.project, index, offset=offset)
+        await _motifs(self.session, photo, {"a": strength})
+        self.session.add(
+            PhotoAlbumSuitability(
+                photo_id=photo.id,
+                level=level,
+                reason=None,
+                provider="testanbieter",
+                computed_at=_BASE,
+            )
+        )
+        self.session.add(
+            PhotoCriterionScore(
+                photo_id=photo.id,
+                criterion_key="sharpness",
+                value=0.5,
+                source="local_heuristic",
+                computed_at=_BASE,
+            )
+        )
+        await _ranking(self.session, self.run, photo, self.event, rank_score=rank)
+        return photo
+
+    async def draft(self) -> dict[str, int | None]:
+        positions = await _positions(self.session, self.run)
+        return {
+            role: positions.get(photo.id)
+            for role, photo in (
+                ("leader", self.leader),
+                ("runner_up", self.runner_up),
+                ("weak", self.weak),
+            )
+        }
+
+
+_WITHOUT_PERSON = {"leader": 1, "runner_up": 2, "weak": None}
+_WITH_PERSON_ON_WEAK = {"leader": 1, "runner_up": None, "weak": 2}
+
+
+class TestThePersonsOfTheDraft:
+    @pytest.mark.parametrize(
+        ("detected", "correction", "counts"),
+        [
+            pytest.param(True, None, True, id="erkannt"),
+            pytest.param(False, True, True, id="von-hand-ergaenzt"),
+            pytest.param(True, False, False, id="von-hand-entfernt"),
+        ],
+    )
+    async def test_exactly_the_effective_names_count(
+        self,
+        db_session: AsyncSession,
+        detected: bool,
+        correction: bool | None,
+        counts: bool,
+    ) -> None:
+        """Dieselben Namen, nach denen der Personenfilter filtert: Die Korrektur geht der
+        Erkennung vor, ein entfernter Name zaehlt nicht."""
+        lay = await _PersonLay().build(db_session)
+        anna = await _person(db_session, 1, "Anna")
+        if detected:
+            await _detect(db_session, lay.weak, anna)
+        if correction is not None:
+            await _correct(db_session, lay.weak, anna, applies=correction)
+
+        await rebuild_run_selection(db_session, lay.project.id)
+
+        assert await lay.draft() == (_WITH_PERSON_ON_WEAK if counts else _WITHOUT_PERSON)
+
+    @pytest.mark.parametrize("lage", ["ausgeschlossenes-dokument", "ohne-rank-score"])
+    async def test_a_person_only_on_an_ineligible_photo_is_not_present(
+        self, db_session: AsyncSession, lage: str
+    ) -> None:
+        """Anna steht nur auf einem Foto, das nicht auswahlfaehig ist: sie kommt nicht vor und
+        lenkt Platz 2 nicht um. Dasselbe Foto auswahlfaehig gemacht bekommt ihn - das Paar steht
+        in einem Fall, weil die erste Haelfte allein auch ohne jede Personenwirkung bestuende."""
+        lay = await _PersonLay().build(db_session)
+        anna = await _person(db_session, 1, "Anna")
+        carrier = await _photo(db_session, lay.project, 4, offset=SIMILARITY_TIME_WINDOW)
+        await _motifs(
+            db_session, carrier, {"a": _NONE}, excluded=lage == "ausgeschlossenes-dokument"
+        )
+        await _ranking(
+            db_session,
+            lay.run,
+            carrier,
+            lay.event,
+            rank_score=None if lage == "ohne-rank-score" else 0.05,
+        )
+        await _detect(db_session, carrier, anna)
+
+        await rebuild_run_selection(db_session, lay.project.id)
+        ineligible = await _positions(db_session, lay.run)
+
+        if lage == "ausgeschlossenes-dokument":
+            await _motifs(db_session, carrier, {"a": _NONE})
+        else:
+            await db_session.execute(
+                update(PhotoRanking)
+                .where(PhotoRanking.photo_id == carrier.id)
+                .values(rank_score=0.05, rank_position=4)
+            )
+        await rebuild_run_selection(db_session, lay.project.id)
+        eligible = await _positions(db_session, lay.run)
+
+        assert ineligible[carrier.id] is None
+        assert ineligible[lay.runner_up.id] == 2
+        assert eligible[carrier.id] == 2
+
+    async def test_a_deleted_person_leaves_the_draft_of_a_project_without_her(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Zwilling: dasselbe Projekt ohne Person. Vor dem Loeschen lenkt Anna Platz 2 um, nach
+        `delete_person` und einem Neuaufbau nicht mehr."""
+        with_anna = await _PersonLay().build(db_session, "Mit")
+        twin = await _PersonLay().build(db_session, "Ohne")
+        anna = await _person(db_session, 1, "Anna")
+        await _detect(db_session, with_anna.weak, anna)
+        await _correct(db_session, with_anna.weak, anna, applies=True)
+        await rebuild_run_selection(db_session, with_anna.project.id)
+        await rebuild_run_selection(db_session, twin.project.id)
+        assert await with_anna.draft() != await twin.draft()
+
+        assert await delete_person(db_session, anna.id)
+        await db_session.flush()
+        await rebuild_run_selection(db_session, with_anna.project.id)
+
+        assert await with_anna.draft() == await twin.draft() == _WITHOUT_PERSON
+
+    @pytest.mark.parametrize(
+        "rebuild",
+        [
+            pytest.param(rebuild_run_selection, id="richtwert"),
+            pytest.param(rebuild_run_grouping, id="versatz"),
+        ],
+    )
+    async def test_both_rebuilds_read_the_persons_live(
+        self, db_session: AsyncSession, rebuild: _Rebuild
+    ) -> None:
+        """Eine nach dem Lauf eingefuegte Erkennung wirkt beim naechsten Neuaufbau - es gibt
+        keinen Schnappschuss der Personen je Lauf."""
+        lay = await _PersonLay().build(db_session)
+        anna = await _person(db_session, 1, "Anna")
+        await rebuild(db_session, lay.project.id)
+        assert await lay.draft() == _WITHOUT_PERSON
+
+        await _detect(db_session, lay.weak, anna)
+        await rebuild(db_session, lay.project.id)
+
+        assert await lay.draft() == _WITH_PERSON_ON_WEAK
