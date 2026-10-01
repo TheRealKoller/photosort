@@ -1,6 +1,7 @@
 # 0042 - Pre-Merge-Finalisierung im Feature-PR statt Post-Merge-Nachzieh-PR
 
 **Status:** Accepted
+**Teilweise abgelöst:** **Abschnitt 3** (Zeitpunkt „nach Review und Copilot-Auswertung, gebündelt mit dem letzten Push") und aus **Abschnitt 1** die Festlegung, die Statuszeile sei der letzte Commit des Feature-Branches, durch ADR [`0128`](./0128-die-spec-statuszeile-steht-vor-dem-copilot-review-im-pull-request.md). Die Statuszeile entsteht ab dort unmittelbar nach der Eröffnung des Pull Requests — nach der Review-Runde, vor dem Copilot-Review — als eigener Commit und Push; `ci.yml` bricht den dadurch überholten Lauf der Eröffnung ab. **Abschnitt 1 im Übrigen** (Statuszeile im Feature-PR selbst, vor dem Merge, kein Nachzieh-PR) **und Abschnitt 5 bleiben unverändert in Kraft.**
 **Datum:** 2026-08-29
 **Bezug:** GitHub-Issue [`#248`](https://github.com/TheRealKoller/photosort/issues/248) ("überprüfen der post-merge-finalisierung"), `specs/features/0066-pre-merge-finalisierung-im-feature-pr.md` (neu, aus dieser ADR hervorgegangen), ADR [`0037`](./0037-status-lebenszyklus-umsetzungsfortschritt-pr-merge-erkennung.md) (Abschnitt 5 — die dort eingeführte PR-Merge-Erkennung bleibt im Code, wechselt aber vom Regel- zum Ausnahmepfad; alle übrigen Abschnitte unverändert gültig), ADR [`0017`](./0017-github-projects-v2-spec-sync.md) (Abschnitt 4: Board als Einbahnstraßen-Projektion, unverändert)
 

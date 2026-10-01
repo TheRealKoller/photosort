@@ -132,7 +132,7 @@ BELEG_OPERATION = "`pr-pruefstand-lesen`"
 # Bericht traegt selbst eine eingezaeunte `##`-Zeile, an der ein Abschnittsleser schnitte.
 ABLAUF_MARKEN: dict[str, tuple[str, str]] = {
     SHIP_FEATURE: (
-        "## Schritt 8: Finalisierung im selben PR (vor dem Merge)",
+        "## Schritt 8: Abgleich mit `main` und letzter Push (vor dem Merge)",
         "## Abschlussbericht an den Nutzer",
     ),
     SHIP_ENTWURF: (

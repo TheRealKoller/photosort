@@ -8,6 +8,15 @@ on:
 permissions:
   contents: read
 
+# Je PR hoechstens ein laufender Lauf: Ein Push auf den Branch bricht den Lauf des vorigen Stands
+# ab. Gilt fuer pull_request; Pushes auf main fallen auf run_id zurueck, sind je Lauf eindeutig und
+# brechen nie einen anderen Lauf ab. Der Schluessel besteht nur aus Werten, die GitHub vergibt -
+# nie Branchname oder Titel, die bei Fork-PRs frei waehlbar sind. Fehlt der Block oder gruppiert
+# er nicht je PR, laeuft der Lauf der PR-Eroeffnung voll durch: ein CI-Durchlauf mehr je PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest

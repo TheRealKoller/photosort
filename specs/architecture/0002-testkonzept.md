@@ -1,7 +1,7 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-09-27
+**Letzte Aktualisierung:** 2026-10-01
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil das Dokument je Testgegenstand das
 Muster führt, das beim nächsten gleichartigen Fall wiederverwendet wird — und die benannten
 Lücken, die nirgends sonst stehen.
@@ -1628,6 +1628,12 @@ Gegenstandslos mit dieser Anwendung: die im vorstehenden 0008-Absatz genannte Be
 - **Nicht-ASCII-Leerraum direkt nach dem Doppelpunkt** (z.B. U+00A0) besteht die Prüfung, weil `[[:space:]]` ASCII-orientiert ist. Bewusst nicht zugesichert: Der Fall ist nicht plausibel, und eine Unicode-genaue Leerraumklasse wäre in `grep -E` weder portabel noch lesbar. Positiv nachgemessen und deshalb als Testfall geführt: Umlaute und Emoji direkt nach dem Doppelpunkt bestehen, und die Klassifikation der gesamten Tabellen ist unter `LC_ALL=C` wie unter `LC_ALL=C.UTF-8` identisch — bei überwiegend deutschsprachigen Titeln ist das die Zusage, die tatsächlich täglich trägt.
 
 Der Test läuft im CI-Job `demo-scripts`, also außerhalb des Backend-Coverage-Gates; `scripts/` hat unverändert kein `--cov-fail-under`.
+
+**Vierte Anwendung seit Spec 0414 (2026-10-01)** (ADR [`0128`](../decisions/0128-die-spec-statuszeile-steht-vor-dem-copilot-review-im-pull-request.md): die Spec-Statuszeile steht vor dem Copilot-Review, `ci.yml` bricht den überholten Lauf ab). Der Wächter ist `scripts/tests/test_statuszeile_vor_copilot_review.py`. Drei Festlegungen gelten über diesen Branch hinaus:
+
+1. **Ein `concurrency`-Schlüssel wird je Auslöser des Workflows gedacht, und sein Rückfall gehört zur Zusicherung.** `pr-titel.yml` läuft nur auf `pull_request`, dort ist die PR-Nummer immer belegt. `ci.yml` läuft zusätzlich auf `push` nach `main`; dort ist `github.event.pull_request.number` leer. Ohne eindeutigen Rückfall (`|| github.run_id`) teilen sich alle `main`-Läufe eine Gruppe, und mit `cancel-in-progress` bricht ein zweiter Merge den Lauf des ersten ab. Der gemergte Stand bleibt dann ohne CI-Ergebnis, und nichts wird rot. Zugesichert werden deshalb drei Dinge: der vollständige Gruppenwert samt Rückfall, die oberste Ebene (ein Block unter einem Job bräche nur diesen Job ab) und genau ein Block. Die Gegenproben laufen am zur Laufzeit mutierten Textabbild des echten `ci.yml`: Rückfall entfernt, Block unter einen Job eingerückt, `cancel-in-progress: false`. Dazu kommt die Nicht-Reaktion auf eine Kommentarzeile, die den Schlüssel nennt — der vorgeschriebene Regelkommentar über dem Block tut genau das.
+2. **Eine Abwesenheitszusage, deren Schlüssel im selben Abschnitt in anderer Ausprägung legitim steht, wird als Einmaligkeit der wertgebundenen Form plus Ort formuliert.** „Schritt 8 enthält kein `**Status:**`" wäre am eigenen Bestand rot: Die verbindliche Rücknahme bei einem PR ohne Merge steht in Schritt 8 und führt `**Status:** Accepted`. Geprüft wird stattdessen, dass `**Status:** Implemented` in `ship-feature` genau einmal steht und in Schritt 6 liegt. Die Einmaligkeit fängt die zurückgelassene alte Anweisung, der Ort fängt das Zurückwandern. Die Rücknahme selbst bleibt Gegenstand der Dokumentdurchsicht (Prosa-Prüfer bewusst nicht, siehe „Die statische Verdrahtungsprüfung" in der Sektion zu `merge-main-into-branch.sh`).
+3. **Eine Zusage über die Zahl abgeschlossener CI-Läufe ist eine Beobachtung am Umsetzungs-PR, kein Test.** Statisch nachweisbar ist nur die Konfiguration. Dass GitHub den Lauf der Eröffnung tatsächlich abbricht, zeigt erst der PR selbst: `gh run list --workflow ci.yml --branch <branch>`, `conclusion` je Lauf. Wie bei `edited` in der dritten Anwendung ist der Umsetzungs-PR der Lauf. Das Ergebnis gehört in den PR-Body, und das Kriterium bleibt offen, bis es dort steht.
 
 ### Erweiterung für ADR [`0078`](../decisions/0078-dateiarbeit-ueber-dedizierte-werkzeuge-als-vorgabe.md) (Dateiarbeit über die dedizierten Werkzeuge, die Shell als begründete Ausnahme): Wächter, die lebenden Markdown-Text zitieren
 
