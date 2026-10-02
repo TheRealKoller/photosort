@@ -276,6 +276,30 @@ describe('AlbumDraftPage: Streichen und Rückgängig', () => {
     },
   )
 
+  it('undo brings back a taken photo without a ranking row that striking took out of the draft', async () => {
+    // Ohne Rangzeile verlässt ein gestrichenes Foto die Antwortmenge - das Rückgängig muss es
+    // wieder einfügen, nicht nur einen vorhandenen Eintrag fortschreiben.
+    const user = userEvent.setup()
+    renderPage(
+      {
+        events: [EVENT_A],
+        items: [photo(1, { ratings: own('album_worthy'), ranking: null }), photo(2)],
+      },
+      noObserver,
+    )
+    vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(1, 'rejected'))
+    await user.click(await screen.findByRole('button', { name: 'Streichen: 1.jpg' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Streichen: 1.jpg' })).toBeNull(),
+    )
+    vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(1, 'album_worthy'))
+
+    await user.click(screen.getByRole('button', { name: 'Rückgängig' }))
+
+    expect(await screen.findByRole('button', { name: 'Streichen: 1.jpg' })).toHaveFocus()
+    expect(photosApi.getAlbumDraft).toHaveBeenCalledTimes(1)
+  })
+
   it('undo restores "Aufgenommen", re-adding from the struck row returns to "Vorschlag"', async () => {
     const user = userEvent.setup()
     renderPage(

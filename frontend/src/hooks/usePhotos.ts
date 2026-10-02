@@ -213,7 +213,8 @@ export function usePhotoSequenceQuery(
 /**
  * Ein Handgriff AUS DER ENTWURFSANSICHT an EINEM Foto: Streichen, Wieder aufnehmen, Hinzufügen und
  * Rückgängig nach dem Streichen. `status: null` nimmt die eigene Entscheidung zurück (`DELETE`).
- * `insert` ist das Foto aus dem Hinzufügen-Panel, das noch nicht im Entwurf steht.
+ * `insert` ist ein Foto, das (noch oder wieder) nicht im Entwurf steht: aus dem Hinzufügen-Panel
+ * oder beim Rückgängig eines Streichens, das es aus der Antwortmenge genommen hat.
  *
  * Sie schreibt dieselbe Bewertung wie `useSetRatingMutation`, behandelt den Cache danach aber
  * anders, und das ist ihr ganzer Zweck: Sie setzt den Serverzustand in den Entwurfs-Cache ein

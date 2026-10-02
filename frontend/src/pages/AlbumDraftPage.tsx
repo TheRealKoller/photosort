@@ -338,7 +338,9 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         return
       }
       decisionMutation.mutate(
-        { photoId: target.photo.id, status: target.previous },
+        // Ohne Rangzeile hat das Streichen das Foto aus der Antwortmenge genommen; das Einfügen ist
+        // idempotent und stellt es an seinen Platz zurück.
+        { photoId: target.photo.id, status: target.previous, insert: target.photo },
         {
           onSuccess: () => {
             endUndo()
