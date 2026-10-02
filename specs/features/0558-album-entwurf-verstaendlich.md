@@ -1,6 +1,6 @@
 # 0558 - Verständlicher Album-Entwurf mit Tauschen und Hinzufügen am Foto
 
-**Status:** Accepted
+**Status:** Implemented ([PR #560](https://github.com/TheRealKoller/photosort/pull/560))
 **Erstellt:** 2026-10-02
 **Bezug:** [#558](https://github.com/TheRealKoller/photosort/issues/558), ADR [`0130`](../decisions/0130-album-entwurf-gestrichenes-ausgeblendet-eigener-lesepfad-rueckgaengig-als-wiederherstellung.md)
 
