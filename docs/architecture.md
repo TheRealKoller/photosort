@@ -538,8 +538,9 @@ Verarbeitungs-Cache (Thumbnails).
   - **Der Auswahlmodus wird der Album-Entwurf, und seine Antwortmenge hängt am anfragenden
     Nutzer** *(Spec [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md), ADR
     [`decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md`](../specs/decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md))*:
-    `GET /projects/{id}/photos` verliert `selection` und bekommt `draft: bool = false`. Der Zweig
-    liefert `Vorschlag(letzter erfolgreicher Lauf) ∪ eigene Bewertung album_worthy`, **ohne
+    `GET /projects/{id}/photos` verliert `selection` und bekommt `draft: bool = false` (seit Spec
+    0558 ersetzt durch den eigenen Lesepfad `GET /projects/{id}/album-draft`, siehe unten). Der
+    Zweig liefert `Vorschlag(letzter erfolgreicher Lauf) ∪ eigene Bewertung album_worthy`, **ohne
     Ablehnungsfilter** — ein gestrichenes Foto bleibt in der Antwort und trägt seinen Zustand in
     `ratings[]`; Streichen ist ein Anzeigezustand, kein Filter. Der Entwurf ist **abgeleitet**, es
     entsteht keine Entwurfstabelle: „nie angefasst" ist die Abwesenheit einer eigenen
@@ -577,8 +578,8 @@ Verarbeitungs-Cache (Thumbnails).
     `pages/AlbumDraftPage.tsx` unter `PROJECT_ROUTE_PATHS.album = '/projects/:projectId/album'`,
     mit Tages- und Eventgliederung in der **Antwortreihenfolge des Servers** (die Seite sortiert
     nicht nach und bildet keine Auswahlregel nach), Richtwert und Ist-Anzahl nebeneinander ohne
-    Fehleroptik, und der Entwurfskachel `CurationPhotoTile` mit dem Zweizustand „Im Album" ⇄
-    „Gestrichen" (`aria-pressed`). Die Entscheidung läuft über eine **eigene** Mutation
+    Fehleroptik, und der Entwurfskachel `CurationPhotoTile` (seit Spec 0558 mit einer
+    Entscheidungsfläche, die die Handlung nennt, siehe unten). Die Entscheidung läuft über eine **eigene** Mutation
     (`useDraftDecisionMutation`), die den betroffenen Eintrag im Cache fortschreibt und nur die
     übrigen Fotoabfragen invalidiert — die breite Invalidierung träfe sonst die Entwurfsliste mit,
     und das gerade gestrichene Bild verschwände unter dem Finger. `pages/CuratePage.tsx`,
@@ -587,10 +588,10 @@ Verarbeitungs-Cache (Thumbnails).
     sich die Ansicht geändert hat.
   - **Der Vorrats-Endpunkt wird der Alternativen-Endpunkt** *(dieselbe Spec, ADR 0098 Punkt 5)*:
     `GET /projects/{id}/curation-candidates` entfällt **ersatzlos** (`404`), an seine Stelle tritt
-    `GET /projects/{id}/draft-alternatives?event_id=N&photo_id=N&limit=…&offset=…`. Er liefert die
-    Fotos **eines** Events des letzten erfolgreichen Laufs abzüglich des Entwurfs des anfragenden
-    Nutzers; ein von ihm **gestrichenes** Foto ist enthalten — genau daraus folgt, dass ein
-    Austausch umkehrbar ist, ohne dass es einen Rückgängig-Knopf oder einen Verlauf gäbe. Ein
+    `GET /projects/{id}/draft-alternatives?event_id=N&photo_id=N&limit=…&offset=…` (`photo_id` seit
+    Spec 0558 optional). Er liefert die Fotos **eines** Events des letzten erfolgreichen Laufs
+    abzüglich des Entwurfs des anfragenden Nutzers; ein von ihm **gestrichenes** Foto ist
+    enthalten — genau daraus folgt, dass ein Austausch auch ohne Rückgängig umkehrbar ist. Ein
     Foto ohne Rangzeile (im Ausschuss-Schritt aussortiert) erscheint nicht. `total` ist die
     Restmenge und damit unabhängig von `limit`/`offset`; `curation_position` ist hier `null` — die
     Alternativen sind keine Auswahl, zu der ein Bild einen Platz hätte.
@@ -613,9 +614,10 @@ Verarbeitungs-Cache (Thumbnails).
       über fremde Ids, und die Sortierung hängt allein an diesem Bild, also liefe sonst ein
       fremdes Motivprofil über die beobachtete Reihenfolge ab; alle vier Query-Parameter tragen
       deklarative Grenzen.
-    - Oberfläche: Der Austausch läuft in `components/DraftAlternativesDialog.tsx` (`ui/dialog`,
-      **kein** Popover — ein Bildraster mit eigenem Blätterweg braucht auf 360px die volle Fläche,
-      und der Vorgang verlangt Fokusfang). Geladen wird **erst beim Öffnen**: eine Abfrage je
+    - Oberfläche: Der Austausch lief bis Spec 0558 allein in `components/DraftAlternativesDialog.tsx`
+      (`ui/dialog`, **kein** Popover — ein Bildraster mit eigenem Blätterweg braucht auf 360px die
+      volle Fläche, und der Vorgang verlangt Fokusfang); seither ist der Dialog die Ansicht „Alle
+      Alternativen" hinter dem Band am Foto (siehe unten). Geladen wird **erst beim Öffnen**: eine Abfrage je
       geöffnetem Bild, nie eine je Kachel. Ein Tippen löst **einen** Schreibvorgang aus (siehe den
       Austausch-Endpunkt unten; bis Spec 0432 waren es zwei), schließt den Dialog und setzt den
       Fokus auf die nun an dieser Stelle stehende Kachel; die Entwurfsliste wird dabei **nicht**
@@ -654,6 +656,53 @@ Verarbeitungs-Cache (Thumbnails).
     - Die Umkehr eines Austauschs ist ein **weiterer** Austausch mit eigenem Ereignis; sie löscht
       nichts. Das Favoriten-Kennzeichen bleibt auf beiden Seiten unberührt, weil der Austausch
       durch dieselbe Schreibstelle läuft wie `PUT /photos/{id}/rating`.
+  - **Der Album-Entwurf wird verständlich: eigener Lesepfad, Gestrichenes ausgeblendet,
+    Rückgängig als Wiederherstellung** *(Spec
+    [`0558`](../specs/features/0558-album-entwurf-verstaendlich.md), ADR
+    [`decisions/0130-album-entwurf-gestrichenes-ausgeblendet-eigener-lesepfad-rueckgaengig-als-wiederherstellung.md`](../specs/decisions/0130-album-entwurf-gestrichenes-ausgeblendet-eigener-lesepfad-rueckgaengig-als-wiederherstellung.md))*:
+    - `GET /projects/{project_id}/album-draft` (`api/photos.py`, Auth-Dependency ausgeschrieben)
+      ersetzt den Entwurfsmodus von `GET /projects/{id}/photos`. Antwort
+      `AlbumDraftOut { events, items }` aus einer Anfrage, ohne `total` und ohne Blättern: `events`
+      sind alle Events des letzten erfolgreichen Laufs nach `position` (lückenlos 1..m, auch Events
+      ohne Foto im Entwurf), `items` ist `Vorschlag ∪ eigene album_worthy ∪ (eigene rejected ∩
+      Rangzeile im Lauf)` in der Reihenfolge `(events.position, taken_at, id)`. Innerhalb der
+      Antwort gilt ausnahmslos: im Album ⇔ eigener `status ≠ rejected`. Die `Event`-Zeilen werden
+      **einmal** geladen (`_event_spans_and_positions`, Auflage S14). `draft` bleibt an
+      `GET /projects/{id}/photos` nach dem Muster von `selection` als `None`-typisierter Riegel
+      stehen und antwortet in jeder Belegung mit `422`.
+    - **Gestrichenes bleibt in der Antwort, die Ansicht blendet es aus:** Gestrichene Fotos
+      erscheinen nur noch in der Gestrichen-Zeile „N gestrichen – anzeigen" ihres Events; es rückt
+      nichts nach. Die Entwurfsliste wird nie neu geladen — jeder Handgriff setzt den vom Server
+      zurückgemeldeten Zustand in den Cache (`applyWrittenRating`, `insertDraftPhoto`) und entfernt,
+      was die Antwortmenge verlässt. Die eine clientseitige Nachbildung des Serverprädikats ist
+      `utils/albumDraft.ts::draftMembership`; eine gemeinsame Falltabelle unter
+      `backend/tests/data/` bindet beide Seiten.
+    - `POST /projects/{project_id}/draft/exchange/undo` (Body `DraftExchangeUndoIn` mit
+      `extra="forbid"`: `photo_id`, `replaced_photo_id` und die beiden Vorzustände) stellt einen
+      Tausch **atomar** wieder her: Ablehnungen wie beim Tausch (`_exchange_sides`, `422` mit
+      identischem Text), Precondition „aktuell `album_worthy` bzw. `rejected`", sonst `409` ohne
+      Schreibvorgang; zwei Schreibvorgänge über `write_own_rating(record=False)`, **ein**
+      `exchanged`-Ereignis in Gegenrichtung und genau ein Commit. Antwort `DraftExchangeUndoOut`
+      mit beiden Zeilen. Rückgängig nach Streichen braucht keinen eigenen Endpunkt: Vorzustand
+      `null` → `DELETE`, `album_worthy` → `PUT`.
+    - `DELETE /photos/{id}/rating` antwortet mit `200` und `RatingWriteOut` statt `204`; die
+      Semantik bleibt gleich.
+    - `draft-alternatives`: Ohne `photo_id` entfällt die Motivstufe —
+      `selection.py::order_alternatives(None, …)` ordnet nach Qualität absteigend, ohne Wert
+      zuletzt, bei Gleichstand nach kleinerer Id. Das speist das Hinzufügen-Feld; mit `photo_id`
+      gilt Auflage S3 unverändert.
+    - **Oberfläche** `pages/AlbumDraftPage.tsx`: Kopf „{T} Tage · {E} Events", zuklappbarer
+      Erklärtext (`DraftExplainer`, Zustand je Nutzer in `localStorage`), mitlaufende Kopfleiste
+      mit „Tag d von T · Event p von E", Eventname, Zählern und „Zur Endauswahl"
+      (`hooks/useDraftPosition`), je Event `DraftEventSection` mit Hinzufügen-Feld als letzter
+      Rasterzelle und Gestrichen-Zeile, das Alternativen-Band `DraftAlternativesBand` als volle
+      Rasterzeile am gewählten Foto (vier Alternativen, dahinter der Dialog „Alle Alternativen"),
+      das Hinzufügen-Panel `DraftAddPanel` und der Rückgängig-Hinweis `UndoToast` (8 s, nur nach
+      Streichen und Tausch). `CurationPhotoTile` nennt die Handlung („Streichen" bzw. „Wieder
+      aufnehmen", ohne `aria-pressed`); der Zustand kommt als Kennzeichen „Vorschlag" /
+      „Aufgenommen" / „Gestrichen" aus der Begriffsquelle `utils/albumStateLabels.ts`, die auch
+      die Haltungszeilen der Endauswahl speist. Die Cache-Schlüssel von Entwurf und Alternativen
+      tragen die angemeldete Identität hinter dem Präfix `['photos', projectId]`.
   - **Die Endauswahl des Projekts, eine Ebene über beiden Entwürfen** *(Spec
     [`0431`](../specs/features/0431-endauswahl-gemeinsam.md), ADR
     [`decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md`](../specs/decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md))*:
@@ -724,7 +773,8 @@ Verarbeitungs-Cache (Thumbnails).
       `utils/albumSelection.ts::applyAlbumDecision`, und das ist exakt, weil eine Entscheidung
       immer überschreibt. Ein struktureller Wächter (`albumSelection.structure.test.ts`) hält beide
       Richtungen fest: Entwurfsseite und Entwurfskachel nennen keines der drei neuen Felder,
-      Endauswahlseite und -kachel importieren `isInAlbum` nicht.
+      Endauswahlseite und -kachel importieren `isInAlbum` nicht (seit Spec 0558 ebenso wenig
+      `draftMembership`).
     - **Die Kachel** `components/SelectionPhotoTile.tsx` trägt je Teilnehmer **eine benannte
       Haltungszeile** — die Zuordnung entsteht aus `user_id` und dem vorangestellten Namen, nie aus
       der Position in `ratings[]`, und die Zahl der Zeilen ist die Kardinalität von `participants`.
@@ -1012,8 +1062,8 @@ Verarbeitungs-Cache (Thumbnails).
     `MAX_FACES_PER_PHOTO`), `GET /photos/{id}/faces/{index}/image`,
     `PUT /photos/{id}/persons/{person_id}` (Body `{applies}`). Wer ein Gesicht als Referenz zeigt,
     ordnet die Person diesem Foto zugleich per Korrektur zu. `GET /projects/{id}/photos` nimmt
-    `person_id` (höchstens zweimal, dedupliziert, UND-verknüpft) im Listenzweig; zusammen mit
-    `draft=true` ist er `422`. `PhotoOut.persons[]` trägt je wirksam zugeordneter Person nur
+    `person_id` (höchstens zweimal, dedupliziert, UND-verknüpft) im Listenzweig; der Riegel
+    `draft` ist seit Spec 0558 in jeder Belegung `422`. `PhotoOut.persons[]` trägt je wirksam zugeordneter Person nur
     `person_id`, `origin` (`recognized`/`corrected`) und `face` (`shown`/`assigned`/`null`, Spec
     0551); Namen kommen aus `GET /persons`. Die
     Gesichts-Endpunkte lesen nur die lokale Display-Variante (fehlt sie: `404` ohne Modellaufruf),
@@ -2132,7 +2182,7 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   Die drei Schreibendpunkte schreiben je genau ihr Feld, `user_id` stammt überall ausschließlich
   aus `current_user`: `PUT /photos/{id}/rating` (nur `status`, `null` ist kein zulässiger
   Body-Wert), `DELETE /photos/{id}/rating` (nimmt nur `status` zurück und behält eine Zeile mit
-  Kennzeichen), `PUT /photos/{id}/favorite` (nur `favorite`).
+  Kennzeichen; seit Spec 0558 `200` mit `RatingWriteOut`), `PUT /photos/{id}/favorite` (nur `favorite`).
 - **PhotoCategoryClassification** *(implementiert, Spec
   [`0289`](../specs/features/0289-feste-kategorien.md), `models.py`, Tabelle
   `photo_category_classifications`, ADR
