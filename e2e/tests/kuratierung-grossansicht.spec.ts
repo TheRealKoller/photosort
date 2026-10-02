@@ -311,9 +311,9 @@ test.describe('Kuratierung: die Großansicht', () => {
   }) => {
     test.skip(page.viewportSize()!.width < 640, 'seitliche Lücke nur in der breiten Ansicht')
     await oeffneEntwurf(page)
-    // Seit Spec 0558 blendet der Entwurf Gestrichenes aus, und das einzige Hochformat des
-    // Demo-Entwurfs ist vom Demo-Nutzer gestrichen. Die Gestrichen-Zeilen werden deshalb
-    // aufgeklappt; die Großansicht einer gestrichenen Kachel ist dieselbe.
+    // Der Entwurf blendet Gestrichenes aus, und das einzige Hochformat des Demo-Entwurfs ist vom
+    // Demo-Nutzer gestrichen. Die Gestrichen-Zeilen werden deshalb aufgeklappt; die Großansicht
+    // einer gestrichenen Kachel ist dieselbe.
     const zeilen = page.getByRole('button', { name: /^\d+ gestrichen – anzeigen$/ })
     while ((await zeilen.count()) > 0) {
       await zeilen.first().click()

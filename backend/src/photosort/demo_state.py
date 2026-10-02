@@ -334,7 +334,7 @@ _DEMO_MULTIPLE_PLACES_EVENT = 2
 _DEMO_NO_LOCATION_EVENT = 3
 # Das Foto, an dem die eine Sehenswuerdigkeit-Zeile haengt - das erste des Landmark-Events.
 _DEMO_LANDMARK_PHOTO_INDEX = 0
-# Das Event OHNE VORSCHLAG des Album-Entwurfs (Spec 0558): Seine Fotos tragen keine Modellbewertung
+# Das Event OHNE VORSCHLAG des Album-Entwurfs: Seine Fotos tragen keine Modellbewertung
 # und damit keinen Qualitaetswert - sie sind Rangzeilen ohne Rang, also keine Kandidaten der
 # Auswahl, und die Abdeckung des Verfahrens laesst das Event leer. Genau so entsteht ein leeres
 # Event auch in der Anwendung. Ohne es zeigten Pruefstack und `browse-app` "Kein Bild im Entwurf"
@@ -1326,7 +1326,7 @@ async def _seed_rated_project(
 
         # Die Modellbewertung und der daraus GERECHNETE Qualitaetswert - nicht zwei unabhaengige
         # Zufallszahlen: die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie
-        # schriebe, und `rank_score` ist seit Spec 0428 genau diese Rechnung. Das Event ohne
+        # schriebe, und `rank_score` ist genau diese Rechnung. Das Event ohne
         # Vorschlag bekommt keine Modellbewertung und damit keinen Qualitaetswert.
         if _demo_event_index(index, spec.photo_count) == _DEMO_UNPROPOSED_EVENT:
             rankings.append((event_id, photo, None))

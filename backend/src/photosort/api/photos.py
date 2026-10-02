@@ -1363,7 +1363,7 @@ async def _draft_photo_ids(
     latest_run_id: int,
     run_events: RunEvents,
 ) -> PlacedPhotos:
-    """Der Album-Entwurf DIESES Nutzers (ADR 0098, ADR 0130):
+    """Der Album-Entwurf DIESES Nutzers:
     `Vorschlag(letzter erfolgreicher Lauf) ∪ Aufgenommen(u) ∪ (Gestrichen(u) ∩ Rangzeile im Lauf)`.
 
     Er ist ABGELEITET und nirgends gespeichert. "Nie angefasst" ist die Abwesenheit einer eigenen
@@ -1501,7 +1501,7 @@ async def album_draft(
     current_user: User = Depends(get_current_user),
 ) -> AlbumDraftOut:
     """Der Album-Entwurf DES ANFRAGENDEN NUTZERS als GANZES samt Eventliste des letzten
-    erfolgreichen Laufs (ADR 0098, ADR 0130); Menge und Reihenfolge siehe `_draft_photo_ids`.
+    erfolgreichen Laufs; Menge und Reihenfolge siehe `_draft_photo_ids`.
 
     SICHERHEIT (S4/S14 der Spec 0429/0430): kein `limit`/`offset`. Die Obergrenze der Antwort ist
     der bewertete Bestand des Laufs zuzueglich der eigenen Aufnahmen; die Menge waechst nur durch

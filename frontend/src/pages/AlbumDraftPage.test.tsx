@@ -792,8 +792,8 @@ describe('AlbumDraftPage: Zustände und Fremdtext', () => {
 })
 
 /*
- * specs/features/0531-kuratierung-grossansicht.md - die Großansicht in der Seite, unverändert seit
- * Spec 0558. Vor der Seite liegt eine Stub-Route als Verlaufssonde: Jeder Fall endet mit einem
+ * specs/features/0531-kuratierung-grossansicht.md - die Großansicht in der Seite. Vor der Seite
+ * liegt eine Stub-Route als Verlaufssonde: Jeder Fall endet mit einem
  * Zurück, das dort ankommen muss - so fällt ein verwaister oder überzähliger Verlaufseintrag auf.
  * Geöffnet wird über `fireEvent.click`, das (wie Safari) den Button NICHT fokussiert.
  */
