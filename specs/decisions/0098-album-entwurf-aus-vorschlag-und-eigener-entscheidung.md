@@ -1,6 +1,12 @@
 # 0098 - Album-Entwurf je Nutzer: abgeleitet aus Vorschlag und eigener Entscheidung, Favorit daneben
 
 **Status:** Accepted
+**Teilweise abgelöst:** ausschließlich aus Punkt 3 der Ort des Lesepfads (der Parameter `draft` an
+`GET /projects/{id}/photos`) und der Satz, ein gestrichenes Foto stehe in der Ansicht an seiner
+Stelle, durch ADR
+[`0130`](./0130-album-entwurf-gestrichenes-ausgeblendet-eigener-lesepfad-rueckgaengig-als-wiederherstellung.md).
+Der Entwurf hat dort einen eigenen Lesepfad mit Eventliste, die Antwort führt Gestrichenes
+weiter, die Ansicht blendet es aus. Punkte 1, 2 und 4–7 und der übrige Punkt 3 gelten unverändert.
 **Datum:** 2026-09-13
 **Bezug:** Spec [`features/0430-album-entwurf-je-nutzer.md`](../features/0430-album-entwurf-je-nutzer.md), ADR
 [`0097`](./0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md) (der
