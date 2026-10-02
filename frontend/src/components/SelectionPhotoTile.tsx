@@ -3,9 +3,10 @@ import type { Ref } from 'react'
 import type { AlbumParticipantOut, PhotoOut } from '../api/types'
 import type { ParticipantStance } from '../utils/albumSelection'
 import { participantStance } from '../utils/albumSelection'
+import { NOT_IN_DRAFT_LABEL } from '../utils/albumStateLabels'
+import { AlbumStateBadge } from './AlbumStateBadge'
 import { PhotoCard } from './PhotoCard'
 import { PhotoImage } from './PhotoImage'
-import { RatingBadge } from './RatingBadge'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 
@@ -41,17 +42,23 @@ export interface SelectionPhotoTileProps {
   largeTriggerRef: Ref<HTMLButtonElement>
 }
 
-/** Das Kennzeichen einer Haltung - der bestehende `RatingBadge`, nie ein neues Symbol. */
-function StanceBadge({ stance }: { stance: ParticipantStance }) {
+/**
+ * Das Kennzeichen einer Haltung in den Wörtern des Album-Entwurfs (`albumStateLabels.ts`).
+ * „Vorschlag" liest allein das lauf-globale `ranking.proposed`; beide Datenformen von „nicht
+ * vorgeschlagen" (keine Rangzeile, `proposed: false`) ergeben das neutrale „–" mit dem
+ * zugänglichen Namen „Nicht im Entwurf".
+ */
+function StanceBadge({ stance, proposed }: { stance: ParticipantStance; proposed: boolean }) {
   if (stance === 'taken') {
-    return <RatingBadge status="album_worthy" />
+    return <AlbumStateBadge state="taken" />
   }
   if (stance === 'struck') {
-    return <RatingBadge status="rejected" />
+    return <AlbumStateBadge state="struck" />
   }
-  // Das neutrale „–" heißt hier „hat nicht bewertet" - genau die Lesart, für die `PhotoCard` es
-  // seinen übrigen Aufrufstellen vorbehält.
-  return <RatingBadge status={null} />
+  if (proposed) {
+    return <AlbumStateBadge state="proposal" />
+  }
+  return <Badge aria-label={NOT_IN_DRAFT_LABEL}>–</Badge>
 }
 
 /**
@@ -88,8 +95,8 @@ export function SelectionPhotoTile({
   largeTriggerRef,
 }: SelectionPhotoTileProps) {
   // Die drei Anzeigezustände liegen ausschließlich in den Serverfeldern. Die Oberfläche leitet die
-  // Zugehörigkeit nie selbst her - `utils/albumDraft.ts::isInAlbum` gilt nur innerhalb der
-  // Antwortmenge des Entwurfszweigs und wird hier ausdrücklich nicht benutzt.
+  // Zugehörigkeit nie selbst her - `utils/albumDraft.ts::draftMembership` gilt nur innerhalb der
+  // Antwortmenge des Entwurfs-Lesepfads und wird hier ausdrücklich nicht benutzt.
   const takenOut = photo.final_selection_decision === false
   const decidedIn = photo.final_selection_decision === true
 
@@ -150,7 +157,10 @@ export function SelectionPhotoTile({
             {participants.map((participant) => (
               <li key={participant.user_id} className="flex flex-wrap items-center gap-1">
                 <span className="min-w-0 truncate">{participant.username}:</span>
-                <StanceBadge stance={participantStance(photo, participant)} />
+                <StanceBadge
+                  stance={participantStance(photo, participant)}
+                  proposed={photo.ranking?.proposed === true}
+                />
               </li>
             ))}
           </ul>

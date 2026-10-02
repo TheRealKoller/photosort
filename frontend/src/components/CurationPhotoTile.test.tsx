@@ -191,7 +191,7 @@ describe('CurationPhotoTile: die Begründung', () => {
       album_suitability: { level: 2, reason: 'Eine ziemlich lange Begründung des Modells.' },
     })
 
-    expect(screen.getByRole('button', { name: 'Im Album: a.jpg' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Streichen: a.jpg' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /mehr|ausklappen|weiterlesen/i })).toBeNull()
   })
 })
@@ -252,7 +252,9 @@ describe('CurationPhotoTile: das Kennzeichen des Zustands', () => {
   }
 
   function icons(element: HTMLElement): string[] {
-    return [...element.querySelectorAll('[data-icon]')].map((icon) => icon.getAttribute('data-icon') ?? '')
+    return [...element.querySelectorAll('[data-icon]')].map(
+      (icon) => icon.getAttribute('data-icon') ?? '',
+    )
   }
 
   it('marks an untouched proposed photo as "Vorschlag" with cog and book', () => {

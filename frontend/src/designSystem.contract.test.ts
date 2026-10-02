@@ -1915,12 +1915,18 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
     },
     {
       file: 'src/components/CurationPhotoTile.tsx',
-      snippet: 'className="h-11 flex-1 sm:h-8"',
+      snippet: 'className="h-11 sm:h-8"',
       reason:
-        'heisser Pfad, ZWEI Flaechen: der Zweizustand der Entwurfskachel wird viele Male ' +
-        'hintereinander gedrueckt, und ein Fehlgriff schreibt hier einen falschen Datenwert; ' +
-        'die Flaeche "Alternativen" liegt unmittelbar daneben und wird mit demselben Daumen ' +
-        'getroffen - eine niedrigere von beiden waere genau der Fehlgriff',
+        'heisser Pfad, ZWEI Flaechen untereinander: "Streichen" bzw. "Wieder aufnehmen" wird ' +
+        'viele Male hintereinander gedrueckt, und ein Fehlgriff schreibt einen falschen Datenwert; ' +
+        '"Alternativen" liegt unmittelbar darunter und wird mit demselben Daumen getroffen',
+    },
+    {
+      file: 'src/components/DraftAlternativesBand.tsx',
+      snippet: 'className="h-11 sm:h-8"',
+      reason:
+        'heisser Pfad in Band und Hinzufuegen-Panel: "Tauschen"/"Hinzufuegen" schreiben sofort, ' +
+        'Kandidaten stehen auf dem Telefon 2x2 dicht beieinander',
     },
     {
       file: 'src/pages/ProjectListPage.tsx',

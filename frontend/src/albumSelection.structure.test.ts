@@ -48,14 +48,22 @@ const DRAFT_FILES = [
   'pages/AlbumDraftPage.tsx',
   'components/CurationPhotoTile.tsx',
   'components/CurationLightbox.tsx',
+  'components/DraftEventSection.tsx',
+  'components/DraftAlternativesBand.tsx',
+  'components/DraftExplainer.tsx',
+  'components/UndoToast.tsx',
+  'components/AlbumStateBadge.tsx',
 ] as const
 
-/** Die Dateien der ENDAUSWAHL - sie dürfen `isInAlbum` nicht importieren. */
+/** Die Dateien der ENDAUSWAHL - sie dürfen `draftMembership` nicht importieren. */
 const SELECTION_FILES = [
   'pages/AlbumSelectionPage.tsx',
   'components/SelectionPhotoTile.tsx',
   'components/CurationLightbox.tsx',
 ] as const
+
+/** Ein Import von `draftMembership`, auch in einem mehrzeiligen Importblock - nie ein Kommentar. */
+const IMPORTS_MEMBERSHIP = /import\s*\{[^}]*\bdraftMembership\b[^}]*\}\s*from/
 
 describe('Der Einzelentwurf bleibt von der Endauswahl unberührt', () => {
   it.each(DRAFT_FILES)('%s nennt keines der drei Endauswahl-Felder', (file) => {
@@ -78,21 +86,19 @@ describe('Der Einzelentwurf bleibt von der Endauswahl unberührt', () => {
 })
 
 describe('Die Endauswahl leitet die Zugehörigkeit nie selbst her', () => {
-  it.each(SELECTION_FILES)('%s importiert `isInAlbum` nicht', (file) => {
-    expect(read(file)).not.toMatch(/^\s*import\b.*\bisInAlbum\b/m)
+  it.each(SELECTION_FILES)('%s importiert `draftMembership` nicht', (file) => {
+    expect(read(file)).not.toMatch(IMPORTS_MEMBERSHIP)
   })
 
   it('erkennt einen solchen Import, wo er steht - die Suche ist nicht blind', () => {
-    // Gegenprobe am Bestand: `CurationPhotoTile` importiert `isInAlbum` tatsächlich.
-    expect(read('components/CurationPhotoTile.tsx')).toMatch(/^\s*import\b.*\bisInAlbum\b/m)
+    // Gegenprobe am Bestand: die Entwurfsseite importiert `draftMembership` tatsächlich.
+    expect(read('pages/AlbumDraftPage.tsx')).toMatch(IMPORTS_MEMBERSHIP)
   })
 
   it('unterscheidet den Import vom bloßen Nennen des Namens in einem Kommentar', () => {
-    // Beide Endauswahl-Dateien SPRECHEN über `isInAlbum` (sie begründen, warum sie es nicht
-    // benutzen). Ein Wächter, der schon daran anschlägt, wäre dauerhaft rot und würde entfernt.
-    for (const file of SELECTION_FILES) {
-      expect(read(file)).toContain('isInAlbum')
-    }
+    // Die Endauswahl-Kachel SPRICHT über `draftMembership` (sie begründet, warum sie es nicht
+    // benutzt). Ein Wächter, der schon daran anschlägt, wäre dauerhaft rot und würde entfernt.
+    expect(read('components/SelectionPhotoTile.tsx')).toContain('draftMembership')
   })
 })
 

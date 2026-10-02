@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 
 import { ApiError } from '../api/client'
@@ -7,57 +7,64 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CurationLightbox } from '../components/CurationLightbox'
 import { CurationPhotoTile } from '../components/CurationPhotoTile'
+import { DraftAddPanel, DraftAlternativesBand } from '../components/DraftAlternativesBand'
 import { DraftAlternativesDialog } from '../components/DraftAlternativesDialog'
+import { DraftEventSection } from '../components/DraftEventSection'
+import { DraftExplainer } from '../components/DraftExplainer'
 import { PersonFilterGroup } from '../components/PersonFilterGroup'
+import { UndoToast } from '../components/UndoToast'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { useCurationLightbox } from '../hooks/useCurationLightbox'
+import { useDraftPosition } from '../hooks/useDraftPosition'
+import type { ObserverFactory } from '../hooks/useDraftPosition'
 import { useMotifsQuery } from '../hooks/useMotifs'
 import { usePersonFilter } from '../hooks/usePersonFilter'
 import {
   useDraftDecisionMutation,
   useDraftExchangeMutation,
+  useDraftExchangeUndoMutation,
   useDraftQuery,
 } from '../hooks/usePhotos'
 import { useProjectQuery } from '../hooks/useProjects'
-import { draftMotifText, draftSizeText, formatDraftPhotoCount } from '../utils/albumDraft'
-import { carriesPersons, filterByPersons } from '../utils/personFilter'
-import type { PhotoEventGroup } from '../utils/eventGrouping'
-import { groupPhotosByDay } from '../utils/eventGrouping'
+import {
+  draftClosingTexts,
+  draftCounts,
+  draftMembership,
+  draftMotifText,
+  draftOverviewText,
+  draftSizeText,
+  formatDraftPhotoCount,
+  reAddDecision,
+} from '../utils/albumDraft'
+import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
+import { groupEventsByDay } from '../utils/eventGrouping'
 import { ownRatingStatus } from '../utils/ownRating'
+import { carriesPersons, filterByPersons } from '../utils/personFilter'
 import { formatDayHeading } from '../utils/timeOfDay'
 
 /**
- * Der Leerzustand des Entwurfs. Er benennt den fehlenden Schritt und verlinkt ihn, statt eine
- * leere Liste zu zeigen: Ohne erfolgreichen Kriterien-Lauf gibt es keinen Vorschlag - und auch
- * bereits aufgenommene Bilder erscheinen dann nicht, weil es kein Event gibt, in das sie
- * einzuordnen wären.
+ * Der Leerzustand des Entwurfs - nur ein Lauf ohne Events zeigt ihn. Er benennt den fehlenden
+ * Schritt und verlinkt ihn.
  */
 export const DRAFT_EMPTY_TEXT = 'Noch kein Auswahlvorschlag — führe die Kriterien-Bewertung aus.'
 
 /**
- * Der Leerzustand OHNE Cloud-Freigabe - mit Vorrang vor `DRAFT_EMPTY_TEXT`: ohne Freigabe entsteht
- * gar kein Entwurf, und „führe die Kriterien-Bewertung aus" wäre ein Rat, der nicht hilft.
- *
- * Er benennt die fehlende Freigabe und den Ort, an dem sie erteilt wird - und WIEDERHOLT DEN
- * ZUSTIMMUNGSTEXT NICHT. Was an die Cloud geht, steht an genau einer Stelle, im Info-Popover neben
- * dem Schalter der Projekteinstellungen; zwei Fassungen desselben Textes driften, und eine
- * Einwilligung, die an zwei Orten verschieden beschrieben ist, ist keine.
+ * Der Leerzustand OHNE Cloud-Freigabe - mit Vorrang vor `DRAFT_EMPTY_TEXT`. Er WIEDERHOLT DEN
+ * ZUSTIMMUNGSTEXT NICHT: was an die Cloud geht, steht an genau einer Stelle.
  */
 export const DRAFT_CLOUD_CONSENT_TEXT =
   'Ohne Cloud-Freigabe entsteht kein Album-Entwurf. Die Freigabe erteilst du in den ' +
   'Projekteinstellungen.'
 
-/** Der Text einer Eventgruppe, in der gerade kein Bild des Entwurfs steht. */
-export const DRAFT_EMPTY_EVENT_TEXT = 'Kein Bild im Entwurf'
+/** Titel des Hinweises nach einem Tausch („Gestrichen" kommt aus der Begriffsquelle). */
+export const EXCHANGED_TITLE = 'Getauscht'
 
 const SKELETON_TILE_COUNT = 6
+const ACTION_FAILED_TEXT = 'Die Aktion ist fehlgeschlagen.'
 
-/**
- * Toggelt den Klapp-Zustand eines einzelnen Tages - liefert ein neues `Set` statt das übergebene
- * zu mutieren, andere `dayKey`s bleiben unverändert.
- */
+/** Toggelt den Klapp-Zustand eines Tages - liefert ein neues `Set`. */
 export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string): Set<string> {
   const next = new Set(collapsedDayKeys)
   if (next.has(dayKey)) {
@@ -68,174 +75,317 @@ export function toggleDayCollapse(collapsedDayKeys: Set<string>, dayKey: string)
   return next
 }
 
-/** Die Bezeichnung einer einmal gesehenen Eventgruppe - Grundlage des Leerzustands je Event. */
-interface KnownEventGroup {
-  dayKey: string
-  eventId: number
-  heading: string
+type UndoTarget =
+  | { kind: 'strike'; photo: PhotoOut; previous: RatingStatus | null }
+  | {
+      kind: 'exchange'
+      replaced: PhotoOut
+      chosen: PhotoOut
+      chosenPrevious: 'rejected' | null
+      replacedPrevious: 'album_worthy' | null
+    }
+
+type OpenPanel = { kind: 'band'; photoId: number } | { kind: 'add'; eventId: number } | null
+
+function errorText(error: unknown): string {
+  return error instanceof ApiError ? error.detail : ACTION_FAILED_TEXT
 }
 
-export function AlbumDraftPage() {
+export interface AlbumDraftPageProps {
+  /** Test-Naht: der Beobachter der Positionsanzeige (jsdom kennt keinen). */
+  createPositionObserver?: ObserverFactory
+}
+
+/**
+ * Der Album-Entwurf: der Vorschlag als Entwurf, „nur abweichen, wo nötig". Streichen, Tauschen
+ * (Band am Foto), Hinzufügen (Panel je Event) und Wieder aufnehmen (Gestrichen-Zeile) schreiben den
+ * Serverzustand in den einmal geladenen Entwurf - nie ein Neuladen, damit Scrollposition und Fokus
+ * stehen bleiben. Es gibt keinen gespeicherten Zustand „fertig".
+ *
+ * Der EIGENE Zustand kommt ausschließlich über `ownRatingStatus` mit dem `username`-Claim (S6/S10).
+ */
+export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps = {}) {
   const { projectId } = useParams()
   const id = Number(projectId)
-  // Das Motivset kommt vom Server und wird langlebig gecacht - es speist die schreibgeschuetzte
-  // Motivliste im Info-Popover jeder Kachel. EIN Request fuer alle Kacheln.
   const motifsQuery = useMotifsQuery()
-  // Der EIGENE Bewertungszustand wird ausschliesslich hierueber abgeleitet (`ownRatingStatus` mit
-  // dem `username`-Claim des JWT, wie in Raster- und Detailansicht) - nie ueber `ratings[]`
-  // insgesamt, sonst stellte die Ansicht die Entscheidung des jeweils anderen als eigene dar
-  // (Auflage S6).
   const token = getToken()
   const username = token ? decodeUsername(token) : null
 
   const query = useDraftQuery(id)
-  // Die Cloud-Freigabe ist eine PROJEKTeinstellung und steht nicht am Foto; das Projekt traegt
-  // ausserdem den wirksamen Richtwert des Kopfbereichs.
   const projectQuery = useProjectQuery(id)
   const decisionMutation = useDraftDecisionMutation(id, username)
   const exchangeMutation = useDraftExchangeMutation(id, username)
+  const undoMutation = useDraftExchangeUndoMutation(id, username)
   const items = useMemo(() => query.data?.items ?? [], [query.data])
+  const events = useMemo(() => query.data?.events ?? [], [query.data])
 
-  // Der Personenfilter blendet NUR clientseitig aus: Der Kopf zählt weiter den ganzen
-  // Entwurf, und die Entwurfsliste wird durch den Filter weder neu geladen noch beschrieben.
   const [searchParams, setSearchParams] = useSearchParams()
   const { personsQuery, personIds, setPersonIds } = usePersonFilter(searchParams, setSearchParams)
   const isFiltered = personIds.length > 0
   const filterKey = personIds.join(',')
-  const visibleItems = filterByPersons(items, personIds)
-  // Das eingetauschte Foto fiel aus dem Filter - gemerkt mit dem Filter, unter dem es geschah, damit
-  // die Meldung mit dem nächsten Filterwechsel von selbst entfällt. Ein neues Objekt je Austausch
-  // setzt den Fokus auch beim zweiten Mal.
   const [hiddenExchange, setHiddenExchange] = useState<{ filterKey: string } | null>(null)
 
-  // Die Grossansicht: offen ist, was im Verlaufseintrag steht - nachgeschlagen in der GELADENEN
-  // Liste. Die Ueberschrift ist Fokusziel, wenn der Ausloeser des Fotos nicht mehr im Raster steht.
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const barRef = useRef<HTMLDivElement>(null)
   const lightbox = useCurationLightbox({ items: query.data?.items, headingRef })
 
-  // Das Bild, dessen Alternativen gerade offen stehen - EIN Dialog fuer die ganze Seite, nicht
-  // einer je Kachel: sonst liefe beim Laden eine Abfrage je Kachel (Durchsatz-Zusage der Story).
-  const [alternativesPhotoId, setAlternativesPhotoId] = useState<number | null>(null)
-  // Die Kachel, die den Fokus bekommt: nach einem Austausch die NEU an dieser Stelle stehende.
-  // Der Dialog gaebe den Fokus sonst an die Schaltflaeche des gerade gestrichenen Bildes zurueck.
-  const [focusPhotoId, setFocusPhotoId] = useState<number | null>(null)
+  const [openPanel, setOpenPanel] = useState<OpenPanel>(null)
+  const [allAlternativesPhotoId, setAllAlternativesPhotoId] = useState<number | null>(null)
+  const panelBaseId = useId()
 
-  // Die Fotos mit gerade LAUFENDER Entscheidung - eine MENGE, nicht eine einzelne Id: verschiedene
-  // Fotos entscheiden unabhaengig voneinander, ein ZWEITER Vorgang fuer DASSELBE Foto wird
-  // verhindert (`Rating` traegt `UniqueConstraint(photo_id, user_id)`, zwei nebenlaeufige Anfragen
-  // liefen in einen IntegrityError).
-  //
-  // ZWEI Ablagen fuer dieselbe Menge, mit verschiedenen Aufgaben: der Ref ist die SYNCHRONE
-  // Wahrheit fuer die Sperre je Foto, der State loest das Neurendern der betroffenen Kacheln aus.
-  // Geprueft wird gegen den REF: `disabled` und der State-Schnappschuss im Render-Closure
-  // entstehen beide erst durch ein State-Update, das React fruehestens beim naechsten Render
-  // verarbeitet - zwei Klicks im selben Durchlauf saehen beide denselben, leeren Schnappschuss.
-  const decidingPhotoIdsRef = useRef<Set<number>>(new Set())
-  const [decidingPhotoIds, setDecidingPhotoIds] = useState<Set<number>>(new Set())
-
-  // Klapp-Zustand der Tages-Abschnitte: leeres Set = alles aufgeklappt (Default) - kein
-  // localStorage/sessionStorage/Query-Param, keine Persistierung ueber einen Reload hinaus.
-  const [collapsedDayKeys, setCollapsedDayKeys] = useState<Set<string>>(new Set())
-
-  // Einmal gesehene Eventgruppen bleiben fuer die Dauer des Seitenbesuchs bekannt: sonst
-  // verschwaende ein leergeraeumtes Event kommentarlos aus der Gliederung, statt mit seiner
-  // Ueberschrift und einem eigenen Leerzustand stehenzubleiben.
-  const knownEventGroupsRef = useRef<Map<number, KnownEventGroup>>(new Map())
-
-  // Bekannt wird eine Gruppe aus dem GANZEN Entwurf, nicht aus der gefilterten Sicht: Sonst stünde
-  // nach dem Aufheben des Filters jede nur ausgeblendete Gruppe als "leergeräumt" da.
-  for (const day of groupPhotosByDay(items)) {
-    for (const group of day.events) {
-      knownEventGroupsRef.current.set(group.eventId, {
-        dayKey: day.dayKey,
-        eventId: group.eventId,
-        heading: group.heading,
-      })
+  // Die Sperre je Foto: der Ref ist die SYNCHRONE Wahrheit, der State löst das Neurendern aus.
+  const lockedRef = useRef<Set<number>>(new Set())
+  const [locked, setLocked] = useState<Set<number>>(new Set())
+  function lock(ids: number[]): boolean {
+    if (ids.some((photoId) => lockedRef.current.has(photoId))) {
+      return false
     }
+    lockedRef.current = new Set([...lockedRef.current, ...ids])
+    setLocked(lockedRef.current)
+    return true
   }
-  const days = groupPhotosByDay(visibleItems)
-  // Bei aktivem Filter entfallen Tage und Gruppen ohne sichtbares Foto - "Kein Bild im Entwurf"
-  // wäre dort eine falsche Aussage.
-  if (!isFiltered) {
-    const presentEventIds = new Set(days.flatMap((day) => day.events.map((group) => group.eventId)))
-    for (const known of knownEventGroupsRef.current.values()) {
-      if (presentEventIds.has(known.eventId)) {
-        continue
-      }
-      let day = days.find((candidate) => candidate.dayKey === known.dayKey)
-      if (day === undefined) {
-        day = { dayKey: known.dayKey, events: [] }
-        days.push(day)
-      }
-      day.events.push({ eventId: known.eventId, heading: known.heading, photos: [] })
-    }
-    // dayKey-Format YYYY-MM-DD sortiert lexikographisch = chronologisch. Nachtraeglich angehaengte
-    // Leergruppen stuenden sonst hinter den gefuellten Tagen.
-    days.sort((left, right) => left.dayKey.localeCompare(right.dayKey))
+  function unlock(ids: number[]): void {
+    lockedRef.current = new Set([...lockedRef.current].filter((photoId) => !ids.includes(photoId)))
+    setLocked(lockedRef.current)
   }
 
-  // Als Effekt statt direkt im Erfolgsfall: Das Schließen des Dialogs gibt den Fokus in seiner
-  // Aufräumfunktion an den Auslöser zurück, und die läuft vor den Effekten des nächsten Renderns.
+  const [actionError, setActionError] = useState<{ where: string; message: string } | null>(null)
+  const errorAt = (where: string) => (actionError?.where === where ? actionError.message : null)
+
+  const [undo, setUndo] = useState<{ key: number; target: UndoTarget } | null>(null)
+  const [undoError, setUndoError] = useState<string | null>(null)
+  const [undoRestart, setUndoRestart] = useState(0)
+  const undoKeyRef = useRef(0)
+  function showUndo(target: UndoTarget): void {
+    undoKeyRef.current += 1
+    setUndo({ key: undoKeyRef.current, target })
+    setUndoError(null)
+  }
+  function endUndo(): void {
+    setUndo(null)
+    setUndoError(null)
+  }
+
+  // Fokusziele über `data-focus-key` (numerische Ids, nie ein Name - S11), gesucht NACH dem Render,
+  // in dem der Handgriff angekommen ist. Nie `body`, kein Scrollsprung.
+  const [focusRequest, setFocusRequest] = useState<{ key: string; scroll: boolean } | null>(null)
+  useEffect(() => {
+    if (focusRequest === null) {
+      return
+    }
+    const target = containerRef.current?.querySelector<HTMLElement>(
+      `[data-focus-key="${focusRequest.key}"]`,
+    )
+    if (target) {
+      target.focus({ preventScroll: true })
+      if (focusRequest.scroll) {
+        target.scrollIntoView?.({ block: 'nearest' })
+      }
+    }
+    setFocusRequest(null)
+  }, [focusRequest, query.data, openPanel])
+
   useEffect(() => {
     if (hiddenExchange !== null) {
       headingRef.current?.focus()
     }
   }, [hiddenExchange])
 
-  function handleDecide(photo: PhotoOut, status: RatingStatus): void {
-    if (decidingPhotoIdsRef.current.has(photo.id)) {
+  const ownStatusOf = (photo: PhotoOut) => ownRatingStatus(photo.ratings, username)
+  const counts = draftCounts(items, username)
+  const albumItems = items.filter((photo) => draftMembership(photo, ownStatusOf(photo)) === 'album')
+  const albumIds = new Set(albumItems.map((photo) => photo.id))
+  const visibleAlbumIds = new Set(filterByPersons(albumItems, personIds).map((photo) => photo.id))
+  const days = groupEventsByDay(events, items)
+
+  const [collapsedDayKeys, setCollapsedDayKeys] = useState<Set<string>>(new Set())
+  const layoutKey = `${days.map((day) => day.dayKey).join()}|${[...collapsedDayKeys].join()}`
+  const position = useDraftPosition(containerRef, barRef, layoutKey, createPositionObserver)
+  const dayIndex = Math.max(
+    0,
+    days.findIndex((day) => day.events.some((group) => group.event.position === position)),
+  )
+  const currentGroup = days
+    .flatMap((day) => day.events)
+    .find((group) => group.event.position === position)
+
+  function albumOf(eventId: number): PhotoOut[] {
+    return albumItems.filter(
+      (photo) => photo.event?.id === eventId && visibleAlbumIds.has(photo.id),
+    )
+  }
+  function struckOf(eventId: number): PhotoOut[] {
+    return items.filter(
+      (photo) =>
+        photo.event?.id === eventId && draftMembership(photo, ownStatusOf(photo)) === 'struck',
+    )
+  }
+
+  function handleStrike(photo: PhotoOut): void {
+    if (!lock([photo.id])) {
       return
     }
-    decidingPhotoIdsRef.current = new Set(decidingPhotoIdsRef.current).add(photo.id)
-    setDecidingPhotoIds(new Set(decidingPhotoIdsRef.current))
+    endUndo()
+    setActionError(null)
+    const previous = ownStatusOf(photo)
+    const siblings = albumOf(photo.event?.id ?? 0)
+    const index = siblings.findIndex((candidate) => candidate.id === photo.id)
+    const neighbor = siblings[index + 1] ?? siblings[index - 1]
     decisionMutation.mutate(
-      { photoId: photo.id, status },
+      { photoId: photo.id, status: 'rejected' },
       {
-        // `onSettled` statt `onError`: das Foto bleibt in jedem Fall an seiner Stelle, es gibt
-        // also kein "verschwindet", an dem sich das Ende der Mutation ablesen liesse.
-        onSettled: () => {
-          const next = new Set(decidingPhotoIdsRef.current)
-          next.delete(photo.id)
-          decidingPhotoIdsRef.current = next
-          setDecidingPhotoIds(next)
+        onSuccess: () => {
+          if (openPanel?.kind === 'band' && openPanel.photoId === photo.id) {
+            setOpenPanel(null)
+          }
+          showUndo({ kind: 'strike', photo, previous })
+          setFocusRequest({
+            key: neighbor ? `decide-${neighbor.id}` : `struck-toggle-${photo.event?.id ?? 0}`,
+            scroll: false,
+          })
         },
+        onError: (error) =>
+          setActionError({ where: `tile-${photo.id}`, message: errorText(error) }),
+        onSettled: () => unlock([photo.id]),
       },
     )
   }
 
-  function handleExchange(replaced: PhotoOut, chosen: PhotoOut): void {
+  function handleReAdd(photo: PhotoOut): void {
+    if (!lock([photo.id])) {
+      return
+    }
+    endUndo()
+    setActionError(null)
+    const struck = struckOf(photo.event?.id ?? 0)
+    const index = struck.findIndex((candidate) => candidate.id === photo.id)
+    const neighbor = struck[index + 1] ?? struck[index - 1]
+    decisionMutation.mutate(
+      { photoId: photo.id, status: reAddDecision(photo) },
+      {
+        onSuccess: () =>
+          setFocusRequest({
+            key: neighbor ? `readd-${neighbor.id}` : `decide-${photo.id}`,
+            scroll: false,
+          }),
+        onError: (error) =>
+          setActionError({ where: `struck-${photo.event?.id ?? 0}`, message: errorText(error) }),
+        onSettled: () => unlock([photo.id]),
+      },
+    )
+  }
+
+  function handleAdd(candidate: PhotoOut, neighborId: number | null, eventId: number): void {
+    if (!lock([candidate.id])) {
+      return
+    }
+    endUndo()
+    setActionError(null)
+    decisionMutation.mutate(
+      { photoId: candidate.id, status: 'album_worthy', insert: candidate },
+      {
+        onSuccess: () =>
+          setFocusRequest({
+            key: neighborId === null ? `panel-heading-${eventId}` : `add-${neighborId}`,
+            scroll: false,
+          }),
+        onError: (error) =>
+          setActionError({ where: `panel-${eventId}`, message: errorText(error) }),
+        onSettled: () => unlock([candidate.id]),
+      },
+    )
+  }
+
+  function handleExchange(replaced: PhotoOut, chosen: PhotoOut, where: string): void {
+    if (!lock([replaced.id, chosen.id])) {
+      return
+    }
+    endUndo()
+    setActionError(null)
+    const chosenPrevious = ownStatusOf(chosen) === 'rejected' ? 'rejected' : null
+    const replacedPrevious = ownStatusOf(replaced) === 'album_worthy' ? 'album_worthy' : null
     exchangeMutation.mutate(
       { replaced, chosen },
       {
         onSuccess: () => {
-          // Erst schliessen, dann den Fokus umlenken: Die Aufraeumfunktion des Dialogs gibt ihn
-          // an das ausloesende Element zurueck, und React fuehrt ALLE Aufraeumfunktionen vor
-          // allen neuen Effekten aus - die Fokusnahme der Kachel gewinnt deshalb. Fällt das
-          // eingetauschte Foto aus dem Filter, gibt es keine Kachel - der Fokus geht aufs `h1`.
-          setAlternativesPhotoId(null)
+          setOpenPanel(null)
+          setAllAlternativesPhotoId(null)
+          showUndo({ kind: 'exchange', replaced, chosen, chosenPrevious, replacedPrevious })
           if (carriesPersons(chosen, personIds)) {
-            setFocusPhotoId(chosen.id)
+            setFocusRequest({ key: `decide-${chosen.id}`, scroll: true })
           } else {
             setHiddenExchange({ filterKey })
           }
         },
+        onError: (error) => setActionError({ where, message: errorText(error) }),
+        onSettled: () => unlock([replaced.id, chosen.id]),
       },
     )
   }
 
-  // Auf `=== true` gepruueft statt auf Falsyness: waehrend des Ladens ist das Feld `undefined`,
-  // und das ist keine Aussage ueber die Freigabe.
-  const cloudConsentGiven = projectQuery.data?.cloud_vision_detection_enabled === true
-  // Die wirksame Zahl kommt FERTIG vom Server - das Frontend leitet sie nie selbst ab.
-  const effectiveSelectionTarget = projectQuery.data?.effective_selection_target ?? null
+  function handleUndo(): void {
+    if (undo === null) {
+      return
+    }
+    const { target } = undo
+    const onError = (error: unknown) => {
+      setUndoError(errorText(error))
+      setUndoRestart((previous) => previous + 1)
+    }
+    if (target.kind === 'strike') {
+      if (!lock([target.photo.id])) {
+        return
+      }
+      decisionMutation.mutate(
+        { photoId: target.photo.id, status: target.previous },
+        {
+          onSuccess: () => {
+            endUndo()
+            setFocusRequest({ key: `decide-${target.photo.id}`, scroll: false })
+          },
+          onError,
+          onSettled: () => unlock([target.photo.id]),
+        },
+      )
+      return
+    }
+    const ids = [target.replaced.id, target.chosen.id]
+    if (!lock(ids)) {
+      return
+    }
+    undoMutation.mutate(
+      {
+        photo_id: target.chosen.id,
+        replaced_photo_id: target.replaced.id,
+        photo_previous_status: target.chosenPrevious,
+        replaced_previous_status: target.replacedPrevious,
+      },
+      {
+        onSuccess: () => {
+          endUndo()
+          setFocusRequest({ key: `decide-${target.replaced.id}`, scroll: false })
+        },
+        onError,
+        onSettled: () => unlock(ids),
+      },
+    )
+  }
 
+  const cloudConsentGiven = projectQuery.data?.cloud_vision_detection_enabled === true
+  const target = projectQuery.data?.effective_selection_target ?? null
   const motifSetError = motifsQuery.isError
     ? motifsQuery.error instanceof ApiError
       ? motifsQuery.error.detail
       : 'Fehler beim Laden der Motive.'
     : undefined
+  const ready = query.isSuccess && projectQuery.isSuccess && cloudConsentGiven
+  const hasEvents = events.length > 0
+  const selectionPath = `/projects/${id}/selection`
 
   function renderTile(photo: PhotoOut) {
+    const struck = ownStatusOf(photo) === 'rejected'
+    const bandOpen = openPanel?.kind === 'band' && openPanel.photoId === photo.id
     return (
       <CurationPhotoTile
         key={photo.id}
@@ -243,70 +393,84 @@ export function AlbumDraftPage() {
         motifSet={motifsQuery.data}
         motifSetLoading={motifsQuery.isLoading}
         motifSetError={motifSetError}
-        onMotifSetRetry={() => {
-          void motifsQuery.refetch()
-        }}
-        ownStatus={ownRatingStatus(photo.ratings, username)}
-        deciding={decidingPhotoIds.has(photo.id)}
-        onDecide={(status) => handleDecide(photo, status)}
-        onOpenAlternatives={() => setAlternativesPhotoId(photo.id)}
-        focusDecision={focusPhotoId === photo.id}
+        onMotifSetRetry={() => void motifsQuery.refetch()}
+        ownStatus={ownStatusOf(photo)}
+        deciding={locked.has(photo.id)}
+        onDecide={() => (struck ? handleReAdd(photo) : handleStrike(photo))}
+        alternatives={
+          struck
+            ? undefined
+            : {
+                expanded: bandOpen,
+                controls: `${panelBaseId}-band`,
+                onToggle: () => {
+                  setActionError(null)
+                  setOpenPanel(bandOpen ? null : { kind: 'band', photoId: photo.id })
+                },
+              }
+        }
+        error={errorAt(`tile-${photo.id}`)}
         onOpenLarge={lightbox.open}
         largeTriggerRef={lightbox.triggerRef(photo.id)}
       />
     )
   }
 
-  function renderEventGroup(group: PhotoEventGroup) {
-    // Die Motivmischung entsteht aus den KACHELN dieser Gruppe, nie aus einer Serveraggregation:
-    // eine solche waere nach jeder Entscheidung veraltet (die Entwurfsliste laedt bewusst nicht
-    // neu, ADR 0098 Punkt 6) und naennte ein Motiv, das kein Bild der Gruppe mehr traegt.
-    const motifText = draftMotifText(group.photos, username, motifsQuery.data?.items ?? [])
-    return (
-      <section key={group.eventId} className="flex flex-col gap-2">
-        {/* Die Zahl steht NEBEN der Ueberschrift in einem eigenen Element, nicht in ihr: der von
-            `formatEventHeading()` gelieferte Text bleibt unveraendert. */}
-        <div className="flex flex-wrap items-baseline gap-2">
-          <h3 className="text-base">{group.heading}</h3>
-          <span className="text-sm text-text">{`(${formatDraftPhotoCount(group.photos.length)})`}</span>
-        </div>
-        {/* Reiner Fliesstext, umbrechend - keine Werte, keine Balken, keine Reihung nach Staerke.
-            In einer leergeraeumten Gruppe entfaellt die Zeile und es bleibt beim Leerzustand. */}
-        {motifText !== null && <p className="text-sm text-text">{motifText}</p>}
-        {group.photos.length === 0 && <p className="text-sm text-text">{DRAFT_EMPTY_EVENT_TEXT}</p>}
-        {group.photos.length > 0 && (
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-            {group.photos.map((photo) => renderTile(photo))}
-          </ul>
-        )}
-      </section>
-    )
-  }
-
+  const bandPhoto =
+    openPanel?.kind === 'band'
+      ? albumItems.find((photo) => photo.id === openPanel.photoId)
+      : undefined
+  const allAlternativesPhoto = items.find((photo) => photo.id === allAlternativesPhotoId)
+  const closing = target === null ? null : draftClosingTexts(counts, target)
+  const undoView =
+    undo === null
+      ? null
+      : undo.target.kind === 'strike'
+        ? {
+            key: undo.key,
+            title: ALBUM_STATE_LABELS.struck,
+            photoId: undo.target.photo.id,
+            relativePath: undo.target.photo.relative_path,
+          }
+        : {
+            key: undo.key,
+            title: EXCHANGED_TITLE,
+            photoId: undo.target.replaced.id,
+            relativePath: undo.target.replaced.relative_path,
+          }
   const dayKeys = days.map((day) => day.dayKey)
-  // Leer ist der ENTWURF, nicht die gefilterte Sicht - bekannte, leergeräumte Gruppen zählen mit.
-  const draftIsEmpty = items.length === 0 && knownEventGroupsRef.current.size === 0
-  // Das Bezugsbild kommt aus der GELADENEN Liste, nicht aus einer Kopie im Zustand: Bewertet es
-  // jemand zwischendurch, zeigte eine Kopie den Stand von vorhin.
-  const alternativesPhoto = items.find((item) => item.id === alternativesPhotoId)
 
   return (
-    <div className="flex flex-col gap-6">
+    <div ref={containerRef} className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h1 ref={headingRef} tabIndex={-1} className="text-xl sm:text-2xl">
           Album-Entwurf
         </h1>
-        {/* Richtwert und Ist-Anzahl NEBENEINANDER, in der Farbe des Fliesstextes. Eine Abweichung
-            nach oben wie nach unten ist ein neutraler Hinweis - kein Warnton, kein Fehlerzustand,
-            keine Schaltflaeche, die sie beseitigt. Der Text erscheint erst, wenn beide Zahlen
-            vorliegen; „0 von etwa 12" waehrend des Ladens waere eine Aussage ueber einen Stand,
-            den es noch nicht gibt. */}
-        {query.isSuccess && effectiveSelectionTarget !== null && (
-          <p className="text-sm text-text">
-            {draftSizeText(items.length, effectiveSelectionTarget)}
-          </p>
+        {ready && hasEvents && (
+          <p className="text-sm text-text">{draftOverviewText(days.length, events.length)}</p>
         )}
       </header>
+
+      {ready && hasEvents && <DraftExplainer username={username} />}
+
+      {ready && hasEvents && (
+        <div
+          ref={barRef}
+          data-draft-bar=""
+          className="sticky top-header z-10 flex flex-col gap-1 border-b border-separator bg-bg py-2"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm text-text-h">
+              {`Tag ${dayIndex + 1} von ${days.length} · Event ${position} von ${events.length}`}
+            </p>
+            <Button asChild variant="secondary" size="sm" className="shrink-0">
+              <Link to={selectionPath}>Zur Endauswahl</Link>
+            </Button>
+          </div>
+          <p className="truncate text-sm text-text">{currentGroup?.heading ?? ''}</p>
+          {target !== null && <p className="text-sm text-text">{draftSizeText(counts, target)}</p>}
+        </div>
+      )}
 
       {(query.isLoading || projectQuery.isLoading) && (
         <ul
@@ -328,9 +492,6 @@ export function AlbumDraftPage() {
         </Alert>
       )}
 
-      {/* Kein `Alert`, kein `role="alert"`, keine Fehlerfarbe, kein Symbol: eine fehlende
-          Einwilligung ist kein Fehler. Die Schaltflaeche ist bewusst SEKUNDAER - sie navigiert,
-          sie erteilt nichts. */}
       {query.isSuccess && projectQuery.isSuccess && !cloudConsentGiven && (
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_CLOUD_CONSENT_TEXT}</p>
@@ -340,7 +501,7 @@ export function AlbumDraftPage() {
         </div>
       )}
 
-      {query.isSuccess && projectQuery.isSuccess && cloudConsentGiven && draftIsEmpty && (
+      {ready && !hasEvents && (
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_EMPTY_TEXT}</p>
           <Button asChild variant="secondary" size="sm">
@@ -349,7 +510,7 @@ export function AlbumDraftPage() {
         </div>
       )}
 
-      {query.isSuccess && items.length > 0 && (
+      {ready && hasEvents && (
         <PersonFilterGroup
           persons={personsQuery.data}
           isError={personsQuery.isError}
@@ -359,15 +520,15 @@ export function AlbumDraftPage() {
         />
       )}
 
-      {query.isSuccess && !draftIsEmpty && isFiltered && (
+      {ready && hasEvents && isFiltered && (
         <p role="status" className="text-sm text-text">
           {hiddenExchange?.filterKey === filterKey
             ? 'Das eingetauschte Foto ist durch den Filter ausgeblendet.'
-            : `${visibleItems.length} von ${items.length} Fotos des Entwurfs sichtbar.`}
+            : `${visibleAlbumIds.size} von ${counts.inAlbum} Fotos des Entwurfs sichtbar.`}
         </p>
       )}
 
-      {query.isSuccess && !draftIsEmpty && isFiltered && visibleItems.length === 0 && (
+      {ready && hasEvents && isFiltered && visibleAlbumIds.size === 0 && (
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">Keine Fotos des Entwurfs mit diesem Filter.</p>
           <Button type="button" variant="outline" size="sm" onClick={() => setPersonIds([])}>
@@ -376,19 +537,13 @@ export function AlbumDraftPage() {
         </div>
       )}
 
-      {/* Auf- und Zuklappen wirken nur auf die SICHTBAREN Tage: Der Zustand eines ausgeblendeten
-          Tages steht nach dem Aufheben des Filters unverändert wieder da. */}
-      {dayKeys.length > 0 && (
+      {ready && hasEvents && (
         <div className="flex flex-wrap items-center gap-3">
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() =>
-              setCollapsedDayKeys(
-                (prev) => new Set([...prev].filter((key) => !dayKeys.includes(key))),
-              )
-            }
+            onClick={() => setCollapsedDayKeys(new Set())}
           >
             Alle Tage aufklappen
           </Button>
@@ -396,69 +551,174 @@ export function AlbumDraftPage() {
             type="button"
             variant="secondary"
             size="sm"
-            onClick={() => setCollapsedDayKeys((prev) => new Set([...prev, ...dayKeys]))}
+            onClick={() => setCollapsedDayKeys(new Set(dayKeys))}
           >
             Alle Tage zuklappen
           </Button>
         </div>
       )}
 
-      {days.map((day) => {
-        // dayKey (Format YYYY-MM-DD) ist bereits ID-sicher.
-        const panelId = `day-panel-${day.dayKey}`
-        const isCollapsed = collapsedDayKeys.has(day.dayKey)
-        const photoCount = day.events.reduce((sum, group) => sum + group.photos.length, 0)
-        return (
-          <section key={day.dayKey} className="flex flex-col gap-4">
-            <h2 className="text-lg">
-              {/* Gesamte Kopfzeile als Trigger - `w-full`+`text-left` macht die ganze Zeile
-                  klickbar, `min-h-11` sichert ein Touch-Ziel von mindestens 44px.
-                  `whitespace-normal` gegen das `whitespace-nowrap` des Primitivs: die
-                  Tagesueberschrift muss bei 360px umbrechen duerfen, sonst entsteht waagerechtes
-                  Scrollen. */}
-              <Button
-                variant="ghost"
-                aria-expanded={!isCollapsed}
-                aria-controls={panelId}
-                onClick={() => setCollapsedDayKeys((prev) => toggleDayCollapse(prev, day.dayKey))}
-                className="h-auto min-h-11 w-full justify-start whitespace-normal px-2 py-1 text-left text-lg font-normal"
-              >
-                <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
-                <span>{formatDayHeading(day.dayKey)}</span>
-                {/* Explizites `{' '}` (statt sich auf das visuelle `gap-2` zu verlassen): der
-                    zugaengliche Name entsteht aus dem Text der Kindknoten, CSS-`gap` erzeugt dabei
-                    keinen Text-/Namensraum. */}
-                {isCollapsed && (
-                  <>
-                    {' '}
-                    <span className="font-normal text-text">
-                      {`(${formatDraftPhotoCount(photoCount)})`}
-                    </span>
-                  </>
-                )}
-              </Button>
-            </h2>
-            {!isCollapsed && (
-              // Kompletter Event-Teilbaum wird bei Zugeklapptheit per conditional JSX gar nicht
-              // gerendert statt nur CSS-versteckt - spart bei grossen Projekten Render-Arbeit.
-              <div id={panelId} className="flex flex-col gap-4">
-                {day.events.map((group) => renderEventGroup(group))}
-              </div>
-            )}
-          </section>
-        )
-      })}
+      {ready &&
+        days.map((day) => {
+          const panelId = `day-panel-${day.dayKey}`
+          const isCollapsed = collapsedDayKeys.has(day.dayKey)
+          const dayCount = day.events.reduce(
+            (sum, group) =>
+              sum + albumItems.filter((photo) => photo.event?.id === group.event.id).length,
+            0,
+          )
+          return (
+            <section
+              key={day.dayKey}
+              data-draft-position={isCollapsed ? day.events[0]?.event.position : undefined}
+              className="flex flex-col gap-4"
+            >
+              <h2 className="text-lg">
+                <Button
+                  variant="ghost"
+                  aria-expanded={!isCollapsed}
+                  aria-controls={panelId}
+                  onClick={() => setCollapsedDayKeys((prev) => toggleDayCollapse(prev, day.dayKey))}
+                  className="h-auto min-h-11 w-full justify-start whitespace-normal px-2 py-1 text-left text-lg font-normal"
+                >
+                  <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
+                  <span>{formatDayHeading(day.dayKey)}</span>
+                  {isCollapsed && (
+                    <>
+                      {' '}
+                      <span className="font-normal text-text">{`(${formatDraftPhotoCount(dayCount)})`}</span>
+                    </>
+                  )}
+                </Button>
+              </h2>
+              {!isCollapsed && (
+                <div id={panelId} className="flex flex-col gap-6">
+                  {day.events.map((group) => {
+                    const eventId = group.event.id
+                    const allAlbum = albumItems.filter((photo) => photo.event?.id === eventId)
+                    const visible = albumOf(eventId)
+                    const addOpen = openPanel?.kind === 'add' && openPanel.eventId === eventId
+                    const addId = `${panelBaseId}-add-${eventId}`
+                    return (
+                      <DraftEventSection
+                        key={eventId}
+                        event={group.event}
+                        heading={group.heading}
+                        albumPhotos={visible}
+                        albumCount={allAlbum.length}
+                        motifText={draftMotifText(
+                          allAlbum,
+                          username,
+                          motifsQuery.data?.items ?? [],
+                        )}
+                        struckPhotos={struckOf(eventId)}
+                        renderAlbumTile={renderTile}
+                        renderStruckTile={renderTile}
+                        band={
+                          bandPhoto !== undefined && bandPhoto.event?.id === eventId
+                            ? {
+                                photoId: bandPhoto.id,
+                                node: (
+                                  <DraftAlternativesBand
+                                    key="band"
+                                    id={`${panelBaseId}-band`}
+                                    projectId={id}
+                                    photo={bandPhoto}
+                                    username={username}
+                                    excludedIds={albumIds}
+                                    onExchange={(chosen) =>
+                                      handleExchange(bandPhoto, chosen, 'band')
+                                    }
+                                    busyIds={locked}
+                                    error={errorAt('band')}
+                                    onOpenAll={() => setAllAlternativesPhotoId(bandPhoto.id)}
+                                    onClose={() => {
+                                      setOpenPanel(null)
+                                      setFocusRequest({
+                                        key: `alternatives-${bandPhoto.id}`,
+                                        scroll: false,
+                                      })
+                                    }}
+                                  />
+                                ),
+                              }
+                            : null
+                        }
+                        addPanel={
+                          addOpen
+                            ? {
+                                id: addId,
+                                node: (
+                                  <DraftAddPanel
+                                    key="panel"
+                                    id={addId}
+                                    projectId={id}
+                                    event={group.event}
+                                    eventName={group.heading}
+                                    username={username}
+                                    excludedIds={albumIds}
+                                    onAdd={(candidate, neighborId) =>
+                                      handleAdd(candidate, neighborId, eventId)
+                                    }
+                                    busyIds={locked}
+                                    error={errorAt(`panel-${eventId}`)}
+                                    onClose={() => {
+                                      setOpenPanel(null)
+                                      setFocusRequest({
+                                        key: `add-trigger-${eventId}`,
+                                        scroll: false,
+                                      })
+                                    }}
+                                  />
+                                ),
+                              }
+                            : null
+                        }
+                        onToggleAdd={() => {
+                          setActionError(null)
+                          setOpenPanel(addOpen ? null : { kind: 'add', eventId })
+                        }}
+                        struckError={errorAt(`struck-${eventId}`)}
+                      />
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+          )
+        })}
 
-      {/* EIN Dialog fuer die ganze Seite, erst ab dem Oeffnen im Baum: So laeuft die Abfrage der
-          Alternativen genau einmal je geoeffnetem Bild, nie einmal je Kachel. */}
-      {alternativesPhoto !== undefined && (
+      {ready && hasEvents && closing !== null && (
+        <section className="flex flex-col items-start gap-2 border-t border-separator pt-6">
+          <h2 className="text-lg">Stand des Entwurfs</h2>
+          {closing.map((sentence) => (
+            <p key={sentence} className="text-sm text-text">
+              {sentence}
+            </p>
+          ))}
+          <Button asChild>
+            <Link to={selectionPath}>Zur Endauswahl</Link>
+          </Button>
+        </section>
+      )}
+
+      <UndoToast
+        notice={undoView}
+        busy={undo !== null && (decisionMutation.isPending || undoMutation.isPending)}
+        error={undoError}
+        restartKey={undoRestart}
+        onUndo={handleUndo}
+        onDismiss={endUndo}
+      />
+
+      {allAlternativesPhoto !== undefined && (
         <DraftAlternativesDialog
           projectId={id}
-          photo={alternativesPhoto}
+          photo={allAlternativesPhoto}
           username={username}
           open
-          onClose={() => setAlternativesPhotoId(null)}
-          onChoose={(alternative) => handleExchange(alternativesPhoto, alternative)}
+          onClose={() => setAllAlternativesPhotoId(null)}
+          onChoose={(chosen) => handleExchange(allAlternativesPhoto, chosen, 'band')}
           exchanging={exchangeMutation.isPending}
         />
       )}

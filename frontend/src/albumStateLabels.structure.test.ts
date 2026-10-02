@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { ALBUM_STATE_LABELS } from './albumStateLabels'
+import { ALBUM_STATE_LABELS } from './utils/albumStateLabels'
 
-const SRC_DIR = fileURLToPath(new URL('..', import.meta.url))
+const SRC_DIR = fileURLToPath(new URL('.', import.meta.url))
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

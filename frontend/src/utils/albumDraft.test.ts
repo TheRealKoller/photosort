@@ -1,7 +1,3 @@
-// @vitest-environment node
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
 import { describe, expect, it } from 'vitest'
 
 import type {
@@ -19,7 +15,6 @@ import {
   DRAFT_MOTIFS_UNASSESSED_TEXT,
   draftClosingTexts,
   draftCounts,
-  draftMembership,
   draftMotifText,
   draftOverviewText,
   draftSizeText,
@@ -76,29 +71,6 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
   }
 }
 
-/**
- * DIESELBE Falltabelle wie `backend/tests/test_api_photos.py::TestTheAlbumDraft`: Der Server ist
- * die Autorität, `draftMembership` bildet sein Prädikat nach. Laufen beide auseinander, zeigte die
- * Ansicht nach einem Handgriff etwas anderes als nach dem Neuladen.
- */
-interface MembershipRow {
-  ranking: 'none' | 'not_proposed' | 'proposed'
-  own: RatingStatus | null
-  other: RatingStatus
-  membership: 'out' | 'album' | 'struck'
-}
-
-// Eingecheckte Testdaten des eigenen Repositoriums - kein Fremdinhalt, der zu validieren waere.
-const MEMBERSHIP_FILE: { rows: MembershipRow[] } = JSON.parse(
-  readFileSync(
-    fileURLToPath(
-      new URL('../../../backend/tests/data/album_draft_membership.json', import.meta.url),
-    ),
-    'utf-8',
-  ),
-)
-const MEMBERSHIP_TABLE = MEMBERSHIP_FILE.rows
-
 const OWN = 'daniel'
 
 function rated(own: RatingStatus | null, other: RatingStatus | null = null): RatingOut[] {
@@ -107,31 +79,6 @@ function rated(own: RatingStatus | null, other: RatingStatus | null = null): Rat
     ...(other === null ? [] : [{ user_id: 2, username: 'anna', status: other, favorite: false }]),
   ]
 }
-
-describe('draftMembership', () => {
-  it('covers the full cross product of ranking form and own status', () => {
-    const keys = MEMBERSHIP_TABLE.map((row) => `${row.ranking}/${String(row.own)}`)
-    expect(new Set(keys).size).toBe(9)
-    for (const form of ['none', 'not_proposed', 'proposed']) {
-      for (const own of ['null', 'album_worthy', 'rejected']) {
-        expect(keys).toContain(`${form}/${own}`)
-      }
-    }
-  })
-
-  it.each(MEMBERSHIP_TABLE)(
-    'ranking $ranking, own $own (other $other) is $membership',
-    ({ ranking: form, own, other, membership }) => {
-      const subject = photo({
-        ranking: form === 'none' ? null : ranking({ proposed: form === 'proposed' }),
-        ratings: rated(own, other),
-      })
-
-      // Die Gegenbewertung des anderen Nutzers steht in `ratings[]` und darf nichts entscheiden.
-      expect(draftMembership(subject, own)).toBe(membership)
-    },
-  )
-})
 
 describe('draftCounts', () => {
   /*

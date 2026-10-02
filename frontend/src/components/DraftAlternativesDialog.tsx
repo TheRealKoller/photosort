@@ -1,14 +1,13 @@
 import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
 import { useDraftAlternativesQuery } from '../hooks/usePhotos'
-import { wasInAlbum } from '../utils/albumDraft'
 import { ownRatingStatus } from '../utils/ownRating'
 import { qualityLevel } from '../utils/qualityLevel'
 import { formatEventHeading } from '../utils/timeOfDay'
 import { PhotoImage } from './PhotoImage'
 import { QualityMeter } from './QualityMeter'
 import { Alert } from './ui/alert'
-import { Badge } from './ui/badge'
+import { AlbumStateBadge } from './AlbumStateBadge'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Skeleton } from './ui/skeleton'
@@ -19,14 +18,11 @@ export const ALTERNATIVES_NONE_TEXT = 'Keine Alternativen in diesem Event.'
 /** Fehlschlag ohne Servertext. */
 export const ALTERNATIVES_ERROR_TEXT = 'Fehler beim Laden der Alternativen.'
 
-/**
- * Das Abzeichen des ausgetauschten Bildes - die ganze Umkehrbarkeit des Austauschs.
- *
- * Es gibt keinen Rückgängig-Knopf und keinen Verlauf: Das ersetzte Bild steht wieder unter den
- * Alternativen (der Endpunkt liefert die eigenen Streichungen mit), und ein Druck darauf ist
- * derselbe Austausch in die andere Richtung - er stellt damit beide Bewertungszeilen zurück.
+/*
+ * Gestrichene Fotos des Events tragen hier das Kennzeichen „Gestrichen" aus der Begriffsquelle.
+ * Der Tausch ist über den Rückgängig-Hinweis der Seite umkehrbar und, solange dieser steht, über
+ * die Gestrichen-Zeile des Events.
  */
-export const PREVIOUSLY_IN_ALBUM_BADGE_TEXT = 'zuvor im Album'
 
 const SKELETON_TILE_COUNT = 6
 
@@ -48,7 +44,8 @@ export interface DraftAlternativesDialogProps {
 }
 
 /**
- * Die Alternativen zu EINEM Bild des Entwurfs, als Dialog.
+ * ALLE Alternativen zu EINEM Bild des Entwurfs, als Dialog mit Seitenabruf - geöffnet aus dem
+ * Alternativen-Band. Namen („Tauschen: {Pfad}") und Wirkung des Tauschs sind dieselben wie dort.
  *
  * DIALOG UND NICHT POPOVER (ADR 0098): Der Inhalt ist ein Bildraster mit eigenem Blätterweg, das
  * auf 360px Breite die volle Fläche braucht, und der Vorgang verlangt Fokusfang und Escape. Beides
@@ -135,7 +132,7 @@ export function DraftAlternativesDialog({
                   <Button
                     type="button"
                     variant="ghost"
-                    aria-label={`Austauschen gegen: ${alternative.relative_path}`}
+                    aria-label={`Tauschen: ${alternative.relative_path}`}
                     disabled={exchanging}
                     className="flex h-auto w-full flex-col items-stretch gap-2 whitespace-normal p-2 text-left"
                     onClick={() => onChoose(alternative)}
@@ -155,9 +152,9 @@ export function DraftAlternativesDialog({
                       level={qualityLevel(alternative.ranking?.rank_score ?? null)}
                       className="text-xs font-normal"
                     />
-                    {wasInAlbum(ownStatus) && (
+                    {ownStatus === 'rejected' && (
                       <span className="block">
-                        <Badge tone="neutral">{PREVIOUSLY_IN_ALBUM_BADGE_TEXT}</Badge>
+                        <AlbumStateBadge state="struck" />
                       </span>
                     )}
                   </Button>
