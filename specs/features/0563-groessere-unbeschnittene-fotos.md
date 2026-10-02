@@ -65,7 +65,6 @@ Für alle betroffenen Raster gilt eine Klasse: `grid grid-cols-2 gap-3 sm:grid-c
 
 ### Offene Punkte
 
-- **Dialog „Alle Alternativen“** (`DraftAlternativesDialog.tsx` Z. 102 und Z. 149, `object-cover`): Er gehört zum Album-Entwurf, die AK nennen ihn aber nicht. Empfehlung: dort ebenfalls `object-contain`, also zwei Utilities. Die Spaltenzahl `2/sm:3` bleibt, sie liegt schon bei höchstens 3. Der spec-writer bestätigt den Umfang oder nimmt den Dialog ausdrücklich aus.
 - **Schärfe auf HiDPI zwischen 640 und 1023 px:** Bei 3 Spalten und DPR 2 wird die 400-px-Variante bis etwa 1,5-fach hochskaliert. Abhilfe wäre ein größeres `THUMBNAIL_MAX_SIZE`. Der Cache-Schlüssel ist aber nur `photo_id`+`etag`, vorhandene Vorschaubilder müssten verworfen und neu erzeugt werden, und es träfe auch die Dateigröße im Bildbestand. Das gehört nicht in diese Story. Bei der Abnahme auf einem Tablet ansehen, gegebenenfalls eine eigene Story.
 - **Ecken bei Hoch- und Querformat:** `rounded-md` sitzt auf dem `<img>`-Kasten. Bei eingepasstem Nicht-Quadrat sind die Ecken des sichtbaren Fotos eckig, und die Leerfläche zeigt die Kartenfläche `--elevated`. Das Band sieht heute schon so aus. Wird eine sichtbare Rahmung der Bildfläche gewünscht, entscheidet das der Entwurf.
 - **Band mit 4 Alternativen bei 3 Spalten:** Es ergibt eine Zeile mit 3 und eine mit 1, das Panel mit 8 ergibt 3+3+2. Das ist zulässig, aber sichtbar.
