@@ -92,6 +92,7 @@ function renderDialog(
       onClose={overrides.onClose ?? (() => {})}
       onChoose={overrides.onChoose ?? (() => {})}
       exchanging={overrides.exchanging ?? false}
+      error={null}
     />,
     { wrapper },
   )

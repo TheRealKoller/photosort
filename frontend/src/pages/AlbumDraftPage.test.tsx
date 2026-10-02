@@ -419,6 +419,28 @@ describe('AlbumDraftPage: Tauschen und Hinzufügen', () => {
 })
 
 describe('AlbumDraftPage: Fehlerfall je Handgriff', () => {
+  it('shows a refused exchange from "Alle Alternativen" inside the dialog', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: [photo(3, { ranking: ranking(false) })],
+      total: 1,
+    })
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+    vi.mocked(photosApi.exchangeDraftPhoto).mockRejectedValueOnce(
+      new ApiError(409, 'Schon vergeben.'),
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Alternativen: 1.jpg' }))
+    await user.click(await screen.findByRole('button', { name: 'Alle Alternativen' }))
+    const dialog = await screen.findByRole('dialog')
+    const choice = await within(dialog).findByRole('button', { name: 'Tauschen: 3.jpg' })
+    await user.click(choice)
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Schon vergeben.')
+    expect(choice).toHaveFocus()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+
   it('keeps both photos and the band open when the exchange is refused', async () => {
     const user = userEvent.setup()
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
@@ -685,6 +707,19 @@ describe('AlbumDraftPage: Zustände und Fremdtext', () => {
     renderPage(null, noObserver)
 
     expect(screen.getByRole('status', { name: 'Fotos werden geladen…' })).toBeInTheDocument()
+  })
+
+  it('shows a failed project request with a retry instead of an empty page', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProject).mockRejectedValue(new ApiError(500, 'Projekt weg.'))
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+
+    expect(await screen.findByText('Projekt weg.')).toBeInTheDocument()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(projectOut())
+    await user.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+
+    expect(await screen.findByRole('button', { name: 'Streichen: 1.jpg' })).toBeInTheDocument()
+    expect(screen.queryByText('Projekt weg.')).toBeNull()
   })
 
   it('shows an error alert whose retry triggers exactly one new request', async () => {

@@ -41,6 +41,8 @@ export interface DraftAlternativesDialogProps {
   onChoose: (alternative: PhotoOut) => void
   /** true, solange der Austausch dieses Dialogs läuft. */
   exchanging: boolean
+  /** Grund eines gescheiterten Austauschs aus diesem Dialog - steht hier, nicht hinter dem Modal. */
+  error: string | null
 }
 
 /**
@@ -67,6 +69,7 @@ export function DraftAlternativesDialog({
   onClose,
   onChoose,
   exchanging,
+  error,
 }: DraftAlternativesDialogProps) {
   const event = photo.event ?? null
   const query = useDraftAlternativesQuery(projectId, {
@@ -117,6 +120,7 @@ export function DraftAlternativesDialog({
         )}
 
         {errorText !== null && <Alert onRetry={() => void query.refetch()}>{errorText}</Alert>}
+        {error !== null && <Alert>{error}</Alert>}
 
         {alternatives.length > 0 && (
           <ul className={ALTERNATIVES_GRID_CLASS}>

@@ -494,6 +494,14 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         </Alert>
       )}
 
+      {projectQuery.isError && (
+        <Alert onRetry={() => void projectQuery.refetch()}>
+          {projectQuery.error instanceof ApiError
+            ? projectQuery.error.detail
+            : 'Fehler beim Laden des Projekts.'}
+        </Alert>
+      )}
+
       {query.isSuccess && projectQuery.isSuccess && !cloudConsentGiven && (
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_CLOUD_CONSENT_TEXT}</p>
@@ -633,7 +641,10 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
                                     }
                                     busyIds={locked}
                                     error={errorAt('band')}
-                                    onOpenAll={() => setAllAlternativesPhotoId(bandPhoto.id)}
+                                    onOpenAll={() => {
+                                      setActionError(null)
+                                      setAllAlternativesPhotoId(bandPhoto.id)
+                                    }}
                                     onClose={() => {
                                       setOpenPanel(null)
                                       setFocusRequest({
@@ -719,9 +730,13 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
           photo={allAlternativesPhoto}
           username={username}
           open
-          onClose={() => setAllAlternativesPhotoId(null)}
-          onChoose={(chosen) => handleExchange(allAlternativesPhoto, chosen, 'band')}
+          onClose={() => {
+            setAllAlternativesPhotoId(null)
+            setActionError(null)
+          }}
+          onChoose={(chosen) => handleExchange(allAlternativesPhoto, chosen, 'dialog')}
           exchanging={exchangeMutation.isPending}
+          error={errorAt('dialog')}
         />
       )}
 
