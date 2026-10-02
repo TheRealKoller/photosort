@@ -12,6 +12,7 @@ import { DraftAlternativesDialog } from '../components/DraftAlternativesDialog'
 import { DraftEventSection } from '../components/DraftEventSection'
 import { DraftExplainer } from '../components/DraftExplainer'
 import { PersonFilterGroup } from '../components/PersonFilterGroup'
+import { PHOTO_CARD_GRID_CLASS } from '../components/PhotoCard'
 import { UndoToast } from '../components/UndoToast'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
@@ -478,7 +479,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         <ul
           role="status"
           aria-label="Fotos werden geladen…"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
+          className={PHOTO_CARD_GRID_CLASS}
         >
           {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
             <li key={index} aria-hidden="true">

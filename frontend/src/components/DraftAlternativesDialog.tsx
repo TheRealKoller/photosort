@@ -99,7 +99,7 @@ export function DraftAlternativesDialog({
               photoId={photo.id}
               variant="thumbnail"
               alt={photo.relative_path}
-              className="size-full object-cover"
+              className="size-full object-contain"
             />
           </div>
           <p className="min-w-0 break-words text-sm text-text">{photo.relative_path}</p>
@@ -146,7 +146,7 @@ export function DraftAlternativesDialog({
                         photoId={alternative.id}
                         variant="thumbnail"
                         alt={alternative.relative_path}
-                        className="size-full object-cover"
+                        className="size-full object-contain"
                       />
                     </span>
                     {/* `?? null` für den FEHLENDEN Wert, nie für die Zahl selbst: `0` ist ein

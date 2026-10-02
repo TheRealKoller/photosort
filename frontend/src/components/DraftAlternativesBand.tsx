@@ -7,6 +7,7 @@ import { useDraftAlternativesQuery } from '../hooks/usePhotos'
 import { ownRatingStatus } from '../utils/ownRating'
 import { qualityLevel } from '../utils/qualityLevel'
 import { AlbumStateBadge } from './AlbumStateBadge'
+import { PHOTO_CARD_GRID_CLASS } from './PhotoCard'
 import { PhotoImage } from './PhotoImage'
 import { QualityMeter } from './QualityMeter'
 import { Alert } from './ui/alert'
@@ -109,7 +110,7 @@ function CandidatePanel({
         <ul
           role="status"
           aria-label="Fotos werden geladen…"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+          className={PHOTO_CARD_GRID_CLASS}
         >
           {Array.from({ length: BAND_SIZE }, (_, index) => (
             <li key={index} aria-hidden="true">
@@ -121,7 +122,7 @@ function CandidatePanel({
       {loadError !== null && <Alert onRetry={() => void query.refetch()}>{loadError}</Alert>}
       {error !== null && <Alert>{error}</Alert>}
       {candidates.length > 0 && (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <ul className={PHOTO_CARD_GRID_CLASS}>
           {candidates.map((candidate, index) => {
             const neighborId = (candidates[index + 1] ?? candidates[index - 1])?.id ?? null
             const struck = ownRatingStatus(candidate.ratings, username) === 'rejected'

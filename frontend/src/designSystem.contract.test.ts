@@ -1026,6 +1026,56 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
   )
 
   /*
+   * specs/features/0563-groessere-unbeschnittene-fotos.md, AK3: Album-Entwurf und Endauswahl
+   * passen jedes Foto in die Bildflaeche ein, nie beschnitten. Nur `object-cover` ist hier
+   * verboten - `aspect-square` bleibt ausdruecklich erlaubt: Es ist die feste quadratische
+   * Bildflaeche, die jede Kachel einer Reihe gleich gross haelt (AK4).
+   */
+  it.each([
+    'src/components/CurationPhotoTile.tsx',
+    'src/components/SelectionPhotoTile.tsx',
+    'src/components/DraftAlternativesBand.tsx',
+    'src/components/DraftAlternativesDialog.tsx',
+  ])('haelt object-cover aus %s heraus (Spec 0563 AK3: kein Beschnitt)', (path) => {
+    const file = sourceFiles.find((candidate) => candidate.path.endsWith(path))
+    expect(file, `${path} muss im Pruefsatz liegen`).toBeDefined()
+
+    expect(stripComments(file?.content ?? '')).not.toContain('object-cover')
+  })
+
+  /*
+   * Spec 0563 AK1/AK2: EINE Spaltenleiter fuer alle Raster der Foto-Karte. Fuehrt eine
+   * Aufrufstelle wieder eine eigene `grid-cols-*`-Utility, laeuft die Leiter zwischen Gruppe,
+   * Band, Panel, Platzhalter und Endauswahl still auseinander.
+   */
+  it.each([
+    'src/components/DraftEventSection.tsx',
+    'src/components/DraftAlternativesBand.tsx',
+    'src/pages/AlbumDraftPage.tsx',
+    'src/pages/AlbumSelectionPage.tsx',
+  ])('setzt in %s nur PHOTO_CARD_GRID_CLASS als Spaltenregel (Spec 0563 AK1/AK2)', (path) => {
+    const file = sourceFiles.find((candidate) => candidate.path.endsWith(path))
+    expect(file, `${path} muss im Pruefsatz liegen`).toBeDefined()
+
+    const code = stripComments(file?.content ?? '')
+    expect(code).toContain('PHOTO_CARD_GRID_CLASS')
+    expect(code).not.toMatch(/grid-cols-/)
+  })
+
+  it('haelt die Spaltenleiter der Foto-Karte bei 2 / 3 / hoechstens 4 (Spec 0563 AK1)', () => {
+    const card = sourceFiles.find((file) => file.path.endsWith('src/components/PhotoCard.tsx'))
+    expect(card, 'PhotoCard.tsx muss im Pruefsatz liegen').toBeDefined()
+    const gridClass = stripComments(card?.content ?? '').match(
+      /export const PHOTO_CARD_GRID_CLASS = '([^']*)'/,
+    )
+    expect(gridClass, 'PHOTO_CARD_GRID_CLASS muss als Literal exportiert sein').not.toBeNull()
+    const columns = (gridClass?.[1] ?? '')
+      .split(/\s+/)
+      .filter((utility: string) => utility.includes('grid-cols-'))
+    expect(columns).toEqual(['grid-cols-2', 'sm:grid-cols-3', 'lg:grid-cols-4'])
+  })
+
+  /*
    * ZWEI WAHRHEITEN DESSELBEN WERTS. Der Zwischenraum zwischen zwei Kacheln ist eine Utility der
    * 8-Punkt-Skala (`gap-3` = 12px) UND eine Zahl in der Rasterrechnung (`GRID_GAP_PX`). Laufen
    * die beiden auseinander, rechnet die Funktion mit einem anderen Abstand als der Browser setzt,

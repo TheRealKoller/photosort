@@ -133,7 +133,7 @@ export function SelectionPhotoTile({
           photoId={photo.id}
           variant="thumbnail"
           alt={photo.relative_path}
-          className="size-full object-cover"
+          className="size-full object-contain"
         />
       }
       /* Der ausdrücklich HERAUSGENOMMENE Zustand - dasselbe Muster wie ein gestrichenes Foto im

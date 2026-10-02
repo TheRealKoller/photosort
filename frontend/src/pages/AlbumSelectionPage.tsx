@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
 import { CurationLightbox } from '../components/CurationLightbox'
+import { PHOTO_CARD_GRID_CLASS } from '../components/PhotoCard'
 import { SelectionPhotoTile } from '../components/SelectionPhotoTile'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
@@ -98,7 +99,7 @@ export function AlbumSelectionPage() {
     return (
       <section key={group.eventId} className="flex flex-col gap-2">
         <h3 className="text-base">{group.heading}</h3>
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <ul className={PHOTO_CARD_GRID_CLASS}>
           {group.photos.map((photo) => (
             <SelectionPhotoTile
               key={photo.id}
@@ -160,7 +161,7 @@ export function AlbumSelectionPage() {
         <ul
           role="status"
           aria-label="Fotos werden geladen…"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
+          className={PHOTO_CARD_GRID_CLASS}
         >
           {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
             <li key={index} aria-hidden="true">
