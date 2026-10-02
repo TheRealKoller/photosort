@@ -35,7 +35,7 @@ export const DESKTOP_ONLY = [
   // Ebenfalls selbstgesetzte Breiten, und zwar exakt 1023/1024: die Umbruchgrenze IST der
   // Gegenstand der Messung, die beiden Projekt-Viewports liegen beide weit davon entfernt.
   /projektuebersicht-raster\.spec\.ts/,
-  // Spec 0563: setzt die Breiten der Spaltenleiter (360/800/1280) selbst.
+  // Setzt die Breiten der Spaltenleiter (360/800/1280) selbst.
   /foto-karte-raster\.spec\.ts/,
 ]
 

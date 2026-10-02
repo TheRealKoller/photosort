@@ -52,7 +52,7 @@ export interface PhotoCardProps {
 }
 
 /**
- * Die EINE Spaltenregel aller Raster der Foto-Karte (Album-Entwurf und Endauswahl, Spec 0563):
+ * Die EINE Spaltenregel aller Raster der Foto-Karte (Album-Entwurf und Endauswahl):
  * 360px -> 2, ab `sm` 3, ab `lg` hoechstens 4 je Reihe. Vier Spalten erst ab `lg`, nicht `md`:
  * Sonst schrumpfte die Kachel beim Wechsel auf vier Spalten unter ihr Mass bei drei.
  */
@@ -62,7 +62,7 @@ export const PHOTO_CARD_GRID_CLASS = 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:g
  * Die Foto-Karte des Album-Entwurfs und der Endauswahl. Sie lebt GENAU EINMAL -
  * `CurationPhotoTile` und `SelectionPhotoTile` bauen keine eigene Kachel.
  *
- * DIE BILDFLAECHE IST QUADRATISCH, DAS BILD WIRD EINGEPASST, NIE BESCHNITTEN (Spec 0563): Der
+ * DIE BILDFLAECHE IST QUADRATISCH, DAS BILD WIRD EINGEPASST, NIE BESCHNITTEN: Der
  * Aufrufer setzt `object-contain`. Die feste Flaeche haelt jede Kachel einer Reihe gleich gross,
  * unabhaengig vom Format des Fotos - Overlays, Kennzeichen und Dateiname stehen ueberall gleich.
  *
