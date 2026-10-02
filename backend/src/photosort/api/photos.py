@@ -2772,6 +2772,144 @@ async def exchange_draft_photo(
     return DraftExchangeOut(taken=written_taken, struck=written_struck)
 
 
+class DraftExchangeUndoIn(BaseModel):
+    """SICHERHEIT (S6): GENAU vier Felder. Dieselben beiden Ids wie beim Tausch und die beiden
+    Vorzustaende als geschlossener Vorrat - jeweils der einzige Zustand ausser "keine
+    Entscheidung", aus dem der Tausch die Seite geholt haben kann.
+
+    Beide Vorzustaende sind PFLICHTFELDER, nullbar, aber ohne Vorgabewert: Ein Default `None`
+    machte ein vergessenes oder abgeschnittenes Feld zu einer stillen Ruecknahme der
+    Albumentscheidung, ein offener Vorrat liesse die Wiederherstellung Zustaende schreiben, die
+    kein Tausch erzeugt hat. Mit dem geschlossenen Vorrat kann der Endpunkt nichts, was der Nutzer
+    nicht schon ueber `PUT`/`DELETE /photos/{id}/rating` an seinen eigenen Zeilen koennte.
+
+    Kein `user_id`, `event_id`, `weight`, `kind`, `criterion_scoring_run_id`, `favorite` -
+    `extra="forbid"` weist jedes weitere Feld ab statt es still zu verwerfen."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    photo_id: int = Field(ge=1, le=MAX_QUERY_POSITION)
+    replaced_photo_id: int = Field(ge=1, le=MAX_QUERY_POSITION)
+    photo_previous_status: Literal[RatingStatus.REJECTED] | None
+    replaced_previous_status: Literal[RatingStatus.ALBUM_WORTHY] | None
+
+
+class DraftExchangeUndoOut(BaseModel):
+    """Der geschriebene Zustand BEIDER eigenen Bewertungszeilen nach der Wiederherstellung."""
+
+    photo: RatingWriteOut
+    replaced: RatingWriteOut
+
+
+# S7: fester Text ohne Rueckspiegelung des gelesenen Zustands.
+_UNDO_REFUSAL = (
+    "Der Tausch laesst sich nicht mehr rueckgaengig machen: Mindestens eines der beiden Bilder "
+    "wurde inzwischen veraendert."
+)
+
+
+@router.post("/projects/{project_id}/draft/exchange/undo", response_model=DraftExchangeUndoOut)
+async def undo_draft_exchange(
+    project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
+    payload: DraftExchangeUndoIn,
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Fuer diesen Router gibt es KEIN
+    # Vollstaendigkeitsnetz - ein hier vergessener Parameter waere ein unauthentifizierter
+    # Schreibzugriff, der ZWEI Bewertungszeilen aendert.
+    current_user: User = Depends(get_current_user),
+) -> DraftExchangeUndoOut:
+    """Stellt nach einem Tausch beide eigenen Bewertungszeilen auf ihren Zustand vor dem Tausch
+    zurueck - beide oder keine.
+
+    REIHENFOLGE, verbindlich (S5): `404` Projekt -> `422` Bindung -> `409` Vorbedingung ->
+    Schreiben. Die Bindung ist wortgleich die des Tauschs (`_exchange_sides`, ein Text fuer gleiche
+    Id, fehlenden Lauf, unbekannte, projektfremde Id und verschiedene Events). Stuende die
+    Vorbedingung vorn, unterschiede die Antwort eine unbekannte Id (`409`) von einer projektfremden
+    - ein Existenz-Orakel ueber fremde Foto-Ids; ohne die Bindung stellte der Endpunkt kohaerent
+    zwei Bilder eines fremden Projekts wieder her.
+
+    VORBEDINGUNG (S7): aktuell `photo_id` = `album_worthy` und `replaced_photo_id` = `rejected`,
+    gelesen AUSSCHLIESSLICH an den eigenen Zeilen - sonst entschiede der Zustand des anderen Nutzers
+    ueber den eigenen Schreibweg. Sonst `409` mit festem Text, keine Zeile geaendert, kein
+    Ereignis. Sie faengt die Wiederholung nach Abschluss ab (Doppelklick, zweiter Tab); eine
+    Zeilensperre gibt es nicht.
+
+    SCHREIBEN: zweimal `write_own_rating(record=False)` - `favorite` bleibt auf beiden Seiten
+    unberuehrt, die Zeileninvariante setzt die Schreibstelle durch -, dazu genau EIN
+    `record_exchange` in Gegenrichtung (ADR 0100 Punkt 3: die Umkehr ist ein weiterer Tausch) und
+    genau EIN Commit."""
+    await _get_project_or_404(project_id, session)
+
+    if payload.photo_id == payload.replaced_photo_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
+        )
+    run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    if run_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
+        )
+    sides = await _exchange_sides(session, run_id, (payload.photo_id, payload.replaced_photo_id))
+    taken = sides.get(payload.photo_id)
+    struck = sides.get(payload.replaced_photo_id)
+    if taken is None or struck is None or taken.event_id != struck.event_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
+        )
+
+    own_status = {
+        photo_id: own
+        for photo_id, own in (
+            await session.execute(
+                select(Rating.photo_id, Rating.status).where(
+                    Rating.user_id == current_user.id,
+                    Rating.photo_id.in_((taken.photo_id, struck.photo_id)),
+                )
+            )
+        ).all()
+    }
+    if (
+        own_status.get(taken.photo_id) != RatingStatus.ALBUM_WORTHY
+        or own_status.get(struck.photo_id) != RatingStatus.REJECTED
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_UNDO_REFUSAL)
+
+    photo_previous = payload.photo_previous_status
+    replaced_previous = payload.replaced_previous_status
+    written_photo = await write_own_rating(
+        session,
+        project_id=project_id,
+        photo_id=taken.photo_id,
+        user_id=current_user.id,
+        next_state=lambda _status, favorite: (photo_previous, favorite),
+        record=False,
+    )
+    written_replaced = await write_own_rating(
+        session,
+        project_id=project_id,
+        photo_id=struck.photo_id,
+        user_id=current_user.id,
+        next_state=lambda _status, favorite: (replaced_previous, favorite),
+        record=False,
+    )
+    # Der Tausch in Gegenrichtung: das damals ersetzte Bild kehrt zurueck, die Alternative geht.
+    await record_exchange(
+        session,
+        project_id=project_id,
+        user_id=current_user.id,
+        photo_id=struck.photo_id,
+        replaced_photo_id=taken.photo_id,
+        criterion_scoring_run_id=run_id,
+        event_id=struck.event_id,
+        level=struck.level,
+        replaced_level=taken.level,
+        quality=struck.quality,
+        replaced_quality=taken.quality,
+    )
+    await session.commit()
+    return DraftExchangeUndoOut(photo=written_photo, replaced=written_replaced)
+
+
 @router.get("/photos/{photo_id}/image")
 async def get_photo_image(
     photo_id: int,

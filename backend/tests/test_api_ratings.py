@@ -276,7 +276,15 @@ async def test_delete_rating_resets_to_unrated(
 
     response = await authenticated_api_client.delete(f"/photos/{photo.id}/rating")
 
-    assert response.status_code == 204
+    assert response.status_code == 200
+    own_id = await _own_user_id(db_session)
+    assert response.json() == {
+        "photo_id": photo.id,
+        "user_id": own_id,
+        "status": None,
+        "favorite": False,
+        "updated_at": None,
+    }
     result = await db_session.execute(select(Rating).where(Rating.photo_id == photo.id))
     assert result.scalars().all() == []
 
@@ -297,7 +305,11 @@ async def test_delete_rating_keeps_a_row_that_still_carries_the_favorite_marker(
 
     response = await authenticated_api_client.delete(f"/photos/{photo.id}/rating")
 
-    assert response.status_code == 204
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["photo_id"], body["status"], body["favorite"]) == (photo.id, None, True)
+    assert body["user_id"] == await _own_user_id(db_session)
+    assert body["updated_at"] is not None
     stored = await _stored_rating(db_session, photo.id, await _own_user_id(db_session))
     assert stored is not None
     assert stored.status is None
@@ -314,7 +326,9 @@ async def test_delete_rating_is_idempotent_when_no_rating_exists(
 
     response = await authenticated_api_client.delete(f"/photos/{photo.id}/rating")
 
-    assert response.status_code == 204
+    assert response.status_code == 200
+    assert response.json()["status"] is None
+    assert response.json()["favorite"] is False
 
     await assert_no_empty_rating_rows(db_session)
 
@@ -322,8 +336,9 @@ async def test_delete_rating_is_idempotent_when_no_rating_exists(
 async def test_delete_rating_is_idempotent_on_a_row_without_an_album_decision(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Zweimal hintereinander auf eine reine Favoritenzeile: `204`, und die Zeile steht danach
-    unveraendert - der zweite Aufruf darf sie nicht als "leer" einsammeln."""
+    """Zweimal hintereinander auf eine reine Favoritenzeile: `200`/`200` mit demselben Zustand,
+    und die Zeile steht danach unveraendert - der zweite Aufruf darf sie nicht als "leer"
+    einsammeln."""
     project = await _make_project(db_session)
     photo = await _make_photo(db_session, project)
     await authenticated_api_client.put(f"/photos/{photo.id}/favorite", json={"favorite": True})
@@ -331,7 +346,9 @@ async def test_delete_rating_is_idempotent_on_a_row_without_an_album_decision(
     first = await authenticated_api_client.delete(f"/photos/{photo.id}/rating")
     second = await authenticated_api_client.delete(f"/photos/{photo.id}/rating")
 
-    assert (first.status_code, second.status_code) == (204, 204)
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert first.json()["favorite"] is second.json()["favorite"] is True
+    assert first.json()["status"] is second.json()["status"] is None
     stored = await _stored_rating(db_session, photo.id, await _own_user_id(db_session))
     assert stored is not None
     assert stored.favorite is True
@@ -780,7 +797,7 @@ async def test_withdrawing_a_decision_that_never_existed_records_nothing(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """Eine nicht vorhandene Entscheidung zurueckzunehmen ist keine Korrektur (L1). Der Endpunkt
-    ist idempotent und antwortet weiterhin `204`."""
+    ist idempotent und antwortet `200` mit dem eigenen, unveraenderten Zeilenzustand."""
     project = await _make_project(db_session)
     photo = await _make_photo(db_session, project)
     # Die Ids VOR der ersten `expire_all()`-Messung festhalten: danach loeste jeder
@@ -789,7 +806,7 @@ async def test_withdrawing_a_decision_that_never_existed_records_nothing(
 
     response = await authenticated_api_client.delete(f"/photos/{photo_id}/rating")
 
-    assert response.status_code == 204
+    assert response.status_code == 200
     assert await _stored_kinds(db_session) == []
 
     await assert_no_empty_rating_rows(db_session)
