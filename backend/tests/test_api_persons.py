@@ -689,9 +689,8 @@ async def test_the_filter_combines_with_the_rating_filter(
         [("person_id", 0)],
         [("person_id", -1)],
         [("person_id", 1_000_000_001)],
-        [("person_id", 1), ("draft", "true")],
     ],
-    ids=["drei-werte", "null", "negativ", "zu-gross", "mit-entwurf"],
+    ids=["drei-werte", "null", "negativ", "zu-gross"],
 )
 async def test_the_filter_is_bounded(
     client: httpx.AsyncClient, lay: Lay, db_session: AsyncSession, params: list[Any]

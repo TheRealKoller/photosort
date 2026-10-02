@@ -521,6 +521,21 @@ class AlbumSelectionOut(BaseModel):
     items: list[PhotoOut]
 
 
+class AlbumDraftOut(BaseModel):
+    """Der Album-Entwurf des anfragenden Nutzers samt Eventliste des letzten erfolgreichen Laufs.
+
+    `events` sind ALLE Events dieses Laufs nach `position` (lueckenlos 1..m), auch die ohne Foto im
+    Entwurf - daraus entstehen "Event p von E", Tage und Events im Kopf und das Hinzufuegen-Feld in
+    leeren Events. `items` ist `Vorschlag ∪ eigene album_worthy ∪ (eigene rejected ∩ Rangzeile)`
+    in `(events.position, taken_at, id)`; innerhalb der Antwort gilt ausnahmslos: im Album genau
+    dann, wenn der eigene Status nicht `rejected` ist. Die Ansicht blendet Gestrichenes aus.
+
+    KEIN `total` und keine Seitenweise, wie `AlbumSelectionOut`."""
+
+    events: list[EventOut]
+    items: list[PhotoOut]
+
+
 async def _get_project_or_404(project_id: int, session: AsyncSession) -> Project:
     project = await session.get(Project, project_id)
     if project is None:
@@ -867,6 +882,7 @@ async def _event_and_location_by_photo_id(
     criterion_scoring_run_id: int | None,
     photos_by_id: Mapping[int, Photo],
     event_id_by_photo_id: Mapping[int, int],
+    known_events: Mapping[int, EventOut] | None = None,
 ) -> dict[int, PhotoPlace]:
     """Beide Ortsfelder aller Fotos einer Antwort aus ZWEI Abfragen - ihre Zahl ist fest und
     unabhaengig von der Zahl der Fotos.
@@ -892,6 +908,10 @@ async def _event_and_location_by_photo_id(
       durchgereicht, nie in dieser Funktion neu bestimmt; fehlt sie, bleibt `event` `None`. Die
       Ausfallrichtung ist "nichts anzeigen", nie "aus irgendeinem Lauf herleiten".
 
+    `known_events` sind die bereits ueber `_run_events` (dasselbe Laufpraedikat) geladenen Events
+    desselben Laufs; mit ihnen entfaellt die Event-Abfrage hier, die Events eines Laufs werden je
+    Anfrage dann genau einmal geladen.
+
     `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie."""
     if not photos_by_id:
         return {}
@@ -908,8 +928,10 @@ async def _event_and_location_by_photo_id(
         for photo_id, taken_at, gps_lat, gps_lon in location_rows
     )
 
-    events_by_id: dict[int, EventOut] = {}
-    if criterion_scoring_run_id is not None and event_id_by_photo_id:
+    events_by_id: Mapping[int, EventOut] = {}
+    if known_events is not None:
+        events_by_id = known_events
+    elif criterion_scoring_run_id is not None and event_id_by_photo_id:
         events_by_id = {
             event.id: _event_out(event)
             for event in (
@@ -1078,19 +1100,20 @@ def _to_photo_out(
 
     SICHERHEIT - die Antwort ist eine Funktion des ANFRAGENDEN Nutzers:
 
-    Bekommen `GET /projects/{id}/photos` (in BEIDEN Modi), `GET /projects/{id}/draft-alternatives`
-    oder `GET /projects/{id}/album-selection` je eine Antwort-Zwischenspeicherung, ein `ETag` oder
-    ein `Cache-Control` ueber `no-store` hinaus, MUSS der Schluessel den Nutzer enthalten. Dafuer
-    gibt es seit ADR 0098 ZWEI UNABHAENGIGE URSACHEN; der Wegfall der einen hebt die Auflage nicht
-    auf:
+    Bekommen `GET /projects/{id}/photos`, `GET /projects/{id}/album-draft`,
+    `GET /projects/{id}/draft-alternatives` oder `GET /projects/{id}/album-selection` je eine
+    Antwort-Zwischenspeicherung, ein `ETag` oder ein `Cache-Control` ueber `no-store` hinaus, MUSS
+    der Schluessel den Nutzer enthalten. Dafuer gibt es seit ADR 0098 ZWEI UNABHAENGIGE URSACHEN;
+    der Wegfall der einen hebt die Auflage nicht auf:
 
     * der ANTWORTKOERPER: `PhotoOut.suggestion` wird unten genau dann gesetzt, wenn der anfragende
       Nutzer noch keine eigene Albumentscheidung fuer dieses Foto hat (`has_own_album_decision`) -
       zwei Nutzer bekommen fuer dasselbe Foto verschiedene Antwortkoerper.
-    * die MENGE: Der Entwurfszweig liefert `Vorschlag ∪ eigene Aufnahmen` und ist damit je Nutzer
-      eine ANDERE Liste; `total` des Alternativen-Endpunkts ist die Restmenge nach Abzug des
-      EIGENEN Entwurfs. Bei Verletzung saehe der eine den Entwurf des anderen als seinen eigenen,
-      ohne dass irgendeine Anzeige das als falsch ausweist.
+    * die MENGE: Der Entwurfs-Lesepfad liefert `Vorschlag ∪ eigene Aufnahmen ∪ eigene
+      Streichungen mit Rangzeile` und ist damit je Nutzer eine ANDERE Liste; `total` des
+      Alternativen-Endpunkts ist die Restmenge nach Abzug des EIGENEN Albums. Bei Verletzung saehe
+      der eine den Entwurf des anderen als seinen eigenen - samt "Deine Eingriffe" -, ohne dass
+      irgendeine Anzeige das als falsch ausweist.
 
     Nicht theoretisch: das Frontend ist eine PWA mit Workbox
     (`registerType: 'autoUpdate'`), heute ohne `runtimeCaching` fuer API-Antworten; der
@@ -1238,9 +1261,6 @@ class PlacedPhotos:
     event_id_by_photo_id: dict[int, int]
 
 
-EMPTY_PLACEMENT = PlacedPhotos(ordered_ids=[], curation_positions={}, event_id_by_photo_id={})
-
-
 def _place_in_events(
     rows: Sequence[tuple[int, datetime, int | None]],
     spans: Sequence[EventSpan],
@@ -1295,73 +1315,87 @@ def _place_in_events(
     )
 
 
-async def _event_spans_and_positions(
-    session: AsyncSession, criterion_scoring_run_id: int
-) -> tuple[list[EventSpan], dict[int, int]]:
-    """Die Events eines Laufs - EINMAL geladen, als Spannenliste und als Positionsabbildung. Die
-    Eingabe von `_place_in_events`, ebenfalls von beiden Zweigen geteilt."""
-    event_rows = (
-        await session.execute(
-            select(Event.id, Event.position, Event.started_at, Event.ended_at).where(
-                Event.criterion_scoring_run_id == criterion_scoring_run_id
+@dataclass(frozen=True)
+class RunEvents:
+    """Die Events EINES Laufs, einmal geladen und in den drei Formen, die die Lesepfade brauchen:
+    Spannen und Positionen als Eingabe von `_place_in_events`, `EventOut` je Id fuer die Fotos und
+    die nach `position` geordnete Liste fuer die Eventliste des Entwurfs."""
+
+    spans: list[EventSpan]
+    position_by_event_id: dict[int, int]
+    out_by_id: dict[int, EventOut]
+    ordered: list[EventOut]
+
+
+async def _run_events(session: AsyncSession, criterion_scoring_run_id: int) -> RunEvents:
+    """Die Events eines Laufs aus EINER Abfrage (Auflage S14), von Entwurf und Endauswahl geteilt.
+
+    SICHERHEIT (M1, S2): ausschliesslich ueber `Event.criterion_scoring_run_id` des uebergebenen,
+    je Anfrage einmal aufgeloesten Laufs; `EventOut` entsteht nur ueber `_event_out`, damit die
+    Mitgliedschaftspruefung des Ortsteils (`_event_place_out`) an einer Stelle bleibt."""
+    events = (
+        (
+            await session.execute(
+                select(Event)
+                .where(Event.criterion_scoring_run_id == criterion_scoring_run_id)
+                .order_by(Event.position)
             )
         )
-    ).all()
-    spans = [
-        EventSpan(event_id=event_id, started_at=started_at, ended_at=ended_at)
-        for event_id, _, started_at, ended_at in event_rows
-    ]
-    return spans, {event_id: position for event_id, position, _, _ in event_rows}
+        .scalars()
+        .all()
+    )
+    ordered = [_event_out(event) for event in events]
+    return RunEvents(
+        spans=[
+            EventSpan(event_id=event.id, started_at=event.started_at, ended_at=event.ended_at)
+            for event in events
+        ],
+        position_by_event_id={event.id: event.position for event in events},
+        out_by_id={event_out.id: event_out for event_out in ordered},
+        ordered=ordered,
+    )
 
 
 async def _draft_photo_ids(
-    session: AsyncSession, project_id: int, user_id: int
-) -> tuple[PlacedPhotos, int | None]:
-    """Der Album-Entwurf DIESES Nutzers (ADR 0098):
-    `Vorschlag(letzter erfolgreicher Lauf) ∪ Aufgenommen(u)`.
+    session: AsyncSession,
+    project_id: int,
+    user_id: int,
+    latest_run_id: int,
+    run_events: RunEvents,
+) -> PlacedPhotos:
+    """Der Album-Entwurf DIESES Nutzers (ADR 0098, ADR 0130):
+    `Vorschlag(letzter erfolgreicher Lauf) ∪ Aufgenommen(u) ∪ (Gestrichen(u) ∩ Rangzeile im Lauf)`.
 
     Er ist ABGELEITET und nirgends gespeichert. "Nie angefasst" ist die Abwesenheit einer eigenen
     Albumentscheidung; daraus folgen "genau ein Entwurf je Nutzer", "ueberdauert die Sitzung" und
     "nur unangefasste Plaetze werden neu befuellt" strukturell statt durchgesetzt.
 
-    EINE ABFRAGE FUER DIE VEREINIGUNG, kein Aneinanderhaengen zweier Mengen: `PhotoRanking` ist je
-    (Lauf, Foto) eindeutig und `Rating` je (Foto, Nutzer) - ein vorgeschlagenes UND aufgenommenes
-    Foto steht deshalb in genau einer Zeile und genau einmal in der Antwort.
+    EINE ABFRAGE FUER DIE VEREINIGUNG, kein Aneinanderhaengen von Mengen: `PhotoRanking` ist je
+    (Lauf, Foto) eindeutig und `Rating` je (Foto, Nutzer) - jedes Foto steht in genau einer Zeile
+    und genau einmal in der Antwort.
 
-    KEIN ABLEHNUNGSFILTER: ein gestrichenes Foto des Vorschlags bleibt in der Antwort und traegt
-    seinen Zustand in `PhotoOut.ratings[]` - Streichen ist ein Anzeigezustand, kein Filter. Ein
-    gestrichenes Foto, das weder vorgeschlagen noch je aufgenommen war, geraet dadurch NICHT in
-    den Entwurf: es erfuellt keine der beiden Bedingungen.
+    KEIN ABLEHNUNGSFILTER: Ein gestrichenes Foto bleibt in der Antwort und traegt seinen Zustand in
+    `PhotoOut.ratings[]`; die Ansicht blendet es aus und zeigt es in der Gestrichen-Zeile seines
+    Events. Der dritte Zweig nimmt jedes eigene `rejected` an einem Foto mit Rangzeile im Lauf
+    auf, auch eine Verwerfung aus dem Bildbestand und unabhaengig vom Vorschlag. Ein gestrichenes
+    Foto OHNE Rangzeile (im Ausschuss aussortiert) erfuellt keinen Zweig.
 
-    OHNE ERFOLGREICHEN LAUF IST DER ENTWURF LEER, auch wenn der Nutzer bereits Fotos aufgenommen
-    hat - es gibt dann weder einen Vorschlag noch Events, in die einzuordnen waere. Dasselbe gilt
-    fuer ein Foto, dessen Zeit in keiner Eventspanne des Laufs einzuordnen ist (ein Lauf ohne
-    Events): die Ausfallrichtung ist "nicht zeigen", nie eine erfundene Gruppe.
+    SICHERHEIT (S2): `Photo.project_id == project_id` steht AUSSERHALB des `or_`, die Rangzeile
+    haengt per `outerjoin` am Lauf DIESES Projekts, und alle drei Zweige lesen denselben Alias
+    `own_rating` mit `user_id` in der Join-Bedingung. Untersagt sind ein zweiter `Rating`-Alias
+    ohne Nutzerbedingung, ein Projektpraedikat innerhalb des `or_` und eine Rangzeile ohne
+    Laufpraedikat: Ohne Laufbindung kaemen kohaerente Fotos eines fremden Projekts in die Antwort
+    (`PhotoRanking` traegt keine `project_id`), ohne Nutzerbedingung stuenden die Streichungen des
+    anderen als eigene in Gestrichen-Zeile und Zaehler.
 
-    REIHENFOLGE `(events.position, photos.taken_at, photos.id)` - innerhalb eines Events also
-    CHRONOLOGISCH nach der korrigierten Aufnahmezeit, ausdruecklich nicht nach
-    `selection_position`. Der Schluessel ist damit TOTAL und fuer vorgeschlagene wie aufgenommene
-    Fotos derselbe. Nach `selection_position NULLS LAST` zu sortieren ist ausgeschlossen: ein
-    aufgenommenes Foto hat keinen Platz im Vorschlag und stuende dann stets am Ende seiner Gruppe
-    - ein Austausch ersetzte das Bild nicht an seiner Stelle, sondern verschoebe es ans
-    Gruppenende.
+    Ein Foto, dessen Zeit in keiner Eventspanne einzuordnen ist und das keine Rangzeile hat,
+    faellt heraus - die Ausfallrichtung ist "nicht zeigen", nie eine erfundene Gruppe.
+
+    REIHENFOLGE `(events.position, photos.taken_at, photos.id)`, siehe `_place_in_events`.
 
     AUFLAGE S14 - die Komplexitaetsklasse ist verbindlich, nicht die Eingabegrenze: Die Menge
-    waechst mit den eigenen Aufnahmen, bis hin zu jedem Foto des Projekts. Die Eventliste wird
-    deshalb EINMAL geladen und die Zuordnung laeuft in einem Durchgang darueber, nie als Abfrage
-    je Foto.
-
-    Rueckgabe: die Einordnung UND die Lauf-Id - jene gehoert nicht in `PlacedPhotos`, weil sie
-    keine Eigenschaft der Einordnung ist und der zweite Zweig sie selbst aufloest."""
-    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
-    if latest_run_id is None:
-        return EMPTY_PLACEMENT, None
-
-    # (1) Die Events des Laufs - EINMAL, als Spannenliste und als Positionsabbildung.
-    spans, position_by_event_id = await _event_spans_and_positions(session, latest_run_id)
-
-    # (2) Die Vereinigung selbst. Der `outerjoin` auf die Rangzeile traegt beides: das Praedikat
-    # des Vorschlags UND die Event-Zuordnung der vorgeschlagenen Fotos.
+    waechst mit den eigenen Handlungen, bis hin zu jedem Foto des Projekts. Die Eventliste kommt
+    FERTIG herein und die Zuordnung laeuft in einem Durchgang darueber, nie als Abfrage je Foto."""
     own_rating = aliased(Rating)
     ranking = aliased(PhotoRanking)
     rows = (
@@ -1383,16 +1417,19 @@ async def _draft_photo_ids(
                 or_(
                     ranking.selection_position.is_not(None),
                     own_rating.status == RatingStatus.ALBUM_WORTHY,
+                    and_(
+                        ranking.photo_id.is_not(None),
+                        own_rating.status == RatingStatus.REJECTED,
+                    ),
                 )
             )
         )
     ).all()
 
-    # (3) Einordnung und Numerierung - dieselbe Funktion, die auch die Endauswahl benutzt. Die
-    # Zeilen werden dabei ausgepackt: ein `Row` ist fuer den Typpruefer kein `tuple`, und die reine
+    # Die Zeilen werden ausgepackt: ein `Row` ist fuer den Typpruefer kein `tuple`, und die reine
     # Funktion soll ausdruecklich keine SQLAlchemy-Form in ihrer Signatur tragen.
     placement_rows = [(photo_id, taken_at, event_id) for photo_id, taken_at, event_id in rows]
-    return _place_in_events(placement_rows, spans, position_by_event_id), latest_run_id
+    return _place_in_events(placement_rows, run_events.spans, run_events.position_by_event_id)
 
 
 async def _partition_sizes(session: AsyncSession, criterion_scoring_run_id: int) -> dict[int, int]:
@@ -1454,21 +1491,83 @@ async def _ranking_by_photo_id(
 MAX_QUERY_POSITION = 1_000_000_000
 
 
+@router.get("/projects/{project_id}/album-draft", response_model=AlbumDraftOut)
+async def album_draft(
+    project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
+    session: AsyncSession = Depends(get_session),
+    # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
+    # router-weite `dependencies`-Liste und hat kein Vollstaendigkeitsnetz - ein Endpunkt, der
+    # diesen Parameter vergisst, waere STILL OEFFENTLICH und gaebe den Entwurf preis.
+    current_user: User = Depends(get_current_user),
+) -> AlbumDraftOut:
+    """Der Album-Entwurf DES ANFRAGENDEN NUTZERS als GANZES samt Eventliste des letzten
+    erfolgreichen Laufs (ADR 0098, ADR 0130); Menge und Reihenfolge siehe `_draft_photo_ids`.
+
+    SICHERHEIT (S4/S14 der Spec 0429/0430): kein `limit`/`offset`. Die Obergrenze der Antwort ist
+    der bewertete Bestand des Laufs zuzueglich der eigenen Aufnahmen; die Menge waechst nur durch
+    Handlungen des Anfragenden selbst. Ein abgeschnittener Entwurf, den die Ansicht als
+    vollstaendig ausweist, waere ein Zustand, den keine Anzeige als fehlerhaft erkennt.
+
+    Ohne erfolgreichen Lauf sind `events` und `items` leer, auch wenn der Nutzer bereits Fotos
+    aufgenommen hat - es gibt dann weder Vorschlag noch Events, in die einzuordnen waere."""
+    project = await _get_project_or_404(project_id, session)
+
+    latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    if latest_run_id is None:
+        return AlbumDraftOut(events=[], items=[])
+
+    run_events = await _run_events(session, latest_run_id)
+    content = await _draft_photo_ids(
+        session, project_id, current_user.id, latest_run_id, run_events
+    )
+    ids = content.ordered_ids
+    photos_by_id = await _photos_by_id(session, ids)
+    rankings_by_id = await _ranking_by_photo_id(session, latest_run_id, ids)
+    partition_sizes = await _partition_sizes(session, latest_run_id)
+    place_by_id = await _event_and_location_by_photo_id(
+        session,
+        project_id,
+        latest_run_id,
+        photos_by_id,
+        # Die Abbildung kommt aus der Entwurfsherleitung, NICHT aus den Rangzeilen: ein
+        # aufgenommenes Foto ohne Rangzeile haette dort keinen Eintrag und verloere sein Event,
+        # obwohl es in der Liste steht.
+        content.event_id_by_photo_id,
+        run_events.out_by_id,
+    )
+    motifs_by_id = await load_effective_strengths(session, ids)
+    persons_by_id = await load_effective_persons(session, ids)
+    decisions = await _final_selection_decisions(session, ids)
+    user_count = await _user_count(session)
+    items = [
+        _to_photo_out(
+            photos_by_id[photo_id],
+            current_user.id,
+            project,
+            rankings_by_id.get(photo_id),
+            partition_sizes,
+            content.curation_positions,
+            place_by_id.get(photo_id, NO_PLACE),
+            motifs_by_id.get(photo_id),
+            decisions=decisions,
+            user_count=user_count,
+            persons=photo_person_outs(persons_by_id.get(photo_id, [])),
+        )
+        for photo_id in ids
+    ]
+    return AlbumDraftOut(events=run_events.ordered, items=items)
+
+
 @router.get("/projects/{project_id}/photos", response_model=PhotoListOut)
 async def list_photos(
     project_id: int,
     rating_status: RatingFilter | None = None,
-    # ENTWURFSMODUS. Gesetzt, ersetzt er `rating_status` vollstaendig (eigenstaendige
-    # Entwurfsansicht) und liefert den Album-Entwurf DES ANFRAGENDEN NUTZERS als GANZES.
-    #
-    # SICHERHEIT (S4/S14): `limit`/`offset` werden in diesem Zweig VOLLSTAENDIG ignoriert - nie
-    # halb. Die Obergrenze der Antwort ist der auswahlfaehige Bestand des Laufs zuzueglich der
-    # eigenen Aufnahmen. Das wird bewusst getragen (die Menge waechst nur durch Handlungen des
-    # Anfragenden selbst, beide Nutzer sind die Vertrauensbasis). Wirkten `limit`/`offset` hier
-    # HALB, zeigte die Ansicht einen abgeschnittenen Entwurf als vollstaendigen an, und der
-    # Kopfbereich naennte eine Ist-Anzahl, die es nicht gibt - ein Zustand, den keine Anzeige als
-    # fehlerhaft ausweist.
-    draft: bool = False,
+    # Der alte Entwurfsmodus, ersetzt durch `GET /projects/{id}/album-draft`. Er steht hier noch
+    # als `None`-typisierter Parameter, damit ein Aufruf mit ihm LAUT scheitert (`422`) statt
+    # still ignoriert zu werden - in BEIDEN Belegungen (S3). Ein vom Service Worker noch nicht
+    # ersetzter Client fiele mit `draft=true` sonst still in den Listing-Zweig und zeigte den
+    # vollen Bestand als Entwurf, mit einem Zaehler, der niemandes Eingriffe misst.
+    draft: None = Query(None, include_in_schema=False),
     # Der alte Auswahlparameter, mit ADR 0098 ersetzt. Er steht hier noch als `None`-typisierter
     # Parameter, damit ein Aufruf mit ihm LAUT scheitert (`422`) statt still ignoriert zu werden -
     # in BEIDEN Belegungen. `selection=false` ist der gefaehrlichere Fall: heute ein gueltiger
@@ -1490,8 +1589,8 @@ async def list_photos(
     camera_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
     # Der Personenfilter (S3): hoechstens zwei Werte je `ge=1, le=MAX_QUERY_POSITION`,
     # danach dedupliziert. Gefiltert wird ueber die Id, nie ueber einen Namen - ein Name gehoerte
-    # sonst in Zugriffslog und Browserverlauf. Mit `draft=true` ist er `422`: der Entwurf wird
-    # immer vollstaendig geliefert und im Client eingeschraenkt, damit seine Zaehlung stimmt.
+    # sonst in Zugriffslog und Browserverlauf. Der Album-Entwurf kennt ihn nicht: er wird immer
+    # vollstaendig geliefert und im Client eingeschraenkt, damit seine Zaehlung stimmt.
     person_id: list[Annotated[int, Field(ge=1, le=MAX_QUERY_POSITION)]] = Query(
         default_factory=list, max_length=2
     ),
@@ -1501,59 +1600,6 @@ async def list_photos(
     current_user: User = Depends(get_current_user),
 ) -> PhotoListOut:
     project = await _get_project_or_404(project_id, session)
-
-    if draft and person_id:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Der Personenfilter gilt nicht fuer den Album-Entwurf.",
-        )
-    if draft:
-        content, criterion_scoring_run_id = await _draft_photo_ids(
-            session, project_id, current_user.id
-        )
-        ids = content.ordered_ids
-        photos_by_id = await _photos_by_id(session, ids)
-        rankings_by_id = (
-            await _ranking_by_photo_id(session, criterion_scoring_run_id, ids)
-            if criterion_scoring_run_id is not None
-            else {}
-        )
-        partition_sizes = (
-            await _partition_sizes(session, criterion_scoring_run_id)
-            if criterion_scoring_run_id is not None
-            else {}
-        )
-        place_by_id = await _event_and_location_by_photo_id(
-            session,
-            project_id,
-            criterion_scoring_run_id,
-            photos_by_id,
-            # Die Abbildung kommt aus der Entwurfsherleitung, NICHT aus den Rangzeilen: ein
-            # aufgenommenes Foto ohne Rangzeile haette dort keinen Eintrag und verloere seine
-            # Eventueberschrift, obwohl es in der Liste steht.
-            content.event_id_by_photo_id,
-        )
-        motifs_by_id = await load_effective_strengths(session, ids)
-        persons_by_id = await load_effective_persons(session, ids)
-        decisions = await _final_selection_decisions(session, ids)
-        user_count = await _user_count(session)
-        items = [
-            _to_photo_out(
-                photos_by_id[photo_id],
-                current_user.id,
-                project,
-                rankings_by_id.get(photo_id),
-                partition_sizes,
-                content.curation_positions,
-                place_by_id.get(photo_id, NO_PLACE),
-                motifs_by_id.get(photo_id),
-                decisions=decisions,
-                user_count=user_count,
-                persons=photo_person_outs(persons_by_id.get(photo_id, [])),
-            )
-            for photo_id in ids
-        ]
-        return PhotoListOut(items=items, total=len(items))
 
     ids, total = await _filtered_photo_ids(
         session,
@@ -1665,7 +1711,7 @@ async def album_selection(
         return AlbumSelectionOut(participants=participants, has_proposal=False, items=[])
 
     # (2) Die Events des Laufs - einmal, ueber dieselbe Beschaffung wie der Entwurfszweig.
-    spans, position_by_event_id = await _event_spans_and_positions(session, latest_run_id)
+    run_events = await _run_events(session, latest_run_id)
 
     # (3) DIE KANDIDATENMENGE, eine Obermenge, in EINER Abfrage: vorgeschlagen ODER entschieden
     # ODER jemals mit einer Albumentscheidung versehen. Sie ist vollstaendig - ohne jede
@@ -1730,7 +1776,7 @@ async def album_selection(
         if state.contested or state.included or decision is not None:
             kept_rows.append((row.id, row.taken_at, row.event_id))
 
-    placed = _place_in_events(kept_rows, spans, position_by_event_id)
+    placed = _place_in_events(kept_rows, run_events.spans, run_events.position_by_event_id)
     ids = placed.ordered_ids
     rankings_by_id = await _ranking_by_photo_id(session, latest_run_id, ids)
     partition_sizes = await _partition_sizes(session, latest_run_id)
@@ -1740,6 +1786,7 @@ async def album_selection(
         latest_run_id,
         {photo_id: photos_by_id[photo_id] for photo_id in ids},
         placed.event_id_by_photo_id,
+        run_events.out_by_id,
     )
     persons_by_id = await load_effective_persons(session, ids)
     motifs_by_id = await load_effective_strengths(session, ids)

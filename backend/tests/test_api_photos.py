@@ -1,6 +1,9 @@
+import itertools
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -37,7 +40,7 @@ from photosort.models import (
 )
 from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
-from photosort.security import create_access_token, hash_password
+from photosort.security import create_access_token, decode_access_token, hash_password
 from photosort.selection import MOTIF_PRESENCE_THRESHOLD
 
 
@@ -859,10 +862,54 @@ async def _add_ranking(
     await session.commit()
 
 
-class TestTheDraft:
-    """Der Entwurfsmodus `draft=true` (ADR 0098): der Endpunkt liefert den Entwurf DES
-    ANFRAGENDEN NUTZERS - `Vorschlag(letzter erfolgreicher Lauf) ∪ Aufgenommen(u)`, ohne
-    Ablehnungsfilter.
+_MEMBERSHIP_TABLE: list[dict[str, Any]] = json.loads(
+    (Path(__file__).parent / "data" / "album_draft_membership.json").read_text(encoding="utf-8")
+)["rows"]
+
+
+def _own_user_id(client: httpx.AsyncClient) -> int:
+    """Der angemeldete Nutzer DIESES Clients, aus seinem Token - die Tests wechseln den Token, um
+    dieselbe Anfrage als zweiter Nutzer zu stellen."""
+    token = client.headers["Authorization"].removeprefix("Bearer ")
+    return int(decode_access_token(token)["sub"])
+
+
+def _own_status(item: dict[str, Any], user_id: int) -> str | None:
+    return next((r["status"] for r in item["ratings"] if r["user_id"] == user_id), None)
+
+
+def assert_album_draft_invariants(body: dict[str, Any], user_id: int) -> None:
+    """Die Invarianten der Entwurfsantwort, als Nachsatz JEDES Falls:
+
+    * `events[].position` ist lueckenlos 1..m und aufsteigend;
+    * jedes `item.event.id` liegt in `events`;
+    * kein eigenes `rejected` ohne Rangzeile - ein gestrichenes Foto steht nur dann in der
+      Antwort, wenn der Lauf es fuehrt;
+    * im Album genau dann, wenn der eigene Status nicht `rejected` ist - jedes Element ist also
+      entweder im Album oder gestrichen, nie etwas Drittes."""
+    positions = [event_row["position"] for event_row in body["events"]]
+    assert positions == list(range(1, len(positions) + 1))
+    event_ids = {event_row["id"] for event_row in body["events"]}
+    for item in body["items"]:
+        assert item["event"] is not None and item["event"]["id"] in event_ids
+        own = _own_status(item, user_id)
+        assert own in (None, "album_worthy", "rejected")
+        if own == "rejected":
+            assert item["ranking"] is not None
+
+
+async def _album_draft(client: httpx.AsyncClient, project: Project) -> dict[str, Any]:
+    response = await client.get(f"/projects/{project.id}/album-draft")
+    assert response.status_code == 200
+    body: dict[str, Any] = response.json()
+    assert set(body) == {"events", "items"}
+    assert_album_draft_invariants(body, _own_user_id(client))
+    return body
+
+
+class TestTheAlbumDraft:
+    """`GET /projects/{id}/album-draft` (ADR 0098, ADR 0130): der Entwurf DES ANFRAGENDEN
+    NUTZERS samt Eventliste - `Vorschlag ∪ eigene album_worthy ∪ (eigene rejected ∩ Rangzeile)`.
 
     Er ist ABGELEITET und nirgends gespeichert; die Auswahlregel selbst ist ein LAUF-ARTEFAKT und
     wird hier nicht wiederholt (tests/test_selection.py)."""
@@ -882,6 +929,269 @@ class TestTheDraft:
         session.add(Rating(photo_id=photo.id, user_id=owner.id, status=status))
         await session.commit()
 
+    def test_the_case_table_covers_the_full_cross_product(self) -> None:
+        """Erst die Vollstaendigkeit, dann die Faelle: Fehlt eine Zeile, prueft niemand sie."""
+        keys = [(row["ranking"], row["own"]) for row in _MEMBERSHIP_TABLE]
+        assert len(keys) == len(set(keys)) == 9
+        assert set(keys) == set(
+            itertools.product(
+                ("none", "not_proposed", "proposed"), (None, "album_worthy", "rejected")
+            )
+        )
+        for row in _MEMBERSHIP_TABLE:
+            assert row["other"] in ("album_worthy", "rejected")
+            assert row["membership"] in ("out", "album", "struck")
+
+    @pytest.mark.parametrize(
+        "row", _MEMBERSHIP_TABLE, ids=lambda row: f"{row['ranking']}-{row['own']}"
+    )
+    async def test_each_row_of_the_case_table(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        row: dict[str, Any],
+    ) -> None:
+        """Je Zeile die Lage samt Gegenbewertung des ANDEREN Nutzers: Eine Umsetzung ohne
+        Nutzerbedingung im neuen Zweig (S2) liesse dessen Streichung als eigene erscheinen."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(
+            db_session,
+            run,
+            started_at=datetime(2023, 1, 1, 8, 0),
+            ended_at=datetime(2023, 1, 1, 10, 0),
+        )
+        photo = await _make_photo(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 9, 0, tzinfo=UTC)
+        )
+        if row["ranking"] != "none":
+            await _add_ranking(
+                db_session,
+                run,
+                photo,
+                event=event_row,
+                rank_score=0.5,
+                rank_position=1,
+                selection_position=1 if row["ranking"] == "proposed" else None,
+            )
+        if row["own"] is not None:
+            await self._rate(db_session, photo, RatingStatus(row["own"]))
+        await self._rate(
+            db_session, photo, RatingStatus(row["other"]), await _make_second_user(db_session)
+        )
+
+        body = await _album_draft(authenticated_api_client, project)
+
+        items = {item["id"]: item for item in body["items"]}
+        own_id = _own_user_id(authenticated_api_client)
+        if row["membership"] == "out":
+            assert photo.id not in items
+        else:
+            assert photo.id in items
+            assert (_own_status(items[photo.id], own_id) == "rejected") == (
+                row["membership"] == "struck"
+            )
+
+    async def test_a_run_with_events_but_no_proposal_lists_every_event(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Eventliste ist die des Laufs, nicht die der Fotos: Events ohne Vorschlag stehen
+        darin, in der Reihenfolge ihrer `position` - auch wenn sie anders angelegt wurden."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        third = await _make_event(db_session, run, position=3, place_name="Drei")
+        first = await _make_event(db_session, run, position=1)
+        second = await _make_event(db_session, run, position=2)
+
+        body = await _album_draft(authenticated_api_client, project)
+
+        assert body["items"] == []
+        assert [event_row["id"] for event_row in body["events"]] == [first.id, second.id, third.id]
+        assert body["events"][2]["place_name"] == "Drei"
+        assert set(body["events"][0]) == {
+            "id",
+            "position",
+            "started_at",
+            "ended_at",
+            "place",
+            "place_name",
+        }
+
+    async def test_the_number_of_selects_does_not_depend_on_the_number_of_events(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """S14: die Events werden EINMAL geladen - eine Abfrage je Event fiele hier auf."""
+        few = await _make_project(db_session, name="wenige")
+        many = await _make_project(db_session, name="viele")
+        base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        for project, count in ((few, 1), (many, 8)):
+            run = await _make_criterion_scoring_run(db_session, project)
+            for position in range(1, count + 1):
+                event_row = await _make_event(db_session, run, position=position)
+                photo = await _make_photo(
+                    db_session, project, f"{project.name}-{position}.jpg", base
+                )
+                await _add_ranking(
+                    db_session, run, photo, event=event_row, rank_score=0.5, rank_position=1
+                )
+
+        with _recorded_select_statements() as few_statements:
+            few_body = await _album_draft(authenticated_api_client, few)
+        with _recorded_select_statements() as many_statements:
+            many_body = await _album_draft(authenticated_api_client, many)
+
+        assert (len(few_body["events"]), len(many_body["events"])) == (1, 8)
+        assert len(many_body["items"]) == 8
+        assert len(few_statements) == len(many_statements)
+
+    async def test_a_rejection_in_the_photo_grid_shows_as_struck_only_with_a_ranking_row(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Verwerfung aus dem Bildbestand (`PUT /photos/{id}/rating`) ist dieselbe Zeile wie
+        das Streichen: Mit Rangzeile im Lauf steht das Foto als gestrichen in der Antwort, ein
+        aussortiertes Foto ohne Rangzeile bleibt draussen."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _make_event(
+            db_session,
+            run,
+            started_at=datetime(2023, 1, 1, 8, 0),
+            ended_at=datetime(2023, 1, 1, 10, 0),
+        )
+        ranked = await _make_photo(
+            db_session, project, "a.jpg", datetime(2023, 1, 1, 8, 30, tzinfo=UTC)
+        )
+        discarded = await _make_photo(
+            db_session, project, "b.jpg", datetime(2023, 1, 1, 9, 30, tzinfo=UTC)
+        )
+        await _add_ranking(
+            db_session,
+            run,
+            ranked,
+            event=event_row,
+            rank_score=0.5,
+            rank_position=1,
+            selection_position=None,
+        )
+        for photo in (ranked, discarded):
+            response = await authenticated_api_client.put(
+                f"/photos/{photo.id}/rating", json={"status": "rejected"}
+            )
+            assert response.status_code == 200
+
+        body = await _album_draft(authenticated_api_client, project)
+
+        assert [item["id"] for item in body["items"]] == [ranked.id]
+        assert _own_status(body["items"][0], _own_user_id(authenticated_api_client)) == "rejected"
+
+    async def test_a_struck_photo_of_another_project_never_enters(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """S2: Die Projektbindung steht AUSSERHALB der Vereinigung, die Rangzeile am Lauf DIESES
+        Projekts. Ein im fremden Projekt gestrichenes Foto mit Rangzeile im fremden Lauf erfuellt
+        den dritten Zweig dort - hier darf es nicht erscheinen."""
+        project = await _make_project(db_session, name="eigen")
+        foreign = await _make_project(db_session, name="fremd")
+        own_run = await _make_criterion_scoring_run(db_session, project)
+        foreign_run = await _make_criterion_scoring_run(db_session, foreign)
+        await _make_event(db_session, own_run)
+        foreign_photo = await _make_photo(
+            db_session, foreign, "x.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        )
+        await _add_ranking(db_session, foreign_run, foreign_photo, rank_score=0.5, rank_position=1)
+        await self._rate(db_session, foreign_photo, RatingStatus.REJECTED)
+
+        body = await _album_draft(authenticated_api_client, project)
+
+        assert body["items"] == []
+
+    @pytest.mark.parametrize("value", ["true", "false"])
+    async def test_the_old_draft_mode_fails_loudly_in_both_settings(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession, value: str
+    ) -> None:
+        """S3: Ein noch nicht ersetzter Client fiele mit `draft=true` sonst still in den
+        Listing-Zweig und zeigte den vollen Bestand als Entwurf."""
+        project = await _make_project(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"draft": value}
+        )
+
+        assert response.status_code == 422
+
+    async def test_the_order_holds_with_struck_photos_in_between(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """`(events.position, taken_at, id)` gilt fuer die ganze Antwort - ein gestrichenes Foto
+        steht an seiner zeitlichen Stelle, nicht am Ende seines Events."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        later_event = await _make_event(db_session, run, position=2)
+        earlier_event = await _make_event(db_session, run, position=1)
+        same_moment = datetime(2023, 1, 2, 9, 0, tzinfo=UTC)
+        struck_late = await _make_photo(
+            db_session, project, "a.jpg", datetime(2023, 1, 3, tzinfo=UTC)
+        )
+        tie_struck = await _make_photo(db_session, project, "b.jpg", same_moment)
+        early = await _make_photo(db_session, project, "c.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        tie_kept = await _make_photo(db_session, project, "d.jpg", same_moment)
+        in_later = await _make_photo(db_session, project, "e.jpg", datetime(2023, 1, 1, tzinfo=UTC))
+        for photo, event_row, position, proposed in (
+            (struck_late, earlier_event, 1, False),
+            (tie_struck, earlier_event, 2, True),
+            (early, earlier_event, 3, True),
+            (tie_kept, earlier_event, 4, True),
+            (in_later, later_event, 1, True),
+        ):
+            await _add_ranking(
+                db_session,
+                run,
+                photo,
+                event=event_row,
+                rank_score=0.5,
+                rank_position=position,
+                selection_position=position if proposed else None,
+            )
+        await self._rate(db_session, struck_late, RatingStatus.REJECTED)
+        await self._rate(db_session, tie_struck, RatingStatus.REJECTED)
+
+        body = await _album_draft(authenticated_api_client, project)
+
+        assert tie_struck.id < tie_kept.id
+        assert [item["id"] for item in body["items"]] == [
+            early.id,
+            tie_struck.id,
+            tie_kept.id,
+            struck_late.id,
+            in_later.id,
+        ]
+
+    async def test_requires_authentication(
+        self, api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """S1: `api/photos.py` hat kein Vollstaendigkeitsnetz - ein vergessenes
+        `Depends(get_current_user)` machte den Entwurf still oeffentlich."""
+        project = await _make_project(db_session)
+
+        response = await api_client.get(f"/projects/{project.id}/album-draft")
+
+        assert response.status_code == 401
+
+    async def test_unknown_project_returns_404(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        response = await authenticated_api_client.get("/projects/9999/album-draft")
+
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize("project_id", ["0", "-1", "1000000001"])
+    async def test_the_project_id_is_bounded(
+        self, authenticated_api_client: httpx.AsyncClient, project_id: str
+    ) -> None:
+        response = await authenticated_api_client.get(f"/projects/{project_id}/album-draft")
+
+        assert response.status_code == 422
+
     async def test_returns_the_drafted_photos_with_ranking_details(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
@@ -897,13 +1207,10 @@ class TestTheDraft:
             db_session, run, third, rank_score=0.1, rank_position=3, selection_position=None
         )
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         assert response.status_code == 200
         body = response.json()
-        assert body["total"] == 2
         assert [item["id"] for item in body["items"]] == [first.id, second.id]
         ranking = body["items"][0]["ranking"]
         # partition_size ist die GROESSE DER GESAMTEN Partition (hier 3 Fotos), nicht die des
@@ -932,13 +1239,10 @@ class TestTheDraft:
         await _add_ranking(db_session, run, both, rank_score=0.9, rank_position=1)
         await self._rate(db_session, both, RatingStatus.ALBUM_WORTHY)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         body = response.json()
         assert [item["id"] for item in body["items"]] == [both.id]
-        assert body["total"] == 1
 
     async def test_a_taken_photo_without_a_proposal_joins_the_draft(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -953,9 +1257,7 @@ class TestTheDraft:
         )
         await self._rate(db_session, taken, RatingStatus.ALBUM_WORTHY)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         items = {item["id"]: item for item in response.json()["items"]}
         assert set(items) == {proposed.id, taken.id}
@@ -963,27 +1265,28 @@ class TestTheDraft:
         assert items[proposed.id]["ranking"]["proposed"] is True
         assert items[taken.id]["ranking"]["proposed"] is False
 
-    async def test_a_rejected_photo_that_was_never_proposed_stays_out(
+    async def test_a_rejected_photo_that_was_never_proposed_stands_as_struck_only_with_ranking(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Der fehlende Ablehnungsfilter darf nicht zum fehlenden Filter werden: ein gestrichenes
-        Foto, das weder im Vorschlag steht noch je aufgenommen wurde, gehoert nicht in den
-        Entwurf."""
+        """Der fehlende Ablehnungsfilter darf nicht zum fehlenden Filter werden: Ein gestrichenes
+        Foto mit Rangzeile im Lauf steht als gestrichen in der Antwort, auch wenn es nie
+        vorgeschlagen war; eines ohne Rangzeile bleibt draussen."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         proposed = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         rejected = await _make_photo(db_session, project, "b.jpg", datetime(2023, 1, 2, tzinfo=UTC))
+        unranked = await _make_photo(db_session, project, "c.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _add_ranking(db_session, run, proposed, rank_score=0.9, rank_position=1)
         await _add_ranking(
             db_session, run, rejected, rank_score=0.1, rank_position=2, selection_position=None
         )
         await self._rate(db_session, rejected, RatingStatus.REJECTED)
+        await self._rate(db_session, unranked, RatingStatus.REJECTED)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        body = await _album_draft(authenticated_api_client, project)
 
-        assert [item["id"] for item in response.json()["items"]] == [proposed.id]
+        assert [item["id"] for item in body["items"]] == [proposed.id, rejected.id]
+        assert [r["status"] for r in body["items"][1]["ratings"]] == ["rejected"]
 
     async def test_only_untouched_places_follow_the_new_run(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1021,9 +1324,7 @@ class TestTheDraft:
         await self._rate(db_session, dropped, RatingStatus.REJECTED)
         await self._rate(db_session, taken, RatingStatus.ALBUM_WORTHY)
 
-        before = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        before = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
         # Nach Lauf 1: das Vorgeschlagene (gestrichen, als Anzeigezustand) und das Aufgenommene.
         assert [item["id"] for item in before.json()["items"]] == [dropped.id, taken.id]
 
@@ -1052,9 +1353,7 @@ class TestTheDraft:
             selection_position=None,
         )
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         items = {item["id"]: item for item in response.json()["items"]}
         assert set(items) == {untouched.id, dropped.id, taken.id}
@@ -1116,9 +1415,7 @@ class TestTheDraft:
                 selection_position=position,
             )
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         # Der Gleichstand bricht ueber die kleinere `photo_id` - `tie_first` wurde VOR
         # `tie_second` angelegt und traegt deshalb die kleinere Id.
@@ -1149,9 +1446,7 @@ class TestTheDraft:
             db_session, run, early, rank_score=0.2, rank_position=2, selection_position=2
         )
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         items = response.json()["items"]
         assert [item["id"] for item in items] == [early.id, late.id]
@@ -1194,9 +1489,7 @@ class TestTheDraft:
         )
         await self._rate(db_session, discarded, RatingStatus.ALBUM_WORTHY)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         items = {item["id"]: item for item in response.json()["items"]}
         assert set(items) == {anchor.id, discarded.id}
@@ -1240,9 +1533,7 @@ class TestTheDraft:
         await db_session.commit()
         await self._rate(db_session, shifted, RatingStatus.ALBUM_WORTHY)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         items = {item["id"]: item for item in response.json()["items"]}
         assert items[shifted.id]["event"]["id"] == second_event.id
@@ -1283,9 +1574,7 @@ class TestTheDraft:
         )
         await self._rate(db_session, moved, RatingStatus.ALBUM_WORTHY)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         [item] = response.json()["items"]
         assert item["event"]["id"] == first_event.id
@@ -1296,8 +1585,9 @@ class TestTheDraft:
     ) -> None:
         """Auflage S14: Die Zuordnung der rangzeilenlosen Fotos laeuft in EINEM Durchgang ueber die
         einmal geladene Eventliste. Ein N+1-Muster erzeugte hier eine Abfrage je aufgenommenem
-        Foto - der Unterschied zwischen einer Handvoll Abfragen und mehreren tausend, ausgeloest
-        durch normale Benutzung, ohne dass ein Parameter das begrenzte."""
+        Foto oder je Event - der Unterschied zwischen einer Handvoll Abfragen und mehreren
+        tausend, ausgeloest durch normale Benutzung, ohne dass ein Parameter das begrenzte. Das
+        grosse Projekt hat deshalb auch mehr Events."""
         small = await _make_project(db_session, name="klein")
         large = await _make_project(db_session, name="gross")
         base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
@@ -1305,6 +1595,15 @@ class TestTheDraft:
             run = await _make_criterion_scoring_run(db_session, project)
             anchor = await _make_photo(db_session, project, f"{project.name}-anchor.jpg", base)
             await _add_ranking(db_session, run, anchor, rank_score=0.9, rank_position=1)
+            if project is large:
+                for position in range(2, 8):
+                    await _make_event(
+                        db_session,
+                        run,
+                        position=position,
+                        started_at=datetime(2024, 1, position, 10, 0),
+                        ended_at=datetime(2024, 1, position, 11, 0),
+                    )
             for index in range(count):
                 photo = await _make_photo(
                     db_session,
@@ -1315,13 +1614,9 @@ class TestTheDraft:
                 await self._rate(db_session, photo, RatingStatus.ALBUM_WORTHY)
 
         with _recorded_select_statements() as small_statements:
-            small_response = await authenticated_api_client.get(
-                f"/projects/{small.id}/photos", params={"draft": "true"}
-            )
+            small_response = await authenticated_api_client.get(f"/projects/{small.id}/album-draft")
         with _recorded_select_statements() as large_statements:
-            large_response = await authenticated_api_client.get(
-                f"/projects/{large.id}/photos", params={"draft": "true"}
-            )
+            large_response = await authenticated_api_client.get(f"/projects/{large.id}/album-draft")
 
         assert len(small_response.json()["items"]) == 3
         assert len(large_response.json()["items"]) == 21
@@ -1349,9 +1644,7 @@ class TestTheDraft:
             db_session, run, second_photo, event=second_event, rank_score=0.1, rank_position=1
         )
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         assert {item["id"] for item in response.json()["items"]} == {
             first_photo.id,
@@ -1366,13 +1659,10 @@ class TestTheDraft:
         only = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await _add_ranking(db_session, run, only, rank_score=0.9, rank_position=1)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         assert response.status_code == 200
         body = response.json()
-        assert body["total"] == 1
         assert body["items"][0]["id"] == only.id
 
     async def test_a_run_without_a_draft_answers_empty(
@@ -1387,19 +1677,19 @@ class TestTheDraft:
             db_session, run, photo, rank_score=0.9, rank_position=1, selection_position=None
         )
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        body = await _album_draft(authenticated_api_client, project)
 
-        assert response.json() == {"items": [], "total": 0}
+        assert body["items"] == []
+        assert [event_row["id"] for event_row in body["events"]] == [
+            (await _default_event(db_session, run)).id
+        ]
 
-    async def test_limit_and_offset_stay_without_effect_in_the_draft_mode(
+    async def test_limit_and_offset_stay_without_effect(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Zusicherung 19 (Sicherheitsauflage S4/S14): `limit`/`offset` duerfen in diesem Zweig
-        nicht HALB wirken. Ein abgeschnittener Entwurf, den die Ansicht als vollstaendig ausweist,
-        ist ein Zustand, den keine Anzeige als fehlerhaft erkennt - und der Kopfbereich naennte
-        dann eine Ist-Anzahl, die es nicht gibt."""
+        """Zusicherung 19 (Sicherheitsauflage S4/S14): `limit`/`offset` wirken hier nicht, auch
+        nicht HALB. Ein abgeschnittener Entwurf, den die Ansicht als vollstaendig ausweist, ist ein
+        Zustand, den keine Anzeige als fehlerhaft erkennt."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         for index in range(4):
@@ -1409,28 +1699,11 @@ class TestTheDraft:
             await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=index + 1)
 
         response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos",
-            params={"draft": "true", "limit": 1, "offset": 2},
+            f"/projects/{project.id}/album-draft", params={"limit": 1, "offset": 2}
         )
 
-        assert response.json()["total"] == 4
+        assert response.status_code == 200
         assert len(response.json()["items"]) == 4
-
-    async def test_without_the_draft_mode_the_default_listing_answers(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
-    ) -> None:
-        """`draft=false` ist der Vorgabewert und kein zweiter Modus: die Antwort ist das
-        gewoehnliche Listing, und `curation_position` traegt dort `null`."""
-        project = await _make_project(db_session)
-        run = await _make_criterion_scoring_run(db_session, project)
-        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
-        await _add_ranking(db_session, run, photo, rank_score=0.9, rank_position=1)
-
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "false"}
-        )
-
-        assert response.json()["items"][0]["ranking"]["curation_position"] is None
 
     @pytest.mark.parametrize("value", ["true", "false"])
     async def test_the_old_selection_parameter_fails_loudly_in_both_settings(
@@ -1450,8 +1723,8 @@ class TestTheDraft:
     async def test_rejecting_a_photo_does_not_change_the_draft(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Nach dem Streichen des Top-Fotos rueckt NICHTS nach - das gestrichene Foto bleibt an
-        seiner Position und traegt seinen Zustand.
+        """Nach dem Streichen des Top-Fotos rueckt in der ANTWORT nichts nach - das gestrichene
+        Foto bleibt an seiner Position und traegt seinen Zustand; die Ansicht blendet es aus.
 
         Geprueft als vollstaendiger Listenvergleich (Ids in Reihenfolge), nicht als blosses
         "das Foto ist noch da": ein Vorhandensein-Test bliebe auch dann gruen, wenn hinter dem
@@ -1466,18 +1739,14 @@ class TestTheDraft:
             db_session, run, second, rank_score=0.5, rank_position=2, selection_position=None
         )
 
-        before = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        before = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
         assert [item["id"] for item in before.json()["items"]] == [first.id]
 
         await authenticated_api_client.put(
             f"/photos/{first.id}/rating", json={"status": "rejected"}
         )
 
-        after = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        after = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
         assert [item["id"] for item in after.json()["items"]] == [first.id]
         [item] = after.json()["items"]
         ranking = item["ranking"]
@@ -1486,10 +1755,10 @@ class TestTheDraft:
     async def test_a_rejected_photo_stays_in_the_draft_with_its_rating(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Das gestrichene Foto verschwindet nicht, sondern traegt seinen Zustand dort, wo er im
-        Produkt immer steht - in `ratings[]`. Die Entwurfsansicht leitet die Kachel-Darstellung
-        ausschliesslich daraus ab (`utils/ownRating.ts::ownRatingStatus`), es gibt kein eigenes
-        Antwortfeld dafuer."""
+        """Das gestrichene Foto verschwindet nicht aus der ANTWORT, sondern traegt seinen Zustand
+        dort, wo er im Produkt immer steht - in `ratings[]`. Die Entwurfsansicht leitet Ausblenden
+        und Gestrichen-Zeile ausschliesslich daraus ab (`utils/ownRating.ts::ownRatingStatus`), es
+        gibt kein eigenes Antwortfeld dafuer."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
@@ -1499,9 +1768,7 @@ class TestTheDraft:
             f"/photos/{photo.id}/rating", json={"status": "rejected"}
         )
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         [item] = response.json()["items"]
         assert item["id"] == photo.id
@@ -1534,7 +1801,7 @@ class TestTheDraft:
         await self._rate(db_session, proposed, RatingStatus.REJECTED, other_user)
 
         async def draft(client: httpx.AsyncClient) -> list[int]:
-            response = await client.get(f"/projects/{project.id}/photos", params={"draft": "true"})
+            response = await client.get(f"/projects/{project.id}/album-draft")
             assert response.status_code == 200
             return [item["id"] for item in response.json()["items"]]
 
@@ -1565,12 +1832,7 @@ class TestTheDraft:
         taken = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await self._rate(db_session, taken, RatingStatus.ALBUM_WORTHY)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
-
-        assert response.status_code == 200
-        assert response.json() == {"items": [], "total": 0}
+        assert await _album_draft(authenticated_api_client, project) == {"events": [], "items": []}
 
     async def test_a_run_without_events_keeps_the_draft_empty(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1582,11 +1844,7 @@ class TestTheDraft:
         taken = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await self._rate(db_session, taken, RatingStatus.ALBUM_WORTHY)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
-
-        assert response.json() == {"items": [], "total": 0}
+        assert await _album_draft(authenticated_api_client, project) == {"events": [], "items": []}
 
     @pytest.mark.parametrize("value", [2, 11])
     async def test_the_old_top_n_parameter_does_not_exist_any_more(
@@ -1625,9 +1883,7 @@ class TestTheDraft:
         )
         await db_session.commit()
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         item = response.json()["items"][0]
         assert item["ranking"] is not None
@@ -1824,9 +2080,7 @@ class TestDraftAlternatives:
         rejected, kept = photos[0], photos[1]
         await self._rate(db_session, rejected, RatingStatus.REJECTED)
 
-        draft = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        draft = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
         alternatives = await self._get(
             authenticated_api_client,
             project,
@@ -3537,9 +3791,7 @@ class TestEventIsNotAnAnswerStatement:
             db_session, anchor_gps=_EIFFEL
         )
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         items = response.json()["items"]
         assert len(items) == 3
@@ -3833,9 +4085,7 @@ class TestPhotoEvent:
         await _add_ranking(db_session, run, photo, event=event_row, rank_score=0.9, rank_position=1)
 
         listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-        draft = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        draft = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         assert listing.json()["items"][0]["event"] == draft.json()["items"][0]["event"]
 
@@ -3871,9 +4121,7 @@ class TestPhotoEvent:
             )
 
         listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-        draft = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        draft = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         assert len(listing.json()["items"]) == 3
         assert len(draft.json()["items"]) == 1
@@ -4494,13 +4742,10 @@ class TestARankingRowWithoutAModelVerdict:
         await _add_ranking(db_session, run, rated, rank_score=0.9, rank_position=1)
         await _add_ranking(db_session, run, unrated, rank_score=None, rank_position=None)
 
-        response = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        response = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         body = response.json()
         assert [item["id"] for item in body["items"]] == [rated.id]
-        assert body["total"] == 1
         assert body["items"][0]["ranking"]["partition_size"] == 1
 
 
@@ -4807,9 +5052,7 @@ class TestTheMotifPresenceFlag:
         await _assess_photo(db_session, photo, strengths={"menschen": 0.9, "tiere": 0.1})
 
         listing = await authenticated_api_client.get(f"/projects/{project.id}/photos")
-        draft = await authenticated_api_client.get(
-            f"/projects/{project.id}/photos", params={"draft": "true"}
-        )
+        draft = await authenticated_api_client.get(f"/projects/{project.id}/album-draft")
 
         assert listing.json()["items"][0]["motifs"] == draft.json()["items"][0]["motifs"]
         by_key = {entry["key"]: entry["present"] for entry in draft.json()["items"][0]["motifs"]}
@@ -4978,7 +5221,7 @@ async def _listing(client: httpx.AsyncClient, project: Project) -> list[dict[str
 
 
 async def _draft(client: httpx.AsyncClient, project: Project) -> list[dict[str, Any]]:
-    response = await client.get(f"/projects/{project.id}/photos", params={"draft": "true"})
+    response = await client.get(f"/projects/{project.id}/album-draft")
     assert response.status_code == 200
     items: list[dict[str, Any]] = response.json()["items"]
     assert_invariants_everywhere(items)
@@ -5715,8 +5958,8 @@ class TestTheSingleDraftStaysUntouchedByAJointDecision:
     async def test_a_joint_decision_changes_neither_the_draft_nor_any_ratings(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Nachweisstelle 4: Verglichen wird die vollstaendige ID-FOLGE und `total`, nicht die
-        Menge - eine Umordnung waere sonst unsichtbar. Dazu die `ratings[]` BEIDER Nutzer."""
+        """Nachweisstelle 4: Verglichen wird die vollstaendige ID-FOLGE und die Eventliste, nicht
+        die Menge - eine Umordnung waere sonst unsichtbar. Dazu die `ratings[]` BEIDER Nutzer."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         photos = []
@@ -5730,24 +5973,16 @@ class TestTheSingleDraftStaysUntouchedByAJointDecision:
         await _rate(db_session, photos[1], other, RatingStatus.REJECTED)
 
         before = await _draft(authenticated_api_client, project)
-        before_total = (
-            await authenticated_api_client.get(
-                f"/projects/{project.id}/photos", params={"draft": "true"}
-            )
-        ).json()["total"]
+        before_events = (await _album_draft(authenticated_api_client, project))["events"]
 
         await _decide(db_session, photos[1], False)
         await _decide(db_session, photos[0], False)
 
         after = await _draft(authenticated_api_client, project)
-        after_total = (
-            await authenticated_api_client.get(
-                f"/projects/{project.id}/photos", params={"draft": "true"}
-            )
-        ).json()["total"]
+        after_events = (await _album_draft(authenticated_api_client, project))["events"]
 
         assert [item["id"] for item in after] == [item["id"] for item in before]
-        assert after_total == before_total
+        assert after_events == before_events
         assert [item["ratings"] for item in after] == [item["ratings"] for item in before]
 
     async def test_a_draft_change_leaves_an_existing_joint_decision_untouched(
