@@ -30,6 +30,7 @@ import {
   openDuplicateGroup,
   photoTiles,
 } from '../lib/demo.ts'
+import { readOwnDraftStates, restoreOwnDraftStates } from '../lib/draft.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
 /** Zugesicherte Mindest-Trefferflaeche in px (Design-System). */
@@ -40,7 +41,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 30
+const EXPECTED_CONTROL_COUNT = 37
 
 async function assertTappable(
   control: Locator,
@@ -175,23 +176,73 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   await assertTappable(appliesButton, 'Trifft zu (Motivkorrektur)')
   checked.push('Trifft zu')
 
-  // --- Die beiden Flaechen der Entwurfskachel (specs/features/0430-...) ----------------------
+  // --- Die Handgriffe des Album-Entwurfs (specs/features/0430-..., 0558-...) -----------------
   // Heisser Pfad nach derselben Begruendung wie die Bewertungsleiste: Beim Durchgehen des Album-
   // Entwurfs wird hier viele Male hintereinander gedrueckt, und ein Fehlgriff schreibt einen
-  // falschen Datenwert. Die zwei Flaechen liegen unmittelbar NEBENEINANDER - das ist genau die
-  // Fehlerklasse "ueberlappende aufgespannte Trefferflaechen benachbarter Bedienelemente", die
-  // der Treffertest mit abdeckt: er meldete dann das Nachbarelement.
+  // falschen Datenwert. "Streichen" und "Alternativen" stehen bei 360 px unmittelbar
+  // UNTEREINANDER - das ist genau die Fehlerklasse "ueberlappende aufgespannte Trefferflaechen
+  // benachbarter Bedienelemente", die der Treffertest mit abdeckt: er meldete dann das
+  // Nachbarelement. Band, Panel und Gestrichen-Zeile entstehen erst durch einen Druck und werden
+  // deshalb geoeffnet, bevor ihre Handgriffe gemessen werden.
   await page.goto(`/projects/${projectId}/album`)
-  const albumToggle = page.getByRole('button', { name: /^(Im Album|Gestrichen): / }).first()
-  await expect(albumToggle, 'erste Entwurfskachel').toBeVisible()
-  await assertTappable(albumToggle, 'Albumentscheidung (Entwurfskachel)')
-  checked.push('Albumentscheidung der Entwurfskachel')
+  const strike = page.getByRole('button', { name: /^Streichen: / }).first()
+  await expect(strike, 'erste Entwurfskachel').toBeVisible()
+  await assertTappable(strike, 'Streichen (Entwurfskachel)')
+  checked.push('Streichen der Entwurfskachel')
 
   await assertTappable(
-    page.getByRole('button', { name: /^Alternativen: / }).first(),
-    'Alternativen (Entwurfskachel)',
+    page.locator('[data-draft-bar]').getByRole('link', { name: 'Zur Endauswahl' }),
+    'Zur Endauswahl (Kopfleiste)',
   )
+  checked.push('Zur Endauswahl der Kopfleiste')
+
+  const alternatives = page.getByRole('button', { name: /^Alternativen: / }).first()
+  await assertTappable(alternatives, 'Alternativen (Entwurfskachel)')
   checked.push('Alternativen der Entwurfskachel')
+  await alternatives.click()
+  const exchange = page.getByRole('button', { name: /^Tauschen: / }).first()
+  await expect(exchange, 'mindestens eine Alternative im Band').toBeVisible()
+  await assertTappable(exchange, 'Tauschen (Alternativen-Band)')
+  checked.push('Tauschen im Band')
+  await alternatives.click()
+
+  const addTrigger = page.getByRole('button', { name: /^Foto hinzufügen: / }).first()
+  await assertTappable(addTrigger, 'Foto hinzufügen (Hinzufügen-Feld)')
+  checked.push('Foto hinzufügen')
+  await addTrigger.click()
+  const add = page.getByRole('button', { name: /^Hinzufügen: / }).first()
+  await expect(add, 'mindestens ein Foto im Hinzufügen-Panel').toBeVisible()
+  await assertTappable(add, 'Hinzufügen (Hinzufügen-Panel)')
+  checked.push('Hinzufügen im Panel')
+  await addTrigger.click()
+
+  const struckToggle = page.getByRole('button', { name: /^\d+ gestrichen – anzeigen$/ }).first()
+  await assertTappable(struckToggle, 'Gestrichen-Zeile')
+  checked.push('Gestrichen-Zeile')
+  await struckToggle.click()
+  const readd = page.getByRole('button', { name: /^Wieder aufnehmen: / }).first()
+  await expect(readd, 'eine gestrichene Kachel').toBeVisible()
+  await assertTappable(readd, 'Wieder aufnehmen (gestrichene Kachel)')
+  checked.push('Wieder aufnehmen')
+
+  // „Rückgängig" steht nur nach einem Streichen da - der einzige SCHREIBENDE Schritt dieses Specs.
+  // Er wird mit „Rückgängig" selbst zurueckgenommen; die API-Ruecksetzung im `finally` greift
+  // auch dann, wenn genau dieser Weg scheitert.
+  const draftBefore = await readOwnDraftStates(page, projectId)
+  try {
+    await page
+      .getByRole('button', { name: /^Streichen: / })
+      .first()
+      .click()
+    const undo = page.getByRole('button', { name: 'Rückgängig', exact: true })
+    await expect(undo, 'Rückgängig-Hinweis nach dem Streichen').toBeVisible()
+    await assertTappable(undo, 'Rückgängig (Hinweis)')
+    checked.push('Rückgängig')
+    await undo.click()
+    await expect(undo).toBeHidden()
+  } finally {
+    await restoreOwnDraftStates(page, projectId, draftBefore)
+  }
 
   // --- Die Großansicht aus dem Entwurf (specs/features/0531-...) ------------------------------
   // „Schließen" und „Details" beziehen ihre 44 px aus der Aufspannung, und beide liegen nur
