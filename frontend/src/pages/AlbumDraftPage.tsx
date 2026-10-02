@@ -476,11 +476,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
       )}
 
       {(query.isLoading || projectQuery.isLoading) && (
-        <ul
-          role="status"
-          aria-label="Fotos werden geladen…"
-          className={PHOTO_CARD_GRID_CLASS}
-        >
+        <ul role="status" aria-label="Fotos werden geladen…" className={PHOTO_CARD_GRID_CLASS}>
           {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
             <li key={index} aria-hidden="true">
               <Skeleton className="aspect-square w-full rounded-md" />
