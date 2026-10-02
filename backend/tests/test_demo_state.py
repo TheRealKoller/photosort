@@ -14,7 +14,9 @@ import hashlib
 import io
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
 from PIL import Image
 from sqlalchemy import delete, select
@@ -97,6 +99,7 @@ from photosort.places import sanitize_place_name
 from photosort.quality import QUALITY_CRITERION_WEIGHTS, compute_quality_score
 from photosort.quality_weights import store_weights
 from photosort.scoring import SHARPNESS_REJECT_THRESHOLD
+from photosort.security import create_access_token
 from photosort.thumbnails import (
     ASPECT_RATIO_MAX,
     ASPECT_RATIO_MIN,
@@ -2694,3 +2697,73 @@ class TestTheDemoStateRespectsAStoredWeightSet:
             )
         ).scalar_one()
         assert run.quality_weight_set_id == written.id
+
+
+class TestTheDemoStateShowsEveryStateOfTheAlbumDraft:
+    """specs/features/0558-album-entwurf-verstaendlich.md: Gestrichen-Zeile, Eingriffszaehler und
+    Hinzufuegen im leeren Event sind in E2E und `browse-app` nur sichtbar, wenn der Bestand sie
+    traegt. Geprueft ueber den LESEPFAD als erster Nutzer - genau die Sicht, die die Pruefstacks
+    anmelden -, nie ueber eine Nachbildung des Praedikats hier."""
+
+    @staticmethod
+    async def _views(
+        session: AsyncSession, client: httpx.AsyncClient, tmp_path: Path
+    ) -> tuple[dict[str, Any], dict[str, Any], int, int]:
+        first = await _make_user(session, "daniel")
+        second = await _make_user(session, "zweiter-nutzer")
+        await rebuild_demo_state(session, tmp_path, large_collection_photo_count=3)
+        await session.commit()
+        project = await _project(session, RATED_PROJECT_NAME)
+        client.headers["Authorization"] = f"Bearer {create_access_token(first)}"
+        draft = await client.get(f"/projects/{project.id}/album-draft")
+        selection = await client.get(f"/projects/{project.id}/album-selection")
+        assert draft.status_code == selection.status_code == 200
+        return draft.json(), selection.json(), first.id, second.id
+
+    @staticmethod
+    def _own(item: dict[str, Any], user_id: int) -> str | None:
+        return next((r["status"] for r in item["ratings"] if r["user_id"] == user_id), None)
+
+    async def test_the_draft_of_the_first_user_carries_all_four_cases(
+        self, db_session: AsyncSession, api_client: httpx.AsyncClient, tmp_path: Path
+    ) -> None:
+        draft, _selection, me, _other = await self._views(db_session, api_client, tmp_path)
+
+        def proposed(item: dict[str, Any]) -> bool:
+            return bool(item["ranking"] and item["ranking"]["proposed"])
+
+        items = draft["items"]
+        struck_proposed = [i for i in items if self._own(i, me) == "rejected" and proposed(i)]
+        taken_unproposed = [
+            i for i in items if self._own(i, me) == "album_worthy" and not proposed(i)
+        ]
+        struck_unproposed = [
+            i
+            for i in items
+            if self._own(i, me) == "rejected" and not proposed(i) and i["ranking"] is not None
+        ]
+        events_with_proposal = {i["event"]["id"] for i in items if proposed(i)}
+        events_without_proposal = [
+            event for event in draft["events"] if event["id"] not in events_with_proposal
+        ]
+
+        assert struck_proposed, "kein gestrichenes vorgeschlagenes Foto"
+        assert taken_unproposed, "kein aufgenommenes nicht vorgeschlagenes Foto"
+        assert struck_unproposed, "kein gestrichenes nicht vorgeschlagenes Foto mit Rangzeile"
+        assert events_without_proposal, "kein Event ohne Vorschlag"
+
+    async def test_the_final_selection_shows_a_proposal_stance_and_a_not_in_draft_stance(
+        self, db_session: AsyncSession, api_client: httpx.AsyncClient, tmp_path: Path
+    ) -> None:
+        """Die Haltungszeilen "Vorschlag" (unberuehrt, vorgeschlagen) und "Nicht im Entwurf"
+        (unberuehrt, nicht vorgeschlagen) - je Teilnehmer abgeleitet wie in der Ansicht."""
+        _draft, selection, me, other = await self._views(db_session, api_client, tmp_path)
+
+        stances = [
+            (bool(item["ranking"] and item["ranking"]["proposed"]), self._own(item, user_id))
+            for item in selection["items"]
+            for user_id in (me, other)
+        ]
+
+        assert (True, None) in stances, "keine Haltung 'Vorschlag'"
+        assert (False, None) in stances, "keine Haltung 'Nicht im Entwurf'"
