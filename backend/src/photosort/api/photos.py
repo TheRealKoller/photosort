@@ -2387,7 +2387,9 @@ async def draft_alternatives(
     # FastAPI spiegelt bei `422` den Rohwert im `input`-Feld zurueck - er wird ausschliesslich als
     # React-Textknoten gerendert, nie geloggt.
     event_id: int = Query(..., ge=1, le=MAX_QUERY_POSITION),
-    photo_id: int = Query(..., ge=1, le=MAX_QUERY_POSITION),
+    # Optional (S8): ohne Bezugsbild (Hinzufuegen-Feld) entfaellt allein die Motivstufe der
+    # Sortierung, nie die Bindung an Lauf und Event.
+    photo_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
     # `limit <= 200` deckelt zugleich die schwere Hydratation ueber `_photos_by_id` mit ihren
     # `selectinload`s - sie laeuft ausschliesslich ueber die angeforderte Seite, nie ueber die
     # ganze Restmenge.
@@ -2439,25 +2441,36 @@ async def draft_alternatives(
     Antwort, und aus der beobachteten Reihenfolge liesse sich das Motivprofil eines Bildes
     ablesen, das der Anfragende nie sehen darf - ein Leck ueber die Sortierung, das keine
     Antwortzeile benennt. Ein abweichender Statuscode waere daneben ein Existenz-Orakel ueber
-    fremde Ids."""
+    fremde Ids.
+
+    OHNE `photo_id` (S8) entfaellt Schritt (1) und mit ihm die Motivstufe: `order_alternatives`
+    ordnet dann nach Qualitaet. Die Kandidatenabfrage steht mit Lauf- UND Event-Praedikat
+    unveraendert - eine unbekannte oder projektfremde `event_id` ergibt `200` mit `items: []` und
+    `total: 0` auf demselben Antwortpfad. Untersagt sind ein Ersatz-Bezugsbild (etwa das erste
+    Foto des Events), eine Menge ohne Event-Praedikat und eine Bindung, die nur im Zweig mit
+    Bezugsbild steht."""
     project = await _get_project_or_404(project_id, session)
 
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
         return PhotoListOut(items=[], total=0)
 
-    # (1) Das Bezugsbild - beide Praedikate ausgeschrieben, siehe Docstring (S3).
-    reference_row = (
-        await session.execute(
-            select(PhotoRanking.photo_id, PhotoRanking.rank_score).where(
-                PhotoRanking.criterion_scoring_run_id == latest_run_id,
-                PhotoRanking.event_id == event_id,
-                PhotoRanking.photo_id == photo_id,
+    # (1) Das Bezugsbild - beide Praedikate ausgeschrieben, siehe Docstring (S3). Nur mit
+    # `photo_id`; ohne gibt es keines, und es wird keines ersatzweise gewaehlt (S8).
+    reference_quality: float | None = None
+    if photo_id is not None:
+        reference_row = (
+            await session.execute(
+                select(PhotoRanking.photo_id, PhotoRanking.rank_score).where(
+                    PhotoRanking.criterion_scoring_run_id == latest_run_id,
+                    PhotoRanking.event_id == event_id,
+                    PhotoRanking.photo_id == photo_id,
+                )
             )
-        )
-    ).first()
-    if reference_row is None:
-        return PhotoListOut(items=[], total=0)
+        ).first()
+        if reference_row is None:
+            return PhotoListOut(items=[], total=0)
+        reference_quality = reference_row.rank_score
 
     # (2) Die Kandidaten: die Rangzeilen dieses Events ABZUEGLICH des eigenen Entwurfs.
     #
@@ -2470,8 +2483,8 @@ async def draft_alternatives(
     # Der zweite Halbsatz von (b) ist die Umkehrbarkeit des Austauschs: ein GESTRICHENES Foto des
     # Vorschlags gehoert nicht mehr zum Entwurf und steht deshalb wieder unter den Alternativen -
     # ohne ihn liesse sich ein Austausch nicht zuruecknehmen. Er ist zugleich der Unterschied zum
-    # Entwurfs-LESEPFAD, der gestrichene Fotos bewusst stehen laesst: dort sind sie ein
-    # Anzeigezustand, hier gehoeren sie zur Restmenge (Zusicherung 2).
+    # Entwurfs-LESEPFAD, der gestrichene Fotos als Anzeigezustand in der Antwort traegt: hier
+    # gehoeren sie zur Restmenge (Zusicherung 2).
     #
     # `or_(… is_(None), … != …)` und nicht `!=` allein: ohne eigene Bewertungszeile ist `status`
     # `NULL`, und ein blosser Ungleichheitsvergleich ergaebe in SQL `NULL` - jedes unbewertete
@@ -2505,12 +2518,20 @@ async def draft_alternatives(
 
     # (3) Die Motive beider Seiten in EINER Abfrage - nie eine je Kandidat.
     strengths_by_id = await load_effective_strengths(
-        session, [photo_id, *(row.photo_id for row in candidate_rows)]
+        session,
+        [
+            *(() if photo_id is None else (photo_id,)),
+            *(row.photo_id for row in candidate_rows),
+        ],
     )
-    reference = AlternativeCandidate(
-        photo_id=photo_id,
-        quality=reference_row.rank_score,
-        motif_strengths=_strength_values(strengths_by_id.get(photo_id)),
+    reference = (
+        None
+        if photo_id is None
+        else AlternativeCandidate(
+            photo_id=photo_id,
+            quality=reference_quality,
+            motif_strengths=_strength_values(strengths_by_id.get(photo_id)),
+        )
     )
     ordered_ids = order_alternatives(
         reference,

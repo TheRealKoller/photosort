@@ -2065,6 +2065,132 @@ class TestDraftAlternatives:
         assert [item["id"] for item in body["items"]] == [p.id for p in photos[2:]]
         assert body["total"] == 3
 
+    async def _ranked(
+        self,
+        session: AsyncSession,
+        project: Project,
+        run: CriterionScoringRun,
+        event_row: Event,
+        name: str,
+        quality: float | None,
+        *,
+        proposed: bool = False,
+    ) -> Photo:
+        photo = await _make_photo(
+            session, project, f"{name}.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        )
+        await _add_ranking(
+            session,
+            run,
+            photo,
+            event=event_row,
+            rank_score=quality,
+            rank_position=None if quality is None else 1,
+            selection_position=1 if proposed else None,
+        )
+        return photo
+
+    async def test_without_a_reference_the_order_is_quality_none_last_then_smaller_id(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Das Hinzufuegen-Feld hat kein Bezugsbild: keine Motivstufe, Qualitaet absteigend,
+        `None` zuletzt, Gleichstand ueber die kleinere Id."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _default_event(db_session, run)
+        low = await self._ranked(db_session, project, run, event_row, "low", 0.2)
+        unrated = await self._ranked(db_session, project, run, event_row, "unrated", None)
+        tie_first = await self._ranked(db_session, project, run, event_row, "tie1", 0.5)
+        high = await self._ranked(db_session, project, run, event_row, "high", 0.9)
+        tie_second = await self._ranked(db_session, project, run, event_row, "tie2", 0.5)
+
+        response = await self._get(authenticated_api_client, project, event_id=event_row.id)
+
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == [
+            high.id,
+            tie_first.id,
+            tie_second.id,
+            low.id,
+            unrated.id,
+        ]
+
+    async def test_without_a_reference_the_set_is_the_event_minus_the_own_album(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Gestrichene sind enthalten (auch gestrichene vorgeschlagene), eigene Album-Fotos nicht -
+        auch nicht unberuehrt vorgeschlagene. Aussortierte (ohne Rangzeile) und Fotos anderer
+        Events fehlen; die Bewertung des ANDEREN Nutzers aendert nichts."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _default_event(db_session, run)
+        other_event = await _make_event(db_session, run, position=2)
+        other_user = await _make_second_user(db_session)
+
+        proposed = await self._ranked(
+            db_session, project, run, event_row, "proposed", 0.9, proposed=True
+        )
+        struck_proposed = await self._ranked(
+            db_session, project, run, event_row, "struck-proposed", 0.8, proposed=True
+        )
+        taken = await self._ranked(db_session, project, run, event_row, "taken", 0.7)
+        struck = await self._ranked(db_session, project, run, event_row, "struck", 0.6)
+        untouched = await self._ranked(db_session, project, run, event_row, "untouched", 0.5)
+        taken_by_other = await self._ranked(db_session, project, run, event_row, "other", 0.4)
+        elsewhere = await self._ranked(db_session, project, run, other_event, "elsewhere", 0.95)
+        discarded = await _make_photo(
+            db_session, project, "discarded.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        )
+        await self._rate(db_session, struck_proposed, RatingStatus.REJECTED)
+        await self._rate(db_session, taken, RatingStatus.ALBUM_WORTHY)
+        await self._rate(db_session, struck, RatingStatus.REJECTED)
+        await self._rate(db_session, taken_by_other, RatingStatus.ALBUM_WORTHY, other_user)
+        await self._rate(db_session, untouched, RatingStatus.REJECTED, other_user)
+
+        response = await self._get(authenticated_api_client, project, event_id=event_row.id)
+
+        body = response.json()
+        ids = [item["id"] for item in body["items"]]
+        assert ids == [struck_proposed.id, struck.id, untouched.id, taken_by_other.id]
+        assert body["total"] == 4
+        assert {proposed.id, taken.id, elsewhere.id, discarded.id}.isdisjoint(ids)
+
+    async def test_without_a_reference_a_foreign_event_yields_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """S8: Ohne Bezugsbild entfaellt die Sortierung, nie die Bindung - eine `event_id` aus
+        einem fremden Projekt ergibt `200` mit leerer Liste UND `total == 0`."""
+        project = await _make_project(db_session, name="eigen")
+        foreign = await _make_project(db_session, name="fremd")
+        await _make_criterion_scoring_run(db_session, project)
+        foreign_run = await _make_criterion_scoring_run(db_session, foreign)
+        foreign_event = await _default_event(db_session, foreign_run)
+        await self._ranked(db_session, foreign, foreign_run, foreign_event, "x", 0.5)
+
+        response = await self._get(authenticated_api_client, project, event_id=foreign_event.id)
+
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "total": 0}
+
+    async def test_without_a_reference_the_second_page_continues_the_order(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        photos = await self._candidates(db_session, project, run, 5)
+        event_id = (await _default_event(db_session, run)).id
+
+        first = await self._get(
+            authenticated_api_client, project, event_id=event_id, limit=2, offset=0
+        )
+        second = await self._get(
+            authenticated_api_client, project, event_id=event_id, limit=2, offset=2
+        )
+
+        assert [item["id"] for item in first.json()["items"]] == [photos[0].id, photos[1].id]
+        assert [item["id"] for item in second.json()["items"]] == [photos[2].id, photos[3].id]
+        assert second.json()["total"] == 5
+
     async def test_a_rejected_photo_is_in_the_draft_and_among_the_alternatives(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
@@ -4401,19 +4527,18 @@ class TestDraftAlternativesKeys:
         "keys",
         [
             pytest.param((), id="beide-fehlen"),
-            pytest.param(("event_id",), id="photo_id-fehlt"),
             pytest.param(("photo_id",), id="event_id-fehlt"),
         ],
     )
-    async def test_both_keys_are_required(
+    async def test_the_event_key_is_required(
         self,
         authenticated_api_client: httpx.AsyncClient,
         db_session: AsyncSession,
         keys: tuple[str, ...],
     ) -> None:
-        """Beide Schluessel sind pflichtig: ohne `event_id` ist gar kein Event adressiert, ohne
-        `photo_id` gibt es keinen Bezugspunkt, an dem die Reihenfolge haengt. Ein Vorgabewert
-        waere in beiden Faellen die stille Wahl irgendeines."""
+        """`event_id` ist pflichtig: ohne ihn ist gar kein Event adressiert, und ein Vorgabewert
+        waere die stille Wahl irgendeines. `photo_id` ist optional (das Hinzufuegen-Feld hat kein
+        Bezugsbild) - siehe `TestDraftAlternatives`."""
         project, _run, event_row, photos = await self._setup(db_session)
         available = {"event_id": event_row.id, "photo_id": photos[0].id}
 
