@@ -88,7 +88,7 @@ export function CurationPhotoTile({
           photoId={photo.id}
           variant="thumbnail"
           alt={photo.relative_path}
-          className="size-full object-cover"
+          className="size-full object-contain"
         />
       }
       // Die Durchstreichung des Dateinamens ohne das Raster-Kennzeichen „Verworfen": das Wort der

@@ -78,7 +78,7 @@ Verarbeitungs-Cache (Thumbnails).
       Link auf `/photos/<id>` — daran hängt der Auffinde-Ausdruck des E2E-Prüfstacks und damit vier
       Specs. Die Bildfläche wird in keinem Zustand gedämpft (ADR 0112); den Zustand einer
       verworfenen Aufnahme tragen allein die beiden Zeichen und die Zustandswörter der Kachel.
-      `PhotoCard` selbst bleibt unverändert; ein struktureller Wächter
+      `PhotoCard` selbst bleibt durch die Rasterkachel unverändert; ein struktureller Wächter
       (`photoGridTile.structure.test.ts`) hält ihre Aufrufstellen fest.
     - **Nachgeladen wird am Sichtbarkeitsanker** (`IntersectionObserver` auf einem Element unter dem
       Raster), nicht an einer Schaltfläche; die Zählzeile „x von y geladen" ist zugleich die
@@ -702,7 +702,12 @@ Verarbeitungs-Cache (Thumbnails).
       aufnehmen", ohne `aria-pressed`); der Zustand kommt als Kennzeichen „Vorschlag" /
       „Aufgenommen" / „Gestrichen" aus der Begriffsquelle `utils/albumStateLabels.ts`, die auch
       die Haltungszeilen der Endauswahl speist. Die Cache-Schlüssel von Entwurf und Alternativen
-      tragen die angemeldete Identität hinter dem Präfix `['photos', projectId]`.
+      tragen die angemeldete Identität hinter dem Präfix `['photos', projectId]`. Seit Spec
+      [`0563`](../specs/features/0563-groessere-unbeschnittene-fotos.md) nutzt jedes Raster der
+      Seite (Gruppen, Gestrichen-Zeile, Band, Panel, Platzhalter) die eine Spaltenregel
+      `PHOTO_CARD_GRID_CLASS` aus `components/PhotoCard.tsx` (2 / ab `sm` 3 / ab `lg` höchstens 4),
+      und jedes Foto — auch im Dialog „Alle Alternativen" — wird in die feste quadratische
+      Bildfläche eingepasst (`object-contain`), nie beschnitten.
   - **Die Endauswahl des Projekts, eine Ebene über beiden Entwürfen** *(Spec
     [`0431`](../specs/features/0431-endauswahl-gemeinsam.md), ADR
     [`decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md`](../specs/decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md))*:
@@ -765,7 +770,9 @@ Verarbeitungs-Cache (Thumbnails).
       `in_final_selection` plus die ausdrücklich Herausgenommenen. **Der Umschalter lädt nichts
       nach**, und die Entscheidungsmutation nimmt den eigenen Schlüssel von der Invalidierung aus
       (Muster `useDraftDecisionMutation`) — daraus folgt beides zugleich: Das entschiedene Bild
-      verlässt die Arbeitssicht sofort, und die Ergebnissicht ordnet sich dabei nicht neu.
+      verlässt die Arbeitssicht sofort, und die Ergebnissicht ordnet sich dabei nicht neu. Beide
+      Sichten und ihre Platzhalter stehen in derselben Spaltenregel `PHOTO_CARD_GRID_CLASS` wie der
+      Album-Entwurf, die Fotos eingepasst statt beschnitten (Spec 0563).
     - **Die Zugehörigkeit kommt vom Server.** `utils/albumDraft.ts::isInAlbum` wird auf dieser
       Seite ausdrücklich **nicht** benutzt: Seine Aussage (`status !== 'rejected'`) gilt nur
       innerhalb der Antwortmenge des Entwurfszweigs, und die Endauswahl enthält auch Fotos, die in

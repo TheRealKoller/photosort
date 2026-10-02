@@ -3,13 +3,12 @@ import type { ReactNode } from 'react'
 
 import type { EventOut, PhotoOut } from '../api/types'
 import { formatDraftPhotoCount } from '../utils/albumDraft'
+import { PHOTO_CARD_GRID_CLASS } from './PhotoCard'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 
 /** Der Text eines Events, in dem gerade kein Bild im Album steht. */
 export const DRAFT_EMPTY_EVENT_TEXT = 'Kein Bild im Entwurf'
-
-const GRID_CLASS = 'grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6'
 
 export interface DraftEventSectionProps {
   event: EventOut
@@ -119,7 +118,7 @@ export function DraftEventSection({
       </div>
       {motifText !== null && <p className="text-sm text-text">{motifText}</p>}
       {albumCount === 0 && <p className="text-sm text-text">{DRAFT_EMPTY_EVENT_TEXT}</p>}
-      <ul ref={gridRef} className={GRID_CLASS}>
+      <ul ref={gridRef} className={PHOTO_CARD_GRID_CLASS}>
         {cells}
       </ul>
       {struckPhotos.length > 0 && (
@@ -139,7 +138,7 @@ export function DraftEventSection({
           </div>
           {struckError !== null && <Alert>{struckError}</Alert>}
           {struckExpanded && (
-            <ul id={struckPanelId} className={GRID_CLASS}>
+            <ul id={struckPanelId} className={PHOTO_CARD_GRID_CLASS}>
               {struckPhotos.map((photo) => renderStruckTile(photo))}
             </ul>
           )}

@@ -41,7 +41,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 37
+const EXPECTED_CONTROL_COUNT = 38
 
 async function assertTappable(
   control: Locator,
@@ -289,6 +289,17 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     )
     checked.push(`Umschalter ${label}`)
   }
+
+  // Die Ergebnissicht ist ein anderes DOM: je Kachel EINE Schaltflaeche, hier „Herausnehmen"
+  // (specs/features/0563-..., AK5). Sie entsteht nur ueber den Umschalter.
+  await page.getByRole('button', { name: 'Endauswahl', exact: true }).click()
+  const remove = page.getByRole('button', { name: /^Herausnehmen: / }).first()
+  await expect(
+    remove,
+    'mindestens eine Kachel mit "Herausnehmen" in der Ergebnissicht',
+  ).toBeVisible()
+  await assertTappable(remove, 'Herausnehmen (Kachel der Ergebnissicht)')
+  checked.push('Herausnehmen der Ergebnissicht')
 
   // --- Projekt-Navigationsgruppe in der Kopfzeile (Spec 0298, AK11c) -------------------------
   // Bei 360 px ist ausschliesslich der Menue-Ausloeser sichtbar; er ist ein `size="icon"`-Button
