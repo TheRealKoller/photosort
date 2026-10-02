@@ -1,0 +1,13 @@
+{
+  "rows": [
+    { "ranking": "none", "own": null, "other": "album_worthy", "membership": "out" },
+    { "ranking": "none", "own": "album_worthy", "other": "rejected", "membership": "album" },
+    { "ranking": "none", "own": "rejected", "other": "album_worthy", "membership": "out" },
+    { "ranking": "not_proposed", "own": null, "other": "album_worthy", "membership": "out" },
+    { "ranking": "not_proposed", "own": "album_worthy", "other": "rejected", "membership": "album" },
+    { "ranking": "not_proposed", "own": "rejected", "other": "album_worthy", "membership": "struck" },
+    { "ranking": "proposed", "own": null, "other": "rejected", "membership": "album" },
+    { "ranking": "proposed", "own": "album_worthy", "other": "rejected", "membership": "album" },
+    { "ranking": "proposed", "own": "rejected", "other": "album_worthy", "membership": "struck" }
+  ]
+}

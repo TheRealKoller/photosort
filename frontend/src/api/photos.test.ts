@@ -4,10 +4,12 @@ import { apiFetch, apiFetchBlob } from './client'
 import {
   exchangeDraftPhoto,
   fetchPhotoImageBlobUrl,
+  getAlbumDraft,
   listDraftAlternatives,
   listPhotos,
+  undoDraftExchange,
 } from './photos'
-import type { PhotoListOut } from './types'
+import type { AlbumDraftOut, PhotoListOut } from './types'
 
 vi.mock('./client', () => ({
   apiFetch: vi.fn(),
@@ -59,32 +61,14 @@ describe('api/photos', () => {
     )
   })
 
-  it('encodes the draft mode as a query param', async () => {
-    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+  it('reads the album draft from its own endpoint', async () => {
+    const draft: AlbumDraftOut = { events: [], items: PHOTO_LIST.items }
+    vi.mocked(apiFetch).mockResolvedValue(draft)
 
-    await listPhotos(1, { draft: true })
+    const result = await getAlbumDraft(1)
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?draft=true')
-  })
-
-  it('sends no draft parameter without the draft mode', async () => {
-    /* Der Gegenfall: `draft=false` ist der serverseitige Vorgabewert, und ein mitgesendeter
-     * `false`-Parameter wäre eine zweite Schreibweise für denselben Zustand. */
-    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
-
-    await listPhotos(1, { limit: 30 })
-
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/photos?limit=30')
-  })
-
-  it('never sends the abolished selection parameter', async () => {
-    /* Der abgeschaffte Parameter endet serverseitig in `422` - in BEIDEN Belegungen. Ein
-     * Aufrufer, der ihn noch mitsendete, bekäme also gar keine Antwort mehr. */
-    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
-
-    await listPhotos(1, { draft: true })
-
-    expect(vi.mocked(apiFetch).mock.calls.at(-1)?.[0]).not.toContain('selection')
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/album-draft')
+    expect(result).toEqual(draft)
   })
 
   it('requests the alternatives of one photo of one event', async () => {
@@ -113,6 +97,18 @@ describe('api/photos', () => {
     await listDraftAlternatives(1, { eventId: 7, photoId: 3 })
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/draft-alternatives?event_id=7&photo_id=3')
+  })
+
+  it('omits the reference photo entirely when the add field asks without one', async () => {
+    /* Der Parameter FEHLT, statt `photo_id=undefined` zu tragen: Der Server wiese einen
+     * nicht-numerischen Wert mit `422` ab. */
+    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+
+    await listDraftAlternatives(1, { eventId: 7, limit: 8, offset: 8 })
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/1/draft-alternatives?event_id=7&limit=8&offset=8',
+    )
   })
 
   it('never calls the endpoint that was replaced', async () => {
@@ -145,6 +141,31 @@ describe('api/photos', () => {
     expect(Object.keys(body).sort()).toEqual(['photo_id', 'replaced_photo_id'])
     expect(result.taken.photo_id).toBe(2)
     expect(result.struck.photo_id).toBe(1)
+  })
+
+  it('undoDraftExchange posts both ids and both previous states, nothing else', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({
+      photo: { photo_id: 2, user_id: 1, status: null, favorite: false, updated_at: null },
+      replaced: { photo_id: 1, user_id: 1, status: null, favorite: false, updated_at: null },
+    })
+
+    const result = await undoDraftExchange(7, {
+      photo_id: 2,
+      replaced_photo_id: 1,
+      photo_previous_status: 'rejected',
+      replaced_previous_status: null,
+    })
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/7/draft/exchange/undo', {
+      method: 'POST',
+      body: {
+        photo_id: 2,
+        replaced_photo_id: 1,
+        photo_previous_status: 'rejected',
+        replaced_previous_status: null,
+      },
+    })
+    expect(result.replaced.photo_id).toBe(1)
   })
 
   it('fetchPhotoImageBlobUrl requests the image and returns an object URL', async () => {

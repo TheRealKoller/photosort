@@ -1144,6 +1144,34 @@ class TestTheOrderOfTheAlternatives:
             reference, [_alternative(1, 0.5, motifs={"a": _FULL}), _alternative(2, 0.1)]
         ) == [2]
 
+    def test_without_a_reference_a_shared_motif_does_not_jump_ahead(self) -> None:
+        """Ohne Bezugsbild gibt es keine Motivstufe: Zwei Kandidaten mit gemeinsamem Motiv stehen
+        nicht vor einem besseren ohne. Eine Implementierung, die ersatzweise den ersten Kandidaten
+        als Bezug nimmt, stellte 2 und 3 vor 4."""
+        assert order_alternatives(
+            None,
+            [
+                _alternative(2, 0.3, motifs={"a": _FULL}),
+                _alternative(3, 0.2, motifs={"a": _FULL}),
+                _alternative(4, 0.9, motifs={"b": _FULL}),
+            ],
+        ) == [4, 2, 3]
+
+    def test_without_a_reference_every_permutation_gives_quality_none_last_then_smaller_id(
+        self,
+    ) -> None:
+        candidates = [
+            _alternative(6, None, motifs={"a": _FULL}),
+            _alternative(5, 0.7),
+            _alternative(3, 0.7, motifs={"a": _FULL}),
+            _alternative(2, None),
+            _alternative(4, 0.0),
+            _alternative(7, 0.9, motifs={"b": _FULL}),
+        ]
+
+        for permutation in itertools.permutations(candidates):
+            assert order_alternatives(None, permutation) == [7, 3, 5, 4, 2, 6]
+
 
 class TestTheStructuralGuardAgainstReadingTheDisplayBands:
     """ADR 0091 Punkt 8: kein auswaehlender Codepfad liest die Anzeigebaender aus `motifs.py`.

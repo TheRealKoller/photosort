@@ -227,7 +227,7 @@ describe('PersonsPage', () => {
         arrange()
         const { queryClient } = renderPage()
         queryClient.setQueryData(['photos', 1, 'grid'], { items: [], total: 0 })
-        queryClient.setQueryData(['photos', 2, 'draft'], { items: [] })
+        queryClient.setQueryData(['photos', 2, 'draft', 'daniel'], { events: [], items: [] })
         const { user, dialog } = await openRemoveDialog('Anna')
         vi.mocked(personsApi.listPersons).mockResolvedValue([BEN])
         await user.type(within(dialog).getByRole('textbox'), 'Anna')
@@ -242,7 +242,9 @@ describe('PersonsPage', () => {
         expect(screen.getByRole('heading', { name: 'Personen', level: 1 })).toHaveFocus()
         expect(screen.getByText('Anna ist entfernt.')).toHaveAttribute('role', 'status')
         expect(queryClient.getQueryState(['photos', 1, 'grid'])?.isInvalidated).toBe(true)
-        expect(queryClient.getQueryState(['photos', 2, 'draft'])?.isInvalidated).toBe(true)
+        expect(queryClient.getQueryState(['photos', 2, 'draft', 'daniel'])?.isInvalidated).toBe(
+          true,
+        )
       },
     )
   })

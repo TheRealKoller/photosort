@@ -8,11 +8,11 @@ import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
 import type { EventOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
 import { ALBUM_SUITABILITY_NOT_RATED_TEXT } from '../utils/albumSuitability'
+import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
 import {
   ALTERNATIVES_ERROR_TEXT,
   ALTERNATIVES_NONE_TEXT,
   DraftAlternativesDialog,
-  PREVIOUSLY_IN_ALBUM_BADGE_TEXT,
 } from './DraftAlternativesDialog'
 
 vi.mock('../api/photos')
@@ -92,6 +92,7 @@ function renderDialog(
       onClose={overrides.onClose ?? (() => {})}
       onChoose={overrides.onChoose ?? (() => {})}
       exchanging={overrides.exchanging ?? false}
+      error={null}
     />,
     { wrapper },
   )
@@ -208,15 +209,11 @@ describe('DraftAlternativesDialog', () => {
 
     renderDialog()
 
-    await screen.findByRole('button', { name: 'Austauschen gegen: e.jpg' })
+    await screen.findByRole('button', { name: 'Tauschen: e.jpg' })
     const names = screen
-      .getAllByRole('button', { name: /Austauschen gegen:/ })
+      .getAllByRole('button', { name: /^Tauschen:/ })
       .map((button) => button.getAttribute('aria-label'))
-    expect(names).toEqual([
-      'Austauschen gegen: e.jpg',
-      'Austauschen gegen: b.jpg',
-      'Austauschen gegen: i.jpg',
-    ])
+    expect(names).toEqual(['Tauschen: e.jpg', 'Tauschen: b.jpg', 'Tauschen: i.jpg'])
   })
 
   it('shows the quality of every alternative, missing values included', async () => {
@@ -237,9 +234,7 @@ describe('DraftAlternativesDialog', () => {
     expect(screen.getByText(ALBUM_SUITABILITY_NOT_RATED_TEXT)).toBeInTheDocument()
   })
 
-  it('marks a struck photo as "zuvor im Album" - and nothing else', async () => {
-    // Die Umkehrbarkeit ohne eigenen Rückgängig-Knopf: Das ausgetauschte Bild steht wieder hier
-    // und ist als das erkennbar, was es war.
+  it('marks a struck photo as "Gestrichen" from the shared vocabulary - and nothing else', async () => {
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
       listOut([
         photo({
@@ -253,13 +248,13 @@ describe('DraftAlternativesDialog', () => {
 
     renderDialog()
 
-    await screen.findByRole('button', { name: 'Austauschen gegen: b.jpg' })
-    expect(screen.getAllByText(PREVIOUSLY_IN_ALBUM_BADGE_TEXT)).toHaveLength(1)
+    await screen.findByRole('button', { name: 'Tauschen: b.jpg' })
+    expect(screen.getAllByLabelText(ALBUM_STATE_LABELS.struck)).toHaveLength(1)
   })
 
   it('reads the own decision over the username, never over any entry of ratings[]', async () => {
-    // Auflage S6: Die Streichung des ANDEREN Nutzers ist nicht die eigene - sonst trüge ein Bild
-    // „zuvor im Album", das nie im eigenen Album war.
+    // Auflage S6: Die Streichung des ANDEREN Nutzers ist nicht die eigene - sonst truege ein Bild
+    // „Gestrichen", das im eigenen Entwurf nie gestrichen wurde.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
       listOut([
         photo({
@@ -272,8 +267,8 @@ describe('DraftAlternativesDialog', () => {
 
     renderDialog()
 
-    await screen.findByRole('button', { name: 'Austauschen gegen: b.jpg' })
-    expect(screen.queryByText(PREVIOUSLY_IN_ALBUM_BADGE_TEXT)).toBeNull()
+    await screen.findByRole('button', { name: 'Tauschen: b.jpg' })
+    expect(screen.queryByLabelText(ALBUM_STATE_LABELS.struck)).toBeNull()
   })
 
   it('hands the chosen alternative to its caller on the first press', async () => {
@@ -284,7 +279,7 @@ describe('DraftAlternativesDialog', () => {
 
     renderDialog({ onChoose })
 
-    await user.click(await screen.findByRole('button', { name: 'Austauschen gegen: b.jpg' }))
+    await user.click(await screen.findByRole('button', { name: 'Tauschen: b.jpg' }))
 
     expect(onChoose).toHaveBeenCalledWith(chosen)
   })
@@ -298,7 +293,7 @@ describe('DraftAlternativesDialog', () => {
 
     renderDialog({ onChoose, exchanging: true })
 
-    await user.click(await screen.findByRole('button', { name: 'Austauschen gegen: b.jpg' }))
+    await user.click(await screen.findByRole('button', { name: 'Tauschen: b.jpg' }))
 
     expect(onChoose).not.toHaveBeenCalled()
   })
@@ -324,7 +319,7 @@ describe('DraftAlternativesDialog', () => {
 
     await user.click(screen.getByRole('button', { name: /erneut/i }))
 
-    expect(await screen.findByRole('button', { name: 'Austauschen gegen: b.jpg' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: 'Tauschen: b.jpg' })).toBeEnabled()
   })
 
   it('falls back to a generic message for a failure without a server text', async () => {
@@ -356,7 +351,7 @@ describe('DraftAlternativesDialog', () => {
 
     await user.click(await screen.findByRole('button', { name: /Weitere Alternativen/ }))
 
-    expect(await screen.findByRole('button', { name: 'Austauschen gegen: c.jpg' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: 'Tauschen: c.jpg' })).toBeEnabled()
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /Weitere Alternativen/ })).toBeNull(),
     )

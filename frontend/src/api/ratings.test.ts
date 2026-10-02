@@ -29,12 +29,14 @@ describe('api/ratings', () => {
     expect(result).toEqual(WRITTEN)
   })
 
-  it('deletes an album decision via DELETE /photos/{id}/rating', async () => {
-    vi.mocked(apiFetch).mockResolvedValue(undefined)
+  it('withdraws an album decision via DELETE and returns the written row state', async () => {
+    const withdrawn: RatingWriteOut = { ...WRITTEN, status: null, updated_at: null }
+    vi.mocked(apiFetch).mockResolvedValue(withdrawn)
 
-    await deleteRating(1)
+    const result = await deleteRating(1)
 
     expect(apiFetch).toHaveBeenCalledWith('/photos/1/rating', { method: 'DELETE' })
+    expect(result).toEqual(withdrawn)
   })
 
   it('sets the favorite marker via its OWN endpoint, never via the rating one', async () => {

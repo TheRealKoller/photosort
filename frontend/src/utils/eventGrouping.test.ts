@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { EventOut, PhotoOut, RankingOut } from '../api/types'
-import { groupPhotosByDay } from './eventGrouping'
+import { groupEventsByDay, groupPhotosByDay } from './eventGrouping'
 
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
   return {
@@ -124,5 +124,52 @@ describe('groupPhotosByDay', () => {
 
   it('returns nothing for an empty draft', () => {
     expect(groupPhotosByDay([])).toEqual([])
+  })
+})
+
+describe('groupEventsByDay', () => {
+  // Mittags, fern von Mitternacht: Die Tageszuordnung soll von keiner Zeitzone abhaengen.
+  const first = event({ id: 10, position: 1, started_at: '2026-07-20T11:00:00' })
+  const second = event({ id: 11, position: 2, started_at: '2026-07-20T13:00:00' })
+  const empty = event({ id: 12, position: 3, started_at: '2026-07-22T12:00:00' })
+
+  it('builds the sections from the event list, empty events included', () => {
+    /* Ein Event ohne Foto im Entwurf ist ein Abschnitt - mit Hinzufuegen-Feld und, wenn es
+     * Gestrichenes gibt, Gestrichen-Zeile. Aus den Fotos allein entstuende es nie. */
+    const days = groupEventsByDay([first, second, empty], [photo({ id: 1, event: first })])
+
+    expect(days.map((day) => day.dayKey)).toEqual(['2026-07-20', '2026-07-22'])
+    expect(days[1].events.map((group) => group.event.id)).toEqual([12])
+    expect(days[1].events[0].photos).toEqual([])
+    expect(days[0].events[1].photos).toEqual([])
+  })
+
+  it('orders the sections by position, whatever order the list has', () => {
+    const days = groupEventsByDay([second, empty, first], [])
+
+    expect(days.flatMap((day) => day.events.map((group) => group.event.position))).toEqual([
+      1, 2, 3,
+    ])
+  })
+
+  it('puts each photo into the section of its event in answer order', () => {
+    const days = groupEventsByDay(
+      [first, second],
+      [
+        photo({ id: 7, event: second }),
+        photo({ id: 3, event: first }),
+        photo({ id: 2, event: second }),
+      ],
+    )
+
+    expect(days[0].events[0].photos.map((item) => item.id)).toEqual([3])
+    expect(days[0].events[1].photos.map((item) => item.id)).toEqual([7, 2])
+  })
+
+  it('drops a photo whose event is not in the list instead of inventing a section', () => {
+    const days = groupEventsByDay([first], [photo({ id: 1, event: second })])
+
+    expect(days[0].events[0].photos).toEqual([])
+    expect(days.flatMap((day) => day.events)).toHaveLength(1)
   })
 })

@@ -151,7 +151,7 @@ class AlternativeCandidate:
 
 
 def order_alternatives(
-    reference: AlternativeCandidate, candidates: Iterable[AlternativeCandidate]
+    reference: AlternativeCandidate | None, candidates: Iterable[AlternativeCandidate]
 ) -> list[int]:
     """Die Reihenfolge der Alternativen zu EINEM Bild (ADR 0098 Punkt 5), als `photo_id`-Folge.
 
@@ -171,8 +171,15 @@ def order_alternatives(
     ueberlassen.
 
     Das Bezugsbild selbst faellt heraus: es ist der Ausgangspunkt des Austauschs, nicht sein
-    Ziel."""
-    reference_motifs = carried_motifs(reference.motif_strengths)
+    Ziel.
+
+    Ohne Bezugsbild (`None`, das Hinzufuegen-Feld des Album-Entwurfs) entfaellt die Motivstufe
+    vollstaendig: alle Kandidaten stehen in einer Gruppe, Qualitaet absteigend, `None` zuletzt,
+    Gleichstand ueber die kleinere `photo_id`. Ein Ersatz-Bezugsbild gibt es nicht."""
+    reference_motifs = (
+        carried_motifs(reference.motif_strengths) if reference is not None else frozenset()
+    )
+    reference_id = reference.photo_id if reference is not None else None
 
     def key(candidate: AlternativeCandidate) -> tuple[int, int, float, int]:
         shares = bool(carried_motifs(candidate.motif_strengths) & reference_motifs)
@@ -187,7 +194,7 @@ def order_alternatives(
     return [
         candidate.photo_id
         for candidate in sorted(
-            (candidate for candidate in candidates if candidate.photo_id != reference.photo_id),
+            (candidate for candidate in candidates if candidate.photo_id != reference_id),
             key=key,
         )
     ]

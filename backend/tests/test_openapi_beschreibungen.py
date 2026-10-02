@@ -116,6 +116,12 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     ("get", "/photos/{photo_id}/faces/{index}/image"),
     ("put", "/photos/{photo_id}/persons/{person_id}"),
     ("get", "/projects/{project_id}/unnamed-faces"),
+    # specs/features/0558-album-entwurf-verstaendlich.md: der Entwurfs-Lesepfad und das
+    # Rueckgaengig nach einem Tausch. Ihre Beschreibungen tragen, was der Signatur nicht anzusehen
+    # ist - die Antwortmenge samt Gestrichenem und Eventliste, und beim Rueckgaengig die
+    # verbindliche Reihenfolge Bindung vor Vorbedingung und das Gegenereignis.
+    ("get", "/projects/{project_id}/album-draft"),
+    ("post", "/projects/{project_id}/draft/exchange/undo"),
 )
 
 

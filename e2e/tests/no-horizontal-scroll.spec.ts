@@ -19,6 +19,8 @@
  * samt Fundstelle des ueberstehenden Elements.
  */
 
+import type { Page } from '@playwright/test'
+
 import {
   DEMO_PERSONS,
   DEMO_PROJECTS,
@@ -43,11 +45,12 @@ const TOLERANCE = 1
 type Precondition = { heading: string } | { role: 'group' | 'link'; name: string | RegExp }
 
 /**
- * Der zugaengliche Name des Zweizustands einer Entwurfskachel. Die Kacheln des Album-Entwurfs
- * tragen KEINEN Kachel-Link und sind deshalb ueber `photoTiles()` nicht auffindbar - ihr
- * Bedienelement ist der belastbare Beleg dafuer, dass die Seite wirklich Kacheln traegt.
+ * Der zugaengliche Name der Entscheidungsflaeche einer Entwurfskachel (specs/features/0558-...):
+ * Sie nennt die Handlung. Die Kacheln des Album-Entwurfs tragen KEINEN Kachel-Link und sind
+ * deshalb ueber `photoTiles()` nicht auffindbar - ihr Bedienelement ist der belastbare Beleg
+ * dafuer, dass die Seite wirklich Kacheln traegt.
  */
-const DRAFT_TILE_TOGGLE = /^(Im Album|Gestrichen): /
+const DRAFT_TILE_TOGGLE = /^(Streichen|Wieder aufnehmen): /
 
 /**
  * Dasselbe fuer die Kacheln der gemeinsamen Endauswahl (specs/features/0431-...). Die Alternative
@@ -408,37 +411,14 @@ test('die Ergebnissicht der Endauswahl erzeugt kein horizontales Scrollen bei 36
 })
 
 /**
- * Der GEOEFFNETE Alternativen-Dialog bei 360 px - ein eigener Testfall, weil er nur ueber eine
- * Interaktion entsteht und die Routenschleife oben ausschliesslich Seiten im Ruhezustand misst.
- *
- * Er ist der engste Fall des Produkts: ein Bildraster mit zwei Spalten, Qualitaetsbeschriftung und
- * Abzeichen liegt in einem Dialog, der selbst schon Rand und Polsterung traegt. Genau dafuer ist
- * es ein Dialog und kein Popover geworden - die Zusage gehoert deshalb gemessen, nicht behauptet.
+ * Misst das Dokument und nennt die ersten ueberstehenden Elemente. `container` ist der Beleg,
+ * dass der gemessene Zustand WIRKLICH Inhalt traegt - seine Hoehe geht als `contentHeight` mit.
  */
-test('der geoeffnete Alternativen-Dialog erzeugt kein horizontales Scrollen bei 360 px', async ({
-  page,
-}) => {
-  const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
-  await page.goto(`/projects/${ratedId}/album`)
-
-  const trigger = page.getByRole('button', { name: /^Alternativen: / }).first()
-  await expect(trigger, 'Zugang zu den Alternativen auf der ersten Entwurfskachel').toBeVisible()
-  await trigger.click()
-
-  const dialog = page.getByRole('dialog')
-  await expect(dialog, 'geoeffneter Alternativen-Dialog').toBeVisible()
-  // Vorbedingung: der Dialog traegt WIRKLICH ein Raster. Ohne sie bestuende der Fall auch dann,
-  // wenn das Event nichts weiter haelt und nur der Leerzustandstext dasteht - also genau dann,
-  // wenn nichts ueberstehen koennte.
-  await expect(
-    dialog.getByRole('button', { name: /^Austauschen gegen: / }).first(),
-    'mindestens eine Alternative im Raster',
-  ).toBeVisible()
-
-  const metrics: PageMetrics = await page.evaluate(() => {
+async function measureWithin(page: Page, container: string): Promise<PageMetrics> {
+  return page.evaluate((selector) => {
     const root = document.documentElement
     const clientWidth = root.clientWidth
-    const open = document.querySelector('dialog[open]')
+    const open = document.querySelector(selector)
     const overflowing = Array.from(document.querySelectorAll('body *'))
       .filter((element) => element.getBoundingClientRect().right > clientWidth + 1)
       .slice(0, 5)
@@ -456,15 +436,129 @@ test('der geoeffnete Alternativen-Dialog erzeugt kein horizontales Scrollen bei 
       contentHeight: open?.getBoundingClientRect().height ?? 0,
       overflowing,
     }
-  })
+  }, container)
+}
 
-  expect(metrics.contentHeight, 'Hoehe des Dialogs').toBeGreaterThan(MIN_CONTENT_HEIGHT)
+function expectNoOverflow(metrics: PageMetrics, label: string): void {
   expect(
     metrics.scrollWidth,
-    `Dokumentbreite bei geoeffnetem Alternativen-Dialog (ueberstehende Elemente: ${
+    `Dokumentbreite ${label} (ueberstehende Elemente: ${
       metrics.overflowing.length === 0 ? 'keine gefunden' : metrics.overflowing.join(' | ')
     })`,
   ).toBeLessThanOrEqual(metrics.clientWidth + TOLERANCE)
+}
+
+/**
+ * Die durch eine Interaktion entstehenden Zustaende des Album-Entwurfs bei 360 px
+ * (specs/features/0558-...) - eigene Messungen, weil die Routenschleife oben ausschliesslich Seiten
+ * im Ruhezustand misst: das offene Alternativen-Band, das offene Hinzufuegen-Panel, die
+ * eingeblendeten Gestrichenen und der Dialog „Alle Alternativen".
+ *
+ * Band und Panel sind volle Rasterzeilen mit eigenem Raster aus Kachel und Handlung darin - der
+ * engste Fall des Entwurfs. Der Dialog bleibt ein Dialog, weil er den VOLLSTAENDIGEN Bestand
+ * seitenweise traegt.
+ */
+test('die offenen Zustaende des Album-Entwurfs erzeugen kein horizontales Scrollen bei 360 px', async ({
+  page,
+}) => {
+  const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.goto(`/projects/${ratedId}/album`)
+
+  // Band: Vorbedingung ist mindestens eine Alternative - ein Band, das nur den Leertext traegt,
+  // koennte nicht ueberstehen.
+  const trigger = page.getByRole('button', { name: /^Alternativen: / }).first()
+  await expect(trigger, 'Zugang zu den Alternativen auf der ersten Entwurfskachel').toBeVisible()
+  await trigger.click()
+  const band = page.locator(`[id="${await trigger.getAttribute('aria-controls')}"]`)
+  await expect(
+    band.getByRole('button', { name: /^Tauschen: / }).first(),
+    'mindestens eine Alternative im Band',
+  ).toBeVisible()
+  expectNoOverflow(await measureWithin(page, 'main'), 'bei offenem Alternativen-Band')
+
+  // Dialog „Alle Alternativen" aus dem Band.
+  await band.getByRole('button', { name: 'Alle Alternativen', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog, 'geoeffneter Alternativen-Dialog').toBeVisible()
+  await expect(
+    dialog.getByRole('button', { name: /^Tauschen: / }).first(),
+    'mindestens eine Alternative im Raster des Dialogs',
+  ).toBeVisible()
+  const dialogMetrics = await measureWithin(page, 'dialog[open]')
+  expect(dialogMetrics.contentHeight, 'Hoehe des Dialogs').toBeGreaterThan(MIN_CONTENT_HEIGHT)
+  expectNoOverflow(dialogMetrics, 'bei geoeffnetem Alternativen-Dialog')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+
+  // Panel: Ein zweites Panel schliesst das Band; Vorbedingung ist mindestens ein Kandidat.
+  const addTrigger = page.getByRole('button', { name: /^Foto hinzufügen: / }).first()
+  await addTrigger.click()
+  await expect(
+    page.getByRole('button', { name: /^Hinzufügen: / }).first(),
+    'mindestens ein Foto im Hinzufügen-Panel',
+  ).toBeVisible()
+  expectNoOverflow(await measureWithin(page, 'main'), 'bei offenem Hinzufügen-Panel')
+  await addTrigger.click()
+
+  // Gestrichene eingeblendet: Vorbedingung ist mindestens eine gestrichene Kachel.
+  await page
+    .getByRole('button', { name: /^\d+ gestrichen – anzeigen$/ })
+    .first()
+    .click()
+  await expect(
+    page.getByRole('button', { name: /^Wieder aufnehmen: / }).first(),
+    'eine eingeblendete gestrichene Kachel',
+  ).toBeVisible()
+  const struckMetrics = await measureWithin(page, 'main')
+  expect(struckMetrics.contentHeight, 'Hoehe des Inhaltsbereichs').toBeGreaterThan(
+    MIN_CONTENT_HEIGHT,
+  )
+  expectNoOverflow(struckMetrics, 'bei eingeblendeten Gestrichenen')
+})
+
+/**
+ * Die Haltungskennzeichen der Endauswahl bei 360 px (specs/features/0558-...): Jedes Kennzeichen
+ * steht EINZEILIG. Die Kachel ist bei zwei Spalten rund 150 px breit, und „Aufgenommen" samt
+ * Symbol neben dem Teilnehmernamen ist der laengste Fall - ein Umbruch darin machte aus dem
+ * Kennzeichen zwei Woerter-Fetzen, ohne dass irgendetwas uebersteht.
+ *
+ * Gemessen wird je Textknoten des Kennzeichens ueber `Range.getClientRects()`: genau ein Rechteck
+ * heisst eine Zeile. Eine Kastenhoehe waere an die Zeilenhoehe kalibriert und damit wertlos.
+ */
+test('die Haltungskennzeichen der Endauswahl stehen bei 360 px einzeilig', async ({ page }) => {
+  const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.goto(`/projects/${ratedId}/selection`)
+
+  const stances = page.locator('ul[aria-label^="Haltung zu "] > li')
+  // Vorbedingung: Kennzeichen sind WIRKLICH da, und darunter mindestens eines der drei Wörter -
+  // sonst liefe die Messung ueber lauter „–".
+  await expect(stances.first(), 'mindestens eine Haltungszeile').toBeVisible()
+  await expect(
+    page.locator('ul[aria-label^="Haltung zu "] [data-album-state]').first(),
+    'mindestens ein Zustandswort',
+  ).toBeVisible()
+
+  const lines = await stances.evaluateAll((rows) =>
+    rows.map((row) => {
+      const badge = row.lastElementChild
+      const walker = document.createTreeWalker(badge ?? row, NodeFilter.SHOW_TEXT)
+      const counts: number[] = []
+      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+        if ((node.textContent ?? '').trim() === '') {
+          continue
+        }
+        const range = document.createRange()
+        range.selectNodeContents(node)
+        counts.push(range.getClientRects().length)
+      }
+      return { text: (badge?.textContent ?? '').trim(), counts }
+    }),
+  )
+
+  expect(lines.length, 'Anzahl gemessener Haltungszeilen').toBeGreaterThan(0)
+  for (const line of lines) {
+    expect(line.counts, `Zeilen des Kennzeichens "${line.text}"`).toEqual([1])
+  }
 })
 
 /**

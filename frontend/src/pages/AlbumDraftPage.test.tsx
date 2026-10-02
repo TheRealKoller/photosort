@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { UserEvent } from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { InitialEntry, Location, NavigateFunction } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -13,35 +14,28 @@ import * as photosApi from '../api/photos'
 import * as projectsApi from '../api/projects'
 import * as ratingsApi from '../api/ratings'
 import type {
+  AlbumDraftOut,
   EventOut,
   PersonOut,
-  PhotoListOut,
   PhotoOut,
   ProjectOut,
   RankingOut,
+  RatingStatus,
+  RatingWriteOut,
 } from '../api/types'
-import { NOT_PROPOSED_BADGE_TEXT } from '../components/CurationPhotoTile'
-import { PREVIOUSLY_IN_ALBUM_BADGE_TEXT } from '../components/DraftAlternativesDialog'
 import { setToken } from '../auth/token'
+import { DRAFT_EMPTY_EVENT_TEXT } from '../components/DraftEventSection'
+import type { ObserverFactory } from '../hooks/useDraftPosition'
 import { MOTIF_SET } from '../test/motifSetFixture'
-import {
-  DRAFT_MOTIFS_NONE_TEXT,
-  DRAFT_MOTIFS_UNASSESSED_TEXT,
-  draftSizeText,
-  formatDraftPhotoCount,
-} from '../utils/albumDraft'
-import {
-  AlbumDraftPage,
-  DRAFT_CLOUD_CONSENT_TEXT,
-  DRAFT_EMPTY_EVENT_TEXT,
-  DRAFT_EMPTY_TEXT,
-} from './AlbumDraftPage'
+import { AlbumDraftPage, DRAFT_CLOUD_CONSENT_TEXT, DRAFT_EMPTY_TEXT } from './AlbumDraftPage'
 
 vi.mock('../api/photos')
 vi.mock('../api/projects')
 vi.mock('../api/ratings')
 vi.mock('../api/motifs')
 vi.mock('../api/persons')
+
+const USER_ID = 7
 
 function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
   return {
@@ -56,8 +50,8 @@ function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: false,
     cloud_vision_detection_enabled: true,
     cloud_vision_consent_at: '2026-07-01T10:00:00',
-    selection_target: 1,
-    effective_selection_target: 1,
+    selection_target: 3,
+    effective_selection_target: 3,
     photo_count: 0,
     taken_at_earliest: null,
     taken_at_latest: null,
@@ -65,47 +59,49 @@ function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
   }
 }
 
-function makeToken(payload: unknown): string {
-  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-  const body = btoa(JSON.stringify(payload))
-  return `${header}.${body}.signature-irrelevant`
+function makeToken(username: string): string {
+  return `${btoa('{}')}.${btoa(JSON.stringify({ sub: String(USER_ID), username }))}.sig`
 }
 
-function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
+const EVENT_A: EventOut = {
+  id: 1,
+  position: 1,
+  started_at: '2026-07-20T10:00:00',
+  ended_at: '2026-07-20T11:00:00',
+  place: null,
+  place_name: 'Paris',
+}
+const EVENT_B: EventOut = {
+  ...EVENT_A,
+  id: 2,
+  position: 2,
+  place_name: 'Lyon',
+  started_at: '2026-07-21T10:00:00',
+  ended_at: '2026-07-21T11:00:00',
+}
+
+function ranking(proposed: boolean): RankingOut {
   return {
     event_id: 1,
     rank_score: 0.8,
     rank_position: 1,
-    proposed: true,
-    partition_size: 1,
-    curation_position: 1,
-    ...overrides,
+    proposed,
+    partition_size: 3,
+    curation_position: null,
   }
 }
 
-function eventOut(overrides: Partial<EventOut> = {}): EventOut {
+function photo(id: number, overrides: Partial<PhotoOut> = {}): PhotoOut {
   return {
-    id: 1,
-    position: 1,
-    started_at: '2026-07-20T10:00:00',
-    ended_at: '2026-07-20T11:00:00',
-    place: null,
-    place_name: null,
-    ...overrides,
-  }
-}
-
-function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
-  return {
-    id: 1,
-    relative_path: 'a.jpg',
-    taken_at: '2026-07-20T10:00:00',
-    taken_at_original: '2026-07-20T10:00:00',
+    id,
+    relative_path: `${id}.jpg`,
+    taken_at: `2026-07-20T10:0${id}:00`,
+    taken_at_original: `2026-07-20T10:0${id}:00`,
     time_offset_minutes: 0,
     camera: null,
     ratings: [],
     suggestion: null,
-    ranking: ranking(),
+    ranking: ranking(true),
     criterion_scores: [],
     fine_labels: [],
     cloud_vision_status: [],
@@ -113,1106 +109,908 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     in_final_selection: false,
     contested: false,
     persons: [],
-    motif_assessment: {
-      source: 'cloud' as const,
-      provider: 'anthropic',
-      excluded_document: false,
-      computed_at: '2026-07-21T09:00:00',
-    },
-    // `present: false` als Grundzustand, NICHT aus `strength` abgeleitet: Die Motivmischung liest
-    // ausschliesslich die Serveraussage, und ein Aufbau, der beide koppelt, sieht eine Oberflaeche
-    // nicht, die doch selbst vergleicht.
-    motifs: MOTIF_SET.items.map((item) => ({
-      key: item.key,
-      strength: 0.5,
-      correction: null,
-      present: false,
-    })),
-    album_suitability: { level: 4, reason: 'Alle schauen in die Kamera.' },
-    event: eventOut(),
+    motif_assessment: null,
+    motifs: [],
+    album_suitability: null,
+    event: EVENT_A,
     ...overrides,
   }
 }
 
-/** Die eigene Bewertungszeile - die Ansicht liest sie ausschliesslich ueber `ownRatingStatus`. */
-function ownRating(status: 'album_worthy' | 'rejected') {
-  return { user_id: 7, username: 'daniel', status, favorite: false }
+function own(status: RatingStatus) {
+  return [{ user_id: USER_ID, username: 'daniel', status, favorite: false }]
 }
 
-function listOut(items: PhotoOut[], total = items.length): PhotoListOut {
-  return { items, total }
+function written(photoId: number, status: RatingStatus | null): RatingWriteOut {
+  return { photo_id: photoId, user_id: USER_ID, status, favorite: false, updated_at: null }
 }
 
-function renderPage(initialPath = '/projects/1/album') {
+/** `draft: null` lässt den Abruf so, wie der Fall ihn vorher eingerichtet hat (Laden, Fehler). */
+function renderPage(
+  draft: AlbumDraftOut | null,
+  observer?: ObserverFactory,
+  path = '/projects/1/album',
+) {
+  if (draft !== null) {
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draft)
+  }
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
-  return {
-    ...render(
-      <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route path="/projects/:projectId/pipeline/:step" element={<p>Pipeline-Schritt</p>} />
-          <Route path="/projects/:projectId/album" element={<AlbumDraftPage />} />
-        </Routes>
-      </MemoryRouter>,
-      { wrapper },
-    ),
-    queryClient,
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route
+          path="/projects/:projectId/album"
+          element={<AlbumDraftPage createPositionObserver={observer} />}
+        />
+        <Route path="/projects/:projectId/selection" element={<p>Endauswahl-Seite</p>} />
+      </Routes>
+    </MemoryRouter>,
+    { wrapper },
+  )
+}
+
+const noObserver: ObserverFactory = () => ({ observe: () => {}, disconnect: () => {} })
+
+beforeEach(() => {
+  vi.resetAllMocks()
+  window.localStorage.clear()
+  setToken(makeToken('daniel'))
+  vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+  vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
+  vi.mocked(projectsApi.getProject).mockResolvedValue(projectOut())
+  vi.mocked(personsApi.listPersons).mockResolvedValue([])
+  vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({ items: [], total: 0 })
+  vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }))
+})
+
+describe('AlbumDraftPage: Kopf und Abschluss', () => {
+  it('names days, events, counts and closes with one primary link to the final selection', async () => {
+    renderPage(
+      {
+        events: [EVENT_A, EVENT_B],
+        items: [
+          photo(1),
+          photo(2, { ratings: own('album_worthy'), ranking: ranking(false) }),
+          photo(3, { ratings: own('rejected') }),
+        ],
+      },
+      noObserver,
+    )
+
+    expect(await screen.findByText('2 Tage · 2 Events')).toBeInTheDocument()
+    expect(screen.getByText(/^Tag \d von 2 · Event \d von 2$/)).toBeInTheDocument()
+    expect(
+      screen.getByText('2 im Album · Richtwert etwa 3 · 1 aufgenommen · 1 gestrichen'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('2 Fotos im Album, Richtwert etwa 3.')).toBeInTheDocument()
+    expect(screen.getByText('Deine Eingriffe: 1 aufgenommen, 1 gestrichen.')).toBeInTheDocument()
+    const links = screen.getAllByRole('link', { name: 'Zur Endauswahl' })
+    expect(links).toHaveLength(2)
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', '/projects/1/selection')
+    }
+    // Das leere Event steht als Abschnitt mit Hinzufügen-Feld da.
+    expect(screen.getByText(DRAFT_EMPTY_EVENT_TEXT)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Foto hinzufügen: .*Lyon/ })).toBeInTheDocument()
+  })
+
+  it('follows the section the observer reports', async () => {
+    let report: () => void = () => {}
+    const observer: ObserverFactory = (callback) => {
+      report = callback
+      return { observe: () => {}, disconnect: () => {} }
+    }
+    const { container } = renderPage({ events: [EVENT_A, EVENT_B], items: [photo(1)] }, observer)
+    await screen.findByText(/^Tag \d von 2 · Event \d von 2$/)
+    const sections = [...container.querySelectorAll<HTMLElement>('[data-draft-position]')]
+    const place = (secondTop: number) => {
+      for (const section of sections) {
+        const top = section.dataset.draftPosition === '2' ? secondTop : -500
+        section.getBoundingClientRect = () => ({ top }) as DOMRect
+      }
+      act(() => report())
+    }
+
+    place(900)
+    expect(await screen.findByText('Tag 1 von 2 · Event 1 von 2')).toBeInTheDocument()
+    place(0)
+    expect(await screen.findByText('Tag 2 von 2 · Event 2 von 2')).toBeInTheDocument()
+  })
+
+  it('shows the empty state only for a run without events, the cloud consent text first', async () => {
+    const first = renderPage({ events: [], items: [] }, noObserver)
+    expect(await screen.findByText(DRAFT_EMPTY_TEXT)).toBeInTheDocument()
+    expect(screen.queryByText(/So funktioniert|Hier steht der Vorschlag/)).toBeNull()
+    first.unmount()
+
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      projectOut({ cloud_vision_detection_enabled: false }),
+    )
+    renderPage({ events: [], items: [] }, noObserver)
+    expect(await screen.findByText(DRAFT_CLOUD_CONSENT_TEXT)).toBeInTheDocument()
+    expect(screen.queryByText(DRAFT_EMPTY_TEXT)).toBeNull()
+  })
+})
+
+describe('AlbumDraftPage: Streichen und Rückgängig', () => {
+  it.each([
+    { previous: null, undoCall: 'delete' },
+    { previous: 'album_worthy' as const, undoCall: 'put' },
+  ])(
+    'strikes without reload and restores the state before ($previous)',
+    async ({ previous, undoCall }) => {
+      const user = userEvent.setup()
+      const first = photo(1, previous === null ? {} : { ratings: own(previous) })
+      renderPage({ events: [EVENT_A], items: [first, photo(2)] }, noObserver)
+      vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(1, 'rejected'))
+
+      await user.click(await screen.findByRole('button', { name: 'Streichen: 1.jpg' }))
+
+      // Die Kachel verschwindet, der Fokus geht auf die nachfolgende, der Hinweis erscheint.
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Streichen: 1.jpg' })).toBeNull(),
+      )
+      expect(screen.getByRole('button', { name: 'Streichen: 2.jpg' })).toHaveFocus()
+      expect(screen.getByRole('status', { name: '' })).toBeDefined()
+      expect(screen.getByRole('button', { name: '1 gestrichen – anzeigen' })).toBeInTheDocument()
+
+      if (undoCall === 'delete') {
+        vi.mocked(ratingsApi.deleteRating).mockResolvedValueOnce(written(1, null))
+      } else {
+        vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(1, 'album_worthy'))
+      }
+      await user.click(screen.getByRole('button', { name: 'Rückgängig' }))
+
+      expect(await screen.findByRole('button', { name: 'Streichen: 1.jpg' })).toHaveFocus()
+      if (undoCall === 'delete') {
+        expect(ratingsApi.deleteRating).toHaveBeenCalledWith(1)
+      } else {
+        expect(ratingsApi.setRating).toHaveBeenLastCalledWith(1, 'album_worthy')
+      }
+      expect(photosApi.getAlbumDraft).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('undo brings back a taken photo without a ranking row that striking took out of the draft', async () => {
+    // Ohne Rangzeile verlässt ein gestrichenes Foto die Antwortmenge - das Rückgängig muss es
+    // wieder einfügen, nicht nur einen vorhandenen Eintrag fortschreiben.
+    const user = userEvent.setup()
+    renderPage(
+      {
+        events: [EVENT_A],
+        items: [photo(1, { ratings: own('album_worthy'), ranking: null }), photo(2)],
+      },
+      noObserver,
+    )
+    vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(1, 'rejected'))
+    await user.click(await screen.findByRole('button', { name: 'Streichen: 1.jpg' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Streichen: 1.jpg' })).toBeNull(),
+    )
+    vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(1, 'album_worthy'))
+
+    await user.click(screen.getByRole('button', { name: 'Rückgängig' }))
+
+    expect(await screen.findByRole('button', { name: 'Streichen: 1.jpg' })).toHaveFocus()
+    expect(photosApi.getAlbumDraft).toHaveBeenCalledTimes(1)
+  })
+
+  it('undo restores "Aufgenommen", re-adding from the struck row returns to "Vorschlag"', async () => {
+    const user = userEvent.setup()
+    renderPage(
+      { events: [EVENT_A], items: [photo(1, { ratings: own('album_worthy') })] },
+      noObserver,
+    )
+    vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(1, 'rejected'))
+    await user.click(await screen.findByRole('button', { name: 'Streichen: 1.jpg' }))
+    // Ohne Nachbarn geht der Fokus auf die Gestrichen-Zeile.
+    const toggle = await screen.findByRole('button', { name: '1 gestrichen – anzeigen' })
+    expect(toggle).toHaveFocus()
+
+    await user.click(toggle)
+    vi.mocked(ratingsApi.deleteRating).mockResolvedValueOnce(written(1, null))
+    await user.click(screen.getByRole('button', { name: 'Wieder aufnehmen: 1.jpg' }))
+
+    // Vorgeschlagen: die eigene Entscheidung wird entfernt, das Foto ist wieder „Vorschlag".
+    expect(ratingsApi.deleteRating).toHaveBeenCalledWith(1)
+    const decide = await screen.findByRole('button', { name: 'Streichen: 1.jpg' })
+    expect(decide).toHaveFocus()
+    expect(screen.getByLabelText('Vorschlag')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /gestrichen –/ })).toBeNull()
+  })
+
+  it('shows the server reason at the tile and keeps the focus on the trigger when striking fails', async () => {
+    const user = userEvent.setup()
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+    vi.mocked(ratingsApi.setRating).mockRejectedValueOnce(new ApiError(409, 'Gerade verändert.'))
+
+    const button = await screen.findByRole('button', { name: 'Streichen: 1.jpg' })
+    await user.click(button)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Gerade verändert.')
+    expect(screen.getByRole('button', { name: 'Streichen: 1.jpg' })).toHaveFocus()
+  })
+})
+
+describe('AlbumDraftPage: Tauschen und Hinzufügen', () => {
+  it('exchanges from the band, hides the replaced photo and undoes the exchange in one call', async () => {
+    const user = userEvent.setup()
+    const candidate = photo(3, { ranking: ranking(false) })
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({ items: [candidate], total: 1 })
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+    vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValueOnce({
+      taken: written(3, 'album_worthy'),
+      struck: written(1, 'rejected'),
+    })
+
+    const trigger = await screen.findByRole('button', { name: 'Alternativen: 1.jpg' })
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    await user.click(await screen.findByRole('button', { name: 'Tauschen: 3.jpg' }))
+
+    expect(photosApi.exchangeDraftPhoto).toHaveBeenCalledWith(1, 3, 1)
+    expect(await screen.findByRole('button', { name: 'Streichen: 3.jpg' })).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Streichen: 1.jpg' })).toBeNull()
+    expect(screen.getByText('Getauscht')).toBeInTheDocument()
+
+    vi.mocked(photosApi.undoDraftExchange).mockResolvedValueOnce({
+      photo: written(3, null),
+      replaced: written(1, null),
+    })
+    await user.click(screen.getByRole('button', { name: 'Rückgängig' }))
+
+    expect(photosApi.undoDraftExchange).toHaveBeenCalledWith(1, {
+      photo_id: 3,
+      replaced_photo_id: 1,
+      photo_previous_status: null,
+      replaced_previous_status: null,
+    })
+    expect(await screen.findByRole('button', { name: 'Streichen: 1.jpg' })).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Streichen: 3.jpg' })).toBeNull()
+  })
+
+  it('keeps the notice with the server reason when undoing an exchange is refused', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: [photo(3, { ranking: ranking(false) })],
+      total: 1,
+    })
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+    vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValueOnce({
+      taken: written(3, 'album_worthy'),
+      struck: written(1, 'rejected'),
+    })
+    await user.click(await screen.findByRole('button', { name: 'Alternativen: 1.jpg' }))
+    await user.click(await screen.findByRole('button', { name: 'Tauschen: 3.jpg' }))
+    vi.mocked(photosApi.undoDraftExchange).mockRejectedValueOnce(
+      new ApiError(409, 'Nicht mehr möglich.'),
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Rückgängig' }))
+
+    expect(await screen.findByText('Nicht mehr möglich.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Streichen: 3.jpg' })).toBeInTheDocument()
+  })
+
+  it('adds a struck proposed photo as "Aufgenommen" in an empty event, beyond the target, without asking', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      projectOut({ effective_selection_target: 0 }),
+    )
+    const struck = photo(4, { event: EVENT_B, ratings: own('rejected') })
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({ items: [struck], total: 1 })
+    renderPage({ events: [EVENT_A, EVENT_B], items: [photo(1), struck] }, noObserver)
+    vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(4, 'album_worthy'))
+
+    await user.click(await screen.findByRole('button', { name: /^Foto hinzufügen: .*Lyon/ }))
+    await user.click(await screen.findByRole('button', { name: 'Hinzufügen: 4.jpg' }))
+
+    expect(ratingsApi.setRating).toHaveBeenCalledWith(4, 'album_worthy')
+    const tile = (await screen.findByRole('button', { name: 'Streichen: 4.jpg' })).closest('li')!
+    expect(within(tile).getByLabelText('Aufgenommen')).toBeInTheDocument()
+    expect(screen.queryByText(DRAFT_EMPTY_EVENT_TEXT)).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+})
+
+describe('AlbumDraftPage: Fehlerfall je Handgriff', () => {
+  it('shows a refused exchange from "Alle Alternativen" inside the dialog', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: [photo(3, { ranking: ranking(false) })],
+      total: 1,
+    })
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+    vi.mocked(photosApi.exchangeDraftPhoto).mockRejectedValueOnce(
+      new ApiError(409, 'Schon vergeben.'),
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Alternativen: 1.jpg' }))
+    await user.click(await screen.findByRole('button', { name: 'Alle Alternativen' }))
+    const dialog = await screen.findByRole('dialog')
+    const choice = await within(dialog).findByRole('button', { name: 'Tauschen: 3.jpg' })
+    await user.click(choice)
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Schon vergeben.')
+    expect(choice).toHaveFocus()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+
+  it('keeps both photos and the band open when the exchange is refused', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: [photo(3, { ranking: ranking(false) })],
+      total: 1,
+    })
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+    vi.mocked(photosApi.exchangeDraftPhoto).mockRejectedValueOnce(
+      new ApiError(409, 'Schon vergeben.'),
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Alternativen: 1.jpg' }))
+    await user.click(await screen.findByRole('button', { name: 'Tauschen: 3.jpg' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Schon vergeben.')
+    expect(screen.getByRole('button', { name: 'Streichen: 1.jpg' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tauschen: 3.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Rückgängig' })).toBeNull()
+  })
+
+  it('shows the reason in the panel and adds nothing when adding is refused', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: [photo(5, { event: EVENT_B, ranking: ranking(false) })],
+      total: 1,
+    })
+    renderPage({ events: [EVENT_A, EVENT_B], items: [photo(1)] }, noObserver)
+    vi.mocked(ratingsApi.setRating).mockRejectedValueOnce(new ApiError(409, 'Nicht mehr da.'))
+
+    await user.click(await screen.findByRole('button', { name: /^Foto hinzufügen: .*Lyon/ }))
+    await user.click(await screen.findByRole('button', { name: 'Hinzufügen: 5.jpg' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nicht mehr da.')
+    expect(screen.queryByRole('button', { name: 'Streichen: 5.jpg' })).toBeNull()
+    expect(screen.getByText(DRAFT_EMPTY_EVENT_TEXT)).toBeInTheDocument()
+  })
+
+  it('keeps the struck photo in the struck row when re-adding is refused', async () => {
+    const user = userEvent.setup()
+    renderPage(
+      { events: [EVENT_A], items: [photo(1, { ratings: own('rejected') }), photo(2)] },
+      noObserver,
+    )
+    vi.mocked(ratingsApi.deleteRating).mockRejectedValueOnce(new ApiError(409, 'Gesperrt.'))
+
+    await user.click(await screen.findByRole('button', { name: '1 gestrichen – anzeigen' }))
+    await user.click(screen.getByRole('button', { name: 'Wieder aufnehmen: 1.jpg' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Gesperrt.')
+    expect(screen.getByRole('button', { name: 'Wieder aufnehmen: 1.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Streichen: 1.jpg' })).toBeNull()
+  })
+
+  it('keeps the notice with the server reason instead of the button when undoing a strike fails', async () => {
+    const user = userEvent.setup()
+    renderPage({ events: [EVENT_A], items: [photo(1), photo(2)] }, noObserver)
+    vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(1, 'rejected'))
+    await user.click(await screen.findByRole('button', { name: 'Streichen: 1.jpg' }))
+    vi.mocked(ratingsApi.deleteRating).mockRejectedValueOnce(
+      new ApiError(409, 'Inzwischen geändert.'),
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Rückgängig' }))
+
+    expect(await screen.findByText('Inzwischen geändert.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Rückgängig' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Streichen: 1.jpg' })).toBeNull()
+  })
+})
+
+describe('AlbumDraftPage: Fokus-Sonderfälle', () => {
+  it('moves the focus to the previous tile when the last tile of an event is struck', async () => {
+    const user = userEvent.setup()
+    renderPage({ events: [EVENT_A], items: [photo(1), photo(2)] }, noObserver)
+    vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(2, 'rejected'))
+
+    await user.click(await screen.findByRole('button', { name: 'Streichen: 2.jpg' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Streichen: 1.jpg' })).toHaveFocus(),
+    )
+  })
+
+  it.each([
+    [
+      'Schließen',
+      async (user: UserEvent) => {
+        await user.click(screen.getByRole('button', { name: 'Schließen' }))
+      },
+    ],
+    [
+      'Esc',
+      async (user: UserEvent) => {
+        await user.keyboard('{Escape}')
+      },
+    ],
+  ])('focuses the band heading on opening and returns to the trigger via %s', async (_, close) => {
+    const user = userEvent.setup()
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+    const trigger = await screen.findByRole('button', { name: 'Alternativen: 1.jpg' })
+
+    await user.click(trigger)
+    expect(
+      await screen.findByRole('heading', { level: 4, name: 'Alternativen zu 1.jpg' }),
+    ).toHaveFocus()
+    await close(user)
+
+    expect(trigger).toHaveFocus()
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('moves the focus along the panel after adding, and to its heading once it is empty', async () => {
+    const user = userEvent.setup()
+    const candidates = [
+      photo(5, { event: EVENT_B, ranking: ranking(false) }),
+      photo(6, { event: EVENT_B, ranking: ranking(false) }),
+    ]
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({ items: candidates, total: 2 })
+    renderPage({ events: [EVENT_A, EVENT_B], items: [photo(1)] }, noObserver)
+    vi.mocked(ratingsApi.setRating)
+      .mockResolvedValueOnce(written(5, 'album_worthy'))
+      .mockResolvedValueOnce(written(6, 'album_worthy'))
+
+    const trigger = await screen.findByRole('button', { name: /^Foto hinzufügen: .*Lyon/ })
+    await user.click(trigger)
+    await user.click(await screen.findByRole('button', { name: 'Hinzufügen: 5.jpg' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Hinzufügen: 6.jpg' })).toHaveFocus(),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Hinzufügen: 6.jpg' }))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { level: 4, name: /^Foto zu .*Lyon.* hinzufügen$/ }),
+      ).toHaveFocus(),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Schließen' }))
+    expect(trigger).toHaveFocus()
+  })
+
+  it('moves the focus to the next struck tile after re-adding', async () => {
+    const user = userEvent.setup()
+    renderPage(
+      {
+        events: [EVENT_A],
+        items: [
+          photo(1, { ratings: own('rejected') }),
+          photo(2, { ratings: own('rejected') }),
+          photo(3),
+        ],
+      },
+      noObserver,
+    )
+    vi.mocked(ratingsApi.deleteRating).mockResolvedValueOnce(written(1, null))
+
+    await user.click(await screen.findByRole('button', { name: '2 gestrichen – anzeigen' }))
+    await user.click(screen.getByRole('button', { name: 'Wieder aufnehmen: 1.jpg' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Wieder aufnehmen: 2.jpg' })).toHaveFocus(),
+    )
+    expect(document.activeElement).not.toBe(document.body)
+  })
+})
+
+describe('AlbumDraftPage: Personenfilter', () => {
+  const anna: PersonOut = { id: 1, name: 'Anna', reference_count: 2 }
+  const ben: PersonOut = { id: 2, name: 'Ben', reference_count: 2 }
+  const withAnna = photo(1, { persons: [{ person_id: 1, origin: 'recognized', face: null }] })
+  const nobody = photo(2)
+  const struckNobody = photo(4, { ratings: own('rejected') })
+  const withBen = photo(3, {
+    event: EVENT_B,
+    taken_at: '2026-07-21T10:03:00',
+    persons: [{ person_id: 2, origin: 'corrected', face: null }],
+  })
+  const draft: AlbumDraftOut = {
+    events: [EVENT_A, EVENT_B],
+    items: [withAnna, nobody, struckNobody, withBen],
   }
-}
 
-/** Die Zahl der Abrufe der Entwurfsliste - Grundlage der Durchsatz-Zusicherung. */
-function draftCalls(): number {
-  return vi.mocked(photosApi.listPhotos).mock.calls.filter(([, params]) => params?.draft === true)
-    .length
-}
-
-/** Maskiert die Sonderzeichen einer Zeichenkette für die Verwendung in einem regulären Ausdruck.
- *
- * Die Überschrift trägt Namen UND Zeitspanne; gesucht wird deshalb ein Teiltreffer, und der
- * feindliche Text besteht selbst aus Regex-Sonderzeichen. */
-function escapeForRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-describe('AlbumDraftPage', () => {
   beforeEach(() => {
-    vi.resetAllMocks()
-    setToken(makeToken({ sub: '7', username: 'daniel' }))
-    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
-    vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
-    vi.mocked(projectsApi.getProject).mockResolvedValue(projectOut())
-    vi.mocked(personsApi.listPersons).mockResolvedValue([])
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn().mockReturnValue({
-        matches: false,
-        media: '(hover: hover) and (pointer: fine)',
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      }),
+    vi.mocked(personsApi.listPersons).mockResolvedValue([anna, ben])
+  })
+
+  it('counts the whole draft in the head and keeps every section standing', async () => {
+    renderPage(draft, noObserver, '/projects/1/album?person=1')
+
+    expect(await screen.findByText('1 von 3 Fotos des Entwurfs sichtbar.')).toHaveAttribute(
+      'role',
+      'status',
     )
-  })
-
-  it('is called "Album-Entwurf"', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
-
-    renderPage()
-
-    const heading = await screen.findByRole('heading', { level: 1 })
-    expect(heading).toHaveTextContent('Album-Entwurf')
-    expect(heading.textContent).not.toContain('Kuratierung')
-  })
-
-  it('asks for the draft of the asking user', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
-
-    renderPage()
-
-    await waitFor(() => expect(photosApi.listPhotos).toHaveBeenCalledWith(1, { draft: true }))
-  })
-
-  it('groups the photos by day and event and counts each event', async () => {
-    const morning = eventOut({ id: 10, position: 1, started_at: '2026-07-20T09:00:00' })
-    const nextDay = eventOut({ id: 12, position: 2, started_at: '2026-07-21T09:00:00' })
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(
-      listOut([
-        photo({ id: 1, relative_path: 'a.jpg', event: morning }),
-        photo({ id: 2, relative_path: 'b.jpg', event: morning }),
-        photo({ id: 3, relative_path: 'c.jpg', event: nextDay }),
-      ]),
-    )
-
-    renderPage()
-
-    await waitFor(() => expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(2))
+    expect(
+      screen.getByText('3 im Album · Richtwert etwa 3 · 0 aufgenommen · 1 gestrichen'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Streichen: 1.jpg' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Streichen: 2.jpg' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Streichen: 3.jpg' })).toBeNull()
+    // Beide Eventabschnitte bleiben stehen - auch der, in dem der Filter alles verbirgt.
     expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(2)
-    expect(screen.getByText(`(${formatDraftPhotoCount(2)})`)).toBeInTheDocument()
-    expect(screen.getByLabelText('Im Album: a.jpg')).toBeInTheDocument()
-    expect(screen.getByLabelText('Im Album: c.jpg')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Foto hinzufügen: .*Lyon/ })).toBeInTheDocument()
+  })
+
+  it('filters neither the struck row nor the add panel nor the band', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: [photo(5, { ranking: ranking(false) })],
+      total: 1,
+    })
+    renderPage(draft, noObserver, '/projects/1/album?person=1')
+
+    await user.click(await screen.findByRole('button', { name: '1 gestrichen – anzeigen' }))
+    expect(screen.getByRole('button', { name: 'Wieder aufnehmen: 4.jpg' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Alternativen: 1.jpg' }))
+    expect(await screen.findByRole('button', { name: 'Tauschen: 5.jpg' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^Foto hinzufügen: .*Paris/ }))
+    expect(await screen.findByRole('button', { name: 'Hinzufügen: 5.jpg' })).toBeInTheDocument()
+  })
+
+  it('focuses the heading and says so when the exchanged photo is hidden by the filter', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: [photo(5, { ranking: ranking(false) })],
+      total: 1,
+    })
+    renderPage(draft, noObserver, '/projects/1/album?person=1')
+    vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValueOnce({
+      taken: written(5, 'album_worthy'),
+      struck: written(1, 'rejected'),
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Alternativen: 1.jpg' }))
+    await user.click(await screen.findByRole('button', { name: 'Tauschen: 5.jpg' }))
+
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveFocus())
+    expect(
+      screen.getByText('Das eingetauschte Foto ist durch den Filter ausgeblendet.'),
+    ).toHaveAttribute('role', 'status')
+    expect(screen.queryByRole('button', { name: 'Streichen: 5.jpg' })).toBeNull()
+  })
+
+  it('neither writes nor reloads the draft when the filter changes', async () => {
+    const user = userEvent.setup()
+    renderPage(draft, noObserver)
+    await screen.findByRole('button', { name: 'Streichen: 1.jpg' })
+
+    await user.click(await screen.findByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Beide: Anna und Ben' }))
+    await user.click(screen.getByRole('button', { name: 'Alle' }))
+
+    expect(photosApi.getAlbumDraft).toHaveBeenCalledTimes(1)
+    expect(ratingsApi.setRating).not.toHaveBeenCalled()
+    expect(ratingsApi.deleteRating).not.toHaveBeenCalled()
+    expect(personsApi.setPhotoPerson).not.toHaveBeenCalled()
+  })
+})
+
+describe('AlbumDraftPage: Zustände und Fremdtext', () => {
+  it('shows a skeleton grid while loading', () => {
+    vi.mocked(photosApi.getAlbumDraft).mockReturnValue(new Promise(() => {}))
+    renderPage(null, noObserver)
+
+    expect(screen.getByRole('status', { name: 'Fotos werden geladen…' })).toBeInTheDocument()
+  })
+
+  it('shows a failed project request with a retry instead of an empty page', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProject).mockRejectedValue(new ApiError(500, 'Projekt weg.'))
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+
+    expect(await screen.findByText('Projekt weg.')).toBeInTheDocument()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(projectOut())
+    await user.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+
+    expect(await screen.findByRole('button', { name: 'Streichen: 1.jpg' })).toBeInTheDocument()
+    expect(screen.queryByText('Projekt weg.')).toBeNull()
+  })
+
+  it('shows an error alert whose retry triggers exactly one new request', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.getAlbumDraft).mockRejectedValue(new ApiError(500, 'Serverfehler'))
+    renderPage(null, noObserver)
+
+    expect(await screen.findByText('Serverfehler')).toBeInTheDocument()
+    const before = vi.mocked(photosApi.getAlbumDraft).mock.calls.length
+    await user.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
+
+    await waitFor(() =>
+      expect(vi.mocked(photosApi.getAlbumDraft).mock.calls.length).toBe(before + 1),
+    )
+  })
+
+  it('strikes one photo while the decision on another is still running', async () => {
+    // Die Sperre gilt je Foto: ein zweiter Druck auf ein ANDERES Foto verpufft nicht.
+    const user = userEvent.setup()
+    renderPage({ events: [EVENT_A], items: [photo(1), photo(2)] }, noObserver)
+    vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
+      photoId === 1 ? new Promise(() => {}) : Promise.resolve(written(photoId, 'rejected')),
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Streichen: 1.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Streichen: 2.jpg' }))
+
+    await waitFor(() => expect(ratingsApi.setRating).toHaveBeenCalledWith(2, 'rejected'))
+  })
+
+  it('drops a motif from the event line as soon as its last carrier is struck', async () => {
+    const user = userEvent.setup()
+    const assessed = {
+      source: 'cloud' as const,
+      provider: 'anthropic',
+      excluded_document: false,
+      computed_at: '2026-07-21T09:00:00',
+    }
+    const motifsWith = (present: string[]) =>
+      MOTIF_SET.items.map((item) => ({
+        key: item.key,
+        strength: 0.5,
+        correction: null,
+        present: present.includes(item.key),
+      }))
+    renderPage(
+      {
+        events: [EVENT_A],
+        items: [
+          photo(1, { motif_assessment: assessed, motifs: motifsWith(['menschen']) }),
+          photo(2, { motif_assessment: assessed, motifs: motifsWith(['tiere']) }),
+        ],
+      },
+      noObserver,
+    )
+    vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(2, 'rejected'))
+    await screen.findByText('Menschen, Tiere')
+
+    await user.click(screen.getByRole('button', { name: 'Streichen: 2.jpg' }))
+
+    expect(await screen.findByText('Menschen')).toBeInTheDocument()
+    expect(screen.queryByText('Menschen, Tiere')).toBeNull()
   })
 
   /*
-   * Spec 0434, Auflage S8: `place_name` und `landmark_name` sind freier, extern erzeugter Text -
-   * der eine aus einem Ortsdatensatz Dritter, der andere aus einer Modellantwort. Beide erscheinen
-   * ausschliesslich als regulaerer React-Textknoten, nie ueber `dangerouslySetInnerHTML` und nie
-   * in einem Attribut, das Code ausfuehren koennte. Seit ADR 0005 liegt das Session-Token in
-   * `localStorage`; ein eingeschleustes Skript laese es unmittelbar aus.
-   *
-   * DER NACHWEIS GEHOERT AN DIE RENDERING-STELLE, nicht in `timeOfDay.test.ts`: Dass die Funktion
-   * nichts interpretiert, sagt nichts darueber, was das Markup daraus macht - das Escaping
-   * leistet React.
+   * Spec 0434 S8 / Spec 0514 S1: `place_name` und `landmark_name` sind freier Fremdtext und
+   * erscheinen ausschließlich als React-Textknoten. Der Nachweis gehört an die Rendering-Stelle.
    */
   const hostile = '<img src=x onerror="window.__pwned = true">'
 
-  it('rendert einen HTML-artigen Ortsnamen als Text, nicht als Markup', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(
-      listOut([photo({ event: eventOut({ place_name: hostile }) })]),
-    )
-
-    renderPage()
-
-    expect(await screen.findByText(new RegExp(escapeForRegExp(hostile)))).toBeInTheDocument()
-    expect(document.querySelector('img[src="x"]')).toBeNull()
-    expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
-  })
-
-  it('rendert einen HTML-artigen Sehenswuerdigkeit-Namen als Text, nicht als Markup', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(
-      listOut([
-        photo({
-          event: eventOut({
-            place: { kind: 'landmark', landmark_name: hostile, lat: null, lon: null },
-          }),
-        }),
-      ]),
-    )
-
-    renderPage()
-
-    expect(await screen.findByText(new RegExp(escapeForRegExp(hostile)))).toBeInTheDocument()
-    expect(document.querySelector('img[src="x"]')).toBeNull()
-    expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
-  })
-
-  it('nutzt den Ortsnamen als Event-Ueberschrift', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(
-      listOut([photo({ event: eventOut({ place_name: 'Berlin, Kreuzberg' }) })]),
-    )
-
-    renderPage()
-
-    const heading = await screen.findByRole('heading', { level: 3 })
-    expect(heading).toHaveTextContent('Berlin, Kreuzberg')
-    expect(heading.textContent).not.toContain('Position')
-  })
-
-  it('setzt Name und Ortsnamen in EINEM Textknoten zusammen', async () => {
-    // Spec 0514, ADR 0120: Die Ueberschrift traegt beide Teile - als EIN Textknoten. Der
-    // Klammerzusatz mit der Fotozahl steht daneben in einem eigenen Element.
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(
-      listOut([
-        photo({
-          event: eventOut({
-            place: { kind: 'landmark', landmark_name: 'Eiffelturm', lat: null, lon: null },
-            place_name: 'Paris, Gros-Caillou',
-          }),
-        }),
-      ]),
-    )
-
-    renderPage()
-
-    const heading = await screen.findByRole('heading', { level: 3 })
-    expect(heading.textContent).toBe('Eiffelturm, Paris, Gros-Caillou (10:00–11:00 Uhr)')
-    expect(heading.childNodes).toHaveLength(1)
-    expect(heading.childNodes[0]?.nodeType).toBe(Node.TEXT_NODE)
-  })
-
-  it('rendert beide feindlichen Teile als Text, nicht als Markup', async () => {
-    // S1: Seit Spec 0514 treffen `landmark_name` und `place_name` in EINEM Wert zusammen - der
-    // Nachweis gilt jetzt fuer die zusammengesetzte Form, in beiden Feldern zugleich.
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(
-      listOut([
-        photo({
-          event: eventOut({
+  it('renders a hostile landmark and place name as ONE text node, never as markup', async () => {
+    renderPage(
+      {
+        events: [
+          {
+            ...EVENT_A,
             place: { kind: 'landmark', landmark_name: hostile, lat: null, lon: null },
             place_name: hostile,
-          }),
-        }),
-      ]),
+          },
+        ],
+        items: [photo(1)],
+      },
+      noObserver,
     )
-
-    renderPage()
 
     const heading = await screen.findByRole('heading', { level: 3 })
     expect(heading.textContent).toBe(`${hostile}, ${hostile} (10:00–11:00 Uhr)`)
+    expect(heading.childNodes).toHaveLength(1)
+    expect(heading.childNodes[0]?.nodeType).toBe(Node.TEXT_NODE)
     expect(document.querySelector('img[src="x"]')).toBeNull()
     expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
   })
 
-  describe('der Kopfbereich', () => {
-    it('names the actual count and the target next to each other', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        projectOut({ selection_target: 3, effective_selection_target: 3 }),
-      )
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([photo({ id: 1 })]))
+  it('renders a hostile person name in the filter group as plain text', async () => {
+    vi.mocked(personsApi.listPersons).mockResolvedValue([
+      { id: 1, name: hostile, reference_count: 2 },
+      { id: 2, name: 'Ben', reference_count: 2 },
+    ])
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
 
-      renderPage()
+    const group = await screen.findByRole('group', { name: 'Personen' })
+    expect(within(group).getByRole('button', { name: hostile })).toBeInTheDocument()
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+  })
+})
 
-      expect(await screen.findByText(draftSizeText(1, 3))).toBeInTheDocument()
+/*
+ * specs/features/0531-kuratierung-grossansicht.md - die Großansicht in der Seite. Vor der Seite
+ * liegt eine Stub-Route als Verlaufssonde: Jeder Fall endet mit einem
+ * Zurück, das dort ankommen muss - so fällt ein verwaister oder überzähliger Verlaufseintrag auf.
+ * Geöffnet wird über `fireEvent.click`, das (wie Safari) den Button NICHT fokussiert.
+ */
+describe('AlbumDraftPage: Großansicht', () => {
+  const probe: { location?: Location; navigate?: NavigateFunction } = {}
+
+  function Probe() {
+    probe.location = useLocation()
+    probe.navigate = useNavigate()
+    return null
+  }
+
+  function renderWithHistory(
+    draft: AlbumDraftOut | null,
+    entry: InitialEntry = '/projects/1/album',
+  ) {
+    if (draft !== null) {
+      vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draft)
+    }
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/stub', entry]} initialIndex={1}>
+          <Probe />
+          <Routes>
+            <Route path="/stub" element={<p>Stub</p>} />
+            <Route
+              path="/projects/:projectId/album"
+              element={<AlbumDraftPage createPositionObserver={noObserver} />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    return queryClient
+  }
 
-    it.each([
-      { label: 'nach unten', target: 10, ids: [1] },
-      { label: 'nach oben', target: 1, ids: [1, 2] },
-    ])(
-      'gives the deviation $label no error optics and no adjusting control',
-      async ({ target, ids }) => {
-        // Der Richtwert ist ein ZIEL und keine Obergrenze - in BEIDEN Richtungen ein neutraler
-        // Hinweis. Ein Schalter, der die Anzahl angliche, machte daraus einen Fehlerzustand.
-        vi.mocked(projectsApi.getProject).mockResolvedValue(
-          projectOut({ selection_target: target, effective_selection_target: target }),
-        )
-        vi.mocked(photosApi.listPhotos).mockResolvedValue(
-          listOut(ids.map((id) => photo({ id, relative_path: `${id}.jpg` }))),
-        )
+  function back(): void {
+    act(() => {
+      void probe.navigate!(-1)
+    })
+  }
 
-        const { container } = renderPage()
+  function writeCalls(): number {
+    return (
+      vi.mocked(ratingsApi.setRating).mock.calls.length +
+      vi.mocked(ratingsApi.deleteRating).mock.calls.length +
+      vi.mocked(ratingsApi.setFavorite).mock.calls.length +
+      vi.mocked(photosApi.exchangeDraftPhoto).mock.calls.length +
+      vi.mocked(photosApi.undoDraftExchange).mock.calls.length +
+      vi.mocked(photosApi.setMotifCorrection).mock.calls.length +
+      vi.mocked(photosApi.deleteMotifCorrection).mock.calls.length
+    )
+  }
 
-        const hint = await screen.findByText(draftSizeText(ids.length, target))
-        expect(screen.queryByRole('alert')).toBeNull()
-        expect(hint.closest('[role="alert"]')).toBeNull()
-        expect(container.querySelectorAll('[class*="danger"]')).toHaveLength(0)
-        expect(screen.queryByRole('button', { name: /angleichen|anpassen|auffüllen/i })).toBeNull()
-        // Und keine ausgehende Anfrage, die den Vorschlag aendert.
-        expect(projectsApi.setSelectionTarget).not.toHaveBeenCalled()
+  const twoPhotos: AlbumDraftOut = {
+    events: [EVENT_A],
+    items: [photo(1, { relative_path: 'reise/a.jpg' }), photo(2, { relative_path: 'reise/b.jpg' })],
+  }
+
+  const closeWays: [string, () => void][] = [
+    ['Schließen', () => fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))],
+    ['Escape', () => fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })],
+    [
+      'Klick neben das Bild',
+      () => {
+        const stage = screen.getByTestId('lightbox-stage')
+        fireEvent.pointerDown(stage)
+        fireEvent.click(stage)
       },
-    )
+    ],
+    ['Browser-Zurück', back],
+  ]
 
-    it('names the effective target when none is set', async () => {
-      // Nie eine leere Stelle: der wirksame Wert steht dort, auch ohne eingestellten Richtwert.
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        projectOut({ selection_target: null, effective_selection_target: 12 }),
-      )
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([photo({ id: 1 })]))
+  it.each(closeWays)(
+    'opens exactly the clicked photo and closes via %s back to the same place',
+    async (_, closeLightbox) => {
+      renderWithHistory(twoPhotos)
+      const trigger = await screen.findByRole('button', { name: 'Großansicht: reise/b.jpg' })
 
-      renderPage()
+      fireEvent.click(trigger)
 
-      expect(await screen.findByText(draftSizeText(1, 12))).toBeInTheDocument()
-    })
-  })
-
-  describe('die Zustaende', () => {
-    it('shows a skeleton grid while loading', () => {
-      vi.mocked(photosApi.listPhotos).mockReturnValue(new Promise(() => {}))
-
-      renderPage()
-
-      expect(screen.getByRole('status')).toBeInTheDocument()
-    })
-
-    it('shows an error alert whose retry triggers exactly one new request', async () => {
-      vi.mocked(photosApi.listPhotos).mockRejectedValue(new ApiError(500, 'Serverfehler'))
-
-      renderPage()
-
-      expect(await screen.findByText('Serverfehler')).toBeInTheDocument()
-      const before = draftCalls()
-      await userEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
-
-      await waitFor(() => expect(draftCalls()).toBe(before + 1))
-    })
-
-    it('names the missing step and links it instead of staying empty', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
-
-      renderPage()
-
-      expect(await screen.findByText(DRAFT_EMPTY_TEXT)).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: /kriterien-bewertung/i })).toHaveAttribute(
-        'href',
-        '/projects/1/pipeline/kriterien',
-      )
-    })
-
-    it('names the missing cloud approval instead of the missing run', async () => {
-      vi.mocked(projectsApi.getProject).mockResolvedValue(
-        projectOut({ cloud_vision_detection_enabled: false }),
-      )
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
-
-      renderPage()
-
-      expect(await screen.findByText(DRAFT_CLOUD_CONSENT_TEXT)).toBeInTheDocument()
-      expect(screen.queryByText(DRAFT_EMPTY_TEXT)).toBeNull()
-      expect(screen.queryByRole('alert')).toBeNull()
-    })
-
-    it('keeps an emptied event group standing with its heading', async () => {
-      // Ein leergeraeumtes Event verschwindet nicht kommentarlos - die Gruppe bleibt mit ihrer
-      // Bezeichnung stehen und sagt, dass gerade kein Bild darin ist.
-      const first = eventOut({ id: 10, position: 1 })
-      vi.mocked(photosApi.listPhotos)
-        .mockResolvedValueOnce(listOut([photo({ id: 1, event: first })]))
-        .mockResolvedValue(listOut([]))
-
-      const { queryClient } = renderPage()
-      await screen.findByLabelText('Im Album: a.jpg')
-
-      await queryClient.refetchQueries({ queryKey: ['photos', 1, 'draft'] })
-
-      expect(await screen.findByText(DRAFT_EMPTY_EVENT_TEXT)).toBeInTheDocument()
-      expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(1)
-    })
-  })
-
-  describe('die Entscheidung', () => {
-    it('strikes a photo without reloading the draft and without moving the tiles', async () => {
-      // Zusicherung 22: genau EIN Abruf der Entwurfsliste ueber den Klick hinweg, und die Id-Folge
-      // der Kacheln ist vorher wie nachher dieselbe. Ohne das risse die breite Invalidierung das
-      // gerade gestrichene Bild aus der Liste.
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([
-          photo({ id: 1, relative_path: 'a.jpg' }),
-          photo({ id: 2, relative_path: 'b.jpg' }),
-        ]),
-      )
-      vi.mocked(ratingsApi.setRating).mockResolvedValue({
-        photo_id: 1,
-        user_id: 7,
-        status: 'rejected',
-        favorite: false,
-        updated_at: '2026-09-13T10:00:00',
-      })
-
-      renderPage()
-      await screen.findByLabelText('Im Album: a.jpg')
-      const before = screen.getAllByRole('button', { name: /\.jpg$/ }).map((b) => b.textContent)
-      const callsBefore = draftCalls()
-
-      await userEvent.click(screen.getByLabelText('Im Album: a.jpg'))
-
-      await waitFor(() => expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'rejected'))
-      // Die Kachel bleibt an ihrer Stelle und wechselt nur ihren Zustand.
-      expect(await screen.findByLabelText('Gestrichen: a.jpg')).toBeInTheDocument()
-      expect(screen.getAllByRole('button', { name: /\.jpg$/ })).toHaveLength(before.length)
-      expect(screen.getByLabelText('Im Album: b.jpg')).toBeInTheDocument()
-      expect(draftCalls()).toBe(callsBefore)
-    })
-
-    it('takes a struck photo back into the album', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([photo({ id: 1, ratings: [ownRating('rejected')] })]),
-      )
-      vi.mocked(ratingsApi.setRating).mockResolvedValue({
-        photo_id: 1,
-        user_id: 7,
-        status: 'album_worthy',
-        favorite: false,
-        updated_at: '2026-09-13T10:00:00',
-      })
-
-      renderPage()
-
-      await userEvent.click(await screen.findByLabelText('Gestrichen: a.jpg'))
-
-      await waitFor(() => expect(ratingsApi.setRating).toHaveBeenCalledWith(1, 'album_worthy'))
-      expect(await screen.findByLabelText('Im Album: a.jpg')).toBeInTheDocument()
-    })
-
-    it('decides each photo independently while another decision is still running', async () => {
-      // Eine MENGE laufender Mutationen, nicht eine einzelne Id: ein zweiter Druck auf ein
-      // ANDERES Foto darf nicht verpuffen, waehrend die erste Entscheidung noch laeuft.
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([
-          photo({ id: 1, relative_path: 'a.jpg' }),
-          photo({ id: 2, relative_path: 'b.jpg' }),
-        ]),
-      )
-      vi.mocked(ratingsApi.setRating).mockImplementation((photoId) =>
-        photoId === 1
-          ? new Promise(() => {})
-          : Promise.resolve({
-              photo_id: photoId,
-              user_id: 7,
-              status: 'rejected' as const,
-              favorite: false,
-              updated_at: '2026-09-13T10:00:00',
-            }),
-      )
-
-      renderPage()
-      await userEvent.click(await screen.findByLabelText('Im Album: a.jpg'))
-      await userEvent.click(screen.getByLabelText('Im Album: b.jpg'))
-
-      await waitFor(() => expect(ratingsApi.setRating).toHaveBeenCalledWith(2, 'rejected'))
-    })
-  })
-
-  describe('der Austausch', () => {
-    /** Die Bewertungsantwort des Servers zu einem der beiden Schreibvorgänge. */
-    function written(photoId: number, status: 'album_worthy' | 'rejected') {
-      return {
-        photo_id: photoId,
-        user_id: 7,
-        status,
-        favorite: false,
-        updated_at: '2026-09-13T10:00:00',
-      }
-    }
-
-    /** Die Antwort des Austausch-Endpunkts: beide geschriebenen Zeilen in einer Antwort. */
-    function exchangeAnswer(takenId: number, struckId: number) {
-      return { taken: written(takenId, 'album_worthy'), struck: written(struckId, 'rejected') }
-    }
-
-    it('asks for alternatives only once the dialog is opened - never one query per tile', async () => {
-      // Die Durchsatz-Zusage der Ansicht: Bei hundert Kacheln liefe sonst hundertmal derselbe
-      // Endpunkt, bevor jemand auch nur einen Austausch angefangen hat.
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([
-          photo({ id: 1, relative_path: 'a.jpg' }),
-          photo({ id: 2, relative_path: 'b.jpg' }),
-        ]),
-      )
-      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(listOut([]))
-
-      renderPage()
-      await screen.findByLabelText('Alternativen: a.jpg')
-      expect(photosApi.listDraftAlternatives).not.toHaveBeenCalled()
-
-      await userEvent.click(screen.getByLabelText('Alternativen: a.jpg'))
-
-      await waitFor(() => expect(photosApi.listDraftAlternatives).toHaveBeenCalledTimes(1))
-      expect(photosApi.listDraftAlternatives).toHaveBeenCalledWith(1, {
-        eventId: 1,
-        photoId: 1,
-        limit: expect.any(Number) as number,
-        offset: 0,
-      })
-    })
-
-    it('exchanges in ONE write, closes the dialog and shows BOTH photos', async () => {
-      // Das Akzeptanzkriterium des Austauschs: das neue Bild als „Im Album", das ersetzte an
-      // seiner Stelle als „Gestrichen". Es rückt nichts nach und es entsteht keine Lücke - und
-      // die Entwurfsliste wird dabei NICHT neu geladen.
-      //
-      // Umgeschrieben mit Spec 0432: EIN Aufruf statt zweier. Die negative Assertion trägt den
-      // Fall - ein stehengebliebener Doppelschreibweg sähe an der Oberfläche identisch aus und
-      // erzeugte serverseitig drei Ereignisse statt einem.
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([photo({ id: 1, relative_path: 'a.jpg', taken_at: '2026-07-20T10:00:00' })]),
-      )
-      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
-        listOut([photo({ id: 2, relative_path: 'b.jpg', taken_at: '2026-07-20T10:30:00' })]),
-      )
-      vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValue(exchangeAnswer(2, 1))
-
-      renderPage()
-      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
-      const callsBefore = draftCalls()
-
-      await userEvent.click(await screen.findByLabelText('Austauschen gegen: b.jpg'))
-
-      await waitFor(() =>
-        expect(vi.mocked(photosApi.exchangeDraftPhoto).mock.calls).toEqual([[1, 2, 1]]),
-      )
-      expect(ratingsApi.setRating).not.toHaveBeenCalled()
-      expect(await screen.findByLabelText('Gestrichen: a.jpg')).toBeInTheDocument()
-      expect(screen.getByLabelText('Im Album: b.jpg')).toBeInTheDocument()
-      expect(screen.queryByLabelText('Austauschen gegen: b.jpg')).toBeNull()
-      expect(draftCalls()).toBe(callsBefore)
-    })
-
-    it('puts the focus onto the tile that now stands in that place', async () => {
-      // Nicht zurück auf die auslösende Schaltfläche: Das Bild, das dort stand, ist gerade
-      // gestrichen worden, und die Arbeit geht an der neuen Kachel weiter.
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([photo({ id: 1, relative_path: 'a.jpg' })]),
-      )
-      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
-        listOut([photo({ id: 2, relative_path: 'b.jpg', taken_at: '2026-07-20T10:30:00' })]),
-      )
-      vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValue(exchangeAnswer(2, 1))
-
-      renderPage()
-      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
-      await userEvent.click(await screen.findByLabelText('Austauschen gegen: b.jpg'))
-
-      await waitFor(() => expect(screen.getByLabelText('Im Album: b.jpg')).toHaveFocus())
-    })
-
-    it('is reversible: the replaced photo returns as "zuvor im Album" and both rows go back', async () => {
-      // Kein eigener Rückgängig-Knopf und kein Verlauf: Das ersetzte Bild steht wieder unter den
-      // Alternativen, und ein Druck darauf ist derselbe Austausch in die andere Richtung.
-      const replaced = photo({ id: 1, relative_path: 'a.jpg', taken_at: '2026-07-20T10:00:00' })
-      const chosen = photo({ id: 2, relative_path: 'b.jpg', taken_at: '2026-07-20T10:30:00' })
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([replaced]))
-      vi.mocked(photosApi.listDraftAlternatives)
-        .mockResolvedValueOnce(listOut([chosen]))
-        .mockResolvedValue(listOut([{ ...replaced, ratings: [ownRating('rejected')] }]))
-      vi.mocked(photosApi.exchangeDraftPhoto).mockImplementation((_projectId, takenId, struckId) =>
-        Promise.resolve(exchangeAnswer(takenId, struckId)),
-      )
-
-      renderPage()
-      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
-      await userEvent.click(await screen.findByLabelText('Austauschen gegen: b.jpg'))
-      await screen.findByLabelText('Im Album: b.jpg')
-
-      await userEvent.click(screen.getByLabelText('Alternativen: b.jpg'))
-      expect(await screen.findByText(PREVIOUSLY_IN_ALBUM_BADGE_TEXT)).toBeInTheDocument()
-      await userEvent.click(screen.getByLabelText('Austauschen gegen: a.jpg'))
-
-      // Beide Zeilen zurück: das zurückgeholte Bild ist wieder im Album, das eingewechselte
-      // gestrichen. Serverseitig ist die Umkehr ein ZWEITER Austausch mit eigenem Ereignis, der
-      // den ersten nicht löscht (ADR 0100 Punkt 3) - hier zählen die zwei Aufrufe.
-      expect(await screen.findByLabelText('Im Album: a.jpg')).toBeInTheDocument()
-      expect(screen.getByLabelText('Gestrichen: b.jpg')).toBeInTheDocument()
-      expect(vi.mocked(photosApi.exchangeDraftPhoto).mock.calls).toEqual([
-        [1, 2, 1],
-        [1, 1, 2],
-      ])
-    })
-  })
-
-  it('marks both data forms of "taken but no longer proposed" identically', async () => {
-    // Zusicherung 23: `ranking: null` (aussortiert) und `ranking.proposed: false` (Kandidat, nicht
-    // gewaehlt) bedeuten dasselbe - beide Kacheln tragen dieselbe Kennzeichnung.
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(
-      listOut([
-        photo({
-          id: 1,
-          relative_path: 'a.jpg',
-          ranking: null,
-          ratings: [ownRating('album_worthy')],
-        }),
-        photo({
-          id: 2,
-          relative_path: 'b.jpg',
-          ranking: ranking({ proposed: false }),
-          ratings: [ownRating('album_worthy')],
-        }),
-        photo({ id: 3, relative_path: 'c.jpg' }),
-      ]),
-    )
-
-    renderPage()
-
-    await screen.findByLabelText('Im Album: a.jpg')
-    expect(screen.getAllByText(NOT_PROPOSED_BADGE_TEXT)).toHaveLength(2)
-  })
-
-  describe('die Motivmischung am Event', () => {
-    /** Ein Achter-Vektor, in dem genau die genannten Motive getragen werden. */
-    function motifsWith(present: string[]) {
-      return MOTIF_SET.items.map((item) => ({
-        key: item.key,
-        strength: 0.5,
-        correction: null,
-        present: present.includes(item.key),
-      }))
-    }
-
-    it('names the motifs of the group alphabetically and without a number', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([
-          photo({ id: 1, relative_path: 'a.jpg', motifs: motifsWith(['menschen']) }),
-          photo({
-            id: 2,
-            relative_path: 'b.jpg',
-            motifs: motifsWith(['bauwerk_sehenswuerdigkeit']),
-          }),
-        ]),
-      )
-
-      renderPage()
-
-      const line = await screen.findByText('Bauwerk und Sehenswürdigkeit, Menschen')
-      expect(line.textContent).not.toMatch(/\d/)
-    })
-
-    it('drops a motif as soon as its last carrier is struck - without reloading', async () => {
-      // Zusicherung 22 in ihrer sichtbaren Folge: Die Zeile entsteht aus den bereits geladenen
-      // Kacheln, nicht aus einer Serveraggregation - eine solche waere nach jedem Handgriff
-      // veraltet und naennte ein Motiv, das kein Bild der Gruppe mehr traegt.
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([
-          photo({ id: 1, relative_path: 'a.jpg', motifs: motifsWith(['menschen']) }),
-          photo({ id: 2, relative_path: 'b.jpg', motifs: motifsWith(['tiere']) }),
-        ]),
-      )
-      vi.mocked(ratingsApi.setRating).mockResolvedValue({
-        photo_id: 2,
-        user_id: 7,
-        status: 'rejected',
-        favorite: false,
-        updated_at: '2026-09-13T10:00:00',
-      })
-
-      renderPage()
-      await screen.findByText('Menschen, Tiere')
-      const callsBefore = draftCalls()
-
-      await userEvent.click(screen.getByLabelText('Im Album: b.jpg'))
-
-      expect(await screen.findByText('Menschen')).toBeInTheDocument()
-      expect(screen.queryByText('Menschen, Tiere')).toBeNull()
-      expect(draftCalls()).toBe(callsBefore)
-    })
-
-    it('says "not yet assessed" for a group without any classified photo', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([photo({ id: 1, motif_assessment: null, motifs: [] })]),
-      )
-
-      renderPage()
-
-      expect(await screen.findByText(DRAFT_MOTIFS_UNASSESSED_TEXT)).toBeInTheDocument()
-    })
-
-    it('shows no motif line in an emptied event group', async () => {
-      const first = eventOut({ id: 10, position: 1 })
-      vi.mocked(photosApi.listPhotos)
-        .mockResolvedValueOnce(listOut([photo({ id: 1, event: first })]))
-        .mockResolvedValue(listOut([]))
-
-      const { queryClient } = renderPage()
-      await screen.findByLabelText('Im Album: a.jpg')
-
-      await queryClient.refetchQueries({ queryKey: ['photos', 1, 'draft'] })
-
-      expect(await screen.findByText(DRAFT_EMPTY_EVENT_TEXT)).toBeInTheDocument()
-      expect(screen.queryByText(DRAFT_MOTIFS_UNASSESSED_TEXT)).toBeNull()
-      expect(screen.queryByText(DRAFT_MOTIFS_NONE_TEXT)).toBeNull()
-    })
-  })
-
-  it('collapses and expands a day', async () => {
-    vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([photo({ id: 1 })]))
-
-    renderPage()
-
-    const trigger = await screen.findByRole('button', { expanded: true })
-    await userEvent.click(trigger)
-
-    expect(screen.getByRole('button', { expanded: false })).toBeInTheDocument()
-    expect(screen.queryByLabelText('Im Album: a.jpg')).toBeNull()
-  })
-
-  /*
-   * specs/features/0531-kuratierung-grossansicht.md - die Grossansicht in der Seite. Vor der Seite
-   * liegt eine Stub-Route als Verlaufssonde: Jeder Fall endet mit einem Zurueck, das dort ankommen
-   * muss - so faellt ein verwaister oder ueberzaehliger Verlaufseintrag auf. Geoeffnet wird ueber
-   * `fireEvent.click`, das (wie Safari) den Button NICHT fokussiert: Eine Fokus-Rueckgabe ueber das
-   * vorher fokussierte Element waere damit rot.
-   */
-  describe('Großansicht', () => {
-    const probe: { location?: Location; navigate?: NavigateFunction } = {}
-
-    function Probe() {
-      probe.location = useLocation()
-      probe.navigate = useNavigate()
-      return null
-    }
-
-    function renderWithHistory(entry: InitialEntry = '/projects/1/album') {
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-      })
-      render(
-        <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={['/stub', entry]} initialIndex={1}>
-            <Probe />
-            <Routes>
-              <Route path="/stub" element={<p>Stub</p>} />
-              <Route path="/projects/:projectId/album" element={<AlbumDraftPage />} />
-            </Routes>
-          </MemoryRouter>
-        </QueryClientProvider>,
-      )
-      return queryClient
-    }
-
-    function back(): void {
-      act(() => {
-        void probe.navigate!(-1)
-      })
-    }
-
-    function writeCalls(): number {
-      return (
-        vi.mocked(ratingsApi.setRating).mock.calls.length +
-        vi.mocked(ratingsApi.deleteRating).mock.calls.length +
-        vi.mocked(ratingsApi.setFavorite).mock.calls.length +
-        vi.mocked(photosApi.exchangeDraftPhoto).mock.calls.length +
-        vi.mocked(photosApi.setMotifCorrection).mock.calls.length +
-        vi.mocked(photosApi.deleteMotifCorrection).mock.calls.length
-      )
-    }
-
-    const closeWays: [string, () => void][] = [
-      ['Schließen', () => fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))],
-      ['Escape', () => fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })],
-      [
-        'Klick neben das Bild',
-        () => {
-          const stage = screen.getByTestId('lightbox-stage')
-          fireEvent.pointerDown(stage)
-          fireEvent.click(stage)
-        },
-      ],
-      ['Browser-Zurück', back],
-    ]
-
-    it.each(closeWays)(
-      'opens exactly the clicked photo and closes via %s back to the same place',
-      async (_, closeLightbox) => {
-        vi.mocked(photosApi.listPhotos).mockResolvedValue(
-          listOut([
-            photo({ id: 1, relative_path: 'reise/a.jpg' }),
-            photo({ id: 2, relative_path: 'reise/b.jpg' }),
-          ]),
-        )
-        renderWithHistory()
-        const trigger = await screen.findByRole('button', { name: 'Großansicht: reise/b.jpg' })
-        const callsBefore = draftCalls()
-
-        fireEvent.click(trigger)
-
-        expect(screen.getByRole('dialog', { name: 'b.jpg' })).toBeInTheDocument()
-        expect(probe.location).toMatchObject({
-          pathname: '/projects/1/album',
-          state: { grossansicht: 2 },
-        })
-
-        closeLightbox()
-
-        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-        expect(trigger).toHaveFocus()
-        expect(trigger.isConnected).toBe(true)
-        expect(screen.getByRole('button', { name: 'Im Album: reise/b.jpg' })).toHaveAttribute(
-          'aria-pressed',
-          'true',
-        )
-        expect(draftCalls()).toBe(callsBefore)
-        expect(writeCalls()).toBe(0)
-        expect(probe.location).toMatchObject({ pathname: '/projects/1/album', state: null })
-        back()
-        expect(probe.location?.pathname).toBe('/stub')
-      },
-    )
-
-    it('keeps a collapsed day collapsed while a photo of another day was open', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([
-          photo({
-            id: 1,
-            relative_path: 'a.jpg',
-            taken_at: '2026-07-20T10:00:00',
-            event: eventOut({ id: 10 }),
-          }),
-          photo({
-            id: 2,
-            relative_path: 'b.jpg',
-            taken_at: '2026-07-21T10:00:00',
-            event: eventOut({ id: 11, position: 2, started_at: '2026-07-21T09:00:00' }),
-          }),
-        ]),
-      )
-      renderWithHistory()
-      await screen.findByRole('button', { name: 'Großansicht: b.jpg' })
-      const dayToggles = screen.getAllByRole('button', { expanded: true })
-      fireEvent.click(dayToggles[1])
-      expect(screen.queryByRole('button', { name: 'Großansicht: b.jpg' })).toBeNull()
-
-      fireEvent.click(screen.getByRole('button', { name: 'Großansicht: a.jpg' }))
-      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
-
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-      expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(1)
-      expect(screen.queryByRole('button', { name: 'Großansicht: b.jpg' })).toBeNull()
-    })
-
-    it('starts with collapsed details on every opening', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([
-          photo({ id: 1, relative_path: 'a.jpg' }),
-          photo({ id: 2, relative_path: 'b.jpg' }),
-        ]),
-      )
-      renderWithHistory()
-
-      fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: a.jpg' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Details' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Großansicht: b.jpg' }))
-
-      expect(screen.getByRole('button', { name: 'Details' })).toHaveAttribute(
-        'aria-expanded',
-        'false',
-      )
-    })
-
-    /* AK15: Nach einem Reload steht der Zustand noch im Verlaufseintrag. Solange die Liste laedt,
-       ist „noch nicht da" nicht „verschwunden" - es wird nichts geschlossen. */
-    it('reopens the photo after a reload once the list has loaded', async () => {
-      let resolveList: (list: PhotoListOut) => void = () => {}
-      vi.mocked(photosApi.listPhotos).mockReturnValue(
-        new Promise((resolve) => {
-          resolveList = resolve
-        }),
-      )
-      renderWithHistory({ pathname: '/projects/1/album', state: { grossansicht: 2 } })
-
-      await screen.findByRole('status', { name: 'Fotos werden geladen…' })
-      expect(probe.location?.state).toEqual({ grossansicht: 2 })
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-
-      await act(async () => {
-        resolveList(
-          listOut([
-            photo({ id: 1, relative_path: 'a.jpg' }),
-            photo({ id: 2, relative_path: 'b.jpg' }),
-          ]),
-        )
-      })
-
-      expect(await screen.findByRole('dialog', { name: 'b.jpg' })).toBeInTheDocument()
-      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
-      expect(screen.getByRole('button', { name: 'Großansicht: b.jpg' })).toHaveFocus()
-      expect(probe.location?.state).toBeNull()
-      back()
-      expect(probe.location?.pathname).toBe('/stub')
-    })
-
-    it('shows nothing and clears the entry when the reloaded photo is not in the list', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([photo({ id: 1, relative_path: 'a.jpg' })]),
-      )
-      renderWithHistory({ pathname: '/projects/1/album', state: { grossansicht: 99 } })
-
-      await screen.findByRole('button', { name: 'Großansicht: a.jpg' })
-
-      await waitFor(() => expect(probe.location?.state).toBeNull())
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-      expect(photosApi.fetchPhotoImageBlobUrl).not.toHaveBeenCalledWith(99, 'display')
-      back()
-      expect(probe.location?.pathname).toBe('/stub')
-    })
-
-    /* AK16: Das Foto verschwindet bei offener Grossansicht aus der Liste. */
-    it('closes without a leftover entry and focuses the heading when the photo disappears', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([
-          photo({ id: 1, relative_path: 'a.jpg' }),
-          photo({ id: 2, relative_path: 'b.jpg' }),
-        ]),
-      )
-      const queryClient = renderWithHistory()
-      fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: b.jpg' }))
       expect(screen.getByRole('dialog', { name: 'b.jpg' })).toBeInTheDocument()
-
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([photo({ id: 1, relative_path: 'a.jpg' })]),
-      )
-      await act(async () => {
-        await queryClient.invalidateQueries({ queryKey: ['photos', 1, 'draft'] })
+      expect(probe.location).toMatchObject({
+        pathname: '/projects/1/album',
+        state: { grossansicht: 2 },
       })
 
-      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-      await waitFor(() =>
-        expect(screen.getByRole('heading', { level: 1, name: 'Album-Entwurf' })).toHaveFocus(),
-      )
-      expect(probe.location?.state).toBeNull()
+      closeLightbox()
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(trigger).toHaveFocus()
+      expect(trigger.isConnected).toBe(true)
+      expect(screen.getByRole('button', { name: 'Streichen: reise/b.jpg' })).toBeInTheDocument()
+      expect(photosApi.getAlbumDraft).toHaveBeenCalledTimes(1)
+      expect(writeCalls()).toBe(0)
+      expect(probe.location).toMatchObject({ pathname: '/projects/1/album', state: null })
       back()
       expect(probe.location?.pathname).toBe('/stub')
-    })
+    },
+  )
 
-    it('has no link in the large view', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(
-        listOut([photo({ id: 1, relative_path: 'a.jpg' })]),
-      )
-      renderWithHistory()
+  it('starts with collapsed details on every opening', async () => {
+    renderWithHistory(twoPhotos)
 
-      fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: a.jpg' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: reise/a.jpg' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Großansicht: reise/b.jpg' }))
 
-      expect(within(screen.getByRole('dialog')).queryAllByRole('link')).toEqual([])
-    })
+    expect(screen.getByRole('button', { name: 'Details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
   })
 
-  /*
-   * Der Personenfilter blendet NUR clientseitig aus -
-   * die Entwurfsliste wird weder neu geladen noch beschrieben, und der Kopf zaehlt weiter den
-   * ganzen Entwurf.
-   */
-  describe('der Personenfilter', () => {
-    const anna: PersonOut = { id: 1, name: 'Anna', reference_count: 2 }
-    const ben: PersonOut = { id: 2, name: 'Ben', reference_count: 2 }
-    const morning = eventOut({ id: 10, position: 1, started_at: '2026-07-20T09:00:00' })
-    const nextDay = eventOut({ id: 12, position: 2, started_at: '2026-07-21T09:00:00' })
+  it('reopens the photo after a reload once the draft has loaded', async () => {
+    let resolveDraft: (draft: AlbumDraftOut) => void = () => {}
+    vi.mocked(photosApi.getAlbumDraft).mockReturnValue(
+      new Promise((resolve) => {
+        resolveDraft = resolve
+      }),
+    )
+    renderWithHistory(null, { pathname: '/projects/1/album', state: { grossansicht: 2 } })
 
-    function motifsWith(present: string[]) {
-      return MOTIF_SET.items.map((item) => ({
-        key: item.key,
-        strength: 0.5,
-        correction: null,
-        present: present.includes(item.key),
-      }))
-    }
+    await screen.findByRole('status', { name: 'Fotos werden geladen…' })
+    expect(probe.location?.state).toEqual({ grossansicht: 2 })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
-    const withAnna = photo({
-      id: 1,
-      relative_path: 'a.jpg',
-      event: morning,
-      persons: [{ person_id: 1, origin: 'recognized', face: null }],
-      motifs: motifsWith(['menschen']),
-    })
-    const nobody = photo({
-      id: 2,
-      relative_path: 'b.jpg',
-      taken_at: '2026-07-20T09:30:00',
-      event: morning,
-      motifs: motifsWith(['tiere']),
-    })
-    const withBen = photo({
-      id: 3,
-      relative_path: 'c.jpg',
-      taken_at: '2026-07-21T09:00:00',
-      event: nextDay,
-      persons: [{ person_id: 2, origin: 'corrected', face: null }],
+    await act(async () => {
+      resolveDraft(twoPhotos)
     })
 
-    beforeEach(() => {
-      vi.mocked(personsApi.listPersons).mockResolvedValue([anna, ben])
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([withAnna, nobody, withBen]))
+    expect(await screen.findByRole('dialog', { name: 'b.jpg' })).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Großansicht: reise/b.jpg' })).toHaveFocus()
+    expect(probe.location?.state).toBeNull()
+    back()
+    expect(probe.location?.pathname).toBe('/stub')
+  })
+
+  it('shows nothing and clears the entry when the reloaded photo is not in the draft', async () => {
+    renderWithHistory(twoPhotos, { pathname: '/projects/1/album', state: { grossansicht: 99 } })
+
+    await screen.findByRole('button', { name: 'Großansicht: reise/a.jpg' })
+
+    await waitFor(() => expect(probe.location?.state).toBeNull())
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(photosApi.fetchPhotoImageBlobUrl).not.toHaveBeenCalledWith(99, 'display')
+    back()
+    expect(probe.location?.pathname).toBe('/stub')
+  })
+
+  it('closes without a leftover entry and focuses the heading when the photo disappears', async () => {
+    const queryClient = renderWithHistory(twoPhotos)
+    fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: reise/b.jpg' }))
+    expect(screen.getByRole('dialog', { name: 'b.jpg' })).toBeInTheDocument()
+
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({
+      events: [EVENT_A],
+      items: [photo(1, { relative_path: 'reise/a.jpg' })],
+    })
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['photos', 1] })
     })
 
-    it('zaehlt im Kopf den ganzen Entwurf und meldet die sichtbaren Fotos', async () => {
-      renderPage('/projects/1/album?person=1')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Album-Entwurf' })).toHaveFocus(),
+    )
+    expect(probe.location?.state).toBeNull()
+    back()
+    expect(probe.location?.pathname).toBe('/stub')
+  })
 
-      expect(await screen.findByText('1 von 3 Fotos des Entwurfs sichtbar.')).toHaveAttribute(
-        'role',
-        'status',
-      )
-      expect(screen.getByText(draftSizeText(3, 1))).toBeInTheDocument()
-    })
+  it('has no link in the large view', async () => {
+    renderWithHistory(twoPhotos)
 
-    it('laesst Tage und Gruppen ohne sichtbares Foto entfallen und zaehlt nur Sichtbares', async () => {
-      renderPage('/projects/1/album?person=1')
+    fireEvent.click(await screen.findByRole('button', { name: 'Großansicht: reise/a.jpg' }))
 
-      expect(await screen.findByLabelText('Im Album: a.jpg')).toBeInTheDocument()
-      expect(screen.queryByLabelText('Im Album: b.jpg')).toBeNull()
-      expect(screen.queryByLabelText('Im Album: c.jpg')).toBeNull()
-      expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(1)
-      expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(1)
-      expect(screen.getByText(`(${formatDraftPhotoCount(1)})`)).toBeInTheDocument()
-      expect(screen.getByText('Menschen')).toBeInTheDocument()
-      expect(screen.queryByText('Menschen, Tiere')).toBeNull()
-      expect(screen.queryByText(DRAFT_EMPTY_EVENT_TEXT)).toBeNull()
-    })
-
-    it('stellt nach Filter ein und aus alle Tage samt Aufklappzustand wieder her', async () => {
-      const user = userEvent.setup()
-      renderPage()
-      await screen.findByLabelText('Im Album: c.jpg')
-      const secondDay = () => screen.getAllByRole('heading', { level: 2 })[1]
-      await user.click(within(secondDay()).getByRole('button'))
-
-      await user.click(await screen.findByRole('button', { name: 'Anna' }))
-      expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(1)
-      // Aufklappen wirkt nur auf die sichtbaren Tage - der ausgeblendete bleibt zugeklappt.
-      await user.click(screen.getByRole('button', { name: 'Alle Tage aufklappen' }))
-      await user.click(screen.getByRole('button', { name: 'Alle' }))
-
-      expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(2)
-      expect(within(secondDay()).getByRole('button')).toHaveAttribute('aria-expanded', 'false')
-      expect(screen.getByLabelText('Im Album: a.jpg')).toBeInTheDocument()
-      expect(screen.getByLabelText('Im Album: b.jpg')).toBeInTheDocument()
-      expect(screen.queryByText(/Fotos des Entwurfs sichtbar/)).toBeNull()
-    })
-
-    it('zeigt ohne Treffer einen Leerzustand, dessen "Filter zurücksetzen" alles zurueckbringt', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([withAnna, nobody]))
-      const user = userEvent.setup()
-      renderPage('/projects/1/album?person=2')
-
-      expect(
-        await screen.findByText('Keine Fotos des Entwurfs mit diesem Filter.'),
-      ).toBeInTheDocument()
-      expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
-      expect(screen.queryByRole('button', { name: 'Alle Tage aufklappen' })).toBeNull()
-
-      await user.click(screen.getByRole('button', { name: 'Filter zurücksetzen' }))
-
-      expect(await screen.findByLabelText('Im Album: b.jpg')).toBeInTheDocument()
-      expect(screen.queryByText('Keine Fotos des Entwurfs mit diesem Filter.')).toBeNull()
-    })
-
-    it('zeigt die Filtergruppe nur, wenn der Entwurf Fotos hat', async () => {
-      vi.mocked(photosApi.listPhotos).mockResolvedValue(listOut([]))
-      renderPage()
-
-      expect(await screen.findByText(DRAFT_EMPTY_TEXT)).toBeInTheDocument()
-      expect(screen.queryByRole('group', { name: 'Personen' })).toBeNull()
-    })
-
-    it('loest keine schreibende Anfrage und kein Neuladen des Entwurfs aus', async () => {
-      const user = userEvent.setup()
-      renderPage()
-      await screen.findByLabelText('Im Album: a.jpg')
-      const callsBefore = draftCalls()
-
-      await user.click(await screen.findByRole('button', { name: 'Anna' }))
-      await user.click(screen.getByRole('button', { name: 'Beide: Anna und Ben' }))
-      await user.click(screen.getByRole('button', { name: 'Alle' }))
-
-      expect(draftCalls()).toBe(callsBefore)
-      expect(ratingsApi.setRating).not.toHaveBeenCalled()
-      expect(photosApi.exchangeDraftPhoto).not.toHaveBeenCalled()
-      expect(personsApi.setPhotoPerson).not.toHaveBeenCalled()
-    })
-
-    it('filtert den Alternativen-Dialog nicht', async () => {
-      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
-        listOut([photo({ id: 5, relative_path: 'x.jpg', event: morning })]),
-      )
-      renderPage('/projects/1/album?person=1')
-
-      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
-
-      expect(await screen.findByLabelText('Austauschen gegen: x.jpg')).toBeInTheDocument()
-    })
-
-    it('fokussiert die Ueberschrift und meldet es, wenn das eingetauschte Foto ausgeblendet ist', async () => {
-      vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
-        listOut([photo({ id: 5, relative_path: 'x.jpg', event: morning })]),
-      )
-      vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValue({
-        taken: {
-          photo_id: 5,
-          user_id: 7,
-          status: 'album_worthy',
-          favorite: false,
-          updated_at: '2026-09-13T10:00:00',
-        },
-        struck: {
-          photo_id: 1,
-          user_id: 7,
-          status: 'rejected',
-          favorite: false,
-          updated_at: '2026-09-13T10:00:00',
-        },
-      })
-      renderPage('/projects/1/album?person=1')
-
-      await userEvent.click(await screen.findByLabelText('Alternativen: a.jpg'))
-      await userEvent.click(await screen.findByLabelText('Austauschen gegen: x.jpg'))
-
-      await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveFocus())
-      expect(
-        screen.getByText('Das eingetauschte Foto ist durch den Filter ausgeblendet.'),
-      ).toHaveAttribute('role', 'status')
-      expect(screen.queryByLabelText('Im Album: x.jpg')).toBeNull()
-      expect(screen.getByLabelText('Gestrichen: a.jpg')).toBeInTheDocument()
-    })
-
-    it('rendert einen Namen mit Markup in der Filtergruppe als reinen Text', async () => {
-      vi.mocked(personsApi.listPersons).mockResolvedValue([{ ...anna, name: hostile }, ben])
-      renderPage()
-
-      const group = await screen.findByRole('group', { name: 'Personen' })
-      expect(within(group).getByRole('button', { name: hostile })).toBeInTheDocument()
-      expect(
-        within(group).getByRole('button', { name: `Beide: ${hostile} und Ben` }),
-      ).toBeInTheDocument()
-      expect(document.querySelector('img[src="x"]')).toBeNull()
-      expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
-    })
+    expect(within(screen.getByRole('dialog')).queryAllByRole('link')).toEqual([])
   })
 })

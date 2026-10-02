@@ -244,23 +244,27 @@ async def set_rating(
     return written
 
 
-@router.delete("/photos/{photo_id}/rating", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/photos/{photo_id}/rating", response_model=RatingWriteOut)
 async def delete_rating(
     photo_id: int,
     session: AsyncSession = Depends(get_session),
     # SICHERHEIT (S1): ausgeschriebene Auth-Dependency, siehe Router-Kommentar oben.
     current_user: User = Depends(get_current_user),
-) -> None:
+) -> RatingWriteOut:
     """Nimmt NUR die Albumentscheidung zurueck (`status = NULL`).
 
     Die Zeile BLEIBT stehen, solange `favorite` gesetzt ist; sonst wird sie geloescht. Eine
     pauschale Zeilenloeschung verloere die Auszeichnung mit der Ruecknahme der Albumentscheidung,
-    ohne jede Meldung (Auflage S7). Idempotent: `204`, ob eine Zeile bestand oder nicht - und
+    ohne jede Meldung (Auflage S7). Idempotent: `200`, ob eine Zeile bestand oder nicht - und
     ohne bestehende Albumentscheidung entsteht dabei KEIN Ereignis, weil nichts zurueckgenommen
-    wurde."""
+    wurde.
+
+    Die Antwort ist der eigene Zeilenzustand danach (`RatingWriteOut`), damit der Album-Entwurf
+    ihn in seine geladene Liste einsetzt statt neu zu laden. Sie unterscheidet "Zeile bestand" von
+    "bestand nicht" nur ueber `favorite`, also nur ueber den eigenen Zustand (S9)."""
     photo = await _get_photo_or_404(photo_id, session)
 
-    await write_own_rating(
+    written = await write_own_rating(
         session,
         project_id=photo.project_id,
         photo_id=photo.id,
@@ -268,6 +272,7 @@ async def delete_rating(
         next_state=lambda _status, favorite: (None, favorite),
     )
     await session.commit()
+    return written
 
 
 @router.put("/photos/{photo_id}/favorite", response_model=RatingWriteOut)

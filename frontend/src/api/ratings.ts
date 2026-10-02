@@ -14,9 +14,10 @@ export function setRating(photoId: number, status: RatingStatus): Promise<Rating
   })
 }
 
-/** Nimmt NUR die Albumentscheidung zurück; eine Zeile mit Favoriten-Kennzeichen bleibt stehen. */
-export function deleteRating(photoId: number): Promise<void> {
-  return apiFetch<void>(`/photos/${photoId}/rating`, { method: 'DELETE' })
+/** Nimmt NUR die Albumentscheidung zurück; eine Zeile mit Favoriten-Kennzeichen bleibt stehen.
+ * Die Antwort ist der eigene Zeilenzustand danach. */
+export function deleteRating(photoId: number): Promise<RatingWriteOut> {
+  return apiFetch<RatingWriteOut>(`/photos/${photoId}/rating`, { method: 'DELETE' })
 }
 
 /**

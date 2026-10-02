@@ -69,6 +69,9 @@ test('die beidbreitigen Specs stehen in keiner Ausschlussliste', () => {
     // Großansicht wechselt an der `sm`-Grenze, und Einpassung, Schließwege und Fokus gelten für
     // die randlose wie für die eingerückte Fassung.
     'tests/kuratierung-grossansicht.spec.ts',
+    // specs/features/0558-album-entwurf-verstaendlich.md: Kopfleiste, Lage des Rückgängig-
+    // Hinweises und Scrollposition nach dem Streichen gelten für beide Prüfbreiten.
+    'tests/album-entwurf.spec.ts',
   ]
 
   for (const spec of beidbreitig) {

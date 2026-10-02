@@ -594,7 +594,13 @@ describe('PhotoDetailPage', () => {
       total: 2,
     }
     vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
-    vi.mocked(ratingsApi.deleteRating).mockResolvedValue(undefined)
+    vi.mocked(ratingsApi.deleteRating).mockResolvedValue({
+      photo_id: 1,
+      user_id: 1,
+      status: null,
+      favorite: false,
+      updated_at: null,
+    })
     const user = userEvent.setup()
 
     renderPage('/projects/1/photos/1')

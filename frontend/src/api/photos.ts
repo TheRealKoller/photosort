@@ -1,6 +1,9 @@
 import { apiFetch, apiFetchBlob } from './client'
 import type {
+  AlbumDraftOut,
   DraftExchangeOut,
+  DraftExchangeUndoIn,
+  DraftExchangeUndoOut,
   MotifCorrectionOut,
   MotifKey,
   PhotoListOut,
@@ -12,11 +15,6 @@ export interface ListPhotosParams {
   ratingStatus?: RatingFilter
   limit?: number
   offset?: number
-  /** Entwurfsmodus - gesetzt, ersetzt er ratingStatus/limit/offset vollständig (eigenständige
-   * Entwurfsansicht, siehe backend api/photos.py::list_photos-Kommentar). Die Antwort ist der
-   * Album-Entwurf des ANFRAGENDEN Nutzers: Vorschlag des Laufs vereinigt mit seinen eigenen
-   * Aufnahmen. Das Frontend kennt weder eine Anzahl noch eine Schwelle und sortiert nicht nach. */
-  draft?: boolean
   /** Nur die Fotos DIESER Kamera. Traegt die Fotoauswahl des Versatz-Vorschlags - ohne den
    * Filter kann die Oberflaeche die beiden Fotos desselben Moments nicht anbieten. */
   cameraId?: number
@@ -26,8 +24,9 @@ export interface ListPhotosParams {
 
 export interface ListDraftAlternativesParams {
   eventId: number
-  /** Das Bezugsbild des Austauschs. Es steuert allein die Reihenfolge und ist nie selbst dabei. */
-  photoId: number
+  /** Das Bezugsbild des Tauschs. Es steuert allein die Reihenfolge und ist nie selbst dabei.
+   * Ohne (Hinzufügen-Feld) ordnet der Server nach Qualität; der Parameter fehlt dann ganz. */
+  photoId?: number
   limit?: number
   offset?: number
 }
@@ -46,9 +45,6 @@ export function listPhotos(
   if (params.offset !== undefined) {
     query.set('offset', String(params.offset))
   }
-  if (params.draft) {
-    query.set('draft', 'true')
-  }
   if (params.cameraId !== undefined) {
     query.set('camera_id', String(params.cameraId))
   }
@@ -62,24 +58,30 @@ export function listPhotos(
 }
 
 /**
- * Die Alternativen zu EINEM Bild des Entwurfs: die Fotos seines Events abzueglich des eigenen
- * Entwurfs, seitenweise. Gestrichene sind darunter - daraus folgt die Umkehrbarkeit des
- * Austauschs. `total` der Antwort ist die RESTMENGE und damit unabhaengig von `limit`/`offset`.
+ * Der Album-Entwurf des ANFRAGENDEN Nutzers samt Eventliste des letzten erfolgreichen Laufs - als
+ * GANZES, ohne Seitenweise. Gestrichene Fotos stehen darin (die Ansicht blendet sie aus); die
+ * Reihenfolge kommt vom Server und wird nie nachsortiert.
+ */
+export function getAlbumDraft(projectId: number): Promise<AlbumDraftOut> {
+  return apiFetch<AlbumDraftOut>(`/projects/${projectId}/album-draft`)
+}
+
+/**
+ * Die Fotos eines Events abzueglich des eigenen Albums, seitenweise. Gestrichene sind darunter -
+ * daraus folgt die Umkehrbarkeit des Tauschs. `total` der Antwort ist die RESTMENGE und damit
+ * unabhaengig von `limit`/`offset`.
  *
- * Die REIHENFOLGE KOMMT VOM SERVER und wird nie nachsortiert: sie haengt an den Motiven des
- * Bezugsbildes, und die Grenze, ab der ein Motiv getragen ist, wohnt im Backend.
- *
- * Bewusst ein eigener Endpunkt statt einer Erweiterung von `listPhotos`: dort gilt die Zusage,
- * dass `limit`/`offset` im Entwurfsmodus nicht wirken.
+ * Die REIHENFOLGE KOMMT VOM SERVER und wird nie nachsortiert: Mit Bezugsbild haengt sie an
+ * dessen Motiven, und die Grenze, ab der ein Motiv getragen ist, wohnt im Backend.
  */
 export function listDraftAlternatives(
   projectId: number,
   params: ListDraftAlternativesParams,
 ): Promise<PhotoListOut> {
-  const query = new URLSearchParams({
-    event_id: String(params.eventId),
-    photo_id: String(params.photoId),
-  })
+  const query = new URLSearchParams({ event_id: String(params.eventId) })
+  if (params.photoId !== undefined) {
+    query.set('photo_id', String(params.photoId))
+  }
   if (params.limit !== undefined) {
     query.set('limit', String(params.limit))
   }
@@ -149,5 +151,20 @@ export function exchangeDraftPhoto(
   return apiFetch<DraftExchangeOut>(`/projects/${projectId}/draft/exchange`, {
     method: 'POST',
     body: { photo_id: photoId, replaced_photo_id: replacedPhotoId },
+  })
+}
+
+/**
+ * Stellt nach einem Tausch beide eigenen Bewertungszeilen auf ihren Zustand davor zurück - beide
+ * oder keine. Der Server lehnt mit `409` ab, wenn sich eine der beiden seit dem Tausch geändert
+ * hat, und schreibt dann nichts.
+ */
+export function undoDraftExchange(
+  projectId: number,
+  body: DraftExchangeUndoIn,
+): Promise<DraftExchangeUndoOut> {
+  return apiFetch<DraftExchangeUndoOut>(`/projects/${projectId}/draft/exchange/undo`, {
+    method: 'POST',
+    body,
   })
 }

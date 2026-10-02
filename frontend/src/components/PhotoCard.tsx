@@ -37,6 +37,10 @@ export interface PhotoCardProps {
    * `ratings[].status` und `final_selection_decision` ausschliesst.
    */
   setAside?: boolean
+  /** Die Karte ist die Bezugskachel eines offenen Alternativen-Bands im Album-Entwurf: anliegende
+   * Akzentkante. Kein Auswahlzustand - es gibt höchstens eine solche Karte je Seite, und sie
+   * verschwindet mit dem Band. */
+  anchored?: boolean
   /** Inhalt der Bildflaeche - `PhotoImage` oder ein Platzhalter. */
   image: ReactNode
   /** Ecken-Overlay oben links (heute: `CategoryOverrideMarker`). */
@@ -77,6 +81,7 @@ export function PhotoCard({
   favorite = false,
   suggested = false,
   setAside = false,
+  anchored = false,
   image,
   topLeft,
   topRight,
@@ -108,7 +113,10 @@ export function PhotoCard({
       // Telefon bewusst 8px statt der 12px des Boards - bei 360px und zwei Spalten misst die
       // Kachel 158px, 12px Polsterung schruempfen die Bildflaeche um 16 %, und die Bildflaeche ist
       // dort die knappste Ressource der Anwendung. Ab `sm:` gilt das Board-Mass.
-      className="flex flex-col gap-2 rounded-lg border border-border bg-elevated p-2 sm:p-3"
+      className={cn(
+        'flex flex-col gap-2 rounded-lg bg-elevated p-2 sm:p-3',
+        anchored ? 'border-2 border-accent' : 'border border-border',
+      )}
     >
       <div className="relative">
         {onImageActivate === undefined ? (

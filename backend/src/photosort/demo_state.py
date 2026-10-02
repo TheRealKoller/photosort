@@ -334,6 +334,15 @@ _DEMO_MULTIPLE_PLACES_EVENT = 2
 _DEMO_NO_LOCATION_EVENT = 3
 # Das Foto, an dem die eine Sehenswuerdigkeit-Zeile haengt - das erste des Landmark-Events.
 _DEMO_LANDMARK_PHOTO_INDEX = 0
+# Das Event OHNE VORSCHLAG des Album-Entwurfs: Seine Fotos tragen keine Modellbewertung
+# und damit keinen Qualitaetswert - sie sind Rangzeilen ohne Rang, also keine Kandidaten der
+# Auswahl, und die Abdeckung des Verfahrens laesst das Event leer. Genau so entsteht ein leeres
+# Event auch in der Anwendung. Ohne es zeigten Pruefstack und `browse-app` "Kein Bild im Entwurf"
+# samt Hinzufuegen-Feld nie. Es ist das Event der ersten beiden Fotos: Deren Bewertungen
+# (`_DEMO_RATINGS`) ergeben dort ein aufgenommenes und ein gestrichenes Foto ohne Vorschlag, beide
+# mit Rangzeile - die Gestrichen-Zeile und der Eingriffszaehler brauchen genau diese Lage. Die
+# Kandidaten der Endauswahl liegen damit in den drei uebrigen Events.
+_DEMO_UNPROPOSED_EVENT = _DEMO_LANDMARK_EVENT
 
 # Frei erfundene, aber plausible Koordinaten rund um den Eiffelturm (ausschliesslich synthetische
 # Demo-Daten - das Repository ist oeffentlich, und Standortdaten der Familie duerfen es nie
@@ -1265,7 +1274,7 @@ async def _seed_rated_project(
     # Zustand erzeugen, den die Anwendung selbst nie schriebe (Feldkombination M7).
     event_by_index = await _create_demo_events(session, criterion_run.id, photos, spec.photo_count)
 
-    rankings: list[tuple[int, Photo, float]] = []
+    rankings: list[tuple[int, Photo, float | None]] = []
     for index, photo in enumerate(photos):
         event_id = event_by_index[_demo_event_index(index, spec.photo_count)]
         session.add(
@@ -1317,7 +1326,11 @@ async def _seed_rated_project(
 
         # Die Modellbewertung und der daraus GERECHNETE Qualitaetswert - nicht zwei unabhaengige
         # Zufallszahlen: die Demo darf keinen Zustand erzeugen, den die Anwendung selbst nie
-        # schriebe, und `rank_score` ist seit Spec 0428 genau diese Rechnung.
+        # schriebe, und `rank_score` ist genau diese Rechnung. Das Event ohne
+        # Vorschlag bekommt keine Modellbewertung und damit keinen Qualitaetswert.
+        if _demo_event_index(index, spec.photo_count) == _DEMO_UNPROPOSED_EVENT:
+            rankings.append((event_id, photo, None))
+            continue
         level = index % ALBUM_SUITABILITY_MAX_LEVEL + 1
         session.add(
             PhotoAlbumSuitability(
@@ -1337,14 +1350,18 @@ async def _seed_rated_project(
         )
 
     # Eine Partition je Event, ein Foto in genau einer davon.
-    partitions: dict[int, list[tuple[Photo, float]]] = {}
+    partitions: dict[int, list[tuple[Photo, float | None]]] = {}
     for event_id, photo, rank_score in rankings:
         partitions.setdefault(event_id, []).append((photo, rank_score))
     for partition_event_id, rows in partitions.items():
         # Absteigend nach Rang-Score, Tie-Break ueber die Foto-Id - dieselbe Ordnung wie
-        # ranking.py::rank_photos.
-        ordered = sorted(rows, key=lambda row: (-row[1], row[0].id))
-        for position, (photo, rank_score) in enumerate(ordered, start=1):
+        # ranking.py::rank_photos. Ein Foto ohne Qualitaetswert hat keinen Rang (wie im Worker:
+        # beide Rangfelder `None`) und zaehlt bei der Numerierung nicht mit.
+        scored = sorted(
+            ((photo, score) for photo, score in rows if score is not None),
+            key=lambda row: (-row[1], row[0].id),
+        )
+        for position, (photo, rank_score) in enumerate(scored, start=1):
             session.add(
                 PhotoRanking(
                     criterion_scoring_run_id=criterion_run.id,
@@ -1354,6 +1371,17 @@ async def _seed_rated_project(
                     rank_position=position,
                 )
             )
+        for photo, score in rows:
+            if score is None:
+                session.add(
+                    PhotoRanking(
+                        criterion_scoring_run_id=criterion_run.id,
+                        photo_id=photo.id,
+                        event_id=partition_event_id,
+                        rank_score=None,
+                        rank_position=None,
+                    )
+                )
 
     # Bewertungen haengen an VORHANDENEN Nutzern; der Seeder legt selbst nie ein Konto an (ein
     # Konto mit bekannten Zugangsdaten waere genau das Sicherheitsproblem, gegen das die Sperre

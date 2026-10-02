@@ -2,7 +2,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { AlbumParticipantOut, PhotoOut, RatingOut } from '../api/types'
+import type { AlbumParticipantOut, PhotoOut, RankingOut, RatingOut } from '../api/types'
+import { ALBUM_STATE_LABELS, NOT_IN_DRAFT_LABEL } from '../utils/albumStateLabels'
 import { SELECTION_DECIDED_BADGE_TEXT, SelectionPhotoTile } from './SelectionPhotoTile'
 
 vi.mock('./PhotoImage', () => ({
@@ -90,9 +91,9 @@ describe('SelectionPhotoTile - Zuordnung der Haltungen', () => {
 
     // Innerhalb der jeweiligen Zeile assertiert, nie kachelweit: eine tileweite Textsuche bestuende
     // auch dann, wenn beide Zeilen dieselbe Haltung zeigten.
-    expect(within(stanceRow('daniel')).getByLabelText('Unbewertet')).toBeInTheDocument()
-    expect(within(stanceRow('nora')).getByLabelText('Album-würdig')).toBeInTheDocument()
-    expect(within(stanceRow('daniel')).queryByLabelText('Album-würdig')).toBeNull()
+    expect(within(stanceRow('daniel')).getByLabelText(NOT_IN_DRAFT_LABEL)).toBeInTheDocument()
+    expect(within(stanceRow('nora')).getByLabelText(ALBUM_STATE_LABELS.taken)).toBeInTheDocument()
+    expect(within(stanceRow('daniel')).queryByLabelText(ALBUM_STATE_LABELS.taken)).toBeNull()
   })
 
   it('shows the struck stance with its own symbol and accessible name', () => {
@@ -103,9 +104,9 @@ describe('SelectionPhotoTile - Zuordnung der Haltungen', () => {
     })
 
     const row = stanceRow('daniel')
-    expect(within(row).getByLabelText('Verworfen')).toBeInTheDocument()
+    expect(within(row).getByLabelText(ALBUM_STATE_LABELS.struck)).toBeInTheDocument()
     expect(
-      within(row).getByLabelText('Verworfen').querySelector('[data-icon="x-circle"]'),
+      within(row).getByLabelText(ALBUM_STATE_LABELS.struck).querySelector('[data-icon="x-circle"]'),
     ).not.toBeNull()
   })
 
@@ -116,8 +117,68 @@ describe('SelectionPhotoTile - Zuordnung der Haltungen', () => {
       persons: [],
     })
 
-    const badge = within(stanceRow('daniel')).getByLabelText('Album-würdig')
+    const badge = within(stanceRow('daniel')).getByLabelText(ALBUM_STATE_LABELS.taken)
     expect(badge.querySelector('[data-icon="book"]')).not.toBeNull()
+  })
+})
+
+describe('SelectionPhotoTile - die vier Haltungen', () => {
+  const proposedRanking: RankingOut = {
+    event_id: 1,
+    rank_score: 0.5,
+    rank_position: 1,
+    proposed: true,
+    partition_size: 2,
+    curation_position: null,
+  }
+
+  it.each([
+    {
+      name: 'aufgenommen',
+      status: 'album_worthy' as const,
+      ranking: null,
+      label: ALBUM_STATE_LABELS.taken,
+    },
+    {
+      name: 'gestrichen',
+      status: 'rejected' as const,
+      ranking: null,
+      label: ALBUM_STATE_LABELS.struck,
+    },
+    {
+      name: 'unberührt, vorgeschlagen',
+      status: null,
+      ranking: proposedRanking,
+      label: ALBUM_STATE_LABELS.proposal,
+    },
+  ])('shows "$label" for $name', ({ status, ranking, label }) => {
+    renderTile({
+      ranking,
+      ratings: status === null ? [] : [{ user_id: 1, username: 'daniel', status, favorite: false }],
+      contested: true,
+    })
+
+    expect(within(stanceRow('daniel')).getByLabelText(label)).toBeInTheDocument()
+  })
+
+  it('shows "–" named "Nicht im Entwurf" for untouched and not proposed, in BOTH data forms', () => {
+    for (const ranking of [null, { ...proposedRanking, proposed: false }]) {
+      const { unmount } = render(
+        <ul>
+          <SelectionPhotoTile
+            photo={photo({ ranking, contested: true })}
+            participants={PARTICIPANTS}
+            decidingIncluded={null}
+            onDecide={vi.fn()}
+            onOpenLarge={vi.fn()}
+            largeTriggerRef={() => {}}
+          />
+        </ul>,
+      )
+      const badge = within(stanceRow('daniel')).getByLabelText(NOT_IN_DRAFT_LABEL)
+      expect(badge).toHaveTextContent('–')
+      unmount()
+    }
   })
 })
 
