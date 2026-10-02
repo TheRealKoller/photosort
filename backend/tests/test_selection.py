@@ -1,4 +1,5 @@
-"""Das Auswahlverfahren, DB-frei geprueft: Kontingente je Event und motivgefuehrte Vergabe.
+"""Das Auswahlverfahren, DB-frei geprueft: Kontingente je Event und motiv- und personengefuehrte
+Vergabe.
 
 Ein Fehler in diesem Verfahren wirft keine Ausnahme und verletzt kein Schema - er liefert eine
 andere, plausibel aussehende Auswahl. Jede Aussage hier hat deshalb einen Fall, der bei ihrer
@@ -16,6 +17,7 @@ import ast
 import itertools
 import math
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -51,6 +53,7 @@ def _candidate(
     quality: float,
     *,
     motifs: Mapping[str, float] | None = None,
+    persons: frozenset[int] = frozenset(),
     offset: timedelta = timedelta(),
 ) -> SelectionCandidate:
     return SelectionCandidate(
@@ -58,6 +61,7 @@ def _candidate(
         taken_at=_BASE_TIME + offset,
         quality=quality,
         motif_strengths=dict(motifs or {}),
+        person_ids=persons,
     )
 
 
@@ -89,13 +93,15 @@ def _event_cap(size: int, target: int, event_count: int) -> int:
 def assert_selection_invariants(
     events: Sequence[SelectionEvent], target: int, result: Mapping[int, int]
 ) -> None:
-    """Vier Zusicherungen, die als Nachsatz JEDES Falls laufen - im Muster von
+    """Fuenf Zusicherungen, die als Nachsatz JEDES Falls laufen - im Muster von
     `assert_event_invariants`:
 
     (a) jedes Event mit `n_i > 0` hat mindestens einen Platz;
     (b) kein Event hat mehr als `min(n_i, max(⌈T/m⌉, ⌈0,25·T⌉))`;
     (c) die Plaetze eines Events sind exakt `{1 … k}`, 1-basiert und lueckenlos;
-    (d) kein Foto erscheint zweimal."""
+    (d) kein Foto erscheint zweimal;
+    (e) hat ein Event mindestens so viele Plaetze, wie dort Motive und Personen vorkommen, ist
+        jedes davon vertreten."""
     eligible = [event for event in events if event.candidates]
     event_count = len(eligible)
 
@@ -115,6 +121,25 @@ def assert_selection_invariants(
         assert places == list(range(1, len(places) + 1)), (
             f"Event {event.event_id}: Plaetze {places} sind nicht lueckenlos ab 1"
         )
+
+        present_motifs: set[str] = set()
+        present_persons: set[int] = set()
+        represented_motifs: set[str] = set()
+        represented_persons: set[int] = set()
+        for candidate in event.candidates:
+            motifs = carried_motifs(candidate.motif_strengths)
+            present_motifs |= motifs
+            present_persons |= candidate.person_ids
+            if candidate.photo_id in result:
+                represented_motifs |= motifs
+                represented_persons |= candidate.person_ids
+        if len(places) >= len(present_motifs) + len(present_persons):
+            assert represented_motifs == present_motifs, (
+                f"Event {event.event_id}: genug Plaetze, aber ein Motiv bleibt unvertreten"
+            )
+            assert represented_persons == present_persons, (
+                f"Event {event.event_id}: genug Plaetze, aber eine Person bleibt unvertreten"
+            )
 
     assert len(seen) == len(set(seen)), "ein Foto steht zweimal im Vorschlag"
     assert set(seen) == set(result), "der Vorschlag enthaelt ein Foto ausserhalb der Events"
@@ -672,6 +697,265 @@ class TestTheMotifsAreEqualInRank:
         )
 
 
+# Zwei Personen-Ids, wie `Person.id` sie liefert.
+_ANNA = 1
+_BERTA = 2
+_FAR = 4 * SIMILARITY_TIME_WINDOW
+
+
+def _without_persons(events: Sequence[SelectionEvent]) -> list[SelectionEvent]:
+    return [
+        _event(
+            event.event_id,
+            event.position,
+            [replace(candidate, person_ids=frozenset()) for candidate in event.candidates],
+        )
+        for event in events
+    ]
+
+
+def _event_places(event: SelectionEvent, result: Mapping[int, int]) -> dict[int, int]:
+    return {
+        candidate.photo_id: result[candidate.photo_id]
+        for candidate in event.candidates
+        if candidate.photo_id in result
+    }
+
+
+class TestThePersonGuidedAssignment:
+    def test_a_person_in_an_event_without_a_motif_gets_its_only_carrier_a_seat(self) -> None:
+        """Kein Motiv kommt vor, zwei Personen schon. Platz 2 geht an den einzigen Traeger von
+        Anna, obwohl er die niedrigste Qualitaet hat und Bertas zweiter Traeger besser waere."""
+        candidates = [
+            _candidate(1, 0.9, persons=frozenset({_BERTA})),
+            _candidate(2, 0.8, persons=frozenset({_BERTA}), offset=_FAR),
+            _candidate(3, 0.1, persons=frozenset({_ANNA})),
+        ]
+
+        result = _draft([_event(1, 1, candidates)], target=2)
+
+        assert result == {1: 1, 3: 2}
+
+    @pytest.mark.parametrize(
+        ("leader", "open_carrier"),
+        [
+            pytest.param(
+                _candidate(1, 0.9, persons=frozenset({_ANNA})),
+                _candidate(3, 0.1, motifs={"b": _FULL}),
+                id="person-vertreten-motiv-offen",
+            ),
+            pytest.param(
+                _candidate(1, 0.9, motifs={"a": _FULL}),
+                _candidate(3, 0.1, persons=frozenset({_ANNA})),
+                id="motiv-vertreten-person-offen",
+            ),
+        ],
+    )
+    def test_the_set_is_unrestricted_only_when_both_kinds_are_represented(
+        self, leader: SelectionCandidate, open_carrier: SelectionCandidate
+    ) -> None:
+        """Platz 1 deckt die eine Art ab, die andere bleibt offen. Platz 2 geht an deren Traeger
+        und nicht an das bessere Bild, das nichts Unvertretenes traegt: Die Menge wird nicht schon
+        frei, sobald EINE der beiden Arten vollstaendig vertreten ist."""
+        candidates = [leader, _candidate(2, 0.8, offset=_FAR), open_carrier]
+
+        result = _draft([_event(1, 1, candidates)], target=2)
+
+        assert result == {1: 1, 3: 2}
+
+    def test_a_photo_with_both_names_represents_both_persons(self) -> None:
+        """Drei Ziele (Anna, Berta, Motiv a), zwei Plaetze. Vertraete das Bild mit beiden Namen
+        nur eine Person, ginge Platz 2 an den besseren Traeger der anderen statt an den Traeger
+        des Motivs."""
+        candidates = [
+            _candidate(1, 0.9, persons=frozenset({_ANNA, _BERTA})),
+            _candidate(2, 0.8, persons=frozenset({_ANNA}), offset=_FAR),
+            _candidate(3, 0.7, persons=frozenset({_BERTA}), offset=2 * _FAR),
+            _candidate(4, 0.1, motifs={"a": _FULL}, offset=3 * _FAR),
+        ]
+
+        result = _draft([_event(1, 1, candidates)], target=2)
+
+        assert result == {1: 1, 4: 2}
+
+    def test_a_photo_with_a_person_and_a_motif_represents_both(self) -> None:
+        """Drei Ziele (Anna, Motiv a, Motiv b), zwei Plaetze. Vertraete das gewaehlte Bild nur
+        Anna oder nur `a`, ginge Platz 2 an den besseren Traeger des anderen."""
+        candidates = [
+            _candidate(1, 0.9, motifs={"a": _FULL}, persons=frozenset({_ANNA})),
+            _candidate(2, 0.8, persons=frozenset({_ANNA}), offset=_FAR),
+            _candidate(3, 0.7, motifs={"a": _FULL}, offset=2 * _FAR),
+            _candidate(4, 0.1, motifs={"b": _FULL}, offset=3 * _FAR),
+        ]
+
+        result = _draft([_event(1, 1, candidates)], target=2)
+
+        assert result == {1: 1, 4: 2}
+
+    @pytest.mark.parametrize(
+        "better",
+        [
+            pytest.param(_candidate(1, 0.9, persons=frozenset({_ANNA})), id="nur-person"),
+            pytest.param(_candidate(1, 0.9, motifs={"a": _FULL}), id="nur-motiv"),
+        ],
+    )
+    def test_covering_more_at_once_gives_no_bonus(self, better: SelectionCandidate) -> None:
+        """Das bessere Bild traegt nur eines der beiden Ziele, das schlechtere beide. Es zaehlt
+        allein der Wert - in beiden Richtungen."""
+        candidates = [
+            better,
+            _candidate(2, 0.8, motifs={"a": _FULL}, persons=frozenset({_ANNA}), offset=_FAR),
+        ]
+
+        result = _draft([_event(1, 1, candidates)], target=1)
+
+        assert result == {1: 1}
+
+    def test_with_fewer_seats_than_targets_the_quality_decides(self) -> None:
+        """Drei Ziele, je ein eigener Traeger, zwei Plaetze. Qualitaet und `photo_id` laufen
+        gegenlaeufig, die Eingabereihenfolge folgt keiner von beiden. Berta bleibt unvertreten,
+        und die Platzzahl ist dieselbe wie ohne Personen."""
+        candidates = [
+            _candidate(2, 0.7, motifs={"a": _FULL}, offset=_FAR),
+            _candidate(1, 0.5, persons=frozenset({_BERTA}), offset=2 * _FAR),
+            _candidate(3, 0.9, persons=frozenset({_ANNA})),
+        ]
+        events = [_event(1, 1, candidates)]
+
+        result = _draft(events, target=2)
+
+        assert result == {3: 1, 2: 2}
+        assert len(result) == len(_draft(_without_persons(events), target=2))
+
+    def test_the_decay_applies_among_the_carriers_of_a_person(self) -> None:
+        """Unter Annas Traegern liegt der bessere zeitgleich beim gewaehlten Bild und teilt mit
+        ihm Motiv a - er faellt auf die Haelfte zurueck, und der schlechtere bekommt den Platz."""
+        candidates = [
+            _candidate(1, 1.0, motifs={"a": _FULL}),
+            _candidate(2, 0.8, motifs={"a": _FULL}, persons=frozenset({_ANNA})),
+            _candidate(3, 0.5, persons=frozenset({_ANNA})),
+        ]
+
+        result = _draft([_event(1, 1, candidates)], target=2)
+
+        assert result == {1: 1, 3: 2}
+
+    def test_a_shared_name_alone_does_not_devalue(self) -> None:
+        """Zeitgleich und mit demselben Namen, aber ohne geteiltes Motiv: keine Abwertung. Wertete
+        der Name ab, fiele 0,8 auf 0,4 und das neutrale Bild mit 0,5 bekaeme Platz 2."""
+        candidates = [
+            _candidate(1, 1.0, persons=frozenset({_ANNA})),
+            _candidate(2, 0.8, persons=frozenset({_ANNA})),
+            _candidate(3, 0.5),
+        ]
+
+        result = _draft([_event(1, 1, candidates)], target=2)
+
+        assert result == {1: 1, 2: 2}
+
+    def test_swapping_the_two_person_ids_leaves_the_result_identical(self) -> None:
+        """Keine Person geht der anderen vor: werden die beiden Ids in der GESAMTEN Eingabe
+        vertauscht, ist die Abbildung identisch."""
+        swap = {_ANNA: _BERTA, _BERTA: _ANNA}
+        originals = [
+            _candidate(1, 0.90, persons=frozenset({_ANNA})),
+            _candidate(2, 0.85, persons=frozenset({_ANNA, _BERTA})),
+            _candidate(3, 0.70, persons=frozenset({_BERTA})),
+            _candidate(4, 0.60, motifs={"c": _FULL}, persons=frozenset({_ANNA})),
+            _candidate(5, 0.55, motifs={"c": _FULL}, persons=frozenset({_BERTA})),
+        ]
+        swapped = [
+            replace(candidate, person_ids=frozenset(swap[p] for p in candidate.person_ids))
+            for candidate in originals
+        ]
+
+        assert _draft([_event(1, 1, originals)], target=3) == _draft(
+            [_event(1, 1, swapped)], target=3
+        )
+
+    def test_swapping_a_motif_with_a_person_leaves_the_result_identical(self) -> None:
+        """Keine Person geht einem Motiv vor und umgekehrt. Alle Aufnahmen liegen weiter als
+        `SIMILARITY_TIME_WINDOW` auseinander: Motive werten ab, Namen nicht, und nur ohne jede
+        Abwertung ist der Rollentausch ergebnisgleich."""
+        originals = [
+            _candidate(1, 0.90, motifs={"a": _FULL}),
+            _candidate(2, 0.85, motifs={"a": _FULL}, persons=frozenset({_ANNA})),
+            _candidate(3, 0.70, persons=frozenset({_ANNA})),
+            _candidate(4, 0.60, motifs={"a": _FULL, "c": _FULL}),
+            _candidate(5, 0.55, motifs={"c": _FULL}, persons=frozenset({_ANNA})),
+        ]
+        originals = [
+            replace(candidate, taken_at=_BASE_TIME + index * 2 * SIMILARITY_TIME_WINDOW)
+            for index, candidate in enumerate(originals)
+        ]
+
+        def swapped(candidate: SelectionCandidate) -> SelectionCandidate:
+            strengths = dict(candidate.motif_strengths)
+            carries_a = strengths.pop("a", 0.0) >= MOTIF_PRESENCE_THRESHOLD
+            if _ANNA in candidate.person_ids:
+                strengths["a"] = _FULL
+            return replace(
+                candidate,
+                motif_strengths=strengths,
+                person_ids=frozenset({_ANNA}) if carries_a else frozenset(),
+            )
+
+        assert _draft([_event(1, 1, originals)], target=3) == _draft(
+            [_event(1, 1, [swapped(candidate) for candidate in originals])], target=3
+        )
+
+    @staticmethod
+    def _scope_events() -> list[SelectionEvent]:
+        """Event 1 traegt Anna auf seinem schwaechsten Bild, Event 2 keine Person."""
+        return [
+            _event(
+                1,
+                1,
+                [
+                    _candidate(101, 0.9, motifs={"a": _FULL}),
+                    _candidate(102, 0.8, motifs={"a": _FULL}, offset=_FAR),
+                    _candidate(103, 0.7, motifs={"a": _FULL}, offset=2 * _FAR),
+                    _candidate(104, 0.1, persons=frozenset({_ANNA}), offset=3 * _FAR),
+                ],
+            ),
+            _event(
+                2,
+                2,
+                [
+                    _candidate(201, 0.9, motifs={"a": _FULL}),
+                    _candidate(202, 0.8, motifs={"b": _FULL}, offset=_FAR),
+                    _candidate(203, 0.7, motifs={"a": _FULL}, offset=2 * _FAR),
+                    _candidate(204, 0.6, motifs={"b": _FULL}, offset=3 * _FAR),
+                    _candidate(205, 0.5, offset=4 * _FAR),
+                ],
+            ),
+        ]
+
+    @pytest.mark.parametrize("target", [1, 2, 3, 4, 6, 9])
+    def test_persons_never_change_the_number_of_places(self, target: int) -> None:
+        """Zwilling mit und ohne Personen: dieselbe Platzzahl je Event, und das Event ohne Person
+        ist platzgleich."""
+        events = self._scope_events()
+        twin = _without_persons(events)
+
+        with_persons = _draft(events, target)
+        without = _draft(twin, target)
+
+        assert _places_per_event(events, with_persons) == _places_per_event(twin, without)
+        assert _event_places(events[1], with_persons) == _event_places(twin[1], without)
+
+    def test_the_person_changes_its_own_event_in_the_scope_twin(self) -> None:
+        """Gegenprobe zum Zwilling darueber: dort aendert Anna nachweislich etwas, sonst bestuende
+        die Platzgleichheit des Nachbar-Events auch bei einer Vergabe, die Personen ignoriert."""
+        events = self._scope_events()
+
+        with_persons = _draft(events, target=4)
+        without = _draft(_without_persons(events), target=4)
+
+        assert _event_places(events[0], with_persons) == {101: 1, 104: 2}
+        assert _event_places(events[0], without) == {101: 1, 102: 2}
+
+
 def _alternative(
     photo_id: int, quality: float | None, *, motifs: Mapping[str, float] | None = None
 ) -> AlternativeCandidate:
@@ -983,18 +1267,19 @@ class TestTheResultIsDeterministic:
     @staticmethod
     def _events() -> list[SelectionEvent]:
         """NICHT-TRIVIAL, sonst bestuende der Fall auch bei einer Implementierung, die ueber ein
-        `set` iteriert: mehr Kandidaten als Plaetze, ein echter Qualitaets-Gleichstand (Fotos 103
-        und 104) und zwei Events mit gleichem `n_i`."""
+        `set` iteriert: mehr Kandidaten als Plaetze, zwei Events mit gleichem `n_i`, beide Personen
+        und ein Bild mit beiden Namen. Fotos 103 und 104 tragen beide Namen bei gleicher Qualitaet;
+        dieser echte Gleichstand entscheidet Platz 3 von Event 10."""
         return [
             _event(
                 10,
                 1,
                 [
                     _candidate(101, 0.90, motifs={"a": _FULL}),
-                    _candidate(102, 0.80, motifs={"b": _FULL}),
-                    _candidate(103, 0.70, motifs={"a": _FULL}),
-                    _candidate(104, 0.70, motifs={"a": _FULL}),
-                    _candidate(105, 0.60, motifs={"c": _FULL}),
+                    _candidate(102, 0.80, motifs={"b": _FULL}, persons=frozenset({_ANNA})),
+                    _candidate(103, 0.70, motifs={"a": _FULL}, persons=frozenset({_ANNA, _BERTA})),
+                    _candidate(104, 0.70, motifs={"a": _FULL}, persons=frozenset({_ANNA, _BERTA})),
+                    _candidate(105, 0.30, motifs={"c": _FULL}),
                 ],
             ),
             _event(
@@ -1003,7 +1288,7 @@ class TestTheResultIsDeterministic:
                 [
                     _candidate(201, 0.95, motifs={"a": _FULL}),
                     _candidate(202, 0.85, motifs={"a": _FULL}),
-                    _candidate(203, 0.75, motifs={"b": _FULL}),
+                    _candidate(203, 0.75, motifs={"b": _FULL}, persons=frozenset({_BERTA})),
                     _candidate(204, 0.65, motifs={"b": _FULL}),
                     _candidate(205, 0.55, motifs={"a": _FULL, "c": _FULL}),
                 ],
@@ -1012,7 +1297,12 @@ class TestTheResultIsDeterministic:
                 30,
                 3,
                 [
-                    _candidate(300 + index, 0.9 - index / 20, motifs={"a": _FULL})
+                    _candidate(
+                        300 + index,
+                        0.9 - index / 20,
+                        motifs={"a": _FULL},
+                        persons=frozenset({_ANNA}) if index == 2 else frozenset(),
+                    )
                     for index in range(8)
                 ],
             ),

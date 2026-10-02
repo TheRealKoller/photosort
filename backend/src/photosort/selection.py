@@ -1,4 +1,4 @@
-"""Der Auswahlvorschlag: Kontingente je Event und motivgefuehrte Vergabe mit
+"""Der Auswahlvorschlag: Kontingente je Event und motiv- und personengefuehrte Vergabe mit
 Aehnlichkeitsabwertung.
 
 REIN und DB-FREI - dasselbe Muster wie `ranking.py`/`quality.py`/`events.py`: keine Session, kein
@@ -109,12 +109,18 @@ class SelectionCandidate:
 
     `quality` ist der fertige `rank_score`; `motif_strengths` sind die WIRKSAMEN Staerken
     (Korrekturen inbegriffen), wie der Aufrufer sie geladen hat. Ein hier fehlendes Motiv zaehlt
-    als nicht getragen."""
+    als nicht getragen.
+
+    `person_ids` sind die wirksam zugeordneten Personen des Bildes, NUR als Id - ein Name erreicht
+    dieses Modul nie. Pflichtfeld ohne Vorgabewert: ein Aufrufer, der es vergisst, scheitert an
+    der Typpruefung, statt still "keine Personen" zu liefern. Der `repr` traegt die Ids; ein
+    Kandidat gehoert deshalb in keine Logzeile und keinen Fehlertext."""
 
     photo_id: int
     taken_at: datetime
     quality: float
     motif_strengths: Mapping[str, float]
+    person_ids: frozenset[int]
 
 
 @dataclass(frozen=True)
@@ -289,14 +295,20 @@ def _quotas(events: Sequence[SelectionEvent], target: int) -> dict[int, int]:
 
 
 def _assign_event(candidates: Sequence[SelectionCandidate], seats: int) -> dict[int, int]:
-    """Stufe 2 - die motivgefuehrte Vergabe innerhalb EINES Events, unabhaengig von den uebrigen.
+    """Stufe 2 - die motiv- und personengefuehrte Vergabe innerhalb EINES Events, unabhaengig von
+    den uebrigen.
 
     Der Wert eines noch nicht gewaehlten Bildes ist
     `rank_score · SIMILARITY_DECAY ^ Σ_{s gewählt} ähnlichkeit(p, s)`. Jeder Platz geht an das
-    Bild mit dem hoechsten Wert - aber solange ein vorkommendes Motiv unvertreten ist, nur aus den
-    Bildern, die ein solches Motiv tragen. Das gewaehlte Bild vertritt dann ALLE unvertretenen
-    Motive, die es traegt; es wird nie ein Motiv gegen ein anderes abgewogen und keine Staerke mit
-    einer anderen verglichen.
+    Bild mit dem hoechsten Wert - aber solange ein vorkommendes Motiv ODER eine vorkommende Person
+    unvertreten ist, nur aus den Bildern, die etwas davon tragen. Das gewaehlte Bild vertritt dann
+    ALLE unvertretenen Motive und Personen, die es traegt; wie viele das sind, geht nie in den Wert
+    ein, und es wird nie ein Ziel gegen ein anderes abgewogen. Personen sind kein
+    Aehnlichkeitsmerkmal.
+
+    Motive und Personen bleiben zwei getrennte Mengen und nie ein gemeinsamer Schluesselraum: ein
+    Motivschluessel und eine Personen-Id koennten sonst zusammenfallen. Die Personenmengen dienen
+    nur Schnittmengen- und Leerheitspruefungen, nie einer Reihenfolge.
 
     Die Abwertung wird je Kandidat FORTGESCHRIEBEN und nie bei jeder Bewertung erneut ueber alle
     bereits Gewaehlten summiert (Sicherheitsauflage S5). Ergebnisgleich - die Aehnlichkeiten
@@ -308,9 +320,11 @@ def _assign_event(candidates: Sequence[SelectionCandidate], seats: int) -> dict[
         candidate.photo_id: carried_motifs(candidate.motif_strengths) for candidate in remaining
     }
     present = frozenset().union(*motifs_of.values()) if motifs_of else frozenset()
+    present_persons = frozenset().union(*(candidate.person_ids for candidate in remaining))
     decay: dict[int, float] = {candidate.photo_id: 0.0 for candidate in remaining}
 
     represented: set[str] = set()
+    represented_persons: set[int] = set()
     places: dict[int, int] = {}
 
     for place in range(1, seats + 1):
@@ -319,11 +333,16 @@ def _assign_event(candidates: Sequence[SelectionCandidate], seats: int) -> dict[
             # mehr Plaetze als Kandidaten.
             break
         unrepresented = present - represented
+        unrepresented_persons = present_persons - represented_persons
+        restricted = bool(unrepresented or unrepresented_persons)
 
         best: SelectionCandidate | None = None
         best_key: tuple[float, int] | None = None
         for candidate in remaining:
-            if unrepresented and not (motifs_of[candidate.photo_id] & unrepresented):
+            if restricted and not (
+                motifs_of[candidate.photo_id] & unrepresented
+                or candidate.person_ids & unrepresented_persons
+            ):
                 continue
             value = candidate.quality * SIMILARITY_DECAY ** decay[candidate.photo_id]
             # Gleichstand ueber die kleinere `photo_id` - ausgeschrieben als zweiter Schluessel
@@ -333,14 +352,15 @@ def _assign_event(candidates: Sequence[SelectionCandidate], seats: int) -> dict[
                 best_key = key
                 best = candidate
         if best is None:
-            # Unerreichbar, solange `present` aus DIESEN Kandidaten entstanden ist: ein
-            # vorkommendes Motiv hat per Definition ein Traegerbild, und ist dieses gewaehlt, gilt
-            # das Motiv als vertreten.
+            # Unerreichbar, solange `present` und `present_persons` aus DIESEN Kandidaten
+            # entstanden sind: ein vorkommendes Motiv und eine vorkommende Person haben per
+            # Definition ein Traegerbild, und ist dieses gewaehlt, gelten sie als vertreten.
             break
 
         places[best.photo_id] = place
         chosen_motifs = motifs_of[best.photo_id]
         represented |= chosen_motifs
+        represented_persons |= best.person_ids
 
         still_open: list[SelectionCandidate] = []
         for candidate in remaining:
