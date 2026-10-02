@@ -41,6 +41,7 @@ export function useDraftPosition(
           sections.map((section) => ({
             position: Number(section.dataset.draftPosition),
             top: section.getBoundingClientRect().top,
+            landing: Number.parseFloat(window.getComputedStyle(section).scrollMarginTop) || 0,
           })),
           edge,
         ),

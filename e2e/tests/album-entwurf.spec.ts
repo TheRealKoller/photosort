@@ -48,16 +48,11 @@ test('die Kopfleiste nennt nach dem Scrollen das Event des Abschnitts und bleibt
   // Vorbedingung: Es gibt ein ZWEITES Event - sonst bewiese „Event 1 von 1" nach dem Scrollen nichts.
   expect(total, 'Anzahl der Events im Demo-Entwurf').toBeGreaterThan(1)
 
-  // Die Oberkante des Abschnitts wird knapp UNTER die Unterkante der Leiste gerollt - genau die
-  // Kante, an der er laut AK zum aktuellen wird. `scrollIntoView` allein taugt dafuer nicht: Es
-  // haelt den `scroll-margin` des Abschnitts ein und laesst ihn einige Pixel unterhalb der Leiste
-  // stehen. Die Kante wird erst NACH dem ersten Rollen gelesen - vorher steht die Leiste noch im
-  // Fluss und nicht an ihrem klebenden Ort.
+  // Ein Sprung wie beim Fokus-Scroll: `scrollIntoView` setzt den Abschnitt an seinen
+  // `scroll-margin`, und die Leiste nennt danach genau dieses Event.
   const target = 2
   await page.locator(`section[data-draft-position="${target}"]`).evaluate((section) => {
     section.scrollIntoView({ block: 'start' })
-    const edge = document.querySelector('[data-draft-bar]')?.getBoundingClientRect().bottom ?? 0
-    window.scrollBy(0, section.getBoundingClientRect().top - edge + 2)
   })
 
   await expect(bar).toContainText(`Event ${target} von ${total}`)

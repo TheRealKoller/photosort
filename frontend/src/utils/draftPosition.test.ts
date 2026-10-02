@@ -82,6 +82,32 @@ describe('currentSectionPosition', () => {
       ],
       expected: 2,
     },
+    {
+      // Ein Sprung (Fokus-Scroll, `scrollIntoView`) setzt den Abschnitt an seinen `scroll-margin`,
+      // und der kann einige Pixel unter der Leiste enden. Dort gilt der Abschnitt als aktuell.
+      name: 'ein angesprungener Abschnitt mit Bruchteilen neben seinem Landeplatz gilt',
+      sections: [
+        { position: 1, top: -400, landing: EDGE + 5 },
+        { position: 2, top: EDGE + 5.4, landing: EDGE + 5 },
+      ],
+      expected: 2,
+    },
+    {
+      name: 'zwei Pixel unter seinem Landeplatz noch der vorige',
+      sections: [
+        { position: 1, top: -400, landing: EDGE + 5 },
+        { position: 2, top: EDGE + 7, landing: EDGE + 5 },
+      ],
+      expected: 1,
+    },
+    {
+      name: 'ein Landeplatz ueber der Leiste verschiebt die Kante nicht nach oben',
+      sections: [
+        { position: 1, top: -400, landing: 40 },
+        { position: 2, top: EDGE, landing: 40 },
+      ],
+      expected: 2,
+    },
   ])('$name', ({ sections, expected }) => {
     expect(currentSectionPosition(sections, EDGE)).toBe(expected)
   })
