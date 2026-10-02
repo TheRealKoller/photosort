@@ -222,7 +222,7 @@ describe('AlbumDraftPage: Kopf und Abschluss', () => {
     expect(await screen.findByText('Tag 2 von 2 · Event 2 von 2')).toBeInTheDocument()
   })
 
-  it('shows the empty state only for a run without events, with cloud consent taking precedence', async () => {
+  it('shows the empty state only for a run without events, the cloud consent text first', async () => {
     const first = renderPage({ events: [], items: [] }, noObserver)
     expect(await screen.findByText(DRAFT_EMPTY_TEXT)).toBeInTheDocument()
     expect(screen.queryByText(/So funktioniert|Hier steht der Vorschlag/)).toBeNull()
