@@ -1,4 +1,4 @@
-import type { PhotoOut } from '../api/types'
+import type { EventOut, PhotoOut } from '../api/types'
 import { formatEventHeading } from './timeOfDay'
 
 /**
@@ -58,6 +58,50 @@ export function groupPhotosByDay(items: PhotoOut[]): PhotoDay[] {
       day.events.push(group)
     }
     group.photos.push(photo)
+  }
+  return days
+}
+
+/** Ein Eventabschnitt des Album-Entwurfs - auch ohne ein einziges Foto. */
+export interface DraftEventGroup {
+  event: EventOut
+  heading: string
+  photos: PhotoOut[]
+}
+
+export interface DraftDay {
+  dayKey: string
+  events: DraftEventGroup[]
+}
+
+/**
+ * Die Gliederung des Album-Entwurfs: Die Abschnitte kommen aus der EVENTLISTE des Laufs, nicht aus
+ * den Fotos. Ein Event ohne Foto im Entwurf steht deshalb als eigener Abschnitt da (mit
+ * Hinzufügen-Feld), und „Event p von E" bleibt stabil, gleich was gestrichen, gefiltert oder
+ * zugeklappt ist. Die Endauswahl gliedert weiter über `groupPhotosByDay`.
+ *
+ * Reihenfolge der Abschnitte nach `position`; die Fotos eines Abschnitts in Antwortreihenfolge.
+ * Ein Foto, dessen Event nicht in der Liste steht, wird übergangen - die Ausfallrichtung ist
+ * „nicht zeigen", nie ein erfundener Abschnitt.
+ */
+export function groupEventsByDay(events: EventOut[], items: PhotoOut[]): DraftDay[] {
+  const groupByEventId = new Map<number, DraftEventGroup>()
+  const days: DraftDay[] = []
+  for (const event of [...events].sort((left, right) => left.position - right.position)) {
+    const { dayKey, heading } = formatEventHeading(event)
+    let day = days.at(-1)
+    if (day?.dayKey !== dayKey) {
+      day = { dayKey, events: [] }
+      days.push(day)
+    }
+    const group: DraftEventGroup = { event, heading, photos: [] }
+    groupByEventId.set(event.id, group)
+    day.events.push(group)
+  }
+  for (const photo of items) {
+    if (photo.event) {
+      groupByEventId.get(photo.event.id)?.photos.push(photo)
+    }
   }
   return days
 }

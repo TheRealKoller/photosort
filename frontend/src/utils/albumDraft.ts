@@ -1,4 +1,5 @@
-import type { EventOut, PhotoListOut, PhotoOut, RatingStatus } from '../api/types'
+import type { AlbumDraftOut, EventOut, PhotoOut, RatingStatus } from '../api/types'
+import type { AlbumState } from './albumStateLabels'
 import type { MotifSet } from './motifLabels'
 import { formatMotifKey } from './motifLabels'
 import { ownRatingStatus } from './ownRating'
@@ -8,29 +9,77 @@ import { ownRatingStatus } from './ownRating'
  * QueryClient und Rendering prüfbar sind.
  */
 
+/** Wo ein Foto im Entwurf steht: im Album, in der Gestrichen-Zeile oder gar nicht. */
+export type DraftMembership = 'album' | 'struck' | 'out'
+
 /**
- * Ist dieses Foto im Album? Der Zweizustand der Entwurfskachel.
+ * DIE EINE Stelle, die das Serverprädikat des Entwurfs-Lesepfads nachbildet
+ * (`api/photos.py::_draft_photo_ids`): `Vorschlag ∪ eigene album_worthy ∪ (eigene rejected ∩
+ * Rangzeile)`, im Album genau dann, wenn der eigene Status nicht `rejected` ist.
  *
- * `true` für alles außer einer eigenen Streichung: Die Antwortmenge des Entwurfszweigs enthält
- * ausschließlich Vorgeschlagenes und selbst Aufgenommenes, und beides gehört ins Album, solange
- * keine eigene Streichung dagegen steht. Ein noch nie bewertetes Foto steht deshalb als „Im
- * Album" da — der Vorschlag entscheidet, bis der Nutzer widerspricht.
+ * Sie entscheidet nach jedem Handgriff, ob ein Foto im Cache bleibt; liefe sie vom Server weg,
+ * zeigte die Seite nach einem Handgriff etwas anderes als nach dem Neuladen. Gegen dieselbe
+ * Falltabelle geprüft wie der Server (`backend/tests/data/album_draft_membership.json`).
+ *
+ * `ownStatus` kommt ausschließlich über `ownRating.ts::ownRatingStatus` (S10), „vorgeschlagen"
+ * ausschließlich über `ranking.proposed`.
  */
-export function isInAlbum(ownStatus: RatingStatus | null): boolean {
-  return ownStatus !== 'rejected'
+export function draftMembership(photo: PhotoOut, ownStatus: RatingStatus | null): DraftMembership {
+  if (ownStatus === 'rejected') {
+    return photo.ranking ? 'struck' : 'out'
+  }
+  if (ownStatus === 'album_worthy' || photo.ranking?.proposed === true) {
+    return 'album'
+  }
+  return 'out'
 }
 
 /**
- * Stand dieses Bild zuvor im Album? Der Zustand hinter dem Abzeichen „zuvor im Album" im
- * Alternativen-Raster.
- *
- * Er ist die EIGENE Streichung und nichts sonst: Der Alternativen-Endpunkt liefert die Fotos des
- * Events abzüglich des eigenen Entwurfs, und darunter ist ein gestrichenes genau deshalb, weil es
- * einmal drin war. Ein nie bewertetes Foto steht dort ebenfalls — es war nie im Album und trägt
- * kein Abzeichen.
+ * Der Zustand eines Fotos der Antwortmenge in den Wörtern von `albumStateLabels.ts`: eigenes
+ * `album_worthy` ist „Aufgenommen" (auch an einem vorgeschlagenen Foto), eigenes `rejected`
+ * „Gestrichen", sonst trägt der Vorschlag das Foto.
  */
-export function wasInAlbum(ownStatus: RatingStatus | null): boolean {
-  return ownStatus === 'rejected'
+export function albumState(ownStatus: RatingStatus | null): AlbumState {
+  if (ownStatus === 'album_worthy') {
+    return 'taken'
+  }
+  return ownStatus === 'rejected' ? 'struck' : 'proposal'
+}
+
+/** n, a und g der Akzeptanzkriterien - aus dem Zustand abgeleitet, nie aus gezählten Handgriffen. */
+export interface DraftCounts {
+  /** Fotos im Album. */
+  inAlbum: number
+  /** Eigene Aufnahmen im Album. */
+  taken: number
+  /** Eigene Streichungen mit Rangzeile. */
+  struck: number
+}
+
+export function draftCounts(items: PhotoOut[], username: string | null): DraftCounts {
+  const counts: DraftCounts = { inAlbum: 0, taken: 0, struck: 0 }
+  for (const item of items) {
+    const ownStatus = ownRatingStatus(item.ratings, username)
+    const membership = draftMembership(item, ownStatus)
+    if (membership === 'album') {
+      counts.inAlbum += 1
+      if (ownStatus === 'album_worthy') {
+        counts.taken += 1
+      }
+    } else if (membership === 'struck') {
+      counts.struck += 1
+    }
+  }
+  return counts
+}
+
+/**
+ * Was „Wieder aufnehmen" aus der Gestrichen-Zeile schreibt: Trägt der Vorschlag das Foto, wird die
+ * eigene Entscheidung entfernt (zurück zum Vorschlag, `null` → `DELETE`), sonst wird es
+ * aufgenommen.
+ */
+export function reAddDecision(photo: PhotoOut): RatingStatus | null {
+  return photo.ranking?.proposed === true ? null : 'album_worthy'
 }
 
 /**
@@ -57,18 +106,16 @@ export function isTakenWithoutProposal(photo: PhotoOut, ownStatus: RatingStatus 
  * Nimmt ein Foto in eine bereits geladene Entwurfsliste auf — rein, ohne Cache und ohne Netz.
  *
  * DERSELBE SORTIERSCHLÜSSEL WIE DER SERVER (`(events.position, taken_at, photo_id)`): Nach einem
- * Austausch steht das neue Bild damit dort, wo es auch nach dem nächsten vollständigen Laden
- * stünde. Ans Ende der Liste gehängt läge es in der falschen Eventgruppe; direkt neben das
- * ersetzte Bild gesetzt spränge es beim nächsten Laden an eine andere Stelle.
+ * Tausch oder Hinzufügen steht das Bild damit dort, wo es auch nach dem nächsten vollständigen
+ * Laden stünde. Ans Ende der Liste gehängt läge es in der falschen Eventgruppe.
  *
  * Zwei Fälle lassen die Liste UNVERÄNDERT (dieselbe Objektreferenz): das Foto steht bereits darin
  * — ein zweites Vorkommen wäre eine Kachel, die zweimal dasteht —, und ein Foto ohne Event, das
- * `eventGrouping.ts::groupPhotosByDay` ohnehin überginge und dessen einzige Wirkung eine falsche
- * Ist-Anzahl im Kopfbereich wäre.
+ * `eventGrouping.ts::groupEventsByDay` ohnehin keinem Abschnitt zuordnete.
  *
  * Unberührte Fotos behalten ihre OBJEKTREFERENZ (wie `applyWrittenRating`).
  */
-export function insertDraftPhoto(list: PhotoListOut, photo: PhotoOut): PhotoListOut {
+export function insertDraftPhoto(list: AlbumDraftOut, photo: PhotoOut): AlbumDraftOut {
   const insertedEvent = photo.event
   if (!insertedEvent || list.items.some((item) => item.id === photo.id)) {
     return list
@@ -93,19 +140,34 @@ export function insertDraftPhoto(list: PhotoListOut, photo: PhotoOut): PhotoList
   })
   const items = [...list.items]
   items.splice(index === -1 ? items.length : index, 0, photo)
-  return { ...list, items, total: items.length }
+  return { ...list, items }
 }
 
 /**
- * Der Kopfzeilentext: Ist-Anzahl und Richtwert NEBENEINANDER.
+ * Der Kopftext: Fotos im Album, Richtwert und die eigenen Eingriffe.
  *
- * Beide Zahlen ausgeschrieben und in beiden Abweichungsrichtungen derselbe Satzbau: Der Richtwert
- * ist ein Ziel und keine Obergrenze, eine Abweichung nach oben wie nach unten ist ein neutraler
- * Hinweis. Ein zweiter Ton („zu wenig", „zu viel") machte daraus einen Zustand, der behoben werden
- * müsste — es gibt hier nichts zu beheben.
+ * In beiden Abweichungsrichtungen derselbe Satzbau: Der Richtwert ist ein Ziel und keine
+ * Obergrenze, eine Abweichung ist ein neutraler Hinweis. Ein zweiter Ton („zu wenig", „zu viel")
+ * machte daraus einen Zustand, der behoben werden müsste - es gibt hier nichts zu beheben.
  */
-export function draftSizeText(actual: number, target: number): string {
-  return `${actual} von etwa ${target} Bildern`
+export function draftSizeText(counts: DraftCounts, target: number): string {
+  return `${counts.inAlbum} im Album · Richtwert etwa ${target} · ${counts.taken} aufgenommen · ${counts.struck} gestrichen`
+}
+
+/** Die drei Sätze des Abschlusses „Stand des Entwurfs" - dieselben Zahlen wie der Kopf. */
+export function draftClosingTexts(counts: DraftCounts, target: number): [string, string, string] {
+  return [
+    `${counts.inAlbum} Fotos im Album, Richtwert etwa ${target}.`,
+    counts.taken === 0 && counts.struck === 0
+      ? 'Keine Eingriffe – der Vorschlag gilt unverändert.'
+      : `Deine Eingriffe: ${counts.taken} aufgenommen, ${counts.struck} gestrichen.`,
+    'Nichts muss bestätigt werden; du kannst jederzeit weiterarbeiten.',
+  ]
+}
+
+/** „{T} Tage · {E} Events" aus der Eventliste des Laufs. */
+export function draftOverviewText(dayCount: number, eventCount: number): string {
+  return `${dayCount} Tage · ${eventCount} Events`
 }
 
 /** „1 Bild" / „N Bilder" - die Anzahl der Bilder eines Events im Entwurf. */
@@ -133,10 +195,9 @@ export const DRAFT_MOTIFS_NONE_TEXT = 'Keine Motive erkannt'
  * Kalibrierung still auseinander. Ebenso wenig erscheint eine Zahl: keine Stärke, keine Anzahl,
  * keine Reihung nach Stärke.
  *
- * GESTRICHENE BILDER ZÄHLEN NICHT MIT. Sie bleiben in der Antwortmenge sichtbar, gehören aber
- * nicht zum Entwurf (ADR 0098 Punkt 1: `… \ Gestrichen`). Daraus folgt das sichtbare Verhalten:
- * Mit dem letzten Bild eines Motivs verschwindet das Motiv aus der Zeile — ohne Neuladen, weil die
- * Zeile aus den bereits geladenen Kacheln entsteht.
+ * GESTRICHENE BILDER ZÄHLEN NICHT MIT: Sie stehen in der Antwortmenge, gehören aber nicht zum
+ * Album. Mit dem letzten Bild eines Motivs verschwindet das Motiv aus der Zeile - ohne Neuladen,
+ * weil die Zeile aus den bereits geladenen Fotos entsteht.
  *
  * Vier Fälle in dieser Reihenfolge: kein Bild im Album → `null`; Bilder im Album, aber keines mit
  * Kopfzeile → `DRAFT_MOTIFS_UNASSESSED_TEXT`; Kopfzeile vorhanden, kein `present` →
@@ -147,7 +208,9 @@ export function draftMotifText(
   username: string | null,
   motifs: MotifSet,
 ): string | null {
-  const inAlbum = photos.filter((photo) => isInAlbum(ownRatingStatus(photo.ratings, username)))
+  const inAlbum = photos.filter(
+    (photo) => draftMembership(photo, ownRatingStatus(photo.ratings, username)) === 'album',
+  )
   if (inAlbum.length === 0) {
     return null
   }

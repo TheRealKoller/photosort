@@ -1,3 +1,7 @@
+// @vitest-environment node
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, it } from 'vitest'
 
 import type {
@@ -9,16 +13,20 @@ import type {
   RatingStatus,
 } from '../api/types'
 import { MOTIF_SET } from '../test/motifSetFixture'
+import type { DraftCounts } from './albumDraft'
 import {
   DRAFT_MOTIFS_NONE_TEXT,
   DRAFT_MOTIFS_UNASSESSED_TEXT,
+  draftClosingTexts,
+  draftCounts,
+  draftMembership,
   draftMotifText,
+  draftOverviewText,
   draftSizeText,
   formatDraftPhotoCount,
   insertDraftPhoto,
-  isInAlbum,
   isTakenWithoutProposal,
-  wasInAlbum,
+  reAddDecision,
 } from './albumDraft'
 
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
@@ -68,15 +76,176 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
   }
 }
 
-describe('isInAlbum', () => {
-  const cases: { ownStatus: RatingStatus | null; expected: boolean }[] = [
-    { ownStatus: null, expected: true },
-    { ownStatus: 'album_worthy', expected: true },
-    { ownStatus: 'rejected', expected: false },
+/**
+ * DIESELBE Falltabelle wie `backend/tests/test_api_photos.py::TestTheAlbumDraft`: Der Server ist
+ * die Autorität, `draftMembership` bildet sein Prädikat nach. Laufen beide auseinander, zeigte die
+ * Ansicht nach einem Handgriff etwas anderes als nach dem Neuladen.
+ */
+interface MembershipRow {
+  ranking: 'none' | 'not_proposed' | 'proposed'
+  own: RatingStatus | null
+  other: RatingStatus
+  membership: 'out' | 'album' | 'struck'
+}
+
+// Eingecheckte Testdaten des eigenen Repositoriums - kein Fremdinhalt, der zu validieren waere.
+const MEMBERSHIP_FILE: { rows: MembershipRow[] } = JSON.parse(
+  readFileSync(
+    fileURLToPath(
+      new URL('../../../backend/tests/data/album_draft_membership.json', import.meta.url),
+    ),
+    'utf-8',
+  ),
+)
+const MEMBERSHIP_TABLE = MEMBERSHIP_FILE.rows
+
+const OWN = 'daniel'
+
+function rated(own: RatingStatus | null, other: RatingStatus | null = null): RatingOut[] {
+  return [
+    ...(own === null ? [] : [{ user_id: 1, username: OWN, status: own, favorite: false }]),
+    ...(other === null ? [] : [{ user_id: 2, username: 'anna', status: other, favorite: false }]),
+  ]
+}
+
+describe('draftMembership', () => {
+  it('covers the full cross product of ranking form and own status', () => {
+    const keys = MEMBERSHIP_TABLE.map((row) => `${row.ranking}/${String(row.own)}`)
+    expect(new Set(keys).size).toBe(9)
+    for (const form of ['none', 'not_proposed', 'proposed']) {
+      for (const own of ['null', 'album_worthy', 'rejected']) {
+        expect(keys).toContain(`${form}/${own}`)
+      }
+    }
+  })
+
+  it.each(MEMBERSHIP_TABLE)(
+    'ranking $ranking, own $own (other $other) is $membership',
+    ({ ranking: form, own, other, membership }) => {
+      const subject = photo({
+        ranking: form === 'none' ? null : ranking({ proposed: form === 'proposed' }),
+        ratings: rated(own, other),
+      })
+
+      // Die Gegenbewertung des anderen Nutzers steht in `ratings[]` und darf nichts entscheiden.
+      expect(draftMembership(subject, own)).toBe(membership)
+    },
+  )
+})
+
+describe('draftCounts', () => {
+  /*
+   * Die Zählertabelle der Akzeptanzkriterien als Zustandsübergänge über EINE Fixture: vier Fotos
+   * eines Events. Die Zahlen sind aus dem Zustand abgeleitet, nicht aus gezählten Handgriffen -
+   * jeder Schritt setzt nur den eigenen Status und vergleicht.
+   */
+  const start = [
+    photo({ id: 1 }),
+    photo({ id: 2, ratings: rated('album_worthy') }),
+    photo({ id: 3, ranking: ranking({ proposed: false }) }),
+    photo({ id: 4, ranking: ranking({ proposed: false }), ratings: rated('rejected') }),
   ]
 
-  it.each(cases)('is $expected for the own status $ownStatus', ({ ownStatus, expected }) => {
-    expect(isInAlbum(ownStatus)).toBe(expected)
+  function withOwn(items: PhotoOut[], id: number, own: RatingStatus | null): PhotoOut[] {
+    return items.map((item) => (item.id === id ? { ...item, ratings: rated(own) } : item))
+  }
+
+  function delta(before: DraftCounts, after: DraftCounts): number[] {
+    return [
+      after.inAlbum - before.inAlbum,
+      after.taken - before.taken,
+      after.struck - before.struck,
+    ]
+  }
+
+  const initial = draftCounts(start, OWN)
+
+  it('counts the album, the taken and the struck photos of the state', () => {
+    // Das unberührte Kandidatenfoto gehört nicht zur Antwortmenge und zählt nirgends.
+    expect(initial).toEqual({ inAlbum: 2, taken: 1, struck: 1 })
+  })
+
+  it.each([
+    { name: 'Streichen eines „Vorschlag“', id: 1, own: 'rejected', expected: [-1, 0, 1] },
+    { name: 'Streichen eines „Aufgenommen“', id: 2, own: 'rejected', expected: [-1, -1, 1] },
+    {
+      name: 'Wieder aufnehmen, nicht vorgeschlagen',
+      id: 4,
+      own: 'album_worthy',
+      expected: [1, 1, -1],
+    },
+    {
+      name: 'Hinzufügen eines nicht gestrichenen Fotos',
+      id: 3,
+      own: 'album_worthy',
+      expected: [1, 1, 0],
+    },
+    {
+      name: 'Hinzufügen eines gestrichenen Fotos',
+      id: 4,
+      own: 'album_worthy',
+      expected: [1, 1, -1],
+    },
+  ] as const)('$name', ({ id, own, expected }) => {
+    expect(delta(initial, draftCounts(withOwn(start, id, own), OWN))).toEqual(expected)
+  })
+
+  it('Wieder aufnehmen, vorgeschlagen: the own decision goes, a stays', () => {
+    const struck = withOwn(start, 1, 'rejected')
+
+    expect(delta(draftCounts(struck, OWN), draftCounts(withOwn(struck, 1, null), OWN))).toEqual([
+      1, 0, -1,
+    ])
+  })
+
+  it.each([
+    {
+      name: 'Tausch „Vorschlag“ gegen unberührte Alternative',
+      replaced: 1,
+      chosen: 3,
+      expected: [0, 1, 1],
+    },
+    {
+      name: 'Tausch „Aufgenommen“ gegen unberührte Alternative',
+      replaced: 2,
+      chosen: 3,
+      expected: [0, 0, 1],
+    },
+    {
+      name: 'Tausch „Vorschlag“ gegen gestrichene Alternative',
+      replaced: 1,
+      chosen: 4,
+      expected: [0, 1, 0],
+    },
+  ] as const)('$name, and undo restores the start', ({ replaced, chosen, expected }) => {
+    const exchanged = withOwn(withOwn(start, replaced, 'rejected'), chosen, 'album_worthy')
+
+    expect(delta(initial, draftCounts(exchanged, OWN))).toEqual(expected)
+    // Rückgängig setzt den eigenen Status beider Fotos auf den Vorzustand - und damit die Zahlen.
+    const previous = (id: number) => start.find((item) => item.id === id)?.ratings ?? []
+    const undone = exchanged.map((item) =>
+      item.id === replaced || item.id === chosen ? { ...item, ratings: previous(item.id) } : item,
+    )
+    expect(draftCounts(undone, OWN)).toEqual(initial)
+  })
+
+  it('ignores the decisions of the other user', () => {
+    const others = start.map((item) => ({ ...item, ratings: rated(null, 'rejected') }))
+
+    expect(draftCounts(others, OWN)).toEqual({ inAlbum: 2, taken: 0, struck: 0 })
+  })
+})
+
+describe('reAddDecision', () => {
+  it('withdraws the own decision for a photo the proposal carries', () => {
+    expect(reAddDecision(photo())).toBeNull()
+  })
+
+  it.each([
+    { name: 'ranking: null', subject: photo({ ranking: null }) },
+    { name: 'proposed: false', subject: photo({ ranking: ranking({ proposed: false }) }) },
+  ])('takes the photo in when the proposal does not carry it ($name)', ({ subject }) => {
+    expect(reAddDecision(subject)).toBe('album_worthy')
   })
 })
 
@@ -118,19 +287,51 @@ describe('isTakenWithoutProposal', () => {
 })
 
 describe('draftSizeText', () => {
-  it('names the actual count and the target next to each other', () => {
-    expect(draftSizeText(142, 130)).toBe('142 von etwa 130 Bildern')
+  it('names album, target, taken and struck in one sentence', () => {
+    expect(draftSizeText({ inAlbum: 142, taken: 3, struck: 5 }, 130)).toBe(
+      '142 im Album · Richtwert etwa 130 · 3 aufgenommen · 5 gestrichen',
+    )
   })
 
-  it('says the same thing in both directions of deviation', () => {
+  it('says the same thing below, at and above the target', () => {
     // Eine Abweichung nach oben wie nach unten ist ein neutraler Hinweis - derselbe Satzbau, kein
     // zweiter Ton, kein Wort wie "zu wenig" oder "zu viel".
-    expect(draftSizeText(100, 130)).toBe('100 von etwa 130 Bildern')
-    expect(draftSizeText(130, 130)).toBe('130 von etwa 130 Bildern')
+    const shapes = [100, 130, 160].map((inAlbum) =>
+      draftSizeText({ inAlbum, taken: 0, struck: 0 }, 130).replace(/\d+/g, '#'),
+    )
+
+    expect(new Set(shapes).size).toBe(1)
+  })
+})
+
+describe('draftClosingTexts', () => {
+  it('names the album, the interventions and that nothing needs confirming', () => {
+    expect(draftClosingTexts({ inAlbum: 12, taken: 2, struck: 3 }, 10)).toEqual([
+      '12 Fotos im Album, Richtwert etwa 10.',
+      'Deine Eingriffe: 2 aufgenommen, 3 gestrichen.',
+      'Nichts muss bestätigt werden; du kannst jederzeit weiterarbeiten.',
+    ])
   })
 
-  it('carries no digit beyond the two counts', () => {
-    expect(draftSizeText(7, 9).match(/\d+/g)).toEqual(['7', '9'])
+  it('says the proposal stands unchanged without any intervention', () => {
+    expect(draftClosingTexts({ inAlbum: 8, taken: 0, struck: 0 }, 10)[1]).toBe(
+      'Keine Eingriffe – der Vorschlag gilt unverändert.',
+    )
+  })
+
+  it.each([
+    { taken: 1, struck: 0 },
+    { taken: 0, struck: 1 },
+  ])('keeps the intervention sentence for $taken/$struck', ({ taken, struck }) => {
+    expect(draftClosingTexts({ inAlbum: 8, taken, struck }, 10)[1]).toBe(
+      `Deine Eingriffe: ${taken} aufgenommen, ${struck} gestrichen.`,
+    )
+  })
+})
+
+describe('draftOverviewText', () => {
+  it('names days and events', () => {
+    expect(draftOverviewText(3, 17)).toBe('3 Tage · 17 Events')
   })
 })
 
@@ -227,8 +428,8 @@ describe('draftMotifText', () => {
   })
 
   it('leaves out the motifs of a struck photo', () => {
-    // Ein gestrichenes Bild bleibt sichtbar, gehoert aber nicht zum Entwurf (ADR 0098 Punkt 1) -
-    // seine Motive also nicht in die Mischung.
+    // Ein gestrichenes Bild steht in der Antwort, gehoert aber nicht zum Album - seine Motive
+    // also nicht in die Mischung.
     const items = [
       assessed({ id: 1, motifs: motifs({ menschen: true }) }),
       assessed({
@@ -270,23 +471,9 @@ describe('draftMotifText', () => {
   })
 })
 
-describe('wasInAlbum', () => {
-  const cases: { ownStatus: RatingStatus | null; expected: boolean }[] = [
-    { ownStatus: 'rejected', expected: true },
-    { ownStatus: 'album_worthy', expected: false },
-    { ownStatus: null, expected: false },
-  ]
-
-  it.each(cases)('is $expected for the own status $ownStatus', ({ ownStatus, expected }) => {
-    // Das Abzeichen „zuvor im Album" hängt an der EIGENEN Streichung. Ein nie bewertetes Foto
-    // unter den Alternativen war nie im Album - es trägt kein Abzeichen.
-    expect(wasInAlbum(ownStatus)).toBe(expected)
-  })
-})
-
 describe('insertDraftPhoto', () => {
   function list(items: PhotoOut[]) {
-    return { items, total: items.length }
+    return { events: [event()], items }
   }
 
   it('inserts by (event position, taken_at, id) - the sort key of the server', () => {
@@ -299,7 +486,6 @@ describe('insertDraftPhoto', () => {
     const result = insertDraftPhoto(list([first, third]), second)
 
     expect(result.items.map((item) => item.id)).toEqual([1, 2, 3])
-    expect(result.total).toBe(3)
   })
 
   it('sorts a later event behind an earlier one, regardless of the time', () => {

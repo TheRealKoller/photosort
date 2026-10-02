@@ -1,15 +1,27 @@
+import type { QueryClient } from '@tanstack/react-query'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { exchangeDraftPhoto, listDraftAlternatives, listPhotos } from '../api/photos'
+import {
+  exchangeDraftPhoto,
+  getAlbumDraft,
+  listDraftAlternatives,
+  listPhotos,
+  undoDraftExchange,
+} from '../api/photos'
 import { deleteRating, setFavorite, setRating } from '../api/ratings'
 import type {
+  AlbumDraftOut,
+  DraftExchangeUndoIn,
   PhotoListOut,
   PhotoOut,
   RatingFilter,
   RatingStatus,
   RatingWriteOut,
 } from '../api/types'
-import { insertDraftPhoto } from '../utils/albumDraft'
+import { decodeUsername } from '../auth/jwt'
+import { getToken } from '../auth/token'
+import { draftMembership, insertDraftPhoto } from '../utils/albumDraft'
+import { ownRatingStatus } from '../utils/ownRating'
 
 /**
  * Batch-Groesse fuer das Foto-Listing: Fotos werden paginiert geladen (Batches statt Gesamt-Reload
@@ -32,88 +44,126 @@ function photosQueryKey(
  * photosQueryKey oben - die breite Invalidierung der Bewertungsmutationen trifft ihn damit mit,
  * wenn anderswo bewertet wird (Raster, Einzelbild, Endauswahl).
  *
- * Die Entwurfsansicht selbst benutzt genau deshalb NICHT jene Mutationen, sondern
- * `useDraftDecisionMutation`: ein Neuladen der Entwurfsliste bei jeder Entscheidung risse die
- * gerade gestrichene Kachel aus der Liste.
+ * Die Entwurfsansicht selbst benutzt genau deshalb NICHT jene Mutationen, sondern die eigenen
+ * unten: Sie schreiben den Serverzustand in den geladenen Entwurf, statt ihn neu zu laden - das
+ * hielte weder Scrollposition noch Fokus.
  */
 const DRAFT_QUERY_SEGMENT = 'draft'
 
-function draftQueryKey(projectId: number) {
-  return ['photos', projectId, DRAFT_QUERY_SEGMENT] as const
+/**
+ * SICHERHEIT (S4): Entwurfs- und Alternativen-Schlüssel tragen die angemeldete Identität HINTER
+ * dem Präfix `['photos', projectId]` (Muster `projectStatsQueryKey`). Der `QueryClient` überlebt
+ * die Anmeldung eines zweiten Nutzers im selben Tab; ohne die Identität sähe dieser bis zum
+ * Abschluss des Neuladens den Entwurf des ersten, samt „Deine Eingriffe". Hinter dem Präfix, damit
+ * die breite Invalidierung beide weiter trifft und die Ausnahme des Entwurfsschlüssels über das
+ * dritte Glied greift. `decodeUsername` dient nur der Cache-Unterscheidung, nie einer
+ * Zugriffsentscheidung.
+ */
+function currentIdentity(): string | null {
+  const token = getToken()
+  return token ? decodeUsername(token) : null
 }
 
-/**
- * Der Album-Entwurf DIESES Nutzers. KEIN Leseparameter im Schluessel: welche Fotos er umfasst,
- * ist eine Eigenschaft des Laufs und der eigenen Entscheidungen, keine der Anfrage - eine zweite
- * Variante desselben Projekts kann es nicht geben.
- */
-export function useDraftQuery(projectId: number) {
-  return useQuery({
-    queryKey: draftQueryKey(projectId),
-    queryFn: () => listPhotos(projectId, { draft: true }),
+export function draftQueryKey(projectId: number) {
+  return ['photos', projectId, DRAFT_QUERY_SEGMENT, currentIdentity()] as const
+}
+
+/** Der eigene Entwurfsschlüssel bleibt von der breiten Invalidierung ausgenommen - sein Stand ist
+ * bereits der, den der Server jetzt gäbe. */
+function invalidateAllButTheDraft(queryClient: QueryClient, projectId: number) {
+  void queryClient.invalidateQueries({
+    queryKey: ['photos', projectId],
+    predicate: (query) => query.queryKey[2] !== DRAFT_QUERY_SEGMENT,
   })
 }
 
 /**
- * Schreibt den Zustand EINER Bewertungszeile in eine bereits geladene Fotoliste fort - rein, ohne
- * Cache und ohne Netz.
+ * Der Album-Entwurf DIESES Nutzers samt Eventliste. KEIN Leseparameter im Schluessel: welche
+ * Fotos er umfasst, ist eine Eigenschaft des Laufs und der eigenen Entscheidungen. Geladen wird er
+ * beim Öffnen genau einmal; jeder Handgriff schreibt danach in den Cache.
+ */
+export function useDraftQuery(projectId: number) {
+  return useQuery({
+    queryKey: draftQueryKey(projectId),
+    queryFn: () => getAlbumDraft(projectId),
+  })
+}
+
+/**
+ * Schreibt den Zustand EINER Bewertungszeile in den geladenen Entwurf fort - rein, ohne Cache und
+ * ohne Netz. Danach ist der Entwurf die Antwort, die der Server jetzt gäbe.
  *
  * Der betroffene Eintrag wird ueber `user_id` der SERVERANTWORT getroffen, nie geraten; der
  * `username` fuellt allein das Feld, ueber das `utils/ownRating.ts` den eigenen Zustand spaeter
  * wiederfindet. Eine geleerte Zeile (`status: null` und kein Kennzeichen) verschwindet, statt als
- * Bewertung ohne Inhalt stehenzubleiben.
+ * Bewertung ohne Inhalt stehenzubleiben. Ein Foto, das damit nicht mehr zur Antwortmenge gehört
+ * (`draftMembership === 'out'`), verlässt den Entwurf.
  *
  * Fotos ohne Bezug behalten ihre OBJEKTREFERENZ - ihre Kacheln rendern dadurch nicht neu.
  */
 export function applyWrittenRating(
-  list: PhotoListOut,
+  draft: AlbumDraftOut,
   written: RatingWriteOut,
   username: string,
-): PhotoListOut {
-  return {
-    ...list,
-    items: list.items.map((item) => {
-      if (item.id !== written.photo_id) {
-        return item
-      }
-      const others = item.ratings.filter((rating) => rating.user_id !== written.user_id)
-      if (written.status === null && !written.favorite) {
-        return { ...item, ratings: others }
-      }
-      return {
-        ...item,
-        ratings: [
-          ...others,
-          {
-            user_id: written.user_id,
-            username,
-            status: written.status,
-            favorite: written.favorite,
-          },
-        ],
-      }
-    }),
+): AlbumDraftOut {
+  const items: PhotoOut[] = []
+  for (const item of draft.items) {
+    if (item.id !== written.photo_id) {
+      items.push(item)
+      continue
+    }
+    const others = item.ratings.filter((rating) => rating.user_id !== written.user_id)
+    const ratings =
+      written.status === null && !written.favorite
+        ? others
+        : [
+            ...others,
+            {
+              user_id: written.user_id,
+              username,
+              status: written.status,
+              favorite: written.favorite,
+            },
+          ]
+    const next = { ...item, ratings }
+    if (draftMembership(next, ownRatingStatus(ratings, username)) !== 'out') {
+      items.push(next)
+    }
   }
+  return { ...draft, items }
 }
 
 // Derselbe ['photos', projectId]-Praefix wie oben, und hier ist er nicht Bequemlichkeit, sondern
 // Bedingung: die Alternativen sind eine ZWEITE Query ueber demselben Datensatz auf demselben
-// Bildschirm. Dasselbe Foto kann in beiden Listen stehen; wird es in der einen bewertet, muss die
-// andere denselben Zustand zeigen. Genau das leistet die bestehende breite Invalidierung - ohne den
-// Praefix stuenden zwei Wahrheiten ueber dasselbe Foto nebeneinander.
+// Bildschirm. Wird ein Foto im Entwurf entschieden, muss die Kandidatenliste denselben Zustand
+// zeigen - genau das leistet die breite Invalidierung.
 //
-// DAS BEZUGSBILD GEHOERT IN DEN SCHLUESSEL: An ihm haengen die Menge (sein Entwurf wird abgezogen)
-// UND die Reihenfolge (seine Motive ordnen). Zwei Bilder desselben Events unter einem Schluessel
-// zeigten dem zweiten Dialog die Alternativen des ersten.
-function draftAlternativesQueryKey(projectId: number, eventId: number, photoId: number) {
-  return ['photos', projectId, 'alternatives', eventId, photoId] as const
+// DAS BEZUGSBILD UND DIE SEITENGROESSE GEHOEREN IN DEN SCHLUESSEL: Am Bezugsbild haengen Menge und
+// Reihenfolge; Band (vier, mit Bezugsbild), Dialog (mit Bezugsbild) und Hinzufuegen-Feld (acht,
+// ohne) holten unter einem gemeinsamen Schluessel dieselbe Cache-Zeile.
+function draftAlternativesQueryKey(
+  projectId: number,
+  eventId: number,
+  photoId: number | null,
+  pageSize: number,
+) {
+  return [
+    'photos',
+    projectId,
+    'alternatives',
+    currentIdentity(),
+    eventId,
+    photoId,
+    pageSize,
+  ] as const
 }
 
 export interface DraftAlternativesQueryParams {
   eventId: number
-  photoId: number
-  /** Der Request laeuft ausschliesslich im GEOEFFNETEN Dialog - eine Abfrage je geoeffnetem Bild,
-   * nie eine je Kachel. */
+  /** Das Bezugsbild; `null` fuer das Hinzufuegen-Feld, das nach Qualitaet ordnet. */
+  photoId: number | null
+  /** Der Request laeuft ausschliesslich im GEOEFFNETEN Band, Panel oder Dialog - eine Abfrage je
+   * geoeffnetem Bild, nie eine je Kachel. */
   enabled: boolean
   pageSize?: number
 }
@@ -123,11 +173,11 @@ export function useDraftAlternativesQuery(
   { eventId, photoId, enabled, pageSize = PHOTOS_PAGE_SIZE }: DraftAlternativesQueryParams,
 ) {
   return useInfiniteQuery({
-    queryKey: draftAlternativesQueryKey(projectId, eventId, photoId),
+    queryKey: draftAlternativesQueryKey(projectId, eventId, photoId, pageSize),
     queryFn: ({ pageParam }: { pageParam: number }) =>
       listDraftAlternatives(projectId, {
         eventId,
-        photoId,
+        ...(photoId === null ? {} : { photoId }),
         limit: pageSize,
         offset: pageParam,
       }),
@@ -161,50 +211,50 @@ export function usePhotoSequenceQuery(
 }
 
 /**
- * Die Albumentscheidung AUS DER ENTWURFSANSICHT - „Im Album" ⇄ „Gestrichen".
+ * Ein Handgriff AUS DER ENTWURFSANSICHT an EINEM Foto: Streichen, Wieder aufnehmen, Hinzufügen und
+ * Rückgängig nach dem Streichen. `status: null` nimmt die eigene Entscheidung zurück (`DELETE`).
+ * `insert` ist das Foto aus dem Hinzufügen-Panel, das noch nicht im Entwurf steht.
  *
  * Sie schreibt dieselbe Bewertung wie `useSetRatingMutation`, behandelt den Cache danach aber
- * anders, und das ist ihr ganzer Zweck (ADR 0098 Punkt 6): Sie schreibt den betroffenen Eintrag
- * im Entwurfs-Cache FORT und invalidiert ausschließlich die ÜBRIGEN Fotoabfragen des Projekts.
- *
- * Ohne diese Trennung träfe die breite Invalidierung den Entwurfsschlüssel mit: Ein gerade
- * gestrichenes Bild fiele beim Neuladen aus der Antwortmenge, die Kachel verschwände unter dem
- * Finger, und der nächste Druck landete auf einem anderen Bild. Ein gestrichenes Bild bleibt
- * stattdessen an seiner Stelle stehen.
+ * anders, und das ist ihr ganzer Zweck: Sie setzt den Serverzustand in den Entwurfs-Cache ein
+ * (nicht optimistisch, kein Rollback-Pfad) und invalidiert ausschließlich die ÜBRIGEN Fotoabfragen
+ * des Projekts. Ein Neuladen des Entwurfs hielte weder Scrollposition noch Fokus.
  */
 export function useDraftDecisionMutation(projectId: number, username: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ photoId, status }: { photoId: number; status: RatingStatus }) =>
-      setRating(photoId, status),
-    onSuccess: (written) => {
+    mutationFn: ({
+      photoId,
+      status,
+    }: {
+      photoId: number
+      status: RatingStatus | null
+      insert?: PhotoOut
+    }) => (status === null ? deleteRating(photoId) : setRating(photoId, status)),
+    onSuccess: (written, { insert }) => {
       if (username !== null) {
-        queryClient.setQueryData<PhotoListOut>(draftQueryKey(projectId), (current) =>
-          current === undefined ? current : applyWrittenRating(current, written, username),
-        )
+        queryClient.setQueryData<AlbumDraftOut>(draftQueryKey(projectId), (current) => {
+          if (current === undefined) {
+            return current
+          }
+          // Erst einfügen, dann fortschreiben: `applyWrittenRating` trifft nur Einträge, die
+          // bereits im Entwurf stehen.
+          const withInsert = insert === undefined ? current : insertDraftPhoto(current, insert)
+          return applyWrittenRating(withInsert, written, username)
+        })
       }
-      // Derselbe breite Präfix wie überall - aber der Entwurfsschlüssel ist ausgenommen, weil
-      // sein Stand oben bereits geschrieben wurde.
-      void queryClient.invalidateQueries({
-        queryKey: ['photos', projectId],
-        predicate: (query) => query.queryKey[2] !== DRAFT_QUERY_SEGMENT,
-      })
+      invalidateAllButTheDraft(queryClient, projectId)
     },
   })
 }
 
 /**
- * Der Austausch EINES Bildes gegen eine Alternative — EIN Aufruf, eine Transaktion, ein Ereignis.
+ * Der Tausch EINES Bildes gegen eine Alternative — EIN Aufruf, eine Transaktion, ein Ereignis.
  *
- * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht. Der Server schreibt
- * beide Bewertungszeilen zusammen und hält das Paar als EIN Ereignis fest. Welche der beiden
- * Zeilen dabei zuerst entsteht, ist ohne Belang: Ein halb ausgeführter Austausch kann nicht
- * bestehen bleiben, und zwischen ihnen ist kein Zustand beobachtbar.
- *
- * Derselbe Cache-Umgang wie bei `useDraftDecisionMutation` und aus demselben Grund: Die
- * Entwurfsliste wird NICHT neu geladen. Das ersetzte Bild bleibt an seiner Stelle und trägt
- * „gestrichen"; die Alternative wird über `insertDraftPhoto` an ihren chronologischen Platz
- * geschrieben — denselben, den der Server ihr beim nächsten vollständigen Laden gäbe.
+ * „B statt A" ist die Aussage; die beiden Bilder für sich tragen sie nicht. Derselbe Cache-Umgang
+ * wie bei `useDraftDecisionMutation`: Das ersetzte Bild bleibt im Cache und trägt „gestrichen"
+ * (die Ansicht blendet es aus); die Alternative wird über `insertDraftPhoto` an ihren
+ * chronologischen Platz geschrieben — denselben, den der Server ihr beim nächsten Laden gäbe.
  */
 export function useDraftExchangeMutation(projectId: number, username: string | null) {
   const queryClient = useQueryClient()
@@ -213,12 +263,10 @@ export function useDraftExchangeMutation(projectId: number, username: string | n
       exchangeDraftPhoto(projectId, chosen.id, replaced.id),
     onSuccess: ({ struck, taken }, { chosen }) => {
       if (username !== null) {
-        queryClient.setQueryData<PhotoListOut>(draftQueryKey(projectId), (current) => {
+        queryClient.setQueryData<AlbumDraftOut>(draftQueryKey(projectId), (current) => {
           if (current === undefined) {
             return current
           }
-          // Erst aufnehmen, dann beide Bewertungen fortschreiben: `applyWrittenRating` trifft nur
-          // Einträge, die bereits in der Liste stehen.
           const withChosen = insertDraftPhoto(current, chosen)
           return applyWrittenRating(
             applyWrittenRating(withChosen, struck, username),
@@ -227,10 +275,30 @@ export function useDraftExchangeMutation(projectId: number, username: string | n
           )
         })
       }
-      void queryClient.invalidateQueries({
-        queryKey: ['photos', projectId],
-        predicate: (query) => query.queryKey[2] !== DRAFT_QUERY_SEGMENT,
-      })
+      invalidateAllButTheDraft(queryClient, projectId)
+    },
+  })
+}
+
+/**
+ * Das Rückgängig nach einem Tausch: EIN Aufruf stellt beide eigenen Zeilen auf ihren Vorzustand
+ * zurück, alle oder keine. Bei Erfolg setzt sie beide geschriebenen Zustände in den Cache - die
+ * Alternative verlässt dabei den Entwurf, wenn sie davor unberührt war. Bei einem Fehlschlag
+ * (`409`, weil sich eines der beiden Fotos inzwischen geändert hat) bleibt der Cache unberührt.
+ */
+export function useDraftExchangeUndoMutation(projectId: number, username: string | null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: DraftExchangeUndoIn) => undoDraftExchange(projectId, body),
+    onSuccess: ({ photo, replaced }) => {
+      if (username !== null) {
+        queryClient.setQueryData<AlbumDraftOut>(draftQueryKey(projectId), (current) =>
+          current === undefined
+            ? current
+            : applyWrittenRating(applyWrittenRating(current, replaced, username), photo, username),
+        )
+      }
+      invalidateAllButTheDraft(queryClient, projectId)
     },
   })
 }

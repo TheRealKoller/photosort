@@ -480,6 +480,24 @@ export interface DraftExchangeOut {
   struck: RatingWriteOut
 }
 
+/** Der Body des Rückgängig nach einem Tausch: dieselben beiden Ids wie beim Tausch und die
+ * beiden Vorzustände - jeweils der einzige Zustand außer „keine Entscheidung", aus dem der Tausch
+ * die Seite geholt haben kann. Beide Felder sind Pflicht, auch als `null`. */
+export interface DraftExchangeUndoIn {
+  photo_id: number
+  replaced_photo_id: number
+  photo_previous_status: 'rejected' | null
+  replaced_previous_status: 'album_worthy' | null
+}
+
+/** Der geschriebene Zustand beider eigenen Zeilen nach dem Rückgängig. */
+export interface DraftExchangeUndoOut {
+  /** Die damals gewählte Alternative. */
+  photo: RatingWriteOut
+  /** Das damals ersetzte Bild. */
+  replaced: RatingWriteOut
+}
+
 // Die Rangzeile eines Fotos aus der Kriterien-/Rangfolgen-Pipeline. Ein Foto hat je Lauf
 // GENAU EINE davon - die Partition ist allein das Event.
 export interface RankingOut {
@@ -864,6 +882,17 @@ export interface AlbumSuitabilityOut {
 export interface PhotoListOut {
   items: PhotoOut[]
   total: number
+}
+
+/**
+ * Der Album-Entwurf des anfragenden Nutzers: ALLE Events des letzten erfolgreichen Laufs nach
+ * `position` (auch die ohne Foto im Entwurf) und die Fotos `Vorschlag ∪ eigene Aufnahmen ∪ eigene
+ * Streichungen mit Rangzeile` in Serverreihenfolge. Innerhalb der Antwort gilt: im Album genau
+ * dann, wenn der eigene Status nicht `rejected` ist. KEIN `total`, keine Seitenweise.
+ */
+export interface AlbumDraftOut {
+  events: EventOut[]
+  items: PhotoOut[]
 }
 
 // Ab hier: die Momentaufnahme eines Projekts (GET /projects/{id}/stats). Reine Anzeigedaten -
