@@ -145,7 +145,9 @@ Praktisch relevant:
 
 ## Wiederkehrende Muster
 
-- **Foto-Karte (`components/PhotoCard.tsx`)** — der eine Baustein für alle drei Foto-Ansichten (Raster, Kuratierung, Vergleich). Karte `rounded-lg border-border bg-elevated p-2 sm:p-3`; darin Bildbereich (`aspect-square overflow-hidden rounded-md`) mit den beiden Ecken-Overlays, darunter die Statuszeile (Kennzeichen links, Dateiname rechts), darunter der Fußzeilen-Slot. Verbindlich:
+- **Foto-Karte (`components/PhotoCard.tsx`)** — der eine Baustein für Album-Entwurf und Endauswahl (`CurationPhotoTile`, `SelectionPhotoTile`); der Bildbestand hat mit `PhotoGridTile` eine eigene Kachel. Karte `rounded-lg border-border bg-elevated p-2 sm:p-3`; darin Bildbereich (`aspect-square overflow-hidden rounded-md`) mit den beiden Ecken-Overlays, darunter die Statuszeile (Kennzeichen links, Dateiname rechts), darunter der Fußzeilen-Slot. Verbindlich:
+  - **Bild eingepasst, nie beschnitten** (Spec 0563): Bildfläche bleibt quadratisch (ruhige Reihe), Bild `size-full object-contain`, nie `object-cover`. Leerfläche = Kartenfläche `--elevated`, kein Rahmen.
+  - **Raster immer `PHOTO_CARD_GRID_CLASS`** (`grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4`, höchstens 4, Sprung bei `lg`) — auch Band, Hinzufügen-Panel, Gestrichen-Zeile und Platzhalter; nie eigene Spaltenklassen.
   - **Vier Zustände** über `data-rating-status`: neu / Favorit / Album-würdig / aussortiert. Der Board-Zustand **„ausgewählt“ ist bewusst nicht gebaut** — es gibt keine `selected`-Prop und kein `data-selected`; er kommt mit der Story, die eine Foto-Auswahl einführt.
   - **Das Kennzeichen sitzt im Kartenkörper**, nicht in der Bildecke (dort ist kein Platz für ein Textbadge, und die Ecke oben rechts gehört dem Info-Trigger).
   - **Ecken-Overlays sind Geschwister der Bildfläche, nie ihre Kinder** — die Bildfläche beschneidet.
