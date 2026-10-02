@@ -1,6 +1,6 @@
 # 0563 - Größere, unbeschnittene Fotos im Album-Entwurf und in der Endauswahl
 
-**Status:** Accepted
+**Status:** Implemented ([PR #564](https://github.com/TheRealKoller/photosort/pull/564))
 **Erstellt:** 2026-10-02
 **Bezug:** [#563](https://github.com/TheRealKoller/photosort/issues/563), Nachbesserung zu [Spec 0558](./0558-album-entwurf-verstaendlich.md)
 
