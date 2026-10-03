@@ -1,6 +1,6 @@
 # 0565 - Neue Versionen ohne Strg+F5 automatisch im Browser und in der PWA
 
-**Status:** Implemented
+**Status:** Implemented ([PR #570](https://github.com/TheRealKoller/photosort/pull/570))
 **Erstellt:** 2026-10-03
 **Bezug:** [Issue #565](https://github.com/TheRealKoller/photosort/issues/565)
 
