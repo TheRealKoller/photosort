@@ -134,19 +134,27 @@ describe('ProjectOverviewHost: von selbst', () => {
       resolve = settle
     })
     answer({ seen: () => promise })
+    // Ein Befund im Beobachter-Rückruf liefe ins Leere - festgehalten wird deshalb jeder Moment,
+    // in dem ein Dialog im Dokument steht, und erst danach geprüft.
+    let sawDialog = false
     const observer = new MutationObserver(() => {
-      expect(document.querySelector('dialog')).toBeNull()
+      sawDialog ||= document.querySelector('dialog') !== null
     })
     observer.observe(document.body, { childList: true, subtree: true })
     renderHost()
 
+    // Das Projekt ist geladen, der Merker noch unbekannt: Jetzt darf der Dialog nicht stehen.
     await waitFor(() => expect(calls()).toContain('GET /projects/1'))
+    await act(async () => {})
+    expect(screen.queryByRole('dialog')).toBeNull()
+
     await act(async () => {
       resolve({ seen: true })
       await promise
     })
     observer.disconnect()
 
+    expect(sawDialog, 'ein Dialog stand zwischendurch im Dokument').toBe(false)
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

@@ -84,7 +84,8 @@ function ValidProjectOverviewHost({
   return (
     <ProjectOverviewContext.Provider value={controls}>
       {children}
-      {projectQuery.isSuccess && project !== undefined && (
+      {/* Ohne geladenes Projekt kein Dialog: Solange es laedt und bei `404` gibt es keine Daten. */}
+      {project !== undefined && (
         <WorkflowOverviewDialog
           project={project}
           open={isOpenedByHand || isUnseen}
