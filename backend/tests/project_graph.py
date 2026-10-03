@@ -50,6 +50,7 @@ from photosort.models import (
     PlaceLookup,
     Project,
     ProjectCamera,
+    ProjectOverviewSeen,
     Rating,
     RatingStatus,
     RemoteCategoryClassificationRun,
@@ -203,6 +204,7 @@ async def build_project_graph(
                 status=RatingStatus.ALBUM_WORTHY,
                 favorite=True,
             ),
+            ProjectOverviewSeen(user_id=user.id, project_id=project.id),
             PhotoScore(photo_id=photo.id, sharpness=0.8, exposure=0.5, computed_at=now),
             PhotoCriterionScore(
                 photo_id=photo.id,

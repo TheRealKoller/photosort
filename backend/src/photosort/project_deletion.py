@@ -58,6 +58,7 @@ from photosort.models import (
     PlaceLookup,
     Project,
     ProjectCamera,
+    ProjectOverviewSeen,
     Rating,
     RemoteCategoryClassificationRun,
     ScanRun,
@@ -220,6 +221,13 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         delete(RemoteCategoryClassificationRun).where(
             RemoteCategoryClassificationRun.project_id.in_(project_ids)
         ),
+    )
+    # Der Merker "Ablaufuebersicht gesehen" beider Personen. Er haengt zugleich an `users` - der
+    # Nutzer wird dabei NICHT mitgeloescht. Die Position folgt der per Test erzwungenen Ordnung
+    # `reversed(Base.metadata.sorted_tables)` - VOR `projects`, deren Zeilen ihr Elternteil sind.
+    await _run(
+        "project_overview_seen",
+        delete(ProjectOverviewSeen).where(ProjectOverviewSeen.project_id.in_(project_ids)),
     )
     # NACH photos (die zeigen ueber `camera_id` auf sie), VOR projects (darauf zeigen sie selbst).
     # Unter Postgres bliebe sonst eine Fremdschluesselverletzung bzw. eine verwaiste Zeile.

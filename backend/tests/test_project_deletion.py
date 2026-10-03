@@ -23,7 +23,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.db import Base
-from photosort.models import CriterionScoringRun, PersonReference, PhotoPersonCorrection, Project
+from photosort.models import (
+    CriterionScoringRun,
+    PersonReference,
+    PhotoPersonCorrection,
+    Project,
+    ProjectOverviewSeen,
+)
 from photosort.persons import current_centroids
 from photosort.project_deletion import collect_photo_cache_keys, delete_projects
 from photosort.quality_weights import store_weights
@@ -211,6 +217,35 @@ class TestThePersonsSurviveEveryProjectDeletion:
         assert await count_rows(db_session, "person_references") == 2
         assert await db_session.get(PersonReference, linked) is not None
         assert await current_centroids(db_session, model_key=GRAPH_MODEL_KEY) == centroids_before
+
+
+async def test_the_overview_seen_markers_of_both_persons_go_with_the_project(
+    db_session: AsyncSession,
+) -> None:
+    """Der Merker "Ablaufuebersicht gesehen" haengt an Person UND Projekt. Mit dem Projekt
+    verschwinden die Zeilen beider Personen; die Zeilen des behaltenen Projekts und die Personen
+    selbst bleiben."""
+    kept = await build_project_graph(db_session, "Behalten")
+    doomed = await build_project_graph(db_session, "Weg")
+    other = await get_or_create_user(db_session, "zweite-person")
+    db_session.add_all(
+        [
+            ProjectOverviewSeen(user_id=other.id, project_id=kept.project_id),
+            ProjectOverviewSeen(user_id=other.id, project_id=doomed.project_id),
+        ]
+    )
+    await db_session.commit()
+    assert await count_rows(db_session, "project_overview_seen") == 4
+
+    await delete_projects(db_session, [doomed.project_id])
+    await db_session.commit()
+
+    remaining = (
+        await db_session.execute(select(ProjectOverviewSeen.project_id).distinct())
+    ).scalars()
+    assert list(remaining) == [kept.project_id]
+    assert await count_rows(db_session, "project_overview_seen") == 2
+    assert await count_rows(db_session, "users") == 2
 
 
 async def test_delete_projects_without_ids_deletes_nothing(db_session: AsyncSession) -> None:
