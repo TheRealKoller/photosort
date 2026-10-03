@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 
+import { ApiError } from '../api/client'
 import { useMarkOverviewSeen, useOverviewSeen } from '../hooks/useOverviewSeen'
 import { ProjectOverviewContext, type ProjectOverviewControls } from '../hooks/useProjectOverview'
 import { useProjectQuery } from '../hooks/useProjects'
@@ -69,6 +70,7 @@ function ValidProjectOverviewHost({
 
   const isUnseen = seenQuery.data?.seen === false || seenQuery.isError
   const project = projectQuery.data
+  const isGone = projectQuery.error instanceof ApiError && projectQuery.error.status === 404
 
   function handleClose(): void {
     setIsOpenedByHand(false)
@@ -84,8 +86,10 @@ function ValidProjectOverviewHost({
   return (
     <ProjectOverviewContext.Provider value={controls}>
       {children}
-      {/* Ohne geladenes Projekt kein Dialog: Solange es laedt und bei `404` gibt es keine Daten. */}
-      {project !== undefined && (
+      {/* Ohne geladenes Projekt kein Dialog. Ein `404` schlaegt dabei den Cache: Ist das Projekt
+          inzwischen geloescht, haelt sein zwischengespeicherter Stand den Dialog nicht offen. Ein
+          sonstiger, voruebergehender Abruffehler laesst einen offenen Dialog stehen. */}
+      {project !== undefined && !isGone && (
         <WorkflowOverviewDialog
           project={project}
           open={isOpenedByHand || isUnseen}

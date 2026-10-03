@@ -189,6 +189,47 @@ describe('ProjectOverviewHost: von selbst', () => {
       expect(screen.queryByRole('dialog')).toBeNull()
     },
   )
+
+  it('schließt, wenn ein späterer Abruf das Projekt nicht mehr findet (404)', async () => {
+    // Ohne Wiederholung des Projektabrufs - sonst wartete der Test die Rückoff-Pausen ab.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let gone = false
+    answer({
+      project: () =>
+        gone
+          ? Promise.reject(new ApiError(404, 'Projekt nicht gefunden.'))
+          : Promise.resolve(PROJECT),
+    })
+    renderHost('1', { queryClient })
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    // Die andere Person löscht das Projekt; der nächste Abruf liefert 404, der Cache hält noch
+    // die alten Daten.
+    gone = true
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['project', 1] })
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('bleibt bei einem vorübergehenden Abruffehler offen', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let broken = false
+    answer({
+      project: () =>
+        broken ? Promise.reject(new ApiError(500, 'kaputt')) : Promise.resolve(PROJECT),
+    })
+    renderHost('1', { queryClient })
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    broken = true
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['project', 1] })
+    })
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
 })
 
 describe('ProjectOverviewHost: Schließen', () => {
