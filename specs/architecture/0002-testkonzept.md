@@ -1,7 +1,7 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-10-02
+**Letzte Aktualisierung:** 2026-10-03
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil das Dokument je Testgegenstand das
 Muster führt, das beim nächsten gleichartigen Fall wiederverwendet wird — und die benannten
 Lücken, die nirgends sonst stehen.
@@ -1574,9 +1574,29 @@ Der Satz bleibt klein und deckte mit seinen ersten sieben Specs genau die zuvor 
 | `kuratierung-grossansicht` | **Neu mit Spec [`0531`](../features/0531-kuratierung-grossansicht.md), in beiden Breiten:** Ausdehnung der Großansicht an der `sm`-Grenze (639 px randlos, 640 px mit 48 px seitlichem und 24 px oberem/unterem Rand), Treffer auf dem Rand liefert den Backdrop, Deckkraft von `::backdrop` > 0; das Bild in zwei Formaten und mit aufgeklappten Details in der Bühne eingepasst (eine Achse bündig, Format wie das natürliche); Klick neben das Bild schließt, auf das Bild nicht; scrollY, URL, Fokus und Verlaufsposition je Schließweg; zweimal Escape (synthetisch und nativ); Reload | paarweise verschiedene Formate als Vorbedingung; zwei Ausdehnungen, die sich unterscheiden müssen; scrollY, URL und Fokus je Schließweg unverändert, auch mit einem Auslöser, der nur **teilweise** im Sichtfenster liegt, und bei einem Öffnen ohne Fokus (wie Safari) — dass die Fokus-Rückgabe mit `preventScroll` fokussiert, erzwingt nicht dieser Spec, sondern der Unit-Test `useCurationLightbox.test.tsx > focuses the registered trigger without scrolling when the photo closes`; die Verlaufsposition (`navigation.currentEntry.index`) ist **sofort** nach dem Verschwinden der Großansicht dieselbe wie vor dem Öffnen, je Schließweg und nach zweimal Escape — ohne `expect.poll`, denn ein Warten verdeckte genau den Moment, in dem ein Nutzer wieder Zurück drückt; genau **ein** `goBack()` bis zur Projektseite, deren URL erst nach der letzten Weiterleitung festgehalten ist; jede Meldung nennt Test und Schließweg; Gegenprobe: `close()` stets im `replace`-Zweig macht beide Tests am ersten Schließweg rot; Rot-Nachweis im PR |
 | `duplikat-vergleich` | **Neu mit Spec [`0533`](../features/0533-duplikatstapel-vergleichsansicht.md), in beiden Breiten:** Wahlschaltflächen liegen im Rechteck ihrer Karte; die Großansicht ordnet Seitenspalte und Bühne ab `lg` nebeneinander, darunter untereinander, den Streifen darunter; das Bühnenbild wird per Eck-Treffertest auf dem Inhaltsrechteck von `object-contain` selbst getroffen | zwei Anordnungen, die sich unterscheiden müssen; Vorbedingung, dass die Großansicht offen ist (`h2` sichtbar); Kardinalität der gemessenen Karten mit Wahlzeile; Streifen mit `scrollWidth > clientWidth` |
 | `ausschuss-stapel` | **Neu mit Spec 0533, in beiden Breiten:** die Duplikat-Stapel im Ausschuss-Schritt des Projekts „Demo — Duplikate“ (B1/B4/B5) | genau zwei Stapel als Vorbedingung; hintere Karten ragen nicht oben und rechts über die vordere oder liegen außerhalb der Kachel; Treffertest auf die nur von ihnen belegte Fläche liefert nicht den Link; Kennzeichen oder Dateiname außerhalb der vorderen Karte; eine gekürzte Beschriftung außer dem Dateinamen |
+| `release-wechsel` | **Neu mit Spec [`0565`](../features/0565-neue-version-ohne-hard-reload.md), nur `desktop`:** nach einem Release lädt F5, ein Deep-Link und eine neu geöffnete Seite beim ersten Mal das Einstiegs-Bundle des neuen Builds, ohne Request an Assets des alten und ohne Umweg über `/login`; eine laufende Sitzung lädt beim SW-Wechsel nicht neu; offline startet die zuletzt geladene Version — vor dem Release A, nach F5 auf B und Übernahme durch dessen Worker B | Einstiegs-Bundle ≠ dem der aktuellen Server-`index.html`; ein Request an eine nur im alten Build vorhandene Datei; Fenster-Marker, Eingabe, Route oder Scrollposition nach `controllerchange` verändert; App-Hülle offline nicht sichtbar oder offline ein anderes Einstiegs-Bundle als das zuletzt vorgehaltene |
 | `toolchain` | **Nicht die Anwendung, sondern die Zusagen dieser Ebene selbst:** das Verlässlichkeitsregime (`retries: 0`, `forbidOnly`, `workers: 1`), die zwei festen Viewport-Projekte, die Ziel-Allowlist der Ad-hoc-Werkzeuge (`resolveBaseUrl`), die Origin-Passung des gespeicherten Anmeldezustands (`authStateCoversOrigin`), und die Bindung von vier Doku-/Code-Aussagen aneinander (Unverbindlichkeit von `review-ux`, Freigabe-Zeichenkette und Demo-Projektnamen aus `demo_state.py`, Token-Schlüssel aus `frontend/src/auth/token.ts`) | geprüft wird der **wirksame** Konfigurationswert, nicht der Dateiinhalt — eine Textsuche ließe sich mit `--retries=2` umgehen; die Projektliste hat eine exakte Kardinalitäts-Assertion; `resolveBaseUrl` und `authStateCoversOrigin` haben je Bedingung einen eigenen Abweisungsfall **plus** Positivfall, sonst bestünde auch eine Sperre, die schlicht alles ablehnt (bei `authStateCoversOrigin` wäre genau das ein Dauer-Neuanmelden statt eines stillen Fehlers) |
 
 **Bewusst nicht aufgenommen**, obwohl inhaltlich naheliegend: (a) **Skelett-/Ladezustände** — sie deterministisch sichtbar zu machen verlangte künstliche Verzögerungen, also genau die festen Wartezeiten, die das Regime ausschließt; (b) **visuelle Unterscheidbarkeit der Bewertungs-Badge-Farben** — das ist eine nachrechenbare Zusage und liegt bereits im Kontrast-Block des Design-Vertrags (`designSystem.contract.test.ts`), ein E2E-Spec brächte dort nichts hinzu und dupliziert eine bestehende Zusicherung; (c) **pixelbasierter Referenzbildvergleich** (`toHaveScreenshot`) — eigene, spätere Frage mit einem eigenen Sprunghaftigkeitsproblem.
+
+### Release-Wechsel mit Service Worker
+
+- **SW-Verhalten nur gegen ein gebautes `sw.js`.** Die Konfiguration in `vite.config.ts` ist nicht
+  das, was der Browser ausführt; geprüft wird das Artefakt — im Build-Check von `frontend/`
+  (`serviceWorker.build.test.ts`, programmatischer Build mit `NODE_ENV=production`) und im E2E
+  gegen den Prüfstack.
+- **„Neue Version" ist eine Gleichheit:** Einstiegs-Bundle der Seite = Einstiegsskript der
+  aktuell vom Server ausgelieferten `index.html`. Vorbedingung im Spec: Hash A ≠ Hash B — sonst
+  bestünde jede Prüfung auch ohne Wechsel. B entsteht aus demselben Dockerfile mit dem Build-Arg
+  `PHOTOSORT_BUILD_MARKER`, der ausschließlich den Einstiegs-Hash ändert.
+- **Der Tausch ist ein Deploy:** Er entfernt die Dateien von A im Frontend-Container, statt B
+  daneben zu legen, und wird nach jedem Test auf A zurückgesetzt — sonst liefen spätere Specs
+  gegen B.
+- **Gewartet wird auf SW-Zustände** (`navigator.serviceWorker.ready`, `controllerchange`), nie auf
+  Zeit.
+- **Die Netz-Zeitgrenze ist nur als Konfigurationswert belegt:** `context.setOffline` lässt den
+  Fetch sofort scheitern; ob der Abbruch nach 3 s greift, prüft allein der Build-Check am
+  erzeugten `sw.js`.
 
 ### Der Nachweis „nur lokal erreichbar" ist selbst ein Test, und er darf nicht leer bestehen
 

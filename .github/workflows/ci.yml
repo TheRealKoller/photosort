@@ -386,6 +386,44 @@ jobs:
           fetch "$base_url/assets/definitiv-nicht-vorhanden.js"
           echo "status: $FETCH_STATUS"
           test "$FETCH_STATUS" = "404"
+      - name: Functional check - Cache-Control headers in frontend nginx (spec 0565)
+        run: |
+          set -euo pipefail
+          # Isoliert vom vorherigen Schritt, siehe Kommentar oben zum IPv4-Check.
+          rm -f .env
+          trap 'docker compose down -v --remove-orphans >/dev/null 2>&1 || true' EXIT
+          docker compose up -d --no-deps --build frontend
+
+          base_url="http://localhost:${FRONTEND_PORT:-8080}"
+          for _ in $(seq 1 30); do
+            if curl -s -o /dev/null "$base_url/"; then break; fi
+            sleep 1
+          done
+
+          # Status und Cache-Control einer Antwort; Vorbedingung je Datei ist 200 (bzw. der
+          # erwartete Status), sonst bewiese der Header-Vergleich nichts.
+          expect_header() {
+            local path="$1" status="$2" expected="$3" headers actual_status actual_cc
+            headers=$(curl -s -o /dev/null -D - "$base_url$path" | tr -d '\r')
+            actual_status=$(printf '%s\n' "$headers" | head -n1 | cut -d' ' -f2)
+            actual_cc=$(printf '%s\n' "$headers" | grep -i '^cache-control:' | cut -d' ' -f2- || true)
+            echo "$path -> $actual_status, Cache-Control: '${actual_cc}'"
+            test "$actual_status" = "$status"
+            test "$actual_cc" = "$expected"
+          }
+
+          html_dir=/usr/share/nginx/html
+          workbox_file=$(docker compose exec -T frontend sh -c "ls $html_dir | grep -E '^workbox-.*\.js$' | head -n1" | tr -d '\r\n')
+          asset_file=$(docker compose exec -T frontend sh -c "ls $html_dir/assets | grep -E '\.js$' | head -n1" | tr -d '\r\n')
+          test -n "$workbox_file"
+          test -n "$asset_file"
+
+          for path in / /index.html /projects/3 /sw.js /registerSW.js /manifest.webmanifest "/$workbox_file"; do
+            expect_header "$path" 200 "no-cache"
+          done
+          expect_header "/assets/$asset_file" 200 "public, max-age=31536000, immutable"
+          # Fehlendes Asset bleibt 404 und bekommt kein immutable.
+          expect_header /assets/definitiv-nicht-vorhanden.js 404 ""
       - name: Functional check - single-origin API proxy via frontend nginx (spec 0049)
         run: |
           set -euo pipefail
@@ -444,6 +482,11 @@ jobs:
           echo "mit Token: $authed_status, ohne Token: $anonymous_status"
           test "$authed_status" = "200"
           test "$anonymous_status" = "401"
+
+          echo "--- /api/ setzt keinen eigenen Cache-Control (maßgeblich bleibt das Backend, spec 0565) ---"
+          api_cc=$(curl -s -o /dev/null -D - "$base_url/api/health" | tr -d '\r' | grep -i '^cache-control:' || true)
+          echo "Cache-Control: '${api_cc}'"
+          test -z "$api_cc"
 
           echo "--- GET /projects/3 (SPA-Route, kein /api-Praefix) bleibt beim SPA-Fallback ---"
           index_response=$(curl -s -w '\n%{http_code}' "$base_url/")
