@@ -82,22 +82,31 @@ export function Dialog({
       className={cn(
         'm-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-border bg-overlay p-6 text-text',
         'backdrop:bg-black/60',
+        // Spalte, damit der Inhaltsbereich unten die Resthoehe bekommt: Die Hoehe deckelt das
+        // `max-height` des modalen Dialogs, ueberstehender Inhalt scrollt dann nur dort.
+        'open:flex open:flex-col',
       )}
     >
-      <div className="flex flex-col gap-6">
-        <div className="flex items-center gap-3">
+      <div className="flex min-h-0 flex-col gap-6">
+        <div className="flex shrink-0 items-center gap-3">
           {icon !== undefined && <Icon name={icon} size={24} className="shrink-0 text-accent" />}
           <h2 id={titleId} className="text-lg font-bold text-text-h">
             {title}
           </h2>
         </div>
         {description !== undefined && (
-          <p id={descriptionId} className="text-sm text-text">
+          <p id={descriptionId} className="shrink-0 text-sm text-text">
             {description}
           </p>
         )}
-        {children}
-        <div className="flex flex-wrap justify-end gap-3">
+        {/* NUR dieser Bereich scrollt: Titel, Beschreibung und Schaltflaechenzeile bleiben stehen,
+            die Schaltflaeche zum Schliessen liegt damit auch bei langem Inhalt ohne Scrollen im
+            Bild. Seitlich scrollt nie etwas. `-m-1 p-1` haelt den Fokusring seiner Elemente
+            innerhalb des Ausschnitts sichtbar. */}
+        {children !== undefined && children !== null && (
+          <div className="-m-1 flex min-h-0 flex-col gap-6 overflow-y-auto p-1">{children}</div>
+        )}
+        <div className="flex shrink-0 flex-wrap justify-end gap-3">
           {/* Die harmloseste Aktion steht ZUERST im DOM - so kann der Erstfokus strukturell nicht
               auf einer bestaetigenden oder loeschenden Aktion landen. */}
           <Button

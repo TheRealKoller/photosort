@@ -20,6 +20,7 @@ import type {
   ScanSummary,
   ScoringRunSummary,
 } from '../../api/types'
+import { ProjectOverviewContext } from '../../hooks/useProjectOverview'
 import { ProjectPipelineLayout, type PipelineOutletContext } from './ProjectPipelineLayout'
 
 vi.mock('../../api/projects')
@@ -110,12 +111,19 @@ function StepProbe() {
   )
 }
 
+/** Der Auslöser der Ablaufübersicht liest den Kontext des Hosts aus der AppShell. */
+const openOverview = vi.fn()
+
 function renderLayout(initialPath = '/projects/1/pipeline') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <ProjectOverviewContext.Provider value={{ open: openOverview }}>
+        {children}
+      </ProjectOverviewContext.Provider>
+    </QueryClientProvider>
   )
   return {
     ...render(
@@ -170,6 +178,55 @@ describe('ProjectPipelineLayout', () => {
     renderLayout('/projects/1/pipeline')
 
     expect(await screen.findByText(/schritt-inhalt: scan/i)).toBeInTheDocument()
+  })
+
+  // Spec 0566: Der Auslöser der Ablaufübersicht sitzt im Kopf des Layouts.
+  it('bietet im Kopf den Auslöser "Ablauf" an, der die Übersicht öffnet', async () => {
+    openOverview.mockClear()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(project())
+    renderLayout('/projects/1/pipeline/scan')
+
+    const trigger = await screen.findByRole('button', { name: 'Ablauf' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(trigger).not.toHaveAttribute('aria-label')
+    trigger.click()
+
+    expect(openOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('behält den Auslöser beim Wechsel zwischen allen vier Schritten als denselben Knoten', async () => {
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      project({
+        last_scan: scan(),
+        last_scoring_run: scoringRun(),
+        last_criterion_scoring_run: criterionScoringRun(),
+      }),
+    )
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/projects/:projectId/pipeline',
+          element: <ProjectPipelineLayout />,
+          children: [{ path: ':step', element: <StepProbe /> }],
+        },
+      ],
+      { initialEntries: ['/projects/1/pipeline/scan'] },
+    )
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ProjectOverviewContext.Provider value={{ open: openOverview }}>
+          <RouterProvider router={router} />
+        </ProjectOverviewContext.Provider>
+      </QueryClientProvider>,
+    )
+    await screen.findByText(/schritt-inhalt: scan/i)
+    const trigger = screen.getByRole('button', { name: 'Ablauf' })
+
+    for (const step of ['ausschuss', 'kriterien', 'kuratierung']) {
+      await router.navigate(`/projects/1/pipeline/${step}`)
+      await screen.findByText(new RegExp(`schritt-inhalt: ${step}`, 'i'))
+      expect(screen.getByRole('button', { name: 'Ablauf' })).toBe(trigger)
+    }
   })
 
   it('redirects an unknown :step value to the highest reachable step (Akzeptanzkriterium 10)', async () => {
@@ -335,7 +392,9 @@ describe('ProjectPipelineLayout', () => {
 
       render(
         <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
+          <ProjectOverviewContext.Provider value={{ open: openOverview }}>
+            <RouterProvider router={router} />
+          </ProjectOverviewContext.Provider>
         </QueryClientProvider>,
       )
 

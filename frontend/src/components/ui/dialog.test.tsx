@@ -233,6 +233,40 @@ describe('Dialog', () => {
   })
 
   /*
+   * Spec 0566, Design-System "Überlagerungen": Bei langem Inhalt scrollt NUR der Inhaltsbereich.
+   * Titelzeile, Beschreibung und Schaltflächenzeile bleiben stehen - "Schließen" liegt am Telefon
+   * ohne vorheriges Scrollen im Bild. Die Geometrie selbst misst e2e (no-horizontal-scroll).
+   */
+  it('legt den Inhalt in einen eigenen Scrollbereich, Kopf und Schaltflächen bleiben außerhalb', () => {
+    render(<TestDialog />)
+
+    const dialog = screen.getByRole('dialog')
+    const content = screen.getByText('Es werden 42 Fotos verarbeitet.').parentElement
+    expect(content).not.toBeNull()
+    expect(content).toHaveClass('min-h-0', 'overflow-y-auto')
+    expect(dialog).toHaveClass('open:flex', 'open:flex-col')
+
+    const title = screen.getByRole('heading', { name: 'Klassifizierung starten' })
+    const description = screen.getByText('Diese Aktion ist kostenpflichtig.')
+    const cancel = screen.getByRole('button', { name: 'Abbrechen' })
+    for (const fixed of [title, description, cancel]) {
+      expect(content?.contains(fixed)).toBe(false)
+    }
+    expect(description).toHaveClass('shrink-0')
+    expect(cancel.parentElement).toHaveClass('shrink-0')
+  })
+
+  it('legt ohne Inhalt keinen leeren Scrollbereich an', () => {
+    render(
+      <Dialog open onClose={vi.fn()} title="Ohne Inhalt">
+        {undefined}
+      </Dialog>,
+    )
+
+    expect(screen.getByRole('dialog').querySelector('.overflow-y-auto')).toBeNull()
+  })
+
+  /*
    * specs/features/0321-dark-utility-register-ansichten.md, Etappe 1: Die Scroll-Sperre traegt
    * jetzt auch bei mehreren gleichzeitig offenen Ueberlagerungen. Zuvor merkte sich jeder Dialog
    * den vorgefundenen `overflow`-Wert selbst - der zweite las bereits 'hidden' als "vorherigen"
