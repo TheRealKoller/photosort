@@ -6,10 +6,9 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 /*
  * Build-Marker fuer e2e/tests/release-wechsel.spec.ts: eine Zuweisung an eine globale Eigenschaft
- * nur im Einstiegs-Chunk, damit ein zweiter Build einen anderen Einstiegs-Hash bekommt (ein
- * Kommentar ueberlebte die Minifizierung nicht). Ohne Marker (Normalfall) bleibt der Chunk
- * unveraendert. Nur Kleinbuchstaben, Ziffern und Bindestrich - sonst koennte der Wert das
- * String-Literal schliessen und Code ins Bundle schreiben.
+ * nur im Einstiegs-Chunk, damit ein zweiter Build einen anderen Einstiegs-Hash bekommt. Ohne
+ * Marker (Normalfall) bleibt der Chunk unveraendert. Nur Kleinbuchstaben, Ziffern und Bindestrich -
+ * sonst koennte der Wert das String-Literal schliessen und Code ins Bundle schreiben.
  */
 const buildMarker = process.env.PHOTOSORT_BUILD_MARKER ?? ''
 if (!/^[a-z0-9-]*$/.test(buildMarker)) {
@@ -53,10 +52,9 @@ export default defineConfig({
          * keinen Runtime-Cache: sonst laegen nutzerbezogene API-Antworten im profilweiten
          * SW-Cache. Erzwungen von src/serviceWorker.build.test.ts.
          *
-         * Die Zeitgrenze steckt im Plugin, weil workbox-build networkTimeoutSeconds nur fuer
-         * NetworkFirst zulaesst. Das Plugin wird als Quelltext ins sw.js serialisiert: keine
-         * Closure, kein Import, keine aeussere Konstante. Der Timer wird bei Erfolg wie Fehlschlag
-         * geloescht, sonst bricht der Body einer langsamen, aber erfolgreichen Antwort nach 3 s ab.
+         * Das Zeitgrenzen-Plugin wird als Quelltext ins sw.js serialisiert: keine Closure, kein
+         * Import, keine aeussere Konstante. Der Timer wird bei Erfolg wie Fehlschlag geloescht,
+         * sonst bricht der Body einer langsamen, aber erfolgreichen Antwort nach 3 s ab.
          */
         // Leer statt "index.html": sonst beantwortet die Precache-Route eine Navigation auf "/"
         // vor der Navigationsroute unten aus dem Precache.

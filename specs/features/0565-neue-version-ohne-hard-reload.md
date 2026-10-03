@@ -60,6 +60,11 @@ Abhängigkeit, keine eigene Registrierung (das Plugin schleust weiterhin `regist
 
 1. `frontend/vite.config.ts`, `workbox`:
    - `navigateFallback: null` — Navigationen kommen nicht mehr aus dem Precache.
+   - `directoryIndex: ''` — mit dem Workbox-Standard `index.html` beantwortete die Precache-Route
+     eine Navigation auf `/` vor der Navigationsroute aus dem Precache; F5 und Neustart auf `/`
+     blieben bei der alten Version. Folge: Eine Navigation direkt auf `/index.html` kommt weiter aus
+     dem Precache, weil die URL selbst darin liegt; die App nutzt `/` und Client-Routen,
+     `start_url` ist `/`.
    - Ein `runtimeCaching`-Eintrag ausschließlich für `request.mode === 'navigate'`, `handler:
      'NetworkOnly'`, `options.precacheFallback: { fallbackURL: 'index.html' }` (Precache-Schlüssel
      im erzeugten `sw.js` prüfen) und `options.plugins` mit **einem** Zeitgrenzen-Plugin.
