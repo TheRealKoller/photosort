@@ -26,6 +26,45 @@ export default defineConfig({
          * Beide Formate zu precachen wuerde den Offline-Cache ohne Gegenwert etwa verdoppeln.
          */
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        /*
+         * Navigationen kommen online immer aus dem Netz, damit F5 bzw. ein Neustart nach einem
+         * Release sofort die aktuelle index.html (und damit die neuen Asset-Hashes) laedt. Nur
+         * offline oder nach 3 s ohne Antwort liefert der Precache index.html - HTML und Assets dann
+         * aus demselben Stand. Diese Route trifft ausschliesslich Navigationen und schreibt in
+         * keinen Runtime-Cache: sonst laegen nutzerbezogene API-Antworten im profilweiten
+         * SW-Cache. Erzwungen von src/serviceWorker.build.test.ts.
+         *
+         * Die Zeitgrenze steckt im Plugin, weil workbox-build networkTimeoutSeconds nur fuer
+         * NetworkFirst zulaesst. Das Plugin wird als Quelltext ins sw.js serialisiert: keine
+         * Closure, kein Import, keine aeussere Konstante. Der Timer wird bei Erfolg wie Fehlschlag
+         * geloescht, sonst bricht der Body einer langsamen, aber erfolgreichen Antwort nach 3 s ab.
+         */
+        navigateFallback: null,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkOnly',
+            options: {
+              precacheFallback: { fallbackURL: 'index.html' },
+              plugins: [
+                {
+                  requestWillFetch: async ({ request, state }) => {
+                    const controller = new AbortController()
+                    state!.timer = setTimeout(() => controller.abort(), 3000)
+                    return new Request(request, { signal: controller.signal })
+                  },
+                  fetchDidSucceed: async ({ response, state }) => {
+                    clearTimeout(state!.timer as number)
+                    return response
+                  },
+                  fetchDidFail: async ({ state }) => {
+                    clearTimeout(state!.timer as number)
+                  },
+                },
+              ],
+            },
+          },
+        ],
       },
       manifest: {
         name: 'PhotoSort',

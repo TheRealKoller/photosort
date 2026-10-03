@@ -76,7 +76,13 @@ describe('erzeugtes sw.js', () => {
       )
     expect(navigation, 'Navigationsroute mit NetworkOnly').not.toBeNull()
     const options = navigation![2]
-    expect(options).toMatch(/networkTimeoutSeconds:3\b/)
+    // Zeitgrenze per Plugin: Abbruch nach 3 s (der Minifier schreibt 3000 als 3e3), Timer bei
+    // Erfolg und Fehlschlag geloescht.
+    expect(options).toMatch(/requestWillFetch:/)
+    expect(options).toMatch(/new AbortController\b/)
+    expect(options).toMatch(/setTimeout\(\(\)=>\w+\.abort\(\),(?:3e3|3000)\)/)
+    expect(options).toMatch(/fetchDidSucceed:async\([^)]*\)=>[({]clearTimeout\(/)
+    expect(options).toMatch(/fetchDidFail:async\([^)]*\)=>[({]clearTimeout\(/)
     const fallback = /PrecacheFallbackPlugin\(\{fallbackURL:"([^"]+)"\}\)/.exec(options)
     expect(fallback, 'precacheFallback der Navigationsroute').not.toBeNull()
     expect(precacheUrls()).toContain(fallback![1])
