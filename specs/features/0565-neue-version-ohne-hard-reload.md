@@ -98,6 +98,11 @@ aus dem Netz, neue Version aktiv, Precache wird nachgezogen. Anmeldung: Token in
 
 **Restrisiken.**
 - Bei langsamem Netz wartet der Start bis zur Zeitgrenze (3 s), bevor die Offline-Fassung erscheint.
+- Umstieg: Geräte, die beim Release dieser Änderung noch vom vorigen Worker kontrolliert werden,
+  bekommen beim ersten Öffnen oder F5 danach einmalig die alte `index.html` aus dessen Precache
+  (Ausnahme zu AK1/AK2); das zweite Laden zeigt die neue Version, danach gilt die neue Strategie.
+- Geht ein Client offline, bevor der Worker eines neuen Release installiert ist, startet er offline
+  weiter die vorige, vollständig vorgehaltene Version — konsistent, ohne gemischte Versionen.
 - Das Zeitgrenzen-Plugin hängt am Plugin-Vertrag von Workbox (`state`, `requestWillFetch`,
   `fetchDidSucceed`/`fetchDidFail`); ein Workbox-Major-Update muss den Build-Check grün halten.
 - Ein offener Alt-Tab, der nach dem Deploy ein nicht mehr vorhandenes Asset nachlädt, bekäme 404.

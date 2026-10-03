@@ -210,6 +210,54 @@ test('ohne Netz startet die zuletzt geladene Version, auch per Deep-Link (AK6)',
   }
 })
 
+test('ohne Netz startet nach einem Release die neue Version, sobald ihr Worker kontrolliert (AK6)', async ({
+  page,
+  context,
+}) => {
+  await page.goto('/')
+  await waitForServiceWorkerControl(page)
+  deploy(releaseB)
+  await page.reload()
+  expect(await loadedEntry(page), 'Einstiegs-Bundle nach F5').toBe(releaseB.entry)
+
+  // Der Worker von B installiert sich beim Navigieren im Hintergrund. Gewartet wird, bis er
+  // aktiviert ist und die Seite kontrolliert - je nach Fortschritt ueber controllerchange oder
+  // statechange, nie ueber Zeit.
+  await page.evaluate(async () => {
+    const serviceWorker = navigator.serviceWorker
+    const registration = await serviceWorker.ready
+    const controllerChanged = new Promise<void>((resolve) =>
+      serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true }),
+    )
+    await registration.update()
+    if (registration.installing || registration.waiting) await controllerChanged
+    const active = registration.active!
+    if (active.state !== 'activated') {
+      await new Promise<void>((resolve) =>
+        active.addEventListener('statechange', () => {
+          if (active.state === 'activated') resolve()
+        }),
+      )
+    }
+    if (serviceWorker.controller !== active) await controllerChanged
+  })
+  expect(
+    await page.evaluate(async (entry) => (await caches.match(entry)) !== undefined, releaseB.entry),
+    'Einstiegs-Bundle von B im Precache',
+  ).toBe(true)
+
+  await context.setOffline(true)
+  try {
+    for (const target of ['/', DEEP_LINK]) {
+      await page.goto(target)
+      await expect(page.getByRole('banner'), `App-Huelle offline auf ${target}`).toBeVisible()
+      expect(await loadedEntry(page), `Einstiegs-Bundle offline auf ${target}`).toBe(releaseB.entry)
+    }
+  } finally {
+    await context.setOffline(false)
+  }
+})
+
 test('eine neu geoeffnete Seite nach Schliessen aller Seiten zeigt die neue Version (AK2-Ersatz)', async ({
   page,
   context,
