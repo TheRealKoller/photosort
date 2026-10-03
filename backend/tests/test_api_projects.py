@@ -1766,6 +1766,12 @@ class TestTheSelectionTarget:
         )
 
         assert response.status_code == 409
+        # Spec 0566: der Schritt heisst ueberall "Klassifizierung" - die Meldung wird auf der
+        # Kuratierungsseite angezeigt.
+        assert response.json()["detail"] == (
+            "Fuer dieses Projekt laeuft gerade eine Klassifizierung. Der Richtwert "
+            "kann danach gesetzt werden."
+        )
         assert await self._stored_target(db_session, project_id) is None
         assert await self._drafted_photo_count(db_session, project_id) == drafted_before
 

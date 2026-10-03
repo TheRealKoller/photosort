@@ -1723,9 +1723,7 @@ async def _seed_error_project(
             last_progress_at=_BASE_SCORING_AT + timedelta(minutes=6),
             photos_total=len(photos),
             photos_processed=2,
-            error_message=(
-                "Kriterien-Bewertung abgebrochen (Demo-Fehlerzustand, kein echter Vorfall)."
-            ),
+            error_message="Klassifizierung abgebrochen (Demo-Fehlerzustand, kein echter Vorfall).",
             cloud_requested=False,
         )
     )
