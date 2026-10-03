@@ -4,6 +4,9 @@ import { ApiError } from '../../api/client'
 import type { ProjectOut } from '../../api/types'
 import { Stepper } from '../../components/Stepper'
 import { Alert } from '../../components/ui/alert'
+import { Button } from '../../components/ui/button'
+import { Icon } from '../../components/ui/icon'
+import { useProjectOverview } from '../../hooks/useProjectOverview'
 import { useProjectQuery } from '../../hooks/useProjects'
 import {
   computeStepStates,
@@ -35,6 +38,7 @@ export function ProjectPipelineLayout() {
   const { projectId, step } = useParams()
   const id = Number(projectId)
   const query = useProjectQuery(id)
+  const overview = useProjectOverview()
 
   if (query.isError && query.error instanceof ApiError && query.error.status === 404) {
     return (
@@ -101,9 +105,25 @@ export function ProjectPipelineLayout() {
       {/* Projektkennung wie in Artboard 4: Name in der Display-Schrift, darunter der Cloud-Pfad in
           Festbreitenschrift und einzeilig gekuerzt - der Pfad ist eine technische Kennung, kein
           Fliesstext, und darf die Zeile nicht sprengen. */}
-      <header className="min-w-0">
-        <h1 className="truncate text-xl sm:text-2xl">{project.name}</h1>
-        <p className="truncate font-mono text-xs text-text-muted">{project.opencloud_path}</p>
+      <header className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-xl sm:text-2xl">{project.name}</h1>
+          <p className="truncate font-mono text-xs text-text-muted">{project.opencloud_path}</p>
+        </div>
+        {/* Der Auslöser der Ablaufübersicht - im Kopf des Layouts und damit auf allen vier
+            Schrittseiten derselbe Knoten an derselben Stelle; der Fokus kehrt nach dem Schließen
+            hierher zurück. Sein Name ist das sichtbare Wort. */}
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="shrink-0"
+          aria-haspopup="dialog"
+          onClick={overview.open}
+        >
+          <Icon name="info" size={16} />
+          Ablauf
+        </Button>
       </header>
 
       <Stepper projectId={project.id} project={project} states={states} activeStepId={step} />

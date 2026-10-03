@@ -87,6 +87,13 @@ export function matchProjectId(pathname: string): string | null {
   return null
 }
 
+/** Die sichtbaren Namen der beiden Stationen nach der Kuratierung - Projektnavigation, Seitenkopf
+ * und Ablaufübersicht lesen sie von hier. */
+export const STATION_LABELS = {
+  album: 'Album-Entwurf',
+  selection: 'Endauswahl',
+} as const satisfies Record<'album' | 'selection', string>
+
 export type ProjectNavTargetId =
   'pipeline' | 'photos' | 'selection' | 'settings' | 'stats' | 'persons'
 
@@ -140,7 +147,7 @@ export const PROJECT_NAV_PRIMARY_TARGETS: readonly ProjectNavTarget[] = [
   },
   {
     id: 'selection',
-    label: 'Endauswahl',
+    label: STATION_LABELS.selection,
     buildPath: (projectId) => `/projects/${projectId}/selection`,
     activeRoutePaths: [PROJECT_ROUTE_PATHS.selection],
   },

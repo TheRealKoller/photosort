@@ -19,6 +19,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from '@playwri
 import { authStateCoversOrigin } from './authState.ts'
 import { logIn } from './auth.ts'
 import { BASE_URL } from './baseUrl.ts'
+import { markAllProjectsSeen } from './overviewSeen.ts'
 import { ARTIFACTS_DIR, AUTH_DIR, AUTH_STATE_FILE } from './paths.ts'
 import {
   createSessionLog,
@@ -42,20 +43,30 @@ export interface AdhocSession {
  * Geprueft wird nicht die Existenz der Datei, sondern ihre Passung zur aktuellen Origin: das
  * Token liegt origin-gebunden in `localStorage`, und ein Portwechsel des Pruefstacks liesse eine
  * vorhandene Datei sonst still ins Leere greifen (siehe `authState.ts`).
+ *
+ * Die Ablaufuebersicht wird bei JEDEM Aufruf als gesehen markiert, nicht nur beim Neuanmelden:
+ * Ein Neu-Seeden legt die Demo-Projekte mit neuen Ids und ohne Merker an, und ein vorhandener
+ * Sitzungszustand ueberdauert das.
  */
 export async function ensureAuthState(browser: Browser): Promise<void> {
   const brauchbar =
     existsSync(AUTH_STATE_FILE) &&
     authStateCoversOrigin(readFileSync(AUTH_STATE_FILE, 'utf8'), BASE_URL)
-  if (brauchbar) {
-    return
-  }
-  const context = await browser.newContext({ viewport: VIEWPORTS.desktop, baseURL: BASE_URL })
+  const context = await browser.newContext({
+    viewport: VIEWPORTS.desktop,
+    baseURL: BASE_URL,
+    ...(brauchbar ? { storageState: AUTH_STATE_FILE } : {}),
+  })
   try {
     const page = await context.newPage()
-    await logIn(page)
-    mkdirSync(AUTH_DIR, { recursive: true })
-    await context.storageState({ path: AUTH_STATE_FILE })
+    if (brauchbar) {
+      await page.goto('/')
+    } else {
+      await logIn(page)
+      mkdirSync(AUTH_DIR, { recursive: true })
+      await context.storageState({ path: AUTH_STATE_FILE })
+    }
+    await markAllProjectsSeen(page)
   } finally {
     await context.close()
   }

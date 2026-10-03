@@ -248,6 +248,27 @@ describe('deriveClassificationSteps: Fortschrittsquellen', () => {
       expect(step.label.trim(), step.id).not.toBe('')
     }
   })
+
+  /*
+   * Der ganze Schritt heisst "Klassifizierung". Die Teilschritte bleiben unterscheidbar:
+   * paarweise verschieden, keiner heisst wie der ganze Schritt oder wie dessen alter Name.
+   */
+  it('benennt die Teilschritte paarweise verschieden und nie wie den ganzen Schritt', () => {
+    const labels = deriveClassificationSteps(run()).map((step) => step.label)
+
+    expect(labels).toHaveLength(CLASSIFICATION_STEP_ORDER.length)
+    expect(new Set(labels).size).toBe(labels.length)
+    for (const label of labels) {
+      expect(label).not.toBe('Klassifizierung')
+      expect(label).not.toMatch(/Kriterien[-\u2010\u2011\u00AD\s]*Bewertung/i)
+    }
+  })
+
+  it('nennt den Teilschritt criteria "Qualität und Bildinhalt"', () => {
+    const criteria = deriveClassificationSteps(run()).find((step) => step.id === 'criteria')
+
+    expect(criteria?.label).toBe('Qualität und Bildinhalt')
+  })
 })
 
 /**

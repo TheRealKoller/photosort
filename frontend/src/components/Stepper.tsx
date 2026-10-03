@@ -39,6 +39,15 @@ interface StepperProps {
 const STEP_CONTROL_CLASSES =
   'tap-target group flex w-full min-w-0 items-center gap-2 px-1 text-left sm:gap-3'
 
+/** Das Zustandswort im zugänglichen Namen - dieselben Wörter wie in der Ablaufübersicht. Die
+ * Ausprägung der Marke bleibt davon unberührt (`data-step-state`). */
+const ZUSTANDSWORT: Record<StepMarkerAuspraegung, string> = {
+  erledigt: 'erledigt',
+  aktuell: 'aktuell',
+  ausstehend: 'offen',
+  blockiert: 'gesperrt',
+}
+
 /**
  * Die ausgeschriebene Schrittbeschriftung NEBEN der Marke (Entwurf `step-marker`: der Baustein ist
  * die Marke allein, die Umrandung fasst nur noch das Zeichen des Schritts). Unterhalb `sm:`
@@ -292,7 +301,7 @@ export function Stepper({ projectId, project, states, activeStepId }: StepperPro
                   ? 'erledigt'
                   : 'ausstehend'
             const stepLabel = `Schritt ${index + 1} von ${PIPELINE_STEPS.length}: ${definition.label}`
-            const ariaLabel = `${stepLabel}, ${auspraegung}`
+            const ariaLabel = `${stepLabel}, ${ZUSTANDSWORT[auspraegung]}`
 
             const inhalt = (
               <>

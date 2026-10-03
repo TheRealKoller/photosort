@@ -14,6 +14,7 @@ from photosort.api import (
     motifs,
     opencloud,
     persons,
+    project_overview,
     projects,
     stats,
 )
@@ -175,6 +176,9 @@ def _protected_router_operations() -> list[tuple[str, str]]:
         feedback.router,
         # S1: alle acht Personen-Endpunkte, auch die Auflistung "Ohne Namen".
         persons.router,
+        # Der Merker "Ablaufuebersicht gesehen". `projects.router` deckt das gemeinsame Praefix
+        # NICHT ab - gelaufen wird ueber Router, nicht ueber Pfade.
+        project_overview.router,
     ):
         for route in router.routes:
             path = getattr(route, "path", "")

@@ -19,7 +19,7 @@ export interface PipelineStepDefinition {
 export const PIPELINE_STEPS: readonly PipelineStepDefinition[] = [
   { id: 'scan', label: 'Scan' },
   { id: 'ausschuss', label: 'Ausschuss' },
-  { id: 'kriterien', label: 'Kriterien-Bewertung' },
+  { id: 'kriterien', label: 'Klassifizierung' },
   { id: 'kuratierung', label: 'Kuratierung' },
 ]
 
@@ -106,7 +106,7 @@ export function getBlockedReason(id: StepId, project: ProjectOut): string {
         ? 'Diese Funktion ist derzeit nicht aktiviert.'
         : 'Bestätige zuerst den Ausschuss oben.'
     case 'kuratierung':
-      return 'Führe zuerst die Kriterien-Bewertung oben aus.'
+      return 'Führe zuerst die Klassifizierung oben aus.'
     default:
       return ''
   }
@@ -147,7 +147,7 @@ export const RUN_FIELD_BY_STEP = {
 export const STAND_OHNE_SCAN = 'Noch nicht gescannt'
 
 /** Randfall C. */
-export const STAND_KATEGORIE_ABGESCHALTET = 'Kategorie-Bewertung ist abgeschaltet'
+export const STAND_KLASSIFIZIERUNG_ABGESCHALTET = 'Klassifizierung ist abgeschaltet'
 
 function stepLabelOf(id: StepId): string {
   const step = PIPELINE_STEPS.find((entry) => entry.id === id)
@@ -203,7 +203,7 @@ export function deriveProjectStand(project: ProjectOut): ProjectStand {
 
   const frontierId = getDefaultStepId(states)
   if (states.find((step) => step.id === frontierId)?.isDone === true) {
-    return { kind: 'hinweis', label: STAND_KATEGORIE_ABGESCHALTET }
+    return { kind: 'hinweis', label: STAND_KLASSIFIZIERUNG_ABGESCHALTET }
   }
 
   if (frontierId === 'scan' && deriveScanStatus(project) === 'never') {
@@ -226,6 +226,86 @@ export function deriveProjectStand(project: ProjectOut): ProjectStand {
     default:
       return { kind: 'weiter', stepLabel }
   }
+}
+
+/** Die Einträge der Ablaufübersicht: die vier Schritte, danach die beiden Stationen. */
+export type OverviewEntryId = StepId | 'album' | 'selection'
+
+/** `jederzeit` gibt es nur an den Stationen, `abgeschaltet` nur an der Klassifizierung. */
+export type OverviewEntryState =
+  'erledigt' | 'aktuell' | 'offen' | 'gesperrt' | 'abgeschaltet' | 'jederzeit'
+
+export interface WorkflowOverviewEntry {
+  id: OverviewEntryId
+  state: OverviewEntryState
+  /** `isDone` aus `computeStepStates`, durchgereicht für die Marke: Haken vor Schloss wie in der
+   * Schrittleiste. An den Stationen immer `false`. */
+  isDone: boolean
+  /** Der Lauf dieses Schritts, unabhängig vom Zustand - nur `running` und `failed` werden
+   * gezeigt. */
+  run: 'running' | 'failed' | null
+  /** Wortgleich mit dem Sperrgrund der Schrittleiste, nur bei `gesperrt`/`abgeschaltet`. */
+  blockedReason: string | null
+  to: string
+}
+
+/**
+ * Die Zustände der Ablaufübersicht für ein Projekt.
+ *
+ * KENNT KEINE EIGENE REGEL: Sie ruft nur `computeStepStates`, `getDefaultStepId`,
+ * `getBlockedReason` und `runStatusOfStep` auf. Damit nennen Übersicht, Schrittleiste und
+ * Stand-Zeile strukturell denselben nächsten Schritt; eine eigene Nachrechnung hier liefe beim
+ * nächsten Regelwechsel still auseinander.
+ *
+ * Vorrang je Schritt: abgeschaltet ▸ gesperrt ▸ aktuell ▸ erledigt ▸ offen. „aktuell" ist genau
+ * die Bedingung, unter der `deriveProjectStand` einen Schritt nennt - fällt der Frontier-Schritt
+ * auf einen erledigten zurück (Randfall C), gibt es keinen. Das „aktuell" der Schrittleiste ist
+ * dagegen eine Ortsangabe und kommt hier nicht vor.
+ *
+ * Album-Entwurf und Endauswahl sind nie erledigt: erreichbar („jederzeit") genau mit der
+ * Kuratierung, sonst gesperrt mit deren Sperrgrund.
+ */
+export function deriveWorkflowOverview(project: ProjectOut): WorkflowOverviewEntry[] {
+  const states = computeStepStates(project)
+  const frontierId = getDefaultStepId(states)
+  const base = `/projects/${project.id}`
+
+  const steps = states.map((step): WorkflowOverviewEntry => {
+    const runStatus = runStatusOfStep(project, step.id)
+    const isSwitchedOff = step.id === 'kriterien' && project.category_selection_enabled === false
+    const state: OverviewEntryState = isSwitchedOff
+      ? 'abgeschaltet'
+      : !step.isReachable
+        ? 'gesperrt'
+        : step.id === frontierId && !step.isDone
+          ? 'aktuell'
+          : step.isDone
+            ? 'erledigt'
+            : 'offen'
+    return {
+      id: step.id,
+      state,
+      isDone: step.isDone,
+      run: runStatus === 'running' || runStatus === 'failed' ? runStatus : null,
+      blockedReason:
+        state === 'gesperrt' || state === 'abgeschaltet'
+          ? getBlockedReason(step.id, project)
+          : null,
+      to: `${base}/pipeline/${step.id}`,
+    }
+  })
+
+  const isCurationReachable = states.some((step) => step.id === 'kuratierung' && step.isReachable)
+  const stations = (['album', 'selection'] as const).map((id): WorkflowOverviewEntry => ({
+    id,
+    state: isCurationReachable ? 'jederzeit' : 'gesperrt',
+    isDone: false,
+    run: null,
+    blockedReason: isCurationReachable ? null : getBlockedReason('kuratierung', project),
+    to: `${base}/${id}`,
+  }))
+
+  return [...steps, ...stations]
 }
 
 export interface StepProgress {

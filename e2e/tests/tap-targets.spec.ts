@@ -382,7 +382,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   )
   checked.push('Schritt 1 der Schrittleiste')
 
-  const gesperrt = stepper.getByRole('button', { name: /, blockiert$/ })
+  const gesperrt = stepper.getByRole('button', { name: /, gesperrt$/ })
   await expect(gesperrt, 'gesperrte Schritte der Leiste').toHaveCount(1)
   await assertTappable(gesperrt, 'gesperrter Schritt der Schrittleiste', { ariaDisabled: true })
   checked.push('gesperrter Schritt der Schrittleiste')
@@ -441,4 +441,41 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   expect(checked.length, 'Anzahl tatsaechlich gepruefter Bedienelemente').toBe(
     EXPECTED_CONTROL_COUNT,
   )
+})
+
+/*
+ * Die Ablaufuebersicht: Auslöser "Ablauf", jede
+ * Öffnen-Schaltflaeche und "Schliessen" sind auf 44 x 44 px treffbar - und Oeffnen wie Schliessen
+ * gehen einmal per Fingertipp. Im "bewertet"-Projekt ist jeder Eintrag erreichbar; es traegt
+ * damit alle sechs Öffnen-Schaltflaechen.
+ */
+test.describe('Ablaufuebersicht per Fingertipp', () => {
+  test.use({ hasTouch: true })
+
+  test('Auslöser, Eintraege und Schliessen sind auf 44 x 44 px treffbar', async ({ page }) => {
+    const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
+    await page.goto(`/projects/${ratedId}/pipeline/scan`)
+
+    const ausloeser = page.getByRole('button', { name: 'Ablauf' })
+    await assertTappable(ausloeser, 'Ablauf')
+    await ausloeser.tap()
+
+    const dialog = page.getByRole('dialog', { name: 'Ablauf im Überblick' })
+    await expect(dialog, 'per Fingertipp geoeffnete Uebersicht').toBeVisible()
+
+    const oeffnen = dialog.getByRole('link', { name: / öffnen$/ })
+    await expect(oeffnen, 'Öffnen-Schaltflaechen der Uebersicht').toHaveCount(6)
+    for (const link of await oeffnen.all()) {
+      await assertTappable(link, (await link.textContent()) ?? 'Öffnen-Schaltflaeche')
+    }
+    await assertTappable(
+      dialog.getByRole('link', { name: 'Zu den Projekteinstellungen' }),
+      'Zu den Projekteinstellungen',
+    )
+
+    const schliessen = dialog.getByRole('button', { name: 'Schließen' })
+    await assertTappable(schliessen, 'Schließen')
+    await schliessen.tap()
+    await expect(dialog, 'per Fingertipp geschlossene Uebersicht').toBeHidden()
+  })
 })

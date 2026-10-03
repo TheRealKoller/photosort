@@ -11,11 +11,11 @@ import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { useAlbumDecisionMutation, useAlbumSelectionQuery } from '../hooks/useAlbumSelection'
 import { useCurationLightbox } from '../hooks/useCurationLightbox'
+import { DRAFT_EMPTY_TEXT } from '../utils/albumDraftTexts'
 import { SELECTION_NOTHING_CONTESTED_TEXT, SELECTION_VIEW_LABELS } from '../utils/albumSelection'
 import type { PhotoEventGroup } from '../utils/eventGrouping'
 import { groupPhotosByDay } from '../utils/eventGrouping'
 import { formatDayHeading } from '../utils/timeOfDay'
-import { DRAFT_EMPTY_TEXT } from './AlbumDraftPage'
 
 /** Die beiden Sichten - lokaler Zustand, keine zweite Route und kein Suchparameter. */
 type SelectionView = keyof typeof SELECTION_VIEW_LABELS
@@ -181,7 +181,7 @@ export function AlbumSelectionPage() {
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_EMPTY_TEXT}</p>
           <Button asChild variant="secondary" size="sm">
-            <Link to={`/projects/${id}/pipeline/kriterien`}>Zur Kriterien-Bewertung</Link>
+            <Link to={`/projects/${id}/pipeline/kriterien`}>Zur Klassifizierung</Link>
           </Button>
         </div>
       )}

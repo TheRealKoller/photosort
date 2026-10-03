@@ -1609,6 +1609,28 @@ class LandmarkPlaceLookup(Base):
     looked_up_at: Mapped[datetime]
 
 
+class ProjectOverviewSeen(Base):
+    """Diese Person hat die Ablaufuebersicht dieses Projekts geschlossen.
+
+    DIE ABWESENHEIT DER ZEILE HEISST "NICHT GESEHEN" - die Uebersicht erscheint dann von selbst.
+    Es gibt keine weitere Spalte, auch keinen Zeitstempel: Gemerkt wird nur die Tatsache, und es
+    gibt nichts, was verfallen koennte.
+
+    Der Zustand gehoert genau EINER Person und hat genau einen Lesepfad
+    (`api/project_overview.py`, `user_id` allein aus dem Token). Er steht bewusst nicht an
+    `ProjectOut`: Das Objekt ist fuer beide Personen gleich und traegt keine Identitaet im
+    Client-Cache - dort zeigte er sonst den Zustand der anderen Person."""
+
+    __tablename__ = "project_overview_seen"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", name="fk_project_overview_seen_user_id"), primary_key=True
+    )
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", name="fk_project_overview_seen_project_id"), primary_key=True
+    )
+
+
 class QualityWeightEntry(Base):
     """Ein Gewicht je Kriterium innerhalb EINER Fassung.
 

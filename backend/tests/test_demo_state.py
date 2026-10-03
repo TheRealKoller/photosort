@@ -794,6 +794,26 @@ class TestRebuildDemoStateProducesTheFiveStates:
         assert failed[0].error_message is not None
         assert failed[0].error_message.strip() != ""
 
+    async def test_error_project_names_the_failed_step_classification(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die angezeigte Meldung des gescheiterten Laufs nennt den Schritt mit seinem
+        Namen in der Oberflaeche."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        project = await _project(db_session, ERROR_PROJECT_NAME)
+        messages = (
+            await db_session.execute(
+                select(CriterionScoringRun.error_message).where(
+                    CriterionScoringRun.project_id == project.id,
+                    CriterionScoringRun.status == ScanStatus.FAILED,
+                )
+            )
+        ).scalars()
+
+        assert list(messages) == [
+            "Klassifizierung abgebrochen (Demo-Fehlerzustand, kein echter Vorfall)."
+        ]
+
     async def test_error_project_has_at_least_one_photo_without_cache_files(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:

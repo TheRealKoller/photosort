@@ -1129,7 +1129,7 @@ async def _reject_while_a_criterion_run_is_active(session: AsyncSession, project
     if latest == ScanStatus.RUNNING:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Fuer dieses Projekt laeuft gerade eine Kriterien-Bewertung. Der Richtwert "
+            detail="Fuer dieses Projekt laeuft gerade eine Klassifizierung. Der Richtwert "
             "kann danach gesetzt werden.",
         )
 

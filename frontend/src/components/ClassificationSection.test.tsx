@@ -349,6 +349,20 @@ describe('genau einer der beiden Zustandsblöcke', () => {
     expect(isProgressShown() && isBalanceShown()).toBe(false)
   })
 
+  // Die Statuszeile nennt den ganzen Schritt in JEDER Phase gleich - die Teilschritte
+  // unterscheidet die Fortschrittsliste darunter.
+  it.each(['remote_categories', 'criteria', 'landmark', 'ranking', 'persons'] as const)(
+    'zeigt waehrend der Phase "%s" die Statuszeile "Klassifizierung läuft…"',
+    (phase) => {
+      renderSection(
+        project({ last_criterion_scoring_run: classificationRun({ status: 'running', phase }) }),
+      )
+
+      expect(screen.getByText('Klassifizierung läuft…')).toBeInTheDocument()
+      expect(screen.queryByText(/Remote-Kategorisierung läuft/)).toBeNull()
+    },
+  )
+
   it('ersetzt die Bilanz wieder durch die Fortschrittsliste, sobald ein neuer Lauf startet', () => {
     const { rerender } = renderSection(
       project({

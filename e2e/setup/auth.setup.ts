@@ -12,6 +12,7 @@ import { test as setup, expect } from '@playwright/test'
 
 import { logIn } from '../lib/auth.ts'
 import { TOKEN_STORAGE_KEY } from '../lib/authState.ts'
+import { markAllProjectsSeen } from '../lib/overviewSeen.ts'
 import { AUTH_DIR, AUTH_STATE_FILE } from '../lib/paths.ts'
 
 setup('anmelden und Sitzungszustand speichern', async ({ page }) => {
@@ -24,6 +25,10 @@ setup('anmelden und Sitzungszustand speichern', async ({ page }) => {
   // Ohne diese Zusicherung koennte ein leerer storageState gespeichert werden und jeder
   // Folge-Spec liefe still abgemeldet gegen die Login-Weiterleitung.
   expect(token, 'Anmelde-Token im localStorage').not.toBeNull()
+
+  // Die Ablaufuebersicht erscheint beim ersten Oeffnen jedes Projekts. Fuer die
+  // geprueften Seiten gilt sie deshalb als gesehen - zugesichert je Projekt, bei mindestens einem.
+  expect(await markAllProjectsSeen(page), 'als gesehen markierte Projekte').toBeGreaterThan(0)
 
   mkdirSync(AUTH_DIR, { recursive: true })
   await page.context().storageState({ path: AUTH_STATE_FILE })

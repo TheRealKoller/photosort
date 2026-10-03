@@ -15,6 +15,7 @@ import { decodeUsername } from './auth/jwt'
 import { clearToken, getToken } from './auth/token'
 import { useUnauthorizedRedirect } from './auth/useUnauthorizedRedirect'
 import { ProjectNav } from './components/ProjectNav'
+import { ProjectOverviewHost } from './components/ProjectOverviewHost'
 import { Button } from './components/ui/button'
 import { AlbumDraftPage } from './pages/AlbumDraftPage'
 import { AlbumSelectionPage } from './pages/AlbumSelectionPage'
@@ -158,7 +159,16 @@ function AppShell() {
         </div>
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
-        <Outlet />
+        {/* Die Ablaufuebersicht haengt am Projektkontext der ROUTE, nicht an einer Seite: Sie
+            erscheint auf jedem Einstiegsweg ins Projekt, auch ueber ein Foto-Lesezeichen. `key`
+            setzt ihren Zustand bei einem Projektwechsel zurueck. */}
+        {projectId !== null ? (
+          <ProjectOverviewHost key={projectId} projectIdParam={projectId}>
+            <Outlet />
+          </ProjectOverviewHost>
+        ) : (
+          <Outlet />
+        )}
       </main>
     </div>
   )

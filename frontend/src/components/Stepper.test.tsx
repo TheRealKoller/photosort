@@ -127,7 +127,7 @@ describe('Stepper', () => {
     renderStepper()
 
     const link = screen.getByRole('link', {
-      name: 'Schritt 2 von 4: Ausschuss, ausstehend',
+      name: 'Schritt 2 von 4: Ausschuss, offen',
     })
     expect(link).toHaveAttribute('href', '/projects/1/pipeline/ausschuss')
   })
@@ -160,7 +160,7 @@ describe('Stepper', () => {
   it('rendert einen gesperrten Schritt als fokussierbaren Knopf mit aria-disabled, nie mit disabled', () => {
     renderStepper()
 
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
     expect(blocked.tagName).toBe('BUTTON')
     expect(blocked).toHaveAttribute('aria-disabled', 'true')
     expect(blocked).not.toBeDisabled()
@@ -173,7 +173,7 @@ describe('Stepper', () => {
     renderStepper()
     const vorher = screen.getByTestId('pfad').textContent
 
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
     expect(blocked).not.toHaveAttribute('href')
     await user.click(blocked)
 
@@ -197,7 +197,7 @@ describe('Stepper', () => {
   it('verlinkt den Sperrgrund per aria-describedby auf einen vorhandenen Knoten', () => {
     renderStepper()
 
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
     const id = blocked.getAttribute('aria-describedby')
     expect(id, 'aria-describedby fehlt').toBeTruthy()
 
@@ -210,7 +210,7 @@ describe('Stepper', () => {
     const user = userEvent.setup()
     renderStepper()
 
-    await user.click(gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert'))
+    await user.click(gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt'))
 
     const panel = await screen.findByRole('dialog')
     expect(within(panel).getByText('Bestätige zuerst den Ausschuss oben.')).toBeInTheDocument()
@@ -226,7 +226,7 @@ describe('Stepper', () => {
     ]
     renderStepper(states, 'ausschuss', { category_selection_enabled: false })
 
-    await user.click(gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert'))
+    await user.click(gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt'))
 
     const panel = await screen.findByRole('dialog')
     expect(
@@ -244,7 +244,7 @@ describe('Stepper', () => {
     ]
     renderStepper(states, 'ausschuss')
 
-    await user.click(gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert'))
+    await user.click(gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt'))
 
     const panel = await screen.findByRole('dialog')
     expect(within(panel).getByText('Bestätige zuerst den Ausschuss oben.')).toBeInTheDocument()
@@ -254,11 +254,11 @@ describe('Stepper', () => {
     const user = userEvent.setup()
     renderStepper()
 
-    await user.click(gesperrterSchritt('Schritt 4 von 4: Kuratierung, blockiert'))
+    await user.click(gesperrterSchritt('Schritt 4 von 4: Kuratierung, gesperrt'))
 
     const panel = await screen.findByRole('dialog')
     expect(
-      within(panel).getByText('Führe zuerst die Kriterien-Bewertung oben aus.'),
+      within(panel).getByText('Führe zuerst die Klassifizierung oben aus.'),
     ).toBeInTheDocument()
   })
 
@@ -314,9 +314,9 @@ describe('Stepper', () => {
     renderStepper(FRESH_STATES, 'kriterien')
 
     const nav = screen.getByRole('navigation', { name: 'Fortschritt der Pipeline' })
-    expect(within(nav).queryByText(/schritt 3 von 4: kriterien-bewertung$/i)).toBeNull()
+    expect(within(nav).queryByText(/schritt 3 von 4: klassifizierung$/i)).toBeNull()
 
-    const zeile = screen.getByText('Schritt 3 von 4: Kriterien-Bewertung')
+    const zeile = screen.getByText('Schritt 3 von 4: Klassifizierung')
     expect(nav.contains(zeile), 'Zeile steckt noch im nav').toBe(false)
     expect(
       zeile.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -396,7 +396,7 @@ describe('Stepper', () => {
     const user = userEvent.setup()
     renderStepper()
 
-    await user.click(gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert'))
+    await user.click(gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt'))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
 
     expect(fokussierbareInDerLeiste()).toHaveLength(4)
@@ -429,7 +429,7 @@ describe('Stepper', () => {
       const user = userEvent.setup()
       renderStepper()
 
-      const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+      const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
       // Bis zum gesperrten Schritt tabben statt ihn zu fokussieren: dass er ueberhaupt in der
       // Tab-Reihenfolge liegt, ist die halbe Zusage.
       for (let schritte = 0; schritte < 10 && document.activeElement !== blocked; schritte += 1) {
@@ -455,7 +455,7 @@ describe('Stepper', () => {
   it('oeffnet beim Ueberfahren nur auf einem Zeigergeraet mit Hover', async () => {
     const user = userEvent.setup()
     renderStepper()
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
 
     await user.hover(blocked)
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -468,7 +468,7 @@ describe('Stepper', () => {
   it('schliesst ein per Klick geoeffnetes Panel nicht, wenn der Zeiger den Ausloeser verlaesst', async () => {
     const user = userEvent.setup()
     renderStepper()
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
 
     await user.click(blocked)
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
@@ -482,7 +482,7 @@ describe('Stepper', () => {
   it('schliesst ein per Ueberfahren geoeffnetes Panel beim Verlassen des Ausloesers', async () => {
     stubMatchMedia(true)
     renderStepper()
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
 
     fireEvent.pointerEnter(blocked)
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
@@ -502,7 +502,7 @@ describe('Stepper', () => {
     stubMatchMedia(true)
     const user = userEvent.setup()
     renderStepper()
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
 
     fireEvent.pointerEnter(blocked)
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
@@ -519,7 +519,7 @@ describe('Stepper', () => {
     stubMatchMedia(true)
     const user = userEvent.setup()
     renderStepper()
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
 
     fireEvent.pointerEnter(blocked)
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
@@ -538,7 +538,7 @@ describe('Stepper', () => {
     stubMatchMedia(true)
     const user = userEvent.setup()
     renderStepper()
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
 
     fireEvent.pointerEnter(blocked)
     const panel = await screen.findByRole('dialog')
@@ -568,16 +568,14 @@ describe('Stepper', () => {
     const user = userEvent.setup()
     renderStepper()
 
-    await user.click(gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert'))
+    await user.click(gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt'))
     await screen.findByRole('dialog')
 
     const panels = screen.getAllByRole('dialog')
     expect(panels).toHaveLength(1)
     // Der Grund des FUENFTEN Schritts steht zwar als sr-only-Text im Baum (aria-describedby),
     // aber nicht in einem geoeffneten Panel - genau das ist hier die Aussage.
-    expect(
-      within(panels[0]).queryByText('Führe zuerst die Kriterien-Bewertung oben aus.'),
-    ).toBeNull()
+    expect(within(panels[0]).queryByText('Führe zuerst die Klassifizierung oben aus.')).toBeNull()
   })
 
   /* Edge Case 6: leerer Sperrgrund (defensiver Fallback von `getBlockedReason` fuer
@@ -589,7 +587,7 @@ describe('Stepper', () => {
       'ausschuss',
     )
 
-    const blocked = gesperrterSchritt('Schritt 1 von 4: Scan, blockiert')
+    const blocked = gesperrterSchritt('Schritt 1 von 4: Scan, gesperrt')
     expect(blocked).not.toHaveAttribute('aria-describedby')
 
     await user.click(blocked)
@@ -608,7 +606,8 @@ describe('Stepper', () => {
    * Edge Cases 2 und 3 als VOLLSTAENDIGE Wahrheitstabelle ueber alle acht Kombinationen, nicht
    * ueber die drei bequemen Faelle - sonst wandert die Rangfolge bei der naechsten Umgestaltung
    * still. Es gilt: blockiert vor aktuell vor erledigt vor ausstehend fuer die Benennung, Haken
-   * vor Schloss fuer die Glyphe.
+   * vor Schloss fuer die Glyphe. Der zugaengliche Name traegt das Zustandswort der
+   * Ablaufuebersicht ("offen"/"gesperrt"), die Auspraegung der Marke bleibt unveraendert.
    */
   it.each([
     {
@@ -616,16 +615,39 @@ describe('Stepper', () => {
       isReachable: true,
       isCurrent: false,
       auspraegung: 'ausstehend',
+      wort: 'offen',
       glyphe: 'nummer',
     },
-    { isDone: false, isReachable: true, isCurrent: true, auspraegung: 'aktuell', glyphe: 'nummer' },
-    { isDone: true, isReachable: true, isCurrent: false, auspraegung: 'erledigt', glyphe: 'haken' },
-    { isDone: true, isReachable: true, isCurrent: true, auspraegung: 'aktuell', glyphe: 'haken' },
+    {
+      isDone: false,
+      isReachable: true,
+      isCurrent: true,
+      auspraegung: 'aktuell',
+      wort: 'aktuell',
+      glyphe: 'nummer',
+    },
+    {
+      isDone: true,
+      isReachable: true,
+      isCurrent: false,
+      auspraegung: 'erledigt',
+      wort: 'erledigt',
+      glyphe: 'haken',
+    },
+    {
+      isDone: true,
+      isReachable: true,
+      isCurrent: true,
+      auspraegung: 'aktuell',
+      wort: 'aktuell',
+      glyphe: 'haken',
+    },
     {
       isDone: false,
       isReachable: false,
       isCurrent: false,
       auspraegung: 'blockiert',
+      wort: 'gesperrt',
       glyphe: 'schloss',
     },
     {
@@ -633,6 +655,7 @@ describe('Stepper', () => {
       isReachable: false,
       isCurrent: true,
       auspraegung: 'blockiert',
+      wort: 'gesperrt',
       glyphe: 'schloss',
     },
     {
@@ -640,6 +663,7 @@ describe('Stepper', () => {
       isReachable: false,
       isCurrent: false,
       auspraegung: 'blockiert',
+      wort: 'gesperrt',
       glyphe: 'haken',
     },
     {
@@ -647,11 +671,12 @@ describe('Stepper', () => {
       isReachable: false,
       isCurrent: true,
       auspraegung: 'blockiert',
+      wort: 'gesperrt',
       glyphe: 'haken',
     },
   ])(
-    'benennt erledigt=$isDone erreichbar=$isReachable aktuell=$isCurrent als $auspraegung mit der Glyphe $glyphe',
-    ({ isDone, isReachable, isCurrent, auspraegung, glyphe }) => {
+    'benennt erledigt=$isDone erreichbar=$isReachable aktuell=$isCurrent als $wort ($auspraegung) mit der Glyphe $glyphe',
+    ({ isDone, isReachable, isCurrent, auspraegung, wort, glyphe }) => {
       renderStepper(
         [
           { id: 'ausschuss', isDone, isReachable },
@@ -660,7 +685,7 @@ describe('Stepper', () => {
         isCurrent ? 'ausschuss' : 'scan',
       )
 
-      const control = screen.getByLabelText(`Schritt 2 von 4: Ausschuss, ${auspraegung}`)
+      const control = screen.getByLabelText(`Schritt 2 von 4: Ausschuss, ${wort}`)
       expect(control.querySelector('[data-step-state]')).toHaveAttribute(
         'data-step-state',
         auspraegung,
@@ -721,7 +746,7 @@ describe('Stepper', () => {
     expect(auspraegungVon(done)).toBe('erledigt')
     expect(done).not.toHaveAttribute('aria-current')
 
-    const blocked = gesperrterSchritt('Schritt 3 von 4: Kriterien-Bewertung, blockiert')
+    const blocked = gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt')
     expect(auspraegungVon(blocked)).toBe('blockiert')
     expect(blocked).toHaveAttribute('aria-disabled', 'true')
 

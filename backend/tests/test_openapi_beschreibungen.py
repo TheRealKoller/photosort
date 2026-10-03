@@ -18,6 +18,8 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     ("get", "/projects/{project_id}/classify/estimate"),
     ("get", "/projects/{project_id}/fine-labels"),
     ("get", "/projects/{project_id}/stats"),
+    ("get", "/projects/{project_id}/overview-seen"),
+    ("put", "/projects/{project_id}/overview-seen"),
     # specs/features/0426-zeitversatz-je-kamera.md: die zweite der zwei Registerstellen, die
     # einen neuen Router still uebergehen - ein nicht eingetragener Endpunkt faellt ohne roten
     # Test aus der Beschreibungspflicht.

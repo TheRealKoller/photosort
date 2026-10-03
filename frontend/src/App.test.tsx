@@ -9,6 +9,7 @@ import App from './App'
 import { apiFetch } from './api/client'
 import * as personsApi from './api/persons'
 import * as photosApi from './api/photos'
+import * as projectOverviewApi from './api/projectOverview'
 import * as projectsApi from './api/projects'
 import type { ProjectOut, ProjectStatsOut } from './api/types'
 import { getToken, setToken } from './auth/token'
@@ -16,6 +17,7 @@ import { getToken, setToken } from './auth/token'
 vi.mock('./api/projects')
 vi.mock('./api/photos')
 vi.mock('./api/persons')
+vi.mock('./api/projectOverview')
 
 // Bildbestand und Detailansicht laden `GET /persons` - ohne Vorgabe liefe die Anfrage
 // ins Leere und der Personenfilter stuende im Fehlerzustand. Die Personenübersicht sucht
@@ -23,6 +25,8 @@ vi.mock('./api/persons')
 beforeEach(() => {
   vi.mocked(personsApi.listPersons).mockResolvedValue([])
   vi.mocked(personsApi.listUnnamedFaces).mockReturnValue(new Promise(() => {}))
+  // Die Ablaufübersicht gilt hier als gesehen, sonst läge sie über jeder Projektseite.
+  vi.mocked(projectOverviewApi.getOverviewSeen).mockResolvedValue({ seen: true })
 })
 
 function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
