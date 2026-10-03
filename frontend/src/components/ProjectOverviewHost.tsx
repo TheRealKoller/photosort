@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import { useMarkOverviewSeen, useOverviewSeen } from '../hooks/useOverviewSeen'
 import { ProjectOverviewContext, type ProjectOverviewControls } from '../hooks/useProjectOverview'
 import { useProjectQuery } from '../hooks/useProjects'
+import { computeStepStates, getDefaultStepId } from '../utils/pipelineSteps'
 import { WorkflowOverviewDialog } from './WorkflowOverviewDialog'
 
 /** Ohne gültige Projekt-Id gibt es keine Übersicht - der Auslöser erscheint dort ohnehin nicht,
@@ -75,7 +76,14 @@ function ValidProjectOverviewHost({
   function handleClose(): void {
     setIsOpenedByHand(false)
     markSeen()
-    navigate(`/projects/${projectId}/pipeline`)
+    // Das Ziel steht hier ausgeschrieben, mit derselben Ableitung wie die Weiterleitung von
+    // `/pipeline` - ein Umweg ueber sie hinge das Layout samt Ausloeser fuer einen Render aus,
+    // und die Fokusrueckgabe des Dialogs ginge an einen geloesten Knoten.
+    const target =
+      project === undefined
+        ? 'pipeline'
+        : `pipeline/${getDefaultStepId(computeStepStates(project))}`
+    navigate(`/projects/${projectId}/${target}`)
   }
 
   function handleOpenEntry(): void {

@@ -10,7 +10,7 @@ import { ApiError, apiFetch } from '../api/client'
 import type { OverviewSeenOut, ProjectOut } from '../api/types'
 import { setToken } from '../auth/token'
 import { useProjectOverview } from '../hooks/useProjectOverview'
-import { projectFixture } from '../test/projectStateSpace'
+import { projectFixture, scanSummary } from '../test/projectStateSpace'
 import { PROJECT_ROUTE_PATHS } from '../utils/projectRoutes'
 import { ProjectOverviewHost } from './ProjectOverviewHost'
 
@@ -248,7 +248,8 @@ describe('ProjectOverviewHost: Schließen', () => {
       }
 
       expect(screen.queryByRole('dialog')).toBeNull()
-      expect(screen.getByTestId('ort')).toHaveTextContent('/projects/1/pipeline')
+      // Frisches Projekt: Der nächste anstehende Schritt ist der Scan.
+      expect(screen.getByTestId('ort').textContent).toBe('/projects/1/pipeline/scan')
       await waitFor(() => expect(calls()).toContain('PUT /projects/1/overview-seen'))
     },
   )
@@ -284,7 +285,7 @@ describe('ProjectOverviewHost: Schließen', () => {
     await waitFor(() => expect(calls()).toContain('PUT /projects/1/overview-seen'))
     await act(async () => {})
 
-    expect(screen.getByTestId('ort')).toHaveTextContent('/projects/1/pipeline')
+    expect(screen.getByTestId('ort').textContent).toBe('/projects/1/pipeline/scan')
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('status')).toBeNull()
@@ -383,6 +384,48 @@ describe('ProjectOverviewHost: auf jedem Weg ins Projekt', () => {
       await act(async () => {})
       expect(calls().filter((call) => call.includes('overview-seen'))).toEqual([])
       expect(screen.queryByRole('dialog', { name: 'Ablauf im Überblick' })).toBeNull()
+    },
+  )
+})
+
+describe('ProjectOverviewHost: Fokus nach dem Schließen', () => {
+  afterEach(() => {
+    window.localStorage.clear()
+  })
+
+  /*
+   * Der Auslöser „Ablauf“ bekommt den Fokus zurück, auch wenn das Schließen auf einen ANDEREN
+   * Schritt führt: Hier steht man auf dem Scan, der nächste anstehende Schritt ist der Ausschuss.
+   * Ein Umweg über die Weiterleitung von `/pipeline` hängte das Layout samt Auslöser für einen
+   * Render aus, und die Fokusrückgabe ginge an einen gelösten Knoten.
+   */
+  it.each(['Schließen', 'Esc'])(
+    'gibt den Fokus nach %s an den Auslöser zurück und landet auf dem nächsten Schritt',
+    async (way) => {
+      const user = userEvent.setup()
+      answer({
+        project: () => Promise.resolve({ ...PROJECT, last_scan: scanSummary('success') }),
+        seen: () => Promise.resolve({ seen: true }),
+      })
+      renderApp('/projects/1/pipeline/scan')
+      const trigger = await screen.findByRole('button', { name: 'Ablauf' })
+
+      await user.click(trigger)
+      await screen.findByRole('dialog', { name: 'Ablauf im Überblick' })
+      if (way === 'Esc') {
+        await user.keyboard('{Escape}')
+      } else {
+        await user.click(screen.getByRole('button', { name: 'Schließen' }))
+      }
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole('link', { name: /^Schritt 2 von 4: Ausschuss, aktuell$/ }),
+        ).toHaveAttribute('aria-current', 'step'),
+      )
+      const nachher = screen.getByRole('button', { name: 'Ablauf' })
+      expect(nachher, 'derselbe Knoten, nicht neu eingehängt').toBe(trigger)
+      expect(nachher).toHaveFocus()
     },
   )
 })
