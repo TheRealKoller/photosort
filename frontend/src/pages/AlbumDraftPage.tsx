@@ -43,6 +43,7 @@ import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
 import { groupEventsByDay } from '../utils/eventGrouping'
 import { ownRatingStatus } from '../utils/ownRating'
 import { carriesPersons, filterByPersons } from '../utils/personFilter'
+import { STATION_LABELS } from '../utils/projectRoutes'
 import { formatDayHeading } from '../utils/timeOfDay'
 
 /**
@@ -58,6 +59,10 @@ export const DRAFT_EMPTY_TEXT = 'Noch kein Auswahlvorschlag — führe die Klass
 export const DRAFT_CLOUD_CONSENT_TEXT =
   'Ohne Cloud-Freigabe entsteht kein Album-Entwurf. Die Freigabe erteilst du in den ' +
   'Projekteinstellungen.'
+
+/** Die Schaltfläche zur Cloud-Freigabe neben `DRAFT_CLOUD_CONSENT_TEXT` - auch in der
+ * Ablaufübersicht wortgleich. */
+export const SETTINGS_LINK_LABEL = 'Zu den Projekteinstellungen'
 
 /** Titel des Hinweises nach einem Tausch („Gestrichen" kommt aus der Begriffsquelle). */
 export const EXCHANGED_TITLE = 'Getauscht'
@@ -447,7 +452,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
     <div ref={containerRef} className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h1 ref={headingRef} tabIndex={-1} className="text-xl sm:text-2xl">
-          Album-Entwurf
+          {STATION_LABELS.album}
         </h1>
         {ready && hasEvents && (
           <p className="text-sm text-text">{draftOverviewText(days.length, events.length)}</p>
@@ -503,7 +508,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_CLOUD_CONSENT_TEXT}</p>
           <Button asChild variant="secondary" size="sm">
-            <Link to={`/projects/${id}/settings`}>Zu den Projekteinstellungen</Link>
+            <Link to={`/projects/${id}/settings`}>{SETTINGS_LINK_LABEL}</Link>
           </Button>
         </div>
       )}

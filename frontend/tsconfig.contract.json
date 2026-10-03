@@ -31,6 +31,7 @@
     "src/prettierSupportInfo.test.ts",
     "src/albumStateLabels.structure.test.ts",
     "src/albumDraftMembership.contract.test.ts",
-    "src/stepName.structure.test.ts"
+    "src/stepName.structure.test.ts",
+    "src/workflowOverview.structure.test.ts"
   ]
 }
