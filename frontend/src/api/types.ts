@@ -983,6 +983,12 @@ export interface ProjectStatsRemoteFailure {
   photo_count: number
 }
 
+/** Ob die angemeldete Person die Ablaufübersicht dieses Projekts schon geschlossen hat - genau
+ * dieses eine Feld, nie der Zustand der anderen Person. */
+export interface OverviewSeenOut {
+  seen: boolean
+}
+
 export interface ProjectStatsDiagnostics {
   /** null = noch nie gescannt (ausdruecklich nicht 0). */
   last_scan_files_skipped: number | null
