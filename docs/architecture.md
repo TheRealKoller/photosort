@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-09-28 (Spec 0551/ADR 0127 — Personenübersicht je Projekt: Gesichtsbox nur für die festgelegten Personen, Rücknahme eines gezeigten Gesichts, „Ohne Namen" als Auflistung auf Anfrage im API-Prozess, Schreibsperre der Personen-Schreibwege; davor Spec 0292/ADR 0126)
+**Letzte Aktualisierung:** 2026-10-03 (Spec 0566 — Ablaufübersicht je Projekt mit „schon gesehen" je Person und Projekt, dritter Schritt heißt überall „Klassifizierung"; davor Spec 0551/ADR 0127)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -174,7 +174,7 @@ Verarbeitungs-Cache (Thumbnails).
     `App.tsx` (Routen `/projects/:id/pipeline/:step`) abgeleitet werden — kein zweiter Ort führt
     die Schrittmenge. **Seit Spec
     [`0525`](../specs/features/0525-ausschuss-ein-schritt.md) zählt das Modell vier Schritte:**
-    Scan, Ausschuss, Kriterien-Bewertung, Kuratierung; der frühere eigene Schritt „Ausschuss-Gate"
+    Scan, Ausschuss, Klassifizierung, Kuratierung; der frühere eigene Schritt „Ausschuss-Gate"
     ist entfallen, weil er weder einen eigenen Lauf noch einen eigenen Ort trug. Erkennung und
     Sichtung sind EIN Schritt — sein Label (`Ausschuss`) nennt deshalb den ganzen Schritt und nicht
     mehr nur seinen ersten Teil, und die Orientierungszeile lautet „von 4". **Der Abschluss dieses
@@ -183,7 +183,30 @@ Verarbeitungs-Cache (Thumbnails).
     und schließt nichts ab; die Bestätigung des Nutzers gibt den nächsten Schritt frei. Deshalb
     ordnet `RUN_FIELD_BY_STEP` dem Schritt weiterhin `last_scoring_run` zu — die Stand-Zeile der
     Projektkarte nennt ihn auch nach einem erfolgreichen Lauf als offenen Schritt „Weiter:
-    Ausschuss" — und `StepId` führt kein `gate` mehr.
+    Ausschuss" — und `StepId` führt kein `gate` mehr. Die Kennung des dritten Schritts bleibt
+    `kriterien` (Route `/projects/:id/pipeline/kriterien`, `KriterienStepPage`), sein Label ist
+    „Klassifizierung"; sichtbar steht der Schrittname nur über `PIPELINE_STEPS[].label`.
+  - **Ablaufübersicht** *(Spec 0566)*: ein modaler Dialog (`components/WorkflowOverviewDialog.tsx`
+    auf `components/ui/dialog.tsx`), keine Route. Er hängt an `components/ProjectOverviewHost.tsx`,
+    das die `AppShell` für **jede** Route mit Projektkontext rendert (`matchProjectId`, Schlüssel
+    `projectId`) — deshalb erscheint er beim ersten Öffnen auf jedem Einstiegsweg. Der Host öffnet
+    ihn von selbst, wenn `GET /projects/{id}/overview-seen` `seen: false` liefert **oder fehlschlägt**
+    (im Zweifel zeigen); er stellt `useProjectOverview().open` als Kontext bereit, über den der
+    Auslöser im Kopf von `ProjectPipelineLayout` (auf jeder Schrittseite an derselben Stelle) ihn
+    öffnet. Jedes Schließen setzt den Abfragewert lokal auf gesehen, schickt `PUT …/overview-seen`
+    ohne Fehleranzeige und führt auf `/projects/{id}/pipeline`, also über dieselbe
+    Frontier-Ableitung zum nächsten anstehenden Schritt; ein Klick auf einen Schritt im Dialog führt
+    stattdessen dorthin. Der Abfrageschlüssel trägt den Nutzernamen
+    (`['overview-seen', username, projectId]`), weil der Abfrage-Cache eine Abmeldung überlebt.
+    **Die Zustände je Eintrag entstehen ausschließlich in `pipelineSteps.ts::deriveWorkflowOverview`**
+    aus `computeStepStates`, `getDefaultStepId`, `getBlockedReason` und `RUN_FIELD_BY_STEP` —
+    dieselben Bausteine wie Schrittleiste und Stand-Zeile; eine zweite Regel daneben ließe
+    Übersicht, Leiste und Projektkarte verschiedene nächste Schritte nennen. „Aktuell" ist der
+    Frontier-Schritt, sofern er nicht erledigt ist (dieselbe Bedingung, unter der die Stand-Zeile
+    einen Schritt nennt), nicht der per URL geöffnete. Album-Entwurf und Endauswahl sind nie
+    „erledigt": „jederzeit möglich", sobald `kuratierung` erreichbar ist, sonst gesperrt mit dem
+    Sperrgrund der Kuratierung. Die festen Erklärtexte liegen in `utils/workflowOverview.ts` als
+    `Record` über alle Einträge, damit ein neuer Schritt ohne Text ein Typfehler ist.
   - **Personen anzeigen, korrigieren, festlegen und filtern** *(Spec 0292, ADR
     [`0126`](../specs/decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md))*:
     `components/PhotoPersonsSection.tsx` in `PhotoDetailPage` zeigt je festgelegter Person, ob sie
@@ -426,6 +449,14 @@ Verarbeitungs-Cache (Thumbnails).
     Modul, es gibt danach genau **eine** Aufzählung dessen, was an einem Projekt hängt. Die
     Import-Richtung ist verbindlich (`demo_state` → `project_deletion`, nie umgekehrt), sonst wäre
     der von der Demo-Seeder-Sperre bewachte Teil über einen HTTP-Endpunkt erreichbar.
+  - `GET`/`PUT /projects/{project_id}/overview-seen` (neues Router-Modul `api/project_overview.py`,
+    Router-Level-Auth-Guard plus `get_current_user` für die `user_id`): `GET` liefert
+    `{"seen": bool}` für den angemeldeten Nutzer, `PUT` merkt „gesehen" idempotent und antwortet
+    `204` ohne Body; beide `404` bei unbekanntem Projekt. Ein nebenläufiger `IntegrityError` des
+    `PUT` wird nach `rollback` und erneuter Projektprüfung als `204` beantwortet (die Zeile hat dann
+    ein paralleler Aufruf derselben Person geschrieben), nie als `500`. Der Wert steht bewusst
+    **nicht** an `ProjectOut`: `ProjectOut` ist nutzerunabhängig und wird gepollt, und ein Lesefehler
+    des Merkers darf das Laden des Projekts nicht mitreißen.
   - kein neuer Endpunkt, drei additive Antwortfelder. `CategoryCandidateOut.confidence: float |
     None` (`api/photos.py`) — die Zahl folgt dem SCHLÜSSEL, nicht der `origin`-Kennzeichnung: ein
     lokal UND remote erkannter Schlüssel bleibt `origin="local"`, behält aber die Modellzahl; ein
@@ -1401,6 +1432,9 @@ Verarbeitungs-Cache (Thumbnails).
   und durch eine dreiteilige, fail-closed Sperre gegen jede fremde Datenbank gesichert ist. Die
   beiden Demo-Personen (Spec 0292) entstehen über die echten Dienstfunktionen in `persons.py` mit
   synthetischen Referenzen und werden beim Neuaufbau ausschließlich über ihre Demo-Namen entfernt.
+  Das Setup-Projekt (`e2e/setup/auth.setup.ts`) markiert nach der Anmeldung die Ablaufübersicht
+  aller Projekte für den Prüfnutzer als gesehen; sonst läge der modale Dialog beim ersten Öffnen
+  jedes Projekts über der geprüften Seite.
   Reine Entwicklungs-/Prüf-Infrastruktur: kein Produktivpfad importiert dieses Modul,
   `docker-compose.yml` bleibt unverändert. Siehe
   [`specs/features/0174-browser-zugang-fuer-claude.md`](../specs/features/0174-browser-zugang-fuer-claude.md)
@@ -1448,14 +1482,15 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     auch die neue Remote-Kategorie-Klassifizierung. **Löschumfang (Spec
     [`0044`](../specs/features/0044-projekte-loeschen.md), ADR
     [`decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md`](../specs/decisions/0062-projektloeschung-als-metadatengeordnete-mengenloeschung.md)):**
-    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller vierundzwanzig am
-    Projekt hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
+    `DELETE /projects/{id}` entfernt in **einer** Transaktion die Zeilen aller am Projekt
+    hängenden Tabellen (`photos`, `project_cameras`, `scan_runs`, `scoring_runs`,
     `criterion_scoring_runs`, `remote_category_classification_runs`, `ratings`, `photo_scores`,
     `photo_criterion_scores`, `photo_rankings`, `events`, `photo_landmark_detections`,
     `photo_fine_labels`, `photo_duplicate_decisions`, `photo_motif_assessments`,
-    `photo_motif_strengths`, `photo_motif_corrections`, `photo_album_suitability`,
-    `photo_cloud_vision_errors`, `final_selection_decisions`, `feedback_events`, `place_lookups`,
-    `landmark_names`, `landmark_place_lookups`) sowie das Projekt selbst, dazu
+    `photo_motif_strengths`, `photo_motif_corrections`, `photo_person_detections`,
+    `photo_person_corrections`, `photo_album_suitability`, `photo_cloud_vision_errors`,
+    `final_selection_decisions`, `feedback_events`, `place_lookups`, `landmark_names`,
+    `landmark_place_lookups`, `project_overview_seen`) sowie das Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
     Erreichbarkeitsprüfung automatisch heraus, ohne eigene Ausnahmeliste; ein `fine_labels`-Eintrag,
@@ -1499,6 +1534,15 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     keine zweite Zählung daneben. Der **Bearbeitungsstand** wird bewusst **kein** Feld: er bleibt
     Frontend-Ableitung (`utils/pipelineSteps.ts`), weil dieselbe Ableitung das Ziel der
     Weiterleitung von `/projects/:id` bestimmt und ein zweiter Ort dafür auseinanderliefe.
+- **ProjectOverviewSeen** *(Spec 0566, `models.py`, Tabelle `project_overview_seen`)*: „diese
+  Person hat die Ablaufübersicht in diesem Projekt geschlossen" — Primärschlüssel
+  `(user_id, project_id)`, beide echte, benannte Fremdschlüssel, **keine weitere Spalte**. Die
+  Anwesenheit der Zeile ist die ganze Aussage; ihre Abwesenheit heißt „noch nicht gesehen", deshalb
+  gelten alle Projekte vor Einführung ohne Datenwanderung als ungesehen. Je Person und Projekt
+  höchstens eine Zeile ist damit strukturell wahr. Geschrieben und gelesen wird ausschließlich für
+  den angemeldeten Nutzer (`user_id` allein aus dem Token, nie aus der Anfrage); eine Zeile einer
+  anderen Person verlässt den Server nie. Kein Schreibweg setzt sie zurück; sie verschwindet nur mit
+  dem Projekt (`project_deletion.py`).
 - **OpenCloud-Verbindung**: kein eigenes DB-Modell — eine einzige, instanzweite Verbindung,
   konfiguriert über
   `OPENCLOUD_BASE_URL`/`OPENCLOUD_USERNAME`/`OPENCLOUD_APP_TOKEN`/`OPENCLOUD_DRIVE_NAME` in `.env`.
