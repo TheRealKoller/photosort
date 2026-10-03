@@ -100,7 +100,9 @@ function OverviewEntry({
       {isBlocked ? (
         <p className="text-sm text-text">{item.blockedReason}</p>
       ) : (
-        <div className="flex flex-wrap gap-3">
+        // Zeilenabstand 16 px: Brechen die beiden Schaltflaechen des Album-Entwurfs bei 360 px um,
+        // ueberlappten sich ihre aufgespannten 44-px-Trefferflaechen bei 12 px.
+        <div className="flex flex-wrap gap-x-3 gap-y-4">
           <Button asChild size="sm" variant={item.state === 'aktuell' ? 'default' : 'secondary'}>
             <Link to={item.to} onClick={onOpenEntry}>
               {`${label} öffnen`}

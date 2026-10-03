@@ -16,6 +16,12 @@ import { expect, type Page } from '@playwright/test'
 export const DEMO_USERNAME = 'e2e-daniel'
 export const DEMO_PASSWORD = 'e2e-only-password-1'
 
+/** Die zweite Person des Pruefstacks (AUTH_SEED_USER2_* in `docker-compose.e2e.yml`) - fuer das
+ * erste Erscheinen der Ablaufuebersicht, die fuer `DEMO_USERNAME` im Setup als gesehen gilt. Gilt
+ * nur in der demo-geseedeten Datenbank; keine Ueberschreibung per Umgebungsvariable. */
+export const SECOND_USERNAME = 'e2e-zweiter-nutzer'
+export const SECOND_PASSWORD = 'e2e-only-password-2'
+
 export async function logIn(page: Page): Promise<void> {
   await page.goto('/login')
   await page.getByLabel('Benutzername').fill(DEMO_USERNAME)

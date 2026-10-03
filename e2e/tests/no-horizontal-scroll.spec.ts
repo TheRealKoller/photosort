@@ -255,6 +255,66 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
 })
 
 /**
+ * Die Ablaufuebersicht bei 360 px (specs/features/0566-ablauf-uebersicht.md). Gemessen am
+ * Fehlerzustand-Projekt: Dort tragen die Kopfzeilen Lauf-Kennzeichen und sind am laengsten.
+ *
+ * Seite und Dialog stehen nicht seitlich ueber, und "Schliessen" liegt vor UND nach dem Scrollen
+ * des Inhaltsbereichs im Bild - es scrollt nur der Inhalt, nie die Schaltflaechenzeile.
+ */
+test('die Ablaufuebersicht scrollt bei 360 px nur im Inhalt, nie seitlich', async ({ page }) => {
+  const errorId = await demoProjectId(page, DEMO_PROJECTS.error)
+  await page.goto(`/projects/${errorId}/pipeline/scan`)
+  await page.getByRole('button', { name: 'Ablauf' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Ablauf im Überblick' })
+  await expect(dialog, 'geoeffnete Ablaufuebersicht').toBeVisible()
+  const schliessen = dialog.getByRole('button', { name: 'Schließen' })
+  const inhalt = dialog.getByRole('list', { name: 'Schritte' }).locator('xpath=..')
+
+  // Vorbedingung: Der Inhaltsbereich traegt tatsaechlich mehr, als in ihn passt - sonst bestuende
+  // die Zusage "Schliessen bleibt im Bild" auch ohne scrollenden Bereich.
+  const vorher = await inhalt.evaluate((element) => ({
+    scrollHeight: element.scrollHeight,
+    clientHeight: element.clientHeight,
+  }))
+  expect(vorher.scrollHeight, 'Inhaltshoehe gegen sichtbare Hoehe').toBeGreaterThan(
+    vorher.clientHeight + TOLERANCE,
+  )
+  await expect(schliessen, '"Schließen" vor dem Scrollen').toBeInViewport({ ratio: 1 })
+
+  await inhalt.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+  })
+  await expect(schliessen, '"Schließen" nach dem Scrollen').toBeInViewport({ ratio: 1 })
+
+  const breiten = await page.evaluate(() => {
+    const dialogElement = document.querySelector('dialog')
+    // Seitlich scrollen kann nur ein Behaelter, dessen `overflow-x` das zulaesst - der negative
+    // Rand des Inhaltsbereichs (Fokusring-Luft) ragt sichtbar ueber, scrollt aber nichts.
+    const ueberstehend = [dialogElement, ...Array.from(dialogElement?.querySelectorAll('*') ?? [])]
+      .filter((element): element is Element => element !== null)
+      .filter(
+        (element) =>
+          ['auto', 'scroll'].includes(getComputedStyle(element).overflowX) &&
+          element.scrollWidth > element.clientWidth + 1,
+      )
+    return {
+      dokument: document.documentElement.scrollWidth,
+      sichtbar: document.documentElement.clientWidth,
+      dialogRechts: dialogElement?.getBoundingClientRect().right ?? Infinity,
+      ueberstehend: ueberstehend.map((element) => element.tagName.toLowerCase()).slice(0, 5),
+    }
+  })
+  expect(breiten.dokument, 'Dokumentbreite bei geoeffneter Uebersicht').toBeLessThanOrEqual(
+    breiten.sichtbar + TOLERANCE,
+  )
+  expect(breiten.dialogRechts, 'rechte Kante des Dialogs').toBeLessThanOrEqual(
+    breiten.sichtbar + TOLERANCE,
+  )
+  expect(breiten.ueberstehend, 'seitlich ueberstehende Elemente im Dialog').toEqual([])
+})
+
+/**
  * Die Filterleiste der Fotouebersicht bei 360 px (specs/features/0489-..., AK11).
  *
  * ZWEI MESSUNGEN, nicht eine. „Die Seite scrollt nicht seitlich" allein bestuende auch gegen eine
