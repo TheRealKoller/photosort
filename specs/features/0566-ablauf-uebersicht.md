@@ -1,6 +1,6 @@
 # 0566 - Übersichtsseite am Projektbeginn, die den geplanten Ablauf erklärt
 
-**Status:** Accepted
+**Status:** Implemented ([PR #571](https://github.com/TheRealKoller/photosort/pull/571))
 **Erstellt:** 2026-10-03
 **Bezug:** [Issue #566](https://github.com/TheRealKoller/photosort/issues/566)
 
