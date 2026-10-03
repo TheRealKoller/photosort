@@ -233,7 +233,7 @@ describe('AlbumSelectionPage - die beiden Leerzustände', () => {
     renderPage()
 
     expect(await screen.findByText(DRAFT_EMPTY_TEXT)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Zur Kriterien-Bewertung' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Zur Klassifizierung' })).toHaveAttribute(
       'href',
       '/projects/1/pipeline/kriterien',
     )

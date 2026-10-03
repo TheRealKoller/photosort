@@ -49,7 +49,7 @@ import { formatDayHeading } from '../utils/timeOfDay'
  * Der Leerzustand des Entwurfs - nur ein Lauf ohne Events zeigt ihn. Er benennt den fehlenden
  * Schritt und verlinkt ihn.
  */
-export const DRAFT_EMPTY_TEXT = 'Noch kein Auswahlvorschlag — führe die Kriterien-Bewertung aus.'
+export const DRAFT_EMPTY_TEXT = 'Noch kein Auswahlvorschlag — führe die Klassifizierung aus.'
 
 /**
  * Der Leerzustand OHNE Cloud-Freigabe - mit Vorrang vor `DRAFT_EMPTY_TEXT`. Er WIEDERHOLT DEN
@@ -512,7 +512,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_EMPTY_TEXT}</p>
           <Button asChild variant="secondary" size="sm">
-            <Link to={`/projects/${id}/pipeline/kriterien`}>Zur Kriterien-Bewertung</Link>
+            <Link to={`/projects/${id}/pipeline/kriterien`}>Zur Klassifizierung</Link>
           </Button>
         </div>
       )}

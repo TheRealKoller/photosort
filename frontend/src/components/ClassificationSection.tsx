@@ -112,12 +112,6 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         ? 'Fehler beim Auslösen der Klassifizierung.'
         : null
 
-  // Die Fortschrittszahlen je Teilschritt kommen aus `cloud_phases` bzw. dem Lauf selbst -
-  // abgeleitet in `utils/classificationSteps.ts`, dargestellt von ClassificationProgress. Die
-  // frueher hier stehende "welcher der beiden Laeufe liefert gerade die Zahlen?"-Weiche entfaellt
-  // damit ersatzlos.
-  const isRemotePhase = run?.phase === 'remote_categories'
-
   const providerLabel = estimate ? formatProviderLabel(estimate.provider) : ''
   // Die Serverreihenfolge (photo_count absteigend, Tie-Break canonical_key) wird uebernommen und
   // nur am Ende gekuerzt - die seltensten Eintraege fallen weg, nicht die haeufigsten.
@@ -189,8 +183,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       {run !== null && (
         <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
           <StatusDot status={runStatus} />
-          {runStatus === 'running' &&
-            (isRemotePhase ? 'Remote-Kategorisierung läuft…' : 'Kriterien-Bewertung läuft…')}
+          {runStatus === 'running' && 'Klassifizierung läuft…'}
           {runStatus === 'success' && 'Klassifizierung abgeschlossen'}
           {runStatus === 'failed' && 'Klassifizierung fehlgeschlagen'}
         </p>

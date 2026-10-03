@@ -181,7 +181,7 @@ export function AlbumSelectionPage() {
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_EMPTY_TEXT}</p>
           <Button asChild variant="secondary" size="sm">
-            <Link to={`/projects/${id}/pipeline/kriterien`}>Zur Kriterien-Bewertung</Link>
+            <Link to={`/projects/${id}/pipeline/kriterien`}>Zur Klassifizierung</Link>
           </Button>
         </div>
       )}

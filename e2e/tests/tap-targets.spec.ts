@@ -382,7 +382,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   )
   checked.push('Schritt 1 der Schrittleiste')
 
-  const gesperrt = stepper.getByRole('button', { name: /, blockiert$/ })
+  const gesperrt = stepper.getByRole('button', { name: /, gesperrt$/ })
   await expect(gesperrt, 'gesperrte Schritte der Leiste').toHaveCount(1)
   await assertTappable(gesperrt, 'gesperrter Schritt der Schrittleiste', { ariaDisabled: true })
   checked.push('gesperrter Schritt der Schrittleiste')

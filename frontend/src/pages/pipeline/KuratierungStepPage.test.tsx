@@ -251,7 +251,7 @@ describe('KuratierungStepPage', () => {
      * verliert der Nutzer seine Eingabe an einen Fehler, den er gerade erst gelesen hat. */
     const user = userEvent.setup()
     vi.mocked(projectsApi.setSelectionTarget).mockRejectedValue(
-      new ApiError(409, 'Fuer dieses Projekt laeuft gerade eine Kriterien-Bewertung.'),
+      new ApiError(409, 'Fuer dieses Projekt laeuft gerade eine Klassifizierung.'),
     )
     renderPage(project())
 
@@ -259,7 +259,7 @@ describe('KuratierungStepPage', () => {
     await user.tab()
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(/kriterien-bewertung/i)
+    expect(alert).toHaveTextContent(/klassifizierung/i)
     expect((screen.getByLabelText(FIELD) as HTMLInputElement).value).toBe('150')
   })
 
@@ -270,7 +270,7 @@ describe('KuratierungStepPage', () => {
      * Eingabe, die es nicht mehr gibt. */
     const user = userEvent.setup()
     vi.mocked(projectsApi.setSelectionTarget).mockRejectedValue(
-      new ApiError(409, 'Fuer dieses Projekt laeuft gerade eine Kriterien-Bewertung.'),
+      new ApiError(409, 'Fuer dieses Projekt laeuft gerade eine Klassifizierung.'),
     )
     renderPage(project({ selection_target: 150, effective_selection_target: 150 }))
 

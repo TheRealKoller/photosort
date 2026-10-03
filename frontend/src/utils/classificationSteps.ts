@@ -56,7 +56,7 @@ export const CLASSIFICATION_STEP_ORDER = [
 
 const STEP_LABELS: Record<ClassificationStepId, string> = {
   remote_categories: 'Kategorie-Vorschläge',
-  criteria: 'Kriterien-Bewertung',
+  criteria: 'Qualität und Bildinhalt',
   landmark: 'Sehenswürdigkeits-Erkennung',
   ranking: 'Rangfolge',
   persons: 'Personen-Erkennung',

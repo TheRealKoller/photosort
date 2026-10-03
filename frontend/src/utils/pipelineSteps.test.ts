@@ -4,12 +4,13 @@ import type { ProjectOut, ScanStatus } from '../api/types'
 import {
   computeStepStates,
   deriveProjectStand,
+  getBlockedReason,
   getDefaultStepId,
   getHighestReachableStepId,
   isStepId,
   PIPELINE_STEPS,
   RUN_FIELD_BY_STEP,
-  STAND_KATEGORIE_ABGESCHALTET,
+  STAND_KLASSIFIZIERUNG_ABGESCHALTET,
   STAND_OHNE_SCAN,
   stepProgress,
   type ProjectStand,
@@ -58,6 +59,23 @@ describe('PIPELINE_STEPS', () => {
   it('kennt kein gate mehr - der Schritt ist entfallen, nicht umbenannt', () => {
     expect(PIPELINE_STEPS.map((step) => step.label)).not.toContain('Ausschuss-Gate')
     expect(PIPELINE_STEPS.map((step) => step.id)).not.toContain('gate')
+  })
+
+  // Spec 0566: Der dritte Schritt heisst ueberall "Klassifizierung"; Kennung und Route bleiben.
+  it('nennt die vier Schritte Scan, Ausschuss, Klassifizierung, Kuratierung', () => {
+    expect(PIPELINE_STEPS.map((step) => step.label)).toEqual([
+      'Scan',
+      'Ausschuss',
+      'Klassifizierung',
+      'Kuratierung',
+    ])
+    expect(PIPELINE_STEPS.find((step) => step.label === 'Klassifizierung')?.id).toBe('kriterien')
+  })
+
+  it('nennt im Sperrgrund der Kuratierung den Schritt "Klassifizierung"', () => {
+    expect(getBlockedReason('kuratierung', project())).toBe(
+      'Führe zuerst die Klassifizierung oben aus.',
+    )
   })
 })
 
@@ -363,7 +381,7 @@ describe('getDefaultStepId / getHighestReachableStepId (Akzeptanzkriterium 4)', 
       expected: 'kriterien',
     },
     {
-      name: 'Kriterien-Bewertung erledigt, category_selection_enabled: false (blockiert trotz erfuellter Vorbedingung)',
+      name: 'Klassifizierung erledigt, category_selection_enabled: false (blockiert trotz erfuellter Vorbedingung)',
       project: {
         category_selection_enabled: false,
         last_scan: { status: 'success' } as ProjectOut['last_scan'],
@@ -553,7 +571,7 @@ function enumerateProjects(): ProjectOut[] {
 /** Die zwei Wortlaute, die KEINEN Schritt benennen, mit der Tabellenzeile, zu der sie gehoeren. */
 const SONDERWORTLAUTE: Readonly<Record<string, StepId>> = {
   [STAND_OHNE_SCAN]: 'scan',
-  [STAND_KATEGORIE_ABGESCHALTET]: 'ausschuss',
+  [STAND_KLASSIFIZIERUNG_ABGESCHALTET]: 'ausschuss',
 }
 
 const SUFFIXES = [' läuft…', ' fehlgeschlagen'] as const
@@ -625,7 +643,7 @@ const WORTLAUT_TABELLE: readonly { descriptor: Descriptor; erreichbar: boolean }
   { descriptor: 'lauf|kriterien|failed', erreichbar: true },
   { descriptor: 'weiter|kriterien|-', erreichbar: true },
   { descriptor: 'weiter|kuratierung|-', erreichbar: true },
-  { descriptor: 'hinweis|ausschuss|-', erreichbar: true }, // Randfall C: Kategorie-Bewertung aus
+  { descriptor: 'hinweis|ausschuss|-', erreichbar: true }, // Randfall C: Klassifizierung aus
   { descriptor: 'fertig|-|-', erreichbar: false }, // Randfall B: Alles erledigt
 ]
 
@@ -712,17 +730,18 @@ describe('deriveProjectStand', () => {
       }),
     )
 
-    expect(stand).toEqual({ kind: 'hinweis', label: STAND_KATEGORIE_ABGESCHALTET })
+    expect(stand).toEqual({ kind: 'hinweis', label: STAND_KLASSIFIZIERUNG_ABGESCHALTET })
+    expect(STAND_KLASSIFIZIERUNG_ABGESCHALTET).toBe('Klassifizierung ist abgeschaltet')
   })
 
   /*
    * Randfall C spricht eine Aussage ueber das Feature-Flag aus. Dass sie nie faellt, waehrend das
    * Flag AN ist, ist die Bedingung dafuer, dass der Wortlaut nicht luegt.
    */
-  it('zeigt "Kategorie-Bewertung ist abgeschaltet" nur bei ausgeschaltetem Feature-Flag', () => {
+  it('zeigt "Klassifizierung ist abgeschaltet" nur bei ausgeschaltetem Feature-Flag', () => {
     for (const entry of projects) {
       const stand = deriveProjectStand(entry)
-      if (stand.kind === 'hinweis' && stand.label === STAND_KATEGORIE_ABGESCHALTET) {
+      if (stand.kind === 'hinweis' && stand.label === STAND_KLASSIFIZIERUNG_ABGESCHALTET) {
         expect(entry.category_selection_enabled).toBe(false)
       }
     }

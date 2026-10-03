@@ -19,7 +19,7 @@ export interface PipelineStepDefinition {
 export const PIPELINE_STEPS: readonly PipelineStepDefinition[] = [
   { id: 'scan', label: 'Scan' },
   { id: 'ausschuss', label: 'Ausschuss' },
-  { id: 'kriterien', label: 'Kriterien-Bewertung' },
+  { id: 'kriterien', label: 'Klassifizierung' },
   { id: 'kuratierung', label: 'Kuratierung' },
 ]
 
@@ -106,7 +106,7 @@ export function getBlockedReason(id: StepId, project: ProjectOut): string {
         ? 'Diese Funktion ist derzeit nicht aktiviert.'
         : 'Bestätige zuerst den Ausschuss oben.'
     case 'kuratierung':
-      return 'Führe zuerst die Kriterien-Bewertung oben aus.'
+      return 'Führe zuerst die Klassifizierung oben aus.'
     default:
       return ''
   }
@@ -147,7 +147,7 @@ export const RUN_FIELD_BY_STEP = {
 export const STAND_OHNE_SCAN = 'Noch nicht gescannt'
 
 /** Randfall C. */
-export const STAND_KATEGORIE_ABGESCHALTET = 'Kategorie-Bewertung ist abgeschaltet'
+export const STAND_KLASSIFIZIERUNG_ABGESCHALTET = 'Klassifizierung ist abgeschaltet'
 
 function stepLabelOf(id: StepId): string {
   const step = PIPELINE_STEPS.find((entry) => entry.id === id)
@@ -203,7 +203,7 @@ export function deriveProjectStand(project: ProjectOut): ProjectStand {
 
   const frontierId = getDefaultStepId(states)
   if (states.find((step) => step.id === frontierId)?.isDone === true) {
-    return { kind: 'hinweis', label: STAND_KATEGORIE_ABGESCHALTET }
+    return { kind: 'hinweis', label: STAND_KLASSIFIZIERUNG_ABGESCHALTET }
   }
 
   if (frontierId === 'scan' && deriveScanStatus(project) === 'never') {

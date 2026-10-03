@@ -49,12 +49,12 @@ describe('ProjectStandLine', () => {
   it('zeichnet einen fehlgeschlagenen Lauf als Kennzeichen ohne Ringindikator', () => {
     render(
       <ProjectStandLine
-        stand={{ kind: 'lauf', status: 'failed', label: 'Kriterien-Bewertung fehlgeschlagen' }}
+        stand={{ kind: 'lauf', status: 'failed', label: 'Klassifizierung fehlgeschlagen' }}
         projectId={7}
       />,
     )
 
-    expect(screen.getByText('Kriterien-Bewertung fehlgeschlagen')).toHaveAttribute(
+    expect(screen.getByText('Klassifizierung fehlgeschlagen')).toHaveAttribute(
       'data-status',
       'failed',
     )
