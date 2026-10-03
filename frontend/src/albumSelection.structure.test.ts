@@ -111,7 +111,7 @@ describe('Ein Textbaustein, der an zwei Orten gilt, steht nur an einem', () => {
     // eigenes Literal wäre selbst die zweite Kopie, die der Fall verbietet, und dieser Test
     // zählte sich fortan selbst mit. Läuft die Anwendung in der Browser-Umgebung, dieser Scan in
     // der Node-Umgebung, gibt es dafür auch keinen gemeinsamen Import.
-    const declaration = read('pages/AlbumDraftPage.tsx').match(
+    const declaration = read('utils/albumDraftTexts.ts').match(
       /export const DRAFT_EMPTY_TEXT = '([^']*)'/,
     )
     // Ohne diese Gegenprobe bestünde der Fall auch dann, wenn die Konstante umbenannt wäre und
@@ -125,6 +125,6 @@ describe('Ein Textbaustein, der an zwei Orten gilt, steht nur an einem', () => {
       .filter((path) => readFileSync(path, 'utf8').includes(DRAFT_EMPTY_TEXT))
       .map((path) => `src/${path.slice(SRC_DIR.length)}`)
 
-    expect(occurrences).toEqual(['src/pages/AlbumDraftPage.tsx'])
+    expect(occurrences).toEqual(['src/utils/albumDraftTexts.ts'])
   })
 })

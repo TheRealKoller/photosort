@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 
 import type { ProjectOut } from '../api/types'
 import { cn } from '../lib/utils'
-import { DRAFT_CLOUD_CONSENT_TEXT, SETTINGS_LINK_LABEL } from '../pages/AlbumDraftPage'
+import { DRAFT_CLOUD_CONSENT_TEXT, SETTINGS_LINK_LABEL } from '../utils/albumDraftTexts'
 import {
   deriveWorkflowOverview,
   PIPELINE_STEPS,
@@ -97,17 +97,21 @@ function OverviewEntry({
 
       {item.id === 'album' && <p className="text-sm text-text">{DRAFT_CLOUD_CONSENT_TEXT}</p>}
 
-      {isBlocked ? (
-        <p className="text-sm text-text">{item.blockedReason}</p>
-      ) : (
-        // Zeilenabstand 16 px: Brechen die beiden Schaltflaechen des Album-Entwurfs bei 360 px um,
-        // ueberlappten sich ihre aufgespannten 44-px-Trefferflaechen bei 12 px.
+      {isBlocked && <p className="text-sm text-text">{item.blockedReason}</p>}
+
+      {/* Zeilenabstand 16 px: Brechen die beiden Schaltflaechen des Album-Entwurfs bei 360 px um,
+          ueberlappten sich ihre aufgespannten 44-px-Trefferflaechen bei 12 px. Der Weg zu den
+          Einstellungen steht am Album-Entwurf in JEDEM Zustand - die Freigabe ist immer
+          erteilbar, auch solange der Entwurf selbst noch gesperrt ist. */}
+      {(!isBlocked || item.id === 'album') && (
         <div className="flex flex-wrap gap-x-3 gap-y-4">
-          <Button asChild size="sm" variant={item.state === 'aktuell' ? 'default' : 'secondary'}>
-            <Link to={item.to} onClick={onOpenEntry}>
-              {`${label} öffnen`}
-            </Link>
-          </Button>
+          {!isBlocked && (
+            <Button asChild size="sm" variant={item.state === 'aktuell' ? 'default' : 'secondary'}>
+              <Link to={item.to} onClick={onOpenEntry}>
+                {`${label} öffnen`}
+              </Link>
+            </Button>
+          )}
           {item.id === 'album' && (
             <Button asChild size="sm" variant="secondary">
               <Link to={`/projects/${projectId}/settings`} onClick={onOpenEntry}>

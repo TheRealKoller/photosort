@@ -27,7 +27,8 @@ import { setToken } from '../auth/token'
 import { DRAFT_EMPTY_EVENT_TEXT } from '../components/DraftEventSection'
 import type { ObserverFactory } from '../hooks/useDraftPosition'
 import { MOTIF_SET } from '../test/motifSetFixture'
-import { AlbumDraftPage, DRAFT_CLOUD_CONSENT_TEXT, DRAFT_EMPTY_TEXT } from './AlbumDraftPage'
+import { DRAFT_CLOUD_CONSENT_TEXT, DRAFT_EMPTY_TEXT } from '../utils/albumDraftTexts'
+import { AlbumDraftPage } from './AlbumDraftPage'
 
 vi.mock('../api/photos')
 vi.mock('../api/projects')

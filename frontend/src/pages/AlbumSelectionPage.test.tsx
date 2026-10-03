@@ -12,8 +12,8 @@ import * as motifsApi from '../api/motifs'
 import type { AlbumSelectionOut, EventOut, PhotoOut } from '../api/types'
 import { SELECTION_DECIDED_BADGE_TEXT } from '../components/SelectionPhotoTile'
 import { MOTIF_SET } from '../test/motifSetFixture'
+import { DRAFT_EMPTY_TEXT } from '../utils/albumDraftTexts'
 import { SELECTION_NOTHING_CONTESTED_TEXT } from '../utils/albumSelection'
-import { DRAFT_EMPTY_TEXT } from './AlbumDraftPage'
 import { AlbumSelectionPage } from './AlbumSelectionPage'
 
 vi.mock('../api/albumSelection')

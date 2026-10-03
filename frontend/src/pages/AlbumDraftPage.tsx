@@ -39,30 +39,17 @@ import {
   formatDraftPhotoCount,
   reAddDecision,
 } from '../utils/albumDraft'
+import {
+  DRAFT_CLOUD_CONSENT_TEXT,
+  DRAFT_EMPTY_TEXT,
+  SETTINGS_LINK_LABEL,
+} from '../utils/albumDraftTexts'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
 import { groupEventsByDay } from '../utils/eventGrouping'
 import { ownRatingStatus } from '../utils/ownRating'
 import { carriesPersons, filterByPersons } from '../utils/personFilter'
 import { STATION_LABELS } from '../utils/projectRoutes'
 import { formatDayHeading } from '../utils/timeOfDay'
-
-/**
- * Der Leerzustand des Entwurfs - nur ein Lauf ohne Events zeigt ihn. Er benennt den fehlenden
- * Schritt und verlinkt ihn.
- */
-export const DRAFT_EMPTY_TEXT = 'Noch kein Auswahlvorschlag — führe die Klassifizierung aus.'
-
-/**
- * Der Leerzustand OHNE Cloud-Freigabe - mit Vorrang vor `DRAFT_EMPTY_TEXT`. Er WIEDERHOLT DEN
- * ZUSTIMMUNGSTEXT NICHT: was an die Cloud geht, steht an genau einer Stelle.
- */
-export const DRAFT_CLOUD_CONSENT_TEXT =
-  'Ohne Cloud-Freigabe entsteht kein Album-Entwurf. Die Freigabe erteilst du in den ' +
-  'Projekteinstellungen.'
-
-/** Die Schaltfläche zur Cloud-Freigabe neben `DRAFT_CLOUD_CONSENT_TEXT` - auch in der
- * Ablaufübersicht wortgleich. */
-export const SETTINGS_LINK_LABEL = 'Zu den Projekteinstellungen'
 
 /** Titel des Hinweises nach einem Tausch („Gestrichen" kommt aus der Begriffsquelle). */
 export const EXCHANGED_TITLE = 'Getauscht'

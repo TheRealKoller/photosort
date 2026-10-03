@@ -4,7 +4,6 @@ import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ProjectOut } from '../api/types'
-import { DRAFT_CLOUD_CONSENT_TEXT, SETTINGS_LINK_LABEL } from '../pages/AlbumDraftPage'
 import {
   criterionRunSummary,
   enumerateProjects,
@@ -12,6 +11,7 @@ import {
   scanSummary,
   scoringRunSummary,
 } from '../test/projectStateSpace'
+import { DRAFT_CLOUD_CONSENT_TEXT, SETTINGS_LINK_LABEL } from '../utils/albumDraftTexts'
 import {
   computeStepStates,
   deriveWorkflowOverview,
@@ -116,6 +116,21 @@ describe('WorkflowOverviewDialog: Inhalt', () => {
     )
   })
 
+  it('zeigt Hinweis und Weg zu den Einstellungen auch am gesperrten Album-Entwurf', () => {
+    // Ein frisch angelegtes, ungescanntes Projekt - genau die Lage beim ersten Öffnen.
+    renderDialog(projectFixture({ id: 4 }))
+
+    const album = entry('album')
+    expect(within(album).getByText('gesperrt')).toBeInTheDocument()
+    expect(within(album).getByText(DRAFT_CLOUD_CONSENT_TEXT)).toBeInTheDocument()
+    expect(within(album).getAllByRole('link')).toHaveLength(1)
+    expect(within(album).getByRole('link', { name: SETTINGS_LINK_LABEL })).toHaveAttribute(
+      'href',
+      '/projects/4/settings',
+    )
+    expect(within(album).queryByRole('link', { name: /öffnen$/ })).toBeNull()
+  })
+
   it('kündigt nichts über aria-live an - jeder Poll würde sonst vorgelesen', () => {
     renderDialog(ALL_REACHABLE)
 
@@ -146,13 +161,17 @@ describe('WorkflowOverviewDialog: Bedienung', () => {
     expect(screen.getByRole('link', { name: 'Scan öffnen' })).not.toHaveClass('bg-accent')
   })
 
-  it('gibt gesperrten Einträgen kein Bedienelement, sondern den Sperrgrund als Text', () => {
+  it('gibt gesperrten Einträgen keine Öffnen-Schaltfläche, sondern den Sperrgrund als Text', () => {
     const project = projectFixture({ last_scan: scanSummary('success') })
     renderDialog(project)
 
     for (const id of ['kriterien', 'kuratierung', 'album', 'selection']) {
       const element = entry(id)
-      expect(within(element).queryAllByRole('link')).toHaveLength(0)
+      // Einzige Ausnahme: der Weg zu den Einstellungen am Album-Entwurf, eigener Fall oben.
+      const links = within(element)
+        .queryAllByRole('link')
+        .filter((link) => link.textContent !== SETTINGS_LINK_LABEL)
+      expect(links).toHaveLength(0)
       expect(within(element).queryAllByRole('button')).toHaveLength(0)
       expect(within(element).getByText('gesperrt')).toBeInTheDocument()
     }
