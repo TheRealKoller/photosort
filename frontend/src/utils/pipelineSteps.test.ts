@@ -47,7 +47,7 @@ describe('PIPELINE_STEPS', () => {
     expect(PIPELINE_STEPS.map((step) => step.id)).not.toContain('gate')
   })
 
-  // Spec 0566: Der dritte Schritt heisst ueberall "Klassifizierung"; Kennung und Route bleiben.
+  // Der dritte Schritt heisst ueberall "Klassifizierung"; Kennung und Route bleiben.
   it('nennt die vier Schritte Scan, Ausschuss, Klassifizierung, Kuratierung', () => {
     expect(PIPELINE_STEPS.map((step) => step.label)).toEqual([
       'Scan',

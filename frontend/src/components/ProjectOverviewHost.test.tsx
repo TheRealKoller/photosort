@@ -15,7 +15,7 @@ import { PROJECT_ROUTE_PATHS } from '../utils/projectRoutes'
 import { ProjectOverviewHost } from './ProjectOverviewHost'
 
 /*
- * Wann die Ablaufübersicht erscheint (Spec 0566). Gespielt wird auf `apiFetch`, der einzigen
+ * Wann die Ablaufübersicht erscheint. Gespielt wird auf `apiFetch`, der einzigen
  * Stelle, die HTTP-Anfragen baut - damit ist jede Anfrage des Hosts sichtbar, auch eine, die über
  * einen ungeprüften Pfad liefe.
  */

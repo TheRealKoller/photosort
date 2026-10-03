@@ -797,7 +797,7 @@ class TestRebuildDemoStateProducesTheFiveStates:
     async def test_error_project_names_the_failed_step_classification(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
-        """Spec 0566: Die angezeigte Meldung des gescheiterten Laufs nennt den Schritt mit seinem
+        """Die angezeigte Meldung des gescheiterten Laufs nennt den Schritt mit seinem
         Namen in der Oberflaeche."""
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
         project = await _project(db_session, ERROR_PROJECT_NAME)

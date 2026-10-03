@@ -1,11 +1,11 @@
 """Der Merker "Ablaufuebersicht gesehen" - je Person und Projekt, ein Lese- und ein Schreibweg.
 
-SICHERHEIT (S1): Der Torwaechter haengt am ROUTER, der Router steht in
+SICHERHEIT: Der Torwaechter haengt am ROUTER, der Router steht in
 `tests/test_auth_guard.py::_protected_router_operations()`, und jeder Endpunkt hat in
 `tests/test_api_project_overview.py` einen eigenen 401-Fall. Ohne die Router-Dependency waere
 ein spaeter ergaenzter Endpunkt dieses Routers still oeffentlich.
 
-SICHERHEIT (S2/S3): Die Person kommt AUSSCHLIESSLICH aus `get_current_user` - kein Body, kein
+SICHERHEIT: Die Person kommt AUSSCHLIESSLICH aus `get_current_user` - kein Body, kein
 Query-Parameter. Gelesen und geschrieben wird genau die Zeile `(current_user.id, project_id)`,
 und die Antwort ist genau `{"seen": bool}`. Der Zustand der anderen Person verlaesst den Server
 auf keinem Weg; er steht deshalb auch nicht an `ProjectOut`.
@@ -34,7 +34,7 @@ class OverviewSeenOut(BaseModel):
 
 
 async def _ensure_project(session: AsyncSession, project_id: int) -> None:
-    """`404` wortgleich mit `api/projects.py::_get_project_or_404` (S4). Ueber eine Abfrage statt
+    """`404` wortgleich mit `api/projects.py::_get_project_or_404`. Ueber eine Abfrage statt
     `session.get`: Nach einem `rollback` darf kein abgelaufenes Objekt der Identity-Map die
     Antwort bestimmen."""
     found = (

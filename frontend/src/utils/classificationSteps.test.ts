@@ -250,7 +250,7 @@ describe('deriveClassificationSteps: Fortschrittsquellen', () => {
   })
 
   /*
-   * Spec 0566: Der ganze Schritt heisst "Klassifizierung". Die Teilschritte bleiben unterscheidbar:
+   * Der ganze Schritt heisst "Klassifizierung". Die Teilschritte bleiben unterscheidbar:
    * paarweise verschieden, keiner heisst wie der ganze Schritt oder wie dessen alter Name.
    */
   it('benennt die Teilschritte paarweise verschieden und nie wie den ganzen Schritt', () => {

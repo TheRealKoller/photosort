@@ -255,7 +255,7 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
 })
 
 /**
- * Die Ablaufuebersicht bei 360 px (specs/features/0566-ablauf-uebersicht.md). Gemessen am
+ * Die Ablaufuebersicht bei 360 px. Gemessen am
  * Fehlerzustand-Projekt: Dort tragen die Kopfzeilen Lauf-Kennzeichen und sind am laengsten.
  *
  * Seite und Dialog stehen nicht seitlich ueber, und "Schliessen" liegt vor UND nach dem Scrollen

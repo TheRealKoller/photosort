@@ -1766,7 +1766,7 @@ class TestTheSelectionTarget:
         )
 
         assert response.status_code == 409
-        # Spec 0566: der Schritt heisst ueberall "Klassifizierung" - die Meldung wird auf der
+        # Der Schritt heisst ueberall "Klassifizierung" - die Meldung wird auf der
         # Kuratierungsseite angezeigt.
         assert response.json()["detail"] == (
             "Fuer dieses Projekt laeuft gerade eine Klassifizierung. Der Richtwert "

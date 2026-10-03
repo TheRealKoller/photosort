@@ -1,5 +1,5 @@
 /**
- * Markiert die Ablaufuebersicht (specs/features/0566-ablauf-uebersicht.md) fuer die angemeldete
+ * Markiert die Ablaufuebersicht fuer die angemeldete
  * Person in jedem Demo-Projekt als gesehen. Ohne das laege der modale Dialog beim ersten Oeffnen
  * jedes Projekts ueber der geprueften Seite, und jeder Treffertest traefe ihn statt der Seite.
  *

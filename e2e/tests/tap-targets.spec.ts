@@ -444,7 +444,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
 })
 
 /*
- * Die Ablaufuebersicht (specs/features/0566-ablauf-uebersicht.md): Auslöser "Ablauf", jede
+ * Die Ablaufuebersicht: Auslöser "Ablauf", jede
  * Öffnen-Schaltflaeche und "Schliessen" sind auf 44 x 44 px treffbar - und Oeffnen wie Schliessen
  * gehen einmal per Fingertipp. Im "bewertet"-Projekt ist jeder Eintrag erreichbar; es traegt
  * damit alle sechs Öffnen-Schaltflaechen.

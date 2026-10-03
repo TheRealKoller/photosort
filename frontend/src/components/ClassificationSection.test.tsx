@@ -349,7 +349,7 @@ describe('genau einer der beiden Zustandsblöcke', () => {
     expect(isProgressShown() && isBalanceShown()).toBe(false)
   })
 
-  // Spec 0566: Die Statuszeile nennt den ganzen Schritt in JEDER Phase gleich - die Teilschritte
+  // Die Statuszeile nennt den ganzen Schritt in JEDER Phase gleich - die Teilschritte
   // unterscheidet die Fortschrittsliste darunter.
   it.each(['remote_categories', 'criteria', 'landmark', 'ranking', 'persons'] as const)(
     'zeigt waehrend der Phase "%s" die Statuszeile "Klassifizierung läuft…"',

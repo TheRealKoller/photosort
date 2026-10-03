@@ -26,7 +26,7 @@ setup('anmelden und Sitzungszustand speichern', async ({ page }) => {
   // Folge-Spec liefe still abgemeldet gegen die Login-Weiterleitung.
   expect(token, 'Anmelde-Token im localStorage').not.toBeNull()
 
-  // Spec 0566: Die Ablaufuebersicht erscheint beim ersten Oeffnen jedes Projekts. Fuer die
+  // Die Ablaufuebersicht erscheint beim ersten Oeffnen jedes Projekts. Fuer die
   // geprueften Seiten gilt sie deshalb als gesehen - zugesichert je Projekt, bei mindestens einem.
   expect(await markAllProjectsSeen(page), 'als gesehen markierte Projekte').toBeGreaterThan(0)
 

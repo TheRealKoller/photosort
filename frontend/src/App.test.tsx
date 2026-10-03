@@ -25,7 +25,7 @@ vi.mock('./api/projectOverview')
 beforeEach(() => {
   vi.mocked(personsApi.listPersons).mockResolvedValue([])
   vi.mocked(personsApi.listUnnamedFaces).mockReturnValue(new Promise(() => {}))
-  // Spec 0566: Die Ablaufübersicht gilt hier als gesehen, sonst läge sie über jeder Projektseite.
+  // Die Ablaufübersicht gilt hier als gesehen, sonst läge sie über jeder Projektseite.
   vi.mocked(projectOverviewApi.getOverviewSeen).mockResolvedValue({ seen: true })
 })
 

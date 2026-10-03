@@ -233,7 +233,7 @@ describe('Dialog', () => {
   })
 
   /*
-   * Spec 0566, Design-System "Überlagerungen": Bei langem Inhalt scrollt NUR der Inhaltsbereich.
+   * Bei langem Inhalt scrollt NUR der Inhaltsbereich.
    * Titelzeile, Beschreibung und Schaltflächenzeile bleiben stehen - "Schließen" liegt am Telefon
    * ohne vorheriges Scrollen im Bild. Die Geometrie selbst misst e2e (no-horizontal-scroll).
    */

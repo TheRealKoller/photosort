@@ -1,4 +1,4 @@
-"""specs/features/0566-ablauf-uebersicht.md - der dritte Schritt heisst an jeder sichtbaren Stelle
+"""Der dritte Schritt heisst an jeder sichtbaren Stelle
 "Klassifizierung".
 
 Mechanischer Beleg ueber den Syntaxbaum: Keine Zeichenkette in `backend/src/photosort` traegt den

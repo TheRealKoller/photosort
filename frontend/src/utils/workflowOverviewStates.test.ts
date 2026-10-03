@@ -23,7 +23,7 @@ import {
 } from './pipelineSteps'
 
 /*
- * Gleichlauf von Ablaufübersicht, Schrittleiste und Stand-Zeile (Spec 0566) über dem vollständig
+ * Gleichlauf von Ablaufübersicht, Schrittleiste und Stand-Zeile über dem vollständig
  * aufgezählten Eingaberaum der Stand-Zeile. `deriveWorkflowOverview` kennt keine eigene Regel;
  * diese Tests halten fest, dass das so bleibt.
  */

@@ -1,8 +1,8 @@
-"""specs/features/0566-ablauf-uebersicht.md - der Merker "Ablaufuebersicht gesehen".
+"""Der Merker "Ablaufuebersicht gesehen".
 
 `GET`/`PUT /projects/{project_id}/overview-seen`, je Person und Projekt. Die Person kommt allein
-aus dem Token (S2), keine Antwort nennt den Zustand der anderen Person (S3), ein unbekanntes
-Projekt ist `404` und nie `500` (S4).
+aus dem Token, keine Antwort nennt den Zustand der anderen Person, ein unbekanntes Projekt ist
+`404` und nie `500`.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ async def _seen(client: httpx.AsyncClient, project_id: int) -> bool:
     return seen
 
 
-# --- Zugriffsschutz (S1) -----------------------------------------------------------------------
+# --- Zugriffsschutz ----------------------------------------------------------------------------
 
 
 async def test_reading_the_marker_requires_a_token(api_client: httpx.AsyncClient) -> None:
@@ -86,7 +86,7 @@ async def test_writing_the_marker_requires_a_token(api_client: httpx.AsyncClient
     assert response.status_code == 401
 
 
-# --- Person und Projekt (S2) -------------------------------------------------------------------
+# --- Person und Projekt ------------------------------------------------------------------------
 
 
 async def test_an_unmarked_project_is_not_seen(
@@ -210,7 +210,7 @@ async def test_a_new_project_is_unseen_for_both_persons(
         assert await _seen(client_a, project_id) is False
 
 
-# --- Rueckgabewerte und unbekanntes Projekt (S4) -----------------------------------------------
+# --- Rueckgabewerte und unbekanntes Projekt ----------------------------------------------------
 
 
 async def test_writing_twice_is_idempotent(
@@ -287,7 +287,7 @@ async def test_reading_never_creates_a_row(
     assert await _rows(db_session) == set()
 
 
-# --- Gleichzeitiges Schreiben (S4) -------------------------------------------------------------
+# --- Gleichzeitiges Schreiben ------------------------------------------------------------------
 
 
 def _interleave_before_insert(

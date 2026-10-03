@@ -180,7 +180,7 @@ describe('ProjectPipelineLayout', () => {
     expect(await screen.findByText(/schritt-inhalt: scan/i)).toBeInTheDocument()
   })
 
-  // Spec 0566: Der Auslöser der Ablaufübersicht sitzt im Kopf des Layouts.
+  // Der Auslöser der Ablaufübersicht sitzt im Kopf des Layouts.
   it('bietet im Kopf den Auslöser "Ablauf" an, der die Übersicht öffnet', async () => {
     openOverview.mockClear()
     vi.mocked(projectsApi.getProject).mockResolvedValue(project())
