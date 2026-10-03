@@ -103,6 +103,15 @@ describe('erzeugtes sw.js', () => {
       expect(routes, `sw.js-Routen enthalten "${forbidden}"`).not.toContain(forbidden)
     }
   })
+
+  it('beantwortet "/" nicht ueber die Precache-Route', () => {
+    // Mit dem Workbox-Standard directoryIndex "index.html" beantwortet die Precache-Route eine
+    // Navigation auf "/" vor der Navigationsroute aus dem Precache - F5 auf der Startseite
+    // laedt dann die alte Version.
+    const options = /precacheAndRoute\(\[.*?\],(\{.*?\})\)/s.exec(sw)
+    expect(options, 'Optionen von precacheAndRoute').not.toBeNull()
+    expect(options![1]).toMatch(/directoryIndex:""/)
+  })
 })
 
 function walk(dir: string): string[] {

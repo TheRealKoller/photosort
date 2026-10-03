@@ -37,6 +37,9 @@ export const DESKTOP_ONLY = [
   /projektuebersicht-raster\.spec\.ts/,
   // Setzt die Breiten der Spaltenleiter (360/800/1280) selbst.
   /foto-karte-raster\.spec\.ts/,
+  // Service-Worker-Verhalten haengt nicht vom Viewport ab; der Spec tauscht zudem den Inhalt des
+  // Frontend-Containers und darf deshalb nur einmal laufen.
+  /release-wechsel\.spec\.ts/,
 ]
 
 export default defineConfig({

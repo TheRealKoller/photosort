@@ -4,9 +4,28 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+/*
+ * Build-Marker fuer e2e/tests/release-wechsel.spec.ts: eine Zuweisung an eine globale Eigenschaft
+ * nur im Einstiegs-Chunk, damit ein zweiter Build einen anderen Einstiegs-Hash bekommt (ein
+ * Kommentar ueberlebte die Minifizierung nicht). Ohne Marker (Normalfall) bleibt der Chunk
+ * unveraendert. Nur Kleinbuchstaben, Ziffern und Bindestrich - sonst koennte der Wert das
+ * String-Literal schliessen und Code ins Bundle schreiben.
+ */
+const buildMarker = process.env.PHOTOSORT_BUILD_MARKER ?? ''
+if (!/^[a-z0-9-]*$/.test(buildMarker)) {
+  throw new Error('PHOTOSORT_BUILD_MARKER: nur a-z, 0-9 und "-" erlaubt')
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    {
+      name: 'photosort-build-marker',
+      renderChunk: (code, chunk) =>
+        buildMarker && chunk.isEntry
+          ? `globalThis.photosortBuildMarker = '${buildMarker}';\n${code}`
+          : null,
+    },
     react(),
     tailwindcss(),
     VitePWA({
@@ -39,6 +58,9 @@ export default defineConfig({
          * Closure, kein Import, keine aeussere Konstante. Der Timer wird bei Erfolg wie Fehlschlag
          * geloescht, sonst bricht der Body einer langsamen, aber erfolgreichen Antwort nach 3 s ab.
          */
+        // Leer statt "index.html": sonst beantwortet die Precache-Route eine Navigation auf "/"
+        // vor der Navigationsroute unten aus dem Precache.
+        directoryIndex: '',
         navigateFallback: null,
         runtimeCaching: [
           {
