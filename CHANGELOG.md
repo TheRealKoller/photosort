@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.49.0](https://github.com/TheRealKoller/photosort/compare/v0.48.1...v0.49.0) (2026-10-03)
+
+
+### Features
+
+* Ablauf-Übersicht beim ersten Öffnen eines Projekts, dritter Schritt heißt überall Klassifizierung (Spec 0566) ([#571](https://github.com/TheRealKoller/photosort/issues/571)) ([de251ab](https://github.com/TheRealKoller/photosort/commit/de251ab8216e162a29fd2bddd804be23dbb4087c))
+* Duplikatgruppen im Ausschuss als Stapel und in der Vergleichsansicht (Spec 0533) ([#540](https://github.com/TheRealKoller/photosort/issues/540)) ([a7c97e8](https://github.com/TheRealKoller/photosort/commit/a7c97e85970df20f1f4f278c465a2eee52979ea2))
+* **frontend:** Großansicht in der Kuratierung (Spec 0531) ([#538](https://github.com/TheRealKoller/photosort/issues/538)) ([1768c2b](https://github.com/TheRealKoller/photosort/commit/1768c2b10f67448e77f6f5c07f9525396982995d))
+* **frontend:** Neue Versionen ohne Strg+F5 in Browser und PWA (Spec 0565) ([#570](https://github.com/TheRealKoller/photosort/issues/570)) ([7c2a6a5](https://github.com/TheRealKoller/photosort/commit/7c2a6a5c7db1d6247e4d47c6bb5db9b45b9a3e87))
+* Größere, unbeschnittene Fotos im Album-Entwurf und in der Endauswahl (Spec 0563) ([#564](https://github.com/TheRealKoller/photosort/issues/564)) ([0b08e17](https://github.com/TheRealKoller/photosort/commit/0b08e17b37612dd571f77f5a304db65a0612a751))
+* Ordnerauswahl beim Projektanlegen sortierbar und durchsuchbar (Spec 0532) ([#544](https://github.com/TheRealKoller/photosort/issues/544)) ([b50750c](https://github.com/TheRealKoller/photosort/commit/b50750cb0b7c835a2fb8821aaf4473cf051f7c61))
+* **personen:** die beiden Nutzer auf Fotos lokal erkennen und benennen (Spec 0292) ([#549](https://github.com/TheRealKoller/photosort/issues/549)) ([a681458](https://github.com/TheRealKoller/photosort/commit/a681458313b0185257e282715cb34d4bc113f8d0))
+* **personen:** Personenübersicht je Projekt mit Zuordnen und Zurücknehmen von Gesichtern (Spec 0551) ([#552](https://github.com/TheRealKoller/photosort/issues/552)) ([b68cccc](https://github.com/TheRealKoller/photosort/commit/b68cccc1f7d53325649337b3b38ebe013922cced))
+* **selection:** Auswahlvorschlag berücksichtigt erkannte Personen (Spec 0548) ([#557](https://github.com/TheRealKoller/photosort/issues/557)) ([9b081cb](https://github.com/TheRealKoller/photosort/commit/9b081cb0ef118edfa486dcf1b60aca5471496027))
+* Single-Origin-API-Proxy über Frontend-nginx, Backend-Port entfällt (Spec 0049) ([#546](https://github.com/TheRealKoller/photosort/issues/546)) ([ea52749](https://github.com/TheRealKoller/photosort/commit/ea52749eeabd4e1ee2e1587c632f9ea878a31014))
+* Verständlicher Album-Entwurf mit Tauschen und Hinzufügen am Foto (Spec 0558) ([#560](https://github.com/TheRealKoller/photosort/issues/560)) ([aaec48e](https://github.com/TheRealKoller/photosort/commit/aaec48ed85972e8defb840de6a8e974b869d4a20))
+
+
+### Bug Fixes
+
+* **e2e:** Zurück-Zusage der Großansicht stabil prüfen (Spec 0550) ([#553](https://github.com/TheRealKoller/photosort/issues/553)) ([820aac4](https://github.com/TheRealKoller/photosort/commit/820aac42519f0a6c5fc20c3648c838e9063951d3))
+
 ## [0.48.1](https://github.com/TheRealKoller/photosort/compare/v0.48.0...v0.48.1) (2026-09-25)
 
 
