@@ -61,8 +61,16 @@ Abhängigkeit, keine eigene Registrierung (das Plugin schleust weiterhin `regist
 1. `frontend/vite.config.ts`, `workbox`:
    - `navigateFallback: null` — Navigationen kommen nicht mehr aus dem Precache.
    - Ein `runtimeCaching`-Eintrag ausschließlich für `request.mode === 'navigate'`, `handler:
-     'NetworkOnly'`, `options.networkTimeoutSeconds: 3`, `options.precacheFallback: { fallbackURL:
-     'index.html' }` (Precache-Schlüssel im erzeugten `sw.js` prüfen).
+     'NetworkOnly'`, `options.precacheFallback: { fallbackURL: 'index.html' }` (Precache-Schlüssel
+     im erzeugten `sw.js` prüfen) und `options.plugins` mit **einem** Zeitgrenzen-Plugin.
+     `networkTimeoutSeconds` ist hier nicht nutzbar: workbox-build erlaubt es nur mit `NetworkFirst`
+     (`workbox-build/build/lib/runtime-caching-converter.js`).
+   - Zeitgrenzen-Plugin (Objektliteral, wird von workbox-build als Quelltext in `sw.js` serialisiert
+     — daher ohne Closure/Import, die 3 s als Literal im Plugin): `requestWillFetch({ request, state
+     })` legt einen `AbortController` an, merkt `setTimeout(() => c.abort(), 3000)` in `state` und
+     gibt `new Request(request, { signal: c.signal })` zurück; `fetchDidSucceed` und `fetchDidFail`
+     löschen den Timer (sonst bräche ein langsamer Body nach 3 s ab). Der Abbruch lässt `NetworkOnly`
+     scheitern, `PrecacheFallbackPlugin.handlerDidError` liefert die Precache-`index.html`.
    - Online lädt jedes Öffnen und jedes F5 die aktuelle `index.html` vom Server; sie verweist auf die
      neuen gehashten Assets. Damit ist AK5 strukturell erfüllt: Der Server hält nur einen Stand.
    - Offline/Timeout liefert der SW `index.html` aus demselben Precache wie die Assets.
@@ -84,7 +92,9 @@ aus dem Netz, neue Version aktiv, Precache wird nachgezogen. Anmeldung: Token in
 0001). `docs/architecture.md` erhält im PWA-Absatz einen Satz zur Navigationsstrategie.
 
 **Restrisiken.**
-- Bei langsamem Netz wartet der Start bis zum Timeout (3 s), bevor die Offline-Fassung erscheint.
+- Bei langsamem Netz wartet der Start bis zur Zeitgrenze (3 s), bevor die Offline-Fassung erscheint.
+- Das Zeitgrenzen-Plugin hängt am Plugin-Vertrag von Workbox (`state`, `requestWillFetch`,
+  `fetchDidSucceed`/`fetchDidFail`); ein Workbox-Major-Update muss den Build-Check grün halten.
 - Ein offener Alt-Tab, der nach dem Deploy ein nicht mehr vorhandenes Asset nachlädt, bekäme 404.
   Heute ausgeschlossen, weil es keine Code-Splits gibt; wer `lazy()`-Routen einführt, muss das neu
   bewerten.
@@ -95,8 +105,10 @@ aus dem Netz, neue Version aktiv, Precache wird nachgezogen. Anmeldung: Token in
 
 - **Build-Check (vitest, `frontend/`, Umgebung `node`):** baut mit der echten `vite.config.ts`
   programmatisch in ein Temp-Verzeichnis und prüft das erzeugte `sw.js`. Positiv: Navigationsroute
-  mit `NetworkOnly`, `networkTimeoutSeconds`, `precacheFallback` auf einen im Precache-Manifest
-  vorhandenen Schlüssel. Negativ: keine `NavigationRoute`/`createHandlerBoundToURL` auf den
+  mit `NetworkOnly`, `precacheFallback` auf einen im Precache-Manifest vorhandenen Schlüssel, ein
+  Plugin mit `requestWillFetch`, `AbortController` und Zeitgrenze `3000`. Nicht geprüft wird
+  `networkTimeoutSeconds` (siehe Entscheidungen).
+  Negativ: keine `NavigationRoute`/`createHandlerBoundToURL` auf den
   Precache; keine Strategie `CacheFirst`/`StaleWhileRevalidate`/`NetworkFirst`; keine Route, die
   `/api` trifft. Dazu eine Prüfung über `src/**` gegen `virtual:pwa-register`, `onNeedRefresh`,
   `location.reload` (AK3/AK4).
@@ -158,7 +170,10 @@ Token und API-Pfad bleiben unberührt.
 - `NetworkOnly` + `precacheFallback` statt `NetworkFirst` mit eigenem Runtime-Cache, damit offline
   HTML und Assets immer aus demselben Precache kommen und kein nutzerbezogener Cache entsteht.
 - generateSW bleibt, kein Wechsel zu injectManifest.
-- Netz-Zeitgrenze für Navigationen: 3 s.
+- Netz-Zeitgrenze für Navigationen: 3 s, umgesetzt als eigenes Plugin mit `AbortController` an
+  `NetworkOnly`, weil workbox-build `networkTimeoutSeconds` nur für `NetworkFirst` zulässt.
+  Verworfen: injectManifest (eigener SW, mehr Wartung für eine Zeitgrenze), Verzicht auf die
+  Zeitgrenze (bricht AK6).
 - AK5 wird ohne dritten Build geprüft: Der Server hält nur einen Stand, A→C ist strukturell A→B.
 - E2E nur im Projekt `desktop`: SW-Verhalten hängt nicht vom Viewport ab.
 - Wie Build B einen anderen Hash bekommt, entscheidet die Umsetzung (z. B. Test-Build-Argument in
