@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-10-03 (Spec 0566 — Ablaufübersicht je Projekt mit „schon gesehen" je Person und Projekt, dritter Schritt heißt überall „Klassifizierung"; davor Spec 0551/ADR 0127)
+**Letzte Aktualisierung:** 2026-10-03 (Spec 0566 — Ablaufübersicht je Projekt mit „schon gesehen" je Person und Projekt, dritter Schritt heißt überall „Klassifizierung"; Spec 0565 — Navigationen des Service Workers zuerst aus dem Netz, offline aus dem Precache; Cache-Control-Header im Frontend-nginx; davor Spec 0551/ADR 0127)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -26,7 +26,11 @@ Verarbeitungs-Cache (Thumbnails).
   die restlichen Projekt-Routen direkt darauf auf. `api/client.ts` hängt bei vorhandenem Token
   automatisch `Authorization: Bearer <token>` an (Token aus `localStorage`, siehe
   [`decisions/0005-auth-implementation.md`](../specs/decisions/0005-auth-implementation.md)) und
-  löst bei 401-Antworten zentral die Abmeldung/Weiterleitung zu `/login` aus.
+  löst bei 401-Antworten zentral die Abmeldung/Weiterleitung zu `/login` aus. Der Service Worker
+  (`vite-plugin-pwa`, generateSW) beantwortet Navigationen online immer aus dem Netz (`NetworkOnly`,
+  Abbruch nach 3 s) und nur offline aus dem Precache, sodass ein Release beim nächsten Öffnen oder
+  F5 ohne Hinweis aktiv ist; nginx liefert `index.html`, `sw.js` und Manifest mit `no-cache`, die
+  gehashten `/assets/` mit `immutable` aus.
   - neue Komponente `components/CloudVisionStatusList.tsx` + permanente Sektion in
     `PhotoDetailPage.tsx`.
   - die deutschen Kategorie-Bezeichnungen kommen aus `GET /categories` (react-query, langlebiger

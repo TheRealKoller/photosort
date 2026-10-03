@@ -36,6 +36,7 @@
     "src/albumStateLabels.structure.test.ts",
     "src/albumDraftMembership.contract.test.ts",
     "src/stepName.structure.test.ts",
-    "src/workflowOverview.structure.test.ts"
+    "src/workflowOverview.structure.test.ts",
+    "src/serviceWorker.build.test.ts"
   ]
 }

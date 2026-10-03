@@ -7,6 +7,10 @@ COPY . .
 # Prozessumgebungsvariablen automatisch, siehe .env.example) - kein Laufzeit-Konfigurationswert.
 ARG VITE_API_BASE_URL=""
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+# Nur fuer e2e/tests/release-wechsel.spec.ts: aendert ausschliesslich den Hash des
+# Einstiegs-Bundles (siehe photosort-build-marker in vite.config.ts). Leer = regulaerer Build.
+ARG PHOTOSORT_BUILD_MARKER=""
+ENV PHOTOSORT_BUILD_MARKER=${PHOTOSORT_BUILD_MARKER}
 RUN npm run build
 
 FROM nginx:1.27-alpine
