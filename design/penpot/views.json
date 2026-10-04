@@ -807,6 +807,86 @@
           "grund": "Die Mindesthöhe einer Trefferfläche ist eine Vorgabe der Bedienbarkeit und hat kein eigenes Token; sie wird gesetzt und hier ausgewiesen statt stillschweigend übernommen."
         }
       ]
+    },
+    {
+      "schluessel": "schrittseite",
+      "anzeigename": "Schrittseite",
+      "seite": "Ansicht — Schrittseite",
+      "produktdateien": [
+        "src/pages/pipeline/ProjectPipelineLayout.tsx",
+        "src/pages/pipeline/ScanStepPage.tsx",
+        "src/pages/pipeline/AusschussStepPage.tsx",
+        "src/pages/pipeline/KriterienStepPage.tsx",
+        "src/pages/pipeline/KuratierungStepPage.tsx"
+      ],
+      "breiten": [
+        "mobile",
+        "desktop"
+      ],
+      "zustaende": [
+        "ausschuss-nie-gelaufen",
+        "ausschuss-laeuft",
+        "ausschuss-fehlgeschlagen",
+        "ausschuss-offen",
+        "ausschuss-abgeschlossen",
+        "scan-erledigt",
+        "klassifizierung-erledigt",
+        "kuratierung"
+      ],
+      "variantenachse": "zustand",
+      "bausteine": [
+        "button",
+        "alert",
+        "step-marker",
+        "progress"
+      ],
+      "luecken": [
+        {
+          "schluessel": "behaelter",
+          "stelle": "Fußleiste, Fortschrittsspalte, Erneut-Zeile und Raster als Behälter für ihren Inhalt",
+          "grund": "Die Bibliothek führt keinen Behälter-Baustein; die Bausteine sind Blätter, und die Struktur einer Instanz lässt sich nicht ändern. Diese Bereiche sind deshalb tokengebundene Rahmen statt Instanzen."
+        },
+        {
+          "schluessel": "haftleiste",
+          "stelle": "Fußleiste mit der Hauptaktion am unteren Fensterrand",
+          "grund": "Penpot bildet ein beim Scrollen haftendes Element nicht ab. Die Leiste steht deshalb am unteren Rand des Prüfrahmens, also dort, wo sie in jeder Scrolllage stünde. Im Produkt braucht der Inhalt darüber am Ende einen Abstand in Leistenhöhe, sonst verdeckt die Leiste die letzte Rasterzeile; das zeigt das Standbild nicht."
+        },
+        {
+          "schluessel": "pruefrahmen",
+          "stelle": "Höhe der Ansichtsbretter",
+          "grund": "Die Bretter haben die volle Prüfbreite und -höhe und schneiden darunter ab, damit ablesbar ist, was ohne Scrollen sichtbar ist. Für diese Höhe gibt es kein Token."
+        },
+        {
+          "schluessel": "fortschrittsanteil",
+          "stelle": "Fortschrittsanzeige in der Fußleiste im Zustand ausschuss-laeuft",
+          "grund": "Der Baustein zeigt nur die leere Spur, keinen Füllstand, und trägt eine sichtbare Beschriftung seiner Ausprägung. Die Beschriftung ist ausgeblendet; Höhe und Breite der Spur sind gesetzt, weil der Baustein sonst auf Höhe null zusammenfällt."
+        },
+        {
+          "schluessel": "laufzustand",
+          "stelle": "Gesperrte Hauptaktion während eines Laufs",
+          "grund": "Die Ausprägung busy der Schaltfläche sieht in der Bibliothek wie die normale aus und zeigt kein Ladezeichen. Erkennbar ist der Laufzustand im Entwurf allein an der Beschriftung in der Verlaufsform."
+        },
+        {
+          "schluessel": "kachelmasse",
+          "stelle": "Kachelbreite, Kachelhöhe und Spaltenzahl des Rasters",
+          "grund": "Gerechnete Layoutgrößen ohne Token; der Satz photosort deckt allein die Zwischenräume. Die Kacheln sind Platzhalterflächen, weil die Ansicht die Lage der Aktionen zeigt, nicht den Rasterinhalt."
+        },
+        {
+          "schluessel": "schrittzellen",
+          "stelle": "Breite der Schrittzellen in der Schrittleiste der breiten Fassung und Beschriftung in der schmalen",
+          "grund": "Die Zellenbreite ist gesetzt und hat kein Token. In der schmalen Fassung trägt nur der aktuelle Schritt eine Beschriftung, die übrigen zeigen allein die Schrittmarke."
+        },
+        {
+          "schluessel": "vertretung",
+          "stelle": "Zustände nie gelaufen, läuft und fehlgeschlagen",
+          "grund": "Sie sind nur am Ausschuss entworfen. Scan und Klassifizierung folgen demselben Muster mit ihren eigenen Beschriftungen; die Zustände scan-erledigt und klassifizierung-erledigt zeigen dafür die Beschriftungen nach erfolgreichem Lauf."
+        },
+        {
+          "schluessel": "seitengrund",
+          "stelle": "Hintergrund der Ansichtsseite",
+          "grund": "Eine Penpot-Seite ist keine Form; eine Tokenbindung greift dort nicht. Der Grund ist aus dem Flächentoken gelesen und gesetzt, damit die Sichtprüfung gegen denselben Untergrund urteilt, gegen den der Kontrast gerechnet ist."
+        }
+      ]
     }
   ]
 }
