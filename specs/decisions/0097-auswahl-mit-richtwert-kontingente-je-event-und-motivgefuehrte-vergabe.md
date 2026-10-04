@@ -3,6 +3,7 @@
 **Status:** Accepted
 **Teilweise abgelöst:** ausschließlich Punkt 6 — der Query-Parameter `selection: bool` und seine Zusage, der Modus liefere genau die Fotos mit `selection_position IS NOT NULL` —, durch ADR [`0098`](./0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md). An seine Stelle tritt der nutzerabhängige Entwurfsmodus. Punkte 1-5 und 7 (Richtwert, persistierter Vorschlag, beide Verfahrensstufen, Determinismus, die drei Auslöser) gelten unverändert; `selection_position` bleibt lauf-global und ohne Nutzerbezug.
 **Teilweise abgelöst:** Punkt 4 (die eingeschränkte Menge kennt neben Motiven auch die festgelegten Personen als Abdeckungsziel; das Ähnlichkeitsmaß bleibt motivbasiert) und Punkt 7 (im Kriterien-Lauf entsteht der Vorschlag nach der Phase `persons` statt am Ende von `_build_grouping_and_rankings`) durch ADR [`0129`](./0129-personen-als-abdeckungsziel-des-auswahlvorschlags-nach-der-phase-persons.md). Die drei Auslöser und der eine Rechenweg gelten unverändert.
+**Teilweise abgelöst:** in Punkt 1 ausschließlich die Höhe der Vorbelegung (ein Zehntel der Bilderzahl, mitwachsend) durch ADR [`0131`](./0131-richtwert-vorbelegung-fest-150-statt-zehntel-der-bilderzahl.md): fester Standard 150. `NULL` als „nicht selbst eingestellt" und die eine Ableitungsstelle gelten unverändert.
 **Datum:** 2026-09-13
 **Bezug:** Spec `specs/features/0429-*.md`, ADR
 [`0091`](./0091-motive-mit-staerke-statt-hauptkategorie.md) (Stärkevektor als Datengrundlage; die
