@@ -9,7 +9,7 @@ import {
   listPhotos,
   undoDraftExchange,
 } from './photos'
-import type { AlbumDraftOut, PhotoListOut } from './types'
+import type { AlbumDraftOut, DraftAlternativesOut, PhotoListOut } from './types'
 
 vi.mock('./client', () => ({
   apiFetch: vi.fn(),
@@ -76,7 +76,13 @@ describe('api/photos', () => {
   })
 
   it('requests the alternatives of one photo of one event', async () => {
-    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+    const answer: DraftAlternativesOut = {
+      items: PHOTO_LIST.items,
+      total: 1,
+      offset: 60,
+      reference_index: 3,
+    }
+    vi.mocked(apiFetch).mockResolvedValue(answer)
 
     const result = await listDraftAlternatives(1, {
       eventId: 42,
@@ -88,7 +94,19 @@ describe('api/photos', () => {
     expect(apiFetch).toHaveBeenCalledWith(
       '/projects/1/draft-alternatives?event_id=42&photo_id=7&limit=60&offset=60',
     )
-    expect(result).toEqual(PHOTO_LIST)
+    expect(result).toEqual(answer)
+  })
+
+  it('asks the band for the nearest window and sends no page of its own', async () => {
+    // Mit `nearest` schneidet allein der Server das Fenster - ein mitgeschicktes
+    // `limit`/`offset` waere wirkungslos und wird deshalb gar nicht erst gesendet.
+    vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
+
+    await listDraftAlternatives(1, { eventId: 42, photoId: 7, nearest: 4 })
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/1/draft-alternatives?event_id=42&photo_id=7&nearest=4',
+    )
   })
 
   it('addresses event and reference by their ids alone, with no free key anywhere', async () => {

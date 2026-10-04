@@ -6,6 +6,7 @@ import type {
   DraftExchangeUndoOut,
   MotifCorrectionOut,
   MotifKey,
+  DraftAlternativesOut,
   PhotoListOut,
   PhotoVariant,
   RatingFilter,
@@ -24,11 +25,15 @@ export interface ListPhotosParams {
 
 export interface ListDraftAlternativesParams {
   eventId: number
-  /** Das Bezugsbild des Tauschs. Es steuert allein die Reihenfolge und ist nie selbst dabei.
-   * Ohne (Hinzufügen-Feld) ordnet der Server nach Qualität; der Parameter fehlt dann ganz. */
+  /** Das Bezugsbild des Tauschs. Es steuert die zeitliche Position (`reference_index`) und ist
+   * nie selbst dabei. Ohne (Hinzufügen-Feld) ordnet der Server nach Qualität; der Parameter fehlt
+   * dann ganz. */
   photoId?: number
   limit?: number
   offset?: number
+  /** Das Band: die `nearest` zeitlich nächsten Alternativen, Fenster vom Server geschnitten. Nur
+   * zusammen mit `photoId`; `limit`/`offset` werden dann nicht gesendet. */
+  nearest?: number
 }
 
 export function listPhotos(
@@ -71,24 +76,30 @@ export function getAlbumDraft(projectId: number): Promise<AlbumDraftOut> {
  * daraus folgt die Umkehrbarkeit des Tauschs. `total` der Antwort ist die RESTMENGE und damit
  * unabhaengig von `limit`/`offset`.
  *
- * Die REIHENFOLGE KOMMT VOM SERVER und wird nie nachsortiert: Mit Bezugsbild haengt sie an
- * dessen Motiven, und die Grenze, ab der ein Motiv getragen ist, wohnt im Backend.
+ * Die REIHENFOLGE KOMMT VOM SERVER und wird nie nachsortiert: Mit Bezugsbild ist sie zeitlich,
+ * und die Stelle des Bezugsbildes liefert der Server als `reference_index` mit.
  */
 export function listDraftAlternatives(
   projectId: number,
   params: ListDraftAlternativesParams,
-): Promise<PhotoListOut> {
+): Promise<DraftAlternativesOut> {
   const query = new URLSearchParams({ event_id: String(params.eventId) })
   if (params.photoId !== undefined) {
     query.set('photo_id', String(params.photoId))
   }
-  if (params.limit !== undefined) {
-    query.set('limit', String(params.limit))
+  if (params.nearest !== undefined) {
+    query.set('nearest', String(params.nearest))
+  } else {
+    if (params.limit !== undefined) {
+      query.set('limit', String(params.limit))
+    }
+    if (params.offset !== undefined) {
+      query.set('offset', String(params.offset))
+    }
   }
-  if (params.offset !== undefined) {
-    query.set('offset', String(params.offset))
-  }
-  return apiFetch<PhotoListOut>(`/projects/${projectId}/draft-alternatives?${query.toString()}`)
+  return apiFetch<DraftAlternativesOut>(
+    `/projects/${projectId}/draft-alternatives?${query.toString()}`,
+  )
 }
 
 /**

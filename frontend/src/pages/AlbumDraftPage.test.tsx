@@ -170,6 +170,10 @@ function renderPage(
 
 const noObserver: ObserverFactory = () => ({ observe: () => {}, disconnect: () => {} })
 
+/** Alternativen ohne Bezugsposition: diese Seitentests prüfen Tausch und Hinzufügen, nicht die
+ * zeitliche Marke (die liegt in `DraftAlternativesBand.test.tsx`). */
+const NO_POSITION = { offset: 0, reference_index: null }
+
 beforeEach(() => {
   vi.resetAllMocks()
   window.localStorage.clear()
@@ -178,7 +182,11 @@ beforeEach(() => {
   vi.mocked(motifsApi.listMotifs).mockResolvedValue(MOTIF_SET)
   vi.mocked(projectsApi.getProject).mockResolvedValue(projectOut())
   vi.mocked(personsApi.listPersons).mockResolvedValue([])
-  vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({ items: [], total: 0 })
+  vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+    items: [],
+    total: 0,
+    ...NO_POSITION,
+  })
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }))
 })
 
@@ -403,7 +411,11 @@ describe('AlbumDraftPage: Tauschen und Hinzufügen', () => {
   it('exchanges from the band, hides the replaced photo and undoes the exchange in one call', async () => {
     const user = userEvent.setup()
     const candidate = photo(3, { ranking: ranking(false) })
-    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({ items: [candidate], total: 1 })
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: [candidate],
+      total: 1,
+      ...NO_POSITION,
+    })
     renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
     vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValueOnce({
       taken: written(3, 'album_worthy'),
@@ -441,6 +453,7 @@ describe('AlbumDraftPage: Tauschen und Hinzufügen', () => {
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
       items: [photo(3, { ranking: ranking(false) })],
       total: 1,
+      ...NO_POSITION,
     })
     renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
     vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValueOnce({
@@ -465,7 +478,11 @@ describe('AlbumDraftPage: Tauschen und Hinzufügen', () => {
       projectOut({ effective_selection_target: 0 }),
     )
     const struck = photo(4, { event: EVENT_B, ratings: own('rejected') })
-    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({ items: [struck], total: 1 })
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: [struck],
+      total: 1,
+      ...NO_POSITION,
+    })
     renderPage({ events: [EVENT_A, EVENT_B], items: [photo(1), struck] }, noObserver)
     vi.mocked(ratingsApi.setRating).mockResolvedValueOnce(written(4, 'album_worthy'))
 
@@ -486,6 +503,7 @@ describe('AlbumDraftPage: Fehlerfall je Handgriff', () => {
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
       items: [photo(3, { ranking: ranking(false) })],
       total: 1,
+      ...NO_POSITION,
     })
     renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
     vi.mocked(photosApi.exchangeDraftPhoto).mockRejectedValueOnce(
@@ -508,6 +526,7 @@ describe('AlbumDraftPage: Fehlerfall je Handgriff', () => {
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
       items: [photo(3, { ranking: ranking(false) })],
       total: 1,
+      ...NO_POSITION,
     })
     renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
     vi.mocked(photosApi.exchangeDraftPhoto).mockRejectedValueOnce(
@@ -528,6 +547,7 @@ describe('AlbumDraftPage: Fehlerfall je Handgriff', () => {
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
       items: [photo(5, { event: EVENT_B, ranking: ranking(false) })],
       total: 1,
+      ...NO_POSITION,
     })
     renderPage({ events: [EVENT_A, EVENT_B], items: [photo(1)] }, noObserver)
     vi.mocked(ratingsApi.setRating).mockRejectedValueOnce(new ApiError(409, 'Nicht mehr da.'))
@@ -620,7 +640,11 @@ describe('AlbumDraftPage: Fokus-Sonderfälle', () => {
       photo(5, { event: EVENT_B, ranking: ranking(false) }),
       photo(6, { event: EVENT_B, ranking: ranking(false) }),
     ]
-    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({ items: candidates, total: 2 })
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      items: candidates,
+      total: 2,
+      ...NO_POSITION,
+    })
     renderPage({ events: [EVENT_A, EVENT_B], items: [photo(1)] }, noObserver)
     vi.mocked(ratingsApi.setRating)
       .mockResolvedValueOnce(written(5, 'album_worthy'))
@@ -712,6 +736,7 @@ describe('AlbumDraftPage: Personenfilter', () => {
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
       items: [photo(5, { ranking: ranking(false) })],
       total: 1,
+      ...NO_POSITION,
     })
     renderPage(draft, noObserver, '/projects/1/album?person=1')
 
@@ -730,6 +755,7 @@ describe('AlbumDraftPage: Personenfilter', () => {
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
       items: [photo(5, { ranking: ranking(false) })],
       total: 1,
+      ...NO_POSITION,
     })
     renderPage(draft, noObserver, '/projects/1/album?person=1')
     vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValueOnce({

@@ -7,6 +7,10 @@ Stelle, durch ADR
 [`0130`](./0130-album-entwurf-gestrichenes-ausgeblendet-eigener-lesepfad-rueckgaengig-als-wiederherstellung.md).
 Der Entwurf hat dort einen eigenen Lesepfad mit Eventliste, die Antwort führt Gestrichenes
 weiter, die Ansicht blendet es aus. Punkte 1, 2 und 4–7 und der übrige Punkt 3 gelten unverändert.
+**Teilweise abgelöst:** aus Punkt 5 ausschließlich die Sortierregel mit Bezugsbild (Motivgruppe,
+dann Qualität) und der Satz, zeitliche Nähe sei kein Sortierkriterium, durch ADR
+[`0132`](./0132-alternativen-zeitlich-geordnet-mit-bezugsposition.md). Menge, Bindung,
+Seitenweise und der Zweig ohne Bezugsbild gelten unverändert.
 **Datum:** 2026-09-13
 **Bezug:** Spec [`features/0430-album-entwurf-je-nutzer.md`](../features/0430-album-entwurf-je-nutzer.md), ADR
 [`0097`](./0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md) (der

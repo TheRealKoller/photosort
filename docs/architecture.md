@@ -637,31 +637,47 @@ Verarbeitungs-Cache (Thumbnails).
     sich die Ansicht geändert hat.
   - **Der Vorrats-Endpunkt wird der Alternativen-Endpunkt** *(dieselbe Spec, ADR 0098 Punkt 5)*:
     `GET /projects/{id}/curation-candidates` entfällt **ersatzlos** (`404`), an seine Stelle tritt
-    `GET /projects/{id}/draft-alternatives?event_id=N&photo_id=N&limit=…&offset=…` (`photo_id` seit
+    `GET /projects/{id}/draft-alternatives?event_id=N&photo_id=N&limit=…&offset=…&nearest=…` (`photo_id` seit
     Spec 0558 optional). Er liefert die Fotos **eines** Events des letzten erfolgreichen Laufs
     abzüglich des Entwurfs des anfragenden Nutzers; ein von ihm **gestrichenes** Foto ist
     enthalten — genau daraus folgt, dass ein Austausch auch ohne Rückgängig umkehrbar ist. Ein
     Foto ohne Rangzeile (im Ausschuss-Schritt aussortiert) erscheint nicht. `total` ist die
     Restmenge und damit unabhängig von `limit`/`offset`; `curation_position` ist hier `null` — die
     Alternativen sind keine Auswahl, zu der ein Bild einen Platz hätte.
-    - Die Reihenfolge entsteht in der **reinen** Funktion `selection.py::order_alternatives` mit
-      dem Schlüssel `(0 wenn geteiltes Motiv sonst 1, -quality, photo_id)`: erst die Träger eines
-      Motivs des Bezugsbildes nach Qualität absteigend, dann die übrigen; `quality is None`
-      sortiert **innerhalb seiner Gruppe** ans Ende, und `0.0` ist kein fehlender Wert. Die
-      Motivgruppe ist **binär** (drei geteilte Motive schlagen ein geteiltes nicht) und die
-      Grenze dieselbe wie in der Auswahl (`carried_motifs`/`motif_is_present`). **Zeitliche Nähe
-      ist kein Kriterium** — `AlternativeCandidate` trägt dafür bewusst keine Aufnahmezeit.
-      Sortiert wird deshalb in Python und nicht im `ORDER BY`; `limit`/`offset` schneiden danach
-      die Seite heraus, und nur sie wird hydratisiert.
+    - **Reihenfolge seit Spec 0569 zeitlich** (ADR
+      [`0132`](../specs/decisions/0132-alternativen-zeitlich-geordnet-mit-bezugsposition.md), löst
+      die Sortierregel aus ADR 0098 Punkt 5 ab): Mit `photo_id` ordnet die **reine** Funktion
+      `selection.py::order_alternatives_chronologically` Bezugsbild und Kandidaten aufsteigend
+      nach `(Photo.taken_at, photo_id)` — wirksame, um den Kamera-Versatz korrigierte Zeit, eine
+      nutzerunabhängige Totalordnung; Motiv und Qualität gehen nicht ein (`TimedCandidate` trägt
+      nur `photo_id` und `taken_at`). Ein Foto ohne EXIF-Zeit ordnet sich nach `last_modified`
+      ein (`taken_at` ist NOT NULL). Sortiert wird in Python; `limit`/`offset` schneiden danach
+      die Seite heraus, und nur sie wird hydratisiert, die Motive eingeschlossen.
+    - Antwortform `DraftAlternativesOut { items, total, offset, reference_index }`:
+      `reference_index` ist die Zahl der Kandidaten der vollen Restmenge **strikt** vor dem
+      Bezugsbild (ohne `photo_id` `null`), `offset` der Beginn der gelieferten Seite. Beide
+      entstehen aus derselben Kandidatenabfrage wie `total`. Mit `nearest=N` (`1..BAND_MAX`, nur
+      zusammen mit `photo_id`, sonst `422`) schneidet der Server selbst das Fenster
+      `offset = clamp(reference_index − ⌊N/2⌋, 0, max(0, total − N))`
+      (`selection.py::nearest_window_offset`) — mitgeschicktes `limit`/`offset` ist dann
+      wirkungslos. Jede gescheiterte Auflösung ergibt den byte-gleichen Leerkörper
+      `{"items": [], "total": 0, "offset": 0, "reference_index": null}`.
+    - Oberfläche: Band (`nearest=BAND_SIZE`, vier) und Dialog zeigen den Ordnungstext
+      `ALTERNATIVES_ORDER_TEXT` und das zu ersetzende Bild als nicht bedienbare Bezugsmarke
+      („Wird ersetzt", `ReferenceMarker`) an der Stelle `reference_index − offset`
+      (`utils/referenceMarker.ts`); das Raster ist eine geordnete Liste. Im Band gilt die Stelle
+      der **ungefilterten** Antwort (ein optimistisch getauschtes Bild verschiebt die Marke nicht),
+      im Dialog steht die Marke über alle geladenen Seiten genau einmal, an der Seitengrenze erst
+      mit der Folgeseite (bis dahin ein Hinweis). Das Frontend sortiert nie selbst.
     - **Vier Muss-Kriterien:** die Auth-Dependency ist ausgeschrieben (dieser Router hat kein
       Vollständigkeitsnetz in `test_auth_guard.py` — ein vergessener Parameter ergäbe einen still
       öffentlichen Endpunkt); `criterion_scoring_run_id` aus dem **Pfadparameter** steht in jeder
       Abfrage, weil `photo_rankings` keine `project_id` trägt und `event_id` ein **globaler**
       Surrogatschlüssel ist; `photo_id` wird **ausschließlich** über eine Rangzeile desselben
       Laufs und desselben Events aufgelöst, nie über `session.get(Photo, …)`, und scheitert das,
-      ist die Antwort `200` mit leerer Liste und `total: 0` — ein `404` wäre ein Existenz-Orakel
-      über fremde Ids, und die Sortierung hängt allein an diesem Bild, also liefe sonst ein
-      fremdes Motivprofil über die beobachtete Reihenfolge ab; alle vier Query-Parameter tragen
+      ist die Antwort `200` mit dem Leerkörper — ein `404` wäre ein Existenz-Orakel
+      über fremde Ids, und `photo_id` steuert die zeitliche Position, also würde sonst die
+      Zeitposition eines fremden Fotos ablesbar; alle fünf Query-Parameter tragen
       deklarative Grenzen.
     - Oberfläche: Der Austausch lief bis Spec 0558 allein in `components/DraftAlternativesDialog.tsx`
       (`ui/dialog`, **kein** Popover — ein Bildraster mit eigenem Blätterweg braucht auf 360px die
@@ -736,10 +752,10 @@ Verarbeitungs-Cache (Thumbnails).
       `null` → `DELETE`, `album_worthy` → `PUT`.
     - `DELETE /photos/{id}/rating` antwortet mit `200` und `RatingWriteOut` statt `204`; die
       Semantik bleibt gleich.
-    - `draft-alternatives`: Ohne `photo_id` entfällt die Motivstufe —
-      `selection.py::order_alternatives(None, …)` ordnet nach Qualität absteigend, ohne Wert
-      zuletzt, bei Gleichstand nach kleinerer Id. Das speist das Hinzufügen-Feld; mit `photo_id`
-      gilt Auflage S3 unverändert.
+    - `draft-alternatives`: Ohne `photo_id` entfällt die Zeitordnung —
+      `selection.py::order_by_quality` ordnet nach Qualität absteigend, ohne Wert
+      zuletzt, bei Gleichstand nach kleinerer Id; `reference_index` ist `null`. Das speist das
+      Hinzufügen-Feld; mit `photo_id` gilt Auflage S3 unverändert.
     - **Oberfläche** `pages/AlbumDraftPage.tsx`: Kopf „{T} Tage · {E} Events", zuklappbarer
       Erklärtext (`DraftExplainer`, Zustand je Nutzer in `localStorage`), mitlaufende Kopfleiste
       mit „Tag d von T · Event p von E", Eventname, Zählern und „Zur Endauswahl"

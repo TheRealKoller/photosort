@@ -8,6 +8,7 @@ import * as photosApi from '../api/photos'
 import * as ratingsApi from '../api/ratings'
 import type {
   AlbumDraftOut,
+  DraftAlternativesOut,
   EventOut,
   PhotoListOut,
   PhotoOut,
@@ -76,6 +77,10 @@ function photo(id: number, overrides: Partial<PhotoOut> = {}): PhotoOut {
 
 function page(items: number[], total: number): PhotoListOut {
   return { items: items.map((id) => photo(id)), total }
+}
+
+function alternativesPage(items: number[], total: number, offset = 0): DraftAlternativesOut {
+  return { items: items.map((id) => photo(id)), total, offset, reference_index: 0 }
 }
 
 /** Eine Entwurfsantwort mit dem einen Event; die Kandidatenzahl spielt in diesen Fällen keine Rolle. */
@@ -177,7 +182,7 @@ describe('useDraftAlternativesQuery', () => {
 
   it('does not fetch while closed', async () => {
     // EINE Abfrage je GEOEFFNETEM Bild, nie eine je Kachel.
-    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(page([4], 4))
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(alternativesPage([4], 4))
 
     const { result } = renderHook(
       () => useDraftAlternativesQuery(1, { ...reference, enabled: false }),
@@ -189,7 +194,7 @@ describe('useDraftAlternativesQuery', () => {
   })
 
   it('fetches the first page once opened, and asks without a reference for the add field', async () => {
-    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(page([4], 1))
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(alternativesPage([4], 1))
 
     const band = renderHook(() => useDraftAlternativesQuery(1, { ...reference, enabled: true }), {
       wrapper,
@@ -217,8 +222,8 @@ describe('useDraftAlternativesQuery', () => {
 
   it('fetchNextPage requests the SECOND page with the right offset and stops at total', async () => {
     vi.mocked(photosApi.listDraftAlternatives)
-      .mockResolvedValueOnce(page([4, 5], 3))
-      .mockResolvedValueOnce(page([6], 3))
+      .mockResolvedValueOnce(alternativesPage([4, 5], 3))
+      .mockResolvedValueOnce(alternativesPage([6], 3, 2))
 
     const { result } = renderHook(
       () => useDraftAlternativesQuery(1, { ...reference, enabled: true, pageSize: 2 }),
@@ -238,14 +243,36 @@ describe('useDraftAlternativesQuery', () => {
     })
   })
 
+  it('fetches the band as ONE window with nearest and never a following page', async () => {
+    // Das Fenster schneidet allein der Server; `total` ist die Restmenge und liegt
+    // ueber der Fenstergroesse - trotzdem gibt es keine Folgeseite.
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+      alternativesPage([4, 5, 6, 7], 10, 3),
+    )
+
+    const { result } = renderHook(
+      () => useDraftAlternativesQuery(1, { ...reference, enabled: true, nearest: 4 }),
+      { wrapper },
+    )
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(photosApi.listDraftAlternatives).toHaveBeenCalledTimes(1)
+    expect(photosApi.listDraftAlternatives).toHaveBeenCalledWith(1, {
+      eventId: 42,
+      photoId: 7,
+      nearest: 4,
+    })
+    expect(result.current.hasNextPage).toBe(false)
+  })
+
   it('gives band, dialog and add panel three different keys under ["photos", id]', async () => {
     // Band (Bezugsbild, vier), Dialog (Bezugsbild, Seitenweise) und Panel (ohne Bezugsbild, acht)
     // holten unter einem gemeinsamen Schluessel dieselbe Cache-Zeile.
-    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(page([4], 1))
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(alternativesPage([4], 1))
     const { queryClient, sharedWrapper } = sharedClient()
 
     for (const params of [
-      { ...reference, pageSize: 4 },
+      { ...reference, nearest: 4 },
       { ...reference },
       { eventId: 42, photoId: null, pageSize: 8 },
     ]) {
@@ -268,7 +295,7 @@ describe('useDraftAlternativesQuery', () => {
   })
 
   it('lives under the ["photos", projectId] prefix so a rating invalidates it too', async () => {
-    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(page([4], 1))
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(alternativesPage([4], 1))
     vi.mocked(ratingsApi.setRating).mockResolvedValue(written(4, 'rejected'))
     const { sharedWrapper } = sharedClient()
     const alternatives = renderHook(

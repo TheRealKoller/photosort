@@ -11,6 +11,7 @@ import {
 import { deleteRating, setFavorite, setRating } from '../api/ratings'
 import type {
   AlbumDraftOut,
+  DraftAlternativesOut,
   DraftExchangeUndoIn,
   PhotoListOut,
   PhotoOut,
@@ -138,14 +139,16 @@ export function applyWrittenRating(
 // Bildschirm. Wird ein Foto im Entwurf entschieden, muss die Kandidatenliste denselben Zustand
 // zeigen - genau das leistet die breite Invalidierung.
 //
-// DAS BEZUGSBILD UND DIE SEITENGROESSE GEHOEREN IN DEN SCHLUESSEL: Am Bezugsbild haengen Menge und
-// Reihenfolge; Band (vier, mit Bezugsbild), Dialog (mit Bezugsbild) und Hinzufuegen-Feld (acht,
-// ohne) holten unter einem gemeinsamen Schluessel dieselbe Cache-Zeile.
+// DAS BEZUGSBILD, DIE SEITENGROESSE UND `nearest` GEHOEREN IN DEN SCHLUESSEL: Am Bezugsbild
+// haengen Menge und Reihenfolge; Band (Fenster `nearest`, mit Bezugsbild), Dialog (mit
+// Bezugsbild, seitenweise) und Hinzufuegen-Feld (acht, ohne) holten unter einem gemeinsamen
+// Schluessel dieselbe Cache-Zeile.
 export function draftAlternativesQueryKey(
   projectId: number,
   eventId: number,
   photoId: number | null,
   pageSize: number,
+  nearest: number | null = null,
 ) {
   return [
     'photos',
@@ -155,6 +158,7 @@ export function draftAlternativesQueryKey(
     eventId,
     photoId,
     pageSize,
+    nearest,
   ] as const
 }
 
@@ -166,25 +170,37 @@ export interface DraftAlternativesQueryParams {
    * geoeffnetem Bild, nie eine je Kachel. */
   enabled: boolean
   pageSize?: number
+  /** Das Band: EIN vom Server geschnittenes Fenster der `nearest` zeitlich naechsten
+   * Alternativen, ohne Folgeseiten. Nur zusammen mit `photoId`. */
+  nearest?: number
 }
 
 export function useDraftAlternativesQuery(
   projectId: number,
-  { eventId, photoId, enabled, pageSize = PHOTOS_PAGE_SIZE }: DraftAlternativesQueryParams,
+  { eventId, photoId, enabled, pageSize = PHOTOS_PAGE_SIZE, nearest }: DraftAlternativesQueryParams,
 ) {
   return useInfiniteQuery({
-    queryKey: draftAlternativesQueryKey(projectId, eventId, photoId, pageSize),
+    queryKey: draftAlternativesQueryKey(projectId, eventId, photoId, pageSize, nearest ?? null),
     queryFn: ({ pageParam }: { pageParam: number }) =>
-      listDraftAlternatives(projectId, {
-        eventId,
-        ...(photoId === null ? {} : { photoId }),
-        limit: pageSize,
-        offset: pageParam,
-      }),
+      listDraftAlternatives(
+        projectId,
+        nearest !== undefined && photoId !== null
+          ? { eventId, photoId, nearest }
+          : {
+              eventId,
+              ...(photoId === null ? {} : { photoId }),
+              limit: pageSize,
+              offset: pageParam,
+            },
+      ),
     initialPageParam: 0,
     // Identisch zu usePhotoSequenceQuery: der naechste Offset ist die Zahl der bereits geladenen
-    // Eintraege, und `total` ist die Restmenge (nicht die Seitengroesse).
-    getNextPageParam: (lastPage: PhotoListOut, allPages: PhotoListOut[]) => {
+    // Eintraege, und `total` ist die Restmenge (nicht die Seitengroesse). Das Band hat nie eine
+    // Folgeseite - sein Fenster ist vollstaendig.
+    getNextPageParam: (lastPage: DraftAlternativesOut, allPages: DraftAlternativesOut[]) => {
+      if (nearest !== undefined) {
+        return undefined
+      }
       const loaded = allPages.reduce((sum, loadedPage) => sum + loadedPage.items.length, 0)
       return loaded < lastPage.total ? loaded : undefined
     },

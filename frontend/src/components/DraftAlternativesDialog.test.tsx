@@ -6,13 +6,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as photosApi from '../api/photos'
-import type { EventOut, PhotoListOut, PhotoOut, RankingOut } from '../api/types'
+import type { DraftAlternativesOut, EventOut, PhotoOut, RankingOut } from '../api/types'
 import { ALBUM_SUITABILITY_NOT_RATED_TEXT } from '../utils/albumSuitability'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
+import { ALTERNATIVES_ORDER_TEXT } from './DraftAlternativesBand'
 import {
   ALTERNATIVES_ERROR_TEXT,
   ALTERNATIVES_NONE_TEXT,
   DraftAlternativesDialog,
+  REFERENCE_LATER_TEXT,
 } from './DraftAlternativesDialog'
 
 vi.mock('../api/photos')
@@ -66,8 +68,24 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
   }
 }
 
-function listOut(items: PhotoOut[], total = items.length): PhotoListOut {
-  return { items, total }
+function listOut(
+  items: PhotoOut[],
+  total = items.length,
+  { offset = 0, referenceIndex = null }: { offset?: number; referenceIndex?: number | null } = {},
+): DraftAlternativesOut {
+  return { items, total, offset, reference_index: referenceIndex }
+}
+
+/** Die Zellen des geordneten Rasters in Reihenfolge: Kandidaten über ihren Aktionsnamen, die
+ * Bezugsmarke über ihren eigenen Namen. */
+function rowCells(): (string | null)[] {
+  const list = screen.getByRole('list', { name: 'Alternativen, zeitlich geordnet' })
+  return Array.from(list.children).map(
+    (cell) =>
+      cell.getAttribute('aria-label') ??
+      cell.querySelector('button')?.getAttribute('aria-label') ??
+      null,
+  )
 }
 
 function renderDialog(
@@ -196,7 +214,7 @@ describe('DraftAlternativesDialog', () => {
   })
 
   it('keeps the ORDER OF THE ANSWER and does not sort again', async () => {
-    // Die Reihenfolge hängt an den Motiven des Bezugsbildes und entsteht im Backend. Eine zweite
+    // Die Reihenfolge ist die zeitliche Ordnung aus dem Backend. Eine zweite
     // Sortierung hier wäre eine zweite Wahrheit - und sie fiele nicht auf, weil beide plausibel
     // aussähen.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
@@ -214,6 +232,100 @@ describe('DraftAlternativesDialog', () => {
       .getAllByRole('button', { name: /^Tauschen:/ })
       .map((button) => button.getAttribute('aria-label'))
     expect(names).toEqual(['Tauschen: e.jpg', 'Tauschen: b.jpg', 'Tauschen: i.jpg'])
+  })
+
+  it('names the order and puts the photo to be replaced at its place in the row', async () => {
+    // Die Marke steht an `reference_index` - hier zwischen dem ersten und dem zweiten
+    // Bild - und ist kein Bedienelement.
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+      listOut(
+        [photo({ id: 5, relative_path: 'e.jpg' }), photo({ id: 2, relative_path: 'b.jpg' })],
+        2,
+        { referenceIndex: 1 },
+      ),
+    )
+
+    renderDialog({ photo: photo({ id: 9, relative_path: 'ref.jpg' }) })
+
+    await screen.findByRole('button', { name: 'Tauschen: e.jpg' })
+    expect(screen.getByText(ALTERNATIVES_ORDER_TEXT)).toBeInTheDocument()
+    expect(rowCells()).toEqual(['Tauschen: e.jpg', 'Wird ersetzt: ref.jpg', 'Tauschen: b.jpg'])
+    const marker = screen.getByRole('listitem', { name: 'Wird ersetzt: ref.jpg' })
+    expect(marker.querySelector('button')).toBeNull()
+    expect(marker).toHaveTextContent('Wird ersetzt')
+    expect(screen.getAllByRole('button', { name: /^Tauschen:/ })).toHaveLength(2)
+  })
+
+  it('shows no marker and no order text when the event holds nothing else', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+      listOut([], 0, { referenceIndex: 0 }),
+    )
+
+    renderDialog()
+
+    expect(await screen.findByText(ALTERNATIVES_NONE_TEXT)).toBeInTheDocument()
+    expect(screen.queryByText(ALTERNATIVES_ORDER_TEXT)).toBeNull()
+    expect(screen.queryByRole('listitem', { name: /^Wird ersetzt/ })).toBeNull()
+  })
+
+  it('says the marker follows later and shows it exactly once after loading its page', async () => {
+    // Grenzfall: `reference_index` fällt genau auf die Seitengrenze. Solange eine weitere Seite
+    // folgt, steht die Marke NICHT am Ende von Seite 1, sondern erst nach dem Nachladen - einmal.
+    vi.mocked(photosApi.listDraftAlternatives)
+      .mockResolvedValueOnce(
+        listOut([photo({ id: 2, relative_path: 'b.jpg' })], 2, { referenceIndex: 1 }),
+      )
+      .mockResolvedValueOnce(
+        listOut([photo({ id: 3, relative_path: 'c.jpg' })], 2, {
+          offset: 1,
+          referenceIndex: 1,
+        }),
+      )
+    const user = userEvent.setup()
+
+    renderDialog({ photo: photo({ id: 9, relative_path: 'ref.jpg' }) })
+
+    expect(await screen.findByText(REFERENCE_LATER_TEXT)).toBeInTheDocument()
+    expect(screen.queryByRole('listitem', { name: /^Wird ersetzt/ })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: /Weitere Alternativen/ }))
+
+    await screen.findByRole('button', { name: 'Tauschen: c.jpg' })
+    expect(rowCells()).toEqual(['Tauschen: b.jpg', 'Wird ersetzt: ref.jpg', 'Tauschen: c.jpg'])
+    expect(screen.queryByText(REFERENCE_LATER_TEXT)).toBeNull()
+  })
+
+  it('puts the marker at the end once no further page follows', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+      listOut([photo({ id: 2, relative_path: 'b.jpg' })], 1, { referenceIndex: 1 }),
+    )
+
+    renderDialog({ photo: photo({ id: 9, relative_path: 'ref.jpg' }) })
+
+    await screen.findByRole('button', { name: 'Tauschen: b.jpg' })
+    expect(rowCells()).toEqual(['Tauschen: b.jpg', 'Wird ersetzt: ref.jpg'])
+  })
+
+  it('keeps the system rating apart from the own album decision', async () => {
+    // Die Albumtauglichkeit ist schmuckloser Text mit eigener Beschriftung, das Kennzeichen
+    // eine eigene Form - und nur bei eigener Entscheidung.
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+      listOut([
+        photo({
+          id: 2,
+          relative_path: 'b.jpg',
+          ratings: [{ user_id: 7, username: USERNAME, status: 'rejected', favorite: false }],
+        }),
+        photo({ id: 3, relative_path: 'c.jpg' }),
+      ]),
+    )
+
+    renderDialog()
+
+    await screen.findByRole('button', { name: 'Tauschen: c.jpg' })
+    expect(screen.getAllByText('Gut albumtauglich')).toHaveLength(2)
+    expect(screen.getAllByLabelText(ALBUM_STATE_LABELS.struck)).toHaveLength(1)
+    expect(screen.queryByText(/Album-würdig/)).toBeNull()
   })
 
   it('shows the quality of every alternative, missing values included', async () => {
