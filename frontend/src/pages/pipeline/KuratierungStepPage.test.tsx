@@ -130,9 +130,8 @@ describe('KuratierungStepPage', () => {
   })
 
   it('renders the shared target field with its server-side default and saves through it', async () => {
-    /* Spec 0567: die Kuratierung nutzt DIESELBE Komponente wie der Klassifizierungs-Schritt.
-     * Die Zustaende des Feldes prueft `SelectionTargetField.test.tsx`; hier nur, dass es da ist
-     * und speichert. */
+    /* Die Kuratierung nutzt DIESELBE Komponente wie der Klassifizierungs-Schritt. Die Zustaende
+     * des Feldes prueft `SelectionTargetField.test.tsx`; hier nur, dass es da ist und speichert. */
     const user = userEvent.setup()
     renderPage(project({ selection_target: null, effective_selection_target: 42 }))
 

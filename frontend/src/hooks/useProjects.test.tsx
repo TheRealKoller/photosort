@@ -273,8 +273,8 @@ describe('useTriggerScanMutation', () => {
 
 describe('useSetSelectionTargetMutation', () => {
   it('invalidates the project and every photo key of the project, the final selection included', async () => {
-    /* Spec 0567: ein neuer Richtwert rechnet den Vorschlag sofort neu. Entwurf, Kandidatenvorrat
-     * und Endauswahl beschreiben danach einen alten Stand und muessen neu geladen werden - jeder
+    /* Ein neuer Richtwert rechnet den Vorschlag sofort neu. Entwurf, Kandidatenvorrat und
+     * Endauswahl beschreiben danach einen alten Stand und muessen neu geladen werden - jeder
      * Schluessel ausdruecklich, damit ein enger gefasster Praefix hier rot wird. */
     setToken(tokenFor('anna'))
     vi.mocked(projectsApi.setSelectionTarget).mockResolvedValue(project({ selection_target: 80 }))

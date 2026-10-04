@@ -175,9 +175,8 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         )}
       </div>
 
-      {/* Spec 0567: der Richtwert ist schon VOR dem ersten Lauf einstellbar - dieselbe Komponente
-          wie in der Kuratierung, über dem Auslöser, damit der erste Vorschlag schon seine Größe
-          hat. */}
+      {/* Der Richtwert ist schon VOR dem ersten Lauf einstellbar - dieselbe Komponente wie in der
+          Kuratierung, über dem Auslöser, damit der erste Vorschlag schon seine Größe hat. */}
       <p className="text-sm text-text">
         Der Richtwert ist ein Ziel, keine Obergrenze — reicht der Bildbestand nicht, wird der
         Vorschlag kleiner; damit jeder Foto-Moment vorkommt, kann er auch größer werden.

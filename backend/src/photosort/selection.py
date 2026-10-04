@@ -93,7 +93,7 @@ SIMILARITY_DECAY = 0.5
 SIMILARITY_TIME_WINDOW = timedelta(minutes=15)
 
 # Die Vorbelegung: ohne eingestellten Richtwert zielt der Vorschlag auf diese feste Zahl Bilder,
-# unabhaengig von der Bilderzahl (ADR 0131). Diese Zahl steht NUR hier.
+# unabhaengig von der Bilderzahl. Diese Zahl steht NUR hier.
 DEFAULT_TARGET = 150
 
 _SIMILARITY_TIME_WINDOW_SECONDS = SIMILARITY_TIME_WINDOW.total_seconds()
@@ -203,9 +203,8 @@ def order_alternatives(
 def effective_target(configured: int | None) -> int:
     """Der wirksame Richtwert eines Projekts.
 
-    `None` heisst "nicht selbst eingestellt" und ergibt die feste Vorbelegung `DEFAULT_TARGET`
-    (ADR 0131) - sie waechst mit dem Bestand NICHT mit. Eine eingestellte Zahl gilt absolut und
-    unveraendert.
+    `None` heisst "nicht selbst eingestellt" und ergibt die feste Vorbelegung `DEFAULT_TARGET` -
+    sie waechst mit dem Bestand NICHT mit. Eine eingestellte Zahl gilt absolut und unveraendert.
 
     DIE EINE Ableitungsstelle: die Vorbelegung wird nie in die Spalte geschrieben, ein
     eingeschriebener Vorgabewert waere von einer Nutzereingabe nicht mehr zu unterscheiden, und

@@ -222,8 +222,8 @@ class EventProbeInput:
 
     @property
     def project_photos(self) -> int:
-        """Die Bilderzahl des Projekts - seit ADR 0131 nur noch Messgroesse der Auswertungsgrenze,
-        nicht mehr Grundlage des Album-Richtwerts (der ist ohne eigene Angabe fest).
+        """Die Bilderzahl des Projekts - Messgroesse der Auswertungsgrenze. Der Album-Richtwert
+        haengt nicht von ihr ab.
 
         `entries` ist jedes Foto dieses Projekts (`event_inputs.py`, Bindung an `Photo.project_id`
         ohne weitere Einschraenkung)."""

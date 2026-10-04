@@ -238,8 +238,8 @@ describe('AlbumDraftPage: Kopf und Abschluss', () => {
   })
 
   it('adds a neutral line when the proposal stays below the target for lack of candidates', async () => {
-    /* Spec 0567: 150 ist ein Ziel, keine Obergrenze. Die Zeile ist ein Hinweis, kein Fehler -
-     * kein Alert, keine Rolle, gedämpfter Text. */
+    /* 150 ist ein Ziel, keine Obergrenze. Die Zeile ist ein Hinweis, kein Fehler - kein Alert,
+     * keine Rolle, gedämpfter Text. */
     vi.mocked(projectsApi.getProject).mockResolvedValue(
       projectOut({ effective_selection_target: 150 }),
     )

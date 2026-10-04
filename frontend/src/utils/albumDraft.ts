@@ -155,7 +155,7 @@ export function draftSizeText(counts: DraftCounts, target: number): string {
 }
 
 /**
- * Die neutrale Zeile „kleinerer Vorschlag" (Spec 0567) - `null` heißt „keine Zeile".
+ * Die neutrale Zeile „kleinerer Vorschlag" - `null` heißt „keine Zeile".
  *
  * Sie erscheint nur, wenn der Vorschlagsanteil unter dem Richtwert liegt UND die auswahlfähigen
  * Kandidaten erschöpft sind. „Unter dem Richtwert" allein reichte nicht: Ein Bestandsvorschlag,

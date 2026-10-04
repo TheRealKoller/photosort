@@ -12,7 +12,7 @@ import { Input } from './ui/input'
 export const SAVED_HINT_MS = 4000
 
 /**
- * Die feste Vorbelegung des Richtwerts (ADR 0131), gespiegelt aus `selection.py::DEFAULT_TARGET`.
+ * Die feste Vorbelegung des Richtwerts, gespiegelt aus `selection.py::DEFAULT_TARGET`.
  *
  * NUR für den Vergleichssatz „Standard wäre …" einer eigenen Angabe und als Platzhalter. Im
  * Zustand „Standard" steht dagegen `effective_selection_target` vom Server - die wirksame Zahl
@@ -35,7 +35,7 @@ interface SelectionTargetFieldProps {
 }
 
 /**
- * Das EINE Richtwert-Feld - im Klassifizierungs-Schritt und in der Kuratierung (Spec 0567).
+ * Das EINE Richtwert-Feld - im Klassifizierungs-Schritt und in der Kuratierung.
  *
  * LEER HEISST STANDARD. Ist `selection_target === null`, bleibt das Feld leer und der Hinweis
  * nennt die wirksame Zahl vom Server - stünde sie im Feld, wäre „vom System vorbelegt" von

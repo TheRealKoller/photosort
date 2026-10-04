@@ -331,7 +331,7 @@ class ProjectOut(BaseModel):
 MAX_SELECTION_TARGET = 1_000_000
 
 # `strict=True`: Pydantic wandelt im Normalmodus `true` still in `1` - ein Wahrheitswert ist aber
-# keine Bilderzahl und gehoert wie jede andere Nicht-Ganzzahl in die `422` (Spec 0567, S1).
+# keine Bilderzahl und gehoert wie jede andere Nicht-Ganzzahl in die `422`.
 _SelectionTargetValue = Annotated[int, Field(strict=True, ge=1, le=MAX_SELECTION_TARGET)]
 
 
