@@ -12,6 +12,7 @@ from sqlalchemy import event, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.api.photos import BAND_MAX
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.models import (
     CriterionScoringRun,
@@ -1985,6 +1986,11 @@ class TestTheProposedFlag:
         assert other.json()["items"][0]["ranking"]["proposed"] is True
 
 
+# Der EINE Leerkoerper des Alternativen-Endpunkts (Spec 0569, Auflage 5): jede gescheiterte
+# Aufloesung, kein Lauf, fremdes Event - byte-gleich, ohne Rueckspiegelung eines Werts.
+_NO_ALTERNATIVES = {"items": [], "total": 0, "offset": 0, "reference_index": None}
+
+
 class TestDraftAlternatives:
     """Die Alternativen zu EINEM Bild des Entwurfs (ADR 0098 Punkt 5):
     `GET /projects/{id}/draft-alternatives?event_id=…&photo_id=…` liefert die Fotos dieses Events
@@ -2178,7 +2184,7 @@ class TestDraftAlternatives:
         response = await self._get(authenticated_api_client, project, event_id=foreign_event.id)
 
         assert response.status_code == 200
-        assert response.json() == {"items": [], "total": 0}
+        assert response.json() == _NO_ALTERNATIVES
 
     async def test_without_a_reference_the_second_page_continues_the_order(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -2275,105 +2281,408 @@ class TestDraftAlternatives:
 
         assert [item["id"] for item in response.json()["items"]] == [photos[1].id]
 
-    async def test_the_order_is_the_one_of_order_alternatives(
+    async def _timed(
+        self,
+        session: AsyncSession,
+        project: Project,
+        run: CriterionScoringRun,
+        event_row: Event,
+        name: str,
+        minute: int,
+        quality: float | None = 0.5,
+    ) -> Photo:
+        """Eine Alternative (nicht vorgeschlagen) zur Minute `minute` nach 10 Uhr."""
+        photo = await _make_photo(
+            session, project, f"{name}.jpg", datetime(2023, 1, 1, 10, minute, tzinfo=UTC)
+        )
+        await _add_ranking(
+            session,
+            run,
+            photo,
+            event=event_row,
+            rank_score=quality,
+            rank_position=None if quality is None else 1,
+            selection_position=None,
+        )
+        return photo
+
+    async def _row(
+        self, session: AsyncSession, size: int, reference_minute: int
+    ) -> tuple[Project, Event, Photo, list[Photo]]:
+        """Ein Bezugsbild (vorgeschlagen) und `size` Alternativen, angelegt in UMGEKEHRTER
+        Zeitfolge - die Id-Folge ist also nie die Sollreihenfolge. Rueckgabe zeitlich geordnet."""
+        project = await _make_project(session)
+        run = await _make_criterion_scoring_run(session, project)
+        event_row = await _default_event(session, run)
+        reference = await _make_photo(
+            session, project, "ref.jpg", datetime(2023, 1, 1, 10, reference_minute, tzinfo=UTC)
+        )
+        await _add_ranking(
+            session, run, reference, event=event_row, rank_score=1.0, rank_position=1
+        )
+        alternatives = [
+            await self._timed(session, project, run, event_row, f"t{minute}", minute * 2 + 1)
+            for minute in reversed(range(size))
+        ]
+        return project, event_row, reference, list(reversed(alternatives))
+
+    async def test_with_a_reference_the_order_is_by_time_not_by_motif_or_quality(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Die Sortierung des Endpunkts ist die der reinen Funktion, gegen einen Aufbau geprueft,
-        dessen Sollreihenfolge sich SOWOHL von der `photo_id`- als auch von der
-        `rank_position`-Folge unterscheidet - sonst bestuende der Fall auch ohne jede Sortierung.
-
-        Bezugsbild traegt `menschen`. Erwartet: erst die Traeger desselben Motivs nach Qualitaet
-        absteigend (`None` zuletzt), dann der Fremde - obwohl der Fremde die hoechste Qualitaet
-        des Aufbaus hat."""
+        """AK1/AK2 am Endpunkt: Das fruehere, schlechtere Bild ohne gemeinsames Motiv steht vor
+        dem spaeteren, besseren mit gemeinsamem Motiv; ein Bild ohne Qualitaet steht zeitlich
+        richtig und nicht am Ende. Die Gegenprobe: Die Soll-Folge ist weder die Id- noch die
+        Qualitaetsfolge, sonst bestuende der Fall auch ohne jede Sortierung."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         event_row = await _default_event(db_session, run)
-        reference = await _make_photo(
-            db_session, project, "ref.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-        )
-        await _add_ranking(
-            db_session, run, reference, event=event_row, rank_score=1.0, rank_position=1
-        )
+        reference = await self._timed(db_session, project, run, event_row, "ref", 30, 1.0)
         await _assess_photo(db_session, reference, strengths={"menschen": 1.0})
-
-        # Anlagereihenfolge = Id-Reihenfolge; `rank_position` folgt der Qualitaet. Die
-        # Sollreihenfolge ist eine dritte.
-        weak_shared = await _make_photo(
-            db_session, project, "weak.jpg", datetime(2023, 1, 1, 10, 1, tzinfo=UTC)
-        )
-        stranger = await _make_photo(
-            db_session, project, "stranger.jpg", datetime(2023, 1, 1, 10, 2, tzinfo=UTC)
-        )
-        strong_shared = await _make_photo(
-            db_session, project, "strong.jpg", datetime(2023, 1, 1, 10, 3, tzinfo=UTC)
-        )
-        unrated_shared = await _make_photo(
-            db_session, project, "unrated.jpg", datetime(2023, 1, 1, 10, 4, tzinfo=UTC)
-        )
-        for photo, score, position, motif in (
-            (stranger, 0.9, 2, "landschaft"),
-            (strong_shared, 0.5, 3, "menschen"),
-            (weak_shared, 0.2, 4, "menschen"),
-            (unrated_shared, None, None, "menschen"),
-        ):
-            await _add_ranking(
-                db_session,
-                run,
-                photo,
-                event=event_row,
-                rank_score=score,
-                rank_position=position,
-                selection_position=None,
-            )
-            await _assess_photo(db_session, photo, strengths={motif: 1.0})
+        shared_late = await self._timed(db_session, project, run, event_row, "late", 50, 0.9)
+        await _assess_photo(db_session, shared_late, strengths={"menschen": 1.0})
+        unrated = await self._timed(db_session, project, run, event_row, "unrated", 20, None)
+        stranger_early = await self._timed(db_session, project, run, event_row, "early", 5, 0.1)
+        await _assess_photo(db_session, stranger_early, strengths={"landschaft": 1.0})
 
         response = await self._get(
             authenticated_api_client, project, event_id=event_row.id, photo_id=reference.id
         )
 
-        order = [item["id"] for item in response.json()["items"]]
-        assert order == [strong_shared.id, weak_shared.id, unrated_shared.id, stranger.id]
+        body = response.json()
+        order = [item["id"] for item in body["items"]]
+        assert order == [stranger_early.id, unrated.id, shared_late.id]
         assert order != sorted(order)
-        assert order != [stranger.id, strong_shared.id, weak_shared.id, unrated_shared.id]
+        assert body["reference_index"] == 2
+        assert body["offset"] == 0
 
-    async def test_temporal_proximity_is_not_a_sorting_criterion(
+    async def test_temporal_proximity_now_is_the_sorting_criterion(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Zusicherung 8 am Endpunkt: ein zeitlich unmittelbar benachbarter Kandidat geringerer
-        Qualitaet bleibt HINTER dem Stunden entfernten hoeherer Qualitaet. Die reine Funktion
-        kennt gar keine Zeit (`test_selection.py`); dieser Fall haelt fest, dass der Endpunkt sie
-        auch nicht heimlich nachtraegt."""
+        """Die frueher geltende Aussage, ins Gegenteil gedreht (ADR 0132 loest ADR 0098 Punkt 5
+        teilweise ab): Der zeitlich benachbarte, schlechtere Kandidat steht VOR dem Stunden
+        entfernten, besseren."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         event_row = await _default_event(db_session, run)
-        reference = await _make_photo(
-            db_session, project, "ref.jpg", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-        )
-        near = await _make_photo(
-            db_session, project, "near.jpg", datetime(2023, 1, 1, 10, 1, tzinfo=UTC)
-        )
+        reference = await self._timed(db_session, project, run, event_row, "ref", 0, 1.0)
         far = await _make_photo(
             db_session, project, "far.jpg", datetime(2023, 1, 1, 15, 0, tzinfo=UTC)
         )
         await _add_ranking(
-            db_session, run, reference, event=event_row, rank_score=1.0, rank_position=1
+            db_session,
+            run,
+            far,
+            event=event_row,
+            rank_score=0.9,
+            rank_position=2,
+            selection_position=None,
         )
-        for photo, score, position in ((far, 0.9, 2), (near, 0.1, 3)):
-            await _add_ranking(
-                db_session,
-                run,
-                photo,
-                event=event_row,
-                rank_score=score,
-                rank_position=position,
-                selection_position=None,
-            )
+        near = await self._timed(db_session, project, run, event_row, "near", 1, 0.1)
 
         response = await self._get(
             authenticated_api_client, project, event_id=event_row.id, photo_id=reference.id
         )
 
-        assert [item["id"] for item in response.json()["items"]] == [far.id, near.id]
+        assert [item["id"] for item in response.json()["items"]] == [near.id, far.id]
+
+    async def test_the_pages_put_together_give_the_order_of_the_full_row(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK1 ueber Seiten und Auflage 6: Seite 1 und Seite 2 aneinandergehaengt ergeben die
+        volle Reihe; `reference_index` und `total` sind auf jeder Seite dieselben, `offset` ist
+        ohne `nearest` das angefragte."""
+        project, event_row, reference, alternatives = await self._row(db_session, 5, 6)
+
+        async def page(offset: int) -> dict[str, Any]:
+            response = await self._get(
+                authenticated_api_client,
+                project,
+                event_id=event_row.id,
+                photo_id=reference.id,
+                limit=3,
+                offset=offset,
+            )
+            assert response.status_code == 200
+            body: dict[str, Any] = response.json()
+            return body
+
+        first, second = await page(0), await page(3)
+
+        ids = [item["id"] for item in [*first["items"], *second["items"]]]
+        assert ids == [photo.id for photo in alternatives]
+        # Minuten 1, 3, 5 liegen vor dem Bezugsbild (Minute 6), 7 und 9 danach.
+        assert first["reference_index"] == second["reference_index"] == 3
+        assert first["total"] == second["total"] == 5
+        assert (first["offset"], second["offset"]) == (0, 3)
+
+    async def test_the_reference_index_at_the_start_the_end_and_in_a_tie(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Auflage 6 und AK6: `reference_index` zaehlt STRIKT kleinere Schluessel - bei gleichem
+        `taken_at` genau die kleineren Ids."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _default_event(db_session, run)
+        before = await self._timed(db_session, project, run, event_row, "tie-before", 10)
+        reference = await self._timed(db_session, project, run, event_row, "ref", 10, 1.0)
+        after = await self._timed(db_session, project, run, event_row, "tie-after", 10)
+        earliest = await self._timed(db_session, project, run, event_row, "earliest", 0)
+        latest = await self._timed(db_session, project, run, event_row, "latest", 20)
+
+        async def index_of(photo: Photo) -> tuple[list[int], int]:
+            body = (
+                await self._get(
+                    authenticated_api_client, project, event_id=event_row.id, photo_id=photo.id
+                )
+            ).json()
+            return [item["id"] for item in body["items"]], body["reference_index"]
+
+        assert await index_of(reference) == ([earliest.id, before.id, after.id, latest.id], 2)
+        assert (await index_of(earliest))[1] == 0
+        assert (await index_of(latest))[1] == 4
+
+    async def test_a_photo_without_exif_orders_by_its_file_time(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK7: `taken_at` aus `last_modified` (keine EXIF-Zeit) - kein Sonderzweig, das Bild
+        steht nach dieser Zeit in der Reihe und nicht am Ende."""
+        project = await _make_project(db_session)
+        run = await _make_criterion_scoring_run(db_session, project)
+        event_row = await _default_event(db_session, run)
+        reference = await self._timed(db_session, project, run, event_row, "ref", 0, 1.0)
+        later = await self._timed(db_session, project, run, event_row, "later", 30)
+        file_time = datetime(2023, 1, 1, 10, 15, tzinfo=UTC)
+        without_exif = Photo(
+            project_id=project.id,
+            relative_path="ohne-exif.jpg",
+            etag="etag-1",
+            content_length=100,
+            taken_at=file_time,
+            taken_at_original=file_time,
+            last_modified=file_time,
+        )
+        db_session.add(without_exif)
+        await db_session.commit()
+        await _add_ranking(
+            db_session,
+            run,
+            without_exif,
+            event=event_row,
+            rank_score=0.5,
+            rank_position=2,
+            selection_position=None,
+        )
+
+        response = await self._get(
+            authenticated_api_client, project, event_id=event_row.id, photo_id=reference.id
+        )
+
+        assert [item["id"] for item in response.json()["items"]] == [without_exif.id, later.id]
+
+    @pytest.mark.parametrize(
+        ("reference_minute", "expected_offset", "expected_index"),
+        [
+            pytest.param(10, 3, 5, id="mitte"),
+            pytest.param(0, 0, 0, id="anfang"),
+            pytest.param(2, 0, 1, id="nahe-am-anfang"),
+            pytest.param(30, 6, 10, id="ende"),
+        ],
+    )
+    async def test_nearest_cuts_the_window_of_the_temporally_nearest(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        reference_minute: int,
+        expected_offset: int,
+        expected_index: int,
+    ) -> None:
+        """AK3: `offset = clamp(reference_index - 2, 0, total - 4)`, genau vier Bilder, zeitlich
+        geordnet - im Normalfall zwei davor, zwei danach, am Rand von der anderen Seite
+        aufgefuellt."""
+        project, event_row, reference, alternatives = await self._row(
+            db_session, 10, reference_minute
+        )
+
+        response = await self._get(
+            authenticated_api_client,
+            project,
+            event_id=event_row.id,
+            photo_id=reference.id,
+            nearest=4,
+        )
+
+        body = response.json()
+        assert body["reference_index"] == expected_index
+        assert body["offset"] == expected_offset
+        assert body["total"] == 10
+        assert [item["id"] for item in body["items"]] == [
+            photo.id for photo in alternatives[expected_offset : expected_offset + 4]
+        ]
+
+    async def test_with_nearest_the_window_comes_from_the_server_alone(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Auflage 3: Ein mitgeschicktes `offset`/`limit` hat mit `nearest` keine Wirkung."""
+        project, event_row, reference, _ = await self._row(db_session, 10, 10)
+        params = {"event_id": event_row.id, "photo_id": reference.id, "nearest": 4}
+
+        plain = await self._get(authenticated_api_client, project, **params)
+        steered = await self._get(
+            authenticated_api_client, project, **params, offset=999999, limit=200
+        )
+
+        assert steered.status_code == 200
+        assert steered.json() == plain.json()
+        assert len(plain.json()["items"]) == 4
+
+    async def test_a_short_row_is_shown_completely_by_nearest(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, event_row, reference, alternatives = await self._row(db_session, 2, 10)
+
+        body = (
+            await self._get(
+                authenticated_api_client,
+                project,
+                event_id=event_row.id,
+                photo_id=reference.id,
+                nearest=4,
+            )
+        ).json()
+
+        assert [item["id"] for item in body["items"]] == [photo.id for photo in alternatives]
+        assert (body["offset"], body["reference_index"], body["total"]) == (0, 2, 2)
+
+    async def test_a_resolved_reference_with_an_empty_remainder_stands_at_zero(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Auflage 5, zweite Haelfte: aufgeloestes Bezugsbild, leere Restmenge ergibt
+        `reference_index = 0` - zulaessig, denn das Bild sieht der Anfragende ohnehin."""
+        project, event_row, reference, _ = await self._row(db_session, 0, 10)
+
+        body = (
+            await self._get(
+                authenticated_api_client,
+                project,
+                event_id=event_row.id,
+                photo_id=reference.id,
+                nearest=4,
+            )
+        ).json()
+
+        assert body == {"items": [], "total": 0, "offset": 0, "reference_index": 0}
+
+    async def test_nearest_without_a_reference_is_refused(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Auflage 2: `nearest` ohne `photo_id` scheitert laut statt still."""
+        project, event_row, _, _ = await self._row(db_session, 3, 10)
+
+        response = await self._get(
+            authenticated_api_client, project, event_id=event_row.id, nearest=4
+        )
+
+        assert response.status_code == 422
+
+    async def test_without_a_reference_there_is_no_reference_index(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK4/AK11 und Auflage 7: ohne `photo_id` ist `reference_index` `null`, `offset` das
+        angefragte."""
+        project, event_row, _, _ = await self._row(db_session, 3, 10)
+
+        body = (
+            await self._get(
+                authenticated_api_client, project, event_id=event_row.id, limit=1, offset=1
+            )
+        ).json()
+
+        assert body["reference_index"] is None
+        assert body["offset"] == 1
+        assert body["total"] == 3
+
+    async def test_every_failed_resolution_gives_the_same_bytes(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Auflage 5: fremde Id, nie vergebene Id und Foto eines anderen Events ergeben
+        byte-gleiche Koerper - auch mit `nearest`, `offset` und `limit`."""
+        project, event_row, reference, _ = await self._row(db_session, 3, 10)
+        foreign = await _make_project(db_session, name="fremd")
+        foreign_run = await _make_criterion_scoring_run(db_session, foreign)
+        foreign_photo = await self._timed(
+            db_session,
+            foreign,
+            foreign_run,
+            await _default_event(db_session, foreign_run),
+            "fremd",
+            10,
+        )
+        run = await db_session.get(CriterionScoringRun, event_row.criterion_scoring_run_id)
+        assert run is not None
+        other_event = await _make_event(db_session, run, position=2)
+
+        bodies = set()
+        for event_id, photo_id in (
+            (event_row.id, foreign_photo.id),
+            (event_row.id, reference.id + 4200),
+            (other_event.id, reference.id),
+        ):
+            for extra in ({}, {"nearest": 4, "offset": 7, "limit": 3}):
+                response = await self._get(
+                    authenticated_api_client,
+                    project,
+                    event_id=event_id,
+                    photo_id=photo_id,
+                    **extra,
+                )
+                assert response.status_code == 200
+                bodies.add(response.content)
+
+        assert len(bodies) == 1
+        assert json.loads(bodies.pop()) == _NO_ALTERNATIVES
+
+    async def test_both_users_see_the_same_order_and_their_own_set(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK9 und Auflage 8: Der Schluessel enthaelt keinen Nutzer. Gleiche Restmenge ergibt
+        dieselbe Folge; nimmt A ein Bild auf, fehlt es nur bei A, die uebrigen behalten ihre
+        relative Ordnung. Die Entscheidung des ANDEREN aendert die eigene Antwort nicht."""
+        project, event_row, reference, alternatives = await self._row(db_session, 4, 4)
+        other_user = await _make_second_user(db_session)
+        params = {"event_id": event_row.id, "photo_id": reference.id}
+
+        async def as_other() -> dict[str, Any]:
+            own_authorization = authenticated_api_client.headers["Authorization"]
+            authenticated_api_client.headers["Authorization"] = (
+                f"Bearer {create_access_token(other_user)}"
+            )
+            try:
+                body: dict[str, Any] = (
+                    await self._get(authenticated_api_client, project, **params)
+                ).json()
+            finally:
+                authenticated_api_client.headers["Authorization"] = own_authorization
+            return body
+
+        def view(body: dict[str, Any]) -> tuple[list[int], int, int, int]:
+            ids = [item["id"] for item in body["items"]]
+            return ids, body["total"], body["offset"], body["reference_index"]
+
+        own = (await self._get(authenticated_api_client, project, **params)).json()
+        assert view(own) == view(await as_other())
+
+        await self._rate(db_session, alternatives[0], RatingStatus.ALBUM_WORTHY)
+        await self._rate(db_session, alternatives[3], RatingStatus.REJECTED, other_user)
+        own_after = (await self._get(authenticated_api_client, project, **params)).json()
+        other_after = await as_other()
+
+        own_ids = [item["id"] for item in own_after["items"]]
+        other_ids = [item["id"] for item in other_after["items"]]
+        assert own_ids == [photo.id for photo in alternatives[1:]]
+        assert other_ids == [photo.id for photo in alternatives]
+        assert [i for i in other_ids if i in own_ids] == own_ids
+        assert (own_after["reference_index"], other_after["reference_index"]) == (1, 2)
+        assert own_after["total"] == 3
 
     async def test_a_candidate_without_a_quality_score_is_delivered_and_selectable(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -2448,7 +2757,7 @@ class TestDraftAlternatives:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"items": [], "total": 0}
+        assert response.json() == _NO_ALTERNATIVES
 
     async def test_an_unresolvable_photo_id_yields_an_empty_list_without_reflecting_it(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -2480,7 +2789,7 @@ class TestDraftAlternatives:
 
         for response in (unknown, wrong_event):
             assert response.status_code == 200
-            assert response.json() == {"items": [], "total": 0}
+            assert response.json() == _NO_ALTERNATIVES
         assert str(photos[-1].id + 4200) not in unknown.text
 
     async def test_a_photo_of_the_project_without_a_ranking_row_does_not_resolve(
@@ -2504,7 +2813,7 @@ class TestDraftAlternatives:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"items": [], "total": 0}
+        assert response.json() == _NO_ALTERNATIVES
 
     async def test_unknown_project_returns_404(
         self, authenticated_api_client: httpx.AsyncClient
@@ -2527,7 +2836,7 @@ class TestDraftAlternatives:
 
         response = await api_client.get(
             f"/projects/{project.id}/draft-alternatives",
-            params={"event_id": 1, "photo_id": 1},
+            params={"event_id": 1, "photo_id": 1, "nearest": 4},
         )
 
         assert response.status_code == 401
@@ -2557,7 +2866,7 @@ class TestDraftAlternatives:
         assert {item["id"] for item in body["items"]}.isdisjoint({p.id for p in foreign_photos})
         # `total` MITGEPRUEFT: eine Zaehlabfrage ohne Lauf-Praedikat lieferte eine plausible Zahl
         # zu einer leeren Liste, und nichts wuerde rot.
-        assert body == {"items": [], "total": 0}
+        assert body == _NO_ALTERNATIVES
 
     async def test_only_the_latest_successful_run_is_the_reference(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -2592,7 +2901,7 @@ class TestDraftAlternatives:
         )
 
         assert response.status_code == 200
-        assert response.json() == {"items": [], "total": 0}
+        assert response.json() == _NO_ALTERNATIVES
 
     async def test_the_replaced_endpoint_is_gone(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -4492,6 +4801,21 @@ class TestDraftAlternativesKeys:
         assert body["total"] == 2
         assert len(body["items"]) == 2
 
+    async def test_nearest_at_its_cap_is_accepted(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Gegenprobe zur Obergrenze: `nearest=BAND_MAX` ist gueltig, und der Deckel bleibt
+        der der Hydratation (`<= 200`, wie `limit`)."""
+        project, _run, event_row, photos = await self._setup(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/draft-alternatives",
+            params={"event_id": event_row.id, "photo_id": photos[0].id, "nearest": BAND_MAX},
+        )
+
+        assert response.status_code == 200
+        assert BAND_MAX <= 200
+
     @pytest.mark.parametrize(
         "params",
         [
@@ -4507,6 +4831,12 @@ class TestDraftAlternativesKeys:
             pytest.param({"offset": 2**63}, id="offset-jenseits-der-obergrenze"),
             pytest.param({"limit": 0}, id="limit-unter-der-untergrenze"),
             pytest.param({"limit": 201}, id="limit-ueber-der-obergrenze"),
+            pytest.param({"nearest": 0}, id="nearest-null"),
+            pytest.param({"nearest": -1}, id="nearest-negativ"),
+            pytest.param({"nearest": BAND_MAX + 1}, id="nearest-ueber-band-max"),
+            pytest.param({"nearest": 2**63}, id="nearest-jenseits-der-obergrenze"),
+            pytest.param({"nearest": 1.5}, id="nearest-kommazahl"),
+            pytest.param({"nearest": "abc"}, id="nearest-nicht-numerisch"),
         ],
     )
     async def test_rejects_query_parameters_outside_their_bounds(

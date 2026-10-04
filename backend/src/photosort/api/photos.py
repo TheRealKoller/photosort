@@ -82,7 +82,14 @@ from photosort.persons import effective_person_assignments, load_effective_perso
 # und der inklusive Vergleich gehoert dort ebenso hin (Zusicherung 26). Dasselbe gilt fuer die
 # Reihenfolge der Alternativen: sie ist eine REINE Funktion in `selection.py`, hier steht nur die
 # Beschaffung ihrer Eingabe.
-from photosort.selection import AlternativeCandidate, motif_is_present, order_alternatives
+from photosort.selection import (
+    QualityCandidate,
+    TimedCandidate,
+    motif_is_present,
+    nearest_window_offset,
+    order_alternatives_chronologically,
+    order_by_quality,
+)
 from photosort.thumbnails import variant_path
 
 # Bewusste Abweichung vom Router-Level-dependencies=[Depends(get_current_user)]-Muster aus
@@ -2394,16 +2401,34 @@ async def list_ausschuss(
     return AusschussOut(items=items, total=len(slots), open_count=open_count)
 
 
-def _strength_values(effective: Mapping[str, EffectiveStrength] | None) -> dict[str, float]:
-    """Die wirksamen Staerken als nackte Zahlen fuer `selection.py`.
-
-    Die Auswahlseite kennt weder `EffectiveStrength` noch die Herkunft eines Werts: ob eine
-    Korrektur im Spiel war, aendert die Staerke bereits IN `effective_strength_expression()` und
-    ist danach keine zweite Eingabe mehr."""
-    return {} if effective is None else {key: entry.strength for key, entry in effective.items()}
+# SICHERHEIT (S4): Deckel von `nearest` und damit der Hydratation ueber `_photos_by_id` mit ihren
+# `selectinload`s - wie `limit` hoechstens 200. Das Band fragt `BAND_SIZE = 4` an.
+BAND_MAX = 50
 
 
-@router.get("/projects/{project_id}/draft-alternatives", response_model=PhotoListOut)
+class DraftAlternativesOut(BaseModel):
+    """Die Antwortform des Alternativen-Endpunkts (ADR 0132 Punkt 4).
+
+    `offset` ist der Beginn der ausgelieferten Seite in der vollen Reihe, `reference_index` die
+    Stelle des Bezugsbildes darin (Zahl der Kandidaten davor) - ohne Bezugsbild `None`. Beide
+    sind wie `total` Funktionen des ANFRAGENDEN Nutzers."""
+
+    items: list[PhotoOut]
+    total: int
+    offset: int
+    reference_index: int | None
+
+
+def _no_alternatives() -> DraftAlternativesOut:
+    """Der EINE Leerkoerper jeder gescheiterten Aufloesung - byte-gleich, ohne Rueckspiegelung
+    eines Werts (Spec 0569, Auflage 5)."""
+    return DraftAlternativesOut(items=[], total=0, offset=0, reference_index=None)
+
+
+_NEAREST_WITHOUT_REFERENCE = "nearest ist nur zusammen mit photo_id zulaessig."
+
+
+@router.get("/projects/{project_id}/draft-alternatives", response_model=DraftAlternativesOut)
 async def draft_alternatives(
     project_id: int,
     # SICHERHEIT (S4): zwei fremdgesteuerte Objekt-Ids, deklarativ begrenzt VOR jeder Verwendung.
@@ -2412,14 +2437,17 @@ async def draft_alternatives(
     # FastAPI spiegelt bei `422` den Rohwert im `input`-Feld zurueck - er wird ausschliesslich als
     # React-Textknoten gerendert, nie geloggt.
     event_id: int = Query(..., ge=1, le=MAX_QUERY_POSITION),
-    # Optional (S8): ohne Bezugsbild (Hinzufuegen-Feld) entfaellt allein die Motivstufe der
-    # Sortierung, nie die Bindung an Lauf und Event.
+    # Optional (S8): ohne Bezugsbild (Hinzufuegen-Feld) entfaellt allein die Zeitordnung, nie die
+    # Bindung an Lauf und Event.
     photo_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
     # `limit <= 200` deckelt zugleich die schwere Hydratation ueber `_photos_by_id` mit ihren
     # `selectinload`s - sie laeuft ausschliesslich ueber die angeforderte Seite, nie ueber die
     # ganze Restmenge.
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0, le=MAX_QUERY_POSITION),
+    # Das Band (ADR 0132 Punkt 3): die `nearest` zeitlich naechsten Alternativen, Fenster vom
+    # Server geschnitten. Nur mit `photo_id`; `limit`/`offset` sind dann wirkungslos.
+    nearest: int | None = Query(None, ge=1, le=BAND_MAX),
     session: AsyncSession = Depends(get_session),
     # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei), und
@@ -2429,19 +2457,22 @@ async def draft_alternatives(
     # `_to_photo_out` (nie ein Platzhalter wie `0` - der liesse `PhotoOut.suggestion` auch fuer
     # laengst bewertete Fotos wieder aufblitzen).
     current_user: User = Depends(get_current_user),
-) -> PhotoListOut:
-    """Die Alternativen zu EINEM Bild des Entwurfs (ADR 0098 Punkt 5).
+) -> DraftAlternativesOut:
+    """Die Alternativen zu EINEM Bild des Entwurfs (ADR 0098 Punkt 5, Ordnung ADR 0132).
 
     Inhalt: die Fotos DIESES Events im letzten erfolgreichen Lauf ABZUEGLICH des Entwurfs des
     anfragenden Nutzers (`Vorschlag ∪ eigene Aufnahmen`). Ein von ihm GESTRICHENES Foto ist damit
     enthalten - genau daraus folgt, dass ein Austausch umkehrbar ist. Ein im Ausschuss-Schritt
     aussortiertes Foto hat keine Rangzeile und erscheint hier nicht.
 
-    Reihenfolge und Seitenweise: `selection.py::order_alternatives` ordnet die volle Restmenge,
-    danach schneidet `limit`/`offset` die Seite heraus. `total` ist die RESTMENGE und damit
-    unabhaengig von beiden - ein aus `len(items)` gebildetes `total` waere auf der ersten Seite
-    nicht davon zu unterscheiden. Die Ordnung entsteht in Python und nicht im `ORDER BY`, weil sie
-    an den Motiven des BEZUGSBILDES haengt; die Menge ist die eines Events.
+    Reihenfolge und Seitenweise: MIT `photo_id` ordnet
+    `selection.py::order_alternatives_chronologically` die volle Restmenge zeitlich nach
+    `(Photo.taken_at, photo_id)` und liefert die Stelle des Bezugsbildes (`reference_index`);
+    ohne `photo_id` ordnet `order_by_quality`. Danach schneidet `limit`/`offset` die Seite heraus,
+    mit `nearest` das vom Server gewaehlte Fenster `nearest_window_offset(...)`. `total` ist die
+    RESTMENGE und damit unabhaengig vom Schnitt - ein aus `len(items)` gebildetes `total` waere
+    auf der ersten Seite nicht davon zu unterscheiden. `reference_index`, `offset` und `total`
+    entstehen aus DERSELBEN Kandidatenabfrage; es gibt keine eigene Zaehl- oder Positionsabfrage.
 
     SICHERHEIT - Projektbindung (S2): `PhotoRanking` traegt KEINE `project_id`, und `event_id` ist
     ein GLOBALER Surrogatschluessel - eine Id aus Projekt B identifiziert unter `/projects/A/…`
@@ -2450,43 +2481,48 @@ async def draft_alternatives(
     die Ausfallrichtung wird unauffaelliger, nicht harmloser. Die einzige Bindung an das Projekt
     des Pfadparameters ist `criterion_scoring_run_id` aus
     `_latest_successful_criterion_scoring_run_id(session, project_id)`; sie steht AUSGESCHRIEBEN
-    in der Aufloesung des Bezugsfotos, in der Kandidatenabfrage und in `_partition_sizes`. `total`
-    entsteht aus der Kandidatenabfrage selbst und damit aus derselben Bindung - eine eigene
-    Zaehlabfrage ohne das Praedikat lieferte eine plausible Zahl zu einer leeren Liste, und nichts
-    wuerde rot. Die Motivabfrage (`load_effective_strengths`) bekommt ausschliesslich Ids aus
-    diesen beiden Abfragen; sie fuegt der Menge keine Zeile hinzu. `_photos_by_id` filtert nur
-    nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
+    in der Aufloesung des Bezugsfotos, in der Kandidatenabfrage und in `_partition_sizes`. Der
+    innere Join auf `Photo` (fuer `taken_at`) fuegt keine Zeile hinzu. Die Motivabfrage
+    (`load_effective_strengths`) bekommt ausschliesslich die Ids der ausgelieferten Seite.
+    `_photos_by_id` filtert nur nach Id und ist ausdruecklich KEINE zweite Verteidigungslinie.
 
-    SICHERHEIT - das Bezugsbild (S3): `photo_id` wird AUSSCHLIESSLICH ueber eine Rangzeile
-    desselben Laufs UND desselben Events aufgeloest, nie ueber `session.get(Photo, …)`. Scheitert
-    das, endet die Anfrage vor jeder weiteren Abfrage mit `200`, `items: []` und `total: 0` - auf
-    demselben Antwortpfad wie eine leere Trefferliste, ohne Fehlertext und ohne Rueckspiegelung
-    der uebergebenen Werte. `photo_id` steuert allein die SORTIERUNG: die Motive des Bezugsbildes
-    bestimmen, welche Fotos vorn stehen. Ohne das Praedikat ordnete ein fremdes Foto die eigene
-    Antwort, und aus der beobachteten Reihenfolge liesse sich das Motivprofil eines Bildes
-    ablesen, das der Anfragende nie sehen darf - ein Leck ueber die Sortierung, das keine
-    Antwortzeile benennt. Ein abweichender Statuscode waere daneben ein Existenz-Orakel ueber
-    fremde Ids.
+    SICHERHEIT - das Bezugsbild (S3): `photo_id` wird samt `taken_at` AUSSCHLIESSLICH ueber EINE
+    Abfrage auf eine Rangzeile desselben Laufs UND desselben Events aufgeloest, nie ueber
+    `session.get(Photo, …)` oder eine zweite Abfrage auf `Photo.taken_at`. Scheitert das, endet
+    die Anfrage vor jeder weiteren Abfrage mit `200` und dem byte-gleichen Leerkoerper
+    (`_no_alternatives`), ohne Fehlertext und ohne Rueckspiegelung der uebergebenen Werte.
+    `photo_id` steuert allein die zeitliche Position (`reference_index`, Bandfenster); ohne das
+    Praedikat wuerde die Zeitposition eines fremden Fotos ablesbar. Ein abweichender Statuscode
+    oder Koerper waere daneben ein Existenz-Orakel ueber fremde Ids.
 
-    OHNE `photo_id` (S8) entfaellt Schritt (1) und mit ihm die Motivstufe: `order_alternatives`
-    ordnet dann nach Qualitaet. Die Kandidatenabfrage steht mit Lauf- UND Event-Praedikat
-    unveraendert - eine unbekannte oder projektfremde `event_id` ergibt `200` mit `items: []` und
-    `total: 0` auf demselben Antwortpfad. Untersagt sind ein Ersatz-Bezugsbild (etwa das erste
-    Foto des Events), eine Menge ohne Event-Praedikat und eine Bindung, die nur im Zweig mit
-    Bezugsbild steht."""
+    OHNE `photo_id` (S8) entfaellt Schritt (1) und mit ihm die Zeitordnung: `order_by_quality`
+    ordnet dann nach Qualitaet, `reference_index` ist `None`, `nearest` ergibt `422`. Die
+    Kandidatenabfrage steht mit Lauf- UND Event-Praedikat unveraendert - eine unbekannte oder
+    projektfremde `event_id` ergibt den Leerkoerper. Untersagt sind ein Ersatz-Bezugsbild (etwa
+    das frueheste Foto des Events), eine Menge ohne Event-Praedikat und eine Bindung, die nur im
+    Zweig mit Bezugsbild steht."""
+    if nearest is not None and photo_id is None:
+        # Laut statt still: ein ignoriertes `nearest` lieferte eine Liste, die wie ein Band
+        # aussieht, aber keines ist. Vor jeder Abfrage.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_NEAREST_WITHOUT_REFERENCE
+        )
     project = await _get_project_or_404(project_id, session)
 
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
-        return PhotoListOut(items=[], total=0)
+        return _no_alternatives()
 
-    # (1) Das Bezugsbild - beide Praedikate ausgeschrieben, siehe Docstring (S3). Nur mit
-    # `photo_id`; ohne gibt es keines, und es wird keines ersatzweise gewaehlt (S8).
-    reference_quality: float | None = None
+    # (1) Das Bezugsbild samt `taken_at` in EINER Abfrage - alle drei Praedikate ausgeschrieben,
+    # siehe Docstring (S3). Nur mit `photo_id`; ohne gibt es keines, und es wird keines
+    # ersatzweise gewaehlt (S8).
+    reference: TimedCandidate | None = None
     if photo_id is not None:
         reference_row = (
             await session.execute(
-                select(PhotoRanking.photo_id, PhotoRanking.rank_score).where(
+                select(PhotoRanking.photo_id, Photo.taken_at)
+                .join(Photo, Photo.id == PhotoRanking.photo_id)
+                .where(
                     PhotoRanking.criterion_scoring_run_id == latest_run_id,
                     PhotoRanking.event_id == event_id,
                     PhotoRanking.photo_id == photo_id,
@@ -2494,8 +2530,8 @@ async def draft_alternatives(
             )
         ).first()
         if reference_row is None:
-            return PhotoListOut(items=[], total=0)
-        reference_quality = reference_row.rank_score
+            return _no_alternatives()
+        reference = TimedCandidate(photo_id=reference_row.photo_id, taken_at=reference_row.taken_at)
 
     # (2) Die Kandidaten: die Rangzeilen dieses Events ABZUEGLICH des eigenen Entwurfs.
     #
@@ -2514,10 +2550,14 @@ async def draft_alternatives(
     # `or_(… is_(None), … != …)` und nicht `!=` allein: ohne eigene Bewertungszeile ist `status`
     # `NULL`, und ein blosser Ungleichheitsvergleich ergaebe in SQL `NULL` - jedes unbewertete
     # Foto fiele still aus der Antwort.
+    #
+    # `Photo.taken_at` kommt per INNEREM Join ueber die Rangzeile; er fuegt keine Zeile hinzu
+    # (jede Rangzeile hat genau ein Foto), Lauf- und Event-Praedikat bleiben die Mengenbindung.
     own_rating = aliased(Rating)
     candidate_rows = (
         await session.execute(
-            select(PhotoRanking.photo_id, PhotoRanking.rank_score)
+            select(PhotoRanking.photo_id, PhotoRanking.rank_score, Photo.taken_at)
+            .join(Photo, Photo.id == PhotoRanking.photo_id)
             .outerjoin(
                 own_rating,
                 and_(
@@ -2541,38 +2581,32 @@ async def draft_alternatives(
         )
     ).all()
 
-    # (3) Die Motive beider Seiten in EINER Abfrage - nie eine je Kandidat.
-    strengths_by_id = await load_effective_strengths(
-        session,
-        [
-            *(() if photo_id is None else (photo_id,)),
-            *(row.photo_id for row in candidate_rows),
-        ],
-    )
-    reference = (
-        None
-        if photo_id is None
-        else AlternativeCandidate(
-            photo_id=photo_id,
-            quality=reference_quality,
-            motif_strengths=_strength_values(strengths_by_id.get(photo_id)),
-        )
-    )
-    ordered_ids = order_alternatives(
-        reference,
-        [
-            AlternativeCandidate(
-                photo_id=row.photo_id,
-                quality=row.rank_score,
-                motif_strengths=_strength_values(strengths_by_id.get(row.photo_id)),
-            )
+    # (3) Ordnen und schneiden - `total`, `reference_index` und `offset` aus derselben Menge.
+    reference_index: int | None = None
+    if reference is None:
+        ordered_ids = order_by_quality(
+            QualityCandidate(photo_id=row.photo_id, quality=row.rank_score)
             for row in candidate_rows
-        ],
-    )
-
-    # (4) `total` ist die volle Restmenge, die Hydratation laeuft ueber die Seite.
+        )
+        if not ordered_ids:
+            return _no_alternatives()
+    else:
+        ordered_ids, reference_index = order_alternatives_chronologically(
+            reference,
+            (
+                TimedCandidate(photo_id=row.photo_id, taken_at=row.taken_at)
+                for row in candidate_rows
+            ),
+        )
     total = len(ordered_ids)
+    if nearest is not None and reference_index is not None:
+        # Das Fenster stammt allein vom Server; kein Client-Wert geht in die Rechnung ein.
+        offset = nearest_window_offset(reference_index, total, nearest)
+        limit = nearest
     ids = ordered_ids[offset : offset + limit]
+
+    # (4) Die Hydratation laeuft ausschliesslich ueber die Seite, die Motive eingeschlossen.
+    strengths_by_id = await load_effective_strengths(session, ids)
     photos_by_id = await _photos_by_id(session, ids)
     rankings_by_id = await _ranking_by_photo_id(session, latest_run_id, ids)
     partition_sizes = await _partition_sizes(session, latest_run_id)
@@ -2603,7 +2637,9 @@ async def draft_alternatives(
         # und wird oben gebraucht; eine Ueberdeckung hier waere an keiner Stelle sichtbar.
         for alternative_id in ids
     ]
-    return PhotoListOut(items=items, total=total)
+    return DraftAlternativesOut(
+        items=items, total=total, offset=offset, reference_index=reference_index
+    )
 
 
 # --- Der Austausch: ein Aufruf, eine Transaktion, ein Ereignis ---------------------------------

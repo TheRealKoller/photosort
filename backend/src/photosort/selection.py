@@ -19,6 +19,7 @@ zwischen Motiven. Ein struktureller Waechter in tests/test_selection.py haelt da
 from __future__ import annotations
 
 import math
+from bisect import bisect_left
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -72,11 +73,10 @@ def carried_motifs(
 ) -> frozenset[str]:
     """Die Motive, die ein Bild traegt - die EINE Herleitung fuer Auswahl und Alternativen.
 
-    Sie nimmt die Staerkeabbildung und nicht einen Kandidaten entgegen, weil beide Aufrufer eigene
-    Kandidatentypen haben (`SelectionCandidate` mit Zeit und Pflichtqualitaet,
-    `AlternativeCandidate` ohne beides): eine zweite Herleitung fuer den zweiten Typ liefe an dem
-    Tag auseinander, an dem die Grenze sich aendert. Ein hier fehlendes Motiv zaehlt als nicht
-    getragen.
+    Sie nimmt die Staerkeabbildung und nicht einen Kandidaten entgegen, damit jeder Aufrufer mit
+    eigenem Kandidatentyp dieselbe Herleitung nutzt: eine zweite Herleitung fuer einen zweiten Typ
+    liefe an dem Tag auseinander, an dem die Grenze sich aendert. Ein hier fehlendes Motiv zaehlt
+    als nicht getragen.
 
     `threshold` wird unveraendert an `motif_is_present` durchgereicht und gilt fuer JEDES Motiv
     dieser Abbildung gleich; die Auflage dort gilt hier mit."""
@@ -135,69 +135,76 @@ class SelectionEvent:
 
 
 @dataclass(frozen=True)
-class AlternativeCandidate:
-    """Ein Bild im Alternativenraster eines Austauschs - Bezugsbild wie Kandidat.
+class TimedCandidate:
+    """Ein Bild in der zeitlichen Reihe der Alternativen eines Austauschs - Bezugsbild wie
+    Kandidat (ADR 0132).
 
-    Zwei bewusste Unterschiede zu `SelectionCandidate`:
+    Traegt bewusst NUR `photo_id` und `taken_at`: Motiv und Qualitaet gehen nicht in die Ordnung
+    ein, und ohne die Felder ist das strukturell wahr statt bloss unbenutzt. `taken_at` ist die
+    wirksame, um den Kamera-Versatz korrigierte Zeit (ADR 0090) und nie `None` (`Photo.taken_at`
+    ist NOT NULL, Rueckfall `last_modified`)."""
 
-    * KEINE `taken_at`. Zeitliche Naehe ist kein Sortierkriterium der Alternativen (ADR 0098
-      Punkt 5); ohne das Feld ist das strukturell wahr statt bloss unbenutzt.
-    * `quality` ist `float | None`. Ein Kandidat ohne Qualitaetsbewertung ist ein gueltiger,
-      waehlbarer Zustand - er sortiert ans Ende SEINER Gruppe, nie global."""
+    photo_id: int
+    taken_at: datetime
+
+
+@dataclass(frozen=True)
+class QualityCandidate:
+    """Ein Bild im Hinzufuegen-Feld des Album-Entwurfs (ohne Bezugsbild).
+
+    `quality` ist `float | None`: ein Kandidat ohne Qualitaetsbewertung ist ein gueltiger,
+    waehlbarer Zustand - er sortiert ans Ende."""
 
     photo_id: int
     quality: float | None
-    motif_strengths: Mapping[str, float]
 
 
-def order_alternatives(
-    reference: AlternativeCandidate | None, candidates: Iterable[AlternativeCandidate]
-) -> list[int]:
-    """Die Reihenfolge der Alternativen zu EINEM Bild (ADR 0098 Punkt 5), als `photo_id`-Folge.
+def order_alternatives_chronologically(
+    reference: TimedCandidate, candidates: Iterable[TimedCandidate]
+) -> tuple[list[int], int]:
+    """Die Alternativen zu EINEM Bild, zeitlich geordnet (ADR 0132 Punkt 1 und 2).
 
-    Sortierschluessel `(0 wenn geteiltes Motiv sonst 1, -quality, photo_id)`:
+    Schluessel `(taken_at, photo_id)` aufsteigend - eine Totalordnung ohne Nutzer, Motiv oder
+    Qualitaet; Gleichstand bricht ueber die kleinere `photo_id`, nie ueber die Eingabereihenfolge.
 
-    1. Bilder, die mit dem Bezugsbild mindestens EIN Motiv teilen, nach Qualitaet absteigend;
-    2. danach die uebrigen, ebenso.
-
-    Die Gruppe ist BINAER - drei geteilte Motive schlagen ein geteiltes nicht, und die Grenze ist
-    fuer alle Motive dieselbe (`carried_motifs`). Es wird nie eine Motivstaerke mit einer anderen
-    verglichen (ADR 0091 Punkt 1 und 8).
-
-    `quality is None` sortiert INNERHALB seiner Gruppe ans Ende, ausgedrueckt als eigenes
-    Schluesselglied: `quality or 0.0` machte aus einer `0.0` lautlos einen fehlenden Wert, und
-    `None` global ans Ende zu schieben stellte ein Bild ohne Bewertung hinter jedes fremde Motiv.
-    Gleichstand bricht ueber die kleinere `photo_id` - ausgeschrieben, nie der Eingabereihenfolge
-    ueberlassen.
-
+    Rueckgabe: die `photo_id`-Folge und `reference_index`, die Zahl der Kandidaten, die nach
+    DEMSELBEN Schluessel STRIKT vor dem Bezugsbild liegen. Beides entsteht aus derselben Menge.
     Das Bezugsbild selbst faellt heraus: es ist der Ausgangspunkt des Austauschs, nicht sein
-    Ziel.
-
-    Ohne Bezugsbild (`None`, das Hinzufuegen-Feld des Album-Entwurfs) entfaellt die Motivstufe
-    vollstaendig: alle Kandidaten stehen in einer Gruppe, Qualitaet absteigend, `None` zuletzt,
-    Gleichstand ueber die kleinere `photo_id`. Ein Ersatz-Bezugsbild gibt es nicht."""
-    reference_motifs = (
-        carried_motifs(reference.motif_strengths) if reference is not None else frozenset()
+    Ziel."""
+    reference_key = (reference.taken_at, reference.photo_id)
+    ordered = sorted(
+        (candidate.taken_at, candidate.photo_id)
+        for candidate in candidates
+        if candidate.photo_id != reference.photo_id
     )
-    reference_id = reference.photo_id if reference is not None else None
+    reference_index = bisect_left(ordered, reference_key)
+    return [photo_id for _, photo_id in ordered], reference_index
 
-    def key(candidate: AlternativeCandidate) -> tuple[int, int, float, int]:
-        shares = bool(carried_motifs(candidate.motif_strengths) & reference_motifs)
+
+def nearest_window_offset(reference_index: int, total: int, size: int) -> int:
+    """Der Beginn des Fensters der `size` zeitlich naechsten Alternativen (ADR 0132 Punkt 3).
+
+    `clamp(reference_index - size // 2, 0, max(0, total - size))`: im Normalfall gleich viele
+    davor und danach, an einem Rand von der anderen Seite aufgefuellt, bei `total < size` alles."""
+    return max(0, min(reference_index - size // 2, total - size))
+
+
+def order_by_quality(candidates: Iterable[QualityCandidate]) -> list[int]:
+    """Die Reihenfolge des Hinzufuegen-Felds (ohne Bezugsbild), als `photo_id`-Folge.
+
+    Qualitaet absteigend, `None` zuletzt - als eigenes Schluesselglied, denn `quality or 0.0`
+    machte aus einer `0.0` lautlos einen fehlenden Wert. Gleichstand ueber die kleinere
+    `photo_id`. Ein Ersatz-Bezugsbild gibt es nicht."""
+
+    def key(candidate: QualityCandidate) -> tuple[int, float, int]:
         quality = candidate.quality
         return (
-            0 if shares else 1,
             1 if quality is None else 0,
             0.0 if quality is None else -quality,
             candidate.photo_id,
         )
 
-    return [
-        candidate.photo_id
-        for candidate in sorted(
-            (candidate for candidate in candidates if candidate.photo_id != reference_id),
-            key=key,
-        )
-    ]
+    return [candidate.photo_id for candidate in sorted(candidates, key=key)]
 
 
 def effective_target(configured: int | None) -> int:
