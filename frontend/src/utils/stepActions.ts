@@ -76,7 +76,9 @@ export function deriveStepAction(
 
   if (stepId === 'ausschuss') {
     const gateConfirmedAt = project.last_scoring_run?.gate_confirmed_at ?? null
-    if (gateConfirmedAt === null || (openCount ?? 0) > 0) {
+    // Eine unbekannte Anzahl (Bestand lädt oder ist nicht ladbar) zählt als „möglicherweise
+    // offen": Ein Weiter-Link an dieser Stelle führte an offenen Vorschlägen vorbei.
+    if (gateConfirmedAt === null || openCount === null || openCount > 0) {
       return {
         action: { kind: 'confirm', label: ausschussConfirmLabel(openCount), openCount },
         rerun,

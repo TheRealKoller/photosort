@@ -126,7 +126,9 @@ describe('deriveStepAction: Tabelle über den vollständigen Eingaberaum', () =>
         expected = 'start'
       } else if (
         c.step === 'ausschuss' &&
-        (c.project.last_scoring_run?.gate_confirmed_at === null || (c.openCount ?? 0) > 0)
+        (c.project.last_scoring_run?.gate_confirmed_at === null ||
+          c.openCount === null ||
+          c.openCount > 0)
       ) {
         expected = 'confirm'
       } else {
@@ -182,6 +184,18 @@ describe('deriveStepAction: Tabelle über den vollständigen Eingaberaum', () =>
         expect(action.label).toBe(ausschussConfirmLabel(c.openCount))
       }
     }
+  })
+
+  it('wertet bei gesetztem Gate eine noch unbekannte Anzahl als Abschluss ohne Anzahl', () => {
+    const project = projectFixture({ last_scoring_run: scoringRunSummary('success', GATE) })
+
+    expect(
+      deriveStepAction('ausschuss', project, { openCount: null, isTriggerPending: false }).action,
+    ).toEqual({ kind: 'confirm', label: AUSSCHUSS_CONFIRM_LABEL, openCount: null })
+    // Nach dem Laden: null Vorschläge, automatisch abgeschlossen - es geht weiter.
+    expect(
+      deriveStepAction('ausschuss', project, { openCount: 0, isTriggerPending: false }).action.kind,
+    ).toBe('next')
   })
 
   it('bleibt beim Ausschuss "confirm", wenn nach der Bestätigung Vorschläge neu offen sind', () => {
