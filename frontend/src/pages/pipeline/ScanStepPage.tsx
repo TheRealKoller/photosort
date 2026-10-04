@@ -84,7 +84,14 @@ export function ScanStepPage() {
       <p className="text-sm text-text">
         Durchsucht den verknüpften OpenCloud-Ordner nach neuen, geänderten oder entfernten Fotos.
       </p>
-      {rerun !== null && <RerunBlock rerun={rerun} onRerun={handleTriggerScan} disabled={isBusy} />}
+      {rerun !== null && (
+        <RerunBlock
+          rerun={rerun}
+          onRerun={handleTriggerScan}
+          disabled={isBusy}
+          busy={isTriggerPending}
+        />
+      )}
 
       {triggerErrorDetail && <Alert>{triggerErrorDetail}</Alert>}
 
@@ -139,7 +146,7 @@ export function ScanStepPage() {
         action={action}
         status={
           <>
-            <StatusDot status={scanStatus} />
+            <StatusDot status={action.kind === 'running' ? 'running' : scanStatus} />
             {statusText}
           </>
         }

@@ -42,6 +42,14 @@ describe('RerunBlock', () => {
     expect(screen.getByRole('button', { name: RERUN.label })).toBeDisabled()
   })
 
+  it('zeigt während des Auslösens das Ladezeichen und ist gesperrt', () => {
+    render(<RerunBlock rerun={RERUN} onRerun={vi.fn()} busy />)
+
+    const button = screen.getByRole('button', { name: RERUN.label })
+    expect(button).toBeDisabled()
+    expect(within(button).getByTestId('button-spinner')).toBeInTheDocument()
+  })
+
   it('rendert den Zusatzplatz', () => {
     render(
       <RerunBlock rerun={RERUN} onRerun={vi.fn()}>

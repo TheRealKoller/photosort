@@ -256,7 +256,12 @@ export function AusschussStepPage() {
       </p>
       <p className="text-sm text-text">{AUSSCHUSS_NOTHING_SORTED_TEXT}</p>
       {rerun !== null && (
-        <RerunBlock rerun={rerun} onRerun={handleTriggerScore} disabled={isScoreBusy} />
+        <RerunBlock
+          rerun={rerun}
+          onRerun={handleTriggerScore}
+          disabled={isScoreBusy}
+          busy={isTriggerPending}
+        />
       )}
 
       {scoreTriggerErrorDetail && <Alert>{scoreTriggerErrorDetail}</Alert>}
@@ -406,7 +411,7 @@ export function AusschussStepPage() {
         action={action}
         status={
           <>
-            <StatusDot status={scoringStatus} />
+            <StatusDot status={action.kind === 'running' ? 'running' : scoringStatus} />
             {statusText}
           </>
         }

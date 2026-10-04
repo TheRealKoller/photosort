@@ -491,6 +491,21 @@ describe('genau einer der beiden Zustandsblöcke', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Klassifizierung' })).toHaveFocus()
   })
 
+  it('zeigt nach dem Auslösen sofort den laufenden Statuspunkt und ein Ladezeichen am Erneut-Knopf', async () => {
+    vi.mocked(projectsApi.triggerClassification).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    renderSection(project({ last_criterion_scoring_run: classificationRun(ERFOLG) }))
+
+    const rerun = screen.getByRole('button', { name: RERUN.label })
+    await user.click(rerun)
+
+    const dot = leiste().querySelector('[aria-live] > span[aria-hidden="true"]')
+    expect(dot).toHaveClass('bg-status-running')
+    expect(dot).not.toHaveClass('bg-status-success')
+    expect(rerun).toBeDisabled()
+    expect(within(rerun).getByTestId('button-spinner')).toBeInTheDocument()
+  })
+
   it('setzt den Fokus bei einem normalen Aufruf nicht', () => {
     renderSection(project())
 

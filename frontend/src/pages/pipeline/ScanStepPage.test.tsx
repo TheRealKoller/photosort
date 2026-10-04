@@ -258,4 +258,19 @@ describe('ScanStepPage', () => {
     expect(screen.queryByRole('button', { name: /erneut/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /aktualisieren/i })).not.toBeInTheDocument()
   })
+
+  it('zeigt nach dem Auslösen sofort den laufenden Statuspunkt und ein Ladezeichen am Erneut-Knopf', async () => {
+    vi.mocked(projectsApi.triggerScan).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    renderPage(project({ last_scan: scan({ status: 'success' }) }))
+
+    const rerun = screen.getByRole('button', { name: RERUN.label })
+    await user.click(rerun)
+
+    const dot = leiste().querySelector('[aria-live] > span[aria-hidden="true"]')
+    expect(dot).toHaveClass('bg-status-running')
+    expect(dot).not.toHaveClass('bg-status-success')
+    expect(rerun).toBeDisabled()
+    expect(within(rerun).getByTestId('button-spinner')).toBeInTheDocument()
+  })
 })

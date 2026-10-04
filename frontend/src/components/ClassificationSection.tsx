@@ -176,7 +176,12 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         leitet daraus eine Kategorie ab und bildet eine Rangfolge je Foto-Moment und Kategorie.
       </p>
       {rerun !== null && (
-        <RerunBlock rerun={rerun} onRerun={handleTrigger} disabled={isTriggerDisabled}>
+        <RerunBlock
+          rerun={rerun}
+          onRerun={handleTrigger}
+          disabled={isTriggerDisabled}
+          busy={isTriggerPending}
+        >
           {estimateBlock}
         </RerunBlock>
       )}
@@ -299,7 +304,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         action={action}
         status={
           <>
-            <StatusDot status={runStatus} />
+            <StatusDot status={action.kind === 'running' ? 'running' : runStatus} />
             {statusText}
           </>
         }
