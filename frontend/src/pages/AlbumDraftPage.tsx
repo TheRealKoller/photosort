@@ -418,7 +418,10 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
       : undefined
   const allAlternativesPhoto = items.find((photo) => photo.id === allAlternativesPhotoId)
   const closing = target === null ? null : draftClosingTexts(counts, target)
-  const smallerProposal = target === null ? null : smallerProposalText(items, target)
+  const smallerProposal =
+    target === null || !query.data
+      ? null
+      : smallerProposalText(items, target, query.data.eligible_candidate_count)
   const undoView =
     undo === null
       ? null

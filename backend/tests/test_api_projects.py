@@ -23,6 +23,7 @@ from photosort.models import (
     CriterionScoringRun,
     Event,
     FinalSelectionDecision,
+    MotifAssessmentSource,
     Photo,
     PhotoRanking,
     PhotoScore,
@@ -35,6 +36,7 @@ from photosort.models import (
     ScoringRun,
     User,
 )
+from photosort.motif_strengths import upsert_assessment
 from photosort.opencloud.client import Drive, OpenCloudError
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.photo_aggregates import (
@@ -2025,6 +2027,24 @@ class TestTheTargetTakesEffectImmediately:
 
 
 class TestTheTargetBeforeTheFirstClassification:
+    async def test_has_proposal_tells_whether_any_successful_run_exists(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Nicht der Status des NEUESTEN Laufs: nach success -> failed rechnet ein `PUT` den
+        Vorschlag des erfolgreichen Laufs neu, und die Oberflaeche muss das sagen koennen."""
+        fresh = await _create_project(authenticated_api_client, name="Ohne Lauf")
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        await TestTheLockWhileAClassificationRuns._add_run(
+            db_session, lay.project_id, ScanStatus.FAILED, datetime(2026, 9, 1, 9)
+        )
+
+        without = (await authenticated_api_client.get(f"/projects/{fresh}")).json()
+        after_failure = (await authenticated_api_client.get(f"/projects/{lay.project_id}")).json()
+
+        assert without["has_selection_proposal"] is False
+        assert after_failure["last_criterion_scoring_run"]["status"] == "failed"
+        assert after_failure["has_selection_proposal"] is True
+
     async def test_a_put_without_a_successful_run_stores_the_value_and_touches_no_ranking(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
@@ -2061,6 +2081,41 @@ class TestTheTargetBeforeTheFirstClassification:
             )
         ).scalar_one()
         assert stored is None
+
+
+class TestTheDraftNamesItsEligibleCandidates:
+    async def test_an_excluded_document_is_not_counted_as_a_candidate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Hinweis „kleinerer Vorschlag" haengt an der Zahl AUSWAHLFAEHIGER Kandidaten. Ein
+        als Dokument ausgeschlossenes Foto hat eine Rangzeile, ist aber nicht auswahlfaehig -
+        zaehlte es mit, blieben die Kandidaten nie erschoepft."""
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        await upsert_assessment(
+            db_session,
+            lay.photo_ids[0],
+            source=MotifAssessmentSource.CLOUD,
+            strengths={},
+            excluded_document=True,
+            provider="testanbieter",
+            computed_at=datetime(2026, 8, 12, 12),
+        )
+        await db_session.commit()
+
+        draft = (
+            await authenticated_api_client.get(f"/projects/{lay.project_id}/album-draft")
+        ).json()
+
+        assert draft["eligible_candidate_count"] == lay.candidate_count - 1
+
+    async def test_without_a_successful_run_there_are_no_candidates(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+
+        draft = (await authenticated_api_client.get(f"/projects/{project_id}/album-draft")).json()
+
+        assert draft["eligible_candidate_count"] == 0
 
 
 class TestTheTargetBelongsToTheProject:

@@ -138,6 +138,10 @@ export interface ProjectOut {
   // Angabe nennt die Vorbelegung selbst (`SelectionTargetField.DEFAULT_SELECTION_TARGET`).
   selection_target: number | null
   effective_selection_target: number
+  // Gibt es einen erfolgreichen Kriterien-Lauf, dessen Vorschlag ein Richtwert-`PUT` neu rechnet?
+  // Nicht aus `last_criterion_scoring_run` ableitbar: nach "erfolgreich, dann gescheitert" ist der
+  // neueste Lauf `failed`, der Vorschlag des erfolgreichen wird trotzdem neu gerechnet.
+  has_selection_proposal: boolean
   // Bestandszahlen des Projekts (ADR 0103). PFLICHTFELDER ohne Vorgabewert: dann erzwingt `tsc`
   // die Ergaenzung jeder lokalen `project()`-Testfabrik, und es braucht keinen Test ueber deren
   // Vollzaehligkeit.
@@ -894,6 +898,9 @@ export interface PhotoListOut {
 export interface AlbumDraftOut {
   events: EventOut[]
   items: PhotoOut[]
+  // Zahl AUSWAHLFÄHIGER Kandidaten des Laufs (Rangzeile mit Wert, kein ausgeschlossenes Dokument)
+  // - Grundlage des Hinweises „kleinerer Vorschlag".
+  eligible_candidate_count: number
 }
 
 // Ab hier: die Momentaufnahme eines Projekts (GET /projects/{id}/stats). Reine Anzeigedaten -

@@ -59,23 +59,31 @@ export function SelectionTargetField({ project, action }: SelectionTargetFieldPr
   const save = useSetSelectionTargetMutation(project.id)
 
   const locked = project.last_criterion_scoring_run?.status === 'running'
-  // Neu berechnet wird nur ein vorhandener Vorschlag. Ohne erfolgreichen neuesten Lauf sagt die
-  // Bestätigung nur, was sicher stimmt: der Wert gilt für den nächsten Vorschlag.
-  const hasProposal = project.last_criterion_scoring_run?.status === 'success'
+  // Neu berechnet wird nur ein vorhandener Vorschlag - der eines erfolgreichen Laufs, auch wenn
+  // danach ein Lauf gescheitert ist. Ohne ihn sagt die Bestätigung nur, was sicher stimmt: der
+  // Wert gilt für den nächsten Vorschlag.
+  const hasProposal = project.has_selection_proposal
 
   // `''` ist der Zustand „Standard" und zugleich der erlaubte Zwischenzustand eines geleerten
   // Feldes - beides derselbe Wert, weil beides dieselbe Eingabe ist.
   const [value, setValue] = useState(fieldValueOf(project.selection_target))
   const [saved, setSaved] = useState(false)
 
-  // Der gespeicherte Wert führt, sobald ER sich ändert - nie bei einem anderen Wechsel der
-  // Projektantwort (etwa dem Laufstatus), sonst ginge eine getippte Eingabe beim Sperren
-  // verloren. Angleichung WÄHREND des Renderns statt in einem Effekt (Reacts Muster „adjusting
-  // state when a prop changes").
+  // Was während eines laufenden Speicherns eingegeben und bestätigt wurde. Gespeichert wird
+  // SERIELL: Zwei parallele Anfragen könnten vertauscht ankommen und den älteren Wert
+  // festschreiben. Vorgemerkt wird nur der letzte Wert; er geht nach dem Abschluss hinaus.
+  const queuedRef = useRef<{ value: number | null } | null>(null)
+
+  // Ändert sich der gespeicherte Wert, übernimmt das Feld ihn NUR, wenn es seit dem letzten
+  // gespeicherten Stand nicht bearbeitet wurde. Eine Eingabe verschwindet nie stillschweigend -
+  // weder beim Sperren noch durch die Antwort eines vorigen Speicherns. Angleichung WÄHREND des
+  // Renderns statt in einem Effekt (Reacts Muster „adjusting state when a prop changes").
   const [lastSavedTarget, setLastSavedTarget] = useState(project.selection_target)
   if (project.selection_target !== lastSavedTarget) {
     setLastSavedTarget(project.selection_target)
-    setValue(fieldValueOf(project.selection_target))
+    if (value === fieldValueOf(lastSavedTarget)) {
+      setValue(fieldValueOf(project.selection_target))
+    }
   }
 
   // Die Bestätigung verschwindet von selbst: ein dauerhafter Erfolgshinweis stünde nach Minuten
@@ -88,12 +96,16 @@ export function SelectionTargetField({ project, action }: SelectionTargetFieldPr
     return () => window.clearTimeout(timer)
   }, [saved])
 
-  function send(next: number | null, onSuccess?: () => void): void {
+  function send(next: number | null): void {
     setSaved(false)
     save.mutate(next, {
-      onSuccess: () => {
-        setSaved(true)
-        onSuccess?.()
+      onSuccess: () => setSaved(true),
+      onSettled: () => {
+        const queued = queuedRef.current
+        queuedRef.current = null
+        if (queued !== null && queued.value !== next) {
+          send(queued.value)
+        }
       },
     })
   }
@@ -104,7 +116,10 @@ export function SelectionTargetField({ project, action }: SelectionTargetFieldPr
     if (next !== null && !Number.isFinite(next)) {
       return
     }
-    if (save.isPending && save.variables === next) {
+    if (save.isPending) {
+      // Gleich dem Wert, der gerade gespeichert wird: nichts vormerken, eine ältere Vormerkung
+      // ist damit überholt.
+      queuedRef.current = save.variables === next ? null : { value: next }
       return
     }
     if (next === project.selection_target) {

@@ -26,6 +26,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     cloud_vision_consent_at: null,
     selection_target: null,
     effective_selection_target: 42,
+    has_selection_proposal: true,
     photo_count: 0,
     taken_at_earliest: null,
     taken_at_latest: null,

@@ -1532,6 +1532,14 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     den Vorschlag des neuesten erfolgreichen Laufs sofort neu und ist ohne erfolgreichen Lauf ein
     reines Speichern. Bestandsvorschläge nach der alten Vorbelegung bleiben ohne Migration stehen,
     bis der nächste erfolgreiche Lauf oder die nächste Richtwert-Änderung sie neu rechnet.
+    Zwei additive Antwortfelder tragen die Oberfläche dazu: `ProjectOut.has_selection_proposal`
+    (es gibt einen erfolgreichen Kriterien-Lauf, dessen Vorschlag ein `PUT` neu rechnet — bewusst
+    nicht der Status des neuesten Laufs, der nach „erfolgreich, dann gescheitert" `failed` ist) und
+    `AlbumDraftOut.eligible_candidate_count` (die Zahl auswahlfähiger Kandidaten des Laufs:
+    Rangzeile mit `rank_score`, kein `excluded_document` — dieselbe Menge, aus der
+    `_apply_run_selection` wählt). Der Hinweis „kleinerer Vorschlag" im Album-Entwurf erscheint nur,
+    wenn der Vorschlag diese Menge ausschöpft und unter dem Richtwert bleibt. Gespeichert wird im
+    Feld seriell: Während ein `PUT` läuft, wird höchstens der zuletzt bestätigte Wert vorgemerkt.
   - **Bestandszahlen an `ProjectOut`** *(Spec
     [`0375`](../specs/features/0375-projektuebersicht-umfang-und-naechster-schritt.md), ADR
     [`decisions/0103-bestandszahlen-an-projectout-stand-bleibt-frontend-ableitung.md`](../specs/decisions/0103-bestandszahlen-an-projectout-stand-bleibt-frontend-ableitung.md))*:

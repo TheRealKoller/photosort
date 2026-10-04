@@ -58,6 +58,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     cloud_vision_consent_at: null,
     selection_target: null,
     effective_selection_target: SERVER_DEFAULT,
+    has_selection_proposal: true,
     photo_count: 0,
     taken_at_earliest: null,
     taken_at_latest: null,
@@ -227,6 +228,87 @@ describe('SelectionTargetField', () => {
       })
     })
 
+    it('serializes saving: a value typed while saving waits, survives the answer and is sent after', async () => {
+      /* Zwei parallele Speichervorgänge könnten in vertauschter Reihenfolge ankommen und den
+       * älteren Wert festschreiben. Und eine Eingabe verschwindet nie stillschweigend - auch
+       * nicht, wenn die Antwort des vorigen Speicherns den gespeicherten Wert ändert. */
+      const user = userEvent.setup()
+      const resolvers: ((value: ProjectOut) => void)[] = []
+      vi.mocked(projectsApi.setSelectionTarget).mockImplementation(
+        () => new Promise<ProjectOut>((resolve) => resolvers.push(resolve)),
+      )
+      const { rerenderWith } = renderField(
+        project({ selection_target: 80, effective_selection_target: 80 }),
+      )
+
+      const input = screen.getByLabelText(FIELD) as HTMLInputElement
+      await user.clear(input)
+      await user.type(input, '90')
+      await user.tab()
+      await waitFor(() => expect(projectsApi.setSelectionTarget).toHaveBeenCalledTimes(1))
+
+      await user.clear(input)
+      await user.type(input, '95')
+      await user.tab()
+      await user.clear(input)
+      await user.type(input, '96')
+      await user.tab()
+      expect(projectsApi.setSelectionTarget).toHaveBeenCalledTimes(1)
+
+      const saved90 = project({ selection_target: 90, effective_selection_target: 90 })
+      resolvers[0]?.(saved90)
+      rerenderWith(saved90)
+
+      expect(input.value).toBe('96')
+      await waitFor(() => expect(projectsApi.setSelectionTarget).toHaveBeenCalledTimes(2))
+      expect(projectsApi.setSelectionTarget).toHaveBeenLastCalledWith(1, 96)
+
+      const saved96 = project({ selection_target: 96, effective_selection_target: 96 })
+      resolvers[1]?.(saved96)
+      rerenderWith(saved96)
+      await waitFor(() => expect(screen.getByText(/vorschlag neu berechnet/i)).toBeInTheDocument())
+      expect(input.value).toBe('96')
+      expect(projectsApi.setSelectionTarget).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not resend a value typed while saving if it equals the value just saved', async () => {
+      const user = userEvent.setup()
+      let resolveSave: ((value: ProjectOut) => void) | undefined
+      vi.mocked(projectsApi.setSelectionTarget).mockReturnValue(
+        new Promise<ProjectOut>((resolve) => {
+          resolveSave = resolve
+        }),
+      )
+      const { rerenderWith } = renderField(
+        project({ selection_target: 80, effective_selection_target: 80 }),
+      )
+
+      const input = screen.getByLabelText(FIELD) as HTMLInputElement
+      await user.clear(input)
+      await user.type(input, '90')
+      await user.tab()
+      await user.click(input)
+      await user.tab()
+
+      const saved90 = project({ selection_target: 90, effective_selection_target: 90 })
+      resolveSave?.(saved90)
+      rerenderWith(saved90)
+
+      await waitFor(() => expect(screen.getByText(/vorschlag neu berechnet/i)).toBeInTheDocument())
+      expect(projectsApi.setSelectionTarget).toHaveBeenCalledTimes(1)
+      expect(input.value).toBe('90')
+    })
+
+    it('still takes over a value changed elsewhere while nothing was typed', () => {
+      const { rerenderWith } = renderField(
+        project({ selection_target: 80, effective_selection_target: 80 }),
+      )
+
+      rerenderWith(project({ selection_target: 120, effective_selection_target: 120 }))
+
+      expect((screen.getByLabelText(FIELD) as HTMLInputElement).value).toBe('120')
+    })
+
     it('confirms a recomputation after a run and takes the confirmation back again', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
@@ -247,7 +329,7 @@ describe('SelectionTargetField', () => {
 
     it('before the first run claims no recomputation but validity for the next proposal', async () => {
       const user = userEvent.setup()
-      renderField(project({ last_criterion_scoring_run: null }))
+      renderField(project({ last_criterion_scoring_run: null, has_selection_proposal: false }))
 
       await user.type(screen.getByLabelText(FIELD), '120')
       await user.tab()
@@ -258,6 +340,26 @@ describe('SelectionTargetField', () => {
         )
       })
       expect(screen.queryByText(/neu berechnet/i)).not.toBeInTheDocument()
+    })
+
+    it('after success then failure still confirms the recomputation of the existing proposal', async () => {
+      /* Der neueste Lauf ist gescheitert, ein früherer erfolgreich: der `PUT` rechnet dessen
+       * Vorschlag neu. Maßgeblich ist `has_selection_proposal`, nicht der Status des neuesten. */
+      const user = userEvent.setup()
+      renderField(
+        project({
+          last_criterion_scoring_run: criterionScoringRun({ status: 'failed' }),
+          has_selection_proposal: true,
+        }),
+      )
+
+      await user.type(screen.getByLabelText(FIELD), '120')
+      await user.tab()
+
+      await waitFor(() => {
+        expect(screen.getByText(/vorschlag neu berechnet/i)).toBeInTheDocument()
+      })
+      expect(screen.queryByText(/nächsten Vorschlag/i)).not.toBeInTheDocument()
     })
   })
 

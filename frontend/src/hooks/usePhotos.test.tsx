@@ -78,6 +78,11 @@ function page(items: number[], total: number): PhotoListOut {
   return { items: items.map((id) => photo(id)), total }
 }
 
+/** Eine Entwurfsantwort mit dem einen Event; die Kandidatenzahl spielt in diesen Fällen keine Rolle. */
+function draftOf(items: PhotoOut[]): AlbumDraftOut {
+  return { events: [EVENT], items, eligible_candidate_count: items.length }
+}
+
 /** Ein Foto des Entwurfs: im Event, mit Rangzeile, vorgeschlagen oder nicht. */
 function draftPhoto(id: number, takenAt: string, proposed: boolean): PhotoOut {
   return photo(id, {
@@ -285,7 +290,7 @@ describe('useDraftQuery', () => {
   })
 
   it('reads the album draft endpoint, under a key that carries the identity', async () => {
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({ events: [EVENT], items: [] })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draftOf([]))
     const { queryClient, sharedWrapper } = sharedClient()
 
     const { result } = renderHook(() => useDraftQuery(1), { wrapper: sharedWrapper })
@@ -295,6 +300,7 @@ describe('useDraftQuery', () => {
     expect(queryClient.getQueryData(['photos', 1, 'draft', USERNAME])).toEqual({
       events: [EVENT],
       items: [],
+      eligible_candidate_count: 0,
     })
   })
 
@@ -311,7 +317,7 @@ describe('useDraftQuery', () => {
 describe('applyWrittenRating', () => {
   const proposed = draftPhoto(1, '2026-07-20T10:00:00', true)
   const candidate = draftPhoto(2, '2026-07-20T11:00:00', false)
-  const DRAFT: AlbumDraftOut = { events: [EVENT], items: [proposed, candidate] }
+  const DRAFT: AlbumDraftOut = draftOf([proposed, candidate])
 
   it('replaces the own entry and leaves the entry of the other user untouched', () => {
     const withBoth: AlbumDraftOut = {
@@ -399,7 +405,7 @@ describe('useDraftDecisionMutation', () => {
         { user_id: USER_ID, username: USERNAME, status: 'rejected' as const, favorite: false },
       ],
     }
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({ events: [EVENT], items: [struck] })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draftOf([struck]))
     vi.mocked(ratingsApi.deleteRating).mockResolvedValue(written(1, null))
     const { queryClient, sharedWrapper } = sharedClient()
     const draft = renderHook(() => useDraftQuery(1), { wrapper: sharedWrapper })
@@ -419,7 +425,7 @@ describe('useDraftDecisionMutation', () => {
     const first = draftPhoto(1, '2026-07-20T10:00:00', true)
     const third = draftPhoto(3, '2026-07-20T12:00:00', true)
     const added = draftPhoto(2, '2026-07-20T11:00:00', false)
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({ events: [EVENT], items: [first, third] })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draftOf([first, third]))
     vi.mocked(ratingsApi.setRating).mockResolvedValue(written(2, 'album_worthy'))
     const { queryClient, sharedWrapper } = sharedClient()
     const draft = renderHook(() => useDraftQuery(1), { wrapper: sharedWrapper })
@@ -437,10 +443,9 @@ describe('useDraftDecisionMutation', () => {
   })
 
   it('invalidates the other photo queries but not the own draft key', async () => {
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({
-      events: [EVENT],
-      items: [draftPhoto(1, '2026-07-20T10:00:00', true)],
-    })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(
+      draftOf([draftPhoto(1, '2026-07-20T10:00:00', true)]),
+    )
     vi.mocked(photosApi.listPhotos).mockResolvedValue(page([1], 1))
     vi.mocked(ratingsApi.setRating).mockResolvedValue(written(1, 'rejected'))
     const { queryClient, sharedWrapper } = sharedClient()
@@ -464,7 +469,7 @@ describe('useSetRatingMutation against the draft', () => {
   it('invalidates the draft key - a decision elsewhere must reach the draft', async () => {
     // Der Gegenfall zur Ausnahme oben: Im Raster oder in der Endauswahl bewertet, muss der Entwurf
     // beim naechsten Besuch neu laden.
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({ events: [EVENT], items: [] })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draftOf([]))
     vi.mocked(ratingsApi.setRating).mockResolvedValue(written(1, 'rejected'))
     const { queryClient, sharedWrapper } = sharedClient()
     const draft = renderHook(() => useDraftQuery(1), { wrapper: sharedWrapper })
@@ -509,7 +514,7 @@ describe('useDraftExchangeMutation', () => {
     // fuehrt es in der Gestrichen-Zeile. Die Alternative kommt an ihren chronologischen Platz.
     const replaced = draftPhoto(1, '2026-07-20T10:00:00', true)
     const chosen = draftPhoto(2, '2026-07-20T11:00:00', false)
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({ events: [EVENT], items: [replaced] })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draftOf([replaced]))
     vi.mocked(photosApi.exchangeDraftPhoto).mockResolvedValue({
       taken: written(2, 'album_worthy'),
       struck: written(1, 'rejected'),
@@ -534,7 +539,7 @@ describe('useDraftExchangeMutation', () => {
 
   it('leaves the draft cache untouched when the exchange fails', async () => {
     const replaced = draftPhoto(1, '2026-07-20T10:00:00', true)
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({ events: [EVENT], items: [replaced] })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draftOf([replaced]))
     vi.mocked(photosApi.exchangeDraftPhoto).mockRejectedValue(new Error('422'))
     const { queryClient, sharedWrapper } = sharedClient()
     const draft = renderHook(() => useDraftQuery(1), { wrapper: sharedWrapper })
@@ -547,10 +552,7 @@ describe('useDraftExchangeMutation', () => {
       result.current.mutateAsync({ replaced, chosen: draftPhoto(2, '2026-07-20T11:00:00', false) }),
     ).rejects.toThrow()
 
-    expect(queryClient.getQueryData(draftQueryKey(1))).toEqual({
-      events: [EVENT],
-      items: [replaced],
-    })
+    expect(queryClient.getQueryData(draftQueryKey(1))).toEqual(draftOf([replaced]))
   })
 })
 
@@ -580,10 +582,7 @@ describe('useDraftExchangeUndoMutation', () => {
   })
 
   it('writes both restored rows: the replaced photo returns, the alternative leaves', async () => {
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({
-      events: [EVENT],
-      items: [replaced, chosen],
-    })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draftOf([replaced, chosen]))
     vi.mocked(photosApi.undoDraftExchange).mockResolvedValue({
       photo: written(2, null),
       replaced: written(1, null),
@@ -604,10 +603,7 @@ describe('useDraftExchangeUndoMutation', () => {
   })
 
   it('leaves the cache untouched on a 409', async () => {
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({
-      events: [EVENT],
-      items: [replaced, chosen],
-    })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draftOf([replaced, chosen]))
     vi.mocked(photosApi.undoDraftExchange).mockRejectedValue(new ApiError(409, 'veraendert'))
     const { queryClient, sharedWrapper } = sharedClient()
     const draft = renderHook(() => useDraftQuery(1), { wrapper: sharedWrapper })
@@ -635,10 +631,7 @@ describe('a sequence of draft actions', () => {
     const proposedB = draftPhoto(2, '2026-07-20T11:00:00', true)
     const candidateC = draftPhoto(3, '2026-07-20T12:00:00', false)
     const candidateD = draftPhoto(4, '2026-07-20T09:30:00', false)
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({
-      events: [EVENT],
-      items: [proposedA, proposedB],
-    })
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draftOf([proposedA, proposedB]))
     const { queryClient, sharedWrapper } = sharedClient()
     const draft = renderHook(() => useDraftQuery(1), { wrapper: sharedWrapper })
     await waitFor(() => expect(draft.result.current.isSuccess).toBe(true))

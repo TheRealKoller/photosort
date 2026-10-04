@@ -162,31 +162,18 @@ export function draftSizeText(counts: DraftCounts, target: number): string {
  * der noch nach der alten Vorbelegung (ein Zehntel der Bilderzahl) gerechnet wurde, ist klein,
  * obwohl genug Fotos da sind - die Zeile nennte dann eine falsche Ursache.
  *
- * „Erschöpft" entsteht aus den vorhandenen Zählungen, ohne eigenes API-Feld: `partition_size` ist
- * die Zahl bewerteter Kandidaten je Event. Jedes Event mit Kandidaten hat mindestens einen Platz
- * im Vorschlag (Abdeckung zuerst) und steht damit mit seiner Rangzeile in der Antwort - auch ein
- * gestrichenes Foto bleibt dort. Die Summe über die Events der Antwort ist also die
- * Kandidatenzahl des Laufs. Ein als Dokument ausgeschlossenes Foto zählt darin mit, ist aber nicht
- * auswahlfähig; die Ausfallrichtung ist dann „keine Zeile", nie eine falsche Behauptung.
+ * „Erschöpft" heißt: der Vorschlag umfasst jeden auswahlfähigen Kandidaten. Die Zahl kommt vom
+ * Server (`AlbumDraftOut.eligible_candidate_count`) und zählt dieselbe Menge, aus der der
+ * Vorschlag gewählt wird. `partition_size` taugt dafür nicht: Es zählt auch als Dokument
+ * ausgeschlossene Fotos, die nie vorgeschlagen werden, und unterdrückte die Zeile dann.
  */
-export function smallerProposalText(items: PhotoOut[], target: number): string | null {
-  let proposed = 0
-  const candidatesByEvent = new Map<number, number>()
-  for (const item of items) {
-    const ranking = item.ranking
-    if (!ranking) {
-      continue
-    }
-    if (ranking.proposed) {
-      proposed += 1
-    }
-    candidatesByEvent.set(ranking.event_id, ranking.partition_size)
-  }
-  let candidates = 0
-  for (const size of candidatesByEvent.values()) {
-    candidates += size
-  }
-  if (proposed === 0 || proposed >= target || proposed < candidates) {
+export function smallerProposalText(
+  items: PhotoOut[],
+  target: number,
+  eligibleCandidates: number,
+): string | null {
+  const proposed = items.filter((item) => item.ranking?.proposed === true).length
+  if (proposed === 0 || proposed >= target || proposed < eligibleCandidates) {
     return null
   }
   return `Der Vorschlag umfasst ${proposed} Fotos statt etwa ${target} – mehr auswahlfähige Fotos gibt dieses Projekt nicht her.`

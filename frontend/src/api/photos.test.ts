@@ -62,7 +62,11 @@ describe('api/photos', () => {
   })
 
   it('reads the album draft from its own endpoint', async () => {
-    const draft: AlbumDraftOut = { events: [], items: PHOTO_LIST.items }
+    const draft: AlbumDraftOut = {
+      events: [],
+      items: PHOTO_LIST.items,
+      eligible_candidate_count: 1,
+    }
     vi.mocked(apiFetch).mockResolvedValue(draft)
 
     const result = await getAlbumDraft(1)
