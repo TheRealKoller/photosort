@@ -92,9 +92,9 @@ SIMILARITY_DECAY = 0.5
 # Jenseits dieser Spanne wertet nichts mehr ab; innerhalb laeuft die Zeitnaehe linear aus.
 SIMILARITY_TIME_WINDOW = timedelta(minutes=15)
 
-# Der Nenner der Vorbelegung: ohne eingestellten Richtwert umfasst der Vorschlag ein Zehntel der
-# Bilderzahl. Diese Zahl steht NUR hier.
-DEFAULT_TARGET_DIVISOR = 10
+# Die Vorbelegung: ohne eingestellten Richtwert zielt der Vorschlag auf diese feste Zahl Bilder,
+# unabhaengig von der Bilderzahl (ADR 0131). Diese Zahl steht NUR hier.
+DEFAULT_TARGET = 150
 
 _SIMILARITY_TIME_WINDOW_SECONDS = SIMILARITY_TIME_WINDOW.total_seconds()
 
@@ -200,18 +200,19 @@ def order_alternatives(
     ]
 
 
-def effective_target(configured: int | None, photo_count: int) -> int:
+def effective_target(configured: int | None) -> int:
     """Der wirksame Richtwert eines Projekts.
 
-    `None` heisst "nicht selbst eingestellt" und ergibt ein Zehntel der Bilderzahl, aufgerundet
-    und mindestens 1 - im Moment der Auswahl berechnet und deshalb mit dem Bestand mitwachsend.
-    Eine eingestellte Zahl gilt absolut und unveraendert.
+    `None` heisst "nicht selbst eingestellt" und ergibt die feste Vorbelegung `DEFAULT_TARGET`
+    (ADR 0131) - sie waechst mit dem Bestand NICHT mit. Eine eingestellte Zahl gilt absolut und
+    unveraendert.
 
     DIE EINE Ableitungsstelle: die Vorbelegung wird nie in die Spalte geschrieben, ein
-    eingeschriebener Vorgabewert waere von einer Nutzereingabe nicht mehr zu unterscheiden."""
+    eingeschriebener Vorgabewert waere von einer Nutzereingabe nicht mehr zu unterscheiden, und
+    eine spaetere Aenderung der Vorbelegung erreichte das Projekt nicht mehr."""
     if configured is not None:
         return configured
-    return max(1, -(-photo_count // DEFAULT_TARGET_DIVISOR))
+    return DEFAULT_TARGET
 
 
 def _similarity(

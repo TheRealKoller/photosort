@@ -34,10 +34,11 @@ class Project(Base):
     # voller Audit-Log.
     cloud_vision_consent_at: Mapped[datetime | None] = mapped_column(default=None)
     # Der Richtwert des Auswahlvorschlags, als absolute Anzahl Bilder. `NULL` heißt NICHT "kein
-    # Richtwert", sondern "nicht selbst eingestellt" - wirksam ist dann ein Zehntel der
-    # Bilderzahl des Projekts (`selection.py::effective_target`), und diese Vorbelegung wird NIE
-    # in die Spalte geschrieben: ein eingeschriebener Vorgabewert wäre von einer Nutzereingabe
-    # nicht mehr zu unterscheiden, und der Wert wüchse mit dem Bestand nicht mehr mit. Ober- und
+    # Richtwert", sondern "nicht selbst eingestellt" - wirksam ist dann die feste Vorbelegung von
+    # 150 Bildern (`selection.py::DEFAULT_TARGET`, ADR 0131), und diese Vorbelegung wird NIE in
+    # die Spalte geschrieben: ein eingeschriebener Vorgabewert wäre von einer Nutzereingabe nicht
+    # mehr zu unterscheiden, und eine spätere Änderung der Vorbelegung erreichte das Projekt nicht
+    # mehr. Ober- und
     # Untergrenze werden am Endpunkt durchgesetzt (`api/projects.py`), nicht hier. Projektweit,
     # ohne user_id-Bezug.
     selection_target: Mapped[int | None] = mapped_column(default=None)

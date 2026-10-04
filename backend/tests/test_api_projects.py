@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -21,10 +22,13 @@ from photosort.models import (
     ClassificationPhase,
     CriterionScoringRun,
     Event,
+    FinalSelectionDecision,
     Photo,
     PhotoRanking,
     PhotoScore,
     Project,
+    Rating,
+    RatingStatus,
     RemoteCategoryClassificationRun,
     ScanRun,
     ScanStatus,
@@ -39,7 +43,7 @@ from photosort.photo_aggregates import (
     photo_aggregates_by_project,
 )
 from photosort.security import create_access_token, hash_password
-from photosort.selection import effective_target
+from photosort.selection import DEFAULT_TARGET, effective_target
 from photosort.thumbnails import display_path, thumbnail_path
 from tests.project_graph import (
     ProjectGraph,
@@ -1627,7 +1631,7 @@ class TestTheSelectionTarget:
             await session.execute(select(Project.selection_target).where(Project.id == project_id))
         ).scalar_one()
 
-    async def test_a_fresh_project_reports_no_own_target_and_a_derived_one(
+    async def test_a_fresh_project_reports_no_own_target_and_the_fixed_default(
         self, authenticated_api_client: httpx.AsyncClient
     ) -> None:
         """`selection_target === null` heisst "nicht selbst eingestellt", nicht "kein Richtwert" -
@@ -1638,19 +1642,38 @@ class TestTheSelectionTarget:
         body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
 
         assert body["selection_target"] is None
-        assert body["effective_selection_target"] == 1
+        assert body["effective_selection_target"] == DEFAULT_TARGET
 
-    async def test_the_derived_target_is_a_tenth_of_the_photo_count(
+    async def test_the_default_does_not_grow_when_a_further_scan_adds_photos(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
+        """ADR 0131: die Vorbelegung ist fest. Ein weiterer Scan bringt Fotos hinzu - hier als die
+        Zeilen, die er schreibt -, und der wirksame Richtwert bleibt stehen."""
         project_id = await self._project_with_a_draft(
             authenticated_api_client, db_session, photo_count=20
         )
+        before = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+        for index in range(DEFAULT_TARGET + 1):
+            db_session.add(
+                Photo(
+                    project_id=project_id,
+                    relative_path=f"Nachscan/{index}.jpg",
+                    etag=f"nachscan-{index}",
+                    content_length=100,
+                    taken_at=datetime(2026, 9, 1) + timedelta(minutes=index),
+                    taken_at_original=datetime(2026, 9, 1) + timedelta(minutes=index),
+                    camera_probed=True,
+                    last_modified=datetime(2026, 9, 1),
+                )
+            )
+        await db_session.commit()
 
-        body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+        after = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
 
-        assert body["selection_target"] is None
-        assert body["effective_selection_target"] == 2
+        assert after["photo_count"] == before["photo_count"] + DEFAULT_TARGET + 1
+        for body in (before, after):
+            assert body["selection_target"] is None
+            assert body["effective_selection_target"] == DEFAULT_TARGET
 
     async def test_setting_a_target_answers_with_the_project_and_recomputes_the_draft(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1689,9 +1712,11 @@ class TestTheSelectionTarget:
 
         assert response.status_code == 200
         assert response.json()["selection_target"] is None
-        assert response.json()["effective_selection_target"] == 2
+        assert response.json()["effective_selection_target"] == DEFAULT_TARGET
         assert await self._stored_target(db_session, project_id) is None
-        assert await self._drafted_photo_count(db_session, project_id) == 2
+        # Zwanzig auswahlfaehige Fotos unter einem Richtwert von 150: der Vorschlag nimmt alle -
+        # ein Ziel, keine Obergrenze, und mehr gibt der Bestand nicht her.
+        assert await self._drafted_photo_count(db_session, project_id) == 20
 
     @pytest.mark.parametrize(
         ("payload", "expected"),
@@ -1791,6 +1816,523 @@ class TestTheSelectionTarget:
         paths = {getattr(route, "path", "") for route in projects_api.router.routes}
 
         assert "/projects/{project_id}/selection-target" in paths
+
+
+# specs/features/0567-richtwert-vor-klassifizierung.md: der Richtwert wirkt sofort, ist vor der
+# Klassifizierung einstellbar, und die Vorbelegung ist fest (ADR 0131).
+
+_EFFECT_EVENTS = 3
+_EFFECT_PER_EVENT = 10
+
+
+@dataclass(frozen=True)
+class _EffectLay:
+    """Ein Projekt mit erfolgreichem Lauf, drei Events zu je zehn bewerteten Kandidaten - genug,
+    dass ein Richtwert ueber der Eventzahl die Vorschlagsgroesse tatsaechlich bestimmt."""
+
+    project_id: int
+    run_id: int
+    photo_ids: tuple[int, ...]
+
+    @property
+    def candidate_count(self) -> int:
+        return len(self.photo_ids)
+
+
+async def _effect_lay(
+    client: httpx.AsyncClient,
+    session: AsyncSession,
+    *,
+    name: str = "Wirkung",
+    seeded_positions: int | None = None,
+) -> _EffectLay:
+    """`seeded_positions` schreibt einen Bestandsvorschlag direkt in die Rangzeilen - der Zustand
+    eines Projekts, dessen letzter Lauf noch nach der alten Vorbelegung gerechnet hat."""
+    project_id = await _create_project(client, name=name)
+    scoring_run = ScoringRun(
+        project_id=project_id, status=ScanStatus.SUCCESS, started_at=datetime(2026, 8, 12, 9)
+    )
+    session.add(scoring_run)
+    await session.flush()
+    run = CriterionScoringRun(
+        project_id=project_id,
+        scoring_run_id=scoring_run.id,
+        status=ScanStatus.SUCCESS,
+        started_at=datetime(2026, 8, 12, 9, 30),
+    )
+    session.add(run)
+    await session.flush()
+    photo_ids: list[int] = []
+    for event_index in range(_EFFECT_EVENTS):
+        day = datetime(2026, 8, 12 + event_index, 10)
+        event_row = Event(
+            criterion_scoring_run_id=run.id,
+            position=event_index + 1,
+            started_at=day,
+            ended_at=day + timedelta(hours=_EFFECT_PER_EVENT),
+        )
+        session.add(event_row)
+        await session.flush()
+        for index in range(_EFFECT_PER_EVENT):
+            moment = day + timedelta(hours=index)
+            photo = Photo(
+                project_id=project_id,
+                relative_path=f"{name}/{event_index}-{index}.jpg",
+                etag=f"{name}-{event_index}-{index}",
+                content_length=100,
+                taken_at=moment,
+                taken_at_original=moment,
+                camera_probed=True,
+                last_modified=moment,
+            )
+            session.add(photo)
+            await session.flush()
+            seeded = seeded_positions is not None and len(photo_ids) < seeded_positions
+            session.add(
+                PhotoRanking(
+                    criterion_scoring_run_id=run.id,
+                    photo_id=photo.id,
+                    event_id=event_row.id,
+                    rank_score=0.9 - index / 100,
+                    rank_position=index + 1,
+                    selection_position=1 if seeded else None,
+                )
+            )
+            photo_ids.append(photo.id)
+    await session.commit()
+    return _EffectLay(project_id=project_id, run_id=run.id, photo_ids=tuple(photo_ids))
+
+
+async def _partner_headers(session: AsyncSession) -> dict[str, str]:
+    partner = User(username="partnerin", password_hash=hash_password("irrelevant"))
+    session.add(partner)
+    await session.commit()
+    await session.refresh(partner)
+    return {"Authorization": f"Bearer {create_access_token(partner)}"}
+
+
+async def _positions(session: AsyncSession, run_id: int) -> dict[int, int | None]:
+    rows = await session.execute(
+        select(PhotoRanking.photo_id, PhotoRanking.selection_position).where(
+            PhotoRanking.criterion_scoring_run_id == run_id
+        )
+    )
+    return {photo_id: position for photo_id, position in rows.all()}
+
+
+def _proposed_ids(items: Sequence[dict[str, Any]]) -> set[int]:
+    return {
+        item["id"] for item in items if item["ranking"] is not None and item["ranking"]["proposed"]
+    }
+
+
+async def _proposal_as_read(
+    client: httpx.AsyncClient, project_id: int, headers: dict[str, str] | None = None
+) -> dict[str, set[int]]:
+    """Der Vorschlagsanteil, wie ihn JEDE Lesestelle zeigt - Kuratierungsliste, Album-Entwurf und
+    Endauswahl -, jeweils aus der Antwort und nicht aus der Datenbank."""
+    listing = await client.get(f"/projects/{project_id}/photos?limit=200", headers=headers)
+    draft = await client.get(f"/projects/{project_id}/album-draft", headers=headers)
+    selection = await client.get(f"/projects/{project_id}/album-selection", headers=headers)
+    assert listing.status_code == draft.status_code == selection.status_code == 200
+    return {
+        "kuratierung": _proposed_ids(listing.json()["items"]),
+        "entwurf": _proposed_ids(draft.json()["items"]),
+        "endauswahl": _proposed_ids(selection.json()["items"]),
+    }
+
+
+async def _put_target(client: httpx.AsyncClient, project_id: int, target: int | None) -> Any:
+    response = await client.put(f"/projects/{project_id}/selection-target", json={"target": target})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+class TestTheTargetTakesEffectImmediately:
+    async def test_raising_and_lowering_changes_the_proposal_on_every_read_path(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Nachweistest des gemeldeten Fehlers. Die Ursache ist nicht gefunden; der Test prueft
+        deshalb SELBST, dass sein Aufbau den Fehler zeigen koennte: Eventzahl < T_alt < T_neu <=
+        Kandidatenzahl, und die Groesse vorher ist eine andere als nachher. Zuerst geschrieben,
+        vor jeder Backend-Aenderung dieser Story, und dort sofort gruen - der Lesepfad war live."""
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        partner = await _partner_headers(db_session)
+        old_target, new_target = 6, 12
+        assert _EFFECT_EVENTS < old_target < new_target <= lay.candidate_count
+
+        for target in (old_target, new_target, old_target):
+            body = await _put_target(authenticated_api_client, lay.project_id, target)
+
+            # Die genannte Zahl ist die, mit der gerechnet wurde.
+            assert body["effective_selection_target"] == target
+            stored = {
+                photo_id
+                for photo_id, position in (await _positions(db_session, lay.run_id)).items()
+                if position is not None
+            }
+            assert len(stored) == target
+            for headers in (None, partner):
+                read = await _proposal_as_read(authenticated_api_client, lay.project_id, headers)
+                assert read == {
+                    "kuratierung": stored,
+                    "entwurf": stored,
+                    "endauswahl": stored,
+                }
+
+    async def test_raising_below_the_event_count_changes_nothing_by_design(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Der Gegenfall im unwirksamen Bereich: Bei T <= Eventzahl bekommt jedes Event genau
+        einen Platz (Abdeckung zuerst). Eine Erhoehung dort aendert nichts - gewollt, kein
+        Fehler."""
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        assert 1 < 2 <= _EFFECT_EVENTS
+
+        await _put_target(authenticated_api_client, lay.project_id, 1)
+        before = await _positions(db_session, lay.run_id)
+        await _put_target(authenticated_api_client, lay.project_id, 2)
+        after = await _positions(db_session, lay.run_id)
+
+        assert sum(position is not None for position in before.values()) == _EFFECT_EVENTS
+        assert after == before
+
+    async def test_the_proposal_is_a_target_and_stops_at_the_candidates(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        assert lay.candidate_count < DEFAULT_TARGET
+
+        body = await _put_target(authenticated_api_client, lay.project_id, None)
+
+        assert body["effective_selection_target"] == DEFAULT_TARGET
+        positions = await _positions(db_session, lay.run_id)
+        assert all(position is not None for position in positions.values())
+
+    async def test_a_put_on_one_project_leaves_the_proposal_of_another_untouched(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sicherheitsauflage S4: die Projektbindung liegt allein am Laufpraedikat."""
+        mine = await _effect_lay(authenticated_api_client, db_session, name="Eigenes")
+        other = await _effect_lay(
+            authenticated_api_client, db_session, name="Fremdes", seeded_positions=4
+        )
+        other_before = await _positions(db_session, other.run_id)
+
+        await _put_target(authenticated_api_client, mine.project_id, 12)
+
+        assert await _positions(db_session, other.run_id) == other_before
+
+
+class TestTheTargetBeforeTheFirstClassification:
+    async def test_a_put_without_a_successful_run_stores_the_value_and_touches_no_ranking(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Ein gescheiterter Lauf mit Rangzeilen ist kein erfolgreicher: es gibt nichts neu zu
+        berechnen, und keine Zeile aendert sich."""
+        lay = await _effect_lay(authenticated_api_client, db_session, seeded_positions=5)
+        run = await db_session.get(CriterionScoringRun, lay.run_id)
+        assert run is not None
+        run.status = ScanStatus.FAILED
+        await db_session.commit()
+        before = await _positions(db_session, lay.run_id)
+
+        body = await _put_target(authenticated_api_client, lay.project_id, 12)
+
+        assert body["selection_target"] == 12
+        assert body["effective_selection_target"] == 12
+        assert await _positions(db_session, lay.run_id) == before
+
+    async def test_a_fresh_project_without_any_run_accepts_and_resets_the_target(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+
+        assert (await _put_target(authenticated_api_client, project_id, 40))[
+            "selection_target"
+        ] == 40
+        reset = await _put_target(authenticated_api_client, project_id, None)
+
+        assert reset["selection_target"] is None
+        assert reset["effective_selection_target"] == DEFAULT_TARGET
+        stored = (
+            await db_session.execute(
+                select(Project.selection_target).where(Project.id == project_id)
+            )
+        ).scalar_one()
+        assert stored is None
+
+
+class TestTheTargetBelongsToTheProject:
+    async def test_user_b_reads_and_drafts_by_the_target_user_a_set(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        partner = await _partner_headers(db_session)
+        target = 9
+        assert _EFFECT_EVENTS < target <= lay.candidate_count
+
+        await _put_target(authenticated_api_client, lay.project_id, target)
+        body = (
+            await authenticated_api_client.get(f"/projects/{lay.project_id}", headers=partner)
+        ).json()
+        draft = (
+            await authenticated_api_client.get(
+                f"/projects/{lay.project_id}/album-draft", headers=partner
+            )
+        ).json()
+
+        assert body["selection_target"] == target
+        assert body["effective_selection_target"] == target
+        assert len(_proposed_ids(draft["items"])) == target
+
+
+class TestTheLockWhileAClassificationRuns:
+    @staticmethod
+    async def _add_run(
+        session: AsyncSession, project_id: int, status: ScanStatus, started_at: datetime
+    ) -> None:
+        scoring_run_id = (
+            await session.execute(
+                select(ScoringRun.id).where(ScoringRun.project_id == project_id).limit(1)
+            )
+        ).scalar_one()
+        session.add(
+            CriterionScoringRun(
+                project_id=project_id,
+                scoring_run_id=scoring_run_id,
+                status=status,
+                started_at=started_at,
+            )
+        )
+        await session.commit()
+
+    async def test_the_newest_running_run_answers_409_without_writing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Sicherheitsauflage S5: maßgeblich ist der Server, vor jedem Schreibvorgang."""
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        await _put_target(authenticated_api_client, lay.project_id, 6)
+        before = await _positions(db_session, lay.run_id)
+        await self._add_run(db_session, lay.project_id, ScanStatus.RUNNING, datetime(2026, 9, 1, 9))
+
+        response = await authenticated_api_client.put(
+            f"/projects/{lay.project_id}/selection-target", json={"target": 12}
+        )
+
+        assert response.status_code == 409
+        assert "Klassifizierung" in response.json()["detail"]
+        body = (await authenticated_api_client.get(f"/projects/{lay.project_id}")).json()
+        assert body["selection_target"] == 6
+        assert await _positions(db_session, lay.run_id) == before
+
+    @pytest.mark.parametrize("finished", [ScanStatus.SUCCESS, ScanStatus.FAILED])
+    async def test_a_finished_newest_run_lets_the_change_through(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        finished: ScanStatus,
+    ) -> None:
+        """Auch ueber einem aelteren, haengengebliebenen `running`-Lauf: geprueft wird nur der
+        neueste."""
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        await self._add_run(
+            db_session, lay.project_id, ScanStatus.RUNNING, datetime(2026, 8, 30, 9)
+        )
+        await self._add_run(db_session, lay.project_id, finished, datetime(2026, 9, 1, 9))
+
+        response = await authenticated_api_client.put(
+            f"/projects/{lay.project_id}/selection-target", json={"target": 12}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["selection_target"] == 12
+
+
+class TestTheTargetInputBounds:
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            pytest.param({"target": 0}, id="null"),
+            pytest.param({"target": -1}, id="negativ"),
+            pytest.param({"target": projects_api.MAX_SELECTION_TARGET + 1}, id="ueber-deckel"),
+            pytest.param({"target": "viele"}, id="zeichenkette"),
+            pytest.param({"target": 1.5}, id="kommazahl"),
+            pytest.param({"target": True}, id="wahrheitswert"),
+            pytest.param({}, id="feld-fehlt"),
+        ],
+    )
+    async def test_a_rejected_value_writes_nothing(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        payload: dict[str, Any],
+    ) -> None:
+        """Sicherheitsauflage S1: `422`, Spalte und `selection_position` unveraendert."""
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        await _put_target(authenticated_api_client, lay.project_id, 6)
+        before = await _positions(db_session, lay.run_id)
+
+        response = await authenticated_api_client.put(
+            f"/projects/{lay.project_id}/selection-target", json=payload
+        )
+
+        assert response.status_code == 422
+        body = (await authenticated_api_client.get(f"/projects/{lay.project_id}")).json()
+        assert body["selection_target"] == 6
+        assert await _positions(db_session, lay.run_id) == before
+
+
+class TestUserStatesSurviveATargetChange:
+    """Aufnahmen, Streichungen und Endauswahl-Entscheidungen haengen an keinem Lauf und werden von
+    der Neuberechnung nie geschrieben (Sicherheitsauflage S4) - geprueft fuer BEIDE Nutzer, mit
+    verschiedenen Fotos je Nutzer."""
+
+    @staticmethod
+    async def _rate(
+        session: AsyncSession, user_id: int, photo_id: int, status: RatingStatus
+    ) -> None:
+        session.add(Rating(photo_id=photo_id, user_id=user_id, status=status))
+        await session.commit()
+
+    @staticmethod
+    async def _row_counts(session: AsyncSession) -> tuple[int, int]:
+        ratings = (await session.execute(select(func.count()).select_from(Rating))).scalar_one()
+        decisions = (
+            await session.execute(select(func.count()).select_from(FinalSelectionDecision))
+        ).scalar_one()
+        return ratings, decisions
+
+    @pytest.mark.parametrize("seeded_positions", [None, 3], ids=["laufender-stand", "bestand"])
+    async def test_own_decisions_of_both_users_survive_raising_and_lowering(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        seeded_positions: int | None,
+    ) -> None:
+        """Zwei Aufbauten mit derselben Pruefung: ein laufender Vorschlag nach eigenem Richtwert,
+        und ein Bestandsvorschlag aus der Zeit der alten Vorbelegung, dessen Uebergangszeit der
+        erste `PUT` beendet."""
+        lay = await _effect_lay(
+            authenticated_api_client, db_session, seeded_positions=seeded_positions
+        )
+        if seeded_positions is None:
+            await _put_target(authenticated_api_client, lay.project_id, 6)
+        partner_headers = await _partner_headers(db_session)
+        user_a = (
+            await db_session.execute(select(User.id).where(User.username == "testuser"))
+        ).scalar_one()
+        user_b = (
+            await db_session.execute(select(User.id).where(User.username == "partnerin"))
+        ).scalar_one()
+        # Die letzten Fotos jedes Events liegen bei jedem hier gesetzten Richtwert ausserhalb
+        # des Vorschlags, die ersten innerhalb.
+        last = lay.photo_ids[_EFFECT_PER_EVENT - 1 :: _EFFECT_PER_EVENT]
+        first = lay.photo_ids[::_EFFECT_PER_EVENT]
+        taken = {user_a: last[0], user_b: last[1]}
+        struck = {user_a: first[0], user_b: first[1]}
+        for user_id in (user_a, user_b):
+            await self._rate(db_session, user_id, taken[user_id], RatingStatus.ALBUM_WORTHY)
+            await self._rate(db_session, user_id, struck[user_id], RatingStatus.REJECTED)
+        # Endauswahl: eines ausdruecklich aufgenommen (ausserhalb), eines ausgeschlossen
+        # (innerhalb). Ohne Entscheidung bleibt `first[2]`, das zwischen den Richtwerten nicht
+        # wechselt, und das zweite Foto des dritten Events, das wechselt.
+        included, excluded = last[2], lay.photo_ids[2 * _EFFECT_PER_EVENT + 1]
+        db_session.add(FinalSelectionDecision(photo_id=included, included=True))
+        db_session.add(FinalSelectionDecision(photo_id=excluded, included=False))
+        await db_session.commit()
+        counts_before = await self._row_counts(db_session)
+        switching = lay.photo_ids[2 * _EFFECT_PER_EVENT + 3]
+
+        membership_of_switching: list[bool] = []
+        for target in (12, 6):
+            await _put_target(authenticated_api_client, lay.project_id, target)
+
+            for user_id, headers in ((user_a, None), (user_b, partner_headers)):
+                draft = (
+                    await authenticated_api_client.get(
+                        f"/projects/{lay.project_id}/album-draft", headers=headers
+                    )
+                ).json()
+                by_id = {item["id"]: item for item in draft["items"]}
+                assert taken[user_id] in by_id
+                assert not by_id[taken[user_id]]["ranking"]["proposed"]
+                assert struck[user_id] in by_id
+                assert by_id[struck[user_id]]["ranking"]["proposed"]
+                own = [r for r in by_id[struck[user_id]]["ratings"] if r["user_id"] == user_id]
+                assert own[0]["status"] == RatingStatus.REJECTED.value
+
+            selection = (
+                await authenticated_api_client.get(f"/projects/{lay.project_id}/album-selection")
+            ).json()
+            state = {item["id"]: item for item in selection["items"]}
+            assert state[included]["in_final_selection"] is True
+            assert state[included]["final_selection_decision"] is True
+            assert state[excluded]["in_final_selection"] is False
+            assert state[excluded]["final_selection_decision"] is False
+            membership_of_switching.append(
+                switching in state and state[switching]["in_final_selection"]
+            )
+            assert await self._row_counts(db_session) == counts_before
+
+        # Die Gegenprobe gegen "nichts aendert sich": ein Foto ohne Entscheidung wechselt.
+        assert membership_of_switching == [True, False]
+
+
+class TestExistingProjectsAfterTheSwitch:
+    async def test_an_own_target_and_its_proposal_stay_exactly_as_they_were(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        lay = await _effect_lay(authenticated_api_client, db_session)
+        await _put_target(authenticated_api_client, lay.project_id, 9)
+        before = await _positions(db_session, lay.run_id)
+
+        body = (await authenticated_api_client.get(f"/projects/{lay.project_id}")).json()
+
+        assert body["selection_target"] == 9
+        assert body["effective_selection_target"] == 9
+        assert await _positions(db_session, lay.run_id) == before
+
+    async def test_a_proposal_from_the_old_default_is_read_unchanged_until_the_next_trigger(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Uebergangszeit ohne Migration: Bestand direkt geseedet (Groesse != 150), Lesen
+        rechnet nichts neu - wiederholt gelesen, bitgenau gleich."""
+        seeded = 3
+        lay = await _effect_lay(authenticated_api_client, db_session, seeded_positions=seeded)
+        partner = await _partner_headers(db_session)
+        positions_before = await _positions(db_session, lay.run_id)
+        assert seeded != DEFAULT_TARGET
+
+        reads = []
+        for _ in range(2):
+            body = (await authenticated_api_client.get(f"/projects/{lay.project_id}")).json()
+            assert body["selection_target"] is None
+            assert body["effective_selection_target"] == DEFAULT_TARGET
+            reads.append(
+                [
+                    (await authenticated_api_client.get(path, headers=headers)).json()
+                    for path in (
+                        f"/projects/{lay.project_id}/album-draft",
+                        f"/projects/{lay.project_id}/album-selection",
+                    )
+                    for headers in (None, partner)
+                ]
+            )
+
+        assert reads[0] == reads[1]
+        assert len(_proposed_ids(reads[0][0]["items"])) == seeded
+        assert await _positions(db_session, lay.run_id) == positions_before
+
+    async def test_a_put_ends_the_transition(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        lay = await _effect_lay(authenticated_api_client, db_session, seeded_positions=3)
+
+        await _put_target(authenticated_api_client, lay.project_id, 12)
+
+        positions = await _positions(db_session, lay.run_id)
+        assert sum(position is not None for position in positions.values()) == 12
 
 
 # Der SQL-Text, an dem die Stapelabfrage des Aufnahmezeitraums erkennbar ist. Gezaehlt wird die
@@ -1957,14 +2499,14 @@ class TestPhotoCountAndTakenAtRange:
         assert response.json() == []
 
     @pytest.mark.parametrize("photo_count", [0, 1, 20])
-    async def test_the_effective_target_stays_on_the_very_number_the_answer_reports(
+    async def test_the_effective_target_does_not_depend_on_the_photo_count(
         self,
         authenticated_api_client: httpx.AsyncClient,
         db_session: AsyncSession,
         photo_count: int,
     ) -> None:
-        """Akzeptanzkriterium S6: mit dem Wegfall von `_project_photo_count` speist dasselbe
-        Aggregat auch die Vorbelegung des Richtwerts - einschliesslich `photo_count == 0`."""
+        """ADR 0131: `photo_count` bleibt ein Feld der Antwort, speist den Richtwert aber nicht
+        mehr - einschliesslich `photo_count == 0`."""
         project_id = await _create_project(authenticated_api_client)
         await self._add_photos(
             db_session,
@@ -1976,9 +2518,7 @@ class TestPhotoCountAndTakenAtRange:
         body = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
 
         assert body["photo_count"] == photo_count
-        assert body["effective_selection_target"] == effective_target(
-            body["selection_target"], body["photo_count"]
-        )
+        assert body["effective_selection_target"] == effective_target(None) == DEFAULT_TARGET
 
     @pytest.mark.parametrize("project_count", [1, 4])
     async def test_the_list_asks_for_the_range_exactly_once_regardless_of_the_project_count(
