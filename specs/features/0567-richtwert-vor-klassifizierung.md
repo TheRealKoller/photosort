@@ -1,6 +1,6 @@
 # 0567 - Richtwert vor der Klassifizierung einstellbar, sofort wirksam und standardmäßig 150
 
-**Status:** Accepted
+**Status:** Implemented ([PR #572](https://github.com/TheRealKoller/photosort/pull/572))
 **Erstellt:** 2026-10-04
 **Bezug:** [#567](https://github.com/TheRealKoller/photosort/issues/567), ADR [0131](../decisions/0131-richtwert-vorbelegung-fest-150-statt-zehntel-der-bilderzahl.md)
 
