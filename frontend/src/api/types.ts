@@ -890,6 +890,18 @@ export interface PhotoListOut {
 }
 
 /**
+ * Die Antwort des Alternativen-Endpunkts (Spec 0569, ADR 0132): `offset` ist der Beginn der
+ * Seite in der vollen Reihe, `reference_index` die Stelle des Bezugsbildes darin (Zahl der
+ * Alternativen davor) - ohne Bezugsbild `null`. Das Frontend rechnet keine Zeit nach.
+ */
+export interface DraftAlternativesOut {
+  items: PhotoOut[]
+  total: number
+  offset: number
+  reference_index: number | null
+}
+
+/**
  * Der Album-Entwurf des anfragenden Nutzers: ALLE Events des letzten erfolgreichen Laufs nach
  * `position` (auch die ohne Foto im Entwurf) und die Fotos `Vorschlag ∪ eigene Aufnahmen ∪ eigene
  * Streichungen mit Rangzeile` in Serverreihenfolge. Innerhalb der Antwort gilt: im Album genau
