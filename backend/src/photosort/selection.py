@@ -137,11 +137,11 @@ class SelectionEvent:
 @dataclass(frozen=True)
 class TimedCandidate:
     """Ein Bild in der zeitlichen Reihe der Alternativen eines Austauschs - Bezugsbild wie
-    Kandidat (ADR 0132).
+    Kandidat.
 
     Traegt bewusst NUR `photo_id` und `taken_at`: Motiv und Qualitaet gehen nicht in die Ordnung
     ein, und ohne die Felder ist das strukturell wahr statt bloss unbenutzt. `taken_at` ist die
-    wirksame, um den Kamera-Versatz korrigierte Zeit (ADR 0090) und nie `None` (`Photo.taken_at`
+    wirksame, um den Kamera-Versatz korrigierte Zeit und nie `None` (`Photo.taken_at`
     ist NOT NULL, Rueckfall `last_modified`)."""
 
     photo_id: int
@@ -162,7 +162,7 @@ class QualityCandidate:
 def order_alternatives_chronologically(
     reference: TimedCandidate, candidates: Iterable[TimedCandidate]
 ) -> tuple[list[int], int]:
-    """Die Alternativen zu EINEM Bild, zeitlich geordnet (ADR 0132 Punkt 1 und 2).
+    """Die Alternativen zu EINEM Bild, zeitlich geordnet.
 
     Schluessel `(taken_at, photo_id)` aufsteigend - eine Totalordnung ohne Nutzer, Motiv oder
     Qualitaet; Gleichstand bricht ueber die kleinere `photo_id`, nie ueber die Eingabereihenfolge.
@@ -182,7 +182,7 @@ def order_alternatives_chronologically(
 
 
 def nearest_window_offset(reference_index: int, total: int, size: int) -> int:
-    """Der Beginn des Fensters der `size` zeitlich naechsten Alternativen (ADR 0132 Punkt 3).
+    """Der Beginn des Fensters der `size` zeitlich naechsten Alternativen.
 
     `clamp(reference_index - size // 2, 0, max(0, total - size))`: im Normalfall gleich viele
     davor und danach, an einem Rand von der anderen Seite aufgefuellt, bei `total < size` alles."""

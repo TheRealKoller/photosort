@@ -20,7 +20,7 @@ import { Skeleton } from './ui/skeleton'
 export const CANDIDATES_NONE_TEXT = 'Keine weiteren Fotos in diesem Event.'
 /** Fehlschlag ohne Servertext. */
 export const CANDIDATES_ERROR_TEXT = 'Fehler beim Laden der Fotos.'
-/** Das Ordnungskriterium der Alternativen, in Band UND Dialog (Spec 0569) - ohne Pfeilzeichen,
+/** Das Ordnungskriterium der Alternativen, in Band UND Dialog - ohne Pfeilzeichen,
  * das ein Screenreader als „Pfeil nach rechts" vorläse. */
 export const ALTERNATIVES_ORDER_TEXT = 'Zeitlich geordnet, von früh nach spät'
 
@@ -65,7 +65,7 @@ interface CandidatePanelProps {
 }
 
 /**
- * Die Bezugsmarke (Spec 0569): das zu ersetzende Bild an seiner zeitlichen Stelle in der Reihe -
+ * Die Bezugsmarke: das zu ersetzende Bild an seiner zeitlichen Stelle in der Reihe -
  * dieselbe Bildfläche wie die Kandidaten, abgesetzt durch einen ANLIEGENDEN Akzentring und das
  * Wort „Wird ersetzt". KEIN Bedienelement: kein Button, kein Fokus, keine Einstufung. Das Bild
  * trägt `alt=""`, der Pfad steht im Namen des Listeneintrags.

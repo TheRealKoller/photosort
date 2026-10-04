@@ -77,7 +77,7 @@ export function getAlbumDraft(projectId: number): Promise<AlbumDraftOut> {
  * unabhaengig von `limit`/`offset`.
  *
  * Die REIHENFOLGE KOMMT VOM SERVER und wird nie nachsortiert: Mit Bezugsbild ist sie zeitlich,
- * und die Stelle des Bezugsbildes liefert der Server als `reference_index` mit (Spec 0569).
+ * und die Stelle des Bezugsbildes liefert der Server als `reference_index` mit.
  */
 export function listDraftAlternatives(
   projectId: number,

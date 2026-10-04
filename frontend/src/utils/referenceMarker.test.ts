@@ -16,7 +16,7 @@ describe('referenceMarkerIndex', () => {
   })
 
   it('takes nothing but an integer as a position', () => {
-    // Auflage 11: keine Fallback-Position für einen Wert, den der Server so nie liefert.
+    // Keine Fallback-Position für einen Wert, den der Server so nie liefert.
     expect(referenceMarkerIndex(1.5, 0, 4)).toBeNull()
     expect(referenceMarkerIndex(Number.NaN, 0, 4)).toBeNull()
   })

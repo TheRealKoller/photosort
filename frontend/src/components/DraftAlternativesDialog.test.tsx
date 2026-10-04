@@ -214,7 +214,7 @@ describe('DraftAlternativesDialog', () => {
   })
 
   it('keeps the ORDER OF THE ANSWER and does not sort again', async () => {
-    // Die Reihenfolge ist die zeitliche Ordnung aus dem Backend (Spec 0569). Eine zweite
+    // Die Reihenfolge ist die zeitliche Ordnung aus dem Backend. Eine zweite
     // Sortierung hier wäre eine zweite Wahrheit - und sie fiele nicht auf, weil beide plausibel
     // aussähen.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
@@ -235,7 +235,7 @@ describe('DraftAlternativesDialog', () => {
   })
 
   it('names the order and puts the photo to be replaced at its place in the row', async () => {
-    // AK4/AK5: Die Marke steht an `reference_index` - hier zwischen dem ersten und dem zweiten
+    // Die Marke steht an `reference_index` - hier zwischen dem ersten und dem zweiten
     // Bild - und ist kein Bedienelement.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
       listOut(
@@ -307,7 +307,7 @@ describe('DraftAlternativesDialog', () => {
   })
 
   it('keeps the system rating apart from the own album decision', async () => {
-    // AK10: Die Albumtauglichkeit ist schmuckloser Text mit eigener Beschriftung, das Kennzeichen
+    // Die Albumtauglichkeit ist schmuckloser Text mit eigener Beschriftung, das Kennzeichen
     // eine eigene Form - und nur bei eigener Entscheidung.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
       listOut([

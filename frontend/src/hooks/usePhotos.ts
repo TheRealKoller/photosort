@@ -170,7 +170,7 @@ export interface DraftAlternativesQueryParams {
    * geoeffnetem Bild, nie eine je Kachel. */
   enabled: boolean
   pageSize?: number
-  /** Das Band (Spec 0569): EIN vom Server geschnittenes Fenster der `nearest` zeitlich naechsten
+  /** Das Band: EIN vom Server geschnittenes Fenster der `nearest` zeitlich naechsten
    * Alternativen, ohne Folgeseiten. Nur zusammen mit `photoId`. */
   nearest?: number
 }

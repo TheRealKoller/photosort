@@ -1008,13 +1008,13 @@ class TestTheThresholdCanBeVariedForAMeasurementWithoutMovingTheOperatingPoint:
 
 
 class TestTheChronologicalOrderOfTheAlternatives:
-    """Der Schluessel `(taken_at, photo_id)` aufsteigend (ADR 0132 Punkt 1) und die Stelle des
-    Bezugsbildes darin (`reference_index`, Punkt 2).
+    """Der Schluessel `(taken_at, photo_id)` aufsteigend und die Stelle des Bezugsbildes darin
+    (`reference_index`).
 
     Ein Fehler hier wirft nichts - er liefert eine andere, plausibel aussehende Reihenfolge."""
 
     def test_the_candidates_run_from_early_to_late(self) -> None:
-        """AK1: Die Eingabe steht bewusst in Id-Reihenfolge, die Zeit laeuft andersherum - eine
+        """Die Eingabe steht bewusst in Id-Reihenfolge, die Zeit laeuft andersherum - eine
         Implementierung, die die Eingabe durchreicht oder nach Id ordnet, faellt hier auf."""
         ids, _ = order_alternatives_chronologically(
             _timed(1, 25), [_timed(2, 40), _timed(3, 30), _timed(4, 10), _timed(5, 20)]
@@ -1023,7 +1023,7 @@ class TestTheChronologicalOrderOfTheAlternatives:
         assert ids == [4, 5, 3, 2]
 
     def test_the_reference_index_counts_the_candidates_before_the_reference(self) -> None:
-        """AK4: Zahl der Kandidaten STRIKT vor dem Bezugsbild - am Anfang, in der Mitte, am Ende."""
+        """Zahl der Kandidaten STRIKT vor dem Bezugsbild - am Anfang, in der Mitte, am Ende."""
         candidates = [_timed(2, 10), _timed(3, 20), _timed(4, 30)]
 
         assert order_alternatives_chronologically(_timed(1, 0), candidates)[1] == 0
@@ -1031,14 +1031,14 @@ class TestTheChronologicalOrderOfTheAlternatives:
         assert order_alternatives_chronologically(_timed(1, 99), candidates)[1] == 3
 
     def test_the_input_carries_time_but_neither_quality_nor_motif(self) -> None:
-        """AK2 strukturell: Motiv und Qualitaet sind als Eingabe gar nicht vorhanden - eine
+        """Strukturell: Motiv und Qualitaet sind als Eingabe gar nicht vorhanden - eine
         spaetere Sortierung danach muesste erst das Eingabeformat aendern."""
         fields = set(TimedCandidate.__dataclass_fields__)
 
         assert fields == {"photo_id", "taken_at"}
 
     def test_a_tie_in_time_breaks_over_the_smaller_photo_id_in_every_permutation(self) -> None:
-        """AK6: echter Gleichstand bei `taken_at`, ueber ALLE Permutationen der Eingabe."""
+        """Echter Gleichstand bei `taken_at`, ueber ALLE Permutationen der Eingabe."""
         candidates = [_timed(7, 5), _timed(3, 5), _timed(5, 5), _timed(9, 1)]
 
         for permutation in itertools.permutations(candidates):
@@ -1048,7 +1048,7 @@ class TestTheChronologicalOrderOfTheAlternatives:
             )
 
     def test_a_reference_in_a_tie_counts_exactly_the_smaller_ids(self) -> None:
-        """AK6 am Bezugsbild: Gleiche Zeit wie Kandidaten mit kleinerer UND groesserer Id - die
+        """Am Bezugsbild: Gleiche Zeit wie Kandidaten mit kleinerer UND groesserer Id - die
         kleineren stehen davor, die groesseren danach."""
         candidates = [_timed(2, 5), _timed(4, 5), _timed(6, 5), _timed(8, 0)]
 
@@ -1069,7 +1069,7 @@ class TestTheChronologicalOrderOfTheAlternatives:
 
 
 class TestTheNearestWindow:
-    """`offset = clamp(reference_index - n // 2, 0, max(0, total - n))` (ADR 0132 Punkt 3)."""
+    """`offset = clamp(reference_index - n // 2, 0, max(0, total - n))`."""
 
     @pytest.mark.parametrize(
         ("reference_index", "expected"),
@@ -1094,7 +1094,7 @@ class TestTheNearestWindow:
 
 
 class TestTheQualityOrderWithoutAReference:
-    """Das Hinzufuegen-Feld (ohne Bezugsbild, AK11): Qualitaet absteigend, `None` zuletzt,
+    """Das Hinzufuegen-Feld (ohne Bezugsbild): Qualitaet absteigend, `None` zuletzt,
     Gleichstand ueber die kleinere `photo_id`."""
 
     def test_an_empty_candidate_list_stays_empty(self) -> None:

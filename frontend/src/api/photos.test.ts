@@ -98,7 +98,7 @@ describe('api/photos', () => {
   })
 
   it('asks the band for the nearest window and sends no page of its own', async () => {
-    // Spec 0569: Mit `nearest` schneidet allein der Server das Fenster - ein mitgeschicktes
+    // Mit `nearest` schneidet allein der Server das Fenster - ein mitgeschicktes
     // `limit`/`offset` waere wirkungslos und wird deshalb gar nicht erst gesendet.
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 

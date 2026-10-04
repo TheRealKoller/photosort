@@ -890,7 +890,7 @@ export interface PhotoListOut {
 }
 
 /**
- * Die Antwort des Alternativen-Endpunkts (Spec 0569, ADR 0132): `offset` ist der Beginn der
+ * Die Antwort des Alternativen-Endpunkts: `offset` ist der Beginn der
  * Seite in der vollen Reihe, `reference_index` die Stelle des Bezugsbildes darin (Zahl der
  * Alternativen davor) - ohne Bezugsbild `null`. Das Frontend rechnet keine Zeit nach.
  */

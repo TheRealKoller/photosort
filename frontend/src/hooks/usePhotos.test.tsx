@@ -244,7 +244,7 @@ describe('useDraftAlternativesQuery', () => {
   })
 
   it('fetches the band as ONE window with nearest and never a following page', async () => {
-    // Spec 0569: Das Fenster schneidet allein der Server; `total` ist die Restmenge und liegt
+    // Das Fenster schneidet allein der Server; `total` ist die Restmenge und liegt
     // ueber der Fenstergroesse - trotzdem gibt es keine Folgeseite.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
       alternativesPage([4, 5, 6, 7], 10, 3),

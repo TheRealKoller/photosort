@@ -44,7 +44,7 @@ DOCUMENTED_ROUTES: tuple[tuple[str, str], ...] = (
     # Stelle von `/projects/{project_id}/curation-candidates`. Seine Beschreibung traegt die
     # beiden Aussagen, die der Antwort sonst nirgends anzusehen sind: WELCHE Menge geliefert wird
     # (das Event abzueglich des eigenen Entwurfs, gestrichene eingeschlossen) und WORAN die
-    # Reihenfolge haengt (seit Spec 0569 der Aufnahmezeit, mit dem Bezugsbild als Position).
+    # Reihenfolge haengt (der Aufnahmezeit, mit dem Bezugsbild als Position).
     ("get", "/projects/{project_id}/draft-alternatives"),
     # specs/features/0431-endauswahl-gemeinsam.md, PR 1: der Schreibendpunkt der gemeinsamen
     # Entscheidung. Seine Beschreibung traegt die Aussage, die der Signatur gerade nicht anzusehen

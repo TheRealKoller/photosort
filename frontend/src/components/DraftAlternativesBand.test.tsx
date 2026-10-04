@@ -128,7 +128,7 @@ describe('DraftAlternativesBand', () => {
   })
 
   it('names the order and puts the photo to be replaced between its neighbours', async () => {
-    // AK3/AK4/AK5: Fenster ab `offset` 3, Bezugsbild an Stelle 5 der Reihe - also nach dem
+    // Fenster ab `offset` 3, Bezugsbild an Stelle 5 der Reihe - also nach dem
     // zweiten Bild des Fensters. Die Reihenfolge ist die der Antwort.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
       answer([5, 2, 7, 3], { offset: 3, referenceIndex: 5, total: 10 }),
@@ -226,7 +226,7 @@ describe('DraftAlternativesBand', () => {
   })
 
   it('keeps the system rating apart from the own decision', async () => {
-    // AK10: Die Albumtauglichkeit steht an jedem Vorschlag als Text, das Kennzeichen „Gestrichen"
+    // Die Albumtauglichkeit steht an jedem Vorschlag als Text, das Kennzeichen „Gestrichen"
     // nur bei eigener Entscheidung.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
       ...answer([3]),

@@ -2402,12 +2402,13 @@ async def list_ausschuss(
 
 
 # SICHERHEIT (S4): Deckel von `nearest` und damit der Hydratation ueber `_photos_by_id` mit ihren
-# `selectinload`s - wie `limit` hoechstens 200. Das Band fragt `BAND_SIZE = 4` an.
+# `selectinload`s. Er darf den Deckel von `limit` (200) nie uebersteigen, sonst holte ein Band
+# mehr schwere Zeilen als jede Seite; das Band selbst fragt `BAND_SIZE = 4` an.
 BAND_MAX = 50
 
 
 class DraftAlternativesOut(BaseModel):
-    """Die Antwortform des Alternativen-Endpunkts (ADR 0132 Punkt 4).
+    """Die Antwortform des Alternativen-Endpunkts.
 
     `offset` ist der Beginn der ausgelieferten Seite in der vollen Reihe, `reference_index` die
     Stelle des Bezugsbildes darin (Zahl der Kandidaten davor) - ohne Bezugsbild `None`. Beide
@@ -2421,7 +2422,7 @@ class DraftAlternativesOut(BaseModel):
 
 def _no_alternatives() -> DraftAlternativesOut:
     """Der EINE Leerkoerper jeder gescheiterten Aufloesung - byte-gleich, ohne Rueckspiegelung
-    eines Werts (Spec 0569, Auflage 5)."""
+    eines Werts. Ein abweichender Koerper je Fehlerursache waere ein Existenz-Orakel."""
     return DraftAlternativesOut(items=[], total=0, offset=0, reference_index=None)
 
 
@@ -2445,7 +2446,7 @@ async def draft_alternatives(
     # ganze Restmenge.
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0, le=MAX_QUERY_POSITION),
-    # Das Band (ADR 0132 Punkt 3): die `nearest` zeitlich naechsten Alternativen, Fenster vom
+    # Das Band: die `nearest` zeitlich naechsten Alternativen, Fenster vom
     # Server geschnitten. Nur mit `photo_id`; `limit`/`offset` sind dann wirkungslos.
     nearest: int | None = Query(None, ge=1, le=BAND_MAX),
     session: AsyncSession = Depends(get_session),
@@ -2458,7 +2459,7 @@ async def draft_alternatives(
     # laengst bewertete Fotos wieder aufblitzen).
     current_user: User = Depends(get_current_user),
 ) -> DraftAlternativesOut:
-    """Die Alternativen zu EINEM Bild des Entwurfs (ADR 0098 Punkt 5, Ordnung ADR 0132).
+    """Die Alternativen zu EINEM Bild des Entwurfs (ADR 0098 Punkt 5).
 
     Inhalt: die Fotos DIESES Events im letzten erfolgreichen Lauf ABZUEGLICH des Entwurfs des
     anfragenden Nutzers (`Vorschlag ∪ eigene Aufnahmen`). Ein von ihm GESTRICHENES Foto ist damit

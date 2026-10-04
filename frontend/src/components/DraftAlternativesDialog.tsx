@@ -64,7 +64,7 @@ export interface DraftAlternativesDialogProps {
  * Ohne Event wird gar nicht gefragt: Der Endpunkt verlangt beide Schlüssel, und die
  * Ausfallrichtung ist „nichts anbieten", nie eine Anfrage auf gut Glück.
  *
- * DIE REIHENFOLGE IST DIE DER ANTWORT: die zeitliche Ordnung aus dem Backend (Spec 0569). Eine
+ * DIE REIHENFOLGE IST DIE DER ANTWORT: die zeitliche Ordnung aus dem Backend. Eine
  * zweite Sortierung hier wäre eine zweite Wahrheit, und sie fiele nicht auf, weil beide plausibel
  * aussähen. Die Stelle des Bezugsbildes liefert der Server (`reference_index`); die Marke steht
  * über alle geladenen Seiten genau einmal - an der Seitengrenze erst mit der Folgeseite.

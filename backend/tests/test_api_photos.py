@@ -1986,7 +1986,7 @@ class TestTheProposedFlag:
         assert other.json()["items"][0]["ranking"]["proposed"] is True
 
 
-# Der EINE Leerkoerper des Alternativen-Endpunkts (Spec 0569, Auflage 5): jede gescheiterte
+# Der EINE Leerkoerper des Alternativen-Endpunkts: jede gescheiterte
 # Aufloesung, kein Lauf, fremdes Event - byte-gleich, ohne Rueckspiegelung eines Werts.
 _NO_ALTERNATIVES = {"items": [], "total": 0, "offset": 0, "reference_index": None}
 
@@ -2329,7 +2329,7 @@ class TestDraftAlternatives:
     async def test_with_a_reference_the_order_is_by_time_not_by_motif_or_quality(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """AK1/AK2 am Endpunkt: Das fruehere, schlechtere Bild ohne gemeinsames Motiv steht vor
+        """Am Endpunkt: Das fruehere, schlechtere Bild ohne gemeinsames Motiv steht vor
         dem spaeteren, besseren mit gemeinsamem Motiv; ein Bild ohne Qualitaet steht zeitlich
         richtig und nicht am Ende. Die Gegenprobe: Die Soll-Folge ist weder die Id- noch die
         Qualitaetsfolge, sonst bestuende der Fall auch ohne jede Sortierung."""
@@ -2358,9 +2358,8 @@ class TestDraftAlternatives:
     async def test_temporal_proximity_now_is_the_sorting_criterion(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Die frueher geltende Aussage, ins Gegenteil gedreht (ADR 0132 loest ADR 0098 Punkt 5
-        teilweise ab): Der zeitlich benachbarte, schlechtere Kandidat steht VOR dem Stunden
-        entfernten, besseren."""
+        """Die frueher geltende Aussage, ins Gegenteil gedreht: Der zeitlich benachbarte,
+        schlechtere Kandidat steht VOR dem Stunden entfernten, besseren."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
         event_row = await _default_event(db_session, run)
@@ -2388,7 +2387,7 @@ class TestDraftAlternatives:
     async def test_the_pages_put_together_give_the_order_of_the_full_row(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """AK1 ueber Seiten und Auflage 6: Seite 1 und Seite 2 aneinandergehaengt ergeben die
+        """Ueber Seiten: Seite 1 und Seite 2 aneinandergehaengt ergeben die
         volle Reihe; `reference_index` und `total` sind auf jeder Seite dieselben, `offset` ist
         ohne `nearest` das angefragte."""
         project, event_row, reference, alternatives = await self._row(db_session, 5, 6)
@@ -2418,7 +2417,7 @@ class TestDraftAlternatives:
     async def test_the_reference_index_at_the_start_the_end_and_in_a_tie(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Auflage 6 und AK6: `reference_index` zaehlt STRIKT kleinere Schluessel - bei gleichem
+        """`reference_index` zaehlt STRIKT kleinere Schluessel - bei gleichem
         `taken_at` genau die kleineren Ids."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
@@ -2444,7 +2443,7 @@ class TestDraftAlternatives:
     async def test_a_photo_without_exif_orders_by_its_file_time(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """AK7: `taken_at` aus `last_modified` (keine EXIF-Zeit) - kein Sonderzweig, das Bild
+        """`taken_at` aus `last_modified` (keine EXIF-Zeit) - kein Sonderzweig, das Bild
         steht nach dieser Zeit in der Reihe und nicht am Ende."""
         project = await _make_project(db_session)
         run = await _make_criterion_scoring_run(db_session, project)
@@ -2496,7 +2495,7 @@ class TestDraftAlternatives:
         expected_offset: int,
         expected_index: int,
     ) -> None:
-        """AK3: `offset = clamp(reference_index - 2, 0, total - 4)`, genau vier Bilder, zeitlich
+        """`offset = clamp(reference_index - 2, 0, total - 4)`, genau vier Bilder, zeitlich
         geordnet - im Normalfall zwei davor, zwei danach, am Rand von der anderen Seite
         aufgefuellt."""
         project, event_row, reference, alternatives = await self._row(
@@ -2522,7 +2521,7 @@ class TestDraftAlternatives:
     async def test_with_nearest_the_window_comes_from_the_server_alone(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Auflage 3: Ein mitgeschicktes `offset`/`limit` hat mit `nearest` keine Wirkung."""
+        """Ein mitgeschicktes `offset`/`limit` hat mit `nearest` keine Wirkung."""
         project, event_row, reference, _ = await self._row(db_session, 10, 10)
         params = {"event_id": event_row.id, "photo_id": reference.id, "nearest": 4}
 
@@ -2556,7 +2555,7 @@ class TestDraftAlternatives:
     async def test_a_resolved_reference_with_an_empty_remainder_stands_at_zero(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Auflage 5, zweite Haelfte: aufgeloestes Bezugsbild, leere Restmenge ergibt
+        """Aufgeloestes Bezugsbild, leere Restmenge ergibt
         `reference_index = 0` - zulaessig, denn das Bild sieht der Anfragende ohnehin."""
         project, event_row, reference, _ = await self._row(db_session, 0, 10)
 
@@ -2575,7 +2574,7 @@ class TestDraftAlternatives:
     async def test_nearest_without_a_reference_is_refused(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Auflage 2: `nearest` ohne `photo_id` scheitert laut statt still."""
+        """`nearest` ohne `photo_id` scheitert laut statt still."""
         project, event_row, _, _ = await self._row(db_session, 3, 10)
 
         response = await self._get(
@@ -2587,7 +2586,7 @@ class TestDraftAlternatives:
     async def test_without_a_reference_there_is_no_reference_index(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """AK4/AK11 und Auflage 7: ohne `photo_id` ist `reference_index` `null`, `offset` das
+        """Ohne `photo_id` ist `reference_index` `null`, `offset` das
         angefragte."""
         project, event_row, _, _ = await self._row(db_session, 3, 10)
 
@@ -2604,7 +2603,7 @@ class TestDraftAlternatives:
     async def test_every_failed_resolution_gives_the_same_bytes(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Auflage 5: fremde Id, nie vergebene Id und Foto eines anderen Events ergeben
+        """Fremde Id, nie vergebene Id und Foto eines anderen Events ergeben
         byte-gleiche Koerper - auch mit `nearest`, `offset` und `limit`."""
         project, event_row, reference, _ = await self._row(db_session, 3, 10)
         foreign = await _make_project(db_session, name="fremd")
@@ -2644,7 +2643,7 @@ class TestDraftAlternatives:
     async def test_both_users_see_the_same_order_and_their_own_set(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """AK9 und Auflage 8: Der Schluessel enthaelt keinen Nutzer. Gleiche Restmenge ergibt
+        """Der Schluessel enthaelt keinen Nutzer. Gleiche Restmenge ergibt
         dieselbe Folge; nimmt A ein Bild auf, fehlt es nur bei A, die uebrigen behalten ihre
         relative Ordnung. Die Entscheidung des ANDEREN aendert die eigene Antwort nicht."""
         project, event_row, reference, alternatives = await self._row(db_session, 4, 4)
