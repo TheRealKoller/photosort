@@ -1213,7 +1213,7 @@ Verarbeitungs-Cache (Thumbnails).
     Versatz-Neuaufbau rechnet ihn direkt hinter den Rangzeilen. Das Modul trägt die
     Kontingent- und Vergabelogik samt ihren fünf Stellschrauben (`EVENT_SHARE_CAP`,
     `MOTIF_PRESENCE_THRESHOLD`, `SIMILARITY_DECAY`, `SIMILARITY_TIME_WINDOW`,
-    `DEFAULT_TARGET_DIVISOR`) an genau einer Stelle und nennt `motifs.py` nicht — die Grenze, ab
+    `DEFAULT_TARGET`) an genau einer Stelle und nennt `motifs.py` nicht — die Grenze, ab
     der ein Motiv als getragen gilt, ist **keines** der Anzeigebänder (ADR 0091 Punkt 8). Der
     Klassifizierungs-Prompt lebt in `classification_prompt.py` (Motivblock plus
     Albumtauglichkeits-Block); `motifs.py` bleibt reines Registermodul und weiß nichts über die
