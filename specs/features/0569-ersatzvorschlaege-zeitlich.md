@@ -1,6 +1,6 @@
 # 0569 - Ersatzvorschläge zeitlich geordnet
 
-**Status:** Accepted
+**Status:** Implemented ([PR #576](https://github.com/TheRealKoller/photosort/pull/576))
 **Erstellt:** 2026-10-04
 **Bezug:** [Issue #569](https://github.com/TheRealKoller/photosort/issues/569)
 
