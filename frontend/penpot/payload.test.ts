@@ -389,9 +389,9 @@ const FREIGABEN: { datei: string; zeile: number; wert: string; ausschnitt: strin
   { datei: 'verify.js', zeile: 59, wert: '14', ausschnitt: 'ERWARTETE_BAUSTEINE = 14' },
   { datei: 'verify.js', zeile: 60, wert: '13', ausschnitt: 'ERWARTETE_KATEGORIEN = 13' },
   { datei: 'verify.js', zeile: 61, wert: '64', ausschnitt: 'ERWARTETE_FARBEN = 64' },
-  { datei: 'verify.js', zeile: 62, wert: '12', ausschnitt: 'ERWARTETE_ANSICHTEN = 12' },
-  { datei: 'verify.js', zeile: 63, wert: '70', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 70' },
-  { datei: 'verify.js', zeile: 64, wert: '16', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 16' },
+  { datei: 'verify.js', zeile: 62, wert: '13', ausschnitt: 'ERWARTETE_ANSICHTEN = 13' },
+  { datei: 'verify.js', zeile: 63, wert: '86', ausschnitt: 'ERWARTETE_ANSICHTSBRETTER = 86' },
+  { datei: 'verify.js', zeile: 64, wert: '18', ausschnitt: 'ERWARTETE_ANSICHTSBEHAELTER = 18' },
 ]
 
 describe('Kein woertlicher Farb-/Groessenwert in der handgeschriebenen Nutzlast', () => {
@@ -1254,6 +1254,14 @@ const ANSICHTSZUSTAENDE = [
   'leer',
   'ladend',
   'fehler',
+  'ausschuss-nie-gelaufen',
+  'ausschuss-laeuft',
+  'ausschuss-fehlgeschlagen',
+  'ausschuss-offen',
+  'ausschuss-abgeschlossen',
+  'scan-erledigt',
+  'klassifizierung-erledigt',
+  'kuratierung',
 ] as const
 
 /** Die zwei absehbaren Luecken sind MUSS-Eintraege: ohne sie waere "Luecken werden ausgewiesen"
@@ -1298,7 +1306,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
 
   /* GESCHLOSSENE NAMENSMENGE INKLUSIVE REIHENFOLGE, nicht blosse Kardinalitaet - dieselbe Bauart
      wie bei den Bausteinen. */
-  it('fuehrt genau die zwoelf Ansichten in dieser Reihenfolge', () => {
+  it('fuehrt genau die dreizehn Ansichten in dieser Reihenfolge', () => {
     expect(ansichten.map((ansicht) => ansicht.schluessel)).toEqual([
       'uebersicht',
       'anlegen',
@@ -1312,6 +1320,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
       'ausschuss',
       'kuratierung-grossansicht',
       'album-entwurf',
+      'schrittseite',
     ])
     expect(ansichten.map((ansicht) => ansicht.anzeigename)).toEqual([
       'Projektübersicht',
@@ -1326,6 +1335,7 @@ describe('views.json: die Soll-Struktur der Ansichten', () => {
       'Ausschuss',
       'Kuratierung Großansicht',
       'Album-Entwurf',
+      'Schrittseite',
     ])
   })
 
