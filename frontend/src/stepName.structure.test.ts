@@ -7,15 +7,24 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 /*
- * Der dritte Schritt heisst an jeder sichtbaren Stelle "Klassifizierung". Mechanischer Beleg über
- * den Syntaxbaum statt über einen Textabgleich: Erfasst werden String- und Template-Literale,
+ * Der dritte Schritt heisst an jeder sichtbaren Stelle "Klassifizierung", und die abgelösten
+ * Aktionsbeschriftungen der Schrittseiten kommen nicht mehr vor. Mechanischer Beleg über den
+ * Syntaxbaum statt über einen Textabgleich: Erfasst werden String- und Template-Literale,
  * JSX-Text und JSX-Attribute - ein Regex über ganze Literale übersähe JSX-Text wie
  * "Zur Kriterien-Bewertung", eine Volltextsuche fiele auf Kommentare herein.
  */
 
 const SRC_DIR = fileURLToPath(new URL('.', import.meta.url))
 
-const OLD_NAMES = [/Kriterien[-\u2010\u2011\u00AD\s]*Bewertung/i, /Kategorie-Bewertung/]
+const OLD_NAMES = [
+  /Kriterien[-\u2010\u2011\u00AD\s]*Bewertung/i,
+  /Kategorie-Bewertung/,
+  /Ausschuss aussortieren/i,
+  /Wird aussortiert/i,
+  /gesichtet, weiter/i,
+  // Als ganzer Knopftext: "Aktualisiert" (Scan-Bilanz) bleibt erlaubt.
+  /^\s*Aktualisieren\s*$/,
+]
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -97,6 +106,25 @@ describe('Schrittname "Klassifizierung"', () => {
       { kind: 'string', text: 'Kategorie-Bewertung ist abgeschaltet' },
       { kind: 'string', text: 'Zur kriterien bewertung' },
       { kind: 'jsx-text', text: 'Zur Kriterien-Bewertung' },
+    ])
+  })
+
+  it('findet die abgelösten Aktionsbeschriftungen, aber nicht "Aktualisiert" (Gegenprobe)', () => {
+    const source = [
+      '// Ausschuss aussortieren im Kommentar zählt nicht',
+      "const a = 'Ausschuss aussortieren'",
+      "const b = busy ? 'Wird aussortiert…' : 'x'",
+      'const c = `${n} Ausschuss gesichtet, weiter`',
+      'const d = <Button>Aktualisieren</Button>',
+      'const e = <dt>Aktualisiert</dt>',
+      "const f = 'Daten aktualisieren lassen'",
+    ].join('\n')
+
+    expect(offending('probe.tsx', source)).toEqual([
+      { kind: 'string', text: 'Ausschuss aussortieren' },
+      { kind: 'string', text: 'Wird aussortiert…' },
+      { kind: 'template', text: ' Ausschuss gesichtet, weiter' },
+      { kind: 'jsx-text', text: 'Aktualisieren' },
     ])
   })
 })

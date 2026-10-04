@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
@@ -10,6 +10,14 @@ import * as projectsApi from '../../api/projects'
 import type { ProjectOut, ScanSummary } from '../../api/types'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 import { ScanStepPage } from './ScanStepPage'
+import { RUN_STEP_TEXTS } from '../../utils/stepActionTexts'
+
+const START = RUN_STEP_TEXTS.scan.start
+const RERUN = RUN_STEP_TEXTS.scan.rerun
+
+function leiste(): HTMLElement {
+  return screen.getByRole('group', { name: 'Nächste Aktion' })
+}
 
 vi.mock('../../api/projects')
 
@@ -95,23 +103,27 @@ describe('ScanStepPage', () => {
     expect(screen.getByText(/durchsucht den verknüpften opencloud-ordner/i)).toBeInTheDocument()
   })
 
-  it('shows an active button and a hint when never scanned', () => {
+  it('zeigt vor dem ersten Scan "Fotos einlesen" als Hauptaktion, ohne "Erneut …"', () => {
     renderPage(project({ last_scan: null }))
 
-    expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
-    expect(screen.getByText(/noch nicht gescannt/i)).toBeInTheDocument()
+    const start = within(leiste()).getByRole('button', { name: START })
+    expect(start).toBeEnabled()
+    expect(start).toHaveClass('bg-accent')
+    expect(within(leiste()).getByText(/noch nicht gescannt/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^erneut/i })).not.toBeInTheDocument()
   })
 
-  it('disables the button synchronously on click and sends exactly one request on a double click', async () => {
+  it('zeigt nach dem Klick die Verlaufsform und sendet bei Doppelklick genau eine Anfrage', async () => {
     vi.mocked(projectsApi.triggerScan).mockReturnValue(new Promise(() => {}))
     const user = userEvent.setup()
     renderPage(project({ last_scan: null }))
 
-    const button = screen.getByRole('button', { name: /aktualisieren/i })
+    const button = screen.getByRole('button', { name: START })
     await user.click(button)
     await user.click(button)
 
     expect(button).toBeDisabled()
+    expect(button).toHaveAccessibleName(RUN_STEP_TEXTS.scan.running)
     expect(projectsApi.triggerScan).toHaveBeenCalledTimes(1)
   })
 
@@ -120,11 +132,9 @@ describe('ScanStepPage', () => {
     const user = userEvent.setup()
     renderPage(project({ last_scan: null }))
 
-    await user.click(screen.getByRole('button', { name: /aktualisieren/i }))
+    await user.click(screen.getByRole('button', { name: START }))
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled(),
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: START })).toBeEnabled())
     expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
   })
 
@@ -133,28 +143,33 @@ describe('ScanStepPage', () => {
       project({ last_scan: scan({ status: 'running', total_files: null, files_found: 5 }) }),
     )
 
-    expect(screen.getByText('Dateien werden gezählt…')).toBeInTheDocument()
-    const progress = screen.getByRole('progressbar') as HTMLProgressElement
+    expect(within(leiste()).getByText('Dateien werden gezählt…')).toBeInTheDocument()
+    const progress = leiste().querySelector('progress') as HTMLProgressElement
     expect(progress.hasAttribute('value')).toBe(false)
     expect(progress.hasAttribute('max')).toBe(false)
+    expect(
+      within(leiste()).getByRole('button', { name: RUN_STEP_TEXTS.scan.running }),
+    ).toBeDisabled()
   })
 
   it('shows "X von Y Dateien verarbeitet" with a determinate progress bar during the processing phase', () => {
     renderPage(project({ last_scan: scan({ status: 'running', total_files: 12, files_found: 4 }) }))
 
-    expect(screen.getByText('4 von 12 Dateien verarbeitet')).toBeInTheDocument()
-    const progress = screen.getByRole('progressbar') as HTMLProgressElement
+    expect(within(leiste()).getByText('4 von 12 Dateien verarbeitet')).toBeInTheDocument()
+    const progress = leiste().querySelector('progress') as HTMLProgressElement
     expect(progress.max).toBe(12)
     expect(progress.value).toBe(4)
+    expect(progress).toHaveAttribute('aria-hidden', 'true')
   })
 
-  it('throttles the aria-live announcement to 10%-steps during the processing phase', () => {
-    renderPage(
+  it('drosselt die einzige Live-Region der Seite auf Zehnerschritte', () => {
+    const { container } = renderPage(
       project({ last_scan: scan({ status: 'running', total_files: 100, files_found: 34 }) }),
     )
 
-    const liveRegion = screen.getByText(/30% verarbeitet/i)
-    expect(liveRegion).toHaveAttribute('aria-live', 'polite')
+    const live = container.querySelectorAll('[aria-live]')
+    expect(live).toHaveLength(1)
+    expect(live[0]).toHaveTextContent('30% verarbeitet')
     expect(screen.queryByText(/34% verarbeitet/i)).not.toBeInTheDocument()
   })
 
@@ -167,7 +182,7 @@ describe('ScanStepPage', () => {
       )
 
       expect(screen.getByText('0 von 0 Dateien verarbeitet')).toBeInTheDocument()
-      const progress = screen.getByRole('progressbar') as HTMLProgressElement
+      const progress = leiste().querySelector('progress') as HTMLProgressElement
       expect(progress.hasAttribute('value')).toBe(false)
       expect(progress.hasAttribute('max')).toBe(false)
     },
@@ -188,7 +203,7 @@ describe('ScanStepPage', () => {
       }),
     )
 
-    expect(screen.getByText('Erfolgreich')).toBeInTheDocument()
+    expect(within(leiste()).getByText('Erfolgreich')).toBeInTheDocument()
     expect(screen.getByText('Hinzugefügt').nextElementSibling).toHaveTextContent('10')
     expect(screen.getByText('Dateien gefunden').nextElementSibling).toHaveTextContent('16')
     const removedDetails = screen.getByText('Entfernt').closest('details')
@@ -213,14 +228,34 @@ describe('ScanStepPage', () => {
     expect(summary.closest('details')).toHaveAttribute('open')
   })
 
-  it('shows the error message on a failed scan and keeps the button enabled', () => {
+  it('führt nach einem erfolgreichen Scan per Link zum Ausschuss, mit "Erneut einlesen" im Kopf', async () => {
+    vi.mocked(projectsApi.triggerScan).mockResolvedValue({ status: 'queued' })
+    const user = userEvent.setup()
+    renderPage(project({ last_scan: scan({ status: 'success' }) }))
+
+    expect(within(leiste()).getByRole('link', { name: 'Weiter zum Ausschuss' })).toHaveAttribute(
+      'href',
+      '/projects/1/pipeline/ausschuss',
+    )
+    const block = screen.getByTestId('rerun-block')
+    expect(within(block).getByText(RERUN.explanation)).toBeVisible()
+
+    await user.click(within(block).getByRole('button', { name: RERUN.label }))
+
+    expect(projectsApi.triggerScan).toHaveBeenCalledTimes(1)
+  })
+
+  it('bietet bei einem Fehlschlag genau eine Wiederholung und keinen "Aktualisieren"-Knopf', () => {
     renderPage(
       project({
         last_scan: scan({ status: 'failed', error_message: 'OpenCloud nicht erreichbar' }),
       }),
     )
 
-    expect(screen.getByText('OpenCloud nicht erreichbar')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /aktualisieren/i })).toBeEnabled()
+    expect(screen.getByRole('alert')).toHaveTextContent('OpenCloud nicht erreichbar')
+    expect(screen.getAllByRole('button', { name: START })).toHaveLength(1)
+    expect(within(leiste()).getByRole('button', { name: START })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /erneut/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /aktualisieren/i })).not.toBeInTheDocument()
   })
 })

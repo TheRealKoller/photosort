@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-router'
+import { MemoryRouter, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as ausschussApi from '../../api/ausschuss'
@@ -21,13 +21,30 @@ import type {
   SuggestionReason,
 } from '../../api/types'
 import {
-  AUSSCHUSS_ALL_DECIDED_TEXT,
   AUSSCHUSS_EMPTY_TEXT,
   AUSSCHUSS_MISSING_ENTRY_TEXT,
-  AUSSCHUSS_NOTHING_TO_CONFIRM_TEXT,
   AusschussStepPage,
 } from './AusschussStepPage'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
+import {
+  AUSSCHUSS_CONFIRM_LABEL,
+  AUSSCHUSS_NOTHING_SORTED_TEXT,
+  NEXT_UNAVAILABLE_TEXT,
+  RUN_STEP_TEXTS,
+} from '../../utils/stepActionTexts'
+
+const START = RUN_STEP_TEXTS.ausschuss.start
+const RERUN = RUN_STEP_TEXTS.ausschuss.rerun
+const BESTAETIGT = '2026-07-20T11:00:00Z'
+
+/** Ein zurückgehaltenes Promise (die `lib`-Einstellung kennt `Promise.withResolvers` nicht). */
+function zurueckgehalten<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => {}
+  const promise = new Promise<T>((inner) => {
+    resolve = inner
+  })
+  return { promise, resolve }
+}
 
 vi.mock('../../api/projects')
 vi.mock('../../api/duplicates')
@@ -182,10 +199,28 @@ function OutletHost({ project: contextProject, refetchProject }: PipelineOutletC
  * gesetztem `photo`-Parameter, und genau das muss pruefbar sein. */
 function Adressspiegel() {
   const ort = useLocation()
-  return <span data-testid="adresse">{`${ort.pathname}${ort.search}`}</span>
+  const zurueck = useNavigate()
+  return (
+    <>
+      <span data-testid="adresse">{`${ort.pathname}${ort.search}`}</span>
+      <span data-testid="zustand">{JSON.stringify(ort.state ?? null)}</span>
+      <button type="button" onClick={() => void zurueck(-1)}>
+        Sonde zurück
+      </button>
+      <button type="button" onClick={() => void zurueck('/woanders')}>
+        Sonde weg
+      </button>
+    </>
+  )
 }
 
-function renderPage(initialProject: ProjectOut, initialEntry = '/x', refetchProject = vi.fn()) {
+function renderPage(
+  initialProject: ProjectOut,
+  initialEntry = '/x',
+  refetchProject: PipelineOutletContext['refetchProject'] = vi
+    .fn()
+    .mockResolvedValue({ data: undefined }),
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -199,13 +234,25 @@ function renderPage(initialProject: ProjectOut, initialEntry = '/x', refetchProj
         <Routes>
           <Route element={<OutletHost project={initialProject} refetchProject={refetchProject} />}>
             <Route path="/x" element={<AusschussStepPage />} />
+            <Route path="/projects/1/pipeline/ausschuss" element={<AusschussStepPage />} />
           </Route>
+          <Route path="/projects/1/pipeline/kriterien" element={<p>Klassifizierungsseite</p>} />
+          <Route path="/woanders" element={<p>Woanders</p>} />
         </Routes>
       </MemoryRouter>,
       { wrapper },
     ),
     refetchProject,
   }
+}
+
+/** Der Pfad ohne Abfrage. */
+function pfad(): string {
+  return screen.getByTestId('adresse').textContent?.split('?')[0] ?? ''
+}
+
+function leiste(): HTMLElement {
+  return screen.getByRole('group', { name: 'Nächste Aktion' })
 }
 
 /** Die Adresse ohne den umgebenden Pfad - nur die Abfrage ist hier von Belang. */
@@ -224,17 +271,21 @@ beforeEach(() => {
 })
 
 describe('AusschussStepPage - Erkennung', () => {
-  it('shows a short explanation line (UI/UX-Abschnitt der Spec 0042)', () => {
+  it('shows a short explanation line that says nothing is sorted out yet', () => {
     renderPage(project({ last_scoring_run: null }))
 
     expect(screen.getByText(/erkennt automatisch unscharfe/i)).toBeInTheDocument()
+    expect(screen.getByText(AUSSCHUSS_NOTHING_SORTED_TEXT)).toBeInTheDocument()
   })
 
-  it('shows an active button and a hint when never scored', () => {
+  it('zeigt vor dem ersten Lauf den Startknopf als Hauptaktion in der Leiste, ohne "Erneut …"', () => {
     renderPage(project({ last_scoring_run: null }))
 
-    expect(screen.getByRole('button', { name: /ausschuss aussortieren/i })).toBeEnabled()
-    expect(screen.getByText(/noch nicht vorgeschlagen/i)).toBeInTheDocument()
+    const start = within(leiste()).getByRole('button', { name: START })
+    expect(start).toBeEnabled()
+    expect(start).toHaveClass('bg-accent')
+    expect(within(leiste()).getByText(/noch nicht vorgeschlagen/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^erneut/i })).not.toBeInTheDocument()
   })
 
   it(
@@ -243,20 +294,21 @@ describe('AusschussStepPage - Erkennung', () => {
     () => {
       renderPage(project({ last_scan: null, last_scoring_run: null }))
 
-      expect(screen.getByRole('button', { name: /ausschuss aussortieren/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: START })).toBeEnabled()
     },
   )
 
-  it('disables the button synchronously on click and sends exactly one request on a double click', async () => {
+  it('zeigt nach dem Klick sofort die Verlaufsform und sendet bei Doppelklick genau eine Anfrage', async () => {
     vi.mocked(projectsApi.triggerScore).mockReturnValue(new Promise(() => {}))
     const user = userEvent.setup()
     renderPage(project({ last_scoring_run: null }))
 
-    const button = screen.getByRole('button', { name: /ausschuss aussortieren/i })
+    const button = screen.getByRole('button', { name: START })
     await user.click(button)
     await user.click(button)
 
     expect(button).toBeDisabled()
+    expect(button).toHaveAccessibleName(RUN_STEP_TEXTS.ausschuss.running)
     expect(projectsApi.triggerScore).toHaveBeenCalledTimes(1)
   })
 
@@ -265,21 +317,22 @@ describe('AusschussStepPage - Erkennung', () => {
     const user = userEvent.setup()
     renderPage(project({ last_scoring_run: null }))
 
-    await user.click(screen.getByRole('button', { name: /ausschuss aussortieren/i }))
+    await user.click(screen.getByRole('button', { name: START }))
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /ausschuss aussortieren/i })).toBeEnabled(),
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: START })).toBeEnabled())
     expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
   })
 
-  it('shows granular "X von Y" progress with a native progress element while running', () => {
+  it('zeigt den Fortschritt "X von Y" mit nativem Balken in der Leiste', () => {
     renderPage(project({ last_scoring_run: scoringRun({ photos_total: 10, photos_processed: 4 }) }))
 
-    expect(screen.getByText(/4 von 10 fotos verarbeitet/i)).toBeInTheDocument()
-    const progress = screen.getByRole('progressbar') as HTMLProgressElement
+    expect(within(leiste()).getByText(/4 von 10 fotos verarbeitet/i)).toBeInTheDocument()
+    const progress = leiste().querySelector('progress') as HTMLProgressElement
     expect(progress.max).toBe(10)
     expect(progress.value).toBe(4)
+    expect(
+      within(leiste()).getByRole('button', { name: RUN_STEP_TEXTS.ausschuss.running }),
+    ).toBeDisabled()
   })
 
   it(
@@ -290,7 +343,7 @@ describe('AusschussStepPage - Erkennung', () => {
         project({ last_scoring_run: scoringRun({ photos_total: 0, photos_processed: 0 }) }),
       )
 
-      const progress = screen.getByRole('progressbar') as HTMLProgressElement
+      const progress = leiste().querySelector('progress') as HTMLProgressElement
       expect(progress.hasAttribute('value')).toBe(false)
       expect(progress.hasAttribute('max')).toBe(false)
     },
@@ -308,7 +361,7 @@ describe('AusschussStepPage - Erkennung', () => {
     expect(screen.getByText('1 Vorschlag gefunden')).toBeInTheDocument()
   })
 
-  it('shows an inline error banner with a retry button on a failed scoring run', async () => {
+  it('bietet bei einem Fehlschlag genau eine Wiederholung: den Startknopf der Leiste', async () => {
     vi.mocked(projectsApi.triggerScore).mockResolvedValue({ status: 'queued' })
     const user = userEvent.setup()
     renderPage(
@@ -318,9 +371,30 @@ describe('AusschussStepPage - Erkennung', () => {
     )
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Unerwarteter Fehler')
-    await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
+    expect(screen.queryByRole('button', { name: /erneut versuchen/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^erneut/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: START })).toHaveLength(1)
+
+    await user.click(within(leiste()).getByRole('button', { name: START }))
 
     expect(projectsApi.triggerScore).toHaveBeenCalledWith(1)
+  })
+
+  it('zeigt nach einem erfolgreichen Lauf "Erneut erkennen" nachrangig samt Erklärsatz', async () => {
+    vi.mocked(projectsApi.triggerScore).mockResolvedValue({ status: 'queued' })
+    const user = userEvent.setup()
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    const block = screen.getByTestId('rerun-block')
+    expect(within(block).getByText(RERUN.explanation)).toBeVisible()
+    const rerun = within(block).getByRole('button', { name: RERUN.label })
+    expect(rerun).not.toHaveClass('bg-accent')
+    expect(leiste()).not.toContainElement(rerun)
+
+    await user.click(rerun)
+
+    expect(projectsApi.triggerScore).toHaveBeenCalledWith(1)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('liest den Bestand nicht, solange kein Lauf erfolgreich war', () => {
@@ -413,16 +487,34 @@ describe('AusschussStepPage - Uebersicht', () => {
     ])
   })
 
-  it('beschriftet den Bestaetigungsbutton mit der Zahl der offenen Vorschlaege', async () => {
+  it('beschriftet die Abschluss-Aktion mit der Zahl der offenen Vorschläge', async () => {
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
       stand([entry(42), entry(43, { decision: 'keep' })], { openCount: 40 }),
     )
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
 
-    const button = await screen.findByRole('button', {
-      name: /ausschuss gesichtet, weiter \(40\)/i,
+    const button = await within(leiste()).findByRole('button', {
+      name: '40 Vorschläge als Ausschuss übernehmen und abschließen',
     })
     expect(button).toBeEnabled()
+    expect(button).toHaveClass('bg-accent')
+    expect(within(leiste()).getByText('40 Vorschläge offen')).toBeInTheDocument()
+  })
+
+  it('nennt die Anzahl erst, wenn der Bestand geladen ist', async () => {
+    const { promise, resolve } = zurueckgehalten<AusschussOut>()
+    vi.mocked(ausschussApi.listAusschuss).mockReturnValue(promise)
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    expect(within(leiste()).getByRole('button', { name: AUSSCHUSS_CONFIRM_LABEL })).toBeEnabled()
+
+    await act(async () => resolve(stand([entry(42)], { openCount: 1 })))
+
+    expect(
+      await within(leiste()).findByRole('button', {
+        name: '1 Vorschlag als Ausschuss übernehmen und abschließen',
+      }),
+    ).toBeInTheDocument()
   })
 
   it('bestaetigt den Abschluss in einem Aufruf, ohne Id-Liste im Body', async () => {
@@ -430,36 +522,37 @@ describe('AusschussStepPage - Uebersicht', () => {
     const user = userEvent.setup()
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
 
-    await user.click(
-      await screen.findByRole('button', { name: /ausschuss gesichtet, weiter \(1\)/i }),
-    )
+    await user.click(await screen.findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }))
 
     expect(projectsApi.confirmAusschussGate).toHaveBeenCalledWith(1)
   })
 
-  it('zeigt einen Alert, wenn der Abschluss scheitert', async () => {
+  it('zeigt einen Alert über der Leiste, wenn der Abschluss scheitert, und bleibt auf der Seite', async () => {
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
     vi.mocked(projectsApi.confirmAusschussGate).mockRejectedValue(
       new ApiError(409, 'Der Ausschuss wurde zwischenzeitlich geändert.'),
     )
     const user = userEvent.setup()
-    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
-
-    await user.click(
-      await screen.findByRole('button', { name: /ausschuss gesichtet, weiter \(1\)/i }),
+    const { refetchProject } = renderPage(
+      project({ last_scoring_run: ERFOLGREICHER_LAUF }),
+      '/projects/1/pipeline/ausschuss',
     )
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Der Ausschuss wurde zwischenzeitlich geändert.',
-    )
+    const button = await screen.findByRole('button', { name: /^1 Vorschlag als Ausschuss/ })
+    await user.click(button)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Der Ausschuss wurde zwischenzeitlich geändert.')
+    expect(alert.nextElementSibling).toBe(leiste())
+    expect(pfad()).toBe('/projects/1/pipeline/ausschuss')
+    expect(refetchProject).not.toHaveBeenCalled()
+    expect(button).toHaveFocus()
   })
 
   it('bietet den Abschluss an, wenn alle Vorschlaege einzeln entschieden sind, aber nicht bestaetigt', async () => {
     // DIE SACKGASSE, DIE ES NICHT GEBEN DARF: Ein erfolgreicher Lauf meldet Vorschlaege, der
-    // Nutzer entscheidet sie ALLE einzeln (AK6 erlaubt das, AK12 verlangt es nicht), danach ist
-    // `open_count` 0 und `gate_confirmed_at` weiterhin null. Ein an `open_count` gebundener
-    // gesperrter Button liesse den Schritt nie abschliessen - und weil allein `gate_confirmed_at`
-    // den naechsten Schritt freigibt (AK13), stuende die ganze Pipeline still.
+    // Nutzer entscheidet sie ALLE einzeln, danach ist `open_count` 0 und `gate_confirmed_at`
+    // weiterhin null. Allein `gate_confirmed_at` gibt den naechsten Schritt frei.
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
       stand([entry(42, { decision: 'keep' }), entry(43, { decision: 'discard' })], {
         openCount: 0,
@@ -468,61 +561,88 @@ describe('AusschussStepPage - Uebersicht', () => {
     const user = userEvent.setup()
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
 
-    const button = await screen.findByRole('button', { name: /ausschuss gesichtet, weiter/i })
+    await within(leiste()).findByText('Alle Vorschläge entschieden')
+    const button = within(leiste()).getByRole('button', { name: AUSSCHUSS_CONFIRM_LABEL })
     expect(button).toBeEnabled()
-    expect(screen.getByText(AUSSCHUSS_ALL_DECIDED_TEXT)).toBeInTheDocument()
-    expect(screen.queryByText(AUSSCHUSS_NOTHING_TO_CONFIRM_TEXT)).not.toBeInTheDocument()
 
     await user.click(button)
 
     expect(projectsApi.confirmAusschussGate).toHaveBeenCalledWith(1)
   })
 
-  it('sperrt den Button mit neutralem Erklaertext erst nach bestaetigtem Abschluss ohne offene Vorschlaege', async () => {
-    // Der einzige Zustand, in dem es wirklich nichts zu tun gibt: Der Abschluss steht, und offen
-    // ist nichts. Hier bleibt der neutrale Erklaertext richtig - vorher sagte er dasselbe ueber
-    // einen Zustand, in dem sehr wohl etwas zu tun war (siehe der Test darueber).
+  it('führt nach bestätigtem Abschluss ohne offene Vorschläge per Link weiter, ohne Schreibanfrage', async () => {
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
       stand([entry(42, { decision: 'keep' })], { openCount: 0 }),
     )
+    const user = userEvent.setup()
     renderPage(
-      project({
-        last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: '2026-07-20T11:00:00Z' },
-      }),
+      project({ last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: BESTAETIGT } }),
+      '/projects/1/pipeline/ausschuss',
     )
 
-    const button = await screen.findByRole('button', { name: /ausschuss gesichtet, weiter/i })
-    expect(button).toBeDisabled()
-    expect(screen.getByText(AUSSCHUSS_NOTHING_TO_CONFIRM_TEXT)).toBeInTheDocument()
+    const link = await within(leiste()).findByRole('link', { name: 'Weiter zur Klassifizierung' })
+    expect(link).toHaveAttribute('href', '/projects/1/pipeline/kriterien')
+    expect(within(leiste()).queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getByText(/bestätigt am/i)).toBeInTheDocument()
+
+    await user.click(link)
+
+    expect(pfad()).toBe('/projects/1/pipeline/kriterien')
     expect(projectsApi.confirmAusschussGate).not.toHaveBeenCalled()
+    expect(projectsApi.triggerScore).not.toHaveBeenCalled()
   })
 
-  it('bleibt nach der Bestaetigung aufrufbar und nennt den Zeitstempel', async () => {
-    // AK11: Nach der Bestaetigung bleibt der Schritt aufrufbar; weitere Anpassungen sind moeglich.
+  it('bleibt nach der Bestaetigung aufrufbar: Zeitstempel und "Erneut erkennen"', async () => {
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 0 }))
     renderPage(
-      project({
-        last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: '2026-07-20T11:00:00Z' },
-      }),
+      project({ last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: BESTAETIGT } }),
     )
 
     expect(await screen.findByText(/bestätigt am/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /ausschuss gesichtet, weiter/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: RERUN.label })).toBeEnabled()
   })
 
   it('laesst offene Vorschlaege auch nach der Bestaetigung erneut abschliessen', async () => {
-    // AK11, die andere Haelfte: Ein neuer Lauf nach der Bestaetigung findet neue Vorschlaege -
-    // der Abschluss bleibt bedienbar und nennt weiter die Zahl der offenen.
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
     renderPage(
-      project({
-        last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: '2026-07-20T11:00:00Z' },
-      }),
+      project({ last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: BESTAETIGT } }),
     )
 
     expect(
-      await screen.findByRole('button', { name: /ausschuss gesichtet, weiter \(1\)/i }),
+      await within(leiste()).findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }),
     ).toBeEnabled()
+  })
+
+  it('behält bei null Vorschlägen mit Auto-Abschluss den Leertext und führt weiter', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([]))
+    renderPage(
+      project({
+        last_scoring_run: {
+          ...ERFOLGREICHER_LAUF,
+          suggestions_found: 0,
+          gate_confirmed_at: BESTAETIGT,
+        },
+      }),
+    )
+
+    expect(await screen.findByText(AUSSCHUSS_EMPTY_TEXT)).toBeInTheDocument()
+    expect(
+      await within(leiste()).findByRole('link', { name: 'Weiter zur Klassifizierung' }),
+    ).toBeInTheDocument()
+  })
+
+  it('nennt bei abgeschalteter Klassifizierung einen neutralen Text ohne Weiter-Link', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([]))
+    renderPage(
+      project({
+        category_selection_enabled: false,
+        last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: BESTAETIGT },
+      }),
+    )
+
+    expect(await within(leiste()).findByText(NEXT_UNAVAILABLE_TEXT)).toBeInTheDocument()
+    expect(within(leiste()).queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('laedt bei mehr Bestand als einer Seite nach', async () => {
@@ -698,36 +818,213 @@ describe('AusschussStepPage - Detailansicht', () => {
     expect(ausschussApi.listAusschuss).not.toHaveBeenCalled()
     expect(screen.queryByRole('img', { name: 'Reise/serie-42.jpg' })).not.toBeInTheDocument()
   })
+
+  it('zeigt die Leiste mit der Abschluss-Aktion auch in der Detailansicht', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }), '/x?photo=42')
+
+    await screen.findByRole('img', { name: 'Reise/serie-42.jpg' })
+    expect(
+      await within(leiste()).findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }),
+    ).toBeEnabled()
+  })
 })
 
-describe('AusschussStepPage - Abschluss', () => {
-  it('sperrt den Button waehrend des laufenden Abschlusses und sendet genau einen Aufruf', async () => {
+/** Ein Projekt nach erfolgreicher Bestätigung, wie es der Refetch liefert. */
+function bestaetigt(overrides: Partial<ProjectOut> = {}): ProjectOut {
+  return project({
+    last_scoring_run: { ...ERFOLGREICHER_LAUF, gate_confirmed_at: BESTAETIGT },
+    ...overrides,
+  })
+}
+
+describe('AusschussStepPage - Abschluss und Weiterführung', () => {
+  it('sperrt die Abschluss-Aktion waehrend der Anfrage und sendet genau einen Aufruf', async () => {
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
     vi.mocked(projectsApi.confirmAusschussGate).mockReturnValue(new Promise(() => {}))
     const user = userEvent.setup()
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
 
-    const button = await screen.findByRole('button', { name: /ausschuss gesichtet, weiter/i })
+    const button = await screen.findByRole('button', { name: /^1 Vorschlag als Ausschuss/ })
     await user.click(button)
 
     expect(button).toBeDisabled()
     expect(projectsApi.confirmAusschussGate).toHaveBeenCalledTimes(1)
   })
 
-  it('bleibt in der Uebersicht und laedt den Bestand nach dem Abschluss neu', async () => {
-    // Der Abschluss ist eine projektweite Aktion, die einzelne Aufnahmen veraendert: Der Bestand
-    // darf danach nicht den alten Stand zeigen - und die Seite wechselt dabei nicht.
+  it('lädt das Projekt neu und wechselt erst danach per Push zur Klassifizierung', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
+    const reihenfolge: string[] = []
+    vi.mocked(projectsApi.confirmAusschussGate).mockImplementation(() => {
+      reihenfolge.push('confirm')
+      return Promise.resolve({ status: 'confirmed' })
+    })
+    const refetchProject = vi.fn(() => {
+      reihenfolge.push(`refetch:${pfad()}`)
+      return Promise.resolve({ data: bestaetigt() })
+    }) as unknown as PipelineOutletContext['refetchProject']
+    const user = userEvent.setup()
+    renderPage(
+      project({ last_scoring_run: ERFOLGREICHER_LAUF }),
+      '/projects/1/pipeline/ausschuss',
+      refetchProject,
+    )
+
+    await user.click(await screen.findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }))
+
+    await screen.findByText('Klassifizierungsseite')
+    expect(reihenfolge).toEqual(['confirm', 'refetch:/projects/1/pipeline/ausschuss'])
+    expect(pfad()).toBe('/projects/1/pipeline/kriterien')
+    expect(screen.getByTestId('zustand')).toHaveTextContent('{"focusHeading":true}')
+
+    await user.click(screen.getByRole('button', { name: 'Sonde zurück' }))
+
+    expect(pfad()).toBe('/projects/1/pipeline/ausschuss')
+  })
+
+  it('führt aus der Detailansicht mit Browser-Zurück in dieselbe Detailansicht', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
+    const refetchProject = vi.fn().mockResolvedValue({ data: bestaetigt() })
+    const user = userEvent.setup()
+    renderPage(
+      project({ last_scoring_run: ERFOLGREICHER_LAUF }),
+      '/projects/1/pipeline/ausschuss?photo=42',
+      refetchProject,
+    )
+
+    await user.click(
+      await within(leiste()).findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }),
+    )
+    await screen.findByText('Klassifizierungsseite')
+    await user.click(screen.getByRole('button', { name: 'Sonde zurück' }))
+
+    expect(screen.getByTestId('adresse')).toHaveTextContent(
+      '/projects/1/pipeline/ausschuss?photo=42',
+    )
+  })
+
+  it('wechselt nicht, wenn der Refetch die Klassifizierung noch nicht freigibt', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
+    const refetchProject = vi
+      .fn()
+      .mockResolvedValue({ data: project({ last_scoring_run: ERFOLGREICHER_LAUF }) })
+    const user = userEvent.setup()
+    renderPage(
+      project({ last_scoring_run: ERFOLGREICHER_LAUF }),
+      '/projects/1/pipeline/ausschuss',
+      refetchProject,
+    )
+
+    await user.click(await screen.findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }))
+
+    await waitFor(() => expect(refetchProject).toHaveBeenCalled())
+    expect(pfad()).toBe('/projects/1/pipeline/ausschuss')
+  })
+
+  it('wechselt nicht und stürzt nicht ab, wenn der Refetch scheitert', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
+    const refetchProject = vi.fn().mockResolvedValue({ data: undefined, isError: true })
+    const user = userEvent.setup()
+    renderPage(
+      project({ last_scoring_run: ERFOLGREICHER_LAUF }),
+      '/projects/1/pipeline/ausschuss',
+      refetchProject,
+    )
+
+    await user.click(await screen.findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }))
+
+    await waitFor(() => expect(refetchProject).toHaveBeenCalled())
+    expect(pfad()).toBe('/projects/1/pipeline/ausschuss')
+    expect(leiste()).toBeInTheDocument()
+  })
+
+  it('wechselt nicht, wenn die Klassifizierung abgeschaltet ist', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
+    const refetchProject = vi
+      .fn()
+      .mockResolvedValue({ data: bestaetigt({ category_selection_enabled: false }) })
+    const user = userEvent.setup()
+    renderPage(
+      project({ category_selection_enabled: false, last_scoring_run: ERFOLGREICHER_LAUF }),
+      '/projects/1/pipeline/ausschuss',
+      refetchProject,
+    )
+
+    await user.click(await screen.findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }))
+
+    await waitFor(() => expect(refetchProject).toHaveBeenCalled())
+    expect(pfad()).toBe('/projects/1/pipeline/ausschuss')
+  })
+
+  it('wechselt nicht, wenn die Seite vor der Antwort verlassen wurde', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
+    const antwort = zurueckgehalten<{ status: 'confirmed' }>()
+    vi.mocked(projectsApi.confirmAusschussGate).mockReturnValue(antwort.promise)
+    const refetchProject = vi.fn().mockResolvedValue({ data: bestaetigt() })
+    const user = userEvent.setup()
+    renderPage(
+      project({ last_scoring_run: ERFOLGREICHER_LAUF }),
+      '/projects/1/pipeline/ausschuss',
+      refetchProject,
+    )
+
+    await user.click(await screen.findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }))
+    await user.click(screen.getByRole('button', { name: 'Sonde weg' }))
+    await act(async () => antwort.resolve({ status: 'confirmed' }))
+
+    expect(pfad()).toBe('/woanders')
+    expect(refetchProject).not.toHaveBeenCalled()
+  })
+
+  it('wechselt nach einem erfolgreichen Hintergrundlauf nicht, sondern zeigt den Weiter-Link', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([]))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const refetchProject = vi.fn().mockResolvedValue({ data: undefined })
+    function Host({ value }: { value: ProjectOut }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/projects/1/pipeline/ausschuss']}>
+            <Adressspiegel />
+            <Routes>
+              <Route element={<OutletHost project={value} refetchProject={refetchProject} />}>
+                <Route path="/projects/1/pipeline/ausschuss" element={<AusschussStepPage />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    }
+    const { rerender } = render(<Host value={project({ last_scoring_run: scoringRun() })} />)
+    expect(
+      within(leiste()).getByRole('button', { name: RUN_STEP_TEXTS.ausschuss.running }),
+    ).toBeDisabled()
+
+    rerender(
+      <Host
+        value={bestaetigt({
+          last_scoring_run: {
+            ...ERFOLGREICHER_LAUF,
+            suggestions_found: 0,
+            gate_confirmed_at: BESTAETIGT,
+          },
+        })}
+      />,
+    )
+
+    expect(
+      await within(leiste()).findByRole('link', { name: 'Weiter zur Klassifizierung' }),
+    ).toBeInTheDocument()
+    expect(pfad()).toBe('/projects/1/pipeline/ausschuss')
+  })
+
+  it('lädt den Bestand nach dem Abschluss neu', async () => {
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(42)], { openCount: 1 }))
     const user = userEvent.setup()
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
 
-    await user.click(
-      await screen.findByRole('button', { name: /ausschuss gesichtet, weiter \(1\)/i }),
-    )
+    await user.click(await screen.findByRole('button', { name: /^1 Vorschlag als Ausschuss/ }))
     await waitFor(() => expect(projectsApi.confirmAusschussGate).toHaveBeenCalledWith(1))
 
-    // Der zweite Aufruf derselben Abfrage entsteht durch die Invalidierung, nicht durch einen
-    // Seitenwechsel: die Adresse bleibt die Uebersicht.
     await waitFor(() =>
       expect(vi.mocked(ausschussApi.listAusschuss).mock.calls.length).toBeGreaterThan(1),
     )

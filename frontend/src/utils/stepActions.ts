@@ -37,8 +37,8 @@ export function ausschussConfirmLabel(openCount: number | null): string {
   if (openCount === null || openCount === 0) {
     return AUSSCHUSS_CONFIRM_LABEL
   }
-  const noun = openCount === 1 ? 'Vorschlag' : 'Vorschläge'
-  return `${openCount} ${noun} als Ausschuss übernehmen und abschließen`
+  const count = openCount === 1 ? '1 Vorschlag' : `${openCount} Vorschläge`
+  return `${count} als Ausschuss übernehmen und abschließen`
 }
 
 /**

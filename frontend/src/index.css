@@ -413,6 +413,15 @@
   }
 
   /*
+   * Unterer Innenabstand der haftenden Aktionsleiste (`StepActionBar`): mindestens 12px, auf
+   * Telefonen mit Gestenleiste deren Hoehe. Eine Rechnung ueber dem Sichtfenster und keine
+   * Rasterstufe - deshalb hier und nicht als willkuerlicher Wert an der Aufrufstelle.
+   */
+  .safe-area-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  /*
    * Fuellstand eines Motivsymbols: Beschnitt auf die UNTEREN `--motif-fill` Prozent der Hoehe
    * (specs/features/0490-motivstaerke-kompakt.md, decisions/0113-...). Das Rezept steht an genau
    * DIESER einen Stelle, die Aufrufstelle uebergibt nur den Prozentwert - eine

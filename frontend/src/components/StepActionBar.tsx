@@ -6,8 +6,9 @@ import { Button } from './ui/button'
 
 interface StepActionBarProps {
   action: StepAction
-  /** Die Statuszeile - die einzige Live-Region des Laufstatus einer Schrittseite. */
-  status: ReactNode
+  /** Die Statuszeile - die einzige Live-Region des Laufstatus einer Schrittseite. Ohne eigenen
+   * Lauf (Kuratierung) bleibt sie leer. */
+  status?: ReactNode
   /** Fortschrittsblock unter der Statuszeile, außerhalb der Live-Region. */
   detail?: ReactNode
   /** Auslöser für `start`, `retry` und `confirm`. */
@@ -80,7 +81,7 @@ export function StepActionBar({
       role="group"
       aria-label="Nächste Aktion"
       data-testid="step-action-bar"
-      className="sticky bottom-0 z-10 w-full self-stretch border-t border-separator bg-bg pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      className="safe-area-bottom sticky bottom-0 z-10 w-full self-stretch border-t border-separator bg-bg pt-3"
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="flex min-w-0 flex-col gap-2">
