@@ -236,6 +236,48 @@ describe('AlbumDraftPage: Kopf und Abschluss', () => {
     expect(await screen.findByText(DRAFT_CLOUD_CONSENT_TEXT)).toBeInTheDocument()
     expect(screen.queryByText(DRAFT_EMPTY_TEXT)).toBeNull()
   })
+
+  it('adds a neutral line when the proposal stays below the target for lack of candidates', async () => {
+    /* Spec 0567: 150 ist ein Ziel, keine Obergrenze. Die Zeile ist ein Hinweis, kein Fehler -
+     * kein Alert, keine Rolle, gedämpfter Text. */
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      projectOut({ effective_selection_target: 150 }),
+    )
+    const exhausted = { ...ranking(true), partition_size: 2 }
+    renderPage(
+      {
+        events: [EVENT_A],
+        items: [photo(1, { ranking: exhausted }), photo(2, { ranking: exhausted })],
+      },
+      noObserver,
+    )
+
+    const line = await screen.findByText(
+      'Der Vorschlag umfasst 2 Fotos statt etwa 150 – mehr auswahlfähige Fotos gibt dieses Projekt nicht her.',
+    )
+    expect(line).not.toHaveAttribute('role')
+    expect(line.className).toContain('text-text-muted')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows no such line while candidates are left, even below the target', async () => {
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      projectOut({ effective_selection_target: 150 }),
+    )
+    const plenty = { ...ranking(true), partition_size: 40 }
+    renderPage(
+      {
+        events: [EVENT_A],
+        items: [photo(1, { ranking: plenty }), photo(2, { ranking: plenty })],
+      },
+      noObserver,
+    )
+
+    expect(
+      await screen.findByText('2 im Album · Richtwert etwa 150 · 0 aufgenommen · 0 gestrichen'),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('smaller-proposal')).toBeNull()
+  })
 })
 
 describe('AlbumDraftPage: Streichen und Rückgängig', () => {

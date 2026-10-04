@@ -141,7 +141,7 @@ export function applyWrittenRating(
 // DAS BEZUGSBILD UND DIE SEITENGROESSE GEHOEREN IN DEN SCHLUESSEL: Am Bezugsbild haengen Menge und
 // Reihenfolge; Band (vier, mit Bezugsbild), Dialog (mit Bezugsbild) und Hinzufuegen-Feld (acht,
 // ohne) holten unter einem gemeinsamen Schluessel dieselbe Cache-Zeile.
-function draftAlternativesQueryKey(
+export function draftAlternativesQueryKey(
   projectId: number,
   eventId: number,
   photoId: number | null,

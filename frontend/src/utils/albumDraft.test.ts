@@ -22,6 +22,7 @@ import {
   insertDraftPhoto,
   isTakenWithoutProposal,
   reAddDecision,
+  smallerProposalText,
 } from './albumDraft'
 
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
@@ -248,6 +249,74 @@ describe('draftSizeText', () => {
     )
 
     expect(new Set(shapes).size).toBe(1)
+  })
+})
+
+describe('smallerProposalText', () => {
+  /** `perEvent` Kandidaten je Event, davon `proposed` im Vorschlag - je Event ein Foto in der
+   * Antwort reicht, weil `partition_size` die ganze Partition beschreibt. */
+  function draftItems(events: { candidates: number; proposed: number }[]): PhotoOut[] {
+    let id = 0
+    return events.flatMap(({ candidates, proposed }, index) =>
+      Array.from({ length: Math.max(proposed, 1) }, (_, offset) => {
+        id += 1
+        return photo({
+          id,
+          ranking: ranking({
+            event_id: index + 1,
+            partition_size: candidates,
+            proposed: offset < proposed,
+          }),
+        })
+      }),
+    )
+  }
+
+  it('names a proposal that stays below the target because the candidates ran out', () => {
+    const items = draftItems([
+      { candidates: 3, proposed: 3 },
+      { candidates: 2, proposed: 2 },
+    ])
+
+    expect(smallerProposalText(items, 150)).toBe(
+      'Der Vorschlag umfasst 5 Fotos statt etwa 150 – mehr auswahlfähige Fotos gibt dieses Projekt nicht her.',
+    )
+  })
+
+  it('stays silent below the target while candidates are left (old proposal in transition)', () => {
+    /* Pflichtfall der Teststrategie: ein Bestandsvorschlag nach der alten Vorbelegung ist klein,
+     * obwohl genug Fotos da sind - die Zeile behauptete sonst eine falsche Ursache. */
+    const items = draftItems([
+      { candidates: 40, proposed: 2 },
+      { candidates: 30, proposed: 1 },
+    ])
+
+    expect(smallerProposalText(items, 150)).toBeNull()
+  })
+
+  it('stays silent at or above the target, coverage included', () => {
+    const atTarget = draftItems([{ candidates: 10, proposed: 4 }])
+    const coverage = draftItems([
+      { candidates: 1, proposed: 1 },
+      { candidates: 1, proposed: 1 },
+      { candidates: 1, proposed: 1 },
+    ])
+
+    expect(smallerProposalText(atTarget, 4)).toBeNull()
+    expect(smallerProposalText(coverage, 2)).toBeNull()
+  })
+
+  it('counts the proposal, not the own decisions, and ignores photos without a ranking', () => {
+    const items = [
+      ...draftItems([{ candidates: 2, proposed: 2 }]),
+      photo({ id: 99, ranking: null, ratings: rated('album_worthy') }),
+    ]
+
+    expect(smallerProposalText(items, 150)).toMatch(/^Der Vorschlag umfasst 2 Fotos /)
+  })
+
+  it('says nothing without any proposal', () => {
+    expect(smallerProposalText([], 150)).toBeNull()
   })
 })
 

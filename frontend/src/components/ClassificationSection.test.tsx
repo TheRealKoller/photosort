@@ -542,3 +542,46 @@ describe('Kostenschätzung ohne hinterlegten Preis', () => {
     expect(screen.getByRole('button', TRIGGER)).toBeEnabled()
   })
 })
+
+// specs/features/0567-richtwert-vor-klassifizierung.md: der Richtwert ist schon vor dem ersten
+// Lauf einstellbar, mit DERSELBEN Komponente wie in der Kuratierung.
+describe('Richtwert vor der Klassifizierung', () => {
+  it('renders the target field above the trigger even without any previous run', () => {
+    renderSection(project({ last_criterion_scoring_run: null, effective_selection_target: 42 }))
+
+    const field = screen.getByLabelText(/richtwert \(bilder\)/i)
+    const trigger = screen.getByRole('button', TRIGGER)
+    expect(field).toBeEnabled()
+    expect(field).toHaveAccessibleDescription('Standard: 42 Bilder.')
+    expect(field.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText(/ziel, keine obergrenze/i)).toBeInTheDocument()
+    // Der Satz zur Motivmischung bleibt der Kuratierung vorbehalten.
+    expect(screen.queryByText(/mischt in jedem die vorkommenden motive/i)).not.toBeInTheDocument()
+  })
+
+  it('saves a target before the first run', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.setSelectionTarget).mockResolvedValue(project({ selection_target: 80 }))
+    renderSection(project({ last_criterion_scoring_run: null }))
+
+    await user.type(screen.getByLabelText(/richtwert \(bilder\)/i), '80')
+    await user.tab()
+
+    await waitFor(() => {
+      expect(projectsApi.setSelectionTarget).toHaveBeenCalledWith(1, 80)
+    })
+  })
+
+  it('locks the field while the classification runs', () => {
+    renderSection(
+      project({
+        last_criterion_scoring_run: classificationRun({ status: 'running', finished_at: null }),
+      }),
+    )
+
+    expect(screen.getByLabelText(/richtwert \(bilder\)/i)).toBeDisabled()
+    expect(
+      screen.getByText('Während die Klassifizierung läuft, lässt sich der Richtwert nicht ändern.'),
+    ).toBeInTheDocument()
+  })
+})

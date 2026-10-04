@@ -154,6 +154,44 @@ export function draftSizeText(counts: DraftCounts, target: number): string {
   return `${counts.inAlbum} im Album · Richtwert etwa ${target} · ${counts.taken} aufgenommen · ${counts.struck} gestrichen`
 }
 
+/**
+ * Die neutrale Zeile „kleinerer Vorschlag" (Spec 0567) - `null` heißt „keine Zeile".
+ *
+ * Sie erscheint nur, wenn der Vorschlagsanteil unter dem Richtwert liegt UND die auswahlfähigen
+ * Kandidaten erschöpft sind. „Unter dem Richtwert" allein reichte nicht: Ein Bestandsvorschlag,
+ * der noch nach der alten Vorbelegung (ein Zehntel der Bilderzahl) gerechnet wurde, ist klein,
+ * obwohl genug Fotos da sind - die Zeile nennte dann eine falsche Ursache.
+ *
+ * „Erschöpft" entsteht aus den vorhandenen Zählungen, ohne eigenes API-Feld: `partition_size` ist
+ * die Zahl bewerteter Kandidaten je Event. Jedes Event mit Kandidaten hat mindestens einen Platz
+ * im Vorschlag (Abdeckung zuerst) und steht damit mit seiner Rangzeile in der Antwort - auch ein
+ * gestrichenes Foto bleibt dort. Die Summe über die Events der Antwort ist also die
+ * Kandidatenzahl des Laufs. Ein als Dokument ausgeschlossenes Foto zählt darin mit, ist aber nicht
+ * auswahlfähig; die Ausfallrichtung ist dann „keine Zeile", nie eine falsche Behauptung.
+ */
+export function smallerProposalText(items: PhotoOut[], target: number): string | null {
+  let proposed = 0
+  const candidatesByEvent = new Map<number, number>()
+  for (const item of items) {
+    const ranking = item.ranking
+    if (!ranking) {
+      continue
+    }
+    if (ranking.proposed) {
+      proposed += 1
+    }
+    candidatesByEvent.set(ranking.event_id, ranking.partition_size)
+  }
+  let candidates = 0
+  for (const size of candidatesByEvent.values()) {
+    candidates += size
+  }
+  if (proposed === 0 || proposed >= target || proposed < candidates) {
+    return null
+  }
+  return `Der Vorschlag umfasst ${proposed} Fotos statt etwa ${target} – mehr auswahlfähige Fotos gibt dieses Projekt nicht her.`
+}
+
 /** Die drei Sätze des Abschlusses „Stand des Entwurfs" - dieselben Zahlen wie der Kopf. */
 export function draftClosingTexts(counts: DraftCounts, target: number): [string, string, string] {
   return [

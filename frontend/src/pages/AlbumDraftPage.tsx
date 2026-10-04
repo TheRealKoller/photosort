@@ -38,6 +38,7 @@ import {
   draftSizeText,
   formatDraftPhotoCount,
   reAddDecision,
+  smallerProposalText,
 } from '../utils/albumDraft'
 import {
   DRAFT_CLOUD_CONSENT_TEXT,
@@ -417,6 +418,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
       : undefined
   const allAlternativesPhoto = items.find((photo) => photo.id === allAlternativesPhotoId)
   const closing = target === null ? null : draftClosingTexts(counts, target)
+  const smallerProposal = target === null ? null : smallerProposalText(items, target)
   const undoView =
     undo === null
       ? null
@@ -464,6 +466,11 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
           </div>
           <p className="truncate text-sm text-text">{currentGroup?.heading ?? ''}</p>
           {target !== null && <p className="text-sm text-text">{draftSizeText(counts, target)}</p>}
+          {smallerProposal !== null && (
+            <p data-testid="smaller-proposal" className="text-sm text-text-muted">
+              {smallerProposal}
+            </p>
+          )}
         </div>
       )}
 

@@ -132,9 +132,10 @@ export interface ProjectOut {
   cloud_vision_detection_enabled: boolean
   cloud_vision_consent_at: string | null
   // Der Richtwert des Auswahlvorschlags. `null` heißt "nicht selbst eingestellt", NICHT "kein
-  // Richtwert" - wirksam ist dann `effective_selection_target`. Das Frontend leitet die wirksame
-  // Zahl nie selbst ab; sie kommt fertig vom Server, weil die Ableitung dort an genau einer
-  // Stelle lebt und mit dem Bildbestand mitwächst.
+  // Richtwert" - wirksam ist dann `effective_selection_target`, die feste Vorbelegung von 150
+  // Bildern (ADR 0131). Das Frontend leitet die wirksame Zahl nie selbst ab; sie kommt fertig vom
+  // Server, weil die Ableitung dort an genau einer Stelle lebt. Nur der Vergleichssatz einer
+  // eigenen Angabe nennt die Vorbelegung selbst (`SelectionTargetField.DEFAULT_SELECTION_TARGET`).
   selection_target: number | null
   effective_selection_target: number
   // Bestandszahlen des Projekts (ADR 0103). PFLICHTFELDER ohne Vorgabewert: dann erzwingt `tsc`
