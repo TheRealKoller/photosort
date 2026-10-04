@@ -176,10 +176,14 @@ describe('WorkflowOverviewDialog: Bedienung', () => {
       expect(within(element).getByText('gesperrt')).toBeInTheDocument()
     }
     expect(
-      within(entry('kriterien')).getByText('Bestätige zuerst den Ausschuss oben.'),
+      within(entry('kriterien')).getByText(
+        'Schließe zuerst den Ausschuss ab („Ausschuss abschließen“).',
+      ),
     ).toBeInTheDocument()
     expect(
-      within(entry('album')).getByText('Führe zuerst die Klassifizierung oben aus.'),
+      within(entry('album')).getByText(
+        'Führe zuerst die Klassifizierung aus („Klassifizierung starten“).',
+      ),
     ).toBeInTheDocument()
   })
 
