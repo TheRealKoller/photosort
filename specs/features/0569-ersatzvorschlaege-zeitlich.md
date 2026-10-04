@@ -21,14 +21,14 @@ Als Nutzer, der im Album-Entwurf ein Bild ersetzen will, möchte ich die Ersatzv
 - [ ] **AK1 (Dialog, volle Reihe):** Mit `photo_id` liefert `GET /projects/{id}/draft-alternatives` `items` aufsteigend nach `(Photo.taken_at, photo_id)` geordnet. Das gilt über alle Seiten: Werden Seite 1 und Seite 2 aneinandergehängt, ergibt das dieselbe Folge wie die Ordnung der vollen Restmenge.
 - [ ] **AK2 (Motiv/Qualität ohne Einfluss):** Zwei Aufbauten, die sich nur in Motivstärken und `rank_score` unterscheiden, ergeben dieselbe Id-Folge. Ein zeitlich früheres Bild mit niedrigerer Qualität und ohne gemeinsames Motiv steht vor einem späteren mit höherer Qualität und gemeinsamem Motiv.
 - [ ] **AK3 (Band = zeitlich nächste):** Mit `nearest=4` gilt `offset = clamp(reference_index − 2, 0, max(0, total − 4))`. Die Antwort enthält genau `min(4, total)` Bilder, zeitlich geordnet. Im Normalfall liegen 2 vor und 2 nach dem Bezugsbild. Am Anfang oder Ende der Reihe wird von der anderen Seite aufgefüllt. Der verwendete `offset` wird zurückgegeben.
-- [ ] **AK4 (Markierung):** `reference_index` ist die Zahl der Kandidaten, die nach demselben Schlüssel vor dem Bezugsbild liegen. Ohne `photo_id` ist er `null`. Band und Dialog zeigen die Markierung des Bezugsbildes genau an der Stelle `reference_index − offset`, wenn dieser Wert in `[0, items.length]` liegt; sonst zeigt die Seite keine Markierung. Bei `total = 0` gibt es keine Markierung, nur den bestehenden Leertext.
+- [ ] **AK4 (Markierung):** `reference_index` ist die Zahl der Kandidaten, die nach demselben Schlüssel vor dem Bezugsbild liegen. Ohne `photo_id` ist er `null`. Das Band zeigt die Markierung des Bezugsbildes an der Stelle `reference_index − offset`, wenn dieser Wert in `[0, items.length]` liegt (beide Fenstergrenzen zulässig); sonst keine. Der Dialog legt die geladenen Seiten zu einer Reihe zusammen und zeigt die Markierung darin genau einmal an der Stelle `reference_index`; am Ende der geladenen Reihe nur, wenn keine Seite mehr folgt. Folgt noch eine, steht bis zum Nachladen der Hinweis „Das zu ersetzende Bild folgt weiter hinten in der Reihe.“ Bei `total = 0` gibt es keine Markierung, nur den bestehenden Leertext.
 - [ ] **AK5 (Wortlaut):** Band und Dialog zeigen den Wortlaut `Zeitlich geordnet, von früh nach spät` (eine Konstante, siehe UI/UX).
 - [ ] **AK6 (Gleichstand):** Bei gleichem `taken_at` entscheidet die kleinere `photo_id`, unabhängig von der Reihenfolge der Eingabe (geprüft über alle Permutationen). Das gilt auch, wenn das Bezugsbild selbst im Gleichstand steht.
 - [ ] **AK7 (ohne EXIF):** Ein Foto, dessen `taken_at` aus `last_modified` stammt, ordnet sich nach diesem Wert ein. Es gibt keinen Sonderzweig.
 - [ ] **AK8 (Menge unverändert):** Die Id-Menge (ohne Ordnung) und `total` sind vor und nach der Umstellung gleich. Die bestehenden Mengen-Tests bleiben grün.
 - [ ] **AK9 (beide Nutzer):** Für zwei Nutzer mit derselben Restmenge ist die Id-Folge identisch. Bei unterschiedlichen Restmengen ist die relative Ordnung der gemeinsamen Ids identisch.
 - [ ] **AK10 (nachrangig):** Jeder Vorschlag in Band und Dialog trägt die Albumtauglichkeit (`QualityMeter` aus `rank_score`) mit eigener Beschriftung. Das Kennzeichen „Album-würdig“ erscheint davon getrennt und nur bei eigener Bewertung.
-- [ ] **AK11 (Hinzufügen-Panel unverändert):** Ohne `photo_id` bleibt die Ordnung nach Qualität (`None` zuletzt, dann kleinere Id). `reference_index` ist `null`, `nearest` ist wirkungslos.
+- [ ] **AK11 (Hinzufügen-Panel unverändert):** Ohne `photo_id` bleibt die Ordnung nach Qualität (`None` zuletzt, dann kleinere Id). `reference_index` ist `null`; `nearest` ohne `photo_id` ergibt `422`.
 - [ ] **AK12 (Validierung):** `nearest` außerhalb von `1..BAND_MAX` ergibt `422`.
 
 ## Datenmodell-Bezug
@@ -45,9 +45,9 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
 - Motiv, Qualität und Nutzer gehen nicht in den Schlüssel ein. Deshalb sehen beide Nutzer dieselbe Reihenfolge; die Menge selbst bleibt je Nutzer, wie bisher.
 - „Ohne Aufnahmezeitpunkt“ ist strukturell leer: `Photo.taken_at` ist NOT NULL und fällt auf `last_modified` zurück. Ein solches Bild ordnet sich nach dieser Zeit ein. Ein eigener Zweig dafür wird nicht gebaut (siehe offene Frage).
 
-**Das zu ersetzende Bild in der Reihe:** Das Bezugsbild gehört zum Entwurf und ist nie in `items`. Der Server liefert `reference_index`: die Zahl der Kandidaten der vollen Restmenge, die nach demselben Schlüssel vor dem Bezugsbild liegen. Das Frontend setzt die Markierung des Bezugsbildes je Seite an die Stelle `reference_index − offset`, wenn dieser Wert in `[0, items.length]` liegt. Im Dialog erscheint die Markierung also, sobald die betreffende Seite geladen ist.
+**Das zu ersetzende Bild in der Reihe:** Das Bezugsbild gehört zum Entwurf und ist nie in `items`. Der Server liefert `reference_index`: die Zahl der Kandidaten der vollen Restmenge, die nach demselben Schlüssel vor dem Bezugsbild liegen. Im Band setzt das Frontend die Markierung an die Stelle `reference_index − offset`, wenn dieser Wert in `[0, items.length]` liegt; beide Fenstergrenzen sind zulässig. Im Dialog legt es die geladenen Seiten zu einer Reihe zusammen und setzt die Markierung darin genau einmal an die Stelle `reference_index`: am Ende der geladenen Reihe nur, wenn keine Seite mehr folgt, sonst steht bis zum Nachladen der Hinweis „Das zu ersetzende Bild folgt weiter hinten in der Reihe.“
 
-**Auswahlregel des Bands:** Neuer Query-Parameter `nearest` (int, `ge=1, le=BAND_MAX`, nur zusammen mit `photo_id` wirksam). Der Server setzt `offset = clamp(reference_index − ⌊N/2⌋, 0, max(0, total − N))`, liefert genau dieses Fenster mit `N = BAND_SIZE = 4` und gibt den verwendeten `offset` zurück.
+**Auswahlregel des Bands:** Neuer Query-Parameter `nearest` (int, `ge=1, le=BAND_MAX`, nur zusammen mit `photo_id` zulässig, sonst `422`). Der Server setzt `offset = clamp(reference_index − ⌊N/2⌋, 0, max(0, total − N))`, liefert genau dieses Fenster mit `N = BAND_SIZE = 4` und gibt den verwendeten `offset` zurück.
 - Im Normalfall stehen 2 Bilder davor und 2 danach.
 - Am Anfang oder Ende der Reihe wird von der anderen Seite aufgefüllt.
 - Bei `total < N` werden alle Bilder gezeigt.
@@ -80,7 +80,7 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
    - `frontend/src/api/types.ts` (neuer Typ), `frontend/src/api/photos.ts::listDraftAlternatives` (Parameter `nearest`, Rückgabetyp).
    - `frontend/src/hooks/usePhotos.ts::useDraftAlternativesQuery`: Band ohne Folgeseiten.
    - `components/DraftAlternativesBand.tsx`: `nearest=BAND_SIZE`, Markierung des Bezugsbildes, Text „zeitlich geordnet“.
-   - `components/DraftAlternativesDialog.tsx`: Markierung je Seite, Text „Zeitlich geordnet, früh → spät“. Der Kommentar „hängt an den Motiven“ wird angepasst.
+   - `components/DraftAlternativesDialog.tsx`: Markierung genau einmal über die geladenen Seiten (am Ende nur ohne Folgeseite, sonst Hinweis), Ordnungstext. Der Kommentar „hängt an den Motiven“ wird angepasst.
    - Die zugehörigen Tests.
 5. Albumtauglichkeit: Die bestehende `QualityMeter` (Albumtauglichkeit aus `rank_score`) bleibt je Vorschlag stehen. Sie wird nicht mit dem Kennzeichen „Album-würdig“ (eigene Bewertung) zusammengelegt; Abgrenzung und Wortlaut übernimmt ux.
 
@@ -221,9 +221,9 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
 - **total < 4:** `total` gleich 1, 2 und 3 ergibt `offset = 0` und alle Bilder. Die Markierung steht korrekt, auch ganz vorn (`reference_index = 0`) und ganz hinten (`reference_index = total`).
 - **total = 0:** `items = []`, `reference_index = 0`. Im Frontend erscheint der Leertext und keine Markierung.
 - **Markierung bei Pagination:**
-  - Liegt `reference_index` auf Seite 2, zeigt Seite 1 keine Markierung; nach dem Nachladen erscheint sie genau einmal.
-  - Fällt `reference_index` genau auf die Seitengrenze (`= offset + items.length`), steht die Markierung am Ende von Seite 1. Auf Seite 2 an Position 0 darf sie dann nicht noch einmal erscheinen.
-  - **Technische Festlegung:** Die Marke wird über alle geladenen Seiten genau einmal gerendert. Der Wert `items.length` ist inklusiv, darum wäre sonst eine doppelte Markierung möglich. Diese Regel ist mit der Architektur und dem Frontend abzustimmen.
+  - Liegt `reference_index` auf Seite 2, zeigt Seite 1 keine Markierung, sondern den Hinweis „Das zu ersetzende Bild folgt weiter hinten in der Reihe.“; nach dem Nachladen erscheint die Markierung genau einmal, und der Hinweis verschwindet.
+  - Fällt `reference_index` genau auf das Ende der geladenen Reihe (`= offset + items.length`) und folgt noch eine Seite, steht die Markierung **nicht** am Ende von Seite 1, sondern der Hinweis. Nach dem Nachladen steht sie genau einmal am Anfang von Seite 2. Folgt keine Seite mehr, steht sie am Ende.
+  - **Technische Festlegung:** Die Marke wird über alle geladenen Seiten genau einmal gerendert. Der Wert `items.length` ist inklusiv, darum wäre an einer Seitengrenze sonst eine doppelte Markierung möglich.
 - **Markierung bei `excludedIds`:** Ein optimistisch ausgeblendetes Bild vor dem Bezugsbild darf die Markierung nicht falsch verschieben. Die Position muss sich nach dem verbleibenden Vorgänger richten, nicht nach dem rohen Index. Der Test prüft die Marke direkt nach dem richtigen Nachbarn. Das Fenster darf sich dabei verkürzen, eine Nachfüllung erfolgt nicht.
 - **Beide Nutzer:**
   - Nutzer A und B mit identischer Restmenge erhalten eine identische Folge.
