@@ -188,10 +188,11 @@ function selectionGrid(page: Page): Locator {
     .first()
 }
 
-/** Das Kandidatenraster eines geoeffneten Bands bzw. Panels (die volle Rasterzeile mit `id`). */
+/** Das Kandidatenraster eines geoeffneten Bands bzw. Panels (die volle Rasterzeile mit `id`).
+ * Das Band traegt eine geordnete Liste, das Hinzufuegen-Panel eine ungeordnete. */
 async function panelGrid(page: Page, trigger: Locator): Promise<Locator> {
   const panel = page.locator(`[id="${await trigger.getAttribute('aria-controls')}"]`)
-  return panel.locator(':scope > ul:not([role="status"])')
+  return panel.locator(':scope > :is(ul, ol):not([role="status"])')
 }
 
 test('Album-Entwurf: Spaltenleiter 2/3/4, eingepasste Bilder, ruhige Reihe', async ({ page }) => {
