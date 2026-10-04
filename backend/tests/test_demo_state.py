@@ -32,6 +32,7 @@ from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.db import Base, make_engine, make_session_factory
 from photosort.demo_state import (
+    AUSSCHUSS_PAGE_SIZE,
     CONFIRM_ENV_VAR,
     CONFIRM_LITERAL,
     DEMO_PERSON_NAMES,
@@ -42,6 +43,7 @@ from photosort.demo_state import (
     ERROR_STATE_PHOTO_COUNT,
     LARGE_COLLECTION_PHOTO_COUNT,
     LARGE_PROJECT_NAME,
+    LONG_AUSSCHUSS_PROJECT_NAME,
     RATED_PROJECT_NAME,
     DemoStateError,
     assert_safe_to_seed,
@@ -217,7 +219,7 @@ class TestCheckOpencloudTarget:
 class TestDemoProjectSpecs:
     """Reine Zustandsbeschreibung - ohne DB, ohne Dateisystem."""
 
-    def test_all_five_states_are_described_and_carry_the_demo_prefix(self) -> None:
+    def test_all_six_states_are_described_and_carry_the_demo_prefix(self) -> None:
         specs = demo_project_specs()
         assert [spec.name for spec in specs] == [
             EMPTY_PROJECT_NAME,
@@ -225,6 +227,7 @@ class TestDemoProjectSpecs:
             RATED_PROJECT_NAME,
             ERROR_PROJECT_NAME,
             DUPLICATE_PROJECT_NAME,
+            LONG_AUSSCHUSS_PROJECT_NAME,
         ]
         assert all(is_demo_project_name(spec.name) for spec in specs)
 
@@ -533,11 +536,11 @@ class TestAssertSafeToSeed:
             )
 
 
-class TestRebuildDemoStateProducesTheFiveStates:
-    """Die fuenf Zustaende, geprueft ueber ihre pruefrelevante Eigenschaft - nie ueber die
+class TestRebuildDemoStateProducesTheSixStates:
+    """Die sechs Zustaende, geprueft ueber ihre pruefrelevante Eigenschaft - nie ueber die
     Implementierung."""
 
-    async def test_creates_exactly_the_five_demo_projects(
+    async def test_creates_exactly_the_six_demo_projects(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
@@ -550,7 +553,46 @@ class TestRebuildDemoStateProducesTheFiveStates:
             RATED_PROJECT_NAME,
             ERROR_PROJECT_NAME,
             DUPLICATE_PROJECT_NAME,
+            LONG_AUSSCHUSS_PROJECT_NAME,
         ]
+
+    async def test_the_long_ausschuss_fills_more_than_one_page_and_stays_unconfirmed(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Spec 0568: Der Browserfall „Mehr laden" der Aktionsleiste braucht eine unbestaetigte
+        Ausschussliste ueber mehr als eine Seite der Uebersicht. Mit hoechstens einer Seite gaebe
+        es den Knopf nicht, und der Fall bestuende leer.
+
+        Gezaehlt werden EINZELEINTRAEGE (offener Vorschlag ohne Gruppe): Eine Gruppe ist in der
+        Uebersicht EIN Eintrag, gleich wie viele Fotos sie hat."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        project = await _project(db_session, LONG_AUSSCHUSS_PROJECT_NAME)
+        photos = await _photos_of(db_session, LONG_AUSSCHUSS_PROJECT_NAME)
+        scores = [await db_session.get(PhotoScore, photo.id) for photo in photos]
+
+        einzeln_offen = [
+            score
+            for score in scores
+            if score is not None
+            and score.suggested_status == RatingStatus.REJECTED
+            and score.duplicate_of is None
+        ]
+        assert len(einzeln_offen) == len(photos)
+        assert len(einzeln_offen) > AUSSCHUSS_PAGE_SIZE
+        assert (
+            await db_session.execute(
+                select(PhotoDuplicateDecision).where(
+                    PhotoDuplicateDecision.photo_id.in_([photo.id for photo in photos])
+                )
+            )
+        ).first() is None
+
+        run = (
+            await db_session.execute(select(ScoringRun).where(ScoringRun.project_id == project.id))
+        ).scalar_one()
+        assert run.status == ScanStatus.SUCCESS
+        assert run.gate_confirmed_at is None
+        assert run.suggestions_found == len(photos)
 
     async def test_the_duplicate_project_holds_two_reachable_groups(
         self, db_session: AsyncSession, tmp_path: Path
@@ -1143,6 +1185,7 @@ class TestRebuildDemoStateAtProductionSize:
             + len(MOTIF_REGISTRY)
             + ERROR_STATE_PHOTO_COUNT
             + sum(demo_state._DEMO_DUPLICATE_GROUP_SIZES)
+            + demo_state.LONG_AUSSCHUSS_PHOTO_COUNT
         )
 
 
@@ -1251,9 +1294,10 @@ class TestMainSucceeds:
             RATED_PROJECT_NAME,
             ERROR_PROJECT_NAME,
             DUPLICATE_PROJECT_NAME,
+            LONG_AUSSCHUSS_PROJECT_NAME,
         ):
             assert name in captured.out
-        assert _read_counts(url)["projects"] == 5
+        assert _read_counts(url)["projects"] == 6
 
     def test_second_run_leaves_the_same_number_of_projects(
         self,
@@ -1286,7 +1330,7 @@ class TestMainSucceeds:
         _write_rows(url, cache_dir, [f"{DEMO_PROJECT_PREFIX}Rest aus einem alten Lauf"])
 
         assert main(["--cache-dir", str(cache_dir)], database_url=url) == 0
-        assert _read_counts(url)["projects"] == 5
+        assert _read_counts(url)["projects"] == 6
         capsys.readouterr()
 
 
