@@ -15,7 +15,7 @@
  * `position: static` auf der Kopfzeile bzw. auf der Stepper-Leiste sind beide Tests rot.
  */
 
-import type { Locator } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 import { DEMO_PROJECTS, demoProjectId, photoTiles } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
@@ -26,6 +26,9 @@ const TOP_TOLERANCE = 1
 interface Rect {
   y: number
   height: number
+  /** Haftet am unteren Rand (`bottom` gesetzt) statt am oberen. */
+  untenHaftend: boolean
+  testId: string | null
 }
 
 /**
@@ -48,13 +51,18 @@ async function trefferInDerMitte(control: Locator): Promise<string> {
   })
 }
 
-async function stickyElements(page: import('@playwright/test').Page): Promise<Rect[]> {
+async function stickyElements(page: Page): Promise<Rect[]> {
   return page.evaluate(() =>
     Array.from(document.querySelectorAll('*'))
       .filter((element) => getComputedStyle(element).position === 'sticky')
       .map((element) => {
         const rect = element.getBoundingClientRect()
-        return { y: rect.y, height: rect.height }
+        return {
+          y: rect.y,
+          height: rect.height,
+          untenHaftend: getComputedStyle(element).bottom !== 'auto',
+          testId: element.getAttribute('data-testid'),
+        }
       }),
   )
 }
@@ -103,10 +111,12 @@ test('Kopfzeile bleibt beim Scrollen am oberen Rand stehen', async ({ page }) =>
 })
 
 /**
- * Auf den Pipeline-Routen gibt es ZWEI unabhaengige haftende Bereiche: die Kopfzeile der App-Huelle
- * und die Stepper-Leiste. Bis specs/features/0387-schrittleiste-fortschritt.md standen beide auf
- * `top-0`, die im DOM spaetere Leiste gewann, und die Kopfzeile war im gescrollten Zustand
- * vollstaendig verdeckt - samt "Abmelden" und dem Weg zurueck ins Projekt.
+ * Auf den Pipeline-Routen gibt es ZWEI unabhaengige, OBEN haftende Bereiche: die Kopfzeile der
+ * App-Huelle und die Stepper-Leiste - und genau EINEN unten haftenden, die Aktionsleiste der
+ * Schrittseite (`StepActionBar`, gemessen in `step-action-bar.spec.ts`). Bis
+ * specs/features/0387-schrittleiste-fortschritt.md standen beide oberen auf `top-0`, die im DOM
+ * spaetere Leiste gewann, und die Kopfzeile war im gescrollten Zustand vollstaendig verdeckt -
+ * samt "Abmelden" und dem Weg zurueck ins Projekt.
  *
  * Seitdem sind sie GEOMETRISCH getrennt: die Kopfzeile ist `h-header` hoch, die Leiste haftet auf
  * `top-header`, beide Werte kommen aus dem einen Token `--spacing-header`. Die Zusage hier bindet
@@ -154,9 +164,16 @@ test('Stepper-Leiste und Kopfzeile stehen im gescrollten Zustand fugenlos untere
   )
 
   const sticky = await stickyElements(page)
-  // Exakte Kardinalitaet - und zugleich die Gegenprobe zur Aussage "was schmal fixiert bleibt":
-  // haftete die Orientierungszeile versehentlich mit, waeren es drei.
-  expect(sticky.length, 'sticky Elemente auf der Pipeline-Route').toBe(2)
+  // Exakte Kardinalitaet je Rand - und zugleich die Gegenprobe zur Aussage "was schmal fixiert
+  // bleibt": haftete die Orientierungszeile versehentlich mit, waeren es oben drei.
+  expect(
+    sticky.filter((rect) => !rect.untenHaftend).length,
+    'oben haftende Elemente auf der Pipeline-Route',
+  ).toBe(2)
+  expect(
+    sticky.filter((rect) => rect.untenHaftend).map((rect) => rect.testId),
+    'unten haftende Elemente auf der Pipeline-Route',
+  ).toEqual(['step-action-bar'])
 
   for (const rect of sticky) {
     expect(rect.height, 'Hoehe eines sticky Elements').toBeGreaterThan(0)

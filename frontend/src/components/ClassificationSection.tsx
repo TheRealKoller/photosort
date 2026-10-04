@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { ProjectOut } from '../api/types'
@@ -10,13 +10,15 @@ import {
 } from '../hooks/useProjects'
 import { useTriggerConfirmation } from '../hooks/useTriggerConfirmation'
 import { formatProviderLabel } from '../utils/formatStats'
+import { deriveStepAction } from '../utils/stepActions'
 import { ClassificationBalance } from './ClassificationBalance'
 import { ClassificationEstimate } from './ClassificationEstimate'
 import { ClassificationProgress } from './ClassificationProgress'
+import { RerunBlock } from './RerunBlock'
 import { SelectionTargetField } from './SelectionTargetField'
 import { StatusDot } from './StatusDot'
+import { StepActionBar } from './StepActionBar'
 import { Alert } from './ui/alert'
-import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 
 interface ClassificationSectionProps {
@@ -41,7 +43,7 @@ const MAX_FINE_LABELS_SHOWN = 15
  * koennten und es nicht sind:
  *
  * 1. KEIN Bestaetigungsdialog mehr vor der kostenpflichtigen Aktion. Das Design-System-Muster ist
- *    mit dieser Spec ausdruecklich zurueckgenommen und durch die dauerhaft an der Checkbox
+ *    mit dieser Spec ausdruecklich zurueckgenommen und durch die dauerhaft am Auslöser
  *    sichtbare Kostenschaetzung ersetzt - ein Dialog zeigte die Kosten erst NACH einem Klick und
  *    verschwand wieder. Bewusst in Kauf genommenes Restrisiko: bei vorausgewaehlter Checkbox
  *    loest ein einzelner Klick Cloud-Kosten aus.
@@ -59,15 +61,26 @@ const MAX_FINE_LABELS_SHOWN = 15
  * hier, die drei Detailbloecke (ClassificationEstimate, ClassificationProgress,
  * ClassificationBalance) sind eigene Komponenten.
  *
- * Unterhalb des Ausloesers steht zu jedem Zeitpunkt GENAU EINER der beiden Zustandsbloecke -
- * Fortschrittsliste ODER Bilanz, nie beide. Das ist die pruefbare Form des Akzeptanzkriteriums
- * "ueberfrachtet die Seite nicht": die Sektion waechst dadurch nicht ueber ihre bisherige Hoehe
- * hinaus.
+ * Im Inhalt steht zu jedem Zeitpunkt GENAU EINER der beiden Zustandsbloecke - Fortschrittsliste
+ * ODER Bilanz, nie beide. Das ist die pruefbare Form des Akzeptanzkriteriums "ueberfrachtet die
+ * Seite nicht". Auslöser und Laufstatus stehen in der Aktionsleiste am Ende, „Erneut
+ * klassifizieren" im Kopf; `isTriggerDisabled` sperrt alle drei Auslöser gleich.
  */
 export function ClassificationSection({ project, refetchProject }: ClassificationSectionProps) {
   const estimateQuery = useClassificationEstimateQuery(project.id)
   const fineLabelsQuery = useFineLabelsQuery(project.id)
   const triggerMutation = useTriggerClassificationMutation(project.id)
+  const location = useLocation()
+  const headingRef = useRef<HTMLHeadingElement>(null)
+
+  // Nur nach dem automatischen Wechsel aus dem Ausschuss: Der Fokus läge sonst auf dem entfernten
+  // Abschluss-Knopf und fiele auf `body`. Bei einem normalen Aufruf bleibt er, wo er ist.
+  const focusHeading = (location.state as { focusHeading?: boolean } | null)?.focusHeading === true
+  useEffect(() => {
+    if (focusHeading) {
+      headingRef.current?.focus()
+    }
+  }, [focusHeading])
 
   const consentEnabled = project.cloud_vision_detection_enabled
   // Vorbelegung = projektweite Einwilligung (Akzeptanzkriterium). Ohne Einwilligung abgewaehlt UND
@@ -85,7 +98,12 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
     refetchProject,
   )
 
-  const isBusy = triggerMutation.isPending || awaitingConfirmation || runStatus === 'running'
+  const isTriggerPending = triggerMutation.isPending || awaitingConfirmation
+  const isBusy = isTriggerPending || runStatus === 'running'
+  const { action, rerun } = deriveStepAction('kriterien', project, {
+    openCount: null,
+    isTriggerPending,
+  })
   const estimate = estimateQuery.data ?? null
   // Auslöse-Button bleibt deaktiviert, solange die Schaetzung bei ANGEWAEHLTER Cloud-Nutzung nicht
   // ladbar ist (Design-System: "kein Bypass" - keine kostenpflichtige Aktion ohne sichtbare
@@ -118,13 +136,55 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   // nur am Ende gekuerzt - die seltensten Eintraege fallen weg, nicht die haeufigsten.
   const shownFineLabels = (fineLabelsQuery.data ?? []).slice(0, MAX_FINE_LABELS_SHOWN)
 
+  /* Die Schaetzung ersetzt den frueheren Bestaetigungsdialog (Kosten sichtbar vor dem Start) und
+     steht am jeweiligen Auslöser: beim ersten Lauf und bei einer Wiederholung direkt über der
+     Leiste, beim erneuten Lauf im Erneut-Block. Sie erscheint nur bei angewaehlter Cloud-Nutzung -
+     bei abgewaehlter entstehen keine Kosten, ein Betrag waere dort irrefuehrend. */
+  const estimateBlock = cloudChecked && (
+    <>
+      {estimateQuery.isSuccess && estimate && <ClassificationEstimate estimate={estimate} />}
+      {estimateQuery.isError && (
+        <Alert onRetry={() => void estimateQuery.refetch()}>
+          Kostenschätzung konnte nicht geladen werden.
+        </Alert>
+      )}
+    </>
+  )
+
+  let statusText: string
+  switch (action.kind) {
+    case 'start':
+      statusText = 'Noch nicht klassifiziert'
+      break
+    case 'running':
+      statusText = 'Klassifizierung läuft…'
+      break
+    case 'retry':
+      statusText = 'Klassifizierung fehlgeschlagen'
+      break
+    default:
+      statusText = 'Klassifizierung abgeschlossen'
+  }
+
   return (
     <section className="flex flex-col items-start gap-3">
-      <h2 className="text-lg">Klassifizierung</h2>
+      <h2 ref={headingRef} tabIndex={-1} className="text-lg">
+        Klassifizierung
+      </h2>
       <p className="text-sm text-text">
         Bewertet jedes verbleibende Foto nach mehreren Kriterien (Schärfe, Belichtung, Bildinhalt),
         leitet daraus eine Kategorie ab und bildet eine Rangfolge je Foto-Moment und Kategorie.
       </p>
+      {rerun !== null && (
+        <RerunBlock
+          rerun={rerun}
+          onRerun={handleTrigger}
+          disabled={isTriggerDisabled}
+          busy={isTriggerPending}
+        >
+          {estimateBlock}
+        </RerunBlock>
+      )}
       {/* Zustandsabhaengige Datenschutz-Aussage: die frueher absolute Formulierung "laeuft
           vollstaendig lokal auf diesem Server" war unwahr, sobald die Cloud-Bilderkennung
           freigegeben war. Sie gilt jetzt genau dann, wenn sie zutrifft.
@@ -160,19 +220,6 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
             .
           </p>
         )}
-
-        {/* Die Schaetzung steht unmittelbar an der Checkbox und ersetzt dort den frueheren
-            Bestaetigungsdialog (Akzeptanzkriterium "Kosten sichtbar vor dem Start"). Sie erscheint
-            nur bei angewaehlter Cloud-Nutzung - bei abgewaehlter entstehen keine Kosten, ein
-            Betrag waere dort irrefuehrend. */}
-        {cloudChecked && estimateQuery.isSuccess && estimate && (
-          <ClassificationEstimate estimate={estimate} />
-        )}
-        {cloudChecked && estimateQuery.isError && (
-          <Alert onRetry={() => void estimateQuery.refetch()}>
-            Kostenschätzung konnte nicht geladen werden.
-          </Alert>
-        )}
       </div>
 
       {/* Der Richtwert ist schon VOR dem ersten Lauf einstellbar - dieselbe Komponente wie in der
@@ -183,20 +230,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       </p>
       <SelectionTargetField project={project} />
 
-      <Button type="button" onClick={handleTrigger} disabled={isTriggerDisabled} busy={isBusy}>
-        {isBusy ? 'Wird klassifiziert…' : 'Klassifizierung starten'}
-      </Button>
-
-      {triggerErrorDetail && <Alert onRetry={handleTrigger}>{triggerErrorDetail}</Alert>}
-
-      {run !== null && (
-        <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
-          <StatusDot status={runStatus} />
-          {runStatus === 'running' && 'Klassifizierung läuft…'}
-          {runStatus === 'success' && 'Klassifizierung abgeschlossen'}
-          {runStatus === 'failed' && 'Klassifizierung fehlgeschlagen'}
-        </p>
-      )}
+      {triggerErrorDetail && <Alert>{triggerErrorDetail}</Alert>}
 
       {/* GENAU EINER der beiden Zustandsblöcke, nie beide: läuft der Durchlauf, steht hier die
           Teilschrittliste, danach die Bilanz dieses einen Laufs. Beide gleichzeitig zu zeigen
@@ -209,7 +243,8 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
           <ClassificationBalance run={run} />
         ))}
 
-      {runStatus === 'failed' && <Alert onRetry={handleTrigger}>{run?.error_message}</Alert>}
+      {/* Ohne Wiederholung: Die einzige Wiederholung ist die Hauptaktion der Leiste. */}
+      {runStatus === 'failed' && <Alert>{run?.error_message}</Alert>}
 
       {/* Cloud-Anteil gescheitert: der Fehler wird sichtbar gemeldet UND das Ergebnis als nicht
           (vollstaendig) angereichert gekennzeichnet - beide Akzeptanzkriterien des Abschnitts
@@ -262,6 +297,20 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
             </ul>
           ))}
       </div>
+
+      {rerun === null && estimateBlock}
+
+      <StepActionBar
+        action={action}
+        status={
+          <>
+            <StatusDot status={action.kind === 'running' ? 'running' : runStatus} />
+            {statusText}
+          </>
+        }
+        onAction={handleTrigger}
+        disabled={isTriggerDisabled}
+      />
     </section>
   )
 }

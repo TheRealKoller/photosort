@@ -773,9 +773,10 @@ docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \
   backend python -m photosort.demo_state
 ```
 
-Der Seeder legt fünf Projekte mit dem Präfix `Demo — ` an (leer / große Sammlung / bewertet /
-Fehlerzustand / Duplikate) und ist zielzustands-idempotent: er löscht seine eigenen Projekte und legt sie neu
-an. Dazu kommen zwei frei erfundene Personen mit synthetischen Referenzen (Spec 0292), eine davon
+Der Seeder legt sechs Projekte mit dem Präfix `Demo — ` an (leer / große Sammlung / bewertet /
+Fehlerzustand / Duplikate / langer Ausschuss) und ist zielzustands-idempotent: er löscht seine
+eigenen Projekte und legt sie neu an. Dazu kommen zwei frei erfundene Personen mit synthetischen
+Referenzen (Spec 0292), eine davon
 mit einem Namen von 40 Zeichen; im bewerteten Projekt sind Fotos erkannt, von Hand zugeordnet und
 von Hand entfernt. Personen entstehen nur, wenn ein Konto existiert, und beim Neuaufbau entfernt
 er ausschließlich die Personen mit den Demo-Namen. Er **bricht ab**, wenn die Freigabe-Variable

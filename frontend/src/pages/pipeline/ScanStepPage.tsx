@@ -1,18 +1,19 @@
 import { useOutletContext } from 'react-router'
 
 import { ApiError } from '../../api/client'
-import { Alert } from '../../components/ui/alert'
-import { Button } from '../../components/ui/button'
-import { Progress } from '../../components/ui/progress'
+import { RerunBlock } from '../../components/RerunBlock'
 import { StatusDot } from '../../components/StatusDot'
+import { StepActionBar } from '../../components/StepActionBar'
+import { Alert } from '../../components/ui/alert'
+import { Progress } from '../../components/ui/progress'
 import { useTriggerScanMutation } from '../../hooks/useProjects'
 import { useTriggerConfirmation } from '../../hooks/useTriggerConfirmation'
+import { deriveStepAction } from '../../utils/stepActions'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 
 /**
- * 1:1-Migration der frueheren Scan-Section aus ProjectDetailPage.tsx - fachliche
- * Logik/Zustaende/Texte unveraendert, ergaenzt um dieselbe kurze Erklaerzeile, die auch die
- * uebrigen Schritte tragen.
+ * Der Scan-Schritt: Erklärzeile und „Erneut einlesen" im Kopf, die Bilanz im Inhalt, Statuszeile,
+ * Fortschritt und Hauptaktion in der haftenden Leiste am Ende.
  */
 export function ScanStepPage() {
   const { project, refetchProject } = useOutletContext<PipelineOutletContext>()
@@ -26,7 +27,12 @@ export function ScanStepPage() {
     refetchProject,
   )
 
-  const isBusy = scanMutation.isPending || awaitingConfirmation || scanStatus === 'running'
+  const isTriggerPending = scanMutation.isPending || awaitingConfirmation
+  const isBusy = isTriggerPending || scanStatus === 'running'
+  const { action, rerun } = deriveStepAction('scan', project, {
+    openCount: null,
+    isTriggerPending,
+  })
 
   function handleTriggerScan(): void {
     if (isBusy) {
@@ -47,13 +53,30 @@ export function ScanStepPage() {
 
   const scanTotalFiles = project.last_scan?.total_files ?? null
   const scanFilesFound = project.last_scan?.files_found ?? 0
-  const isScanEnumerating = project.last_scan?.status === 'running' && scanTotalFiles === null
-  const isScanProcessing = project.last_scan?.status === 'running' && scanTotalFiles !== null
+  const isScanEnumerating = scanStatus === 'running' && scanTotalFiles === null
+  const isScanProcessing = scanStatus === 'running' && scanTotalFiles !== null
   const scanPercent =
     scanTotalFiles !== null && scanTotalFiles > 0
       ? Math.floor((scanFilesFound / scanTotalFiles) * 100)
       : 0
   const scanAnnouncedDecile = Math.floor(scanPercent / 10) * 10
+
+  let statusText: string
+  switch (action.kind) {
+    case 'start':
+      statusText = 'Noch nicht gescannt'
+      break
+    case 'running':
+      statusText = isScanProcessing
+        ? `Scan läuft… ${scanAnnouncedDecile}% verarbeitet`
+        : 'Scan läuft…'
+      break
+    case 'retry':
+      statusText = 'Scan fehlgeschlagen'
+      break
+    default:
+      statusText = 'Erfolgreich'
+  }
 
   return (
     <section className="flex flex-col items-start gap-3">
@@ -61,45 +84,16 @@ export function ScanStepPage() {
       <p className="text-sm text-text">
         Durchsucht den verknüpften OpenCloud-Ordner nach neuen, geänderten oder entfernten Fotos.
       </p>
-
-      <Button type="button" onClick={handleTriggerScan} disabled={isBusy} busy={isBusy}>
-        {isBusy ? 'Scan läuft…' : 'Aktualisieren'}
-      </Button>
+      {rerun !== null && (
+        <RerunBlock
+          rerun={rerun}
+          onRerun={handleTriggerScan}
+          disabled={isBusy}
+          busy={isTriggerPending}
+        />
+      )}
 
       {triggerErrorDetail && <Alert>{triggerErrorDetail}</Alert>}
-
-      <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
-        <StatusDot status={project.last_scan?.status} />
-        {project.last_scan === null && 'Noch nicht gescannt'}
-        {project.last_scan?.status === 'running' && 'Scan läuft…'}
-        {project.last_scan?.status === 'success' && 'Erfolgreich'}
-        {project.last_scan?.status === 'failed' && 'Fehlgeschlagen'}
-      </p>
-
-      {isScanEnumerating && (
-        <div className="flex w-full max-w-sm flex-col gap-2">
-          <p className="text-sm text-text">Dateien werden gezählt…</p>
-          <Progress />
-        </div>
-      )}
-
-      {isScanProcessing && (
-        <div className="flex w-full max-w-sm flex-col gap-2">
-          <p className="text-sm text-text">
-            {scanFilesFound} von {scanTotalFiles} Dateien verarbeitet
-          </p>
-          {scanTotalFiles !== null && scanTotalFiles > 0 ? (
-            <Progress value={scanFilesFound} max={scanTotalFiles}>
-              {scanFilesFound}/{scanTotalFiles}
-            </Progress>
-          ) : (
-            <Progress />
-          )}
-          <p aria-live="polite" className="text-sm text-text">
-            {scanAnnouncedDecile}% verarbeitet
-          </p>
-        </div>
-      )}
 
       {project.last_scan?.status === 'success' && (
         <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-text sm:grid-cols-3">
@@ -145,7 +139,35 @@ export function ScanStepPage() {
         </dl>
       )}
 
+      {/* Ohne Wiederholung: Die einzige Wiederholung ist die Hauptaktion der Leiste. */}
       {project.last_scan?.status === 'failed' && <Alert>{project.last_scan.error_message}</Alert>}
+
+      <StepActionBar
+        action={action}
+        status={
+          <>
+            <StatusDot status={action.kind === 'running' ? 'running' : scanStatus} />
+            {statusText}
+          </>
+        }
+        detail={
+          (isScanEnumerating || isScanProcessing) && (
+            <div className="flex w-full max-w-sm flex-col gap-2">
+              <p className="text-sm text-text">
+                {isScanEnumerating
+                  ? 'Dateien werden gezählt…'
+                  : `${scanFilesFound} von ${scanTotalFiles} Dateien verarbeitet`}
+              </p>
+              {scanTotalFiles !== null && scanTotalFiles > 0 ? (
+                <Progress aria-hidden="true" value={scanFilesFound} max={scanTotalFiles} />
+              ) : (
+                <Progress aria-hidden="true" />
+              )}
+            </div>
+          )
+        }
+        onAction={handleTriggerScan}
+      />
     </section>
   )
 }

@@ -133,6 +133,7 @@ LARGE_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Große Sammlung"
 RATED_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Bewertet"
 ERROR_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Fehlerzustand"
 DUPLICATE_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Duplikate"
+LONG_AUSSCHUSS_PROJECT_NAME = f"{DEMO_PROJECT_PREFIX}Langer Ausschuss"
 
 # Umgebungsvariable + exakter Satz-Literal (M1a). Bewusst KEIN "gesetzt"/truthy-Test: `1`/`true`
 # setzt man versehentlich, einen Satz wie diesen nicht.
@@ -162,6 +163,13 @@ _DEMO_DUPLICATE_GROUP_SIZES = (7, 3)
 # Der Bestand ist ABSICHTLICH unentschieden: Die Sichtpruefung soll den Anfangszustand beider
 # Gruppen sehen, und der Gruppenzaehler soll "1 von 2" nennen. Eine mitgelieferte Entscheidung
 # naehme genau das weg.
+
+# Seitengroesse der Ausschuss-Uebersicht, gespiegelt aus
+# `frontend/src/hooks/useAusschuss.ts::AUSSCHUSS_PAGE_SIZE`. Das Projekt "Langer Ausschuss" muss
+# mehr Eintraege tragen, sonst gibt es dort kein "Mehr laden", und der Browserfall der
+# Aktionsleiste (`e2e/tests/step-action-bar.spec.ts`) bestuende leer.
+AUSSCHUSS_PAGE_SIZE = 60
+LONG_AUSSCHUSS_PHOTO_COUNT = AUSSCHUSS_PAGE_SIZE + 4
 
 # Hostnamen, die als "eindeutig lokal/Demo" gelten (M1c). Muster inklusive Port-Pflicht aus
 # scripts/seed-opencloud-demo.py::validate_demo_base_url - dort als Copilot-Review-Fund ergaenzt,
@@ -570,7 +578,7 @@ class DemoProjectSpec:
 def demo_project_specs(
     *, large_collection_photo_count: int = LARGE_COLLECTION_PHOTO_COUNT
 ) -> tuple[DemoProjectSpec, ...]:
-    """Die fuenf Zustaende in fester Reihenfolge.
+    """Die sechs Zustaende in fester Reihenfolge.
 
     Die Fotoanzahl der grossen Sammlung ist ein Parameter mit der Produktionskonstante als Default
     (Edge Case E6): die Masse der Tests laeuft klein, genau ein Test faehrt die echte Groesse.
@@ -600,6 +608,14 @@ def demo_project_specs(
             name=DUPLICATE_PROJECT_NAME,
             slug="duplikate",
             photo_count=sum(_DEMO_DUPLICATE_GROUP_SIZES),
+        ),
+        # EIGENES Projekt statt eines Ausschuss-Laufs in der grossen Sammlung: Deren Fotoliste und
+        # Pipeline-Startpunkt tragen die Raster- und Navigationspruefungen, ein Vorschlag an jedem
+        # Foto aenderte beides.
+        DemoProjectSpec(
+            name=LONG_AUSSCHUSS_PROJECT_NAME,
+            slug="langer-ausschuss",
+            photo_count=LONG_AUSSCHUSS_PHOTO_COUNT,
         ),
     )
 
@@ -1831,6 +1847,53 @@ async def _seed_duplicate_project(
     return photos
 
 
+async def _seed_long_ausschuss_project(
+    session: AsyncSession, spec: DemoProjectSpec, cache_dir: Path
+) -> list[Photo]:
+    """Zustand 6: ein unbestaetigter Ausschuss ueber mehr als eine Seite der Uebersicht.
+
+    Jedes Foto ist ein EINZELNER offener Vorschlag wegen Unschaerfe - kein `duplicate_of`, keine
+    Entscheidungszeile -, also ein eigener Eintrag der Uebersicht. Gruppen zaehlten dort nur als
+    ein Eintrag und braechten die Liste nicht ueber die Seitengroesse."""
+    project = await _create_project(session, spec)
+    photos = await _create_photos(session, project, spec, cache_dir)
+    session.add(
+        _scan_run(
+            project,
+            status=ScanStatus.SUCCESS,
+            photo_count=len(photos),
+            started_at=_BASE_SCAN_AT,
+        )
+    )
+    for index, photo in enumerate(photos):
+        session.add(
+            PhotoScore(
+                photo_id=photo.id,
+                sharpness=SHARPNESS_REJECT_THRESHOLD / 2,
+                exposure=_deterministic_unit_value(spec.slug, index, "exposure"),
+                cluster_key=None,
+                duplicate_of=None,
+                suggested_status=RatingStatus.REJECTED,
+                computed_at=_BASE_SCORING_AT,
+            )
+        )
+    session.add(
+        ScoringRun(
+            project_id=project.id,
+            status=ScanStatus.SUCCESS,
+            started_at=_BASE_SCORING_AT,
+            finished_at=_BASE_SCORING_AT + timedelta(minutes=2),
+            last_progress_at=_BASE_SCORING_AT + timedelta(minutes=2),
+            photos_total=len(photos),
+            photos_processed=len(photos),
+            suggestions_found=len(photos),
+            gate_confirmed_at=None,
+        )
+    )
+    await session.flush()
+    return photos
+
+
 async def rebuild_demo_state(
     session: AsyncSession,
     cache_dir: Path,
@@ -1838,13 +1901,13 @@ async def rebuild_demo_state(
     large_collection_photo_count: int = LARGE_COLLECTION_PHOTO_COUNT,
 ) -> DemoStateSummary:
     """Zielzustands-idempotent: entfernt zuerst ALLE eigenen Demo-Projekte (auch Reste eines
-    frueheren Laufs mit anderen Namen) und legt die fuenf Zustaende danach neu an. Das Ergebnis
+    frueheren Laufs mit anderen Namen) und legt die sechs Zustaende danach neu an. Das Ergebnis
     haengt nicht vom Vorzustand ab.
 
     Enthaelt selbst KEINE Sperre - der Aufrufer (main()) wertet `assert_safe_to_seed` vor dem
     ersten Schreibzugriff vollstaendig aus."""
     await purge_demo_state(session, cache_dir)
-    empty_spec, large_spec, rated_spec, error_spec, duplicate_spec = demo_project_specs(
+    empty_spec, large_spec, rated_spec, error_spec, duplicate_spec, long_spec = demo_project_specs(
         large_collection_photo_count=large_collection_photo_count
     )
     photos = list(await _seed_empty_project(session, empty_spec, cache_dir))
@@ -1853,6 +1916,7 @@ async def rebuild_demo_state(
     photos += rated_photos
     photos += await _seed_error_project(session, error_spec, cache_dir)
     photos += await _seed_duplicate_project(session, duplicate_spec, cache_dir)
+    photos += await _seed_long_ausschuss_project(session, long_spec, cache_dir)
     await session.flush()
 
     cache_file_count = (
@@ -1865,6 +1929,7 @@ async def rebuild_demo_state(
             rated_spec.name,
             error_spec.name,
             duplicate_spec.name,
+            long_spec.name,
         ),
         photo_count=len(photos),
         cache_file_count=cache_file_count,

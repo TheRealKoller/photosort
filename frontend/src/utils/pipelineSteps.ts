@@ -1,5 +1,6 @@
 import type { ProjectOut, ScanStatus } from '../api/types'
 import { deriveScanStatus } from './scanStatus'
+import { AUSSCHUSS_CONFIRM_LABEL, RUN_STEP_TEXTS } from './stepActionTexts'
 
 export type StepId = 'scan' | 'ausschuss' | 'kriterien' | 'kuratierung'
 
@@ -104,9 +105,9 @@ export function getBlockedReason(id: StepId, project: ProjectOut): string {
     case 'kriterien':
       return project.category_selection_enabled === false
         ? 'Diese Funktion ist derzeit nicht aktiviert.'
-        : 'Bestätige zuerst den Ausschuss oben.'
+        : `Schließe zuerst den Ausschuss ab („${AUSSCHUSS_CONFIRM_LABEL}“).`
     case 'kuratierung':
-      return 'Führe zuerst die Klassifizierung oben aus.'
+      return `Führe zuerst die Klassifizierung aus („${RUN_STEP_TEXTS.kriterien.start}“).`
     default:
       return ''
   }

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -110,6 +110,20 @@ describe('KuratierungStepPage', () => {
       'href',
       '/projects/1/album',
     )
+  })
+
+  it('hat genau eine Hauptaktion: den Link in die Aktionsleiste, keine Start-, Erneut- oder Abschluss-Buttons', () => {
+    renderPage(project())
+
+    const leiste = screen.getByRole('group', { name: 'Nächste Aktion' })
+    const link = within(leiste).getByRole('link', { name: 'Album-Entwurf öffnen' })
+    expect(link).toHaveClass('bg-accent')
+    expect(screen.getAllByRole('link', { name: 'Album-Entwurf öffnen' })).toHaveLength(1)
+    for (const button of screen.queryAllByRole('button')) {
+      expect(button).not.toHaveAccessibleName(
+        /^(.* starten|erneut|.*abschließen|fotos einlesen|vorschläge erkennen)/i,
+      )
+    }
   })
 
   it('explains that the target is a goal and not an upper bound', () => {

@@ -7,6 +7,9 @@ import type { ProjectOut } from '../api/types'
 import { PIPELINE_STEPS, stepProgress, type PipelineStepState } from '../utils/pipelineSteps'
 import { Stepper } from './Stepper'
 
+const KRITERIEN_GRUND = 'Schließe zuerst den Ausschuss ab („Ausschuss abschließen“).'
+const KURATIERUNG_GRUND = 'Führe zuerst die Klassifizierung aus („Klassifizierung starten“).'
+
 // window.matchMedia existiert in jsdom nicht (siehe CriterionDetailsPopover.test.tsx) - gleicher
 // Stub, da der Blockiert-Grund-Popover-Trigger dieselbe Radix-Popover-Primitive wiederverwendet
 // (specs/architecture/0002-testkonzept.md, Abschnitt "Mehrschritt-Routing", Punkt 6).
@@ -204,7 +207,7 @@ describe('Stepper', () => {
 
     const beschreibung = document.getElementById(id!)
     expect(beschreibung, 'aria-describedby zeigt ins Leere').not.toBeNull()
-    expect(beschreibung).toHaveTextContent('Bestätige zuerst den Ausschuss oben.')
+    expect(beschreibung).toHaveTextContent(KRITERIEN_GRUND)
   })
 
   it('gibt den Grund am gesperrten Schritt selbst preis, beim Antippen', async () => {
@@ -214,7 +217,7 @@ describe('Stepper', () => {
     await user.click(gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt'))
 
     const panel = await screen.findByRole('dialog')
-    expect(within(panel).getByText('Bestätige zuerst den Ausschuss oben.')).toBeInTheDocument()
+    expect(within(panel).getByText(KRITERIEN_GRUND)).toBeInTheDocument()
   })
 
   it('shows the feature-flag-off reason for a blocked kriterien step', async () => {
@@ -248,7 +251,7 @@ describe('Stepper', () => {
     await user.click(gesperrterSchritt('Schritt 3 von 4: Klassifizierung, gesperrt'))
 
     const panel = await screen.findByRole('dialog')
-    expect(within(panel).getByText('Bestätige zuerst den Ausschuss oben.')).toBeInTheDocument()
+    expect(within(panel).getByText(KRITERIEN_GRUND)).toBeInTheDocument()
   })
 
   it('shows the criterion-scoring reason for a blocked kuratierung step', async () => {
@@ -258,9 +261,7 @@ describe('Stepper', () => {
     await user.click(gesperrterSchritt('Schritt 4 von 4: Kuratierung, gesperrt'))
 
     const panel = await screen.findByRole('dialog')
-    expect(
-      within(panel).getByText('Führe zuerst die Klassifizierung oben aus.'),
-    ).toBeInTheDocument()
+    expect(within(panel).getByText(KURATIERUNG_GRUND)).toBeInTheDocument()
   })
 
   /*
@@ -440,7 +441,7 @@ describe('Stepper', () => {
 
       await user.keyboard(taste)
       const panel = await screen.findByRole('dialog')
-      expect(within(panel).getByText('Bestätige zuerst den Ausschuss oben.')).toBeInTheDocument()
+      expect(within(panel).getByText(KRITERIEN_GRUND)).toBeInTheDocument()
       expect(panel.contains(document.activeElement), 'Fokus liegt nicht im Panel').toBe(true)
 
       await user.keyboard('{Escape}')
@@ -576,7 +577,7 @@ describe('Stepper', () => {
     expect(panels).toHaveLength(1)
     // Der Grund des FUENFTEN Schritts steht zwar als sr-only-Text im Baum (aria-describedby),
     // aber nicht in einem geoeffneten Panel - genau das ist hier die Aussage.
-    expect(within(panels[0]).queryByText('Führe zuerst die Klassifizierung oben aus.')).toBeNull()
+    expect(within(panels[0]).queryByText(KURATIERUNG_GRUND)).toBeNull()
   })
 
   /* Edge Case 6: leerer Sperrgrund (defensiver Fallback von `getBlockedReason` fuer

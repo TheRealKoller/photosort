@@ -2025,6 +2025,14 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
         'heisser Pfad: die Zuordnen-Schaltflaechen in "Ohne Namen" (Spec 0551) - ein Fehlgriff ' +
         'benennt nicht nur ein Foto, er lehrt PhotoSort ein falsches Gesicht',
     },
+    {
+      file: 'src/components/StepActionBar.tsx',
+      snippet: "const ACTION_CLASSES = 'h-11 w-full shrink-0 sm:h-8 sm:w-auto'",
+      reason:
+        'Hauptaktion der haftenden Aktionsleiste unter sm: die eine naechste Aktion der ' +
+        'Schrittseite in voller Breite am unteren Rand, einhaendig mit dem Daumen bedient - ' +
+        'dieselbe Begruendung wie bei der Absende-Schaltflaeche der Anmeldung',
+    },
   ]
 
   it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {

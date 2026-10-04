@@ -229,10 +229,10 @@ describe('ClassificationProgress: eigene Fortschrittsquellen je Teilschritt', ()
     expect(stepRow('criteria').textContent).not.toMatch(/0\/8/)
   })
 
-  it('kündigt den Fortschritt höflich an', () => {
+  it('ist keine eigene Live-Region - der Laufstatus wird nur in der Aktionsleiste angesagt', () => {
     render(<ClassificationProgress run={run()} />)
 
-    expect(screen.getByRole('list')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByRole('list')).not.toHaveAttribute('aria-live')
   })
 })
 

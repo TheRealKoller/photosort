@@ -42,7 +42,6 @@ export function ClassificationProgress({ run }: ClassificationProgressProps) {
 
   return (
     <ul
-      aria-live="polite"
       aria-label="Teilschritte der Klassifizierung"
       className="flex w-full max-w-sm flex-col gap-3"
     >

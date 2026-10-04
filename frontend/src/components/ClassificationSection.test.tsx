@@ -1,14 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
 import type { CriterionScoringRunSummary, ProjectOut, ScoringRunSummary } from '../api/types'
 import { ClassificationSection } from './ClassificationSection'
+import { RUN_STEP_TEXTS } from '../utils/stepActionTexts'
 
 // specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md - traegt die vollstaendige
 // Verhaltensmatrix des einen Ausloesers. Loest die frueheren, getrennten Testfaelle in
@@ -78,7 +79,11 @@ function classificationRun(
   }
 }
 
-function renderSection(initialProject: ProjectOut, refetchProject = vi.fn()) {
+function renderSection(
+  initialProject: ProjectOut,
+  refetchProject = vi.fn(),
+  locationState: unknown = null,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -86,14 +91,27 @@ function renderSection(initialProject: ProjectOut, refetchProject = vi.fn()) {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
   return render(
-    <MemoryRouter>
-      <ClassificationSection project={initialProject} refetchProject={refetchProject} />
+    <MemoryRouter initialEntries={[{ pathname: '/', state: locationState }]}>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <ClassificationSection project={initialProject} refetchProject={refetchProject} />
+          }
+        />
+      </Routes>
     </MemoryRouter>,
     { wrapper },
   )
 }
 
+function leiste(): HTMLElement {
+  return screen.getByRole('group', { name: 'Nächste Aktion' })
+}
+
 const TRIGGER = { name: 'Klassifizierung starten' }
+const RERUN = RUN_STEP_TEXTS.kriterien.rerun
+const ERFOLG = { status: 'success' as const, phase: null, finished_at: '2026-07-20T10:07:00Z' }
 const CHECKBOX = { name: /cloud-bilderkennung für diesen durchlauf nutzen/i }
 
 beforeEach(() => {
@@ -268,13 +286,41 @@ describe('Cloud-Nutzung pro Durchlauf', () => {
 })
 
 describe('Kosten sichtbar vor dem Start', () => {
-  it('shows the estimate block right at the checkbox', async () => {
-    // Der INHALT der Kostenvorschau (Anteile, Unbekannt-Fälle, Format) wird in
-    // ClassificationEstimate.test.tsx geprüft - hier nur, dass der Block überhaupt an seiner
-    // Stelle vor dem Auslöser erscheint.
+  it('stellt die Schätzung beim Start als letztes Inhaltselement direkt über die Leiste', async () => {
+    // Der INHALT der Kostenvorschau wird in ClassificationEstimate.test.tsx geprüft.
     renderSection(project({ cloud_vision_detection_enabled: true }))
 
-    expect(await screen.findByTestId('classification-estimate')).toBeInTheDocument()
+    const estimate = await screen.findByTestId('classification-estimate')
+    expect(estimate.nextElementSibling).toBe(leiste())
+  })
+
+  it('stellt die Schätzung beim erneuten Auslösen in den Erneut-Block', async () => {
+    renderSection(
+      project({
+        cloud_vision_detection_enabled: true,
+        last_criterion_scoring_run: classificationRun(ERFOLG),
+      }),
+    )
+
+    const block = screen.getByTestId('rerun-block')
+    expect(await within(block).findByTestId('classification-estimate')).toBeInTheDocument()
+    expect(screen.getAllByTestId('classification-estimate')).toHaveLength(1)
+  })
+
+  it.each([
+    ['Start', null],
+    ['Wiederholung', classificationRun({ status: 'failed', phase: null })],
+    ['Erneut', classificationRun(ERFOLG)],
+  ])('sperrt "%s" ohne ladbare Schätzung bei Cloud-Nutzung', async (_, run) => {
+    vi.mocked(projectsApi.getClassificationEstimate).mockRejectedValue(
+      new ApiError(500, 'Serverfehler'),
+    )
+    renderSection(
+      project({ cloud_vision_detection_enabled: true, last_criterion_scoring_run: run }),
+    )
+
+    const name = run?.status === 'success' ? RERUN.label : TRIGGER.name
+    await waitFor(() => expect(screen.getByRole('button', { name })).toBeDisabled())
   })
 
   it('hides the estimate while the cloud is unchecked', async () => {
@@ -359,7 +405,10 @@ describe('genau einer der beiden Zustandsblöcke', () => {
         project({ last_criterion_scoring_run: classificationRun({ status: 'running', phase }) }),
       )
 
-      expect(screen.getByText('Klassifizierung läuft…')).toBeInTheDocument()
+      expect(leiste().querySelector('[aria-live]')).toHaveTextContent('Klassifizierung läuft…')
+      expect(
+        within(leiste()).getByRole('button', { name: RUN_STEP_TEXTS.kriterien.running }),
+      ).toBeDisabled()
       expect(screen.queryByText(/Remote-Kategorisierung läuft/)).toBeNull()
     },
   )
@@ -390,14 +439,12 @@ describe('genau einer der beiden Zustandsblöcke', () => {
     expect(isBalanceShown()).toBe(false)
   })
 
-  it('kündigt den Abschluss des Durchlaufs an', async () => {
+  it('kündigt den Abschluss an und führt per Link zur Kuratierung weiter', async () => {
     renderSection(
       project({
         cloud_vision_detection_enabled: true,
         last_criterion_scoring_run: classificationRun({
-          status: 'success',
-          finished_at: '2026-07-20T10:07:00Z',
-          phase: null,
+          ...ERFOLG,
           cloud_requested: true,
           photos_total: 10,
           photos_processed: 10,
@@ -405,14 +452,19 @@ describe('genau einer der beiden Zustandsblöcke', () => {
       }),
     )
 
-    expect(screen.getByText('Klassifizierung abgeschlossen')).toBeInTheDocument()
-    // Der Auslöser ist bei angewählter Cloud-Nutzung erst wieder bedienbar, sobald die Schätzung
-    // vorliegt ("kein Bypass") - deshalb hier abwarten statt synchron zu prüfen.
+    expect(within(leiste()).getByText('Klassifizierung abgeschlossen')).toBeInTheDocument()
+    expect(within(leiste()).getByRole('link', { name: 'Weiter zur Kuratierung' })).toHaveAttribute(
+      'href',
+      '/projects/1/pipeline/kuratierung',
+    )
+    expect(screen.queryByRole('button', TRIGGER)).not.toBeInTheDocument()
+    // Bei angewählter Cloud-Nutzung erst bedienbar, sobald die Schätzung vorliegt.
     await screen.findByTestId('classification-estimate')
-    expect(screen.getByRole('button', TRIGGER)).toBeEnabled()
+    expect(screen.getByRole('button', { name: RERUN.label })).toBeEnabled()
+    expect(screen.getByText(RERUN.explanation)).toBeVisible()
   })
 
-  it('shows an inline error banner with a retry button on a failed run', async () => {
+  it('bietet bei einem Fehlschlag genau eine Wiederholung: den Startknopf der Leiste', async () => {
     vi.mocked(projectsApi.triggerClassification).mockResolvedValue({ status: 'queued' })
     const user = userEvent.setup()
     renderSection(
@@ -426,9 +478,38 @@ describe('genau einer der beiden Zustandsblöcke', () => {
     )
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Unerwarteter Fehler')
-    await user.click(screen.getByRole('button', { name: /erneut versuchen/i }))
+    expect(screen.queryByRole('button', { name: /erneut/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', TRIGGER)).toHaveLength(1)
+    await user.click(within(leiste()).getByRole('button', TRIGGER))
 
     expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 42, false)
+  })
+
+  it('setzt den Fokus nach dem automatischen Wechsel auf die Überschrift', () => {
+    renderSection(project(), vi.fn(), { focusHeading: true })
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Klassifizierung' })).toHaveFocus()
+  })
+
+  it('zeigt nach dem Auslösen sofort den laufenden Statuspunkt und ein Ladezeichen am Erneut-Knopf', async () => {
+    vi.mocked(projectsApi.triggerClassification).mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+    renderSection(project({ last_criterion_scoring_run: classificationRun(ERFOLG) }))
+
+    const rerun = screen.getByRole('button', { name: RERUN.label })
+    await user.click(rerun)
+
+    const dot = leiste().querySelector('[aria-live] > span[aria-hidden="true"]')
+    expect(dot).toHaveClass('bg-status-running')
+    expect(dot).not.toHaveClass('bg-status-success')
+    expect(rerun).toBeDisabled()
+    expect(within(rerun).getByTestId('button-spinner')).toBeInTheDocument()
+  })
+
+  it('setzt den Fokus bei einem normalen Aufruf nicht', () => {
+    renderSection(project())
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Klassifizierung' })).not.toHaveFocus()
   })
 })
 

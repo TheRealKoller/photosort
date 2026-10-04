@@ -211,6 +211,20 @@ Verarbeitungs-Cache (Thumbnails).
     „erledigt": „jederzeit möglich", sobald `kuratierung` erreichbar ist, sonst gesperrt mit dem
     Sperrgrund der Kuratierung. Die festen Erklärtexte liegen in `utils/workflowOverview.ts` als
     `Record` über alle Einträge, damit ein neuer Schritt ohne Text ein Typfehler ist.
+  - **Hauptaktion je Schrittseite** *(Spec 0568)*: Welche eine Aktion eine Schrittseite anbietet
+    (`start`, `running`, `retry`, `confirm`, `next`, `nextUnavailable`, `open`) und ob daneben ein
+    nachrangiges „Erneut …" steht, leitet allein `utils/stepActions.ts::deriveStepAction` ab — aus
+    dem Projekt, der Zahl offener Ausschuss-Vorschläge und dem lokalen Auslösezustand; ob es
+    weitergeht, sagt `isReachable` des Folgeschritts aus `computeStepStates`. Alle Beschriftungen
+    (Start, Verlaufsform, Erneut samt Erklärsatz, Abschluss, Weiter) stehen im Blattmodul
+    `utils/stepActionTexts.ts`, das auch `getBlockedReason` und `OVERVIEW_TEXTS` lesen; ein
+    eigenes Modul, weil `pipelineSteps.ts` und `stepActions.ts` beide darauf zugreifen. Gerendert
+    wird die Aktion von `components/StepActionBar.tsx` (haftet als letztes Element im Fluss am
+    unteren Rand), „Erneut …" von `components/RerunBlock.tsx` im Schrittkopf. Nach einer
+    erfolgreichen Ausschuss-Bestätigung lädt `AusschussStepPage` das Projekt neu und wechselt erst
+    danach per Push zur Klassifizierung (sonst leitete der Guard des Layouts mit dem alten Stand
+    zurück); nach Hintergrundläufen gibt es keinen automatischen Wechsel, der Weiter-Link entsteht
+    aus dem gepollten Zustand.
   - **Personen anzeigen, korrigieren, festlegen und filtern** *(Spec 0292, ADR
     [`0126`](../specs/decisions/0126-personen-lokal-erkennen-global-festlegen-korrektur-getrennt.md))*:
     `components/PhotoPersonsSection.tsx` in `PhotoDetailPage` zeigt je festgelegter Person, ob sie

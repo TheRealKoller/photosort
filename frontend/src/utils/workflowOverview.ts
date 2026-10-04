@@ -1,6 +1,7 @@
 import type { OverviewEntryId, OverviewEntryState, StepId } from './pipelineSteps'
 import { PIPELINE_STEPS } from './pipelineSteps'
 import { STATION_LABELS } from './projectRoutes'
+import { AUSSCHUSS_CONFIRM_LABEL, RUN_STEP_TEXTS } from './stepActionTexts'
 
 /*
  * Die festen Erklärtexte der Ablaufübersicht. Sie verwenden keinen Begriff, der nicht schon in der
@@ -28,18 +29,16 @@ export const OVERVIEW_TEXTS: Record<OverviewEntryId, OverviewEntryText> = {
       'PhotoSort durchsucht den verknüpften OpenCloud-Ordner und nimmt die Fotos ins Projekt auf; die Original-Fotos bleiben auf OpenCloud unverändert. Ein neuer Scan übernimmt später neue, geänderte und entfernte Fotos.',
     worker: {
       kind: 'beides',
-      detail: 'du startest ihn mit „Aktualisieren“, den Rest erledigt PhotoSort.',
+      detail: `du startest ihn mit „${RUN_STEP_TEXTS.scan.start}“, den Rest erledigt PhotoSort.`,
     },
     responsibility: 'einer von euch, einmal für das ganze Projekt',
     prerequisite: null,
   },
   ausschuss: {
-    purpose:
-      'PhotoSort schlägt unscharfe, überbelichtete oder doppelte Fotos als Ausschuss vor. Du gehst die Vorschläge durch, korrigierst, wo nötig, und bestätigst mit „Ausschuss gesichtet, weiter“.',
+    purpose: `PhotoSort schlägt unscharfe, überbelichtete oder doppelte Fotos als Ausschuss vor. Du gehst die Vorschläge durch, korrigierst, wo nötig, und bestätigst mit „${AUSSCHUSS_CONFIRM_LABEL}“.`,
     worker: {
       kind: 'beides',
-      detail:
-        'du startest mit „Ausschuss aussortieren“, PhotoSort erkennt, du prüfst und bestätigst.',
+      detail: `du startest mit „${RUN_STEP_TEXTS.ausschuss.start}“, PhotoSort erkennt, du prüfst und bestätigst.`,
     },
     responsibility: 'einer von euch, einmal für das ganze Projekt',
     prerequisite: {
@@ -52,8 +51,7 @@ export const OVERVIEW_TEXTS: Record<OverviewEntryId, OverviewEntryText> = {
       'PhotoSort bewertet jedes Foto, das nach dem Ausschuss übrig ist, nach Qualität und Bildinhalt und bildet daraus eine Rangfolge je Foto-Moment. Darauf bauen Kuratierung, Album-Entwurf und Endauswahl auf.',
     worker: {
       kind: 'beides',
-      detail:
-        'du startest mit „Klassifizierung starten“ und wählst, ob die Cloud-Bilderkennung mitläuft; den Rest erledigt PhotoSort.',
+      detail: `du startest mit „${RUN_STEP_TEXTS.kriterien.start}“ und wählst, ob die Cloud-Bilderkennung mitläuft; den Rest erledigt PhotoSort.`,
     },
     responsibility: 'einer von euch, einmal für das ganze Projekt',
     prerequisite: {

@@ -25,6 +25,7 @@ import {
   type ProjectStand,
   type StepId,
 } from './pipelineSteps'
+import { AUSSCHUSS_CONFIRM_LABEL, RUN_STEP_TEXTS } from './stepActionTexts'
 
 const project = projectFixture
 
@@ -59,9 +60,18 @@ describe('PIPELINE_STEPS', () => {
   })
 
   it('nennt im Sperrgrund der Kuratierung den Schritt "Klassifizierung"', () => {
-    expect(getBlockedReason('kuratierung', project())).toBe(
-      'Führe zuerst die Klassifizierung oben aus.',
-    )
+    expect(getBlockedReason('kuratierung', project())).toContain('Klassifizierung')
+  })
+
+  it('nennt im Sperrgrund die Knopfbeschriftung wörtlich und keine Ortsangabe', () => {
+    const kriterien = getBlockedReason('kriterien', project())
+    const kuratierung = getBlockedReason('kuratierung', project())
+
+    expect(kriterien).toContain(AUSSCHUSS_CONFIRM_LABEL)
+    expect(kuratierung).toContain(RUN_STEP_TEXTS.kriterien.start)
+    for (const reason of [kriterien, kuratierung]) {
+      expect(reason).not.toMatch(/\boben\b/)
+    }
   })
 })
 

@@ -64,12 +64,12 @@ describe('Zitierte Bezeichnungen der Ablaufübersicht', () => {
 
   it('zitiert überhaupt Bezeichnungen', () => {
     expect(quoted.sort()).toEqual([
-      'Aktualisieren',
-      'Ausschuss aussortieren',
-      'Ausschuss gesichtet, weiter',
+      'Ausschuss abschließen',
       'Endauswahl',
+      'Fotos einlesen',
       'Klassifizierung starten',
       'Unterschiede',
+      'Vorschläge erkennen',
     ])
   })
 

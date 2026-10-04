@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from 'react'
-import { Link, useOutletContext, useSearchParams } from 'react-router'
+import { Link, useNavigate, useOutletContext, useSearchParams } from 'react-router'
 
 import { ApiError } from '../../api/client'
 import type { AusschussPhotoEntry, DuplicateDecision } from '../../api/types'
@@ -7,7 +7,9 @@ import { GrundKennzeichen } from '../../components/AusschussGrund'
 import { DUPLICATE_IMMUTABLE_TEXT, DUPLICATE_ZUSTAENDE } from '../../components/DuplicatePhotoTile'
 import { DuplicateStackTile } from '../../components/DuplicateStackTile'
 import { PhotoImage } from '../../components/PhotoImage'
+import { RerunBlock } from '../../components/RerunBlock'
 import { StatusDot } from '../../components/StatusDot'
+import { StepActionBar } from '../../components/StepActionBar'
 import { Alert } from '../../components/ui/alert'
 import { Button } from '../../components/ui/button'
 import { Progress } from '../../components/ui/progress'
@@ -28,6 +30,8 @@ import {
 } from '../../utils/justifiedRows'
 import type { JustifiedTile } from '../../utils/justifiedRows'
 import { duplicateComparePath } from '../../utils/projectRoutes'
+import { deriveStepAction } from '../../utils/stepActions'
+import { AUSSCHUSS_NOTHING_SORTED_TEXT } from '../../utils/stepActionTexts'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
 
 // Design-System-Muster "Skeleton-/Platzhalter-Kacheln ... wo Inhalte schrittweise eintrudeln" -
@@ -39,18 +43,6 @@ const SKELETON_TILE_COUNT = 6
  * noch gar keinen erfolgreichen Lauf mit Vorschlaegen. */
 export const AUSSCHUSS_EMPTY_TEXT = 'Kein Ausschuss gefunden — es gibt derzeit nichts zu sichten.'
 
-/** Der neutrale Erklaertext bei `open_count === 0`: Es gibt nichts zu bestaetigen, der Abschluss
- * ist keine Pflicht, die noch offen waere - er steht bereits. */
-export const AUSSCHUSS_NOTHING_TO_CONFIRM_TEXT =
-  'Keine offenen Vorschläge — es gibt nichts zu bestätigen.'
-
-/** Der Erklaertext, wenn zwar nichts mehr OFFEN, der Abschluss aber noch nicht bestaetigt ist:
- * Hier gibt es sehr wohl etwas zu tun - genau dieser eine Klick gibt den naechsten Schritt frei
- * (AK13). Ohne ihn stuende die Pipeline still, sobald der Nutzer zuletzt alle Vorschlaege einzeln
- * entschieden hat (AK6). */
-export const AUSSCHUSS_ALL_DECIDED_TEXT =
-  'Alle Vorschläge sind entschieden — bestätige den Abschluss, um den nächsten Schritt freizugeben.'
-
 /** Der benannte Zustand der Detailansicht, wenn die Aufnahme nicht (mehr) im Bestand liegt: Die
  * Antwort des `photo_id`-Filters ist leer, weil ein neuer Lauf die Entscheidung aufgeloest hat -
  * kein Fehler, sondern ein definierter Zustand mit Rueckweg. */
@@ -60,9 +52,6 @@ export const AUSSCHUSS_MISSING_ENTRY_TEXT =
 /** Die Entscheidungszeile eines noch offenen Eintrags (AK14/AK4): Die Zeile trennt den GRUND der
  * Markierung von der getroffenen ENTSCHEIDUNG. */
 export const AUSSCHUSS_OPEN_LABEL = 'Vorgeschlagen'
-
-/** Die Beschriftung des Abschlusses - wortgleich mit dem frueheren Ausschuss-Gate. */
-export const AUSSCHUSS_CONFIRM_TEXT = 'Ausschuss gesichtet, weiter'
 
 /** Die Farbe der Entscheidungszeile. `null` (noch offen) ist zurueckhaltend: Es ist der Zustand
  * ohne Handlung, nicht einer mit. */
@@ -110,6 +99,7 @@ export function AusschussStepPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const scoreMutation = useTriggerScoreMutation(project.id)
   const confirmMutation = useConfirmAusschussGateMutation(project.id)
+  const navigate = useNavigate()
 
   const scoringRun = project.last_scoring_run ?? null
   const scoringStatus = scoringRun?.status ?? null
@@ -135,7 +125,8 @@ export function AusschussStepPage() {
     [ausschussQuery.data],
   )
   const total = ausschussQuery.data?.pages[0]?.total ?? 0
-  const openCount = ausschussQuery.data?.pages[0]?.open_count ?? 0
+  // `null`, solange der Bestand nicht geladen ist - die Abschluss-Aktion steht dann ohne Anzahl.
+  const openCount = ausschussQuery.data?.pages[0]?.open_count ?? null
 
   const tiles = useMemo(() => {
     const ratios = entries.map(
@@ -156,8 +147,9 @@ export function AusschussStepPage() {
     )
   }, [entries, containerWidth])
 
-  const isScoreBusy =
-    scoreMutation.isPending || awaitingScoreConfirmation || scoringStatus === 'running'
+  const isTriggerPending = scoreMutation.isPending || awaitingScoreConfirmation
+  const isScoreBusy = isTriggerPending || scoringStatus === 'running'
+  const { action, rerun } = deriveStepAction('ausschuss', project, { openCount, isTriggerPending })
 
   function handleTriggerScore(): void {
     if (isScoreBusy) {
@@ -166,6 +158,28 @@ export function AusschussStepPage() {
     setAwaitingScoreConfirmation(true)
     scoreMutation.mutate(undefined, {
       onError: () => setAwaitingScoreConfirmation(false),
+    })
+  }
+
+  /* Gewechselt wird erst nach dem Neuladen des Projekts: Mit dem alten Stand
+     (`gate_confirmed_at === null`) leitete der Guard des Layouts sofort zum Ausschuss zurück. Der
+     Callback gilt nur diesem Aufruf und entfällt, wenn die Seite vor der Antwort verlassen wurde.
+     Das Ziel kommt aus der Ableitung, nie aus Adresse oder Verlauf (offene Weiterleitung). */
+  function handleConfirm(): void {
+    confirmMutation.mutate(undefined, {
+      onSuccess: async () => {
+        const { data } = await refetchProject()
+        if (data === undefined) {
+          return
+        }
+        const next = deriveStepAction('ausschuss', data, {
+          openCount: 0,
+          isTriggerPending: false,
+        }).action
+        if (next.kind === 'next') {
+          void navigate(next.to, { state: { focusHeading: true } })
+        }
+      },
     })
   }
 
@@ -205,6 +219,34 @@ export function AusschussStepPage() {
   const gateConfirmedAt = scoringRun?.gate_confirmed_at ?? null
   const istDetailansicht = scoringStatus === 'success' && detailPhotoId !== null
 
+  let statusText: string
+  switch (action.kind) {
+    case 'start':
+      statusText = 'Noch nicht vorgeschlagen'
+      break
+    case 'running':
+      statusText =
+        scoringStatus === 'running'
+          ? `Ausschuss läuft… ${scoringAnnouncedDecile}% verarbeitet`
+          : 'Ausschuss läuft…'
+      break
+    case 'retry':
+      statusText = 'Ausschuss fehlgeschlagen'
+      break
+    case 'confirm':
+      statusText =
+        openCount === null
+          ? 'Abschluss offen'
+          : openCount === 0
+            ? 'Alle Vorschläge entschieden'
+            : openCount === 1
+              ? '1 Vorschlag offen'
+              : `${openCount} Vorschläge offen`
+      break
+    default:
+      statusText = 'Ausschuss bestätigt'
+  }
+
   return (
     <section className="flex flex-col items-start gap-3">
       <h2 className="text-lg">Ausschuss</h2>
@@ -212,51 +254,30 @@ export function AusschussStepPage() {
         Erkennt automatisch unscharfe, überbelichtete oder doppelte Fotos als Ausschuss-Vorschläge —
         läuft vollständig lokal auf diesem Server.
       </p>
-
-      <Button type="button" onClick={handleTriggerScore} disabled={isScoreBusy} busy={isScoreBusy}>
-        {isScoreBusy ? 'Wird aussortiert…' : 'Ausschuss aussortieren'}
-      </Button>
+      <p className="text-sm text-text">{AUSSCHUSS_NOTHING_SORTED_TEXT}</p>
+      {rerun !== null && (
+        <RerunBlock
+          rerun={rerun}
+          onRerun={handleTriggerScore}
+          disabled={isScoreBusy}
+          busy={isTriggerPending}
+        />
+      )}
 
       {scoreTriggerErrorDetail && <Alert>{scoreTriggerErrorDetail}</Alert>}
 
-      <p aria-live="polite" className="flex items-center gap-2 text-sm text-text">
-        <StatusDot status={scoringStatus} />
-        {scoringRun === null && 'Noch nicht vorgeschlagen'}
-        {scoringStatus === 'running' && 'Wird verarbeitet…'}
-        {scoringStatus === 'success' && suggestionsFoundText}
-        {scoringStatus === 'failed' && 'Fehlgeschlagen'}
-      </p>
+      {scoringStatus === 'success' && <p className="text-sm text-text">{suggestionsFoundText}</p>}
 
-      {/* AK11: Nach der Bestaetigung bleibt der Schritt aufrufbar - weitere Anpassungen sind
-          moeglich, und es kann erneut bestaetigt werden. Der Zeitstempel ist die einzige Anzeige
-          des Abschlusses: Eine gesperrte Ansicht gaebe es hier nicht. */}
+      {/* Nach der Bestaetigung bleibt der Schritt aufrufbar - weitere Anpassungen sind moeglich,
+          und es kann erneut bestaetigt werden. */}
       {gateConfirmedAt !== null && (
         <p className="text-sm text-text">
           Ausschuss bestätigt am {formatDateTime(gateConfirmedAt)} — der Schritt bleibt aufrufbar.
         </p>
       )}
 
-      {scoringStatus === 'running' && (
-        <div className="flex w-full max-w-sm flex-col gap-2">
-          <p className="text-sm text-text">
-            {photosProcessed} von {photosTotal} Fotos verarbeitet
-          </p>
-          {photosTotal > 0 ? (
-            <Progress value={photosProcessed} max={photosTotal}>
-              {photosProcessed}/{photosTotal}
-            </Progress>
-          ) : (
-            <Progress />
-          )}
-          <p aria-live="polite" className="text-sm text-text">
-            {scoringAnnouncedDecile}% verarbeitet
-          </p>
-        </div>
-      )}
-
-      {scoringStatus === 'failed' && (
-        <Alert onRetry={handleTriggerScore}>{scoringRun?.error_message}</Alert>
-      )}
+      {/* Ohne Wiederholung: Die einzige Wiederholung ist die Hauptaktion der Leiste. */}
+      {scoringStatus === 'failed' && <Alert>{scoringRun?.error_message}</Alert>}
 
       {istDetailansicht ? (
         <AusschussDetail projectId={project.id} photoId={detailPhotoId} onClose={closeDetail} />
@@ -374,44 +395,43 @@ export function AusschussStepPage() {
                 {entries.length} von {total} Einträgen geladen
               </p>
             )}
-
-            {/*
-              DER ABSCHLUSS IST DIE EINZIGE FREIGABE DES NAECHSTEN SCHRITTS (AK13), und `open_count`
-              ist dafuer die FALSCHE BEDINGUNG: Ein Nutzer, der zuletzt alle Vorschlaege einzeln
-              entschieden hat (AK6), hat `open_count === 0` und `gate_confirmed_at === null` - ein
-              daran gesperrter Button liesse den Schritt nie abschliessen und die Pipeline still
-              stehen. Gesperrt ist er deshalb erst, wenn beides erledigt ist: bestaetigt UND nichts
-              mehr offen. Der Server setzt den Zeitstempel ohnehin auch bei leerer Menge.
-            */}
-            <Button
-              type="button"
-              onClick={() => confirmMutation.mutate()}
-              disabled={confirmMutation.isPending || (gateConfirmedAt !== null && openCount === 0)}
-              busy={confirmMutation.isPending}
-            >
-              {confirmMutation.isPending
-                ? 'Wird bestätigt…'
-                : openCount === 0
-                  ? AUSSCHUSS_CONFIRM_TEXT
-                  : `${AUSSCHUSS_CONFIRM_TEXT} (${openCount})`}
-            </Button>
-            {gateConfirmedAt !== null && openCount === 0 && (
-              <p className="text-sm text-text">{AUSSCHUSS_NOTHING_TO_CONFIRM_TEXT}</p>
-            )}
-            {gateConfirmedAt === null && openCount === 0 && (
-              <p className="text-sm text-text">{AUSSCHUSS_ALL_DECIDED_TEXT}</p>
-            )}
-
-            {confirmMutation.isError && (
-              <Alert>
-                {confirmMutation.error instanceof ApiError
-                  ? confirmMutation.error.detail
-                  : 'Fehler beim Bestätigen des Ausschusses.'}
-              </Alert>
-            )}
           </div>
         )
       )}
+
+      {confirmMutation.isError && (
+        <Alert>
+          {confirmMutation.error instanceof ApiError
+            ? confirmMutation.error.detail
+            : 'Fehler beim Bestätigen des Ausschusses.'}
+        </Alert>
+      )}
+
+      <StepActionBar
+        action={action}
+        status={
+          <>
+            <StatusDot status={action.kind === 'running' ? 'running' : scoringStatus} />
+            {statusText}
+          </>
+        }
+        detail={
+          scoringStatus === 'running' && (
+            <div className="flex w-full max-w-sm flex-col gap-2">
+              <p className="text-sm text-text">
+                {photosProcessed} von {photosTotal} Fotos verarbeitet
+              </p>
+              {photosTotal > 0 ? (
+                <Progress aria-hidden="true" value={photosProcessed} max={photosTotal} />
+              ) : (
+                <Progress aria-hidden="true" />
+              )}
+            </div>
+          )
+        }
+        onAction={action.kind === 'confirm' ? handleConfirm : handleTriggerScore}
+        busy={action.kind === 'confirm' && confirmMutation.isPending}
+      />
     </section>
   )
 }

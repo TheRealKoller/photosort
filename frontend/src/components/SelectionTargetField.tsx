@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 
 import { ApiError } from '../api/client'
 import type { ProjectOut } from '../api/types'
@@ -30,8 +29,6 @@ function fieldValueOf(target: number | null): string {
 
 interface SelectionTargetFieldProps {
   project: ProjectOut
-  /** Steht in derselben Zeile wie das Feld (Kuratierung: der Weg in den Album-Entwurf). */
-  action?: ReactNode
 }
 
 /**
@@ -52,7 +49,7 @@ interface SelectionTargetFieldProps {
  * Servers. Der Feldinhalt wird dabei nie zurückgesetzt, und der 2-s-Poll des Projekts gibt das
  * Feld nach dem Laufende von selbst wieder frei.
  */
-export function SelectionTargetField({ project, action }: SelectionTargetFieldProps) {
+export function SelectionTargetField({ project }: SelectionTargetFieldProps) {
   const hintId = useId()
   const lockId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -191,7 +188,6 @@ export function SelectionTargetField({ project, action }: SelectionTargetFieldPr
             Auf Standard zurücksetzen
           </Button>
         )}
-        {action}
       </div>
 
       <p id={hintId} className="text-sm text-text-muted">
