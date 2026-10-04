@@ -1,7 +1,7 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-10-03
+**Letzte Aktualisierung:** 2026-10-04
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil das Dokument je Testgegenstand das
 Muster führt, das beim nächsten gleichartigen Fall wiederverwendet wird — und die benannten
 Lücken, die nirgends sonst stehen.
@@ -770,6 +770,27 @@ Anzeigebänder" existierte im Bestand nicht; er entsteht mit Spec 0429, weil dor
 angelegt wird, die ihn verletzen könnte. Regel daraus: Ein hier beschriebenes Muster ist eine
 Vorlage, kein Bestandsnachweis — wer sich auf eines beruft, prüft am Bestand nach, ob es tatsächlich
 irgendwo läuft.
+
+**Fortschreibung Spec [`0567`](../features/0567-richtwert-vor-klassifizierung.md) / ADR
+[`0131`](../decisions/0131-richtwert-vorbelegung-fest-150-statt-zehntel-der-bilderzahl.md): ein
+Regressionstest ohne gefundene Ursache, und eine Übergangszeit ohne Migration.**
+
+- **Ein Regressionstest für einen gemeldeten Fehler, dessen Ursache nicht gefunden ist, prüft im
+  Test selbst, dass sein Aufbau den Fehler zeigen könnte** — Parameter im wirksamen Bereich
+  (hier: Eventzahl < T_alt < T_neu ≤ Kandidatenzahl) und Vorher ≠ Nachher als Assertion, nicht als
+  Annahme. Daneben steht ein **Gegenfall im unwirksamen Bereich** (eine Erhöhung unterhalb der
+  Eventzahl ändert nichts), der das gewollte Verhalten vom Fehler unterscheidbar macht. Ohne beides
+  wäre der Test grün, ohne etwas zu belegen. Muster:
+  `test_api_projects.py::TestTheTargetTakesEffectImmediately`.
+- **Eine Übergangszeit ohne Migration wird über direkt geseedete Bestandswerte hergestellt**, nicht
+  über einen Lauf mit der alten Regel. „Lesen rechnet nicht neu" wird über **wiederholte** `GET`s
+  mit bitgleicher Antwort geprüft, und das Ende der Übergangszeit **je Auslöser einzeln** —
+  einschließlich des Nicht-Auslösers (ein gescheiterter Lauf lässt die Bestandswerte stehen).
+  Muster: `test_api_projects.py::TestExistingProjectsAfterTheSwitch`,
+  `test_worker_criterion_scoring.py::test_a_failed_run_leaves_the_old_default_proposal_untouched`.
+- Eine fest vorbelegte Konstante steht wie die Startwerte genau einmal als Zahl im Test
+  (`test_the_starting_values_are_pinned_in_exactly_this_one_case`); alle übrigen Fälle importieren
+  `DEFAULT_TARGET`.
 
 Gilt als Vorlage für jedes künftige mehrstufige Rechen- oder Verteilungsverfahren als reine Funktion,
 für jede Zusage der Form „zwischen X gibt es keine Rangfolge", für jeden weiteren
