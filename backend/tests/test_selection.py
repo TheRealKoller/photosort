@@ -14,6 +14,7 @@ Testwelle auszuloesen.
 from __future__ import annotations
 
 import ast
+import inspect
 import itertools
 import math
 from collections.abc import Mapping, Sequence
@@ -25,7 +26,7 @@ import pytest
 
 import photosort
 from photosort.selection import (
-    DEFAULT_TARGET_DIVISOR,
+    DEFAULT_TARGET,
     EVENT_SHARE_CAP,
     MOTIF_PRESENCE_THRESHOLD,
     SIMILARITY_DECAY,
@@ -173,39 +174,25 @@ class TestTheStartingValues:
         assert MOTIF_PRESENCE_THRESHOLD == 0.5
         assert SIMILARITY_DECAY == 0.5
         assert SIMILARITY_TIME_WINDOW == timedelta(minutes=15)
-        assert DEFAULT_TARGET_DIVISOR == 10
+        assert DEFAULT_TARGET == 150
 
 
 class TestTheEffectiveTarget:
-    def test_without_an_own_setting_it_is_a_tenth_of_the_photo_count(self) -> None:
-        assert effective_target(None, 100) == 100 // DEFAULT_TARGET_DIVISOR
-
     @pytest.mark.parametrize(
-        ("photo_count", "expected"),
-        [
-            pytest.param(DEFAULT_TARGET_DIVISOR, 1, id="glatt-aufgehend"),
-            pytest.param(DEFAULT_TARGET_DIVISOR + 1, 2, id="aufgerundet"),
-        ],
+        "photo_count", [0, 1, DEFAULT_TARGET - 1, DEFAULT_TARGET, DEFAULT_TARGET + 1, 10_000]
     )
-    def test_the_default_rounds_up(self, photo_count: int, expected: int) -> None:
-        """Das Paar trennt `⌈·⌉` von `//`: eine ganzzahlige Division ergaebe hier zweimal 1."""
-        assert effective_target(None, photo_count) == expected
-
-    def test_an_empty_project_still_has_a_target_of_one(self) -> None:
-        assert effective_target(None, 0) == 1
+    def test_without_an_own_setting_it_is_the_fixed_default_whatever_the_stock(
+        self, photo_count: int
+    ) -> None:
+        """ADR 0131: die Vorbelegung ist fest, nicht aus der Bilderzahl abgeleitet. Die Bilderzahl
+        steht hier nur als Lage; dass sie die Ableitung gar nicht erreichen KANN, haelt die
+        Signatur fest (eine einzige Angabe, kein Bestand)."""
+        assert list(inspect.signature(effective_target).parameters) == ["configured"]
+        assert effective_target(None) == DEFAULT_TARGET, photo_count
 
     def test_a_configured_number_is_taken_absolutely(self) -> None:
-        assert effective_target(7, 100_000) == 7
-
-    def test_the_default_grows_with_the_stock_while_a_set_number_stays(self) -> None:
-        """Die eigentliche Zusage der Vorbelegung, als Paar in EINEM Fall: derselbe Bestand
-        waechst, der wirksame Wert waechst bei `NULL` mit und bleibt bei einer eingestellten Zahl
-        stehen. Dass die Vorbelegung dabei nie in die Spalte geschrieben wird, ist die DB-nahe
-        Haelfte davon (test_worker_selection.py)."""
-        small, large = 50, 500
-
-        assert effective_target(None, small) < effective_target(None, large)
-        assert effective_target(20, small) == effective_target(20, large) == 20
+        assert effective_target(7) == 7
+        assert effective_target(DEFAULT_TARGET + 1) == DEFAULT_TARGET + 1
 
 
 class TestTheQuotasPerEvent:

@@ -154,6 +154,31 @@ export function draftSizeText(counts: DraftCounts, target: number): string {
   return `${counts.inAlbum} im Album · Richtwert etwa ${target} · ${counts.taken} aufgenommen · ${counts.struck} gestrichen`
 }
 
+/**
+ * Die neutrale Zeile „kleinerer Vorschlag" - `null` heißt „keine Zeile".
+ *
+ * Sie erscheint nur, wenn der Vorschlagsanteil unter dem Richtwert liegt UND die auswahlfähigen
+ * Kandidaten erschöpft sind. „Unter dem Richtwert" allein reichte nicht: Ein Bestandsvorschlag,
+ * der noch nach der alten Vorbelegung (ein Zehntel der Bilderzahl) gerechnet wurde, ist klein,
+ * obwohl genug Fotos da sind - die Zeile nennte dann eine falsche Ursache.
+ *
+ * „Erschöpft" heißt: der Vorschlag umfasst jeden auswahlfähigen Kandidaten. Die Zahl kommt vom
+ * Server (`AlbumDraftOut.eligible_candidate_count`) und zählt dieselbe Menge, aus der der
+ * Vorschlag gewählt wird. `partition_size` taugt dafür nicht: Es zählt auch als Dokument
+ * ausgeschlossene Fotos, die nie vorgeschlagen werden, und unterdrückte die Zeile dann.
+ */
+export function smallerProposalText(
+  items: PhotoOut[],
+  target: number,
+  eligibleCandidates: number,
+): string | null {
+  const proposed = items.filter((item) => item.ranking?.proposed === true).length
+  if (proposed === 0 || proposed >= target || proposed < eligibleCandidates) {
+    return null
+  }
+  return `Der Vorschlag umfasst ${proposed} Fotos statt etwa ${target} – mehr auswahlfähige Fotos gibt dieses Projekt nicht her.`
+}
+
 /** Die drei Sätze des Abschlusses „Stand des Entwurfs" - dieselben Zahlen wie der Kopf. */
 export function draftClosingTexts(counts: DraftCounts, target: number): [string, string, string] {
   return [

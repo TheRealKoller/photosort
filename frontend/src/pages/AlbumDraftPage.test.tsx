@@ -53,6 +53,7 @@ function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
     cloud_vision_consent_at: '2026-07-01T10:00:00',
     selection_target: 3,
     effective_selection_target: 3,
+    has_selection_proposal: true,
     photo_count: 0,
     taken_at_earliest: null,
     taken_at_latest: null,
@@ -126,14 +127,26 @@ function written(photoId: number, status: RatingStatus | null): RatingWriteOut {
   return { photo_id: photoId, user_id: USER_ID, status, favorite: false, updated_at: null }
 }
 
+/**
+ * Reichlich Kandidaten: ohne eigene Angabe bleibt der Hinweis „kleinerer Vorschlag" aus, damit
+ * nur die Fälle ihn sehen, die ihn prüfen.
+ */
+const PLENTY_OF_CANDIDATES = 1000
+
+type DraftInput = Omit<AlbumDraftOut, 'eligible_candidate_count'> &
+  Partial<Pick<AlbumDraftOut, 'eligible_candidate_count'>>
+
 /** `draft: null` lässt den Abruf so, wie der Fall ihn vorher eingerichtet hat (Laden, Fehler). */
 function renderPage(
-  draft: AlbumDraftOut | null,
+  draft: DraftInput | null,
   observer?: ObserverFactory,
   path = '/projects/1/album',
 ) {
   if (draft !== null) {
-    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue(draft)
+    vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({
+      eligible_candidate_count: PLENTY_OF_CANDIDATES,
+      ...draft,
+    })
   }
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -235,6 +248,54 @@ describe('AlbumDraftPage: Kopf und Abschluss', () => {
     renderPage({ events: [], items: [] }, noObserver)
     expect(await screen.findByText(DRAFT_CLOUD_CONSENT_TEXT)).toBeInTheDocument()
     expect(screen.queryByText(DRAFT_EMPTY_TEXT)).toBeNull()
+  })
+
+  it('adds a neutral line when the proposal stays below the target for lack of candidates', async () => {
+    /* 150 ist ein Ziel, keine Obergrenze. Die Zeile ist ein Hinweis, kein Fehler - kein Alert,
+     * keine Rolle, gedämpfter Text. */
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      projectOut({ effective_selection_target: 150 }),
+    )
+    // Eine dritte Rangzeile der Partition ist ein ausgeschlossenes Dokument: `partition_size` zählt
+    // sie, auswahlfähig ist sie nicht. Maßgeblich ist allein `eligible_candidate_count`.
+    const withExcludedDocument = { ...ranking(true), partition_size: 3 }
+    renderPage(
+      {
+        events: [EVENT_A],
+        items: [
+          photo(1, { ranking: withExcludedDocument }),
+          photo(2, { ranking: withExcludedDocument }),
+        ],
+        eligible_candidate_count: 2,
+      },
+      noObserver,
+    )
+
+    const line = await screen.findByText(
+      'Der Vorschlag umfasst 2 Fotos statt etwa 150 – mehr auswahlfähige Fotos gibt dieses Projekt nicht her.',
+    )
+    expect(line).not.toHaveAttribute('role')
+    expect(line.className).toContain('text-text-muted')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows no such line while candidates are left, even below the target', async () => {
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      projectOut({ effective_selection_target: 150 }),
+    )
+    renderPage(
+      {
+        events: [EVENT_A],
+        items: [photo(1), photo(2)],
+        eligible_candidate_count: 40,
+      },
+      noObserver,
+    )
+
+    expect(
+      await screen.findByText('2 im Album · Richtwert etwa 150 · 0 aufgenommen · 0 gestrichen'),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('smaller-proposal')).toBeNull()
   })
 })
 
@@ -619,7 +680,7 @@ describe('AlbumDraftPage: Personenfilter', () => {
     taken_at: '2026-07-21T10:03:00',
     persons: [{ person_id: 2, origin: 'corrected', face: null }],
   })
-  const draft: AlbumDraftOut = {
+  const draft: DraftInput = {
     events: [EVENT_A, EVENT_B],
     items: [withAnna, nobody, struckNobody, withBen],
   }
@@ -890,6 +951,7 @@ describe('AlbumDraftPage: Großansicht', () => {
   const twoPhotos: AlbumDraftOut = {
     events: [EVENT_A],
     items: [photo(1, { relative_path: 'reise/a.jpg' }), photo(2, { relative_path: 'reise/b.jpg' })],
+    eligible_candidate_count: PLENTY_OF_CANDIDATES,
   }
 
   const closeWays: [string, () => void][] = [
@@ -993,6 +1055,7 @@ describe('AlbumDraftPage: Großansicht', () => {
     vi.mocked(photosApi.getAlbumDraft).mockResolvedValue({
       events: [EVENT_A],
       items: [photo(1, { relative_path: 'reise/a.jpg' })],
+      eligible_candidate_count: PLENTY_OF_CANDIDATES,
     })
     await act(async () => {
       await queryClient.invalidateQueries({ queryKey: ['photos', 1] })

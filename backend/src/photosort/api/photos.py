@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import CursorResult, and_, delete, func, or_, select
+from sqlalchemy import CursorResult, and_, delete, exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
@@ -63,6 +63,7 @@ from photosort.models import (
     PhotoCloudVisionError,
     PhotoDuplicateDecision,
     PhotoFineLabel,
+    PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
     PhotoRanking,
@@ -534,6 +535,11 @@ class AlbumDraftOut(BaseModel):
 
     events: list[EventOut]
     items: list[PhotoOut]
+    # Die Zahl AUSWAHLFAEHIGER Kandidaten des Laufs - dieselbe Menge, aus der
+    # `worker.py::_apply_run_selection` waehlt (Rangzeile mit `rank_score`, kein
+    # `excluded_document`). Lauf-global, ohne Nutzerbezug. Speist allein den Hinweis
+    # "kleinerer Vorschlag": Er erscheint nur, wenn der Vorschlag diese Menge ausschoepft.
+    eligible_candidate_count: int
 
 
 async def _get_project_or_404(project_id: int, session: AsyncSession) -> Project:
@@ -1514,7 +1520,7 @@ async def album_draft(
 
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
-        return AlbumDraftOut(events=[], items=[])
+        return AlbumDraftOut(events=[], items=[], eligible_candidate_count=0)
 
     run_events = await _run_events(session, latest_run_id)
     content = await _draft_photo_ids(
@@ -1555,7 +1561,26 @@ async def album_draft(
         )
         for photo_id in ids
     ]
-    return AlbumDraftOut(events=run_events.ordered, items=items)
+    eligible_candidate_count = (
+        await session.execute(
+            select(func.count())
+            .select_from(PhotoRanking)
+            .where(
+                # SICHERHEIT (S2): das Laufpraedikat bindet an dieses Projekt.
+                PhotoRanking.criterion_scoring_run_id == latest_run_id,
+                PhotoRanking.rank_score.is_not(None),
+                ~exists().where(
+                    PhotoMotifAssessment.photo_id == PhotoRanking.photo_id,
+                    PhotoMotifAssessment.excluded_document.is_(True),
+                ),
+            )
+        )
+    ).scalar_one()
+    return AlbumDraftOut(
+        events=run_events.ordered,
+        items=items,
+        eligible_candidate_count=eligible_candidate_count,
+    )
 
 
 @router.get("/projects/{project_id}/photos", response_model=PhotoListOut)

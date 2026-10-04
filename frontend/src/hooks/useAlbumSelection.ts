@@ -10,7 +10,7 @@ import { applyAlbumDecision } from '../utils/albumSelection'
  * anderswo geschrieben wird, invalidiert ihn damit mit, und die Endauswahl zeigt danach den
  * neuen Stand beider Entwürfe.
  */
-const SELECTION_QUERY_SEGMENT = 'selection'
+export const SELECTION_QUERY_SEGMENT = 'selection'
 
 function selectionQueryKey(projectId: number) {
   return ['photos', projectId, SELECTION_QUERY_SEGMENT] as const

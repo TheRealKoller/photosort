@@ -464,10 +464,10 @@ class TestBlockAQuotaReach:
     """Ob die Kontingentvergabe ueberhaupt gewichten kann - das Mass, an dem die Zerstueckelung
     haengt. Der Anteil der Ein-Bild-Cluster ist nur ein Hilfsmass daneben.
 
-    DIE LAGEN STEHEN UEBER EINEN EINGESTELLTEN RICHTWERT, nie ueber eine Bilderzahl, aus der er
-    sich ergaebe: Eine Lage aus Fotozahlen haenge am Zahlwert von `DEFAULT_TARGET_DIVISOR` und
-    ginge nur gegen den heutigen Wert auf. Die Ableitung selbst prueft der Fall darunter, und zwar
-    gegen `effective_target` statt gegen eine Zahl."""
+    DIE LAGEN STEHEN UEBER EINEN EINGESTELLTEN RICHTWERT, nie ueber die Vorbelegung: Eine Lage
+    aus der Vorbelegung haenge an `DEFAULT_TARGET` und ginge nur gegen den heutigen Wert auf. Die
+    Ableitung selbst prueft der Fall darunter, und zwar gegen `effective_target` statt gegen eine
+    Zahl."""
 
     def test_more_events_than_seats_leaves_nothing_to_weight(self) -> None:
         """Die gemessene Lage: deutlich mehr Events als Plaetze. "Abdeckung zuerst" vergibt jeden
@@ -496,14 +496,14 @@ class TestBlockAQuotaReach:
 
     def test_the_target_comes_from_selection_itself_not_from_a_second_formula(self) -> None:
         """Nicht nachgebildet: Eine zweite Fassung der Ableitung liefe beim naechsten Grenzfall
-        auseinander. Geprueft ueber mehrere Bilderzahlen, damit nicht eine einzelne Zahl zufaellig
-        uebereinstimmt."""
+        auseinander. Geprueft ueber mehrere Bilderzahlen, damit belegt ist, dass der Bestand den
+        Richtwert ohne eigene Angabe nicht mehr bewegt (ADR 0131)."""
         for photo_count in (0, 1, 9, 10, 11, 373, 1000):
             reach = quota_reach(
                 _probe_input(selection_target=None, project_photos=photo_count), events_total=5
             )
 
-            assert reach.target == effective_target(None, photo_count)
+            assert reach.target == effective_target(None)
             assert reach.target_is_configured is False
 
     def test_a_configured_target_is_reported_as_configured(self) -> None:
@@ -515,7 +515,7 @@ class TestBlockAQuotaReach:
         assert reach.target_is_configured is True
 
     def test_the_measured_sets_are_carried_side_by_side(self) -> None:
-        """Die Auswertungsgrenze: Der Richtwert rechnet auf jedem Foto des Projekts, die gemessene
+        """Die Auswertungsgrenze: Das Projekt umfasst jedes Foto, die gemessene
         Gliederung auf der Kandidatenmenge des Laufs. Beide Zahlen stehen nebeneinander, damit ein
         Auseinanderfallen sichtbar wird statt verrechnet zu werden."""
         probe = _probe_input(selection_target=None, project_photos=400, candidates=3)
@@ -2246,23 +2246,23 @@ class TestTheReportNamesWhetherTheQuotaCanWeigh:
         assert main(["--project-id", str(project_id)], database_url=url) == 0
 
         report = capsys.readouterr().out
-        assert f"Album-Richtwert: {effective_target(None, 4)}" in report
+        assert f"Album-Richtwert: {effective_target(None)}" in report
         assert "freie Plaetze" in report
         assert "Die Kontingentvergabe kann" in report
 
-    def test_the_target_rests_on_the_photos_of_the_project_not_on_the_candidates(
+    def test_the_report_names_diverging_project_and_candidate_sets(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Die Auswertungsgrenze am echten Lesepfad: Ein nach dem Lauf hinzugekommenes Foto zaehlt
-        fuer den Richtwert mit - er rechnet auf dem Bestand, nicht auf der Kandidatenmenge - und
-        der Bericht sagt, dass die beiden Mengen auseinanderfallen."""
+        zum Projekt, nicht zur Kandidatenmenge - der Bericht sagt, dass die beiden Mengen
+        auseinanderfallen. Den Richtwert bewegt es nicht (ADR 0131)."""
         url, project_id = _prepared(tmp_path)
         _add_one_unranked_photo(url, project_id)
 
         assert main(["--project-id", str(project_id)], database_url=url) == 0
 
         report = capsys.readouterr().out
-        assert f"Album-Richtwert: {effective_target(None, 5)}" in report
+        assert f"Album-Richtwert: {effective_target(None)}" in report
         assert "Auswertungsgrenze" in report
 
 

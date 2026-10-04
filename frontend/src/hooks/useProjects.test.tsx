@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as projectsApi from '../api/projects'
 import type { ProjectOut, ProjectStatsOut } from '../api/types'
 import { setToken } from '../auth/token'
+import { SELECTION_QUERY_SEGMENT } from './useAlbumSelection'
+import { draftAlternativesQueryKey, draftQueryKey } from './usePhotos'
 import {
   useClassificationEstimateQuery,
   useConfirmAusschussGateMutation,
@@ -20,6 +22,7 @@ import {
   useProjectsQuery,
   useProjectStatsQuery,
   useSetCloudVisionConsentMutation,
+  useSetSelectionTargetMutation,
   useTriggerScanMutation,
   useTriggerClassificationMutation,
   useTriggerScoreMutation,
@@ -42,6 +45,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     cloud_vision_consent_at: null,
     selection_target: null,
     effective_selection_target: 1,
+    has_selection_proposal: false,
     photo_count: 0,
     taken_at_earliest: null,
     taken_at_latest: null,
@@ -265,6 +269,38 @@ describe('useTriggerScanMutation', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(projectsApi.triggerScan).toHaveBeenCalledWith(1)
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
+  })
+})
+
+describe('useSetSelectionTargetMutation', () => {
+  it('invalidates the project and every photo key of the project, the final selection included', async () => {
+    /* Ein neuer Richtwert rechnet den Vorschlag sofort neu. Entwurf, Kandidatenvorrat und
+     * Endauswahl beschreiben danach einen alten Stand und muessen neu geladen werden - jeder
+     * Schluessel ausdruecklich, damit ein enger gefasster Praefix hier rot wird. */
+    setToken(tokenFor('anna'))
+    vi.mocked(projectsApi.setSelectionTarget).mockResolvedValue(project({ selection_target: 80 }))
+    const { wrapper, queryClient } = makeWrapper()
+    const keys = [
+      ['project', 1],
+      draftQueryKey(1),
+      draftAlternativesQueryKey(1, 7, null, 8),
+      ['photos', 1, SELECTION_QUERY_SEGMENT],
+    ] as const
+    for (const key of keys) {
+      queryClient.setQueryData(key, { stand: 'vorher' })
+    }
+    const otherProject = ['photos', 2, SELECTION_QUERY_SEGMENT] as const
+    queryClient.setQueryData(otherProject, { stand: 'vorher' })
+
+    const { result } = renderHook(() => useSetSelectionTargetMutation(1), { wrapper })
+    result.current.mutate(80)
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.setSelectionTarget).toHaveBeenCalledWith(1, 80)
+    for (const key of keys) {
+      expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true)
+    }
+    expect(queryClient.getQueryState(otherProject)?.isInvalidated).toBe(false)
   })
 })
 

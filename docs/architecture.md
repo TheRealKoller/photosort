@@ -1213,7 +1213,7 @@ Verarbeitungs-Cache (Thumbnails).
     Versatz-Neuaufbau rechnet ihn direkt hinter den Rangzeilen. Das Modul trägt die
     Kontingent- und Vergabelogik samt ihren fünf Stellschrauben (`EVENT_SHARE_CAP`,
     `MOTIF_PRESENCE_THRESHOLD`, `SIMILARITY_DECAY`, `SIMILARITY_TIME_WINDOW`,
-    `DEFAULT_TARGET_DIVISOR`) an genau einer Stelle und nennt `motifs.py` nicht — die Grenze, ab
+    `DEFAULT_TARGET`) an genau einer Stelle und nennt `motifs.py` nicht — die Grenze, ab
     der ein Motiv als getragen gilt, ist **keines** der Anzeigebänder (ADR 0091 Punkt 8). Der
     Klassifizierungs-Prompt lebt in `classification_prompt.py` (Motivblock plus
     Albumtauglichkeits-Block); `motifs.py` bleibt reines Registermodul und weiß nichts über die
@@ -1517,13 +1517,29 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
     [`decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
     Migration `e7f8a9b0c1d2`)*: additiv `selection_target: int | None`. **`NULL` heißt nicht „kein
-    Richtwert", sondern „nicht selbst eingestellt"** — wirksam ist dann ein Zehntel der Bilderzahl
-    des Projekts, aufgerundet und mindestens 1, im Moment der Auswahl berechnet und damit mit dem
-    Bestand mitwachsend. Die Vorbelegung wird **nie** in die Spalte geschrieben; ein
-    eingeschriebener Vorgabewert wäre von einer Nutzereingabe nicht mehr zu unterscheiden. Die
-    Ableitung lebt an genau einer Stelle (`selection.py::effective_target`), und `ProjectOut` trägt
-    beide Werte (`selection_target`, `effective_selection_target`), damit das Frontend die zweite
-    nicht selbst bildet. Projektweit, ohne `user_id`-Bezug.
+    Richtwert", sondern „nicht selbst eingestellt"** — wirksam ist dann die feste Vorbelegung von
+    150 Bildern (`selection.py::DEFAULT_TARGET`, ADR
+    [`0131`](../specs/decisions/0131-richtwert-vorbelegung-fest-150-statt-zehntel-der-bilderzahl.md),
+    Spec [`0567`](../specs/features/0567-richtwert-vor-klassifizierung.md)), unabhängig von der
+    Bilderzahl; das frühere Zehntel der Bilderzahl ist abgelöst. Die Vorbelegung wird **nie** in die
+    Spalte geschrieben; ein eingeschriebener Vorgabewert wäre von einer Nutzereingabe nicht mehr zu
+    unterscheiden, und eine spätere Änderung der Vorbelegung erreichte das Projekt nicht mehr. Die
+    Ableitung lebt an genau einer Stelle (`selection.py::effective_target(configured)`), und
+    `ProjectOut` trägt beide Werte (`selection_target`, `effective_selection_target`), damit das
+    Frontend die zweite nicht selbst bildet. Projektweit, ohne `user_id`-Bezug. Einstellbar ist der
+    Richtwert schon vor dem ersten Lauf (Klassifizierungs-Schritt) und in der Kuratierung, beide Male
+    über dieselbe Komponente `SelectionTargetField`; `PUT /projects/{id}/selection-target` rechnet
+    den Vorschlag des neuesten erfolgreichen Laufs sofort neu und ist ohne erfolgreichen Lauf ein
+    reines Speichern. Bestandsvorschläge nach der alten Vorbelegung bleiben ohne Migration stehen,
+    bis der nächste erfolgreiche Lauf oder die nächste Richtwert-Änderung sie neu rechnet.
+    Zwei additive Antwortfelder tragen die Oberfläche dazu: `ProjectOut.has_selection_proposal`
+    (es gibt einen erfolgreichen Kriterien-Lauf, dessen Vorschlag ein `PUT` neu rechnet — bewusst
+    nicht der Status des neuesten Laufs, der nach „erfolgreich, dann gescheitert" `failed` ist) und
+    `AlbumDraftOut.eligible_candidate_count` (die Zahl auswahlfähiger Kandidaten des Laufs:
+    Rangzeile mit `rank_score`, kein `excluded_document` — dieselbe Menge, aus der
+    `_apply_run_selection` wählt). Der Hinweis „kleinerer Vorschlag" im Album-Entwurf erscheint nur,
+    wenn der Vorschlag diese Menge ausschöpft und unter dem Richtwert bleibt. Gespeichert wird im
+    Feld seriell: Während ein `PUT` läuft, wird höchstens der zuletzt bestätigte Wert vorgemerkt.
   - **Bestandszahlen an `ProjectOut`** *(Spec
     [`0375`](../specs/features/0375-projektuebersicht-umfang-und-naechster-schritt.md), ADR
     [`decisions/0103-bestandszahlen-an-projectout-stand-bleibt-frontend-ableitung.md`](../specs/decisions/0103-bestandszahlen-an-projectout-stand-bleibt-frontend-ableitung.md))*:
@@ -1533,9 +1549,8 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Angabe". Die drei Werte entstehen an genau einer Stelle
     (`photo_aggregates.py`: `COUNT`/`MIN`/`MAX` über `photos` mit `GROUP BY project_id`) und
     speisen **sowohl** `ProjectOut` **als auch** `GET /projects/{id}/stats`; ein Projekt ohne Fotos
-    fehlt in der Gruppierung und bekommt die benannte Vorgabe `(0, None, None)`. `photo_count`
-    speist zugleich `effective_selection_target` — es ist dieselbe Zahl, die die Antwort ausweist,
-    keine zweite Zählung daneben. Der **Bearbeitungsstand** wird bewusst **kein** Feld: er bleibt
+    fehlt in der Gruppierung und bekommt die benannte Vorgabe `(0, None, None)`. Seit ADR 0131 speist
+    `photo_count` den Richtwert nicht mehr. Der **Bearbeitungsstand** wird bewusst **kein** Feld: er bleibt
     Frontend-Ableitung (`utils/pipelineSteps.ts`), weil dieselbe Ableitung das Ziel der
     Weiterleitung von `/projects/:id` bestimmt und ein zweiter Ort dafür auseinanderliefe.
 - **ProjectOverviewSeen** *(Spec 0566, `models.py`, Tabelle `project_overview_seen`)*: „diese

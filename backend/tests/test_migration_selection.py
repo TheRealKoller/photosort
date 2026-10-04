@@ -1,7 +1,7 @@
 """Die Migration des Auswahlvorschlags: zwei additive, nullbare Spalten.
 
 `NULL` traegt in beiden Spalten Bedeutung - `projects.selection_target IS NULL` heisst "nicht
-selbst eingestellt" (wirksam ist dann ein Zehntel der Bilderzahl), `photo_rankings.
+selbst eingestellt" (wirksam ist dann die feste Vorbelegung, ADR 0131), `photo_rankings.
 selection_position IS NULL` heisst "gehoert nicht zum Vorschlag". Ein `server_default` machte aus
 beidem stillschweigend eine Aussage; er wird deshalb an zwei Artefakten geprueft.
 

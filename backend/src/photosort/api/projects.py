@@ -308,6 +308,10 @@ class ProjectOut(BaseModel):
     # System vorbelegt" von "selbst eingestellt" ununterscheidbar.
     selection_target: int | None
     effective_selection_target: int
+    # Gibt es einen erfolgreichen Kriterien-Lauf, dessen Vorschlag ein Richtwert-`PUT` neu
+    # rechnet? Bewusst NICHT der Status des neuesten Laufs: nach "erfolgreich, dann gescheitert"
+    # rechnet der `PUT` den Vorschlag des erfolgreichen Laufs weiterhin neu.
+    has_selection_proposal: bool
     # Bestandszahlen des Projekts (ADR 0103): fuer die ganze Liste in EINER gruppierten Abfrage zu
     # haben, in konstanter Antwortgroesse, und damit auch im Zwei-Sekunden-Takt von
     # `useProjectQuery` tragbar. Die Kennzahlen von `GET /projects/{id}/stats` erfuellen das nicht
@@ -330,7 +334,9 @@ class ProjectOut(BaseModel):
 # Komplexitaetsklasse des Verfahrens (`selection.py::_assign_event`).
 MAX_SELECTION_TARGET = 1_000_000
 
-_SelectionTargetValue = Annotated[int, Field(ge=1, le=MAX_SELECTION_TARGET)]
+# `strict=True`: Pydantic wandelt im Normalmodus `true` still in `1` - ein Wahrheitswert ist aber
+# keine Bilderzahl und gehoert wie jede andere Nicht-Ganzzahl in die `422`.
+_SelectionTargetValue = Annotated[int, Field(strict=True, ge=1, le=MAX_SELECTION_TARGET)]
 
 
 class SelectionTargetUpdate(BaseModel):
@@ -708,11 +714,17 @@ async def _to_project_out(
         cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
         cloud_vision_consent_at=project.cloud_vision_consent_at,
         selection_target=project.selection_target,
-        # DIESELBE Zahl, die die Antwort als `photo_count` ausweist - nicht eine zweite Zaehlung
-        # daneben, die mit ihr auseinanderlaufen koennte.
-        effective_selection_target=effective_target(
-            project.selection_target, aggregate.photo_count
-        ),
+        effective_selection_target=effective_target(project.selection_target),
+        has_selection_proposal=(
+            await session.execute(
+                select(
+                    exists().where(
+                        CriterionScoringRun.project_id == project.id,
+                        CriterionScoringRun.status == ScanStatus.SUCCESS,
+                    )
+                )
+            )
+        ).scalar_one(),
         photo_count=aggregate.photo_count,
         taken_at_earliest=aggregate.taken_at_earliest,
         taken_at_latest=aggregate.taken_at_latest,

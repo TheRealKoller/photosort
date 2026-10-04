@@ -22,6 +22,7 @@ import {
   insertDraftPhoto,
   isTakenWithoutProposal,
   reAddDecision,
+  smallerProposalText,
 } from './albumDraft'
 
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
@@ -251,6 +252,55 @@ describe('draftSizeText', () => {
   })
 })
 
+describe('smallerProposalText', () => {
+  /** `proposed` vorgeschlagene Fotos, dazu je ein nicht vorgeschlagenes. */
+  function draftItems(proposed: number): PhotoOut[] {
+    return Array.from({ length: proposed }, (_, index) =>
+      photo({ id: index + 1, ranking: ranking({ proposed: true }) }),
+    )
+  }
+
+  it('names a proposal that stays below the target because the candidates ran out', () => {
+    expect(smallerProposalText(draftItems(5), 150, 5)).toBe(
+      'Der Vorschlag umfasst 5 Fotos statt etwa 150 – mehr auswahlfähige Fotos gibt dieses Projekt nicht her.',
+    )
+  })
+
+  it('counts eligible candidates only - an excluded document in the partition does not hide the line', () => {
+    /* `partition_size` zählt das ausgeschlossene Dokument mit; die auswahlfähige Zahl nicht. */
+    const items = draftItems(2).map((item) => ({
+      ...item,
+      ranking: ranking({ proposed: true, partition_size: 3 }),
+    }))
+
+    expect(smallerProposalText(items, 150, 2)).toMatch(/^Der Vorschlag umfasst 2 Fotos /)
+  })
+
+  it('stays silent below the target while candidates are left (old proposal in transition)', () => {
+    /* Pflichtfall der Teststrategie: ein Bestandsvorschlag nach der alten Vorbelegung ist klein,
+     * obwohl genug Fotos da sind - die Zeile behauptete sonst eine falsche Ursache. */
+    expect(smallerProposalText(draftItems(3), 150, 70)).toBeNull()
+  })
+
+  it('stays silent at or above the target, coverage included', () => {
+    expect(smallerProposalText(draftItems(4), 4, 10)).toBeNull()
+    expect(smallerProposalText(draftItems(3), 2, 3)).toBeNull()
+  })
+
+  it('counts the proposal, not the own decisions, and ignores photos without a ranking', () => {
+    const items = [
+      ...draftItems(2),
+      photo({ id: 99, ranking: null, ratings: rated('album_worthy') }),
+    ]
+
+    expect(smallerProposalText(items, 150, 2)).toMatch(/^Der Vorschlag umfasst 2 Fotos /)
+  })
+
+  it('says nothing without any proposal', () => {
+    expect(smallerProposalText([], 150, 0)).toBeNull()
+  })
+})
+
 describe('draftClosingTexts', () => {
   it('names the album, the interventions and that nothing needs confirming', () => {
     expect(draftClosingTexts({ inAlbum: 12, taken: 2, struck: 3 }, 10)).toEqual([
@@ -420,7 +470,7 @@ describe('draftMotifText', () => {
 
 describe('insertDraftPhoto', () => {
   function list(items: PhotoOut[]) {
-    return { events: [event()], items }
+    return { events: [event()], items, eligible_candidate_count: items.length }
   }
 
   it('inserts by (event position, taken_at, id) - the sort key of the server', () => {

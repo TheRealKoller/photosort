@@ -902,7 +902,7 @@ async def _album_draft(client: httpx.AsyncClient, project: Project) -> dict[str,
     response = await client.get(f"/projects/{project.id}/album-draft")
     assert response.status_code == 200
     body: dict[str, Any] = response.json()
-    assert set(body) == {"events", "items"}
+    assert set(body) == {"events", "items", "eligible_candidate_count"}
     assert_album_draft_invariants(body, _own_user_id(client))
     return body
 
@@ -1832,7 +1832,11 @@ class TestTheAlbumDraft:
         taken = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await self._rate(db_session, taken, RatingStatus.ALBUM_WORTHY)
 
-        assert await _album_draft(authenticated_api_client, project) == {"events": [], "items": []}
+        assert await _album_draft(authenticated_api_client, project) == {
+            "events": [],
+            "items": [],
+            "eligible_candidate_count": 0,
+        }
 
     async def test_a_run_without_events_keeps_the_draft_empty(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1844,7 +1848,11 @@ class TestTheAlbumDraft:
         taken = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1, tzinfo=UTC))
         await self._rate(db_session, taken, RatingStatus.ALBUM_WORTHY)
 
-        assert await _album_draft(authenticated_api_client, project) == {"events": [], "items": []}
+        assert await _album_draft(authenticated_api_client, project) == {
+            "events": [],
+            "items": [],
+            "eligible_candidate_count": 0,
+        }
 
     @pytest.mark.parametrize("value", [2, 11])
     async def test_the_old_top_n_parameter_does_not_exist_any_more(

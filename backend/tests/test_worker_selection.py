@@ -37,7 +37,7 @@ from photosort.models import (
 )
 from photosort.motif_strengths import upsert_assessment
 from photosort.persons import delete_person
-from photosort.selection import MOTIF_PRESENCE_THRESHOLD, SIMILARITY_TIME_WINDOW
+from photosort.selection import DEFAULT_TARGET, MOTIF_PRESENCE_THRESHOLD, SIMILARITY_TIME_WINDOW
 from photosort.worker import rebuild_run_grouping, rebuild_run_selection
 
 _BASE = datetime(2026, 8, 12, 9, 0, 0)
@@ -48,9 +48,9 @@ _NONE = 0.0
 async def _project(
     session: AsyncSession, name: str = "Reise", *, target: int | None = None
 ) -> Project:
-    """`target` steht in jedem Fall ausgeschrieben, der mehr als einen Platz braucht: die
-    Vorbelegung ist ein Zehntel der Bilderzahl, und ein Testaufbau mit drei Fotos haette sonst
-    genau einen Platz."""
+    """`target` steht in jedem Fall ausgeschrieben, der eine bestimmte Platzzahl braucht: die
+    Vorbelegung ist fest 150 (ADR 0131), und ein Testaufbau mit drei Fotos bekaeme sonst
+    jedes Foto."""
     project = Project(
         name=name,
         opencloud_drive_id=f"drive-{name}",
@@ -429,19 +429,23 @@ class TestTheRebuildOnlyRecomputesTheDraft:
     ) -> None:
         """Die eigentliche Zusage der Vorbelegung: sie wirkt, ohne je gespeichert zu werden. Ein
         eingeschriebener Vorgabewert waere von einer Nutzereingabe nicht mehr zu unterscheiden -
-        und wuechse mit dem Bestand nicht mehr mit."""
+        und eine spaetere Aenderung der Vorbelegung erreichte das Projekt nicht mehr. Mehr
+        Kandidaten als die Vorbelegung, damit sie die Groesse tatsaechlich bestimmt."""
         project = await _project(db_session)
         run = await _successful_run(db_session, project)
         event = await _event_row(db_session, run, 1)
-        for index in range(30):
+        for index in range(DEFAULT_TARGET + 10):
             photo = await _photo(db_session, project, index, offset=index * timedelta(hours=2))
-            await _ranking(db_session, run, photo, event, rank_score=0.9 - index / 100)
+            await _ranking(db_session, run, photo, event, rank_score=0.9 - index / 1000)
         await db_session.flush()
 
         await rebuild_run_selection(db_session, project.id)
 
         assert project.selection_target is None
-        assert len([p for p in (await _positions(db_session, run)).values() if p is not None]) == 3
+        assert (
+            len([p for p in (await _positions(db_session, run)).values() if p is not None])
+            == DEFAULT_TARGET
+        )
 
     async def test_a_set_target_governs_the_size_of_the_draft(
         self, db_session: AsyncSession

@@ -222,12 +222,11 @@ class EventProbeInput:
 
     @property
     def project_photos(self) -> int:
-        """Die Bilderzahl, auf der der Album-Richtwert rechnet.
+        """Die Bilderzahl des Projekts - Messgroesse der Auswertungsgrenze. Der Album-Richtwert
+        haengt nicht von ihr ab.
 
-        DIESELBE MENGE, DIE AUCH DER LAUF ZAEHLT: `entries` ist jedes Foto dieses Projekts
-        (`event_inputs.py`, Bindung an `Photo.project_id` ohne weitere Einschraenkung), also genau
-        die Menge hinter `count(Photo where project_id)` in `worker.py`. Eine zweite Zaehlung
-        daneben koennte mit ihr auseinanderlaufen."""
+        `entries` ist jedes Foto dieses Projekts (`event_inputs.py`, Bindung an `Photo.project_id`
+        ohne weitere Einschraenkung)."""
         return len(self.entries)
 
 
@@ -268,9 +267,9 @@ class QuotaReach:
     dann einen Richtwert, nach dem die Auswahl gar nicht arbeitet.
 
     `project_photos` und `candidates_total` stehen NEBENEINANDER, weil sie verschiedene Mengen sind
-    (Auswertungsgrenze): Der Richtwert rechnet auf jedem Foto des Projekts, die gemessene
-    Gliederung auf der Kandidatenmenge des letzten erfolgreichen Laufs. Fallen sie auseinander,
-    gehoert das in den Bericht statt verrechnet zu werden."""
+    (Auswertungsgrenze): Das Projekt umfasst jedes Foto, die gemessene Gliederung nur die
+    Kandidatenmenge des letzten erfolgreichen Laufs. Fallen sie auseinander, gehoert das in den
+    Bericht statt verrechnet zu werden."""
 
     target: int
     target_is_configured: bool
@@ -301,7 +300,7 @@ def quota_reach(probe: EventProbeInput, events_total: int) -> QuotaReach:
     Rein lesend wie der ganze Bericht: `effective_target` rechnet, es schreibt nichts, und an
     `selection.py` aendert dieser Lauf nichts."""
     return QuotaReach(
-        target=effective_target(probe.selection_target, probe.project_photos),
+        target=effective_target(probe.selection_target),
         target_is_configured=probe.selection_target is not None,
         project_photos=probe.project_photos,
         candidates_total=len(probe.candidates),
@@ -1167,9 +1166,7 @@ def _quota_lines(reach: QuotaReach) -> list[str]:
     Sind es mindestens so viele Events wie Plaetze, ist die Gewichtung der Albumauswahl
     wirkungslos."""
     origin = (
-        "eingestellt"
-        if reach.target_is_configured
-        else f"abgeleitet aus {reach.project_photos} Fotos des Projekts, ein Zehntel aufgerundet"
+        "eingestellt" if reach.target_is_configured else "Standard, unabhaengig von der Bilderzahl"
     )
     verdict = (
         (
@@ -1197,9 +1194,9 @@ def _quota_lines(reach: QuotaReach) -> list[str]:
     if not reach.measured_on_the_same_set:
         lines += [
             "",
-            f"Auswertungsgrenze: Der Richtwert rechnet auf den {reach.project_photos} Fotos des "
-            f"Projekts, die gemessene Gliederung auf den {reach.candidates_total} Kandidaten des "
-            "letzten erfolgreichen Kriterien-Laufs. Die beiden Mengen fallen hier auseinander.",
+            f"Auswertungsgrenze: Das Projekt hat {reach.project_photos} Fotos, die gemessene "
+            f"Gliederung steht auf den {reach.candidates_total} Kandidaten des letzten "
+            "erfolgreichen Kriterien-Laufs. Die beiden Mengen fallen hier auseinander.",
         ]
     return lines + [
         "",

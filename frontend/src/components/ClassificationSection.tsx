@@ -13,6 +13,7 @@ import { formatProviderLabel } from '../utils/formatStats'
 import { ClassificationBalance } from './ClassificationBalance'
 import { ClassificationEstimate } from './ClassificationEstimate'
 import { ClassificationProgress } from './ClassificationProgress'
+import { SelectionTargetField } from './SelectionTargetField'
 import { StatusDot } from './StatusDot'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
@@ -173,6 +174,14 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
           </Alert>
         )}
       </div>
+
+      {/* Der Richtwert ist schon VOR dem ersten Lauf einstellbar - dieselbe Komponente wie in der
+          Kuratierung, über dem Auslöser, damit der erste Vorschlag schon seine Größe hat. */}
+      <p className="text-sm text-text">
+        Der Richtwert ist ein Ziel, keine Obergrenze — reicht der Bildbestand nicht, wird der
+        Vorschlag kleiner; damit jeder Foto-Moment vorkommt, kann er auch größer werden.
+      </p>
+      <SelectionTargetField project={project} />
 
       <Button type="button" onClick={handleTrigger} disabled={isTriggerDisabled} busy={isBusy}>
         {isBusy ? 'Wird klassifiziert…' : 'Klassifizierung starten'}

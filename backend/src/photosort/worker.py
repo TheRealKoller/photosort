@@ -14,7 +14,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
-from sqlalchemy import delete, func, select, tuple_, update
+from sqlalchemy import delete, select, tuple_, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -2160,12 +2160,6 @@ async def _apply_run_selection(
             )
         )
 
-    photo_count = (
-        await session.execute(
-            select(func.count()).select_from(Photo).where(Photo.project_id == project_id)
-        )
-    ).scalar_one()
-
     draft = select_album_draft(
         [
             SelectionEvent(
@@ -2175,7 +2169,7 @@ async def _apply_run_selection(
             )
             for event_id, candidates in candidates_by_event.items()
         ],
-        effective_target(project.selection_target, photo_count),
+        effective_target(project.selection_target),
     )
     if not draft:
         return

@@ -17,10 +17,10 @@ import httpx
 import numpy as np
 import pytest
 from PIL import Image
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort import events, pricing, worker
+from photosort import events, pricing, selection, worker
 from photosort import events as events_module
 from photosort.album_suitability import normalize_level
 from photosort.api.projects import _count_landmark_candidates
@@ -6887,3 +6887,181 @@ async def test_the_local_motif_basis_reaches_the_run_without_moving_a_boundary(
         window
     ), "ohne zwei verschiedene LOKALE Motivbilder prueft der Fall nichts"
     assert await _event_membership(db_session, run.id) == [tuple(photo.id for photo in photos)]
+
+
+# specs/features/0567-richtwert-vor-klassifizierung.md: der Richtwert vor dem ersten Lauf, sein
+# Fortbestand ueber weitere Laeufe und das Ende der Uebergangszeit nach ADR 0131.
+
+_TARGET_LAY_PHOTOS = 6
+
+
+async def _target_lay(
+    session: AsyncSession, cache_dir: Path, *, target: int | None
+) -> tuple[Project, ScoringRun]:
+    """Sechs bewertete Fotos im Minutenabstand - EIN Event, also bestimmt allein der Richtwert die
+    Vorschlagsgroesse, bis die Kandidaten ausgehen."""
+    project = await _make_project(session)
+    project.selection_target = target
+    await session.commit()
+    scoring_run = await _add_successful_scoring_run(session, project)
+    for index in range(_TARGET_LAY_PHOTOS):
+        photo = await _add_photo(
+            session,
+            project,
+            f"{index}.jpg",
+            f"etag-{index}",
+            datetime(2023, 1, 1, 10, index, tzinfo=UTC),
+        )
+        await _add_score(session, photo, sharpness=float(50 + index * 10))
+        _write_display_variant(cache_dir, photo, _flat_image())
+        await _add_album_suitability(session, photo)
+    return project, scoring_run
+
+
+async def _run_classification(
+    session: AsyncSession, project: Project, scoring_run: ScoringRun, cache_dir: Path
+) -> CriterionScoringRun:
+    return await run_criterion_scoring(
+        session,
+        project,
+        scoring_run.id,
+        cache_dir=cache_dir,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_no_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+    )
+
+
+async def _proposal_size(session: AsyncSession, run_id: int) -> int:
+    return (
+        await session.execute(
+            select(func.count())
+            .select_from(PhotoRanking)
+            .where(
+                PhotoRanking.criterion_scoring_run_id == run_id,
+                PhotoRanking.selection_position.is_not(None),
+            )
+        )
+    ).scalar_one()
+
+
+async def test_a_target_set_before_the_first_run_sizes_its_proposal(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """T != Vorbelegung und T > Eventzahl - sonst waere der Fall von der Vorbelegung bzw. von der
+    Mindestabdeckung nicht zu unterscheiden."""
+    target = 4
+    project, scoring_run = await _target_lay(db_session, tmp_path, target=target)
+
+    run = await _run_classification(db_session, project, scoring_run, tmp_path)
+
+    assert run.status == ScanStatus.SUCCESS
+    events_in_run = len(await _event_membership(db_session, run.id))
+    assert events_in_run < target < _TARGET_LAY_PHOTOS
+    assert target != selection.DEFAULT_TARGET
+    assert await _proposal_size(db_session, run.id) == target
+
+
+async def test_a_further_run_keeps_the_target_and_after_a_reset_uses_the_default(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    target = 4
+    project, scoring_run = await _target_lay(db_session, tmp_path, target=target)
+    await _run_classification(db_session, project, scoring_run, tmp_path)
+
+    second = await _run_classification(db_session, project, scoring_run, tmp_path)
+    assert await _proposal_size(db_session, second.id) == target
+
+    project.selection_target = None
+    await db_session.commit()
+    third = await _run_classification(db_session, project, scoring_run, tmp_path)
+
+    # Die Vorbelegung liegt ueber dem Bestand: der Vorschlag nimmt alle Kandidaten.
+    assert _TARGET_LAY_PHOTOS < selection.DEFAULT_TARGET
+    assert await _proposal_size(db_session, third.id) == _TARGET_LAY_PHOTOS
+
+
+async def _seed_old_default_proposal(session: AsyncSession, run_id: int, size: int) -> None:
+    """Der Bestandsvorschlag eines Laufs aus der Zeit der alten Vorbelegung: direkt geseedet."""
+    await session.execute(
+        update(PhotoRanking)
+        .where(PhotoRanking.criterion_scoring_run_id == run_id)
+        .values(selection_position=None)
+    )
+    photo_ids = (
+        (
+            await session.execute(
+                select(PhotoRanking.photo_id)
+                .where(PhotoRanking.criterion_scoring_run_id == run_id)
+                .order_by(PhotoRanking.photo_id)
+                .limit(size)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await session.execute(
+        update(PhotoRanking)
+        .where(
+            PhotoRanking.criterion_scoring_run_id == run_id,
+            PhotoRanking.photo_id.in_(photo_ids),
+        )
+        .values(selection_position=1)
+    )
+    await session.commit()
+
+
+async def _positions_of(session: AsyncSession, run_id: int) -> dict[int, int | None]:
+    rows = await session.execute(
+        select(PhotoRanking.photo_id, PhotoRanking.selection_position).where(
+            PhotoRanking.criterion_scoring_run_id == run_id
+        )
+    )
+    return {photo_id: position for photo_id, position in rows.all()}
+
+
+async def test_a_failed_run_leaves_the_old_default_proposal_untouched(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ende der Uebergangszeit, Fall (a): ein gescheiterter Lauf ist kein Ausloeser. Er scheitert
+    hier in seiner letzten Phase - nach den eigenen Rangzeilen, vor dem Auswahlvorschlag."""
+
+    async def failing_phase(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("Phase gescheitert")
+
+    project, scoring_run = await _target_lay(db_session, tmp_path, target=None)
+    first = await _run_classification(db_session, project, scoring_run, tmp_path)
+    first_id, project_id = first.id, project.id
+    await _seed_old_default_proposal(db_session, first_id, 1)
+    before = await _positions_of(db_session, first_id)
+    monkeypatch.setattr(worker, "_recognize_persons", failing_phase)
+
+    await _run_classification(db_session, project, scoring_run, tmp_path)
+
+    latest = (
+        await db_session.execute(
+            select(CriterionScoringRun)
+            .where(CriterionScoringRun.project_id == project_id)
+            .order_by(CriterionScoringRun.id.desc())
+            .limit(1)
+        )
+    ).scalar_one()
+    assert latest.status == ScanStatus.FAILED
+    assert await _positions_of(db_session, first_id) == before
+
+
+async def test_a_successful_run_ends_the_transition_with_the_default(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ende der Uebergangszeit, Fall (b): der naechste erfolgreiche Lauf rechnet nach 150."""
+    project, scoring_run = await _target_lay(db_session, tmp_path, target=None)
+    first = await _run_classification(db_session, project, scoring_run, tmp_path)
+    await _seed_old_default_proposal(db_session, first.id, 1)
+
+    second = await _run_classification(db_session, project, scoring_run, tmp_path)
+
+    assert await _proposal_size(db_session, second.id) == min(
+        selection.DEFAULT_TARGET, _TARGET_LAY_PHOTOS
+    )
