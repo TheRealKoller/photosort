@@ -1,6 +1,6 @@
 # 0568 - Schrittseiten: eindeutige Beschriftungen, eine Hauptaktion, Weiterführung
 
-**Status:** Accepted
+**Status:** Implemented ([PR #575](https://github.com/TheRealKoller/photosort/pull/575))
 **Erstellt:** 2026-10-04
 **Bezug:** [Issue #568](https://github.com/TheRealKoller/photosort/issues/568)
 
