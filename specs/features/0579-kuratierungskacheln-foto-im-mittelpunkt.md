@@ -1,6 +1,6 @@
 # 0579 - Kuratierungskacheln mit Foto im Mittelpunkt und Details bei Bedarf
 
-**Status:** Accepted
+**Status:** Implemented ([PR #582](https://github.com/TheRealKoller/photosort/pull/582))
 **Erstellt:** 2026-10-05
 **Bezug:** Issue [#579](https://github.com/TheRealKoller/photosort/issues/579), ADR [`0134`](../decisions/0134-kuratierungskachel-im-eigenen-seitenverhaeltnis-knoepfe-schrumpfen-aufs-symbol.md)
 
