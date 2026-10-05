@@ -404,7 +404,7 @@ Der Docstring von `draft_alternatives` wird umgeschrieben, nicht gelöscht: `pho
 
 **E2E (Playwright, 360 px).**
 - `no-horizontal-scroll.spec.ts`: Dialog-Abschnitt ersetzt durch geöffnetes Band zugeklappt **und** aufgeklappt (Vorbedingung: Raster mit ≥ 1 Alternative und Umschalter `aria-expanded=true` sichtbar); dazu Höhe ≥ 44 px von „Tauschen“/„Hinzufügen“ und 12 px Abstand.
-- `tap-targets.spec.ts`: „Tauschen“ und „Hinzufügen“ der ersten Alternative, Umschalter, „Schließen“ (und „Weitere Fotos“, falls der Seeder eine Folgeseite erzeugt); `EXPECTED_CONTROL_COUNT` bewusst anheben, die Dialog-Einträge fallen weg.
+- `tap-targets.spec.ts`: „Tauschen“ und „Hinzufügen“ der ersten Alternative, Umschalter, „Schließen“ und „Weitere Fotos“ der aufgeklappten Reihe; `EXPECTED_CONTROL_COUNT` bewusst anheben, die Dialog-Einträge fallen weg. Weil der Demo-Bestand kein Event mit mehr als 60 Alternativen hat, hebt der Spec per `page.route` allein `total` der echten Serverantwort der vollen Reihe an, damit „Weitere Fotos“ erscheint (Regel im Testkonzept, Nachtrag zur Tabelle „Umfang“).
 - Schreibender Hinzufügen-Fall nur, wenn nötig, dann nach Muster 7 der Sektion zu #558 (Wiederherstellung im `finally` über die API). Die Paginierungslogik (Marke auf späterer Seite) bleibt in vitest; jsdom kann sie vollständig prüfen, der Demo-Bestand hat dafür kein Event mit > 60 Alternativen.
 
 **Bewusst nicht automatisiert:** Erhalt der Scrollposition als gemessene Pixel (jsdom ohne Layout; belegt wird die Abwesenheit programmatischen Scrollens plus `preventScroll`), Sichtwirkung des „+“ — Sichtprüfung bei 360 px.
