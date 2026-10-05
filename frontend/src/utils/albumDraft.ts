@@ -83,6 +83,12 @@ export function reAddDecision(photo: PhotoOut): RatingStatus | null {
 }
 
 /**
+ * Die Kennzeichnung von „aufgenommen, vom aktuellen Vorschlag nicht getragen" - EINE Zeichenkette
+ * für BEIDE Datenformen, dieselbe Lage sieht nicht je nach Datenform verschieden aus.
+ */
+export const NOT_PROPOSED_BADGE_TEXT = 'nicht vorgeschlagen'
+
+/**
  * „Aufgenommen, vom aktuellen Vorschlag nicht getragen" — der Zustand hinter dem Abzeichen
  * `NOT_PROPOSED_BADGE_TEXT`.
  *

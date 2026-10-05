@@ -1,7 +1,7 @@
 import type { Ref } from 'react'
 
 import type { MotifSetOut, PhotoOut, RatingStatus } from '../api/types'
-import { albumState, isTakenWithoutProposal } from '../utils/albumDraft'
+import { NOT_PROPOSED_BADGE_TEXT, albumState, isTakenWithoutProposal } from '../utils/albumDraft'
 import { qualityLevel } from '../utils/qualityLevel'
 import { AlbumStateBadge } from './AlbumStateBadge'
 import { CriterionDetailsPopover } from './CriterionDetailsPopover'
@@ -12,14 +12,6 @@ import { QualityMeter } from './QualityMeter'
 import { Alert } from './ui/alert'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
-
-/**
- * Die Kennzeichnung von „aufgenommen, vom aktuellen Vorschlag nicht getragen".
- *
- * EINE Zeichenkette für BEIDE Datenformen (`ranking: null` und `ranking.proposed === false`) -
- * dieselbe Lage sieht nicht je nach Datenform verschieden aus.
- */
-export const NOT_PROPOSED_BADGE_TEXT = 'nicht vorgeschlagen'
 
 export interface CurationPhotoTileProps {
   photo: PhotoOut

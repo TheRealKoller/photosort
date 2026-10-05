@@ -5,8 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import type { PhotoOut, RankingOut, RatingStatus } from '../api/types'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { ALBUM_SUITABILITY_NOT_RATED_TEXT } from '../utils/albumSuitability'
+import { NOT_PROPOSED_BADGE_TEXT } from '../utils/albumDraft'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
-import { CurationPhotoTile, NOT_PROPOSED_BADGE_TEXT } from './CurationPhotoTile'
+import { CurationPhotoTile } from './CurationPhotoTile'
 
 /**
  * specs/features/0428-albumtauglichkeit-vom-modell.md: die Kachel trägt ab hier die
