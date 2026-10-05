@@ -198,79 +198,86 @@ function CandidatePanel({
       )}
       {controls}
       {loadError !== null && <Alert onRetry={() => void query.refetch()}>{loadError}</Alert>}
-      {/* Der gesteuerte Bereich des Umschalters: steht in JEDEM Zustand im Dokument, damit
-          `aria-controls` nie ins Leere zeigt (Fehler, alle Kandidaten hinzugefügt). */}
-      <div id={gridId} className="flex flex-col gap-3">
-        {query.isLoading && (
-          <ul role="status" aria-label="Fotos werden geladen…" className={PHOTO_CARD_GRID_CLASS}>
-            {Array.from({ length: BAND_SKELETON_COUNT }, (_, index) => (
-              <li key={index} aria-hidden="true">
-                <Skeleton className="aspect-square w-full rounded-md" />
-              </li>
-            ))}
-          </ul>
-        )}
-        {candidates.length > 0 && (
-          <List
-            aria-label={reference === undefined ? undefined : 'Alternativen, zeitlich geordnet'}
-            className={PHOTO_CARD_GRID_CLASS}
-          >
-            {candidates.map((candidate, index) => {
-              const neighborId = (candidates[index + 1] ?? candidates[index - 1])?.id ?? null
-              const struck = ownRatingStatus(candidate.ratings, username) === 'rejected'
-              const fileName = candidate.relative_path.split('/').pop() ?? candidate.relative_path
-              const busy = busyIds.has(candidate.id)
-              return (
-                <Fragment key={candidate.id}>
-                  {markerBeforeId === candidate.id && marker}
-                  <li className="flex min-w-0 flex-col gap-2">
-                    <span className="block aspect-square w-full overflow-hidden rounded-md">
-                      <PhotoImage
-                        photoId={candidate.id}
-                        variant="thumbnail"
-                        alt={candidate.relative_path}
-                        className="size-full object-contain"
-                      />
-                    </span>
-                    <span className="truncate font-mono text-xs text-text">{fileName}</span>
-                    <QualityMeter
-                      level={qualityLevel(candidate.ranking?.rank_score ?? null)}
-                      className="text-xs"
+      {/* Das gesteuerte Element des Umschalters ist das jeweils sichtbare Raster; gibt es keines
+          (Fehler, alle Kandidaten hinzugefügt), steht ein leerer Platzhalter mit derselben Id,
+          damit `aria-controls` nie ins Leere zeigt. Das Raster bleibt direktes Kind der Fläche. */}
+      {gridId !== undefined && !query.isLoading && candidates.length === 0 && <div id={gridId} />}
+      {query.isLoading && (
+        <ul
+          id={gridId}
+          role="status"
+          aria-label="Fotos werden geladen…"
+          className={PHOTO_CARD_GRID_CLASS}
+        >
+          {Array.from({ length: BAND_SKELETON_COUNT }, (_, index) => (
+            <li key={index} aria-hidden="true">
+              <Skeleton className="aspect-square w-full rounded-md" />
+            </li>
+          ))}
+        </ul>
+      )}
+      {candidates.length > 0 && (
+        <List
+          id={gridId}
+          aria-label={reference === undefined ? undefined : 'Alternativen, zeitlich geordnet'}
+          className={PHOTO_CARD_GRID_CLASS}
+        >
+          {candidates.map((candidate, index) => {
+            const neighborId = (candidates[index + 1] ?? candidates[index - 1])?.id ?? null
+            const struck = ownRatingStatus(candidate.ratings, username) === 'rejected'
+            const fileName = candidate.relative_path.split('/').pop() ?? candidate.relative_path
+            const busy = busyIds.has(candidate.id)
+            return (
+              <Fragment key={candidate.id}>
+                {markerBeforeId === candidate.id && marker}
+                <li className="flex min-w-0 flex-col gap-2">
+                  <span className="block aspect-square w-full overflow-hidden rounded-md">
+                    <PhotoImage
+                      photoId={candidate.id}
+                      variant="thumbnail"
+                      alt={candidate.relative_path}
+                      className="size-full object-contain"
                     />
-                    {struck && (
-                      <span>
-                        <AlbumStateBadge state="struck" />
-                      </span>
-                    )}
-                    <div className="flex flex-col gap-3">
-                      {actions.map((action) => (
-                        <Button
-                          key={action.key}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-11 sm:h-8"
-                          data-focus-key={`${action.key}-${candidate.id}`}
-                          busy={busy}
-                          aria-label={`${action.label}: ${candidate.relative_path}`}
-                          onClick={() => action.onAction(candidate, neighborId)}
-                        >
-                          {action.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </li>
-                </Fragment>
-              )
-            })}
-            {showMarker && markerBeforeId === null && marker}
-          </List>
-        )}
-        {markerLater && <p className="text-xs text-text">{REFERENCE_LATER_TEXT}</p>}
-        {!query.isLoading && loadError === null && candidates.length === 0 && (
-          <p className="text-sm text-text">{CANDIDATES_NONE_TEXT}</p>
-        )}
-      </div>
+                  </span>
+                  <span className="truncate font-mono text-xs text-text">{fileName}</span>
+                  <QualityMeter
+                    level={qualityLevel(candidate.ranking?.rank_score ?? null)}
+                    className="text-xs"
+                  />
+                  {struck && (
+                    <span>
+                      <AlbumStateBadge state="struck" />
+                    </span>
+                  )}
+                  <div className="flex flex-col gap-3">
+                    {actions.map((action) => (
+                      <Button
+                        key={action.key}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-8"
+                        data-focus-key={`${action.key}-${candidate.id}`}
+                        busy={busy}
+                        aria-label={`${action.label}: ${candidate.relative_path}`}
+                        onClick={() => action.onAction(candidate, neighborId)}
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                  </div>
+                </li>
+              </Fragment>
+            )
+          })}
+          {showMarker && markerBeforeId === null && marker}
+        </List>
+      )}
+      {markerLater && <p className="text-xs text-text">{REFERENCE_LATER_TEXT}</p>}
+      {!query.isLoading && loadError === null && candidates.length === 0 && (
+        <p className="text-sm text-text">{CANDIDATES_NONE_TEXT}</p>
+      )}
+
       <div className="flex flex-wrap gap-3">
         {moreLabel !== undefined && query.hasNextPage && (
           <Button
