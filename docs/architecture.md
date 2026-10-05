@@ -637,7 +637,7 @@ Verarbeitungs-Cache (Thumbnails).
     sich die Ansicht geändert hat.
   - **Der Vorrats-Endpunkt wird der Alternativen-Endpunkt** *(dieselbe Spec, ADR 0098 Punkt 5)*:
     `GET /projects/{id}/curation-candidates` entfällt **ersatzlos** (`404`), an seine Stelle tritt
-    `GET /projects/{id}/draft-alternatives?event_id=N&photo_id=N&limit=…&offset=…&nearest=…` (`photo_id` seit
+    `GET /projects/{id}/draft-alternatives?event_id=N&photo_id=N&limit=…&offset=…&series=…` (`photo_id` seit
     Spec 0558 optional). Er liefert die Fotos **eines** Events des letzten erfolgreichen Laufs
     abzüglich des Entwurfs des anfragenden Nutzers; ein von ihm **gestrichenes** Foto ist
     enthalten — genau daraus folgt, dass ein Austausch auch ohne Rückgängig umkehrbar ist. Ein
@@ -653,22 +653,35 @@ Verarbeitungs-Cache (Thumbnails).
       nur `photo_id` und `taken_at`). Ein Foto ohne EXIF-Zeit ordnet sich nach `last_modified`
       ein (`taken_at` ist NOT NULL). Sortiert wird in Python; `limit`/`offset` schneiden danach
       die Seite heraus, und nur sie wird hydratisiert, die Motive eingeschlossen.
-    - Antwortform `DraftAlternativesOut { items, total, offset, reference_index }`:
+    - Antwortform `DraftAlternativesOut { items, total, offset, reference_index, series_rest }`:
       `reference_index` ist die Zahl der Kandidaten der vollen Restmenge **strikt** vor dem
-      Bezugsbild (ohne `photo_id` `null`), `offset` der Beginn der gelieferten Seite. Beide
-      entstehen aus derselben Kandidatenabfrage wie `total`. Mit `nearest=N` (`1..BAND_MAX`, nur
-      zusammen mit `photo_id`, sonst `422`) schneidet der Server selbst das Fenster
-      `offset = clamp(reference_index − ⌊N/2⌋, 0, max(0, total − N))`
-      (`selection.py::nearest_window_offset`) — mitgeschicktes `limit`/`offset` ist dann
-      wirkungslos. Jede gescheiterte Auflösung ergibt den byte-gleichen Leerkörper
-      `{"items": [], "total": 0, "offset": 0, "reference_index": null}`.
-    - Oberfläche: Band (`nearest=BAND_SIZE`, vier) und Dialog zeigen den Ordnungstext
+      Bezugsbild (ohne `photo_id` `null`), `offset` der Beginn der gelieferten Seite. Alle
+      entstehen aus derselben Kandidatenabfrage wie `total`.
+    - **Das Band zeigt die Aufnahmeserie** *(Spec
+      [`0578`](../specs/features/0578-alternativen-serie-und-hinzufuegen.md), ADR
+      [`0133`](../specs/decisions/0133-band-zeigt-aufnahmeserie.md), löst das Bandfenster
+      `nearest` aus ADR 0132 Punkt 3 ab)*: Mit `series=true` (strikt geparster Wahrheitswert, nur
+      zusammen mit `photo_id`, sonst `422`) schneidet der Server das Fenster allein über die reine
+      Funktion `selection.py::series_window` aus denselben geordneten `taken_at`. Zwei benachbarte
+      Alternativen gehören zur selben Serie, solange zwischen ihnen höchstens `SERIES_GAP` (2 min,
+      inklusiv) liegt; die Serie wächst vom Bezugsbild nach beiden Seiten bis zur ersten größeren
+      Pause. Fotos des Entwurfs überbrücken keine Pause. Serie mit `BAND_MIN`..`BAND_MAX_SERIES`
+      (4..12) Bildern: genau die Serie; kürzer: aufgefüllt mit den zeitlich nächsten des Events auf
+      4; länger: die 12 zeitlich nächsten innerhalb der Serie, `series_rest` = Rest. Bei
+      Gleichstand gewinnt das frühere Bild. Mitgeschicktes `limit`/`offset` ist dann wirkungslos;
+      `BAND_MAX_SERIES` deckelt zugleich die Hydratation. Ohne `series` ist `series_rest` `0`.
+      `nearest` bleibt als Riegel stehen (`None`-typisiert, jede Belegung `422`), damit ein alter
+      Client nicht still die erste Seite der vollen Reihe als Band bekommt. Jede gescheiterte
+      Auflösung ergibt den byte-gleichen Leerkörper
+      `{"items": [], "total": 0, "offset": 0, "reference_index": null, "series_rest": 0}`.
+    - Oberfläche: Serie und aufgeklappte Reihe des Bands zeigen den Ordnungstext
       `ALTERNATIVES_ORDER_TEXT` und das zu ersetzende Bild als nicht bedienbare Bezugsmarke
-      („Wird ersetzt", `ReferenceMarker`) an der Stelle `reference_index − offset`
-      (`utils/referenceMarker.ts`); das Raster ist eine geordnete Liste. Im Band gilt die Stelle
-      der **ungefilterten** Antwort (ein optimistisch getauschtes Bild verschiebt die Marke nicht),
-      im Dialog steht die Marke über alle geladenen Seiten genau einmal, an der Seitengrenze erst
-      mit der Folgeseite (bis dahin ein Hinweis). Das Frontend sortiert nie selbst.
+      („Wird ersetzt", `ReferenceMarker`) an der Stelle `reference_index − pages[0].offset`
+      (`utils/referenceMarker.ts`); das Raster ist eine geordnete Liste. Es gilt die Stelle der
+      **ungefilterten** Antwort (ein Foto, das die Liste verlässt, verschiebt die Marke nicht); in
+      der aufgeklappten Reihe steht die Marke über alle geladenen Seiten genau einmal, an der
+      Seitengrenze erst mit der Folgeseite (bis dahin `REFERENCE_LATER_TEXT`). Das Frontend
+      sortiert nie selbst.
     - **Vier Muss-Kriterien:** die Auth-Dependency ist ausgeschrieben (dieser Router hat kein
       Vollständigkeitsnetz in `test_auth_guard.py` — ein vergessener Parameter ergäbe einen still
       öffentlichen Endpunkt); `criterion_scoring_run_id` aus dem **Pfadparameter** steht in jeder
@@ -679,17 +692,24 @@ Verarbeitungs-Cache (Thumbnails).
       über fremde Ids, und `photo_id` steuert die zeitliche Position, also würde sonst die
       Zeitposition eines fremden Fotos ablesbar; alle fünf Query-Parameter tragen
       deklarative Grenzen.
-    - Oberfläche: Der Austausch lief bis Spec 0558 allein in `components/DraftAlternativesDialog.tsx`
-      (`ui/dialog`, **kein** Popover — ein Bildraster mit eigenem Blätterweg braucht auf 360px die
-      volle Fläche, und der Vorgang verlangt Fokusfang); seither ist der Dialog die Ansicht „Alle
-      Alternativen" hinter dem Band am Foto (siehe unten). Geladen wird **erst beim Öffnen**: eine Abfrage je
-      geöffnetem Bild, nie eine je Kachel. Ein Tippen löst **einen** Schreibvorgang aus (siehe den
-      Austausch-Endpunkt unten; bis Spec 0432 waren es zwei), schließt den Dialog und setzt den
-      Fokus auf die nun an dieser Stelle stehende Kachel; die Entwurfsliste wird dabei **nicht**
-      neu geladen (`useDraftExchangeMutation` schreibt sie über
-      `utils/albumDraft.ts::insertDraftPhoto` mit dem Sortierschlüssel des Servers fort).
-      `components/CurationCandidates.tsx`, `useCurationCandidatesQuery` und
-      `listCurationCandidates` entfallen.
+    - Oberfläche: Der Austausch lief bis Spec 0558 allein in einem Dialog; Spec 0558 brachte das
+      Band am Foto, Spec 0578 ersetzt die dortige Ansicht „Alle Alternativen" durch die
+      **aufgeklappte Reihe im Band** (`DraftAlternativesBand`, Umschalter „Alle Fotos des
+      Events"/„Weniger anzeigen" mit `aria-expanded`): dieselbe Fläche wächst zur vollen zeitlichen
+      Reihe, seitenweise (`PHOTOS_PAGE_SIZE = 60`, „Weitere Fotos"), ohne Dialog, ohne Fokusfalle,
+      ohne programmatisches Scrollen; die volle Reihe lädt erst beim ersten Aufklappen. Geladen
+      wird **erst beim Öffnen**: Abfragen nur für das geöffnete Bild, nie je Kachel. Jede
+      Alternative trägt „Tauschen" und „Hinzufügen" (`CandidatePanel.actions`). Ein Tausch löst
+      **einen** Schreibvorgang aus (siehe den Austausch-Endpunkt unten; bis Spec 0432 waren es
+      zwei), schließt Band und Reihe und setzt den Fokus auf die nun an dieser Stelle stehende
+      Kachel; die Entwurfsliste wird dabei **nicht** neu geladen (`useDraftExchangeMutation`
+      schreibt sie über `utils/albumDraft.ts::insertDraftPhoto` mit dem Sortierschlüssel des
+      Servers fort). „Hinzufügen" ist derselbe Schreibweg wie im Hinzufügen-Panel
+      (`handleAdd`, `PUT /photos/{id}/rating` mit `album_worthy`, ohne Rückgängig) und lässt das
+      Band offen; das Foto verlässt die Liste über die Entwurfsmenge, und die Alternativen-Abfragen
+      werden danach nur als veraltet markiert (`refetchType: 'none'`) — kein Nachrücken, das
+      nächste Öffnen lädt frisch. `components/CurationCandidates.tsx`,
+      `useCurationCandidatesQuery` und `listCurationCandidates` entfallen.
   - **Der Austausch ist ein Aufruf, eine Transaktion und ein Ereignis** *(Spec
     [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
     [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md)
@@ -760,10 +780,12 @@ Verarbeitungs-Cache (Thumbnails).
       Erklärtext (`DraftExplainer`, Zustand je Nutzer in `localStorage`), mitlaufende Kopfleiste
       mit „Tag d von T · Event p von E", Eventname, Zählern und „Zur Endauswahl"
       (`hooks/useDraftPosition`), je Event `DraftEventSection` mit Hinzufügen-Feld als letzter
-      Rasterzelle und Gestrichen-Zeile, das Alternativen-Band `DraftAlternativesBand` als volle
-      Rasterzeile am gewählten Foto (vier Alternativen, dahinter der Dialog „Alle Alternativen"),
-      das Hinzufügen-Panel `DraftAddPanel` und der Rückgängig-Hinweis `UndoToast` (8 s, nur nach
-      Streichen und Tausch). `CurationPhotoTile` nennt die Handlung („Streichen" bzw. „Wieder
+      Rasterzelle (vor dem Wort ein `aria-hidden`-„+", Spec 0578) und Gestrichen-Zeile, das
+      Alternativen-Band `DraftAlternativesBand` als volle Rasterzeile am gewählten Foto (die
+      Aufnahmeserie, an Ort und Stelle aufklappbar zu allen Fotos des Events, je Alternative
+      „Tauschen" und „Hinzufügen"), das Hinzufügen-Panel `DraftAddPanel` und der
+      Rückgängig-Hinweis `UndoToast` (8 s, nur nach Streichen und Tausch). `CurationPhotoTile`
+      nennt die Handlung („Streichen" bzw. „Wieder
       aufnehmen", ohne `aria-pressed`); der Zustand kommt als Kennzeichen „Vorschlag" /
       „Aufgenommen" / „Gestrichen" aus der Begriffsquelle `utils/albumStateLabels.ts`, die auch
       die Haltungszeilen der Endauswahl speist. Die Cache-Schlüssel von Entwurf und Alternativen
@@ -771,7 +793,7 @@ Verarbeitungs-Cache (Thumbnails).
       [`0563`](../specs/features/0563-groessere-unbeschnittene-fotos.md) nutzt jedes Raster der
       Seite (Gruppen, Gestrichen-Zeile, Band, Panel, Platzhalter) die eine Spaltenregel
       `PHOTO_CARD_GRID_CLASS` aus `components/PhotoCard.tsx` (2 / ab `sm` 3 / ab `lg` höchstens 4),
-      und jedes Foto — auch im Dialog „Alle Alternativen" — wird in die feste quadratische
+      und jedes Foto — auch in der aufgeklappten Reihe im Band — wird in die feste quadratische
       Bildfläche eingepasst (`object-contain`), nie beschnitten.
   - **Die Endauswahl des Projekts, eine Ebene über beiden Entwürfen** *(Spec
     [`0431`](../specs/features/0431-endauswahl-gemeinsam.md), ADR

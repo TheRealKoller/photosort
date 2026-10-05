@@ -85,8 +85,8 @@ Begriffe für alle Kriterien:
 - [ ] Jede Entscheidungsfläche nennt die Handlung, nie den Zustand:
   - „Streichen: {Pfad}“ an der Albumkachel
   - „Wieder aufnehmen: {Pfad}“ an der gestrichenen Kachel
-  - „Tauschen: {Pfad}“ im Band **und** im Dialog „Alle Alternativen“
-  - „Hinzufügen: {Pfad}“ im Hinzufügen-Panel
+  - „Tauschen: {Pfad}“ im Band ~~**und** im Dialog „Alle Alternativen“~~ *(seit Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): in Serie und aufgeklappter Reihe des Bands)*
+  - „Hinzufügen: {Pfad}“ im Hinzufügen-Panel *(seit Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md) auch in Band und aufgeklappter Reihe)*
   - „Foto hinzufügen: {Eventname}“ als Auslöser
 
   Keine dieser Flächen trägt `aria-pressed`.
@@ -115,7 +115,7 @@ Begriffe für alle Kriterien:
 - [ ] „Alternativen: {Pfad}“ öffnet ohne Dialog ein Band als volle Rasterzeile nach der Zeile des gewählten Fotos.
   - Auf der Seite ist höchstens ein Band oder Panel offen. Der Auslöser trägt `aria-expanded` und `aria-controls`.
   - Geladen wird erst beim Öffnen, nie eine Abfrage je Kachel.
-  - Das Band zeigt höchstens vier Alternativen: Fotos desselben Events mit Rangzeile im Lauf, die nicht im Album sind. Gestrichene sind eingeschlossen und tragen „Gestrichen“, aussortierte nie.
+  - ~~Das Band zeigt höchstens vier Alternativen~~ *(abgelöst durch Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): das Band zeigt die Aufnahmeserie, 4 bis 12)*: Fotos desselben Events mit Rangzeile im Lauf, die nicht im Album sind. Gestrichene sind eingeschlossen und tragen „Gestrichen“, aussortierte nie.
   - Reihenfolge des Servers: zuerst gleiches Motiv nach Qualität absteigend, dann der Rest des Events nach Qualität. Fotos ohne Qualitätswert stehen jeweils zuletzt, bei Gleichstand gewinnt die kleinere Id.
   - Laden zeigt Platzhalter, ein Fehler eine Meldung mit „Erneut versuchen“, leer „Keine weiteren Fotos in diesem Event.“
   - Esc und „Schließen“ schließen das Band und geben den Fokus an „Alternativen“ zurück.
@@ -128,7 +128,7 @@ Begriffe für alle Kriterien:
   - Das ursprüngliche Foto steht wieder an seiner Stelle. Die Alternative hat ihren Vorzustand zurück (unberührt bzw. gestrichen) und ist nicht mehr im Album.
   - Während der Anfrage sind beide Fotos gesperrt.
   - Hat sich der Zustand eines der beiden Fotos seit dem Tausch geändert, lehnt der Server ab und schreibt nichts. Der Hinweis zeigt dann den Grund.
-- [ ] „Alle Alternativen“ öffnet den Dialog mit dem vollständigen Fotobestand des Events, seitenweise. Begriffe, Namen („Tauschen: {Pfad}“) und die Wirkung des Tauschs samt Hinweis sind dieselben wie im Band.
+- [ ] ~~„Alle Alternativen“ öffnet den Dialog mit dem vollständigen Fotobestand des Events, seitenweise. Begriffe, Namen („Tauschen: {Pfad}“) und die Wirkung des Tauschs samt Hinweis sind dieselben wie im Band.~~ *(abgelöst durch Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): „Alle Fotos des Events“ klappt die volle Reihe an Ort und Stelle im Band auf.)*
 - [ ] Die Großansicht ist über die Bildfläche jeder Albumkachel und jeder gestrichenen Kachel erreichbar. Verlauf und Fokusrückgabe bleiben wie bisher.
 
 **Fotos hinzufügen, ohne zu ersetzen**
@@ -152,7 +152,7 @@ Begriffe für alle Kriterien:
 - [ ] Keine Entscheidung lädt die Seite oder die Entwurfsliste neu: Die Liste wird beim Öffnen genau einmal geladen. Die Scrollposition des Dokuments ist nach jedem Handgriff unverändert. Nach jedem Handgriff zeigt die Seite dieselben Fotos, Kennzeichen, Zahlen und Gestrichen-Zeilen wie nach einem Neuladen.
 - [ ] Scheitert ein Handgriff (Streichen, Wieder aufnehmen, Tausch, Hinzufügen), ändert sich nichts. Am Ort der Handlung erscheint eine Meldung mit dem Grund aus der Serverantwort, und der Fokus bleibt auf dem Auslöser.
 - [ ] Bei 360 px Breite gilt:
-  - Alle Handgriffe dieser Story sind per Touch treffbar: Erklärtext umschalten, Streichen, Alternativen, Tauschen, Alle Alternativen, Schließen, gestrichene anzeigen, Wieder aufnehmen, Foto hinzufügen, Hinzufügen, Weitere Fotos, Rückgängig, Zur Endauswahl.
+  - Alle Handgriffe dieser Story sind per Touch treffbar: Erklärtext umschalten, Streichen, Alternativen, Tauschen, ~~Alle Alternativen~~ *(entfallen, Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md))*, Schließen, gestrichene anzeigen, Wieder aufnehmen, Foto hinzufügen, Hinzufügen, Weitere Fotos, Rückgängig, Zur Endauswahl.
   - Die Seite scrollt in keinem Zustand waagerecht: Ruhe, Band offen, Panel offen, Gestrichene eingeblendet, Hinweis sichtbar.
   - Der Hinweis liegt vollständig im Sichtbereich, und „Rückgängig“ wird nicht abgeschnitten.
 
@@ -241,7 +241,7 @@ Die Entscheidung steht in ADR [`0130`](../decisions/0130-album-entwurf-gestriche
    - `components/DraftExplainer.tsx`: zuklappbar. Der Zustand liegt in `localStorage` unter einem Schlüssel mit dem Nutzernamen, damit er je Browser und Nutzer gilt; es wird nur ein Boolean gespeichert. Ist der Speicher nicht verfügbar, ist der Text aufgeklappt.
    - `components/DraftEventSection.tsx`: Albumkacheln, Gestrichen-Zeile mit lokalem Aufklappzustand je `eventId` (nicht persistiert), Hinzufügen-Feld (`useDraftAlternativesQuery` ohne `photoId`, nur auf Anforderung geladen).
    - `components/DraftAlternativesBand.tsx`: Band am **einen** gewählten Foto der Seite, also eine Abfrage je gewähltem Foto, nie eine je Kachel.
-   - `DraftAlternativesDialog.tsx` bleibt als Ansicht „alle Alternativen“ mit Seitenabruf. Kommentar und Test „kein Rückgängig-Knopf“ werden angepasst.
+   - ~~`DraftAlternativesDialog.tsx` bleibt als Ansicht „alle Alternativen“ mit Seitenabruf. Kommentar und Test „kein Rückgängig-Knopf“ werden angepasst.~~ *(entfernt mit Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md))*
    - `components/UndoToast.tsx`: eigene Komponente ohne neue Abhängigkeit, `role="status"`. Rückgängig gilt nur für den letzten Handgriff. Ein neuer Handgriff ersetzt den Hinweis, die Gestrichen-Zeile bleibt der zweite Weg zurück. Die Sperre gilt für beide Ids.
    - Positionsanzeige über ein `IntersectionObserver` auf den Eventabschnitten, als eigener Hook mit injizierbarem Observer.
    - Abschluss unter dem letzten Event und ein dauerhafter Link auf `PROJECT_ROUTE_PATHS.selection`.
@@ -267,7 +267,7 @@ In `docs/architecture.md`, Kuratierungszweig (ca. Z. 538–635):
 - „kein Rückgängig-Knopf“ wird zum Undo-Endpunkt.
 - `photo_id` am Alternativen-Endpunkt wird optional.
 - `DELETE /photos/{id}/rating` liefert `200`.
-- `AlbumDraftPage` mit Band und Dialog „alle Alternativen“.
+- `AlbumDraftPage` mit Band ~~und Dialog „alle Alternativen“~~ *(seit Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): aufgeklappte Reihe im Band)*.
 
 `docs/setup.md` bleibt unberührt.
 
@@ -370,10 +370,10 @@ Ohne Farbe trennen Zahnrad, Rand gegen Füllung, Symbol und Wort die drei Zustä
   - 3–4 Alternativen in Serverreihenfolge; auf dem Desktop `grid-cols-4`, auf dem Handy 2×2.
   - Je Alternative: Bild (eingepasst, `rounded-md`), Dateiname (`font-mono text-xs truncate`) und Qualitätsstufe. Gestrichene tragen das Kennzeichen „Gestrichen“.
   - Je Alternative `outline` „Tauschen“, zugänglicher Name „Tauschen: {Pfad}“, `h-11 sm:h-8`.
-  - Darunter `ghost sm` „Alle Alternativen“ (bestehender `DraftAlternativesDialog`) und `ghost sm` „Schließen“.
+  - Darunter ~~`ghost sm` „Alle Alternativen“ (bestehender `DraftAlternativesDialog`) und~~ `ghost sm` „Schließen“. *(Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): Umschalter „Alle Fotos des Events“ über dem Raster.)*
 - **Laden:** vier Platzhalter, `role="status"`, „Alternativen werden geladen…“.
 - **Fehler:** `Alert` mit „Erneut versuchen“.
-- **Leer:** „Keine weiteren Fotos in diesem Event.“ Ohne „Alle Alternativen“.
+- **Leer:** „Keine weiteren Fotos in diesem Event.“ Ohne ~~„Alle Alternativen“~~ Umschalter *(Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md))*.
 - **Fokus:**
   - Beim Öffnen auf die Überschrift.
   - Esc und „Schließen“ geben ihn an „Alternativen“ zurück.
@@ -472,7 +472,7 @@ Aus der Endauswahl ändern sich nur die Haltungszeilen je Teilnehmer in `Selecti
 
 - **Raster:** zwei Spalten. Die Kachelhandlungen stehen untereinander und sind sichtbar 44px hoch. Kein waagerechtes Scrollen.
 - **Kopfleiste:** drei Zeilen. „Zur Endauswahl“ steht neben Zeile 1, der Eventname wird gekürzt.
-- **Band und Panel:** volle Breite, Kandidaten 2×2. „Alle Alternativen“, „Weitere Fotos“ und „Schließen“ dürfen umbrechen.
+- **Band und Panel:** volle Breite, Kandidaten 2×2. ~~„Alle Alternativen“,~~ „Weitere Fotos“ und „Schließen“ dürfen umbrechen. *(Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md))*
 - **Rückgängig-Hinweis:** 16px Rand. Der Dateiname wird gekürzt, der Knopf nie.
 - **Bedienung:** Alles ist per Touch erreichbar. Das Anhalten per Zeiger entfällt; der dauerhafte Weg zurück ist die Gestrichen-Zeile.
 - **E2E:**
@@ -727,7 +727,7 @@ Leitsatz: Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlege
   - `insertDraftPhoto` mit Gleichstand auf `taken_at`.
   - `useDraftDecisionMutation`: `null` führt zu `deleteRating`; Einfügen; der Entwurfsschlüssel wird nicht invalidiert, die anderen schon.
   - `useDraftExchangeUndoMutation`: Erfolg schreibt beide; `409` lässt den Cache unberührt.
-  - `useDraftAlternativesQuery`: Band (`photoId`, 4), Dialog und Panel (ohne `photoId`, 8) ergeben drei verschiedene Schlüssel unter `['photos', id]`.
+  - `useDraftAlternativesQuery`: ~~Band (`photoId`, 4), Dialog~~ Serie (`photoId`, `series`), volle Reihe *(Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md))* und Panel (ohne `photoId`, 8) ergeben drei verschiedene Schlüssel unter `['photos', id]`.
   - **Gegenfall:** `useSetRatingMutation` (Bildbestand) invalidiert den Entwurfsschlüssel.
   - **Folgentest:** Streichen → Rückgängig → Wiederaufnehmen → Hinzufügen → Tausch → Rückgängig. Nach jedem Schritt gilt Cache-Menge = Fotos mit `draftMembership ≠ out` in Sortierfolge, und `getAlbumDraft` lief insgesamt genau einmal.
 - **Komponenten:**
@@ -741,7 +741,7 @@ Leitsatz: Jede Zusage wird auf der niedrigsten Ebene geprüft, die sie widerlege
   - `DraftEventSection`: N der Gestrichen-Zeile, Aufklappen je Event ohne Speicherung, Hinzufügen-Feld, „Kein Bild im Entwurf“.
   - `CurationPhotoTile`: „Streichen: {Pfad}“ ohne `aria-pressed`; Kennzeichen je Zustand über Wort und `data-icon`; beide Datenformen von „nicht vorgeschlagen“.
   - `SelectionPhotoTile`: Haltungstabelle mit 4 Zeilen, „Nicht im Entwurf“ in **einem** Fall mit beiden Datenformen.
-  - `DraftAlternativesDialog`: „Gestrichen“, „Tauschen: {Pfad}“.
+  - ~~`DraftAlternativesDialog`: „Gestrichen“, „Tauschen: {Pfad}“.~~ *(Dialog entfernt mit Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md); dieselben Fälle in `DraftAlternativesBand.test.tsx`)*
   - Keine CSS-Assertions; Geometrie gehört nach E2E.
 - **Seite `AlbumDraftPage.test.tsx`:**
   - Verdrahtung von Kopf, Position und Abschluss (Observer-Attrappe mit Meldung je Element).
