@@ -1,6 +1,6 @@
 # 0578 - Alternativen als Aufnahmeserie, aufklappbar, mit Tauschen und Hinzufügen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #580](https://github.com/TheRealKoller/photosort/pull/580))
 **Erstellt:** 2026-10-05
 **Bezug:** Issue [#578](https://github.com/TheRealKoller/photosort/issues/578) (enthält die zusammengeführte Story #577), ADR [`0133`](../decisions/0133-band-zeigt-aufnahmeserie.md)
 
