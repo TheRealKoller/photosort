@@ -294,6 +294,28 @@ describe('DraftAlternativesBand', () => {
     expect(screen.queryByRole('button', { name: SHOW_ALL_LABEL })).toBeNull()
   })
 
+  it.each([
+    [
+      'the series fails to load',
+      () => vi.mocked(photosApi.listDraftAlternatives).mockRejectedValue(new Error('kaputt')),
+      new Set<number>(),
+    ],
+    [
+      'every loaded alternative left the list',
+      () => vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2, 3])),
+      new Set([2, 3]),
+    ],
+  ])('lets the toggle control an existing element when %s', async (_, arrange, excluded) => {
+    arrange()
+
+    renderBand(excluded)
+
+    const toggle = await screen.findByRole('button', { name: SHOW_ALL_LABEL })
+    const controlled = toggle.getAttribute('aria-controls')
+    expect(controlled).not.toBeNull()
+    expect(document.getElementById(controlled!)).not.toBeNull()
+  })
+
   it('keeps the toggle when the series fails to load', async () => {
     vi.mocked(photosApi.listDraftAlternatives).mockRejectedValue(new Error('kaputt'))
 
@@ -318,10 +340,11 @@ describe('DraftAlternativesBand', () => {
 
     const toggle = await screen.findByRole('button', { name: SHOW_ALL_LABEL })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle).toHaveAttribute(
-      'aria-controls',
-      screen.getByRole('list', { name: 'Alternativen, zeitlich geordnet' }).id,
-    )
+    expect(
+      document
+        .getElementById(toggle.getAttribute('aria-controls')!)
+        ?.contains(screen.getByRole('list', { name: 'Alternativen, zeitlich geordnet' })),
+    ).toBe(true)
     expect(rowCalls()).toHaveLength(0)
 
     await user.click(toggle)

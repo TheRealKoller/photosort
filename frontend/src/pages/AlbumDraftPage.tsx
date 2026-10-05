@@ -270,30 +270,36 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
 
   /** Hinzufügen aus Hinzufügen-Panel, Band oder aufgeklappter Reihe - derselbe Schreibweg
    * (`decisionMutation` mit `album_worthy`), ohne Rückgängig. Es schließt nichts: Das Foto
-   * verlässt die Liste über `excludedIds`, der Fokus wandert zum Nachbarn. */
-  function handleAdd(
+   * verlässt die Liste über `excludedIds`, der Fokus wandert zum Nachbarn. Andere Alternativen
+   * bleiben bedienbar, zwei Hinzufügungen können sich also überlappen - deshalb `mutateAsync` je
+   * Aufruf statt der Aufruf-Callbacks, die nur für den jeweils letzten Aufruf feuern; sonst
+   * verlöre ein früherer Aufruf Fehlermeldung, Fokus und das Lösen seiner Sperre. */
+  async function handleAdd(
     candidate: PhotoOut,
     neighborId: number | null,
     where: string,
     fallbackFocusKey: string,
-  ): void {
+  ): Promise<void> {
     if (!lock([candidate.id])) {
       return
     }
     endUndo()
     setActionError(null)
-    decisionMutation.mutate(
-      { photoId: candidate.id, status: 'album_worthy', insert: candidate },
-      {
-        onSuccess: () =>
-          setFocusRequest({
-            key: neighborId === null ? fallbackFocusKey : `add-${neighborId}`,
-            scroll: false,
-          }),
-        onError: (error) => setActionError({ where, message: errorText(error) }),
-        onSettled: () => unlock([candidate.id]),
-      },
-    )
+    try {
+      await decisionMutation.mutateAsync({
+        photoId: candidate.id,
+        status: 'album_worthy',
+        insert: candidate,
+      })
+      setFocusRequest({
+        key: neighborId === null ? fallbackFocusKey : `add-${neighborId}`,
+        scroll: false,
+      })
+    } catch (error) {
+      setActionError({ where, message: errorText(error) })
+    } finally {
+      unlock([candidate.id])
+    }
   }
 
   function handleExchange(replaced: PhotoOut, chosen: PhotoOut, where: string): void {
@@ -642,7 +648,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
                                       handleExchange(bandPhoto, chosen, 'band')
                                     }
                                     onAdd={(candidate, neighborId) =>
-                                      handleAdd(candidate, neighborId, 'band', 'band-heading')
+                                      void handleAdd(candidate, neighborId, 'band', 'band-heading')
                                     }
                                     busyIds={locked}
                                     error={errorAt('band')}
@@ -672,7 +678,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
                                     username={username}
                                     excludedIds={albumIds}
                                     onAdd={(candidate, neighborId) =>
-                                      handleAdd(
+                                      void handleAdd(
                                         candidate,
                                         neighborId,
                                         `panel-${eventId}`,

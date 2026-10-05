@@ -1,4 +1,4 @@
-import type { QueryClient } from '@tanstack/react-query'
+import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -84,6 +84,41 @@ function invalidateAllButTheDraft(queryClient: QueryClient, projectId: number) {
     queryKey: ['photos', projectId, 'alternatives'],
     refetchType: 'none',
   })
+}
+
+/**
+ * Ein Foto, das gerade in den Entwurf gekommen ist, verlässt die geladenen Alternativen-Seiten -
+ * ohne Nachfüllen, `series_rest` bleibt stehen. Zwingend, weil die Abfragen nur als veraltet
+ * markiert werden: Der nächste `offset` ist die Zahl der geladenen Einträge, und die Restmenge des
+ * Servers ist vor dieser Grenze um eins geschrumpft. Bliebe das Foto in den Seiten, überspränge
+ * „Weitere Fotos" genau ein Foto. `total`, `reference_index` und die `offset` der Folgeseiten
+ * rücken deshalb mit, damit Marke und Seitenfolge der verkleinerten Reihe entsprechen.
+ */
+function dropFromAlternatives(queryClient: QueryClient, projectId: number, photoId: number) {
+  queryClient.setQueriesData<InfiniteData<DraftAlternativesOut, number>>(
+    { queryKey: ['photos', projectId, 'alternatives'] },
+    (data) => {
+      const page = data?.pages.findIndex((current) => current.items.some((p) => p.id === photoId))
+      if (data === undefined || page === undefined || page === -1) {
+        return data
+      }
+      const removedAt =
+        data.pages[page].offset + data.pages[page].items.findIndex((p) => p.id === photoId)
+      return {
+        ...data,
+        pages: data.pages.map((current, index) => ({
+          ...current,
+          items: index === page ? current.items.filter((p) => p.id !== photoId) : current.items,
+          total: current.total - 1,
+          offset: index > page ? current.offset - 1 : current.offset,
+          reference_index:
+            current.reference_index !== null && removedAt < current.reference_index
+              ? current.reference_index - 1
+              : current.reference_index,
+        })),
+      }
+    },
+  )
 }
 
 /**
@@ -269,6 +304,9 @@ export function useDraftDecisionMutation(projectId: number, username: string | n
           return applyWrittenRating(withInsert, written, username)
         })
       }
+      if (insert !== undefined && written.status === 'album_worthy') {
+        dropFromAlternatives(queryClient, projectId, insert.id)
+      }
       invalidateAllButTheDraft(queryClient, projectId)
     },
   })
@@ -301,6 +339,7 @@ export function useDraftExchangeMutation(projectId: number, username: string | n
           )
         })
       }
+      dropFromAlternatives(queryClient, projectId, chosen.id)
       invalidateAllButTheDraft(queryClient, projectId)
     },
   })

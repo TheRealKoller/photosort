@@ -687,6 +687,105 @@ describe('AlbumDraftPage: Hinzufügen und Tauschen aus dem Band', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
+  /** Ein Server, dessen Restmenge nach jedem Hinzufügen tatsächlich schrumpft: Seiten werden
+   * aus der AKTUELLEN Restmenge geschnitten, wie es der Endpunkt tut. */
+  function shrinkingServer(ids: number[], event: EventOut) {
+    const taken = new Set<number>()
+    vi.mocked(photosApi.listDraftAlternatives).mockImplementation(async (_projectId, params) => {
+      const rest = ids.filter((photoId) => !taken.has(photoId))
+      const items =
+        params.series === true
+          ? rest.slice(0, 4)
+          : rest.slice(params.offset ?? 0, (params.offset ?? 0) + (params.limit ?? 60))
+      return {
+        items: items.map((photoId) => photo(photoId, { event, ranking: ranking(false) })),
+        total: rest.length,
+        offset: params.series === true ? 0 : (params.offset ?? 0),
+        reference_index: null,
+        series_rest: 0,
+      }
+    })
+    vi.mocked(ratingsApi.setRating).mockImplementation(async (photoId) => {
+      taken.add(photoId)
+      return written(photoId, 'album_worthy')
+    })
+  }
+
+  function shownAddNames(): string[] {
+    return screen
+      .getAllByRole('button', { name: /^Hinzufügen: / })
+      .map((button) => button.getAttribute('aria-label')!)
+  }
+
+  it('loses and doubles no photo when loading more after adding in the expanded row', async () => {
+    const user = userEvent.setup()
+    const ids = Array.from({ length: 62 }, (_, index) => 100 + index)
+    shrinkingServer(ids, EVENT_A)
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+
+    await openBand(user)
+    await user.click(await screen.findByRole('button', { name: 'Alle Fotos des Events' }))
+    await user.click(await screen.findByRole('button', { name: 'Hinzufügen: 100.jpg' }))
+    await screen.findByRole('button', { name: 'Streichen: 100.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Weitere Fotos' }))
+
+    await screen.findByRole('button', { name: 'Hinzufügen: 161.jpg' })
+    expect(shownAddNames()).toEqual(ids.slice(1).map((photoId) => `Hinzufügen: ${photoId}.jpg`))
+    expect(screen.queryByRole('button', { name: 'Weitere Fotos' })).toBeNull()
+  })
+
+  it('loses and doubles no photo when loading more after adding in the add panel', async () => {
+    const user = userEvent.setup()
+    const ids = Array.from({ length: 10 }, (_, index) => 200 + index)
+    shrinkingServer(ids, EVENT_B)
+    renderPage({ events: [EVENT_A, EVENT_B], items: [photo(1)] }, noObserver)
+
+    await user.click(await screen.findByRole('button', { name: /^Foto hinzufügen: .*Lyon/ }))
+    await user.click(await screen.findByRole('button', { name: 'Hinzufügen: 203.jpg' }))
+    await screen.findByRole('button', { name: 'Streichen: 203.jpg' })
+    await user.click(screen.getByRole('button', { name: 'Weitere Fotos' }))
+
+    await screen.findByRole('button', { name: 'Hinzufügen: 209.jpg' })
+    expect(shownAddNames()).toEqual(
+      ids.filter((photoId) => photoId !== 203).map((photoId) => `Hinzufügen: ${photoId}.jpg`),
+    )
+    expect(screen.queryByRole('button', { name: 'Weitere Fotos' })).toBeNull()
+  })
+
+  it('keeps error, lock and focus per call when two additions overlap and the first fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(alternativesOf(3, 4, 5))
+    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+    // `Promise.withResolvers` liegt jenseits der Bibliothek ES2023 dieses Projekts.
+    let failFirst: (error: unknown) => void = () => {}
+    let resolveSecond: (value: RatingWriteOut) => void = () => {}
+    vi.mocked(ratingsApi.setRating)
+      .mockReturnValueOnce(
+        new Promise((_, reject) => {
+          failFirst = reject
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSecond = resolve
+        }),
+      )
+
+    await openBand(user)
+    const addThree = await screen.findByRole('button', { name: 'Hinzufügen: 3.jpg' })
+    await user.click(addThree)
+    await user.click(screen.getByRole('button', { name: 'Hinzufügen: 4.jpg' }))
+    await act(async () => {
+      failFirst(new ApiError(409, 'Nicht mehr da.'))
+      resolveSecond(written(4, 'album_worthy'))
+    })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nicht mehr da.')
+    expect(await screen.findByRole('button', { name: 'Streichen: 4.jpg' })).toBeInTheDocument()
+    await waitFor(() => expect(addThree).toBeEnabled())
+    expect(screen.queryByRole('button', { name: 'Streichen: 3.jpg' })).toBeNull()
+  })
+
   it('loads the band fresh once after closing and reopening', async () => {
     const user = userEvent.setup()
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(alternativesOf(3, 4))
