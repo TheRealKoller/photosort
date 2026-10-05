@@ -72,7 +72,7 @@ export function draftQueryKey(projectId: number) {
 /** Der eigene Entwurfsschlüssel bleibt von der breiten Invalidierung ausgenommen - sein Stand ist
  * bereits der, den der Server jetzt gäbe. Die Alternativen werden nur als veraltet markiert
  * (`refetchType: 'none'`): Ein offenes Band oder Panel holte sonst ein neu geschnittenes Fenster
- * mit nachgerücktem Foto, und `series_rest` stimmte nicht mehr (ADR 0133, kein Nachrücken). Das
+ * mit nachgerücktem Foto, und `series_rest` stimmte nicht mehr. Das
  * hinzugefügte Foto verlässt die Liste über `excludedIds`; das nächste Öffnen lädt frisch. */
 function invalidateAllButTheDraft(queryClient: QueryClient, projectId: number) {
   void queryClient.invalidateQueries({

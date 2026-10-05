@@ -2549,7 +2549,7 @@ class TestDraftAlternatives:
     async def test_with_series_the_window_comes_from_the_server_alone(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Spec 0578, Auflage 3: Ein mitgeschicktes `offset`/`limit` hat mit `series` keine
+        """Ein mitgeschicktes `offset`/`limit` hat mit `series` keine
         Wirkung - gleiches Fenster, gleiches `offset`, gleiches `series_rest`."""
         project, event_row, reference, _ = await self._series_row(db_session, [1] * 20, 10)
         params = {"event_id": event_row.id, "photo_id": reference.id, "series": "true"}
@@ -2661,8 +2661,9 @@ class TestDraftAlternatives:
     async def test_a_candidate_of_a_foreign_event_or_older_run_bridges_nothing(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Spec 0578, Auflage 4: Kandidaten eines fremden Events oder eines aelteren Laufs mit
-        `taken_at` in der Luecke ueberbruecken nichts und zaehlen nicht in `series_rest`."""
+        """Kandidaten eines fremden Events oder eines aelteren Laufs mit `taken_at` in der Luecke
+        ueberbruecken nichts und zaehlen nicht in `series_rest` - sonst stuende dort eine
+        plausible Zahl zu einer fremden Menge."""
         gap = int(SERIES_GAP.total_seconds())
         gaps = [1] * 13 + [2 * gap] + [1] * 4
         project, event_row, reference, _ = await self._series_row(db_session, gaps, 13)
@@ -2680,6 +2681,20 @@ class TestDraftAlternatives:
             rank_position=1,
             selection_position=None,
         )
+        older_run = await _make_criterion_scoring_run(
+            db_session, project, started_at=datetime(2000, 1, 1, tzinfo=UTC)
+        )
+        older = await _make_photo(db_session, project, "aelterer-lauf.jpg", middle)
+        # Bewusst mit der Event-Id des AKTUELLEN Laufs: allein das Lauf-Praedikat haelt sie fern.
+        await _add_ranking(
+            db_session,
+            older_run,
+            older,
+            event=event_row,
+            rank_score=0.5,
+            rank_position=1,
+            selection_position=None,
+        )
         before = await self._series(authenticated_api_client, project, event_row, reference)
 
         assert before["series_rest"] == 13 - BAND_MAX_SERIES
@@ -2688,7 +2703,7 @@ class TestDraftAlternatives:
     async def test_another_users_decision_changes_nothing_of_the_own_series(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Spec 0578, Auflage 4 (Erweiterung von Auflage 8 der Spec 0569): Eine `album_worthy`-
+        """Eine `album_worthy`-
         oder `rejected`-Entscheidung des ANDEREN aendert keinen Wert der eigenen Antwort."""
         project, event_row, reference, alternatives = await self._series_row(
             db_session, [1] * 20, 10
@@ -2724,7 +2739,7 @@ class TestDraftAlternatives:
     async def test_series_without_a_reference_is_refused(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Spec 0578, Auflage 1: `series` ohne `photo_id` scheitert laut statt still."""
+        """`series` ohne `photo_id` scheitert laut statt still."""
         project, event_row, _, _ = await self._row(db_session, 3, 10)
 
         response = await self._get(
@@ -4953,7 +4968,7 @@ class TestDraftAlternativesKeys:
     async def test_the_series_cap_stays_below_the_page_cap(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Spec 0578, Auflage 3: `BAND_MAX_SERIES` deckelt die Hydratation des Bands und bleibt
+        """`BAND_MAX_SERIES` deckelt die Hydratation des Bands und bleibt
         unter dem Deckel von `limit` (200); `series=true` ist mit Bezugsbild gueltig."""
         project, _run, event_row, photos = await self._setup(db_session)
 
@@ -4980,7 +4995,7 @@ class TestDraftAlternativesKeys:
         db_session: AsyncSession,
         value: str,
     ) -> None:
-        """Spec 0578, Auflage 1: ein nicht als Wahrheitswert lesbarer Wert ergibt `422`."""
+        """Ein nicht als Wahrheitswert lesbarer Wert fuer `series` ergibt `422`."""
         project, _run, event_row, photos = await self._setup(db_session)
 
         response = await authenticated_api_client.get(
@@ -5015,7 +5030,7 @@ class TestDraftAlternativesKeys:
         with_reference: bool,
         value: str,
     ) -> None:
-        """Spec 0578, Auflage 2: Ein noch nicht aktualisierter Client mit `nearest` scheitert
+        """Ein noch nicht aktualisierter Client mit `nearest` scheitert
         laut, statt still die erste Seite der vollen Reihe als Band zu bekommen."""
         project, _run, event_row, photos = await self._setup(db_session)
         params: dict[str, object] = {"event_id": event_row.id, "nearest": value}

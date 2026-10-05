@@ -308,7 +308,7 @@ export interface DraftAlternativesBandProps {
 
 /**
  * Das Alternativen-Band am EINEN gewählten Foto der Seite: Abfragen nur für das gewählte Foto,
- * nie je Kachel, geladen erst beim Öffnen. Es zeigt die Aufnahmeserie des Fotos (ADR 0133), als
+ * nie je Kachel, geladen erst beim Öffnen. Es zeigt die Aufnahmeserie des Fotos, als
  * Fenster vom Server geschnitten, mit dem Foto selbst als Marke an seiner Stelle. „Alle Fotos des
  * Events" klappt an DERSELBEN Stelle die volle zeitliche Reihe seitenweise auf - kein Dialog, keine
  * Fokusfalle, kein programmatisches Scrollen; die volle Reihe lädt erst beim ersten Aufklappen und

@@ -159,10 +159,10 @@ class QualityCandidate:
     quality: float | None
 
 
-# Das Band unter einem Foto des Album-Entwurfs zeigt dessen Aufnahmeserie (ADR 0133): Zwei
+# Das Band unter einem Foto des Album-Entwurfs zeigt dessen Aufnahmeserie: Zwei
 # zeitlich benachbarte Alternativen gehoeren zusammen, solange zwischen ihnen hoechstens
 # `SERIES_GAP` liegt (INKLUSIV). Eine kuerzere Serie wird auf `BAND_MIN` aufgefuellt, eine
-# laengere auf `BAND_MAX_SERIES` gekappt. SICHERHEIT (Spec 0578, Auflage 3): `BAND_MAX_SERIES`
+# laengere auf `BAND_MAX_SERIES` gekappt. SICHERHEIT: `BAND_MAX_SERIES`
 # ist zugleich der Deckel der Hydratation und darf den `limit`-Deckel (200) nie uebersteigen.
 SERIES_GAP = timedelta(minutes=2)
 BAND_MIN = 4

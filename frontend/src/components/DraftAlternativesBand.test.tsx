@@ -377,7 +377,7 @@ describe('DraftAlternativesBand', () => {
   })
 
   it('loads the next page with "Weitere Fotos" and places the marker exactly once', async () => {
-    // Grenzfall aus dem abgeloesten Dialog: `reference_index` faellt genau auf die Seitengrenze.
+    // Grenzfall: `reference_index` faellt genau auf die Seitengrenze.
     // Solange eine weitere Seite folgt, steht die Marke NICHT am Ende von Seite 1.
     mockSeriesAndRow(
       answer([2], { referenceIndex: 1 }),

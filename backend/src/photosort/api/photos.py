@@ -2443,10 +2443,10 @@ async def draft_alternatives(
     # ganze Restmenge.
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0, le=MAX_QUERY_POSITION),
-    # Das Band (ADR 0133): die Aufnahmeserie um das Bezugsbild, Fenster allein vom Server
+    # Das Band: die Aufnahmeserie um das Bezugsbild, Fenster allein vom Server
     # (`series_window`). Nur mit `photo_id`; `limit`/`offset` sind dann wirkungslos.
     series: bool = Query(False),
-    # Der alte Bandparameter, mit ADR 0133 ersetzt. Er steht als `None`-typisierter Parameter
+    # Ein `None`-typisierter Riegel fuer den frueheren Bandparameter. Er steht
     # hier, damit ein noch nicht aktualisierter Client LAUT scheitert (`422`) statt still die
     # erste Seite der vollen Reihe als Band zu bekommen - Muster des `draft`-Riegels.
     nearest: None = Query(None, include_in_schema=False),

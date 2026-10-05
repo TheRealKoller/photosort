@@ -12,8 +12,11 @@
 
 ## Entscheidung
 
-1. **Die Serie entsteht im Backend, in derselben Reihe.** Der Query-Parameter `nearest` entfällt;
-   an seine Stelle tritt `series: bool` (nur mit `photo_id`, sonst `422`). Grundlage ist die nach
+1. **Die Serie entsteht im Backend, in derselben Reihe.** An die Stelle des Query-Parameters
+   `nearest` tritt `series: bool` (nur mit `photo_id`, sonst `422`). `nearest` bleibt als Riegel
+   stehen (`nearest: None = Query(None, include_in_schema=False)`): jede Belegung ergibt `422`,
+   damit ein noch nicht aktualisierter Client nicht still die erste Seite der vollen Reihe als
+   Band bekommt. Grundlage ist die nach
    ADR 0132 Punkt 1 geordnete Kandidatenreihe mit dem Bezugsbild an `reference_index`. Die Serie
    ist der zusammenhängende Abschnitt `[a, b)` dieser Reihe, der vom Bezugsbild aus nach beiden
    Seiten wächst, solange der Abstand zweier benachbarter `taken_at` (das Bezugsbild als erster

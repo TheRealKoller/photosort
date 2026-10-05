@@ -1139,7 +1139,7 @@ _STEP = timedelta(seconds=1)
 
 
 class TestTheSeriesWindow:
-    """Das Band zeigt die Aufnahmeserie (ADR 0133): Nachbarabstand `<= SERIES_GAP` verbindet,
+    """Das Band zeigt die Aufnahmeserie: Nachbarabstand `<= SERIES_GAP` verbindet,
     kurze Serien fuellen auf `BAND_MIN` auf, lange kappen auf `BAND_MAX_SERIES`."""
 
     @staticmethod

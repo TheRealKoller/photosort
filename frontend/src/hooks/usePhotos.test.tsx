@@ -288,7 +288,7 @@ describe('useDraftAlternativesQuery', () => {
       .findAll({ queryKey: ['photos', 1] })
       .map((query) => query.queryKey)
     expect(keys).toHaveLength(3)
-    // S4 / Spec 0578 Auflage 5: die Identitaet steht in jedem Schluessel, hinter dem Praefix,
+    // Die Identitaet steht in jedem Schluessel, hinter dem Praefix,
     // und `series` unterscheidet Serie und volle Reihe.
     for (const key of keys) {
       expect(key.slice(0, 4)).toEqual(['photos', 1, 'alternatives', USERNAME])
@@ -297,7 +297,7 @@ describe('useDraftAlternativesQuery', () => {
   })
 
   it('a rating marks it stale without refetching it while open (no moving up)', async () => {
-    // Spec 0578 / ADR 0133: Ein offenes Band holt nach einem Hinzufuegen KEIN neu geschnittenes
+    // Ein offenes Band holt nach einem Hinzufuegen KEIN neu geschnittenes
     // Fenster - sonst rueckte ein Foto nach und `series_rest` stimmte nicht mehr. Erst das naechste
     // Oeffnen (neuer Beobachter) laedt frisch.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(alternativesPage([4], 1))

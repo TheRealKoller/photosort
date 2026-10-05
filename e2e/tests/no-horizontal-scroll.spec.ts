@@ -509,7 +509,7 @@ function expectNoOverflow(metrics: PageMetrics, label: string): void {
 }
 
 /**
- * „Tauschen" und „Hinzufügen" der ersten Alternative (specs/features/0578-...): untereinander,
+ * „Tauschen" und „Hinzufügen" der ersten Alternative: untereinander,
  * je sichtbar mindestens 44 px hoch und mit mindestens 12 px Abstand, ohne Ueberlappung.
  */
 async function expectStackedActions(band: Locator, label: string): Promise<void> {
@@ -535,7 +535,7 @@ async function expectStackedActions(band: Locator, label: string): Promise<void>
  * Die durch eine Interaktion entstehenden Zustaende des Album-Entwurfs bei 360 px
  * (specs/features/0558-...) - eigene Messungen, weil die Routenschleife oben ausschliesslich Seiten
  * im Ruhezustand misst: das offene Alternativen-Band zugeklappt (Serie) und aufgeklappt (alle Fotos
- * des Events, specs/features/0578-...), das offene Hinzufuegen-Panel und die eingeblendeten
+ * des Events), das offene Hinzufuegen-Panel und die eingeblendeten
  * Gestrichenen.
  *
  * Band und Panel sind volle Rasterzeilen mit eigenem Raster aus Kachel und Handlungen darin - der
