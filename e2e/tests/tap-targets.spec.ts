@@ -220,7 +220,8 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   checked.push('Schließen des Bands')
   // Aufgeklappte Reihe: dieselben Handgriffe in derselben Fläche.
   await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  const collapse = band.getByRole('button', { name: 'Weniger anzeigen', exact: true })
+  await expect(collapse, 'aufgeklappter Umschalter').toHaveAttribute('aria-expanded', 'true')
   const rowExchange = band.getByRole('button', { name: /^Tauschen: / }).first()
   await expect(rowExchange, 'mindestens eine Alternative in der aufgeklappten Reihe').toBeVisible()
   await assertTappable(rowExchange, 'Tauschen (aufgeklappte Reihe)')
@@ -230,10 +231,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
     'Hinzufügen (aufgeklappte Reihe)',
   )
   checked.push('Hinzufügen in der Reihe')
-  await assertTappable(
-    band.getByRole('button', { name: 'Weniger anzeigen', exact: true }),
-    'Weniger anzeigen (Umschalter)',
-  )
+  await assertTappable(collapse, 'Weniger anzeigen (Umschalter)')
   checked.push('Umschalter der Reihe')
   await alternatives.click()
 
