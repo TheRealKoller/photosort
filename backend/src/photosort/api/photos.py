@@ -84,11 +84,12 @@ from photosort.persons import effective_person_assignments, load_effective_perso
 # Beschaffung ihrer Eingabe.
 from photosort.selection import (
     QualityCandidate,
+    SeriesWindow,
     TimedCandidate,
     motif_is_present,
-    nearest_window_offset,
     order_alternatives_chronologically,
     order_by_quality,
+    series_window,
 )
 from photosort.thumbnails import variant_path
 
@@ -2401,32 +2402,28 @@ async def list_ausschuss(
     return AusschussOut(items=items, total=len(slots), open_count=open_count)
 
 
-# SICHERHEIT (S4): Deckel von `nearest` und damit der Hydratation ueber `_photos_by_id` mit ihren
-# `selectinload`s. Er darf den Deckel von `limit` (200) nie uebersteigen, sonst holte ein Band
-# mehr schwere Zeilen als jede Seite; das Band selbst fragt `BAND_SIZE = 4` an.
-BAND_MAX = 50
-
-
 class DraftAlternativesOut(BaseModel):
     """Die Antwortform des Alternativen-Endpunkts.
 
     `offset` ist der Beginn der ausgelieferten Seite in der vollen Reihe, `reference_index` die
-    Stelle des Bezugsbildes darin (Zahl der Kandidaten davor) - ohne Bezugsbild `None`. Beide
-    sind wie `total` Funktionen des ANFRAGENDEN Nutzers."""
+    Stelle des Bezugsbildes darin (Zahl der Kandidaten davor) - ohne Bezugsbild `None`.
+    `series_rest` ist die Zahl der Serienaufnahmen jenseits des Bandfensters (nur mit `series`,
+    sonst `0`). Alle vier sind wie `total` Funktionen des ANFRAGENDEN Nutzers."""
 
     items: list[PhotoOut]
     total: int
     offset: int
     reference_index: int | None
+    series_rest: int
 
 
 def _no_alternatives() -> DraftAlternativesOut:
     """Der EINE Leerkoerper jeder gescheiterten Aufloesung - byte-gleich, ohne Rueckspiegelung
     eines Werts. Ein abweichender Koerper je Fehlerursache waere ein Existenz-Orakel."""
-    return DraftAlternativesOut(items=[], total=0, offset=0, reference_index=None)
+    return DraftAlternativesOut(items=[], total=0, offset=0, reference_index=None, series_rest=0)
 
 
-_NEAREST_WITHOUT_REFERENCE = "nearest ist nur zusammen mit photo_id zulaessig."
+_SERIES_WITHOUT_REFERENCE = "series ist nur zusammen mit photo_id zulaessig."
 
 
 @router.get("/projects/{project_id}/draft-alternatives", response_model=DraftAlternativesOut)
@@ -2446,9 +2443,13 @@ async def draft_alternatives(
     # ganze Restmenge.
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0, le=MAX_QUERY_POSITION),
-    # Das Band: die `nearest` zeitlich naechsten Alternativen, Fenster vom
-    # Server geschnitten. Nur mit `photo_id`; `limit`/`offset` sind dann wirkungslos.
-    nearest: int | None = Query(None, ge=1, le=BAND_MAX),
+    # Das Band (ADR 0133): die Aufnahmeserie um das Bezugsbild, Fenster allein vom Server
+    # (`series_window`). Nur mit `photo_id`; `limit`/`offset` sind dann wirkungslos.
+    series: bool = Query(False),
+    # Der alte Bandparameter, mit ADR 0133 ersetzt. Er steht als `None`-typisierter Parameter
+    # hier, damit ein noch nicht aktualisierter Client LAUT scheitert (`422`) statt still die
+    # erste Seite der vollen Reihe als Band zu bekommen - Muster des `draft`-Riegels.
+    nearest: None = Query(None, include_in_schema=False),
     session: AsyncSession = Depends(get_session),
     # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Dieser Router traegt bewusst KEINE
     # router-weite `dependencies`-Liste (siehe Kopfkommentar der Datei), und
@@ -2470,10 +2471,11 @@ async def draft_alternatives(
     `selection.py::order_alternatives_chronologically` die volle Restmenge zeitlich nach
     `(Photo.taken_at, photo_id)` und liefert die Stelle des Bezugsbildes (`reference_index`);
     ohne `photo_id` ordnet `order_by_quality`. Danach schneidet `limit`/`offset` die Seite heraus,
-    mit `nearest` das vom Server gewaehlte Fenster `nearest_window_offset(...)`. `total` ist die
-    RESTMENGE und damit unabhaengig vom Schnitt - ein aus `len(items)` gebildetes `total` waere
-    auf der ersten Seite nicht davon zu unterscheiden. `reference_index`, `offset` und `total`
-    entstehen aus DERSELBEN Kandidatenabfrage; es gibt keine eigene Zaehl- oder Positionsabfrage.
+    mit `series` das vom Server gewaehlte Serienfenster `series_window(...)` samt `series_rest`.
+    `total` ist die RESTMENGE und damit unabhaengig vom Schnitt - ein aus `len(items)` gebildetes
+    `total` waere auf der ersten Seite nicht davon zu unterscheiden. `reference_index`, `offset`,
+    `series_rest` und `total` entstehen aus DERSELBEN Kandidatenabfrage; es gibt keine eigene
+    Zaehl- oder Positionsabfrage.
 
     SICHERHEIT - Projektbindung (S2): `PhotoRanking` traegt KEINE `project_id`, und `event_id` ist
     ein GLOBALER Surrogatschluessel - eine Id aus Projekt B identifiziert unter `/projects/A/…`
@@ -2492,21 +2494,21 @@ async def draft_alternatives(
     `session.get(Photo, …)` oder eine zweite Abfrage auf `Photo.taken_at`. Scheitert das, endet
     die Anfrage vor jeder weiteren Abfrage mit `200` und dem byte-gleichen Leerkoerper
     (`_no_alternatives`), ohne Fehlertext und ohne Rueckspiegelung der uebergebenen Werte.
-    `photo_id` steuert allein die zeitliche Position (`reference_index`, Bandfenster); ohne das
-    Praedikat wuerde die Zeitposition eines fremden Fotos ablesbar. Ein abweichender Statuscode
-    oder Koerper waere daneben ein Existenz-Orakel ueber fremde Ids.
+    `photo_id` steuert allein die zeitliche Position (`reference_index`, Serienfenster,
+    `series_rest`); ohne das Praedikat wuerde die Zeitposition eines fremden Fotos ablesbar.
+    Ein abweichender Statuscode oder Koerper waere daneben ein Existenz-Orakel ueber fremde Ids.
 
     OHNE `photo_id` (S8) entfaellt Schritt (1) und mit ihm die Zeitordnung: `order_by_quality`
-    ordnet dann nach Qualitaet, `reference_index` ist `None`, `nearest` ergibt `422`. Die
+    ordnet dann nach Qualitaet, `reference_index` ist `None`, `series` ergibt `422`. Die
     Kandidatenabfrage steht mit Lauf- UND Event-Praedikat unveraendert - eine unbekannte oder
     projektfremde `event_id` ergibt den Leerkoerper. Untersagt sind ein Ersatz-Bezugsbild (etwa
     das frueheste Foto des Events), eine Menge ohne Event-Praedikat und eine Bindung, die nur im
     Zweig mit Bezugsbild steht."""
-    if nearest is not None and photo_id is None:
-        # Laut statt still: ein ignoriertes `nearest` lieferte eine Liste, die wie ein Band
+    if series and photo_id is None:
+        # Laut statt still: ein ignoriertes `series` lieferte eine Liste, die wie ein Band
         # aussieht, aber keines ist. Vor jeder Abfrage.
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_NEAREST_WITHOUT_REFERENCE
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_SERIES_WITHOUT_REFERENCE
         )
     project = await _get_project_or_404(project_id, session)
 
@@ -2584,6 +2586,7 @@ async def draft_alternatives(
 
     # (3) Ordnen und schneiden - `total`, `reference_index` und `offset` aus derselben Menge.
     reference_index: int | None = None
+    window: SeriesWindow | None = None
     if reference is None:
         ordered_ids = order_by_quality(
             QualityCandidate(photo_id=row.photo_id, quality=row.rank_score)
@@ -2592,18 +2595,18 @@ async def draft_alternatives(
         if not ordered_ids:
             return _no_alternatives()
     else:
-        ordered_ids, reference_index = order_alternatives_chronologically(
+        ordered_ids, reference_index, ordered_times = order_alternatives_chronologically(
             reference,
             (
                 TimedCandidate(photo_id=row.photo_id, taken_at=row.taken_at)
                 for row in candidate_rows
             ),
         )
+        if series:
+            # Das Fenster stammt allein vom Server; kein Client-Wert geht in die Rechnung ein.
+            window = series_window(ordered_times, reference.taken_at, reference_index)
+            offset, limit = window.offset, window.size
     total = len(ordered_ids)
-    if nearest is not None and reference_index is not None:
-        # Das Fenster stammt allein vom Server; kein Client-Wert geht in die Rechnung ein.
-        offset = nearest_window_offset(reference_index, total, nearest)
-        limit = nearest
     ids = ordered_ids[offset : offset + limit]
 
     # (4) Die Hydratation laeuft ausschliesslich ueber die Seite, die Motive eingeschlossen.
@@ -2639,7 +2642,11 @@ async def draft_alternatives(
         for alternative_id in ids
     ]
     return DraftAlternativesOut(
-        items=items, total=total, offset=offset, reference_index=reference_index
+        items=items,
+        total=total,
+        offset=offset,
+        reference_index=reference_index,
+        series_rest=0 if window is None else window.rest,
     )
 
 

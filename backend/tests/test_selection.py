@@ -26,9 +26,12 @@ import pytest
 
 import photosort
 from photosort.selection import (
+    BAND_MAX_SERIES,
+    BAND_MIN,
     DEFAULT_TARGET,
     EVENT_SHARE_CAP,
     MOTIF_PRESENCE_THRESHOLD,
+    SERIES_GAP,
     SIMILARITY_DECAY,
     SIMILARITY_TIME_WINDOW,
     QualityCandidate,
@@ -38,10 +41,10 @@ from photosort.selection import (
     carried_motifs,
     effective_target,
     motif_is_present,
-    nearest_window_offset,
     order_alternatives_chronologically,
     order_by_quality,
     select_album_draft,
+    series_window,
 )
 
 _BASE_TIME = datetime(2026, 7, 20, 10, 0)
@@ -1016,7 +1019,7 @@ class TestTheChronologicalOrderOfTheAlternatives:
     def test_the_candidates_run_from_early_to_late(self) -> None:
         """Die Eingabe steht bewusst in Id-Reihenfolge, die Zeit laeuft andersherum - eine
         Implementierung, die die Eingabe durchreicht oder nach Id ordnet, faellt hier auf."""
-        ids, _ = order_alternatives_chronologically(
+        ids, _, _ = order_alternatives_chronologically(
             _timed(1, 25), [_timed(2, 40), _timed(3, 30), _timed(4, 10), _timed(5, 20)]
         )
 
@@ -1042,7 +1045,7 @@ class TestTheChronologicalOrderOfTheAlternatives:
         candidates = [_timed(7, 5), _timed(3, 5), _timed(5, 5), _timed(9, 1)]
 
         for permutation in itertools.permutations(candidates):
-            assert order_alternatives_chronologically(_timed(1, 30), permutation) == (
+            assert order_alternatives_chronologically(_timed(1, 30), permutation)[:2] == (
                 [9, 3, 5, 7],
                 4,
             )
@@ -1053,44 +1056,222 @@ class TestTheChronologicalOrderOfTheAlternatives:
         candidates = [_timed(2, 5), _timed(4, 5), _timed(6, 5), _timed(8, 0)]
 
         for permutation in itertools.permutations(candidates):
-            ids, reference_index = order_alternatives_chronologically(_timed(5, 5), permutation)
+            ids, reference_index, _ = order_alternatives_chronologically(_timed(5, 5), permutation)
             assert ids == [8, 2, 4, 6]
             assert reference_index == 3
 
     def test_an_empty_candidate_list_stays_empty_with_the_reference_at_zero(self) -> None:
-        assert order_alternatives_chronologically(_timed(1, 0), []) == ([], 0)
+        assert order_alternatives_chronologically(_timed(1, 0), []) == ([], 0, [])
+
+    def test_the_ordered_times_come_from_the_same_sort(self) -> None:
+        """Die Zeiten fuer `series_window` stehen in DERSELBEN Ordnung wie die Ids."""
+        ids, _, times = order_alternatives_chronologically(
+            _timed(1, 25), [_timed(2, 40), _timed(3, 30), _timed(4, 10), _timed(5, 30)]
+        )
+        assert ids == [4, 3, 5, 2]
+        assert times == [_timed(i, m).taken_at for i, m in ((4, 10), (3, 30), (5, 30), (2, 40))]
 
     def test_the_reference_is_never_among_its_own_alternatives(self) -> None:
         """Das Bezugsbild ist der Ausgangspunkt des Austauschs, nicht sein Ziel - es faellt hier
         heraus, und es zaehlt sich nicht selbst."""
         assert order_alternatives_chronologically(
             _timed(3, 10), [_timed(3, 10), _timed(2, 20), _timed(1, 0)]
-        ) == ([1, 2], 1)
+        )[:2] == ([1, 2], 1)
 
 
-class TestTheNearestWindow:
-    """`offset = clamp(reference_index - n // 2, 0, max(0, total - n))`."""
+def _series_times(
+    gaps_before: Sequence[timedelta], gaps_after: Sequence[timedelta]
+) -> tuple[list[datetime], datetime, int]:
+    """Eine Zeitreihe um ein Bezugsbild: `gaps_before` laeuft vom Bezugsbild nach FRUEH
+    (erster Wert = Abstand zum direkten Vorgaenger), `gaps_after` nach SPAET."""
+    reference = _BASE_TIME + timedelta(days=1)
+    before: list[datetime] = []
+    at = reference
+    for gap in gaps_before:
+        at -= gap
+        before.append(at)
+    after: list[datetime] = []
+    at = reference
+    for gap in gaps_after:
+        at += gap
+        after.append(at)
+    return [*reversed(before), *after], reference, len(before)
 
-    @pytest.mark.parametrize(
-        ("reference_index", "expected"),
-        [(0, 0), (1, 0), (2, 0), (5, 3), (8, 6), (9, 6), (10, 6)],
-    )
-    def test_the_window_of_ten_keeps_two_before_and_fills_up_at_the_edges(
-        self, reference_index: int, expected: int
+
+def _reference_series_window(
+    times: Sequence[datetime], reference: datetime, reference_index: int
+) -> tuple[int, int, int]:
+    """Nachbildung im Test, anders formuliert als die Implementierung: Die Serie entsteht aus
+    der Liste aller Nachbarabstaende, das Fenster als die besten Kandidaten nach dem Schluessel
+    (Abstand zum Bezugsbild, frueher vor spaeter, Naehe auf der eigenen Seite)."""
+    points = [*times[:reference_index], reference, *times[reference_index:]]
+    gaps = [later - earlier for earlier, later in itertools.pairwise(points)]
+    start = reference_index
+    while start > 0 and gaps[start - 1] <= SERIES_GAP:
+        start -= 1
+    end = reference_index  # Index im erweiterten `points`, inklusiv
+    while end < len(gaps) and gaps[end] <= SERIES_GAP:
+        end += 1
+    a, b = start, end  # Kandidatenindizes [a, b): `points` hat das Bezugsbild bei reference_index
+    series = b - a
+
+    def ranked(indices: Sequence[int]) -> list[int]:
+        def key(index: int) -> tuple[timedelta, int, int]:
+            if index < reference_index:
+                return (reference - times[index], 0, reference_index - index)
+            return (times[index] - reference, 1, index - reference_index)
+
+        return sorted(indices, key=key)
+
+    if series > BAND_MAX_SERIES:
+        chosen = ranked(range(a, b))[:BAND_MAX_SERIES]
+    elif series >= BAND_MIN:
+        chosen = list(range(a, b))
+    else:
+        outside = [i for i in range(len(times)) if not a <= i < b]
+        chosen = [*range(a, b), *ranked(outside)[: BAND_MIN - series]]
+    if not chosen:
+        return (min(reference_index, len(times)), 0, 0)
+    return (min(chosen), len(chosen), max(0, series - BAND_MAX_SERIES))
+
+
+_STEP = timedelta(seconds=1)
+
+
+class TestTheSeriesWindow:
+    """Das Band zeigt die Aufnahmeserie (ADR 0133): Nachbarabstand `<= SERIES_GAP` verbindet,
+    kurze Serien fuellen auf `BAND_MIN` auf, lange kappen auf `BAND_MAX_SERIES`."""
+
+    @staticmethod
+    def _window(
+        gaps_before: Sequence[timedelta], gaps_after: Sequence[timedelta]
+    ) -> tuple[int, int, int, int]:
+        times, reference, reference_index = _series_times(gaps_before, gaps_after)
+        window = series_window(times, reference, reference_index)
+        return window.offset, window.size, window.rest, reference_index
+
+    def test_the_band_constants_are_pinned(self) -> None:
+        assert SERIES_GAP == timedelta(minutes=2)
+        assert BAND_MIN == 4
+        assert BAND_MAX_SERIES == 12
+
+    def test_a_gap_of_exactly_the_threshold_still_belongs_on_both_sides(self) -> None:
+        same = [SERIES_GAP] * 3
+        assert self._window(same, same) == (0, 6, 0, 3)
+
+    def test_a_gap_beyond_the_threshold_before_the_reference_separates(self) -> None:
+        far = timedelta(hours=1)
+        before = [SERIES_GAP, SERIES_GAP + _STEP, timedelta(0), timedelta(0)]
+        after = [SERIES_GAP] * 3 + [far]
+        # Serie: 1 davor + 3 danach = 4; die Aufnahmen hinter der Luecke zaehlen nicht.
+        assert self._window(before, after) == (3, 4, 0, 4)
+
+    def test_a_gap_beyond_the_threshold_after_the_reference_separates(self) -> None:
+        far = timedelta(hours=1)
+        before = [SERIES_GAP] * 3 + [far]
+        after = [SERIES_GAP, SERIES_GAP + _STEP, timedelta(0), timedelta(0)]
+        assert self._window(before, after) == (1, 4, 0, 4)
+
+    def test_a_chain_belongs_completely_although_its_span_is_far_wider(self) -> None:
+        chain = [SERIES_GAP] * 5
+        assert self._window(chain, chain) == (0, 10, 0, 5)
+
+    def test_a_one_sided_series_at_the_start_and_end_of_the_event(self) -> None:
+        far = timedelta(hours=1)
+        assert self._window([], [SERIES_GAP] * 5) == (0, 5, 0, 0)
+        assert self._window([SERIES_GAP] * 5, []) == (0, 5, 0, 5)
+        assert self._window([far, far], [SERIES_GAP] * 5) == (2, 5, 0, 2)
+
+    def test_a_short_series_fills_up_beyond_the_gap(self) -> None:
+        far = SERIES_GAP + _STEP
+        # Serie 1 (davor), Auffuellen beidseitig mit den naechsten: danach `far`, davor 2*far.
+        assert self._window([_STEP, far, far], [far, far]) == (1, 4, 0, 3)
+        # Einseitig: nur danach liegt etwas.
+        assert self._window([], [far, far, far, far, far]) == (0, 4, 0, 0)
+
+    @pytest.mark.parametrize("n", [0, 1, 2, 3])
+    def test_an_event_with_fewer_than_the_minimum_shows_everything(self, n: int) -> None:
+        far = timedelta(hours=1)
+        for before in range(n + 1):
+            assert self._window([far] * before, [far] * (n - before)) == (0, n, 0, before)
+
+    def test_a_series_of_exactly_the_minimum_and_the_maximum_is_shown_exactly(self) -> None:
+        far = timedelta(hours=1)
+        assert self._window([_STEP, _STEP, far, far], [_STEP, _STEP, far]) == (2, 4, 0, 4)
+        six = [_STEP] * 6
+        assert self._window([*six, far], [*six, far]) == (1, BAND_MAX_SERIES, 0, 7)
+
+    def test_a_series_one_beyond_the_maximum_is_capped_with_a_rest_of_one(self) -> None:
+        offset, size, rest, _ = self._window([_STEP] * 6, [_STEP] * 7)
+        assert (offset, size, rest) == (0, BAND_MAX_SERIES, 1)
+
+    def test_a_long_series_stays_inside_the_series_at_its_edge(self) -> None:
+        far = SERIES_GAP + _STEP
+        offset, size, rest, reference_index = self._window([far] * 5, [_STEP] * 30)
+        assert reference_index == 5
+        assert (offset, size, rest) == (5, BAND_MAX_SERIES, 30 - BAND_MAX_SERIES)
+
+    def test_a_tie_in_distance_prefers_the_earlier_when_filling_and_capping(self) -> None:
+        far = timedelta(minutes=10)
+        # Fuellen: Serie leer, links und rechts je `far` - die fruehere zuerst.
+        assert self._window([far, far], [far, far, far]) == (0, 4, 0, 2)
+        # Kappen: 13 Bilder in gleichen Abstaenden - links bekommt das zusaetzliche.
+        offset, size, _, reference_index = self._window([_STEP] * 7, [_STEP] * 6)
+        assert (offset, size) == (reference_index - 6, BAND_MAX_SERIES)
+
+    def test_equal_times_are_ordered_by_photo_id_ahead_of_the_window(self) -> None:
+        """Abstand 0 mehrerer Fotos: die Ordnung kommt aus `order_alternatives_chronologically`
+        (`photo_id`), das Fenster bleibt zusammenhaengend um `reference_index`."""
+        reference = _timed(5, 0)
+        candidates = [_timed(i, 0) for i in (1, 2, 3, 4, 6, 7, 8)]
+        ids, reference_index, times = order_alternatives_chronologically(reference, candidates)
+        window = series_window(times, reference.taken_at, reference_index)
+        assert ids == [1, 2, 3, 4, 6, 7, 8]
+        assert (window.offset, window.size, window.rest) == (0, 7, 0)
+
+    def test_every_small_sequence_matches_the_reference_model(self) -> None:
+        """Erschoepfend: Abstaende aus {0, Schwelle, Schwelle + 1 s}, alle Bezugsindizes."""
+        choices = (timedelta(0), SERIES_GAP, SERIES_GAP + _STEP)
+        for n in range(8):
+            for gaps in itertools.product(choices, repeat=n):
+                for reference_index in range(n + 1):
+                    before = list(reversed(gaps[:reference_index]))
+                    after = list(gaps[reference_index:])
+                    times, reference, index = _series_times(before, after)
+                    window = series_window(times, reference, index)
+                    expected = _reference_series_window(times, reference, index)
+                    assert (window.offset, window.size, window.rest) == expected
+                    self._assert_invariants(times, index, window.offset, window.size, window.rest)
+
+    def test_long_sequences_match_the_reference_model(self) -> None:
+        patterns = [
+            (SERIES_GAP,),
+            (timedelta(0), SERIES_GAP + _STEP),
+            (_STEP, _STEP, SERIES_GAP + _STEP),
+            (SERIES_GAP, SERIES_GAP, SERIES_GAP, timedelta(hours=1)),
+        ]
+        for pattern in patterns:
+            for n in range(8, 31):
+                gaps = list(itertools.islice(itertools.cycle(pattern), n))
+                for reference_index in range(n + 1):
+                    before = list(reversed(gaps[:reference_index]))
+                    after = gaps[reference_index:]
+                    times, reference, index = _series_times(before, after)
+                    window = series_window(times, reference, index)
+                    expected = _reference_series_window(times, reference, index)
+                    assert (window.offset, window.size, window.rest) == expected
+                    self._assert_invariants(times, index, window.offset, window.size, window.rest)
+
+    @staticmethod
+    def _assert_invariants(
+        times: Sequence[datetime], reference_index: int, offset: int, size: int, rest: int
     ) -> None:
-        assert nearest_window_offset(reference_index, 10, 4) == expected
-
-    @pytest.mark.parametrize("total", [0, 1, 2, 3, 4])
-    def test_a_short_row_is_shown_completely(self, total: int) -> None:
-        for reference_index in range(total + 1):
-            assert nearest_window_offset(reference_index, total, 4) == 0
-
-    def test_the_offset_always_lies_inside_the_row(self) -> None:
-        for total in range(12):
-            for size in range(1, 7):
-                for reference_index in range(total + 1):
-                    offset = nearest_window_offset(reference_index, total, size)
-                    assert 0 <= offset <= max(0, total - size)
+        n = len(times)
+        assert rest >= 0
+        assert offset + size <= n
+        assert min(BAND_MIN, n) <= size <= BAND_MAX_SERIES
+        if size:
+            assert offset <= reference_index <= offset + size
 
 
 class TestTheQualityOrderWithoutAReference:

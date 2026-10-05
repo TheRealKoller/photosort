@@ -12,7 +12,6 @@ from sqlalchemy import event, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from photosort.api.photos import BAND_MAX
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.models import (
     CriterionScoringRun,
@@ -42,7 +41,7 @@ from photosort.models import (
 from photosort.motif_strengths import upsert_assessment
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.security import create_access_token, decode_access_token, hash_password
-from photosort.selection import MOTIF_PRESENCE_THRESHOLD
+from photosort.selection import BAND_MAX_SERIES, MOTIF_PRESENCE_THRESHOLD, SERIES_GAP
 
 
 async def _make_project(session: AsyncSession, name: str = "Costa Rica") -> Project:
@@ -1988,7 +1987,13 @@ class TestTheProposedFlag:
 
 # Der EINE Leerkoerper des Alternativen-Endpunkts: jede gescheiterte
 # Aufloesung, kein Lauf, fremdes Event - byte-gleich, ohne Rueckspiegelung eines Werts.
-_NO_ALTERNATIVES = {"items": [], "total": 0, "offset": 0, "reference_index": None}
+_NO_ALTERNATIVES = {
+    "items": [],
+    "total": 0,
+    "offset": 0,
+    "reference_index": None,
+    "series_rest": 0,
+}
 
 
 class TestDraftAlternatives:
@@ -2389,7 +2394,7 @@ class TestDraftAlternatives:
     ) -> None:
         """Ueber Seiten: Seite 1 und Seite 2 aneinandergehaengt ergeben die
         volle Reihe; `reference_index` und `total` sind auf jeder Seite dieselben, `offset` ist
-        ohne `nearest` das angefragte."""
+        ohne `series` das angefragte; `series_rest` ist ohne `series` `0`."""
         project, event_row, reference, alternatives = await self._row(db_session, 5, 6)
 
         async def page(offset: int) -> dict[str, Any]:
@@ -2413,6 +2418,7 @@ class TestDraftAlternatives:
         assert first["reference_index"] == second["reference_index"] == 3
         assert first["total"] == second["total"] == 5
         assert (first["offset"], second["offset"]) == (0, 3)
+        assert first["series_rest"] == second["series_rest"] == 0
 
     async def test_the_reference_index_at_the_start_the_end_and_in_a_tie(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -2478,52 +2484,75 @@ class TestDraftAlternatives:
 
         assert [item["id"] for item in response.json()["items"]] == [without_exif.id, later.id]
 
-    @pytest.mark.parametrize(
-        ("reference_minute", "expected_offset", "expected_index"),
-        [
-            pytest.param(10, 3, 5, id="mitte"),
-            pytest.param(0, 0, 0, id="anfang"),
-            pytest.param(2, 0, 1, id="nahe-am-anfang"),
-            pytest.param(30, 6, 10, id="ende"),
-        ],
-    )
-    async def test_nearest_cuts_the_window_of_the_temporally_nearest(
-        self,
-        authenticated_api_client: httpx.AsyncClient,
-        db_session: AsyncSession,
-        reference_minute: int,
-        expected_offset: int,
-        expected_index: int,
-    ) -> None:
-        """`offset = clamp(reference_index - 2, 0, total - 4)`, genau vier Bilder, zeitlich
-        geordnet - im Normalfall zwei davor, zwei danach, am Rand von der anderen Seite
-        aufgefuellt."""
-        project, event_row, reference, alternatives = await self._row(
-            db_session, 10, reference_minute
-        )
+    async def _series_row(
+        self, session: AsyncSession, gaps_seconds: list[int], reference_position: int
+    ) -> tuple[Project, Event, Photo, list[Photo]]:
+        """Ein Bezugsbild (vorgeschlagen) und Alternativen mit den gegebenen Abstaenden in
+        Sekunden; das Bezugsbild steht an `reference_position` der Gesamtfolge. Angelegt in
+        umgekehrter Zeitfolge, Rueckgabe zeitlich geordnet (ohne Bezugsbild)."""
+        project = await _make_project(session)
+        run = await _make_criterion_scoring_run(session, project)
+        event_row = await _default_event(session, run)
+        start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        moments = [start]
+        for gap in gaps_seconds:
+            moments.append(moments[-1] + timedelta(seconds=gap))
+        reference: Photo | None = None
+        alternatives: list[Photo] = []
+        for index in reversed(range(len(moments))):
+            photo = await _make_photo(session, project, f"s{index}.jpg", moments[index])
+            if index == reference_position:
+                await _add_ranking(
+                    session, run, photo, event=event_row, rank_score=1.0, rank_position=1
+                )
+                reference = photo
+            else:
+                await _add_ranking(
+                    session,
+                    run,
+                    photo,
+                    event=event_row,
+                    rank_score=0.5,
+                    rank_position=1,
+                    selection_position=None,
+                )
+                alternatives.append(photo)
+        assert reference is not None
+        return project, event_row, reference, list(reversed(alternatives))
 
+    async def _series(
+        self, client: httpx.AsyncClient, project: Project, event_row: Event, reference: Photo
+    ) -> dict[str, Any]:
         response = await self._get(
-            authenticated_api_client,
-            project,
-            event_id=event_row.id,
-            photo_id=reference.id,
-            nearest=4,
+            client, project, event_id=event_row.id, photo_id=reference.id, series="true"
         )
+        assert response.status_code == 200
+        body: dict[str, Any] = response.json()
+        return body
 
-        body = response.json()
-        assert body["reference_index"] == expected_index
-        assert body["offset"] == expected_offset
-        assert body["total"] == 10
-        assert [item["id"] for item in body["items"]] == [
-            photo.id for photo in alternatives[expected_offset : expected_offset + 4]
-        ]
-
-    async def test_with_nearest_the_window_comes_from_the_server_alone(
+    async def test_series_cuts_the_window_of_the_recording_series(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Ein mitgeschicktes `offset`/`limit` hat mit `nearest` keine Wirkung."""
-        project, event_row, reference, _ = await self._row(db_session, 10, 10)
-        params = {"event_id": event_row.id, "photo_id": reference.id, "nearest": 4}
+        """Die Serie endet an der ersten Pause `> SERIES_GAP`; eine Pause von genau `SERIES_GAP`
+        gehoert dazu. Marke bei `reference_index - offset`."""
+        gap = int(SERIES_GAP.total_seconds())
+        # 0 | +gap+1 | 1 2 [ref] 3 4 (Abstand je genau gap) | +gap+1 | 5 6 7
+        gaps = [gap + 1, gap, gap, gap, gap, gap + 1, 1, 1]
+        project, event_row, reference, alternatives = await self._series_row(db_session, gaps, 3)
+
+        body = await self._series(authenticated_api_client, project, event_row, reference)
+
+        assert [item["id"] for item in body["items"]] == [p.id for p in alternatives[1:5]]
+        assert (body["offset"], body["reference_index"], body["total"]) == (1, 3, 8)
+        assert body["series_rest"] == 0
+
+    async def test_with_series_the_window_comes_from_the_server_alone(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Spec 0578, Auflage 3: Ein mitgeschicktes `offset`/`limit` hat mit `series` keine
+        Wirkung - gleiches Fenster, gleiches `offset`, gleiches `series_rest`."""
+        project, event_row, reference, _ = await self._series_row(db_session, [1] * 20, 10)
+        params = {"event_id": event_row.id, "photo_id": reference.id, "series": "true"}
 
         plain = await self._get(authenticated_api_client, project, **params)
         steered = await self._get(
@@ -2532,25 +2561,148 @@ class TestDraftAlternatives:
 
         assert steered.status_code == 200
         assert steered.json() == plain.json()
-        assert len(plain.json()["items"]) == 4
+        assert len(plain.json()["items"]) == BAND_MAX_SERIES
 
-    async def test_a_short_row_is_shown_completely_by_nearest(
+    async def test_a_long_series_is_capped_with_its_rest(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Serie mit 20 Alternativen: genau `BAND_MAX_SERIES` Bilder, `series_rest` der Rest;
+        die Hydratation laedt nur die Ids des Fensters."""
+        project, event_row, reference, alternatives = await self._series_row(
+            db_session, [1] * 20, 10
+        )
+
+        body = await self._series(authenticated_api_client, project, event_row, reference)
+
+        assert len(body["items"]) == BAND_MAX_SERIES
+        assert body["series_rest"] == 20 - BAND_MAX_SERIES
+        assert body["total"] == 20
+        assert 0 <= body["series_rest"] <= body["total"] - len(body["items"])
+        assert 0 <= body["offset"] <= body["total"] - len(body["items"])
+        offset = body["offset"]
+        assert [item["id"] for item in body["items"]] == [
+            p.id for p in alternatives[offset : offset + BAND_MAX_SERIES]
+        ]
+
+    async def test_a_short_series_is_filled_up_to_four(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        far = int(SERIES_GAP.total_seconds()) + 60
+        project, event_row, reference, alternatives = await self._series_row(
+            db_session, [far] * 6, 3
+        )
+
+        body = await self._series(authenticated_api_client, project, event_row, reference)
+
+        assert [item["id"] for item in body["items"]] == [p.id for p in alternatives[1:5]]
+        assert body["series_rest"] == 0
+
+    async def test_a_short_row_is_shown_completely_by_series(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project, event_row, reference, alternatives = await self._row(db_session, 2, 10)
 
-        body = (
-            await self._get(
-                authenticated_api_client,
-                project,
-                event_id=event_row.id,
-                photo_id=reference.id,
-                nearest=4,
-            )
-        ).json()
+        body = await self._series(authenticated_api_client, project, event_row, reference)
 
         assert [item["id"] for item in body["items"]] == [photo.id for photo in alternatives]
         assert (body["offset"], body["reference_index"], body["total"]) == (0, 2, 2)
+        assert body["series_rest"] == 0
+
+    async def test_a_struck_alternative_counts_in_the_series(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Ein gestrichenes Foto des Vorschlags ist Alternative und schliesst die Serie."""
+        gap = int(SERIES_GAP.total_seconds())
+        project, event_row, reference, alternatives = await self._series_row(
+            db_session, [1] * 14, 7
+        )
+        run = await db_session.get(CriterionScoringRun, event_row.criterion_scoring_run_id)
+        assert run is not None
+        struck = await _make_photo(
+            db_session,
+            project,
+            "struck.jpg",
+            alternatives[-1].taken_at + timedelta(seconds=gap),
+        )
+        await _add_ranking(
+            db_session, run, struck, event=event_row, rank_score=0.9, rank_position=1
+        )
+        await self._rate(db_session, struck, RatingStatus.REJECTED)
+
+        body = await self._series(authenticated_api_client, project, event_row, reference)
+
+        assert body["total"] == 15
+        assert body["series_rest"] == 15 - BAND_MAX_SERIES
+
+    async def test_neither_a_draft_photo_nor_a_sorted_out_one_bridges_a_gap(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Datenlage: links und rechts je eine Serie mit mehr als `SERIES_GAP` Abstand, dazwischen
+        ein Entwurfsfoto und ein aussortiertes Foto (ohne Rangzeile). Keines davon verbindet."""
+        gap = int(SERIES_GAP.total_seconds())
+        # Bezugsbild am Ende einer 13er-Serie, dann Luecke 2*gap, dann 5 dichte Bilder.
+        gaps = [1] * 13 + [2 * gap] + [1] * 4
+        project, event_row, reference, alternatives = await self._series_row(db_session, gaps, 13)
+        run = await db_session.get(CriterionScoringRun, event_row.criterion_scoring_run_id)
+        assert run is not None
+        middle = reference.taken_at + timedelta(seconds=gap)
+        in_draft = await _make_photo(db_session, project, "entwurf.jpg", middle)
+        await _add_ranking(
+            db_session, run, in_draft, event=event_row, rank_score=0.9, rank_position=1
+        )
+        await _make_photo(db_session, project, "aussortiert.jpg", middle)
+
+        body = await self._series(authenticated_api_client, project, event_row, reference)
+
+        assert body["series_rest"] == 13 - BAND_MAX_SERIES
+        assert body["total"] == 18
+        assert all(item["id"] != in_draft.id for item in body["items"])
+
+    async def test_a_candidate_of_a_foreign_event_or_older_run_bridges_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Spec 0578, Auflage 4: Kandidaten eines fremden Events oder eines aelteren Laufs mit
+        `taken_at` in der Luecke ueberbruecken nichts und zaehlen nicht in `series_rest`."""
+        gap = int(SERIES_GAP.total_seconds())
+        gaps = [1] * 13 + [2 * gap] + [1] * 4
+        project, event_row, reference, _ = await self._series_row(db_session, gaps, 13)
+        run = await db_session.get(CriterionScoringRun, event_row.criterion_scoring_run_id)
+        assert run is not None
+        middle = reference.taken_at + timedelta(seconds=gap)
+        other_event = await _make_event(db_session, run, position=2)
+        foreign = await _make_photo(db_session, project, "fremd-event.jpg", middle)
+        await _add_ranking(
+            db_session,
+            run,
+            foreign,
+            event=other_event,
+            rank_score=0.5,
+            rank_position=1,
+            selection_position=None,
+        )
+        before = await self._series(authenticated_api_client, project, event_row, reference)
+
+        assert before["series_rest"] == 13 - BAND_MAX_SERIES
+        assert before["total"] == 18
+
+    async def test_another_users_decision_changes_nothing_of_the_own_series(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Spec 0578, Auflage 4 (Erweiterung von Auflage 8 der Spec 0569): Eine `album_worthy`-
+        oder `rejected`-Entscheidung des ANDEREN aendert keinen Wert der eigenen Antwort."""
+        project, event_row, reference, alternatives = await self._series_row(
+            db_session, [1] * 20, 10
+        )
+        other_user = await _make_second_user(db_session)
+        await self._rate(db_session, alternatives[0], RatingStatus.ALBUM_WORTHY)
+        own_before = await self._series(authenticated_api_client, project, event_row, reference)
+
+        await self._rate(db_session, alternatives[9], RatingStatus.ALBUM_WORTHY, other_user)
+        await self._rate(db_session, alternatives[12], RatingStatus.REJECTED, other_user)
+        own_after = await self._series(authenticated_api_client, project, event_row, reference)
+
+        assert own_after == own_before
+        assert own_before["series_rest"] == 19 - BAND_MAX_SERIES
 
     async def test_a_resolved_reference_with_an_empty_remainder_stands_at_zero(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -2559,26 +2711,24 @@ class TestDraftAlternatives:
         `reference_index = 0` - zulaessig, denn das Bild sieht der Anfragende ohnehin."""
         project, event_row, reference, _ = await self._row(db_session, 0, 10)
 
-        body = (
-            await self._get(
-                authenticated_api_client,
-                project,
-                event_id=event_row.id,
-                photo_id=reference.id,
-                nearest=4,
-            )
-        ).json()
+        body = await self._series(authenticated_api_client, project, event_row, reference)
 
-        assert body == {"items": [], "total": 0, "offset": 0, "reference_index": 0}
+        assert body == {
+            "items": [],
+            "total": 0,
+            "offset": 0,
+            "reference_index": 0,
+            "series_rest": 0,
+        }
 
-    async def test_nearest_without_a_reference_is_refused(
+    async def test_series_without_a_reference_is_refused(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """`nearest` ohne `photo_id` scheitert laut statt still."""
+        """Spec 0578, Auflage 1: `series` ohne `photo_id` scheitert laut statt still."""
         project, event_row, _, _ = await self._row(db_session, 3, 10)
 
         response = await self._get(
-            authenticated_api_client, project, event_id=event_row.id, nearest=4
+            authenticated_api_client, project, event_id=event_row.id, series="true"
         )
 
         assert response.status_code == 422
@@ -2604,7 +2754,7 @@ class TestDraftAlternatives:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         """Fremde Id, nie vergebene Id und Foto eines anderen Events ergeben
-        byte-gleiche Koerper - auch mit `nearest`, `offset` und `limit`."""
+        byte-gleiche Koerper - auch mit `series`, `offset` und `limit`."""
         project, event_row, reference, _ = await self._row(db_session, 3, 10)
         foreign = await _make_project(db_session, name="fremd")
         foreign_run = await _make_criterion_scoring_run(db_session, foreign)
@@ -2626,7 +2776,7 @@ class TestDraftAlternatives:
             (event_row.id, reference.id + 4200),
             (other_event.id, reference.id),
         ):
-            for extra in ({}, {"nearest": 4, "offset": 7, "limit": 3}):
+            for extra in ({}, {"series": "true", "offset": 7, "limit": 3}):
                 response = await self._get(
                     authenticated_api_client,
                     project,
@@ -2835,7 +2985,7 @@ class TestDraftAlternatives:
 
         response = await api_client.get(
             f"/projects/{project.id}/draft-alternatives",
-            params={"event_id": 1, "photo_id": 1, "nearest": 4},
+            params={"event_id": 1, "photo_id": 1, "series": "true"},
         )
 
         assert response.status_code == 401
@@ -4800,20 +4950,83 @@ class TestDraftAlternativesKeys:
         assert body["total"] == 2
         assert len(body["items"]) == 2
 
-    async def test_nearest_at_its_cap_is_accepted(
+    async def test_the_series_cap_stays_below_the_page_cap(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Die Gegenprobe zur Obergrenze: `nearest=BAND_MAX` ist gueltig, und der Deckel bleibt
-        der der Hydratation (`<= 200`, wie `limit`)."""
+        """Spec 0578, Auflage 3: `BAND_MAX_SERIES` deckelt die Hydratation des Bands und bleibt
+        unter dem Deckel von `limit` (200); `series=true` ist mit Bezugsbild gueltig."""
         project, _run, event_row, photos = await self._setup(db_session)
 
         response = await authenticated_api_client.get(
             f"/projects/{project.id}/draft-alternatives",
-            params={"event_id": event_row.id, "photo_id": photos[0].id, "nearest": BAND_MAX},
+            params={"event_id": event_row.id, "photo_id": photos[0].id, "series": "true"},
         )
 
         assert response.status_code == 200
-        assert BAND_MAX <= 200
+        assert BAND_MAX_SERIES <= 200
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param("2", id="series-zwei"),
+            pytest.param("abc", id="series-nicht-bool"),
+            pytest.param("", id="series-leer"),
+            pytest.param("1.0", id="series-kommazahl"),
+        ],
+    )
+    async def test_series_is_a_strictly_parsed_boolean(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        value: str,
+    ) -> None:
+        """Spec 0578, Auflage 1: ein nicht als Wahrheitswert lesbarer Wert ergibt `422`."""
+        project, _run, event_row, photos = await self._setup(db_session)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/draft-alternatives",
+            params={"event_id": event_row.id, "photo_id": photos[0].id, "series": value},
+        )
+
+        assert response.status_code == 422
+
+    async def test_series_false_behaves_like_a_missing_parameter(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _run, event_row, photos = await self._setup(db_session)
+        params = {"event_id": event_row.id, "photo_id": photos[0].id}
+
+        plain = await authenticated_api_client.get(
+            f"/projects/{project.id}/draft-alternatives", params=params
+        )
+        off = await authenticated_api_client.get(
+            f"/projects/{project.id}/draft-alternatives", params={**params, "series": "false"}
+        )
+
+        assert off.status_code == 200
+        assert off.json() == plain.json()
+
+    @pytest.mark.parametrize("with_reference", [True, False])
+    @pytest.mark.parametrize("value", ["4", "0", "abc", ""])
+    async def test_the_retired_nearest_parameter_is_refused(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        with_reference: bool,
+        value: str,
+    ) -> None:
+        """Spec 0578, Auflage 2: Ein noch nicht aktualisierter Client mit `nearest` scheitert
+        laut, statt still die erste Seite der vollen Reihe als Band zu bekommen."""
+        project, _run, event_row, photos = await self._setup(db_session)
+        params: dict[str, object] = {"event_id": event_row.id, "nearest": value}
+        if with_reference:
+            params["photo_id"] = photos[0].id
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project.id}/draft-alternatives", params=params
+        )
+
+        assert response.status_code == 422
 
     @pytest.mark.parametrize(
         "params",
@@ -4830,12 +5043,7 @@ class TestDraftAlternativesKeys:
             pytest.param({"offset": 2**63}, id="offset-jenseits-der-obergrenze"),
             pytest.param({"limit": 0}, id="limit-unter-der-untergrenze"),
             pytest.param({"limit": 201}, id="limit-ueber-der-obergrenze"),
-            pytest.param({"nearest": 0}, id="nearest-null"),
-            pytest.param({"nearest": -1}, id="nearest-negativ"),
-            pytest.param({"nearest": BAND_MAX + 1}, id="nearest-ueber-band-max"),
-            pytest.param({"nearest": 2**63}, id="nearest-jenseits-der-obergrenze"),
-            pytest.param({"nearest": 1.5}, id="nearest-kommazahl"),
-            pytest.param({"nearest": "abc"}, id="nearest-nicht-numerisch"),
+            pytest.param({"series": "abc"}, id="series-nicht-bool"),
         ],
     )
     async def test_rejects_query_parameters_outside_their_bounds(
