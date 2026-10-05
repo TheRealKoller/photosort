@@ -348,6 +348,9 @@ Die Ebenen folgen dem Testkonzept: reine Funktionen vor dem DOM (Sektion 0489, P
 - Grund in der Leiste mit Zuschreibung „Begründung des Modells" (security-engineer, S2).
 - `foto-karte-raster.spec.ts` wird ersetzt statt erweitert; Testkonzept: Nachtrag 0578 und Sektion 0489/ADR 0110 werden im Umsetzungs-PR nachgezogen (test-engineer).
 - Securitykonzept bekommt im Umsetzungs-PR die neue Ankerzeile zur Leiste (security-engineer).
+- `CriterionDetailsList` wird mitgelöscht: Nach dem Wegfall von `CriterionDetailsPopover` hatte sie keinen Aufrufer mehr; der XSS-Schutz bleibt an den Renderstellen `FineLabelList`/`PhotoVerdict` (architect, in der Umsetzung).
+- Das Kurzwort im Symbolmodus erscheint bei Tastaturfokus über ein beim Fokussieren gelesenes `:focus-visible` statt über die Variante `group-focus-visible:` — der Design-Vertrag verbietet Fokus-Varianten außerhalb der globalen Fokusdarstellung (Umsetzung).
+- `NOT_PROPOSED_BADGE_TEXT` liegt in `utils/albumDraft.ts`, weil `AlbumStateBadge` ihn für den Namen braucht und ein Import aus `CurationPhotoTile` zirkulär wäre (Umsetzung).
 
 ## Offene Fragen
 

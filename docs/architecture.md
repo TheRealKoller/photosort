@@ -55,8 +55,8 @@ Verarbeitungs-Cache (Thumbnails).
     `pages/CuratePage.tsx` sowie
     `hooks/useMotifs.ts`/`hooks/useMotifCorrection.ts` und `utils/motifLabels.ts` ersetzt. **Auf der
     Kachel steht kein Motiv**: acht Werte haben dort keinen Platz, und der stärkste allein
-    behauptete wieder die Zuordnung, die diese Spec ablöst — der einzige neue Kachelmarker ist
-    `components/MotifAssessmentMarker.tsx` („Motive noch nicht bestimmt"). **Am Einzelwert erscheint
+    behauptete wieder die Zuordnung, die diese Spec ablöst. Der frühere Kachelmarker „Motive noch
+    nicht bestimmt" ist mit Spec 0579 entfallen. **Am Einzelwert erscheint
     kein Bandwort** (Bänder gibt es nur in der aggregierten Statistiktabelle). Die Kuratierung
     gruppiert nur noch nach Tag und Foto-Moment — die Kategorie-Ebene der Gruppierung fällt weg.
     Anzeigenamen, Reihenfolge und Bandgrenzen kommen aus `GET /motifs`; das Frontend spiegelt sie

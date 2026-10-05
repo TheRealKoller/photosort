@@ -4,6 +4,8 @@
 **Erstellt:** 2026-10-02
 **Bezug:** [#558](https://github.com/TheRealKoller/photosort/issues/558), ADR [`0130`](../decisions/0130-album-entwurf-gestrichenes-ausgeblendet-eigener-lesepfad-rueckgaengig-als-wiederherstellung.md)
 
+> **Teilweise abgelöst durch Spec [`0579`](./0579-kuratierungskacheln-foto-im-mittelpunkt.md):** Die Handgriffe der Kachel stehen nebeneinander statt untereinander, das Kennzeichen ist ein Symbolzeichen in der Bildecke (das Wort ist nur noch zugänglicher Name) statt eines Wortes im Kartenkörper, und Band/Panel stehen hinter der gerechneten Reihe statt nach einer Spaltenzahl.
+
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil die Story vier Handgriffe mit Rückgängig, einen neuen Lese- und einen neuen Schreibpfad sowie die Begriffe zweier Seiten festlegt und jede Konsultation testbare Zusagen beiträgt.
 
 ## Ziel

@@ -4,6 +4,8 @@
 **Erstellt:** 2026-10-02
 **Bezug:** [#563](https://github.com/TheRealKoller/photosort/issues/563), Nachbesserung zu [Spec 0558](./0558-album-entwurf-verstaendlich.md)
 
+> **Teilweise abgelöst durch Spec [`0579`](./0579-kuratierungskacheln-foto-im-mittelpunkt.md) / ADR 0134:** AK1, AK2 (Spaltenleiter), AK4 (quadratische Bildfläche), `PHOTO_CARD_GRID_CLASS` und die Spaltenleiter 2/3/4 gelten nicht mehr — die Kuratierungsraster sind justierte Reihen im Seitenverhältnis des Fotos. AK3 (kein Beschnitt) gilt weiter.
+
 ## Ziel
 
 Nachbesserung zu #558: Auf der Album-Entwurf-Seite sind die Fotos zu klein, und sie werden quadratisch beschnitten. Beim Kuratieren soll man jedes Foto groß genug und vollständig sehen, im Hoch- wie im Querformat. Dasselbe gilt für die Endauswahl, damit beide Seiten dieselbe Kachel zeigen.

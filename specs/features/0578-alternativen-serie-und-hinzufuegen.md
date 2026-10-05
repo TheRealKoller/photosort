@@ -4,6 +4,8 @@
 **Erstellt:** 2026-10-05
 **Bezug:** Issue [#578](https://github.com/TheRealKoller/photosort/issues/578) (enthält die zusammengeführte Story #577), ADR [`0133`](../decisions/0133-band-zeigt-aufnahmeserie.md)
 
+> **Teilweise abgelöst durch Spec [`0579`](./0579-kuratierungskacheln-foto-im-mittelpunkt.md):** „Tauschen"/„Hinzufügen" stehen nebeneinander (Symbole `repeat`/`plus`, in schmalen Kacheln nur Symbol) statt untereinander; „Foto hinzufügen" trägt `<Icon name="plus" />` statt des Textzeichens `+` (die Symbollücke `+` entfällt); Raster und Bezugsmarke (Punkt 5) sind justierte Reihen statt `aspect-square` mit `PHOTO_CARD_GRID_CLASS`.
+
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil zwei zusammengeführte Stories mit Backend-Fensterregel, ersetztem Dialog und neuen Handgriffen samt Sicherheitsauflagen in einer Spec stehen.
 
 ## Ziel
