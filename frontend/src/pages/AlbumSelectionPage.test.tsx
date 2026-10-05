@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { InitialEntry, Location, NavigateFunction } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as albumSelectionApi from '../api/albumSelection'
 import { ApiError } from '../api/client'
@@ -12,6 +12,7 @@ import * as motifsApi from '../api/motifs'
 import type { AlbumSelectionOut, EventOut, PhotoOut } from '../api/types'
 import { SELECTION_DECIDED_BADGE_TEXT } from '../components/SelectionPhotoTile'
 import { MOTIF_SET } from '../test/motifSetFixture'
+import { installResizeObserver } from '../test/observers'
 import { DRAFT_EMPTY_TEXT } from '../utils/albumDraftTexts'
 import { SELECTION_NOTHING_CONTESTED_TEXT } from '../utils/albumSelection'
 import { AlbumSelectionPage } from './AlbumSelectionPage'
@@ -105,6 +106,35 @@ function visibleTileNames(): string[] {
 beforeEach(() => {
   vi.mocked(albumSelectionApi.getAlbumSelection).mockReset()
   vi.mocked(albumSelectionApi.setAlbumDecision).mockReset()
+})
+
+describe('AlbumSelectionPage - justierte Reihen', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('lays each event out as a wrapping list of tiles with computed widths', async () => {
+    const observer = installResizeObserver()
+    vi.mocked(albumSelectionApi.getAlbumSelection).mockResolvedValue(
+      selection({
+        items: [
+          photo({ id: 1, relative_path: 'a.jpg', contested: true, aspect_ratio: 1.5 }),
+          photo({ id: 2, relative_path: 'b.jpg', contested: true, aspect_ratio: 2 / 3 }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(visibleTileNames()).toEqual(['a.jpg', 'b.jpg']))
+
+    observer.resizeTo(1280)
+
+    const tile = screen.getByRole('list', { name: 'Haltung zu a.jpg' }).closest('ul > li')!
+    const grid = tile.parentElement!
+    expect(grid.className).toContain('flex-wrap')
+    expect(grid.className).not.toMatch(/grid-cols/)
+    // Zwei Bilder fuellen 1280px nicht: letzte Reihe, Zielhoehe 280, natuerliche Breite.
+    expect((tile as HTMLElement).style.width).toBe(`${Math.round(1.5 * 280)}px`)
+  })
 })
 
 describe('AlbumSelectionPage - die zwei Sichten', () => {

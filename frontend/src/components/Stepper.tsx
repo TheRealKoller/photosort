@@ -81,9 +81,8 @@ function StepLabel({ label, auspraegung }: { label: string; auspraegung: StepMar
 /**
  * DER GESPERRTE SCHRITT IST SELBST DER AUSLOESER seines Sperrgrunds - der bisherige eigene
  * `i`-Knopf daneben ist ersatzlos entfallen. Wiederverwendet wird das dokumentierte Muster
- * "Info-Popover fuer situative Kurzerklaerungen" samt geraeteunabhaengigem Oeffnungsverhalten
- * (Vorlage: components/CriterionDetailsPopover.tsx). Kein Radix-Tooltip: das ARIA-Tooltip-Muster
- * ist hover/focus-only und oeffnet nicht per Tippen.
+ * "Info-Popover fuer situative Kurzerklaerungen" samt geraeteunabhaengigem Oeffnungsverhalten.
+ * Kein Radix-Tooltip: das ARIA-Tooltip-Muster ist hover/focus-only und oeffnet nicht per Tippen.
  *
  * `<button type="button">` mit `aria-disabled="true"`, NIE `disabled`: `disabled` naehme das
  * Element aus der Tab-Reihenfolge UND schaltete Zeigerereignisse ab - genau die Luecke, die diese
@@ -154,9 +153,8 @@ function BlockedStep({
 
   function handleMouseLeave(): void {
     // Schliesst NUR ein Panel, das per Ueberfahren geoeffnet wurde und seither nicht angeklickt
-    // worden ist (siehe `handleTriggerClick`). Kein Grace-Bereich ueber die Portal-Grenze wie in
-    // CriterionDetailsPopover: der Panelinhalt ist EIN SATZ ohne Bedienelement - es gibt dort
-    // nichts zu erreichen.
+    // worden ist (siehe `handleTriggerClick`). Kein Grace-Bereich ueber die Portal-Grenze: der
+    // Panelinhalt ist EIN SATZ ohne Bedienelement - es gibt dort nichts zu erreichen.
     if (openedByHoverRef.current) {
       handleOpenChange(false)
     }

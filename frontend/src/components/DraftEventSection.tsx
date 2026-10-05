@@ -1,14 +1,19 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import type { EventOut, PhotoOut } from '../api/types'
+import { useJustifiedRows } from '../hooks/useJustifiedRows'
 import { formatDraftPhotoCount } from '../utils/albumDraft'
-import { PHOTO_CARD_GRID_CLASS } from './PhotoCard'
+import type { JustifiedTile } from '../utils/justifiedRows'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
+import { Icon } from './ui/icon'
 
 /** Der Text eines Events, in dem gerade kein Bild im Album steht. */
 export const DRAFT_EMPTY_EVENT_TEXT = 'Kein Bild im Entwurf'
+
+/** Das Planungsverhaeltnis der „Foto hinzufügen"-Zelle: ein Hochformat 2:3. */
+const ADD_CELL_RATIO = 2 / 3
 
 export interface DraftEventSectionProps {
   event: EventOut
@@ -21,8 +26,9 @@ export interface DraftEventSectionProps {
   motifText: string | null
   /** Die gestrichenen Fotos des Events - der Personenfilter filtert sie nicht. */
   struckPhotos: PhotoOut[]
-  renderAlbumTile: (photo: PhotoOut) => ReactNode
-  renderStruckTile: (photo: PhotoOut) => ReactNode
+  /** Eine Kachel in ihrer gerechneten Breite und Bildhoehe. */
+  renderAlbumTile: (photo: PhotoOut, tile: JustifiedTile) => ReactNode
+  renderStruckTile: (photo: PhotoOut, tile: JustifiedTile) => ReactNode
   /** Das offene Band dieses Events, verankert am gewählten Foto. */
   band: { photoId: number; node: ReactNode } | null
   /** Das offene Hinzufügen-Panel dieses Events. */
@@ -32,22 +38,18 @@ export interface DraftEventSectionProps {
   struckError: string | null
 }
 
-/** Die Spaltenzahl des gerenderten Rasters - das Band schließt die Zeile des gewählten Fotos ab. */
-function columnCount(grid: HTMLElement | null): number {
-  if (grid === null) {
-    return 1
-  }
-  const template = window.getComputedStyle(grid).gridTemplateColumns
-  return Math.max(1, template.split(' ').filter((part) => part.length > 0).length)
+/** Die gerechnete Kachel einer Zelle - vor dem ersten Rendern der Reihen eine leere. */
+function tileOf(tiles: readonly JustifiedTile[], index: number): JustifiedTile {
+  return tiles[index] ?? { index, width: 0, height: 0 }
 }
 
 /**
- * EIN Eventabschnitt des Album-Entwurfs: Überschrift mit Bildzahl, Motivzeile, Raster der Fotos im
- * Album mit dem Hinzufügen-Feld als letzter Zelle, und die Gestrichen-Zeile.
+ * EIN Eventabschnitt des Album-Entwurfs: Überschrift mit Bildzahl, Motivzeile, die Fotos im Album
+ * als justierte Reihen mit dem Hinzufügen-Feld als letzter Zelle, und die Gestrichen-Zeile.
  *
  * Er steht auch ohne ein einziges Foto im Album („Kein Bild im Entwurf"). Der Aufklappzustand der
- * Gestrichen-Zeile gilt je Event und wird nicht gespeichert. Band und Panel stehen als volle
- * Rasterzeile nach der Zeile ihres Auslösers.
+ * Gestrichen-Zeile gilt je Event und wird nicht gespeichert. Band und Panel stehen als volle Zeile
+ * direkt nach der GERECHNETEN Reihe ihres Auslösers - nie nach einer festen Spaltenzahl.
  */
 export function DraftEventSection({
   event,
@@ -65,31 +67,32 @@ export function DraftEventSection({
 }: DraftEventSectionProps) {
   const [struckExpanded, setStruckExpanded] = useState(false)
   const struckPanelId = useId()
-  const gridRef = useRef<HTMLUListElement>(null)
-  const [columns, setColumns] = useState(1)
+  const album = useJustifiedRows<HTMLUListElement>([
+    ...albumPhotos.map((photo) => photo.aspect_ratio ?? null),
+    ADD_CELL_RATIO,
+  ])
+  const struck = useJustifiedRows<HTMLUListElement>(
+    struckPhotos.map((photo) => photo.aspect_ratio ?? null),
+  )
+  const albumTiles = album.rows.flatMap((row) => row.tiles)
+  const struckTiles = struck.rows.flatMap((row) => row.tiles)
 
-  useLayoutEffect(() => {
-    const measure = () => setColumns(columnCount(gridRef.current))
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [])
-
-  // Zellen: die Albumkacheln, dann das Hinzufügen-Feld.
-  const cellCount = albumPhotos.length + 1
+  // Zellen: die Albumkacheln, dann das Hinzufügen-Feld. Das Band schliesst die Reihe seiner Kachel.
+  const addIndex = albumPhotos.length
   const bandIndex = band === null ? -1 : albumPhotos.findIndex((photo) => photo.id === band.photoId)
-  const bandAfter =
-    bandIndex === -1 ? -1 : Math.min(cellCount, (Math.floor(bandIndex / columns) + 1) * columns) - 1
+  const bandRow = album.rows.find((row) => row.tiles.some((tile) => tile.index === bandIndex))
+  const bandAfter = bandRow?.tiles.at(-1)?.index ?? -1
+  const addTile = tileOf(albumTiles, addIndex)
 
   const cells: ReactNode[] = []
   albumPhotos.forEach((photo, index) => {
-    cells.push(renderAlbumTile(photo))
+    cells.push(renderAlbumTile(photo, tileOf(albumTiles, index)))
     if (index === bandAfter && band !== null) {
       cells.push(band.node)
     }
   })
   cells.push(
-    <li key="add" className="flex">
+    <li key="add" className="flex" style={{ width: addTile.width }}>
       <button
         type="button"
         data-focus-key={`add-trigger-${event.id}`}
@@ -97,18 +100,17 @@ export function DraftEventSection({
         aria-expanded={addPanel !== null}
         aria-controls={addPanel?.id}
         onClick={onToggleAdd}
-        className="flex min-h-32 w-full items-center justify-center gap-2 rounded-lg border border-border-control bg-surface p-3 text-sm text-text-h"
+        // Mindestens so hoch wie die Bildflaeche; in einer Reihe mit Kacheln dehnt die Liste die
+        // Zelle auf Bild plus Knopfzeile.
+        style={{ minHeight: addTile.height }}
+        className="flex w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-separator p-3 text-sm text-text"
       >
-        {/* Textzeichen statt Symbol (geschlossener Symbolsatz, Design-System-Lücke `+`): Es
-            trägt allein die Wiedererkennung und wird nie vorgelesen. */}
-        <span aria-hidden="true" className="text-lg leading-none">
-          +
-        </span>
+        <Icon name="plus" size={20} />
         Foto hinzufügen
       </button>
     </li>,
   )
-  if (bandAfter === cellCount - 1 && band !== null) {
+  if (bandAfter === addIndex && band !== null) {
     cells.push(band.node)
   }
   if (addPanel !== null) {
@@ -123,7 +125,7 @@ export function DraftEventSection({
       </div>
       {motifText !== null && <p className="text-sm text-text">{motifText}</p>}
       {albumCount === 0 && <p className="text-sm text-text">{DRAFT_EMPTY_EVENT_TEXT}</p>}
-      <ul ref={gridRef} className={PHOTO_CARD_GRID_CLASS}>
+      <ul ref={album.ref} className="flex flex-wrap gap-3">
         {cells}
       </ul>
       {struckPhotos.length > 0 && (
@@ -143,8 +145,10 @@ export function DraftEventSection({
           </div>
           {struckError !== null && <Alert>{struckError}</Alert>}
           {struckExpanded && (
-            <ul id={struckPanelId} className={PHOTO_CARD_GRID_CLASS}>
-              {struckPhotos.map((photo) => renderStruckTile(photo))}
+            <ul id={struckPanelId} ref={struck.ref} className="flex flex-wrap gap-3">
+              {struckPhotos.map((photo, index) =>
+                renderStruckTile(photo, tileOf(struckTiles, index)),
+              )}
             </ul>
           )}
         </div>

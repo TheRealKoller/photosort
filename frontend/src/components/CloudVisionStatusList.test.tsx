@@ -14,10 +14,10 @@ function statusEntry(overrides: Partial<CloudVisionStatusOut> = {}): CloudVision
   }
 }
 
-// specs/features/0058-cloud-vision-status-transparenz.md: reine Praesentationskomponente, analog
-// CriterionDetailsList - alle sechs Zustaende mit Icon+Text, Fehlermeldung inline nur bei "error",
-// permanente Sichtbarkeit unabhaengig vom Rating (kein bedingtes Ausblenden in der Komponente
-// selbst - das entscheidet der Aufrufer, siehe CriterionDetailsList-Praezedenzfall).
+// specs/features/0058-cloud-vision-status-transparenz.md: reine Praesentationskomponente - alle
+// sechs Zustaende mit Icon+Text, Fehlermeldung inline nur bei "error", permanente Sichtbarkeit
+// unabhaengig vom Rating (kein bedingtes Ausblenden in der Komponente selbst - das entscheidet der
+// Aufrufer).
 describe('CloudVisionStatusList', () => {
   it('renders both phases in the given order', () => {
     render(

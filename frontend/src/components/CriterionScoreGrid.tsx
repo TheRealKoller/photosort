@@ -52,10 +52,8 @@ function ScoreRow({
  * Inhalt entfällt vollständig - keine Kopfzeile, kein leeres `<dl>`; bei komplett leerer Eingabe
  * rendert die Komponente `null` statt eines leeren Rahmens.
  *
- * DIES IST NICHT DIE VARIANTE VON `CriterionDetailsList`. Das kompakte Kachel-Popover und dieses
- * große Seitenraster sind zwei Darstellungen mit verschiedener Elementstruktur und Schriftgröße;
- * eine gemeinsame Komponente hätte zwei sich ausschließende Zweige. Geteilt wird ausschließlich,
- * was zeichengleich ist - die Aufteilung in `utils/criterionScores.ts`.
+ * Die Aufteilung in Qualität und Bildinhalt kommt aus `utils/criterionScores.ts`, nie aus einer
+ * hier nachgebauten Zuordnung.
  *
  * KEIN RANG. Er ist keiner der fünfzehn Einzelwerte, sondern Teil des URTEILS und steht
  * ausschließlich in `PhotoVerdict` (Spec 0497, AK5). Nähme dieser Baustein ihn ebenfalls

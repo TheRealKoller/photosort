@@ -379,8 +379,7 @@ export function PhotoDetailPage() {
           <p className="text-text-h">
             Automatischer Vorschlag: {formatSuggestionStatusLabel(suggestion)}
           </p>
-          {/* Formatierung aus utils/suggestionLabels.ts - dasselbe Muster wird auch von
-              CriterionDetailsPopover.tsx verwendet, keine zweite Kopie derselben Logik. Der
+          {/* Formatierung aus utils/suggestionLabels.ts, keine zweite Kopie derselben Logik. Der
               fruehere dritte Fall "top_pick" (Kategorie + Qualitaets-Einordnung) ist entfallen -
               dieser Kuratierungs-Kontext lebt in der
               eigenstaendigen /curate-Ansicht statt in diesem Ausschuss-Vorschlagskasten (siehe
@@ -481,12 +480,9 @@ export function PhotoDetailPage() {
           Informationsteil, weil sie sagt, was das System über dieses Foto weiß. */}
       <PhotoCaptureFacts photo={currentPhoto} headingLevel="h2" />
 
-      {/* Layout & Platzierung: unmittelbar vor der CriterionDetailsList UND nach den
-          Bewertungs-Buttons - beides zusammen ist erst seit der Umordnung der Seite erfuellbar
-          (die Bewertungsleiste stand zuvor weiter unten). IMMER sichtbar (bewusste
+      {/* Layout & Platzierung: nach den Bewertungs-Buttons. IMMER sichtbar (bewusste
           Stakeholder-Entscheidung, kein Ausblenden bei not_candidate/not_run, siehe
-          Spec-Abschnitt "Entscheidungen") - anders als die CriterionDetailsList darunter kein
-          `.length > 0`-Sichtbarkeitsgate. */}
+          Spec-Abschnitt "Entscheidungen") - kein `.length > 0`-Sichtbarkeitsgate. */}
       <div className="text-sm text-text" data-testid="cloud-vision-status-section">
         <CloudVisionStatusList cloudVisionStatus={currentPhoto.cloud_vision_status} />
       </div>

@@ -15,10 +15,8 @@ vi.mock('../api/cameras')
 
 // specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md: erste dedizierte
 // Projekteinstellungs-UI im Projekt - Toggle-Switch fuer die Cloud-Landmark-Einwilligung +
-// Info-Popover (Muster: CriterionDetailsPopover.tsx, hier bewusst ohne dessen geraetespezifische
-// Hover-Auto-Close-Logik - technische Detailentscheidung der Umsetzung, siehe
-// ProjectSettingsPage.tsx-Kommentar, ein einzelner Einstellungs-Schalter braucht keine
-// Hover-Ergonomie wie Dutzende Grid-Kacheln).
+// Info-Popover (ohne geraetespezifische Hover-Auto-Close-Logik - technische Detailentscheidung der
+// Umsetzung, siehe ProjectSettingsPage.tsx-Kommentar).
 
 function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
   return {

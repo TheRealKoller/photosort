@@ -5,7 +5,7 @@ import type { UserEvent } from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import type { InitialEntry, Location, NavigateFunction } from 'react-router'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as motifsApi from '../api/motifs'
@@ -27,6 +27,7 @@ import { setToken } from '../auth/token'
 import { DRAFT_EMPTY_EVENT_TEXT } from '../components/DraftEventSection'
 import type { ObserverFactory } from '../hooks/useDraftPosition'
 import { MOTIF_SET } from '../test/motifSetFixture'
+import { installResizeObserver } from '../test/observers'
 import { DRAFT_CLOUD_CONSENT_TEXT, DRAFT_EMPTY_TEXT } from '../utils/albumDraftTexts'
 import { AlbumDraftPage } from './AlbumDraftPage'
 
@@ -191,31 +192,100 @@ beforeEach(() => {
 })
 
 describe('AlbumDraftPage: Schaltfläche „Foto hinzufügen"', () => {
-  it('carries a hidden "+" before the word and keeps its accessible name exactly', async () => {
+  it('is the last cell of the event, with the plus symbol and its exact accessible name', async () => {
     const user = userEvent.setup()
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
       items: [photo(3, { ranking: ranking(false) })],
       total: 1,
       ...NO_POSITION,
     })
-    renderPage({ events: [EVENT_A], items: [photo(1)] }, noObserver)
+    renderPage({ events: [EVENT_A], items: [photo(1), photo(2)] }, noObserver)
 
     const trigger = await screen.findByRole('button', { name: /^Foto hinzufügen: / })
-    const plus = within(trigger).getByText('+')
-    expect(plus).toHaveAttribute('aria-hidden', 'true')
-    expect(trigger.firstElementChild).toBe(plus)
-    expect(trigger).toHaveTextContent(/^\+\s*Foto hinzufügen$/)
+    expect(trigger.querySelector('[data-icon="plus"]')).toHaveAttribute('aria-hidden', 'true')
+    expect(trigger).not.toHaveTextContent('+')
+    expect(trigger).toHaveTextContent(/^Foto hinzufügen$/)
     expect(trigger.getAttribute('aria-label')).toMatch(/^Foto hinzufügen: [^+]*$/)
+    const cell = trigger.closest('li')!
+    expect(cell.nextElementSibling).toBeNull()
+    expect(cell.parentElement?.className).toContain('flex-wrap')
 
-    // Das Zeichen gibt es nur dort - nicht an den „Hinzufügen"-Handgriffen in Band und Panel.
     await user.click(trigger)
     for (const button of await screen.findAllByRole('button', { name: /^Hinzufügen: / })) {
       expect(button).not.toHaveTextContent('+')
+      expect(button.querySelector('[data-icon="plus"]')).not.toBeNull()
     }
+  })
+})
+
+describe('AlbumDraftPage: justierte Reihen', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const landscapes = [1, 2, 3, 4].map((id) => photo(id, { aspect_ratio: 1.5 }))
+
+  async function bandAfterOpening(width: number) {
+    const user = userEvent.setup()
+    const observer = installResizeObserver()
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }))
+    renderPage({ events: [EVENT_A], items: landscapes }, noObserver)
+    await screen.findByRole('button', { name: 'Streichen: 1.jpg' })
+    observer.resizeTo(width)
     await user.click(screen.getByRole('button', { name: 'Alternativen: 1.jpg' }))
-    for (const button of await screen.findAllByRole('button', { name: /^Hinzufügen: / })) {
-      expect(button).not.toHaveTextContent('+')
-    }
+    const heading = await screen.findByRole('heading', { level: 4, name: 'Alternativen zu 1.jpg' })
+    return heading.closest('li')!
+  }
+
+  it.each([
+    // 900px: zwei Querformate je Reihe (ein drittes drueckte die Reihe unter 200px).
+    [900, '2.jpg'],
+    // 1280px: drei Querformate je Reihe.
+    [1280, '3.jpg'],
+  ])(
+    'puts the band as a full-width item right after the computed row at %s px',
+    async (width, last) => {
+      const band = await bandAfterOpening(width)
+
+      expect(band.className).toContain('w-full')
+      const previous = band.previousElementSibling
+      expect(previous).toBe(
+        screen.getByRole('button', { name: `Streichen: ${last}` }).closest('li'),
+      )
+    },
+  )
+
+  it('gives every album tile its computed width as a number', async () => {
+    const observer = installResizeObserver()
+    renderPage({ events: [EVENT_A], items: landscapes }, noObserver)
+    await screen.findByRole('button', { name: 'Streichen: 1.jpg' })
+
+    observer.resizeTo(1280)
+
+    const tile = screen.getByRole('button', { name: 'Streichen: 1.jpg' }).closest('li')!
+    // (1280 - 2 * 12) / 4.5 = 279.1 hoch, ein Querformat davon 1.5-fach breit.
+    expect(tile.style.width).toBe(`${Math.round(1.5 * ((1280 - 24) / 4.5))}px`)
+    expect(tile.className).not.toMatch(/aspect-square|grid-cols/)
+  })
+
+  it('puts the add panel after the last row, as a full-width item', async () => {
+    const user = userEvent.setup()
+    const observer = installResizeObserver()
+    renderPage({ events: [EVENT_A], items: landscapes }, noObserver)
+    await screen.findByRole('button', { name: 'Streichen: 1.jpg' })
+    observer.resizeTo(1280)
+
+    await user.click(screen.getByRole('button', { name: /^Foto hinzufügen: / }))
+    const heading = await screen.findByRole('heading', {
+      level: 4,
+      name: /^Foto zu .* hinzufügen$/,
+    })
+    const panel = heading.closest('li')!
+
+    expect(panel.className).toContain('w-full')
+    expect(panel.previousElementSibling).toBe(
+      screen.getByRole('button', { name: /^Foto hinzufügen: / }).closest('li'),
+    )
   })
 })
 
@@ -552,7 +622,8 @@ describe('AlbumDraftPage: Hinzufügen und Tauschen aus dem Band', () => {
     expect(ratingsApi.setRating).toHaveBeenCalledTimes(1)
     expect(ratingsApi.setRating).toHaveBeenCalledWith(4, 'album_worthy')
     const tile = (await screen.findByRole('button', { name: 'Streichen: 4.jpg' })).closest('li')!
-    expect(within(tile).getByLabelText('Aufgenommen')).toBeInTheDocument()
+    // 4 war nicht vorgeschlagen: Das Zeichen nennt das im Namen.
+    expect(within(tile).getByLabelText('Aufgenommen, nicht vorgeschlagen')).toBeInTheDocument()
     expect(screen.getByText(/^2 im Album · Richtwert etwa 3 · 1 aufgenommen/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 4, name: 'Alternativen zu 1.jpg' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Hinzufügen: 4.jpg' })).toBeNull()

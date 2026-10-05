@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { AlbumParticipantOut, PhotoOut, RankingOut, RatingOut } from '../api/types'
 import { ALBUM_STATE_LABELS, NOT_IN_DRAFT_LABEL } from '../utils/albumStateLabels'
+import { HANDLES_FULL_WIDTH_PX } from '../utils/curationLayout'
 import { SELECTION_DECIDED_BADGE_TEXT, SelectionPhotoTile } from './SelectionPhotoTile'
 
 vi.mock('./PhotoImage', () => ({
@@ -38,14 +39,20 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
 
 function renderTile(
   overrides: Partial<PhotoOut> = {},
-  props: { onDecide?: () => void; largeTriggerRef?: (element: HTMLElement | null) => void } = {},
+  props: {
+    onDecide?: () => void
+    largeTriggerRef?: (element: HTMLElement | null) => void
+    width?: number
+  } = {},
 ) {
   const onDecide = props.onDecide ?? vi.fn()
   const onOpenLarge = vi.fn()
-  render(
+  const { unmount, container } = render(
     <ul>
       <SelectionPhotoTile
         photo={photo(overrides)}
+        width={props.width ?? 300}
+        imageHeight={200}
         participants={PARTICIPANTS}
         decidingIncluded={null}
         onDecide={onDecide}
@@ -54,7 +61,7 @@ function renderTile(
       />
     </ul>,
   )
-  return { onDecide, onOpenLarge }
+  return { onDecide, onOpenLarge, unmount, container }
 }
 
 /** Die Entscheidungsflaechen der Kachel - ohne den Bild-Ausloeser der Grossansicht. */
@@ -167,6 +174,8 @@ describe('SelectionPhotoTile - die vier Haltungen', () => {
         <ul>
           <SelectionPhotoTile
             photo={photo({ ranking, contested: true })}
+            width={300}
+            imageHeight={200}
             participants={PARTICIPANTS}
             decidingIncluded={null}
             onDecide={vi.fn()}
@@ -241,6 +250,8 @@ describe('SelectionPhotoTile - die Trefferfläche', () => {
       <ul>
         <SelectionPhotoTile
           photo={photo({ contested: true })}
+          width={300}
+          imageHeight={200}
           participants={PARTICIPANTS}
           decidingIncluded={true}
           onDecide={vi.fn()}
@@ -256,66 +267,41 @@ describe('SelectionPhotoTile - die Trefferfläche', () => {
     expect(within(drop).queryByTestId('button-spinner')).toBeNull()
   })
 
-  it('builds no own height class - the 44px come from the button primitive', () => {
-    renderTile({ contested: true })
-
-    for (const control of decisionButtons()) {
-      expect(control.className).not.toMatch(/\bh-11\b/)
-      expect(control.className).toMatch(/\btap-target\b/)
-    }
-  })
-
-  /*
-   * DIE BEIDEN ENTSCHEIDUNGEN STEHEN UNTEREINANDER, AUF JEDER BREITE.
-   *
-   * Geprüft wird die KLASSENSTRUKTUR und keine Pixelbreite: jsdom hat keine Layout-Engine, dort
-   * ist jede Breite 0. Der Nachweis, dass die Beschriftungen nebeneinander auf keiner
-   * Rasterbreite Platz haben, ist eine Messung im Browser und gehört nicht in diese Ebene - hier
-   * steht der Wächter gegen den Rückfall, und der greift genau an der Anordnung.
-   *
-   * Ein `sm:flex-row` (oder irgendein anderer Umschlag zurück in eine Zeile) macht den Fall rot.
-   */
-  it('stacks the two decisions vertically and never falls back to one row', () => {
+  it('puts the two decisions side by side, "Aufnehmen" (book) first, "Nicht aufnehmen" (x-circle)', () => {
     renderTile({ contested: true })
 
     const take = screen.getByRole('button', { name: 'Aufnehmen: reise/a.jpg' })
     const drop = screen.getByRole('button', { name: 'Nicht aufnehmen: reise/a.jpg' })
-    const row = take.parentElement
-    expect(row, 'gemeinsamer Container der beiden Entscheidungen').not.toBeNull()
-    expect(row).toBe(drop.parentElement)
+    expect(take.parentElement).toBe(drop.parentElement)
+    expect(take.compareDocumentPosition(drop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(take.querySelector('[data-icon="book"]')).not.toBeNull()
+    expect(drop.querySelector('[data-icon="x-circle"]')).not.toBeNull()
+  })
 
-    expect(row!.className).toMatch(/\bflex-col\b/)
-    // Auch als Breakpoint-Variante nicht - `sm:flex-row`, `md:flex-row`, … sind alle gemeint.
-    expect(row!.className).not.toMatch(/flex-row\b/)
-
-    // Volle Kachelbreite je Schaltfläche statt `flex-1`: In einer SPALTE wirkt `flex-1` auf die
-    // Höhe und ließe die Schaltflächen auf ihre Textzeile zusammenfallen.
-    for (const control of [take, drop]) {
-      expect(control.className).toMatch(/\bw-full\b/)
-      expect(control.className).not.toMatch(/\bflex-1\b/)
+  it.each([
+    [{ contested: true }, HANDLES_FULL_WIDTH_PX['selection-contested']],
+    [{ in_final_selection: true }, HANDLES_FULL_WIDTH_PX['selection-single']],
+  ])('switches %j to symbols strictly below %s px', (overrides, threshold) => {
+    for (const [width, iconOnly] of [
+      [threshold - 1, true],
+      [threshold, false],
+    ] as const) {
+      const { unmount } = renderTile(overrides, { width })
+      for (const control of decisionButtons()) {
+        expect(control.querySelector('[data-tile-action-hint]') !== null, `${width}`).toBe(iconOnly)
+      }
+      unmount()
     }
   })
 
-  /*
-   * ABSTAND DER GESTAPELTEN ENTSCHEIDUNGEN: mindestens 16px.
-   *
-   * Das Design-System nennt 12px als Untergrenze zwischen zwei aufgespannten Bedienelementen
-   * (Regel 2 am `tap-target`, die Aufspannung ragt je 6px über das Sichtbare hinaus). Hier gilt
-   * der nächsthöhere Wert, und das ist kein Vorsichtsaufschlag: `tap-targets.spec.ts` tastet die
-   * Ecken bei 21.5px ab der Mitte ab, während die aufgespannte Fläche 22px weit reicht. Bei
-   * genau 12px Abstand beginnt die Fläche des NACHBARN exakt an dieser Abtaststelle - die
-   * Entscheidung fiele dann in die Rundung des Browsers. Bei Überlappung gewinnt das
-   * obenliegende Element, und das wäre hier eine falsch geschriebene Entscheidung über die
-   * Bildmenge des Albums.
-   */
-  it('keeps the stacked decisions far enough apart for their expanded tap targets', () => {
-    renderTile({ contested: true })
+  it('shows "Herausnehmen" with x-circle', () => {
+    renderTile({ in_final_selection: true })
 
-    const row = screen.getByRole('button', { name: 'Aufnehmen: reise/a.jpg' }).parentElement
-    const gap = row!.className.match(/\bgap-(\d+)\b/)
-    expect(gap, 'Abstandsklasse der Entscheidungsspalte').not.toBeNull()
-    // Tailwind-Skala: 1 Einheit = 4px.
-    expect(Number(gap![1]) * 4).toBeGreaterThanOrEqual(16)
+    expect(
+      screen
+        .getByRole('button', { name: 'Herausnehmen: reise/a.jpg' })
+        .querySelector('[data-icon="x-circle"]'),
+    ).not.toBeNull()
   })
 })
 
@@ -339,6 +325,8 @@ describe('SelectionPhotoTile - die drei Anzeigezustände', () => {
       <ul>
         <SelectionPhotoTile
           photo={photo({ final_selection_decision: false, in_final_selection: false })}
+          width={300}
+          imageHeight={200}
           participants={PARTICIPANTS}
           decidingIncluded={null}
           onDecide={vi.fn()}
@@ -372,6 +360,8 @@ describe('SelectionPhotoTile - was hier nicht stehen darf', () => {
         <ul>
           <SelectionPhotoTile
             photo={photo({ ...overrides, ratings: REVERSED_RATINGS })}
+            width={300}
+            imageHeight={200}
             participants={PARTICIPANTS}
             decidingIncluded={null}
             onDecide={vi.fn()}
@@ -393,6 +383,8 @@ describe('SelectionPhotoTile - was hier nicht stehen darf', () => {
       <ul>
         <SelectionPhotoTile
           photo={photo({ ...overrides, ratings: REVERSED_RATINGS })}
+          width={300}
+          imageHeight={200}
           participants={PARTICIPANTS}
           decidingIncluded={null}
           onDecide={vi.fn()}
@@ -447,5 +439,31 @@ describe('SelectionPhotoTile - die Grossansicht (Spec 0531)', () => {
     const trigger = screen.getByRole('button', { name: 'Großansicht: reise/a.jpg' })
     expect(trigger).toHaveFocus()
     expect(largeTriggerRef).toHaveBeenLastCalledWith(trigger)
+  })
+})
+
+describe('SelectionPhotoTile - Haltungszeichen und Leiste', () => {
+  it('shows each stance as the symbol mark, its word only as accessible name', () => {
+    renderTile({ ratings: REVERSED_RATINGS, contested: true })
+
+    const mark = within(stanceRow('nora')).getByRole('img', { name: ALBUM_STATE_LABELS.taken })
+    expect(mark.textContent).toBe('')
+  })
+
+  it('carries reason, suitability and file name in the strip, in that order', () => {
+    const { container } = renderTile({
+      contested: true,
+      album_suitability: { level: 4, reason: 'Schönes Licht.' },
+    })
+
+    const strip = container.querySelector<HTMLElement>('[data-tile-details]')!
+    expect(strip).toHaveTextContent(/Begründung des Modells.*Schönes Licht\..*a\.jpg$/)
+  })
+
+  it('strikes the file name of a photo taken out', () => {
+    const { container } = renderTile({ final_selection_decision: false })
+
+    const strip = container.querySelector<HTMLElement>('[data-tile-details]')!
+    expect(within(strip).getByText('a.jpg')).toHaveAttribute('data-struck', 'true')
   })
 })

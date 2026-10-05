@@ -3,13 +3,10 @@ import type { ComponentProps } from 'react'
 
 import { cn } from '../../lib/utils'
 
-// Duenner Radix-Wrapper - erste Verwendung von @radix-ui/react-popover im Projekt (bisher nur
-// @radix-ui/react-slot fuer `asChild`-Komposition, siehe ui/button.tsx). Bewusst Popover statt
-// Tooltip: das ARIA-Tooltip-Pattern ist hover/focus-only konzipiert und oeffnet sich nicht per Tap,
-// Radix Popover hat einen echten Button-Trigger, der nativ per Tap funktioniert. Enthaelt selbst
-// KEINE geraetespezifische Hover-Logik - die lebt feature-spezifisch in
-// components/CriterionDetailsPopover.tsx, das diese generische Primitive nutzt (analog zum
-// bestehenden Muster ui/badge.tsx -> components/RatingBadge.tsx).
+// Duenner Radix-Wrapper. Bewusst Popover statt Tooltip: das ARIA-Tooltip-Pattern ist
+// hover/focus-only konzipiert und oeffnet sich nicht per Tap, Radix Popover hat einen echten
+// Button-Trigger, der nativ per Tap funktioniert. Enthaelt selbst KEINE geraetespezifische
+// Hover-Logik - die lebt feature-spezifisch beim Aufrufer (Vorlage: components/Stepper.tsx).
 export const Popover = PopoverPrimitive.Root
 export const PopoverTrigger = PopoverPrimitive.Trigger
 export const PopoverClose = PopoverPrimitive.Close
@@ -23,11 +20,10 @@ export const PopoverClose = PopoverPrimitive.Close
 // auf `--elevated` - es liest so als aufgesetzte Ebene und nicht als weitere Karte. Der frueher
 // hier gesetzte Schatten entfaellt ersatzlos: Tiefe tragen die vier Flaechenstufen.
 //
-// `ref` als normale Prop (React 19, kein `forwardRef` noetig) - laesst CriterionDetailsPopover.tsx
-// einen contentRef an den tatsaechlichen DOM-Knoten binden, fuer den Ref-basierten
-// Grace-Bereich-Check des Hover-Auto-Close ueber die Portal-Grenze hinweg. Kein eigener Unit-Test
-// hier (Testkonzept Punkt 7, "duenne generische Primitive") - ein kaputtes Forwarding zeigt sich
-// indirekt, aber vollstaendig in jedem Grace-Bereich-Test von CriterionDetailsPopover.test.tsx.
+// `ref` als normale Prop (React 19, kein `forwardRef` noetig) - bindet einen Ref an den
+// tatsaechlichen DOM-Knoten jenseits der Portal-Grenze. Kein eigener Unit-Test hier (Testkonzept
+// Punkt 7, "duenne generische Primitive"); Oeffnen, Schliessen und Hover-Verhalten pruefen die
+// Aufrufer (`Stepper.test.tsx`).
 export function PopoverContent({
   className,
   sideOffset = 8,

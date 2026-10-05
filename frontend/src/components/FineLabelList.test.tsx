@@ -66,10 +66,10 @@ describe('FineLabelList: der Regelfall', () => {
 })
 
 describe('FineLabelList: Sicherheit (S1/S5)', () => {
-  /* S5 — DIESER TEST WANDERT MIT DER RENDERSTELLE. Ein in `CriterionDetailsList.test.tsx`
-     verbliebener Test bliebe grün, obwohl die Komponente den Text nicht mehr rendert; der Schutz
-     bestünde dann nur noch nominell. `display_name` ist freier, extern erzeugter LLM-Text, und das
-     Session-Token liegt in `localStorage`: ein eingeschleustes Skript liest es unmittelbar aus. */
+  /* S5 — DIESER TEST STEHT AN DER RENDERSTELLE. Ein Test an einem Aufrufer bliebe grün, auch wenn
+     die Komponente den Text anders rendert; der Schutz bestünde dann nur noch nominell.
+     `display_name` ist freier, extern erzeugter LLM-Text, und das Session-Token liegt in
+     `localStorage`: ein eingeschleustes Skript liest es unmittelbar aus. */
   it('rendert einen feindlich belegten Anzeigenamen als reinen Textknoten', () => {
     const payload = '<img src=x onerror="window.__pwned = true">'
 

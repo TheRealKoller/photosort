@@ -1,194 +1,142 @@
 import type { ReactNode, Ref } from 'react'
 
-import type { RatingStatus } from '../api/types'
+import { useRevealOnDemand } from '../hooks/useRevealOnDemand'
 import { cn } from '../lib/utils'
-import { RatingBadge } from './RatingBadge'
+import { Alert } from './ui/alert'
 
 export interface PhotoCardProps {
+  /** Die gerechnete Kachelbreite in Pixeln (`useJustifiedRows`). */
+  width: number
+  /** Die gerechnete Hoehe der Bildflaeche in Pixeln - die Hoehe der Reihe. */
+  imageHeight: number
   /** Macht die Bildflaeche zu einer Schaltflaeche mit genau diesem einen Aktivierungsweg. Fehlt
    * die Prop, ist die Bildflaeche weder Link noch Schaltflaeche. */
   onImageActivate?: () => void
   /** Zugaenglicher Name der Bildflaeche als Schaltflaeche, z. B. „Großansicht: {Pfad}". */
   imageTriggerLabel?: string
   imageTriggerRef?: Ref<HTMLButtonElement>
-  /** Vollstaendiger Pfad des Fotos. Sichtbar wird ausschliesslich der Basisname. */
+  /** Vollstaendiger Pfad des Fotos. Sichtbar wird ausschliesslich der Basisname, in der Leiste. */
   relativePath: string
-  /**
-   * Bewertungszustand der Karte. `undefined` heisst "die Karte traegt keinen Zustand" (Vergleich
-   * und Kuratierung zeigen ihn woanders bzw. gar nicht), `null` ist der Board-Zustand "neu".
-   */
-  status?: RatingStatus | null
-  /**
-   * Das EIGENE Favoriten-Kennzeichen - seit ADR 0098 unabhaengig von `status` und deshalb eine
-   * eigene Prop statt eines dritten Werts darin.
-   */
-  favorite?: boolean
-  /** true fuer einen unbestaetigten automatischen Vorschlag statt einer echten Bewertung. */
-  suggested?: boolean
-  /**
-   * Der Gegenstand dieser Karte ist BEISEITEGELEGT - die Bildflaeche tritt zurueck und der
-   * Dateiname wird durchgestrichen, OHNE dass die Karte damit einen Bewertungszustand behauptet.
-   *
-   * Getrennt von `status='rejected'`, weil die beiden verschiedene Dinge sagen: jenes ist die
-   * Streichung EINES Nutzers und traegt deshalb das Kennzeichen "Verworfen", dieses die
-   * gemeinsame Herausnahme des PROJEKTS aus der Endauswahl. Auf einer Ansicht, die je Teilnehmer
-   * ein benanntes Bewertungs-Kennzeichen zeigt, waere ein unbenanntes "Verworfen" am
-   * Kartenkoerper als Haltung einer Person lesbar - genau die Verwechslung, die die Trennung von
-   * `ratings[].status` und `final_selection_decision` ausschliesst.
-   */
+  /** Gestrichen bzw. herausgenommen: Der Dateiname in der Leiste ist durchgestrichen. */
   setAside?: boolean
-  /** Die Karte ist die Bezugskachel eines offenen Alternativen-Bands im Album-Entwurf: anliegende
-   * Akzentkante. Kein Auswahlzustand - es gibt höchstens eine solche Karte je Seite, und sie
-   * verschwindet mit dem Band. */
+  /** Bezugskachel eines offenen Alternativen-Bands: anliegender Akzentring um die Bildflaeche. */
   anchored?: boolean
-  /** Inhalt der Bildflaeche - `PhotoImage` oder ein Platzhalter. */
+  /** Inhalt der Bildflaeche - `PhotoImage` oder ein Platzhalter, eingepasst (`object-contain`). */
   image: ReactNode
-  /** Ecken-Overlay oben links (heute: `CategoryOverrideMarker`). */
-  topLeft?: ReactNode
-  /** Ecken-Overlay oben rechts (heute: `CriterionDetailsPopover`). */
-  topRight?: ReactNode
-  /** Fusszeile der Karte - Aktion oder ergaenzende Zeilen. */
+  /** Das Zustandszeichen oben links in der Bildecke (`AlbumStateBadge`). */
+  stateMark?: ReactNode
+  /** Angaben der Leiste VOR dem Dateinamen (Grund, Albumtauglichkeit). */
+  details?: ReactNode
+  /** Die Knopfzeile: erster Knopf links, zweiter rechts, nie umbrochen. */
+  actions: ReactNode
+  /** Grund eines gescheiterten Handgriffs an dieser Kachel. */
+  error?: string | null
+  /** Unter der Knopfzeile (Haltungszeilen der Endauswahl). */
   footer?: ReactNode
 }
 
 /**
- * Die EINE Spaltenregel aller Raster der Foto-Karte (Album-Entwurf und Endauswahl):
- * 360px -> 2, ab `sm` 3, ab `lg` hoechstens 4 je Reihe. Vier Spalten erst ab `lg`, nicht `md`:
- * Sonst schrumpfte die Kachel beim Wechsel auf vier Spalten unter ihr Mass bei drei.
- */
-export const PHOTO_CARD_GRID_CLASS = 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4'
-
-/**
- * Die Foto-Karte des Album-Entwurfs und der Endauswahl. Sie lebt GENAU EINMAL -
- * `CurationPhotoTile` und `SelectionPhotoTile` bauen keine eigene Kachel.
+ * DIE Kachel der Kuratierung - Album-Entwurf, Gestrichen-Zeile, Alternativen, Hinzufuegen-Panel
+ * und Endauswahl. Aufbau, zugleich DOM- und Fokusreihenfolge: Bildflaeche (Ausloeser der
+ * Grossansicht), Zustandszeichen, Leiste bei Bedarf, Knopfzeile, Fehlermeldung, Fusszeile.
  *
- * DIE BILDFLAECHE IST QUADRATISCH, DAS BILD WIRD EINGEPASST, NIE BESCHNITTEN: Der
- * Aufrufer setzt `object-contain`. Die feste Flaeche haelt jede Kachel einer Reihe gleich gross,
- * unabhaengig vom Format des Fotos - Overlays, Kennzeichen und Dateiname stehen ueberall gleich.
+ * DIE BILDFLAECHE HAT DAS SEITENVERHAELTNIS DES FOTOS und keine Polsterung, Kartenflaeche oder
+ * Rahmen. Breite und Hoehe kommen gerechnet von aussen; das Bild wird eingepasst, nie
+ * beschnitten. Sie steht IMMER in voller Helligkeit, auch gestrichen oder herausgenommen: eine
+ * gedaempfte Flaeche verfaelscht die Beurteilung des Motivs.
  *
- * AUFBAU (zugleich DOM- und Fokusreihenfolge): Bildbereich mit den beiden Ecken-Overlays,
- * darunter die Statuszeile (Kennzeichen links, Dateiname rechts), darunter die Fusszeile.
- * Kennzeichen und Dateiname sind nicht fokussierbar und schieben sich damit zwischen Bild und
- * Fusszeile, ohne die Reihenfolge der Bedienelemente zu veraendern.
+ * ZUSTANDSZEICHEN UND LEISTE SIND GESCHWISTER DER BILDFLAECHE, NIE IHRE KINDER: Die Bildflaeche
+ * beschneidet (`overflow-hidden`). Die Knopfzeile liegt ausserhalb jedes beschneidenden
+ * Containers, sonst wuerde ihre aufgespannte Trefferflaeche still abgeschnitten.
  *
- * DAS KENNZEICHEN SITZT IM KARTENKOERPER, NICHT IN DER BILDECKE: Ein Textbadge "Album-wuerdig"
- * ueber dem Foto braucht bei 360px und zwei Spalten mehr Platz, als die Ecke hat, und die Ecke
- * oben rechts ist fuer den Info-Trigger reserviert.
+ * DIE LEISTE STEHT IMMER IM DOM, im Ruhezustand `sr-only`: Grund und Dateiname bleiben fuer
+ * Bildschirmleser im Lesefluss zwischen Zustandszeichen und Knoepfen. Sichtbar wird sie beim
+ * Ueberfahren (feiner Zeiger), bei Fokus auf irgendeinem Bedienelement der Kachel und nach einem
+ * langen Druck. Der lange Druck aktiviert nichts - weder die Grossansicht noch einen Knopf.
  *
- * DIE ECKEN-OVERLAYS SIND GESCHWISTER DER BILDFLAECHE, NIE IHRE KINDER. Die Bildflaeche traegt
- * `overflow-hidden`; eine aufgespannte Trefferflaeche innerhalb eines beschneidenden Containers
- * wuerde still abgeschnitten.
- *
- * DER FUENFTE BOARD-ZUSTAND "AUSGEWAEHLT" WIRD NICHT GEBAUT: PhotoSort kennt heute keine
- * Foto-Auswahl. Es gibt weder eine `selected`-Prop noch ein `data-selected`, und es entsteht
- * keine Vorbereitung darauf.
+ * SICHERHEIT: Der Dateiname stammt aus dem WebDAV-Walk der OpenCloud und ist extern entstandener
+ * Text. Er steht ausschliesslich als React-Textknoten - nie ueber `dangerouslySetInnerHTML`, nie in
+ * `href`, `src`, `style` oder `url()`. Das Session-Token liegt in `localStorage`; ein
+ * eingeschleustes Skript laese es unmittelbar aus. Die Inline-Stile tragen nur gerechnete Zahlen.
  */
 export function PhotoCard({
+  width,
+  imageHeight,
   onImageActivate,
   imageTriggerLabel,
   imageTriggerRef,
   relativePath,
-  status,
-  favorite = false,
-  suggested = false,
   setAside = false,
   anchored = false,
   image,
-  topLeft,
-  topRight,
+  stateMark,
+  details,
+  actions,
+  error = null,
   footer,
 }: PhotoCardProps) {
-  // BEIDE Faelle werden gleich dargestellt, und nur einer traegt zusaetzlich ein Kennzeichen: die
-  // eigene Streichung (Bewertung eines Nutzers) und die gemeinsame Herausnahme aus der Endauswahl
-  // (Entscheidung des Projekts). Traeger ist die Durchstreichung des Dateinamens - bei `setAside`
-  // ohne Bewertungszustand ist sie der einzige.
-  const stepsBack = status === 'rejected' || setAside
-
-  /*
-   * DIE BILDFLAECHE STEHT IMMER IN VOLLER HELLIGKEIT (ADR 0112), auch bei einer Streichung oder
-   * einer Herausnahme: Eine gedaempfte Bildflaeche verfaelscht die Beurteilung des Motivs, und
-   * beurteilt wird ueberall dort, wo diese Karte steht. Den Zustand tragen Kennzeichen (Symbol und
-   * Wort) und der durchgestrichene Dateiname, beide ausserhalb der Bildflaeche.
-   */
-  const imageAreaClassName = 'block aspect-square overflow-hidden rounded-md'
-
-  // Nur der Basisname: Der Ordnerteil ist auf ~60px ohnehin unlesbar und steht bereits im `alt`
-  // des Bildes sowie im `aria-label` der Fusszeilen-Aktion.
+  const { visible, handlers, consumeSuppressedClick } = useRevealOnDemand()
   const fileName = relativePath.split('/').pop() ?? relativePath
+  const imageAreaClassName = cn(
+    'block size-full overflow-hidden rounded-md',
+    anchored && 'ring-2 ring-accent',
+  )
 
   return (
     <li
-      data-rating-status={status === undefined ? undefined : (status ?? 'unrated')}
-      data-rating-favorite={favorite ? 'true' : undefined}
-      // Board-Karte: Radius 12px, Flaeche `--elevated`, Rand `--border`. Die Polsterung ist am
-      // Telefon bewusst 8px statt der 12px des Boards - bei 360px und zwei Spalten misst die
-      // Kachel 158px, 12px Polsterung schruempfen die Bildflaeche um 16 %, und die Bildflaeche ist
-      // dort die knappste Ressource der Anwendung. Ab `sm:` gilt das Board-Mass.
-      className={cn(
-        'flex flex-col gap-2 rounded-lg bg-elevated p-2 sm:p-3',
-        anchored ? 'border-2 border-accent' : 'border border-border',
-      )}
+      style={{ width }}
+      data-anchored={anchored ? 'true' : undefined}
+      className="flex flex-col"
+      {...handlers}
+      onClickCapture={(event) => {
+        if (consumeSuppressedClick(event)) {
+          event.stopPropagation()
+        }
+      }}
     >
-      <div className="relative">
+      <div className="relative" style={{ height: imageHeight }}>
         {onImageActivate === undefined ? (
           <div className={imageAreaClassName}>{image}</div>
         ) : (
-          // Der Zeiger kuendigt die Grossansicht an; sonst aendert die Bildflaeche beim
-          // Ueberfahren nichts. Fokus zeigt allein die globale Kontur.
           <button
             ref={imageTriggerRef}
             type="button"
             aria-label={imageTriggerLabel}
             onClick={onImageActivate}
-            className={cn(imageAreaClassName, 'w-full cursor-zoom-in')}
+            className={cn(imageAreaClassName, 'cursor-zoom-in')}
           >
             {image}
           </button>
         )}
-        {topLeft !== undefined && <div className="absolute left-2 top-2">{topLeft}</div>}
-        {topRight !== undefined && <div className="absolute right-2 top-2">{topRight}</div>}
-      </div>
-
-      <div className="flex items-center justify-between gap-2">
-        {status === null && !favorite && (
-          // Der Zustand "neu" traegt das WORT, nicht das neutrale "–"-Badge. Reiner Text, kein
-          // `aria-label`, kein `RatingBadge` - das "–" bleibt seinen uebrigen Aufrufstellen
-          // (Haltungszeilen der Endauswahl) vorbehalten, wo es "hat nicht bewertet" heisst.
-          //
-          // Traegt die Karte das Favoriten-Kennzeichen, steht dort dessen Badge statt "Neu":
-          // "Favorit" ohne Albumkennzeichen daneben IST die Aussage "noch nicht entschieden",
-          // und beides nebeneinander laese sich wie ein Widerspruch.
-          <span className="shrink-0 text-xs text-text-muted">Neu</span>
-        )}
-        {status !== undefined && (status !== null || favorite) && (
-          <RatingBadge
-            status={status}
-            favorite={favorite}
-            suggested={suggested}
-            className="shrink-0"
-          />
-        )}
-        {/* SICHERHEIT: Der Dateiname stammt aus dem WebDAV-Walk der OpenCloud und ist damit extern
-            entstandener Text. Er wird ausschliesslich als regulaerer React-Textknoten gerendert -
-            nie ueber `dangerouslySetInnerHTML`, und er fliesst in kein `href`, `src`, `style` oder
-            `url()`. Das Session-Token liegt in `localStorage`; ein eingeschleustes
-            Skript laese es unmittelbar aus. Abgesichert in PhotoCard.test.tsx.
-
-            `min-w-6` neben `truncate`, damit ein langes Kennzeichen den Namen nie auf null
-            drueckt - sonst verschwaende auch die Durchstreichung. Eine Zeile, kein Umbruch: in
-            einer Rasterzeile gleichen sich die Kartenhoehen aus, ein zweizeiliger Name auf EINER
-            Karte machte alle Karten der Zeile hoeher. */}
-        <span
-          data-struck={stepsBack ? 'true' : undefined}
-          className={cn(
-            'min-w-6 truncate font-mono text-xs',
-            stepsBack ? 'text-text-muted line-through' : 'text-text',
-          )}
+        {stateMark !== undefined && <div className="absolute top-1 left-1">{stateMark}</div>}
+        <div
+          data-tile-details=""
+          data-visible={visible ? 'true' : undefined}
+          style={{ maxHeight: imageHeight }}
+          className={
+            visible
+              ? 'pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-1 overflow-hidden rounded-b-md bg-overlay px-2 py-1 text-xs text-text-h'
+              : 'sr-only'
+          }
         >
-          {fileName}
-        </span>
+          {details}
+          <p
+            data-struck={setAside ? 'true' : undefined}
+            className={cn(
+              'font-mono break-all',
+              setAside ? 'text-text-muted line-through' : 'text-text',
+            )}
+          >
+            {fileName}
+          </p>
+        </div>
       </div>
-
+      <div className="mt-2 flex justify-between gap-3">{actions}</div>
+      {error !== null && (
+        <div className="mt-2">
+          <Alert>{error}</Alert>
+        </div>
+      )}
       {footer}
     </li>
   )

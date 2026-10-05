@@ -1026,52 +1026,51 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
   )
 
   /*
-   * specs/features/0563-groessere-unbeschnittene-fotos.md, AK3: Album-Entwurf und Endauswahl
-   * passen jedes Foto in die Bildflaeche ein, nie beschnitten. Nur `object-cover` ist hier
-   * verboten - `aspect-square` bleibt ausdruecklich erlaubt: Es ist die feste quadratische
-   * Bildflaeche, die jede Kachel einer Reihe gleich gross haelt (AK4).
+   * Die Kuratierungsraster (Album-Entwurf, Alternativen, Hinzufuegen-Panel, Endauswahl) zeigen
+   * jedes Foto im eigenen Seitenverhaeltnis, nie beschnitten und nie in eine feste Form gezwungen:
+   * `object-cover` schneidet zu, `aspect-square` zwingt jede Bildflaeche ins Quadrat, und ein
+   * Spaltenraster (`grid-cols-*`) setzte die Kachelbreite unabhaengig vom Foto.
    */
-  it.each([
+  const CURATION_FILES = [
+    'src/components/PhotoCard.tsx',
     'src/components/CurationPhotoTile.tsx',
     'src/components/SelectionPhotoTile.tsx',
     'src/components/DraftAlternativesBand.tsx',
-  ])('haelt object-cover aus %s heraus (kein Beschnitt)', (path) => {
-    const file = sourceFiles.find((candidate) => candidate.path.endsWith(path))
-    expect(file, `${path} muss im Pruefsatz liegen`).toBeDefined()
+    'src/components/DraftEventSection.tsx',
+    'src/components/CurationSkeletonList.tsx',
+    'src/pages/AlbumDraftPage.tsx',
+    'src/pages/AlbumSelectionPage.tsx',
+  ]
 
-    expect(stripComments(file?.content ?? '')).not.toContain('object-cover')
-  })
+  it.each(CURATION_FILES)(
+    'haelt object-cover, aspect-square und Spaltenraster aus %s heraus',
+    (path) => {
+      const file = sourceFiles.find((candidate) => candidate.path.endsWith(path))
+      expect(file, `${path} muss im Pruefsatz liegen`).toBeDefined()
+
+      const code = stripComments(file?.content ?? '')
+      expect(code).not.toContain('object-cover')
+      expect(code).not.toContain('aspect-square')
+      expect(code).not.toMatch(/grid-cols-/)
+    },
+  )
 
   /*
-   * EINE Spaltenleiter fuer alle Raster der Foto-Karte. Fuehrt eine
-   * Aufrufstelle wieder eine eigene `grid-cols-*`-Utility, laeuft die Leiter zwischen Gruppe,
-   * Band, Panel, Platzhalter und Endauswahl still auseinander.
+   * Jedes Kuratierungsraster ist eine umbrechende Liste mit demselben Zwischenraum, mit dem
+   * `justifiedRows` rechnet - sonst bricht jede Reihe einen Pixel zu frueh oder zu spaet um.
    */
   it.each([
     'src/components/DraftEventSection.tsx',
     'src/components/DraftAlternativesBand.tsx',
-    'src/pages/AlbumDraftPage.tsx',
+    'src/components/CurationSkeletonList.tsx',
     'src/pages/AlbumSelectionPage.tsx',
-  ])('setzt in %s nur PHOTO_CARD_GRID_CLASS als Spaltenregel', (path) => {
+  ])('setzt das Raster in %s als flex-wrap mit dem gerechneten Zwischenraum', (path) => {
     const file = sourceFiles.find((candidate) => candidate.path.endsWith(path))
     expect(file, `${path} muss im Pruefsatz liegen`).toBeDefined()
 
-    const code = stripComments(file?.content ?? '')
-    expect(code).toContain('PHOTO_CARD_GRID_CLASS')
-    expect(code).not.toMatch(/grid-cols-/)
-  })
-
-  it('haelt die Spaltenleiter der Foto-Karte bei 2 / 3 / hoechstens 4', () => {
-    const card = sourceFiles.find((file) => file.path.endsWith('src/components/PhotoCard.tsx'))
-    expect(card, 'PhotoCard.tsx muss im Pruefsatz liegen').toBeDefined()
-    const gridClass = stripComments(card?.content ?? '').match(
-      /export const PHOTO_CARD_GRID_CLASS = '([^']*)'/,
+    expect(stripComments(file?.content ?? '')).toContain(
+      `className="flex flex-wrap gap-${GRID_GAP_PX / 4}"`,
     )
-    expect(gridClass, 'PHOTO_CARD_GRID_CLASS muss als Literal exportiert sein').not.toBeNull()
-    const columns = (gridClass?.[1] ?? '')
-      .split(/\s+/)
-      .filter((utility: string) => utility.includes('grid-cols-'))
-    expect(columns).toEqual(['grid-cols-2', 'sm:grid-cols-3', 'lg:grid-cols-4'])
   })
 
   /*
@@ -1305,16 +1304,6 @@ describe('Design-Vertrag: Formsprache und Skalen', () => {
       file: 'src/components/StatusDot.tsx',
       snippet: 'size-2.5 shrink-0 rounded-full',
       reason: 'Prozess-Status-Punkt',
-    },
-    {
-      file: 'src/components/CriterionDetailsPopover.tsx',
-      snippet: 'rounded-full border border-border-control bg-bg/85',
-      reason: 'runder Backdrop des Popover-Triggers ueber der Fotokachel',
-    },
-    {
-      file: 'src/components/MotifAssessmentMarker.tsx',
-      snippet: 'items-center justify-center rounded-full bg-bg/85',
-      reason: 'runder Backdrop des Motiv-Markers ueber der Fotokachel',
     },
     {
       file: 'src/components/PhotoGridTile.tsx',
@@ -1699,16 +1688,6 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       snippet: 'border-b border-separator bg-bg/95',
       reason: 'durchscheinende sticky Kopfzeile der Schrittnavigation',
     },
-    {
-      file: 'src/components/MotifAssessmentMarker.tsx',
-      snippet: 'rounded-full bg-bg/85',
-      reason: 'Backdrop des Motiv-Markers ueber einer Fotokachel',
-    },
-    {
-      file: 'src/components/CriterionDetailsPopover.tsx',
-      snippet: 'border-border-control bg-bg/85',
-      reason: 'Backdrop des Info-Triggers ueber einer Fotokachel',
-    },
   ]
 
   it('verwendet Deckkraft-Modifikatoren auf Farb-Utilities nur an der begruendeten Liste', () => {
@@ -1961,21 +1940,6 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       file: 'src/pages/AlbumDraftPage.tsx',
       snippet: 'h-auto min-h-11 w-full justify-start',
       reason: 'Aufklapp-Zeile des Album-Entwurfs: Zeilenhoehe einer zeilenweisen Liste',
-    },
-    {
-      file: 'src/components/CurationPhotoTile.tsx',
-      snippet: 'className="h-11 sm:h-8"',
-      reason:
-        'heisser Pfad, ZWEI Flaechen untereinander: "Streichen" bzw. "Wieder aufnehmen" wird ' +
-        'viele Male hintereinander gedrueckt, und ein Fehlgriff schreibt einen falschen Datenwert; ' +
-        '"Alternativen" liegt unmittelbar darunter und wird mit demselben Daumen getroffen',
-    },
-    {
-      file: 'src/components/DraftAlternativesBand.tsx',
-      snippet: 'className="h-11 sm:h-8"',
-      reason:
-        'heisser Pfad in Band und Hinzufuegen-Panel: "Tauschen"/"Hinzufuegen" schreiben sofort, ' +
-        'Kandidaten stehen auf dem Telefon 2x2 dicht beieinander',
     },
     {
       file: 'src/pages/ProjectListPage.tsx',

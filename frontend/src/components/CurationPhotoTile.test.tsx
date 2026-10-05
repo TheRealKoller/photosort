@@ -1,19 +1,16 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { PhotoOut, RankingOut, RatingStatus } from '../api/types'
+import { LONG_PRESS_MS } from '../hooks/useRevealOnDemand'
 import { MOTIF_SET } from '../test/motifSetFixture'
-import { ALBUM_SUITABILITY_NOT_RATED_TEXT } from '../utils/albumSuitability'
 import { NOT_PROPOSED_BADGE_TEXT } from '../utils/albumDraft'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
+import { ALBUM_SUITABILITY_NOT_RATED_TEXT, REASON_ATTRIBUTION } from '../utils/albumSuitability'
+import { HANDLES_FULL_WIDTH_PX } from '../utils/curationLayout'
 import { CurationPhotoTile } from './CurationPhotoTile'
 
-/**
- * specs/features/0428-albumtauglichkeit-vom-modell.md: die Kachel trägt ab hier die
- * Stufenbeschriftung der Albumtauglichkeit und darunter die Begründung des Modells - auf zwei
- * Zeilen GEKÜRZT, aber vollständig im DOM.
- */
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
   return {
     event_id: 1,
@@ -44,12 +41,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
     in_final_selection: false,
     contested: false,
     persons: [],
-    motif_assessment: {
-      source: 'cloud' as const,
-      provider: 'anthropic',
-      excluded_document: false,
-      computed_at: '2026-07-21T09:00:00',
-    },
+    motif_assessment: null,
     motifs: MOTIF_SET.items.map((item) => ({
       key: item.key,
       strength: 0.5,
@@ -72,40 +64,56 @@ function renderTile(
     error?: string | null
     onOpenLarge?: (photoId: number) => void
     largeTriggerRef?: (element: HTMLElement | null) => void
+    width?: number
   } = {},
 ) {
   return render(
-    <CurationPhotoTile
-      photo={photo(overrides)}
-      motifSet={MOTIF_SET}
-      motifSetLoading={false}
-      motifSetError={undefined}
-      onMotifSetRetry={() => {}}
-      ownStatus={tile.ownStatus ?? null}
-      deciding={tile.deciding ?? false}
-      onDecide={tile.onDecide ?? (() => {})}
-      alternatives={{
-        expanded: tile.alternativesExpanded ?? false,
-        controls: 'band-1',
-        onToggle: tile.onToggleAlternatives ?? (() => {}),
-      }}
-      error={tile.error ?? null}
-      onOpenLarge={tile.onOpenLarge ?? (() => {})}
-      largeTriggerRef={tile.largeTriggerRef ?? (() => {})}
-    />,
+    <ul>
+      <CurationPhotoTile
+        photo={photo(overrides)}
+        width={tile.width ?? 300}
+        imageHeight={200}
+        ownStatus={tile.ownStatus ?? null}
+        deciding={tile.deciding ?? false}
+        onDecide={tile.onDecide ?? (() => {})}
+        alternatives={{
+          expanded: tile.alternativesExpanded ?? false,
+          controls: 'band-1',
+          onToggle: tile.onToggleAlternatives ?? (() => {}),
+        }}
+        error={tile.error ?? null}
+        onOpenLarge={tile.onOpenLarge ?? (() => {})}
+        largeTriggerRef={tile.largeTriggerRef ?? (() => {})}
+      />
+    </ul>,
   )
 }
 
-describe('CurationPhotoTile: die Stufenzeile', () => {
-  it('shows the coarse level label for a rated photo', () => {
-    renderTile({ ranking: ranking({ rank_score: 0.8 }) })
+function details(container: HTMLElement): HTMLElement {
+  const found = container.querySelector<HTMLElement>('[data-tile-details]')
+  if (found === null) {
+    throw new Error('keine Leiste')
+  }
+  return found
+}
 
-    expect(screen.getByText('Gut albumtauglich')).toBeInTheDocument()
+function icons(element: Element): string[] {
+  return [...element.querySelectorAll('[data-icon]')].map((icon) => icon.getAttribute('data-icon')!)
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+describe('CurationPhotoTile: die Albumtauglichkeit in der Leiste', () => {
+  it('shows the coarse level label for a rated photo', () => {
+    const { container } = renderTile({ ranking: ranking({ rank_score: 0.8 }) })
+
+    expect(within(details(container)).getByText('Gut albumtauglich')).toBeInTheDocument()
   })
 
   it('shows the exact level nowhere on the tile', () => {
-    /* Zwei Skalen nebeneinander wären zwei Zahlen für eine Aussage - die genaue Stufe steht nur
-     * in den Bewertungsdetails. */
     renderTile({ album_suitability: { level: 4, reason: null } })
 
     expect(screen.queryByText('Stufe 4 von 5')).toBeNull()
@@ -117,17 +125,7 @@ describe('CurationPhotoTile: die Stufenzeile', () => {
     expect(screen.getByText(ALBUM_SUITABILITY_NOT_RATED_TEXT)).toBeInTheDocument()
   })
 
-  it('renders no meter glyph for a photo without a quality score', () => {
-    const { container } = renderTile({
-      ranking: ranking({ rank_score: null, rank_position: null }),
-    })
-
-    expect(container.querySelectorAll('[data-quality-meter-dots]')).toHaveLength(0)
-  })
-
   it('keeps a quality score of 0 as a real level instead of "not rated"', () => {
-    /* `0` ist ein gültiger Qualitätswert. Eine Falsyness-Prüfung zeigte hier fälschlich
-     * „Noch nicht bewertet". */
     renderTile({ ranking: ranking({ rank_score: 0 }) })
 
     expect(screen.getByText('Wenig albumtauglich')).toBeInTheDocument()
@@ -136,26 +134,62 @@ describe('CurationPhotoTile: die Stufenzeile', () => {
 })
 
 describe('CurationPhotoTile: die Begründung', () => {
-  it('keeps the full reason in the DOM even though it is visually clamped', () => {
-    /* Assertion auf den TEXTINHALT, nicht auf die sichtbare Zeilenzahl - die kann jsdom nicht.
-     * Die Kürzung geschieht per `line-clamp`, nie durch Abschneiden der Zeichenkette: der
-     * vorgelesene Text bleibt vollständig. */
-    const reason =
-      'Die Person ist am linken Bildrand angeschnitten, der Hintergrund ist unruhig und ' +
-      'der Bildaufbau wirkt dadurch zufällig gewählt.'
+  const LONG_REASON =
+    'Die Person ist am linken Bildrand angeschnitten, der Hintergrund ist unruhig, das Licht ' +
+    'kommt hart von oben, und der Bildaufbau wirkt dadurch eher zufällig als bewusst gewählt.'
 
-    const { container } = renderTile({ album_suitability: { level: 2, reason } })
+  it('keeps a reason of 160 characters complete, unclamped, even in a 100 px tile', () => {
+    const reason = LONG_REASON.slice(0, 160)
+    expect(reason).toHaveLength(160)
+
+    const { container } = renderTile({ album_suitability: { level: 2, reason } }, { width: 100 })
 
     const carrier = container.querySelector('[data-album-suitability-reason]')
-    expect(carrier).not.toBeNull()
-    expect(carrier?.textContent).toBe(reason)
-    expect(carrier?.className).toContain('line-clamp-2')
+    expect(carrier?.lastChild?.textContent).toBe(reason)
+    expect(carrier?.className ?? '').not.toMatch(/line-clamp|truncate/)
+    for (const element of details(container).querySelectorAll('*')) {
+      expect(element.className).not.toMatch(/line-clamp|truncate/)
+    }
   })
 
-  it('renders no carrier at all when there is no reason', () => {
-    const { container } = renderTile({ album_suitability: { level: 3, reason: null } })
+  it('puts the reason first in the strip, before suitability and file name', () => {
+    const { container } = renderTile()
+
+    const strip = details(container)
+    const carrier = strip.querySelector('[data-album-suitability-reason]')
+    expect(strip.firstElementChild).toBe(carrier)
+    expect(strip.lastElementChild).toHaveTextContent('a.jpg')
+  })
+
+  it('attributes the reason to the model inside its carrier', () => {
+    const { container } = renderTile()
+
+    const carrier = container.querySelector<HTMLElement>('[data-album-suitability-reason]')
+    expect(carrier).toHaveTextContent(
+      new RegExp(`${REASON_ATTRIBUTION}.*Alle schauen in die Kamera\\.`),
+    )
+  })
+
+  it('the reason carrier is no alert', () => {
+    const { container } = renderTile()
+
+    const carrier = container.querySelector<HTMLElement>('[data-album-suitability-reason]')!
+    expect(carrier.closest('[role="alert"], [role="status"]')).toBeNull()
+    expect(carrier.querySelector('[role="alert"], [role="status"]')).toBeNull()
+    expect(carrier.querySelector('[data-icon], [data-badge-tone]')).toBeNull()
+  })
+
+  it.each([null, ''])('renders no line at all for the reason %j', (reason) => {
+    const { container } = renderTile({ album_suitability: { level: 3, reason } })
 
     expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
+    const strip = details(container)
+    expect(strip.firstElementChild?.textContent).not.toBe('')
+    for (const element of strip.querySelectorAll('*')) {
+      if (element.children.length === 0 && element.tagName !== 'svg') {
+        expect(element.textContent, element.outerHTML).not.toBe('')
+      }
+    }
   })
 
   it('renders no carrier at all when the photo has no verdict', () => {
@@ -165,53 +199,137 @@ describe('CurationPhotoTile: die Begründung', () => {
   })
 
   it('never renders the reason as markup', () => {
-    /* SICHERHEIT (S12): freier, extern erzeugter LLM-Text aus einem Bild, das Text enthalten
-     * kann. */
     const payload = '<img src=x onerror="alert(1)">'
 
     const { container } = renderTile({ album_suitability: { level: 1, reason: payload } })
 
-    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('img:not([alt="a.jpg"])')).toBeNull()
+    expect(container.querySelector('img[src="x"]')).toBeNull()
     expect(screen.getByText(payload)).toBeInTheDocument()
   })
 
-  it('never turns a javascript: payload into a link', () => {
-    const payload = 'javascript:alert(1)'
+  it.each(['javascript:alert(1)', '<a href="https://evil.example">Anmelden</a>'])(
+    'never turns %s into a link',
+    (payload) => {
+      const { container } = renderTile({ album_suitability: { level: 1, reason: payload } })
 
+      expect(container.querySelector('a')).toBeNull()
+      expect(container.querySelector('img[src="x"]')).toBeNull()
+      expect(screen.getByText(payload)).toBeInTheDocument()
+    },
+  )
+
+  it('the reason never reaches an attribute', () => {
+    const payload = 'Nutzlast-7f3a <img src=x>'
     const { container } = renderTile({ album_suitability: { level: 1, reason: payload } })
 
-    expect(container.querySelector('a')).toBeNull()
-    expect(container.querySelector('img')).toBeNull()
-    expect(screen.getByText(payload)).toBeInTheDocument()
+    for (const element of container.querySelectorAll('*')) {
+      for (const attribute of element.attributes) {
+        expect(attribute.value, `${element.tagName}[${attribute.name}]`).not.toContain(
+          'Nutzlast-7f3a',
+        )
+      }
+    }
   })
 
-  it('adds no expand control to the tile footer', () => {
-    /* Kein Ausklapp-Bedienelement je Kachel - die Begründung steht vollständig im DOM und wird
-     * rein visuell gekürzt. */
-    renderTile({
-      album_suitability: { level: 2, reason: 'Eine ziemlich lange Begründung des Modells.' },
-    })
+  it('a hostile file name stays text', () => {
+    const hostile = '<img src=x onerror="window.__pwned = true">.jpg'
+    const { container } = renderTile({ relative_path: `2024/${hostile}` })
 
-    expect(screen.getByRole('button', { name: 'Streichen: a.jpg' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /mehr|ausklappen|weiterlesen/i })).toBeNull()
+    for (const image of container.querySelectorAll('img')) {
+      expect(image).toHaveAttribute('alt', `2024/${hostile}`)
+    }
+    expect(container.querySelector('img[src="x"]')).toBeNull()
+    expect(screen.getByRole('button', { name: `Streichen: 2024/${hostile}` })).toBeInTheDocument()
+    expect(within(details(container)).getByText(hostile)).toBeInTheDocument()
+  })
+
+  it('inline styles carry only numeric pixel values', () => {
+    const { container } = renderTile({ aspect_ratio: '1;background:url(x)' as unknown as number })
+
+    for (const element of container.querySelectorAll<HTMLElement>('[style]')) {
+      for (const property of [...element.style]) {
+        const value = element.style.getPropertyValue(property)
+        expect(value).toMatch(/^\d+(\.\d+)?px$/)
+        expect(value).not.toContain('url(')
+        expect(value).not.toContain('var(')
+      }
+    }
   })
 })
 
-describe('CurationPhotoTile: die Entscheidungsfläche nennt die Handlung', () => {
-  it('says "Streichen" on a photo of the album, with the file name, never aria-pressed', () => {
-    renderTile({}, { ownStatus: null })
+describe('CurationPhotoTile: die Leiste bei Bedarf', () => {
+  it('is in the DOM at rest, screen-reader only', () => {
+    const { container } = renderTile()
 
-    const button = screen.getByRole('button', { name: 'Streichen: a.jpg' })
-    expect(button).not.toHaveAttribute('aria-pressed')
-    expect(button).toHaveTextContent('Streichen')
+    expect(details(container)).toHaveClass('sr-only')
   })
 
-  it('says "Wieder aufnehmen" on a struck photo, again without aria-pressed', () => {
+  it.each([/^Großansicht: /, /^Streichen: /, /^Alternativen: /])(
+    'shows while %s has focus',
+    (name) => {
+      const { container } = renderTile()
+
+      act(() => screen.getByRole('button', { name }).focus())
+
+      expect(details(container)).toHaveAttribute('data-visible', 'true')
+    },
+  )
+
+  it('carries no info trigger and no motif marker', () => {
+    const { container } = renderTile({ motif_assessment: null })
+
+    const tile = within(screen.getByRole('listitem'))
+    expect(tile.queryByRole('button', { name: /Bewertungsdetails/ })).toBeNull()
+    expect(container.querySelector('[data-motif-marker], [data-icon="info"]')).toBeNull()
+    expect(container.querySelector('[data-rating-status]')).toBeNull()
+  })
+})
+
+describe('CurationPhotoTile: die Handgriffe', () => {
+  it('offers "Streichen" (x-circle) and "Alternativen" (repeat) side by side', () => {
+    renderTile()
+
+    const strike = screen.getByRole('button', { name: 'Streichen: a.jpg' })
+    const alternatives = screen.getByRole('button', { name: 'Alternativen: a.jpg' })
+    expect(icons(strike)).toEqual(['x-circle'])
+    expect(icons(alternatives)).toEqual(['repeat'])
+    expect(strike.parentElement).toBe(alternatives.parentElement)
+    expect(strike).not.toHaveAttribute('aria-pressed')
+  })
+
+  it.each([
+    [HANDLES_FULL_WIDTH_PX.draft - 1, true],
+    [HANDLES_FULL_WIDTH_PX.draft, false],
+  ])('at %s px shows symbols only: %s, for both buttons alike', (width, iconOnly) => {
+    renderTile({}, { width })
+
+    for (const name of ['Streichen: a.jpg', 'Alternativen: a.jpg']) {
+      const button = screen.getByRole('button', { name })
+      expect(button.querySelector('[data-tile-action-hint]') !== null, name).toBe(iconOnly)
+    }
+  })
+
+  it('says "Wieder aufnehmen" (book) as the only button on a struck tile', () => {
     renderTile({}, { ownStatus: 'rejected' })
 
-    const button = screen.getByRole('button', { name: 'Wieder aufnehmen: a.jpg' })
-    expect(button).not.toHaveAttribute('aria-pressed')
-    expect(screen.queryByRole('button', { name: /^Streichen: / })).toBeNull()
+    const tile = within(screen.getByRole('listitem'))
+    const buttons = tile
+      .getAllByRole('button')
+      .filter((button) => !/^Großansicht/.test(button.getAttribute('aria-label') ?? ''))
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]).toHaveAccessibleName('Wieder aufnehmen: a.jpg')
+    expect(icons(buttons[0])).toEqual(['book'])
+  })
+
+  it('switches the struck tile by its own threshold', () => {
+    renderTile({}, { ownStatus: 'rejected', width: HANDLES_FULL_WIDTH_PX.struck })
+
+    expect(
+      screen
+        .getByRole('button', { name: 'Wieder aufnehmen: a.jpg' })
+        .querySelector('[data-tile-action-hint]'),
+    ).toBeNull()
   })
 
   it('acts on the first press, without a confirmation step', async () => {
@@ -226,7 +344,6 @@ describe('CurationPhotoTile: die Entscheidungsfläche nennt die Handlung', () =>
   })
 
   it('is busy while its own decision runs and takes no second press', async () => {
-    // Ein zweiter Druck auf DASSELBE Foto liefe in den Unique-Constraint der Bewertungszeile.
     const onDecide = vi.fn()
     const user = userEvent.setup()
     renderTile({}, { ownStatus: null, deciding: true, onDecide })
@@ -240,90 +357,6 @@ describe('CurationPhotoTile: die Entscheidungsfläche nennt die Handlung', () =>
     renderTile({}, { error: 'Die Bewertung wurde gerade verändert.' })
 
     expect(screen.getByRole('alert')).toHaveTextContent('Die Bewertung wurde gerade verändert.')
-  })
-})
-
-describe('CurationPhotoTile: das Kennzeichen des Zustands', () => {
-  function badge(container: HTMLElement): HTMLElement {
-    const found = container.querySelector<HTMLElement>('[data-album-state]')
-    if (found === null) {
-      throw new Error('kein Kennzeichen')
-    }
-    return found
-  }
-
-  function icons(element: HTMLElement): string[] {
-    return [...element.querySelectorAll('[data-icon]')].map(
-      (icon) => icon.getAttribute('data-icon') ?? '',
-    )
-  }
-
-  it('marks an untouched proposed photo as "Vorschlag" with cog and book', () => {
-    const { container } = renderTile({}, { ownStatus: null })
-
-    const element = badge(container)
-    expect(element).toHaveAccessibleName(ALBUM_STATE_LABELS.proposal)
-    expect(icons(element)).toEqual(['cog', 'book'])
-  })
-
-  it('marks an own album decision as "Aufgenommen" with book alone - also on a proposed photo', () => {
-    const { container } = renderTile({}, { ownStatus: 'album_worthy' })
-
-    const element = badge(container)
-    expect(element).toHaveAccessibleName(ALBUM_STATE_LABELS.taken)
-    expect(icons(element)).toEqual(['book'])
-  })
-
-  it('marks a struck photo as "Gestrichen" with x-circle and a struck file name', () => {
-    const { container } = renderTile({}, { ownStatus: 'rejected' })
-
-    const element = badge(container)
-    expect(element).toHaveAccessibleName(ALBUM_STATE_LABELS.struck)
-    expect(icons(element)).toEqual(['x-circle'])
-    expect(within(container).getByText('a.jpg')).toHaveAttribute('data-struck', 'true')
-  })
-
-  it('carries exactly one state badge and no rating badge of the photo grid', () => {
-    const { container } = renderTile({}, { ownStatus: 'album_worthy' })
-
-    expect(container.querySelectorAll('[data-album-state]')).toHaveLength(1)
-    expect(container.querySelector('[data-rating-status]')).toBeNull()
-  })
-})
-
-describe('CurationPhotoTile: aufgenommen, vom Vorschlag nicht getragen', () => {
-  it('marks a taken photo the run dropped from the candidate pool', () => {
-    renderTile({ ranking: null }, { ownStatus: 'album_worthy' })
-
-    expect(screen.getByText(NOT_PROPOSED_BADGE_TEXT)).toBeInTheDocument()
-  })
-
-  it('marks a taken candidate the run did not propose IDENTICALLY', () => {
-    // Zusicherung 23: zwei Datenformen, EIN Anzeigezustand - geprueft ueber dieselbe Beschriftung.
-    renderTile({ ranking: ranking({ proposed: false }) }, { ownStatus: 'album_worthy' })
-
-    expect(screen.getByText(NOT_PROPOSED_BADGE_TEXT)).toBeInTheDocument()
-  })
-
-  it('marks nothing on a photo the run proposes', () => {
-    renderTile({ ranking: ranking({ proposed: true }) }, { ownStatus: 'album_worthy' })
-
-    expect(screen.queryByText(NOT_PROPOSED_BADGE_TEXT)).toBeNull()
-  })
-
-  it('marks nothing without an own decision', () => {
-    renderTile({ ranking: ranking({ proposed: false }) }, { ownStatus: null })
-
-    expect(screen.queryByText(NOT_PROPOSED_BADGE_TEXT)).toBeNull()
-  })
-})
-
-describe('CurationPhotoTile: der Zugang zu den Alternativen', () => {
-  it('offers "Alternativen" next to "Streichen", with the file name in its name', () => {
-    renderTile()
-
-    expect(screen.getByRole('button', { name: 'Alternativen: a.jpg' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Streichen: a.jpg' })).toBeInTheDocument()
   })
 
   it('is a disclosure that names the band it controls', async () => {
@@ -339,22 +372,52 @@ describe('CurationPhotoTile: der Zugang zu den Alternativen', () => {
     expect(onToggleAlternatives).toHaveBeenCalledTimes(1)
   })
 
-  it('is absent on a struck tile - its way back is "Wieder aufnehmen"', () => {
-    renderTile({}, { ownStatus: 'rejected' })
+  it('anchors the tile whose band is open', () => {
+    renderTile({}, { alternativesExpanded: true })
 
-    expect(screen.queryByRole('button', { name: /^Alternativen: / })).toBeNull()
-  })
-
-  it('keeps both hit areas at least 44px tall on the phone', () => {
-    renderTile()
-
-    for (const name of ['Streichen: a.jpg', 'Alternativen: a.jpg']) {
-      expect(screen.getByRole('button', { name }).className).toContain('h-11')
-    }
+    expect(screen.getByRole('listitem')).toHaveAttribute('data-anchored', 'true')
   })
 })
 
-describe('CurationPhotoTile: die Grossansicht (Spec 0531)', () => {
+describe('CurationPhotoTile: das Zustandszeichen', () => {
+  it.each<[RatingStatus | null, string, string[]]>([
+    [null, ALBUM_STATE_LABELS.proposal, ['cog', 'book']],
+    ['album_worthy', ALBUM_STATE_LABELS.taken, ['book']],
+    ['rejected', ALBUM_STATE_LABELS.struck, ['x-circle']],
+  ])('own status %s is the symbol mark "%s"', (ownStatus, name, expected) => {
+    renderTile({}, { ownStatus })
+
+    expect(icons(screen.getByRole('img', { name }))).toEqual(expected)
+  })
+
+  it('strikes the file name of a struck photo', () => {
+    const { container } = renderTile({}, { ownStatus: 'rejected' })
+
+    expect(within(details(container)).getByText('a.jpg')).toHaveAttribute('data-struck', 'true')
+  })
+
+  it.each([{ ranking: null }, { ranking: ranking({ proposed: false }) }])(
+    'names a taken photo the run did not propose in mark and strip (%j)',
+    (overrides) => {
+      const { container } = renderTile(overrides, { ownStatus: 'album_worthy' })
+
+      expect(
+        screen.getByRole('img', {
+          name: `${ALBUM_STATE_LABELS.taken}, ${NOT_PROPOSED_BADGE_TEXT}`,
+        }),
+      ).toBeInTheDocument()
+      expect(details(container)).toHaveTextContent(`· ${NOT_PROPOSED_BADGE_TEXT}`)
+    },
+  )
+
+  it('marks nothing on a photo the run proposes', () => {
+    renderTile({ ranking: ranking({ proposed: true }) }, { ownStatus: 'album_worthy' })
+
+    expect(screen.queryByText(new RegExp(NOT_PROPOSED_BADGE_TEXT))).toBeNull()
+  })
+})
+
+describe('CurationPhotoTile: die Grossansicht', () => {
   it('opens the large view of exactly this photo from the image area, without deciding', () => {
     const onOpenLarge = vi.fn()
     const onDecide = vi.fn()
@@ -362,7 +425,6 @@ describe('CurationPhotoTile: die Grossansicht (Spec 0531)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Großansicht: 2024/07/IMG_0042.jpg' }))
 
-    expect(onOpenLarge).toHaveBeenCalledTimes(1)
     expect(onOpenLarge).toHaveBeenCalledWith(17)
     expect(onDecide).not.toHaveBeenCalled()
   })
@@ -374,6 +436,28 @@ describe('CurationPhotoTile: die Grossansicht (Spec 0531)', () => {
     fireEvent.click(screen.getByRole('button', { name }))
 
     expect(onOpenLarge).not.toHaveBeenCalled()
+  })
+
+  it('does not open the large view after a long press', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn() }),
+    )
+    const onOpenLarge = vi.fn()
+    const { container } = renderTile({}, { onOpenLarge })
+    const trigger = screen.getByRole('button', { name: /^Großansicht: / })
+
+    vi.useFakeTimers()
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+    act(() => {
+      vi.advanceTimersByTime(LONG_PRESS_MS)
+    })
+    fireEvent.click(trigger)
+
+    expect(onOpenLarge).not.toHaveBeenCalled()
+    expect(details(container)).toHaveAttribute('data-visible', 'true')
   })
 
   it('makes the image trigger the first tabbable element and hands it out', async () => {

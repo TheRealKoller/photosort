@@ -3,7 +3,7 @@
  * Struktureller Wächter der Bilddetailansicht (specs/features/0497-bilddetail-urteil-zuerst.md,
  * Teststrategie).
  *
- * WARUM DIESE EBENE: Alle drei Zusagen brechen ohne eigenen Testfall STILL - sie sind Aussagen
+ * WARUM DIESE EBENE: Beide Zusagen brechen ohne eigenen Testfall STILL - sie sind Aussagen
  * über den BESTAND der Quellen, nicht über das Verhalten einer Komponente, und sähen in jedem
  * Komponententest richtig aus.
  *
@@ -56,40 +56,6 @@ function withoutComments(content: string): string {
   return content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
 }
 
-/** Importiert die Datei die Aufschlüsselung - unabhängig davon, wie ihr Doku-Block sie erwähnt? */
-function importsCriterionDetailsList(content: string): boolean {
-  return /import\s*\{[^}]*\bCriterionDetailsList\b[^}]*\}\s*from\s*'[^']*CriterionDetailsList'/.test(
-    content,
-  )
-}
-
-describe('Die Aufschlüsselung behält genau ihre eine Aufrufstelle', () => {
-  /*
-   * GLEICHHEIT, NICHT "ENTHÄLT NICHT": Ein späterer Rück-Import in die Detailseite zeigte die
-   * Aufschlüsselung DOPPELT in zwei Idiomen - einmal kompakt als Popover-Darstellung, einmal als
-   * Seitenraster - und sähe in jedem Komponententest richtig aus. Kompaktes Popover und großes
-   * Seitenurteil sind zwei Darstellungen, keine Variante voneinander.
-   */
-  it('lässt CriterionDetailsList genau die Popover-Aufrufstelle', () => {
-    const callers = productionSources()
-      .filter((file) => importsCriterionDetailsList(file.content))
-      .map((file) => relativePath(file.path))
-      .sort()
-
-    expect(callers).toEqual(['components/CriterionDetailsPopover.tsx'])
-  })
-
-  it('lässt die Detailseite die Aufschlüsselung nicht mehr einbinden', () => {
-    const page = readFileSync(join(SRC_DIR, 'pages/PhotoDetailPage.tsx'), 'utf8')
-
-    expect(importsCriterionDetailsList(page)).toBe(false)
-    expect(page).not.toMatch(/<CriterionDetailsList[\s/>]/)
-    // Positiv-Gegenprobe: Die Seite bindet stattdessen tatsächlich das Raster ein - ohne sie
-    // bestünde die Zusage auch auf einer Seite, die gar keine Einzelwerte mehr zeigt.
-    expect(page).toContain('CriterionScoreGrid')
-  })
-})
-
 describe('Die Aufteilung nach has_presence_threshold steht an genau einer Stelle', () => {
   /*
    * Eine zweite, inline nachgebaute Aufteilung bricht STILL: Sie sähe in ihrem eigenen Test
@@ -114,18 +80,13 @@ describe('Die Aufteilung nach has_presence_threshold steht an genau einer Stelle
     expect(util).toContain('has_presence_threshold')
   })
 
-  /* Beide Darstellungen lesen dieselbe Funktion - sonst wäre die Mengengleichheit oben zwar
-     erfüllt, die Aufteilung aber trotzdem nur an einer der beiden Stellen im Einsatz. */
-  it('lässt beide Darstellungen dieselbe Funktion lesen', () => {
-    for (const datei of [
-      'components/CriterionDetailsList.tsx',
-      'components/CriterionScoreGrid.tsx',
-    ]) {
-      const inhalt = readFileSync(join(SRC_DIR, datei), 'utf8')
-      expect(inhalt, datei).toMatch(
-        /import\s*\{[^}]*\bpartitionByPresenceThreshold\b[^}]*\}\s*from\s*'[^']*criterionScores'/,
-      )
-    }
+  /* Die Darstellung liest dieselbe Funktion - sonst wäre die Mengengleichheit oben zwar erfüllt,
+     die Aufteilung aber gar nicht im Einsatz. */
+  it('lässt das Einzelwerte-Raster die geteilte Funktion lesen', () => {
+    const inhalt = readFileSync(join(SRC_DIR, 'components/CriterionScoreGrid.tsx'), 'utf8')
+    expect(inhalt).toMatch(
+      /import\s*\{[^}]*\bpartitionByPresenceThreshold\b[^}]*\}\s*from\s*'[^']*criterionScores'/,
+    )
   })
 })
 

@@ -115,12 +115,10 @@ function CameraSection({ projectId }: { projectId: number }) {
  * Label/Erklaertext lauten auf "Cloud-Bilderkennung" - derselbe Schalter gated zusaetzlich die
  * Remote-Kategorie-Klassifizierung.
  *
- * Bewusst OHNE die geraetespezifische Hover-Auto-Close-Logik von CriterionDetailsPopover.tsx
- * (technische Detailentscheidung der Umsetzung): dieses Popover sitzt an einer einzelnen
- * Einstellungs-Zeile, nicht an potenziell Dutzenden Grid-Kacheln, wo Hover-Ergonomie beim
- * schnellen Durchsehen tatsaechlich zaehlt (siehe Design-System, "Durchsatz vor Erklaerung") -
- * ein reiner Klick/Tap-Trigger (Popover.onOpenChange ueber den kontrollierten Radix-Default)
- * reicht hier aus, ohne den Mehraufwand des Hover-Grace-Bereichs unnoetig zu duplizieren.
+ * Bewusst OHNE geraetespezifische Hover-Auto-Close-Logik (technische Detailentscheidung der
+ * Umsetzung): dieses Popover sitzt an einer einzelnen Einstellungs-Zeile, wo Hover-Ergonomie
+ * beim schnellen Durchsehen nicht zaehlt - ein reiner Klick/Tap-Trigger
+ * (Popover.onOpenChange ueber den kontrollierten Radix-Default) reicht.
  *
  * Busy-Button-Muster (Design-System): der Switch wird waehrend einer laufenden PUT-Anfrage
  * disabled, um ein Doppel-Toggle/eine Race gegen die eigene, noch nicht abgeschlossene Anfrage zu

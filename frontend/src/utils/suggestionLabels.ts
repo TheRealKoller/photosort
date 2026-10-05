@@ -1,11 +1,9 @@
 import type { SuggestionOut } from '../api/types'
 import { RATING_STATUS_LABELS } from './ratingLabels'
 
-// Aus PhotoDetailPage.tsx extrahiert - der bestehende Ausschuss-Kasten dort UND das neue
-// CriterionDetailsPopover.tsx brauchen dieselbe Formatierung, keine zweite, potenziell
-// auseinanderlaufende Kopie. Server liefert die Begruendung bereits regelbasiert ueber `reason`
-// (backend/src/photosort/api/photos.py::_to_suggestion_out) - hier bewusst nicht erneut aus
-// duplicate_of abgeleitet.
+// Aus PhotoDetailPage.tsx extrahiert. Server liefert die Begruendung bereits regelbasiert ueber
+// `reason` (backend/src/photosort/api/photos.py::_to_suggestion_out) - hier bewusst nicht erneut
+// aus duplicate_of abgeleitet.
 export function formatSuggestionReason(suggestion: SuggestionOut): string {
   if (suggestion.reason === 'duplicate') {
     return `Duplikat von Foto #${suggestion.duplicate_of}`

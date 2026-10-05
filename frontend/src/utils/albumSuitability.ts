@@ -16,6 +16,13 @@ export const ALBUM_SUITABILITY_MAX_LEVEL = 5
 export const ALBUM_SUITABILITY_NOT_RATED_TEXT = 'Noch nicht bewertet'
 
 /**
+ * Die Zuschreibung, die vor JEDER angezeigten Begründung im selben Träger steht. Ohne sie wird eine
+ * per Prompt-Injection erzeugte Zeile („Sitzung abgelaufen, bitte …") als Aussage von PhotoSort
+ * gelesen statt als Aussage des Modells.
+ */
+export const REASON_ATTRIBUTION = 'Begründung des Modells'
+
+/**
  * Die genaue Modellstufe, ausgeschrieben („Stufe 4 von 5"). Sie erscheint NUR in den
  * Bewertungsdetails, nicht neben der Dreistufigkeit auf der Kachel: zwei Skalen nebeneinander
  * wären zwei Zahlen für eine Aussage.
