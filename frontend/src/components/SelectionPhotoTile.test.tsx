@@ -467,3 +467,30 @@ describe('SelectionPhotoTile - Haltungszeichen und Leiste', () => {
     expect(within(strip).getByText('a.jpg')).toHaveAttribute('data-struck', 'true')
   })
 })
+
+describe('SelectionPhotoTile - Zustandszeichen in der Bildecke', () => {
+  function cornerMark(container: HTMLElement): Element | null {
+    // Das Eckzeichen ist das Zeichen ausserhalb der Haltungsliste.
+    return (
+      [...container.querySelectorAll('[data-album-state]')].find(
+        (mark) => mark.closest('ul[aria-label^="Haltung zu "]') === null,
+      ) ?? null
+    )
+  }
+
+  it('marks a photo taken out with x-circle, named from the term source', () => {
+    const { container } = renderTile({ final_selection_decision: false })
+
+    const mark = cornerMark(container)
+    expect(mark).toHaveAccessibleName(ALBUM_STATE_LABELS.struck)
+    expect(mark?.querySelector('[data-icon="x-circle"]')).not.toBeNull()
+  })
+
+  it('marks a photo in the final selection with book', () => {
+    const { container } = renderTile({ in_final_selection: true })
+
+    const mark = cornerMark(container)
+    expect(mark).toHaveAccessibleName(ALBUM_STATE_LABELS.taken)
+    expect(mark?.querySelector('[data-icon="book"]')).not.toBeNull()
+  })
+})

@@ -288,9 +288,7 @@ test('Album-Entwurf: Hoch- und Querformat in einer Reihe, Band hinter der gerech
   }
 })
 
-test('Leiste bei Bedarf: Hover und Tab-Fokus, innerhalb der Bildflaeche; Kurzbeschriftung in der Kachel', async ({
-  page,
-}) => {
+test('Leiste bei Bedarf: Hover und Tab-Fokus, innerhalb der Bildflaeche', async ({ page }) => {
   const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
   await page.setViewportSize({ width: 1280, height: VIEWPORT_HEIGHT })
   await page.goto(`/projects/${projectId}/album`)
@@ -310,27 +308,71 @@ test('Leiste bei Bedarf: Hover und Tab-Fokus, innerhalb der Bildflaeche; Kurzbes
   await tile.getByRole('button', { name: /^Großansicht: / }).focus()
   await page.keyboard.press('Tab')
   await expect(details).toHaveAttribute('data-visible', 'true')
+})
 
-  // Kurzbeschriftung: Symbolmodus durch schmalere Kachel bei 360 px nicht noetig - der Hinweis
-  // wird an jeder Symbolkachel geprueft, falls vorhanden.
+/**
+ * Kurzbeschriftung im Symbolmodus, DETERMINISTISCH: Die echte Entwurfsantwort wird durchgereicht,
+ * nur `aspect_ratio` jedes Fotos auf 1:2 gesetzt (Antwort-Eingriff fuer eine Geometrie-Zusage,
+ * Testkonzept). Bei 360 px teilt sich jedes Foto mit dem 2:3-Hinzufuegen-Feld eine Reihe und ist
+ * damit sicher schmaler als die Schwelle der Entwurfskachel.
+ */
+test('Kurzbeschriftung im Symbolmodus: bei Hover und Tastaturfokus sichtbar, innerhalb der Kachel', async ({
+  page,
+}) => {
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.route('**/api/projects/*/album-draft*', async (route) => {
+    const response = await route.fetch()
+    const json = (await response.json()) as { items: { aspect_ratio: number | null }[] }
+    json.items = json.items.map((item) => ({ ...item, aspect_ratio: 0.5 }))
+    await route.fulfill({ response, json })
+  })
   await page.setViewportSize({ width: 360, height: VIEWPORT_HEIGHT })
-  const symbolTile = page
-    .locator('li')
-    .filter({ has: page.locator('[data-tile-action-hint]') })
-    .first()
-  if ((await symbolTile.count()) > 0) {
-    const box = await symbolTile.boundingBox()
-    for (const hint of await symbolTile.locator('[data-tile-action-hint]').all()) {
-      await hint.locator('..').focus()
-      await page.keyboard.press('Shift+Tab')
-      await page.keyboard.press('Tab')
-      const hintBox = await hint.boundingBox()
-      if (hintBox !== null) {
-        expect(hintBox.x).toBeGreaterThanOrEqual(box!.x - TOLERANCE)
-        expect(hintBox.x + hintBox.width).toBeLessThanOrEqual(box!.x + box!.width + TOLERANCE)
-      }
-    }
-  }
+  await page.goto(`/projects/${projectId}/album`)
+
+  const tile = draftGrid(page).locator(':scope > li').first()
+  const strike = tile.getByRole('button', { name: /^Streichen: / })
+  const alternatives = tile.getByRole('button', { name: /^Alternativen: / })
+  await expect(strike, 'Vorbedingung: Symbolmodus').toHaveCount(1)
+  const tileBox = (await tile.boundingBox())!
+  expect(tileBox.width, 'Vorbedingung: Kachel schmaler als 208 px').toBeLessThan(208)
+
+  const firstHint = strike.locator('[data-tile-action-hint]')
+  const secondHint = alternatives.locator('[data-tile-action-hint]')
+  await expect(firstHint).toBeHidden()
+  await expect(secondHint).toBeHidden()
+
+  // Hover: erster Knopf, Hinweis linksbuendig in der Kachel.
+  await strike.hover()
+  await expect(firstHint).toBeVisible()
+  await expect(firstHint).toHaveText('Streichen')
+  const hover = (await firstHint.boundingBox())!
+  expect(hover.x, 'Hinweis links nicht ausserhalb der Kachel').toBeGreaterThanOrEqual(
+    tileBox.x - TOLERANCE,
+  )
+  expect(hover.x + hover.width, 'Hinweis rechts nicht ausserhalb der Kachel').toBeLessThanOrEqual(
+    tileBox.x + tileBox.width + TOLERANCE,
+  )
+  await page.mouse.move(0, 0)
+  await expect(firstHint).toBeHidden()
+
+  // Tastaturfokus: zweiter Knopf, Hinweis rechtsbuendig in der Kachel.
+  await strike.focus()
+  await page.keyboard.press('Tab')
+  await expect(alternatives).toBeFocused()
+  await expect(secondHint).toBeVisible()
+  await expect(secondHint).toHaveText('Alternativen')
+  const focus = (await secondHint.boundingBox())!
+  const buttonBox = (await alternatives.boundingBox())!
+  expect(
+    Math.abs(focus.x + focus.width - (buttonBox.x + buttonBox.width)),
+    'rechtsbuendig am zweiten Knopf',
+  ).toBeLessThanOrEqual(TOLERANCE)
+  expect(focus.x, 'Hinweis links nicht ausserhalb der Kachel').toBeGreaterThanOrEqual(
+    tileBox.x - TOLERANCE,
+  )
+  expect(focus.y + focus.height, 'Hinweis ueber dem Knopf').toBeLessThanOrEqual(
+    buttonBox.y + TOLERANCE,
+  )
 })
 
 test.describe('Telefon (Touch, ohne Hover)', () => {

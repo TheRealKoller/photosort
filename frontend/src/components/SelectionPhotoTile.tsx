@@ -130,10 +130,17 @@ export function SelectionPhotoTile({
           className="size-full object-contain"
         />
       }
-      // Der ausdrücklich HERAUSGENOMMENE Zustand: durchgestrichener Dateiname, Bildfläche in voller
-      // Helligkeit, kein Bewertungs-Kennzeichen - „Gestrichen" ist das Wort der Bewertung eines
-      // Nutzers, nicht der Herausnahme durch das Projekt.
+      // Der ausdrücklich HERAUSGENOMMENE Zustand: durchgestrichener Dateiname und das Zeichen
+      // `x-circle` in der Bildecke, Bildfläche in voller Helligkeit. Ein Foto der Endauswahl trägt
+      // `book`. Die Namen kommen aus derselben Begriffsquelle wie im Album-Entwurf.
       setAside={takenOut}
+      stateMark={
+        takenOut ? (
+          <AlbumStateBadge state="struck" />
+        ) : photo.in_final_selection ? (
+          <AlbumStateBadge state="taken" />
+        ) : undefined
+      }
       details={<CurationDetails photo={photo} />}
       // Ein Druck schreibt die Entscheidung SOFORT - kein Dialog, kein Bestätigungsschritt.
       actions={
