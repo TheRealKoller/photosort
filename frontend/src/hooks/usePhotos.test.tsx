@@ -80,7 +80,7 @@ function page(items: number[], total: number): PhotoListOut {
 }
 
 function alternativesPage(items: number[], total: number, offset = 0): DraftAlternativesOut {
-  return { items: items.map((id) => photo(id)), total, offset, reference_index: 0 }
+  return { items: items.map((id) => photo(id)), total, offset, reference_index: 0, series_rest: 0 }
 }
 
 /** Eine Entwurfsantwort mit dem einen Event; die Kandidatenzahl spielt in diesen Fällen keine Rolle. */
@@ -243,7 +243,7 @@ describe('useDraftAlternativesQuery', () => {
     })
   })
 
-  it('fetches the band as ONE window with nearest and never a following page', async () => {
+  it('fetches the band as ONE series window and never a following page', async () => {
     // Das Fenster schneidet allein der Server; `total` ist die Restmenge und liegt
     // ueber der Fenstergroesse - trotzdem gibt es keine Folgeseite.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
@@ -251,7 +251,7 @@ describe('useDraftAlternativesQuery', () => {
     )
 
     const { result } = renderHook(
-      () => useDraftAlternativesQuery(1, { ...reference, enabled: true, nearest: 4 }),
+      () => useDraftAlternativesQuery(1, { ...reference, enabled: true, series: true }),
       { wrapper },
     )
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
@@ -260,19 +260,19 @@ describe('useDraftAlternativesQuery', () => {
     expect(photosApi.listDraftAlternatives).toHaveBeenCalledWith(1, {
       eventId: 42,
       photoId: 7,
-      nearest: 4,
+      series: true,
     })
     expect(result.current.hasNextPage).toBe(false)
   })
 
-  it('gives band, dialog and add panel three different keys under ["photos", id]', async () => {
-    // Band (Bezugsbild, vier), Dialog (Bezugsbild, Seitenweise) und Panel (ohne Bezugsbild, acht)
-    // holten unter einem gemeinsamen Schluessel dieselbe Cache-Zeile.
+  it('gives series, full row and add panel three different keys under ["photos", id]', async () => {
+    // Serie (Bezugsbild, Server-Fenster), volle Reihe (Bezugsbild, seitenweise) und Panel (ohne
+    // Bezugsbild, acht) holten unter einem gemeinsamen Schluessel dieselbe Cache-Zeile.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(alternativesPage([4], 1))
     const { queryClient, sharedWrapper } = sharedClient()
 
     for (const params of [
-      { ...reference, nearest: 4 },
+      { ...reference, series: true as const },
       { ...reference },
       { eventId: 42, photoId: null, pageSize: 8 },
     ]) {
@@ -288,25 +288,40 @@ describe('useDraftAlternativesQuery', () => {
       .findAll({ queryKey: ['photos', 1] })
       .map((query) => query.queryKey)
     expect(keys).toHaveLength(3)
-    // S4: die Identitaet steht in jedem Schluessel, hinter dem Praefix.
+    // Die Identitaet steht in jedem Schluessel, hinter dem Praefix,
+    // und `series` unterscheidet Serie und volle Reihe.
     for (const key of keys) {
       expect(key.slice(0, 4)).toEqual(['photos', 1, 'alternatives', USERNAME])
     }
+    expect(keys.filter((key) => key.includes(true))).toHaveLength(1)
   })
 
-  it('lives under the ["photos", projectId] prefix so a rating invalidates it too', async () => {
+  it('a rating marks it stale without refetching it while open (no moving up)', async () => {
+    // Ein offenes Band holt nach einem Hinzufuegen KEIN neu geschnittenes
+    // Fenster - sonst rueckte ein Foto nach und `series_rest` stimmte nicht mehr. Erst das naechste
+    // Oeffnen (neuer Beobachter) laedt frisch.
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(alternativesPage([4], 1))
     vi.mocked(ratingsApi.setRating).mockResolvedValue(written(4, 'rejected'))
-    const { sharedWrapper } = sharedClient()
+    const { queryClient, sharedWrapper } = sharedClient()
     const alternatives = renderHook(
       () => useDraftAlternativesQuery(1, { ...reference, enabled: true }),
       { wrapper: sharedWrapper },
     )
     await waitFor(() => expect(alternatives.result.current.isSuccess).toBe(true))
 
-    const { result } = renderHook(() => useSetRatingMutation(1), { wrapper: sharedWrapper })
+    const { result } = renderHook(() => useDraftDecisionMutation(1, USERNAME), {
+      wrapper: sharedWrapper,
+    })
     await result.current.mutateAsync({ photoId: 4, status: 'rejected' })
 
+    const [query] = queryClient.getQueryCache().findAll({ queryKey: ['photos', 1, 'alternatives'] })
+    expect(query.state.isInvalidated).toBe(true)
+    expect(photosApi.listDraftAlternatives).toHaveBeenCalledTimes(1)
+
+    alternatives.unmount()
+    renderHook(() => useDraftAlternativesQuery(1, { ...reference, enabled: true }), {
+      wrapper: sharedWrapper,
+    })
     await waitFor(() => expect(photosApi.listDraftAlternatives).toHaveBeenCalledTimes(2))
   })
 })

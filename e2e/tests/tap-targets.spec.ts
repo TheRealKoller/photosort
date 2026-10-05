@@ -41,7 +41,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 38
+const EXPECTED_CONTROL_COUNT = 45
 
 async function assertTappable(
   control: Locator,
@@ -200,10 +200,56 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   await assertTappable(alternatives, 'Alternativen (Entwurfskachel)')
   checked.push('Alternativen der Entwurfskachel')
   await alternatives.click()
-  const exchange = page.getByRole('button', { name: /^Tauschen: / }).first()
+  const band = page.locator(`[id="${await alternatives.getAttribute('aria-controls')}"]`)
+  const exchange = band.getByRole('button', { name: /^Tauschen: / }).first()
   await expect(exchange, 'mindestens eine Alternative im Band').toBeVisible()
   await assertTappable(exchange, 'Tauschen (Alternativen-Band)')
   checked.push('Tauschen im Band')
+  await assertTappable(
+    band.getByRole('button', { name: /^Hinzufügen: / }).first(),
+    'Hinzufügen (Alternativen-Band)',
+  )
+  checked.push('Hinzufügen im Band')
+  const toggle = band.getByRole('button', { name: 'Alle Fotos des Events', exact: true })
+  await assertTappable(toggle, 'Alle Fotos des Events (Umschalter)')
+  checked.push('Umschalter des Bands')
+  await assertTappable(
+    band.getByRole('button', { name: 'Schließen', exact: true }),
+    'Schließen (Alternativen-Band)',
+  )
+  checked.push('Schließen des Bands')
+  // Aufgeklappte Reihe: dieselben Handgriffe in derselben Fläche. Der Demo-Bestand hat kein Event
+  // mit mehr als einer Seite (60) Alternativen; damit „Weitere Fotos" überhaupt erscheint, meldet
+  // die echte Serverantwort der vollen Reihe (mit `photo_id`, ohne `series`) eine Folgeseite. Nur
+  // `total` wird angehoben - Fotos, Reihenfolge und Marke bleiben die des Servers. Die Folgeseite
+  // wird nie abgerufen: geprüft wird die Treffbarkeit, nicht das Nachladen (das belegt vitest).
+  const fullRow = /\/api\/projects\/\d+\/draft-alternatives\?(?=.*photo_id=)(?!.*series=)/
+  await page.route(fullRow, async (route) => {
+    const response = await route.fetch()
+    const body = (await response.json()) as { items: unknown[]; offset: number; total: number }
+    await route.fulfill({
+      response,
+      json: { ...body, total: body.offset + body.items.length + 1 },
+    })
+  })
+  await toggle.click()
+  const collapse = band.getByRole('button', { name: 'Weniger anzeigen', exact: true })
+  await expect(collapse, 'aufgeklappter Umschalter').toHaveAttribute('aria-expanded', 'true')
+  const rowExchange = band.getByRole('button', { name: /^Tauschen: / }).first()
+  await expect(rowExchange, 'mindestens eine Alternative in der aufgeklappten Reihe').toBeVisible()
+  await assertTappable(rowExchange, 'Tauschen (aufgeklappte Reihe)')
+  checked.push('Tauschen in der Reihe')
+  await assertTappable(
+    band.getByRole('button', { name: /^Hinzufügen: / }).first(),
+    'Hinzufügen (aufgeklappte Reihe)',
+  )
+  checked.push('Hinzufügen in der Reihe')
+  await assertTappable(collapse, 'Weniger anzeigen (Umschalter)')
+  checked.push('Umschalter der Reihe')
+  const more = band.getByRole('button', { name: 'Weitere Fotos', exact: true })
+  await assertTappable(more, 'Weitere Fotos (aufgeklappte Reihe)')
+  checked.push('Weitere Fotos in der Reihe')
+  await page.unroute(fullRow)
   await alternatives.click()
 
   const addTrigger = page.getByRole('button', { name: /^Foto hinzufügen: / }).first()

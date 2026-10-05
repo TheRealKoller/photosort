@@ -159,16 +159,37 @@ class QualityCandidate:
     quality: float | None
 
 
+# Das Band unter einem Foto des Album-Entwurfs zeigt dessen Aufnahmeserie: Zwei
+# zeitlich benachbarte Alternativen gehoeren zusammen, solange zwischen ihnen hoechstens
+# `SERIES_GAP` liegt (INKLUSIV). Eine kuerzere Serie wird auf `BAND_MIN` aufgefuellt, eine
+# laengere auf `BAND_MAX_SERIES` gekappt. SICHERHEIT: `BAND_MAX_SERIES`
+# ist zugleich der Deckel der Hydratation und darf den `limit`-Deckel (200) nie uebersteigen.
+SERIES_GAP = timedelta(minutes=2)
+BAND_MIN = 4
+BAND_MAX_SERIES = 12
+
+
+@dataclass(frozen=True)
+class SeriesWindow:
+    """Das Fenster des Bands in der zeitlichen Reihe: `[offset, offset + size)`; `rest` ist
+    die Zahl der Serienaufnahmen, die wegen `BAND_MAX_SERIES` draussen bleiben."""
+
+    offset: int
+    size: int
+    rest: int
+
+
 def order_alternatives_chronologically(
     reference: TimedCandidate, candidates: Iterable[TimedCandidate]
-) -> tuple[list[int], int]:
+) -> tuple[list[int], int, list[datetime]]:
     """Die Alternativen zu EINEM Bild, zeitlich geordnet.
 
     Schluessel `(taken_at, photo_id)` aufsteigend - eine Totalordnung ohne Nutzer, Motiv oder
     Qualitaet; Gleichstand bricht ueber die kleinere `photo_id`, nie ueber die Eingabereihenfolge.
 
-    Rueckgabe: die `photo_id`-Folge und `reference_index`, die Zahl der Kandidaten, die nach
-    DEMSELBEN Schluessel STRIKT vor dem Bezugsbild liegen. Beides entsteht aus derselben Menge.
+    Rueckgabe: die `photo_id`-Folge, `reference_index` - die Zahl der Kandidaten, die nach
+    DEMSELBEN Schluessel STRIKT vor dem Bezugsbild liegen - und die `taken_at` in derselben
+    Ordnung (Eingabe von `series_window`). Alles entsteht aus derselben Menge und Sortierung.
     Das Bezugsbild selbst faellt heraus: es ist der Ausgangspunkt des Austauschs, nicht sein
     Ziel."""
     reference_key = (reference.taken_at, reference.photo_id)
@@ -178,15 +199,59 @@ def order_alternatives_chronologically(
         if candidate.photo_id != reference.photo_id
     )
     reference_index = bisect_left(ordered, reference_key)
-    return [photo_id for _, photo_id in ordered], reference_index
+    return (
+        [photo_id for _, photo_id in ordered],
+        reference_index,
+        [taken_at for taken_at, _ in ordered],
+    )
 
 
-def nearest_window_offset(reference_index: int, total: int, size: int) -> int:
-    """Der Beginn des Fensters der `size` zeitlich naechsten Alternativen.
+def series_window(
+    times: Sequence[datetime], reference_taken_at: datetime, reference_index: int
+) -> SeriesWindow:
+    """Das Bandfenster ueber den nach `(taken_at, photo_id)` geordneten Zeiten der Alternativen.
 
-    `clamp(reference_index - size // 2, 0, max(0, total - size))`: im Normalfall gleich viele
-    davor und danach, an einem Rand von der anderen Seite aufgefuellt, bei `total < size` alles."""
-    return max(0, min(reference_index - size // 2, total - size))
+    Die SERIE `[a, b)` waechst vom Bezugsbild nach beiden Seiten, solange der Abstand zum
+    jeweils vorigen Nachbarn (zuerst dem Bezugsbild selbst) hoechstens `SERIES_GAP` ist.
+    Das FENSTER ist immer zusammenhaengend: Serie mit `BAND_MIN`..`BAND_MAX_SERIES` Bildern
+    genau; laenger -> die `BAND_MAX_SERIES` zeitlich naechsten INNERHALB der Serie; kuerzer ->
+    die Serie, aufgefuellt mit den zeitlich naechsten des Events bis `BAND_MIN`. Beim Wachsen
+    gewinnt der zeitlich naehere Nachbar, bei Gleichstand der fruehere."""
+    total = len(times)
+    start = reference_index
+    previous = reference_taken_at
+    while start > 0 and previous - times[start - 1] <= SERIES_GAP:
+        start -= 1
+        previous = times[start]
+    end = reference_index
+    previous = reference_taken_at
+    while end < total and times[end] - previous <= SERIES_GAP:
+        previous = times[end]
+        end += 1
+    series = end - start
+
+    if BAND_MIN <= series <= BAND_MAX_SERIES:
+        return SeriesWindow(offset=start, size=series, rest=0)
+    if series > BAND_MAX_SERIES:
+        low, high, bound_low, bound_high, target = (
+            reference_index,
+            reference_index,
+            start,
+            end,
+            BAND_MAX_SERIES,
+        )
+    else:
+        low, high, bound_low, bound_high, target = start, end, 0, total, BAND_MIN
+    while high - low < target and (low > bound_low or high < bound_high):
+        take_earlier = high >= bound_high or (
+            low > bound_low
+            and reference_taken_at - times[low - 1] <= times[high] - reference_taken_at
+        )
+        if take_earlier:
+            low -= 1
+        else:
+            high += 1
+    return SeriesWindow(offset=low, size=high - low, rest=max(0, series - BAND_MAX_SERIES))
 
 
 def order_by_quality(candidates: Iterable[QualityCandidate]) -> list[int]:

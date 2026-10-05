@@ -19,7 +19,7 @@
  * samt Fundstelle des ueberstehenden Elements.
  */
 
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 import {
   DEMO_PERSONS,
@@ -509,14 +509,38 @@ function expectNoOverflow(metrics: PageMetrics, label: string): void {
 }
 
 /**
+ * „Tauschen" und „Hinzufügen" der ersten Alternative: untereinander,
+ * je sichtbar mindestens 44 px hoch und mit mindestens 12 px Abstand, ohne Ueberlappung.
+ */
+async function expectStackedActions(band: Locator, label: string): Promise<void> {
+  const exchange = await band
+    .getByRole('button', { name: /^Tauschen: / })
+    .first()
+    .boundingBox()
+  const add = await band
+    .getByRole('button', { name: /^Hinzufügen: / })
+    .first()
+    .boundingBox()
+  expect(exchange, `Tauschen ${label}`).not.toBeNull()
+  expect(add, `Hinzufügen ${label}`).not.toBeNull()
+  expect(exchange!.height, `Hoehe von Tauschen ${label}`).toBeGreaterThanOrEqual(44 - TOLERANCE)
+  expect(add!.height, `Hoehe von Hinzufügen ${label}`).toBeGreaterThanOrEqual(44 - TOLERANCE)
+  expect(
+    add!.y - (exchange!.y + exchange!.height),
+    `Abstand zwischen Tauschen und Hinzufügen ${label}`,
+  ).toBeGreaterThanOrEqual(12 - TOLERANCE)
+}
+
+/**
  * Die durch eine Interaktion entstehenden Zustaende des Album-Entwurfs bei 360 px
  * (specs/features/0558-...) - eigene Messungen, weil die Routenschleife oben ausschliesslich Seiten
- * im Ruhezustand misst: das offene Alternativen-Band, das offene Hinzufuegen-Panel, die
- * eingeblendeten Gestrichenen und der Dialog „Alle Alternativen".
+ * im Ruhezustand misst: das offene Alternativen-Band zugeklappt (Serie) und aufgeklappt (alle Fotos
+ * des Events), das offene Hinzufuegen-Panel und die eingeblendeten
+ * Gestrichenen.
  *
- * Band und Panel sind volle Rasterzeilen mit eigenem Raster aus Kachel und Handlung darin - der
- * engste Fall des Entwurfs. Der Dialog bleibt ein Dialog, weil er den VOLLSTAENDIGEN Bestand
- * seitenweise traegt.
+ * Band und Panel sind volle Rasterzeilen mit eigenem Raster aus Kachel und Handlungen darin - der
+ * engste Fall des Entwurfs. Die aufgeklappte Reihe waechst an derselben Stelle und bricht im
+ * Raster um; sie hat keinen eigenen Scrollcontainer.
  */
 test('die offenen Zustaende des Album-Entwurfs erzeugen kein horizontales Scrollen bei 360 px', async ({
   page,
@@ -535,20 +559,27 @@ test('die offenen Zustaende des Album-Entwurfs erzeugen kein horizontales Scroll
     'mindestens eine Alternative im Band',
   ).toBeVisible()
   expectNoOverflow(await measureWithin(page, 'main'), 'bei offenem Alternativen-Band')
+  await expectStackedActions(band, 'in der Serie')
 
-  // Dialog „Alle Alternativen" aus dem Band.
-  await band.getByRole('button', { name: 'Alle Alternativen', exact: true }).click()
-  const dialog = page.getByRole('dialog')
-  await expect(dialog, 'geoeffneter Alternativen-Dialog').toBeVisible()
+  // „Alle Fotos des Events": dieselbe Flaeche waechst zur vollen Reihe, kein Dialog.
+  const toggle = band.getByRole('button', { name: 'Alle Fotos des Events', exact: true })
+  await toggle.click()
   await expect(
-    dialog.getByRole('button', { name: /^Tauschen: / }).first(),
-    'mindestens eine Alternative im Raster des Dialogs',
+    band.getByRole('button', { name: 'Weniger anzeigen', exact: true }),
+    'aufgeklappter Umschalter',
+  ).toHaveAttribute('aria-expanded', 'true')
+  await expect(
+    band
+      .getByRole('list', { name: 'Alternativen, zeitlich geordnet' })
+      .getByRole('button', { name: /^Tauschen: / })
+      .first(),
+    'mindestens eine Alternative in der aufgeklappten Reihe',
   ).toBeVisible()
-  const dialogMetrics = await measureWithin(page, 'dialog[open]')
-  expect(dialogMetrics.contentHeight, 'Hoehe des Dialogs').toBeGreaterThan(MIN_CONTENT_HEIGHT)
-  expectNoOverflow(dialogMetrics, 'bei geoeffnetem Alternativen-Dialog')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expectNoOverflow(await measureWithin(page, 'main'), 'bei aufgeklappter Reihe')
+  await expectStackedActions(band, 'in der aufgeklappten Reihe')
   await page.keyboard.press('Escape')
-  await expect(dialog).toBeHidden()
+  await expect(band).toBeHidden()
 
   // Panel: Ein zweites Panel schliesst das Band; Vorbedingung ist mindestens ein Kandidat.
   const addTrigger = page.getByRole('button', { name: /^Foto hinzufügen: / }).first()

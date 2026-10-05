@@ -1,4 +1,4 @@
-import type { QueryClient } from '@tanstack/react-query'
+import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -70,12 +70,55 @@ export function draftQueryKey(projectId: number) {
 }
 
 /** Der eigene Entwurfsschlüssel bleibt von der breiten Invalidierung ausgenommen - sein Stand ist
- * bereits der, den der Server jetzt gäbe. */
+ * bereits der, den der Server jetzt gäbe. Die Alternativen werden nur als veraltet markiert
+ * (`refetchType: 'none'`): Ein offenes Band oder Panel holte sonst ein neu geschnittenes Fenster
+ * mit nachgerücktem Foto, und `series_rest` stimmte nicht mehr. Das
+ * hinzugefügte Foto verlässt die Liste über `excludedIds`; das nächste Öffnen lädt frisch. */
 function invalidateAllButTheDraft(queryClient: QueryClient, projectId: number) {
   void queryClient.invalidateQueries({
     queryKey: ['photos', projectId],
-    predicate: (query) => query.queryKey[2] !== DRAFT_QUERY_SEGMENT,
+    predicate: (query) =>
+      query.queryKey[2] !== DRAFT_QUERY_SEGMENT && query.queryKey[2] !== 'alternatives',
   })
+  void queryClient.invalidateQueries({
+    queryKey: ['photos', projectId, 'alternatives'],
+    refetchType: 'none',
+  })
+}
+
+/**
+ * Ein Foto, das gerade in den Entwurf gekommen ist, verlässt die geladenen Alternativen-Seiten -
+ * ohne Nachfüllen, `series_rest` bleibt stehen. Zwingend, weil die Abfragen nur als veraltet
+ * markiert werden: Der nächste `offset` ist die Zahl der geladenen Einträge, und die Restmenge des
+ * Servers ist vor dieser Grenze um eins geschrumpft. Bliebe das Foto in den Seiten, überspränge
+ * „Weitere Fotos" genau ein Foto. `total`, `reference_index` und die `offset` der Folgeseiten
+ * rücken deshalb mit, damit Marke und Seitenfolge der verkleinerten Reihe entsprechen.
+ */
+function dropFromAlternatives(queryClient: QueryClient, projectId: number, photoId: number) {
+  queryClient.setQueriesData<InfiniteData<DraftAlternativesOut, number>>(
+    { queryKey: ['photos', projectId, 'alternatives'] },
+    (data) => {
+      const page = data?.pages.findIndex((current) => current.items.some((p) => p.id === photoId))
+      if (data === undefined || page === undefined || page === -1) {
+        return data
+      }
+      const removedAt =
+        data.pages[page].offset + data.pages[page].items.findIndex((p) => p.id === photoId)
+      return {
+        ...data,
+        pages: data.pages.map((current, index) => ({
+          ...current,
+          items: index === page ? current.items.filter((p) => p.id !== photoId) : current.items,
+          total: current.total - 1,
+          offset: index > page ? current.offset - 1 : current.offset,
+          reference_index:
+            current.reference_index !== null && removedAt < current.reference_index
+              ? current.reference_index - 1
+              : current.reference_index,
+        })),
+      }
+    },
+  )
 }
 
 /**
@@ -139,8 +182,8 @@ export function applyWrittenRating(
 // Bildschirm. Wird ein Foto im Entwurf entschieden, muss die Kandidatenliste denselben Zustand
 // zeigen - genau das leistet die breite Invalidierung.
 //
-// DAS BEZUGSBILD, DIE SEITENGROESSE UND `nearest` GEHOEREN IN DEN SCHLUESSEL: Am Bezugsbild
-// haengen Menge und Reihenfolge; Band (Fenster `nearest`, mit Bezugsbild), Dialog (mit
+// DAS BEZUGSBILD, DIE SEITENGROESSE UND `series` GEHOEREN IN DEN SCHLUESSEL: Am Bezugsbild
+// haengen Menge und Reihenfolge; Serie (Server-Fenster, mit Bezugsbild), volle Reihe (mit
 // Bezugsbild, seitenweise) und Hinzufuegen-Feld (acht, ohne) holten unter einem gemeinsamen
 // Schluessel dieselbe Cache-Zeile.
 export function draftAlternativesQueryKey(
@@ -148,7 +191,7 @@ export function draftAlternativesQueryKey(
   eventId: number,
   photoId: number | null,
   pageSize: number,
-  nearest: number | null = null,
+  series: boolean = false,
 ) {
   return [
     'photos',
@@ -158,7 +201,7 @@ export function draftAlternativesQueryKey(
     eventId,
     photoId,
     pageSize,
-    nearest,
+    series,
   ] as const
 }
 
@@ -166,26 +209,27 @@ export interface DraftAlternativesQueryParams {
   eventId: number
   /** Das Bezugsbild; `null` fuer das Hinzufuegen-Feld, das nach Qualitaet ordnet. */
   photoId: number | null
-  /** Der Request laeuft ausschliesslich im GEOEFFNETEN Band, Panel oder Dialog - eine Abfrage je
-   * geoeffnetem Bild, nie eine je Kachel. */
+  /** Der Request laeuft ausschliesslich im GEOEFFNETEN Band oder Panel bzw. in der
+   * aufgeklappten Reihe - eine Abfrage je geoeffnetem Bild, nie eine je Kachel. */
   enabled: boolean
   pageSize?: number
-  /** Das Band: EIN vom Server geschnittenes Fenster der `nearest` zeitlich naechsten
-   * Alternativen, ohne Folgeseiten. Nur zusammen mit `photoId`. */
-  nearest?: number
+  /** Das Band: EIN vom Server geschnittenes Fenster der Aufnahmeserie, ohne Folgeseiten. Nur
+   * zusammen mit `photoId`. */
+  series?: true
 }
 
 export function useDraftAlternativesQuery(
   projectId: number,
-  { eventId, photoId, enabled, pageSize = PHOTOS_PAGE_SIZE, nearest }: DraftAlternativesQueryParams,
+  { eventId, photoId, enabled, pageSize = PHOTOS_PAGE_SIZE, series }: DraftAlternativesQueryParams,
 ) {
+  const isSeries = series === true && photoId !== null
   return useInfiniteQuery({
-    queryKey: draftAlternativesQueryKey(projectId, eventId, photoId, pageSize, nearest ?? null),
+    queryKey: draftAlternativesQueryKey(projectId, eventId, photoId, pageSize, isSeries),
     queryFn: ({ pageParam }: { pageParam: number }) =>
       listDraftAlternatives(
         projectId,
-        nearest !== undefined && photoId !== null
-          ? { eventId, photoId, nearest }
+        isSeries
+          ? { eventId, photoId, series: true }
           : {
               eventId,
               ...(photoId === null ? {} : { photoId }),
@@ -195,10 +239,10 @@ export function useDraftAlternativesQuery(
       ),
     initialPageParam: 0,
     // Identisch zu usePhotoSequenceQuery: der naechste Offset ist die Zahl der bereits geladenen
-    // Eintraege, und `total` ist die Restmenge (nicht die Seitengroesse). Das Band hat nie eine
-    // Folgeseite - sein Fenster ist vollstaendig.
+    // Eintraege, und `total` ist die Restmenge (nicht die Seitengroesse). Die Serie hat nie eine
+    // Folgeseite - ihr Fenster ist vollstaendig.
     getNextPageParam: (lastPage: DraftAlternativesOut, allPages: DraftAlternativesOut[]) => {
-      if (nearest !== undefined) {
+      if (isSeries) {
         return undefined
       }
       const loaded = allPages.reduce((sum, loadedPage) => sum + loadedPage.items.length, 0)
@@ -260,6 +304,9 @@ export function useDraftDecisionMutation(projectId: number, username: string | n
           return applyWrittenRating(withInsert, written, username)
         })
       }
+      if (insert !== undefined && written.status === 'album_worthy') {
+        dropFromAlternatives(queryClient, projectId, insert.id)
+      }
       invalidateAllButTheDraft(queryClient, projectId)
     },
   })
@@ -292,6 +339,7 @@ export function useDraftExchangeMutation(projectId: number, username: string | n
           )
         })
       }
+      dropFromAlternatives(queryClient, projectId, chosen.id)
       invalidateAllButTheDraft(queryClient, projectId)
     },
   })

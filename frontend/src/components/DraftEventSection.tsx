@@ -97,8 +97,13 @@ export function DraftEventSection({
         aria-expanded={addPanel !== null}
         aria-controls={addPanel?.id}
         onClick={onToggleAdd}
-        className="flex min-h-32 w-full items-center justify-center rounded-lg border border-border-control bg-surface p-3 text-sm text-text-h"
+        className="flex min-h-32 w-full items-center justify-center gap-2 rounded-lg border border-border-control bg-surface p-3 text-sm text-text-h"
       >
+        {/* Textzeichen statt Symbol (geschlossener Symbolsatz, Design-System-Lücke `+`): Es
+            trägt allein die Wiedererkennung und wird nie vorgelesen. */}
+        <span aria-hidden="true" className="text-lg leading-none">
+          +
+        </span>
         Foto hinzufügen
       </button>
     </li>,

@@ -18,18 +18,18 @@ Als Nutzer, der im Album-Entwurf ein Bild ersetzen will, möchte ich die Ersatzv
 
 ## Akzeptanzkriterien
 
-- [ ] **AK1 (Dialog, volle Reihe):** Mit `photo_id` liefert `GET /projects/{id}/draft-alternatives` `items` aufsteigend nach `(Photo.taken_at, photo_id)` geordnet. Das gilt über alle Seiten: Werden Seite 1 und Seite 2 aneinandergehängt, ergibt das dieselbe Folge wie die Ordnung der vollen Restmenge.
+- [ ] **AK1 (~~Dialog~~, volle Reihe):** Mit `photo_id` liefert `GET /projects/{id}/draft-alternatives` `items` aufsteigend nach `(Photo.taken_at, photo_id)` geordnet. Das gilt über alle Seiten: Werden Seite 1 und Seite 2 aneinandergehängt, ergibt das dieselbe Folge wie die Ordnung der vollen Restmenge. *(Dialogteil abgelöst durch Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): die volle Reihe ist die aufgeklappte Reihe im Band.)*
 - [ ] **AK2 (Motiv/Qualität ohne Einfluss):** Zwei Aufbauten, die sich nur in Motivstärken und `rank_score` unterscheiden, ergeben dieselbe Id-Folge. Ein zeitlich früheres Bild mit niedrigerer Qualität und ohne gemeinsames Motiv steht vor einem späteren mit höherer Qualität und gemeinsamem Motiv.
-- [ ] **AK3 (Band = zeitlich nächste):** Mit `nearest=4` gilt `offset = clamp(reference_index − 2, 0, max(0, total − 4))`. Die Antwort enthält genau `min(4, total)` Bilder, zeitlich geordnet. Im Normalfall liegen 2 vor und 2 nach dem Bezugsbild. Am Anfang oder Ende der Reihe wird von der anderen Seite aufgefüllt. Der verwendete `offset` wird zurückgegeben.
-- [ ] **AK4 (Markierung):** `reference_index` ist die Zahl der Kandidaten, die nach demselben Schlüssel vor dem Bezugsbild liegen. Ohne `photo_id` ist er `null`. Das Band zeigt die Markierung des Bezugsbildes an der Stelle `reference_index − offset`, wenn dieser Wert in `[0, items.length]` liegt (beide Fenstergrenzen zulässig); sonst keine. Der Dialog legt die geladenen Seiten zu einer Reihe zusammen und zeigt die Markierung darin genau einmal an der Stelle `reference_index`; am Ende der geladenen Reihe nur, wenn keine Seite mehr folgt. Folgt noch eine, steht bis zum Nachladen der Hinweis „Das zu ersetzende Bild folgt weiter hinten in der Reihe.“ Bei `total = 0` gibt es keine Markierung, nur den bestehenden Leertext.
-- [ ] **AK5 (Wortlaut):** Band und Dialog zeigen den Wortlaut `Zeitlich geordnet, von früh nach spät` (eine Konstante, siehe UI/UX).
+- [ ] ~~**AK3 (Band = zeitlich nächste):** Mit `nearest=4` gilt `offset = clamp(reference_index − 2, 0, max(0, total − 4))`. Die Antwort enthält genau `min(4, total)` Bilder, zeitlich geordnet. Im Normalfall liegen 2 vor und 2 nach dem Bezugsbild. Am Anfang oder Ende der Reihe wird von der anderen Seite aufgefüllt. Der verwendete `offset` wird zurückgegeben.~~ *(abgelöst durch Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md)/ADR 0133: das Band zeigt die Aufnahmeserie, `series`)*
+- [ ] **AK4 (Markierung):** `reference_index` ist die Zahl der Kandidaten, die nach demselben Schlüssel vor dem Bezugsbild liegen. Ohne `photo_id` ist er `null`. Das Band zeigt die Markierung des Bezugsbildes an der Stelle `reference_index − offset`, wenn dieser Wert in `[0, items.length]` liegt (beide Fenstergrenzen zulässig); sonst keine. ~~Der Dialog legt die geladenen Seiten zu einer Reihe zusammen~~ *(seit Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): die aufgeklappte Reihe im Band)* und zeigt die Markierung darin genau einmal an der Stelle `reference_index`; am Ende der geladenen Reihe nur, wenn keine Seite mehr folgt. Folgt noch eine, steht bis zum Nachladen der Hinweis „Das zu ersetzende Bild folgt weiter hinten in der Reihe.“ Bei `total = 0` gibt es keine Markierung, nur den bestehenden Leertext.
+- [ ] ~~**AK5 (Wortlaut):** Band und Dialog zeigen den Wortlaut `Zeitlich geordnet, von früh nach spät` (eine Konstante, siehe UI/UX).~~ *(abgelöst durch Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): Serie und aufgeklappte Reihe im Band zeigen ihn.)*
 - [ ] **AK6 (Gleichstand):** Bei gleichem `taken_at` entscheidet die kleinere `photo_id`, unabhängig von der Reihenfolge der Eingabe (geprüft über alle Permutationen). Das gilt auch, wenn das Bezugsbild selbst im Gleichstand steht.
 - [ ] **AK7 (ohne EXIF):** Ein Foto, dessen `taken_at` aus `last_modified` stammt, ordnet sich nach diesem Wert ein. Es gibt keinen Sonderzweig.
 - [ ] **AK8 (Menge unverändert):** Die Id-Menge (ohne Ordnung) und `total` sind vor und nach der Umstellung gleich. Die bestehenden Mengen-Tests bleiben grün.
 - [ ] **AK9 (beide Nutzer):** Für zwei Nutzer mit derselben Restmenge ist die Id-Folge identisch. Bei unterschiedlichen Restmengen ist die relative Ordnung der gemeinsamen Ids identisch.
-- [ ] **AK10 (nachrangig):** Jeder Vorschlag in Band und Dialog trägt die Albumtauglichkeit (`QualityMeter` aus `rank_score`) mit eigener Beschriftung. Das Kennzeichen „Album-würdig“ erscheint davon getrennt und nur bei eigener Bewertung.
+- [ ] **AK10 (nachrangig):** Jeder Vorschlag in ~~Band und Dialog~~ Serie und aufgeklappter Reihe des Bands *(Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md))* trägt die Albumtauglichkeit (`QualityMeter` aus `rank_score`) mit eigener Beschriftung. Das Kennzeichen „Album-würdig“ erscheint davon getrennt und nur bei eigener Bewertung.
 - [ ] **AK11 (Hinzufügen-Panel unverändert):** Ohne `photo_id` bleibt die Ordnung nach Qualität (`None` zuletzt, dann kleinere Id). `reference_index` ist `null`; `nearest` ohne `photo_id` ergibt `422`.
-- [ ] **AK12 (Validierung):** `nearest` außerhalb von `1..BAND_MAX` ergibt `422`.
+- [ ] ~~**AK12 (Validierung):** `nearest` außerhalb von `1..BAND_MAX` ergibt `422`.~~ *(abgelöst durch Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): `nearest` ergibt in jeder Belegung `422`, `series` ist ein strikt geparster Wahrheitswert.)*
 
 ## Datenmodell-Bezug
 
@@ -47,10 +47,10 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
 
 **Das zu ersetzende Bild in der Reihe:** Das Bezugsbild gehört zum Entwurf und ist nie in `items`. Der Server liefert `reference_index`: die Zahl der Kandidaten der vollen Restmenge, die nach demselben Schlüssel vor dem Bezugsbild liegen. Im Band setzt das Frontend die Markierung an die Stelle `reference_index − offset`, wenn dieser Wert in `[0, items.length]` liegt; beide Fenstergrenzen sind zulässig. Im Dialog legt es die geladenen Seiten zu einer Reihe zusammen und setzt die Markierung darin genau einmal an die Stelle `reference_index`: am Ende der geladenen Reihe nur, wenn keine Seite mehr folgt, sonst steht bis zum Nachladen der Hinweis „Das zu ersetzende Bild folgt weiter hinten in der Reihe.“
 
-**Auswahlregel des Bands:** Neuer Query-Parameter `nearest` (int, `ge=1, le=BAND_MAX`, nur zusammen mit `photo_id` zulässig, sonst `422`). Der Server setzt `offset = clamp(reference_index − ⌊N/2⌋, 0, max(0, total − N))`, liefert genau dieses Fenster mit `N = BAND_SIZE = 4` und gibt den verwendeten `offset` zurück.
-- Im Normalfall stehen 2 Bilder davor und 2 danach.
-- Am Anfang oder Ende der Reihe wird von der anderen Seite aufgefüllt.
-- Bei `total < N` werden alle Bilder gezeigt.
+~~**Auswahlregel des Bands:** Neuer Query-Parameter `nearest` (int, `ge=1, le=BAND_MAX`, nur zusammen mit `photo_id` zulässig, sonst `422`). Der Server setzt `offset = clamp(reference_index − ⌊N/2⌋, 0, max(0, total − N))`, liefert genau dieses Fenster mit `N = BAND_SIZE = 4` und gibt den verwendeten `offset` zurück.~~ *(abgelöst durch Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md)/ADR [`0133`](../decisions/0133-band-zeigt-aufnahmeserie.md): `series_window`)*
+- ~~Im Normalfall stehen 2 Bilder davor und 2 danach.~~
+- ~~Am Anfang oder Ende der Reihe wird von der anderen Seite aufgefüllt.~~
+- ~~Bei `total < N` werden alle Bilder gezeigt.~~
 - Bei `total = 0` bleibt der bestehende Leertext; die Markierung entfällt.
 - Innerhalb des Fensters bleibt die zeitliche Ordnung erhalten.
 - Der bestehende clientseitige Filter `excludedIds` (optimistisch getauschte Bilder) kann das Fenster vorübergehend verkürzen. Das ist unverändert und wird nicht ausgeglichen.
@@ -92,7 +92,7 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
 
 **Ordnungstext (wörtlich, eine Konstante für Band und Dialog):** `Zeitlich geordnet, von früh nach spät` (Konstante `ALTERNATIVES_ORDER_TEXT` in `DraftAlternativesBand.tsx`, vom Dialog importiert).
 - Ort im Band: als `<p className="text-xs text-text">` direkt unter der `h4` „Alternativen zu {Dateiname}“.
-- Ort im Dialog: unter der Bezugsbild-Zeile, über dem Raster.
+- ~~Ort im Dialog: unter der Bezugsbild-Zeile, über dem Raster.~~ *(Dialog entfallen, Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md))*
 - Der Text erscheint nur, wenn mindestens ein Kandidat da ist. Bei Laden, Fehler und Leerzustand fehlt er, denn eine Ordnung ohne Reihe sagt nichts.
 - Kein Pfeilzeichen („→“): Ein Screenreader liest es als „Pfeil nach rechts“, und der Satz trägt die Richtung schon in Worten.
 
@@ -115,8 +115,8 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
   - Fällt dieser Kandidat durch `excludedIds` (optimistisch getauscht) heraus, steht sie vor dem nächsten verbliebenen.
   - Die Position wird also vor dem Filtern bestimmt, nicht über den gefilterten Index. Sonst rutscht die Marke beim Tausch um eine Stelle.
   - Das Band zeigt damit bis zu 5 Zellen (Marke + 4). Bei 2/3/4 Spalten bricht die Zeile um; das ist hingenommen.
-- **Dialog (Seitenabruf):** Der Dialog legt alle geladenen Seiten zu einer Reihe zusammen. Die Marke steht deshalb einmal an der Stelle `reference_index` dieser Reihe, sobald `reference_index < geladene Anzahl` gilt. Im Fall `reference_index = geladene Anzahl` steht sie nur, wenn **keine** weitere Seite folgt (`!hasNextPage`), dann am Ende. Folgt noch eine Seite, erscheint sie erst nach „Weitere Alternativen laden“ an deren Anfang. Sie erscheint nie doppelt.
-  - Noch nicht geladen: Unter dem Ordnungstext steht der Hinweis `Das zu ersetzende Bild folgt weiter hinten in der Reihe.` (`text-xs text-text`). So fehlt die Marke nicht kommentarlos. Nach dem Nachladen verschwindet der Hinweis.
+- ~~**Dialog (Seitenabruf):** Der Dialog legt alle geladenen Seiten zu einer Reihe zusammen. Die Marke steht deshalb einmal an der Stelle `reference_index` dieser Reihe, sobald `reference_index < geladene Anzahl` gilt. Im Fall `reference_index = geladene Anzahl` steht sie nur, wenn **keine** weitere Seite folgt (`!hasNextPage`), dann am Ende. Folgt noch eine Seite, erscheint sie erst nach „Weitere Alternativen laden“ an deren Anfang. Sie erscheint nie doppelt.~~ *(abgelöst durch Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): dieselbe Regel gilt in der aufgeklappten Reihe im Band, nachgeladen über „Weitere Fotos“.)*
+  - ~~Noch nicht geladen: Unter dem Ordnungstext steht der Hinweis `Das zu ersetzende Bild folgt weiter hinten in der Reihe.` (`text-xs text-text`). So fehlt die Marke nicht kommentarlos. Nach dem Nachladen verschwindet der Hinweis.~~ *(seit Spec 0578 steht der Hinweis unter dem Raster der aufgeklappten Reihe)*
 - **Rand:** Liegt das Bezugsbild am Anfang (`reference_index = 0`), steht die Marke als erste Zelle. Am Ende steht sie als letzte. Das Band füllt serverseitig von der anderen Seite auf, hier gibt es nichts weiter zu tun.
 - **Leer (`total = 0`):** keine Marke, kein Ordnungstext. Die bestehenden Leertexte bleiben unverändert (`CANDIDATES_NONE_TEXT` im Band, `ALTERNATIVES_NONE_TEXT` im Dialog).
 - **`reference_index === null`** (darf mit `photo_id` nicht vorkommen): keine Marke, Kandidaten wie geliefert. Es gibt keine geratene Position.
@@ -125,7 +125,7 @@ Keine Änderung. Gelesen wird `Photo.taken_at` (NOT NULL, ohne EXIF-Zeit aus `la
 - **Laden:** wie bisher Skeleton-Platzhalter. Die Marke wird nicht vorab gezeigt, weil ihre Position erst mit der Antwort feststeht.
 - **Fehler:** wie bisher `Alert` mit „Erneut versuchen“, ohne Marke und ohne Ordnungstext.
 - **Leer:** siehe oben.
-- **Nachladen (Dialog):** Der Button „Weitere Alternativen laden“ bleibt unverändert.
+- ~~**Nachladen (Dialog):** Der Button „Weitere Alternativen laden“ bleibt unverändert.~~ *(abgelöst durch Spec [`0578`](0578-alternativen-serie-und-hinzufuegen.md): „Weitere Fotos“ in der Fußzeile des Bands)*
 - **Tausch läuft:** Die Sperre der Kandidaten bleibt wie bisher. Die Marke ist davon nicht betroffen, sie ist nicht bedienbar.
 
 **Albumtauglichkeit je Vorschlag (Systemeinstufung):**
