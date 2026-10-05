@@ -4,6 +4,8 @@
 **Erstellt:** 2026-10-04
 **Bezug:** [Issue #569](https://github.com/TheRealKoller/photosort/issues/569)
 
+> **Teilweise abgelöst durch Spec [`0579`](./0579-kuratierungskacheln-foto-im-mittelpunkt.md):** Die Bezugsmarke ist eine Zelle im eigenen Seitenverhältnis des Bezugsbilds (keine quadratische Bildfläche, kein `PHOTO_CARD_GRID_CLASS`); die Kandidaten sind Kuratierungskacheln mit Albumtauglichkeit in der Leiste bei Bedarf.
+
 **Umfang:** über dem Richtwert von ~200 Zeilen, weil Fensterregel, Markenposition und neue Endpunkt-Auflagen je eigene Randfälle tragen.
 
 ## Ziel

@@ -3,9 +3,8 @@
  *
  * Radix positioniert das Panel zur Laufzeit ueber gemessene Geometrie - in jsdom (keine
  * Layout-Engine, alle Rechtecke 0x0) ist davon nichts pruefbar, weshalb dieser Punkt bis zur
- * Einfuehrung dieser Ebene "manueller visueller Smoke-Test vor Merge" war. Die jsdom-Tests von
- * `CriterionDetailsPopover` (Oeffnen/Schliessen, Inhalt, Hover-Verhalten) bleiben unveraendert
- * bestehen; hier wird ausschliesslich Geometrie gemessen, nichts davon dupliziert.
+ * Einfuehrung dieser Ebene "manueller visueller Smoke-Test vor Merge" war. Hier wird
+ * ausschliesslich Geometrie gemessen.
  *
  * NUR IM SCHMALEN VIEWPORT (siehe `MOBILE_ONLY` in playwright.config.ts): Der Inhaltsbereich ist
  * auf `max-w-5xl` begrenzt und mittig gesetzt - bei 1280 px liegt jeder Trigger so weit vom
@@ -39,7 +38,6 @@ test('geoeffnete Popover bleiben vollstaendig im Sichtbereich', async ({ page })
   const routes = [
     { label: 'Projekteinstellungen', path: `/projects/${ratedId}/settings` },
     { label: 'Statistik', path: `/projects/${ratedId}/stats` },
-    { label: 'Album-Entwurf', path: `/projects/${ratedId}/album` },
   ]
 
   const viewport = page.viewportSize()

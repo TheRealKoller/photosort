@@ -725,7 +725,7 @@ describe('PhotoGridPage', () => {
    * Geprueft wird jetzt die ABWESENHEIT, und zwar mit einem Foto, das beide fruehere Ausloeser
    * ausgeloest haette. Der getragene Preis steht in der Spec: Die Bewertungsdetails sind aus dem
    * Raster nicht mehr erreichbar, nur noch in der Detailansicht (dort weiterhin geprueft, siehe
-   * PhotoDetailPage.test.tsx und CriterionDetailsPopover.test.tsx).
+   * PhotoDetailPage.test.tsx).
    */
   describe('kein drittes Ecken-Element mehr (AK3)', () => {
     it('shows neither the info trigger nor the motif marker, even where both used to appear', async () => {

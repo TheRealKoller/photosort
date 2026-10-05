@@ -59,6 +59,12 @@ export interface JustifiedRowsInput {
   gap: number
   targetRowHeight: number
   minRowHeight: number
+  /**
+   * Eine volle Zeile, deren buendige Hoehe DARUEBER laege, steht wie die letzte: Zielhoehe,
+   * natuerliche Breiten, linksbuendig. Genau auf der Grenze bleibt sie buendig. Ohne den Wert
+   * bleibt jede volle Zeile buendig, gleich wie hoch.
+   */
+  maxRowHeight?: number
 }
 
 export interface JustifiedTile {
@@ -106,6 +112,7 @@ export function justifiedRows({
   gap,
   targetRowHeight,
   minRowHeight,
+  maxRowHeight,
 }: JustifiedRowsInput): JustifiedRow[] {
   if (ratios.length === 0 || containerWidth <= 0 || targetRowHeight <= 0) {
     return []
@@ -143,17 +150,24 @@ export function justifiedRows({
     }
   }
 
-  const rows = fullRows.map((indices) => justify(indices, heightOf(indices)))
+  const natural = (indices: readonly number[]): JustifiedRow => ({
+    height: targetRowHeight,
+    tiles: indices.map((index) => ({
+      index,
+      width: Math.max(1, Math.round(usable[index] * targetRowHeight)),
+      height: targetRowHeight,
+    })),
+  })
+
+  const rows = fullRows.map((indices) => {
+    const exactHeight = heightOf(indices)
+    return maxRowHeight !== undefined && exactHeight > maxRowHeight
+      ? natural(indices)
+      : justify(indices, exactHeight)
+  })
   if (current.length > 0) {
     // Die letzte, unvollstaendige Zeile: Zielhoehe, natuerliche Breiten, kein Aufziehen.
-    rows.push({
-      height: targetRowHeight,
-      tiles: current.map((index) => ({
-        index,
-        width: Math.max(1, Math.round(usable[index] * targetRowHeight)),
-        height: targetRowHeight,
-      })),
-    })
+    rows.push(natural(current))
   }
   return rows
 

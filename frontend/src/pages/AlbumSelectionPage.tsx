@@ -1,26 +1,52 @@
 import { useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
 import { CurationLightbox } from '../components/CurationLightbox'
-import { PHOTO_CARD_GRID_CLASS } from '../components/PhotoCard'
+import { CurationSkeletonList } from '../components/CurationSkeletonList'
 import { SelectionPhotoTile } from '../components/SelectionPhotoTile'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
-import { Skeleton } from '../components/ui/skeleton'
 import { useAlbumDecisionMutation, useAlbumSelectionQuery } from '../hooks/useAlbumSelection'
 import { useCurationLightbox } from '../hooks/useCurationLightbox'
+import { useJustifiedRows } from '../hooks/useJustifiedRows'
 import { DRAFT_EMPTY_TEXT } from '../utils/albumDraftTexts'
 import { SELECTION_NOTHING_CONTESTED_TEXT, SELECTION_VIEW_LABELS } from '../utils/albumSelection'
 import type { PhotoEventGroup } from '../utils/eventGrouping'
 import { groupPhotosByDay } from '../utils/eventGrouping'
+import type { JustifiedTile } from '../utils/justifiedRows'
 import { formatDayHeading } from '../utils/timeOfDay'
 
 /** Die beiden Sichten - lokaler Zustand, keine zweite Route und kein Suchparameter. */
 type SelectionView = keyof typeof SELECTION_VIEW_LABELS
 
 const SKELETON_TILE_COUNT = 6
+
+/** Eine Eventgruppe der Endauswahl als justierte Reihen. */
+function SelectionEventGroup({
+  group,
+  renderTile,
+}: {
+  group: PhotoEventGroup
+  renderTile: (photo: PhotoOut, tile: JustifiedTile) => ReactNode
+}) {
+  const { ref, rows } = useJustifiedRows<HTMLUListElement>(
+    group.photos.map((photo) => photo.aspect_ratio ?? null),
+  )
+  const tiles = rows.flatMap((row) => row.tiles)
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-base">{group.heading}</h3>
+      <ul ref={ref} className="flex flex-wrap gap-3">
+        {group.photos.map((photo, index) =>
+          renderTile(photo, tiles[index] ?? { index, width: 0, height: 0 }),
+        )}
+      </ul>
+    </section>
+  )
+}
 
 /**
  * Die gemeinsame Endauswahl: EIN Ort, ZWEI Sichten, EINE Abfrage.
@@ -95,24 +121,19 @@ export function AlbumSelectionPage() {
     )
   }
 
-  function renderEventGroup(group: PhotoEventGroup) {
+  function renderTile(photo: PhotoOut, tile: JustifiedTile) {
     return (
-      <section key={group.eventId} className="flex flex-col gap-2">
-        <h3 className="text-base">{group.heading}</h3>
-        <ul className={PHOTO_CARD_GRID_CLASS}>
-          {group.photos.map((photo) => (
-            <SelectionPhotoTile
-              key={photo.id}
-              photo={photo}
-              participants={participants}
-              decidingIncluded={decidingByPhotoId.get(photo.id) ?? null}
-              onDecide={(included) => handleDecide(photo, included)}
-              onOpenLarge={lightbox.open}
-              largeTriggerRef={lightbox.triggerRef(photo.id)}
-            />
-          ))}
-        </ul>
-      </section>
+      <SelectionPhotoTile
+        key={photo.id}
+        photo={photo}
+        width={tile.width}
+        imageHeight={tile.height}
+        participants={participants}
+        decidingIncluded={decidingByPhotoId.get(photo.id) ?? null}
+        onDecide={(included) => handleDecide(photo, included)}
+        onOpenLarge={lightbox.open}
+        largeTriggerRef={lightbox.triggerRef(photo.id)}
+      />
     )
   }
 
@@ -157,15 +178,7 @@ export function AlbumSelectionPage() {
         </div>
       </header>
 
-      {query.isLoading && (
-        <ul role="status" aria-label="Fotos werden geladen…" className={PHOTO_CARD_GRID_CLASS}>
-          {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
-            <li key={index} aria-hidden="true">
-              <Skeleton className="aspect-square w-full rounded-md" />
-            </li>
-          ))}
-        </ul>
-      )}
+      {query.isLoading && <CurationSkeletonList count={SKELETON_TILE_COUNT} />}
 
       {query.isError && (
         <Alert onRetry={() => void query.refetch()}>
@@ -199,7 +212,9 @@ export function AlbumSelectionPage() {
       {days.map((day) => (
         <section key={day.dayKey} className="flex flex-col gap-4">
           <h2 className="text-lg">{formatDayHeading(day.dayKey)}</h2>
-          {day.events.map((group) => renderEventGroup(group))}
+          {day.events.map((group) => (
+            <SelectionEventGroup key={group.eventId} group={group} renderTile={renderTile} />
+          ))}
         </section>
       ))}
 

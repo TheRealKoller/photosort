@@ -15,12 +15,10 @@ interface FineLabelListProps {
 }
 
 /**
- * Die Feinlabel-Chips - geteilt zwischen dem kompakten Kachel-Popover
- * (`CriterionDetailsList`) und dem Seitenurteil (`PhotoVerdict`).
+ * Die Feinlabel-Chips des Seitenurteils (`PhotoVerdict`) und der Großansicht der Kuratierung.
  *
  * OHNE FEINLABELS ENTFÄLLT DER BEREICH ERSATZLOS: kein Platzhalter, keine leere Liste, keine
- * Überschrift. Die Überschrift trägt die jeweilige Aufrufstelle, nicht dieser Baustein - im
- * Popover steht sie als `h4` in der Bildinhalt-Gruppe, im Urteil auf einer anderen Stufe.
+ * Überschrift. Die Überschrift trägt die jeweilige Aufrufstelle, nicht dieser Baustein.
  *
  * S3 — DER SCHLÜSSEL KOMMT AUS `canonical_key`, nie aus dem Anzeigenamen. Gleichnamigkeit ist der
  * Normalfall; ein aus dem Text gebildeter Schlüssel brächte die Listenabgleichung von React

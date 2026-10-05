@@ -3,12 +3,12 @@
  * Struktureller Wächter der Rasterkachel (specs/features/0489-fotouebersicht-ohne-beschnitt.md,
  * AK13; ADR 0110 Punkt 5).
  *
- * WARUM DIESE EBENE: Beide Zusagen brechen ohne eigenen Testfall STILL. `PhotoCard` bleibt
- * unverändert und behält genau ihre beiden verbleibenden Aufrufstellen (Kuratierung, gemeinsame
- * Endauswahl) — eine dritte Aufrufstelle wäre in jedem Komponententest unauffällig, machte aber
+ * WARUM DIESE EBENE: Beide Zusagen brechen ohne eigenen Testfall STILL. `PhotoCard` behält genau
+ * ihre Aufrufstellen der Kuratierung (Entwurfskachel, Alternativen/Hinzufügen-Panel, gemeinsame
+ * Endauswahl) — eine weitere Aufrufstelle wäre in jedem Komponententest unauffällig, machte aber
  * die Aussage „die Rasteransicht benutzt die Fotokarte nicht mehr" falsch. Umgekehrt
  * sähe eine Rasterkachel, die `PhotoCard` intern wiederverwendet, in ihren eigenen Tests völlig
- * richtig aus und zöge trotzdem Kartenkörper, Statuszeile und feste Bildform mit.
+ * richtig aus und zöge trotzdem Knopfzeile und Großansichts-Auslöser in die Rasteransicht.
  *
  * SELBSTAUSSCHLUSS: Diese Datei enthält die Dateinamen als SUCHBEGRIFFE und prüft deshalb
  * ausschließlich namentlich genannte Dateien bzw. schließt sich aus der baumweiten Suche aus.
@@ -65,6 +65,7 @@ describe('Rasterkachel und Fotokarte stehen nebeneinander', () => {
 
     expect(callers).toEqual([
       'components/CurationPhotoTile.tsx',
+      'components/DraftAlternativesBand.tsx',
       'components/SelectionPhotoTile.tsx',
     ])
   })

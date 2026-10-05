@@ -51,12 +51,10 @@ function formatAttemptedAt(attemptedAt: string): string {
 }
 
 /**
- * Reine Praesentationskomponente mit dem Cloud-Vision-Status beider Laeufe eines Fotos: analog
- * CriterionDetailsList strukturiert (`<dl>`, kein Card-Rahmen, "Die Fotos sind der Star"). Rendert
- * IMMER genau die uebergebenen Eintraege ohne eigene Sichtbarkeitsentscheidung (die permanente
- * Sichtbarkeit ist eine bewusste Stakeholder-Entscheidung, umgesetzt vom Aufrufer
- * PhotoDetailPage.tsx - analog CriterionDetailsList, dessen Docstring dieselbe Aufteilung
- * dokumentiert).
+ * Reine Praesentationskomponente mit dem Cloud-Vision-Status beider Laeufe eines Fotos (`<dl>`,
+ * kein Card-Rahmen, "Die Fotos sind der Star"). Rendert IMMER genau die uebergebenen Eintraege
+ * ohne eigene Sichtbarkeitsentscheidung (die permanente Sichtbarkeit ist eine bewusste
+ * Stakeholder-Entscheidung, umgesetzt vom Aufrufer PhotoDetailPage.tsx).
  *
  * `error_message` wird ausschliesslich ueber einen regulaeren React-Textknoten gerendert, nie
  * `dangerouslySetInnerHTML` (Sicherheits-Muss-Kriterium der Spec, defense in depth - erste Stelle

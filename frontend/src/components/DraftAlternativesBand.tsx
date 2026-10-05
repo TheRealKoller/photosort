@@ -1,20 +1,22 @@
-import { Fragment, useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { ApiError } from '../api/client'
 import type { DraftAlternativesOut, EventOut, PhotoOut } from '../api/types'
+import { useJustifiedRows } from '../hooks/useJustifiedRows'
 import { useDraftAlternativesQuery } from '../hooks/usePhotos'
-import { cn } from '../lib/utils'
+import { iconOnly } from '../utils/curationLayout'
+import type { JustifiedTile } from '../utils/justifiedRows'
 import { ownRatingStatus } from '../utils/ownRating'
-import { qualityLevel } from '../utils/qualityLevel'
 import { referenceMarkerIndex } from '../utils/referenceMarker'
 import { AlbumStateBadge } from './AlbumStateBadge'
-import { PHOTO_CARD_GRID_CLASS } from './PhotoCard'
+import { CurationDetails } from './CurationDetails'
+import { CurationSkeletonList } from './CurationSkeletonList'
+import { PhotoCard } from './PhotoCard'
 import { PhotoImage } from './PhotoImage'
-import { QualityMeter } from './QualityMeter'
+import { TileAction } from './TileAction'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
-import { Skeleton } from './ui/skeleton'
 
 /** Band und Panel ohne Kandidaten. */
 export const CANDIDATES_NONE_TEXT = 'Keine weiteren Fotos in diesem Event.'
@@ -50,6 +52,7 @@ interface CandidateQuery {
 export interface CandidateAction {
   label: 'Tauschen' | 'Hinzufügen'
   key: 'exchange' | 'add'
+  icon: 'repeat' | 'plus'
   /** `neighborId`: der nächste Kandidat, sonst der vorige - das Fokusziel, wenn dieser die Liste
    * verlässt. */
   onAction: (photo: PhotoOut, neighborId: number | null) => void
@@ -64,7 +67,7 @@ interface CandidatePanelProps {
    * Neuladen. */
   excludedIds: ReadonlySet<number>
   username: string | null
-  /** Untereinander, in dieser Reihenfolge. */
+  /** Nebeneinander, in dieser Reihenfolge. */
   actions: readonly CandidateAction[]
   busyIds: ReadonlySet<number>
   error: string | null
@@ -79,26 +82,22 @@ interface CandidatePanelProps {
 }
 
 /**
- * Die Bezugsmarke: das zu ersetzende Bild an seiner zeitlichen Stelle in der Reihe -
- * dieselbe Bildfläche wie die Kandidaten, abgesetzt durch einen ANLIEGENDEN Akzentring und das
- * Wort „Wird ersetzt". KEIN Bedienelement: kein Button, kein Fokus, keine Einstufung. Das Bild
- * trägt `alt=""`, der Pfad steht im Namen des Listeneintrags.
+ * Die Bezugsmarke: das zu ersetzende Bild an seiner zeitlichen Stelle in der Reihe - eine Zelle
+ * im eigenen Seitenverhältnis mit derselben Bildbehandlung wie die Kandidaten, abgesetzt durch
+ * einen ANLIEGENDEN Akzentring und das Wort „Wird ersetzt". KEIN Bedienelement: kein Button, kein
+ * Fokus, keine Einstufung. Das Bild trägt `alt=""`, der Pfad steht im Namen des Listeneintrags.
  */
-export function ReferenceMarker({
-  photo,
-  showFileName = false,
-  className,
-}: {
-  photo: PhotoOut
-  showFileName?: boolean
-  className?: string
-}) {
+function ReferenceMarker({ photo, tile }: { photo: PhotoOut; tile: JustifiedTile }) {
   return (
     <li
       aria-label={`Wird ersetzt: ${photo.relative_path}`}
-      className={cn('flex min-w-0 flex-col gap-2', className)}
+      style={{ width: tile.width }}
+      className="flex flex-col gap-2"
     >
-      <span className="block aspect-square w-full overflow-hidden rounded-md ring-2 ring-accent">
+      <span
+        style={{ height: tile.height }}
+        className="block overflow-hidden rounded-md ring-2 ring-accent"
+      >
         <PhotoImage
           photoId={photo.id}
           variant="thumbnail"
@@ -107,19 +106,21 @@ export function ReferenceMarker({
         />
       </span>
       <span className="text-xs font-semibold text-text-h">Wird ersetzt</span>
-      {showFileName && (
-        <span className="truncate font-mono text-xs text-text">
-          {photo.relative_path.split('/').pop() ?? photo.relative_path}
-        </span>
-      )}
+      <span className="font-mono text-xs break-all text-text">
+        {photo.relative_path.split('/').pop() ?? photo.relative_path}
+      </span>
     </li>
   )
 }
 
+/** Eine Zelle der Kandidatenreihe: ein Kandidat oder die Bezugsmarke. */
+type CandidateCell = { kind: 'candidate'; photo: PhotoOut; position: number } | { kind: 'marker' }
+
 /**
- * Die gemeinsame Gestalt von Alternativen-Band und Hinzufügen-Panel: eine volle Rasterzeile mit
- * Überschrift (Fokusziel beim Öffnen), Kandidaten in SERVERREIHENFOLGE, Platzhaltern beim Laden,
- * Meldung mit „Erneut versuchen" beim Fehler und einem eigenen Leertext. Esc schließt.
+ * Die gemeinsame Gestalt von Alternativen-Band und Hinzufügen-Panel: eine volle Zeile des
+ * Eventrasters mit Überschrift (Fokusziel beim Öffnen), Kandidaten in SERVERREIHENFOLGE als
+ * justierte Reihen, Platzhaltern beim Laden, Meldung mit „Erneut versuchen" beim Fehler und einem
+ * eigenen Leertext. Esc schließt.
  */
 function CandidatePanel({
   id,
@@ -167,21 +168,38 @@ function CandidatePanel({
     markerAt === null || !showMarker
       ? null
       : (kept.find(({ rawIndex }) => rawIndex >= markerAt)?.photo.id ?? null)
-  const marker =
-    reference === undefined ? null : (
-      <ReferenceMarker key="reference-marker" photo={reference} showFileName />
-    )
+
+  const cells: CandidateCell[] = []
+  candidates.forEach((photo, position) => {
+    if (markerBeforeId === photo.id) {
+      cells.push({ kind: 'marker' })
+    }
+    cells.push({ kind: 'candidate', photo, position })
+  })
+  if (candidates.length > 0 && showMarker && markerBeforeId === null) {
+    cells.push({ kind: 'marker' })
+  }
+  const { ref: listRef, rows } = useJustifiedRows<HTMLElement>(
+    cells.map((cell) =>
+      cell.kind === 'marker'
+        ? (reference?.aspect_ratio ?? null)
+        : (cell.photo.aspect_ratio ?? null),
+    ),
+  )
+  const tiles = rows.flatMap((row) => row.tiles)
+
   const List = reference === undefined ? 'ul' : 'ol'
   const loadError = query.isError
     ? query.error instanceof ApiError
       ? query.error.detail
       : CANDIDATES_ERROR_TEXT
     : null
+  const handlesKind = actions.length > 1 ? 'candidate' : 'panel'
 
   return (
     <li
       id={id}
-      className="col-span-full flex flex-col gap-3 rounded-lg border border-border bg-surface p-3"
+      className="flex w-full flex-col gap-3 rounded-lg border border-border bg-surface p-3"
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.stopPropagation()
@@ -202,75 +220,61 @@ function CandidatePanel({
           (Fehler, alle Kandidaten hinzugefügt), steht ein leerer Platzhalter mit derselben Id,
           damit `aria-controls` nie ins Leere zeigt. Das Raster bleibt direktes Kind der Fläche. */}
       {gridId !== undefined && !query.isLoading && candidates.length === 0 && <div id={gridId} />}
-      {query.isLoading && (
-        <ul
-          id={gridId}
-          role="status"
-          aria-label="Fotos werden geladen…"
-          className={PHOTO_CARD_GRID_CLASS}
-        >
-          {Array.from({ length: BAND_SKELETON_COUNT }, (_, index) => (
-            <li key={index} aria-hidden="true">
-              <Skeleton className="aspect-square w-full rounded-md" />
-            </li>
-          ))}
-        </ul>
-      )}
+      {query.isLoading && <CurationSkeletonList id={gridId} count={BAND_SKELETON_COUNT} />}
       {candidates.length > 0 && (
         <List
           id={gridId}
+          ref={listRef}
           aria-label={reference === undefined ? undefined : 'Alternativen, zeitlich geordnet'}
-          className={PHOTO_CARD_GRID_CLASS}
+          className="flex flex-wrap gap-3"
         >
-          {candidates.map((candidate, index) => {
-            const neighborId = (candidates[index + 1] ?? candidates[index - 1])?.id ?? null
+          {cells.map((cell, index) => {
+            const tile = tiles[index] ?? { index, width: 0, height: 0 }
+            if (cell.kind === 'marker') {
+              return reference === undefined ? null : (
+                <ReferenceMarker key="reference-marker" photo={reference} tile={tile} />
+              )
+            }
+            const candidate = cell.photo
+            const neighborId =
+              (candidates[cell.position + 1] ?? candidates[cell.position - 1])?.id ?? null
             const struck = ownRatingStatus(candidate.ratings, username) === 'rejected'
-            const fileName = candidate.relative_path.split('/').pop() ?? candidate.relative_path
             const busy = busyIds.has(candidate.id)
+            const symbolsOnly = iconOnly(tile.width, handlesKind)
             return (
-              <Fragment key={candidate.id}>
-                {markerBeforeId === candidate.id && marker}
-                <li className="flex min-w-0 flex-col gap-2">
-                  <span className="block aspect-square w-full overflow-hidden rounded-md">
-                    <PhotoImage
-                      photoId={candidate.id}
-                      variant="thumbnail"
-                      alt={candidate.relative_path}
-                      className="size-full object-contain"
-                    />
-                  </span>
-                  <span className="truncate font-mono text-xs text-text">{fileName}</span>
-                  <QualityMeter
-                    level={qualityLevel(candidate.ranking?.rank_score ?? null)}
-                    className="text-xs"
+              <PhotoCard
+                key={candidate.id}
+                width={tile.width}
+                imageHeight={tile.height}
+                relativePath={candidate.relative_path}
+                image={
+                  <PhotoImage
+                    photoId={candidate.id}
+                    variant="thumbnail"
+                    alt={candidate.relative_path}
+                    className="size-full object-contain"
                   />
-                  {struck && (
-                    <span>
-                      <AlbumStateBadge state="struck" />
-                    </span>
-                  )}
-                  <div className="flex flex-col gap-3">
-                    {actions.map((action) => (
-                      <Button
-                        key={action.key}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-11 sm:h-8"
-                        data-focus-key={`${action.key}-${candidate.id}`}
-                        busy={busy}
-                        aria-label={`${action.label}: ${candidate.relative_path}`}
-                        onClick={() => action.onAction(candidate, neighborId)}
-                      >
-                        {action.label}
-                      </Button>
-                    ))}
-                  </div>
-                </li>
-              </Fragment>
+                }
+                setAside={struck}
+                stateMark={struck ? <AlbumStateBadge state="struck" /> : undefined}
+                details={<CurationDetails photo={candidate} />}
+                actions={actions.map((action, actionIndex) => (
+                  <TileAction
+                    key={action.key}
+                    icon={action.icon}
+                    label={action.label}
+                    accessibleName={`${action.label}: ${candidate.relative_path}`}
+                    iconOnly={symbolsOnly}
+                    tileWidth={tile.width}
+                    align={actionIndex === 0 ? 'start' : 'end'}
+                    data-focus-key={`${action.key}-${candidate.id}`}
+                    busy={busy}
+                    onClick={() => action.onAction(candidate, neighborId)}
+                  />
+                ))}
+              />
             )
           })}
-          {showMarker && markerBeforeId === null && marker}
         </List>
       )}
       {markerLater && <p className="text-xs text-text">{REFERENCE_LATER_TEXT}</p>}
@@ -371,8 +375,13 @@ export function DraftAlternativesBand({
       excludedIds={excludedIds}
       username={username}
       actions={[
-        { label: 'Tauschen', key: 'exchange', onAction: (alternative) => onExchange(alternative) },
-        { label: 'Hinzufügen', key: 'add', onAction: onAdd },
+        {
+          label: 'Tauschen',
+          key: 'exchange',
+          icon: 'repeat',
+          onAction: (alternative) => onExchange(alternative),
+        },
+        { label: 'Hinzufügen', key: 'add', icon: 'plus', onAction: onAdd },
       ]}
       busyIds={busyIds}
       error={error}
@@ -455,7 +464,7 @@ export function DraftAddPanel({
       query={query}
       excludedIds={excludedIds}
       username={username}
-      actions={[{ label: 'Hinzufügen', key: 'add', onAction: onAdd }]}
+      actions={[{ label: 'Hinzufügen', key: 'add', icon: 'plus', onAction: onAdd }]}
       busyIds={busyIds}
       error={error}
       onClose={onClose}

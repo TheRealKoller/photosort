@@ -4,6 +4,8 @@
 **Erstellt:** 2026-09-13
 **Bezug:** [Issue #428](https://github.com/TheRealKoller/photosort/issues/428), Story 4 des Zielbilds [#424](https://github.com/TheRealKoller/photosort/issues/424)
 
+> **Teilweise abgelöst durch Spec [`0579`](./0579-kuratierungskacheln-foto-im-mittelpunkt.md):** Auf der Kuratierungskachel steht die Begründung vollständig (ohne `line-clamp`) in der Leiste bei Bedarf; das Info-Popover (`CriterionDetailsPopover`/`CriterionDetailsList`) ist in der Kuratierung entfallen.
+
 **Umfang:** deutlich über dem Richtwert von rund 200 Zeilen. Die Story trägt drei voneinander
 unabhängige Umbauten in einem Zug — Modellbewertung, Score-Trennung und Cloud-Gate —, berührt
 Backend, Datenmodell und Frontend zugleich, und der Großteil der Länge entfällt auf die vierzehn

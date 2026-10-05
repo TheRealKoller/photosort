@@ -509,10 +509,10 @@ function expectNoOverflow(metrics: PageMetrics, label: string): void {
 }
 
 /**
- * „Tauschen" und „Hinzufügen" der ersten Alternative: untereinander,
- * je sichtbar mindestens 44 px hoch und mit mindestens 12 px Abstand, ohne Ueberlappung.
+ * „Tauschen" und „Hinzufügen" der ersten Alternative: nebeneinander, je sichtbar mindestens
+ * 44 x 44 px und mit mindestens 12 px waagerechtem Abstand, ohne Ueberlappung.
  */
-async function expectStackedActions(band: Locator, label: string): Promise<void> {
+async function expectSideBySideActions(band: Locator, label: string): Promise<void> {
   const exchange = await band
     .getByRole('button', { name: /^Tauschen: / })
     .first()
@@ -523,11 +523,17 @@ async function expectStackedActions(band: Locator, label: string): Promise<void>
     .boundingBox()
   expect(exchange, `Tauschen ${label}`).not.toBeNull()
   expect(add, `Hinzufügen ${label}`).not.toBeNull()
-  expect(exchange!.height, `Hoehe von Tauschen ${label}`).toBeGreaterThanOrEqual(44 - TOLERANCE)
-  expect(add!.height, `Hoehe von Hinzufügen ${label}`).toBeGreaterThanOrEqual(44 - TOLERANCE)
+  for (const [name, box] of [
+    ['Tauschen', exchange!],
+    ['Hinzufügen', add!],
+  ] as const) {
+    expect(box.height, `Hoehe von ${name} ${label}`).toBeGreaterThanOrEqual(44 - TOLERANCE)
+    expect(box.width, `Breite von ${name} ${label}`).toBeGreaterThanOrEqual(44 - TOLERANCE)
+  }
+  expect(Math.abs(add!.y - exchange!.y), `gleiche Zeile ${label}`).toBeLessThanOrEqual(TOLERANCE)
   expect(
-    add!.y - (exchange!.y + exchange!.height),
-    `Abstand zwischen Tauschen und Hinzufügen ${label}`,
+    add!.x - (exchange!.x + exchange!.width),
+    `waagerechter Abstand zwischen Tauschen und Hinzufügen ${label}`,
   ).toBeGreaterThanOrEqual(12 - TOLERANCE)
 }
 
@@ -559,7 +565,7 @@ test('die offenen Zustaende des Album-Entwurfs erzeugen kein horizontales Scroll
     'mindestens eine Alternative im Band',
   ).toBeVisible()
   expectNoOverflow(await measureWithin(page, 'main'), 'bei offenem Alternativen-Band')
-  await expectStackedActions(band, 'in der Serie')
+  await expectSideBySideActions(band, 'in der Serie')
 
   // „Alle Fotos des Events": dieselbe Flaeche waechst zur vollen Reihe, kein Dialog.
   const toggle = band.getByRole('button', { name: 'Alle Fotos des Events', exact: true })
@@ -577,7 +583,7 @@ test('die offenen Zustaende des Album-Entwurfs erzeugen kein horizontales Scroll
   ).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expectNoOverflow(await measureWithin(page, 'main'), 'bei aufgeklappter Reihe')
-  await expectStackedActions(band, 'in der aufgeklappten Reihe')
+  await expectSideBySideActions(band, 'in der aufgeklappten Reihe')
   await page.keyboard.press('Escape')
   await expect(band).toBeHidden()
 
@@ -608,47 +614,35 @@ test('die offenen Zustaende des Album-Entwurfs erzeugen kein horizontales Scroll
 })
 
 /**
- * Die Haltungskennzeichen der Endauswahl bei 360 px (specs/features/0558-...): Jedes Kennzeichen
- * steht EINZEILIG. Die Kachel ist bei zwei Spalten rund 150 px breit, und „Aufgenommen" samt
- * Symbol neben dem Teilnehmernamen ist der laengste Fall - ein Umbruch darin machte aus dem
- * Kennzeichen zwei Woerter-Fetzen, ohne dass irgendetwas uebersteht.
- *
- * Gemessen wird je Textknoten des Kennzeichens ueber `Range.getClientRects()`: genau ein Rechteck
- * heisst eine Zeile. Eine Kastenhoehe waere an die Zeilenhoehe kalibriert und damit wertlos.
+ * Die Haltungszeilen der Endauswahl bei 360 px: Name und Symbolzeichen stehen in EINER Zeile.
+ * Das Zeichen traegt seit Spec 0579 kein Wort mehr; ein Umbruch zwischen Name und Zeichen trennte
+ * die Haltung von ihrer Person.
  */
-test('die Haltungskennzeichen der Endauswahl stehen bei 360 px einzeilig', async ({ page }) => {
+test('die Haltungszeilen der Endauswahl stehen bei 360 px einzeilig', async ({ page }) => {
   const ratedId = await demoProjectId(page, DEMO_PROJECTS.rated)
   await page.goto(`/projects/${ratedId}/selection`)
 
   const stances = page.locator('ul[aria-label^="Haltung zu "] > li')
-  // Vorbedingung: Kennzeichen sind WIRKLICH da, und darunter mindestens eines der drei Wörter -
-  // sonst liefe die Messung ueber lauter „–".
   await expect(stances.first(), 'mindestens eine Haltungszeile').toBeVisible()
   await expect(
     page.locator('ul[aria-label^="Haltung zu "] [data-album-state]').first(),
-    'mindestens ein Zustandswort',
+    'mindestens ein Zustandszeichen',
   ).toBeVisible()
 
   const lines = await stances.evaluateAll((rows) =>
     rows.map((row) => {
-      const badge = row.lastElementChild
-      const walker = document.createTreeWalker(badge ?? row, NodeFilter.SHOW_TEXT)
-      const counts: number[] = []
-      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-        if ((node.textContent ?? '').trim() === '') {
-          continue
-        }
-        const range = document.createRange()
-        range.selectNodeContents(node)
-        counts.push(range.getClientRects().length)
+      const name = row.firstElementChild!.getBoundingClientRect()
+      const badge = row.lastElementChild!.getBoundingClientRect()
+      return {
+        text: row.textContent ?? '',
+        sameLine: badge.top < name.bottom && name.top < badge.bottom,
       }
-      return { text: (badge?.textContent ?? '').trim(), counts }
     }),
   )
 
   expect(lines.length, 'Anzahl gemessener Haltungszeilen').toBeGreaterThan(0)
   for (const line of lines) {
-    expect(line.counts, `Zeilen des Kennzeichens "${line.text}"`).toEqual([1])
+    expect(line.sameLine, `Name und Zeichen in einer Zeile: "${line.text}"`).toBe(true)
   }
 })
 

@@ -180,10 +180,9 @@ describe('PhotoVerdict: leer und fehlend', () => {
 })
 
 describe('PhotoVerdict: Sicherheit (S1/S4/S5)', () => {
-  /* S5 — DIESER TEST WANDERT MIT DER RENDERSTELLE. `album_suitability.reason` stammt aus einem
-     Bild, das selbst Text enthalten kann; das Session-Token liegt in `localStorage`. Ein in
-     `CriterionDetailsList.test.tsx` verbliebener Test bliebe grün, obwohl DIESE Komponente den
-     Text rendert. */
+  /* S5 — DIESER TEST STEHT AN DER RENDERSTELLE. `album_suitability.reason` stammt aus einem
+     Bild, das selbst Text enthalten kann; das Session-Token liegt in `localStorage`. Ein Test an
+     einer anderen Komponente bliebe grün, obwohl DIESE Komponente den Text rendert. */
   it('rendert eine feindlich belegte Begründung als reinen Textknoten', () => {
     const payload = '<img src=x onerror="window.__pwned = true">'
 

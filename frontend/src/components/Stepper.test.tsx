@@ -10,9 +10,9 @@ import { Stepper } from './Stepper'
 const KRITERIEN_GRUND = 'Schließe zuerst den Ausschuss ab („Ausschuss abschließen“).'
 const KURATIERUNG_GRUND = 'Führe zuerst die Klassifizierung aus („Klassifizierung starten“).'
 
-// window.matchMedia existiert in jsdom nicht (siehe CriterionDetailsPopover.test.tsx) - gleicher
-// Stub, da der Blockiert-Grund-Popover-Trigger dieselbe Radix-Popover-Primitive wiederverwendet
-// (specs/architecture/0002-testkonzept.md, Abschnitt "Mehrschritt-Routing", Punkt 6).
+// window.matchMedia existiert in jsdom nicht - minimaler MediaQueryList-Stub fuer den
+// Blockiert-Grund-Popover-Trigger (specs/architecture/0002-testkonzept.md, Abschnitt
+// "Mehrschritt-Routing", Punkt 6).
 function stubMatchMedia(matches: boolean): void {
   vi.stubGlobal(
     'matchMedia',
@@ -475,8 +475,8 @@ describe('Stepper', () => {
     await user.click(blocked)
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
 
-    // Schliessen per fireEvent mit `relatedTarget` statt `userEvent.unhover()` - dieselbe
-    // dokumentierte Falle wie in CriterionDetailsPopover.test.tsx.
+    // Schliessen per fireEvent mit `relatedTarget` statt `userEvent.unhover()`: user-event setzt
+    // bei `unhover()` kein reales `relatedTarget` auf das `mouseleave`.
     fireEvent.mouseLeave(blocked, { relatedTarget: document.body })
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })

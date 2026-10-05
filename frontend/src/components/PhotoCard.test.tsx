@@ -1,150 +1,131 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { RatingStatus } from '../api/types'
+import { LONG_PRESS_MS } from '../hooks/useRevealOnDemand'
 import { PhotoCard } from './PhotoCard'
+import type { PhotoCardProps } from './PhotoCard'
 
 /*
- * specs/features/0321-dark-utility-register-ansichten.md, Etappe 3.
+ * Die Kuratierungskachel: Bildflaeche im eigenen Seitenverhaeltnis, Zustandszeichen in der
+ * Bildecke, Angaben bei Bedarf ueber dem unteren Bildrand, Knopfzeile darunter.
  *
- * KEINE CSS-ASSERTIONEN (Regel aus Stufe 1): Zustaende werden ueber `data-*`, Rollen und
- * sichtbaren Text geprueft. Alles Gerechnete, Gestrichene oder Gedaempfte liegt im Vertragstest
- * `designSystem.contract.test.ts`. Auch `sm:`-Verhalten (`p-2 sm:p-3`) wird hier NIE geprueft -
- * eine Zusicherung auf den Klassennamen prueft die Schreibweise, nicht die Wirkung.
+ * Geprueft ueber Rollen, Namen und `data-*`; Klassen nur dort, wo die Klasse selbst die Zusage
+ * ist (`sr-only` der ruhenden Leiste).
  */
-function renderCard(props: Partial<Parameters<typeof PhotoCard>[0]> = {}) {
+
+function stubHover(matches: boolean): void {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockReturnValue({
+      matches,
+      media: '(hover: hover) and (pointer: fine)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }),
+  )
+}
+
+function renderCard(props: Partial<PhotoCardProps> = {}) {
   return render(
     <ul>
       <PhotoCard
+        width={180}
+        imageHeight={240}
         relativePath="2024/07/IMG_0042.jpg"
         image={<img alt="2024/07/IMG_0042.jpg" src="blob:x" />}
         onImageActivate={() => {}}
         imageTriggerLabel="Großansicht: 2024/07/IMG_0042.jpg"
+        stateMark={<span role="img" aria-label="Vorschlag" />}
+        details={<p>Angabe des Modells</p>}
+        actions={
+          <>
+            <button type="button">Erster</button>
+            <button type="button">Zweiter</button>
+          </>
+        }
         {...props}
       />
     </ul>,
   )
 }
 
-describe('PhotoCard', () => {
-  /*
-   * Die vier Zustaende des Boards, die im Produkt vorkommen. Der fuenfte Board-Zustand
-   * "ausgewaehlt" wird bewusst NICHT gebaut (Entscheidung 5: PhotoSort kennt keine Foto-Auswahl)
-   * und deshalb auch nicht getestet.
-   *
-   * Geprueft als PAARWEISE VERSCHIEDENHEIT statt als vier abgeschriebene Einzelfaelle: Genau das
-   * ist die Zusage - die Zustaende muessen sich voneinander unterscheiden lassen, und zwar an
-   * mehreren, nicht-farblichen Merkmalen zugleich.
-   */
-  it('keeps the four card states pairwise distinguishable without colour perception', () => {
-    // Vier Zustaende wie bisher - seit ADR 0098 aber aus ZWEI Feldern gebildet: der Favorit ist
-    // kein Wert von `status` mehr, sondern das Kennzeichen ohne Albumentscheidung.
-    const states: { status: RatingStatus | null; favorite?: boolean }[] = [
-      { status: null },
-      { status: null, favorite: true },
-      { status: 'album_worthy' },
-      { status: 'rejected' },
+function strip(): HTMLElement {
+  const found = document.querySelector<HTMLElement>('[data-tile-details]')
+  if (found === null) {
+    throw new Error('keine Leiste')
+  }
+  return found
+}
+
+beforeEach(() => {
+  stubHover(false)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+describe('PhotoCard: Aufbau', () => {
+  it('orders image trigger, state, details, actions, error and footer', () => {
+    renderCard({ error: 'Ging schief', footer: <p>Fusszeile</p> })
+
+    const item = screen.getByRole('listitem')
+    const order = [
+      screen.getByRole('button', { name: /^Großansicht: / }),
+      screen.getByRole('img', { name: 'Vorschlag' }),
+      strip(),
+      screen.getByRole('button', { name: 'Erster' }),
+      screen.getByRole('button', { name: 'Zweiter' }),
+      screen.getByRole('alert'),
+      screen.getByText('Fusszeile'),
     ]
+    const all = [...item.querySelectorAll('*')]
+    const positions = order.map((element) => all.indexOf(element))
+    expect(positions).toEqual([...positions].sort((a, b) => a - b))
+    expect(positions.every((position) => position >= 0)).toBe(true)
+  })
 
-    const signatures = states.map(({ status, favorite }) => {
-      const { container, unmount } = render(
-        <ul>
-          <PhotoCard
-            relativePath="2024/07/IMG_0042.jpg"
-            status={status}
-            favorite={favorite}
-            image={<img alt="2024/07/IMG_0042.jpg" src="blob:x" />}
-          />
-        </ul>,
-      )
-      const item = container.querySelector('li')!
-      const signature = [
-        // BEIDE Felder, nicht nur `status`: "unbewertet" und "nur Favorit" tragen dasselbe
-        // `data-rating-status` und waeren allein daran nicht auseinanderzuhalten.
-        `${item.getAttribute('data-rating-status')}/${item.getAttribute('data-rating-favorite') ?? 'kein Favorit'}`,
-        item.textContent?.replace('IMG_0042.jpg', '').trim(),
-        item.querySelector('[data-icon]')?.getAttribute('data-icon') ?? 'kein Symbol',
-      ].join('|')
-      unmount()
-      return signature
-    })
+  it('makes the image trigger the first tab stop, then the actions in order', async () => {
+    renderCard()
 
-    expect(new Set(signatures).size).toBe(4)
-    for (const field of [0, 1, 2]) {
-      expect(
-        new Set(signatures.map((entry) => entry.split('|')[field])).size,
-        `Merkmal ${field}`,
-      ).toBe(4)
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: /^Großansicht: / })).toHaveFocus()
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: 'Erster' })).toHaveFocus()
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: 'Zweiter' })).toHaveFocus()
+  })
+
+  it('carries the computed tile width and image height as numeric inline styles', () => {
+    renderCard({ width: 158, imageHeight: 237 })
+
+    const item = screen.getByRole('listitem')
+    expect(item.style.width).toBe('158px')
+    const trigger = screen.getByRole('button', { name: /^Großansicht: / })
+    expect(trigger.parentElement?.style.height).toBe('237px')
+    for (const element of [item, ...item.querySelectorAll<HTMLElement>('[style]')]) {
+      for (const property of [...element.style]) {
+        expect(element.style.getPropertyValue(property)).toMatch(/^\d+(\.\d+)?px$/)
+      }
     }
   })
 
-  it('marks only the rejected state with the struck-through file name', () => {
-    for (const status of [null, 'album_worthy'] as const) {
-      const { container, unmount } = renderCard({ status })
-      expect(container.querySelector('[data-struck]'), `${status}`).toBeNull()
-      unmount()
-    }
-    const favoriteOnly = renderCard({ status: null, favorite: true })
-    expect(favoriteOnly.container.querySelector('[data-struck]')).toBeNull()
-    favoriteOnly.unmount()
+  it('keeps the state mark a sibling of the image trigger, never its child', () => {
+    renderCard()
 
-    // Im aussortierten Zustand traegt der Dateiname die Durchstreichung als DOM-Merkmal. Das
-    // Kennzeichen selbst fuehrt `data-struck` seit Stufe 1 ebenfalls (es benennt den Zustand,
-    // ohne selbst gestrichen zu sein) - geprueft wird deshalb gezielt der Dateiname.
-    const { container } = renderCard({ status: 'rejected' })
-    const struck = [...container.querySelectorAll('[data-struck="true"]')].map(
-      (node) => node.textContent,
-    )
-    expect(struck).toContain('IMG_0042.jpg')
-  })
-
-  /*
-   * Entscheidung 3: Auf der Karte steht im Zustand "neu" das WORT "Neu", nicht das neutrale
-   * "–"-Badge. Der Prueffall haelt beide Haelften fest - ohne die zweite koennte das Badge hier
-   * unbemerkt zurueckkehren und das Wort verdoppeln.
-   */
-  it('shows the word "Neu" for an unrated photo, without the neutral badge', () => {
-    renderCard({ status: null })
-
-    expect(screen.getByText('Neu')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Unbewertet')).not.toBeInTheDocument()
-    expect(screen.queryByText('–')).not.toBeInTheDocument()
-  })
-
-  /*
-   * `setAside` ist die gemeinsame Herausnahme aus der Endauswahl (Spec 0431): erkennbar, aber OHNE
-   * Bewertungs-Kennzeichen. Beide Haelften gehoeren in EINEN Fall - getrennt bestuende jede auch
-   * bei einer Umsetzung, die `setAside` einfach auf `status='rejected'` abbildet und damit ein
-   * unbenanntes "Verworfen" an den Kartenkoerper haengt.
-   *
-   * TRAEGER IST DER DURCHGESTRICHENE DATEINAME, nicht mehr die Bildflaeche (Spec 0498 AK4): Die
-   * Bildflaeche steht seither in voller Helligkeit, und ohne Bewertungszustand ist die
-   * Durchstreichung der einzige Zustandstraeger dieser Karte.
-   */
-  it('marks a set-aside card by its struck file name, WITHOUT asserting a rating state', () => {
-    const { container } = renderCard({ setAside: true })
-
-    expect(container.querySelector('[data-struck="true"]')?.textContent).toBe('IMG_0042.jpg')
-    expect(container.querySelector('[data-rating-status]')).toBeNull()
-    expect(screen.queryByLabelText('Verworfen')).not.toBeInTheDocument()
-  })
-
-  it('shows no rating indicator at all when the card carries no rating state', () => {
-    // Kuratierung und Vergleich zeigen den Zustand woanders bzw. gar nicht - die Karte darf dort
-    // nichts hinzufuegen ("es wird nichts hinzugefuegt" ist Akzeptanzkriterium).
-    const { container } = renderCard()
-
-    expect(container.querySelector('[data-rating-status]')).toBeNull()
-    expect(screen.queryByText('Neu')).not.toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: /^Großansicht: / })
+    expect(trigger.contains(screen.getByRole('img', { name: 'Vorschlag' }))).toBe(false)
   })
 
   it('renders the image area as neither link nor button without onImageActivate', () => {
-    renderCard({ onImageActivate: undefined })
+    renderCard({ onImageActivate: undefined, actions: null })
 
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.getByRole('listitem')).toBeInTheDocument()
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('makes the image area a button that activates once and hands out its element', () => {
@@ -156,78 +137,118 @@ describe('PhotoCard', () => {
     fireEvent.click(trigger)
 
     expect(onImageActivate).toHaveBeenCalledTimes(1)
-    expect(trigger).toHaveAttribute('type', 'button')
     expect(imageTriggerRef.current).toBe(trigger)
   })
 
-  /*
-   * Fallstrick "tap-target nie in einen beschneidenden Container": Die Bildflaeche traegt
-   * `overflow-hidden`; ein Ecken-Trigger als Kind wuerde still seine Trefferflaeche abgeschnitten
-   * bekommen. Die Zusicherung wandert mit dem Baustein aus PhotoGridPage.test.tsx eine Ebene nach
-   * unten - sie ist zugleich der Ersatz fuer den entfallenen `pointer-events-none`-Test.
-   */
-  it('keeps the corner slots siblings of the image trigger, never children of it', () => {
-    renderCard({
-      topLeft: <button type="button">Marker</button>,
-      topRight: <button type="button">Details</button>,
-    })
+  it('does not open the large view from an action', () => {
+    const onImageActivate = vi.fn()
+    renderCard({ onImageActivate })
 
-    const item = screen.getByRole('listitem')
-    const imageTrigger = screen.getByRole('button', { name: /^Großansicht: / })
-    for (const name of ['Marker', 'Details']) {
-      const trigger = screen.getByRole('button', { name })
-      expect(imageTrigger.contains(trigger), name).toBe(false)
-      expect(item.contains(trigger), name).toBe(true)
-    }
+    fireEvent.click(screen.getByRole('button', { name: 'Erster' }))
+
+    expect(onImageActivate).not.toHaveBeenCalled()
   })
 
-  it('renders footer children outside the image trigger', () => {
-    renderCard({ footer: <button type="button">Übernehmen</button> })
+  it('marks the anchored card', () => {
+    renderCard({ anchored: true })
 
-    const item = screen.getByRole('listitem')
-    const action = screen.getByRole('button', { name: 'Übernehmen' })
-    expect(screen.getByRole('button', { name: /^Großansicht: / }).contains(action)).toBe(false)
-    expect(item.contains(action)).toBe(true)
+    expect(screen.getByRole('listitem')).toHaveAttribute('data-anchored', 'true')
   })
+})
 
-  it('shows only the base name of the file, never the folder part', () => {
+describe('PhotoCard: die Leiste bei Bedarf', () => {
+  it('stays in the DOM at rest, screen-reader only', () => {
     renderCard()
 
-    expect(screen.getByText('IMG_0042.jpg')).toBeInTheDocument()
-    expect(screen.queryByText(/2024\/07/)).not.toBeInTheDocument()
+    expect(strip()).toHaveClass('sr-only')
+    expect(strip()).not.toHaveAttribute('data-visible')
+    expect(within(strip()).getByText('Angabe des Modells')).toBeInTheDocument()
   })
 
-  it('keeps the file name outside the image trigger and out of its accessible name', () => {
+  it.each([/^Großansicht: /, 'Erster', 'Zweiter'])('shows while %s has focus', (name) => {
     renderCard()
 
+    act(() => screen.getByRole('button', { name }).focus())
+
+    expect(strip()).toHaveAttribute('data-visible', 'true')
+    expect(strip()).not.toHaveClass('sr-only')
+  })
+
+  it('never grows above the image', () => {
+    renderCard({ imageHeight: 211 })
+
+    expect(strip().style.maxHeight).toBe('211px')
+  })
+
+  it('shows on a long press and does not open the large view', () => {
+    const onImageActivate = vi.fn()
+    renderCard({ onImageActivate })
     const trigger = screen.getByRole('button', { name: /^Großansicht: / })
-    const fileName = screen.getByText('IMG_0042.jpg')
-    expect(trigger.contains(fileName)).toBe(false)
-    expect(trigger).toHaveAccessibleName('Großansicht: 2024/07/IMG_0042.jpg')
-    // Der Dateiname ist Inhalt, kein Dekor - er wird NICHT vor Screenreadern versteckt.
-    expect(fileName).not.toHaveAttribute('aria-hidden')
+
+    vi.useFakeTimers()
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+    act(() => {
+      vi.advanceTimersByTime(LONG_PRESS_MS)
+    })
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    })
+    fireEvent.click(trigger)
+
+    expect(strip()).toHaveAttribute('data-visible', 'true')
+    expect(onImageActivate).not.toHaveBeenCalled()
   })
 
-  /*
-   * Sicherheits-Muss-Kriterium der Spec: Der Dateiname stammt aus dem WebDAV-Walk der OpenCloud
-   * und ist damit extern entstandener Text. Er wird ausschliesslich als regulaerer React-Textknoten
-   * gerendert - nie ueber `dangerouslySetInnerHTML`. Seit ADR 0005 liegt das Session-Token in
-   * `localStorage`; ein eingeschleustes Skript laese es unmittelbar aus.
-   */
-  it('never renders the file name via dangerouslySetInnerHTML (plain text node)', () => {
-    const hostile = '<img src=x onerror="window.__pwned = true">'
+  it('ends with the base name of the file, never the folder part', () => {
+    renderCard()
+
+    const name = within(strip()).getByText('IMG_0042.jpg')
+    expect(strip().lastElementChild).toBe(name)
+    expect(screen.queryByText(/2024\/07\/IMG/)).toBeNull()
+  })
+
+  it('strikes the file name of a set-aside card', () => {
+    renderCard({ setAside: true })
+
+    expect(within(strip()).getByText('IMG_0042.jpg')).toHaveAttribute('data-struck', 'true')
+  })
+
+  it('does not strike the file name otherwise', () => {
+    renderCard()
+
+    expect(within(strip()).getByText('IMG_0042.jpg')).not.toHaveAttribute('data-struck')
+  })
+
+  it('never renders a hostile file name as markup', () => {
+    const hostile = '<img src=x onerror="window.__pwned = true">.jpg'
     renderCard({ relativePath: `2024/07/${hostile}` })
 
     expect(screen.getByText(hostile)).toBeInTheDocument()
     expect(document.querySelector('img[src="x"]')).toBeNull()
     expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
   })
+})
 
-  // Entscheidung 5, von Daniel zurueckgestellt: der fuenfte Board-Zustand wird weder gebaut noch
-  // vorbereitet. Diese Zusicherung haelt fest, dass keine stille Vorbereitung entstanden ist.
-  it('does not build the board state "selected"', () => {
-    const { container } = renderCard({ status: 'album_worthy', favorite: true })
+describe('PhotoCard: eine lange Leiste bleibt erreichbar', () => {
+  it('scrolls vertically within the image height instead of clipping, and takes keyboard focus when it overflows', () => {
+    // jsdom misst nicht: Der Ueberlauf wird ueber die beiden Masse vorgegeben, die der Baustein liest.
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(300)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(120)
+    renderCard({ imageHeight: 120 })
 
-    expect(container.querySelector('[data-selected]')).toBeNull()
+    act(() => screen.getByRole('button', { name: 'Erster' }).focus())
+
+    expect(strip().style.maxHeight).toBe('120px')
+    expect(strip().className).toContain('overflow-y-auto')
+    expect(strip().className).not.toMatch(/\boverflow-hidden\b/)
+    expect(strip()).toHaveAttribute('tabindex', '0')
+  })
+
+  it('is no tab stop at rest', () => {
+    renderCard()
+
+    expect(strip()).not.toHaveAttribute('tabindex', '0')
   })
 })

@@ -127,9 +127,8 @@ describe('formatTakenAtRange', () => {
 })
 
 // specs/features/0299-kategorie-konfidenz-anzeigen.md, Umsetzungsschritt 10: `formatCriterionPercent`
-// ist von `components/CriterionDetailsList.tsx` hierher gewandert und wird jetzt von der
-// Kandidatenliste UND dem Statistikblock geteilt - eine zweite Formatierungslogik entstuende
-// sonst zwangslaeufig.
+// wird von Einzelwerte-Raster, Motivstaerke und Statistikblock geteilt - eine zweite
+// Formatierungslogik entstuende sonst zwangslaeufig.
 describe('formatCriterionPercent', () => {
   it('rundet kaufmaennisch auf eine ganze Prozentzahl ohne Leerzeichen', () => {
     expect(formatCriterionPercent(0.92)).toBe('92%')

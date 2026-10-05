@@ -7,15 +7,14 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CurationLightbox } from '../components/CurationLightbox'
 import { CurationPhotoTile } from '../components/CurationPhotoTile'
+import { CurationSkeletonList } from '../components/CurationSkeletonList'
 import { DraftAddPanel, DraftAlternativesBand } from '../components/DraftAlternativesBand'
 import { DraftEventSection } from '../components/DraftEventSection'
 import { DraftExplainer } from '../components/DraftExplainer'
 import { PersonFilterGroup } from '../components/PersonFilterGroup'
-import { PHOTO_CARD_GRID_CLASS } from '../components/PhotoCard'
 import { UndoToast } from '../components/UndoToast'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
-import { Skeleton } from '../components/ui/skeleton'
 import { useCurationLightbox } from '../hooks/useCurationLightbox'
 import { useDraftPosition } from '../hooks/useDraftPosition'
 import type { ObserverFactory } from '../hooks/useDraftPosition'
@@ -46,6 +45,7 @@ import {
 } from '../utils/albumDraftTexts'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
 import { groupEventsByDay } from '../utils/eventGrouping'
+import type { JustifiedTile } from '../utils/justifiedRows'
 import { ownRatingStatus } from '../utils/ownRating'
 import { carriesPersons, filterByPersons } from '../utils/personFilter'
 import { STATION_LABELS } from '../utils/projectRoutes'
@@ -380,26 +380,19 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
 
   const cloudConsentGiven = projectQuery.data?.cloud_vision_detection_enabled === true
   const target = projectQuery.data?.effective_selection_target ?? null
-  const motifSetError = motifsQuery.isError
-    ? motifsQuery.error instanceof ApiError
-      ? motifsQuery.error.detail
-      : 'Fehler beim Laden der Motive.'
-    : undefined
   const ready = query.isSuccess && projectQuery.isSuccess && cloudConsentGiven
   const hasEvents = events.length > 0
   const selectionPath = `/projects/${id}/selection`
 
-  function renderTile(photo: PhotoOut) {
+  function renderTile(photo: PhotoOut, tile: JustifiedTile) {
     const struck = ownStatusOf(photo) === 'rejected'
     const bandOpen = openPanel?.kind === 'band' && openPanel.photoId === photo.id
     return (
       <CurationPhotoTile
         key={photo.id}
         photo={photo}
-        motifSet={motifsQuery.data}
-        motifSetLoading={motifsQuery.isLoading}
-        motifSetError={motifSetError}
-        onMotifSetRetry={() => void motifsQuery.refetch()}
+        width={tile.width}
+        imageHeight={tile.height}
         ownStatus={ownStatusOf(photo)}
         deciding={locked.has(photo.id)}
         onDecide={() => (struck ? handleReAdd(photo) : handleStrike(photo))}
@@ -487,13 +480,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
       )}
 
       {(query.isLoading || projectQuery.isLoading) && (
-        <ul role="status" aria-label="Fotos werden geladen…" className={PHOTO_CARD_GRID_CLASS}>
-          {Array.from({ length: SKELETON_TILE_COUNT }, (_, index) => (
-            <li key={index} aria-hidden="true">
-              <Skeleton className="aspect-square w-full rounded-md" />
-            </li>
-          ))}
-        </ul>
+        <CurationSkeletonList count={SKELETON_TILE_COUNT} />
       )}
 
       {query.isError && (

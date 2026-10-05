@@ -4,11 +4,13 @@ import type { AlbumParticipantOut, PhotoOut } from '../api/types'
 import type { ParticipantStance } from '../utils/albumSelection'
 import { participantStance } from '../utils/albumSelection'
 import { NOT_IN_DRAFT_LABEL } from '../utils/albumStateLabels'
+import { iconOnly } from '../utils/curationLayout'
 import { AlbumStateBadge } from './AlbumStateBadge'
+import { CurationDetails } from './CurationDetails'
 import { PhotoCard } from './PhotoCard'
 import { PhotoImage } from './PhotoImage'
+import { TileAction } from './TileAction'
 import { Badge } from './ui/badge'
-import { Button } from './ui/button'
 
 /**
  * Die Kennzeichnung „die beiden haben hier ausdrücklich entschieden".
@@ -21,6 +23,9 @@ export const SELECTION_DECIDED_BADGE_TEXT = 'gemeinsam entschieden'
 
 export interface SelectionPhotoTileProps {
   photo: PhotoOut
+  /** Gerechnete Kachelbreite und Bildhoehe (`useJustifiedRows`). */
+  width: number
+  imageHeight: number
   /**
    * ALLE Teilnehmer, vom Server, nach `user_id` sortiert - sie und nicht `photo.ratings[]`
    * bestimmen die Zahl der Haltungszeilen. Aus `ratings[]` abgeleitet fehlte genau der Nutzer,
@@ -30,9 +35,7 @@ export interface SelectionPhotoTileProps {
   /**
    * Welcher Wert wird gerade geschrieben? `null` = es läuft nichts.
    *
-   * EIN Wert statt eines Wahrheitswerts, damit NUR die gedrückte Schaltfläche `busy` trägt: Bei
-   * zwei Schaltflächen auf derselben Kachel sagte ein bloßes „hier läuft etwas" nicht, welche von
-   * beiden gedrückt wurde, und beide trügen den Spinner.
+   * EIN Wert statt eines Wahrheitswerts, damit NUR die gedrückte Schaltfläche `busy` trägt.
    */
   decidingIncluded: boolean | null
   onDecide: (included: boolean) => void
@@ -43,10 +46,9 @@ export interface SelectionPhotoTileProps {
 }
 
 /**
- * Das Kennzeichen einer Haltung in den Wörtern des Album-Entwurfs (`albumStateLabels.ts`).
- * „Vorschlag" liest allein das lauf-globale `ranking.proposed`; beide Datenformen von „nicht
- * vorgeschlagen" (keine Rangzeile, `proposed: false`) ergeben das neutrale „–" mit dem
- * zugänglichen Namen „Nicht im Entwurf".
+ * Das Kennzeichen einer Haltung: dasselbe Symbolzeichen wie im Album-Entwurf, das Wort ist sein
+ * zugänglicher Name. „Vorschlag" liest allein das lauf-globale `ranking.proposed`; beide
+ * Datenformen von „nicht vorgeschlagen" ergeben das neutrale „–" mit dem Namen „Nicht im Entwurf".
  */
 function StanceBadge({ stance, proposed }: { stance: ParticipantStance; proposed: boolean }) {
   if (stance === 'taken') {
@@ -62,24 +64,16 @@ function StanceBadge({ stance, proposed }: { stance: ParticipantStance; proposed
 }
 
 /**
- * EINE Kachel der gemeinsamen Endauswahl: die Haltung JEDES Teilnehmers, benannt und untereinander,
- * dazu die eine Trefferfläche der gemeinsamen Entscheidung.
- *
- * EIGENE KACHEL STATT EINER ZWEITEN AUSPRÄGUNG VON `CurationPhotoTile`: jene trägt den Zweizustand
- * und die Alternativen des Einzelentwurfs, die es hier nicht gibt. Diese trägt weder
- * Motivstärkeliste noch Info-Popover - sie zeigt die Haltungen und die eine Entscheidung, sonst
- * nichts.
+ * EINE Kachel der gemeinsamen Endauswahl: die Kuratierungskachel mit der gemeinsamen Entscheidung
+ * als Knopfzeile und darunter der Haltung JEDES Teilnehmers.
  *
  * ZWEI BENANNTE ZEILEN SIND DIE ZUSICHERUNG „die Haltung des einen wird nie als die des anderen
  * dargestellt": Die Zuordnung entsteht aus dem vorangestellten Namen und aus `user_id`, nie aus
- * Position, Reihenfolge oder Farbe allein. Jede Haltung ist dreifach codiert (Name des
- * Teilnehmers, eigenes Symbol, zugänglicher Name) und nie allein farbig - das Symbol `check` ist
- * dabei ausgeschlossen, es ist im Produkt bereits die Erfolgsmeldung.
+ * Position, Reihenfolge oder Farbe allein. Das Symbol `check` ist ausgeschlossen, es ist im
+ * Produkt bereits die Erfolgsmeldung.
  *
  * `variant="destructive"` KOMMT HIER NICHT VOR (Kollisionsregel im Docstring von `ui/button.tsx`):
- * gefülltes `--danger` mit dunkler Tinte bei Radius 6px ist formgleich mit dem Kennzeichen
- * „Aussortiert", und diese Kachel zeigt Bewertungs-Kennzeichen je Teilnehmer. Bedienelement und
- * Kennzeichen wären sonst verwechselbar.
+ * Diese Kachel zeigt Bewertungs-Kennzeichen je Teilnehmer.
  *
  * SICHERHEIT (S10): `username` und Dateiname sind fremdbestimmter Text und erscheinen
  * ausschließlich als reguläre React-Textknoten - nie über `dangerouslySetInnerHTML`, nie in
@@ -88,6 +82,8 @@ function StanceBadge({ stance, proposed }: { stance: ParticipantStance; proposed
  */
 export function SelectionPhotoTile({
   photo,
+  width,
+  imageHeight,
   participants,
   decidingIncluded,
   onDecide,
@@ -99,32 +95,30 @@ export function SelectionPhotoTile({
   // Antwortmenge des Entwurfs-Lesepfads und wird hier ausdrücklich nicht benutzt.
   const takenOut = photo.final_selection_decision === false
   const decidedIn = photo.final_selection_decision === true
+  const symbolsOnly = iconOnly(width, photo.contested ? 'selection-contested' : 'selection-single')
 
-  function decisionButton(included: boolean, label: string) {
+  function decisionButton(included: boolean, label: string, align: 'start' | 'end') {
     return (
-      <Button
-        type="button"
-        variant={included ? 'default' : 'secondary'}
-        size="sm"
-        // Volle Kachelbreite, NICHT `flex-1`: In einer Spalte wirkt `flex-1` auf die Hauptachse,
-        // also auf die Höhe - die Schaltfläche fiele auf ihre Textzeile zusammen und verlöre die
-        // sichtbaren 32px, auf denen die Trefferflächen-Aufspannung aufsetzt.
-        className="w-full"
-        busy={decidingIncluded === included}
+      <TileAction
+        icon={included ? 'book' : 'x-circle'}
+        label={label}
         // Der zugängliche Name trägt den Dateinamen - sonst hießen auf einer Seite mit vielen
         // Kacheln alle Schaltflächen gleich.
-        aria-label={`${label}: ${photo.relative_path}`}
+        accessibleName={`${label}: ${photo.relative_path}`}
+        iconOnly={symbolsOnly}
+        tileWidth={width}
+        align={align}
+        busy={decidingIncluded === included}
         onClick={() => onDecide(included)}
-      >
-        {label}
-      </Button>
+      />
     )
   }
 
   return (
     <PhotoCard
+      width={width}
+      imageHeight={imageHeight}
       relativePath={photo.relative_path}
-      // Der zugängliche Name trägt den Dateinamen wie die übrigen Schaltflächen der Kachel.
       onImageActivate={() => onOpenLarge(photo.id)}
       imageTriggerLabel={`Großansicht: ${photo.relative_path}`}
       imageTriggerRef={largeTriggerRef}
@@ -136,26 +130,43 @@ export function SelectionPhotoTile({
           className="size-full object-contain"
         />
       }
-      /* Der ausdrücklich HERAUSGENOMMENE Zustand - dasselbe Muster wie ein gestrichenes Foto im
-         Entwurf (ADR 0071 Entscheidung 3): durchgestrichener Dateiname, Bildfläche in voller
-         Helligkeit.
-
-         `setAside` und NICHT `status='rejected'`: Die Karte trägt hier gar keinen
-         Bewertungszustand. Ein unbenanntes „Verworfen" am Kartenkörper wäre neben den benannten
-         Haltungszeilen als Haltung einer Person lesbar — und „verworfen" ist das Wort der
-         Bewertung eines Nutzers, nicht der Herausnahme durch das Projekt. */
+      // Der ausdrücklich HERAUSGENOMMENE Zustand: durchgestrichener Dateiname und das Zeichen
+      // `x-circle` in der Bildecke, Bildfläche in voller Helligkeit. Ein Foto der Endauswahl trägt
+      // `book`. Die Namen kommen aus derselben Begriffsquelle wie im Album-Entwurf.
       setAside={takenOut}
+      stateMark={
+        takenOut ? (
+          <AlbumStateBadge state="struck" />
+        ) : photo.in_final_selection ? (
+          <AlbumStateBadge state="taken" />
+        ) : undefined
+      }
+      details={<CurationDetails photo={photo} />}
+      // Ein Druck schreibt die Entscheidung SOFORT - kein Dialog, kein Bestätigungsschritt.
+      actions={
+        photo.contested ? (
+          <>
+            {decisionButton(true, 'Aufnehmen', 'start')}
+            {decisionButton(false, 'Nicht aufnehmen', 'end')}
+          </>
+        ) : (
+          decisionButton(
+            !photo.in_final_selection,
+            photo.in_final_selection ? 'Herausnehmen' : 'Aufnehmen',
+            'start',
+          )
+        )
+      }
       footer={
-        <div className="flex flex-col gap-2">
+        <div className="mt-2 flex flex-col gap-1">
           {/* Je Teilnehmer EINE Zeile, in der Reihenfolge von `participants`. Der Dateiname im
-              zugänglichen Namen der Liste macht sie je Kachel eindeutig. Senkrecht gestapelt,
-              damit die Kachel bei 360px vollständig bedienbar bleibt. */}
+              zugänglichen Namen der Liste macht sie je Kachel eindeutig. */}
           <ul
             aria-label={`Haltung zu ${photo.relative_path}`}
             className="flex flex-col gap-1 text-xs text-text"
           >
             {participants.map((participant) => (
-              <li key={participant.user_id} className="flex flex-wrap items-center gap-1">
+              <li key={participant.user_id} className="flex items-center gap-1">
                 <span className="min-w-0 truncate">{participant.username}:</span>
                 <StanceBadge
                   stance={participantStance(photo, participant)}
@@ -170,37 +181,6 @@ export function SelectionPhotoTile({
               <Badge tone="neutral">{SELECTION_DECIDED_BADGE_TEXT}</Badge>
             </div>
           )}
-
-          {/* Ein Druck schreibt die Entscheidung SOFORT - kein Dialog, kein Bestätigungsschritt,
-              keine Abstimmung. Die Aufspannung auf 44px bringt `Button` über `tap-target` selbst
-              mit; eine eigene Höhenklasse baute sie daneben noch einmal nach.
-
-              DIE ENTSCHEIDUNGEN STEHEN UNTEREINANDER, AUF JEDER BREITE - auch auf dem großen
-              Schirm, und das ist kein Zugeständnis an das Telefon: Die Kachel ist auf jeder
-              Rasterstufe schmaler als „Nicht aufnehmen" nebeneinander braucht (das Raster wird mit
-              der Bildschirmbreite spaltenreicher, die Kachel dadurch nicht breiter). `Button`
-              trägt `whitespace-nowrap` und über `size="sm"` ein `min-w-8`, das die inhaltsbasierte
-              Mindestbreite des Flex-Kindes aushebelt - nebeneinander wird die Beschriftung
-              deshalb nicht umbrochen, sondern beschnitten, ohne dass die Seite waagerecht
-              scrollte. Ein Rückfall auf eine Zeile ist damit nicht an einem Überlauf erkennbar,
-              sondern nur an der halb abgeschnittenen Gegenaussage.
-
-              16px Abstand statt der 12px, die das Design-System als Untergrenze nennt: Die
-              aufgespannten Trefferflächen reichen 22px ab der Mitte, und der Eckentest tastet bei
-              21.5px ab - bei 12px begänne die Fläche des Nachbarn genau dort. */}
-          <div className="flex flex-col gap-4">
-            {photo.contested ? (
-              <>
-                {decisionButton(true, 'Aufnehmen')}
-                {decisionButton(false, 'Nicht aufnehmen')}
-              </>
-            ) : (
-              decisionButton(
-                !photo.in_final_selection,
-                photo.in_final_selection ? 'Herausnehmen' : 'Aufnehmen',
-              )
-            )}
-          </div>
         </div>
       }
     />

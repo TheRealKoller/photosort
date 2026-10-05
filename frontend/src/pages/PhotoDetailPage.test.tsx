@@ -154,9 +154,8 @@ function motifSection(): HTMLElement {
 
 describe('PhotoDetailPage', () => {
   beforeEach(() => {
-    // Kein window.matchMedia-Stub mehr noetig (anders als vor Spec 0041) - CriterionDetailsPopover
-    // wird auf dieser Seite seit der permanenten Sektion nicht mehr eingebunden, die neue
-    // CriterionDetailsList ist eine reine Praesentationskomponente ohne matchMedia-Zugriff.
+    // Kein window.matchMedia-Stub noetig: Die Seite bindet kein Popover mit geraetespezifischem
+    // Oeffnungsverhalten ein.
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
@@ -824,10 +823,8 @@ describe('PhotoDetailPage', () => {
     })
 
     // specs/features/0209-bewertungsdetails-bloecke-qualitaet-kategorien.md, Akzeptanzkriterium 1:
-    // genau EIN Oberflaechennachweis, dass die beiden beschrifteten Bloecke auch in der
-    // permanenten Sektion ankommen - die Blockbildungs-Logik selbst liegt vollstaendig in
-    // CriterionDetailsList.test.tsx (specs/architecture/0002-testkonzept.md, useId-Sektion
-    // Punkt 5: keine Doppelabdeckung derselben Logik auf zwei Ebenen).
+    // genau EIN Oberflaechennachweis, dass die beiden beschrifteten Bloecke in der permanenten
+    // Sektion ankommen.
     it('shows both block headings in the permanent section', async () => {
       const list: PhotoListOut = {
         items: [
@@ -862,11 +859,9 @@ describe('PhotoDetailPage', () => {
       ).toBeInTheDocument()
     })
 
-    // Akzeptanzkriterium 2: kein leerer Bereich, wenn criterion_scores leer ist (gleiche Regel wie
-    // die bisherige Icon-Sichtbarkeit, Spec 0040 AK1). Die neue Cloud-Vision-Status-Sektion
-    // (specs/features/0058) bleibt davon unberuehrt - sie ist IMMER sichtbar (eigener describe-
-    // Block unten) und rendert deshalb weiterhin ein eigenes <dl>, nur das der
-    // CriterionDetailsList entfaellt.
+    // Akzeptanzkriterium 2: kein leerer Bereich, wenn criterion_scores leer ist. Die
+    // Cloud-Vision-Status-Sektion (specs/features/0058) bleibt davon unberuehrt - sie ist IMMER
+    // sichtbar (eigener describe-Block unten) und rendert deshalb weiterhin ein eigenes <dl>.
     it('renders no criterion-details dl when criterion_scores is empty', async () => {
       const list: PhotoListOut = { items: [photo({ id: 1, criterion_scores: [] })], total: 1 }
       vi.mocked(photosApi.listPhotos).mockResolvedValue(list)
@@ -893,10 +888,9 @@ describe('PhotoDetailPage', () => {
       ).not.toBeInTheDocument()
     })
 
-    // Akzeptanzkriterium 6/showSuggestion=false: die permanente Sektion reicht suggestion nicht
-    // durch, auch wenn eine Suggestion vorhanden ist - die Ausschuss-Gruppe der CriterionDetailsList
-    // ("Ausschuss-Vorschlag"/"Grund") darf dort nicht erscheinen, unabhaengig vom separaten
-    // "Automatischer Vorschlag"-Kasten weiter unten auf der Seite.
+    // Akzeptanzkriterium 6: die permanente Sektion zeigt keine Ausschuss-Gruppe
+    // ("Ausschuss-Vorschlag"/"Grund"), auch wenn eine Suggestion vorhanden ist - unabhaengig vom
+    // separaten "Automatischer Vorschlag"-Kasten weiter unten auf der Seite.
     it('does not pass suggestion into the permanent section, even when a suggestion exists', async () => {
       const list: PhotoListOut = {
         items: [

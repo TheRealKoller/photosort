@@ -589,6 +589,43 @@ describe('DraftAlternativesBand', () => {
   })
 })
 
+describe('DraftAlternativesBand: die Kandidaten als Kuratierungskachel', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
+  })
+
+  it('renders every candidate as the curation card: symbols repeat and plus, strip, no info', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2, 3]))
+
+    const { container } = renderBand()
+
+    const exchange = await screen.findByRole('button', { name: 'Tauschen: dir/2.jpg' })
+    const add = screen.getByRole('button', { name: 'Hinzufügen: dir/2.jpg' })
+    expect(exchange.querySelector('[data-icon="repeat"]')).not.toBeNull()
+    expect(add.querySelector('[data-icon="plus"]')).not.toBeNull()
+    expect(exchange.parentElement).toBe(add.parentElement)
+    const list = screen.getByRole('list', { name: 'Alternativen, zeitlich geordnet' })
+    expect(list.querySelectorAll('[data-tile-details]')).toHaveLength(2)
+    expect(container.querySelector('[data-icon="info"]')).toBeNull()
+  })
+
+  it('lays the row out as a wrapping flex list with computed numeric widths', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2], { referenceIndex: 0 }))
+
+    renderBand(new Set(), { reference: photo(9, { aspect_ratio: 2 / 3 }) })
+
+    const marker = await screen.findByRole('listitem', { name: 'Wird ersetzt: dir/9.jpg' })
+    const list = screen.getByRole('list', { name: 'Alternativen, zeitlich geordnet' })
+    expect(list.className).toContain('flex-wrap')
+    expect(list.className).not.toMatch(/grid-cols-|aspect-square/)
+    // Vor der ersten Messung: natuerliche Breite des Bezugsbilds zur Zielhoehe, im eigenen
+    // Verhaeltnis.
+    expect(marker.style.width).toBe(`${Math.round((2 / 3) * 280)}px`)
+    expect(marker.querySelector('[class*="aspect-square"]')).toBeNull()
+  })
+})
+
 describe('DraftAddPanel', () => {
   beforeEach(() => {
     vi.resetAllMocks()

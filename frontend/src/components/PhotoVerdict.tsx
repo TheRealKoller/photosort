@@ -1,6 +1,7 @@
 import type { AlbumSuitabilityOut, FineLabelOut, RankingOut } from '../api/types'
 import {
   ALBUM_SUITABILITY_NOT_RATED_TEXT,
+  REASON_ATTRIBUTION,
   formatAlbumSuitabilityLevel,
 } from '../utils/albumSuitability'
 import { FineLabelList } from './FineLabelList'
@@ -21,12 +22,6 @@ interface PhotoVerdictProps {
   ranking: RankingOut | null
   fineLabels: FineLabelOut[]
 }
-
-/** S4 — die Zuschreibung. Sie steht als SICHTBARER TEXTKNOTEN vor der Begründung und damit im
- *  selben Absatz: Assistive Technik liest ihn ohnehin mit, Sehende sehen ihn. Ein `aria-labelledby`
- *  daneben trüge nichts bei - ein `<p>` hat keine namensfähige Rolle, und das benannte Element wäre
- *  sein eigenes Kind. */
-const REASON_ATTRIBUTION = 'Begründung des Modells'
 
 /** Die Beschriftung über einem Wert - dieselbe Stufe wie die Kopfzeilen des Einzelwerte-Rasters,
  *  damit „Albumtauglichkeit" und „Qualität — Einzelwerte" als gleichrangige Aufschriften lesbar

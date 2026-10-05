@@ -52,7 +52,7 @@ const SYMBOL_PFAD = 'symbol'
 /* Erwartete Kardinalitaeten. Sie sind KEINE Gestaltungswerte, sondern der Schutz gegen einen
    halb gelesenen Stand: ohne sie waere ein abgeschnittenes Ergebnis von einem vollstaendigen
    nicht zu unterscheiden. Die Werte stehen so auch in den Akzeptanzkriterien 1, 3 und 5. */
-const ERWARTETE_SYMBOLE = 20
+const ERWARTETE_SYMBOLE = 22
 /* ABLEITUNG (sie steht hier, nicht in einer Nachricht): Bausteine aus `components.json`
    PLUS der Chip, der in der Design-Datei gefuehrt wird und in jener Liste nicht. Aktuell
    13 + 1 = 14. Wer einen Baustein in `components.json` ergaenzt, hebt diese Zahl mit an. */

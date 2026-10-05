@@ -1,13 +1,13 @@
 /**
- * Die Raster der Foto-Karte in Album-Entwurf und Endauswahl - gemessen im echten Browser
- * (specs/features/0563-groessere-unbeschnittene-fotos.md).
+ * Die Raster der Kuratierungskachel in Album-Entwurf, Alternativen-Band, Hinzufuegen-Panel und
+ * Endauswahl - gemessen im echten Browser (specs/features/0579-kuratierungskacheln-foto-im-
+ * mittelpunkt.md). jsdom hat keine Layout-Engine; hier steht die Wirkung der gerechneten Reihen.
  *
- * Gemessen werden die Spaltenleiter (AK1, AK2), das Einpassen des Bildes (AK3) und die ruhige
- * Reihe mit gleich grosser, quadratischer Bildflaeche (AK4). jsdom hat keine Layout-Engine; der
- * Vertragstest `designSystem.contract.test.ts` haelt nur die Klassen fest, ihre Wirkung steht hier.
+ * Je Raster: Bildflaeche im Seitenverhaeltnis des Fotos, gleiche Hoehe je Reihe, volle Reihe
+ * buendig, Reihenhoehe bei 1280 px in [200, 350], jede Kachel >= 100 px, Knopfzeile einzeilig und
+ * nicht breiter als die Kachel, Symbolmodus genau unterhalb der Schwelle der Kachelart.
  *
- * An EIN Projekt gebunden (`DESKTOP_ONLY`): Die Datei setzt ihre Breiten selbst, in beiden
- * Projekten liefe sie mit identischem Ergebnis.
+ * An EIN Projekt gebunden (`DESKTOP_ONLY`): Die Datei setzt ihre Breiten selbst.
  */
 
 import type { Locator, Page } from '@playwright/test'
@@ -17,44 +17,42 @@ import { readOwnDraftStates, restoreOwnDraftStates } from '../lib/draft.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
 const VIEWPORT_HEIGHT = 900
-/** Die Spaltenleiter aus AK1/AK2. Die Grenzbreiten selbst prueft die Spec bewusst nicht. */
-const LADDER = [
-  { width: 360, columns: 2 },
-  { width: 800, columns: 3 },
-  { width: 1280, columns: 4 },
-] as const
-/** Masstoleranz in px (AK4: ±1 px). */
+const WIDTHS = [360, 1280] as const
 const TOLERANCE = 1
-/** Kacheln derselben Reihe duerfen sich in der Oberkante um Subpixel unterscheiden. */
 const SAME_ROW_TOLERANCE = 2
-/** Wartegrenze, bis alle Bilder eines Rasters geladen sind (je ein authentifizierter Blob-Abruf). */
+const TARGET_ROW_HEIGHT = 280
 const IMAGE_LOAD_TIMEOUT_MS = 30_000
+/** `HANDLES_FULL_WIDTH_PX` aus frontend/src/utils/curationLayout.ts, je erster Handlung. */
+const THRESHOLDS: Record<string, number> = {
+  Streichen: 208,
+  'Wieder aufnehmen': 146,
+  Tauschen: 206,
+  Hinzufügen: 102,
+  contested: 248,
+  single: 124,
+}
 
-/** Die Bedienelemente einer Endauswahl-Kachel in Arbeits- und Ergebnissicht. */
-const SELECTION_TILE_CONTROL = /^(Aufnehmen|Nicht aufnehmen|Herausnehmen): /
-
-interface TileMeasurement {
-  /** Oberkante der Kachel - gruppiert die Reihen. */
+interface Tile {
   top: number
+  width: number
+  imageWidth: number
+  imageHeight: number
+  ratio: number
   objectFit: string
-  naturalWidth: number
-  naturalHeight: number
-  area: { width: number; height: number }
-  /** Lage des Elements unter der Bildflaeche (Kennzeichen und Dateiname), relativ zur Kachel. */
-  belowArea: { x: number; y: number } | null
-  /** Lage des Ecken-Handgriffs (Overlay neben der Bildflaeche), relativ zur Kachel. */
-  cornerHandle: { x: number; y: number } | null
+  rowWidth: number
+  buttonTops: number[]
+  kind: string
+  iconOnly: boolean
 }
 
-interface GridMeasurement {
-  columns: number
-  tiles: TileMeasurement[]
+interface Grid {
+  width: number
+  gap: number
+  tiles: Tile[]
 }
 
-/** Die Spaltenzahl des gerenderten Rasters und je Kachel mit Foto ihre Masse. */
-async function measureGrid(grid: Locator): Promise<GridMeasurement> {
+async function measure(grid: Locator): Promise<Grid> {
   await expect(grid.locator(':scope > li img').first()).toBeVisible()
-  // Ohne geladenes Bild waeren `naturalWidth`/`naturalHeight` 0 und die Formatpruefung leer.
   await expect
     .poll(
       () =>
@@ -69,205 +67,164 @@ async function measureGrid(grid: Locator): Promise<GridMeasurement> {
     .toBe(true)
 
   return grid.evaluate((list) => {
-    const columns = window
-      .getComputedStyle(list)
-      .gridTemplateColumns.split(' ')
-      .filter((part) => part.length > 0).length
+    const style = window.getComputedStyle(list)
     const tiles = [...list.querySelectorAll(':scope > li')].flatMap((tile) => {
       const image = tile.querySelector('img')
-      const area = image?.parentElement
-      if (image === null || area === null || area === undefined) {
+      const buttons = [...tile.querySelectorAll('button[aria-label]')].filter(
+        (button) => !/^Großansicht: /.test(button.getAttribute('aria-label') ?? ''),
+      )
+      if (image === null || buttons.length === 0) {
         return []
       }
-      const tileRect = tile.getBoundingClientRect()
-      const relative = (element: Element | null | undefined) => {
-        if (element === null || element === undefined) {
-          return null
-        }
-        const rect = element.getBoundingClientRect()
-        return { x: rect.left - tileRect.left, y: rect.top - tileRect.top }
-      }
-      const areaRect = area.getBoundingClientRect()
-      const corner = [...(area.parentElement?.querySelectorAll('button') ?? [])].find(
-        (button) => button !== area && !area.contains(button),
-      )
+      const area = image.parentElement!.getBoundingClientRect()
+      const rect = tile.getBoundingClientRect()
+      const row = buttons[0]!.parentElement!.getBoundingClientRect()
+      const labels = buttons.map((button) => button.getAttribute('aria-label')!.split(':')[0])
+      const kind = labels.includes('Nicht aufnehmen')
+        ? 'contested'
+        : labels[0] === 'Aufnehmen' || labels[0] === 'Herausnehmen'
+          ? 'single'
+          : (labels[0] ?? '')
       return [
         {
-          top: tileRect.top,
+          top: rect.top,
+          width: rect.width,
+          imageWidth: area.width,
+          imageHeight: area.height,
+          ratio: image.naturalWidth / image.naturalHeight,
           objectFit: window.getComputedStyle(image).objectFit,
-          naturalWidth: image.naturalWidth,
-          naturalHeight: image.naturalHeight,
-          area: { width: areaRect.width, height: areaRect.height },
-          // Bei der Foto-Karte liegt die Bildflaeche in einem Rahmen mit den Overlays; die Zeile
-          // darunter ist dessen Geschwister. Im Band ist die Bildflaeche selbst das Kind der Kachel.
-          belowArea: relative(
-            area.parentElement === tile
-              ? area.nextElementSibling
-              : area.parentElement?.nextElementSibling,
-          ),
-          cornerHandle: relative(corner),
+          rowWidth: row.width,
+          buttonTops: buttons.map((button) => Math.round(button.getBoundingClientRect().top)),
+          kind,
+          iconOnly: buttons[0]!.querySelector('[data-tile-action-hint]') !== null,
         },
       ]
     })
-    return { columns, tiles }
+    return {
+      width: list.getBoundingClientRect().width,
+      gap: parseFloat(style.columnGap) || 0,
+      tiles,
+    }
   })
 }
 
-function firstRow(tiles: TileMeasurement[]): TileMeasurement[] {
-  const top = Math.min(...tiles.map((tile) => tile.top))
-  return tiles.filter((tile) => Math.abs(tile.top - top) <= SAME_ROW_TOLERANCE)
-}
-
-function rowsOf(tiles: TileMeasurement[]): TileMeasurement[][] {
-  const rows: TileMeasurement[][] = []
+function rowsOf(tiles: Tile[]): Tile[][] {
+  const rows: Tile[][] = []
   for (const tile of tiles) {
-    const row = rows.find(
-      (candidate) => Math.abs((candidate[0]?.top ?? 0) - tile.top) <= SAME_ROW_TOLERANCE,
-    )
-    if (row === undefined) {
-      rows.push([tile])
-    } else {
-      row.push(tile)
-    }
+    const row = rows.find((r) => Math.abs(r[0]!.top - tile.top) <= SAME_ROW_TOLERANCE)
+    if (row === undefined) rows.push([tile])
+    else row.push(tile)
   }
   return rows
 }
 
-const isPortrait = (tile: TileMeasurement) => tile.naturalHeight > tile.naturalWidth
-const isLandscape = (tile: TileMeasurement) => tile.naturalWidth > tile.naturalHeight
-
-/**
- * Spaltenzahl der Leiterstufe, kein Beschnitt, quadratische und gleich grosse Bildflaeche. Traegt
- * das Raster mindestens so viele Kacheln wie Spalten, muss die erste Reihe voll besetzt sein - nur
- * dann belegt ihre Kachelzahl die Spaltenzahl auch sichtbar.
- */
-function expectLadderStep(
-  measurement: GridMeasurement,
-  expectedColumns: number,
-  label: string,
-): void {
-  expect(measurement.columns, `Spaltenzahl ${label}`).toBe(expectedColumns)
-  expect(measurement.tiles.length, `Kacheln mit Foto ${label}`).toBeGreaterThan(0)
-
-  const row = firstRow(measurement.tiles)
-  expect(row.length, `Kacheln in der ersten Reihe ${label}`).toBeLessThanOrEqual(expectedColumns)
-  if (measurement.tiles.length >= expectedColumns) {
-    expect(row.length, `volle erste Reihe ${label}`).toBe(expectedColumns)
-  }
-
-  for (const tile of measurement.tiles) {
+function expectCurationGrid(grid: Grid, viewport: number, label: string): void {
+  expect(grid.tiles.length, `Kacheln ${label}`).toBeGreaterThan(0)
+  for (const tile of grid.tiles) {
     expect(tile.objectFit, `object-fit ${label}`).toBe('contain')
-    expect(
-      Math.abs(tile.area.width - tile.area.height),
-      `quadratische Bildflaeche ${label} (${tile.area.width} x ${tile.area.height})`,
-    ).toBeLessThanOrEqual(TOLERANCE)
+    if (tile.ratio >= 0.5) {
+      expect(
+        Math.abs(tile.imageWidth / tile.ratio - tile.imageHeight),
+        `Bildflaeche im Verhaeltnis des Fotos ${label}`,
+      ).toBeLessThanOrEqual(TOLERANCE + 0.5)
+    }
+    expect(tile.width, `Kachel >= 100 px ${label}`).toBeGreaterThanOrEqual(100 - TOLERANCE)
+    expect(tile.rowWidth, `Knopfzeile <= Kachel ${label}`).toBeLessThanOrEqual(
+      tile.width + TOLERANCE,
+    )
+    expect(new Set(tile.buttonTops).size, `Knopfzeile einzeilig ${label}`).toBe(1)
+    const threshold = THRESHOLDS[tile.kind]
+    expect(threshold, `bekannte Kachelart ${tile.kind}`).toBeDefined()
+    expect(tile.iconOnly, `Symbolmodus bei ${tile.width}px (${tile.kind}) ${label}`).toBe(
+      Math.round(tile.width) < (threshold ?? 0),
+    )
   }
-  const reference = row[0]?.area
-  for (const tile of row) {
-    expect(
-      Math.abs(tile.area.width - (reference?.width ?? 0)),
-      `Flaechenbreite ${label}`,
-    ).toBeLessThanOrEqual(TOLERANCE)
-    expect(
-      Math.abs(tile.area.height - (reference?.height ?? 0)),
-      `Flaechenhoehe ${label}`,
-    ).toBeLessThanOrEqual(TOLERANCE)
-  }
+  const rows = rowsOf(grid.tiles)
+  rows.forEach((row, index) => {
+    const height = row[0]!.imageHeight
+    for (const tile of row) {
+      expect(
+        Math.abs(tile.imageHeight - height),
+        `gleiche Hoehe je Reihe ${label}`,
+      ).toBeLessThanOrEqual(TOLERANCE)
+    }
+    const natural = Math.abs(height - TARGET_ROW_HEIGHT) <= TOLERANCE
+    if (index < rows.length - 1 && !natural) {
+      const sum = row.reduce((total, tile) => total + tile.width, 0) + grid.gap * (row.length - 1)
+      expect(Math.abs(sum - grid.width), `volle Reihe buendig ${label}`).toBeLessThanOrEqual(
+        TOLERANCE + row.length,
+      )
+    }
+    if (viewport === 1280 && row.length > 1) {
+      expect(height, `Reihenhoehe ${label}`).toBeGreaterThanOrEqual(200 - TOLERANCE)
+      expect(height, `Reihenhoehe ${label}`).toBeLessThanOrEqual(350 + TOLERANCE)
+    }
+  })
 }
 
-/** Das Albumraster des ersten Eventabschnitts. */
 function draftGrid(page: Page): Locator {
   return page.locator('section[data-draft-position] > ul').first()
 }
 
-/** Das Raster der ersten Gruppe der Endauswahl (Arbeits- oder Ergebnissicht). */
-function selectionGrid(page: Page): Locator {
-  return page
-    .locator('ul')
-    .filter({ has: page.getByRole('button', { name: SELECTION_TILE_CONTROL }) })
-    .first()
-}
-
-/** Das Kandidatenraster eines geoeffneten Bands bzw. Panels (die volle Rasterzeile mit `id`).
- * Das Band traegt eine geordnete Liste, das Hinzufuegen-Panel eine ungeordnete. */
 async function panelGrid(page: Page, trigger: Locator): Promise<Locator> {
   const panel = page.locator(`[id="${await trigger.getAttribute('aria-controls')}"]`)
   return panel.locator(':scope > :is(ul, ol):not([role="status"])')
 }
 
-test('Album-Entwurf: Spaltenleiter 2/3/4, eingepasste Bilder, ruhige Reihe', async ({ page }) => {
+test('Album-Entwurf, Band und Panel: justierte Reihen, Symbolmodus nach Breite', async ({
+  page,
+}) => {
   const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
-
-  for (const { width, columns } of LADDER) {
+  for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: VIEWPORT_HEIGHT })
     await page.goto(`/projects/${projectId}/album`)
-    const label = `im Album-Entwurf bei ${width} px`
+    expectCurationGrid(await measure(draftGrid(page)), width, `im Entwurf bei ${width} px`)
 
-    const grid = await measureGrid(draftGrid(page))
-    expectLadderStep(grid, columns, label)
-
-    // Band: geoeffnet an der ersten Entwurfskachel.
     const alternatives = page.getByRole('button', { name: /^Alternativen: / }).first()
     await alternatives.click()
-    const band = await panelGrid(page, alternatives)
-    expectLadderStep(await measureGrid(band), columns, `im Alternativen-Band bei ${width} px`)
+    expectCurationGrid(
+      await measure(await panelGrid(page, alternatives)),
+      width,
+      `im Band bei ${width} px`,
+    )
     await alternatives.click()
 
-    // Panel: das Hinzufuegen-Feld des ersten Events.
     const addTrigger = page.getByRole('button', { name: /^Foto hinzufügen: / }).first()
     await addTrigger.click()
-    const panel = await panelGrid(page, addTrigger)
-    expectLadderStep(await measureGrid(panel), columns, `im Hinzufuegen-Panel bei ${width} px`)
+    expectCurationGrid(
+      await measure(await panelGrid(page, addTrigger)),
+      width,
+      `im Panel bei ${width} px`,
+    )
     await addTrigger.click()
   }
 })
 
-/**
- * Nimmt jedes Foto eines Events in den Entwurf, das die Oberflaeche dafuer anbietet: zuerst die
- * gestrichenen ueber „Wieder aufnehmen", dann alle Kandidaten des Hinzufuegen-Panels - genau die
- * Handgriffe eines Nutzers. Liefert die Zahl der Albumkacheln danach.
- */
-async function takeEverything(section: Locator): Promise<number> {
-  const albumTiles = section.locator(':scope > ul').getByRole('button', { name: /^Streichen: / })
-
-  const struckToggle = section.getByRole('button', { name: /^\d+ gestrichen – anzeigen$/ })
-  if ((await struckToggle.count()) > 0) {
-    await struckToggle.click()
-    const readd = section.getByRole('button', { name: /^Wieder aufnehmen: / })
-    while ((await readd.count()) > 0) {
-      const count = await albumTiles.count()
-      await readd.first().click()
-      await expect(albumTiles, 'das wieder aufgenommene Foto im Raster').toHaveCount(count + 1)
-    }
+test('Endauswahl: justierte Reihen in Arbeits- und Ergebnissicht', async ({ page }) => {
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  const grid = page
+    .locator('ul')
+    .filter({
+      has: page.getByRole('button', { name: /^(Aufnehmen|Nicht aufnehmen|Herausnehmen): / }),
+    })
+    .first()
+  for (const width of WIDTHS) {
+    await page.setViewportSize({ width, height: VIEWPORT_HEIGHT })
+    await page.goto(`/projects/${projectId}/selection`)
+    expectCurationGrid(await measure(grid), width, `Arbeitssicht bei ${width} px`)
+    await page.getByRole('button', { name: 'Endauswahl', exact: true }).click()
+    expectCurationGrid(await measure(grid), width, `Ergebnissicht bei ${width} px`)
   }
-
-  const addTrigger = section.getByRole('button', { name: /^Foto hinzufügen: / })
-  for (;;) {
-    if ((await addTrigger.getAttribute('aria-expanded')) !== 'true') {
-      await addTrigger.click()
-    }
-    const panel = section.locator(`[id="${await addTrigger.getAttribute('aria-controls')}"]`)
-    const add = panel.getByRole('button', { name: /^Hinzufügen: / })
-    // Zielzustand statt Wartezeit: Kandidaten ODER der Leertext des Panels.
-    await expect(add.first().or(panel.locator(':scope > p'))).toBeVisible()
-    if ((await add.count()) === 0) {
-      await addTrigger.click()
-      return albumTiles.count()
-    }
-    const count = await albumTiles.count()
-    await add.first().click()
-    await expect(albumTiles, 'das hinzugefuegte Foto im Raster').toHaveCount(count + 1)
-  }
-}
+})
 
 /**
- * Der geseedete Entwurf traegt je Event nur ein Foto - zu wenig fuer eine Reihe. Die Events werden
- * deshalb ueber die Oberflaeche aufgefuellt und im `finally` ueber die API zurueckgesetzt.
+ * Der geseedete Entwurf traegt je Event nur ein Foto. Das Event wird ueber die Oberflaeche mit
+ * seinen gestrichenen Fotos aufgefuellt (das einzige Hochformat ist gestrichen) und im `finally`
+ * ueber die API zurueckgesetzt.
  */
-test('Album-Entwurf: Hoch- und Querformat ruhig in einer Reihe, Band unter seiner Reihe', async ({
+test('Album-Entwurf: Hoch- und Querformat in einer Reihe, Band hinter der gerechneten Reihe', async ({
   page,
 }) => {
-  // Auffuellen sind gut ein Dutzend einzeln geschriebene Handgriffe ueber vier Events.
   test.slow()
   const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
   await page.setViewportSize({ width: 1280, height: VIEWPORT_HEIGHT })
@@ -276,114 +233,248 @@ test('Album-Entwurf: Hoch- und Querformat ruhig in einer Reihe, Band unter seine
   const before = await readOwnDraftStates(page, projectId)
 
   try {
-    // AK3/AK4 bei 1280 px: eine Reihe mit Hoch- UND Querformat, gesucht ueber alle Events.
     const sections = page.locator('section[data-draft-position]')
-    const rows: TileMeasurement[][] = []
-    let fullestIndex = 0
-    let fullestCount = 0
+    let mixed: Locator | null = null
     for (let index = 0; index < (await sections.count()); index += 1) {
       const section = sections.nth(index)
-      const count = await takeEverything(section)
-      if (count > 0) {
-        rows.push(...rowsOf((await measureGrid(section.locator(':scope > ul').first())).tiles))
+      const toggle = section.getByRole('button', { name: /^\d+ gestrichen – anzeigen$/ })
+      if ((await toggle.count()) > 0) {
+        await toggle.click()
+        const readd = section.getByRole('button', { name: /^Wieder aufnehmen: / })
+        while ((await readd.count()) > 0) {
+          const count = await section.getByRole('button', { name: /^Streichen: / }).count()
+          await readd.first().click()
+          await expect(section.getByRole('button', { name: /^Streichen: / })).toHaveCount(count + 1)
+        }
       }
-      if (count > fullestCount) {
-        fullestIndex = index
-        fullestCount = count
+      const grid = section.locator(':scope > ul').first()
+      const tiles = (await measure(grid)).tiles
+      if (tiles.some((t) => t.ratio < 1) && tiles.some((t) => t.ratio > 1)) {
+        mixed = grid
+        expectCurationGrid(await measure(grid), 1280, 'gemischte Reihe bei 1280 px')
+        break
       }
     }
-    // Vorbedingung gegen den trivialen Gruen-Fall: ein rein quadratischer Bestand bewiese nichts.
-    const mixedRow = rows.find((row) => row.some(isPortrait) && row.some(isLandscape))
-    expect(mixedRow, 'eine Reihe mit Hoch- UND Querformat im Demo-Bestand').toBeDefined()
-    const portrait = mixedRow?.find(isPortrait)
-    const landscape = mixedRow?.find(isLandscape)
+    expect(mixed, 'ein Event mit Hoch- UND Querformat').not.toBeNull()
 
-    for (const tile of [portrait, landscape]) {
-      expect(tile?.objectFit, 'Bild eingepasst statt beschnitten').toBe('contain')
-    }
-    expect(
-      Math.abs((portrait?.area.width ?? 0) - (landscape?.area.width ?? -9)),
-      'gleich breite Bildflaeche bei Hoch- und Querformat',
-    ).toBeLessThanOrEqual(TOLERANCE)
-    expect(
-      Math.abs((portrait?.area.height ?? 0) - (landscape?.area.height ?? -9)),
-      'gleich hohe Bildflaeche bei Hoch- und Querformat',
-    ).toBeLessThanOrEqual(TOLERANCE)
-    for (const key of ['cornerHandle', 'belowArea'] as const) {
-      const a = portrait?.[key]
-      const b = landscape?.[key]
-      expect(a, `${key} der Hochformat-Kachel`).not.toBeNull()
-      expect(b, `${key} der Querformat-Kachel`).not.toBeNull()
-      expect(Math.abs((a?.x ?? 0) - (b?.x ?? -9)), `${key}: waagerechte Lage`).toBeLessThanOrEqual(
-        TOLERANCE,
-      )
-      expect(Math.abs((a?.y ?? 0) - (b?.y ?? -9)), `${key}: senkrechte Lage`).toBeLessThanOrEqual(
-        TOLERANCE,
-      )
-    }
-
-    // AK2 bei 800 px (drei Spalten): Das Band schliesst die Reihe seiner Kachel ab. Der Demo-Bestand
-    // traegt je Event hoechstens zwei Fotos; mit dem Hinzufuegen-Feld ist das genau eine volle
-    // Reihe zu drei Zellen - das Band muss hinter allen dreien stehen, nicht schon nach zweien.
-    await page.setViewportSize({ width: 800, height: VIEWPORT_HEIGHT })
-    expect(fullestCount, 'ein Event mit mindestens zwei Albumkacheln').toBeGreaterThanOrEqual(2)
-    const grid = sections.nth(fullestIndex).locator(':scope > ul').first()
-    await expect.poll(async () => (await measureGrid(grid)).columns).toBe(3)
-    const trigger = grid.getByRole('button', { name: /^Alternativen: / }).first()
+    const trigger = mixed!.getByRole('button', { name: /^Alternativen: / }).first()
     await trigger.click()
     const bandId = await trigger.getAttribute('aria-controls')
-    await expect(page.locator(`[id="${bandId}"]`), 'geoeffnetes Band').toBeVisible()
-
-    const placement = await grid.evaluate((list, id) => {
+    await expect(page.locator(`[id="${bandId}"]`)).toBeVisible()
+    const placement = await mixed!.evaluate((list, id) => {
       const children = [...list.children]
-      const preceding = children.slice(
-        0,
-        children.findIndex((child) => child.id === id),
-      )
-      const tops = preceding.map((child) => child.getBoundingClientRect().top)
+      const bandIndex = children.findIndex((child) => child.id === id)
+      const triggerTile = children.find((child) =>
+        child.querySelector('button[aria-expanded="true"][aria-label^="Alternativen: "]'),
+      )!
+      const rowTop = triggerTile.getBoundingClientRect().top
+      const before = children[bandIndex - 1]!.getBoundingClientRect()
+      const after = children[bandIndex + 1]?.getBoundingClientRect()
       return {
-        cellsBefore: preceding.length,
-        rowsBefore: new Set(tops.map((top) => Math.round(top))).size,
-        lastRowBottom: Math.max(...preceding.map((child) => child.getBoundingClientRect().bottom)),
-        bandTop: document.getElementById(id ?? '')?.getBoundingClientRect().top ?? 0,
+        lastOfRow: Math.abs(before.top - rowTop) <= 2,
+        nextBelow: after === undefined || after.top > rowTop + 2,
+        bandFull:
+          Math.abs(
+            document.getElementById(id ?? '')!.getBoundingClientRect().width -
+              list.getBoundingClientRect().width,
+          ) <= 1,
       }
     }, bandId)
-
-    expect(
-      placement.cellsBefore,
-      'Zellen vor dem Band (die volle Reihe der ausloesenden Kachel)',
-    ).toBe(Math.min(3, fullestCount + 1))
-    expect(placement.rowsBefore, 'die Zellen vor dem Band bilden genau eine Reihe').toBe(1)
-    expect(placement.bandTop, 'Band unter der Reihe der ausloesenden Kachel').toBeGreaterThan(
-      placement.lastRowBottom - TOLERANCE,
-    )
+    expect(placement.lastOfRow, 'Band folgt der letzten Kachel der Reihe').toBe(true)
+    expect(placement.nextBelow, 'nach dem Band beginnt eine neue Reihe').toBe(true)
+    expect(placement.bandFull, 'Band ueber die volle Breite').toBe(true)
   } finally {
     await restoreOwnDraftStates(page, projectId, before)
   }
 })
 
-test('Endauswahl: Spaltenleiter 2/3/4, eingepasste Bilder, ruhige Reihe', async ({ page }) => {
+test('Leiste bei Bedarf: Hover und Tab-Fokus, innerhalb der Bildflaeche', async ({ page }) => {
   const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.setViewportSize({ width: 1280, height: VIEWPORT_HEIGHT })
+  await page.goto(`/projects/${projectId}/album`)
+  const tile = draftGrid(page).locator(':scope > li').first()
+  const details = tile.locator('[data-tile-details]')
+  await expect(details).not.toHaveAttribute('data-visible', 'true')
 
-  for (const { width, columns } of LADDER) {
-    await page.setViewportSize({ width, height: VIEWPORT_HEIGHT })
-    await page.goto(`/projects/${projectId}/selection`)
-    expectLadderStep(
-      await measureGrid(selectionGrid(page)),
-      columns,
-      `in der Arbeitssicht der Endauswahl bei ${width} px`,
-    )
-  }
+  await tile.locator('img').hover()
+  await expect(details).toHaveAttribute('data-visible', 'true')
+  const image = await tile.locator('img').locator('..').boundingBox()
+  const strip = await details.boundingBox()
+  expect(strip!.y).toBeGreaterThanOrEqual(image!.y - TOLERANCE)
+  expect(strip!.y + strip!.height).toBeLessThanOrEqual(image!.y + image!.height + TOLERANCE)
+  await page.mouse.move(0, 0)
+  await expect(details).not.toHaveAttribute('data-visible', 'true')
 
-  // Die Ergebnissicht ist ein anderes DOM - bei der breitesten Stufe, wo die Leiter endet.
-  await page.getByRole('button', { name: 'Endauswahl', exact: true }).click()
-  await expect(
-    page.getByRole('button', { name: SELECTION_TILE_CONTROL }).first(),
-    'mindestens eine Kachel in der Ergebnissicht',
-  ).toBeVisible()
-  expectLadderStep(
-    await measureGrid(selectionGrid(page)),
-    4,
-    'in der Ergebnissicht der Endauswahl bei 1280 px',
+  await tile.getByRole('button', { name: /^Großansicht: / }).focus()
+  await page.keyboard.press('Tab')
+  await expect(details).toHaveAttribute('data-visible', 'true')
+})
+
+/**
+ * Kurzbeschriftung im Symbolmodus, DETERMINISTISCH: Die echte Entwurfsantwort wird durchgereicht,
+ * nur `aspect_ratio` jedes Fotos auf 1:2 gesetzt (Antwort-Eingriff fuer eine Geometrie-Zusage,
+ * Testkonzept). Bei 360 px teilt sich jedes Foto mit dem 2:3-Hinzufuegen-Feld eine Reihe und ist
+ * damit sicher schmaler als die Schwelle der Entwurfskachel.
+ */
+test('Kurzbeschriftung im Symbolmodus: bei Hover und Tastaturfokus sichtbar, innerhalb der Kachel', async ({
+  page,
+}) => {
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.route('**/api/projects/*/album-draft*', async (route) => {
+    const response = await route.fetch()
+    const json = (await response.json()) as { items: { aspect_ratio: number | null }[] }
+    json.items = json.items.map((item) => ({ ...item, aspect_ratio: 0.5 }))
+    await route.fulfill({ response, json })
+  })
+  await page.setViewportSize({ width: 360, height: VIEWPORT_HEIGHT })
+  await page.goto(`/projects/${projectId}/album`)
+
+  const tile = draftGrid(page).locator(':scope > li').first()
+  const strike = tile.getByRole('button', { name: /^Streichen: / })
+  const alternatives = tile.getByRole('button', { name: /^Alternativen: / })
+  await expect(strike, 'Vorbedingung: Symbolmodus').toHaveCount(1)
+  const tileBox = (await tile.boundingBox())!
+  expect(tileBox.width, 'Vorbedingung: Kachel schmaler als 208 px').toBeLessThan(208)
+
+  const firstHint = strike.locator('[data-tile-action-hint]')
+  const secondHint = alternatives.locator('[data-tile-action-hint]')
+  await expect(firstHint).toBeHidden()
+  await expect(secondHint).toBeHidden()
+
+  // Hover: erster Knopf, Hinweis linksbuendig in der Kachel.
+  await strike.hover()
+  await expect(firstHint).toBeVisible()
+  await expect(firstHint).toHaveText('Streichen')
+  const hover = (await firstHint.boundingBox())!
+  expect(hover.x, 'Hinweis links nicht ausserhalb der Kachel').toBeGreaterThanOrEqual(
+    tileBox.x - TOLERANCE,
   )
+  expect(hover.x + hover.width, 'Hinweis rechts nicht ausserhalb der Kachel').toBeLessThanOrEqual(
+    tileBox.x + tileBox.width + TOLERANCE,
+  )
+  // Lage RELATIV ZUM KNOPF, nicht nur zur Kachel: linksbuendig am ersten Knopf und darueber. Ein
+  // fehlender Positionskontext setzte den Hinweis an den naechsten positionierten Vorfahren.
+  const strikeBox = (await strike.boundingBox())!
+  expect(Math.abs(hover.x - strikeBox.x), 'linksbuendig am ersten Knopf').toBeLessThanOrEqual(
+    TOLERANCE,
+  )
+  expect(hover.y + hover.height, 'Hinweis ueber dem ersten Knopf').toBeLessThanOrEqual(
+    strikeBox.y + TOLERANCE,
+  )
+  expect(
+    strikeBox.y - (hover.y + hover.height),
+    'Hinweis dicht ueber dem Knopf',
+  ).toBeLessThanOrEqual(8)
+  await page.mouse.move(0, 0)
+  await expect(firstHint).toBeHidden()
+
+  // Tastaturfokus: zweiter Knopf, Hinweis rechtsbuendig in der Kachel.
+  await strike.focus()
+  await page.keyboard.press('Tab')
+  await expect(alternatives).toBeFocused()
+  await expect(secondHint).toBeVisible()
+  await expect(secondHint).toHaveText('Alternativen')
+  const focus = (await secondHint.boundingBox())!
+  const buttonBox = (await alternatives.boundingBox())!
+  expect(
+    Math.abs(focus.x + focus.width - (buttonBox.x + buttonBox.width)),
+    'rechtsbuendig am zweiten Knopf',
+  ).toBeLessThanOrEqual(TOLERANCE)
+  expect(focus.x, 'Hinweis links nicht ausserhalb der Kachel').toBeGreaterThanOrEqual(
+    tileBox.x - TOLERANCE,
+  )
+  expect(focus.y + focus.height, 'Hinweis ueber dem Knopf').toBeLessThanOrEqual(
+    buttonBox.y + TOLERANCE,
+  )
+})
+
+/**
+ * Langer Grund in schmaler Kachel: 160 Zeichen bei etwa 100 px Kachelbreite. Die Leiste bleibt
+ * innerhalb der Bildflaeche und laesst sich bis zum Dateinamen scrollen - nichts wird abgeschnitten.
+ * Antwort-Eingriff wie oben: echte Entwurfsantwort, nur Verhaeltnis und Begruendung gesetzt.
+ */
+test('lange Begruendung in einer 100-px-Kachel bleibt vollstaendig erreichbar', async ({
+  page,
+}) => {
+  const reason = 'Gesichter scharf, Licht weich und warm, Hintergrund ruhig. '
+    .repeat(3)
+    .slice(0, 160)
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.route('**/api/projects/*/album-draft*', async (route) => {
+    const response = await route.fetch()
+    const json = (await response.json()) as {
+      items: { aspect_ratio: number | null; album_suitability: unknown }[]
+    }
+    json.items = json.items.map((item) => ({
+      ...item,
+      aspect_ratio: 0.5,
+      album_suitability: { level: 3, reason },
+    }))
+    await route.fulfill({ response, json })
+  })
+  await page.setViewportSize({ width: 280, height: VIEWPORT_HEIGHT })
+  await page.goto(`/projects/${projectId}/album`)
+
+  const tile = draftGrid(page).locator(':scope > li').first()
+  const image = tile.getByRole('button', { name: /^Großansicht: / })
+  await expect(image).toBeVisible()
+  const tileBox = (await tile.boundingBox())!
+  expect(tileBox.width, 'Vorbedingung: Kachel um 100 px').toBeLessThanOrEqual(110)
+  expect(tileBox.width).toBeGreaterThanOrEqual(100 - TOLERANCE)
+
+  await image.hover()
+  const strip = tile.locator('[data-tile-details]')
+  await expect(strip).toHaveAttribute('data-visible', 'true')
+  await expect(strip.locator('[data-album-suitability-reason]')).toContainText(reason)
+
+  const imageBox = (await image.boundingBox())!
+  const stripBox = (await strip.boundingBox())!
+  expect(stripBox.y, 'Leiste nicht ueber der Bildflaeche').toBeGreaterThanOrEqual(
+    imageBox.y - TOLERANCE,
+  )
+  expect(stripBox.y + stripBox.height, 'Leiste nicht unter der Bildflaeche').toBeLessThanOrEqual(
+    imageBox.y + imageBox.height + TOLERANCE,
+  )
+
+  // Bis ans Ende scrollen: Der Dateiname - die letzte Zeile - steht dann sichtbar in der Leiste.
+  const overflow = await strip.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    return element.scrollHeight > element.clientHeight
+  })
+  expect(overflow, 'Vorbedingung: der Inhalt ist hoeher als die Leiste').toBe(true)
+  await expect(strip).toHaveAttribute('tabindex', '0')
+  const fileName = strip.locator(':scope > p').last()
+  const nameBox = (await fileName.boundingBox())!
+  const scrolled = (await strip.boundingBox())!
+  expect(nameBox.y + nameBox.height, 'Dateiname nach dem Scrollen sichtbar').toBeLessThanOrEqual(
+    scrolled.y + scrolled.height + TOLERANCE,
+  )
+  expect(nameBox.y).toBeGreaterThanOrEqual(scrolled.y - TOLERANCE)
+})
+
+test.describe('Telefon (Touch, ohne Hover)', () => {
+  test.use({ viewport: { width: 360, height: 800 }, hasTouch: true, isMobile: true })
+
+  test('langer Druck zeigt die Leiste und oeffnet keine Grossansicht', async ({ page }) => {
+    const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+    await page.goto(`/projects/${projectId}/album`)
+    const tile = draftGrid(page).locator(':scope > li').first()
+    const trigger = tile.getByRole('button', { name: /^Großansicht: / })
+    const details = tile.locator('[data-tile-details]')
+    await expect(trigger).toBeVisible()
+
+    // Kurzer Druck: keine Leiste.
+    await trigger.dispatchEvent('pointerdown', { pointerType: 'touch' })
+    await page.waitForTimeout(200)
+    await trigger.dispatchEvent('pointerup', { pointerType: 'touch' })
+    await expect(details).not.toHaveAttribute('data-visible', 'true')
+
+    // Langer Druck (>= 500 ms): Leiste sichtbar, der folgende Klick oeffnet nichts.
+    await trigger.dispatchEvent('pointerdown', { pointerType: 'touch' })
+    await page.waitForTimeout(700)
+    await trigger.dispatchEvent('pointerup', { pointerType: 'touch' })
+    await trigger.dispatchEvent('click')
+    await expect(details).toHaveAttribute('data-visible', 'true')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
 })

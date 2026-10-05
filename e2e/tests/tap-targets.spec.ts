@@ -180,8 +180,9 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   // Heisser Pfad nach derselben Begruendung wie die Bewertungsleiste: Beim Durchgehen des Album-
   // Entwurfs wird hier viele Male hintereinander gedrueckt, und ein Fehlgriff schreibt einen
   // falschen Datenwert. "Streichen" und "Alternativen" stehen bei 360 px unmittelbar
-  // UNTEREINANDER - das ist genau die Fehlerklasse "ueberlappende aufgespannte Trefferflaechen
-  // benachbarter Bedienelemente", die der Treffertest mit abdeckt: er meldete dann das
+  // NEBENEINANDER (im Symbolmodus sichtbar 44 x 44 px mit 12 px Abstand) - das ist genau die
+  // Fehlerklasse "ueberlappende aufgespannte Trefferflaechen benachbarter Bedienelemente", die der
+  // Treffertest mit abdeckt: er meldete dann das
   // Nachbarelement. Band, Panel und Gestrichen-Zeile entstehen erst durch einen Druck und werden
   // deshalb geoeffnet, bevor ihre Handgriffe gemessen werden.
   await page.goto(`/projects/${projectId}/album`)
