@@ -81,6 +81,7 @@ describe('api/photos', () => {
       total: 1,
       offset: 60,
       reference_index: 3,
+      series_rest: 0,
     }
     vi.mocked(apiFetch).mockResolvedValue(answer)
 
@@ -97,15 +98,15 @@ describe('api/photos', () => {
     expect(result).toEqual(answer)
   })
 
-  it('asks the band for the nearest window and sends no page of its own', async () => {
-    // Mit `nearest` schneidet allein der Server das Fenster - ein mitgeschicktes
+  it('asks the band for the series window and sends no page of its own', async () => {
+    // Mit `series` schneidet allein der Server das Fenster - ein mitgeschicktes
     // `limit`/`offset` waere wirkungslos und wird deshalb gar nicht erst gesendet.
     vi.mocked(apiFetch).mockResolvedValue(PHOTO_LIST)
 
-    await listDraftAlternatives(1, { eventId: 42, photoId: 7, nearest: 4 })
+    await listDraftAlternatives(1, { eventId: 42, photoId: 7, series: true })
 
     expect(apiFetch).toHaveBeenCalledWith(
-      '/projects/1/draft-alternatives?event_id=42&photo_id=7&nearest=4',
+      '/projects/1/draft-alternatives?event_id=42&photo_id=7&series=true',
     )
   })
 

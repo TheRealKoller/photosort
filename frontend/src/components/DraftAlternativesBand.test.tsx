@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,10 +9,12 @@ import type { DraftAlternativesOut, EventOut, PhotoOut } from '../api/types'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
 import {
   ALTERNATIVES_ORDER_TEXT,
-  BAND_SIZE,
   CANDIDATES_NONE_TEXT,
   DraftAddPanel,
   DraftAlternativesBand,
+  REFERENCE_LATER_TEXT,
+  SHOW_ALL_LABEL,
+  SHOW_LESS_LABEL,
 } from './DraftAlternativesBand'
 
 vi.mock('../api/photos')
@@ -63,13 +66,21 @@ function answer(
     offset = 0,
     referenceIndex = null,
     total = ids.length,
+    seriesRest = 0,
   }: {
     offset?: number
     referenceIndex?: number | null
     total?: number
+    seriesRest?: number
   } = {},
 ): DraftAlternativesOut {
-  return { items: ids.map((id) => photo(id)), total, offset, reference_index: referenceIndex }
+  return {
+    items: ids.map((id) => photo(id)),
+    total,
+    offset,
+    reference_index: referenceIndex,
+    series_rest: seriesRest,
+  }
 }
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -77,24 +88,52 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }
 
-function renderBand(excludedIds: ReadonlySet<number> = new Set()) {
+function renderBand(
+  excludedIds: ReadonlySet<number> = new Set(),
+  overrides: {
+    onClose?: () => void
+    onExchange?: (alternative: PhotoOut) => void
+    onAdd?: (alternative: PhotoOut, neighborId: number | null) => void
+    busyIds?: ReadonlySet<number>
+    reference?: PhotoOut
+  } = {},
+) {
   return render(
     <ul>
       <DraftAlternativesBand
         id="band"
         projectId={1}
-        photo={photo(9)}
+        photo={overrides.reference ?? photo(9)}
         username={USERNAME}
         excludedIds={excludedIds}
-        onExchange={() => {}}
-        busyIds={new Set()}
+        onExchange={overrides.onExchange ?? (() => {})}
+        onAdd={overrides.onAdd ?? (() => {})}
+        busyIds={overrides.busyIds ?? new Set()}
         error={null}
-        onOpenAll={() => {}}
-        onClose={() => {}}
+        onClose={overrides.onClose ?? (() => {})}
       />
     </ul>,
     { wrapper },
   )
+}
+
+/** Die Serie (mit `series`) und die volle Reihe (seitenweise) getrennt beantworten. */
+function mockSeriesAndRow(series: DraftAlternativesOut, ...rowPages: DraftAlternativesOut[]) {
+  let rowCall = 0
+  vi.mocked(photosApi.listDraftAlternatives).mockImplementation(async (_projectId, params) => {
+    if (params.series === true) {
+      return series
+    }
+    const page = rowPages[Math.min(rowCall, rowPages.length - 1)]
+    rowCall += 1
+    return page
+  })
+}
+
+function rowCalls() {
+  return vi
+    .mocked(photosApi.listDraftAlternatives)
+    .mock.calls.filter(([, params]) => params.series !== true)
 }
 
 /** Die Zellen der geordneten Reihe: Kandidaten über ihre Aktion, die Marke über ihren Namen. */
@@ -114,17 +153,297 @@ describe('DraftAlternativesBand', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
   })
 
-  it('asks the server for the nearest window around THIS photo', async () => {
+  it('asks the server for the series window around THIS photo', async () => {
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2]))
 
     renderBand()
 
     await screen.findByRole('button', { name: 'Tauschen: dir/2.jpg' })
+    expect(photosApi.listDraftAlternatives).toHaveBeenCalledTimes(1)
     expect(photosApi.listDraftAlternatives).toHaveBeenCalledWith(1, {
       eventId: EVENT.id,
       photoId: 9,
-      nearest: BAND_SIZE,
+      series: true,
     })
+  })
+
+  it('offers "Tauschen" then "Hinzufügen" at every alternative and none at the marker', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+      answer([2, 3], { referenceIndex: 1 }),
+    )
+
+    renderBand()
+
+    await screen.findByRole('button', { name: 'Tauschen: dir/2.jpg' })
+    const list = screen.getByRole('list', { name: 'Alternativen, zeitlich geordnet' })
+    const names = within(list)
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label'))
+    expect(names).toEqual([
+      'Tauschen: dir/2.jpg',
+      'Hinzufügen: dir/2.jpg',
+      'Tauschen: dir/3.jpg',
+      'Hinzufügen: dir/3.jpg',
+    ])
+    const marker = screen.getByRole('listitem', { name: 'Wird ersetzt: dir/9.jpg' })
+    expect(within(marker).queryByRole('button')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Tauschen: dir/2.jpg' })).toHaveTextContent(
+      /^Tauschen$/,
+    )
+    expect(screen.getByRole('button', { name: 'Hinzufügen: dir/2.jpg' })).toHaveTextContent(
+      /^Hinzufügen$/,
+    )
+    expect(screen.getByRole('button', { name: 'Hinzufügen: dir/2.jpg' })).toHaveAttribute(
+      'data-focus-key',
+      'add-2',
+    )
+    expect(within(list).queryByText('+')).toBeNull()
+  })
+
+  it('passes the alternative and its neighbour to "Hinzufügen", the alternative to "Tauschen"', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2, 3]))
+    const onAdd = vi.fn()
+    const onExchange = vi.fn()
+    const user = userEvent.setup()
+
+    renderBand(new Set(), { onAdd, onExchange })
+
+    await user.click(await screen.findByRole('button', { name: 'Hinzufügen: dir/2.jpg' }))
+    await user.click(screen.getByRole('button', { name: 'Tauschen: dir/3.jpg' }))
+
+    expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }), 3)
+    expect(onExchange).toHaveBeenCalledWith(expect.objectContaining({ id: 3 }))
+  })
+
+  it('locks both actions of a busy alternative and leaves the others usable', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2, 3]))
+    const onAdd = vi.fn()
+    const user = userEvent.setup()
+
+    renderBand(new Set(), { busyIds: new Set([2]), onAdd })
+
+    const add = await screen.findByRole('button', { name: 'Hinzufügen: dir/2.jpg' })
+    expect(add).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Tauschen: dir/2.jpg' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Hinzufügen: dir/3.jpg' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Tauschen: dir/3.jpg' })).toBeEnabled()
+    await user.click(add)
+    expect(onAdd).not.toHaveBeenCalled()
+  })
+
+  it('keeps a hostile file name as plain text in the names and creates no element', async () => {
+    const hostile = '<img src=x onerror=alert(1)>.jpg'
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      ...answer([]),
+      items: [photo(2, { relative_path: hostile })],
+      total: 1,
+    })
+
+    const { container } = renderBand()
+
+    expect(await screen.findByRole('button', { name: `Tauschen: ${hostile}` })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: `Hinzufügen: ${hostile}` })).toBeInTheDocument()
+    expect(container.querySelector('img[src="x"]')).toBeNull()
+  })
+
+  it('names the rest of the series only when there is one, singular and plural', async () => {
+    const singular = '1 weitere Aufnahme dieser Serie unter „Alle Fotos des Events“.'
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2, 3]))
+    const { unmount } = renderBand()
+    await screen.findByRole('button', { name: 'Tauschen: dir/2.jpg' })
+    expect(screen.queryByText(/weitere Aufnahme/)).toBeNull()
+    unmount()
+
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2, 3], { seriesRest: 1 }))
+    const second = renderBand()
+    expect(await screen.findByText(singular)).toBeInTheDocument()
+    second.unmount()
+
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2, 3], { seriesRest: 7 }))
+    renderBand()
+    expect(
+      await screen.findByText('7 weitere Aufnahmen dieser Serie unter „Alle Fotos des Events“.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows no rest hint for a value that is not a positive integer', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(
+      answer([2, 3], { seriesRest: 1.5 }),
+    )
+
+    renderBand()
+
+    await screen.findByRole('button', { name: 'Tauschen: dir/2.jpg' })
+    expect(screen.queryByText(/weitere Aufnahme/)).toBeNull()
+  })
+
+  it('has no toggle while the series loads and none for an empty series', async () => {
+    let resolve: (value: DraftAlternativesOut) => void = () => {}
+    vi.mocked(photosApi.listDraftAlternatives).mockReturnValue(
+      new Promise((done) => {
+        resolve = done
+      }),
+    )
+
+    renderBand()
+
+    expect(screen.getByRole('status', { name: 'Fotos werden geladen…' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: SHOW_ALL_LABEL })).toBeNull()
+    resolve(answer([], { referenceIndex: 0 }))
+    expect(await screen.findByText(CANDIDATES_NONE_TEXT)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: SHOW_ALL_LABEL })).toBeNull()
+  })
+
+  it('keeps the toggle when the series fails to load', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockRejectedValue(new Error('kaputt'))
+
+    renderBand()
+
+    expect(await screen.findByRole('button', { name: 'Erneut versuchen' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: SHOW_ALL_LABEL })).toBeInTheDocument()
+  })
+
+  it('expands the full row in place: lazily, without a dialog, scrolling or losing focus', async () => {
+    mockSeriesAndRow(
+      answer([3, 4], { offset: 1, referenceIndex: 2, total: 5, seriesRest: 2 }),
+      answer([2, 3, 4, 5, 6], { referenceIndex: 2 }),
+    )
+    const scrollIntoView = vi.fn()
+    const scrollTo = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    window.scrollTo = scrollTo
+    const user = userEvent.setup()
+
+    renderBand()
+
+    const toggle = await screen.findByRole('button', { name: SHOW_ALL_LABEL })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute(
+      'aria-controls',
+      screen.getByRole('list', { name: 'Alternativen, zeitlich geordnet' }).id,
+    )
+    expect(rowCalls()).toHaveLength(0)
+
+    await user.click(toggle)
+
+    await screen.findByRole('button', { name: 'Tauschen: dir/6.jpg' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(toggle).toHaveTextContent(SHOW_LESS_LABEL)
+    expect(toggle).toHaveFocus()
+    expect(rowCalls()).toEqual([[1, { eventId: EVENT.id, photoId: 9, limit: 60, offset: 0 }]])
+    expect(rowCells()).toEqual([
+      'Tauschen: dir/2.jpg',
+      'Tauschen: dir/3.jpg',
+      'Wird ersetzt: dir/9.jpg',
+      'Tauschen: dir/4.jpg',
+      'Tauschen: dir/5.jpg',
+      'Tauschen: dir/6.jpg',
+    ])
+    expect(screen.queryByText(/weitere Aufnahmen/)).toBeNull()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+
+    await user.click(toggle)
+    expect(toggle).toHaveTextContent(SHOW_ALL_LABEL)
+    expect(toggle).toHaveFocus()
+    expect(rowCells()).toEqual([
+      'Tauschen: dir/3.jpg',
+      'Wird ersetzt: dir/9.jpg',
+      'Tauschen: dir/4.jpg',
+    ])
+    expect(screen.getByText(/2 weitere Aufnahmen/)).toBeInTheDocument()
+
+    await user.click(toggle)
+    await screen.findByRole('button', { name: 'Tauschen: dir/6.jpg' })
+    expect(rowCalls()).toHaveLength(1)
+    expect(
+      vi.mocked(photosApi.listDraftAlternatives).mock.calls.filter(([, p]) => p.series === true),
+    ).toHaveLength(1)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(scrollTo).not.toHaveBeenCalled()
+  })
+
+  it('closes band and row together with Escape, also when expanded', async () => {
+    mockSeriesAndRow(answer([3]), answer([2, 3]))
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+
+    renderBand(new Set(), { onClose })
+
+    await user.click(await screen.findByRole('button', { name: SHOW_ALL_LABEL }))
+    await screen.findByRole('button', { name: 'Tauschen: dir/2.jpg' })
+    await user.keyboard('{Escape}')
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads the next page with "Weitere Fotos" and places the marker exactly once', async () => {
+    // Grenzfall aus dem abgeloesten Dialog: `reference_index` faellt genau auf die Seitengrenze.
+    // Solange eine weitere Seite folgt, steht die Marke NICHT am Ende von Seite 1.
+    mockSeriesAndRow(
+      answer([2], { referenceIndex: 1 }),
+      answer([2], { referenceIndex: 1, total: 2 }),
+      answer([3], { offset: 1, referenceIndex: 1, total: 2 }),
+    )
+    const user = userEvent.setup()
+
+    renderBand()
+    await user.click(await screen.findByRole('button', { name: SHOW_ALL_LABEL }))
+
+    expect(await screen.findByText(REFERENCE_LATER_TEXT)).toBeInTheDocument()
+    expect(screen.queryByRole('listitem', { name: /^Wird ersetzt/ })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Weitere Fotos' }))
+
+    await screen.findByRole('button', { name: 'Tauschen: dir/3.jpg' })
+    expect(rowCells()).toEqual([
+      'Tauschen: dir/2.jpg',
+      'Wird ersetzt: dir/9.jpg',
+      'Tauschen: dir/3.jpg',
+    ])
+    expect(screen.queryByText(REFERENCE_LATER_TEXT)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Weitere Fotos' })).toBeNull()
+  })
+
+  it('puts the marker on page one and at the end without a following page', async () => {
+    mockSeriesAndRow(answer([2]), answer([2, 3], { referenceIndex: 1, total: 4 }))
+    const user = userEvent.setup()
+
+    renderBand()
+    await user.click(await screen.findByRole('button', { name: SHOW_ALL_LABEL }))
+
+    await screen.findByRole('button', { name: 'Tauschen: dir/3.jpg' })
+    expect(rowCells()).toEqual([
+      'Tauschen: dir/2.jpg',
+      'Wird ersetzt: dir/9.jpg',
+      'Tauschen: dir/3.jpg',
+    ])
+    expect(screen.getByRole('button', { name: 'Weitere Fotos' })).toBeInTheDocument()
+  })
+
+  it('puts the marker at the end of the last page', async () => {
+    mockSeriesAndRow(answer([2]), answer([2, 3], { referenceIndex: 2 }))
+    const user = userEvent.setup()
+
+    renderBand()
+    await user.click(await screen.findByRole('button', { name: SHOW_ALL_LABEL }))
+
+    await screen.findByRole('button', { name: 'Tauschen: dir/3.jpg' })
+    expect(rowCells()).toEqual([
+      'Tauschen: dir/2.jpg',
+      'Tauschen: dir/3.jpg',
+      'Wird ersetzt: dir/9.jpg',
+    ])
+    expect(screen.queryByText(REFERENCE_LATER_TEXT)).toBeNull()
+  })
+
+  it('offers no "Weitere Fotos" in the series', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2], { total: 30 }))
+
+    renderBand()
+
+    await screen.findByRole('button', { name: 'Tauschen: dir/2.jpg' })
+    expect(screen.queryByRole('button', { name: 'Weitere Fotos' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Alle Alternativen' })).toBeNull()
   })
 
   it('names the order and puts the photo to be replaced between its neighbours', async () => {

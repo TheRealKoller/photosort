@@ -31,9 +31,9 @@ export interface ListDraftAlternativesParams {
   photoId?: number
   limit?: number
   offset?: number
-  /** Das Band: die `nearest` zeitlich nächsten Alternativen, Fenster vom Server geschnitten. Nur
+  /** Das Band: die Aufnahmeserie um das Bezugsbild, Fenster vom Server geschnitten. Nur
    * zusammen mit `photoId`; `limit`/`offset` werden dann nicht gesendet. */
-  nearest?: number
+  series?: true
 }
 
 export function listPhotos(
@@ -87,8 +87,8 @@ export function listDraftAlternatives(
   if (params.photoId !== undefined) {
     query.set('photo_id', String(params.photoId))
   }
-  if (params.nearest !== undefined) {
-    query.set('nearest', String(params.nearest))
+  if (params.series === true) {
+    query.set('series', 'true')
   } else {
     if (params.limit !== undefined) {
       query.set('limit', String(params.limit))

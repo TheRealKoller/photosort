@@ -1035,7 +1035,6 @@ describe('Design-Vertrag: statische Verwendungsregeln', () => {
     'src/components/CurationPhotoTile.tsx',
     'src/components/SelectionPhotoTile.tsx',
     'src/components/DraftAlternativesBand.tsx',
-    'src/components/DraftAlternativesDialog.tsx',
   ])('haelt object-cover aus %s heraus (kein Beschnitt)', (path) => {
     const file = sourceFiles.find((candidate) => candidate.path.endsWith(path))
     expect(file, `${path} muss im Pruefsatz liegen`).toBeDefined()

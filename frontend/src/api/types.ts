@@ -892,13 +892,15 @@ export interface PhotoListOut {
 /**
  * Die Antwort des Alternativen-Endpunkts: `offset` ist der Beginn der
  * Seite in der vollen Reihe, `reference_index` die Stelle des Bezugsbildes darin (Zahl der
- * Alternativen davor) - ohne Bezugsbild `null`. Das Frontend rechnet keine Zeit nach.
+ * Alternativen davor) - ohne Bezugsbild `null`. `series_rest` ist die Zahl der Serienaufnahmen
+ * jenseits des Bandfensters (nur mit `series`, sonst `0`). Das Frontend rechnet keine Zeit nach.
  */
 export interface DraftAlternativesOut {
   items: PhotoOut[]
   total: number
   offset: number
   reference_index: number | null
+  series_rest: number
 }
 
 /**

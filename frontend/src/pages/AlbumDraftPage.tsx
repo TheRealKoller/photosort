@@ -8,7 +8,6 @@ import { getToken } from '../auth/token'
 import { CurationLightbox } from '../components/CurationLightbox'
 import { CurationPhotoTile } from '../components/CurationPhotoTile'
 import { DraftAddPanel, DraftAlternativesBand } from '../components/DraftAlternativesBand'
-import { DraftAlternativesDialog } from '../components/DraftAlternativesDialog'
 import { DraftEventSection } from '../components/DraftEventSection'
 import { DraftExplainer } from '../components/DraftExplainer'
 import { PersonFilterGroup } from '../components/PersonFilterGroup'
@@ -125,7 +124,6 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
   const lightbox = useCurationLightbox({ items: query.data?.items, headingRef })
 
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null)
-  const [allAlternativesPhotoId, setAllAlternativesPhotoId] = useState<number | null>(null)
   const panelBaseId = useId()
 
   // Die Sperre je Foto: der Ref ist die SYNCHRONE Wahrheit, der State löst das Neurendern aus.
@@ -270,7 +268,15 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
     )
   }
 
-  function handleAdd(candidate: PhotoOut, neighborId: number | null, eventId: number): void {
+  /** Hinzufügen aus Hinzufügen-Panel, Band oder aufgeklappter Reihe - derselbe Schreibweg
+   * (`decisionMutation` mit `album_worthy`), ohne Rückgängig. Es schließt nichts: Das Foto
+   * verlässt die Liste über `excludedIds`, der Fokus wandert zum Nachbarn. */
+  function handleAdd(
+    candidate: PhotoOut,
+    neighborId: number | null,
+    where: string,
+    fallbackFocusKey: string,
+  ): void {
     if (!lock([candidate.id])) {
       return
     }
@@ -281,11 +287,10 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
       {
         onSuccess: () =>
           setFocusRequest({
-            key: neighborId === null ? `panel-heading-${eventId}` : `add-${neighborId}`,
+            key: neighborId === null ? fallbackFocusKey : `add-${neighborId}`,
             scroll: false,
           }),
-        onError: (error) =>
-          setActionError({ where: `panel-${eventId}`, message: errorText(error) }),
+        onError: (error) => setActionError({ where, message: errorText(error) }),
         onSettled: () => unlock([candidate.id]),
       },
     )
@@ -304,7 +309,6 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
       {
         onSuccess: () => {
           setOpenPanel(null)
-          setAllAlternativesPhotoId(null)
           showUndo({ kind: 'exchange', replaced, chosen, chosenPrevious, replacedPrevious })
           if (carriesPersons(chosen, personIds)) {
             setFocusRequest({ key: `decide-${chosen.id}`, scroll: true })
@@ -416,7 +420,6 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
     openPanel?.kind === 'band'
       ? albumItems.find((photo) => photo.id === openPanel.photoId)
       : undefined
-  const allAlternativesPhoto = items.find((photo) => photo.id === allAlternativesPhotoId)
   const closing = target === null ? null : draftClosingTexts(counts, target)
   const smallerProposal =
     target === null || !query.data
@@ -629,7 +632,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
                                 photoId: bandPhoto.id,
                                 node: (
                                   <DraftAlternativesBand
-                                    key="band"
+                                    key={`band-${bandPhoto.id}`}
                                     id={`${panelBaseId}-band`}
                                     projectId={id}
                                     photo={bandPhoto}
@@ -638,12 +641,11 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
                                     onExchange={(chosen) =>
                                       handleExchange(bandPhoto, chosen, 'band')
                                     }
+                                    onAdd={(candidate, neighborId) =>
+                                      handleAdd(candidate, neighborId, 'band', 'band-heading')
+                                    }
                                     busyIds={locked}
                                     error={errorAt('band')}
-                                    onOpenAll={() => {
-                                      setActionError(null)
-                                      setAllAlternativesPhotoId(bandPhoto.id)
-                                    }}
                                     onClose={() => {
                                       setOpenPanel(null)
                                       setFocusRequest({
@@ -670,7 +672,12 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
                                     username={username}
                                     excludedIds={albumIds}
                                     onAdd={(candidate, neighborId) =>
-                                      handleAdd(candidate, neighborId, eventId)
+                                      handleAdd(
+                                        candidate,
+                                        neighborId,
+                                        `panel-${eventId}`,
+                                        `panel-heading-${eventId}`,
+                                      )
                                     }
                                     busyIds={locked}
                                     error={errorAt(`panel-${eventId}`)}
@@ -722,22 +729,6 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         onUndo={handleUndo}
         onDismiss={endUndo}
       />
-
-      {allAlternativesPhoto !== undefined && (
-        <DraftAlternativesDialog
-          projectId={id}
-          photo={allAlternativesPhoto}
-          username={username}
-          open
-          onClose={() => {
-            setAllAlternativesPhotoId(null)
-            setActionError(null)
-          }}
-          onChoose={(chosen) => handleExchange(allAlternativesPhoto, chosen, 'dialog')}
-          exchanging={exchangeMutation.isPending}
-          error={errorAt('dialog')}
-        />
-      )}
 
       {lightbox.photo !== undefined && (
         <CurationLightbox key={lightbox.photo.id} photo={lightbox.photo} onClose={lightbox.close} />

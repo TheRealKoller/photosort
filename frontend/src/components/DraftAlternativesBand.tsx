@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react'
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { ApiError } from '../api/client'
@@ -20,12 +20,18 @@ import { Skeleton } from './ui/skeleton'
 export const CANDIDATES_NONE_TEXT = 'Keine weiteren Fotos in diesem Event.'
 /** Fehlschlag ohne Servertext. */
 export const CANDIDATES_ERROR_TEXT = 'Fehler beim Laden der Fotos.'
-/** Das Ordnungskriterium der Alternativen, in Band UND Dialog - ohne Pfeilzeichen,
+/** Das Ordnungskriterium der Alternativen, in Serie UND aufgeklappter Reihe - ohne Pfeilzeichen,
  * das ein Screenreader als „Pfeil nach rechts" vorläse. */
 export const ALTERNATIVES_ORDER_TEXT = 'Zeitlich geordnet, von früh nach spät'
+/** Die Stelle des zu ersetzenden Bildes liegt auf einer noch nicht geladenen Seite der Reihe. */
+export const REFERENCE_LATER_TEXT = 'Das zu ersetzende Bild folgt weiter hinten in der Reihe.'
+/** Der Umschalter zwischen Serie und voller Reihe, zugeklappt bzw. aufgeklappt. */
+export const SHOW_ALL_LABEL = 'Alle Fotos des Events'
+export const SHOW_LESS_LABEL = 'Weniger anzeigen'
 
-/** Die vier zeitlich nächsten Alternativen im Band, acht Kandidaten je Seite im Hinzufügen-Panel. */
-export const BAND_SIZE = 4
+/** Vier Platzhalter beim Laden - reine Darstellung, die Fenstergröße schneidet der Server. */
+export const BAND_SKELETON_COUNT = 4
+/** Acht Kandidaten je Seite im Hinzufügen-Panel. */
 export const ADD_PAGE_SIZE = 8
 /** Was das Panel von `useDraftAlternativesQuery` liest. */
 interface CandidateQuery {
@@ -39,6 +45,16 @@ interface CandidateQuery {
   fetchNextPage: () => unknown
 }
 
+/** Ein Handgriff an jeder Alternative. Name `"{label}: {relative_path}"`, Fokusschlüssel
+ * `"{key}-{id}"` - der Pfad steht nie im Schlüssel. */
+export interface CandidateAction {
+  label: 'Tauschen' | 'Hinzufügen'
+  key: 'exchange' | 'add'
+  /** `neighborId`: der nächste Kandidat, sonst der vorige - das Fokusziel, wenn dieser die Liste
+   * verlässt. */
+  onAction: (photo: PhotoOut, neighborId: number | null) => void
+}
+
 interface CandidatePanelProps {
   id: string
   heading: string
@@ -47,17 +63,15 @@ interface CandidatePanelProps {
   /** Fotos, die gerade im Album stehen - sie verlassen die Liste sofort, nicht erst nach dem
    * Neuladen. */
   excludedIds: ReadonlySet<number>
-  limit?: number
   username: string | null
-  actionLabel: 'Tauschen' | 'Hinzufügen'
-  actionKey: 'exchange' | 'add'
-  /** `neighborId`: der nächste Kandidat, sonst der vorige - das Fokusziel, wenn dieser die Liste
-   * verlässt. */
-  onAction: (photo: PhotoOut, neighborId: number | null) => void
+  /** Untereinander, in dieser Reihenfolge. */
+  actions: readonly CandidateAction[]
   busyIds: ReadonlySet<number>
   error: string | null
   onClose: () => void
-  extra?: ReactNode
+  /** Steht unter dem Ordnungstext und über dem Raster (Serienhinweis, Umschalter). */
+  controls?: ReactNode
+  gridId?: string
   moreLabel?: string
   /** Das zu ersetzende Bild (nur im Band): Die Reihe wird eine geordnete Liste mit Ordnungstext,
    * und die Bezugsmarke steht an der Stelle, die der Server liefert. */
@@ -113,15 +127,13 @@ function CandidatePanel({
   focusKey,
   query,
   excludedIds,
-  limit,
   username,
-  actionLabel,
-  actionKey,
-  onAction,
+  actions,
   busyIds,
   error,
   onClose,
-  extra,
+  controls,
+  gridId,
   moreLabel,
   reference,
 }: CandidatePanelProps) {
@@ -132,20 +144,29 @@ function CandidatePanel({
   }, [])
 
   const pages = query.data?.pages ?? []
-  const kept = pages
-    .flatMap((page) => page.items)
+  const loaded = pages.flatMap((page) => page.items)
+  const kept = loaded
     .map((photo, rawIndex) => ({ photo, rawIndex }))
     .filter(({ photo }) => !excludedIds.has(photo.id))
-    .slice(0, limit)
   const candidates = kept.map(({ photo }) => photo)
-  // Die Marke steht vor dem ersten verbliebenen Kandidaten ab ihrer Stelle in der UNGEFILTERTEN
-  // Antwort, sonst am Ende - so rutscht sie bei einem optimistischen Tausch nicht mit.
+  // Die geladenen Seiten bilden EINE Reihe ab `pages[0].offset`. Am Ende steht die Marke nur, wenn
+  // keine Seite mehr folgt - sonst gehört sie an den Anfang der nächsten. Sie steht vor dem ersten
+  // verbliebenen Kandidaten ab ihrer Stelle in der UNGEFILTERTEN Antwort, sonst am Ende - so
+  // rutscht sie nicht mit, wenn ein Foto die Liste verlässt.
   const markerAt =
     reference === undefined || pages.length === 0
       ? null
-      : referenceMarkerIndex(pages[0].reference_index, pages[0].offset, pages[0].items.length)
+      : referenceMarkerIndex(pages[0].reference_index, pages[0].offset, loaded.length)
+  const showMarker = markerAt !== null && (markerAt < loaded.length || !query.hasNextPage)
+  const markerLater =
+    reference !== undefined &&
+    !showMarker &&
+    candidates.length > 0 &&
+    pages[0]?.reference_index !== null
   const markerBeforeId =
-    markerAt === null ? null : (kept.find(({ rawIndex }) => rawIndex >= markerAt)?.photo.id ?? null)
+    markerAt === null || !showMarker
+      ? null
+      : (kept.find(({ rawIndex }) => rawIndex >= markerAt)?.photo.id ?? null)
   const marker =
     reference === undefined ? null : (
       <ReferenceMarker key="reference-marker" photo={reference} showFileName />
@@ -171,22 +192,29 @@ function CandidatePanel({
       <h4 ref={headingRef} tabIndex={-1} data-focus-key={focusKey} className="text-sm text-text-h">
         {heading}
       </h4>
+      {error !== null && <Alert>{error}</Alert>}
       {reference !== undefined && candidates.length > 0 && (
         <p className="text-xs text-text">{ALTERNATIVES_ORDER_TEXT}</p>
       )}
+      {controls}
+      {loadError !== null && <Alert onRetry={() => void query.refetch()}>{loadError}</Alert>}
       {query.isLoading && (
-        <ul role="status" aria-label="Fotos werden geladen…" className={PHOTO_CARD_GRID_CLASS}>
-          {Array.from({ length: BAND_SIZE }, (_, index) => (
+        <ul
+          id={gridId}
+          role="status"
+          aria-label="Fotos werden geladen…"
+          className={PHOTO_CARD_GRID_CLASS}
+        >
+          {Array.from({ length: BAND_SKELETON_COUNT }, (_, index) => (
             <li key={index} aria-hidden="true">
               <Skeleton className="aspect-square w-full rounded-md" />
             </li>
           ))}
         </ul>
       )}
-      {loadError !== null && <Alert onRetry={() => void query.refetch()}>{loadError}</Alert>}
-      {error !== null && <Alert>{error}</Alert>}
       {candidates.length > 0 && (
         <List
+          id={gridId}
           aria-label={reference === undefined ? undefined : 'Alternativen, zeitlich geordnet'}
           className={PHOTO_CARD_GRID_CLASS}
         >
@@ -194,6 +222,7 @@ function CandidatePanel({
             const neighborId = (candidates[index + 1] ?? candidates[index - 1])?.id ?? null
             const struck = ownRatingStatus(candidate.ratings, username) === 'rejected'
             const fileName = candidate.relative_path.split('/').pop() ?? candidate.relative_path
+            const busy = busyIds.has(candidate.id)
             return (
               <Fragment key={candidate.id}>
                 {markerBeforeId === candidate.id && marker}
@@ -216,29 +245,35 @@ function CandidatePanel({
                       <AlbumStateBadge state="struck" />
                     </span>
                   )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-11 sm:h-8"
-                    data-focus-key={`${actionKey}-${candidate.id}`}
-                    busy={busyIds.has(candidate.id)}
-                    aria-label={`${actionLabel}: ${candidate.relative_path}`}
-                    onClick={() => onAction(candidate, neighborId)}
-                  >
-                    {actionLabel}
-                  </Button>
+                  <div className="flex flex-col gap-3">
+                    {actions.map((action) => (
+                      <Button
+                        key={action.key}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-8"
+                        data-focus-key={`${action.key}-${candidate.id}`}
+                        busy={busy}
+                        aria-label={`${action.label}: ${candidate.relative_path}`}
+                        onClick={() => action.onAction(candidate, neighborId)}
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                  </div>
                 </li>
               </Fragment>
             )
           })}
-          {markerAt !== null && markerBeforeId === null && marker}
+          {showMarker && markerBeforeId === null && marker}
         </List>
       )}
+      {markerLater && <p className="text-xs text-text">{REFERENCE_LATER_TEXT}</p>}
       {!query.isLoading && loadError === null && candidates.length === 0 && (
         <p className="text-sm text-text">{CANDIDATES_NONE_TEXT}</p>
       )}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-3">
         {moreLabel !== undefined && query.hasNextPage && (
           <Button
             type="button"
@@ -250,7 +285,6 @@ function CandidatePanel({
             {moreLabel}
           </Button>
         )}
-        {candidates.length > 0 && extra}
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           Schließen
         </Button>
@@ -266,17 +300,19 @@ export interface DraftAlternativesBandProps {
   username: string | null
   excludedIds: ReadonlySet<number>
   onExchange: (alternative: PhotoOut) => void
+  onAdd: (alternative: PhotoOut, neighborId: number | null) => void
   busyIds: ReadonlySet<number>
   error: string | null
-  onOpenAll: () => void
   onClose: () => void
 }
 
 /**
- * Das Alternativen-Band am EINEN gewählten Foto der Seite: eine Abfrage je gewähltem Foto, nie
- * eine je Kachel, geladen erst beim Öffnen. Die vier zeitlich nächsten Alternativen desselben
- * Events, als Fenster vom Server geschnitten, mit dem Foto selbst als Marke an seiner Stelle; der
- * Dialog „Alle Alternativen" zeigt den vollständigen Bestand seitenweise.
+ * Das Alternativen-Band am EINEN gewählten Foto der Seite: Abfragen nur für das gewählte Foto,
+ * nie je Kachel, geladen erst beim Öffnen. Es zeigt die Aufnahmeserie des Fotos (ADR 0133), als
+ * Fenster vom Server geschnitten, mit dem Foto selbst als Marke an seiner Stelle. „Alle Fotos des
+ * Events" klappt an DERSELBEN Stelle die volle zeitliche Reihe seitenweise auf - kein Dialog, keine
+ * Fokusfalle, kein programmatisches Scrollen; die volle Reihe lädt erst beim ersten Aufklappen und
+ * bleibt danach im Cache.
  */
 export function DraftAlternativesBand({
   id,
@@ -285,38 +321,80 @@ export function DraftAlternativesBand({
   username,
   excludedIds,
   onExchange,
+  onAdd,
   busyIds,
   error,
-  onOpenAll,
   onClose,
 }: DraftAlternativesBandProps) {
-  const query = useDraftAlternativesQuery(projectId, {
-    eventId: photo.event?.id ?? 0,
+  const [expanded, setExpanded] = useState(false)
+  // Einmal aufgeklappt, bleibt die Abfrage der vollen Reihe aktiv: Zurückschalten und erneutes
+  // Aufklappen lesen ihren Cache, statt sie beim Wiederaktivieren neu zu laden.
+  const [rowRequested, setRowRequested] = useState(false)
+  const gridId = useId()
+  const eventId = photo.event?.id ?? 0
+  const series = useDraftAlternativesQuery(projectId, {
+    eventId,
     photoId: photo.id,
     enabled: photo.event != null,
-    nearest: BAND_SIZE,
+    series: true,
+  })
+  const row = useDraftAlternativesQuery(projectId, {
+    eventId,
+    photoId: photo.id,
+    enabled: rowRequested && photo.event != null,
   })
   const fileName = photo.relative_path.split('/').pop() ?? photo.relative_path
+  const seriesPage = series.data?.pages[0]
+  const seriesRest = seriesPage?.series_rest
+  const showRest =
+    !expanded && typeof seriesRest === 'number' && Number.isInteger(seriesRest) && seriesRest > 0
+  const showToggle =
+    !series.isLoading && !(seriesPage !== undefined && seriesPage.items.length === 0)
   return (
     <CandidatePanel
       id={id}
       heading={`Alternativen zu ${fileName}`}
       focusKey="band-heading"
-      query={query}
+      query={expanded ? row : series}
       excludedIds={excludedIds}
-      limit={BAND_SIZE}
       username={username}
-      actionLabel="Tauschen"
-      actionKey="exchange"
-      onAction={onExchange}
+      actions={[
+        { label: 'Tauschen', key: 'exchange', onAction: (alternative) => onExchange(alternative) },
+        { label: 'Hinzufügen', key: 'add', onAction: onAdd },
+      ]}
       busyIds={busyIds}
       error={error}
       onClose={onClose}
-      extra={
-        <Button type="button" variant="ghost" size="sm" onClick={onOpenAll}>
-          Alle Alternativen
-        </Button>
+      controls={
+        <>
+          {showRest && (
+            <p className="text-xs text-text">
+              {seriesRest === 1
+                ? '1 weitere Aufnahme dieser Serie unter „Alle Fotos des Events“.'
+                : `${seriesRest} weitere Aufnahmen dieser Serie unter „Alle Fotos des Events“.`}
+            </p>
+          )}
+          {showToggle && (
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-expanded={expanded}
+                aria-controls={gridId}
+                onClick={() => {
+                  setExpanded((current) => !current)
+                  setRowRequested(true)
+                }}
+              >
+                {expanded ? SHOW_LESS_LABEL : SHOW_ALL_LABEL}
+              </Button>
+            </div>
+          )}
+        </>
       }
+      gridId={gridId}
+      moreLabel={expanded ? 'Weitere Fotos' : undefined}
       reference={photo}
     />
   )
@@ -365,9 +443,7 @@ export function DraftAddPanel({
       query={query}
       excludedIds={excludedIds}
       username={username}
-      actionLabel="Hinzufügen"
-      actionKey="add"
-      onAction={onAdd}
+      actions={[{ label: 'Hinzufügen', key: 'add', onAction: onAdd }]}
       busyIds={busyIds}
       error={error}
       onClose={onClose}
