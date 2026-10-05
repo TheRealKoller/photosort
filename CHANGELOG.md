@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.50.0](https://github.com/TheRealKoller/photosort/compare/v0.49.0...v0.50.0) (2026-10-04)
+
+
+### Features
+
+* Ersatzvorschläge im Album-Entwurf zeitlich geordnet (Spec 0569) ([#576](https://github.com/TheRealKoller/photosort/issues/576)) ([16870af](https://github.com/TheRealKoller/photosort/commit/16870af55638e1fefbd2dabb72c513e1570898e5))
+* **frontend:** eine Hauptaktion je Schrittseite mit haftender Aktionsleiste (Spec 0568) ([#575](https://github.com/TheRealKoller/photosort/issues/575)) ([71b0e72](https://github.com/TheRealKoller/photosort/commit/71b0e72900acd280cbef52c248ef19313c5bb471))
+* Richtwert vor der Klassifizierung einstellbar, sofort wirksam und standardmäßig 150 (Spec 0567) ([#572](https://github.com/TheRealKoller/photosort/issues/572)) ([115ecc3](https://github.com/TheRealKoller/photosort/commit/115ecc31fac5cc318101f4a763285f5db4789eac))
+
 ## [0.49.0](https://github.com/TheRealKoller/photosort/compare/v0.48.1...v0.49.0) (2026-10-03)
 
 
