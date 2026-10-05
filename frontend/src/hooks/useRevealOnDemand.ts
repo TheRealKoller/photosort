@@ -6,8 +6,6 @@ export const LONG_PRESS_MS = 500
 /** Ein Geraet mit feinem Zeiger und Hover-Faehigkeit loest die Angaben durch Ueberfahren aus. */
 const HOVER_QUERY = '(hover: hover) and (pointer: fine)'
 
-type RevealSource = 'hover' | 'focus' | 'press'
-
 export interface RevealOnDemand {
   visible: boolean
   /** Gehoeren an das Element, das die ganze Kachel umfasst. */
@@ -32,13 +30,18 @@ export interface RevealOnDemand {
  * Angaben einer Kachel auf Anforderung: beim Ueberfahren (nur mit feinem Zeiger), solange ein
  * Bedienelement darin den Fokus hat, und nach einem Druck von mindestens `LONG_PRESS_MS`.
  *
- * WOHER die Angaben kamen, nicht nur DASS sie da sind: Ein TOUCH-Pointer wird nach `pointerup` vom
+ * JEDER AUSLOESER FUER SICH, nicht ein gemeinsamer Zustand: Ein TOUCH-Pointer wird nach `pointerup` vom
  * Browser zerstoert und feuert dabei `pointerleave`, ohne Zutun des Nutzers. Blendete das
  * Verlassen bedingungslos aus, verschwaenden die per langem Druck eingeblendeten Angaben im selben
  * Moment, in dem der Finger sie freigibt.
  */
 export function useRevealOnDemand(): RevealOnDemand {
-  const [source, setSource] = useState<RevealSource | null>(null)
+  // Drei unabhaengige Ausloeser: Das Ende des einen darf die anderen nie mitnehmen (Fokus bleibt,
+  // auch wenn der Zeiger die Kachel verlaesst; ein langer Druck bleibt, auch wenn ein Touch-Pointer
+  // beim Loslassen `pointerleave` feuert).
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const [pressed, setPressed] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const suppressClickRef = useRef(false)
 
@@ -70,20 +73,20 @@ export function useRevealOnDemand(): RevealOnDemand {
    * erreichte die Blasenphase am Dokument sonst nie, und die Angaben blieben stehen.
    */
   useEffect(() => {
-    if (source !== 'press') {
+    if (!pressed) {
       return undefined
     }
-    const close = (): void => setSource(null)
+    const close = (): void => setPressed(false)
     document.addEventListener('pointerdown', close, { capture: true })
     window.addEventListener('scroll', close, { passive: true })
     return () => {
       document.removeEventListener('pointerdown', close, { capture: true })
       window.removeEventListener('scroll', close)
     }
-  }, [source])
+  }, [pressed])
 
   return {
-    visible: source !== null,
+    visible: hovered || focused || pressed,
     handlers: {
       onPointerDown: () => {
         if (hoverCapable) {
@@ -93,20 +96,19 @@ export function useRevealOnDemand(): RevealOnDemand {
         timerRef.current = setTimeout(() => {
           timerRef.current = null
           suppressClickRef.current = true
-          setSource('press')
+          setPressed(true)
         }, LONG_PRESS_MS)
       },
       onPointerUp: clearTimer,
       onPointerCancel: clearTimer,
-      onPointerEnter: hoverCapable ? () => setSource('hover') : undefined,
+      onPointerEnter: hoverCapable ? () => setHovered(true) : undefined,
       onPointerLeave: () => {
-        // Der laufende Druck wird IMMER abgebrochen; ausgeblendet wird nur, was durch
-        // Ueberfahren kam.
+        // Der laufende Druck wird IMMER abgebrochen; zurueckgenommen wird nur das Ueberfahren.
         clearTimer()
-        setSource((current) => (current === 'hover' ? null : current))
+        setHovered(false)
       },
-      onFocus: () => setSource('focus'),
-      onBlur: () => setSource((current) => (current === 'focus' ? null : current)),
+      onFocus: () => setFocused(true),
+      onBlur: () => setFocused(false),
     },
     consumeSuppressedClick: (event) => {
       if (!suppressClickRef.current) {

@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode, Ref } from 'react'
 
 import { useRevealOnDemand } from '../hooks/useRevealOnDemand'
@@ -77,6 +78,12 @@ export function PhotoCard({
 }: PhotoCardProps) {
   const { visible, handlers, consumeSuppressedClick } = useRevealOnDemand()
   const fileName = relativePath.split('/').pop() ?? relativePath
+  const stripRef = useRef<HTMLDivElement>(null)
+  const [overflowing, setOverflowing] = useState(false)
+  useLayoutEffect(() => {
+    const strip = stripRef.current
+    setOverflowing(visible && strip !== null && strip.scrollHeight > strip.clientHeight)
+  }, [visible, imageHeight, width])
   const imageAreaClassName = cn(
     'block size-full overflow-hidden rounded-md',
     anchored && 'ring-2 ring-accent',
@@ -109,13 +116,19 @@ export function PhotoCard({
           </button>
         )}
         {stateMark !== undefined && <div className="absolute top-1 left-1">{stateMark}</div>}
+        {/* Hoechstens so hoch wie das Bild; was darueber hinausginge, scrollt SENKRECHT in der
+            Leiste, statt abgeschnitten zu werden - der Grund bleibt vollstaendig erreichbar. Nur
+            eine tatsaechlich ueberlaufende, sichtbare Leiste wird Tab-Stopp: So erreicht die
+            Tastatur den Rest, und die gewohnte Folge Bild → Knoepfe bleibt sonst unveraendert. */}
         <div
+          ref={stripRef}
           data-tile-details=""
           data-visible={visible ? 'true' : undefined}
+          tabIndex={overflowing ? 0 : undefined}
           style={{ maxHeight: imageHeight }}
           className={
             visible
-              ? 'pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-1 overflow-hidden rounded-b-md bg-overlay px-2 py-1 text-xs text-text-h'
+              ? 'absolute inset-x-0 bottom-0 flex flex-col gap-1 overflow-y-auto rounded-b-md bg-overlay px-2 py-1 text-xs text-text-h'
               : 'sr-only'
           }
         >

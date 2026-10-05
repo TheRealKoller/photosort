@@ -66,6 +66,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('PhotoCard: Aufbau', () => {
@@ -227,5 +228,27 @@ describe('PhotoCard: die Leiste bei Bedarf', () => {
     expect(screen.getByText(hostile)).toBeInTheDocument()
     expect(document.querySelector('img[src="x"]')).toBeNull()
     expect((window as unknown as Record<string, unknown>).__pwned).toBeUndefined()
+  })
+})
+
+describe('PhotoCard: eine lange Leiste bleibt erreichbar', () => {
+  it('scrolls vertically within the image height instead of clipping, and takes keyboard focus when it overflows', () => {
+    // jsdom misst nicht: Der Ueberlauf wird ueber die beiden Masse vorgegeben, die der Baustein liest.
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(300)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(120)
+    renderCard({ imageHeight: 120 })
+
+    act(() => screen.getByRole('button', { name: 'Erster' }).focus())
+
+    expect(strip().style.maxHeight).toBe('120px')
+    expect(strip().className).toContain('overflow-y-auto')
+    expect(strip().className).not.toMatch(/\boverflow-hidden\b/)
+    expect(strip()).toHaveAttribute('tabindex', '0')
+  })
+
+  it('is no tab stop at rest', () => {
+    renderCard()
+
+    expect(strip()).not.toHaveAttribute('tabindex', '0')
   })
 })

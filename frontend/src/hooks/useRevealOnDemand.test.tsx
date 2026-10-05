@@ -152,3 +152,27 @@ describe('useRevealOnDemand: Fokus', () => {
     expect(screen.queryByText('Angaben')).toBeNull()
   })
 })
+
+describe('useRevealOnDemand: ueberlappende Ausloeser', () => {
+  it('stays visible while focus remains after hover ends', () => {
+    stubHover(true)
+    const area = renderProbe()
+
+    act(() => screen.getByRole('button', { name: 'Ausloeser' }).focus())
+    fireEvent.pointerOver(area)
+    fireEvent.pointerOut(area, { relatedTarget: null })
+
+    expect(screen.getByText('Angaben')).toBeInTheDocument()
+  })
+
+  it('stays visible while hovering after focus leaves', () => {
+    stubHover(true)
+    const area = renderProbe()
+
+    fireEvent.pointerOver(area)
+    act(() => screen.getByRole('button', { name: 'Ausloeser' }).focus())
+    act(() => screen.getByRole('button', { name: 'Ausloeser' }).blur())
+
+    expect(screen.getByText('Angaben')).toBeInTheDocument()
+  })
+})

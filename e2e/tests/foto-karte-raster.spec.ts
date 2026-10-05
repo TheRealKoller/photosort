@@ -352,6 +352,19 @@ test('Kurzbeschriftung im Symbolmodus: bei Hover und Tastaturfokus sichtbar, inn
   expect(hover.x + hover.width, 'Hinweis rechts nicht ausserhalb der Kachel').toBeLessThanOrEqual(
     tileBox.x + tileBox.width + TOLERANCE,
   )
+  // Lage RELATIV ZUM KNOPF, nicht nur zur Kachel: linksbuendig am ersten Knopf und darueber. Ein
+  // fehlender Positionskontext setzte den Hinweis an den naechsten positionierten Vorfahren.
+  const strikeBox = (await strike.boundingBox())!
+  expect(Math.abs(hover.x - strikeBox.x), 'linksbuendig am ersten Knopf').toBeLessThanOrEqual(
+    TOLERANCE,
+  )
+  expect(hover.y + hover.height, 'Hinweis ueber dem ersten Knopf').toBeLessThanOrEqual(
+    strikeBox.y + TOLERANCE,
+  )
+  expect(
+    strikeBox.y - (hover.y + hover.height),
+    'Hinweis dicht ueber dem Knopf',
+  ).toBeLessThanOrEqual(8)
   await page.mouse.move(0, 0)
   await expect(firstHint).toBeHidden()
 
@@ -373,6 +386,70 @@ test('Kurzbeschriftung im Symbolmodus: bei Hover und Tastaturfokus sichtbar, inn
   expect(focus.y + focus.height, 'Hinweis ueber dem Knopf').toBeLessThanOrEqual(
     buttonBox.y + TOLERANCE,
   )
+})
+
+/**
+ * Langer Grund in schmaler Kachel: 160 Zeichen bei etwa 100 px Kachelbreite. Die Leiste bleibt
+ * innerhalb der Bildflaeche und laesst sich bis zum Dateinamen scrollen - nichts wird abgeschnitten.
+ * Antwort-Eingriff wie oben: echte Entwurfsantwort, nur Verhaeltnis und Begruendung gesetzt.
+ */
+test('lange Begruendung in einer 100-px-Kachel bleibt vollstaendig erreichbar', async ({
+  page,
+}) => {
+  const reason = 'Gesichter scharf, Licht weich und warm, Hintergrund ruhig. '
+    .repeat(3)
+    .slice(0, 160)
+  const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+  await page.route('**/api/projects/*/album-draft*', async (route) => {
+    const response = await route.fetch()
+    const json = (await response.json()) as {
+      items: { aspect_ratio: number | null; album_suitability: unknown }[]
+    }
+    json.items = json.items.map((item) => ({
+      ...item,
+      aspect_ratio: 0.5,
+      album_suitability: { level: 3, reason },
+    }))
+    await route.fulfill({ response, json })
+  })
+  await page.setViewportSize({ width: 280, height: VIEWPORT_HEIGHT })
+  await page.goto(`/projects/${projectId}/album`)
+
+  const tile = draftGrid(page).locator(':scope > li').first()
+  const image = tile.getByRole('button', { name: /^Großansicht: / })
+  await expect(image).toBeVisible()
+  const tileBox = (await tile.boundingBox())!
+  expect(tileBox.width, 'Vorbedingung: Kachel um 100 px').toBeLessThanOrEqual(110)
+  expect(tileBox.width).toBeGreaterThanOrEqual(100 - TOLERANCE)
+
+  await image.hover()
+  const strip = tile.locator('[data-tile-details]')
+  await expect(strip).toHaveAttribute('data-visible', 'true')
+  await expect(strip.locator('[data-album-suitability-reason]')).toContainText(reason)
+
+  const imageBox = (await image.boundingBox())!
+  const stripBox = (await strip.boundingBox())!
+  expect(stripBox.y, 'Leiste nicht ueber der Bildflaeche').toBeGreaterThanOrEqual(
+    imageBox.y - TOLERANCE,
+  )
+  expect(stripBox.y + stripBox.height, 'Leiste nicht unter der Bildflaeche').toBeLessThanOrEqual(
+    imageBox.y + imageBox.height + TOLERANCE,
+  )
+
+  // Bis ans Ende scrollen: Der Dateiname - die letzte Zeile - steht dann sichtbar in der Leiste.
+  const overflow = await strip.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    return element.scrollHeight > element.clientHeight
+  })
+  expect(overflow, 'Vorbedingung: der Inhalt ist hoeher als die Leiste').toBe(true)
+  await expect(strip).toHaveAttribute('tabindex', '0')
+  const fileName = strip.locator(':scope > p').last()
+  const nameBox = (await fileName.boundingBox())!
+  const scrolled = (await strip.boundingBox())!
+  expect(nameBox.y + nameBox.height, 'Dateiname nach dem Scrollen sichtbar').toBeLessThanOrEqual(
+    scrolled.y + scrolled.height + TOLERANCE,
+  )
+  expect(nameBox.y).toBeGreaterThanOrEqual(scrolled.y - TOLERANCE)
 })
 
 test.describe('Telefon (Touch, ohne Hover)', () => {

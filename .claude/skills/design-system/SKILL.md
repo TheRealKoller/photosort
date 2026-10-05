@@ -80,7 +80,7 @@ Typoskala (Größe, Standardschnitt): `text-xs` 12px · `text-sm` 14px · `text-
 
 ## Symbole
 
-Zwölf Symbole, mehr gibt es nicht: `star · book · x-circle · cog · image · check · info · chevron-down · search · folder · camera · tag`.
+Zweiundzwanzig Symbole, mehr gibt es nicht: vierzehn Board-Symbole `star · book · x-circle · cog · image · check · info · chevron-down · search · folder · camera · tag · repeat · plus` und acht Motivsymbole `user-round · mountain-snow · landmark · building-2 · paw-print · utensils · footprints · sparkles`.
 
 - **Immer über `components/ui/icon.tsx`** (`<Icon name="star" size={16} />`). Das ist die **einzige** Datei, die aus `lucide-react` importieren darf — statisch geprüft. Nur **benannte Importe** in einem **statischen Objektliteral**: ein Namespace-Import oder ein berechneter Zugriff auf das Paket-Objekt hebelt das Tree-Shaking aus und zöge den vollen Satz (~32 MB entpackt) ins Bundle.
 - Größen 14/16/18/24 (Default 16), Strichstärke 2 und Einfärbung über `currentColor` sind zentral gesetzt — nicht an der Aufrufstelle wiederholen.

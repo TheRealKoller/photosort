@@ -57,7 +57,13 @@ export function TileAction({
       size={iconOnly ? 'icon' : 'compact'}
       busy={busy}
       aria-label={accessibleName}
-      className={cn('group shrink-0', iconOnly ? 'size-11 sm:size-8' : 'h-11 sm:h-8', className)}
+      // `relative`: Positionskontext des Kurzhinweises. `tap-target` setzt ihn ueber CSS bereits,
+      // er steht hier trotzdem ausdruecklich, damit der Hinweis nicht an einer fremden Regel haengt.
+      className={cn(
+        'group relative shrink-0',
+        iconOnly ? 'size-11 sm:size-8' : 'h-11 sm:h-8',
+        className,
+      )}
       onFocus={(event) => {
         setKeyboardFocus(event.currentTarget.matches(':focus-visible'))
         onFocus?.(event)
