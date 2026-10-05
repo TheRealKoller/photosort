@@ -201,6 +201,62 @@ describe('justifiedRows', () => {
     )
   })
 
+  describe('maxRowHeight: eine zu hohe volle Reihe steht wie die letzte', () => {
+    // Ein Hochformat, dem ein Panorama folgt: Das Panorama druckte die Reihe unter die
+    // Untergrenze, also bricht sie vorher um - und die Reihe aus dem Hochformat allein waere
+    // buendig fast 500px hoch.
+    const PORTRAIT_THEN_PANORAMA = [2 / 3, 4]
+    const PHONE_WIDTH = 328
+
+    function phoneRows(maxRowHeight?: number) {
+      return justifiedRows({
+        ratios: PORTRAIT_THEN_PANORAMA,
+        containerWidth: PHONE_WIDTH,
+        gap: GRID_GAP_PX,
+        targetRowHeight: 280,
+        minRowHeight: 200,
+        maxRowHeight,
+      })
+    }
+
+    it('keeps todays output without the parameter', () => {
+      const rows = phoneRows()
+
+      expect(rows[0].tiles).toHaveLength(1)
+      expect(rows[0].tiles[0].width).toBe(PHONE_WIDTH)
+      expect(rows[0].height).toBe(Math.round(PHONE_WIDTH / (2 / 3)))
+    })
+
+    it('sets a row above the limit at the target height, natural width, left-aligned', () => {
+      const rows = phoneRows(350)
+
+      expect(rows[0]).toEqual({
+        height: 280,
+        tiles: [{ index: 0, width: Math.round((2 / 3) * 280), height: 280 }],
+      })
+    })
+
+    it('keeps a row exactly at the limit justified (inclusive bound)', () => {
+      // 1.5 bei 300px: buendige Hoehe genau 200.
+      const rows = justifiedRows({
+        ratios: [1.5, 6],
+        containerWidth: 300,
+        gap: GRID_GAP_PX,
+        targetRowHeight: 150,
+        minRowHeight: 100,
+        maxRowHeight: 200,
+      })
+
+      expect(rows[0]).toEqual({ height: 200, tiles: [{ index: 0, width: 300, height: 200 }] })
+    })
+
+    it('leaves rows below the limit untouched', () => {
+      const ratios = [1.5, 0.75, 2.4, 1, 1.5, 0.66, 3, 1.2]
+
+      expect(rowsOf(ratios, { maxRowHeight: 10_000 })).toEqual(rowsOf(ratios))
+    })
+  })
+
   describe('naturalTiles: die Ausfallrichtung vor der ersten Messung', () => {
     it('gives every image its natural width at the target height', () => {
       const tiles = naturalTiles([1.5, 0.75, null], TARGET_ROW_HEIGHT_PX)
