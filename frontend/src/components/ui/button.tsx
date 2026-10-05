@@ -68,6 +68,8 @@ const buttonVariants = cva(
       size: {
         default: 'h-8 min-w-8 px-4 py-2',
         sm: 'h-8 min-w-8 px-3',
+        // Symbol (14px) plus Kurzwort auf einer Kachel: schmaler, damit zwei nebeneinander passen.
+        compact: 'h-8 min-w-8 gap-1 px-2',
         icon: 'size-8',
       },
     },

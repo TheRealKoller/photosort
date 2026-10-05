@@ -2010,6 +2010,14 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
         'hintereinander gedrueckt, unmittelbar neben der Wahlzeile',
     },
     {
+      file: 'src/components/TileAction.tsx',
+      snippet: "iconOnly ? 'size-11 sm:size-8' : 'h-11 sm:h-8'",
+      reason:
+        'heisser Pfad auf jeder Kuratierungskachel: Streichen/Alternativen, Tauschen/Hinzufuegen ' +
+        'und Aufnehmen/Herausnehmen schreiben sofort und stehen am Telefon nebeneinander; ' +
+        'Symbolknoepfe sichtbar 44 x 44, beschriftete 44 hoch',
+    },
+    {
       file: 'src/pages/DuplicateComparePage.tsx',
       snippet: 'className="h-11 sm:h-8"',
       reason:

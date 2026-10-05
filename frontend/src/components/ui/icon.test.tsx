@@ -10,7 +10,7 @@ import { Icon, ICON_NAMES } from './icon'
  * src/designSystem.contract.test.ts).
  */
 describe('Icon', () => {
-  it('kennt genau die zwanzig Symbole des Boards', () => {
+  it('kennt genau die zweiundzwanzig Symbole des Boards', () => {
     expect([...ICON_NAMES].sort()).toEqual(
       [
         'book',
@@ -26,6 +26,8 @@ describe('Icon', () => {
         'landmark',
         'mountain-snow',
         'paw-print',
+        'plus',
+        'repeat',
         'search',
         'sparkles',
         'star',
