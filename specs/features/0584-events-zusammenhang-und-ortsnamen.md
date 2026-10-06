@@ -1,6 +1,6 @@
 # 0584 - Events fassen zusammenhängende Erlebnisse zusammen und tragen nur zutreffende Ortsnamen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #588](https://github.com/TheRealKoller/photosort/pull/588))
 **Erstellt:** 2026-10-06
 **Bezug:** [Issue #584](https://github.com/TheRealKoller/photosort/issues/584), ADR [0135](../decisions/0135-einzelner-ortsausreisser-trennt-nicht-und-unbestaetigter-sehenswuerdigkeitsname-entfaellt.md)
 
