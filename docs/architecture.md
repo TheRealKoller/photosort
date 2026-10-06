@@ -2272,12 +2272,24 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Seit Spec
     [`0529`](../specs/features/0529-sehenswuerdigkeitsname-ortsplausibel.md) / ADR
     [`0123`](../specs/decisions/0123-der-sehenswuerdigkeitsname-wird-lokal-verortet-und-am-event-geprueft.md)
-    trägt der Name zusätzlich eine **Ortsbedingung**: `events.py::_built` verwirft `landmark_name`
-    (auf `None`), wenn die Fundorte des Namens laut `landmark_place_lookups` **keinen** Punkt näher
-    als `geonames.LANDMARK_PLAUSIBILITY_RADIUS_METERS` an einer gemessenen Zelle des Events haben.
-    `place_kind` fällt dadurch auf `coordinate`/`multiple`/`None`, die Koordinatenstufe greift
-    wieder. Die Prüfung sitzt **hinter** den bestehenden Regeln (Konfidenzgrenze, Trägeranteil) und
-    rückt nichts nach; die Zellen eines Events mit Namen sind dafür bereits aufgelöst.
+    trägt der Name zusätzlich eine **Ortsbedingung**, und sie ist **fail-closed**:
+    `events.py::_built` behält `landmark_name` nur, wenn zum Namen eine Zeile in
+    `landmark_place_lookups` mit mindestens einem Fundort vorliegt und einer davon näher als
+    `geonames.LANDMARK_PLAUSIBILITY_RADIUS_METERS` an einer gemessenen Zelle des Events liegt. Keine
+    Auskunft, keine gemessene Zelle (etwa nur übernommene Koordinaten), keine Zeile oder eine leere
+    Punktliste verwerfen ihn. `place_kind` fällt dadurch auf `coordinate`/`multiple`/`None`, die
+    Koordinatenstufe greift wieder. Die Prüfung sitzt **hinter** den bestehenden Regeln
+    (Konfidenzgrenze, Trägeranteil) und rückt nichts nach; die Zellen eines Events mit Namen sind
+    dafür bereits aufgelöst.
+    Seit Spec
+    [`0584`](../specs/features/0584-events-zusammenhang-und-ortsnamen.md) / ADR
+    [`0135`](../specs/decisions/0135-einzelner-ortsausreisser-trennt-nicht-und-unbestaetigter-sehenswuerdigkeitsname-entfaellt.md)
+    trennt ein **einzelner Ortsausreißer** nicht mehr: `events.py::location_excursions` bestimmt vor
+    dem Signaldurchlauf Folgen von weniger als `LOCATION_CHANGE_CONFIRMING_PHOTOS` gemessenen Fotos
+    jenseits von `EVENT_STEP_MAX_METERS`, nach denen das nächste gemessene Foto zum Bezug
+    zurückkehrt. Sie gehen in `explain_events` an einer Stelle **ohne Ort** ein — Mitglied des
+    umgebenden Events, aber ohne Wirkung auf Schritt, Ausdehnung, Zelle, Ortsname und
+    Namensprüfung. Persistiert wird davon nichts; die Fotos behalten ihre Koordinaten.
 - **Rating** *(implementiert, Spec 0002, `models.py`; Neufassung mit Spec
   [`0430`](../specs/features/0430-album-entwurf-je-nutzer.md) / ADR
   [`0098`](../specs/decisions/0098-album-entwurf-aus-vorschlag-und-eigener-entscheidung.md))*: Die
@@ -2563,11 +2575,12 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   und aus demselben Grund, in `project_deletion.py` mitgelöscht und in `tests/project_graph.py`
   geführt.
   - **Dreiwertig, und die drei Zustände fallen nie zusammen.** **Keine Zeile** heißt „nie
-    nachgeschlagen" und lässt den Namen unverändert; eine Zeile mit **leerer** Punktliste heißt
-    „nachgeschlagen, kein Fund" und verwirft ihn; eine Zeile **mit** Punkten bestätigt ihn, sofern
-    einer davon näher als `geonames.LANDMARK_PLAUSIBILITY_RADIUS_METERS` an einer gemessenen Zelle
-    des Events liegt. Die Punktliste ist deshalb **nicht nullbar, aber leer erlaubt**: Fiele (1) mit
-    (2) zusammen, verwürfe ein Lauf ohne Datensatz jeden Namen.
+    nachgeschlagen": der Name fällt am Event (fail-closed), und der nächste Lauf mit Auszug schlägt
+    ihn nach; eine Zeile mit **leerer** Punktliste heißt „nachgeschlagen, kein Fund", verwirft ihn
+    und wird nicht erneut gefragt; eine Zeile **mit** Punkten bestätigt ihn, sofern einer davon
+    näher als `geonames.LANDMARK_PLAUSIBILITY_RADIUS_METERS` an einer gemessenen Zelle des Events
+    liegt. Die Punktliste ist deshalb **nicht nullbar, aber leer erlaubt**: Fiele (1) mit (2)
+    zusammen, würde ein Name, der nur mangels Auszug fehlt, nie mehr nachgeschlagen.
   - **Die Punkte sind reine Gazetteer-Koordinaten.** In die Liste gelangt nie eine Foto-, Event- oder
     Zellkoordinate; die Tabelle trägt keine Entfernung, kein Prüfergebnis und keine `event_id` — sonst
     würde aus einer Namensauskunft eine persistierte Aufenthaltsaussage mit feinerer Körnung, als
@@ -2599,8 +2612,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     entstehen in **einem** Kommandoaufruf und **einem** Durchgang, jede mit eigener `*.sha256`.
     Gelesen wird er über `geonames.py::LandmarkGazetteer` — namensgeschlüsselt, nicht kachelweise,
     über die eine Faltung `fold_landmark_name`, **kein** Ähnlichkeitsrückfall. Fehlt er oder weicht
-    sein Hash ab, liefert `build_landmark_gazetteer` `None`: es wird **kein** Name verworfen
-    (fail-open), mit **eigenen** Grund-Token, getrennt von denen des Ortsauszugs.
+    sein Hash ab, liefert `build_landmark_gazetteer` `None`: der Lauf bleibt `SUCCESS`, aber jeder
+    Name ohne abgelegte Zeile fällt an der Ortsprüfung (fail-closed), mit **eigenen** Grund-Token,
+    getrennt von denen des Ortsauszugs.
 - **FineLabel** *(implementiert, Spec
   [`0055`](../specs/features/0055-remote-kategorie-klassifizierung-mit-kostenschaetzung.md),
   `models.py`; Tabelle `fine_labels`, bis Spec 0289 `category_labels`/`CategoryLabel`, ADR

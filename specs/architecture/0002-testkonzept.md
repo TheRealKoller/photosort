@@ -2598,6 +2598,10 @@ Die Prüfstack-Erweiterungen dieser Story (geöffneter Dialog in `no-horizontal-
 
 ## Bekannte Lücken (Stand 2026-08-03)
 
+- **Neu mit Spec 0584 (2026-10-06), zwei benannte Lücken der Ausreißer-Vorstufe:**
+  - **`LOCATION_CHANGE_CONFIRMING_PHOTOS` ist unkalibriert.** Tests sagen über den Wert nur `>= 2` aus und rechnen am Symbol. Ob zwei gemessene Fotos am neuen Ort im echten Bestand die richtige Grenze zwischen Ausreißer und Ortswechsel sind, belegt kein Korpus im Repository.
+  - **Ein echter Abstecher mit nur einem Foto verliert seinen Ort.** Er wird nicht mehr abgetrennt und gibt dem Event weder Zelle noch Namen; automatisiert ist das von einem GPS-Ausreißer nicht zu unterscheiden. Erkennungsweg ist Daniels Abnahme in der Kuratierungsansicht, gestützt auf die Ausreißerzahl in Block B von `event_probe`.
+
 - **Neu mit Issue #566 (2026-10-03), zwei benannte Lücken der Ablaufübersicht:**
   - **„Keine Begriffe, die sonst nirgends in der Oberfläche vorkommen“ ist nur zum Teil mechanisch belegt.** Geprüft wird, dass jede in den Erklärtexten zitierte Bezeichnung („Aktualisieren“, „Ausschuss gesichtet, weiter“ …) als Literal an ihrer Bedienstelle im Quellbaum steht. Ob der übrige Wortschatz Alltagssprache ist und nur Begriffe der Oberfläche nutzt, ist Sichtprüfung im `review-ux`-Durchlauf.
   - **Zwei offene Tabs derselben Person.** Schließt sie die Übersicht im einen Tab, erscheint sie im anderen, bereits geladenen Tab wegen `staleTime: Infinity` noch einmal. Das ist die gewollte Richtung („lieber einmal zu oft“) und ungeprüft.

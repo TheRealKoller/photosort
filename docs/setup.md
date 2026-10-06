@@ -535,9 +535,11 @@ Grund-Token: „der Ortsauszug fehlt" ist von „der Sehenswürdigkeitsauszug fe
 
 - Fehlt der **Ortsauszug** oder weicht er von seinem Hash ab, wird **kein Auflöser gebaut**, es
   entsteht **kein Ersatzweg**, und jeder Lauf schreibt eine laute Zeile.
-- Fehlt der **Sehenswürdigkeitsauszug** oder weicht er ab, ist die Ausfallrichtung **fail-open**:
-  es wird **kein** Sehenswürdigkeitsname verworfen, und der Lauf bleibt `SUCCESS`. So entfernt ein
-  einzelner fehlender Auszug nie alle Namen eines Laufs auf einmal.
+- Fehlt der **Sehenswürdigkeitsauszug** oder weicht er ab, ist die Ausfallrichtung **fail-closed**:
+  der Lauf bleibt `SUCCESS`, aber kein Event trägt einen Sehenswürdigkeitsnamen, für den noch keine
+  Auskunftszeile abgelegt ist — die Events heißen dann nach Ort bzw. Zeit. Ein Name, der sich nicht
+  über den Aufnahmeort bestätigen lässt, entfällt, statt falsch angezeigt zu werden; liegt der
+  Auszug wieder, schlägt der nächste Lauf die fehlenden Namen nach.
 
 Der Pfad des Ortsauszugs lässt sich über `PLACE_DATASET_PATH` verlegen (Vorgabe: der Pfad auf dem
 Volume); der Sehenswürdigkeitsauszug folgt ihm als Geschwisterdatei.

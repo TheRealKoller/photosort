@@ -122,7 +122,8 @@ class CountingGazetteer:
 
 def _landmark_factory(gazetteer: object | None = None) -> object:
     """Die zweite Fabrik, wie der Worker sie bekommt: sie merkt sich, ob und womit sie gerufen
-    wurde. Ohne Angabe liefert sie `None` - "es wird keines gebaut" (S4, fail-open)."""
+    wurde. Ohne Angabe liefert sie `None` - "es wird keines gebaut", und jeder Name faellt
+    (fail-closed)."""
 
     class _Factory:
         def __init__(self) -> None:
@@ -320,8 +321,9 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
     """Spec 0529, Abschnitt 5: `_landmark_points_by_name` nach dem Muster `_place_infos`.
 
     Die drei Zustaende der Auskunft fallen nicht zusammen (ADR 0123 Punkt 2): keine Zeile heisst
-    "nie nachgeschlagen" und der Name bleibt, eine leere Punktliste heisst "nachgeschlagen, ohne
-    Fund" und der Name faellt. Gelesen wird ausschliesslich die Zeile DIESES Projekts."""
+    "nie nachgeschlagen" und wird beim naechsten Lauf mit Auszug nachgeschlagen, eine leere
+    Punktliste heisst "nachgeschlagen, ohne Fund" und wird nicht erneut gefragt. Am Event fallen
+    beide (fail-closed). Gelesen wird ausschliesslich die Zeile DIESES Projekts."""
 
     async def test_an_empty_name_set_asks_nobody_and_builds_no_gazetteer(
         self, db_session: AsyncSession
@@ -484,8 +486,8 @@ class TestTheLandmarkPointsAreAskedOncePerProject:
     async def test_a_factory_that_yields_nothing_writes_no_row_and_keeps_the_name_out(
         self, db_session: AsyncSession
     ) -> None:
-        """S3/S4, fail-open: der Auszug fehlt - kein Durchgang, keine Zeile, und der Name fehlt im
-        Ergebnis, damit er die Pruefung unbeschadet passiert."""
+        """S3/S4: der Auszug fehlt - kein Durchgang, keine Zeile, und der Name fehlt im Ergebnis;
+        an der Ortspruefung faellt er damit (fail-closed)."""
         project = await _project(db_session, "landmark-kein-auszug")
         factory = _landmark_factory(None)
 
@@ -629,7 +631,7 @@ class TestTheRunWritesTheNames:
             project.id,
             values,
             _factory(resolver),
-            _landmark_factory(),  # type: ignore[arg-type]
+            _landmark_factory(CountingGazetteer({"brandenburger tor": (MITTE,)})),  # type: ignore[arg-type]
         )
 
         # Die Zellen kommen aus einer MENGE; verglichen wird deshalb als Menge.
@@ -807,7 +809,7 @@ class TestTheShareOfThePhotosDecides:
             project.id,
             values,
             _factory(resolver),
-            _landmark_factory(),  # type: ignore[arg-type]
+            _landmark_factory(CountingGazetteer({"brandenburger tor": (SPLIT,)})),  # type: ignore[arg-type]
         )
 
         [event] = await _events_of(db_session, run)
@@ -890,8 +892,8 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
     """Der Durchstich ueber BEIDE Fabriken (Spec 0529, Abschnitt 5).
 
     Ein bestaetigter Fundort laesst den Namen stehen; ein Fundort ausserhalb des Umkreises nimmt
-    ihn weg, und das Event faellt auf den Ortsnamen zurueck. Fehlt der Auszug, bleibt JEDER Name
-    (fail-open), es entsteht keine Zeile, und der Lauf bleibt `SUCCESS`."""
+    ihn weg, und das Event faellt auf den Ortsnamen zurueck. Fehlt der Auszug, faellt JEDER Name
+    ohne abgelegte Zeile (fail-closed), es entsteht keine Zeile, und der Lauf bleibt `SUCCESS`."""
 
     async def test_a_findspot_in_reach_keeps_the_name(self, db_session: AsyncSession) -> None:
         project, run, values = await _run_with_photos(db_session, "landmark-nah", [SPLIT])
@@ -958,14 +960,14 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         [event] = await _events_of(db_session, run)
         assert event.landmark_name == "Diokletianpalast"
 
-    async def test_without_a_measured_cell_an_empty_findspot_keeps_the_name(
+    async def test_without_a_measured_cell_the_name_falls_even_beside_a_fitting_findspot(
         self, db_session: AsyncSession
     ) -> None:
-        """DER PFLICHTFALL "keine Zelle UND leere Punktmenge": die Zellregel schlaegt die
-        Fundregel, der Name bleibt."""
+        """Ohne Aufnahmeort laesst sich nichts bestaetigen: der Name faellt, auch wenn ein
+        Fundort abgelegt ist."""
         project, run, values = await _run_with_photos(db_session, "landmark-ohne-zelle", [None])
         await _add_landmark(db_session, min(values), "Brandenburger Tor")
-        gazetteer = CountingGazetteer({"brandenburger tor": ()})
+        gazetteer = CountingGazetteer({"brandenburger tor": (MITTE,)})
 
         await _build_grouping_and_rankings(
             db_session,
@@ -977,7 +979,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         )
 
         [event] = await _events_of(db_session, run)
-        assert event.landmark_name == "Brandenburger Tor"
+        assert event.landmark_name is None
 
     async def test_the_candidate_set_is_looked_up_not_only_the_winner(
         self, db_session: AsyncSession
@@ -1042,11 +1044,11 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
             "Diokletianpalast",
         ]
 
-    async def test_a_missing_extract_keeps_every_name_and_writes_no_row(
+    async def test_a_missing_extract_drops_every_name_and_writes_no_row(
         self, db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """S4, fail-open: der Sehenswuerdigkeitsauszug fehlt - kein Name faellt, der Lauf bleibt
-        `SUCCESS`, und die Logzeile traegt nur das eigene Grund-Token."""
+        """S4, fail-closed: der Sehenswuerdigkeitsauszug fehlt - kein Event behaelt einen Namen
+        ohne Zeile, der Lauf bleibt `SUCCESS`, und die Logzeile traegt nur das eigene Grund-Token."""
         from photosort.geonames import LANDMARK_DATASET_REASON_MISSING, build_landmark_gazetteer
 
         project, run, values = await _run_with_photos(db_session, "landmark-fehlt", [SPLIT])
@@ -1063,14 +1065,15 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
             )
 
         [event] = await _events_of(db_session, run)
-        assert event.landmark_name == "Diokletianpalast"
+        assert event.landmark_name is None
+        assert event.place_name == "Split"
         assert await _landmark_rows(db_session, project.id) == []
         assert run.status == ScanStatus.SUCCESS
         assert any(
             LANDMARK_DATASET_REASON_MISSING in record.getMessage() for record in caplog.records
         )
 
-    async def test_a_hash_mismatch_keeps_every_name_too(
+    async def test_a_hash_mismatch_drops_every_name_too(
         self, db_session: AsyncSession, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         from photosort.geonames import (
@@ -1095,7 +1098,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
             )
 
         [event] = await _events_of(db_session, run)
-        assert event.landmark_name == "Diokletianpalast"
+        assert event.landmark_name is None
         assert await _landmark_rows(db_session, project.id) == []
         assert any(
             LANDMARK_DATASET_REASON_HASH_MISMATCH in record.getMessage()
@@ -1106,7 +1109,8 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         """S3/S4: die beiden Grund-Token und die beiden Ausfallrichtungen sind getrennt - ein
-        vorhandener Sehenswuerdigkeitsauszug arbeitet auch ohne Ortsauszug und umgekehrt."""
+        vorhandener Sehenswuerdigkeitsauszug bestaetigt auch ohne Ortsauszug, und ein fehlender
+        nimmt den Namen, waehrend der Ortsauszug weiter benennt."""
         from photosort.geonames import build_landmark_gazetteer, build_place_resolver
 
         present = _write_landmark_extract(tmp_path, "Diokletianpalast", 43.5081, 16.4402)
@@ -1140,7 +1144,7 @@ class TestTheLandmarkNameNeedsAFindspotInReach:
             lambda names: build_landmark_gazetteer(names, path=absent_landmark),
         )
         [event_b] = await _events_of(db_session, run_b)
-        assert event_b.landmark_name == "Diokletianpalast"
+        assert event_b.landmark_name is None
         assert event_b.place_name == "Split"
 
 
@@ -1177,7 +1181,7 @@ class TestTheRebuildObeysTheThresholdOfTheDay:
             project.id,
             values,
             _factory(resolver),
-            _landmark_factory(),  # type: ignore[arg-type]
+            _landmark_factory(CountingGazetteer({"brandenburger tor": (SPLIT,)})),  # type: ignore[arg-type]
         )
 
         detections_before = await _detections_of(db_session, project.id)
@@ -1334,10 +1338,103 @@ class TestADiscardedHitIsIndistinguishableFromNoHitAtAll:
             confidence=LANDMARK_CONFIDENCE_THRESHOLD,
         )
 
-        await _build_grouping_and_rankings(db_session, run, project.id, values, None, None)
+        await _build_grouping_and_rankings(
+            db_session,
+            run,
+            project.id,
+            values,
+            None,
+            _landmark_factory(CountingGazetteer({"brandenburger tor": (KREUZBERG,)})),  # type: ignore[arg-type]
+        )
 
         [event] = await _events_of(db_session, run)
         assert event.landmark_name == "Brandenburger Tor"
+
+
+class TestTheRebuildIsFailClosedToo:
+    """ADR 0135 Punkt 3 im Request-Pfad: `rebuild_run_grouping` schlaegt nichts nach und reicht
+    `None` durch - ein Name mit abgelegter bestaetigender Zeile bleibt, einer ohne Zeile faellt."""
+
+    async def test_a_stored_row_keeps_the_name_and_a_missing_row_drops_it(
+        self, db_session: AsyncSession
+    ) -> None:
+        project, run, values = await _run_with_photos(db_session, "neuaufbau-zeile", [SPLIT, MITTE])
+        confirmed_photo, unconfirmed_photo = sorted(values)
+        await _add_landmark(db_session, confirmed_photo, "Diokletianpalast")
+        await _build_grouping_and_rankings(
+            db_session,
+            run,
+            project.id,
+            values,
+            _factory(CountingResolver({})),  # type: ignore[arg-type]
+            _landmark_factory(CountingGazetteer({"diokletianpalast": ((43.5081, 16.4402),)})),
+        )
+        # Erst NACH dem Lauf erkannt: fuer diesen Namen gibt es keine abgelegte Zeile.
+        await _add_landmark(db_session, unconfirmed_photo, "Brandenburger Tor")
+
+        await rebuild_run_grouping(db_session, project.id)
+
+        db_session.expunge_all()
+        assert [event.landmark_name for event in await _events_of(db_session, run)] == [
+            "Diokletianpalast",
+            None,
+        ]
+        assert [row.folded_name for row in await _landmark_rows(db_session, project.id)] == [
+            "diokletianpalast"
+        ]
+
+
+class TestAnExcursionThroughTheWorker:
+    """ADR 0135 Punkt 1/2 ueber den ganzen Weg: A-X-A wird EIN Event am Ort A - im Lauf wie im
+    Neuaufbau, ohne Migration und ohne dass an den Fotos etwas geschrieben wird."""
+
+    async def test_a_x_a_is_one_event_in_the_run_and_in_the_rebuild(
+        self, db_session: AsyncSession
+    ) -> None:
+        project, run, values = await _run_with_photos(
+            db_session, "ausreisser", [SPLIT, MITTE, SPLIT]
+        )
+        photos = (
+            (await db_session.execute(select(Photo).where(Photo.project_id == project.id)))
+            .scalars()
+            .all()
+        )
+        for photo in photos:
+            photo.taken_at = _BASE + timedelta(minutes=sorted(values).index(photo.id))
+        await db_session.flush()
+        resolver = CountingResolver({SPLIT: _answer("Split"), MITTE: _answer("Berlin")})
+
+        await _build_grouping_and_rankings(
+            db_session,
+            run,
+            project.id,
+            values,
+            _factory(resolver),  # type: ignore[arg-type]
+            _landmark_factory(),
+        )
+
+        def shape(events: list[Event]) -> list[tuple[object, ...]]:
+            return [
+                (event.place_kind, event.place_lat, event.place_lon, event.place_name)
+                for event in events
+            ]
+
+        expected = [("coordinate", *SPLIT, "Split")]
+        assert shape(await _events_of(db_session, run)) == expected
+        assert resolver.asked == [SPLIT]
+
+        await rebuild_run_grouping(db_session, project.id)
+
+        db_session.expunge_all()
+        assert shape(await _events_of(db_session, run)) == expected
+        stored = (
+            await db_session.execute(
+                select(Photo.gps_lat, Photo.gps_lon)
+                .where(Photo.project_id == project.id)
+                .order_by(Photo.id)
+            )
+        ).all()
+        assert [tuple(row) for row in stored] == [SPLIT, MITTE, SPLIT]
 
 
 class TestNothingLeaksIntoALogOrIntoTheRunRow:

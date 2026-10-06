@@ -247,8 +247,8 @@ class TestTheGazetteer:
 
 
 class TestTheFactoryChecksTheSecondExtractBeforeEveryUse:
-    """S3 und S4: eigener Bauweg samt eigener Prüfung, eigene Grund-Token, fail-open - ein
-    fehlender Sehenswürdigkeits-Auszug verwirft keinen Namen."""
+    """S3 und S4: eigener Bauweg samt eigener Prüfung, eigene Grund-Token, fail-closed - ohne
+    Sehenswürdigkeits-Auszug entsteht kein Gazetteer, und Namen ohne Zeile fallen am Event."""
 
     def _prepared(self, tmp_path: Path) -> Path:
         target = tmp_path / "sehenswuerdigkeiten.txt"
@@ -309,7 +309,7 @@ class TestTheFactoryChecksTheSecondExtractBeforeEveryUse:
 
     def test_the_two_extracts_have_their_own_reason_tokens(self) -> None:
         """S3: Sonst wäre „der Sehenswürdigkeitsauszug fehlt" von „der Ortsauszug fehlt" nicht zu
-        unterscheiden - und daran hängt die fail-open-Ausfallrichtung."""
+        unterscheiden - und daran hängt die Diagnose eines namenlosen Laufs."""
         own = {
             LANDMARK_DATASET_REASON_MISSING,
             LANDMARK_DATASET_REASON_HASH_MISSING,

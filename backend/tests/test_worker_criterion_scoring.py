@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -33,6 +33,7 @@ from photosort.cloud_vision import (
 )
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.event_inputs import read_event_inputs
+from photosort.geonames import build_landmark_gazetteer
 from photosort.landmark import (
     LANDMARK_CONFIDENCE_THRESHOLD,
     MAX_LANDMARK_NAME_LENGTH,
@@ -2686,7 +2687,7 @@ async def test_multiple_simultaneously_failing_landmark_calls_each_log_their_own
     assert run.status == ScanStatus.SUCCESS
     assert client.calls == 3
     # Spec 0529: ohne Sehenswuerdigkeitsauszug meldet sich die Ortsprüfung einmal zusaetzlich
-    # (fail-open) - hier zaehlen nur die Worker-Zeilen der fehlgeschlagenen Cloud-Aufrufe.
+    # (fail-closed) - hier zaehlen nur die Worker-Zeilen der fehlgeschlagenen Cloud-Aufrufe.
     worker_records = [record for record in caplog.records if record.name == "photosort.worker"]
     assert len(worker_records) == 2
     messages = [record.message for record in worker_records]
@@ -4334,9 +4335,39 @@ async def _add_landmark_detection(
     return row
 
 
+# Ein Aufnahmeort fuer die Faelle, die einen Sehenswuerdigkeitsnamen am Event erwarten: Die
+# Ortspruefung ist fail-closed, ein Name braucht eine gemessene Zelle und eine bestaetigende
+# Auskunft (`_gazetteer_confirming_at`).
+PARIS = (48.8584, 2.2945)
+_AT_PARIS = {"gps_lat": PARIS[0], "gps_lon": PARIS[1]}
+
+
+def _gazetteer_confirming_at(spot: tuple[float, float]) -> Callable[[object], object]:
+    """Eine Namensverzeichnis-Fabrik, die JEDEN gefragten Namen am Ort `spot` bestaetigt - kein
+    automatisierter Test liest den echten zweiten Auszug."""
+
+    class _Gazetteer:
+        def points(self, name: str) -> tuple[tuple[float, float], ...]:
+            return (spot,)
+
+    return lambda names: _Gazetteer()
+
+
 async def _run_without_cloud(
-    session: AsyncSession, project: Project, scoring_run_id: int, cache_dir: Path
+    session: AsyncSession,
+    project: Project,
+    scoring_run_id: int,
+    cache_dir: Path,
+    *,
+    confirm_landmarks_at: tuple[float, float] | None = None,
 ) -> CriterionScoringRun:
+    """Ein Lauf ohne Cloud-Phase. Mit `confirm_landmarks_at` bestaetigt die Auskunft jeden Namen
+    an diesem Ort; ohne bleibt die Vorgabefabrik, und ohne Auszug faellt jeder Name."""
+    gazetteer_factory = (
+        build_landmark_gazetteer
+        if confirm_landmarks_at is None
+        else _gazetteer_confirming_at(confirm_landmarks_at)
+    )
     return await run_criterion_scoring(
         session,
         project,
@@ -4347,6 +4378,7 @@ async def _run_without_cloud(
         build_classifier=_no_scene_classifier,
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
+        build_landmark_gazetteer=gazetteer_factory,  # type: ignore[arg-type]
     )
 
 
@@ -4402,15 +4434,19 @@ async def test_the_landmark_names_of_a_run_without_any_cloud_phase_reach_their_e
     assert project.cloud_vision_detection_enabled is False
     scoring_run = await _add_successful_scoring_run(db_session, project)
     start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-    eiffel = await _add_photo(db_session, project, "a.jpg", "etag-a", start)
-    trocadero = await _add_photo(db_session, project, "b.jpg", "etag-b", _in_its_own_event(start))
+    eiffel = await _add_photo(db_session, project, "a.jpg", "etag-a", start, **_AT_PARIS)
+    trocadero = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", _in_its_own_event(start), **_AT_PARIS
+    )
     for photo in (eiffel, trocadero):
         await _add_score(db_session, photo, cluster_key="cluster-0")
         _write_display_variant(tmp_path, photo, _flat_image())
     await _add_landmark_detection(db_session, eiffel, "Eiffelturm")
     await _add_landmark_detection(db_session, trocadero, "Trocadero")
 
-    run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
+    run = await _run_without_cloud(
+        db_session, project, scoring_run.id, tmp_path, confirm_landmarks_at=PARIS
+    )
 
     assert run.status == ScanStatus.SUCCESS
     event_ids = await _event_ids_by_photo(db_session, run.id)
@@ -4509,8 +4545,10 @@ async def test_landmark_rows_of_mixed_origin_both_take_effect_in_one_run(
     await db_session.commit()
     scoring_run = await _add_successful_scoring_run(db_session, project)
     start = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
-    older = await _add_photo(db_session, project, "a.jpg", "etag-a", start)
-    fresh = await _add_photo(db_session, project, "b.jpg", "etag-b", _in_its_own_event(start))
+    older = await _add_photo(db_session, project, "a.jpg", "etag-a", start, **_AT_PARIS)
+    fresh = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", _in_its_own_event(start), **_AT_PARIS
+    )
     for photo in (older, fresh):
         await _add_score(db_session, photo, cluster_key="cluster-0")
         _write_display_variant(tmp_path, photo, _flat_image())
@@ -4540,6 +4578,7 @@ async def test_landmark_rows_of_mixed_origin_both_take_effect_in_one_run(
         build_aesthetics=_no_aesthetics_model,
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda _model: client,
+        build_landmark_gazetteer=_gazetteer_confirming_at(PARIS),  # type: ignore[arg-type]
         use_cloud=True,
     )
 
@@ -4796,10 +4835,10 @@ async def test_an_unsanitised_legacy_name_does_not_split_against_its_sanitised_t
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     legacy = await _add_photo(
-        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), **_AT_PARIS
     )
     clean = await _add_photo(
-        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
+        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), **_AT_PARIS
     )
     for photo in (legacy, clean):
         await _add_score(db_session, photo, cluster_key="cluster-0")
@@ -4807,7 +4846,9 @@ async def test_an_unsanitised_legacy_name_does_not_split_against_its_sanitised_t
     await _add_landmark_detection(db_session, legacy, "Eiffel​turm")
     await _add_landmark_detection(db_session, clean, "Eiffelturm")
 
-    run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
+    run = await _run_without_cloud(
+        db_session, project, scoring_run.id, tmp_path, confirm_landmarks_at=PARIS
+    )
 
     events = await _events_of_run(db_session, run.id)
     assert [(e.position, e.landmark_name) for e in events] == [(1, "Eiffelturm")]
@@ -4821,10 +4862,10 @@ async def test_an_overlong_legacy_name_is_discarded_and_causes_no_split(
     project = await _make_project(db_session)
     scoring_run = await _add_successful_scoring_run(db_session, project)
     overlong = await _add_photo(
-        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC), **_AT_PARIS
     )
     normal = await _add_photo(
-        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 5, tzinfo=UTC)
+        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 10, 5, tzinfo=UTC), **_AT_PARIS
     )
     for photo in (overlong, normal):
         await _add_score(db_session, photo, cluster_key="cluster-0")
@@ -4832,7 +4873,9 @@ async def test_an_overlong_legacy_name_is_discarded_and_causes_no_split(
     await _add_landmark_detection(db_session, overlong, "A" * (MAX_LANDMARK_NAME_LENGTH + 1))
     await _add_landmark_detection(db_session, normal, "Eiffelturm")
 
-    run = await _run_without_cloud(db_session, project, scoring_run.id, tmp_path)
+    run = await _run_without_cloud(
+        db_session, project, scoring_run.id, tmp_path, confirm_landmarks_at=PARIS
+    )
 
     events = await _events_of_run(db_session, run.id)
     assert [(e.position, e.landmark_name) for e in events] == [(1, "Eiffelturm")]
@@ -6315,6 +6358,8 @@ async def _run_with_embedder(
     client: object,
     build_place_resolver: object,
     build_embedder: object,
+    *,
+    build_landmark_gazetteer: object = build_landmark_gazetteer,
 ) -> CriterionScoringRun:
     return await run_criterion_scoring(
         session,
@@ -6328,6 +6373,7 @@ async def _run_with_embedder(
         build_landmarker=_no_face_landmarker,
         build_landmark_client=lambda _model: client,  # type: ignore[arg-type,return-value]
         build_place_resolver=build_place_resolver,  # type: ignore[arg-type]
+        build_landmark_gazetteer=build_landmark_gazetteer,  # type: ignore[arg-type]
         build_embedder=build_embedder,  # type: ignore[arg-type]
         use_cloud=True,
     )
@@ -6432,7 +6478,14 @@ class TestTheRegisterMakesTheNamesUniform:
         resolver = _RecordingResolverFactory({place_cell(*GARMISCH): _locality_answer("Grainau")})
 
         run = await _run_with_embedder(
-            db_session, project, scoring_run.id, tmp_path, client, resolver, ConstantEmbedder
+            db_session,
+            project,
+            scoring_run.id,
+            tmp_path,
+            client,
+            resolver,
+            ConstantEmbedder,
+            build_landmark_gazetteer=_gazetteer_confirming_at(GARMISCH),
         )
 
         events = (
@@ -6528,7 +6581,8 @@ class TestTheRegisterMakesTheNamesUniform:
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
         """Kein Einbetter, kein kanonischer Name, KEIN Laufabbruch: Die Erkennungszeilen entstehen
-        unveraendert, und jede verhaelt sich wie vor dem Register."""
+        unveraendert, und jede verhaelt sich wie vor dem Register - bestaetigt die Auskunft den
+        Namen am Aufnahmeort, benennt er sein Event."""
         project = await _cloud_project(db_session, "ohne-einbetter")
         scoring_run = await _add_successful_scoring_run(db_session, project)
         photo = await _landmark_photo(
@@ -6545,7 +6599,14 @@ class TestTheRegisterMakesTheNamesUniform:
         )
 
         run = await _run_with_embedder(
-            db_session, project, scoring_run.id, tmp_path, client, _no_resolver, _no_embedder
+            db_session,
+            project,
+            scoring_run.id,
+            tmp_path,
+            client,
+            _no_resolver,
+            _no_embedder,
+            build_landmark_gazetteer=_gazetteer_confirming_at(GARMISCH),
         )
 
         assert run.status == ScanStatus.SUCCESS

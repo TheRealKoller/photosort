@@ -207,7 +207,7 @@ def folded_landmark_names(names: Iterable[str]) -> dict[str, str]:
     Der SCHLUESSEL des Ergebnisses ist der uebergebene Name, der WERT der gefaltete: Abgelegt wird
     der gefaltete, nachgefragt wird mit dem Namen, den `events.py::_name_of` liefert. Liefen die
     beiden Seiten in getrennten Fassungen, traege die Zuordnung beim naechsten Sonderzeichen keinen
-    einzigen Namen mehr, und die Pruefung fiele still auf "keine Auskunft" zurueck (fail-open).
+    einzigen Namen mehr, und jeder Name fiele still an der Pruefung (fail-closed).
 
     Ein Name, der nach dem Trimmen leer ist, faellt weg: Er traegt keinen Aufsuchschluessel und
     bekaeme unter `""` eine Zeile, die kein Kandidat je wieder trifft."""
@@ -477,7 +477,7 @@ class DatasetReasons(NamedTuple):
 
     Zwei Auszuege fuehren je eigene: waeren sie dieselben, liesse sich „der
     Sehenswuerdigkeitsauszug fehlt" nicht von „der Ortsauszug fehlt" unterscheiden, und an genau
-    dieser Unterscheidung haengt die fail-open-Ausfallrichtung (S3, S4)."""
+    dieser Unterscheidung haengt die Diagnose eines namenlosen Laufs (S3, S4)."""
 
     missing: str
     hash_missing: str
@@ -592,9 +592,9 @@ def build_landmark_gazetteer(
     im Betrieb ist es der aus `PLACE_DATASET_PATH` abgeleitete Geschwisterpfad - nie ein Wert aus
     Datenbank oder Request.
 
-    S4 (fail-open): Fehlt der Auszug, wird KEIN Name verworfen, der Lauf bleibt `SUCCESS`. Die
-    Alternative waere ein Betriebszustand, in dem ein einzelner fehlender Auszug ALLE
-    Sehenswuerdigkeitsnamen eines Laufs auf einmal entfernte."""
+    S4 (fail-closed): Fehlt der Auszug, liefert der Bauweg `None`, der Lauf bleibt `SUCCESS` -
+    und jeder Sehenswuerdigkeitsname ohne abgelegte Zeile faellt an der Ortspruefung, statt
+    unbestaetigt stehen zu bleiben."""
     wanted = tuple(names)
     if not wanted:
         return None

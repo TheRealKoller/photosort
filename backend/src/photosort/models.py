@@ -1587,10 +1587,10 @@ class LandmarkPlaceLookup(Base):
 
     `points` ist die JSON-Liste von `[lat, lon]` der gefundenen Gazetteer-Punkte - NICHT nullbar und
     darf LEER sein (ADR 0123 Punkt 2). Die drei Zustände fallen sonst zusammen: **keine Zeile**
-    heißt „nie nachgeschlagen" (fail-open, der Name bleibt), eine **leere Liste** „nachgeschlagen,
-    ohne Fund" (der Name fällt), eine **gefüllte Liste** „nachgeschlagen, mit Fund" (der Name bleibt,
-    wenn ein Fundort im Umkreis des Aufnahmeorts liegt). Wäre die Spalte nullbar, verwürfe ein Lauf
-    ohne Sehenswürdigkeits-Auszug jeden Namen (S4).
+    heißt „nie nachgeschlagen" (der Name fällt am Event, fail-closed; der nächste Lauf mit Auszug
+    schlägt nach), eine **leere Liste** „nachgeschlagen, ohne Fund" (der Name fällt, und es wird
+    nicht erneut nachgeschlagen), eine **gefüllte Liste** „nachgeschlagen, mit Fund" (der Name
+    bleibt, wenn ein Fundort im Umkreis des Aufnahmeorts liegt).
 
     KEINE Spalte für eine Entfernung, ein Prüfergebnis oder eine `event_id` (S1): eine persistierte
     Entfernung machte aus einer Namensauskunft eine Aufenthaltsaussage mit feinerer Körnung, als

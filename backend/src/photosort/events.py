@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_left
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from fractions import Fraction
 from typing import Protocol
@@ -194,6 +194,14 @@ MERGE_BLOCK_REASONS = (
 # EVENT_EXTENT_MAX_METERS - aenderbar, durch keinen Test auf den Zahlwert gepinnt.
 # Ein Wert von 1 widerspraeche der Zusage "ein einzelnes abweichendes Foto trennt nie".
 MOTIF_CHANGE_CONFIRMING_PHOTOS = 3
+
+# Wie viele aufeinanderfolgende GEMESSENE Fotos jenseits von `EVENT_STEP_MAX_METERS` einen
+# Ortswechsel bestaetigen, das erste abweichende eingeschlossen. Darunter ist die Folge ein
+# Ausreisser (`location_excursions`), sofern das naechste gemessene Foto zum Bezug zurueckkehrt.
+# UNKALIBRIERT, als Modulattribut gelesen, durch keinen Test auf den Zahlwert gepinnt. Ein Wert
+# von 1 widerspraeche der Zusage "ein einzelnes abweichendes Foto trennt nie". Kehrseite: ein
+# echter Abstecher mit weniger Fotos verliert seinen Ort.
+LOCATION_CHANGE_CONFIRMING_PHOTOS = 2
 
 
 @dataclass(frozen=True)
@@ -754,6 +762,77 @@ def motif_change_starts(
     return frozenset(starts)
 
 
+def location_excursions(
+    ordered: Sequence[EventCandidate], *, confirming_photos: int | None = None
+) -> frozenset[int]:
+    """Die Foto-Ids der BEREITS SORTIERTEN Folge, deren Ort ein AUSREISSER ist - eine Vorstufe der
+    Event-Bildung, REIN, im Muster von `motif_change_starts`. Aufwand O(n * k) mit k =
+    Bestaetigungszahl: nach einem bestaetigten Wechsel setzt die Auswertung hinter dem neuen Bezug
+    neu an, und dessen Index steigt dabei streng.
+
+    AUSREISSER ist eine Folge von weniger als `LOCATION_CHANGE_CONFIRMING_PHOTOS` Fotos mit
+    GEMESSENER Koordinate (`measured_position`), jedes weiter als `EVENT_STEP_MAX_METERS` vom Bezug,
+    nach der das naechste gemessene Foto wieder innerhalb dieser Schwelle am Bezug liegt. Bezug ist
+    die letzte gemessene Koordinate vor der Folge, die selbst kein Ausreisser ist. Ohne Bezug (erstes
+    gemessenes Foto) und ohne Rueckkehr gibt es keinen Ausreisser. Erreicht die Folge die
+    Bestaetigungszahl, ist der alte Ort verlassen: ihr AELTESTES Foto wird der neue Bezug, und die
+    uebrigen werden gegen ihn neu gemessen - zwei Fotos fern vom alten Ort, die nicht beieinander
+    liegen, sind noch keine zwei Fotos am neuen Ort.
+
+    Fotos ohne gemessene Koordinate zaehlen NIE mit, weder fuer den Ausreisser noch fuer die
+    Bestaetigung - sonst bestaetigte ein Foto, das den Ort des Ausreissers uebernommen hat, den
+    Wechsel. Sie gehoeren aber zum Ausreisser, wenn sie zwischen Bezugs- und Rueckkehrfoto liegen
+    und ihr wirksamer Ort weiter als `EVENT_STEP_MAX_METERS` vom Bezug liegt.
+
+    Beide Schwellen werden als MODULATTRIBUT gelesen, nie als Default-Parameterwert gebunden;
+    `confirming_photos` (`None` = Modulkonstante) ist fuer die Empfindlichkeitsmessung injizierbar."""
+    confirming = (
+        LOCATION_CHANGE_CONFIRMING_PHOTOS if confirming_photos is None else confirming_photos
+    )
+    step = EVENT_STEP_MAX_METERS
+    excursions: set[int] = set()
+    reference: tuple[float, float] | None = None
+    reference_index = 0
+    pending: list[int] = []
+
+    index = 0
+    while index < len(ordered):
+        candidate = ordered[index]
+        position = measured_position(candidate)
+        if position is None:
+            index += 1
+            continue
+        if reference is None:
+            reference, reference_index = position, index
+            index += 1
+            continue
+        if haversine_meters(*reference, *position) > step:
+            pending.append(index)
+            if len(pending) >= confirming:
+                # Bestaetigt ist nur, dass der alte Ort verlassen wurde. Neuer Bezug ist das
+                # AELTESTE ausstehende Foto; die uebrigen werden gegen IHN neu gemessen.
+                reference_index = pending[0]
+                reference = measured_position(ordered[reference_index])
+                pending = []
+                index = reference_index + 1
+                continue
+            index += 1
+            continue
+        if pending:
+            for between in ordered[reference_index + 1 : index]:
+                location = between.location
+                if measured_position(between) is not None or (
+                    location is not None
+                    and haversine_meters(*reference, location.lat, location.lon) > step
+                ):
+                    excursions.add(between.photo_id)
+            pending = []
+        reference, reference_index = position, index
+        index += 1
+
+    return frozenset(excursions)
+
+
 def _name_of(members: Sequence[EventCandidate]) -> str | None:
     """Der Name eines Events, oder `None`.
 
@@ -862,35 +941,22 @@ def _landmark_name_is_plausible(
     cells: Sequence[tuple[float, float]],
     landmark_points_by_name: LandmarkPointsByName | None,
 ) -> bool:
-    """Ob ein Sehenswuerdigkeitsname zu den GEMESSENEN Zellen eines Events passt (Spec 0529).
+    """Ob ein Sehenswuerdigkeitsname zu den GEMESSENEN Zellen eines Events passt - FAIL-CLOSED.
 
-    Die Reihenfolge ist die Regel, nicht die Auswertung von oben nach unten:
+    Wahr NUR, wenn zum Namen eine Auskunftszeile mit mindestens einem Fundort vorliegt und
+    mindestens EIN Fundort mindestens EINER gemessenen Zelle naeher liegt als
+    `LANDMARK_PLAUSIBILITY_RADIUS_METERS` - STRENG, die Grenze selbst gehoert nicht mehr dazu.
+    Falsch in jedem Zweifelsfall: keine Auskunft (`None`), keine gemessene Zelle, keine Zeile zum
+    Namen, leere Punktmenge. Ein Name, der sich nicht ueber den Aufnahmeort bestaetigen laesst,
+    entfaellt, statt falsch angezeigt zu werden; fehlt der Auszug, traegt deshalb kein Event des
+    Laufs einen Sehenswuerdigkeitsnamen. Die Pruefung kann nur wegnehmen, nie einen Namen setzen.
 
-    1. **Keine Auskunft** (`landmark_points_by_name is None`) -> wahr. Ein Lauf ohne
-       Sehenswuerdigkeits-Auszug verwirft KEINEN Namen (S4, fail-open) - die Alternative waere ein
-       Betriebszustand, in dem ein einzelner fehlender Auszug alle Namen eines Laufs auf einmal
-       entfernte.
-    2. **Keine einzige gemessene Zelle** -> wahr. Ohne Aufnahmeort gibt es nichts zu pruefen; das
-       schlaegt den Fund-Fall, deshalb steht es VOR ihm.
-    3. **Kein Eintrag zum Namen** -> wahr. Das ist Zustand 1 am Datenbestand ("nie nachgeschlagen")
-       und strikt verschieden von Zustand 2 "nachgeschlagen, ohne Fund" - unterschieden wird an der
-       ABWESENHEIT des Eintrags, nicht am Ergebnis (ADR 0123 Punkt 2).
-    4. **Leere Punktmenge** -> falsch. Nachgeschlagen und nichts gefunden.
-    5. Sonst: wahr, wenn mindestens EIN Fundort mindestens EINER gemessenen Zelle naeher liegt als
-       `LANDMARK_PLAUSIBILITY_RADIUS_METERS` - STRENG, die Grenze selbst gehoert nicht mehr dazu.
-       Eine Entfernung wird dabei nicht abgelegt und nicht geloggt (S1); sie ist ein reiner
-       Zwischenwert dieser Entscheidung.
-
-    Rein: sie liest nichts nach, sie greift nur auf die uebergebene Auskunft zu. Der Name selbst
-    kommt gefaltet von der Schreibseite (`landmark_place_lookups.folded_name`), sodass hier nur der
-    Schluesselvergleich steht und keine zweite Faltung entsteht."""
-    if landmark_points_by_name is None:
-        return True
-    if not cells:
-        return True
+    Eine Entfernung wird nicht abgelegt und nicht geloggt (S1); sie ist ein reiner Zwischenwert.
+    Rein: sie liest nichts nach. Der Name kommt gefaltet von der Schreibseite
+    (`landmark_place_lookups.folded_name`), hier steht nur der Schluesselvergleich."""
+    if landmark_points_by_name is None or not cells:
+        return False
     points = landmark_points_by_name.get(landmark_name)
-    if points is None:
-        return True
     if not points:
         return False
     radius = LANDMARK_PLAUSIBILITY_RADIUS_METERS
@@ -1254,13 +1320,17 @@ class EventFormation:
 
     `blocked_segments` ist die Gegenfrage dazu: woran es lag, dass das Uebrige NICHT zusammengelegt
     wurde (Block F). Sie reicht die Beobachtung der Stufe durch, statt dass ein Aufrufer sie
-    nachbildet."""
+    nachbildet.
+
+    `excursion_photos` ist die Zahl der Fotos, die als Ausreisser (`location_excursions`) ohne Ort
+    in die Bildung eingingen - nur eine Anzahl, nie welche (Block B)."""
 
     events: tuple[BuiltEvent, ...]
     causes: tuple[frozenset[str], ...]
     dissolved_boundaries: int = 0
     moved_photos: int = 0
     blocked_segments: tuple[BlockedSegment, ...] = ()
+    excursion_photos: int = 0
 
 
 def build_events(
@@ -1332,10 +1402,20 @@ def explain_events(
     nicht die einer Nachbildung.
 
     `landmark_points_by_name` ist die Sehenswuerdigkeitsauskunft des Laufs (Spec 0529): gefalteter
-    Name -> Gazetteer-Fundorte. `None` (die Vorgabe) heisst "keine Auskunft vorhanden" und laesst
-    jeden bestehenden Aufruf gueltig; ein Eintrag mit LEERER Punktmenge heisst "nachgeschlagen, ohne
-    Fund". Der Unterschied der beiden ist die ganze Regel - siehe `_landmark_name_is_plausible`."""
+    Name -> Gazetteer-Fundorte. `None` (die Vorgabe) heisst "keine Auskunft vorhanden"; die
+    Pruefung ist fail-closed, ohne Auskunft traegt also kein Event einen Sehenswuerdigkeitsnamen -
+    siehe `_landmark_name_is_plausible`."""
     ordered = sorted(candidates, key=lambda candidate: (candidate.taken_at, candidate.photo_id))
+    # DIE EINE STELLE, an der ein Ausreisser seinen Ort verliert (ADR 0135 Punkt 2): fuer den
+    # Durchlauf, Stufe 3 und `_built` - er bleibt Mitglied, speist aber weder Schritt, Ausdehnung,
+    # Zelle noch Namenspruefung. An den Fotos selbst wird nichts geschrieben.
+    excursions = location_excursions(ordered)
+    ordered = [
+        replace(candidate, location=None, gps_lat=None, gps_lon=None)
+        if candidate.photo_id in excursions
+        else candidate
+        for candidate in ordered
+    ]
     noted_starts = motif_change_starts(
         ordered,
         confirming_photos=confirming_photos,
@@ -1387,6 +1467,7 @@ def explain_events(
         dissolved_boundaries=outcome.dissolved_boundaries,
         moved_photos=len(outcome.moved_photo_ids),
         blocked_segments=outcome.blocked_segments,
+        excursion_photos=len(excursions),
     )
 
 
