@@ -239,12 +239,37 @@ test.describe('Bilddetail: der reservierte Platz', () => {
    *  Grundlage, ausgeschlossenes Dokument) liegen jenseits dieser Spanne. */
   const SUCHTIEFE = 5
 
+  /**
+   * Wartet, bis ALLES zwischen Bühne und Bezugselement fertig geladen ist - die Motivreihe und der
+   * Personenabschnitt. Beide hängen an eigenen Abfragen (`motif-set`, `GET /persons`), die nach
+   * dem Sichtbarwerden der Bewertungsgruppe noch laufen können. Gewartet wird vor der Suche nach
+   * dem korrigierten Foto und damit auch vor der Startmessung.
+   *
+   * OHNE DIESES WARTEN wird der Fall sprunghaft, auf zwei Wegen:
+   * - Die Suche liest `[data-motif-corrected]`, solange die Motivreihe noch als Platzhalter steht,
+   *   überspringt so das korrigierte Foto und meldet „keines unter den ersten fünf".
+   * - Der Personenabschnitt steht zwischen Motivbereich und Bezugselement. Landen seine Zeilen
+   *   und die Schaltfläche „Gesicht zeigen" erst nach der Startmessung, rutscht die Kopfzeile nach
+   *   unten - ein Ladesprung, den der Fall fälschlich dem Anheften zuschriebe.
+   *
+   * „Gesicht zeigen" ist das POSITIVE Zeichen: Es entsteht erst mit der geladenen Personenliste.
+   * Das bloße Fehlen des Ladehinweises bewiese nichts, solange die Abfrage nicht begonnen hat.
+   */
+  async function bereicheOberhalbGeladen(page: Page): Promise<void> {
+    await expect(page.locator('[data-motif-key]'), 'die acht Motivsymbole').toHaveCount(8)
+    await expect(
+      page.getByRole('button', { name: 'Gesicht zeigen' }),
+      'der Personenabschnitt ist geladen',
+    ).toBeVisible()
+  }
+
   test('bewegt nichts unterhalb des Motivbereichs beim Auf- und Zuklappen', async ({ page }) => {
     const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
 
     let gefunden = false
     for (let index = 0; index < SUCHTIEFE; index += 1) {
       await oeffneFoto(page, projectId, index)
+      await bereicheOberhalbGeladen(page)
       const korrigiert = page.locator('[data-motif-corrected]')
       if ((await korrigiert.count()) > 0) {
         gefunden = true
