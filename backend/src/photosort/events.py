@@ -766,14 +766,18 @@ def location_excursions(
     ordered: Sequence[EventCandidate], *, confirming_photos: int | None = None
 ) -> frozenset[int]:
     """Die Foto-Ids der BEREITS SORTIERTEN Folge, deren Ort ein AUSREISSER ist - eine Vorstufe der
-    Event-Bildung, REIN und linear, im Muster von `motif_change_starts`.
+    Event-Bildung, REIN, im Muster von `motif_change_starts`. Aufwand O(n * k) mit k =
+    Bestaetigungszahl: nach einem bestaetigten Wechsel setzt die Auswertung hinter dem neuen Bezug
+    neu an, und dessen Index steigt dabei streng.
 
     AUSREISSER ist eine Folge von weniger als `LOCATION_CHANGE_CONFIRMING_PHOTOS` Fotos mit
     GEMESSENER Koordinate (`measured_position`), jedes weiter als `EVENT_STEP_MAX_METERS` vom Bezug,
     nach der das naechste gemessene Foto wieder innerhalb dieser Schwelle am Bezug liegt. Bezug ist
     die letzte gemessene Koordinate vor der Folge, die selbst kein Ausreisser ist. Ohne Bezug (erstes
-    gemessenes Foto) und ohne Rueckkehr gibt es keinen Ausreisser; erreicht die Folge die
-    Bestaetigungszahl, ist sie ein Ortswechsel, und ihr juengstes Foto wird der neue Bezug.
+    gemessenes Foto) und ohne Rueckkehr gibt es keinen Ausreisser. Erreicht die Folge die
+    Bestaetigungszahl, ist der alte Ort verlassen: ihr AELTESTES Foto wird der neue Bezug, und die
+    uebrigen werden gegen ihn neu gemessen - zwei Fotos fern vom alten Ort, die nicht beieinander
+    liegen, sind noch keine zwei Fotos am neuen Ort.
 
     Fotos ohne gemessene Koordinate zaehlen NIE mit, weder fuer den Ausreisser noch fuer die
     Bestaetigung - sonst bestaetigte ein Foto, das den Ort des Ausreissers uebernommen hat, den
@@ -791,18 +795,28 @@ def location_excursions(
     reference_index = 0
     pending: list[int] = []
 
-    for index, candidate in enumerate(ordered):
+    index = 0
+    while index < len(ordered):
+        candidate = ordered[index]
         position = measured_position(candidate)
         if position is None:
+            index += 1
             continue
         if reference is None:
             reference, reference_index = position, index
+            index += 1
             continue
         if haversine_meters(*reference, *position) > step:
             pending.append(index)
             if len(pending) >= confirming:
-                reference, reference_index = position, index
+                # Bestaetigt ist nur, dass der alte Ort verlassen wurde. Neuer Bezug ist das
+                # AELTESTE ausstehende Foto; die uebrigen werden gegen IHN neu gemessen.
+                reference_index = pending[0]
+                reference = measured_position(ordered[reference_index])
                 pending = []
+                index = reference_index + 1
+                continue
+            index += 1
             continue
         if pending:
             for between in ordered[reference_index + 1 : index]:
@@ -814,6 +828,7 @@ def location_excursions(
                     excursions.add(between.photo_id)
             pending = []
         reference, reference_index = position, index
+        index += 1
 
     return frozenset(excursions)
 

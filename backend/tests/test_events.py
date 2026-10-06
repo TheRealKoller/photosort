@@ -1502,6 +1502,20 @@ class TestLocationExcursions(_UnderShiftedEventConstants):
 
         assert location_excursions(candidates) == frozenset()
 
+    def test_the_oldest_far_photo_becomes_the_new_reference(self) -> None:
+        """Zwei Fotos fern vom alten Bezug, die nicht beieinanderliegen: Das AELTERE wird der neue
+        Bezug, und das juengere ist gegen ihn ein Ausreisser, sobald die Folge zu ihm zurueckkehrt."""
+        a = _north(3 * _step_max())
+        x = _north(4 * _step_max() + EPSILON_METERS)
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=a),
+            _measured_candidate(3, _at(minutes=2), lat=x),
+            _measured_candidate(4, _at(minutes=3), lat=a),
+        ]
+
+        assert location_excursions(candidates) == frozenset({3})
+
     def test_already_neutralised_candidates_yield_nothing(self) -> None:
         candidates = [
             _measured_candidate(1, T0),
@@ -1588,6 +1602,22 @@ class TestAnExcursionStaysInItsEvent(_UnderShiftedEventConstants):
         [event] = _build(candidates, landmark_points_by_name={name: ((far_away, BASE_LON),)})
 
         assert event.landmark_name is None
+
+    def test_a_new_place_followed_by_a_neighbouring_single_photo_keeps_one_event(self) -> None:
+        """P-P, dann A, X neben A und A ab da: Zwei Fotos fern von P sind noch kein Ort, an dem
+        zwei Fotos liegen - A wird der neue Bezug, X ist ein Ausreisser, und es bleiben zwei
+        Events statt vier."""
+        a = _north(3 * _step_max())
+        x = _north(4 * _step_max() + EPSILON_METERS)
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1)),
+            _measured_candidate(3, _at(minutes=2), lat=a),
+            _measured_candidate(4, _at(minutes=3), lat=x),
+            *(_measured_candidate(5 + i, _at(minutes=4 + i), lat=a) for i in range(3)),
+        ]
+
+        assert [event.photo_ids for event in _build(candidates)] == [(1, 2), (3, 4, 5, 6, 7)]
 
     def test_nothing_is_written_back_to_the_candidates(self) -> None:
         candidates = self._a_x_a()
