@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.51.0](https://github.com/TheRealKoller/photosort/compare/v0.50.0...v0.51.0) (2026-10-05)
+
+
+### Features
+
+* Alternativen als Aufnahmeserie, aufklappbar, mit Tauschen und Hinzufügen (Spec 0578) ([#580](https://github.com/TheRealKoller/photosort/issues/580)) ([8bd0460](https://github.com/TheRealKoller/photosort/commit/8bd0460b1f35fc7afd6b161675bee2542f7aa057))
+* Kuratierungskacheln mit Foto im Mittelpunkt und Details bei Bedarf (Spec 0579) ([#582](https://github.com/TheRealKoller/photosort/issues/582)) ([a01a204](https://github.com/TheRealKoller/photosort/commit/a01a20462cd126e81f6fae0655cbb93cfcaef940))
+
 ## [0.50.0](https://github.com/TheRealKoller/photosort/compare/v0.49.0...v0.50.0) (2026-10-04)
 
 
