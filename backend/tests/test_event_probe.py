@@ -128,13 +128,18 @@ def _named_candidate(
     )
 
 
+# Eine Auskunft, die "Palast" am Ort (0, 0) BESTAETIGT. Die Ortspruefung ist fail-closed: Ein
+# Fall, der ein benanntes Event erwartet, braucht eine gemessene Zelle und diese Zeile.
+_PALAST_CONFIRMED = {"Palast": ((0.0, 0.0),)}
+
+
 def _one_event_with_a_share_of(members: int) -> list[EventCandidate]:
     """EIN Event aus `members` Fotos, von denen GENAU EINES den Namen traegt - der Traegeranteil
-    ist damit 1/`members`.
+    ist damit 1/`members`. Der Traeger steht bei (0, 0), wo `_PALAST_CONFIRMED` ihn bestaetigt.
 
     Die uebrigen liegen je eine Minute auseinander: dicht genug, dass die Zeitluecke sie nicht
     trennt, und die Zeitreihenfolge bleibt die der Uebergabe."""
-    named = _named_candidate(1_000_000, 0, "Palast")
+    named = _named_candidate(1_000_000, 0, "Palast", gps=(0.0, 0.0))
     return [named, *(_candidate(minutes) for minutes in range(1, members))]
 
 
@@ -384,7 +389,7 @@ class TestTheReadPath:
     async def test_a_name_without_a_row_stays_absent(self, db_session: AsyncSession) -> None:
         """Der dritte Zustand: Ein anderer Name DESSELBEN Projekts hat eine Zeile, der eigene
         nicht - nur der eigene fehlt im Ergebnis, und genau daran haengt "nie nachgeschlagen"
-        (fail-open, S4)."""
+        (der Name faellt am Event, fail-closed)."""
         project_id = await _project(db_session)
         ranked = await _photo(db_session, project_id, minutes=0, gps=(43.51, 16.44))
         await _add_landmark(db_session, ranked, "Trevi-Brunnen")
@@ -773,6 +778,28 @@ class TestBlockBCountsTheCounterIndicationOfTheThirdStage:
         assert (counts.dissolved_by_merge, counts.photos_moved_by_merge) == (1, 1)
         assert counts.boundaries_before_merge == 1
         assert counts.boundaries_total == 0
+
+
+class TestBlockBCountsTheNeutralisedPhotos:
+    """ADR 0135: Wie viele Fotos ihren Ort als Ausreisser fuer die Bildung verloren haben - NUR
+    als Zahl ueber den Lauf, ohne Event- oder Zeitbezug (S4)."""
+
+    def test_an_excursion_is_counted(self) -> None:
+        candidates = [
+            _candidate(0, gps=(0.0, 0.0)),
+            _candidate(1, gps=(0.1, 0.0)),
+            _candidate(2, gps=(0.0, 0.0)),
+        ]
+
+        counts = cause_counts(explain_events(candidates))
+
+        assert counts.photos_without_place_as_excursion == 1
+        assert counts.boundaries_total == 0
+
+    def test_a_run_without_an_excursion_reports_zero(self) -> None:
+        counts = cause_counts(_formation((2, frozenset()), (2, frozenset({BOUNDARY_TIME_GAP}))))
+
+        assert counts.photos_without_place_as_excursion == 0
 
 
 def _blocked_formation(*blocked: tuple[frozenset[str], ...]) -> EventFormation:
@@ -1667,7 +1694,7 @@ class TestBlockC3LandmarkNames:
         ueber Fotos, zu denen er nie erhoben wurde."""
         named = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
         others = [_candidate(minutes) for minutes in (1, 2)]
-        formation = explain_events([named, *others])
+        formation = explain_events([named, *others], landmark_points_by_name=_PALAST_CONFIRMED)
 
         counts = landmark_counts([named, *others], formation, {}, {})
 
@@ -1702,7 +1729,7 @@ class TestBlockC3LandmarkNames:
         Auf Prozent gerundet verloere genau die Grenze ihre Aussage."""
         members = events_module.LANDMARK_MIN_SHARE.denominator
         candidates = _one_event_with_a_share_of(members)
-        formation = explain_events(candidates)
+        formation = explain_events(candidates, landmark_points_by_name=_PALAST_CONFIRMED)
 
         counts = landmark_counts(candidates, formation, {}, {})
 
@@ -1733,7 +1760,7 @@ class TestBlockC3LandmarkNames:
         Zeile fielen "kein Event unter der Schwelle" und "es gibt benannte Events" in eine einzige
         Zahl zusammen, und die Gegenanzeige waere mit einem Namensschalter erfuellbar."""
         candidates = _one_event_with_a_share_of(3)  # 1 von 3 traegt
-        formation = explain_events(candidates)
+        formation = explain_events(candidates, landmark_points_by_name=_PALAST_CONFIRMED)
         monkeypatch.setattr(events_module, "LANDMARK_MIN_SHARE", Fraction(1, 2))
 
         counts = landmark_counts(candidates, formation, {}, {})
@@ -1771,23 +1798,32 @@ class TestTheNamesWithoutAKnownLocation:
         assert counts.names_without_a_location == 0
 
     def test_the_three_states_of_the_auskunft_do_not_collapse(self) -> None:
-        """Dieselbe Kandidatenlage, drei Auskuenfte: keine Zeile, leere Punktmenge, Punkte. Nur die
-        leere Punktmenge zaehlt - "nie nachgeschlagen" ist der Zustand, in dem ein fehlender Auszug
-        alle Namen stehen laesst (fail-open, S4), und er darf hier nicht als Widerspruch
-        erscheinen."""
+        """Dieselbe Kandidatenlage, drei Auskuenfte: keine Zeile, leere Punktmenge, Punkte. Jeder
+        Zustand hat seinen eigenen Zaehler: "nie nachgeschlagen" zaehlt als Name ohne
+        Auskunftszeile, "ohne Fund" als Name ohne bekannte Lage, der Fund in keinem von beiden."""
         candidate = _named_candidate(1, 0, "Palast", gps=(0.0, 0.0))
         formation = explain_events([])
 
         never = landmark_counts([candidate], formation, {}, {})
         without_a_find = landmark_counts([candidate], formation, {}, {"Palast": ()})
         with_a_find = landmark_counts([candidate], formation, {}, {"Palast": ((0.0, 0.0),)})
+        states = (never, without_a_find, with_a_find)
 
-        assert [
-            never.names_without_a_location,
-            without_a_find.names_without_a_location,
-            with_a_find.names_without_a_location,
-        ] == [0, 1, 0]
-        assert {each.names_total for each in (never, without_a_find, with_a_find)} == {1}
+        assert [each.names_without_a_location for each in states] == [0, 1, 0]
+        assert [each.names_without_a_row for each in states] == [1, 0, 0]
+        assert {each.names_total for each in states} == {1}
+
+    def test_names_without_a_row_count_names_not_detections(self) -> None:
+        candidates = [
+            _named_candidate(1, 0, "Palast", gps=(0.0, 0.0)),
+            _named_candidate(2, 1, "Palast", gps=(0.0, 0.0)),
+            _named_candidate(3, 2, "Turm", gps=(0.0, 0.0)),
+            _candidate(3, gps=(0.0, 0.0)),
+        ]
+
+        counts = landmark_counts(candidates, explain_events([]), {}, {"Turm": ()})
+
+        assert counts.names_without_a_row == 1
 
     def test_the_counter_counts_names_and_not_detections(self) -> None:
         """DERSELBE Name auf mehreren Fotos: Die Zahl ist eine Aussage ueber den Lauf, nicht je
@@ -2573,19 +2609,19 @@ class TestTheStoredAuskunftReachesTheReport:
         assert "- davon ohne bekannte Lage: 1" in report
         assert "- benannte Events: 0" in report
 
-    def test_without_a_stored_auskunft_the_name_stays(
+    def test_without_a_stored_auskunft_the_name_falls_and_is_counted(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Der Gegenfall zur Zeile darueber, und zugleich der Zustand "nie nachgeschlagen": Ohne
-        Zeile bleibt der Name - ein fehlender Sehenswuerdigkeitsauszug verwirft keinen Namen
-        (S4, fail-open)."""
+        """Der Zustand "nie nachgeschlagen": Ohne Zeile faellt der Name (fail-closed) - und der
+        Bericht nennt die Zahl der Namen ohne Auskunftszeile, nur als Zahl."""
         url, project_id = _prepared(tmp_path)
 
         assert main(["--project-id", str(project_id)], database_url=url) == 0
 
         report = capsys.readouterr().out
         assert "- davon ohne bekannte Lage: 0" in report
-        assert "- benannte Events: 1" in report
+        assert "- davon ohne Auskunftszeile: 1 (100.0 %)" in report
+        assert "- benannte Events: 0" in report
 
     def test_a_find_at_the_place_of_recording_keeps_the_name(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -2600,7 +2636,9 @@ class TestTheStoredAuskunftReachesTheReport:
 
         report = capsys.readouterr().out
         assert "- davon ohne bekannte Lage: 0" in report
+        assert "- davon ohne Auskunftszeile: 0 (0.0 %)" in report
         assert "- benannte Events: 1" in report
+        assert "- Fotos, deren Ort als Ausreisser nicht mitzaehlt: 0" in report
 
 
 class TestAnAbsentDatasetIsReportedNotShownAsZero:
@@ -2866,6 +2904,7 @@ class TestNoAdjustableConstantIsBoundAtImport:
             "MERGE_EXTENT_MAX_METERS",
             "MIN_EVENT_PHOTOS",
             "MOTIF_CHANGE_CONFIRMING_PHOTOS",
+            "LOCATION_CHANGE_CONFIRMING_PHOTOS",
             "LANDMARK_MIN_SHARE",
         } <= found
 

@@ -205,9 +205,9 @@ class EventProbeInput:
     `landmark_points_by_name` ist die abgelegte Sehenswuerdigkeitsauskunft dieses Projekts
     (Spec 0529), geschluesselt mit dem ROhen Kandidatennamen (so, wie `events.py::_name_of` ihn
     liefert). Sie wird hier GELESEN, nicht beschafft: kein Dateidurchgang, kein Nachschlagen. Die
-    Vorgabe `{}` bedeutet "keine Zeile" und laesst jeden Namen stehen (S4, fail-open) - dieselbe
-    Ausfallrichtung wie ein fehlender zweiter Auszug. Ein leerer Punktwert `()` heisst dagegen
-    "nachgeschlagen, ohne Fund" und verwirft den Namen."""
+    Vorgabe `{}` bedeutet "keine Zeile" - die Pruefung ist fail-closed, jeder Name faellt, wie bei
+    einem fehlenden zweiten Auszug. Ein leerer Punktwert `()` heisst "nachgeschlagen, ohne Fund"
+    und verwirft den Namen ebenso."""
 
     project_id: int
     candidates: tuple[EventCandidate, ...]
@@ -327,8 +327,8 @@ async def _landmark_points_by_name(
 
     Gefragt wird mit der Faltung der Schreibseite (`geonames.py::folded_landmark_names`); der
     SCHLUESSEL des Ergebnisses ist der ROHENAME, denn `events.py::_name_of` liefert den Rohnamen,
-    und mit ihm schlaegt die Ortspruefung nach. Ein Name OHNE Zeile fehlt im Ergebnis und bleibt
-    stehen (S4, fail-open); ein Name mit leerem Punktwert ist darin und faellt."""
+    und mit ihm schlaegt die Ortspruefung nach. Ein Name OHNE Zeile fehlt im Ergebnis und faellt
+    (fail-closed); ein Name mit leerem Punktwert ist darin und faellt ebenso."""
     folded_by_name = folded_landmark_names(
         candidate.landmark_name for candidate in candidates if candidate.landmark_name is not None
     )
@@ -466,7 +466,11 @@ class CauseCounts:
 
     `boundaries_before_merge` ist die Bezugsgroesse der Aufloesungen - die Zahl der Grenzen, die
     der Durchlauf erzeugt hat. Gegen `boundaries_total` gerechnet wuerde der Anteil mit jeder
-    weiteren Aufloesung groesser statt aussagekraeftiger."""
+    weiteren Aufloesung groesser statt aussagekraeftiger.
+
+    `photos_without_place_as_excursion` ist die Zahl der Fotos, deren Ort als Ausreisser nicht in
+    die Bildung einging (`events.py::location_excursions`) - nur als Zahl ueber den Lauf, ohne
+    Event- oder Zeitbezug (S4)."""
 
     boundaries_total: int
     involved: dict[str, int]
@@ -476,6 +480,7 @@ class CauseCounts:
     boundaries_before_merge: int
     dissolved_by_merge: int
     photos_moved_by_merge: int
+    photos_without_place_as_excursion: int
 
 
 def cause_counts(formation: EventFormation) -> CauseCounts:
@@ -518,6 +523,7 @@ def cause_counts(formation: EventFormation) -> CauseCounts:
         boundaries_before_merge=boundaries_total + formation.dissolved_boundaries,
         dissolved_by_merge=formation.dissolved_boundaries,
         photos_moved_by_merge=formation.moved_photos,
+        photos_without_place_as_excursion=formation.excursion_photos,
     )
 
 
@@ -919,15 +925,16 @@ class LandmarkCounts:
     auftreten, und kann ihn nicht widerlegen.
 
     Seit Spec 0529 (ADR 0123) benennt er es ausserdem nur noch, wenn ein Fundort seines Namens im
-    Umkreis des Aufnahmeorts liegt. `names_without_a_location` ist die GEGENANZEIGE dazu: Eine
-    Auskunft, die den zweiten Auszug gelesen und zu keinem Namen einen Fundort gefunden hat, nimmt
-    jedem Namen sein Event - und keine andere Zahl dieses Blocks verriete das. Gezaehlt werden
-    NAMEN ueber den Lauf, nie eine Zeile je Name und nie eine je Event (S10)."""
+    Umkreis des Aufnahmeorts liegt. `names_without_a_location` und `names_without_a_row` sind die
+    GEGENANZEIGE dazu: Eine Auskunft ohne Fund oder ganz ohne Zeile nimmt dem Namen sein Event
+    (fail-closed) - und keine andere Zahl dieses Blocks verriete das. Gezaehlt werden NAMEN ueber
+    den Lauf, nie eine Zeile je Name und nie eine je Event (S10)."""
 
     detections_total: int
     detections_without_place_hint: int
     names_total: int
     names_without_a_location: int
+    names_without_a_row: int
     names_spread_beyond_threshold: int
     events_named_by_a_single_photo: int
     events_named: int
@@ -975,21 +982,22 @@ def landmark_counts(
     `_name_of` erfragt, weil genau der Abstand zwischen der vorgelegten Gliederung und der heute
     geltenden Schwelle der Messgegenstand ist.
 
-    `landmark_points_by_name` ist die Auskunft des Laufs (Spec 0529). Sie geht in GENAU EINE Zahl
-    ein, `names_without_a_location`: die Zahl der VERSCHIEDENEN Namen, zu denen sie eine LEERE
-    Punktmenge traegt - radius-unabhaengig. Gezaehlt werden NAMEN des Laufs, keine Zeilen je Name
-    und keine je Event (S10). Der Zaehler misst die AUSKUNFT, nicht das Ergebnis der Pruefung: Ein
-    Fund weit ausserhalb des Umkreises ist ein Fund, der die Regel arbeiten laesst; erst
-    "nachgeschlagen, ohne Fund" ist die Lage, die aus einem VORHANDENEN Auszug still einen
-    namenlosen Lauf macht - und keine andere Zahl dieses Blocks verriete sie. Eine FEHLENDE Zeile
-    zaehlt ausdruecklich nicht: das ist "nie nachgeschlagen", und es laesst den Namen stehen
-    (fail-open, S4)."""
+    `landmark_points_by_name` ist die Auskunft des Laufs (Spec 0529). Sie geht in GENAU ZWEI Zahlen
+    ein, beide ueber die VERSCHIEDENEN Namen des Laufs, keine Zeile je Name und keine je Event
+    (S10): `names_without_a_location` zaehlt die Namen, zu denen sie eine LEERE Punktmenge traegt -
+    radius-unabhaengig, denn ein Fund weit ausserhalb des Umkreises ist ein Fund, der die Regel
+    arbeiten laesst; erst "nachgeschlagen, ohne Fund" macht aus einem VORHANDENEN Auszug still
+    einen namenlosen Lauf. `names_without_a_row` zaehlt die Namen OHNE Zeile ("nie
+    nachgeschlagen"): Die Pruefung ist fail-closed, auch sie verlieren ihr Event, und das ist die
+    Lage eines fehlenden Sehenswuerdigkeitsauszugs."""
     named = [candidate for candidate in candidates if candidate.landmark_name is not None]
+    distinct_names = {
+        candidate.landmark_name for candidate in named if candidate.landmark_name is not None
+    }
     names_without_a_location = sum(
-        1
-        for name in {candidate.landmark_name for candidate in named}
-        if name is not None and landmark_points_by_name.get(name) == ()
+        1 for name in distinct_names if landmark_points_by_name.get(name) == ()
     )
+    names_without_a_row = sum(1 for name in distinct_names if name not in landmark_points_by_name)
 
     without_hint = 0
     cells_by_name: dict[str, list[Cell]] = {}
@@ -1033,6 +1041,7 @@ def landmark_counts(
         detections_without_place_hint=without_hint,
         names_total=len({candidate.landmark_name for candidate in named}),
         names_without_a_location=names_without_a_location,
+        names_without_a_row=names_without_a_row,
         names_spread_beyond_threshold=spread,
         events_named_by_a_single_photo=single_photo_named,
         events_named=len(shares),
@@ -1460,6 +1469,8 @@ def render_report(
         f"- Grenzen mit Ursache: {causes.boundaries_total} (Eventzahl - 1; das erste Segment "
         "eines Laufs traegt keine)",
         f"- Mindestgroesse eines Segments: {events_module.MIN_EVENT_PHOTOS} Fotos",
+        "- Fotos, deren Ort als Ausreisser nicht mitzaehlt: "
+        f"{causes.photos_without_place_as_excursion}",
         "",
         "| Ursache | beteiligt | alleinige Ursache | eroeffnet ein zu kleines Segment |",
         "|---|---|---|---|",
@@ -1528,6 +1539,8 @@ def render_report(
         f"- verschiedene Namen: {landmarks.names_total}",
         f"- davon ohne bekannte Lage: {landmarks.names_without_a_location} "
         f"({_percent(landmarks.names_without_a_location, landmarks.names_total)})",
+        f"- davon ohne Auskunftszeile: {landmarks.names_without_a_row} "
+        f"({_percent(landmarks.names_without_a_row, landmarks.names_total)})",
         "- davon mit Traegerfotos ueber der Entfernungsschwelle auseinander: "
         f"{landmarks.names_spread_beyond_threshold}",
         f"- Events, deren Name auf genau einem von vielen Fotos beruht: "

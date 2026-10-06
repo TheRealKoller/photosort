@@ -48,10 +48,11 @@ from photosort.events import (
     explain_events,
     infer_locations,
     inherited_locations,
+    location_excursions,
     merge_small_segments,
     motif_change_starts,
 )
-from photosort.places import MAX_PLACE_NAME_LENGTH, PlaceInfo
+from photosort.places import MAX_PLACE_NAME_LENGTH, PlaceInfo, place_cell
 from photosort.scoring import haversine_meters
 from photosort.selection import MOTIF_PRESENCE_THRESHOLD
 
@@ -196,6 +197,16 @@ def _placeless_candidate(
         gps_lon=None,
         landmark_name=landmark_name,
     )
+
+
+def _confirming(
+    *names: str, at: tuple[float, float] = (BASE_LAT, BASE_LON)
+) -> dict[str, tuple[tuple[float, float], ...]]:
+    """Eine Sehenswuerdigkeitsauskunft, die jeden genannten Namen am Ort `at` BESTAETIGT.
+
+    Die Pruefung ist fail-closed: Ein Fall, der einen Namen erwartet, braucht gemessene Kandidaten
+    in der Naehe von `at` und diese Auskunft - ohne sie faellt jeder Name."""
+    return {name: (at,) for name in names}
 
 
 # Die Staerken der Motivfaelle stehen ausschliesslich als SYMBOL zur Praesenzgrenze - kein Fall
@@ -389,8 +400,16 @@ def assert_full_signal_invariants(
     verbrauchte Liste traege den Zustand des ersten Laufs weiter.
 
     Als Nachsatz ueber der ganzen Fallmenge, nicht als Einzelfall. Nur fuer den vollen Satz: Eine
-    injizierte Teilmenge kennt die Riegel nicht und darf sie ueberschreiten."""
-    location_by_id = {candidate.photo_id: candidate.location for candidate in candidates}
+    injizierte Teilmenge kennt die Riegel nicht und darf sie ueberschreiten.
+
+    Ein Ausreisser (`location_excursions`) geht ohne Ort in die Bildung ein und zaehlt deshalb auch
+    hier nicht zur Box."""
+    ordered = sorted(candidates, key=lambda candidate: (candidate.taken_at, candidate.photo_id))
+    excursions = location_excursions(ordered)
+    location_by_id = {
+        candidate.photo_id: None if candidate.photo_id in excursions else candidate.location
+        for candidate in candidates
+    }
     for event in events:
         assert event.ended_at - event.started_at <= _max_span()
         diagonal = _diagonal_of(event, location_by_id)
@@ -423,7 +442,8 @@ def _build(
     eigenen Wert mit.
 
     `landmark_points_by_name` ist die Ortsauskunft der Sehenswuerdigkeitsnamen (Spec 0529). Die
-    Vorgabe `None` heisst "keine Auskunft vorhanden" und laesst jeden bestehenden Fall unveraendert."""
+    Vorgabe `None` heisst "keine Auskunft vorhanden" - jeder Name faellt (fail-closed); wer einen
+    Namen erwartet, gibt `_confirming(...)` mit."""
     events = build_events(
         candidates,
         signals,
@@ -1333,6 +1353,252 @@ class TestEveryShortSequenceOverATinyMotifAlphabet(_UnderEveryConfirmingWindow):
         assert found_a_start, "sonst zaehlt die Aufzaehlung nur Folgen ohne jeden Wechsel"
 
 
+def _far_north() -> float:
+    """Ein Breitengrad knapp JENSEITS der Schritt-Schwelle nach Norden - am Symbol gerechnet."""
+    return _north(_step_max() + EPSILON_METERS)
+
+
+def _far_south() -> float:
+    """Ein Breitengrad knapp jenseits der Schritt-Schwelle nach SUEDEN - ein zweiter ferner Ort."""
+    return _north(-(_step_max() + EPSILON_METERS))
+
+
+def _excursion_confirming() -> int:
+    """Die geltende Bestaetigungszahl eines Ortswechsels - als Modulattribut gelesen."""
+    return events_module.LOCATION_CHANGE_CONFIRMING_PHOTOS
+
+
+class TestLocationExcursions(_UnderShiftedEventConstants):
+    """Die REINE Vorstufe `location_excursions` (ADR 0135 Punkt 1), direkt gemessen.
+
+    Ein Ausreisser ist eine Folge von weniger als `LOCATION_CHANGE_CONFIRMING_PHOTOS` GEMESSENEN
+    Fotos jenseits von `EVENT_STEP_MAX_METERS` vom Bezug, nach der das naechste gemessene Foto
+    wieder innerhalb der Schwelle am Bezug liegt. Beide Schwellen werden am Symbol gerechnet."""
+
+    def test_a_single_far_photo_between_two_at_the_reference_is_an_excursion(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north()),
+            _measured_candidate(3, _at(minutes=2)),
+        ]
+
+        assert location_excursions(candidates) == frozenset({2})
+
+    def test_the_first_photo_has_no_reference_and_is_never_an_excursion(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0, lat=_far_north()),
+            _measured_candidate(2, _at(minutes=1)),
+            _measured_candidate(3, _at(minutes=2)),
+        ]
+
+        assert location_excursions(candidates) == frozenset()
+
+    def test_a_far_last_photo_has_no_return_and_is_no_excursion(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1)),
+            _measured_candidate(3, _at(minutes=2), lat=_far_north()),
+        ]
+
+        assert location_excursions(candidates) == frozenset()
+
+    def test_two_far_photos_in_a_row_confirm_a_change(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north()),
+            _measured_candidate(3, _at(minutes=2), lat=_far_north()),
+            _measured_candidate(4, _at(minutes=3)),
+        ]
+
+        assert location_excursions(candidates) == frozenset()
+
+    def test_with_a_larger_confirmation_both_far_photos_are_neutralised(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die Zahl wird als MODULATTRIBUT gelesen - eine gebundene Vorgabe liefe hier ins Leere."""
+        monkeypatch.setattr(events_module, "LOCATION_CHANGE_CONFIRMING_PHOTOS", 3)
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north()),
+            _measured_candidate(3, _at(minutes=2), lat=_far_north()),
+            _measured_candidate(4, _at(minutes=3)),
+        ]
+
+        assert location_excursions(candidates) == frozenset({2, 3})
+
+    def test_two_different_far_places_are_a_change_not_an_excursion(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north()),
+            _measured_candidate(3, _at(minutes=2), lat=_far_south()),
+            _measured_candidate(4, _at(minutes=3)),
+        ]
+
+        assert location_excursions(candidates) == frozenset()
+
+    def test_placeless_photos_neither_interrupt_nor_count(self) -> None:
+        """A-∅-X-∅-A: Fotos ganz ohne Ort stehen dazwischen und aendern nichts."""
+        candidates = [
+            _measured_candidate(1, T0),
+            _placeless_candidate(2, _at(minutes=1)),
+            _measured_candidate(3, _at(minutes=2), lat=_far_north()),
+            _placeless_candidate(4, _at(minutes=3)),
+            _measured_candidate(5, _at(minutes=4)),
+        ]
+
+        assert location_excursions(candidates) == frozenset({3})
+
+    def test_an_inherited_photo_beside_the_excursion_goes_with_it_and_confirms_nothing(
+        self,
+    ) -> None:
+        """Das Foto ohne Messung hat seinen Ort vom Ausreisser uebernommen: es zaehlt nicht als
+        Bestaetigung und verliert seinen Ort mit ihm. Eines mit dem Bezugsort bleibt."""
+        candidates = [
+            _measured_candidate(1, T0),
+            _inherited_candidate(2, _at(minutes=1)),
+            _measured_candidate(3, _at(minutes=2), lat=_far_north()),
+            _inherited_candidate(4, _at(minutes=3), lat=_far_north()),
+            _measured_candidate(5, _at(minutes=4)),
+        ]
+
+        assert location_excursions(candidates) == frozenset({3, 4})
+
+    def test_two_separate_excursions_keep_the_same_reference(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north()),
+            _measured_candidate(3, _at(minutes=2)),
+            _measured_candidate(4, _at(minutes=3), lat=_far_south()),
+            _measured_candidate(5, _at(minutes=4)),
+        ]
+
+        assert location_excursions(candidates) == frozenset({2, 4})
+
+    def test_a_return_just_inside_the_step_counts(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_north(2 * _step_max())),
+            _measured_candidate(3, _at(minutes=2), lat=_north(_step_max() - EPSILON_METERS)),
+        ]
+
+        assert location_excursions(candidates) == frozenset({2})
+
+    def test_a_return_just_outside_the_step_is_none(self) -> None:
+        """Das vermeintliche Rueckkehrfoto liegt selbst jenseits der Schwelle - es bestaetigt."""
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_north(3 * _step_max())),
+            _measured_candidate(3, _at(minutes=2), lat=_north(_step_max() + EPSILON_METERS)),
+        ]
+
+        assert location_excursions(candidates) == frozenset()
+
+    def test_a_deviation_just_inside_the_step_is_no_excursion(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_north(_step_max() - EPSILON_METERS)),
+            _measured_candidate(3, _at(minutes=2)),
+        ]
+
+        assert location_excursions(candidates) == frozenset()
+
+    def test_already_neutralised_candidates_yield_nothing(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north()),
+            _measured_candidate(3, _at(minutes=2)),
+        ]
+        neutralised = [
+            replace(candidate, location=None, gps_lat=None, gps_lon=None)
+            if candidate.photo_id in location_excursions(candidates)
+            else candidate
+            for candidate in candidates
+        ]
+
+        assert location_excursions(neutralised) == frozenset()
+
+    def test_the_confirmation_is_at_least_two(self) -> None:
+        """Die EINE Aussage ueber den Zahlwert, und sie ist eine Ungleichung."""
+        assert _excursion_confirming() >= 2
+
+
+class TestAnExcursionStaysInItsEvent(_UnderShiftedEventConstants):
+    """Die Einbindung in `explain_events` (ADR 0135 Punkt 2): Ein Ausreisser bleibt Mitglied, aber
+    ohne Ort - er verschiebt weder Schritt noch Ausdehnung und speist weder Zelle noch Namen."""
+
+    def _a_x_a(self, *, x_name: str | None = None) -> list[EventCandidate]:
+        return [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north(), landmark_name=x_name),
+            _measured_candidate(3, _at(minutes=2)),
+        ]
+
+    def test_a_x_a_is_one_event_with_the_one_cell_of_a(self) -> None:
+        for min_event_photos in (_NO_MERGING, None):
+            [event] = _build(self._a_x_a(), min_event_photos=min_event_photos)
+
+            assert event.photo_ids == (1, 2, 3)
+            assert event.place_cells == (place_cell(BASE_LAT, BASE_LON),)
+
+    def test_an_excursion_carries_no_boundary_cause(self) -> None:
+        formation = explain_events(self._a_x_a(), min_event_photos=_NO_MERGING)
+
+        assert formation.causes == (frozenset(),)
+
+    def test_a_change_without_return_still_splits(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north()),
+        ]
+
+        assert [event.photo_ids for event in _build(candidates)] == [(1,), (2,)]
+
+    def test_a_confirmed_change_splits_even_with_a_later_return(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north()),
+            _measured_candidate(3, _at(minutes=2), lat=_far_north()),
+            _measured_candidate(4, _at(minutes=3)),
+        ]
+
+        assert [event.photo_ids for event in _build(candidates)] == [(1,), (2, 3), (4,)]
+
+    def test_a_time_gap_right_after_the_excursion_still_splits(self) -> None:
+        candidates = [
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), lat=_far_north()),
+            _measured_candidate(3, _at(minutes=1) + _time_gap() + EPSILON_TIME),
+        ]
+
+        first, second = _build(candidates)
+
+        assert (first.photo_ids, second.photo_ids) == ((1, 2), (3,))
+        assert first.place_cells == (place_cell(BASE_LAT, BASE_LON),)
+
+    def test_an_excursion_with_a_fitting_find_does_not_confirm_the_name(self) -> None:
+        """Der Fundort liegt am Ausreisser, nicht am Event: der Name entfaellt."""
+        name = "Tower of London"
+        far_away = _latitude_at(2 * _radius() + _step_max())
+        candidates = [
+            _measured_candidate(1, T0, landmark_name=name),
+            _measured_candidate(2, _at(minutes=1), lat=far_away, landmark_name=name),
+            _measured_candidate(3, _at(minutes=2), landmark_name=name),
+        ]
+
+        [event] = _build(candidates, landmark_points_by_name={name: ((far_away, BASE_LON),)})
+
+        assert event.landmark_name is None
+
+    def test_nothing_is_written_back_to_the_candidates(self) -> None:
+        candidates = self._a_x_a()
+        before = list(candidates)
+
+        _build(candidates)
+
+        assert candidates == before
+        assert candidates[1].gps_lat == _far_north()
+
+
 def _reference_time_and_span_events(candidates: Sequence[EventCandidate]) -> list[tuple[int, ...]]:
     """Im Test NACHGEBILDETE Referenz aus Zeitluecke plus Dauergrenze.
 
@@ -1452,7 +1718,9 @@ class TestEventPlace:
             _measured_candidate(2, _at(minutes=1), lat=48.85, lon=2.29, landmark_name="Eiffelturm"),
         ]
 
-        [event] = _build(candidates)
+        [event] = _build(
+            candidates, landmark_points_by_name=_confirming("Eiffelturm", at=(48.85, 2.29))
+        )
 
         assert event.place_kind == "landmark"
         assert event.landmark_name == "Eiffelturm"
@@ -1462,11 +1730,11 @@ class TestEventPlace:
         """Der Rueckhalt, nicht die Reihenfolge: Ein einzelner benannter unter zwei Fotos genuegt
         (die Haelfte liegt ueber dem Zehntel) - auch wenn er nicht das erste ist."""
         candidates = [
-            _placeless_candidate(1, T0),
-            _placeless_candidate(2, _at(minutes=1), landmark_name="Eiffelturm"),
+            _measured_candidate(1, T0),
+            _measured_candidate(2, _at(minutes=1), landmark_name="Eiffelturm"),
         ]
 
-        [event] = _build(candidates, [])
+        [event] = _build(candidates, [], landmark_points_by_name=_confirming("Eiffelturm"))
 
         assert event.landmark_name == "Eiffelturm"
 
@@ -1474,11 +1742,11 @@ class TestEventPlace:
         """Der GLEICHSTAND: Zwei Namen mit JE einem Traegerfoto. Der Rueckhalt entscheidet zuerst,
         die Reihenfolge erst bei Gleichstand - hier gewinnt deshalb der fruehere."""
         candidates = [
-            _placeless_candidate(1, T0, landmark_name="Zugspitze"),
-            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Eibsee"),
+            _measured_candidate(1, T0, landmark_name="Zugspitze"),
+            _measured_candidate(2, T0 + EPSILON_TIME, landmark_name="Eibsee"),
         ]
 
-        [event] = _build(candidates)
+        [event] = _build(candidates, landmark_points_by_name=_confirming("Zugspitze", "Eibsee"))
 
         assert event.photo_ids == (1, 2)
         assert event.landmark_name == "Zugspitze"
@@ -1491,16 +1759,20 @@ class TestEventPlace:
         big = events_module.MIN_EVENT_PHOTOS
         opening = _time_gap() + EPSILON_TIME
         candidates = [
-            _placeless_candidate(1, T0, landmark_name="Zugspitze"),
+            _measured_candidate(1, T0, landmark_name="Zugspitze"),
             *(
-                _placeless_candidate(
+                _measured_candidate(
                     10 + index, T0 + opening + index * EPSILON_TIME, landmark_name="Eibsee"
                 )
                 for index in range(big)
             ),
         ]
 
-        [event] = _build(candidates, min_event_photos=None)
+        [event] = _build(
+            candidates,
+            min_event_photos=None,
+            landmark_points_by_name=_confirming("Zugspitze", "Eibsee"),
+        )
 
         assert len(event.photo_ids) == big + 1
         assert event.landmark_name == "Eibsee"
@@ -1527,18 +1799,20 @@ class TestTheNameNeedsTheSupportOfItsPhotos:
     zweiter Kandidat rueckt nach.
 
     Alle Mengen entstehen aus Zaehler und Nenner des Bruchs; kein Fall nennt die Zehntel als Zahl.
+    Die Faelle, die einen Namen erwarten, tragen gemessene Kandidaten und eine bestaetigende
+    Auskunft - ohne beide faellt jeder Name (fail-closed).
     """
 
     def test_a_name_with_more_carriers_beats_an_earlier_one(self) -> None:
         """Der Rueckhalt steht VOR der Reihenfolge: Der fruehere Eibsee hat ein Traegerfoto, der
         spaetere Zugspitze zwei - Zugspitze benennt das Event."""
         candidates = [
-            _placeless_candidate(1, T0, landmark_name="Eibsee"),
-            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Zugspitze"),
-            _placeless_candidate(3, T0 + 2 * EPSILON_TIME, landmark_name="Zugspitze"),
+            _measured_candidate(1, T0, landmark_name="Eibsee"),
+            _measured_candidate(2, T0 + EPSILON_TIME, landmark_name="Zugspitze"),
+            _measured_candidate(3, T0 + 2 * EPSILON_TIME, landmark_name="Zugspitze"),
         ]
 
-        [event] = _build(candidates)
+        [event] = _build(candidates, landmark_points_by_name=_confirming("Eibsee", "Zugspitze"))
 
         assert event.landmark_name == "Zugspitze"
 
@@ -1546,7 +1820,7 @@ class TestTheNameNeedsTheSupportOfItsPhotos:
         """Genau `numerator` Traeger unter `denominator` Mitgliedern: das genuegt."""
         share = _min_share()
         candidates = [
-            _placeless_candidate(
+            _measured_candidate(
                 index,
                 T0 + index * EPSILON_TIME,
                 landmark_name="Eiffelturm" if index < share.numerator else None,
@@ -1554,7 +1828,7 @@ class TestTheNameNeedsTheSupportOfItsPhotos:
             for index in range(share.denominator)
         ]
 
-        [event] = _build(candidates)
+        [event] = _build(candidates, landmark_points_by_name=_confirming("Eiffelturm"))
 
         assert event.landmark_name == "Eiffelturm"
 
@@ -1580,12 +1854,12 @@ class TestTheNameNeedsTheSupportOfItsPhotos:
         """Ein Traeger unter DREI Fotos genuegt (1/3 ueber 1/10). Eine Zaehlung ueber nur die
         benannten Fotos ergaebe 1/1 und liesse die Schwelle wirkungslos."""
         candidates = [
-            _placeless_candidate(1, T0, landmark_name="Eiffelturm"),
-            _placeless_candidate(2, T0 + EPSILON_TIME),
-            _placeless_candidate(3, T0 + 2 * EPSILON_TIME),
+            _measured_candidate(1, T0, landmark_name="Eiffelturm"),
+            _measured_candidate(2, T0 + EPSILON_TIME),
+            _measured_candidate(3, T0 + 2 * EPSILON_TIME),
         ]
 
-        [event] = _build(candidates)
+        [event] = _build(candidates, landmark_points_by_name=_confirming("Eiffelturm"))
 
         assert event.landmark_name == "Eiffelturm"
 
@@ -1610,7 +1884,10 @@ class TestTheNameNeedsTheSupportOfItsPhotos:
 
     def test_a_single_photo_event_carries_its_name(self) -> None:
         """1 von 1 erfuellt jeden Anteil - der Einzelfall braucht keinen eigenen Zweig."""
-        [event] = _build([_placeless_candidate(1, T0, landmark_name="Eiffelturm")])
+        [event] = _build(
+            [_measured_candidate(1, T0, landmark_name="Eiffelturm")],
+            landmark_points_by_name=_confirming("Eiffelturm"),
+        )
 
         assert event.landmark_name == "Eiffelturm"
 
@@ -1618,11 +1895,11 @@ class TestTheNameNeedsTheSupportOfItsPhotos:
         """Ein nach der Sanitisierung leerer Name zaehlt nicht als Traeger - und kann deshalb auch
         nicht gewinnen, obwohl er der fruehere ist."""
         candidates = [
-            _placeless_candidate(1, T0, landmark_name="   "),
-            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name="Eiffelturm"),
+            _measured_candidate(1, T0, landmark_name="   "),
+            _measured_candidate(2, T0 + EPSILON_TIME, landmark_name="Eiffelturm"),
         ]
 
-        [event] = _build(candidates)
+        [event] = _build(candidates, landmark_points_by_name=_confirming("Eiffelturm"))
 
         assert event.landmark_name == "Eiffelturm"
 
@@ -1641,10 +1918,10 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
     """Spec 0529: Ein erkannter Sehenswuerdigkeitsname benennt ein Event nur, wenn mindestens einer
     seiner Gazetteer-Fundorte im Umkreis des Aufnahmeorts liegt.
 
-    Die Prueffunktion ist ABSICHTLICH direkt aufgerufen: ihre fuenf Zweige sind eine REIHENFOLGE,
-    und drei davon liefern wahr - ueber `_build` allein waeren "keine Auskunft", "keine gemessene
-    Zelle" und "Schluessel fehlt" nicht auseinanderzuhalten. Die Grenze wird am SYMBOL gerechnet;
-    kein Fall nennt den Zahlwert."""
+    Die Prueffunktion ist ABSICHTLICH direkt aufgerufen: sie ist FAIL-CLOSED (ADR 0135 Punkt 3),
+    und vier ihrer Zweige liefern falsch - ueber `_build` allein waeren "keine Auskunft", "keine
+    gemessene Zelle", "keine Zeile" und "leere Punktmenge" nicht auseinanderzuhalten. Die Grenze
+    wird am SYMBOL gerechnet; kein Fall nennt den Zahlwert."""
 
     NAME = "Zugspitze"
 
@@ -1657,23 +1934,28 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
     def _outside(self) -> tuple[float, float]:
         return (_latitude_at(_radius() * 2), BASE_LON)
 
-    def test_without_any_lookup_every_name_stays(self) -> None:
-        """Zustand 1 (ADR 0123 Punkt 2): Es gibt keine Auskunft - der Name bleibt."""
-        assert events_module._landmark_name_is_plausible(self.NAME, (self._cell(),), None) is True
+    def test_without_any_lookup_the_name_falls(self) -> None:
+        """Keine Auskunft (`None`) ist kein Freibrief: der Name faellt."""
+        assert events_module._landmark_name_is_plausible(self.NAME, (self._cell(),), None) is False
 
-    def test_without_a_measured_cell_the_name_stays_even_beside_an_empty_point_set(self) -> None:
-        """Der Pflichtfall "keine Zelle UND leere Punktmenge": Der Zellen-Zweig schlaegt den
-        Fund-Zweig, sonst verwuerfe ein Lauf ohne Koordinaten jeden Namen."""
-        assert events_module._landmark_name_is_plausible(self.NAME, (), {self.NAME: ()}) is True
+    def test_without_a_measured_cell_the_name_falls_beside_an_empty_point_set(self) -> None:
+        assert events_module._landmark_name_is_plausible(self.NAME, (), {self.NAME: ()}) is False
 
-    def test_a_name_without_an_entry_keeps_its_name(self) -> None:
-        """Zustand 1 am Datenbestand: eine nicht leere Auskunft, in der DIESER Name fehlt, ist
-        "nie nachgeschlagen" - niemals "ohne Fund"."""
+    def test_without_a_measured_cell_the_name_falls_beside_a_fitting_point(self) -> None:
+        """Ohne Aufnahmeort laesst sich nichts bestaetigen - auch ein vorhandener Fund nicht."""
+        assert (
+            events_module._landmark_name_is_plausible(self.NAME, (), {self.NAME: (self._inside(),)})
+            is False
+        )
+
+    def test_a_name_without_an_entry_falls(self) -> None:
+        """Der Zustand "nie nachgeschlagen" faellt am Event wie "ohne Fund" - die Ablage bleibt
+        dreiwertig, eine fehlende Zeile wird beim naechsten Lauf nachgeschlagen."""
         assert (
             events_module._landmark_name_is_plausible(
                 self.NAME, (self._cell(),), {"Andere Sehenswuerdigkeit": (self._inside(),)}
             )
-            is True
+            is False
         )
 
     def test_a_looked_up_name_without_a_single_point_falls(self) -> None:
@@ -1770,7 +2052,7 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
 
         assert event.landmark_name == self.NAME
 
-    def test_without_a_lookup_the_name_stays(self) -> None:
+    def test_without_a_lookup_the_name_falls(self) -> None:
         candidates = [
             _measured_candidate(1, T0, landmark_name=self.NAME),
             _measured_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
@@ -1778,38 +2060,40 @@ class TestTheLandmarkNameNeedsAPlausiblePlace:
 
         [event] = _build(candidates, landmark_points_by_name=None)
 
-        assert event.landmark_name == self.NAME
+        assert event.landmark_name is None
 
     def test_a_dropped_name_leaves_the_event_as_unnamed_as_a_never_named_one(self) -> None:
-        """Zwillings-Tripel der Auskunft (ADR 0123 Punkt 2): kein Eintrag / leere Punktmenge /
-        Punkte. Zustand 1 und 3 liefern DASSELBE Event; unterschieden werden sie an der Abwesenheit
-        der Zeile, nicht am Ergebnis - der Zustand 2 faellt allein am Namen."""
+        """Keine Auskunft, keine Zeile und leere Punktmenge liefern DASSELBE Event wie Kandidaten,
+        die nie einen Namen trugen; nur der bestaetigende Fund behaelt ihn. Kein anderer Name
+        rueckt nach, und die Ueberschrift faellt auf den Ort bzw. die Zeit zurueck."""
         candidates = [
             _measured_candidate(1, T0, landmark_name=self.NAME),
             _measured_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
         ]
-        never_looked_up = _build(candidates)  # Zustand 1: gar keine Auskunft
+        never_named = _build([replace(candidate, landmark_name=None) for candidate in candidates])
+        never_looked_up = _build(candidates)
         without_a_find = _build(candidates, landmark_points_by_name={self.NAME: ()})
-        with_a_find = _build(candidates, landmark_points_by_name={self.NAME: (self._inside(),)})
         missing_entry = _build(
-            candidates, landmark_points_by_name={"Andere Sehenswuerdigkeit": (self._outside(),)}
+            candidates, landmark_points_by_name={"Andere Sehenswuerdigkeit": (self._inside(),)}
         )
+        with_a_find = _build(candidates, landmark_points_by_name={self.NAME: (self._inside(),)})
 
-        assert never_looked_up == with_a_find == missing_entry
-        assert without_a_find[0].landmark_name is None
-        assert never_looked_up[0] != without_a_find[0]
+        assert never_looked_up == without_a_find == missing_entry == never_named
+        assert never_named[0].place_kind == "coordinate"
+        assert with_a_find[0].landmark_name == self.NAME
 
-    def test_a_name_without_a_measured_cell_survives_an_empty_point_set(self) -> None:
-        """Der Zellen-Fall schlaegt den Fund-Fall auch ueber den vollen Weg: ein Event ohne jede
-        gemessene Zelle behaelt seinen Namen, selbst wenn eine leere Zeile vorliegt."""
+    def test_a_name_on_only_inherited_coordinates_falls(self) -> None:
+        """Ein Event, das nur uebernommene Koordinaten traegt, hat keine gemessene Zelle - der
+        Name faellt, auch neben einem passenden Fund."""
         candidates = [
-            _placeless_candidate(1, T0, landmark_name=self.NAME),
-            _placeless_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
+            _inherited_candidate(1, T0, landmark_name=self.NAME),
+            _inherited_candidate(2, T0 + EPSILON_TIME, landmark_name=self.NAME),
         ]
 
-        [event] = _build(candidates, landmark_points_by_name={self.NAME: ()})
+        [event] = _build(candidates, landmark_points_by_name={self.NAME: (self._inside(),)})
 
-        assert event.landmark_name == self.NAME
+        assert event.landmark_name is None
+        assert event.place_kind is None
 
     def test_the_second_best_name_does_not_move_up(self) -> None:
         """KEIN NACHRUECKEN: faellt der Gewinner an der Ortspruefung, traegt das Event gar keinen
@@ -2143,7 +2427,9 @@ class TestBuiltEventCarriesItsCells:
             _measured_candidate(1, T0, lat=52.52, lon=13.40, landmark_name="Brandenburger Tor"),
         ]
 
-        [event] = _build(candidates)
+        [event] = _build(
+            candidates, landmark_points_by_name=_confirming("Brandenburger Tor", at=(52.52, 13.40))
+        )
 
         assert event.place_kind == "landmark"
         assert event.place_cells == ((52.52, 13.4),)
@@ -3496,7 +3782,7 @@ class TestBuildEventsRunsTheThirdStage:
             _measured_candidate(3, T0 + EPSILON_TIME + gap),
         ]
 
-        [event] = build_events(candidates)
+        [event] = build_events(candidates, landmark_points_by_name=_confirming("Zugspitze"))
 
         assert (event.position, event.photo_ids) == (1, (1, 2, 3))
         assert (event.landmark_name, event.place_kind) == ("Zugspitze", "landmark")

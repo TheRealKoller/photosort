@@ -1602,7 +1602,8 @@ async def _place_infos(
 
 # Die Fabrik des Namensverzeichnisses: aus der Menge der noch offenen, bereits GEFALTETEN Namen
 # entsteht ein Verzeichnis oder `None`. `None` heisst "es wird keines gebaut" - weil der zweite
-# Auszug fehlt oder von seinem Hash abweicht - und ist ein arbeitsfaehiger Zustand (S4, fail-open).
+# Auszug fehlt oder von seinem Hash abweicht. Der Lauf bleibt arbeitsfaehig und `SUCCESS`, die
+# Namen ohne Zeile fallen aber an der Ortspruefung (S4, fail-closed).
 LandmarkGazetteerFactory = Callable[[Collection[str]], LandmarkGazetteer | None]
 
 
@@ -1622,13 +1623,14 @@ async def _landmark_points_by_name(
     `build_gazetteer` ist `None` im Request-Pfad (S8) und wird sonst erst gerufen, wenn es
     tatsaechlich etwas zu fragen gibt: ein Durchgang durch den zweiten Auszug ohne offenen Namen
     waere reine Arbeit. Liefert die Fabrik `None` (Auszug fehlt oder weicht von seinem Hash ab),
-    wird nichts beschafft und nichts geschrieben; die Namen fehlen im ERGEBNIS und passieren damit
-    die Ortspruefung unbeschadet (S4, fail-open).
+    wird nichts beschafft und nichts geschrieben; die Namen fehlen im ERGEBNIS und fallen damit an
+    der Ortspruefung (S4, fail-closed).
 
-    DREI AUSGAENGE, und sie sind verschieden (ADR 0123 Punkt 2): **keine Zeile** heisst "nie
-    nachgeschlagen" und der Name bleibt; eine **nachgeschlagene, leere Punktmenge** heisst
-    "nachgeschlagen, ohne Fund" und der Name faellt; eine **gefuellte Punktmenge** entscheidet die
-    Umkreispruefung. Geschluesselt ist das Ergebnis mit dem ROhen Namen - genau der, den
+    DREI AUSGAENGE der Ablage (ADR 0123 Punkt 2): **keine Zeile** heisst "nie nachgeschlagen" -
+    der Name faellt am Event, und beim naechsten Lauf mit Auszug wird nachgeschlagen; eine
+    **nachgeschlagene, leere Punktmenge** heisst "nachgeschlagen, ohne Fund" und der Name faellt;
+    eine **gefuellte Punktmenge** entscheidet die Umkreispruefung. Geschluesselt ist das Ergebnis
+    mit dem ROhen Namen - genau der, den
     `events.py::_name_of` spaeter als Gewinnername liefert und mit dem die Pruefung nachschlaegt.
     Gefragt und abgelegt wird dagegen der GEFALTETE Name: `Trevi-Brunnen` trifft `trevi brunnen`.
 
