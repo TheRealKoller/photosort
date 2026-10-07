@@ -3175,6 +3175,7 @@ async def run_classification(
                 build_client=build_category_client,
                 build_embedder=build_embedder,
                 run=remote_run,
+                parent_run=run,
             )
         except asyncio.CancelledError:
             # Schicht 1 des Fortschritts-Watchdogs: run_remote_category_classification faellt seine
@@ -3336,6 +3337,7 @@ async def run_remote_category_classification(
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
     *,
     run: RemoteCategoryClassificationRun | None = None,
+    parent_run: CriterionScoringRun | None = None,
 ) -> RemoteCategoryClassificationRun:
     """Eigenständiger, expliziter Job - KEIN Teil von run_criterion_scoring, eigene
     Run-Tabelle, eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner
@@ -3350,7 +3352,11 @@ async def run_remote_category_classification(
     Klassifizierungslauf setzt seinen Fremdschluessel darauf, BEVOR Phase 1 startet; ohne diesen
     frueheren Anlagezeitpunkt haette die Oberflaeche waehrend der Remote-Phase keinen Anker fuer
     den laufenden Vorgang. Wird keiner uebergeben (Direktaufruf, Tests), legt diese Funktion die
-    Zeile selbst an."""
+    Zeile selbst an.
+
+    `parent_run` ist der uebergeordnete Klassifizierungslauf; er wird an jedem Block-Commit
+    mitgestempelt. Ohne ihn (Direktaufruf, Tests) stempelt die Funktion nur ihre
+    eigene Zeile."""
     if run is None:
         run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
         session.add(run)
@@ -3575,7 +3581,14 @@ async def run_remote_category_classification(
                 # beim Betreten des Blocks (sonst stuende nach einem Abbruch mitten im Block ein
                 # `processed` da, dem weder ein Aufruf noch ein Fehlschlag gegenuebersteht).
                 run.failed_calls = failed_calls
-                run.last_progress_at = _now_utc()
+                # Der uebergeordnete Klassifizierungslauf bekommt denselben Stempel im
+                # selben Commit - reap_stalled_runs liest nur `last_progress_at` der eigenen Zeile
+                # und setzte den Elternlauf sonst nach STALL_THRESHOLD auf FAILED, waehrend diese
+                # Coroutine kostenpflichtig weiter Cloud-Aufrufe absetzt.
+                progress_at = _now_utc()
+                run.last_progress_at = progress_at
+                if parent_run is not None:
+                    parent_run.last_progress_at = progress_at
                 await session.commit()
         finally:
             aclose = getattr(client, "aclose", None)
