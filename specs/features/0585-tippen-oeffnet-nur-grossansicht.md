@@ -18,7 +18,7 @@ Als Nutzer, der am Tablet Fotos kuratiert oder durchsieht, möchte ich, dass ein
 
 Begriffe: **kurzes Tippen** = Touch-Zeiger (`pointerType: 'touch'`), Abstand `pointerdown`→`pointerup` < 500 ms (`LONG_PRESS_MS`). **Langer Druck** = Touch-Zeiger gehalten ≥ 500 ms. **Leiste** = Zusatzangaben-Leiste der Kachel (sichtbar ⇔ `data-visible="true"`). **Kachel** = jede Kachel aus AK8.
 
-- [ ] **AK1** **Tippen auf das Foto öffnet nur die Großansicht.** Kurzes Tippen auf das Foto einer Kachel öffnet die Großansicht dieses Fotos; die Leiste dieser Kachel ist weder währenddessen noch nach dem Schließen der Großansicht (Esc, Schließen-Knopf, Zurück) sichtbar, obwohl der Fokus an das Foto zurückkehrt.
+- [ ] **AK1** **Tippen auf das Foto öffnet nur die Großansicht.** Kurzes Tippen auf das Foto einer Kachel öffnet die Großansicht dieses Fotos; die Leiste dieser Kachel ist weder währenddessen noch nach dem Schließen der Großansicht per Zeiger (Schließen-Knopf antippen, Zurück) sichtbar, obwohl der Fokus an das Foto zurückkehrt. Schließen per Esc ist Tastaturbedienung: Danach ist die Leiste sichtbar (AK7).
 - [ ] **AK2** **Langer Druck zeigt die Leiste, öffnet nichts.** Langer Druck auf das Foto macht die Leiste sichtbar, sobald 500 ms vergangen sind (noch vor dem Loslassen); nach 499 ms ist sie nicht sichtbar. Der auf das Loslassen folgende Klick öffnet keine Großansicht und löst keine Kachel-Handlung aus.
 - [ ] **AK3** **Leiste nach langem Druck schließt** bei (a) Tippen/Klick außerhalb der Kachel, (b) Scrollen der Seite. Tippen innerhalb der Kachel schließt nicht per se (es gilt AK1/AK4 für die Folgehandlung).
 - [ ] **AK4** **Tippen auf einen Kachel-Knopf** (Streichen, Alternativen, Tauschen/Hinzufügen) löst genau dessen Handlung aus; die Leiste wird nicht sichtbar, auch nicht, solange der Knopf danach fokussiert bleibt.
@@ -158,6 +158,7 @@ Ergänzung nötig (kurz, in der 0579-/Reveal-Sektion bzw. als eigener Nachtrag):
 
 - Ursache und Ansatz: Korrektur allein in `useRevealOnDemand` (Tastaturfokus via `:focus-visible`, `pointerType` statt `matchMedia`); keine ADR, da keine neue Technologie/Abhängigkeit.
 - Stift (`pen`) verhält sich wie Maus (folgt aus AK5); ein Stift ohne Schwebeerkennung kann beim Tippen die Leiste kurz zeigen — hingenommen.
+- Esc nach Tippen-Öffnen zeigt die Leiste (Tastaturfokus nach Tastatureingabe); Entscheidung Daniel, 2026-10-07. Kein Merken der Eingabeart beim Öffnen.
 - Spec 0489 (AK8, Abschnitt Klick/Tipp/Überfahren) wird im selben PR mit präzisiert, nicht nur 0579 AK14.
 - Design-System-Doku (`specs/architecture/0004-design-system.md`) und Skill `design-system` werden im Umsetzungs-PR nachgezogen; Popover der Schrittleiste und Rückgängig-Hinweis bleiben bei `(hover: hover) and (pointer: fine)`.
 - E2E nur für Album-Entwurf und Fotoübersicht mit `locator.tap()`; AK8 sonst über gemeinsamen Hook und Verdrahtungstests je Komponente belegt.
