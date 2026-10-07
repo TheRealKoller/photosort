@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.51.1](https://github.com/TheRealKoller/photosort/compare/v0.51.0...v0.51.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **e2e:** Bühnen-Test misst erst nach dem Laden der Abschnitte oberhalb des Bezugs ([#586](https://github.com/TheRealKoller/photosort/issues/586)) ([80d4f2d](https://github.com/TheRealKoller/photosort/commit/80d4f2da8500e4e2f66f5884a0cebe2d7888b6fb))
+* **events:** Ortsausreißer trennen keine Events, unbestätigte Sehenswürdigkeitsnamen entfallen (Spec 0584) ([#588](https://github.com/TheRealKoller/photosort/issues/588)) ([bebc3e7](https://github.com/TheRealKoller/photosort/commit/bebc3e74c52596d46a27e217e9e3caf7c939c91c))
+* **frontend:** kurzes Tippen öffnet nur die Großansicht (Spec 0585) ([#589](https://github.com/TheRealKoller/photosort/issues/589)) ([6b8eab1](https://github.com/TheRealKoller/photosort/commit/6b8eab1c9def4360c4fd8760b7497f606b228cd8))
+* **worker:** Cloud-Kategorisierung großer Projekte nicht mehr als Stillstand abbrechen (Spec 0590) ([#591](https://github.com/TheRealKoller/photosort/issues/591)) ([5e20e4a](https://github.com/TheRealKoller/photosort/commit/5e20e4a34d031cdfc82f42a4a217add8bf439c65))
+
 ## [0.51.0](https://github.com/TheRealKoller/photosort/compare/v0.50.0...v0.51.0) (2026-10-05)
 
 
