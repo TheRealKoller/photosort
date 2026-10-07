@@ -12,7 +12,7 @@
 
 import type { Locator, Page } from '@playwright/test'
 
-import { DEMO_PROJECTS, demoProjectId } from '../lib/demo.ts'
+import { DEMO_PROJECTS, demoProjectId, photoTiles } from '../lib/demo.ts'
 import { readOwnDraftStates, restoreOwnDraftStates } from '../lib/draft.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
@@ -476,5 +476,90 @@ test.describe('Telefon (Touch, ohne Hover)', () => {
     await trigger.dispatchEvent('click')
     await expect(details).toHaveAttribute('data-visible', 'true')
     await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
+  /*
+   * Spec 0585: Ein kurzes Tippen oeffnet NUR die Grossansicht. Getippt wird mit `locator.tap()`,
+   * nicht mit `dispatchEvent` - synthetisch verschickte Ereignisse fokussieren nicht, und der Fehler
+   * hing gerade am Fokus, den das Tippen setzt (und den die Grossansicht beim Schliessen
+   * zurueckgibt). Der Abschnitt "kurzer Druck" oben blieb deshalb gegen den Fehler gruen.
+   */
+  test('kurzes Tippen oeffnet nur die Grossansicht, auch nach dem Schliessen keine Leiste', async ({
+    page,
+  }) => {
+    const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+    await page.goto(`/projects/${projectId}/album`)
+    const tile = draftGrid(page).locator(':scope > li').first()
+    const trigger = tile.getByRole('button', { name: /^Großansicht: / })
+    const details = tile.locator('[data-tile-details]')
+    await expect(trigger).toBeVisible()
+
+    await trigger.tap()
+    await expect(page.getByRole('dialog'), 'Tippen: Grossansicht offen').toHaveCount(1)
+    await expect(details, 'Tippen: Leiste waehrend der Grossansicht').not.toHaveAttribute(
+      'data-visible',
+      'true',
+    )
+
+    // Geschlossen wird, wie am Tablet: per Tippen auf „Schließen". Esc ist eine Tastatureingabe -
+    // danach meldet der Browser den zurueckgegebenen Fokus zu Recht als Tastaturfokus.
+    await page.getByRole('dialog').getByRole('button', { name: 'Schließen' }).tap()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    // Vorbedingung gegen den trivialen Gruen-Fall: Der Fokus IST zurueckgekehrt.
+    await expect(trigger, 'Tippen: Fokus nach dem Schliessen zurueck').toBeFocused()
+    await expect(details, 'Tippen: Leiste nach dem Schliessen').not.toHaveAttribute(
+      'data-visible',
+      'true',
+    )
+  })
+
+  /*
+   * Der Kachel-Knopf ist "Alternativen", nicht "Streichen": Eine gestrichene Kachel verlaesst die
+   * Ansicht (Spec 0558), dort bliebe keine Kachel, an der die Leiste zu pruefen waere.
+   * "Alternativen" schreibt nichts; das Band nimmt beim Oeffnen den Fokus an seine Ueberschrift
+   * (Spec 0558), der Knopf bleibt deshalb nicht fokussiert - geprueft wird die Leiste der Kachel.
+   */
+  test('kurzes Tippen auf einen Kachel-Knopf loest nur dessen Handlung aus, keine Leiste', async ({
+    page,
+  }) => {
+    const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+    await page.goto(`/projects/${projectId}/album`)
+    const tile = draftGrid(page).locator(':scope > li').first()
+    const alternatives = tile.getByRole('button', { name: /^Alternativen: / })
+    await expect(alternatives).toHaveAttribute('aria-expanded', 'false')
+
+    await alternatives.tap()
+    await expect(alternatives, 'Knopf: Handlung erfolgt').toHaveAttribute('aria-expanded', 'true')
+    await expect(tile.locator('[data-tile-details]'), 'Knopf: Leiste').not.toHaveAttribute(
+      'data-visible',
+      'true',
+    )
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
+  test('kurzes Tippen auf eine Kachel der Fotouebersicht oeffnet nur die Detailansicht', async ({
+    page,
+  }) => {
+    const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
+    await page.goto(`/projects/${projectId}/photos`)
+    const tile = photoTiles(page).first()
+    await expect(tile).toBeVisible()
+    const fileName = (await tile.locator('img').first().getAttribute('alt'))!.split('/').pop()!
+    // Vorbedingung: Der Dateiname steht im Ruhezustand nicht im Dokument - er waere sonst kein
+    // Merkmal der eingeblendeten Zeile.
+    await expect(tile.getByText(fileName, { exact: true })).toHaveCount(0)
+
+    await tile.getByRole('link').first().tap()
+    await expect(
+      page.getByRole('group', { name: 'Bewertung' }),
+      'Detailansicht offen',
+    ).toBeVisible()
+
+    await page.goBack()
+    const back = photoTiles(page).first()
+    await expect(back).toBeVisible()
+    await expect(back.getByText(fileName, { exact: true }), 'Zeile nach der Rueckkehr').toHaveCount(
+      0,
+    )
   })
 })
