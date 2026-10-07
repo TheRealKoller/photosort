@@ -1,8 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AlbumParticipantOut, PhotoOut, RankingOut, RatingOut } from '../api/types'
+import { LONG_PRESS_MS } from '../hooks/useRevealOnDemand'
+import { stubFocusVisible } from '../test/focusVisible'
 import { ALBUM_STATE_LABELS, NOT_IN_DRAFT_LABEL } from '../utils/albumStateLabels'
 import { HANDLES_FULL_WIDTH_PX } from '../utils/curationLayout'
 import { SELECTION_DECIDED_BADGE_TEXT, SelectionPhotoTile } from './SelectionPhotoTile'
@@ -492,5 +494,38 @@ describe('SelectionPhotoTile - Zustandszeichen in der Bildecke', () => {
     const mark = cornerMark(container)
     expect(mark).toHaveAccessibleName(ALBUM_STATE_LABELS.taken)
     expect(mark?.querySelector('[data-icon="book"]')).not.toBeNull()
+  })
+})
+
+describe('SelectionPhotoTile - Leiste bei Bedarf (Spec 0585 AK1, AK2, AK8)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('opens the large view on a tap without showing the strip, and shows it on a long press', () => {
+    // Nur Verdrahtung: Die Kachel erbt `useRevealOnDemand` ueber `PhotoCard`.
+    stubFocusVisible(false)
+    const { onOpenLarge, container } = renderTile()
+    const trigger = screen.getByRole('button', { name: /^Großansicht: / })
+    const strip = container.querySelector('[data-tile-details]')!
+
+    fireEvent.pointerDown(trigger, { pointerType: 'touch' })
+    act(() => trigger.focus())
+    fireEvent.pointerUp(trigger, { pointerType: 'touch' })
+    fireEvent.click(trigger)
+
+    expect(onOpenLarge).toHaveBeenCalledTimes(1)
+    expect(strip).not.toHaveAttribute('data-visible')
+
+    vi.useFakeTimers()
+    fireEvent.pointerDown(trigger, { pointerType: 'touch' })
+    act(() => {
+      vi.advanceTimersByTime(LONG_PRESS_MS)
+    })
+    fireEvent.click(trigger)
+
+    expect(strip).toHaveAttribute('data-visible', 'true')
+    expect(onOpenLarge).toHaveBeenCalledTimes(1)
   })
 })

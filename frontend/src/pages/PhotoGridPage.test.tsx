@@ -136,18 +136,6 @@ describe('PhotoGridPage', () => {
     // genau das, was zu pruefen ist.
     resizeObserver = installResizeObserver()
     intersectionObserver = installIntersectionObserver()
-    // window.matchMedia existiert in jsdom nicht - die Kachel fragt es nach der Geraeteklasse
-    // (Hover oder langer Druck). Hier durchgaengig "kein feiner Zeiger"; die Geste selbst deckt
-    // PhotoGridTile.test.tsx in ihren vier Faellen ab.
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn().mockReturnValue({
-        matches: false,
-        media: '(hover: hover) and (pointer: fine)',
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      }),
-    )
     vi.mocked(photosApi.listPhotos).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockReset()
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')

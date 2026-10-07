@@ -1,19 +1,16 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { stubFocusVisible } from '../test/focusVisible'
 import { LONG_PRESS_MS, useRevealOnDemand } from './useRevealOnDemand'
 
-function stubHover(matches: boolean): void {
-  vi.stubGlobal(
-    'matchMedia',
-    vi.fn().mockReturnValue({
-      matches,
-      media: '(hover: hover) and (pointer: fine)',
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }),
-  )
-}
+type PointerKind = 'touch' | 'mouse' | 'pen'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
 
 function Probe({ onActivate }: { onActivate: () => void }) {
   const { visible, handlers, consumeSuppressedClick } = useRevealOnDemand()
@@ -45,73 +42,124 @@ function renderProbe(onActivate: () => void = () => {}) {
   return screen.getByTestId('area')
 }
 
-function press(element: HTMLElement, milliseconds: number): void {
+function press(element: HTMLElement, milliseconds: number, pointerType: PointerKind): void {
   vi.useFakeTimers()
   act(() => {
-    element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    fireEvent.pointerDown(element, { pointerType })
   })
   act(() => {
     vi.advanceTimersByTime(milliseconds)
   })
   act(() => {
-    element.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
-    element.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: null }))
+    fireEvent.pointerUp(element, { pointerType })
+    // Wie im Browser: Ein Touch-Pointer feuert beim Loslassen `pointerleave`.
+    fireEvent.pointerOut(element, { pointerType, relatedTarget: null })
   })
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals()
-  vi.useRealTimers()
-})
+function focusTrigger(): void {
+  act(() => screen.getByRole('button', { name: 'Ausloeser' }).focus())
+}
 
-describe('useRevealOnDemand: Ueberfahren', () => {
-  it('reveals on hover with a fine pointer and hides on leave', () => {
-    stubHover(true)
+describe('useRevealOnDemand: Eingabeart statt Geraet (AK5)', () => {
+  it('never asks matchMedia', () => {
+    const matchMedia = vi.fn()
+    vi.stubGlobal('matchMedia', matchMedia)
     const area = renderProbe()
 
-    fireEvent.pointerOver(area)
+    fireEvent.pointerOver(area, { pointerType: 'mouse' })
+    press(area, LONG_PRESS_MS, 'touch')
+
+    expect(matchMedia).not.toHaveBeenCalled()
+  })
+
+  it('renders without any matchMedia at all', () => {
+    vi.stubGlobal('matchMedia', undefined)
+    const area = renderProbe()
+
+    fireEvent.pointerOver(area, { pointerType: 'mouse' })
+
+    expect(screen.getByText('Angaben')).toBeInTheDocument()
+  })
+
+  it('switches between touch and mouse within one session', () => {
+    const area = renderProbe()
+
+    press(area, LONG_PRESS_MS - 1, 'touch')
+    expect(screen.queryByText('Angaben')).toBeNull()
+
+    fireEvent.pointerOver(area, { pointerType: 'mouse' })
+    expect(screen.getByText('Angaben')).toBeInTheDocument()
+  })
+})
+
+describe('useRevealOnDemand: Ueberfahren (AK6)', () => {
+  it.each(['mouse', 'pen'] as const)('reveals on %s hover and hides on leave', (pointerType) => {
+    const area = renderProbe()
+
+    fireEvent.pointerOver(area, { pointerType })
     expect(screen.getByText('Angaben')).toBeInTheDocument()
 
-    fireEvent.pointerOut(area, { relatedTarget: null })
+    fireEvent.pointerOut(area, { pointerType, relatedTarget: null })
     expect(screen.queryByText('Angaben')).toBeNull()
   })
 
-  it('does not reveal on hover without a fine pointer', () => {
-    stubHover(false)
+  it('does not reveal when a touch pointer enters', () => {
     const area = renderProbe()
 
-    fireEvent.pointerOver(area)
+    fireEvent.pointerOver(area, { pointerType: 'touch' })
 
     expect(screen.queryByText('Angaben')).toBeNull()
   })
 })
 
-describe('useRevealOnDemand: langer Druck', () => {
+describe('useRevealOnDemand: langer Druck (AK2, AK3)', () => {
   it(`does not reveal after ${LONG_PRESS_MS - 1} ms`, () => {
-    stubHover(false)
     const area = renderProbe()
 
-    press(area, LONG_PRESS_MS - 1)
+    press(area, LONG_PRESS_MS - 1, 'touch')
 
     expect(screen.queryByText('Angaben')).toBeNull()
   })
 
   it(`reveals after ${LONG_PRESS_MS} ms and keeps it after the finger lifts`, () => {
-    stubHover(false)
     const area = renderProbe()
 
-    press(area, LONG_PRESS_MS)
+    press(area, LONG_PRESS_MS, 'touch')
 
     expect(screen.getByText('Angaben')).toBeInTheDocument()
   })
 
+  it.each(['mouse', 'pen'] as const)(
+    'does not start a long press for %s, and the click still activates',
+    (pointerType) => {
+      const onActivate = vi.fn()
+      const area = renderProbe(onActivate)
+
+      press(area, 700, pointerType)
+      fireEvent.click(screen.getByRole('button', { name: 'Ausloeser' }))
+
+      expect(screen.queryByText('Angaben')).toBeNull()
+      expect(onActivate).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('does not swallow the click after a short touch press', () => {
+    const onActivate = vi.fn()
+    const area = renderProbe(onActivate)
+
+    press(area, LONG_PRESS_MS - 1, 'touch')
+    fireEvent.click(screen.getByRole('button', { name: 'Ausloeser' }))
+
+    expect(onActivate).toHaveBeenCalledTimes(1)
+  })
+
   it('swallows the click that follows a long press, but not the next one', () => {
-    stubHover(false)
     const onActivate = vi.fn()
     const area = renderProbe(onActivate)
     const trigger = screen.getByRole('button', { name: 'Ausloeser' })
 
-    press(area, LONG_PRESS_MS)
+    press(area, LONG_PRESS_MS, 'touch')
     fireEvent.click(trigger)
     expect(onActivate).not.toHaveBeenCalled()
 
@@ -120,19 +168,17 @@ describe('useRevealOnDemand: langer Druck', () => {
   })
 
   it('closes on a press elsewhere', () => {
-    stubHover(false)
     const area = renderProbe()
-    press(area, LONG_PRESS_MS)
+    press(area, LONG_PRESS_MS, 'touch')
 
-    fireEvent.pointerDown(screen.getByTestId('elsewhere'))
+    fireEvent.pointerDown(screen.getByTestId('elsewhere'), { pointerType: 'touch' })
 
     expect(screen.queryByText('Angaben')).toBeNull()
   })
 
   it('closes on scroll', () => {
-    stubHover(false)
     const area = renderProbe()
-    press(area, LONG_PRESS_MS)
+    press(area, LONG_PRESS_MS, 'touch')
 
     fireEvent.scroll(window)
 
@@ -140,37 +186,46 @@ describe('useRevealOnDemand: langer Druck', () => {
   })
 })
 
-describe('useRevealOnDemand: Fokus', () => {
-  it('reveals while any control inside has focus', () => {
-    stubHover(false)
+describe('useRevealOnDemand: Fokus (AK1, AK7, AK9)', () => {
+  it('reveals while a control inside has keyboard focus (:focus-visible)', () => {
+    stubFocusVisible(true)
     renderProbe()
 
-    act(() => screen.getByRole('button', { name: 'Ausloeser' }).focus())
+    focusTrigger()
     expect(screen.getByText('Angaben')).toBeInTheDocument()
 
     act(() => screen.getByRole('button', { name: 'Ausloeser' }).blur())
     expect(screen.queryByText('Angaben')).toBeNull()
   })
+
+  it('does not reveal on focus that is not :focus-visible (tap, focus return)', () => {
+    stubFocusVisible(false)
+    renderProbe()
+
+    focusTrigger()
+
+    expect(screen.queryByText('Angaben')).toBeNull()
+  })
 })
 
 describe('useRevealOnDemand: ueberlappende Ausloeser', () => {
-  it('stays visible while focus remains after hover ends', () => {
-    stubHover(true)
+  it('stays visible while keyboard focus remains after hover ends', () => {
+    stubFocusVisible(true)
     const area = renderProbe()
 
-    act(() => screen.getByRole('button', { name: 'Ausloeser' }).focus())
-    fireEvent.pointerOver(area)
-    fireEvent.pointerOut(area, { relatedTarget: null })
+    focusTrigger()
+    fireEvent.pointerOver(area, { pointerType: 'mouse' })
+    fireEvent.pointerOut(area, { pointerType: 'mouse', relatedTarget: null })
 
     expect(screen.getByText('Angaben')).toBeInTheDocument()
   })
 
   it('stays visible while hovering after focus leaves', () => {
-    stubHover(true)
+    stubFocusVisible(true)
     const area = renderProbe()
 
-    fireEvent.pointerOver(area)
-    act(() => screen.getByRole('button', { name: 'Ausloeser' }).focus())
+    fireEvent.pointerOver(area, { pointerType: 'mouse' })
+    focusTrigger()
     act(() => screen.getByRole('button', { name: 'Ausloeser' }).blur())
 
     expect(screen.getByText('Angaben')).toBeInTheDocument()

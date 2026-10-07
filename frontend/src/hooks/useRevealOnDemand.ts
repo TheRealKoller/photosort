@@ -1,21 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { FocusEvent, PointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /** Ab dieser Druckdauer erscheinen die Angaben, statt die Kachel zu aktivieren. */
 export const LONG_PRESS_MS = 500
-
-/** Ein Geraet mit feinem Zeiger und Hover-Faehigkeit loest die Angaben durch Ueberfahren aus. */
-const HOVER_QUERY = '(hover: hover) and (pointer: fine)'
 
 export interface RevealOnDemand {
   visible: boolean
   /** Gehoeren an das Element, das die ganze Kachel umfasst. */
   handlers: {
-    onPointerDown: () => void
+    onPointerDown: (event: PointerEvent) => void
     onPointerUp: () => void
     onPointerCancel: () => void
-    onPointerEnter: (() => void) | undefined
+    onPointerEnter: (event: PointerEvent) => void
     onPointerLeave: () => void
-    onFocus: () => void
+    onFocus: (event: FocusEvent) => void
     onBlur: () => void
   }
   /**
@@ -27,8 +25,12 @@ export interface RevealOnDemand {
 }
 
 /**
- * Angaben einer Kachel auf Anforderung: beim Ueberfahren (nur mit feinem Zeiger), solange ein
- * Bedienelement darin den Fokus hat, und nach einem Druck von mindestens `LONG_PRESS_MS`.
+ * Angaben einer Kachel auf Anforderung: beim Ueberfahren mit Maus oder Stift, solange ein
+ * Bedienelement darin den TASTATURfokus (`:focus-visible`) hat, und nach einem Fingerdruck von
+ * mindestens `LONG_PRESS_MS`. Ein kurzes Tippen zeigt die Angaben nie (Spec 0585).
+ *
+ * EINGABEART STATT GERAET: Ausschlaggebend ist `pointerType` des einzelnen Ereignisses, nicht eine
+ * Geraeteabfrage - ein Touch-Laptop wird mit dem Finger, ein Tablet mit Maus oder Stift bedient.
  *
  * JEDER AUSLOESER FUER SICH, nicht ein gemeinsamer Zustand: Ein TOUCH-Pointer wird nach `pointerup` vom
  * Browser zerstoert und feuert dabei `pointerleave`, ohne Zutun des Nutzers. Blendete das
@@ -44,16 +46,6 @@ export function useRevealOnDemand(): RevealOnDemand {
   const [pressed, setPressed] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const suppressClickRef = useRef(false)
-
-  // Einmal beim ersten Rendern gelesen: Die Geraeteklasse wechselt waehrend einer Sitzung nicht,
-  // und ein Abonnement je Kachel waere bei zweihundert Kacheln zweihundert Abonnements.
-  const hoverCapable = useMemo(
-    () =>
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia(HOVER_QUERY).matches,
-    [],
-  )
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -88,8 +80,9 @@ export function useRevealOnDemand(): RevealOnDemand {
   return {
     visible: hovered || focused || pressed,
     handlers: {
-      onPointerDown: () => {
-        if (hoverCapable) {
+      onPointerDown: (event) => {
+        // Maus und Stift haben das Ueberfahren; ein langer Druck ist nur dem Finger vorbehalten.
+        if (event.pointerType !== 'touch') {
           return
         }
         clearTimer()
@@ -101,13 +94,25 @@ export function useRevealOnDemand(): RevealOnDemand {
       },
       onPointerUp: clearTimer,
       onPointerCancel: clearTimer,
-      onPointerEnter: hoverCapable ? () => setHovered(true) : undefined,
+      onPointerEnter: (event) => {
+        // Touch feuert `pointerenter` vor `pointerdown`, `pointerleave` aber erst nach `pointerup`:
+        // Setzte der Finger `hovered`, bliebe die Leiste nach jedem Tippen stehen.
+        if (event.pointerType !== 'touch') {
+          setHovered(true)
+        }
+      },
       onPointerLeave: () => {
         // Der laufende Druck wird IMMER abgebrochen; zurueckgenommen wird nur das Ueberfahren.
         clearTimer()
         setHovered(false)
       },
-      onFocus: () => setFocused(true),
+      // Nur Tastaturfokus: Tippen/Klick fokussiert ebenfalls, und die Grossansicht gibt den Fokus
+      // beim Schliessen programmatisch zurueck - beides meldet der Browser nicht als `:focus-visible`.
+      onFocus: (event) => {
+        if ((event.target as Element).matches(':focus-visible')) {
+          setFocused(true)
+        }
+      },
       onBlur: () => setFocused(false),
     },
     consumeSuppressedClick: (event) => {

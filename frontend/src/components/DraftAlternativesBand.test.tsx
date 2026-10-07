@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as photosApi from '../api/photos'
 import type { DraftAlternativesOut, EventOut, PhotoOut } from '../api/types'
+import { LONG_PRESS_MS } from '../hooks/useRevealOnDemand'
+import { stubFocusVisible } from '../test/focusVisible'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
 import {
   ALTERNATIVES_ORDER_TEXT,
@@ -595,6 +597,11 @@ describe('DraftAlternativesBand: die Kandidaten als Kuratierungskachel', () => {
     vi.mocked(photosApi.fetchPhotoImageBlobUrl).mockResolvedValue('blob:fake-url')
   })
 
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
   it('renders every candidate as the curation card: symbols repeat and plus, strip, no info', async () => {
     vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2, 3]))
 
@@ -623,6 +630,34 @@ describe('DraftAlternativesBand: die Kandidaten als Kuratierungskachel', () => {
     // Verhaeltnis.
     expect(marker.style.width).toBe(`${Math.round((2 / 3) * 280)}px`)
     expect(marker.querySelector('[class*="aspect-square"]')).toBeNull()
+  })
+
+  it('wires the candidate tile to the shared reveal: a tapped action keeps the strip hidden, a long press shows it', async () => {
+    // Spec 0585 AK4/AK8: keine eigene Sichtbarkeitslogik, die Kachel erbt `useRevealOnDemand`.
+    stubFocusVisible(false)
+    const onExchange = vi.fn()
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue(answer([2]))
+    renderBand(new Set(), { onExchange })
+
+    const exchange = await screen.findByRole('button', { name: 'Tauschen: dir/2.jpg' })
+    const tile = exchange.closest('li')!
+    const strip = tile.querySelector('[data-tile-details]')!
+    fireEvent.pointerDown(exchange, { pointerType: 'touch' })
+    act(() => exchange.focus())
+    fireEvent.pointerUp(exchange, { pointerType: 'touch' })
+    fireEvent.click(exchange)
+
+    expect(onExchange).toHaveBeenCalledTimes(1)
+    expect(strip).not.toHaveAttribute('data-visible')
+
+    vi.useFakeTimers()
+    fireEvent.pointerDown(tile, { pointerType: 'touch' })
+    act(() => {
+      vi.advanceTimersByTime(LONG_PRESS_MS)
+    })
+    vi.useRealTimers()
+
+    expect(strip).toHaveAttribute('data-visible', 'true')
   })
 })
 
