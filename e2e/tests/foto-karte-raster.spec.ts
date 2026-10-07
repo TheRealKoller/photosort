@@ -479,10 +479,9 @@ test.describe('Telefon (Touch, ohne Hover)', () => {
   })
 
   /*
-   * Spec 0585: Ein kurzes Tippen oeffnet NUR die Grossansicht. Getippt wird mit `locator.tap()`,
-   * nicht mit `dispatchEvent` - synthetisch verschickte Ereignisse fokussieren nicht, und der Fehler
-   * hing gerade am Fokus, den das Tippen setzt (und den die Grossansicht beim Schliessen
-   * zurueckgibt). Der Abschnitt "kurzer Druck" oben blieb deshalb gegen den Fehler gruen.
+   * Ein kurzes Tippen oeffnet NUR die Grossansicht. Getippt wird mit `locator.tap()`, nie mit
+   * `dispatchEvent` - synthetisch verschickte Ereignisse fokussieren nicht, die Zusage haengt aber
+   * am Fokus, den das Tippen setzt und den die Grossansicht beim Schliessen zurueckgibt.
    */
   test('kurzes Tippen oeffnet nur die Grossansicht, auch nach dem Schliessen keine Leiste', async ({
     page,
@@ -515,9 +514,9 @@ test.describe('Telefon (Touch, ohne Hover)', () => {
 
   /*
    * Der Kachel-Knopf ist "Alternativen", nicht "Streichen": Eine gestrichene Kachel verlaesst die
-   * Ansicht (Spec 0558), dort bliebe keine Kachel, an der die Leiste zu pruefen waere.
-   * "Alternativen" schreibt nichts; das Band nimmt beim Oeffnen den Fokus an seine Ueberschrift
-   * (Spec 0558), der Knopf bleibt deshalb nicht fokussiert - geprueft wird die Leiste der Kachel.
+   * Ansicht, dort bliebe keine Kachel, an der die Leiste zu pruefen waere. "Alternativen" schreibt
+   * nichts; das Band nimmt beim Oeffnen den Fokus an seine Ueberschrift, der Knopf bleibt deshalb
+   * nicht fokussiert - geprueft wird die Leiste der Kachel.
    */
   test('kurzes Tippen auf einen Kachel-Knopf loest nur dessen Handlung aus, keine Leiste', async ({
     page,

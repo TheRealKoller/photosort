@@ -27,7 +27,7 @@ export interface RevealOnDemand {
 /**
  * Angaben einer Kachel auf Anforderung: beim Ueberfahren mit Maus oder Stift, solange ein
  * Bedienelement darin den TASTATURfokus (`:focus-visible`) hat, und nach einem Fingerdruck von
- * mindestens `LONG_PRESS_MS`. Ein kurzes Tippen zeigt die Angaben nie (Spec 0585).
+ * mindestens `LONG_PRESS_MS`. Ein kurzes Tippen zeigt die Angaben nie.
  *
  * EINGABEART STATT GERAET: Ausschlaggebend ist `pointerType` des einzelnen Ereignisses, nicht eine
  * Geraeteabfrage - ein Touch-Laptop wird mit dem Finger, ein Tablet mit Maus oder Stift bedient.

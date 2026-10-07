@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 
 /**
- * Gezielter Stub fuer `Element.matches(':focus-visible')` (Spec 0585, Testkonzept).
+ * Gezielter Stub fuer `Element.matches(':focus-visible')`.
  *
  * jsdom hat keine Zeiger-Heuristik und wertet `:focus-visible` nicht wie ein Browser aus. Alle
  * anderen Selektoren gehen an die echte Implementierung. Die Rueckgabe steuert, ob der folgende
