@@ -1,6 +1,6 @@
 # 0585 - Tippen auf ein Foto öffnet am Tablet nur die Großansicht
 
-**Status:** Accepted
+**Status:** Implemented ([PR #589](https://github.com/TheRealKoller/photosort/pull/589))
 **Erstellt:** 2026-10-07
 **Bezug:** [Issue #585](https://github.com/TheRealKoller/photosort/issues/585)
 
