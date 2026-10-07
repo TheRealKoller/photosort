@@ -1,9 +1,10 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { RatingStatus } from '../api/types'
+import { stubFocusVisible } from '../test/focusVisible'
 import { PhotoGridTile } from './PhotoGridTile'
 import type { PhotoGridTileProps } from './PhotoGridTile'
 
@@ -48,50 +49,38 @@ function marks(): HTMLElement[] {
 }
 
 /**
- * Ein Druck der angegebenen Dauer auf das uebergebene Element. Zeit kommt ueber Fake-Timer, NIE
- * ueber echtes Warten - ein Test, der 500 ms schlaeft, verlaengert den Prueflauf um genau diese
- * Zeit und wird auf einer langsamen Maschine trotzdem sprunghaft.
+ * Ein Druck der angegebenen Dauer auf das uebergebene Element, standardmaessig mit dem Finger. Zeit
+ * kommt ueber Fake-Timer, NIE ueber echtes Warten - ein Test, der 500 ms schlaeft, verlaengert den
+ * Prueflauf um genau diese Zeit und wird auf einer langsamen Maschine trotzdem sprunghaft.
  *
  * DAS ABSCHLIESSENDE `pointerleave` GEHOERT ZWINGEND DAZU: Ein Touch-Pointer wird nach `pointerup`
  * vom Browser ZERSTOERT, und dabei feuert er `pointerleave` - ohne Zutun des Nutzers. Ein Helfer,
  * der nur `pointerdown`/`pointerup` sendet, bildet den Druck am Telefon nicht ab, und jede daran
  * haengende Zusage bestuende, ohne im Browser zu gelten.
  */
-function press(element: HTMLElement, milliseconds: number): void {
+function press(
+  element: HTMLElement,
+  milliseconds: number,
+  pointerType: 'touch' | 'mouse' | 'pen' = 'touch',
+): void {
   vi.useFakeTimers()
   act(() => {
-    element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    fireEvent.pointerDown(element, { pointerType })
   })
   act(() => {
     vi.advanceTimersByTime(milliseconds)
   })
   act(() => {
-    element.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    fireEvent.pointerUp(element, { pointerType })
     // Gesendet wird `pointerout`, nicht `pointerleave`: React synthetisiert `onPointerLeave`
     // ueber das Ueber-/Austritts-Paar, und ein direkt abgesetztes `pointerleave` erreichte den
     // Rueckruf gar nicht - der Fall bliebe gruen, ohne etwas zu pruefen.
-    element.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: null }))
+    fireEvent.pointerOut(element, { pointerType, relatedTarget: null })
   })
 }
 
-function stubHover(matches: boolean): void {
-  vi.stubGlobal(
-    'matchMedia',
-    vi.fn().mockReturnValue({
-      matches,
-      media: '(hover: hover) and (pointer: fine)',
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }),
-  )
-}
-
-beforeEach(() => {
-  stubHover(false)
-})
-
 afterEach(() => {
-  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
@@ -274,27 +263,24 @@ describe('PhotoGridTile: die Angabenzeile (AK7, AK8)', () => {
     expect(screen.queryByText('IMG_0042.jpg')).not.toBeInTheDocument()
   })
 
-  it('shows the line on hover where the device has a fine pointer', async () => {
-    stubHover(true)
-    const user = userEvent.setup()
+  it.each(['mouse', 'pen'] as const)('shows the line on %s hover', (pointerType) => {
     renderTile()
 
-    await user.hover(screen.getByRole('listitem'))
+    fireEvent.pointerOver(screen.getByRole('listitem'), { pointerType })
 
     expect(screen.getByText('IMG_0042.jpg')).toBeInTheDocument()
   })
 
-  it('does not show the line on hover where the device has no fine pointer', async () => {
-    stubHover(false)
-    const user = userEvent.setup()
+  it('does not show the line when a finger enters the tile', () => {
     renderTile()
 
-    await user.hover(screen.getByRole('listitem'))
+    fireEvent.pointerOver(screen.getByRole('listitem'), { pointerType: 'touch' })
 
     expect(screen.queryByText('IMG_0042.jpg')).not.toBeInTheDocument()
   })
 
-  it('shows the line on focus', async () => {
+  it('shows the line on keyboard focus', async () => {
+    stubFocusVisible(true)
     const user = userEvent.setup()
     renderTile()
 
@@ -302,6 +288,31 @@ describe('PhotoGridTile: die Angabenzeile (AK7, AK8)', () => {
 
     expect(screen.getByText('IMG_0042.jpg')).toBeInTheDocument()
   })
+
+  it('does not show the line on focus from a tap (not :focus-visible)', () => {
+    stubFocusVisible(false)
+    renderTile()
+
+    act(() => screen.getByRole('link').focus())
+
+    expect(screen.queryByText('IMG_0042.jpg')).not.toBeInTheDocument()
+  })
+
+  it.each(['mouse', 'pen'] as const)(
+    'starts no long press for %s and navigates on the click',
+    async (pointerType) => {
+      renderTile()
+      const link = screen.getByRole('link')
+
+      press(link, 700, pointerType)
+      expect(screen.queryByText('IMG_0042.jpg')).not.toBeInTheDocument()
+
+      vi.useRealTimers()
+      await userEvent.setup().click(link)
+
+      expect(screen.getByText('Detailansicht')).toBeInTheDocument()
+    },
+  )
 
   it('caps the line at a quarter of the image height', () => {
     // Auflage S6 und AK7 in einem: das gerechnete Mass als ZAHL in einer gewoehnlichen
@@ -390,18 +401,13 @@ describe('PhotoGridTile: die Angabenzeile (AK7, AK8)', () => {
   it('still hides the hovered line when the pointer leaves', () => {
     // Die Gegenprobe zum Fall darueber: Was durch Ueberfahren kam, verschwindet beim Verlassen
     // weiterhin. Ohne sie bestuende die Zusage auch gegen eine Kachel, die nie mehr ausblendet.
-    stubHover(true)
     renderTile()
     const item = screen.getByRole('listitem')
 
-    act(() => {
-      item.dispatchEvent(new MouseEvent('pointerover', { bubbles: true, relatedTarget: null }))
-    })
+    fireEvent.pointerOver(item, { pointerType: 'mouse', relatedTarget: null })
     expect(screen.getByText('IMG_0042.jpg')).toBeInTheDocument()
 
-    act(() => {
-      item.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: null }))
-    })
+    fireEvent.pointerOut(item, { pointerType: 'mouse', relatedTarget: null })
 
     expect(screen.queryByText('IMG_0042.jpg')).not.toBeInTheDocument()
   })

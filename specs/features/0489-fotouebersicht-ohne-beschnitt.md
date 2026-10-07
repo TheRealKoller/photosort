@@ -53,8 +53,10 @@ Bestand schnell erfassen und gezielt einzelne Bilder öffnen kann.
 - [x] AK7 — Dateiname und weitere Angaben stehen nicht dauerhaft in der Übersicht. Sie sind im
       Ruhezustand **nicht im Dokument** und erscheinen erst auf Anforderung als Zeile bündig an der
       Unterkante der Bildfläche; die Zeile überdeckt höchstens **ein Viertel** der Bildhöhe.
-- [x] AK8 — Die Zeile wird an einem Gerät mit feinem Zeiger und Hover-Fähigkeit durch Überfahren
-      ausgelöst, sonst durch einen Druck von mindestens **500 ms**. Ein kürzerer Druck öffnet die
+- [x] AK8 — Die Zeile wird bei Eingabe mit Maus oder Stift durch Überfahren ausgelöst, mit dem
+      Finger durch einen Druck von mindestens **500 ms**; ausschlaggebend ist die Eingabeart des
+      Ereignisses (`pointerType`), nicht das Gerät (präzisiert durch Spec
+      [0585](0585-tippen-oeffnet-nur-grossansicht.md)). Ein kürzerer Druck öffnet die
       Detailansicht und blendet die Zeile nicht ein; ein langer Druck blendet die Zeile ein und
       öffnet die Detailansicht **nicht**.
 - [x] AK9 — Ein Klick oder Tippen auf ein Bild öffnet weiterhin die bestehende Detailansicht, unter
@@ -207,11 +209,10 @@ vorgeschlagen", „Verworfen").
 ### Interaktion
 
 - **Kurzer Klick/Tipp:** Detailansicht, unter Beibehaltung des aktiven Filters.
-- **Überfahren** (Gerät mit `(hover: hover) and (pointer: fine)`) **oder Fokus:** die Angabenzeile
-  erscheint.
-- **Druck ≥ 500 ms** auf einem Gerät ohne feinen Zeiger: die Angabenzeile erscheint, **ohne** zu
-  navigieren.
-- **Tastatur:** Fokus zeigt die Zeile, `Enter` öffnet die Detailansicht. Fokusreihenfolge folgt der
+- **Überfahren** (Eingabe mit Maus oder Stift) **oder Tastaturfokus** (`:focus-visible`): die
+  Angabenzeile erscheint. Fokus durch Tippen/Klick zeigt sie nicht (Spec 0585).
+- **Fingerdruck ≥ 500 ms:** die Angabenzeile erscheint, **ohne** zu navigieren.
+- **Tastatur:** Tastaturfokus zeigt die Zeile, `Enter` öffnet die Detailansicht. Fokusreihenfolge folgt der
   DOM-Ordnung des Rasters; die Filterleiste kommt davor.
 
 ### Barrierefreiheit

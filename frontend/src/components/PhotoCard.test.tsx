@@ -1,9 +1,10 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { LONG_PRESS_MS } from '../hooks/useRevealOnDemand'
+import { stubFocusVisible } from '../test/focusVisible'
 import { PhotoCard } from './PhotoCard'
 import type { PhotoCardProps } from './PhotoCard'
 
@@ -14,18 +15,6 @@ import type { PhotoCardProps } from './PhotoCard'
  * Geprueft ueber Rollen, Namen und `data-*`; Klassen nur dort, wo die Klasse selbst die Zusage
  * ist (`sr-only` der ruhenden Leiste).
  */
-
-function stubHover(matches: boolean): void {
-  vi.stubGlobal(
-    'matchMedia',
-    vi.fn().mockReturnValue({
-      matches,
-      media: '(hover: hover) and (pointer: fine)',
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }),
-  )
-}
 
 function renderCard(props: Partial<PhotoCardProps> = {}) {
   return render(
@@ -59,12 +48,7 @@ function strip(): HTMLElement {
   return found
 }
 
-beforeEach(() => {
-  stubHover(false)
-})
-
 afterEach(() => {
-  vi.unstubAllGlobals()
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -157,15 +141,8 @@ describe('PhotoCard: Aufbau', () => {
 })
 
 describe('PhotoCard: die Leiste bei Bedarf', () => {
-  it('stays in the DOM at rest, screen-reader only', () => {
-    renderCard()
-
-    expect(strip()).toHaveClass('sr-only')
-    expect(strip()).not.toHaveAttribute('data-visible')
-    expect(within(strip()).getByText('Angabe des Modells')).toBeInTheDocument()
-  })
-
-  it.each([/^Großansicht: /, 'Erster', 'Zweiter'])('shows while %s has focus', (name) => {
+  it.each([/^Großansicht: /, 'Erster', 'Zweiter'])('shows while %s has keyboard focus', (name) => {
+    stubFocusVisible(true)
     renderCard()
 
     act(() => screen.getByRole('button', { name }).focus())
@@ -174,26 +151,73 @@ describe('PhotoCard: die Leiste bei Bedarf', () => {
     expect(strip()).not.toHaveClass('sr-only')
   })
 
+  it.each([/^Großansicht: /, 'Erster', 'Zweiter'])(
+    'stays hidden while %s has focus from a tap or click (not :focus-visible)',
+    (name) => {
+      stubFocusVisible(false)
+      renderCard()
+
+      act(() => screen.getByRole('button', { name }).focus())
+
+      expect(strip()).not.toHaveAttribute('data-visible')
+      expect(strip()).toHaveClass('sr-only')
+    },
+  )
+
+  it('shows after tabbing onto the image trigger', async () => {
+    stubFocusVisible(true)
+    renderCard()
+
+    await userEvent.tab()
+
+    expect(strip()).toHaveAttribute('data-visible', 'true')
+  })
+
+  it('runs exactly the tapped action and keeps the strip hidden while it stays focused', () => {
+    stubFocusVisible(false)
+    const onFirst = vi.fn()
+    const onImageActivate = vi.fn()
+    renderCard({
+      onImageActivate,
+      actions: (
+        <button type="button" onClick={onFirst}>
+          Erster
+        </button>
+      ),
+    })
+    const action = screen.getByRole('button', { name: 'Erster' })
+
+    fireEvent.pointerDown(action, { pointerType: 'touch' })
+    act(() => action.focus())
+    fireEvent.pointerUp(action, { pointerType: 'touch' })
+    fireEvent.click(action)
+
+    expect(onFirst).toHaveBeenCalledTimes(1)
+    expect(onImageActivate).not.toHaveBeenCalled()
+    expect(action).toHaveFocus()
+    expect(strip()).not.toHaveAttribute('data-visible')
+  })
+
   it('never grows above the image', () => {
     renderCard({ imageHeight: 211 })
 
     expect(strip().style.maxHeight).toBe('211px')
   })
 
-  it('shows on a long press and does not open the large view', () => {
+  it('shows on a long touch press and does not open the large view', () => {
     const onImageActivate = vi.fn()
     renderCard({ onImageActivate })
     const trigger = screen.getByRole('button', { name: /^Großansicht: / })
 
     vi.useFakeTimers()
     act(() => {
-      trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+      fireEvent.pointerDown(trigger, { pointerType: 'touch' })
     })
     act(() => {
       vi.advanceTimersByTime(LONG_PRESS_MS)
     })
     act(() => {
-      trigger.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+      fireEvent.pointerUp(trigger, { pointerType: 'touch' })
     })
     fireEvent.click(trigger)
 
@@ -233,6 +257,7 @@ describe('PhotoCard: die Leiste bei Bedarf', () => {
 
 describe('PhotoCard: eine lange Leiste bleibt erreichbar', () => {
   it('scrolls vertically within the image height instead of clipping, and takes keyboard focus when it overflows', () => {
+    stubFocusVisible(true)
     // jsdom misst nicht: Der Ueberlauf wird ueber die beiden Masse vorgegeben, die der Baustein liest.
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(300)
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(120)

@@ -45,7 +45,7 @@ Als Nutzer, der beim Kuratieren viele Fotos sichtet, möchte ich Kacheln, auf de
 
 **Bei Bedarf**
 
-- [ ] AK14 — Über dem unteren Bildrand steht eine undurchsichtige Leiste mit dieser Reihenfolge: (1) Bewertungsgrund, (2) Albumtauglichkeit als Stufe mit Wort, gegebenenfalls „· nicht vorgeschlagen“, (3) Dateiname, bei Gestrichen durchgestrichen. Sichtbar wird sie: beim Überfahren, nur auf Geräten mit `(hover: hover) and (pointer: fine)`; bei Fokus auf **jedem** Bedienelement der Kachel (Bildauslöser, beide Knöpfe); nach einem Druck von ≥ 500 ms. Ein Druck < 500 ms zeigt sie nicht.
+- [ ] AK14 — Über dem unteren Bildrand steht eine undurchsichtige Leiste mit dieser Reihenfolge: (1) Bewertungsgrund, (2) Albumtauglichkeit als Stufe mit Wort, gegebenenfalls „· nicht vorgeschlagen“, (3) Dateiname, bei Gestrichen durchgestrichen. Sichtbar wird sie: beim Überfahren mit Maus oder Stift; bei **Tastatur**fokus (`:focus-visible`) auf **jedem** Bedienelement der Kachel (Bildauslöser, beide Knöpfe); nach einem Fingerdruck von ≥ 500 ms. Ein Druck < 500 ms zeigt sie nicht; Fokus durch Tippen/Klick oder die Fokus-Rückgabe nach dem Schließen der Großansicht ebenfalls nicht. Ausschlaggebend ist die Eingabeart des Ereignisses (`pointerType`), nicht das Gerät (präzisiert durch Spec [0585](0585-tippen-oeffnet-nur-grossansicht.md)).
 - [ ] AK15 — Ein langer Druck öffnet weder die Großansicht noch einen Knopf. Ein Tipp anderswo oder Scrollen schließt die Leiste wieder.
 - [ ] AK16 — Der Bewertungsgrund steht vollständig, auch bei 160 Zeichen in einer 100 px breiten Kachel: kein „…“, kein `line-clamp`, keine Kürzung der Zeichenkette, kein Lauftext, keine Animation. Die Leiste ist höchstens so hoch wie das Bild.
 - [ ] AK17 — Hat ein Foto keinen Grund (`reason = null`), fehlt seine Zeile vollständig: kein Platzhalter, kein leeres Element. Die Leiste beginnt dann mit der Albumtauglichkeit.
@@ -134,13 +134,13 @@ Es entfallen die Statuszeile mit Dateiname, `Neu` und `RatingBadge`, die von kei
 ### 5. Bei Bedarf: Leiste über dem unteren Bildrand
 
 - **`hooks/useRevealOnDemand.ts`** wird aus `PhotoGridTile` herausgezogen:
-  - Herkunft `hover`/`focus`/`press`; `(hover: hover) and (pointer: fine)` wird einmal gelesen.
+  - Herkunft `hover`/`focus`/`press`; ~~`(hover: hover) and (pointer: fine)` wird einmal gelesen~~ — seit Spec 0585 entscheidet `pointerType` je Ereignis (Maus/Stift: Überfahren, Finger: langer Druck), kein `matchMedia`.
   - `LONG_PRESS_MS = 500`.
   - Nach einem Druck schließt `pointerdown` (capture) oder `scroll` die Leiste.
   - Der Klick nach einem langen Druck wird unterdrückt.
   - `PhotoGridTile` wird verhaltensgleich umgestellt; seine Tests sind das Regressionsnetz.
   - In der Kuratierung unterdrückt der lange Druck das Öffnen der Großansicht.
-  - Fokus auf einem beliebigen Bedienelement der Kachel blendet die Leiste ein (`onFocus` am `<li>`).
+  - **Tastatur**fokus (`:focus-visible`) auf einem beliebigen Bedienelement der Kachel blendet die Leiste ein (`onFocus` am `<li>`); Fokus nach Tippen/Klick nicht (Spec 0585).
 - **Inhalt:**
   - Bewertungsgrund **vollständig**, ohne `line-clamp` und ohne Bewegung. Er erscheint nur bei `album_suitability.reason !== null`; ohne Grund gibt es keinen Platzhalter und keine leere Zeile.
   - `QualityMeter` (Stufe mit Wort).
@@ -218,7 +218,7 @@ Es entfallen: das Info-„i“, die Statuszeile mit Dateiname/`Neu`/`RatingBadge
 
 ### Bei-Bedarf-Leiste
 
-- **Auslöser** aus `useRevealOnDemand`, verhaltensgleich zur Rasterkachel: Überfahren nur bei `(hover: hover) and (pointer: fine)`, Fokus auf irgendeinem Bedienelement der Kachel (Bildauslöser, Knöpfe), am Telefon ein Druck von mindestens 500 ms. Der lange Druck öffnet die Großansicht ausdrücklich nicht. Ein Tipp anderswo oder Scrollen schließt die Leiste wieder. Keine Angabe ist nur per Maus erreichbar.
+- **Auslöser** aus `useRevealOnDemand`, verhaltensgleich zur Rasterkachel: Überfahren mit Maus oder Stift, **Tastatur**fokus (`:focus-visible`) auf irgendeinem Bedienelement der Kachel (Bildauslöser, Knöpfe), mit dem Finger ein Druck von mindestens 500 ms. Ausschlaggebend ist die Eingabeart des Ereignisses (`pointerType`), nicht das Gerät; ein kurzes Tippen zeigt die Leiste nie, auch nicht über die Fokus-Rückgabe beim Schließen der Großansicht (Spec 0585). Der lange Druck öffnet die Großansicht ausdrücklich nicht. Ein Tipp anderswo oder Scrollen schließt die Leiste wieder. Keine Angabe ist nur per Maus erreichbar.
 - **Inhalt in dieser Reihenfolge** (zuerst, was die Entscheidung trägt):
   1. Bewertungsgrund, vollständig, `text-xs text-text-h`, Umbruch frei, ohne `line-clamp`, ohne Lauftext, ohne Bewegung.
   2. Eine Zeile Albumtauglichkeit: `QualityMeter` (Punkte `aria-hidden` plus Stufenwort), `text-xs text-text`. Wo zutreffend folgt „· nicht vorgeschlagen“ in derselben Zeile. Kein Badge, keine Bewertungsfarbe (Muster „Schätzung eines Modells“).
@@ -248,7 +248,7 @@ Letzte Zelle der Eventgruppe mit Planungsverhältnis 2:3, gleich hoch wie Bild p
 
 ### Tastatur und Bildschirmleser
 
-- Tab-Reihenfolge je Kachel: Bildauslöser (Großansicht, wo heute vorhanden) → erster Knopf → zweiter Knopf. Jeder Fokus in der Kachel blendet Leiste und Kurzbeschriftung ein. Fokusdarstellung allein über die globale `:focus-visible`-Regel.
+- Tab-Reihenfolge je Kachel: Bildauslöser (Großansicht, wo heute vorhanden) → erster Knopf → zweiter Knopf. Jeder **Tastatur**fokus in der Kachel blendet Leiste und Kurzbeschriftung ein; Fokus nach Tippen/Klick blendet nichts ein (Spec 0585). Fokusdarstellung allein über die globale `:focus-visible`-Regel.
 - Vorgelesen werden je Kachel: Bildname wie bisher, Zustandswort, Grund/Tauglichkeit/Dateiname aus der Leiste, dann Knöpfe mit `{Handlung}: {Pfad}`. Symbole sind `aria-hidden`, die Kurzbeschriftung ist `aria-hidden`.
 
 ### Design-System
@@ -294,7 +294,7 @@ Die Ebenen folgen dem Testkonzept: reine Funktionen vor dem DOM (Sektion 0489, P
 - `useRevealOnDemand`: die vier Pflichtfälle aus Sektion 0489, Punkt 4, je mit Negativ-Assertion: Hover mit und ohne fine pointer, Druck 499 und 500 ms. Dazu: Schließen per `pointerdown` außerhalb und per `scroll`, unterdrückter Klick nach langem Druck. `PhotoGridTile`-Bestandstests bleiben unverändert grün; das ist der Verhaltensgleichheits-Nachweis.
 - `TileAction`: beide Modi, zugänglicher Name gleich, Kurzbeschriftung nur im Symbolmodus und `aria-hidden`, `busy` ersetzt das Symbol (genau ein Spinner, kein Symbol, Wort bleibt), deaktiviert.
 - `AlbumStateBadge`: je Zustand `role=img`, exakter Name, kein sichtbarer Text. Symbolfolge per `data-icon`.
-- `PhotoCard` / `CurationPhotoTile` / `SelectionPhotoTile`: DOM- und Fokusreihenfolge. Fokus auf jedem Bedienelement blendet die Leiste ein. Leiste im Ruhezustand im DOM und `sr-only`. Ein Grund mit 160 Zeichen hat vollen `textContent`, keine Klasse `line-clamp-*`/`truncate`. Ohne Grund ist kein Element mit leerem Text da. „nicht vorgeschlagen“ erscheint in Leiste und Badge-Name. `setAside` zeigt den Dateinamen durchgestrichen. Info-Auslöser und Motiv-Marker fehlen (Abwesenheit im `within(tile)`-Rahmen). Die Knöpfe öffnen die Großansicht nicht. Langer Druck öffnet sie nicht. Struck-Variante mit genau einem Knopf. Endauswahl strittig mit zwei Knöpfen und Haltungszeilen mit Symbolzeichen und Namen.
+- `PhotoCard` / `CurationPhotoTile` / `SelectionPhotoTile`: DOM- und Fokusreihenfolge. **Tastatur**fokus auf jedem Bedienelement blendet die Leiste ein, Fokus nach Tippen/Klick nicht (Spec 0585). Leiste im Ruhezustand im DOM und `sr-only`. Ein Grund mit 160 Zeichen hat vollen `textContent`, keine Klasse `line-clamp-*`/`truncate`. Ohne Grund ist kein Element mit leerem Text da. „nicht vorgeschlagen“ erscheint in Leiste und Badge-Name. `setAside` zeigt den Dateinamen durchgestrichen. Info-Auslöser und Motiv-Marker fehlen (Abwesenheit im `within(tile)`-Rahmen). Die Knöpfe öffnen die Großansicht nicht. Langer Druck öffnet sie nicht. Struck-Variante mit genau einem Knopf. Endauswahl strittig mit zwei Knöpfen und Haltungszeilen mit Symbolzeichen und Namen.
 - `DraftAlternativesBand`: Kandidaten sind `PhotoCard`. Die Bezugsmarke ist eine Zelle mit eigenem Verhältnis.
 
 **Seitentests (`AlbumDraftPage`, `AlbumSelectionPage`)**: Band/Panel als `li.w-full` hinter der gerechneten Reihe der auslösenden Kachel, über die Attrappe bei zwei Breiten. Die Hinzufügen-Zelle ist die letzte und trägt Symbol `plus`. Die bestehenden Abläufe (Alternativen → Tauschen/Hinzufügen, Streichen/Rückgängig) bleiben grün, keine Namensänderung (Knopf heißt weiter „Alternativen: …“).

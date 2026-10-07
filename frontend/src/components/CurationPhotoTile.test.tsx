@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { PhotoOut, RankingOut, RatingStatus } from '../api/types'
 import { LONG_PRESS_MS } from '../hooks/useRevealOnDemand'
+import { stubFocusVisible } from '../test/focusVisible'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { NOT_PROPOSED_BADGE_TEXT } from '../utils/albumDraft'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
@@ -102,7 +103,7 @@ function icons(element: Element): string[] {
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
@@ -266,8 +267,9 @@ describe('CurationPhotoTile: die Leiste bei Bedarf', () => {
   })
 
   it.each([/^Großansicht: /, /^Streichen: /, /^Alternativen: /])(
-    'shows while %s has focus',
+    'shows while %s has keyboard focus',
     (name) => {
+      stubFocusVisible(true)
       const { container } = renderTile()
 
       act(() => screen.getByRole('button', { name }).focus())
@@ -438,18 +440,14 @@ describe('CurationPhotoTile: die Grossansicht', () => {
     expect(onOpenLarge).not.toHaveBeenCalled()
   })
 
-  it('does not open the large view after a long press', () => {
-    vi.stubGlobal(
-      'matchMedia',
-      vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn() }),
-    )
+  it('does not open the large view after a long touch press', () => {
     const onOpenLarge = vi.fn()
     const { container } = renderTile({}, { onOpenLarge })
     const trigger = screen.getByRole('button', { name: /^Großansicht: / })
 
     vi.useFakeTimers()
     act(() => {
-      trigger.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+      fireEvent.pointerDown(trigger, { pointerType: 'touch' })
     })
     act(() => {
       vi.advanceTimersByTime(LONG_PRESS_MS)
@@ -458,6 +456,57 @@ describe('CurationPhotoTile: die Grossansicht', () => {
 
     expect(onOpenLarge).not.toHaveBeenCalled()
     expect(details(container)).toHaveAttribute('data-visible', 'true')
+  })
+
+  /*
+   * Spec 0585 AK1/AK7: Die Grossansicht gibt den Fokus beim Schliessen an den Bildausloeser
+   * zurueck. Nach einem Tippen ist dieser Fokus kein Tastaturfokus (`:focus-visible` = false) -
+   * die Leiste bleibt verborgen; nach Tastaturbedienung ist er es - die Leiste erscheint.
+   */
+  it.each([
+    { focusVisible: false, visible: false },
+    { focusVisible: true, visible: true },
+  ])(
+    'after opening and the focus coming back (focus-visible $focusVisible) the strip is visible: $visible',
+    ({ focusVisible, visible }) => {
+      stubFocusVisible(focusVisible)
+      const onOpenLarge = vi.fn()
+      const { container } = renderTile({ id: 17 }, { onOpenLarge })
+      const trigger = screen.getByRole('button', { name: /^Großansicht: / })
+
+      fireEvent.pointerDown(trigger, { pointerType: 'touch' })
+      fireEvent.pointerUp(trigger, { pointerType: 'touch' })
+      fireEvent.click(trigger)
+      expect(onOpenLarge).toHaveBeenCalledWith(17)
+
+      act(() => trigger.blur())
+      act(() => trigger.focus())
+
+      expect(trigger).toHaveFocus()
+      if (visible) {
+        expect(details(container)).toHaveAttribute('data-visible', 'true')
+      } else {
+        expect(details(container)).not.toHaveAttribute('data-visible')
+      }
+    },
+  )
+
+  it('runs exactly the tapped strike and keeps the strip hidden while the button stays focused', () => {
+    stubFocusVisible(false)
+    const onDecide = vi.fn()
+    const onOpenLarge = vi.fn()
+    const { container } = renderTile({}, { onDecide, onOpenLarge, ownStatus: 'album_worthy' })
+    const strike = screen.getByRole('button', { name: /^Streichen: / })
+
+    fireEvent.pointerDown(strike, { pointerType: 'touch' })
+    act(() => strike.focus())
+    fireEvent.pointerUp(strike, { pointerType: 'touch' })
+    fireEvent.click(strike)
+
+    expect(onDecide).toHaveBeenCalledTimes(1)
+    expect(onOpenLarge).not.toHaveBeenCalled()
+    expect(strike).toHaveFocus()
+    expect(details(container)).not.toHaveAttribute('data-visible')
   })
 
   it('makes the image trigger the first tabbable element and hands it out', async () => {
