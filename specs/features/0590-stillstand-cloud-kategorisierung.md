@@ -1,6 +1,6 @@
 # 0590 - Klassifizierung mit Cloud bricht bei großen Projekten fälschlich als Stillstand ab
 
-**Status:** Accepted
+**Status:** Implemented ([PR #591](https://github.com/TheRealKoller/photosort/pull/591))
 **Erstellt:** 2026-10-07
 **Bezug:** [Issue #590](https://github.com/TheRealKoller/photosort/issues/590)
 
