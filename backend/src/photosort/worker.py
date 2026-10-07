@@ -3355,7 +3355,7 @@ async def run_remote_category_classification(
     Zeile selbst an.
 
     `parent_run` ist der uebergeordnete Klassifizierungslauf; er wird an jedem Block-Commit
-    mitgestempelt (Spec 0590). Ohne ihn (Direktaufruf, Tests) stempelt die Funktion nur ihre
+    mitgestempelt. Ohne ihn (Direktaufruf, Tests) stempelt die Funktion nur ihre
     eigene Zeile."""
     if run is None:
         run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
@@ -3581,7 +3581,7 @@ async def run_remote_category_classification(
                 # beim Betreten des Blocks (sonst stuende nach einem Abbruch mitten im Block ein
                 # `processed` da, dem weder ein Aufruf noch ein Fehlschlag gegenuebersteht).
                 run.failed_calls = failed_calls
-                # Spec 0590: der uebergeordnete Klassifizierungslauf bekommt denselben Stempel im
+                # Der uebergeordnete Klassifizierungslauf bekommt denselben Stempel im
                 # selben Commit - reap_stalled_runs liest nur `last_progress_at` der eigenen Zeile
                 # und setzte den Elternlauf sonst nach STALL_THRESHOLD auf FAILED, waehrend diese
                 # Coroutine kostenpflichtig weiter Cloud-Aufrufe absetzt.
