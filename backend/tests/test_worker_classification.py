@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import inspect
 import math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NoReturn
@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort.worker as worker
 from photosort.cloud_vision import VISION_MODELS_BY_PROVIDER
+from photosort.db import make_session_factory
 from photosort.label_embedding import LabelEmbedderLike
 from photosort.landmark import LandmarkApiError, LandmarkDetection, PlaceHint
 from photosort.models import (
@@ -38,7 +39,7 @@ from photosort.models import (
 from photosort.motifs import MOTIF_REGISTRY
 from photosort.remote_classification import RemoteClassification
 from photosort.thumbnails import display_path
-from photosort.worker import run_classification
+from photosort.worker import reap_stalled_runs, run_classification
 from tests.phase_binding import assert_phase_binding, assert_phase_starts_strictly_increase
 
 # specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, decisions/0050-verketteter-
@@ -1208,3 +1209,133 @@ def test_the_classify_job_argument_has_a_default() -> None:
     parameter = inspect.signature(worker.classify).parameters["estimated_cost_usd"]
 
     assert parameter.default is None
+
+
+# --------------------------------------------------------------------------------------------
+# specs/features/0590-stillstand-cloud-kategorisierung.md: der uebergeordnete Lauf wird an jedem
+# Block-Commit der Remote-Phase mitgestempelt - sonst setzt reap_stalled_runs einen arbeitenden
+# Lauf nach 15 min auf FAILED, waehrend die Cloud-Aufrufe kostenpflichtig weiterlaufen.
+# --------------------------------------------------------------------------------------------
+
+
+class _TickingClock:
+    """Jeder Aufruf von `_now_utc` rueckt die simulierte Zeit um zehn Minuten vor - die Remote-
+    Phase liegt damit in simulierter Zeit deutlich ueber STALL_THRESHOLD. `frozen` haelt die Uhr
+    fuer den Reaper-Aufruf an einem bestimmten Wert fest."""
+
+    def __init__(self) -> None:
+        self.current = datetime(2030, 1, 1, 12, 0)
+        self.frozen: datetime | None = None
+
+    def __call__(self) -> datetime:
+        if self.frozen is not None:
+            return self.frozen
+        self.current += timedelta(minutes=10)
+        return self.current
+
+
+class _ParentSnapshottingCategoryClient(RecordingCategoryClient):
+    """Liest vor jedem Aufruf den uebergeordneten CriterionScoringRun und zeichnet seinen
+    Fortschrittsstempel auf; vor dem letzten Aufruf laesst er optional den Reaper laufen."""
+
+    def __init__(
+        self, session: AsyncSession, clock: _TickingClock, *, reap_before_call: int | None = None
+    ) -> None:
+        super().__init__()
+        self._session = session
+        self._clock = clock
+        self._reap_before_call = reap_before_call
+        self.parent_stamps: list[datetime | None] = []
+        self.remote_stamps: list[datetime | None] = []
+        self.parent_status_after_reap: ScanStatus | None = None
+
+    async def classify(
+        self, image_bytes: bytes, mime_type: str, photo_id: int
+    ) -> RemoteClassification:
+        parent = await _current_run(self._session)
+        remote = (
+            (await self._session.execute(select(RemoteCategoryClassificationRun))).scalars().one()
+        )
+        self.parent_stamps.append(parent.last_progress_at)
+        self.remote_stamps.append(remote.last_progress_at)
+        if self._reap_before_call == len(self.parent_stamps):
+            last_block = remote.last_progress_at
+            assert last_block is not None
+            self._clock.frozen = last_block + timedelta(minutes=14)
+            try:
+                await reap_stalled_runs(
+                    {}, session_factory=make_session_factory(self._session.bind)
+                )
+            finally:
+                self._clock.frozen = None
+            await self._session.refresh(parent)
+            self.parent_status_after_reap = parent.status
+        return await super().classify(image_bytes, mime_type, photo_id)
+
+
+async def _three_photo_cloud_project(
+    session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Project, ScoringRun, _TickingClock]:
+    monkeypatch.setattr(worker.settings, "remote_category_classification_concurrency", 1)
+    project = await _make_project(session, cloud_consent=True)
+    scoring_run = await _add_successful_scoring_run(session, project)
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        await _add_candidate_photo(session, project, name, tmp_path)
+    clock = _TickingClock()
+    monkeypatch.setattr(worker, "_now_utc", clock)
+    return project, scoring_run, clock
+
+
+async def test_the_parent_run_is_stamped_at_every_remote_block_commit(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spec 0590 AK1/AK3: der Stempel des uebergeordneten Laufs folgt jedem Block-Commit der
+    Remote-Phase und ist dem der Remote-Zeile gleich. Vor dem ersten Block steht er noch auf
+    seinem Anlagewert - es gibt keinen Heartbeat, nur Block-Commits stempeln."""
+    project, scoring_run, clock = await _three_photo_cloud_project(
+        db_session, tmp_path, monkeypatch
+    )
+    client = _ParentSnapshottingCategoryClient(db_session, clock)
+
+    await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: client,
+    )
+
+    stamps = client.parent_stamps
+    assert len(stamps) == 3
+    assert stamps[0] is not None and stamps[0] < datetime(2030, 1, 1), (
+        "Vor dem ersten Remote-Block darf der uebergeordnete Lauf nur seinen Anlagewert tragen."
+    )
+    assert stamps == sorted(stamps)  # type: ignore[type-var]
+    assert stamps[-1] > stamps[0], (  # type: ignore[operator]
+        "last_progress_at des übergeordneten Laufs hat sich während der Remote-Phase nicht bewegt"
+    )
+    assert stamps[1:] == client.remote_stamps[1:]
+
+
+async def test_a_long_but_progressing_remote_phase_is_not_reaped(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spec 0590 AK2, der gemeldete Symptomfall: seit der Anlage sind weit mehr als 15 min
+    simuliert, der letzte Remote-Block liegt aber nur 14 min zurueck - der Reaper darf den
+    uebergeordneten Lauf nicht auf FAILED setzen."""
+    project, scoring_run, clock = await _three_photo_cloud_project(
+        db_session, tmp_path, monkeypatch
+    )
+    client = _ParentSnapshottingCategoryClient(db_session, clock, reap_before_call=3)
+
+    await _run(
+        db_session,
+        project,
+        scoring_run,
+        tmp_path,
+        use_cloud=True,
+        build_category_client=lambda _model: client,
+    )
+
+    assert client.parent_status_after_reap == ScanStatus.RUNNING
