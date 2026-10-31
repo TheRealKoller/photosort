@@ -1,6 +1,6 @@
 # 0561 - Keine Altdaten nach Nutzerwechsel
 
-**Status:** Accepted
+**Status:** Implemented ([PR #596](https://github.com/TheRealKoller/photosort/pull/596))
 **Erstellt:** 2026-10-31
 **Bezug:** [#561](https://github.com/TheRealKoller/photosort/issues/561)
 
