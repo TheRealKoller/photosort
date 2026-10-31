@@ -101,20 +101,25 @@ function makeToken(payload: Record<string, unknown>): string {
   return `${header}.${body}.sig`
 }
 
-function renderApp(initialEntries: string[] = ['/']) {
-  const queryClient = new QueryClient({
+function renderApp(
+  initialEntries: string[] = ['/'],
+  queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
+  }),
+) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
 
-  return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <App />
-    </MemoryRouter>,
-    { wrapper },
-  )
+  return {
+    queryClient,
+    ...render(
+      <MemoryRouter initialEntries={initialEntries}>
+        <App />
+      </MemoryRouter>,
+      { wrapper },
+    ),
+  }
 }
 
 describe('App', () => {
@@ -186,6 +191,51 @@ describe('App', () => {
 
     expect(getToken()).toBeNull()
     expect(screen.getByLabelText(/benutzername/i)).toBeInTheDocument()
+  })
+
+  /*
+   * specs/features/0561-keine-altdaten-nach-nutzerwechsel.md: Beim Abmelden wird der gesamte
+   * Query-Client-Cache geleert, damit im aktiven Tab kein Rest der vorherigen Sitzung sichtbar
+   * bleibt. Geprueft wird der beobachtbare Cache-Zustand (getQueryData -> undefined), kein
+   * Aufrufzaehler; `['motifs']` traegt gcTime: Infinity und wuerde eine reine Garbage Collection
+   * ueberleben - nur clear() raeumt sie (specs/architecture/0002-testkonzept.md).
+   */
+  it('leert den Query-Client-Cache beim Abmelden', async () => {
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+    const user = userEvent.setup()
+
+    const { queryClient } = renderApp(['/'])
+    await waitFor(() => expect(queryClient.getQueryData(['projects'])).toBeDefined())
+    queryClient.setQueryDefaults(['motifs'], { staleTime: Infinity, gcTime: Infinity })
+    queryClient.setQueryData(['motifs'], { items: [] })
+    expect(queryClient.getQueryData(['motifs'])).toBeDefined()
+
+    await user.click(screen.getByRole('button', { name: /abmelden/i }))
+
+    expect(queryClient.getQueryData(['projects'])).toBeUndefined()
+    expect(queryClient.getQueryData(['motifs'])).toBeUndefined()
+  })
+
+  /*
+   * Verhaltensgegenprobe zur Cache-Leerung: Nach dem Abmelden und einer erneuten Anmeldung laedt
+   * die Projektliste frisch, statt aus dem Cache bedient zu werden - damit beginnt der neu
+   * angemeldete Nutzer ausschliesslich mit seinen eigenen Daten (AK5 der Spec 0561).
+   */
+  it('laedt nach erneutem Anmelden die Daten frisch statt aus dem Cache', async () => {
+    setToken(makeToken({ sub: '1', username: 'daniel' }))
+    const user = userEvent.setup()
+
+    const { queryClient, unmount } = renderApp(['/'])
+    await waitFor(() => expect(projectsApi.listProjects).toHaveBeenCalledTimes(1))
+
+    await user.click(screen.getByRole('button', { name: /abmelden/i }))
+    expect(queryClient.getQueryData(['projects'])).toBeUndefined()
+    unmount()
+
+    setToken(makeToken({ sub: '2', username: 'anna' }))
+    renderApp(['/'], queryClient)
+
+    await waitFor(() => expect(projectsApi.listProjects).toHaveBeenCalledTimes(2))
   })
 
   it('navigates to /login with an expired-session hint when a real API call returns 401 mid-session', async () => {

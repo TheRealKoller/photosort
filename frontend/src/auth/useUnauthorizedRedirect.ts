@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router'
 
@@ -10,13 +11,15 @@ import { UNAUTHORIZED_EVENT } from '../api/client'
  */
 export function useUnauthorizedRedirect(): void {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     function handleUnauthorized(): void {
+      queryClient.clear()
       navigate('/login', { state: { reason: 'expired' } })
     }
 
     window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized)
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized)
-  }, [navigate])
+  }, [navigate, queryClient])
 }
