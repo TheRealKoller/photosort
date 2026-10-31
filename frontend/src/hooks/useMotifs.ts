@@ -7,8 +7,10 @@ import { listMotifs } from '../api/motifs'
  *
  * `staleTime: Infinity` + `gcTime: Infinity`: das Set aendert sich ausschliesslich durch ein
  * Server-Deployment, nicht zur Laufzeit - ein Refetch beim Fenster-Fokus oder beim Mount einer
- * zweiten Komponente waere reine Netzlast. Die Invalidierung erfolgt implizit beim Login-Wechsel,
- * weil dabei der gesamte QueryClient neu aufgebaut wird.
+ * zweiten Komponente waere reine Netzlast. Geraeumt wird der Eintrag ausschliesslich ueber
+ * `queryClient.clear()` an den beiden Sitzungsende-Punkten (Abmelden und 401), die den gesamten
+ * Cache leeren (specs/features/0561) - eine reine Garbage Collection wuerde diesen
+ * unvergaenglichen Eintrag nie entfernen.
  *
  * Mehrere gleichzeitige Konsumenten teilen sich denselben Cache-Eintrag (`queryKey`) und loesen
  * deshalb genau EINEN Request aus - dafuer gibt es einen eigenen Hook-Test mit Aufrufzaehler. Der
