@@ -222,9 +222,7 @@ class TestTheRequestBody:
 
         assert response.status_code == 422
 
-    @pytest.mark.parametrize(
-        "project_id", ["0", "-1", str(_MAX_ALLOWED_ID + 1), str(2**63 + 1)]
-    )
+    @pytest.mark.parametrize("project_id", ["0", "-1", str(_MAX_ALLOWED_ID + 1), str(2**63 + 1)])
     async def test_the_project_id_is_bounded(
         self, authenticated_api_client: httpx.AsyncClient, project_id: str
     ) -> None:
