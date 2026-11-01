@@ -2747,7 +2747,7 @@ async def _exchange_sides(
 
 @router.post("/projects/{project_id}/draft/exchange", response_model=DraftExchangeOut)
 async def exchange_draft_photo(
-    project_id: int,
+    project_id: Annotated[int, PathParam(ge=1, le=MAX_QUERY_POSITION)],
     payload: DraftExchangeIn,
     session: AsyncSession = Depends(get_session),
     # SICHERHEIT (S1): ausgeschriebene Auth-Dependency. Fuer diesen Router gibt es KEIN

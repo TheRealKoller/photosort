@@ -52,7 +52,7 @@ from photosort.models import (
 _MAX_ALLOWED_ID = 1_000_000_000
 
 
-def _url(project_id: int) -> str:
+def _url(project_id: int | str) -> str:
     return f"/projects/{project_id}/draft/exchange"
 
 
@@ -218,6 +218,20 @@ class TestTheRequestBody:
         response = await authenticated_api_client.post(
             _url(draft.project_id),
             json={"photo_id": value, "replaced_photo_id": draft.photo_ids[0]},
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize(
+        "project_id", ["0", "-1", str(_MAX_ALLOWED_ID + 1), str(2**63 + 1)]
+    )
+    async def test_the_project_id_is_bounded(
+        self, authenticated_api_client: httpx.AsyncClient, project_id: str
+    ) -> None:
+        """Der Pfadparameter ist wie beim Rueckgaengig und beim Entwurf-zeigen deklarativ
+        begrenzt: Eine unzulaessige Projektangabe ist `422` und nie ein interner Fehler."""
+        response = await authenticated_api_client.post(
+            _url(project_id), json={"photo_id": 1, "replaced_photo_id": 2}
         )
 
         assert response.status_code == 422
