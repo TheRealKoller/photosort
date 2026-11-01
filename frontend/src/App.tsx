@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
 import {
   Link,
@@ -88,6 +89,7 @@ function useProjectIdFromRoute(): string | null {
 
 function AppShell() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const token = getToken()
   const username = token ? decodeUsername(token) : null
   const projectId = useProjectIdFromRoute()
@@ -96,6 +98,10 @@ function AppShell() {
     // Bestaetigungslose Aktion - kein Backend-Aufruf, da es ohne Server-Session-Store nichts zu
     // invalidieren gaebe.
     clearToken()
+    // Leert den gesamten Query-Cache, damit im aktiven Tab kein Rest der vorherigen Sitzung
+    // (persoenliche Vorschlaege, Zaehlwerte, Statistik) sichtbar bleibt - vor der Navigation,
+    // damit der geschuetzte Baum schon leer entmountet wird (specs/features/0561).
+    queryClient.clear()
     navigate('/login')
   }
 
