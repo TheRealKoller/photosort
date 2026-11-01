@@ -1,6 +1,6 @@
 # 0603 - Backend-CI-Beschleunigung
 
-**Status:** Accepted
+**Status:** Implemented ([PR #604](https://github.com/TheRealKoller/photosort/pull/604))
 **Erstellt:** 2026-11-01
 **Bezug:** [GitHub-Issue #603](https://github.com/TheRealKoller/photosort/issues/603)
 
