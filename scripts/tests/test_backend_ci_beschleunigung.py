@@ -4,8 +4,9 @@ Die Beschleunigung selbst ist eine Messung aus dem Actions-Protokoll, kein autom
 Gate. Dieser Test traegt stattdessen den TDD-Zwang: Er liest den echten Dateizustand von
 `ci.yml` und `backend/pyproject.toml` und schlaegt laut fehl, sobald die tragenden Formen
 driftend — der Testschritt ohne `-n auto` oder mit aufgeweichtem Coverage-Gate, der
-`pytest-xdist`-dev-Eintrag, der `uv`-Cache-Schritt, die Job-Schluesselmenge oder die
-Pruefschrittfolge. Es wird kein Test entfernt oder geaendert.
+`pytest-xdist`-dev-Eintrag, der `uv`-Cache-Schritt, die Job-Schluesselmenge, die
+Pruefschrittfolge oder ein Pruefschritt, der per `if:`/`continue-on-error` ueberspringbar bzw.
+nicht blockierend gemacht wird. Es wird kein Test entfernt oder geaendert.
 """
 
 from __future__ import annotations
@@ -113,6 +114,10 @@ def schritte(job: str) -> list[str]:
 _NAME = re.compile(r"^\s*name:\s*([^\n]+?)\s*$", re.MULTILINE)
 _RUN = re.compile(r"^\s*run:\s*([^\n]+?)\s*$", re.MULTILINE)
 _USES = re.compile(r"^\s*uses:\s*(\S+)\s*$", re.MULTILINE)
+# Ein `if:` macht einen Schritt ueberspringbar; `continue-on-error: true` nimmt ihm die
+# blockierende Wirkung (AK4). `continue-on-error: false` ist der Default und bleibt unbeanstandet.
+_IF = re.compile(r"^\s*if:\s*", re.MULTILINE)
+_CONTINUE_ON_ERROR = re.compile(r"^\s*continue-on-error:\s*true\b", re.MULTILINE)
 
 
 def schritt_name(block: str) -> str | None:
@@ -164,6 +169,28 @@ def benannte_schritte(job: str) -> list[tuple[str, str]]:
         if name is not None:
             paare.append((name, schritt_run(block) or ""))
     return paare
+
+
+def pruefschritt_umgehungen(job: str) -> list[str]:
+    """Befunde: ein `if:` oder `continue-on-error: true` an einem der vier Pruefschritte oder
+    am backend-Job-Kopf. Ein solcher Eintrag machte einen Pruefschritt ueberspringbar bzw. nicht
+    blockierend (AK4). Leer = keiner vorhanden."""
+    befunde: list[str] = []
+    namen = {name for name, _ in PRUEFSCHRITTE}
+    for block in schritte(job):
+        name = schritt_name(block)
+        if name not in namen:
+            continue
+        if _IF.search(block):
+            befunde.append(f"Pruefschritt {name!r} traegt ein `if:`")
+        if _CONTINUE_ON_ERROR.search(block):
+            befunde.append(f"Pruefschritt {name!r} traegt `continue-on-error: true`")
+    kopf = job.split("    steps:", 1)[0]
+    if _IF.search(kopf):
+        befunde.append("backend-Job traegt ein `if:`")
+    if _CONTINUE_ON_ERROR.search(kopf):
+        befunde.append("backend-Job traegt `continue-on-error: true`")
+    return befunde
 
 
 def dev_block(text: str) -> str:
@@ -239,6 +266,11 @@ def test_alle_pruefschritte_sind_vorhanden_und_ungekuerzt() -> None:
     assert folge == list(PRUEFSCHRITTE), (
         f"Pruefschritte weichen ab: {folge!r}, erwartet {list(PRUEFSCHRITTE)!r}."
     )
+
+
+def test_kein_pruefschritt_ist_ueberspringbar_oder_nicht_blockierend() -> None:
+    befunde = pruefschritt_umgehungen(backend_job(ci_text()))
+    assert not befunde, "; ".join(befunde)
 
 
 # --- Gegenproben je Regel -------------------------------------------------------------------
@@ -350,6 +382,39 @@ def test_ein_abgeschwaechter_pruefschritt_wird_erkannt() -> None:
         ),
     )
     assert pruefschritte(abgeschwaecht) != list(PRUEFSCHRITTE)
+
+
+def test_ein_pruefschritt_ohne_bedingung_ist_kein_befund() -> None:
+    job = _job((TEST_SCHRITT_NAME, EXPECTED_TEST_RUN))
+    assert pruefschritt_umgehungen(job) == []
+
+
+def test_ein_if_false_am_testschritt_wird_erkannt() -> None:
+    job = (
+        f"      - name: {TEST_SCHRITT_NAME}\n        run: {EXPECTED_TEST_RUN}\n        if: false\n"
+    )
+    assert pruefschritt_umgehungen(job)
+
+
+def test_ein_continue_on_error_true_an_einem_pruefschritt_wird_erkannt() -> None:
+    job = "      - name: Lint (ruff)\n        run: ruff check .\n        continue-on-error: true\n"
+    assert pruefschritt_umgehungen(job)
+
+
+def test_ein_continue_on_error_false_ist_kein_befund() -> None:
+    job = (
+        f"      - name: {TEST_SCHRITT_NAME}\n"
+        f"        run: {EXPECTED_TEST_RUN}\n"
+        "        continue-on-error: false\n"
+    )
+    assert pruefschritt_umgehungen(job) == []
+
+
+def test_ein_if_am_backend_job_wird_erkannt() -> None:
+    job = (
+        "    if: false\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n"
+    )
+    assert pruefschritt_umgehungen(job)
 
 
 # --- Selbstschutz ---------------------------------------------------------------------------
