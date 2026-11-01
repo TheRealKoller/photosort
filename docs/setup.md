@@ -56,6 +56,13 @@ Die Klammern sind hier aus demselben Grund gesetzt wie weiter unten beim Install
 stünde man nach der ersten Zeile in `backend/`, und die beiden folgenden lösten
 `backend/frontend` und `backend/scripts` auf und schlügen fehl.
 
+Der Backend-Testlauf lässt sich lokal über alle Kerne parallelisieren (`pytest-xdist`, liegt in
+den dev-Dependencies) — derselbe Aufruf, den der CI-Job `backend` fährt:
+
+```bash
+(cd backend && pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=80)
+```
+
 Der dritte Lauf ist der kleinste und betrifft am ehesten, wer nur Doku oder Specs geändert hat:
 Unter `scripts/tests/` liegen die Repo-Konsistenzprüfungen, die Texte und Dateinamen dieses
 Repositoriums gegeneinander halten (etwa Verweisnummern und die Eindeutigkeit der
