@@ -231,3 +231,25 @@ class OpenCloudClient:
         response = await self._send("GET", url)
         _raise_for_status(response)
         return response.content
+
+    async def copy(self, webdav_url: str, source_path: str, dest_url: str) -> None:
+        """Serverseitiges WebDAV `COPY` (RFC 4918) - kein Byte fliesst durch PhotoSort.
+
+        `source_path` ist der relative Quellpfad und laeuft wie jede Pfadbildung ueber `_join`
+        (`..`-Ablehnung, Segment-Quotierung). `dest_url` ist die VOLLE Ziel-URL und wird vom
+        Aufrufer AUSSCHLIESSLICH ueber `_join(webdav_url, dest_path)` gebaut - nie durch manuelle
+        String-Konkatenation mit rohen Namen, sonst waere eine CRLF-Header-Injection im
+        `Destination`-Header oder ein `..`-Ausbruch aus dem Zielordner moeglich."""
+        source_url = _join(webdav_url, source_path)
+        response = await self._send("COPY", source_url, headers={"Destination": dest_url})
+        _raise_for_status(response)
+
+    async def mkcol(self, webdav_url: str, path: str) -> None:
+        """Legt einen Ordner per WebDAV `MKCOL` an, tolerant gegenueber `405` (Ordner existiert
+        bereits). Gilt fuer Wurzel- und Unterordner des Exports gleichermassen: ein bereits
+        vorhandener Ordner ist kein Fehler, sondern das gewollte "weiter im Zielbaum"."""
+        url = _join(webdav_url, path)
+        response = await self._send("MKCOL", url)
+        if response.status_code == 405:
+            return
+        _raise_for_status(response)

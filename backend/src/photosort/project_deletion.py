@@ -37,6 +37,8 @@ from sqlalchemy.sql.dml import Delete
 from photosort.models import (
     CriterionScoringRun,
     Event,
+    ExportPhoto,
+    ExportRun,
     FeedbackEvent,
     FinalSelectionDecision,
     LandmarkName,
@@ -103,6 +105,7 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     criterion_run_ids = select(CriterionScoringRun.id).where(
         CriterionScoringRun.project_id.in_(project_ids)
     )
+    export_run_ids = select(ExportRun.id).where(ExportRun.project_id.in_(project_ids))
     deleted: dict[str, int] = {}
 
     async def _run(table_name: str, statement: Delete) -> None:
@@ -207,6 +210,15 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     # NACH photo_rankings (die zeigen auf events), VOR criterion_scoring_runs (darauf zeigen
     # events). Beide Kanten sind echte Fremdschluessel - unter Postgres bleibt sonst eine verwaiste
     # Zeile zurueck.
+    # Der Mengen-Schnappschuss haengt am LAUF (nicht am Foto) und an `photos` (nullable) - er
+    # faellt ueber den Lauf. Ohne diese Anweisung ueberlebte die Liste "welche Auswahl wohin
+    # exportiert wurde" die Projektloeschung. Die Position folgt der per Test erzwungenen Ordnung
+    # `reversed(Base.metadata.sorted_tables)` - VOR `export_runs`, `photos` und `events`, auf
+    # deren Elternteile keine Kante zeigt.
+    await _run(
+        "export_photos",
+        delete(ExportPhoto).where(ExportPhoto.export_run_id.in_(export_run_ids)),
+    )
     await _run("events", delete(Event).where(Event.criterion_scoring_run_id.in_(criterion_run_ids)))
     # NACH allen photo_*-Kindzeilen, VOR project_cameras: `photos.camera_id` zeigt auf sie.
     await _run("photos", delete(Photo).where(Photo.project_id.in_(project_ids)))
@@ -262,5 +274,10 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         "landmark_names",
         delete(LandmarkName).where(LandmarkName.project_id.in_(project_ids)),
     )
+    # Der Export-Lauf selbst. Ohne diese Anweisung ueberlebte der Nachweis "wann wurde wohin
+    # exportiert" die Projektloeschung. VOR `projects` (Elternteil), NACH `export_photos`
+    # (Kindtabelle) - die Position folgt der per Test erzwungenen Ordnung
+    # `reversed(Base.metadata.sorted_tables)`.
+    await _run("export_runs", delete(ExportRun).where(ExportRun.project_id.in_(project_ids)))
     await _run("projects", delete(Project).where(Project.id.in_(project_ids)))
     return deleted

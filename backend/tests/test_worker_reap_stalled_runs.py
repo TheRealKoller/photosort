@@ -10,6 +10,8 @@ from photosort.db import make_session_factory
 from photosort.models import (
     ClassificationPhase,
     CriterionScoringRun,
+    ExportRun,
+    ExportRunStatus,
     Project,
     RemoteCategoryClassificationRun,
     ScanRun,
@@ -228,6 +230,30 @@ async def test_reaps_stalled_remote_category_classification_run(
     assert reaped == 1
     await db_session.refresh(stalled)
     assert stalled.status == ScanStatus.FAILED
+
+
+async def test_reaps_stalled_export_run(db_session: AsyncSession) -> None:
+    """Spec 0263: stirbt der Worker mitten im Export (OOM/Deploy/Timeout), bleibt der Lauf sonst
+    dauerhaft `running` und die UI pollt endlos. Der Reaper setzt den verwaisten Lauf auf `failed`
+    (Muster der vier anderen Run-Tabellen)."""
+    project = await _make_project(db_session)
+    stalled = ExportRun(
+        project_id=project.id,
+        status=ExportRunStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add(stalled)
+    await db_session.commit()
+    await db_session.refresh(stalled)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    assert reaped == 1
+    await db_session.refresh(stalled)
+    assert stalled.status == ExportRunStatus.FAILED
+    assert stalled.error_message
+    assert "15 Minuten" in stalled.error_message
 
 
 async def test_reaps_stalled_runs_of_different_types_independently(

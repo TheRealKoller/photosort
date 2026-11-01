@@ -16,6 +16,9 @@ from photosort.models import (
     CriterionScoringRun,
     CriterionSource,
     Event,
+    ExportPhoto,
+    ExportRun,
+    ExportRunStatus,
     FinalSelectionDecision,
     FineLabel,
     MotifAssessmentSource,
@@ -2013,6 +2016,10 @@ _ALLOWED_DECISION_MODEL_READERS = frozenset(
     {
         "api/photos.py::_final_selection_decisions",
         "api/photos.py::album_selection",
+        # specs/features/0263-export-nach-opencloud.md: die geteilte Ableitung der inkludierten
+        # Menge (Auflage S9 der Spec 0431). Sie liest die Entscheidungszeilen, um `included` zu
+        # bestimmen - die Menge, die der Export nimmt. Kein Entwurfszweig, keine zweite Ebene.
+        "final_selection.py::included_photos",
         "api/album_decisions.py::_existing_decision",
         "api/album_decisions.py::set_album_decision",
         "project_deletion.py::delete_projects",
@@ -2689,3 +2696,66 @@ async def test_the_person_counters_of_a_run_start_as_null(db_session: AsyncSessi
     assert run.persons_photos_processed is None
     assert ClassificationPhase.PERSONS.value == "persons"
     assert list(ClassificationPhase)[-1] is ClassificationPhase.PERSONS
+
+
+class TestTheExportRunCarriesNoUserReference:
+    """ADR 0136 Punkt 3: Das Ergebnis gehoert dem Projekt, nicht dem ausloesenden Nutzer - es gibt
+    keine Spalte, in der ein Nutzerbezug stehen koennte."""
+
+    def test_the_export_run_table_has_no_user_column(self) -> None:
+        assert set(ExportRun.__table__.columns.keys()) == {
+            "id",
+            "project_id",
+            "status",
+            "started_at",
+            "finished_at",
+            "target_path",
+            "photo_count",
+            "exported_count",
+            "failed_count",
+            "error_message",
+            "last_progress_at",
+        }
+
+    def test_the_export_run_status_vocabulary_is_running_success_failed(self) -> None:
+        assert {status.value for status in ExportRunStatus} == {"running", "success", "failed"}
+
+
+async def test_an_export_run_starts_with_zero_counters(db_session: AsyncSession) -> None:
+    project = Project(name="Export", opencloud_drive_id="d", opencloud_path="/e")
+    db_session.add(project)
+    await db_session.flush()
+    run = ExportRun(project_id=project.id, status=ExportRunStatus.RUNNING)
+    db_session.add(run)
+    await db_session.commit()
+
+    assert run.photo_count == 0
+    assert run.exported_count == 0
+    assert run.failed_count == 0
+    assert run.target_path is None
+    assert run.error_message is None
+    assert run.finished_at is None
+
+
+async def test_deleting_a_photo_leaves_the_export_snapshot_with_a_null_photo_id(
+    db_session: AsyncSession,
+) -> None:
+    """Der Mengen-Schnappschuss haengt am LAUF, nicht am Foto: verschwindet das Foto, bleibt die
+    Zeile mit `photo_id = NULL` stehen - "welche Auswahl wohin exportiert wurde" bleibt
+    nachvollziehbar (ADR 0136 Punkt 3)."""
+    photo = await _make_photo(db_session)
+    run = ExportRun(project_id=photo.project_id, status=ExportRunStatus.SUCCESS)
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(
+        ExportPhoto(export_run_id=run.id, photo_id=photo.id, relative_path=photo.relative_path)
+    )
+    await db_session.commit()
+
+    await db_session.delete(photo)
+    await db_session.commit()
+
+    rows = (await db_session.execute(select(ExportPhoto))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].photo_id is None
+    assert rows[0].relative_path == photo.relative_path

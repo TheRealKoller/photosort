@@ -1546,7 +1546,8 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `photo_motif_strengths`, `photo_motif_corrections`, `photo_person_detections`,
     `photo_person_corrections`, `photo_album_suitability`, `photo_cloud_vision_errors`,
     `final_selection_decisions`, `feedback_events`, `place_lookups`, `landmark_names`,
-    `landmark_place_lookups`, `project_overview_seen`) sowie das Projekt selbst, dazu
+    `landmark_place_lookups`, `project_overview_seen`, `export_runs`, `export_photos`) sowie das
+    Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
     Erreichbarkeitsprüfung automatisch heraus, ohne eigene Ausnahmeliste; ein `fine_labels`-Eintrag,
@@ -2411,6 +2412,21 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   und der so entstandene Zustand wäre nicht korrigierbar, nur überschreibbar. Die Endauswahl selbst
   wird **nicht** materialisiert. Zuordenbarkeit, wer was wollte, bleibt unangetastet in den
   `Rating`-Zeilen.
+- **ExportRun / ExportPhoto** *(Spec [`0263`](../specs/features/0263-export-nach-opencloud.md), ADR
+  [`decisions/0136-export-der-endauswahl-als-serverseitiges-copy-in-einen-eigenen-ordner.md`](../specs/decisions/0136-export-der-endauswahl-als-serverseitiges-copy-in-einen-eigenen-ordner.md),
+  `models.py`, Tabellen `export_runs`/`export_photos`)*: der Export der Endauswahl als neuer Ordner
+  auf OpenCloud. `export_runs` ist der Lauf-Datensatz (Muster `ScanRun`): `project_id`, `status`
+  (`running`/`success`/`failed`), `started_at`/`finished_at`, `target_path`, `photo_count`,
+  `exported_count`, `failed_count`, `error_message` — **kein `user_id`** (das Ergebnis gehört dem
+  Projekt). `export_photos` ist der Mengen-Schnappschuss (Muster `CriterionScoringRun.rankings`):
+  je exportiertem Foto eine Zeile mit `photo_id` (nullable, `ondelete="SET NULL"` — ein gelöschtes
+  Foto lässt den Schnappschuss stehen), `relative_path` (eingefroren, zugleich Zielpfad unter dem
+  Lauf-Ordner) und `error` (nullable, Einzelfehler je `COPY`). Die Übertragung läuft serverseitig
+  per WebDAV `COPY` (kein Re-Upload, kein `PUT`/`MOVE`); Ziel ist der Wurzelordner `PhotoSort-Export`
+  mit je Lauf einem Unterordner `<bereinigter Projektname> <Zeitstempel>`, der die
+  Quell-Unterordnerstruktur abbildet. Endpunkte: `GET /projects/{id}/export-preview` (Anzahl),
+  `POST /projects/{id}/export` (202), `GET /projects/{id}/exports/{run_id}` (Fehler je Foto), dazu
+  `ProjectOut.last_export_run`; Worker-Job `export_project` (arq, `max_tries=1`).
 - **PhotoDuplicateDecision** *(Spec [`0374`](../specs/features/0374-duplikate-vergleichen.md), ADR
   [`decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md`](../specs/decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md),
   `models.py`, Tabelle `photo_duplicate_decisions`)*: die Entscheidung des **Projekts** darüber, ob

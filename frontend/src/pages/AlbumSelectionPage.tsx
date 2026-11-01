@@ -6,6 +6,7 @@ import { ApiError } from '../api/client'
 import type { PhotoOut } from '../api/types'
 import { CurationLightbox } from '../components/CurationLightbox'
 import { CurationSkeletonList } from '../components/CurationSkeletonList'
+import { ExportSection } from '../components/ExportSection'
 import { SelectionPhotoTile } from '../components/SelectionPhotoTile'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
@@ -177,6 +178,10 @@ export function AlbumSelectionPage() {
           {viewButton('all')}
         </div>
       </header>
+
+      {/* Der Export nimmt die ganze Endauswahl - dieselbe Menge, die die Ergebnissicht zeigt. Er
+          steht deshalb AUSSCHLIESSLICH dort, zwischen Umschalter und Liste (Spec 0263, UI/UX). */}
+      {view === 'all' && <ExportSection projectId={id} />}
 
       {query.isLoading && <CurationSkeletonList count={SKELETON_TILE_COUNT} />}
 

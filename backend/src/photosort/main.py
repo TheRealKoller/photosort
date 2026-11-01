@@ -9,6 +9,7 @@ from photosort.api import (
     auth,
     cameras,
     duplicate_decisions,
+    export,
     feedback,
     motifs,
     opencloud,
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(cameras.router)
     app.include_router(duplicate_decisions.router)
+    app.include_router(export.router)
     app.include_router(feedback.router)
     app.include_router(motifs.router)
     app.include_router(opencloud.router)

@@ -31,6 +31,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     last_scan: null,
     last_scoring_run: null,
     last_criterion_scoring_run: null,
+    last_export_run: null,
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,

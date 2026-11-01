@@ -18,6 +18,17 @@ class ScanStatus(enum.StrEnum):
     FAILED = "failed"
 
 
+class ExportRunStatus(enum.StrEnum):
+    """Der Endzustand eines Export-Laufs. Eigener Wertevorrat statt Wiederverwendung von
+    `ScanStatus` - der Export ist der erste SCHREIBPFAD auf OpenCloud und traegt eine eigene
+    Semantik (Teilfehler enden `success`), ein geteilter Vorrat machte die beiden an jeder
+    Lesestelle verwechselbar."""
+
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -61,6 +72,9 @@ class Project(Base):
         relationship(back_populates="project", cascade="all, delete-orphan")
     )
     cameras: Mapped[list[ProjectCamera]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+    export_runs: Mapped[list[ExportRun]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
 
@@ -1266,6 +1280,71 @@ class FinalSelectionDecision(Base):
     # korrigierbar, nur ueberschreibbar.
     included: Mapped[bool]
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class ExportRun(Base):
+    """Ein Export-Lauf: die Endauswahl eines Projekts als neuer Ordner auf OpenCloud (ADR 0136).
+
+    KEIN `user_id` - das Ergebnis gehoert dem Projekt, nicht dem ausloesenden Nutzer, wie bei
+    `FinalSelectionDecision`. Der Lauf traegt den Zielpfad (`target_path`) und die Bilanz
+    (`photo_count`/`exported_count`/`failed_count`); die Einzelfehler je Foto stehen in
+    `export_photos.error`. Ein Lauf mit Teilfehlern endet trotzdem `success` - nur ein fataler
+    Fehler (Zielordner nicht anlegbar, OpenCloud nicht erreichbar) endet `failed`."""
+
+    __tablename__ = "export_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    status: Mapped[ExportRunStatus] = mapped_column(
+        SQLEnum(ExportRunStatus, native_enum=False, length=20)
+    )
+    started_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Der vollstaendige Ziel-Unterordner dieses Laufs unter `PhotoSort-Export` (z.B.
+    # `PhotoSort-Export/Costa Rica 2026-11-01 12-00-00.000000`). `NULL` heisst "Zielordner noch
+    # nicht angelegt" - ein laufender Export, dessen `MKCOL` noch nicht gelaufen ist.
+    target_path: Mapped[str | None] = mapped_column(default=None)
+    photo_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    exported_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    failed_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    error_message: Mapped[str | None] = mapped_column(default=None)
+    # Fortschritts-Watchdog, analog ScanRun.last_progress_at: server-seitig defaultet, sonst gaelte
+    # ein frisch angelegter Lauf sofort als Stillstand. Periodisch zwischen-committet
+    # (worker.py::run_export), gelesen von worker.py::reap_stalled_runs.
+    last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    project: Mapped[Project] = relationship(back_populates="export_runs")
+    photos: Mapped[list[ExportPhoto]] = relationship(
+        back_populates="export_run", cascade="all, delete-orphan"
+    )
+
+
+class ExportPhoto(Base):
+    """Der Mengen-Schnappschuss EINES Export-Laufs: je exportiertem Foto eine Zeile (Muster
+    `CriterionScoringRun.rankings`).
+
+    `relative_path` ist beim Anlegen des Laufs EINGEFROREN und zugleich der Zielpfad unter dem
+    Lauf-Ordner (der Zielordner spiegelt die Quellstruktur, ADR 0136 Punkt 2). `photo_id` ist
+    NULLABLE: ein spaeter geloeschtes Foto laesst den Schnappschuss stehen - "welche Auswahl wohin
+    exportiert wurde" bleibt nachvollziehbar, auch wenn die Quelle verschwindet. `error` ist
+    nullable und traegt die Fehlermeldung eines fehlgeschlagenen `COPY`; der Lauf laeuft weiter."""
+
+    __tablename__ = "export_photos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    export_run_id: Mapped[int] = mapped_column(
+        ForeignKey("export_runs.id", name="fk_export_photos_export_run_id")
+    )
+    # NULLABLE und `NULL` heisst "das Foto existiert nicht mehr": Der Schnappschuss ueberlebt die
+    # Loeschung des Fotos, weil die Zeile am LAUF haengt, nicht am Foto.
+    photo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("photos.id", name="fk_export_photos_photo_id", ondelete="SET NULL"),
+        default=None,
+    )
+    relative_path: Mapped[str]
+    error: Mapped[str | None] = mapped_column(default=None)
+
+    export_run: Mapped[ExportRun] = relationship(back_populates="photos")
 
 
 class DuplicateDecision(enum.StrEnum):
