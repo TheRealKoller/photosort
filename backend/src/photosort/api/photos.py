@@ -16,7 +16,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
-from photosort.album_selection import SelectionState, selection_state
 from photosort.api.deps import get_current_user, get_session
 from photosort.api.persons import PhotoPersonOut, photo_person_outs
 from photosort.api.ratings import RatingWriteOut, write_own_rating
@@ -1047,27 +1046,10 @@ async def _final_selection_decisions(
     return {photo_id: included for photo_id, included in result.all()}
 
 
-def _selection_state_of(
-    photo: Photo, *, proposed: bool, decision: bool | None, user_count: int
-) -> SelectionState:
-    """Die Eingaenge der Endauswahl-Regel aus EINEM Foto - die Regel selbst lebt in
-    `album_selection.py` und nur dort.
-
-    Die beiden Zaehlungen laufen ueber `Rating.status`, NIE ueber das Vorhandensein der Zeile:
-    Seit ADR 0098 kann eine Zeile allein den Favoriten tragen, und ein Existenztest machte aus
-    einer Auszeichnung eine Streichung.
-
-    EINE Stelle fuer beide Leser (`_to_photo_out` und der Zustandsfilter von
-    `album_selection`): Zweimal geschrieben liefe die Antwortmenge an dem Tag von den gelieferten
-    Feldern auseinander, an dem eine der beiden Stellen sich aendert - die Ansicht zeigte dann ein
-    Bild, dessen eigene Felder sagen, dass es nicht dazugehoert."""
-    return selection_state(
-        taken=sum(1 for r in photo.ratings if r.status is RatingStatus.ALBUM_WORTHY),
-        rejected=sum(1 for r in photo.ratings if r.status is RatingStatus.REJECTED),
-        user_count=user_count,
-        proposed=proposed,
-        decision=decision,
-    )
+# Die reine Anwendung der Endauswahl-Regel lebt seit Spec 0263 in `final_selection.py` - die
+# geteilte Stelle fuer `_to_photo_out`, den Zustandsfilter von `album_selection` und den
+# Export-Worker (Auflage S9 der Spec 0431). Der Name ist hier ein Import, keine zweite Definition.
+from photosort.final_selection import selection_state_of as _selection_state_of
 
 
 async def _participants(session: AsyncSession) -> list[AlbumParticipantOut]:

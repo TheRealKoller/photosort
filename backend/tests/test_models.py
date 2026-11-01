@@ -2016,6 +2016,10 @@ _ALLOWED_DECISION_MODEL_READERS = frozenset(
     {
         "api/photos.py::_final_selection_decisions",
         "api/photos.py::album_selection",
+        # specs/features/0263-export-nach-opencloud.md: die geteilte Ableitung der inkludierten
+        # Menge (Auflage S9 der Spec 0431). Sie liest die Entscheidungszeilen, um `included` zu
+        # bestimmen - die Menge, die der Export nimmt. Kein Entwurfszweig, keine zweite Ebene.
+        "final_selection.py::included_photos",
         "api/album_decisions.py::_existing_decision",
         "api/album_decisions.py::set_album_decision",
         "project_deletion.py::delete_projects",
