@@ -6,7 +6,7 @@
 
 ## Kontext
 
-Der Job `backend` in `.github/workflows/ci.yml` trägt fünf Prüfschritte in fester Reihenfolge
+Der Job `backend` in `.github/workflows/ci.yml` trägt vier Prüfschritte in fester Reihenfolge
 (Formatierung, Lint, mypy, pytest mit Coverage-Gate 80 %) und ist zu lang. Die Kosten zerfallen in
 zwei Buckets: (a) Fixkosten vor den Prüfungen — Systempakete für mediapipe/opencv,
 `uv pip install --system -e ".[dev]"` (tensorflow, mediapipe, opencv-contrib, onnxruntime) und der
