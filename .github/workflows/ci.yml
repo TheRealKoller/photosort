@@ -51,6 +51,14 @@ jobs:
         run: python scripts/fetch_model_assets.py
       - name: Install uv
         run: pip install uv
+      # uv-Cache (ADR 0137): der dominante Fixkosten-Anteil ist "uv pip install"
+      # (tensorflow/mediapipe/opencv werden je Lauf neu geladen). Der Cache schluesselt ueber
+      # backend/pyproject.toml; uvs Cache ist inhaltsadressiert, ein abweichender
+      # Aufloesungsstand ergibt einen Teil-Treffer, nie eine falsche Installation.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-cache-${{ hashFiles('backend/pyproject.toml') }}
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
       # specs/decisions/0080-maschinelle-formatierung-ruff-format-und-prettier.md Abschnitt 11:
@@ -67,7 +75,7 @@ jobs:
       - name: Type check (mypy)
         run: mypy src
       - name: Test (pytest, coverage gate 80%)
-        run: pytest --cov=photosort --cov-report=term-missing --cov-fail-under=80
+        run: pytest -n auto --cov=photosort --cov-report=term-missing --cov-fail-under=80
 
   frontend:
     runs-on: ubuntu-latest
