@@ -332,17 +332,18 @@ export function AusschussStepPage() {
                     <li
                       key={eintrag.photo.id}
                       style={{ width: tile?.width ?? 0, height: tile?.height ?? 0 }}
-                      className="relative overflow-hidden rounded-md bg-elevated"
+                      className="relative rounded-md bg-elevated"
                     >
                       {/* Die Bildflaeche ist ein natives `<button>` - Enter und Leertaste wirken
                           ohne eigenen Tastatur-Handler, und der zugaengliche Name nennt die
-                          Aktion samt Dateiname. */}
+                          Aktion samt Dateiname. Der Beschnitt liegt am Button selbst, nicht am
+                          `li` - am `li` schnitte `overflow-hidden` den Fokusring ab. */}
                       <button
                         type="button"
                         onClick={() => openDetail(eintrag.photo.id)}
                         aria-label={`${eintrag.photo.relative_path} öffnen`}
                         data-testid="ausschuss-image"
-                        className="block size-full"
+                        className="block size-full overflow-hidden rounded-md"
                       >
                         <PhotoImage
                           photoId={eintrag.photo.id}
@@ -360,7 +361,7 @@ export function AusschussStepPage() {
                       </span>
                       <span
                         className={cn(
-                          'pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-overlay px-2 py-1 text-xs',
+                          'pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 rounded-b-md bg-overlay px-2 py-1 text-xs',
                           ENTSCHEIDUNG_SCHRIFT[eintrag.decision ?? 'offen'],
                         )}
                       >

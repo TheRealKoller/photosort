@@ -92,7 +92,7 @@ export function PhotoGridTile({
       // Auflage S6: Das gerechnete Mass geht als ZAHL in eine gewoehnliche CSS-Eigenschaft - nie
       // als zusammengesetzte Zeichenkette, nie als Custom-Property, nie in einen `url()`-Kontext.
       style={{ width, height }}
-      className="relative overflow-hidden rounded-md"
+      className="relative rounded-md"
       {...handlers}
     >
       <Link
@@ -144,7 +144,7 @@ export function PhotoGridTile({
       {detailsVisible && (
         <p
           style={{ maxHeight: Math.round(height / DETAILS_HEIGHT_SHARE) }}
-          className="pointer-events-none absolute inset-x-0 bottom-0 overflow-hidden truncate bg-overlay px-2 py-1 font-mono text-xs text-text-h"
+          className="pointer-events-none absolute inset-x-0 bottom-0 overflow-hidden truncate rounded-b-md bg-overlay px-2 py-1 font-mono text-xs text-text-h"
         >
           {fileName}
         </p>

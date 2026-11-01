@@ -106,6 +106,15 @@ describe('PhotoGridTile: Struktur (AK2, Barrierefreiheit)', () => {
     expect(item.className).not.toMatch(/\[/)
   })
 
+  it('lässt den Tastaturfokusring unbeschnitten: kein overflow-hidden am Kachel-li', () => {
+    // Der Bildbeschnitt liegt am inneren Bildcontainer, nie am `li` - am `li` schnitte
+    // `overflow-hidden` den globalen, abgesetzten Fokusring still ab (Issue #542).
+    renderTile()
+
+    const item = screen.getByRole('listitem')
+    expect(item.className.split(/\s+/)).not.toContain('overflow-hidden')
+  })
+
   it('shows the image inside the tile', () => {
     renderTile()
 

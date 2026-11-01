@@ -482,6 +482,17 @@ describe('AusschussStepPage - Uebersicht', () => {
     ).toHaveAttribute('href', '/projects/1/photos/40/duplicates?from=ausschuss')
   })
 
+  it('lässt den Tastaturfokusring der Einzelkachel unbeschnitten', async () => {
+    // Der Bildbeschnitt liegt am Button selbst, nie am `li` - am `li` schnitte `overflow-hidden`
+    // den globalen, abgesetzten Fokusring still ab (Issue #542).
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([entry(43)]))
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    const button = await screen.findByRole('button', { name: /serie-43\.jpg öffnen/i })
+    const item = button.closest('li') as HTMLElement
+    expect(item.className.split(/\s+/)).not.toContain('overflow-hidden')
+  })
+
   it('trennt die Entscheidungszeile vom Grund: vorgeschlagen, Ausschuss, behalten', async () => {
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
       stand([
