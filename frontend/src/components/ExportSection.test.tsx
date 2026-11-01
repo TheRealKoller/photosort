@@ -49,9 +49,7 @@ describe('ExportSection', () => {
     render(<ExportSection projectId={1} />)
 
     expect(screen.getByText('3 Fotos')).toBeVisible()
-    expect(
-      screen.getByRole('button', { name: 'Nach OpenCloud exportieren' }),
-    ).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Nach OpenCloud exportieren' })).not.toBeDisabled()
   })
 
   it('sperrt den Auslöser bei leerer Endauswahl mit sichtbarem Grund', () => {
