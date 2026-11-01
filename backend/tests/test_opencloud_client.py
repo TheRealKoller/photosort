@@ -420,3 +420,87 @@ async def test_download_raises_on_error_status() -> None:
 
     with pytest.raises(OpenCloudError):
         await client.download(WEBDAV_URL, "CostaRica/img001.jpg")
+
+
+async def test_copy_sends_the_destination_header_and_copies_from_the_joined_source() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "COPY"
+        assert request.url.path == "/dav/spaces/storage-project-1$family-id/CostaRica/img001.jpg"
+        seen["destination"] = request.headers["destination"]
+        return httpx.Response(201)
+
+    client = _client(httpx.MockTransport(handler))
+
+    dest = _join(WEBDAV_URL, "PhotoSort-Export/Costa Rica/img001.jpg")
+    await client.copy(WEBDAV_URL, "CostaRica/img001.jpg", dest)
+
+    assert seen["destination"] == dest
+
+
+async def test_copy_raises_on_error_status() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409)
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.copy(
+            WEBDAV_URL, "CostaRica/img001.jpg", _join(WEBDAV_URL, "PhotoSort-Export/x/img.jpg")
+        )
+
+
+async def test_copy_rejects_a_parent_traversal_source_segment() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should be sent for a rejected path")
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.copy(WEBDAV_URL, "../secret", _join(WEBDAV_URL, "PhotoSort-Export/x"))
+
+
+async def test_mkcol_sends_mkcol_to_the_joined_path() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "MKCOL"
+        seen["path"] = request.url.path
+        return httpx.Response(201)
+
+    client = _client(httpx.MockTransport(handler))
+
+    await client.mkcol(WEBDAV_URL, "PhotoSort-Export")
+
+    assert seen["path"] == "/dav/spaces/storage-project-1$family-id/PhotoSort-Export"
+
+
+async def test_mkcol_tolerates_405_when_the_folder_already_exists() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(405)
+
+    client = _client(httpx.MockTransport(handler))
+
+    # Kein Raise: ein bereits vorhandener Ordner ist der Regelfall des deduplizierten MKCOL.
+    await client.mkcol(WEBDAV_URL, "PhotoSort-Export/Costa Rica")
+
+
+async def test_mkcol_raises_on_another_error_status() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500)
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.mkcol(WEBDAV_URL, "PhotoSort-Export")
+
+
+async def test_mkcol_rejects_a_parent_traversal_segment() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request should be sent for a rejected path")
+
+    client = _client(httpx.MockTransport(handler))
+
+    with pytest.raises(OpenCloudError):
+        await client.mkcol(WEBDAV_URL, "../secret")

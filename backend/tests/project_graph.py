@@ -24,6 +24,9 @@ from photosort.models import (
     CriterionSource,
     DuplicateDecision,
     Event,
+    ExportPhoto,
+    ExportRun,
+    ExportRunStatus,
     FeedbackEvent,
     FeedbackEventKind,
     FinalSelectionDecision,
@@ -182,6 +185,14 @@ async def build_project_graph(
     session.add(criterion_run)
     await session.flush()
 
+    # specs/features/0263-export-nach-opencloud.md: aus demselben Grund wie die Motiv- und
+    # Entscheidungszeilen weiter unten - der Verhaltenstest der Projektloeschung zaehlt Zeilen und
+    # bestuende mit null Zeilen stillschweigend. Ohne diesen Lauf prueft die Loeschung des
+    # Export-Nachweises nichts.
+    export_run = ExportRun(project_id=project.id, status=ExportRunStatus.SUCCESS)
+    session.add(export_run)
+    await session.flush()
+
     # Das Event steht ZWISCHEN Lauf und Rangzeile und wird deshalb vor ihr angelegt und von ihr
     # referenziert - ohne diese Verknuepfung pruefte kein Vollstaendigkeitstest der Suite die neue
     # Kante `photo_rankings -> events -> criterion_scoring_runs`.
@@ -333,6 +344,14 @@ async def build_project_graph(
                 face_box_y=0.25,
                 face_box_width=0.25,
                 face_box_height=0.25,
+            ),
+            # specs/features/0263-export-nach-opencloud.md: der Mengen-Schnappschuss des oben
+            # angelegten Export-Laufs. Ohne diese Zeile prueft der Verhaltenstest der
+            # Projektloeschung die neue Kante `export_photos -> export_runs` nicht.
+            ExportPhoto(
+                export_run_id=export_run.id,
+                photo_id=photo.id,
+                relative_path=photo.relative_path,
             ),
         ]
     )
