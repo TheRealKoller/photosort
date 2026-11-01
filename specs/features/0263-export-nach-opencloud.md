@@ -1,6 +1,6 @@
 # 0263 - Export nach OpenCloud
 
-**Status:** Accepted
+**Status:** Implemented ([PR #602](https://github.com/TheRealKoller/photosort/pull/602))
 **Erstellt:** 2026-11-01
 **Bezug:** [Issue #263](https://github.com/TheRealKoller/photosort/issues/263)
 
