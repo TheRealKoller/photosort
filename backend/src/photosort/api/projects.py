@@ -30,6 +30,8 @@ from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
     DuplicateDecision,
+    ExportRun,
+    ExportRunStatus,
     FineLabel,
     MotifAssessmentSource,
     Photo,
@@ -116,6 +118,22 @@ class ScoringRunSummary(BaseModel):
     error_message: str | None
     # Ausschuss-Gate: None = noch nicht bestaetigt.
     gate_confirmed_at: datetime | None
+
+
+class ExportRunSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    # Der Polling-Zustand des Exports (Muster `last_scan`): Zustand, Anzahl und Zielpfad. Die
+    # Einzelfehler je Foto liefert erst `GET /projects/{id}/exports/{run_id}`.
+    id: int
+    status: ExportRunStatus
+    started_at: datetime
+    finished_at: datetime | None
+    target_path: str | None
+    photo_count: int
+    exported_count: int
+    failed_count: int
+    error_message: str | None
 
 
 class CloudPhaseSummaryOut(BaseModel):
@@ -289,6 +307,9 @@ class ProjectOut(BaseModel):
     last_scan: ScanSummary | None = None
     last_scoring_run: ScoringRunSummary | None = None
     last_criterion_scoring_run: CriterionScoringRunSummary | None = None
+    # Der letzte Export-Lauf (Muster `last_scan`): der Polling-Zustand des Ausloesers samt Anzahl
+    # und Zielpfad. `null` = nie exportiert.
+    last_export_run: ExportRunSummary | None = None
     # Die Fortschrittsanzeige liest AUSSCHLIESSLICH `last_criterion_scoring_run.cloud_phases`,
     # also den Fremdschlüssel DES LAUFS - niemals "die jüngste Remote-Zeile des Projekts".
     #
@@ -377,6 +398,16 @@ async def _latest_criterion_scoring_run(
         select(CriterionScoringRun)
         .where(CriterionScoringRun.project_id == project_id)
         .order_by(CriterionScoringRun.started_at.desc())
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
+async def _latest_export_run(session: AsyncSession, project_id: int) -> ExportRun | None:
+    result = await session.execute(
+        select(ExportRun)
+        .where(ExportRun.project_id == project_id)
+        .order_by(ExportRun.started_at.desc())
         .limit(1)
     )
     return result.scalars().first()
@@ -695,6 +726,7 @@ async def _to_project_out(
     scan_run = await _latest_scan_run(session, project.id)
     scoring_run = await _latest_scoring_run(session, project.id)
     criterion_scoring_run = await _latest_criterion_scoring_run(session, project.id)
+    export_run = await _latest_export_run(session, project.id)
     return ProjectOut(
         id=project.id,
         name=project.name,
@@ -709,6 +741,9 @@ async def _to_project_out(
             await _criterion_scoring_run_summary(session, criterion_scoring_run)
             if criterion_scoring_run is not None
             else None
+        ),
+        last_export_run=(
+            ExportRunSummary.model_validate(export_run) if export_run is not None else None
         ),
         category_selection_enabled=settings.category_selection_enabled,
         cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,

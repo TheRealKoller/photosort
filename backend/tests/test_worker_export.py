@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,12 +17,9 @@ from photosort.models import (
     ExportPhoto,
     ExportRun,
     ExportRunStatus,
-    FinalSelectionDecision,
     Photo,
     PhotoRanking,
     Project,
-    Rating,
-    RatingStatus,
     ScanStatus,
     ScoringRun,
     User,
@@ -135,7 +131,9 @@ async def _two_users(session: AsyncSession) -> None:
     await _user(session, "second")
 
 
-async def test_export_copies_each_included_photo_to_the_run_folder(db_session: AsyncSession) -> None:
+async def test_export_copies_each_included_photo_to_the_run_folder(
+    db_session: AsyncSession,
+) -> None:
     await _two_users(db_session)
     project = await _project(db_session)
     run = await _successful_run(db_session, project)

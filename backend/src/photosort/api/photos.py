@@ -48,6 +48,7 @@ from photosort.events import (
     infer_locations,
 )
 from photosort.feedback_log import load_frozen_context, record_exchange, record_motif_correction
+from photosort.final_selection import selection_state_of as _selection_state_of
 from photosort.models import (
     CloudVisionPhase,
     CriterionScoringRun,
@@ -1044,12 +1045,6 @@ async def _final_selection_decisions(
         )
     )
     return {photo_id: included for photo_id, included in result.all()}
-
-
-# Die reine Anwendung der Endauswahl-Regel lebt seit Spec 0263 in `final_selection.py` - die
-# geteilte Stelle fuer `_to_photo_out`, den Zustandsfilter von `album_selection` und den
-# Export-Worker (Auflage S9 der Spec 0431). Der Name ist hier ein Import, keine zweite Definition.
-from photosort.final_selection import selection_state_of as _selection_state_of
 
 
 async def _participants(session: AsyncSession) -> list[AlbumParticipantOut]:

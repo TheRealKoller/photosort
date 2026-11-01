@@ -45,7 +45,8 @@ export function useProjectQuery(id: number) {
       const isRunning =
         data?.last_scan?.status === 'running' ||
         data?.last_scoring_run?.status === 'running' ||
-        data?.last_criterion_scoring_run?.status === 'running'
+        data?.last_criterion_scoring_run?.status === 'running' ||
+        data?.last_export_run?.status === 'running'
       return isRunning ? POLL_INTERVAL_MS : false
     },
   })

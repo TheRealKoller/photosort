@@ -116,6 +116,47 @@ export interface CriterionScoringRunSummary {
   persons_photos_processed: number | null
 }
 
+/**
+ * Der Polling-Zustand des Exports (Muster `last_scan`): Zustand, Anzahl und Zielpfad. Die
+ * Einzelfehler je Foto liefert erst `GET /projects/{id}/exports/{run_id}`.
+ */
+export interface ExportRunSummary {
+  id: number
+  status: ScanStatus
+  started_at: string
+  finished_at: string | null
+  target_path: string | null
+  photo_count: number
+  exported_count: number
+  failed_count: number
+  error_message: string | null
+}
+
+/** Ein fehlgeschlagenes Foto eines Export-Laufs, wie es der Detailendpunkt meldet. */
+export interface ExportPhotoErrorOut {
+  relative_path: string
+  error: string
+}
+
+/** Der Export-Lauf samt Fehlerliste je Foto - die Bestätigung DANACH. */
+export interface ExportRunDetailOut {
+  id: number
+  status: ScanStatus
+  started_at: string
+  finished_at: string | null
+  target_path: string | null
+  photo_count: number
+  exported_count: number
+  failed_count: number
+  error_message: string | null
+  failed_photos: ExportPhotoErrorOut[]
+}
+
+/** Die Anzahl der Endauswahl-Fotos vor dem Auslösen (server-autoritativ). */
+export interface ExportPreviewOut {
+  photo_count: number
+}
+
 export interface ProjectOut {
   id: number
   name: string
@@ -125,6 +166,9 @@ export interface ProjectOut {
   last_scan: ScanSummary | null
   last_scoring_run: ScoringRunSummary | null
   last_criterion_scoring_run: CriterionScoringRunSummary | null
+  // Der letzte Export-Lauf (Muster `last_scan`): der Polling-Zustand des Ausloesers samt Anzahl
+  // und Zielpfad. `null` = nie exportiert.
+  last_export_run: ExportRunSummary | null
   // Globales Feature-Flag, nicht projektspezifisch.
   category_selection_enabled: boolean
   // Projektweiter Einwilligungs-Schalter für produktive Cloud-Vision-Datenflüsse - Default

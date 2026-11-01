@@ -629,6 +629,7 @@ describe('deriveProjectStand', () => {
         last_scan: scanSummary('success'),
         last_scoring_run: scoringRunSummary('success', '2026-08-12T09:30:00Z'),
         last_criterion_scoring_run: null,
+        last_export_run: null,
       }),
     )
 

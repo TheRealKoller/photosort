@@ -10,6 +10,7 @@ from photosort.api import (
     album_decisions,
     cameras,
     duplicate_decisions,
+    export,
     feedback,
     motifs,
     opencloud,
@@ -173,6 +174,11 @@ def _protected_router_operations() -> list[tuple[str, str]]:
         motifs.router,
         album_decisions.router,
         duplicate_decisions.router,
+        # specs/features/0263-export-nach-opencloud.md, Auflage S1: dasselbe fuer `export.router`.
+        # Sein Ausloeser nimmt kein `current_user` entgegen; ohne Torwaechter waere er ein
+        # unauthentifizierter SCHREIBZUGRIFF auf OpenCloud (der erste des Produkts) - er traegt
+        # deshalb zusaetzlich seinen eigenen, pfadbenannten 401-Fall in tests/test_api_export.py.
+        export.router,
         feedback.router,
         # S1: alle acht Personen-Endpunkte, auch die Auflistung "Ohne Namen".
         persons.router,

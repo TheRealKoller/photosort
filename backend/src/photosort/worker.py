@@ -1029,7 +1029,7 @@ def _parent_folders(relative_path: str) -> list[str]:
 
 
 async def _fail_export_run(session: AsyncSession, run: ExportRun, error_message: str) -> None:
-    """"ExportRun auf FAILED setzen" - das Pendant zu `_fail_run` fuer den eigenen Status-Enum."""
+    """ "ExportRun auf FAILED setzen" - das Pendant zu `_fail_run` fuer den eigenen Status-Enum."""
     await session.rollback()
     run.status = ExportRunStatus.FAILED
     run.error_message = error_message
