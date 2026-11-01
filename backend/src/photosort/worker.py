@@ -1091,10 +1091,13 @@ async def run_export(
         exported = 0
         failed = 0
         for entry in included:
-            # Das Ziel laeuft AUSSCHLIESSLICH ueber `_join` - nie manuelle Konkatenation roher
-            # Namen (Security Muss gegen Header-Injection und `..`-Ausbruch).
-            dest_url = _join(webdav_url, f"{target_path}/{entry.relative_path}")
             try:
+                # Das Ziel laeuft AUSSCHLIESSLICH ueber `_join` - nie manuelle Konkatenation roher
+                # Namen (Security Muss gegen Header-Injection und `..`-Ausbruch). Der `_join`
+                # steht INNERHALB des je-Foto-try: ein Foto, dessen Name die Regeln verletzt
+                # (`..`-Segment), scheitert als Einzelfehler in `export_photos.error`, nie bricht
+                # es den Lauf ab.
+                dest_url = _join(webdav_url, f"{target_path}/{entry.relative_path}")
                 await client.copy(webdav_url, entry.relative_path, dest_url)
                 exported += 1
             except OpenCloudError as exc:

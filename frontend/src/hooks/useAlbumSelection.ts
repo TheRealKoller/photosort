@@ -55,6 +55,11 @@ export function useAlbumDecisionMutation(projectId: number) {
         queryKey: ['photos', projectId],
         predicate: (query) => query.queryKey[2] !== SELECTION_QUERY_SEGMENT,
       })
+      // Die Anzahl im Export-Ausloeser („N Fotos") kommt aus `getExportPreview` - ein anderer
+      // Schlüssel als die Endauswahl-Antwort. Eine Entscheidung aendert die inkludierte Menge und
+      // damit die Anzahl; ohne diese Invalidierung bliebe „N Fotos" veraltet, bis neu gemountet
+      // wird (Spec 0263, UI/UX: „bei jeder Änderung der Endauswahl nachgezogen").
+      void queryClient.invalidateQueries({ queryKey: ['export-preview', projectId] })
     },
   })
 }

@@ -223,6 +223,42 @@ async def test_a_single_copy_failure_leaves_the_run_success_with_an_error_row(
     assert by_path["bad.jpg"].error == "COPY fehlgeschlagen"
 
 
+async def test_a_photo_whose_name_violates_the_path_rules_is_a_single_failure(
+    db_session: AsyncSession,
+) -> None:
+    """Ein `..`-Segment im Namen (Fremdtext aus dem OpenCloud-Scan) laesst den Lauf nicht
+    abbrechen, sondern landet als Einzelfehler in `export_photos.error` - der Lauf endet trotzdem
+    `success` (Spec 0263, Security Muss: „ein Foto, dessen Name die Regeln verletzt, scheitert als
+    Einzelfehler, nie bricht es den Lauf ab")."""
+    await _two_users(db_session)
+    project = await _project(db_session)
+    run = await _successful_run(db_session, project)
+    good = await _photo(db_session, project, "good.jpg")
+    bad = await _photo(db_session, project, "../ausbruch.jpg")
+    await _propose(db_session, run, good)
+    await _propose(db_session, run, bad)
+    await db_session.commit()
+
+    client = RecordingExportClient()
+    export_run = await run_export(db_session, client, project)
+
+    assert export_run is not None
+    assert export_run.status == ExportRunStatus.SUCCESS
+    assert export_run.exported_count == 1
+    assert export_run.failed_count == 1
+
+    rows = list(
+        (
+            await db_session.execute(
+                select(ExportPhoto).where(ExportPhoto.export_run_id == export_run.id)
+            )
+        ).scalars()
+    )
+    by_path = {row.relative_path: row for row in rows}
+    assert by_path["good.jpg"].error is None
+    assert by_path["../ausbruch.jpg"].error is not None
+
+
 async def test_a_fatal_mkcol_failure_fails_the_run(db_session: AsyncSession) -> None:
     await _two_users(db_session)
     project = await _project(db_session)

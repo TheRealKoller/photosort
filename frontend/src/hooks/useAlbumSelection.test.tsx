@@ -114,8 +114,12 @@ describe('useAlbumDecisionMutation', () => {
     const invalidated: unknown[][] = []
     vi.spyOn(queryClient, 'invalidateQueries').mockImplementation((filters) => {
       const predicate = filters?.predicate
+      const prefix = filters?.queryKey
       for (const query of queryClient.getQueryCache().getAll()) {
-        if (predicate === undefined || predicate(query)) {
+        const matchesKey =
+          prefix === undefined || prefix.every((part, index) => query.queryKey[index] === part)
+        const matchesPredicate = predicate === undefined || predicate(query)
+        if (matchesKey && matchesPredicate) {
           invalidated.push([...query.queryKey])
         }
       }
@@ -127,6 +131,23 @@ describe('useAlbumDecisionMutation', () => {
 
     expect(invalidated).toContainEqual(['photos', 7, null])
     expect(invalidated).not.toContainEqual(['photos', 7, 'selection'])
+  })
+
+  it('invalidates the export preview count when a decision changes the selection', async () => {
+    // Die Anzahl „N Fotos" im Export-Ausloeser kommt aus `getExportPreview` unter einem ANDEREN
+    // Schlüssel als die Endauswahl-Antwort - eine Entscheidung muss sie nachziehen (Spec 0263).
+    vi.mocked(albumSelectionApi.setAlbumDecision).mockResolvedValue({
+      photo_id: 1,
+      included: false,
+      updated_at: '2026-09-13T10:00:00',
+    })
+    const { queryClient, wrapper } = sharedClient()
+    queryClient.setQueryData(['export-preview', 7], { photo_count: 3 })
+
+    const { result } = renderHook(() => useAlbumDecisionMutation(7), { wrapper })
+    await result.current.mutateAsync({ photoId: 1, included: false })
+
+    expect(queryClient.getQueryState(['export-preview', 7])?.isInvalidated).toBe(true)
   })
 
   it('leaves the cache alone when nothing is loaded yet', async () => {
