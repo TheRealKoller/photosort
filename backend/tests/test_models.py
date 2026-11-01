@@ -2714,6 +2714,7 @@ class TestTheExportRunCarriesNoUserReference:
             "exported_count",
             "failed_count",
             "error_message",
+            "last_progress_at",
         }
 
     def test_the_export_run_status_vocabulary_is_running_success_failed(self) -> None:

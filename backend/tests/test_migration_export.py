@@ -106,6 +106,7 @@ def test_the_upgrade_creates_export_runs_with_exactly_the_expected_columns(
         "exported_count",
         "failed_count",
         "error_message",
+        "last_progress_at",
     }
 
 

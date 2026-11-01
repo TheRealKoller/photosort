@@ -30,6 +30,11 @@ export function ExportSection({ projectId }: { projectId: number }) {
     trigger.isError && trigger.error instanceof ApiError ? trigger.error.detail : null
 
   function handleTrigger(): void {
+    // Doppel-Ausloesen gesperrt: waehrend des Laufs/der Trigger-Bestaetigung wird nichts erneut
+    // eingereiht - sonst queued ein Doppelklick zwei Jobs.
+    if (isBusy) {
+      return
+    }
     setAwaiting(true)
     trigger.mutate()
   }
@@ -87,6 +92,9 @@ export function ExportSection({ projectId }: { projectId: number }) {
                 'Ein neuer Export legt einen weiteren, eigenen Ordner an und lässt den vorherigen unverändert.',
             }}
             onRerun={handleTrigger}
+            // Nach dem Leeren der Auswahl ist auch der Rerun gesperrt - ein Klick queued sonst
+            // einen Job, der keinen Lauf anlegt.
+            disabled={isEmpty || isBusy}
             busy={isBusy}
           />
         </div>

@@ -985,6 +985,12 @@ EXPORT_ROOT_FOLDER = "PhotoSort-Export"
 # als Pfadbestandteil eines HTTP-Headers, nicht die Benutzung.
 EXPORT_FOLDER_NAME_MAX_LENGTH = 200
 
+# Checkpoint-Granularitaet der je-Foto-Ergebnisse: je Block werden `exported_count`/`failed_count`,
+# `last_progress_at` und die bereits geschriebenen `export_photos.error`-Zeilen committet. Ein
+# Abbruch mitten im Lauf verliert so hoechstens die Ergebnisse des letzten Blocks statt des
+# ganzen Laufs (AK8 "nachvollziehbar").
+EXPORT_COMMIT_BATCH_SIZE = 50
+
 # Die C0/C1-Steuerzeichen, die aus dem Ordnernamen entfernt werden. U+007F (DEL) ist C0, U+0080-
 # U+009F sind C1. Ein Steuerzeichen im `Destination`-Header waere eine Header-Injection; sie
 # gehoeren deshalb nicht in den Ordnernamen (Security Muss).
@@ -1026,6 +1032,13 @@ def _parent_folders(relative_path: str) -> list[str]:
         current = f"{current}/{part}" if current else part
         folders.append(current)
     return folders
+
+
+def _export_overlaps_scan_root(opencloud_path: str) -> bool:
+    """Der Export-Wurzelordner `PhotoSort-Export` liegt am Drive-Root. Er liegt damit im Scan-Baum,
+    wenn der Scan die Drive-Wurzel selbst ist (`opencloud_path` leer oder `/`) - der naechste Scan
+    importierte die exportierten Kopien sonst als neue Fotos (ADR 0136 Punkt 2)."""
+    return opencloud_path.strip("/") == ""
 
 
 async def _fail_export_run(session: AsyncSession, run: ExportRun, error_message: str) -> None:
@@ -1071,8 +1084,27 @@ async def run_export(
         snapshots[entry.photo_id] = row
     await session.commit()
 
+    # Vor dem `try`, damit beide Fehlerpfade die Zaehler-Standorte kennen - sie stehen auch bei
+    # einem Abbruch VOR der COPY-Schleife auf 0 (Muss-Fix 3).
+    exported = 0
+    failed = 0
+
     try:
         drive = await client.resolve_drive(settings.opencloud_drive_name or None)
+        # ADR 0136 Punkt 2: Der Export gehoert auf die WebDAV-URL des am PROJEKT persistierten
+        # `opencloud_drive_id`, nie auf den globalen Config-Namen. Weicht die Konfiguration
+        # zwischen Scan und Export ab, faellt der Lauf hier VOR jedem Schreibzugriff aus - ein
+        # stiller COPY aus einem fremden Space waere ein Vertraulichkeits-/Integritaetsbruch.
+        if drive.id != project.opencloud_drive_id:
+            raise OpenCloudError(
+                f"OpenCloud-Space der Konfiguration ({drive.id!r}) weicht vom Projekt "
+                f"({project.opencloud_drive_id!r}) ab."
+            )
+        if _export_overlaps_scan_root(project.opencloud_path):
+            raise OpenCloudError(
+                "Das Projekt scannt die Drive-Wurzel; ein Export dorthin wuerde die Kopien beim "
+                "naechsten Scan als neue Fotos importieren."
+            )
         webdav_url = drive.webdav_url
 
         await client.mkcol(webdav_url, EXPORT_ROOT_FOLDER)
@@ -1088,9 +1120,7 @@ async def run_export(
         for folder in subfolders:
             await client.mkcol(webdav_url, f"{target_path}/{folder}")
 
-        exported = 0
-        failed = 0
-        for entry in included:
+        for index, entry in enumerate(included):
             try:
                 # Das Ziel laeuft AUSSCHLIESSLICH ueber `_join` - nie manuelle Konkatenation roher
                 # Namen (Security Muss gegen Header-Injection und `..`-Ausbruch). Der `_join`
@@ -1103,16 +1133,29 @@ async def run_export(
             except OpenCloudError as exc:
                 failed += 1
                 snapshots[entry.photo_id].error = str(exc)
+            run.exported_count = exported
+            run.failed_count = failed
+            run.last_progress_at = _now_utc()
+            if (index + 1) % EXPORT_COMMIT_BATCH_SIZE == 0:
+                await session.commit()
 
-        run.exported_count = exported
-        run.failed_count = failed
         run.status = ExportRunStatus.SUCCESS
         run.finished_at = _now_utc()
         await session.commit()
     except asyncio.CancelledError:
+        # Persistiert den bis hierher erzielten Stand, BEVOR _fail_export_run zurueckrollt - der
+        # failed-Bericht bildet so die real erfolgten COPYs ab (Muss-Fix 3).
+        run.exported_count = exported
+        run.failed_count = failed
+        run.last_progress_at = _now_utc()
+        await session.commit()
         await _fail_export_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
         raise
     except Exception as exc:
+        run.exported_count = exported
+        run.failed_count = failed
+        run.last_progress_at = _now_utc()
+        await session.commit()
         await _fail_export_run(session, run, str(exc))
         return run
     return run
@@ -3839,6 +3882,16 @@ async def _fail_if_stalled(
         return False
 
 
+async def _fail_export_if_stalled(session: AsyncSession, run: ExportRun) -> bool:
+    """Dasselbe wie `_fail_if_stalled`, aber fuer den eigenen Status-Enum des Exports."""
+    try:
+        await _fail_export_run(session, run, _stall_message())
+        return True
+    except Exception:
+        await session.rollback()
+        return False
+
+
 async def reap_stalled_runs(
     ctx: dict[str, Any],
     session_factory: async_sessionmaker[AsyncSession] = async_session_factory,
@@ -3850,10 +3903,10 @@ async def reap_stalled_runs(
     anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
     async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
     Testdatenbank gebundene Factory, analog zu run_criterion_scoring's build_detector-Parameter.
-    Die vier Tabellen werden bewusst nacheinander in vier eigenstaendigen Bloecken behandelt
+    Die fuenf Tabellen werden bewusst nacheinander in fuenf eigenstaendigen Bloecken behandelt
     statt ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/
-    ScoringRun/CriterionScoringRun/RemoteCategoryClassificationRun bleiben vier eigenstaendige
-    Modelle ohne gemeinsame Basisklasse)."""
+    ScoringRun/CriterionScoringRun/RemoteCategoryClassificationRun/ExportRun bleiben fuenf
+    eigenstaendige Modelle ohne gemeinsame Basisklasse)."""
     reaped = 0
     threshold = _now_utc() - STALL_THRESHOLD
     async with session_factory() as session:
@@ -3942,6 +3995,26 @@ async def reap_stalled_runs(
             stalled_remote_category_runs = []
         for remote_category_run in stalled_remote_category_runs:
             if await _fail_if_stalled(session, remote_category_run):
+                reaped += 1
+
+        try:
+            stalled_export_runs = (
+                (
+                    await session.execute(
+                        select(ExportRun).where(
+                            ExportRun.status == ExportRunStatus.RUNNING,
+                            ExportRun.last_progress_at < threshold,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        except Exception:
+            await session.rollback()
+            stalled_export_runs = []
+        for export_run in stalled_export_runs:
+            if await _fail_export_if_stalled(session, export_run):
                 reaped += 1
 
     return reaped

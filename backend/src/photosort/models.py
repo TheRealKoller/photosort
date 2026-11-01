@@ -1308,6 +1308,10 @@ class ExportRun(Base):
     exported_count: Mapped[int] = mapped_column(default=0, server_default="0")
     failed_count: Mapped[int] = mapped_column(default=0, server_default="0")
     error_message: Mapped[str | None] = mapped_column(default=None)
+    # Fortschritts-Watchdog, analog ScanRun.last_progress_at: server-seitig defaultet, sonst gaelte
+    # ein frisch angelegter Lauf sofort als Stillstand. Periodisch zwischen-committet
+    # (worker.py::run_export), gelesen von worker.py::reap_stalled_runs.
+    last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     project: Mapped[Project] = relationship(back_populates="export_runs")
     photos: Mapped[list[ExportPhoto]] = relationship(

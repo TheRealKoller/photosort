@@ -52,6 +52,10 @@ def upgrade() -> None:
         sa.Column("exported_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("failed_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("error_message", sa.String(), nullable=True),
+        # Fortschritts-Watchdog, analog ScanRun.last_progress_at: server-seitig defaultet, sonst
+        # gaelte ein frisch angelegter Lauf sofort als Stillstand. Periodisch zwischen-committet
+        # (worker.py::run_export), gelesen von worker.py::reap_stalled_runs.
+        sa.Column("last_progress_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], name="fk_export_runs_project_id"),
     )
     op.create_table(

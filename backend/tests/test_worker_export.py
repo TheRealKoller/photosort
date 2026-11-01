@@ -7,8 +7,10 @@ das erste Mal, dass Tests pruefen, *was wohin* geschrieben wird, nicht nur *was*
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,17 +49,24 @@ class RecordingExportClient:
         fail_mkcol: set[str] | None = None,
         fail_copy: set[str] | None = None,
         fail_drive: bool = False,
+        drive_id: str = DRIVE.id,
     ) -> None:
         self.mkcol_calls: list[str] = []
         self.copy_calls: list[tuple[str, str]] = []
         self._fail_mkcol = fail_mkcol or set()
         self._fail_copy = fail_copy or set()
         self._fail_drive = fail_drive
+        self._drive_id = drive_id
 
     async def resolve_drive(self, name: str | None) -> Drive:
         if self._fail_drive:
             raise OpenCloudError("OpenCloud nicht erreichbar")
-        return DRIVE
+        return Drive(
+            id=self._drive_id,
+            name="Family",
+            drive_type="project",
+            webdav_url=DRIVE.webdav_url,
+        )
 
     async def mkcol(self, webdav_url: str, path: str) -> None:
         self.mkcol_calls.append(path)
@@ -77,8 +86,10 @@ async def _user(session: AsyncSession, username: str) -> User:
     return user
 
 
-async def _project(session: AsyncSession, name: str = "Costa Rica") -> Project:
-    project = Project(name=name, opencloud_drive_id="drive-1", opencloud_path="/a")
+async def _project(
+    session: AsyncSession, name: str = "Costa Rica", opencloud_path: str = "/a"
+) -> Project:
+    project = Project(name=name, opencloud_drive_id="drive-1", opencloud_path=opencloud_path)
     session.add(project)
     await session.flush()
     return project
@@ -289,6 +300,83 @@ async def test_a_fatal_drive_failure_fails_the_run(db_session: AsyncSession) -> 
 
     assert export_run is not None
     assert export_run.status == ExportRunStatus.FAILED
+
+
+async def test_a_drive_id_mismatch_fails_before_any_write(db_session: AsyncSession) -> None:
+    """ADR 0136 Punkt 2: Der Export gehoert auf die WebDAV-URL des am PROJEKT persistierten
+    `opencloud_drive_id`, nie auf den globalen Config-Namen. Weicht die Konfiguration zwischen
+    Scan und Export ab, faellt der Lauf vor jedem Schreibzugriff aus."""
+    await _two_users(db_session)
+    project = await _project(db_session)
+    run = await _successful_run(db_session, project)
+    a = await _photo(db_session, project, "a.jpg")
+    await _propose(db_session, run, a)
+    await db_session.commit()
+
+    client = RecordingExportClient(drive_id="ein-anderer-space")
+    export_run = await run_export(db_session, client, project)
+
+    assert export_run is not None
+    assert export_run.status == ExportRunStatus.FAILED
+    assert "weicht vom Projekt" in (export_run.error_message or "")
+    assert client.mkcol_calls == []
+    assert client.copy_calls == []
+
+
+async def test_a_drive_root_project_is_rejected_without_any_write(db_session: AsyncSession) -> None:
+    """Scannt ein Projekt die Drive-Wurzel (`opencloud_path` leer oder '/'), laege `PhotoSort-Export`
+    im Scan-Baum und der naechste Scan importierte die Kopien. Der Export lehnt explizit ab."""
+    await _two_users(db_session)
+    project = await _project(db_session, opencloud_path="/")
+    run = await _successful_run(db_session, project)
+    a = await _photo(db_session, project, "a.jpg")
+    await _propose(db_session, run, a)
+    await db_session.commit()
+
+    client = RecordingExportClient()
+    export_run = await run_export(db_session, client, project)
+
+    assert export_run is not None
+    assert export_run.status == ExportRunStatus.FAILED
+    assert "Drive-Wurzel" in (export_run.error_message or "")
+    assert client.mkcol_calls == []
+    assert client.copy_calls == []
+
+
+class CancelsAfterClient(RecordingExportClient):
+    """Simuliert einen Worker-Abbruch (Timeout/Shutdown) nach einer festen Anzahl COPYs."""
+
+    def __init__(self, cancel_after: int, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self._cancel_after = cancel_after
+
+    async def copy(self, webdav_url: str, source_path: str, dest_url: str) -> None:
+        if len(self.copy_calls) >= self._cancel_after:
+            raise asyncio.CancelledError()
+        await super().copy(webdav_url, source_path, dest_url)
+
+
+async def test_an_abort_persists_the_exported_count_so_far(db_session: AsyncSession) -> None:
+    """AK8 "nachvollziehbar": Bricht der Lauf nach N erfolgreichen COPYs ab, bildet der
+    failed-Bericht die real erfolgten COPYs ab (exported_count == N), nicht 0/0."""
+    await _two_users(db_session)
+    project = await _project(db_session)
+    run = await _successful_run(db_session, project)
+    await _propose(db_session, run, await _photo(db_session, project, "a.jpg"))
+    await _propose(db_session, run, await _photo(db_session, project, "b.jpg"))
+    await _propose(db_session, run, await _photo(db_session, project, "c.jpg"))
+    await db_session.commit()
+
+    client = CancelsAfterClient(cancel_after=2)
+    with pytest.raises(asyncio.CancelledError):
+        await run_export(db_session, client, project)
+
+    rows = list((await db_session.execute(select(ExportRun))).scalars().all())
+    assert len(rows) == 1
+    stalled = rows[0]
+    assert stalled.status == ExportRunStatus.FAILED
+    assert stalled.exported_count == 2
+    assert stalled.failed_count == 0
 
 
 async def test_an_empty_selection_produces_no_run(db_session: AsyncSession) -> None:

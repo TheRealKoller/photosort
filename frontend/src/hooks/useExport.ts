@@ -24,27 +24,32 @@ export function useExport(projectId: number) {
     queryFn: () => getExportPreview(projectId),
   })
 
+  const lastRun: ExportRunSummary | null = project.data?.last_export_run ?? null
+  const runId = lastRun?.id
+
+  // VOR der Mutation: `setAwaiting` muss im `onError` der Mutation erreichbar sein. Ohne dieses
+  // Zuruecksetzen bliebe `awaiting` nach einem fehlgeschlagenen Trigger dauerhaft `true` - der
+  // Ausloeser waere permanent gesperrt (Muster ScanStepPage).
+  const [awaiting, setAwaiting] = useTriggerConfirmation(
+    lastRun?.status ?? null,
+    lastRun?.started_at ?? null,
+    () => project.refetch(),
+  )
+
   const trigger = useMutation({
     mutationFn: () => triggerExport(projectId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', projectId] })
     },
+    onError: () => setAwaiting(false),
   })
 
-  const lastRun: ExportRunSummary | null = project.data?.last_export_run ?? null
-  const runId = lastRun?.id
   const runDetail = useQuery({
     queryKey: ['export-run', projectId, runId],
     queryFn: () => getExportRun(projectId, runId!),
     // Der Detailendpunkt liefert die Fehlerliste erst DANACH - waehrend des Laufs gibt es keine.
     enabled: runId !== undefined && lastRun !== null && lastRun.status !== 'running',
   })
-
-  const [awaiting, setAwaiting] = useTriggerConfirmation(
-    lastRun?.status ?? null,
-    lastRun?.started_at ?? null,
-    () => project.refetch(),
-  )
 
   return { project, preview, trigger, lastRun, runDetail, awaiting, setAwaiting }
 }
