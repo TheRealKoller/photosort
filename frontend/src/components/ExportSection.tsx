@@ -73,7 +73,7 @@ export function ExportSection({ projectId }: { projectId: number }) {
           </p>
           {failedPhotos.length > 0 && (
             <Alert variant="warning" title="Einige Fotos konnten nicht übertragen werden">
-              <ul className="list-disc pl-5">
+              <ul className="list-disc pl-4">
                 {failedPhotos.map((failed) => (
                   <li key={failed.relative_path}>{failed.relative_path}</li>
                 ))}
