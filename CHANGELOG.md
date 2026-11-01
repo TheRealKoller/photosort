@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.52.0](https://github.com/TheRealKoller/photosort/compare/v0.51.1...v0.52.0) (2026-11-01)
+
+
+### Features
+
+* **export:** Endauswahl nach OpenCloud exportieren (Spec 0263) ([#602](https://github.com/TheRealKoller/photosort/issues/602)) ([3794a3d](https://github.com/TheRealKoller/photosort/commit/3794a3d41dfbc334ef7eff6c2804909502d586d1))
+
+
+### Bug Fixes
+
+* **api:** Projektangabe beim Tausch deklarativ begrenzen ([#598](https://github.com/TheRealKoller/photosort/issues/598)) ([4e719a1](https://github.com/TheRealKoller/photosort/commit/4e719a189705a8e9a72396a2ffac22eb54e3ec7e))
+* **frontend:** Query-Cache bei Abmelden und 401 leeren (Spec 0561) ([#596](https://github.com/TheRealKoller/photosort/issues/596)) ([2f88092](https://github.com/TheRealKoller/photosort/commit/2f880923079377d8e4212728efedfc10e4dee8a0))
+* **frontend:** Tastaturfokus an Fotokacheln rundum sichtbar ([#599](https://github.com/TheRealKoller/photosort/issues/599)) ([fb3c977](https://github.com/TheRealKoller/photosort/commit/fb3c977aedf164fbd75f861b7a355c7150c94e62))
+
 ## [0.51.1](https://github.com/TheRealKoller/photosort/compare/v0.51.0...v0.51.1) (2026-10-07)
 
 
