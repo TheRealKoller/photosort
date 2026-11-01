@@ -115,40 +115,45 @@ export function PhotoGridTile({
         {stateWords.length > 0 && <span className="sr-only">{stateWords.join(', ')}</span>}
       </Link>
 
-      {(favorite || dotStatus !== null) && (
-        // Die Zeichen stehen auf der UNDURCHSICHTIGEN Flaeche `--overlay`, nie auf einer
-        // teildeckenden: Ueber einer Bildflaeche ist ein Kontrast mit Deckkraft statisch nicht
-        // nachrechenbar, und der Vertragstest weist Deckkraft-Modifikatoren auf Farb-Utilities
-        // zurueck.
-        <span className="pointer-events-none absolute left-1 top-1 flex items-center gap-1 rounded-sm bg-overlay p-1">
-          {favorite && (
-            <span data-mark="favorite" className="flex">
-              <Icon name="star" size={14} className="text-accent" />
-            </span>
-          )}
-          {dotStatus !== null && (
-            <span
-              data-mark="album"
-              data-mark-shape={dotShape}
-              data-mark-status={dotStatus}
-              className={cn(
-                'block size-3 rounded-full border-2',
-                DOT_COLOR[dotStatus],
-                dotShape === 'filled' && DOT_FILL[dotStatus],
-              )}
-            />
-          )}
-        </span>
-      )}
+      {/* Kachelgrosser Beschnitt NUR fuer die Angaben: Sie sind Geschwister des Links (nie dessen
+          Kinder) und koennten auf sehr schmalen Kacheln ueberstehen. Der Fokusring des Links
+          bleibt unbeschnitten. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-md">
+        {(favorite || dotStatus !== null) && (
+          // Die Zeichen stehen auf der UNDURCHSICHTIGEN Flaeche `--overlay`, nie auf einer
+          // teildeckenden: Ueber einer Bildflaeche ist ein Kontrast mit Deckkraft statisch nicht
+          // nachrechenbar, und der Vertragstest weist Deckkraft-Modifikatoren auf Farb-Utilities
+          // zurueck.
+          <span className="absolute left-1 top-1 flex items-center gap-1 rounded-sm bg-overlay p-1">
+            {favorite && (
+              <span data-mark="favorite" className="flex">
+                <Icon name="star" size={14} className="text-accent" />
+              </span>
+            )}
+            {dotStatus !== null && (
+              <span
+                data-mark="album"
+                data-mark-shape={dotShape}
+                data-mark-status={dotStatus}
+                className={cn(
+                  'block size-3 rounded-full border-2',
+                  DOT_COLOR[dotStatus],
+                  dotShape === 'filled' && DOT_FILL[dotStatus],
+                )}
+              />
+            )}
+          </span>
+        )}
 
-      {detailsVisible && (
-        <p
-          style={{ maxHeight: Math.round(height / DETAILS_HEIGHT_SHARE) }}
-          className="pointer-events-none absolute inset-x-0 bottom-0 overflow-hidden truncate rounded-b-md bg-overlay px-2 py-1 font-mono text-xs text-text-h"
-        >
-          {fileName}
-        </p>
-      )}
+        {detailsVisible && (
+          <p
+            style={{ maxHeight: Math.round(height / DETAILS_HEIGHT_SHARE) }}
+            className="absolute inset-x-0 bottom-0 truncate bg-overlay px-2 py-1 font-mono text-xs text-text-h"
+          >
+            {fileName}
+          </p>
+        )}
+      </div>
     </li>
   )
 }

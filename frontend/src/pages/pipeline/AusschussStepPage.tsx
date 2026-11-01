@@ -355,23 +355,27 @@ export function AusschussStepPage() {
 
                       {/* Beide Kennzeichen liegen auf der UNDURCHSICHTIGEN Flaeche `--overlay` und
                           sind fuer Zeigegeraete durchlaessig: Die Bildflaeche bleibt die eine
-                          Trefferflaeche dieser Kachel. */}
-                      <span className="pointer-events-none absolute left-1 top-1 rounded-sm bg-overlay p-1">
-                        <GrundKennzeichen reason={eintrag.reason} />
-                      </span>
-                      <span
-                        className={cn(
-                          'pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 rounded-b-md bg-overlay px-2 py-1 text-xs',
-                          ENTSCHEIDUNG_SCHRIFT[eintrag.decision ?? 'offen'],
-                        )}
-                      >
-                        <span data-testid="ausschuss-decision">
-                          {entscheidungswort(eintrag.decision)}
+                          Trefferflaeche dieser Kachel. Kachelgrosser Beschnitt NUR fuer die
+                          Angaben - der Fokusring des Buttons bleibt unbeschnitten, und sehr
+                          schmale Kacheln halten Zeile und Kennzeichen in ihren Grenzen. */}
+                      <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-md">
+                        <span className="absolute left-1 top-1 rounded-sm bg-overlay p-1">
+                          <GrundKennzeichen reason={eintrag.reason} />
                         </span>
-                        <span className="min-w-6 truncate font-mono text-text-muted">
-                          {eintrag.photo.relative_path.split('/').pop()}
+                        <span
+                          className={cn(
+                            'absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-overlay px-2 py-1 text-xs',
+                            ENTSCHEIDUNG_SCHRIFT[eintrag.decision ?? 'offen'],
+                          )}
+                        >
+                          <span data-testid="ausschuss-decision">
+                            {entscheidungswort(eintrag.decision)}
+                          </span>
+                          <span className="min-w-6 truncate font-mono text-text-muted">
+                            {eintrag.photo.relative_path.split('/').pop()}
+                          </span>
                         </span>
-                      </span>
+                      </div>
                     </li>
                   )
                 })}
