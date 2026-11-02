@@ -95,3 +95,54 @@ test("Übersprungene Fotos senken weder Wahl noch Ersparnis", () => {
   assert.equal(ergebnis.purposes.ausschluss.replaced, false);
   assert.equal(ergebnis.replacedCategoryPurposes, 3);
 });
+
+test("eine einzelne Stimme ersetzt nichts, solange die Hälfte der Paare nicht entschieden ist", () => {
+  const duenn = isReplaced({ better: 1, same: 0, worse: 0, skipped: 2, total: 3 });
+  assert.equal(duenn.replaced, false);
+  assert.match(duenn.reason, /zu wenige Paare entschieden/);
+  assert.equal(duenn.total, 3);
+  assert.equal(duenn.decided, 1);
+});
+
+test("genau die Hälfte entschieden genügt, ein Paar darunter nicht", () => {
+  assert.equal(isReplaced({ better: 2, same: 0, worse: 0, skipped: 0, total: 3 }).replaced, true);
+  assert.equal(isReplaced({ better: 2, same: 0, worse: 0, skipped: 2, total: 4 }).replaced, true);
+  assert.equal(isReplaced({ better: 1, same: 0, worse: 0, skipped: 3, total: 4 }).replaced, false);
+});
+
+test("ohne total in den Zählungen wird es aus den Werten gebildet", () => {
+  const ausWerten = isReplaced({ better: 1, same: 0, worse: 0, skipped: 2 });
+  assert.equal(ausWerten.total, 3);
+  assert.equal(ausWerten.replaced, false);
+});
+
+test("die Ersparnis nennt zu dünn entschiedene Zwecke statt „Teilersatz“", () => {
+  const duenn = voll(1, 0, 0);
+  for (const zweck of VIER) duenn[zweck] = { better: 1, same: 0, worse: 0, skipped: 2, total: 3 };
+  const ergebnis = computeSavings({
+    categories: { photosWithCall: 260, purposes: duenn },
+    landmark: { candidates: 20, verdicts: { better: 1, same: 0, worse: 0, skipped: 2, total: 3 } },
+  });
+
+  assert.equal(ergebnis.categoryCallSaved, false);
+  assert.equal(ergebnis.categoryCallsSaved, 0);
+  assert.equal(ergebnis.landmarkCallSaved, false);
+  assert.equal(ergebnis.landmarkCallsSaved, 0);
+  assert.equal(ergebnis.totalCallsSaved, 0);
+  assert.deepEqual(ergebnis.underdecidedPurposes.sort(), [...VIER, "sehenswuerdigkeit"].sort());
+  assert.match(ergebnis.note, /zu wenige Entscheidungen/i);
+  assert.equal(ergebnis.note.includes("Teilersatz"), false);
+  assert.match(ergebnis.note, /ausschluss/);
+});
+
+test("der Landmark-Zweck wird bei zu wenigen Entscheidungen ebenso benannt", () => {
+  const ergebnis = computeSavings({
+    categories: { photosWithCall: 100, purposes: voll() },
+    landmark: { candidates: 20, verdicts: { better: 1, same: 0, worse: 0, skipped: 2, total: 3 } },
+  });
+
+  assert.equal(ergebnis.landmark.replaced, false);
+  assert.equal(ergebnis.landmarkCallSaved, false);
+  assert.deepEqual(ergebnis.underdecidedPurposes, ["sehenswuerdigkeit"]);
+  assert.match(ergebnis.note, /sehenswuerdigkeit/);
+});

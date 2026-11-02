@@ -24,7 +24,7 @@ import { EYE_PURPOSE_MAPPING, EYE_PURPOSE_MAPPING_HASH, assertMappingHash } from
 import { renderComparisonPage, renderCompletionPage } from "./page.js";
 import { repoRootFromModule, resolveWorkDir } from "./paths.js";
 import { checkReport, formatFindings } from "./report.js";
-import { selectSample } from "./sample.js";
+import { parseRun } from "./runfile.js";
 import { computeSavings } from "./savings.js";
 
 const RUN_FILE = "run.json";
@@ -61,7 +61,7 @@ async function ladeRun(workDir) {
   if (!existsSync(pfad)) {
     throw new Error(`${pfad} fehlt. Zuerst \`prepare\` laufen lassen.`);
   }
-  const run = await leseJson(pfad);
+  const run = parseRun(await readFile(pfad, "utf8"), pfad);
   assertMappingHash(run.mappingHash);
   return run;
 }
@@ -373,6 +373,7 @@ async function summary(args, workDir) {
       same: zaehlung.same,
       worse: zaehlung.b,
       skipped: Math.max(0, gesamt - zaehlung.decided),
+      total: gesamt,
     };
     summaries.push({
       purpose,

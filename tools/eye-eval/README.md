@@ -107,6 +107,12 @@ stdout trägt nur Zählungen (S10); Namen und Pfade stehen ausschließlich in Da
 - `<work>/report-check.txt` — Befunde des Report-Prüfers inklusive Fundstellen (nur lokal).
 - `<work>/runtime.json` — Laufzeit je Foto, Modellrevision, geprüfte Hashes.
 
+Als ersetzt gilt ein Zweck nur, wenn „gleich oder besser“ die Mehrheit der **entschiedenen** Paare
+stellt **und** mindestens die Hälfte der Paare des Zwecks überhaupt entschieden ist
+(`entschieden * 2 >= gesamt`). Sonst steht in der Zusammenfassung „zu wenige Entscheidungen in …“,
+und es wird kein Aufruf als gespart gezählt — eine einzelne Stimme bei überwiegend übersprungenen
+Paaren ersetzt nichts.
+
 Der Bericht im öffentlichen Repository nennt nur Zählungen, Zwecke, Urteile und Prosa (S6–S8).
 Der Prüfer findet Pfade, Dateiendungen, Projekt- und Landmarknamen, Bild-Einbettungen,
 Install-IDs, Aufnahmezeiten, Koordinaten und A/B-Zuordnung; Personennamen im Fließtext bleiben
