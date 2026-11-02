@@ -3,8 +3,9 @@
 Einmaliges Messwerkzeug, **kein Produktcode**. Es liest die bestehende Cloud-Bewertung
 schreibgeschützt aus Postgres, lässt `@desert-ant-labs/eye@4.2.3` lokal über dieselben
 Cache-Bilder laufen und stellt beide Ergebnisse in einer Wegwerf-Seite gegenüber, die du
-paarweise bewertest. Der Werkzeugbaum hängt in keinem Image, in keiner CI und in
-`scripts/check.sh` (S22).
+paarweise bewertest. Der Werkzeugbaum hängt in keinem Image und nicht in `scripts/check.sh`
+(S22). In der CI läuft allein der Job `eye-eval`: signaturgeprüfte Installation und `npm test`,
+keine Auswertung.
 
 **Powered by Desert Ant Labs** — Lizenz §9 verlangt die Namensnennung. Die Lizenzprüfung des
 SDK bleibt unverändert (S1–S5): nicht deaktivieren, nicht blockieren, nicht umleiten, nichts
@@ -145,8 +146,8 @@ EYE_EVAL_TEST_PHOTO_CACHE_DIR=... npm run test:db   # opt-in, nur auf dem Heimse
 ```
 
 Der DB-Test ist kein Teil von `npm test`; ein fehlendes Env ist ein lauter Fehlschlag, kein
-stiller Skip. CI und `scripts/check.sh` führen keinen der beiden Läufe aus — der Rot-Nachweis
-steht im PR.
+stiller Skip. Der CI-Job `eye-eval` führt nur `npm test` aus; den DB-Test führt weder er noch
+`scripts/check.sh` aus. Der Rot-Nachweis steht im PR.
 
 ## Grenzen
 

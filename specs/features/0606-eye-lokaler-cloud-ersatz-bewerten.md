@@ -83,8 +83,11 @@ Siehe [`docs/architecture.md`](../docs/architecture.md).
 
 - **Ort:** `tools/eye-eval/`, eigener Node-Baum mit `package.json` und eingecheckter
   `package-lock.json`. Bewusst mitcommittet: die Methode ist Teil des Belegs und muss im PR
-  prüfbar sein. Der Baum geht in kein Image ein und hängt weder in `scripts/check.sh` noch in der
-  CI — er ist Messwerkzeug, kein Produktcode. Eine spätere Einbau-Story ersetzt oder löscht ihn.
+  prüfbar sein. Der Baum geht in kein Image ein und hängt nicht in `scripts/check.sh` — er ist
+  Messwerkzeug, kein Produktcode. In der CI läuft allein der Job `eye-eval`, den der
+  Paketsatz-Wächter des Repositories für jedes `package-lock.json` verlangt: Installation mit
+  Signaturprüfung und `npm test`, keine Auswertung. Eine spätere Einbau-Story ersetzt oder löscht
+  ihn.
 - **Eye über das offizielle Node-SDK** `@desert-ant-labs/eye/native` (linux-x64). Ein eigener
   LiteRT-Interpreter auf den rohen `.tflite`-Gewichten scheidet aus: die Lizenz erlaubt eine
   Nutzung ohne SDK nirgends ausdrücklich, und ein solcher Weg berührt die Lizenzgrauzone, die die
@@ -311,7 +314,9 @@ dem ersten Push statt danach.
   gegen den veröffentlichten; das Binary ist nicht prüfbar. Getragen wird das von S5, S16 und
   davon, dass das Paket in kein Produktimage kommt.
 - **S22 — Keine neue Abhängigkeit im Produkt:** nicht in `backend/pyproject.toml`,
-  `frontend/package.json`, einem Dockerfile, `docker-compose.yml`, `scripts/check.sh` oder der CI.
+  `frontend/package.json`, einem Dockerfile, `docker-compose.yml`, `scripts/check.sh` oder einem
+  Image. Der CI-Job `eye-eval` prüft ausschließlich Installation mit Signaturprüfung und die
+  Unit-Tests dieses Baums; er ist keine Produktabhängigkeit.
 
 **Erst für einen Einbau relevant** (hier nicht entworfen): monatliche Lizenzabfrage aus dem Produkt
 und der Hinweis in der Datenschutzerklärung; Namensnennung („Powered by Desert Ant Labs“);
@@ -329,10 +334,10 @@ Werkzeugs, keine Bilddaten im Repository. Das Securitykonzept
 ## Teststrategie
 
 Testlauf `node --test` über `npm test` im Werkzeugbaum, kein zusätzliches Framework und kein jsdom:
-der Seiten-Generator wird als reine String-Funktion geprüft. CI und `scripts/check.sh` führen ihn
-nicht — TDD gilt trotzdem, der Rot-Lauf wird im PR belegt. Kein Test lädt das SDK, öffnet einen
-Socket oder braucht Bilddaten: die SDK-Aufrufe liegen hinter einer dünnen Adaptergrenze, alles
-Prüfbare ist reine Funktion über bereits ermittelte Signale.
+der Seiten-Generator wird als reine String-Funktion geprüft. `scripts/check.sh` führt ihn nicht,
+der CI-Job `eye-eval` führt `npm test` aus — TDD gilt ohnehin, der Rot-Lauf wird im PR belegt.
+Kein Test lädt das SDK, öffnet einen Socket oder braucht Bilddaten: die SDK-Aufrufe liegen hinter
+einer dünnen Adaptergrenze, alles Prüfbare ist reine Funktion über bereits ermittelte Signale.
 
 - **Unit** (`tools/eye-eval/test/*.test.js`): Auswahl, Basis-Extraktion je Zweck, eingefrorene
   Zuordnungstabelle, A/B-Zuweisung, Blinding im HTML, Entscheidungs-JSON, Ersparnis-Arithmetik,
@@ -360,9 +365,9 @@ unabhängig davon, Fotos ohne Cloud-Aufruf zählen 0. Report-Prüfer — Pfad, D
 Landmarkname sind ein Befund; Personennamen im Fließtext bleiben manuelle Prüfung.
 
 Das Testkonzept ([`0002`](../architecture/0002-testkonzept.md)) wird um einen Absatz „Werkzeuge
-außerhalb des Coverage-Gates (`scripts/`, `tools/`)“ ergänzt: erster Node-Baum außerhalb von
-Coverage-Gate und CI, eigener `node --test`-Lauf im Wegwerf-Container, opt-in-DB-Test,
-Rot-Nachweis im PR statt in der CI.
+außerhalb des Coverage-Gates (`scripts/`, `tools/`)“ ergänzt: erster Node-Baum ohne
+Coverage-Gate, eigener `node --test`-Lauf im Wegwerf-Container und im CI-Job `eye-eval`,
+opt-in-DB-Test, Rot-Nachweis im PR.
 
 ## Entscheidungen
 
@@ -382,15 +387,15 @@ Rot-Nachweis im PR statt in der CI.
   die Beweiskraft der Story.
 - **`test-engineer` konsultiert (Schritt 3):** Auswahl, Blinding, Ersparnis-Arithmetik und
   Report-Prüfung sind nicht-triviales Verhalten und unterliegen dem TDD-Zwang, obwohl sie außerhalb
-  der CI liegen.
+  des Coverage-Gates liegen.
 - **`security-engineer` konsultiert (Schritt 3):** Lizenzprüfung als ausgehender Kontakt,
   Lesezugriff eines Fremdpakets auf alle Familienfotos und die Datenbank, Bericht in einem
   öffentlichen Repo.
 - **Node-SDK statt eigener LiteRT-Interpreter** (technisch): die Lizenz erlaubt die Nutzung ohne SDK
   nicht ausdrücklich; diesen Grauzonenweg schließt die Lizenzregel aus ADR 0022 aus.
-- **Werkzeug wird committet, aber nicht in CI und Image eingehängt** (technisch): die Methode ist
-  Teil des Belegs und muss auf den Heimserver; die bewusste Abweichung von der CI-Einbindung ist
-  benannt.
+- **Werkzeug wird committet, aber in kein Image eingehängt** (technisch): die Methode ist Teil des
+  Belegs und muss auf den Heimserver. In der CI prüft ein eigener Job nur Installation und
+  Unit-Tests; die Auswertung selbst bleibt beim Heimserver.
 - **Keine ADR in dieser Story** (technisch): keine Produktabhängigkeit, keine System- oder
   Datenmodelländerung; die ADR-Pflicht entsteht mit einer Einbau-Story.
 - **Kein Berichts-Substrat im Repo außer dem Text** (technisch): Bildkopien, A/B-Zuordnung und

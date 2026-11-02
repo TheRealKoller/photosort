@@ -139,6 +139,28 @@ jobs:
         run: ruff check .
       - name: Test (pytest)
         run: pytest
+  # Einmaliges Messwerkzeug aus Spec 0606, kein Produktcode: Der Job haelt nur die beiden
+  # Zusicherungen, die an jedem Paketsatz des Repositories haengen - signaturgepruefte
+  # Installation und die eigenen Unit-Tests. Der Datenbanktest (`npm run test:db`) laeuft hier
+  # nicht, er braucht eine erreichbare Postgres-Instanz und bleibt beim Lauf auf dem Heimserver.
+  eye-eval:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/eye-eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: tools/eye-eval/package-lock.json
+      - name: Abhaengigkeiten installieren (npm ci, nie npm install)
+        run: npm ci
+      - name: Lieferkette - Registry-Signaturen pruefen
+        run: npm audit signatures
+      - name: Test
+        run: npm test
 
   docker-compose-check:
     runs-on: ubuntu-latest
