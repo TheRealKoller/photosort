@@ -83,7 +83,12 @@ async function prepare(args, workDir) {
     );
   }
   const projekte = await leseJson(projektePfad);
-  const cacheVerzeichnis = args.photoCache ?? umgebung("EYE_EVAL_PHOTO_CACHE_DIR");
+  const cacheVerzeichnis = args.photoCache ?? process.env.EYE_EVAL_PHOTO_CACHE_DIR;
+  if (typeof cacheVerzeichnis !== "string" || cacheVerzeichnis.trim() === "") {
+    throw new Error(
+      "Bildcache fehlt: --photo-cache übergeben oder EYE_EVAL_PHOTO_CACHE_DIR setzen (im Container /cache).",
+    );
+  }
   const dsn = args.databaseUrl ?? umgebung("EYE_EVAL_DATABASE_URL");
 
   await mkdir(join(workDir, IMAGES_DIR), { recursive: true });

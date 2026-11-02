@@ -95,13 +95,19 @@ Container auf `/tmp`, damit `npm ci` auch als nicht-root schreiben kann.
 ## Ablauf
 
 ```bash
-node src/cli.js prepare      # Stichprobe + Basis, Bildkopien nach <work>/images
-node src/cli.js analyze      # Gewichte prüfen, Bilder analysieren
-node src/cli.js pages        # Vergleichsseiten je Zweck
-node src/cli.js serve        # http://127.0.0.1:<port>/ (nie 0.0.0.0, S12)
-node src/cli.js summary      # Zählungen, Ersparnis, <work>/abschluss.html
+node src/cli.js prepare --work-dir /work --photo-cache /cache   # Stichprobe + Basis, Bildkopien nach /work/images
+node src/cli.js analyze --work-dir /work                       # Gewichte prüfen, Bilder analysieren
+node src/cli.js pages   --work-dir /work                       # Vergleichsseiten je Zweck
+node src/cli.js serve   --work-dir /work                       # http://127.0.0.1:<port>/ (nie 0.0.0.0, S12)
+node src/cli.js summary --work-dir /work                       # Zählungen, Ersparnis, /work/abschluss.html
 node src/cli.js report-check <markdown>
 ```
+
+`EYE_EVAL_DATABASE_URL` kommt ausschließlich über die gefilterte Env-Datei (S15: nur dieser eine
+Eintrag, Rechte 600, kein `--env-file .env`) — nie über die Kommandozeile. `--photo-cache` ist im
+Container immer `/cache` (das schreibgeschützt eingebundene Volume); fehlen `--photo-cache` und die
+Variable, bricht `prepare` mit „Bildcache fehlt: --photo-cache übergeben oder
+EYE_EVAL_PHOTO_CACHE_DIR setzen (im Container /cache).“ ab.
 
 Alle Befehle laufen im Container unter `/app` (Schritt 2 oben), mit `--work-dir /work`. Der Host
 braucht kein `npm ci`; nach einer Codeänderung erst die Kopie erneuern.
