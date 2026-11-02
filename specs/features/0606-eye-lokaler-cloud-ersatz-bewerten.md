@@ -121,11 +121,16 @@ Siehe [`docs/architecture.md`](../docs/architecture.md).
 | Albumtauglichkeit | `photo_album_suitability.level` und `.reason` |
 | Feinlabels | `photo_fine_labels.raw_label` plus `fine_labels.canonical_key` |
 | Sehenswürdigkeit | `photo_landmark_detections` (`name`, `canonical_name`, `confidence`) |
+| Landmark-Kandidat | `photo_criterion_scores.value` zu `landschaft` / `gebaeude` |
 | Anbieter/Modell | `model` und `provider` der Laufzeilen |
 | Laufzeit, Aufrufe | `started_at`/`finished_at`, Phasenzähler, `api_calls`, `landmark_api_calls` |
 
 Grundgesamtheit der Sehenswürdigkeiten sind die Landmark-Kandidaten des Laufs; eine fehlende
-Zeile heißt dort „kein Name“.
+Zeile heißt dort „kein Name“. Kandidat ist ein Foto, wenn in `photo_criterion_scores` der Wert zu
+`landschaft` oder `gebaeude` die Schwelle 0,01 erreicht — dieselbe Regel und derselbe Wert wie im
+Produktionslauf (`criteria.py::is_landmark_candidate`); beide Werte werden beim Anlegen der
+Stichprobe aus der Datenbank gelesen, nicht im Werkzeug geraten. Fotos ohne Kandidatur kommen im
+Zweck Sehenswürdigkeit nicht vor; sie sind weder Paar noch „beide gleich“.
 Die Laufzeilen sind `remote_category_classification_runs.model` und
 `criterion_scoring_runs.landmark_model`.
 
@@ -280,8 +285,10 @@ dem ersten Push statt danach.
   default_transaction_read_only` und bricht bei allem außer `on` ab; ausschließlich `SELECT`, kein
   `INSERT`/`UPDATE`/`DELETE`/DDL, kein `pg_dump`, kein `COPY TO`.
 - **S14 — Kleinste Datenmenge:** nur die oben genannten Tabellen plus `photos` (Id, Projekt,
-  `etag`). `users` (Passwort-Hashes) und `person_references` (biometrische Referenzvektoren)
-  werden nicht gelesen; kein Tabellenexport ins Arbeitsverzeichnis.
+  `etag`) und `photo_criterion_scores` **nur** für die beiden Schlüssel `landschaft` und
+  `gebaeude` — sie entscheiden, welche Fotos überhaupt Landmark-Kandidaten sind. `users`
+  (Passwort-Hashes) und `person_references` (biometrische Referenzvektoren) werden nicht gelesen;
+  kein Tabellenexport ins Arbeitsverzeichnis.
 - **S15 — Nur die Datenbank-URL verlässt die `.env`:** zur Laufzeit aus `POSTGRES_*` gebildet und
   über eine gefilterte Env-Datei (Rechte 600) übergeben, die nur für den Lauf existiert.
   `--env-file .env` ist verboten — damit gingen OpenCloud-App-Token, `SECRET_KEY` und die
