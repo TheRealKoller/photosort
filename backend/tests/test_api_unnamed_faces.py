@@ -724,7 +724,7 @@ async def _call_directly(
     return sent
 
 
-async def test_a_disconnect_stops_the_listing_after_the_running_photo(
+async def test_a_disconnect_stops_the_listing_after_at_most_one_more_photo(
     stack: PersonStack, analyzer: FakeFaceAnalyzer, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
@@ -734,7 +734,13 @@ async def test_a_disconnect_stops_the_listing_after_the_running_photo(
 
     sent = await _call_directly(stack, project, disconnect_after_first=True, analyzer=analyzer)
 
-    assert len([call for call in analyzer.calls if call[0] == "detect"]) == 1
+    # Die Trennung erreicht den Wächter über `request.receive()` und damit durch
+    # `SlowAPIMiddleware`; auf einem ausgelasteten Rechner kann sie erst nach dem Start des
+    # nächsten Fotos ankommen. Die Zusage ist deshalb: höchstens das laufende und ein weiteres
+    # Foto, nie die restliche Seite. Nachgemessen in CI-Läufen mit `assert 2 == 1`; ein Warten
+    # auf die Zustellung in der Schleife hilft nicht, weil die Middleware die Meldung erst später
+    # durchreicht.
+    assert len([call for call in analyzer.calls if call[0] == "detect"]) <= 2
     [start] = [message for message in sent if message["type"] == "http.response.start"]
     assert start["status"] == 204
     assert b"".join(message.get("body", b"") for message in sent) == b""

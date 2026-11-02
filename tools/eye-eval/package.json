@@ -1,0 +1,19 @@
+{
+  "name": "photosort-eye-eval",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Einmaliges Auswertungswerkzeug: Eye gegen die heutige Cloud-Klassifizierung (Spec 0606).",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:db": "node --test test-db/*.db.test.js"
+  },
+  "dependencies": {
+    "@desert-ant-labs/eye": "4.2.3",
+    "pg": "8.23.1",
+    "sharp": "0.35.5"
+  }
+}

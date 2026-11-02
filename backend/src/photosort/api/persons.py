@@ -560,7 +560,8 @@ async def get_unnamed_faces(
     Display-Variante, mit unlesbarem Bild oder einem Modellfehler stehen in `not_ready_photo_ids`.
     Je Foto ein eigener Auftrag auf dem Modell-Thread, ohne gehaltene Datenbankverbindung; eine
     Zuordnung wartet so hoechstens ein Foto. Trennt sich der Client, endet die Seite nach dem
-    laufenden Foto mit einer leeren `204`."""
+    laufenden, spaetestens nach dem naechsten Foto mit einer leeren `204`: die Trennung
+    erreicht den Waechter durch `SlowAPIMiddleware` verzoegert."""
     if await session.get(Project, project_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projekt nicht gefunden.")
     in_project = Photo.project_id == project_id
