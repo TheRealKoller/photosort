@@ -95,8 +95,9 @@ test("im Kopie-Layout liegt das Arbeitsverzeichnis neben dem Werkzeugbaum", () =
       () => resolveWorkDir({ ...optionen, workDir: verboten }),
       (error) => {
         assert.ok(error instanceof WorkDirError);
-        assert.match(error.message, new RegExp(verboten.replace(/^\/$/, "/")));
-        assert.match(error.message, /Werkzeugbaum/);
+        assert.ok(
+          error.message.startsWith(`Das Arbeitsverzeichnis ${verboten} liegt im Werkzeugbaum `),
+        );
         return true;
       },
       verboten,
