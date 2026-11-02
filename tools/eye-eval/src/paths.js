@@ -34,12 +34,34 @@ export function assertOutsideRepo(pfad, repoRoot) {
   return ziel;
 }
 
-export function resolveWorkDir({ workDir, home = homedir(), repoRoot }) {
+/**
+ * Im Repository-Checkout gilt die Repository-Regel. In der Containerkopie (S16) gibt es kein
+ * Repository; dort muss das Arbeitsverzeichnis neben dem Werkzeugbaum liegen und ihn weder
+ * enthalten noch in ihm liegen. Die Erkennung des Layouts macht der Aufrufer, weil sie das
+ * Dateisystem liest.
+ */
+export function assertWorkDirAllowed(pfad, { toolRoot, repoRoot, istCheckout }) {
+  if (istCheckout) return assertOutsideRepo(pfad, repoRoot);
+
+  const werkzeug = resolve(toolRoot);
+  const ziel = resolve(pfad);
+  const imWerkzeug = relativ(werkzeug, ziel);
+  const enthaeltWerkzeug = relativ(ziel, werkzeug);
+  const drin = (abstand) => abstand === "" || (!abstand.startsWith("..") && !isAbsolute(abstand));
+  if (drin(imWerkzeug) || drin(enthaeltWerkzeug)) {
+    throw new WorkDirError(
+      `Das Arbeitsverzeichnis ${ziel} liegt im Werkzeugbaum (${werkzeug}) oder enthält ihn. Ohne Repository-Checkout muss es neben dem Werkzeugbaum liegen (S9); Standard ist ~/photosort-eye-eval.`,
+    );
+  }
+  return ziel;
+}
+
+export function resolveWorkDir({ workDir, home = homedir(), repoRoot, toolRoot, istCheckout = true }) {
   const roh =
     typeof workDir === "string" && workDir.trim() !== ""
       ? workDir.trim()
       : join(home, "photosort-eye-eval");
   const aufgeloest = roh.startsWith("~/") ? join(home, roh.slice(2)) : roh;
   const absolut = isAbsolute(aufgeloest) ? aufgeloest : resolve(aufgeloest);
-  return assertOutsideRepo(absolut, repoRoot);
+  return assertWorkDirAllowed(absolut, { toolRoot: toolRoot ?? repoRoot, repoRoot, istCheckout });
 }

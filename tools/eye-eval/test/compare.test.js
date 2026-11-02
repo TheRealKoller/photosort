@@ -159,7 +159,7 @@ test("die Basis-Texte folgen den Tabellenwerten", () => {
   const landmark = describeCloud(basal.purposes.sehenswuerdigkeit.photos[2], "sehenswuerdigkeit");
   assert.match(landmark.reason, /Wahrzeichen/);
   const ohneName = describeCloud(basal.purposes.sehenswuerdigkeit.photos[0], "sehenswuerdigkeit");
-  assert.match(ohneName.verdict, /kein Name/i);
+  assert.match(ohneName.verdict, /Kein Bauwerk/i);
 });
 
 test("unvollständige Motivbasis wird benannt statt verschwiegen", () => {
@@ -174,4 +174,23 @@ test("unvollständige Motivbasis wird benannt statt verschwiegen", () => {
 test("ohne Analyse gibt es kein Paar", () => {
   const { items } = buildItems({ sample: stichprobe(), baseline: basis(), analyses: {} });
   for (const liste of Object.values(items)) assert.equal(liste.length, 0);
+});
+
+test("keine Paarseite verrät ihre Herkunft", () => {
+  const { items } = buildItems({ sample: stichprobe(), baseline: basis(), analyses: ANALYSEN });
+  const text = JSON.stringify(items);
+  const marker = [
+    /Rohlabel/i,
+    /Alle acht/i,
+    /Feinlabels vorhanden/i,
+    /Stärkste Szene/i,
+    /Ausschnitt/i,
+    /Weitere:/i,
+    /eye/i,
+    /cloud/i,
+    /desert/i,
+  ];
+  for (const verraeter of marker) {
+    assert.equal(verraeter.test(text), false, `Marker ${verraeter} verrät die Quelle: ${text}`);
+  }
 });

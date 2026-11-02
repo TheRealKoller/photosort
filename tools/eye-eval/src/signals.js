@@ -18,30 +18,7 @@ export const MOTIF_LABELS = {
   detail_stimmung: "Detail und Stimmung",
 };
 
-const AUSSCHLUSS_LABELS = {
-  document: "Dokument",
-  screenshot: "Bildschirmfoto",
-  receipt: "Beleg",
-  id_card: "Ausweis",
-  whiteboard: "Whiteboard",
-  chart_or_slide: "Diagramm oder Folie",
-  map: "Karte",
-  photo_of_screen: "Foto eines Bildschirms",
-  medical_reference: "medizinische Referenz",
-  repair_reference: "Reparatur-Referenz",
-  shopping_reference: "Einkaufs-Referenz",
-  meme_or_graphic: "Mem oder Grafik",
-  reference: "Merkfoto",
-};
-
 const AUSSCHLUSS_TAGS = EYE_PURPOSE_MAPPING.purposes.ausschluss.excludedTypes;
-
-const SHOT_LABELS = {
-  extreme_close_up: "sehr nah",
-  close_up: "nah",
-  medium: "mittel",
-  wide: "weit",
-};
 
 function konfidenz(tags, name) {
   const wert = tags?.[name];
@@ -162,15 +139,11 @@ export function describeEye(signals, purpose) {
   switch (purpose) {
     case "motivstaerken": {
       const treffer = Object.keys(MOTIF_LABELS).filter((key) => motifMatches(signals, key));
-      const teile = [];
-      if (signals.shot) teile.push(`Ausschnitt ${SHOT_LABELS[signals.shot] ?? signals.shot}`);
-      if (signals.faceCount > 0) teile.push("Gesicht erkannt");
-      if (signals.petCount > 0) teile.push("Tier erkannt");
       return {
         verdict: treffer.length
           ? `Motive: ${treffer.map((key) => MOTIF_LABELS[key]).join(", ")}`
           : "Kein Motiv über der Schwelle",
-        reason: teile.length ? teile.join("; ") : "Ohne Bildausschnitt, Gesicht und Tier",
+        reason: "Bewertung vollständig",
       };
     }
     case "ausschluss": {
@@ -179,7 +152,7 @@ export function describeEye(signals, purpose) {
       return {
         verdict: ausgeschlossen ? "Ausschluss: ja" : "Ausschluss: nein",
         reason: ausgeschlossen
-          ? `Als ${AUSSCHLUSS_LABELS[typ] ?? typ} erkannt`
+          ? "Als Dokument oder Bildschirmfoto erkannt"
           : "Nicht als Dokument oder Bildschirmfoto erkannt",
       };
     }
@@ -189,12 +162,9 @@ export function describeEye(signals, purpose) {
       const gruende = [];
       if (maengel.geschlosseneAugen) gruende.push("Geschlossene Augen");
       if (maengel.verdecktesGesicht) gruende.push("Verdecktes Gesicht");
-      if (!gruende.length) {
-        gruende.push(konfidenz(signals.tags, "sharp") >= 0.5 ? "Scharf, ohne benannten Mangel" : "Ohne benannten Mangel");
-      }
       return {
         verdict: stufe === null ? "Keine Stufe" : `Stufe ${stufe}`,
-        reason: gruende.join("; "),
+        reason: gruende.length ? `Benannter Mangel: ${gruende.join("; ")}` : "Kein benannter Mangel",
       };
     }
     case "feinlabels": {
@@ -202,12 +172,9 @@ export function describeEye(signals, purpose) {
         signals,
         new Set([...AUSSCHLUSS_TAGS, "photo", "people", "portrait", "group_shot", "kid", "adult"]),
       );
-      if (tags.length === 0) {
-        return { verdict: "Keine Szene über der Schwelle", reason: "Ohne erkennbare Szene" };
-      }
       return {
-        verdict: `Stärkste Szene: ${tags[0]}`,
-        reason: tags.length > 1 ? `Weitere: ${tags.slice(1, 4).join(", ")}` : "Einzige Szene über der Schwelle",
+        verdict: tags.length ? "Szene erkannt" : "Keine Szene erkannt",
+        reason: tags.length ? `Erkannt: ${tags.slice(0, 3).join(", ")}` : "Nicht beurteilbar: keine Szene",
       };
     }
     case "sehenswuerdigkeit": {
@@ -216,9 +183,7 @@ export function describeEye(signals, purpose) {
       );
       return {
         verdict: bauwerk.length ? "Bauwerk oder Wahrzeichen erkannt" : "Kein Bauwerk erkannt",
-        reason: bauwerk.length
-          ? `Szene: ${bauwerk.join(", ")}`
-          : "Keine Wahrzeichen-Szene über der Schwelle",
+        reason: bauwerk.length ? `Erkannt: ${bauwerk.join(", ")}` : "Nicht beurteilbar: keine Angabe",
       };
     }
     default:

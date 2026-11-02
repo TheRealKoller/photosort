@@ -120,5 +120,6 @@ Optionen:
   --purpose <zweck>        Nur ein Durchlauf; sonst alle fünf
   --port <zahl>            Port für serve (Standard 0 = freier Port)
   --resume                 An einer vorhandenen Entscheidungsdatei fortsetzen
+  --force                  prepare: neues Arbeitsverzeichnis statt vorhandener run.json
   --help                   Diese Übersicht`;
 }

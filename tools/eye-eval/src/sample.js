@@ -5,7 +5,7 @@ import { cacheKey } from "./cache.js";
  * unterschiedlicher Art.
  *
  * Die Menge ist die der heutigen Cloud-Bewertung: eine `photo_motif_assessments`-Zeile mit
- * `source='cloud'` UND eine Zeile in `photo_album_suitability` — das zusammengesetzte Kriterium,
+ * `source='CLOUD'` UND eine Zeile in `photo_album_suitability` — das zusammengesetzte Kriterium,
  * mit dem die Anwendung selbst „vollständig cloud-bewertet" feststellt. Ein Foto, dessen
  * `display`-Datei nicht zum etag passt, fällt aus der Stichprobe und wird gezählt; fällt ein
  * Projekt dadurch unter 100, bricht der Lauf ab statt still zu verkleinern.
@@ -47,15 +47,15 @@ function pruefeProjekte(projects) {
     const kind = normalisierteArt(project.kind);
     if (kind === "") {
       throw new SampleError(
-        `Projekt ${project.id} hat keine Art-Angabe; zwei Projekte unterschiedlicher Art sind Pflicht.`,
+        `Projekt ${project.projectId} hat keine Art-Angabe; zwei Projekte unterschiedlicher Art sind Pflicht.`,
       );
     }
     if (gesehen.has(kind)) {
       throw new SampleError(
-        `Projekt ${project.id} und Projekt ${gesehen.get(kind)} tragen dieselbe Art "${kind}"; zwei Projekte unterschiedlicher Art sind Pflicht.`,
+        `Projekt ${project.projectId} und Projekt ${gesehen.get(kind)} tragen dieselbe Art "${kind}"; zwei Projekte unterschiedlicher Art sind Pflicht.`,
       );
     }
-    gesehen.set(kind, project.id);
+    gesehen.set(kind, project.projectId);
   }
 }
 
@@ -110,13 +110,13 @@ export function selectSample({
   const proProjekt = [];
 
   for (const project of projects) {
-    const eigene = kandidaten.filter((row) => row.projectId === project.id);
+    const eigene = kandidaten.filter((row) => row.projectId === project.projectId);
     const stimmig = eigene.filter((row) => cacheExists(row.photoId, row.etag));
     const ausfaelle = eigene.length - stimmig.length;
 
     if (stimmig.length < perProject) {
       throw new SampleError(
-        `Projekt ${project.id} hat nach dem Etag/Cache-Abgleich ${stimmig.length} von ${perProject} nötigen Fotos (${eigene.length} cloud-bewertet, ${ausfaelle} Ausfälle). Die Stichprobe wird nicht still verkleinert.`,
+        `Projekt ${project.projectId} hat nach dem Etag/Cache-Abgleich ${stimmig.length} von ${perProject} nötigen Fotos (${eigene.length} cloud-bewertet, ${ausfaelle} Ausfälle). Die Stichprobe wird nicht still verkleinert.`,
       );
     }
 
@@ -128,7 +128,7 @@ export function selectSample({
     }));
 
     proProjekt.push({
-      projectId: project.id,
+      projectId: project.projectId,
       kind: project.kind,
       counts: {
         eligible: eigene.length,

@@ -97,9 +97,20 @@ test("keine Abfrage schreibt, sperrt oder exportiert (S13)", () => {
 test("die Kandidatenabfrage trägt das zusammengesetzte Cloud-Kriterium", () => {
   const [kandidaten] = queriesForProjects([7]);
   assert.match(kandidaten.sql, /photo_motif_assessments/);
-  assert.match(kandidaten.sql, /source = 'cloud'/);
+  assert.match(kandidaten.sql, /source = 'CLOUD'/);
   assert.match(kandidaten.sql, /photo_album_suitability/);
   assert.deepEqual(kandidaten.params, [[7]]);
+});
+
+test("jede Abfrage auf Bewertungen nutzt den gespeicherten Enum-Namen CLOUD", () => {
+  const [, assessment] = queriesForPhotos([11]);
+  const alle = [...queriesForProjects([7]), ...queriesForPhotos([11])];
+  for (const abfrage of alle) {
+    assert.equal(abfrage.sql.includes("'cloud'"), false, `${abfrage.name} nutzt den Mitgliedsnamen statt des Enum-Werts`);
+  }
+  assert.match(assessment.sql, /source = 'CLOUD'/);
+  const ausschluss = alle.find((abfrage) => abfrage.name === "assessments");
+  assert.ok(ausschluss);
 });
 
 test("Motivstärken werden je Foto über alle acht Motive gesammelt", () => {

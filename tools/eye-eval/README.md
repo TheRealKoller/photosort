@@ -9,8 +9,9 @@ keine Auswertung.
 
 **Powered by Desert Ant Labs** — Lizenz §9 verlangt die Namensnennung. Die Lizenzprüfung des
 SDK bleibt unverändert (S1–S5): nicht deaktivieren, nicht blockieren, nicht umleiten, nichts
-fälschen. Gesetzt wird ausschließlich `DAL_APP_ID=photosort-eye-eval`. Ein ausgehender Kontakt
-geht nur an `events.desertant.com` (Metadaten, keine Bilder). Ein gesetztes
+fälschen. Gesetzt wird ausschließlich `DAL_APP_ID=photosort-eye-eval`. Das SDK kontaktiert nur
+`events.desertant.com` (Metadaten, keine Bilder); im Container ist das nicht erzwungen (siehe
+„Grenzen“). Ein gesetztes
 `DAL_LICENSE_ENDPOINT` oder `HF_TOKEN` bricht den Lauf ab.
 
 ## Was hier bewusst nicht passiert
@@ -93,6 +94,12 @@ docker run --rm -it \
 Kein Docker-Socket, kein veröffentlichter Port, `--rm` (S16); `HOME`/`npm_config_cache` liegen im
 Container auf `/tmp`, damit `npm ci` auch als nicht-root schreiben kann.
 
+Der Container **erzwingt** keinen Egress-Filter. Das SDK kontaktiert ausschließlich
+`events.desertant.com` (Lizenzprüfung, keine Bilder, S1–S5); wer das Netz hart begrenzen will,
+setzt es auf dem Host durch (eigene Docker-Netzwerk-Bridge ohne Default-Route bzw. Egress-Regel der
+Firewall, die nur diese Namensauflösung und TCP 443 zu dieser Adresse zulässt) und lässt den
+Container mit `--network <eigenes-netz>` laufen.
+
 ## Ablauf
 
 ```bash
@@ -114,7 +121,11 @@ Alle Befehle laufen im Container unter `/app` (Schritt 2 oben), mit `--work-dir 
 braucht kein `npm ci`; nach einer Codeänderung erst die Kopie erneuern.
 
 Optionen: `--work-dir`, `--database-url`, `--photo-cache`, `--model-dir`, `--seed`,
-`--per-project`, `--purpose`, `--port`, `--resume` (`--help` zeigt alles).
+`--per-project`, `--purpose`, `--port`, `--resume`, `--force` (`--help` zeigt alles).
+
+`prepare` bricht ab, wenn im Arbeitsverzeichnis schon eine `run.json` liegt: ein zweiter Lauf würde
+Stichprobe, Analysen und Wahlen mischen. `--force` legt stattdessen ein neues Verzeichnis
+`<work>-lauf-<zeitstempel>` an und gibt es aus; die weiteren Befehle zielen dann dorthin.
 
 stdout trägt nur Zählungen (S10); Namen und Pfade stehen ausschließlich in Dateien unter
 `<work>/`. Die Vergleichsseite enthält nur „A“/„B“; die Zuordnung liegt in `<work>/ab-map.json`.
@@ -131,6 +142,11 @@ stellt **und** mindestens die Hälfte der Paare des Zwecks überhaupt entschiede
 (`entschieden * 2 >= gesamt`). Sonst steht in der Zusammenfassung „zu wenige Entscheidungen in …“,
 und es wird kein Aufruf als gespart gezählt — eine einzelne Stimme bei überwiegend übersprungenen
 Paaren ersetzt nichts.
+
+Die Abschlussseite zeigt die rohen Seitenzahlen (A, gleich, B). Für die Ersparnis übersetzt
+`summary` sie über `<work>/ab-map.json` in Eye-Urteile: A heißt „links besser“, und links stand je
+Foto mal die Cloud, mal Eye. Fehlt die Zuordnung oder eine Stimme darin, bricht `summary` ab, statt
+die Seiten zu raten.
 
 Der Bericht im öffentlichen Repository nennt nur Zählungen, Zwecke, Urteile und Prosa (S6–S8).
 Der Prüfer findet Pfade, Dateiendungen, Projekt- und Landmarknamen, Bild-Einbettungen,
@@ -162,3 +178,6 @@ stiller Skip. Der CI-Job `eye-eval` führt nur `npm test` aus; den DB-Test führ
   getauschten Stand, nicht gegen den veröffentlichten.
 - Eye v1.0.0 ist **Beta**; ein Modell-Update gilt unter der dann aktuellen Lizenz. Diese Auswertung
   ist an `@desert-ant-labs/eye` 4.2.3 und die Lizenz zum Zeitpunkt des Pins gebunden.
+- Egress ist im Container nicht erzwungen: die Zusage „nur `events.desertant.com`“ beschreibt das
+  SDK, nicht die Laufzeitumgebung. Ohne Host-Regel kann das Fremdpaket alles erreichen, was das
+  Docker-Netz zulässt; die Durchsetzung ist Betreiberpflicht (siehe Abschnitt „Container“).

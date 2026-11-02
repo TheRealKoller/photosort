@@ -103,7 +103,7 @@ test("Motivtexte nennen die Quelle nicht", () => {
   const text = describeEye(signale, "motivstaerken");
 
   assert.match(text.verdict, /Landschaft/);
-  assert.match(text.reason, /Ausschnitt/);
+  assert.equal(text.reason, "Bewertung vollständig");
   for (const verraeter of ["eye", "cloud", "modell", "anbieter"]) {
     assert.equal(`${text.verdict} ${text.reason}`.toLowerCase().includes(verraeter), false, verraeter);
   }
@@ -125,7 +125,7 @@ test("die Albumstufe kommt aus der Note, die Mängel aus den Gesichtern", () => 
     "albumtauglichkeit",
   );
   assert.match(gut.verdict, /Stufe 5/);
-  assert.match(gut.reason, /scharf/i);
+  assert.equal(gut.reason, "Kein benannter Mangel");
 
   const blinzelnd = describeEye(
     extractSignals(

@@ -66,3 +66,40 @@ test("ein relatives Arbeitsverzeichnis wird absolut", () => {
     rmSync(verzeichnis, { recursive: true, force: true });
   }
 });
+
+test("im Checkout-Layout gilt weiter die Repository-Regel", () => {
+  const repo = "/repo";
+  const tool = "/repo/tools/eye-eval";
+  assert.throws(
+    () => resolveWorkDir({ workDir: "/repo/w", home: "/home/daniel", repoRoot: repo, toolRoot: tool, istCheckout: true }),
+    (error) => {
+      assert.ok(error instanceof WorkDirError);
+      assert.match(error.message, /außerhalb des Repositorys/);
+      return true;
+    },
+  );
+  assert.equal(
+    resolveWorkDir({ workDir: "/tmp/w", home: "/home/daniel", repoRoot: repo, toolRoot: tool, istCheckout: true }),
+    "/tmp/w",
+  );
+});
+
+test("im Kopie-Layout liegt das Arbeitsverzeichnis neben dem Werkzeugbaum", () => {
+  const tool = "/app";
+  const repo = "/";
+  const optionen = { home: "/home/daniel", repoRoot: repo, toolRoot: tool, istCheckout: false };
+
+  assert.equal(resolveWorkDir({ ...optionen, workDir: "/work" }), "/work");
+  for (const verboten of ["/app/out", "/app", "/"]) {
+    assert.throws(
+      () => resolveWorkDir({ ...optionen, workDir: verboten }),
+      (error) => {
+        assert.ok(error instanceof WorkDirError);
+        assert.match(error.message, new RegExp(verboten.replace(/^\/$/, "/")));
+        assert.match(error.message, /Werkzeugbaum/);
+        return true;
+      },
+      verboten,
+    );
+  }
+});

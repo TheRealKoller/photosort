@@ -32,32 +32,32 @@ export function describeCloud(row, purpose) {
         treffer.length
           ? `Motive: ${treffer.map((key) => MOTIF_LABELS[key]).join(", ")}`
           : "Kein Motiv über der Schwelle",
-        row.complete ? "Alle acht Motive bewertet" : "Unvollständige Motivbewertung",
+        row.complete ? "Bewertung vollständig" : "Bewertung unvollständig",
       );
     }
     case "ausschluss":
       return text(
         row.excludedDocument ? "Ausschluss: ja" : "Ausschluss: nein",
         row.excludedDocument
-          ? "Bewertung: als Dokument oder Bildschirmfoto ausgeschlossen"
-          : "Bewertung: nicht ausgeschlossen",
+          ? "Als Dokument oder Bildschirmfoto erkannt"
+          : "Nicht als Dokument oder Bildschirmfoto erkannt",
       );
     case "albumtauglichkeit":
       return text(
         typeof row.level === "number" ? `Stufe ${row.level}` : "Keine Stufe",
-        row.reason || "Ohne benannten Mangel",
+        row.reason ? `Benannter Mangel: ${row.reason}` : "Kein benannter Mangel",
       );
     case "feinlabels": {
       const labels = (row.labels ?? []).map((label) => label.rawLabel).filter(Boolean);
       return text(
-        labels.length ? "Feinlabels vorhanden" : "Keine Feinlabels",
-        labels.length ? `Rohlabel: ${labels.slice(0, 3).join(", ")}` : "Ohne Rohlabel",
+        labels.length ? "Szene erkannt" : "Keine Szene erkannt",
+        labels.length ? `Erkannt: ${labels.slice(0, 3).join(", ")}` : "Nicht beurteilbar: keine Szene",
       );
     }
     case "sehenswuerdigkeit":
       return text(
-        row.name ? "Landmarkname erkannt" : "Kein Name erkannt",
-        row.name ? `Name: ${row.name}` : "Keine Landmark-Zeile",
+        row.name ? "Bauwerk oder Wahrzeichen erkannt" : "Kein Bauwerk erkannt",
+        row.name ? `Erkannt: ${row.name}` : "Nicht beurteilbar: keine Angabe",
       );
     default:
       throw new Error(`Unbekannter Zweck „${purpose}“.`);

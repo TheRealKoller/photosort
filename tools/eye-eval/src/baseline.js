@@ -59,7 +59,7 @@ export function queriesForProjects(projectIds) {
        true AS cloud_motif_assessment,
        true AS album_suitability
 FROM photos p
-JOIN photo_motif_assessments ma ON ma.photo_id = p.id AND ma.source = 'cloud'
+JOIN photo_motif_assessments ma ON ma.photo_id = p.id AND ma.source = 'CLOUD'
 JOIN photo_album_suitability pas ON pas.photo_id = p.id
 WHERE p.project_id = ANY($1::int[])
 ORDER BY p.project_id, p.id`,
@@ -92,7 +92,7 @@ export function queriesForPhotos(photoIds) {
       params,
       sql: `SELECT ms.photo_id, ms.motif_key, ms.strength
 FROM photo_motif_strengths ms
-JOIN photo_motif_assessments ma ON ma.photo_id = ms.photo_id AND ma.source = 'cloud'
+JOIN photo_motif_assessments ma ON ma.photo_id = ms.photo_id AND ma.source = 'CLOUD'
 WHERE ms.photo_id = ANY($1::bigint[])
 ORDER BY ms.photo_id, ms.motif_key`,
     },
@@ -101,7 +101,7 @@ ORDER BY ms.photo_id, ms.motif_key`,
       params,
       sql: `SELECT photo_id, excluded_document, provider
 FROM photo_motif_assessments
-WHERE photo_id = ANY($1::bigint[]) AND source = 'cloud'`,
+WHERE photo_id = ANY($1::bigint[]) AND source = 'CLOUD'`,
     },
     {
       name: "albumSuitability",

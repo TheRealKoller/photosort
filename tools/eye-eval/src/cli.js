@@ -23,10 +23,12 @@ import {
 import { analyzeDisplayFile, assertLicenseEnvironment, openModel } from "./eye.js";
 import { EYE_PURPOSE_MAPPING, EYE_PURPOSE_MAPPING_HASH, assertMappingHash } from "./mapping.js";
 import { renderComparisonPage, renderCompletionPage } from "./page.js";
-import { repoRootFromModule, resolveWorkDir } from "./paths.js";
+import { repoRootFromModule, resolveWorkDir, toolRootFromModule } from "./paths.js";
 import { checkReport, formatFindings } from "./report.js";
 import { parseRun } from "./runfile.js";
+import { selectSample } from "./sample.js";
 import { computeSavings } from "./savings.js";
+import { ladeAbMap, mapVotes } from "./votes.js";
 
 const RUN_FILE = "run.json";
 const INPUT_FILE = "projects.json";
@@ -38,7 +40,9 @@ const SUMMARY_FILE = "summary.json";
 const AB_MAP_FILE = "ab-map.json";
 const RUNTIME_FILE = "runtime.json";
 
+const TOOL_ROOT = toolRootFromModule(import.meta.url);
 const REPO_ROOT = repoRootFromModule(import.meta.url);
+const IST_CHECKOUT = existsSync(join(REPO_ROOT, "backend")) || existsSync(join(REPO_ROOT, ".git"));
 const STATISCH = /^\/?(page-[a-z]+\.html|images\/\d+\.jpg)$/;
 
 function umgebung(name) {
@@ -67,15 +71,27 @@ async function ladeRun(workDir) {
   return run;
 }
 
-function fotoIds(run) {
-  return run.sample.projects.flatMap((projekt) => projekt.photos.map((foto) => foto.photoId));
+function fotoIds(sample) {
+  return sample.projects.flatMap((projekt) => projekt.photos.map((foto) => foto.photoId));
 }
 
 function zwecke(args) {
   return args.purpose ? [args.purpose] : PURPOSE_ORDER;
 }
 
-async function prepare(args, workDir) {
+export function prepareZiel(workDir, { force = false, zeit = new Date().toISOString() } = {}) {
+  if (!force) return workDir;
+  return `${workDir}-lauf-${zeit.replace(/[:.]/g, "-")}`;
+}
+
+export async function prepare(args, workDir, deps = {}) {
+  const { connect = connectReadOnly, query = runQuery, copy = copyFile } = deps;
+  const ziel = prepareZiel(workDir, { force: args.force });
+  if (existsSync(join(ziel, RUN_FILE))) {
+    throw new Error(
+      `${join(ziel, RUN_FILE)} existiert bereits. Ein zweites \`prepare\` würde Stichprobe, Analysen und Wahlen mischen; mit --force entsteht ein neues Arbeitsverzeichnis (${prepareZiel(workDir, { force: true })}).`,
+    );
+  }
   const projektePfad = join(workDir, INPUT_FILE);
   if (!existsSync(projektePfad)) {
     throw new Error(
@@ -91,15 +107,15 @@ async function prepare(args, workDir) {
   }
   const dsn = args.databaseUrl ?? umgebung("EYE_EVAL_DATABASE_URL");
 
-  await mkdir(join(workDir, IMAGES_DIR), { recursive: true });
-  const client = await connectReadOnly(dsn);
+  await mkdir(join(ziel, IMAGES_DIR), { recursive: true });
+  const client = await connect(dsn);
   try {
     const [kandidatenAbfrage, laeufeAbfrage, kriteriumAbfrage] = queriesForProjects(
       projekte.map((projekt) => projekt.projectId),
     );
-    const kandidaten = await runQuery(client, kandidatenAbfrage);
-    const laeufe = await runQuery(client, laeufeAbfrage);
-    const kriteriumLaeufe = await runQuery(client, kriteriumAbfrage);
+    const kandidaten = await query(client, kandidatenAbfrage);
+    const laeufe = await query(client, laeufeAbfrage);
+    const kriteriumLaeufe = await query(client, kriteriumAbfrage);
 
     const sample = selectSample({
       projects: projekte,
@@ -111,9 +127,9 @@ async function prepare(args, workDir) {
 
     for (const projekt of sample.projects) {
       for (const foto of projekt.photos) {
-        await copyFile(
+        await copy(
           displayPath(cacheVerzeichnis, foto.photoId, foto.etag),
-          join(workDir, IMAGES_DIR, `${foto.photoId}.jpg`),
+          join(ziel, IMAGES_DIR, `${foto.photoId}.jpg`),
         );
       }
     }
@@ -121,7 +137,7 @@ async function prepare(args, workDir) {
     const ids = fotoIds(sample);
     const roh = {};
     for (const abfrage of queriesForPhotos(ids)) {
-      roh[abfrage.name] = await runQuery(client, abfrage);
+      roh[abfrage.name] = await query(client, abfrage);
     }
     const baseline = assembleBaseline({
       photoIds: ids,
@@ -134,7 +150,7 @@ async function prepare(args, workDir) {
       criterionRuns: kriteriumLaeufe,
     });
 
-    await schreibeJson(join(workDir, RUN_FILE), {
+    await schreibeJson(join(ziel, RUN_FILE), {
       version: 1,
       seed: args.seed,
       mappingHash: EYE_PURPOSE_MAPPING_HASH,
@@ -152,7 +168,7 @@ async function prepare(args, workDir) {
         `Projekt ${projekt.projectId} (${projekt.kind}): ${projekt.counts.selected} von ${projekt.counts.eligible}`,
       );
     }
-    console.log(`Arbeitsverzeichnis: ${workDir}`);
+    console.log(`Arbeitsverzeichnis: ${ziel}`);
   } finally {
     await client.end();
   }
@@ -165,7 +181,7 @@ async function analyze(args, workDir) {
   await mkdir(join(workDir, ANALYSIS_DIR), { recursive: true });
 
   const { eye, pins } = await openModel({ directory: modellVerzeichnis });
-  const ids = fotoIds(run);
+  const ids = fotoIds(run.sample);
   const zeiten = [];
   try {
     for (const [index, id] of ids.entries()) {
@@ -357,24 +373,36 @@ async function summary(args, workDir) {
     throw new Error(`${pfad} fehlt. Erst vergleichen (\`serve\`), dann zusammenfassen.`);
   }
   const state = loadState(pfad, { seed: run.seed, purposes: PURPOSE_ORDER, resume: true });
+  const abPfad = join(workDir, AB_MAP_FILE);
+  if (!existsSync(abPfad)) {
+    throw new Error(
+      `${abPfad} fehlt. Erst \`pages\` laufen lassen: ohne die A/B-Zuordnung sind die Stimmen nicht deutbar.`,
+    );
+  }
+  const abbildung = ladeAbMap(await readFile(abPfad, "utf8"), abPfad);
   const aufrufe = countCalls(run.baseline.runs);
 
   const summaries = [];
   const zweckUrteile = {};
   for (const purpose of PURPOSE_ORDER) {
-    const zaehlung = countChoices(state, purpose);
+    const roh = countChoices(state, purpose);
+    const gemappt = mapVotes({
+      choices: state.purposes[purpose].choices,
+      assignments: abbildung.purposes[purpose] ?? [],
+    });
     const gesamt = items[purpose]?.length ?? 0;
+    const uebersprungen = Math.max(0, gesamt - roh.decided);
     zweckUrteile[purpose] = {
-      better: zaehlung.a,
-      same: zaehlung.same,
-      worse: zaehlung.b,
-      skipped: Math.max(0, gesamt - zaehlung.decided),
+      better: gemappt.better,
+      same: gemappt.same,
+      worse: gemappt.worse,
+      skipped: uebersprungen,
       total: gesamt,
     };
     summaries.push({
       purpose,
       label: EYE_PURPOSE_MAPPING.purposes[purpose].label,
-      counts: { ...zweckUrteile[purpose], total: gesamt },
+      counts: { better: roh.a, same: roh.same, worse: roh.b, skipped: uebersprungen, total: gesamt },
     });
   }
 
@@ -452,7 +480,12 @@ export async function main(argv) {
     console.log(usage());
     return 0;
   }
-  const workDir = resolveWorkDir({ workDir: args.workDir, repoRoot: REPO_ROOT });
+  const workDir = resolveWorkDir({
+    workDir: args.workDir,
+    repoRoot: REPO_ROOT,
+    toolRoot: TOOL_ROOT,
+    istCheckout: IST_CHECKOUT,
+  });
 
   switch (args.command) {
     case "prepare":

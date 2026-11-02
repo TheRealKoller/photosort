@@ -29,8 +29,8 @@ function cachePresent(photoId) {
 test("genau 100 Fotos je Projekt sind zulässig", () => {
   const sample = selectSample({
     projects: [
-      { id: 1, kind: "reise" },
-      { id: 2, kind: "familie" },
+      { projectId: 1, kind: "reise" },
+      { projectId: 2, kind: "familie" },
     ],
     candidates: [...candidates(100, 1), ...candidates(100, 2, 500)],
     cacheExists: cachePresent(),
@@ -47,8 +47,8 @@ test("99 zulässige Fotos brechen ab statt still zu verkleinern", () => {
     () =>
       selectSample({
         projects: [
-          { id: 1, kind: "reise" },
-          { id: 2, kind: "familie" },
+          { projectId: 1, kind: "reise" },
+          { projectId: 2, kind: "familie" },
         ],
         candidates: [...candidates(99, 1), ...candidates(100, 2, 500)],
         cacheExists: cachePresent(),
@@ -81,8 +81,8 @@ test("fehlende Cloud-Basis oder Albumtauglichkeit fällt aus der Stichprobe", ()
 test("ein fehlender oder abweichender Cache-Stand zählt als Ausfall", () => {
   const sample = selectSample({
     projects: [
-      { id: 1, kind: "reise" },
-      { id: 2, kind: "familie" },
+      { projectId: 1, kind: "reise" },
+      { projectId: 2, kind: "familie" },
     ],
     candidates: [...candidates(103, 1), ...candidates(100, 2, 500)],
     // Drei Fotos des ersten Projekts haben keine Cache-Datei zum etag.
@@ -101,8 +101,8 @@ test("fällt ein Projekt durch Ausfälle unter 100, bricht der Lauf ab", () => {
     () =>
       selectSample({
         projects: [
-          { id: 1, kind: "reise" },
-          { id: 2, kind: "familie" },
+          { projectId: 1, kind: "reise" },
+          { projectId: 2, kind: "familie" },
         ],
         candidates: [...candidates(100, 1), ...candidates(100, 2, 500)],
         cacheExists: (photoId) => photoId > 1,
@@ -116,8 +116,8 @@ test("zwei Projekte mit gleicher Art brechen ab", () => {
     () =>
       selectSample({
         projects: [
-          { id: 1, kind: "reise" },
-          { id: 2, kind: "Reise" },
+          { projectId: 1, kind: "reise" },
+          { projectId: 2, kind: "Reise" },
         ],
         candidates: [...candidates(100, 1), ...candidates(100, 2, 500)],
         cacheExists: cachePresent(),
@@ -131,8 +131,8 @@ test("eine leere Art-Angabe bricht ab", () => {
     () =>
       selectSample({
         projects: [
-          { id: 1, kind: "" },
-          { id: 2, kind: "familie" },
+          { projectId: 1, kind: "" },
+          { projectId: 2, kind: "familie" },
         ],
         candidates: [...candidates(100, 1), ...candidates(100, 2, 500)],
         cacheExists: cachePresent(),
@@ -145,7 +145,7 @@ test("weniger als zwei Projekte brechen ab", () => {
   assert.throws(
     () =>
       selectSample({
-        projects: [{ id: 1, kind: "reise" }],
+        projects: [{ projectId: 1, kind: "reise" }],
         candidates: candidates(100, 1),
         cacheExists: cachePresent(),
       }),
@@ -156,8 +156,8 @@ test("weniger als zwei Projekte brechen ab", () => {
 test("dieselbe Saat liefert dieselbe Auswahl, eine andere eine andere", () => {
   const input = {
     projects: [
-      { id: 1, kind: "reise" },
-      { id: 2, kind: "familie" },
+      { projectId: 1, kind: "reise" },
+      { projectId: 2, kind: "familie" },
     ],
     candidates: [...candidates(140, 1), ...candidates(140, 2, 500)],
     cacheExists: cachePresent(),
@@ -181,8 +181,8 @@ test("dieselbe Saat liefert dieselbe Auswahl, eine andere eine andere", () => {
 test("die Auswahl ist aufsteigend sortiert und ohne Doppelung", () => {
   const sample = selectSample({
     projects: [
-      { id: 1, kind: "reise" },
-      { id: 2, kind: "familie" },
+      { projectId: 1, kind: "reise" },
+      { projectId: 2, kind: "familie" },
     ],
     candidates: [...candidates(130, 1), ...candidates(130, 2, 500)],
     cacheExists: cachePresent(),
@@ -198,8 +198,8 @@ test("die Auswahl ist aufsteigend sortiert und ohne Doppelung", () => {
 test("jedes ausgewählte Foto trägt einen Cache-Schlüssel aus photo_id und etag", () => {
   const sample = selectSample({
     projects: [
-      { id: 1, kind: "reise" },
-      { id: 2, kind: "familie" },
+      { projectId: 1, kind: "reise" },
+      { projectId: 2, kind: "familie" },
     ],
     candidates: [...candidates(100, 1), ...candidates(100, 2, 500)],
     cacheExists: cachePresent(),
@@ -219,8 +219,8 @@ test("Photos ohne Cache-Prüfung werden nie stillschweigend aufgenommen", () => 
     () =>
       selectSample({
         projects: [
-          { id: 1, kind: "reise" },
-          { id: 2, kind: "familie" },
+          { projectId: 1, kind: "reise" },
+          { projectId: 2, kind: "familie" },
         ],
         candidates: [...candidates(100, 1), ...candidates(100, 2, 500)],
       }),
