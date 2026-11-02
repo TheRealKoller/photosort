@@ -102,8 +102,10 @@ Container auf `/tmp`, damit `npm ci` auch als nicht-root schreiben kann.
 Der Container **erzwingt** keinen Egress-Filter. Das SDK kontaktiert ausschließlich
 `events.desertant.com` (Lizenzprüfung, keine Bilder, S1–S5); wer das Netz hart begrenzen will,
 setzt es auf dem Host durch (eigene Docker-Netzwerk-Bridge ohne Default-Route bzw. Egress-Regel der
-Firewall, die nur diese Namensauflösung und TCP 443 zu dieser Adresse zulässt) und lässt den
-Container mit `--network <eigenes-netz>` laufen.
+Firewall, die nur diese Namensauflösung und TCP 443 zu dieser Adresse zulässt) und startet den
+Container mit `--network <eigenes-netz>`. Der Postgres-Zugang bleibt dabei erhalten: Postgres liegt
+im Compose-Netz, also hängt der Container an beiden (`docker network connect photosort_default
+<container>`); ohne das zweite Netz scheitert `prepare` an der Namensauflösung.
 
 ## Ablauf
 
