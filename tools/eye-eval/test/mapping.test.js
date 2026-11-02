@@ -36,7 +36,7 @@ test("die Motivstärken nennen jedes der acht Motive mit seinen Eye-Signalen", (
   assert.deepEqual(motive.aktivitaet.shot.length > 0, true);
   assert.deepEqual(motive.detail_stimmung.shot.length > 0, true);
   for (const key of ["landschaft", "stadt_strasse", "bauwerk_sehenswuerdigkeit", "essen_trinken"]) {
-    assert.ok(motive[key].scenes.length > 0, `${key} braucht Szenen`);
+    assert.ok(motive[key].tags.length > 0, `${key} braucht Tags`);
   }
 });
 
@@ -60,13 +60,13 @@ test("die Albumtauglichkeit nennt Note, Behaltenswert, Schärfe und die beiden M
 test("die Feinlabels werden ausdrücklich nicht automatisch verglichen", () => {
   const fein = EYE_PURPOSE_MAPPING.purposes.feinlabels;
   assert.equal(fein.automaticMatch, false);
-  assert.ok(fein.signals.includes("scenes"));
+  assert.ok(fein.signals.includes("tags"));
 });
 
 test("für die Sehenswürdigkeit steht das erwartete Urteil fest", () => {
   const landmark = EYE_PURPOSE_MAPPING.purposes.sehenswuerdigkeit;
   assert.equal(landmark.expectedVerdict, "schlechter / nicht geeignet");
-  assert.ok(landmark.sceneClasses.length > 0);
+  assert.ok(landmark.tags.length > 0);
 });
 
 test("die Tabelle ist tief eingefroren", () => {
