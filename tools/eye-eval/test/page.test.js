@@ -210,3 +210,14 @@ test("die Abschlussseite zählt je Zweck und nennt kein Gesamturteil", () => {
   assert.ok(html.includes("Gesamturteil"));
   assert.equal(html.includes("http"), false);
 });
+
+test("unter http holt die Seite den Stand und fällt sonst auf den Startwert zurück", () => {
+  const { html } = seite(120, { startIndex: 36 });
+
+  assert.match(html, /if \(laeufer\) \{/);
+  assert.match(html, /fetch\("state", \{ cache: "no-store" \}\)/);
+  assert.match(html, /\.then\(uebernehmeStand\)/);
+  assert.match(html, /Math\.min\(ziel, DATA\.steps\.length\)/);
+  assert.match(html, /: DATA\.startIndex/);
+  assert.match(html, /\.catch\(\(\) => \{\}\)/);
+});

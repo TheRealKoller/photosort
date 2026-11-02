@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { main } from "../src/cli.js";
@@ -9,6 +11,8 @@ import { assembleBaseline } from "../src/baseline.js";
 import { PURPOSE_ORDER } from "../src/compare.js";
 import { EYE_PURPOSE_MAPPING_HASH } from "../src/mapping.js";
 import { MOTIF_KEYS } from "../src/motifs.js";
+
+const TOOL_DIR = fileURLToPath(new URL("..", import.meta.url));
 
 function mitArbeitsverzeichnis(rumpf) {
   const verzeichnis = mkdtempSync(join(tmpdir(), "eye-eval-cli-"));
@@ -121,4 +125,50 @@ test("pages beginnt je Zweck am gespeicherten Zeiger aus decisions.json", () =>
     const html = readFileSync(join(verzeichnis, "page-ausschluss.html"), "utf8");
     assert.match(html, /data-start="1"/);
     assert.match(html, /"startIndex":1/);
+  }));
+
+test("serve liefert den gespeicherten Stand über GET /state", { timeout: 20000 }, () =>
+  mitArbeitsverzeichnis(async (verzeichnis) => {
+    const { run, decisions } = pagesLauf();
+    decisions.purposes.ausschluss.index = 1;
+    decisions.purposes.ausschluss.choices = { 11: "a" };
+    writeFileSync(join(verzeichnis, "run.json"), JSON.stringify(run));
+    writeFileSync(join(verzeichnis, "decisions.json"), JSON.stringify(decisions));
+    mkdirSync(join(verzeichnis, "analysis"));
+    for (const photoId of [11, 13]) {
+      writeFileSync(join(verzeichnis, "analysis", `${photoId}.json`), JSON.stringify(ANALYSE));
+    }
+
+    const kind = spawn(
+      process.execPath,
+      ["src/cli.js", "serve", "--work-dir", verzeichnis, "--port", "0"],
+      { cwd: TOOL_DIR, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let ausgabe = "";
+    let fehler = "";
+    kind.stderr.on("data", (stueck) => {
+      fehler += stueck;
+    });
+    try {
+      const port = await new Promise((fertig, scheitern) => {
+        kind.stdout.on("data", (stueck) => {
+          ausgabe += stueck;
+          const treffer = ausgabe.match(/http:\/\/127\.0\.0\.1:(\d+)\//);
+          if (treffer) fertig(treffer[1]);
+        });
+        kind.once("exit", (code) =>
+          scheitern(new Error(`serve endete mit ${code}: ${ausgabe}${fehler}`)),
+        );
+      });
+
+      const antwort = await fetch(`http://127.0.0.1:${port}/state`);
+      assert.equal(antwort.status, 200);
+      assert.match(antwort.headers.get("content-type"), /application\/json/);
+      const stand = await antwort.json();
+      assert.equal(stand.purposes.ausschluss.index, 1);
+      assert.deepEqual(stand.purposes.ausschluss.choices, { 11: "a" });
+    } finally {
+      kind.kill("SIGTERM");
+      await new Promise((fertig) => kind.once("exit", fertig));
+    }
   }));

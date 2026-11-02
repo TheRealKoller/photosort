@@ -12,6 +12,10 @@ const SESSION_QUELLE = readFileSync(new URL("./session.js", import.meta.url), "u
  * externe Ressource. Eine Wahl landet über den lokalen Läufer (`POST decisions`) in der
  * Entscheidungsdatei; ohne Läufer (Aufruf über `file://`) im `localStorage` des Browsers.
  *
+ * Unter `http:`/`https:` fragt die Seite beim Laden `/state` und springt auf den dort
+ * gespeicherten Zeiger; scheitert das, bleibt der eingebackene Startwert. Unter `file://` gibt
+ * es keinen Server, dort gilt allein der eingebackene Wert.
+ *
  * Blindheit entsteht hier und nicht im Aufrufer: die Seite bekommt je Foto zwei neutrale Texte
  * und entscheidet selbst, welcher links steht. Welcher Text von welcher Seite kommt, steht
  * ausschließlich im zurückgegebenen `assignments` und wird in eine eigene Datei geschrieben —
@@ -161,7 +165,7 @@ ${SESSION_QUELLE}
   const schluessel = "vergleich:" + DATA.purpose + ":" + DATA.seed;
   const gespeichert = JSON.parse(localStorage.getItem(schluessel) || "{}");
   const laeufer = location.protocol === "http:" || location.protocol === "https:";
-  const session = createSession({
+  let session = createSession({
     photoIds: DATA.steps.map((schritt) => schritt.photoId),
     startIndex: DATA.startIndex,
     saved: gespeichert,
@@ -178,6 +182,24 @@ ${SESSION_QUELLE}
     zoom: document.getElementById("zoom"),
   };
   let gezeigt = null;
+
+  function uebernehmeStand(stand) {
+    const eigener = stand && stand.purposes && stand.purposes[DATA.purpose];
+    if (!eigener) return;
+    const ziel = Number(eigener.index);
+    const index = Number.isFinite(ziel)
+      ? Math.max(0, Math.min(ziel, DATA.steps.length))
+      : DATA.startIndex;
+    for (const [photoId, wert] of Object.entries(eigener.choices || {})) {
+      gespeichert[photoId] = wert;
+    }
+    session = createSession({
+      photoIds: DATA.steps.map((schritt) => schritt.photoId),
+      startIndex: index,
+      saved: gespeichert,
+    });
+    zeichne(session.zeige());
+  }
 
   function zeichne(zustand) {
     const fertig = zustand.fertig;
@@ -320,6 +342,15 @@ ${SESSION_QUELLE}
         break;
     }
   });
+
+  if (laeufer) {
+    fetch("state", { cache: "no-store" })
+      .then((antwort) =>
+        antwort.ok ? antwort.json() : Promise.reject(new Error(String(antwort.status))),
+      )
+      .then(uebernehmeStand)
+      .catch(() => {});
+  }
 
   zeichne(session.zeige());
 })();

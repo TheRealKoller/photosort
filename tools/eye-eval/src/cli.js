@@ -333,6 +333,14 @@ async function serve(args, workDir) {
       res.end(indexSeite());
       return;
     }
+    if (url.pathname === "/state") {
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      res.end(JSON.stringify({ purposes: aktuell.purposes }));
+      return;
+    }
     if (!STATISCH.test(url.pathname)) {
       res.writeHead(404).end();
       return;
