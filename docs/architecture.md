@@ -1182,8 +1182,9 @@ Verarbeitungs-Cache (Thumbnails).
       (`detect`, nie `embed`), vorher eine kurze eigene Lesesitzung aus `get_session_factory`;
       die Anfrage-Sitzung ist vor dem ersten Auftrag freigegeben, die Anfrage hält während des
       Modellaufrufs keine Verbindung. Ein Wächter-Task liest `receive()` bis `http.disconnect`;
-      bei Trennung endet die Seite nach dem laufenden Foto mit einer leeren `204`. Die Auflistung
-      schreibt nichts, Antworten tragen `Cache-Control: no-store` und `nosniff`.
+      bei Trennung endet die Seite nach dem laufenden, spätestens nach dem nächsten Foto mit einer
+      leeren `204`; die Trennung erreicht den Wächter durch `SlowAPIMiddleware` verzögert. Die
+      Auflistung schreibt nichts, Antworten tragen `Cache-Control: no-store` und `nosniff`.
     - **Schreibsperre** *(Spec 0551, ADR 0127 Punkt 2)*: `_person_write_lock`, eine prozessweite
       `asyncio.Lock`, umschließt Prüfungen, Schreiben und Commit von `POST /persons`,
       `POST /persons/{id}/references`, `PUT /photos/{id}/persons/{person_id}` und
