@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { ArgsError, parseArgs, usage } from "./args.js";
 import { assembleBaseline, queriesForPhotos, queriesForProjects } from "./baseline.js";
 import { cacheExistsIn, displayPath } from "./cache.js";
+import { countCalls } from "./calls.js";
 import { buildItems, PURPOSE_ORDER } from "./compare.js";
 import { connectReadOnly, runQuery } from "./db.js";
 import {
@@ -339,16 +340,6 @@ async function serve(args, workDir) {
   console.log("Server beendet.");
 }
 
-function laufAufrufe(run) {
-  let kategorie = 0;
-  let landmark = 0;
-  for (const projekt of run.baseline.runs.projects) {
-    kategorie += projekt.category?.photosProcessed ?? projekt.category?.apiCalls ?? 0;
-    landmark += projekt.landmark?.apiCalls ?? 0;
-  }
-  return { kategorie, landmark };
-}
-
 async function summary(args, workDir) {
   const run = await ladeRun(workDir);
   const { items } = buildItems({
@@ -361,7 +352,7 @@ async function summary(args, workDir) {
     throw new Error(`${pfad} fehlt. Erst vergleichen (\`serve\`), dann zusammenfassen.`);
   }
   const state = loadState(pfad, { seed: run.seed, purposes: PURPOSE_ORDER, resume: true });
-  const aufrufe = laufAufrufe(run);
+  const aufrufe = countCalls(run.baseline.runs);
 
   const summaries = [];
   const zweckUrteile = {};
@@ -384,7 +375,7 @@ async function summary(args, workDir) {
 
   const ersparnis = computeSavings({
     categories: {
-      photosWithCall: aufrufe.kategorie,
+      photosWithCall: aufrufe.category,
       photosWithoutCall: 0,
       purposes: {
         motivstaerken: zweckUrteile.motivstaerken,
@@ -401,7 +392,12 @@ async function summary(args, workDir) {
     mappingHash: run.mappingHash,
     seed: run.seed,
     purposes: zweckUrteile,
-    calls: { category: aufrufe.kategorie, landmark: aufrufe.landmark },
+    calls: {
+      category: aufrufe.category,
+      landmark: aufrufe.landmark,
+      source: aufrufe.categorySource,
+      fallbackProjects: aufrufe.fallbackProjects,
+    },
     savings: ersparnis,
     models: run.baseline.runs.models,
   });

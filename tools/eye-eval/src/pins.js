@@ -46,6 +46,17 @@ export async function loadPins(directory) {
 }
 
 export async function verifyPins({ directory, pins }) {
+  const revision = typeof pins?.revision === "string" ? pins.revision.trim() : "";
+  if (revision === "") {
+    throw new PinError("pins.json nennt keine HF-Revision unter „revision“; ohne Revision gibt es keinen Lauf (S20).");
+  }
+  const commit = typeof pins?.commit === "string" ? pins.commit.trim() : "";
+  if (!/^[0-9a-f]{40}$/.test(commit)) {
+    throw new PinError(
+      `pins.json nennt keinen 40-stelligen Commit-SHA unter „commit“ (gefunden: ${commit || "nichts"}); ohne Commit gibt es keinen Lauf (S20).`,
+    );
+  }
+
   const erwartet = { ...pins?.files };
   for (const name of REQUIRED_FILES) {
     if (!erwartet[name]) {
@@ -70,5 +81,5 @@ export async function verifyPins({ directory, pins }) {
     geprueft.push(name);
   }
 
-  return { ok: true, checked: geprueft, revision: pins.revision ?? null, commit: pins.commit ?? null };
+  return { ok: true, checked: geprueft, revision, commit };
 }

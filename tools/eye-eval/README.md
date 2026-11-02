@@ -69,10 +69,19 @@ abgleichen (die Tabelle ist danach durch ihren Hash eingefroren).
 
 ## Container
 
+Der Container sieht nie das Repository, sondern nur eine Kopie des Werkzeugbaums im
+Arbeitsverzeichnis (S16). Jede Codeänderung braucht deshalb zuerst eine neue Kopie — sonst läuft
+der alte Stand:
+
 ```bash
-# npm ci läuft IM Container, nie auf dem Host (S17)
+# 1. Kopie des Werkzeugbaums ins Arbeitsverzeichnis (nicht das Repo selbst mounten)
+rsync -a --delete tools/eye-eval/ "$HOME/photosort-eye-eval/tool/"
+
+# 2. npm ci läuft IM Container, nie auf dem Host (S17); nicht als root
 docker run --rm -it \
-  -v "$PWD/tools/eye-eval:/app" -w /app \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e npm_config_cache=/tmp/npm-cache \
+  -v "$HOME/photosort-eye-eval/tool:/app" -w /app \
   -v "$HOME/photosort-eye-eval:/work" \
   -v photosort_photo_cache:/cache:ro \
   --env-file /tmp/eye-eval.env \
@@ -80,8 +89,8 @@ docker run --rm -it \
   bash -lc 'npm ci --ignore-scripts && node src/cli.js --help'
 ```
 
-Nicht als root, kein Docker-Socket, kein veröffentlichter Port, kein Repo im Container
-(nur eine Kopie des Werkzeugbaums), `--rm` (S16).
+Kein Docker-Socket, kein veröffentlichter Port, `--rm` (S16); `HOME`/`npm_config_cache` liegen im
+Container auf `/tmp`, damit `npm ci` auch als nicht-root schreiben kann.
 
 ## Ablauf
 
@@ -93,6 +102,9 @@ node src/cli.js serve        # http://127.0.0.1:<port>/ (nie 0.0.0.0, S12)
 node src/cli.js summary      # Zählungen, Ersparnis, <work>/abschluss.html
 node src/cli.js report-check <markdown>
 ```
+
+Alle Befehle laufen im Container unter `/app` (Schritt 2 oben), mit `--work-dir /work`. Der Host
+braucht kein `npm ci`; nach einer Codeänderung erst die Kopie erneuern.
 
 Optionen: `--work-dir`, `--database-url`, `--photo-cache`, `--model-dir`, `--seed`,
 `--per-project`, `--purpose`, `--port`, `--resume` (`--help` zeigt alles).
@@ -134,7 +146,12 @@ steht im PR.
 
 - Eye liefert keine Landmarknamen; die Sehenswürdigkeit wird über Bauwerk-Szenen gemessen.
 - Feinlabels haben ein anderes Vokabular als die Cloud — kein automatischer Treffervergleich.
-- Die Aufrufzahlen der Ersparnis stammen aus den Laufzeilen des letzten Laufs je Projekt; Fotos
-  ohne Cloud-Aufruf zählen dort naturgemäß null.
+- Die Aufrufzahlen der Ersparnis stammen aus `remote_category_classification_runs.api_calls` bzw.
+  `landmark_classification_runs.api_calls` des letzten Laufs je Projekt — der Aufrufzahl, nicht der
+  Fotozahl, weil Wiederholungen und ausgesetzte Fotos sonst unterschlagen würden. Trägt eine
+  Kategorie-Zeile keine Aufrufzahl, dient `photos_processed` als Rückfall; `summary.json` hält das
+  unter `calls.source` (und `calls.fallbackProjects`) fest.
 - Das native SDK ist ein vorgefertigtes Binary (S21); der Pin schützt gegen einen später
   getauschten Stand, nicht gegen den veröffentlichten.
+- Eye v1.0.0 ist **Beta**; ein Modell-Update gilt unter der dann aktuellen Lizenz. Diese Auswertung
+  ist an `@desert-ant-labs/eye` 4.2.3 und die Lizenz zum Zeitpunkt des Pins gebunden.

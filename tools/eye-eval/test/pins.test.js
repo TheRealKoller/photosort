@@ -75,3 +75,38 @@ test("pins.json wird gelesen", () =>
     const gelesen = await loadPins(verzeichnis);
     assert.equal(gelesen.revision, "v1.0.0");
   }));
+
+test("ohne Revision oder Commit-SHA gibt es keinen Lauf (S20)", () =>
+  mitModell(async (verzeichnis) => {
+    for (const feld of ["revision", "commit"]) {
+      const ohne = pins();
+      delete ohne[feld];
+      await assert.rejects(
+        () => verifyPins({ directory: verzeichnis, pins: ohne }),
+        (error) => {
+          assert.ok(error instanceof PinError);
+          assert.match(error.message, new RegExp(feld));
+          return true;
+        },
+      );
+    }
+  }));
+
+test("ein Commit-SHA, der kein 40-stelliger Hexwert ist, bricht ab", () =>
+  mitModell(async (verzeichnis) => {
+    for (const falsch of ["", "v1.0.0", "0123456789abcdef", "0123456789ABCDEF0123456789abcdef01234567", "z".repeat(40)]) {
+      const kaputt = pins();
+      kaputt.commit = falsch;
+      await assert.rejects(() => verifyPins({ directory: verzeichnis, pins: kaputt }), PinError);
+    }
+    const falscheRevision = pins();
+    falscheRevision.revision = "";
+    await assert.rejects(() => verifyPins({ directory: verzeichnis, pins: falscheRevision }), /revision/);
+  }));
+
+test("die geprüfte Revision und der Commit stehen im Ergebnis", () =>
+  mitModell(async (verzeichnis) => {
+    const ergebnis = await verifyPins({ directory: verzeichnis, pins: pins() });
+    assert.equal(ergebnis.revision, "v1.0.0");
+    assert.equal(ergebnis.commit, "0123456789abcdef0123456789abcdef01234567");
+  }));
