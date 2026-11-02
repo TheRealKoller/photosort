@@ -1,6 +1,6 @@
 # 0606 - Eye als lokaler Ersatz für die Cloud-Klassifizierung bewerten
 
-**Status:** Accepted
+**Status:** Implemented ([PR #607](https://github.com/TheRealKoller/photosort/pull/607))
 **Erstellt:** 2026-11-02
 **Bezug:** [GitHub-Issue #606](https://github.com/TheRealKoller/photosort/issues/606)
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil die beiden Abschnitte `## Security` und
@@ -412,6 +412,12 @@ Akzeptanzkriterium).
 - Die Wahl unterschiedlicher Modelle je Zweck und ihre Bedienung in der Oberfläche.
 
 ## Vergleichsergebnis
+
+**Nachtrag (2026-11-02, PR #607):** Der Status steht auf `Implemented`, weil das Werkzeug unter
+`tools/eye-eval/` umgesetzt und durch `node --test` abgesichert ist — die Akzeptanzkriterien
+selbst beschreiben den Auswertungslauf und sind damit noch nicht erfüllt. Dieser Abschnitt bleibt
+bis zu diesem Lauf ein Platzhalter und wird danach an dieser Stelle angehängt; eine Änderung am
+Status geht damit einher.
 
 *Wird nach dem Auswertungslauf angehängt — Anbieter und Modell des Maßstabs, Urteil und Begründung
 je Zweck, Laufzeit, eingesparte Aufrufe, Lizenzeinstufung, Restrisiken, Empfehlung, offene Punkte.
