@@ -1742,6 +1742,10 @@ Begründung. Das zugesagte Verhalten überlebt eine Kürzung, sein Warum nicht.
 - **E2E-Ebene:** der volle Ablauf (echter `opencloud-rolling`-Container, echter Upload, Browsing/Scan/Scoring im Frontend) bleibt manueller Smoke-Test vor Merge, analog zum etablierten Muster — kein CI-Job mit echtem Container, da Image-Größe/Startzeit für einen rein lokalen, optionalen Ausprobier-Zweck nicht gerechtfertigt sind.
 - Gilt als wiederverwendbares Muster für künftige `scripts/`-Tooling mit echter Verzweigungslogik: eigene Unit-Tests trotz Lage außerhalb des Coverage-Gate-Packages, sobald es mehr als reine Konfiguration ist (Abgrenzung zum dreistufigen Verifikationsmuster aus Spec 0007, das nur für Features *ganz ohne* Anwendungscode gilt).
 
+## Werkzeuge außerhalb des Coverage-Gates (`scripts/`, `tools/`)
+
+**Neu seit Spec [`0606`](../features/0606-eye-lokaler-cloud-ersatz-bewerten.md)** ("Eye als lokaler Cloud-Ersatz bewerten"): `tools/eye-eval/` ist der erste Node-Baum außerhalb von Coverage-Gate und CI — Messwerkzeug, kein Produktcode, bewusst mit eingechecktem `package.json` und `package-lock.json`, weil die Methode Teil des Belegs ist. Er hat seinen eigenen Testlauf (`npm test` = `node --test test/*.test.js` im Wegwerf-Container), und die Trennung ist dieselbe wie bei `scripts/`: alles Prüfbare ist reine Funktion über bereits ermittelte Signale (Auswahl, Basis je Zweck, eingefrorene Zuordnungstabelle, A/B-Zuweisung, Blinding im HTML, Entscheidungs-JSON, Ersparnis-Arithmetik, Report-Prüfer), die SDK-Aufrufe liegen hinter einer dünnen Adaptergrenze, die kein Unit-Test lädt. Ein echter Datenbanktest ist opt-in (`npm run test:db` mit `EYE_EVAL_TEST_DATABASE_URL` und `EYE_EVAL_TEST_PHOTO_CACHE_DIR`, nur auf dem Heimserver, nicht Teil von `npm test`); ein fehlendes Env ist ein lauter Fehlschlag statt eines stillen Skips, und der Laufbericht hält fest, ob er lief. CI und `scripts/check.sh` führen keinen der beiden Läufe aus — der Rot-Nachweis steht stattdessen im PR.
+
 ## Externe CLI-Werkzeuge als dünne Adapter-Schicht (`subprocess`)
 
 Das Werkzeug, für das dieses Muster entstand (`scripts/github-project-sync/`, später
