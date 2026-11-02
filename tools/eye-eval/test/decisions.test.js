@@ -9,6 +9,7 @@ import {
   countChoices,
   createState,
   recordChoice,
+  recordSkip,
   saveState,
   serializeState,
   loadState,
@@ -183,4 +184,20 @@ test("die Serialisierung ist stabil", () => {
   const state = createState({ seed: 7, purposes: ZWECKE });
   assert.equal(serializeState(state), serializeState(JSON.parse(serializeState(state))));
   assert.ok(serializeState(state).endsWith("\n"));
+});
+
+test("Überspringen rückt den Zeiger vor, ohne eine Wahl zu erfinden", () => {
+  const vorher = createState({ seed: 7, purposes: ZWECKE });
+  const nachher = recordSkip(vorher, { purpose: "albumtauglichkeit", index: 5 });
+
+  assert.equal(nachher.purposes.albumtauglichkeit.index, 5);
+  assert.deepEqual(nachher.purposes.albumtauglichkeit.choices, {});
+  assert.deepEqual(vorher.purposes.albumtauglichkeit.choices, {});
+  assert.deepEqual(countChoices(nachher, "albumtauglichkeit"), {
+    a: 0,
+    same: 0,
+    b: 0,
+    decided: 0,
+  });
+  assert.throws(() => recordSkip(vorher, { purpose: "feinlabels", index: 1 }), /Zweck/);
 });

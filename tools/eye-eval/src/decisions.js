@@ -47,6 +47,21 @@ export function recordChoice(state, { purpose, photoId, choice, index }) {
   };
 }
 
+/** Überspringen ist keine Wahl: der Zeiger rückt vor, die Zählung bleibt unberührt. */
+export function recordSkip(state, { purpose, index }) {
+  if (!Object.hasOwn(state.purposes, purpose)) {
+    throw new DecisionStoreError(`Unbekannter Zweck „${purpose}“; die Datei kennt nur ${Object.keys(state.purposes).join(", ")}.`);
+  }
+  const vorher = state.purposes[purpose];
+  return {
+    ...state,
+    purposes: {
+      ...state.purposes,
+      [purpose]: { ...vorher, index: Math.max(vorher.index, Number(index) || 0) },
+    },
+  };
+}
+
 export function countChoices(state, purpose) {
   const choices = state.purposes[purpose]?.choices ?? {};
   const werte = Object.values(choices);

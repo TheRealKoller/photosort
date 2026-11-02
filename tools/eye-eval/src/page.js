@@ -193,7 +193,7 @@ export function renderComparisonPage({
       fetch("decisions", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ purpose: DATA.purpose, photoId: photoId, choice: wert, index: index }),
+        body: JSON.stringify({ purpose: DATA.purpose, photoId: photoId, choice: wert, index: index + 1 }),
       })
         .then((antwort) => {
           if (!antwort.ok) throw new Error(String(antwort.status));
@@ -269,9 +269,19 @@ export function renderComparisonPage({
   }
 
   function ueberspringen() {
+    const schritt = aktuell();
     index += 1;
     const naechster = aktuell();
     choice = naechster ? (gespeichert[naechster.photoId] || null) : null;
+    if (schritt && (location.protocol === "http:" || location.protocol === "https:")) {
+      fetch("decisions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ purpose: DATA.purpose, photoId: schritt.photoId, skip: true, index: index }),
+      }).catch((problem) => {
+        fehler.textContent = "Der Sprung wurde nicht gespeichert: " + problem.message;
+      });
+    }
     zeige();
   }
 
