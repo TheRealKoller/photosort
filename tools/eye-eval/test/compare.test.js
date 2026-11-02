@@ -48,6 +48,11 @@ function basis(photoIds = PHOTOS) {
       canonicalKey: "ort",
     })),
     landmarks: [{ photoId: 13, name: "Wahrzeichen", canonicalName: "wahrzeichen", confidence: 0.9 }],
+    criterionScores: photoIds.map((photoId) => ({
+      photoId,
+      criterionKey: "gebaeude",
+      value: 1,
+    })),
   });
 }
 

@@ -4,8 +4,10 @@ import { test } from "node:test";
 import {
   BASELINE_TABLES,
   BaselineError,
+  LANDMARK_CANDIDATE_THRESHOLD,
   assembleBaseline,
   assertReadOnly,
+  isLandmarkCandidate,
   queriesForPhotos,
   queriesForProjects,
   readOnlyQueryOptions,
@@ -15,7 +17,18 @@ import { MOTIF_KEYS } from "../src/motifs.js";
 
 const FOTO_IDS = [11, 12, 13];
 
-function basis({ motifs = {}, exclusion = {}, album = {}, fineLabels = [], landmarks = [] } = {}) {
+function basis({
+  motifs = {},
+  exclusion = {},
+  album = {},
+  fineLabels = [],
+  landmarks = [],
+  criterionScores = FOTO_IDS.map((photoId) => ({
+    photoId,
+    criterionKey: "landschaft",
+    value: 1,
+  })),
+} = {}) {
   return assembleBaseline({
     photoIds: FOTO_IDS,
     motifStrengths: Object.entries(motifs).flatMap(([photoId, strengths]) =>
@@ -38,6 +51,7 @@ function basis({ motifs = {}, exclusion = {}, album = {}, fineLabels = [], landm
     })),
     fineLabels,
     landmarks,
+    criterionScores,
   });
 }
 
@@ -195,6 +209,55 @@ test("eine fehlende Landmark-Zeile heißt „kein Name“ statt eines Platzhalte
     canonicalName: null,
     confidence: null,
   });
+});
+
+test("Landmark-Kandidat ist, wer die Schwelle bei landschaft oder gebaeude erreicht", () => {
+  assert.equal(LANDMARK_CANDIDATE_THRESHOLD, 0.01);
+  assert.equal(isLandmarkCandidate({}), false);
+  assert.equal(isLandmarkCandidate({ landschaft: 0.009 }), false);
+  assert.equal(isLandmarkCandidate({ landschaft: 0.01 }), true);
+  assert.equal(isLandmarkCandidate({ gebaeude: 0.5 }), true);
+  assert.equal(isLandmarkCandidate({ landschaft: 0.009, gebaeude: 0.011 }), true);
+  assert.equal(isLandmarkCandidate({ landschaft: "0.01" }), true);
+});
+
+test("Sehenswürdigkeit bewertet nur Landmark-Kandidaten, der Rest wird gezählt", () => {
+  const fotos = [1, 2, 3, 4, 5];
+  const ergebnis = assembleBaseline({
+    photoIds: fotos,
+    criterionScores: [
+      { photoId: 1, criterionKey: "landschaft", value: 0.5 },
+      { photoId: 2, criterionKey: "gebaeude", value: 0.01 },
+      { photoId: 3, criterionKey: "landschaft", value: 0.009 },
+      { photoId: 3, criterionKey: "gebaeude", value: 0.009 },
+      { photoId: 4, criterionKey: "landschaft", value: 0 },
+      { photoId: 99, criterionKey: "landschaft", value: 1 },
+    ],
+    landmarks: fotos.map((photoId) => ({
+      photoId,
+      name: null,
+      canonicalName: null,
+      confidence: null,
+    })),
+  });
+  const zweck = ergebnis.purposes.sehenswuerdigkeit;
+
+  assert.deepEqual(zweck.photos.map((row) => row.photoId), [1, 2]);
+  assert.equal(zweck.counts.total, 5);
+  assert.equal(zweck.counts.candidates, 2);
+  assert.equal(zweck.counts.notCandidate, 3);
+  assert.equal(ergebnis.counts.notCandidate, 3);
+});
+
+test("die Kandidatenabfrage liest nur die beiden Schlüssel der Stichprobenfotos", () => {
+  const abfrage = queriesForPhotos([11, 12]).find((eintrag) => eintrag.name === "criterionScores");
+
+  assert.ok(abfrage, "criterionScores fehlt");
+  assert.deepEqual(abfrage.params, [[11, 12]]);
+  assert.match(abfrage.sql, /photo_criterion_scores/);
+  assert.match(abfrage.sql, /criterion_key IN \('landschaft', 'gebaeude'\)/);
+  assert.deepEqual(tableNames(abfrage.sql), ["photo_criterion_scores"]);
+  assert.equal(BASELINE_TABLES.includes("photo_criterion_scores"), true);
 });
 
 test("Fotos außerhalb der Stichprobe gelangen nicht in die Basis", () => {

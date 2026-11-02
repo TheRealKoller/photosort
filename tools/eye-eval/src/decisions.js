@@ -47,7 +47,14 @@ export function recordChoice(state, { purpose, photoId, choice, index }) {
   };
 }
 
-/** Überspringen ist keine Wahl: der Zeiger rückt vor, die Zählung bleibt unberührt. */
+/**
+ * Überspringen ist keine Wahl: der Zeiger rückt vor, die Zählung bleibt unberührt.
+ *
+ * Lesart (bewusst so, keine Verhaltensänderung): Überspringen nimmt eine frühere Stimme zu
+ * demselben Foto **nicht** zurück. Wer sein Urteil korrigieren will, blättert mit „zurück“ und
+ * wählt erneut; wer nur weitergehen will, ohne zu urteilen, überspringt. Eine Stimme
+ * verschwindet damit ausschließlich durch eine neue Wahl, nie durch einen Sprung.
+ */
 export function recordSkip(state, { purpose, index }) {
   if (!Object.hasOwn(state.purposes, purpose)) {
     throw new DecisionStoreError(`Unbekannter Zweck „${purpose}“; die Datei kennt nur ${Object.keys(state.purposes).join(", ")}.`);

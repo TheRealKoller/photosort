@@ -1,4 +1,11 @@
 import { assignSides } from "./ab.js";
+import { readFileSync } from "node:fs";
+
+const SESSION_QUELLE = readFileSync(new URL("./session.js", import.meta.url), "utf8").replace(
+  /^export /gm,
+  "",
+);
+
 
 /**
  * Erzeugt die Wegwerf-Vergleichsseite als reinen String — kein Framework, kein Build, keine
@@ -147,12 +154,18 @@ export function renderComparisonPage({
 </main>
 <script type="application/json" id="data">${jsonFuerSkript(daten)}</script>
 <script>
+${SESSION_QUELLE}
 (() => {
   "use strict";
   const DATA = JSON.parse(document.getElementById("data").textContent);
   const schluessel = "vergleich:" + DATA.purpose + ":" + DATA.seed;
   const gespeichert = JSON.parse(localStorage.getItem(schluessel) || "{}");
-  const total = DATA.total;
+  const laeufer = location.protocol === "http:" || location.protocol === "https:";
+  const session = createSession({
+    photoIds: DATA.steps.map((schritt) => schritt.photoId),
+    startIndex: DATA.startIndex,
+    saved: gespeichert,
+  });
   const photo = document.getElementById("photo");
   const placeholder = document.getElementById("placeholder");
   const progress = document.getElementById("progress");
@@ -164,21 +177,51 @@ export function renderComparisonPage({
     skip: document.getElementById("skip"),
     zoom: document.getElementById("zoom"),
   };
-  let index = DATA.startIndex;
-  let choice = null;
-  let bildKaputt = false;
+  let gezeigt = null;
 
-  function aktuell() {
-    return DATA.steps[index] || null;
-  }
-
-  function setzeWahl(wert) {
-    if (!aktuell() || bildKaputt) return;
-    choice = wert;
+  function zeichne(zustand) {
+    const fertig = zustand.fertig;
+    const schritt = fertig ? null : DATA.steps[zustand.index];
+    document.getElementById("card").style.display = fertig ? "none" : "block";
+    document.getElementById("done").style.display = fertig ? "block" : "none";
+    knopf.back.disabled = !zustand.backEnabled;
+    knopf.next.disabled = !zustand.nextEnabled;
+    knopf.skip.disabled = !zustand.skipEnabled;
     for (const button of document.querySelectorAll("[data-choice]")) {
-      button.setAttribute("aria-pressed", String(button.dataset.choice === wert));
+      button.setAttribute("aria-pressed", String(button.dataset.choice === zustand.choice));
+      button.disabled = !zustand.canChoose;
     }
-    speichern(aktuell().photoId, wert);
+    if (fertig) {
+      progress.textContent = "Foto " + zustand.total + " von " + zustand.total;
+      return;
+    }
+
+    progress.textContent = "Foto " + (zustand.index + 1) + " von " + zustand.total;
+    const [urteilA, ...grundA] = schritt.textA.split("\\n");
+    const [urteilB, ...grundB] = schritt.textB.split("\\n");
+    document.getElementById("a-verdict").textContent = urteilA;
+    document.getElementById("a-reason").textContent = grundA.join("\\n");
+    document.getElementById("b-verdict").textContent = urteilB;
+    document.getElementById("b-reason").textContent = grundB.join("\\n");
+
+    if (gezeigt !== schritt.photoId) {
+      gezeigt = schritt.photoId;
+      photo.hidden = true;
+      placeholder.hidden = false;
+      placeholder.textContent = "Bild wird geladen …";
+      fehler.textContent = "";
+      photo.src = schritt.image;
+    }
+    if (zustand.bildKaputt) {
+      photo.hidden = true;
+      placeholder.hidden = false;
+      placeholder.textContent = "Bild fehlt oder ist beschädigt – dieses Foto wird übersprungen.";
+    }
+    status.textContent = zustand.choice
+      ? laeufer
+        ? "Gespeichert"
+        : "Gespeichert (nur in diesem Browser)"
+      : "";
   }
 
   function speichern(photoId, wert) {
@@ -189,104 +232,55 @@ export function renderComparisonPage({
       fehler.textContent = "Die Wahl wurde nicht gespeichert: " + problem.message;
       return;
     }
-    if (location.protocol === "http:" || location.protocol === "https:") {
-      fetch("decisions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ purpose: DATA.purpose, photoId: photoId, choice: wert, index: index + 1 }),
+    if (!laeufer) return;
+    fetch("decisions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ purpose: DATA.purpose, photoId: photoId, choice: wert, index: session.zustand().index + 1 }),
+    })
+      .then((antwort) => {
+        if (!antwort.ok) throw new Error(String(antwort.status));
+        fehler.textContent = "";
       })
-        .then((antwort) => {
-          if (!antwort.ok) throw new Error(String(antwort.status));
-          status.textContent = "Gespeichert";
-          fehler.textContent = "";
-        })
-        .catch((problem) => {
-          fehler.textContent = "Die Wahl wurde nicht gespeichert: " + problem.message;
-        });
-    } else {
-      status.textContent = "Gespeichert (im Browser; Export am Ende)";
-    }
+      .catch((problem) => {
+        fehler.textContent = "Die Wahl wurde nicht gespeichert: " + problem.message;
+      });
   }
 
-  function zeige() {
-    const schritt = aktuell();
-    const fertig = schritt === null;
-    document.getElementById("card").style.display = fertig ? "none" : "block";
-    document.getElementById("done").style.display = fertig ? "block" : "none";
-    if (fertig) {
-      progress.textContent = "Foto " + total + " von " + total;
-      return;
-    }
-
-    progress.textContent = \`Foto \${index + 1} von \${total}\`;
-    const [urteilA, ...grundA] = schritt.textA.split("\\n");
-    const [urteilB, ...grundB] = schritt.textB.split("\\n");
-    document.getElementById("a-verdict").textContent = urteilA;
-    document.getElementById("a-reason").textContent = grundA.join("\\n");
-    document.getElementById("b-verdict").textContent = urteilB;
-    document.getElementById("b-reason").textContent = grundB.join("\\n");
-
-    bildKaputt = false;
-    choice = gespeichert[schritt.photoId] || null;
-    for (const button of document.querySelectorAll("[data-choice]")) {
-      button.setAttribute("aria-pressed", String(button.dataset.choice === choice));
-      button.disabled = false;
-    }
-    knopf.next.disabled = choice === null;
-    placeholder.hidden = false;
-    placeholder.textContent = "Bild wird geladen …";
-    photo.hidden = true;
-    photo.onerror = () => {
-      bildKaputt = true;
-      photo.hidden = true;
-      placeholder.hidden = false;
-      placeholder.textContent = "Bild fehlt oder ist beschädigt – dieses Foto wird übersprungen.";
-      for (const button of document.querySelectorAll("[data-choice]")) button.disabled = true;
-      knopf.next.disabled = false;
-      fehler.textContent = "Die Wahl wurde nicht gespeichert: kein Bild, kein Urteil.";
-    };
-    photo.onload = () => {
-      placeholder.hidden = true;
-      photo.hidden = false;
-      fehler.textContent = "";
-    };
-    photo.src = schritt.image;
-    status.textContent = choice ? "Gespeichert" : "";
-  }
-
-  function weiter() {
-    if (!choice) return;
-    index += 1;
-    const naechster = aktuell();
-    choice = naechster ? (gespeichert[naechster.photoId] || null) : null;
-    zeige();
-  }
-
-  function zurueck() {
-    if (index === 0) return;
-    index -= 1;
-    zeige();
+  function setzeWahl(wert) {
+    const zustand = session.setzeWahl(wert);
+    if (zustand.choice === wert) speichern(zustand.photoId, wert);
+    zeichne(zustand);
   }
 
   function ueberspringen() {
-    const schritt = aktuell();
-    index += 1;
-    const naechster = aktuell();
-    choice = naechster ? (gespeichert[naechster.photoId] || null) : null;
-    if (schritt && (location.protocol === "http:" || location.protocol === "https:")) {
+    const photoId = session.aktuell();
+    const zustand = session.ueberspringen();
+    if (photoId !== null && laeufer) {
       fetch("decisions", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ purpose: DATA.purpose, photoId: schritt.photoId, skip: true, index: index }),
+        body: JSON.stringify({ purpose: DATA.purpose, photoId: photoId, skip: true, index: zustand.index }),
       }).catch((problem) => {
         fehler.textContent = "Der Sprung wurde nicht gespeichert: " + problem.message;
       });
     }
-    zeige();
+    zeichne(zustand);
   }
 
-  knopf.next.addEventListener("click", weiter);
-  knopf.back.addEventListener("click", zurueck);
+  photo.onerror = () => {
+    const zustand = session.bildFehler();
+    zeichne(zustand);
+    fehler.textContent = "Die Wahl wurde nicht gespeichert: kein Bild, kein Urteil.";
+  };
+  photo.onload = () => {
+    placeholder.hidden = true;
+    photo.hidden = false;
+    fehler.textContent = "";
+  };
+
+  knopf.next.addEventListener("click", () => zeichne(session.weiter()));
+  knopf.back.addEventListener("click", () => zeichne(session.zurueck()));
   knopf.skip.addEventListener("click", ueberspringen);
   knopf.zoom.addEventListener("click", () => {
     const an = photo.classList.toggle("zoom");
@@ -314,10 +308,10 @@ export function renderComparisonPage({
         break;
       case "Enter":
       case "ArrowRight":
-        weiter();
+        zeichne(session.weiter());
         break;
       case "ArrowLeft":
-        zurueck();
+        zeichne(session.zurueck());
         break;
       case "s":
         ueberspringen();
@@ -327,7 +321,7 @@ export function renderComparisonPage({
     }
   });
 
-  zeige();
+  zeichne(session.zeige());
 })();
 </script>
 </body>

@@ -55,6 +55,7 @@ function fakeDeps(zustand) {
     albumSuitability: [],
     fineLabels: [],
     landmarks: [],
+    criterionScores: [],
   };
   return {
     connect: async () => {
@@ -115,6 +116,7 @@ test("prepare schreibt aus der Stichprobe eine vollständige run.json", () =>
       "sehenswuerdigkeit",
     ]);
     assert.equal(run.baseline.runs.projects.length, 2);
+    assert.equal(run.baseline.counts.notCandidate, 200);
     const projekt3 = run.baseline.runs.projects.find((eintrag) => eintrag.projectId === 3);
     assert.equal(projekt3.category.apiCalls, 120);
   }));

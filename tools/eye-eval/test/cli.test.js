@@ -1,18 +1,25 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
 import { main } from "../src/cli.js";
+import { assembleBaseline } from "../src/baseline.js";
+import { PURPOSE_ORDER } from "../src/compare.js";
+import { EYE_PURPOSE_MAPPING_HASH } from "../src/mapping.js";
+import { MOTIF_KEYS } from "../src/motifs.js";
 
 function mitArbeitsverzeichnis(rumpf) {
   const verzeichnis = mkdtempSync(join(tmpdir(), "eye-eval-cli-"));
   try {
     writeFileSync(join(verzeichnis, "projects.json"), "[]");
-    return rumpf(verzeichnis);
-  } finally {
+    return Promise.resolve(rumpf(verzeichnis)).finally(() =>
+      rmSync(verzeichnis, { recursive: true, force: true }),
+    );
+  } catch (fehler) {
     rmSync(verzeichnis, { recursive: true, force: true });
+    throw fehler;
   }
 }
 
@@ -48,3 +55,70 @@ test("prepare ohne Datenbank nennt die Env-Datei statt einer Verbindung", () =>
       );
     }),
   ));
+
+const FOTOS = [11, 12, 13];
+const ANALYSE = {
+  model: "eye@v1.0.0",
+  kind: "photo",
+  confidences: { beach: 0.9 },
+  scores: { aesthetic: 0.7, keeper: 0.6, cover: 0.5 },
+  faces: [],
+  pets: [],
+  details: { layout: { shot: { wide: 0.8 } } },
+};
+
+function pagesLauf() {
+  const sample = {
+    seed: 7,
+    projects: [
+      {
+        projectId: 1,
+        kind: "familie",
+        photos: FOTOS.map((photoId) => ({
+          photoId,
+          projectId: 1,
+          etag: `etag-${photoId}`,
+          cacheKey: `key-${photoId}`,
+        })),
+      },
+    ],
+  };
+  const baseline = assembleBaseline({
+    photoIds: FOTOS,
+    motifStrengths: FOTOS.flatMap((photoId) =>
+      MOTIF_KEYS.map((motifKey) => ({ photoId, motifKey, strength: 0.5 })),
+    ),
+    assessments: FOTOS.map((photoId) => ({ photoId, excludedDocument: false })),
+    albumSuitability: FOTOS.map((photoId) => ({ photoId, level: 3, reason: null })),
+    fineLabels: FOTOS.map((photoId) => ({ photoId, rawLabel: "Strand", canonicalKey: "strand" })),
+    criterionScores: FOTOS.map((photoId) => ({
+      photoId,
+      criterionKey: "landschaft",
+      value: 1,
+    })),
+  });
+  const purposes = Object.fromEntries(
+    PURPOSE_ORDER.map((purpose) => [purpose, { index: 0, choices: {} }]),
+  );
+  purposes.ausschluss.index = 1;
+  return {
+    run: { version: 1, seed: 7, mappingHash: EYE_PURPOSE_MAPPING_HASH, sample, baseline },
+    decisions: { version: 1, seed: 7, purposes },
+  };
+}
+
+test("pages beginnt je Zweck am gespeicherten Zeiger aus decisions.json", () =>
+  mitArbeitsverzeichnis(async (verzeichnis) => {
+    const { run, decisions } = pagesLauf();
+    writeFileSync(join(verzeichnis, "run.json"), JSON.stringify(run));
+    writeFileSync(join(verzeichnis, "decisions.json"), JSON.stringify(decisions));
+    mkdirSync(join(verzeichnis, "analysis"));
+    for (const photoId of [11, 13]) {
+      writeFileSync(join(verzeichnis, "analysis", `${photoId}.json`), JSON.stringify(ANALYSE));
+    }
+
+    assert.equal(await main(["pages", "--work-dir", verzeichnis]), 0);
+    const html = readFileSync(join(verzeichnis, "page-ausschluss.html"), "utf8");
+    assert.match(html, /data-start="1"/);
+    assert.match(html, /"startIndex":1/);
+  }));

@@ -120,7 +120,8 @@ test("die Tastaturbedienung deckt A/B/=, Enter/→, ← und S ab", () => {
   assert.match(html, /case "b"/);
   assert.match(html, /case "="/);
   assert.match(html, /case "s"/);
-  assert.match(html, /if \(!choice\) return/);
+  assert.match(html, /createSession\(/);
+  assert.match(html, /knopf\.next\.disabled = !zustand\.nextEnabled/);
   assert.match(html, /closest\("button"\)/, "Enter auf einem Knopf darf nicht doppelt zählen");
   assert.ok(html.includes("44px"));
   assert.ok(html.includes("14px"));
@@ -130,7 +131,7 @@ test("die Tastaturbedienung deckt A/B/=, Enter/→, ← und S ab", () => {
 test("Fortschritt, Zurück und Überspringen sind sichtbar, ohne Zwischenstand der Urteile", () => {
   const { html } = seite();
 
-  assert.match(html, /Foto \$\{index \+ 1\} von \$\{total\}/);
+  assert.match(html, /"Foto " \+ \(zustand\.index \+ 1\) \+ " von " \+ zustand\.total/);
   assert.ok(html.includes("überspringen"));
   assert.ok(html.includes("zurück"));
   assert.equal(/Zwischenstand|Trefferquote|bisher \d/.test(html), false);
@@ -149,6 +150,8 @@ test("jede Wahl bestätigt sichtbar und ein Schreibfehler ist deutlich", () => {
   assert.match(html, /Gespeichert/);
   assert.match(html, /nicht gespeichert/);
   assert.match(html, /fetch\(/);
+  assert.equal(html.includes("Export am Ende"), false, "die Seite verspricht keinen Export");
+  assert.ok(html.includes("Gespeichert (nur in diesem Browser)"));
   assert.match(html, /localStorage/);
 });
 

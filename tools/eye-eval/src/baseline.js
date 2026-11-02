@@ -20,6 +20,7 @@ export const BASELINE_TABLES = Object.freeze([
   "photo_landmark_detections",
   "remote_category_classification_runs",
   "criterion_scoring_runs",
+  "photo_criterion_scores",
 ]);
 
 export class BaselineError extends Error {
@@ -27,6 +28,17 @@ export class BaselineError extends Error {
     super(message);
     this.name = "BaselineError";
   }
+}
+
+/** Dieselbe Schwelle wie im Backend: ab hier gilt ein Foto als Landmark-Kandidat. */
+export const LANDMARK_CANDIDATE_THRESHOLD = 0.01;
+export const LANDMARK_CRITERIA = Object.freeze(["landschaft", "gebaeude"]);
+
+export function isLandmarkCandidate(values) {
+  return LANDMARK_CRITERIA.some((key) => {
+    const wert = Number(values?.[key] ?? 0);
+    return Number.isFinite(wert) && wert >= LANDMARK_CANDIDATE_THRESHOLD;
+  });
 }
 
 export function readOnlyQueryOptions() {
@@ -126,8 +138,16 @@ ORDER BY pfl.photo_id, fl.canonical_key, pfl.id`,
 FROM photo_landmark_detections
 WHERE photo_id = ANY($1::bigint[])`,
     },
+    {
+      name: "criterionScores",
+      params,
+      sql: `SELECT photo_id, criterion_key, value
+FROM photo_criterion_scores
+WHERE photo_id = ANY($1::bigint[]) AND criterion_key IN ('landschaft', 'gebaeude')`,
+    },
   ];
 }
+
 
 function gruppiere(rows, key) {
   const karte = new Map();
@@ -188,6 +208,7 @@ export function assembleBaseline({
   albumSuitability = [],
   fineLabels = [],
   landmarks = [],
+  criterionScores = [],
   remoteRuns = [],
   criterionRuns = [],
 }) {
@@ -223,8 +244,18 @@ export function assembleBaseline({
   const album = albumSuitability.filter(innerhalb);
   const labelsProFoto = gruppiere(fineLabels.filter(innerhalb), "photoId");
   const landmarkProFoto = new Map(landmarks.filter(innerhalb).map((row) => [row.photoId, row]));
+  const kriterienProFoto = new Map();
+  for (const row of criterionScores.filter(innerhalb)) {
+    if (!LANDMARK_CRITERIA.includes(row.criterionKey)) continue;
+    if (!kriterienProFoto.has(row.photoId)) kriterienProFoto.set(row.photoId, {});
+    kriterienProFoto.get(row.photoId)[row.criterionKey] = row.value;
+  }
+  const kandidaten = photoIds.filter((photoId) =>
+    isLandmarkCandidate(kriterienProFoto.get(photoId)),
+  );
 
-  const sehenswuerdig = photoIds.map((photoId) => {
+
+  const sehenswuerdig = kandidaten.map((photoId) => {
     const row = landmarkProFoto.get(photoId);
     return {
       photoId,
@@ -252,6 +283,7 @@ export function assembleBaseline({
     counts: {
       photos: photoIds.length,
       ignoredRows,
+      notCandidate: photoIds.length - kandidaten.length,
       incompleteRuns: remoteRuns.filter((row) => !row.finishedAt).length,
     },
     runs: {
@@ -313,6 +345,8 @@ export function assembleBaseline({
         photos: sehenswuerdig,
         counts: {
           total: photoIds.length,
+          candidates: kandidaten.length,
+          notCandidate: photoIds.length - kandidaten.length,
           named: sehenswuerdig.filter((row) => row.name !== null).length,
           unnamed: sehenswuerdig.filter((row) => row.name === null).length,
         },

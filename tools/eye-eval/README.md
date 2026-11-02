@@ -80,9 +80,14 @@ der alte Stand:
 rsync -a --delete tools/eye-eval/ "$HOME/photosort-eye-eval/tool/"
 
 # 2. npm ci läuft IM Container, nie auf dem Host (S17); nicht als root
+#    --network: das Compose-Netz, in dem der Postgres-Dienst läuft (Name z. B. aus
+#    `docker compose ps --format '{{.Networks}}'`, meist photosort_default). Ohne dieses Netz
+#    ist der Dienstname `postgres` aus der Env-Datei nicht auflösbar.
 docker run --rm -it \
   --user "$(id -u):$(id -g)" \
+  --network photosort_default \
   -e HOME=/tmp -e npm_config_cache=/tmp/npm-cache \
+  -e DAL_APP_ID=photosort-eye-eval \
   -v "$HOME/photosort-eye-eval/tool:/app" -w /app \
   -v "$HOME/photosort-eye-eval:/work" \
   -v photosort_photo_cache:/cache:ro \
@@ -103,22 +108,44 @@ Container mit `--network <eigenes-netz>` laufen.
 ## Ablauf
 
 ```bash
+# Im Container (`--work-dir /work`):
 node src/cli.js prepare --work-dir /work --photo-cache /cache   # Stichprobe + Basis, Bildkopien nach /work/images
 node src/cli.js analyze --work-dir /work                       # Gewichte prüfen, Bilder analysieren
 node src/cli.js pages   --work-dir /work                       # Vergleichsseiten je Zweck
-node src/cli.js serve   --work-dir /work                       # http://127.0.0.1:<port>/ (nie 0.0.0.0, S12)
 node src/cli.js summary --work-dir /work                       # Zählungen, Ersparnis, /work/abschluss.html
 node src/cli.js report-check <markdown>
+
+# Auf dem Host, nicht im Container (siehe „serve“ unten):
+node tools/eye-eval/src/cli.js serve --work-dir "$HOME/photosort-eye-eval"
 ```
 
 `EYE_EVAL_DATABASE_URL` kommt ausschließlich über die gefilterte Env-Datei (S15: nur dieser eine
-Eintrag, Rechte 600, kein `--env-file .env`) — nie über die Kommandozeile. `--photo-cache` ist im
-Container immer `/cache` (das schreibgeschützt eingebundene Volume); fehlen `--photo-cache` und die
-Variable, bricht `prepare` mit „Bildcache fehlt: --photo-cache übergeben oder
-EYE_EVAL_PHOTO_CACHE_DIR setzen (im Container /cache).“ ab.
+Eintrag, Rechte 600, kein `--env-file .env`) — nie über die Kommandozeile. Sie zeigt im Container
+auf den Compose-Dienst statt auf `localhost`: `postgresql://photosort:photosort@postgres:5432/photosort`
+(Dienstname `postgres`, Port 5432; im Default-Bridge-Netz wäre beides nicht erreichbar).
+`--photo-cache` ist im Container immer `/cache` (das schreibgeschützt eingebundene Volume); fehlen
+`--photo-cache` und die Variable, bricht `prepare` mit „Bildcache fehlt: --photo-cache übergeben
+oder EYE_EVAL_PHOTO_CACHE_DIR setzen (im Container /cache).“ ab.
 
-Alle Befehle laufen im Container unter `/app` (Schritt 2 oben), mit `--work-dir /work`. Der Host
-braucht kein `npm ci`; nach einer Codeänderung erst die Kopie erneuern.
+`DAL_APP_ID=photosort-eye-eval` steht bewusst als Literal auf der Kommandozeile, nicht in der
+Env-Datei: die Datei trägt weiterhin nur die Datenbank-URL, und `analyze` bricht ohne exakt diesen
+Wert ab (S3). Kein weiterer Lizenzwert gehört in den Container.
+
+`prepare`, `analyze`, `pages`, `summary` und `report-check` laufen im Container unter `/app`
+(Schritt 2 oben), mit `--work-dir /work`; der Host braucht dafür kein `npm ci`.
+
+`serve` läuft dagegen **auf dem Host**, im Repo-Checkout (oder in einer Kopie), weil der Server
+nur an 127.0.0.1 im jeweiligen Netzwerk bindet und ein veröffentlichter Port durch S12/S16
+ausgeschlossen ist — aus dem Container käme der Browser nie an die Seite:
+
+```bash
+node tools/eye-eval/src/cli.js serve --work-dir "$HOME/photosort-eye-eval"
+# Browser: http://127.0.0.1:<port>/
+```
+
+Der `serve`-Pfad braucht weder SDK noch Datenbank und lädt ausschließlich Node-Bordmittel; ein
+`npm ci` auf dem Host ist nicht nötig (nach einer Codeänderung die Containerkopie erneuern, nicht
+das Repo). Es wird kein Port veröffentlicht und nicht an 0.0.0.0 gebunden.
 
 Optionen: `--work-dir`, `--database-url`, `--photo-cache`, `--model-dir`, `--seed`,
 `--per-project`, `--purpose`, `--port`, `--resume`, `--force` (`--help` zeigt alles).

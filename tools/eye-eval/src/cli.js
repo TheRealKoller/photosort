@@ -146,6 +146,7 @@ export async function prepare(args, workDir, deps = {}) {
       albumSuitability: roh.albumSuitability,
       fineLabels: roh.fineLabels,
       landmarks: roh.landmarks,
+      criterionScores: roh.criterionScores,
       remoteRuns: laeufe,
       criterionRuns: kriteriumLaeufe,
     });
@@ -433,6 +434,7 @@ async function summary(args, workDir) {
     },
     savings: ersparnis,
     models: run.baseline.runs.models,
+    baseline: { counts: run.baseline.counts },
   });
   await writeFile(join(workDir, "abschluss.html"), renderCompletionPage({ summaries }));
 
