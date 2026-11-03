@@ -22,7 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort import eye_comparison
 from photosort.eye_comparison import (
     DEVIATION_SAMPLE_LIMIT,
-    MOTIF_PRESENT_THRESHOLD,
     ComparisonReport,
     Deviation,
     PhotoComparison,
@@ -45,6 +44,7 @@ from photosort.models import (
     PhotoMotifStrength,
     Project,
 )
+from photosort.selection import MOTIF_PRESENCE_THRESHOLD, motif_is_present
 
 _MODULE_PATH = Path(eye_comparison.__file__)
 
@@ -71,9 +71,17 @@ def _photo(
 
 
 class TestTheThreshold:
-    def test_the_threshold_is_inclusive(self) -> None:
-        assert motif_present({"menschen": MOTIF_PRESENT_THRESHOLD}, "menschen")
-        assert not motif_present({"menschen": MOTIF_PRESENT_THRESHOLD - 0.01}, "menschen")
+    """Der Vergleich entscheidet die Grenze NICHT selbst: er ruft das geteilte Praedikat aus
+    `selection.py`. Ein Test gegen die dortige Konstante haelt fest, dass die Zuordnung
+    Schluessel -> Staerke nichts Eigenes dazwischenschiebt."""
+
+    def test_the_shared_threshold_is_inclusive(self) -> None:
+        assert motif_present({"menschen": MOTIF_PRESENCE_THRESHOLD}, "menschen")
+        assert not motif_present({"menschen": MOTIF_PRESENCE_THRESHOLD - 0.01}, "menschen")
+
+    def test_the_helper_delegates_to_the_shared_predicate(self) -> None:
+        for strength in (0.0, 0.49, 0.5, 0.51, 1.0):
+            assert motif_present({"menschen": strength}, "menschen") is motif_is_present(strength)
 
     def test_a_missing_strength_means_not_present(self) -> None:
         # Dieselbe Regel wie im Lesepfad: eine fehlende Zeile ist "nicht vorhanden", nie
@@ -158,6 +166,55 @@ class TestTheSeededSelection:
 
         keys = [(row.photo_id, row.purpose, row.motif_key or "") for row in report.deviations]
         assert keys == sorted(keys)
+
+
+class TestThePerPurposeLimit:
+    """ADR 0138 Punkt 8: die Auswahl ist JE ZWECK gedeckelt. Eine Gesamtgrenze liesse dreissig
+    Motiv-Abweichungen den Platz von Ausschluss und Albumstufe fressen - genau der Zwecke, fuer
+    die das Werkzeug existiert."""
+
+    @staticmethod
+    def _motif_deviations(count: int, *, offset: int = 0) -> list[PhotoComparison]:
+        return [
+            _photo(offset + index, eye_motifs={"menschen": 0.1}) for index in range(1, count + 1)
+        ]
+
+    @staticmethod
+    def _album_deviations(count: int, *, offset: int = 0) -> list[PhotoComparison]:
+        return [
+            _photo(offset + index, cloud_album_level=2, eye_album_level=4)
+            for index in range(1, count + 1)
+        ]
+
+    def test_every_purpose_keeps_its_own_thirty_rows(self) -> None:
+        photos = (
+            self._motif_deviations(40)
+            + self._album_deviations(5, offset=100)
+            + [_photo(200 + index, eye_excluded=True) for index in range(1, 4)]
+        )
+
+        report = summarize(photos, seed=0)
+
+        purposes = [row.purpose for row in report.deviations]
+        assert purposes.count("motifs") == DEVIATION_SAMPLE_LIMIT
+        assert purposes.count("album_level") == 5
+        assert purposes.count("excluded_document") == 3
+        assert set(purposes) == {"motifs", "album_level", "excluded_document"}
+
+    def test_a_purpose_below_the_limit_contributes_all_its_rows(self) -> None:
+        report = summarize(self._album_deviations(4), seed=0)
+
+        assert len(report.deviations) == 4
+        assert {row.purpose for row in report.deviations} == {"album_level"}
+
+    def test_the_per_purpose_selection_is_seed_deterministic(self) -> None:
+        photos = self._motif_deviations(90) + self._album_deviations(40, offset=100)
+
+        first = summarize(photos, seed=7)
+        second = summarize(photos, seed=7)
+
+        assert first.deviations == second.deviations
+        assert summarize(photos, seed=8).deviations != first.deviations
 
 
 class TestTheOutputShape:

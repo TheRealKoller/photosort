@@ -38,8 +38,10 @@ MAPPING_VERSION: Final = "eye-4.2.3/v1"
 MODEL_REVISION: Final = "v1.0.0"
 
 # Die Schwellen der Zuordnung. `tag_confidence` ist die Grenze, ab der ein Tag als Motivbeleg
-# zaehlt UND als Feinlabel erscheint; `motif_present` ist die Grenze, ab der eine Staerke als
-# "trifft zu" gilt - sie wird vom Vergleich (Story #610) gelesen, hier aber nur einmal benannt.
+# zaehlt UND als Feinlabel erscheint; `motif_present` BESCHREIBT die Grenze, ab der eine Staerke
+# als "trifft zu" gilt - entschieden wird sie in `selection.py::motif_is_present`, und ein Test
+# haelt beide Zahlen zusammen. Diese Tabelle fliesst in die veroeffentlichte
+# `EYE_PURPOSE_MAPPING`; sie ist eine Beschreibung, keine zweite Auswahlregel.
 TAG_CONFIDENCE: Final = 0.5
 MOTIF_PRESENT: Final = 0.5
 

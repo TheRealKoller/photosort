@@ -16,6 +16,8 @@ wieder ausgebaut?") und keine Produktaussage. Deshalb ist es bewusst:
 * **ohne Namen** - gelesen werden ausschliesslich Eye-, Cloud-, Motiv- und Albumspalten. Weder
   `photos.relative_path` noch Nutzer, Personen, Orte oder Sehenswuerdigkeitsnamen erreichen die
   Ausgabe; ein Dateiname waere schon eine Inhaltsangabe.
+* **je Zweck gedeckelt** - hoechstens `DEVIATION_SAMPLE_LIMIT` Zeilen PRO Zweck; eine
+  Gesamtgrenze liesse dreissig Motiv-Abweichungen den Platz von Ausschluss und Albumstufe fressen.
 * **deterministisch** - dieselbe `--seed` waehlt dieselben Abweichungszeilen aus, damit zwei
   Personen ueber dieselben Beispiele sprechen.
 
@@ -48,14 +50,11 @@ from photosort.models import (
     PhotoMotifAssessment,
     PhotoMotifStrength,
 )
+from photosort.selection import motif_is_present
 
-# Eine Staerke ab dieser Schwelle gilt als "Motiv vorhanden" - inklusiv, wie
-# `motifs.py::motif_is_present`. Der Vergleich liest die Schwelle NICHT von dort, weil er sonst
-# zwei Wahrheiten ueber dieselbe Grenze fuehrte; er spiegelt sie und wird vom Test dagegen
-# geprueft.
-MOTIF_PRESENT_THRESHOLD = 0.5
-
-# So viele Abweichungen nennt die Datei - mehr sind kein Vergleich mehr, sondern ein Datenexport.
+# So viele Abweichungen nennt die Datei JE ZWECK - mehr sind kein Vergleich mehr, sondern ein
+# Datenexport. Je Zweck und nicht insgesamt: sonst fraessen dreissig Motiv-Abweichungen den Platz
+# von Ausschluss und Albumstufe, also genau der Zwecke, fuer die das Werkzeug existiert.
 DEVIATION_SAMPLE_LIMIT = 30
 
 # Die Zwecke, in denen verglichen wird. Feinlabels sind ausdruecklich NICHT dabei: Eyes
@@ -104,9 +103,12 @@ class ComparisonReport:
 
 def motif_present(strengths: Mapping[str, float], motif_key: str) -> bool:
     """Gilt das Motiv als vorhanden? Fehlt die Zeile, ist es nicht vorhanden - dieselbe Regel wie
-    im Lesepfad (`motifs.py::motif_is_present`), nur ueber eine Zuordnung statt ueber ORM-Zeilen."""
-    value = strengths.get(motif_key, 0.0)
-    return value >= MOTIF_PRESENT_THRESHOLD
+    im Lesepfad, entschieden von `selection.py::motif_is_present` (inklusive Grenze, ein Praedikat
+    fuer alle Motive).
+
+    Hier steht NUR die Zuordnung Schluessel -> Staerke; keine eigene Grenze und kein eigener
+    Vergleich. Eine zweite Fassung liefe beim naechsten Wechsel der Grenze still auseinander."""
+    return motif_is_present(strengths.get(motif_key, 0.0))
 
 
 def _compared_pairs(
@@ -119,7 +121,7 @@ def _compared_pairs(
 
 
 def compare_motifs(cloud: Mapping[str, float], eye: Mapping[str, float]) -> tuple[int, int]:
-    """(uebereinstimmende, abweichende) Motiv-Entscheidungen bei Schwelle 0.5 inklusiv.
+    """(uebereinstimmende, abweichende) Motiv-Entscheidungen der gemeinsamen Praesenzregel.
 
     Verglichen wird ueber die VEREINIGUNG der Schluessel: eine auf einer Seite fehlende Zeile ist
     "nicht vorhanden", und genau so liest der Lesepfad sie. Ein Schnitt waere die stillere, aber
@@ -200,12 +202,23 @@ def summarize(
 
 
 def _sample(deviations: Sequence[Deviation], *, seed: int, limit: int) -> tuple[Deviation, ...]:
-    """Dieselbe Seed waehlt dieselben Zeilen; die Auswahl wird anschliessend SORTIERT, damit die
-    Datei unabhaengig von der Zufallsreihenfolge lesbar ist und zwei Laeufe byte-gleich sind."""
-    if limit <= 0 or not deviations:
+    """Hoechstens `limit` Zeilen JE ZWECK, seeded ausgewaehlt - und anschliessend SORTIERT, damit
+    die Datei unabhaengig von der Zufallsreihenfolge lesbar ist und zwei Laeufe byte-gleich sind.
+
+    Ein gemeinsamer Generator ueber die Zwecke in fester Reihenfolge: der Strom haengt damit nur
+    an der Seed und an den Zaehlungen, nicht an der Reihenfolge der Abweichungen in der Datenbank.
+    """
+    if limit <= 0:
         return ()
+    by_purpose: dict[str, list[Deviation]] = {purpose: [] for purpose in PURPOSES}
+    for deviation in deviations:
+        by_purpose[deviation.purpose].append(deviation)
     rng = random.Random(seed)
-    chosen = rng.sample(list(deviations), min(limit, len(deviations)))
+    chosen: list[Deviation] = []
+    for purpose in PURPOSES:
+        rows = by_purpose[purpose]
+        if rows:
+            chosen.extend(rng.sample(rows, min(limit, len(rows))))
     return tuple(
         sorted(chosen, key=lambda item: (item.photo_id, item.purpose, item.motif_key or ""))
     )

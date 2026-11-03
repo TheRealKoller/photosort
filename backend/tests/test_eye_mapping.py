@@ -40,6 +40,7 @@ from photosort.eye_mapping import (
     motif_strengths,
 )
 from photosort.motifs import MOTIF_REGISTRY
+from photosort.selection import MOTIF_PRESENCE_THRESHOLD
 
 _SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "photosort"
 
@@ -232,6 +233,15 @@ class TestTheWholeMapping:
         assert MODEL_REVISION == "v1.0.0"
         assert EYE_PURPOSE_MAPPING["version"] == MAPPING_VERSION
         assert EYE_PURPOSE_MAPPING["model_revision"] == MODEL_REVISION
+
+
+class TestThePublishedThresholdAgainstTheSelectionPredicate:
+    """`EYE_PURPOSE_MAPPING` beschreibt die Praesenzgrenze, entschieden wird sie in
+    `selection.py`. Zwei Zahlen fuer dieselbe Grenze driften sonst still auseinander - hier
+    bricht die Drift laut."""
+
+    def test_the_published_motif_present_threshold_is_the_selection_threshold(self) -> None:
+        assert EYE_PURPOSE_MAPPING["thresholds"]["motif_present"] == MOTIF_PRESENCE_THRESHOLD
 
 
 class TestTheStructuralGuards:
