@@ -61,11 +61,8 @@ const MAX_FINE_LABELS_SHOWN = 15
  * drei Detailbloecke (ClassificationEstimate, ClassificationProgress, ClassificationBalance) sind
  * eigene Komponenten.
  *
- * DIE LAUFWAHL (Spec 0609) ersetzt seit dieser Fassung die Checkbox: drei Wege, genau einer,
- * ohne Vorbelegung. Keine Vorbelegung ist die eigentliche Aenderung - die fruehere Checkbox war
- * mit der Projekteinstellung vorbelegt, und ein einzelner Klick loeste Cloud-Kosten aus. Jetzt
- * beginnt jeder Ausloesevorgang mit einer bewussten Wahl, und nach dem Start faellt sie zurueck
- * auf "nichts gewaehlt".
+ * DIE LAUFWAHL (Spec 0609): drei Wege, genau einer, ohne Vorbelegung. Jeder Ausloesevorgang
+ * beginnt mit einer bewussten Wahl; nach dem Start faellt sie zurueck auf "nichts gewaehlt".
  *
  * Der Eye-Weg erscheint nur, wenn der Server ihn anbietet (`ProjectOut.eye_available`, allein aus
  * `EYE_ENABLED`). Ob der DIENST gerade antwortet, wird hier NICHT geprueft: das machte das Laden

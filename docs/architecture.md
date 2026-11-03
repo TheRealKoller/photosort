@@ -1479,8 +1479,8 @@ Verarbeitungs-Cache (Thumbnails).
   keinen Rückfall auf einen anderen Modus. Der Egress des Fremdpakets ist **nicht** erzwungen
   (Betreiberpflicht des Heimservers). Der **Vergleich** Eye ↔ Cloud ist ein rein lesendes CLI
   (`python -m photosort.eye_comparison --project-id … --seed … --out …`, Spec 0609): stdout trägt
-  nur Zählungen je Zweck, die seeded Abweichungszeilen (Foto-Id und App-Pfad) gehen ausschließlich
-  in eine Datei **außerhalb** des Repos, und das Modul liest weder Dateinamen noch Nutzer, Personen
+  nur Zählungen je Zweck, die seeded Abweichungszeilen (je Zweck höchstens dreißig, Foto-Id und
+  App-Pfad) gehen ausschließlich in eine Datei **außerhalb** des Repos, und das Modul liest weder Dateinamen noch Nutzer, Personen
   oder Orte. Es ist an keinen Endpunkt, kein Compose-Ziel und keinen Worker-Pfad gehängt. Die
   Demo-Daten zeigen Eye an genau einem Foto: `demo_state.py` schreibt dort zuerst die lokale
   Kopfzeile und lässt Eye darüber laufen, sodass Kopfzeile, Schattenzeilen und der verdrängte
@@ -1976,7 +1976,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     hochgezähltes `api_calls` löste ihn bei jedem laufenden Cloud-Lauf als Fehlalarm aus. Dazu
     `estimated_cost_usd` (die Schätzung, mit der genau dieser Lauf gestartet wurde; ein BELEG, nie
     eine Eingabe — sie geht in keine spätere Rechnung, kein Budget-Gate und keine Ableitung der
-    Ist-Kosten ein, und bei `use_cloud=false` steht dort `NULL`, nicht `0.0`) und
+    Ist-Kosten ein; ohne Cloud-Kontakt — `mode=local` oder `mode=eye` ohne Einwilligung — steht
+    dort `NULL`, nicht `0.0`, die Vorschau `GET …/classify/estimate` nennt für diese Wege
+    weiterhin `0.0`) und
     `remote_category_classification_run_id` (FK auf `remote_category_classification_runs.id`,
     gesetzt von `run_classification` vor dem Start von Phase 1; `NULL` = dieser Lauf hatte keine
     Remote-Phase oder ist eine Altzeile). Damit ist der oben genannte Vermerk „bewusst KEIN FK auf

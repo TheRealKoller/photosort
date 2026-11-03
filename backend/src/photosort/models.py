@@ -578,9 +578,7 @@ class CriterionScoringRun(Base):
     # Der Weg, den der Nutzer fuer DIESEN Lauf gewaehlt hat (Spec 0609 / ADR 0138 Punkt 6).
     # Eingefroren beim Einreihen, damit ein spaeterer Blick auf den Lauf nicht die heute
     # eingestellte Wahl liest. `NULL` heisst "Altzeile aus der Zeit vor der Laufwahl" - ein
-    # solcher Lauf wird NIE nachtraeglich einem Weg zugeschlagen; aus `cloud_requested` liesse er
-    # sich zwar meist erschliessen, aber nur meist (ein Eye-Lauf MIT Einwilligung setzt es
-    # ebenfalls), und eine geratene Angabe waere schlimmer als eine fehlende.
+    # solcher Lauf wird NIE nachtraeglich einem Weg zugeschlagen.
     mode: Mapped[ClassificationMode | None] = mapped_column(
         SQLEnum(ClassificationMode, native_enum=False, length=20), default=None
     )

@@ -1,10 +1,8 @@
 """Die HTTP-Grenze zum Eye-Sidecar (Spec 0609, ADR 0138).
 
-Warum ein eigenes Modul und nicht `worker.py`: ZWEI Stellen sprechen mit dem Dienst, und zwar mit
-denselben Regeln - der Klassifizierungslauf (`analyse`) und der Ausloese-Endpunkt (`health`, bevor
-er einen Job einreiht). Die Alternative waere gewesen, die Politik (Adresse nur aus den Settings,
-keine Weiterleitungen, feste Zeitgrenze, Antwortdeckel) ein zweites Mal in `api/projects.py` zu
-schreiben; genau die zweite Fassung laeuft beim naechsten Mal auseinander.
+Ein Modul fuer beide Aufrufer: der Klassifizierungslauf (`analyse`) und der Ausloese-Endpunkt
+(`health`, bevor er einen Job einreiht). Adresse nur aus den Settings, keine Weiterleitungen,
+feste Zeitgrenze, Antwortdeckel - die Regeln stehen an EINER Stelle.
 
 Das Modul ist reine I/O ohne Datenbank und ohne Jobwissen: es kennt weder `Photo` noch
 `CriterionScoringRun`. Damit bleibt die Layering-Regel des Projekts intakt, dass die API-Schicht

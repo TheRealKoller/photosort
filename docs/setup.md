@@ -547,7 +547,8 @@ docker compose exec backend python -m photosort.eye_comparison --project-id <id>
 ```
 
 stdout trägt nur Zählungen je Zweck (Motiv, Ausschluss, Albumstufe), die Datei die benannten
-Abweichungen mit Foto-Id und App-Pfad. Die Datei bleibt außerhalb des Repos.
+Abweichungen mit Foto-Id und App-Pfad — höchstens dreißig je Zweck, damit dreißig Motiv-Fälle
+Ausschluss und Albumstufe nicht verdrängen. Die Datei bleibt außerhalb des Repos.
 
 **Rückbau:** Die Migration des Ausbaus stellt für jedes Foto mit Eye-Grundlage dessen lokales
 Ergebnis wieder her (oder lässt es „noch nicht klassifiziert"), danach fallen Dienst, Profil,
