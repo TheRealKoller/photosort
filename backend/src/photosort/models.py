@@ -282,6 +282,18 @@ class Photo(Base):
     album_suitability: Mapped[PhotoAlbumSuitability | None] = relationship(
         back_populates="photo", uselist=False, cascade="all, delete-orphan"
     )
+    # 1:1 und optional: die Eye-Auswertung als SCHATTEN neben der Motiv-Kopfzeile (Spec 0609).
+    # Sie existiert auch dann, wenn eine Cloud-Kopfzeile gilt - deshalb ist sie keine zweite
+    # Kopfzeile, sondern ein eigener Satz, der den Vergleich mit der Cloud traegt.
+    eye_result: Mapped[PhotoEyeResult | None] = relationship(
+        back_populates="photo", uselist=False, cascade="all, delete-orphan"
+    )
+    # 1:1 und optional: der lokale Vektor, den Eye verdraengt hat (Rueckbaudaten, ADR 0138
+    # Punkt 5). Ohne Rueckrichtung - der Lesepfad braucht sie nicht, und der Rueckbau ist eine
+    # eigene Story.
+    local_motif_snapshot: Mapped[PhotoLocalMotifSnapshot | None] = relationship(
+        uselist=False, cascade="all, delete-orphan"
+    )
     # Die Foto-Seite derselben Kaskade wie bei CriterionScoringRun.rankings. Ohne sie scheitert
     # der Re-Scan unter echtem Postgres an einer Fremdschlüsselverletzung, sobald
     # worker.py::run_project_scan ein auf OpenCloud verschwundenes Foto löscht, das noch in einem
@@ -472,13 +484,16 @@ class PhotoCriterionScore(Base):
 
 
 class ClassificationPhase(enum.StrEnum):
-    """Die FUENF Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser
+    """Die SECHS Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser
     Reihenfolge, damit die Remote-Ergebnisse noch im selben Lauf in die Kategorieableitung
     einfließen.
 
-    REMOTE_CATEGORIES und LANDMARK laufen nur bei angeforderter UND eingewilligter Cloud-Nutzung;
-    CRITERIA und RANKING laufen immer. PERSONS laeuft immer lokal, aber nur, wenn mindestens eine
-    Person eine Referenz des geladenen Modells hat und der Adapter baubar ist. Getragen von
+    REMOTE_CATEGORIES laeuft nur bei `mode='cloud'`; LANDMARK nur bei angeforderter UND
+    eingewilligter Cloud-Nutzung (also auch bei `mode='eye'` mit Einwilligung). CRITERIA und
+    RANKING laufen immer. PERSONS laeuft immer lokal, aber nur, wenn mindestens eine Person eine
+    Referenz des geladenen Modells hat und der Adapter baubar ist. EYE laeuft nur bei `mode='eye'`
+    und steht deshalb VOR CRITERIA: Rangfolge, Events und Auswahlvorschlag desselben Laufs lesen
+    schon den wirksamen Vektor (Spec 0609 / ADR 0138 Punkt 6). Getragen von
     CriterionScoringRun.phase, dort NULL sobald der Lauf beendet ist.
 
     RANKING (Kategorieableitung, rank_photos je Partition, Schreiben der PhotoRanking-Zeilen)
@@ -491,10 +506,25 @@ class ClassificationPhase(enum.StrEnum):
     braucht deshalb keine Migration."""
 
     REMOTE_CATEGORIES = "remote_categories"
+    EYE = "eye"
     CRITERIA = "criteria"
     LANDMARK = "landmark"
     RANKING = "ranking"
     PERSONS = "persons"
+
+
+class ClassificationMode(enum.StrEnum):
+    """Der Weg, den der Nutzer fuer EINEN Klassifizierungslauf waehlt (Spec 0609 / ADR 0138
+    Punkt 6) - er ersetzt die frueher boolesche Checkbox `use_cloud`.
+
+    Die drei Werte sind fachlich gleichrangig und werden nie stillschweigend auf einen anderen
+    abgebildet: ein fehlender oder unbekannter Wert ist ein `422`, kein Rueckfall. Getragen von
+    CriterionScoringRun.mode, dort NULL fuer Altzeilen (vor dieser Story), die keinem Weg
+    nachtraeglich zugeschlagen werden."""
+
+    CLOUD = "cloud"
+    EYE = "eye"
+    LOCAL = "local"
 
 
 class CriterionScoringRun(Base):
@@ -545,6 +575,15 @@ class CriterionScoringRun(Base):
     # von einem Quelltext-Wächter (tests/test_models.py) und dem Nachsatz
     # `assert_phase_binding` (tests/phase_binding.py).
     phase_started_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Der Weg, den der Nutzer fuer DIESEN Lauf gewaehlt hat (Spec 0609 / ADR 0138 Punkt 6).
+    # Eingefroren beim Einreihen, damit ein spaeterer Blick auf den Lauf nicht die heute
+    # eingestellte Wahl liest. `NULL` heisst "Altzeile aus der Zeit vor der Laufwahl" - ein
+    # solcher Lauf wird NIE nachtraeglich einem Weg zugeschlagen; aus `cloud_requested` liesse er
+    # sich zwar meist erschliessen, aber nur meist (ein Eye-Lauf MIT Einwilligung setzt es
+    # ebenfalls), und eine geratene Angabe waere schlimmer als eine fehlende.
+    mode: Mapped[ClassificationMode | None] = mapped_column(
+        SQLEnum(ClassificationMode, native_enum=False, length=20), default=None
+    )
     # War die Cloud-Nutzung für DIESEN Lauf angefordert (Checkbox am Auslöser)? Macht
     # nachträglich erkennbar, ob das Ergebnis überhaupt Cloud-Anreicherung enthalten kann. Sagt
     # NICHT, ob tatsächlich Cloud-Aufrufe stattgefunden haben - das Gate ist die Konjunktion mit
@@ -621,6 +660,11 @@ class CriterionScoringRun(Base):
     # `NULL` aus.
     persons_photos_total: Mapped[int | None] = mapped_column(default=None)
     persons_photos_processed: Mapped[int | None] = mapped_column(default=None)
+    # Die LIVE-Zaehler der Phase `eye` (Spec 0609), dasselbe Idiom wie `persons_*`: `NULL` heisst
+    # "die Phase lief nicht" - gesetzt beim BETRETEN. `processed` zaehlt Fotos mit geschriebener
+    # Schattenzeile; ein unlesbares Bild bleibt darunter, ein Transportfehler bricht die Phase ab.
+    eye_photos_total: Mapped[int | None] = mapped_column(default=None)
+    eye_photos_processed: Mapped[int | None] = mapped_column(default=None)
 
     # Die Kostenschätzung, mit der GENAU DIESER Lauf gestartet wurde - serverseitig im
     # Auslöse-Endpunkt berechnet und als Job-Argument durchgereicht. Festgehalten, weil die
@@ -975,12 +1019,18 @@ class PhotoCloudVisionError(Base):
 class MotifAssessmentSource(enum.StrEnum):
     """Welche Grundlage die Motivstaerken eines Fotos beurteilt hat.
 
-    Die beiden treten NIE gegeneinander an und werden nie gemischt: liegt eine Cloud-Aussage vor,
-    bestimmt allein sie alle acht Staerken. Der Kriterien-Lauf schreibt eine lokale Kopfzeile nur,
-    wenn keine Zeile existiert oder die vorhandene `local` traegt (motif_strengths.py::
-    upsert_assessment) - eine Cloud-Grundlage wird von einem lokalen Lauf nie ueberschrieben."""
+    Die drei treten NIE gegeneinander an und werden nie gemischt: es gibt je Foto hoechstens EINE
+    Kopfzeile mit EINEM Vektor. Welche Grundlage ihn bestimmt, entscheidet die Rangfolge
+    `local < eye < cloud` - sie steht in `motif_strengths.py::upsert_assessment` und nirgends
+    sonst. Eye verdraengt damit eine lokale Aussage, aber nie eine Cloud-Aussage; die
+    verdraengte lokale wandert vorher in `photo_local_motif_snapshots`.
+
+    `provider` ist `NULL` sowohl bei `local` als auch bei `eye` - Eye ist kein Cloud-Anbieter, ein
+    Anbieterwert behauptete einen Kontakt, der nicht stattfand (ADR 0138 Punkt 4). Die
+    Modellrevision steht in `photo_eye_results`."""
 
     CLOUD = "cloud"
+    EYE = "eye"
     LOCAL = "local"
 
 
@@ -1037,6 +1087,124 @@ class PhotoMotifStrength(Base):
     strength: Mapped[float]
 
     assessment: Mapped[PhotoMotifAssessment] = relationship(back_populates="strengths")
+
+
+class PhotoEyeResult(Base):
+    """Die Kopfzeile der Eye-Auswertung eines Fotos - 1:1 zu Photo, `photo_id` ist Primary Key.
+
+    Sie steht NEBEN `photo_motif_assessments`, nicht darin: Eye schreibt bei JEDEM Lauf einen
+    vollstaendigen Schattensatz (auch fuer Fotos mit Cloud-Kopfzeile), damit die Cloud-Ergebnisse
+    gueltig bleiben und ein Ausbau ohne Datenverlust moeglich ist (ADR 0138 Punkt 4).
+
+    `excluded_document` ist NOT NULL und BEWUSST ohne jeden Default - derselbe Grund wie bei der
+    Motiv-Kopfzeile: ein Schreibpfad, der die Spalte vergisst, soll laut scheitern statt still
+    ein Foto aus jeder Motivauswahl zu nehmen. `album_level` ist die Eye-Albumstufe 1..5;
+    `model_revision` benennt das gerechnete Modell, weil ein Pin-Wechsel sonst still unter
+    bestehenden Zeilen liefe.
+
+    Eye schreibt NIE in `photo_album_suitability`, `photo_fine_labels` oder `fine_labels`: die
+    Album-Entwurfsmenge und die Cloud-Kandidatenauswahl bleiben unberuehrt. Die Eye-Feinlabels
+    stehen deshalb in einer eigenen Tabelle - ihr Vokabular ist ein anderes."""
+
+    __tablename__ = "photo_eye_results"
+    __table_args__ = (
+        CheckConstraint("album_level BETWEEN 1 AND 5", name="ck_photo_eye_results_album_level"),
+    )
+
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
+    excluded_document: Mapped[bool]
+    album_level: Mapped[int]
+    model_revision: Mapped[str]
+    computed_at: Mapped[datetime]
+
+    photo: Mapped[Photo] = relationship(back_populates="eye_result")
+    strengths: Mapped[list[PhotoEyeMotifStrength]] = relationship(
+        back_populates="result", cascade="all, delete-orphan"
+    )
+    fine_labels: Mapped[list[PhotoEyeFineLabel]] = relationship(
+        back_populates="result", cascade="all, delete-orphan"
+    )
+
+
+class PhotoEyeMotifStrength(Base):
+    """Eine Eye-Motivstaerke - acht Zeilen je Eye-Kopfzeile, `strength` in [0, 1].
+
+    Der Fremdschluessel zeigt auf `photo_eye_results.photo_id`: eine Schattenstaerke kann ohne
+    Kopfzeile nicht existieren, und ein neuer Eye-Lauf ersetzt den ganzen Vektor. `motif_key` ist
+    ein freier String ohne Fremdschluessel - der zulaessige Wertebereich ist
+    `motifs.py::MOTIF_REGISTRY`, und was Eye nicht nennt, schreibt der Lauf als `0.0`."""
+
+    __tablename__ = "photo_eye_motif_strengths"
+    __table_args__ = (
+        UniqueConstraint("photo_id", "motif_key", name="uq_eye_motif_strength_photo_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photo_eye_results.photo_id"))
+    motif_key: Mapped[str]
+    strength: Mapped[float]
+
+    result: Mapped[PhotoEyeResult] = relationship(back_populates="strengths")
+
+
+class PhotoEyeFineLabel(Base):
+    """Ein Eye-Feinlabel - der ROHE Tag des Modells samt Konfidenz.
+
+    Getrennt von `photo_fine_labels`/`fine_labels`: die dortige Registry ist geschlossen und
+    dient der Cloud-Kategorieableitung; Eyes Vokabular ist ein anderes, und eine erzwungene
+    Zuordnung waere eine Aussage, die das Modell nie getroffen hat (ADR 0138 Punkt 4). Der Text
+    ist fremder Modelltext und wird am Parser mit `cloud_vision._sanitize_label_text` saniert,
+    laengenbegrenzt und leer weggelassen - gerendert ausschliesslich als React-Textknoten."""
+
+    __tablename__ = "photo_eye_fine_labels"
+    __table_args__ = (UniqueConstraint("photo_id", "label", name="uq_eye_fine_label_photo_label"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photo_eye_results.photo_id"))
+    label: Mapped[str]
+    confidence: Mapped[float]
+
+    result: Mapped[PhotoEyeResult] = relationship(back_populates="fine_labels")
+
+
+class PhotoLocalMotifSnapshot(Base):
+    """Der lokale Motivvektor, den eine Eye-Kopfzeile verdraengt hat - die Rueckbaudaten.
+
+    Trifft Eye auf eine LOKALE Kopfzeile, wandert deren vollstaendiger Vektor vorher hierher
+    (Kopfzeilenfelder plus acht Staerken in `photo_local_motif_snapshot_strengths`). Ohne ihn
+    faellt ein Foto nach einem Ausbau auf "noch nicht klassifiziert" zurueck, obwohl es ein
+    lokales Ergebnis hatte (ADR 0138 Punkt 5).
+
+    Es gibt hoechstens EINE Zeile je Foto (`photo_id` ist Primary Key); ein spaeterer lokaler
+    Lauf trifft ein Foto mit Eye-Kopfzeile und schreibt seinen FRISCHEN Vektor hierher - ein
+    zweiter Eye-Lauf ueberschreibt den Schnappschuss dagegen nie mit Eye-Werten."""
+
+    __tablename__ = "photo_local_motif_snapshots"
+
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
+    excluded_document: Mapped[bool]
+    computed_at: Mapped[datetime]
+
+    strengths: Mapped[list[PhotoLocalMotifSnapshotStrength]] = relationship(
+        back_populates="snapshot", cascade="all, delete-orphan"
+    )
+
+
+class PhotoLocalMotifSnapshotStrength(Base):
+    """Eine Staerkezeile des zurueckgelegten lokalen Vektors - Zeilenform wie
+    `photo_motif_strengths`, gebunden an den Schnappschuss statt an die Kopfzeile."""
+
+    __tablename__ = "photo_local_motif_snapshot_strengths"
+    __table_args__ = (
+        UniqueConstraint("photo_id", "motif_key", name="uq_local_snapshot_strength_photo_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photo_local_motif_snapshots.photo_id"))
+    motif_key: Mapped[str]
+    strength: Mapped[float]
+
+    snapshot: Mapped[PhotoLocalMotifSnapshot] = relationship(back_populates="strengths")
 
 
 class PhotoMotifCorrection(Base):

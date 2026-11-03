@@ -7,6 +7,11 @@ Datengraphen und je Tabelle eine eigene Zeilenzaehlungs-Assertion.
 
 Die Zaehlungen selbst stehen bewusst NICHT hier, sondern tabellenweise ausgeschrieben im
 jeweiligen Test - nur so nennt die Fehlermeldung die vergessene Tabelle.
+
+Spec 0609 / ADR 0138: die fuenf Eye-Tabellen sind ueber `photos` erreichbar und werden deshalb
+mitgezaehlt. `photo_eye_*` sind Schattenzeilen NEBEN der Cloud-Kopfzeile (`source='cloud'` unten),
+`photo_local_motif_snapshots` der zurueckgelegte lokale Vektor - beide Zustaende existieren im
+Betrieb gleichzeitig.
 """
 
 from __future__ import annotations
@@ -41,8 +46,13 @@ from photosort.models import (
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoDuplicateDecision,
+    PhotoEyeFineLabel,
+    PhotoEyeMotifStrength,
+    PhotoEyeResult,
     PhotoFineLabel,
     PhotoLandmarkDetection,
+    PhotoLocalMotifSnapshot,
+    PhotoLocalMotifSnapshotStrength,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -136,7 +146,7 @@ async def get_or_create_person(session: AsyncSession) -> Person:
 async def build_project_graph(
     session: AsyncSession, name: str, *, fine_label_key: str = "strand"
 ) -> ProjectGraph:
-    """Legt ein Projekt mit genau einer Zeile in jeder der sechzehn abhaengigen Tabellen an."""
+    """Legt ein Projekt mit genau einer Zeile in jeder der einundzwanzig abhaengigen Tabellen an."""
     now = datetime.now(UTC).replace(tzinfo=None)
     user = await get_or_create_user(session)
     fine_label = await get_or_create_fine_label(session, fine_label_key)
@@ -382,6 +392,31 @@ async def build_project_graph(
     session.add(PhotoMotifStrength(photo_id=photo.id, motif_key="menschen", strength=0.9))
     await session.flush()
 
+    # Spec 0609: Schatten-Kopfzeile samt Staerke und Feinlabel, dazu der Schnappschuss des
+    # lokalen Vektors, den Eye verdraengt hat. Ohne diese fuenf Zeilen pruefen die
+    # Vollstaendigkeitstests der Projektloeschung die neuen Kanten nicht, und "Eye-Ergebnisse
+    # fallen mit dem Projekt" (S9) waere unbelegt.
+    session.add_all(
+        [
+            PhotoEyeResult(
+                photo_id=photo.id,
+                excluded_document=False,
+                album_level=3,
+                model_revision="v1.0.0",
+                computed_at=now,
+            ),
+            PhotoLocalMotifSnapshot(photo_id=photo.id, excluded_document=False, computed_at=now),
+        ]
+    )
+    await session.flush()
+    session.add_all(
+        [
+            PhotoEyeMotifStrength(photo_id=photo.id, motif_key="menschen", strength=0.7),
+            PhotoEyeFineLabel(photo_id=photo.id, label="strand", confidence=0.8),
+            PhotoLocalMotifSnapshotStrength(photo_id=photo.id, motif_key="menschen", strength=0.4),
+        ]
+    )
+    await session.flush()
     return ProjectGraph(
         project_id=project.id,
         project_name=name,

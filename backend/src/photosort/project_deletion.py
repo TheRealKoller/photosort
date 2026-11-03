@@ -48,8 +48,13 @@ from photosort.models import (
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoDuplicateDecision,
+    PhotoEyeFineLabel,
+    PhotoEyeMotifStrength,
+    PhotoEyeResult,
     PhotoFineLabel,
     PhotoLandmarkDetection,
+    PhotoLocalMotifSnapshot,
+    PhotoLocalMotifSnapshotStrength,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -132,6 +137,24 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         "photo_motif_strengths",
         delete(PhotoMotifStrength).where(PhotoMotifStrength.photo_id.in_(photo_ids)),
     )
+    # Spec 0609 / ADR 0138: die Eye-Schattendaten. Sie haengen ueber `photos` am Projekt (S9) und
+    # muessen VOR ihren Elternteilen fallen: die Staerke- und Feinlabelzeilen vor
+    # `photo_eye_results`, die Schnappschuss-Staerken vor `photo_local_motif_snapshots`. Die
+    # Position folgt der per Test erzwungenen Ordnung `reversed(Base.metadata.sorted_tables)`.
+    await _run(
+        "photo_local_motif_snapshot_strengths",
+        delete(PhotoLocalMotifSnapshotStrength).where(
+            PhotoLocalMotifSnapshotStrength.photo_id.in_(photo_ids)
+        ),
+    )
+    await _run(
+        "photo_eye_motif_strengths",
+        delete(PhotoEyeMotifStrength).where(PhotoEyeMotifStrength.photo_id.in_(photo_ids)),
+    )
+    await _run(
+        "photo_eye_fine_labels",
+        delete(PhotoEyeFineLabel).where(PhotoEyeFineLabel.photo_id.in_(photo_ids)),
+    )
     await _run("ratings", delete(Rating).where(Rating.photo_id.in_(photo_ids)))
     await _run("photo_scores", delete(PhotoScore).where(PhotoScore.photo_id.in_(photo_ids)))
     # Erkennungen und Korrekturen der Personen haengen am FOTO und fallen mit ihm. Die Personen
@@ -156,6 +179,13 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         "photo_motif_assessments",
         delete(PhotoMotifAssessment).where(PhotoMotifAssessment.photo_id.in_(photo_ids)),
     )
+    # NACH `photo_motif_assessments` (deren Kindzeilen oben fallen), VOR `photos` - der
+    # zurueckgelegte lokale Vektor ist Rueckbaudaten und hat keinen anderen Elternteil als das
+    # Foto.
+    await _run(
+        "photo_local_motif_snapshots",
+        delete(PhotoLocalMotifSnapshot).where(PhotoLocalMotifSnapshot.photo_id.in_(photo_ids)),
+    )
     await _run(
         "photo_landmark_detections",
         delete(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id.in_(photo_ids)),
@@ -163,6 +193,12 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     await _run(
         "photo_fine_labels",
         delete(PhotoFineLabel).where(PhotoFineLabel.photo_id.in_(photo_ids)),
+    )
+    # NACH `photo_fine_labels` (der Ordnung von `reversed(sorted_tables)` folgend) und VOR
+    # `photos`: die Eye-Kopfzeile ist der Elternteil der oben geloeschten Schatten-Kindzeilen.
+    await _run(
+        "photo_eye_results",
+        delete(PhotoEyeResult).where(PhotoEyeResult.photo_id.in_(photo_ids)),
     )
     # Ohne diese Anweisung ueberleben die Ausschuss-Entscheidungen ueber geloeschte Familienfotos
     # die Projektloeschung - und sie sind die Menge, die mitbestimmt, welche Bilddaten den

@@ -355,11 +355,13 @@ class MotifAssessmentOut(BaseModel):
     acht Staerken niedrig). Genau dafuer gibt es dieses Feld getrennt von `motifs`: acht Nullzeilen
     sind von "nichts erkannt" nicht zu unterscheiden.
 
-    `provider` ist `null` bei `source == "local"`. `excluded_document` ist von Hand NICHT
-    korrigierbar - der Rueckweg ist allein ein erneuter Klassifizierungslauf, und die Oberflaeche
-    benennt das, statt einen Schalter anzubieten."""
+    `provider` ist `null` bei `source == "local"` UND bei `source == "eye"` - Eye ist kein
+    Cloud-Anbieter, ein Anbieterwert behauptete einen Kontakt, der nicht stattfand; die
+    Modellrevision steht in `eye_result`. `excluded_document` ist von Hand NICHT korrigierbar -
+    der Rueckweg ist allein ein erneuter Klassifizierungslauf, und die Oberflaeche benennt das,
+    statt einen Schalter anzubieten."""
 
-    source: Literal["cloud", "local"]
+    source: Literal["cloud", "eye", "local"]
     provider: str | None
     excluded_document: bool
     computed_at: datetime
