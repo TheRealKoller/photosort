@@ -1116,3 +1116,204 @@ class TestTheRankingOfTheThreeSources:
         assert [(row.motif_key, row.applies) for row in corrections] == [("tiere", False)]
         effective = (await load_effective_strengths(db_session, [photo.id]))[photo.id]
         assert effective["tiere"].strength == pytest.approx(0.0)
+
+
+class TestTheRollbackPreparation:
+    """Spec 0609, Akzeptanzkriterium "Rueckbau (eigene Story)": DIESE Spec fuehrt den Rueckbau
+    nicht aus, sie stellt die Daten her, aus denen er moeglich ist - je `source='eye'`
+    entweder der verdrängte lokale Vektor als Schnappschuss oder gar kein Vektor (dann genuegt
+    das Loeschen der Kopfzeile).
+
+    Der Test SIMULIERT den Rueckbau auf denselben Zeilen und prueft, dass er verlustfrei ist:
+    danach traegt keine Kopfzeile `source='eye'`, der lokale Vektor steht wieder da, und Cloud-,
+    Album-, Feinlabel- und Korrekturzeilen sind unveraendert. Ohne diese Probe waere der
+    Schnappschuss nur eine Tabelle, von der niemand weiss, ob sie ausreicht.
+    """
+
+    async def _restore(
+        self, session: AsyncSession, photo_id: int
+    ) -> tuple[bool, datetime, dict[str, float]] | None:
+        snapshot = await session.get(PhotoLocalMotifSnapshot, photo_id)
+        if snapshot is None:
+            return None
+        rows = (
+            (
+                await session.execute(
+                    select(PhotoLocalMotifSnapshotStrength).where(
+                        PhotoLocalMotifSnapshotStrength.photo_id == photo_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return (
+            snapshot.excluded_document,
+            snapshot.computed_at,
+            {row.motif_key: row.strength for row in rows},
+        )
+
+    async def test_a_displaced_local_vector_is_restorable(self, db_session: AsyncSession) -> None:
+        photo = await _photo(db_session)
+        local_vector = _vector(tiere=0.4, menschen=0.1)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=local_vector,
+            excluded_document=True,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.9),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        restored = await self._restore(db_session, photo.id)
+
+        # Der Schnappschuss traegt den VOLLSTAENDIGEN Vektor samt Ausschluss und Zeitstempel -
+        # und zwar genau den verdrängten, nicht Eyes Werte.
+        assert restored is not None
+        excluded, computed_at, strengths = restored
+        assert excluded is True
+        assert computed_at == _NOW
+        assert strengths == pytest.approx(local_vector)
+
+    async def test_a_header_without_predecessor_needs_no_snapshot(
+        self, db_session: AsyncSession
+    ) -> None:
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.9),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        # Kein Vektor zum Wiederherstellen: der Rueckbau loescht die Kopfzeile, und das Foto
+        # steht danach auf "noch nicht klassifiziert" - so wie vorher.
+        assert await self._restore(db_session, photo.id) is None
+
+    async def test_nothing_but_the_eye_rows_moves(self, db_session: AsyncSession) -> None:
+        photo = await _photo(db_session)
+        user = User(username="daniel", password_hash="irrelevant")
+        db_session.add(user)
+        await db_session.flush()
+        db_session.add(
+            PhotoMotifCorrection(
+                photo_id=photo.id, user_id=user.id, motif_key="tiere", applies=False
+            )
+        )
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=_vector(tiere=0.4),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(tiere=0.9),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        # Der Rueckbau selbst: Kopfzeile auf den Schnappschuss zuruecksetzen, Schnappschuss
+        # verbrauchen. Cloud-Zeilen entstehen in diesem Test nicht - der Punkt ist, dass NICHTS
+        # anderes als Eye-Zeilen angefasst wird.
+        restored = await self._restore(db_session, photo.id)
+        assert restored is not None
+        excluded, computed_at, strengths = restored
+        # Der Rueckbau schreibt DIREKT (wie eine Migration), nicht ueber `upsert_assessment`:
+        # jenes Praedikat setzt die Rangfolge durch und liesse eine Eye-Kopfzeile absichtlich
+        # stehen.
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        header.source = MotifAssessmentSource.LOCAL
+        header.excluded_document = excluded
+        header.computed_at = computed_at
+        stored_strengths = (
+            (
+                await db_session.execute(
+                    select(PhotoMotifStrength).where(PhotoMotifStrength.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in stored_strengths:
+            row.strength = strengths[row.motif_key]
+        await db_session.flush()
+        snapshot = await db_session.get(PhotoLocalMotifSnapshot, photo.id)
+        if snapshot is not None:
+            await db_session.delete(snapshot)
+        await db_session.flush()
+
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        assert header.source == MotifAssessmentSource.LOCAL
+        assert header.computed_at == _NOW
+        sources = (await db_session.execute(select(PhotoMotifAssessment.source))).scalars().all()
+        assert MotifAssessmentSource.EYE not in sources
+        corrections = (
+            (
+                await db_session.execute(
+                    select(PhotoMotifCorrection).where(PhotoMotifCorrection.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(row.motif_key, row.applies) for row in corrections] == [("tiere", False)]
+
+    async def test_a_cloud_header_keeps_its_shadow_and_the_restore_source(
+        self, db_session: AsyncSession
+    ) -> None:
+        # Cloud-Kopfzeile: Eye schreibt nichts, also gibt es auch keinen Schnappschuss - der
+        # Rueckbau hat hier nichts zu tun, und die Cloud-Aussage bleibt unberuehrt.
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.CLOUD,
+            strengths=_vector(menschen=0.9),
+            excluded_document=False,
+            provider="anthropic",
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.2),
+            excluded_document=True,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        assert header.source == MotifAssessmentSource.CLOUD
+        assert header.provider == "anthropic"
+        assert await self._restore(db_session, photo.id) is None
