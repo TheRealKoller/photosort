@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,6 +32,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
+    eye_available: false,
     selection_target: null,
     effective_selection_target: 1,
     has_selection_proposal: false,
@@ -86,6 +88,7 @@ describe('KriterienStepPage', () => {
     vi.mocked(projectsApi.triggerClassification).mockReset()
     vi.mocked(projectsApi.getClassificationEstimate).mockReset()
     vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
+      mode: 'cloud',
       candidate_count: 0,
       remote_categories: { candidate_count: 0, estimated_cost_usd: 0 },
       landmark: { candidate_count: 0, estimated_cost_usd: 0 },
@@ -105,10 +108,14 @@ describe('KriterienStepPage', () => {
     expect(headings.map((heading) => heading.textContent)).toEqual(['Klassifizierung'])
   })
 
-  it('wires the outlet project through, so the trigger knows the current scoring run', () => {
+  it('wires the outlet project through, so the trigger knows the current scoring run', async () => {
+    const user = userEvent.setup()
     renderPage(project({ last_scoring_run: scoringRun({ id: 99 }) }))
 
-    // Der Auslöser ist nur bedienbar, wenn ein ScoringRun aus dem Outlet-Kontext ankam.
+    // Der Auslöser ist nur bedienbar, wenn ein ScoringRun aus dem Outlet-Kontext ankam - und
+    // seit Spec 0609 zusaetzlich erst nach der Wahl eines Wegs.
+    await user.click(screen.getByRole('radio', { name: /^nur lokal/i }))
+
     expect(screen.getByRole('button', { name: 'Klassifizierung starten' })).toBeEnabled()
   })
 

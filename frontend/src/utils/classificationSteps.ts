@@ -48,6 +48,7 @@ export interface ClassificationStep {
  */
 export const CLASSIFICATION_STEP_ORDER = [
   'remote_categories',
+  'eye',
   'criteria',
   'landmark',
   'ranking',
@@ -56,6 +57,7 @@ export const CLASSIFICATION_STEP_ORDER = [
 
 const STEP_LABELS: Record<ClassificationStepId, string> = {
   remote_categories: 'Kategorie-Vorschläge',
+  eye: 'Eye-Auswertung',
   criteria: 'Qualität und Bildinhalt',
   landmark: 'Sehenswürdigkeits-Erkennung',
   ranking: 'Rangfolge',
@@ -97,6 +99,23 @@ export function deriveClassificationSteps(run: CriterionScoringRunSummary): Clas
     // Die Personen-Erkennung läuft nur, wenn eine Person gezeigte Gesichter hat. Vor ihr steht sie
     // auf "ausstehend"; nach Laufende ohne Zähler (`null`) lief sie nicht und wird ausgeblendet.
     if (id === 'persons' && isFinished && run.persons_photos_total === null) {
+      continue
+    }
+    // Die Eye-Auswertung steht nur auf dem Eye-Weg zur Disposition. Sie als "übersprungen" zu
+    // zeigen behauptete eine Auslassung, wo gar keine Wahl getroffen wurde; bei Altläufen ohne
+    // `mode` ist die Aussage „unbekannt" und damit ebenfalls kein Teilschritt.
+    if (id === 'eye' && run.mode !== 'eye') {
+      continue
+    }
+    // Nach Laufende ohne Zaehler lief die Eye-Phase nicht (Altlauf, oder der Lauf brach vor ihr
+    // ab) - dann wird der Teilschritt ausgeblendet statt als "uebersprungen" behauptet.
+    if (id === 'eye' && isFinished && run.eye_photos_total === null) {
+      continue
+    }
+    // Der Eye-Weg fragt zwar mit Einwilligung Cloud an (Landmark), baut aber NIE den
+    // Kategorie-Client: „Kategorie-Vorschläge" hat dort nicht zur Disposition gestanden, und
+    // „übersprungen" behauptete eine Auslassung.
+    if (id === 'remote_categories' && run.mode === 'eye') {
       continue
     }
     if (isCloudStep(id) && !run.cloud_requested) {
@@ -205,6 +224,9 @@ function progressOf(
   }
   if (id === 'persons') {
     return { processed: run.persons_photos_processed, total: run.persons_photos_total }
+  }
+  if (id === 'eye') {
+    return { processed: run.eye_photos_processed, total: run.eye_photos_total }
   }
   // `ranking` kennt kein Total: die Kategorieableitung läuft über Partitionen, nicht über eine
   // gezählte Fotomenge. `null` heisst hier "unbestimmter Fortschritt", und die Anzeige zeichnet

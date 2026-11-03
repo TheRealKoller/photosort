@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { ProjectOut } from '../api/types'
+import type { ClassificationWay, ProjectOut } from '../api/types'
 import {
   useClassificationEstimateQuery,
   useFineLabelsQuery,
@@ -14,12 +14,12 @@ import { deriveStepAction } from '../utils/stepActions'
 import { ClassificationBalance } from './ClassificationBalance'
 import { ClassificationEstimate } from './ClassificationEstimate'
 import { ClassificationProgress } from './ClassificationProgress'
+import { EyeAttribution } from './EyeAttribution'
 import { RerunBlock } from './RerunBlock'
 import { SelectionTargetField } from './SelectionTargetField'
 import { StatusDot } from './StatusDot'
 import { StepActionBar } from './StepActionBar'
 import { Alert } from './ui/alert'
-import { Checkbox } from './ui/checkbox'
 
 interface ClassificationSectionProps {
   project: ProjectOut
@@ -57,9 +57,20 @@ const MAX_FINE_LABELS_SHOWN = 15
  * `useTriggerConfirmation` (etabliert fuer Scan/Score) ueberbrueckt unveraendert das Zeitfenster
  * zwischen der 202-Antwort und dem ersten Poll, der `status="running"` bestaetigt.
  *
- * Diese Datei ist der CONTAINER - Checkbox-Zustand, Consent-Gate, Mutation und Ausloeser bleiben
- * hier, die drei Detailbloecke (ClassificationEstimate, ClassificationProgress,
- * ClassificationBalance) sind eigene Komponenten.
+ * Diese Datei ist der CONTAINER - Laufwahl, Consent-Gate, Mutation und Ausloeser bleiben hier, die
+ * drei Detailbloecke (ClassificationEstimate, ClassificationProgress, ClassificationBalance) sind
+ * eigene Komponenten.
+ *
+ * DIE LAUFWAHL (Spec 0609) ersetzt seit dieser Fassung die Checkbox: drei Wege, genau einer,
+ * ohne Vorbelegung. Keine Vorbelegung ist die eigentliche Aenderung - die fruehere Checkbox war
+ * mit der Projekteinstellung vorbelegt, und ein einzelner Klick loeste Cloud-Kosten aus. Jetzt
+ * beginnt jeder Ausloesevorgang mit einer bewussten Wahl, und nach dem Start faellt sie zurueck
+ * auf "nichts gewaehlt".
+ *
+ * Der Eye-Weg erscheint nur, wenn der Server ihn anbietet (`ProjectOut.eye_available`, allein aus
+ * `EYE_ENABLED`). Ob der DIENST gerade antwortet, wird hier NICHT geprueft: das machte das Laden
+ * der Projektseite von einem Sidecar abhaengig, und die Antwort auf einen toten Dienst gibt es
+ * erst beim Ausloesen (503, mit "Erneut versuchen").
  *
  * Im Inhalt steht zu jedem Zeitpunkt GENAU EINER der beiden Zustandsbloecke - Fortschrittsliste
  * ODER Bilanz, nie beide. Das ist die pruefbare Form des Akzeptanzkriteriums "ueberfrachtet die
@@ -67,7 +78,10 @@ const MAX_FINE_LABELS_SHOWN = 15
  * klassifizieren" im Kopf; `isTriggerDisabled` sperrt alle drei Auslöser gleich.
  */
 export function ClassificationSection({ project, refetchProject }: ClassificationSectionProps) {
-  const estimateQuery = useClassificationEstimateQuery(project.id)
+  // Der Weg wird HIER gehalten und an die Schaetzung weitergereicht: je Weg liegt eine eigene
+  // Query, und solange nichts gewaehlt ist, laedt gar keine.
+  const [way, setWay] = useState<ClassificationWay | null>(null)
+  const estimateQuery = useClassificationEstimateQuery(project.id, way)
   const fineLabelsQuery = useFineLabelsQuery(project.id)
   const triggerMutation = useTriggerClassificationMutation(project.id)
   const location = useLocation()
@@ -83,10 +97,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   }, [focusHeading])
 
   const consentEnabled = project.cloud_vision_detection_enabled
-  // Vorbelegung = projektweite Einwilligung (Akzeptanzkriterium). Ohne Einwilligung abgewaehlt UND
-  // nicht setzbar - die Checkbox erteilt selbst keine Freigabe.
-  const [useCloud, setUseCloud] = useState(consentEnabled)
-  const cloudChecked = consentEnabled && useCloud
+  const wayGroupName = useId()
 
   const scoringRun = project.last_scoring_run
   const run = project.last_criterion_scoring_run
@@ -105,31 +116,66 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
     isTriggerPending,
   })
   const estimate = estimateQuery.data ?? null
-  // Auslöse-Button bleibt deaktiviert, solange die Schaetzung bei ANGEWAEHLTER Cloud-Nutzung nicht
-  // ladbar ist (Design-System: "kein Bypass" - keine kostenpflichtige Aktion ohne sichtbare
-  // Schaetzung). Bei abgewaehlter Checkbox entstehen keine Kosten, die Schaetzung ist dann keine
-  // Vorbedingung. `candidate_count === null` deckt "noch ladend" und "Fehler beim Laden" ab.
-  const candidateCount = estimate?.candidate_count ?? null
+  // Traegt der gewaehlte Weg Kosten? Cloud immer, Eye nur mit Einwilligung (dann laeuft die
+  // Sehenswuerdigkeits-Erkennung mit), lokal nie. Dieselbe Bedingung entscheidet, ob die
+  // Sehenswuerdigkeits-Erkennung ueberhaupt stattfindet - eine Wahrheit, zwei Verwendungen.
+  const wayMayCost = way === 'cloud' || (way === 'eye' && consentEnabled)
+  const landmarkParticipates = wayMayCost
+  // Auslöse-Button bleibt deaktiviert, solange kein Weg gewaehlt ist und - bei einem Weg, der
+  // Kosten tragen kann - solange dessen Schaetzung nicht geladen ist (Design-System: "kein
+  // Bypass" - keine kostenpflichtige Aktion ohne sichtbare Schaetzung). Ein Fehler beim Laden
+  // sperrt ebenfalls: er ist keine Aussage ueber 0 USD.
+  // Cloud ohne Einwilligung ist ein Weg, den der Server mit 403 abweist: der Auslöser wird hier
+  // gesperrt, statt den Fehlschlag zu provozieren. Eye und lokal sind davon unberuehrt.
+  const cloudBlocked = way === 'cloud' && !consentEnabled
   const isTriggerDisabled =
-    isBusy || scoringRun === null || (cloudChecked && candidateCount === null)
+    isBusy ||
+    scoringRun === null ||
+    way === null ||
+    cloudBlocked ||
+    (wayMayCost && estimate === null)
+
+  // Der Sperrgrund steht als Text neben dem Ausloeser - ein ausgegrauter Knopf ohne Begruendung
+  // laesst den Nutzer raten, was fehlt.
+  const disabledReason = !isTriggerDisabled
+    ? null
+    : way === null
+      ? 'Wähle zuerst einen Weg für diesen Durchlauf.'
+      : cloudBlocked
+        ? 'Cloud-Bilderkennung ist für dieses Projekt nicht aktiviert — erst die Einwilligung in den Projekteinstellungen erteilen.'
+        : wayMayCost && estimate === null
+          ? 'Die Kostenschätzung wird geladen…'
+          : null
 
   function handleTrigger(): void {
-    if (isTriggerDisabled || scoringRun === null) {
+    if (isTriggerDisabled || scoringRun === null || way === null) {
       return
     }
     setAwaitingConfirmation(true)
     triggerMutation.mutate(
-      { scoringRunId: scoringRun.id, useCloud: cloudChecked },
-      { onError: () => setAwaitingConfirmation(false) },
+      { scoringRunId: scoringRun.id, mode: way },
+      {
+        // Die Wahl gilt fuer EINEN Durchlauf. Sie stehen zu lassen luede dazu ein, den naechsten
+        // Start als Wiederholung desselben Klicks zu lesen - bei einem kostenpflichtigen Weg ist
+        // genau das die Falle, die die Checkbox vorher war.
+        onSuccess: () => setWay(null),
+        onError: () => setAwaitingConfirmation(false),
+      },
     )
   }
 
-  const triggerErrorDetail =
-    triggerMutation.isError && triggerMutation.error instanceof ApiError
-      ? triggerMutation.error.detail
-      : triggerMutation.isError
-        ? 'Fehler beim Auslösen der Klassifizierung.'
-        : null
+  const triggerError = triggerMutation.isError
+    ? triggerMutation.error instanceof ApiError
+      ? triggerMutation.error
+      : null
+    : null
+  const triggerErrorDetail = triggerMutation.isError
+    ? (triggerError?.detail ?? 'Fehler beim Auslösen der Klassifizierung.')
+    : null
+  // 503 heisst "der Eye-Dienst antwortet nicht" - das ist die einzige Ausloese-Antwort, bei der
+  // eine Wiederholung sinnvoll ist (der Dienst kann zurueckkommen). 403/409/404 sind Entscheidungen
+  // des Servers: ein Wiederholungsknopf luede zu einem zweiten identischen Fehlschlag ein.
+  const triggerRetry = triggerError?.status === 503 ? handleTrigger : undefined
 
   const providerLabel = estimate ? formatProviderLabel(estimate.provider) : ''
   // Die Serverreihenfolge (photo_count absteigend, Tie-Break canonical_key) wird uebernommen und
@@ -138,11 +184,18 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
 
   /* Die Schaetzung ersetzt den frueheren Bestaetigungsdialog (Kosten sichtbar vor dem Start) und
      steht am jeweiligen Auslöser: beim ersten Lauf und bei einer Wiederholung direkt über der
-     Leiste, beim erneuten Lauf im Erneut-Block. Sie erscheint nur bei angewaehlter Cloud-Nutzung -
-     bei abgewaehlter entstehen keine Kosten, ein Betrag waere dort irrefuehrend. */
-  const estimateBlock = cloudChecked && (
+     Leiste, beim erneuten Lauf im Erneut-Block. Sie erscheint fuer JEDEN gewaehlten Weg - auch
+     fuer die kostenfreien, dort mit der Zeile "Dieser Durchlauf ist kostenfrei." statt eines
+     Betrags. Vor der Wahl steht sie gar nicht: es gibt dann keinen Durchlauf, dessen Kosten sie
+     beschriebe. */
+  const estimateBlock = way !== null && (
     <>
-      {estimateQuery.isSuccess && estimate && <ClassificationEstimate estimate={estimate} />}
+      {estimateQuery.isSuccess && estimate && (
+        <ClassificationEstimate estimate={estimate} landmarkParticipates={landmarkParticipates} />
+      )}
+      {estimateQuery.isPending && (
+        <p className="text-sm text-text">Kostenschätzung wird geladen…</p>
+      )}
       {estimateQuery.isError && (
         <Alert onRetry={() => void estimateQuery.refetch()}>
           Kostenschätzung konnte nicht geladen werden.
@@ -195,32 +248,100 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
           Einwilligung fuer diese Datenklasse an einer Beschreibung erteilt, die sie nicht nennt.
           Der lokale Durchlauf behaelt seinen Satz unveraendert - dort geht nichts hinaus. */}
       <p className="text-sm text-text" data-testid="classification-scope-text">
-        {cloudChecked
-          ? `Dieser Durchlauf sendet Fotos an ${providerLabel || 'den Cloud-Anbieter'} — für Kategorie-Vorschläge und die Sehenswürdigkeits-Erkennung. Trägt ein Foto Standortdaten, geht dabei eine grobe Angabe zum Aufnahmeort mit: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.`
-          : 'Dieser Durchlauf läuft vollständig lokal auf diesem Server — kein Foto verlässt ihn.'}
+        {way === null
+          ? 'Noch kein Weg gewählt — was mit den Fotos geschieht, sagt dieser Abschnitt, sobald einer gewählt ist.'
+          : way === 'cloud'
+            ? `Dieser Durchlauf sendet Fotos an ${providerLabel || 'den Cloud-Anbieter'} — für Kategorie-Vorschläge und die Sehenswürdigkeits-Erkennung. Trägt ein Foto Standortdaten, geht dabei eine grobe Angabe zum Aufnahmeort mit: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.`
+            : way === 'eye'
+              ? `Dieser Durchlauf wertet die Fotos auf diesem Server aus — kein Foto verlässt ihn.${
+                  consentEnabled
+                    ? ' Für die Sehenswürdigkeits-Erkennung geht mit dem Foto eine grobe Ortsangabe an den Cloud-Anbieter: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.'
+                    : ''
+                } Eye sendet bei jedem Lauf eine Lizenzmeldung mit einer Zählkennung, aber ohne Bildinhalte an Desert Ant Labs; diese Meldung lässt sich nicht abschalten.`
+              : 'Dieser Durchlauf läuft vollständig lokal auf diesem Server — kein Foto verlässt ihn.'}
       </p>
 
-      <div className="flex flex-col items-start gap-1">
-        <Checkbox
-          checked={cloudChecked}
-          onCheckedChange={setUseCloud}
-          disabled={!consentEnabled || isBusy}
-          label="Cloud-Bilderkennung für diesen Durchlauf nutzen"
-        />
+      {/* DIE LAUFWAHL. Ein echtes `fieldset` mit `legend`, weil die Gruppe eine Frage stellt
+          ("Weg für diesen Durchlauf") und die Zeilen nur gemeinsam Sinn ergeben; Radios in einem
+          `div` sind fuer Screenreader drei unabhaengige Schalter.
 
-        {!consentEnabled && (
-          <p className="text-sm text-text">
-            Cloud-Bilderkennung ist für dieses Projekt nicht aktiviert.{' '}
-            <Link
-              className="text-accent-strong underline-offset-4 hover:underline"
-              to={`/projects/${project.id}/settings`}
+          Ganze Zeile anklickbar (`<label>`), Mindesthoehe 44 px (`min-h-11`) - die Trefferflaeche
+          ist die Zeile, nicht der 16-px-Kreis. `disabled` am Fieldset sperrt waehrend eines Laufs
+          alle Optionen in EINEM Attribut; einzelne `disabled`-Attribute an den Radios liessen
+          sich vergessen.
+
+          KEINE Vorbelegung: `way === null` ist der Anfangszustand jeder Sitzung. */}
+      <fieldset
+        className="flex w-full max-w-sm flex-col gap-2"
+        disabled={isBusy}
+        data-testid="classification-way-fieldset"
+      >
+        <legend className="text-sm font-medium text-text-h">Weg für diesen Durchlauf</legend>
+        {(
+          [
+            {
+              id: 'cloud',
+              label: 'Cloud',
+              meta: `Fotos an ${providerLabel || 'den Cloud-Anbieter'} · Abrechnung nach Verbrauch`,
+              available: true,
+            },
+            {
+              id: 'eye',
+              label: 'Eye',
+              meta: consentEnabled
+                ? 'Bleibt auf diesem Server · kostenfrei — abgerechnet wird nur die Sehenswürdigkeits-Erkennung'
+                : 'Bleibt auf diesem Server · kostenfrei',
+              available: project.eye_available,
+            },
+            {
+              id: 'local',
+              label: 'Nur lokal',
+              meta: 'Bleibt auf diesem Server · kostenfrei · ohne Kategorie-Vorschläge und Sehenswürdigkeits-Erkennung',
+              available: true,
+            },
+          ] as const
+        )
+          .filter((option) => option.available)
+          .map((option) => (
+            <label
+              key={option.id}
+              className="flex min-h-11 w-full cursor-pointer flex-col justify-center gap-1 rounded-sm border border-border px-3 py-2 has-[:checked]:border-accent"
             >
-              In den Projekteinstellungen aktivieren
-            </Link>
-            .
-          </p>
-        )}
-      </div>
+              <span className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name={wayGroupName}
+                  value={option.id}
+                  checked={way === option.id}
+                  onChange={() => setWay(option.id)}
+                  className="size-4 accent-accent"
+                />
+                <span className="text-sm font-semibold text-text-h">{option.label}</span>
+              </span>
+              {/* Die Nebenangabe ist KEIN zusaetzlicher Inhalt, sondern die Begruendung der Wahl:
+                  sie sagt in einem Halbsatz, was der Weg kostet und wohin er geht. */}
+              <span className="pl-6 text-xs text-text-muted">{option.meta}</span>
+              {option.id === 'eye' && (
+                <span className="pl-6">
+                  <EyeAttribution />
+                </span>
+              )}
+            </label>
+          ))}
+      </fieldset>
+
+      {!consentEnabled && (
+        <p className="text-sm text-text">
+          Cloud-Bilderkennung ist für dieses Projekt nicht aktiviert.{' '}
+          <Link
+            className="text-accent-strong underline-offset-4 hover:underline"
+            to={`/projects/${project.id}/settings`}
+          >
+            In den Projekteinstellungen aktivieren
+          </Link>
+          .
+        </p>
+      )}
 
       {/* Der Richtwert ist schon VOR dem ersten Lauf einstellbar - dieselbe Komponente wie in der
           Kuratierung, über dem Auslöser, damit der erste Vorschlag schon seine Größe hat. */}
@@ -230,7 +351,12 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       </p>
       <SelectionTargetField project={project} />
 
-      {triggerErrorDetail && <Alert>{triggerErrorDetail}</Alert>}
+      {triggerErrorDetail && <Alert onRetry={triggerRetry}>{triggerErrorDetail}</Alert>}
+      {disabledReason !== null && (
+        <p className="text-xs text-text-muted" data-testid="classification-disabled-reason">
+          {disabledReason}
+        </p>
+      )}
 
       {/* GENAU EINER der beiden Zustandsblöcke, nie beide: läuft der Durchlauf, steht hier die
           Teilschrittliste, danach die Bilanz dieses einen Laufs. Beide gleichzeitig zu zeigen

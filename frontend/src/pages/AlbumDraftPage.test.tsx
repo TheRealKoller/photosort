@@ -53,6 +53,7 @@ function projectOut(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: false,
     cloud_vision_detection_enabled: true,
     cloud_vision_consent_at: '2026-07-01T10:00:00',
+    eye_available: false,
     selection_target: 3,
     effective_selection_target: 3,
     has_selection_proposal: true,

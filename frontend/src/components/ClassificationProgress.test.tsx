@@ -45,6 +45,9 @@ function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScor
     phase_remaining_seconds: null,
     persons_photos_total: null,
     persons_photos_processed: null,
+    mode: null,
+    eye_photos_total: null,
+    eye_photos_processed: null,
     ...overrides,
   }
 }
@@ -332,6 +335,9 @@ describe('ClassificationProgress: die Restdauer', () => {
           phase_remaining_seconds: 240,
           persons_photos_total: null,
           persons_photos_processed: null,
+          mode: null,
+          eye_photos_total: null,
+          eye_photos_processed: null,
           photos_total: 10,
           photos_processed: 4,
         })}
@@ -343,5 +349,35 @@ describe('ClassificationProgress: die Restdauer', () => {
     expect(row).toHaveTextContent('4/10')
     expect(row.querySelector('progress')).not.toBeNull()
     expect(row).toContainElement(etaLines(container)[0])
+  })
+})
+
+// specs/features/0609-eye-dritte-wahl.md: die Eye-Auswertung ist ein eigener Teilschritt mit
+// eigenem Zaehler - und nur auf dem Eye-Weg vorhanden.
+describe('ClassificationProgress: die Eye-Auswertung (Spec 0609)', () => {
+  it('zeigt den Eye-Teilschritt mit seinem eigenen Fortschritt', () => {
+    render(
+      <ClassificationProgress
+        run={run({
+          mode: 'eye',
+          phase: 'eye',
+          cloud_requested: false,
+          cloud_phases: [],
+          eye_photos_total: 20,
+          eye_photos_processed: 7,
+        })}
+      />,
+    )
+
+    const row = stepRow('eye')
+    expect(row).toHaveTextContent('Eye-Auswertung')
+    expect(row).toHaveTextContent('7')
+    expect(row).toHaveTextContent('20')
+  })
+
+  it('zeigt den Eye-Teilschritt nicht ausserhalb des Eye-Wegs', () => {
+    render(<ClassificationProgress run={run({ mode: 'cloud' })} />)
+
+    expect(screen.queryByTestId('classification-step-eye')).not.toBeInTheDocument()
   })
 })

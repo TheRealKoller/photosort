@@ -39,6 +39,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
+    eye_available: false,
     selection_target: null,
     effective_selection_target: 1,
     has_selection_proposal: false,
@@ -99,6 +100,9 @@ function criterionScoringRun(
     phase_remaining_seconds: null,
     persons_photos_total: null,
     persons_photos_processed: null,
+    mode: null,
+    eye_photos_total: null,
+    eye_photos_processed: null,
     ...overrides,
   }
 }

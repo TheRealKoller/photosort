@@ -37,6 +37,13 @@ const CLOUD_ASSESSMENT: MotifAssessmentOut = {
   computed_at: '2026-09-12T10:00:00',
 }
 
+const EYE_ASSESSMENT: MotifAssessmentOut = {
+  source: 'eye',
+  provider: null,
+  excluded_document: false,
+  computed_at: '2026-09-12T10:00:00',
+}
+
 const LOCAL_ASSESSMENT: MotifAssessmentOut = {
   source: 'local',
   provider: null,
@@ -606,6 +613,33 @@ describe('MotifStrengthSection: die vier Fotozustände', () => {
     renderSection()
 
     expect(screen.getByText(/Grundlage: Cloud-Klassifizierung \(Anthropic\)/)).toBeTruthy()
+  })
+
+  // specs/features/0609-eye-dritte-wahl.md: die Eye-Auswertung ist eine dritte Grundlage - mit
+  // Zeitpunkt, ohne Anbieter, und mit der Namensnennung des Modells an dieser Stelle.
+  it('names the eye basis with its timestamp and the model attribution', () => {
+    renderSection({ assessment: EYE_ASSESSMENT })
+
+    const basis = document.querySelector('[data-motif-source="eye"]')
+    expect(basis).not.toBeNull()
+    expect(basis).toHaveTextContent(/Grundlage: Eye-Auswertung/)
+    const attribution = screen.getByTestId('eye-attribution')
+    expect(attribution).toHaveTextContent(/desert ant labs/i)
+    expect(screen.getByRole('link', { name: /desert ant labs/i })).toHaveAttribute(
+      'href',
+      'https://desertant.com',
+    )
+  })
+
+  it('marks the basis of every source machine-readably', () => {
+    // Die Herkunft ist nicht nur Prosa: `data-motif-source` traegt sie als Wert, und die drei
+    // Zweige bleiben unterscheidbar, ohne den Satz zu parsen.
+    const { view } = renderSection()
+    expect(document.querySelector('[data-motif-source="cloud"]')).not.toBeNull()
+
+    view.unmount()
+    renderSection({ assessment: LOCAL_ASSESSMENT })
+    expect(document.querySelector('[data-motif-source="local"]')).not.toBeNull()
   })
 
   it('names the local basis and that it cannot judge every motif', () => {

@@ -34,6 +34,7 @@ const PROJECT: ProjectOut = {
   category_selection_enabled: true,
   cloud_vision_detection_enabled: false,
   cloud_vision_consent_at: null,
+  eye_available: false,
   selection_target: null,
   effective_selection_target: 1,
   has_selection_proposal: false,
@@ -102,26 +103,26 @@ describe('api/projects', () => {
     expect(result).toEqual({ status: 'confirmed' })
   })
 
-  it('triggers the classification via POST /projects/{id}/classify with scoring_run_id and use_cloud', async () => {
+  it('triggers the classification via POST /projects/{id}/classify with scoring_run_id and mode', async () => {
     vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
 
-    const result = await triggerClassification(1, 5, true)
+    const result = await triggerClassification(1, 5, 'cloud')
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify', {
       method: 'POST',
-      body: { scoring_run_id: 5, use_cloud: true },
+      body: { scoring_run_id: 5, mode: 'cloud' },
     })
     expect(result).toEqual({ status: 'queued' })
   })
 
-  it('sends use_cloud false unchanged', async () => {
+  it('reicht jeden Weg unveraendert weiter', async () => {
     vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
 
-    await triggerClassification(1, 5, false)
+    await triggerClassification(1, 5, 'eye')
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify', {
       method: 'POST',
-      body: { scoring_run_id: 5, use_cloud: false },
+      body: { scoring_run_id: 5, mode: 'eye' },
     })
   })
 
@@ -162,8 +163,9 @@ describe('api/projects', () => {
     await expect(getProjectStats(7)).rejects.toBe(error)
   })
 
-  it('fetches the estimate via GET /projects/{id}/classify/estimate', async () => {
+  it('fetches the estimate of ONE way via GET /projects/{id}/classify/estimate?mode=', async () => {
     const response = {
+      mode: 'cloud',
       candidate_count: 42,
       remote_category_candidate_count: 40,
       landmark_candidate_count: 2,
@@ -173,9 +175,10 @@ describe('api/projects', () => {
     }
     vi.mocked(apiFetch).mockResolvedValue(response)
 
-    const result = await getClassificationEstimate(1)
+    const result = await getClassificationEstimate(1, 'cloud')
 
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify/estimate')
+    // Der Weg reist als Query-Parameter: dieselbe Ressource, drei Antworten.
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify/estimate?mode=cloud')
     expect(result).toEqual(response)
   })
 

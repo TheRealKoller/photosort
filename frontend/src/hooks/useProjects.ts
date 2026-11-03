@@ -16,7 +16,7 @@ import {
   triggerScore,
   type CreateProjectPayload,
 } from '../api/projects'
-import type { ProjectOut } from '../api/types'
+import type { ClassificationWay, ProjectOut } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 
@@ -78,7 +78,8 @@ export function useDeleteProjectMutation(id: number) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.removeQueries({ queryKey: ['project', id] })
-      queryClient.removeQueries({ queryKey: classificationEstimateQueryKey(id) })
+      // Der Praefix ohne Weg deckt alle Wege ab - je Weg liegt eine eigene Query.
+      queryClient.removeQueries({ queryKey: ['classification-estimate', id] })
       queryClient.removeQueries({ queryKey: fineLabelsQueryKey(id) })
       queryClient.removeQueries({ queryKey: projectStatsQueryKey(id) })
     },
@@ -129,15 +130,15 @@ export function useConfirmAusschussGateMutation(id: number) {
 export function useTriggerClassificationMutation(id: number) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ scoringRunId, useCloud }: { scoringRunId: number; useCloud: boolean }) =>
-      triggerClassification(id, scoringRunId, useCloud),
+    mutationFn: ({ scoringRunId, mode }: { scoringRunId: number; mode: ClassificationWay }) =>
+      triggerClassification(id, scoringRunId, mode),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
       // Die Schaetzung aendert sich durch das Ausloesen nicht sofort (der Job laeuft erst im
       // Hintergrund), aber ein erneuter Abruf nach Abschluss soll wieder den aktuellen
       // Kandidatenstand zeigen - Invalidierung hier ist die einfachste Variante, ohne einen
       // eigenen Polling-Pfad fuer die Schaetzung selbst einzufuehren.
-      void queryClient.invalidateQueries({ queryKey: classificationEstimateQueryKey(id) })
+      void queryClient.invalidateQueries({ queryKey: ['classification-estimate', id] })
       // Ein Lauf mit Cloud-Nutzung ist die EINZIGE Quelle neuer Feinlabels - die
       // Haeufigkeitsliste muss danach neu geladen werden, sonst zeigt sie dauerhaft den Stand
       // vor dem Lauf.
@@ -175,18 +176,24 @@ export function useSetSelectionTargetMutation(id: number) {
   })
 }
 
-export function classificationEstimateQueryKey(id: number) {
-  return ['classification-estimate', id] as const
+export function classificationEstimateQueryKey(id: number, mode: ClassificationWay | null) {
+  return ['classification-estimate', id, mode] as const
 }
 
-// "Eager-Schätzung" - beim Seitenaufruf geladen, analog dem bestehenden Eager-Zaehler-Muster.
-// Funktioniert unabhaengig vom Consent-Schalter. Sie steht nicht in einem Bestaetigungsdialog,
-// sondern dauerhaft an der Cloud-Checkbox - das Eager-Laden ist damit nicht nur eine Optimierung,
-// sondern Voraussetzung dafuer, dass die Kosten VOR dem Start sichtbar sind.
-export function useClassificationEstimateQuery(id: number) {
+/**
+ * Die Kostenschaetzung des GEWAEHLTEN Wegs (Spec 0609). Sie wird erst geladen, wenn ein Weg
+ * gewaehlt ist (`enabled`): solange nichts gewaehlt ist, gibt es keine Kosten zu zeigen, und ein
+ * Abruf mit geratenem Weg zeigte den Betrag eines Laufs, den niemand gestartet hat.
+ *
+ * Funktioniert unabhaengig vom Consent-Schalter. Sie steht nicht in einem Bestaetigungsdialog,
+ * sondern dauerhaft an der Laufwahl - das Laden ist damit nicht nur eine Optimierung, sondern
+ * Voraussetzung dafuer, dass die Kosten VOR dem Start sichtbar sind.
+ */
+export function useClassificationEstimateQuery(id: number, mode: ClassificationWay | null) {
   return useQuery({
-    queryKey: classificationEstimateQueryKey(id),
-    queryFn: () => getClassificationEstimate(id),
+    queryKey: classificationEstimateQueryKey(id, mode),
+    queryFn: () => getClassificationEstimate(id, mode as ClassificationWay),
+    enabled: mode !== null,
   })
 }
 
