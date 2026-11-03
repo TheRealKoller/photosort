@@ -45,7 +45,7 @@ UV_CACHE_VOR_INSTALL = _UV_CACHE_SCHRITT + "      - name: Install dependencies"
 
 # (iv) Die Job-Schluesselmenge von ci.yml — exakt, nicht "mindestens". Ein neuer Job wird hier
 # eingetragen; der Test faerbt sonst rot, damit kein Job unbemerkt dazukommt.
-JOB_SCHLUESSEL = ("backend", "frontend", "demo-scripts", "eye-eval", "docker-compose-check", "e2e")
+JOB_SCHLUESSEL = ("backend", "frontend", "demo-scripts", "eye", "docker-compose-check", "e2e")
 
 # (v) Die Pruefschritte des backend-Jobs in fester Reihenfolge, (Name, run). Die Spec zaehlt
 # sie in den Akzeptanzkriterien als (Formatierung, Lint, Typpruefung, Tests) — vier Schritte;
