@@ -9,8 +9,11 @@ Der Port aus `tools/eye-eval/src/mapping.js` hat zwei Fallen, und beide werden h
   0.4, 0.6, 0.8, 1.0) und nicht in der Mitte der Baender: nur so faellt eine um 0.01 verschobene
   Grenze auf.
 
-Der Tag-Abgleich gegen `eye_meta.json` laeuft nur mit den Gewichten (Heimserver-Schritt): die
-Datei liegt ausserhalb des Repos, in CI ist der Test uebersprungen statt rot (Bekannte Luecke in
+Die Tag-Liste selbst ist gegen das ECHTE SDK-Vokabular geprueft: `tags.js` aus
+`@desert-ant-labs/eye` fuehrt snake_case-Namen (`sky`), `eye_meta.json::labels.scenes` dagegen nur
+Anzeigenamen (`Sky`). Der Abgleich gegen `tags.js` laeuft in `eye/test/tags.test.js`, der
+Backend-Test haelt diese Tabelle und `eye/src/pins.json::mappingTags` deckungsgleich; der
+Ausschluss-Abgleich gegen `eye_meta.json` bleibt Heimserver-Schritt (Bekannte Luecke in
 specs/features/0002-offene-punkte.md).
 """
 
@@ -25,6 +28,7 @@ from typing import Any
 import pytest
 
 from photosort.eye_mapping import (
+    EXCLUDED_TYPES,
     EYE_PURPOSE_MAPPING,
     MAPPING_VERSION,
     MODEL_REVISION,
@@ -258,16 +262,65 @@ class TestTheStructuralGuards:
         assert foreign == set()
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_PINS_FILE = _REPO_ROOT / "eye" / "src" / "pins.json"
+
+
+class TestTheTagsAgainstTheSidecarPins:
+    """Die Tag-Liste steht in DREI Fassungen, und alle drei muessen gleich sein: diese Tabelle,
+    `mappingTags` in `eye/src/pins.json` und das SDK-Vokabular aus `tags.js`.
+
+    Grund fuer die Pins-Fassung: das Modell ist gepinnt, das Vokabular ist es damit auch. Ein
+    Pin-Wechsel, der einen Tag umbenennt, faellt dann hier auf und nicht als stille Null in jedem
+    Eye-Ergebnis. Der Abgleich gegen `tags.js` selbst laeuft in `eye/test/tags.test.js`, wo die SDK
+    ohnehin Abhaengigkeit ist; dieses Modul bleibt frei von Node.
+    """
+
+    def test_the_binding_table_equals_the_pins(self) -> None:
+        pins = json.loads(_PINS_FILE.read_text(encoding="utf-8"))
+        table = {
+            tag
+            for tags in EYE_PURPOSE_MAPPING["purposes"]["motivstaerken"]["motifs"].values()
+            for tag in tags
+        }
+        pinned = set(pins["mappingTags"])
+
+        assert table - pinned == set()
+        assert pinned - table == set()
+
+    def test_the_pins_name_the_pinned_revision_and_commit(self) -> None:
+        pins = json.loads(_PINS_FILE.read_text(encoding="utf-8"))
+
+        assert pins["revision"] == MODEL_REVISION
+        assert len(pins["commit"]) == 40
+        assert set(pins["files"]) == {"eye.tflite", "eye_meta.json"}
+        for digest in pins["files"].values():
+            assert len(digest) == 64
+
+    def test_every_motif_tag_is_lowercase_snake_case(self) -> None:
+        """Das SDK-Vokabular ist snake_case; ein Anzeigename wie "Human face" wuerde nie treffen."""
+        table = {
+            tag
+            for tags in EYE_PURPOSE_MAPPING["purposes"]["motivstaerken"]["motifs"].values()
+            for tag in tags
+        }
+
+        for tag in table:
+            assert tag == tag.lower()
+            assert " " not in tag
+
+
 @pytest.mark.skipif(
     not Path(os.environ.get("EYE_META_PATH", "eye_model/eye_meta.json")).exists(),
     reason="eye_meta.json liegt ausserhalb des Repos - Heimserver-Schritt",
 )
-def test_every_tag_of_the_table_exists_in_eye_meta() -> None:
+def test_every_excluded_type_exists_in_eye_meta() -> None:
+    """Heimserver-Schritt (0002): der Ausschluss haengt an `labels.type` des echten Modells. Die
+    Motiv-Tags lassen sich dort NICHT abgleichen - `labels.scenes` fuehrt Anzeigenamen ("Sky"),
+    die SDK-Antwort snake_case-Tags ("sky"); dieser Abgleich laeuft in eye/test/tags.test.js."""
     meta = json.loads(
         Path(os.environ.get("EYE_META_PATH", "eye_model/eye_meta.json")).read_text(encoding="utf-8")
     )
-    known = set(meta.get("tags", meta.get("classes", [])))
+    known = set(meta["labels"]["type"])
 
-    motifs = EYE_PURPOSE_MAPPING["purposes"]["motivstaerken"]["motifs"]
-    missing = sorted({tag for tags in motifs.values() for tag in tags} - known)
-    assert missing == []
+    assert EXCLUDED_TYPES - known == set()

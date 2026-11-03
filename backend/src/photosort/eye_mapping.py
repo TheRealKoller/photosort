@@ -63,9 +63,18 @@ EXCLUDED_TYPES: Final[frozenset[str]] = frozenset(
     }
 )
 
-# Je Motiv die Eye-Tags, die es belegen. Die Reihenfolge ist die des Werkzeugs und hat keine
-# Bedeutung fuer das Ergebnis (die Staerke ist ein Maximum), sie bleibt aber stehen, damit der
-# Abgleich gegen `eye_meta.json` und gegen die alte Tabelle zeilenweise lesbar ist.
+# Je Motiv die Eye-Tags, die es belegen - WOERTLICH aus dem SDK-Vokabular
+# (`@desert-ant-labs/eye/tags.js`, erzeugt aus `eye_meta.json`). Die Reihenfolge ist die des
+# entfallenen Werkzeugs und hat keine Bedeutung fuer das Ergebnis (die Staerke ist ein Maximum).
+#
+# Die Tabelle des Werkzeugs fuehrte 15 Namen, die im SDK-Vokabular NICHT vorkommen und deshalb nie
+# gefeuert haetten: `arch`, `bridge`, `basketball`, `coffee`, `dancing`, `desert`, `dish`,
+# `interior`, `mosque`, `museum`, `palace`, `restaurant`, `sunrise`, `tableware`, `valley`. Fuenf
+# davon sind auf den SDK-Namen derselben Sache umgestellt (`architecture`, `bridge_structure`,
+# `basketball_sport`, `coffee_cup`, `coffee_drink`); die uebrigen elf sind gestrichen, weil das
+# Vokabular - und auch das Anzeigevokabular unter `labels.scenes` - keine Entsprechung fuehrt.
+# Beides haelt `eye/test/tags.test.js` gegen `tags.js` und `tests/test_eye_mapping.py` gegen
+# `eye/src/pins.json::mappingTags` fest.
 MOTIF_TAGS: Final[dict[str, tuple[str, ...]]] = {
     "menschen": ("people", "portrait", "group_shot", "selfie"),
     "landschaft": (
@@ -75,12 +84,9 @@ MOTIF_TAGS: Final[dict[str, tuple[str, ...]]] = {
         "forest",
         "lake",
         "river",
-        "desert",
-        "valley",
         "coast",
         "cloud",
         "sunset",
-        "sunrise",
         "water",
         "sea",
         "field",
@@ -89,19 +95,16 @@ MOTIF_TAGS: Final[dict[str, tuple[str, ...]]] = {
         "building",
         "tower",
         "skyscraper",
-        "bridge",
+        "bridge_structure",
         "castle",
         "church",
-        "mosque",
         "temple",
         "monument",
         "fountain",
-        "arch",
+        "architecture",
         "lighthouse",
         "ruins",
         "stadium",
-        "museum",
-        "palace",
     ),
     "stadt_strasse": (
         "street",
@@ -117,15 +120,13 @@ MOTIF_TAGS: Final[dict[str, tuple[str, ...]]] = {
     "tiere": ("dog", "cat", "bird", "horse"),
     "essen_trinken": (
         "food",
-        "dish",
-        "tableware",
         "drink",
-        "coffee",
+        "coffee_cup",
+        "coffee_drink",
         "cake",
         "bread",
         "fruit",
         "plate",
-        "restaurant",
         "cocktail",
     ),
     "aktivitaet": (
@@ -135,12 +136,11 @@ MOTIF_TAGS: Final[dict[str, tuple[str, ...]]] = {
         "swimming",
         "ski",
         "surfing",
-        "dancing",
         "skateboard",
-        "basketball",
+        "basketball_sport",
         "tennis",
     ),
-    "detail_stimmung": ("flower", "leaf", "furniture", "interior"),
+    "detail_stimmung": ("flower", "leaf", "furniture"),
 }
 
 # Feste Albumbaender: untere Grenze inklusiv, obere exklusiv, die letzte Stufe nimmt 1.0 mit. Die

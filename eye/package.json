@@ -1,0 +1,18 @@
+{
+  "name": "photosort-eye",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Eye-Sidecar (Desert Ant Labs): gibt die SDK-Analyse als JSON zurück und rechnet keine Motive.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@desert-ant-labs/eye": "4.2.3",
+    "sharp": "0.35.5"
+  }
+}
