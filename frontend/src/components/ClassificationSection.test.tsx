@@ -244,7 +244,7 @@ describe('Weg für diesen Durchlauf', () => {
     }
     expect(screen.getByRole('button', TRIGGER)).toBeDisabled()
     expect(screen.getByTestId('classification-disabled-reason')).toHaveTextContent(
-      /wähle zuerst einen weg/i,
+      /ohne wahl startet kein lauf/i,
     )
   })
 

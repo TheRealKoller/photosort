@@ -140,7 +140,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   const disabledReason = !isTriggerDisabled
     ? null
     : way === null
-      ? 'Wähle zuerst einen Weg für diesen Durchlauf.'
+      ? 'Wähle einen Weg — ohne Wahl startet kein Lauf.'
       : cloudBlocked
         ? 'Cloud-Bilderkennung ist für dieses Projekt nicht aktiviert — erst die Einwilligung in den Projekteinstellungen erteilen.'
         : wayMayCost && estimate === null
@@ -193,9 +193,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       {estimateQuery.isSuccess && estimate && (
         <ClassificationEstimate estimate={estimate} landmarkParticipates={landmarkParticipates} />
       )}
-      {estimateQuery.isPending && (
-        <p className="text-sm text-text">Kostenschätzung wird geladen…</p>
-      )}
+      {estimateQuery.isPending && <p className="text-sm text-text">Kostenvorschau wird geladen…</p>}
       {estimateQuery.isError && (
         <Alert onRetry={() => void estimateQuery.refetch()}>
           Kostenschätzung konnte nicht geladen werden.
@@ -253,7 +251,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
           : way === 'cloud'
             ? `Dieser Durchlauf sendet Fotos an ${providerLabel || 'den Cloud-Anbieter'} — für Kategorie-Vorschläge und die Sehenswürdigkeits-Erkennung. Trägt ein Foto Standortdaten, geht dabei eine grobe Angabe zum Aufnahmeort mit: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.`
             : way === 'eye'
-              ? `Dieser Durchlauf wertet die Fotos auf diesem Server aus — kein Foto verlässt ihn.${
+              ? `Dieser Durchlauf beurteilt Motivstärken, Dokumentausschluss, Albumtauglichkeit und Feinlabels auf diesem Server — kein Foto verlässt ihn.${
                   consentEnabled
                     ? ' Für die Sehenswürdigkeits-Erkennung geht mit dem Foto eine grobe Ortsangabe an den Cloud-Anbieter: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.'
                     : ''
@@ -296,7 +294,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
             {
               id: 'local',
               label: 'Nur lokal',
-              meta: 'Bleibt auf diesem Server · kostenfrei · ohne Kategorie-Vorschläge und Sehenswürdigkeits-Erkennung',
+              meta: 'Bleibt auf diesem Server · kostenfrei',
               available: true,
             },
           ] as const
@@ -316,7 +314,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
                   onChange={() => setWay(option.id)}
                   className="size-4 accent-accent"
                 />
-                <span className="text-sm font-semibold text-text-h">{option.label}</span>
+                <span className="text-sm font-medium text-text-h">{option.label}</span>
               </span>
               {/* Die Nebenangabe ist KEIN zusaetzlicher Inhalt, sondern die Begruendung der Wahl:
                   sie sagt in einem Halbsatz, was der Weg kostet und wohin er geht. */}
@@ -351,7 +349,14 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       </p>
       <SelectionTargetField project={project} />
 
-      {triggerErrorDetail && <Alert onRetry={triggerRetry}>{triggerErrorDetail}</Alert>}
+      {/* Der Serversatz allein laesst offen, ob der Lauf trotzdem angestossen wurde. Der Zusatz
+          beantwortet genau das - und gilt fuer jede Ablehnung, weil keine von ihnen etwas
+          veraendert. */}
+      {triggerErrorDetail && (
+        <Alert onRetry={triggerRetry}>
+          {triggerErrorDetail} Der Lauf wurde nicht gestartet und es wurde nichts verändert.
+        </Alert>
+      )}
       {disabledReason !== null && (
         <p className="text-xs text-text-muted" data-testid="classification-disabled-reason">
           {disabledReason}
