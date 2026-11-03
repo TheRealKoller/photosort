@@ -40,6 +40,9 @@ export const DESKTOP_ONLY = [
   // Service-Worker-Verhalten haengt nicht vom Viewport ab; der Spec tauscht zudem den Inhalt des
   // Frontend-Containers und darf deshalb nur einmal laufen.
   /release-wechsel\.spec\.ts/,
+  // Der Gegenstand ist die Ablehnung ohne Eye-Dienst, nicht die Geometrie: die Zustandsfolge ist
+  // in beiden Breiten identisch, und ein zweiter Lauf schriebe denselben Nachweis.
+  /eye-nicht-verfuegbar\.spec\.ts/,
 ]
 
 export default defineConfig({

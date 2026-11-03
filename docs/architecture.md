@@ -1477,7 +1477,14 @@ Verarbeitungs-Cache (Thumbnails).
   ihn über `EYE_SERVICE_URL` (Vorgabe `http://eye:8090`); `EYE_ENABLED` (Vorgabe `false`) schaltet
   die Laufwahl app-seitig ab. Ohne gestartetes Profil antwortet der Auslöser `403`/`503`, es gibt
   keinen Rückfall auf einen anderen Modus. Der Egress des Fremdpakets ist **nicht** erzwungen
-  (Betreiberpflicht des Heimservers).
+  (Betreiberpflicht des Heimservers). Der **Vergleich** Eye ↔ Cloud ist ein rein lesendes CLI
+  (`python -m photosort.eye_comparison --project-id … --seed … --out …`, Spec 0609): stdout trägt
+  nur Zählungen je Zweck, die seeded Abweichungszeilen (Foto-Id und App-Pfad) gehen ausschließlich
+  in eine Datei **außerhalb** des Repos, und das Modul liest weder Dateinamen noch Nutzer, Personen
+  oder Orte. Es ist an keinen Endpunkt, kein Compose-Ziel und keinen Worker-Pfad gehängt. Die
+  Demo-Daten zeigen Eye an genau einem Foto: `demo_state.py` schreibt dort zuerst die lokale
+  Kopfzeile und lässt Eye darüber laufen, sodass Kopfzeile, Schattenzeilen und der verdrängte
+  lokale Vektor (Rückbaudaten) im Bestand gleichzeitig vorkommen.
 - **Postgres**: Metadaten (Projekte, Fotos, Bewertungen, Nutzer), keine Bilddaten.
 - **Redis**: Job-Queue für den Worker.
 - **Lokaler Cache**: Docker-Volume für Thumbnails/Zwischenergebnisse, kein Ersatz für OpenCloud als
