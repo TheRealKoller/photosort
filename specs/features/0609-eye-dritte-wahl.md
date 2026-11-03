@@ -1,6 +1,6 @@
 # 0609 - Eye als dritte Laufwahl: Sidecar, Rangfolge der Grundlagen, Vergleich zur Cloud
 
-**Status:** Accepted
+**Status:** Implemented ([PR #611](https://github.com/TheRealKoller/photosort/pull/611))
 **Erstellt:** 2026-11-03
 **Bezug:** Issue [#609](https://github.com/TheRealKoller/photosort/issues/609), ADR
 [`0138`](../decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md)
