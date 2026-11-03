@@ -820,6 +820,7 @@ class TestTheAusschussDecisionMovesBothEstimates:
         assert body["remote_categories"]["candidate_count"] == 0
         assert body["landmark"]["candidate_count"] == 0
 
+
 class TestTheEstimatePerWay:
     """Spec 0609, S7: die Vorschau sagt je Weg, WELCHE Anteile stattfinden - und ein nicht
     stattfindender Anteil ist `null`/`null`, nie `0.0`. `0.0` als Gesamtsumme heisst "kostenfrei"
@@ -852,9 +853,7 @@ class TestTheEstimatePerWay:
         await _add_photo_candidate(db_session, project_id, "a.jpg")
 
         body = (
-            await authenticated_api_client.get(
-                f"/projects/{project_id}/classify/estimate?mode=eye"
-            )
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate?mode=eye")
         ).json()
 
         assert body["mode"] == "eye"
@@ -877,9 +876,7 @@ class TestTheEstimatePerWay:
         )
 
         eye = (
-            await authenticated_api_client.get(
-                f"/projects/{project_id}/classify/estimate?mode=eye"
-            )
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate?mode=eye")
         ).json()
         cloud = (
             await authenticated_api_client.get(

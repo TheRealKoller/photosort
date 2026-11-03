@@ -24,9 +24,9 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCriterionScore,
     PhotoDuplicateDecision,
-    PhotoLandmarkDetection,
     PhotoEyeFineLabel,
     PhotoEyeResult,
+    PhotoLandmarkDetection,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -6734,10 +6734,12 @@ class TestTheSingleDraftStaysUntouchedByAJointDecision:
         assert before
         assert after == before
 
+
 # Spec 0609, "Cloud gilt weiter" und "Lesen": `PhotoOut.eye_result` ist GENAU dann gesetzt, wenn
 # die Motiv-Kopfzeile `source="eye"` traegt. Der Schattensatz daneben ist Vergleichsmaterial fuer
 # das CLI, keine Anzeige - er darf die Ansicht nicht dazu bringen, Eye-Werte zu zeigen, die gar
 # nicht gelten.
+
 
 async def _add_eye_shadow(
     session: AsyncSession,
@@ -6756,10 +6758,9 @@ async def _add_eye_shadow(
     )
     await session.flush()
     for label, confidence in labels:
-        session.add(
-            PhotoEyeFineLabel(photo_id=photo.id, label=label, confidence=confidence)
-        )
+        session.add(PhotoEyeFineLabel(photo_id=photo.id, label=label, confidence=confidence))
     await session.commit()
+
 
 class TestTheEyeResultInThePhotoOut:
     async def test_an_eye_header_carries_album_level_revision_and_labels(

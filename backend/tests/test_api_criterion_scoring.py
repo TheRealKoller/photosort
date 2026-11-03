@@ -448,8 +448,10 @@ class TestConfirmAusschussGate:
 async def _healthy() -> bool:
     return True
 
+
 async def _unhealthy() -> bool:
     return False
+
 
 class TestClassify:
     async def test_requires_auth(self, api_client: httpx.AsyncClient) -> None:
@@ -723,7 +725,9 @@ class TestClassify:
         assert response.status_code == 404
 
     async def test_eye_without_consent_starts_the_run_and_costs_nothing(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession,
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AK "Eye auch ohne Einwilligung waehlbar": `202`, kein Cloud-Anteil, `0.0` als
@@ -746,7 +750,9 @@ class TestClassify:
         assert fake_enqueuer.keywords == [{"mode": "eye"}]
 
     async def test_eye_with_consent_forwards_only_the_landmark_estimate(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession,
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(settings, "eye_enabled", True)
@@ -758,9 +764,7 @@ class TestClassify:
             f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
         )
         expected = (
-            await authenticated_api_client.get(
-                f"/projects/{project_id}/classify/estimate?mode=eye"
-            )
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate?mode=eye")
         ).json()["estimated_cost_usd"]
         fake_enqueuer = FakeEnqueuer()
         app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
@@ -775,7 +779,9 @@ class TestClassify:
         assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, expected))]
 
     async def test_a_dead_eye_service_is_rejected_without_enqueueing(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession,
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """AK "Nicht verfuegbar": Schalter an, Health != 200 -> `503` INNERHALB der Anfrage und
@@ -799,7 +805,9 @@ class TestClassify:
         assert fake_enqueuer.calls == []
 
     async def test_the_consent_rejection_stands_before_the_health_probe(
-        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession,
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`mode=cloud` ohne Einwilligung ist ein `403` - die Frage nach dem Eye-Dienst stellt sich
