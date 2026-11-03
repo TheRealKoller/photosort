@@ -76,7 +76,9 @@ from photosort.models import (
     PhotoCloudVisionError,
     PhotoCriterionScore,
     PhotoDuplicateDecision,
+    PhotoEyeResult,
     PhotoLandmarkDetection,
+    PhotoLocalMotifSnapshot,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -2058,20 +2060,40 @@ class TestTheDemoStateShowsEveryMotifState:
 
         assert len(without) == 1
 
-    async def test_both_bases_occur_and_the_local_one_carries_no_provider(
+    async def test_cloud_and_exactly_one_eye_basis_occur_and_only_cloud_names_a_provider(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
+        """Spec 0609: das frueher lokal grundierte Demo-Foto traegt jetzt die Eye-Kopfzeile -
+        die lokale Grundlage wandert als Schnappschuss in die Rueckbaudaten (Produktionspfad).
+        Eye ist kein Cloud-Anbieter, also traegt nur `cloud` einen Anbieternamen."""
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
 
+        rated_photos = await _photos_of(db_session, RATED_PROJECT_NAME)
         headers = [
             header
-            for photo in await _photos_of(db_session, RATED_PROJECT_NAME)
+            for photo in rated_photos
             if (header := await db_session.get(PhotoMotifAssessment, photo.id)) is not None
         ]
 
-        assert {header.source for header in headers} == set(MotifAssessmentSource)
+        assert {header.source for header in headers} == {
+            MotifAssessmentSource.CLOUD,
+            MotifAssessmentSource.EYE,
+        }
+        eye_headers = [h for h in headers if h.source == MotifAssessmentSource.EYE]
+        assert len(eye_headers) == 1
         for header in headers:
-            assert (header.provider is None) == (header.source == MotifAssessmentSource.LOCAL)
+            assert (header.provider is not None) == (header.source == MotifAssessmentSource.CLOUD)
+
+        eye_photo = await db_session.get(Photo, eye_headers[0].photo_id)
+        assert eye_photo is not None
+        eye_result = await db_session.get(PhotoEyeResult, eye_photo.id)
+        assert eye_result is not None
+        assert eye_result.album_level == demo_state._DEMO_EYE_ALBUM_LEVEL
+        assert eye_result.model_revision == demo_state._DEMO_EYE_MODEL_REVISION
+        # Der verdraengte lokale Vektor liegt als Rueckbaudatensatz daneben - sonst zeigte die
+        # Demo einen Eye-Zustand, den die Anwendung selbst nie erzeugt.
+        snapshot = await db_session.get(PhotoLocalMotifSnapshot, eye_photo.id)
+        assert snapshot is not None
 
     async def test_exactly_one_photo_is_excluded_as_a_document(
         self, db_session: AsyncSession, tmp_path: Path
