@@ -10,7 +10,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
-import httpx
 from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
@@ -71,6 +70,11 @@ from photosort.db import async_session_factory
 from photosort.duplicates import survives_ausschuss
 from photosort.event_inputs import read_event_inputs
 from photosort.events import LandmarkPointsByName, assign_place_names, build_events
+from photosort.eye_client import (
+    EyeClientLike,
+    EyeServiceUnavailableError,
+    build_eye_client,
+)
 from photosort.eye_mapping import (
     MODEL_REVISION as EYE_MODEL_REVISION,
 )
@@ -2694,90 +2698,10 @@ async def _start_criterion_scoring_run(
 
 
 # --- Eye-Sidecar (Spec 0609, ADR 0138) ------------------------------------------------------
-#
-# Der Dienst nimmt JPEG-Bytes und gibt die SDK-Analyse als JSON zurueck; er rechnet KEINE Motive
-# (die Abbildung steht in eye_mapping.py). Diese Grenze hier ist die einzige Stelle, an der das
-# Backend mit ihm spricht.
 
-# 30 s je Foto - feste Zeitgrenze, kein Retry (S3). Ein haengender Aufruf ist ein Fehlschlag der
-# Phase, kein Grund, es gleich noch einmal zu versuchen: die Gewichte sind lokal, ein Timeout
-# heisst "Dienst antwortet nicht", und jeder Wiederholungsversuch verlaengert nur den Lauf.
-EYE_REQUEST_TIMEOUT_SECONDS = 30.0
-# 1 MiB Antwortdeckel, geprueft VOR json.loads: die Analyse eines Fotos ist wenige Kilobyte gross,
-# ein groesserer Koerper ist ein Defekt oder ein falscher Dienst hinter der Adresse.
-EYE_MAX_RESPONSE_BYTES = 1024 * 1024
 # Fortschritt wird in Bloecken committet - Muster von `persons_*`. Die ERGEBNISZEILEN bleiben bis
 # zum Phasenende ungeschrieben (eine Transaktion), nur der Zaehler wandert frueher.
 EYE_PROGRESS_COMMIT_BATCH_SIZE = 20
-
-
-class EyeClientLike(Protocol):
-    """Die Teilmenge des Sidecars, die die Phase braucht - Tests setzen hier einen Fake ein."""
-
-    async def health(self) -> bool: ...
-
-    async def analyze(self, image_bytes: bytes) -> Mapping[str, Any]: ...
-
-    async def aclose(self) -> None: ...
-
-
-class EyeServiceUnavailableError(RuntimeError):
-    """Der Dienst antwortet nicht, antwortet falsch oder ist nicht gesund.
-
-    Bewusst ein eigener Fehlertyp: die Phase endet damit sofort und der Lauf auf `FAILED` - ein
-    einzelnes unlesbares BILD wird dagegen uebersprungen (das ist `Path.exists()` bzw. der
-    Bildleser, nicht dieser Fehler)."""
-
-
-class _EyeHttpClient:
-    """HTTP-Grenze zum Sidecar: keine Weiterleitungen, keine Browser-Kopfzeilen, fester Deckel.
-
-    S3: `EYE_SERVICE_URL` kommt ausschliesslich aus den Settings (nur http/https, per Validator
-    geprueft), `follow_redirects=False` verhindert, dass ein 302 den Verkehr auf einen anderen
-    Host umlenkt, und der Antwortkoerper wird gedeckelt, bevor er geparst wird."""
-
-    def __init__(self, base_url: str) -> None:
-        self._client = httpx.AsyncClient(
-            base_url=base_url,
-            timeout=EYE_REQUEST_TIMEOUT_SECONDS,
-            follow_redirects=False,
-        )
-
-    async def health(self) -> bool:
-        try:
-            response = await self._client.get("/health")
-        except httpx.HTTPError:
-            return False
-        return bool(response.status_code == 200)
-
-    async def analyze(self, image_bytes: bytes) -> Mapping[str, Any]:
-        try:
-            response = await self._client.post(
-                "/analyze",
-                content=image_bytes,
-                headers={"content-type": _CLOUD_VISION_IMAGE_MIME_TYPE},
-            )
-        except httpx.HTTPError as exc:
-            raise EyeServiceUnavailableError("Die Eye-Auswertung ist nicht erreichbar.") from exc
-        if response.status_code != 200:
-            raise EyeServiceUnavailableError("Die Eye-Auswertung hat abgelehnt.")
-        if len(response.content) > EYE_MAX_RESPONSE_BYTES:
-            raise EyeServiceUnavailableError("Die Eye-Auswertung hat zu viel geliefert.")
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise EyeServiceUnavailableError("Die Eye-Auswertung war nicht lesbar.") from exc
-        if not isinstance(payload, dict):
-            raise EyeServiceUnavailableError("Die Eye-Auswertung war nicht lesbar.")
-        return payload
-
-    async def aclose(self) -> None:
-        await self._client.aclose()
-
-
-def build_eye_client() -> EyeClientLike:
-    """Der Client des Sidecars - Adresse allein aus den Settings, kein Request-Wert."""
-    return _EyeHttpClient(settings.eye_service_url)
 
 
 def _sanitized_eye_labels(analysis: EyeAnalysis) -> list[tuple[str, float]]:

@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import photosort.api.projects as projects_api
 from photosort.api.deps import get_job_enqueuer, get_opencloud_client
 from photosort.config import settings
 from photosort.main import app
@@ -50,9 +51,14 @@ class FakeOpenCloudClient:
 class FakeEnqueuer:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
+        # Die Schluesselwort-Argumente getrennt: `mode` faehrt seit Spec 0609 als solches mit,
+        # und die bestehenden Zusagen ueber die Positionsargumente sollen dabei nicht umgeschrieben
+        # werden muessen.
+        self.keywords: list[dict[str, Any]] = []
 
-    async def enqueue_job(self, function: str, *args: Any) -> None:
+    async def enqueue_job(self, function: str, *args: Any, **kwargs: Any) -> None:
         self.calls.append((function, args))
+        self.keywords.append(kwargs)
 
 
 async def _create_project(
@@ -439,10 +445,16 @@ class TestConfirmAusschussGate:
         assert await _decision_count(db_session) == 1
 
 
+async def _healthy() -> bool:
+    return True
+
+async def _unhealthy() -> bool:
+    return False
+
 class TestClassify:
     async def test_requires_auth(self, api_client: httpx.AsyncClient) -> None:
         response = await api_client.post(
-            "/projects/1/classify", json={"scoring_run_id": 1, "use_cloud": False}
+            "/projects/1/classify", json={"scoring_run_id": 1, "mode": "local"}
         )
         assert response.status_code == 401
 
@@ -452,7 +464,7 @@ class TestClassify:
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
-            "/projects/999/classify", json={"scoring_run_id": 1, "use_cloud": False}
+            "/projects/999/classify", json={"scoring_run_id": 1, "mode": "local"}
         )
 
         assert response.status_code == 404
@@ -469,7 +481,7 @@ class TestClassify:
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id, "use_cloud": False}
+            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id, "mode": "local"}
         )
 
         assert response.status_code == 403
@@ -481,7 +493,7 @@ class TestClassify:
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/classify", json={"scoring_run_id": 1, "use_cloud": False}
+            f"/projects/{project_id}/classify", json={"scoring_run_id": 1, "mode": "local"}
         )
 
         assert response.status_code == 409
@@ -494,7 +506,7 @@ class TestClassify:
         app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id, "use_cloud": False}
+            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id, "mode": "local"}
         )
 
         assert response.status_code == 409
@@ -521,7 +533,7 @@ class TestClassify:
 
         response = await authenticated_api_client.post(
             f"/projects/{project_id}/classify",
-            json={"scoring_run_id": stale_run.id, "use_cloud": False},
+            json={"scoring_run_id": stale_run.id, "mode": "local"},
         )
 
         assert response.status_code == 409
@@ -536,14 +548,15 @@ class TestClassify:
         app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
 
         response = await authenticated_api_client.post(
-            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id, "use_cloud": False}
+            f"/projects/{project_id}/classify", json={"scoring_run_id": run.id, "mode": "local"}
         )
 
         assert response.status_code == 202
-        # specs/features/0348-klassifizierungs-transparenz.md, ADR 0068 Punkt 5: das vierte
-        # Argument ist die serverseitig berechnete Start-Schaetzung. Ohne Cloud-Nutzung ist sie
-        # `None` - nicht `0.0`: ein Lauf ohne Cloud hat keine Kostenschaetzung.
-        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, None))]
+        # Spec 0609, S7: `0.0` heisst "kostenfrei" und ist eine BEKANNTE Aussage ueber einen Lauf,
+        # der nichts kostet; `NULL` bliebe der Ausdruck fuer "keine Schaetzung bekannt". Der
+        # Schluessel `mode` faehrt neben dem vierten Positionsargument mit (S6).
+        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, 0.0))]
+        assert fake_enqueuer.keywords == [{"mode": "local"}]
 
     async def test_auto_confirmed_gate_allows_the_request(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -566,17 +579,17 @@ class TestClassify:
 
         response = await authenticated_api_client.post(
             f"/projects/{project_id}/classify",
-            json={"scoring_run_id": scoring_run.id, "use_cloud": False},
+            json={"scoring_run_id": scoring_run.id, "mode": "local"},
         )
 
         assert response.status_code == 202
 
-    async def test_enqueues_the_job_with_use_cloud_true(
+    async def test_enqueues_the_job_with_mode_cloud(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md: die laufbezogene
-        Checkbox wird unveraendert an den Job durchgereicht - sie ist eine Laufeigenschaft, kein
-        Projektzustand."""
+        """Spec 0609: der gewaehlte Weg wird unveraendert an den Job durchgereicht - er ist eine
+        Laufeigenschaft, kein Projektzustand. `use_cloud` bleibt dabei vierter
+        Positionsparameter, `mode` faehrt als Schluesselwort (S6)."""
         project_id = await _create_project(authenticated_api_client)
         run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
         await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
@@ -588,14 +601,15 @@ class TestClassify:
 
         response = await authenticated_api_client.post(
             f"/projects/{project_id}/classify",
-            json={"scoring_run_id": run.id, "use_cloud": True},
+            json={"scoring_run_id": run.id, "mode": "cloud"},
         )
 
         assert response.status_code == 202
-        # Mit Cloud-Nutzung reicht der Endpunkt die Schaetzung durch. Das Projekt hat hier keine
+        # Mit Cloud-Weg reicht der Endpunkt die Schaetzung durch. Das Projekt hat hier keine
         # Kandidaten, die Schaetzung ist deshalb `0.0` - "es faellt nichts an", eine BEKANNTE
-        # Aussage, im Unterschied zum `None` des lokalen Laufs darueber.
+        # Aussage.
         assert fake_enqueuer.calls == [("classify", (project_id, run.id, True, 0.0))]
+        assert fake_enqueuer.keywords == [{"mode": "cloud"}]
 
     async def test_returns_403_when_cloud_is_requested_without_consent(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -611,7 +625,7 @@ class TestClassify:
 
         response = await authenticated_api_client.post(
             f"/projects/{project_id}/classify",
-            json={"scoring_run_id": run.id, "use_cloud": True},
+            json={"scoring_run_id": run.id, "mode": "cloud"},
         )
 
         assert response.status_code == 403
@@ -628,15 +642,15 @@ class TestClassify:
 
         response = await authenticated_api_client.post(
             f"/projects/{project_id}/classify",
-            json={"scoring_run_id": run.id, "use_cloud": False},
+            json={"scoring_run_id": run.id, "mode": "local"},
         )
 
         assert response.status_code == 202
 
-    async def test_use_cloud_is_required(
+    async def test_mode_is_required(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Kein Default fuer `use_cloud` (api/projects.py::ClassifyRequest): der Client soll sich
+        """Kein Default fuer `mode` (api/projects.py::ClassifyRequest, S5): der Client soll sich
         sichtbar entscheiden muessen, statt in eine Voreinstellung zu laufen, die Kosten
         verursacht."""
         project_id = await _create_project(authenticated_api_client)
@@ -649,6 +663,180 @@ class TestClassify:
         )
 
         assert response.status_code == 422
+
+    async def test_an_unknown_mode_is_rejected(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """S5: `mode` ist ein geschlossener Wertebereich - ein unbekannter Wert wird nicht auf
+        einen anderen Weg abgebildet."""
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": run.id, "mode": "irgendwas"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_eye_with_the_switch_off_is_rejected_before_the_project_lookup(
+        self, authenticated_api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die Reihenfolge ist Teil der Zusage: das Projekt 999 existiert nicht, trotzdem kommt
+        `403` - die Antwort verraet damit nichts ueber den Bestand, und der eigene `detail`-Satz
+        ist vom Consent-`403` unterscheidbar."""
+        monkeypatch.setattr(settings, "eye_enabled", False)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            "/projects/999/classify", json={"scoring_run_id": 1, "mode": "eye"}
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Die Eye-Auswertung ist nicht aktiviert."
+
+    async def test_the_feature_flag_still_comes_first(
+        self, authenticated_api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "category_selection_enabled", False)
+        monkeypatch.setattr(settings, "eye_enabled", False)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            "/projects/999/classify", json={"scoring_run_id": 1, "mode": "eye"}
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Diese Funktion ist derzeit nicht aktiviert."
+
+    async def test_eye_with_the_switch_on_reaches_the_project_lookup(
+        self, authenticated_api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            "/projects/999/classify", json={"scoring_run_id": 1, "mode": "eye"}
+        )
+
+        assert response.status_code == 404
+
+    async def test_eye_without_consent_starts_the_run_and_costs_nothing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AK "Eye auch ohne Einwilligung waehlbar": `202`, kein Cloud-Anteil, `0.0` als
+        eingefrorene Schaetzung."""
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(projects_api, "eye_service_is_healthy", _healthy)
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": run.id, "mode": "eye"},
+        )
+
+        assert response.status_code == 202
+        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, 0.0))]
+        assert fake_enqueuer.keywords == [{"mode": "eye"}]
+
+    async def test_eye_with_consent_forwards_only_the_landmark_estimate(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(projects_api, "eye_service_is_healthy", _healthy)
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        await authenticated_api_client.put(
+            f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
+        )
+        expected = (
+            await authenticated_api_client.get(
+                f"/projects/{project_id}/classify/estimate?mode=eye"
+            )
+        ).json()["estimated_cost_usd"]
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": run.id, "mode": "eye"},
+        )
+
+        assert response.status_code == 202
+        assert expected is not None
+        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, expected))]
+
+    async def test_a_dead_eye_service_is_rejected_without_enqueueing(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """AK "Nicht verfuegbar": Schalter an, Health != 200 -> `503` INNERHALB der Anfrage und
+        kein Job - ein stiller Rueckfall auf einen anderen Weg waere schlimmer als die sichtbare
+        Ablehnung."""
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(projects_api, "eye_service_is_healthy", _unhealthy)
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": run.id, "mode": "eye"},
+        )
+
+        assert response.status_code == 503
+        assert "nicht erreichbar" in response.json()["detail"]
+        assert fake_enqueuer.calls == []
+
+    async def test_the_consent_rejection_stands_before_the_health_probe(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`mode=cloud` ohne Einwilligung ist ein `403` - die Frage nach dem Eye-Dienst stellt sich
+        fuer diesen Weg gar nicht."""
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": run.id, "mode": "cloud"},
+        )
+
+        assert response.status_code == 403
+
+    async def test_eye_available_comes_from_the_switch_and_never_from_a_probe(
+        self, authenticated_api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`ProjectOut.eye_available` ist eine Aussage ueber die EINSTELLUNG. Wuerde sie gemessen,
+        machte das Laden der Projektliste den Dienst zur Voraussetzung - und die Wahl verschwaende
+        bei jedem Aussetzer aus der Oberflaeche."""
+
+        async def _forbidden() -> bool:
+            raise AssertionError("Die Projektliste darf den Eye-Dienst nicht anfragen")
+
+        monkeypatch.setattr(projects_api, "eye_service_is_healthy", _forbidden)
+
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        project_id = await _create_project(authenticated_api_client)
+        enabled = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+        assert enabled["eye_available"] is True
+
+        monkeypatch.setattr(settings, "eye_enabled", False)
+        disabled = (await authenticated_api_client.get(f"/projects/{project_id}")).json()
+        assert disabled["eye_available"] is False
 
     async def test_the_replaced_endpoints_are_gone(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession

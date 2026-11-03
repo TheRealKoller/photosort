@@ -376,8 +376,11 @@ _ERSETZTE_VORKOMMEN = 6
 # Stelle liefert eine plausible Menge und dieselbe Gesamtzahl.
 _ERWARTETE_VERWENDUNGEN = {
     # run_criterion_scoring (speist zugleich den Sehenswuerdigkeits-Teilschritt) und
-    # select_remote_category_candidates - beide cloud-bestimmend (S1).
-    ("worker.py", "survives_ausschuss"): 2,
+    # select_remote_category_candidates - beide cloud-bestimmend (S1). Dazu seit Spec 0609 die
+    # Eye-Phase: sie wertet DENSELBEN Kandidatenbestand aus wie die Kriterien-Phase, damit
+    # ausgeschlossene Aufnahmen auch lokal keine Kopfzeile bekommen (und die Rangfolge nicht
+    # zwischen zwei Laeufen ueber verschiedene Mengen spricht).
+    ("worker.py", "survives_ausschuss"): 3,
     # Die beiden Kostenschaetzungen, auf denen die Freigabe eines kostenpflichtigen Laufs beruht.
     # Sie folgen der Auswahl NICHT von selbst (S1).
     ("api/projects.py", "survives_ausschuss"): 2,
@@ -481,13 +484,14 @@ def test_the_six_replaced_occurrences_and_the_written_call_sites_are_held_side_b
     Die sechs ersetzten Vorkommen der Dokumente werden zu mehr Aufrufstellen, weil die eine
     Bedingung in ZWEI Funktionen zerfaellt und "der Vorschlags-Zweig" schon vorher zwei Codeformen
     war; seit Spec 0525 treten Massenweg, projektweite `open_count` und der Bestand
-    `has_ausschuss_entry` hinzu, seit Spec 0533 die Auswahl des Gruppenabschlusses. Ein Teil davon
+    `has_ausschuss_entry` hinzu, seit Spec 0533 die Auswahl des Gruppenabschlusses und seit Spec
+    0609 die Eye-Phase (derselbe Kandidatenbestand wie die Kriterien-Phase). Ein Teil davon
     sind SQL-Fassungen und treten als weiterer Konjunktionsteil in eine bestehende Anweisung ein
     (Auflage S2); die zwei Objektfassungen lesen ein bereits geladenes Foto."""
     gemessen = _gemessene_verwendungen()
     sql = sum(anzahl for (_datei, name), anzahl in gemessen.items() if name in _SQL_FASSUNGEN)
 
     assert _ERSETZTE_VORKOMMEN == 6
-    assert sum(gemessen.values()) == 12
-    assert sql == 10
+    assert sum(gemessen.values()) == 13
+    assert sql == 11
     assert sum(gemessen.values()) - sql == 2

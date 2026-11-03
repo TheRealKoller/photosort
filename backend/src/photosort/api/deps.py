@@ -75,7 +75,12 @@ async def get_opencloud_client() -> AsyncIterator[OpenCloudClient]:
 
 
 class JobEnqueuer(Protocol):
-    async def enqueue_job(self, function: str, *args: Any) -> Any: ...
+    """Die Einreih-Schnittstelle der Jobs. `**kwargs` gehoert dazu, seit der Klassifizierungs-Job
+    `mode` als SCHLUESSELWORT traegt (Spec 0609, S6): `use_cloud` bleibt vierter
+    Positionsparameter, damit ein alter Worker den Job sichtbar mit `TypeError` verwirft, statt
+    `"eye"` als Cloud-Freigabe zu lesen."""
+
+    async def enqueue_job(self, function: str, *args: Any, **kwargs: Any) -> Any: ...
 
 
 _pool: ArqRedis | None = None

@@ -25,6 +25,8 @@ from photosort.models import (
     PhotoCriterionScore,
     PhotoDuplicateDecision,
     PhotoLandmarkDetection,
+    PhotoEyeFineLabel,
+    PhotoEyeResult,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -6731,3 +6733,107 @@ class TestTheSingleDraftStaysUntouchedByAJointDecision:
 
         assert before
         assert after == before
+
+# Spec 0609, "Cloud gilt weiter" und "Lesen": `PhotoOut.eye_result` ist GENAU dann gesetzt, wenn
+# die Motiv-Kopfzeile `source="eye"` traegt. Der Schattensatz daneben ist Vergleichsmaterial fuer
+# das CLI, keine Anzeige - er darf die Ansicht nicht dazu bringen, Eye-Werte zu zeigen, die gar
+# nicht gelten.
+
+async def _add_eye_shadow(
+    session: AsyncSession,
+    photo: Photo,
+    *,
+    labels: tuple[tuple[str, float], ...] = (("dog", 0.9), ("mountain", 0.7)),
+) -> None:
+    session.add(
+        PhotoEyeResult(
+            photo_id=photo.id,
+            excluded_document=False,
+            album_level=4,
+            model_revision="v1.0.0",
+            computed_at=datetime(2026, 9, 14, 9, 0, 0),
+        )
+    )
+    await session.flush()
+    for label, confidence in labels:
+        session.add(
+            PhotoEyeFineLabel(photo_id=photo.id, label=label, confidence=confidence)
+        )
+    await session.commit()
+
+class TestTheEyeResultInThePhotoOut:
+    async def test_an_eye_header_carries_album_level_revision_and_labels(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(
+            db_session,
+            photo,
+            source=MotifAssessmentSource.EYE,
+            provider=None,
+            computed_at=datetime(2026, 9, 14, 9, 0, 0),
+        )
+        await _add_eye_shadow(db_session, photo)
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["motif_assessment"]["source"] == "eye"
+        assert item["motif_assessment"]["provider"] is None
+        assert item["eye_result"] == {
+            "album_level": 4,
+            "model_revision": "v1.0.0",
+            "computed_at": "2026-09-14T09:00:00",
+            "fine_labels": ["dog", "mountain"],
+        }
+
+    async def test_the_labels_are_ordered_by_confidence_not_by_insertion(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo, source=MotifAssessmentSource.EYE, provider=None)
+        await _add_eye_shadow(
+            db_session, photo, labels=(("schwach", 0.55), ("stark", 0.9), ("mittel", 0.7))
+        )
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["eye_result"]["fine_labels"] == ["stark", "mittel", "schwach"]
+
+    async def test_a_cloud_header_stays_and_the_shadow_is_not_shown(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK "Cloud gilt weiter": die Cloud-Kopfzeile bleibt die Grundlage, `eye_result` ist
+        `null` - sonst zeigte die Ansicht Eye-Werte als die gueltigen einer Cloud-Kopfzeile."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo, strengths={"tiere": 0.8})
+        await _add_eye_shadow(db_session, photo)
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["motif_assessment"]["source"] == "cloud"
+        assert item["eye_result"] is None
+
+    async def test_a_shadow_without_a_header_is_not_shown(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _add_eye_shadow(db_session, photo)
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["motif_assessment"] is None
+        assert item["eye_result"] is None
+
+    async def test_a_photo_without_an_eye_run_carries_null(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["eye_result"] is None
