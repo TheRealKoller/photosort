@@ -1154,10 +1154,18 @@ async def trigger_classify(
     # SICHERHEIT: die Zahl entsteht ausschliesslich aus Datenbankzaehlungen und der validierten
     # Betriebseinstellung. `ClassifyRequest` traegt bewusst KEIN Betrags-, Kosten-, Modell- oder
     # Anbieterfeld - ein vom Client geliefertes Geldfeld wanderte sonst ungeprueft in die
-    # Buchfuehrung. `0.0` bedeutet "kostenfrei" (lokal, Eye ohne Einwilligung) und ist von `NULL`
-    # ("keine Schaetzung bekannt") zu unterscheiden.
+    # Buchfuehrung.
+    #
+    # NUR MIT CLOUD-KONTAKT wird eine Schaetzung eingefroren (ADR 0138 Punkt 7): findet kein
+    # Cloud-Aufruf statt, speichert der Lauf `NULL` - "keine Schaetzung", nicht "0 USD geschaetzt".
+    # Die ANTWORT von `GET .../classify/estimate` bleibt davon unberuehrt und nennt fuer den
+    # kostenfreien Weg weiterhin `0.0` (S7); `0.0` als gespeicherte Laufschaetzung behauptete
+    # dagegen eine Rechnung, die niemand erwartet.
+    cloud_contact = payload.mode == "cloud" or (
+        payload.mode == "eye" and project.cloud_vision_detection_enabled
+    )
     estimate = await _build_classification_estimate(session, project, mode=payload.mode)
-    estimated_cost_usd = estimate.estimated_cost_usd
+    estimated_cost_usd = estimate.estimated_cost_usd if cloud_contact else None
 
     # `use_cloud` bleibt der vierte Positionsparameter des Jobs; `mode` faehrt als Schluesselwort
     # mit (S6). Ein alter Worker kennt den Parameter nicht und verwirft den Job sichtbar mit

@@ -1512,14 +1512,21 @@ class TestTheRunEstimateReachesTheJob:
         assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, True, expected))]
         assert fake_enqueuer.keywords == [{"mode": "cloud"}]
 
-    async def test_a_local_run_forwards_zero_and_that_means_free(
+    async def test_a_local_run_forwards_no_estimate(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Spec 0609, S7: `0.0` heisst "kostenfrei" - eine BEKANNTE Aussage ueber einen Weg, der
-        nichts kostet. `NULL` bleibt dem Fall vorbehalten, dass keine Schaetzung bekannt ist."""
+        """ADR 0138 Punkt 7: ohne Cloud-Kontakt reicht der Ausloeser `None` durch - der Lauf
+        speichert "keine Schaetzung", nicht "0 USD geschaetzt". Die ANTWORT der Vorschau nennt
+        fuer diesen Weg weiterhin `0.0` (S7); sie beschreibt einen Preis, keine Buchfuehrung."""
         project_id, scoring_run_id = await self._prepare(
             authenticated_api_client, db_session, photo_count=3
         )
+        vorgabe = (
+            await authenticated_api_client.get(
+                f"/projects/{project_id}/classify/estimate?mode=local"
+            )
+        ).json()["estimated_cost_usd"]
+        assert vorgabe == 0.0
         fake_enqueuer = FakeEnqueuer()
         app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
 
@@ -1529,7 +1536,7 @@ class TestTheRunEstimateReachesTheJob:
         )
 
         assert response.status_code == 202
-        assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, False, 0.0))]
+        assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, False, None))]
         assert fake_enqueuer.keywords == [{"mode": "local"}]
 
     async def test_the_request_body_cannot_influence_the_stored_estimate(

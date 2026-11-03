@@ -554,10 +554,9 @@ class TestClassify:
         )
 
         assert response.status_code == 202
-        # Spec 0609, S7: `0.0` heisst "kostenfrei" und ist eine BEKANNTE Aussage ueber einen Lauf,
-        # der nichts kostet; `NULL` bliebe der Ausdruck fuer "keine Schaetzung bekannt". Der
-        # Schluessel `mode` faehrt neben dem vierten Positionsargument mit (S6).
-        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, 0.0))]
+        # ADR 0138 Punkt 7: ohne Cloud-Kontakt reicht der Ausloeser `None` durch. Der Schluessel
+        # `mode` faehrt neben dem vierten Positionsargument mit (S6).
+        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, None))]
         assert fake_enqueuer.keywords == [{"mode": "local"}]
 
     async def test_auto_confirmed_gate_allows_the_request(
@@ -730,8 +729,8 @@ class TestClassify:
         db_session: AsyncSession,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """AK "Eye auch ohne Einwilligung waehlbar": `202`, kein Cloud-Anteil, `0.0` als
-        eingefrorene Schaetzung."""
+        """AK "Eye auch ohne Einwilligung waehlbar": `202`, kein Cloud-Anteil und deshalb
+        `None` als eingefrorene Schaetzung (ADR 0138 Punkt 7)."""
         monkeypatch.setattr(settings, "eye_enabled", True)
         monkeypatch.setattr(projects_api, "eye_service_is_healthy", _healthy)
         project_id = await _create_project(authenticated_api_client)
@@ -746,7 +745,9 @@ class TestClassify:
         )
 
         assert response.status_code == 202
-        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, 0.0))]
+        # Kein Cloud-Kontakt (keine Einwilligung) -> keine eingefrorene Schaetzung, obwohl die
+        # Vorschau fuer diesen Weg `0.0` nennt.
+        assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, None))]
         assert fake_enqueuer.keywords == [{"mode": "eye"}]
 
     async def test_eye_with_consent_forwards_only_the_landmark_estimate(
@@ -777,6 +778,57 @@ class TestClassify:
         assert response.status_code == 202
         assert expected is not None
         assert fake_enqueuer.calls == [("classify", (project_id, run.id, False, expected))]
+
+    @pytest.mark.parametrize(
+        ("mode", "consent", "expects_estimate"),
+        [
+            ("cloud", True, True),
+            ("local", False, False),
+            ("eye", False, False),
+            ("eye", True, True),
+        ],
+        ids=["cloud", "local", "eye-ohne-einwilligung", "eye-mit-einwilligung"],
+    )
+    async def test_only_a_cloud_contact_freezes_an_estimate(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+        mode: str,
+        consent: bool,
+        expects_estimate: bool,
+    ) -> None:
+        """ADR 0138 Punkt 7: der Job traegt eine Schaetzung GENAU dann, wenn in diesem Lauf ein
+        Cloud-Kontakt stattfindet. `None` heisst "keine Schaetzung", nicht "0 USD" - Eye ohne
+        Einwilligung und "nur lokal" fassen keinen fremden Dienst an."""
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(projects_api, "eye_service_is_healthy", _healthy)
+        project_id = await _create_project(authenticated_api_client)
+        run = await _add_successful_scoring_run(db_session, project_id, suggestions_found=0)
+        await authenticated_api_client.post(f"/projects/{project_id}/confirm-ausschuss-gate")
+        if consent:
+            await authenticated_api_client.put(
+                f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
+            )
+        estimate = (
+            await authenticated_api_client.get(
+                f"/projects/{project_id}/classify/estimate?mode={mode}"
+            )
+        ).json()["estimated_cost_usd"]
+        fake_enqueuer = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
+
+        response = await authenticated_api_client.post(
+            f"/projects/{project_id}/classify",
+            json={"scoring_run_id": run.id, "mode": mode},
+        )
+
+        assert response.status_code == 202
+        forwarded = fake_enqueuer.calls[0][1][3]
+        if expects_estimate:
+            assert forwarded == estimate
+        else:
+            assert forwarded is None
 
     async def test_a_dead_eye_service_is_rejected_without_enqueueing(
         self,
