@@ -217,6 +217,57 @@ describe('ein Auslöser', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Serverfehler')
   })
 
+  it('bietet nach einem 503 "Erneut versuchen" und wiederholt genau einen Aufruf', async () => {
+    vi.mocked(projectsApi.triggerClassification)
+      .mockRejectedValueOnce(new ApiError(503, 'Eye ist nicht erreichbar.'))
+      .mockRejectedValueOnce(new ApiError(503, 'Eye ist nicht erreichbar.'))
+    const user = userEvent.setup()
+    renderSection(project({ eye_available: true }))
+    await chooseWay(user, EYE_WAY)
+
+    await user.click(screen.getByRole('button', TRIGGER))
+
+    // 503 heisst "nicht verfuegbar, spaeter erneut" - der Fehler ist voruebergehend und die
+    // Wiederholung deshalb Teil der Meldung, nicht ein zweiter Ausloeser im Formular.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Eye ist nicht erreichbar.')
+    await user.click(within(alert).getByRole('button', { name: 'Erneut versuchen' }))
+
+    await waitFor(() => expect(projectsApi.triggerClassification).toHaveBeenCalledTimes(2))
+    expect(projectsApi.triggerClassification).toHaveBeenLastCalledWith(1, 42, 'eye')
+  })
+
+  it('bietet nach einem 403 KEIN "Erneut versuchen" - die Ablehnung bleibt bestehen', async () => {
+    vi.mocked(projectsApi.triggerClassification).mockRejectedValue(
+      new ApiError(403, 'Diese Funktion ist derzeit nicht aktiviert.'),
+    )
+    const user = userEvent.setup()
+    renderSection(project({ eye_available: true }))
+    await chooseWay(user, EYE_WAY)
+
+    await user.click(screen.getByRole('button', TRIGGER))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Diese Funktion ist derzeit nicht aktiviert.')
+    expect(within(alert).queryByRole('button', { name: 'Erneut versuchen' })).toBeNull()
+  })
+
+  it('laesst die Eye-Zeile nach einem 503 gewaehlt', async () => {
+    vi.mocked(projectsApi.triggerClassification).mockRejectedValue(
+      new ApiError(503, 'Eye ist nicht erreichbar.'),
+    )
+    const user = userEvent.setup()
+    renderSection(project({ eye_available: true }))
+    await chooseWay(user, EYE_WAY)
+
+    await user.click(screen.getByRole('button', TRIGGER))
+
+    await screen.findByRole('alert')
+    // Der Fehlschlag ist keine neue Wahl: ein stiller Rueckfall auf einen anderen Weg waere
+    // schlimmer als die sichtbare Ablehnung, und die Wahl gehoert der Person.
+    expect(screen.getByRole('radio', EYE_WAY)).toBeChecked()
+  })
+
   it('never repeats the withdrawn "results only take effect on a later run" hint', () => {
     renderSection(
       project({
