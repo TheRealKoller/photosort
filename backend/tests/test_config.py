@@ -596,3 +596,65 @@ def test_env_example_documents_the_place_dataset_path() -> None:
     """Eine Einstellung, die der Betreiber nicht findet, ist keine - und dieser Pfad ist der
     Unterschied zwischen benannten Events und Nummern."""
     assert "PLACE_DATASET_PATH=" in _env_example_text()
+
+
+class TestTheEyeSettings:
+    """Spec 0609 / ADR 0138: zwei Betriebseinstellungen, beide ohne Wirkung auf andere Dienste.
+
+    `eye_enabled` ist die EINE Quelle der Laufwahl - nie eine Lebendpruefung, sonst waere das
+    Laden der Projektliste eine Erreichbarkeitssonde. `eye_service_url` wandert in einen HTTP-
+    Client; nur http/https mit Host ist zulaessig (S3 der Spec)."""
+
+    def test_the_switch_defaults_to_off(self) -> None:
+        """Vorgabe `false`: ein Stack ohne Eye-Dienst bietet die Wahl gar nicht erst an."""
+        settings = Settings(_env_file=None)
+
+        assert settings.eye_enabled is False
+
+    def test_the_service_url_defaults_to_the_compose_service(self) -> None:
+        settings = Settings(_env_file=None)
+
+        assert settings.eye_service_url == "http://eye:8090"
+
+    def test_the_switch_is_env_overridable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EYE_ENABLED", "true")
+
+        assert Settings(_env_file=None).eye_enabled is True
+
+    def test_an_https_url_is_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EYE_SERVICE_URL", "https://eye.example.test:8090")
+
+        assert Settings(_env_file=None).eye_service_url == "https://eye.example.test:8090"
+
+    def test_a_trailing_slash_is_removed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Der Aufrufer haengt Pfade mit fuehrendem Schraegstrich an - zwei waeren ein 404."""
+        monkeypatch.setenv("EYE_SERVICE_URL", "http://eye:8090/")
+
+        assert Settings(_env_file=None).eye_service_url == "http://eye:8090"
+
+    @pytest.mark.parametrize(
+        "wert",
+        ["", "eye:8090", "ftp://eye:8090", "file:///model", "http://", "http://eye:8090/?x=1"],
+    )
+    def test_an_unusable_url_is_a_start_error(
+        self, monkeypatch: pytest.MonkeyPatch, wert: str
+    ) -> None:
+        monkeypatch.setenv("EYE_SERVICE_URL", wert)
+
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None)
+
+    def test_the_rejection_names_the_field_and_leaks_no_other_setting(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """pydantic haengt an eine ValidationError den EINGABEWERT des Feldes - hier die Adresse
+        selbst, die kein Geheimnis ist. Kein ANDERER Wert darf mitkommen (Muster
+        `landmark_model`): sonst stuenden `SECRET_KEY` und beide API-Keys im Startup-Traceback."""
+        monkeypatch.setenv("EYE_SERVICE_URL", "ftp://eye.example.test:2121")
+        monkeypatch.setenv("SECRET_KEY", "streng-geheim-0609")
+
+        with pytest.raises(ValidationError) as fehler:
+            Settings(_env_file=None)
+
+        assert "EYE_SERVICE_URL" in str(fehler.value)
+        assert "streng-geheim-0609" not in str(fehler.value)
