@@ -23,10 +23,20 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from photosort.models import (
     MotifAssessmentSource,
+    PhotoLocalMotifSnapshot,
+    PhotoLocalMotifSnapshotStrength,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
 )
+
+# Die Rangfolge der Grundlagen an EINER Stelle: `local < eye < cloud`. Ein Eye-Lauf verdraengt
+# damit eine lokale Aussage und eine Cloud-Aussage nie (Spec 0609 / ADR 0138 Punkt 4).
+_SOURCE_RANK: dict[MotifAssessmentSource, int] = {
+    MotifAssessmentSource.LOCAL: 0,
+    MotifAssessmentSource.EYE: 1,
+    MotifAssessmentSource.CLOUD: 2,
+}
 
 
 @dataclass(frozen=True)
@@ -120,6 +130,70 @@ async def load_effective_strengths(
     return result
 
 
+async def _write_local_snapshot(
+    session: AsyncSession,
+    photo_id: int,
+    *,
+    excluded_document: bool,
+    computed_at: datetime,
+    strengths: Mapping[str, float],
+) -> None:
+    """Legt den LOKALEN Vektor als Rueckbaudaten ab bzw. ersetzt ihn (ADR 0138 Punkt 5).
+
+    Hoechstens EINE Zeile je Foto (`photo_id` ist Primary Key): ein zweiter lokaler Lauf
+    ueberschreibt den Schnappschuss mit seinem FRISCHEN Vektor, statt eine zweite Zeile
+    danebenzulegen - sonst muesste der Rueckbau raten, welcher der juengste ist."""
+    snapshot = await session.get(PhotoLocalMotifSnapshot, photo_id)
+    if snapshot is None:
+        session.add(
+            PhotoLocalMotifSnapshot(
+                photo_id=photo_id,
+                excluded_document=excluded_document,
+                computed_at=computed_at,
+            )
+        )
+    else:
+        snapshot.excluded_document = excluded_document
+        snapshot.computed_at = computed_at
+        await session.execute(
+            delete(PhotoLocalMotifSnapshotStrength).where(
+                PhotoLocalMotifSnapshotStrength.photo_id == photo_id
+            )
+        )
+    # `flush` vor den Staerkezeilen: ihr Fremdschluessel zeigt auf den Schnappschuss.
+    await session.flush()
+    session.add_all(
+        [
+            PhotoLocalMotifSnapshotStrength(
+                photo_id=photo_id, motif_key=motif_key, strength=strength
+            )
+            for motif_key, strength in strengths.items()
+        ]
+    )
+
+
+async def _snapshot_the_local_header(session: AsyncSession, photo_id: int) -> None:
+    """Legt den Vektor der VORHANDENEN lokalen Kopfzeile in den Schnappschuss - VOR dem
+    Ueberschreiben, denn danach ist er fort."""
+    header = await session.get(PhotoMotifAssessment, photo_id)
+    if header is None:
+        return
+    rows = (
+        await session.execute(
+            select(PhotoMotifStrength.motif_key, PhotoMotifStrength.strength).where(
+                PhotoMotifStrength.photo_id == photo_id
+            )
+        )
+    ).all()
+    await _write_local_snapshot(
+        session,
+        photo_id,
+        excluded_document=header.excluded_document,
+        computed_at=header.computed_at,
+        strengths={motif_key: strength for motif_key, strength in rows},
+    )
+
+
 async def upsert_assessment(
     session: AsyncSession,
     photo_id: int,
@@ -133,12 +207,21 @@ async def upsert_assessment(
     """Schreibt bzw. ersetzt Kopfzeile und Staerkevektor eines Fotos. Rueckgabe: ob geschrieben
     wurde.
 
-    DIE REGEL, die beide Grundlagen auseinanderhaelt: eine LOKALE Grundlage schreibt nur, wenn
-    fuer das Foto keine Zeile existiert ODER die vorhandene `source='local'` traegt. Eine
-    Cloud-Grundlage schreibt immer. Liegt eine Cloud-Aussage vor, bleibt sie also unberuehrt -
-    Herkunft, Anbieter, Zeitstempel, Ausschluss-Flag und alle acht Werte. Die Regel haengt dabei
-    NICHT an der Reihenfolge der beiden Teilschritte: sie steht vollstaendig in dieser Funktion,
-    und in beiden Reihenfolgen gewinnt am Ende die Cloud-Grundlage.
+    DIE REGEL, die die drei Grundlagen auseinanderhaelt, ist eine RANGFOLGE:
+    `local < eye < cloud` (Spec 0609 / ADR 0138 Punkt 4). Eine neue Aussage schreibt nur, wenn sie
+    hoeher rangiert als die vorhandene oder dieselbe Grundlage ist; sonst bleibt die Kopfzeile in
+    Herkunft, Anbieter, Zeitstempel, Ausschluss-Flag und allen acht Werten unberuehrt. Die Regel
+    haengt NICHT an der Reihenfolge der Teilschritte - sie steht vollstaendig hier, und in jeder
+    Reihenfolge gewinnt am Ende die Cloud-Grundlage.
+
+    Der SCHNAPPSCHUSS ist die zweite Haelfte derselben Regel, und beide Faelle muessen hier stehen,
+    weil nur hier der jeweils andere Vektor bekannt ist:
+
+    * Eye verdraengt eine LOKALE Kopfzeile: deren Vektor wandert VORHER in
+      `photo_local_motif_snapshots`.
+    * Ein lokaler Lauf trifft eine EYE-Kopfzeile: die Kopfzeile bleibt `eye`, der FRISCHE lokale
+      Vektor geht in den Schnappschuss. Ein zweiter lokaler Lauf ersetzt ihn (hoechstens eine
+      Zeile je Foto); ein zweiter Eye-Lauf laesst ihn stehen.
 
     Der GESAMTE Vektor wird ersetzt, nicht zeilenweise gemischt: ein halb gefuellter
     Zwischenzustand aus zwei Grundlagen gibt es nicht. Die Korrekturzeilen bleiben dabei
@@ -147,12 +230,20 @@ async def upsert_assessment(
     Weder `commit` noch eigene Transaktionsgrenze - die gehoert dem Aufrufer (Muster
     `project_deletion`/`_build_grouping_and_rankings`)."""
     existing = await session.get(PhotoMotifAssessment, photo_id)
-    if (
-        existing is not None
-        and source == MotifAssessmentSource.LOCAL
-        and existing.source != MotifAssessmentSource.LOCAL
-    ):
-        return False
+    if existing is not None:
+        if source == MotifAssessmentSource.LOCAL and (existing.source == MotifAssessmentSource.EYE):
+            await _write_local_snapshot(
+                session,
+                photo_id,
+                excluded_document=excluded_document,
+                computed_at=computed_at,
+                strengths=strengths,
+            )
+            return False
+        if _SOURCE_RANK[source] < _SOURCE_RANK[existing.source]:
+            return False
+        if source == MotifAssessmentSource.EYE and (existing.source == MotifAssessmentSource.LOCAL):
+            await _snapshot_the_local_header(session, photo_id)
 
     if existing is None:
         existing = PhotoMotifAssessment(
