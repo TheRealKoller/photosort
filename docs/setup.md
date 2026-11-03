@@ -491,6 +491,69 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
 Danach die Einwilligung für das jeweilige Projekt einmalig über die Settings-Seite
 (`/projects/:id/settings`) aktivieren.
 
+## Eye: dritte Laufwahl, lokal auf dem Heimserver (optional)
+
+Eye (Desert Ant Labs) ist das lokale Bildmodell, das Motivstärken, Dokumentausschluss,
+Albumtauglichkeit und Feinlabels ohne Cloud-Anbieter liefert. Es ist als **dritter Weg neben
+„Cloud" und „nur lokal"** wählbar, ersetzt keines der beiden Ergebnisse, sondern tritt daneben
+(ADR [`0138`](../specs/decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md)).
+Die Lizenz ist für die private Nutzung zu zweit geklärt; Auflagen sind eine nicht abschaltbare
+Lizenzmeldung mit Zählkennung, aber **ohne Bildinhalte**, und die sichtbare Namensnennung.
+
+Eye läuft als **eigener Dienst `eye`** (Node, Port `8090`, kein veröffentlichter Port) im
+Compose-Netz. Er steht hinter dem Compose-Profil `eye` — ein normales `docker compose up -d`
+startet ihn nicht, und ohne ihn antwortet der Klassifizierungs-Auslöser für `mode=eye` mit `503`
+(kein stiller Rückfall). Zwei Dinge gehören deshalb zusammen:
+
+1. **Modellgewichte einmalig holen** (nicht im Repository, nicht im Image):
+
+   ```bash
+   docker compose --profile eye-setup run --rm eye-model
+   ```
+
+   Der Befehl prüft Revision, Commit-SHA und die beiden SHA256-Werte aus `eye/src/pins.json`
+   und bricht bei Abweichung ab. Die Dateien liegen danach im Volume `eye_model`. Ein
+   Modellwechsel ist ein neuer Pin im Baum, kein Schalter.
+
+2. **Dienst starten und Laufwahl freischalten**:
+
+   ```bash
+   docker compose --profile eye up -d eye
+   ```
+
+   In `.env` zusätzlich:
+
+   - `EYE_ENABLED=true` — schaltet die dritte Laufwahl in der Oberfläche frei. `false` (Default)
+     blendet sie aus und lässt die API `mode=eye` mit `403` ablehnen.
+   - `EYE_SERVICE_URL` — Vorgabe `http://eye:8090` (nur innerhalb des Compose-Netzes gültig).
+
+**Health und Pins:** `GET /health` antwortet erst mit `200`, wenn beide Modelldateien gegen die
+Pins geprüft und geladen sind. Ein Pin-Fehler heißt „Eye nicht verfügbar", nicht „Modell neu
+laden". `DAL_APP_ID=photosort` steht fest im Image; `DAL_LICENSE_ENDPOINT` oder `HF_TOKEN` im
+Environment brechen den Start ab. Die Install-ID liegt auf dem Volume `eye_home`, damit die
+Zählkennung Neustarts übersteht.
+
+**Bewusst nicht zugesichert:** Der Container erzwingt **keinen** Egress-Filter. Das SDK
+kontaktiert ausschließlich `events.desertant.com` (Metadaten, keine Bilder); wer das hart
+beschränken will, setzt es auf dem Host durch (eigene Bridge ohne Default-Route bzw.
+Firewall-Regel, die nur diese Namensauflösung und TCP 443 zu dieser Adresse zulässt, während
+`postgres`/`redis` aus dem Compose-Netz erreichbar bleiben). Die Durchsetzung ist
+Betreiberpflicht (Spec 0606, S21). Eye v1.0.0 ist Beta.
+
+**Vergleich mit der Cloud** (schreibgeschützt, kein Endpunkt):
+
+```bash
+docker compose exec backend python -m photosort.eye_comparison --project-id <id> --out /tmp/eye-vergleich.json
+```
+
+stdout trägt nur Zählungen je Zweck (Motiv, Ausschluss, Albumstufe), die Datei die benannten
+Abweichungen mit Foto-Id und App-Pfad. Die Datei bleibt außerhalb des Repos.
+
+**Rückbau:** Die Migration des Ausbaus stellt für jedes Foto mit Eye-Grundlage dessen lokales
+Ergebnis wieder her (oder lässt es „noch nicht klassifiziert"), danach fallen Dienst, Profil,
+Baum `eye/` und die beiden Variablen. Cloud-Ergebnisse, lokale Ergebnisse und Korrekturen bleiben
+unangetastet.
+
 ## Ortsnamen für Event-Überschriften: der Ortsdatensatz
 
 Ein Event ohne erkannte Sehenswürdigkeit heißt nach seinem Ort, sobald sich einer auflösen lässt

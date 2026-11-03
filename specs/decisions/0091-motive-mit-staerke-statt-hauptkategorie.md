@@ -2,6 +2,13 @@
 
 **Status:** Accepted
 **Datum:** 2026-09-12
+**Teilweise abgelöst:** die Zweiwertigkeit von `source` (`cloud` | `local`) und die
+Überschreibregel aus Punkt 3 („lokal schreibt nur, wenn keine Zeile existiert oder die vorhandene
+`source='local'` trägt") gelten seit ADR
+[`0138`](./0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md) dreiwertig mit der Rangfolge
+`local < eye < cloud`. „Genau eine Grundlage je Foto, nie gemischt" und alles Übrige von Punkt 3
+gelten unverändert.
+
 **Bezug:** Spec `specs/features/0427-*.md`, ADR
 [`0087`](./0087-event-als-persistierte-einheit-und-trennsignale-als-liste.md) (das Event als
 Partition, hier die verbleibende), ADR
