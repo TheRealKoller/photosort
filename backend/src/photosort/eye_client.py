@@ -11,6 +11,7 @@ Das Modul ist reine I/O ohne Datenbank und ohne Jobwissen: es kennt weder `Photo
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any, Protocol
 
@@ -22,8 +23,8 @@ from photosort.config import settings
 # Phase, kein Grund, es gleich noch einmal zu versuchen: die Gewichte liegen lokal, ein Timeout
 # heisst "Dienst antwortet nicht", und jeder Wiederholungsversuch verlaengerte nur den Lauf.
 EYE_REQUEST_TIMEOUT_SECONDS = 30.0
-# 1 MiB Antwortdeckel, geprueft VOR dem Parsen: die Analyse eines Fotos ist wenige Kilobyte gross,
-# ein groesserer Koerper ist ein Defekt oder ein falscher Dienst hinter der Adresse.
+# 1 MiB Antwortdeckel, geprueft WAEHREND des Lesens: die Analyse eines Fotos ist wenige Kilobyte
+# gross, ein groesserer Koerper ist ein Defekt oder ein falscher Dienst hinter der Adresse.
 EYE_MAX_RESPONSE_BYTES = 1024 * 1024
 # Der Dienst nimmt ausschliesslich JPEG-Bytes der `display`-Variante, keinen Multipart-Koerper,
 # keinen Pfad und keinen Feldparameter (S3).
@@ -53,37 +54,46 @@ class EyeServiceUnavailableError(RuntimeError):
 class EyeHttpClient:
     """`follow_redirects=False` verhindert, dass ein 302 den Verkehr auf einen anderen Host
     umlenkt; die Adresse kommt ausschliesslich aus den Settings (per Validator auf http/https
-    eingegrenzt) und nie aus einer Anfrage."""
+    eingegrenzt) und nie aus einer Anfrage. `transport` ist fuer Tests injizierbar
+    (`httpx.MockTransport`)."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._client = httpx.AsyncClient(
             base_url=base_url,
             timeout=EYE_REQUEST_TIMEOUT_SECONDS,
             follow_redirects=False,
+            transport=transport,
         )
 
     async def health(self) -> bool:
+        """Nur der Status zaehlt; der Koerper wird nicht gelesen."""
         try:
-            response = await self._client.get("/health")
+            async with self._client.stream("GET", "/health") as response:
+                return bool(response.status_code == 200)
         except httpx.HTTPError:
             return False
-        return bool(response.status_code == 200)
 
     async def analyze(self, image_bytes: bytes) -> Mapping[str, Any]:
         try:
-            response = await self._client.post(
+            async with self._client.stream(
+                "POST",
                 "/analyze",
                 content=image_bytes,
                 headers={"content-type": EYE_CONTENT_TYPE},
-            )
+            ) as response:
+                if response.status_code != 200:
+                    raise EyeServiceUnavailableError("Die Eye-Auswertung hat abgelehnt.")
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > EYE_MAX_RESPONSE_BYTES:
+                        raise EyeServiceUnavailableError(
+                            "Die Eye-Auswertung hat zu viel geliefert."
+                        )
         except httpx.HTTPError as exc:
             raise EyeServiceUnavailableError("Die Eye-Auswertung ist nicht erreichbar.") from exc
-        if response.status_code != 200:
-            raise EyeServiceUnavailableError("Die Eye-Auswertung hat abgelehnt.")
-        if len(response.content) > EYE_MAX_RESPONSE_BYTES:
-            raise EyeServiceUnavailableError("Die Eye-Auswertung hat zu viel geliefert.")
         try:
-            payload = response.json()
+            payload = json.loads(body)
         except ValueError as exc:
             raise EyeServiceUnavailableError("Die Eye-Auswertung war nicht lesbar.") from exc
         if not isinstance(payload, dict):
