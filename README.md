@@ -12,6 +12,8 @@ PhotoSort wird vollständig von KI (Claude Code) entwickelt. Die Rolle des Mensc
 
 Anleitung zum lokalen Entwickeln und Ausprobieren (inkl. Demo-Stack ohne echten OpenCloud-Server und dem Prüfstack für die browsergestützte Oberflächenprüfung) steht unter [`docs/setup.md`](./docs/setup.md). Für die optionale Cloud-Sehenswürdigkeit-Erkennung wird zusätzlich ein API-Key für den gewählten Cloud-Provider benötigt (`ANTHROPIC_API_KEY`, Default, oder wahlweise `MISTRAL_API_KEY` über `LANDMARK_PROVIDER=mistral`), sobald die Einwilligung dafür in einem Projekt aktiviert wird (Details ebenfalls in `docs/setup.md`).
 
+Optional läuft zusätzlich **Eye** (Desert Ant Labs) als dritte Laufwahl neben „Cloud" und „nur lokal": ein lokaler Bildmodell-Dienst für Motivstärken, Dokumentausschluss, Albumtauglichkeit und Feinlabels, ohne Cloud-Anbieter und ohne Kosten je Bild. Er ist standardmäßig abgeschaltet, liegt hinter dem Compose-Profil `eye`, seine Gewichte werden nie eingecheckt; der Einrichtungsschritt steht in `docs/setup.md` (Abschnitt „Eye").
+
 ## Projektstruktur
 
 | Pfad | Inhalt |
@@ -19,6 +21,7 @@ Anleitung zum lokalen Entwickeln und Ausprobieren (inkl. Demo-Stack ohne echten 
 | [`docs/`](./docs/) | Aufbereitete Dokumentation: [Setup](./docs/setup.md), [Architektur](./docs/architecture.md), [AI-Workflow](./docs/ai-workflow.md) |
 | `specs/` | Architektur, Entscheidungen (ADRs), Feature-Spezifikationen |
 | `backend/` | FastAPI-Backend + Worker (Foto-Verarbeitung, KI-Scoring) |
+| `eye/` | Eye-Sidecar (Node, Desert Ant Labs): lokaler Bildmodell-Dienst für die dritte Laufwahl, eigenständiges Paket hinter dem Compose-Profil `eye` |
 | `frontend/` | React/Vite PWA |
 | `scripts/` | Eigenständiges Dev-/Demo-Tooling (z.B. `seed-opencloud-demo.py`), außerhalb der Produktiv-Codebasis |
 | `e2e/` | Browsergestützte Oberflächenprüfung (Playwright/Chromium) gegen den lokal laufenden Prüfstack — eigenständiges Paket, außerhalb der Produktiv-Codebasis |

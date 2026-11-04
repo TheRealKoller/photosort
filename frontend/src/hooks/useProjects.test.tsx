@@ -44,6 +44,7 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
+    eye_available: false,
     selection_target: null,
     effective_selection_target: 1,
     has_selection_proposal: false,
@@ -231,7 +232,7 @@ describe('useDeleteProjectMutation', () => {
     vi.mocked(projectsApi.deleteProject).mockResolvedValue(undefined)
     const { wrapper, queryClient } = makeWrapper()
     queryClient.setQueryData(['project', 1], project())
-    queryClient.setQueryData(classificationEstimateQueryKey(1), { candidate_count: 3 })
+    queryClient.setQueryData(classificationEstimateQueryKey(1, 'cloud'), { candidate_count: 3 })
     queryClient.setQueryData(fineLabelsQueryKey(1), [])
     queryClient.setQueryData(projectStatsQueryKey(1), { photo_count: 7 })
 
@@ -240,7 +241,7 @@ describe('useDeleteProjectMutation', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(queryClient.getQueryData(['project', 1])).toBeUndefined()
-    expect(queryClient.getQueryData(classificationEstimateQueryKey(1))).toBeUndefined()
+    expect(queryClient.getQueryData(classificationEstimateQueryKey(1, 'cloud'))).toBeUndefined()
     expect(queryClient.getQueryData(fineLabelsQueryKey(1))).toBeUndefined()
     expect(queryClient.getQueryData(projectStatsQueryKey(1))).toBeUndefined()
   })
@@ -336,16 +337,16 @@ describe('useConfirmAusschussGateMutation', () => {
 })
 
 describe('useTriggerClassificationMutation', () => {
-  it('forwards scoring_run_id and use_cloud, and invalidates project, estimate and fine labels', async () => {
+  it('forwards scoring_run_id and the chosen way, and invalidates project, estimate and fine labels', async () => {
     vi.mocked(projectsApi.triggerClassification).mockResolvedValue({ status: 'queued' })
     const { wrapper, queryClient } = makeWrapper()
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
     const { result } = renderHook(() => useTriggerClassificationMutation(1), { wrapper })
-    result.current.mutate({ scoringRunId: 5, useCloud: true })
+    result.current.mutate({ scoringRunId: 5, mode: 'cloud' })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, true)
+    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, 'cloud')
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
     // Beide haengen am Ergebnis der Remote-Phase, die dieser eine Lauf mit ausfuehren kann
     // (specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md).
@@ -353,15 +354,15 @@ describe('useTriggerClassificationMutation', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['fine-labels', 1] })
   })
 
-  it('forwards use_cloud false unchanged', async () => {
+  it('forwards the eye way unchanged', async () => {
     vi.mocked(projectsApi.triggerClassification).mockResolvedValue({ status: 'queued' })
     const { wrapper } = makeWrapper()
 
     const { result } = renderHook(() => useTriggerClassificationMutation(1), { wrapper })
-    result.current.mutate({ scoringRunId: 5, useCloud: false })
+    result.current.mutate({ scoringRunId: 5, mode: 'eye' })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, false)
+    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, 'eye')
   })
 })
 
@@ -384,8 +385,9 @@ describe('useSetCloudVisionConsentMutation', () => {
 })
 
 describe('useClassificationEstimateQuery', () => {
-  it('fetches the estimate for a project, covering both cloud shares', async () => {
+  it('fetches the estimate of the chosen way', async () => {
     vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
+      mode: 'cloud',
       candidate_count: 42,
       remote_categories: { candidate_count: 40, estimated_cost_usd: 0.208 },
       landmark: { candidate_count: 2, estimated_cost_usd: 0.0104 },
@@ -396,12 +398,24 @@ describe('useClassificationEstimateQuery', () => {
     })
     const { wrapper } = makeWrapper()
 
-    const { result } = renderHook(() => useClassificationEstimateQuery(1), { wrapper })
+    const { result } = renderHook(() => useClassificationEstimateQuery(1, 'cloud'), { wrapper })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.getClassificationEstimate).toHaveBeenCalledWith(1)
+    expect(projectsApi.getClassificationEstimate).toHaveBeenCalledWith(1, 'cloud')
     expect(result.current.data?.candidate_count).toBe(42)
     expect(result.current.data?.landmark.candidate_count).toBe(2)
+  })
+
+  it('laedt ohne gewaehlten Weg gar nichts', async () => {
+    vi.mocked(projectsApi.getClassificationEstimate).mockClear()
+    const { wrapper } = makeWrapper()
+
+    const { result } = renderHook(() => useClassificationEstimateQuery(1, null), { wrapper })
+
+    // Solange nichts gewaehlt ist, gibt es keinen Durchlauf, dessen Kosten eine Schaetzung
+    // beschriebe - ein Abruf mit geratenem Weg waere eine Aussage ueber einen fremden Lauf.
+    expect(result.current.fetchStatus).toBe('idle')
+    expect(projectsApi.getClassificationEstimate).not.toHaveBeenCalled()
   })
 })
 
@@ -451,6 +465,9 @@ function runningCriterionScoringRun(): ProjectOut['last_criterion_scoring_run'] 
     phase_remaining_seconds: null,
     persons_photos_total: null,
     persons_photos_processed: null,
+    mode: null,
+    eye_photos_total: null,
+    eye_photos_processed: null,
   }
 }
 

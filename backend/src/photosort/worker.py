@@ -41,7 +41,7 @@ from photosort.classification import (
     detect_person,
 )
 from photosort.clock import now_utc
-from photosort.cloud_vision import ThrottleStats, TokenUsage
+from photosort.cloud_vision import ThrottleStats, TokenUsage, _sanitize_label_text
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.criteria import (
@@ -70,6 +70,21 @@ from photosort.db import async_session_factory
 from photosort.duplicates import survives_ausschuss
 from photosort.event_inputs import read_event_inputs
 from photosort.events import LandmarkPointsByName, assign_place_names, build_events
+from photosort.eye_client import (
+    EyeClientLike,
+    EyeImageUnreadableError,
+    EyeServiceUnavailableError,
+    build_eye_client,
+)
+from photosort.eye_mapping import (
+    MODEL_REVISION as EYE_MODEL_REVISION,
+)
+from photosort.eye_mapping import (
+    EyeAnalysis,
+)
+from photosort.eye_mapping import (
+    analyze as map_eye_analysis,
+)
 from photosort.face_analysis import (
     MODEL_KEY,
     FaceAnalyzerLike,
@@ -98,6 +113,7 @@ from photosort.landmark import (
 from photosort.landmark_names import LandmarkNameEntry, resolve_canonical_landmark
 from photosort.logging_config import configure_logging
 from photosort.models import (
+    ClassificationMode,
     ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
@@ -114,6 +130,9 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoEyeFineLabel,
+    PhotoEyeMotifStrength,
+    PhotoEyeResult,
     PhotoFineLabel,
     PhotoLandmarkDetection,
     PhotoMotifAssessment,
@@ -152,6 +171,7 @@ from photosort.quality import compute_quality_score
 from photosort.quality_weights import effective_weights, latest_weight_set
 from photosort.ranking import rank_photos
 from photosort.remote_classification import (
+    MAX_FINE_LABEL_LENGTH,
     CategoryDetectionClientLike,
     FineLabelSnapshotEntry,
     RemoteClassification,
@@ -2643,6 +2663,7 @@ async def _start_criterion_scoring_run(
     *,
     cloud_requested: bool,
     estimated_cost_usd: float | None = None,
+    mode: ClassificationMode | None = None,
 ) -> CriterionScoringRun:
     """Legt die Lauf-Zeile an - fuer BEIDE Aufrufer, und erst nach der Existenzpruefung des
     referenzierten Bewertungslaufs.
@@ -2666,11 +2687,167 @@ async def _start_criterion_scoring_run(
         status=ScanStatus.RUNNING,
         cloud_requested=cloud_requested,
         estimated_cost_usd=estimated_cost_usd,
+        # Der gewaehlte Weg wird EINGEFROREN (Spec 0609): die Anzeige liest ihn nie zurueck, aber
+        # eine Auswertung muss spaeter wissen, welcher Weg zu einem Ergebnis gefuehrt hat. Altzeilen
+        # bleiben `NULL` - "unbekannt" ist die wahre Aussage ueber sie.
+        mode=mode,
     )
     session.add(run)
     await session.commit()
     await session.refresh(run)
     return run
+
+
+# --- Eye-Sidecar (Spec 0609, ADR 0138) ------------------------------------------------------
+
+# Fortschritt wird in Bloecken committet - Muster von `persons_*`. Die ERGEBNISZEILEN bleiben bis
+# zum Phasenende ungeschrieben (eine Transaktion), nur der Zaehler wandert frueher.
+EYE_PROGRESS_COMMIT_BATCH_SIZE = 20
+
+
+def _sanitized_eye_labels(analysis: EyeAnalysis) -> list[tuple[str, float]]:
+    """Eyes Feinlabels als Text, den die Oberflaeche gefahrlos rendern kann (S12).
+
+    Dieselbe Sanierung und dieselbe Laengengrenze wie der Cloud-Pfad - eine zweite Fassung liefe
+    beim naechsten Sonderzeichen auseinander. Leere Texte und Doppelungen fallen weg; die
+    Reihenfolge bleibt die von `fine_labels()` (staerkster zuerst)."""
+    labels: list[tuple[str, float]] = []
+    seen: set[str] = set()
+    for raw, confidence in analysis.fine_labels:
+        sanitized = _sanitize_label_text(raw)
+        if not sanitized or len(sanitized) > MAX_FINE_LABEL_LENGTH or sanitized in seen:
+            continue
+        seen.add(sanitized)
+        labels.append((sanitized, confidence))
+    return labels
+
+
+async def _write_eye_shadow_rows(
+    session: AsyncSession,
+    analyses: Mapping[int, EyeAnalysis],
+    *,
+    computed_at: datetime,
+) -> None:
+    """Der Schattensatz: je Foto Kopfzeile, acht Staerken, die Feinlabels.
+
+    Loeschen-dann-Schreiben statt zeilenweisem Mischen: der Vektor eines Fotos ist vollstaendig
+    oder er existiert nicht, und ein Motiv, das der neue Lauf nicht mehr nennt, darf nicht mit
+    seinem alten Wert stehen bleiben."""
+    photo_ids = list(analyses)
+    if not photo_ids:
+        return
+    await session.execute(
+        delete(PhotoEyeMotifStrength).where(PhotoEyeMotifStrength.photo_id.in_(photo_ids))
+    )
+    await session.execute(
+        delete(PhotoEyeFineLabel).where(PhotoEyeFineLabel.photo_id.in_(photo_ids))
+    )
+    await session.execute(delete(PhotoEyeResult).where(PhotoEyeResult.photo_id.in_(photo_ids)))
+    await session.flush()
+
+    for photo_id, analysis in analyses.items():
+        session.add(
+            PhotoEyeResult(
+                photo_id=photo_id,
+                excluded_document=analysis.excluded_document,
+                album_level=analysis.album_level,
+                model_revision=EYE_MODEL_REVISION,
+                computed_at=computed_at,
+            )
+        )
+    # `flush` vor den Kindern: ihr Fremdschluessel zeigt auf die Kopfzeile.
+    await session.flush()
+
+    for photo_id, analysis in analyses.items():
+        for motif_key, strength in analysis.motif_strengths.items():
+            session.add(
+                PhotoEyeMotifStrength(photo_id=photo_id, motif_key=motif_key, strength=strength)
+            )
+        for label, confidence in _sanitized_eye_labels(analysis):
+            session.add(PhotoEyeFineLabel(photo_id=photo_id, label=label, confidence=confidence))
+
+
+async def _run_eye_phase(
+    session: AsyncSession,
+    run: CriterionScoringRun,
+    project: Project,
+    cache_dir: Path,
+    *,
+    build_client: Callable[[], EyeClientLike] = build_eye_client,
+) -> None:
+    """Der Teilschritt `eye`: Schattenzeilen fuer alle ueberlebenden, lesbaren Fotos und die
+    Kopfzeilen-Promotion (Spec 0609).
+
+    Reihenfolge und Grenzen:
+
+    * SEQUENZIELL, ein Client, 30 s je Aufruf, kein Retry. Ein Modell, eine Anfrage - und ein
+      Test haelt fest, dass nie zwei Aufrufe gleichzeitig laufen.
+    * ALLE Analysen zuerst in den Speicher, dann EINE Transaktion fuer Schattensaetze und
+      Promotion. Bricht die Phase, ist nichts geschrieben: kein halber Schattensatz, keine
+      Promotion, Lauf `FAILED`.
+    * Ein einzelnes unlesbares Bild - keine `display`-Variante oder vom Dienst nicht dekodierbar
+      (`EyeImageUnreadableError`) - wird uebersprungen und gezaehlt: `eye_photos_processed`
+      bleibt dann unter `eye_photos_total`. Jeder andere Fehler bricht die Phase ab.
+    * Die Promotion laeuft ueber `upsert_assessment`, das die Rangfolge `local < eye < cloud`
+      selbst durchsetzt. Eine Cloud-Kopfzeile bleibt damit unberuehrt und die Schattenzeile steht
+      daneben - genau die Zusage aus S8.
+    * Geschrieben wird NICHTS in `photo_album_suitability`, `photo_fine_labels` oder
+      `fine_labels`: Eyes Albumstufe und Feinlabels sind Schatten, keine Eingabe fuer Auswahl oder
+      Entwurf."""
+    photos = (
+        (
+            await session.execute(
+                select(Photo)
+                .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+                .where(Photo.project_id == project.id, survives_ausschuss())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    _set_phase(run, ClassificationPhase.EYE)
+    run.eye_photos_total = len(photos)
+    run.eye_photos_processed = 0
+    await session.commit()
+
+    client = build_client()
+    try:
+        if not await client.health():
+            raise EyeServiceUnavailableError("Die Eye-Auswertung ist nicht gesund.")
+        analyses: dict[int, EyeAnalysis] = {}
+        for photo in photos:
+            path = variant_path(cache_dir, photo.id, photo.etag, "display")
+            if not path.exists():
+                continue
+            try:
+                payload = await client.analyze(path.read_bytes())
+            except EyeImageUnreadableError:
+                continue
+            # Eine Antwort ohne Aussage (fehlende Albumstufe) ist ein Defekt des Dienstes, kein
+            # unlesbares Bild - `EyeMappingError` bricht die Phase ab.
+            analyses[photo.id] = map_eye_analysis(payload)
+            run.eye_photos_processed = len(analyses)
+            if len(analyses) % EYE_PROGRESS_COMMIT_BATCH_SIZE == 0:
+                run.last_progress_at = _now_utc()
+                await session.commit()
+
+        computed_at = _now_utc()
+        await _write_eye_shadow_rows(session, analyses, computed_at=computed_at)
+        for photo_id, analysis in analyses.items():
+            await upsert_assessment(
+                session,
+                photo_id,
+                source=MotifAssessmentSource.EYE,
+                strengths=analysis.motif_strengths,
+                excluded_document=analysis.excluded_document,
+                provider=None,
+                computed_at=computed_at,
+            )
+        run.eye_photos_processed = len(analyses)
+        await session.commit()
+    finally:
+        await client.aclose()
 
 
 async def run_criterion_scoring(
@@ -3297,7 +3474,8 @@ async def run_classification(
     scoring_run_id: int,
     cache_dir: Path,
     *,
-    use_cloud: bool,
+    mode: ClassificationMode | None = None,
+    use_cloud: bool | None = None,
     estimated_cost_usd: float | None = None,
     build_detector: Callable[[], FaceDetectorLike] = build_face_detector,
     build_animal_detector: Callable[[], ObjectDetectorLike] = build_object_detector,
@@ -3310,14 +3488,23 @@ async def run_classification(
     ] = build_category_classification_client,
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
     build_face_analyzer: Callable[[], FaceAnalyzerLike] = build_face_analyzer,
+    build_eye_client: Callable[[], EyeClientLike] = build_eye_client,
 ) -> CriterionScoringRun:
     """Der EINE, verkettete Klassifizierungslauf:
 
-        Phase "remote_categories" (nur bei aktiver Cloud-Nutzung)
+        Phase "remote_categories" (nur bei mode=cloud und aktiver Cloud-Nutzung)
             -> run_remote_category_classification
+        Phase "eye" (nur bei mode=eye)
+            -> _run_eye_phase
         Phase "criteria" (immer)
-            -> run_criterion_scoring (inkl. Landmark-Teilphase, ebenfalls nur bei aktiver
-               Cloud-Nutzung)
+            -> run_criterion_scoring (inkl. Landmark-Teilphase: bei mode=cloud mit Einwilligung
+               oder bei mode=eye MIT Einwilligung)
+
+    `mode` ist der gewaehlte Weg (`cloud`, `eye`, `local`). Fehlt er, wird er aus dem alten
+    `use_cloud` abgeleitet - ein Aufrufer, der die Signatur noch nicht kennt, verliert dadurch
+    nichts. WIDERSPRECHEN sich beide, ist das ein Programmierfehler und kein stiller Vorrang:
+    `use_cloud=False` mit `mode="cloud"` waere ein Lauf, der Geld ausgibt, obwohl der Aufrufer
+    "kein Cloud" gesagt hat.
 
     Die Reihenfolge ist der eigentliche Zweck dieser Funktion: `run_criterion_scoring` liest die
     Remote-Ergebnisse ueber `_remote_category_evidence` aus der Datenbank und kann sie nur dann in
@@ -3348,23 +3535,40 @@ async def run_classification(
       Laufs. Sie wird hier nur DURCHGEREICHT und gespeichert, NIE neu gerechnet: die Modulgrenze
       "API zaehlt fuer die Schaetzung, Worker selektiert fuer den Lauf" bleibt bestehen. Sie ist
       ein BELEG, keine Eingabe - kein spaeterer Rechenweg liest sie."""
-    cloud_active = use_cloud and project.cloud_vision_detection_enabled
+    if mode is None:
+        mode = ClassificationMode.CLOUD if use_cloud else ClassificationMode.LOCAL
+    elif use_cloud is not None and use_cloud != (mode is ClassificationMode.CLOUD):
+        raise ValueError("mode und use_cloud widersprechen sich; der Weg wird nicht geraten.")
+
+    # Cloud-Kontakt heisst: mode=cloud ODER (mode=eye UND projektweite Einwilligung) - nur dann
+    # laeuft die Sehenswuerdigkeits-Phase, und nur dann ist `cloud_requested` wahr (S6). Der
+    # Remote-Kategorie-Client wird ausschliesslich unter mode=cloud gebaut.
+    cloud_active = mode is ClassificationMode.CLOUD and project.cloud_vision_detection_enabled
+    cloud_requested = mode is ClassificationMode.CLOUD or (
+        mode is ClassificationMode.EYE and project.cloud_vision_detection_enabled
+    )
 
     run = await _start_criterion_scoring_run(
         session,
         project,
         scoring_run_id,
-        cloud_requested=use_cloud,
+        cloud_requested=cloud_requested,
         estimated_cost_usd=estimated_cost_usd,
+        mode=mode,
     )
     # Die ERSTE Phase geht ueber denselben Weg wie jede spaetere, statt als
     # Konstruktor-Schluesselwort mitzulaufen. Sonst entkaeme genau sie der Bindung aus ADR 0116
     # Punkt 1, und die erste Phase JEDES Laufs - bei einem Lauf ohne Cloud die laengste - zeigte
     # dauerhaft "wird noch ermittelt", schweigend.
-    _set_phase(
-        run,
-        ClassificationPhase.REMOTE_CATEGORIES if cloud_active else ClassificationPhase.CRITERIA,
-    )
+    if cloud_active:
+        initial_phase = ClassificationPhase.REMOTE_CATEGORIES
+    elif mode is ClassificationMode.EYE:
+        # Die Eye-Phase ist der ERSTE Teilschritt dieses Laufs, nicht ein Zwischenschritt: die
+        # Anzeige soll nicht "Kriterien" behaupten, waehrend der Dienst rechnet.
+        initial_phase = ClassificationPhase.EYE
+    else:
+        initial_phase = ClassificationPhase.CRITERIA
+    _set_phase(run, initial_phase)
     await session.commit()
 
     if cloud_active:
@@ -3412,6 +3616,24 @@ async def run_classification(
             )
             await session.commit()
 
+    if mode is ClassificationMode.EYE:
+        # Die Eye-Phase liegt VOR der Kriterien-Phase, damit Rangfolge, Events und
+        # Auswahlvorschlag desselben Laufs den WIRKSAMEN Vektor lesen. Ein Fehlschlag beendet den
+        # Lauf hier: es gibt keinen Rueckfall auf Cloud oder "nur lokal", und geschrieben ist
+        # nichts (die Phase committet ihre Ergebnisse erst am Ende).
+        try:
+            await _run_eye_phase(session, run, project, cache_dir, build_client=build_eye_client)
+        except asyncio.CancelledError:
+            await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
+            raise
+        except Exception:
+            await _fail_run(
+                session,
+                run,
+                "Eye-Auswertung fehlgeschlagen; es wurde nichts uebernommen.",
+            )
+            return run
+
     return await run_criterion_scoring(
         session,
         project,
@@ -3425,7 +3647,10 @@ async def run_classification(
         build_landmark_client,
         build_embedder=build_embedder,
         run=run,
-        use_cloud=use_cloud,
+        # Die Landmark-Phase haengt an der Cloud-FREIGABE, nicht am Weg: bei mode=eye MIT
+        # Einwilligung laeuft sie (dann kostet der Lauf genau die Sehenswuerdigkeits-Erkennung),
+        # ohne Einwilligung nie.
+        use_cloud=cloud_requested,
         build_face_analyzer=build_face_analyzer,
     )
 
@@ -3434,14 +3659,21 @@ async def classify(
     ctx: dict[str, Any],
     project_id: int,
     scoring_run_id: int,
-    use_cloud: bool,
+    use_cloud: bool | None,
     estimated_cost_usd: float | None = None,
+    *,
+    mode: str | None = None,
 ) -> int:
     """Der einzige Klassifizierungs-Job.
 
     `estimated_cost_usd` ist die im Ausloese-Endpunkt berechnete Schaetzung. Der Default `None` ist
     verbindlich - ein zum Zeitpunkt eines Deployments BEREITS EINGEREIHTER Job traegt das Argument
-    nicht und darf nicht an der Signaturaenderung scheitern."""
+    nicht und darf nicht an der Signaturaenderung scheitern.
+
+    S6 der Spec 0609: `use_cloud` bleibt der VIERTE POSITIONSPARAMETER vom Typ `bool | None`, `mode`
+    ist keyword-only. Fehlt `mode`, wird er aus `use_cloud` abgeleitet (`True` -> cloud, sonst
+    local). Ein ALTER Worker kennt den Parameter nicht und verwirft den Job sichtbar mit
+    `TypeError` - er liest `"eye"` also nie als Cloud-Freigabe."""
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
@@ -3452,7 +3684,10 @@ async def classify(
             project,
             scoring_run_id,
             cache_dir=Path(settings.photo_cache_dir),
-            use_cloud=use_cloud,
+            # `mode` ist die genauere Aussage: liegt er vor, wird `use_cloud` NICHT mitgegeben -
+            # sonst meldete der Widerspruchs-Check einen Konflikt, den nur die Ableitung erzeugt.
+            mode=ClassificationMode(mode) if mode is not None else None,
+            use_cloud=None if mode is not None else use_cloud,
             estimated_cost_usd=estimated_cost_usd,
         )
         return run.id

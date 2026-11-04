@@ -78,6 +78,11 @@ services:
       # /api auf derselben Origin auf und braucht den Eintrag selbst nicht.
       CORS_ALLOWED_ORIGINS: http://localhost:8080
       CATEGORY_SELECTION_ENABLED: "true"
+      # Eye-Schalter AN, aber bewusst OHNE "eye"-Dienst in diesem Stack (Spec 0609, E2E-Zeile):
+      # geprueft wird die sichtbare 503-Ablehnung "Dienst nicht erreichbar", nicht der Schalter
+      # "aus". Mit ausgeschaltetem Schalter gaebe es nur zwei Wege und nichts abzulehnen.
+      EYE_ENABLED: "true"
+      EYE_SERVICE_URL: http://eye:8090
 
   # Der Worker laeuft im Pruefstack nicht mit (kein Pruefschritt loest einen Hintergrundjob aus).
   # Das eigene Profil sorgt dafuer, dass ein schlichtes "up" ihn gar nicht erst startet; seine
@@ -105,6 +110,8 @@ services:
       AUTH_SEED_USER1_PASSWORD: e2e-only-password-1
       AUTH_SEED_USER2_USERNAME: e2e-zweiter-nutzer
       AUTH_SEED_USER2_PASSWORD: e2e-only-password-2
+      EYE_ENABLED: "true"
+      EYE_SERVICE_URL: http://eye:8090
 
   frontend:
     build:

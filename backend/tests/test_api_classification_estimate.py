@@ -676,6 +676,7 @@ async def test_the_two_flat_candidate_fields_are_gone(
     assert "landmark_candidate_count" not in body
     assert set(body) == {
         "candidate_count",
+        "mode",
         "remote_categories",
         "landmark",
         "provider",
@@ -818,3 +819,104 @@ class TestTheAusschussDecisionMovesBothEstimates:
 
         assert body["remote_categories"]["candidate_count"] == 0
         assert body["landmark"]["candidate_count"] == 0
+
+
+class TestTheEstimatePerWay:
+    """Spec 0609, S7: die Vorschau sagt je Weg, WELCHE Anteile stattfinden - und ein nicht
+    stattfindender Anteil ist `null`/`null`, nie `0.0`. `0.0` als Gesamtsumme heisst "kostenfrei"
+    und ist die Aussage, die die Oberflaeche mit dem Wort statt mit einem Betrag zeigt."""
+
+    async def test_local_reports_no_part_at_all(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        await _add_photo_candidate(db_session, project_id, "a.jpg")
+
+        body = (
+            await authenticated_api_client.get(
+                f"/projects/{project_id}/classify/estimate?mode=local"
+            )
+        ).json()
+
+        assert body["mode"] == "local"
+        assert body["remote_categories"] == {"candidate_count": None, "estimated_cost_usd": None}
+        assert body["landmark"] == {"candidate_count": None, "estimated_cost_usd": None}
+        assert body["candidate_count"] == 0
+        assert body["estimated_cost_usd"] == 0.0
+
+    async def test_eye_without_consent_is_free_and_count_free(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK "Eye ohne Einwilligung: kein Cloud-Kontakt, keine Namen, kostenfrei" - beide Anteile
+        finden nicht statt, und die Summe ist genau `0.0`."""
+        project_id = await _create_project(authenticated_api_client)
+        await _add_photo_candidate(db_session, project_id, "a.jpg")
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate?mode=eye")
+        ).json()
+
+        assert body["mode"] == "eye"
+        assert body["remote_categories"] == {"candidate_count": None, "estimated_cost_usd": None}
+        assert body["landmark"] == {"candidate_count": None, "estimated_cost_usd": None}
+        assert body["candidate_count"] == 0
+        assert body["estimated_cost_usd"] == 0.0
+
+    async def test_eye_with_consent_reports_the_landmark_part_only(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK "Eye mit Einwilligung: nur die Landmark-Phase laeuft": der Kategorie-Anteil fehlt,
+        der Landmark-Anteil steht wie heute - und die Summe ist NUR sein Betrag."""
+        project_id = await _create_project(authenticated_api_client)
+        photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
+        await _add_classification_run(db_session, project_id)
+        await _add_criterion_score(db_session, photo, "landscape", 0.9)
+        await authenticated_api_client.put(
+            f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
+        )
+
+        eye = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate?mode=eye")
+        ).json()
+        cloud = (
+            await authenticated_api_client.get(
+                f"/projects/{project_id}/classify/estimate?mode=cloud"
+            )
+        ).json()
+
+        assert eye["remote_categories"] == {"candidate_count": None, "estimated_cost_usd": None}
+        assert eye["landmark"] == cloud["landmark"]
+        assert eye["candidate_count"] == eye["landmark"]["candidate_count"]
+        assert eye["estimated_cost_usd"] == eye["landmark"]["estimated_cost_usd"]
+
+    async def test_the_cloud_number_is_unchanged_by_the_way(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
+        await _add_classification_run(db_session, project_id)
+        await _add_criterion_score(db_session, photo, "landscape", 0.9)
+
+        default = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+        cloud = (
+            await authenticated_api_client.get(
+                f"/projects/{project_id}/classify/estimate?mode=cloud"
+            )
+        ).json()
+
+        assert default["mode"] == "cloud"
+        assert default["candidate_count"] == cloud["candidate_count"]
+        assert default["estimated_cost_usd"] == cloud["estimated_cost_usd"]
+
+    async def test_an_unknown_mode_is_rejected(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+
+        response = await authenticated_api_client.get(
+            f"/projects/{project_id}/classify/estimate?mode=irgendwas"
+        )
+
+        assert response.status_code == 422

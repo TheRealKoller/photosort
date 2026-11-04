@@ -1,4 +1,5 @@
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -190,6 +191,33 @@ class Settings(BaseSettings):
     # ausdrücklich. `ge=0` analog den Concurrency-Feldern oben: eine fehlerhafte .env fällt beim
     # Prozessstart auf, nicht mitten im nächsten kostenpflichtigen Lauf.
     cloud_vision_requests_per_minute: int = Field(default=0, ge=0)
+
+    # Eye als dritte Laufwahl (Spec 0609 / ADR 0138). `eye_enabled` ist die EINE Quelle der
+    # Laufwahl in der Oberflaeche und der einzige Grund fuer ein 403 auf `mode=eye`; der Wert
+    # kommt NIE aus einer Lebendpruefung, sonst wuerde das Laden der Projektliste zur
+    # Erreichbarkeitssonde. `eye_service_url` zeigt auf den Sidecar im Compose-Netz - der Dienst
+    # veroeffentlicht keinen Host-Port.
+    eye_enabled: bool = False
+    eye_service_url: str = "http://eye:8090"
+
+    @field_validator("eye_service_url")
+    @classmethod
+    def _check_eye_service_url(cls, value: str) -> str:
+        """Nur `http` und `https`, mit Host - und ohne Schraegstrich am Ende.
+
+        Der Wert landet in `httpx.AsyncClient(base_url=...)`; ein Schema wie `file:` oder `ftp:`
+        waere ein zweiter Weg zu Daten, den niemand vorgesehen hat (S3). Der Schraegstrich wird
+        entfernt, damit der Aufrufer Pfade immer mit fuehrendem Schraegstrich anhaengen kann,
+        ohne dass die Adresse zwei enthaelt. Die Meldung nennt den Feldnamen und keinen Wert -
+        sie erscheint im Startup-Traceback."""
+        teile = urlsplit(value)
+        if teile.scheme not in {"http", "https"} or not teile.hostname:
+            raise ValueError(
+                "EYE_SERVICE_URL muss eine Adresse mit http:// oder https:// und Host sein."
+            )
+        if teile.query or teile.fragment:
+            raise ValueError("EYE_SERVICE_URL darf keine Abfrage und keinen Anker enthalten.")
+        return value.rstrip("/")
 
     def resolved_cloud_vision_requests_per_minute(self, provider: str) -> int:
         """Die tatsächlich zu verwendende Anfragerate (Muster `resolved_landmark_model()`).

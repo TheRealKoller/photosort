@@ -27,6 +27,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.models import (
     MotifAssessmentSource,
     Photo,
+    PhotoLocalMotifSnapshot,
+    PhotoLocalMotifSnapshotStrength,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -744,3 +746,574 @@ class TestTheTimestampsAreNaive:
         header = await db_session.get(PhotoMotifAssessment, photo.id)
         assert header is not None
         assert header.computed_at == naive
+
+
+class TestTheRankingOfTheThreeSources:
+    """Spec 0609 / ADR 0138 Punkt 4 und 5: `local < eye < cloud`.
+
+    Die Rangfolge steht in `upsert_assessment` und NICHT in der Reihenfolge der Teilschritte.
+    Geprueft wird sie deshalb als Fallmatrix und nicht ueber einen Lauf: nur so bestuende auch
+    eine Implementierung, die zufaellig in der richtigen Reihenfolge laeuft und dabei jede
+    vorhandene Kopfzeile ueberschreibt.
+
+    Die zweite Haelfte jeder Zusage ist der SCHNAPPSCHUSS: verdrängt Eye eine lokale Kopfzeile,
+    muss deren Vektor vorher in `photo_local_motif_snapshots` liegen (Rueckbaudaten). Trifft ein
+    lokaler Lauf eine Eye-Kopfzeile, bleibt die Kopfzeile stehen und der FRISCHE lokale Vektor
+    geht in den Schnappschuss.
+    """
+
+    async def _snapshot_of(
+        self, session: AsyncSession, photo_id: int
+    ) -> tuple[bool, datetime, dict[str, float]] | None:
+        snapshot = await session.get(PhotoLocalMotifSnapshot, photo_id)
+        if snapshot is None:
+            return None
+        rows = (
+            (
+                await session.execute(
+                    select(PhotoLocalMotifSnapshotStrength).where(
+                        PhotoLocalMotifSnapshotStrength.photo_id == photo_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return (
+            snapshot.excluded_document,
+            snapshot.computed_at,
+            {row.motif_key: row.strength for row in rows},
+        )
+
+    async def test_eye_writes_when_there_is_no_header_at_all(
+        self, db_session: AsyncSession
+    ) -> None:
+        photo = await _photo(db_session)
+
+        written = await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.7),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+
+        assert written is True
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        assert header.source == MotifAssessmentSource.EYE
+        # Eye ist KEIN Cloud-Anbieter - ein Anbieterwert behauptete einen Kontakt, der nicht
+        # stattfand (ADR 0138 Punkt 4).
+        assert header.provider is None
+        assert await self._snapshot_of(db_session, photo.id) is None
+
+    async def test_eye_displaces_a_local_header_and_keeps_its_vector_as_a_snapshot(
+        self, db_session: AsyncSession
+    ) -> None:
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=_vector(tiere=0.4, menschen=0.1),
+            excluded_document=True,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+
+        written = await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(tiere=0.8),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        assert written is True
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        assert header.source == MotifAssessmentSource.EYE
+        assert header.computed_at == _LATER
+        snapshot = await self._snapshot_of(db_session, photo.id)
+        assert snapshot is not None
+        excluded_document, computed_at, strengths = snapshot
+        assert excluded_document is True
+        assert computed_at == _NOW
+        assert strengths == _vector(tiere=0.4, menschen=0.1)
+
+    async def test_eye_overwrites_itself_and_leaves_the_snapshot_untouched(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Ein zweiter Eye-Lauf ersetzt seinen eigenen Vektor - der zurueckgelegte LOKALE Vektor
+        bleibt, sonst waere der Rueckbau nach zwei Eye-Laeufen auf den Eye-Wert gestuetzt."""
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=_vector(tiere=0.4),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(tiere=0.8),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+
+        written = await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(tiere=0.95),
+            excluded_document=True,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        assert written is True
+        effective = (await load_effective_strengths(db_session, [photo.id]))[photo.id]
+        assert effective["tiere"].strength == pytest.approx(0.95)
+        snapshot = await self._snapshot_of(db_session, photo.id)
+        assert snapshot is not None
+        assert snapshot[2] == _vector(tiere=0.4)
+
+    async def test_eye_never_touches_a_cloud_header_and_writes_no_snapshot(
+        self, db_session: AsyncSession
+    ) -> None:
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.CLOUD,
+            strengths=_vector(menschen=0.9),
+            excluded_document=False,
+            provider="anthropic",
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+
+        written = await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.1),
+            excluded_document=True,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        assert written is False
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        assert header.source == MotifAssessmentSource.CLOUD
+        assert header.provider == "anthropic"
+        assert header.excluded_document is False
+        assert header.computed_at == _NOW
+        effective = (await load_effective_strengths(db_session, [photo.id]))[photo.id]
+        assert effective["menschen"].strength == pytest.approx(0.9)
+        assert await self._snapshot_of(db_session, photo.id) is None
+
+    async def test_a_local_run_on_an_eye_header_keeps_it_and_snapshots_the_fresh_vector(
+        self, db_session: AsyncSession
+    ) -> None:
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.7),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+
+        written = await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=_vector(menschen=0.3, tiere=0.6),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        assert written is False
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        assert header.source == MotifAssessmentSource.EYE
+        effective = (await load_effective_strengths(db_session, [photo.id]))[photo.id]
+        assert effective["menschen"].strength == pytest.approx(0.7)
+        snapshot = await self._snapshot_of(db_session, photo.id)
+        assert snapshot is not None
+        assert snapshot[2] == _vector(menschen=0.3, tiere=0.6)
+
+    async def test_two_local_runs_on_an_eye_header_leave_exactly_one_snapshot(
+        self, db_session: AsyncSession
+    ) -> None:
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.7),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+
+        for tiere, computed_at in ((0.3, _NOW), (0.5, _LATER)):
+            await upsert_assessment(
+                db_session,
+                photo.id,
+                source=MotifAssessmentSource.LOCAL,
+                strengths=_vector(tiere=tiere),
+                excluded_document=False,
+                provider=None,
+                computed_at=computed_at,
+            )
+            await db_session.flush()
+
+        snapshot = await self._snapshot_of(db_session, photo.id)
+        assert snapshot is not None
+        # Der JUENGSTE lokale Vektor - nicht der erste, und keine zweite Zeile daneben.
+        assert snapshot[1] == _LATER
+        assert snapshot[2] == _vector(tiere=0.5)
+
+    async def test_a_local_run_never_touches_a_cloud_header_and_writes_no_snapshot(
+        self, db_session: AsyncSession
+    ) -> None:
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.CLOUD,
+            strengths=_vector(menschen=0.9),
+            excluded_document=False,
+            provider="anthropic",
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+
+        written = await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=_vector(menschen=0.1),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        assert written is False
+        assert await self._snapshot_of(db_session, photo.id) is None
+
+    async def test_a_cloud_run_replaces_an_eye_header_and_leaves_the_snapshot(
+        self, db_session: AsyncSession
+    ) -> None:
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=_vector(tiere=0.4),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(tiere=0.8),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+
+        written = await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.CLOUD,
+            strengths=_vector(tiere=0.99),
+            excluded_document=False,
+            provider="anthropic",
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        assert written is True
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        assert header.source == MotifAssessmentSource.CLOUD
+        snapshot = await self._snapshot_of(db_session, photo.id)
+        assert snapshot is not None
+        assert snapshot[2] == _vector(tiere=0.4)
+
+    async def test_a_correction_survives_an_eye_run(self, db_session: AsyncSession) -> None:
+        """`photo_motif_corrections` haengt am FOTO und nicht an der Kopfzeile - kein Eye-Pfad
+        fasst sie an (S8)."""
+        photo = await _photo(db_session)
+        user = await _user(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=_vector(tiere=0.4),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        db_session.add(
+            PhotoMotifCorrection(
+                photo_id=photo.id, user_id=user.id, motif_key="tiere", applies=False
+            )
+        )
+        await db_session.flush()
+
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(tiere=0.9),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        corrections = (
+            (
+                await db_session.execute(
+                    select(PhotoMotifCorrection).where(PhotoMotifCorrection.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(row.motif_key, row.applies) for row in corrections] == [("tiere", False)]
+        effective = (await load_effective_strengths(db_session, [photo.id]))[photo.id]
+        assert effective["tiere"].strength == pytest.approx(0.0)
+
+
+class TestTheRollbackPreparation:
+    """Spec 0609, Akzeptanzkriterium "Rueckbau (eigene Story)": DIESE Spec fuehrt den Rueckbau
+    nicht aus, sie stellt die Daten her, aus denen er moeglich ist - je `source='eye'`
+    entweder der verdrängte lokale Vektor als Schnappschuss oder gar kein Vektor (dann genuegt
+    das Loeschen der Kopfzeile).
+
+    Der Test SIMULIERT den Rueckbau auf denselben Zeilen und prueft, dass er verlustfrei ist:
+    danach traegt keine Kopfzeile `source='eye'`, der lokale Vektor steht wieder da, und Cloud-,
+    Album-, Feinlabel- und Korrekturzeilen sind unveraendert. Ohne diese Probe waere der
+    Schnappschuss nur eine Tabelle, von der niemand weiss, ob sie ausreicht.
+    """
+
+    async def _restore(
+        self, session: AsyncSession, photo_id: int
+    ) -> tuple[bool, datetime, dict[str, float]] | None:
+        snapshot = await session.get(PhotoLocalMotifSnapshot, photo_id)
+        if snapshot is None:
+            return None
+        rows = (
+            (
+                await session.execute(
+                    select(PhotoLocalMotifSnapshotStrength).where(
+                        PhotoLocalMotifSnapshotStrength.photo_id == photo_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return (
+            snapshot.excluded_document,
+            snapshot.computed_at,
+            {row.motif_key: row.strength for row in rows},
+        )
+
+    async def test_a_displaced_local_vector_is_restorable(self, db_session: AsyncSession) -> None:
+        photo = await _photo(db_session)
+        local_vector = _vector(tiere=0.4, menschen=0.1)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=local_vector,
+            excluded_document=True,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.9),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        restored = await self._restore(db_session, photo.id)
+
+        # Der Schnappschuss traegt den VOLLSTAENDIGEN Vektor samt Ausschluss und Zeitstempel -
+        # und zwar genau den verdrängten, nicht Eyes Werte.
+        assert restored is not None
+        excluded, computed_at, strengths = restored
+        assert excluded is True
+        assert computed_at == _NOW
+        assert strengths == pytest.approx(local_vector)
+
+    async def test_a_header_without_predecessor_needs_no_snapshot(
+        self, db_session: AsyncSession
+    ) -> None:
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.9),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        # Kein Vektor zum Wiederherstellen: der Rueckbau loescht die Kopfzeile, und das Foto
+        # steht danach auf "noch nicht klassifiziert" - so wie vorher.
+        assert await self._restore(db_session, photo.id) is None
+
+    async def test_nothing_but_the_eye_rows_moves(self, db_session: AsyncSession) -> None:
+        photo = await _photo(db_session)
+        user = User(username="daniel", password_hash="irrelevant")
+        db_session.add(user)
+        await db_session.flush()
+        db_session.add(
+            PhotoMotifCorrection(
+                photo_id=photo.id, user_id=user.id, motif_key="tiere", applies=False
+            )
+        )
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.LOCAL,
+            strengths=_vector(tiere=0.4),
+            excluded_document=False,
+            provider=None,
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(tiere=0.9),
+            excluded_document=False,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        # Der Rueckbau selbst: Kopfzeile auf den Schnappschuss zuruecksetzen, Schnappschuss
+        # verbrauchen. Cloud-Zeilen entstehen in diesem Test nicht - der Punkt ist, dass NICHTS
+        # anderes als Eye-Zeilen angefasst wird.
+        restored = await self._restore(db_session, photo.id)
+        assert restored is not None
+        excluded, computed_at, strengths = restored
+        # Der Rueckbau schreibt DIREKT (wie eine Migration), nicht ueber `upsert_assessment`:
+        # jenes Praedikat setzt die Rangfolge durch und liesse eine Eye-Kopfzeile absichtlich
+        # stehen.
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        header.source = MotifAssessmentSource.LOCAL
+        header.excluded_document = excluded
+        header.computed_at = computed_at
+        stored_strengths = (
+            (
+                await db_session.execute(
+                    select(PhotoMotifStrength).where(PhotoMotifStrength.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in stored_strengths:
+            row.strength = strengths[row.motif_key]
+        await db_session.flush()
+        snapshot = await db_session.get(PhotoLocalMotifSnapshot, photo.id)
+        if snapshot is not None:
+            await db_session.delete(snapshot)
+        await db_session.flush()
+
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        assert header.source == MotifAssessmentSource.LOCAL
+        assert header.computed_at == _NOW
+        sources = (await db_session.execute(select(PhotoMotifAssessment.source))).scalars().all()
+        assert MotifAssessmentSource.EYE not in sources
+        corrections = (
+            (
+                await db_session.execute(
+                    select(PhotoMotifCorrection).where(PhotoMotifCorrection.photo_id == photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(row.motif_key, row.applies) for row in corrections] == [("tiere", False)]
+
+    async def test_a_cloud_header_keeps_its_shadow_and_the_restore_source(
+        self, db_session: AsyncSession
+    ) -> None:
+        # Cloud-Kopfzeile: Eye schreibt nichts, also gibt es auch keinen Schnappschuss - der
+        # Rueckbau hat hier nichts zu tun, und die Cloud-Aussage bleibt unberuehrt.
+        photo = await _photo(db_session)
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.CLOUD,
+            strengths=_vector(menschen=0.9),
+            excluded_document=False,
+            provider="anthropic",
+            computed_at=_NOW,
+        )
+        await db_session.flush()
+        await upsert_assessment(
+            db_session,
+            photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=_vector(menschen=0.2),
+            excluded_document=True,
+            provider=None,
+            computed_at=_LATER,
+        )
+        await db_session.flush()
+
+        header = await db_session.get(PhotoMotifAssessment, photo.id)
+        assert header is not None
+        assert header.source == MotifAssessmentSource.CLOUD
+        assert header.provider == "anthropic"
+        assert await self._restore(db_session, photo.id) is None

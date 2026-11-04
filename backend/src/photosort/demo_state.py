@@ -82,6 +82,9 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoEyeFineLabel,
+    PhotoEyeMotifStrength,
+    PhotoEyeResult,
     PhotoLandmarkDetection,
     PhotoMotifCorrection,
     PhotoMotifStrength,
@@ -218,6 +221,16 @@ _OPEN_SUGGESTION_INDEX = 3
 _DEMO_UNASSESSED_INDEX = 5
 _DEMO_LOCAL_BASIS_INDEX = 6
 _DEMO_EXCLUDED_INDEX = 7
+
+# Spec 0609: GENAU EIN Foto der Demo traegt eine Eye-Kopfzeile, damit die dritte Grundlage samt
+# Namensnennung, Bilanzzeile und Eye-Band ueberhaupt sichtbar ist. Es ist DASSELBE Foto wie die
+# lokale Grundlage: der Seeder schreibt zuerst lokal und laesst dann Eye darueberlaufen - also den
+# Produktionspfad, in dem die verdraengte lokale Kopfzeile als Schnappschuss in die Rueckbaudaten
+# wandert. Ein von Hand gebauter Eye-Zustand ohne Schnappschuss zeigte der Sichtpruefung einen
+# Bestand, den die Anwendung selbst nie erzeugt.
+_DEMO_EYE_ALBUM_LEVEL = 4
+_DEMO_EYE_MODEL_REVISION = "v1.0.0"
+_DEMO_EYE_FINE_LABELS: tuple[tuple[str, float], ...] = (("hund", 0.82), ("strand", 0.61))
 _DEMO_CORRECTED_INDEX = 1
 _DEMO_CORRECTED_MOTIF_KEY = "menschen"
 
@@ -241,7 +254,7 @@ _DEMO_EXCHANGES: tuple[tuple[int, int, int | None, int | None], ...] = (
 # dann zurueckgenommen. Es entsteht dabei bewusst KEINE Korrekturzeile - der Bestand zeigt eine
 # zurueckgenommene Korrektur nicht mehr, und genau das ist der Grund fuer das Log. Der Index
 # kollidiert mit keinem der uebrigen Sonderfaelle (0 Landmark, 1 korrigiert, 3 offener Vorschlag,
-# 4 ohne Motiv-Kopfzeile, 6 lokale Grundlage, 7 ausgeschlossen).
+# 4 ohne Motiv-Kopfzeile, 6 Eye-Grundlage, 7 ausgeschlossen).
 _DEMO_WITHDRAWN_MOTIF_INDEX = 2
 _DEMO_WITHDRAWN_MOTIF_KEY = "tiere"
 
@@ -911,8 +924,11 @@ async def _seed_motif_assessments(
     Ausschluss ohne Korrekturschalter) bleiben ungesehen:
 
     * `_DEMO_UNASSESSED_INDEX` bekommt GAR KEINE Kopfzeile - "noch nicht klassifiziert".
-    * `_DEMO_LOCAL_BASIS_INDEX` bekommt eine lokale Grundlage ohne Anbieter, und die beiden lokal
-      nicht beurteilbaren Motive stehen dort auf 0.
+    * `_DEMO_LOCAL_BASIS_INDEX` beginnt mit einer lokalen Grundlage ohne Anbieter (die beiden
+      lokal nicht beurteilbaren Motive stehen dort auf 0) und wird anschliessend von Eye
+      verdraengt - das Foto zeigt damit die dritte Grundlage, und sein lokaler Vektor liegt als
+      Schnappschuss daneben (Spec 0609, Produktionspfad statt Nachbau). Die Sichtpruefung sieht
+      die lokale Darstellung damit nur noch als Zwischenzustand, nicht als stehende Kopfzeile.
     * `_DEMO_EXCLUDED_INDEX` ist als Dokument ausgeschlossen - mit erhaltenen Staerken daneben,
       denn der Ausschluss setzt sie nicht auf 0.
     * Alle uebrigen tragen eine Cloud-Grundlage.
@@ -926,6 +942,11 @@ async def _seed_motif_assessments(
     Band - sonst koennte die Statistiktabelle eine Zeile zeigen, die nie etwas anderes als
     Nullen enthaelt, und die Bandgrenzen blieben in der Sichtpruefung unsichtbar. Der Ueberhang
     bei mehr Fotos als Motiven laeuft ueber den Modulo zurueck auf den Anfang.
+
+    Seit Spec 0609 traegt DASSELBE Foto zusaetzlich eine Eye-Kopfzeile: die lokale Grundlage
+    (und ihr Vektor im Schnappschuss) entsteht zuerst, danach laeuft Eye darueber. Damit zeigt
+    die Demo den dritten Herkunftszweig, die Namensnennung und das Eye-Band, ohne einen Zustand
+    zu erfinden, den die Anwendung nie schriebe.
 
     Die Korrektur haengt an einem VORHANDENEN Nutzer; der Seeder legt selbst nie ein Konto an
     (ein Konto mit bekannten Zugangsdaten waere genau das Sicherheitsproblem, gegen das die Sperre
@@ -955,6 +976,51 @@ async def _seed_motif_assessments(
             provider=None if local else "demo-state",
             computed_at=_BASE_SCORING_AT,
         )
+
+    if len(photos) > _DEMO_LOCAL_BASIS_INDEX:
+        eye_index = _DEMO_LOCAL_BASIS_INDEX
+        eye_photo = photos[eye_index]
+        # Der Eye-Vektor kommt aus demselben deterministischen Generator, aber aus einem EIGENEN
+        # Namensraum - gleiche Zahlen wie die verdrängte lokale Kopfzeile machten den Vergleich
+        # im Bestand unsichtbar.
+        eye_strengths = {
+            motif_key: (
+                _DEMO_PEAK_STRENGTH
+                if motif_key == registry_keys[eye_index % len(registry_keys)]
+                else _deterministic_unit_value(slug, eye_index, f"eye:{motif_key}")
+            )
+            for motif_key in MOTIF_REGISTRY
+        }
+        await upsert_assessment(
+            session,
+            eye_photo.id,
+            source=MotifAssessmentSource.EYE,
+            strengths=eye_strengths,
+            excluded_document=False,
+            provider=None,
+            computed_at=_BASE_SCORING_AT,
+        )
+        session.add(
+            PhotoEyeResult(
+                photo_id=eye_photo.id,
+                excluded_document=False,
+                album_level=_DEMO_EYE_ALBUM_LEVEL,
+                model_revision=_DEMO_EYE_MODEL_REVISION,
+                computed_at=_BASE_SCORING_AT,
+            )
+        )
+        await session.flush()
+        session.add_all(
+            [
+                PhotoEyeMotifStrength(photo_id=eye_photo.id, motif_key=key, strength=strength)
+                for key, strength in eye_strengths.items()
+            ]
+            + [
+                PhotoEyeFineLabel(photo_id=eye_photo.id, label=label, confidence=confidence)
+                for label, confidence in _DEMO_EYE_FINE_LABELS
+            ]
+        )
+        await session.flush()
 
     if user_ids and len(photos) > _DEMO_CORRECTED_INDEX:
         session.add(

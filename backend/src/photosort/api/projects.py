@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,7 +25,9 @@ from photosort.cloud_vision import provider_for_vision_model
 from photosort.config import settings
 from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
 from photosort.duplicates import has_open_suggestion, survives_ausschuss
+from photosort.eye_client import eye_service_is_healthy
 from photosort.models import (
+    ClassificationMode,
     ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
@@ -189,6 +191,14 @@ class CriterionScoringRunSummary(BaseModel):
     phase: ClassificationPhase | None
     cloud_requested: bool
     cloud_error_message: str | None
+    # Der beim Start GEWAEHLTE Weg (Spec 0609) - `null` bei Altzeilen, deren Weg unbekannt ist.
+    # Kein Ableiten aus `cloud_requested`: Eye mit Einwilligung fragt Cloud an, ohne der Cloud-Weg
+    # zu sein, und "unbekannt" ist fuer Altzeilen die wahre Aussage.
+    mode: ClassificationMode | None
+    # Zaehler der Eye-Phase, Muster `persons_*`: `null` heisst "diese Phase lief nicht" - die
+    # Oberflaeche blendet den Teilschritt eines beendeten Laufs damit aus.
+    eye_photos_total: int | None
+    eye_photos_processed: int | None
     # `cloud_phases` in AUSFUEHRUNGSREIHENFOLGE (remote_category, dann landmark); ein Eintrag
     # entsteht, sobald die Phase betreten wurde (Remote: Fremdschluessel gesetzt; Landmark:
     # `landmark_photos_total is not None`). Eine LEERE LISTE heisst "dieser Durchlauf hatte
@@ -253,9 +263,15 @@ class ClassificationEstimateOut(BaseModel):
     `candidate_count` ist die Summe der BEKANNTEN Anteile und damit bei unbekanntem
     Landmark-Anteil ausdruecklich eine UNTERE SCHRANKE. Sie faellt nicht auf `null`: sonst saehe
     der Nutzer vor seinem ersten Durchlauf ueberhaupt keinen Betrag mehr, obwohl der
-    Kategorie-Anteil bekannt ist."""
+    Kategorie-Anteil bekannt ist.
+
+    `mode` sagt, WORAUF sich die Antwort bezieht (S7): beim Weg `eye` bzw. `local` sind die nicht
+    stattfindenden Anteile `null`/`null` - nie `0.0`, das "kostenlos" behauptete, wo in Wahrheit
+    nichts gezaehlt wurde. Die Vorgabe `cloud` dieses LESEPfads existiert nur hier; der Laufpfad
+    kennt keine Vorgabe."""
 
     candidate_count: int
+    mode: Literal["cloud", "eye", "local"]
     remote_categories: ClassificationEstimatePartOut
     landmark: ClassificationEstimatePartOut
     provider: str
@@ -288,14 +304,17 @@ class ClassifyRequest(BaseModel):
     der Server einen zwischenzeitlichen Re-Scan/Re-Scoring als 409 ablehnen kann, statt auf
     einem veralteten cluster_key-Stand weiterzuarbeiten.
 
-    `use_cloud` ist die laufbezogene Cloud-Freigabe (die Checkbox am Ausloeser). Sie erteilt
-    KEINE Einwilligung - die bleibt ausschliesslich `PUT .../cloud-vision-consent` - sondern
-    entscheidet nur, ob die vorhandene Einwilligung fuer genau diesen Lauf genutzt wird. Kein
-    Default: der Client soll sich sichtbar entscheiden muessen, statt in eine Voreinstellung zu
-    laufen, die Kosten verursacht."""
+    `mode` ist der Weg dieses Durchlaufs und ersetzt die fruehere `use_cloud`-Checkbox (Spec
+    0609, S5). Kein Vorgabewert: ein fehlendes Feld ist eine `422` und kein stiller Rueckfall auf
+    einen Weg, den der Client nie genannt hat - ein unbekannter Wert ebenso, deshalb `Literal` und
+    kein freier String.
+
+    `mode=cloud` erteilt KEINE Einwilligung - die bleibt ausschliesslich
+    `PUT .../cloud-vision-consent` - sondern entscheidet nur, ob die vorhandene Einwilligung fuer
+    genau diesen Lauf genutzt wird."""
 
     scoring_run_id: int
-    use_cloud: bool
+    mode: Literal["cloud", "eye", "local"]
 
 
 class ProjectOut(BaseModel):
@@ -317,6 +336,11 @@ class ProjectOut(BaseModel):
     # exponiert, damit das Frontend-Verfügbarkeitsgate proaktiv aus den ohnehin geladenen
     # Projektdaten dieser Seite ableitbar ist, statt erst nach einem fehlgeschlagenen 403.
     category_selection_enabled: bool
+    # Der Eye-Schalter (`EYE_ENABLED`) - die dritte Laufwahl erscheint nur, wenn er an ist. Er
+    # kommt ALLEIN aus den Settings und nie aus einer Lebendpruefung des Dienstes: sonst wuerde
+    # das Laden der Projektliste zu einer Erreichbarkeitssonde, und ein kurz nicht antwortender
+    # Sidecar liesse die Wahl aus der Oberflaeche verschwinden.
+    eye_available: bool
     # Projektweiter Einwilligungs-Schalter für produktive Cloud-Vision-Datenflüsse; er gated
     # BEIDE Cloud-Anteile. Hier statt in einem eigenen GET exponiert, damit ProjectSettingsPage
     # den Zustand aus den bereits geladenen Projektdaten lesen kann.
@@ -520,6 +544,8 @@ def _phase_progress(
         return run.photos_processed, run.photos_total
     if run.phase is ClassificationPhase.PERSONS:
         return run.persons_photos_processed, run.persons_photos_total
+    if run.phase is ClassificationPhase.EYE:
+        return run.eye_photos_processed, run.eye_photos_total
     purpose = _CLOUD_PURPOSE_BY_PHASE.get(run.phase) if run.phase is not None else None
     if purpose is None:
         return None, None
@@ -574,6 +600,9 @@ async def _criterion_scoring_run_summary(
         phase=run.phase,
         cloud_requested=run.cloud_requested,
         cloud_error_message=run.cloud_error_message,
+        mode=run.mode,
+        eye_photos_total=run.eye_photos_total,
+        eye_photos_processed=run.eye_photos_processed,
         estimated_cost_usd=run.estimated_cost_usd,
         cloud_phases=phases,
         cloud_cost_total_usd=_cloud_cost_total(phases),
@@ -746,6 +775,7 @@ async def _to_project_out(
             ExportRunSummary.model_validate(export_run) if export_run is not None else None
         ),
         category_selection_enabled=settings.category_selection_enabled,
+        eye_available=settings.eye_enabled,
         cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
         cloud_vision_consent_at=project.cloud_vision_consent_at,
         selection_target=project.selection_target,
@@ -1048,18 +1078,30 @@ async def trigger_classify(
     session: AsyncSession = Depends(get_session),
     enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
 ) -> dict[str, str]:
-    """Der EINE Auslöser der Klassifizierung. Der ausgelöste Job verkettet beide Cloud-Phasen
-    mit der Kriterien- und der Rangfolge-Phase (worker.py::run_classification).
+    """Der EINE Auslöser der Klassifizierung. Der ausgelöste Job verkettet den gewaehlten Weg mit
+    der Kriterien- und der Rangfolge-Phase (worker.py::run_classification).
 
-    Vorbedingungen: `403` wenn das Feature-Flag aus ist, `404` bei unbekanntem Projekt, `409`
-    ohne erfolgreichen `ScoringRun`, `409` ohne bestätigtes Gate, `409` bei veraltetem
-    `scoring_run_id`-Bezug (Re-Scan/Re-Scoring während der Kuratierung). `403`, wenn
-    `use_cloud=true` ohne projektweite Einwilligung angefragt wird - ein Client, der
-    Cloud-Verarbeitung ohne Einwilligung anfordert, soll das erfahren, statt still auf "lokal"
-    herunterzufallen. Diese Pruefung ist die sprechende Frueh-Rueckmeldung, NICHT das
-    Sicherheitsnetz: das eigentliche Gate ist die Konjunktion
-    `use_cloud and project.cloud_vision_detection_enabled`, ausgewertet im Worker unmittelbar vor
-    der Client-Konstruktion.
+    Die REIHENFOLGE der Ablehnungen ist Teil der Zusage (Spec 0609, S5) - jede Zeile hier hat
+    einen Grund, genau an dieser Stelle zu stehen:
+
+    1. `403`, wenn das Feature-Flag aus ist.
+    2. `403`, wenn `mode=eye` angefragt wird und `EYE_ENABLED` aus ist - VOR jedem Projektzugriff,
+       damit die Antwort nichts ueber die Existenz eines Projekts verraet und der Ausloeser ohne
+       Datenbankzugriff ablehnen kann. Eigenes `detail`, unterscheidbar vom Consent-`403`.
+    3. `404` bei unbekanntem Projekt.
+    4. die drei `409` wie bisher (kein erfolgreicher ScoringRun, Gate nicht bestaetigt, veralteter
+       `scoring_run_id`-Bezug).
+    5. `403`, wenn `mode=cloud` ohne projektweite Einwilligung angefragt wird - ein Client, der
+       Cloud-Verarbeitung ohne Einwilligung anfordert, soll das erfahren, statt still auf einen
+       anderen Weg zu fallen.
+    6. `503`, wenn `mode=eye` und der Dienst nicht gesund antwortet - INNERHALB der Anfrage, und
+       zwar bevor ein Job eingereiht wird: ein eingereihter Job scheiterte garantiert, und ein
+       stiller Rueckfall auf einen anderen Weg waere schlimmer als die sichtbare Ablehnung.
+
+    Die Pruefung in Punkt 5/6 ist die sprechende Frueh-Rueckmeldung, NICHT das Sicherheitsnetz:
+    das eigentliche Cloud-Gate ist die Konjunktion `mode=cloud and
+    project.cloud_vision_detection_enabled` im Worker unmittelbar vor der Client-Konstruktion, und
+    ein Dienst, der WAEHREND des Laufs wegbricht, laesst den Lauf `FAILED` enden.
 
     Legt selbst KEINE CriterionScoringRun-Zeile an - das erledigt der Job beim tatsaechlichen
     Start (run_classification in worker.py), identisches Muster wie trigger_scan/trigger_score."""
@@ -1067,6 +1109,11 @@ async def trigger_classify(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Diese Funktion ist derzeit nicht aktiviert.",
+        )
+    if payload.mode == "eye" and not settings.eye_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Die Eye-Auswertung ist nicht aktiviert.",
         )
 
     project = await _get_project_or_404(project_id, session)
@@ -1088,10 +1135,16 @@ async def trigger_classify(
             detail="Der Ausschuss wurde zwischenzeitlich neu ermittelt (Re-Scan/Re-Scoring) - "
             "lade das Projekt neu und starte die Klassifizierung erneut.",
         )
-    if payload.use_cloud and not project.cloud_vision_detection_enabled:
+    if payload.mode == "cloud" and not project.cloud_vision_detection_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cloud-Bilderkennung ist fuer dieses Projekt nicht aktiviert.",
+        )
+    if payload.mode == "eye" and not await eye_service_is_healthy():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Die Eye-Auswertung ist derzeit nicht erreichbar. Der Lauf wurde nicht "
+            "gestartet und es wurde nichts veraendert.",
         )
 
     # Die Schätzung, mit der dieser Lauf startet, wird HIER serverseitig berechnet und als
@@ -1101,16 +1154,29 @@ async def trigger_classify(
     # SICHERHEIT: die Zahl entsteht ausschliesslich aus Datenbankzaehlungen und der validierten
     # Betriebseinstellung. `ClassifyRequest` traegt bewusst KEIN Betrags-, Kosten-, Modell- oder
     # Anbieterfeld - ein vom Client geliefertes Geldfeld wanderte sonst ungeprueft in die
-    # Buchfuehrung. Bei `use_cloud=false` wird `None` gereicht (und `NULL` gespeichert), nicht
-    # `0.0`: ein Lauf ohne Cloud hat keine Kostenschaetzung.
-    estimated_cost_usd: float | None = None
-    if payload.use_cloud:
-        estimated_cost_usd = (
-            await _build_classification_estimate(session, project_id)
-        ).estimated_cost_usd
+    # Buchfuehrung.
+    #
+    # NUR MIT CLOUD-KONTAKT wird eine Schaetzung eingefroren (ADR 0138 Punkt 7): findet kein
+    # Cloud-Aufruf statt, speichert der Lauf `NULL` - "keine Schaetzung", nicht "0 USD geschaetzt".
+    # Die ANTWORT von `GET .../classify/estimate` bleibt davon unberuehrt und nennt fuer den
+    # kostenfreien Weg weiterhin `0.0` (S7); `0.0` als gespeicherte Laufschaetzung behauptete
+    # dagegen eine Rechnung, die niemand erwartet.
+    cloud_contact = payload.mode == "cloud" or (
+        payload.mode == "eye" and project.cloud_vision_detection_enabled
+    )
+    estimate = await _build_classification_estimate(session, project, mode=payload.mode)
+    estimated_cost_usd = estimate.estimated_cost_usd if cloud_contact else None
 
+    # `use_cloud` bleibt der vierte Positionsparameter des Jobs; `mode` faehrt als Schluesselwort
+    # mit (S6). Ein alter Worker kennt den Parameter nicht und verwirft den Job sichtbar mit
+    # `TypeError` - er liest `"eye"` also nie als Cloud-Freigabe.
     await enqueuer.enqueue_job(
-        "classify", project_id, payload.scoring_run_id, payload.use_cloud, estimated_cost_usd
+        "classify",
+        project_id,
+        payload.scoring_run_id,
+        payload.mode == "cloud",
+        estimated_cost_usd,
+        mode=payload.mode,
     )
     return {"status": "queued"}
 
@@ -1213,24 +1279,33 @@ async def set_selection_target(
 
 @router.get("/{project_id}/classify/estimate", response_model=ClassificationEstimateOut)
 async def estimate_classification(
-    project_id: int, session: AsyncSession = Depends(get_session)
+    project_id: int,
+    mode: Literal["cloud", "eye", "local"] = "cloud",
+    session: AsyncSession = Depends(get_session),
 ) -> ClassificationEstimateOut:
-    """Die Vorab-Kostenschätzung des Klassifizierungslaufs, über BEIDE Cloud-Anteile - die
-    Checkbox am Auslöser gibt beide frei.
+    """Die Vorab-Kostenschätzung des Klassifizierungslaufs, JE WEG (`?mode=`).
+
+    Cloud schaetzt beide Cloud-Anteile, Eye nur den Landmark-Anteil (und nur mit Einwilligung),
+    lokal keinen. Nicht stattfindende Anteile sind `null`/`null`, nie `0.0` (S7) - die Summe ist
+    dann `0.0`, und die Oberflaeche schreibt dort das Wort "kostenfrei".
+
+    Die Vorgabe `cloud` gibt es NUR auf diesem Lesepfad: sie ist die Fortschreibung des bisherigen
+    Verhaltens fuer Clients, die noch ohne `mode` fragen. Der Laufpfad daneben kennt keine
+    Vorgabe (S5).
 
     Funktioniert UNABHÄNGIG vom Consent-Schalter (auch bei deaktiviertem Consent 200, kein 403) -
     der Nutzer soll die Kosten VOR einer Consent-Entscheidung sehen können. `candidate_count=0`
-    liefert 200 mit estimated_cost_usd=0.0, kein Sonderfall.
+    liefert 200 mit estimated_cost_usd=0.0, kein Sonderfall."""
+    project = await _get_project_or_404(project_id, session)
 
-    Die beiden Anteile werden getrennt ausgewiesen, und "nicht schätzbar" ist ein eigener Wert
-    (`null`) statt einer `0`."""
-    await _get_project_or_404(project_id, session)
-
-    return await _build_classification_estimate(session, project_id)
+    return await _build_classification_estimate(session, project, mode=mode)
 
 
 async def _build_classification_estimate(
-    session: AsyncSession, project_id: int
+    session: AsyncSession,
+    project: Project,
+    *,
+    mode: Literal["cloud", "eye", "local"] = "cloud",
 ) -> ClassificationEstimateOut:
     """Die Schaetzung selbst, ohne HTTP-Anteil - geteilt zwischen `GET .../classify/estimate` und
     `POST .../classify`.
@@ -1238,51 +1313,63 @@ async def _build_classification_estimate(
     Genau EIN Rechenweg fuer die Zahl, die angezeigt und die am Lauf eingefroren wird: eine
     zweite Kopie liefe mit der ersten auseinander, und dann verglichen Bilanz und Vorschau zwei
     verschiedene Groessen miteinander. Der Ausloese-Endpunkt hat sein 404 zu diesem Zeitpunkt
-    bereits selbst geworfen, deshalb keine zweite Projektpruefung hier."""
-    remote_category_candidate_count = await _count_remote_category_candidates(session, project_id)
-    # Der Landmark-Anteil ist NICHT SCHAETZBAR, solange im Projekt kein erfolgreich
-    # abgeschlossener Klassifizierungslauf existiert - vor dem ersten Lauf gibt es keine
-    # gespeicherten Kriterien-Werte, aus denen sich Kandidaten ableiten liessen, und
-    # `_count_landmark_candidates` liefert dort strukturell `0`. Diese `0` als Tatsache
-    # anzuzeigen behauptet Kostenfreiheit fuer einen Anteil, der gleich Geld kostet.
-    #
-    # Ein laufender oder fehlgeschlagener Durchlauf gilt ausdruecklich nicht als stattgefunden:
-    # erst ein `success` belegt, dass Kriterien-Werte geschrieben wurden.
-    landmark_candidate_count: int | None = None
-    if await _has_successful_classification_run(session, project_id):
-        landmark_candidate_count = await _count_landmark_candidates(session, project_id)
+    bereits selbst geworfen, deshalb keine zweite Projektpruefung hier.
+
+    WELCHE Anteile stattfinden, entscheidet der Weg: Cloud beide, Eye nur die
+    Sehenswuerdigkeits-Erkennung (und nur bei projektweiter Einwilligung), lokal keinen. Was nicht
+    stattfindet, wird GAR NICHT gezaehlt - die Zaehlabfrage selbst ist billig, aber eine Zahl fuer
+    einen Anteil, der nicht laeuft, waere eine Einladung, sie anzuzeigen."""
     provider = settings.landmark_provider
     # Die Schätzung hängt am tatsächlich EINGESTELLTEN Modell, nicht am Anbieter - ein
     # Modellwechsel kann sie damit nicht unbemerkt falsch machen.
     model = settings.resolved_landmark_model()
     price_per_image_usd = estimate_usd_per_image(model, provider)
-    # Die Summe der BEKANNTEN Anteile - bei unbekanntem Landmark-Anteil ausdruecklich eine
-    # UNTERE SCHRANKE. Ueber ein `is not None`, nie ueber ein `or 0`: die Regel "unbekannt ist
-    # nicht null" gilt in diesem Modul durchgaengig.
-    candidate_count = remote_category_candidate_count
-    if landmark_candidate_count is not None:
-        candidate_count += landmark_candidate_count
+
+    remote_category_candidate_count: int | None = None
+    landmark_candidate_count: int | None = None
+    if mode == "cloud":
+        remote_category_candidate_count = await _count_remote_category_candidates(
+            session, project.id
+        )
+    if mode == "cloud" or (mode == "eye" and project.cloud_vision_detection_enabled):
+        # Der Landmark-Anteil ist NICHT SCHAETZBAR, solange im Projekt kein erfolgreich
+        # abgeschlossener Klassifizierungslauf existiert - vor dem ersten Lauf gibt es keine
+        # gespeicherten Kriterien-Werte, aus denen sich Kandidaten ableiten liessen, und
+        # `_count_landmark_candidates` liefert dort strukturell `0`. Diese `0` als Tatsache
+        # anzuzeigen behauptet Kostenfreiheit fuer einen Anteil, der gleich Geld kostet.
+        #
+        # Ein laufender oder fehlgeschlagener Durchlauf gilt ausdruecklich nicht als stattgefunden:
+        # erst ein `success` belegt, dass Kriterien-Werte geschrieben wurden.
+        if await _has_successful_classification_run(session, project.id):
+            landmark_candidate_count = await _count_landmark_candidates(session, project.id)
+
+    remote_categories = _estimate_part(remote_category_candidate_count, price_per_image_usd)
+    landmark = _estimate_part(landmark_candidate_count, price_per_image_usd)
+    parts = (remote_categories, landmark)
+    # Die Summe der BEKANNTEN Anteile - bei unbekanntem Anteil ausdruecklich eine UNTERE
+    # SCHRANKE. Ueber ein `is not None`, nie ueber ein `or 0`: die Regel "unbekannt ist nicht
+    # null" gilt in diesem Modul durchgaengig.
+    candidate_count = sum(
+        part.candidate_count for part in parts if part.candidate_count is not None
+    )
+    # Ebenfalls nur die stattfindenden Anteile: ein Anteil mit `candidate_count is None` findet
+    # nicht statt. Kein stattfindender Anteil -> `0.0` = kostenfrei (S7).
+    costs = [part.estimated_cost_usd for part in parts if part.candidate_count is not None]
+    estimated_cost_usd: float | None
+    if any(cost is None for cost in costs):
+        estimated_cost_usd = None
+    else:
+        estimated_cost_usd = sum(cost for cost in costs if cost is not None)
+
     return ClassificationEstimateOut(
         candidate_count=candidate_count,
-        remote_categories=_estimate_part(remote_category_candidate_count, price_per_image_usd),
-        landmark=_estimate_part(landmark_candidate_count, price_per_image_usd),
+        mode=mode,
+        remote_categories=remote_categories,
+        landmark=landmark,
         provider=provider,
         model=model,
         price_per_image_usd=price_per_image_usd,
-        # Reihenfolge der Zweige ist die Aussage: null Kandidaten zuerst. `null` heisst
-        # "unbekannt" - bei null Kandidaten ist der Betrag aber bekannt, es faellt nichts an,
-        # weil nichts verarbeitet wird. Der Preis JE BILD bleibt daneben korrekt `null`.
-        # Andersherum haengt die Zusage des Docstrings ("candidate_count=0 liefert 0.0, kein
-        # Sonderfall") unausgesprochen daran, dass ein Preis gepflegt ist.
-        #
-        # Kein neuer Rechenweg fuer die Gesamtsumme: dieselbe Multiplikation wie je Anteil, nur
-        # ueber die Summe der bekannten Anteile, mit der Grobheit "ein Preis je Bild fuer beide
-        # Cloud-Anteile".
-        estimated_cost_usd=(
-            0.0
-            if candidate_count == 0
-            else (None if price_per_image_usd is None else candidate_count * price_per_image_usd)
-        ),
+        estimated_cost_usd=estimated_cost_usd,
     )
 
 

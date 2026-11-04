@@ -1,6 +1,8 @@
 # 0606 - Eye als lokaler Ersatz für die Cloud-Klassifizierung bewerten
 
-**Status:** Implemented ([PR #607](https://github.com/TheRealKoller/photosort/pull/607))
+**Status:** Superseded (Auswertungsweg durch Spec [`0609`](./0609-eye-dritte-wahl.md) und ADR
+[`0138`](../decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md) abgelöst;
+umgesetzt war zuvor nur das Werkzeug, [PR #607](https://github.com/TheRealKoller/photosort/pull/607))
 **Erstellt:** 2026-11-02
 **Bezug:** [GitHub-Issue #606](https://github.com/TheRealKoller/photosort/issues/606)
 **Umfang:** über dem Richtwert von rund 200 Zeilen, weil die beiden Abschnitte `## Security` und
@@ -425,12 +427,8 @@ Akzeptanzkriterium).
 
 ## Vergleichsergebnis
 
-**Nachtrag (2026-11-02, PR #607):** Der Status steht auf `Implemented`, weil das Werkzeug unter
-`tools/eye-eval/` umgesetzt und durch `node --test` abgesichert ist — die Akzeptanzkriterien
-selbst beschreiben den Auswertungslauf und sind damit noch nicht erfüllt. Dieser Abschnitt bleibt
-bis zu diesem Lauf ein Platzhalter und wird danach an dieser Stelle angehängt; eine Änderung am
-Status geht damit einher.
-
-*Wird nach dem Auswertungslauf angehängt — Anbieter und Modell des Maßstabs, Urteil und Begründung
-je Zweck, Laufzeit, eingesparte Aufrufe, Lizenzeinstufung, Restrisiken, Empfehlung, offene Punkte.
-Es gelten die Auflagen aus `## Security` (S6–S11) und `## Architektur / Umsetzung`.*
+**Abgelöst (2026-11-03, zu [#609](https://github.com/TheRealKoller/photosort/issues/609)):** Der
+Auswertungsweg dieser Spec entfällt. Eye ist als dritte Laufwahl in der Anwendung eingebaut, und
+sein Vergleich gegen die Cloud läuft über den Vergleich in Spec
+[`0609`](./0609-eye-dritte-wahl.md); das Ergebnis wird dort festgehalten, nicht hier. Das Werkzeug
+`tools/eye-eval/` und sein CI-Job entfallen mit derselben Änderung.

@@ -78,9 +78,14 @@ class FakeOpenCloudClient:
 class FakeEnqueuer:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
+        # Die Schluesselwort-Argumente getrennt: `mode` faehrt seit Spec 0609 als solches mit,
+        # und die bestehenden Zusagen ueber die Positionsargumente sollen dabei nicht umgeschrieben
+        # werden muessen.
+        self.keywords: list[dict[str, Any]] = []
 
-    async def enqueue_job(self, function: str, *args: Any) -> None:
+    async def enqueue_job(self, function: str, *args: Any, **kwargs: Any) -> None:
         self.calls.append((function, args))
+        self.keywords.append(kwargs)
 
 
 async def _create_project(client: httpx.AsyncClient, name: str = "Costa Rica") -> int:
@@ -1389,6 +1394,9 @@ async def test_the_response_carries_no_further_configuration_fields(
         "cloud_requested",
         "cloud_error_message",
         "estimated_cost_usd",
+        "mode",
+        "eye_photos_total",
+        "eye_photos_processed",
         "cloud_phases",
         "cloud_cost_total_usd",
         # Spec 0481: die Restdauer des laufenden Teilschritts - eine ABLEITUNG aus Werten, die
@@ -1497,30 +1505,39 @@ class TestTheRunEstimateReachesTheJob:
 
         response = await authenticated_api_client.post(
             f"/projects/{project_id}/classify",
-            json={"scoring_run_id": scoring_run_id, "use_cloud": True},
+            json={"scoring_run_id": scoring_run_id, "mode": "cloud"},
         )
 
         assert response.status_code == 202
         assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, True, expected))]
+        assert fake_enqueuer.keywords == [{"mode": "cloud"}]
 
-    async def test_a_local_run_forwards_none_and_stores_null(
+    async def test_a_local_run_forwards_no_estimate(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """`NULL`, nicht `0.0`: ein Lauf ohne Cloud hat keine Kostenschaetzung, und `0.0` waere
-        eine Aussage, die niemand getroffen hat."""
+        """ADR 0138 Punkt 7: ohne Cloud-Kontakt reicht der Ausloeser `None` durch - der Lauf
+        speichert "keine Schaetzung", nicht "0 USD geschaetzt". Die ANTWORT der Vorschau nennt
+        fuer diesen Weg weiterhin `0.0` (S7); sie beschreibt einen Preis, keine Buchfuehrung."""
         project_id, scoring_run_id = await self._prepare(
             authenticated_api_client, db_session, photo_count=3
         )
+        vorgabe = (
+            await authenticated_api_client.get(
+                f"/projects/{project_id}/classify/estimate?mode=local"
+            )
+        ).json()["estimated_cost_usd"]
+        assert vorgabe == 0.0
         fake_enqueuer = FakeEnqueuer()
         app.dependency_overrides[get_job_enqueuer] = lambda: fake_enqueuer
 
         response = await authenticated_api_client.post(
             f"/projects/{project_id}/classify",
-            json={"scoring_run_id": scoring_run_id, "use_cloud": False},
+            json={"scoring_run_id": scoring_run_id, "mode": "local"},
         )
 
         assert response.status_code == 202
         assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, False, None))]
+        assert fake_enqueuer.keywords == [{"mode": "local"}]
 
     async def test_the_request_body_cannot_influence_the_stored_estimate(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1542,7 +1559,7 @@ class TestTheRunEstimateReachesTheJob:
             f"/projects/{project_id}/classify",
             json={
                 "scoring_run_id": scoring_run_id,
-                "use_cloud": True,
+                "mode": "cloud",
                 "estimated_cost_usd": 999_999.0,
                 "cost_usd": 999_999.0,
                 "model": "ein-untergeschobenes-modell",
@@ -1552,6 +1569,7 @@ class TestTheRunEstimateReachesTheJob:
 
         assert response.status_code == 202
         assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, True, expected))]
+        assert fake_enqueuer.keywords == [{"mode": "cloud"}]
 
 
 # specs/features/0429-auswahl-richtwert-und-mischung.md: der Richtwert des Auswahlvorschlags -

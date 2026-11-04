@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-10-03 (Spec 0566 — Ablaufübersicht je Projekt mit „schon gesehen" je Person und Projekt, dritter Schritt heißt überall „Klassifizierung"; Spec 0565 — Navigationen des Service Workers zuerst aus dem Netz, offline aus dem Precache; Cache-Control-Header im Frontend-nginx; davor Spec 0551/ADR 0127)
+**Letzte Aktualisierung:** 2026-11-03 (Spec 0609 — Eye als dritte Laufwahl neben „Cloud" und „nur lokal": eigener Sidecar im Compose-Profil `eye`, Eye-Schattentabellen, Rangfolge der Grundlagen `cloud > eye > local`, Rückbauweg; davor Spec 0566/0565)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -1462,6 +1462,29 @@ Verarbeitungs-Cache (Thumbnails).
     `face_detection_yunet_2023mar.onnx`, `face_recognition_sface_2021dec.onnx`. Alle übrigen Assets
     bleiben eingecheckt. `label_embedding.py` setzt `ORT_DISABLE_TELEMETRY=1` vor dem ersten
     `import onnxruntime`; der Personenpfad lädt kein `onnxruntime`.
+- **Eye-Sidecar** (`eye/`, eigener Container-Prozess, Spec 0609, ADR
+  [`decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md`](../specs/decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md)):
+  Node-Dienst im Compose-Profil `eye`, Port `8090`, **kein** veröffentlichter Port, kein Zugriff
+  auf Datenbank oder `photo_cache`, keine Geheimnisse. Er lädt `@desert-ant-labs/eye` (exakt
+  gepinnt, signaturgeprüftes Lockfile) und die Gewichte `eye.tflite`/`eye_meta.json` aus dem Volume
+  `eye_model`, prüft Revision, Commit-SHA und beide SHA-256 bei **jedem** Start gegen
+  `eye/src/pins.json` und antwortet erst danach auf `GET /health` mit `200`. `POST /analyze` nimmt
+  die Bytes der `display`-Variante und gibt die SDK-Analyse unverändert zurück — die Abbildung auf
+  Motive, Dokumentausschluss, Albumstufe und Feinlabels rechnet `backend/src/photosort/eye_mapping.py`,
+  nicht der Dienst. Verarbeitung sequenziell (ein Modell, eine Anfrage). `DAL_APP_ID=photosort`
+  steht fest im Image, `HOME` liegt auf dem Volume `eye_home` (die Lizenz-Zählkennung übersteht
+  Neustarts), `DAL_LICENSE_ENDPOINT`/`HF_TOKEN` brechen den Start ab. Backend und Worker erreichen
+  ihn über `EYE_SERVICE_URL` (Vorgabe `http://eye:8090`); `EYE_ENABLED` (Vorgabe `false`) schaltet
+  die Laufwahl app-seitig ab. Ohne gestartetes Profil antwortet der Auslöser `403`/`503`, es gibt
+  keinen Rückfall auf einen anderen Modus. Der Egress des Fremdpakets ist **nicht** erzwungen
+  (Betreiberpflicht des Heimservers). Der **Vergleich** Eye ↔ Cloud ist ein rein lesendes CLI
+  (`python -m photosort.eye_comparison --project-id … --seed … --out …`, Spec 0609): stdout trägt
+  nur Zählungen je Zweck, die seeded Abweichungszeilen (je Zweck höchstens dreißig, Foto-Id und
+  App-Pfad) gehen ausschließlich in eine Datei **außerhalb** des Repos, und das Modul liest weder Dateinamen noch Nutzer, Personen
+  oder Orte. Es ist an keinen Endpunkt, kein Compose-Ziel und keinen Worker-Pfad gehängt. Die
+  Demo-Daten zeigen Eye an genau einem Foto: `demo_state.py` schreibt dort zuerst die lokale
+  Kopfzeile und lässt Eye darüber laufen, sodass Kopfzeile, Schattenzeilen und der verdrängte
+  lokale Vektor (Rückbaudaten) im Bestand gleichzeitig vorkommen.
 - **Postgres**: Metadaten (Projekte, Fotos, Bewertungen, Nutzer), keine Bilddaten.
 - **Redis**: Job-Queue für den Worker.
 - **Lokaler Cache**: Docker-Volume für Thumbnails/Zwischenergebnisse, kein Ersatz für OpenCloud als
@@ -1544,7 +1567,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `criterion_scoring_runs`, `remote_category_classification_runs`, `ratings`, `photo_scores`,
     `photo_criterion_scores`, `photo_rankings`, `events`, `photo_landmark_detections`,
     `photo_fine_labels`, `photo_duplicate_decisions`, `photo_motif_assessments`,
-    `photo_motif_strengths`, `photo_motif_corrections`, `photo_person_detections`,
+    `photo_motif_strengths`, `photo_motif_corrections`, `photo_eye_results`,
+    `photo_eye_motif_strengths`, `photo_eye_fine_labels`, `photo_local_motif_snapshots`,
+    `photo_local_motif_snapshot_strengths`, `photo_person_detections`,
     `photo_person_corrections`, `photo_album_suitability`, `photo_cloud_vision_errors`,
     `final_selection_decisions`, `feedback_events`, `place_lookups`, `landmark_names`,
     `landmark_place_lookups`, `project_overview_seen`, `export_runs`, `export_photos`) sowie das
@@ -1951,7 +1976,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     hochgezähltes `api_calls` löste ihn bei jedem laufenden Cloud-Lauf als Fehlalarm aus. Dazu
     `estimated_cost_usd` (die Schätzung, mit der genau dieser Lauf gestartet wurde; ein BELEG, nie
     eine Eingabe — sie geht in keine spätere Rechnung, kein Budget-Gate und keine Ableitung der
-    Ist-Kosten ein, und bei `use_cloud=false` steht dort `NULL`, nicht `0.0`) und
+    Ist-Kosten ein; ohne Cloud-Kontakt — `mode=local` oder `mode=eye` ohne Einwilligung — steht
+    dort `NULL`, nicht `0.0`, die Vorschau `GET …/classify/estimate` nennt für diese Wege
+    weiterhin `0.0`) und
     `remote_category_classification_run_id` (FK auf `remote_category_classification_runs.id`,
     gesetzt von `run_classification` vor dem Start von Phase 1; `NULL` = dieser Lauf hatte keine
     Remote-Phase oder ist eine Altzeile). Damit ist der oben genannte Vermerk „bewusst KEIN FK auf
@@ -1981,6 +2008,14 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     Fehler und ohne roten Verhaltenstest. Festgehalten wird das von einem Quelltext-Wächter
     (`tests/test_models.py`: die Funktionsmenge je Spalte und die Modulmenge paketweit) und dem
     Nachsatz `assert_phase_binding` samt strenger Monotonie über die volle Phasenabfolge.
+  - zwölfte additive Spalte `mode` *(Spec 0609, ADR 0138, Migration mit den Eye-Tabellen)* — die
+    Laufwahl des Nutzers (`cloud`/`eye`/`local`), nullable: Altzeilen tragen
+    `NULL`, und die Regel „unbekannt ist nicht `local`" gilt auch hier. Dazu `eye_photos_total`/
+    `eye_photos_processed` (nullable, Muster `persons_*`; `NULL` = Phase lief nicht) für den
+    Fortschritt der Eye-Phase und den fünften `ClassificationPhase`-Wert `eye` zwischen
+    `remote_categories` und `criteria`. Die Phasenmonotonie (`assert_phase_binding`) und die
+    Schrittableitung im Frontend ziehen mit; der Wertebereich bleibt ein `VARCHAR(20)` ohne
+    DB-Prüfeinschränkung.
 - **PhotoRanking** *(implementiert, Spec
   [`0037`](../specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md), `models.py`, ADR
   0021)*: der volle, sortierte Kandidatenpool einer Partition für einen `CriterionScoringRun` —
@@ -2366,14 +2401,15 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   [`decisions/0091-motive-mit-staerke-statt-hauptkategorie.md`](../specs/decisions/0091-motive-mit-staerke-statt-hauptkategorie.md),
   `models.py`, Tabelle `photo_motif_assessments`)*: die **Grundlage** der Motivbeurteilung eines
   Fotos, **1:1 zu `Photo`** (`photo_id` als Primary Key und Fremdschlüssel,
-  `cascade="all, delete-orphan"`). `source` (`cloud` | `local`, `SQLEnum(native_enum=False)`),
+  `source` (`cloud` | `eye` | `local`, `SQLEnum(native_enum=False)`),
   `excluded_document: bool` (NOT NULL, **ohne jeden Default** — ein Schreibpfad, der die Spalte
   vergisst, soll laut scheitern statt still ein Foto aus jeder Motivauswahl zu entfernen),
   `provider: str | None` (`NULL` bei lokaler Grundlage), `computed_at`. **Die Abwesenheit dieser
   Zeile ist der Zustand „noch nicht klassifiziert"** und damit unterscheidbar von „nichts erkannt"
-  (Zeile vorhanden, Stärken durchgehend niedrig). Eine Cloud-Grundlage wird von einem lokalen Lauf
-  **nie** überschrieben; der Kriterien-Lauf schreibt nur, wenn keine Zeile existiert oder die
-  vorhandene `source='local'` trägt.
+  (Zeile vorhanden, Stärken durchgehend niedrig). Die Rangfolge lautet **`local` < `eye` < `cloud`**:
+  eine Cloud-Grundlage überschreibt alles, `eye` überschreibt nur `local` oder eine fehlende Zeile,
+  `local` schreibt nur, wenn keine Zeile existiert oder die vorhandene `source='local'` trägt
+  (ADR 0138 Punkt 4; die Regel steht in `motif_strengths.py::upsert_assessment`).
 - **PhotoMotifStrength** *(Spec [`0427`](../specs/features/0427-motive-mit-staerke.md), ADR 0091,
   `models.py`, Tabelle `photo_motif_strengths`)*: **1:N** zur Kopfzeile (Fremdschlüssel auf
   `photo_motif_assessments.photo_id`, `UniqueConstraint(photo_id, motif_key)`) — `motif_key: str`
@@ -2398,6 +2434,29 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   Grundlage, diese Zeile ist eine Aussage über die Bildgüte und existiert nur mit Cloud-Grundlage.
   Die Abwesenheit der Zeile ist der Zustand „nicht beurteilt" und macht das Foto erneut zum
   Kandidaten des Modellaufrufs, ohne dass das Projekt neu eingelesen werden muss.
+- **PhotoEyeResult / PhotoEyeMotifStrength / PhotoEyeFineLabel** *(Spec 0609, ADR 0138, Migration
+  mit `mode`)*: das
+  **Schatten-Ergebnis** eines Eye-Laufs, das auch dann geschrieben wird, wenn für das Foto eine
+  Cloud-Grundlage gilt (Vergleichsgrundlage, #610). `photo_eye_results` ist **1:1 zu `Photo`**
+  (`photo_id` PK und FK, `cascade="all, delete-orphan"`), `excluded_document: bool` NOT NULL **ohne
+  jeden Default** (dasselbe Idiom wie die Kopfzeile), `album_level: int` (1–5, die Modellstufe),
+  `model_revision: str`, `computed_at`. `photo_eye_motif_strengths` (FK auf
+  `photo_eye_results.photo_id`, `Unique(photo_id, motif_key)`) trägt alle acht Motive; ein nicht
+  genanntes Motiv wird `0.0`, nicht „keine Angabe". `photo_eye_fine_labels` (FK auf
+  `photo_eye_results.photo_id`, roher Eye-Tag als Text, `confidence`, `Unique(photo_id, label)`)
+  bleibt **außerhalb** der geschlossenen Registry `fine_labels`: das Vokabular ist ein anderes, und
+  eine erzwungene Zuordnung wäre eine Modellaussage, die es nicht gibt. Eye schreibt **nie** in
+  `photo_motif_*`, `photo_album_suitability` oder `photo_fine_labels`; die geltende Motivgrundlage
+  steht allein in `photo_motif_assessments`. Gelesen wird der Satz über `PhotoOut.eye_result`, und
+  zwar genau dann, wenn die Kopfzeile `source='eye'` trägt.
+- **PhotoLocalMotifSnapshot / PhotoLocalMotifSnapshotStrength** *(Spec 0609, ADR 0138 Punkt 5)*:
+  der **Rückbaudatensatz** — der jüngste lokale Motivvektor eines Fotos, dessen Kopfzeile von Eye
+  verdrängt wurde.
+  `photo_local_motif_snapshots` (1:1 zu `Photo`, `computed_at`), Stärken in
+  `photo_local_motif_snapshot_strengths` (`Unique(photo_id, motif_key)`). Geschrieben, wenn Eye eine
+  lokale Kopfzeile verdrängt, und von jedem späteren Lauf „nur lokal", der auf eine Eye-Kopfzeile
+  trifft (er ersetzt dann nichts). Ein erneuter Eye-Lauf überschreibt ihn nicht. `NULL`/Abwesenheit
+  heißt „kein lokales Ergebnis vorhanden"; der Rückbau löscht dann die Kopfzeile.
 - **FinalSelectionDecision** *(Spec [`0431`](../specs/features/0431-endauswahl-gemeinsam.md), ADR
   [`decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md`](../specs/decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md),
   `models.py`, Tabelle `final_selection_decisions`)*: die **gemeinsame Entscheidung des Projekts**
@@ -2758,6 +2817,16 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   bisher implizite Abhängigkeit nur explizit. Die aktive `cv2`-Nutzung ist strukturell auf
   `cv2.Canny`/`cv2.HoughLinesP` auf bereits über Pillow dekodierten Pixeldaten begrenzt, nie auf
   `cv2.imread`/`cv2.imdecode` — Pillow bleibt die alleinige Bild-I/O-Bibliothek im Projekt.
+
+- **Eye ist eine dritte, abschaltbare Grundlage, kein Ersatz** (Spec 0609, ADR
+  [`decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md`](../specs/decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md)):
+  Cloud-Ergebnisse bleiben gültig, Eye füllt nur Fotos ohne Cloud-Grundlage und schreibt daneben
+  immer seine Schattentabellen; Album-Entwurf und Cloud-Kandidatenauswahl bleiben unberührt. Die
+  Gewichte liegen in einem Volume, nie im Repository oder Image, und werden bei jedem Start gegen
+  feste Pins geprüft. **Nicht zugesichert** ist der Egress des Fremdpakets: das SDK kontaktiert nur
+  `events.desertant.com`, erzwungen wird das nicht — die Durchsetzung ist Betreiberpflicht. Eye
+  v1.0.0 ist Beta; ein Modell-Update gilt unter der dann aktuellen Lizenz und ist ein neuer Pin,
+  kein stiller Wechsel.
 
 - Der automatisierte Oberflächen-Prüflauf ist **bewusst unvollständig**: der Prüfstack
   (`docker-compose.e2e.yml`) enthält weder eine OpenCloud-Instanz noch den Worker. Begründung: das

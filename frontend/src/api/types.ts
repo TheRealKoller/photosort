@@ -30,12 +30,21 @@ export interface ScoringRunSummary {
   gate_confirmed_at: string | null
 }
 
-// Die VIER Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser Reihenfolge.
+// Die Teilschritte eines verketteten Klassifizierungslaufs, in genau dieser Reihenfolge.
 //
-// 'landmark' ist die Sehenswürdigkeits-Erkennung. 'ranking' (Kategorieableitung und Rangfolge)
-// gehört fachlich zur Kriterien-Phase, läuft aber DANACH.
+// 'eye' ist die Eye-Auswertung auf diesem Server (Spec 0609) und läuft VOR der Kriterien-Phase,
+// damit Rangfolge, Events und Auswahlvorschlag desselben Laufs schon den wirksamen Vektor lesen -
+// obwohl sie in der Anzeige hinter 'remote_categories' steht. 'landmark' ist die
+// Sehenswürdigkeits-Erkennung. 'ranking' (Kategorieableitung und Rangfolge) gehört fachlich zur
+// Kriterien-Phase, läuft aber DANACH.
 export type ClassificationPhase =
-  'remote_categories' | 'criteria' | 'landmark' | 'ranking' | 'persons'
+  'remote_categories' | 'eye' | 'criteria' | 'landmark' | 'ranking' | 'persons'
+
+/**
+ * Der Weg eines Klassifizierungslaufs (Spec 0609): Cloud, Eye oder nur lokal. Der Name ist
+ * derselbe wie im Anfragekoerper, damit Anfrage und Antwort nicht zwei Vokabulare fuehren.
+ */
+export type ClassificationWay = 'cloud' | 'eye' | 'local'
 
 // Ein Cloud-Teilschritt EINES Klassifizierungslaufs: während des Laufs die Fortschrittsanzeige,
 // danach die Bilanz.
@@ -114,6 +123,13 @@ export interface CriterionScoringRunSummary {
   // Laufende wird der Teilschritt dann ausgeblendet. Keine Namen, keine Trefferzahl.
   persons_photos_total: number | null
   persons_photos_processed: number | null
+  // Der beim Start GEWAEHLTE Weg; `null` bei Altzeilen, deren Weg unbekannt ist. Nicht aus
+  // `cloud_requested` ableitbar: Eye mit Einwilligung fragt Cloud an, ohne der Cloud-Weg zu sein.
+  mode: ClassificationWay | null
+  // Die Zaehler der Eye-Phase (Muster `persons_*`). `null` heisst "diese Phase lief nicht" -
+  // der Teilschritt wird nach Laufende dann ausgeblendet.
+  eye_photos_total: number | null
+  eye_photos_processed: number | null
 }
 
 /**
@@ -175,6 +191,10 @@ export interface ProjectOut {
   // false, consent_at null solange nicht aktiviert. Er gated BEIDE Cloud-Anteile.
   cloud_vision_detection_enabled: boolean
   cloud_vision_consent_at: string | null
+  // Der Eye-Schalter (`EYE_ENABLED`) - die dritte Laufwahl erscheint nur, wenn er an ist. Er kommt
+  // allein aus den Einstellungen des Servers, NIE aus einer Lebendpruefung des Dienstes: sonst
+  // machte das Laden der Projektliste den Sidecar zur Voraussetzung.
+  eye_available: boolean
   // Der Richtwert des Auswahlvorschlags. `null` heißt "nicht selbst eingestellt", NICHT "kein
   // Richtwert" - wirksam ist dann `effective_selection_target`, die feste Vorbelegung von 150
   // Bildern. Das Frontend leitet die wirksame Zahl nie selbst ab; sie kommt fertig vom Server,
@@ -210,6 +230,9 @@ export interface ClassificationEstimatePartOut {
 }
 
 export interface ClassificationEstimateOut {
+  // Der Weg, auf den sich die Antwort bezieht. Beim Weg `eye`/`local` sind nicht stattfindende
+  // Anteile `null`/`null` - nie `0`, das "kostenlos" behauptete, wo nichts gezaehlt wurde.
+  mode: ClassificationWay
   // Summe der BEKANNTEN Anteile - bei unbekanntem Landmark-Anteil eine untere Schranke.
   candidate_count: number
   remote_categories: ClassificationEstimatePartOut
@@ -487,10 +510,27 @@ export interface MotifSetOut {
  * Stärken niedrig). `provider` ist `null` bei `source === 'local'`. `excluded_document` lässt sich
  * von Hand NICHT korrigieren. */
 export interface MotifAssessmentOut {
-  source: 'cloud' | 'local'
+  source: 'cloud' | 'eye' | 'local'
   provider: string | null
   excluded_document: boolean
   computed_at: string
+}
+
+/**
+ * Die Eye-Auswertung eines Fotos (Spec 0609). Gesetzt GENAU dann, wenn die Motiv-Kopfzeile
+ * `source === 'eye'` traegt - ein Schattensatz neben einer Cloud-Kopfzeile ist Vergleichsmaterial
+ * fuer das CLI und wird hier NICHT angezeigt.
+ *
+ * `fine_labels` sind die rohen Eye-Tags ab Konfidenz 0.5, serverseitig zeichensaniert und
+ * laengenbegrenzt, absteigend nach Konfidenz. Als React-Textknoten rendern, nie als HTML.
+ * `model_revision` steht hier und nicht in `MotifAssessmentOut.provider`: Eye ist kein
+ * Cloud-Anbieter.
+ */
+export interface EyeResultOut {
+  album_level: number
+  model_revision: string
+  computed_at: string
+  fine_labels: string[]
 }
 
 /** Die WIRKSAME Stärke eines Motivs samt Korrekturzustand. `strength` trägt die Korrektur bereits
@@ -787,6 +827,9 @@ export interface PhotoOut {
   /** Die Albumtauglichkeit des Modells - `null` heißt „noch nicht bewertet" und ist von der
    * niedrigsten Stufe unterscheidbar. Auf `=== null` prüfen, nie auf Falsyness. */
   album_suitability?: AlbumSuitabilityOut | null
+  /** Die Eye-Auswertung, `null` ohne Eye-Kopfzeile. Optional deklariert wie `location`/`motifs`:
+   * `undefined` und `null` bedeuten an jeder Lesestelle dasselbe ("nicht angezeigt"). */
+  eye_result?: EyeResultOut | null
   /**
    * Die persistierte GEMEINSAME Entscheidung des Projekts über dieses Foto; `null` = keine
    * getroffen. Sie ist keine Aussage eines Nutzers - `ratings[].status` heißt bereits

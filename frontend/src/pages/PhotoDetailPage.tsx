@@ -7,6 +7,7 @@ import { decodeUsername } from '../auth/jwt'
 import { getToken } from '../auth/token'
 import { CloudVisionStatusList } from '../components/CloudVisionStatusList'
 import { CriterionScoreGrid } from '../components/CriterionScoreGrid'
+import { EyeAttribution } from '../components/EyeAttribution'
 import { MotifStrengthSection } from '../components/MotifStrengthSection'
 import { PhotoCaptureFacts } from '../components/PhotoCaptureFacts'
 import { PhotoDetailStage } from '../components/PhotoDetailStage'
@@ -25,6 +26,8 @@ import { usePersonFilter } from '../hooks/usePersonFilter'
 import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
 import { withPersonIds } from '../utils/personFilter'
 import { parseRatingFilter } from '../utils/ratingFilter'
+import { eyeVerdict } from '../utils/eyeVerdict'
+import { formatDateTime } from '../utils/formatStats'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching for
@@ -349,6 +352,7 @@ export function PhotoDetailPage() {
   }
 
   const isMutating = setMutation.isPending || deleteMutation.isPending || favoriteMutation.isPending
+  const eyeValues = currentPhoto.eye_result != null ? eyeVerdict(currentPhoto.eye_result) : null
 
   return (
     <div className="flex flex-col gap-4">
@@ -416,13 +420,33 @@ export function PhotoDetailPage() {
         <h2 id="verdict-heading" className="sr-only">
           Urteil
         </h2>
+        {/* Mit Eye-Ergebnis stammen Stufe und Feinlabels aus Eye - die Cloud-Tabellen beschreibt
+            Eye nie (S8), sie blieben hier leer oder zeigten einen fremden Lauf. */}
         <PhotoVerdict
           // `?? null` heisst hier "noch nicht bewertet" und nicht "Feld nicht durchgereicht":
           // diese Ansicht zeigt die Zeile immer, mit Stufe oder mit dem Satz.
-          albumSuitability={currentPhoto.album_suitability ?? null}
+          albumSuitability={eyeValues?.albumSuitability ?? currentPhoto.album_suitability ?? null}
           ranking={currentPhoto.ranking ?? null}
-          fineLabels={currentPhoto.fine_labels}
+          fineLabels={eyeValues?.fineLabels ?? currentPhoto.fine_labels}
         />
+
+        {/* DAS EYE-BAND (Spec 0609): zwischen Urteil und Motivbereich, weil es die HERKUNFT der
+            beiden Angaben im Urteil benennt - Modellrevision und Zeitpunkt stammen aus
+            `photo_eye_results`, nicht aus einer geratenen Anbieterzeile. Die Namensnennung steht
+            darunter, an derselben Stelle wie die Angabe selbst. */}
+        {currentPhoto.eye_result != null && (
+          <div
+            className="flex flex-col gap-1 rounded-sm border border-separator bg-elevated px-3 py-2"
+            data-testid="eye-band"
+          >
+            <p className="text-xs text-text">
+              Albumtauglichkeit und Feinlabels stammen aus der Eye-Auswertung — Modellrevision{' '}
+              {currentPhoto.eye_result.model_revision},{' '}
+              {formatDateTime(currentPhoto.eye_result.computed_at)}.
+            </p>
+            <EyeAttribution />
+          </div>
+        )}
 
         <section
           className="flex flex-col gap-2 text-base"

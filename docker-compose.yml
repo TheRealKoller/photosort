@@ -53,6 +53,12 @@ services:
       # (der 403-Gate-Check sitzt in api/projects.py), der Worker-Job selbst prueft dieses Flag
       # nicht - seine einzige Vorbedingung ist ein erfolgreicher ScoringRun.
       CATEGORY_SELECTION_ENABLED: ${CATEGORY_SELECTION_ENABLED:-true}
+      # Eye als dritte Laufwahl (specs/features/0609-eye-dritte-wahl.md). Der Schalter ist die
+      # EINE Quelle der Laufwahl in der Oberflaeche; die Adresse zeigt auf den Sidecar im
+      # Compose-Netz. Beide muessen zusammenpassen - "true" ohne gesunden Dienst endet im
+      # sichtbaren 503, nie in einem stillen Rueckfall.
+      EYE_ENABLED: ${EYE_ENABLED:-false}
+      EYE_SERVICE_URL: ${EYE_SERVICE_URL:-http://eye:8090}
     command: ["sh", "-c", "alembic upgrade head && uvicorn photosort.main:app --host 0.0.0.0 --port 8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
@@ -102,6 +108,8 @@ services:
       AUTH_SEED_USER1_PASSWORD: ${AUTH_SEED_USER1_PASSWORD:-change-me}
       AUTH_SEED_USER2_USERNAME: ${AUTH_SEED_USER2_USERNAME:-change-me}
       AUTH_SEED_USER2_PASSWORD: ${AUTH_SEED_USER2_PASSWORD:-change-me}
+      EYE_ENABLED: ${EYE_ENABLED:-false}
+      EYE_SERVICE_URL: ${EYE_SERVICE_URL:-http://eye:8090}
     command: ["python", "-m", "arq", "photosort.worker.WorkerSettings"]
     volumes:
       - photo_cache:/data/photo-cache
@@ -109,6 +117,49 @@ services:
       # von seinem Hash ab, wird kein Aufloeser gebaut, es entsteht kein Ersatzweg, und die Events
       # behalten Nummer und Zeitspanne - der Lauf laeuft durch.
       - place_dataset:/data/place-dataset:ro
+
+  # Eye-Sidecar (specs/features/0609-eye-dritte-wahl.md, ADR 0138 Punkt 2). Bewusst hinter dem
+  # Profil "eye": ein Standard-"up" startet ihn nicht, und die Laufwahl bleibt ueber EYE_ENABLED
+  # aus. Kein "ports:" (nur im Compose-Netz erreichbar), keine Datenbank-, Cache- oder
+  # Geheimnisvariable (S1). Die Gewichte kommen aus dem Volume "eye_model", das der Einmal-Dienst
+  # "eye-model" unter "--profile eye-setup" fuellt - sie liegen nie im Image und nie im Repository.
+  eye:
+    build: ./eye
+    profiles: ["eye"]
+    restart: unless-stopped
+    # Nicht als root: der Dienst schreibt nur in sein eigenes Home (Install-ID der Lizenz).
+    user: node
+    environment:
+      DAL_APP_ID: photosort
+      EYE_MODEL_DIR: /model
+    volumes:
+      - eye_model:/model:ro
+      - eye_home:/home/node
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8090/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Einmal-Dienst: holt die Gewichte des gepinnten Commits und prueft jede Datei gegen ihren
+  # SHA-256, BEVOR sie an ihren Platz wandert. Laeuft als root, weil ein frisches Named Volume
+  # root gehoert; der Dienst selbst liest das Volume spaeter nur.
+  eye-model:
+    build: ./eye
+    profiles: ["eye-setup"]
+    user: "0:0"
+    command: ["node", "src/fetch-model.js"]
+    environment:
+      EYE_MODEL_DIR: /model
+    volumes:
+      - eye_model:/model
 
   frontend:
     build:
@@ -125,6 +176,9 @@ volumes:
   postgres_data:
   photo_cache:
   place_dataset:
+  # Nur die Gewichte (ro gelesen) und das Home des Sidecars (Install-ID der Lizenz, rw).
+  eye_model:
+  eye_home:
 
 # Expliziter Default-Netzwerk-Block statt des von Docker Compose automatisch angelegten
 # Default-Netzwerks (siehe specs/features/0010-explicit-ipv4-only-network.md): das externe

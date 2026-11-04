@@ -514,9 +514,11 @@ class TestTheDraftHasNoPhaseOfItsOwn:
     async def test_no_new_classification_phase_value_was_introduced(self) -> None:
         """Der Vorschlag ist kein eigener Teilschritt mit eigener Fortschrittsstufe in der
         Oberflaeche: Er rechnet unter der zuletzt gesetzten Phase. `persons` ist der Teilschritt
-        der Personen-Erkennung, nicht der Vorschlag."""
+        der Personen-Erkennung, nicht der Vorschlag. `eye` steht VOR `criteria`, weil Rangfolge
+        und Auswahlvorschlag desselben Laufs schon den wirksamen Vektor lesen (Spec 0609)."""
         assert [phase.value for phase in ClassificationPhase] == [
             "remote_categories",
+            "eye",
             "criteria",
             "landmark",
             "ranking",

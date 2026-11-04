@@ -21,6 +21,7 @@ import type {
 } from '../api/types'
 import { setToken } from '../auth/token'
 import { MOTIF_KEYS, MOTIF_SET } from '../test/motifSetFixture'
+import { formatAlbumSuitabilityLevel } from '../utils/albumSuitability'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
 // (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
@@ -1350,6 +1351,123 @@ describe('PhotoDetailPage', () => {
   // specs/features/0427-motive-mit-staerke.md, UI/UX-Abschnitt "Einzelbildansicht": die
   // permanente Sektion "Motive", nach dem Vorschlagskasten und VOR der Trennlinie. Seit PR 3 ist
   // sie der EINZIGE Bedienblock der Bewertungsdetails.
+  // specs/features/0609-eye-dritte-wahl.md: die Herkunft von Albumtauglichkeit und Feinlabels
+  // steht zwischen Urteil und Motivbereich - an der Stelle, deren Angaben sie erklaert.
+  describe('Die Eye-Auswertung (Spec 0609)', () => {
+    const EYE_ASSESSMENT_LOCAL = {
+      source: 'eye' as const,
+      provider: null,
+      excluded_document: false,
+      computed_at: '2026-09-12T10:00:00Z',
+    }
+    const EYE_RESULT = {
+      album_level: 3,
+      model_revision: 'v1.0.0',
+      computed_at: '2026-09-12T10:00:00Z',
+      fine_labels: ['urlaub', 'strand'],
+    }
+
+    it('nennt Herkunft, Modellrevision und Zeitpunkt zwischen Urteil und Motiven', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            motif_assessment: EYE_ASSESSMENT_LOCAL,
+            motifs: motifStrengths(),
+            eye_result: EYE_RESULT,
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      const band = await screen.findByTestId('eye-band')
+      expect(band).toHaveTextContent(
+        /Albumtauglichkeit und Feinlabels stammen aus der Eye-Auswertung/,
+      )
+      expect(band).toHaveTextContent('v1.0.0')
+      const link = within(band).getByRole('link', { name: /desert ant labs/i })
+      expect(link).toHaveAttribute('href', 'https://desertant.com')
+
+      // Die Reihenfolge ist die Aussage: nach dem Urteil, vor den Motiven.
+      const verdict = screen.getByTestId('verdict-section')
+      expect(verdict.compareDocumentPosition(band) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(
+        band.compareDocumentPosition(screen.getByTestId('motifs-section')) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    it('zeigt kein Band ohne Eye-Ergebnis', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [photo({ id: 1, motif_assessment: CLOUD_ASSESSMENT, motifs: motifStrengths() })],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+      await screen.findByTestId('verdict-section')
+
+      // Cloud-Kopfzeile: kein Eye-Band, keine Eye-Namensnennung im Urteilsblock.
+      expect(screen.queryByTestId('eye-band')).not.toBeInTheDocument()
+    })
+
+    it('zeigt im Urteil Eyes Stufe und Feinlabels statt der leeren Cloud-Werte', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            motif_assessment: EYE_ASSESSMENT_LOCAL,
+            motifs: motifStrengths(),
+            album_suitability: null,
+            fine_labels: [],
+            eye_result: { ...EYE_RESULT, album_level: 4, fine_labels: ['beach', 'sunset'] },
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      const verdict = await screen.findByTestId('photo-verdict')
+      expect(within(verdict).getByText(formatAlbumSuitabilityLevel(4))).toBeInTheDocument()
+      expect(within(verdict).queryByText('Noch nicht bewertet')).toBeNull()
+      expect(verdict.querySelector('[data-album-suitability-reason]')).toBeNull()
+      const labels = within(verdict).getByRole('list', { name: 'Feinlabels' })
+      expect(within(labels).getByText('beach')).toBeInTheDocument()
+      expect(within(labels).getByText('sunset')).toBeInTheDocument()
+    })
+
+    it('zeigt ohne Eye-Ergebnis weiter die Cloud-Werte im Urteil', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            motif_assessment: CLOUD_ASSESSMENT,
+            motifs: motifStrengths(),
+            album_suitability: { level: 2, reason: 'Unscharf.' },
+            fine_labels: [
+              {
+                canonical_key: 'urlaub',
+                display_name: 'Urlaub',
+                raw_label: 'Urlaub',
+                provider: 'anthropic',
+              },
+            ],
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      const verdict = await screen.findByTestId('photo-verdict')
+      expect(within(verdict).getByText(formatAlbumSuitabilityLevel(2))).toBeInTheDocument()
+      expect(within(verdict).getByText('Unscharf.')).toBeInTheDocument()
+      expect(within(verdict).getByText('Urlaub')).toBeInTheDocument()
+    })
+  })
+
   describe('Sektion "Motive"', () => {
     it('zeigt die Sektion permanent, auch ohne Kopfzeile', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({

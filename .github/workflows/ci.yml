@@ -139,22 +139,23 @@ jobs:
         run: ruff check .
       - name: Test (pytest)
         run: pytest
-  # Einmaliges Messwerkzeug aus Spec 0606, kein Produktcode: Der Job haelt nur die beiden
-  # Zusicherungen, die an jedem Paketsatz des Repositories haengen - signaturgepruefte
-  # Installation und die eigenen Unit-Tests. Der Datenbanktest (`npm run test:db`) laeuft hier
-  # nicht, er braucht eine erreichbare Postgres-Instanz und bleibt beim Lauf auf dem Heimserver.
-  eye-eval:
+  # Der Eye-Sidecar (specs/features/0609-eye-dritte-wahl.md): Produktcode seit dem Entfall von
+  # tools/eye-eval. Der Job haelt dieselben beiden Zusicherungen, die an jedem Paketsatz des
+  # Repositories haengen - signaturgepruefte Installation und die eigenen Unit-Tests - und darueber
+  # den Vokabelabgleich gegen das SDK (`eye/test/tags.test.js`). Die Inferenz prueft kein Test:
+  # die Gewichte liegen ausserhalb des Repos (Bekannte Luecke in 0002).
+  eye:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: tools/eye-eval
+        working-directory: eye
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: tools/eye-eval/package-lock.json
+          cache-dependency-path: eye/package-lock.json
       - name: Abhaengigkeiten installieren (npm ci, nie npm install)
         run: npm ci
       - name: Lieferkette - Registry-Signaturen pruefen
@@ -197,6 +198,37 @@ jobs:
             echo "Network $network still exists after 'docker compose down'" >&2
             exit 1
           fi
+      - name: Static check - eye sidecar exposure (spec 0609)
+        run: |
+          set -euo pipefail
+          # S1 der Spec: der Sidecar ist ausschliesslich im Compose-Netz erreichbar und sieht
+          # keine Datenbank, keinen Cache und kein Geheimnis. Geprueft wird die gerenderte
+          # Konfiguration MIT Profil "eye" - ohne Profil waere der Dienst gar nicht da und die
+          # Pruefung liefe leer durch.
+          config=$(docker compose --profile eye --profile eye-setup config --format json)
+          ports=$(echo "$config" | jq '.services.eye.ports')
+          test "$ports" = "null"
+          profile=$(echo "$config" | jq -r '.services.eye.profiles[0]')
+          test "$profile" = "eye"
+          user=$(echo "$config" | jq -r '.services.eye.user')
+          test "$user" = "node"
+          env_keys=$(echo "$config" | jq -r '.services.eye.environment | keys | join(" ")')
+          echo "eye environment: $env_keys"
+          test "$env_keys" = "DAL_APP_ID EYE_MODEL_DIR"
+          for verboten in DATABASE_URL REDIS_URL SECRET_KEY ANTHROPIC_API_KEY MISTRAL_API_KEY OPENCLOUD_APP_TOKEN; do
+            if echo "$env_keys" | grep -qw "$verboten"; then
+              echo "eye sees $verboten - S1 der Spec 0609 verletzt" >&2
+              exit 1
+            fi
+          done
+          volumes=$(echo "$config" | jq -r '.services.eye.volumes[].target' | sort | tr '\n' ' ')
+          echo "eye volumes: $volumes"
+          test "$volumes" = "/home/node /model "
+          model_ro=$(echo "$config" | jq -r '.services.eye.volumes[] | select(.target == "/model") | .read_only')
+          test "$model_ro" = "true"
+          # Die Gewichte liegen nie im Image, sondern nur im Volume.
+          test "$(echo "$config" | jq '.volumes | has("eye_model")')" = "true"
+          test "$(echo "$config" | jq '.volumes | has("eye_home")')" = "true"
       - name: Static check - worker command runs no migration (spec 0013)
         run: |
           set -euo pipefail

@@ -1907,6 +1907,14 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Kontrollkaestchen samt Beschriftung: dieselbe Begruendung wie beim Eingabefeld',
     },
     {
+      file: 'src/components/ClassificationSection.tsx',
+      snippet: 'flex min-h-11 w-full cursor-pointer flex-col justify-center gap-1',
+      reason:
+        'Laufwahl mit drei Wegen: Radio-Eingabe samt Beschriftung in einer klickbaren Zeile - ' +
+        'derselbe Fall wie die Richtungswahl des Versatz-Dialogs (ersetztes Element ohne ' +
+        'Pseudo-Element, Trefferflaeche = Zeilenhoehe)',
+    },
+    {
       file: 'src/components/CameraTimeOffsetDialog.tsx',
       snippet: '<label key={option} className="flex min-h-11 items-center gap-2">',
       reason:

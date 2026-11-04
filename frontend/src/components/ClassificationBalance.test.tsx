@@ -53,6 +53,9 @@ function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScor
     phase_remaining_seconds: null,
     persons_photos_total: null,
     persons_photos_processed: null,
+    mode: null,
+    eye_photos_total: null,
+    eye_photos_processed: null,
     ...overrides,
   }
 }
@@ -181,5 +184,48 @@ describe('ClassificationBalance (C): Cloud angefragt, keine Bilanz erfasst', () 
     render(<ClassificationBalance run={withoutBalance} />)
 
     expect(block().textContent).not.toMatch(/ohne cloud-anreicherung durchgeführt/i)
+  })
+})
+
+// specs/features/0609-eye-dritte-wahl.md: die Eye-Auswertung steht mit Fotos und dem Wort
+// "kostenfrei" in der Bilanz - ohne Betrag, und ohne die Cloud-Summenzeile zu beruehren.
+describe('ClassificationBalance (D): Eye-Auswertung im Durchlauf', () => {
+  it('nennt die Anzahl ausgewerteter Fotos und dass sie kostenfrei war', () => {
+    render(
+      <ClassificationBalance
+        run={run({ mode: 'eye', eye_photos_total: 20, eye_photos_processed: 18 })}
+      />,
+    )
+
+    const eye = screen.getByTestId('classification-balance-eye')
+    expect(eye).toHaveTextContent('Eye-Auswertung')
+    expect(eye).toHaveTextContent('18 Fotos')
+    expect(eye).toHaveTextContent('kostenfrei')
+    // Die Eye-Auswertung laeuft auf diesem Server: kein Betrag, keine Null.
+    expect(eye.textContent).not.toMatch(/USD/)
+  })
+
+  it('steht auch neben den Cloud-Anteilen eines Eye-Laufs mit Einwilligung', () => {
+    render(
+      <ClassificationBalance
+        run={run({
+          mode: 'eye',
+          eye_photos_total: 20,
+          eye_photos_processed: 20,
+          cloud_phases: [LANDMARK_PHASE],
+          cloud_cost_total_usd: 0.33,
+        })}
+      />,
+    )
+
+    expect(screen.getByTestId('classification-balance-eye')).toBeInTheDocument()
+    // Die Summenzeile bleibt Cloud-only - sie nennt den Landmark-Anteil, nicht die Eye-Zeile.
+    expect(block()).toHaveTextContent('0,33 USD')
+  })
+
+  it('zeigt keine Eye-Zeile, wenn die Phase nicht lief', () => {
+    render(<ClassificationBalance run={run({ mode: 'cloud' })} />)
+
+    expect(screen.queryByTestId('classification-balance-eye')).not.toBeInTheDocument()
   })
 })

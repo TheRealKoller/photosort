@@ -1,6 +1,7 @@
 import { apiFetch } from './client'
 import type {
   ClassificationEstimateOut,
+  ClassificationWay,
   FineLabelCountOut,
   ProjectOut,
   ProjectStatsOut,
@@ -63,22 +64,23 @@ export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
 }
 
 /**
- * Der EINE Ausloeser der Klassifizierung - der Server verkettet beide Phasen, der Aufrufer kennt
- * ihre Reihenfolge nicht.
+ * Der EINE Ausloeser der Klassifizierung - der Server verkettet die Phasen des gewaehlten Wegs,
+ * der Aufrufer kennt ihre Reihenfolge nicht.
  *
  * `scoringRunId`: Staleness-Guard bei einem zwischenzeitlichen Re-Scan/Re-Scoring (siehe
- * ScoringRunSummary.id). `useCloud`: laufbezogene Cloud-Freigabe - erteilt KEINE Einwilligung
- * (die bleibt die Projekteinstellung), sondern entscheidet nur ueber die Nutzung der bereits
- * erteilten fuer genau diesen Lauf. Ohne Einwilligung antwortet der Server mit 403.
+ * ScoringRunSummary.id). `mode`: der Weg dieses Laufs (Spec 0609) - er ersetzt die fruehere
+ * `use_cloud`-Checkbox und hat KEINEN Vorgabewert; `mode: 'cloud'` erteilt keine Einwilligung
+ * (die bleibt die Projekteinstellung) und wird ohne sie mit 403 abgewiesen. `eye` wird mit 403
+ * abgewiesen, wenn der Eye-Schalter aus ist, und mit 503, wenn der Dienst nicht antwortet.
  */
 export function triggerClassification(
   id: number,
   scoringRunId: number,
-  useCloud: boolean,
+  mode: ClassificationWay,
 ): Promise<TriggerScanResponse> {
   return apiFetch<TriggerScanResponse>(`/projects/${id}/classify`, {
     method: 'POST',
-    body: { scoring_run_id: scoringRunId, use_cloud: useCloud },
+    body: { scoring_run_id: scoringRunId, mode },
   })
 }
 
@@ -108,10 +110,17 @@ export function setSelectionTarget(id: number, target: number | null): Promise<P
   })
 }
 
-// Die Schaetzung deckt beide Cloud-Anteile ab. Funktioniert unabhaengig vom Consent-Schalter (auch
-// bei deaktiviertem Consent 200) - die Kosten sollen vor einer Consent-Entscheidung sichtbar sein.
-export function getClassificationEstimate(id: number): Promise<ClassificationEstimateOut> {
-  return apiFetch<ClassificationEstimateOut>(`/projects/${id}/classify/estimate`)
+// Die Schaetzung gilt JE WEG (`?mode=`): Cloud beide Anteile, Eye nur die
+// Sehenswuerdigkeits-Erkennung (und nur mit Einwilligung), lokal keinen. Funktioniert unabhaengig
+// vom Consent-Schalter (auch bei deaktiviertem Consent 200) - die Kosten sollen vor einer
+// Consent-Entscheidung sichtbar sein.
+export function getClassificationEstimate(
+  id: number,
+  mode: ClassificationWay,
+): Promise<ClassificationEstimateOut> {
+  return apiFetch<ClassificationEstimateOut>(
+    `/projects/${id}/classify/estimate?mode=${encodeURIComponent(mode)}`,
+  )
 }
 
 /**

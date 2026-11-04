@@ -1742,9 +1742,17 @@ Begründung. Das zugesagte Verhalten überlebt eine Kürzung, sein Warum nicht.
 - **E2E-Ebene:** der volle Ablauf (echter `opencloud-rolling`-Container, echter Upload, Browsing/Scan/Scoring im Frontend) bleibt manueller Smoke-Test vor Merge, analog zum etablierten Muster — kein CI-Job mit echtem Container, da Image-Größe/Startzeit für einen rein lokalen, optionalen Ausprobier-Zweck nicht gerechtfertigt sind.
 - Gilt als wiederverwendbares Muster für künftige `scripts/`-Tooling mit echter Verzweigungslogik: eigene Unit-Tests trotz Lage außerhalb des Coverage-Gate-Packages, sobald es mehr als reine Konfiguration ist (Abgrenzung zum dreistufigen Verifikationsmuster aus Spec 0007, das nur für Features *ganz ohne* Anwendungscode gilt).
 
-## Werkzeuge außerhalb des Coverage-Gates (`scripts/`, `tools/`)
+## Werkzeuge außerhalb des Coverage-Gates (`scripts/`, `eye/`)
 
-**Neu seit Spec [`0606`](../features/0606-eye-lokaler-cloud-ersatz-bewerten.md)** ("Eye als lokaler Cloud-Ersatz bewerten"): `tools/eye-eval/` ist der erste Node-Baum ohne Coverage-Gate — Messwerkzeug, kein Produktcode, bewusst mit eingechecktem `package.json` und `package-lock.json`, weil die Methode Teil des Belegs ist. Er hat seinen eigenen Testlauf (`npm test` = `node --test test/*.test.js`), den der CI-Job `eye-eval` ausführt, zusammen mit der signaturgeprüften Installation, die der Paketsatz-Wächter für jedes `package-lock.json` verlangt; die Auswertung selbst läuft nicht in der CI. Die Trennung ist dieselbe wie bei `scripts/`: alles Prüfbare ist reine Funktion über bereits ermittelte Signale (Auswahl, Basis je Zweck, eingefrorene Zuordnungstabelle, A/B-Zuweisung, Blinding im HTML, Entscheidungs-JSON, Ersparnis-Arithmetik, Report-Prüfer), die SDK-Aufrufe liegen hinter einer dünnen Adaptergrenze, die kein Unit-Test lädt. Ein echter Datenbanktest ist opt-in (`npm run test:db` mit `EYE_EVAL_TEST_DATABASE_URL` und `EYE_EVAL_TEST_PHOTO_CACHE_DIR`, nur auf dem Heimserver, nicht Teil von `npm test`); ein fehlendes Env ist ein lauter Fehlschlag statt eines stillen Skips, und der Laufbericht hält fest, ob er lief. Weder der CI-Job noch `scripts/check.sh` führen ihn aus — der Rot-Nachweis steht stattdessen im PR.
+Der Eye-Sidecar (`eye/`, Spec 0609, ADR 0138) ist ein eigener Node-Baum **im Produkt**: Er hält das
+Modell, prüft die Pins und beantwortet zwei HTTP-Routen. Er hat seinen eigenen Testlauf (`npm test`
+= `node --test test/*.test.js`), den der CI-Job `eye` ausführt, zusammen mit der signaturgeprüften
+Installation, die der Paketsatz-Wächter für jedes `package-lock.json` verlangt. Prüfbar ist er ohne
+Modell: Pin-Abgleich gegen synthetische Dateien, Request-Grenzen, Health-Zustand vor und nach dem
+Laden, Abbruch bei gesetzten Lizenzvariablen. Das frühere Messwerkzeug `tools/eye-eval/` (Spec
+0606) und sein CI-Job `eye-eval` sind mit Spec 0609 entfallen; die Vergleichslogik lebt als CLI im
+Backend (`photosort.eye_comparison`): Zählen, Abweichungsauswahl und Benennung sind reine
+Funktionen ohne Datenbankzugriff und werden unit-getestet, der DB-Teil bleibt ein dünner Leser.
 
 ## Externe CLI-Werkzeuge als dünne Adapter-Schicht (`subprocess`)
 
@@ -2627,6 +2635,10 @@ Bewusst nicht automatisiert bleibt der echte OpenCloud-`COPY`/`MKCOL` gegen die 
 - Echte OpenCloud-Instanz/echtes Redis/echter Worker-Container im automatisierten Testlauf — dafür kein Docker-Compose-Testsetup, ersetzt durch manuellen Smoke-Test vor Merge (etabliert mit Spec 0002: "Touch/Swipe-Gefühl wird als manueller Smoke-Test vor Merge geprüft", gilt analog für neue externe Integrationen).
 
 ## Bekannte Lücken (Stand 2026-08-03)
+
+- **Neu mit Spec 0609 / ADR [`0138`](../decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md) (2026-11-03), zwei benannte Lücken der Eye-Grundlage:**
+  - **Die Inferenz selbst prüft kein automatisierter Test.** Der CI-Job `eye` läuft ohne Modellgewichte; geprüft sind Pin-Abgleich, Grenzen der beiden Routen, Health-Zustand und Lizenzabbruch gegen synthetische Dateien. Ob `@desert-ant-labs/eye` aus den gepinnten Gewichten brauchbare Konfidenzen liefert und ob `eye_mapping.py` sie auf die richtigen Motive abbildet, zeigt allein ein echter Lauf — ein Modell-Asset gehört nicht ins Repository, also gibt es auch kein Fixture. Erkennungsweg ist der erste Eye-Lauf auf dem Heimserver samt Gegenüberstellung mit der Cloud (`photosort.eye_comparison`, Auswertung #610).
+  - **Die Tag-Tabelle wird in CI nicht gegen `eye_meta.json` gehalten.** Die Datei liegt nur im Volume `eye_model`. Ein Tag-Abgleich läuft deshalb als reine Funktion gegen synthetische Meta-Daten; der Abgleich mit der echten Datei bleibt ein Schritt des Heimserver-Smoke-Tests. Ein Pin-Wechsel, der Tags umbenennt, liefert damit still Nullen, bis dieser Schritt gelaufen ist.
 
 - **Neu mit Spec 0584 (2026-10-06), zwei benannte Lücken der Ausreißer-Vorstufe:**
   - **`LOCATION_CHANGE_CONFIRMING_PHOTOS` ist unkalibriert.** Tests sagen über den Wert nur `>= 2` aus und rechnen am Symbol. Ob zwei gemessene Fotos am neuen Ort im echten Bestand die richtige Grenze zwischen Ausreißer und Ortswechsel sind, belegt kein Korpus im Repository.

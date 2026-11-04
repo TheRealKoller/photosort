@@ -2,37 +2,61 @@ import type { ClassificationEstimateOut, ClassificationEstimatePartOut } from '.
 import { formatProviderLabel, formatUsd } from '../utils/formatStats'
 
 /**
- * Die aufgeschlüsselte Kostenvorschau vor dem Start.
+ * Die aufgeschlüsselte Kostenvorschau vor dem Start - JE WEG (`classification-estimate?mode=`).
  *
  * Bleibt an ihrer bisherigen Stelle VOR dem Auslöser, damit die Kosten sichtbar sind, während der
  * Nutzer ihn betätigt - das Design-System-Muster "dauerhaft sichtbare Kostenschätzung am Auslöser"
  * statt eines Bestätigungsdialogs bleibt unverändert in Kraft.
  *
- * Die drei Unbekannt-Fälle werden ausdrücklich benannt statt als `0` dargestellt. Der wichtigste
- * ist der Landmark-Anteil vor dem ersten Durchlauf: eine bloße Leerstelle liest sich wie "fällt
- * nicht an", deshalb steht dort ein zweiter Satz, der das Gegenteil sagt.
+ * WAS STATTFINDET, ENTSCHEIDET DER WEG, nicht die Zahl: `remote_categories` gehört nur zum
+ * Cloud-Weg, die Sehenswürdigkeits-Erkennung zum Cloud-Weg und zum Eye-Weg MIT Einwilligung. Der
+ * Server nennt in `mode` den Weg und in den Anteilen die Mengen; welche Anteile überhaupt laufen,
+ * sagt ihm die Oberfläche über `landmarkParticipates` zurück, weil `candidate_count === null` für
+ * "unbekannte Menge" UND für "findet nicht statt" stehen kann - beides `null`, aber nur das erste
+ * ist eine Aussage über Kosten.
  *
- * Beträge durchgängig über `formatStats.ts::formatUsd` (`1,23 USD`) - das frühere lokale
- * `$1.23`-Format ist entfallen. Zwei Formate direkt nebeneinander unterliefen das
- * Akzeptanzkriterium "tatsächliche Kosten gegen die Schätzung einordenbar", weil die Bilanz
- * dieselbe Formatierung trägt.
+ * Ein Weg ganz ohne Kosten zeigt EINE Zeile: „Dieser Durchlauf ist kostenfrei." — das Wort, nie
+ * „0,00 USD" (S7). Einzelne kostenfreie Anteile tragen dasselbe Wort.
+ *
+ * Beträge durchgängig über `formatStats.ts::formatUsd` (`1,23 USD`) - die Bilanz trägt dieselbe
+ * Formatierung.
  */
 
 const NO_PRICE_TEXT = 'kein Preis hinterlegt'
+const FREE_TEXT = 'kostenfrei'
 
 interface ClassificationEstimateProps {
   estimate: ClassificationEstimateOut
+  /** Findet die Sehenswürdigkeits-Erkennung in diesem Durchlauf statt? Cloud: immer. Eye: nur mit
+   * Einwilligung. Lokal: nie. */
+  landmarkParticipates: boolean
 }
 
-export function ClassificationEstimate({ estimate }: ClassificationEstimateProps) {
+function formatPartCost(part: ClassificationEstimatePartOut): string {
+  if (part.estimated_cost_usd === null) {
+    return NO_PRICE_TEXT
+  }
+  // `0.0` heisst "es faellt nichts an" - als Wort, nie als Betrag.
+  return part.estimated_cost_usd === 0 ? FREE_TEXT : formatUsd(part.estimated_cost_usd)
+}
+
+export function ClassificationEstimate({
+  estimate,
+  landmarkParticipates,
+}: ClassificationEstimateProps) {
   const providerLabel = formatProviderLabel(estimate.provider)
+  const showsRemoteCategories = estimate.mode === 'cloud'
+  const showsLandmark = landmarkParticipates
+  // Nur die Anteile, die in DIESEM Durchlauf laufen, zaehlen fuer Summe und Unbekannt-Hinweis.
+  const parts = [
+    showsRemoteCategories ? estimate.remote_categories : null,
+    showsLandmark ? estimate.landmark : null,
+  ].filter((part): part is ClassificationEstimatePartOut => part !== null)
   // "Alle Fotos bereits klassifiziert" darf NUR behauptet werden, wenn nichts offen UND nichts
-  // unbekannt ist: bei unbekanntem Landmark-Anteil wäre es eine Zusage über eine Menge, die
-  // niemand kennt - und genau diese Zusage kostet dann Geld.
-  const everythingKnown =
-    estimate.remote_categories.candidate_count !== null &&
-    estimate.landmark.candidate_count !== null
-  const nothingLeft = everythingKnown && estimate.candidate_count === 0
+  // unbekannt ist: bei unbekanntem Anteil wäre es eine Zusage über eine Menge, die niemand kennt -
+  // und genau diese Zusage kostet dann Geld.
+  const everythingKnown = parts.every((part) => part.candidate_count !== null)
+  const nothingLeft = parts.length > 0 && everythingKnown && estimate.candidate_count === 0
 
   return (
     <div
@@ -41,23 +65,29 @@ export function ClassificationEstimate({ estimate }: ClassificationEstimateProps
     >
       <h3 className="text-sm font-semibold text-text-h">Kostenvorschau</h3>
 
-      {nothingLeft ? (
+      {parts.length === 0 ? (
+        <p className="text-sm text-text">Dieser Durchlauf ist kostenfrei.</p>
+      ) : nothingLeft ? (
         <p className="text-sm text-text">
           Alle Fotos bereits klassifiziert — keine Cloud-Kosten zu erwarten.
         </p>
       ) : (
         <>
-          <EstimatePart
-            id="remote_categories"
-            label="Kategorie-Vorschläge"
-            part={estimate.remote_categories}
-          />
-          <EstimatePart
-            id="landmark"
-            label="Sehenswürdigkeits-Erkennung"
-            part={estimate.landmark}
-            unknownHint="Menge noch unbekannt — für dieses Projekt gab es noch keinen Durchlauf. Dieser Anteil verursacht trotzdem Kosten."
-          />
+          {showsRemoteCategories && (
+            <EstimatePart
+              id="remote_categories"
+              label="Kategorie-Vorschläge"
+              part={estimate.remote_categories}
+            />
+          )}
+          {showsLandmark && (
+            <EstimatePart
+              id="landmark"
+              label="Sehenswürdigkeits-Erkennung"
+              part={estimate.landmark}
+              unknownHint="Menge noch unbekannt — für dieses Projekt gab es noch keinen Durchlauf. Dieser Anteil verursacht trotzdem Kosten."
+            />
+          )}
           <p className="flex items-baseline justify-between gap-3 border-t border-separator pt-1">
             {/* Ist ein Anteil unbekannt, ist die Summe nur eine UNTERE SCHRANKE. Sie
                 unbeschriftet als "Gesamtsumme" zu zeigen, wäre genau die Fehlaussage, gegen die
@@ -69,7 +99,9 @@ export function ClassificationEstimate({ estimate }: ClassificationEstimateProps
             <span className="shrink-0 font-semibold text-text-h">
               {estimate.estimated_cost_usd === null
                 ? NO_PRICE_TEXT
-                : formatUsd(estimate.estimated_cost_usd)}
+                : estimate.estimated_cost_usd === 0
+                  ? FREE_TEXT
+                  : formatUsd(estimate.estimated_cost_usd)}
             </span>
           </p>
           {!everythingKnown && (
@@ -80,23 +112,30 @@ export function ClassificationEstimate({ estimate }: ClassificationEstimateProps
         </>
       )}
 
-      <p className="text-xs text-text-muted">
-        {/* Reine Textknoten: `provider`/`model` sind Herstellerbezeichnungen aus der
-            Server-Antwort, nie HTML. */}
-        Grundlage: {providerLabel}, Modell {estimate.model}
-      </p>
-      {estimate.price_per_image_usd === null && (
-        // Bewusst KEIN `Alert`: Alert ist im Projekt der Fehler-/Retry-Baustein, hier liegt kein
-        // Ladefehler vor, sondern eine ehrliche Wissenslücke. Der Auslöser bleibt bedienbar - eine
-        // Sperre bestrafte den Betreiber für einen Zustand, den er hier nicht auflösen kann.
-        <p className="text-xs text-text-muted">
-          Für dieses Modell ist kein Preis hinterlegt — die Kosten lassen sich nicht schätzen.
-        </p>
+      {/* Anbieter, Modell und Preisgrundlage stehen NUR am Cloud-Weg: beim Eye- und beim lokalen
+          Weg gibt es keinen Anbieter, dessen Preis hier genannt werden dürfte. */}
+      {showsRemoteCategories && (
+        <>
+          <p className="text-xs text-text-muted">
+            {/* Reine Textknoten: `provider`/`model` sind Herstellerbezeichnungen aus der
+                Server-Antwort, nie HTML. */}
+            Grundlage: {providerLabel}, Modell {estimate.model}
+          </p>
+          {estimate.price_per_image_usd === null && (
+            // Bewusst KEIN `Alert`: Alert ist im Projekt der Fehler-/Retry-Baustein, hier liegt
+            // kein Ladefehler vor, sondern eine ehrliche Wissenslücke. Der Auslöser bleibt
+            // bedienbar - eine Sperre bestrafte den Betreiber für einen Zustand, den er hier
+            // nicht auflösen kann.
+            <p className="text-xs text-text-muted">
+              Für dieses Modell ist kein Preis hinterlegt — die Kosten lassen sich nicht schätzen.
+            </p>
+          )}
+          <p className="text-xs text-text-muted">
+            Schätzung, keine Abrechnung — die tatsächlichen Kosten können abweichen. Beide
+            Cloud-Anteile werden mit demselben Preis je Bild gerechnet.
+          </p>
+        </>
       )}
-      <p className="text-xs text-text-muted">
-        Schätzung, keine Abrechnung — die tatsächlichen Kosten können abweichen. Beide Cloud-Anteile
-        werden mit demselben Preis je Bild gerechnet.
-      </p>
     </div>
   )
 }
@@ -119,11 +158,7 @@ function EstimatePart({
         {part.candidate_count !== null && (
           <span className="flex shrink-0 items-baseline gap-2">
             <span className="text-xs text-text-muted">{part.candidate_count} Fotos</span>
-            <span className="text-sm text-text-h">
-              {part.estimated_cost_usd === null
-                ? NO_PRICE_TEXT
-                : formatUsd(part.estimated_cost_usd)}
-            </span>
+            <span className="text-sm text-text-h">{formatPartCost(part)}</span>
           </span>
         )}
       </div>

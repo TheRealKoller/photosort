@@ -62,6 +62,7 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoDuplicateDecision,
+    PhotoEyeResult,
     PhotoFineLabel,
     PhotoMotifAssessment,
     PhotoMotifCorrection,
@@ -355,14 +356,35 @@ class MotifAssessmentOut(BaseModel):
     acht Staerken niedrig). Genau dafuer gibt es dieses Feld getrennt von `motifs`: acht Nullzeilen
     sind von "nichts erkannt" nicht zu unterscheiden.
 
-    `provider` ist `null` bei `source == "local"`. `excluded_document` ist von Hand NICHT
-    korrigierbar - der Rueckweg ist allein ein erneuter Klassifizierungslauf, und die Oberflaeche
-    benennt das, statt einen Schalter anzubieten."""
+    `provider` ist `null` bei `source == "local"` UND bei `source == "eye"` - Eye ist kein
+    Cloud-Anbieter, ein Anbieterwert behauptete einen Kontakt, der nicht stattfand; die
+    Modellrevision steht in `eye_result`. `excluded_document` ist von Hand NICHT korrigierbar -
+    der Rueckweg ist allein ein erneuter Klassifizierungslauf, und die Oberflaeche benennt das,
+    statt einen Schalter anzubieten."""
 
-    source: Literal["cloud", "local"]
+    source: Literal["cloud", "eye", "local"]
     provider: str | None
     excluded_document: bool
     computed_at: datetime
+
+
+class EyeResultOut(BaseModel):
+    """Die Eye-Auswertung eines Fotos - gesetzt GENAU dann, wenn die Motiv-Kopfzeile
+    `source="eye"` traegt (Spec 0609).
+
+    Nicht gesetzt allein deshalb, weil `photo_eye_results` existiert: Eye schreibt bei jedem Lauf
+    einen Schatten, auch neben einer gueltigen Cloud-Kopfzeile. Der Schatten ist Vergleichsmaterial
+    fuer das CLI, keine Anzeige - gezeigt wird er nur, wenn er auch gilt.
+
+    `fine_labels` sind die ROHEn Eye-Tags ab Konfidenz 0.5, beim Schreiben zeichensaniert und
+    laengenbegrenzt (S12) - deshalb hier als reine Textknoten, ohne weitere Umformung. Die
+    Modellrevision steht hier und NICHT in `MotifAssessmentOut.provider`: Eye ist kein
+    Cloud-Anbieter."""
+
+    album_level: int
+    model_revision: str
+    computed_at: datetime
+    fine_labels: list[str]
 
 
 class AlbumSuitabilityOut(BaseModel):
@@ -463,6 +485,9 @@ class PhotoOut(BaseModel):
     motifs: list[MotifStrengthOut]
     # `null` heisst "noch nicht bewertet" - kein Meter-Glyph, keine Stufe, kein Platzhalter.
     album_suitability: AlbumSuitabilityOut | None = None
+    # Die Eye-Auswertung, `null` ohne Eye-Kopfzeile - auch dann, wenn ein Schattensatz daneben
+    # steht (siehe `EyeResultOut`). Auf ALLEN Lesepfaden befuellt, Muster `motif_assessment`.
+    eye_result: EyeResultOut | None = None
     # DIE DREI FELDER DER ENDAUSWAHL (ADR 0099 Punkt 4), auf ALLEN Lesepfaden befuellt - Muster
     # `RankingOut.proposed`: ein je Query-Modus verschiedenes `PhotoOut` waere die zweite,
     # driftende Abbildung. Alle drei sind PROJEKTAUSSAGEN und tragen kein nutzerbezogenes Datum.
@@ -659,6 +684,11 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
             # sondern ueber `load_effective_strengths` - sonst muesste die Korrektur zweimal
             # ausgewertet werden.
             selectinload(Photo.motif_assessment),
+            # Grundlage von `PhotoOut.eye_result`. Die FINELABELS kommen ueber die Relationship
+            # der Kopfzeile mit - eine Abfrage mehr, unabhaengig von der Fotoanzahl. Ohne dieses
+            # selectinload loeste `photo.eye_result` einen Lazy-Load aus und schluege im
+            # Async-Kontext mit MissingGreenlet fehl.
+            selectinload(Photo.eye_result).selectinload(PhotoEyeResult.fine_labels),
             # Grundlage von `PhotoOut.album_suitability` UND der zweiten Haelfte des
             # Erfolgssignals in `_cloud_vision_status_out`. Ohne dieses selectinload loeste
             # `photo.album_suitability` einen Lazy-Load aus und schluege im Async-Kontext mit
@@ -980,6 +1010,27 @@ def _album_suitability_out(photo: Photo) -> AlbumSuitabilityOut | None:
     return AlbumSuitabilityOut(level=suitability.level, reason=suitability.reason)
 
 
+def _eye_result_out(photo: Photo) -> EyeResultOut | None:
+    """Die Eye-Auswertung NUR bei gueltiger Eye-Kopfzeile - der Schatten bleibt unsichtbar.
+
+    Die Reihenfolge der Labels kommt aus der Tabelle selbst (`fine_labels` hat keine eigene
+    Sortierspalte): absteigend nach Konfidenz, bei Gleichstand nach Label, damit die Antwort
+    zwischen zwei Abfragen nicht wackelt."""
+    assessment = photo.motif_assessment
+    result = photo.eye_result
+    if assessment is None or result is None or assessment.source is not MotifAssessmentSource.EYE:
+        return None
+    return EyeResultOut(
+        album_level=result.album_level,
+        model_revision=result.model_revision,
+        computed_at=result.computed_at,
+        fine_labels=[
+            label.label
+            for label in sorted(result.fine_labels, key=lambda row: (-row.confidence, row.label))
+        ],
+    )
+
+
 def _motif_assessment_out(photo: Photo) -> MotifAssessmentOut | None:
     assessment = photo.motif_assessment
     if assessment is None:
@@ -1207,6 +1258,7 @@ def _to_photo_out(
         motif_assessment=_motif_assessment_out(photo),
         motifs=_motifs_out(photo, motifs),
         album_suitability=_album_suitability_out(photo),
+        eye_result=_eye_result_out(photo),
         final_selection_decision=decision,
         in_final_selection=state.included,
         contested=state.contested,

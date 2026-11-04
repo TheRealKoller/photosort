@@ -62,6 +62,9 @@ function run(overrides: Partial<CriterionScoringRunSummary> = {}): CriterionScor
     phase_remaining_seconds: null,
     persons_photos_total: null,
     persons_photos_processed: null,
+    mode: null,
+    eye_photos_total: null,
+    eye_photos_processed: null,
     ...overrides,
   }
 }
@@ -254,10 +257,17 @@ describe('deriveClassificationSteps: Fortschrittsquellen', () => {
    * paarweise verschieden, keiner heisst wie der ganze Schritt oder wie dessen alter Name.
    */
   it('benennt die Teilschritte paarweise verschieden und nie wie den ganzen Schritt', () => {
-    const labels = deriveClassificationSteps(run()).map((step) => step.label)
+    // Der Eye-Teilschritt steht nur auf dem Eye-Weg zur Disposition und die
+    // Kategorie-Vorschlaege nur auf dem Cloud-Weg - die Vereinigungsmenge BEIDER Wege deckt die
+    // vollstaendige Reihenfolge ab.
+    const labels = [
+      ...deriveClassificationSteps(run({ mode: 'cloud' })).map((step) => step.label),
+      ...deriveClassificationSteps(
+        run({ mode: 'eye', cloud_requested: false, cloud_phases: [] }),
+      ).map((step) => step.label),
+    ]
 
-    expect(labels).toHaveLength(CLASSIFICATION_STEP_ORDER.length)
-    expect(new Set(labels).size).toBe(labels.length)
+    expect(new Set(labels).size).toBe(CLASSIFICATION_STEP_ORDER.length)
     for (const label of labels) {
       expect(label).not.toBe('Klassifizierung')
       expect(label).not.toMatch(/Kriterien[-\u2010\u2011\u00AD\s]*Bewertung/i)
@@ -385,5 +395,67 @@ describe('der Teilschritt Personen-Erkennung (Spec 0292)', () => {
     expect(
       idsOf(run({ ...finished, persons_photos_total: 4, persons_photos_processed: 4 })),
     ).toContain('persons')
+  })
+})
+
+// specs/features/0609-eye-dritte-wahl.md: die Eye-Auswertung ist ein eigener Teilschritt, aber nur
+// auf dem Eye-Weg. Sie als "übersprungen" zu zeigen behauptete eine Auslassung, wo keine Wahl
+// getroffen wurde.
+describe('der Teilschritt Eye-Auswertung (Spec 0609)', () => {
+  it('steht auf dem Eye-Weg zwischen Kategorie-Vorschlägen und der Kriterien-Phase', () => {
+    expect(idsOf(run({ mode: 'eye', cloud_requested: false, cloud_phases: [] }))).toEqual([
+      'eye',
+      'criteria',
+      'ranking',
+      'persons',
+    ])
+  })
+
+  it('steht auf dem Eye-Weg MIT Einwilligung hinter den Kategorie-Vorschlägen, die dann entfallen', () => {
+    // Eye mit Einwilligung fragt nur die Landmark-Phase an - der Kategorie-Client wird nie gebaut,
+    // also hat "Kategorie-Vorschläge" nicht zur Disposition gestanden.
+    expect(idsOf(run({ mode: 'eye', cloud_requested: true }))).toEqual([
+      'eye',
+      'criteria',
+      'landmark',
+      'ranking',
+      'persons',
+    ])
+  })
+
+  it('fehlt auf dem Cloud- und dem lokalen Weg', () => {
+    expect(idsOf(run({ mode: 'cloud' }))).not.toContain('eye')
+    expect(idsOf(run({ mode: 'local', cloud_requested: false }))).not.toContain('eye')
+  })
+
+  it('fehlt bei einem Altlauf ohne bekannten Weg', () => {
+    expect(idsOf(run({ mode: null }))).not.toContain('eye')
+  })
+
+  it('heisst "Eye-Auswertung"', () => {
+    const eye = deriveClassificationSteps(run({ mode: 'eye' })).find((step) => step.id === 'eye')
+
+    expect(eye?.label).toBe('Eye-Auswertung')
+  })
+
+  it('liest den Fortschritt aus den Eye-Zählern', () => {
+    const eye = deriveClassificationSteps(
+      run({
+        mode: 'eye',
+        status: 'running',
+        phase: 'eye',
+        eye_photos_total: 20,
+        eye_photos_processed: 7,
+      }),
+    ).find((step) => step.id === 'eye')
+
+    expect(eye?.processed).toBe(7)
+    expect(eye?.total).toBe(20)
+  })
+
+  it('wird nach Laufende ohne Zähler ausgeblendet', () => {
+    expect(
+      idsOf(run({ mode: 'eye', status: 'success', phase: null, eye_photos_total: null })),
+    ).not.toContain('eye')
   })
 })

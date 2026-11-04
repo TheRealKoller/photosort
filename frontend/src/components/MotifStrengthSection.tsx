@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 
 import type { MotifAssessmentOut, MotifKey, MotifSetOut, MotifStrengthOut } from '../api/types'
+import { EyeAttribution } from './EyeAttribution'
 import { Alert } from './ui/alert'
 import { Button } from './ui/button'
 import { Skeleton } from './ui/skeleton'
@@ -103,15 +104,28 @@ function SkeletonRows() {
   )
 }
 
+/**
+ * Die drei Grundlagen-Zweige (Spec 0609) - Cloud und lokal wortgleich zu vorher, Eye neu.
+ *
+ * `data-motif-source` macht die Grundlage zusaetzlich maschinenlesbar (AK "Herkunft"): der Text
+ * allein waere fuer eine Pruefung nur per Zeichenkette greifbar. Die Namensnennung des Modells
+ * steht bei Eye DARUNTER, an der Verwendungsstelle - nicht in einer Fusszeile und in keinem
+ * aufklappbaren Element.
+ */
 function BasisLine({ assessment }: { assessment: MotifAssessmentOut }) {
   // `text-xs text-text`, KEIN `Alert`: die Grundlage ist eine Auskunft, kein Fehler.
   return (
-    <p className="text-xs text-text">
-      {assessment.source === 'local'
-        ? LOCAL_BASIS_TEXT
-        : `Grundlage: Cloud-Klassifizierung (${formatProviderLabel(assessment.provider ?? '')}), ` +
-          formatDateTime(assessment.computed_at)}
-    </p>
+    <div className="flex flex-col gap-1">
+      <p className="text-xs text-text" data-motif-source={assessment.source}>
+        {assessment.source === 'local'
+          ? LOCAL_BASIS_TEXT
+          : assessment.source === 'eye'
+            ? `Grundlage: Eye-Auswertung, ${formatDateTime(assessment.computed_at)}`
+            : `Grundlage: Cloud-Klassifizierung (${formatProviderLabel(assessment.provider ?? '')}), ` +
+              formatDateTime(assessment.computed_at)}
+      </p>
+      {assessment.source === 'eye' && <EyeAttribution />}
+    </div>
   )
 }
 

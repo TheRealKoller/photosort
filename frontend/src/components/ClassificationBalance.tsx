@@ -33,6 +33,15 @@ export function ClassificationBalance({ run }: ClassificationBalanceProps) {
     >
       <h3 className="text-sm font-semibold text-text-h">Ergebnis dieses Durchlaufs</h3>
 
+      {/* Die Eye-Zeile traegt KEINEN Betrag: die Auswertung laeuft auf diesem Server. Sie steht
+          auch dann hier, wenn zusaetzlich Cloud-Anteile liefen (Eye mit Einwilligung) - die
+          Summenzeile darunter bleibt ausdruecklich Cloud-only. */}
+      {run.eye_photos_processed !== null && (
+        <p className="text-sm text-text-h" data-testid="classification-balance-eye">
+          Eye-Auswertung · {formatCount(run.eye_photos_processed)} Fotos · kostenfrei
+        </p>
+      )}
+
       {run.cloud_phases.length > 0 ? (
         <>
           {run.cloud_phases.map((phase) => (
