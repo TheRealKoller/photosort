@@ -146,6 +146,53 @@ test("ein Fehler des Modells wird zu 500 mit festem Satz ohne Stacktrace", async
   assert.deepEqual(koerper, { error: "Die Auswertung ist fehlgeschlagen." });
 });
 
+function gezaehlteAnalyse({ wirftBeimErsten = false } = {}) {
+  const zaehler = { laufend: 0, maximum: 0, aufrufe: 0 };
+  const analyze = async () => {
+    zaehler.aufrufe += 1;
+    const nummer = zaehler.aufrufe;
+    zaehler.laufend += 1;
+    zaehler.maximum = Math.max(zaehler.maximum, zaehler.laufend);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      if (wirftBeimErsten && nummer === 1) throw new Error("Modell weg");
+      return { kind: "landscape" };
+    } finally {
+      zaehler.laufend -= 1;
+    }
+  };
+  return { zaehler, analyze };
+}
+
+test("zwei überlappende Anfragen laufen nacheinander durch das Modell", async () => {
+  const { zaehler, analyze } = gezaehlteAnalyse();
+  await stop();
+  await start({ ready: true, revision: "v1.0.0" }, analyze);
+
+  const antworten = await Promise.all([
+    fetch(`${base}/analyze`, jpeg()),
+    fetch(`${base}/analyze`, jpeg()),
+  ]);
+
+  assert.deepEqual(antworten.map((antwort) => antwort.status), [200, 200]);
+  assert.equal(zaehler.aufrufe, 2);
+  assert.equal(zaehler.maximum, 1);
+});
+
+test("ein fehlgeschlagener Aufruf hält die nächste Anfrage nicht auf", async () => {
+  const { zaehler, analyze } = gezaehlteAnalyse({ wirftBeimErsten: true });
+  await stop();
+  await start({ ready: true, revision: "v1.0.0" }, analyze);
+
+  const antworten = await Promise.all([
+    fetch(`${base}/analyze`, jpeg()),
+    fetch(`${base}/analyze`, jpeg()),
+  ]);
+
+  assert.deepEqual(antworten.map((antwort) => antwort.status).sort(), [200, 500]);
+  assert.equal(zaehler.maximum, 1);
+});
+
 test("ohne Bereitschaft wird POST /analyze mit 503 beantwortet", async () => {
   await stop();
   await start({ ready: false, revision: null });

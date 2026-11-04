@@ -51,8 +51,18 @@ async function readBody(request, limit) {
 /**
  * Baut den Server um eine Analyse-Funktion und einen Zustand. Beides ist injizierbar, damit die
  * Tests ohne Modell laufen (CI hat keine Gewichte).
+ *
+ * Ein Modell, eine Anfrage (ADR 0138): überlappende Aufrufe reihen sich hinter dem laufenden
+ * ein. Ein fehlgeschlagener Aufruf beendet nur sich selbst, nicht die Warteschlange.
  */
 export function createApp({ analyze, state }) {
+  let warteschlange = Promise.resolve();
+  const nacheinander = (bytes) => {
+    const aufruf = warteschlange.then(() => analyze(bytes));
+    warteschlange = aufruf.catch(() => {});
+    return aufruf;
+  };
+
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://eye.local");
 
@@ -87,7 +97,7 @@ export function createApp({ analyze, state }) {
         return;
       }
       try {
-        sendJson(response, 200, await analyze(bytes));
+        sendJson(response, 200, await nacheinander(bytes));
       } catch {
         sendJson(response, 500, { error: FIXED.failed });
       }
