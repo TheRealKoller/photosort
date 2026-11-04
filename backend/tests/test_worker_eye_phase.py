@@ -410,6 +410,43 @@ async def test_an_unreadable_display_variant_is_skipped_not_fatal(
     assert await db_session.get(PhotoEyeResult, broken.id) is None
 
 
+async def test_an_image_the_service_cannot_decode_is_skipped_not_fatal(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_run(db_session, project)
+    first = await _add_photo(db_session, project, "a.jpg", tmp_path)
+    broken = await _add_photo(db_session, project, "b.jpg", tmp_path)
+    third = await _add_photo(db_session, project, "c.jpg", tmp_path)
+    client = FakeEyeClient(
+        {first.id: _payload(), broken.id: _payload(), third.id: _payload()},
+        fail_at=2,
+        fail_with=worker.EyeImageUnreadableError("Das Bild ist nicht lesbar."),
+    )
+
+    run = await _run(db_session, project, scoring_run, tmp_path, client=client)
+
+    assert run.status is ScanStatus.SUCCESS
+    assert run.eye_photos_total == 3
+    assert run.eye_photos_processed == 2
+    assert client.analyze_calls == 3
+    assert await db_session.get(PhotoEyeResult, broken.id) is None
+    broken_header = await db_session.get(PhotoMotifAssessment, broken.id)
+    assert broken_header is None or broken_header.source is not MotifAssessmentSource.EYE
+    assert (
+        await db_session.execute(
+            select(func.count())
+            .select_from(PhotoEyeMotifStrength)
+            .where(PhotoEyeMotifStrength.photo_id == broken.id)
+        )
+    ).scalar_one() == 0
+    for promoted in (first, third):
+        header = await db_session.get(PhotoMotifAssessment, promoted.id)
+        assert header is not None
+        assert header.source is MotifAssessmentSource.EYE
+        assert await db_session.get(PhotoEyeResult, promoted.id) is not None
+
+
 async def test_a_transport_error_fails_the_run_without_writing_anything(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

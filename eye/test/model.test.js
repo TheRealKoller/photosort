@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { APP_ID, assertLicenseEnvironment } from "../src/model.js";
+import { APP_ID, analyzeBytes, assertLicenseEnvironment } from "../src/model.js";
 
 function env(overrides = {}) {
   return { DAL_APP_ID: APP_ID, ...overrides };
@@ -53,4 +53,48 @@ test("die Meldungen nennen keinen Host, keine Version und keinen Pin", () => {
       }
     }
   }
+});
+
+async function einPixelJpeg() {
+  const { default: sharp } = await import("sharp");
+  return sharp({ create: { width: 1, height: 1, channels: 3, background: "#fff" } })
+    .jpeg()
+    .toBuffer();
+}
+
+test("nicht dekodierbare Bytes werden als unlesbares Bild gemeldet, ohne das Modell zu rufen", async () => {
+  let aufrufe = 0;
+  const eye = { analyze: async () => (aufrufe += 1) };
+
+  await assert.rejects(analyzeBytes(eye, Buffer.from([0xff, 0xd8, 0xff, 0x00])), {
+    code: "UNREADABLE_IMAGE",
+  });
+  assert.equal(aufrufe, 0);
+});
+
+test("ein Fehler des Modells bleibt ein gewöhnlicher Fehler", async () => {
+  const eye = {
+    analyze: async () => {
+      throw new Error("Inferenz kaputt");
+    },
+  };
+
+  await assert.rejects(analyzeBytes(eye, await einPixelJpeg()), (error) => {
+    assert.equal(error.code, undefined);
+    assert.equal(error.message, "Inferenz kaputt");
+    return true;
+  });
+});
+
+test("ein lesbares Bild geht als Pixelpuffer an das Modell", async () => {
+  const gesehen = [];
+  const eye = {
+    analyze: async (bild) => {
+      gesehen.push({ width: bild.width, height: bild.height });
+      return { kind: "landscape" };
+    },
+  };
+
+  assert.deepEqual(await analyzeBytes(eye, await einPixelJpeg()), { kind: "landscape" });
+  assert.deepEqual(gesehen, [{ width: 1, height: 1 }]);
 });

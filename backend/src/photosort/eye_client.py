@@ -36,7 +36,10 @@ class EyeClientLike(Protocol):
 
     async def health(self) -> bool: ...
 
-    async def analyze(self, image_bytes: bytes) -> Mapping[str, Any]: ...
+    async def analyze(self, image_bytes: bytes) -> Mapping[str, Any]:
+        """Die rohe Analyse eines Fotos. Wirft `EyeImageUnreadableError`, wenn der Dienst das Bild
+        nicht dekodieren kann, und `EyeServiceUnavailableError` fuer jeden anderen Fehlschlag."""
+        ...
 
     async def aclose(self) -> None: ...
 
@@ -45,10 +48,17 @@ class EyeServiceUnavailableError(RuntimeError):
     """Der Dienst antwortet nicht, antwortet falsch oder ist nicht gesund.
 
     Bewusst ein eigener Fehlertyp: die Phase endet damit sofort, der Lauf auf `FAILED` - ein
-    einzelnes unlesbares BILD wird dagegen uebersprungen, das ist nicht dieser Fehler.
+    einzelnes unlesbares BILD wird dagegen uebersprungen, das ist `EyeImageUnreadableError`.
 
     Die Meldung ist ein FESTER deutscher Satz ohne Host, Port, Version oder Stacktrace (S5) und
     wird so - unveraendert - als `error_message` persistiert."""
+
+
+class EyeImageUnreadableError(Exception):
+    """Der Dienst konnte genau dieses Bild nicht dekodieren (`422`).
+
+    Keine Unterklasse von `EyeServiceUnavailableError`: der Dienst ist gesund, nur das eine Foto
+    ist kaputt - die Phase ueberspringt es und laeuft weiter."""
 
 
 class EyeHttpClient:
@@ -81,6 +91,8 @@ class EyeHttpClient:
                 content=image_bytes,
                 headers={"content-type": EYE_CONTENT_TYPE},
             ) as response:
+                if response.status_code == 422:
+                    raise EyeImageUnreadableError("Das Bild ist nicht lesbar.")
                 if response.status_code != 200:
                     raise EyeServiceUnavailableError("Die Eye-Auswertung hat abgelehnt.")
                 body = bytearray()

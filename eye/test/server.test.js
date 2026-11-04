@@ -193,6 +193,20 @@ test("ein fehlgeschlagener Aufruf hält die nächste Anfrage nicht auf", async (
   assert.equal(zaehler.maximum, 1);
 });
 
+test("ein unlesbares Bild wird zu 422 mit festem Satz", async () => {
+  await stop();
+  await start({ ready: true, revision: "v1.0.0" }, async () => {
+    throw Object.assign(new Error("sharp: /geheim/pfad.jpg: korrupt"), {
+      code: "UNREADABLE_IMAGE",
+    });
+  });
+
+  const antwort = await fetch(`${base}/analyze`, jpeg());
+
+  assert.equal(antwort.status, 422);
+  assert.deepEqual(await antwort.json(), { error: "Das Bild ist nicht lesbar." });
+});
+
 test("ohne Bereitschaft wird POST /analyze mit 503 beantwortet", async () => {
   await stop();
   await start({ ready: false, revision: null });

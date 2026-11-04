@@ -42,14 +42,21 @@ export async function openModel({ directory, pins }) {
   return { eye, pins: geprueft };
 }
 
-/** JPEG-Bytes hinein, die rohe SDK-Analyse als JSON-Objekt heraus. */
+export const UNREADABLE_IMAGE = "UNREADABLE_IMAGE";
+
+/**
+ * JPEG-Bytes hinein, die rohe SDK-Analyse als JSON-Objekt heraus. Scheitert das Dekodieren, trägt
+ * der Fehler `code: UNREADABLE_IMAGE` - ein einzelnes kaputtes Bild, kein Defekt des Modells.
+ */
 export async function analyzeBytes(eye, bytes) {
   const { default: sharp } = await import("sharp");
-  const { data, info } = await sharp(bytes)
-    .rotate()
-    .removeAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  let decoded;
+  try {
+    decoded = await sharp(bytes).rotate().removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  } catch {
+    throw Object.assign(new Error("Das Bild ist nicht lesbar."), { code: UNREADABLE_IMAGE });
+  }
+  const { data, info } = decoded;
   const analysis = await eye.analyze({ data, width: info.width, height: info.height });
   return typeof analysis.toJSON === "function"
     ? analysis.toJSON()

@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 
-import { analyzeBytes, assertLicenseEnvironment, openModel } from "./model.js";
+import { UNREADABLE_IMAGE, analyzeBytes, assertLicenseEnvironment, openModel } from "./model.js";
 
 /**
  * Der Eye-Sidecar: zwei Routen, sonst nichts.
@@ -22,6 +22,7 @@ const FIXED = Object.freeze({
   tooLarge: "Das Bild ist zu groß.",
   notReady: "Das Modell ist noch nicht bereit.",
   failed: "Die Auswertung ist fehlgeschlagen.",
+  unreadable: "Das Bild ist nicht lesbar.",
   notFound: "Unbekannter Pfad.",
 });
 
@@ -98,8 +99,12 @@ export function createApp({ analyze, state }) {
       }
       try {
         sendJson(response, 200, await nacheinander(bytes));
-      } catch {
-        sendJson(response, 500, { error: FIXED.failed });
+      } catch (error) {
+        if (error?.code === UNREADABLE_IMAGE) {
+          sendJson(response, 422, { error: FIXED.unreadable });
+        } else {
+          sendJson(response, 500, { error: FIXED.failed });
+        }
       }
       return;
     }

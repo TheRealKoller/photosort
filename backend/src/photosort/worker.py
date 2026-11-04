@@ -72,6 +72,7 @@ from photosort.event_inputs import read_event_inputs
 from photosort.events import LandmarkPointsByName, assign_place_names, build_events
 from photosort.eye_client import (
     EyeClientLike,
+    EyeImageUnreadableError,
     EyeServiceUnavailableError,
     build_eye_client,
 )
@@ -2784,8 +2785,9 @@ async def _run_eye_phase(
     * ALLE Analysen zuerst in den Speicher, dann EINE Transaktion fuer Schattensaetze und
       Promotion. Bricht die Phase, ist nichts geschrieben: kein halber Schattensatz, keine
       Promotion, Lauf `FAILED`.
-    * Ein einzelnes unlesbares Bild (keine `display`-Variante) wird uebersprungen und gezaehlt -
-      `eye_photos_processed` bleibt dann unter `eye_photos_total`.
+    * Ein einzelnes unlesbares Bild - keine `display`-Variante oder vom Dienst nicht dekodierbar
+      (`EyeImageUnreadableError`) - wird uebersprungen und gezaehlt: `eye_photos_processed`
+      bleibt dann unter `eye_photos_total`. Jeder andere Fehler bricht die Phase ab.
     * Die Promotion laeuft ueber `upsert_assessment`, das die Rangfolge `local < eye < cloud`
       selbst durchsetzt. Eine Cloud-Kopfzeile bleibt damit unberuehrt und die Schattenzeile steht
       daneben - genau die Zusage aus S8.
@@ -2818,7 +2820,10 @@ async def _run_eye_phase(
             path = variant_path(cache_dir, photo.id, photo.etag, "display")
             if not path.exists():
                 continue
-            payload = await client.analyze(path.read_bytes())
+            try:
+                payload = await client.analyze(path.read_bytes())
+            except EyeImageUnreadableError:
+                continue
             # Eine Antwort ohne Aussage (fehlende Albumstufe) ist ein Defekt des Dienstes, kein
             # unlesbares Bild - `EyeMappingError` bricht die Phase ab.
             analyses[photo.id] = map_eye_analysis(payload)

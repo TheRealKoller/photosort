@@ -10,6 +10,7 @@ import pytest
 from photosort.eye_client import (
     EYE_MAX_RESPONSE_BYTES,
     EyeHttpClient,
+    EyeImageUnreadableError,
     EyeServiceUnavailableError,
 )
 
@@ -96,6 +97,27 @@ async def test_a_non_200_status_is_rejected_without_reading_the_body() -> None:
     await client.aclose()
 
     assert body.pulled == 0
+
+
+async def test_a_422_is_an_unreadable_image_not_a_service_failure() -> None:
+    client = _client(
+        lambda request: httpx.Response(422, json={"error": "Das Bild ist nicht lesbar."})
+    )
+
+    with pytest.raises(EyeImageUnreadableError) as caught:
+        await client.analyze(b"\xff\xd8\xff")
+    await client.aclose()
+
+    assert not isinstance(caught.value, EyeServiceUnavailableError)
+
+
+@pytest.mark.parametrize("status", [400, 413, 415, 500, 503])
+async def test_every_other_rejection_stays_a_service_failure(status: int) -> None:
+    client = _client(lambda request: httpx.Response(status, json={"error": "x"}))
+
+    with pytest.raises(EyeServiceUnavailableError, match="abgelehnt"):
+        await client.analyze(b"\xff\xd8\xff")
+    await client.aclose()
 
 
 @pytest.mark.parametrize("content", [b"kein json", b"[1, 2]"])
