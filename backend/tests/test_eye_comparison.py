@@ -794,6 +794,27 @@ class TestTheOutFileGuard:
 
         assert eye_comparison._resolve_out(target) == target.resolve()
 
+    def test_any_worktree_above_the_target_is_rejected(self, tmp_path: Path) -> None:
+        # Nicht nur DIESES Repository: jedes `.git` ueber dem Ziel ist ein Arbeitsbaum, dessen
+        # Inhalt sonst in die Versionsverwaltung wanderte.
+        (tmp_path / ".git").mkdir()
+        target = tmp_path / "unterordner" / "vergleich.json"
+
+        with pytest.raises(ValueError, match="AUSSERHALB"):
+            eye_comparison._resolve_out(target)
+
+    def test_the_package_location_does_not_decide_about_the_target(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Der Container-Fall: das Paket liegt installiert unter `site-packages` ohne Arbeitsbaum
+        # darueber, das Ziel unter /tmp. Wird die Grenze ab dem Paket gemessen, gilt `/` als
+        # Repo-Wurzel und JEDES Ziel wird abgelehnt - auch das dokumentierte `/tmp/...`.
+        paket = tmp_path / "site-packages" / "photosort" / "eye_comparison.py"
+        monkeypatch.setattr(eye_comparison, "__file__", str(paket))
+        ziel = tmp_path / "ausgabe" / "vergleich.json"
+
+        assert eye_comparison._resolve_out(ziel) == ziel.resolve()
+
 
 class TestTheReadPath:
     async def _project(self, session: AsyncSession) -> Project:

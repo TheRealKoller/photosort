@@ -405,23 +405,21 @@ def _counts_dict(counts: PurposeCounts) -> dict[str, int]:
     }
 
 
-def repository_root() -> Path:
-    """Die Wurzel des Arbeitsbaums - ueber `.git`, nicht ueber eine feste Elternzahl.
+def _inside_a_worktree(target: Path) -> bool:
+    """Wahr, wenn ein Verzeichnis OBERHALB des Ziels ein `.git` traegt.
 
-    Eine Elternzahl (`parents[3]`) waere eine Aussage ueber den Aufbau des Pakets, die bei jedem
-    Umzug still falsch wird - und dann laege die Ausgabe unbemerkt IM Repo."""
-    for candidate in Path(__file__).resolve().parents:
-        if (candidate / ".git").exists():
-            return candidate
-    # Ohne `.git` (Paketinstallation) gibt es keinen Arbeitsbaum, dessen Grenze zu pruefen waere;
-    # die Wurzel des Dateisystems kann nie "innen" liegen.
-    return Path(Path.cwd().anchor)
+    Geprueft wird der ZIELPFAD gegen die Arbeitsbaeume ueber ihm, nicht das installierte Paket
+    gegen seinen eigenen: Im Container liegt das Modul unter `site-packages` ohne jeden `.git`
+    darueber, und eine Pruefung ab dem Modul lehnte dort JEDEN Pfad ab - auch das in
+    `docs/setup.md` dokumentierte `/tmp/...`. Die Auflage bleibt dieselbe: Eye-Ergebnisse gehoeren
+    nicht in die Versionsverwaltung. Wird sie verletzt, bricht der Aufruf laut ab, bevor eine Datei
+    entsteht; ohne Arbeitsbaum ueber dem Ziel gibt es nichts zu schuetzen."""
+    return any((candidate / ".git").exists() for candidate in target.parents)
 
 
 def _resolve_out(path: Path) -> Path:
     out = path.expanduser().resolve()
-    root = repository_root()
-    if out == root or root in out.parents:
+    if _inside_a_worktree(out):
         raise ValueError(
             "Die Ausgabedatei muss AUSSERHALB des Repos liegen: "
             "Eye-Ergebnisse gehoeren nicht in die Versionsverwaltung."

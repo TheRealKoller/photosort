@@ -128,6 +128,11 @@ Aus [Issue #610](https://github.com/TheRealKoller/photosort/issues/610), unverä
       oder Client-Moduls, kein `add`/`add_all`/`merge`/`delete`/`commit`/`flush`. Verhaltensseitig:
       ein Marker aus beiden Meldungsspalten fehlt im serialisierten JSON, ein ISO-Zeitstempel-Muster
       ebenfalls.
+- [ ] **Die Repo-Grenze der Ausgabe prüft den Zielpfad, nicht das Paket.** `_resolve_out` lehnt ein
+      Ziel ab, wenn über ihm ein Verzeichnis mit `.git` liegt; ohne Arbeitsbaum über dem Ziel ist es
+      zulässig. Eine Messung ab dem installierten Modul ist unzulässig: Sie endet im Container ohne
+      `.git` bei `/` und lehnt damit jeden Pfad ab, auch das in `docs/setup.md` dokumentierte
+      `/tmp/...`. Abgelehnt wird vor jedem Schreibzugriff, ohne Datei.
 - [ ] **Doku.** `docs/setup.md` (Vergleichsabschnitt) und `docs/architecture.md` nennen die
       Abweichungswerte, `origin`/`runtime` und die Grenze „Dauern, keine Zeitstempel, keine
       Fehlermeldungstexte".
@@ -267,6 +272,7 @@ unverändert** (0609 S2): dieses Werkzeug spricht den `eye`-Dienst nicht an, es 
 | Integration | Projektbindung: Läufe und Kopfzeilen eines zweiten Projekts lecken nicht; Kopfzeile ohne Eye-Zeile trägt keinen Anbieter bei | `TestTheRunSelection`, `TestTheOrigin` |
 | Unit (AST) | Kein Attributzugriff `*error_message` (+ Gegenproben), kein Netzwerk-/Client-Import, keine Schreibaufrufe, weiterhin genau eine Schreibstelle | `TestTheFormGuard` |
 | Unit (CLI) | `main` mit erweiterten Seams: Datei trägt Laufdaten, stdout nur Zählungen, Marker aus `error_message` fehlt, kein ISO-Zeitstempel darin | `TestTheFormGuard` (bestehender Fall) |
+| Unit | Repo-Grenze: jedes `.git` über dem Ziel lehnt ab, kein Arbeitsbaum lässt zu — die Lage des Pakets entscheidet nicht (Container-Fall) | `TestTheOutFileGuard` |
 
 **Bestehende Tests, die sich ändern** (namentlich, damit der Review sie nicht als abgeschwächte
 Erwartung liest): `TestTheSummary::test_names_deviation_rows_by_photo_and_purpose` (vergleicht
@@ -336,6 +342,9 @@ Schritt einer Implementierung:
 - **Fehlende Stärke → `null`, nicht `0.0`:** „hat das Motiv nicht beurteilt" und „hat 0.0 geurteilt"
   sind genau der Unterschied, den Daniels Durchsicht braucht.
 - **Abgeschnittene Sekunden statt gerundet:** projektüblicher Boden (`//`), überschätzt keine Dauer.
+- **Repo-Grenze am Ziel statt am Modul:** Die Auflage bleibt („Eye-Ergebnisse gehören nicht in die
+  Versionsverwaltung"), der Maßstab wandert. Ab dem Modul gemessen gilt im Container ohne `.git`
+  die Wurzel `/`, und damit wäre jedes Ziel „im Repo" — der dokumentierte Aufruf schlüge fehl.
 - **Diese Spec ändert das Verhalten der Anwendung nicht.** Sie ist die technische Grundlage der
   Auswertung; Urteile, Entscheidung und der Abschnitt „Vergleichsergebnis" in 0609 sind Daniels
   Handarbeit und kein Schritt für `developer`. Kein Gesamturteil, kein Empfehlungsfeld in der Datei.
