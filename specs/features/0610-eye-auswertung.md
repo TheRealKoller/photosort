@@ -4,9 +4,9 @@
 **Erstellt:** 2026-11-04
 **Bezug:** [Issue #610](https://github.com/TheRealKoller/photosort/issues/610)
 
-**Umfang:** über dem Richtwert von rund 200 Zeilen, weil die Akzeptanzkriterien der Story sowohl
-Daniels Auswertungshandlungen als auch die technische Erweiterung des Vergleichs-CLI umfassen und
-beide Verträge hier stehen müssen.
+**Umfang:** über dem Richtwert von rund 200 Zeilen, weil die Spec drei Dinge vollständig trägt — die
+Story-Kriterien, an denen das Ergebnis gemessen wird, die technischen Kriterien der CLI-Erweiterung
+und den Auswertungsablauf, den Daniel ohne weitere Vorlage durchführt.
 
 ## Ziel
 
@@ -148,11 +148,13 @@ Fotoansicht den Eye-Schatten nicht (`PhotoOut.eye_result` nur bei `source='eye'`
 ändert diese Story nichts. Beide Werte stehen deshalb in der `--out`-Zeile neben dem App-Pfad,
 über den Daniel das Foto öffnet. stdout bleibt unverändert: nur Zählungen.
 
-**Werte an jeder Abweichungszeile.** `Deviation` bekommt die Pflichtfelder `cloud` und `eye`,
-`full_report` gibt sie unter genau diesen Schlüsseln aus: beim Motiv beide Stärken als `float`,
-ungerundet (die inklusive Grenze 0.5 muss lesbar bleiben), beim Ausschluss beide als `bool`, bei der
-Albumstufe beide als `int`. Die Herkunft steht im Schlüssel, nicht in einer Reihenfolge. Auswahl,
-Sortierung und Seed-Strom bleiben gleich, dieselbe Seed wählt dieselben Zeilen.
+**Werte an jeder Abweichungszeile.** `Deviation` bekommt drei Pflichtpaare, eines je Zweck:
+`cloud_strength`/`eye_strength` (Motiv, `float`, ungerundet — die inklusive Grenze 0.5 muss lesbar
+bleiben), `cloud_excluded_document`/`eye_excluded_document` (`bool`) und
+`cloud_album_level`/`eye_album_level` (`int`). Jede Zeile führt **alle** Schlüssel; `null` steht
+dort, wo der Zweck das Paar nicht führt oder eine Seite den Schlüssel nicht beurteilt hat. Die
+Herkunft steht im Schlüssel, nicht in einer Reihenfolge. Auswahl, Sortierung und Seed-Strom bleiben
+gleich, dieselbe Seed wählt dieselben Zeilen.
 
 **Herkunft (`origin`).** `cloud_providers` enthält die `provider`-Werte der Cloud-Kopfzeilen der
 verglichenen Fotos, `cloud_models` die `model`-Werte aller erfolgreichen
@@ -201,8 +203,7 @@ ausdrücklich, dass sie die Anwendung nicht ändert. Dieselbe Grenze schließt d
 Anzeige aus. Bei geltender Cloud-Kopfzeile zeigt die Fotoansicht den Eye-Schatten nicht
 (`PhotoOut.eye_result` nur bei `source='eye'`), und ein eigenes Vergleichsband wäre eine Änderung
 der Oberfläche, die der Story widerspräche. Beide Werte stehen deshalb in der `--out`-Datei; das
-Foto öffnet Daniel über den dort mitgegebenen App-Pfad, die Eye-Seite liest er dort mit. Die
-Entwürfe aus Spec 0606 mit blinden Paarvergleichsseiten entfallen.
+Foto öffnet Daniel über den dort mitgegebenen App-Pfad, die Eye-Seite liest er dort mit.
 
 `ux-ui-designer` nicht konsultiert (`spec-writer` Schritt 2): kein sichtbarer Teil der Oberfläche
 wird angefasst — die Ausgabe ist eine Datei, die ein Betreiber am Terminal erzeugt.
@@ -226,15 +227,15 @@ in [`0003`](../architecture/0003-securitykonzept.md), Ankerzeile „Das Vergleic
   weg statt als Leerstring zu erscheinen, und `cloud_models` kommt nur aus **erfolgreichen** Läufen.
 - **S4 — `--out` bleibt der einzige Schreibpfad und liegt außerhalb des Repos.** Foto-Id und App-Pfad
   bleiben pseudonym (nur mit der eigenen Datenbank auflösbar), Dateiname, OpenCloud-Pfad, Ort, GPS
-  und Zeitstempel fehlen. Die Repo-Grenze ist fail-closed geprüft; ohne `.git` fällt
-  `repository_root()` auf `/` zurück, also auf Ablehnung statt Durchlass.
+  und Zeitstempel fehlen. Ohne `.git` fällt `repository_root()` auf `/` zurück, also auf Ablehnung
+  statt Durchlass.
 - **S5 — Kein Egress, kein Kostenpfad.** Das Werkzeug baut keinen Client und importiert keinen; es
   **liest** `api_calls` einer erfolgreichen Zeile. Fehlende Cloud-Ergebnisse entstehen nur über den
   normalen Lauf mit angezeigter Schätzung, nie hier. **Erzwingung:** Formwächter gegen
   Netzwerk-/Client-Importe und gegen `add`/`delete`/`commit` im Modul.
 - **S6 — Eine Summe ohne Lücke oder gar keine.** `remote_api_calls_total` bleibt `null`, sobald ein
   erfolgreicher Lauf `NULL` trägt oder keiner existiert; Landmark-Aufrufe zählen nie mit. Eine zu
-  kleine Zahl trägt die Ausbauentscheidung („rechnet sich Eye?") und wäre dort eine falsche Grundlage.
+  kleine Zahl trägt die Ausbauentscheidung und wäre dort eine falsche Grundlage.
 - **S7 — Der Ergebnistext in 0609 ist öffentlich; die Sichtprüfung ist die einzige Kontrolle.** Eine
   *menschliche* Kontrolle auf einem nicht zurücknehmbaren Artefakt. Tragbar nur, weil die Datei die
   sensiblen Klassen gar nicht führt (S1/S2/S4): im schlimmsten Fall leckt eine Zahl, keine
@@ -278,6 +279,46 @@ jeder `full_report`-Aufruf und der `_fake_run`-Seam in `main` (neues `runs`-Argu
 
 `specs/architecture/0002-testkonzept.md` ist um das Muster „Ein Bericht wächst um Laufdaten"
 ergänzt.
+
+## Auswertung
+
+Der Code liefert die Zahlen; die Urteile trifft Daniel. Dieser Ablauf ist Teil der Story, nicht
+Schritt einer Implementierung:
+
+1. **Je Projekt** (mindestens zwei, verschiedene Art; je ≥ 100 Fotos mit beiden Ergebnissen) im
+   Compose-Netz auf dem Heimserver, mit derselben Seed:
+
+   ```bash
+   docker compose exec backend python -m photosort.eye_comparison --project-id <id> --seed 0 --out /tmp/eye-vergleich-<projekt>.json
+   ```
+
+   stdout liefert `photos_compared` und die Zählungen je Zweck; die Datei `origin` (Anbieter,
+   Cloud-Modell, Eye-Revision), `runtime` und je Abweichung beide Werte mit App-Pfad. `--out` liegt
+   außerhalb des Repos; die Datei geht nicht ins Repository.
+2. **Prüfmenge:** jede Zeile der Datei ist bereits die Zufallsauswahl `min(30, Abweichungen)` je
+   Zweck. Daniel öffnet den App-Pfad, sieht das Foto und beide Werte und notiert je Zeile, welches
+   Ergebnis trägt. Kein Foto wird von Hand gelabelt.
+3. **Urteil je Zweck und Projekt:** „Eye ist besser", „gleichwertig" oder „schlechter / nicht
+   geeignet", dazu die beschriebenen Beispielfälle. Für einen Ersatz der Cloud genügt
+   „gleichwertig". Ein Gesamturteil gibt es nicht.
+4. **Entscheidung:** „Eye bleibt" oder „Rückbau", gestützt auf die drei Urteile, Laufzeit,
+   Einsparung und die Lizenz-Einstufung (0609: „klar zulässig", damit ist der
+   `Rückbau`-Auslöser „unklar"/„unzulässig" nicht erfüllt). Eingespart zählt ein Cloud-Aufruf nur,
+   wenn **alle drei** Zwecke mindestens „gleichwertig" sind; `remote_api_calls_total` ist die
+   Obergrenze, Sehenswürdigkeitsnamen zählen nie. Bei „Rückbau" entsteht eine eigene, hier
+   verlinkte Story; bei „Eye bleibt" nennt das Ergebnis die tauglichen Zwecke und den Beta-Stand als
+   Restrisiko.
+5. **Ergebnis:** der Abschnitt `## Vergleichsergebnis` in
+   [`0609`](./0609-eye-dritte-wahl.md), mit genau diesen Feldern je Projekt: Art des Projekts, Zahl
+   der Fotos mit beiden Ergebnissen, Anbieter/Modell/Eye-Revision, je Zweck Übereinstimmungen,
+   Abweichungen und Größe der geprüften Auswahl, Dauer beider Läufe, `remote_api_calls_total`,
+   Urteil mit Beispielen; dann die Entscheidung mit Begründung. Feinlabels und
+   Sehenswürdigkeitsnamen stehen ausdrücklich als „nicht bewertet" darin.
+6. **Inhaltsauflagen vor dem Push:** keine Bilddaten, Dateinamen, Pfade, Aufnahmedaten, Orte oder
+   GPS-Angaben, keine Sehenswürdigkeitsnamen, Projekte als „Projekt A/B", wenn der Name einen Ort
+   verrät, keine Zeile je Foto und keine Dauer je Lauf — nur Zählungen, Zwecke, Urteile und Prosa.
+   Daniel liest gegen, bevor der erste Push passiert; ein Verstoß wird umformuliert, nie in einem
+   späteren Commit nachgebessert.
 
 ## Entscheidungen
 
