@@ -21,6 +21,7 @@ import type {
 } from '../api/types'
 import { setToken } from '../auth/token'
 import { MOTIF_KEYS, MOTIF_SET } from '../test/motifSetFixture'
+import { formatAlbumSuitabilityLevel } from '../utils/albumSuitability'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
 // (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
@@ -1409,6 +1410,61 @@ describe('PhotoDetailPage', () => {
 
       // Cloud-Kopfzeile: kein Eye-Band, keine Eye-Namensnennung im Urteilsblock.
       expect(screen.queryByTestId('eye-band')).not.toBeInTheDocument()
+    })
+
+    it('zeigt im Urteil Eyes Stufe und Feinlabels statt der leeren Cloud-Werte', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            motif_assessment: EYE_ASSESSMENT_LOCAL,
+            motifs: motifStrengths(),
+            album_suitability: null,
+            fine_labels: [],
+            eye_result: { ...EYE_RESULT, album_level: 4, fine_labels: ['beach', 'sunset'] },
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      const verdict = await screen.findByTestId('photo-verdict')
+      expect(within(verdict).getByText(formatAlbumSuitabilityLevel(4))).toBeInTheDocument()
+      expect(within(verdict).queryByText('Noch nicht bewertet')).toBeNull()
+      expect(verdict.querySelector('[data-album-suitability-reason]')).toBeNull()
+      const labels = within(verdict).getByRole('list', { name: 'Feinlabels' })
+      expect(within(labels).getByText('beach')).toBeInTheDocument()
+      expect(within(labels).getByText('sunset')).toBeInTheDocument()
+    })
+
+    it('zeigt ohne Eye-Ergebnis weiter die Cloud-Werte im Urteil', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            motif_assessment: CLOUD_ASSESSMENT,
+            motifs: motifStrengths(),
+            album_suitability: { level: 2, reason: 'Unscharf.' },
+            fine_labels: [
+              {
+                canonical_key: 'urlaub',
+                display_name: 'Urlaub',
+                raw_label: 'Urlaub',
+                provider: 'anthropic',
+              },
+            ],
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      const verdict = await screen.findByTestId('photo-verdict')
+      expect(within(verdict).getByText(formatAlbumSuitabilityLevel(2))).toBeInTheDocument()
+      expect(within(verdict).getByText('Unscharf.')).toBeInTheDocument()
+      expect(within(verdict).getByText('Urlaub')).toBeInTheDocument()
     })
   })
 

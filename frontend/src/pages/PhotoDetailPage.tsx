@@ -26,6 +26,7 @@ import { usePersonFilter } from '../hooks/usePersonFilter'
 import { ownFavorite, ownRatingStatus } from '../utils/ownRating'
 import { withPersonIds } from '../utils/personFilter'
 import { parseRatingFilter } from '../utils/ratingFilter'
+import { eyeVerdict } from '../utils/eyeVerdict'
 import { formatDateTime } from '../utils/formatStats'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
 
@@ -351,6 +352,7 @@ export function PhotoDetailPage() {
   }
 
   const isMutating = setMutation.isPending || deleteMutation.isPending || favoriteMutation.isPending
+  const eyeValues = currentPhoto.eye_result != null ? eyeVerdict(currentPhoto.eye_result) : null
 
   return (
     <div className="flex flex-col gap-4">
@@ -418,12 +420,14 @@ export function PhotoDetailPage() {
         <h2 id="verdict-heading" className="sr-only">
           Urteil
         </h2>
+        {/* Mit Eye-Ergebnis stammen Stufe und Feinlabels aus Eye - die Cloud-Tabellen beschreibt
+            Eye nie (S8), sie blieben hier leer oder zeigten einen fremden Lauf. */}
         <PhotoVerdict
           // `?? null` heisst hier "noch nicht bewertet" und nicht "Feld nicht durchgereicht":
           // diese Ansicht zeigt die Zeile immer, mit Stufe oder mit dem Satz.
-          albumSuitability={currentPhoto.album_suitability ?? null}
+          albumSuitability={eyeValues?.albumSuitability ?? currentPhoto.album_suitability ?? null}
           ranking={currentPhoto.ranking ?? null}
-          fineLabels={currentPhoto.fine_labels}
+          fineLabels={eyeValues?.fineLabels ?? currentPhoto.fine_labels}
         />
 
         {/* DAS EYE-BAND (Spec 0609): zwischen Urteil und Motivbereich, weil es die HERKUNFT der
