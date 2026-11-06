@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.53.0](https://github.com/TheRealKoller/photosort/compare/v0.52.0...v0.53.0) (2026-11-06)
+
+
+### Features
+
+* Eye als dritte Laufwahl beim Klassifizierungslauf (Spec 0609) ([#611](https://github.com/TheRealKoller/photosort/issues/611)) ([659d9c1](https://github.com/TheRealKoller/photosort/commit/659d9c17c31a1abfacf364c193e60e372e477ed1))
+* **eye-eval:** Eye gegen die Cloud ausgewertet, Entscheidung „Eye bleibt“ (Spec 0610) ([#617](https://github.com/TheRealKoller/photosort/issues/617)) ([7e7c3b7](https://github.com/TheRealKoller/photosort/commit/7e7c3b704116eb362c4e2b44b48a91270c1debdc))
+* **eye-eval:** Eye-Auswertungswerkzeug für die Cloud-Ablösung (Spec 0606) ([#607](https://github.com/TheRealKoller/photosort/issues/607)) ([5163cb7](https://github.com/TheRealKoller/photosort/commit/5163cb7ea98dfda06f1ae5e9ea97827ca5c586d2))
+
+
+### Bug Fixes
+
+* **eye:** Tag-Konfidenzen aus dem SDK-Schlüssel tags lesen ([#613](https://github.com/TheRealKoller/photosort/issues/613)) ([50933a3](https://github.com/TheRealKoller/photosort/commit/50933a36c1980a58f8c3e97144c03adc1f70e88f)), closes [#612](https://github.com/TheRealKoller/photosort/issues/612)
+
 ## [0.52.0](https://github.com/TheRealKoller/photosort/compare/v0.51.1...v0.52.0) (2026-11-01)
 
 
