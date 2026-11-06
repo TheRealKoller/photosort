@@ -372,3 +372,78 @@ Keine.
 - Sehenswürdigkeitsnamen aus Eye — das Modell liefert keine Eigennamen.
 - Feinlabels-Vergleich im Vergleichs-CLI (Vokabulare nicht vergleichbar).
 - Parallele Verarbeitung im Eye-Lauf.
+
+## Vergleichsergebnis
+
+Auswertung aus Story [#610](https://github.com/TheRealKoller/photosort/issues/610). Grundlage für
+beide Projekte: Cloud `mistral` / `mistral-small-2603`, Eye-Revision `v1.0.0`, gemessen nach dem
+Fix des Tag-Schlüssels ([#612](https://github.com/TheRealKoller/photosort/issues/612)). Geprüft hat
+Daniel je Zweck die seeded Zufallsauswahl `min(30, Abweichungen)`. Pro Fall hat er notiert, welches
+Ergebnis trägt: Cloud, Eye, beide ok oder beide falsch.
+
+### Projekt A
+
+- **Art:** Urlaub
+- **Fotos mit beiden Ergebnissen:** 373
+- **Dauer:** Cloud-Lauf 4 min 51 s, Eye-Lauf 13 min 5 s
+- **`remote_api_calls_total`:** 373
+
+|Zweck|Übereinstimmungen|Abweichungen|geprüft|Cloud|Eye|beide ok|beide falsch|
+|---|---|---|---|---|---|---|---|
+|Motive (Motiv × Foto)|2378|606|30|8|22|0|0|
+|Dokument-Ausschluss|366|7|7|6|1|0|0|
+|Albumtauglichkeit|123|250|30|7|9|13|1|
+
+- **Motive: Eye ist besser.** Fast alle Abweichungen sind Motive, die nur Eye sieht, vor allem
+  „Detail/Stimmung“ und „Stadt/Straße“. Meist lag Eye dabei richtig.
+- **Dokument-Ausschluss: schlechter / nicht geeignet.** In sechs der sieben Fälle hat Eye ein
+  gewöhnliches Foto als Dokument ausgeschlossen, das die Cloud zu Recht behielt.
+- **Albumtauglichkeit: gleichwertig.** Eye stuft meist eine bis drei Stufen niedriger ein als die
+  Cloud. Knapp die Hälfte der geprüften Fälle trägt mit beiden Stufen, und die übrigen verteilen
+  sich etwa gleich auf beide Seiten.
+
+### Projekt B
+
+- **Art:** Urlaub
+- **Fotos mit beiden Ergebnissen:** 278
+- **Dauer:** Cloud-Lauf 16 min 22 s, Eye-Lauf 10 min 27 s
+- **`remote_api_calls_total`:** 278
+
+|Zweck|Übereinstimmungen|Abweichungen|geprüft|Cloud|Eye|beide ok|beide falsch|
+|---|---|---|---|---|---|---|---|
+|Motive (Motiv × Foto)|1723|501|30|13|17|0|0|
+|Dokument-Ausschluss|278|0|0|–|–|–|–|
+|Albumtauglichkeit|52|226|30|4|9|17|0|
+
+- **Motive: gleichwertig.** Eye trifft „Detail/Stimmung“ öfter. Bei „Tiere“ und „Aktivität“ sieht
+  dagegen oft nur die Cloud das Motiv. Die Abbildung liest für Tiere nur vier Tags und Eyes
+  eigenes Tierfeld gar nicht, für Aktivität nur Sport-Tags. Ob Eye diese Motive erkannt hat und
+  nur die Übersetzung sie verliert, ist nicht gemessen, weil die rohe Eye-Antwort nicht gespeichert
+  wird.
+- **Dokument-Ausschluss: gleichwertig.** Keine Abweichung.
+- **Albumtauglichkeit: Eye ist besser.** Mehr als die Hälfte der geprüften Fälle trägt mit beiden
+  Stufen. Von den übrigen liegt Eye gut doppelt so oft richtig wie die Cloud.
+
+### Nicht bewertet
+
+- **Feinlabels:** Die Vokabulare von Eye und Cloud sind nicht vergleichbar.
+- **Sehenswürdigkeitsnamen:** Eye liefert keine Eigennamen.
+
+### Entscheidung: Eye bleibt
+
+- **Taugliche Zwecke:** Eye ist für Motive (A besser, B gleichwertig) und Albumtauglichkeit (A
+  gleichwertig, B besser) mindestens gleichwertig.
+- **Dokument-Ausschluss:** In Projekt A ist Eye schlechter, deshalb gilt **keine Einsparung**. Kein
+  Cloud-Aufruf zählt als eingespart, solange nicht alle drei Zwecke mindestens „gleichwertig“ sind.
+  Die Obergrenze wären 373 bzw. 278 Aufrufe gewesen.
+- **Laufzeit:** kein Ausschlussgrund. Eye lief in Projekt A langsamer und in Projekt B schneller als
+  die Cloud.
+- **Lizenz:** bleibt „klar zulässig“.
+- **Restrisiken:**
+  - Eye ist Beta. Ein Modell-Update gilt unter der dann aktuellen Lizenz und verlangt eine neue
+    Prüfung der Abbildung.
+  - Eyes Albumtauglichkeit fließt weiterhin nicht in den Album-Entwurf ein.
+- **Folgestory:** Der Eindruck aus der Prüfung ist, dass Eye gut erkennt, die Übersetzung der
+  Eye-Ergebnisse auf Motive, Ausschluss und Albumstufe aber nachgeschärft werden muss. Das ist
+  Story [#615](https://github.com/TheRealKoller/photosort/issues/615); danach wird mit denselben
+  Projekten erneut ausgewertet.
