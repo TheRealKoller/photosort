@@ -1,6 +1,6 @@
 # 0610 - Eye gegen die Cloud auswerten: Werte je Abweichung, Herkunft, Laufzeit, Urteil
 
-**Status:** Accepted
+**Status:** Implemented ([PR #617](https://github.com/TheRealKoller/photosort/pull/617))
 **Erstellt:** 2026-11-04
 **Bezug:** [Issue #610](https://github.com/TheRealKoller/photosort/issues/610)
 
