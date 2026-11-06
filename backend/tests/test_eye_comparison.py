@@ -1079,6 +1079,49 @@ class TestTheRunSelection:
 
         assert (await load_run_facts(db_session, project.id)).eye_run is None
 
+    async def test_a_newer_failed_eye_run_does_not_displace_the_valid_one(
+        self, db_session: AsyncSession
+    ) -> None:
+        project = await _project_row(db_session, "Eye-Fehlschlag")
+        await _criterion_row(
+            db_session,
+            project,
+            mode=ClassificationMode.EYE,
+            finished_at=datetime(2026, 9, 14, 10, 0, 0),
+            eye_photos_total=7,
+            eye_photos_processed=7,
+        )
+        await _criterion_row(
+            db_session,
+            project,
+            mode=ClassificationMode.EYE,
+            status=ScanStatus.FAILED,
+            finished_at=datetime(2026, 9, 14, 12, 0, 0),
+            eye_photos_total=99,
+            eye_photos_processed=1,
+        )
+
+        facts = await load_run_facts(db_session, project.id)
+
+        assert facts.eye_run == EyeRunFacts(
+            duration_seconds=3600, eye_photos_total=7, eye_photos_processed=7
+        )
+
+    async def test_an_eye_run_without_finished_at_is_never_chosen(
+        self, db_session: AsyncSession
+    ) -> None:
+        project = await _project_row(db_session, "Eye ohne Ende")
+        await _criterion_row(
+            db_session,
+            project,
+            mode=ClassificationMode.EYE,
+            finished_at=None,
+            eye_photos_total=5,
+            eye_photos_processed=5,
+        )
+
+        assert (await load_run_facts(db_session, project.id)).eye_run is None
+
     async def test_the_duration_is_a_whole_truncated_second(self, db_session: AsyncSession) -> None:
         project = await _project_row(db_session, "Dauer")
         remote = await _remote_row(db_session, project)

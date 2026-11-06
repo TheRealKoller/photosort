@@ -232,8 +232,9 @@ in [`0003`](../architecture/0003-securitykonzept.md), Ankerzeile „Das Vergleic
   weg statt als Leerstring zu erscheinen, und `cloud_models` kommt nur aus **erfolgreichen** Läufen.
 - **S4 — `--out` bleibt der einzige Schreibpfad und liegt außerhalb des Repos.** Foto-Id und App-Pfad
   bleiben pseudonym (nur mit der eigenen Datenbank auflösbar), Dateiname, OpenCloud-Pfad, Ort, GPS
-  und Zeitstempel fehlen. Ohne `.git` fällt `repository_root()` auf `/` zurück, also auf Ablehnung
-  statt Durchlass.
+  und Zeitstempel fehlen. Geprüft wird der aufgelöste Zielpfad: Trägt ein Verzeichnis über ihm ein
+  `.git`, bricht der Aufruf ab, bevor eine Datei entsteht. Ohne Arbeitsbaum über dem Ziel (etwa
+  `/tmp` im Container) wird geschrieben, unabhängig davon, wo das Paket installiert ist.
 - **S5 — Kein Egress, kein Kostenpfad.** Das Werkzeug baut keinen Client und importiert keinen; es
   **liest** `api_calls` einer erfolgreichen Zeile. Fehlende Cloud-Ergebnisse entstehen nur über den
   normalen Lauf mit angezeigter Schätzung, nie hier. **Erzwingung:** Formwächter gegen
