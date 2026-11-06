@@ -548,7 +548,20 @@ docker compose exec backend python -m photosort.eye_comparison --project-id <id>
 
 stdout trägt nur Zählungen je Zweck (Motiv, Ausschluss, Albumstufe), die Datei die benannten
 Abweichungen mit Foto-Id und App-Pfad — höchstens dreißig je Zweck, damit dreißig Motiv-Fälle
-Ausschluss und Albumstufe nicht verdrängen. Die Datei bleibt außerhalb des Repos.
+Ausschluss und Albumstufe nicht verdrängen. Jede Abweichungszeile führt **beide** Werte ihres
+Zwecks (Motivstärke, Dokumentausschluss oder Albumstufe), roh und ungerundet; `null` heißt „diese
+Seite hat den Schlüssel nicht beurteilt", nicht „als 0.0 beurteilt". Dazu stehen in der Datei:
+
+- `origin` — `cloud_providers` und `eye_model_revisions` der verglichenen Fotos, `cloud_models`
+  aller erfolgreichen Remote-Läufe des Projekts; je sortiert, ohne Dubletten, ohne erfassten Wert
+  als leere Liste.
+- `runtime` — `cloud_run` und `eye_run` mit `duration_seconds` und den Foto- und Aufrufzahlen des
+  Laufs, dazu `remote_api_calls_total` als Summe über alle erfolgreichen Remote-Läufe. Fehlt ein
+  Lauf, oder trägt einer davon keine Aufrufzahl, steht dort `null` statt einer Teilsumme.
+
+Die Datei trägt **Dauern, keine Zeitstempel, keine Fehlermeldungstexte**: Laufzeiten in ganzen
+Sekunden, damit kein Muster entsteht, wann der Haushalt nicht zu Hause war, und keine Meldung
+eines fremden Systems. Die Datei bleibt außerhalb des Repos.
 
 **Rückbau:** Die Migration des Ausbaus stellt für jedes Foto mit Eye-Grundlage dessen lokales
 Ergebnis wieder her (oder lässt es „noch nicht klassifiziert"), danach fallen Dienst, Profil,

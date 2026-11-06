@@ -1479,9 +1479,17 @@ Verarbeitungs-Cache (Thumbnails).
   keinen Rückfall auf einen anderen Modus. Der Egress des Fremdpakets ist **nicht** erzwungen
   (Betreiberpflicht des Heimservers). Der **Vergleich** Eye ↔ Cloud ist ein rein lesendes CLI
   (`python -m photosort.eye_comparison --project-id … --seed … --out …`, Spec 0609): stdout trägt
-  nur Zählungen je Zweck, die seeded Abweichungszeilen (je Zweck höchstens dreißig, Foto-Id und
-  App-Pfad) gehen ausschließlich in eine Datei **außerhalb** des Repos, und das Modul liest weder Dateinamen noch Nutzer, Personen
-  oder Orte. Es ist an keinen Endpunkt, kein Compose-Ziel und keinen Worker-Pfad gehängt. Die
+  nur Zählungen je Zweck, die seeded Abweichungszeilen (je Zweck höchstens dreißig) gehen
+  ausschließlich in eine Datei **außerhalb** des Repos. Jede Zeile führt Foto-Id, App-Pfad und
+  **beide Werte ihres Zwecks** — Stärke, Dokumentausschluss oder Albumstufe, roh und ungerundet;
+  `null` heißt „diese Seite hat den Schlüssel nicht beurteilt", nicht „0.0". Dazu trägt die Datei
+  `origin` (Anbieter und Eye-Revision der **verglichenen** Fotos, Cloud-Modelle aller
+  erfolgreichen Remote-Läufe, je sortiert und ohne Dubletten, ohne Vorkommen als leere Liste) und
+  `runtime` (`cloud_run` und `eye_run` mit `duration_seconds` und den Foto-/Aufrufzahlen des
+  Laufs, dazu `remote_api_calls_total` über **alle** erfolgreichen Remote-Läufe — fehlt eine Zahl,
+  steht dort `null` statt einer Teilsumme). Die Datei trägt **Dauern, keine Zeitstempel, keine
+  Fehlermeldungstexte**; das Modul liest weder Dateinamen noch Nutzer, Personen oder Orte. Es ist
+  an keinen Endpunkt, kein Compose-Ziel und keinen Worker-Pfad gehängt. Die
   Demo-Daten zeigen Eye an genau einem Foto: `demo_state.py` schreibt dort zuerst die lokale
   Kopfzeile und lässt Eye darüber laufen, sodass Kopfzeile, Schattenzeilen und der verdrängte
   lokale Vektor (Rückbaudaten) im Bestand gleichzeitig vorkommen.
