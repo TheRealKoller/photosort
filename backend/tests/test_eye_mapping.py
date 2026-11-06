@@ -106,7 +106,7 @@ class TestTheMotifStrengths:
 
         assert strengths["landschaft"] == pytest.approx(1.0)
 
-    def test_a_payload_without_confidences_yields_eight_zeros(self) -> None:
+    def test_a_payload_without_tags_yields_eight_zeros(self) -> None:
         strengths = motif_strengths({"kind": None})
 
         assert set(strengths) == set(MOTIF_REGISTRY)
