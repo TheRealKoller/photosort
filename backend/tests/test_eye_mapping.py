@@ -45,13 +45,16 @@ from photosort.selection import MOTIF_PRESENCE_THRESHOLD
 _SOURCE_DIR = Path(__file__).resolve().parent.parent / "src" / "photosort"
 
 
-# Ein Payload in der Form, die der Sidecar unveraendert zurueckgibt: `confidences`, `scores`,
-# `kind`, `faces`. Alles, was die Abbildung nicht liest, steht bewusst mit drin.
+# Ein Payload in der Form, die der Sidecar unveraendert zurueckgibt - die gespeicherte JSON-Form
+# des SDK (`Analysis.toJSON()`): Tag-Konfidenzen unter `tags`, dazu `scores`, `kind`, `faces`.
+# `confidences` ist nur der Name der JS-Eigenschaft und steht NICHT im JSON; ein Payload mit
+# diesem Schluessel liesse jede Motivstaerke still auf 0 fallen. Alles, was die Abbildung nicht
+# liest, steht bewusst mit drin.
 def _payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": "eye-4.2.3",
         "kind": "landscape",
-        "confidences": {
+        "tags": {
             "mountain": 0.91,
             "sky": 0.7,
             "people": 0.4,
@@ -77,7 +80,7 @@ class TestTheMotifStrengths:
         assert strengths["menschen"] == pytest.approx(0.4)
 
     def test_all_eight_motifs_are_always_present_and_unmentioned_ones_are_zero(self) -> None:
-        strengths = motif_strengths(_payload(confidences={"mountain": 0.9}))
+        strengths = motif_strengths(_payload(tags={"mountain": 0.9}))
 
         assert list(strengths) == list(MOTIF_REGISTRY)
         assert strengths["tiere"] == 0.0
@@ -86,24 +89,24 @@ class TestTheMotifStrengths:
     def test_a_tag_that_two_motifs_share_counts_for_both(self) -> None:
         """`building` und `people` stehen in mehreren Listen - eine erste Zuordnung, die den Tag
         "verbraucht", liesse eines der Motive grundlos auf 0 fallen."""
-        strengths = motif_strengths(_payload(confidences={"building": 0.8}))
+        strengths = motif_strengths(_payload(tags={"building": 0.8}))
 
         assert strengths["bauwerk_sehenswuerdigkeit"] == pytest.approx(0.8)
         assert strengths["stadt_strasse"] == pytest.approx(0.8)
 
     def test_unknown_tags_and_non_numeric_values_do_not_leak_into_the_vector(self) -> None:
         strengths = motif_strengths(
-            _payload(confidences={"mountain": "hoch", "sky": True, "unbekannt": 0.99})
+            _payload(tags={"mountain": "hoch", "sky": True, "unbekannt": 0.99})
         )
 
         assert strengths["landschaft"] == 0.0
 
     def test_values_above_one_are_clamped_to_one(self) -> None:
-        strengths = motif_strengths(_payload(confidences={"mountain": 1.4}))
+        strengths = motif_strengths(_payload(tags={"mountain": 1.4}))
 
         assert strengths["landschaft"] == pytest.approx(1.0)
 
-    def test_a_payload_without_confidences_yields_eight_zeros(self) -> None:
+    def test_a_payload_without_tags_yields_eight_zeros(self) -> None:
         strengths = motif_strengths({"kind": None})
 
         assert set(strengths) == set(MOTIF_REGISTRY)
@@ -196,12 +199,12 @@ class TestTheFineLabels:
         assert [label for label, _ in labels] == ["mountain", "sky"]
 
     def test_the_threshold_is_inclusive(self) -> None:
-        assert fine_labels(_payload(confidences={"mountain": 0.5})) == (("mountain", 0.5),)
-        assert fine_labels(_payload(confidences={"mountain": 0.4999})) == ()
+        assert fine_labels(_payload(tags={"mountain": 0.5})) == (("mountain", 0.5),)
+        assert fine_labels(_payload(tags={"mountain": 0.4999})) == ()
 
     def test_the_strongest_come_first_and_ties_are_alphabetical(self) -> None:
         labels = fine_labels(
-            _payload(confidences={"sky": 0.6, "mountain": 0.9, "beach": 0.6, "food": 0.7})
+            _payload(tags={"sky": 0.6, "mountain": 0.9, "beach": 0.6, "food": 0.7})
         )
 
         assert [label for label, _ in labels] == ["mountain", "food", "beach", "sky"]
@@ -209,12 +212,12 @@ class TestTheFineLabels:
     def test_the_excluded_types_are_not_fine_labels(self) -> None:
         """Der Typ ist bereits die Aussage `excluded_document` - als Feinlabel waere er ein
         zweites Mal gezaehlt."""
-        labels = fine_labels(_payload(confidences={"document": 0.9, "mountain": 0.7}))
+        labels = fine_labels(_payload(tags={"document": 0.9, "mountain": 0.7}))
 
         assert [label for label, _ in labels] == ["mountain"]
 
     def test_the_values_are_the_raw_confidences(self) -> None:
-        labels = fine_labels(_payload(confidences={"mountain": 0.73}))
+        labels = fine_labels(_payload(tags={"mountain": 0.73}))
 
         assert labels == (("mountain", 0.73),)
 

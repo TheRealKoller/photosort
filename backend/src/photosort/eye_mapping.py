@@ -215,7 +215,11 @@ def _confidence(tags: Mapping[str, Any], tag: str) -> float:
 
 
 def _tags(payload: Mapping[str, Any]) -> Mapping[str, Any]:
-    tags = payload.get("confidences")
+    """Die Tag-Konfidenzen stehen in der JSON-Form des SDK (`Analysis.toJSON()`) unter `tags`.
+
+    `confidences` ist nur der Name der JS-Eigenschaft und kommt im JSON nie vor; wer ihn liest,
+    bekommt still acht Nullen und keine Feinlabels."""
+    tags = payload.get("tags")
     return tags if isinstance(tags, Mapping) else {}
 
 

@@ -113,16 +113,14 @@ async def _add_photo(
 
 def _payload(
     *,
-    confidences: dict[str, float] | None = None,
+    tags: dict[str, float] | None = None,
     kind: str = "landscape",
     aesthetic: float = 0.5,
 ) -> dict[str, Any]:
     return {
         "model": "eye-4.2.3",
         "kind": kind,
-        "confidences": {"mountain": 0.91, "sky": 0.7, "dog": 0.66}
-        if confidences is None
-        else confidences,
+        "tags": {"mountain": 0.91, "sky": 0.7, "dog": 0.66} if tags is None else tags,
         "scores": {"aesthetic": aesthetic, "keeper": 0.6, "cover": 0.3},
         "faces": [],
         "pets": [],
@@ -292,7 +290,7 @@ async def test_the_promotion_writes_the_eye_header_when_no_cloud_header_exists(
     project = await _make_project(db_session)
     scoring_run = await _add_run(db_session, project)
     photo = await _add_photo(db_session, project, "a.jpg", tmp_path)
-    client = FakeEyeClient({photo.id: _payload(confidences={"mountain": 0.9})})
+    client = FakeEyeClient({photo.id: _payload(tags={"mountain": 0.9})})
 
     await _run(db_session, project, scoring_run, tmp_path, client=client)
 
@@ -331,7 +329,7 @@ async def test_a_cloud_header_stays_and_the_shadow_stands_beside_it(
     )
     await db_session.commit()
 
-    client = FakeEyeClient({photo.id: _payload(confidences={"dog": 0.95})})
+    client = FakeEyeClient({photo.id: _payload(tags={"dog": 0.95})})
     run = await _run(db_session, project, scoring_run, tmp_path, client=client)
 
     header = await db_session.get(PhotoMotifAssessment, photo.id)
@@ -373,7 +371,7 @@ async def test_a_local_header_is_replaced_and_its_vector_survives_as_snapshot(
     )
     await db_session.commit()
 
-    client = FakeEyeClient({photo.id: _payload(confidences={"mountain": 0.9})})
+    client = FakeEyeClient({photo.id: _payload(tags={"mountain": 0.9})})
     await _run(db_session, project, scoring_run, tmp_path, client=client)
 
     header = await db_session.get(PhotoMotifAssessment, photo.id)

@@ -53,7 +53,7 @@ nie in einem stillen Rückfall.
 
 Vertrag, mehr nicht: `GET /health` (200 erst, wenn Pins geprüft und Modell geladen sind) und
 `POST /analyze` mit den rohen Bytes der `display`-Variante, Antwort ist die SDK-Analyse als JSON.
-Der Sidecar rechnet **keine** Motive: er liefert `confidences`, `faces`, `pets`, `scores`,
+Der Sidecar rechnet **keine** Motive: er liefert `tags` (Tag-Konfidenzen), `faces`, `pets`, `scores`,
 `details.layout.shot`, `kind`, `model` unverändert. Verarbeitung ist sequenziell (ein Modell, eine
 Anfrage), Aufrufe laufen über `httpx` mit fester Zeitgrenze; die Eye-Phase ist deshalb bewusst
 nicht nebenläufig.

@@ -98,3 +98,16 @@ test("ein lesbares Bild geht als Pixelpuffer an das Modell", async () => {
   assert.deepEqual(await analyzeBytes(eye, await einPixelJpeg()), { kind: "landscape" });
   assert.deepEqual(gesehen, [{ width: 1, height: 1 }]);
 });
+
+test("die Antwort ist die JSON-Form des SDK: Tag-Konfidenzen stehen unter `tags`", async () => {
+  // Was die Python-Abbildung liest, muss die echte SDK-Klasse liefern: `confidences` ist nur
+  // der Name der JS-Eigenschaft, im JSON heißt der Schlüssel `tags`.
+  const { Analysis } = await import("@desert-ant-labs/eye/native");
+  const roh = { model: "eye@v1.0.0", width: 1, height: 1, kind: "landscape", tags: { sky: 0.9 } };
+  const eye = { analyze: async () => Analysis.fromJSON(roh) };
+
+  const ergebnis = await analyzeBytes(eye, await einPixelJpeg());
+
+  assert.deepEqual(ergebnis.tags, { sky: 0.9 });
+  assert.equal("confidences" in ergebnis, false);
+});
