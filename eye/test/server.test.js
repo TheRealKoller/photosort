@@ -54,14 +54,14 @@ test("POST /analyze gibt die Analyse als JSON zurück und ruft sie genau einmal"
   await stop();
   await start({ ready: true, revision: "v1.0.0" }, async (bytes) => {
     aufrufe.push(bytes);
-    return { kind: "landscape", confidences: { sky: 0.9 } };
+    return { kind: "landscape", tags: { sky: 0.9 } };
   });
 
   const antwort = await fetch(`${base}/analyze`, jpeg());
   const koerper = await antwort.json();
 
   assert.equal(antwort.status, 200);
-  assert.deepEqual(koerper, { kind: "landscape", confidences: { sky: 0.9 } });
+  assert.deepEqual(koerper, { kind: "landscape", tags: { sky: 0.9 } });
   assert.equal(aufrufe.length, 1);
 });
 
