@@ -429,6 +429,14 @@ Ergebnis trägt: Cloud, Eye, beide ok oder beide falsch.
 - **Feinlabels:** Die Vokabulare von Eye und Cloud sind nicht vergleichbar.
 - **Sehenswürdigkeitsnamen:** Eye liefert keine Eigennamen.
 
+### Abweichungen von der Prüfvorgabe
+
+- **Projektart:** Beide Projekte sind Urlaube. Ein Projekt anderer Art, etwa Familienalltag mit
+  vielen Menschen, ist nicht ausgewertet. Daniel nimmt diese Abweichung bewusst hin. Die erneute
+  Auswertung aus #615 soll sie schließen.
+- **Geschlossene Augen und verdeckte Gesichter:** Unter den geprüften Album-Fällen wurden solche
+  Fotos nicht gezielt beachtet. Das Urteil zur Albumtauglichkeit trifft dazu keine Aussage.
+
 ### Entscheidung: Eye bleibt
 
 - **Taugliche Zwecke:** Eye ist für Motive (A besser, B gleichwertig) und Albumtauglichkeit (A
@@ -436,8 +444,10 @@ Ergebnis trägt: Cloud, Eye, beide ok oder beide falsch.
 - **Dokument-Ausschluss:** In Projekt A ist Eye schlechter, deshalb gilt **keine Einsparung**. Kein
   Cloud-Aufruf zählt als eingespart, solange nicht alle drei Zwecke mindestens „gleichwertig“ sind.
   Die Obergrenze wären 373 bzw. 278 Aufrufe gewesen.
-- **Laufzeit:** kein Ausschlussgrund. Eye lief in Projekt A langsamer und in Projekt B schneller als
-  die Cloud.
+- **Laufzeit:** vertretbar und kein Ausschlussgrund. Eye lief in Projekt A langsamer und in
+  Projekt B schneller als die Cloud.
+- **Feinlabels:** Würde Eye die Cloud ersetzen, kämen die Feinlabels ungeprüft von Eye.
+  Sehenswürdigkeitsnamen kämen weiter aus der Cloud, ihre Aufrufe zählen nie als eingespart.
 - **Lizenz:** bleibt „klar zulässig“.
 - **Restrisiken:**
   - Eye ist Beta. Ein Modell-Update gilt unter der dann aktuellen Lizenz und verlangt eine neue
