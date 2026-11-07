@@ -17,19 +17,17 @@ const UNITS = ['photo', 'pair'] as const
 const COUNT_COLUMNS = ['matching', 'deviating', 'presented'] as const
 
 /*
- * `table-fixed` mit Spaltenanteilen und `break-words`: Bei 360 px stehen 328 px zur Verfuegung.
- * "uebereinstimmend" und "Albumtauglichkeit" sind laenger als ihre Spalte; ohne feste Anteile
- * spannt eine Tabelle ihre Spalten auf die min-content-Breite und schoebe die Seite waagerecht
- * ueber den Rand (gemessen in `e2e/tests/no-horizontal-scroll.spec.ts`). `hyphens-auto` bricht
- * dabei an Silbengrenzen, `break-words` bleibt der Rueckfall fuer Woerter ohne Trennstelle.
+ * Die Zweckspalte bekommt ein Drittel, die Zaehlspalten teilen den Rest zu gleichen Teilen
+ * (`table-fixed` ohne eigene Breite). Das genuegt bei 360 px: Ohne feste Breiten spannt eine
+ * Tabelle ihre Spalten auf die min-content-Breite von "uebereinstimmend" und "Albumtauglichkeit"
+ * und schoebe die Seite waagerecht ueber den Rand (gemessen in
+ * `e2e/tests/no-horizontal-scroll.spec.ts`). `hyphens-auto` bricht laengere Woerter an
+ * Silbengrenzen, `break-words` bleibt der Rueckfall fuer Woerter ohne Trennstelle.
  */
-const HEAD_CELL =
-  'hyphens-auto break-words py-2 pl-1 text-right align-bottom font-semibold sm:pl-2'
+const HEAD_CELL = 'hyphens-auto break-words py-2 pl-1 text-right align-bottom font-semibold sm:pl-2'
 const ROW_HEAD_CELL = 'hyphens-auto py-2 text-left font-normal break-words text-text'
 const NUMBER_CELL = 'py-2 pl-1 text-right tabular-nums text-text-h sm:pl-2'
-const PURPOSE_COLUMN = 'w-[30%]'
-const COUNT_COLUMN = 'w-[23.3%]'
-const VERDICT_COLUMN = 'w-[14%]'
+const PURPOSE_COLUMN = 'w-1/3'
 
 /**
  * Die Uebersicht einer abgeschlossenen Pruefung (Spec 0616, UI/UX): zwei schmale Tabellen statt
@@ -58,7 +56,6 @@ export function ClassificationReviewOverview({
       <table className="w-full table-fixed border-collapse text-sm">
         <colgroup>
           <col className={PURPOSE_COLUMN} />
-          <col span={COUNT_COLUMNS.length} className={COUNT_COLUMN} />
         </colgroup>
         <caption className="pb-2 text-left text-sm font-semibold text-text-h">
           {REVIEW_DETAIL_TEXTS.deviationsCaption}
@@ -118,7 +115,6 @@ export function ClassificationReviewOverview({
       <table className="w-full table-fixed border-collapse text-sm">
         <colgroup>
           <col className={PURPOSE_COLUMN} />
-          <col span={VERDICT_ORDER.length + 1} className={VERDICT_COLUMN} />
         </colgroup>
         <caption className="pb-2 text-left text-sm font-semibold text-text-h">
           {REVIEW_DETAIL_TEXTS.verdictsCaption}
