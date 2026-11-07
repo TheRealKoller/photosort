@@ -1422,6 +1422,8 @@ export interface ClassificationReviewCaseSideOut {
 /** Ein vorgelegter Fall mit Urteil und dessen Schreiber. */
 export interface ClassificationReviewCaseOut {
   id: number
+  /** Traegt die Fallansicht zum bestehenden Foto-Endpunkt; der Export nennt nur die Position. */
+  photo_id: number
   photo_position: number
   purpose: ClassificationReviewPurpose
   /** Nur bei `motif_feature` gesetzt. */

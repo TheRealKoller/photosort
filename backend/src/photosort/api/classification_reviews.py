@@ -312,9 +312,13 @@ class ReviewCaseSideOut(BaseModel):
 
 
 class ReviewCaseOut(BaseModel):
-    """Ein vorgelegter Fall mit Urteil und dessen Schreiber (Projektion auf zwei Spalten)."""
+    """Ein vorgelegter Fall mit Urteil und dessen Schreiber (Projektion auf zwei Spalten).
+
+    `photo_id` traegt die Fallansicht zum bestehenden Foto-Endpunkt (S2 erlaubt sie hier); der
+    Export nennt stattdessen nur `photo_position` und bleibt ohne Foto-Id."""
 
     id: int
+    photo_id: int
     photo_position: int
     purpose: ClassificationReviewPurpose
     motif_key: str | None
@@ -1032,6 +1036,7 @@ def _case_out(row: _CaseRow, statements: dict[str, dict[int, _Statement]]) -> Re
     case, verdict, user_id, username, updated_at = row
     return ReviewCaseOut(
         id=case.id,
+        photo_id=case.photo_id,
         photo_position=case.photo_position,
         purpose=case.purpose,
         motif_key=case.motif_key,

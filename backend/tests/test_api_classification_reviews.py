@@ -1469,6 +1469,25 @@ class TestCases:
         assert set(case["updated_by"]) == {"user_id", "username"}
         assert case["verdict"] == "b_better"
 
+    async def test_each_case_names_the_photo_of_its_position(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Fallansicht laedt das Bild ueber den bestehenden Foto-Endpunkt und braucht dafuer die
+        Foto-Id (S2 erlaubt sie in der Fall-Antwort, der Export traegt sie nie)."""
+        project, _user, review, first = await self._case_scenario(db_session)
+        second = await _add_photo(db_session, project, "second.jpg")
+        await _add_case(db_session, review, first, 1, "motifs")
+        await _add_case(db_session, review, second, 2, "album_level")
+
+        cases = (
+            await authenticated_api_client.get(_url(project.id, f"/{review.id}/cases"))
+        ).json()["cases"]
+
+        assert [(case["photo_position"], case["photo_id"]) for case in cases] == [
+            (1, first.id),
+            (2, second.id),
+        ]
+
     async def test_a_foreign_review_is_404(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
