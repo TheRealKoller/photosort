@@ -92,6 +92,15 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
   const compareHref = await compareLink.getAttribute('href')
   expect(compareHref, 'Ziel des Vergleichs-Einstiegs').toMatch(/\/photos\/\d+\/duplicates$/)
 
+  // specs/features/0616-klassifizierungsverfahren-vergleichen.md: Liste und Fallansicht der
+  // Klassifizierungspruefung. Die Fallansicht traegt die Pruefungs-Id in der Adresse, und die
+  // vergibt der Seeder bei jedem Lauf neu - sie kommt deshalb aus dem echten Einstieg.
+  await page.goto(`/projects/${ratedId}/klassifizierung-pruefen`)
+  const reviewLink = page.getByRole('link', { name: /angelegt von / }).first()
+  await expect(reviewLink, 'Zeile der geseedeten Pruefung').toBeVisible()
+  const reviewHref = await reviewLink.getAttribute('href')
+  expect(reviewHref, 'Ziel der Pruefungszeile').toMatch(/\/klassifizierung-pruefen\/\d+$/)
+
   const routes = [
     { label: 'Projektliste', path: '/', heading: 'Projekte' },
     { label: 'Neues Projekt', path: '/projects/new', heading: 'Neues Projekt anlegen' },
@@ -165,6 +174,19 @@ test('keine Route erzeugt horizontales Scrollen bei 360 px', async ({ page }) =>
       path: `/projects/${ratedId}/persons`,
       heading: DEMO_PERSONS.longest,
       requiresText: /^(Gesichter werden gesucht|Suche abgeschlossen)/,
+    },
+    // Die Liste und die Fallansicht derselben Pruefung. Vorbedingung der Fallansicht ist die
+    // Urteilsgruppe eines Falls: ohne sie mass die Route eine Ueberschrift ohne Inhalt.
+    {
+      label: 'Klassifizierung pruefen (Liste)',
+      path: `/projects/${ratedId}/klassifizierung-pruefen`,
+      heading: 'Klassifizierung prüfen',
+    },
+    {
+      label: 'Klassifizierung pruefen (Fallansicht)',
+      path: reviewHref ?? '',
+      role: 'group' as const,
+      name: /^Urteil zu /,
     },
   ] satisfies ({
     label: string

@@ -16,9 +16,20 @@ const PURPOSES = Object.keys(PURPOSE_LABELS) as ClassificationReviewPurpose[]
 const UNITS = ['photo', 'pair'] as const
 const COUNT_COLUMNS = ['matching', 'deviating', 'presented'] as const
 
-const HEAD_CELL = 'py-2 pl-2 text-right align-bottom font-semibold'
-const ROW_HEAD_CELL = 'py-2 text-left font-normal break-words text-text'
-const NUMBER_CELL = 'py-2 pl-2 text-right tabular-nums text-text-h'
+/*
+ * `table-fixed` mit Spaltenanteilen und `break-words`: Bei 360 px stehen 328 px zur Verfuegung.
+ * "uebereinstimmend" und "Albumtauglichkeit" sind laenger als ihre Spalte; ohne feste Anteile
+ * spannt eine Tabelle ihre Spalten auf die min-content-Breite und schoebe die Seite waagerecht
+ * ueber den Rand (gemessen in `e2e/tests/no-horizontal-scroll.spec.ts`). `hyphens-auto` bricht
+ * dabei an Silbengrenzen, `break-words` bleibt der Rueckfall fuer Woerter ohne Trennstelle.
+ */
+const HEAD_CELL =
+  'hyphens-auto break-words py-2 pl-1 text-right align-bottom font-semibold sm:pl-2'
+const ROW_HEAD_CELL = 'hyphens-auto py-2 text-left font-normal break-words text-text'
+const NUMBER_CELL = 'py-2 pl-1 text-right tabular-nums text-text-h sm:pl-2'
+const PURPOSE_COLUMN = 'w-[30%]'
+const COUNT_COLUMN = 'w-[23.3%]'
+const VERDICT_COLUMN = 'w-[14%]'
 
 /**
  * Die Uebersicht einer abgeschlossenen Pruefung (Spec 0616, UI/UX): zwei schmale Tabellen statt
@@ -44,7 +55,11 @@ export function ClassificationReviewOverview({
         {REVIEW_DETAIL_TEXTS.overviewTitle}
       </h2>
 
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full table-fixed border-collapse text-sm">
+        <colgroup>
+          <col className={PURPOSE_COLUMN} />
+          <col span={COUNT_COLUMNS.length} className={COUNT_COLUMN} />
+        </colgroup>
         <caption className="pb-2 text-left text-sm font-semibold text-text-h">
           {REVIEW_DETAIL_TEXTS.deviationsCaption}
         </caption>
@@ -100,7 +115,11 @@ export function ClassificationReviewOverview({
         })}
       </table>
 
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full table-fixed border-collapse text-sm">
+        <colgroup>
+          <col className={PURPOSE_COLUMN} />
+          <col span={VERDICT_ORDER.length + 1} className={VERDICT_COLUMN} />
+        </colgroup>
         <caption className="pb-2 text-left text-sm font-semibold text-text-h">
           {REVIEW_DETAIL_TEXTS.verdictsCaption}
         </caption>
