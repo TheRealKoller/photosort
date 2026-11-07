@@ -2768,6 +2768,7 @@ async def _write_eye_shadow_rows(
                 excluded_document=analysis.excluded_document,
                 album_level=analysis.album_level,
                 model_revision=EYE_MODEL_REVISION,
+                mapping_version=EYE_MAPPING_VERSION,
                 computed_at=computed_at,
             )
         )

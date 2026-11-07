@@ -415,6 +415,7 @@ async def build_project_graph(
                 excluded_document=False,
                 album_level=3,
                 model_revision="v1.0.0",
+                mapping_version="eye-4.2.3/v2",
                 computed_at=now,
             ),
             PhotoLocalMotifSnapshot(photo_id=photo.id, excluded_document=False, computed_at=now),

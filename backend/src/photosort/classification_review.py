@@ -51,7 +51,7 @@ from photosort.eye_client import (
     EyeServiceUnavailableError,
     build_eye_client,
 )
-from photosort.eye_mapping import MAPPING_VERSION, EyeMappingError
+from photosort.eye_mapping import EyeMappingError
 from photosort.eye_mapping import analyze as map_eye_analysis
 from photosort.models import (
     ClassificationReview,
@@ -201,13 +201,21 @@ async def _run_eye_sides(
 ) -> set[int]:
     """Alle Eye-Seiten in EINEM Durchgang: ein Dienstaufruf je Foto, jede gewaehlte Fassung auf
     dieselbe Antwort im Speicher. Rueckgabe: die Fotos mit Ergebnis (auf jeder Eye-Seite gleich).
+
+    Eine Eye-Seite ohne gespeicherte Fassung ist ein `EyeMappingError` VOR dem ersten Foto, kein
+    Rueckfall auf die Lauf-Fassung: die Pruefung endet `FAILED` (`ERROR_GENERIC`), statt eine
+    Fassung zu pruefen, die niemand gewaehlt hat.
     """
+    versions: list[tuple[str, str]] = []
+    for side in sides:
+        if side.eye_mapping_version is None:
+            raise EyeMappingError("Eine Eye-Seite traegt keine Fassung der Eye-Zuordnung.")
+        versions.append((side.side, side.eye_mapping_version))
     client = build_client()
     with_result: set[int] = set()
     try:
         if not await client.health():
             raise EyeServiceUnavailableError("Die Eye-Auswertung ist nicht gesund.")
-        versions = [(side.side, side.eye_mapping_version or MAPPING_VERSION) for side in sides]
         review.photos_processed = 0
         await session.commit()
         for index, photo in enumerate(photos, start=1):
