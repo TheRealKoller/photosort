@@ -1145,3 +1145,82 @@ class TestTheCategoryClientsSitOutARateLimit:
 
         assert len(requests) == 1
         assert waits == []
+
+
+class TestTheCategoryClientFollowsTheModel:
+    """Spec 0616, ADR 0139 Punkt 4: der Anbieter des Kategorie-Clients folgt aus dem MODELL, nicht
+    aus `settings.landmark_provider`. Eine Pruefseite nennt ihr Modell; zwei Cloud-Seiten duerfen
+    deshalb in einem Lauf zwei Anbieter treffen. Die Client-Klassen und der Schrittmacher sind
+    gepatcht - kein Netz, kein Secret."""
+
+    def test_a_mistral_model_builds_the_mistral_client_although_the_setting_says_anthropic(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from photosort import remote_classification as module
+        from photosort.config import settings
+
+        throttles: list[str] = []
+        built: list[tuple[str, dict[str, object]]] = []
+
+        def fake_throttle(provider: str) -> object:
+            throttles.append(provider)
+            return object()
+
+        class FakeAnthropic:
+            def __init__(self, **kwargs: object) -> None:
+                built.append(("anthropic", kwargs))
+
+        class FakeMistral:
+            def __init__(self, **kwargs: object) -> None:
+                built.append(("mistral", kwargs))
+
+        monkeypatch.setattr(module, "throttle_for_provider", fake_throttle)
+        monkeypatch.setattr(module, "AnthropicCategoryClient", FakeAnthropic)
+        monkeypatch.setattr(module, "MistralCategoryClient", FakeMistral)
+        monkeypatch.setattr(settings, "landmark_provider", "anthropic")
+
+        module.build_category_classification_client(MISTRAL_VISION_MODEL)
+
+        assert throttles == ["mistral"]
+        assert [name for name, _ in built] == ["mistral"]
+
+    def test_an_anthropic_model_builds_the_anthropic_client_although_the_setting_says_mistral(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from photosort import remote_classification as module
+        from photosort.config import settings
+
+        throttles: list[str] = []
+        built: list[str] = []
+
+        def fake_throttle(provider: str) -> object:
+            throttles.append(provider)
+            return object()
+
+        class FakeAnthropic:
+            def __init__(self, **kwargs: object) -> None:
+                built.append("anthropic")
+
+        class FakeMistral:
+            def __init__(self, **kwargs: object) -> None:
+                built.append("mistral")
+
+        monkeypatch.setattr(module, "throttle_for_provider", fake_throttle)
+        monkeypatch.setattr(module, "AnthropicCategoryClient", FakeAnthropic)
+        monkeypatch.setattr(module, "MistralCategoryClient", FakeMistral)
+        monkeypatch.setattr(settings, "landmark_provider", "mistral")
+
+        module.build_category_classification_client(ANTHROPIC_VISION_MODEL)
+
+        assert throttles == ["anthropic"]
+        assert built == ["anthropic"]
+
+    def test_a_model_outside_the_registry_is_rejected_instead_of_guessing_a_provider(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Spec 0616, S6: die Wahl ist geschlossen. Eine Modell-ID ohne Anbieter faellt laut auf,
+        statt still beim Installationsanbieter zu landen."""
+        from photosort import remote_classification as module
+
+        with pytest.raises(ValueError):
+            module.build_category_classification_client("unbekanntes-modell")

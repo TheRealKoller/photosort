@@ -337,3 +337,30 @@ def test_every_excluded_type_exists_in_eye_meta() -> None:
     known = set(meta["labels"]["type"])
 
     assert EXCLUDED_TYPES - known == set()
+
+
+class TestTheVersionedMappings:
+    """Spec 0616, ADR 0139 Punkt 4: die Pruefseite speichert je Seite die Abbildungsfassung, mit
+    der sie gerechnet wurde. Eine gespeicherte Fassung muss deshalb AUFRUFBAR bleiben - und eine
+    unbekannte Fassung darf nicht still die Vorgabe rechnen."""
+
+    def test_the_shipped_version_is_registered(self) -> None:
+        from photosort.eye_mapping import MAPPINGS
+
+        assert MAPPING_VERSION in MAPPINGS
+
+    def test_the_explicit_shipped_version_is_value_identical_to_the_default_call(self) -> None:
+        assert analyze(_payload(), MAPPING_VERSION) == analyze(_payload())
+
+    def test_every_registered_version_produces_an_analysis(self) -> None:
+        from photosort.eye_mapping import MAPPINGS
+
+        for version in MAPPINGS:
+            result = analyze(_payload(), version)
+
+            assert set(result.motif_strengths) == set(MOTIF_REGISTRY), version
+            assert 1 <= result.album_level <= 5, version
+
+    def test_an_unknown_version_raises_instead_of_falling_back_to_the_shipped_one(self) -> None:
+        with pytest.raises(EyeMappingError):
+            analyze(_payload(), "eye-0.0.0/v1")
