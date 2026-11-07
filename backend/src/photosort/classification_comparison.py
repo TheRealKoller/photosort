@@ -190,7 +190,7 @@ def _sample(cases: Sequence[Case], *, seed: int, limit: int) -> tuple[Case, ...]
     return tuple(sorted(chosen, key=_sort_key))
 
 
-def summarize(
+def compare_review(
     photos: Iterable[PhotoComparison],
     *,
     seed: int,
