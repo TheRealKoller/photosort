@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-11-03 (Spec 0609 — Eye als dritte Laufwahl neben „Cloud" und „nur lokal": eigener Sidecar im Compose-Profil `eye`, Eye-Schattentabellen, Rangfolge der Grundlagen `cloud > eye > local`, Rückbauweg; davor Spec 0566/0565)
+**Letzte Aktualisierung:** 2026-11-07 (Spec 0616 — Prüfung zweier Klassifizierungsverfahren in der App: Job `classification_review` mit sechs eigenen Prüftabellen, Router `api/classification_reviews.py`, Prüfseiten als viertes Nebenziel, Kostenposten `review`; davor Spec 0609)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -258,6 +258,20 @@ Verarbeitungs-Cache (Thumbnails).
     Ausprägung 96 px). Festlegen und Zeigen teilen `hooks/useFaceAssignment.ts` mit der
     Gesichterwahl der Detailansicht; die Großansicht öffnet über `useCurationLightbox` mit dem
     Auslöserschlüssel `${personId}:${photoId}`.
+  - **Klassifizierung prüfen** *(Spec 0616, ADR
+    [`0139`](../specs/decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md))*:
+    viertes Nebenziel der Projektnavigation hinter „Personen“, damit führt das Panel unterhalb
+    `lg:` sieben Ziele. Route `/projects/:projectId/klassifizierung-pruefen`
+    (`pages/ClassificationReviewsPage.tsx`: Liste der Prüfungen und Anlegen-Panel mit zwei
+    Seitenwahlen ohne Vorauswahl, Prüfgröße und Kostenvorschau) und
+    `/projects/:projectId/klassifizierung-pruefen/:reviewId`
+    (`pages/ClassificationReviewDetailPage.tsx`: Herkunft beider Seiten, Fallansicht ab `sm:`
+    zweispaltig mit `components/ClassificationReviewCase.tsx`, Übersicht
+    `components/ClassificationReviewOverview.tsx`, Export). Das gezeigte Foto steht in `?foto=<n>`
+    (Fotoposition der Prüfung); ein fehlender oder ungültiger Wert springt auf das erste Foto mit
+    offenem Fall. Die Tasten `A`/`B`/`O`/`F` setzen das Urteil des markierten Falls, nie mit
+    Strg/Meta/Alt und nie in einem Textfeld; Pfeiltasten wechseln das Foto. Alle Texte stehen in
+    `utils/classificationReviewLabels.ts`.
 - **Einstiegspunkt: der nginx des `frontend`-Containers** (`frontend/nginx.conf`): der einzige
   Dienst in `docker-compose.yml` mit Host-Port (`FRONTEND_PORT`, Default 8080). `backend`,
   `worker`, `postgres` und `redis` veröffentlichen keinen Port; ein externer Reverse-Proxy braucht
@@ -415,7 +429,10 @@ Verarbeitungs-Cache (Thumbnails).
     Endpunkt dieses neuen Moduls nicht ungeschützt bleiben kann. Der geschätzte Datenbank-Anteil
     läuft über eine Dialekt-Weiche (`session.get_bind().dialect.name == "postgresql"`, kein
     try/except um fehlschlagendes SQL); außerhalb Postgres ist der Wert `null`, nicht `0`. Die
-    Cache-Messung (`thumbnails.py::measure_cache_usage`) läuft über `asyncio.to_thread`.
+    Cache-Messung (`thumbnails.py::measure_cache_usage`) läuft über `asyncio.to_thread`. Die
+    Ist-Kosten stehen je Zweck in `cost.by_purpose`: `landmark`, `remote_category` und `review`
+    (Summe von `classification_review_sides.cost_usd`; der Lückenhinweis greift dort nur bei
+    `api_calls > 0` mit Betrag `NULL` oder `0`, die geschätzten Kosten fließen nie ein).
   - neues Router-Modul `api/cameras.py` *(Spec
     [`0426`](../specs/features/0426-zeitversatz-je-kamera.md))* mit drei Endpunkten und
     router-weiter Auth wie `api/stats.py`: `GET /projects/{id}/cameras` (Kameraliste mit
@@ -454,7 +471,8 @@ Verarbeitungs-Cache (Thumbnails).
   - `DELETE /projects/{project_id}` (`api/projects.py`, Body `{"confirm_name": "<string>"}` mit
     `max_length=500`, hängt am bestehenden Router-Level-Auth-Guard, **kein Owner-Check**) löscht ein
     Projekt und alle PhotoSort-eigenen Daten daran — die Original-Fotos auf OpenCloud bleiben
-    unangetastet. Reihenfolge der Prüfungen: `404` → `409` (einer der **vier** letzten Läufe ist
+    unangetastet. Reihenfolge der Prüfungen: `404` → `409` (einer der **fünf** letzten Läufe —
+    Scan, Bewertung, Kriterien, Remote-Klassifizierung, Klassifizierungsprüfung — ist
     `RUNNING`; ein nicht mehr aktueller `RUNNING`-Altlauf blockiert nicht) → `400`
     (`confirm_name.strip() != project.name`, case-sensitiv — serverseitig getrimmt, im Frontend
     bewusst nicht) → `(photo_id, etag)`-Paare lesen → Mengenlöschung + genau ein `commit()` →
@@ -1477,22 +1495,46 @@ Verarbeitungs-Cache (Thumbnails).
   ihn über `EYE_SERVICE_URL` (Vorgabe `http://eye:8090`); `EYE_ENABLED` (Vorgabe `false`) schaltet
   die Laufwahl app-seitig ab. Ohne gestartetes Profil antwortet der Auslöser `403`/`503`, es gibt
   keinen Rückfall auf einen anderen Modus. Der Egress des Fremdpakets ist **nicht** erzwungen
-  (Betreiberpflicht des Heimservers). Der **Vergleich** Eye ↔ Cloud ist ein rein lesendes CLI
-  (`python -m photosort.eye_comparison --project-id … --seed … --out …`, Spec 0609): stdout trägt
-  nur Zählungen je Zweck, die seeded Abweichungszeilen (je Zweck höchstens dreißig) gehen
-  ausschließlich in eine Datei **außerhalb** des Repos. Jede Zeile führt Foto-Id, App-Pfad und
-  **beide Werte ihres Zwecks** — Stärke, Dokumentausschluss oder Albumstufe, roh und ungerundet;
-  `null` heißt „diese Seite hat den Schlüssel nicht beurteilt", nicht „0.0". Dazu trägt die Datei
-  `origin` (Anbieter und Eye-Revision der **verglichenen** Fotos, Cloud-Modelle aller
-  erfolgreichen Remote-Läufe, je sortiert und ohne Dubletten, ohne Vorkommen als leere Liste) und
-  `runtime` (`cloud_run` und `eye_run` mit `duration_seconds` und den Foto-/Aufrufzahlen des
-  Laufs, dazu `remote_api_calls_total` über **alle** erfolgreichen Remote-Läufe — fehlt eine Zahl,
-  steht dort `null` statt einer Teilsumme). Die Datei trägt **Dauern, keine Zeitstempel, keine
-  Fehlermeldungstexte**; das Modul liest weder Dateinamen noch Nutzer, Personen oder Orte. Es ist
-  an keinen Endpunkt, kein Compose-Ziel und keinen Worker-Pfad gehängt. Die
+  (Betreiberpflicht des Heimservers). Die
   Demo-Daten zeigen Eye an genau einem Foto: `demo_state.py` schreibt dort zuerst die lokale
   Kopfzeile und lässt Eye darüber laufen, sodass Kopfzeile, Schattenzeilen und der verdrängte
   lokale Vektor (Rückbaudaten) im Bestand gleichzeitig vorkommen.
+- **Klassifizierungsprüfung** (Spec 0616, ADR
+  [`0139`](../specs/decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md)): der
+  fünfte Job `classification_review.py::run_classification_review` (in
+  `WorkerSettings.functions`, `max_tries=1`) klassifiziert die eingefrorene Prüfmenge — alle
+  Ausschuss-Überlebenden des Projekts nach `survives_ausschuss()`, ohne Skip-Kriterium, nach
+  Foto-Id geordnet; daraus entsteht die gespeicherte `photo_position` — für **beide** Seiten neu
+  und schreibt ausschließlich in die sechs Prüftabellen. Geltende Motive, Kriterien,
+  Albumtauglichkeit, Rangfolge und die Kostenspalten der übrigen Läufe bleiben unberührt; das
+  halten ein Syntaxbaum- und ein Bestandswächter fest. Seitenreihenfolge: erst die kostenfreien
+  Seiten (Eye, dann lokal), danach die Cloud.
+  - **eye:** ein Dienstaufruf je Foto über `build_eye_client`, bei zwei Eye-Seiten beide
+    Abbildungsfassungen (`eye_mapping.py`) auf dieselbe Antwort.
+  - **local:** `_compute_content_criteria` und `motifs.py::local_motif_strengths` ohne
+    Sehenswürdigkeits-Beitrag und ohne `photo_criterion_scores`-Zeile; Dokumentausschluss und
+    Albumstufe bleiben `NULL` („keine Aussage“).
+  - **cloud:** nur mit Einwilligung des Projekts; Client über
+    `remote_classification.py::build_category_classification_client(model)`, der Anbieter folgt
+    über `cloud_vision.py::provider_for_vision_model` aus dem Modell. Aufrufe, Tokens und
+    `cost_usd` werden im `finally` eingefroren.
+  - Ein Foto, das eine Seite nicht beurteilen kann, wird übersprungen und in
+    `unclassifiable_photo_count` gezählt; scheitern alle Fotos einzeln, endet die Prüfung `SUCCESS`
+    mit null verglichenen Fotos. Liefert eine Seite auf keinem Foto ein Ergebnis, ohne dass ein
+    Fotofehler gezählt wurde, endet sie `FAILED` (`ERROR_NO_RESULTS`). `error_message` trägt nur
+    einen Satz aus `ERROR_MESSAGES`, nie einen Fremdtext. `reap_stalled_runs` führt die Prüfung als
+    eigenen Block über `last_progress_at` und löscht dabei den Teilschritt.
+  - Die Fälle zieht `classification_comparison.py::compare_review` (vier Zwecke, seeded
+    Stichprobe `min(Prüfgröße, Abweichungen)` je Zweck); die Übersicht rechnet ihre Zahlen mit
+    derselben Funktion aus den gespeicherten Ergebnissen.
+  - **API** `api/classification_reviews.py` unter `/projects/{project_id}/classification-reviews`:
+    `GET /options` (wählbare Verfahren samt Sperrgrund), `GET /estimate`, `POST ""` (Prüfreihenfolge
+    `403` Feature-Schalter → `403` Eye abgeschaltet → `404` → `409` kein bestätigter
+    Ausschusslauf oder laufende Prüfung → `403` Cloud ohne Einwilligung → `503` Eye-Dienst nicht
+    erreichbar → `422` ungültige Wahl), Liste, Detail, `GET /{id}/cases`,
+    `PUT /{id}/cases/{case_id}/verdict` (nur an `SUCCESS`, sonst `409`) und `GET /{id}/export` (fester
+    Schlüsselsatz, je Fall die Fotoposition statt der Foto-Id, keine Bilddaten, Dateinamen, Orte
+    oder Namen). Das Projekt bindet ausschließlich der Pfad.
 - **Postgres**: Metadaten (Projekte, Fotos, Bewertungen, Nutzer), keine Bilddaten.
 - **Redis**: Job-Queue für den Worker.
 - **Lokaler Cache**: Docker-Volume für Thumbnails/Zwischenergebnisse, kein Ersatz für OpenCloud als
@@ -1580,7 +1622,10 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `photo_local_motif_snapshot_strengths`, `photo_person_detections`,
     `photo_person_corrections`, `photo_album_suitability`, `photo_cloud_vision_errors`,
     `final_selection_decisions`, `feedback_events`, `place_lookups`, `landmark_names`,
-    `landmark_place_lookups`, `project_overview_seen`, `export_runs`, `export_photos`) sowie das
+    `landmark_place_lookups`, `project_overview_seen`, `export_runs`, `export_photos`,
+    `classification_reviews`, `classification_review_sides`, `classification_review_results`,
+    `classification_review_result_strengths`, `classification_review_cases`,
+    `classification_review_verdicts`) sowie das
     Projekt selbst, dazu
     best-effort die Cache-Varianten des aktuellen `(photo.id, photo.etag)`-Paars. `users` und
     `fine_labels` bleiben unangetastet — beide sind Fremdschlüssel-**Eltern** und fallen aus der
@@ -2465,6 +2510,26 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   lokale Kopfzeile verdrängt, und von jedem späteren Lauf „nur lokal", der auf eine Eye-Kopfzeile
   trifft (er ersetzt dann nichts). Ein erneuter Eye-Lauf überschreibt ihn nicht. `NULL`/Abwesenheit
   heißt „kein lokales Ergebnis vorhanden"; der Rückbau löscht dann die Kopfzeile.
+- **ClassificationReview und fünf Kindtabellen** *(Spec 0616, ADR
+  [`0139`](../specs/decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md),
+  `models.py`)*: eine Prüfung zweier Klassifizierungsverfahren. Nur der Prüfjob,
+  `api/classification_reviews.py` und `project_deletion.py` lesen oder schreiben diese Tabellen.
+  - `classification_reviews`: Projekt, anlegender Nutzer, `status` (`ScanStatus`), Teilschritt
+    `phase` (`side_a|side_b|cases`, `NULL` außerhalb des Laufs), Prüfgröße, Seed, Fotozahlen,
+    `unclassifiable_photo_count`, Zeitpunkte, `last_progress_at`, `error_message`.
+  - `classification_review_sides` (PK Prüfung + Seite `a`/`b`): `kind` `cloud|eye|local`,
+    `provider`, `model`, `eye_model_revision`, `eye_mapping_version`, die beim Anlegen
+    eingefrorene `estimated_cost_usd` (Beleg, keine Eingabe) und die Ist-Kosten
+    `api_calls`/`failed_calls`/Tokens/`cost_usd` (`NULL` = nicht erfasst).
+  - `classification_review_results` (PK Prüfung + Seite + Foto) mit `excluded_document` und
+    `album_level`, beide nullable: `NULL` heißt „dieses Verfahren trifft dazu keine Aussage“.
+    `classification_review_result_strengths` trägt je Ergebnis alle acht Motive.
+  - `classification_review_cases`: Prüfung, Foto, gespeicherte `photo_position`, Zweck
+    `motifs|motif_feature|excluded_document|album_level`; `motif_key` nur bei `motif_feature`.
+    Eindeutig je Prüfung, Foto, Zweck und Merkmal.
+  - `classification_review_verdicts` (PK = Fall): `a_better|b_better|both_ok|both_wrong`,
+    `updated_by_user_id`, `updated_at`. **Ein** Urteil je Fall für beide Nutzer, gesetzt per
+    Upsert; `updated_by_user_id` ist eine Auskunft, nie ein Zugriffsschlüssel.
 - **FinalSelectionDecision** *(Spec [`0431`](../specs/features/0431-endauswahl-gemeinsam.md), ADR
   [`decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md`](../specs/decisions/0099-endauswahl-als-projektentscheidung-ueber-zwei-entwuerfen.md),
   `models.py`, Tabelle `final_selection_decisions`)*: die **gemeinsame Entscheidung des Projekts**
