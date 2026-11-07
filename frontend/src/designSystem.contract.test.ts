@@ -2029,6 +2029,13 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
         'Pruefungszeile der Liste: die ganze Zeile ist EINE Trefferflaeche (Zeilenhoehe einer ' +
         'zeilenweisen Liste), nicht nur ihr Datum',
     },
+    {
+      file: 'src/components/ClassificationReviewCase.tsx',
+      snippet: "'h-auto min-h-11 w-full justify-between whitespace-normal text-left",
+      reason:
+        'heisser Pfad: die vier Urteile je Fall der Pruefung (Spec 0616) - ein Fehlgriff ' +
+        'schreibt ein falsches Urteil, das beide Nutzer und der Export uebernehmen',
+    },
   ]
 
   it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {

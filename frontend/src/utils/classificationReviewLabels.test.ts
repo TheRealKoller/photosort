@@ -1,22 +1,32 @@
 import { describe, expect, it } from 'vitest'
 
+import type { ClassificationReviewPurpose } from '../api/types'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import {
+  caseSideValueText,
   CLASSIFICATION_REVIEW_TEXTS,
   CLASSIFICATION_REVIEW_TITLE,
   NO_DEVIATION_TEXT,
+  NO_SHARED_STATEMENT_TEXT,
   NO_STATEMENT_TEXT,
+  noPhotosComparedText,
+  notComparedText,
+  PHASE_LABELS,
   PROVIDER_BLOCKED_TEXT,
   PURPOSE_LABELS,
   PURPOSE_UNIT_LABELS,
+  REVIEW_DETAIL_TEXTS,
   reviewCaseTitle,
   reviewListStand,
+  silentSide,
   SIDE_COST_LABELS,
   SIDE_LABELS,
   SIDE_MARKS,
   sideOriginText,
   TERMS,
   UNAVAILABLE_REASON_TEXTS,
+  UNIT_GROUP_LABELS,
+  VERDICT_KEYS,
   VERDICT_LABELS,
   VERDICT_ORDER,
 } from './classificationReviewLabels'
@@ -107,11 +117,14 @@ describe('classificationReviewLabels - Abgrenzung zur Bewertung', () => {
     const visible = [
       CLASSIFICATION_REVIEW_TITLE,
       ...Object.values(CLASSIFICATION_REVIEW_TEXTS),
+      ...Object.values(REVIEW_DETAIL_TEXTS),
       ...Object.values(TERMS),
       ...Object.values(SIDE_LABELS),
       ...Object.values(VERDICT_LABELS),
       ...Object.values(PURPOSE_LABELS),
       ...Object.values(PURPOSE_UNIT_LABELS),
+      ...Object.values(UNIT_GROUP_LABELS),
+      ...Object.values(PHASE_LABELS),
       NO_STATEMENT_TEXT,
     ]
     expect(visible).not.toContain('Vergleich')
@@ -225,5 +238,46 @@ describe('classificationReviewLabels - Sperrgruende und Kostenworte', () => {
   // "kostenfrei" ist ein Wort, keine 0 (Design-System).
   it('nennt den Preis einer Wahl als Wort, nie als Betrag', () => {
     expect(SIDE_COST_LABELS).toEqual({ free: 'kostenfrei', cloud: 'Cloud · kostenpflichtig' })
+  })
+})
+
+describe('classificationReviewLabels - Detailseite', () => {
+  // Buchstaben, keine Ziffern: 1/2/3 sind die Bewertungstasten des Bestands.
+  it('belegt jedes Urteil mit genau einem Buchstaben', () => {
+    expect(VERDICT_ORDER.map((verdict) => VERDICT_KEYS[verdict])).toEqual(['A', 'B', 'O', 'F'])
+  })
+
+  it('nennt die Rohwerte je Zweck - ja/nein, Albumstufe, und null als "keine Aussage"', () => {
+    const empty = {
+      motifs: null,
+      present: null,
+      strength: null,
+      excluded_document: null,
+      album_level: null,
+    }
+    const motifs = MOTIF_SET.items
+    expect(caseSideValueText('motifs', { ...empty, motifs: ['menschen'] }, motifs)).toBe('Menschen')
+    expect(caseSideValueText('motifs', { ...empty, motifs: [] }, motifs)).toBe('kein Motiv')
+    expect(caseSideValueText('motif_feature', { ...empty, present: false }, motifs)).toBe('nein')
+    expect(
+      caseSideValueText('excluded_document', { ...empty, excluded_document: true }, motifs),
+    ).toBe('ja')
+    expect(caseSideValueText('album_level', { ...empty, album_level: 0 }, motifs)).toBe(
+      'Stufe 0 von 5',
+    )
+    for (const purpose of Object.keys(PURPOSE_LABELS) as ClassificationReviewPurpose[]) {
+      expect(caseSideValueText(purpose, empty, motifs)).toBe(NO_STATEMENT_TEXT)
+    }
+  })
+
+  // Lokal kennt weder Dokument-Ausschluss noch Albumstufe; zu Motiven sagen alle Seiten etwas.
+  it('nennt die strukturell schweigende Seite eines Zwecks', () => {
+    expect(silentSide('album_level', { a: 'cloud', b: 'local' })).toBe('b')
+    expect(silentSide('excluded_document', { a: 'local', b: 'eye' })).toBe('a')
+    expect(silentSide('motifs', { a: 'local', b: 'cloud' })).toBeNull()
+    expect(silentSide('album_level', { a: 'eye', b: 'cloud' })).toBeNull()
+    expect(notComparedText('b')).toBe('nicht verglichen — Seite B trifft dazu keine Aussage')
+    expect(NO_SHARED_STATEMENT_TEXT).toBe('nicht verglichen — keine gemeinsame Aussage')
+    expect(noPhotosComparedText(1)).toBe('keine Fotos verglichen - 1 Foto fehlgeschlagen')
   })
 })

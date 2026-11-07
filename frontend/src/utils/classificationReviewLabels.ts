@@ -1,10 +1,13 @@
 import type {
+  ClassificationReviewCaseSideOut,
   ClassificationReviewListItemOut,
+  ClassificationReviewPhase,
   ClassificationReviewPurpose,
   ClassificationReviewSideKind,
   ClassificationReviewUnit,
   ClassificationVerdict,
 } from '../api/types'
+import { formatAlbumSuitabilityLevel } from './albumSuitability'
 import { formatProviderLabel, NOT_AVAILABLE } from './formatStats'
 import { formatMotifKey, type MotifSet } from './motifLabels'
 import type { ScanStatusLabel } from './scanStatus'
@@ -72,6 +75,17 @@ export const VERDICT_LABELS = {
   both_wrong: 'beide falsch',
 } as const satisfies Record<ClassificationVerdict, string>
 
+/**
+ * Die Taste je Urteil. Bewusst Buchstaben und keine Ziffern: 1/2/3 sind im Produkt die
+ * Bewertungstasten, und "gleiche Taste macht immer dasselbe" gilt seitenuebergreifend.
+ */
+export const VERDICT_KEYS = {
+  a_better: 'A',
+  b_better: 'B',
+  both_ok: 'O',
+  both_wrong: 'F',
+} as const satisfies Record<ClassificationVerdict, string>
+
 /** Die vier Pruefzwecke; `motifs`, `excluded_document` und `album_level` zaehlen Fotos,
  * `motif_feature` zaehlt Paare aus Foto und Motiv. */
 export const PURPOSE_LABELS = {
@@ -87,11 +101,163 @@ export const PURPOSE_UNIT_LABELS = {
   pair: 'Paare',
 } as const satisfies Record<ClassificationReviewUnit, string>
 
+/** Die Zeilengruppe einer Einheit in der Abweichungstabelle. */
+export const UNIT_GROUP_LABELS = {
+  photo: 'Zwecke',
+  pair: 'Merkmale (Foto × Motiv)',
+} as const satisfies Record<ClassificationReviewUnit, string>
+
+/** Der sichtbare Teilschritt einer laufenden Pruefung. */
+export const PHASE_LABELS = {
+  side_a: 'Seite A wird klassifiziert',
+  side_b: 'Seite B wird klassifiziert',
+  cases: 'Fälle werden gezogen',
+} as const satisfies Record<ClassificationReviewPhase, string>
+
+/** Die dauerhaften Saetze und Beschriftungen der Detailseite. */
+export const REVIEW_DETAIL_TEXTS = {
+  backToList: 'Zur Liste der Prüfungen',
+  originRegion: 'Herkunft der Seiten',
+  loading: 'Prüfung wird geladen…',
+  loadError: 'Fehler beim Laden der Prüfung.',
+  casesLoadError: 'Fehler beim Laden der Fälle.',
+  failedFallback: 'Die Prüfung ist fehlgeschlagen.',
+  allJudged: 'Alle Fälle sind beurteilt. Der Export bleibt verfügbar.',
+  noCases: 'Diese Prüfung hat keinen Fall vorgelegt.',
+  previousPhoto: 'Vorheriges Foto',
+  nextPhoto: 'Nächstes Foto',
+  nextOpenPhoto: 'Nächstes offenes Foto',
+  casesOfPhoto: 'Fälle dieses Fotos',
+  saveError: 'Das Urteil konnte nicht gespeichert werden.',
+  overviewTitle: 'Übersicht',
+  deviationsCaption: 'Abweichungen',
+  verdictsCaption: 'Urteile',
+  purposeColumn: 'Zweck',
+  matching: 'übereinstimmend',
+  deviating: 'abweichend',
+  presented: 'vorgelegt',
+  open: 'offen',
+  total: 'gesamt',
+  exportTitle: 'Export',
+  exportButton: 'Für die KI exportieren',
+  exportContents:
+    'Die Datei enthält keine Bilddaten, keine Dateinamen, keine Orte und keine Namen - je Fall nur die Fotonummer, den Zweck, beide Rohwerte und das Urteil.',
+  exportBlockedRunning: 'Der Export ist erst nach Abschluss der Prüfung möglich.',
+  exportBlockedFailed: 'Eine fehlgeschlagene Prüfung lässt sich nicht exportieren.',
+  exportError: 'Der Export konnte nicht geladen werden.',
+} as const
+
+/** "{n} offen von {m}" - die Faelle ohne Urteil gegen alle vorgelegten Faelle. */
+export function reviewProgressText(open: number, total: number): string {
+  return `${open} offen von ${total}`
+}
+
+/** Der Satz zu den Fotos ohne Ergebnis auf mindestens einer Seite; nur fuer `count > 0`. */
+export function unclassifiableText(count: number): string {
+  return count === 1
+    ? '1 Foto ließ sich nicht klassifizieren und wurde für keinen Zweck verglichen.'
+    : `${count} Fotos ließen sich nicht klassifizieren und wurden für keinen Zweck verglichen.`
+}
+
+/** Der Fortschritt einer laufenden Pruefung nach Teilschritt. */
+export function reviewPhaseText(
+  phase: ClassificationReviewPhase | null,
+  processed: number,
+  photoCount: number,
+): string {
+  const step = phase === null ? 'Prüfung läuft' : PHASE_LABELS[phase]
+  return `${step}… ${processed} von ${photoCount} Fotos`
+}
+
+/** Die Beschriftung des Fotowechslers; `position` ist die laufende Nummer der Pruefmenge. */
+export function photoPositionLabel(position: number, photoCount: number): string {
+  return `Foto ${position} von ${photoCount}`
+}
+
+/** Der Hinweis, wenn KEIN Foto auf beiden Seiten ein Ergebnis hat (alle einzeln gescheitert). */
+export function noPhotosComparedText(failedPhotos: number): string {
+  return `keine Fotos verglichen - ${failedPhotos} ${failedPhotos === 1 ? 'Foto' : 'Fotos'} fehlgeschlagen`
+}
+
+/** Ein Zweck ohne gemeinsame Aussage, mit der Seite, die schweigt. */
+export function notComparedText(side: 'a' | 'b'): string {
+  return `nicht verglichen — ${SIDE_LABELS[side]} trifft dazu keine Aussage`
+}
+
+/** Ein Zweck ohne gemeinsame Aussage, obwohl beide Seiten dazu etwas sagen koennten. */
+export const NO_SHARED_STATEMENT_TEXT = 'nicht verglichen — keine gemeinsame Aussage'
+
+/**
+ * Die Seite, die zu einem Zweck strukturell keine Aussage trifft: die lokale Seite kennt weder
+ * Dokument-Ausschluss noch Albumstufe (der Lauf speichert beide als `NULL`). Eye und Cloud sagen
+ * zu allen Zwecken etwas. `null` heisst: beide Seiten koennen etwas sagen.
+ */
+export function silentSide(
+  purpose: ClassificationReviewPurpose,
+  kinds: { a: ClassificationReviewSideKind; b: ClassificationReviewSideKind },
+): 'a' | 'b' | null {
+  if (purpose !== 'excluded_document' && purpose !== 'album_level') {
+    return null
+  }
+  if (kinds.a === 'local') {
+    return 'a'
+  }
+  return kinds.b === 'local' ? 'b' : null
+}
+
+/** Der Schreiber eines gesetzten Urteils. */
+export function verdictWriterText(username: string): string {
+  return `von ${username}`
+}
+
+/** Der zugaengliche Name der Urteilsgruppe EINES Falls. */
+export function verdictGroupLabel(caseTitle: string): string {
+  return `${TERMS.verdict} zu ${caseTitle}`
+}
+
 /**
  * Das Wort fuer eine fehlende Aussage. `null` einer Seite ist genau das und nie `false` oder `0` -
  * ein `?? 0` an der Anzeigestelle behauptete eine Aussage, die niemand getroffen hat.
  */
 export const NO_STATEMENT_TEXT = 'keine Aussage'
+
+/** Wahrheitswerte der Rohwerte - Motive, Merkmale und Dokument-Ausschluss. */
+export const YES_NO_TEXTS = { yes: 'ja', no: 'nein' } as const
+
+/** Die leere Praesenzmenge eines Fotos: eine Aussage ("kein Motiv"), nicht "keine Aussage". */
+export const NO_MOTIF_TEXT = 'kein Motiv'
+
+/**
+ * Der Rohwert EINER Seite in einem Fall, als Text. `null` ist "keine Aussage", nie `nein` oder
+ * eine Stufe 0. Bei `motifs` ist die Praesenzmenge der Rohwert und steht als Motivnamen da.
+ */
+export function caseSideValueText(
+  purpose: ClassificationReviewPurpose,
+  side: ClassificationReviewCaseSideOut,
+  motifs: MotifSet,
+): string {
+  switch (purpose) {
+    case 'motifs':
+      if (side.motifs === null) {
+        return NO_STATEMENT_TEXT
+      }
+      return side.motifs.length === 0
+        ? NO_MOTIF_TEXT
+        : side.motifs.map((key) => formatMotifKey(key, motifs)).join(', ')
+    case 'motif_feature':
+      return side.present === null ? NO_STATEMENT_TEXT : yesNo(side.present)
+    case 'excluded_document':
+      return side.excluded_document === null ? NO_STATEMENT_TEXT : yesNo(side.excluded_document)
+    case 'album_level':
+      return side.album_level === null
+        ? NO_STATEMENT_TEXT
+        : formatAlbumSuitabilityLevel(side.album_level)
+  }
+}
+
+function yesNo(value: boolean): string {
+  return value ? YES_NO_TEXTS.yes : YES_NO_TEXTS.no
+}
 
 /**
  * Der Stand EINER Zeile: das Wort und der Tonwert, den `StatusTag` traegt. `case_open` zaehlt die
