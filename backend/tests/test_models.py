@@ -2327,11 +2327,17 @@ def _annotation_names(annotation: ast.AST | None) -> set[str]:
 
 
 def _review_parameters(function: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
+    """Die Parameter, deren Annotation GENAU `ClassificationReview` ist.
+
+    Ein Nachweis, kein Suchtreffer: Der reine Name muss dastehen. Enthaelt die Annotation den
+    Klassennamen nur irgendwo (`CriterionScoringRun | ClassificationReview`), ist der Empfaenger
+    kein nachweislich Pruefungszeile - er waere beides, und `run.phase = ...` entkaeme dem
+    Waechter. Im `isinstance`-Zweig bleibt die Ausnahme unveraendert."""
     arguments = [*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs]
     return frozenset(
         argument.arg
         for argument in arguments
-        if _REVIEW_ROW_CLASS in _annotation_names(argument.annotation)
+        if isinstance(argument.annotation, ast.Name) and argument.annotation.id == _REVIEW_ROW_CLASS
     )
 
 
@@ -2368,20 +2374,29 @@ def _functions_writing(source: str, field: str) -> set[str]:
                 descend(child, child.name, _review_parameters(child))
                 continue
             if isinstance(child, ast.If):
-                descend(child.test, enclosing, review_names)
-                branch_names = review_names | _isinstance_review_names(child.test)
-                for statement in child.body:
-                    if _is_phase_write(statement, field, branch_names):
-                        found.add(enclosing)
-                    descend(statement, enclosing, branch_names)
-                for statement in child.orelse:
-                    if _is_phase_write(statement, field, review_names):
-                        found.add(enclosing)
-                    descend(statement, enclosing, review_names)
+                descend_if(child, enclosing, review_names)
                 continue
             if _is_phase_write(child, field, review_names):
                 found.add(enclosing)
             descend(child, enclosing, review_names)
+
+    def descend_if(node: ast.If, enclosing: str, review_names: frozenset[str]) -> None:
+        """Ein `if` samt `elif`-Kette: der `isinstance`-Nachweis gilt fuer SEINEN Rumpf, nie fuer
+        den `else`-Zweig daneben. Im AST ist `elif` ein `If` im `orelse` - ohne diesen eigenen Weg
+        laege sein Rumpf ausserhalb seines Nachweises, und `_fail_run` waere ein Befund."""
+        descend(node.test, enclosing, review_names)
+        branch_names = review_names | _isinstance_review_names(node.test)
+        for statement in node.body:
+            if _is_phase_write(statement, field, branch_names):
+                found.add(enclosing)
+            descend(statement, enclosing, branch_names)
+        for statement in node.orelse:
+            if isinstance(statement, ast.If):
+                descend_if(statement, enclosing, review_names)
+                continue
+            if _is_phase_write(statement, field, review_names):
+                found.add(enclosing)
+            descend(statement, enclosing, review_names)
 
     descend(ast.parse(source), _MODULE_LEVEL, frozenset())
     return found
@@ -2550,6 +2565,16 @@ def test_the_phase_guard_still_counts_a_criterion_receiver_next_to_a_review() ->
         "def f(review: ClassificationReview, run: CriterionScoringRun) -> None:\n"
         "    review.phase = None\n"
         "    run.phase = None\n"
+    )
+    assert _functions_writing(snippet, _PHASE) == {"f"}
+
+
+def test_the_phase_guard_counts_a_union_annotated_receiver() -> None:
+    """Gegenprobe gegen eine Ausnahme, die den Klassennamen IRGENDWO in der Annotation sucht: ein
+    `CriterionScoringRun | ClassificationReview` ist kein Nachweis, dass der Empfaenger eine
+    Pruefungszeile ist - er ist beides, und `run.phase = ...` entkaeme dem Waechter still."""
+    snippet = (
+        "def f(run: CriterionScoringRun | ClassificationReview) -> None:\n    run.phase = None\n"
     )
     assert _functions_writing(snippet, _PHASE) == {"f"}
 
