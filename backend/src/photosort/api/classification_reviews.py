@@ -1296,22 +1296,10 @@ _EXPORT_KEYS: Final = {
     "case": frozenset({"photo_position", "purpose", "motif_key", "a", "b", "verdict"}),
 }
 
-# Was die Datei NIE enthaelt: Bilddaten, Foto-Ids, Pfade, Dateinamen, Zeitstempel, Orte/GPS,
-# Personen- und Sehenswuerdigkeitsnamen, Projektname, Nutzer, Modellfreitext. Durchgesetzt wird
-# das von der Positivliste oben; die Marker-Technik des Tests schreibt unverwechselbare
-# Zeichenfolgen in genau diese Spalten und prueft ihre Abwesenheit in der Datei.
-_EXPORT_EXCLUDED: Final = (
-    "Bilddaten",
-    "Foto-Ids",
-    "Pfade",
-    "Dateinamen",
-    "Zeitstempel",
-    "Orte/GPS",
-    "Namen",
-    "Projektname",
-    "Nutzer",
-    "Modellfreitext",
-)
+# Was die Datei NIE enthaelt - Bilddaten, Foto-Ids, Pfade, Dateinamen, Zeitstempel, Orte/GPS,
+# Personen- und Sehenswuerdigkeitsnamen, Projektname, Nutzer, Modellfreitext - setzt die
+# Positivliste oben durch; der Test schreibt unverwechselbare Marker in genau diese Spalten und
+# prueft ihre Abwesenheit in der Datei.
 
 
 def _guard_export_shape(payload: dict[str, Any]) -> None:
