@@ -8,10 +8,12 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     SmallInteger,
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import false as sa_false
@@ -2082,7 +2084,11 @@ class ClassificationReviewCase(Base):
     kann mehrere Faelle tragen.
 
     `motif_key` steht NUR bei `motif_feature`; die Eindeutigkeit schliesst den Zweck ein, damit ein
-    Foto je Zweck hoechstens einen Fall traegt und je abweichendem Motiv genau einen Merkmal-Fall."""
+    Foto je Zweck hoechstens einen Fall traegt und je abweichendem Motiv genau einen Merkmal-Fall.
+
+    Fuer die drei fotozzaehlenden Zwecke ist `motif_key` NULL, und ein einfaches UNIQUE behandelt
+    NULL je Zeile als verschieden - die Zusage traegt deshalb zusaetzlich ein Teilindex
+    `WHERE motif_key IS NULL`."""
 
     __tablename__ = "classification_review_cases"
     __table_args__ = (
@@ -2092,6 +2098,15 @@ class ClassificationReviewCase(Base):
             "purpose",
             "motif_key",
             name="uq_classification_review_case_review_photo_purpose_motif",
+        ),
+        Index(
+            "uq_classification_review_case_review_photo_purpose_counted",
+            "review_id",
+            "photo_id",
+            "purpose",
+            unique=True,
+            sqlite_where=text("motif_key IS NULL"),
+            postgresql_where=text("motif_key IS NULL"),
         ),
     )
 

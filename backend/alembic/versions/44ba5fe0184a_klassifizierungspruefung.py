@@ -13,7 +13,8 @@ Spec 0616 / ADR 0139 Punkt 3. Fuenf Festlegungen tragen die Form:
   Staerkezeilen tragen alle acht Motive und haengen an DERSELBEN zusammengesetzten Kennung, nicht
   an `photos`.
 * `classification_review_cases` speichert die **Fotoposition** einmal, dazu Zweck und `motif_key`
-  (nur bei `motif_feature`); eindeutig je Pruefung, Foto, Zweck und Merkmal.
+  (nur bei `motif_feature`); eindeutig je Pruefung, Foto, Zweck und Merkmal - fuer die drei
+  fotozzaehlenden Zwecke ueber einen Teilindex `WHERE motif_key IS NULL`.
 * `classification_review_verdicts` hat den Fall als Primaerschluessel - genau EIN Urteil je Fall,
   nicht eines je Nutzer - und fuehrt den Schreiber als Auditfeld.
 
@@ -190,6 +191,16 @@ def upgrade() -> None:
             "motif_key",
             name="uq_classification_review_case_review_photo_purpose_motif",
         ),
+    )
+    # Die drei fotozzaehlenden Zwecke tragen `motif_key = NULL`; ein einfaches UNIQUE behandelt
+    # NULL je Zeile als verschieden, deshalb sichert der Teilindex die Eindeutigkeit fuer sie.
+    op.create_index(
+        "uq_classification_review_case_review_photo_purpose_counted",
+        "classification_review_cases",
+        ["review_id", "photo_id", "purpose"],
+        unique=True,
+        sqlite_where=sa.text("motif_key IS NULL"),
+        postgresql_where=sa.text("motif_key IS NULL"),
     )
     op.create_table(
         "classification_review_verdicts",

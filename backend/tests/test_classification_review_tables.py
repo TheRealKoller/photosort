@@ -8,15 +8,25 @@ verlassen - Primaerschluessel, Eindeutigkeit, Nullbarkeit und die geschlossenen 
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 from sqlalchemy import UniqueConstraint
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.db import Base
 from photosort.models import (
+    ClassificationReview,
+    ClassificationReviewCase,
     ClassificationReviewPurpose,
     ClassificationReviewSideKind,
     ClassificationVerdict,
+    Photo,
+    Project,
     ReviewPhase,
+    ScanStatus,
+    User,
 )
 
 REVIEW_TABLES = (
@@ -142,3 +152,107 @@ def test_the_closed_value_sets_match_the_spec() -> None:
         "both_ok",
         "both_wrong",
     ]
+
+
+async def _make_project(session: AsyncSession) -> Project:
+    project = Project(name="Costa Rica", opencloud_drive_id="drive", opencloud_path="Costa Rica")
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+    return project
+
+
+async def _make_user(session: AsyncSession) -> User:
+    user = User(username="anleger", password_hash="x")
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def _add_photo(session: AsyncSession, project: Project) -> Photo:
+    moment = datetime(2023, 6, 1, 12, 0)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="keep.jpg",
+        etag="etag-keep",
+        content_length=1_000,
+        taken_at=moment,
+        taken_at_original=moment,
+        last_modified=moment,
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return photo
+
+
+async def _make_review(session: AsyncSession, project: Project, user: User) -> ClassificationReview:
+    review = ClassificationReview(
+        project_id=project.id,
+        created_by_user_id=user.id,
+        status=ScanStatus.SUCCESS,
+        sample_size=30,
+        seed=4711,
+    )
+    session.add(review)
+    await session.commit()
+    await session.refresh(review)
+    return review
+
+
+async def test_a_photo_counting_case_is_unique_even_though_its_motif_key_is_null(
+    db_session: AsyncSession,
+) -> None:
+    """ADR 0139 Punkt 3: ein Fall ist eindeutig je Pruefung, Foto, Zweck und Merkmal. Fuer die drei
+    fotozzaehlenden Zwecke ist `motif_key` NULL - und ein einfaches UNIQUE behandelt NULL je Zeile
+    als verschieden. Erst der Teilindex `WHERE motif_key IS NULL` macht die Zusage wahr."""
+    project = await _make_project(db_session)
+    user = await _make_user(db_session)
+    photo = await _add_photo(db_session, project)
+    review = await _make_review(db_session, project, user)
+    # VOR dem `rollback` festhalten: er verfaellt die Instanzen, und ein spaeterer Attributzugriff
+    # waere ein Nachladen ausserhalb des async-Kontexts.
+    review_id, photo_id = review.id, photo.id
+    db_session.add(
+        ClassificationReviewCase(
+            review_id=review_id,
+            photo_id=photo_id,
+            photo_position=1,
+            purpose=ClassificationReviewPurpose.MOTIFS,
+        )
+    )
+    await db_session.commit()
+
+    db_session.add(
+        ClassificationReviewCase(
+            review_id=review_id,
+            photo_id=photo_id,
+            photo_position=1,
+            purpose=ClassificationReviewPurpose.MOTIFS,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()
+
+    # Ein Merkmal-Fall desselben Fotos ist ein EIGENER Fall - je abweichendem Motiv genau einer.
+    db_session.add_all(
+        [
+            ClassificationReviewCase(
+                review_id=review_id,
+                photo_id=photo_id,
+                photo_position=1,
+                purpose=ClassificationReviewPurpose.MOTIF_FEATURE,
+                motif_key="menschen",
+            ),
+            ClassificationReviewCase(
+                review_id=review_id,
+                photo_id=photo_id,
+                photo_position=1,
+                purpose=ClassificationReviewPurpose.MOTIF_FEATURE,
+                motif_key="tiere",
+            ),
+        ]
+    )
+    await db_session.commit()
