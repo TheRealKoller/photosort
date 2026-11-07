@@ -420,10 +420,11 @@ export function PhotoDetailPage() {
           fineLabels={eyeValues?.fineLabels ?? currentPhoto.fine_labels}
         />
 
-        {/* DAS EYE-BAND (Spec 0609): zwischen Urteil und Motivbereich, weil es die HERKUNFT der
-            beiden Angaben im Urteil benennt - Modellrevision und Zeitpunkt stammen aus
-            `photo_eye_results`, nicht aus einer geratenen Anbieterzeile. Die Namensnennung steht
-            darunter, an derselben Stelle wie die Angabe selbst. */}
+        {/* DAS EYE-BAND (Spec 0609/0615): zwischen Urteil und Motivbereich, weil es die HERKUNFT
+            der beiden Angaben im Urteil benennt - Modellrevision, Fassung der Uebersetzung und
+            Zeitpunkt stammen aus `photo_eye_results`, nicht aus einer geratenen Anbieterzeile. Die
+            Fassung ist ein Rohwert und nur ein Textknoten (S7). Die Namensnennung steht darunter,
+            an derselben Stelle wie die Angabe selbst. */}
         {currentPhoto.eye_result != null && (
           <div
             className="flex flex-col gap-1 rounded-sm border border-separator bg-elevated px-3 py-2"
@@ -431,7 +432,8 @@ export function PhotoDetailPage() {
           >
             <p className="text-xs text-text">
               Albumtauglichkeit und Feinlabels stammen aus der Eye-Auswertung — Modellrevision{' '}
-              {currentPhoto.eye_result.model_revision},{' '}
+              {currentPhoto.eye_result.model_revision}, Übersetzung{' '}
+              {currentPhoto.eye_result.mapping_version},{' '}
               {formatDateTime(currentPhoto.eye_result.computed_at)}.
             </p>
             <EyeAttribution />

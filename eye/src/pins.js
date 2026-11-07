@@ -12,9 +12,9 @@ import { fileURLToPath } from "node:url";
  * Ein Env-Wert als Pin gibt es nicht, und es wird nichts nachgeladen.
  *
  * Seit dem Abgleich mit dem echten SDK-Vokabular (`@desert-ant-labs/eye/tags.js`) trägt dieselbe
- * Datei auch `mappingTags`: die Tags, aus denen das Backend Motivstärken bildet. Damit fällt ein
- * Pin-Wechsel, der einen Tag umbenennt, beim Start und im Test auf - und nicht als stille Null in
- * jedem Eye-Ergebnis.
+ * Datei auch `mappingTags`: die Vereinigung der Tags aller Fassungen, aus denen das Backend
+ * Motivstärken bildet. Damit fällt ein Pin-Wechsel, der einen Tag umbenennt, beim Start und im
+ * Test auf - und nicht als stille Null in jedem Eye-Ergebnis.
  */
 export class PinError extends Error {
   constructor(message) {

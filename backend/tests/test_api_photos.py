@@ -6746,6 +6746,7 @@ async def _add_eye_shadow(
     photo: Photo,
     *,
     labels: tuple[tuple[str, float], ...] = (("dog", 0.9), ("mountain", 0.7)),
+    mapping_version: str = "eye-4.2.3/v2",
 ) -> None:
     session.add(
         PhotoEyeResult(
@@ -6753,6 +6754,7 @@ async def _add_eye_shadow(
             excluded_document=False,
             album_level=4,
             model_revision="v1.0.0",
+            mapping_version=mapping_version,
             computed_at=datetime(2026, 9, 14, 9, 0, 0),
         )
     )
@@ -6784,6 +6786,7 @@ class TestTheEyeResultInThePhotoOut:
         assert item["eye_result"] == {
             "album_level": 4,
             "model_revision": "v1.0.0",
+            "mapping_version": "eye-4.2.3/v2",
             "computed_at": "2026-09-14T09:00:00",
             "fine_labels": ["dog", "mountain"],
         }
@@ -6801,6 +6804,19 @@ class TestTheEyeResultInThePhotoOut:
         item = await _first_photo_out(authenticated_api_client, project)
 
         assert item["eye_result"]["fine_labels"] == ["stark", "mittel", "schwach"]
+
+    async def test_a_v1_row_reports_its_own_mapping_version(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Spec 0615: die Antwort nennt die Fassung DER ZEILE, nicht die Lauf-Fassung."""
+        project = await _make_project(db_session)
+        photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
+        await _assess_photo(db_session, photo, source=MotifAssessmentSource.EYE, provider=None)
+        await _add_eye_shadow(db_session, photo, mapping_version="eye-4.2.3/v1")
+
+        item = await _first_photo_out(authenticated_api_client, project)
+
+        assert item["eye_result"]["mapping_version"] == "eye-4.2.3/v1"
 
     async def test_a_cloud_header_stays_and_the_shadow_is_not_shown(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
