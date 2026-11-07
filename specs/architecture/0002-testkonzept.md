@@ -1,7 +1,7 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-11-04
+**Letzte Aktualisierung:** 2026-11-07 (Story #616/ADR 0139 — Prüfung von Klassifizierungsverfahren: ein Job mit Schreibgrenze und zwei einander nicht vertretenden Wächtern, ein Export, der Kennungen durch Ordnungszahlen ersetzt; die Sektion zu `eye_comparison.py` trägt einen Kopfvermerk, die E2E-Tabelle eine Zeile für die Prüfseite)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil das Dokument je Testgegenstand das
 Muster führt, das beim nächsten gleichartigen Fall wiederverwendet wird — und die benannten
 Lücken, die nirgends sonst stehen.
@@ -157,12 +157,12 @@ Gilt als wiederverwendbares Muster für jeden künftigen Job mit `asyncio.gather
    - **Gegenprobe-Pflicht:** beide Tests werden im Umsetzungslauf einmal belegt rot gesehen (eine Anweisung entfernen; zwei Anweisungen vertauschen). Ein Test, dessen beide Seiten aus derselben Quelle stammen, ist der Bauart nach anfällig dafür, leer zu bestehen — der Rot-Nachweis gehört in die PR-Beschreibung, dieselbe Regel wie bei den Layout-Specs der E2E-Ebene.
 4. **API-Ebene (`test_api_projects.py`, `authenticated_api_client`):**
    - Minimalfall (Projekt ohne Fotos/Läufe) → `204`, `GET /projects/{id}` danach `404`.
-   - **Voller Datengraph über alle dreizehn Tabellen** → `204`, danach je Tabelle eine eigene Zeilenzählungs-Assertion (nicht nur der Statuscode). Der Aufbau des Graphen gehört in eine Hilfsfunktion der Testdatei; die Assertion selbst bleibt tabellenweise ausgeschrieben, damit die Fehlermeldung die vergessene Tabelle nennt.
+   - **Voller Datengraph über alle Tabellen des Projektgraphen** → `204`, danach je Tabelle eine eigene Zeilenzählungs-Assertion (nicht nur der Statuscode). Der Aufbau des Graphen gehört in eine Hilfsfunktion der Testdatei; die Assertion selbst bleibt tabellenweise ausgeschrieben, damit die Fehlermeldung die vergessene Tabelle nennt.
    - **`fine_labels` überlebt:** zwei Projekte referenzieren denselben `fine_labels`-Eintrag, Projekt A wird über den Endpunkt gelöscht → der Eintrag existiert weiter, die `photo_fine_labels`-Zeilen von Projekt B ebenfalls, die von Projekt A sind weg. Das Modell-Ebene-Pendant (`test_deleting_project_leaves_shared_fine_label_and_other_project_untouched`) prüft den ORM-Pfad und ersetzt diesen Fall **nicht** (Punkt 1). Ebenso bleibt `users` unangetastet — der löschende Nutzer existiert nach dem `204` weiter.
    - **Projektfremde Zeilen bleiben stehen:** ein zweites Projekt mit vollem Datengraph existiert parallel und ist danach unverändert. Eine Mengenlöschung mit falsch gesetzter `where`-Bedingung (`.in_(photo_ids)` statt `.in_(...)` des richtigen Schlüssels) ist der naheliegendste Fehler dieser Bauform und ohne ein zweites Projekt im Test unsichtbar.
    - `404` bei unbekannter `project_id`; **zweiter `DELETE` auf dieselbe, bereits gelöschte ID → erneut `404`**, nicht idempotent-`204` (konsistent mit `_get_project_or_404`).
-   - **`409` je einmal pro Lauftyp — es sind vier:** `ScanRun`, `ScoringRun`, `CriterionScoringRun` und `RemoteCategoryClassificationRun`, jeweils der *neueste* Lauf mit `status=RUNNING`. Der vierte ist neu gegenüber der alten Fassung und der wichtigste: der Remote-Klassifizierungslauf schreibt in genau die Zeilen, die die Löschung entfernt. Je Fall zusätzlich die Assertion, dass das Projekt **unverändert** ist — operationalisiert als „`GET /projects/{id}` liefert weiterhin `200`" plus unveränderte Zeilenzahlen aller dreizehn Tabellen, nicht als bloßes „kein 204".
-   - **Ein nicht mehr aktueller `RUNNING`-Altlauf blockiert nicht:** älterer `RUNNING`-Lauf, neuerer `SUCCESS`-Lauf → `204`. Dieser Fall gehört zu jedem der vier Lauftypen und ist der einzige, der `_latest_*` von „irgendein RUNNING" unterscheidet.
+   - **`409` je einmal pro Lauftyp — es sind fünf:** `ScanRun`, `ScoringRun`, `CriterionScoringRun`, `RemoteCategoryClassificationRun` und `ClassificationReview`, jeweils der *neueste* Lauf mit `status=RUNNING`. Der vierte ist gegenüber der alten Fassung der wichtigste: der Remote-Klassifizierungslauf schreibt in genau die Zeilen, die die Löschung entfernt; der fünfte, die Prüfung, schreibt in eigene Tabellen, die mit dem Projekt fallen. Je Fall zusätzlich die Assertion, dass das Projekt **unverändert** ist — operationalisiert als „`GET /projects/{id}` liefert weiterhin `200`" plus unveränderte Zeilenzahlen aller Tabellen des Projektgraphen, nicht als bloßes „kein 204". Die Zeilenzahl-Zusicherung bleibt aus `Base.metadata` abgeleitet — `tests/project_graph.py` wächst um die sechs Prüftabellen, eine abgeschriebene Liste bleibt verboten.
+   - **Ein nicht mehr aktueller `RUNNING`-Altlauf blockiert nicht:** älterer `RUNNING`-Lauf, neuerer `SUCCESS`-Lauf → `204`. Dieser Fall gehört zu jedem der fünf Lauftypen und ist der einzige, der `_latest_*` von „irgendein RUNNING" unterscheidet.
    - **Namensbestätigung:** exakter Treffer → `204`; abweichende Groß-/Kleinschreibung → `400` und Projekt nachweislich noch da; Teiltreffer/leerer String → `400`; **`confirm_name` mit führenden/nachgestellten Leerzeichen → `204`** (serverseitig wird `strip()` verglichen, im Frontend nicht — eine bewusste Asymmetrie, die ohne eigenen Testfall wie ein Fehler aussieht und beim nächsten Aufräumen auf einer der beiden Seiten „korrigiert" würde); fehlendes Feld/falscher Typ/Überlänge → `422` durch das Pydantic-Modell.
    - **Kein Owner-Check:** ein zweiter, im Test angelegter `User` mit eigenem Token (`create_access_token`, kein neuer Fixture-Parameter nötig) löscht erfolgreich.
    - `401` wird vom bestehenden introspektiven `test_auth_guard.py::test_all_project_and_opencloud_routes_require_token` automatisch miterfasst, sobald die Route registriert ist — **kein neuer Testfall**.
@@ -1071,6 +1071,8 @@ Gilt als Vorlage für jede künftige kuratierte Liste gegen ein Modell-Asset: **
 
 ### Ein Bericht wächst um Laufdaten: Auswahl vor Ordnung, Summe nur vollständig, und Pflichtfelder über einem Zufallsstrom (`eye_comparison.py`) — neu für Spec 0610
 
+> **Stand seit Story #616/ADR [`0139`](../decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md):** `eye_comparison.py` und seine Tests entfallen mit der Prüfung von Klassifizierungsverfahren; die gemeinsame Vergleichslogik lebt als `classification_comparison.py`. Muster 3 (Auswahl gegen einen vor der Änderung aufgenommenen Zufallsstrom-Pin) gilt dort weiter, Muster 4 (Marker + Syntaxbaum gegen Fremdtext) im Export der Prüfung (Sektion „Ein Lauf, der nur in eigene Tabellen schreiben darf").
+
 **Teststrategie-Konsultation zur Story #610** (das rein lesende Vergleichs-CLI aus Spec 0609 bekommt je Abweichungszeile beide Vergleichswerte sowie ein `origin`- und ein `runtime`-Block). Vier Muster, jedes fängt eine Fehlerklasse, die grün bleibt, während die Datei plausibel aussieht:
 
 1. **„Der jüngste passende Lauf" wird ZUERST gefiltert und DANN geordnet — Prüfgegenstand ist die Reihenfolge der beiden Schritte, nicht das Ergebnis im Normalfall.** Im Normalfall (ein gültiger Lauf) sind beide Reihenfolgen richtig. Der Pflichtfall ist der negative: ein **neuerer** Lauf, der die Bedingung nicht erfüllt — falscher Status, `finished_at` `NULL`, Fremdschlüssel auf einen *fehlgeschlagenen* Lauf, `mode` ≠ `eye` —, darf den älteren gültigen nicht verdrängen. Ohne ihn besteht der Test auch gegen „jüngste Zeile nehmen und danach prüfen" und liefert dann still den falschen Lauf. Zweiter Pflichtfall: zwei gültige Läufe mit **gleichem** `finished_at`; der Zweitschlüssel (`id` absteigend) wird gepinnt, sonst flackert die Zahl mit der Zeilenreihenfolge der Datenbank. Beide Läufe der Messlage müssen dabei unterscheidbare Zahlen tragen, damit die Assertion den gewählten Lauf benennt und nicht nur „irgendeine Zahl" sieht.
@@ -1080,6 +1082,74 @@ Gilt als Vorlage für jede künftige kuratierte Liste gegen ein Modell-Asset: **
 Dazu ein Einzelpunkt ohne eigenes Muster: **eine Dauer wird nicht geklemmt.** Ergibt `finished_at - started_at` einen negativen Wert (Uhrensprung zwischen den beiden Server-Zeitstempeln), steht er als negativer `duration_seconds` in der Datei — dieselbe Richtung wie „im Zweifel verworfen, nie geklemmt" bei den Motivstärken: `0` wäre eine erfundene Messung, ein negativer Wert ein sichtbarer Befund. Der Fall gehört auf die Unit-Ebene über `full_report`, nicht in die Lauf-Auswahl.
 
 Gilt als Vorlage für jedes rein lesende Berichtswerkzeug, das nachher Lauf-Metadaten aufnimmt: erst filtern, dann ordnen; Summen nur vollständig; Pflichtfelder gegen einen Vorher-Pin; Fremdtext über Marker und Syntaxbaum aussperren.
+
+### Ein Lauf, der nur in eigene Tabellen schreiben darf: zwei Wächter, die einander nicht vertreten, und ein Export, der Kennungen durch Ordnungszahlen ersetzt (`classification_review.py`/`classification_comparison.py`/`api/classification_reviews.py`) — neu für ADR [`0139`](../decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md) / Spec [`0616`](../features/0616-klassifizierungsverfahren-vergleichen.md)
+
+Erster Job des Projekts, dessen Zusage eine **Schreibgrenze** ist: er darf ausschließlich in sechs
+eigene Tabellen schreiben und keine bestehende Tabelle berühren. Diese Zusage hat keinen
+Rot-Zustand, den ein Verhaltenstest allein einnehmen könnte, und keinen Fehlercode, der sie
+meldet. Acht Muster:
+
+1. **Die Schreibgrenze wird über die FORM geprüft, nicht über ein Verhalten** — mit
+   `tests/write_guard.py::write_statements()` je Modul, plus einer **Ziel-Allowlist**: die
+   Modellnamen in den Schreibaufrufen werden gesammelt und gegen die sechs Prüfmodelle geprüft.
+   Gegenprobe-Pflicht in beide Richtungen: ein Schnipsel mit `upsert_assessment(...)` muss
+   gefunden werden, ein Schnipsel mit `api_calls = ...` nicht. Die Allowlist wird aus dem
+   Modulimport abgeleitet, nicht als Zeichenkettenliste abgeschrieben.
+2. **Ein Namenswächter für verbotene Aufrufe, weil ein Import-Wächter hier blind ist.** Die
+   verbotenen Funktionen (`run_classification`, `run_criterion_scoring`,
+   `run_remote_category_classification`, `_run_eye_phase`, `upsert_assessment`,
+   `select_remote_category_candidates`, `_build_classification_estimate`) liegen **im selben
+   Modul** (`worker.py`) wie der neue Job; `import_closure` kann sie nicht unterscheiden.
+   Geprüft wird die aufgerufene Funktion über `ast.Call` (Attribut **und** blanker Name), mit
+   Positiv- und Negativ-Gegenprobe.
+3. **Der Strukturwächter allein genügt nie — der Verhaltenstest daneben ist der zweite Flügel.**
+   Ein Schreibpfad hinter einem nicht betretenen Zweig ist ihm unsichtbar; eine Schreibhilfe in
+   einem dritten Modul ebenso. Der Verhaltenstest snapshotet den **gesamten** Bestand, der
+   „geltende Ergebnisse" trägt (Kopfzeile samt `source`, Stärken, Korrekturen, Kriterien-Scores,
+   Albumtauglichkeit, Ausschuss, Rangfolge, Cloud-Vision-Fehler, `photo_eye_*`,
+   `photo_local_motif_snapshot*`, Fotozeilen, Kostenspalten der vier Lauf-Tabellen) und vergleicht
+   Zeile für Zeile. Der Gegenstand ist die **Menge der Tabellen**, nicht eine Stichprobe: die
+   Fehlermeldung muss die verletzte Tabelle nennen.
+4. **„Verhält sich wie ohne" ist eine Aussage über einen ZWEITEN Lauf, nicht über den Zustand.**
+   Geprüft wird der nächste normale Klassifizierungslauf: die `estimated_cost_usd`, die der
+   Auslöser an den Enqueuer übergibt, und die Kandidatenmenge — verglichen gegen ein
+   Zwillingsprojekt ohne Prüfung, nicht gegen eine abgeschriebene Zahl. Eine Erwartung „Kosten
+   unverändert" ohne diesen Lauf bestünde auch dann, wenn die Prüfung nur die Spalte nicht
+   schreibt, aus der die Anzeige liest.
+5. **Eine verallgemeinerte Zufallsauswahl wird gegen das alte Werkzeug gepinnt, solange beide
+   existieren** (Fortführung von Muster 3 der Sektion zu `eye_comparison.py`): `_sample` zieht aus
+   `eye_comparison` in ein gemeinsames Modul um. Ein Test vergleicht für dieselbe
+   Abweichungsliste und dieselbe Seed die **Auswahl** (nicht die Zählungen — deren Einheit ändert
+   sich bewusst von Motiv-Paaren auf Fotos) und wird mit dem alten Modul gelöscht; sein
+   dauerhafter Rest ist die Literalliste `(Fotonummer, Zweck, motif_key)`. Damit ist die Auswahl
+   gegen genau den Umbau gepinnt, der sie still verändern könnte.
+6. **Ein Export, der keine Kennung tragen darf, ersetzt sie durch eine Ordnungszahl — und die
+   Bindung dieser Zahl ist selbst ein Test.** Neu gegenüber der Sektion zu Spec 0610: die
+   laufende Fotonummer existiert an zwei Stellen (Export und Fallansicht). Geprüft wird die
+   **Gleichheit beider Zahlen** aus einer Fixture, nicht jede für sich; dazu, dass die Nummern bei
+   lückenhaften Foto-Ids bei `1` beginnen. Die Marker-Technik aus 0610 (einprägsame Zeichenfolge
+   in jede verbotene Spalte, Abwesenheit im serialisierten JSON) gilt unverändert; der
+   Syntaxbaum-Wächter bekommt zusätzlich die Attributendungen `relative_path`, `taken_at`,
+   `latitude`/`longitude`, `display_name` auf `fine_labels` und die Lesung von `Project.name` und
+   `User.*`.
+7. **Ein Vergleich hat drei Ausgänge, nicht zwei.** Bisher kannte das Projekt „Wert"/„kein Wert";
+   hier kommt „nicht verglichen" hinzu, und es darf weder als Übereinstimmung noch als Abweichung
+   gezählt werden. Der Pflichtfall ist der mit **einer** fehlenden Seite (nicht der mit zwei):
+   bei zwei fehlenden Seiten ist „nicht verglichen" auch mit einer naiven Implementierung richtig,
+   bei einer fehlenden Seite wird sie zur Scheinabweichung bzw. Scheinübereinstimmung. Dazu die
+   Invarianten `übereinstimmend + abweichend = verglichen` und
+   `vorgelegt = min(Prüfgröße, abweichend)` je Zweck als Nachsatz über **jeder** Fixture.
+8. **Tastenkürzel, die mit Browserkürzeln kollidieren, werden als Partition geprüft.** Die
+   Urteilstasten A/B/O/F sind genau die Buchstaben von `Strg+A` und `Strg+F`. Geprüft wird in drei
+   Zuständen (ohne Modifier → schreibt; mit Strg/Meta/Alt → schreibt nicht, kein Request; Fokus in
+   einem Textfeld → schreibt nicht), jeweils mit der Zusatzforderung, dass die Taste im
+   schreibenden Fall **genau ihr** Urteil setzt und die anderen drei unberührt lässt — dieselbe
+   Tabellenform wie bei der Tastenbelegung der Einzelbildansicht, ergänzt um die Zusage, dass die
+   Ziffern 1/2/3 hier nichts auslösen.
+
+Gilt als Vorlage für jeden künftigen Job mit einer Schreibgrenze, für jede Verallgemeinerung
+einer Zufallsauswahl und für jeden Export, der Kennungen durch Ordnungszahlen ersetzt.
 
 ## Frontend (`frontend/`, `vitest` + Testing Library)
 
@@ -1601,7 +1671,7 @@ Verschwindet `e2e` dort — etwa beim Umbenennen des Jobs, denn der Schutz binde
 
 ### Umfang: welche Specs es gibt und woran jeder scheitert
 
-Der Satz bleibt klein und deckte mit seinen ersten sieben Specs genau die zuvor als „manueller **visueller** Smoke-Test vor Merge" geführten Punkte ab. Der achte, `toolchain`, prüft nicht die Anwendung, sondern die Zusagen dieser Prüfebene selbst — er steht bewusst im selben blockierenden Lauf, weil eine Zusage, die nur in einer Konfigurationsdatei steht, sich still wegkonfigurieren lässt. Der neunte, `project-nav` (Spec 0298), ist der erste, der **nicht** eine bestehende manuelle Zusage ablöst, sondern mit dem Feature zusammen entsteht — das Aufnahmekriterium ist unverändert erfüllt (Breakpoint-Wechsel, Kopfzeilenhöhe und Überlagerung sind Geometrie), und die Ebene ist damit ausdrücklich kein reines Nachrüstwerkzeug für Altlasten. Je Spec ist festgehalten, welche Vorbedingung den trivialen Grün-Fall ausschließt:
+Der Satz bleibt klein und deckte mit seinen ersten sieben Specs genau die zuvor als „manueller **visueller** Smoke-Test vor Merge" geführten Punkte ab. Der achte, `toolchain`, prüft nicht die Anwendung, sondern die Zusagen dieser Prüfebene selbst — er steht bewusst im selben blockierenden Lauf, weil eine Zusage, die nur in einer Konfigurationsdatei steht, sich still wegkonfigurieren lässt. Der neunte, `project-nav` (Spec 0298), ist der erste, der **nicht** eine bestehende manuelle Zusage ablöst, sondern mit dem Feature zusammen entsteht — das Aufnahmekriterium ist unverändert erfüllt (Breakpoint-Wechsel, Kopfzeilenhöhe und Überlagerung sind Geometrie), und die Ebene ist damit ausdrücklich kein reines Nachrüstwerkzeug für Altlasten. Ein Feature, dessen Seite ein Ergebnis eines Hintergrundjobs zeigt, wird im Demo-Seeder als **Ergebnis** angelegt, nie durch einen ausgelösten Job (`demo_state.py`) — erst dann darf sein Spec die Geometrie dieser Seite prüfen wie jede andere, und ohne diesen Satz ist die Prüfseite für die einzige Ebene blind, die Geometrie messen kann. Je Spec ist festgehalten, welche Vorbedingung den trivialen Grün-Fall ausschließt:
 
 | Spec | Prüft | Was ihn bei kaputtem Layout rot macht |
 |---|---|---|
@@ -1618,12 +1688,14 @@ Der Satz bleibt klein und deckte mit seinen ersten sieben Specs genau die zuvor 
 | `kuratierung-grossansicht` | **Neu mit Spec [`0531`](../features/0531-kuratierung-grossansicht.md), in beiden Breiten:** Ausdehnung der Großansicht an der `sm`-Grenze (639 px randlos, 640 px mit 48 px seitlichem und 24 px oberem/unterem Rand), Treffer auf dem Rand liefert den Backdrop, Deckkraft von `::backdrop` > 0; das Bild in zwei Formaten und mit aufgeklappten Details in der Bühne eingepasst (eine Achse bündig, Format wie das natürliche); Klick neben das Bild schließt, auf das Bild nicht; scrollY, URL, Fokus und Verlaufsposition je Schließweg; zweimal Escape (synthetisch und nativ); Reload | paarweise verschiedene Formate als Vorbedingung; zwei Ausdehnungen, die sich unterscheiden müssen; scrollY, URL und Fokus je Schließweg unverändert, auch mit einem Auslöser, der nur **teilweise** im Sichtfenster liegt, und bei einem Öffnen ohne Fokus (wie Safari) — dass die Fokus-Rückgabe mit `preventScroll` fokussiert, erzwingt nicht dieser Spec, sondern der Unit-Test `useCurationLightbox.test.tsx > focuses the registered trigger without scrolling when the photo closes`; die Verlaufsposition (`navigation.currentEntry.index`) ist **sofort** nach dem Verschwinden der Großansicht dieselbe wie vor dem Öffnen, je Schließweg und nach zweimal Escape — ohne `expect.poll`, denn ein Warten verdeckte genau den Moment, in dem ein Nutzer wieder Zurück drückt; genau **ein** `goBack()` bis zur Projektseite, deren URL erst nach der letzten Weiterleitung festgehalten ist; jede Meldung nennt Test und Schließweg; Gegenprobe: `close()` stets im `replace`-Zweig macht beide Tests am ersten Schließweg rot; Rot-Nachweis im PR |
 | `duplikat-vergleich` | **Neu mit Spec [`0533`](../features/0533-duplikatstapel-vergleichsansicht.md), in beiden Breiten:** Wahlschaltflächen liegen im Rechteck ihrer Karte; die Großansicht ordnet Seitenspalte und Bühne ab `lg` nebeneinander, darunter untereinander, den Streifen darunter; das Bühnenbild wird per Eck-Treffertest auf dem Inhaltsrechteck von `object-contain` selbst getroffen | zwei Anordnungen, die sich unterscheiden müssen; Vorbedingung, dass die Großansicht offen ist (`h2` sichtbar); Kardinalität der gemessenen Karten mit Wahlzeile; Streifen mit `scrollWidth > clientWidth` |
 | `ausschuss-stapel` | **Neu mit Spec 0533, in beiden Breiten:** die Duplikat-Stapel im Ausschuss-Schritt des Projekts „Demo — Duplikate“ (B1/B4/B5) | genau zwei Stapel als Vorbedingung; hintere Karten ragen nicht oben und rechts über die vordere oder liegen außerhalb der Kachel; Treffertest auf die nur von ihnen belegte Fläche liefert nicht den Link; Kennzeichen oder Dateiname außerhalb der vorderen Karte; eine gekürzte Beschriftung außer dem Dateinamen |
+| `klassifizierung-pruefung` | **Neu mit Story #616/ADR [`0139`](../decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md), in beiden Breiten:** die Fallansicht und die Übersicht einer **geseedeten, abgeschlossenen** Prüfung — zwei Spalten ab `lg`, eine darunter; die mitlaufende Kopfleiste verdeckt die Fotoüberschrift der Fallansicht nicht; das Inhaltsrechteck des `object-contain`-Bildes ist frei; die vier Urteilsflächen sind bei 360 px an allen vier Ecken treffbar (≥ 44 px); kein waagerechtes Scrollen bei 360 px | zwei Anordnungen, die sich unterscheiden müssen; Vorbedingung: die Prüfung steht auf `SUCCESS` und die Fallansicht zeigt einen Fall; ein Treffertest im Inhaltsrechteck, der ein Nachbarelement liefert, eine verdeckte Fotoüberschrift oder `scrollWidth > clientWidth` bei 360 px macht ihn rot |
 | `release-wechsel` | **Neu mit Spec [`0565`](../features/0565-neue-version-ohne-hard-reload.md), nur `desktop`:** nach einem Release lädt F5, ein Deep-Link und eine neu geöffnete Seite beim ersten Mal das Einstiegs-Bundle des neuen Builds, ohne Request an Assets des alten und ohne Umweg über `/login`; eine laufende Sitzung lädt beim SW-Wechsel nicht neu; offline startet die zuletzt geladene Version — vor dem Release A, nach F5 auf B und Übernahme durch dessen Worker B | Einstiegs-Bundle ≠ dem der aktuellen Server-`index.html`; ein Request an eine nur im alten Build vorhandene Datei; Fenster-Marker, Eingabe, Route oder Scrollposition nach `controllerchange` verändert; App-Hülle offline nicht sichtbar oder offline ein anderes Einstiegs-Bundle als das zuletzt vorgehaltene |
 | `toolchain` | **Nicht die Anwendung, sondern die Zusagen dieser Ebene selbst:** das Verlässlichkeitsregime (`retries: 0`, `forbidOnly`, `workers: 1`), die zwei festen Viewport-Projekte, die Ziel-Allowlist der Ad-hoc-Werkzeuge (`resolveBaseUrl`), die Origin-Passung des gespeicherten Anmeldezustands (`authStateCoversOrigin`), und die Bindung von vier Doku-/Code-Aussagen aneinander (Unverbindlichkeit von `review-ux`, Freigabe-Zeichenkette und Demo-Projektnamen aus `demo_state.py`, Token-Schlüssel aus `frontend/src/auth/token.ts`) | geprüft wird der **wirksame** Konfigurationswert, nicht der Dateiinhalt — eine Textsuche ließe sich mit `--retries=2` umgehen; die Projektliste hat eine exakte Kardinalitäts-Assertion; `resolveBaseUrl` und `authStateCoversOrigin` haben je Bedingung einen eigenen Abweisungsfall **plus** Positivfall, sonst bestünde auch eine Sperre, die schlicht alles ablehnt (bei `authStateCoversOrigin` wäre genau das ein Dauer-Neuanmelden statt eines stillen Fehlers) |
 
 **Nachtrag Spec [`0578`](../features/0578-alternativen-serie-und-hinzufuegen.md) zu zwei Zeilen der Tabelle:** `no-horizontal-scroll` misst im Album-Entwurf statt des entfallenen Dialogs „Alle Alternativen" das geöffnete Band **zugeklappt (Serie) und aufgeklappt** (Vorbedingung: Raster mit ≥ 1 Alternative und Umschalter mit `aria-expanded=true` sichtbar, kein `role="dialog"` im Dokument) und dazu je Zustand „Tauschen"/„Hinzufügen" der ersten Alternative: sichtbar ≥ 44 px hoch, untereinander mit ≥ 12 px Abstand (`boundingBox`, nicht Treffertest — hier ist die **sichtbare** Höhe die Zusage). `tap-targets` prüft im Band zusätzlich „Hinzufügen", den Umschalter „Alle Fotos des Events" und „Schließen", in der aufgeklappten Reihe „Tauschen", „Hinzufügen", „Weniger anzeigen" und „Weitere Fotos"; `EXPECTED_CONTROL_COUNT` ist bewusst von 38 auf **45** angehoben. Weil der Demo-Bestand kein Event mit mehr als 60 Alternativen hat, hebt der Spec für „Weitere Fotos" per `page.route` allein `total` der **echten** Serverantwort der vollen Reihe an (Fotos, Reihenfolge und Marke bleiben die des Servers) und nimmt die Umleitung danach wieder weg. **Regel dafür:** Ein Antwort-Eingriff im E2E-Satz ist nur zulässig, wenn er eine fehlende Datenlage für eine **Geometrie**-Zusage herstellt, die echte Antwort durchreicht und nur das eine Feld ändert, das den Zustand auslöst; das Verhalten hinter dem Bedienelement (Nachladen, Marke auf späterer Seite) bleibt in vitest belegt.
 
 **Nachtrag Spec [`0579`](../features/0579-kuratierungskacheln-foto-im-mittelpunkt.md):** „Tauschen"/„Hinzufügen" stehen **nebeneinander**: je sichtbar ≥ 44 × 44 px, gleiche Zeile, ≥ 12 px waagerechter Abstand (`boundingBox`). Die Haltungszeilen der Endauswahl werden auf „Name und Symbolzeichen in einer Zeile" geprüft (das Zeichen trägt kein Wort mehr). `foto-karte-raster.spec.ts` ist **ersetzt**: statt Spaltenleiter 2/3/4 und quadratischer Fläche misst er je Raster (Entwurf, Band, Panel, Endauswahl beide Sichten, 360 und 1280 px) Bildfläche im Fotoverhältnis, gleiche Höhe je Reihe, bündige volle Reihe, Reihenhöhe in [200, 350] bei 1280 px, Kachel ≥ 100 px, einzeilige Knopfzeile ≤ Kachelbreite und Symbolmodus genau unterhalb der Schwelle; dazu Band hinter der gerechneten Reihe, Leiste per Hover und Tab-Fokus innerhalb der Bildfläche, Kurzbeschriftung innerhalb der Kachel und langer Druck in einem Touch-Kontext (Leiste sichtbar, kein Dialog). `popover-position.spec.ts` misst den Album-Entwurf nicht mehr (dort gibt es keinen Popover-Auslöser). Die Sektion 0489 Punkt 5 (`GRID_GAP_PX` gegen `gap-3`) gilt jetzt auch für die Kuratierungsraster (`designSystem.contract.test.ts`).
+**Nachtrag Story #616/ADR [`0139`](../decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md):** `project-nav.spec.ts` (Zeilenzahl des Panels), `no-horizontal-scroll.spec.ts` (Routentabelle) und `tap-targets.spec.ts` werden um die neue Route bzw. um die vier Urteilsflächen **nachgezogen, nicht abgeschwächt**.
 
 **Bewusst nicht aufgenommen**, obwohl inhaltlich naheliegend: (a) **Skelett-/Ladezustände** — sie deterministisch sichtbar zu machen verlangte künstliche Verzögerungen, also genau die festen Wartezeiten, die das Regime ausschließt; (b) **visuelle Unterscheidbarkeit der Bewertungs-Badge-Farben** — das ist eine nachrechenbare Zusage und liegt bereits im Kontrast-Block des Design-Vertrags (`designSystem.contract.test.ts`), ein E2E-Spec brächte dort nichts hinzu und dupliziert eine bestehende Zusicherung; (c) **pixelbasierter Referenzbildvergleich** (`toHaveScreenshot`) — eigene, spätere Frage mit einem eigenen Sprunghaftigkeitsproblem.
 
