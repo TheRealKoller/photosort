@@ -1564,26 +1564,32 @@ def _demo_review_statements(
     index: int,
 ) -> tuple[dict[str, dict[str, float]], dict[str, bool], dict[str, int]]:
     """Beide Seitenaussagen zum `index`-ten Foto der Pruefmenge (ab 0): Staerken, Ausschluss,
-    Albumstufe je Seite. Jeder Zweck weicht an mindestens einem Foto ab, die uebrigen Fotos
-    stimmen ueberein - sonst blieben die Spalten "uebereinstimmend" der Uebersicht leer."""
+    Albumstufe je Seite.
+
+    Die Abweichungen sind ABSICHTLICH breit gestreut: jedes Foto traegt null bis drei abweichende
+    Motive, einzelne Fotos weichen beim Dokument-Ausschluss und bei der Albumstufe ab, andere
+    stimmen ueberein. Beide Spalten der Uebersicht ("uebereinstimmend" und "abweichend") sind
+    damit belegt, und die Fallansicht hat mehr als eine Handvoll Faelle - sie ist im Pruefstack
+    der Ort, an dem Urteile geschrieben werden.
+    """
     keys = list(MOTIF_REGISTRY)
     a = {
         key: _DEMO_REVIEW_STRONG if (index + offset) % 3 == 0 else _DEMO_REVIEW_WEAK
         for offset, key in enumerate(keys)
     }
     b = dict(a)
-    if index % 2 == 0:
-        flipped = keys[index % len(keys)]
-        b[flipped] = _DEMO_REVIEW_WEAK if a[flipped] == _DEMO_REVIEW_STRONG else _DEMO_REVIEW_STRONG
+    for step in range(index % 4):
+        key = keys[(index + step) % len(keys)]
+        b[key] = _DEMO_REVIEW_STRONG if a[key] == _DEMO_REVIEW_WEAK else _DEMO_REVIEW_WEAK
     a_level = ALBUM_SUITABILITY_MIN_LEVEL + index % ALBUM_SUITABILITY_MAX_LEVEL
     b_level = (
         ALBUM_SUITABILITY_MIN_LEVEL + (index + 1) % ALBUM_SUITABILITY_MAX_LEVEL
-        if index % 3 == 0
+        if index % 3 in (0, 1)
         else a_level
     )
     return (
         {"a": a, "b": b},
-        {"a": False, "b": index == 1},
+        {"a": index == 5, "b": index == 1},
         {"a": a_level, "b": b_level},
     )
 
