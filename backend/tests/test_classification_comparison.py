@@ -203,6 +203,18 @@ class TestTheSampleIsSeededAndSorted:
 
         assert first.cases != second.cases
 
+    def test_the_selection_does_not_depend_on_the_input_order(self) -> None:
+        """Gleicher Seed und gleiche Abweichungsliste ergeben dieselbe Auswahl, unabhaengig von
+        der Reihenfolge der Zeilen: `rng.sample` zieht POSITIONEN, deshalb muss die
+        Kandidatenliste je Zweck vor dem Ziehen in fester Ordnung stehen."""
+        photos = self._photos()
+
+        forward = compare_review(photos, seed=4711, limit=4)
+        backward = compare_review(list(reversed(photos)), seed=4711, limit=4)
+
+        assert forward.cases == backward.cases
+        assert forward.counts == backward.counts
+
     def test_the_cases_are_sorted_by_photo_then_purpose_then_motif(self) -> None:
         photos = [
             _photo(

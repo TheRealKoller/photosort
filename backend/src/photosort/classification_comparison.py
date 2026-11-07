@@ -173,8 +173,10 @@ def _sample(cases: Sequence[Case], *, seed: int, limit: int) -> tuple[Case, ...]
     """Hoechstens `limit` Faelle JE ZWECK, seeded ausgewaehlt und anschliessend sortiert.
 
     Ein gemeinsamer Generator ueber die Zwecke in fester Reihenfolge: der Strom haengt damit nur
-    an der Seed und den Zaehlungen, nicht an der Reihenfolge der Faelle im Bestand. Die Sortierung
-    danach macht den gespeicherten Bestand unabhaengig von der Zufallsreihenfolge lesbar.
+    an der Seed und den Zaehlungen, nicht an der Reihenfolge der Faelle im Bestand. `rng.sample`
+    zieht POSITIONEN, deshalb steht die Kandidatenliste je Zweck vorher in `_sort_key`-Ordnung -
+    sonst waere die Zusage an die Eingabereihenfolge gebunden. Die Sortierung danach macht den
+    gespeicherten Bestand unabhaengig von der Zufallsreihenfolge lesbar.
     """
     if limit <= 0:
         return ()
@@ -184,7 +186,7 @@ def _sample(cases: Sequence[Case], *, seed: int, limit: int) -> tuple[Case, ...]
     rng = random.Random(seed)
     chosen: list[Case] = []
     for purpose in PURPOSES:
-        rows = by_purpose[purpose]
+        rows = sorted(by_purpose[purpose], key=_sort_key)
         if rows:
             chosen.extend(rng.sample(rows, min(limit, len(rows))))
     return tuple(sorted(chosen, key=_sort_key))
