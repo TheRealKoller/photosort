@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.api import (
     album_decisions,
     cameras,
+    classification_reviews,
     duplicate_decisions,
     export,
     feedback,
@@ -185,6 +186,10 @@ def _protected_router_operations() -> list[tuple[str, str]]:
         # Der Merker "Ablaufuebersicht gesehen". `projects.router` deckt das gemeinsame Praefix
         # NICHT ab - gelaufen wird ueber Router, nicht ueber Pfade.
         project_overview.router,
+        # S10 der Spec 0616: jeder der acht Endpunkte, auch die reinen Lesepfade. Die Praefix-
+        # Ebene von `projects.router` deckt diesen Router NICHT ab, weil gelaufen wird ueber
+        # Router, nicht ueber Pfade.
+        classification_reviews.router,
     ):
         for route in router.routes:
             path = getattr(route, "path", "")
