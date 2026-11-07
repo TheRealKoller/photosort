@@ -78,6 +78,9 @@ from photosort.eye_client import (
     build_eye_client,
 )
 from photosort.eye_mapping import (
+    MAPPING_VERSION as EYE_MAPPING_VERSION,
+)
+from photosort.eye_mapping import (
     MODEL_REVISION as EYE_MODEL_REVISION,
 )
 from photosort.eye_mapping import (
@@ -2765,6 +2768,7 @@ async def _write_eye_shadow_rows(
                 excluded_document=analysis.excluded_document,
                 album_level=analysis.album_level,
                 model_revision=EYE_MODEL_REVISION,
+                mapping_version=EYE_MAPPING_VERSION,
                 computed_at=computed_at,
             )
         )
@@ -2839,7 +2843,7 @@ async def _run_eye_phase(
                 continue
             # Eine Antwort ohne Aussage (fehlende Albumstufe) ist ein Defekt des Dienstes, kein
             # unlesbares Bild - `EyeMappingError` bricht die Phase ab.
-            analyses[photo.id] = map_eye_analysis(payload)
+            analyses[photo.id] = map_eye_analysis(payload, EYE_MAPPING_VERSION)
             run.eye_photos_processed = len(analyses)
             if len(analyses) % EYE_PROGRESS_COMMIT_BATCH_SIZE == 0:
                 run.last_progress_at = _now_utc()

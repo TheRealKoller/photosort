@@ -25,6 +25,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort.worker as worker
+from photosort.eye_mapping import MAPPING_VERSION, MAPPING_VERSION_V1
 from photosort.models import (
     ClassificationMode,
     ClassificationPhase,
@@ -269,6 +270,7 @@ async def test_every_readable_photo_gets_the_full_shadow_set(
 
     result, strengths = await _eye_rows(db_session, photo.id)
     assert result.model_revision == "v1.0.0"
+    assert result.mapping_version == MAPPING_VERSION == "eye-4.2.3/v2"
     assert result.album_level == 3
     assert result.excluded_document is False
     # Acht Zeilen, immer - was Eye nicht nennt, steht mit 0.0 da.
@@ -282,6 +284,57 @@ async def test_every_readable_photo_gets_the_full_shadow_set(
         )
     ).all()
     assert [label for label, _ in labels] == ["mountain", "sky", "dog"]
+
+
+async def test_a_new_run_replaces_a_v1_row_with_the_run_mapping(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Eine bestehende Zeile behaelt v1, bis ein neuer Lauf sie ersetzt - danach traegt sie die
+    Lauf-Fassung und deren Werte."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_run(db_session, project)
+    photo = await _add_photo(db_session, project, "a.jpg", tmp_path)
+    db_session.add(
+        PhotoEyeResult(
+            photo_id=photo.id,
+            excluded_document=True,
+            album_level=1,
+            model_revision="v1.0.0",
+            mapping_version=MAPPING_VERSION_V1,
+            computed_at=datetime(2026, 1, 1),
+        )
+    )
+    await db_session.commit()
+    client = FakeEyeClient({photo.id: _payload(kind="map", tags={"pet": 0.8})})
+
+    await _run(db_session, project, scoring_run, tmp_path, client=client)
+
+    result, _ = await _eye_rows(db_session, photo.id)
+    assert result.mapping_version == MAPPING_VERSION
+    assert result.excluded_document is False
+    assert result.album_level == 3
+    tiere = await db_session.scalar(
+        select(PhotoEyeMotifStrength.strength).where(
+            PhotoEyeMotifStrength.photo_id == photo.id,
+            PhotoEyeMotifStrength.motif_key == "tiere",
+        )
+    )
+    assert tiere == pytest.approx(0.8)
+
+
+@pytest.mark.parametrize(("kind", "excluded"), [("map", False), ("receipt", True)])
+async def test_the_run_excludes_by_the_v2_document_types(
+    db_session: AsyncSession, tmp_path: Path, kind: str, excluded: bool
+) -> None:
+    project = await _make_project(db_session)
+    scoring_run = await _add_run(db_session, project)
+    photo = await _add_photo(db_session, project, "a.jpg", tmp_path)
+    client = FakeEyeClient({photo.id: _payload(kind=kind)})
+
+    await _run(db_session, project, scoring_run, tmp_path, client=client)
+
+    result, _ = await _eye_rows(db_session, photo.id)
+    assert result.excluded_document is excluded
 
 
 async def test_the_promotion_writes_the_eye_header_when_no_cloud_header_exists(

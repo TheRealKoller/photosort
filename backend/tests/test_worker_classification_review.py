@@ -867,6 +867,44 @@ class TestFailuresAndCosts:
         assert review.error_message == ERROR_EYE_UNAVAILABLE
         assert review.phase is None
 
+    async def test_an_eye_side_without_a_version_fails_without_asking_eye(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Kein Rueckfall auf die Lauf-Fassung: die Seite ohne Fassung beendet die Pruefung mit
+        dem festen Sammelsatz, bevor Eye ein einziges Foto sieht - und der Satz nennt keine
+        Fassung, keinen Host und keinen Stacktrace."""
+        project = await _make_project(db_session)
+        user = await _make_user(db_session)
+        await _add_photo(db_session, project, tmp_path, "one.jpg")
+        review = await _make_review(
+            db_session,
+            project,
+            user,
+            [
+                _side("a", ClassificationReviewSideKind.EYE, eye_mapping_version=None),
+                _side("b", ClassificationReviewSideKind.LOCAL),
+            ],
+        )
+        eye = FakeEyeClient()
+
+        await execute_classification_review(
+            db_session,
+            review,
+            tmp_path,
+            build_eye_client=lambda: eye,
+            build_detector=lambda: None,
+            build_animal_detector=lambda: None,
+            build_classifier=lambda: None,
+            build_aesthetics=lambda: None,
+            build_landmarker=lambda: None,
+        )
+
+        assert review.status == ScanStatus.FAILED
+        assert review.error_message == ERROR_GENERIC
+        assert "eye-4.2.3" not in (review.error_message or "")
+        assert eye.analyze_calls == 0
+        assert await _result_rows(db_session, review.id, "a") == []
+
     async def test_a_cloud_side_without_consent_never_builds_a_client(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:

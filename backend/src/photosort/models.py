@@ -1111,7 +1111,8 @@ class PhotoEyeResult(Base):
     Motiv-Kopfzeile: ein Schreibpfad, der die Spalte vergisst, soll laut scheitern statt still
     ein Foto aus jeder Motivauswahl zu nehmen. `album_level` ist die Eye-Albumstufe 1..5;
     `model_revision` benennt das gerechnete Modell, weil ein Pin-Wechsel sonst still unter
-    bestehenden Zeilen liefe.
+    bestehenden Zeilen liefe. `mapping_version` benennt die Fassung der Uebersetzung
+    (`eye_mapping.MAPPINGS`), mit der die Zeile entstand - ebenfalls NOT NULL ohne Default.
 
     Eye schreibt NIE in `photo_album_suitability`, `photo_fine_labels` oder `fine_labels`: die
     Album-Entwurfsmenge und die Cloud-Kandidatenauswahl bleiben unberuehrt. Die Eye-Feinlabels
@@ -1126,6 +1127,7 @@ class PhotoEyeResult(Base):
     excluded_document: Mapped[bool]
     album_level: Mapped[int]
     model_revision: Mapped[str]
+    mapping_version: Mapped[str]
     computed_at: Mapped[datetime]
 
     photo: Mapped[Photo] = relationship(back_populates="eye_result")

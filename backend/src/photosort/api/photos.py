@@ -379,10 +379,12 @@ class EyeResultOut(BaseModel):
     `fine_labels` sind die ROHEn Eye-Tags ab Konfidenz 0.5, beim Schreiben zeichensaniert und
     laengenbegrenzt (S12) - deshalb hier als reine Textknoten, ohne weitere Umformung. Die
     Modellrevision steht hier und NICHT in `MotifAssessmentOut.provider`: Eye ist kein
-    Cloud-Anbieter."""
+    Cloud-Anbieter. `mapping_version` ist die Fassung der Uebersetzung, mit der die Zeile entstand
+    - ein serverseitiger Schluessel von `eye_mapping.MAPPINGS`, als Rohwert."""
 
     album_level: int
     model_revision: str
+    mapping_version: str
     computed_at: datetime
     fine_labels: list[str]
 
@@ -1023,6 +1025,7 @@ def _eye_result_out(photo: Photo) -> EyeResultOut | None:
     return EyeResultOut(
         album_level=result.album_level,
         model_revision=result.model_revision,
+        mapping_version=result.mapping_version,
         computed_at=result.computed_at,
         fine_labels=[
             label.label

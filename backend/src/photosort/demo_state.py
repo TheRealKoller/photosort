@@ -1045,6 +1045,7 @@ async def _seed_motif_assessments(
                 excluded_document=False,
                 album_level=_DEMO_EYE_ALBUM_LEVEL,
                 model_revision=_DEMO_EYE_MODEL_REVISION,
+                mapping_version=EYE_MAPPING_VERSION,
                 computed_at=_BASE_SCORING_AT,
             )
         )

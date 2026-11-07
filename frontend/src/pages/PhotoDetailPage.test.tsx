@@ -22,6 +22,7 @@ import type {
 import { setToken } from '../auth/token'
 import { MOTIF_KEYS, MOTIF_SET } from '../test/motifSetFixture'
 import { formatAlbumSuitabilityLevel } from '../utils/albumSuitability'
+import { formatDateTime } from '../utils/formatStats'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
 // (`useCategoriesQuery`) - ohne Mock liefe diese Query in einen echten Request und die Seite
@@ -1363,6 +1364,7 @@ describe('PhotoDetailPage', () => {
     const EYE_RESULT = {
       album_level: 3,
       model_revision: 'v1.0.0',
+      mapping_version: 'eye-4.2.3/v2',
       computed_at: '2026-09-12T10:00:00Z',
       fine_labels: ['urlaub', 'strand'],
     }
@@ -1398,6 +1400,36 @@ describe('PhotoDetailPage', () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
     })
+
+    // Die Fassung der Uebersetzung steht als Rohwert zwischen Modellrevision und Zeitpunkt - fuer
+    // jede Fassung, die die Zeile traegt.
+    it.each(['eye-4.2.3/v2', 'eye-4.2.3/v1'])(
+      'nennt Modellrevision, Übersetzung %s und Zeitpunkt in dieser Reihenfolge',
+      async (mappingVersion) => {
+        vi.mocked(photosApi.listPhotos).mockResolvedValue({
+          items: [
+            photo({
+              id: 1,
+              motif_assessment: EYE_ASSESSMENT_LOCAL,
+              motifs: motifStrengths(),
+              eye_result: { ...EYE_RESULT, mapping_version: mappingVersion },
+            }),
+          ],
+          total: 1,
+        })
+
+        renderPage('/projects/1/photos/1')
+
+        const band = await screen.findByTestId('eye-band')
+        const text = band.textContent ?? ''
+        const revision = text.indexOf('Modellrevision v1.0.0,')
+        const mapping = text.indexOf(`Übersetzung ${mappingVersion},`)
+        const timestamp = text.indexOf(formatDateTime(EYE_RESULT.computed_at))
+        expect(revision).toBeGreaterThanOrEqual(0)
+        expect(mapping).toBeGreaterThan(revision)
+        expect(timestamp).toBeGreaterThan(mapping)
+      },
+    )
 
     it('zeigt kein Band ohne Eye-Ergebnis', async () => {
       vi.mocked(photosApi.listPhotos).mockResolvedValue({

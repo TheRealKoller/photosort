@@ -284,6 +284,7 @@ class TestOptions:
         payload = (await authenticated_api_client.get(_url(project.id, "/options"))).json()
 
         assert [entry["eye_mapping_version"] for entry in payload["eye_mappings"]] == list(MAPPINGS)
+        assert list(MAPPINGS) == ["eye-4.2.3/v1", "eye-4.2.3/v2"]
         for entry in payload["eye_mappings"]:
             assert entry["eye_model_revision"] == MODEL_REVISION
             assert entry["available"] is True

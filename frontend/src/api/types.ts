@@ -524,11 +524,13 @@ export interface MotifAssessmentOut {
  * `fine_labels` sind die rohen Eye-Tags ab Konfidenz 0.5, serverseitig zeichensaniert und
  * laengenbegrenzt, absteigend nach Konfidenz. Als React-Textknoten rendern, nie als HTML.
  * `model_revision` steht hier und nicht in `MotifAssessmentOut.provider`: Eye ist kein
- * Cloud-Anbieter.
+ * Cloud-Anbieter. `mapping_version` ist die Fassung der Uebersetzung, mit der die Zeile entstand
+ * (Rohwert wie `eye-4.2.3/v2`), immer gesetzt; als Textknoten rendern.
  */
 export interface EyeResultOut {
   album_level: number
   model_revision: string
+  mapping_version: string
   computed_at: string
   fine_labels: string[]
 }

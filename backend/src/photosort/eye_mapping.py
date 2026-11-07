@@ -1,12 +1,14 @@
 """Die Abbildung Eye-SDK-Ausgabe -> Motivstaerken, Dokumentausschluss, Albumstufe, Feinlabels.
 
-Spec 0609 / ADR 0138 Punkt 3. Reines Modul, nur Standardbibliothek: es steht neben `motifs.py`
-und braucht weder eine Session noch ein Modell.
+Reines Modul, nur Standardbibliothek: es steht neben `motifs.py` und braucht weder eine Session
+noch ein Modell.
 
-GENAU EINE ZUORDNUNGSTABELLE. Sie ist der Port von `tools/eye-eval/src/mapping.js` und
-`signals.js` des entfallenen Auswertungswerkzeugs; das Werkzeug ist geloescht, damit Lauf und
-Vergleich nicht zwei Tabellen fuehren, die auseinanderlaufen. Der Node-Teil des Sidecars bleibt
-dumm: er gibt die SDK-Analyse unveraendert zurueck und rechnet keine Motive.
+MEHRERE FASSUNGEN, EINE LAUF-FASSUNG. `MAPPINGS` fuehrt jede aufrufbare Fassung der Zuordnung;
+der Eye-Lauf rechnet `MAPPING_VERSION`, die Klassifizierungspruefung die Fassung, die ihre Seite
+gespeichert hat. Eine Fassung wird nie geaendert, nur um eine weitere ergaenzt - ein gespeichertes
+Ergebnis traegt seine Fassung, und eine still veraenderte Tabelle machte diese Angabe falsch. Der
+Node-Teil des Sidecars bleibt dumm: er gibt die SDK-Analyse unveraendert zurueck und rechnet
+keine Motive.
 
 WAS HIER NICHT PASSIERT, und warum:
 
@@ -22,6 +24,7 @@ WAS HIER NICHT PASSIERT, und warum:
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -29,8 +32,14 @@ from typing import Any, Final
 
 from photosort.motifs import MOTIF_REGISTRY
 
-# Die Fassung der Zuordnung, wie sie das entfallene Werkzeug in seinen Arbeitsbereich schrieb.
-MAPPING_VERSION: Final = "eye-4.2.3/v1"
+# Die erste Fassung - aufrufbar, damit gespeicherte Pruefseiten und Altergebnisse lesbar bleiben.
+MAPPING_VERSION_V1: Final = "eye-4.2.3/v1"
+
+# Die Lauf-Fassung: mit ihr rechnet der Eye-Lauf, und sie steht in jeder neuen
+# `photo_eye_results`-Zeile. Nur der Server setzt sie - nie ein Wert aus Request, Sidecar-Antwort
+# oder Umgebung. Ein Wert von dort liesse eine Zeile eine Fassung behaupten, mit der sie nicht
+# entstand.
+MAPPING_VERSION: Final = "eye-4.2.3/v2"
 
 # Die Revision des gepinnten Modells (`eye/src/pins.json`). Sie steht in jeder
 # `photo_eye_results`-Zeile, damit ein Pin-Wechsel nicht still unter bestehenden Ergebnissen
@@ -45,10 +54,12 @@ MODEL_REVISION: Final = "v1.0.0"
 TAG_CONFIDENCE: Final = 0.5
 MOTIF_PRESENT: Final = 0.5
 
-# Die Eye-Typen, die als Dokument oder Bildschirmabbildung gelten. `kind` in dieser Liste heisst
-# "Eye schliesst aus"; die Liste ist geschlossen und wird beim Pin-Wechsel nachgeprueft (der
-# Abgleich gegen `eye_meta.json` ist Heimserver-Schritt, siehe tests/test_eye_mapping.py).
-EXCLUDED_TYPES: Final[frozenset[str]] = frozenset(
+# Die zwoelf Eye-Fotoarten (`kind`), die ein Dokument, eine Bildschirm- oder Grafikabbildung
+# benennen. In v1 schliessen sie alle aus; in jeder Fassung fehlen sie als Feinlabel, weil eine
+# Fotoart keine Bildinhaltsaussage ist. Die Liste ist geschlossen und wird beim Pin-Wechsel
+# nachgeprueft (der Abgleich gegen `eye_meta.json` ist Heimserver-Schritt, siehe
+# tests/test_eye_mapping.py).
+DOCUMENT_TYPES: Final[frozenset[str]] = frozenset(
     {
         "document",
         "screenshot",
@@ -65,19 +76,21 @@ EXCLUDED_TYPES: Final[frozenset[str]] = frozenset(
     }
 )
 
-# Je Motiv die Eye-Tags, die es belegen - WOERTLICH aus dem SDK-Vokabular
-# (`@desert-ant-labs/eye/tags.js`, erzeugt aus `eye_meta.json`). Die Reihenfolge ist die des
-# entfallenen Werkzeugs und hat keine Bedeutung fuer das Ergebnis (die Staerke ist ein Maximum).
-#
-# Die Tabelle des Werkzeugs fuehrte 15 Namen, die im SDK-Vokabular NICHT vorkommen und deshalb nie
-# gefeuert haetten: `arch`, `bridge`, `basketball`, `coffee`, `dancing`, `desert`, `dish`,
-# `interior`, `mosque`, `museum`, `palace`, `restaurant`, `sunrise`, `tableware`, `valley`. Fuenf
-# davon sind auf den SDK-Namen derselben Sache umgestellt (`architecture`, `bridge_structure`,
-# `basketball_sport`, `coffee_cup`, `coffee_drink`); die uebrigen elf sind gestrichen, weil das
-# Vokabular - und auch das Anzeigevokabular unter `labels.scenes` - keine Entsprechung fuehrt.
-# Beides haelt `eye/test/tags.test.js` gegen `tags.js` und `tests/test_eye_mapping.py` gegen
-# `eye/src/pins.json::mappingTags` fest.
-MOTIF_TAGS: Final[dict[str, tuple[str, ...]]] = {
+# Der Ausschluss von v2: nur die Fotoarten, die das Foto SELBST zum Dokument oder Bildschirmbild
+# machen. Karte, Whiteboard, Folie, Grafik und die Referenzfotos bleiben eingeschlossen. Exakte
+# Mitgliedschaft von `kind`, kein Tag - ein Schild oder Bildschirm im Hintergrund ist ein Tag und
+# schliesst deshalb nie aus.
+EXCLUDED_TYPES_V2: Final[frozenset[str]] = frozenset(
+    {"document", "screenshot", "receipt", "photo_of_screen", "id_card"}
+)
+
+# Je Motiv die Eye-Tags, die es in v1 belegen - WOERTLICH aus dem SDK-Vokabular
+# (`@desert-ant-labs/eye/tags.js`, erzeugt aus `eye_meta.json`). Die Reihenfolge hat keine
+# Bedeutung fuer das Ergebnis (die Staerke ist ein Maximum). Ein Name ausserhalb des Vokabulars
+# feuerte nie und liefert still Nullen: `eye/test/tags.test.js` prueft
+# `eye/src/pins.json::mappingTags` gegen `tags.js`, `tests/test_eye_mapping.py` die Vereinigung
+# aller Tabellen gegen `mappingTags`.
+MOTIF_TAGS_V1: Final[Mapping[str, tuple[str, ...]]] = {
     "menschen": ("people", "portrait", "group_shot", "selfie"),
     "landschaft": (
         "beach",
@@ -145,6 +158,53 @@ MOTIF_TAGS: Final[dict[str, tuple[str, ...]]] = {
     "detail_stimmung": ("flower", "leaf", "furniture"),
 }
 
+# v2 aendert gegenueber v1 genau zwei Motive; die uebrigen sechs Listen sind dieselben Objekte.
+# Tiere: die vier Arten plus die Oberbegriffe und Tierklassen des Vokabulars (dazu
+# `motif_detections`). Aktivitaet: Taetigkeiten - keine Gegenstaende, Orte oder Kleidung
+# (`surfboard`, `stadium`, `swimming_pool`, `swimwear`), kein Zuschauersport (`horse_racing`,
+# `motorsport`), kein `sailboat`, kein `chess`.
+MOTIF_TAGS_V2: Final[Mapping[str, tuple[str, ...]]] = {
+    **MOTIF_TAGS_V1,
+    "tiere": (
+        "dog",
+        "cat",
+        "bird",
+        "horse",
+        "animal",
+        "pet",
+        "wildlife",
+        "insect",
+        "reptile",
+        "fish",
+        "marine_mammal",
+    ),
+    "aktivitaet": (
+        *MOTIF_TAGS_V1["aktivitaet"],
+        "hiking",
+        "walking",
+        "running",
+        "cross_country_running",
+        "ultramarathon",
+        "track_and_field_athletics",
+        "skiing",
+        "snowboarding",
+        "ice_skating",
+        "water_skiing",
+        "cycle_sport",
+        "racing_bicycle",
+        "dance",
+        "playground",
+        "sports",
+        "volleyball_sport",
+        "baseball_sport",
+        "american_football",
+        "golf",
+        "hockey",
+        "bowling",
+        "canoe",
+    ),
+}
+
 # Feste Albumbaender: untere Grenze inklusiv, obere exklusiv, die letzte Stufe nimmt 1.0 mit. Die
 # Grenzen stehen hier EINMAL - der Vergleich (Story #610) liest dieselbe Stufe ueber
 # `album_level()`.
@@ -166,25 +226,48 @@ class EyeMapping:
     Tabelle bekommt einen eigenen Schluessel, und die alte bleibt unveraendert aufrufbar
     (`MAPPINGS`). Deshalb stehen die Tabellen hier als Feld und nicht als Modulglobale, die eine
     kuenftige Fassung ueberschreiben muesste.
+
+    `motif_detections` nennt je Motiv eine Detektionsliste der SDK-Antwort (`pets`), deren
+    groesste `confidence` neben den Tags in das Maximum eingeht. `excluded_types` entscheidet den
+    Ausschluss, `fine_label_excluded` die Tags, die nie Feinlabel werden - getrennt, damit ein
+    schmalerer Ausschluss die Feinlabels nicht veraendert.
     """
 
     motif_tags: Mapping[str, tuple[str, ...]]
+    motif_detections: Mapping[str, str]
     excluded_types: frozenset[str]
+    fine_label_excluded: frozenset[str]
     album_levels: tuple[tuple[int, float, float], ...]
     tag_confidence: float
 
 
-SHIPPED_MAPPING: Final[EyeMapping] = EyeMapping(
-    motif_tags=MOTIF_TAGS,
-    excluded_types=EXCLUDED_TYPES,
+MAPPING_V1: Final[EyeMapping] = EyeMapping(
+    motif_tags=MappingProxyType(MOTIF_TAGS_V1),
+    motif_detections=MappingProxyType({}),
+    excluded_types=DOCUMENT_TYPES,
+    fine_label_excluded=DOCUMENT_TYPES,
     album_levels=ALBUM_LEVELS,
     tag_confidence=TAG_CONFIDENCE,
 )
 
-# Die gueltigen Fassungen. Genau eine - die naechste Tabelle kommt als zusaetzlicher Eintrag
-# hinzu, nie als Ersatz (ADR 0139 Punkt 4).
-MAPPINGS: Final[Mapping[str, EyeMapping]] = MappingProxyType({MAPPING_VERSION: SHIPPED_MAPPING})
+MAPPING_V2: Final[EyeMapping] = EyeMapping(
+    motif_tags=MappingProxyType(MOTIF_TAGS_V2),
+    motif_detections=MappingProxyType({"tiere": "pets"}),
+    excluded_types=EXCLUDED_TYPES_V2,
+    fine_label_excluded=DOCUMENT_TYPES,
+    album_levels=ALBUM_LEVELS,
+    tag_confidence=TAG_CONFIDENCE,
+)
 
+# Die aufrufbaren Fassungen. Eine neue Tabelle kommt als zusaetzlicher Eintrag hinzu, nie als
+# Ersatz; die Klassifizierungspruefung bietet jede davon an und nimmt nur diese Schluessel an.
+MAPPINGS: Final[Mapping[str, EyeMapping]] = MappingProxyType(
+    {MAPPING_VERSION_V1: MAPPING_V1, MAPPING_VERSION: MAPPING_V2}
+)
+
+_RUN_MAPPING: Final = MAPPINGS[MAPPING_VERSION]
+
+# Die Beschreibung der LAUF-Fassung.
 EYE_PURPOSE_MAPPING: Final[Mapping[str, Any]] = MappingProxyType(
     {
         "version": MAPPING_VERSION,
@@ -197,14 +280,22 @@ EYE_PURPOSE_MAPPING: Final[Mapping[str, Any]] = MappingProxyType(
         ),
         "purposes": MappingProxyType(
             {
-                "motivstaerken": MappingProxyType({"signals": ("tags",), "motifs": MOTIF_TAGS}),
+                "motivstaerken": MappingProxyType(
+                    {
+                        "signals": ("tags", "pets"),
+                        "motifs": _RUN_MAPPING.motif_tags,
+                        "detections": _RUN_MAPPING.motif_detections,
+                    }
+                ),
                 "ausschluss": MappingProxyType(
-                    {"signals": ("kind",), "excluded_types": EXCLUDED_TYPES}
+                    {"signals": ("kind",), "excluded_types": _RUN_MAPPING.excluded_types}
                 ),
                 "albumtauglichkeit": MappingProxyType(
-                    {"signals": ("scores.aesthetic",), "levels": ALBUM_LEVELS}
+                    {"signals": ("scores.aesthetic",), "levels": _RUN_MAPPING.album_levels}
                 ),
-                "feinlabels": MappingProxyType({"signals": ("tags",)}),
+                "feinlabels": MappingProxyType(
+                    {"signals": ("tags",), "excluded_types": _RUN_MAPPING.fine_label_excluded}
+                ),
             }
         ),
     }
@@ -233,12 +324,21 @@ class EyeAnalysis:
     fine_labels: tuple[tuple[str, float], ...]
 
 
-def _confidence(tags: Mapping[str, Any], tag: str) -> float:
-    value = tags.get(tag)
+def _confidence(value: Any) -> float:
+    """Ein Fremdwert aus der SDK-Antwort als Konfidenz in [0, 1] - fuer Tag-Werte UND die
+    `confidence` eines `pets`-Eintrags dieselbe Regel.
+
+    Nur `int`/`float` zaehlen (`bool` nicht). Ein NICHT-ENDLICHER Wert - NaN, ±Unendlich, eine
+    Ganzzahl jenseits des float-Bereichs, die `json.loads` alle annimmt - wird verworfen (0),
+    nicht geklemmt: er ist keine Aussage, und aus einem Defekt entstuende sonst eine Hoechststaerke
+    oder ein `OverflowError`, der die Eye-Phase abbricht. Endliche Werte werden geklemmt."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return 0.0
-    number = float(value)
-    if number != number:  # NaN
+    try:
+        number = float(value)
+    except OverflowError:
+        return 0.0
+    if not math.isfinite(number):
         return 0.0
     return min(1.0, max(0.0, number))
 
@@ -252,32 +352,59 @@ def _tags(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     return tags if isinstance(tags, Mapping) else {}
 
 
-def motif_strengths(
-    payload: Mapping[str, Any], mapping: EyeMapping = SHIPPED_MAPPING
-) -> dict[str, float]:
-    """Je Motiv die GROESSTE Konfidenz seiner zugeordneten Tags, alle acht Registry-Schluessel.
+def _detection_confidence(payload: Mapping[str, Any], field: str) -> float:
+    """Die groesste `confidence` einer Detektionsliste (`pets`), sonst 0.
 
-    Nur Tags, keine Gesichter, keine Tiere, kein Bildausschnitt: die Staerke ist eine Aussage
-    ueber den Bildinhalt, und `mapping.motif_tags` ist die einzige Stelle, an der festgelegt ist,
-    welcher Tag welches Motiv belegt. Eine zweite Regel daneben (etwa "ein Gesicht genuegt") liefe
-    beim naechsten Pin-Wechsel auseinander."""
+    Fremdeingabe: gelesen nur, wenn das Feld eine Liste ist; ein Eintrag zaehlt nur als Objekt,
+    seine `confidence` laeuft durch `_confidence`. Nur die oberste Listenebene, keine Rekursion;
+    Label, Box und uebrige Felder werden nie gelesen und verlassen diese Funktion nicht - sonst
+    stuende ungesaeuberter Fremdtext in Datenbank oder Oberflaeche.
+    """
+    detections = payload.get(field)
+    if not isinstance(detections, list):
+        return 0.0
+    return max(
+        (
+            _confidence(entry.get("confidence"))
+            for entry in detections
+            if isinstance(entry, Mapping)
+        ),
+        default=0.0,
+    )
+
+
+def motif_strengths(payload: Mapping[str, Any], mapping: EyeMapping) -> dict[str, float]:
+    """Je Motiv die GROESSTE Konfidenz seiner Signale, alle acht Registry-Schluessel.
+
+    Signale sind die zugeordneten Tags (`mapping.motif_tags`) und, wo die Fassung es nennt, eine
+    Detektionsliste (`mapping.motif_detections`, in v2 `pets` fuer Tiere). Keine Gesichter, kein
+    Bildausschnitt: diese beiden Felder sind die einzige Stelle, an der festgelegt ist, was ein
+    Motiv belegt. Eine zweite Regel daneben (etwa "ein Gesicht genuegt") liefe beim naechsten
+    Pin-Wechsel auseinander."""
     tags = _tags(payload)
-    return {
-        motif_key: max(
-            (_confidence(tags, tag) for tag in mapping.motif_tags.get(motif_key, ())), default=0.0
+    strengths: dict[str, float] = {}
+    for motif_key in MOTIF_REGISTRY:
+        strength = max(
+            (_confidence(tags.get(tag)) for tag in mapping.motif_tags.get(motif_key, ())),
+            default=0.0,
         )
-        for motif_key in MOTIF_REGISTRY
-    }
+        field = mapping.motif_detections.get(motif_key)
+        if field is not None:
+            strength = max(strength, _detection_confidence(payload, field))
+        strengths[motif_key] = strength
+    return strengths
 
 
-def is_excluded(payload: Mapping[str, Any], mapping: EyeMapping = SHIPPED_MAPPING) -> bool:
-    """`kind` in der Ausschlussliste heisst "Eye schliesst aus". Ein fehlendes `kind` schliesst
-    NICHTS aus - die Abwesenheit einer Typangabe ist keine Dokumentaussage."""
+def is_excluded(payload: Mapping[str, Any], mapping: EyeMapping) -> bool:
+    """`kind` in der Ausschlussmenge der Fassung heisst "Eye schliesst aus" - exakte
+    Mitgliedschaft eines Textes, Tags spielen keine Rolle. Ein fehlendes, unbekanntes oder
+    nicht-textuelles `kind` schliesst NICHTS aus - die Abwesenheit einer Typangabe ist keine
+    Dokumentaussage."""
     kind = payload.get("kind")
     return isinstance(kind, str) and kind in mapping.excluded_types
 
 
-def album_level(payload: Mapping[str, Any], mapping: EyeMapping = SHIPPED_MAPPING) -> int:
+def album_level(payload: Mapping[str, Any], mapping: EyeMapping) -> int:
     """Die Albumstufe 1..5 aus `scores.aesthetic` in festen Baendern.
 
     Fehlt der Wert, gibt es KEINE Stufe - und weil die Ergebnistabelle NOT NULL fuehrt, ist das
@@ -293,34 +420,33 @@ def album_level(payload: Mapping[str, Any], mapping: EyeMapping = SHIPPED_MAPPIN
     raise EyeMappingError("Die Eye-Antwort enthaelt keine gueltige Albumstufe.")
 
 
-def fine_labels(
-    payload: Mapping[str, Any], mapping: EyeMapping = SHIPPED_MAPPING
-) -> tuple[tuple[str, float], ...]:
+def fine_labels(payload: Mapping[str, Any], mapping: EyeMapping) -> tuple[tuple[str, float], ...]:
     """Die Tags ab `mapping.tag_confidence`, absteigend nach Konfidenz, bei Gleichstand
     alphabetisch.
 
     Die Reihenfolge ist eine Zusage DIESER Funktion, nicht der SDK-Antwort: die Anzeige kuerzt am
     Ende, und ohne feste Ordnung fiele die Auswahl bei gleichem Wert von Lauf zu Lauf anders aus.
-    Die Ausschlusstypen fehlen hier - sie sind bereits die Aussage `excluded_document`, kein
-    Feinlabel."""
+    Die Fotoarten (`mapping.fine_label_excluded`) fehlen hier - sie sind keine
+    Bildinhaltsaussage."""
     tags = _tags(payload)
     labeled = [
         (tag, confidence)
         for tag in tags
-        if isinstance(tag, str) and tag not in mapping.excluded_types
-        for confidence in (_confidence(tags, tag),)
+        if isinstance(tag, str) and tag not in mapping.fine_label_excluded
+        for confidence in (_confidence(tags.get(tag)),)
         if confidence >= mapping.tag_confidence
     ]
     labeled.sort(key=lambda entry: (-entry[1], entry[0]))
     return tuple(labeled)
 
 
-def analyze(payload: Mapping[str, Any], version: str = MAPPING_VERSION) -> EyeAnalysis:
+def analyze(payload: Mapping[str, Any], version: str) -> EyeAnalysis:
     """Die ganze Abbildung in einem Aufruf - die Form, die der Schreibpfad braucht.
 
-    `version` waehlt die gespeicherte Fassung (`MAPPINGS`). Eine unbekannte Fassung ist ein
-    `EyeMappingError` und kein Rueckfall auf die Vorgabe: das Ergebnis traegt die Fassung in
-    seiner Zeile, und ein still gerechneter Ersatz machte diese Angabe falsch."""
+    `version` waehlt die Fassung (`MAPPINGS`) und hat KEINEN Default: der Eye-Lauf uebergibt
+    `MAPPING_VERSION`, die Pruefung die gespeicherte Fassung ihrer Seite. Eine unbekannte Fassung
+    ist ein `EyeMappingError` und kein Rueckfall: das Ergebnis traegt die Fassung in seiner Zeile,
+    und ein still gerechneter Ersatz machte diese Angabe falsch."""
     mapping = MAPPINGS.get(version)
     if mapping is None:
         raise EyeMappingError(f"Unbekannte Fassung der Eye-Zuordnung: {version!r}")

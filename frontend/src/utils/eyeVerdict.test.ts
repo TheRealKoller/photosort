@@ -5,6 +5,7 @@ import { eyeVerdict } from './eyeVerdict'
 const EYE_RESULT = {
   album_level: 4,
   model_revision: 'v1.0.0',
+  mapping_version: 'eye-4.2.3/v2',
   computed_at: '2026-09-12T10:00:00Z',
   fine_labels: ['beach', 'sunset'],
 }
