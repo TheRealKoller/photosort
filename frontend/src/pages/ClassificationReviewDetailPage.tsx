@@ -24,6 +24,7 @@ import { useMotifsQuery } from '../hooks/useMotifs'
 import {
   CLASSIFICATION_REVIEW_TITLE,
   NO_DEVIATION_TEXT,
+  noPhotosComparedText,
   photoPositionLabel,
   REVIEW_DETAIL_TEXTS,
   reviewListStand,
@@ -395,6 +396,14 @@ function ReviewStand({
   caseTotal: number
 }) {
   const open = review.verdict_counts.open
+  // "stimmen auf allen Fotos ueberein" ist eine Aussage UEBER verglichene Fotos. Ohne ein einziges
+  // verglichenes Foto ist sie falsch, auch wenn kein Fall vorgelegt wurde (Edge Case 4) - dann
+  // nennt der Kopf stattdessen die Zahl der fehlgeschlagenen Fotos (AK 9).
+  const compared = Object.values(review.counts_by_purpose).reduce(
+    (sum, counts) => sum + counts.compared,
+    0,
+  )
+  const nothingCompared = review.status === 'success' && caseTotal === 0 && compared === 0
   return (
     <div aria-live="polite" className="flex flex-col gap-1 text-sm text-text">
       {review.status === 'running' && (
@@ -410,8 +419,11 @@ function ReviewStand({
       {review.status === 'success' && caseTotal > 0 && open === 0 && (
         <p>{REVIEW_DETAIL_TEXTS.allJudged}</p>
       )}
-      {review.status === 'success' && caseTotal === 0 && <p>{NO_DEVIATION_TEXT}</p>}
-      {review.unclassifiable_photo_count > 0 && (
+      {review.status === 'success' && caseTotal === 0 && !nothingCompared && (
+        <p>{NO_DEVIATION_TEXT}</p>
+      )}
+      {nothingCompared && <p>{noPhotosComparedText(review.unclassifiable_photo_count)}</p>}
+      {review.unclassifiable_photo_count > 0 && !nothingCompared && (
         <p>{unclassifiableText(review.unclassifiable_photo_count)}</p>
       )}
     </div>
