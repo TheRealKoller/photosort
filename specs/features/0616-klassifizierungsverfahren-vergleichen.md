@@ -210,7 +210,9 @@ eine Aussage haben.
     übersprungen, in `unclassifiable_photo_count` gezählt und für keinen Zweck verglichen. Liefert
     eine Seite auf keinem Foto ein Ergebnis, endet die Prüfung `FAILED` statt mit leerer Übersicht.
   - `reap_stalled_runs`/`_fail_if_stalled` nehmen den neuen Lauftyp auf.
-- **`api/classification_reviews.py`** (neu, Router-Auth, Projektbindung nur aus dem Pfad):
+- **`api/classification_reviews.py`** (neu, Router-Auth, Projektbindung nur aus dem Pfad). Basis
+  `/projects/{project_id}/classification-reviews` (englische Kebab-Pfade wie `album-draft` und
+  `duplicate-groups`; der deutsche Pfad gilt nur für die Oberfläche):
   - `GET …/options`: wählbare Verfahren mit `available` und `unavailable_reasons` (`no_consent` vor
     `no_api_key`), Eye-`eye_disabled`, `sample_size {default: 30, min: 1, max: 200}`, dazu die
     wählbaren Eye-Fassungen und Cloud-Modelle.
