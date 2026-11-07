@@ -1,6 +1,6 @@
 # 0616 - Klassifizierungsverfahren am Foto vergleichen und beurteilen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #618](https://github.com/TheRealKoller/photosort/pull/618))
 **Erstellt:** 2026-11-07
 **Bezug:** [Issue #616](https://github.com/TheRealKoller/photosort/issues/616), ADR
 [`0139`](../decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md) (löst ADR 0138
