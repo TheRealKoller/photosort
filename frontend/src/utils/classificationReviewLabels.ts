@@ -40,8 +40,7 @@ export const CLASSIFICATION_REVIEW_TEXTS = {
   start: 'Prüfung starten',
   // Der Satz gehoert an die Stelle des juengsten Fehlschlags; die Handlung daneben heisst
   // "Erneut anlegen", nie "Erneut versuchen": die gescheiterte Pruefung wird nicht wiederholt.
-  failedLatest:
-    'Die letzte Prüfung ist fehlgeschlagen. Sie wird nicht automatisch wiederholt.',
+  failedLatest: 'Die letzte Prüfung ist fehlgeschlagen. Sie wird nicht automatisch wiederholt.',
   retryCreate: 'Erneut anlegen',
 } as const
 
