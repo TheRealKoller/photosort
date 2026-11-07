@@ -1096,6 +1096,20 @@ class TestList:
         assert row["case_open"] == 1
         assert left_open.id != decided.id
 
+    async def test_a_review_of_the_other_user_is_listed_too(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK 1: BEIDE Nutzer sehen jede Pruefung des Projekts - `created_by` ist Herkunft, kein
+        Filter."""
+        project, _user, review = await _finished_review(db_session)
+        other = await _make_user(db_session, "zweiter")
+        header = {"Authorization": f"Bearer {create_access_token(other)}"}
+
+        payload = (await authenticated_api_client.get(_url(project.id), headers=header)).json()
+
+        assert [row["id"] for row in payload] == [review.id]
+        assert payload[0]["created_by"]["username"] == "anleger"
+
     async def test_an_unknown_project_is_404(
         self, authenticated_api_client: httpx.AsyncClient
     ) -> None:
@@ -1266,6 +1280,22 @@ class TestDetail:
             "cost_usd": 2.5,
         }
         assert payload["sides"]["b"]["kind"] == "local"
+
+    async def test_a_second_user_opens_the_review(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK 1, zweiter Satz: das Oeffnen ist nicht an den Ersteller gebunden - nur die
+        Projektbindung zaehlt."""
+        project, user, review, _first, _second = await self._scenario(db_session)
+        other = await _make_user(db_session, "zweiter")
+        header = {"Authorization": f"Bearer {create_access_token(other)}"}
+
+        response = await authenticated_api_client.get(
+            _url(project.id, f"/{review.id}"), headers=header
+        )
+
+        assert response.status_code == 200
+        assert response.json()["created_by"] == {"user_id": user.id, "username": "anleger"}
 
     async def test_a_foreign_review_is_404(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
