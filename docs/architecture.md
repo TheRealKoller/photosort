@@ -1489,7 +1489,13 @@ Verarbeitungs-Cache (Thumbnails).
   `eye/src/pins.json` und antwortet erst danach auf `GET /health` mit `200`. `POST /analyze` nimmt
   die Bytes der `display`-Variante und gibt die SDK-Analyse unverändert zurück — die Abbildung auf
   Motive, Dokumentausschluss, Albumstufe und Feinlabels rechnet `backend/src/photosort/eye_mapping.py`,
-  nicht der Dienst. Verarbeitung sequenziell (ein Modell, eine Anfrage). `DAL_APP_ID=photosort`
+  nicht der Dienst. `eye_mapping.py` führt mehrere Fassungen (`MAPPINGS`, ADR
+  [`0140`](../specs/decisions/0140-eye-uebersetzung-v2-lauf-fassung-tiererkennung-fassung-je-ergebnis.md));
+  der Eye-Lauf rechnet `MAPPING_VERSION` (`eye-4.2.3/v2`), `eye-4.2.3/v1` bleibt aufrufbar. v2
+  schließt nur über `kind` aus (Dokument, Screenshot, Beleg, abfotografierter Bildschirm,
+  Ausweis), nimmt für Tiere zusätzlich Eyes Tiererkennung `pets` und für Aktivität Tags, die eine
+  Tätigkeit benennen. `eye/src/pins.json::mappingTags` ist die Vereinigung der Motiv-Tags aller
+  Fassungen. Verarbeitung sequenziell (ein Modell, eine Anfrage). `DAL_APP_ID=photosort`
   steht fest im Image, `HOME` liegt auf dem Volume `eye_home` (die Lizenz-Zählkennung übersteht
   Neustarts), `DAL_LICENSE_ENDPOINT`/`HF_TOKEN` brechen den Start ab. Backend und Worker erreichen
   ihn über `EYE_SERVICE_URL` (Vorgabe `http://eye:8090`); `EYE_ENABLED` (Vorgabe `false`) schaltet
@@ -2493,7 +2499,8 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   Cloud-Grundlage gilt (Vergleichsgrundlage, #610). `photo_eye_results` ist **1:1 zu `Photo`**
   (`photo_id` PK und FK, `cascade="all, delete-orphan"`), `excluded_document: bool` NOT NULL **ohne
   jeden Default** (dasselbe Idiom wie die Kopfzeile), `album_level: int` (1–5, die Modellstufe),
-  `model_revision: str`, `computed_at`. `photo_eye_motif_strengths` (FK auf
+  `model_revision: str`, `mapping_version: str` NOT NULL (die Übersetzungsfassung, mit der die
+  Zeile entstand; Bestand vor ADR 0140 trägt `eye-4.2.3/v1`), `computed_at`. `photo_eye_motif_strengths` (FK auf
   `photo_eye_results.photo_id`, `Unique(photo_id, motif_key)`) trägt alle acht Motive; ein nicht
   genanntes Motiv wird `0.0`, nicht „keine Angabe". `photo_eye_fine_labels` (FK auf
   `photo_eye_results.photo_id`, roher Eye-Tag als Text, `confidence`, `Unique(photo_id, label)`)
