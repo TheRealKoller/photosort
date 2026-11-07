@@ -198,6 +198,49 @@ describe('ClassificationReviewCreatePanel', () => {
     ).toBeInTheDocument()
   })
 
+  // Eine Cloud-Seite kostet Geld; ohne belastbare Vorschau ist der Preis kein Kontrollmittel.
+  // Laeuft die Schaetzung noch oder ist sie gescheitert, bleibt der Ausloeser zu.
+  it.each<[string, () => Promise<ClassificationReviewEstimateOut>]>([
+    ['laeuft', () => new Promise<ClassificationReviewEstimateOut>(() => {})],
+    [
+      'scheitert',
+      () => Promise.reject(new ApiError(503, 'Die Kostenschätzung ist nicht verfügbar.')),
+    ],
+  ])(
+    'sperrt den Ausloeser, solange die Kostenvorschau der Cloud-Seite %s - ohne Create-Aufruf',
+    async (_zustand, estimate) => {
+      vi.mocked(reviewApi.getClassificationReviewEstimate).mockImplementation(estimate)
+      renderPanel()
+
+      await chooseCloudAAndLocalB()
+
+      await waitFor(() => expect(startButton()).toBeDisabled())
+      expect(screen.getByTestId('review-disabled-reason')).toHaveTextContent(
+        'ohne sie startet keine Prüfung mit Cloud-Seite',
+      )
+      expect(reviewApi.createClassificationReview).not.toHaveBeenCalled()
+    },
+  )
+
+  // Gegenprobe: rein kostenfreie Kombinationen brauchen keine Vorschau, um zu starten.
+  it('startet eine kostenfreie Kombination auch ohne gelungene Vorschau', async () => {
+    vi.mocked(reviewApi.getClassificationReviewEstimate).mockRejectedValue(
+      new ApiError(503, 'Die Kostenschätzung ist nicht verfügbar.'),
+    )
+    vi.mocked(reviewApi.createClassificationReview).mockReturnValue(new Promise(() => {}))
+    renderPanel()
+
+    const user = await chooseLocalAAndEyeB()
+    await waitFor(() => expect(startButton()).toBeEnabled())
+    await user.click(startButton())
+
+    expect(reviewApi.createClassificationReview).toHaveBeenCalledWith(7, {
+      a: { kind: 'local' },
+      b: { kind: 'eye', eye_mapping_version: 'v1' },
+      sample_size: 30,
+    })
+  })
+
   it('belegt die Pruefgraesse aus den Servergrenzen vor und nennt den Zufallshinweis', async () => {
     renderPanel()
 

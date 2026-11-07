@@ -264,7 +264,9 @@ interface ClassificationReviewCreatePanelProps {
  *
  * Die Kostenvorschau erscheint erst nach beiden Wahlen und steht DAUERHAFT ueber dem Ausloeser:
  * kein Bestaetigungsdialog, die Kosten sind beim Betätigen sichtbar. Der Preis ist nie eine
- * Eingabe des Clients - er kommt aus `GET …/estimate`.
+ * Eingabe des Clients - er kommt aus `GET …/estimate`. Solange eine gewaehlte Seite Cloud ist,
+ * bleibt der Ausloeser gesperrt, bis genau diese Wahl eine erfolgreiche Schaetzung hat; laeuft
+ * sie noch oder ist sie gescheitert, startet nichts.
  *
  * Nach Erfolg meldet das Panel die angelegte Pruefung nach oben; die Navigation zur Uebersicht
  * entscheidet die Seite, weil sie den Projektpfad kennt.
@@ -295,7 +297,13 @@ export function ClassificationReviewCreatePanel({
     sampleSizeValue <= options.sample_size.max
 
   const isSubmitting = createMutation.isPending
-  const isReady = sides !== null && sampleSizeValid && !isSubmitting
+  // "Kosten vor dem Start": der Preis ist Kontrollmittel, nicht Beiwerk. Solange eine gewaehlte
+  // Seite Cloud ist, startet die Pruefung deshalb nur mit fertiger Schaetzung - waehrend sie
+  // laedt oder nach einem Fehler bleibt der Ausloeser zu. Rein kostenfreie Kombinationen
+  // (Eye, lokal) brauchen keine Vorschau und bleiben wie bisher startbar.
+  const hasCloudSide = sideA?.kind === 'cloud' || sideB?.kind === 'cloud'
+  const estimateReady = !hasCloudSide || estimateQuery.isSuccess
+  const isReady = sides !== null && sampleSizeValid && estimateReady && !isSubmitting
 
   // Der Sperrgrund steht als Satz an der Schaltflaeche - ein ausgegrauter Knopf ohne Begruendung
   // laesst raten, was fehlt.
@@ -305,7 +313,11 @@ export function ClassificationReviewCreatePanel({
       ? 'Wähle für beide Seiten ein Verfahren — ohne Wahl startet keine Prüfung.'
       : !sampleSizeValid
         ? `Die Prüfgröße muss zwischen ${options?.sample_size.min} und ${options?.sample_size.max} liegen.`
-        : null
+        : !estimateReady
+          ? estimateQuery.isError
+            ? 'Die Kostenschätzung ist fehlgeschlagen — ohne sie startet keine Prüfung mit Cloud-Seite.'
+            : 'Die Kostenvorschau wird noch geladen — ohne sie startet keine Prüfung mit Cloud-Seite.'
+          : null
 
   const createErrorDetail = createMutation.isError
     ? createMutation.error instanceof ApiError
