@@ -379,7 +379,9 @@ function ReviewOrigins({ review }: { review: ClassificationReviewDetailOut }) {
             <span className="sr-only">{SIDE_LABELS[letter]}:</span>
             <span className="break-words">{sideOriginText(review.sides[letter])}</span>
           </span>
-          <span className="text-xs text-text-muted">{sideCostText(review.sides[letter])}</span>
+          <span className="break-words text-xs text-text-muted">
+            {sideCostText(review.sides[letter])}
+          </span>
           {review.sides[letter].kind === 'eye' && <EyeAttribution />}
         </li>
       ))}
