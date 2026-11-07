@@ -62,6 +62,11 @@ export function ausschussStepPath(projectId: number): string {
   return `/projects/${projectId}/pipeline/ausschuss`
 }
 
+/** Das Ziel EINER Pruefung - die einzige Stelle, die diesen Pfad baut. */
+export function classificationReviewPath(projectId: number, reviewId: number): string {
+  return `/projects/${projectId}/klassifizierung-pruefen/${reviewId}`
+}
+
 /**
  * Literale Geschwister-Segmente unter /projects/, die keine projectId sind. Anders als React
  * Routers eigentliches Routing (das statische Segmente vor dynamischen bevorzugt) matcht ein

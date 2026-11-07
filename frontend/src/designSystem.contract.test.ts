@@ -2012,6 +2012,23 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
         'Schrittseite in voller Breite am unteren Rand, einhaendig mit dem Daumen bedient - ' +
         'dieselbe Begruendung wie bei der Absende-Schaltflaeche der Anmeldung',
     },
+    {
+      file: 'src/components/ClassificationReviewCreatePanel.tsx',
+      snippet:
+        'flex min-h-11 w-full cursor-pointer flex-col justify-center gap-1 rounded-sm border',
+      reason:
+        'Seitenwahl der Pruefung (Spec 0616): Radio-Eingabe samt Beschriftung in einer klickbaren ' +
+        'Zeile - derselbe Fall wie die Laufwahl der Klassifizierung (ersetztes Element ohne ' +
+        'Pseudo-Element, Trefferflaeche = Zeilenhoehe)',
+    },
+    {
+      file: 'src/pages/ClassificationReviewsPage.tsx',
+      snippet:
+        'flex min-h-11 w-full flex-col gap-2 rounded-sm border border-border bg-surface px-3',
+      reason:
+        'Pruefungszeile der Liste: die ganze Zeile ist EINE Trefferflaeche (Zeilenhoehe einer ' +
+        'zeilenweisen Liste), nicht nur ihr Datum',
+    },
   ]
 
   it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ALL_PROJECT_NAV_TARGETS,
   ausschussStepPath,
+  classificationReviewPath,
   duplicateComparePath,
   isSecondaryNavTargetId,
   matchProjectId,
@@ -122,6 +123,12 @@ describe('projectRoutes - duplicateComparePath', () => {
 
   it('fuehrt der Rueckweg fest in den Ausschuss-Schritt des Projekts', () => {
     expect(ausschussStepPath(7)).toBe('/projects/7/pipeline/ausschuss')
+  })
+})
+
+describe('projectRoutes - classificationReviewPath', () => {
+  it('baut den Pfad der Uebersicht EINER Pruefung', () => {
+    expect(classificationReviewPath(7, 42)).toBe('/projects/7/klassifizierung-pruefen/42')
   })
 })
 
