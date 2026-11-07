@@ -20,7 +20,7 @@ import {
  * verschachtelte :photoId-Route) sind mit dieser Spec hierher gewandert.
  */
 
-/** Die elf Muster mit eingesetzten Parametern - Grundlage beider Funktionen. */
+/** Die dreizehn Muster mit eingesetzten Parametern - Grundlage beider Funktionen. */
 const PATHS_WITH_PROJECT_CONTEXT = [
   '/projects/1',
   '/projects/1/pipeline',
@@ -33,12 +33,15 @@ const PATHS_WITH_PROJECT_CONTEXT = [
   '/projects/1/stats',
   '/projects/1/album',
   '/projects/1/persons',
+  // Spec 0616: Liste und Fallansicht der Klassifizierungspruefung.
+  '/projects/1/klassifizierung-pruefen',
+  '/projects/1/klassifizierung-pruefen/7',
 ]
 
 describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
-  it('fuehrt genau die elf Muster mit Projektkontext', () => {
-    expect(Object.values(PROJECT_ROUTE_PATHS)).toHaveLength(11)
-    expect(PROJECT_CONTEXT_ROUTE_PATHS).toHaveLength(11)
+  it('fuehrt genau die dreizehn Muster mit Projektkontext', () => {
+    expect(Object.values(PROJECT_ROUTE_PATHS)).toHaveLength(13)
+    expect(PROJECT_CONTEXT_ROUTE_PATHS).toHaveLength(13)
     expect([...PROJECT_CONTEXT_ROUTE_PATHS].sort()).toEqual(
       [
         '/projects/:projectId',
@@ -52,8 +55,24 @@ describe('projectRoutes - PROJECT_ROUTE_PATHS', () => {
         '/projects/:projectId/settings',
         '/projects/:projectId/stats',
         '/projects/:projectId/persons',
+        '/projects/:projectId/klassifizierung-pruefen',
+        '/projects/:projectId/klassifizierung-pruefen/:reviewId',
       ].sort(),
     )
+  })
+
+  // Spec 0616: der deutsche Pfad gilt nur fuer die Oberflaeche, die API bleibt beim englischen
+  // Kebab-Pfad. Beide Pruefrouten tragen Projektkontext - sonst verschwaende die Navigation genau
+  // auf den neuen Seiten.
+  it('fuehrt beide Pruefrouten im Projektkontext', () => {
+    expect(PROJECT_ROUTE_PATHS.classificationReviews).toBe(
+      '/projects/:projectId/klassifizierung-pruefen',
+    )
+    expect(PROJECT_ROUTE_PATHS.classificationReviewDetail).toBe(
+      '/projects/:projectId/klassifizierung-pruefen/:reviewId',
+    )
+    expect(matchProjectId('/projects/1/klassifizierung-pruefen')).toBe('1')
+    expect(matchProjectId('/projects/1/klassifizierung-pruefen/7')).toBe('1')
   })
 
   // specs/features/0374-duplikate-vergleichen.md: Eine unregistrierte Route markiert still KEIN
@@ -173,23 +192,26 @@ describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
 
   // specs/features/0551: "Personen" steht HINTER Einstellungen und Statistik - die beiden
   // bestehenden Ziele behalten ihren Platz.
-  it('fuehrt genau drei Nebenziele in fixierter Reihenfolge (AK2, Spec 0551)', () => {
-    expect(PROJECT_NAV_SECONDARY_TARGETS).toHaveLength(3)
+  // specs/features/0616: "Klassifizierung pruefen" ist der VIERTE Eintrag, hinter "Personen".
+  it('fuehrt genau vier Nebenziele in fixierter Reihenfolge (AK2, Spec 0551/0616)', () => {
+    expect(PROJECT_NAV_SECONDARY_TARGETS).toHaveLength(4)
     expect(PROJECT_NAV_SECONDARY_TARGETS.map((target) => target.id)).toEqual([
       'settings',
       'stats',
       'persons',
+      'classificationReviews',
     ])
     expect(PROJECT_NAV_SECONDARY_TARGETS.map((target) => target.label)).toEqual([
       'Einstellungen',
       'Statistik',
       'Personen',
+      'Klassifizierung prüfen',
     ])
   })
 
   /*
    * INVARIANTE STATT DRITTER TABELLE (specs/features/0347, Teststrategie): ALL_ ist exakt die
-   * Verkettung beider Gruppen, fuehrt sechs EINDEUTIGE ids, und die Gruppen sind disjunkt. Das ist
+   * Verkettung beider Gruppen, fuehrt sieben EINDEUTIGE ids, und die Gruppen sind disjunkt. Das ist
    * der Waechter gegen den realistischsten Fehler genau dieses Umbaus - ein Ziel landet per
    * Copy-Paste in BEIDEN Listen und erzeugt einen doppelten React-Key samt doppelter Panelzeile.
    * Eine ausgeschriebene Soll-Liste faende das nicht, sie waere selbst die Kopie.
@@ -201,8 +223,8 @@ describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
     ])
 
     const ids = ALL_PROJECT_NAV_TARGETS.map((target) => target.id)
-    expect(ids).toHaveLength(6)
-    expect(new Set(ids).size, `doppelte id in ${ids.join(', ')}`).toBe(6)
+    expect(ids).toHaveLength(7)
+    expect(new Set(ids).size, `doppelte id in ${ids.join(', ')}`).toBe(7)
 
     const primaryIds = new Set<string>(PROJECT_NAV_PRIMARY_TARGETS.map((target) => target.id))
     expect(
@@ -220,6 +242,7 @@ describe('projectRoutes - Zieltabelle in zwei Gruppen', () => {
     ['settings', '/projects/1/settings'],
     ['stats', '/projects/1/stats'],
     ['persons', '/projects/1/persons'],
+    ['classificationReviews', '/projects/1/klassifizierung-pruefen'],
   ])('baut fuer %s den Pfad %s', (id, expected) => {
     const target = ALL_PROJECT_NAV_TARGETS.find((candidate) => candidate.id === id)
     expect(target, `Ziel ${id}`).toBeDefined()
@@ -274,6 +297,9 @@ describe('projectRoutes - resolveActiveNavTargetId', () => {
     // gestrichen - beim blossen Streichen verschwaende die Zusage lautlos (Edge Case 2).
     ['/projects/1/stats', 'stats'],
     ['/projects/1/persons', 'persons'],
+    // specs/features/0616: das Nebenziel ist auf BEIDEN Pruefrouten aktiv - Liste und Fallansicht.
+    ['/projects/1/klassifizierung-pruefen', 'classificationReviews'],
+    ['/projects/1/klassifizierung-pruefen/7', 'classificationReviews'],
   ])('markiert auf %s das Ziel %s als aktiv (AK8a)', (pathname, expected) => {
     expect(resolveActiveNavTargetId(pathname)).toBe(expected)
   })

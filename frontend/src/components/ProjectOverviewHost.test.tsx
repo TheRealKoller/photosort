@@ -343,6 +343,9 @@ const ROUTE_CASES: Record<keyof typeof PROJECT_ROUTE_PATHS, string> = {
   stats: '/projects/1/stats',
   album: '/projects/1/album',
   persons: '/projects/1/persons',
+  // Spec 0616: Liste und Fallansicht der Klassifizierungspruefung.
+  classificationReviews: '/projects/1/klassifizierung-pruefen',
+  classificationReviewDetail: '/projects/1/klassifizierung-pruefen/7',
 }
 
 function renderApp(path: string) {
