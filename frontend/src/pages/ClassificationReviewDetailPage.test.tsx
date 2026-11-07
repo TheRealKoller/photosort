@@ -256,6 +256,117 @@ describe('ClassificationReviewDetailPage - Kopf', () => {
   })
 })
 
+describe('ClassificationReviewDetailPage - Kosten der Seiten', () => {
+  it('nennt Ist-Kosten mit der eingefrorenen Schaetzung, kostenfreie Seiten als Wort', async () => {
+    renderPage()
+
+    const origins = await screen.findByRole('list', { name: 'Herkunft der Seiten' })
+    const items = within(origins).getAllByRole('listitem')
+    expect(items[0]).toHaveTextContent('kostenfrei')
+    expect(items[0]).not.toHaveTextContent('0,00 USD')
+    expect(items[1]).toHaveTextContent('Ist 1,10 USD (vor dem Start geschätzt: 1,20 USD)')
+  })
+
+  it('sagt "nicht erfasst", solange keine Ist-Kosten geschrieben sind', async () => {
+    vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(
+      detailOut({
+        sides: { a: LOCAL, b: { ...CLOUD, cost_usd: null, estimated_cost_usd: null } },
+      }),
+    )
+    renderPage()
+
+    const origins = await screen.findByRole('list', { name: 'Herkunft der Seiten' })
+    const items = within(origins).getAllByRole('listitem')
+    expect(items[1]).toHaveTextContent('nicht erfasst')
+    expect(items[1]).not.toHaveTextContent('Ist ')
+  })
+
+  it('laesst die Ist-Kosten einer fehlgeschlagenen Pruefung stehen', async () => {
+    vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(
+      detailOut({
+        status: 'failed',
+        error_message: 'Seite B lieferte kein Ergebnis.',
+        sides: { a: LOCAL, b: { ...CLOUD, cost_usd: 0.4 } },
+      }),
+    )
+    vi.mocked(reviewApi.listClassificationReviewCases).mockResolvedValue({ cases: [] })
+    renderPage()
+
+    expect(
+      await screen.findByText('Ist 0,40 USD (vor dem Start geschätzt: 1,20 USD)'),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('ClassificationReviewDetailPage - Kopfaussage ohne Vergleich', () => {
+  const none = { compared: 0, matching: 0, deviating: 0, presented: 0 }
+
+  it('behauptet bei verglichen = 0 keine Uebereinstimmung, sondern nennt die Fehlschlaege', async () => {
+    vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(
+      detailOut({
+        sides: { a: LOCAL, b: CLOUD },
+        unclassifiable_photo_count: 3,
+        counts_by_purpose: {
+          motifs: { unit: 'photo', ...none },
+          motif_feature: { unit: 'pair', ...none },
+          excluded_document: { unit: 'photo', ...none },
+          album_level: { unit: 'photo', ...none },
+        },
+        verdict_counts: ZERO_VERDICTS,
+        verdicts_by_purpose: {
+          motifs: ZERO_VERDICTS,
+          motif_feature: ZERO_VERDICTS,
+          excluded_document: ZERO_VERDICTS,
+          album_level: ZERO_VERDICTS,
+        },
+      }),
+    )
+    vi.mocked(reviewApi.listClassificationReviewCases).mockResolvedValue({ cases: [] })
+    renderPage()
+
+    const head = await screen.findByRole('banner')
+    expect(
+      within(head).queryByText('Die beiden Verfahren stimmen auf allen Fotos überein.'),
+    ).not.toBeInTheDocument()
+    expect(
+      within(head).getByText('keine Fotos verglichen - 3 Fotos fehlgeschlagen'),
+    ).toBeInTheDocument()
+  })
+
+  it('behauptet Uebereinstimmung nur, wenn wirklich Fotos verglichen wurden', async () => {
+    vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(
+      detailOut({
+        counts_by_purpose: {
+          motifs: { unit: 'photo', compared: 3, matching: 3, deviating: 0, presented: 0 },
+          motif_feature: { unit: 'pair', compared: 0, matching: 0, deviating: 0, presented: 0 },
+          excluded_document: {
+            unit: 'photo',
+            compared: 3,
+            matching: 3,
+            deviating: 0,
+            presented: 0,
+          },
+          album_level: { unit: 'photo', compared: 3, matching: 3, deviating: 0, presented: 0 },
+        },
+        verdict_counts: ZERO_VERDICTS,
+        verdicts_by_purpose: {
+          motifs: ZERO_VERDICTS,
+          motif_feature: ZERO_VERDICTS,
+          excluded_document: ZERO_VERDICTS,
+          album_level: ZERO_VERDICTS,
+        },
+      }),
+    )
+    vi.mocked(reviewApi.listClassificationReviewCases).mockResolvedValue({ cases: [] })
+    renderPage()
+
+    const head = await screen.findByRole('banner')
+    expect(
+      within(head).getByText('Die beiden Verfahren stimmen auf allen Fotos überein.'),
+    ).toBeInTheDocument()
+  })
+})
+
 describe('ClassificationReviewDetailPage - laufende Pruefung', () => {
   beforeEach(() => {
     vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(

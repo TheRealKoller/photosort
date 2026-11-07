@@ -22,6 +22,7 @@ import {
   SIDE_COST_LABELS,
   SIDE_LABELS,
   SIDE_MARKS,
+  sideCostText,
   sideOriginText,
   TERMS,
   UNAVAILABLE_REASON_TEXTS,
@@ -237,7 +238,30 @@ describe('classificationReviewLabels - Sperrgruende und Kostenworte', () => {
 
   // "kostenfrei" ist ein Wort, keine 0 (Design-System).
   it('nennt den Preis einer Wahl als Wort, nie als Betrag', () => {
-    expect(SIDE_COST_LABELS).toEqual({ free: 'kostenfrei', cloud: 'Cloud · kostenpflichtig' })
+    expect(SIDE_COST_LABELS).toEqual({
+      free: 'kostenfrei',
+      cloud: 'Cloud · kostenpflichtig',
+      notRecorded: 'nicht erfasst',
+    })
+  })
+
+  // Die Kostenzeile jeder Seite (AK 9/AK 12): Ist-Wert mit eingefrorener Schaetzung, das Wort fuer
+  // die kostenfreien Seiten, "nicht erfasst" ohne Ist-Wert - und ein geschriebener Ist-Wert bleibt.
+  it('nennt Ist-Kosten mit der Schaetzung von vor dem Start', () => {
+    expect(sideCostText({ kind: 'cloud', estimated_cost_usd: 1.2, cost_usd: 1.1 })).toBe(
+      'Ist 1,10 USD (vor dem Start geschätzt: 1,20 USD)',
+    )
+    expect(sideCostText({ kind: 'cloud', estimated_cost_usd: null, cost_usd: 0.4 })).toBe(
+      'Ist 0,40 USD (vor dem Start geschätzt: nicht erfasst)',
+    )
+  })
+
+  it('nennt kostenfreie Seiten als Wort und fehlende Ist-Kosten "nicht erfasst"', () => {
+    expect(sideCostText({ kind: 'eye', estimated_cost_usd: 0, cost_usd: 0 })).toBe('kostenfrei')
+    expect(sideCostText({ kind: 'local', estimated_cost_usd: 0, cost_usd: 0 })).toBe('kostenfrei')
+    expect(sideCostText({ kind: 'cloud', estimated_cost_usd: 1.2, cost_usd: null })).toBe(
+      'nicht erfasst',
+    )
   })
 })
 

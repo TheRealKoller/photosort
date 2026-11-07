@@ -8,7 +8,7 @@ import type {
   ClassificationVerdict,
 } from '../api/types'
 import { formatAlbumSuitabilityLevel } from './albumSuitability'
-import { formatProviderLabel, NOT_AVAILABLE } from './formatStats'
+import { formatProviderLabel, formatUsd, NOT_AVAILABLE } from './formatStats'
 import { formatMotifKey, type MotifSet } from './motifLabels'
 import type { ScanStatusLabel } from './scanStatus'
 
@@ -317,7 +317,33 @@ export function sideOriginText(side: ReviewSideOrigin): string {
 export const SIDE_COST_LABELS = {
   free: 'kostenfrei',
   cloud: 'Cloud · kostenpflichtig',
+  notRecorded: 'nicht erfasst',
 } as const
+
+/**
+ * Die Kostenzeile EINER Seite der Pruefung (AK 9/AK 12): Ist-Kosten mit dem beim Anlegen
+ * eingefrorenen Schaetzwert in der Klammer. Eye und lokal sind kostenfrei und tragen das Wort,
+ * nie "0,00 USD"; ein Cloud-Lauf ohne Ist-Wert heisst "nicht erfasst". Ein bereits geschriebener
+ * Ist-Wert bleibt nach einem Abbruch stehen - die bis dahin angefallenen Kosten sind die einzige
+ * Auskunft ueber den gescheiterten Lauf.
+ */
+export function sideCostText(side: {
+  kind: ClassificationReviewSideKind
+  estimated_cost_usd: number | null
+  cost_usd: number | null
+}): string {
+  if (side.kind !== 'cloud') {
+    return SIDE_COST_LABELS.free
+  }
+  if (side.cost_usd === null) {
+    return SIDE_COST_LABELS.notRecorded
+  }
+  const estimate =
+    side.estimated_cost_usd === null
+      ? SIDE_COST_LABELS.notRecorded
+      : formatUsd(side.estimated_cost_usd)
+  return `Ist ${formatUsd(side.cost_usd)} (vor dem Start geschätzt: ${estimate})`
+}
 
 /**
  * Die geschlossene Menge der Sperrgruende aus `GET …/options`, als Satz am Ort der Gruppe. Der
