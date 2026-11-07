@@ -20,6 +20,8 @@ import { ProjectOverviewHost } from './components/ProjectOverviewHost'
 import { Button } from './components/ui/button'
 import { AlbumDraftPage } from './pages/AlbumDraftPage'
 import { AlbumSelectionPage } from './pages/AlbumSelectionPage'
+import { ClassificationReviewDetailPage } from './pages/ClassificationReviewDetailPage'
+import { ClassificationReviewsPage } from './pages/ClassificationReviewsPage'
 import { DuplicateComparePage } from './pages/DuplicateComparePage'
 import { LoginPage } from './pages/LoginPage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
@@ -81,6 +83,14 @@ const PROJECT_ROUTES: { path: string; element: ReactElement }[] = [
   // Die Personenübersicht (Spec 0551): Gruppen je Person und "Ohne Namen", Nebenziel der
   // Projektnavigation wie Einstellungen und Statistik.
   { path: PROJECT_ROUTE_PATHS.persons, element: <ProjectPersonsPage /> },
+  // Die Klassifizierungspruefung (Spec 0616): Liste und Anlegen, danach die Fallansicht. Beide
+  // Routen haengen am selben Nebenziel - die Fallansicht ist kein eigenes Ziel, sondern der Weg
+  // in EINE Pruefung.
+  { path: PROJECT_ROUTE_PATHS.classificationReviews, element: <ClassificationReviewsPage /> },
+  {
+    path: PROJECT_ROUTE_PATHS.classificationReviewDetail,
+    element: <ClassificationReviewDetailPage />,
+  },
 ]
 
 function useProjectIdFromRoute(): string | null {

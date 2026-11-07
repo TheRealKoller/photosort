@@ -41,7 +41,7 @@ const TAP_TARGET_SIZE = 44
  * einer eigenen Zusicherung: ohne sie bestuende der Spec auch dann, wenn er - etwa nach einer
  * Umbenennung eines aria-Labels - gar kein Element mehr faende.
  */
-const EXPECTED_CONTROL_COUNT = 45
+const EXPECTED_CONTROL_COUNT = 49
 
 async function assertTappable(
   control: Locator,
@@ -372,13 +372,14 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   // werden nicht aufgespannt") - dort ist die Zeile selbst die Trefferflaeche und traegt `min-h-11`.
   // Der Treffertest gilt trotzdem: 44 px sind 44 px, unabhaengig davon, woher sie kommen.
   //
-  // SECHS ZEILEN SEIT specs/features/0551-personenuebersicht-je-projekt.md: unterhalb `lg:` fuehrt
-  // das Panel alle Ziele - erst die drei Hauptziele, dann die drei Nebenziele.
+  // SIEBEN ZEILEN SEIT specs/features/0551-personenuebersicht-je-projekt.md und
+  // specs/features/0616-klassifizierungsverfahren-vergleichen.md: unterhalb `lg:` fuehrt das Panel
+  // alle Ziele - erst die drei Hauptziele, dann die vier Nebenziele.
   await navTrigger.click()
   const navPanel = page.getByRole('dialog')
   await expect(navPanel).toBeVisible()
   const navRows = navPanel.getByRole('link')
-  await expect(navRows, 'Ziele im Panel der Projekt-Navigation').toHaveCount(6)
+  await expect(navRows, 'Ziele im Panel der Projekt-Navigation').toHaveCount(7)
   await assertTappable(navRows.first(), 'Projekt (Panelzeile der Projekt-Navigation)')
   checked.push('Projekt (Panelzeile)')
 
@@ -481,6 +482,23 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   for (const label of ['Vorherige Aufnahme', 'Nächste Aufnahme']) {
     await assertTappable(page.getByRole('button', { name: label, exact: true }), label)
     checked.push(`${label} der Grossansicht`)
+  }
+
+  // --- Die vier Urteilsflaechen der Klassifizierungspruefung (specs/features/0616-...) --------
+  // Heisser Pfad eigener Art: Ein Urteil schreibt einen gespeicherten Zustand, ein Fehlgriff
+  // daneben landet auf dem NACHBARURTEIL desselben Falls. Die vier liegen zu zweit in einem
+  // Raster mit 8 px Abstand und beziehen ihre 44 px aus `min-h-11` - die Flaechen sind also
+  // sichtbar hoch, und der Treffertest deckt zusaetzlich ab, dass kein Nachbar hineinragt.
+  await page.goto(`/projects/${projectId}/klassifizierung-pruefen`)
+  const reviewLink = page.getByRole('link', { name: /angelegt von / }).first()
+  await expect(reviewLink, 'Zeile der geseedeten Pruefung').toBeVisible()
+  await reviewLink.click()
+  const fall = page.locator('li[data-testid^="review-case-"]').first()
+  await expect(fall, 'Fall der Fallansicht').toBeVisible()
+  for (const label of ['A besser', 'B besser', 'beide ok', 'beide falsch']) {
+    const control = fall.getByRole('button', { name: new RegExp(`^${label}`) })
+    await assertTappable(control, `${label} (Urteil)`)
+    checked.push(label)
   }
 
   // Ohne diese Zusicherung bestuende der Spec auch dann, wenn keine der Lokalisierungen oben noch

@@ -28,6 +28,7 @@ from photosort.album_suitability import (
     ALBUM_SUITABILITY_MAX_LEVEL,
     MAX_ALBUM_SUITABILITY_REASON_LENGTH,
 )
+from photosort.classification_comparison import PhotoComparison, compare_review
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.db import Base, make_engine, make_session_factory
@@ -58,11 +59,20 @@ from photosort.demo_state import (
     rebuild_demo_state,
     render_demo_image,
 )
+from photosort.duplicates import survives_ausschuss
 from photosort.events import LANDMARK_MIN_SHARE
 from photosort.face_analysis import MODEL_KEY
 from photosort.feedback_log import load_diagnosis
 from photosort.landmark import sanitize_landmark_name
 from photosort.models import (
+    ClassificationReview,
+    ClassificationReviewCase,
+    ClassificationReviewPurpose,
+    ClassificationReviewResult,
+    ClassificationReviewResultStrength,
+    ClassificationReviewSide,
+    ClassificationReviewSideKind,
+    ClassificationReviewVerdict,
     CriterionScoringRun,
     Event,
     FeedbackEvent,
@@ -2853,3 +2863,208 @@ class TestTheDemoStateShowsEveryStateOfTheAlbumDraft:
 
         assert (True, None) in stances, "keine Haltung 'Vorschlag'"
         assert (False, None) in stances, "keine Haltung 'Nicht im Entwurf'"
+
+
+class TestTheDemoStateCarriesACompletedClassificationReview:
+    """specs/features/0616-klassifizierungsverfahren-vergleichen.md, Stufe 7: Liste, Fallansicht
+    und Urteil sind im Pruefstack und in `browse-app` nur pruefbar, wenn der Bestand eine
+    ABGESCHLOSSENE Pruefung traegt - als gespeichertes Ergebnis, nie durch einen ausgeloesten Lauf.
+    """
+
+    @staticmethod
+    async def _review(session: AsyncSession, tmp_path: Path) -> tuple[ClassificationReview, User]:
+        user = await _make_user(session, "daniel")
+        await rebuild_demo_state(session, tmp_path, large_collection_photo_count=3)
+        project = await _project(session, RATED_PROJECT_NAME)
+        reviews = (
+            (
+                await session.execute(
+                    select(ClassificationReview).where(
+                        ClassificationReview.project_id == project.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(reviews) == 1
+        return reviews[0], user
+
+    @staticmethod
+    async def _cases(session: AsyncSession, review_id: int) -> list[ClassificationReviewCase]:
+        return list(
+            (
+                await session.execute(
+                    select(ClassificationReviewCase)
+                    .where(ClassificationReviewCase.review_id == review_id)
+                    .order_by(ClassificationReviewCase.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    @staticmethod
+    async def _review_photo_ids(session: AsyncSession, project_id: int) -> list[int]:
+        """Die Pruefmenge so, wie der Pruefjob sie einfriert - unabhaengig nachgebaut."""
+        return list(
+            (
+                await session.execute(
+                    select(Photo.id)
+                    .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+                    .where(Photo.project_id == project_id, survives_ausschuss())
+                    .order_by(Photo.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    async def test_the_review_is_finished_and_compares_eye_with_cloud(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        review, user = await self._review(db_session, tmp_path)
+        sides = {
+            row.side: row
+            for row in (
+                await db_session.execute(
+                    select(ClassificationReviewSide).where(
+                        ClassificationReviewSide.review_id == review.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        }
+
+        assert review.status is ScanStatus.SUCCESS
+        assert review.phase is None
+        assert review.finished_at is not None
+        assert review.error_message is None
+        assert review.created_by_user_id == user.id
+        assert (
+            review.photos_processed
+            == review.photo_count
+            == len(await self._review_photo_ids(db_session, review.project_id))
+        )
+        assert set(sides) == {"a", "b"}
+        assert sides["a"].kind is ClassificationReviewSideKind.EYE
+        assert sides["a"].eye_model_revision is not None
+        assert sides["a"].eye_mapping_version is not None
+        assert sides["b"].kind is ClassificationReviewSideKind.CLOUD
+        assert sides["b"].provider is not None and sides["b"].model is not None
+        assert sides["b"].cost_usd is not None and sides["b"].cost_usd > 0
+
+    async def test_the_stored_cases_are_exactly_what_the_comparison_draws(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Uebersicht rechnet die Zaehlungen beim Lesen mit `compare_review` neu. Gespeicherte
+        Faelle, die diese Funktion nicht zoege, waeren ein Zustand, den die App selbst nie
+        schriebe - die Zahl "vorgelegt" laege dann neben "abweichend" falsch."""
+        review, _user = await self._review(db_session, tmp_path)
+        results = {
+            (row.side, row.photo_id): row
+            for row in (
+                await db_session.execute(
+                    select(ClassificationReviewResult).where(
+                        ClassificationReviewResult.review_id == review.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        }
+        strengths: dict[tuple[str, int], dict[str, float]] = {}
+        for row in (
+            (
+                await db_session.execute(
+                    select(ClassificationReviewResultStrength).where(
+                        ClassificationReviewResultStrength.review_id == review.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        ):
+            strengths.setdefault((row.side, row.photo_id), {})[row.motif_key] = row.strength
+        photo_ids = await self._review_photo_ids(db_session, review.project_id)
+        comparison = compare_review(
+            [
+                PhotoComparison(
+                    photo_id=photo_id,
+                    a_motifs=strengths.get(("a", photo_id)),
+                    b_motifs=strengths.get(("b", photo_id)),
+                    a_excluded_document=results[("a", photo_id)].excluded_document,
+                    b_excluded_document=results[("b", photo_id)].excluded_document,
+                    a_album_level=results[("a", photo_id)].album_level,
+                    b_album_level=results[("b", photo_id)].album_level,
+                )
+                for photo_id in photo_ids
+            ],
+            seed=review.seed,
+            limit=review.sample_size,
+        )
+        stored = await self._cases(db_session, review.id)
+
+        assert {photo_id for _side, photo_id in results} == set(photo_ids)
+        assert all((side, photo_id) in results for side in "ab" for photo_id in photo_ids)
+        assert sorted((c.photo_id, c.purpose.value, c.motif_key or "") for c in stored) == sorted(
+            (c.photo_id, c.purpose, c.motif_key or "") for c in comparison.cases
+        )
+        assert {c.purpose for c in stored} == set(ClassificationReviewPurpose), (
+            "nicht jeder Zweck hat Faelle"
+        )
+
+    async def test_photo_position_counts_from_one_in_the_order_of_the_review_set(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        review, _user = await self._review(db_session, tmp_path)
+        position = {
+            photo_id: index
+            for index, photo_id in enumerate(
+                await self._review_photo_ids(db_session, review.project_id), start=1
+            )
+        }
+
+        for case in await self._cases(db_session, review.id):
+            assert case.photo_position == position[case.photo_id]
+
+    async def test_some_cases_are_judged_by_an_existing_account_and_some_stay_open(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Offene Faelle sind Stoff fuer das Urteil per Klick und per Taste im Pruefstack,
+        beurteilte fuer die Urteilszahlen der Uebersicht."""
+        review, user = await self._review(db_session, tmp_path)
+        cases = await self._cases(db_session, review.id)
+        verdicts = (
+            (
+                await db_session.execute(
+                    select(ClassificationReviewVerdict).where(
+                        ClassificationReviewVerdict.case_id.in_([c.id for c in cases])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert 0 < len(verdicts) < len(cases)
+        assert {v.updated_by_user_id for v in verdicts} == {user.id}
+        assert len({v.verdict for v in verdicts}) > 1
+
+    async def test_without_an_account_there_is_no_review_and_the_seeder_does_not_fail(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Die Pruefung braucht einen Anleger; der Seeder legt nie selbst ein Konto an."""
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        assert (await db_session.execute(select(ClassificationReview))).scalars().all() == []
+
+    async def test_a_rebuild_leaves_exactly_one_review(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        await _make_user(db_session, "daniel")
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+
+        assert len((await db_session.execute(select(ClassificationReview))).scalars().all()) == 1

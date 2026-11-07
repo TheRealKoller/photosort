@@ -4,7 +4,17 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import JSON as SQLJSON
-from sqlalchemy import CheckConstraint, ForeignKey, SmallInteger, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    SmallInteger,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -75,6 +85,9 @@ class Project(Base):
         back_populates="project", cascade="all, delete-orphan"
     )
     export_runs: Mapped[list[ExportRun]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+    classification_reviews: Mapped[list[ClassificationReview]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
 
@@ -1899,3 +1912,228 @@ class QualityWeightEntry(Base):
     criterion_key: Mapped[str]
     weight: Mapped[float]
     weight_set: Mapped[QualityWeightSet] = relationship(back_populates="entries")
+
+
+class ClassificationReviewSideKind(enum.StrEnum):
+    """Das Verfahren EINER Pruefseite - geschlossener Vorrat, nie Freitext (Spec 0616, S6)."""
+
+    CLOUD = "cloud"
+    EYE = "eye"
+    LOCAL = "local"
+
+
+class ClassificationReviewPurpose(enum.StrEnum):
+    """Die vier Pruefzwecke. `motifs`, `excluded_document` und `album_level` zaehlen FOTOS,
+    `motif_feature` zaehlt (Foto, Motiv)-PAARE (ADR 0139 Punkt 1)."""
+
+    MOTIFS = "motifs"
+    MOTIF_FEATURE = "motif_feature"
+    EXCLUDED_DOCUMENT = "excluded_document"
+    ALBUM_LEVEL = "album_level"
+
+
+class ReviewPhase(enum.StrEnum):
+    """Der sichtbare Teilschritt eines Prueflaufs - ein ZUSTAND, kein Satz: die Oberflaeche
+    formuliert ihn. `NULL`, sobald der Lauf beendet ist (ADR 0139 Punkt 3)."""
+
+    SIDE_A = "side_a"
+    SIDE_B = "side_b"
+    CASES = "cases"
+
+
+class ClassificationVerdict(enum.StrEnum):
+    """Die vier Urteile je Fall - genau eines, gemeinsam fuer beide Nutzer."""
+
+    A_BETTER = "a_better"
+    B_BETTER = "b_better"
+    BOTH_OK = "both_ok"
+    BOTH_WRONG = "both_wrong"
+
+
+class ClassificationReview(Base):
+    """Eine Pruefung zweier Klassifizierungsverfahren an denselben Fotos (Spec 0616).
+
+    EIGENER LAUF, EIGENE TABELLEN (ADR 0139 Punkt 2): Der Job klassifiziert die Pruefmenge fuer
+    beide Seiten NEU und schreibt ausschliesslich hierher. Geltende Motiv-Kopfzeilen, Kriterien,
+    Albumtauglichkeit, Rangfolge und die Kostenspalten der vier uebrigen Lauf-Tabellen bleiben
+    dadurch strukturell unberuehrt - ein Verhaltenstest vergleicht den Bestand vor und nach einer
+    Pruefung.
+
+    `sample_size` gilt JE ZWECK (ADR 0139 Punkt 6); daraus folgt die Obergrenze von vier
+    vorgelegten Fallgruppen. `seed` wird beim Anlegen gezogen und mit den Abweichungen an
+    `classification_comparison.py::compare_review` gereicht, damit die Auswahl reproduzierbar ist.
+
+    `photo_count` ist die Groesse der EINGEFRORENEN Pruefmenge, `photos_processed` der Fortschritt
+    und `unclassifiable_photo_count` die Zahl der Fotos ohne Ergebnis auf mindestens einer Seite.
+    Die drei sind getrennte Zahlen: ein fehlgeschlagenes Foto bleibt Teil der Pruefmenge, wird
+    aber fuer keinen Zweck verglichen."""
+
+    __tablename__ = "classification_reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    # Der anlegende Nutzer ist ein AUDITFELD, kein Zugriffsschluessel (S1): beide Nutzer sehen und
+    # beurteilen dieselben Pruefungen.
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    status: Mapped[ScanStatus] = mapped_column(SQLEnum(ScanStatus, native_enum=False, length=20))
+    phase: Mapped[ReviewPhase | None] = mapped_column(
+        SQLEnum(ReviewPhase, native_enum=False, length=20), default=None
+    )
+    sample_size: Mapped[int]
+    seed: Mapped[int]
+    photo_count: Mapped[int] = mapped_column(default=0)
+    photos_processed: Mapped[int] = mapped_column(default=0)
+    unclassifiable_photo_count: Mapped[int] = mapped_column(default=0)
+    started_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    # Fortschritts-Watchdog, analog den uebrigen Lauf-Tabellen.
+    last_progress_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Ausschliesslich ein fester deutscher Satz aus der geschlossenen Menge in
+    # classification_review.py - nie `str(exc)` eines fremden Systems (S7).
+    error_message: Mapped[str | None] = mapped_column(default=None)
+
+    project: Mapped[Project] = relationship(back_populates="classification_reviews")
+
+
+class ClassificationReviewSide(Base):
+    """Die Herkunft EINER Seite und ihre Kosten (Spec 0616, ADR 0139 Punkte 3 und 6).
+
+    Die Herkunft wird beim Anlegen GESPEICHERT, nicht beim Lesen abgeleitet: eine spaeter
+    hinzugefuegte Eye-Fassung aendert eine bestehende Pruefung nicht. `provider` folgt
+    serverseitig aus `provider_for_vision_model(model)` (S6) - ein Anbieterfeld aus dem Client
+    existiert nicht.
+
+    `estimated_cost_usd` ist die beim Anlegen neu berechnete und eingefrorene Schaetzung; sie ist
+    ein Beleg, keine Eingabe. `NULL` heisst "nicht schaetzbar", nie "kostenlos" - Eye und lokal
+    tragen `0.0`. Die Ist-Kosten folgen dem Idiom der Remote-Laeufe: `NULL` = nicht erfasst."""
+
+    __tablename__ = "classification_review_sides"
+
+    review_id: Mapped[int] = mapped_column(
+        ForeignKey("classification_reviews.id"), primary_key=True
+    )
+    side: Mapped[str] = mapped_column(String(1), primary_key=True)
+    kind: Mapped[ClassificationReviewSideKind] = mapped_column(
+        SQLEnum(ClassificationReviewSideKind, native_enum=False, length=20)
+    )
+    provider: Mapped[str | None] = mapped_column(default=None)
+    model: Mapped[str | None] = mapped_column(default=None)
+    eye_model_revision: Mapped[str | None] = mapped_column(default=None)
+    eye_mapping_version: Mapped[str | None] = mapped_column(default=None)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(default=None)
+    api_calls: Mapped[int | None] = mapped_column(default=None)
+    failed_calls: Mapped[int | None] = mapped_column(default=None)
+    input_tokens: Mapped[int | None] = mapped_column(default=None)
+    output_tokens: Mapped[int | None] = mapped_column(default=None)
+    cost_usd: Mapped[float | None] = mapped_column(default=None)
+
+
+class ClassificationReviewResult(Base):
+    """Die Aussage EINER Seite zu EINEM Foto (ADR 0139 Punkt 3).
+
+    `excluded_document` und `album_level` sind NULLBAR, und `NULL` heisst hier "dieses Verfahren
+    trifft dazu keine Aussage" - die lokale Seite hat weder Dokument-Ausschluss noch Albumstufe.
+    Ein erfundenes `false` machte jede Dokumentaufnahme zur Abweichung, ein erfundenes `0` jede
+    Albumstufe."""
+
+    __tablename__ = "classification_review_results"
+
+    review_id: Mapped[int] = mapped_column(
+        ForeignKey("classification_reviews.id"), primary_key=True
+    )
+    side: Mapped[str] = mapped_column(String(1), primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"), primary_key=True)
+    excluded_document: Mapped[bool | None] = mapped_column(default=None)
+    album_level: Mapped[int | None] = mapped_column(default=None)
+    computed_at: Mapped[datetime]
+
+
+class ClassificationReviewResultStrength(Base):
+    """Eine Motivstaerke einer Pruefseite - ALLE ACHT Motive je Ergebniszeile.
+
+    Die Zeile ist der Rohwert, den der Export je Merkmal-Fall durchreicht: ungerundet, wie sie
+    hier steht. Eine fehlende Zeile gilt beim Vergleich als "nicht vorhanden", dieselbe Regel wie
+    im Lesepfad (`selection.motif_is_present`)."""
+
+    __tablename__ = "classification_review_result_strengths"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["review_id", "side", "photo_id"],
+            [
+                "classification_review_results.review_id",
+                "classification_review_results.side",
+                "classification_review_results.photo_id",
+            ],
+            name="fk_classification_review_result_strengths_result",
+        ),
+    )
+
+    review_id: Mapped[int] = mapped_column(primary_key=True)
+    side: Mapped[str] = mapped_column(String(1), primary_key=True)
+    photo_id: Mapped[int] = mapped_column(primary_key=True)
+    motif_key: Mapped[str] = mapped_column(primary_key=True)
+    strength: Mapped[float]
+
+
+class ClassificationReviewCase(Base):
+    """Ein VORGELGTER Fall - eine Abweichung, die die Stichprobe erwischt hat.
+
+    `photo_position` ist die laufende Nummer des Fotos in der eingefrorenen Pruefmenge, EINMAL
+    geschrieben und von Fallliste und Export gemeinsam gelesen (ADR 0139 Punkt 3). Ohne sie waere
+    "das dritte Foto der Pruefung" in Oberflaeche und Export nicht dieselbe Stelle, denn ein Foto
+    kann mehrere Faelle tragen.
+
+    `motif_key` steht NUR bei `motif_feature`; die Eindeutigkeit schliesst den Zweck ein, damit ein
+    Foto je Zweck hoechstens einen Fall traegt und je abweichendem Motiv genau einen Merkmal-Fall.
+
+    Fuer die drei fotozzaehlenden Zwecke ist `motif_key` NULL, und ein einfaches UNIQUE behandelt
+    NULL je Zeile als verschieden - die Zusage traegt deshalb zusaetzlich ein Teilindex
+    `WHERE motif_key IS NULL`."""
+
+    __tablename__ = "classification_review_cases"
+    __table_args__ = (
+        UniqueConstraint(
+            "review_id",
+            "photo_id",
+            "purpose",
+            "motif_key",
+            name="uq_classification_review_case_review_photo_purpose_motif",
+        ),
+        Index(
+            "uq_classification_review_case_review_photo_purpose_counted",
+            "review_id",
+            "photo_id",
+            "purpose",
+            unique=True,
+            sqlite_where=text("motif_key IS NULL"),
+            postgresql_where=text("motif_key IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_id: Mapped[int] = mapped_column(ForeignKey("classification_reviews.id"))
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    photo_position: Mapped[int]
+    purpose: Mapped[ClassificationReviewPurpose] = mapped_column(
+        SQLEnum(ClassificationReviewPurpose, native_enum=False, length=20)
+    )
+    motif_key: Mapped[str | None] = mapped_column(default=None)
+
+
+class ClassificationReviewVerdict(Base):
+    """Das EINE Urteil eines Falls - nicht eines je Nutzer (ADR 0139 Punkt 3).
+
+    `updated_by_user_id` ist ein AUDITFELD, nie ein Zugriffsschluessel (S1): es wird
+    ausschliesslich aus `current_user.id` geschrieben und nur zur Anzeige "von {Nutzer}" gelesen,
+    nie als Aufsuch- oder Filterbedingung."""
+
+    __tablename__ = "classification_review_verdicts"
+
+    case_id: Mapped[int] = mapped_column(
+        ForeignKey("classification_review_cases.id"), primary_key=True
+    )
+    verdict: Mapped[ClassificationVerdict] = mapped_column(
+        SQLEnum(ClassificationVerdict, native_enum=False, length=20)
+    )
+    updated_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

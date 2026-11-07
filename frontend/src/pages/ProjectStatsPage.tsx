@@ -2,7 +2,12 @@ import type { ReactNode } from 'react'
 import { useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { CloudVisionPurpose, ProjectStatsCostByPurpose, ProjectStatsOut } from '../api/types'
+import type {
+  CloudVisionPurpose,
+  ProjectStatsCostByPurpose,
+  ProjectStatsOut,
+  StatsCostPurpose,
+} from '../api/types'
 import { FeedbackDiagnosisSection } from '../components/FeedbackDiagnosisSection'
 import { DetailRow, Metric, MetricRow, Section } from '../components/StatsLayout'
 import { Alert } from '../components/ui/alert'
@@ -77,6 +82,16 @@ const PURPOSE_LABELS: Record<CloudVisionPurpose, string> = {
 }
 
 /**
+ * Die Beschriftung der KOSTENPOSTEN (Spec 0616): die beiden Cloud-Zwecke plus der Posten der
+ * Klassifizierungspruefung. `PURPOSE_LABELS` bleibt auf die beiden Cloud-Zwecke verengt - es
+ * beschriftet auch die Fehlschlag-Zeilen je Cloud-Zweck, wo `review` nie vorkommt.
+ */
+const COST_PURPOSE_LABELS: Record<StatsCostPurpose, string> = {
+  ...PURPOSE_LABELS,
+  review: 'Prüfungen',
+}
+
+/**
  * Hinweis samt Erlaeuterung, beides im Wortlaut des UI/UX-Abschnitts der Spec. Bewusst dezent und
  * ohne Fehler-Rot: eine unvollstaendig erfasste Summe ist kein Fehler, sondern eine Einschraenkung
  * der Aussage.
@@ -109,7 +124,7 @@ function CostEntry({ entry }: { entry: ProjectStatsCostByPurpose }) {
       data-purpose={entry.purpose}
       className="flex flex-wrap items-start justify-between gap-2 border-b border-separator py-2 last:border-b-0"
     >
-      <dt className="text-sm text-text">{PURPOSE_LABELS[entry.purpose]}</dt>
+      <dt className="text-sm text-text">{COST_PURPOSE_LABELS[entry.purpose]}</dt>
       <dd className="flex max-w-md flex-col items-end gap-1 text-right">
         <span className="text-sm font-medium text-text-h">{formatUsd(entry.cost_usd)}</span>
         {entry.has_unrecorded_runs && <IncompleteHint />}

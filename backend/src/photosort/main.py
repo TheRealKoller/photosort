@@ -8,6 +8,7 @@ from photosort.api import (
     album_decisions,
     auth,
     cameras,
+    classification_reviews,
     duplicate_decisions,
     export,
     feedback,
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(album_decisions.router)
     app.include_router(auth.router)
     app.include_router(cameras.router)
+    app.include_router(classification_reviews.router)
     app.include_router(duplicate_decisions.router)
     app.include_router(export.router)
     app.include_router(feedback.router)

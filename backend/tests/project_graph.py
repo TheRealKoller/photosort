@@ -24,6 +24,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.db import Base
 from photosort.models import (
+    ClassificationReview,
+    ClassificationReviewCase,
+    ClassificationReviewPurpose,
+    ClassificationReviewResult,
+    ClassificationReviewResultStrength,
+    ClassificationReviewSide,
+    ClassificationReviewSideKind,
+    ClassificationReviewVerdict,
+    ClassificationVerdict,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
@@ -89,6 +98,8 @@ class ProjectGraph:
     fine_label_id: int
     event_id: int
     camera_id: int
+    classification_review_id: int
+    classification_review_case_id: int
 
 
 async def get_or_create_user(session: AsyncSession, username: str = "graph-user") -> User:
@@ -146,7 +157,8 @@ async def get_or_create_person(session: AsyncSession) -> Person:
 async def build_project_graph(
     session: AsyncSession, name: str, *, fine_label_key: str = "strand"
 ) -> ProjectGraph:
-    """Legt ein Projekt mit genau einer Zeile in jeder der einundzwanzig abhaengigen Tabellen an."""
+    """Legt ein Projekt mit genau einer Zeile in jeder der siebenundzwanzig abhaengigen
+    Tabellen an."""
     now = datetime.now(UTC).replace(tzinfo=None)
     user = await get_or_create_user(session)
     fine_label = await get_or_create_fine_label(session, fine_label_key)
@@ -417,6 +429,72 @@ async def build_project_graph(
         ]
     )
     await session.flush()
+
+    # Spec 0616 / ADR 0139: die sechs Prueftabellen. Ohne diese Zeilen prueften die beiden
+    # Vollstaendigkeitstests der Projektloeschung die neuen Kanten nicht, und "die Pruefung faellt
+    # mit dem Projekt" waere unbelegt. Zwei Seiten, zwei Ergebnisse und eine Staerkezeile spiegeln
+    # die zusammengesetzten Schluessel; der Fall traegt seine gespeicherte Fotoposition.
+    review = ClassificationReview(
+        project_id=project.id,
+        created_by_user_id=user.id,
+        status=ScanStatus.SUCCESS,
+        sample_size=30,
+        seed=4711,
+        photo_count=1,
+    )
+    session.add(review)
+    await session.flush()
+    session.add_all(
+        [
+            ClassificationReviewSide(
+                review_id=review.id,
+                side="a",
+                kind=ClassificationReviewSideKind.CLOUD,
+                provider="anthropic",
+                model="claude-sonnet-4-5",
+                estimated_cost_usd=0.25,
+                api_calls=1,
+                failed_calls=0,
+                input_tokens=100,
+                output_tokens=10,
+                cost_usd=0.01,
+            ),
+            ClassificationReviewResult(
+                review_id=review.id,
+                side="a",
+                photo_id=photo.id,
+                excluded_document=False,
+                album_level=4,
+                computed_at=now,
+            ),
+        ]
+    )
+    await session.flush()
+    session.add_all(
+        [
+            ClassificationReviewResultStrength(
+                review_id=review.id, side="a", photo_id=photo.id, motif_key="menschen", strength=0.9
+            ),
+        ]
+    )
+    await session.flush()
+    case = ClassificationReviewCase(
+        review_id=review.id,
+        photo_id=photo.id,
+        photo_position=1,
+        purpose=ClassificationReviewPurpose.MOTIFS,
+    )
+    session.add(case)
+    await session.flush()
+    session.add(
+        ClassificationReviewVerdict(
+            case_id=case.id,
+            verdict=ClassificationVerdict.A_BETTER,
+            updated_by_user_id=user.id,
+            updated_at=now,
+        )
+    )
+    await session.flush()
     return ProjectGraph(
         project_id=project.id,
         project_name=name,
@@ -429,6 +507,8 @@ async def build_project_graph(
         fine_label_id=fine_label.id,
         event_id=event.id,
         camera_id=camera.id,
+        classification_review_id=review.id,
+        classification_review_case_id=case.id,
     )
 
 

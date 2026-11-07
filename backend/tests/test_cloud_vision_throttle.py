@@ -134,9 +134,18 @@ class TestTheThrottleIsAlwaysPassedIn:
     def test_both_factories_pull_the_process_wide_throttle(self) -> None:
         """Die beiden Factories laufen in keinem automatisierten Test (echtes Secret, echter
         Netzwerkversuch) - abgesichert ist ihr Durchreichen deshalb als Quelltext-Verankerung
-        plus `mypy --strict`."""
-        for factory in (build_landmark_client, build_category_classification_client):
-            source = inspect.getsource(factory)
+        plus `mypy --strict`.
 
-            assert "throttle_for_provider(settings.landmark_provider)" in source, factory.__name__
-            assert "throttle=throttle" in source, factory.__name__
+        Der LANDMARK-Client folgt weiter dem Installationsanbieter; der KATEGORIE-Client leitet
+        ihn seit Spec 0616 aus dem uebergebenen Modell ab (ADR 0139 Punkt 4) - die
+        Verhaltenspruefung dazu steht in `test_remote_classification.py`.
+        """
+        landmark_source = inspect.getsource(build_landmark_client)
+        assert "throttle_for_provider(settings.landmark_provider)" in landmark_source
+        assert "throttle=throttle" in landmark_source
+
+        category_source = inspect.getsource(build_category_classification_client)
+        assert "provider = provider_for_vision_model(model)" in category_source
+        assert "throttle_for_provider(provider)" in category_source
+        assert "throttle_for_provider(settings.landmark_provider)" not in category_source
+        assert "throttle=throttle" in category_source

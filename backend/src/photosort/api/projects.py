@@ -29,6 +29,7 @@ from photosort.eye_client import eye_service_is_healthy
 from photosort.models import (
     ClassificationMode,
     ClassificationPhase,
+    ClassificationReview,
     CloudVisionPhase,
     CriterionScoringRun,
     DuplicateDecision,
@@ -432,6 +433,18 @@ async def _latest_export_run(session: AsyncSession, project_id: int) -> ExportRu
         select(ExportRun)
         .where(ExportRun.project_id == project_id)
         .order_by(ExportRun.started_at.desc())
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
+async def _latest_classification_review(
+    session: AsyncSession, project_id: int
+) -> ClassificationReview | None:
+    result = await session.execute(
+        select(ClassificationReview)
+        .where(ClassificationReview.project_id == project_id)
+        .order_by(ClassificationReview.started_at.desc())
         .limit(1)
     )
     return result.scalars().first()
@@ -882,16 +895,18 @@ async def delete_project(
     """
     project = await _get_project_or_404(project_id, session)
 
-    # Ein aktiver Lauf schreibt in genau die Zeilen, die gleich verschwinden. Alle VIER Lauftypen
+    # Ein aktiver Lauf schreibt in genau die Zeilen, die gleich verschwinden. Alle FUENF Lauftypen
     # - der Remote-Klassifizierungslauf gehoert zwingend dazu, er schreibt nach
-    # photo_category_classifications/photo_fine_labels/fine_labels. Geprueft wird jeweils nur der
-    # NEUESTE Lauf: ein nicht mehr aktueller RUNNING-Altlauf darf nicht dauerhaft blockieren (ein
+    # photo_category_classifications/photo_fine_labels/fine_labels, und die Klassifizierungspruefung
+    # (Spec 0616) schreibt in ihre sechs eigenen Tabellen. Geprueft wird jeweils nur der NEUESTE
+    # Lauf: ein nicht mehr aktueller RUNNING-Altlauf darf nicht dauerhaft blockieren (ein
     # haengengebliebener wird ohnehin vom Watchdog auf FAILED gesetzt).
     latest_runs = (
         await _latest_scan_run(session, project_id),
         await _latest_scoring_run(session, project_id),
         await _latest_criterion_scoring_run(session, project_id),
         await _latest_remote_category_classification_run(session, project_id),
+        await _latest_classification_review(session, project_id),
     )
     if any(run is not None and run.status == ScanStatus.RUNNING for run in latest_runs):
         raise HTTPException(

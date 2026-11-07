@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 from datetime import datetime
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from photosort.api.deps import get_current_user, get_session
 from photosort.api.motifs import StrengthBandsOut
 from photosort.config import settings
 from photosort.models import (
+    ClassificationReview,
+    ClassificationReviewSide,
     CloudVisionPhase,
     CriterionScoringRun,
     MotifAssessmentSource,
@@ -93,12 +96,25 @@ class MotifEntryOut(BaseModel):
     average_strength: float | None
 
 
-class CostByPurposeOut(BaseModel):
-    """`has_unrecorded_runs` ist wahr, wenn mindestens einer der beiden Befunde zutrifft. Es wird
-    nichts geschaetzt und nichts hochgerechnet; der Betrag bleibt die Summe des tatsaechlich
-    Erfassten."""
+class CostPurpose(enum.StrEnum):
+    """Die Kostenposten der Statistik: die beiden Cloud-Vision-Laeufe und die Pruefung der
+    Klassifizierungsverfahren (Spec 0616).
 
-    purpose: CloudVisionPhase
+    Eigener Typ und NICHT `CloudVisionPhase`: die Pruefung ist kein Cloud-Vision-Lauf je Foto, sie
+    hat keinen Foto-Fortschritt und keine `photo_cloud_vision_errors`-Zeile. Haenge sie an jene
+    Aufzaehlung, liefe sie in `RemoteFailureOut` und in die Phasenliste der Laufuebersicht mit."""
+
+    LANDMARK = "landmark"
+    REMOTE_CATEGORY = "remote_category"
+    REVIEW = "review"
+
+
+class CostByPurposeOut(BaseModel):
+    """`has_unrecorded_runs` ist wahr, wenn mindestens einer der beiden Befunde zutrifft (beim
+    Posten `review` nur Befund (b), siehe `_cost_out`). Es wird nichts geschaetzt und nichts
+    hochgerechnet; der Betrag bleibt die Summe des tatsaechlich Erfassten."""
+
+    purpose: CostPurpose
     cost_usd: float
     has_unrecorded_runs: bool
 
@@ -395,6 +411,11 @@ async def _cost_out(
         Token-Preisen groesser null ist das strukturell unmoeglich und damit ein zuverlaessiger
         Indikator fuer eine Erfassungsluecke, kein heuristischer Verdacht.
 
+    Der Posten `review` (Spec 0616) folgt derselben Lueckenregel (b) - und NUR ihr: es gibt keine
+    Altzeilen ohne Betrag, denn die Tabellen entstehen mit dieser Revision. Eine Seite ohne
+    `api_calls` (Eye, lokal) ist kostenfrei und loest nie einen Hinweis aus; `estimated_cost_usd`
+    ist ein Beleg und fliesst in keinen Betrag ein.
+
     Bewusst getragene Grenze von Befund (a) beim Zweck `landmark`: ein Altlauf, der Aufrufe
     abgesetzt, aber keine Sehenswuerdigkeit gefunden hat, hinterlaesst keine
     `photo_landmark_detections`-Zeile und loest den Hinweis nicht aus. Fuer Laeufe nach der
@@ -436,17 +457,44 @@ async def _cost_out(
         )
     ).one()
 
+    review_cost, review_gap_runs = (
+        await session.execute(
+            select(
+                func.coalesce(func.sum(ClassificationReviewSide.cost_usd), 0.0),
+                func.count().filter(
+                    and_(
+                        ClassificationReviewSide.api_calls > 0,
+                        or_(
+                            ClassificationReviewSide.cost_usd.is_(None),
+                            ClassificationReviewSide.cost_usd == 0,
+                        ),
+                    )
+                ),
+            )
+            .join(
+                ClassificationReview,
+                ClassificationReview.id == ClassificationReviewSide.review_id,
+            )
+            .where(ClassificationReview.project_id == project_id)
+        )
+    ).one()
+
     by_purpose = [
         CostByPurposeOut(
-            purpose=CloudVisionPhase.LANDMARK,
+            purpose=CostPurpose.LANDMARK,
             cost_usd=landmark_cost,
             has_unrecorded_runs=bool(landmark_null_runs and landmark_results)
             or bool(landmark_gap_runs),
         ),
         CostByPurposeOut(
-            purpose=CloudVisionPhase.REMOTE_CATEGORY,
+            purpose=CostPurpose.REMOTE_CATEGORY,
             cost_usd=remote_cost,
             has_unrecorded_runs=bool(remote_null_runs and remote_results) or bool(remote_gap_runs),
+        ),
+        CostByPurposeOut(
+            purpose=CostPurpose.REVIEW,
+            cost_usd=review_cost,
+            has_unrecorded_runs=bool(review_gap_runs),
         ),
     ]
     return CostOut(

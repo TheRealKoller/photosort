@@ -40,6 +40,7 @@ from photosort.classification import (
     detect_objects,
     detect_person,
 )
+from photosort.classification_review import run_classification_review
 from photosort.clock import now_utc
 from photosort.cloud_vision import ThrottleStats, TokenUsage, _sanitize_label_text
 from photosort.cloud_vision_throttle import throttle_for_provider
@@ -115,6 +116,7 @@ from photosort.logging_config import configure_logging
 from photosort.models import (
     ClassificationMode,
     ClassificationPhase,
+    ClassificationReview,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
@@ -401,7 +403,13 @@ def _set_phase(run: CriterionScoringRun, phase: ClassificationPhase | None) -> N
 
 async def _fail_run(
     session: AsyncSession,
-    run: ScanRun | ScoringRun | CriterionScoringRun | RemoteCategoryClassificationRun,
+    run: (
+        ScanRun
+        | ScoringRun
+        | CriterionScoringRun
+        | RemoteCategoryClassificationRun
+        | ClassificationReview
+    ),
     error_message: str,
 ) -> None:
     """Gemeinsame "Lauf auf FAILED setzen"-Logik für die run_*-Funktionen. KEIN Kontrollfluss
@@ -419,6 +427,11 @@ async def _fail_run(
         # existiert nur auf CriterionScoringRun, deshalb die isinstance-Pruefung statt eines
         # gemeinsamen Basisklassen-Feldes (die vier Run-Modelle haben bewusst keine).
         _set_phase(run, None)
+    elif isinstance(run, ClassificationReview):
+        # Spec 0616: der Teilschritt einer Pruefung ist `NULL`, sobald der Lauf beendet ist -
+        # das gilt fuer den Fehlschlag genauso wie fuer den Erfolg. Die Pruefung hat kein
+        # `phase_started_at`, deshalb steht hier die direkte Zuweisung.
+        run.phase = None
     await session.commit()
     # das vorangehende rollback() expired ORM-Objekte der Session -
     # ohne dieses refresh() koennte ein direkter Attributzugriff auf `run` NACH der Rueckkehr aus
@@ -4102,7 +4115,13 @@ def _stall_message() -> str:
 
 async def _fail_if_stalled(
     session: AsyncSession,
-    run: ScanRun | ScoringRun | CriterionScoringRun | RemoteCategoryClassificationRun,
+    run: (
+        ScanRun
+        | ScoringRun
+        | CriterionScoringRun
+        | RemoteCategoryClassificationRun
+        | ClassificationReview
+    ),
 ) -> bool:
     """Setzt eine einzelne Zeile über _fail_run auf FAILED, isoliert von den übrigen
     Zeilen/Tabellen: ein Fehler bei einer Zeile/Tabelle darf die Bereinigung der übrigen
@@ -4138,10 +4157,10 @@ async def reap_stalled_runs(
     anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
     async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
     Testdatenbank gebundene Factory, analog zu run_criterion_scoring's build_detector-Parameter.
-    Die fuenf Tabellen werden bewusst nacheinander in fuenf eigenstaendigen Bloecken behandelt
+    Die sechs Tabellen werden bewusst nacheinander in sechs eigenstaendigen Bloecken behandelt
     statt ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/
-    ScoringRun/CriterionScoringRun/RemoteCategoryClassificationRun/ExportRun bleiben fuenf
-    eigenstaendige Modelle ohne gemeinsame Basisklasse)."""
+    ScoringRun/CriterionScoringRun/RemoteCategoryClassificationRun/ClassificationReview/ExportRun
+    bleiben sechs eigenstaendige Modelle ohne gemeinsame Basisklasse)."""
     reaped = 0
     threshold = _now_utc() - STALL_THRESHOLD
     async with session_factory() as session:
@@ -4233,6 +4252,26 @@ async def reap_stalled_runs(
                 reaped += 1
 
         try:
+            stalled_reviews = (
+                (
+                    await session.execute(
+                        select(ClassificationReview).where(
+                            ClassificationReview.status == ScanStatus.RUNNING,
+                            ClassificationReview.last_progress_at < threshold,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        except Exception:
+            await session.rollback()
+            stalled_reviews = []
+        for review in stalled_reviews:
+            if await _fail_if_stalled(session, review):
+                reaped += 1
+
+        try:
             stalled_export_runs = (
                 (
                     await session.execute(
@@ -4279,6 +4318,10 @@ class WorkerSettings:
         arq_func(classify, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
         # Der Export: "ein Trigger -> genau ein Lauf" (ADR 0136 Punkt 5), wie die anderen Jobs.
         arq_func(export_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+        # Der Prueflauf (Spec 0616, ADR 0139 Punkt 2): eigener Lauf mit eigenen Tabellen. Auch er
+        # kennt genau einen Versuch - ein Fehlschlag ist ein Endzustand mit fester Meldung, kein
+        # automatischer Hintergrund-Retry.
+        arq_func(run_classification_review, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
     )
     # Schicht 2 des Fortschritts-Watchdogs: run_at_startup=True sorgt dafuer, dass ein
     # Worker-Neustart sofort eine erste Pruefung ausloest, statt bis zu 5 Minuten auf den

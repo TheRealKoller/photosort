@@ -12,7 +12,8 @@ und werden ueber die ECHTE ``thumbnails.py``-Logik in den lokalen Cache geschrie
 Abbild von Datenmodell oder Cache-Schluessel, das bei einer Modelaenderung still abdriften
 koennte. Dazu kommen zwei frei erfundene Personen mit synthetischen Referenzen: Sie
 sind global, entstehen ueber die echten Dienstfunktionen in ``persons.py`` und werden beim
-Neuaufbau ausschliesslich ueber ihre Demo-Namen entfernt.
+Neuaufbau ausschliesslich ueber ihre Demo-Namen entfernt. Das bewertete Projekt traegt ausserdem
+eine abgeschlossene Klassifizierungspruefung (Eye gegen Cloud) als gespeichertes Ergebnis.
 
 WARUM DIESES MODUL IM PRODUKTIV-PAKET LIEGT UND TROTZDEM UNGEFAEHRLICH IST: Es braucht die echten
 SQLAlchemy-Modelle und die echte Cache-Schluessel-Bildung, liegt damit im Produktiv-Image - und ist
@@ -56,13 +57,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.album_suitability import (
     ALBUM_SUITABILITY_MAX_LEVEL,
+    ALBUM_SUITABILITY_MIN_LEVEL,
     MAX_ALBUM_SUITABILITY_REASON_LENGTH,
 )
 from photosort.cameras import shifted
-from photosort.cloud_vision import default_vision_model_for_provider
+from photosort.classification_comparison import (
+    DEFAULT_SAMPLE_SIZE,
+    PhotoComparison,
+    compare_review,
+)
+from photosort.cloud_vision import default_vision_model_for_provider, provider_for_vision_model
 from photosort.config import settings
 from photosort.criteria import CRITERIA_REGISTRY
 from photosort.db import make_engine, make_session_factory
+from photosort.duplicates import survives_ausschuss
+from photosort.eye_mapping import MAPPING_VERSION as EYE_MAPPING_VERSION
+from photosort.eye_mapping import MODEL_REVISION as EYE_MODEL_REVISION
 from photosort.face_analysis import MODEL_KEY, FaceBox
 from photosort.feedback_log import (
     FrozenContext,
@@ -71,6 +81,15 @@ from photosort.feedback_log import (
     record_motif_correction,
 )
 from photosort.models import (
+    ClassificationReview,
+    ClassificationReviewCase,
+    ClassificationReviewPurpose,
+    ClassificationReviewResult,
+    ClassificationReviewResultStrength,
+    ClassificationReviewSide,
+    ClassificationReviewSideKind,
+    ClassificationReviewVerdict,
+    ClassificationVerdict,
     CloudVisionPhase,
     CriterionScoringRun,
     Event,
@@ -319,6 +338,26 @@ _DEMO_LANDMARK_INPUT_TOKENS = 6_200
 _DEMO_LANDMARK_OUTPUT_TOKENS = 540
 _DEMO_LANDMARK_COST_USD = 0.11
 _DEMO_ESTIMATED_COST_USD = 0.52
+
+# Die abgeschlossene Klassifizierungspruefung des "bewertet"-Zustands (Spec 0616). Bilanz und
+# Zeitpunkte sind FREI ERFUNDEN - aus demselben Grund wie die Cloud-Bilanz darueber: Screenshots
+# landen oeffentlich. Die Staerken liegen deutlich beidseits der Praesenzgrenze, damit eine
+# Abweichung nie an der Grenze haengt.
+_DEMO_REVIEW_CLOUD_PROVIDER = "anthropic"
+_DEMO_REVIEW_SEED = 616
+_DEMO_REVIEW_STARTED_AT = datetime(2024, 6, 2, 9, 0, 0)
+_DEMO_REVIEW_FINISHED_AT = datetime(2024, 6, 2, 9, 4, 0)
+_DEMO_REVIEW_ESTIMATED_COST_USD = 0.09
+_DEMO_REVIEW_COST_USD = 0.07
+_DEMO_REVIEW_INPUT_TOKENS = 9_800
+_DEMO_REVIEW_OUTPUT_TOKENS = 760
+_DEMO_REVIEW_STRONG = 0.8
+_DEMO_REVIEW_WEAK = 0.2
+_DEMO_REVIEW_VERDICTS: tuple[ClassificationVerdict, ...] = (
+    ClassificationVerdict.A_BETTER,
+    ClassificationVerdict.BOTH_OK,
+    ClassificationVerdict.B_BETTER,
+)
 
 # Die Albumtauglichkeit des "bewertet"-Zustands. Zwei Fotos tragen einen Sonderfall der
 # BEGRUENDUNG, damit die Sichtpruefung im Browser beide Extreme sieht - und damit die bestehenden
@@ -1516,7 +1555,167 @@ async def _seed_rated_project(
         user_ids=[user.id for user in users],
     )
     await session.flush()
+    await _seed_classification_review(session, project.id, users)
+    await session.flush()
     return photos, len(users)
+
+
+def _demo_review_statements(
+    index: int,
+) -> tuple[dict[str, dict[str, float]], dict[str, bool], dict[str, int]]:
+    """Beide Seitenaussagen zum `index`-ten Foto der Pruefmenge (ab 0): Staerken, Ausschluss,
+    Albumstufe je Seite.
+
+    Die Abweichungen sind ABSICHTLICH breit gestreut: jedes Foto traegt null bis drei abweichende
+    Motive, einzelne Fotos weichen beim Dokument-Ausschluss und bei der Albumstufe ab, andere
+    stimmen ueberein. Beide Spalten der Uebersicht ("uebereinstimmend" und "abweichend") sind
+    damit belegt, und die Fallansicht hat mehr als eine Handvoll Faelle - sie ist im Pruefstack
+    der Ort, an dem Urteile geschrieben werden.
+    """
+    keys = list(MOTIF_REGISTRY)
+    a = {
+        key: _DEMO_REVIEW_STRONG if (index + offset) % 3 == 0 else _DEMO_REVIEW_WEAK
+        for offset, key in enumerate(keys)
+    }
+    b = dict(a)
+    for step in range(index % 4):
+        key = keys[(index + step) % len(keys)]
+        b[key] = _DEMO_REVIEW_STRONG if a[key] == _DEMO_REVIEW_WEAK else _DEMO_REVIEW_WEAK
+    a_level = ALBUM_SUITABILITY_MIN_LEVEL + index % ALBUM_SUITABILITY_MAX_LEVEL
+    b_level = (
+        ALBUM_SUITABILITY_MIN_LEVEL + (index + 1) % ALBUM_SUITABILITY_MAX_LEVEL
+        if index % 3 in (0, 1)
+        else a_level
+    )
+    return (
+        {"a": a, "b": b},
+        {"a": index == 5, "b": index == 1},
+        {"a": a_level, "b": b_level},
+    )
+
+
+async def _seed_classification_review(
+    session: AsyncSession, project_id: int, users: Sequence[User]
+) -> None:
+    """Eine ABGESCHLOSSENE Pruefung Eye gegen Cloud als gespeichertes Ergebnis - nie ueber den
+    Pruefjob, der ein Eye und einen Cloud-Anbieter braeuchte. Die Faelle zieht DIESELBE Funktion
+    wie der Job (`compare_review`) ueber dieselbe Pruefmenge: die Uebersicht rechnet die
+    Zaehlungen beim Lesen damit neu, und gespeicherte Faelle, die sie nicht zoege, waeren ein
+    Zustand, den die App selbst nie schriebe. Ohne Konto entfaellt sie - eine Pruefung hat
+    immer einen Anleger."""
+    if not users:
+        return
+    photo_ids = list(
+        (
+            await session.execute(
+                select(Photo.id)
+                .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+                .where(Photo.project_id == project_id, survives_ausschuss())
+                .order_by(Photo.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    model = default_vision_model_for_provider(_DEMO_REVIEW_CLOUD_PROVIDER)
+    review = ClassificationReview(
+        project_id=project_id,
+        created_by_user_id=users[0].id,
+        status=ScanStatus.SUCCESS,
+        phase=None,
+        sample_size=DEFAULT_SAMPLE_SIZE,
+        seed=_DEMO_REVIEW_SEED,
+        photo_count=len(photo_ids),
+        photos_processed=len(photo_ids),
+        started_at=_DEMO_REVIEW_STARTED_AT,
+        finished_at=_DEMO_REVIEW_FINISHED_AT,
+        last_progress_at=_DEMO_REVIEW_FINISHED_AT,
+    )
+    session.add(review)
+    await session.flush()
+    session.add_all(
+        [
+            ClassificationReviewSide(
+                review_id=review.id,
+                side="a",
+                kind=ClassificationReviewSideKind.EYE,
+                eye_model_revision=EYE_MODEL_REVISION,
+                eye_mapping_version=EYE_MAPPING_VERSION,
+                estimated_cost_usd=0.0,
+            ),
+            ClassificationReviewSide(
+                review_id=review.id,
+                side="b",
+                kind=ClassificationReviewSideKind.CLOUD,
+                provider=provider_for_vision_model(model),
+                model=model,
+                estimated_cost_usd=_DEMO_REVIEW_ESTIMATED_COST_USD,
+                api_calls=len(photo_ids),
+                failed_calls=0,
+                input_tokens=_DEMO_REVIEW_INPUT_TOKENS,
+                output_tokens=_DEMO_REVIEW_OUTPUT_TOKENS,
+                cost_usd=_DEMO_REVIEW_COST_USD,
+            ),
+        ]
+    )
+    comparisons: list[PhotoComparison] = []
+    for index, photo_id in enumerate(photo_ids):
+        strengths, excluded, levels = _demo_review_statements(index)
+        for side in ("a", "b"):
+            session.add(
+                ClassificationReviewResult(
+                    review_id=review.id,
+                    side=side,
+                    photo_id=photo_id,
+                    excluded_document=excluded[side],
+                    album_level=levels[side],
+                    computed_at=_DEMO_REVIEW_FINISHED_AT,
+                )
+            )
+            session.add_all(
+                ClassificationReviewResultStrength(
+                    review_id=review.id,
+                    side=side,
+                    photo_id=photo_id,
+                    motif_key=motif_key,
+                    strength=strength,
+                )
+                for motif_key, strength in strengths[side].items()
+            )
+        comparisons.append(
+            PhotoComparison(
+                photo_id=photo_id,
+                a_motifs=strengths["a"],
+                b_motifs=strengths["b"],
+                a_excluded_document=excluded["a"],
+                b_excluded_document=excluded["b"],
+                a_album_level=levels["a"],
+                b_album_level=levels["b"],
+            )
+        )
+    position = {photo_id: index for index, photo_id in enumerate(photo_ids, start=1)}
+    cases = [
+        ClassificationReviewCase(
+            review_id=review.id,
+            photo_id=case.photo_id,
+            photo_position=position[case.photo_id],
+            purpose=ClassificationReviewPurpose(case.purpose),
+            motif_key=case.motif_key,
+        )
+        for case in compare_review(comparisons, seed=review.seed, limit=review.sample_size).cases
+    ]
+    session.add_all(cases)
+    await session.flush()
+    # Nur die ersten Faelle tragen ein Urteil: offene bleiben fuer Klick und Taste im Pruefstack.
+    session.add_all(
+        ClassificationReviewVerdict(
+            case_id=case.id,
+            verdict=verdict,
+            updated_by_user_id=users[0].id,
+            updated_at=_DEMO_REVIEW_FINISHED_AT,
+        )
+        for case, verdict in zip(cases, _DEMO_REVIEW_VERDICTS, strict=False)
+    )
 
 
 async def _seed_final_selection_dissent(

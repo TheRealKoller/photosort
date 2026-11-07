@@ -1040,8 +1040,16 @@ export interface ProjectStatsMotifEntry {
 /** Die beiden Cloud-Zwecke (backend models.py::CloudVisionPhase) - immer beide, auch mit 0. */
 export type CloudVisionPurpose = 'landmark' | 'remote_category'
 
+/**
+ * Die Kostenzwecke der Statistik (backend api/stats.py): die beiden Cloud-Zwecke plus `review`,
+ * den Kostenposten der Klassifizierungspruefung (Spec 0616). Eigener Typ, weil `review` kein
+ * Cloud-Aufruf ist und `CloudVisionPhase` an allen Aufrufstellen der Cloud-Laeufe unangetastet
+ * bleiben muss.
+ */
+export type StatsCostPurpose = CloudVisionPurpose | 'review'
+
 export interface ProjectStatsCostByPurpose {
-  purpose: CloudVisionPurpose
+  purpose: StatsCostPurpose
   cost_usd: number
   /** true = für mindestens einen Lauf dieses Zwecks fehlen Verbrauchsdaten. Es wird bewusst
    * nichts geschätzt - der Betrag bleibt die Summe des tatsächlich Erfassten. */
@@ -1228,4 +1236,226 @@ export interface FeedbackDiagnosisOut {
   exchanges: FeedbackExchangeStats[]
   criteria: FeedbackCriterionAgreement[]
   weights: FeedbackWeightPreview
+}
+
+/*
+ * Die Klassifizierungspruefung (Spec 0616) - Feld fuer Feld aus dem Backend-Schema
+ * (`api/classification_reviews.py`) abgeleitet, nicht aus der Oberflaeche erraten.
+ */
+
+/** Das Verfahren EINER Pruefseite - geschlossener Vorrat, nie Freitext. */
+export type ClassificationReviewSideKind = 'cloud' | 'eye' | 'local'
+
+/** Die vier Pruefzwecke; `motifs`, `excluded_document` und `album_level` zaehlen Fotos,
+ * `motif_feature` zaehlt (Foto, Motiv)-Paare. */
+export type ClassificationReviewPurpose =
+  'motifs' | 'motif_feature' | 'excluded_document' | 'album_level'
+
+/** Der sichtbare Teilschritt eines Laufs; `null`, sobald er beendet ist. */
+export type ClassificationReviewPhase = 'side_a' | 'side_b' | 'cases'
+
+/** Genau eines von vier Urteilen je Fall, gemeinsam fuer beide Nutzer. */
+export type ClassificationVerdict = 'a_better' | 'b_better' | 'both_ok' | 'both_wrong'
+
+/** Die geschlossenen Sperrgruende einer Wahl; `no_consent` steht vor `no_api_key`. */
+export type ClassificationReviewUnavailableReason = 'no_consent' | 'no_api_key' | 'eye_disabled'
+
+/** Die Einheit einer Zaehlung, vom Server mitgeliefert. */
+export type ClassificationReviewUnit = 'photo' | 'pair'
+
+/** Ein Urteilswert wird geschrieben - die Antwort nennt danach den Schreiber. */
+export interface ClassificationReviewVerdictIn {
+  verdict: ClassificationVerdict
+}
+
+/** Der Nutzer als ausdrueckliche Projektion auf zwei Spalten. */
+export interface ClassificationReviewUserOut {
+  user_id: number
+  username: string
+}
+
+export interface ClassificationReviewSampleSizeOut {
+  default: number
+  min: number
+  max: number
+}
+
+export interface ClassificationReviewKindOptionOut {
+  kind: ClassificationReviewSideKind
+  /** Genau dann wahr, wenn `unavailable_reasons` leer ist. */
+  available: boolean
+  unavailable_reasons: ClassificationReviewUnavailableReason[]
+}
+
+export interface ClassificationReviewCloudModelOptionOut {
+  provider: string
+  model: string
+  available: boolean
+  unavailable_reasons: ClassificationReviewUnavailableReason[]
+}
+
+/** Eine waehlbare Eye-Fassung; Modellrevision und Fassung sind getrennt genannt. */
+export interface ClassificationReviewEyeMappingOptionOut {
+  eye_model_revision: string
+  eye_mapping_version: string
+  available: boolean
+  unavailable_reasons: ClassificationReviewUnavailableReason[]
+}
+
+/** Waehlbare Verfahren, Modelle und Eye-Fassungen samt Sperrgruenden (`GET …/options`). */
+export interface ClassificationReviewOptionsOut {
+  sample_size: ClassificationReviewSampleSizeOut
+  kinds: ClassificationReviewKindOptionOut[]
+  cloud_models: ClassificationReviewCloudModelOptionOut[]
+  eye_mappings: ClassificationReviewEyeMappingOptionOut[]
+}
+
+/**
+ * Die Vorab-Schaetzung EINER Seite in DREI Zustaenden: `0.0` heisst kostenfrei (Eye, lokal),
+ * `null` heisst "nicht schaetzbar" (kein Preis hinterlegt) - nie "kostenlos".
+ */
+export interface ClassificationReviewSideEstimateOut {
+  kind: ClassificationReviewSideKind
+  provider: string | null
+  model: string | null
+  photo_count: number
+  price_per_image_usd: number | null
+  estimated_cost_usd: number | null
+}
+
+export interface ClassificationReviewEstimateOut {
+  photo_count: number
+  a: ClassificationReviewSideEstimateOut
+  b: ClassificationReviewSideEstimateOut
+}
+
+/** Die Verfahrenswahl EINER Seite - kein Anbieter-, Preis- oder Kostenfeld. */
+export interface ClassificationReviewSideIn {
+  kind: ClassificationReviewSideKind
+  /** Gilt nur fuer eine Cloud-Seite; der Anbieter folgt serverseitig aus dem Modell. */
+  model?: string | null
+  /** Gilt nur fuer eine Eye-Seite. */
+  eye_mapping_version?: string | null
+}
+
+/** Der Koerper des Anlegens; `sample_size` ist Pflicht und wird nicht still ersetzt. */
+export interface ClassificationReviewCreateBody {
+  a: ClassificationReviewSideIn
+  b: ClassificationReviewSideIn
+  sample_size: number
+}
+
+export interface ClassificationReviewCreatedOut {
+  id: number
+  status: ScanStatus
+}
+
+/** Herkunft UND Kosten einer Seite: `estimated_cost_usd` ist eingefroren, `cost_usd` die Ist-Kosten. */
+export interface ClassificationReviewSideOut {
+  kind: ClassificationReviewSideKind
+  provider: string | null
+  model: string | null
+  eye_model_revision: string | null
+  eye_mapping_version: string | null
+  estimated_cost_usd: number | null
+  cost_usd: number | null
+}
+
+export interface ClassificationReviewSidesOut {
+  a: ClassificationReviewSideOut
+  b: ClassificationReviewSideOut
+}
+
+/** Eine Zaehlung MIT ihrer Einheit; `presented` ist `min(Pruefgraesse, abweichend)`. */
+export interface ClassificationReviewPurposeCountsOut {
+  unit: ClassificationReviewUnit
+  compared: number
+  matching: number
+  deviating: number
+  presented: number
+}
+
+/** Die vier Urteile plus `open` - die Zahl der Faelle ohne Urteil. */
+export interface ClassificationReviewVerdictCountsOut {
+  a_better: number
+  b_better: number
+  both_ok: number
+  both_wrong: number
+  open: number
+}
+
+/** Eine Zeile der Liste; `case_count === 0` heisst "keine Abweichungen". */
+export interface ClassificationReviewListItemOut {
+  id: number
+  created_at: string
+  created_by: ClassificationReviewUserOut
+  status: ScanStatus
+  phase: ClassificationReviewPhase | null
+  sides: ClassificationReviewSidesOut
+  /** Pruefmenge und die Fotos ohne Ergebnis auf beiden Seiten. Beide Zahlen traegt die Zeile,
+   * damit die Liste „keine Fotos verglichen" (beide gleich, Edge Case 4) von „stimmt ueberein"
+   * unterscheiden kann. */
+  photo_count: number
+  unclassifiable_photo_count: number
+  case_count: number
+  case_open: number
+}
+
+export interface ClassificationReviewDetailOut {
+  id: number
+  created_at: string
+  created_by: ClassificationReviewUserOut
+  status: ScanStatus
+  phase: ClassificationReviewPhase | null
+  sample_size: number
+  seed: number
+  photo_count: number
+  photos_processed: number
+  unclassifiable_photo_count: number
+  finished_at: string | null
+  error_message: string | null
+  sides: ClassificationReviewSidesOut
+  counts_by_purpose: Record<ClassificationReviewPurpose, ClassificationReviewPurposeCountsOut>
+  verdict_counts: ClassificationReviewVerdictCountsOut
+  verdicts_by_purpose: Record<ClassificationReviewPurpose, ClassificationReviewVerdictCountsOut>
+}
+
+/**
+ * Die Rohwerte EINER Seite in einem Fall - nur die seines Zwecks. `null` heisst "diese Seite
+ * trifft dazu keine Aussage", nie `false` oder `0`.
+ */
+export interface ClassificationReviewCaseSideOut {
+  motifs: string[] | null
+  present: boolean | null
+  strength: number | null
+  excluded_document: boolean | null
+  album_level: number | null
+}
+
+/** Ein vorgelegter Fall mit Urteil und dessen Schreiber. */
+export interface ClassificationReviewCaseOut {
+  id: number
+  /** Traegt die Fallansicht zum bestehenden Foto-Endpunkt; der Export nennt nur die Position. */
+  photo_id: number
+  photo_position: number
+  purpose: ClassificationReviewPurpose
+  /** Nur bei `motif_feature` gesetzt. */
+  motif_key: string | null
+  a: ClassificationReviewCaseSideOut
+  b: ClassificationReviewCaseSideOut
+  verdict: ClassificationVerdict | null
+  updated_by: ClassificationReviewUserOut | null
+  updated_at: string | null
+}
+
+export interface ClassificationReviewCasesOut {
+  cases: ClassificationReviewCaseOut[]
+}
+
+/** Das Urteil nach dem Schreiben. */
+export interface ClassificationReviewVerdictOut {
+  case_id: number
+  verdict: ClassificationVerdict
+  updated_by: ClassificationReviewUserOut
+  updated_at: string
 }

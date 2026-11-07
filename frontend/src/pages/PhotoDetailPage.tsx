@@ -29,6 +29,7 @@ import { parseRatingFilter } from '../utils/ratingFilter'
 import { eyeVerdict } from '../utils/eyeVerdict'
 import { formatDateTime } from '../utils/formatStats'
 import { formatSuggestionReason, formatSuggestionStatusLabel } from '../utils/suggestionLabels'
+import { isTextInputFocused } from '../utils/textInputFocus'
 
 // Bounded so a broken/degenerate filter can never spin forever fetching pages while searching for
 // the next unrated photo - 80 * PHOTOS_PAGE_SIZE(60) covers well beyond any realistic project size
@@ -42,17 +43,6 @@ const SWIPE_THRESHOLD_PX = 50
 // Ladefehler heisst - so kann das Info-Popover der Kachel (PR 3) denselben Baustein mit einem
 // eigenen Text verwenden.
 const MOTIF_SET_ERROR_TEXT = 'Die Motive konnten nicht geladen werden.'
-
-function isTextInputFocused(): boolean {
-  const active = document.activeElement
-  if (active === null) {
-    return false
-  }
-  if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') {
-    return true
-  }
-  return (active as HTMLElement).isContentEditable
-}
 
 export function PhotoDetailPage() {
   const { projectId, photoId } = useParams()

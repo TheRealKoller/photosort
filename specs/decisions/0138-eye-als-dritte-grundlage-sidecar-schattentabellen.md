@@ -1,6 +1,9 @@
 # 0138 - Eye als dritte Klassifizierungsgrundlage: eigener Sidecar, Schattentabellen, Rangfolge der Grundlagen
 
 **Status:** Accepted
+**Teilweise abgelöst:** Punkt 8 (Vergleich als CLI ohne Endpunkt) durch ADR
+[`0139`](./0139-pruefung-von-klassifizierungsverfahren-in-der-app.md); alle übrigen Punkte gelten
+weiter.
 **Datum:** 2026-11-03
 **Bezug:** Issue [#609](https://github.com/TheRealKoller/photosort/issues/609), Spec
 [`0606`](../features/0606-eye-lokaler-cloud-ersatz-bewerten.md) (ihr Auswertungsweg wird durch

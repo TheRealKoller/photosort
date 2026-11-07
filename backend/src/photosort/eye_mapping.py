@@ -156,6 +156,35 @@ ALBUM_LEVELS: Final[tuple[tuple[int, float, float], ...]] = (
     (5, 0.8, 1.0),
 )
 
+
+@dataclass(frozen=True)
+class EyeMapping:
+    """EINE Fassung der Zuordnung - die Tabelle, gegen die ein gespeichertes Ergebnis gelesen
+    wird.
+
+    Die Fassung ist eine Zusage ueber das Ergebnis, nicht nur eine Versionsnummer: eine spaetere
+    Tabelle bekommt einen eigenen Schluessel, und die alte bleibt unveraendert aufrufbar
+    (`MAPPINGS`). Deshalb stehen die Tabellen hier als Feld und nicht als Modulglobale, die eine
+    kuenftige Fassung ueberschreiben muesste.
+    """
+
+    motif_tags: Mapping[str, tuple[str, ...]]
+    excluded_types: frozenset[str]
+    album_levels: tuple[tuple[int, float, float], ...]
+    tag_confidence: float
+
+
+SHIPPED_MAPPING: Final[EyeMapping] = EyeMapping(
+    motif_tags=MOTIF_TAGS,
+    excluded_types=EXCLUDED_TYPES,
+    album_levels=ALBUM_LEVELS,
+    tag_confidence=TAG_CONFIDENCE,
+)
+
+# Die gueltigen Fassungen. Genau eine - die naechste Tabelle kommt als zusaetzlicher Eintrag
+# hinzu, nie als Ersatz (ADR 0139 Punkt 4).
+MAPPINGS: Final[Mapping[str, EyeMapping]] = MappingProxyType({MAPPING_VERSION: SHIPPED_MAPPING})
+
 EYE_PURPOSE_MAPPING: Final[Mapping[str, Any]] = MappingProxyType(
     {
         "version": MAPPING_VERSION,
@@ -223,30 +252,32 @@ def _tags(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     return tags if isinstance(tags, Mapping) else {}
 
 
-def motif_strengths(payload: Mapping[str, Any]) -> dict[str, float]:
+def motif_strengths(
+    payload: Mapping[str, Any], mapping: EyeMapping = SHIPPED_MAPPING
+) -> dict[str, float]:
     """Je Motiv die GROESSTE Konfidenz seiner zugeordneten Tags, alle acht Registry-Schluessel.
 
     Nur Tags, keine Gesichter, keine Tiere, kein Bildausschnitt: die Staerke ist eine Aussage
-    ueber den Bildinhalt, und `MOTIF_TAGS` ist die einzige Stelle, an der festgelegt ist, welcher
-    Tag welches Motiv belegt. Eine zweite Regel daneben (etwa "ein Gesicht genuegt") liefe beim
-    naechsten Pin-Wechsel auseinander."""
+    ueber den Bildinhalt, und `mapping.motif_tags` ist die einzige Stelle, an der festgelegt ist,
+    welcher Tag welches Motiv belegt. Eine zweite Regel daneben (etwa "ein Gesicht genuegt") liefe
+    beim naechsten Pin-Wechsel auseinander."""
     tags = _tags(payload)
     return {
         motif_key: max(
-            (_confidence(tags, tag) for tag in MOTIF_TAGS.get(motif_key, ())), default=0.0
+            (_confidence(tags, tag) for tag in mapping.motif_tags.get(motif_key, ())), default=0.0
         )
         for motif_key in MOTIF_REGISTRY
     }
 
 
-def is_excluded(payload: Mapping[str, Any]) -> bool:
+def is_excluded(payload: Mapping[str, Any], mapping: EyeMapping = SHIPPED_MAPPING) -> bool:
     """`kind` in der Ausschlussliste heisst "Eye schliesst aus". Ein fehlendes `kind` schliesst
     NICHTS aus - die Abwesenheit einer Typangabe ist keine Dokumentaussage."""
     kind = payload.get("kind")
-    return isinstance(kind, str) and kind in EXCLUDED_TYPES
+    return isinstance(kind, str) and kind in mapping.excluded_types
 
 
-def album_level(payload: Mapping[str, Any]) -> int:
+def album_level(payload: Mapping[str, Any], mapping: EyeMapping = SHIPPED_MAPPING) -> int:
     """Die Albumstufe 1..5 aus `scores.aesthetic` in festen Baendern.
 
     Fehlt der Wert, gibt es KEINE Stufe - und weil die Ergebnistabelle NOT NULL fuehrt, ist das
@@ -256,14 +287,17 @@ def album_level(payload: Mapping[str, Any]) -> int:
     if isinstance(aesthetic, bool) or not isinstance(aesthetic, (int, float)):
         raise EyeMappingError("Die Eye-Antwort enthaelt keine Albumstufe.")
     note = min(1.0, max(0.0, float(aesthetic)))
-    for level, lower, upper in ALBUM_LEVELS:
+    for level, lower, upper in mapping.album_levels:
         if lower <= note < upper or (upper == 1.0 and note == 1.0):
             return level
     raise EyeMappingError("Die Eye-Antwort enthaelt keine gueltige Albumstufe.")
 
 
-def fine_labels(payload: Mapping[str, Any]) -> tuple[tuple[str, float], ...]:
-    """Die Tags ab `TAG_CONFIDENCE`, absteigend nach Konfidenz, bei Gleichstand alphabetisch.
+def fine_labels(
+    payload: Mapping[str, Any], mapping: EyeMapping = SHIPPED_MAPPING
+) -> tuple[tuple[str, float], ...]:
+    """Die Tags ab `mapping.tag_confidence`, absteigend nach Konfidenz, bei Gleichstand
+    alphabetisch.
 
     Die Reihenfolge ist eine Zusage DIESER Funktion, nicht der SDK-Antwort: die Anzeige kuerzt am
     Ende, und ohne feste Ordnung fiele die Auswahl bei gleichem Wert von Lauf zu Lauf anders aus.
@@ -273,19 +307,26 @@ def fine_labels(payload: Mapping[str, Any]) -> tuple[tuple[str, float], ...]:
     labeled = [
         (tag, confidence)
         for tag in tags
-        if isinstance(tag, str) and tag not in EXCLUDED_TYPES
+        if isinstance(tag, str) and tag not in mapping.excluded_types
         for confidence in (_confidence(tags, tag),)
-        if confidence >= TAG_CONFIDENCE
+        if confidence >= mapping.tag_confidence
     ]
     labeled.sort(key=lambda entry: (-entry[1], entry[0]))
     return tuple(labeled)
 
 
-def analyze(payload: Mapping[str, Any]) -> EyeAnalysis:
-    """Die ganze Abbildung in einem Aufruf - die Form, die der Schreibpfad braucht."""
+def analyze(payload: Mapping[str, Any], version: str = MAPPING_VERSION) -> EyeAnalysis:
+    """Die ganze Abbildung in einem Aufruf - die Form, die der Schreibpfad braucht.
+
+    `version` waehlt die gespeicherte Fassung (`MAPPINGS`). Eine unbekannte Fassung ist ein
+    `EyeMappingError` und kein Rueckfall auf die Vorgabe: das Ergebnis traegt die Fassung in
+    seiner Zeile, und ein still gerechneter Ersatz machte diese Angabe falsch."""
+    mapping = MAPPINGS.get(version)
+    if mapping is None:
+        raise EyeMappingError(f"Unbekannte Fassung der Eye-Zuordnung: {version!r}")
     return EyeAnalysis(
-        motif_strengths=motif_strengths(payload),
-        excluded_document=is_excluded(payload),
-        album_level=album_level(payload),
-        fine_labels=fine_labels(payload),
+        motif_strengths=motif_strengths(payload, mapping),
+        excluded_document=is_excluded(payload, mapping),
+        album_level=album_level(payload, mapping),
+        fine_labels=fine_labels(payload, mapping),
     )

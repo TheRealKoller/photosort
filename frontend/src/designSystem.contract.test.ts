@@ -2012,6 +2012,30 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
         'Schrittseite in voller Breite am unteren Rand, einhaendig mit dem Daumen bedient - ' +
         'dieselbe Begruendung wie bei der Absende-Schaltflaeche der Anmeldung',
     },
+    {
+      file: 'src/components/ClassificationReviewCreatePanel.tsx',
+      snippet:
+        'flex min-h-11 w-full cursor-pointer flex-col justify-center gap-1 rounded-sm border',
+      reason:
+        'Seitenwahl der Pruefung (Spec 0616): Radio-Eingabe samt Beschriftung in einer klickbaren ' +
+        'Zeile - derselbe Fall wie die Laufwahl der Klassifizierung (ersetztes Element ohne ' +
+        'Pseudo-Element, Trefferflaeche = Zeilenhoehe)',
+    },
+    {
+      file: 'src/pages/ClassificationReviewsPage.tsx',
+      snippet:
+        'flex min-h-11 w-full flex-col gap-2 rounded-sm border border-border bg-surface px-3',
+      reason:
+        'Pruefungszeile der Liste: die ganze Zeile ist EINE Trefferflaeche (Zeilenhoehe einer ' +
+        'zeilenweisen Liste), nicht nur ihr Datum',
+    },
+    {
+      file: 'src/components/ClassificationReviewCase.tsx',
+      snippet: "'h-auto min-h-11 w-full justify-between whitespace-normal text-left",
+      reason:
+        'heisser Pfad: die vier Urteile je Fall der Pruefung (Spec 0616) - ein Fehlgriff ' +
+        'schreibt ein falsches Urteil, das beide Nutzer und der Export uebernehmen',
+    },
   ]
 
   it('verwendet die sichtbaren 44px nur an den drei begruendeten Kategorien', () => {

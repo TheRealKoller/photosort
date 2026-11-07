@@ -20,7 +20,7 @@ import { ProjectNav } from './ProjectNav'
  * - auf einem Nebenziel liegt die Markierung zwangslaeufig doppelt vor (`true` am Ausloeser,
  * `page` an der Panelzeile), und das ist die Bauweise, kein Fehler.
  *
- * DAS PANEL HAT HIER IMMER SECHS ZEILEN (Edge Case 4 der Spec). Ein `toHaveLength(3)` waere in
+ * DAS PANEL HAT HIER IMMER SIEBEN ZEILEN (Edge Case 4 der Spec). Ein `toHaveLength(3)` waere in
  * jsdom schlicht falsch, und es darf ausdruecklich NICHT ueber ein `matchMedia`-Mock "repariert"
  * werden - das pruefte den Mock, nicht Tailwind.
  */
@@ -36,9 +36,11 @@ const SECONDARY_TARGETS = [
   { label: 'Statistik', href: '/projects/1/stats' },
   // specs/features/0551: hinter Einstellungen und Statistik.
   { label: 'Personen', href: '/projects/1/persons' },
+  // specs/features/0616: der vierte Eintrag, hinter "Personen".
+  { label: 'Klassifizierung prüfen', href: '/projects/1/klassifizierung-pruefen' },
 ]
 
-/** Die Reihenfolge im Panel unterhalb `lg:` - erst die drei Hauptziele, dann die drei Nebenziele. */
+/** Die Reihenfolge im Panel unterhalb `lg:` - erst die drei Hauptziele, dann die vier Nebenziele. */
 const PANEL_TARGETS = [...PRIMARY_TARGETS, ...SECONDARY_TARGETS]
 
 function LocationProbe() {
@@ -105,7 +107,7 @@ describe('ProjectNav - Leiste', () => {
     })
   })
 
-  // AK2, erste Haelfte: die beiden Nebenziele liegen NICHT in der Leiste. Ohne diesen Fall
+  // AK2, erste Haelfte: die vier Nebenziele liegen NICHT in der Leiste. Ohne diesen Fall
   // bestuende der Test oben auch dann, wenn sie zusaetzlich woanders im Landmark haengen wuerden.
   it.each(SECONDARY_TARGETS.map((target) => target.label))(
     'fuehrt "%s" nicht in der Leiste (AK2)',
@@ -266,7 +268,7 @@ describe('ProjectNav - Ausloeser des Nebenbereichs', () => {
 })
 
 describe('ProjectNav - Panel des Nebenbereichs', () => {
-  it('haengt den Panel-Inhalt erst beim Oeffnen ein und fuehrt dann fuenf Zeilen in fester Reihenfolge (AK2/AK5)', async () => {
+  it('haengt den Panel-Inhalt erst beim Oeffnen ein und fuehrt dann sieben Zeilen in fester Reihenfolge (AK2/AK5)', async () => {
     const { user } = renderNav()
 
     // Solange geschlossen, existiert jedes Hauptziel genau einmal (kein forceMount) und kein
@@ -277,8 +279,8 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
 
     const panel = await openPanel(user)
 
-    // FUENF, nicht zwei: in jsdom greift `lg:hidden` nicht (Edge Case 4). Die Zusage "ab 1024 px
-    // nur die zwei Nebenziele" liegt ausschliesslich im E2E-Spec.
+    // SIEBEN, nicht vier: in jsdom greift `lg:hidden` nicht (Edge Case 4). Die Zusage "ab 1024 px
+    // nur die vier Nebenziele" liegt ausschliesslich im E2E-Spec.
     const links = within(panel).getAllByRole('link')
     expect(links.map((link) => link.textContent)).toEqual(
       PANEL_TARGETS.map((target) => target.label),
@@ -290,7 +292,7 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
 
   /*
    * AK5, in jsdom pruefbare Haelfte: die drei Hauptzielzeilen bilden einen eigenen Block - einen
-   * gemeinsamen Vorfahren, der keine der beiden Nebenzeilen enthaelt und nicht das Panel selbst
+   * gemeinsamen Vorfahren, der keine der vier Nebenzeilen enthaelt und nicht das Panel selbst
    * ist. Genau dieser Block traegt im Produkt Trennlinie, Abstand und `lg:hidden`; ohne ihn haette
    * die Absetzung keinen Traeger, und die Nebenziele koennten unterhalb `lg:` gar nicht mehr von
    * den Hauptzielen unterschieden werden.
@@ -321,6 +323,9 @@ describe('ProjectNav - Panel des Nebenbereichs', () => {
     // der frueheren "kein Ziel aktiv"-Tabelle waere die Zusage lautlos verschwunden.
     ['/projects/1/stats', 'Statistik'],
     ['/projects/1/persons', 'Personen'],
+    // specs/features/0616: das Nebenziel ist auf BEIDEN Pruefrouten aktiv.
+    ['/projects/1/klassifizierung-pruefen', 'Klassifizierung prüfen'],
+    ['/projects/1/klassifizierung-pruefen/7', 'Klassifizierung prüfen'],
   ])(
     'markiert im Panel auf %s genau "%s" (AK6, je Darstellung eingegrenzt)',
     async (path, label) => {

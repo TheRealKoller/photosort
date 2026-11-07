@@ -35,6 +35,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import Delete
 
 from photosort.models import (
+    ClassificationReview,
+    ClassificationReviewCase,
+    ClassificationReviewResult,
+    ClassificationReviewResultStrength,
+    ClassificationReviewSide,
+    ClassificationReviewVerdict,
     CriterionScoringRun,
     Event,
     ExportPhoto,
@@ -111,6 +117,12 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         CriterionScoringRun.project_id.in_(project_ids)
     )
     export_run_ids = select(ExportRun.id).where(ExportRun.project_id.in_(project_ids))
+    review_ids = select(ClassificationReview.id).where(
+        ClassificationReview.project_id.in_(project_ids)
+    )
+    case_ids = select(ClassificationReviewCase.id).where(
+        ClassificationReviewCase.review_id.in_(review_ids)
+    )
     deleted: dict[str, int] = {}
 
     async def _run(table_name: str, statement: Delete) -> None:
@@ -154,6 +166,23 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     await _run(
         "photo_eye_fine_labels",
         delete(PhotoEyeFineLabel).where(PhotoEyeFineLabel.photo_id.in_(photo_ids)),
+    )
+    # Spec 0616 / ADR 0139 Punkt 3: die sechs Prueftabellen fallen mit dem Projekt. Ein Urteil
+    # haengt am Fall, ein Fall an der Pruefung, eine Staerkezeile am Ergebnis; die Reihenfolge
+    # folgt `reversed(Base.metadata.sorted_tables)` und ist damit durch den Ordnungstest
+    # erzwungen. Ohne diese Anweisungen ueberlebten Urteile ueber geloeschte Familienfotos ihr
+    # Projekt - und ein Export koennte sie wieder sichtbar machen.
+    await _run(
+        "classification_review_verdicts",
+        delete(ClassificationReviewVerdict).where(
+            ClassificationReviewVerdict.case_id.in_(case_ids)
+        ),
+    )
+    await _run(
+        "classification_review_result_strengths",
+        delete(ClassificationReviewResultStrength).where(
+            ClassificationReviewResultStrength.review_id.in_(review_ids)
+        ),
     )
     await _run("ratings", delete(Rating).where(Rating.photo_id.in_(photo_ids)))
     await _run("photo_scores", delete(PhotoScore).where(PhotoScore.photo_id.in_(photo_ids)))
@@ -256,11 +285,25 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
         delete(ExportPhoto).where(ExportPhoto.export_run_id.in_(export_run_ids)),
     )
     await _run("events", delete(Event).where(Event.criterion_scoring_run_id.in_(criterion_run_ids)))
+    await _run(
+        "classification_review_results",
+        delete(ClassificationReviewResult).where(
+            ClassificationReviewResult.review_id.in_(review_ids)
+        ),
+    )
+    await _run(
+        "classification_review_cases",
+        delete(ClassificationReviewCase).where(ClassificationReviewCase.review_id.in_(review_ids)),
+    )
     # NACH allen photo_*-Kindzeilen, VOR project_cameras: `photos.camera_id` zeigt auf sie.
     await _run("photos", delete(Photo).where(Photo.project_id.in_(project_ids)))
     await _run(
         "criterion_scoring_runs",
         delete(CriterionScoringRun).where(CriterionScoringRun.project_id.in_(project_ids)),
+    )
+    await _run(
+        "classification_review_sides",
+        delete(ClassificationReviewSide).where(ClassificationReviewSide.review_id.in_(review_ids)),
     )
     await _run("scoring_runs", delete(ScoringRun).where(ScoringRun.project_id.in_(project_ids)))
     await _run("scan_runs", delete(ScanRun).where(ScanRun.project_id.in_(project_ids)))
@@ -315,5 +358,10 @@ async def delete_projects(session: AsyncSession, project_ids: Sequence[int]) -> 
     # (Kindtabelle) - die Position folgt der per Test erzwungenen Ordnung
     # `reversed(Base.metadata.sorted_tables)`.
     await _run("export_runs", delete(ExportRun).where(ExportRun.project_id.in_(project_ids)))
+    # Die Pruefung selbst, zuletzt vor `projects`: alle oben geloeschten Kindzeilen zeigen auf sie.
+    await _run(
+        "classification_reviews",
+        delete(ClassificationReview).where(ClassificationReview.project_id.in_(project_ids)),
+    )
     await _run("projects", delete(Project).where(Project.id.in_(project_ids)))
     return deleted
