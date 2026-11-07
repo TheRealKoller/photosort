@@ -2269,12 +2269,17 @@ _PHASE_STARTED_AT = "phase_started_at"
 # `PhotoCloudVisionError(phase=…)` und `CloudVisionStatusOut(phase=…)` fuehren eine gleichnamige
 # Spalte eines ANDEREN Modells und sind keine Schreibstelle im Sinne dieser Bindung.
 _PHASE_ROW_CLASS = "CriterionScoringRun"
+# Spec 0616: die Pruefung fuehrt eine EIGENE Spalte `phase` (`ClassificationReview.phase`). Sie
+# ist nicht die Phase des Kriterienlaufs; der Waechter darf sie nur dann uebersehen, wenn die
+# Funktion den Empfaenger nachweislich als `ClassificationReview` fuehrt (Annotation oder
+# `isinstance`-Zweig) - siehe `_functions_writing`.
+_REVIEW_ROW_CLASS = "ClassificationReview"
 # Ein Schreibzugriff ausserhalb jeder Funktion - er faellt ueber die Gleichheitspruefung unten
 # auf, statt unbemerkt keiner Funktion zugeordnet zu werden.
 _MODULE_LEVEL = "<modulebene>"
 
 
-def _is_phase_write(node: ast.AST, field: str) -> bool:
+def _is_phase_write(node: ast.AST, field: str, review_names: frozenset[str] = frozenset()) -> bool:
     """Ob DIESER Knoten `field` an einer `CriterionScoringRun`-Zeile setzt.
 
     VIER Schreibformen, verglichen ueber `ast.Attribute.attr` bzw. das Schluesselwort - nie ueber
@@ -2290,10 +2295,21 @@ def _is_phase_write(node: ast.AST, field: str) -> bool:
     Zeile ausdruecklich nicht zaehlt. Hier ist gerade das Anlegen die gefaehrliche Stelle: Die
     ERSTE Phase jedes Laufs wurde vor dieser Spec als Konstruktor-Schluesselwort gesetzt. Bliebe
     sie es, entkaeme genau sie der Bindung - und die gesamte erste Phase jedes Laufs zeigte
-    dauerhaft "wird noch ermittelt", schweigend und ohne roten Test."""
+    dauerhaft "wird noch ermittelt", schweigend und ohne roten Test.
+
+    `review_names` sind die Namen, die in DIESER Funktion nachweislich eine `ClassificationReview`
+    sind (annotierter Parameter oder `isinstance`-Zweig, siehe `_functions_writing`). Deren
+    `.phase` ist eine gleichnamige Spalte eines ANDEREN Modells - dieselbe Ausnahme, die oben
+    schon fuer den Konstruktor von `PhotoCloudVisionError` gilt. Ein `run` ohne diesen Nachweis
+    zaehlt weiter."""
     if isinstance(node, ast.Assign | ast.AugAssign | ast.AnnAssign):
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        return any(isinstance(target, ast.Attribute) and target.attr == field for target in targets)
+        return any(
+            isinstance(target, ast.Attribute)
+            and target.attr == field
+            and not (isinstance(target.value, ast.Name) and target.value.id in review_names)
+            for target in targets
+        )
     if isinstance(node, ast.Dict):
         return any(isinstance(key, ast.Constant) and key.value == field for key in node.keys)
     if isinstance(node, ast.Call):
@@ -2304,25 +2320,70 @@ def _is_phase_write(node: ast.AST, field: str) -> bool:
     return False
 
 
+def _annotation_names(annotation: ast.AST | None) -> set[str]:
+    if annotation is None:
+        return set()
+    return {node.id for node in ast.walk(annotation) if isinstance(node, ast.Name)}
+
+
+def _review_parameters(function: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
+    arguments = [*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs]
+    return frozenset(
+        argument.arg
+        for argument in arguments
+        if _REVIEW_ROW_CLASS in _annotation_names(argument.annotation)
+    )
+
+
+def _isinstance_review_names(test: ast.AST) -> frozenset[str]:
+    if not (
+        isinstance(test, ast.Call)
+        and isinstance(test.func, ast.Name)
+        and test.func.id == "isinstance"
+    ):
+        return frozenset()
+    if len(test.args) != 2 or not isinstance(test.args[0], ast.Name):
+        return frozenset()
+    if _REVIEW_ROW_CLASS not in _annotation_names(test.args[1]):
+        return frozenset()
+    return frozenset({test.args[0].id})
+
+
 def _functions_writing(source: str, field: str) -> set[str]:
     """Die Namen der Funktionen dieses Quelltexts, die `field` setzen - Modulebene als eigener,
     nicht stiller Eintrag.
 
     Feiner als der Modulwaechter unten, und das ist der Punkt: Waeren nur die MODULE geprueft,
     duerfte eine beliebige zweite Funktion in `worker.py` die Phase setzen, ohne den Zeitstempel
-    mitzufuehren - der Modulwaechter bliebe gruen."""
+    mitzufuehren - der Modulwaechter bliebe gruen.
+
+    Ein Name gilt nur dann als `ClassificationReview`, wenn ihn die Funktion selbst nachweist:
+    Annotation des Parameters oder `isinstance`-Zweig. `run` bleibt ohne diesen Nachweis ein
+    Kriterienlauf - die Ausnahme ist damit so eng wie die Zusage."""
     found: set[str] = set()
 
-    def descend(node: ast.AST, enclosing: str) -> None:
+    def descend(node: ast.AST, enclosing: str, review_names: frozenset[str]) -> None:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
-                descend(child, child.name)
+                descend(child, child.name, _review_parameters(child))
                 continue
-            if _is_phase_write(child, field):
+            if isinstance(child, ast.If):
+                descend(child.test, enclosing, review_names)
+                branch_names = review_names | _isinstance_review_names(child.test)
+                for statement in child.body:
+                    if _is_phase_write(statement, field, branch_names):
+                        found.add(enclosing)
+                    descend(statement, enclosing, branch_names)
+                for statement in child.orelse:
+                    if _is_phase_write(statement, field, review_names):
+                        found.add(enclosing)
+                    descend(statement, enclosing, review_names)
+                continue
+            if _is_phase_write(child, field, review_names):
                 found.add(enclosing)
-            descend(child, enclosing)
+            descend(child, enclosing, review_names)
 
-    descend(ast.parse(source), _MODULE_LEVEL)
+    descend(ast.parse(source), _MODULE_LEVEL, frozenset())
     return found
 
 
@@ -2462,6 +2523,45 @@ def test_the_phase_guard_ignores_a_parameter_or_a_local_variable() -> None:
     sind keine Spaltenzuweisung. `worker.py` fuehrt beides."""
     assert _functions_writing("def f(phase: str) -> None:\n    pass", _PHASE) == set()
     assert _functions_writing("def f():\n    phase = compute()", _PHASE) == set()
+
+
+def test_the_phase_guard_ignores_the_review_phase_of_an_annotated_parameter() -> None:
+    """Spec 0616: `ClassificationReview` fuehrt eine eigene Spalte `phase`. Ein nachweislich als
+    Pruefung annotierter Empfaenger ist keine Schreibstelle des Kriterienlaufs."""
+    snippet = "def f(review: ClassificationReview) -> None:\n    review.phase = None"
+    assert _functions_writing(snippet, _PHASE) == set()
+
+
+def test_the_phase_guard_ignores_the_review_branch_of_the_fail_path() -> None:
+    """Dieselbe Ausnahme fuer `_fail_run`: der Empfaenger ist NUR im `isinstance`-Zweig eine
+    Pruefung. Der Kriterienzweig daneben bleibt sichtbar."""
+    snippet = (
+        "def f(run) -> None:\n"
+        "    if isinstance(run, ClassificationReview):\n"
+        "        run.phase = None\n"
+    )
+    assert _functions_writing(snippet, _PHASE) == set()
+
+
+def test_the_phase_guard_still_counts_a_criterion_receiver_next_to_a_review() -> None:
+    """Gegenprobe gegen eine zu breite Ausnahme: derselbe Funktionskoerper mit einem echten
+    Kriterienlauf-Empfaenger bleibt ein Befund."""
+    snippet = (
+        "def f(review: ClassificationReview, run: CriterionScoringRun) -> None:\n"
+        "    review.phase = None\n"
+        "    run.phase = None\n"
+    )
+    assert _functions_writing(snippet, _PHASE) == {"f"}
+
+
+def test_the_phase_guard_still_counts_an_untyped_receiver_in_the_review_branch() -> None:
+    """Gegenprobe zur Zweig-Ausnahme: ein anderer Name als der gepruefte bleibt ein Befund."""
+    snippet = (
+        "def f(run, other) -> None:\n"
+        "    if isinstance(run, ClassificationReview):\n"
+        "        other.phase = None\n"
+    )
+    assert _functions_writing(snippet, _PHASE) == {"f"}
 
 
 def test_the_phase_guard_ignores_reading_the_columns() -> None:

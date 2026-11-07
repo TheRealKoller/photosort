@@ -40,6 +40,7 @@ from photosort.classification import (
     detect_objects,
     detect_person,
 )
+from photosort.classification_review import run_classification_review
 from photosort.clock import now_utc
 from photosort.cloud_vision import ThrottleStats, TokenUsage, _sanitize_label_text
 from photosort.cloud_vision_throttle import throttle_for_provider
@@ -4317,6 +4318,10 @@ class WorkerSettings:
         arq_func(classify, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
         # Der Export: "ein Trigger -> genau ein Lauf" (ADR 0136 Punkt 5), wie die anderen Jobs.
         arq_func(export_project, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
+        # Der Prueflauf (Spec 0616, ADR 0139 Punkt 2): eigener Lauf mit eigenen Tabellen. Auch er
+        # kennt genau einen Versuch - ein Fehlschlag ist ein Endzustand mit fester Meldung, kein
+        # automatischer Hintergrund-Retry.
+        arq_func(run_classification_review, timeout=JOB_TIMEOUT_SECONDS, max_tries=1),
     )
     # Schicht 2 des Fortschritts-Watchdogs: run_at_startup=True sorgt dafuer, dass ein
     # Worker-Neustart sofort eine erste Pruefung ausloest, statt bis zu 5 Minuten auf den

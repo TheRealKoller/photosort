@@ -168,13 +168,17 @@ class TestTheTwoCapsAreIndependent:
         assert sum(1 for case in comparison.cases if case.purpose == "motif_feature") == 5
 
     def test_a_limit_beyond_the_deviations_keeps_all_of_them(self) -> None:
-        comparison = compare_review([_photo(1, a_motifs=dict(_ZERO) | {"tiere": 0.9})], seed=1, limit=30)
+        comparison = compare_review(
+            [_photo(1, a_motifs=dict(_ZERO) | {"tiere": 0.9})], seed=1, limit=30
+        )
 
         assert sum(1 for case in comparison.cases if case.purpose == "motifs") == 1
         assert sum(1 for case in comparison.cases if case.purpose == "motif_feature") == 1
 
     def test_a_limit_of_zero_keeps_counts_but_no_case(self) -> None:
-        comparison = compare_review([_photo(1, a_motifs=dict(_ZERO) | {"tiere": 0.9})], seed=1, limit=0)
+        comparison = compare_review(
+            [_photo(1, a_motifs=dict(_ZERO) | {"tiere": 0.9})], seed=1, limit=0
+        )
 
         assert comparison.counts["motifs"] == (1, 0, 1)
         assert comparison.cases == ()

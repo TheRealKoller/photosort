@@ -10,6 +10,7 @@ from photosort.worker import (
     classify,
     export_project,
     reap_stalled_runs,
+    run_classification_review,
     scan_project,
     score_project,
 )
@@ -56,12 +57,26 @@ def test_export_project_registered_with_generous_timeout_and_no_background_retry
     assert by_coroutine[export_project].max_tries == _EXPECTED_MAX_TRIES
 
 
-def test_exactly_four_jobs_are_registered() -> None:
+def test_run_classification_review_registered_with_generous_timeout_and_no_background_retry() -> (
+    None
+):
+    # specs/features/0616-klassifizierungsverfahren-vergleichen.md, AC "Fehlschlag und
+    # Stillstand": die Pruefung wird NIE automatisch wiederholt (`max_tries=1`) - ein
+    # gescheiterter Lauf ist ein Endzustand mit fester Servermeldung.
+    by_coroutine = _registered_by_coroutine()
+
+    assert by_coroutine[run_classification_review].timeout_s == _EXPECTED_TIMEOUT_S
+    assert by_coroutine[run_classification_review].max_tries == _EXPECTED_MAX_TRIES
+
+
+def test_exactly_five_jobs_are_registered() -> None:
     """specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md, AC "Ein Ausloeser":
     die frueheren Jobs `score_criteria` und `classify_categories_remote` sind durch den einen
     verketteten `classify`-Job ersetzt - es darf kein zweiter Weg zurueckbleiben, einen Teil der
     Klassifizierung anzustossen. specs/features/0263-export-nach-opencloud.md ergaenzt den
-    vierten Job `export_project` - "ein Trigger -> genau ein Lauf" (ADR 0136 Punkt 5)."""
+    vierten Job `export_project` - "ein Trigger -> genau ein Lauf" (ADR 0136 Punkt 5).
+    specs/features/0616-klassifizierungsverfahren-vergleichen.md ergaenzt den fuenften Job
+    `run_classification_review` als eigenen Prueflauf mit eigenen Tabellen (ADR 0139 Punkt 2)."""
     by_coroutine = _registered_by_coroutine()
 
     assert {f.__name__ for f in by_coroutine} == {
@@ -69,6 +84,7 @@ def test_exactly_four_jobs_are_registered() -> None:
         "score_project",
         "classify",
         "export_project",
+        "run_classification_review",
     }
 
 
