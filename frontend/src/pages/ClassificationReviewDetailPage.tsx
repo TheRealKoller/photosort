@@ -143,8 +143,10 @@ export function ClassificationReviewDetailPage() {
 
   const photoHeadingRef = useRef<HTMLHeadingElement>(null)
   // Synchron statt `isPending`: zwei Tastendruecke im selben Takt sehen beide noch den alten
-  // Render-Stand, und der zweite erzeugte sonst einen zweiten Request.
+  // Render-Stand, und der zweite erzeugte sonst einen zweiten Request. Der zusaetzliche
+  // Render-Stand sperrt die vier Urteilsflaechen sichtbar, statt den Klick still zu verschlucken.
   const savingRef = useRef(false)
+  const [saving, setSaving] = useState(false)
 
   function goToPosition(target: number | undefined, focusHeading: boolean): void {
     if (target === undefined) {
@@ -166,6 +168,7 @@ export function ClassificationReviewDetailPage() {
       return
     }
     savingRef.current = true
+    setSaving(true)
     setMarkedCaseId(reviewCase.id)
     verdictMutation.mutate(
       { caseId: reviewCase.id, verdict },
@@ -181,6 +184,7 @@ export function ClassificationReviewDetailPage() {
         },
         onSettled: () => {
           savingRef.current = false
+          setSaving(false)
         },
       },
     )
@@ -312,6 +316,7 @@ export function ClassificationReviewDetailPage() {
                   motifs={motifs}
                   marked={reviewCase.id === markedCase?.id}
                   judgeable={judgeable}
+                  saving={saving}
                   onMark={() => setMarkedCaseId(reviewCase.id)}
                   onJudge={(verdict) => judge(reviewCase, verdict)}
                 />

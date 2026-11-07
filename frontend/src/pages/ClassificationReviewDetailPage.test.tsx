@@ -521,6 +521,36 @@ describe('ClassificationReviewDetailPage - Fallansicht', () => {
     ).toBeInTheDocument()
     expect(pressedStates(11)).toEqual(['false', 'false', 'false', 'false'])
   })
+
+  // Copilot-Review-Fund (PR #618): waehrend einer laufenden Anfrage verschluckte `savingRef`
+  // weitere Klicks STILL - die Flaechen sahen bedienbar aus und taten nichts. Sie sind gesperrt,
+  // bis die Antwort da ist, und danach wieder bedienbar.
+  it('sperrt waehrend des Speicherns die vier Urteilsflaechen und gibt sie danach frei', async () => {
+    let resolve: (value: ClassificationReviewVerdictOut) => void = () => {}
+    vi.mocked(reviewApi.setClassificationReviewVerdict).mockReturnValue(
+      new Promise((done) => {
+        resolve = done
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('group', { name: 'Urteil zu Motive' })
+    await user.click(verdictButton(11, /^A besser/))
+
+    const whileSaving = within(verdictGroup(11)).getAllByRole('button')
+    expect(whileSaving).toHaveLength(4)
+    for (const button of whileSaving) {
+      expect(button).toBeDisabled()
+    }
+
+    resolve(written('a_better', 11))
+
+    await waitFor(() => expect(pressedStates(11)[0]).toBe('true'))
+    for (const button of within(verdictGroup(11)).getAllByRole('button')) {
+      expect(button).toBeEnabled()
+    }
+  })
 })
 
 describe('ClassificationReviewDetailPage - Tastatur', () => {

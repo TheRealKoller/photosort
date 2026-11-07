@@ -33,6 +33,9 @@ interface ClassificationReviewCaseProps {
   marked: boolean
   /** `false`, solange die Pruefung nicht abgeschlossen ist. */
   judgeable: boolean
+  /** `true`, solange ein Urteil dieses Falls gesendet wird - bis dahin sind die vier Flaechen
+   * gesperrt, statt einen zweiten Klick still zu verschlucken. */
+  saving: boolean
   onMark: () => void
   onJudge: (verdict: ClassificationVerdict) => void
 }
@@ -50,6 +53,7 @@ export function ClassificationReviewCase({
   motifs,
   marked,
   judgeable,
+  saving,
   onMark,
   onJudge,
 }: ClassificationReviewCaseProps) {
@@ -98,7 +102,7 @@ export function ClassificationReviewCase({
               className={VERDICT_BUTTON_CLASSES}
               aria-pressed={pressed}
               aria-keyshortcuts={VERDICT_KEYS[verdict]}
-              disabled={!judgeable}
+              disabled={!judgeable || saving}
               onClick={() => onJudge(verdict)}
             >
               <span className="flex flex-col gap-1">
