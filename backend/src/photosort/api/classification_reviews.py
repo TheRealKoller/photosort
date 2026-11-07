@@ -14,14 +14,15 @@ SICHERHEIT (S10): Der Torwaechter haengt am ROUTER und zusaetzlich am Eintrag in
 
 from __future__ import annotations
 
+import json
 import random
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Final, Literal, NamedTuple
+from typing import Any, Final, Literal, NamedTuple
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, StrictInt
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1270,4 +1271,186 @@ async def put_case_verdict(
         verdict=payload.verdict,
         updated_by=ReviewUserOut(user_id=current_user.id, username=current_user.username),
         updated_at=now,
+    )
+
+
+# ---------------------------------------------------------------------------------------------
+# Export: eine POSITIVLISTE, kein Weglassen
+# ---------------------------------------------------------------------------------------------
+
+# Der feste Schluesselsatz des Exports (Spec 0616, ADR 0139 Punkt 7). Er steht hier als
+# POSITIVLISTE: der Serialisierer baut jeden Knoten aus genau diesen Namen, und der Waechter
+# prueft danach, dass nichts dazugekommen ist. Ein Feld, das "nur noch" ergaenzt wird, faellt
+# damit auf, bevor es die Datei erreicht - schliesslich geht die Datei an eine KI.
+_EXPORT_KEYS: Final = {
+    "top": frozenset({"review", "sides", "verdict_counts", "cases"}),
+    "review": frozenset({"sample_size", "seed", "photo_count", "counts_by_purpose"}),
+    "side": frozenset({"kind", "provider", "model", "eye_model_revision", "eye_mapping_version"}),
+    "counts": frozenset({"compared", "matching", "deviating", "presented"}),
+    "verdict_counts": frozenset({"a_better", "b_better", "both_ok", "both_wrong", "open"}),
+    "case": frozenset({"photo_position", "purpose", "motif_key", "a", "b", "verdict"}),
+}
+
+# Was die Datei NIE enthaelt: Bilddaten, Foto-Ids, Pfade, Dateinamen, Zeitstempel, Orte/GPS,
+# Personen- und Sehenswuerdigkeitsnamen, Projektname, Nutzer, Modellfreitext. Durchgesetzt wird
+# das von der Positivliste oben; die Marker-Technik des Tests schreibt unverwechselbare
+# Zeichenfolgen in genau diese Spalten und prueft ihre Abwesenheit in der Datei.
+_EXPORT_EXCLUDED: Final = (
+    "Bilddaten",
+    "Foto-Ids",
+    "Pfade",
+    "Dateinamen",
+    "Zeitstempel",
+    "Orte/GPS",
+    "Namen",
+    "Projektname",
+    "Nutzer",
+    "Modellfreitext",
+)
+
+
+def _guard_export_shape(payload: dict[str, Any]) -> None:
+    """Der Formwaechter: prueft den GEBAUTEN Export gegen die Positivliste.
+
+    Er wirft hart statt zu filtern. Ein Filter waere still - die Datei saehe in Ordnung aus, und
+    niemand erfuehre, dass ein neues Feld beinahe mitgegangen waere."""
+    if set(payload) != _EXPORT_KEYS["top"]:
+        raise RuntimeError("Exportform verletzt: unerwartete Schluessel auf oberster Ebene.")
+    if set(payload["review"]) != _EXPORT_KEYS["review"]:
+        raise RuntimeError("Exportform verletzt: unerwartete Schluessel in `review`.")
+    for side_name in ("a", "b"):
+        if set(payload["sides"][side_name]) != _EXPORT_KEYS["side"]:
+            raise RuntimeError("Exportform verletzt: unerwartete Schluessel in `sides`.")
+    if set(payload["review"]["counts_by_purpose"]) != set(PURPOSES):
+        raise RuntimeError("Exportform verletzt: unerwartete Zwecke in `counts_by_purpose`.")
+    for counts in payload["review"]["counts_by_purpose"].values():
+        if set(counts) != _EXPORT_KEYS["counts"]:
+            raise RuntimeError("Exportform verletzt: unerwartete Schluessel in einer Zaehlung.")
+    if set(payload["verdict_counts"]) != _EXPORT_KEYS["verdict_counts"]:
+        raise RuntimeError("Exportform verletzt: unerwartete Schluessel in `verdict_counts`.")
+    for case in payload["cases"]:
+        if set(case) != _EXPORT_KEYS["case"]:
+            raise RuntimeError("Exportform verletzt: unerwartete Schluessel in einem Fall.")
+
+
+def _export_side(side: ReviewSideOut) -> dict[str, str | None]:
+    """Die Herkunft einer Seite - OHNE ihre Kosten. Der Export traegt keine Betraege: die Frage,
+    die die Datei beantwortet, ist die Verfahrensguete, nicht der Haushalt."""
+    return {
+        "kind": str(side.kind),
+        "provider": side.provider,
+        "model": side.model,
+        "eye_model_revision": side.eye_model_revision,
+        "eye_mapping_version": side.eye_mapping_version,
+    }
+
+
+def _export_raw_value(
+    side: ReviewCaseSideOut, purpose: ClassificationReviewPurpose
+) -> float | bool | int | list[str] | None:
+    """Der ROHWERT einer Seite - genau der seines Zwecks, ungerundet.
+
+    Motive: die Praesenzmenge (sie ist es, die verglichen wird). Merkmale: die gespeicherte
+    Staerke. Ausschluss: der Wahrheitswert. Albumstufe: die Stufe. `null` heisst "keine
+    Aussage"."""
+    if purpose is ClassificationReviewPurpose.MOTIFS:
+        return side.motifs
+    if purpose is ClassificationReviewPurpose.MOTIF_FEATURE:
+        return side.strength
+    if purpose is ClassificationReviewPurpose.EXCLUDED_DOCUMENT:
+        return side.excluded_document
+    return side.album_level
+
+
+def _export_payload(
+    review: ClassificationReview,
+    sides: ReviewSidesOut,
+    comparison_counts: dict[str, Any],
+    presented: dict[str, int],
+    rows: Sequence[_CaseRow],
+    statements: dict[str, dict[int, _Statement]],
+) -> dict[str, Any]:
+    """Der Exportkoerper aus der Positivliste.
+
+    Jeder Zweig nennt seine Schluessel ausdruecklich - kein `model_dump()` eines Modells, damit ein
+    spaeter ergaenztes Feld nicht ungeprueft mitwandert (ADR 0139 Punkt 7)."""
+    cases: list[dict[str, Any]] = []
+    for row in rows:
+        case = _case_out(row, statements)
+        cases.append(
+            {
+                # Die LAUFENDE FOTONUMMER statt der Foto-Id: dieselbe Zahl, die die Fallansicht
+                # als Position zeigt, und ohne Bezug auf den Foto-Bestand.
+                "photo_position": case.photo_position,
+                "purpose": str(case.purpose),
+                "motif_key": case.motif_key,
+                "a": _export_raw_value(case.a, case.purpose),
+                "b": _export_raw_value(case.b, case.purpose),
+                "verdict": str(case.verdict) if case.verdict is not None else None,
+            }
+        )
+    return {
+        "review": {
+            "sample_size": review.sample_size,
+            "seed": review.seed,
+            "photo_count": review.photo_count,
+            "counts_by_purpose": {
+                purpose: {
+                    "compared": comparison_counts[purpose].compared,
+                    "matching": comparison_counts[purpose].matching,
+                    "deviating": comparison_counts[purpose].deviating,
+                    "presented": presented[purpose],
+                }
+                for purpose in PURPOSES
+            },
+        },
+        "sides": {"a": _export_side(sides.a), "b": _export_side(sides.b)},
+        "verdict_counts": _verdict_counts(row.verdict for row in rows),
+        "cases": cases,
+    }
+
+
+@router.get("/{review_id}/export")
+async def export_review(
+    project_id: int,
+    review_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Die Exportdatei fuer eine KI - erst nach `SUCCESS`.
+
+    Reihenfolge: `404` (Pruefung oder Projekt unbekannt, Projektbindung in derselben Anweisung),
+    dann `409` (nicht `SUCCESS`). Offene Faelle stehen in der Datei ohne Urteil; der Dateiname
+    enthaelt nur die Pruefungs-Id. Die drei Kopfzeilen sind Teil der Zusage: ein Download wird
+    gespeichert, nie geschnueffelt (`nosniff`) und nie zwischengespeichert (`no-store`)."""
+    review = await _review_or_404(project_id, review_id, session)
+    if review.status != ScanStatus.SUCCESS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Der Export ist erst nach einer abgeschlossenen Pruefung moeglich.",
+        )
+    statements = await _load_statements(session, review_id)
+    comparison = compare_review(
+        _comparisons(statements), seed=review.seed, limit=review.sample_size
+    )
+    rows = _sort_cases(await _case_rows(session, review_id))
+    payload = _export_payload(
+        review,
+        _sides_out(await _sides_for_review(session, review_id)),
+        dict(comparison.counts),
+        _presented_by_purpose(row.case.purpose for row in rows),
+        rows,
+        statements,
+    )
+    _guard_export_shape(payload)
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={
+            # Der Dateiname traegt NUR die Id - kein Projektname, kein Datum.
+            "Content-Disposition": (
+                f'attachment; filename="klassifizierungspruefung-{review.id}.json"'
+            ),
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
     )

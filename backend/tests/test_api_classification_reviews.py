@@ -1664,3 +1664,324 @@ class TestVerdict:
         response = await api_client.put(_url(1, "/1/cases/1/verdict"), json={"verdict": "both_ok"})
 
         assert response.status_code == 401
+
+
+class TestExport:
+    MARKER_PROJECT = "MARKER-PROJEKT-9f3"
+    MARKER_USER = "MARKER-NUTZER-9f3"
+    MARKER_PATH = "MARKER-DATEINAME-9f3.jpg"
+
+    async def _exportable(
+        self, session: AsyncSession
+    ) -> tuple[Project, User, ClassificationReview, Photo, ClassificationReviewCase]:
+        """Eine abgeschlossene Pruefung mit Markern in ALLEN verbotenen Spalten.
+
+        Die Zeichenfolgen sind unverwechselbar, damit ein Treffer im JSON keiner Zufallszahl
+        zuzuschreiben ist - das ist die Marker-Technik."""
+        project = await _make_project(session, consent=True, name=self.MARKER_PROJECT)
+        user = await _make_user(session, self.MARKER_USER)
+        review = await _make_review(session, project, user, status=ScanStatus.SUCCESS)
+        review.photo_count = 2
+        review.started_at = datetime(2031, 7, 7, 5, 5, 5, tzinfo=UTC).replace(tzinfo=None)
+        review.finished_at = datetime(2031, 7, 7, 5, 6, 5, tzinfo=UTC).replace(tzinfo=None)
+        await session.commit()
+        await _add_side(
+            session,
+            review,
+            "a",
+            ClassificationReviewSideKind.CLOUD,
+            provider="anthropic",
+            model=ANTHROPIC_VISION_MODEL,
+            estimated_cost_usd=1.5,
+            cost_usd=1.25,
+        )
+        await _add_side(session, review, "b", ClassificationReviewSideKind.LOCAL)
+        first = await _add_photo(session, project, self.MARKER_PATH)
+        second = await _add_photo(session, project, "zweites.jpg")
+        await _add_result(
+            session,
+            review,
+            "a",
+            first,
+            strengths={"menschen": 0.9},
+            excluded_document=True,
+            album_level=2,
+        )
+        await _add_result(
+            session,
+            review,
+            "b",
+            first,
+            strengths={"menschen": 0.2},
+            excluded_document=False,
+            album_level=3,
+        )
+        await _add_result(session, review, "a", second, strengths={"menschen": 0.9})
+        await _add_result(session, review, "b", second, strengths={"menschen": 0.9})
+        case = await _add_case(session, review, first, 1, "motif_feature", "menschen")
+        await _add_verdict(session, case, user, ClassificationVerdict.A_BETTER)
+        return project, user, review, first, case
+
+    async def test_the_file_names_the_key_set_and_nothing_else(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _user, review, _photo, _case = await self._exportable(db_session)
+
+        response = await authenticated_api_client.get(_url(project.id, f"/{review.id}/export"))
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert set(payload) == {"review", "sides", "verdict_counts", "cases"}
+        assert set(payload["review"]) == {
+            "sample_size",
+            "seed",
+            "photo_count",
+            "counts_by_purpose",
+        }
+        assert set(payload["review"]["counts_by_purpose"]) == {
+            "motifs",
+            "motif_feature",
+            "excluded_document",
+            "album_level",
+        }
+        for counts in payload["review"]["counts_by_purpose"].values():
+            assert set(counts) == {"compared", "matching", "deviating", "presented"}
+        for side_name in ("a", "b"):
+            assert set(payload["sides"][side_name]) == {
+                "kind",
+                "provider",
+                "model",
+                "eye_model_revision",
+                "eye_mapping_version",
+            }
+        assert set(payload["verdict_counts"]) == {
+            "a_better",
+            "b_better",
+            "both_ok",
+            "both_wrong",
+            "open",
+        }
+        for case in payload["cases"]:
+            assert set(case) == {"photo_position", "purpose", "motif_key", "a", "b", "verdict"}
+
+    async def test_no_forbidden_column_reaches_the_file(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Marker-Technik: Projektname, Nutzername, Dateiname und Zeitstempel stehen in der
+        Datenbank und duerfen in der Datei NICHT auftauchen (ADR 0139 Punkt 7)."""
+        project, _user, review, photo, _case = await self._exportable(db_session)
+
+        response = await authenticated_api_client.get(_url(project.id, f"/{review.id}/export"))
+        text = response.text
+
+        assert response.status_code == 200
+        for marker in (self.MARKER_PROJECT, self.MARKER_USER, self.MARKER_PATH):
+            assert marker not in text
+        # Zeitstempel: das Jahr der Pruefung ist einzigartig gewaehlt.
+        assert "2031" not in text
+        # Kein Schluessel nennt eine Foto-Id oder einen Pfad.
+        for forbidden in ("photo_id", "relative_path", "etag", "project", "username", "started_at"):
+            assert forbidden not in text
+        assert photo.relative_path not in text
+
+    async def test_the_count_and_the_samples_are_in_the_review_block(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _user, review, _photo, _case = await self._exportable(db_session)
+
+        payload = (
+            await authenticated_api_client.get(_url(project.id, f"/{review.id}/export"))
+        ).json()
+
+        assert payload["review"]["sample_size"] == 30
+        assert payload["review"]["seed"] == 4711
+        assert payload["review"]["photo_count"] == 2
+        counts = payload["review"]["counts_by_purpose"]
+        assert counts["motifs"] == {
+            "compared": 2,
+            "matching": 1,
+            "deviating": 1,
+            "presented": 0,
+        }
+        # Der einzige gespeicherte Fall dieser Pruefung ist ein Merkmalsfall.
+        assert counts["motif_feature"]["presented"] == 1
+        assert counts["motif_feature"]["deviating"] == 1
+        assert counts["excluded_document"] == {
+            "compared": 1,
+            "matching": 0,
+            "deviating": 1,
+            "presented": 0,
+        }
+        # Keine Seite sagt etwas zur Albumstufe? Hier schon: 2 gegen 3 ist eine Abweichung.
+        assert counts["album_level"]["deviating"] == 1
+
+    async def test_the_case_carries_the_photo_position_and_the_raw_values(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _user, review, _photo, _case = await self._exportable(db_session)
+
+        payload = (
+            await authenticated_api_client.get(_url(project.id, f"/{review.id}/export"))
+        ).json()
+
+        assert len(payload["cases"]) == 1
+        entry = payload["cases"][0]
+        # Dieselbe Nummer wie in der Fallansicht - nicht die Foto-Id.
+        cases_list = (
+            await authenticated_api_client.get(_url(project.id, f"/{review.id}/cases"))
+        ).json()["cases"]
+        assert entry["photo_position"] == cases_list[0]["photo_position"] == 1
+        assert entry["purpose"] == "motif_feature"
+        assert entry["motif_key"] == "menschen"
+        assert entry["a"] == 0.9
+        assert entry["b"] == 0.2
+        assert entry["verdict"] == "a_better"
+        assert payload["verdict_counts"] == {
+            "a_better": 1,
+            "b_better": 0,
+            "both_ok": 0,
+            "both_wrong": 0,
+            "open": 0,
+        }
+
+    async def test_an_open_case_stays_without_verdict(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _user, review, _photo, _case = await self._exportable(db_session)
+        second = await _add_photo(db_session, project, "drittes.jpg")
+        await _add_case(db_session, review, second, 2, "motifs")
+
+        payload = (
+            await authenticated_api_client.get(_url(project.id, f"/{review.id}/export"))
+        ).json()
+
+        assert [entry["verdict"] for entry in payload["cases"]] == ["a_better", None]
+        assert payload["verdict_counts"]["open"] == 1
+
+    async def test_the_motif_case_exports_the_presence_set(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _user, review, first, _case = await self._exportable(db_session)
+        await _add_case(db_session, review, first, 1, "motifs")
+
+        payload = (
+            await authenticated_api_client.get(_url(project.id, f"/{review.id}/export"))
+        ).json()
+
+        entry = next(item for item in payload["cases"] if item["purpose"] == "motifs")
+        assert entry["a"] == ["menschen"]
+        assert entry["b"] == []
+        assert entry["motif_key"] is None
+
+    async def test_the_headers_mark_a_download(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project, _user, review, _photo, _case = await self._exportable(db_session)
+
+        response = await authenticated_api_client.get(_url(project.id, f"/{review.id}/export"))
+
+        assert response.headers["content-disposition"] == (
+            f'attachment; filename="klassifizierungspruefung-{review.id}.json"'
+        )
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["cache-control"] == "no-store"
+
+    @pytest.mark.parametrize("status_value", [ScanStatus.RUNNING, ScanStatus.FAILED])
+    async def test_the_export_is_409_before_success(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        status_value: ScanStatus,
+    ) -> None:
+        project, _user, review = await _finished_review(db_session, status=status_value)
+
+        response = await authenticated_api_client.get(_url(project.id, f"/{review.id}/export"))
+
+        assert response.status_code == 409
+
+    async def test_a_foreign_review_is_404(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        own = await _make_project(db_session, name="Eigen")
+        other = await _make_project(db_session, name="Fremd")
+        user = await _make_user(db_session)
+        foreign = await _make_review(db_session, other, user)
+
+        response = await authenticated_api_client.get(_url(own.id, f"/{foreign.id}/export"))
+
+        assert response.status_code == 404
+
+    async def test_the_export_requires_a_token(self, api_client: httpx.AsyncClient) -> None:
+        response = await api_client.get(_url(1, "/1/export"))
+
+        assert response.status_code == 401
+
+    def test_the_guard_refuses_an_extra_key(self) -> None:
+        """Rot-Nachweis des Formwaechters: er wirft, statt zu filtern. Ohne diesen Test waere
+        "der Waechter haelt" eine Behauptung ueber Code, den niemand je scheitern sah."""
+        valid: dict[str, Any] = {
+            "review": {
+                "sample_size": 30,
+                "seed": 1,
+                "photo_count": 0,
+                "counts_by_purpose": {
+                    "motifs": {"compared": 0, "matching": 0, "deviating": 0, "presented": 0},
+                    "motif_feature": {"compared": 0, "matching": 0, "deviating": 0, "presented": 0},
+                    "excluded_document": {
+                        "compared": 0,
+                        "matching": 0,
+                        "deviating": 0,
+                        "presented": 0,
+                    },
+                    "album_level": {"compared": 0, "matching": 0, "deviating": 0, "presented": 0},
+                },
+            },
+            "sides": {
+                "a": {
+                    "kind": "local",
+                    "provider": None,
+                    "model": None,
+                    "eye_model_revision": None,
+                    "eye_mapping_version": None,
+                },
+                "b": {
+                    "kind": "eye",
+                    "provider": None,
+                    "model": None,
+                    "eye_model_revision": "v1.0.0",
+                    "eye_mapping_version": MAPPING_VERSION,
+                },
+            },
+            "verdict_counts": {
+                "a_better": 0,
+                "b_better": 0,
+                "both_ok": 0,
+                "both_wrong": 0,
+                "open": 0,
+            },
+            "cases": [],
+        }
+
+        reviews_api._guard_export_shape(valid)
+        with pytest.raises(RuntimeError):
+            reviews_api._guard_export_shape({**valid, "projektname": "Costa Rica"})
+        poisoned = {
+            **valid,
+            "cases": [
+                {
+                    "photo_position": 1,
+                    "purpose": "motifs",
+                    "motif_key": None,
+                    "a": None,
+                    "b": None,
+                    "verdict": None,
+                    "relative_path": "x.jpg",
+                }
+            ],
+        }
+        with pytest.raises(RuntimeError):
+            reviews_api._guard_export_shape(poisoned)
+        with pytest.raises(RuntimeError):
+            reviews_api._guard_export_shape(
+                {**valid, "review": {**valid["review"], "finished_at": None}}
+            )
