@@ -9,16 +9,19 @@ import photosort.worker as worker_module
 from photosort.db import make_session_factory
 from photosort.models import (
     ClassificationPhase,
+    ClassificationReview,
     CriterionScoringRun,
     ExportRun,
     ExportRunStatus,
     Project,
     RemoteCategoryClassificationRun,
+    ReviewPhase,
     ScanRun,
     ScanStatus,
     ScoringRun,
 )
 from photosort.worker import reap_stalled_runs
+from tests.project_graph import get_or_create_user
 
 # Fortschritts-Watchdog (specs/features/0034-scan-haenger-fortschritts-watchdog.md, ADR 0019),
 # Schicht 2: reap_stalled_runs braucht keinen echten arq-Scheduler/Redis - wird als gewoehnliche
@@ -548,3 +551,103 @@ async def test_error_selecting_remote_category_classification_runs_does_not_bloc
     await db_session.refresh(stalled_remote_category)
     assert stalled_scan.status == ScanStatus.FAILED
     assert stalled_remote_category.status == ScanStatus.RUNNING
+
+
+async def test_reaps_a_stalled_classification_review_and_clears_its_phase(
+    db_session: AsyncSession,
+) -> None:
+    """Spec 0616: die Pruefung ist der fuenfte Lauftyp des Watchdogs. `phase = NULL` heisst
+    "laeuft nicht mehr" - der Reaper raeumt einen haengenden Lauf ab, ohne dass der Job je
+    zurueckkehrt."""
+    project = await _make_project(db_session)
+    user = await get_or_create_user(db_session, "watchdog-user")
+    stalled = ClassificationReview(
+        project_id=project.id,
+        created_by_user_id=user.id,
+        status=ScanStatus.RUNNING,
+        phase=ReviewPhase.SIDE_B,
+        sample_size=30,
+        seed=4711,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add(stalled)
+    await db_session.commit()
+    await db_session.refresh(stalled)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    assert reaped == 1
+    await db_session.refresh(stalled)
+    assert stalled.status == ScanStatus.FAILED
+    assert stalled.phase is None
+    assert stalled.error_message
+    assert "15 Minuten" in stalled.error_message
+
+
+async def test_does_not_reap_a_review_exactly_at_threshold(db_session: AsyncSession) -> None:
+    """Wie bei den anderen Lauftypen: nur STRIKT aelter als die Schwelle zaehlt als Stillstand."""
+    project = await _make_project(db_session)
+    user = await get_or_create_user(db_session, "watchdog-user")
+    boundary = ClassificationReview(
+        project_id=project.id,
+        created_by_user_id=user.id,
+        status=ScanStatus.RUNNING,
+        sample_size=30,
+        seed=4711,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=15),
+    )
+    db_session.add(boundary)
+    await db_session.commit()
+    await db_session.refresh(boundary)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    assert reaped == 0
+    await db_session.refresh(boundary)
+    assert boundary.status == ScanStatus.RUNNING
+
+
+async def test_error_selecting_reviews_does_not_block_the_other_tables(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fuentes Pendant: ein Fehler beim Lesen der Prueftabelle verhindert das Reapen der
+    uebrigen Lauftypen nicht (und umgekehrt)."""
+    project = await _make_project(db_session)
+    user = await get_or_create_user(db_session, "watchdog-user")
+    stalled_scan = ScanRun(
+        project_id=project.id,
+        status=ScanStatus.RUNNING,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    stalled_review = ClassificationReview(
+        project_id=project.id,
+        created_by_user_id=user.id,
+        status=ScanStatus.RUNNING,
+        sample_size=30,
+        seed=4711,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add_all([stalled_scan, stalled_review])
+    await db_session.commit()
+
+    original_execute = AsyncSession.execute
+
+    async def flaky_execute(self: AsyncSession, statement: object, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        if "FROM classification_reviews" in str(statement):
+            raise RuntimeError("simulated table-level failure")
+        return await original_execute(self, statement, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(AsyncSession, "execute", flaky_execute)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    monkeypatch.undo()
+
+    assert reaped == 1
+    await db_session.refresh(stalled_scan)
+    await db_session.refresh(stalled_review)
+    assert stalled_scan.status == ScanStatus.FAILED
+    assert stalled_review.status == ScanStatus.RUNNING

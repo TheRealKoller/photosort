@@ -20,6 +20,7 @@ from photosort.config import settings
 from photosort.main import app
 from photosort.models import (
     ClassificationPhase,
+    ClassificationReview,
     CriterionScoringRun,
     Event,
     FinalSelectionDecision,
@@ -51,6 +52,7 @@ from tests.project_graph import (
     ProjectGraph,
     build_project_graph,
     count_rows,
+    get_or_create_user,
     tables_reachable_from_projects,
 )
 
@@ -505,6 +507,18 @@ async def _add_run(
                 project_id=graph.project_id, status=status, started_at=started_at
             )
         )
+    elif run_kind == "classification_review":
+        user = await get_or_create_user(session, "delete-lock-user")
+        session.add(
+            ClassificationReview(
+                project_id=graph.project_id,
+                created_by_user_id=user.id,
+                status=status,
+                sample_size=30,
+                seed=4711,
+                started_at=started_at,
+            )
+        )
     else:  # pragma: no cover - Tippfehler im Parametersatz
         raise AssertionError(f"unbekannter Lauftyp: {run_kind}")
     await session.flush()
@@ -619,7 +633,9 @@ async def test_delete_project_twice_returns_404_the_second_time(
     assert second.status_code == 404
 
 
-@pytest.mark.parametrize("run_kind", ["scan", "scoring", "criterion_scoring", "remote_category"])
+@pytest.mark.parametrize(
+    "run_kind", ["scan", "scoring", "criterion_scoring", "remote_category", "classification_review"]
+)
 async def test_delete_project_returns_409_while_a_run_is_active(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession, run_kind: str
 ) -> None:
@@ -637,7 +653,9 @@ async def test_delete_project_returns_409_while_a_run_is_active(
     assert await count_rows(db_session, "projects") == 1
 
 
-@pytest.mark.parametrize("run_kind", ["scan", "scoring", "criterion_scoring", "remote_category"])
+@pytest.mark.parametrize(
+    "run_kind", ["scan", "scoring", "criterion_scoring", "remote_category", "classification_review"]
+)
 async def test_delete_project_ignores_an_outdated_running_run(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession, run_kind: str
 ) -> None:
