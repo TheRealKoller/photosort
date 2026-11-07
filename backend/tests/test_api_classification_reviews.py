@@ -18,13 +18,19 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.api import classification_reviews as reviews_api
+from photosort.api.deps import get_job_enqueuer
 from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL
 from photosort.config import settings
-from photosort.eye_mapping import MAPPINGS, MODEL_REVISION
+from photosort.eye_mapping import MAPPING_VERSION, MAPPINGS, MODEL_REVISION
+from photosort.main import app
 from photosort.models import (
     ClassificationReview,
+    ClassificationReviewSide,
+    ClassificationReviewSideKind,
     DuplicateDecision,
     Photo,
     PhotoDuplicateDecision,
@@ -32,6 +38,7 @@ from photosort.models import (
     Project,
     RatingStatus,
     ScanStatus,
+    ScoringRun,
     User,
 )
 from photosort.pricing import estimate_usd_per_image
@@ -109,6 +116,23 @@ async def _add_photo(
     return photo
 
 
+async def _add_successful_run(
+    session: AsyncSession, project: Project, *, gate_confirmed: bool = True
+) -> ScoringRun:
+    run = ScoringRun(
+        project_id=project.id,
+        status=ScanStatus.SUCCESS,
+        suggestions_found=0,
+        started_at=_MOMENT,
+    )
+    if gate_confirmed:
+        run.gate_confirmed_at = _MOMENT
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    return run
+
+
 async def _make_review(
     session: AsyncSession,
     project: Project,
@@ -133,6 +157,40 @@ async def _make_review(
 
 def _url(project_id: int, suffix: str = "") -> str:
     return f"/projects/{project_id}/classification-reviews{suffix}"
+
+
+def _local() -> dict[str, Any]:
+    return {"kind": "local"}
+
+
+def _eye(version: str = MAPPING_VERSION) -> dict[str, Any]:
+    return {"kind": "eye", "eye_mapping_version": version}
+
+
+def _cloud(model: str = ANTHROPIC_VISION_MODEL) -> dict[str, Any]:
+    return {"kind": "cloud", "model": model}
+
+
+_OMITTED: Any = object()
+
+
+def _body(
+    a: dict[str, Any], b: dict[str, Any], *, sample_size: Any = 30, **extra: Any
+) -> dict[str, Any]:
+    """Der Koerper einer Pruefung; `sample_size` faehrt mit, weil S9 es als Pflichtfeld fuehrt.
+    `_OMITTED` laesst es weg - nur der Test auf das fehlende Feld braucht das."""
+    body: dict[str, Any] = {"a": a, "b": b, **extra}
+    if sample_size is not _OMITTED:
+        body["sample_size"] = sample_size
+    return body
+
+
+async def _healthy() -> bool:
+    return True
+
+
+async def _unhealthy() -> bool:
+    return False
 
 
 class TestOptions:
@@ -367,3 +425,506 @@ class TestEstimate:
         )
 
         assert response.status_code == 422
+
+
+class TestCreate:
+    async def _ready_project(
+        self, session: AsyncSession, *, consent: bool = False, photos: int = 2
+    ) -> Project:
+        project = await _make_project(session, consent=consent)
+        await _add_successful_run(session, project)
+        for index in range(photos):
+            await _add_photo(session, project, f"keep-{index}.jpg")
+        return project
+
+    async def test_creates_the_review_and_enqueues_the_job(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        fake = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_eye(), _local(), sample_size=17)
+        )
+
+        assert response.status_code == 201
+        review_id = response.json()["id"]
+        assert response.json()["status"] == "running"
+        assert fake.calls == [("run_classification_review", (review_id,))]
+        review = await db_session.get(ClassificationReview, review_id)
+        assert review is not None
+        assert review.status == ScanStatus.RUNNING
+        assert review.phase is None
+        assert review.sample_size == 17
+        assert review.photo_count == 2
+        assert 0 <= review.seed < 2**31
+
+    async def test_the_creator_comes_from_the_token(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_eye(), _local())
+        )
+
+        review = await db_session.get(ClassificationReview, response.json()["id"])
+        assert review is not None
+        creator = await db_session.execute(select(User.id).where(User.username == "testuser"))
+        assert review.created_by_user_id == creator.scalar_one()
+
+    async def test_the_origin_and_the_estimate_are_stored_at_the_side(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """S6/S8: der Anbieter folgt aus dem Modell, `eye_model_revision` ist die gepinnte
+        Fassung, und der Betrag wird AN DER SEITE eingefroren - er ist der Stand beim Anlegen."""
+        monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+        project = await self._ready_project(db_session, consent=True, photos=4)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_cloud(), _local())
+        )
+
+        sides = {
+            side.side: side
+            for side in (
+                await db_session.execute(
+                    select(ClassificationReviewSide).where(
+                        ClassificationReviewSide.review_id == response.json()["id"]
+                    )
+                )
+            ).scalars()
+        }
+        assert sides["a"].kind is ClassificationReviewSideKind.CLOUD
+        assert sides["a"].provider == "anthropic"
+        assert sides["a"].model == ANTHROPIC_VISION_MODEL
+        assert sides["a"].eye_mapping_version is None
+        assert sides["a"].estimated_cost_usd == pytest.approx(
+            4 * estimate_usd_per_image(ANTHROPIC_VISION_MODEL, "anthropic")
+        )
+        assert sides["b"].kind is ClassificationReviewSideKind.LOCAL
+        assert sides["b"].provider is None
+        assert sides["b"].estimated_cost_usd == 0.0
+
+    async def test_an_eye_side_stores_the_pinned_revision(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_eye(), _local())
+        )
+
+        side = (
+            await db_session.execute(
+                select(ClassificationReviewSide).where(
+                    ClassificationReviewSide.review_id == response.json()["id"],
+                    ClassificationReviewSide.side == "a",
+                )
+            )
+        ).scalar_one()
+        assert side.eye_model_revision == MODEL_REVISION
+        assert side.eye_mapping_version == MAPPING_VERSION
+
+    async def test_the_feature_switch_comes_first(
+        self, authenticated_api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "category_selection_enabled", False)
+        monkeypatch.setattr(settings, "eye_enabled", False)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            "/projects/999/classification-reviews", json=_body(_eye(), _local())
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Diese Funktion ist derzeit nicht aktiviert."
+
+    async def test_the_eye_switch_is_second(
+        self, authenticated_api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Das Projekt 999 existiert nicht, trotzdem `403`: die Antwort verraet nichts ueber den
+        Bestand, und der eigene Satz ist vom Consent-`403` unterscheidbar."""
+        monkeypatch.setattr(settings, "eye_enabled", False)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            "/projects/999/classification-reviews", json=_body(_eye(), _local())
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Die Eye-Auswertung ist nicht aktiviert."
+
+    async def test_the_eye_switch_does_not_block_a_local_review(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", False)
+        monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+        project = await self._ready_project(db_session, consent=True)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_cloud(), _local())
+        )
+
+        assert response.status_code == 201
+
+    async def test_an_unknown_project_is_404(
+        self, authenticated_api_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            "/projects/999/classification-reviews", json=_body(_local(), _eye())
+        )
+
+        assert response.status_code == 404
+
+    async def test_without_a_successful_scoring_run_is_409(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_local(), _local())
+        )
+
+        assert response.status_code == 409
+
+    async def test_without_the_confirmed_gate_is_409(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session)
+        await _add_successful_run(db_session, project, gate_confirmed=False)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_local(), _local())
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Bestaetige zuerst das Ausschuss-Gate."
+
+    async def test_a_running_review_is_409(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        user = await _make_user(db_session)
+        await _make_review(db_session, project, user, status=ScanStatus.RUNNING)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_eye(), _local())
+        )
+
+        assert response.status_code == 409
+
+    async def test_a_finished_review_does_not_block_a_new_one(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        user = await _make_user(db_session)
+        await _make_review(db_session, project, user, status=ScanStatus.FAILED)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_eye(), _local())
+        )
+
+        assert response.status_code == 201
+
+    async def test_cloud_without_consent_is_403_after_the_gate_checks(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Die Reihenfolge ist beobachtbar: ohne Ausschusslauf kommt `409`, obwohl auch die
+        Einwilligung fehlt."""
+        project = await _make_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_cloud(), _local())
+        )
+
+        assert response.status_code == 409
+
+    async def test_cloud_without_consent_on_a_ready_project_is_403(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await self._ready_project(db_session, consent=False)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_cloud(), _local())
+        )
+
+        assert response.status_code == 403
+
+    async def test_an_unhealthy_eye_service_is_503_and_changes_nothing(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Der Gesundheitscheck steht VOR dem Einreihen: keine Zeile, kein Job, kein Job, der
+        garantiert scheitert."""
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _unhealthy)
+        project = await self._ready_project(db_session)
+        fake = FakeEnqueuer()
+        app.dependency_overrides[get_job_enqueuer] = lambda: fake
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_eye(), _local(), sample_size=201)
+        )
+
+        assert response.status_code == 503
+        assert fake.calls == []
+        count = await db_session.execute(
+            select(ClassificationReview).where(ClassificationReview.project_id == project.id)
+        )
+        assert count.scalars().all() == []
+
+    async def test_two_identical_sides_are_422(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_local(), _local())
+        )
+
+        assert response.status_code == 422
+
+    async def test_two_eye_sides_with_the_same_version_are_422(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(_url(project.id), json=_body(_eye(), _eye()))
+
+        assert response.status_code == 422
+
+    async def test_two_cloud_sides_with_the_same_model_are_422(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+        project = await self._ready_project(db_session, consent=True)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_cloud(), _cloud())
+        )
+
+        assert response.status_code == 422
+
+    async def test_an_unknown_model_is_422(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        project = await self._ready_project(db_session, consent=True)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_cloud("unbekannt"), _local())
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Unbekanntes Modell."
+
+    async def test_a_known_model_without_its_key_is_422(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Bekannt, aber nicht ausfuehrbar: die Wahl ist valide, nur nicht bedienbar - und ein
+        Lauf ohne Schluessel scheiterte garantiert, also wird er nicht eingereiht."""
+        monkeypatch.setattr(settings, "anthropic_api_key", "")
+        project = await self._ready_project(db_session, consent=True)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_cloud(), _local())
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Fuer dieses Modell ist kein API-Schluessel hinterlegt."
+
+    async def test_an_unknown_eye_version_is_422(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_eye("eye-9.9.9/v1"), _local())
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Unbekannte Eye-Fassung."
+
+    async def test_an_eye_side_without_a_version_is_422(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body({"kind": "eye"}, _local())
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize("sample_size", [0, 201, -5])
+    async def test_a_sample_size_out_of_bounds_is_422(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+        sample_size: int,
+    ) -> None:
+        project = await self._ready_project(db_session, consent=True)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_cloud(), _local(), sample_size=sample_size)
+        )
+
+        assert response.status_code == 422
+        assert "Pruefgraesse" in response.json()["detail"]
+
+    @pytest.mark.parametrize("size", [1, 200])
+    async def test_the_bounds_are_inclusive(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+        size: int,
+    ) -> None:
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_local(), _eye(), sample_size=size)
+        )
+
+        assert response.status_code == 201
+
+    @pytest.mark.parametrize("sample_size", ["30", 30.5, True, None, _OMITTED])
+    async def test_a_wrongly_typed_sample_size_is_a_schema_422(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+        sample_size: Any,
+    ) -> None:
+        """S9: `StrictInt` - `"30"` und `true` werden NICHT zu 30 und 1, und ein fehlendes Feld
+        bleibt ein Fehler; die Vorgabe 30 ist eine Vorbelegung der Oberflaeche."""
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_local(), _eye(), sample_size=sample_size)
+        )
+
+        assert response.status_code == 422
+
+    async def test_an_extra_body_field_is_rejected(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """S8: kein Betrags-, Preis- oder Kostenfeld - ein mitgeschickter Betrag ist ein Fehler,
+        kein stiller Vorschlag."""
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_local(), _eye(), estimated_cost_usd=0.0)
+        )
+
+        assert response.status_code == 422
+
+    async def test_an_extra_side_field_is_rejected(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id),
+            json=_body(
+                {"kind": "cloud", "model": ANTHROPIC_VISION_MODEL, "provider": "mistral"}, _local()
+            ),
+        )
+
+        assert response.status_code == 422
+
+    async def test_the_create_requires_a_token(self, api_client: httpx.AsyncClient) -> None:
+        response = await api_client.post(_url(1), json=_body(_local(), _eye()))
+
+        assert response.status_code == 401
