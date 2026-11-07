@@ -85,6 +85,8 @@ function listItem(
     sides: { a: LOCAL, b: CLOUD },
     case_count: 8,
     case_open: 3,
+    photo_count: 12,
+    unclassifiable_photo_count: 0,
     ...overrides,
   }
 }
@@ -211,6 +213,35 @@ describe('ClassificationReviewsPage', () => {
     expect(
       screen.getByText('Die beiden Verfahren stimmen auf allen Fotos überein.'),
     ).toBeInTheDocument()
+  })
+
+  // Edge Case 4: scheitern alle Fotos einzeln, steht in der Zeile KEINE Uebereinstimmung, sondern
+  // die Zahl der fehlgeschlagenen Fotos (AK 9).
+  it('behauptet keine Uebereinstimmung, wenn kein Foto verglichen wurde', async () => {
+    vi.mocked(reviewApi.listClassificationReviews).mockResolvedValue([
+      listItem(2, {
+        case_count: 0,
+        case_open: 0,
+        photo_count: 12,
+        unclassifiable_photo_count: 12,
+      }),
+      listItem(1, {
+        case_count: 0,
+        case_open: 0,
+        photo_count: 12,
+        unclassifiable_photo_count: 0,
+      }),
+    ])
+
+    renderPage()
+
+    expect(
+      await screen.findByText('keine Fotos verglichen - 12 Fotos fehlgeschlagen'),
+    ).toBeInTheDocument()
+    // Die andere Zeile ohne Fall behaelt die Uebereinstimmung - genau EINMAL.
+    expect(
+      screen.getAllByText('Die beiden Verfahren stimmen auf allen Fotos überein.'),
+    ).toHaveLength(1)
   })
 
   it('macht die ganze Zeile zur Trefferflaeche von mindestens 44 px', async () => {

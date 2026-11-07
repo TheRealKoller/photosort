@@ -288,6 +288,22 @@ export function reviewListStand(
 /** Der Hinweis, wenn eine abgeschlossene Pruefung gar keinen Fall vorgelegt hat. */
 export const NO_DEVIATION_TEXT = 'Die beiden Verfahren stimmen auf allen Fotos überein.'
 
+/**
+ * Der Hinweis unter dem Stand einer abgeschlossenen Pruefung OHNE Fall.
+ *
+ * "keine Abweichungen" ist nur dann eine Aussage ueber die Verfahren, wenn wirklich etwas
+ * verglichen wurde. Ist `unclassifiable_photo_count` gleich der Pruefmenge, hat KEIN Foto auf
+ * beiden Seiten ein Ergebnis - dann nennt der Hinweis die fehlgeschlagenen Fotos statt einer
+ * Uebereinstimmung (Spec 0616, Edge Case 4 / AK 9).
+ */
+export function reviewNoCaseText(
+  review: Pick<ClassificationReviewListItemOut, 'photo_count' | 'unclassifiable_photo_count'>,
+): string {
+  return review.unclassifiable_photo_count === review.photo_count
+    ? noPhotosComparedText(review.unclassifiable_photo_count)
+    : NO_DEVIATION_TEXT
+}
+
 /** Die Herkunftsmerkmale, die eine Seite traegt - eine Anzeige braucht die Rohwerte, nie Regeln. */
 export interface ReviewSideOrigin {
   kind: ClassificationReviewSideKind

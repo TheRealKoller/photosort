@@ -11,8 +11,8 @@ import { useClassificationReviewsQuery } from '../hooks/useClassificationReviews
 import {
   CLASSIFICATION_REVIEW_TEXTS,
   CLASSIFICATION_REVIEW_TITLE,
-  NO_DEVIATION_TEXT,
   reviewListStand,
+  reviewNoCaseText,
   SIDE_MARKS,
   sideOriginText,
 } from '../utils/classificationReviewLabels'
@@ -63,7 +63,7 @@ function ReviewRow({
         <span className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
           <StatusTag status={stand.tone} label={stand.label} />
           {review.status === 'success' && review.case_count === 0 && (
-            <span className="text-xs text-text-muted">{NO_DEVIATION_TEXT}</span>
+            <span className="text-xs text-text-muted">{reviewNoCaseText(review)}</span>
           )}
         </span>
       </Link>

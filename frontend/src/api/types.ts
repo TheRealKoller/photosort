@@ -1392,6 +1392,11 @@ export interface ClassificationReviewListItemOut {
   status: ScanStatus
   phase: ClassificationReviewPhase | null
   sides: ClassificationReviewSidesOut
+  /** Pruefmenge und die Fotos ohne Ergebnis auf beiden Seiten. Beide Zahlen traegt die Zeile,
+   * damit die Liste „keine Fotos verglichen" (beide gleich, Edge Case 4) von „stimmt ueberein"
+   * unterscheiden kann. */
+  photo_count: number
+  unclassifiable_photo_count: number
   case_count: number
   case_open: number
 }

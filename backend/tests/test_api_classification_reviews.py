@@ -1097,6 +1097,22 @@ class TestList:
         assert row["case_open"] == 1
         assert left_open.id != decided.id
 
+    async def test_the_row_names_both_photo_counts(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Edge Case 4: sind alle Fotos einzeln gescheitert, ist `unclassifiable_photo_count`
+        gleich der Pruefmenge - dann darf die Liste NICHT "stimmen ueberein" behaupten. Sie
+        braucht beide Zahlen, um "keine Fotos verglichen" zu erkennen."""
+        project, _user, review = await _finished_review(db_session)
+        review.photo_count = 12
+        review.unclassifiable_photo_count = 12
+        await db_session.commit()
+
+        payload = (await authenticated_api_client.get(_url(project.id))).json()
+
+        assert payload[0]["photo_count"] == 12
+        assert payload[0]["unclassifiable_photo_count"] == 12
+
     async def test_a_review_of_the_other_user_is_listed_too(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:

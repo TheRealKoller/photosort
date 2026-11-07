@@ -18,6 +18,7 @@ import {
   REVIEW_DETAIL_TEXTS,
   reviewCaseTitle,
   reviewListStand,
+  reviewNoCaseText,
   silentSide,
   SIDE_COST_LABELS,
   SIDE_LABELS,
@@ -221,6 +222,17 @@ describe('classificationReviewLabels - Stand einer Pruefung', () => {
       label: 'keine Abweichungen',
     })
     expect(NO_DEVIATION_TEXT).toBe('Die beiden Verfahren stimmen auf allen Fotos überein.')
+  })
+
+  // Edge Case 4: sind alle Fotos einzeln gescheitert, wurde NICHTS verglichen - dann steht die
+  // Zahl der fehlgeschlagenen Fotos da, nicht die Uebereinstimmung.
+  it('behauptet ohne ein verglichenes Foto keine Uebereinstimmung', () => {
+    expect(reviewNoCaseText({ photo_count: 12, unclassifiable_photo_count: 12 })).toBe(
+      'keine Fotos verglichen - 12 Fotos fehlgeschlagen',
+    )
+    expect(reviewNoCaseText({ photo_count: 12, unclassifiable_photo_count: 3 })).toBe(
+      NO_DEVIATION_TEXT,
+    )
   })
 })
 

@@ -259,7 +259,9 @@ class ReviewVerdictCountsOut(BaseModel):
 
 class ReviewListItemOut(BaseModel):
     """Eine Zeile der Liste. `case_count`/`case_open` tragen den Stand („{n} von {m} Fällen
-    offen"); `case_count == 0` heisst "keine Abweichungen"."""
+    offen"); `case_count == 0` heisst "keine Abweichungen" - ausser `unclassifiable_photo_count`
+    ist gleich `photo_count`: dann wurde nichts verglichen (Edge Case 4), und die Liste behauptet
+    keine Uebereinstimmung."""
 
     id: int
     created_at: datetime
@@ -267,6 +269,8 @@ class ReviewListItemOut(BaseModel):
     status: ScanStatus
     phase: ReviewPhase | None
     sides: ReviewSidesOut
+    photo_count: int
+    unclassifiable_photo_count: int
     case_count: int
     case_open: int
 
@@ -1098,6 +1102,8 @@ async def list_reviews(
                 ClassificationReview.started_at,
                 ClassificationReview.status,
                 ClassificationReview.phase,
+                ClassificationReview.photo_count,
+                ClassificationReview.unclassifiable_photo_count,
                 User.id,
                 User.username,
             )
@@ -1135,10 +1141,21 @@ async def list_reviews(
             status=review_status,
             phase=phase,
             sides=_sides_out(sides[review_id]),
+            photo_count=photo_count,
+            unclassifiable_photo_count=unclassifiable_photo_count,
             case_count=case_counts.get(review_id, (0, 0))[0],
             case_open=case_counts.get(review_id, (0, 0))[1],
         )
-        for review_id, started_at, review_status, phase, user_id, username in review_rows
+        for (
+            review_id,
+            started_at,
+            review_status,
+            phase,
+            photo_count,
+            unclassifiable_photo_count,
+            user_id,
+            username,
+        ) in review_rows
     ]
 
 
