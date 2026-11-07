@@ -207,8 +207,10 @@ eine Aussage haben.
   - **cloud:** Client des gewählten Modells, Parallelität wie `remote_category_classification_concurrency`,
     Kosten im `finally` eingefroren.
   - Danach Fälle über `classification_comparison` ziehen und speichern. Ein Fotofehler wird
-    übersprungen, in `unclassifiable_photo_count` gezählt und für keinen Zweck verglichen. Liefert
-    eine Seite auf keinem Foto ein Ergebnis, endet die Prüfung `FAILED` statt mit leerer Übersicht.
+    übersprungen, in `unclassifiable_photo_count` gezählt und für keinen Zweck verglichen; scheitern
+    alle Fotos einzeln, ist das ein `SUCCESS` mit `verglichen = 0` (Edge Case 4). Liefert eine Seite
+    dagegen auf keinem Foto ein Ergebnis, **ohne** dass ein Fotofehler gezählt wurde, endet die
+    Prüfung `FAILED` statt mit leerer Übersicht.
   - `reap_stalled_runs`/`_fail_if_stalled` nehmen den neuen Lauftyp auf.
 - **`api/classification_reviews.py`** (neu, Router-Auth, Projektbindung nur aus dem Pfad). Basis
   `/projects/{project_id}/classification-reviews` (englische Kebab-Pfade wie `album-draft` und
@@ -534,8 +536,14 @@ den Syntaxbaum und ein Verhaltenstest über den Bestand.
    beiden anderen Zahlen.
 4. **Fehler bei einzelnen Fotos.** Ein Foto scheitert auf einer Seite → übersprungen, gezählt, keine
    Ergebniszeile für diese Seite, kein Fall für das Foto, Prüfung endet `SUCCESS`; die übrigen Fotos
-   sind vollständig. Ein Foto scheitert auf beiden Seiten → einmal gezählt. Alle Fotos scheitern →
-   `SUCCESS` mit `verglichen = 0`, und die Übersicht sagt „keine Fotos verglichen“.
+   sind vollständig. Ein Foto scheitert auf beiden Seiten → einmal gezählt. Scheitern alle Fotos
+   einzeln (jede Seite meldet je Foto einen Fehler), endet die Prüfung `SUCCESS` mit
+   `verglichen = 0`, und die Übersicht sagt „keine Fotos verglichen“; die Zahl der
+   `unclassifiable_photo_count` ist dann gleich der Prüfmenge. **Davon zu unterscheiden ist eine
+   Seite, die ohne einen einzigen gezählten Fehler nichts liefert**: liefert eine Seite auf keinem
+   Foto ein Ergebnis, ohne dass ein Fotofehler gezählt wurde, endet die Prüfung `FAILED` — das ist
+   kein Datenbefund, sondern ein kaputter Client oder eine unbekannte Fassung, und eine leere
+   Übersicht verdeckte ihn.
 5. **Watchdog.** `last_progress_at` älter als die Schwelle → `FAILED`, Teilschritt `NULL`; exakt auf
    der Schwelle → nicht gereapt; innerhalb → nicht gereapt; ein Fehler beim Lesen einer anderen
    Lauf-Tabelle verhindert das Reapen der Prüfung nicht; ein bereits über die erste Schicht
