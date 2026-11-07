@@ -20,6 +20,9 @@ from photosort.api.stats import (
 from photosort.config import settings
 from photosort.models import (
     ClassificationPhase,
+    ClassificationReview,
+    ClassificationReviewSide,
+    ClassificationReviewSideKind,
     CloudVisionPhase,
     CriterionScoringRun,
     MotifAssessmentSource,
@@ -503,6 +506,7 @@ class TestEmptyProject:
         assert payload["cost"]["by_purpose"] == [
             {"purpose": "landmark", "cost_usd": 0.0, "has_unrecorded_runs": False},
             {"purpose": "remote_category", "cost_usd": 0.0, "has_unrecorded_runs": False},
+            {"purpose": "review", "cost_usd": 0.0, "has_unrecorded_runs": False},
         ]
 
     async def test_no_run_has_ever_finished(self, payload: dict[str, Any]) -> None:
@@ -1859,3 +1863,116 @@ class TestTheOverviewAndTheStatsPageAgree:
         ]
 
         assert occurrences == ["photo_aggregates.py"]
+
+
+async def _add_review_side(
+    session: AsyncSession,
+    project: Project,
+    *,
+    side: str = "a",
+    kind: ClassificationReviewSideKind = ClassificationReviewSideKind.CLOUD,
+    api_calls: int | None = 0,
+    cost_usd: float | None = 0.0,
+    estimated_cost_usd: float | None = 0.0,
+) -> ClassificationReviewSide:
+    user = User(username=f"pruefer-{side}", password_hash=hash_password("x"))
+    session.add(user)
+    await session.flush()
+    review = ClassificationReview(
+        project_id=project.id,
+        created_by_user_id=user.id,
+        status=ScanStatus.SUCCESS,
+        sample_size=30,
+        seed=1,
+    )
+    session.add(review)
+    await session.flush()
+    row = ClassificationReviewSide(
+        review_id=review.id,
+        side=side,
+        kind=kind,
+        api_calls=api_calls,
+        cost_usd=cost_usd,
+        estimated_cost_usd=estimated_cost_usd,
+    )
+    session.add(row)
+    await session.commit()
+    return row
+
+
+class TestReviewCosts:
+    """Spec 0616: der Kostenposten `review` folgt der Lueckenregel (b) - ein Aufruf ohne
+    erfassten Betrag ist ein Hinweis, eine kostenfreie Seite nie."""
+
+    async def test_the_review_entry_is_always_present(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        entry = next(item for item in payload["cost"]["by_purpose"] if item["purpose"] == "review")
+        assert entry == {"purpose": "review", "cost_usd": 0.0, "has_unrecorded_runs": False}
+
+    async def test_a_recorded_amount_is_added_to_the_total(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        await _add_review_side(db_session, project, api_calls=12, cost_usd=0.75)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        entry = next(item for item in payload["cost"]["by_purpose"] if item["purpose"] == "review")
+        assert entry["cost_usd"] == pytest.approx(0.75)
+        assert entry["has_unrecorded_runs"] is False
+        assert payload["cost"]["total_usd"] == pytest.approx(0.75)
+
+    @pytest.mark.parametrize("missing", [None, 0.0])
+    async def test_rule_b_flags_a_run_with_calls_but_without_an_amount(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        missing: float | None,
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        await _add_review_side(db_session, project, api_calls=7, cost_usd=missing)
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        entry = next(item for item in payload["cost"]["by_purpose"] if item["purpose"] == "review")
+        assert entry["has_unrecorded_runs"] is True
+
+    async def test_a_free_side_never_raises_the_hint(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Eye und lokal setzen `api_calls = NULL` und tragen `0.0` - das ist kostenfrei, keine
+        Erfassungsluecke."""
+        project = await _make_project(db_session, "Costa Rica")
+        await _add_review_side(
+            db_session,
+            project,
+            side="b",
+            kind=ClassificationReviewSideKind.LOCAL,
+            api_calls=None,
+            cost_usd=0.0,
+        )
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        entry = next(item for item in payload["cost"]["by_purpose"] if item["purpose"] == "review")
+        assert entry["has_unrecorded_runs"] is False
+        assert entry["cost_usd"] == 0.0
+
+    async def test_the_estimate_never_counts_as_a_cost(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project = await _make_project(db_session, "Costa Rica")
+        await _add_review_side(
+            db_session, project, api_calls=0, cost_usd=0.0, estimated_cost_usd=9.99
+        )
+
+        payload = (await authenticated_api_client.get(f"/projects/{project.id}/stats")).json()
+
+        entry = next(item for item in payload["cost"]["by_purpose"] if item["purpose"] == "review")
+        assert entry["cost_usd"] == 0.0
+        assert entry["has_unrecorded_runs"] is False
