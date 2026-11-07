@@ -4,13 +4,19 @@ import { MOTIF_SET } from '../test/motifSetFixture'
 import {
   CLASSIFICATION_REVIEW_TEXTS,
   CLASSIFICATION_REVIEW_TITLE,
+  NO_DEVIATION_TEXT,
   NO_STATEMENT_TEXT,
+  PROVIDER_BLOCKED_TEXT,
   PURPOSE_LABELS,
   PURPOSE_UNIT_LABELS,
   reviewCaseTitle,
+  reviewListStand,
+  SIDE_COST_LABELS,
   SIDE_LABELS,
   SIDE_MARKS,
+  sideOriginText,
   TERMS,
+  UNAVAILABLE_REASON_TEXTS,
   VERDICT_LABELS,
   VERDICT_ORDER,
 } from './classificationReviewLabels'
@@ -117,5 +123,107 @@ describe('classificationReviewLabels - Abgrenzung zur Bewertung', () => {
       (target) => target.id === 'classificationReviews',
     )
     expect(navTarget?.label).toBe(CLASSIFICATION_REVIEW_TITLE)
+  })
+})
+
+describe('classificationReviewLabels - Herkunft einer Seite', () => {
+  // Die Herkunft wird beim Anlegen eingefroren und beim Lesen nur noch angezeigt; ihre drei
+  // Formen stehen deshalb hier und nicht an jeder Aufrufstelle neu.
+  it('nennt eine Cloud-Seite mit Anbieter und Modell', () => {
+    expect(
+      sideOriginText({
+        kind: 'cloud',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        eye_model_revision: null,
+        eye_mapping_version: null,
+      }),
+    ).toBe('Cloud · Anthropic · Modell claude-sonnet-4-5')
+  })
+
+  it('nennt eine Eye-Seite mit Modellrevision und Uebersetzungsfassung', () => {
+    expect(
+      sideOriginText({
+        kind: 'eye',
+        provider: null,
+        model: null,
+        eye_model_revision: 'eye-4.2.3',
+        eye_mapping_version: 'v1',
+      }),
+    ).toBe('Eye · eye-4.2.3 · Übersetzung v1')
+  })
+
+  // Zwei Fassungen desselben Modells unterscheiden sich oft nur am Ende - die Zeile darf deshalb
+  // nicht gekuerzt werden. Das ist eine Klassen-Zusage an der Aufrufstelle (break-words).
+  it('nennt eine lokale Seite als ohne Sehenswuerdigkeits-Beitrag', () => {
+    expect(
+      sideOriginText({
+        kind: 'local',
+        provider: null,
+        model: null,
+        eye_model_revision: null,
+        eye_mapping_version: null,
+      }),
+    ).toBe('Lokal · ohne Sehenswürdigkeits-Beitrag')
+  })
+})
+
+describe('classificationReviewLabels - Stand einer Pruefung', () => {
+  const base = { case_count: 4, case_open: 2 }
+
+  it('nennt eine laufende Pruefung "läuft…" mit Laufindikator', () => {
+    expect(reviewListStand({ ...base, status: 'running' })).toEqual({
+      tone: 'running',
+      label: 'läuft…',
+    })
+  })
+
+  it('nennt eine gescheiterte Pruefung "fehlgeschlagen"', () => {
+    expect(reviewListStand({ ...base, status: 'failed' })).toEqual({
+      tone: 'failed',
+      label: 'fehlgeschlagen',
+    })
+  })
+
+  it('zaehlt die offenen Faelle gegen alle Faelle', () => {
+    expect(reviewListStand({ ...base, status: 'success' })).toEqual({
+      tone: 'never',
+      label: '2 von 4 Fällen offen',
+    })
+  })
+
+  it('nennt eine vollstaendig beurteilte Pruefung "alle beurteilt"', () => {
+    expect(reviewListStand({ case_count: 4, case_open: 0, status: 'success' })).toEqual({
+      tone: 'success',
+      label: 'alle beurteilt',
+    })
+  })
+
+  // "keine Abweichungen" ist eine Aussage ueber die Verfahren, nicht ueber die Urteile - und sie
+  // steht nur, wenn es wirklich keinen Fall gibt.
+  it('nennt eine Pruefung ohne Faelle "keine Abweichungen"', () => {
+    expect(reviewListStand({ case_count: 0, case_open: 0, status: 'success' })).toEqual({
+      tone: 'success',
+      label: 'keine Abweichungen',
+    })
+    expect(NO_DEVIATION_TEXT).toBe('Die beiden Verfahren stimmen auf allen Fotos überein.')
+  })
+})
+
+describe('classificationReviewLabels - Sperrgruende und Kostenworte', () => {
+  // Die Gruende sind eine GESCHLOSSENE Menge fester Saetze; der Server nennt Tokens, die
+  // Oberflaeche formuliert sie.
+  it('formuliert jeden Sperrgrund als Satz', () => {
+    expect(UNAVAILABLE_REASON_TEXTS).toEqual({
+      no_consent: 'keine Cloud-Einwilligung im Projekt',
+      no_api_key: 'für keinen Cloud-Anbieter ist ein API-Schlüssel hinterlegt',
+      eye_disabled: 'Eye ist in dieser Installation abgeschaltet',
+    })
+    expect(PROVIDER_BLOCKED_TEXT).toBe('kein API-Schlüssel hinterlegt')
+  })
+
+  // "kostenfrei" ist ein Wort, keine 0 (Design-System).
+  it('nennt den Preis einer Wahl als Wort, nie als Betrag', () => {
+    expect(SIDE_COST_LABELS).toEqual({ free: 'kostenfrei', cloud: 'Cloud · kostenpflichtig' })
   })
 })
