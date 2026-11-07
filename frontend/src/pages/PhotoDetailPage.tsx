@@ -420,11 +420,12 @@ export function PhotoDetailPage() {
           fineLabels={eyeValues?.fineLabels ?? currentPhoto.fine_labels}
         />
 
-        {/* DAS EYE-BAND (Spec 0609/0615): zwischen Urteil und Motivbereich, weil es die HERKUNFT
-            der beiden Angaben im Urteil benennt - Modellrevision, Fassung der Uebersetzung und
-            Zeitpunkt stammen aus `photo_eye_results`, nicht aus einer geratenen Anbieterzeile. Die
-            Fassung ist ein Rohwert und nur ein Textknoten (S7). Die Namensnennung steht darunter,
-            an derselben Stelle wie die Angabe selbst. */}
+        {/* DAS EYE-BAND: zwischen Urteil und Motivbereich, weil es die HERKUNFT der beiden
+            Angaben im Urteil benennt - Modellrevision, Fassung der Uebersetzung und Zeitpunkt
+            stammen aus `photo_eye_results`, nicht aus einer geratenen Anbieterzeile. Die Fassung
+            ist ein Rohwert und nur ein Textknoten, nie HTML, `href`, `src`, `style`, `key`,
+            `aria-label` oder `title`. Die Namensnennung steht darunter, an derselben Stelle wie
+            die Angabe selbst. */}
         {currentPhoto.eye_result != null && (
           <div
             className="flex flex-col gap-1 rounded-sm border border-separator bg-elevated px-3 py-2"

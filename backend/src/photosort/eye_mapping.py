@@ -1,7 +1,7 @@
 """Die Abbildung Eye-SDK-Ausgabe -> Motivstaerken, Dokumentausschluss, Albumstufe, Feinlabels.
 
-Spec 0609 / ADR 0138 Punkt 3, Spec 0615 / ADR 0140. Reines Modul, nur Standardbibliothek: es
-steht neben `motifs.py` und braucht weder eine Session noch ein Modell.
+Reines Modul, nur Standardbibliothek: es steht neben `motifs.py` und braucht weder eine Session
+noch ein Modell.
 
 MEHRERE FASSUNGEN, EINE LAUF-FASSUNG. `MAPPINGS` fuehrt jede aufrufbare Fassung der Zuordnung;
 der Eye-Lauf rechnet `MAPPING_VERSION`, die Klassifizierungspruefung die Fassung, die ihre Seite
@@ -37,7 +37,8 @@ MAPPING_VERSION_V1: Final = "eye-4.2.3/v1"
 
 # Die Lauf-Fassung: mit ihr rechnet der Eye-Lauf, und sie steht in jeder neuen
 # `photo_eye_results`-Zeile. Nur der Server setzt sie - nie ein Wert aus Request, Sidecar-Antwort
-# oder Umgebung (Spec 0615, S4).
+# oder Umgebung. Ein Wert von dort liesse eine Zeile eine Fassung behaupten, mit der sie nicht
+# entstand.
 MAPPING_VERSION: Final = "eye-4.2.3/v2"
 
 # Die Revision des gepinnten Modells (`eye/src/pins.json`). Sie steht in jeder
@@ -354,9 +355,10 @@ def _tags(payload: Mapping[str, Any]) -> Mapping[str, Any]:
 def _detection_confidence(payload: Mapping[str, Any], field: str) -> float:
     """Die groesste `confidence` einer Detektionsliste (`pets`), sonst 0.
 
-    Fremdeingabe (S1/S2): gelesen nur, wenn das Feld eine Liste ist; ein Eintrag zaehlt nur als
-    Objekt, seine `confidence` laeuft durch `_confidence`. Nur die oberste Listenebene, keine
-    Rekursion; Label, Box und uebrige Felder werden nie gelesen und verlassen diese Funktion nicht.
+    Fremdeingabe: gelesen nur, wenn das Feld eine Liste ist; ein Eintrag zaehlt nur als Objekt,
+    seine `confidence` laeuft durch `_confidence`. Nur die oberste Listenebene, keine Rekursion;
+    Label, Box und uebrige Felder werden nie gelesen und verlassen diese Funktion nicht - sonst
+    stuende ungesaeuberter Fremdtext in Datenbank oder Oberflaeche.
     """
     detections = payload.get(field)
     if not isinstance(detections, list):

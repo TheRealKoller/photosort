@@ -870,9 +870,9 @@ class TestFailuresAndCosts:
     async def test_an_eye_side_without_a_version_fails_without_asking_eye(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
-        """Spec 0615: kein Rueckfall auf die Lauf-Fassung. Die Seite ohne Fassung beendet die
-        Pruefung mit dem festen Sammelsatz, bevor Eye ein einziges Foto sieht - und der Satz nennt
-        keine Fassung (S5)."""
+        """Kein Rueckfall auf die Lauf-Fassung: die Seite ohne Fassung beendet die Pruefung mit
+        dem festen Sammelsatz, bevor Eye ein einziges Foto sieht - und der Satz nennt keine
+        Fassung, keinen Host und keinen Stacktrace."""
         project = await _make_project(db_session)
         user = await _make_user(db_session)
         await _add_photo(db_session, project, tmp_path, "one.jpg")

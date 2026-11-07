@@ -1,6 +1,6 @@
 """eye mapping version: `photo_eye_results.mapping_version`
 
-Spec 0615 / ADR 0140 Punkt 5. Additiv, eine Spalte, keine Loeschkante.
+Additiv, eine Spalte, keine Loeschkante.
 
 * Bestehende Zeilen erhalten `eye-4.2.3/v1` - sie sind alle mit v1 entstanden - und werden nicht
   neu berechnet.

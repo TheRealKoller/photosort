@@ -289,8 +289,8 @@ async def test_every_readable_photo_gets_the_full_shadow_set(
 async def test_a_new_run_replaces_a_v1_row_with_the_run_mapping(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Spec 0615: eine bestehende Zeile behaelt v1, bis ein neuer Lauf sie ersetzt - danach
-    traegt sie die Lauf-Fassung und deren Werte."""
+    """Eine bestehende Zeile behaelt v1, bis ein neuer Lauf sie ersetzt - danach traegt sie die
+    Lauf-Fassung und deren Werte."""
     project = await _make_project(db_session)
     scoring_run = await _add_run(db_session, project)
     photo = await _add_photo(db_session, project, "a.jpg", tmp_path)

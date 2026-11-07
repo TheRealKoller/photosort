@@ -1,5 +1,4 @@
-"""Spec 0609 / ADR 0138 Punkt 3, Spec 0615 / ADR 0140 - die Abbildung Eye-SDK-Ausgabe auf das
-Motivset, in beiden aufrufbaren Fassungen.
+"""Die Abbildung Eye-SDK-Ausgabe auf das Motivset, in beiden aufrufbaren Fassungen.
 
 Drei Fallen werden hier festgehalten:
 
@@ -147,7 +146,7 @@ class TestTheMotifStrengths:
     @_BOTH
     @pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan"), 10**400])
     def test_a_non_finite_tag_value_counts_as_zero(self, mapping: EyeMapping, value: Any) -> None:
-        """S1: `json.loads` nimmt `Infinity`, `NaN` und beliebig grosse Ganzzahlen an. Ein
+        """`json.loads` nimmt `Infinity`, `NaN` und beliebig grosse Ganzzahlen an. Ein
         nicht-endlicher Wert ist keine Aussage - er wird verworfen, nicht auf 1 geklemmt, und
         eine Ganzzahl jenseits des float-Bereichs wirft keinen `OverflowError`."""
         strengths = motif_strengths(_payload(tags={"mountain": value}), mapping)
@@ -226,7 +225,7 @@ class TestTheAnimalsInV2:
         ],
     )
     def test_a_defective_detection_counts_as_zero(self, pets: Any) -> None:
-        """S1: `pets` ist Fremdeingabe - kein JSON-Wert bricht die Abbildung ab."""
+        """`pets` ist Fremdeingabe - kein JSON-Wert bricht die Abbildung ab."""
         strengths = motif_strengths(_payload(tags={}, pets=pets), MAPPING_V2)
 
         assert strengths["tiere"] == 0.0

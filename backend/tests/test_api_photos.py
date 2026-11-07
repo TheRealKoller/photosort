@@ -6808,7 +6808,7 @@ class TestTheEyeResultInThePhotoOut:
     async def test_a_v1_row_reports_its_own_mapping_version(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """Spec 0615: die Antwort nennt die Fassung DER ZEILE, nicht die Lauf-Fassung."""
+        """Die Antwort nennt die Fassung DER ZEILE, nicht die Lauf-Fassung."""
         project = await _make_project(db_session)
         photo = await _make_photo(db_session, project, "a.jpg", datetime(2023, 1, 1))
         await _assess_photo(db_session, photo, source=MotifAssessmentSource.EYE, provider=None)

@@ -1401,8 +1401,8 @@ describe('PhotoDetailPage', () => {
       ).toBeTruthy()
     })
 
-    // Spec 0615: die Fassung der Uebersetzung steht als Rohwert zwischen Modellrevision und
-    // Zeitpunkt - fuer jede Fassung, die die Zeile traegt.
+    // Die Fassung der Uebersetzung steht als Rohwert zwischen Modellrevision und Zeitpunkt - fuer
+    // jede Fassung, die die Zeile traegt.
     it.each(['eye-4.2.3/v2', 'eye-4.2.3/v1'])(
       'nennt Modellrevision, Übersetzung %s und Zeitpunkt in dieser Reihenfolge',
       async (mappingVersion) => {

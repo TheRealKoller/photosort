@@ -1,10 +1,10 @@
-"""Spec 0615 / ADR 0140 Punkt 5 - die Fassung der Eye-Uebersetzung je Ergebniszeile.
+"""Die Fassung der Eye-Uebersetzung je Ergebniszeile.
 
 Additiv, eine Spalte. Zwei Aussagen tragen mehr als die reine Spaltenform:
 
 * Bestehende Zeilen erhalten `eye-4.2.3/v1` - sie sind alle mit v1 entstanden - und behalten
   jede andere Spalte unveraendert.
-* Danach ist `mapping_version` NOT NULL **ohne** bleibenden Default (S6): der `server_default`
+* Danach ist `mapping_version` NOT NULL **ohne** bleibenden Default: der `server_default`
   dient nur dem Nachtragen. Ein Schreibpfad, der die Spalte vergisst, scheitert laut, statt still
   "v1" zu behaupten.
 """
