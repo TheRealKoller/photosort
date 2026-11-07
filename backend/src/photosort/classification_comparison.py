@@ -217,7 +217,6 @@ def compare_review(
             motif_pairs[0] += matching
             motif_pairs[1] += deviating
             if deviating > 0:
-                motif_photos[0] += 0
                 motif_photos[1] += 1
                 cases.append(_case(photo, "motifs", None))
                 for key in _motif_keys(photo.a_motifs, photo.b_motifs):
