@@ -1,6 +1,6 @@
 # 0615 - Treffendere Eye-Übersetzung für Dokument-Ausschluss, Tiere und Aktivität
 
-**Status:** Accepted
+**Status:** Implemented ([PR #619](https://github.com/TheRealKoller/photosort/pull/619))
 **Erstellt:** 2026-11-07
 **Bezug:** Issue [#615](https://github.com/TheRealKoller/photosort/issues/615), ADR
 [`0140`](../decisions/0140-eye-uebersetzung-v2-lauf-fassung-tiererkennung-fassung-je-ergebnis.md)
