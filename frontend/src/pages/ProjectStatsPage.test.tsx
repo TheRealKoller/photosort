@@ -381,6 +381,35 @@ describe('ProjectStatsPage', () => {
     })
   })
 
+  // Spec 0616: der Kostenposten der Klassifizierungspruefung steht neben den beiden Cloud-Zwecken.
+  // Ohne eigenes Label erscheint seine Zeile mit Betrag, aber ohne Beschriftung - der Zweck ist
+  // kein Cloud-Aufruf und deshalb auch kein `CloudVisionPurpose`.
+  it('beschriftet den Kostenposten der Pruefungen mit eigenem Namen', async () => {
+    vi.mocked(projectsApi.getProjectStats).mockResolvedValue({
+      ...fullStats(),
+      cost: {
+        currency: 'USD',
+        total_usd: 42.13,
+        by_purpose: [
+          { purpose: 'landmark', cost_usd: 12.1, has_unrecorded_runs: false },
+          { purpose: 'remote_category', cost_usd: 30.03, has_unrecorded_runs: false },
+          { purpose: 'review', cost_usd: 0.9, has_unrecorded_runs: false },
+        ],
+      },
+    })
+
+    renderPage()
+
+    const scope = await screen.findByRole('region', { name: 'Kosten für Remote-Berechnungen' })
+    const reviewRow = scope.querySelector('[data-purpose="review"]')
+    expect(reviewRow).not.toBeNull()
+    expect(within(reviewRow as HTMLElement).getByText('Prüfungen')).toBeInTheDocument()
+    expect(within(reviewRow as HTMLElement).getByText('0,90 USD')).toBeInTheDocument()
+    // Der neue Posten aendert die Beschriftung der Cloud-Zwecke nicht.
+    expect(within(scope).getByText('Kategorie-Klassifizierung')).toBeInTheDocument()
+    expect(within(scope).getByText('Sehenswürdigkeiten-Erkennung')).toBeInTheDocument()
+  })
+
   describe('vollständig erfasste Kosten', () => {
     it('zeigt weder Hinweis noch Erläuterung, wenn beide Zwecke vollständig erfasst sind', async () => {
       vi.mocked(projectsApi.getProjectStats).mockResolvedValue({

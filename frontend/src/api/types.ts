@@ -1040,8 +1040,16 @@ export interface ProjectStatsMotifEntry {
 /** Die beiden Cloud-Zwecke (backend models.py::CloudVisionPhase) - immer beide, auch mit 0. */
 export type CloudVisionPurpose = 'landmark' | 'remote_category'
 
+/**
+ * Die Kostenzwecke der Statistik (backend api/stats.py): die beiden Cloud-Zwecke plus `review`,
+ * den Kostenposten der Klassifizierungspruefung (Spec 0616). Eigener Typ, weil `review` kein
+ * Cloud-Aufruf ist und `CloudVisionPhase` an allen Aufrufstellen der Cloud-Laeufe unangetastet
+ * bleiben muss.
+ */
+export type StatsCostPurpose = CloudVisionPurpose | 'review'
+
 export interface ProjectStatsCostByPurpose {
-  purpose: CloudVisionPurpose
+  purpose: StatsCostPurpose
   cost_usd: number
   /** true = für mindestens einen Lauf dieses Zwecks fehlen Verbrauchsdaten. Es wird bewusst
    * nichts geschätzt - der Betrag bleibt die Summe des tatsächlich Erfassten. */
