@@ -595,7 +595,14 @@ async def execute_classification_review(
                 build_client=build_cloud_client,
             )
 
-        if any(not ids for ids in results_by_side.values()):
+        # Edge Case 4: Eine Seite, die auf JEDEM Foto gezaehlt gescheitert ist, hat ein Ergebnis -
+        # "keins je Foto". Erst eine Seite, die ohne einen einzigen gezaehlten Fotofehler nichts
+        # liefert, ist der kaputte Client (unbekannte Fassung, falsche Antwort) und endet FAILED;
+        # eine leere Uebersicht verdeckte ihn.
+        if any(
+            not ids and not (sides[letter].failed_calls or 0)
+            for letter, ids in results_by_side.items()
+        ):
             raise _ReviewAbort(ERROR_NO_RESULTS)
 
         review.phase = ReviewPhase.CASES

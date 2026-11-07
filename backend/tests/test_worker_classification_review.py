@@ -750,6 +750,56 @@ class TestFailuresAndCosts:
             second.id
         ]
 
+    async def test_a_side_failing_on_every_photo_still_succeeds_with_nothing_compared(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Edge Case 4: Scheitert die Cloud-Seite auf JEDEM Foto einzeln, ist das ein Datenbefund
+        und kein kaputter Client - der Lauf endet `SUCCESS` mit `verglichen = 0`, und die
+        Pruefmenge steht als nicht klassifizierbar da."""
+        project = await _make_project(db_session)
+        user = await _make_user(db_session)
+        for name in ("first.jpg", "second.jpg"):
+            await _add_photo(db_session, project, tmp_path, name)
+        review = await _make_review(
+            db_session,
+            project,
+            user,
+            [
+                _side(
+                    "a",
+                    ClassificationReviewSideKind.CLOUD,
+                    provider="anthropic",
+                    model="claude-sonnet-5",
+                ),
+                _side("b", ClassificationReviewSideKind.LOCAL),
+            ],
+        )
+        client = FakeCloudClient(
+            model="claude-sonnet-5", fail_everything=RuntimeError("Anbieter weg")
+        )
+
+        await execute_classification_review(
+            db_session,
+            review,
+            tmp_path,
+            build_cloud_client=lambda model: client,
+            build_detector=lambda: None,
+            build_animal_detector=lambda: None,
+            build_classifier=lambda: None,
+            build_aesthetics=lambda: None,
+            build_landmarker=lambda: None,
+        )
+
+        assert review.status == ScanStatus.SUCCESS
+        assert review.error_message is None
+        assert review.phase is None
+        assert review.unclassifiable_photo_count == review.photo_count == 2
+        assert await _case_rows(db_session, review.id) == []
+        side_a = await db_session.get(ClassificationReviewSide, (review.id, "a"))
+        assert side_a is not None
+        assert side_a.failed_calls == 2
+        assert side_a.api_calls == 0
+
     async def test_a_side_without_any_result_fails_the_run(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
