@@ -87,10 +87,17 @@ class PurposeCounts(NamedTuple):
 
 @dataclass(frozen=True)
 class Comparison:
-    """Zaehlungen je Zweck und die vorzulegenden Faelle (seeded, gedeckelt, sortiert)."""
+    """Zaehlungen je Zweck, je Merkmal und die vorzulegenden Faelle (seeded, gedeckelt,
+    sortiert).
+
+    `motif_counts` schluesselt den Zweck `motif_feature` nach Merkmal auf - je Motiv ein
+    (Foto, Motiv)-Paar-Zaehler in Registry-Ordnung, alle acht auch ohne Vergleich. Die Uebersicht
+    der App bleibt bei einer Zeilengruppe; der Export traegt die Aufschluesselung (AK 10).
+    """
 
     photos_compared: int
     counts: Mapping[str, PurposeCounts]
+    motif_counts: Mapping[str, PurposeCounts]
     cases: tuple[Case, ...]
 
 
@@ -207,6 +214,7 @@ def compare_review(
     photos_compared = 0
     motif_photos = [0, 0]  # matching, deviating
     motif_pairs = [0, 0]
+    motif_units: dict[str, list[int]] = {motif_key: [0, 0] for motif_key in MOTIF_REGISTRY}
     excluded = [0, 0]
     album = [0, 0]
     cases: list[Case] = []
@@ -218,12 +226,17 @@ def compare_review(
             matching, deviating = compare_motifs(photo.a_motifs, photo.b_motifs)
             motif_pairs[0] += matching
             motif_pairs[1] += deviating
-            if deviating > 0:
+            deviating_keys: list[str] = []
+            for key in _motif_keys(photo.a_motifs, photo.b_motifs):
+                if motif_present(photo.a_motifs, key) == motif_present(photo.b_motifs, key):
+                    motif_units[key][0] += 1
+                else:
+                    motif_units[key][1] += 1
+                    deviating_keys.append(key)
+            if deviating_keys:
                 motif_photos[1] += 1
                 cases.append(_case(photo, "motifs", None))
-                for key in _motif_keys(photo.a_motifs, photo.b_motifs):
-                    if motif_present(photo.a_motifs, key) != motif_present(photo.b_motifs, key):
-                        cases.append(_case(photo, "motif_feature", key))
+                cases.extend(_case(photo, "motif_feature", key) for key in deviating_keys)
             else:
                 motif_photos[0] += 1
 
@@ -259,8 +272,15 @@ def compare_review(
             compared=album[0] + album[1], matching=album[0], deviating=album[1]
         ),
     }
+    motif_counts = {
+        motif_key: PurposeCounts(
+            compared=matching + deviating, matching=matching, deviating=deviating
+        )
+        for motif_key, (matching, deviating) in motif_units.items()
+    }
     return Comparison(
         photos_compared=photos_compared,
         counts=counts,
+        motif_counts=motif_counts,
         cases=_sample(cases, seed=seed, limit=limit),
     )

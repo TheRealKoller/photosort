@@ -47,6 +47,7 @@ from photosort.models import (
     ScoringRun,
     User,
 )
+from photosort.motifs import MOTIF_REGISTRY
 from photosort.pricing import estimate_usd_per_image
 from photosort.security import create_access_token
 
@@ -1786,6 +1787,7 @@ class TestExport:
             "seed",
             "photo_count",
             "counts_by_purpose",
+            "counts_by_motif",
         }
         assert set(payload["review"]["counts_by_purpose"]) == {
             "motifs",
@@ -1794,6 +1796,11 @@ class TestExport:
             "album_level",
         }
         for counts in payload["review"]["counts_by_purpose"].values():
+            assert set(counts) == {"compared", "matching", "deviating", "presented"}
+        # Die Aufschluesselung je Merkmal steht in der Ordnung der Registry und nennt ALLE acht,
+        # auch die ohne Vergleich (Zaehleinheit "(Foto, Motiv)-Paare").
+        assert list(payload["review"]["counts_by_motif"]) == list(MOTIF_REGISTRY)
+        for counts in payload["review"]["counts_by_motif"].values():
             assert set(counts) == {"compared", "matching", "deviating", "presented"}
         for side_name in ("a", "b"):
             assert set(payload["sides"][side_name]) == {
@@ -1863,6 +1870,34 @@ class TestExport:
         }
         # Keine Seite sagt etwas zur Albumstufe? Hier schon: 2 gegen 3 ist eine Abweichung.
         assert counts["album_level"]["deviating"] == 1
+
+    async def test_the_motif_breakdown_counts_pairs_per_motif(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """AK 10: Zaehlungen je Merkmal. Einheit ist das (Foto, Motiv)-Paar des Zwecks
+        `motif_feature` - zwei Fotos mit derselben Merkmalszeile sind zwei Paare."""
+        project, _user, review, _photo, _case = await self._exportable(db_session)
+
+        payload = (
+            await authenticated_api_client.get(_url(project.id, f"/{review.id}/export"))
+        ).json()
+
+        by_motif = payload["review"]["counts_by_motif"]
+        # Ein Foto: 0,9 gegen 0,2 - nur Seite A haelt das Motiv fuer vorhanden. Das zweite Foto
+        # stimmt auf beiden Seiten zu.
+        assert by_motif["menschen"] == {
+            "compared": 2,
+            "matching": 1,
+            "deviating": 1,
+            "presented": 1,
+        }
+        # Ein Motiv ohne eine einzige beurteilte Zeile bleibt im Bericht - mit vier Nullen.
+        assert by_motif["tiere"] == {
+            "compared": 0,
+            "matching": 0,
+            "deviating": 0,
+            "presented": 0,
+        }
 
     async def test_the_case_carries_the_photo_position_and_the_raw_values(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1984,6 +2019,11 @@ class TestExport:
                     },
                     "album_level": {"compared": 0, "matching": 0, "deviating": 0, "presented": 0},
                 },
+                # Die Aufschluesselung je Merkmal: alle acht in Registry-Ordnung, vier Nullen.
+                "counts_by_motif": {
+                    motif_key: {"compared": 0, "matching": 0, "deviating": 0, "presented": 0}
+                    for motif_key in MOTIF_REGISTRY
+                },
             },
             "sides": {
                 "a": {
@@ -2033,4 +2073,29 @@ class TestExport:
         with pytest.raises(RuntimeError):
             reviews_api._guard_export_shape(
                 {**valid, "review": {**valid["review"], "finished_at": None}}
+            )
+        # Auch die Merkmals-Aufschluesselung ist eine Positivliste: ein unbekanntes Merkmal oder
+        # eine fremde Ordnung faellt auf, bevor die Datei eine KI erreicht.
+        with pytest.raises(RuntimeError):
+            reviews_api._guard_export_shape(
+                {
+                    **valid,
+                    "review": {
+                        **valid["review"],
+                        "counts_by_motif": {
+                            **valid["review"]["counts_by_motif"],
+                            "unbekannt": {
+                                "compared": 0,
+                                "matching": 0,
+                                "deviating": 0,
+                                "presented": 0,
+                            },
+                        },
+                    },
+                }
+            )
+        reordered = dict(reversed(list(valid["review"]["counts_by_motif"].items())))
+        with pytest.raises(RuntimeError):
+            reviews_api._guard_export_shape(
+                {**valid, "review": {**valid["review"], "counts_by_motif": reordered}}
             )

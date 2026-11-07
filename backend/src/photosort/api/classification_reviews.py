@@ -943,6 +943,19 @@ def _presented_by_purpose(rows: Iterable[ClassificationReviewPurpose]) -> dict[s
     return presented
 
 
+def _presented_by_motif(rows: Iterable[_CaseRow]) -> dict[str, int]:
+    """Die vorgelegten Merkmalsfaelle je Motiv in Registry-Ordnung - alle acht, auch mit 0.
+
+    Nur der Zweck `motif_feature` traegt einen `motif_key`; die uebrigen drei zaehlen Fotos und
+    stehen ausschliesslich in `counts_by_purpose`."""
+    presented = {motif_key: 0 for motif_key in MOTIF_REGISTRY}
+    for row in rows:
+        if row.case.purpose is ClassificationReviewPurpose.MOTIF_FEATURE:
+            assert row.case.motif_key is not None
+            presented[row.case.motif_key] += 1
+    return presented
+
+
 def _verdict_counts(verdicts: Iterable[ClassificationVerdict | None]) -> dict[str, int]:
     """Die vier Urteile plus `open` - `open` ist die Zahl der Faelle ohne Urteil."""
     counts = {"a_better": 0, "b_better": 0, "both_ok": 0, "both_wrong": 0, "open": 0}
@@ -1289,7 +1302,9 @@ async def put_case_verdict(
 # damit auf, bevor es die Datei erreicht - schliesslich geht die Datei an eine KI.
 _EXPORT_KEYS: Final = {
     "top": frozenset({"review", "sides", "verdict_counts", "cases"}),
-    "review": frozenset({"sample_size", "seed", "photo_count", "counts_by_purpose"}),
+    "review": frozenset(
+        {"sample_size", "seed", "photo_count", "counts_by_purpose", "counts_by_motif"}
+    ),
     "side": frozenset({"kind", "provider", "model", "eye_model_revision", "eye_mapping_version"}),
     "counts": frozenset({"compared", "matching", "deviating", "presented"}),
     "verdict_counts": frozenset({"a_better", "b_better", "both_ok", "both_wrong", "open"}),
@@ -1317,6 +1332,11 @@ def _guard_export_shape(payload: dict[str, Any]) -> None:
     if set(payload["review"]["counts_by_purpose"]) != set(PURPOSES):
         raise RuntimeError("Exportform verletzt: unerwartete Zwecke in `counts_by_purpose`.")
     for counts in payload["review"]["counts_by_purpose"].values():
+        if set(counts) != _EXPORT_KEYS["counts"]:
+            raise RuntimeError("Exportform verletzt: unerwartete Schluessel in einer Zaehlung.")
+    if list(payload["review"]["counts_by_motif"]) != list(MOTIF_REGISTRY):
+        raise RuntimeError("Exportform verletzt: unerwartete Merkmale in `counts_by_motif`.")
+    for counts in payload["review"]["counts_by_motif"].values():
         if set(counts) != _EXPORT_KEYS["counts"]:
             raise RuntimeError("Exportform verletzt: unerwartete Schluessel in einer Zaehlung.")
     if set(payload["verdict_counts"]) != _EXPORT_KEYS["verdict_counts"]:
@@ -1362,6 +1382,7 @@ def _export_payload(
     presented: dict[str, int],
     rows: Sequence[_CaseRow],
     statements: dict[str, dict[int, _Statement]],
+    motif_counts: dict[str, Any],
 ) -> dict[str, Any]:
     """Der Exportkoerper aus der Positivliste.
 
@@ -1382,6 +1403,7 @@ def _export_payload(
                 "verdict": str(case.verdict) if case.verdict is not None else None,
             }
         )
+    presented_motifs = _presented_by_motif(rows)
     return {
         "review": {
             "sample_size": review.sample_size,
@@ -1395,6 +1417,17 @@ def _export_payload(
                     "presented": presented[purpose],
                 }
                 for purpose in PURPOSES
+            },
+            # AK 10: derselbe Zaehler je Merkmal des Zwecks `motif_feature`. Die Einheit ist das
+            # (Foto, Motiv)-Paar - ein Foto mit drei abweichenden Merkmalen steht hier dreimal.
+            "counts_by_motif": {
+                motif_key: {
+                    "compared": motif_counts[motif_key].compared,
+                    "matching": motif_counts[motif_key].matching,
+                    "deviating": motif_counts[motif_key].deviating,
+                    "presented": presented_motifs[motif_key],
+                }
+                for motif_key in MOTIF_REGISTRY
             },
         },
         "sides": {"a": _export_side(sides.a), "b": _export_side(sides.b)},
@@ -1433,6 +1466,7 @@ async def export_review(
         _presented_by_purpose(row.case.purpose for row in rows),
         rows,
         statements,
+        dict(comparison.motif_counts),
     )
     _guard_export_shape(payload)
     return Response(
