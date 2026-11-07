@@ -1834,9 +1834,10 @@ Modell, prüft die Pins und beantwortet zwei HTTP-Routen. Er hat seinen eigenen 
 Installation, die der Paketsatz-Wächter für jedes `package-lock.json` verlangt. Prüfbar ist er ohne
 Modell: Pin-Abgleich gegen synthetische Dateien, Request-Grenzen, Health-Zustand vor und nach dem
 Laden, Abbruch bei gesetzten Lizenzvariablen. Das frühere Messwerkzeug `tools/eye-eval/` (Spec
-0606) und sein CI-Job `eye-eval` sind mit Spec 0609 entfallen; die Vergleichslogik lebt als CLI im
-Backend (`photosort.eye_comparison`): Zählen, Abweichungsauswahl und Benennung sind reine
-Funktionen ohne Datenbankzugriff und werden unit-getestet, der DB-Teil bleibt ein dünner Leser.
+0606) und sein CI-Job `eye-eval` sind mit Spec 0609 entfallen; die gemeinsame Vergleichslogik lebt
+im Backend (`photosort.classification_comparison`): Zählen, Abweichungsauswahl und Benennung sind
+reine Funktionen ohne Datenbankzugriff und werden unit-getestet, der DB-Teil bleibt ein dünner
+Leser im Job.
 
 ## Externe CLI-Werkzeuge als dünne Adapter-Schicht (`subprocess`)
 
@@ -2721,7 +2722,7 @@ Bewusst nicht automatisiert bleibt der echte OpenCloud-`COPY`/`MKCOL` gegen die 
 ## Bekannte Lücken (Stand 2026-08-03)
 
 - **Neu mit Spec 0609 / ADR [`0138`](../decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md) (2026-11-03), zwei benannte Lücken der Eye-Grundlage:**
-  - **Die Inferenz selbst prüft kein automatisierter Test.** Der CI-Job `eye` läuft ohne Modellgewichte; geprüft sind Pin-Abgleich, Grenzen der beiden Routen, Health-Zustand und Lizenzabbruch gegen synthetische Dateien. Ob `@desert-ant-labs/eye` aus den gepinnten Gewichten brauchbare Konfidenzen liefert und ob `eye_mapping.py` sie auf die richtigen Motive abbildet, zeigt allein ein echter Lauf — ein Modell-Asset gehört nicht ins Repository, also gibt es auch kein Fixture. Erkennungsweg ist der erste Eye-Lauf auf dem Heimserver samt Gegenüberstellung mit der Cloud (`photosort.eye_comparison`, Auswertung #610).
+  - **Die Inferenz selbst prüft kein automatisierter Test.** Der CI-Job `eye` läuft ohne Modellgewichte; geprüft sind Pin-Abgleich, Grenzen der beiden Routen, Health-Zustand und Lizenzabbruch gegen synthetische Dateien. Ob `@desert-ant-labs/eye` aus den gepinnten Gewichten brauchbare Konfidenzen liefert und ob `eye_mapping.py` sie auf die richtigen Motive abbildet, zeigt allein ein echter Lauf — ein Modell-Asset gehört nicht ins Repository, also gibt es auch kein Fixture. Erkennungsweg ist der erste Eye-Lauf auf dem Heimserver samt Gegenüberstellung mit der Cloud in der Prüfung von Klassifizierungsverfahren (Story #616/ADR [`0139`](../decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md)).
   - **Die Tag-Tabelle wird in CI nicht gegen `eye_meta.json` gehalten.** Die Datei liegt nur im Volume `eye_model`. Ein Tag-Abgleich läuft deshalb als reine Funktion gegen synthetische Meta-Daten; der Abgleich mit der echten Datei bleibt ein Schritt des Heimserver-Smoke-Tests. Ein Pin-Wechsel, der Tags umbenennt, liefert damit still Nullen, bis dieser Schritt gelaufen ist.
 
 - **Neu mit Spec 0584 (2026-10-06), zwei benannte Lücken der Ausreißer-Vorstufe:**
