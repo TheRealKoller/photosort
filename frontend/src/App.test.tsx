@@ -410,6 +410,9 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     '/projects/1/album',
     // specs/features/0551: die Personenübersicht eines Projekts.
     '/projects/1/persons',
+    // Spec 0616: beide Pruefrouten der Klassifizierungspruefung.
+    '/projects/1/klassifizierung-pruefen',
+    '/projects/1/klassifizierung-pruefen/7',
   ]
 
   /** Die drei Hauptziele der Leiste (specs/features/0347: "Einstellungen" ist herausgewandert). */
@@ -419,11 +422,12 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     { label: 'Endauswahl', href: '/projects/1/selection' },
   ]
 
-  /** Die drei Nebenziele - ausschliesslich ueber den Ausloeser erreichbar. */
+  /** Die vier Nebenziele - ausschliesslich ueber den Ausloeser erreichbar. */
   const SECONDARY_TARGETS = [
     { label: 'Einstellungen', href: '/projects/1/settings' },
     { label: 'Statistik', href: '/projects/1/stats' },
     { label: 'Personen', href: '/projects/1/persons' },
+    { label: 'Klassifizierung prüfen', href: '/projects/1/klassifizierung-pruefen' },
   ]
 
   /** Der eine Landmark der Gruppe; das Panel liegt per Portal ausserhalb davon. */
@@ -534,23 +538,27 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
   /*
    * specs/features/0347 (AK6): /stats und /settings sind Nebenziele geworden - der GESCHLOSSENE
    * Ausloeser traegt die Markierung, damit ohne Oeffnen erkennbar bleibt, wo man steht.
+   * specs/features/0616: beide Pruefrouten sind ein Nebenziel.
    *
    * BEWUSST ALS EIGENER POSITIVFALL und nicht bloss aus der frueheren "kein Ziel aktiv"-Tabelle
    * gestrichen: beim blossen Streichen waere die Zusage lautlos verschwunden (Edge Case 2 der
    * Spec). /album steht unveraendert als Negativfall daneben.
    */
-  it.each(['/projects/1/settings', '/projects/1/stats', '/projects/1/persons'])(
-    'markiert auf %s den geschlossenen Ausloeser statt eines Leistenziels (AK6)',
-    async (path) => {
-      renderApp([path])
+  it.each([
+    '/projects/1/settings',
+    '/projects/1/stats',
+    '/projects/1/persons',
+    '/projects/1/klassifizierung-pruefen',
+    '/projects/1/klassifizierung-pruefen/7',
+  ])('markiert auf %s den geschlossenen Ausloeser statt eines Leistenziels (AK6)', async (path) => {
+    renderApp([path])
 
-      await screen.findByRole('navigation', { name: 'Projektbereiche' })
-      const links = within(group()).getAllByRole('link')
-      expect(links).toHaveLength(PRIMARY_TARGETS.length)
-      expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([])
-      expect(trigger()).toHaveAttribute('aria-current', 'true')
-    },
-  )
+    await screen.findByRole('navigation', { name: 'Projektbereiche' })
+    const links = within(group()).getAllByRole('link')
+    expect(links).toHaveLength(PRIMARY_TARGETS.length)
+    expect(links.filter((link) => link.hasAttribute('aria-current'))).toEqual([])
+    expect(trigger()).toHaveAttribute('aria-current', 'true')
+  })
 
   it('zeigt die Gruppe auf /projects/1/album vollstaendig, aber ohne jede Markierung (AK6/AK8b)', async () => {
     renderApp(['/projects/1/album'])
@@ -588,8 +596,8 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
     )
   })
 
-  /** Beide Nebenziele sind aus der Kopfzeile heraus erreichbar - in fester Reihenfolge. */
-  it('bietet im geoeffneten Bereich beide Nebenziele an (AK2)', async () => {
+  /** Alle vier Nebenziele sind aus der Kopfzeile heraus erreichbar - in fester Reihenfolge. */
+  it('bietet im geoeffneten Bereich alle vier Nebenziele an (AK2)', async () => {
     const user = userEvent.setup()
     renderApp(['/projects/1/photos'])
 
@@ -616,7 +624,7 @@ describe('App - Projekt-Navigationsgruppe in der Kopfzeile', () => {
 
   /**
    * Kein Ziel, kein Ausloeser, kein Landmark - alle drei Haelften von AK4/AK3 einzeln. Geprueft
-   * ueber ALLE SECHS Ziele: die drei Nebenziele duerfen ohne Projektkontext ebenso wenig
+   * ueber ALLE SIEBEN Ziele: die vier Nebenziele duerfen ohne Projektkontext ebenso wenig
    * auftauchen wie die drei Hauptziele. Ueber das Ziel (`href`), nicht die Beschriftung: Die
    * Projektliste fuehrt einen eigenen Link "Personen" auf die projektuebergreifende Seite.
    */

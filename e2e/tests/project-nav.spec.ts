@@ -5,7 +5,7 @@
  * der-kopfzeile.md und specs/features/0347-navigation-nebenbereich.md, Teststrategie;
  * specs/architecture/0002-testkonzept.md, Sektion "Eine Zieltabelle, zwei Darstellungen"): In
  * jsdom greifen Tailwind-Klassen nicht, `hidden`/`lg:hidden` blenden dort nichts aus, das Panel
- * hat dort IMMER sechs Zeilen. Ein `toBeVisible()` waere dort eine Zusicherung, die immer dasselbe
+ * hat dort IMMER sieben Zeilen. Ein `toBeVisible()` waere dort eine Zusicherung, die immer dasselbe
  * sagt - unabhaengig davon, ob die Utility ueberhaupt noch am Element haengt. Die
  * Breakpoint-Zusage lebt deshalb nur hier, ebenso die beiden gemessenen Abnahmemasse aus AK4/AK5
  * (Ausloeserbreite, Gruppenabstand) und die gerenderte Trennlinie. Die Verhaltenspruefungen (drei
@@ -93,8 +93,9 @@ async function visibleCount(locator: import('@playwright/test').Locator): Promis
 
 /** Die drei Hauptziele der Leiste, in Anzeigereihenfolge. */
 const PRIMARY_LABELS = ['Projekt', 'Fotos', 'Endauswahl']
-/** Die drei Nebenziele des Panels, in Anzeigereihenfolge - "Personen" seit Spec 0551 dahinter. */
-const SECONDARY_LABELS = ['Einstellungen', 'Statistik', 'Personen']
+/** Die vier Nebenziele des Panels, in Anzeigereihenfolge - "Personen" seit Spec 0551 dahinter,
+ * "Klassifizierung pruefen" seit Spec 0616 als vierter Eintrag. */
+const SECONDARY_LABELS = ['Einstellungen', 'Statistik', 'Personen', 'Klassifizierung prüfen']
 
 test('blendet an der exakten Grenze 1024 px die Leiste aus, ohne den Ausloeser anzutasten', async ({
   page,
@@ -156,8 +157,8 @@ test('zeigt im Panel ueber die Grenze hinweg unterschiedliche Inhalte aus demsel
 }) => {
   /*
    * `getByRole` sieht den ACCESSIBILITY-TREE: was `display: none` traegt, faellt heraus. Genau
-   * darauf beruht diese Zusage - im DOM liegen bei beiden Breiten dieselben sechs Zeilen, im
-   * Accessibility-Tree ab 1024 px nur die drei Nebenziele. Die DOM-Zaehlung daneben schliesst den
+   * darauf beruht diese Zusage - im DOM liegen bei beiden Breiten dieselben sieben Zeilen, im
+   * Accessibility-Tree ab 1024 px nur die vier Nebenziele. Die DOM-Zaehlung daneben schliesst den
    * trivialen Gruen-Fall aus: ohne sie bestuende der 1024-px-Durchlauf auch dann, wenn die drei
    * Hauptzeilen gar nicht mehr gerendert wuerden - und unterhalb `lg:` waeren sie dann weg.
    */
@@ -177,7 +178,7 @@ test('zeigt im Panel ueber die Grenze hinweg unterschiedliche Inhalte aus demsel
     const panel = page.getByRole('dialog')
     await expect(panel, `Panel bei ${width} px`).toBeVisible()
 
-    await expect(panel.locator('a'), `Panelzeilen im DOM bei ${width} px`).toHaveCount(6)
+    await expect(panel.locator('a'), `Panelzeilen im DOM bei ${width} px`).toHaveCount(7)
     await expect(panel.getByRole('link'), `dargestellte Panelzeilen bei ${width} px`).toHaveText(
       expectedLabels,
     )

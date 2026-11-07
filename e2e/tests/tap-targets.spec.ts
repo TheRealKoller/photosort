@@ -372,13 +372,14 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   // werden nicht aufgespannt") - dort ist die Zeile selbst die Trefferflaeche und traegt `min-h-11`.
   // Der Treffertest gilt trotzdem: 44 px sind 44 px, unabhaengig davon, woher sie kommen.
   //
-  // SECHS ZEILEN SEIT specs/features/0551-personenuebersicht-je-projekt.md: unterhalb `lg:` fuehrt
-  // das Panel alle Ziele - erst die drei Hauptziele, dann die drei Nebenziele.
+  // SIEBEN ZEILEN SEIT specs/features/0551-personenuebersicht-je-projekt.md und
+  // specs/features/0616-klassifizierungsverfahren-vergleichen.md: unterhalb `lg:` fuehrt das Panel
+  // alle Ziele - erst die drei Hauptziele, dann die vier Nebenziele.
   await navTrigger.click()
   const navPanel = page.getByRole('dialog')
   await expect(navPanel).toBeVisible()
   const navRows = navPanel.getByRole('link')
-  await expect(navRows, 'Ziele im Panel der Projekt-Navigation').toHaveCount(6)
+  await expect(navRows, 'Ziele im Panel der Projekt-Navigation').toHaveCount(7)
   await assertTappable(navRows.first(), 'Projekt (Panelzeile der Projekt-Navigation)')
   checked.push('Projekt (Panelzeile)')
 
