@@ -7,6 +7,7 @@ import type { PhotoOut } from '../api/types'
 import { CurationLightbox } from '../components/CurationLightbox'
 import { CurationSkeletonList } from '../components/CurationSkeletonList'
 import { ExportSection } from '../components/ExportSection'
+import { EyeAttribution } from '../components/EyeAttribution'
 import { SelectionPhotoTile } from '../components/SelectionPhotoTile'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
@@ -87,7 +88,7 @@ export function AlbumSelectionPage() {
   const selection = query.data
   const participants = selection?.participants ?? []
   const items = selection?.items ?? []
-
+  const hasEyeStage = items.some((photo) => photo.album_suitability?.source === 'eye')
   // Die Grossansicht schlaegt in `items` nach, NICHT in der gefilterten Sicht: Ein Foto, das nur
   // die andere Sicht zeigt, oeffnet sich trotzdem; ohne Ausloeser geht der Fokus danach auf `h1`.
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -171,6 +172,9 @@ export function AlbumSelectionPage() {
         <h1 ref={headingRef} tabIndex={-1} className="text-xl sm:text-2xl">
           Endauswahl
         </h1>
+        {/* Einmal je Ansicht, im Kopf: Eye ist der Dritte, der die Stufe liefert - die einzelne
+            Kachel bliebe dafür zu klein und zu oft im Blick. */}
+        {hasEyeStage && <EyeAttribution />}
         {/* Der Umschalter steht ÜBER der Liste und bleibt in jedem Zustand bedienbar - auch
             während des Ladens und im Fehlerfall. */}
         <div className="flex flex-wrap gap-2">

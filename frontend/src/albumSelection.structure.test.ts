@@ -128,3 +128,42 @@ describe('Ein Textbaustein, der an zwei Orten gilt, steht nur an einem', () => {
     expect(occurrences).toEqual(['src/utils/albumDraftTexts.ts'])
   })
 })
+
+describe('Die Wörter der Albumstufe stehen je einmal an ihrer Definitionsstelle', () => {
+  /** Liest den Wert einer Konstante aus ihrer Definitionsstelle. */
+  function declaredValue(file: string, name: string): string {
+    const declaration = read(file).match(new RegExp(`export const ${name} = '([^']*)'`))
+    // Ohne diese Gegenprobe bestünde der Fall auch dann, wenn die Konstante umbenannt wäre und der
+    // Scan über einen leeren Suchbegriff liefe.
+    expect(declaration, `Deklaration von ${name}`).not.toBeNull()
+    expect(declaration![1].length).toBeGreaterThan(2)
+    return declaration![1]
+  }
+
+  const allSources = walk(SRC_DIR)
+    .filter((path) => path.endsWith('.ts') || path.endsWith('.tsx'))
+    .map((path) => `src/${path.slice(SRC_DIR.length)}`)
+
+  function hitsOf(text: string, files: string[]): string[] {
+    return files.filter((path) => read(path.slice('src/'.length)).includes(text))
+  }
+
+  it.each([
+    ['utils/albumSuitability.ts', 'ALBUM_SUITABILITY_NOT_RATED_TEXT'],
+    ['utils/albumSuitability.ts', 'ALBUM_SUITABILITY_ORIGIN_LABEL'],
+  ])('führt den Wortlaut aus %s::%s genau einmal', (file, name) => {
+    const text = declaredValue(file, name)
+
+    expect(hitsOf(text, allSources)).toEqual([`src/${file}`])
+  })
+
+  it('kennt den früheren Wortlaut im Produktcode nicht mehr', () => {
+    const product = allSources.filter((path) => !/\.test\.tsx?$/.test(path))
+    const current = declaredValue('utils/albumSuitability.ts', 'ALBUM_SUITABILITY_NOT_RATED_TEXT')
+
+    expect(hitsOf('Noch nicht bewertet', product)).toEqual([])
+    // Gegenprobe: dieselbe Suche über denselben Bestand findet den heutigen Satz an genau einer
+    // Stelle - sonst wäre der leere Befund oben auch bei einem blinden Scan grün.
+    expect(hitsOf(current, product)).toEqual(['src/utils/albumSuitability.ts'])
+  })
+})

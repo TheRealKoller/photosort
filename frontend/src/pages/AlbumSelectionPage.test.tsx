@@ -375,6 +375,54 @@ describe('AlbumSelectionPage - die drei Anzeigezustände der Ergebnissicht', () 
   })
 })
 
+describe('AlbumSelectionPage - die Namensnennung', () => {
+  it('nennt Eye einmal im Kopf, sobald eine Eye-Stufe erscheint', async () => {
+    vi.mocked(albumSelectionApi.getAlbumSelection).mockResolvedValue(
+      selection({
+        items: [
+          photo({
+            id: 1,
+            relative_path: 'a.jpg',
+            contested: true,
+            album_suitability: { level: 4, reason: null, source: 'eye' },
+          }),
+          photo({
+            id: 2,
+            relative_path: 'b.jpg',
+            contested: true,
+            album_suitability: { level: 2, reason: null, source: 'eye' },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(visibleTileNames()).toEqual(['a.jpg', 'b.jpg']))
+
+    const attribution = screen.getAllByTestId('eye-attribution')
+    expect(attribution).toHaveLength(1)
+    expect(attribution[0].closest('header')).not.toBeNull()
+  })
+
+  it('nennt Eye gar nicht, wenn keine Stufe von dort stammt', async () => {
+    vi.mocked(albumSelectionApi.getAlbumSelection).mockResolvedValue(
+      selection({
+        items: [
+          photo({
+            id: 1,
+            relative_path: 'a.jpg',
+            contested: true,
+            album_suitability: { level: 4, reason: 'Gut.', source: 'cloud' },
+          }),
+        ],
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(visibleTileNames()).toEqual(['a.jpg']))
+
+    expect(screen.queryAllByTestId('eye-attribution')).toHaveLength(0)
+  })
+})
+
 describe('AlbumSelectionPage - ladend und fehlgeschlagen', () => {
   it('shows skeleton tiles while loading, and the switch stays usable', () => {
     vi.mocked(albumSelectionApi.getAlbumSelection).mockReturnValue(new Promise(() => {}))
