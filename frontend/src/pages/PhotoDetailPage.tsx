@@ -342,7 +342,10 @@ export function PhotoDetailPage() {
   }
 
   const isMutating = setMutation.isPending || deleteMutation.isPending || favoriteMutation.isPending
-  const eyeValues = currentPhoto.eye_result != null ? eyeVerdict(currentPhoto.eye_result) : null
+  // Eye liefert hier nur noch die Feinlabels; die zaehlende Albumstufe kommt seit 0621 aus
+  // `album_suitability` und bringt ihre Herkunft (`source`) mit.
+  const eyeFineLabels =
+    currentPhoto.eye_result != null ? eyeVerdict(currentPhoto.eye_result).fineLabels : null
 
   return (
     <div className="flex flex-col gap-4">
@@ -410,29 +413,34 @@ export function PhotoDetailPage() {
         <h2 id="verdict-heading" className="sr-only">
           Urteil
         </h2>
-        {/* Mit Eye-Ergebnis stammen Stufe und Feinlabels aus Eye - die Cloud-Tabellen beschreibt
-            Eye nie (S8), sie blieben hier leer oder zeigten einen fremden Lauf. */}
+        {/* Die zaehlende Stufe kommt aus `album_suitability` - sie reist mit ihrer Herkunft, statt
+            hier aus der Eye-Kopfzeile geraten zu werden (0621). `?? null` heisst "noch nicht
+            eingestuft" und nicht "Feld nicht durchgereicht": diese Ansicht zeigt die Zeile immer,
+            mit Stufe oder mit dem Satz. Die Feinlabels bleiben Eyes rohe Tags, solange eine
+            Eye-Kopfzeile existiert. */}
         <PhotoVerdict
-          // `?? null` heisst hier "noch nicht bewertet" und nicht "Feld nicht durchgereicht":
-          // diese Ansicht zeigt die Zeile immer, mit Stufe oder mit dem Satz.
-          albumSuitability={eyeValues?.albumSuitability ?? currentPhoto.album_suitability ?? null}
+          albumSuitability={currentPhoto.album_suitability ?? null}
           ranking={currentPhoto.ranking ?? null}
-          fineLabels={eyeValues?.fineLabels ?? currentPhoto.fine_labels}
+          fineLabels={eyeFineLabels ?? currentPhoto.fine_labels}
         />
 
-        {/* DAS EYE-BAND: zwischen Urteil und Motivbereich, weil es die HERKUNFT der beiden
-            Angaben im Urteil benennt - Modellrevision, Fassung der Uebersetzung und Zeitpunkt
-            stammen aus `photo_eye_results`, nicht aus einer geratenen Anbieterzeile. Die Fassung
-            ist ein Rohwert und nur ein Textknoten, nie HTML, `href`, `src`, `style`, `key`,
-            `aria-label` oder `title`. Die Namensnennung steht darunter, an derselben Stelle wie
-            die Angabe selbst. */}
+        {/* DAS EYE-BAND: zwischen Urteil und Motivbereich, weil es die HERKUNFT der Angaben im
+            Urteil benennt - Modellrevision, Fassung der Uebersetzung und Zeitpunkt stammen aus
+            `photo_eye_results`, nicht aus einer geratenen Anbieterzeile. Es nennt die
+            Albumtauglichkeit nur dann, wenn sie tatsaechlich aus Eye zaehlt (`source === 'eye'`);
+            sonst erklaert es allein die Feinlabels (0621). Die Fassung ist ein Rohwert und nur ein
+            Textknoten, nie HTML, `href`, `src`, `style`, `key`, `aria-label` oder `title`. Die
+            Namensnennung steht darunter, an derselben Stelle wie die Angabe selbst. */}
         {currentPhoto.eye_result != null && (
           <div
             className="flex flex-col gap-1 rounded-sm border border-separator bg-elevated px-3 py-2"
             data-testid="eye-band"
           >
             <p className="text-xs text-text">
-              Albumtauglichkeit und Feinlabels stammen aus der Eye-Auswertung — Modellrevision{' '}
+              {currentPhoto.album_suitability?.source === 'eye'
+                ? 'Albumtauglichkeit und Feinlabels'
+                : 'Feinlabels'}{' '}
+              stammen aus der Eye-Auswertung — Modellrevision{' '}
               {currentPhoto.eye_result.model_revision}, Übersetzung{' '}
               {currentPhoto.eye_result.mapping_version},{' '}
               {formatDateTime(currentPhoto.eye_result.computed_at)}.

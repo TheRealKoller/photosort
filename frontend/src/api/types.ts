@@ -1026,6 +1026,9 @@ export interface AlbumDecisionOut {
 export interface AlbumSuitabilityOut {
   level: number
   reason: string | null
+  // Die Herkunft der zaehlenden Stufe, serverseitig festgelegt (nie aus einer Anfrage): `eye`
+  // heisst, die Stufe kommt aus Eyes Auswertung, und `reason` ist dann `null`.
+  source: 'cloud' | 'eye'
 }
 
 export interface PhotoListOut {
