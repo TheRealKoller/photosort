@@ -35,11 +35,14 @@ from photosort.motifs import MOTIF_REGISTRY
 # Die erste Fassung - aufrufbar, damit gespeicherte Pruefseiten und Altergebnisse lesbar bleiben.
 MAPPING_VERSION_V1: Final = "eye-4.2.3/v1"
 
+# Die zweite Fassung - seit v3 nicht mehr die Lauf-Fassung, aber unveraendert aufrufbar.
+MAPPING_VERSION_V2: Final = "eye-4.2.3/v2"
+
 # Die Lauf-Fassung: mit ihr rechnet der Eye-Lauf, und sie steht in jeder neuen
 # `photo_eye_results`-Zeile. Nur der Server setzt sie - nie ein Wert aus Request, Sidecar-Antwort
 # oder Umgebung. Ein Wert von dort liesse eine Zeile eine Fassung behaupten, mit der sie nicht
 # entstand.
-MAPPING_VERSION: Final = "eye-4.2.3/v2"
+MAPPING_VERSION: Final = "eye-4.2.3/v3"
 
 # Die Revision des gepinnten Modells (`eye/src/pins.json`). Sie steht in jeder
 # `photo_eye_results`-Zeile, damit ein Pin-Wechsel nicht still unter bestehenden Ergebnissen
@@ -205,6 +208,158 @@ MOTIF_TAGS_V2: Final[Mapping[str, tuple[str, ...]]] = {
     ),
 }
 
+# v3 zaehlt nur DEFINIERENDE Signale: ein Tag belegt ein Motiv nur, wenn er das Motiv selbst
+# benennt. Gegenstaende (`car`, `bus`, `building`, `furniture`, `bicycle`, `football`), reine
+# Umgebungsbedingungen (`sky`, `cloud`, `sunset`, `water`) und Oberbegriffe ohne Art
+# (`animal`, `pet`, `wildlife`) entfallen; benannte Arten und Klassen kommen hinzu. `menschen`,
+# `bauwerk_sehenswuerdigkeit` und `essen_trinken` bleiben dieselben Objekte wie in v2.
+MOTIF_TAGS_V3: Final[Mapping[str, tuple[str, ...]]] = {
+    **MOTIF_TAGS_V2,
+    "landschaft": (
+        "beach",
+        "field",
+        "forest",
+        "grassland",
+        "hill",
+        "lake",
+        "landscape",
+        "mountain",
+        "mountain_range",
+        "ocean",
+        "river",
+        "sea",
+        "shore",
+        "coast",
+    ),
+    "stadt_strasse": (
+        "street",
+        "road",
+        "city",
+        "town",
+        "sidewalk",
+        "traffic_light",
+        "street_light",
+        "traffic_sign",
+        "pedestrian",
+        "cityscape",
+        "metropolis",
+        "metropolitan_area",
+        "urban_area",
+        "neighbourhood",
+        "skyline",
+    ),
+    "detail_stimmung": ("flower", "leaf", "blossom"),
+    "tiere": (
+        "antelope",
+        "bear",
+        "bee",
+        "beetle",
+        "bird",
+        "black_cat",
+        "border_collie",
+        "bulldog",
+        "butterfly",
+        "cat",
+        "cattle",
+        "deer",
+        "dog",
+        "dolphin",
+        "dragonfly",
+        "duck",
+        "eagle",
+        "elephant",
+        "english_cocker_spaniel",
+        "falcon",
+        "fish",
+        "frog",
+        "giraffe",
+        "goat",
+        "golden_retriever",
+        "goose",
+        "harbor_seal",
+        "horse",
+        "insect",
+        "labrador_retriever",
+        "lion",
+        "lizard",
+        "maine_coon",
+        "marine_mammal",
+        "monkey",
+        "norwegian_forest_cat",
+        "owl",
+        "parrot",
+        "penguin",
+        "pig",
+        "poodle",
+        "pug",
+        "rabbit",
+        "reptile",
+        "sea_lion",
+        "sheep",
+        "siamese",
+        "snake",
+        "spider",
+        "squirrel",
+        "swan",
+        "tiger",
+        "turtle",
+    ),
+    "aktivitaet": (
+        "swimming",
+        "ski",
+        "surfing",
+        "basketball_sport",
+        "tennis",
+        "hiking",
+        "walking",
+        "running",
+        "cross_country_running",
+        "ultramarathon",
+        "track_and_field_athletics",
+        "skiing",
+        "snowboarding",
+        "ice_skating",
+        "water_skiing",
+        "cycle_sport",
+        "racing_bicycle",
+        "dance",
+        "playground",
+        "sports",
+        "volleyball_sport",
+        "baseball_sport",
+        "american_football",
+        "golf",
+        "hockey",
+        "bowling",
+        "canoe",
+    ),
+}
+
+# Die Support-Bedingung je Motiv: hat ein Motiv hier einen Eintrag, zaehlt es nur, wenn mindestens
+# einer dieser Tags `tag_confidence` erreicht; sonst ist seine Staerke 0.0. Die Staerke selbst
+# bleibt das Maximum der Motivsignale - der Support hebt sie nicht an. Ein leerer Eintrag ist
+# unzulaessig, weil er das Motiv dauerhaft auf 0.0 schloesse.
+MOTIF_SUPPORT_V3: Final[Mapping[str, tuple[str, ...]]] = {
+    "aktivitaet": (
+        "people",
+        "person",
+        "man",
+        "woman",
+        "boy",
+        "girl",
+        "child",
+        "crowd",
+        "human_face",
+        "portrait",
+        "group_shot",
+        "selfie",
+        "adolescent",
+        "baby",
+        "toddler",
+        "senior_citizen",
+    ),
+}
+
 # Feste Albumbaender: untere Grenze inklusiv, obere exklusiv, die letzte Stufe nimmt 1.0 mit. Die
 # Grenzen stehen hier EINMAL - der Vergleich (Story #610) liest dieselbe Stufe ueber
 # `album_level()`.
@@ -230,7 +385,10 @@ class EyeMapping:
     `motif_detections` nennt je Motiv eine Detektionsliste der SDK-Antwort (`pets`), deren
     groesste `confidence` neben den Tags in das Maximum eingeht. `excluded_types` entscheidet den
     Ausschluss, `fine_label_excluded` die Tags, die nie Feinlabel werden - getrennt, damit ein
-    schmalerer Ausschluss die Feinlabels nicht veraendert.
+    schmalerer Ausschluss die Feinlabels nicht veraendert. `motif_support` ist die Support-
+    Bedingung: hat ein Motiv dort einen Eintrag, gilt es nur, wenn mindestens einer dieser Tags
+    `tag_confidence` erreicht - sonst ist seine Staerke 0.0. Leer ist die Abbildung, wo es keine
+    Bedingung gibt.
     """
 
     motif_tags: Mapping[str, tuple[str, ...]]
@@ -239,6 +397,7 @@ class EyeMapping:
     fine_label_excluded: frozenset[str]
     album_levels: tuple[tuple[int, float, float], ...]
     tag_confidence: float
+    motif_support: Mapping[str, tuple[str, ...]]
 
 
 MAPPING_V1: Final[EyeMapping] = EyeMapping(
@@ -248,6 +407,7 @@ MAPPING_V1: Final[EyeMapping] = EyeMapping(
     fine_label_excluded=DOCUMENT_TYPES,
     album_levels=ALBUM_LEVELS,
     tag_confidence=TAG_CONFIDENCE,
+    motif_support=MappingProxyType({}),
 )
 
 MAPPING_V2: Final[EyeMapping] = EyeMapping(
@@ -257,12 +417,23 @@ MAPPING_V2: Final[EyeMapping] = EyeMapping(
     fine_label_excluded=DOCUMENT_TYPES,
     album_levels=ALBUM_LEVELS,
     tag_confidence=TAG_CONFIDENCE,
+    motif_support=MappingProxyType({}),
+)
+
+MAPPING_V3: Final[EyeMapping] = EyeMapping(
+    motif_tags=MappingProxyType(MOTIF_TAGS_V3),
+    motif_detections=MappingProxyType({"tiere": "pets"}),
+    excluded_types=EXCLUDED_TYPES_V2,
+    fine_label_excluded=DOCUMENT_TYPES,
+    album_levels=ALBUM_LEVELS,
+    tag_confidence=TAG_CONFIDENCE,
+    motif_support=MappingProxyType(MOTIF_SUPPORT_V3),
 )
 
 # Die aufrufbaren Fassungen. Eine neue Tabelle kommt als zusaetzlicher Eintrag hinzu, nie als
 # Ersatz; die Klassifizierungspruefung bietet jede davon an und nimmt nur diese Schluessel an.
 MAPPINGS: Final[Mapping[str, EyeMapping]] = MappingProxyType(
-    {MAPPING_VERSION_V1: MAPPING_V1, MAPPING_VERSION: MAPPING_V2}
+    {MAPPING_VERSION_V1: MAPPING_V1, MAPPING_VERSION_V2: MAPPING_V2, MAPPING_VERSION: MAPPING_V3}
 )
 
 _RUN_MAPPING: Final = MAPPINGS[MAPPING_VERSION]
@@ -285,6 +456,8 @@ EYE_PURPOSE_MAPPING: Final[Mapping[str, Any]] = MappingProxyType(
                         "signals": ("tags", "pets"),
                         "motifs": _RUN_MAPPING.motif_tags,
                         "detections": _RUN_MAPPING.motif_detections,
+                        "support": _RUN_MAPPING.motif_support,
+                        "support_threshold": _RUN_MAPPING.tag_confidence,
                     }
                 ),
                 "ausschluss": MappingProxyType(
@@ -380,7 +553,11 @@ def motif_strengths(payload: Mapping[str, Any], mapping: EyeMapping) -> dict[str
     Detektionsliste (`mapping.motif_detections`, in v2 `pets` fuer Tiere). Keine Gesichter, kein
     Bildausschnitt: diese beiden Felder sind die einzige Stelle, an der festgelegt ist, was ein
     Motiv belegt. Eine zweite Regel daneben (etwa "ein Gesicht genuegt") liefe beim naechsten
-    Pin-Wechsel auseinander."""
+    Pin-Wechsel auseinander.
+
+    `mapping.motif_support` gatet ein Motiv danach: hat es einen Eintrag, zaehlt es nur, wenn
+    mindestens einer dieser Tags `tag_confidence` erreicht - sonst 0.0. Die Schwelle ist
+    dieselbe, inklusiv wie bei den Feinlabels; eine eigene Support-Schwelle gibt es nicht."""
     tags = _tags(payload)
     strengths: dict[str, float] = {}
     for motif_key in MOTIF_REGISTRY:
@@ -391,6 +568,11 @@ def motif_strengths(payload: Mapping[str, Any], mapping: EyeMapping) -> dict[str
         field = mapping.motif_detections.get(motif_key)
         if field is not None:
             strength = max(strength, _detection_confidence(payload, field))
+        support = mapping.motif_support.get(motif_key)
+        if support is not None and not any(
+            _confidence(tags.get(tag)) >= mapping.tag_confidence for tag in support
+        ):
+            strength = 0.0
         strengths[motif_key] = strength
     return strengths
 

@@ -13,7 +13,9 @@ import pytest
 from photosort.classification_comparison import (
     PURPOSES,
     Comparison,
+    MotifCounts,
     PhotoComparison,
+    PurposeCounts,
     compare_motifs,
     compare_review,
     motif_present,
@@ -284,3 +286,91 @@ class TestTheComparisonCarriesBothRawValues:
 class TestThePurposeList:
     def test_the_purposes_are_the_four_documented_ones_in_that_order(self) -> None:
         assert PURPOSES == ("motifs", "motif_feature", "excluded_document", "album_level")
+
+
+class TestTheDirectionOfAMotifDeviation:
+    """`a_only`/`b_only` machen die Richtung einer Merkmalsabweichung lesbar - `deviating` allein
+    ist richtungslos (ADR 0141 Punkt 6). Die Richtung entsteht im selben Durchlauf wie
+    `motif_units`, aus derselben Praesenzregel."""
+
+    def test_the_direction_names_the_side_that_alone_sees_the_motif(self) -> None:
+        a = dict(_ZERO) | {"landschaft": 0.9, "menschen": 0.9}
+        b = dict(_ZERO) | {"menschen": 0.9, "tiere": 0.9}
+
+        comparison = compare_review([_photo(1, a_motifs=a, b_motifs=b)], seed=4711, limit=30)
+
+        assert comparison.motif_counts["landschaft"].a_only == 1
+        assert comparison.motif_counts["landschaft"].b_only == 0
+        assert comparison.motif_counts["tiere"].a_only == 0
+        assert comparison.motif_counts["tiere"].b_only == 1
+        assert comparison.motif_counts["menschen"].a_only == 0
+        assert comparison.motif_counts["menschen"].b_only == 0
+
+    def test_the_two_directions_add_up_to_the_deviations(self) -> None:
+        photos = [
+            _photo(1, a_motifs=dict(_ZERO) | {"landschaft": 0.9}),
+            _photo(2, b_motifs=dict(_ZERO) | {"landschaft": 0.9}),
+            _photo(3, a_motifs=dict(_ZERO) | {"landschaft": 0.9, "tiere": 0.9}),
+        ]
+
+        comparison = compare_review(photos, seed=4711, limit=30)
+
+        for motif_key in MOTIF_REGISTRY:
+            counts = comparison.motif_counts[motif_key]
+            assert counts.a_only + counts.b_only == counts.deviating, motif_key
+            assert counts.matching + counts.deviating == counts.compared, motif_key
+
+    def test_a_matching_pair_has_no_direction(self) -> None:
+        comparison = compare_review([_photo(1)], seed=4711, limit=30)
+
+        for motif_key in MOTIF_REGISTRY:
+            counts = comparison.motif_counts[motif_key]
+            assert (counts.a_only, counts.b_only) == (0, 0), motif_key
+            assert counts.matching == counts.compared, motif_key
+
+    def test_two_below_threshold_values_on_both_sides_leave_no_direction(self) -> None:
+        """Unter der Schwelle heisst "nicht vorhanden" - auch wenn beide Seiten verschiedene
+        kleine Werte tragen, gibt es keine Abweichung."""
+        a = dict(_ZERO) | {"landschaft": MOTIF_PRESENCE_THRESHOLD - 0.1}
+        b = dict(_ZERO) | {"landschaft": MOTIF_PRESENCE_THRESHOLD - 0.2}
+
+        comparison = compare_review([_photo(1, a_motifs=a, b_motifs=b)], seed=4711, limit=30)
+        counts = comparison.motif_counts["landschaft"]
+
+        assert counts.compared == 1
+        assert counts.matching == 1
+        assert (counts.deviating, counts.a_only, counts.b_only) == (0, 0, 0)
+
+    def test_the_threshold_edge_decides_the_direction(self) -> None:
+        at = dict(_ZERO) | {"landschaft": MOTIF_PRESENCE_THRESHOLD}
+        below = dict(_ZERO) | {"landschaft": MOTIF_PRESENCE_THRESHOLD - 0.0001}
+
+        a_side = compare_review([_photo(1, a_motifs=at, b_motifs=below)], seed=4711, limit=30)
+        b_side = compare_review([_photo(1, a_motifs=below, b_motifs=at)], seed=4711, limit=30)
+        a_counts = a_side.motif_counts["landschaft"]
+        b_counts = b_side.motif_counts["landschaft"]
+
+        assert (a_counts.a_only, a_counts.b_only) == (1, 0)
+        assert (b_counts.a_only, b_counts.b_only) == (0, 1)
+
+    def test_a_motif_key_on_one_side_only_counts_as_that_side(self) -> None:
+        without_tiere = dict(_ZERO)
+        del without_tiere["tiere"]
+        present = dict(_ZERO) | {"tiere": 0.9}
+
+        b_side = compare_review(
+            [_photo(1, a_motifs=without_tiere, b_motifs=present)], seed=4711, limit=30
+        )
+        a_side = compare_review(
+            [_photo(1, a_motifs=present, b_motifs=without_tiere)], seed=4711, limit=30
+        )
+        b_counts = b_side.motif_counts["tiere"]
+        a_counts = a_side.motif_counts["tiere"]
+
+        assert (b_counts.a_only, b_counts.b_only) == (0, 1)
+        assert (a_counts.a_only, a_counts.b_only) == (1, 0)
+
+    def test_the_purpose_counts_keep_their_three_fields(self) -> None:
+        """`PurposeCounts` ist die Form von `counts_by_purpose` und bleibt unangetastet."""
+        assert PurposeCounts._fields == ("compared", "matching", "deviating")
+        assert MotifCounts._fields == ("compared", "matching", "deviating", "a_only", "b_only")

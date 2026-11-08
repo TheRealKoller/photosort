@@ -270,7 +270,7 @@ async def test_every_readable_photo_gets_the_full_shadow_set(
 
     result, strengths = await _eye_rows(db_session, photo.id)
     assert result.model_revision == "v1.0.0"
-    assert result.mapping_version == MAPPING_VERSION == "eye-4.2.3/v2"
+    assert result.mapping_version == MAPPING_VERSION == "eye-4.2.3/v3"
     assert result.album_level == 3
     assert result.excluded_document is False
     # Acht Zeilen, immer - was Eye nicht nennt, steht mit 0.0 da.
@@ -305,7 +305,7 @@ async def test_a_new_run_replaces_a_v1_row_with_the_run_mapping(
         )
     )
     await db_session.commit()
-    client = FakeEyeClient({photo.id: _payload(kind="map", tags={"pet": 0.8})})
+    client = FakeEyeClient({photo.id: _payload(kind="map", tags={"dog": 0.8})})
 
     await _run(db_session, project, scoring_run, tmp_path, client=client)
 
@@ -323,7 +323,7 @@ async def test_a_new_run_replaces_a_v1_row_with_the_run_mapping(
 
 
 @pytest.mark.parametrize(("kind", "excluded"), [("map", False), ("receipt", True)])
-async def test_the_run_excludes_by_the_v2_document_types(
+async def test_the_run_excludes_by_the_v3_document_types(
     db_session: AsyncSession, tmp_path: Path, kind: str, excluded: bool
 ) -> None:
     project = await _make_project(db_session)

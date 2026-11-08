@@ -1,4 +1,4 @@
-"""Die Abbildung Eye-SDK-Ausgabe auf das Motivset, in beiden aufrufbaren Fassungen.
+"""Die Abbildung Eye-SDK-Ausgabe auf das Motivset, in allen aufrufbaren Fassungen.
 
 Drei Fallen werden hier festgehalten:
 
@@ -34,10 +34,13 @@ from photosort.eye_mapping import (
     EYE_PURPOSE_MAPPING,
     MAPPING_V1,
     MAPPING_V2,
+    MAPPING_V3,
     MAPPING_VERSION,
     MAPPING_VERSION_V1,
+    MAPPING_VERSION_V2,
     MAPPINGS,
     MODEL_REVISION,
+    MOTIF_SUPPORT_V3,
     EyeMapping,
     EyeMappingError,
     album_level,
@@ -93,14 +96,25 @@ def _pet(confidence: Any, label: str = "dog") -> dict[str, Any]:
 
 
 _BOTH = pytest.mark.parametrize("mapping", [MAPPING_V1, MAPPING_V2], ids=["v1", "v2"])
+# v3 fuehrt eine eigene Tabelle: ein Regeltest, dessen Payload-Tag diese Fassung nicht kennt,
+# bestuende aus dem falschen Grund. `_ALL` traegt deshalb nur Tags, die in allen drei Fassungen
+# stehen; wo die Tabelle abweicht, nennt die Parametrisierung das Tag je Fassung.
+_ALL = pytest.mark.parametrize(
+    "mapping", [MAPPING_V1, MAPPING_V2, MAPPING_V3], ids=["v1", "v2", "v3"]
+)
+_STRONG_TAG = pytest.mark.parametrize(
+    ("mapping", "tag"),
+    [(MAPPING_V1, "sky"), (MAPPING_V2, "sky"), (MAPPING_V3, "mountain")],
+    ids=["v1", "v2", "v3"],
+)
 
 
 class TestTheMotifStrengths:
-    @_BOTH
+    @_STRONG_TAG
     def test_the_strength_is_the_highest_confidence_of_the_assigned_tags(
-        self, mapping: EyeMapping
+        self, mapping: EyeMapping, tag: str
     ) -> None:
-        strengths = motif_strengths(_payload(), mapping)
+        strengths = motif_strengths(_payload(tags={tag: 0.91, "people": 0.4}), mapping)
 
         assert strengths["landschaft"] == pytest.approx(0.91)
         # `people` mit 0.4 ist unter der Schwelle - aber die Staerke ist keine Trefferaussage,
@@ -108,7 +122,7 @@ class TestTheMotifStrengths:
         # liest.
         assert strengths["menschen"] == pytest.approx(0.4)
 
-    @_BOTH
+    @_ALL
     def test_all_eight_motifs_are_always_present_and_unmentioned_ones_are_zero(
         self, mapping: EyeMapping
     ) -> None:
@@ -127,23 +141,29 @@ class TestTheMotifStrengths:
         assert strengths["bauwerk_sehenswuerdigkeit"] == pytest.approx(0.8)
         assert strengths["stadt_strasse"] == pytest.approx(0.8)
 
-    @_BOTH
+    @pytest.mark.parametrize(
+        ("mapping", "tags"),
+        [
+            (MAPPING_V1, {"mountain": "hoch", "sky": True, "unbekannt": 0.99}),
+            (MAPPING_V2, {"mountain": "hoch", "sky": True, "unbekannt": 0.99}),
+            (MAPPING_V3, {"mountain": "hoch", "landscape": True, "unbekannt": 0.99}),
+        ],
+        ids=["v1", "v2", "v3"],
+    )
     def test_unknown_tags_and_non_numeric_values_do_not_leak_into_the_vector(
-        self, mapping: EyeMapping
+        self, mapping: EyeMapping, tags: dict[str, Any]
     ) -> None:
-        strengths = motif_strengths(
-            _payload(tags={"mountain": "hoch", "sky": True, "unbekannt": 0.99}), mapping
-        )
+        strengths = motif_strengths(_payload(tags=tags), mapping)
 
         assert strengths["landschaft"] == 0.0
 
-    @_BOTH
+    @_ALL
     def test_values_above_one_are_clamped_to_one(self, mapping: EyeMapping) -> None:
         strengths = motif_strengths(_payload(tags={"mountain": 1.4}), mapping)
 
         assert strengths["landschaft"] == pytest.approx(1.0)
 
-    @_BOTH
+    @_ALL
     @pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan"), 10**400])
     def test_a_non_finite_tag_value_counts_as_zero(self, mapping: EyeMapping, value: Any) -> None:
         """`json.loads` nimmt `Infinity`, `NaN` und beliebig grosse Ganzzahlen an. Ein
@@ -153,7 +173,7 @@ class TestTheMotifStrengths:
 
         assert strengths["landschaft"] == 0.0
 
-    @_BOTH
+    @_ALL
     def test_a_payload_without_tags_yields_eight_zeros(self, mapping: EyeMapping) -> None:
         strengths = motif_strengths({"kind": None}, mapping)
 
@@ -164,11 +184,30 @@ class TestTheMotifStrengths:
     def test_every_motif_in_every_table_is_a_registry_key(self, version: str) -> None:
         assert set(MAPPINGS[version].motif_tags) == set(MOTIF_REGISTRY)
         assert set(MAPPINGS[version].motif_detections) <= set(MOTIF_REGISTRY)
+        assert set(MAPPINGS[version].motif_support) <= set(MOTIF_REGISTRY)
 
     @pytest.mark.parametrize("version", list(MAPPINGS))
     def test_no_motif_lists_the_same_tag_twice(self, version: str) -> None:
-        for motif_key, tags in MAPPINGS[version].motif_tags.items():
+        mapping = MAPPINGS[version]
+        for motif_key, tags in (*mapping.motif_tags.items(), *mapping.motif_support.items()):
             assert len(tags) == len(set(tags)), motif_key
+
+    @pytest.mark.parametrize("version", list(MAPPINGS))
+    def test_a_support_entry_is_never_empty(self, version: str) -> None:
+        """Ein leerer Support-Eintrag schloesse das Motiv dauerhaft auf 0.0 - unzulaessig."""
+        for motif_key, tags in MAPPINGS[version].motif_support.items():
+            assert tags, motif_key
+
+    @pytest.mark.parametrize("version", list(MAPPINGS))
+    def test_no_support_tag_is_also_a_motif_tag_of_the_same_motif(self, version: str) -> None:
+        """Sonst erfuellte das Motiv sein eigenes Gate - die Bedingung waere wirkungslos."""
+        mapping = MAPPINGS[version]
+        for motif_key, support in mapping.motif_support.items():
+            assert set(support) & set(mapping.motif_tags[motif_key]) == set(), motif_key
+
+    @pytest.mark.parametrize("version", [MAPPING_VERSION_V1, MAPPING_VERSION_V2])
+    def test_the_older_versions_carry_no_support_condition(self, version: str) -> None:
+        assert dict(MAPPINGS[version].motif_support) == {}
 
 
 class TestTheAnimalsInV2:
@@ -329,6 +368,357 @@ class TestTheUnchangedPartsOfV2:
         assert len(DOCUMENT_TYPES) == 12
 
 
+# Die Tiere, die v3 gegenueber v2 hinzufuegt. Als Literal, damit ein still verlorener Tag auffaellt;
+# die Mengendifferenz unten faengt genau den Fall, den kein namentlicher Test erwartet.
+_TIERE_ADDED_IN_V3 = frozenset(
+    {
+        "antelope",
+        "bear",
+        "bee",
+        "beetle",
+        "black_cat",
+        "border_collie",
+        "bulldog",
+        "butterfly",
+        "cattle",
+        "deer",
+        "dolphin",
+        "dragonfly",
+        "duck",
+        "eagle",
+        "elephant",
+        "english_cocker_spaniel",
+        "falcon",
+        "frog",
+        "giraffe",
+        "goat",
+        "golden_retriever",
+        "goose",
+        "harbor_seal",
+        "labrador_retriever",
+        "lion",
+        "lizard",
+        "maine_coon",
+        "monkey",
+        "norwegian_forest_cat",
+        "owl",
+        "parrot",
+        "penguin",
+        "pig",
+        "poodle",
+        "pug",
+        "rabbit",
+        "sea_lion",
+        "sheep",
+        "siamese",
+        "snake",
+        "spider",
+        "squirrel",
+        "swan",
+        "tiger",
+        "turtle",
+    }
+)
+
+
+class TestTheDefiningSignalsInV3:
+    """v3 zaehlt nur Signale, die das Motiv SELBST benennen - ein Gegenstand, eine Oertlichkeit
+    oder eine Umgebungsbedingung belegt kein Motiv (ADR 0141 Punkt 2)."""
+
+    @pytest.mark.parametrize(
+        ("motif_key", "tag"),
+        [
+            ("aktivitaet", "bicycle"),
+            ("aktivitaet", "football"),
+            ("aktivitaet", "soccer"),
+            ("aktivitaet", "skateboard"),
+            ("stadt_strasse", "car"),
+            ("stadt_strasse", "bus"),
+            ("stadt_strasse", "building"),
+            ("landschaft", "sky"),
+            ("landschaft", "cloud"),
+            ("landschaft", "sunset"),
+            ("landschaft", "water"),
+            ("detail_stimmung", "furniture"),
+            ("tiere", "animal"),
+            ("tiere", "pet"),
+            ("tiere", "wildlife"),
+        ],
+    )
+    def test_a_removed_tag_alone_does_not_carry_its_motif(self, motif_key: str, tag: str) -> None:
+        assert motif_strengths(_payload(tags={tag: 0.9}), MAPPING_V3)[motif_key] == 0.0
+
+    @pytest.mark.parametrize(
+        ("motif_key", "tag"),
+        [
+            ("landschaft", "mountain_range"),
+            ("landschaft", "hill"),
+            ("landschaft", "grassland"),
+            ("landschaft", "landscape"),
+            ("landschaft", "ocean"),
+            ("landschaft", "shore"),
+            ("stadt_strasse", "cityscape"),
+            ("stadt_strasse", "metropolis"),
+            ("stadt_strasse", "metropolitan_area"),
+            ("stadt_strasse", "urban_area"),
+            ("stadt_strasse", "neighbourhood"),
+            ("stadt_strasse", "street_light"),
+            ("stadt_strasse", "traffic_sign"),
+            ("stadt_strasse", "pedestrian"),
+            ("stadt_strasse", "skyline"),
+            ("detail_stimmung", "blossom"),
+            ("tiere", "cattle"),
+            ("tiere", "golden_retriever"),
+            ("tiere", "sea_lion"),
+        ],
+    )
+    def test_an_added_tag_alone_carries_its_motif(self, motif_key: str, tag: str) -> None:
+        assert motif_strengths(_payload(tags={tag: 0.8}), MAPPING_V3)[motif_key] == pytest.approx(
+            0.8
+        )
+
+    @pytest.mark.parametrize(
+        ("motif_key", "removed", "added"),
+        [
+            (
+                "landschaft",
+                {"sky", "cloud", "sunset", "water"},
+                {"mountain_range", "hill", "grassland", "landscape", "ocean", "shore"},
+            ),
+            (
+                "stadt_strasse",
+                {"car", "bus", "building"},
+                {
+                    "cityscape",
+                    "metropolis",
+                    "metropolitan_area",
+                    "urban_area",
+                    "neighbourhood",
+                    "street_light",
+                    "traffic_sign",
+                    "pedestrian",
+                    "skyline",
+                },
+            ),
+            ("detail_stimmung", {"furniture"}, {"blossom"}),
+            ("tiere", {"animal", "pet", "wildlife"}, _TIERE_ADDED_IN_V3),
+            # Aktivitaet verliert Gegenstaende und gewinnt keinen Tag - dort gatet der Support.
+            ("aktivitaet", {"bicycle", "football", "soccer", "skateboard"}, set()),
+        ],
+    )
+    def test_the_table_difference_is_the_documented_one(
+        self, motif_key: str, removed: set[str], added: set[str]
+    ) -> None:
+        v2 = set(MAPPING_V2.motif_tags[motif_key])
+        v3 = set(MAPPING_V3.motif_tags[motif_key])
+
+        assert v2 - v3 == removed, motif_key
+        assert v3 - v2 == set(added), motif_key
+
+    def test_every_v3_table_tag_carries_its_own_motif(self) -> None:
+        """Sweep ueber ALLE Tags der v3-Tabellen: eine still verlorene Zeile faellt hier auf.
+        `aktivitaet` laeuft mit erfuelltem Gate im selben Payload - sonst pruefte der Sweep die
+        Support-Regel statt der Tabelle."""
+        for motif_key, tags in MAPPING_V3.motif_tags.items():
+            extra = {"people": 0.9} if motif_key == "aktivitaet" else {}
+            for tag in tags:
+                strengths = motif_strengths(_payload(tags={tag: 0.9, **extra}), MAPPING_V3)
+                assert strengths[motif_key] == pytest.approx(0.9), (motif_key, tag)
+
+    def test_the_pet_detection_carries_tiere_alone_in_v3(self) -> None:
+        """`pets` bleibt Motivsignal und wird nicht gegatet."""
+        strengths = motif_strengths(_payload(tags={}, pets=[_pet(0.7)]), MAPPING_V3)
+
+        assert strengths["tiere"] == pytest.approx(0.7)
+
+    def test_v2_still_counts_the_removed_tags(self) -> None:
+        """Gegenprobe: v2 bleibt wertgleich - sonst veraenderte v3 still ein gespeichertes
+        Ergebnis."""
+        assert motif_strengths(_payload(tags={"bicycle": 0.9}), MAPPING_V2)[
+            "aktivitaet"
+        ] == pytest.approx(0.9)
+
+
+class TestTheActivitySupportInV3:
+    """`motif_support` gatet `aktivitaet`: ein Aktivitaetstag ohne Personensignal ist kein Beleg.
+    Die Staerke bleibt das Maximum der Motivsignale - der Support hebt sie nicht an."""
+
+    def test_an_activity_tag_without_a_person_is_zero(self) -> None:
+        assert motif_strengths(_payload(tags={"hiking": 0.9}), MAPPING_V3)["aktivitaet"] == 0.0
+
+    def test_a_person_opens_the_gate_and_the_activity_tag_carries_the_strength(self) -> None:
+        strengths = motif_strengths(_payload(tags={"hiking": 0.8, "people": 0.9}), MAPPING_V3)
+
+        assert strengths["aktivitaet"] == pytest.approx(0.8)
+
+    def test_the_support_does_not_raise_the_strength(self) -> None:
+        """0,5 bleibt 0,5: der Support oeffnet das Gate, er ist kein Motivsignal."""
+        strengths = motif_strengths(_payload(tags={"hiking": 0.5, "people": 0.9}), MAPPING_V3)
+
+        assert strengths["aktivitaet"] == pytest.approx(0.5)
+
+    @pytest.mark.parametrize(
+        "person_tag",
+        [
+            "people",
+            "person",
+            "man",
+            "woman",
+            "boy",
+            "girl",
+            "child",
+            "crowd",
+            "human_face",
+            "portrait",
+            "group_shot",
+            "selfie",
+            "adolescent",
+            "baby",
+            "toddler",
+            "senior_citizen",
+        ],
+    )
+    def test_every_person_signal_opens_the_gate(self, person_tag: str) -> None:
+        strengths = motif_strengths(_payload(tags={"hiking": 0.8, person_tag: 0.5}), MAPPING_V3)
+
+        assert strengths["aktivitaet"] == pytest.approx(0.8)
+
+    @pytest.mark.parametrize("below", [0.49, 0.4999])
+    def test_the_gate_is_inclusive_at_the_tag_confidence(self, below: float) -> None:
+        at = motif_strengths(_payload(tags={"hiking": 0.8, "people": 0.5}), MAPPING_V3)
+        under = motif_strengths(_payload(tags={"hiking": 0.8, "people": below}), MAPPING_V3)
+
+        assert at["aktivitaet"] == pytest.approx(0.8)
+        assert under["aktivitaet"] == 0.0
+
+    def test_a_support_value_outside_the_scale_is_clamped(self) -> None:
+        above = motif_strengths(_payload(tags={"hiking": 0.8, "people": 1.4}), MAPPING_V3)
+        below = motif_strengths(_payload(tags={"hiking": 0.8, "people": -0.4}), MAPPING_V3)
+
+        assert above["aktivitaet"] == pytest.approx(0.8)
+        assert below["aktivitaet"] == 0.0
+
+    @pytest.mark.parametrize(
+        "value", ["hoch", True, float("nan"), float("inf"), float("-inf"), 10**400]
+    )
+    def test_a_defective_support_value_closes_the_gate_without_raising(self, value: Any) -> None:
+        strengths = motif_strengths(_payload(tags={"hiking": 0.9, "people": value}), MAPPING_V3)
+
+        assert strengths["aktivitaet"] == 0.0
+
+    def test_a_defective_support_value_does_not_hide_a_valid_one(self) -> None:
+        strengths = motif_strengths(
+            _payload(tags={"hiking": 0.9, "people": "hoch", "person": 0.6}), MAPPING_V3
+        )
+
+        assert strengths["aktivitaet"] == pytest.approx(0.9)
+
+    def test_missing_or_non_mapping_tags_close_the_gate_for_all_eight(self) -> None:
+        missing = motif_strengths({"kind": "landscape"}, MAPPING_V3)
+        non_mapping = motif_strengths({"tags": ["people"]}, MAPPING_V3)
+
+        assert set(missing.values()) == {0.0}
+        assert set(non_mapping.values()) == {0.0}
+
+    def test_the_pet_detection_does_not_open_the_gate(self) -> None:
+        strengths = motif_strengths(_payload(tags={"hiking": 0.9}, pets=[_pet(0.95)]), MAPPING_V3)
+
+        assert strengths["aktivitaet"] == 0.0
+        assert strengths["tiere"] == pytest.approx(0.95)
+
+    def test_v2_keeps_the_activity_tag_alone(self) -> None:
+        assert motif_strengths(_payload(tags={"hiking": 0.9}), MAPPING_V2)[
+            "aktivitaet"
+        ] == pytest.approx(0.9)
+
+    def test_menschen_is_not_gated(self) -> None:
+        assert motif_strengths(_payload(tags={"people": 0.3}), MAPPING_V3)[
+            "menschen"
+        ] == pytest.approx(0.3)
+
+
+class TestTheUnchangedPartsOfV3:
+    """Der AK-4-Nachweis: `menschen`, `bauwerk_sehenswuerdigkeit` und `essen_trinken` sind
+    DIESELBEN Tupel wie in v2, ebenso Ausschluss, Feinlabel-Filter, Albumbaender und Schwelle.
+    Weil `is_excluded`, `album_level` und `fine_labels` reine Funktionen dieser Felder sind,
+    schliesst die Identitaet den ganzen Payload-Raum; die Differenzpruefungen darunter sichern
+    gegen einen kuenftigen Fassungs-Zweig im Code."""
+
+    _UNCHANGED = ("menschen", "bauwerk_sehenswuerdigkeit", "essen_trinken")
+
+    def test_the_three_motif_tables_are_the_same_objects(self) -> None:
+        for motif_key in self._UNCHANGED:
+            assert MAPPING_V3.motif_tags[motif_key] is MAPPING_V2.motif_tags[motif_key], motif_key
+
+    def test_exclusion_fine_labels_album_bands_and_threshold_are_the_same_objects(self) -> None:
+        assert MAPPING_V3.excluded_types is MAPPING_V2.excluded_types
+        assert MAPPING_V3.fine_label_excluded is MAPPING_V2.fine_label_excluded
+        assert MAPPING_V3.album_levels is MAPPING_V2.album_levels
+        assert MAPPING_V3.tag_confidence is MAPPING_V2.tag_confidence
+        assert MAPPING_V3.motif_detections == MAPPING_V2.motif_detections == {"tiere": "pets"}
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            *sorted(DOCUMENT_TYPES),
+            "landscape",
+            "Document",
+            "document ",
+            42,
+            None,
+            ["document"],
+            {"document": 1},
+            True,
+        ],
+    )
+    def test_the_exclusion_agrees_for_every_kind(self, kind: Any) -> None:
+        payload = _payload(kind=kind)
+
+        assert is_excluded(payload, MAPPING_V3) == is_excluded(payload, MAPPING_V2)
+
+    def test_the_exclusion_agrees_when_the_kind_is_missing(self) -> None:
+        payload = _payload()
+        del payload["kind"]
+
+        assert is_excluded(payload, MAPPING_V3) is False
+        assert is_excluded(payload, MAPPING_V2) is False
+
+    @pytest.mark.parametrize(
+        "aesthetic",
+        [0.0, 0.19, 0.2, 0.39, 0.4, 0.59, 0.6, 0.79, 0.8, 0.99, 1.0, 1.7, -0.4],
+    )
+    def test_the_album_level_agrees_at_every_band_edge(self, aesthetic: float) -> None:
+        payload = _payload(scores={"aesthetic": aesthetic})
+
+        assert album_level(payload, MAPPING_V3) == album_level(payload, MAPPING_V2)
+
+    @pytest.mark.parametrize(
+        "scores", [{}, {"keeper": 0.6}, {"aesthetic": "gut"}, {"aesthetic": True}]
+    )
+    def test_the_album_level_raises_in_both_versions(self, scores: dict[str, Any]) -> None:
+        payload = _payload(scores=scores)
+
+        with pytest.raises(EyeMappingError):
+            album_level(payload, MAPPING_V2)
+        with pytest.raises(EyeMappingError):
+            album_level(payload, MAPPING_V3)
+
+    def test_a_missing_scores_object_raises_in_both_versions(self) -> None:
+        payload = _payload()
+        del payload["scores"]
+
+        with pytest.raises(EyeMappingError):
+            album_level(payload, MAPPING_V2)
+        with pytest.raises(EyeMappingError):
+            album_level(payload, MAPPING_V3)
+
+    def test_the_fine_labels_are_identical_for_every_table_tag(self) -> None:
+        tags = {tag: 0.5 + index / 1000 for index, tag in enumerate(sorted(_all_table_tags()))}
+        payload = _payload(tags=tags)
+
+        assert fine_labels(payload, MAPPING_V3) == fine_labels(payload, MAPPING_V2)
+
+
 class TestTheDocumentExclusion:
     @pytest.mark.parametrize("kind", _V2_EXCLUDES)
     def test_every_type_of_the_v2_core_excludes(self, kind: str) -> None:
@@ -461,12 +851,14 @@ class TestTheWholeMapping:
         assert analysis.motif_strengths["tiere"] == pytest.approx(0.66)
         assert analysis.fine_labels == (("mountain", 0.91), ("sky", 0.7))
 
-    def test_the_run_version_is_v2_and_v1_stays_callable(self) -> None:
-        assert MAPPING_VERSION == "eye-4.2.3/v2"
+    def test_the_run_version_is_v3_and_the_older_ones_stay_callable(self) -> None:
+        assert MAPPING_VERSION == "eye-4.2.3/v3"
         assert MAPPING_VERSION_V1 == "eye-4.2.3/v1"
-        assert list(MAPPINGS) == [MAPPING_VERSION_V1, MAPPING_VERSION]
+        assert MAPPING_VERSION_V2 == "eye-4.2.3/v2"
+        assert list(MAPPINGS) == [MAPPING_VERSION_V1, MAPPING_VERSION_V2, MAPPING_VERSION]
         assert MAPPINGS[MAPPING_VERSION_V1] is MAPPING_V1
-        assert MAPPINGS[MAPPING_VERSION] is MAPPING_V2
+        assert MAPPINGS[MAPPING_VERSION_V2] is MAPPING_V2
+        assert MAPPINGS[MAPPING_VERSION] is MAPPING_V3
         assert MODEL_REVISION == "v1.0.0"
 
     def test_analyze_requires_the_version(self) -> None:
@@ -479,11 +871,13 @@ class TestTheWholeMapping:
 
         assert EYE_PURPOSE_MAPPING["version"] == MAPPING_VERSION
         assert EYE_PURPOSE_MAPPING["model_revision"] == MODEL_REVISION
-        assert purposes["motivstaerken"]["motifs"] == MAPPING_V2.motif_tags
-        assert purposes["motivstaerken"]["detections"] == MAPPING_V2.motif_detections
-        assert set(purposes["motivstaerken"]["signals"]) == {"tags", "pets"}
-        assert purposes["ausschluss"]["excluded_types"] == MAPPING_V2.excluded_types
-        assert purposes["feinlabels"]["excluded_types"] == MAPPING_V2.fine_label_excluded
+        assert purposes["motivstaerken"]["motifs"] == MAPPING_V3.motif_tags
+        assert purposes["motivstaerken"]["detections"] == MAPPING_V3.motif_detections
+        assert purposes["motivstaerken"]["support"] is MAPPING_V3.motif_support
+        assert purposes["motivstaerken"]["support_threshold"] == MAPPING_V3.tag_confidence
+        assert purposes["motivstaerken"]["signals"] == ("tags", "pets")
+        assert purposes["ausschluss"]["excluded_types"] == MAPPING_V3.excluded_types
+        assert purposes["feinlabels"]["excluded_types"] == MAPPING_V3.fine_label_excluded
 
 
 class TestThePublishedThresholdAgainstTheSelectionPredicate:
@@ -530,8 +924,13 @@ _PINS_FILE = _REPO_ROOT / "eye" / "src" / "pins.json"
 
 
 def _all_table_tags() -> set[str]:
+    """Die Vereinigung ALLER Quellen: Motiv-Tags UND Support-Tags jeder Fassung. Ein Support-Tag
+    fehlt sonst still in den Pins, und ein Pin-Wechsel benennt ihn um, ohne dass es auffaellt."""
     return {
-        tag for mapping in MAPPINGS.values() for tags in mapping.motif_tags.values() for tag in tags
+        tag
+        for mapping in MAPPINGS.values()
+        for tags in (*mapping.motif_tags.values(), *mapping.motif_support.values())
+        for tag in tags
     }
 
 
@@ -554,6 +953,13 @@ class TestTheTagsAgainstTheSidecarPins:
 
         assert table - pinned == set()
         assert pinned - table == set()
+
+    def test_the_person_signals_are_pinned(self) -> None:
+        """Die 16 Support-Tags muessen im Pins-Vokabular stehen, sonst gatet v3 mit Tags, die die
+        gepinnte SDK nicht liefert - `aktivitaet` bliebe still auf 0.0."""
+        pins = json.loads(_PINS_FILE.read_text(encoding="utf-8"))
+
+        assert set(MOTIF_SUPPORT_V3["aktivitaet"]) <= set(pins["mappingTags"])
 
     def test_the_pins_name_the_pinned_revision_and_commit(self) -> None:
         pins = json.loads(_PINS_FILE.read_text(encoding="utf-8"))
@@ -602,16 +1008,27 @@ class TestTheVersionedMappings:
         assert set(result.motif_strengths) == set(MOTIF_REGISTRY)
         assert 1 <= result.album_level <= 5
 
-    def test_the_versions_differ_where_v2_is_meant_to_differ(self) -> None:
+    def test_the_versions_differ_where_they_are_meant_to_differ(self) -> None:
         payload = _payload(kind="map", tags={"hiking": 0.8}, pets=[_pet(0.7)])
 
         v1 = analyze(payload, MAPPING_VERSION_V1)
-        v2 = analyze(payload, MAPPING_VERSION)
+        v2 = analyze(payload, MAPPING_VERSION_V2)
+        v3 = analyze(payload, MAPPING_VERSION)
 
-        assert (v1.excluded_document, v2.excluded_document) == (True, False)
-        assert (v1.motif_strengths["tiere"], v2.motif_strengths["tiere"]) == (0.0, 0.7)
+        assert (v1.excluded_document, v2.excluded_document, v3.excluded_document) == (
+            True,
+            False,
+            False,
+        )
+        assert (
+            v1.motif_strengths["tiere"],
+            v2.motif_strengths["tiere"],
+            v3.motif_strengths["tiere"],
+        ) == (0.0, 0.7, 0.7)
         assert v1.motif_strengths["aktivitaet"] == 0.0
         assert v2.motif_strengths["aktivitaet"] == pytest.approx(0.8)
+        # v3 gatet denselben Tag ohne Personensignal auf 0.
+        assert v3.motif_strengths["aktivitaet"] == 0.0
 
     @pytest.mark.parametrize("version", ["eye-0.0.0/v1", "", "EYE-4.2.3/V2"])
     def test_an_unknown_version_raises_instead_of_falling_back(self, version: str) -> None:

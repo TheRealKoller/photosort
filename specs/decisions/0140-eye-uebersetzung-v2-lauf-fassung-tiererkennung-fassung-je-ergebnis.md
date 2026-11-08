@@ -1,6 +1,10 @@
 # 0140 - Eye-Übersetzung v2: Lauf-Fassung, Tiererkennung als Motivsignal, Fassung je Ergebnis
 
 **Status:** Accepted
+**Teilweise abgelöst:** Punkt 1 (v2 ist die Lauf-Fassung) und Punkt 6 (Pins umfassen die
+Motiv-Tags) durch ADR
+[`0141`](./0141-eye-uebersetzung-v3-definierende-signale-support.md); alle übrigen Punkte gelten
+weiter.
 **Datum:** 2026-11-07
 **Bezug:** Issue [#615](https://github.com/TheRealKoller/photosort/issues/615), Spec
 [`0615`](../features/0615-eye-uebersetzung-v2.md), ADR
