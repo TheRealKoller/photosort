@@ -399,17 +399,23 @@ python scripts/fetch_model_assets.py
 
 Um beide Funktionen tatsächlich zu nutzen, in `.env`:
 
-- `LANDMARK_PROVIDER` wählt den Cloud-Provider (für beide Funktionen gemeinsam, kein separates
-  Setting) — `anthropic` (Default, USA, DPA-/Datenschutzlage geklärt siehe ADR 0025) oder
-  `mistral` (EU-hosted Alternative, Sitz Frankreich; DPA-/Zero-Data-Retention-Lage für
-  Privatkonten laut Recherche unklar, bewusst akzeptiertes Restrisiko siehe ADR 0031). Eine reine
-  Betreiber-/Deployment-Entscheidung, kein Feld pro Projekt.
+- `LANDMARK_PROVIDER` wählt den Cloud-Provider — `anthropic` (Default, USA, DPA-/Datenschutzlage
+  geklärt siehe ADR 0025) oder `mistral` (EU-hosted Alternative, Sitz Frankreich; DPA-/Zero-Data-
+  Retention-Lage für Privatkonten laut Recherche unklar, bewusst akzeptiertes Restrisiko siehe
+  ADR 0031). Seit Spec [`0383`](../specs/features/0383-modellwahl-je-projekt.md) (ADR
+  [`0143`](../specs/decisions/0143-modellwahl-je-projekt-und-taetigkeit.md)) ist das die
+  **Installationsvorgabe**: sie gilt für Projekte, die in ihren Einstellungen keine eigene Wahl
+  getroffen haben (Datenbankwert `NULL`), und für beide Tätigkeiten gemeinsam. Ein Projekt kann
+  in **Projekteinstellungen → Modellwahl** für die Kategorisierung und die
+  Sehenswürdigkeits-Erkennung je ein eigenes Modell wählen; diese Wahl hat Vorrang.
 - `LANDMARK_MODEL` wählt das **Modell** des eingestellten Providers (Spec
   [`0304`](../specs/features/0304-cloud-modell-je-anbieter-waehlbar.md), ADR
-  [`0059`](../specs/decisions/0059-modellwahl-je-anbieter-und-modellgebundene-kostenschaetzung.md))
-  — wie `LANDMARK_PROVIDER` für beide Cloud-Funktionen gemeinsam und ebenfalls eine reine
-  Betreiber-Entscheidung ohne UI-Feld. **Leer lassen = Voreinstellung des Providers**, also
-  unverändertes Verhalten:
+  [`0059`](../specs/decisions/0059-modellwahl-je-anbieter-und-modellgebundene-kostenschaetzung.md)).
+  Seit Spec [`0383`](../specs/features/0383-modellwahl-je-projekt.md) ist der Wert die
+  **Installationsvorgabe** für Projekte ohne eigene Wahl und damit nur noch der Ausgangspunkt:
+  eine in den Projekteinstellungen gespeicherte Wahl (je Tätigkeit ein Modell) hat Vorrang.
+  **Leer lassen = Voreinstellung des Providers**, also unverändertes Verhalten für alle Projekte
+  mit `NULL`:
 
   | `LANDMARK_PROVIDER` | wählbare `LANDMARK_MODEL`-Werte | Voreinstellung (leer) | Schätzung je Bild |
   |---|---|---|---|
@@ -423,7 +429,21 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
   nur auf künftige Läufe und ist durch Zurücksetzen jederzeit ohne Datenverlust rücknehmbar.
   Ein Modell, das noch nicht in der Auswahl steht, wird über eine Code-Änderung aufgenommen
   (`cloud_vision.py::VISION_MODELS_BY_PROVIDER` samt verifiziertem Preis in `pricing.py`), nicht
-  über diese Variable.
+  über diese Variable. Seit Spec [`0383`](../specs/features/0383-modellwahl-je-projekt.md) steht
+  der Katalog samt Preisen, Token-Preisen, Anfragelimit und Verfügbarkeit zusätzlich in
+  **Projekteinstellungen → Modellwahl** — ein Projekt wählt dort aus genau dieser Liste.
+
+  **Zurück auf die Installationsvorgabe** geht jederzeit, auch in einer Installation ohne
+  Cloud-Schlüssel: die Vorgabe wird als `NULL` gespeichert und braucht weder Schlüssel noch
+  Registry-Eintrag. Ein eigenes Cloud-Modell zu wählen verlangt dagegen einen hinterlegten
+  Schlüssel des Anbieters (`422` sonst) — die Eye-Kategorisierung und der Rückweg auf die Vorgabe
+  bleiben davon unberührt.
+
+  **Modell verschwindet aus der Registry:** Projekte mit eigener Wahl bekommen beim Start einer
+  Klassifizierung `409` mit dem Hinweis, in den Projekteinstellungen ein anderes Modell zu wählen;
+  es gibt **keinen** stillen Rückfall auf `LANDMARK_MODEL`. Nur die Modellwahl dieser Projekte
+  muss angepasst werden — eine neue Betriebseinstellung hier repariert sie nicht. Projekte mit
+  `NULL` folgen weiterhin dieser Vorgabe und damit dem Startfehler oben.
 
   **Umstellung 2026-09-09 (Spec [`0369`](../specs/features/0369-mistral-small-loest-ministral-8b-ab.md)):**
   Der bis dahin an zweiter Stelle stehende `mistral`-Wert ist **nicht mehr wählbar**; an seine

@@ -5,16 +5,19 @@ import {
   createProject,
   deleteProject,
   getClassificationEstimate,
+  getModelChoice,
   getProject,
   getProjectStats,
   listFineLabels,
   listProjects,
+  putModelChoice,
   setCloudVisionConsent,
   setSelectionTarget,
   triggerClassification,
   triggerScan,
   triggerScore,
   type CreateProjectPayload,
+  type ModelChoicePayload,
 } from '../api/projects'
 import type { ClassificationWay, ProjectOut } from '../api/types'
 import { decodeUsername } from '../auth/jwt'
@@ -172,6 +175,39 @@ export function useSetSelectionTargetMutation(id: number) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['project', id] })
       void queryClient.invalidateQueries({ queryKey: ['photos', id] })
+    },
+  })
+}
+
+export function modelChoiceQueryKey(id: number) {
+  return ['model-choice', id] as const
+}
+
+/**
+ * Katalog und gespeicherte Wahl des Projekts (Spec 0383). Eigene Query statt eines Feldes an
+ * `ProjectOut`: der Katalog ist statisch je Installation und aendert sich nie durch einen Lauf -
+ * er wuerde bei jedem `useProjectQuery`-Poll mitgeladen und die Projektliste unnoetig vergroessern.
+ */
+export function useModelChoiceQuery(id: number) {
+  return useQuery({
+    queryKey: modelChoiceQueryKey(id),
+    queryFn: () => getModelChoice(id),
+  })
+}
+
+/**
+ * Setzt die Wahl je Taetigkeit. Invalidiert das Projekt (die wirksame Wahl steht dort), die
+ * Model-Choice-Query selbst (der Server antwortet mit dem neuen Stand) und die Schaetzung: deren
+ * Grundlage haengt an Modell und Weg, der alte Betrag waere sonst weiter sichtbar.
+ */
+export function useUpdateModelChoiceMutation(id: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: ModelChoicePayload) => putModelChoice(id, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: modelChoiceQueryKey(id) })
+      void queryClient.invalidateQueries({ queryKey: ['project', id] })
+      void queryClient.invalidateQueries({ queryKey: ['classification-estimate', id] })
     },
   })
 }

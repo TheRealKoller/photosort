@@ -1,20 +1,26 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router'
+import { generatePath, Link, useLocation } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { ClassificationWay, ProjectOut } from '../api/types'
+import type {
+  ClassificationPath,
+  ClassificationWay,
+  ProjectModelChoiceOut,
+  ProjectOut,
+} from '../api/types'
 import {
   useClassificationEstimateQuery,
   useFineLabelsQuery,
   useTriggerClassificationMutation,
 } from '../hooks/useProjects'
 import { useTriggerConfirmation } from '../hooks/useTriggerConfirmation'
+import { MODEL_CHOICE_TEXTS } from '../utils/classificationReviewLabels'
 import { formatProviderLabel } from '../utils/formatStats'
+import { PROJECT_ROUTE_PATHS } from '../utils/projectRoutes'
 import { deriveStepAction } from '../utils/stepActions'
 import { ClassificationBalance } from './ClassificationBalance'
 import { ClassificationEstimate } from './ClassificationEstimate'
 import { ClassificationProgress } from './ClassificationProgress'
-import { EyeAttribution } from './EyeAttribution'
 import { RerunBlock } from './RerunBlock'
 import { SelectionTargetField } from './SelectionTargetField'
 import { StatusDot } from './StatusDot'
@@ -32,6 +38,59 @@ interface ClassificationSectionProps {
  * Begrenzung eine reine Darstellungsentscheidung gegen Ueberinformation.
  */
 const MAX_FINE_LABELS_SHOWN = 15
+
+/** „Anthropic, claude-haiku-4-5" - Anbieter und Modell in EINER Zeile, wie sie im Projekt steht. */
+function formatActivity(provider: string | null, model: string | null): string {
+  if (provider === null || model === null) {
+    return model ?? 'unbekannt'
+  }
+  return `${formatProviderLabel(provider)}, ${model}`
+}
+
+/**
+ * Der Datenabfluss-Absatz, JE TAETIGKEIT aus der Projektwahl. Bei demselben Anbieter steht er
+ * einmal mit beiden Taetigkeiten; bei Eye-Kategorisierung verlaesst fuer die Kategorisierung kein
+ * Foto den Server. Der lokale Weg fasst niemanden an.
+ */
+function scopeText(
+  way: ClassificationWay | null,
+  effectivePath: ClassificationPath,
+  modelChoice: ProjectModelChoiceOut,
+  consentEnabled: boolean,
+): string {
+  if (way === null) {
+    return 'Noch kein Weg gewählt — was mit den Fotos geschieht, sagt dieser Abschnitt, sobald einer gewählt ist.'
+  }
+  if (effectivePath === 'local') {
+    return 'Dieser Durchlauf läuft vollständig lokal auf diesem Server — kein Foto verlässt ihn.'
+  }
+  const locationSentence =
+    'Trägt ein Foto Standortdaten, geht dabei eine grobe Angabe zum Aufnahmeort mit: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.'
+  const eyeLicence = MODEL_CHOICE_TEXTS.eyeLicenceNotice
+  const categorizesInCloud = modelChoice.category_method === 'cloud'
+  const categoryProvider = categorizesInCloud ? modelChoice.category_provider : null
+  const landmarkProvider = consentEnabled ? modelChoice.landmark_provider : null
+  if (categoryProvider !== null && categoryProvider === landmarkProvider) {
+    return `Dieser Durchlauf sendet Fotos an ${formatProviderLabel(categoryProvider)} — für Kategorie-Vorschläge und die Sehenswürdigkeits-Erkennung. ${locationSentence}`
+  }
+  const parts: string[] = []
+  if (categoryProvider !== null) {
+    parts.push(
+      `Dieser Durchlauf sendet Fotos an ${formatProviderLabel(categoryProvider)} — für Kategorie-Vorschläge. ${locationSentence}`,
+    )
+  } else {
+    parts.push('Für die Kategorisierung verlässt kein Foto diesen Server.')
+  }
+  if (landmarkProvider !== null) {
+    parts.push(
+      `Für die Sehenswürdigkeits-Erkennung sendet er Fotos an ${formatProviderLabel(landmarkProvider)}. ${locationSentence}`,
+    )
+  }
+  if (!categorizesInCloud) {
+    parts.push(eyeLicence)
+  }
+  return parts.join(' ')
+}
 
 /**
  * Die EINE "Klassifizierung"-Section auf KriterienStepPage.tsx. Ersetzt die frueher getrennten
@@ -61,13 +120,15 @@ const MAX_FINE_LABELS_SHOWN = 15
  * drei Detailbloecke (ClassificationEstimate, ClassificationProgress, ClassificationBalance) sind
  * eigene Komponenten.
  *
- * DIE LAUFWAHL (Spec 0609): drei Wege, genau einer, ohne Vorbelegung. Jeder Ausloesevorgang
- * beginnt mit einer bewussten Wahl; nach dem Start faellt sie zurueck auf "nichts gewaehlt".
+ * DIE LAUFWAHL (Spec 0383): zwei Wege, genau einer, ohne Vorbelegung - "wie im Projekt
+ * eingestellt" oder "nur lokal". Cloud und Eye sind keine Anfragewege mehr: welcher Weg
+ * tatsaechlich laeuft, entscheidet `project.model_choice.category_method`, und die Kurzfassung
+ * nennt beide Taetigkeiten mit Modell und Anbieter. Nach dem Start faellt die Wahl zurueck auf
+ * "nichts gewaehlt".
  *
- * Der Eye-Weg erscheint nur, wenn der Server ihn anbietet (`ProjectOut.eye_available`, allein aus
- * `EYE_ENABLED`). Ob der DIENST gerade antwortet, wird hier NICHT geprueft: das machte das Laden
- * der Projektseite von einem Sidecar abhaengig, und die Antwort auf einen toten Dienst gibt es
- * erst beim Ausloesen (503, mit "Erneut versuchen").
+ * Ob der Eye-DIENST gerade antwortet, wird hier NICHT geprueft: das machte das Laden der
+ * Projektseite von einem Sidecar abhaengig, und die Antwort auf einen toten Dienst gibt es erst
+ * beim Ausloesen (503, mit "Erneut versuchen").
  *
  * Im Inhalt steht zu jedem Zeitpunkt GENAU EINER der beiden Zustandsbloecke - Fortschrittsliste
  * ODER Bilanz, nie beide. Das ist die pruefbare Form des Akzeptanzkriteriums "ueberfrachtet die
@@ -95,6 +156,19 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
 
   const consentEnabled = project.cloud_vision_detection_enabled
   const wayGroupName = useId()
+  const modelChoice = project.model_choice
+  // Der WIRKSAME Weg. `null` (noch nichts gewaehlt) faellt auf die Projektwahl - die Ableitung
+  // steht nur an Stellen, die erst nach einer Wahl greifen.
+  const effectivePath: ClassificationPath = way === 'local' ? 'local' : modelChoice.category_method
+  // Die Kurzfassung nennt je Taetigkeit Modell und Anbieter; bei Eye gibt es kein Modell, und
+  // ohne Einwilligung entfaellt die Sehenswuerdigkeits-Erkennung.
+  const categorySummary =
+    modelChoice.category_method === 'eye'
+      ? 'Eye'
+      : formatActivity(modelChoice.category_provider, modelChoice.category_model)
+  const landmarkSummary = consentEnabled
+    ? formatActivity(modelChoice.landmark_provider, modelChoice.landmark_model)
+    : 'entfällt — keine Cloud-Einwilligung'
 
   const scoringRun = project.last_scoring_run
   const run = project.last_criterion_scoring_run
@@ -113,18 +187,17 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
     isTriggerPending,
   })
   const estimate = estimateQuery.data ?? null
-  // Traegt der gewaehlte Weg Kosten? Cloud immer, Eye nur mit Einwilligung (dann laeuft die
+  // Traegt der wirksame Weg Kosten? Cloud immer, Eye nur mit Einwilligung (dann laeuft die
   // Sehenswuerdigkeits-Erkennung mit), lokal nie. Dieselbe Bedingung entscheidet, ob die
   // Sehenswuerdigkeits-Erkennung ueberhaupt stattfindet - eine Wahrheit, zwei Verwendungen.
-  const wayMayCost = way === 'cloud' || (way === 'eye' && consentEnabled)
-  const landmarkParticipates = wayMayCost
+  const wayMayCost = effectivePath === 'cloud' || (effectivePath === 'eye' && consentEnabled)
   // Auslöse-Button bleibt deaktiviert, solange kein Weg gewaehlt ist und - bei einem Weg, der
   // Kosten tragen kann - solange dessen Schaetzung nicht geladen ist (Design-System: "kein
   // Bypass" - keine kostenpflichtige Aktion ohne sichtbare Schaetzung). Ein Fehler beim Laden
   // sperrt ebenfalls: er ist keine Aussage ueber 0 USD.
   // Cloud ohne Einwilligung ist ein Weg, den der Server mit 403 abweist: der Auslöser wird hier
   // gesperrt, statt den Fehlschlag zu provozieren. Eye und lokal sind davon unberuehrt.
-  const cloudBlocked = way === 'cloud' && !consentEnabled
+  const cloudBlocked = effectivePath === 'cloud' && !consentEnabled
   const isTriggerDisabled =
     isBusy ||
     scoringRun === null ||
@@ -174,7 +247,6 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
   // des Servers: ein Wiederholungsknopf luede zu einem zweiten identischen Fehlschlag ein.
   const triggerRetry = triggerError?.status === 503 ? handleTrigger : undefined
 
-  const providerLabel = estimate ? formatProviderLabel(estimate.provider) : ''
   // Die Serverreihenfolge (photo_count absteigend, Tie-Break canonical_key) wird uebernommen und
   // nur am Ende gekuerzt - die seltensten Eintraege fallen weg, nicht die haeufigsten.
   const shownFineLabels = (fineLabelsQuery.data ?? []).slice(0, MAX_FINE_LABELS_SHOWN)
@@ -187,9 +259,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
      beschriebe. */
   const estimateBlock = way !== null && (
     <>
-      {estimateQuery.isSuccess && estimate && (
-        <ClassificationEstimate estimate={estimate} landmarkParticipates={landmarkParticipates} />
-      )}
+      {estimateQuery.isSuccess && estimate && <ClassificationEstimate estimate={estimate} />}
       {estimateQuery.isPending && <p className="text-sm text-text">Kostenvorschau wird geladen…</p>}
       {estimateQuery.isError && (
         <Alert onRetry={() => void estimateQuery.refetch()}>
@@ -235,94 +305,70 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
       )}
       {/* Zustandsabhaengige Datenschutz-Aussage: die frueher absolute Formulierung "laeuft
           vollstaendig lokal auf diesem Server" war unwahr, sobald die Cloud-Bilderkennung
-          freigegeben war. Sie gilt jetzt genau dann, wenn sie zutrifft.
+          freigegeben war. Seit Spec 0383 nennt sie die Anbieter JE TAETIGKEIT aus
+          `project.model_choice` - bei demselben Anbieter einmal, mit beiden Taetigkeiten.
 
           An DIESEM Text haengt die Einwilligung (Spec 0469, S7). Seit ADR 0106 geht mit dem Foto
           eine grobe Ortsangabe hinaus, und der Satz muss sie nennen - beide Stufen, und dass Fotos
-          ohne Standortdaten nicht betroffen sind. Bliebe er bei "sendet Fotos", waere die
-          Einwilligung fuer diese Datenklasse an einer Beschreibung erteilt, die sie nicht nennt.
-          Der lokale Durchlauf behaelt seinen Satz unveraendert - dort geht nichts hinaus. */}
+          ohne Standortdaten nicht betroffen sind. */}
       <p className="text-sm text-text" data-testid="classification-scope-text">
-        {way === null
-          ? 'Noch kein Weg gewählt — was mit den Fotos geschieht, sagt dieser Abschnitt, sobald einer gewählt ist.'
-          : way === 'cloud'
-            ? `Dieser Durchlauf sendet Fotos an ${providerLabel || 'den Cloud-Anbieter'} — für Kategorie-Vorschläge und die Sehenswürdigkeits-Erkennung. Trägt ein Foto Standortdaten, geht dabei eine grobe Angabe zum Aufnahmeort mit: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.`
-            : way === 'eye'
-              ? `Dieser Durchlauf beurteilt Motivstärken, Dokumentausschluss, Albumtauglichkeit und Feinlabels auf diesem Server — kein Foto verlässt ihn.${
-                  consentEnabled
-                    ? ' Für die Sehenswürdigkeits-Erkennung geht mit dem Foto eine grobe Ortsangabe an den Cloud-Anbieter: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.'
-                    : ''
-                } Eye sendet bei jedem Lauf eine Lizenzmeldung mit einer Zählkennung, aber ohne Bildinhalte an Desert Ant Labs; diese Meldung lässt sich nicht abschalten.`
-              : 'Dieser Durchlauf läuft vollständig lokal auf diesem Server — kein Foto verlässt ihn.'}
+        {scopeText(way, effectivePath, modelChoice, consentEnabled)}
       </p>
 
       {/* DIE LAUFWAHL. Ein echtes `fieldset` mit `legend`, weil die Gruppe eine Frage stellt
-          ("Weg für diesen Durchlauf") und die Zeilen nur gemeinsam Sinn ergeben; Radios in einem
-          `div` sind fuer Screenreader drei unabhaengige Schalter.
+          ("Weg für diesen Durchlauf") und die Zeilen nur gemeinsam Sinn ergeben. GENAU ZWEI
+          Zeilen: "wie im Projekt eingestellt" und "nur lokal" - Cloud und Eye sind Ergebnisse
+          der Projektwahl, keine Anfragewege mehr (Spec 0383).
 
-          Ganze Zeile anklickbar (`<label>`), Mindesthoehe 44 px (`min-h-11`) - die Trefferflaeche
-          ist die Zeile, nicht der 16-px-Kreis. `disabled` am Fieldset sperrt waehrend eines Laufs
-          alle Optionen in EINEM Attribut; einzelne `disabled`-Attribute an den Radios liessen
-          sich vergessen.
-
-          KEINE Vorbelegung: `way === null` ist der Anfangszustand jeder Sitzung. */}
+          Ganze Zeile anklickbar (`<label>`), Mindesthoehe 44 px (`min-h-11`). Der Link in die
+          Einstellungen steht AUSSERHALB des `<label>`: innerhalb setzte ein Klick zusaetzlich
+          die Wahl. KEINE Vorbelegung: `way === null` ist der Anfangszustand jeder Sitzung. */}
       <fieldset
         className="flex w-full max-w-sm flex-col gap-2"
         disabled={isBusy}
         data-testid="classification-way-fieldset"
       >
         <legend className="text-sm font-medium text-text-h">Weg für diesen Durchlauf</legend>
-        {(
-          [
-            {
-              id: 'cloud',
-              label: 'Cloud',
-              meta: `Fotos an ${providerLabel || 'den Cloud-Anbieter'} · Abrechnung nach Verbrauch`,
-              available: true,
-            },
-            {
-              id: 'eye',
-              label: 'Eye',
-              meta: consentEnabled
-                ? 'Bleibt auf diesem Server · kostenfrei — abgerechnet wird nur die Sehenswürdigkeits-Erkennung'
-                : 'Bleibt auf diesem Server · kostenfrei',
-              available: project.eye_available,
-            },
-            {
-              id: 'local',
-              label: 'Nur lokal',
-              meta: 'Bleibt auf diesem Server · kostenfrei',
-              available: true,
-            },
-          ] as const
-        )
-          .filter((option) => option.available)
-          .map((option) => (
-            <label
-              key={option.id}
-              className="flex min-h-11 w-full cursor-pointer flex-col justify-center gap-1 rounded-sm border border-border px-3 py-2 has-[:checked]:border-accent"
-            >
-              <span className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name={wayGroupName}
-                  value={option.id}
-                  checked={way === option.id}
-                  onChange={() => setWay(option.id)}
-                  className="size-4 accent-accent"
-                />
-                <span className="text-sm font-medium text-text-h">{option.label}</span>
-              </span>
-              {/* Die Nebenangabe ist KEIN zusaetzlicher Inhalt, sondern die Begruendung der Wahl:
-                  sie sagt in einem Halbsatz, was der Weg kostet und wohin er geht. */}
-              <span className="pl-6 text-xs text-text-muted">{option.meta}</span>
-              {option.id === 'eye' && (
-                <span className="pl-6">
-                  <EyeAttribution />
-                </span>
-              )}
-            </label>
-          ))}
+        <label className="flex min-h-11 w-full cursor-pointer flex-col justify-center gap-1 rounded-sm border border-border px-3 py-2 has-[:checked]:border-accent">
+          <span className="flex items-center gap-2">
+            <input
+              type="radio"
+              name={wayGroupName}
+              value="project"
+              checked={way === 'project'}
+              onChange={() => setWay('project')}
+              className="size-4 accent-accent"
+            />
+            <span className="text-sm font-medium text-text-h">Wie im Projekt eingestellt</span>
+          </span>
+          {/* Die Nebenangabe ist die Begruendung der Wahl: sie sagt in einem Halbsatz, welche
+              Modelle laufen und wohin die Fotos gehen. */}
+          <span className="pl-6 text-xs break-words text-text-muted" data-testid="way-project-meta">
+            Kategorisierung: {categorySummary} · Sehenswürdigkeits-Erkennung: {landmarkSummary}
+          </span>
+        </label>
+        <Link
+          className="pl-6 text-xs text-accent-strong underline-offset-4 hover:underline"
+          to={generatePath(PROJECT_ROUTE_PATHS.settings, { projectId: String(project.id) })}
+        >
+          In den Projekteinstellungen ändern
+        </Link>
+        <label className="flex min-h-11 w-full cursor-pointer flex-col justify-center gap-1 rounded-sm border border-border px-3 py-2 has-[:checked]:border-accent">
+          <span className="flex items-center gap-2">
+            <input
+              type="radio"
+              name={wayGroupName}
+              value="local"
+              checked={way === 'local'}
+              onChange={() => setWay('local')}
+              className="size-4 accent-accent"
+            />
+            <span className="text-sm font-medium text-text-h">Nur lokal</span>
+          </span>
+          <span className="pl-6 text-xs text-text-muted">
+            Bleibt auf diesem Server · kostenfrei
+          </span>
+        </label>
       </fieldset>
 
       {!consentEnabled && (

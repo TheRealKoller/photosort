@@ -26,7 +26,13 @@ from photosort.config import settings
 from photosort.criteria import LANDMARK_CANDIDATE_CRITERION_KEYS, is_landmark_candidate
 from photosort.duplicates import has_open_suggestion, survives_ausschuss
 from photosort.eye_client import eye_service_is_healthy
+from photosort.model_choice import (
+    UnknownModelChoiceError,
+    describe_model_choice,
+    resolve_model_choice,
+)
 from photosort.models import (
+    CategoryMethod,
     ClassificationMode,
     ClassificationPhase,
     ClassificationReview,
@@ -67,6 +73,14 @@ from photosort.worker import rebuild_run_selection
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"], dependencies=[Depends(get_current_user)])
+
+# Spec 0383: ein gespeichertes Modell, das nicht mehr in der Registry steht, ist ein 409 - es
+# gibt keinen Rueckfall auf die Installationsvorgabe (ADR 0143 Punkt 2). Woertlich an jeder
+# Stelle derselbe Satz, damit die Oberflaeche ihn nicht je Endpunkt anders erklaeren muss.
+MODEL_CHOICE_UNAVAILABLE_DETAIL = (
+    "Das im Projekt eingestellte Modell ist nicht mehr wählbar. "
+    "Wähle in den Projekteinstellungen ein anderes."
+)
 
 
 class ProjectCreate(BaseModel):
@@ -236,8 +250,10 @@ class CriterionScoringRunSummary(BaseModel):
 
 
 class ClassificationEstimatePartOut(BaseModel):
-    """Ein einzelner Cloud-Anteil der Vorab-Schätzung - Kategorie-Vorschläge bzw.
-    Sehenswürdigkeits-Erkennung.
+    """Eine STATTFINDENDE Tätigkeit der Vorab-Schätzung, mit ihrer EIGENEN Grundlage.
+
+    `kind="eye"` trägt `provider`/`model` `None` und Preis und Betrag `0.0` - Eye ist
+    kostenfrei, unabhängig von der Fotoanzahl.
 
     `candidate_count is None` heisst "dieser Anteil ist nicht verlaesslich schaetzbar", NIE
     "null Fotos". Der Fall tritt beim Landmark-Anteil vor dem ersten erfolgreichen Durchlauf
@@ -248,45 +264,35 @@ class ClassificationEstimatePartOut(BaseModel):
     `estimated_cost_usd is None` heisst "kein Preis hinterlegt ODER Anteil nicht schaetzbar" -
     dieselbe "`null` heißt unbekannt, nie kostenlos"-Linie wie bei `price_per_image_usd`."""
 
+    kind: Literal["cloud", "eye"]
+    provider: str | None
+    model: str | None
+    price_per_image_usd: float | None
     candidate_count: int | None
     estimated_cost_usd: float | None
 
 
 class ClassificationEstimateOut(BaseModel):
-    """Die Schätzung deckt ALLE Cloud-Anteile ab, die die Checkbox freigibt, nicht nur die
-    Kategorie-Klassifizierung. Sie funktioniert unabhängig vom Consent-Schalter (auch bei
-    deaktiviertem Consent 200, kein 403) - die Kosten sollen VOR einer Consent-Entscheidung
-    sichtbar sein.
+    """Die Schätzung JE TÄTIGKEIT: `categorization` und `landmark`.
 
-    Die beiden Anteile sind eigene Objekte mit Fotoanzahl UND Betrag; kein Client leitet einen
-    Betrag selbst ab, sonst entstuende ein zweiter Weg zu derselben Zahl ohne `null`-Semantik.
+    Ein Anteil ist `null`, wenn die Tätigkeit nicht stattfindet - unterscheidbar von einem
+    stattfindenden Anteil mit `estimated_cost_usd is None` ("Betrag unbekannt"). Kein Client
+    leitet einen Betrag selbst ab, sonst entstuende ein zweiter Weg zu derselben Zahl ohne
+    `null`-Semantik.
 
     `candidate_count` ist die Summe der BEKANNTEN Anteile und damit bei unbekanntem
     Landmark-Anteil ausdruecklich eine UNTERE SCHRANKE. Sie faellt nicht auf `null`: sonst saehe
     der Nutzer vor seinem ersten Durchlauf ueberhaupt keinen Betrag mehr, obwohl der
     Kategorie-Anteil bekannt ist.
 
-    `mode` sagt, WORAUF sich die Antwort bezieht (S7): beim Weg `eye` bzw. `local` sind die nicht
-    stattfindenden Anteile `null`/`null` - nie `0.0`, das "kostenlos" behauptete, wo in Wahrheit
-    nichts gezaehlt wurde. Die Vorgabe `cloud` dieses LESEPfads existiert nur hier; der Laufpfad
-    kennt keine Vorgabe."""
+    `mode` sagt, WORAUF sich die Antwort bezieht: `project` = wie im Projekt eingestellt
+    (`resolve_model_choice`), `local` = nur lokal, beide Anteile `null`. Die Summe ist dann
+    `0.0` - sie beschreibt einen Preis, keine Buchfuehrung."""
 
+    mode: Literal["project", "local"]
     candidate_count: int
-    mode: Literal["cloud", "eye", "local"]
-    remote_categories: ClassificationEstimatePartOut
-    landmark: ClassificationEstimatePartOut
-    provider: str
-    # Die Antwort sagt selbst, WORAUF sich die Schätzung bezieht: da die Modellwahl eine
-    # Betriebseinstellung ist, benennt `provider` allein die Preisgrundlage nicht eindeutig.
-    # Feldname `model` und nicht `model_id`: pydantic v2 schützt den Namensraum `model_` und
-    # würde bei `model_id` warnen.
-    model: str
-    # `| None` heißt "für das eingestellte Modell ist kein Preis hinterlegt", nie ein stilles
-    # `0.0` (dieselbe Semantik wie `pricing.py::compute_cost_usd`). Die Oberfläche weist diesen
-    # Fall an der Schätzung als fehlende Kostenangabe aus, statt einen falschen Betrag zu zeigen.
-    # Der Normalfall bleibt ein Betrag: dass jedes wählbare Modell einen Preis hat, ist per
-    # Invariantentest erzwungen (tests/test_pricing.py).
-    price_per_image_usd: float | None
+    categorization: ClassificationEstimatePartOut | None
+    landmark: ClassificationEstimatePartOut | None
     estimated_cost_usd: float | None
 
 
@@ -305,17 +311,45 @@ class ClassifyRequest(BaseModel):
     der Server einen zwischenzeitlichen Re-Scan/Re-Scoring als 409 ablehnen kann, statt auf
     einem veralteten cluster_key-Stand weiterzuarbeiten.
 
-    `mode` ist der Weg dieses Durchlaufs und ersetzt die fruehere `use_cloud`-Checkbox (Spec
-    0609, S5). Kein Vorgabewert: ein fehlendes Feld ist eine `422` und kein stiller Rueckfall auf
-    einen Weg, den der Client nie genannt hat - ein unbekannter Wert ebenso, deshalb `Literal` und
-    kein freier String.
+    `mode` ist seit Spec 0383 nur noch die Entscheidung "wie im Projekt eingestellt" oder "nur
+    lokal" - `cloud`/`eye` sind keine Wege der Anfrage mehr, sondern Ergebnisse der im Projekt
+    gespeicherten Wahl (ADR 0143). Kein Vorgabewert: ein fehlendes Feld ist eine `422` und kein
+    stiller Rueckfall auf einen Weg, den der Client nie genannt hat - ein unbekannter Wert ebenso,
+    deshalb `Literal` und kein freier String.
 
-    `mode=cloud` erteilt KEINE Einwilligung - die bleibt ausschliesslich
-    `PUT .../cloud-vision-consent` - sondern entscheidet nur, ob die vorhandene Einwilligung fuer
-    genau diesen Lauf genutzt wird."""
+    Die Anfrage erteilt KEINE Einwilligung - die bleibt ausschliesslich
+    `PUT .../cloud-vision-consent` - und waehlt auch kein Modell: beides steht im Projekt."""
 
     scoring_run_id: int
-    mode: Literal["cloud", "eye", "local"]
+    mode: Literal["project", "local"]
+
+
+class ProjectModelChoiceOut(BaseModel):
+    """Die wirksame Wahl des Projekts im Projekt-Datensatz (Spec 0383, API-Punkt 3).
+
+    Fuenf Felder, KEIN `*_is_default`: die Herkunft ("Installationsvorgabe" vs. ausdruecklich
+    gespeichert) braucht nur die Einstellungsseite, und die liest `GET …/model-choice`.
+    `provider` ist `None` bei Eye und bei einem Modell, das nicht mehr in der Registry steht -
+    der Lesepfad zeigt, er wirft nicht."""
+
+    category_method: CategoryMethod
+    category_provider: str | None
+    category_model: str | None
+    landmark_provider: str | None
+    landmark_model: str
+
+
+def _project_model_choice_out(project: Project) -> ProjectModelChoiceOut:
+    """Aus derselben Aufloesung wie Schaetzung und Ausloeser (`photosort.model_choice`), nur auf
+    dem Lesepfad ohne Werfen - ein entferntes Modell erscheint als ID mit `provider: null`."""
+    choice = describe_model_choice(project)
+    return ProjectModelChoiceOut(
+        category_method=choice.category_method,
+        category_provider=choice.category_provider,
+        category_model=choice.category_model,
+        landmark_provider=choice.landmark_provider,
+        landmark_model=choice.landmark_model,
+    )
 
 
 class ProjectOut(BaseModel):
@@ -337,11 +371,11 @@ class ProjectOut(BaseModel):
     # exponiert, damit das Frontend-Verfügbarkeitsgate proaktiv aus den ohnehin geladenen
     # Projektdaten dieser Seite ableitbar ist, statt erst nach einem fehlgeschlagenen 403.
     category_selection_enabled: bool
-    # Der Eye-Schalter (`EYE_ENABLED`) - die dritte Laufwahl erscheint nur, wenn er an ist. Er
-    # kommt ALLEIN aus den Settings und nie aus einer Lebendpruefung des Dienstes: sonst wuerde
-    # das Laden der Projektliste zu einer Erreichbarkeitssonde, und ein kurz nicht antwortender
-    # Sidecar liesse die Wahl aus der Oberflaeche verschwinden.
-    eye_available: bool
+    # Die WIRKSAME Modellwahl des Projekts, gebaut ueber `describe_model_choice` (ADR 0143).
+    # Sie ersetzt das fruehere `eye_available`: die Verfuegbarkeit beider Methoden liefert
+    # `GET …/model-choice`, hier steht das, was der naechste Lauf tatsaechlich aufruft. Der
+    # Lesepfad wirft NICHT - ein entferntes Modell erscheint als ID mit `provider: null`.
+    model_choice: ProjectModelChoiceOut
     # Projektweiter Einwilligungs-Schalter für produktive Cloud-Vision-Datenflüsse; er gated
     # BEIDE Cloud-Anteile. Hier statt in einem eigenen GET exponiert, damit ProjectSettingsPage
     # den Zustand aus den bereits geladenen Projektdaten lesen kann.
@@ -643,26 +677,64 @@ async def _has_successful_classification_run(session: AsyncSession, project_id: 
 
 
 def _estimate_part(
-    candidate_count: int | None, price_per_image_usd: float | None
+    *,
+    kind: Literal["cloud", "eye"],
+    provider: str | None,
+    model: str | None,
+    price_per_image_usd: float | None,
+    candidate_count: int | None,
 ) -> ClassificationEstimatePartOut:
-    """Ein Anteil der Vorab-Schaetzung. Die ZWEIGREIHENFOLGE ist die Aussage und dieselbe wie
-    für die Gesamtsumme, ergänzt um einen dritten Fall:
+    """Ein STATTFINDENDER Anteil der Vorab-Schaetzung. Die ZWEIGREIHENFOLGE ist die Aussage:
 
     1. Anteil unbekannt (`candidate_count is None`) -> Betrag `None`. Ueber eine unbekannte Menge
        laesst sich nichts sagen, auch nicht mit einem bekannten Preis.
     2. Null Kandidaten -> `0.0`. Der Betrag ist hier BEKANNT (es faellt nichts an, weil nichts
        verarbeitet wird), selbst wenn der Preis je Bild unbekannt ist.
     3. Kein Preis hinterlegt -> `None`, nie ein stilles `0.0`.
-    """
+
+    Eye braucht keinen dieser Zweige: ohne Modell, ohne Anbieter, kostenfrei - der Betrag ist
+    `0.0` auch bei unbekannter Anzahl, weil Eye nichts kostet."""
+    if kind == "eye":
+        return ClassificationEstimatePartOut(
+            kind="eye",
+            provider=None,
+            model=None,
+            price_per_image_usd=0.0,
+            candidate_count=candidate_count,
+            estimated_cost_usd=0.0,
+        )
     if candidate_count is None:
-        return ClassificationEstimatePartOut(candidate_count=None, estimated_cost_usd=None)
+        return ClassificationEstimatePartOut(
+            kind="cloud",
+            provider=provider,
+            model=model,
+            price_per_image_usd=price_per_image_usd,
+            candidate_count=None,
+            estimated_cost_usd=None,
+        )
     if candidate_count == 0:
-        return ClassificationEstimatePartOut(candidate_count=0, estimated_cost_usd=0.0)
+        return ClassificationEstimatePartOut(
+            kind="cloud",
+            provider=provider,
+            model=model,
+            price_per_image_usd=price_per_image_usd,
+            candidate_count=0,
+            estimated_cost_usd=0.0,
+        )
     if price_per_image_usd is None:
         return ClassificationEstimatePartOut(
-            candidate_count=candidate_count, estimated_cost_usd=None
+            kind="cloud",
+            provider=provider,
+            model=model,
+            price_per_image_usd=None,
+            candidate_count=candidate_count,
+            estimated_cost_usd=None,
         )
     return ClassificationEstimatePartOut(
+        kind="cloud",
+        provider=provider,
+        model=model,
+        price_per_image_usd=price_per_image_usd,
         candidate_count=candidate_count,
         estimated_cost_usd=candidate_count * price_per_image_usd,
     )
@@ -759,6 +831,22 @@ async def _count_landmark_candidates(session: AsyncSession, project_id: int) -> 
     return sum(1 for values in values_by_photo.values() if is_landmark_candidate(values))
 
 
+async def _count_eye_candidates(session: AsyncSession, project_id: int) -> int:
+    """Die Kandidatenmenge der Eye-Phase: Ausschuss-Überlebende mit Bewertungszeile.
+
+    Dieselbe Bedingung wie `worker.py::_run_eye_phase`, als eigenstaendige kleine Query HIER
+    dupliziert - dieselbe Begruendung wie bei `_count_remote_category_candidates`: die
+    API-Schicht importiert worker.py nicht. Eine Schaetzung, die eine andere Menge zaehlt als
+    der Lauf, waere eine falsche Grundlage."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(Photo)
+        .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+        .where(Photo.project_id == project_id, survives_ausschuss())
+    )
+    return result.scalar_one()
+
+
 async def _to_project_out(
     session: AsyncSession, project: Project, aggregate: PhotoAggregate
 ) -> ProjectOut:
@@ -788,7 +876,7 @@ async def _to_project_out(
             ExportRunSummary.model_validate(export_run) if export_run is not None else None
         ),
         category_selection_enabled=settings.category_selection_enabled,
-        eye_available=settings.eye_enabled,
+        model_choice=_project_model_choice_out(project),
         cloud_vision_detection_enabled=project.cloud_vision_detection_enabled,
         cloud_vision_consent_at=project.cloud_vision_consent_at,
         selection_target=project.selection_target,
@@ -1094,29 +1182,33 @@ async def trigger_classify(
     enqueuer: JobEnqueuer = Depends(get_job_enqueuer),
 ) -> dict[str, str]:
     """Der EINE Auslöser der Klassifizierung. Der ausgelöste Job verkettet den gewaehlten Weg mit
-    der Kriterien- und der Rangfolge-Phase (worker.py::run_classification).
+    der Kriterien- und der Rangfolge-Phase (worker.py: run_classification).
 
-    Die REIHENFOLGE der Ablehnungen ist Teil der Zusage (Spec 0609, S5) - jede Zeile hier hat
-    einen Grund, genau an dieser Stelle zu stehen:
+    Die REIHENFOLGE der Ablehnungen ist Teil der Zusage (Spec 0609 S5, Spec 0383 API-Punkt 4) -
+    jede Zeile hier hat einen Grund, genau an dieser Stelle zu stehen:
 
     1. `403`, wenn das Feature-Flag aus ist.
-    2. `403`, wenn `mode=eye` angefragt wird und `EYE_ENABLED` aus ist - VOR jedem Projektzugriff,
-       damit die Antwort nichts ueber die Existenz eines Projekts verraet und der Ausloeser ohne
-       Datenbankzugriff ablehnen kann. Eigenes `detail`, unterscheidbar vom Consent-`403`.
-    3. `404` bei unbekanntem Projekt.
-    4. die drei `409` wie bisher (kein erfolgreicher ScoringRun, Gate nicht bestaetigt, veralteter
+    2. `404` bei unbekanntem Projekt - VOR allem, was vom Projekt abhaengt, denn ohne Projekt
+       gibt es weder eine wirksame Wahl noch eine Einwilligung zu pruefen.
+    3. die drei `409` wie bisher (kein erfolgreicher ScoringRun, Gate nicht bestaetigt, veralteter
        `scoring_run_id`-Bezug).
-    5. `403`, wenn `mode=cloud` ohne projektweite Einwilligung angefragt wird - ein Client, der
-       Cloud-Verarbeitung ohne Einwilligung anfordert, soll das erfahren, statt still auf einen
-       anderen Weg zu fallen.
-    6. `503`, wenn `mode=eye` und der Dienst nicht gesund antwortet - INNERHALB der Anfrage, und
-       zwar bevor ein Job eingereiht wird: ein eingereihter Job scheiterte garantiert, und ein
-       stiller Rueckfall auf einen anderen Weg waere schlimmer als die sichtbare Ablehnung.
+    4. `409`, wenn die im Projekt gespeicherte Wahl nicht mehr auflösbar ist
+       (`MODEL_CHOICE_UNAVAILABLE_DETAIL`) - es gibt keinen Rueckfall auf die
+       Installationsvorgabe, auch nicht fuer diesen einen Lauf.
+    5. `403`, wenn die WIRKSAME Wahl Eye ist und `EYE_ENABLED` aus ist.
+    6. `403`, wenn die WIRKSAME Wahl Cloud ist und die projektweite Einwilligung fehlt - mit
+       Hinweis auf die Projekteinstellungen. Ein Client, der Cloud-Verarbeitung ohne Einwilligung
+       anfordert, soll das erfahren, statt still auf einen anderen Weg zu fallen.
+    7. `503`, wenn die WIRKSAME Wahl Eye ist und der Dienst nicht gesund antwortet - INNERHALB
+       der Anfrage, und zwar bevor ein Job eingereiht wird: ein eingereihter Job scheiterte
+       garantiert, und ein stiller Rueckfall auf einen anderen Weg waere schlimmer als die
+       sichtbare Ablehnung.
 
-    Die Pruefung in Punkt 5/6 ist die sprechende Frueh-Rueckmeldung, NICHT das Sicherheitsnetz:
-    das eigentliche Cloud-Gate ist die Konjunktion `mode=cloud and
-    project.cloud_vision_detection_enabled` im Worker unmittelbar vor der Client-Konstruktion, und
-    ein Dienst, der WAEHREND des Laufs wegbricht, laesst den Lauf `FAILED` enden.
+    "Wirksam" heisst: `mode=local` ist der lokale Weg, sonst entscheidet `resolve_model_choice`.
+    Die Pruefung in Punkt 6/7 ist die sprechende Frueh-Rueckmeldung, NICHT das Sicherheitsnetz:
+    das eigentliche Cloud-Gate ist die Konjunktion im Worker unmittelbar vor der
+    Client-Konstruktion, und ein Dienst, der WAEHREND des Laufs wegbricht, laesst den Lauf
+    `FAILED` enden.
 
     Legt selbst KEINE CriterionScoringRun-Zeile an - das erledigt der Job beim tatsaechlichen
     Start (run_classification in worker.py), identisches Muster wie trigger_scan/trigger_score."""
@@ -1124,11 +1216,6 @@ async def trigger_classify(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Diese Funktion ist derzeit nicht aktiviert.",
-        )
-    if payload.mode == "eye" and not settings.eye_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Die Eye-Auswertung ist nicht aktiviert.",
         )
 
     project = await _get_project_or_404(project_id, session)
@@ -1150,12 +1237,33 @@ async def trigger_classify(
             detail="Der Ausschuss wurde zwischenzeitlich neu ermittelt (Re-Scan/Re-Scoring) - "
             "lade das Projekt neu und starte die Klassifizierung erneut.",
         )
-    if payload.mode == "cloud" and not project.cloud_vision_detection_enabled:
+
+    # Genau EINE Aufloesung je Anfrage: sie bestimmt Weg, Modelle, Anbieter und die Grundlage der
+    # Schaetzung - "angezeigt = aufgerufen = abgerechnet" per Bau (ADR 0143).
+    try:
+        resolved = resolve_model_choice(project)
+    except UnknownModelChoiceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=MODEL_CHOICE_UNAVAILABLE_DETAIL,
+        ) from error
+
+    path: Literal["cloud", "eye", "local"] = (
+        "local" if payload.mode == "local" else resolved.category_method.value
+    )
+
+    if path == "eye" and not settings.eye_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cloud-Bilderkennung ist fuer dieses Projekt nicht aktiviert.",
+            detail="Die Eye-Auswertung ist nicht aktiviert.",
         )
-    if payload.mode == "eye" and not await eye_service_is_healthy():
+    if path == "cloud" and not project.cloud_vision_detection_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cloud-Bilderkennung ist fuer dieses Projekt nicht aktiviert. Aktiviere sie "
+            "in den Projekteinstellungen.",
+        )
+    if path == "eye" and not await eye_service_is_healthy():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Die Eye-Auswertung ist derzeit nicht erreichbar. Der Lauf wurde nicht "
@@ -1174,24 +1282,28 @@ async def trigger_classify(
     # NUR MIT CLOUD-KONTAKT wird eine Schaetzung eingefroren (ADR 0138 Punkt 7): findet kein
     # Cloud-Aufruf statt, speichert der Lauf `NULL` - "keine Schaetzung", nicht "0 USD geschaetzt".
     # Die ANTWORT von `GET .../classify/estimate` bleibt davon unberuehrt und nennt fuer den
-    # kostenfreien Weg weiterhin `0.0` (S7); `0.0` als gespeicherte Laufschaetzung behauptete
-    # dagegen eine Rechnung, die niemand erwartet.
-    cloud_contact = payload.mode == "cloud" or (
-        payload.mode == "eye" and project.cloud_vision_detection_enabled
+    # kostenfreien Weg weiterhin `0.0` (S7).
+    estimate = await _build_classification_estimate(
+        session, project, mode="local" if payload.mode == "local" else "project"
     )
-    estimate = await _build_classification_estimate(session, project, mode=payload.mode)
+    cloud_contact = (
+        estimate.categorization is not None and estimate.categorization.kind == "cloud"
+    ) or estimate.landmark is not None
     estimated_cost_usd = estimate.estimated_cost_usd if cloud_contact else None
 
-    # `use_cloud` bleibt der vierte Positionsparameter des Jobs; `mode` faehrt als Schluesselwort
-    # mit (S6). Ein alter Worker kennt den Parameter nicht und verwirft den Job sichtbar mit
-    # `TypeError` - er liest `"eye"` also nie als Cloud-Freigabe.
+    # `use_cloud` bleibt der vierte Positionsparameter des Jobs und ist genau beim wirksamen
+    # Cloud-Weg `True`; `mode` faehrt als Schluesselwort mit (S6). Die aufgeloesten Modelle
+    # fahren mit, damit der Job nicht erneut raten muss. Ein alter Worker kennt die
+    # Schluesselwoerter nicht und verwirft den Job sichtbar mit `TypeError`.
     await enqueuer.enqueue_job(
         "classify",
         project_id,
         payload.scoring_run_id,
-        payload.mode == "cloud",
+        path == "cloud",
         estimated_cost_usd,
-        mode=payload.mode,
+        mode=path,
+        category_model=resolved.category_model,
+        landmark_model=resolved.landmark_model,
     )
     return {"status": "queued"}
 
@@ -1227,7 +1339,12 @@ async def set_cloud_vision_consent(
     )
 
 
-async def _reject_while_a_criterion_run_is_active(session: AsyncSession, project_id: int) -> None:
+async def _reject_while_a_criterion_run_is_active(
+    session: AsyncSession,
+    project_id: int,
+    *,
+    afterwards: str = "Der Richtwert kann danach gesetzt werden.",
+) -> None:
     """`409`, solange der Kriterien-Lauf dieses Projekts laeuft.
 
     ENGER als `api/cameras.py::_reject_while_a_run_is_active`, das auch den Scan erfasst: nur
@@ -1241,7 +1358,10 @@ async def _reject_while_a_criterion_run_is_active(session: AsyncSession, project
 
     Geprueft wird nur der NEUESTE Lauf (Muster `delete_project`), damit ein haengengebliebener
     Altlauf nicht dauerhaft blockiert - ein solcher wird ohnehin vom Watchdog auf FAILED
-    gesetzt."""
+    gesetzt.
+
+    `afterwards` ist der Nachsatz, der dem Nutzer sagt, WAS danach moeglich ist - der Richtwert
+    oder (Spec 0383) die Modellwahl. Der Statuscode und der erste Satz bleiben wortgleich."""
     latest = (
         (
             await session.execute(
@@ -1257,8 +1377,7 @@ async def _reject_while_a_criterion_run_is_active(session: AsyncSession, project
     if latest == ScanStatus.RUNNING:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Fuer dieses Projekt laeuft gerade eine Klassifizierung. Der Richtwert "
-            "kann danach gesetzt werden.",
+            detail="Fuer dieses Projekt laeuft gerade eine Klassifizierung. " + afterwards,
         )
 
 
@@ -1295,32 +1414,40 @@ async def set_selection_target(
 @router.get("/{project_id}/classify/estimate", response_model=ClassificationEstimateOut)
 async def estimate_classification(
     project_id: int,
-    mode: Literal["cloud", "eye", "local"] = "cloud",
+    mode: Literal["project", "local"] = "project",
     session: AsyncSession = Depends(get_session),
 ) -> ClassificationEstimateOut:
-    """Die Vorab-Kostenschätzung des Klassifizierungslaufs, JE WEG (`?mode=`).
+    """Die Vorab-Kostenschätzung des Klassifizierungslaufs, JE MODUS (`?mode=`).
 
-    Cloud schaetzt beide Cloud-Anteile, Eye nur den Landmark-Anteil (und nur mit Einwilligung),
-    lokal keinen. Nicht stattfindende Anteile sind `null`/`null`, nie `0.0` (S7) - die Summe ist
-    dann `0.0`, und die Oberflaeche schreibt dort das Wort "kostenfrei".
+    `project` schaetzt die beiden Tätigkeiten der Projektwahl (Kategorisierung nach
+    `category_method`, Sehenswürdigkeits-Erkennung bei projektweiter Einwilligung), `local`
+    keine. Ein nicht stattfindender Anteil ist `null`, nie ein Objekt mit `0.0` (S7) - die Summe
+    ist dann `0.0`, und die Oberflaeche schreibt dort das Wort "kostenfrei".
 
-    Die Vorgabe `cloud` gibt es NUR auf diesem Lesepfad: sie ist die Fortschreibung des bisherigen
-    Verhaltens fuer Clients, die noch ohne `mode` fragen. Der Laufpfad daneben kennt keine
-    Vorgabe (S5).
+    Die Vorgabe `project` gibt es NUR auf diesem Lesepfad: sie ist die Fortschreibung des
+    bisherigen Verhaltens fuer Clients, die noch ohne `mode` fragen. Der Laufpfad daneben kennt
+    keine Vorgabe (S5).
 
+    Ein im Projekt gespeichertes Modell, das nicht mehr in der Registry steht, ist `409` mit der
+    Meldung aus `MODEL_CHOICE_UNAVAILABLE_DETAIL` - kein Rueckfall auf die Installationsvorgabe.
     Funktioniert UNABHÄNGIG vom Consent-Schalter (auch bei deaktiviertem Consent 200, kein 403) -
     der Nutzer soll die Kosten VOR einer Consent-Entscheidung sehen können. `candidate_count=0`
     liefert 200 mit estimated_cost_usd=0.0, kein Sonderfall."""
     project = await _get_project_or_404(project_id, session)
 
-    return await _build_classification_estimate(session, project, mode=mode)
+    try:
+        return await _build_classification_estimate(session, project, mode=mode)
+    except UnknownModelChoiceError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=MODEL_CHOICE_UNAVAILABLE_DETAIL
+        ) from None
 
 
 async def _build_classification_estimate(
     session: AsyncSession,
     project: Project,
     *,
-    mode: Literal["cloud", "eye", "local"] = "cloud",
+    mode: Literal["project", "local"] = "project",
 ) -> ClassificationEstimateOut:
     """Die Schaetzung selbst, ohne HTTP-Anteil - geteilt zwischen `GET .../classify/estimate` und
     `POST .../classify`.
@@ -1330,23 +1457,45 @@ async def _build_classification_estimate(
     verschiedene Groessen miteinander. Der Ausloese-Endpunkt hat sein 404 zu diesem Zeitpunkt
     bereits selbst geworfen, deshalb keine zweite Projektpruefung hier.
 
-    WELCHE Anteile stattfinden, entscheidet der Weg: Cloud beide, Eye nur die
-    Sehenswuerdigkeits-Erkennung (und nur bei projektweiter Einwilligung), lokal keinen. Was nicht
-    stattfindet, wird GAR NICHT gezaehlt - die Zaehlabfrage selbst ist billig, aber eine Zahl fuer
-    einen Anteil, der nicht laeuft, waere eine Einladung, sie anzuzeigen."""
-    provider = settings.landmark_provider
-    # Die Schätzung hängt am tatsächlich EINGESTELLTEN Modell, nicht am Anbieter - ein
-    # Modellwechsel kann sie damit nicht unbemerkt falsch machen.
-    model = settings.resolved_landmark_model()
-    price_per_image_usd = estimate_usd_per_image(model, provider)
+    WELCHE Anteile stattfinden, entscheidet die Projektwahl (ueber `resolve_model_choice`):
+    Kategorisierung nach `category_method`, Sehenswürdigkeits-Erkennung bei projektweiter
+    Einwilligung. Bei `local` findet keiner statt. Was nicht stattfindet, wird GAR NICHT gezaehlt.
 
-    remote_category_candidate_count: int | None = None
-    landmark_candidate_count: int | None = None
-    if mode == "cloud":
-        remote_category_candidate_count = await _count_remote_category_candidates(
-            session, project.id
+    Ein unbekanntes Modell wirft `UnknownModelChoiceError` und wird vom Aufrufer zu `409`."""
+    if mode == "local":
+        return ClassificationEstimateOut(
+            mode="local",
+            candidate_count=0,
+            categorization=None,
+            landmark=None,
+            estimated_cost_usd=0.0,
         )
-    if mode == "cloud" or (mode == "eye" and project.cloud_vision_detection_enabled):
+
+    resolved = resolve_model_choice(project)
+
+    categorization: ClassificationEstimatePartOut
+    if resolved.category_model is not None and resolved.category_provider is not None:
+        categorization = _estimate_part(
+            kind="cloud",
+            provider=resolved.category_provider,
+            model=resolved.category_model,
+            price_per_image_usd=estimate_usd_per_image(
+                resolved.category_model, resolved.category_provider
+            ),
+            candidate_count=await _count_remote_category_candidates(session, project.id),
+        )
+    else:
+        # Eye liefert keine Modell-ID und keinen Anbieter - der Anteil ist kostenfrei.
+        categorization = _estimate_part(
+            kind="eye",
+            provider=None,
+            model=None,
+            price_per_image_usd=0.0,
+            candidate_count=await _count_eye_candidates(session, project.id),
+        )
+
+    landmark: ClassificationEstimatePartOut | None = None
+    if project.cloud_vision_detection_enabled:
         # Der Landmark-Anteil ist NICHT SCHAETZBAR, solange im Projekt kein erfolgreich
         # abgeschlossener Klassifizierungslauf existiert - vor dem ersten Lauf gibt es keine
         # gespeicherten Kriterien-Werte, aus denen sich Kandidaten ableiten liessen, und
@@ -1355,20 +1504,30 @@ async def _build_classification_estimate(
         #
         # Ein laufender oder fehlgeschlagener Durchlauf gilt ausdruecklich nicht als stattgefunden:
         # erst ein `success` belegt, dass Kriterien-Werte geschrieben wurden.
+        landmark_candidate_count: int | None = None
         if await _has_successful_classification_run(session, project.id):
             landmark_candidate_count = await _count_landmark_candidates(session, project.id)
+        landmark = _estimate_part(
+            kind="cloud",
+            provider=resolved.landmark_provider,
+            model=resolved.landmark_model,
+            price_per_image_usd=estimate_usd_per_image(
+                resolved.landmark_model, resolved.landmark_provider
+            ),
+            candidate_count=landmark_candidate_count,
+        )
 
-    remote_categories = _estimate_part(remote_category_candidate_count, price_per_image_usd)
-    landmark = _estimate_part(landmark_candidate_count, price_per_image_usd)
-    parts = (remote_categories, landmark)
+    parts = [part for part in (categorization, landmark) if part is not None]
     # Die Summe der BEKANNTEN Anteile - bei unbekanntem Anteil ausdruecklich eine UNTERE
     # SCHRANKE. Ueber ein `is not None`, nie ueber ein `or 0`: die Regel "unbekannt ist nicht
     # null" gilt in diesem Modul durchgaengig.
     candidate_count = sum(
         part.candidate_count for part in parts if part.candidate_count is not None
     )
-    # Ebenfalls nur die stattfindenden Anteile: ein Anteil mit `candidate_count is None` findet
-    # nicht statt. Kein stattfindender Anteil -> `0.0` = kostenfrei (S7).
+    # `candidate_count is None` heisst "Menge nicht verlaesslich schaetzbar" (Landmark vor dem
+    # ersten erfolgreichen Durchlauf), NICHT "findet nicht statt" - das ist der `null`-ANTEIL.
+    # Ein solcher Anteil traegt keinen Betrag (`estimated_cost_usd is None`), die Summe wird
+    # deshalb insgesamt unbekannt statt still kleiner. Keine Anteile -> `0.0` = kostenfrei (S7).
     costs = [part.estimated_cost_usd for part in parts if part.candidate_count is not None]
     estimated_cost_usd: float | None
     if any(cost is None for cost in costs):
@@ -1377,13 +1536,10 @@ async def _build_classification_estimate(
         estimated_cost_usd = sum(cost for cost in costs if cost is not None)
 
     return ClassificationEstimateOut(
+        mode="project",
         candidate_count=candidate_count,
-        mode=mode,
-        remote_categories=remote_categories,
+        categorization=categorization,
         landmark=landmark,
-        provider=provider,
-        model=model,
-        price_per_image_usd=price_per_image_usd,
         estimated_cost_usd=estimated_cost_usd,
     )
 

@@ -32,7 +32,13 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
-    eye_available: false,
+    model_choice: {
+      category_method: 'cloud',
+      category_provider: 'mistral',
+      category_model: 'ministral-3b-2512',
+      landmark_provider: 'anthropic',
+      landmark_model: 'claude-haiku-4-5',
+    },
     selection_target: null,
     effective_selection_target: 1,
     has_selection_proposal: false,
@@ -68,6 +74,23 @@ describe('ProjectSettingsPage', () => {
     vi.mocked(projectsApi.setCloudVisionConsent).mockReset()
     vi.mocked(camerasApi.listCameras).mockReset()
     vi.mocked(camerasApi.listCameras).mockResolvedValue([])
+    // Der Modellwahl-Abschnitt laedt seinen eigenen Katalog; ohne Mock stuende dort ein Fehler,
+    // der mit dem jeweiligen Testfall nichts zu tun hat.
+    vi.mocked(projectsApi.getModelChoice).mockReset()
+    vi.mocked(projectsApi.getModelChoice).mockResolvedValue({
+      current: {
+        category_method: 'cloud',
+        category_model: 'ministral-3b-2512',
+        category_provider: 'mistral',
+        category_is_default: false,
+        landmark_model: 'claude-haiku-4-5',
+        landmark_provider: 'anthropic',
+        landmark_is_default: false,
+      },
+      cloud_models: [],
+      eye: { available: true, unavailable_reasons: [] },
+    })
+    vi.mocked(projectsApi.putModelChoice).mockReset()
   })
 
   it('shows a loading state while the project is being fetched', () => {
@@ -168,7 +191,57 @@ describe('ProjectSettingsPage', () => {
     })
     await user.click(infoTrigger)
 
-    expect(await screen.findByText(/an die anthropic-cloud-api versendet/i)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/an Anthropic gesendet, um Sehenswürdigkeiten zu erkennen/i),
+    ).toBeInTheDocument()
+    // Spec 0383: der Text nennt die Anbieter der aktuellen Wahl statt eines festen Namens.
+    expect(
+      screen.getByText(/an Mistral gesendet, um ihre Kategorie aus dem festen Set/i),
+    ).toBeInTheDocument()
+  })
+
+  it('nennt denselben Anbieter fuer beide Taetigkeiten nur EINMAL (AK 62)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      project({
+        model_choice: {
+          category_method: 'cloud',
+          category_provider: 'mistral',
+          category_model: 'ministral-3b-2512',
+          landmark_provider: 'mistral',
+          landmark_model: 'mistral-small-2506',
+        },
+      }),
+    )
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /erkläre cloud-bilderkennung/i }))
+
+    const text = (await screen.findByText(/Sehenswürdigkeiten zu erkennen/)).textContent ?? ''
+    expect(text.match(/Mistral/g)).toHaveLength(1)
+    expect(text).toContain('an denselben Anbieter gesendet')
+  })
+
+  it('nennt bei einem aus der Registry gefallenen Modell keinen erfundenen Anbieter', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      project({
+        model_choice: {
+          category_method: 'cloud',
+          category_provider: null,
+          category_model: 'verschwunden-1',
+          landmark_provider: null,
+          landmark_model: 'verschwunden-2',
+        },
+      }),
+    )
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /erkläre cloud-bilderkennung/i }))
+
+    const text = (await screen.findByText(/Sehenswürdigkeiten zu erkennen/)).textContent ?? ''
+    expect(text).toContain('an den hinterlegten Anbieter gesendet')
+    expect(text).not.toContain('an des Anbieters')
   })
 
   it('disables the toggle while the consent update is in flight (busy-button pattern)', async () => {

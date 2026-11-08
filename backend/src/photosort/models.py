@@ -39,8 +39,25 @@ class ExportRunStatus(enum.StrEnum):
     FAILED = "failed"
 
 
+class CategoryMethod(enum.StrEnum):
+    """Womit die Kategorisierung eines Projekts laeuft - zwei Werte, kein dritter.
+
+    Die Sehenswuerdigkeits-Erkennung hat keine eigene Methode: sie laeuft immer ueber ein
+    Cloud-Modell, weil Eye keine Namen von Sehenswuerdigkeiten liefert."""
+
+    CLOUD = "cloud"
+    EYE = "eye"
+
+
 class Project(Base):
     __tablename__ = "projects"
+
+    __table_args__ = (
+        CheckConstraint(
+            "category_method = 'cloud' OR category_model IS NULL",
+            name="ck_projects_category_model_requires_cloud",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(unique=True)
@@ -62,6 +79,27 @@ class Project(Base):
     # Ober- und Untergrenze werden am Endpunkt durchgesetzt (`api/projects.py`), nicht hier.
     # Projektweit, ohne user_id-Bezug.
     selection_target: Mapped[int | None] = mapped_column(default=None)
+    # Die Modellwahl je Taetigkeit (ADR 0143). `category_method` ist NOT NULL mit
+    # `server_default 'cloud'`; `category_model`/`landmark_model` nullbar, wobei `NULL` die
+    # Installationsvorgabe bedeutet - ein ausdruecklich gespeicherter Vorgabewert bleibt ein
+    # gespeicherter Wert, damit "zur vorherigen Wahl zurueckkehren" eindeutig ist.
+    # `ck_projects_category_model_requires_cloud` schliesst "Eye mit Cloud-Modell" aus.
+    category_method: Mapped[CategoryMethod] = mapped_column(
+        # `values_callable`: die Spalte traegt die WERTE `cloud`/`eye`, wie Migration,
+        # Server-Default und Check-Constraint sie nennen - nicht die Enum-NAMEN. Ohne das
+        # schriebe SQLAlchemy `CLOUD`, und `category_method = 'cloud'` im Constraint schluege
+        # bei jeder Cloud-Wahl mit Modell fehl.
+        SQLEnum(
+            CategoryMethod,
+            native_enum=False,
+            length=20,
+            values_callable=lambda members: [member.value for member in members],
+        ),
+        default=CategoryMethod.CLOUD,
+        server_default="cloud",
+    )
+    category_model: Mapped[str | None] = mapped_column(default=None)
+    landmark_model: Mapped[str | None] = mapped_column(default=None)
 
     photos: Mapped[list[Photo]] = relationship(
         back_populates="project", cascade="all, delete-orphan"

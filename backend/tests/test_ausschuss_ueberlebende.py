@@ -381,9 +381,11 @@ _ERWARTETE_VERWENDUNGEN = {
     # ausgeschlossene Aufnahmen auch lokal keine Kopfzeile bekommen (und die Rangfolge nicht
     # zwischen zwei Laeufen ueber verschiedene Mengen spricht).
     ("worker.py", "survives_ausschuss"): 3,
-    # Die beiden Kostenschaetzungen, auf denen die Freigabe eines kostenpflichtigen Laufs beruht.
-    # Sie folgen der Auswahl NICHT von selbst (S1).
-    ("api/projects.py", "survives_ausschuss"): 2,
+    # Die Kostenschaetzungen, auf denen die Freigabe eines Laufs beruht: Kategorisierung (Cloud
+    # oder Eye), Sehenswuerdigkeits-Erkennung und - seit Spec 0383 - die Eye-Anzahl als EIGENER
+    # Anteil der Vorschau (dieselbe Menge wie die Eye-Phase im Lauf). Sie folgen der Auswahl NICHT
+    # von selbst (S1).
+    ("api/projects.py", "survives_ausschuss"): 3,
     # Spec 0525: die Auswahlmenge des Massenwegs im Abschluss des Ausschuss-Schritts. Die Menge
     # bestimmt der SERVER aus dem offenen Vorschlag - eine mitgeschickte Id-Liste wird nie gelesen.
     ("api/projects.py", "has_open_suggestion"): 1,
@@ -492,6 +494,6 @@ def test_the_six_replaced_occurrences_and_the_written_call_sites_are_held_side_b
     sql = sum(anzahl for (_datei, name), anzahl in gemessen.items() if name in _SQL_FASSUNGEN)
 
     assert _ERSETZTE_VORKOMMEN == 6
-    assert sum(gemessen.values()) == 13
-    assert sql == 11
+    assert sum(gemessen.values()) == 14
+    assert sql == 12
     assert sum(gemessen.values()) - sql == 2

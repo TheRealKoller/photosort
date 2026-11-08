@@ -1255,3 +1255,80 @@ class TestBothClientsCarryTheHintInTheirTextPart:
         body = seen["body"]
         assert isinstance(body, dict)
         assert body["max_tokens"] == 256
+
+
+class TestTheLandmarkClientFollowsTheModel:
+    """Spec 0383 / ADR 0143 Punkt 2: der Anbieter des Landmark-Clients folgt aus dem MODELL - wie
+    beim Kategorie-Client seit Spec 0616 -, nicht aus `settings.landmark_provider`. Ein Projekt
+    kann fuer die Sehenswuerdigkeits-Erkennung ein Modell des anderen Anbieters tragen; ein
+    geratener Anbieter schickte Bilddaten an den falschen Empfaenger. Client-Klassen und
+    Schrittmacher sind gepatcht - kein Netz, kein Secret."""
+
+    def test_a_mistral_model_builds_the_mistral_client_although_the_setting_says_anthropic(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from photosort import landmark as module
+        from photosort.config import settings
+
+        throttles: list[str] = []
+        built: list[tuple[str, dict[str, object]]] = []
+
+        def fake_throttle(provider: str) -> object:
+            throttles.append(provider)
+            return object()
+
+        class FakeAnthropic:
+            def __init__(self, **kwargs: object) -> None:
+                built.append(("anthropic", kwargs))
+
+        class FakeMistral:
+            def __init__(self, **kwargs: object) -> None:
+                built.append(("mistral", kwargs))
+
+        monkeypatch.setattr(module, "throttle_for_provider", fake_throttle)
+        monkeypatch.setattr(module, "AnthropicLandmarkClient", FakeAnthropic)
+        monkeypatch.setattr(module, "MistralLandmarkClient", FakeMistral)
+        monkeypatch.setattr(settings, "landmark_provider", "anthropic")
+
+        module.build_landmark_client(MISTRAL_VISION_MODEL)
+
+        assert throttles == ["mistral"]
+        assert [name for name, _ in built] == ["mistral"]
+        assert built[0][1]["model"] == MISTRAL_VISION_MODEL
+
+    def test_an_anthropic_model_builds_the_anthropic_client_although_the_setting_says_mistral(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from photosort import landmark as module
+        from photosort.config import settings
+
+        throttles: list[str] = []
+        built: list[str] = []
+
+        def fake_throttle(provider: str) -> object:
+            throttles.append(provider)
+            return object()
+
+        class FakeAnthropic:
+            def __init__(self, **kwargs: object) -> None:
+                built.append("anthropic")
+
+        class FakeMistral:
+            def __init__(self, **kwargs: object) -> None:
+                built.append("mistral")
+
+        monkeypatch.setattr(module, "throttle_for_provider", fake_throttle)
+        monkeypatch.setattr(module, "AnthropicLandmarkClient", FakeAnthropic)
+        monkeypatch.setattr(module, "MistralLandmarkClient", FakeMistral)
+        monkeypatch.setattr(settings, "landmark_provider", "mistral")
+
+        module.build_landmark_client(ANTHROPIC_VISION_MODEL)
+
+        assert throttles == ["anthropic"]
+        assert built == ["anthropic"]
+
+    def test_an_unknown_model_raises_instead_of_guessing_a_provider(self) -> None:
+        from photosort import landmark as module
+
+        with pytest.raises(ValueError):
+            module.build_landmark_client("gibt-es-nicht")

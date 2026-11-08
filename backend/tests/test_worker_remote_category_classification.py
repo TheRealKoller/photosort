@@ -17,6 +17,7 @@ from photosort import pricing, worker
 from photosort.album_suitability import AlbumSuitability
 from photosort.api.projects import _count_remote_category_candidates
 from photosort.cloud_vision import (
+    MISTRAL_VISION_MODEL,
     VISION_MODELS_BY_PROVIDER,
     CloudRequestThrottle,
     TokenUsage,
@@ -2343,3 +2344,52 @@ class TestTheRemoteCategoryPhaseSummarisesItsThrottling:
         # `"1 Wiederholung" in "1 Wiederholungen"` waere sonst auch beim Plural wahr.
         assert "1 Wiederholung nach 429" in message
         assert "2.0 s Wartezeit" in message
+
+
+async def test_the_categorization_uses_the_project_model_not_the_installation_default(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0143 Punkt 2, AK 55 ("angezeigt = aufgerufen = abgerechnet") fuer die KATEGORISIERUNG:
+    der Job bekommt das im Ausloeser aufgeloeste Modell und leitet daraus Client, `provider`-Spalte
+    und Preis ab - die Installationsvorgabe gilt nur fuer Projekte ohne eigene Wahl. Ein zweiter
+    Anbieter in derselben Installation belegt, dass der Wert wirklich durchgereicht wird und nicht
+    aus `settings` kommt."""
+    monkeypatch.setattr(worker.settings, "landmark_provider", "anthropic")
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    photo = await _add_photo(db_session, project, "a.jpg", "etag-1")
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo)
+
+    usage = TokenUsage(input_tokens=1_200, output_tokens=300)
+    built_models: list[str] = []
+    client = RecordingCategoryClient(
+        RemoteClassification(
+            motif_strengths=_vector(bauwerk_sehenswuerdigkeit=0.9),
+            fine_labels=(),
+            usage=usage,
+        )
+    )
+
+    run = await run_remote_category_classification(
+        db_session,
+        project,
+        cache_dir=tmp_path,
+        build_client=lambda model: (built_models.append(model), client)[1],
+        build_embedder=_fake_embedder,
+        model=MISTRAL_VISION_MODEL,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert built_models == [MISTRAL_VISION_MODEL]
+    assert run.model == MISTRAL_VISION_MODEL
+    # Der Betrag ist der des MISTRAL-Modells, nicht der der Installationsvorgabe - sonst
+    # stimmte die Vorschau nicht mit der Abrechnung ueberein.
+    assert run.cost_usd == pytest.approx(compute_cost_usd(MISTRAL_VISION_MODEL, usage))
+    assert run.cost_usd != pytest.approx(
+        compute_cost_usd(default_vision_model_for_provider("anthropic"), usage)
+    )
+    assessment = await db_session.get(PhotoMotifAssessment, photo.id)
+    assert assessment is not None
+    assert assessment.provider == "mistral"

@@ -131,21 +131,27 @@ class TestTheThrottleIsAlwaysPassedIn:
             assert parameter.default is inspect.Parameter.empty, client.__name__
             assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, client.__name__
 
-    def test_both_factories_pull_the_process_wide_throttle(self) -> None:
+    def test_both_factories_pull_the_process_wide_throttle_of_the_derived_provider(self) -> None:
         """Die beiden Factories laufen in keinem automatisierten Test (echtes Secret, echter
         Netzwerkversuch) - abgesichert ist ihr Durchreichen deshalb als Quelltext-Verankerung
         plus `mypy --strict`.
 
-        Der LANDMARK-Client folgt weiter dem Installationsanbieter; der KATEGORIE-Client leitet
-        ihn seit Spec 0616 aus dem uebergebenen Modell ab (ADR 0139 Punkt 4) - die
-        Verhaltenspruefung dazu steht in `test_remote_classification.py`.
+        BEIDE leiten den Anbieter aus dem uebergebenen Modell ab (ADR 0143 Punkt 2; fuer den
+        Kategorie-Client schon seit ADR 0139 Punkt 4). Keine der beiden Factories liest
+        `settings.landmark_provider`: der beschriebe den Installationsanbieter statt der Wahl des
+        Projekts.
         """
+        # Eine Regel, eine Stelle: die Ableitung selbst steht in
+        # `model_choice.provider_for_task_model` (Spec 0383, Finding D5); hier bleibt zu belegen,
+        # dass beide Factories sie ziehen und ihren Wert weiterreichen.
         landmark_source = inspect.getsource(build_landmark_client)
-        assert "throttle_for_provider(settings.landmark_provider)" in landmark_source
+        assert "provider = provider_for_task_model(model)" in landmark_source
+        assert "throttle_for_provider(provider)" in landmark_source
+        assert "throttle_for_provider(settings.landmark_provider)" not in landmark_source
         assert "throttle=throttle" in landmark_source
 
         category_source = inspect.getsource(build_category_classification_client)
-        assert "provider = provider_for_vision_model(model)" in category_source
+        assert "provider = provider_for_task_model(model)" in category_source
         assert "throttle_for_provider(provider)" in category_source
         assert "throttle_for_provider(settings.landmark_provider)" not in category_source
         assert "throttle=throttle" in category_source

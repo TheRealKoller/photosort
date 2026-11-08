@@ -13,6 +13,7 @@ from photosort.api import (
     duplicate_decisions,
     export,
     feedback,
+    model_choice,
     motifs,
     opencloud,
     persons,
@@ -190,6 +191,12 @@ def _protected_router_operations() -> list[tuple[str, str]]:
         # Ebene von `projects.router` deckt diesen Router NICHT ab, weil gelaufen wird ueber
         # Router, nicht ueber Pfade.
         classification_reviews.router,
+        # specs/features/0383-modellwahl-je-projekt.md, Auflage S2: dasselbe fuer
+        # `model_choice.router`. Sein Schreibendpunkt bestimmt, welche Empfaenger kuenftige
+        # Laeufe sehen - ein hier vergessener Torwaechter waere ein unauthentifizierter
+        # Schreibzugriff auf genau diese Frage. Seine beiden Endpunkte tragen zusaetzlich je
+        # einen eigenen, pfadbenannten 401-Fall in tests/test_api_model_choice.py.
+        model_choice.router,
     ):
         for route in router.routes:
             path = getattr(route, "path", "")

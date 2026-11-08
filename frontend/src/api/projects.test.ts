@@ -6,9 +6,11 @@ import {
   createProject,
   deleteProject,
   getClassificationEstimate,
+  getModelChoice,
   getProject,
   getProjectStats,
   listProjects,
+  putModelChoice,
   setCloudVisionConsent,
   triggerClassification,
   triggerScan,
@@ -34,7 +36,13 @@ const PROJECT: ProjectOut = {
   category_selection_enabled: true,
   cloud_vision_detection_enabled: false,
   cloud_vision_consent_at: null,
-  eye_available: false,
+  model_choice: {
+    category_method: 'cloud',
+    category_provider: 'mistral',
+    category_model: 'ministral-3b-2512',
+    landmark_provider: 'anthropic',
+    landmark_model: 'claude-haiku-4-5',
+  },
   selection_target: null,
   effective_selection_target: 1,
   has_selection_proposal: false,
@@ -106,23 +114,23 @@ describe('api/projects', () => {
   it('triggers the classification via POST /projects/{id}/classify with scoring_run_id and mode', async () => {
     vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
 
-    const result = await triggerClassification(1, 5, 'cloud')
+    const result = await triggerClassification(1, 5, 'project')
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify', {
       method: 'POST',
-      body: { scoring_run_id: 5, mode: 'cloud' },
+      body: { scoring_run_id: 5, mode: 'project' },
     })
     expect(result).toEqual({ status: 'queued' })
   })
 
-  it('reicht jeden Weg unveraendert weiter', async () => {
+  it('reicht auch den lokalen Weg unveraendert weiter', async () => {
     vi.mocked(apiFetch).mockResolvedValue({ status: 'queued' })
 
-    await triggerClassification(1, 5, 'eye')
+    await triggerClassification(1, 5, 'local')
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify', {
       method: 'POST',
-      body: { scoring_run_id: 5, mode: 'eye' },
+      body: { scoring_run_id: 5, mode: 'local' },
     })
   })
 
@@ -163,23 +171,64 @@ describe('api/projects', () => {
     await expect(getProjectStats(7)).rejects.toBe(error)
   })
 
-  it('fetches the estimate of ONE way via GET /projects/{id}/classify/estimate?mode=', async () => {
+  it('fetches the estimate of ONE choice via GET /projects/{id}/classify/estimate?mode=', async () => {
     const response = {
-      mode: 'cloud',
+      mode: 'project',
       candidate_count: 42,
-      remote_category_candidate_count: 40,
-      landmark_candidate_count: 2,
-      provider: 'anthropic',
-      price_per_image_usd: 0.0052,
-      estimated_cost_usd: 0.2184,
+      categorization: {
+        kind: 'cloud',
+        provider: 'anthropic',
+        model: 'claude-haiku-4-5',
+        price_per_image_usd: 0.0052,
+        candidate_count: 40,
+        estimated_cost_usd: 0.208,
+      },
+      landmark: {
+        kind: 'cloud',
+        provider: 'mistral',
+        model: 'ministral-3b-2512',
+        price_per_image_usd: 0.0003,
+        candidate_count: 2,
+        estimated_cost_usd: 0.0006,
+      },
+      estimated_cost_usd: 0.2086,
     }
     vi.mocked(apiFetch).mockResolvedValue(response)
 
-    const result = await getClassificationEstimate(1, 'cloud')
+    const result = await getClassificationEstimate(1, 'project')
 
-    // Der Weg reist als Query-Parameter: dieselbe Ressource, drei Antworten.
-    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify/estimate?mode=cloud')
+    // Die Wahl reist als Query-Parameter: dieselbe Ressource, zwei Antworten.
+    expect(apiFetch).toHaveBeenCalledWith('/projects/1/classify/estimate?mode=project')
     expect(result).toEqual(response)
+  })
+
+  it('reads the model choice and catalogue via GET /projects/{id}/model-choice', async () => {
+    const response = { current: { category_method: 'cloud' }, cloud_models: [], eye: {} }
+    vi.mocked(apiFetch).mockResolvedValue(response)
+
+    const result = await getModelChoice(3)
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/3/model-choice')
+    expect(result).toEqual(response)
+  })
+
+  it('writes the model choice with all three columns in one PUT', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ current: {}, cloud_models: [], eye: {} })
+
+    await putModelChoice(3, {
+      category_method: 'eye',
+      category_model: null,
+      landmark_model: 'claude-haiku-4-5',
+    })
+
+    expect(apiFetch).toHaveBeenCalledWith('/projects/3/model-choice', {
+      method: 'PUT',
+      body: {
+        category_method: 'eye',
+        category_model: null,
+        landmark_model: 'claude-haiku-4-5',
+      },
+    })
   })
 
   it('deletes a project via DELETE /projects/{id} with the typed confirmation', async () => {

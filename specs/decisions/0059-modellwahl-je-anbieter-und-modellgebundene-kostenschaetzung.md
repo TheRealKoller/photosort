@@ -1,6 +1,7 @@
 # 0059 - Modellwahl je Anbieter als Betriebseinstellung, Vorab-Schätzung an das Modell gebunden
 
 **Status:** Accepted
+**Teilweise abgelöst:** Punkt 1, Absätze „Betriebseinstellung, kein Projekt-/Laufparameter" und die Festlegung „ein Schalter für beide Zwecke", durch ADR [`0143`](./0143-modellwahl-je-projekt-und-taetigkeit.md) — `LANDMARK_MODEL` bleibt als Installationsvorgabe; alle übrigen Punkte gelten weiter.
 **Datum:** 2026-09-06
 **Bezug:** [GitHub-Issue #304](https://github.com/TheRealKoller/photosort/issues/304), [`specs/features/0304-cloud-modell-je-anbieter-waehlbar.md`](../features/0304-cloud-modell-je-anbieter-waehlbar.md)
 

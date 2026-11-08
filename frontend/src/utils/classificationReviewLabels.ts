@@ -53,6 +53,31 @@ export const SIDE_LABELS = {
   b: 'Seite B',
 } as const satisfies Record<'a' | 'b', string>
 
+/**
+ * Die Wortlaute der Modellwahl (Spec 0383) - an jeder Stelle zeichengleich. Die Sperrgründe
+ * beginnen alle mit „Nicht wählbar —", damit die Oberfläche sie nicht je Karte umformuliert.
+ */
+export const MODEL_CHOICE_TEXTS = {
+  categoryGroup: 'Kategorisierung',
+  landmarkGroup: 'Sehenswürdigkeits-Erkennung',
+  installationDefault: 'Installationsvorgabe',
+  eyeDisabled: 'Nicht wählbar — Eye ist in dieser Installation abgeschaltet.',
+  stillSelected: 'So eingestellt, derzeit nicht wählbar.',
+  eyeNoLandmark: 'Nicht möglich — Eye liefert keine Namen von Sehenswürdigkeiten.',
+  free: 'kostenfrei',
+  saved: 'Gespeichert — gilt für künftige Läufe.',
+  unchanged: 'Es wurde nichts geändert; die bisherige Wahl gilt weiter.',
+  // Der rechtlich formulierte Satz steht EINMAL (Spec 0383): Einstellungen und Laufdialog
+  // zeigen ihn wortgleich - zwei Kopien drifteten beim nächsten Wortwechsel auseinander.
+  eyeLicenceNotice:
+    'Eye sendet bei jedem Lauf eine Lizenzmeldung mit einer Zählkennung, aber ohne Bildinhalte an Desert Ant Labs; diese Meldung lässt sich nicht abschalten.',
+} as const
+
+/** „Nicht wählbar — für Anthropic ist kein API-Schlüssel hinterlegt." */
+export function noApiKeyText(providerLabel: string): string {
+  return `Nicht wählbar — für ${providerLabel} ist kein API-Schlüssel hinterlegt.`
+}
+
 /** Die neutrale Buchstabenmarke; A und B unterscheiden sich NUR ueber den Buchstaben. */
 export const SIDE_MARKS = {
   a: 'A',

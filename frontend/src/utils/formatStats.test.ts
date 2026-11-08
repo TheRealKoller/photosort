@@ -9,6 +9,7 @@ import {
   formatDateTime,
   formatTakenAtRange,
   formatUsd,
+  formatUsdPerImage,
   NOT_AVAILABLE,
 } from './formatStats'
 
@@ -77,6 +78,27 @@ describe('formatUsd', () => {
 
   it('zeigt genau an der Rundungsgrenze bereits einen Cent', () => {
     expect(formatUsd(0.005)).toBe('0,01 USD')
+  })
+})
+
+describe('formatUsdPerImage', () => {
+  it('zeigt einen Modellpreis mit vier Nachkommastellen', () => {
+    expect(formatUsdPerImage(0.0052)).toBe('0,0052 USD je Bild')
+  })
+
+  it('bleibt bei Preisen unter einem Cent unterscheidbar', () => {
+    expect(formatUsdPerImage(0.000305)).toBe('0,000305 USD je Bild')
+  })
+
+  it('nennt einen fehlenden Preis als Wort, nie als Zahl', () => {
+    expect(formatUsdPerImage(null)).toBe('Preis unbekannt')
+  })
+
+  it('rundet einen Preis ungleich null nie auf "0"', () => {
+    // Die dokumentierte Regel: ein angefallener Preis darf nicht als Nichts erscheinen - unterhalb
+    // der Auflösung von sechs Nachkommastellen steht die Schranke.
+    expect(formatUsdPerImage(0.0000004)).toBe('< 0,000001 USD je Bild')
+    expect(formatUsdPerImage(0)).toBe('0,0000 USD je Bild')
   })
 })
 

@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useParams } from 'react-router'
 
 import { ApiError } from '../api/client'
-import type { ProjectCameraOut } from '../api/types'
+import type { ProjectCameraOut, ProjectOut } from '../api/types'
 import { CameraTimeOffsetDialog } from '../components/CameraTimeOffsetDialog'
+import { ModelChoiceSection } from '../components/ModelChoiceSection'
 import { DeleteProjectDialog } from '../components/DeleteProjectDialog'
 import { Alert } from '../components/ui/alert'
 import { Button } from '../components/ui/button'
@@ -12,6 +13,7 @@ import { Skeleton } from '../components/ui/skeleton'
 import { Switch } from '../components/ui/switch'
 import { useCamerasQuery } from '../hooks/useCameras'
 import { useProjectQuery, useSetCloudVisionConsentMutation } from '../hooks/useProjects'
+import { formatProviderLabel } from '../utils/formatStats'
 import { formatTimeOffset } from '../utils/timeOffset'
 
 /**
@@ -110,6 +112,43 @@ function CameraSection({ projectId }: { projectId: number }) {
 }
 
 /**
+ * Der Einwilligungstext nennt die Anbieter der AKTUELLEN Wahl (Spec 0383) statt der festen
+ * „Anthropic-Cloud-API": welche Cloud einwilligt wird, entscheidet `project.model_choice`, und
+ * ein Text mit festem Anbieternamen wäre nach einer Umstellung schlicht unwahr. Bei
+ * Eye-Kategorisierung bleibt die Kategorisierung auf diesem Server.
+ */
+function consentExplainer(project: ProjectOut): string {
+  const choice = project.model_choice
+  // Ein gespeichertes Modell kann aus der Registry gefallen sein (`provider: null`). Dann nennt
+  // der Satz keinen geratenen Empfänger, sondern "den hinterlegten Anbieter" - ein Genitiv-
+  // Platzhalter ergäbe hier "an des Anbieters gesendet".
+  const landmarkTarget =
+    choice.landmark_provider === null
+      ? 'den hinterlegten Anbieter'
+      : formatProviderLabel(choice.landmark_provider)
+  const categoriesOnServer = choice.category_method === 'eye'
+  const categoryTarget =
+    choice.category_provider === null
+      ? 'den hinterlegten Anbieter'
+      : formatProviderLabel(choice.category_provider)
+  const sameProvider = !categoriesOnServer && categoryTarget === landmarkTarget
+  const parts = [
+    `Fotos, die als Landschaft oder Gebäude erkannt wurden, werden zur Analyse an ${landmarkTarget} gesendet, um Sehenswürdigkeiten zu erkennen.`,
+  ]
+  const remoteCategories = (target: string) =>
+    `Derselbe Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei (Kuratierungs-Schritt): dort ausgewählte Fotos werden an ${target} gesendet, um ihre Kategorie aus dem festen Set und bis zu zwei freie Feinlabels zu bestimmen.`
+  parts.push(
+    categoriesOnServer
+      ? 'Derselbe Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei — nicht nötig: die Kategorisierung dieses Projekts läuft auf diesem Server und sendet kein Foto.'
+      : sameProvider
+        ? // AK 62: die Anbietermenge ohne Dopplung - derselbe Anbieter wird EINMAL genannt.
+          remoteCategories('denselben Anbieter')
+        : remoteCategories(categoryTarget),
+  )
+  return parts.join(' ')
+}
+
+/**
  * Erste dedizierte Projekteinstellungs-Seite im Projekt - Toggle-Switch fuer die projektweite
  * Cloud-Bilderkennungs-Einwilligung + Info-Popover, das den Cloud-Versand erklaert.
  * Label/Erklaertext lauten auf "Cloud-Bilderkennung" - derselbe Schalter gated zusaetzlich die
@@ -196,13 +235,7 @@ export function ProjectSettingsPage() {
                     </Button>
                   </PopoverClose>
                 </div>
-                <p className="text-sm text-text">
-                  Fotos, die als Landschaft oder Gebäude erkannt wurden, werden zur Analyse an die
-                  Anthropic-Cloud-API versendet, um Sehenswürdigkeiten zu erkennen. Derselbe
-                  Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei (Kuratierungs-
-                  Schritt): dort ausgewählte Fotos werden an dieselbe Cloud-API gesendet, um ihre
-                  Kategorie aus dem festen Set und bis zu zwei freie Feinlabels zu bestimmen.
-                </p>
+                <p className="text-sm text-text">{consentExplainer(project)}</p>
               </PopoverContent>
             </Popover>
           </div>
@@ -215,8 +248,11 @@ export function ProjectSettingsPage() {
         </div>
       </div>
 
-      {/* UNTERHALB der Cloud-Vision-Einstellung, OBERHALB der Gefahrenzone: die Gefahrenzone
-          bleibt das letzte Kind des gap-6-Containers. */}
+      {/* Die Modellwahl sitzt ZWISCHEN Cloud-Panel und Kameras (Spec 0383): die Einwilligung
+          beschreibt den Datenabfluss, die Wahl bestimmt den Empfänger. Die Gefahrenzone bleibt das
+          letzte Kind des gap-6-Containers. */}
+      <ModelChoiceSection projectId={id} />
+
       <CameraSection projectId={id} />
 
       {/* GEFAHRENZONE, letztes Kind des gap-6-Containers. Bewusst hier und nicht in der

@@ -409,7 +409,9 @@ Verarbeitungs-Cache (Thumbnails).
     `criteria.py::is_landmark_candidate` gegen die bereits gespeicherten Kriterien-Werte aus —
     strukturell eine Schätzung, vor dem ersten Lauf eines Projekts 0). Kein hinterlegter Preis
     heißt `null`, nie `0` — `ClassificationEstimateOut.price_per_image_usd`/`.estimated_cost_usd`
-    sind entsprechend nullable, dazu das Feld `model`. `CriterionScoringRunSummary` trägt additiv
+    sind entsprechend nullable, dazu das Feld `model`. Seit ADR 0143 nimmt der Auslöser
+    `{scoring_run_id, mode: "project" | "local"}`, und die Schätzung trägt Anbieter, Modell und
+    Preis je Tätigkeit im jeweiligen Anteil statt auf oberster Ebene. `CriterionScoringRunSummary` trägt additiv
     `phase`/`cloud_requested`/`cloud_error_message`, seit Spec 0481 dazu
     `phase_remaining_seconds` (die Restdauer des in `phase` genannten Teilschritts in Sekunden;
     `null` heißt „noch nicht abschätzbar", nie „keine Restdauer", und steht immer bei `ranking`
@@ -1416,7 +1418,8 @@ Verarbeitungs-Cache (Thumbnails).
     (`cloud_vision.py::provider_for_vision_model`), nie aus `settings.landmark_provider`: Die
     aktuelle Betriebseinstellung sagt nichts darüber, womit ein vergangener Lauf gerechnet hat.
   - Alle Cloud-Aufrufe beider Teilschritte laufen über einen prozessweiten **Schrittmacher je
-    Anbieter** (`cloud_vision_throttle.py`) und werden bei HTTP `429` — und nur dort — nach einer
+    Anbieter** (`cloud_vision_throttle.py`; Schlüssel ist der Anbieter des je Tätigkeit aufgelösten
+    Modells, ADR 0143 Punkt 3) und werden bei HTTP `429` — und nur dort — nach einer
     gedeckelten Wartezeit wiederholt. Die Zeitgrenzen des Laufs werden dabei **nicht abgefragt**,
     sondern durch ein hart gedeckeltes Wartebudget je Anfrage eingehalten (höchstens 5 Versuche,
     120 s summierte Wartezeit, 60 s je Wartevorgang → schlimmster Fall 420 s gegen die
@@ -1501,8 +1504,9 @@ Verarbeitungs-Cache (Thumbnails).
   `DAL_APP_ID=photosort`
   steht fest im Image, `HOME` liegt auf dem Volume `eye_home` (die Lizenz-Zählkennung übersteht
   Neustarts), `DAL_LICENSE_ENDPOINT`/`HF_TOKEN` brechen den Start ab. Backend und Worker erreichen
-  ihn über `EYE_SERVICE_URL` (Vorgabe `http://eye:8090`); `EYE_ENABLED` (Vorgabe `false`) schaltet
-  die Laufwahl app-seitig ab. Ohne gestartetes Profil antwortet der Auslöser `403`/`503`, es gibt
+  ihn über `EYE_SERVICE_URL` (Vorgabe `http://eye:8090`); `EYE_ENABLED` (Vorgabe `false`) macht
+  Eye in der Modellwahl des Projekts unwählbar (ADR 0143). Ist Eye eingestellt und das Profil nicht
+  gestartet, antwortet der Auslöser `403`/`503`, es gibt
   keinen Rückfall auf einen anderen Modus. Der Egress des Fremdpakets ist **nicht** erzwungen
   (Betreiberpflicht des Heimservers). Die
   Demo-Daten zeigen Eye an genau einem Foto: `demo_state.py` schreibt dort zuerst die lokale
@@ -1696,6 +1700,22 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `photo_count` den Richtwert nicht mehr. Der **Bearbeitungsstand** wird bewusst **kein** Feld: er bleibt
     Frontend-Ableitung (`utils/pipelineSteps.ts`), weil dieselbe Ableitung das Ziel der
     Weiterleitung von `/projects/:id` bestimmt und ein zweiter Ort dafür auseinanderliefe.
+  - **Modellwahl je Projekt und Tätigkeit** *(Issue #383, ADR
+    [`0143`](../specs/decisions/0143-modellwahl-je-projekt-und-taetigkeit.md))*: `category_method`
+    (`cloud`/`eye`, NOT NULL, Vorgabe `cloud`), `category_model: str | None`, `landmark_model: str |
+    None`; ein Modell `NULL` heißt „Installationsvorgabe" (`LANDMARK_PROVIDER`/`LANDMARK_MODEL`),
+    `category_model` ist bei `eye` `NULL` (Check-Constraint). Aufgelöst wird an genau einer Stelle,
+    `model_choice.py::resolve_model_choice`; der Anbieter folgt immer aus dem Modell
+    (`provider_for_vision_model`), nie aus `settings.landmark_provider`. Der Auslöser `POST
+    …/classify` kennt `mode=project|local`, löst `project` zum wirksamen Weg (`cloud`/`eye`) auf und
+    reicht die aufgelösten Modelle als Job-Argumente durch; `criterion_scoring_runs.mode` speichert
+    den wirksamen Weg. Gelesen und gesetzt wird die Wahl über `GET`/`PUT
+    /projects/{id}/model-choice` (geschlossener Katalog aus `VISION_MODELS_BY_PROVIDER` plus Eye;
+    `422` nur für einen **geänderten** Wert — unbekanntes Modell, fehlender Schlüssel, `eye` bei
+    ausgeschaltetem `EYE_ENABLED`; `409` während eines Laufs);
+    `ProjectOut.model_choice` trägt die aufgelöste Wahl. Die Schätzung `GET
+    …/classify/estimate?mode=project|local` weist je Tätigkeit einen Anteil mit eigener Grundlage
+    aus (`categorization`, `landmark`; `null` = findet nicht statt).
 - **ProjectOverviewSeen** *(Spec 0566, `models.py`, Tabelle `project_overview_seen`)*: „diese
   Person hat die Ablaufübersicht in diesem Projekt geschlossen" — Primärschlüssel
   `(user_id, project_id)`, beide echte, benannte Fremdschlüssel, **keine weitere Spalte**. Die
@@ -2041,9 +2061,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     hochgezähltes `api_calls` löste ihn bei jedem laufenden Cloud-Lauf als Fehlalarm aus. Dazu
     `estimated_cost_usd` (die Schätzung, mit der genau dieser Lauf gestartet wurde; ein BELEG, nie
     eine Eingabe — sie geht in keine spätere Rechnung, kein Budget-Gate und keine Ableitung der
-    Ist-Kosten ein; ohne Cloud-Kontakt — `mode=local` oder `mode=eye` ohne Einwilligung — steht
+    Ist-Kosten ein; ohne Cloud-Kontakt — `mode=local` oder wirksam Eye ohne Einwilligung — steht
     dort `NULL`, nicht `0.0`, die Vorschau `GET …/classify/estimate` nennt für diese Wege
-    weiterhin `0.0`) und
+    weiterhin `0.0`; ADR 0143) und
     `remote_category_classification_run_id` (FK auf `remote_category_classification_runs.id`,
     gesetzt von `run_classification` vor dem Start von Phase 1; `NULL` = dieser Lauf hatte keine
     Remote-Phase oder ist eine Altzeile). Damit ist der oben genannte Vermerk „bewusst KEIN FK auf
