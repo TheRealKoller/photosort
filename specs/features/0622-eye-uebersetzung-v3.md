@@ -33,27 +33,27 @@ dass Fotos den Server verlassen und ohne Kosten.
 
 ## Akzeptanzkriterien
 
-- [ ] Es gibt eine neue Eye-Übersetzungsfassung. Die bisherigen Fassungen bleiben aufrufbar, die
+- [x] Es gibt eine neue Eye-Übersetzungsfassung. Die bisherigen Fassungen bleiben aufrufbar, die
   Klassifizierungsprüfung bietet alle an, und bestehende Eye-Ergebnisse behalten ihre Fassung.
-- [ ] Die neue Fassung vergibt weniger überzählige Motive als v2, gemessen auf denselben Fotos wie
+- [x] Die neue Fassung vergibt weniger überzählige Motive als v2, gemessen auf denselben Fotos wie
   Prüfung 1 — für `aktivitaet`, `stadt_strasse`, `detail_stimmung`, `tiere` und `landschaft`
   jeweils einzeln. Ein Foto ohne erkennbare Tätigkeit erhält bei `aktivitaet` keine hohe Stärke.
-- [ ] Die Verbesserungen gelten allgemein für Motive und nicht für einzelne, aus Prüfung 1
+- [x] Die Verbesserungen gelten allgemein für Motive und nicht für einzelne, aus Prüfung 1
   bekannte Fotos.
-- [ ] Dokument-Ausschluss und Album-Stufe liefern in der neuen Fassung für jedes Foto dieselben
+- [x] Dokument-Ausschluss und Album-Stufe liefern in der neuen Fassung für jedes Foto dieselben
   Werte wie in v2.
-- [ ] Eine Bestätigungsprüfung vergleicht Eye mit der neuen Fassung gegen die Cloud mit demselben
+- [x] Eine Bestätigungsprüfung vergleicht Eye mit der neuen Fassung gegen die Cloud mit demselben
   Modell wie in Prüfung 1 (`ministral-3b-2512`), und zwar im Projekt von Prüfung 1 und in einem
   zweiten Projekt, dessen Fotos nicht zur Entwicklung der neuen Fassung herangezogen wurden. Jeder
   vorgelegte Fall der Zwecke „Motive“ und „Motivstärke“ ist beurteilt, keiner bleibt offen.
 - [ ] Erfolgsmaß: In beiden Projekten gilt für „Motive“ und für „Motivstärke“ jeweils einzeln,
   dass die Fälle „Eye besser“ mindestens so viele sind wie die Fälle „Cloud besser“. „Beide ok“ und
-  „beide falsch“ zählen dabei nicht.
-- [ ] Das Ergebnis ist nachvollziehbar festgehalten: Seiten beider Prüfungen, Urteilszählungen je
+  „beide falsch“ zählen dabei nicht. **Verfehlt** in einer von vier Zellen, siehe „Messergebnis“.
+- [x] Das Ergebnis ist nachvollziehbar festgehalten: Seiten beider Prüfungen, Urteilszählungen je
   Zweck und Projekt, Prüfung 1 als Ausgangswert, und ob das Erfolgsmaß erreicht wurde. Die Story
   ist auch dann abgeschlossen, wenn das Erfolgsmaß verfehlt wird; dann hält das Ergebnis fest, dass
   eine Kombination beider KIs als Folge-Story zu prüfen ist.
-- [ ] Am laufenden Betrieb ändert sich nichts: Cloud-Ergebnisse, Album-Entwurf, Albumtauglichkeit
+- [x] Am laufenden Betrieb ändert sich nichts: Cloud-Ergebnisse, Album-Entwurf, Albumtauglichkeit
   und die Auswahl, welche Fotos an die Cloud gehen, bleiben unverändert; kein zusätzlicher
   Datenabfluss durch Eye.
 
@@ -416,3 +416,61 @@ Keine.
 - Neubewertung bestehender Eye-Ergebnisse: sie behalten ihre Fassung, bis ein neuer Eye-Lauf
   darüberläuft.
 - Feinlabels-Vergleich zwischen Eye und Cloud (Vokabulare sind nicht vergleichbar).
+
+## Messergebnis
+
+Eye-Revision `v1.0.0` auf allen Eye-Seiten, Cloud `mistral` / `ministral-3b-2512`, Prüfgröße 30
+je Zweck. Geurteilt hat Daniel; in den drei Prüfungen gegen die Cloud ist kein Fall offen.
+
+|Prüfung|Projekt|Fotos|Seite A|Seite B|
+|---|---|---|---|---|
+|1 (Ausgangswert)|Projekt von Prüfung 1|373|Cloud|Eye `eye-4.2.3/v2`|
+|2 (Bestätigung)|Projekt von Prüfung 1|373|Eye `eye-4.2.3/v3`|Cloud|
+|3 (Bestätigung)|zweites, unberührtes Projekt|278|Eye `eye-4.2.3/v3`|Cloud|
+|4 (Gegenprobe)|Projekt von Prüfung 1|373|Eye `eye-4.2.3/v2`|Eye `eye-4.2.3/v3`|
+
+### Urteile je Zweck (Eye besser : Cloud besser : beide ok : beide falsch)
+
+|Zweck|Prüfung 1 (v2)|Prüfung 2 (v3)|Prüfung 3 (v3)|
+|---|---|---|---|
+|Motive|6 : 24 : 0 : 0|**16 : 14** : 0 : 0|**13 : 17** : 0 : 0|
+|Motivstärke|11 : 19 : 0 : 0|**17 : 13** : 0 : 0|**19 : 11** : 0 : 0|
+|Albumtauglichkeit|10 : 1 : 19 : 0|12 : 4 : 14 : 0|10 : 9 : 11 : 0|
+|Dokument-Ausschluss|4 : 2 : 0 : 0|4 : 2 : 0 : 0|keine Abweichung|
+
+**Erfolgsmaß verfehlt**, in genau einer von vier Zellen: „Motive“ in Prüfung 3 (13 : 17). Die
+übrigen drei Zellen erfüllen es; gegenüber v2 hat sich das Verhältnis in beiden Motiv-Zwecken
+umgekehrt.
+
+### Überzählige Motive je Motiv (AK 2)
+
+Fotos, bei denen Eye das Motiv vergibt und die Gegenseite nicht. Prüfung 1 und 2 klassifizieren
+die Cloud je neu; die Gegenprobe vergleicht beide Fassungen auf derselben Eye-Antwort und ist
+davon frei.
+
+|Motiv|v2 gegen Cloud (P1)|v3 gegen Cloud (P2)|nur v2 (P4)|nur v3 (P4)|
+|---|---|---|---|---|
+|`aktivitaet`|110|27|90|0|
+|`landschaft`|86|32|65|0|
+|`stadt_strasse`|63|47|28|4|
+|`tiere`|21|15|20|11|
+|`detail_stimmung`|153|134|21|0|
+
+AK 2 erfüllt, alle fünf Motive einzeln, auf beiden Messwegen. `menschen`,
+`bauwerk_sehenswuerdigkeit` und `essen_trinken` sind in der Gegenprobe wertgleich. Bei
+`aktivitaet` vergibt Eye in den Stärke-Fällen von Prüfung 2 und 3 je ein Foto über der
+Präsenzgrenze ohne Cloud-Gegenstück: 0,8 in Prüfung 3, von Daniel als Eye besser beurteilt; 0,54 in
+Prüfung 2, als Cloud besser beurteilt — eine Übervergabe knapp über der Grenze, keine hohe Stärke.
+
+### Wertgleichheit (AK 4)
+
+Gegenprobe: Dokument-Ausschluss und Albumtauglichkeit je 373 übereinstimmend, 0 abweichend.
+
+### Ursache der verfehlten Zelle und Folge
+
+Die verfehlte Zelle hängt an einem Motiv: In 14 der 17 Motiv-Fälle von Prüfung 3, in denen die
+Cloud besser war, vergibt Eye zusätzlich `detail_stimmung`. Eye vergibt das Motiv in Prüfung 2 und
+3 bei 134 bzw. 162 Fotos ohne Cloud-Gegenstück, die Cloud umgekehrt bei 41 bzw. 13; v3 nimmt es
+gegenüber v2 nur bei 21 Fotos zurück. Folge-Story laut AK 7: eine Kombination beider KIs prüfen.
+Vorgelagert und enger ist eine Fassung, die allein `detail_stimmung` verengt; erreicht sie das
+Erfolgsmaß, entfällt die Kombination.
