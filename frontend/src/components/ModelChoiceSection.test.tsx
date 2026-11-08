@@ -304,6 +304,52 @@ describe('ModelChoiceSection: Zustände', () => {
 })
 
 describe('ModelChoiceSection: Speichern', () => {
+  it('schickt die Installationsvorgabe als null, nicht als aufgeloestes Modell', async () => {
+    // Der geseedete Bestand steht auf `NULL` (Installationsvorgabe). Wer nur die Methode umstellt,
+    // darf die Modelle nicht festschreiben: sonst verlore das Projekt die Eigenschaft, der
+    // Vorgabe zu folgen, und in einer Installation ohne Schluessel scheiterte der PUT mit 422.
+    vi.mocked(projectsApi.getModelChoice).mockResolvedValue(
+      choice({
+        current: {
+          category_method: 'cloud',
+          category_model: MISTRAL.model,
+          category_provider: 'mistral',
+          category_is_default: true,
+          landmark_model: ANTHROPIC.model,
+          landmark_provider: 'anthropic',
+          landmark_is_default: true,
+        },
+      }),
+    )
+    vi.mocked(projectsApi.putModelChoice).mockResolvedValue(
+      choice({
+        current: {
+          category_method: 'eye',
+          category_model: null,
+          category_provider: null,
+          category_is_default: false,
+          landmark_model: ANTHROPIC.model,
+          landmark_provider: 'anthropic',
+          landmark_is_default: true,
+        },
+      }),
+    )
+    const user = userEvent.setup()
+    renderSection()
+
+    await user.click(await screen.findByRole('radio', { name: 'Kategorisierung: Eye' }))
+    await user.click(screen.getByRole('button', { name: 'Speichern' }))
+
+    await waitFor(() =>
+      expect(projectsApi.putModelChoice).toHaveBeenCalledWith(1, {
+        category_method: 'eye',
+        category_model: null,
+        landmark_model: null,
+      }),
+    )
+  })
+
+
   it('schreibt alle drei Spalten in EINEM PUT und meldet den Erfolg', async () => {
     vi.mocked(projectsApi.putModelChoice).mockResolvedValue(
       choice({

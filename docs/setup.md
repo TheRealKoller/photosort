@@ -433,6 +433,12 @@ Um beide Funktionen tatsächlich zu nutzen, in `.env`:
   der Katalog samt Preisen, Token-Preisen, Anfragelimit und Verfügbarkeit zusätzlich in
   **Projekteinstellungen → Modellwahl** — ein Projekt wählt dort aus genau dieser Liste.
 
+  **Zurück auf die Installationsvorgabe** geht jederzeit, auch in einer Installation ohne
+  Cloud-Schlüssel: die Vorgabe wird als `NULL` gespeichert und braucht weder Schlüssel noch
+  Registry-Eintrag. Ein eigenes Cloud-Modell zu wählen verlangt dagegen einen hinterlegten
+  Schlüssel des Anbieters (`422` sonst) — die Eye-Kategorisierung und der Rückweg auf die Vorgabe
+  bleiben davon unberührt.
+
   **Modell verschwindet aus der Registry:** Projekte mit eigener Wahl bekommen beim Start einer
   Klassifizierung `409` mit dem Hinweis, in den Projekteinstellungen ein anderes Modell zu wählen;
   es gibt **keinen** stillen Rückfall auf `LANDMARK_MODEL`. Nur die Modellwahl dieser Projekte

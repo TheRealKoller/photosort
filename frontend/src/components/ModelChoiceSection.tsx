@@ -28,14 +28,22 @@ import { Skeleton } from './ui/skeleton'
 type Draft = {
   categoryMethod: 'cloud' | 'eye'
   categoryModel: string | null
+  // Die Herkunft gehört zum Entwurf: `true` heißt "Spalte steht auf `NULL`", und `NULL` ist die
+  // Installationsvorgabe, kein Modellname. Ohne diese Marke schriebe jedes Speichern das
+  // aufgelöste Modell fest - der Bestand verlöre die Eigenschaft, der Vorgabe zu folgen, und in
+  // einer Installation ohne Schlüssel scheiterte der `PUT` sogar (`422`).
+  categoryIsDefault: boolean
   landmarkModel: string | null
+  landmarkIsDefault: boolean
 }
 
 function draftFrom(current: ModelChoiceOut['current']): Draft {
   return {
     categoryMethod: current.category_method,
     categoryModel: current.category_model,
+    categoryIsDefault: current.category_is_default,
     landmarkModel: current.landmark_model,
+    landmarkIsDefault: current.landmark_is_default,
   }
 }
 
@@ -43,8 +51,23 @@ function isUnchanged(current: ModelChoiceOut['current'], draft: Draft): boolean 
   return (
     current.category_method === draft.categoryMethod &&
     current.category_model === draft.categoryModel &&
-    current.landmark_model === draft.landmarkModel
+    current.category_is_default === draft.categoryIsDefault &&
+    current.landmark_model === draft.landmarkModel &&
+    current.landmark_is_default === draft.landmarkIsDefault
   )
+}
+
+/** Der Rumpf des `PUT`: die Vorgabe wird als `null` gespeichert, nie als ihr aufgelöster Wert. */
+function storedBody(draft: Draft): {
+  category_method: 'cloud' | 'eye'
+  category_model: string | null
+  landmark_model: string | null
+} {
+  return {
+    category_method: draft.categoryMethod,
+    category_model: draft.categoryIsDefault ? null : draft.categoryModel,
+    landmark_model: draft.landmarkIsDefault ? null : draft.landmarkModel,
+  }
 }
 
 /** Anbieter und Modell in einer Zeile für den zugänglichen Namen der Marke. */
@@ -134,11 +157,7 @@ export function ModelChoiceSection({ projectId }: { projectId: number }) {
     }
     setSaved(false)
     mutation.mutate(
-      {
-        category_method: draft.categoryMethod,
-        category_model: draft.categoryModel,
-        landmark_model: draft.landmarkModel,
-      },
+      storedBody(draft),
       {
         onSuccess: (answer) => {
           setDraft(draftFrom(answer.current))
@@ -159,7 +178,12 @@ export function ModelChoiceSection({ projectId }: { projectId: number }) {
       return
     }
     setSaved(false)
-    setDraft({ ...draft, categoryMethod: 'cloud', categoryModel: entry.model })
+    setDraft({
+      ...draft,
+      categoryMethod: 'cloud',
+      categoryModel: entry.model,
+      categoryIsDefault: false,
+    })
   }
 
   function chooseCategoryEye(): void {
@@ -167,7 +191,12 @@ export function ModelChoiceSection({ projectId }: { projectId: number }) {
       return
     }
     setSaved(false)
-    setDraft({ ...draft, categoryMethod: 'eye', categoryModel: null })
+    setDraft({
+      ...draft,
+      categoryMethod: 'eye',
+      categoryModel: null,
+      categoryIsDefault: false,
+    })
   }
 
   function chooseLandmarkModel(entry: CloudModelOut): void {
@@ -175,7 +204,7 @@ export function ModelChoiceSection({ projectId }: { projectId: number }) {
       return
     }
     setSaved(false)
-    setDraft({ ...draft, landmarkModel: entry.model })
+    setDraft({ ...draft, landmarkModel: entry.model, landmarkIsDefault: false })
   }
 
   return (
