@@ -19,8 +19,12 @@ from photosort.config import settings
 from photosort.models import CategoryMethod, Project
 
 
-class UnknownModelChoiceError(Exception):
+class UnknownModelChoiceError(ValueError):
     """Ein gespeichertes Modell steht nicht mehr in `VISION_MODELS_BY_PROVIDER`.
+
+    Erbt von `ValueError`, weil die Client-Factories (`build_landmark_client`,
+    `build_category_classification_client`) genau dafuer seit jeher einen `ValueError` zusagen -
+    eine Regel, ein Ausnahmetyp, und der Zusagentext bleibt wahr.
 
     Ausloeser und Schaetzung antworten darauf mit `409`; Lesepfade zeigen die Modell-ID mit
     `provider: null`. Ein Rueckfall auf die Installationsvorgabe waere ein stiller Wechsel des
@@ -77,7 +81,13 @@ def api_key_for_provider(provider: str) -> bool:
     return False
 
 
-def _provider_or_raise(model: str) -> str:
+def provider_for_task_model(model: str) -> str:
+    """Der Anbieter des Modells EINER Taetigkeit - aus der Registry, nie aus `settings`.
+
+    Die EINE Stelle, an der ein Modell zu seinem Anbieter wird: Aufloesung, Lauf, Schrittmacher,
+    Client-Bau, `provider`-Spalte und Preis lesen denselben Wert. Eine Modell-ID ausserhalb der
+    Registry ist `UnknownModelChoiceError` statt eines geratenen Empfaengers - ein geratener
+    Anbieter schickte Bilddaten an den falschen Adressaten."""
     provider = provider_for_vision_model(model)
     if provider is None:
         raise UnknownModelChoiceError(f"Unbekanntes Vision-Modell: {model!r}")
@@ -106,14 +116,14 @@ def resolve_model_choice(project: Project) -> ResolvedModelChoice:
     category_model, category_is_default, landmark_model, landmark_is_default = _stored_values(
         project
     )
-    category_provider = None if category_model is None else _provider_or_raise(category_model)
+    category_provider = None if category_model is None else provider_for_task_model(category_model)
 
     return ResolvedModelChoice(
         category_method=project.category_method,
         category_model=category_model,
         category_provider=category_provider,
         landmark_model=landmark_model,
-        landmark_provider=_provider_or_raise(landmark_model),
+        landmark_provider=provider_for_task_model(landmark_model),
         category_is_default=category_is_default,
         landmark_is_default=landmark_is_default,
     )

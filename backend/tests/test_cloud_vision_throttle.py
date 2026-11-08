@@ -141,14 +141,17 @@ class TestTheThrottleIsAlwaysPassedIn:
         `settings.landmark_provider`: der beschriebe den Installationsanbieter statt der Wahl des
         Projekts.
         """
+        # Eine Regel, eine Stelle: die Ableitung selbst steht in
+        # `model_choice.provider_for_task_model` (Spec 0383, Finding D5); hier bleibt zu belegen,
+        # dass beide Factories sie ziehen und ihren Wert weiterreichen.
         landmark_source = inspect.getsource(build_landmark_client)
-        assert "provider = provider_for_vision_model(model)" in landmark_source
+        assert "provider = provider_for_task_model(model)" in landmark_source
         assert "throttle_for_provider(provider)" in landmark_source
         assert "throttle_for_provider(settings.landmark_provider)" not in landmark_source
         assert "throttle=throttle" in landmark_source
 
         category_source = inspect.getsource(build_category_classification_client)
-        assert "provider = provider_for_vision_model(model)" in category_source
+        assert "provider = provider_for_task_model(model)" in category_source
         assert "throttle_for_provider(provider)" in category_source
         assert "throttle_for_provider(settings.landmark_provider)" not in category_source
         assert "throttle=throttle" in category_source

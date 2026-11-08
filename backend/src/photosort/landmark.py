@@ -19,10 +19,10 @@ from photosort.cloud_vision import (
     mistral_response_to_json,
     mistral_usage_from_response,
     post_vision_request,
-    provider_for_vision_model,
 )
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
+from photosort.model_choice import provider_for_task_model
 from photosort.places import (
     LANDMARK_PLACE_CELL_DIGITS,
     landmark_place_cell,
@@ -475,9 +475,7 @@ def build_landmark_client(model: str) -> LandmarkClientLike:
     strukturell wahr statt durch drei zufaellig uebereinstimmende Lesevorgaenge derselben globalen
     `settings`. Laeuft NIE in einem automatisierten Test (echtes Secret, echter Netzwerkversuch) -
     die Ableitung prueft `TestTheLandmarkClientFollowsTheModel` mit gepatchten Klassen."""
-    provider = provider_for_vision_model(model)
-    if provider is None:
-        raise ValueError(f"Unbekanntes Vision-Modell: {model!r}")
+    provider = provider_for_task_model(model)
     # Der PROZESSWEITE Schrittmacher des abgeleiteten Anbieters - dieselbe Instanz, die auch
     # build_category_classification_client() zieht. Beide Cloud-Teilschritte und mehrere
     # gleichzeitig laufende Jobs teilen sich dadurch einen Schrittmacher je Anbieter.

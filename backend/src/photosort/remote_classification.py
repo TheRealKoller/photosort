@@ -32,11 +32,11 @@ from photosort.cloud_vision import (
     mistral_response_to_json,
     mistral_usage_from_response,
     post_vision_request,
-    provider_for_vision_model,
 )
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.label_embedding import LabelEmbedderLike, cosine_similarity, normalize_label_text
+from photosort.model_choice import provider_for_task_model
 from photosort.motifs import MOTIF_REGISTRY, is_motif_key
 
 # Strukturell analog landmark.py. Das Antwortschema ist GESCHLOSSEN: das Modell nennt fuer JEDEN
@@ -517,9 +517,7 @@ def build_category_classification_client(model: str) -> CategoryDetectionClientL
 
     Laeuft NIE in einem automatisierten Test (echtes Secret, echter Netzwerkversuch) - die
     Ableitung selbst prueft `TestTheCategoryClientFollowsTheModel` mit gepatchten Klassen."""
-    provider = provider_for_vision_model(model)
-    if provider is None:
-        raise ValueError(f"Unbekanntes Vision-Modell: {model!r}")
+    provider = provider_for_task_model(model)
     # DERSELBE prozessweite Schrittmacher, den auch build_landmark_client() zieht - beide
     # Cloud-Teilschritte teilen sich einen je Anbieter.
     throttle = throttle_for_provider(provider)

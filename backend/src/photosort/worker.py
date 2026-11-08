@@ -46,7 +46,6 @@ from photosort.cloud_vision import (
     ThrottleStats,
     TokenUsage,
     _sanitize_label_text,
-    provider_for_vision_model,
 )
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
@@ -121,7 +120,7 @@ from photosort.landmark import (
 )
 from photosort.landmark_names import LandmarkNameEntry, resolve_canonical_landmark
 from photosort.logging_config import configure_logging
-from photosort.model_choice import resolve_model_choice
+from photosort.model_choice import provider_for_task_model, resolve_model_choice
 from photosort.models import (
     ClassificationMode,
     ClassificationPhase,
@@ -1467,17 +1466,6 @@ def _try_build[T](build: Callable[[], T]) -> T | None:
         return build()
     except Exception:
         return None
-
-
-def _provider_for_task_model(model: str) -> str:
-    """Der Anbieter des Modells EINER Taetigkeit - aus der Registry, nie aus `settings`.
-
-    Ein Modell ausserhalb der Registry ist ein `ValueError` statt eines geratenen Empfaengers:
-    Schrittmacher, `provider`-Spalte und Client-Bau muessen denselben Anbieter lesen."""
-    provider = provider_for_vision_model(model)
-    if provider is None:
-        raise ValueError(f"Unbekanntes Vision-Modell: {model!r}")
-    return provider
 
 
 def _select_landmark_candidates(
@@ -3134,7 +3122,7 @@ async def run_criterion_scoring(
             # wahr, nicht das Ergebnis dreier zufaellig gleicher Lesevorgaenge. Fehlt der
             # Parameter (Job aus der Zeit vor dem Update), gilt die Installationsvorgabe.
             landmark_model = landmark_model or settings.resolved_landmark_model()
-            landmark_provider = _provider_for_task_model(landmark_model)
+            landmark_provider = provider_for_task_model(landmark_model)
             landmark_client = _try_build(lambda: build_landmark_client(landmark_model))
             if landmark_client is None:
                 # Ein nicht konstruierbarer Client laesst die Sehenswuerdigkeits-Erkennung aus -
@@ -3747,18 +3735,25 @@ async def classify(
         if project is None:
             raise ValueError(f"Project {project_id} not found")
 
-        if mode is None or category_model is None or landmark_model is None:
-            effective_mode = (
-                ClassificationMode(mode)
-                if mode is not None
-                else ClassificationMode.CLOUD
-                if use_cloud
-                else ClassificationMode.LOCAL
-            )
+        effective_mode = (
+            ClassificationMode(mode)
+            if mode is not None
+            else ClassificationMode.CLOUD
+            if use_cloud
+            else ClassificationMode.LOCAL
+        )
+        # Aufgeloest wird nur, was WIRKLICH fehlt: bei `eye` ist `category_model is None` der
+        # Regelfall, und ein Eye-Job, der beide Modelle mitbringt, darf nicht an einem inzwischen
+        # aus der Registry gefallenen Landmark-Modell des Projekts scheitern.
+        needs_category_model = (
+            effective_mode is not ClassificationMode.EYE and category_model is None
+        )
+        needs_landmark_model = landmark_model is None
+        if needs_category_model or needs_landmark_model:
             resolved = resolve_model_choice(project)
-            if category_model is None and effective_mode is not ClassificationMode.EYE:
+            if needs_category_model:
                 category_model = resolved.category_model
-            if landmark_model is None:
+            if needs_landmark_model:
                 landmark_model = resolved.landmark_model
 
         run = await run_classification(
@@ -3917,7 +3912,7 @@ async def run_remote_category_classification(
         # die `provider`-Spalten je Foto lesen denselben Wert. Fehlt der Parameter (Altjob),
         # gilt die Installationsvorgabe.
         model = model or settings.resolved_landmark_model()
-        provider = _provider_for_task_model(model)
+        provider = provider_for_task_model(model)
         client = _try_build(lambda: build_client(model))
         embedder = _try_build(build_embedder)
         if client is None or embedder is None:
