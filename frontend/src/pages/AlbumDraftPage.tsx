@@ -11,6 +11,7 @@ import { CurationSkeletonList } from '../components/CurationSkeletonList'
 import { DraftAddPanel, DraftAlternativesBand } from '../components/DraftAlternativesBand'
 import { DraftEventSection } from '../components/DraftEventSection'
 import { DraftExplainer } from '../components/DraftExplainer'
+import { EyeAttribution } from '../components/EyeAttribution'
 import { PersonFilterGroup } from '../components/PersonFilterGroup'
 import { UndoToast } from '../components/UndoToast'
 import { Alert } from '../components/ui/alert'
@@ -26,7 +27,7 @@ import {
   useDraftExchangeUndoMutation,
   useDraftQuery,
 } from '../hooks/usePhotos'
-import { useProjectQuery } from '../hooks/useProjects'
+import { useModelChoiceQuery, useProjectQuery } from '../hooks/useProjects'
 import {
   draftClosingTexts,
   draftCounts,
@@ -41,6 +42,7 @@ import {
 import {
   DRAFT_CLOUD_CONSENT_TEXT,
   DRAFT_EMPTY_TEXT,
+  DRAFT_EYE_DISABLED_TEXT,
   SETTINGS_LINK_LABEL,
 } from '../utils/albumDraftTexts'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
@@ -103,7 +105,6 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
   const motifsQuery = useMotifsQuery()
   const token = getToken()
   const username = token ? decodeUsername(token) : null
-
   const query = useDraftQuery(id)
   const projectQuery = useProjectQuery(id)
   const decisionMutation = useDraftDecisionMutation(id, username)
@@ -111,6 +112,20 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
   const undoMutation = useDraftExchangeUndoMutation(id, username)
   const items = useMemo(() => query.data?.items ?? [], [query.data])
   const events = useMemo(() => query.data?.events ?? [], [query.data])
+  const hasEvents = events.length > 0
+
+  const categoryMethod = projectQuery.data?.model_choice.category_method ?? null
+  // Die Modellwahl traegt allein den Eye-Leerzustand, und nur ohne Events: Sie wird AUSSCHLIESSLICH
+  // dann geholt. Ein Cloud-Projekt fragte sonst einen Katalog ab, den diese Seite nie liest, und
+  // ein Eye-Projekt mit Entwurf kippte nach dem Laden in den Leertext statt beim Entwurf zu bleiben.
+  const needsModelChoice = categoryMethod === 'eye' && query.isSuccess && !hasEvents
+  const modelChoiceQuery = useModelChoiceQuery(id, { enabled: needsModelChoice })
+  const eyeDisabled =
+    needsModelChoice &&
+    modelChoiceQuery.data?.eye.unavailable_reasons.includes('eye_disabled') === true
+  // Das Skeleton steht, solange EINE der drei Antworten aussteht - auch die der Modellwahl.
+  const loading =
+    query.isLoading || projectQuery.isLoading || (needsModelChoice && modelChoiceQuery.isLoading)
 
   const [searchParams, setSearchParams] = useSearchParams()
   const { personsQuery, personIds, setPersonIds } = usePersonFilter(searchParams, setSearchParams)
@@ -379,10 +394,12 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
   }
 
   const cloudConsentGiven = projectQuery.data?.cloud_vision_detection_enabled === true
+  // Der Freigabe-Hinweis gehoert allein zum Cloud-Verfahren: Ein Eye-Projekt braucht keine
+  // Cloud-Freigabe, und ein Hinweis darauf schickte es auf den falschen Weg.
+  const consentMissing = categoryMethod === 'cloud' && !cloudConsentGiven
   const target = projectQuery.data?.effective_selection_target ?? null
-  const ready = query.isSuccess && projectQuery.isSuccess && cloudConsentGiven
-  const hasEvents = events.length > 0
-  const selectionPath = `/projects/${id}/selection`
+  const ready = query.isSuccess && projectQuery.isSuccess && !consentMissing && !loading
+  const hasEyeStage = items.some((photo) => photo.album_suitability?.source === 'eye')
 
   function renderTile(photo: PhotoOut, tile: JustifiedTile) {
     const struck = ownStatusOf(photo) === 'rejected'
@@ -415,6 +432,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
     )
   }
 
+  const selectionPath = `/projects/${id}/selection`
   const bandPhoto =
     openPanel?.kind === 'band'
       ? albumItems.find((photo) => photo.id === openPanel.photoId)
@@ -451,6 +469,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         {ready && hasEvents && (
           <p className="text-sm text-text">{draftOverviewText(days.length, events.length)}</p>
         )}
+        {hasEyeStage && <EyeAttribution />}
       </header>
 
       {ready && hasEvents && <DraftExplainer username={username} />}
@@ -479,9 +498,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         </div>
       )}
 
-      {(query.isLoading || projectQuery.isLoading) && (
-        <CurationSkeletonList count={SKELETON_TILE_COUNT} />
-      )}
+      {loading && <CurationSkeletonList count={SKELETON_TILE_COUNT} />}
 
       {query.isError && (
         <Alert onRetry={() => void query.refetch()}>
@@ -497,7 +514,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         </Alert>
       )}
 
-      {query.isSuccess && projectQuery.isSuccess && !cloudConsentGiven && (
+      {consentMissing && (
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_CLOUD_CONSENT_TEXT}</p>
           <Button asChild variant="secondary" size="sm">
@@ -506,7 +523,16 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         </div>
       )}
 
-      {ready && !hasEvents && (
+      {ready && !hasEvents && eyeDisabled && (
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-sm text-text">{DRAFT_EYE_DISABLED_TEXT}</p>
+          <Button asChild variant="secondary" size="sm">
+            <Link to={`/projects/${id}/settings`}>{SETTINGS_LINK_LABEL}</Link>
+          </Button>
+        </div>
+      )}
+
+      {ready && !hasEvents && !eyeDisabled && (
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_EMPTY_TEXT}</p>
           <Button asChild variant="secondary" size="sm">
