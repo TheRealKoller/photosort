@@ -1907,6 +1907,13 @@ describe('Design-Vertrag: Abstands- und Wertskalen', () => {
       reason: 'Kontrollkaestchen samt Beschriftung: dieselbe Begruendung wie beim Eingabefeld',
     },
     {
+      file: 'src/components/ModelChoiceSection.tsx',
+      snippet: 'flex min-h-11 cursor-pointer flex-col justify-center gap-1',
+      reason:
+        'Modellwahl-Zeile (Spec 0383): Radio samt Taetigkeitsbeschriftung, Grund und Herkunft in ' +
+        'einer klickbaren Zeile - dieselbe Trefferflaeche wie die Laufwahl darueber.',
+    },
+    {
       file: 'src/components/ClassificationSection.tsx',
       snippet: 'flex min-h-11 w-full cursor-pointer flex-col justify-center gap-1',
       reason:

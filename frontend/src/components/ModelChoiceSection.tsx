@@ -98,6 +98,7 @@ export function ModelChoiceSection({ projectId }: { projectId: number }) {
   const catalogue = query.data.cloud_models
   const eyeAvailable = query.data.eye.available
   const eyeReasons = query.data.eye.unavailable_reasons
+  const noLandmarkModel = catalogue.every((entry) => !entry.available)
 
   const removedCategory =
     current.category_model !== null && current.category_provider === null
@@ -201,6 +202,13 @@ export function ModelChoiceSection({ projectId }: { projectId: number }) {
         <p className="text-sm text-text" data-testid="model-choice-removed-landmark">
           Sehenswürdigkeits-Erkennung: {removedLandmark} — dieses Modell ist nicht mehr wählbar.
           Wähle ein anderes.
+        </p>
+      )}
+
+      {noLandmarkModel && (
+        <p className="text-sm text-text-muted" data-testid="model-choice-no-landmark-model">
+          Für die Sehenswürdigkeits-Erkennung ist derzeit kein Modell wählbar — für keinen Anbieter
+          ist ein API-Schlüssel hinterlegt.
         </p>
       )}
 
@@ -427,7 +435,7 @@ function ChoiceRow({
   installationDefault,
 }: ChoiceRowProps) {
   return (
-    <label className="flex cursor-pointer flex-col justify-center gap-1 rounded-sm border border-border px-3 py-2 has-[:checked]:border-accent">
+    <label className="flex min-h-11 cursor-pointer flex-col justify-center gap-1 rounded-sm border border-border px-3 py-2 has-[:checked]:border-accent">
       <span className="flex items-center gap-2">
         <input
           type="radio"

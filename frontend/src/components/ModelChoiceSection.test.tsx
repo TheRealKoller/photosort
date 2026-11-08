@@ -116,6 +116,29 @@ describe('ModelChoiceSection: der Katalog', () => {
     expect(card).toHaveTextContent('unbekannt je Million Eingabe-Token')
   })
 
+  it('sagt am Kopf der Gruppe, wenn kein Modell für die Sehenswürdigkeits-Erkennung wählbar ist', async () => {
+    vi.mocked(projectsApi.getModelChoice).mockResolvedValue(
+      choice({
+        cloud_models: [
+          { ...MISTRAL, available: false, unavailable_reasons: ['no_api_key'] },
+          ANTHROPIC,
+        ],
+      }),
+    )
+    renderSection()
+
+    expect(await screen.findByTestId('model-choice-no-landmark-model')).toHaveTextContent(
+      'Für die Sehenswürdigkeits-Erkennung ist derzeit kein Modell wählbar',
+    )
+  })
+
+  it('sagt diesen Satz nicht, solange ein Modell wählbar ist', async () => {
+    renderSection()
+
+    await screen.findByTestId('model-card-eye')
+    expect(screen.queryByTestId('model-choice-no-landmark-model')).not.toBeInTheDocument()
+  })
+
   it('setzt die Wahl auf die Installationsvorgabe, wenn sie von dort kommt', async () => {
     vi.mocked(projectsApi.getModelChoice).mockResolvedValue(
       choice({
@@ -162,7 +185,9 @@ describe('ModelChoiceSection: zwei Gruppen', () => {
     expect(eyeCard).toHaveTextContent(/desert ant labs/i)
     expect(eyeCard).toHaveTextContent(/lässt sich nicht abschalten/i)
     expect(eyeCard).toHaveTextContent(/solange #621 nicht umgesetzt ist/i)
-    expect(eyeCard).toHaveTextContent(/liefert keine namen von sehenswürdigkeiten/i)
+    expect(eyeCard).toHaveTextContent(
+      'Nicht möglich — Eye liefert keine Namen von Sehenswürdigkeiten.',
+    )
   })
 })
 
