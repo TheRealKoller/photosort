@@ -1440,8 +1440,10 @@ def _export_payload(
                 }
                 for purpose in PURPOSES
             },
-            # AK 10: derselbe Zaehler je Merkmal des Zwecks `motif_feature`. Die Einheit ist das
-            # (Foto, Motiv)-Paar - ein Foto mit drei abweichenden Merkmalen steht hier dreimal.
+            # Die Aufschluesselung je Merkmal: die Einheit ist das (Foto, Motiv)-Paar - ein Foto
+            # mit drei abweichenden Merkmalen steht hier dreimal. Zusaetzlich nennt jede Zeile
+            # die Richtung der Abweichung (`a_only`/`b_only`) und ist damit NICHT dieselbe Form
+            # wie eine Zweckzaehlung.
             "counts_by_motif": {
                 motif_key: {
                     "compared": motif_counts[motif_key].compared,
