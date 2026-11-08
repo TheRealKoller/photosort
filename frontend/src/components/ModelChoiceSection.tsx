@@ -156,21 +156,18 @@ export function ModelChoiceSection({ projectId }: { projectId: number }) {
       return
     }
     setSaved(false)
-    mutation.mutate(
-      storedBody(draft),
-      {
-        onSuccess: (answer) => {
-          setDraft(draftFrom(answer.current))
-          setSaved(true)
-        },
-        // Fehlschlag: die Marken springen auf die Serverantwort zurück.
-        onError: () => {
-          if (current !== null) {
-            setDraft(draftFrom(current))
-          }
-        },
+    mutation.mutate(storedBody(draft), {
+      onSuccess: (answer) => {
+        setDraft(draftFrom(answer.current))
+        setSaved(true)
       },
-    )
+      // Fehlschlag: die Marken springen auf die Serverantwort zurück.
+      onError: () => {
+        if (current !== null) {
+          setDraft(draftFrom(current))
+        }
+      },
+    })
   }
 
   function chooseCategoryModel(entry: CloudModelOut): void {

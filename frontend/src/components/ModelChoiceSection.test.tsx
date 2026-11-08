@@ -349,7 +349,6 @@ describe('ModelChoiceSection: Speichern', () => {
     )
   })
 
-
   it('schreibt alle drei Spalten in EINEM PUT und meldet den Erfolg', async () => {
     vi.mocked(projectsApi.putModelChoice).mockResolvedValue(
       choice({
