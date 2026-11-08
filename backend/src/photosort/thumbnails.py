@@ -14,6 +14,10 @@ from typing import Literal
 
 from PIL import Image, ImageOps
 
+# Der Modulimport registriert den HEIF-Opener bei Pillow; ohne ihn liefert `Image.open` fuer
+# HEIC/HEIF kein Bild und `generate_variants` faellt dauerhaft auf `None` zurueck.
+import photosort.image_codecs  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 # Grid nutzt die Thumbnail-, Einzelbild-/Vergleichsansicht die Display-Auflösung.
@@ -131,7 +135,7 @@ def generate_variants(
     """Erzeugt Thumbnail- und Display-Auflösung im lokalen Cache.
 
     Best-effort wie opencloud/exif.py::extract_taken_at: ein nicht dekodierbares Bild (z.B.
-    HEIC ohne installiertes Plugin, beschaedigte Datei) darf einen laufenden Scan nie abbrechen
+    beschaedigte Datei oder nicht unterstuetzte Spielart) darf einen laufenden Scan nie abbrechen
     - stattdessen liefert der Bild-Endpunkt fuer diese Variante dauerhaft 404 ("wird noch
     verarbeitet"-Platzhalter im Frontend), bis eine neue etag-Version erfolgreich verarbeitet
     werden kann.

@@ -4,6 +4,7 @@ import io
 import os
 from pathlib import Path
 
+import pillow_heif
 import pytest
 from PIL import Image
 
@@ -46,6 +47,19 @@ def _jpeg_bytes_with_orientation(width: int, height: int, orientation: int) -> b
     exif[0x0112] = orientation
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", exif=exif)
+    return buffer.getvalue()
+
+
+def _heic_bytes(width: int, height: int) -> bytes:
+    """HEIC-Bytes ueber die NATIVE pillow_heif-API.
+
+    Bewusst nicht ueber `pillow_heif.register_heif_opener()`: Dieses Plugin muss allein das
+    Produkt registrieren (`photosort/image_codecs.py`). Registrierte der Test es selbst, bliebe
+    der fehlende Import in `thumbnails.py` unbemerkt - der Test waere gruen, obwohl
+    `generate_variants` im Betrieb an derselben Datei scheitert."""
+    image = Image.new("RGB", (width, height), color="red")
+    buffer = io.BytesIO()
+    pillow_heif.from_pillow(image).save(buffer)
     return buffer.getvalue()
 
 
@@ -235,6 +249,41 @@ def test_generate_variants_returns_the_shown_ratio_of_an_exif_rotated_image(
     assert ratio == pytest.approx(2 / 3)
     with Image.open(thumbnail_path(tmp_path, 1, "etag-rot")) as saved:
         assert saved.size[0] < saved.size[1]
+
+
+# HEIC/HEIF laufen durch denselben Bildpfad wie JPEG/PNG, weil `thumbnails.py` das
+# Registrierungsmodul importiert - kein Format-Zweig.
+def test_generate_variants_writes_both_jpeg_variants_for_heic(tmp_path: Path) -> None:
+    content = _heic_bytes(4000, 3000)
+
+    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-heic", image_bytes=content)
+
+    assert ratio == pytest.approx(4 / 3)
+    thumb = thumbnail_path(tmp_path, 1, "etag-heic")
+    display = display_path(tmp_path, 1, "etag-heic")
+    assert thumb.is_file()
+    assert display.is_file()
+
+    with Image.open(thumb) as image:
+        assert image.format == "JPEG"
+        assert image.size == (400, 300)
+    with Image.open(display) as image:
+        assert image.format == "JPEG"
+        assert image.size == (2048, 1536)
+
+
+def test_generate_variants_returns_none_for_broken_heic_without_writing(
+    tmp_path: Path,
+) -> None:
+    # Gueltiger HEIC-Dateikopf (ftypheic), danach Muell: ein beschaedigter HEIC-Posten darf den
+    # Scan nicht abbrechen, liefert `None` und hinterlaesst keine Cache-Datei.
+    content = b"\x00\x00\x00\x1cftypheic\x00\x00\x00\x00" + b"broken"
+
+    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-heic-broken", image_bytes=content)
+
+    assert ratio is None
+    assert not thumbnail_path(tmp_path, 1, "etag-heic-broken").exists()
+    assert not display_path(tmp_path, 1, "etag-heic-broken").exists()
 
 
 def test_generate_variants_returns_none_instead_of_crashing_on_write_failure(

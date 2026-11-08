@@ -5,6 +5,8 @@ Teststrategie-Abschnitt der Spec ("Phase-2a-Klassifikation als reine Funktion").
 
 from datetime import UTC, datetime
 
+import pytest
+
 from photosort.models import Photo
 from photosort.opencloud.webdav_xml import DavEntry
 from photosort.worker import SkipReason, _classify_scan_entries
@@ -83,6 +85,26 @@ def test_unchanged_etag_of_an_unprobed_photo_becomes_a_probe_only_work_item() ->
     assert decision.work_item.existing_photo is existing_photo
     assert classification.work_items == [decision.work_item]
     assert classification.seen_paths == {"CostaRica/img.jpg"}
+
+
+@pytest.mark.parametrize("dateiname", ["img.heic", "img.heif"])
+def test_an_unprobed_heic_of_an_unchanged_etag_is_skipped_without_catch_up(
+    dateiname: str,
+) -> None:
+    """BESTANDSSCHUTZ: HEIC/HEIF wurden vor ihrer Unterstuetzung nie gelesen. Ein unveraenderter
+    Etag darf fuer sie keine Nachhol-Runde ausloesen, sonst veraenderte ein erneuter Scan
+    Bestandsprojekte rueckwirkend."""
+    relative_path = f"CostaRica/{dateiname}"
+    entries = [(relative_path, _entry(dateiname, "same-etag"))]
+    existing = {relative_path: _existing_photo(relative_path, "same-etag", camera_probed=False)}
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    decision = classification.decisions[0]
+    assert decision.skip_reason == SkipReason.UNCHANGED_ETAG
+    assert decision.work_item is None
+    assert classification.work_items == []
+    assert classification.seen_paths == {relative_path}
 
 
 def test_a_changed_etag_stays_a_full_work_item_even_when_unprobed() -> None:

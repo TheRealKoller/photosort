@@ -1726,7 +1726,8 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   Zeitspanne, keine Regel mit Sommer-/Winterzeit.
 - **Photo** *(implementiert, `models.py`)*: gehört zu einem Project, referenziert
   `relative_path`/`etag` auf OpenCloud, `taken_at`/`last_modified`, `content_length`. Nur
-  JPEG/PNG/HEIC (MVP).
+  JPEG/PNG/HEIC/HEIF (MVP); HEIC/HEIF dekodiert Pillow über `pillow-heif`, dessen Wheel libheif
+  mitbringt (`image_codecs.py` registriert den Opener für API und Worker).
   - **`taken_at` trägt seit Spec [`0426`](../specs/features/0426-zeitversatz-je-kamera.md) die
     KORRIGIERTE Zeit** (Migration `a6b7c8d9e0f1`). Name und Rolle ("die Zeit, mit der die Anwendung
     arbeitet") sind unverändert, der Inhalt hat sich gedreht: hier steht seither die um den

@@ -232,6 +232,37 @@ Dieses Dokument benennt die durchsetzenden Codestellen selbst. Die Verbindung Ko
 
 - Bei Spec 0003 zusätzlich entschärft dadurch, dass die Heuristik-Berechnung (Schärfe/Belichtung/dHash) auf der bereits von `thumbnails.py` auf max. 2048×2048 Pixel begrenzten `display`-Cache-Variante läuft, nicht auf dem OpenCloud-Originalbild — `DecompressionBombError` beim erneuten Öffnen ist damit praktisch ausgeschlossen, das breite `except Exception` bleibt trotzdem Pflicht für die übrigen Randfälle (fehlende Cache-Datei, beschädigte Datei, Varianz-0-Bilder o.ä.).
 
+### HEIC/HEIF-Dekodierung über `pillow-heif` (`image_codecs.py`, ADR [`0142`](../decisions/0142-heic-dekodierung-ueber-pillow-heif.md), Spec [`0627`](../features/0627-heic-fotos-anzeigen.md)) — umgesetzt
+
+Ein zusätzlicher nativer Decoder (libheif) verarbeitet fremde Dateien. **Was gilt:** Er ist
+ausschließlich über Pillow erreichbar; `photosort/image_codecs.py` registriert den Opener,
+`thumbnails.py` und `opencloud/exif.py` importieren dieses Modul. **Wofür:** jeder Dekodier- und
+EXIF-Pfad in API und Worker. **Bei Verletzung:** ein zweiter Bild-I/O-Weg über CLI, ImageMagick
+oder einen Subprozess ist untersagt.
+
+- **Lieferkette:** `pillow-heif>=1.8.1` (BSD-3-Clause) kommt als Wheel von PyPI, cp312/
+  manylinux_2_28 für x86_64 und aarch64, und bringt libheif selbst mit — kein apt-Paket, kein
+  Build-Schritt, keine zweite libheif-Quelle im Image. Die Version steht in
+  `backend/pyproject.toml`; installiert wird sie wie jede andere Python-Abhängigkeit über
+  `uv pip install`, nie als Fremd-Download und nie aus einem sdist-Bau.
+- **Fehlergrenze unverändert:** Jeder Dekodier-/Schreibfehler endet im Best-effort-Block von
+  `generate_variants` als `None`, ohne Scan-Abbruch; `Image.DecompressionBombError` bleibt
+  abgedeckt.
+- **Auslieferung unverändert:** Der Bild-Endpunkt liefert ausschließlich die JPEG-Cache-Varianten;
+  HEIC/HEIF verlässt den Server nie, und eine undekodierbare Datei ergibt weiterhin 404.
+- **Sicherheitsauflage `decode_threads=0`:** **Was gilt:** `image_codecs.py` registriert den
+  Opener mit `register_heif_opener(decode_threads=0)` und deaktiviert damit die parallele
+  Grid-Tile-Dekodierung; das schließt GHSA-35mc-3887-rr37 (Heap-Use-after-free, High/CVSS 7.5)
+  in der gebündelten libheif-Version 1.23.6, ausgelöst schon durch gewöhnliches Dekodieren einer
+  fremden Datei. **Wofür:** jeder HEIC/HEIF-Dekodierpfad in API und Worker; ein frischer Prozess,
+  der nur `photosort.opencloud.exif` importiert, belegt den Wert im Test. **Bei Verletzung:** ein
+  Aufruf ohne `decode_threads=0` oder eine zweite Registrierungsstelle öffnet den angreifbaren
+  Pfad wieder; die Auflage fällt erst mit einer Anhebung auf libheif ≥ 1.23.7.
+- **Restrisiko:** CPU-Amplifikation über abgeleitete Bilder bleibt bis libheif 1.23.7 möglich,
+  das erst mit pillow-heif 1.9.0 kommt (am 2026-11-08 nicht auf PyPI). Hingenommen, weil der
+  Dienst ausschließlich Dateien aus dem eigenen OpenCloud-Speicher verarbeitet und keinen offenen
+  Upload anbietet; der Scan bleibt pro Foto best-effort.
+
 ### Job-Lauf-Terminierung (projektweites Robustheitsprinzip)
 
 **Grundsatz, projektweit verbindlich** (analog zum vorstehenden "Lokale Bildverarbeitung"-Prinzip, aber auf Lauf-Ebene statt Einzelfoto-Ebene; erstmals als konkreter Fix in `worker.py::run_project_scoring` zu Spec 0003 umgesetzt, seit Spec 0023 (`worker.py::run_project_scan`) ein zweites, unabhängiges Mal angewendet und hier deshalb als wiederkehrendes Muster verankert): Jede `ScanRun`/`ScoringRun`/`TopSelectionRun`-Verarbeitung muss in einem äußeren, breiten `except Exception`-Handler enden, der den Lauf zuverlässig auf `status=FAILED` mit `error_message`/`finished_at` setzt — eine engere, auf bekannte Fehlerklassen (z.B. nur `OpenCloudError`) beschränkte Liste ist unzureichend, da jede unerwartete, heute noch unbekannte Fehlerquelle (z.B. ein Bug im XML-Parsing) sonst ungefangen durchläuft und den Datenbankeintrag dauerhaft auf `running` stehen lässt — ohne Watchdog/Retry hilft daran auch ein Neustart nichts.
