@@ -45,6 +45,7 @@ from photosort.config import settings
 from photosort.duplicates import survives_ausschuss
 from photosort.eye_client import eye_service_is_healthy
 from photosort.eye_mapping import MAPPINGS, MODEL_REVISION
+from photosort.model_choice import api_key_for_provider
 from photosort.models import (
     ClassificationReview,
     ClassificationReviewCase,
@@ -364,26 +365,12 @@ async def _get_project_or_404(project_id: int, session: AsyncSession) -> Project
     return project
 
 
-def _api_key_for_provider(provider: str) -> str:
-    """Der hinterlegte Schluessel eines Anbieters - leer heisst "keiner hinterlegt".
-
-    Ausdrueckliche Zuordnung statt `getattr(settings, f"{provider}_api_key")`: die Registry der
-    Modelle ist erweiterbar, die Namen der Secret-Felder sind es nicht. Ein neuer Anbieter ohne
-    Eintrag hier ist damit schlicht nicht waehlbar, statt versehentlich mit leerem Schluessel
-    aufzulaufen. Es wird nur die ANWESENHEIT geprueft, der Wert verlaesst diese Funktion nie."""
-    if provider == "anthropic":
-        return settings.anthropic_api_key
-    if provider == "mistral":
-        return settings.mistral_api_key
-    return ""
-
-
 def _cloud_reasons(*, consent_enabled: bool, provider: str) -> list[UnavailableReason]:
     """Die Sperrgruende einer Cloud-Wahl in fester Reihenfolge: `no_consent` vor `no_api_key`."""
     reasons: list[UnavailableReason] = []
     if not consent_enabled:
         reasons.append("no_consent")
-    if not _api_key_for_provider(provider):
+    if not api_key_for_provider(provider):
         reasons.append("no_api_key")
     return reasons
 
@@ -415,7 +402,7 @@ def _options_out(project: Project) -> ClassificationReviewOptionsOut:
     cloud_reasons = _cloud_reasons(
         consent_enabled=consent,
         provider=next(
-            (name for name in VISION_MODELS_BY_PROVIDER if _api_key_for_provider(name)), ""
+            (name for name in VISION_MODELS_BY_PROVIDER if api_key_for_provider(name)), ""
         ),
     )
     kinds = [
@@ -614,7 +601,7 @@ def _resolve_side(side_in: ReviewSideIn, letter: str) -> ResolvedSide:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Unbekanntes Modell.",
             )
-        if not _api_key_for_provider(provider):
+        if not api_key_for_provider(provider):
             # Kein Schluessel heisst nicht "unbekannt": die Wahl ist bekannt, aber nicht
             # ausfuehrbar - und ein Lauf ohne Schluessel scheiterte garantiert.
             raise HTTPException(
