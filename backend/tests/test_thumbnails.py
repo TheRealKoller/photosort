@@ -251,8 +251,8 @@ def test_generate_variants_returns_the_shown_ratio_of_an_exif_rotated_image(
         assert saved.size[0] < saved.size[1]
 
 
-# specs/features/0627-heic-fotos-anzeigen.md: HEIC/HEIF laufen durch denselben Bildpfad wie
-# JPEG/PNG, weil `thumbnails.py` das Registrierungsmodul importiert - kein Format-Zweig.
+# HEIC/HEIF laufen durch denselben Bildpfad wie JPEG/PNG, weil `thumbnails.py` das
+# Registrierungsmodul importiert - kein Format-Zweig.
 def test_generate_variants_writes_both_jpeg_variants_for_heic(tmp_path: Path) -> None:
     content = _heic_bytes(4000, 3000)
 
