@@ -1,6 +1,6 @@
 # 0627 - HEIC-Fotos anzeigen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #629](https://github.com/TheRealKoller/photosort/pull/629))
 **Erstellt:** 2026-11-08
 **Bezug:** [Issue #627](https://github.com/TheRealKoller/photosort/issues/627), ADR
 [`0142`](../decisions/0142-heic-dekodierung-ueber-pillow-heif.md)
