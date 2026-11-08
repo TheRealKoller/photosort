@@ -414,6 +414,58 @@ async def test_scan_extracts_exif_for_jpeg(db_session: AsyncSession, tmp_path: P
     assert client.range_requests == ["CostaRica/img.jpg"]
 
 
+def _heic_with_exif() -> bytes:
+    """HEIC mit Aufnahmedatum, GPS und Kamera, erzeugt ueber die native pillow_heif-API."""
+    import io
+
+    import pillow_heif
+    from PIL import Image
+    from PIL.ExifTags import IFD
+    from PIL.TiffImagePlugin import IFDRational
+
+    def dms(degrees: int, minutes: int, seconds: float) -> tuple[object, object, object]:
+        return (
+            IFDRational(degrees, 1),
+            IFDRational(minutes, 1),
+            IFDRational(round(seconds * 100), 100),
+        )
+
+    image = Image.new("RGB", (20, 10), color="blue")
+    exif = image.getexif()
+    exif[271] = "Canon"
+    exif[272] = "EOS 5D"
+    exif.get_ifd(IFD.Exif)[36867] = "2022:01:02 03:04:05"
+    exif.get_ifd(IFD.GPSInfo).update({1: "N", 2: dms(48, 51, 29.09), 3: "E", 4: dms(2, 17, 40.90)})
+    buffer = io.BytesIO()
+    pillow_heif.from_pillow(image).save(buffer, exif=exif)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("dateiname", ["img.heic", "img.heif"])
+async def test_scan_reads_exif_from_a_heic_in_the_same_range_window(
+    db_session: AsyncSession, tmp_path: Path, dateiname: str
+) -> None:
+    """`.heic`/`.heif` sind EXIF-Kandidaten und teilen sich das 128-KiB-Range-Fenster mit JPEG:
+    kein zweiter Netzwerkzugriff, alle drei Extraktoren greifen."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    relative_path = f"CostaRica/{dateiname}"
+    client = FakeOpenCloudClient(
+        entries=[(relative_path, _entry(dateiname, "etag-heic", modified))],
+        file_contents={relative_path: _heic_with_exif()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    camera = (await db_session.execute(select(ProjectCamera))).scalar_one()
+    assert photo.taken_at_original == datetime(2022, 1, 2, 3, 4, 5)
+    assert photo.gps_lat == pytest.approx(48.85808, abs=1e-4)
+    assert photo.gps_lon == pytest.approx(2.29469, abs=1e-4)
+    assert (camera.make, camera.model) == ("Canon", "EOS 5D")
+    assert client.range_requests == [relative_path]
+
+
 async def test_scan_run_marked_failed_on_opencloud_error(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

@@ -211,7 +211,8 @@ from photosort.thumbnails import (
 # remote_classification.py/cloud_vision.py bekommen deshalb keinen eigenen Logger.
 logger = logging.getLogger(__name__)
 
-_EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg"}
+# HEIC/HEIF lesen ihr EXIF aus demselben 128-KiB-Fenster wie JPEG (ADR 0142 Punkt 2).
+_EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg", ".heic", ".heif"}
 _EXIF_RANGE_BYTES = 131_072
 
 # FESTES Grund-Token fuer den einen Fall, in dem der Scan den Versatz eines Fotos nicht anwenden
