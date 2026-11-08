@@ -32,31 +32,31 @@ einen vollständigen Entwurf bekomme und an jedem Bild sehe, woher seine Einstuf
 
 **Entwurf ohne Cloud**
 
-- [ ] Ein Projekt ohne Cloud-Einwilligung, das für die Kategorisierung Eye eingestellt hat, erhält nach einem erfolgreichen Lauf einen Album-Entwurf; während des ganzen Laufs gibt es keinen Cloud-Aufruf und keine Cloud-Kosten.
-- [ ] In einem solchen Projekt erscheint kein Hinweis mehr, dass für den Entwurf eine Cloud-Freigabe nötig sei — weder auf der Entwurfsseite noch in der Ablaufübersicht.
-- [ ] Ist Eye in dieser Installation nicht eingeschaltet oder noch nie gelaufen, bleibt die Ansicht nicht leer, sondern nennt den fehlenden Schritt.
+- [x] Ein Projekt ohne Cloud-Einwilligung, das für die Kategorisierung Eye eingestellt hat, erhält nach einem erfolgreichen Lauf einen Album-Entwurf; während des ganzen Laufs gibt es keinen Cloud-Aufruf und keine Cloud-Kosten.
+- [x] In einem solchen Projekt erscheint kein Hinweis mehr, dass für den Entwurf eine Cloud-Freigabe nötig sei — weder auf der Entwurfsseite noch in der Ablaufübersicht.
+- [x] Ist Eye in dieser Installation nicht eingeschaltet oder noch nie gelaufen, bleibt die Ansicht nicht leer, sondern nennt den fehlenden Schritt.
 
 **Welche Stufe zählt**
 
-- [ ] Für ein Foto zählt ausschließlich die Stufe des Verfahrens, das im Projekt für die Kategorisierung eingestellt ist — auch dann, wenn das Foto zusätzlich eine Stufe des anderen Verfahrens trägt.
-- [ ] Fehlt einem Foto die Stufe des eingestellten Verfahrens, gibt es keinen Rückfall auf die Stufe des anderen Verfahrens und keinen rein lokal gebildeten Wert; das gilt auch für ein Foto, dessen Eye-Aufruf fehlgeschlagen ist. Es behält seine Event-Zugehörigkeit, bleibt im einsehbaren Vorrat und wird nicht vorgeschlagen; von Hand aufgenommen erscheint es als „noch nicht eingestuft".
-- [ ] Ein späterer Lauf des eingestellten Verfahrens holt fehlende Stufen nach, auch für Fotos, die aus früheren Läufen schon eine Eye-Stufe tragen; Fotos mit vorhandener Stufe dieses Verfahrens werden nicht erneut bewertet.
+- [x] Für ein Foto zählt ausschließlich die Stufe des Verfahrens, das im Projekt für die Kategorisierung eingestellt ist — auch dann, wenn das Foto zusätzlich eine Stufe des anderen Verfahrens trägt.
+- [x] Fehlt einem Foto die Stufe des eingestellten Verfahrens, gibt es keinen Rückfall auf die Stufe des anderen Verfahrens und keinen rein lokal gebildeten Wert; das gilt auch für ein Foto, dessen Eye-Aufruf fehlgeschlagen ist. Es behält seine Event-Zugehörigkeit, bleibt im einsehbaren Vorrat und wird nicht vorgeschlagen; von Hand aufgenommen erscheint es als „noch nicht eingestuft".
+- [x] Ein späterer Lauf des eingestellten Verfahrens holt fehlende Stufen nach, auch für Fotos, die aus früheren Läufen schon eine Eye-Stufe tragen; Fotos mit vorhandener Stufe dieses Verfahrens werden nicht erneut bewertet.
 
 **Wechsel der Projekteinstellung**
 
-- [ ] Ein Wechsel zwischen Cloud und Eye ändert den bestehenden Vorschlag nicht sofort, sondern wirkt mit dem nächsten erfolgreichen Lauf; bis dahin bleiben Entwurf, Stufen und Herkunft unverändert.
-- [ ] Nach dem ersten Lauf mit der neuen Einstellung enthält der Vorschlag nur noch Fotos mit einer Stufe des neuen Verfahrens; Stufen des vorherigen Verfahrens bleiben gespeichert und zählen wieder, sobald zurückgewechselt und erneut gelaufen wurde. Von Hand aufgenommene und gestrichene Fotos bleiben über jeden Wechsel erhalten.
+- [x] Ein Wechsel zwischen Cloud und Eye ändert den bestehenden Vorschlag nicht sofort, sondern wirkt mit dem nächsten erfolgreichen Lauf; bis dahin bleiben Entwurf, Stufen und Herkunft unverändert.
+- [x] Nach dem ersten Lauf mit der neuen Einstellung enthält der Vorschlag nur noch Fotos mit einer Stufe des neuen Verfahrens; Stufen des vorherigen Verfahrens bleiben gespeichert und zählen wieder, sobald zurückgewechselt und erneut gelaufen wurde. Von Hand aufgenommene und gestrichene Fotos bleiben über jeden Wechsel erhalten.
 
 **Anzeige**
 
-- [ ] Bei einem Foto, dessen zählende Stufe von Eye stammt, steht an der Stelle der Begründung die Herkunft „Eye" — an der Entwurfskachel, im Alternativen-Band und in der Endauswahl. Keine leere Zeile, kein Platzhalter, kein erfundener Text.
-- [ ] Die Qualitätsstufe (wenig / bedingt / gut albumtauglich) wird für Eye-Stufen nach derselben Einteilung angezeigt wie für Cloud-Stufen; es gibt keine zweite Skala und keine Umrechnung.
+- [x] Bei einem Foto, dessen zählende Stufe von Eye stammt, steht an der Stelle der Begründung die Herkunft „Eye" — an der Entwurfskachel, im Alternativen-Band und in der Endauswahl. Keine leere Zeile, kein Platzhalter, kein erfundener Text.
+- [x] Die Qualitätsstufe (wenig / bedingt / gut albumtauglich) wird für Eye-Stufen nach derselben Einteilung angezeigt wie für Cloud-Stufen; es gibt keine zweite Skala und keine Umrechnung.
 
 **Was unverändert bleibt**
 
-- [ ] Eye-Stufen ändern weder die Kandidatenmenge noch die Kostenschätzung des nächsten Cloud-Laufs.
-- [ ] In einem Projekt mit eingestellter Cloud-Kategorisierung bleiben Entwurf, Stufen und Begründungen nach einem Eye-Lauf unverändert.
-- [ ] Scan, Ausschuss-Gate, die lokale Bewertung und die Klassifizierungsprüfung bleiben unverändert.
+- [x] Eye-Stufen ändern weder die Kandidatenmenge noch die Kostenschätzung des nächsten Cloud-Laufs.
+- [x] In einem Projekt mit eingestellter Cloud-Kategorisierung bleiben Entwurf, Stufen und Begründungen nach einem Eye-Lauf unverändert.
+- [x] Scan, Ausschuss-Gate, die lokale Bewertung und die Klassifizierungsprüfung bleiben unverändert.
 
 ## Datenmodell-Bezug
 
