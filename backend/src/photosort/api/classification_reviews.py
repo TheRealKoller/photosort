@@ -1358,7 +1358,9 @@ def _guard_export_shape(payload: dict[str, Any]) -> None:
         raise RuntimeError("Exportform verletzt: unerwartete Merkmale in `counts_by_motif`.")
     for counts in payload["review"]["counts_by_motif"].values():
         if set(counts) != _EXPORT_KEYS["motif_counts"]:
-            raise RuntimeError("Exportform verletzt: unerwartete Schluessel in einer Merkmalszaehlung.")
+            raise RuntimeError(
+                "Exportform verletzt: unerwartete Schluessel in einer Merkmalszaehlung."
+            )
     if set(payload["verdict_counts"]) != _EXPORT_KEYS["verdict_counts"]:
         raise RuntimeError("Exportform verletzt: unerwartete Schluessel in `verdict_counts`.")
     for case in payload["cases"]:

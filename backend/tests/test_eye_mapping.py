@@ -445,9 +445,7 @@ class TestTheDefiningSignalsInV3:
             ("tiere", "wildlife"),
         ],
     )
-    def test_a_removed_tag_alone_does_not_carry_its_motif(
-        self, motif_key: str, tag: str
-    ) -> None:
+    def test_a_removed_tag_alone_does_not_carry_its_motif(self, motif_key: str, tag: str) -> None:
         assert motif_strengths(_payload(tags={tag: 0.9}), MAPPING_V3)[motif_key] == 0.0
 
     @pytest.mark.parametrize(
@@ -585,12 +583,13 @@ class TestTheActivitySupportInV3:
 
         assert strengths["aktivitaet"] == pytest.approx(0.8)
 
-    def test_the_gate_is_inclusive_at_the_tag_confidence(self) -> None:
+    @pytest.mark.parametrize("below", [0.49, 0.4999])
+    def test_the_gate_is_inclusive_at_the_tag_confidence(self, below: float) -> None:
         at = motif_strengths(_payload(tags={"hiking": 0.8, "people": 0.5}), MAPPING_V3)
-        below = motif_strengths(_payload(tags={"hiking": 0.8, "people": 0.4999}), MAPPING_V3)
+        under = motif_strengths(_payload(tags={"hiking": 0.8, "people": below}), MAPPING_V3)
 
         assert at["aktivitaet"] == pytest.approx(0.8)
-        assert below["aktivitaet"] == 0.0
+        assert under["aktivitaet"] == 0.0
 
     def test_a_support_value_outside_the_scale_is_clamped(self) -> None:
         above = motif_strengths(_payload(tags={"hiking": 0.8, "people": 1.4}), MAPPING_V3)
@@ -874,9 +873,9 @@ class TestTheWholeMapping:
         assert EYE_PURPOSE_MAPPING["model_revision"] == MODEL_REVISION
         assert purposes["motivstaerken"]["motifs"] == MAPPING_V3.motif_tags
         assert purposes["motivstaerken"]["detections"] == MAPPING_V3.motif_detections
-        assert purposes["motivstaerken"]["support"] == MAPPING_V3.motif_support
+        assert purposes["motivstaerken"]["support"] is MAPPING_V3.motif_support
         assert purposes["motivstaerken"]["support_threshold"] == MAPPING_V3.tag_confidence
-        assert set(purposes["motivstaerken"]["signals"]) == {"tags", "pets"}
+        assert purposes["motivstaerken"]["signals"] == ("tags", "pets")
         assert purposes["ausschluss"]["excluded_types"] == MAPPING_V3.excluded_types
         assert purposes["feinlabels"]["excluded_types"] == MAPPING_V3.fine_label_excluded
 
