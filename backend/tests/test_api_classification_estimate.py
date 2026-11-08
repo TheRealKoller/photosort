@@ -6,11 +6,13 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort import pricing
 from photosort.api.deps import get_opencloud_client
-from photosort.cloud_vision import VISION_MODELS_BY_PROVIDER
+from photosort.cloud_vision import VISION_MODELS_BY_PROVIDER, provider_for_vision_model
 from photosort.config import settings
 from photosort.main import app
 from photosort.models import (
+    CategoryMethod,
     CriterionScoringRun,
     CriterionSource,
     DuplicateDecision,
@@ -21,6 +23,7 @@ from photosort.models import (
     PhotoDuplicateDecision,
     PhotoMotifAssessment,
     PhotoScore,
+    Project,
     RatingStatus,
     ScanStatus,
     ScoringRun,
@@ -160,6 +163,33 @@ async def _add_criterion_score(
     await session.commit()
 
 
+async def _set_model_choice(
+    session: AsyncSession,
+    project_id: int,
+    *,
+    method: CategoryMethod = CategoryMethod.CLOUD,
+    category_model: str | None = None,
+    landmark_model: str | None = None,
+) -> None:
+    """Setzt die Projektwahl direkt in der Datenbank - die API dafuer lebt in
+    `api/model_choice.py`; die Schaetzung soll unabhaengig davon pruefbar sein."""
+    project = await session.get(Project, project_id)
+    assert project is not None
+    project.category_method = method
+    project.category_model = category_model
+    project.landmark_model = landmark_model
+    await session.commit()
+
+
+async def _enable_consent(client: httpx.AsyncClient, project_id: int) -> None:
+    """Die Sehenswuerdigkeits-Erkennung setzt die projektweite Einwilligung voraus; ohne sie ist
+    der Landmark-Anteil `null` (findet nicht statt) und wird gar nicht gezaehlt."""
+    response = await client.put(
+        f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
+    )
+    assert response.status_code == 200
+
+
 class TestEstimateEndpoint:
     async def test_requires_auth(self, api_client: httpx.AsyncClient) -> None:
         response = await api_client.get("/projects/1/classify/estimate")
@@ -206,19 +236,19 @@ class TestEstimateEndpoint:
         assert response.status_code == 200
         body = response.json()
         assert body["candidate_count"] == 2
-        assert body["remote_categories"]["candidate_count"] == 2
-        # Spec 0348/ADR 0068 Punkt 7: ohne einen erfolgreich abgeschlossenen Lauf ist der
-        # Landmark-Anteil `null` = "nicht verlaesslich schaetzbar", nicht `0`. Die frueher hier
-        # stehende `0` behauptete Kostenfreiheit fuer einen Anteil, der gleich Geld kostet.
-        assert body["landmark"]["candidate_count"] is None
-        assert body["landmark"]["estimated_cost_usd"] is None
-        assert body["provider"] == settings.landmark_provider
-        assert body["model"] == settings.resolved_landmark_model()
-        price = estimate_usd_per_image(
-            settings.resolved_landmark_model(), settings.landmark_provider
-        )
+        assert body["categorization"]["candidate_count"] == 2
+        # Ohne Einwilligung findet die Sehenswuerdigkeits-Erkennung nicht statt: der Anteil ist
+        # `null`, nicht ein Objekt mit `0` - die Oberflaeche schreibt dort "findet nicht statt".
+        assert body["landmark"] is None
+        # Ohne Projektwahl gilt fuer BEIDE Taetigkeiten die Installationsvorgabe.
+        model = settings.resolved_landmark_model()
+        provider = provider_for_vision_model(model)
+        assert provider is not None
+        assert body["categorization"]["model"] == model
+        assert body["categorization"]["provider"] == provider
+        price = estimate_usd_per_image(model, provider)
         assert price is not None
-        assert body["price_per_image_usd"] == price
+        assert body["categorization"]["price_per_image_usd"] == price
         assert body["estimated_cost_usd"] == 2 * price
 
     async def test_excludes_cloud_assessed_photos_from_the_candidate_count(
@@ -268,7 +298,7 @@ class TestEstimateEndpoint:
         response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
 
         assert response.status_code == 200
-        assert response.json()["remote_categories"]["candidate_count"] == 2
+        assert response.json()["categorization"]["candidate_count"] == 2
 
 
 class TestLandmarkShareOfTheEstimate:
@@ -280,6 +310,7 @@ class TestLandmarkShareOfTheEstimate:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
         landmark_candidate = await _add_photo_candidate(db_session, project_id, "a.jpg")
         await _add_criterion_score(db_session, landmark_candidate, "landschaft", 1.0)
@@ -291,11 +322,12 @@ class TestLandmarkShareOfTheEstimate:
         ).json()
 
         assert body["landmark"]["candidate_count"] == 1
-        assert body["remote_categories"]["candidate_count"] == 2
+        assert body["categorization"]["candidate_count"] == 2
         assert body["candidate_count"] == 3
-        price = estimate_usd_per_image(
-            settings.resolved_landmark_model(), settings.landmark_provider
-        )
+        model = settings.resolved_landmark_model()
+        provider = provider_for_vision_model(model)
+        assert provider is not None
+        price = estimate_usd_per_image(model, provider)
         assert price is not None
         assert body["estimated_cost_usd"] == 3 * price
 
@@ -303,6 +335,7 @@ class TestLandmarkShareOfTheEstimate:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
         photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
         await _add_criterion_score(db_session, photo, "gebaeude", 1.0)
@@ -320,6 +353,7 @@ class TestLandmarkShareOfTheEstimate:
         bereits gescortes Foto wird kein zweites Mal an die Cloud geschickt und darf die
         Schaetzung deshalb auch nicht erhoehen."""
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
         photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
         await _add_criterion_score(db_session, photo, "landschaft", 1.0)
@@ -335,6 +369,7 @@ class TestLandmarkShareOfTheEstimate:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
         rejected = await _add_photo_candidate(db_session, project_id, "a.jpg", rejected=True)
         await _add_criterion_score(db_session, rejected, "landschaft", 1.0)
@@ -349,6 +384,7 @@ class TestLandmarkShareOfTheEstimate:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
         app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
         other_id = (
@@ -388,8 +424,8 @@ class TestTheEstimateFollowsTheConfiguredModel:
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["model"] == "claude-haiku-4-5"
-        assert body["price_per_image_usd"] == pytest.approx(0.00585, abs=1e-9)
+        assert body["categorization"]["model"] == "claude-haiku-4-5"
+        assert body["categorization"]["price_per_image_usd"] == pytest.approx(0.00585, abs=1e-9)
         assert body["estimated_cost_usd"] == pytest.approx(0.00585, abs=1e-9)
 
     async def test_a_configured_non_default_model_changes_the_price(
@@ -407,8 +443,8 @@ class TestTheEstimateFollowsTheConfiguredModel:
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["model"] == stronger
-        assert body["price_per_image_usd"] > 0.0052
+        assert body["categorization"]["model"] == stronger
+        assert body["categorization"]["price_per_image_usd"] > 0.0052
 
     async def test_an_unpriced_model_yields_null_amounts_instead_of_zero(
         self,
@@ -424,7 +460,11 @@ class TestTheEstimateFollowsTheConfiguredModel:
         deshalb ausdruecklich ueber den Monkeypatch-Bypass erzeugt. Der Pfad wird trotzdem
         gebaut und geprueft, weil eine Absicherung, die ausschliesslich aus einem Test besteht,
         mit diesem Test verschwindet (ADR 0059 Punkt 4)."""
-        monkeypatch.setattr(settings, "landmark_model", "ein-nie-bepreistes-modell")
+        model = settings.resolved_landmark_model()
+        # Der Registry-Invariante sei Dank gibt es keinen Katalogeintrag ohne Preis; der Bypass
+        # nimmt ihn hier aus der Tabelle, statt ein NICHT registriertes Modell zu speichern -
+        # das waere seit Spec 0383 ein `409` und kein Preisfall mehr.
+        monkeypatch.delitem(pricing.MODEL_PRICING, model)
         project_id = await _create_project(authenticated_api_client)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
 
@@ -432,8 +472,8 @@ class TestTheEstimateFollowsTheConfiguredModel:
 
         assert response.status_code == 200
         body = response.json()
-        assert body["model"] == "ein-nie-bepreistes-modell"
-        assert body["price_per_image_usd"] is None
+        assert body["categorization"]["model"] == model
+        assert body["categorization"]["price_per_image_usd"] is None
         assert body["estimated_cost_usd"] is None
         # Die Kandidatenzahl bleibt korrekt - sie ist bekannt, nur der Preis ist es nicht.
         assert body["candidate_count"] == 1
@@ -452,15 +492,17 @@ class TestTheEstimateFollowsTheConfiguredModel:
         "candidate_count=0 liefert estimated_cost_usd=0.0, kein Sonderfall" aus dem Docstring des
         Endpunkts gilt ohne Ausnahme - sonst haengt sie unausgesprochen daran, dass ein Preis
         gepflegt ist."""
-        monkeypatch.setattr(settings, "landmark_model", "ein-nie-bepreistes-modell")
+        model = settings.resolved_landmark_model()
+        monkeypatch.delitem(pricing.MODEL_PRICING, model)
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
 
         body = (
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
         assert body["candidate_count"] == 0
-        assert body["price_per_image_usd"] is None
+        assert body["categorization"]["price_per_image_usd"] is None
         assert body["estimated_cost_usd"] == 0.0
 
     async def test_zero_candidates_still_yield_zero_not_null(
@@ -496,6 +538,7 @@ class TestTheLandmarkShareIsUnknownBeforeTheFirstRun:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
         await _add_criterion_score(db_session, photo, "landschaft", 1.0)
 
@@ -515,6 +558,7 @@ class TestTheLandmarkShareIsUnknownBeforeTheFirstRun:
         status: ScanStatus,
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id, status=status)
         photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
         await _add_criterion_score(db_session, photo, "landschaft", 1.0)
@@ -531,6 +575,7 @@ class TestTheLandmarkShareIsUnknownBeforeTheFirstRun:
         """Nach einem erfolgreichen Lauf ist `0` eine ANDERE Aussage als `null`: "es gibt gerade
         keine Landmark-Kandidaten" statt "wir wissen es nicht"."""
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
 
@@ -547,6 +592,7 @@ class TestTheLandmarkShareIsUnknownBeforeTheFirstRun:
         """Pflichtfall jeder projektskopierten Abfrage - ohne ihn bestuende die Abfrage auch ohne
         `WHERE project_id = ...`."""
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         app.dependency_overrides[get_opencloud_client] = lambda: FakeOpenCloudClient()
         other_id = (
             await authenticated_api_client.post(
@@ -571,6 +617,7 @@ class TestTheLandmarkShareIsUnknownBeforeTheFirstRun:
         `landmark.estimated_cost_usd` `null` bleibt. Wuerde die Gesamtsumme hier auf `null`
         fallen, saehe der Nutzer vor seinem ersten Durchlauf ueberhaupt keinen Betrag mehr."""
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
         await _add_photo_candidate(db_session, project_id, "b.jpg")
         price = estimate_usd_per_image(
@@ -584,7 +631,7 @@ class TestTheLandmarkShareIsUnknownBeforeTheFirstRun:
 
         assert body["candidate_count"] == 2
         assert body["estimated_cost_usd"] == pytest.approx(2 * price)
-        assert body["remote_categories"]["estimated_cost_usd"] == pytest.approx(2 * price)
+        assert body["categorization"]["estimated_cost_usd"] == pytest.approx(2 * price)
         assert body["landmark"]["estimated_cost_usd"] is None
 
 
@@ -597,14 +644,17 @@ class TestTheBranchOrderPerShare:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
 
         body = (
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["remote_categories"] == {"candidate_count": 0, "estimated_cost_usd": 0.0}
-        assert body["landmark"] == {"candidate_count": 0, "estimated_cost_usd": 0.0}
+        assert body["categorization"]["candidate_count"] == 0
+        assert body["categorization"]["estimated_cost_usd"] == 0.0
+        assert body["landmark"]["candidate_count"] == 0
+        assert body["landmark"]["estimated_cost_usd"] == 0.0
 
     async def test_zero_candidates_beat_a_missing_price(
         self,
@@ -614,16 +664,18 @@ class TestTheBranchOrderPerShare:
     ) -> None:
         """Bei null Kandidaten ist der Betrag BEKANNT - es faellt nichts an, weil nichts
         verarbeitet wird - auch wenn der Preis je Bild unbekannt ist."""
-        monkeypatch.setattr(settings, "landmark_model", "ein-nie-bepreistes-modell")
+        model = settings.resolved_landmark_model()
+        monkeypatch.delitem(pricing.MODEL_PRICING, model)
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
 
         body = (
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["price_per_image_usd"] is None
-        assert body["remote_categories"]["estimated_cost_usd"] == 0.0
+        assert body["categorization"]["price_per_image_usd"] is None
+        assert body["categorization"]["estimated_cost_usd"] == 0.0
         assert body["landmark"]["estimated_cost_usd"] == 0.0
 
     async def test_a_missing_price_yields_null_for_a_non_empty_share(
@@ -632,7 +684,8 @@ class TestTheBranchOrderPerShare:
         db_session: AsyncSession,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr(settings, "landmark_model", "ein-nie-bepreistes-modell")
+        model = settings.resolved_landmark_model()
+        monkeypatch.delitem(pricing.MODEL_PRICING, model)
         project_id = await _create_project(authenticated_api_client)
         await _add_classification_run(db_session, project_id)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
@@ -641,49 +694,46 @@ class TestTheBranchOrderPerShare:
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["remote_categories"]["candidate_count"] == 1
-        assert body["remote_categories"]["estimated_cost_usd"] is None
+        assert body["categorization"]["candidate_count"] == 1
+        assert body["categorization"]["estimated_cost_usd"] is None
         assert body["estimated_cost_usd"] is None
 
     async def test_an_unknown_share_yields_null_regardless_of_the_price(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
 
         body = (
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["price_per_image_usd"] is not None
+        assert body["categorization"]["price_per_image_usd"] is not None
         assert body["landmark"]["candidate_count"] is None
         assert body["landmark"]["estimated_cost_usd"] is None
 
 
-async def test_the_two_flat_candidate_fields_are_gone(
+async def test_the_flat_fields_of_the_old_shape_are_gone(
     authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Abwesenheits-Assertion zum Umbau von `ClassificationEstimateOut`: die beiden Flachfelder
-    gehen in den Anteils-Objekten AUF, sie stehen nicht zusaetzlich daneben. Zwei Wege zu
-    derselben Zahl, von denen einer die `null`-Semantik nicht kennt, waeren genau der Zustand,
-    den ADR 0068 Punkt 7 beseitigt."""
+    """Abwesenheits-Assertion zum Umbau von `ClassificationEstimateOut`: Anbieter, Modell und
+    Preis je Bild stehen JE ANTEIL, die Kandidatenzahl JE TATIGKEIT in den Anteils-Objekten.
+    Zwei Wege zu derselben Zahl, von denen einer die `null`-Semantik nicht kennt, waeren genau
+    der Zustand, den ADR 0068 Punkt 7 beseitigt."""
     project_id = await _create_project(authenticated_api_client)
     await _add_photo_candidate(db_session, project_id, "a.jpg")
 
     body = (await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")).json()
 
-    assert "remote_category_candidate_count" not in body
-    assert "landmark_candidate_count" not in body
     assert set(body) == {
         "candidate_count",
         "mode",
-        "remote_categories",
+        "categorization",
         "landmark",
-        "provider",
-        "model",
-        "price_per_image_usd",
         "estimated_cost_usd",
     }
+    assert "remote_categories" not in body
 
 
 class TestTheAusschussDecisionMovesBothEstimates:
@@ -712,7 +762,7 @@ class TestTheAusschussDecisionMovesBothEstimates:
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["remote_categories"]["candidate_count"] == 2
+        assert body["categorization"]["candidate_count"] == 2
 
     async def test_a_discard_decision_takes_a_candidate_out_of_the_remote_category_estimate(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -727,7 +777,7 @@ class TestTheAusschussDecisionMovesBothEstimates:
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["remote_categories"]["candidate_count"] == 1
+        assert body["categorization"]["candidate_count"] == 1
 
     async def test_the_remote_category_estimate_counts_exactly_what_the_run_would_send(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -758,13 +808,14 @@ class TestTheAusschussDecisionMovesBothEstimates:
         ).json()
         vom_lauf = await select_remote_category_candidates(db_session, project_id)
 
-        assert body["remote_categories"]["candidate_count"] == len(vom_lauf)
+        assert body["categorization"]["candidate_count"] == len(vom_lauf)
         assert {photo.relative_path for photo in vom_lauf} == {"gewinner.jpg", "behalten.jpg"}
 
     async def test_a_keep_decision_turns_a_sorted_out_photo_into_a_landmark_candidate(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
         winner = await _add_photo_candidate(db_session, project_id, "gewinner.jpg")
         behalten = await _add_photo_candidate(
@@ -787,6 +838,7 @@ class TestTheAusschussDecisionMovesBothEstimates:
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
         verworfen = await _add_photo_candidate(
             db_session, project_id, "raus.jpg", decision=DuplicateDecision.DISCARD
@@ -807,6 +859,7 @@ class TestTheAusschussDecisionMovesBothEstimates:
         abgelehnte Aufnahme traegt kein `duplicate_of` - sie bleibt abgelehnt und geht nicht an
         den Anbieter, obwohl jemand "behalten" gedrueckt hat."""
         project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
         await _add_classification_run(db_session, project_id)
         unscharf = await _add_photo_candidate(
             db_session, project_id, "unscharf.jpg", rejected=True, decision=DuplicateDecision.KEEP
@@ -817,14 +870,14 @@ class TestTheAusschussDecisionMovesBothEstimates:
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["remote_categories"]["candidate_count"] == 0
+        assert body["categorization"]["candidate_count"] == 0
         assert body["landmark"]["candidate_count"] == 0
 
 
-class TestTheEstimatePerWay:
-    """Spec 0609, S7: die Vorschau sagt je Weg, WELCHE Anteile stattfinden - und ein nicht
-    stattfindender Anteil ist `null`/`null`, nie `0.0`. `0.0` als Gesamtsumme heisst "kostenfrei"
-    und ist die Aussage, die die Oberflaeche mit dem Wort statt mit einem Betrag zeigt."""
+class TestTheEstimatePerMode:
+    """Spec 0383, S7: die Vorschau sagt je Modus, WELCHE Anteile stattfinden - `local` gar
+    keinen, `project` genau die der Projektwahl. Ein nicht stattfindender Anteil ist `null`
+    (das ganze Anteils-Objekt), nie `0.0`."""
 
     async def test_local_reports_no_part_at_all(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -839,84 +892,141 @@ class TestTheEstimatePerWay:
         ).json()
 
         assert body["mode"] == "local"
-        assert body["remote_categories"] == {"candidate_count": None, "estimated_cost_usd": None}
-        assert body["landmark"] == {"candidate_count": None, "estimated_cost_usd": None}
+        assert body["categorization"] is None
+        assert body["landmark"] is None
         assert body["candidate_count"] == 0
         assert body["estimated_cost_usd"] == 0.0
 
-    async def test_eye_without_consent_is_free_and_count_free(
+    async def test_an_eye_choice_without_consent_is_free_and_skips_the_landmark_part(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """AK "Eye ohne Einwilligung: kein Cloud-Kontakt, keine Namen, kostenfrei" - beide Anteile
-        finden nicht statt, und die Summe ist genau `0.0`."""
+        """Eye braucht keine Cloud-Einwilligung fuer die Kategorisierung; ohne Einwilligung
+        entfaellt die Sehenswuerdigkeits-Erkennung - der Anteil ist `null`, nicht `0`."""
         project_id = await _create_project(authenticated_api_client)
         await _add_photo_candidate(db_session, project_id, "a.jpg")
+        await _set_model_choice(db_session, project_id, method=CategoryMethod.EYE)
 
         body = (
-            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate?mode=eye")
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert body["mode"] == "eye"
-        assert body["remote_categories"] == {"candidate_count": None, "estimated_cost_usd": None}
-        assert body["landmark"] == {"candidate_count": None, "estimated_cost_usd": None}
-        assert body["candidate_count"] == 0
+        assert body["mode"] == "project"
+        assert body["categorization"] == {
+            "kind": "eye",
+            "provider": None,
+            "model": None,
+            "price_per_image_usd": 0.0,
+            "candidate_count": 1,
+            "estimated_cost_usd": 0.0,
+        }
+        assert body["landmark"] is None
+        assert body["candidate_count"] == 1
         assert body["estimated_cost_usd"] == 0.0
 
-    async def test_eye_with_consent_reports_the_landmark_part_only(
+    async def test_an_eye_choice_with_consent_reports_the_landmark_part_too(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
-        """AK "Eye mit Einwilligung: nur die Landmark-Phase laeuft": der Kategorie-Anteil fehlt,
-        der Landmark-Anteil steht wie heute - und die Summe ist NUR sein Betrag."""
         project_id = await _create_project(authenticated_api_client)
         photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
         await _add_classification_run(db_session, project_id)
-        await _add_criterion_score(db_session, photo, "landscape", 0.9)
+        await _add_criterion_score(db_session, photo, "landschaft", 0.9)
+        await _set_model_choice(db_session, project_id, method=CategoryMethod.EYE)
         await authenticated_api_client.put(
             f"/projects/{project_id}/cloud-vision-consent", json={"enabled": True}
         )
 
         eye = (
-            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate?mode=eye")
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
+        await _set_model_choice(db_session, project_id, method=CategoryMethod.CLOUD)
         cloud = (
-            await authenticated_api_client.get(
-                f"/projects/{project_id}/classify/estimate?mode=cloud"
-            )
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
 
-        assert eye["remote_categories"] == {"candidate_count": None, "estimated_cost_usd": None}
+        assert eye["categorization"]["kind"] == "eye"
+        assert eye["categorization"]["estimated_cost_usd"] == 0.0
         assert eye["landmark"] == cloud["landmark"]
-        assert eye["candidate_count"] == eye["landmark"]["candidate_count"]
+        assert eye["candidate_count"] == (
+            eye["categorization"]["candidate_count"] + eye["landmark"]["candidate_count"]
+        )
         assert eye["estimated_cost_usd"] == eye["landmark"]["estimated_cost_usd"]
 
-    async def test_the_cloud_number_is_unchanged_by_the_way(
+    async def test_the_default_mode_is_the_project_choice(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
-        photo = await _add_photo_candidate(db_session, project_id, "a.jpg")
-        await _add_classification_run(db_session, project_id)
-        await _add_criterion_score(db_session, photo, "landscape", 0.9)
+        await _add_photo_candidate(db_session, project_id, "a.jpg")
 
-        default = (
+        params = (
             await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
         ).json()
-        cloud = (
+        project = (
             await authenticated_api_client.get(
-                f"/projects/{project_id}/classify/estimate?mode=cloud"
+                f"/projects/{project_id}/classify/estimate?mode=project"
             )
         ).json()
 
-        assert default["mode"] == "cloud"
-        assert default["candidate_count"] == cloud["candidate_count"]
-        assert default["estimated_cost_usd"] == cloud["estimated_cost_usd"]
+        assert params["mode"] == "project"
+        assert params["candidate_count"] == project["candidate_count"]
+        assert params["estimated_cost_usd"] == project["estimated_cost_usd"]
 
+    @pytest.mark.parametrize("mode", ["cloud", "eye", "irgendwas"])
     async def test_an_unknown_mode_is_rejected(
-        self, authenticated_api_client: httpx.AsyncClient
+        self, authenticated_api_client: httpx.AsyncClient, mode: str
     ) -> None:
         project_id = await _create_project(authenticated_api_client)
 
         response = await authenticated_api_client.get(
-            f"/projects/{project_id}/classify/estimate?mode=irgendwas"
+            f"/projects/{project_id}/classify/estimate?mode={mode}"
         )
 
         assert response.status_code == 422
+
+
+class TestTheProjectChoiceDecidesTheBasis:
+    """Spec 0383, S3/S5: jeder Anteil traegt Anbieter, Modell und Preis SEINER Taetigkeit -
+    angezeigt und abgerechnet lesen denselben aufgeloesten Wert."""
+
+    async def test_each_part_names_the_model_of_its_own_task(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        category_model = VISION_MODELS_BY_PROVIDER["mistral"][1]
+        landmark_model = VISION_MODELS_BY_PROVIDER["anthropic"][1]
+        project_id = await _create_project(authenticated_api_client)
+        await _enable_consent(authenticated_api_client, project_id)
+        await _add_photo_candidate(db_session, project_id, "a.jpg")
+        await _set_model_choice(
+            db_session,
+            project_id,
+            category_model=category_model,
+            landmark_model=landmark_model,
+        )
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["categorization"]["provider"] == "mistral"
+        assert body["categorization"]["model"] == category_model
+        assert body["categorization"]["price_per_image_usd"] == estimate_usd_per_image(
+            category_model, "mistral"
+        )
+        assert body["landmark"]["provider"] == "anthropic"
+        assert body["landmark"]["model"] == landmark_model
+        assert body["landmark"]["price_per_image_usd"] == estimate_usd_per_image(
+            landmark_model, "anthropic"
+        )
+
+    async def test_a_stored_model_that_left_the_registry_is_a_409(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        project_id = await _create_project(authenticated_api_client)
+        await _set_model_choice(db_session, project_id, category_model="weg-damit")
+
+        response = await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == (
+            "Das im Projekt eingestellte Modell ist nicht mehr wählbar. "
+            "Wähle in den Projekteinstellungen ein anderes."
+        )

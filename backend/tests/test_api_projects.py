@@ -1523,12 +1523,18 @@ class TestTheRunEstimateReachesTheJob:
 
         response = await authenticated_api_client.post(
             f"/projects/{project_id}/classify",
-            json={"scoring_run_id": scoring_run_id, "mode": "cloud"},
+            json={"scoring_run_id": scoring_run_id, "mode": "project"},
         )
 
         assert response.status_code == 202
         assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, True, expected))]
-        assert fake_enqueuer.keywords == [{"mode": "cloud"}]
+        assert fake_enqueuer.keywords == [
+            {
+                "mode": "cloud",
+                "category_model": settings.resolved_landmark_model(),
+                "landmark_model": settings.resolved_landmark_model(),
+            }
+        ]
 
     async def test_a_local_run_forwards_no_estimate(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1555,7 +1561,13 @@ class TestTheRunEstimateReachesTheJob:
 
         assert response.status_code == 202
         assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, False, None))]
-        assert fake_enqueuer.keywords == [{"mode": "local"}]
+        assert fake_enqueuer.keywords == [
+            {
+                "mode": "local",
+                "category_model": settings.resolved_landmark_model(),
+                "landmark_model": settings.resolved_landmark_model(),
+            }
+        ]
 
     async def test_the_request_body_cannot_influence_the_stored_estimate(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
@@ -1577,7 +1589,7 @@ class TestTheRunEstimateReachesTheJob:
             f"/projects/{project_id}/classify",
             json={
                 "scoring_run_id": scoring_run_id,
-                "mode": "cloud",
+                "mode": "project",
                 "estimated_cost_usd": 999_999.0,
                 "cost_usd": 999_999.0,
                 "model": "ein-untergeschobenes-modell",
@@ -1587,7 +1599,13 @@ class TestTheRunEstimateReachesTheJob:
 
         assert response.status_code == 202
         assert fake_enqueuer.calls == [("classify", (project_id, scoring_run_id, True, expected))]
-        assert fake_enqueuer.keywords == [{"mode": "cloud"}]
+        assert fake_enqueuer.keywords == [
+            {
+                "mode": "cloud",
+                "category_model": settings.resolved_landmark_model(),
+                "landmark_model": settings.resolved_landmark_model(),
+            }
+        ]
 
 
 # specs/features/0429-auswahl-richtwert-und-mischung.md: der Richtwert des Auswahlvorschlags -

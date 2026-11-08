@@ -44,6 +44,25 @@ class ResolvedModelChoice:
     landmark_is_default: bool
 
 
+@dataclass(frozen=True)
+class ModelChoiceView:
+    """Dieselbe Wahl fuer LESEPFAEDE - mit einer anderen Fehlerzeit.
+
+    Ein gespeichertes Modell, das nicht mehr in der Registry steht, bleibt hier als ID stehen und
+    traegt `provider: None`: `GET …/model-choice` und `ProjectOut` werfen nicht, sie zeigen. Der
+    Laufpfad daneben (`resolve_model_choice`) wirft `UnknownModelChoiceError` - ein Foto darf
+    nicht an einen anderen Empfaenger gehen als angezeigt, eine ANZEIGE aber darf einen
+    veralteten Wert benennen."""
+
+    category_method: CategoryMethod
+    category_model: str | None
+    category_provider: str | None
+    landmark_model: str
+    landmark_provider: str | None
+    category_is_default: bool
+    landmark_is_default: bool
+
+
 def api_key_for_provider(provider: str) -> bool:
     """Ist fuer diesen Anbieter ein Schluessel hinterlegt?
 
@@ -65,30 +84,54 @@ def _provider_or_raise(model: str) -> str:
     return provider
 
 
+def _stored_values(project: Project) -> tuple[str | None, bool, str, bool]:
+    """Die wirksamen Werte OHNE Anbieter-Aufloesung - die eine Stelle, die `NULL` zur
+    Installationsvorgabe macht. Geteilt von Lauf- und Lesepfad, damit beide nie auseinanderlaufen."""
+    if project.category_method is CategoryMethod.EYE:
+        category_model: str | None = None
+        category_is_default = False
+    else:
+        category_model = project.category_model or settings.resolved_landmark_model()
+        category_is_default = project.category_model is None
+    landmark_model = project.landmark_model or settings.resolved_landmark_model()
+    return category_model, category_is_default, landmark_model, project.landmark_model is None
+
+
 def resolve_model_choice(project: Project) -> ResolvedModelChoice:
     """Die wirksame Wahl eines Projekts - einmal je Auslösung, danach durchgereicht.
 
     `NULL` in `category_model`/`landmark_model` heisst Installationsvorgabe und wird hier zum
     konkreten Modellwert. Ein ausdruecklich gespeicherter Wert folgt einer spaeteren Aenderung der
     Vorgabe nicht; nur `NULL` folgt ihr."""
-    if project.category_method is CategoryMethod.EYE:
-        category_model: str | None = None
-        category_provider: str | None = None
-        category_is_default = False
-    else:
-        category_model = project.category_model or settings.resolved_landmark_model()
-        category_provider = _provider_or_raise(category_model)
-        category_is_default = project.category_model is None
-
-    landmark_model = project.landmark_model or settings.resolved_landmark_model()
-    landmark_provider = _provider_or_raise(landmark_model)
+    category_model, category_is_default, landmark_model, landmark_is_default = _stored_values(
+        project
+    )
+    category_provider = None if category_model is None else _provider_or_raise(category_model)
 
     return ResolvedModelChoice(
         category_method=project.category_method,
         category_model=category_model,
         category_provider=category_provider,
         landmark_model=landmark_model,
-        landmark_provider=landmark_provider,
+        landmark_provider=_provider_or_raise(landmark_model),
         category_is_default=category_is_default,
-        landmark_is_default=project.landmark_model is None,
+        landmark_is_default=landmark_is_default,
+    )
+
+
+def describe_model_choice(project: Project) -> ModelChoiceView:
+    """Die wirksame Wahl fuer LESEPFAEDE - ohne zu werfen (siehe `ModelChoiceView`)."""
+    category_model, category_is_default, landmark_model, landmark_is_default = _stored_values(
+        project
+    )
+    return ModelChoiceView(
+        category_method=project.category_method,
+        category_model=category_model,
+        category_provider=(
+            None if category_model is None else provider_for_vision_model(category_model)
+        ),
+        landmark_model=landmark_model,
+        landmark_provider=provider_for_vision_model(landmark_model),
+        category_is_default=category_is_default,
+        landmark_is_default=landmark_is_default,
     )

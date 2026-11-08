@@ -85,7 +85,16 @@ class Project(Base):
     # gespeicherter Wert, damit "zur vorherigen Wahl zurueckkehren" eindeutig ist.
     # `ck_projects_category_model_requires_cloud` schliesst "Eye mit Cloud-Modell" aus.
     category_method: Mapped[CategoryMethod] = mapped_column(
-        SQLEnum(CategoryMethod, native_enum=False, length=20),
+        # `values_callable`: die Spalte traegt die WERTE `cloud`/`eye`, wie Migration,
+        # Server-Default und Check-Constraint sie nennen - nicht die Enum-NAMEN. Ohne das
+        # schriebe SQLAlchemy `CLOUD`, und `category_method = 'cloud'` im Constraint schluege
+        # bei jeder Cloud-Wahl mit Modell fehl.
+        SQLEnum(
+            CategoryMethod,
+            native_enum=False,
+            length=20,
+            values_callable=lambda members: [member.value for member in members],
+        ),
         default=CategoryMethod.CLOUD,
         server_default="cloud",
     )

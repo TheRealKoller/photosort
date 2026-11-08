@@ -20,7 +20,11 @@ from photosort.cloud_vision import (
     MISTRAL_VISION_MODEL,
 )
 from photosort.config import settings
-from photosort.model_choice import UnknownModelChoiceError, resolve_model_choice
+from photosort.model_choice import (
+    UnknownModelChoiceError,
+    describe_model_choice,
+    resolve_model_choice,
+)
 from photosort.models import CategoryMethod, Project
 
 
@@ -141,3 +145,43 @@ async def test_a_fresh_project_is_cloud_without_models(db_session: AsyncSession)
     assert project.category_method is CategoryMethod.CLOUD
     assert project.category_model is None
     assert project.landmark_model is None
+
+
+def test_the_read_path_describes_a_removed_model_without_raising() -> None:
+    """`GET …/model-choice` und `ProjectOut` zeigen die ID mit `provider: null` - ein 409 waere
+    hier falsch, denn der Nutzer muss den veralteten Wert SEHEN, um ihn aendern zu koennen."""
+    view = describe_model_choice(_project(category_model="gibt-es-nicht", landmark_model="weg"))
+
+    assert view.category_model == "gibt-es-nicht"
+    assert view.category_provider is None
+    assert view.landmark_model == "weg"
+    assert view.landmark_provider is None
+    assert view.category_is_default is False
+    assert view.landmark_is_default is False
+
+
+def test_the_read_path_reports_the_effective_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "landmark_provider", "mistral")
+
+    view = describe_model_choice(_project())
+
+    assert view.category_model == MISTRAL_VISION_MODEL
+    assert view.category_provider == "mistral"
+    assert view.landmark_model == MISTRAL_VISION_MODEL
+    assert view.landmark_provider == "mistral"
+    assert view.category_is_default is True
+    assert view.landmark_is_default is True
+
+
+def test_the_read_path_has_no_category_model_for_eye() -> None:
+    view = describe_model_choice(
+        _project(category_method=CategoryMethod.EYE, landmark_model=ANTHROPIC_VISION_MODEL)
+    )
+
+    assert view.category_method is CategoryMethod.EYE
+    assert view.category_model is None
+    assert view.category_provider is None
+    assert view.category_is_default is False
+    assert view.landmark_provider == "anthropic"
