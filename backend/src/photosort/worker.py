@@ -211,8 +211,9 @@ from photosort.thumbnails import (
 # remote_classification.py/cloud_vision.py bekommen deshalb keinen eigenen Logger.
 logger = logging.getLogger(__name__)
 
-# HEIC/HEIF lesen ihr EXIF aus demselben 128-KiB-Fenster wie JPEG (ADR 0142 Punkt 2).
-_EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg", ".heic", ".heif"}
+# HEIC/HEIF lesen ihr EXIF aus demselben 128-KiB-Fenster wie JPEG.
+_HEIC_EXTENSIONS = {".heic", ".heif"}
+_EXIF_CANDIDATE_EXTENSIONS = {".jpg", ".jpeg"} | _HEIC_EXTENSIONS
 _EXIF_RANGE_BYTES = 131_072
 
 # FESTES Grund-Token fuer den einen Fall, in dem der Scan den Versatz eines Fotos nicht anwenden
@@ -344,14 +345,18 @@ def _classify_scan_entries(
 ) -> ScanClassification:
     """Phase 2a: reine Funktion, keine Session-/DB-Zugriffe - isoliert unit-testbar (siehe
     test_worker_scan_classification.py). Entscheidungslogik: unsupported extension -> Skip +
-    files_skipped; unveraenderter Etag UND Kamera bereits geprueft -> Skip ohne files_skipped;
-    unveraenderter Etag UND noch nicht geprueft -> Arbeitsposten mit `probe_only=True`; sonst ->
-    voller Arbeitsposten. Die Verarbeitung selbst gehoert nicht hierher.
+    files_skipped; unveraenderter Etag UND (Kamera bereits geprueft ODER Endung HEIC/HEIF) ->
+    Skip ohne files_skipped; unveraenderter Etag UND noch nicht geprueft -> Arbeitsposten mit
+    `probe_only=True`; sonst -> voller Arbeitsposten. Die Verarbeitung selbst gehoert nicht
+    hierher.
 
     Der `probe_only`-Zweig ist die EINMALIGE Nachhol-Runde fuer Bestandsfotos (ADR 0090,
     Konsequenzen): Ohne sie bliebe die Kameraliste in bereits gescannten Projekten leer, denn ein
     unveraendertes Foto wird nie wieder gelesen. Sie laeuft genau einmal je Foto - danach steht
-    der Merker, AUCH wenn die Datei keine Kamera nennt."""
+    der Merker, AUCH wenn die Datei keine Kamera nennt. HEIC/HEIF sind davon ausgenommen: diese
+    Endungen wurden vor ihrer Unterstuetzung nie gelesen, ein Nachtrag wuerde Bestandsprojekte
+    rueckwirkend veraendern - sie bleiben bei unveraendertem Etag unberuehrt, bis das Projekt neu
+    eingelesen wird."""
     classification = ScanClassification()
     for relative_path, entry in entries:
         extension = _extension(relative_path)
@@ -364,7 +369,11 @@ def _classify_scan_entries(
         classification.seen_paths.add(relative_path)
         existing_photo = existing_photos.get(relative_path)
         unchanged = existing_photo is not None and existing_photo.etag == entry.etag
-        if unchanged and existing_photo is not None and existing_photo.camera_probed:
+        if (
+            unchanged
+            and existing_photo is not None
+            and (existing_photo.camera_probed or extension in _HEIC_EXTENSIONS)
+        ):
             classification.decisions.append(
                 ScanEntryDecision(relative_path, SkipReason.UNCHANGED_ETAG, None)
             )
