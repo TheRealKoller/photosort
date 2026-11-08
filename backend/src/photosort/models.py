@@ -633,6 +633,22 @@ class CriterionScoringRun(Base):
     mode: Mapped[ClassificationMode | None] = mapped_column(
         SQLEnum(ClassificationMode, native_enum=False, length=20), default=None
     )
+    # Die Quelle der ZAEHLENDEN Albumstufe dieses Laufs (ADR 0144): `cloud` liest
+    # `photo_album_suitability.level`, `eye` liest `photo_eye_results.album_level`. Eingefroren
+    # beim Laufstart aus `Project.category_method`; Rangwerte, Neuberechnung, Entwurfsanzeige und
+    # Feedback-Ereignisse lesen sie von HIER, nie von der heutigen Projekteinstellung - sonst
+    # wechselte ein Umschalten ohne neuen Lauf still die Grundlage des bestehenden Entwurfs.
+    # Altzeilen tragen `cloud`. Einzige Schreibstelle: `worker._start_criterion_scoring_run`.
+    album_level_source: Mapped[CategoryMethod] = mapped_column(
+        SQLEnum(
+            CategoryMethod,
+            native_enum=False,
+            length=20,
+            values_callable=lambda members: [member.value for member in members],
+        ),
+        default=CategoryMethod.CLOUD,
+        server_default="cloud",
+    )
     # War die Cloud-Nutzung für DIESEN Lauf angefordert (Checkbox am Auslöser)? Macht
     # nachträglich erkennbar, ob das Ergebnis überhaupt Cloud-Anreicherung enthalten kann. Sagt
     # NICHT, ob tatsächlich Cloud-Aufrufe stattgefunden haben - das Gate ist die Konjunktion mit
