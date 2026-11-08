@@ -200,6 +200,50 @@ describe('ProjectSettingsPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('nennt denselben Anbieter fuer beide Taetigkeiten nur EINMAL (AK 62)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      project({
+        model_choice: {
+          category_method: 'cloud',
+          category_provider: 'mistral',
+          category_model: 'ministral-3b-2512',
+          landmark_provider: 'mistral',
+          landmark_model: 'mistral-small-2506',
+        },
+      }),
+    )
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /erkläre cloud-bilderkennung/i }))
+
+    const text = (await screen.findByText(/Sehenswürdigkeiten zu erkennen/)).textContent ?? ''
+    expect(text.match(/Mistral/g)).toHaveLength(1)
+    expect(text).toContain('an denselben Anbieter gesendet')
+  })
+
+  it('nennt bei einem aus der Registry gefallenen Modell keinen erfundenen Anbieter', async () => {
+    const user = userEvent.setup()
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      project({
+        model_choice: {
+          category_method: 'cloud',
+          category_provider: null,
+          category_model: 'verschwunden-1',
+          landmark_provider: null,
+          landmark_model: 'verschwunden-2',
+        },
+      }),
+    )
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /erkläre cloud-bilderkennung/i }))
+
+    const text = (await screen.findByText(/Sehenswürdigkeiten zu erkennen/)).textContent ?? ''
+    expect(text).toContain('an den hinterlegten Anbieter gesendet')
+    expect(text).not.toContain('an des Anbieters')
+  })
+
   it('disables the toggle while the consent update is in flight (busy-button pattern)', async () => {
     const user = userEvent.setup()
     vi.mocked(projectsApi.getProject).mockResolvedValue(project())

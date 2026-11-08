@@ -14,6 +14,7 @@ import {
   useTriggerClassificationMutation,
 } from '../hooks/useProjects'
 import { useTriggerConfirmation } from '../hooks/useTriggerConfirmation'
+import { MODEL_CHOICE_TEXTS } from '../utils/classificationReviewLabels'
 import { formatProviderLabel } from '../utils/formatStats'
 import { PROJECT_ROUTE_PATHS } from '../utils/projectRoutes'
 import { deriveStepAction } from '../utils/stepActions'
@@ -65,8 +66,7 @@ function scopeText(
   }
   const locationSentence =
     'Trägt ein Foto Standortdaten, geht dabei eine grobe Angabe zum Aufnahmeort mit: der Ortsname, sonst eine auf rund 11 km gerundete Koordinate. Fotos ohne Standortdaten sind davon nicht betroffen.'
-  const eyeLicence =
-    'Eye sendet bei jedem Lauf eine Lizenzmeldung mit einer Zählkennung, aber ohne Bildinhalte an Desert Ant Labs; diese Meldung lässt sich nicht abschalten.'
+  const eyeLicence = MODEL_CHOICE_TEXTS.eyeLicenceNotice
   const categorizesInCloud = modelChoice.category_method === 'cloud'
   const categoryProvider = categorizesInCloud ? modelChoice.category_provider : null
   const landmarkProvider = consentEnabled ? modelChoice.landmark_provider : null

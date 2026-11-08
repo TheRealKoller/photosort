@@ -4,7 +4,6 @@ import type {
   ClassificationWay,
   FineLabelCountOut,
   ModelChoiceOut,
-  ProjectModelChoiceOut,
   ProjectOut,
   ProjectStatsOut,
 } from './types'
@@ -142,9 +141,6 @@ export function putModelChoice(id: number, payload: ModelChoicePayload): Promise
     body: payload,
   })
 }
-
-/** Die wirksame Wahl eines Projekts - schon im `ProjectOut` enthalten, hier nur benannt. */
-export type { ProjectModelChoiceOut }
 export function getClassificationEstimate(
   id: number,
   mode: ClassificationWay,

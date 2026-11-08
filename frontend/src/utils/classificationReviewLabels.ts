@@ -67,6 +67,10 @@ export const MODEL_CHOICE_TEXTS = {
   free: 'kostenfrei',
   saved: 'Gespeichert — gilt für künftige Läufe.',
   unchanged: 'Es wurde nichts geändert; die bisherige Wahl gilt weiter.',
+  // Der rechtlich formulierte Satz steht EINMAL (Spec 0383): Einstellungen und Laufdialog
+  // zeigen ihn wortgleich - zwei Kopien drifteten beim nächsten Wortwechsel auseinander.
+  eyeLicenceNotice:
+    'Eye sendet bei jedem Lauf eine Lizenzmeldung mit einer Zählkennung, aber ohne Bildinhalte an Desert Ant Labs; diese Meldung lässt sich nicht abschalten.',
 } as const
 
 /** „Nicht wählbar — für Anthropic ist kein API-Schlüssel hinterlegt." */

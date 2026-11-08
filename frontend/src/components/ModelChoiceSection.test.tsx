@@ -262,7 +262,23 @@ describe('ModelChoiceSection: nicht wählbar', () => {
     expect(await screen.findByTestId('model-choice-removed-category')).toHaveTextContent(
       'Kategorisierung: ein-entferntes-modell — dieses Modell ist nicht mehr wählbar. Wähle ein anderes.',
     )
+    // Der Grund steht NEBEN dem gesperrten Knopf, nicht nur über dem Raster: ein ausgegrauter
+    // Knopf ohne Begründung lässt raten, was fehlt (Muster 4 der Teststrategie).
     expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
+    expect(
+      screen.getByText(
+        'Ein Modell ist nicht mehr wählbar — wähle für die betroffene Tätigkeit ein anderes.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('bietet nirgends ein freies Textfeld für ein Modell an (S1)', async () => {
+    // Der Katalog ist die GESCHLOSSENE Eingabe: eine getippte Modell-ID könnte einen Namen
+    // behaupten, den diese Installation nicht wählen darf.
+    renderSection()
+
+    await screen.findByTestId('model-choice-section')
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 })
 

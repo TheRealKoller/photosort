@@ -119,21 +119,31 @@ function CameraSection({ projectId }: { projectId: number }) {
  */
 function consentExplainer(project: ProjectOut): string {
   const choice = project.model_choice
-  const landmarkProvider = formatProviderLabel(choice.landmark_provider ?? 'des Anbieters')
+  // Ein gespeichertes Modell kann aus der Registry gefallen sein (`provider: null`). Dann nennt
+  // der Satz keinen geratenen Empfänger, sondern "den hinterlegten Anbieter" - ein Genitiv-
+  // Platzhalter ergäbe hier "an des Anbieters gesendet".
+  const landmarkTarget =
+    choice.landmark_provider === null
+      ? 'den hinterlegten Anbieter'
+      : formatProviderLabel(choice.landmark_provider)
   const categoriesOnServer = choice.category_method === 'eye'
-  const categoryProvider = categoriesOnServer
-    ? null
-    : formatProviderLabel(choice.category_provider ?? 'des Anbieters')
-  const sameProvider = categoryProvider !== null && categoryProvider === landmarkProvider
+  const categoryTarget =
+    choice.category_provider === null
+      ? 'den hinterlegten Anbieter'
+      : formatProviderLabel(choice.category_provider)
+  const sameProvider = !categoriesOnServer && categoryTarget === landmarkTarget
   const parts = [
-    `Fotos, die als Landschaft oder Gebäude erkannt wurden, werden zur Analyse an ${landmarkProvider} gesendet, um Sehenswürdigkeiten zu erkennen.`,
+    `Fotos, die als Landschaft oder Gebäude erkannt wurden, werden zur Analyse an ${landmarkTarget} gesendet, um Sehenswürdigkeiten zu erkennen.`,
   ]
+  const remoteCategories = (target: string) =>
+    `Derselbe Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei (Kuratierungs-Schritt): dort ausgewählte Fotos werden an ${target} gesendet, um ihre Kategorie aus dem festen Set und bis zu zwei freie Feinlabels zu bestimmen.`
   parts.push(
     categoriesOnServer
       ? 'Derselbe Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei — nicht nötig: die Kategorisierung dieses Projekts läuft auf diesem Server und sendet kein Foto.'
       : sameProvider
-        ? `Derselbe Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei (Kuratierungs-Schritt): dort ausgewählte Fotos werden an ${categoryProvider} gesendet, um ihre Kategorie aus dem festen Set und bis zu zwei freie Feinlabels zu bestimmen.`
-        : `Derselbe Schalter gibt zusätzlich die optionale Remote-Kategorisierung frei (Kuratierungs-Schritt): dort ausgewählte Fotos werden an ${categoryProvider} gesendet, um ihre Kategorie aus dem festen Set und bis zu zwei freie Feinlabels zu bestimmen.`,
+        ? // AK 62: die Anbietermenge ohne Dopplung - derselbe Anbieter wird EINMAL genannt.
+          remoteCategories('denselben Anbieter')
+        : remoteCategories(categoryTarget),
   )
   return parts.join(' ')
 }
@@ -238,9 +248,9 @@ export function ProjectSettingsPage() {
         </div>
       </div>
 
-      {/* Modellwahl VOR der Cloud-Vision-Panel? Nein: sie sitzt ZWISCHEN Cloud-Panel und
-          Kameras (Spec 0383) - die Einwilligung beschreibt den Datenabfluss, die Wahl bestimmt
-          den Empfänger. Die Gefahrenzone bleibt das letzte Kind des gap-6-Containers. */}
+      {/* Die Modellwahl sitzt ZWISCHEN Cloud-Panel und Kameras (Spec 0383): die Einwilligung
+          beschreibt den Datenabfluss, die Wahl bestimmt den Empfänger. Die Gefahrenzone bleibt das
+          letzte Kind des gap-6-Containers. */}
       <ModelChoiceSection projectId={id} />
 
       <CameraSection projectId={id} />
