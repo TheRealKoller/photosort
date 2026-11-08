@@ -14,6 +14,10 @@ from typing import Literal
 
 from PIL import Image, ImageOps
 
+# Der Modulimport registriert den HEIF-Opener bei Pillow; ohne ihn liefert `Image.open` fuer
+# HEIC/HEIF kein Bild und `generate_variants` faellt dauerhaft auf `None` zurueck.
+import photosort.image_codecs  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 # Grid nutzt die Thumbnail-, Einzelbild-/Vergleichsansicht die Display-Auflösung.
