@@ -2100,7 +2100,7 @@ class TestTheDemoStateShowsEveryMotifState:
         assert eye_result is not None
         assert eye_result.album_level == demo_state._DEMO_EYE_ALBUM_LEVEL
         assert eye_result.model_revision == demo_state._DEMO_EYE_MODEL_REVISION
-        assert eye_result.mapping_version == "eye-4.2.3/v2"
+        assert eye_result.mapping_version == demo_state.EYE_MAPPING_VERSION
         # Der verdraengte lokale Vektor liegt als Rueckbaudatensatz daneben - sonst zeigte die
         # Demo einen Eye-Zustand, den die Anwendung selbst nie erzeugt.
         snapshot = await db_session.get(PhotoLocalMotifSnapshot, eye_photo.id)

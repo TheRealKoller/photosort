@@ -33,7 +33,7 @@ from photosort.classification_review import (
 )
 from photosort.cloud_vision import TokenUsage
 from photosort.eye_client import EyeImageUnreadableError
-from photosort.eye_mapping import MAPPING_VERSION
+from photosort.eye_mapping import MAPPING_VERSION, MAPPING_VERSION_V2
 from photosort.models import (
     ClassificationReview,
     ClassificationReviewCase,
@@ -258,6 +258,18 @@ async def _result_rows(
         )
         .scalars()
         .all()
+    )
+
+
+async def _motif_strength(
+    session: AsyncSession, review_id: int, side: str, motif_key: str
+) -> float | None:
+    return await session.scalar(
+        select(ClassificationReviewResultStrength.strength).where(
+            ClassificationReviewResultStrength.review_id == review_id,
+            ClassificationReviewResultStrength.side == side,
+            ClassificationReviewResultStrength.motif_key == motif_key,
+        )
     )
 
 
@@ -604,6 +616,86 @@ class TestEyeAndCloudCalls:
         assert eye.closed is True
         assert len(await _result_rows(db_session, review.id, "a")) == 3
         assert len(await _result_rows(db_session, review.id, "b")) == 3
+
+    async def test_two_eye_versions_gate_the_activity_on_the_same_response(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Spec 0622, Messweg: v2 gegen v3 auf DEMSELBEN Payload - ein Dienstaufruf je Foto.
+        `hiking` ohne Person traegt v2 mit 0,9, v3 gatet es auf 0,0."""
+        project = await _make_project(db_session)
+        user = await _make_user(db_session)
+        first = await _add_photo(db_session, project, tmp_path, "first.jpg")
+        second = await _add_photo(db_session, project, tmp_path, "second.jpg")
+        review = await _make_review(
+            db_session,
+            project,
+            user,
+            [
+                _side(
+                    "a",
+                    ClassificationReviewSideKind.EYE,
+                    eye_mapping_version=MAPPING_VERSION_V2,
+                ),
+                _side("b", ClassificationReviewSideKind.EYE, eye_mapping_version=MAPPING_VERSION),
+            ],
+        )
+        payload = _payload(tags={"hiking": 0.9})
+        eye = FakeEyeClient({first.id: payload, second.id: payload})
+
+        await execute_classification_review(
+            db_session, review, tmp_path, build_eye_client=lambda: eye
+        )
+
+        assert review.status == ScanStatus.SUCCESS
+        assert eye.analyze_calls == 2
+        assert await _motif_strength(db_session, review.id, "a", "aktivitaet") == pytest.approx(0.9)
+        assert await _motif_strength(db_session, review.id, "b", "aktivitaet") == pytest.approx(0.0)
+        assert len(await _result_rows(db_session, review.id, "a")) == 2
+        assert len(await _result_rows(db_session, review.id, "b")) == 2
+
+    async def test_a_photo_without_valid_scores_leaves_no_row_on_either_side(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Eine Fassung kann das Foto nicht beantworten - dann hinterlaesst es auf KEINER Seite
+        eine Zeile und zaehlt als unklassifizierbar, nie als halbes Vergleichspaar."""
+        project = await _make_project(db_session)
+        user = await _make_user(db_session)
+        answered = await _add_photo(db_session, project, tmp_path, "answered.jpg")
+        unanswered = await _add_photo(db_session, project, tmp_path, "unanswered.jpg")
+        review = await _make_review(
+            db_session,
+            project,
+            user,
+            [
+                _side(
+                    "a",
+                    ClassificationReviewSideKind.EYE,
+                    eye_mapping_version=MAPPING_VERSION_V2,
+                ),
+                _side("b", ClassificationReviewSideKind.EYE, eye_mapping_version=MAPPING_VERSION),
+            ],
+        )
+        eye = FakeEyeClient(
+            {
+                answered.id: _payload(tags={"hiking": 0.9}),
+                unanswered.id: {"kind": "landscape", "tags": {"hiking": 0.9}},
+            }
+        )
+
+        await execute_classification_review(
+            db_session, review, tmp_path, build_eye_client=lambda: eye
+        )
+
+        assert review.status == ScanStatus.SUCCESS
+        assert eye.analyze_calls == 2
+        assert review.unclassifiable_photo_count == 1
+        assert review.photo_count == 2
+        assert [row.photo_id for row in await _result_rows(db_session, review.id, "a")] == [
+            answered.id
+        ]
+        assert [row.photo_id for row in await _result_rows(db_session, review.id, "b")] == [
+            answered.id
+        ]
 
     async def test_the_cloud_client_follows_the_side_model(
         self, db_session: AsyncSession, tmp_path: Path

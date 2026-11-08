@@ -25,7 +25,7 @@ from photosort.api import classification_reviews as reviews_api
 from photosort.api.deps import get_job_enqueuer
 from photosort.cloud_vision import ANTHROPIC_VISION_MODEL, MISTRAL_VISION_MODEL
 from photosort.config import settings
-from photosort.eye_mapping import MAPPING_VERSION, MAPPINGS, MODEL_REVISION
+from photosort.eye_mapping import MAPPING_VERSION, MAPPING_VERSION_V2, MAPPINGS, MODEL_REVISION
 from photosort.main import app
 from photosort.models import (
     ClassificationReview,
@@ -284,7 +284,7 @@ class TestOptions:
         payload = (await authenticated_api_client.get(_url(project.id, "/options"))).json()
 
         assert [entry["eye_mapping_version"] for entry in payload["eye_mappings"]] == list(MAPPINGS)
-        assert list(MAPPINGS) == ["eye-4.2.3/v1", "eye-4.2.3/v2"]
+        assert list(MAPPINGS) == ["eye-4.2.3/v1", "eye-4.2.3/v2", "eye-4.2.3/v3"]
         for entry in payload["eye_mappings"]:
             assert entry["eye_model_revision"] == MODEL_REVISION
             assert entry["available"] is True
@@ -759,6 +759,36 @@ class TestCreate:
         response = await authenticated_api_client.post(_url(project.id), json=_body(_eye(), _eye()))
 
         assert response.status_code == 422
+
+    async def test_two_eye_sides_of_different_versions_are_201(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Der kostenfreie Gegenprobe-Lauf (Spec 0622, Messweg): A = v2, B = v3. Nur dieselbe
+        Fassung zweimal ist verboten, nicht jede Doppelung der Bauart."""
+        monkeypatch.setattr(settings, "eye_enabled", True)
+        monkeypatch.setattr(reviews_api, "eye_service_is_healthy", _healthy)
+        project = await self._ready_project(db_session)
+        app.dependency_overrides[get_job_enqueuer] = lambda: FakeEnqueuer()
+
+        response = await authenticated_api_client.post(
+            _url(project.id), json=_body(_eye(MAPPING_VERSION_V2), _eye(MAPPING_VERSION))
+        )
+
+        assert response.status_code == 201
+        stored = {
+            side.side: side.eye_mapping_version
+            for side in (
+                await db_session.execute(
+                    select(ClassificationReviewSide).where(
+                        ClassificationReviewSide.review_id == response.json()["id"]
+                    )
+                )
+            ).scalars()
+        }
+        assert stored == {"a": MAPPING_VERSION_V2, "b": MAPPING_VERSION}
 
     async def test_two_cloud_sides_with_the_same_model_are_422(
         self,
@@ -1818,7 +1848,14 @@ class TestExport:
         # auch die ohne Vergleich (Zaehleinheit "(Foto, Motiv)-Paare").
         assert list(payload["review"]["counts_by_motif"]) == list(MOTIF_REGISTRY)
         for counts in payload["review"]["counts_by_motif"].values():
-            assert set(counts) == {"compared", "matching", "deviating", "presented"}
+            assert set(counts) == {
+                "compared",
+                "matching",
+                "deviating",
+                "a_only",
+                "b_only",
+                "presented",
+            }
         for side_name in ("a", "b"):
             assert set(payload["sides"][side_name]) == {
                 "kind",
@@ -1906,13 +1943,17 @@ class TestExport:
             "compared": 2,
             "matching": 1,
             "deviating": 1,
+            "a_only": 1,
+            "b_only": 0,
             "presented": 1,
         }
-        # Ein Motiv ohne eine einzige beurteilte Zeile bleibt im Bericht - mit vier Nullen.
+        # Ein Motiv ohne eine einzige beurteilte Zeile bleibt im Bericht - mit sechs Nullen.
         assert by_motif["tiere"] == {
             "compared": 0,
             "matching": 0,
             "deviating": 0,
+            "a_only": 0,
+            "b_only": 0,
             "presented": 0,
         }
 
@@ -2036,9 +2077,17 @@ class TestExport:
                     },
                     "album_level": {"compared": 0, "matching": 0, "deviating": 0, "presented": 0},
                 },
-                # Die Aufschluesselung je Merkmal: alle acht in Registry-Ordnung, vier Nullen.
+                # Die Aufschluesselung je Merkmal: alle acht in Registry-Ordnung. Sie fuehrt zwei
+                # Schluessel mehr als die Zwecke-Zaehlung - die Richtung der Abweichung.
                 "counts_by_motif": {
-                    motif_key: {"compared": 0, "matching": 0, "deviating": 0, "presented": 0}
+                    motif_key: {
+                        "compared": 0,
+                        "matching": 0,
+                        "deviating": 0,
+                        "a_only": 0,
+                        "b_only": 0,
+                        "presented": 0,
+                    }
                     for motif_key in MOTIF_REGISTRY
                 },
             },
@@ -2100,11 +2149,12 @@ class TestExport:
                     "review": {
                         **valid["review"],
                         "counts_by_motif": {
-                            **valid["review"]["counts_by_motif"],
                             "unbekannt": {
                                 "compared": 0,
                                 "matching": 0,
                                 "deviating": 0,
+                                "a_only": 0,
+                                "b_only": 0,
                                 "presented": 0,
                             },
                         },
@@ -2115,4 +2165,34 @@ class TestExport:
         with pytest.raises(RuntimeError):
             reviews_api._guard_export_shape(
                 {**valid, "review": {**valid["review"], "counts_by_motif": reordered}}
+            )
+        # Die beiden Zaehlformen sind nicht austauschbar: eine Merkmalszeile ohne Richtung und
+        # eine Zwecke-Zeile mit Richtung werden beide abgewiesen.
+        four_keys = {"compared": 0, "matching": 0, "deviating": 0, "presented": 0}
+        with pytest.raises(RuntimeError):
+            reviews_api._guard_export_shape(
+                {
+                    **valid,
+                    "review": {
+                        **valid["review"],
+                        "counts_by_motif": {
+                            **valid["review"]["counts_by_motif"],
+                            "landschaft": dict(four_keys),
+                        },
+                    },
+                }
+            )
+        six_keys = {**four_keys, "a_only": 0, "b_only": 0}
+        with pytest.raises(RuntimeError):
+            reviews_api._guard_export_shape(
+                {
+                    **valid,
+                    "review": {
+                        **valid["review"],
+                        "counts_by_purpose": {
+                            **valid["review"]["counts_by_purpose"],
+                            "motifs": dict(six_keys),
+                        },
+                    },
+                }
             )

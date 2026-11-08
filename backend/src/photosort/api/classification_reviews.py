@@ -1324,6 +1324,9 @@ _EXPORT_KEYS: Final = {
     ),
     "side": frozenset({"kind", "provider", "model", "eye_model_revision", "eye_mapping_version"}),
     "counts": frozenset({"compared", "matching", "deviating", "presented"}),
+    "motif_counts": frozenset(
+        {"compared", "matching", "deviating", "a_only", "b_only", "presented"}
+    ),
     "verdict_counts": frozenset({"a_better", "b_better", "both_ok", "both_wrong", "open"}),
     "case": frozenset({"photo_position", "purpose", "motif_key", "a", "b", "verdict"}),
 }
@@ -1354,8 +1357,10 @@ def _guard_export_shape(payload: dict[str, Any]) -> None:
     if list(payload["review"]["counts_by_motif"]) != list(MOTIF_REGISTRY):
         raise RuntimeError("Exportform verletzt: unerwartete Merkmale in `counts_by_motif`.")
     for counts in payload["review"]["counts_by_motif"].values():
-        if set(counts) != _EXPORT_KEYS["counts"]:
-            raise RuntimeError("Exportform verletzt: unerwartete Schluessel in einer Zaehlung.")
+        if set(counts) != _EXPORT_KEYS["motif_counts"]:
+            raise RuntimeError(
+                "Exportform verletzt: unerwartete Schluessel in einer Merkmalszaehlung."
+            )
     if set(payload["verdict_counts"]) != _EXPORT_KEYS["verdict_counts"]:
         raise RuntimeError("Exportform verletzt: unerwartete Schluessel in `verdict_counts`.")
     for case in payload["cases"]:
@@ -1435,13 +1440,17 @@ def _export_payload(
                 }
                 for purpose in PURPOSES
             },
-            # AK 10: derselbe Zaehler je Merkmal des Zwecks `motif_feature`. Die Einheit ist das
-            # (Foto, Motiv)-Paar - ein Foto mit drei abweichenden Merkmalen steht hier dreimal.
+            # Die Aufschluesselung je Merkmal: die Einheit ist das (Foto, Motiv)-Paar - ein Foto
+            # mit drei abweichenden Merkmalen steht hier dreimal. Zusaetzlich nennt jede Zeile
+            # die Richtung der Abweichung (`a_only`/`b_only`) und ist damit NICHT dieselbe Form
+            # wie eine Zweckzaehlung.
             "counts_by_motif": {
                 motif_key: {
                     "compared": motif_counts[motif_key].compared,
                     "matching": motif_counts[motif_key].matching,
                     "deviating": motif_counts[motif_key].deviating,
+                    "a_only": motif_counts[motif_key].a_only,
+                    "b_only": motif_counts[motif_key].b_only,
                     "presented": presented_motifs[motif_key],
                 }
                 for motif_key in MOTIF_REGISTRY

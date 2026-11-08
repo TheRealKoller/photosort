@@ -85,6 +85,20 @@ class PurposeCounts(NamedTuple):
     deviating: int
 
 
+class MotifCounts(NamedTuple):
+    """Einheiten eines Merkmals mit Richtung. `a_only`/`b_only` nennen die Seite, die das Motiv
+    allein als vorhanden liest - `deviating` allein ist richtungslos.
+
+    `a_only + b_only == deviating` und `matching + deviating == compared` gelten immer.
+    """
+
+    compared: int
+    matching: int
+    deviating: int
+    a_only: int
+    b_only: int
+
+
 @dataclass(frozen=True)
 class Comparison:
     """Zaehlungen je Zweck, je Merkmal und die vorzulegenden Faelle (seeded, gedeckelt,
@@ -97,7 +111,7 @@ class Comparison:
 
     photos_compared: int
     counts: Mapping[str, PurposeCounts]
-    motif_counts: Mapping[str, PurposeCounts]
+    motif_counts: Mapping[str, MotifCounts]
     cases: tuple[Case, ...]
 
 
@@ -214,7 +228,8 @@ def compare_review(
     photos_compared = 0
     motif_photos = [0, 0]  # matching, deviating
     motif_pairs = [0, 0]
-    motif_units: dict[str, list[int]] = {motif_key: [0, 0] for motif_key in MOTIF_REGISTRY}
+    # je Motiv: matching, deviating, a_only, b_only
+    motif_units: dict[str, list[int]] = {motif_key: [0, 0, 0, 0] for motif_key in MOTIF_REGISTRY}
     excluded = [0, 0]
     album = [0, 0]
     cases: list[Case] = []
@@ -228,10 +243,13 @@ def compare_review(
             motif_pairs[1] += deviating
             deviating_keys: list[str] = []
             for key in _motif_keys(photo.a_motifs, photo.b_motifs):
-                if motif_present(photo.a_motifs, key) == motif_present(photo.b_motifs, key):
+                a_present = motif_present(photo.a_motifs, key)
+                b_present = motif_present(photo.b_motifs, key)
+                if a_present == b_present:
                     motif_units[key][0] += 1
                 else:
                     motif_units[key][1] += 1
+                    motif_units[key][2 if a_present else 3] += 1
                     deviating_keys.append(key)
             if deviating_keys:
                 motif_photos[1] += 1
@@ -273,10 +291,14 @@ def compare_review(
         ),
     }
     motif_counts = {
-        motif_key: PurposeCounts(
-            compared=matching + deviating, matching=matching, deviating=deviating
+        motif_key: MotifCounts(
+            compared=matching + deviating,
+            matching=matching,
+            deviating=deviating,
+            a_only=a_only,
+            b_only=b_only,
         )
-        for motif_key, (matching, deviating) in motif_units.items()
+        for motif_key, (matching, deviating, a_only, b_only) in motif_units.items()
     }
     return Comparison(
         photos_compared=photos_compared,
