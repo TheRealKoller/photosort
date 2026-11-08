@@ -1,7 +1,7 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-11-07 (Story #616/ADR 0139 — Prüfung von Klassifizierungsverfahren: ein Job mit Schreibgrenze und zwei einander nicht vertretenden Wächtern, ein Export, der Kennungen durch Ordnungszahlen ersetzt; die Sektion zu `eye_comparison.py` trägt einen Kopfvermerk, die E2E-Tabelle eine Zeile für die Prüfseite)
+**Letzte Aktualisierung:** 2026-11-08 (Story #622/ADR 0141 — Eye-Übersetzung v3: wertgleiches Erbe über Objektidentität, Tag-Tabellen als Mengendifferenz, Gate-Regel als Datenvertrag, Richtungszähler als Zählfunktion; die Wirkung einer Fassung als benannte Lücke)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil das Dokument je Testgegenstand das
 Muster führt, das beim nächsten gleichartigen Fall wiederverwendet wird — und die benannten
 Lücken, die nirgends sonst stehen.
@@ -2705,6 +2705,32 @@ Der Export ist der erste Schreibpfad auf OpenCloud; gemockt wird ausschließlich
 
 Bewusst nicht automatisiert bleibt der echte OpenCloud-`COPY`/`MKCOL` gegen die reale Instanz (ungepinntes Rolling-Image) und die Byte-Gleichheit Original↔Kopie — das ist manueller Smoke-Test vor Merge; die Socket-Sperre bleibt unangetastet.
 
+## Wertgleiches Erbe zwischen Fassungen per Objektidentität, Tabellendifferenz als geschlossene Menge und eine Gate-Regel als Datenvertrag (`eye_mapping.py`/`classification_comparison.py`) — neu für Spec [`0622`](../features/0622-eye-uebersetzung-v3.md) / ADR [`0141`](../decisions/0141-eye-uebersetzung-v3-definierende-signale-support.md)
+
+1. **„Bleibt wertgleich" wird über Objektidentität zugesichert, nicht über Stichproben.** Für die
+   geerbten Felder (`motif_tags` der unveränderten Motive, `excluded_types`, `fine_label_excluded`,
+   `album_levels`, `tag_confidence`) prüft der Test `is` gegen die v2-Objekte. Weil `is_excluded`,
+   `album_level` und `fine_labels` reine Funktionen genau dieser Felder sind, schließt die Identität
+   den ganzen Payload-Raum; die Payload-Differenzprüfung über alle `kind`s, alle Bandgrenzen und die
+   Fehlerfälle bleibt als Regressionsschutz gegen einen künftigen Fassungs-Zweig im Code.
+2. **Eine geänderte Tag-Tabelle wird als Mengendifferenz geprüft, nicht nur namentlich.** Je
+   geändertem Motiv stehen `set(V2) - set(V3)` und `set(V3) - set(V2)` gegen ein Literal, dazu ein
+   Sweep über alle Tags der neuen Tabellen. Benannte Einzelfälle fangen die falsche Zuordnung; nur
+   die Differenz fängt den stillen Verlust eines Tags, den niemand namentlich erwartet.
+3. **Eine datengetriebene Gate-Regel bekommt Invarianten statt Sonderfälle.** Für `motif_support`:
+   keine leere Liste, Schlüssel nur aus der Registry, kein Support-Tag, das zugleich Motivtag
+   desselben Motivs ist (sonst erfüllt sich das Gate selbst), leere Abbildung in den alten
+   Fassungen, Pins als Vereinigung **beider** Quellen. Richtig und falsch müssen sich in einem
+   Testfall unterscheiden lassen — „Support hebt die Stärke nicht an" braucht einen Aktivitätstag
+   unter der Person, sonst bestünde der Test auch bei einem Maximum über beide.
+4. **Zwei Fassungen auf derselben Antwort, ein Dienstaufruf.** Eine Prüfung mit zwei Eye-Seiten
+   verschiedener Fassung belegt einmalig, dass jede Seite mit ihrer **eigenen** gespeicherten
+   Fassung rechnet; die Erwartung steht auf zwei verschiedenen Werten.
+
+Die Richtungszähler im Export (`a_only`/`b_only` je Merkmal) werden als reine Zählfunktion
+geprüft: beide Richtungen im selben Foto, die Invariante `a_only + b_only == deviating`, und die
+Präsenzgrenze als Quelle der Richtung — zwei Werte unter 0,5 ergeben keine Abweichung.
+
 ## Was bewusst nicht getestet wird
 
 - Reine UI-Kosmetik (Pixelmaße, Layout, visuelle Wirkung, CSS-Feinheiten) — Design-System-Konformität ist Aufgabe des `ux-ui-designer`-Agenten bei Review/Umsetzung, dafür nicht automatisiert testbar mit sinnvollem Aufwand. **Teil-Rücknahme seit Spec [`0320`](../features/0320-dark-utility-register.md) (2026-09-05):** Für **exakte Farbwerte** gilt dieser Eintrag nicht mehr. Sobald ein Farbwert eine *ausgerechnete Zusage* trägt (eine Kontrastschwelle) oder eine *Streichung belegen* soll, ist er sehr wohl prüfbar und wird geprüft — siehe die neue Frontend-Sektion „Design-Vertrag“ unten. Pixelmaße, Layout und visuelle Wirkung bleiben ungeprüft; die Grenze verläuft zwischen einer nachrechenbaren Zusage und einem gestalterischen Urteil. Gleiches Prinzip gilt analog für die subjektive visuelle Qualität eines Diagramms (ADR 0013, "optisch weniger generisch"/"kompakter beim Rendern") — kein `ux-ui-designer`-Zuständigkeitsbereich (kein UI-Code), aber ebenso keine Assertion-fähige Eigenschaft. Ersatzverfahren: Vorher/Nachher-Screenshot-Vergleich (gleiche Browserbreite/Zoom) plus explizite Abnahme durch Daniel, der die ursprüngliche Beschwerde formuliert hat — kein selbst gewählter Pixel-/Prozent-Schwellenwert, siehe Teststrategie-Notiz zur Diagramm-Tooling-Richtlinie.
@@ -2720,6 +2746,13 @@ Bewusst nicht automatisiert bleibt der echte OpenCloud-`COPY`/`MKCOL` gegen die 
 - Echte OpenCloud-Instanz/echtes Redis/echter Worker-Container im automatisierten Testlauf — dafür kein Docker-Compose-Testsetup, ersetzt durch manuellen Smoke-Test vor Merge (etabliert mit Spec 0002: "Touch/Swipe-Gefühl wird als manueller Smoke-Test vor Merge geprüft", gilt analog für neue externe Integrationen).
 
 ## Bekannte Lücken (Stand 2026-08-03)
+
+- **Neu mit Spec 0622 (2026-11-08), eine benannte Lücke der Übersetzungsfassungen:** Die Wirkung
+  einer Fassung ist ein Messlauf, kein CI-Kriterium. Ob v3 weniger überzählige Motive vergibt, ob
+  das Erfolgsmaß in zwei Projekten erreicht ist und ob jeder vorgelegte Fall beurteilt wurde, hängt
+  an Fotobeständen und menschlichen Urteilen außerhalb des Repositories. Automatisiert ist nur das
+  **Instrument**: die Richtungszähler je Motiv (`a_only`/`b_only`), die Urteilszähler samt
+  `open` und die Prüfmenge. Ein Testfall, der die Erfolgsaussage behauptete, prüfte eine Fixture.
 
 - **Neu mit Spec 0609 / ADR [`0138`](../decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md) (2026-11-03), zwei benannte Lücken der Eye-Grundlage:**
   - **Die Inferenz selbst prüft kein automatisierter Test.** Der CI-Job `eye` läuft ohne Modellgewichte; geprüft sind Pin-Abgleich, Grenzen der beiden Routen, Health-Zustand und Lizenzabbruch gegen synthetische Dateien. Ob `@desert-ant-labs/eye` aus den gepinnten Gewichten brauchbare Konfidenzen liefert und ob `eye_mapping.py` sie auf die richtigen Motive abbildet, zeigt allein ein echter Lauf — ein Modell-Asset gehört nicht ins Repository, also gibt es auch kein Fixture. Erkennungsweg ist der erste Eye-Lauf auf dem Heimserver samt Gegenüberstellung mit der Cloud in der Prüfung von Klassifizierungsverfahren (Story #616/ADR [`0139`](../decisions/0139-pruefung-von-klassifizierungsverfahren-in-der-app.md)).
