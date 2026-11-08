@@ -7126,3 +7126,93 @@ async def test_a_successful_run_ends_the_transition_with_the_default(
     assert await _proposal_size(db_session, second.id) == min(
         selection.DEFAULT_TARGET, _TARGET_LAY_PHOTOS
     )
+
+
+async def test_the_landmark_phase_uses_the_project_model_not_the_installation_default(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0143 Punkt 2: die Landmark-Phase bekommt das aufgeloeste Modell des Projekts und leitet
+    daraus Anbieter, Client, Preis und die `provider`-Spalte ab - die Installationsvorgabe gilt
+    nur noch fuer Projekte ohne eigene Wahl. Ein zweiter Anbieter in derselben Installation
+    belegt, dass der Wert wirklich durchgereicht wird und nicht aus `settings` kommt."""
+    from photosort.cloud_vision import ANTHROPIC_VISION_MODEL
+
+    monkeypatch.setattr(worker.settings, "landmark_provider", "mistral")
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    client = RecordingLandmarkClient(detection=LandmarkDetection(name="Eiffelturm", confidence=0.9))
+    built_models: list[str] = []
+
+    def recording_builder(model: str) -> RecordingLandmarkClient:
+        built_models.append(model)
+        return client
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=recording_builder,
+        use_cloud=True,
+        landmark_model=ANTHROPIC_VISION_MODEL,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert built_models == [ANTHROPIC_VISION_MODEL]
+    assert run.landmark_model == ANTHROPIC_VISION_MODEL
+    detection_row = (
+        await db_session.execute(
+            select(PhotoLandmarkDetection).where(PhotoLandmarkDetection.photo_id == photo.id)
+        )
+    ).scalar_one()
+    assert detection_row.provider == "anthropic"
+
+
+async def test_without_a_landmark_model_argument_the_phase_resolves_the_installation_default(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ein Job aus der Zeit vor dem Update traegt das Keyword nicht - dann gilt unveraendert die
+    Installationsvorgabe, kein Fehlschlag."""
+    project = await _make_project(db_session)
+    project.cloud_vision_detection_enabled = True
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+    photo = await _add_photo(
+        db_session, project, "a.jpg", "etag-1", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    await _add_score(db_session, photo)
+    _write_display_variant(tmp_path, photo, _flat_image())
+
+    client = RecordingLandmarkClient(detection=LandmarkDetection(name="Eiffelturm", confidence=0.9))
+    built_models: list[str] = []
+
+    run = await run_criterion_scoring(
+        db_session,
+        project,
+        scoring_run.id,
+        cache_dir=tmp_path,
+        build_detector=_no_face_detector,
+        build_animal_detector=_no_animal_detector,
+        build_classifier=_landscape_scene_classifier,
+        build_aesthetics=_no_aesthetics_model,
+        build_landmarker=_no_face_landmarker,
+        build_landmark_client=lambda model: (built_models.append(model), client)[1],
+        use_cloud=True,
+    )
+
+    assert run.status == ScanStatus.SUCCESS
+    assert built_models == [worker.settings.resolved_landmark_model()]
+    assert run.landmark_model == worker.settings.resolved_landmark_model()

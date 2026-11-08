@@ -19,6 +19,7 @@ from photosort.cloud_vision import (
     mistral_response_to_json,
     mistral_usage_from_response,
     post_vision_request,
+    provider_for_vision_model,
 )
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
@@ -456,22 +457,32 @@ class MistralLandmarkClient:
 
 
 def build_landmark_client(model: str) -> LandmarkClientLike:
-    """Dispatch-Factory zwischen AnthropicLandmarkClient (Default) und MistralLandmarkClient je
-    nach settings.landmark_provider. Analog build_face_detector/build_aesthetics_model: laeuft NIE
-    in einem automatisierten Test (echtes Secret + echter Netzwerkversuch - ein versehentlicher
-    Aufruf in CI muesste als harter Fehlschlag auffallen).
+    """Dispatch-Factory zwischen AnthropicLandmarkClient und MistralLandmarkClient.
+
+    Der Anbieter folgt aus DEM MODELL (`cloud_vision.py::provider_for_vision_model`), nicht aus
+    `settings.landmark_provider`: seit Spec 0383 ist das Cloud-Modell eine Eigenschaft des
+    Projekts je Taetigkeit, und zwei Taetigkeiten duerfen in einem Lauf zwei Anbieter treffen
+    (ADR 0143 Punkt 2). Fuer Projekte ohne eigene Wahl ist es wirkungsgleich, weil die
+    Installationsvorgabe gegen ihren Anbieter validiert ist.
+
+    Eine Modell-ID ausserhalb der Registry ist ein `ValueError` statt eines stillen Rueckfalls
+    auf den Installationsanbieter: die Wahl ist geschlossen, und ein geratener Anbieter schickte
+    Bilddaten an den falschen Empfaenger.
 
     `model` ist ein Parameter statt einer hier gelesenen Modulkonstante: der Aufrufer loest das
     Modell EINMAL je Cloud-Phase auf und benutzt denselben Wert fuer Client-Bau, Kostenrechnung und
     Modellspalte des Laufs - "angezeigt = abgerechnet = tatsaechlich aufgerufen" wird dadurch
     strukturell wahr statt durch drei zufaellig uebereinstimmende Lesevorgaenge derselben globalen
-    `settings`."""
-    # Der PROZESSWEITE Schrittmacher des eingestellten Anbieters - dieselbe Instanz, die auch
+    `settings`. Laeuft NIE in einem automatisierten Test (echtes Secret, echter Netzwerkversuch) -
+    die Ableitung prueft `TestTheLandmarkClientFollowsTheModel` mit gepatchten Klassen."""
+    provider = provider_for_vision_model(model)
+    if provider is None:
+        raise ValueError(f"Unbekanntes Vision-Modell: {model!r}")
+    # Der PROZESSWEITE Schrittmacher des abgeleiteten Anbieters - dieselbe Instanz, die auch
     # build_category_classification_client() zieht. Beide Cloud-Teilschritte und mehrere
-    # gleichzeitig laufende Jobs teilen sich dadurch einen Schrittmacher je Anbieter; der Anbieter
-    # sieht ohnehin nur eine einzige Quelle.
-    throttle = throttle_for_provider(settings.landmark_provider)
-    if settings.landmark_provider == "mistral":
+    # gleichzeitig laufende Jobs teilen sich dadurch einen Schrittmacher je Anbieter.
+    throttle = throttle_for_provider(provider)
+    if provider == "mistral":
         mistral_client: LandmarkClientLike = MistralLandmarkClient(
             api_key=settings.mistral_api_key, model=model, throttle=throttle
         )

@@ -42,7 +42,12 @@ from photosort.classification import (
 )
 from photosort.classification_review import run_classification_review
 from photosort.clock import now_utc
-from photosort.cloud_vision import ThrottleStats, TokenUsage, _sanitize_label_text
+from photosort.cloud_vision import (
+    ThrottleStats,
+    TokenUsage,
+    _sanitize_label_text,
+    provider_for_vision_model,
+)
 from photosort.cloud_vision_throttle import throttle_for_provider
 from photosort.config import settings
 from photosort.criteria import (
@@ -116,6 +121,7 @@ from photosort.landmark import (
 )
 from photosort.landmark_names import LandmarkNameEntry, resolve_canonical_landmark
 from photosort.logging_config import configure_logging
+from photosort.model_choice import resolve_model_choice
 from photosort.models import (
     ClassificationMode,
     ClassificationPhase,
@@ -1461,6 +1467,17 @@ def _try_build[T](build: Callable[[], T]) -> T | None:
         return build()
     except Exception:
         return None
+
+
+def _provider_for_task_model(model: str) -> str:
+    """Der Anbieter des Modells EINER Taetigkeit - aus der Registry, nie aus `settings`.
+
+    Ein Modell ausserhalb der Registry ist ein `ValueError` statt eines geratenen Empfaengers:
+    Schrittmacher, `provider`-Spalte und Client-Bau muessen denselben Anbieter lesen."""
+    provider = provider_for_vision_model(model)
+    if provider is None:
+        raise ValueError(f"Unbekanntes Vision-Modell: {model!r}")
+    return provider
 
 
 def _select_landmark_candidates(
@@ -2894,6 +2911,7 @@ async def run_criterion_scoring(
     *,
     run: CriterionScoringRun | None = None,
     use_cloud: bool = False,
+    landmark_model: str | None = None,
     build_face_analyzer: Callable[[], FaceAnalyzerLike] = build_face_analyzer,
 ) -> CriterionScoringRun:
     """Berechnet Kriterien-Werte fuer alle Ausschuss-Ueberlebenden eines Projekts und die daraus
@@ -2911,7 +2929,7 @@ async def run_criterion_scoring(
     aufgerufen werden).
 
     Dies ist die ZWEITE Phase eines verketteten Klassifizierungslaufs, kein eigenständig
-    ausgelöster Lauf. Zwei keyword-only Parameter:
+    ausgelöster Lauf. Drei keyword-only Parameter:
 
     - `run`: der bereits von run_classification angelegte Lauf-Datensatz. Wird keiner uebergeben,
       legt diese Funktion ihn selbst an (Direktaufruf, z.B. in Tests).
@@ -2921,7 +2939,11 @@ async def run_criterion_scoring(
       ersetzen, nur eine vorhandene fuer diesen einen Lauf ungenutzt lassen.
       Default `False` und damit FAIL-CLOSED: ein Aufrufer, der den Parameter vergisst, verliert
       die Cloud-Anreicherung, statt ungewollte Kosten und einen ungewollten Datenabfluss
-      auszuloesen."""
+      auszuloesen.
+    - `landmark_model`: das im Projekt aufgeloeste Modell der Sehenswuerdigkeits-Erkennung.
+      Fehlt es (Job aus der Zeit vor dem Update), loest diese Funktion die
+      Installationsvorgabe auf. Client, Schrittmacher, Kosten und `provider`-Spalte lesen
+      denselben Wert."""
     if run is None:
         run = await _start_criterion_scoring_run(
             session, project, scoring_run_id, cloud_requested=use_cloud
@@ -3105,12 +3127,14 @@ async def run_criterion_scoring(
             # einem haengengebliebenen nicht zu unterscheiden.
             _set_phase(run, ClassificationPhase.LANDMARK)
             await session.commit()
-            # Das Modell wird EINMAL je Cloud-Phase aufgeloest und danach durchgereicht - derselbe
-            # lokale Wert baut den Client, rechnet die Ist-Kosten und landet in der Modellspalte des
-            # Laufs. "Angezeigt = abgerechnet = tatsaechlich aufgerufen" ist damit strukturell wahr,
-            # nicht das Ergebnis dreier zufaellig gleicher Lesevorgaenge derselben globalen
-            # `settings`.
-            landmark_model = settings.resolved_landmark_model()
+            # Das Modell kommt als Parameter herein (im Ausloeser aus der Projektwahl aufgeloest)
+            # und wird EINMAL je Cloud-Phase gebunden: derselbe lokale Wert baut den Client,
+            # bestimmt den Schrittmacher, rechnet die Ist-Kosten und landet in der Modellspalte
+            # des Laufs. "Angezeigt = abgerechnet = tatsaechlich aufgerufen" ist damit strukturell
+            # wahr, nicht das Ergebnis dreier zufaellig gleicher Lesevorgaenge. Fehlt der
+            # Parameter (Job aus der Zeit vor dem Update), gilt die Installationsvorgabe.
+            landmark_model = landmark_model or settings.resolved_landmark_model()
+            landmark_provider = _provider_for_task_model(landmark_model)
             landmark_client = _try_build(lambda: build_landmark_client(landmark_model))
             if landmark_client is None:
                 # Ein nicht konstruierbarer Client laesst die Sehenswuerdigkeits-Erkennung aus -
@@ -3133,7 +3157,7 @@ async def run_criterion_scoring(
                 # Zusammenfassung unten entsteht ausschliesslich aus der DIFFERENZ zu diesem
                 # Schnappschuss - die Zaehler selbst sind prozessweit und enthalten auch die
                 # Wartezeiten des jeweils anderen Cloud-Teilschritts und paralleler Laeufe.
-                landmark_throttle = throttle_for_provider(settings.landmark_provider)
+                landmark_throttle = throttle_for_provider(landmark_provider)
                 landmark_throttle_before = landmark_throttle.stats()
                 landmark_failures = 0
                 landmark_attempts = 0
@@ -3360,7 +3384,7 @@ async def run_criterion_scoring(
                                     photo_id,
                                     detection,
                                     now,
-                                    settings.landmark_provider,
+                                    landmark_provider,
                                     canonical_name,
                                 )
 
@@ -3412,7 +3436,7 @@ async def run_criterion_scoring(
                 # wurde.
                 _log_cloud_vision_throttling(
                     "landmark",
-                    settings.landmark_provider,
+                    landmark_provider,
                     landmark_throttle.stats().since(landmark_throttle_before),
                 )
                 # Zähl-Zusammenfassung statt N Einzelmeldungen - die Einzelfehler bleiben pro
@@ -3504,6 +3528,8 @@ async def run_classification(
     mode: ClassificationMode | None = None,
     use_cloud: bool | None = None,
     estimated_cost_usd: float | None = None,
+    category_model: str | None = None,
+    landmark_model: str | None = None,
     build_detector: Callable[[], FaceDetectorLike] = build_face_detector,
     build_animal_detector: Callable[[], ObjectDetectorLike] = build_object_detector,
     build_classifier: Callable[[], SceneClassifierLike] = build_scene_classifier,
@@ -3561,7 +3587,12 @@ async def run_classification(
     - `estimated_cost_usd` ist die im Ausloese-Endpunkt serverseitig berechnete Schaetzung dieses
       Laufs. Sie wird hier nur DURCHGEREICHT und gespeichert, NIE neu gerechnet: die Modulgrenze
       "API zaehlt fuer die Schaetzung, Worker selektiert fuer den Lauf" bleibt bestehen. Sie ist
-      ein BELEG, keine Eingabe - kein spaeterer Rechenweg liest sie."""
+      ein BELEG, keine Eingabe - kein spaeterer Rechenweg liest sie.
+
+    `category_model`/`landmark_model` sind die im Ausloeser aufgeloesten Modelle der beiden
+    Taetigkeiten. Sie werden unveraendert an die jeweilige Phase weitergereicht; `None` heisst
+    "Job aus der Zeit vor dem Update" und laesst die Phase die Installationsvorgabe aufloesen.
+    """
     if mode is None:
         mode = ClassificationMode.CLOUD if use_cloud else ClassificationMode.LOCAL
     elif use_cloud is not None and use_cloud != (mode is ClassificationMode.CLOUD):
@@ -3620,6 +3651,7 @@ async def run_classification(
                 build_embedder=build_embedder,
                 run=remote_run,
                 parent_run=run,
+                model=category_model,
             )
         except asyncio.CancelledError:
             # Schicht 1 des Fortschritts-Watchdogs: run_remote_category_classification faellt seine
@@ -3678,6 +3710,7 @@ async def run_classification(
         # Einwilligung laeuft sie (dann kostet der Lauf genau die Sehenswuerdigkeits-Erkennung),
         # ohne Einwilligung nie.
         use_cloud=cloud_requested,
+        landmark_model=landmark_model,
         build_face_analyzer=build_face_analyzer,
     )
 
@@ -3690,6 +3723,8 @@ async def classify(
     estimated_cost_usd: float | None = None,
     *,
     mode: str | None = None,
+    category_model: str | None = None,
+    landmark_model: str | None = None,
 ) -> int:
     """Der einzige Klassifizierungs-Job.
 
@@ -3697,14 +3732,34 @@ async def classify(
     verbindlich - ein zum Zeitpunkt eines Deployments BEREITS EINGEREIHTER Job traegt das Argument
     nicht und darf nicht an der Signaturaenderung scheitern.
 
-    S6 der Spec 0609: `use_cloud` bleibt der VIERTE POSITIONSPARAMETER vom Typ `bool | None`, `mode`
-    ist keyword-only. Fehlt `mode`, wird er aus `use_cloud` abgeleitet (`True` -> cloud, sonst
-    local). Ein ALTER Worker kennt den Parameter nicht und verwirft den Job sichtbar mit
-    `TypeError` - er liest `"eye"` also nie als Cloud-Freigabe."""
+    `use_cloud` bleibt der VIERTE POSITIONSPARAMETER vom Typ `bool | None`, `mode` ist
+    keyword-only. Fehlt `mode`, wird er aus `use_cloud` abgeleitet (`True` -> cloud, sonst
+    local). Ein ALTER Worker kennt die Parameter nicht und verwirft den Job sichtbar mit
+    `TypeError` - er liest `"eye"` also nie als Cloud-Freigabe.
+
+    `category_model`/`landmark_model` sind die im Ausloeser aufgeloesten Modelle. Fehlt eines
+    (Job aus der Zeit vor dem Update), loest der Job selbst ueber `resolve_model_choice` auf -
+    derselbe Weg wie im Ausloeser, kein Rueckfall auf einen geratenen Wert. Ein nicht mehr
+    waehlbares Modell wirft dort `UnknownModelChoiceError` und laesst den Lauf sichtbar
+    scheitern (ADR 0143 Punkt 2)."""
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
             raise ValueError(f"Project {project_id} not found")
+
+        if mode is None or category_model is None or landmark_model is None:
+            effective_mode = (
+                ClassificationMode(mode)
+                if mode is not None
+                else ClassificationMode.CLOUD
+                if use_cloud
+                else ClassificationMode.LOCAL
+            )
+            resolved = resolve_model_choice(project)
+            if category_model is None and effective_mode is not ClassificationMode.EYE:
+                category_model = resolved.category_model
+            if landmark_model is None:
+                landmark_model = resolved.landmark_model
 
         run = await run_classification(
             session,
@@ -3716,6 +3771,8 @@ async def classify(
             mode=ClassificationMode(mode) if mode is not None else None,
             use_cloud=None if mode is not None else use_cloud,
             estimated_cost_usd=estimated_cost_usd,
+            category_model=category_model,
+            landmark_model=landmark_model,
         )
         return run.id
 
@@ -3813,6 +3870,7 @@ async def run_remote_category_classification(
     *,
     run: RemoteCategoryClassificationRun | None = None,
     parent_run: CriterionScoringRun | None = None,
+    model: str | None = None,
 ) -> RemoteCategoryClassificationRun:
     """Eigenständiger, expliziter Job - KEIN Teil von run_criterion_scoring, eigene
     Run-Tabelle, eigenes Concurrency-Setting. Best-effort ohne Retry: ein einzelner
@@ -3831,7 +3889,11 @@ async def run_remote_category_classification(
 
     `parent_run` ist der uebergeordnete Klassifizierungslauf; er wird an jedem Block-Commit
     mitgestempelt. Ohne ihn (Direktaufruf, Tests) stempelt die Funktion nur ihre
-    eigene Zeile."""
+    eigene Zeile.
+
+    `model` ist das Modell der Kategorisierung, im Ausloeser aus der Projektwahl aufgeloest.
+    Fehlt es (Direktaufruf, Altjob), gilt die Installationsvorgabe. Aus DIESEM Wert folgen
+    Anbieter, Client, Schrittmacher, Preis und die `provider`-Spalten je Foto."""
     if run is None:
         run = RemoteCategoryClassificationRun(project_id=project.id, status=ScanStatus.RUNNING)
         session.add(run)
@@ -3851,10 +3913,11 @@ async def run_remote_category_classification(
             await session.commit()
             return run
 
-        # Eine Auflösung je Cloud-Phase, danach durchgereicht - dasselbe Modell wie in der
-        # Landmark-Phase, weil `LANDMARK_MODEL` wie `LANDMARK_PROVIDER` fuer beide Cloud-Anteile
-        # gilt.
-        model = settings.resolved_landmark_model()
+        # Eine Auflösung je Cloud-Phase, danach durchgereicht: Client, Schrittmacher, Preis und
+        # die `provider`-Spalten je Foto lesen denselben Wert. Fehlt der Parameter (Altjob),
+        # gilt die Installationsvorgabe.
+        model = model or settings.resolved_landmark_model()
+        provider = _provider_for_task_model(model)
         client = _try_build(lambda: build_client(model))
         embedder = _try_build(build_embedder)
         if client is None or embedder is None:
@@ -3893,7 +3956,7 @@ async def run_remote_category_classification(
         # Zählerstand des ANBIETERWEITEN Schrittmachers beim Betreten des Teilschritts, wie in der
         # Landmark-Phase in run_criterion_scoring. Die Zusammenfassung unten entsteht
         # ausschliesslich aus der DIFFERENZ zu diesem Schnappschuss.
-        throttle = throttle_for_provider(settings.landmark_provider)
+        throttle = throttle_for_provider(provider)
         throttle_before = throttle.stats()
 
         try:
@@ -3984,7 +4047,7 @@ async def run_remote_category_classification(
                         source=MotifAssessmentSource.CLOUD,
                         strengths=classification.motif_strengths,
                         excluded_document=classification.excluded,
-                        provider=settings.landmark_provider,
+                        provider=provider,
                         computed_at=now,
                     )
 
@@ -3998,7 +4061,7 @@ async def run_remote_category_classification(
                             photo.id,
                             classification.album_suitability,
                             now,
-                            settings.landmark_provider,
+                            provider,
                         )
 
                     # Feinlabels sind reine Zusatzinformation und werden AUCH DANN geschrieben,
@@ -4040,7 +4103,7 @@ async def run_remote_category_classification(
                                 photo_id=photo.id,
                                 fine_label_id=entry.id,
                                 raw_label=raw_label,
-                                provider=settings.landmark_provider,
+                                provider=provider,
                                 computed_at=now,
                             )
                         )
@@ -4087,7 +4150,7 @@ async def run_remote_category_classification(
         # Höchstens eine Zeile, und nur wenn in DIESEM Teilschritt tatsächlich gewartet wurde.
         _log_cloud_vision_throttling(
             "remote_category",
-            settings.landmark_provider,
+            provider,
             throttle.stats().since(throttle_before),
         )
 
