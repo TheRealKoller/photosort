@@ -22,9 +22,9 @@ describe('formatAlbumSuitabilityLevel', () => {
 
 describe('ALBUM_SUITABILITY_NOT_RATED_TEXT', () => {
   it('is a sentence and not a placeholder character', () => {
-    // „Noch nicht bewertet" steht an genau EINER Stelle: Kachel und Bewertungsdetails tragen
-    // denselben Satz, und ein zweites Literal liefe davon weg.
-    expect(ALBUM_SUITABILITY_NOT_RATED_TEXT).toBe('Noch nicht bewertet')
+    // Der Satz steht an genau EINER Stelle: Kachel und Bewertungsdetails tragen denselben, und ein
+    // zweites Literal liefe davon weg. „bewertet" bleibt der menschlichen Bewertung vorbehalten.
+    expect(ALBUM_SUITABILITY_NOT_RATED_TEXT.endsWith('eingestuft')).toBe(true)
     expect(ALBUM_SUITABILITY_NOT_RATED_TEXT).not.toBe('—')
   })
 })

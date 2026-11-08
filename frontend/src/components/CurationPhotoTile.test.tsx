@@ -8,7 +8,12 @@ import { stubFocusVisible } from '../test/focusVisible'
 import { MOTIF_SET } from '../test/motifSetFixture'
 import { NOT_PROPOSED_BADGE_TEXT } from '../utils/albumDraft'
 import { ALBUM_STATE_LABELS } from '../utils/albumStateLabels'
-import { ALBUM_SUITABILITY_NOT_RATED_TEXT, REASON_ATTRIBUTION } from '../utils/albumSuitability'
+import {
+  ALBUM_SUITABILITY_EYE_ORIGIN_TEXT,
+  ALBUM_SUITABILITY_NOT_RATED_TEXT,
+  ALBUM_SUITABILITY_ORIGIN_LABEL,
+  REASON_ATTRIBUTION,
+} from '../utils/albumSuitability'
 import { HANDLES_FULL_WIDTH_PX } from '../utils/curationLayout'
 import { CurationPhotoTile } from './CurationPhotoTile'
 
@@ -49,7 +54,7 @@ function photo(overrides: Partial<PhotoOut> = {}): PhotoOut {
       correction: null,
       present: false,
     })),
-    album_suitability: { level: 4, reason: 'Alle schauen in die Kamera.' },
+    album_suitability: { level: 4, reason: 'Alle schauen in die Kamera.', source: 'cloud' },
     ...overrides,
   }
 }
@@ -115,12 +120,12 @@ describe('CurationPhotoTile: die Albumtauglichkeit in der Leiste', () => {
   })
 
   it('shows the exact level nowhere on the tile', () => {
-    renderTile({ album_suitability: { level: 4, reason: null } })
+    renderTile({ album_suitability: { level: 4, reason: null, source: 'cloud' } })
 
     expect(screen.queryByText('Stufe 4 von 5')).toBeNull()
   })
 
-  it('says "Noch nicht bewertet" for a photo without a quality score', () => {
+  it('names a photo without a quality score as not yet rated', () => {
     renderTile({ ranking: ranking({ rank_score: null, rank_position: null }) })
 
     expect(screen.getByText(ALBUM_SUITABILITY_NOT_RATED_TEXT)).toBeInTheDocument()
@@ -143,7 +148,10 @@ describe('CurationPhotoTile: die Begründung', () => {
     const reason = LONG_REASON.slice(0, 160)
     expect(reason).toHaveLength(160)
 
-    const { container } = renderTile({ album_suitability: { level: 2, reason } }, { width: 100 })
+    const { container } = renderTile(
+      { album_suitability: { level: 2, reason, source: 'cloud' } },
+      { width: 100 },
+    )
 
     const carrier = container.querySelector('[data-album-suitability-reason]')
     expect(carrier?.lastChild?.textContent).toBe(reason)
@@ -181,7 +189,9 @@ describe('CurationPhotoTile: die Begründung', () => {
   })
 
   it.each([null, ''])('renders no line at all for the reason %j', (reason) => {
-    const { container } = renderTile({ album_suitability: { level: 3, reason } })
+    const { container } = renderTile({
+      album_suitability: { level: 3, reason, source: 'cloud' },
+    })
 
     expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
     const strip = details(container)
@@ -202,7 +212,9 @@ describe('CurationPhotoTile: die Begründung', () => {
   it('never renders the reason as markup', () => {
     const payload = '<img src=x onerror="alert(1)">'
 
-    const { container } = renderTile({ album_suitability: { level: 1, reason: payload } })
+    const { container } = renderTile({
+      album_suitability: { level: 1, reason: payload, source: 'cloud' },
+    })
 
     expect(container.querySelector('img:not([alt="a.jpg"])')).toBeNull()
     expect(container.querySelector('img[src="x"]')).toBeNull()
@@ -212,7 +224,9 @@ describe('CurationPhotoTile: die Begründung', () => {
   it.each(['javascript:alert(1)', '<a href="https://evil.example">Anmelden</a>'])(
     'never turns %s into a link',
     (payload) => {
-      const { container } = renderTile({ album_suitability: { level: 1, reason: payload } })
+      const { container } = renderTile({
+        album_suitability: { level: 1, reason: payload, source: 'cloud' },
+      })
 
       expect(container.querySelector('a')).toBeNull()
       expect(container.querySelector('img[src="x"]')).toBeNull()
@@ -222,7 +236,9 @@ describe('CurationPhotoTile: die Begründung', () => {
 
   it('the reason never reaches an attribute', () => {
     const payload = 'Nutzlast-7f3a <img src=x>'
-    const { container } = renderTile({ album_suitability: { level: 1, reason: payload } })
+    const { container } = renderTile({
+      album_suitability: { level: 1, reason: payload, source: 'cloud' },
+    })
 
     for (const element of container.querySelectorAll('*')) {
       for (const attribute of element.attributes) {
@@ -518,5 +534,92 @@ describe('CurationPhotoTile: die Grossansicht', () => {
     const trigger = screen.getByRole('button', { name: 'Großansicht: a.jpg' })
     expect(trigger).toHaveFocus()
     expect(largeTriggerRef).toHaveBeenLastCalledWith(trigger)
+  })
+})
+
+describe('CurationPhotoTile: die Herkunft der Stufe', () => {
+  const EYE_SUITABILITY = { level: 4, reason: null, source: 'eye' } as const
+
+  it('shows the origin label in place of the reason', () => {
+    const { container } = renderTile({ album_suitability: EYE_SUITABILITY })
+
+    const origin = container.querySelector('[data-album-suitability-origin]')
+    expect(origin).not.toBeNull()
+    expect(origin).toHaveTextContent(
+      `${ALBUM_SUITABILITY_ORIGIN_LABEL} ${ALBUM_SUITABILITY_EYE_ORIGIN_TEXT}`,
+    )
+    expect(within(details(container)).getByText(ALBUM_SUITABILITY_ORIGIN_LABEL)).toBeVisible()
+    expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
+  })
+
+  it('keeps its place as the first line of the strip', () => {
+    const { container } = renderTile({ album_suitability: EYE_SUITABILITY })
+
+    const strip = details(container)
+    expect(strip.firstElementChild).toBe(container.querySelector('[data-album-suitability-origin]'))
+  })
+
+  it('wins over a reason that is set anyway, and never renders it', () => {
+    const { container } = renderTile({
+      album_suitability: { level: 4, reason: 'Unerwarteter Modelltext.', source: 'eye' },
+    })
+
+    expect(container.querySelectorAll('[data-album-suitability-origin]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
+    expect(screen.queryByText('Unerwarteter Modelltext.')).toBeNull()
+  })
+
+  it('leaves a cloud step exactly as before, without an origin line', () => {
+    const { container } = renderTile({
+      album_suitability: { level: 3, reason: 'Gut.', source: 'cloud' },
+    })
+
+    expect(container.querySelectorAll('[data-album-suitability-origin]')).toHaveLength(0)
+    const carrier = container.querySelector('[data-album-suitability-reason]')
+    expect(carrier).toHaveTextContent(new RegExp(`${REASON_ATTRIBUTION}.*Gut\\.`))
+  })
+
+  it('stays words: no role, no aria-label, no badge or icon', () => {
+    const { container } = renderTile({ album_suitability: EYE_SUITABILITY })
+
+    const origin = container.querySelector<HTMLElement>('[data-album-suitability-origin]')!
+    expect(origin.closest('[role]')).toBeNull()
+    expect(origin.querySelector('[role]')).toBeNull()
+    expect(origin.querySelector('[data-icon], [data-badge-tone], svg')).toBeNull()
+    for (const element of [origin, ...origin.querySelectorAll('*')]) {
+      expect(element.hasAttribute('aria-label')).toBe(false)
+    }
+  })
+
+  it('reveals the origin line like the reason: screen-reader only at rest, visible on focus', () => {
+    stubFocusVisible(true)
+    const { container } = renderTile({ album_suitability: EYE_SUITABILITY })
+    const origin = container.querySelector('[data-album-suitability-origin]')
+
+    expect(details(container)).toHaveClass('sr-only')
+    expect(origin).toBeInTheDocument()
+
+    act(() => screen.getByRole('button', { name: /^Streichen: / }).focus())
+
+    expect(details(container)).toHaveAttribute('data-visible', 'true')
+    expect(origin).toBeInTheDocument()
+  })
+
+  it('keeps the quality level of the same rank score independent of the source', () => {
+    const cloud = renderTile({
+      album_suitability: { level: 4, reason: null, source: 'cloud' },
+      ranking: ranking({ rank_score: 0.8 }),
+    })
+    const cloudText = within(details(cloud.container)).getByText('Gut albumtauglich').textContent
+    cloud.unmount()
+
+    const eye = renderTile({
+      album_suitability: EYE_SUITABILITY,
+      ranking: ranking({ rank_score: 0.8 }),
+    })
+
+    expect(within(details(eye.container)).getByText('Gut albumtauglich').textContent).toBe(
+      cloudText,
+    )
   })
 })

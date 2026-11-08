@@ -37,7 +37,7 @@ describe('QualityMeter', () => {
 })
 
 describe('QualityMeter without a model verdict', () => {
-  it('says "Noch nicht bewertet" instead of a level', () => {
+  it('names the missing verdict as a sentence instead of a level', () => {
     render(<QualityMeter level={null} />)
 
     expect(screen.getByText(ALBUM_SUITABILITY_NOT_RATED_TEXT)).toBeInTheDocument()

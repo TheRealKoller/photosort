@@ -1,14 +1,17 @@
 import type { AlbumSuitabilityOut, FineLabelOut, RankingOut } from '../api/types'
 import {
+  ALBUM_SUITABILITY_EYE_ORIGIN_TEXT,
   ALBUM_SUITABILITY_NOT_RATED_TEXT,
+  ALBUM_SUITABILITY_ORIGIN_LABEL,
   REASON_ATTRIBUTION,
   formatAlbumSuitabilityLevel,
 } from '../utils/albumSuitability'
 import { FineLabelList } from './FineLabelList'
 
 interface PhotoVerdictProps {
-  /** Die Albumtauglichkeit des Modells. `null` heißt „noch nicht bewertet" - dann trägt die Zeile
-   * den Satz statt einer Stufe, und es erscheint KEINE Begründungszeile.
+  /** Die zählende Albumtauglichkeit des Modells samt Herkunft. `null` heißt „noch nicht
+   * eingestuft" - dann trägt die Zeile den Satz statt einer Stufe, und es erscheint KEINE
+   * Begründungszeile. Bei `source === 'eye'` steht statt der Begründung die Herkunft.
    *
    * SICHERHEIT (S1/S4/S5): `reason` ist freier, extern erzeugter Text aus einem Bild, das selbst
    * Text enthalten kann. Ausschließlich als regulärer React-Textknoten rendern - nie
@@ -50,6 +53,9 @@ export function PhotoVerdict({ albumSuitability, ranking, fineLabels }: PhotoVer
   // Foto ohne Rang.
   const showRankRow = ranking !== null && ranking.rank_position !== null
   const reason = albumSuitability?.reason ?? null
+  // Die Herkunft geht der Begründung vor: Ein Eye-Lauf liefert keinen Modelltext, und eine
+  // unerwartet gesetzte Begründung wäre die Aussage eines anderen Verfahrens.
+  const fromEye = albumSuitability?.source === 'eye'
 
   return (
     <div className="flex flex-col gap-3" data-testid="photo-verdict">
@@ -62,15 +68,24 @@ export function PhotoVerdict({ albumSuitability, ranking, fineLabels }: PhotoVer
             ? ALBUM_SUITABILITY_NOT_RATED_TEXT
             : formatAlbumSuitabilityLevel(albumSuitability.level)}
         </p>
-        {reason !== null && (
-          // S4: Der sichtbare Vorsatz traegt die Zuschreibung fuer alle Leser - reiner
-          // React-Textknoten, ungekuerzt.
-          <p data-album-suitability-reason="" className="text-sm text-text">
+        {fromEye ? (
+          <p data-album-suitability-origin="" className="text-sm text-text">
             <span className="mr-2 text-xs tracking-wide text-text-muted uppercase">
-              {REASON_ATTRIBUTION}
-            </span>
-            {reason}
+              {ALBUM_SUITABILITY_ORIGIN_LABEL}
+            </span>{' '}
+            <span className="text-sm text-text">{ALBUM_SUITABILITY_EYE_ORIGIN_TEXT}</span>
           </p>
+        ) : (
+          reason !== null && (
+            // S4: Der sichtbare Vorsatz traegt die Zuschreibung fuer alle Leser - reiner
+            // React-Textknoten, ungekuerzt.
+            <p data-album-suitability-reason="" className="text-sm text-text">
+              <span className="mr-2 text-xs tracking-wide text-text-muted uppercase">
+                {REASON_ATTRIBUTION}
+              </span>
+              {reason}
+            </p>
+          )
         )}
       </div>
       {showRankRow && ranking !== null && (
