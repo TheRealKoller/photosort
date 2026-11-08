@@ -1,6 +1,6 @@
 # 0383 - Modellwahl je Projekt und Tätigkeit
 
-**Status:** Accepted
+**Status:** Implemented ([PR #633](https://github.com/TheRealKoller/photosort/pull/633))
 **Erstellt:** 2026-11-08
 **Bezug:** [#383](https://github.com/TheRealKoller/photosort/issues/383)
 
