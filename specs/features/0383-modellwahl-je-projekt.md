@@ -28,7 +28,7 @@ seine Fotos am besten passt.
 
 **Auswahl in den Projekteinstellungen**
 
-- [ ] Die Projekteinstellungen enthalten einen Abschnitt zur Modellwahl mit zwei getrennten Wahlen: „Kategorisierung" und „Sehenswürdigkeits-Erkennung" — je Wahl eine eigene Gruppe mit eigener Legende und genau einem wählbaren Wert, nicht ein gemeinsamer Schalter für beide.
+- [ ] Die Projekteinstellungen enthalten einen Abschnitt zur Modellwahl mit zwei getrennten Wahlen: „Kategorisierung" und „Sehenswürdigkeits-Erkennung" — je Wahl eine eigene Gruppe mit eigenem zugänglichen Namen und genau einem wählbaren Wert, nicht ein gemeinsamer Schalter für beide.
 - [ ] Für die Kategorisierung stehen genau die Cloud-Modelle der gepflegten, preisgeprüften Auswahl — die Einträge von `VISION_MODELS_BY_PROVIDER`, vollständig und ohne Zusatz — und zusätzlich Eye zur Wahl; für die Sehenswürdigkeits-Erkennung nur diese Cloud-Modelle, ohne Eye-Karte, weil Eye keine Namen von Sehenswürdigkeiten liefert.
 - [ ] Beide Wahlen dürfen dasselbe Cloud-Modell tragen, und sie dürfen Modelle verschiedener Anbieter tragen; gespeichert und zurückgelesen werden beide Werte unverändert und unabhängig voneinander.
 - [ ] Es gibt keine freie Eingabe eines Modellnamens: der Abschnitt enthält kein Textfeld, jede Wahl entsteht ausschließlich durch Auswahl einer Katalogkarte, und ein **geändertes** Modell außerhalb der Registry wird von der Schreib-API mit `422` abgelehnt.
@@ -137,8 +137,12 @@ gilt „angezeigt = aufgerufen = abgerechnet" per Bau.
 2. **`PUT /projects/{id}/model-choice`** — Body `{category_method: "cloud"|"eye",
    category_model: str|None, landmark_model: str|None}` mit `extra="forbid"`.
    - `422`: Modell nicht in der Registry, kein Schlüssel für den Anbieter (nur bei geändertem
-     Wert), `eye` bei `EYE_ENABLED=false` (nur bei geändertem Wert), `category_model` gesetzt
-     bei `eye` bzw. fehlend bei `cloud`.
+     Wert), `category_model` gesetzt bei `eye`, `eye` bei `EYE_ENABLED=false` (nur bei
+     geändertem Wert).
+   - `cloud` mit `category_model: null` ist **erlaubt**: das ist die Installationsvorgabe
+     (gespeichert `NULL`, `category_is_default: true`) und braucht keinen Schlüssel — ohne jeden
+     Cloud-Schlüssel bleiben „Kategorisierung = Eye" und der Rückweg auf die Vorgabe speicherbar
+     (ADR 0143 Punkt 6).
    - `404` bei unbekanntem Projekt, `409` während eines aktiven Klassifizierungslaufs über
      `_reject_while_a_criterion_run_is_active` (`api/projects.py:1230`, Meldung auf die
      Modellwahl angepasst).
