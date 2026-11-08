@@ -1,7 +1,7 @@
 # Testkonzept
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-11-08 (Story #622/ADR 0141 — Eye-Übersetzung v3: wertgleiches Erbe über Objektidentität, Tag-Tabellen als Mengendifferenz, Gate-Regel als Datenvertrag, Richtungszähler als Zählfunktion; die Wirkung einer Fassung als benannte Lücke)
+**Letzte Aktualisierung:** 2026-11-08 (Issue #383/ADR 0143 — Modellwahl je Projekt und Tätigkeit: ein gespeicherter Registry-Verweis mit zwei Fehlerzeiten, eine Wahl, die eine Installationsvorgabe ersetzt, „keine freie Eingabe" als Strukturwächter, zwei Sorten Abwesenheit im Katalog, die Anbietermenge im Einwilligungstext als Kombinationstabelle und die benannte Grenze des Prüfstands für den Cloud-Weg)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil das Dokument je Testgegenstand das
 Muster führt, das beim nächsten gleichartigen Fall wiederverwendet wird — und die benannten
 Lücken, die nirgends sonst stehen.
@@ -2730,6 +2730,108 @@ Bewusst nicht automatisiert bleibt der echte OpenCloud-`COPY`/`MKCOL` gegen die 
 Die Richtungszähler im Export (`a_only`/`b_only` je Merkmal) werden als reine Zählfunktion
 geprüft: beide Richtungen im selben Foto, die Invariante `a_only + b_only == deviating`, und die
 Präsenzgrenze als Quelle der Richtung — zwei Werte unter 0,5 ergeben keine Abweichung.
+
+## Eine Wahl je Projekt und Tätigkeit, ein gespeicherter Registry-Verweis mit zwei Fehlerzeiten und eine Bindung an zwei Nutzer (`model_choice.py`/`api/model_choice.py`/`worker.py`/`ModelChoiceSection.tsx`/`ClassificationSection.tsx`) — neu für ADR [`0143`](../decisions/0143-modellwahl-je-projekt-und-taetigkeit.md) / Issue [`#383`](https://github.com/TheRealKoller/photosort/issues/383)
+
+Bisher war die Modellwahl eine **Betriebseinstellung** (ADR 0059) und Eye eine eigene Laufwahl
+(ADR 0138). Neu ist beides zugleich: ein Projekt speichert je Tätigkeit eine Wahl, ein
+Katalog-Endpunkt liefert die wählbaren Werte samt Preis und Limit, und der gespeicherte Wert ist
+ein **Verweis auf eine Registry, die schrumpfen kann**. Elf Muster, jedes aus einer Fehlerklasse,
+die grün bleibt, während das Produkt falsch ist:
+
+1. **Ein gespeicherter Registry-Verweis hat zwei Fehlerzeiten, und nur eine davon darf werfen.**
+   Zur Schreibzeit ist ein unbekanntes Modell `422`; fällt der Eintrag später aus der Registry,
+   werfen nur Auslöser und Schätzung (`409`, mit Verweis auf die Einstellungen), während die
+   Lese-Antworten die Modell-ID mit `provider: null` zeigen. Der Testfall ist **eine** Fixture in
+   beiden Lagen: einmal gegen die Schreib-API, einmal mit einem per `monkeypatch` aus
+   `VISION_MODELS_BY_PROVIDER` entfernten, aber gespeicherten Modell gegen Auslöser, Schätzung,
+   `GET …/model-choice` und `ProjectOut`. Ein Test, der nur den Schreibpfad kennt, besteht auch
+   gegen eine Auflösung, die still auf die Installationsvorgabe zurückfällt — deshalb gehört in den
+   Lauf-Fall die Gegenprobe „null Aufrufe am aufgezeichneten Client".
+2. **Eine Wahl, die eine Installationsvorgabe ersetzt, braucht den Fall, in dem die beiden Formen
+   auseinanderfallen.** `NULL` („Installationsvorgabe") und der ausdrücklich gespeicherte Wert
+   derselben Vorgabe verhalten sich gleich, bis die Vorgabe sich ändert: nur dann folgt `NULL` und
+   der gespeicherte Wert nicht, und nur dann unterscheidet sich `is_default`. Ohne diesen zweiten
+   Schritt ist jeder Test gegen ein „speichert einfach den aufgelösten Wert" grün.
+3. **Eine Schreibprüfung, die gegen den GESPEICHERTEN Stand differenziert, wird je Regel zweimal
+   getestet: geändert und unverändert.** `PUT …/model-choice` prüft Modell und Anbieterschlüssel nur
+   für einen **geänderten** Wert; ein unverändert durchgereichter Wert läuft ungeprüft durch — auch
+   ein inzwischen aus der Registry entferntes Modell. `null` heißt Installationsvorgabe und braucht
+   nie einen Schlüssel; `eye` ist nur beim **Methodenwechsel** an `EYE_ENABLED` gebunden. Jede dieser
+   Regeln bekommt deshalb ein Paar aus demselben Body: einmal mit Änderung (`422`), einmal ohne
+   (`200`, gespeicherter Stand gleich). Ein Test, der nur die geänderte Richtung kennt, ist gegen eine
+   pauschale Prüfung grün — und die macht ein Projekt in einer Installation ohne Schlüssel
+   unbeschreibbar, also auch den Rückweg unmöglich. Für die **geänderten** Werte gilt unverändert der
+   Vier-Fall-Test der Registry-Sektion (Punkt 1): gültig → gespeichert; unbekannt → `422`; richtiger
+   Wert in falscher Kombination (ein Modell bei `eye`) → `422`; fehlender Anbieterschlüssel → `422`.
+   Die Invariante `eye` ⇒ `category_model IS NULL` gilt dagegen **immer**, auch unverändert, und
+   bekommt einen eigenen Fall plus den Constraint-Test der Migration. Jeder Fehlschlag sichert
+   zusätzlich zu, dass die gespeicherte Wahl **unverändert** bleibt (Lesen nach dem Fehlschlag, nicht
+   nur der Statuscode).
+4. **„Keine freie Eingabe" ist ein Strukturwächter über zwei Ebenen, und der Katalog wird beidseitig
+   mengengleich geprüft.** Auf der API-Ebene sind die Katalogeinträge **mengengleich** zu
+   `VISION_MODELS_BY_PROVIDER` (nicht Teilmenge — Regel 11a der Registry-Sektion, sonst bleibt ein
+   später entfernter Eintrag als wählbare Karte stehen); auf der Komponentenebene entsteht je
+   Katalogeintrag **genau eine** Karte, und im Abschnitt existiert kein Textfeld. Eine Karte, die
+   nur einen Teil des Arrays abbildet, ist gegen eine Teilmengen-Zusicherung grün — und ein
+   `<select>` mit `option`-Liste wäre gegen „kein Textfeld" ebenfalls grün, obwohl die Auswahl dann
+   nicht als Karte mit Preis und Limit erscheint.
+5. **Katalogwerte werden an der Karte nur ANGEZEIGT, nie nachgerechnet — und zwei Modelle desselben
+   Anbieters tragen dasselbe Limit.** Die Komponenten-Fixture ist die API-Form selbst; je Karte
+   werden Anbieter, Preis je Bild, beide Token-Preise und das Limit gegen den Wert desselben
+   Katalogeintrags geprüft. Der Pflichtfall für das Limit ist ein Katalog mit **zwei Anbietern**:
+   bei nur einem Anbieter besteht auch eine Karte, die ein fest verdrahtetes Limit anzeigt. Dieselbe
+   Zusicherung sichert die Aussage „gilt für alle Projekte gemeinsam" an ihren Wortlaut.
+6. **Abwesenheit hat hier zwei Sorten, und `0` ist keine von beiden.** `null` heißt „Preis
+   unbekannt" (Cloud-Anteil ohne `MODEL_PRICING`-Eintrag), ein `null`-**Anteil** heißt „findet nicht
+   statt" — und ein Eye-Anteil trägt `0.0`, wird aber als „kostenfrei" geschrieben. Die Fälle werden
+   als Vielfeldertafel geprüft (Cloud mit Preis / Cloud ohne Preis / Eye / Anteil fehlt), je Fall
+   gegen Text **und** gegen die Abwesenheit eines Betrags (`/USD/`, `/0,00/`). Der Grund ist ein
+   bereits eingetretener Fehler: `0,00 USD` tarnte in Spec 0609 (S7) einen kostenpflichtigen Anteil
+   als kostenlos.
+7. **Eine Anzeige, die aus zwei Wahlen EINE Menge bildet, wird über die Kombinationstabelle
+   geprüft.** Der Einwilligungstext nennt die Anbieter beider Tätigkeiten ohne Dopplung, Eye trägt
+   keinen bei. Die Tabelle läuft über {Eye, Cloud A, Cloud B} × {Cloud A, Cloud B}; ein Fall mit je
+   einem Anbieter besteht auch gegen „nennt nur die Kategorisierung". Dazu gehört die Änderung
+   **ohne Neuladen**: sie ist der einzige Nachweis, dass der Satz aus `project.model_choice` kommt
+   und nicht aus einem Literal — heute steht dort „Anthropic-Cloud-API".
+8. **„Gilt für beide Nutzer" und „keine Wahl gemerkt" sind beides Aussagen über einen ZWEITEN
+   Leser.** Die eine über einen zweiten Client derselben Installation mit eigenem Token (Muster
+   Person × Projekt aus der Sektion zu #566; ein Fall mit einem Nutzer besteht gegen eine
+   `user_id`-Spalte), die andere über ein frisch aufgesetztes `QueryClient`/`render` **nach** einem
+   Lauf. Beim gescheiterten Speichern werden **beide** Seiten geprüft: die gespeicherte Wahl bleibt
+   (Lesen über die API) **und** die Marke steht weiter auf dem alten Wert. Ein Test, der nur die
+   Meldung prüft, ist gegen eine optimistische Oberfläche grün, die die Marke schon verschoben hat.
+9. **„Nie still ausgewichen" braucht ein Vorher-Nachher über alle Spuren, nicht den Statuscode.**
+   Eye abgeschaltet (`403`) und Eye nicht erreichbar (`503`) sind zwei getrennte Fälle; in beiden
+   gilt: kein Job beim Fake-Enqueuer, keine Laufzeile, keine veränderte Foto-/Bewertungszeile,
+   unveränderte Bilanz. Ein Fall, der nur den Statuscode prüft, besteht auch gegen einen Rückfall,
+   der einen lokalen Lauf einreiht.
+10. **Der E2E-Fall dieser Story ist der Übergang von den Einstellungen in den Laufdialog — und er
+    schreibt.** `e2e/tests/eye-nicht-verfuegbar.spec.ts` wird zu genau diesem Fall: Eye in den
+    Einstellungen wählen, Weg „wie im Projekt eingestellt", `503`, kein Rückfall. Er ist der einzige
+    automatisierte Nachweis, dass die Invalidierung nach dem `PUT` bis in den Laufdialog reicht.
+    Weil alle Specs bei `workers: 1` einen geseedeten Bestand teilen, wird die Wahl im `finally` über
+    `page.request` auf den Ausgangszustand zurückgesetzt (Regel 7 der Sektion zu #558) — sonst läuft
+    jeder spätere Spec mit Eye. Der Rückweg ist im schlüssellosen Prüfstack möglich, weil
+    `cloud`/`null`/`null` nur unveränderte `null`-Werte mitschickt; trotzdem bleibt die
+    Wiederherstellung ein eigener Schritt, weil ein späterer Testaufbau die Vorgabe verschieben
+    kann.
+11. **Ein Wächter kehrt sich um, statt zu entfallen — und die Grenze des Prüfstands wird benannt.**
+    Der Inhaltswächter in `tests/test_cloud_vision_throttle.py`, der heute
+    `throttle_for_provider(settings.landmark_provider)` in `build_landmark_client` verlangt, wird auf
+    „Anbieter aus dem Modell" umgeschrieben (Regel 9 der ADR-0059-Sektion: erst mit Ersatz, nie
+    ersatzlos). Dazu ein struktureller Wächter, dass nur `model_choice.resolve_model_choice`
+    `settings.landmark_provider`/`resolved_landmark_model()` liest. **Nicht geführt werden kann der
+    Cloud-Weg:** `docker-compose.e2e.yml` hat bewusst leere Anbieterschlüssel und keinen Worker,
+    also ist im Prüfstack jede Cloud-Karte nicht wählbar und kein Cloud-Lauf möglich. Der Nachweis
+    „zwei Anbieter, zwei Schrittmacher, zwei Preise, mehrere Projekte" bleibt auf
+    Integrationsebene (aufzeichnender Client, zwei Projekte); der E2E-Fall darf deshalb keinen
+    Cloud-Wert auswählen, und „gilt für beide Nutzer" ist nur auf API-Ebene belegt.
+
+**Zum Coverage-Gate:** wie seit Spec 0357 zählt hier die namentliche Abdeckung der elf Muster,
+nicht die Prozentzahl; der neue Code könnte weitgehend ungetestet bleiben, ohne `--cov-fail-under=80`
+zu röten.
 
 ## Was bewusst nicht getestet wird
 
