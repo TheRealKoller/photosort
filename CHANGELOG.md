@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.54.0](https://github.com/TheRealKoller/photosort/compare/v0.53.0...v0.54.0) (2026-11-08)
+
+
+### Features
+
+* **eye:** Eye-Übersetzung v3 mit definierenden Signalen (Spec 0622) ([#626](https://github.com/TheRealKoller/photosort/issues/626)) ([27d02d3](https://github.com/TheRealKoller/photosort/commit/27d02d392dc8d6f6935a3e0d0419b0caaf1dde1c))
+* **eye:** Treffendere Eye-Übersetzung v2 für Ausschluss, Tiere und Aktivität (Spec 0615) ([#619](https://github.com/TheRealKoller/photosort/issues/619)) ([a7fb9c4](https://github.com/TheRealKoller/photosort/commit/a7fb9c4efe72d11b6aa53a6f3f32f8fdad25bb14))
+* **modellwahl:** Modellwahl je Projekt und Tätigkeit (Spec 0383) ([#633](https://github.com/TheRealKoller/photosort/issues/633)) ([a8df801](https://github.com/TheRealKoller/photosort/commit/a8df8012cdd6d06b33887ef9716521ecb18e1a6d))
+
+
+### Bug Fixes
+
+* **heic:** HEIC-/HEIF-Fotos anzeigen und auswerten (Spec 0627) ([#629](https://github.com/TheRealKoller/photosort/issues/629)) ([f3456e1](https://github.com/TheRealKoller/photosort/commit/f3456e17c4da9698a6684f19fccf8526b70a74c0))
+
 ## [0.53.0](https://github.com/TheRealKoller/photosort/compare/v0.52.0...v0.53.0) (2026-11-07)
 
 
