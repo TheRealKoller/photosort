@@ -2722,6 +2722,9 @@ async def _start_criterion_scoring_run(
         # eine Auswertung muss spaeter wissen, welcher Weg zu einem Ergebnis gefuehrt hat. Altzeilen
         # bleiben `NULL` - "unbekannt" ist die wahre Aussage ueber sie.
         mode=mode,
+        # Die einzige Schreibstelle der Stufenquelle (ADR 0144 Punkt 1) - fuer jeden Weg, auch
+        # `local`: Auch ein Lauf ohne Eye und ohne Cloud bildet Rangwerte aus einer Stufe.
+        album_level_source=project.category_method,
     )
     session.add(run)
     await session.commit()
