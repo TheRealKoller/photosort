@@ -154,3 +154,105 @@ describe('ClassificationEstimate: was nicht stattfindet', () => {
     expect(block()).toHaveTextContent('Preis unbekannt')
   })
 })
+
+describe('ClassificationEstimate: die Menge kann unbekannt sein', () => {
+  /** Vor dem ersten erfolgreichen Durchlauf gibt es keine gespeicherten Kriterien-Werte - die API
+   * liefert dann `candidate_count: null` und `estimated_cost_usd: null`. Die Zeile darf daraus
+   * weder "0 Fotos" noch "kostenfrei" machen. */
+  const unknownLandmark = {
+    kind: 'cloud' as const,
+    provider: 'anthropic',
+    model: 'claude-haiku-4-5',
+    price_per_image_usd: 0.0052,
+    candidate_count: null,
+    estimated_cost_usd: null,
+  }
+
+  it('laesst die Mengenangabe weg statt " Fotos" zu schreiben', () => {
+    render(
+      <ClassificationEstimate
+        estimate={estimate({ landmark: unknownLandmark, estimated_cost_usd: 0.9 })}
+      />,
+    )
+
+    const zeile = screen.getByTestId('classification-estimate-part-landmark')
+    expect(zeile).not.toHaveTextContent('Fotos')
+    expect(zeile).not.toHaveTextContent('null')
+  })
+
+  it('nennt den Grund und behauptet trotzdem Kosten', () => {
+    render(
+      <ClassificationEstimate
+        estimate={estimate({ landmark: unknownLandmark, estimated_cost_usd: 0.9 })}
+      />,
+    )
+
+    const zeile = screen.getByTestId('classification-estimate-part-landmark')
+    expect(zeile).toHaveTextContent('Menge noch unbekannt')
+    expect(zeile).toHaveTextContent('verursacht trotzdem Kosten')
+    // Der bekannte Preis des Modells bleibt sichtbar - unbekannt ist die Menge, nicht der Preis.
+    expect(zeile).toHaveTextContent('Anthropic, claude-haiku-4-5 · 0,0052 USD je Bild')
+  })
+
+  it('beschriftet die Summe als Untergrenze und sagt das darunter', () => {
+    render(
+      <ClassificationEstimate
+        estimate={estimate({ landmark: unknownLandmark, estimated_cost_usd: 0.9 })}
+      />,
+    )
+
+    expect(screen.getByText('Mindestens')).toBeInTheDocument()
+    expect(screen.queryByText('Gesamtsumme')).not.toBeInTheDocument()
+    expect(block()).toHaveTextContent(
+      'Ein Anteil ist noch unbekannt — der tatsächliche Betrag liegt höher.',
+    )
+    expect(block()).toHaveTextContent('0,90 USD')
+  })
+
+  it('behauptet "bereits klassifiziert" nur, wenn alles bekannt und nichts offen ist', () => {
+    const { unmount } = render(
+      <ClassificationEstimate
+        estimate={estimate({
+          categorization: {
+            kind: 'cloud',
+            provider: 'mistral',
+            model: 'ministral-3b-2512',
+            price_per_image_usd: 0.000305,
+            candidate_count: 0,
+            estimated_cost_usd: 0,
+          },
+          landmark: unknownLandmark,
+          candidate_count: 0,
+          estimated_cost_usd: null,
+        })}
+      />,
+    )
+
+    expect(block()).not.toHaveTextContent('Alle Fotos bereits klassifiziert')
+    expect(screen.getByText('Mindestens')).toBeInTheDocument()
+
+    unmount()
+
+    render(
+      <ClassificationEstimate
+        estimate={estimate({
+          categorization: {
+            kind: 'cloud',
+            provider: 'mistral',
+            model: 'ministral-3b-2512',
+            price_per_image_usd: 0.000305,
+            candidate_count: 0,
+            estimated_cost_usd: 0,
+          },
+          landmark: { ...unknownLandmark, candidate_count: 0, estimated_cost_usd: 0 },
+          candidate_count: 0,
+          estimated_cost_usd: 0,
+        })}
+      />,
+    )
+
+    expect(block()).toHaveTextContent(
+      'Alle Fotos bereits klassifiziert — keine Cloud-Kosten zu erwarten.',
+    )
+  })
+})

@@ -240,7 +240,9 @@ export interface ClassificationEstimatePartOut {
   model: string | null
   // `| null` heißt "für dieses Modell ist kein Preis hinterlegt", NIE 0.
   price_per_image_usd: number | null
-  candidate_count: number
+  // `| null` heißt "Menge nicht verlässlich schätzbar" (vor dem ersten Durchlauf gibt es keine
+  // gespeicherten Kriterien-Werte), NIE "null Fotos" - eine 0 behauptete Kostenfreiheit.
+  candidate_count: number | null
   estimated_cost_usd: number | null
 }
 

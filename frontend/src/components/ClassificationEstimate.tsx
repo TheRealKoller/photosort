@@ -11,8 +11,17 @@ import { formatProviderLabel, formatUsd, formatUsdPerImage } from '../utils/form
  * Cloud-Anteile werden mit demselben Preis je Bild gerechnet" wäre genau dann falsch und entfällt
  * deshalb ersatzlos.
  *
+ * DREI Zustände, die auseinandergehalten werden müssen:
+ *  - `candidate_count` bekannt und `estimated_cost_usd === 0` → das Wort „kostenfrei",
+ *  - `candidate_count` bekannt und kein Preis hinterlegt → „kein Preis hinterlegt",
+ *  - `candidate_count === null` → die MENGE ist unbekannt. Dann fällt die Mengenangabe weg
+ *    („ Fotos" wäre keine Aussage) und die Summe heißt „Mindestens", weil sie nur die bekannten
+ *    Anteile zählt.
+ *
  * Ein Durchlauf ganz ohne Anteile zeigt EINE Zeile: „Dieser Durchlauf ist kostenfrei." — das Wort,
- * nie „0,00 USD". Einzelne kostenfreie Anteile tragen dasselbe Wort.
+ * nie „0,00 USD". „Alle Fotos bereits klassifiziert" behauptet die Anzeige NUR, wenn nichts offen
+ * UND nichts unbekannt ist: bei unbekanntem Anteil wäre es eine Zusage über eine Menge, die
+ * niemand kennt - und genau diese Zusage kostet dann Geld.
  *
  * Beträge durchgängig über `formatStats.ts::formatUsd` (`1,23 USD`) - die Bilanz trägt dieselbe
  * Formatierung. Der Preis je Bild kommt aus `formatUsdPerImage` (mindestens vier
@@ -22,14 +31,17 @@ import { formatProviderLabel, formatUsd, formatUsdPerImage } from '../utils/form
 const NO_PRICE_TEXT = 'kein Preis hinterlegt'
 const FREE_TEXT = 'kostenfrei'
 const EYE_BASIS = 'Eye, auf diesem Server'
+const UNKNOWN_COUNT_HINT =
+  'Menge noch unbekannt — für dieses Projekt gab es noch keinen Durchlauf. Dieser Anteil verursacht trotzdem Kosten.'
 
 interface ClassificationEstimateProps {
   estimate: ClassificationEstimateOut
 }
 
-function formatPartCost(part: ClassificationEstimatePartOut): string {
+function formatPartCost(part: ClassificationEstimatePartOut): string | null {
   if (part.estimated_cost_usd === null) {
-    return NO_PRICE_TEXT
+    // Unbekannte Menge ist keine fehlende Preisangabe - der Hinweis darunter sagt es genauer.
+    return part.candidate_count === null ? null : NO_PRICE_TEXT
   }
   // `0.0` heisst "es faellt nichts an" - als Wort, nie als Betrag.
   return part.estimated_cost_usd === 0 ? FREE_TEXT : formatUsd(part.estimated_cost_usd)
@@ -49,6 +61,8 @@ export function ClassificationEstimate({ estimate }: ClassificationEstimateProps
   const parts = [estimate.categorization, estimate.landmark].filter(
     (part): part is ClassificationEstimatePartOut => part !== null,
   )
+  const everythingKnown = parts.every((part) => part.candidate_count !== null)
+  const nothingLeft = parts.length > 0 && everythingKnown && estimate.candidate_count === 0
 
   return (
     <div
@@ -59,6 +73,10 @@ export function ClassificationEstimate({ estimate }: ClassificationEstimateProps
 
       {parts.length === 0 ? (
         <p className="text-sm text-text">Dieser Durchlauf ist kostenfrei.</p>
+      ) : nothingLeft ? (
+        <p className="text-sm text-text">
+          Alle Fotos bereits klassifiziert — keine Cloud-Kosten zu erwarten.
+        </p>
       ) : (
         <>
           {estimate.categorization !== null && (
@@ -89,7 +107,9 @@ export function ClassificationEstimate({ estimate }: ClassificationEstimateProps
             {/* Ist ein Anteil unbekannt, ist die Summe nur eine UNTERE SCHRANKE. Sie unbeschriftet
                 als "Gesamtsumme" zu zeigen, waere genau die Fehlaussage, gegen die diese Anzeige
                 antritt. */}
-            <span className="font-semibold text-text-h">Gesamtsumme</span>
+            <span className="font-semibold text-text-h">
+              {everythingKnown ? 'Gesamtsumme' : 'Mindestens'}
+            </span>
             <span className="shrink-0 font-semibold text-text-h">
               {estimate.estimated_cost_usd === null
                 ? NO_PRICE_TEXT
@@ -98,6 +118,11 @@ export function ClassificationEstimate({ estimate }: ClassificationEstimateProps
                   : formatUsd(estimate.estimated_cost_usd)}
             </span>
           </p>
+          {!everythingKnown && (
+            <p className="text-xs text-text-muted">
+              Ein Anteil ist noch unbekannt — der tatsächliche Betrag liegt höher.
+            </p>
+          )}
           <p className="text-xs text-text-muted">
             Schätzung, keine Abrechnung — die tatsächlichen Kosten können abweichen.
           </p>
@@ -116,15 +141,21 @@ function EstimatePart({
   label: string
   part: ClassificationEstimatePartOut
 }) {
+  const cost = formatPartCost(part)
   return (
     <div data-testid={`classification-estimate-part-${id}`} className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-sm text-text">{label}</span>
         <span className="flex shrink-0 items-baseline gap-2">
-          <span className="text-xs text-text-muted">{part.candidate_count} Fotos</span>
-          <span className="text-sm text-text-h">{formatPartCost(part)}</span>
+          {part.candidate_count !== null && (
+            <span className="text-xs text-text-muted">{part.candidate_count} Fotos</span>
+          )}
+          {cost !== null && <span className="text-sm text-text-h">{cost}</span>}
         </span>
       </div>
+      {part.candidate_count === null && (
+        <span className="text-xs text-text-muted">{UNKNOWN_COUNT_HINT}</span>
+      )}
       <span className="text-xs text-text-muted">{partBasis(part)}</span>
     </div>
   )

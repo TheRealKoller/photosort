@@ -1524,8 +1524,10 @@ async def _build_classification_estimate(
     candidate_count = sum(
         part.candidate_count for part in parts if part.candidate_count is not None
     )
-    # Ebenfalls nur die stattfindenden Anteile: ein Anteil mit `candidate_count is None` findet
-    # nicht statt. Kein stattfindender Anteil -> `0.0` = kostenfrei (S7).
+    # `candidate_count is None` heisst "Menge nicht verlaesslich schaetzbar" (Landmark vor dem
+    # ersten erfolgreichen Durchlauf), NICHT "findet nicht statt" - das ist der `null`-ANTEIL.
+    # Ein solcher Anteil traegt keinen Betrag (`estimated_cost_usd is None`), die Summe wird
+    # deshalb insgesamt unbekannt statt still kleiner. Keine Anteile -> `0.0` = kostenfrei (S7).
     costs = [part.estimated_cost_usd for part in parts if part.candidate_count is not None]
     estimated_cost_usd: float | None
     if any(cost is None for cost in costs):
