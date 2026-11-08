@@ -18,6 +18,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import (
+    CategoryMethod,
     ClassificationPhase,
     CriterionScoringRun,
     Event,
@@ -26,11 +27,14 @@ from photosort.models import (
     Photo,
     PhotoAlbumSuitability,
     PhotoCriterionScore,
+    PhotoEyeResult,
     PhotoMotifCorrection,
     PhotoPersonCorrection,
     PhotoPersonDetection,
     PhotoRanking,
     Project,
+    Rating,
+    RatingStatus,
     ScanStatus,
     ScoringRun,
     User,
@@ -62,17 +66,21 @@ async def _project(
     return project
 
 
-async def _successful_run(session: AsyncSession, project: Project) -> CriterionScoringRun:
-    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS, started_at=_BASE)
+async def _successful_run(
+    session: AsyncSession, project: Project, *, started_at: datetime = _BASE
+) -> CriterionScoringRun:
+    scoring_run = ScoringRun(
+        project_id=project.id, status=ScanStatus.SUCCESS, started_at=started_at
+    )
     session.add(scoring_run)
     await session.flush()
     run = CriterionScoringRun(
         project_id=project.id,
         scoring_run_id=scoring_run.id,
         status=ScanStatus.SUCCESS,
-        started_at=_BASE,
-        finished_at=_BASE + timedelta(minutes=5),
-        last_progress_at=_BASE + timedelta(minutes=5),
+        started_at=started_at,
+        finished_at=started_at + timedelta(minutes=5),
+        last_progress_at=started_at + timedelta(minutes=5),
     )
     session.add(run)
     await session.flush()
@@ -806,3 +814,157 @@ class TestThePersonsOfTheDraft:
         await rebuild(db_session, lay.project.id)
 
         assert await lay.draft() == _WITH_PERSON_ON_WEAK
+
+
+class TestTheProposalFollowsTheRunNotTheProject:
+    """Spec 0621, Testtabelle „Neues Verfahren nach dem Lauf, Rueckwechsel, Handentscheide":
+    Cloud-Lauf, Eye-Lauf, Cloud-Lauf auf DEMSELBEN Bestand. Massgeblich ist
+    `album_level_source` der LAUF-Zeile (ADR 0144) - die Projekteinstellung wird mitgewechselt,
+    damit ein Lesepfad, der sie nimmt, hier auffiele.
+
+    Die Cloud- und die Eye-Stufen ordnen die Fotos ABSICHTLICH umgekehrt: bei gleicher Ordnung
+    bestuende „nur das Lauf-Verfahren zaehlt" auch gegen einen Rueckfall auf die andere Tabelle."""
+
+    @staticmethod
+    async def _level_tables(
+        session: AsyncSession,
+    ) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+        """Beide Stufentabellen als zeilengleiche Schnappschuesse."""
+        cloud = (
+            await session.execute(
+                select(PhotoAlbumSuitability.photo_id, PhotoAlbumSuitability.level).order_by(
+                    PhotoAlbumSuitability.photo_id
+                )
+            )
+        ).all()
+        eye = (
+            await session.execute(
+                select(PhotoEyeResult.photo_id, PhotoEyeResult.album_level).order_by(
+                    PhotoEyeResult.photo_id
+                )
+            )
+        ).all()
+        return [(photo_id, level) for photo_id, level in cloud], [
+            (photo_id, level) for photo_id, level in eye
+        ]
+
+    @staticmethod
+    async def _rating_rows(session: AsyncSession) -> list[tuple[int, RatingStatus]]:
+        rows = (
+            await session.execute(select(Rating.photo_id, Rating.status).order_by(Rating.photo_id))
+        ).all()
+        return [(photo_id, status) for photo_id, status in rows]
+
+    async def _run(
+        self,
+        session: AsyncSession,
+        project: Project,
+        photos: Sequence[Photo],
+        *,
+        source: CategoryMethod,
+        index: int,
+    ) -> CriterionScoringRun:
+        """Ein Lauf mit eingefrorener Quelle, Kandidatensaat und anschliessendem Neuaufbau.
+
+        Die Saat (`rank_score` fuer jedes Foto) ist der Kandidatenstand, den
+        `run_criterion_scoring` hinterlaesst; `rebuild_run_grouping` rechnet Rangwerte und
+        Vorschlag daraus neu - derselbe Code wie im Lauf, ohne Modelle."""
+        run = await _successful_run(session, project, started_at=_BASE + timedelta(hours=index))
+        run.album_level_source = source
+        project.category_method = source
+        event = await _event_row(session, run, 1)
+        for photo in photos:
+            await _ranking(session, run, photo, event, rank_score=0.5)
+        await session.flush()
+
+        await rebuild_run_grouping(session, project.id)
+        return run
+
+    async def test_cloud_eye_cloud_moves_only_the_membership_of_the_run(
+        self, db_session: AsyncSession
+    ) -> None:
+        project = await _project(db_session)
+        taken = await _photo(db_session, project, 1)
+        struck = await _photo(db_session, project, 2)
+        only_cloud = await _photo(db_session, project, 3)
+        only_eye = await _photo(db_session, project, 4)
+        user = User(username="daniel", password_hash="egal")
+        db_session.add(user)
+        await db_session.flush()
+        db_session.add_all(
+            [
+                Rating(photo_id=taken.id, user_id=user.id, status=RatingStatus.ALBUM_WORTHY),
+                Rating(photo_id=struck.id, user_id=user.id, status=RatingStatus.REJECTED),
+            ]
+        )
+        # Umgekehrte Ordnung: Cloud sieht `taken` vorn, Eye `struck` - und jedes Verfahren hat ein
+        # Foto, das nur es einstuft.
+        for photo, level in ((taken, 5), (struck, 3), (only_cloud, 4)):
+            db_session.add(
+                PhotoAlbumSuitability(
+                    photo_id=photo.id,
+                    level=level,
+                    reason="Modellbegruendung",
+                    provider="anthropic",
+                    computed_at=_BASE,
+                )
+            )
+        for photo, level in ((taken, 2), (struck, 5), (only_eye, 4)):
+            db_session.add(
+                PhotoEyeResult(
+                    photo_id=photo.id,
+                    excluded_document=False,
+                    album_level=level,
+                    model_revision="v1.0.0",
+                    mapping_version="eye-4.2.3/v3",
+                    computed_at=_BASE,
+                )
+            )
+        await db_session.flush()
+
+        before_levels = await self._level_tables(db_session)
+        expected_ratings = [
+            (taken.id, RatingStatus.ALBUM_WORTHY),
+            (struck.id, RatingStatus.REJECTED),
+        ]
+        assert await self._rating_rows(db_session) == expected_ratings
+
+        positions_by_step: list[dict[int, int | None]] = []
+        for index, source in enumerate(
+            (CategoryMethod.CLOUD, CategoryMethod.EYE, CategoryMethod.CLOUD)
+        ):
+            run = await self._run(
+                db_session,
+                project,
+                [taken, struck, only_cloud, only_eye],
+                source=source,
+                index=index,
+            )
+            positions_by_step.append(await _positions(db_session, run))
+
+            # Die Stufen beider Verfahren bleiben gespeichert und unveraendert.
+            assert await self._level_tables(db_session) == before_levels
+            # Der Handentscheid haengt an der Bewertung, nicht am Lauf.
+            assert await self._rating_rows(db_session) == expected_ratings
+
+        # Lauf 1 (Cloud): die beiden Cloud-Fotos mit Stufe, `only_eye` nicht vorgeschlagen.
+        assert positions_by_step[0] == {
+            taken.id: 1,
+            only_cloud.id: 2,
+            struck.id: 3,
+            only_eye.id: None,
+        }
+        # Lauf 2 (Eye): nur Fotos mit Eye-Stufe, und in der Ordnung der Eye-Stufen.
+        assert positions_by_step[1] == {
+            struck.id: 1,
+            only_eye.id: 2,
+            taken.id: 3,
+            only_cloud.id: None,
+        }
+        proposed = {
+            photo_id for photo_id, position in positions_by_step[1].items() if position is not None
+        }
+        eye_levels = {photo_id for photo_id, _level in before_levels[1]}
+        assert proposed <= eye_levels
+        # Rueckwechsel: derselbe Vorschlag wie nach Lauf 1.
+        assert positions_by_step[2] == positions_by_step[0]
