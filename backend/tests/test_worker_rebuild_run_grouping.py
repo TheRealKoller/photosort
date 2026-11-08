@@ -769,3 +769,60 @@ async def test_the_same_levels_in_the_eye_table_give_the_same_rank_scores(
     assert eye[eye_photos["a.jpg"].id] > eye[eye_photos["b.jpg"].id]
     assert cloud[cloud_photos["a.jpg"].id] == pytest.approx(eye[eye_photos["a.jpg"].id])
     assert cloud[cloud_photos["b.jpg"].id] == pytest.approx(eye[eye_photos["b.jpg"].id])
+
+
+class TestTheRebuildNeverCallsTheEyeService:
+    """Spec 0621 S5 (ADR 0144): Der Neuaufbau laeuft IN EINEM REQUEST (Versatz-Endpunkt). Er
+    liest die Eye-Stufe ausschliesslich aus `photo_eye_results`; ein Sidecar-Aufruf entsteht nur
+    in `_run_eye_phase` eines bewusst gestarteten Laufs. Ein gestohlenes JWT darf damit keine
+    Modellarbeit und keinen Netzverkehr ausloesen."""
+
+    async def test_the_rebuild_with_an_eye_source_never_builds_the_eye_client(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Der Verhaltensnachweis: der Bau des Clients bringt den Test zum Scheitern, statt nur
+        einen Zaehler stehen zu lassen."""
+        project, run, _photos = await _run_with_levels(
+            db_session,
+            tmp_path,
+            name="Eye-Quelle",
+            source=CategoryMethod.EYE,
+            levels={"a.jpg": 5, "b.jpg": 1},
+        )
+        before = await _scores_by_photo(db_session, run.id)
+
+        def _explode() -> NoReturn:
+            pytest.fail("rebuild_run_grouping darf keinen Eye-Client bauen (S5)")
+
+        monkeypatch.setattr(worker, "build_eye_client", _explode)
+
+        await rebuild_run_grouping(db_session, project.id)
+
+        # Antileerlauf: der Neuaufbau ist gelaufen, nicht nur nicht geworfen.
+        assert await _scores_by_photo(db_session, run.id) == before
+
+    def test_the_rebuild_mentions_no_eye_phase_at_all(self) -> None:
+        """Dazu ein struktureller Waechter: Der Verhaltensnachweis oben haengt daran, dass ein Bau
+        ueber den Modulnamen laeuft. Ein Weg ueber einen Default-Parameter (`_run_eye_phase`
+        bindet `build_eye_client` beim Import) roetete ihn nicht."""
+        path = module_file("photosort.worker")
+        assert path is not None
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        functions = {
+            node.name: node for node in ast.walk(tree) if isinstance(node, ast.AsyncFunctionDef)
+        }
+        mentioned = {
+            node.id
+            for node in ast.walk(functions["rebuild_run_grouping"])
+            if isinstance(node, ast.Name)
+        }
+
+        assert "build_eye_client" not in mentioned
+        assert "_run_eye_phase" not in mentioned
+        # Gegenprobe: ohne sie bestuende der Fall auch dann, wenn der Walker nichts findet.
+        assert "_build_grouping_and_rankings" in mentioned
+        assert "_run_eye_phase" in {
+            node.id
+            for node in ast.walk(functions["run_classification"])
+            if isinstance(node, ast.Name)
+        }
