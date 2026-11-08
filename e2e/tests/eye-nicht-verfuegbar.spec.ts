@@ -36,15 +36,15 @@ test.use({
     // Der Ausloeser fragt den Eye-Dienst und bekommt keine Verbindung - der Server antwortet 503.
     { urlPattern: /\/api\/projects\/\d+\/classify$/, status: 503 },
   ],
-  // Der Ablauf besucht ZWEI Seiten (Einstellungen, Kriterien) und der 503 kommt erst nach der
-  // Gesundheitspruefung des nicht laufenden Eye-Dienstes - die Standardgrenze von 30 s reicht
-  // dafuer nicht.
-  timeout: 120_000,
 })
 
 test('ohne Eye-Dienst wird der Lauf sichtbar abgelehnt und nicht still ersetzt', async ({
   page,
 }) => {
+  // Der Ablauf besucht ZWEI Seiten (Einstellungen, Kriterien) und der 503 kommt erst nach der
+  // Gesundheitspruefung des nicht laufenden Eye-Dienstes - die Standardgrenze von 30 s ist dafuer
+  // knapp bemessen.
+  test.setTimeout(120_000)
   const projectId = await demoProjectId(page, DEMO_PROJECTS.rated)
 
   // Vorbedingung: der geseedete Bestand steht auf Cloud. Steht er schon auf Eye, belegt der Fall
