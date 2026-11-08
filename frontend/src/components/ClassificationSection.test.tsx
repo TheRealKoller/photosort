@@ -7,7 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import * as projectsApi from '../api/projects'
-import type { CriterionScoringRunSummary, ProjectOut, ScoringRunSummary } from '../api/types'
+import type {
+  CriterionScoringRunSummary,
+  ProjectModelChoiceOut,
+  ProjectOut,
+  ScoringRunSummary,
+} from '../api/types'
 import { ClassificationSection } from './ClassificationSection'
 import { RUN_STEP_TEXTS } from '../utils/stepActionTexts'
 
@@ -32,7 +37,13 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
-    eye_available: false,
+    model_choice: {
+      category_method: 'cloud',
+      category_provider: 'mistral',
+      category_model: 'ministral-3b-2512',
+      landmark_provider: 'anthropic',
+      landmark_model: 'claude-haiku-4-5',
+    },
     selection_target: null,
     effective_selection_target: 1,
     has_selection_proposal: false,
@@ -117,11 +128,26 @@ function leiste(): HTMLElement {
 const TRIGGER = { name: 'Klassifizierung starten' }
 const RERUN = RUN_STEP_TEXTS.kriterien.rerun
 const ERFOLG = { status: 'success' as const, phase: null, finished_at: '2026-07-20T10:07:00Z' }
-// Die drei Wege der Laufwahl (Spec 0609). Die Zugaenglichkeitsnamen beginnen mit dem Weg-Label;
+// Die ZWEI Wege der Laufwahl (Spec 0383). Die Zugaenglichkeitsnamen beginnen mit dem Weg-Label;
 // die Nebenangabe darunter ist Teil desselben `<label>` und deshalb Teil des Namens.
-const CLOUD_WAY = { name: /^cloud/i }
-const EYE_WAY = { name: /^eye/i }
+const PROJECT_WAY = { name: /^wie im projekt eingestellt/i }
 const LOCAL_WAY = { name: /^nur lokal/i }
+
+/** Die Palette einer Eye-Kategorisierung - was der Server nach einem `PUT` zurueckgibt. */
+const EYE_CHOICE: ProjectModelChoiceOut = {
+  category_method: 'eye',
+  category_provider: null,
+  category_model: null,
+  landmark_provider: 'anthropic',
+  landmark_model: 'claude-haiku-4-5',
+}
+const CLOUD_CHOICE: ProjectModelChoiceOut = {
+  category_method: 'cloud',
+  category_provider: 'mistral',
+  category_model: 'ministral-3b-2512',
+  landmark_provider: 'anthropic',
+  landmark_model: 'claude-haiku-4-5',
+}
 
 async function chooseWay(
   user: ReturnType<typeof userEvent.setup>,
@@ -137,25 +163,33 @@ beforeEach(() => {
   // Anzeige folgt `mode` aus der Antwort - nicht dem Zustand der Oberflaeche.
   vi.mocked(projectsApi.getClassificationEstimate).mockImplementation((_id, mode) =>
     Promise.resolve(
-      mode === 'cloud'
+      mode === 'project'
         ? {
             mode,
             candidate_count: 5,
-            remote_categories: { candidate_count: 4, estimated_cost_usd: 0.0208 },
-            landmark: { candidate_count: 1, estimated_cost_usd: 0.0052 },
-            provider: 'anthropic',
-            model: 'claude-haiku-4-5',
-            price_per_image_usd: 0.0052,
+            categorization: {
+              kind: 'cloud',
+              provider: 'mistral',
+              model: 'ministral-3b-2512',
+              price_per_image_usd: 0.000305,
+              candidate_count: 4,
+              estimated_cost_usd: 0.0208,
+            },
+            landmark: {
+              kind: 'cloud',
+              provider: 'anthropic',
+              model: 'claude-haiku-4-5',
+              price_per_image_usd: 0.0052,
+              candidate_count: 1,
+              estimated_cost_usd: 0.0052,
+            },
             estimated_cost_usd: 0.026,
           }
         : {
             mode,
             candidate_count: 0,
-            remote_categories: { candidate_count: null, estimated_cost_usd: null },
-            landmark: { candidate_count: null, estimated_cost_usd: null },
-            provider: 'anthropic',
-            model: 'claude-haiku-4-5',
-            price_per_image_usd: 0.0052,
+            categorization: null,
+            landmark: null,
             estimated_cost_usd: 0,
           },
     ),
@@ -222,8 +256,8 @@ describe('ein Auslöser', () => {
       .mockRejectedValueOnce(new ApiError(503, 'Eye ist nicht erreichbar.'))
       .mockRejectedValueOnce(new ApiError(503, 'Eye ist nicht erreichbar.'))
     const user = userEvent.setup()
-    renderSection(project({ eye_available: true }))
-    await chooseWay(user, EYE_WAY)
+    renderSection(project({ model_choice: EYE_CHOICE }))
+    await chooseWay(user, PROJECT_WAY)
 
     await user.click(screen.getByRole('button', TRIGGER))
 
@@ -234,7 +268,7 @@ describe('ein Auslöser', () => {
     await user.click(within(alert).getByRole('button', { name: 'Erneut versuchen' }))
 
     await waitFor(() => expect(projectsApi.triggerClassification).toHaveBeenCalledTimes(2))
-    expect(projectsApi.triggerClassification).toHaveBeenLastCalledWith(1, 42, 'eye')
+    expect(projectsApi.triggerClassification).toHaveBeenLastCalledWith(1, 42, 'project')
   })
 
   it('bietet nach einem 403 KEIN "Erneut versuchen" - die Ablehnung bleibt bestehen', async () => {
@@ -242,8 +276,8 @@ describe('ein Auslöser', () => {
       new ApiError(403, 'Diese Funktion ist derzeit nicht aktiviert.'),
     )
     const user = userEvent.setup()
-    renderSection(project({ eye_available: true }))
-    await chooseWay(user, EYE_WAY)
+    renderSection(project({ model_choice: EYE_CHOICE }))
+    await chooseWay(user, PROJECT_WAY)
 
     await user.click(screen.getByRole('button', TRIGGER))
 
@@ -252,20 +286,20 @@ describe('ein Auslöser', () => {
     expect(within(alert).queryByRole('button', { name: 'Erneut versuchen' })).toBeNull()
   })
 
-  it('laesst die Eye-Zeile nach einem 503 gewaehlt', async () => {
+  it('laesst die Projekt-Wahl nach einem 503 gewaehlt', async () => {
     vi.mocked(projectsApi.triggerClassification).mockRejectedValue(
       new ApiError(503, 'Eye ist nicht erreichbar.'),
     )
     const user = userEvent.setup()
-    renderSection(project({ eye_available: true }))
-    await chooseWay(user, EYE_WAY)
+    renderSection(project({ model_choice: EYE_CHOICE }))
+    await chooseWay(user, PROJECT_WAY)
 
     await user.click(screen.getByRole('button', TRIGGER))
 
     await screen.findByRole('alert')
     // Der Fehlschlag ist keine neue Wahl: ein stiller Rueckfall auf einen anderen Weg waere
     // schlimmer als die sichtbare Ablehnung, und die Wahl gehoert der Person.
-    expect(screen.getByRole('radio', EYE_WAY)).toBeChecked()
+    expect(screen.getByRole('radio', PROJECT_WAY)).toBeChecked()
   })
 
   it('never repeats the withdrawn "results only take effect on a later run" hint', () => {
@@ -286,10 +320,10 @@ describe('ein Auslöser', () => {
 
 describe('Weg für diesen Durchlauf', () => {
   it('zeigt KEINE Vorbelegung - auch nicht bei erteilter Cloud-Einwilligung', () => {
-    renderSection(project({ cloud_vision_detection_enabled: true, eye_available: true }))
+    renderSection(project({ cloud_vision_detection_enabled: true }))
 
-    // DIE Aenderung gegenueber der Checkbox: die Einwilligung ist eine Vorbedingung des
-    // Cloud-Wegs, aber keine Wahl. Jeder Durchlauf beginnt mit einer bewussten Entscheidung.
+    // Jeder Durchlauf beginnt mit einer bewussten Entscheidung; die Einwilligung ist eine
+    // Vorbedingung, keine Wahl.
     for (const radio of screen.getAllByRole('radio')) {
       expect(radio).not.toBeChecked()
     }
@@ -299,15 +333,15 @@ describe('Weg für diesen Durchlauf', () => {
     )
   })
 
-  it('bietet ohne Eye-Schalter genau zwei Wege, mit ihm drei', () => {
-    const { unmount } = renderSection(project({ eye_available: false }))
-    expect(screen.getAllByRole('radio')).toHaveLength(2)
-    expect(screen.queryByRole('radio', EYE_WAY)).not.toBeInTheDocument()
+  it('bietet GENAU ZWEI Wege - Cloud und Eye sind keine Anfragewege mehr', () => {
+    renderSection(project({ model_choice: EYE_CHOICE }))
 
-    unmount()
-    renderSection(project({ eye_available: true }))
-    expect(screen.getAllByRole('radio')).toHaveLength(3)
-    expect(screen.getByRole('radio', EYE_WAY)).toBeInTheDocument()
+    const radios = screen.getAllByRole('radio')
+    expect(radios).toHaveLength(2)
+    expect(screen.getByRole('radio', PROJECT_WAY)).toBeInTheDocument()
+    expect(screen.getByRole('radio', LOCAL_WAY)).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /^cloud/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /^eye/i })).not.toBeInTheDocument()
   })
 
   it('nennt die Gruppe ueber eine legend', () => {
@@ -316,24 +350,36 @@ describe('Weg für diesen Durchlauf', () => {
     expect(screen.getByRole('group', { name: 'Weg für diesen Durchlauf' })).toBeInTheDocument()
   })
 
-  it('nennt die Namensnennung des Eye-Modells an der Eye-Zeile', () => {
-    renderSection(project({ eye_available: true }))
+  it('fasst die Projektwahl in der Zeile zusammen', () => {
+    renderSection(project({ model_choice: CLOUD_CHOICE, cloud_vision_detection_enabled: true }))
 
-    // S12: sichtbar, verlinkt und nicht abschaltbar - die Lizenz des Modells verlangt sie an der
-    // Verwendungsstelle, nicht in einer Fusszeile.
-    const attribution = within(screen.getByRole('radio', EYE_WAY).closest('label') as HTMLElement)
-    expect(attribution.getByTestId('eye-attribution')).toHaveTextContent(/desert ant labs/i)
-    const link = attribution.getByRole('link', { name: /desert ant labs/i })
-    expect(link).toHaveAttribute('href', 'https://desertant.com')
-    expect(link).toHaveAttribute('target', '_blank')
-    expect(link.getAttribute('rel')).toContain('noreferrer')
+    const meta = screen.getByTestId('way-project-meta')
+    expect(meta).toHaveTextContent(/Kategorisierung: Mistral, ministral-3b-2512/)
+    expect(meta).toHaveTextContent(/Sehenswürdigkeits-Erkennung: Anthropic, claude-haiku-4-5/)
+  })
+
+  it('sagt bei Eye-Kategorisierung ohne Einwilligung, dass die Erkennung entfaellt', () => {
+    renderSection(project({ model_choice: EYE_CHOICE }))
+
+    const meta = screen.getByTestId('way-project-meta')
+    expect(meta).toHaveTextContent(/Kategorisierung: Eye/)
+    expect(meta).toHaveTextContent(/entfällt — keine Cloud-Einwilligung/)
+  })
+
+  it('verlinkt die Aenderung AUSSERHALB des Labels in die Einstellungen', () => {
+    renderSection(project())
+
+    const link = screen.getByRole('link', { name: 'In den Projekteinstellungen ändern' })
+    expect(link).toHaveAttribute('href', '/projects/1/settings')
+    // Ein Link IM <label> setzte beim Klick zusaetzlich die Wahl - er steht deshalb daneben.
+    expect(link.closest('label')).toBeNull()
   })
 
   it('sperrt den Cloud-Weg ohne Einwilligung und verweist auf die Einstellungen', async () => {
     const user = userEvent.setup()
     renderSection(project({ cloud_vision_detection_enabled: false }))
 
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
 
     expect(screen.getByRole('button', TRIGGER)).toBeDisabled()
     expect(screen.getByTestId('classification-disabled-reason')).toHaveTextContent(
@@ -342,52 +388,58 @@ describe('Weg für diesen Durchlauf', () => {
     expect(
       screen.getByRole('link', { name: /in den projekteinstellungen aktivieren/i }),
     ).toHaveAttribute('href', '/projects/1/settings')
+    // "Nur lokal" bleibt startklar, auch wenn der wirksame Weg gesperrt ist.
+    expect(screen.getByRole('radio', LOCAL_WAY)).toBeEnabled()
   })
 
-  it('sendet mode=cloud bei gewaehltem Cloud-Weg', async () => {
+  it('sendet mode=project, wenn "wie im Projekt eingestellt" gewaehlt ist', async () => {
     vi.mocked(projectsApi.triggerClassification).mockReturnValue(new Promise(() => {}))
     const user = userEvent.setup()
     renderSection(project({ cloud_vision_detection_enabled: true }))
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
     await screen.findByTestId('classification-estimate')
 
     await user.click(screen.getByRole('button', TRIGGER))
 
-    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 42, 'cloud')
+    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 42, 'project')
   })
 
-  it('sendet mode=eye bei gewaehltem Eye-Weg', async () => {
+  it('sendet mode=project auch bei Eye-Kategorisierung - den Weg entscheidet der Server', async () => {
     vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
-      mode: 'eye',
+      mode: 'project',
       candidate_count: 0,
-      remote_categories: { candidate_count: null, estimated_cost_usd: null },
-      landmark: { candidate_count: null, estimated_cost_usd: null },
-      provider: 'anthropic',
-      model: 'claude-haiku-4-5',
-      price_per_image_usd: 0.0052,
+      categorization: {
+        kind: 'eye',
+        provider: null,
+        model: null,
+        price_per_image_usd: 0,
+        candidate_count: 0,
+        estimated_cost_usd: 0,
+      },
+      landmark: null,
       estimated_cost_usd: 0,
     })
     vi.mocked(projectsApi.triggerClassification).mockReturnValue(new Promise(() => {}))
     const user = userEvent.setup()
-    renderSection(project({ eye_available: true }))
-    await chooseWay(user, EYE_WAY)
+    renderSection(project({ model_choice: EYE_CHOICE }))
+    await chooseWay(user, PROJECT_WAY)
     await screen.findByTestId('classification-estimate')
 
     await user.click(screen.getByRole('button', TRIGGER))
 
-    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 42, 'eye')
+    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 42, 'project')
   })
 
-  it('fragt die Schaetzung je Weg ab', async () => {
+  it('fragt die Schaetzung je Wahl ab', async () => {
     const user = userEvent.setup()
-    renderSection(project({ cloud_vision_detection_enabled: true, eye_available: true }))
+    renderSection(project({ cloud_vision_detection_enabled: true }))
 
     // Vor der Wahl laedt NICHTS - es gibt keinen Durchlauf, dessen Kosten sie beschriebe.
     expect(projectsApi.getClassificationEstimate).not.toHaveBeenCalled()
 
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
     await waitFor(() => {
-      expect(projectsApi.getClassificationEstimate).toHaveBeenCalledWith(1, 'cloud')
+      expect(projectsApi.getClassificationEstimate).toHaveBeenCalledWith(1, 'project')
     })
   })
 
@@ -404,37 +456,47 @@ describe('Weg für diesen Durchlauf', () => {
     })
   })
 
-  // Spec 0609, Datenschutz: an der Wahl haengt die Aussage ueber den Datenfluss. Der Eye-Satz
-  // traegt die Lizenzmeldung ausdruecklich mit, weil sie sich nicht abschalten laesst.
-  it('sagt beim Eye-Weg, dass kein Foto den Server verlaesst', async () => {
+  // Spec 0383: an der Wahl haengt die Aussage ueber den Datenfluss, und die nennt die Anbieter JE
+  // TAETIGKEIT aus `project.model_choice`.
+  it('sagt bei Eye-Kategorisierung, dass kein Foto den Server verlaesst', async () => {
     const user = userEvent.setup()
-    renderSection(project({ eye_available: true }))
-    await chooseWay(user, EYE_WAY)
+    renderSection(project({ model_choice: EYE_CHOICE }))
+    await chooseWay(user, PROJECT_WAY)
 
     const text = screen.getByTestId('classification-scope-text')
-    expect(text).toHaveTextContent(/kein foto verlässt ihn/i)
+    expect(text).toHaveTextContent(/verlässt kein foto diesen server/i)
     expect(text).toHaveTextContent(/lizenzmeldung mit einer zählkennung/i)
     expect(text).toHaveTextContent(/lässt sich nicht abschalten/i)
     // Ohne Einwilligung laeuft keine Cloud-Phase - der Ortshinweis gehoert dann nicht hierher.
     expect(text).not.toHaveTextContent(/ortsname/i)
   })
 
-  it('nennt beim Eye-Weg mit Einwilligung die Sehenswuerdigkeits-Erkennung samt Ortsangabe', async () => {
+  it('nennt bei Eye-Kategorisierung mit Einwilligung die Sehenswuerdigkeits-Erkennung samt Ortsangabe', async () => {
     const user = userEvent.setup()
-    renderSection(project({ eye_available: true, cloud_vision_detection_enabled: true }))
-    await chooseWay(user, EYE_WAY)
+    renderSection(project({ model_choice: EYE_CHOICE, cloud_vision_detection_enabled: true }))
+    await chooseWay(user, PROJECT_WAY)
 
     const text = screen.getByTestId('classification-scope-text')
     expect(text).toHaveTextContent(/sehenswürdigkeits-erkennung/i)
     expect(text).toHaveTextContent(/ortsname/i)
     expect(text).toHaveTextContent(/koordinate/i)
-    // Die Lizenzmeldung steht auch dann - sie haengt am Weg, nicht an der Einwilligung.
+    // Die Lizenzmeldung steht auch dann - sie haengt an der Kategorisierung, nicht an der Einwilligung.
     expect(text).toHaveTextContent(/lässt sich nicht abschalten/i)
+  })
+
+  it('nennt die Anbieter beider Taetigkeiten, wenn sie sich unterscheiden', async () => {
+    const user = userEvent.setup()
+    renderSection(project({ model_choice: CLOUD_CHOICE, cloud_vision_detection_enabled: true }))
+    await chooseWay(user, PROJECT_WAY)
+
+    const text = screen.getByTestId('classification-scope-text')
+    expect(text).toHaveTextContent(/an Mistral — für Kategorie-Vorschläge/)
+    expect(text).toHaveTextContent(/an Anthropic\./)
   })
 
   it('sagt beim lokalen Weg, dass kein Foto den Server verlaesst - ohne Lizenzmeldung', async () => {
     const user = userEvent.setup()
-    renderSection(project({ eye_available: true }))
+    renderSection(project({ model_choice: EYE_CHOICE }))
     await chooseWay(user, LOCAL_WAY)
 
     const text = screen.getByTestId('classification-scope-text')
@@ -449,7 +511,7 @@ describe('Kosten sichtbar vor dem Start', () => {
     // Der INHALT der Kostenvorschau wird in ClassificationEstimate.test.tsx geprüft.
     const user = userEvent.setup()
     renderSection(project({ cloud_vision_detection_enabled: true }))
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
 
     const estimate = await screen.findByTestId('classification-estimate')
     expect(estimate.nextElementSibling).toBe(leiste())
@@ -463,7 +525,7 @@ describe('Kosten sichtbar vor dem Start', () => {
         last_criterion_scoring_run: classificationRun(ERFOLG),
       }),
     )
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
 
     const block = screen.getByTestId('rerun-block')
     expect(await within(block).findByTestId('classification-estimate')).toBeInTheDocument()
@@ -482,7 +544,7 @@ describe('Kosten sichtbar vor dem Start', () => {
     renderSection(
       project({ cloud_vision_detection_enabled: true, last_criterion_scoring_run: run }),
     )
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
 
     const name = run?.status === 'success' ? RERUN.label : TRIGGER.name
     await waitFor(() => expect(screen.getByRole('button', { name })).toBeDisabled())
@@ -511,7 +573,7 @@ describe('Kosten sichtbar vor dem Start', () => {
     vi.mocked(projectsApi.triggerClassification).mockReturnValue(new Promise(() => {}))
     const user = userEvent.setup()
     renderSection(project({ cloud_vision_detection_enabled: true }))
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
     await screen.findByTestId('classification-estimate')
 
     await user.click(screen.getByRole('button', TRIGGER))
@@ -519,7 +581,7 @@ describe('Kosten sichtbar vor dem Start', () => {
     // Das Design-System-Muster "Bestaetigungsdialog vor kostenpflichtiger Aktion" ist mit dieser
     // Spec ausdruecklich zurueckgenommen - die Schaetzung an der Laufwahl tritt an seine Stelle.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 42, 'cloud')
+    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 42, 'project')
   })
 
   it('blocks the cloud run while the estimate cannot be loaded, but allows the local one', async () => {
@@ -529,7 +591,7 @@ describe('Kosten sichtbar vor dem Start', () => {
     const user = userEvent.setup()
     renderSection(project({ cloud_vision_detection_enabled: true }))
 
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
 
     // "Kein Bypass": keine kostenpflichtige Aktion ohne sichtbare Schaetzung.
     await waitFor(() => expect(screen.getByRole('button', TRIGGER)).toBeDisabled())
@@ -637,7 +699,7 @@ describe('genau einer der beiden Zustandsblöcke', () => {
     )
     expect(screen.queryByRole('button', TRIGGER)).not.toBeInTheDocument()
     // Bei gewähltem Cloud-Weg erst bedienbar, sobald die Schätzung vorliegt.
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
     await screen.findByTestId('classification-estimate')
     expect(screen.getByRole('button', { name: RERUN.label })).toBeEnabled()
     expect(screen.getByText(RERUN.explanation)).toBeVisible()
@@ -784,13 +846,24 @@ describe('Kostenschätzung ohne hinterlegten Preis', () => {
   // specs/features/0304-cloud-modell-je-anbieter-waehlbar.md, ADR 0059 Punkt 4. Die DARSTELLUNG
   // des Falls prüft ClassificationEstimate.test.tsx; hier steht die Zusage des Containers.
   const withoutPrice = {
-    mode: 'cloud' as const,
+    mode: 'project' as const,
     candidate_count: 5,
-    remote_categories: { candidate_count: 4, estimated_cost_usd: null },
-    landmark: { candidate_count: 1, estimated_cost_usd: null },
-    provider: 'anthropic',
-    model: 'ein-nie-bepreistes-modell',
-    price_per_image_usd: null,
+    categorization: {
+      kind: 'cloud' as const,
+      provider: 'anthropic',
+      model: 'ein-nie-bepreistes-modell',
+      price_per_image_usd: null,
+      candidate_count: 4,
+      estimated_cost_usd: null,
+    },
+    landmark: {
+      kind: 'cloud' as const,
+      provider: 'anthropic',
+      model: 'ein-nie-bepreistes-modell',
+      price_per_image_usd: null,
+      candidate_count: 1,
+      estimated_cost_usd: null,
+    },
     estimated_cost_usd: null,
   }
 
@@ -798,7 +871,7 @@ describe('Kostenschätzung ohne hinterlegten Preis', () => {
     vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue(withoutPrice)
     const user = userEvent.setup()
     renderSection(project({ cloud_vision_detection_enabled: true }))
-    await chooseWay(user, CLOUD_WAY)
+    await chooseWay(user, PROJECT_WAY)
 
     await screen.findByTestId('classification-estimate')
 

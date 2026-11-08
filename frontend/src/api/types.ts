@@ -41,10 +41,19 @@ export type ClassificationPhase =
   'remote_categories' | 'eye' | 'criteria' | 'landmark' | 'ranking' | 'persons'
 
 /**
- * Der Weg eines Klassifizierungslaufs (Spec 0609): Cloud, Eye oder nur lokal. Der Name ist
- * derselbe wie im Anfragekoerper, damit Anfrage und Antwort nicht zwei Vokabulare fuehren.
+ * Die Wahl des Nutzers beim Auslösen (Spec 0383): "wie im Projekt eingestellt" oder "nur lokal".
+ * Der Name ist derselbe wie im Anfragekoerper, damit Anfrage und Antwort nicht zwei Vokabulare
+ * fuehren. Cloud und Eye sind seit 0383 keine Anfragewege mehr, sondern Ergebnisse der im Projekt
+ * gespeicherten Wahl (`ClassificationPath`).
  */
-export type ClassificationWay = 'cloud' | 'eye' | 'local'
+export type ClassificationWay = 'project' | 'local'
+
+/**
+ * Der WIRKSAME Weg eines Laufs (Antwortfeld `CriterionScoringRunSummary.mode` und die
+ * Schätzung): Cloud, Eye oder nur lokal. Vom `ClassificationWay` bewusst getrennt - ein Feld,
+ * das beide Zustände mischte, machte "so eingestellt, aber lokal gelaufen" unlesbar.
+ */
+export type ClassificationPath = 'cloud' | 'eye' | 'local'
 
 // Ein Cloud-Teilschritt EINES Klassifizierungslaufs: während des Laufs die Fortschrittsanzeige,
 // danach die Bilanz.
@@ -123,9 +132,9 @@ export interface CriterionScoringRunSummary {
   // Laufende wird der Teilschritt dann ausgeblendet. Keine Namen, keine Trefferzahl.
   persons_photos_total: number | null
   persons_photos_processed: number | null
-  // Der beim Start GEWAEHLTE Weg; `null` bei Altzeilen, deren Weg unbekannt ist. Nicht aus
+  // Der beim Start WIRKSAME Weg; `null` bei Altzeilen, deren Weg unbekannt ist. Nicht aus
   // `cloud_requested` ableitbar: Eye mit Einwilligung fragt Cloud an, ohne der Cloud-Weg zu sein.
-  mode: ClassificationWay | null
+  mode: ClassificationPath | null
   // Die Zaehler der Eye-Phase (Muster `persons_*`). `null` heisst "diese Phase lief nicht" -
   // der Teilschritt wird nach Laufende dann ausgeblendet.
   eye_photos_total: number | null
@@ -191,10 +200,11 @@ export interface ProjectOut {
   // false, consent_at null solange nicht aktiviert. Er gated BEIDE Cloud-Anteile.
   cloud_vision_detection_enabled: boolean
   cloud_vision_consent_at: string | null
-  // Der Eye-Schalter (`EYE_ENABLED`) - die dritte Laufwahl erscheint nur, wenn er an ist. Er kommt
-  // allein aus den Einstellungen des Servers, NIE aus einer Lebendpruefung des Dienstes: sonst
-  // machte das Laden der Projektliste den Sidecar zur Voraussetzung.
-  eye_available: boolean
+  // Die WIRKSAME Modellwahl je Tätigkeit (Spec 0383, ADR 0143). Sie ersetzt das frühere
+  // `eye_available`: die Verfügbarkeit beider Methoden liefert `GET …/model-choice`, hier steht,
+  // was der nächste Lauf tatsächlich aufruft. `provider: null` heißt "Modell nicht mehr wählbar"
+  // bzw. "Eye" - der Lesepfad rät keinen Empfänger.
+  model_choice: ProjectModelChoiceOut
   // Der Richtwert des Auswahlvorschlags. `null` heißt "nicht selbst eingestellt", NICHT "kein
   // Richtwert" - wirksam ist dann `effective_selection_target`, die feste Vorbelegung von 150
   // Bildern. Das Frontend leitet die wirksame Zahl nie selbst ab; sie kommt fertig vom Server,
@@ -218,34 +228,77 @@ export interface ProjectOut {
   taken_at_latest: string | null
 }
 
-// Kostenschätzung vor dem Lauf, über ALLE Cloud-Anteile, die die Checkbox am Auslöser
-// freigibt. `candidate_count` ist die Summe der beiden Einzelanteile und bleibt die eine
-// anzuzeigende Zahl. Je Einzelanteil gilt: `candidate_count === null` heißt "nicht
-// verlässlich schätzbar" (Landmark-Anteil vor dem ersten erfolgreichen Durchlauf), NIE
-// "null Fotos"; `estimated_cost_usd === null` heißt "kein Preis hinterlegt ODER Anteil
-// unbekannt", nie "kostenlos".
+/**
+ * Ein Anteil der Kostenschätzung (Spec 0383): je Tätigkeit einer. `null` im umgebenden Typ heißt
+ * "dieser Anteil findet nicht statt" - unterscheidbar von "Betrag unbekannt" (`estimated_cost_usd:
+ * null`). Eye-Kategorisierung ist `kind: 'eye'` mit `provider`/`model` `null` und Betrag `0.0`
+ * ("kostenfrei", nicht "kein Preis hinterlegt").
+ */
 export interface ClassificationEstimatePartOut {
-  candidate_count: number | null
+  kind: 'cloud' | 'eye'
+  provider: string | null
+  model: string | null
+  // `| null` heißt "für dieses Modell ist kein Preis hinterlegt", NIE 0.
+  price_per_image_usd: number | null
+  candidate_count: number
   estimated_cost_usd: number | null
 }
 
 export interface ClassificationEstimateOut {
-  // Der Weg, auf den sich die Antwort bezieht. Beim Weg `eye`/`local` sind nicht stattfindende
-  // Anteile `null`/`null` - nie `0`, das "kostenlos" behauptete, wo nichts gezaehlt wurde.
+  // Die Wahl, auf die sich die Antwort bezieht (`project` = wie eingestellt, `local` = nur lokal).
   mode: ClassificationWay
-  // Summe der BEKANNTEN Anteile - bei unbekanntem Landmark-Anteil eine untere Schranke.
+  // Summe der BEKANNTEN Anteile - bei unbekanntem Anteil eine untere Schranke.
   candidate_count: number
-  remote_categories: ClassificationEstimatePartOut
-  landmark: ClassificationEstimatePartOut
-  provider: string
-  // Das Modell, auf das sich die Schätzung bezieht - `provider` allein benennt die
-  // Preisgrundlage nicht eindeutig.
-  model: string
-  // `| null` heißt "für das eingestellte Modell ist kein Preis hinterlegt", NIE 0. Ein
-  // `?? 0` an dieser Stelle behauptete Kostenfreiheit - `tsc` erzwingt die Behandlung an der
-  // Anzeigestelle.
-  price_per_image_usd: number | null
+  // `null` = dieser Anteil findet in diesem Durchlauf nicht statt (Eye-Anteil ist nie `null`,
+  // solange kategorisiert wird; `landmark` fehlt ohne Einwilligung und bei `local`).
+  categorization: ClassificationEstimatePartOut | null
+  landmark: ClassificationEstimatePartOut | null
+  // Summe der bekannten Anteile; `null` heißt "kein Preis hinterlegt ODER Anteil unbekannt",
+  // nie "kostenlos".
   estimated_cost_usd: number | null
+}
+
+/**
+ * Die wirksame Wahl eines Projekts im Projekt-Datensatz (Spec 0383). Ohne `*_is_default`: die
+ * Herkunft ("Installationsvorgabe" vs. ausdrücklich gespeichert) braucht nur die
+ * Einstellungsseite, und die liest `GET …/model-choice`.
+ */
+export interface ProjectModelChoiceOut {
+  category_method: 'cloud' | 'eye'
+  category_provider: string | null
+  category_model: string | null
+  landmark_provider: string | null
+  landmark_model: string
+}
+
+/** Ein wählbarer Katalogeintrag der Registry (Spec 0383). Fehlender Preis ist `null`, nie `0`. */
+export interface CloudModelOut {
+  provider: string
+  model: string
+  estimate_usd_per_image: number | null
+  input_usd_per_mtok: number | null
+  output_usd_per_mtok: number | null
+  requests_per_minute: number
+  available: boolean
+  unavailable_reasons: 'no_api_key'[]
+}
+
+/** Die gespeicherte Wahl samt Katalog - Antwort von `GET`/`PUT …/model-choice`. */
+export interface ModelChoiceOut {
+  current: {
+    category_method: 'cloud' | 'eye'
+    category_model: string | null
+    category_provider: string | null
+    category_is_default: boolean
+    landmark_model: string
+    landmark_provider: string | null
+    landmark_is_default: boolean
+  }
+  cloud_models: CloudModelOut[]
+  eye: {
+    available: boolean
+    unavailable_reasons: 'eye_disabled'[]
+  }
 }
 
 export interface BrowseEntry {

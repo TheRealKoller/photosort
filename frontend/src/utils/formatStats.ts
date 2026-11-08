@@ -15,6 +15,10 @@ const DECIMAL_TWO = new Intl.NumberFormat('de-DE', {
   maximumFractionDigits: 2,
 })
 const INTEGER = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 })
+const DECIMAL_PER_IMAGE = new Intl.NumberFormat('de-DE', {
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 6,
+})
 
 /** Basis 1024 - dieselbe Zaehlweise wie `du`/der Dateimanager. */
 const MEBIBYTE = 1024 * 1024
@@ -62,6 +66,21 @@ export function formatUsd(amountUsd: number): string {
     return '< 0,01 USD'
   }
   return `${DECIMAL_TWO.format(amountUsd)} USD`
+}
+
+/**
+ * Preis JE BILD für die Modellwahl (Spec 0383): mindestens vier, höchstens sechs
+ * Nachkommastellen, abschließende Nullen fallen weg („0,0052 USD je Bild").
+ *
+ * `formatUsd` ist hier untauglich: es macht jeden Wert unter einem Cent zu „< 0,01 USD", und die
+ * wählbaren Modelle wären nicht mehr unterscheidbar. Nie auf „0" gerundet - ein fehlender Preis
+ * ist das Wort „Preis unbekannt", keine Null und kein leerer Platz.
+ */
+export function formatUsdPerImage(priceUsdPerImage: number | null): string {
+  if (priceUsdPerImage === null) {
+    return 'Preis unbekannt'
+  }
+  return `${DECIMAL_PER_IMAGE.format(priceUsdPerImage)} USD je Bild`
 }
 
 /**

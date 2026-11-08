@@ -3,6 +3,8 @@ import type {
   ClassificationEstimateOut,
   ClassificationWay,
   FineLabelCountOut,
+  ModelChoiceOut,
+  ProjectModelChoiceOut,
   ProjectOut,
   ProjectStatsOut,
 } from './types'
@@ -68,10 +70,11 @@ export function confirmAusschussGate(id: number): Promise<TriggerScanResponse> {
  * der Aufrufer kennt ihre Reihenfolge nicht.
  *
  * `scoringRunId`: Staleness-Guard bei einem zwischenzeitlichen Re-Scan/Re-Scoring (siehe
- * ScoringRunSummary.id). `mode`: der Weg dieses Laufs (Spec 0609) - er ersetzt die fruehere
- * `use_cloud`-Checkbox und hat KEINEN Vorgabewert; `mode: 'cloud'` erteilt keine Einwilligung
- * (die bleibt die Projekteinstellung) und wird ohne sie mit 403 abgewiesen. `eye` wird mit 403
- * abgewiesen, wenn der Eye-Schalter aus ist, und mit 503, wenn der Dienst nicht antwortet.
+ * ScoringRunSummary.id). `mode` waehlt seit Spec 0383 nur noch "wie im Projekt eingestellt"
+ * (`project`) oder "nur lokal" (`local`) und hat KEINEN Vorgabewert. Den wirksamen Weg, die
+ * Modelle und die Einwilligung entscheidet der Server aus der Projektwahl: ohne Einwilligung
+ * wird der wirksame Cloud-Weg mit 403 abgewiesen, ein abgeschaltetes Eye ebenso, ein nicht
+ * erreichbares mit 503.
  */
 export function triggerClassification(
   id: number,
@@ -110,10 +113,38 @@ export function setSelectionTarget(id: number, target: number | null): Promise<P
   })
 }
 
-// Die Schaetzung gilt JE WEG (`?mode=`): Cloud beide Anteile, Eye nur die
-// Sehenswuerdigkeits-Erkennung (und nur mit Einwilligung), lokal keinen. Funktioniert unabhaengig
-// vom Consent-Schalter (auch bei deaktiviertem Consent 200) - die Kosten sollen vor einer
-// Consent-Entscheidung sichtbar sein.
+// Die Schaetzung gilt JE WAHL (`?mode=project|local`): `project` nimmt die im Projekt
+// gespeicherte Wahl (Cloud-Kategorisierung, Eye-Kategorisierung oder Eye + Landmark mit
+// Einwilligung), `local` keinen Anteil. Funktioniert unabhaengig vom Consent-Schalter (auch bei
+// deaktiviertem Consent 200) - die Kosten sollen vor einer Consent-Entscheidung sichtbar sein.
+
+/**
+ * Katalog und gespeicherte Wahl des Projekts (Spec 0383) - die Quelle fuer den Abschnitt
+ * "Modellwahl" in den Einstellungen und fuer die Kurzfassung an der Laufwahl.
+ */
+export function getModelChoice(id: number): Promise<ModelChoiceOut> {
+  return apiFetch<ModelChoiceOut>(`/projects/${id}/model-choice`)
+}
+
+export interface ModelChoicePayload {
+  category_method: 'cloud' | 'eye'
+  category_model: string | null
+  landmark_model: string | null
+}
+
+/**
+ * Setzt die Wahl je Taetigkeit - alle drei Spalten in EINEM Commit. Bei einem Fehler aendert sich
+ * nichts; `409` heisst "es laeuft gerade eine Klassifizierung".
+ */
+export function putModelChoice(id: number, payload: ModelChoicePayload): Promise<ModelChoiceOut> {
+  return apiFetch<ModelChoiceOut>(`/projects/${id}/model-choice`, {
+    method: 'PUT',
+    body: payload,
+  })
+}
+
+/** Die wirksame Wahl eines Projekts - schon im `ProjectOut` enthalten, hier nur benannt. */
+export type { ProjectModelChoiceOut }
 export function getClassificationEstimate(
   id: number,
   mode: ClassificationWay,

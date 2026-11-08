@@ -11,6 +11,9 @@ import { draftAlternativesQueryKey, draftQueryKey } from './usePhotos'
 import {
   useClassificationEstimateQuery,
   useConfirmAusschussGateMutation,
+  useModelChoiceQuery,
+  useUpdateModelChoiceMutation,
+  modelChoiceQueryKey,
   useCreateProjectMutation,
   useDeleteProjectMutation,
   classificationEstimateQueryKey,
@@ -44,7 +47,13 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
-    eye_available: false,
+    model_choice: {
+      category_method: 'cloud',
+      category_provider: 'mistral',
+      category_model: 'ministral-3b-2512',
+      landmark_provider: 'anthropic',
+      landmark_model: 'claude-haiku-4-5',
+    },
     selection_target: null,
     effective_selection_target: 1,
     has_selection_proposal: false,
@@ -232,7 +241,7 @@ describe('useDeleteProjectMutation', () => {
     vi.mocked(projectsApi.deleteProject).mockResolvedValue(undefined)
     const { wrapper, queryClient } = makeWrapper()
     queryClient.setQueryData(['project', 1], project())
-    queryClient.setQueryData(classificationEstimateQueryKey(1, 'cloud'), { candidate_count: 3 })
+    queryClient.setQueryData(classificationEstimateQueryKey(1, 'project'), { candidate_count: 3 })
     queryClient.setQueryData(fineLabelsQueryKey(1), [])
     queryClient.setQueryData(projectStatsQueryKey(1), { photo_count: 7 })
 
@@ -241,7 +250,7 @@ describe('useDeleteProjectMutation', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(queryClient.getQueryData(['project', 1])).toBeUndefined()
-    expect(queryClient.getQueryData(classificationEstimateQueryKey(1, 'cloud'))).toBeUndefined()
+    expect(queryClient.getQueryData(classificationEstimateQueryKey(1, 'project'))).toBeUndefined()
     expect(queryClient.getQueryData(fineLabelsQueryKey(1))).toBeUndefined()
     expect(queryClient.getQueryData(projectStatsQueryKey(1))).toBeUndefined()
   })
@@ -343,10 +352,10 @@ describe('useTriggerClassificationMutation', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
     const { result } = renderHook(() => useTriggerClassificationMutation(1), { wrapper })
-    result.current.mutate({ scoringRunId: 5, mode: 'cloud' })
+    result.current.mutate({ scoringRunId: 5, mode: 'project' })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, 'cloud')
+    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, 'project')
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
     // Beide haengen am Ergebnis der Remote-Phase, die dieser eine Lauf mit ausfuehren kann
     // (specs/features/0296-klassifizierung-ein-ausloeser-cloud-checkbox.md).
@@ -354,15 +363,15 @@ describe('useTriggerClassificationMutation', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['fine-labels', 1] })
   })
 
-  it('forwards the eye way unchanged', async () => {
+  it('forwards the local way unchanged', async () => {
     vi.mocked(projectsApi.triggerClassification).mockResolvedValue({ status: 'queued' })
     const { wrapper } = makeWrapper()
 
     const { result } = renderHook(() => useTriggerClassificationMutation(1), { wrapper })
-    result.current.mutate({ scoringRunId: 5, mode: 'eye' })
+    result.current.mutate({ scoringRunId: 5, mode: 'local' })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, 'eye')
+    expect(projectsApi.triggerClassification).toHaveBeenCalledWith(1, 5, 'local')
   })
 })
 
@@ -387,23 +396,34 @@ describe('useSetCloudVisionConsentMutation', () => {
 describe('useClassificationEstimateQuery', () => {
   it('fetches the estimate of the chosen way', async () => {
     vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
-      mode: 'cloud',
+      mode: 'project',
       candidate_count: 42,
-      remote_categories: { candidate_count: 40, estimated_cost_usd: 0.208 },
-      landmark: { candidate_count: 2, estimated_cost_usd: 0.0104 },
-      provider: 'anthropic',
-      model: 'claude-haiku-4-5',
-      price_per_image_usd: 0.0052,
+      categorization: {
+        kind: 'cloud',
+        provider: 'anthropic',
+        model: 'claude-haiku-4-5',
+        price_per_image_usd: 0.0052,
+        candidate_count: 40,
+        estimated_cost_usd: 0.208,
+      },
+      landmark: {
+        kind: 'cloud',
+        provider: 'mistral',
+        model: 'ministral-3b-2512',
+        price_per_image_usd: 0.0003,
+        candidate_count: 2,
+        estimated_cost_usd: 0.0104,
+      },
       estimated_cost_usd: 0.2184,
     })
     const { wrapper } = makeWrapper()
 
-    const { result } = renderHook(() => useClassificationEstimateQuery(1, 'cloud'), { wrapper })
+    const { result } = renderHook(() => useClassificationEstimateQuery(1, 'project'), { wrapper })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(projectsApi.getClassificationEstimate).toHaveBeenCalledWith(1, 'cloud')
+    expect(projectsApi.getClassificationEstimate).toHaveBeenCalledWith(1, 'project')
     expect(result.current.data?.candidate_count).toBe(42)
-    expect(result.current.data?.landmark.candidate_count).toBe(2)
+    expect(result.current.data?.landmark?.candidate_count).toBe(2)
   })
 
   it('laedt ohne gewaehlten Weg gar nichts', async () => {
@@ -575,5 +595,69 @@ describe('useProjectStatsQuery', () => {
     expect(projectStatsQueryOptions(7).refetchOnWindowFocus).toBe(false)
     expect(projectStatsQueryOptions(7).staleTime).toBe(PROJECT_STATS_STALE_TIME_MS)
     expect('refetchInterval' in projectStatsQueryOptions(7)).toBe(false)
+  })
+})
+
+describe('useModelChoiceQuery', () => {
+  it('liest Katalog und gespeicherte Wahl über GET /projects/{id}/model-choice', async () => {
+    const answer = {
+      current: {
+        category_method: 'cloud' as const,
+        category_model: 'ministral-3b-2512',
+        category_provider: 'mistral',
+        category_is_default: false,
+        landmark_model: 'claude-haiku-4-5',
+        landmark_provider: 'anthropic',
+        landmark_is_default: false,
+      },
+      cloud_models: [],
+      eye: { available: true, unavailable_reasons: [] as [] },
+    }
+    vi.mocked(projectsApi.getModelChoice).mockResolvedValue(answer)
+    const { wrapper } = makeWrapper()
+
+    const { result } = renderHook(() => useModelChoiceQuery(1), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.getModelChoice).toHaveBeenCalledWith(1)
+    expect(result.current.data?.current.category_model).toBe('ministral-3b-2512')
+    expect(modelChoiceQueryKey(1)).toEqual(['model-choice', 1])
+  })
+})
+
+describe('useUpdateModelChoiceMutation', () => {
+  it('schickt alle drei Spalten und invalidiert Wahl, Projekt und Schätzung', async () => {
+    vi.mocked(projectsApi.putModelChoice).mockResolvedValue({
+      current: {
+        category_method: 'eye',
+        category_model: null,
+        category_provider: null,
+        category_is_default: false,
+        landmark_model: 'claude-haiku-4-5',
+        landmark_provider: 'anthropic',
+        landmark_is_default: false,
+      },
+      cloud_models: [],
+      eye: { available: true, unavailable_reasons: [] },
+    })
+    const { wrapper, queryClient } = makeWrapper()
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    const { result } = renderHook(() => useUpdateModelChoiceMutation(1), { wrapper })
+    result.current.mutate({
+      category_method: 'eye',
+      category_model: null,
+      landmark_model: 'claude-haiku-4-5',
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(projectsApi.putModelChoice).toHaveBeenCalledWith(1, {
+      category_method: 'eye',
+      category_model: null,
+      landmark_model: 'claude-haiku-4-5',
+    })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['model-choice', 1] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['project', 1] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['classification-estimate', 1] })
   })
 })

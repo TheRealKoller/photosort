@@ -32,7 +32,13 @@ function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
     category_selection_enabled: true,
     cloud_vision_detection_enabled: false,
     cloud_vision_consent_at: null,
-    eye_available: false,
+    model_choice: {
+      category_method: 'cloud',
+      category_provider: 'mistral',
+      category_model: 'ministral-3b-2512',
+      landmark_provider: 'anthropic',
+      landmark_model: 'claude-haiku-4-5',
+    },
     selection_target: null,
     effective_selection_target: 1,
     has_selection_proposal: false,
@@ -88,13 +94,17 @@ describe('KriterienStepPage', () => {
     vi.mocked(projectsApi.triggerClassification).mockReset()
     vi.mocked(projectsApi.getClassificationEstimate).mockReset()
     vi.mocked(projectsApi.getClassificationEstimate).mockResolvedValue({
-      mode: 'cloud',
+      mode: 'project',
       candidate_count: 0,
-      remote_categories: { candidate_count: 0, estimated_cost_usd: 0 },
-      landmark: { candidate_count: 0, estimated_cost_usd: 0 },
-      provider: 'anthropic',
-      model: 'claude-haiku-4-5',
-      price_per_image_usd: 0.0052,
+      categorization: {
+        kind: 'cloud',
+        provider: 'anthropic',
+        model: 'claude-haiku-4-5',
+        price_per_image_usd: 0.0052,
+        candidate_count: 0,
+        estimated_cost_usd: 0,
+      },
+      landmark: null,
       estimated_cost_usd: 0,
     })
     vi.mocked(projectsApi.listFineLabels).mockReset()
