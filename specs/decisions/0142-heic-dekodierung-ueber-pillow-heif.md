@@ -67,6 +67,12 @@ und neu eingelesen.
 - Ein nativer Decoder für fremde Dateien kommt hinzu. Das Sicherheitskonzept führt `pillow-heif`
   als lokale Bild-Abhängigkeit; die bestehende Best-effort-Grenze (jede Exception → `None`, kein
   Scan-Abbruch) bleibt unverändert.
+- Die Registrierung lautet `register_heif_opener(decode_threads=0)`: Die mit pillow-heif 1.8.1
+  gebündelte libheif 1.23.6 hat beim parallelen Grid-Tile-Decoding einen Heap-Use-after-free
+  (GHSA-35mc-3887-rr37); `decode_threads=0` schaltet genau diesen Pfad ab. Die Korrektur
+  (libheif 1.23.7) kommt erst mit pillow-heif 1.9.0, das am 2026-11-08 nicht auf PyPI verfügbar
+  ist; bis dahin bleibt CPU-Amplifikation über abgeleitete Bilder als Restrisiko
+  (Sicherheitskonzept). Erst mit der Anhebung auf eine korrigierte Version darf die Auflage fallen.
 - Jeder Prozess, der Bilder dekodiert, muss das Registrierungsmodul importieren. Ein künftiger
   Einstiegspunkt, der nur Pillow importiert, verliert HEIC still; die Tests decken den Weg über
   `generate_variants` und die drei EXIF-Extraktoren ab, nicht die Existenz des Imports.

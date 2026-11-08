@@ -250,6 +250,18 @@ oder einen Subprozess ist untersagt.
   abgedeckt.
 - **Auslieferung unverändert:** Der Bild-Endpunkt liefert ausschließlich die JPEG-Cache-Varianten;
   HEIC/HEIF verlässt den Server nie, und eine undekodierbare Datei ergibt weiterhin 404.
+- **Sicherheitsauflage `decode_threads=0`:** **Was gilt:** `image_codecs.py` registriert den
+  Opener mit `register_heif_opener(decode_threads=0)` und deaktiviert damit die parallele
+  Grid-Tile-Dekodierung; das schließt GHSA-35mc-3887-rr37 (Heap-Use-after-free, High/CVSS 7.5)
+  in der gebündelten libheif-Version 1.23.6, ausgelöst schon durch gewöhnliches Dekodieren einer
+  fremden Datei. **Wofür:** jeder HEIC/HEIF-Dekodierpfad in API und Worker; ein frischer Prozess,
+  der nur `photosort.opencloud.exif` importiert, belegt den Wert im Test. **Bei Verletzung:** ein
+  Aufruf ohne `decode_threads=0` oder eine zweite Registrierungsstelle öffnet den angreifbaren
+  Pfad wieder; die Auflage fällt erst mit einer Anhebung auf libheif ≥ 1.23.7.
+- **Restrisiko:** CPU-Amplifikation über abgeleitete Bilder bleibt bis libheif 1.23.7 möglich,
+  das erst mit pillow-heif 1.9.0 kommt (am 2026-11-08 nicht auf PyPI). Hingenommen, weil der
+  Dienst ausschließlich Dateien aus dem eigenen OpenCloud-Speicher verarbeitet und keinen offenen
+  Upload anbietet; der Scan bleibt pro Foto best-effort.
 
 ### Job-Lauf-Terminierung (projektweites Robustheitsprinzip)
 
