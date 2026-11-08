@@ -1715,7 +1715,11 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     ausgeschaltetem `EYE_ENABLED`; `409` während eines Laufs);
     `ProjectOut.model_choice` trägt die aufgelöste Wahl. Die Schätzung `GET
     …/classify/estimate?mode=project|local` weist je Tätigkeit einen Anteil mit eigener Grundlage
-    aus (`categorization`, `landmark`; `null` = findet nicht statt).
+    aus (`categorization`, `landmark`; `null` = findet nicht statt). Welche Albumstufe für den Entwurf
+    zählt, folgt nicht der Einstellung, sondern dem Verfahren des jüngsten erfolgreichen Laufs
+    (`criterion_scoring_runs.album_level_source`, ADR
+    [`0144`](../specs/decisions/0144-albumstufe-folgt-dem-verfahren-des-laufs.md)); ein Wechsel wirkt
+    deshalb erst mit dem nächsten Lauf.
 - **ProjectOverviewSeen** *(Spec 0566, `models.py`, Tabelle `project_overview_seen`)*: „diese
   Person hat die Ablaufübersicht in diesem Projekt geschlossen" — Primärschlüssel
   `(user_id, project_id)`, beide echte, benannte Fremdschlüssel, **keine weitere Spalte**. Die
@@ -2101,6 +2105,13 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     `remote_categories` und `criteria`. Die Phasenmonotonie (`assert_phase_binding`) und die
     Schrittableitung im Frontend ziehen mit; der Wertebereich bleibt ein `VARCHAR(20)` ohne
     DB-Prüfeinschränkung.
+  - dreizehnte Spalte `album_level_source` *(Issue #621, ADR
+    [`0144`](../specs/decisions/0144-albumstufe-folgt-dem-verfahren-des-laufs.md))* — das Verfahren
+    (`cloud`/`eye`, `CategoryMethod`, Werte statt Namen), dessen Albumstufe dieser Lauf zählt; NOT
+    NULL mit bleibendem `server_default 'cloud'` (Altläufe lasen ausschließlich
+    `photo_album_suitability`). Gesetzt einmal beim Anlegen aus `project.category_method` und von
+    jedem Neuaufbau (`rebuild_run_grouping`) gelesen statt der heutigen Einstellung. Gelesen wird die
+    Stufe nur über `album_stage.py::load_album_levels` — kein Rückfall auf das andere Verfahren.
 - **PhotoRanking** *(implementiert, Spec
   [`0037`](../specs/features/0037-gatefuehrte-bewertungs-pipeline-mit-backfill.md), `models.py`, ADR
   0021)*: der volle, sortierte Kandidatenpool einer Partition für einen `CriterionScoringRun` —
@@ -2201,11 +2212,13 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
     er entsteht nicht mehr aus der Gleichgewichtung aller Kriterien, sondern aus
     `quality.py::compute_quality_score` — der Modellstufe der Albumtauglichkeit, korrigiert um
     höchstens `±LOCAL_CORRECTION_SPAN` durch die lokalen Qualitäts-/Kompositionskriterien;
-    Inhaltssignale gehen nicht mehr ein. `NULL` in beiden Spalten heißt **„kein Qualitätswert, weil
-    keine Modellbewertung"** (Cloud nicht freigegeben, oder der Aufruf für dieses Foto ist
+    Inhaltssignale gehen nicht mehr ein. Die Modellstufe ist die des Verfahrens des Laufs
+    (`album_level_source`: `photo_album_suitability.level` bzw. `photo_eye_results.album_level`).
+    `NULL` in beiden Spalten heißt **„kein Qualitätswert, weil keine Stufe dieses Verfahrens"**
+    (Cloud nicht freigegeben, Eye noch nicht gelaufen, oder der Aufruf für dieses Foto ist
     fehlgeschlagen); ein solches Foto erscheint nicht im Album-Entwurf, bleibt aber im einsehbaren
-    Vorrat. `event_id` bleibt `NOT NULL` — die Gliederung nach Events ist keine Cloud-Leistung und
-    entsteht auch ohne Freigabe.
+    Vorrat. `event_id` bleibt `NOT NULL` — die Gliederung nach Events ist keine Modellleistung und
+    entsteht auch ohne Stufe.
   - **Neue Spalte `selection_position: int | None` und eine neue Auswahlregel** *(Spec
     [`0429`](../specs/features/0429-auswahl-richtwert-und-mischung.md), ADR
     [`decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md`](../specs/decisions/0097-auswahl-mit-richtwert-kontingente-je-event-und-motivgefuehrte-vergabe.md),
@@ -2518,11 +2531,16 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   entstehen: die Kopfzeile ist eine Aussage über den Bildinhalt und existiert auch auf lokaler
   Grundlage, diese Zeile ist eine Aussage über die Bildgüte und existiert nur mit Cloud-Grundlage.
   Die Abwesenheit der Zeile ist der Zustand „nicht beurteilt" und macht das Foto erneut zum
-  Kandidaten des Modellaufrufs, ohne dass das Projekt neu eingelesen werden muss.
+  Kandidaten des Modellaufrufs, ohne dass das Projekt neu eingelesen werden muss. Für Entwurf und
+  Rangwert zählt die Zeile nur in Läufen mit `album_level_source='cloud'`; sie bleibt auch in einem
+  Eye-Projekt gespeichert und zählt nach Rückwechsel und Lauf wieder.
 - **PhotoEyeResult / PhotoEyeMotifStrength / PhotoEyeFineLabel** *(Spec 0609, ADR 0138, Migration
   mit `mode`)*: das
-  **Schatten-Ergebnis** eines Eye-Laufs, das auch dann geschrieben wird, wenn für das Foto eine
-  Cloud-Grundlage gilt (Vergleichsgrundlage, #610). `photo_eye_results` ist **1:1 zu `Photo`**
+  **Eye-Ergebnis** eines Fotos, das auch dann geschrieben wird, wenn für das Foto eine
+  Cloud-Grundlage gilt (Vergleichsgrundlage, #610). Die Eye-Phase analysiert nur
+  Ausschuss-Überlebende **ohne** `photo_eye_results`-Zeile (ADR 0144); vorhandene Ergebnisse werden
+  nicht ersetzt, ein gescheitertes Foto ist im nächsten Eye-Lauf wieder Kandidat.
+  `photo_eye_results` ist **1:1 zu `Photo`**
   (`photo_id` PK und FK, `cascade="all, delete-orphan"`), `excluded_document: bool` NOT NULL **ohne
   jeden Default** (dasselbe Idiom wie die Kopfzeile), `album_level: int` (1–5, die Modellstufe),
   `model_revision: str`, `mapping_version: str` NOT NULL (die Übersetzungsfassung, mit der die
@@ -2534,8 +2552,10 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   bleibt **außerhalb** der geschlossenen Registry `fine_labels`: das Vokabular ist ein anderes, und
   eine erzwungene Zuordnung wäre eine Modellaussage, die es nicht gibt. Eye schreibt **nie** in
   `photo_motif_*`, `photo_album_suitability` oder `photo_fine_labels`; die geltende Motivgrundlage
-  steht allein in `photo_motif_assessments`. Gelesen wird der Satz über `PhotoOut.eye_result`, und
-  zwar genau dann, wenn die Kopfzeile `source='eye'` trägt.
+  steht allein in `photo_motif_assessments`. `album_level` ist in Läufen mit
+  `album_level_source='eye'` die zählende Stufe und erscheint dann als
+  `PhotoOut.album_suitability` mit `source='eye'` und `reason=NULL`; `PhotoOut.eye_result` ist
+  weiterhin genau dann gesetzt, wenn die Kopfzeile `source='eye'` trägt.
 - **PhotoLocalMotifSnapshot / PhotoLocalMotifSnapshotStrength** *(Spec 0609, ADR 0138 Punkt 5)*:
   der **Rückbaudatensatz** — der jüngste lokale Motivvektor eines Fotos, dessen Kopfzeile von Eye
   verdrängt wurde.
@@ -2893,8 +2913,9 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   ausdrücklich abgegrenzt** (ADR
   [`decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md`](../specs/decisions/0095-albumtauglichkeit-vom-modell-qualitaet-getrennt-vom-inhalt.md),
   Abschnitt 1): Scan, Ausschuss-Gate und lokale Bewertung laufen vollständig ohne Cloud, der
-  Album-Entwurf dagegen setzt die Freigabe voraus und entsteht ohne sie gar nicht — ohne stillen
-  Rückfall auf einen rein lokal gebildeten Qualitätswert. Mit Spec
+  Album-Entwurf dagegen setzt eine Modellstufe voraus — die Cloud-Freigabe oder, bei
+  `category_method='eye'`, einen Eye-Lauf (ADR 0144) — und entsteht ohne sie gar nicht, ohne
+  stillen Rückfall auf einen rein lokal gebildeten Qualitätswert. Mit Spec
   [`0047`](../specs/features/0047-sehenswuerdigkeit-erkennung-cloud-vision-api.md) (ADR
   [`decisions/0025-cloud-landmark-erkennung.md`](../specs/decisions/0025-cloud-landmark-erkennung.md))
   erstmals tatsächlich eingelöst statt nur vorgesehen: das `landmark`-Kriterium ist die **erste
@@ -2928,7 +2949,8 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
 - **Eye ist eine dritte, abschaltbare Grundlage, kein Ersatz** (Spec 0609, ADR
   [`decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md`](../specs/decisions/0138-eye-als-dritte-grundlage-sidecar-schattentabellen.md)):
   Cloud-Ergebnisse bleiben gültig, Eye füllt nur Fotos ohne Cloud-Grundlage und schreibt daneben
-  immer seine Schattentabellen; Album-Entwurf und Cloud-Kandidatenauswahl bleiben unberührt. Die
+  seine Eye-Tabellen; die Cloud-Kandidatenauswahl und ihre Kostenschätzung bleiben unberührt, der
+  Album-Entwurf zählt Eye-Stufen nur in Läufen mit `album_level_source='eye'`. Die
   Gewichte liegen in einem Volume, nie im Repository oder Image, und werden bei jedem Start gegen
   feste Pins geprüft. **Nicht zugesichert** ist der Egress des Fremdpakets: das SDK kontaktiert nur
   `events.desertant.com`, erzwungen wird das nicht — die Durchsetzung ist Betreiberpflicht. Eye

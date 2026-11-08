@@ -6,7 +6,9 @@
 aus Tags) für das Motiv Tiere durch ADR
 [`0140`](./0140-eye-uebersetzung-v2-lauf-fassung-tiererkennung-fassung-je-ergebnis.md); Punkt 6
 (Laufwahl `cloud`/`eye`/`local`) und Punkt 7 (Kostenvorschau je Modus) durch ADR
-[`0143`](./0143-modellwahl-je-projekt-und-taetigkeit.md); alle übrigen Punkte gelten weiter.
+[`0143`](./0143-modellwahl-je-projekt-und-taetigkeit.md); Punkt 4 (Eye-Albumstufe nur eigene
+Anzeige) und Punkt 6 (Schattenzeilen für alle Ausschuss-Überlebenden je Eye-Lauf) durch ADR
+[`0144`](./0144-albumstufe-folgt-dem-verfahren-des-laufs.md); alle übrigen Punkte gelten weiter.
 **Datum:** 2026-11-03
 **Bezug:** Issue [#609](https://github.com/TheRealKoller/photosort/issues/609), Spec
 [`0606`](../features/0606-eye-lokaler-cloud-ersatz-bewerten.md) (ihr Auswertungsweg wird durch
