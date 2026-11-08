@@ -1490,12 +1490,15 @@ Verarbeitungs-Cache (Thumbnails).
   die Bytes der `display`-Variante und gibt die SDK-Analyse unverändert zurück — die Abbildung auf
   Motive, Dokumentausschluss, Albumstufe und Feinlabels rechnet `backend/src/photosort/eye_mapping.py`,
   nicht der Dienst. `eye_mapping.py` führt mehrere Fassungen (`MAPPINGS`, ADR
-  [`0140`](../specs/decisions/0140-eye-uebersetzung-v2-lauf-fassung-tiererkennung-fassung-je-ergebnis.md));
-  der Eye-Lauf rechnet `MAPPING_VERSION` (`eye-4.2.3/v2`), `eye-4.2.3/v1` bleibt aufrufbar. v2
-  schließt nur über `kind` aus (Dokument, Screenshot, Beleg, abfotografierter Bildschirm,
-  Ausweis), nimmt für Tiere zusätzlich Eyes Tiererkennung `pets` und für Aktivität Tags, die eine
-  Tätigkeit benennen. `eye/src/pins.json::mappingTags` ist die Vereinigung der Motiv-Tags aller
-  Fassungen. Verarbeitung sequenziell (ein Modell, eine Anfrage). `DAL_APP_ID=photosort`
+  [`0140`](../specs/decisions/0140-eye-uebersetzung-v2-lauf-fassung-tiererkennung-fassung-je-ergebnis.md),
+  [`0141`](../specs/decisions/0141-eye-uebersetzung-v3-definierende-signale-support.md)); der
+  Eye-Lauf rechnet `MAPPING_VERSION` (`eye-4.2.3/v3`), `eye-4.2.3/v1` und `/v2` bleiben aufrufbar.
+  v3 zählt je Motiv nur definierende Signale und verlangt für Aktivität zusätzlich mindestens ein
+  Personensignal ab `tag_confidence` (`motif_support`); Ausschluss (nur über `kind`: Dokument,
+  Screenshot, Beleg, abfotografierter Bildschirm, Ausweis), Albumstufe, Feinlabels und Eyes
+  Tiererkennung `pets` sind wertgleich mit v2. `eye/src/pins.json::mappingTags` ist die Vereinigung
+  der Motiv- und Support-Tags aller Fassungen. Verarbeitung sequenziell (ein Modell, eine Anfrage).
+  `DAL_APP_ID=photosort`
   steht fest im Image, `HOME` liegt auf dem Volume `eye_home` (die Lizenz-Zählkennung übersteht
   Neustarts), `DAL_LICENSE_ENDPOINT`/`HF_TOKEN` brechen den Start ab. Backend und Worker erreichen
   ihn über `EYE_SERVICE_URL` (Vorgabe `http://eye:8090`); `EYE_ENABLED` (Vorgabe `false`) schaltet
@@ -1532,7 +1535,9 @@ Verarbeitungs-Cache (Thumbnails).
     eigenen Block über `last_progress_at` und löscht dabei den Teilschritt.
   - Die Fälle zieht `classification_comparison.py::compare_review` (vier Zwecke, seeded
     Stichprobe `min(Prüfgröße, Abweichungen)` je Zweck); die Übersicht rechnet ihre Zahlen mit
-    derselben Funktion aus den gespeicherten Ergebnissen.
+    derselben Funktion aus den gespeicherten Ergebnissen. Der Export schlüsselt `motif_feature` je
+    Merkmal auf und nennt dort zusätzlich die Richtung (`a_only` = nur Seite A hält das Motiv für
+    vorhanden, `b_only` = nur Seite B); die Übersicht führt sie nicht.
   - **API** `api/classification_reviews.py` unter `/projects/{project_id}/classification-reviews`:
     `GET /options` (wählbare Verfahren samt Sperrgrund), `GET /estimate`, `POST ""` (Prüfreihenfolge
     `403` Feature-Schalter → `403` Eye abgeschaltet → `404` → `409` kein bestätigter
@@ -2500,7 +2505,8 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   (`photo_id` PK und FK, `cascade="all, delete-orphan"`), `excluded_document: bool` NOT NULL **ohne
   jeden Default** (dasselbe Idiom wie die Kopfzeile), `album_level: int` (1–5, die Modellstufe),
   `model_revision: str`, `mapping_version: str` NOT NULL (die Übersetzungsfassung, mit der die
-  Zeile entstand; Bestand vor ADR 0140 trägt `eye-4.2.3/v1`), `computed_at`. `photo_eye_motif_strengths` (FK auf
+  Zeile entstand; `eye-4.2.3/v1`, `/v2` und `/v3` sind aufrufbar und bleiben an ihrer Zeile),
+  `computed_at`. `photo_eye_motif_strengths` (FK auf
   `photo_eye_results.photo_id`, `Unique(photo_id, motif_key)`) trägt alle acht Motive; ein nicht
   genanntes Motiv wird `0.0`, nicht „keine Angabe". `photo_eye_fine_labels` (FK auf
   `photo_eye_results.photo_id`, roher Eye-Tag als Text, `confidence`, `Unique(photo_id, label)`)
