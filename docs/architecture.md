@@ -1,7 +1,7 @@
 # Architektur-Übersicht
 
 **Status:** Living Document (kein Lifecycle, wird laufend aktualisiert)
-**Letzte Aktualisierung:** 2026-11-07 (Spec 0616 — Prüfung zweier Klassifizierungsverfahren in der App: Job `classification_review` mit sechs eigenen Prüftabellen, Router `api/classification_reviews.py`, Prüfseiten als viertes Nebenziel, Kostenposten `review`; davor Spec 0609)
+**Letzte Aktualisierung:** 2026-11-08 (Spec 0621 — Eyes Albumstufe zählt im Album-Entwurf: das Verfahren friert der Laufstart in `criterion_scoring_runs.album_level_source` ein, die Stufe kommt aus `album_stage.py::load_album_levels` ohne Rückfall, das Urteil nennt bei Eye-Quelle die Herkunft statt einer Begründung; davor 2026-11-07: Spec 0616 — Prüfung zweier Klassifizierungsverfahren in der App: Job `classification_review` mit sechs eigenen Prüftabellen, Router `api/classification_reviews.py`, Prüfseiten als viertes Nebenziel, Kostenposten `review`; davor Spec 0609)
 **Umfang:** über dem Richtwert von rund 300 Zeilen, weil je Komponente und je Entität die
 Zusicherungen mitstehen, die aus dem Modell allein nicht ablesbar sind.
 
@@ -112,7 +112,9 @@ Verarbeitungs-Cache (Thumbnails).
       Feinlabel) steht **vor** den Einzelwerten. Groß gesetzt ist allein die Stufe (`text-lg`
       gegen `text-sm` der Rasterzeilen); Begründung und Rang stehen klein unter ihren Labels. Die
       Begründung ist erkennbar als Aussage des **Modells** ausgewiesen und wird ungekürzt gezeigt;
-      Kappung findet an der Quelle statt.
+      Kappung findet an der Quelle statt. Stammt die zählende Stufe aus Eyes Auswertung
+      (`album_suitability.source === 'eye'`, Spec 0621), steht an der Stelle der Begründung die
+      Herkunft „Eingestuft von Eye" — Eye liefert keinen Modelltext.
     - **Das Nachschlagraster** `components/CriterionScoreGrid.tsx` zeigt die fünfzehn Einzelwerte,
       auf Telefonbreite einspaltig. Es ist **keine Variante** von `CriterionDetailsList` — die
       bleibt mit genau einer Aufrufstelle im Kachel-Popover. Geteilt wird nur, was zeichengleich
