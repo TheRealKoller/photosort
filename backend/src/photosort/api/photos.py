@@ -373,9 +373,10 @@ class EyeResultOut(BaseModel):
     """Die Eye-Auswertung eines Fotos - gesetzt GENAU dann, wenn die Motiv-Kopfzeile
     `source="eye"` traegt (Spec 0609).
 
-    Nicht gesetzt allein deshalb, weil `photo_eye_results` existiert: Eye schreibt bei jedem Lauf
-    einen Schatten, auch neben einer gueltigen Cloud-Kopfzeile. Der Schatten ist Vergleichsmaterial
-    fuer das CLI, keine Anzeige - gezeigt wird er nur, wenn er auch gilt.
+    Nicht gesetzt allein deshalb, weil `photo_eye_results` existiert: Die Zeile steht auch neben
+    einer gueltigen Cloud-Kopfzeile. Dieses Feld zeigt sie nur, wenn sie auch gilt; die ZAHLENDE
+    Albumstufe steht unabhaengig davon in `album_suitability`, sobald der Lauf Eye als Quelle
+    eingefroren hat (ADR 0144).
 
     `fine_labels` sind die ROHEn Eye-Tags ab Konfidenz 0.5, beim Schreiben zeichensaniert und
     laengenbegrenzt (S12) - deshalb hier als reine Textknoten, ohne weitere Umformung. Die

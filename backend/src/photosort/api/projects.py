@@ -47,6 +47,7 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCriterionScore,
     PhotoDuplicateDecision,
+    PhotoEyeResult,
     PhotoFineLabel,
     PhotoMotifAssessment,
     PhotoScore,
@@ -832,17 +833,23 @@ async def _count_landmark_candidates(session: AsyncSession, project_id: int) -> 
 
 
 async def _count_eye_candidates(session: AsyncSession, project_id: int) -> int:
-    """Die Kandidatenmenge der Eye-Phase: Ausschuss-Überlebende mit Bewertungszeile.
+    """Die Kandidatenmenge der Eye-Phase: Ausschuss-Überlebende mit Bewertungszeile, die noch
+    KEINE Eye-Zeile haben - die Nachhol-Menge, nicht der Bestand (Spec 0621).
 
     Dieselbe Bedingung wie `worker.py::_run_eye_phase`, als eigenstaendige kleine Query HIER
     dupliziert - dieselbe Begruendung wie bei `_count_remote_category_candidates`: die
     API-Schicht importiert worker.py nicht. Eine Schaetzung, die eine andere Menge zaehlt als
-    der Lauf, waere eine falsche Grundlage."""
+    der Lauf, waere eine falsche Grundlage: Sie verspraeche Kosten fuer Fotos, die der Lauf gar
+    nicht mehr an den Dienst schickt."""
     result = await session.execute(
         select(func.count())
         .select_from(Photo)
         .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-        .where(Photo.project_id == project_id, survives_ausschuss())
+        .where(
+            Photo.project_id == project_id,
+            survives_ausschuss(),
+            ~exists().where(PhotoEyeResult.photo_id == Photo.id),
+        )
     )
     return result.scalar_one()
 

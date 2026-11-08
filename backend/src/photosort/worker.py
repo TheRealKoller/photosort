@@ -14,7 +14,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
-from sqlalchemy import delete, select, tuple_, update
+from sqlalchemy import delete, exists, select, tuple_, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -2805,13 +2805,19 @@ async def _run_eye_phase(
     *,
     build_client: Callable[[], EyeClientLike] = build_eye_client,
 ) -> None:
-    """Der Teilschritt `eye`: Schattenzeilen fuer alle ueberlebenden, lesbaren Fotos und die
-    Kopfzeilen-Promotion (Spec 0609).
+    """Der Teilschritt `eye`: Schattenzeilen fuer die ueberlebenden, lesbaren Fotos, die noch keine
+    Eye-Zeile haben, und deren Kopfzeilen-Promotion (Spec 0609, Spec 0621).
 
     Reihenfolge und Grenzen:
 
+    * NACHHOLEN, NICHT NEUBEWERTEN: Kandidat ist nur, wer ueberlebt, lesbar ist UND noch keine
+      Zeile in `photo_eye_results` hat. Ein bereits ausgewertetes Foto wird kein zweites Mal an den
+      Dienst geschickt; seine Zeile behaelt `computed_at`, `mapping_version` und ihre Werte, und
+      seine Kopfzeile wird nicht befördert. `eye_photos_total` ist damit die Nachhol-Menge.
     * SEQUENZIELL, ein Client, 30 s je Aufruf, kein Retry. Ein Modell, eine Anfrage - und ein
       Test haelt fest, dass nie zwei Aufrufe gleichzeitig laufen.
+    * Die Gesundheitspruefung laeuft auch bei NULL Kandidaten: Ein Lauf, der den Dienst gar nicht
+      erst anspricht, meldete sonst Erfolg, ohne je geprueft zu haben, ob er erreichbar waere.
     * ALLE Analysen zuerst in den Speicher, dann EINE Transaktion fuer Schattensaetze und
       Promotion. Bricht die Phase, ist nichts geschrieben: kein halber Schattensatz, keine
       Promotion, Lauf `FAILED`.
@@ -2822,14 +2828,22 @@ async def _run_eye_phase(
       selbst durchsetzt. Eine Cloud-Kopfzeile bleibt damit unberuehrt und die Schattenzeile steht
       daneben - genau die Zusage aus S8.
     * Geschrieben wird NICHTS in `photo_album_suitability`, `photo_fine_labels` oder
-      `fine_labels`: Eyes Albumstufe und Feinlabels sind Schatten, keine Eingabe fuer Auswahl oder
-      Entwurf."""
+      `fine_labels`: Die Eye-Stufe ist eine Schattenzeile in eigener Tabelle. Sie zaehlt im
+      Entwurf genau dann, wenn der Lauf sie als seine Quelle eingefroren hat (ADR 0144);
+      `album_stage.load_album_levels` liest sie dann von dort."""
     photos = (
         (
             await session.execute(
                 select(Photo)
                 .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-                .where(Photo.project_id == project.id, survives_ausschuss())
+                .where(
+                    Photo.project_id == project.id,
+                    survives_ausschuss(),
+                    # Die Luecke ist das Praedikat, nicht ein Filter nach dem Laden: Der Dienst
+                    # wird je Foto bezahlt, und ohne diese Bedingung schickte jeder Lauf den
+                    # gesamten Bestand erneut.
+                    ~exists().where(PhotoEyeResult.photo_id == Photo.id),
+                )
             )
         )
         .scalars()
