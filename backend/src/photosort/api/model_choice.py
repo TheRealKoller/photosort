@@ -203,11 +203,10 @@ async def put_model_choice(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Eye ist in dieser Installation abgeschaltet.",
             )
-    elif payload.category_model is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Für die Cloud-Kategorisierung fehlt ein Modell.",
-        )
+
+    # `cloud` mit `category_model=None` ist ausdruecklich erlaubt: das ist die
+    # Installationsvorgabe und der Rueckweg aus Eye, und beides braucht keinen Schluessel
+    # (ADR 0143 Punkt 6). Gespeichert wird dann `NULL`, und `category_is_default` sagt es.
 
     _reject_unusable_model(payload.category_model, project.category_model)
     _reject_unusable_model(payload.landmark_model, project.landmark_model)

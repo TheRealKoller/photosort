@@ -33,9 +33,11 @@ from photosort.models import (
     Project,
     ScanStatus,
     ScoringRun,
+    User,
 )
 from photosort.opencloud.client import Drive
 from photosort.pricing import MODEL_PRICING, estimate_usd_per_image
+from photosort.security import create_access_token, hash_password
 
 
 class FakeOpenCloudClient:
@@ -267,6 +269,38 @@ def _keys_present(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestWritingTheChoice:
+    async def test_the_choice_of_one_user_is_the_choice_of_the_other(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        api_client: httpx.AsyncClient,
+    ) -> None:
+        """AK 40 ("gilt fuer beide Nutzer der Installation"): die Wahl haengt am PROJEKT, nicht an
+        der Person. Ein zweiter Nutzer mit eigenem Token liest nach dem `PUT` des ersten denselben
+        Stand - dieser Fall wuerde gegen eine versehentlich `user_id`-gebundene Ablage bestehen."""
+        project_id = await _create_project(authenticated_api_client)
+        await authenticated_api_client.put(
+            f"/projects/{project_id}/model-choice",
+            json=_body(category_model=MISTRAL_VISION_MODEL),
+        )
+
+        partner = User(username="partnerin", password_hash=hash_password("irrelevant"))
+        db_session.add(partner)
+        await db_session.commit()
+        await db_session.refresh(partner)
+        partner_token = create_access_token(partner)
+
+        response = await api_client.get(
+            f"/projects/{project_id}/model-choice",
+            headers={"Authorization": f"Bearer {partner_token}"},
+        )
+
+        assert response.status_code == 200
+        current = response.json()["current"]
+        assert current["category_model"] == MISTRAL_VISION_MODEL
+        assert current["category_provider"] == "mistral"
+        assert current["category_is_default"] is False
+
     async def test_a_valid_choice_is_stored_and_answered(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
@@ -447,16 +481,70 @@ class TestWritingTheChoice:
 
         assert response.status_code == 422
 
-    async def test_cloud_without_a_category_model_is_rejected(
-        self, authenticated_api_client: httpx.AsyncClient
+    async def test_cloud_with_the_installation_default_is_accepted_and_stored_as_null(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
     ) -> None:
+        """`cloud` ohne Modell ist die Installationsvorgabe und ausdruecklich speicherbar
+        (ADR 0143 Punkt 6) - gespeichert wird `NULL`, und `category_is_default` sagt es."""
         project_id = await _create_project(authenticated_api_client)
 
         response = await authenticated_api_client.put(
-            f"/projects/{project_id}/model-choice", json=_body(category_model=None)
+            f"/projects/{project_id}/model-choice",
+            json=_body(category_model=None, landmark_model=None),
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 200
+        project = await _stored_project(db_session, project_id)
+        assert project.category_method is CategoryMethod.CLOUD
+        assert project.category_model is None
+        assert project.landmark_model is None
+        current = response.json()["current"]
+        assert current["category_is_default"] is True
+        assert current["landmark_is_default"] is True
+        assert current["category_model"] == settings.resolved_landmark_model()
+
+    async def test_the_unchanged_default_stays_accepted(
+        self, authenticated_api_client: httpx.AsyncClient
+    ) -> None:
+        """Ein unveraendert durchgereichtes `null` wird nicht neu geprueft - der Bestand bleibt
+        auch dann schreibbar, wenn diese Installation gar keinen Cloud-Schluessel hat."""
+        project_id = await _create_project(authenticated_api_client)
+        body = _body(category_model=None, landmark_model=None)
+
+        for _ in range(2):
+            response = await authenticated_api_client.put(
+                f"/projects/{project_id}/model-choice", json=body
+            )
+            assert response.status_code == 200
+
+    async def test_the_way_back_from_eye_to_the_default_needs_no_api_key(
+        self,
+        authenticated_api_client: httpx.AsyncClient,
+        db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Der Rueckweg (ADR 0143 Punkt 6): nach der Eye-Wahl steht `category_model` auf `NULL`;
+        ohne jeden Cloud-Schluessel muss die Vorgabe trotzdem speicherbar sein, sonst waere die
+        Wahl eine Einbahnstrasse - und genau so sieht der Pruefstack aus."""
+        monkeypatch.setattr(
+            "photosort.api.model_choice.api_key_for_provider", lambda _provider: False
+        )
+        project_id = await _create_project(authenticated_api_client)
+        project = await _stored_project(db_session, project_id)
+        project.category_method = CategoryMethod.EYE
+        project.category_model = None
+        project.landmark_model = ANTHROPIC_VISION_MODEL
+        await db_session.commit()
+
+        response = await authenticated_api_client.put(
+            f"/projects/{project_id}/model-choice",
+            json=_body(category_model=None, landmark_model=ANTHROPIC_VISION_MODEL),
+        )
+
+        assert response.status_code == 200
+        project = await _stored_project(db_session, project_id)
+        assert project.category_method is CategoryMethod.CLOUD
+        assert project.category_model is None
 
     async def test_a_running_classification_blocks_the_change(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
