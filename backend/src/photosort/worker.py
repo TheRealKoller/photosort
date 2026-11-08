@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
+from photosort.album_stage import load_album_levels
 from photosort.album_suitability import AlbumSuitability
 from photosort.cache_cleanup import cleanup_orphaned_cache
 from photosort.cameras import CameraIdentity, shifted
@@ -2264,21 +2265,15 @@ async def _build_grouping_and_rankings(
         for photo_id in built.photo_ids
     }
 
-    # DIE MODELLBEWERTUNG als Grundlage des Qualitaetswerts - gelesen aus der TABELLE, nie aus
-    # einer laufinternen Abbildung: der Cloud-Teilschritt ist ein eigener Lauf, und diese Funktion
-    # hat auch den zweiten Aufrufer (`rebuild_run_grouping`), der gar keine Cloud-Phase kennt.
-    # Ohne Freigabe gibt es keine einzige Zeile, und JEDER Qualitaetswert wird `NULL` - es gibt
-    # keinen Rueckfall auf einen lokal gebildeten Wert (ADR 0095, Abschnitt 1).
-    level_by_photo_id: dict[int, int] = {
-        photo_id: level
-        for photo_id, level in (
-            await session.execute(
-                select(PhotoAlbumSuitability.photo_id, PhotoAlbumSuitability.level).where(
-                    PhotoAlbumSuitability.photo_id.in_(values_by_photo_id.keys())
-                )
-            )
-        ).all()
-    }
+    # DIE ZAEHLENDE MODELLSTUFE als Grundlage des Qualitaetswerts - gelesen aus der Tabelle des am
+    # LAUF eingefrorenen Verfahrens (ADR 0144), nie aus der heutigen Projekteinstellung und nie aus
+    # einer laufinternen Abbildung: Diese Funktion hat auch den zweiten Aufrufer
+    # (`rebuild_run_grouping`), der keine Bewertungsphase kennt. Fehlt die Stufe dieses Verfahrens,
+    # wird der Qualitaetswert `NULL` - es gibt keinen Rueckfall auf das andere Verfahren und keinen
+    # lokal gebildeten Wert (ADR 0095, Abschnitt 1).
+    level_by_photo_id = await load_album_levels(
+        session, run.album_level_source, values_by_photo_id.keys()
+    )
 
     # DIE GEWICHTE EINMAL JE LAUF, vor der Partitionsschleife - nicht je Foto (Spec 0432): Die
     # geltende Fassung aendert sich waehrend eines Laufs nicht, und ein Lesegang je Foto fiele an

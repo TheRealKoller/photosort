@@ -39,6 +39,7 @@ from photosort.feedback_log import (
     record_motif_correction,
 )
 from photosort.models import (
+    CategoryMethod,
     CriterionScoringRun,
     Event,
     FeedbackEvent,
@@ -46,6 +47,7 @@ from photosort.models import (
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
+    PhotoEyeResult,
     PhotoMotifAssessment,
     PhotoMotifStrength,
     PhotoRanking,
@@ -404,6 +406,83 @@ async def test_the_frozen_context_comes_from_the_latest_successful_run(
     assert context.event_id == graph.event_id
     assert context.level == 4
     assert context.quality == pytest.approx(0.8)
+
+
+def _eye_result(photo_id: int, level: int) -> PhotoEyeResult:
+    return PhotoEyeResult(
+        photo_id=photo_id,
+        excluded_document=False,
+        album_level=level,
+        model_revision="rev",
+        mapping_version="v2",
+        computed_at=datetime(2023, 1, 1),
+    )
+
+
+async def test_an_eye_run_freezes_the_eye_level(db_session: AsyncSession) -> None:
+    """Die eingefrorene Stufe stammt aus demselben Verfahren wie der eingefrorene `rank_score`
+    (Spec 0621, Datenfluss 6). Die Eye-Stufe liegt bewusst neben der Cloud-Stufe (4)."""
+    graph = await _build_graph(db_session)
+    graph.run.album_level_source = CategoryMethod.EYE
+    db_session.add(_eye_result(graph.photo.id, 1))
+    await db_session.flush()
+
+    context = await load_frozen_context(
+        db_session, project_id=graph.project_id, photo_id=graph.photo.id
+    )
+
+    assert context.level == 1
+
+
+async def test_a_switch_without_a_new_run_keeps_the_frozen_level_of_the_run(
+    db_session: AsyncSession,
+) -> None:
+    """Der Wechsel wirkt erst mit dem naechsten Lauf: Projekt jetzt `eye`, der juengste Lauf
+    zaehlte Cloud - die Stufe bleibt die Cloud-Stufe."""
+    graph = await _build_graph(db_session)
+    db_session.add(_eye_result(graph.photo.id, 1))
+    await db_session.execute(
+        update(Project)
+        .where(Project.id == graph.project_id)
+        .values(category_method=CategoryMethod.EYE)
+    )
+    await db_session.flush()
+
+    context = await load_frozen_context(
+        db_session, project_id=graph.project_id, photo_id=graph.photo.id
+    )
+
+    assert context.level == 4
+
+
+@pytest.mark.parametrize(
+    ("category_method", "expected_level"), [(CategoryMethod.CLOUD, 4), (CategoryMethod.EYE, 1)]
+)
+async def test_without_a_run_the_project_setting_names_the_source(
+    db_session: AsyncSession, category_method: CategoryMethod, expected_level: int
+) -> None:
+    """Ohne erfolgreichen Lauf gibt es keine eingefrorene Quelle - dann zaehlt die Einstellung
+    des Projekts, ueber eine eigene Abfrage statt eines Lazy-Loads."""
+    graph = await _build_graph(db_session)
+    db_session.add(_eye_result(graph.photo.id, 1))
+    await db_session.execute(
+        update(CriterionScoringRun)
+        .where(CriterionScoringRun.id == graph.run_id)
+        .values(status=ScanStatus.FAILED)
+    )
+    await db_session.execute(
+        update(Project)
+        .where(Project.id == graph.project_id)
+        .values(category_method=category_method)
+    )
+    await db_session.flush()
+
+    context = await load_frozen_context(
+        db_session, project_id=graph.project_id, photo_id=graph.photo.id
+    )
+
+    assert context.criterion_scoring_run_id is None
+    assert context.level == expected_level
 
 
 async def test_a_photo_without_any_model_assessment_still_yields_an_event(

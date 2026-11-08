@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.album_stage import load_album_levels
 from photosort.feedback import (
     CriterionAgreement,
     ExchangeKind,
@@ -48,12 +49,13 @@ from photosort.feedback import (
     summarize_exchanges,
 )
 from photosort.models import (
+    CategoryMethod,
     CriterionScoringRun,
     FeedbackEvent,
     FeedbackEventKind,
-    PhotoAlbumSuitability,
     PhotoCriterionScore,
     PhotoRanking,
+    Project,
     ScanStatus,
 )
 
@@ -123,15 +125,16 @@ class FrozenContext:
     quality: float | None = None
 
 
-async def _latest_successful_criterion_scoring_run_id(
+async def _latest_successful_criterion_scoring_run(
     session: AsyncSession, project_id: int
-) -> int | None:
-    """Bewusst identisch zu `api/photos.py::_latest_successful_criterion_scoring_run_id` (dort
-    steht die ausfuehrliche Begruendung des Praedikats). Eine Import-Beziehung von diesem Modul
-    in die API-Schicht liefe der Abhaengigkeitsrichtung entgegen."""
-    return (
+) -> tuple[int, CategoryMethod] | None:
+    """Id und eingefrorene Stufenquelle des juengsten erfolgreichen Laufs. Das Praedikat ist
+    bewusst identisch zu `api/photos.py::_latest_successful_criterion_scoring_run_id` (dort steht
+    die ausfuehrliche Begruendung). Eine Import-Beziehung von diesem Modul in die API-Schicht liefe
+    der Abhaengigkeitsrichtung entgegen."""
+    row = (
         await session.execute(
-            select(CriterionScoringRun.id)
+            select(CriterionScoringRun.id, CriterionScoringRun.album_level_source)
             .where(
                 CriterionScoringRun.project_id == project_id,
                 CriterionScoringRun.status == ScanStatus.SUCCESS,
@@ -139,7 +142,8 @@ async def _latest_successful_criterion_scoring_run_id(
             .order_by(CriterionScoringRun.started_at.desc())
             .limit(1)
         )
-    ).scalar_one_or_none()
+    ).one_or_none()
+    return None if row is None else (row[0], row[1])
 
 
 async def load_frozen_context(
@@ -147,10 +151,15 @@ async def load_frozen_context(
 ) -> FrozenContext:
     """Erhebt die Entscheidungslage, die das Ereignis mitschreibt.
 
-    EINGEFROREN wird, was ein spaeterer Lauf UEBERSCHREIBT: die Modellstufe
-    (`PhotoAlbumSuitability.level`) und der Qualitaetswert (`PhotoRanking.rank_score` des damals
-    juengsten erfolgreichen Laufs). Ohne das Einfrieren haenge die Aussage des Ereignisses am
-    heutigen Stand - und genau das schliesst die Story aus.
+    EINGEFROREN wird, was ein spaeterer Lauf UEBERSCHREIBT: die zaehlende Modellstufe und der
+    Qualitaetswert (`PhotoRanking.rank_score` des damals juengsten erfolgreichen Laufs). Ohne das
+    Einfrieren haenge die Aussage des Ereignisses am heutigen Stand - und genau das schliesst die
+    Story aus.
+
+    Die Stufe stammt aus dem Verfahren, das an DIESEM Lauf eingefroren ist
+    (`album_level_source`, ADR 0144), sonst aus einem anderen als der eingefrorene `rank_score`.
+    Ohne erfolgreichen Lauf gilt `Project.category_method` - ueber eine eigene Abfrage, nicht ueber
+    ein Objekt (Begruendung unten).
 
     Die lokalen Kriterienwerte werden hier ausdruecklich NICHT gelesen: Sie sind eine
     deterministische Messung an denselben Pixeln und werden zur Auswertungszeit gejoint.
@@ -160,10 +169,12 @@ async def load_frozen_context(
     Entscheidungsschreibstelle). Ein danach angefasstes ORM-Objekt ist expired, und der
     Nachladeversuch bricht unter `asyncio` mit `MissingGreenlet` ab - in einem Zweig, der
     ausgerechnet den Wettlauf-Fall behandelt."""
-    run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
+    latest = await _latest_successful_criterion_scoring_run(session, project_id)
+    run_id: int | None = None
     event_id: int | None = None
     quality: float | None = None
-    if run_id is not None:
+    if latest is not None:
+        run_id, source = latest
         ranking = (
             await session.execute(
                 select(PhotoRanking.event_id, PhotoRanking.rank_score).where(
@@ -179,11 +190,11 @@ async def load_frozen_context(
             # KEINEN Laufbezug: Ein `criterion_scoring_run_id` ohne `event_id` verspraeche eine
             # Gruppierung, die es fuer dieses Foto nicht gibt.
             run_id = None
-    level = (
-        await session.execute(
-            select(PhotoAlbumSuitability.level).where(PhotoAlbumSuitability.photo_id == photo_id)
-        )
-    ).scalar_one_or_none()
+    else:
+        source = (
+            await session.execute(select(Project.category_method).where(Project.id == project_id))
+        ).scalar_one()
+    level = (await load_album_levels(session, source, (photo_id,))).get(photo_id)
     return FrozenContext(
         criterion_scoring_run_id=run_id, event_id=event_id, level=level, quality=quality
     )

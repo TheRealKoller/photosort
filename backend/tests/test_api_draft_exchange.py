@@ -34,12 +34,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import (
+    CategoryMethod,
     CriterionScoringRun,
     Event,
     FeedbackEvent,
     FeedbackEventKind,
     Photo,
     PhotoAlbumSuitability,
+    PhotoEyeResult,
     PhotoRanking,
     Project,
     Rating,
@@ -66,7 +68,12 @@ class _Draft:
     """Drei Fotos im ersten Event, eines im zweiten."""
 
 
-async def _build_draft(session: AsyncSession, *, name: str = "Costa Rica") -> _Draft:
+async def _build_draft(
+    session: AsyncSession,
+    *,
+    name: str = "Costa Rica",
+    run_source: CategoryMethod = CategoryMethod.CLOUD,
+) -> _Draft:
     """Ein Projekt mit erfolgreichem Lauf und ZWEI Events - das zweite traegt den Fall "beide
     Fotos im selben Event" (S3), der ohne ein zweites Event gar nicht pruefbar waere."""
     project = Project(name=name, opencloud_drive_id="d", opencloud_path=f"/{name}")
@@ -92,7 +99,10 @@ async def _build_draft(session: AsyncSession, *, name: str = "Costa Rica") -> _D
     await session.flush()
 
     run = CriterionScoringRun(
-        project_id=project.id, scoring_run_id=scoring_run.id, status=ScanStatus.SUCCESS
+        project_id=project.id,
+        scoring_run_id=scoring_run.id,
+        status=ScanStatus.SUCCESS,
+        album_level_source=run_source,
     )
     session.add(run)
     await session.flush()
@@ -141,6 +151,21 @@ async def _ratings(session: AsyncSession) -> dict[int, tuple[RatingStatus | None
     session.expire_all()
     rows = (await session.execute(select(Rating))).scalars().all()
     return {row.photo_id: (row.status, row.favorite) for row in rows}
+
+
+async def _add_eye_level(session: AsyncSession, photo_id: int, level: int) -> None:
+    """Die Eye-Stufe eines Fotos - ohne Labelzeilen, die der Austausch nicht liest."""
+    session.add(
+        PhotoEyeResult(
+            photo_id=photo_id,
+            excluded_document=False,
+            album_level=level,
+            model_revision="v1.0.0",
+            mapping_version="eye-4.2.3/v2",
+            computed_at=datetime(2026, 9, 14, 9, 0, 0),
+        )
+    )
+    await session.commit()
 
 
 class TestAuth:
@@ -290,6 +315,28 @@ class TestTheRefusals:
         response = await authenticated_api_client.post(
             _url(mine.project_id),
             json={"photo_id": theirs.photo_ids[1], "replaced_photo_id": mine.photo_ids[0]},
+        )
+
+        assert response.status_code == 422
+        assert await _ratings(db_session) == {}
+        assert await _events(db_session) == []
+
+    async def test_a_foreign_project_with_an_eye_run_is_refused_as_well(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """S2 mit Eye-Quelle: `load_album_levels` loest KEINE Id auf - die Projektbindung traegt
+        allein das Laufpraedikat. Waere der neue Lesepunkt eine zweite Aufloesung, holte er die
+        Stufe der fremden Fotos herbei und der Austausch liefe durch."""
+        mine = await _build_draft(db_session)
+        theirs = await _build_draft(
+            db_session, name="Fremdes Projekt", run_source=CategoryMethod.EYE
+        )
+        await _add_eye_level(db_session, theirs.photo_ids[1], 1)
+        await _add_eye_level(db_session, theirs.photo_ids[0], 2)
+
+        response = await authenticated_api_client.post(
+            _url(mine.project_id),
+            json={"photo_id": theirs.photo_ids[1], "replaced_photo_id": theirs.photo_ids[0]},
         )
 
         assert response.status_code == 422
@@ -462,6 +509,42 @@ class TestTheSuccessfulExchange:
         stored = (await _events(db_session))[0]
         assert stored.level is None
         assert stored.replaced_level == 4
+
+    async def test_an_eye_run_freezes_the_eye_level_although_a_cloud_row_lies_beside(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """ADR 0144 und S2: Das eingefrorene Level kommt aus der Tabelle des AM LAUF eingefrorenen
+        Verfahrens. Eine daneben liegende Cloud-Zeile ist fuer diesen Lauf nicht die Stufe."""
+        draft = await _build_draft(db_session, run_source=CategoryMethod.EYE)
+        await _add_eye_level(db_session, draft.photo_ids[1], 1)
+        await _add_eye_level(db_session, draft.photo_ids[0], 2)
+
+        response = await authenticated_api_client.post(
+            _url(draft.project_id),
+            json={"photo_id": draft.photo_ids[1], "replaced_photo_id": draft.photo_ids[0]},
+        )
+
+        assert response.status_code == 200
+        stored = (await _events(db_session))[0]
+        assert (stored.level, stored.replaced_level) == (1, 2)
+
+    async def test_an_eye_run_without_an_eye_row_freezes_null_and_still_exchanges(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Kein Rueckfall: Weder die Cloud-Zeile noch ein anderer Wert ersetzt die fehlende Stufe
+        des Verfahrens, das der Lauf zaehlt (L4 bleibt gewahrt)."""
+        draft = await _build_draft(db_session, run_source=CategoryMethod.EYE)
+        await _add_eye_level(db_session, draft.photo_ids[0], 2)
+
+        response = await authenticated_api_client.post(
+            _url(draft.project_id),
+            json={"photo_id": draft.photo_ids[1], "replaced_photo_id": draft.photo_ids[0]},
+        )
+
+        assert response.status_code == 200
+        stored = (await _events(db_session))[0]
+        assert stored.level is None
+        assert stored.replaced_level == 2
 
     async def test_the_exchange_leaves_the_favorite_markers_untouched(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
