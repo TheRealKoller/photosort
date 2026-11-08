@@ -752,6 +752,42 @@ async def test_scan_survives_undecodable_image_without_failing(
     assert not thumbnail_path(tmp_path, photo.id, photo.etag).is_file()
 
 
+async def test_scan_of_a_broken_heic_still_reads_the_other_photos_completely(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ein kaputtes HEIC kostet nur sein eigenes Vorschaubild: die anderen Fotos des Ordners
+    werden vollstaendig eingelesen, samt beider Cache-Varianten."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[
+            ("CostaRica/broken.heic", _entry("broken.heic", "etag-broken", modified)),
+            ("CostaRica/good.heic", _entry("good.heic", "etag-good", modified)),
+        ],
+        file_contents={
+            "CostaRica/broken.heic": b"not a heic",
+            "CostaRica/good.heic": _heic_with_exif(),
+        },
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    photos = {
+        photo.relative_path: photo
+        for photo in (await db_session.execute(select(Photo))).scalars().all()
+    }
+    assert set(photos) == {"CostaRica/broken.heic", "CostaRica/good.heic"}
+    good = photos["CostaRica/good.heic"]
+    assert thumbnail_path(tmp_path, good.id, good.etag).is_file()
+    assert display_path(tmp_path, good.id, good.etag).is_file()
+    broken = photos["CostaRica/broken.heic"]
+    assert not thumbnail_path(tmp_path, broken.id, broken.etag).is_file()
+    assert not display_path(tmp_path, broken.id, broken.etag).is_file()
+
+
 # --- Seitenverhaeltnis, Schreibweg 1: der Scan -------------------------------------------------
 # specs/features/0489-fotouebersicht-ohne-beschnitt.md, ADR 0110 Punkt 3.
 
@@ -1971,6 +2007,38 @@ async def _existing_unprobed_photo(session: AsyncSession, project: Project, path
     await session.commit()
     await session.refresh(photo)
     return photo
+
+
+@pytest.mark.parametrize("dateiname", ["img001.heic", "img001.heif"])
+async def test_the_catch_up_round_skips_heic_photos_with_an_unchanged_etag(
+    db_session: AsyncSession, tmp_path: Path, dateiname: str
+) -> None:
+    """BESTANDSSCHUTZ: HEIC/HEIF wurden vor ihrer Unterstuetzung nie gelesen - ein unveraenderter
+    Etag darf fuer sie keine Nachhol-Runde ausloesen, sonst veraenderte ein erneuter Scan
+    Bestandsprojekte rueckwirkend. Reparatur nur durch Neu-Einlesen."""
+    project = await _make_project(db_session)
+    relative_path = f"CostaRica/{dateiname}"
+    await _existing_unprobed_photo(db_session, project, relative_path)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[(relative_path, _entry(dateiname, "same-etag", modified))],
+        file_contents={relative_path: _heic_with_exif()},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert client.range_requests == []
+    assert client.download_requests == []
+    assert scan_run.photos_updated == 0
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.taken_at == datetime(2023, 8, 15, 10, 0)
+    assert photo.taken_at_original == datetime(2023, 8, 15, 10, 0)
+    assert photo.gps_lat is None
+    assert photo.gps_lon is None
+    assert photo.camera_id is None
+    assert photo.camera_probed is False
 
 
 async def test_the_catch_up_round_reads_the_exif_window_without_making_thumbnails(
