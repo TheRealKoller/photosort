@@ -8,6 +8,9 @@ from typing import Any
 from PIL import Image
 from PIL.ExifTags import IFD
 
+# Der Modulimport registriert den HEIF-Opener bei Pillow fuer den Worker-Prozess; ohne ihn liefern
+# die drei Extraktoren fuer HEIC/HEIF immer `None`, ohne dass ein Fehler auftaucht.
+import photosort.image_codecs  # noqa: F401
 from photosort.cameras import CameraIdentity, camera_identity
 
 logger = logging.getLogger(__name__)

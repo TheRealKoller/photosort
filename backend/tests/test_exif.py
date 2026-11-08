@@ -1,6 +1,9 @@
 import io
 import logging
+import subprocess
+import sys
 
+import pillow_heif
 import pytest
 from PIL import Image
 from PIL.ExifTags import IFD
@@ -521,3 +524,81 @@ def test_a_discarded_camera_logs_a_fixed_reason_token_without_the_raw_value(
     assert "4711" in message
     assert "MMM" not in message
     assert "XXX" not in message
+
+
+# specs/features/0627-heic-fotos-anzeigen.md: HEIC/HEIF sind EXIF-Kandidaten und laufen durch
+# dieselben drei Extraktoren. Die Testdatei entsteht ueber die NATIVE pillow_heif-API - das
+# Pillow-Plugin registriert allein das Produkt (`photosort/image_codecs.py`); registrierte der
+# Test es selbst, bliebe ein fehlender Import in `opencloud/exif.py` unbemerkt.
+
+
+def _make_heic(with_exif: bool) -> bytes:
+    image = Image.new("RGB", (16, 12), color="red")
+    buffer = io.BytesIO()
+
+    if not with_exif:
+        pillow_heif.from_pillow(image).save(buffer)
+        return buffer.getvalue()
+
+    exif = image.getexif()
+    exif.get_ifd(IFD.Exif)[_DATETIME_ORIGINAL_TAG] = "2023:08:15 12:30:00"
+    exif[_MAKE_TAG] = "Apple"
+    exif[_MODEL_TAG] = "iPhone 13 mini"
+    exif.get_ifd(IFD.GPSInfo).update({1: "N", 2: _EIFFEL_LAT_DMS, 3: "E", 4: _EIFFEL_LON_DMS})
+    pillow_heif.from_pillow(image).save(buffer, exif=exif)
+    return buffer.getvalue()
+
+
+def test_all_three_extractors_read_a_heic_with_exif() -> None:
+    content = _make_heic(with_exif=True)
+
+    taken_at = extract_taken_at(content)
+    coordinate = extract_gps(content)
+    camera = extract_camera(content)
+
+    assert taken_at is not None
+    assert (taken_at.year, taken_at.month, taken_at.day) == (2023, 8, 15)
+    assert (taken_at.hour, taken_at.minute, taken_at.second) == (12, 30, 0)
+    assert coordinate is not None
+    assert coordinate[0] == pytest.approx(_EIFFEL_LAT_DECIMAL)
+    assert coordinate[1] == pytest.approx(_EIFFEL_LON_DECIMAL)
+    assert camera == CameraIdentity(make="Apple", model="iPhone 13 mini")
+
+
+def test_a_heic_without_exif_falls_back_to_no_value_for_all_three() -> None:
+    content = _make_heic(with_exif=False)
+
+    assert extract_taken_at(content) is None
+    assert extract_gps(content) is None
+    assert extract_camera(content) is None
+
+
+def test_a_fresh_worker_process_gets_heif_registration_from_the_exif_module() -> None:
+    """API und Worker sind getrennte Prozesse - `opencloud/exif.py` muss die Registrierung selbst
+    mitbringen. Im Testprozess hat `conftest.py` ueber `photosort.main` bereits registriert; ein
+    fehlender Import in `exif.py` bliebe hier also unsichtbar. Der frische Interpreter importiert
+    nur dieses Modul."""
+    program = (
+        "import io\n"
+        "import pillow_heif\n"
+        "from PIL import Image\n"
+        "from PIL.ExifTags import IFD\n"
+        "from photosort.opencloud.exif import extract_taken_at\n"
+        "image = Image.new('RGB', (8, 8))\n"
+        "exif = image.getexif()\n"
+        "exif.get_ifd(IFD.Exif)[36867] = '2023:08:15 12:30:00'\n"
+        "buffer = io.BytesIO()\n"
+        "pillow_heif.from_pillow(image).save(buffer, exif=exif)\n"
+        "taken_at = extract_taken_at(buffer.getvalue())\n"
+        "assert taken_at is not None and taken_at.year == 2023, taken_at\n"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
