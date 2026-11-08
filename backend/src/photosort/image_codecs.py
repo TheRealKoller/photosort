@@ -10,4 +10,7 @@ from __future__ import annotations
 
 import pillow_heif
 
-pillow_heif.register_heif_opener()
+# `decode_threads=0` schaltet die parallele Grid-Tile-Dekodierung ab; genau dieser Pfad ist in der
+# gebuendelten libheif-Version angreifbar. Erst ein libheif mit der Korrektur darf hier wieder
+# einen anderen Wert bekommen.
+pillow_heif.register_heif_opener(decode_threads=0)

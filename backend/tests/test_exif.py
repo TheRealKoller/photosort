@@ -526,10 +526,10 @@ def test_a_discarded_camera_logs_a_fixed_reason_token_without_the_raw_value(
     assert "XXX" not in message
 
 
-# specs/features/0627-heic-fotos-anzeigen.md: HEIC/HEIF sind EXIF-Kandidaten und laufen durch
-# dieselben drei Extraktoren. Die Testdatei entsteht ueber die NATIVE pillow_heif-API - das
-# Pillow-Plugin registriert allein das Produkt (`photosort/image_codecs.py`); registrierte der
-# Test es selbst, bliebe ein fehlender Import in `opencloud/exif.py` unbemerkt.
+# HEIC/HEIF sind EXIF-Kandidaten und laufen durch dieselben drei Extraktoren. Die Testdatei
+# entsteht ueber die NATIVE pillow_heif-API - das Pillow-Plugin registriert allein das Produkt
+# (`photosort/image_codecs.py`); registrierte der Test es selbst, bliebe ein fehlender Import in
+# `opencloud/exif.py` unbemerkt.
 
 
 def _make_heic(with_exif: bool) -> bytes:
@@ -591,6 +591,8 @@ def test_a_fresh_worker_process_gets_heif_registration_from_the_exif_module() ->
         "pillow_heif.from_pillow(image).save(buffer, exif=exif)\n"
         "taken_at = extract_taken_at(buffer.getvalue())\n"
         "assert taken_at is not None and taken_at.year == 2023, taken_at\n"
+        "assert pillow_heif.options.DECODE_THREADS == 0, "
+        "pillow_heif.options.DECODE_THREADS\n"
     )
 
     completed = subprocess.run(
