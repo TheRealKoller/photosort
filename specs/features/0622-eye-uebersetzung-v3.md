@@ -1,6 +1,6 @@
 # 0622 - Eye-Übersetzung v3: definierende Signale statt Gegenstände
 
-**Status:** Accepted
+**Status:** Implemented ([PR #626](https://github.com/TheRealKoller/photosort/pull/626))
 **Erstellt:** 2026-11-08
 **Bezug:** Issue [#622](https://github.com/TheRealKoller/photosort/issues/622), ADR
 [`0141`](../decisions/0141-eye-uebersetzung-v3-definierende-signale-support.md)
