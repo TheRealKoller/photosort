@@ -477,6 +477,24 @@ class TestAssignDuplicateGroups:
 
         assert assign_duplicate_groups([winner, earlier, later]) == {11: 10, 12: 10}
 
+    def test_a_pair_outside_the_candidate_net_is_never_checked(self) -> None:
+        """Harte Stufe-1-Grenze (ADR 0145): gleiche feine Signatur und gleiches Gitter, aber
+        grober Hamming ueber `DUPLICATE_CANDIDATE_HAMMING` - das Paar ist kein Kandidat und wird
+        nicht gruppiert, obwohl die spaeteren Stufen es als identisch ansaehen."""
+        winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
+        lookalike = _signature(
+            11,
+            phash=_mask(DUPLICATE_CANDIDATE_HAMMING + 1),
+            fine_phash=0,
+            sharpness=90.0,
+            taken_at=_BASE_TIME,
+        )
+
+        assert (winner.phash ^ lookalike.phash).bit_count() > DUPLICATE_CANDIDATE_HAMMING
+        assert is_practically_identical(winner, lookalike)
+        assert assign_duplicate_groups([winner, lookalike]) == {}
+
+
 
 class TestTheTriggerRegression:
     """Der ausloesende Bestand: 13 Aufnahmen ueber rund 392 Stunden, hoechstens zwei echte Paare

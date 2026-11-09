@@ -389,11 +389,13 @@ _ERWARTETE_VERWENDUNGEN = {
     # Spec 0525: die Auswahlmenge des Massenwegs im Abschluss des Ausschuss-Schritts. Die Menge
     # bestimmt der SERVER aus dem offenen Vorschlag - eine mitgeschickte Id-Liste wird nie gelesen.
     ("api/projects.py", "has_open_suggestion"): 1,
-    # Spec 0525: die zweite Haelfte der erweiterten Vorbedingung des EINZEL-Schreibwegs. Sie wird
-    # pro Foto und projektgebunden beantwortet (Auflage S10) - ein Sammelweg entsteht daraus nicht.
+    # Spec 0525: die Vorbedingung des EINZEL-Schreibwegs ist der Ausschuss-BESTAND (seit Spec
+    # 0637 inklusive der Entscheidungszeile). Sie wird pro Foto und projektgebunden beantwortet
+    # (Auflage S10) - ein Sammelweg entsteht daraus nicht.
     # Spec 0533: die Auswahl des GRUPPENABSCHLUSSES - Mitgliedschaft, Projektbindung und offener
     # Vorschlag in einer Anweisung (Auflage S2); die Menge bestimmt der Server, nie der Koerper.
-    ("api/duplicate_decisions.py", "has_open_suggestion"): 2,
+    ("api/duplicate_decisions.py", "has_open_suggestion"): 1,
+    ("api/duplicate_decisions.py", "has_ausschuss_entry"): 1,
     # `is_candidate` - Anzeige, keine Grenze.
     ("api/photos.py", "survives_ausschuss_for"): 1,
     # Der Vorschlags-Zweig von `_filtered_photo_ids` und der Objekt-Zwilling `has_suggestion`; dazu

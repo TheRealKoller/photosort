@@ -196,21 +196,23 @@ def candidate_pairs(fingerprints: Sequence[PhotoFingerprint]) -> set[tuple[int, 
     Schubfachprinzip mindestens eines der `DUPLICATE_CANDIDATE_BANDS` disjunkten Baender exakt
     ueberein, weil es mehr Baender als erlaubte Abweichungen gibt. Innerhalb eines Buckets wird
     die volle Distanz geprueft; ein Paar, das in mehreren Baendern liegt, steht einmal im
-    Ergebnis. Ein Paar, das nur Stufe 1 besteht, ist damit noch KEIN Duplikat."""
-    by_id = {fingerprint.photo_id: fingerprint for fingerprint in fingerprints}
-    buckets: dict[tuple[int, int], list[int]] = {}
+    Ergebnis. Ein Paar, das nur Stufe 1 besteht, ist damit noch KEIN Duplikat.
+
+    Die `photo_id`s eines Laufs sind eindeutig (Datenbank-Primaerschluessel); ein doppeltes Foto
+    waere kein Fehler dieser Funktion, sondern ein Fehler des Aufrufers."""
+    buckets: dict[tuple[int, int], list[PhotoFingerprint]] = {}
     for fingerprint in fingerprints:
         for index, (offset, width) in enumerate(_BAND_RANGES):
             band = (fingerprint.phash >> offset) & ((1 << width) - 1)
-            buckets.setdefault((index, band), []).append(fingerprint.photo_id)
+            buckets.setdefault((index, band), []).append(fingerprint)
 
     pairs: set[tuple[int, int]] = set()
-    for photo_ids in buckets.values():
-        for position, left in enumerate(photo_ids):
-            for right in photo_ids[position + 1 :]:
-                distance = (by_id[left].phash ^ by_id[right].phash).bit_count()
+    for bucket in buckets.values():
+        for position, left in enumerate(bucket):
+            for right in bucket[position + 1 :]:
+                distance = (left.phash ^ right.phash).bit_count()
                 if distance <= DUPLICATE_CANDIDATE_HAMMING:
-                    pairs.add((left, right) if left < right else (right, left))
+                    pairs.add((min(left.photo_id, right.photo_id), max(left.photo_id, right.photo_id)))
     return pairs
 
 
@@ -301,12 +303,17 @@ def assign_duplicate_groups(fingerprints: Sequence[PhotoFingerprint]) -> dict[in
     """Die Duplikatgruppen als STERN um je einen Gewinner: `loser -> winner`.
 
     Sortiert absteigend nach `(-sharpness, photo_id)`; das erste freie Foto wird Gewinner.
+    HARTE STUFE-1-GRENZE: Nur Paare aus `candidate_pairs` werden geprueft - ein Paar mit grober
+    Hamming-Distanz ueber `DUPLICATE_CANDIDATE_HAMMING` ist kein Kandidat und wird nicht einmal
+    angesehen (ADR 0145).
+
     Aufgenommen werden nur FREIE Fotos mit einer DIREKTEN Kante zum Gewinner (identisch oder
     aehnlich im Fenster) - ein Kettenmitglied, das nur ueber ein anderes Mitglied haengt, bleibt
     ungruppiert. Fuer zwei aehnliche (nicht identische) Mitglieder gilt zusaetzlich paarweise das
     Zeitfenster; ein Kandidat, der es gegen ein bereits aufgenommenes Mitglied verletzt, wird
     nicht aufgenommen. Jedes Foto wird hoechstens einmal zugeordnet, der Gewinner steht nirgends
     im Ergebnis."""
+    pairs = candidate_pairs(fingerprints)
     ordered = sorted(
         fingerprints, key=lambda fingerprint: (-fingerprint.sharpness, fingerprint.photo_id)
     )
@@ -319,6 +326,12 @@ def assign_duplicate_groups(fingerprints: Sequence[PhotoFingerprint]) -> dict[in
         similar_members: list[PhotoFingerprint] = []
         for candidate in ordered:
             if candidate.photo_id in assigned:
+                continue
+            key = (
+                min(winner.photo_id, candidate.photo_id),
+                max(winner.photo_id, candidate.photo_id),
+            )
+            if key not in pairs:
                 continue
             edge = _edge_kind(winner, candidate)
             if edge is None:

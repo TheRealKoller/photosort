@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from photosort.api.photos import _suggestion_reason
-from photosort.duplicates import effective_decision_for, keep_possible_for
+from photosort.duplicates import decision_effective_for, effective_decision_for, keep_possible_for
 from photosort.models import (
     DuplicateDecision,
     Photo,
@@ -280,3 +280,44 @@ def test_the_ausschuss_run_writes_only_none_or_rejected_into_suggested_status() 
     )
     # Ohne diese Zeile bestuende der Waechter auch dann, wenn er gar nichts mehr faende.
     assert zweige == _ERLAUBTE_ZUWEISUNGEN
+
+# ------------------------------------------------------------------------------------------
+# `decision_effective`: die GESPEICHERTE Zeile, nicht der angezeigte Zustand
+# ------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("decision", _ENTSCHEIDUNGEN)
+@pytest.mark.parametrize("verlierer", _VERLIERER)
+def test_the_stored_decision_is_effective_exactly_while_it_still_bites(
+    decision: DuplicateDecision | None, verlierer: bool
+) -> None:
+    """In Prosa: ohne Zeile `None`; ein `discard` wirkt immer; ein `keep` nur, solange
+    `duplicate_of IS NOT NULL` - ein veraltetes `keep` ist wirkungslos (`False`), nicht `None`."""
+    photo = _photo(
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=42 if verlierer else None,
+        decision=decision,
+    )
+
+    if decision is None:
+        erwartet: bool | None = None
+    elif decision is DuplicateDecision.DISCARD:
+        erwartet = True
+    else:
+        erwartet = verlierer
+
+    assert decision_effective_for(photo) is erwartet
+
+
+def test_a_stale_keep_is_ineffective_not_unknown() -> None:
+    """Der Fall, den der angezeigte Zustand nicht hergibt: `effective_decision_for` zeigt
+    weiterhin `discard`, die gespeicherte Zeile ist aber ein `keep` ohne Gruppe."""
+    photo = _photo(
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=None,
+        decision=DuplicateDecision.KEEP,
+    )
+
+    assert effective_decision_for(photo) is DuplicateDecision.DISCARD
+    assert decision_effective_for(photo) is False
+
