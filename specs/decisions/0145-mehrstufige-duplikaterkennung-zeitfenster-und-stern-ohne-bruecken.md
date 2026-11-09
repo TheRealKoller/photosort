@@ -10,6 +10,10 @@
 [`0111`](./0111-vergleichsansicht-zeigt-das-praedikat-nicht-die-entscheidungszeile.md)
 (angezeigter Zustand)
 
+Umfang über dem Richtwert: Stufenplan, Metrik, Sternregel, Zeit-Herkunft und die Fortwirkung
+früherer Entscheidungen tragen je eine eigene Ausfallrichtung; sie stehen vollständig, weil sie
+nur gemeinsam die Zusage „nur echte Duplikate“ ergeben.
+
 ## Kontext
 
 Die Duplikatstufe verglich alle Foto-Paare über die Hamming-Distanz ihrer 64-Bit-dHashes
