@@ -1,6 +1,6 @@
 # 0621 - Eyes Albumtauglichkeit im Album-Entwurf
 
-**Status:** Accepted
+**Status:** Implemented ([PR #634](https://github.com/TheRealKoller/photosort/pull/634))
 **Erstellt:** 2026-11-08
 **Bezug:** Issue [#621](https://github.com/TheRealKoller/photosort/issues/621), ADR
 [`0144`](../decisions/0144-albumstufe-folgt-dem-verfahren-des-laufs.md)
