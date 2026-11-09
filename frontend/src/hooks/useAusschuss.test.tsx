@@ -39,6 +39,7 @@ function stand(ids: number[], total: number): AusschussOut {
       decision: null,
       group_anchor_photo_id: null,
       keep_possible: false,
+      decision_effective: null,
     })),
     total,
     open_count: 0,

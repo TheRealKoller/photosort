@@ -13,12 +13,12 @@ import type {
   AusschussGroupEntry,
   AusschussOut,
   AusschussPhotoEntry,
+  AusschussReason,
   DuplicateDecision,
   DuplicateGroupOut,
   PhotoOut,
   ProjectOut,
   ScoringRunSummary,
-  SuggestionReason,
 } from '../../api/types'
 import {
   AUSSCHUSS_EMPTY_TEXT,
@@ -81,17 +81,19 @@ function entry(
     decision = null,
     groupAnchorPhotoId = null,
     keepPossible = reason === 'duplicate',
+    decisionEffective = decision === null ? null : true,
   }: {
-    reason?: SuggestionReason
+    reason?: AusschussReason
     decision?: DuplicateDecision | null
     groupAnchorPhotoId?: number | null
     keepPossible?: boolean
+    decisionEffective?: boolean | null
   } = {},
 ): AusschussPhotoEntry {
-  // `keepPossible` ist der SERVERWERT (`duplicates.py::keep_possible_for`). Der Vorgabewert bildet
-  // nur den Regelfall ab - ein Duplikat hat eine Gruppe, eine Unscharfe-Ablehnung nicht - und darf
-  // nicht als Ableitungsregel gelesen werden: Der Fall "Entscheidungszeile ohne offenen Vorschlag"
-  // traegt `true` bei `reason === 'low_quality'` (siehe der Test dazu).
+  // `keepPossible` und `decisionEffective` sind SERVERWERTE (`duplicates.py`). Die Vorgaben
+  // bilden nur den Regelfall ab und duerfen nicht als Ableitungsregel gelesen werden: Der Fall
+  // "Entscheidungszeile ohne offenen Vorschlag" traegt `true` bei `reason === 'low_quality'`
+  // (siehe der Test dazu).
   return {
     kind: 'photo',
     photo: photo(id),
@@ -99,6 +101,7 @@ function entry(
     decision,
     group_anchor_photo_id: groupAnchorPhotoId,
     keep_possible: keepPossible,
+    decision_effective: decisionEffective,
   }
 }
 
@@ -477,6 +480,45 @@ describe('AusschussStepPage - Uebersicht', () => {
     expect(screen.getByText('Geringe Bildqualität')).toBeInTheDocument()
   })
 
+  it('zeigt fuer "Aus frueherem Lauf" kein Grund-Kennzeichen, sondern den Zusatz am Entscheidungswort', async () => {
+    // Der dritte Grund ist keine Bildqualitaet: Der Lauf hat die Aufnahme gar nicht abgelehnt.
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
+      stand([entry(42, { reason: 'earlier_decision', decision: 'discard' })]),
+    )
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    expect(await screen.findByText('Aus früherem Lauf')).toBeInTheDocument()
+    expect(screen.getByTestId('ausschuss-decision')).toHaveTextContent('Ausschuss')
+    expect(screen.queryByText('Geringe Bildqualität')).not.toBeInTheDocument()
+    expect(screen.queryByText('Duplikat')).not.toBeInTheDocument()
+  })
+
+  it('ergaenzt "wirkt nicht mehr" nur beim gespeicherten keep ohne Wirkung und ohne Behalten-Angebot', async () => {
+    // Drei Bedingungen zusammen: gespeichertes `keep`, `decision_effective === false` und
+    // `keep_possible === false`. Fehlt eine, bleibt der Zusatz weg - der Client leitet nichts ab.
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
+      stand([
+        entry(42, {
+          reason: 'earlier_decision',
+          decision: 'keep',
+          keepPossible: false,
+          decisionEffective: false,
+        }),
+        entry(43, {
+          reason: 'earlier_decision',
+          decision: 'keep',
+          keepPossible: true,
+          decisionEffective: true,
+        }),
+        entry(44, { reason: 'low_quality', decision: null }),
+      ]),
+    )
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    expect(await screen.findAllByText('wirkt nicht mehr')).toHaveLength(1)
+    expect(screen.getAllByText('Aus früherem Lauf')).toHaveLength(2)
+  })
+
   it('mischt Einzelkacheln und Stapel im selben Raster', async () => {
     // B3/B4: Eine Einzelaufnahme oeffnet die Detailansicht, ein Stapel die Vergleichsansicht am
     // Anker - fuer ein Gruppenmitglied gibt es in der Uebersicht keinen "oeffnen"-Knopf.
@@ -799,6 +841,19 @@ describe('AusschussStepPage - Detailansicht', () => {
     await user.click(behalten)
 
     expect(duplicatesApi.setDuplicateDecision).toHaveBeenCalledWith(1, 42, 'keep')
+  })
+
+  it('zeigt "Aus frueherem Lauf" in der Detailansicht neben dem Entscheidungswort', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
+      stand([entry(42, { reason: 'earlier_decision', decision: 'discard' })]),
+    )
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }), '/x?photo=42')
+
+    await screen.findByRole('img', { name: 'Reise/serie-42.jpg' })
+    const zeile = screen.getByTestId('detail-decision').parentElement as HTMLElement
+    expect(zeile).toHaveTextContent('Aus früherem Lauf')
+    expect(zeile).toHaveTextContent('Ausschuss')
+    expect(zeile).not.toHaveTextContent('Geringe Bildqualität')
   })
 
   it.each([
