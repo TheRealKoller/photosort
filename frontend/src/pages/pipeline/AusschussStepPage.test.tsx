@@ -493,20 +493,22 @@ describe('AusschussStepPage - Uebersicht', () => {
     expect(screen.queryByText('Duplikat')).not.toBeInTheDocument()
   })
 
-  it('ergaenzt "wirkt nicht mehr" nur beim gespeicherten keep ohne Wirkung und ohne Behalten-Angebot', async () => {
-    // Drei Bedingungen zusammen: gespeichertes `keep`, `decision_effective === false` und
-    // `keep_possible === false`. Fehlt eine, bleibt der Zusatz weg - der Client leitet nichts ab.
+  it('ergaenzt "wirkt nicht mehr" nur beim gespeicherten keep mit aktuellem Grund, ohne Wirkung und ohne Behalten-Angebot', async () => {
+    // Der Zusatz braucht einen AKTUELLEN Grund: Bei `earlier_decision` sind `suggested_status` und
+    // `duplicate_of` leer, dann liefert `keep_possible_for()` `true` - ein solcher Eintrag traegt
+    // `Aus früherem Lauf`, nie `wirkt nicht mehr`. Der Fall hier ist ein `keep` auf einer aktuellen
+    // Schaerfe-Ablehnung (`suggested_status = REJECTED`, `duplicate_of = NULL`).
     vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
       stand([
         entry(42, {
-          reason: 'earlier_decision',
+          reason: 'low_quality',
           decision: 'keep',
           keepPossible: false,
           decisionEffective: false,
         }),
         entry(43, {
           reason: 'earlier_decision',
-          decision: 'keep',
+          decision: 'discard',
           keepPossible: true,
           decisionEffective: true,
         }),
@@ -516,7 +518,27 @@ describe('AusschussStepPage - Uebersicht', () => {
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
 
     expect(await screen.findAllByText('wirkt nicht mehr')).toHaveLength(1)
-    expect(screen.getAllByText('Aus früherem Lauf')).toHaveLength(2)
+    expect(screen.getAllByText('Aus früherem Lauf')).toHaveLength(1)
+  })
+
+  it('zeigt hoechstens einen Hinweis, auch wenn frueherer Lauf und wirkungsloses keep zusammenkommen', async () => {
+    // Schutzpfad: Der Server erzeugt diese Kombination nicht (bei `earlier_decision` ist
+    // `keep_possible` true, weil ohne Vorschlag nichts abgelehnt wird), aber der Typ laesst sie zu.
+    // Die beiden Texte schliessen einander aus - `earlier_decision` heisst "kein aktueller Grund".
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
+      stand([
+        entry(42, {
+          reason: 'earlier_decision',
+          decision: 'keep',
+          keepPossible: false,
+          decisionEffective: false,
+        }),
+      ]),
+    )
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    expect(await screen.findByText('Aus früherem Lauf')).toBeInTheDocument()
+    expect(screen.queryByText('wirkt nicht mehr')).not.toBeInTheDocument()
   })
 
   it('mischt Einzelkacheln und Stapel im selben Raster', async () => {

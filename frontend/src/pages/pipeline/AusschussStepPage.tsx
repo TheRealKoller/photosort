@@ -70,11 +70,15 @@ function entscheidungswort(decision: DuplicateDecision | null): string {
 /** Die Zusaetze an der Entscheidungszeile. `Aus früherem Lauf` gehoert zum dritten Grund und
  * tritt an die Stelle des Grund-Kennzeichens; `wirkt nicht mehr` markiert ein gespeichertes
  * `keep`, das den Zustand nicht mehr bestimmt. Beide Texte sind Anzeige des SERVERWERTS, keine
- * Ableitung aus `reason` oder `decision`. */
+ * Ableitung aus `reason` oder `decision` — und sie schliessen einander aus: Wo kein aktueller
+ * Grund steht, gibt es auch keinen, auf den sich `wirkt nicht mehr` beziehen koennte. */
 function Entscheidungshinweise({ eintrag }: { eintrag: AusschussPhotoEntry }) {
   const ausFrueheremLauf = eintrag.reason === 'earlier_decision'
   const wirktNichtMehr =
-    eintrag.decision === 'keep' && eintrag.decision_effective === false && !eintrag.keep_possible
+    !ausFrueheremLauf &&
+    eintrag.decision === 'keep' &&
+    eintrag.decision_effective === false &&
+    !eintrag.keep_possible
   if (!ausFrueheremLauf && !wirktNichtMehr) {
     return null
   }
