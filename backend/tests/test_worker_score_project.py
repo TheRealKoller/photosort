@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -34,8 +35,15 @@ async def _make_project(session: AsyncSession) -> Project:
 
 
 async def _add_photo(
-    session: AsyncSession, project: Project, path: str, etag: str, taken_at: datetime
+    session: AsyncSession,
+    project: Project,
+    path: str,
+    etag: str,
+    taken_at: datetime,
+    last_modified: datetime | None = None,
 ) -> Photo:
+    # Der Versatz haelt `taken_at_original != last_modified`: die Zeit gilt als aus dem Bild
+    # gelesen. Ein Negativfall setzt `last_modified=taken_at` - dann ist sie abgeleitet.
     photo = Photo(
         project_id=project.id,
         relative_path=path,
@@ -43,7 +51,7 @@ async def _add_photo(
         content_length=100,
         taken_at=taken_at,
         taken_at_original=taken_at,
-        last_modified=taken_at,
+        last_modified=taken_at + timedelta(hours=1) if last_modified is None else last_modified,
     )
     session.add(photo)
     await session.commit()
@@ -250,7 +258,7 @@ async def test_scoring_run_marked_failed_keeps_suggestions_found_at_default(
     def _boom(*args: object, **kwargs: object) -> None:
         raise RuntimeError("unexpected clustering failure")
 
-    monkeypatch.setattr(worker_module, "assign_duplicate_clusters", _boom)
+    monkeypatch.setattr(worker_module, "assign_duplicate_groups", _boom)
 
     project = await _make_project(db_session)
     photo = await _add_photo(
@@ -412,7 +420,7 @@ async def test_scoring_run_marked_failed_leaves_committed_progress_untouched(
     def _boom(*args: object, **kwargs: object) -> None:
         raise RuntimeError("unexpected clustering failure")
 
-    monkeypatch.setattr(worker_module, "assign_duplicate_clusters", _boom)
+    monkeypatch.setattr(worker_module, "assign_duplicate_groups", _boom)
 
     project = await _make_project(db_session)
     photo = await _add_photo(
@@ -574,3 +582,124 @@ async def test_gate_is_not_auto_confirmed_when_suggestions_are_found(
 
     assert scoring_run.suggestions_found > 0
     assert scoring_run.gate_confirmed_at is None
+
+
+def _unique_photo_image(variant: int, size: int = 200) -> Image.Image:
+    """Ein eigenstaendiges Motiv je Variante - fuer Bestaende, in denen nur die gesetzten Paare
+    Duplikate sind."""
+    rng = random.Random(variant)
+    image = Image.new("RGB", (size, size), color=(20, 40, 80))
+    draw = ImageDraw.Draw(image)
+    for _ in range(10):
+        x0 = rng.randrange(size)
+        y0 = rng.randrange(size)
+        draw.ellipse(
+            (x0, y0, x0 + rng.randrange(20, 80), y0 + rng.randrange(20, 80)),
+            fill=(rng.randrange(256), rng.randrange(256), rng.randrange(256)),
+        )
+    return image
+
+
+async def _duplicate_map(session: AsyncSession) -> dict[int, int | None]:
+    scores = (await session.execute(select(PhotoScore))).scalars()
+    return {score.photo_id: score.duplicate_of for score in scores}
+
+
+async def test_scoring_run_groups_a_copy_across_hundreds_of_hours(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # AK2: "praktisch identisch" ist zeitunabhaengig - eine Kopie bleibt eine Kopie, auch wenn die
+    # Zeitstempel Jahrzehnte auseinanderliegen.
+    project = await _make_project(db_session)
+    image = _sharp_photo_image()
+    early = await _add_photo(
+        db_session, project, "a.jpg", "etag-a", datetime(2001, 1, 1, tzinfo=UTC)
+    )
+    late = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, early, image)
+    _write_display_variant(tmp_path, late, image)
+
+    await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    duplicates = await _duplicate_map(db_session)
+    assert duplicates[late.id] == early.id
+    assert duplicates[early.id] is None
+
+
+async def test_scoring_run_does_not_group_similar_photos_outside_the_window(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # AK1/AK5: "aehnlich" nur im Zeitfenster. Ohne das Fenster waeren zwei Aufnahmen desselben
+    # Motivs ueber Stunden eine Gruppe - die Kette, die den Ausschuss fluten liess.
+    project = await _make_project(db_session)
+    image = _sharp_photo_image()
+    earlier = await _add_photo(
+        db_session, project, "a.jpg", "etag-a", datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    )
+    later = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", datetime(2023, 1, 1, 12, 0, tzinfo=UTC)
+    )
+    _write_display_variant(tmp_path, earlier, image)
+    _write_display_variant(tmp_path, later, image.filter(ImageFilter.GaussianBlur(radius=3.0)))
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    duplicates = await _duplicate_map(db_session)
+    assert duplicates[earlier.id] is None
+    assert duplicates[later.id] is None
+    assert scoring_run.suggestions_found == 0
+
+
+async def test_scoring_run_does_not_group_similar_photos_without_a_trusted_time(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    image = _sharp_photo_image()
+    moment = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    # `taken_at_original == last_modified`: die Zeit stammt aus dem Dateidatum.
+    first = await _add_photo(
+        db_session, project, "a.jpg", "etag-a", moment, last_modified=moment
+    )
+    second = await _add_photo(
+        db_session, project, "b.jpg", "etag-b", moment, last_modified=moment
+    )
+    _write_display_variant(tmp_path, first, image)
+    _write_display_variant(tmp_path, second, image.filter(ImageFilter.GaussianBlur(radius=3.0)))
+
+    await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    duplicates = await _duplicate_map(db_session)
+    assert duplicates[first.id] is None
+    assert duplicates[second.id] is None
+
+
+async def test_the_trigger_regression_yields_exactly_two_groups(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    # AK8: 13 Fotos ueber rund 392 Stunden, genau zwei echte Paare - eine Kopie (zeitunabhaengig)
+    # und ein aehnliches Paar im Fenster. Alles andere bleibt Einzelfoto; keine Bruecke.
+    project = await _make_project(db_session)
+    span = timedelta(hours=392)
+    base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    moments = [base + span * index / 12 for index in range(13)]
+    images = [_unique_photo_image(index) for index in range(11)]
+    images.append(_unique_photo_image(3))  # Kopie von Foto 4 - 392 h entfernt
+    images.append(_unique_photo_image(6).filter(ImageFilter.GaussianBlur(radius=3.0)))
+    moments[12] = moments[6] + timedelta(minutes=4)
+    photos = [
+        await _add_photo(db_session, project, f"regression-{index}.jpg", f"etag-{index}", moment)
+        for index, moment in enumerate(moments)
+    ]
+    for photo, image in zip(photos, images, strict=True):
+        _write_display_variant(tmp_path, photo, image)
+
+    await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    duplicates = await _duplicate_map(db_session)
+    grouped = {photo_id: winner for photo_id, winner in duplicates.items() if winner is not None}
+    assert len(grouped) == 2
+    assert set(grouped) == {photos[11].id, photos[12].id}
+    assert grouped[photos[11].id] == photos[3].id
+    assert grouped[photos[12].id] == photos[6].id
