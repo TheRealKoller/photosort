@@ -212,7 +212,9 @@ def candidate_pairs(fingerprints: Sequence[PhotoFingerprint]) -> set[tuple[int, 
             for right in bucket[position + 1 :]:
                 distance = (left.phash ^ right.phash).bit_count()
                 if distance <= DUPLICATE_CANDIDATE_HAMMING:
-                    pairs.add((min(left.photo_id, right.photo_id), max(left.photo_id, right.photo_id)))
+                    pairs.add(
+                        (min(left.photo_id, right.photo_id), max(left.photo_id, right.photo_id))
+                    )
     return pairs
 
 

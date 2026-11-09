@@ -202,9 +202,7 @@ async def set_duplicate_decision(
     representative_id = representative_of(photo_id, links)
     # SICHERHEIT (S10): Die zweite Haelfte der Vorbedingung ist projektgebunden und wird pro FOTO
     # beantwortet - ein Sammelweg entsteht daraus nicht.
-    if representative_id is None and not await _has_ausschuss_entry(
-        session, project.id, photo_id
-    ):
+    if representative_id is None and not await _has_ausschuss_entry(session, project.id, photo_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
         )
