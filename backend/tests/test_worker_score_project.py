@@ -659,12 +659,8 @@ async def test_scoring_run_does_not_group_similar_photos_without_a_trusted_time(
     image = _sharp_photo_image()
     moment = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
     # `taken_at_original == last_modified`: die Zeit stammt aus dem Dateidatum.
-    first = await _add_photo(
-        db_session, project, "a.jpg", "etag-a", moment, last_modified=moment
-    )
-    second = await _add_photo(
-        db_session, project, "b.jpg", "etag-b", moment, last_modified=moment
-    )
+    first = await _add_photo(db_session, project, "a.jpg", "etag-a", moment, last_modified=moment)
+    second = await _add_photo(db_session, project, "b.jpg", "etag-b", moment, last_modified=moment)
     _write_display_variant(tmp_path, first, image)
     _write_display_variant(tmp_path, second, image.filter(ImageFilter.GaussianBlur(radius=3.0)))
 

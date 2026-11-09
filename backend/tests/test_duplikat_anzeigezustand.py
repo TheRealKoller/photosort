@@ -281,6 +281,7 @@ def test_the_ausschuss_run_writes_only_none_or_rejected_into_suggested_status() 
     # Ohne diese Zeile bestuende der Waechter auch dann, wenn er gar nichts mehr faende.
     assert zweige == _ERLAUBTE_ZUWEISUNGEN
 
+
 # ------------------------------------------------------------------------------------------
 # `decision_effective`: die GESPEICHERTE Zeile, nicht der angezeigte Zustand
 # ------------------------------------------------------------------------------------------
@@ -320,4 +321,3 @@ def test_a_stale_keep_is_ineffective_not_unknown() -> None:
 
     assert effective_decision_for(photo) is DuplicateDecision.DISCARD
     assert decision_effective_for(photo) is False
-

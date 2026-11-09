@@ -277,9 +277,7 @@ class TestSimilarImagesOnlyInsideTheWindow:
         original = _photo_like()
         shifted = _shifted_crop(original)
         base = _fingerprint(1, original, taken_at=_BASE_TIME)
-        on_window = _fingerprint(
-            2, shifted, taken_at=_BASE_TIME + DUPLICATE_SIMILAR_TIME_WINDOW
-        )
+        on_window = _fingerprint(2, shifted, taken_at=_BASE_TIME + DUPLICATE_SIMILAR_TIME_WINDOW)
         beyond = _fingerprint(
             3, shifted, taken_at=_BASE_TIME + DUPLICATE_SIMILAR_TIME_WINDOW + timedelta(seconds=1)
         )
@@ -291,9 +289,7 @@ class TestSimilarImagesOnlyInsideTheWindow:
 
     def test_the_similar_thresholds_are_the_module_constants(self) -> None:
         # Jede Grenze kommt aus der Konstanten: ein Bit ueber der groben Grenze traegt nicht mehr.
-        base = _signature(
-            1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME
-        )
+        base = _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
         on_coarse = _signature(
             2,
             phash=_mask(DUPLICATE_SIMILAR_HAMMING),
@@ -411,8 +407,12 @@ class TestAssignDuplicateGroups:
     def test_the_result_is_independent_of_the_input_order(self) -> None:
         photos = [
             _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME),
-            _signature(2, phash=_mask(8), fine_phash=_mask(20), sharpness=20.0, taken_at=_BASE_TIME),
-            _signature(3, phash=_mask(16), fine_phash=_mask(40), sharpness=30.0, taken_at=_BASE_TIME),
+            _signature(
+                2, phash=_mask(8), fine_phash=_mask(20), sharpness=20.0, taken_at=_BASE_TIME
+            ),
+            _signature(
+                3, phash=_mask(16), fine_phash=_mask(40), sharpness=30.0, taken_at=_BASE_TIME
+            ),
         ]
 
         assert all(assign_duplicate_groups(list(order)) == {2: 3} for order in permutations(photos))
@@ -425,7 +425,11 @@ class TestAssignDuplicateGroups:
             2, phash=_mask(8), fine_phash=_mask(20), sharpness=20.0, taken_at=_BASE_TIME + _MINUTE
         )
         last = _signature(
-            3, phash=_mask(16), fine_phash=_mask(40), sharpness=30.0, taken_at=_BASE_TIME + 2 * _MINUTE
+            3,
+            phash=_mask(16),
+            fine_phash=_mask(40),
+            sharpness=30.0,
+            taken_at=_BASE_TIME + 2 * _MINUTE,
         )
 
         assert is_similar(first, middle)
@@ -437,10 +441,18 @@ class TestAssignDuplicateGroups:
         winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
         members = [
             _signature(
-                11, phash=_mask(8), fine_phash=_mask(20), sharpness=90.0, taken_at=_BASE_TIME + _MINUTE
+                11,
+                phash=_mask(8),
+                fine_phash=_mask(20),
+                sharpness=90.0,
+                taken_at=_BASE_TIME + _MINUTE,
             ),
             _signature(
-                12, phash=_mask(4), fine_phash=_mask(30), sharpness=80.0, taken_at=_BASE_TIME + 2 * _MINUTE
+                12,
+                phash=_mask(4),
+                fine_phash=_mask(30),
+                sharpness=80.0,
+                taken_at=_BASE_TIME + 2 * _MINUTE,
             ),
         ]
         by_id = {photo.photo_id: photo for photo in [winner, *members]}
@@ -454,10 +466,18 @@ class TestAssignDuplicateGroups:
     def test_two_similar_members_must_lie_within_the_window_of_each_other(self) -> None:
         winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
         near = _signature(
-            11, phash=_mask(8), fine_phash=_mask(20), sharpness=90.0, taken_at=_BASE_TIME + 14 * _MINUTE
+            11,
+            phash=_mask(8),
+            fine_phash=_mask(20),
+            sharpness=90.0,
+            taken_at=_BASE_TIME + 14 * _MINUTE,
         )
         far = _signature(
-            12, phash=_mask(8), fine_phash=_mask(20), sharpness=80.0, taken_at=_BASE_TIME - 14 * _MINUTE
+            12,
+            phash=_mask(8),
+            fine_phash=_mask(20),
+            sharpness=80.0,
+            taken_at=_BASE_TIME - 14 * _MINUTE,
         )
 
         # Beide haben eine direkte Kante zum Gewinner (14 min), liegen aber 28 min auseinander.
@@ -469,10 +489,18 @@ class TestAssignDuplicateGroups:
     def test_members_inside_the_pairwise_window_all_join(self) -> None:
         winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
         earlier = _signature(
-            11, phash=_mask(8), fine_phash=_mask(20), sharpness=90.0, taken_at=_BASE_TIME - 7 * _MINUTE
+            11,
+            phash=_mask(8),
+            fine_phash=_mask(20),
+            sharpness=90.0,
+            taken_at=_BASE_TIME - 7 * _MINUTE,
         )
         later = _signature(
-            12, phash=_mask(4), fine_phash=_mask(30), sharpness=80.0, taken_at=_BASE_TIME + 7 * _MINUTE
+            12,
+            phash=_mask(4),
+            fine_phash=_mask(30),
+            sharpness=80.0,
+            taken_at=_BASE_TIME + 7 * _MINUTE,
         )
 
         assert assign_duplicate_groups([winner, earlier, later]) == {11: 10, 12: 10}
@@ -493,7 +521,6 @@ class TestAssignDuplicateGroups:
         assert (winner.phash ^ lookalike.phash).bit_count() > DUPLICATE_CANDIDATE_HAMMING
         assert is_practically_identical(winner, lookalike)
         assert assign_duplicate_groups([winner, lookalike]) == {}
-
 
 
 class TestTheTriggerRegression:
@@ -529,9 +556,7 @@ class TestTheTriggerRegression:
         assert frozenset((4, 12)) in pairs
         assert frozenset((7, 13)) in pairs
         for loser, winner in groups.items():
-            span_seconds = abs(
-                (by_id[loser].taken_at - by_id[winner].taken_at).total_seconds()
-            )
+            span_seconds = abs((by_id[loser].taken_at - by_id[winner].taken_at).total_seconds())
             assert is_practically_identical(by_id[loser], by_id[winner]) or (
                 span_seconds <= DUPLICATE_SIMILAR_TIME_WINDOW.total_seconds()
             )
