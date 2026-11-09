@@ -24,6 +24,7 @@ from photosort.api.photos import (
     empty_duplicate_group_out,
 )
 from photosort.duplicates import (
+    has_ausschuss_entry,
     has_open_suggestion,
     load_duplicate_links,
     member_ids_of,
@@ -123,17 +124,19 @@ async def _write(session: AsyncSession, photo_ids: list[int], decision: Duplicat
         ) from None
 
 
-async def _has_open_suggestion(session: AsyncSession, project_id: int, photo_id: int) -> bool:
-    """Ob DIESES Foto DIESES Projekts einen offenen Vorschlag traegt (Spec 0525, Auflage S10).
+async def _has_ausschuss_entry(session: AsyncSession, project_id: int, photo_id: int) -> bool:
+    """Ob DIESES Foto DIESES Projekts im Ausschuss-BESTAND liegt (Spec 0525/0637).
 
-    Die zweite Haelfte der erweiterten Vorbedingung des Einzelwegs - und die Stelle, an der die
-    Projektbindung sitzt: Das Praedikat `has_open_suggestion()` traegt selbst keine
-    Projektbedingung, sie kommt allein aus dem Join auf `Photo`. Die Bedingung wird pro FOTO
-    beantwortet; ein Sammelweg entsteht daraus nicht."""
+    Die zweite Haelfte der Vorbedingung des Einzelwegs: offener Vorschlag ODER Entscheidungszeile.
+    Die Projektbindung sitzt hier - `has_ausschuss_entry()` traegt selbst keine Projektbedingung,
+    sie kommt allein aus dem Join auf `Photo`. Die Bedingung wird pro FOTO beantwortet; ein
+    Sammelweg entsteht daraus nicht. Dass eine Entscheidungszeile den Eintrag traegt, ist der
+    Unterschied zum alten `has_open_suggestion`: Ohne sie liesse sich ein alter `discard` nach
+    einem Neulauf ohne Gruppe nie widerrufen."""
     treffer = await session.execute(
         select(Photo.id)
         .join(PhotoScore, PhotoScore.photo_id == Photo.id)
-        .where(Photo.project_id == project_id, Photo.id == photo_id, has_open_suggestion())
+        .where(Photo.project_id == project_id, Photo.id == photo_id, has_ausschuss_entry())
     )
     return treffer.first() is not None
 
@@ -164,11 +167,15 @@ async def set_duplicate_decision(
     Ablehnung aus einem anderen Grund. Eine wegen Unschaerfe abgelehnte Aufnahme bleibt abgelehnt.
 
     SEIT SPEC 0525 IST DAS EINE ANGENOMMENE, ABER UNWIRKSAME HANDLUNG (Auflage S10). Die
-    Vorbedingung heisst "hat eine Duplikat-Gruppe ODER einen offenen Vorschlag": Die
-    Unschaerfe-Ablehnung ohne Gruppe darf entschieden werden, und `keep` bleibt dort wirkungslos -
-    die Anzeige bietet es gar nicht erst an. Der Server weist es NICHT ab (Auflage S4 der Spec 0486
-    gilt unveraendert): Eine solche Abweisung waere eine zweite Regel neben ADR 0104 Punkt 3 und
-    liefe dem gruppenweiten Schreibweg entgegen.
+    Vorbedingung heisst "liegt im Ausschuss-Bestand": offener Vorschlag ODER Entscheidungszeile.
+    Die Unschaerfe-Ablehnung ohne Gruppe darf entschieden werden, und `keep` bleibt dort
+    wirkungslos - die Anzeige bietet es gar nicht erst an. Der Server weist es NICHT ab (Auflage S4
+    der Spec 0486 gilt unveraendert): Eine solche Abweisung waere eine zweite Regel neben ADR 0104
+    Punkt 3 und liefe dem gruppenweiten Schreibweg entgegen.
+
+    Die Entscheidungszeile traegt den Eintrag mit (Spec 0637): Ein alter `discard` aus einem
+    frueheren Lauf bleibt im Bestand und ist damit widerrufbar, auch wenn der Neulauf
+    `suggested_status` UND `duplicate_of` zurueckgesetzt hat.
 
     Eine entschiedene Aufnahme ist kein offener Vorschlag mehr: Sie verschwindet aus dem Filter
     `suggested`, aus der Vorschlagsanzeige am Foto und aus der Zaehlung des Ausschuss-Gates.
@@ -181,21 +188,21 @@ async def set_duplicate_decision(
     Gruppe, nicht ein Echo des Koerpers. Ohne Gruppe ist der Stand leer (AK6): Ein Aufruf, der eine
     Entscheidung getragen hat, darf nicht wie ein Fehlschlag aussehen.
 
-    `404` fuer ein Foto, das WEDER in einer Duplikat-Gruppe liegt NOCH einen offenen Vorschlag
-    traegt - das deckt das unbekannte Foto und das fremde Projekt mit ab (die drei sind nicht
-    unterscheidbar; die Meldung nennt deshalb weiterhin nur die Gruppe und gibt nicht preis, welche
-    der beiden Bedingungen gefehlt hat), `422` fuer eine Pfad-Id ausserhalb der Grenzen oder einen
-    Koerper mit einem anderen Feld als `decision`, `409` bei einem gleichzeitigen Schreibversuch, der
-    sich nicht aufloesen laesst - nie eine `500`."""
+    `404` fuer ein Foto, das NICHT im Ausschuss-Bestand dieses Projekts liegt - das deckt das
+    unbekannte Foto und das fremde Projekt mit ab (die drei sind nicht unterscheidbar; die Meldung
+    nennt deshalb weiterhin nur die Gruppe und gibt nicht preis, welche Bedingung gefehlt hat),
+    `422` fuer eine Pfad-Id ausserhalb der Grenzen oder einen Koerper mit einem anderen Feld als
+    `decision`, `409` bei einem gleichzeitigen Schreibversuch, der sich nicht aufloesen laesst -
+    nie eine `500`."""
     project = await _project_or_404(project_id, session)
     # SICHERHEIT (S7): Die Projektbindung steht ausgeschrieben, hier ueber die bereits
     # projektbegrenzte Kantenliste. Ein Foto eines fremden Projekts loest sich nicht auf und wird
     # deshalb auch nicht geschrieben.
     links = await load_duplicate_links(session, project.id)
     representative_id = representative_of(photo_id, links)
-    # SICHERHEIT (S10): Die zweite Haelfte der Vorbedingung ist ebenfalls projektgebunden und wird
-    # pro FOTO beantwortet - ein Sammelweg entsteht daraus nicht.
-    if representative_id is None and not await _has_open_suggestion(session, project.id, photo_id):
+    # SICHERHEIT (S10): Die zweite Haelfte der Vorbedingung ist projektgebunden und wird pro FOTO
+    # beantwortet - ein Sammelweg entsteht daraus nicht.
+    if representative_id is None and not await _has_ausschuss_entry(session, project.id, photo_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
         )

@@ -773,6 +773,25 @@ Ortsauszug gar nicht.
 `--motiv`, `--riegel` und `--kohaerenz` schließen einander paarweise aus; zwei davon zusammen
 brechen mit einer Meldung ab.
 
+### Wie die Duplikaterkennung gruppiert, an einem echten Projekt messen
+
+```bash
+docker compose exec -T backend python -m photosort.duplicate_probe --project-id <N>
+```
+
+Das Messkommando ist **rein lesend** und liest den letzten erfolgreichen Scoring-Lauf eines
+Projekts. Es rechnet drei Läufe über **dieselbe** Teilmenge: die abgelöste transitive Gruppierung
+über dHash-Abstand `<= 6`, die heutige dreistufige Gruppierung und einen Gegenlauf, der die
+Herkunft der Aufnahmezeit ignoriert. Der Gegenlauf zeigt, wie viele Gruppen entstünden, wenn eine
+aus dem Dateidatum abgeleitete Zeit wie eine Messung behandelt würde.
+
+Die Ausgabe ist Markdown auf stdout und trägt **nur Projekt-Id, Lauf-Id, Anzahlen,
+Größenverteilungen und Zeitspannen als Dauer** — keinen Pfad, keinen Dateinamen, keinen
+Projektnamen und keinen Einzelzeitpunkt; damit sind die Zahlen als Ganzes weitergebbar. Fehlt für
+ein Foto die lokale `display`-Variante oder ist sie nicht dekodierbar, zählt es als
+„übersprungen" und wird aus **allen** Läufen entfernt, nie als Null gewertet. Liegt für kein Foto
+eine lesbare Variante vor, sagt der Bericht ausdrücklich „NICHT GEMESSEN".
+
 ## Personen erkennen (lokal)
 
 Die beiden Nutzer werden ausschließlich auf dem eigenen Server erkannt (Spec 0292, ADR

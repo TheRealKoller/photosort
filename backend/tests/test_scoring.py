@@ -1,24 +1,36 @@
 from __future__ import annotations
 
 import io
+import random
 from datetime import datetime, timedelta
+from itertools import permutations
 
 import pytest
 from PIL import Image, ImageDraw, ImageFilter
 
 from photosort.scoring import (
-    DUPLICATE_HAMMING_THRESHOLD,
+    DUPLICATE_CANDIDATE_BANDS,
+    DUPLICATE_CANDIDATE_HAMMING,
+    DUPLICATE_SIMILAR_FINE_HAMMING,
+    DUPLICATE_SIMILAR_HAMMING,
+    DUPLICATE_SIMILAR_TIME_WINDOW,
     GPS_CLUSTER_SPLIT_DISTANCE_METERS,
+    IDENTICAL_FINE_HAMMING,
     TIME_CLUSTER_GAP,
     ClusterCandidate,
-    DuplicateCandidate,
+    PhotoFingerprint,
     assign_clusters,
-    assign_duplicate_clusters,
+    assign_duplicate_groups,
+    candidate_pairs,
     compute_dhash,
     compute_exposure,
+    compute_fine_dhash,
+    compute_gray_grid,
     compute_sharpness,
-    hamming_distance,
     haversine_meters,
+    is_practically_identical,
+    is_similar,
+    taken_at_is_trusted,
 )
 
 
@@ -46,6 +58,22 @@ def _photo_like(size: int = 200) -> Image.Image:
     draw = ImageDraw.Draw(image)
     draw.ellipse((size * 0.2, size * 0.2, size * 0.7, size * 0.8), fill=(220, 180, 90))
     draw.rectangle((size * 0.5, size * 0.1, size * 0.9, size * 0.4), fill=(90, 200, 90))
+    return image
+
+
+def _motif(index: int, size: int = 200) -> Image.Image:
+    """Ein eigenstaendiges Motiv - fuer Bestaende, in denen nur die gesetzten Paare Duplikate
+    sind. Zufaellige Formen je Index statt einer Familie aus einem Bild."""
+    rng = random.Random(index)
+    image = Image.new("RGB", (size, size), color=(30, 60, 120))
+    draw = ImageDraw.Draw(image)
+    for _ in range(10):
+        x0 = rng.randrange(size)
+        y0 = rng.randrange(size)
+        draw.ellipse(
+            (x0, y0, x0 + rng.randrange(20, 80), y0 + rng.randrange(20, 80)),
+            fill=(rng.randrange(256), rng.randrange(256), rng.randrange(256)),
+        )
     return image
 
 
@@ -82,29 +110,115 @@ class TestComputeExposure:
         assert compute_exposure(_solid(255)) == 1.0
 
 
+def _hamming(left: str, right: str) -> int:
+    """Die Bit-Distanz zweier hex-codierter Hashes - im Test, weil `scoring.py` sie nicht mehr
+    anbietet."""
+    return (int(left, 16) ^ int(right, 16)).bit_count()
+
+
+def _mask(bits: int) -> int:
+    """Eine Bitfolge mit genau `bits` gesetzten niederwertigen Bits."""
+    return (1 << bits) - 1
+
+
+def _resaved(image: Image.Image, quality: int = 90) -> Image.Image:
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=quality)
+    return Image.open(io.BytesIO(buffer.getvalue()))
+
+
+def _resized(image: Image.Image, factor: float = 0.5) -> Image.Image:
+    size = (int(image.width * factor), int(image.height * factor))
+    return image.resize(size, Image.Resampling.LANCZOS)
+
+
+def _as_png(image: Image.Image) -> Image.Image:
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return Image.open(io.BytesIO(buffer.getvalue()))
+
+
+def _shifted_crop(image: Image.Image, fraction: float = 0.02) -> Image.Image:
+    """Derselbe Ausschnitt, um rund zwei Prozent verschoben - der Fall, den die alte Schwelle
+    nicht von einer Kopie trennte."""
+    shift_x = max(1, int(image.width * fraction))
+    shift_y = max(1, int(image.height * fraction))
+    return image.crop((shift_x, shift_y, image.width - shift_x, image.height - shift_y)).resize(
+        image.size, Image.Resampling.LANCZOS
+    )
+
+
+_BASE_TIME = datetime(2023, 1, 1, 10, 0, 0)
+_MINUTE = timedelta(minutes=1)
+
+
+def _fingerprint(
+    photo_id: int,
+    image: Image.Image,
+    *,
+    sharpness: float | None = None,
+    taken_at: datetime | None = None,
+    taken_at_trusted: bool = True,
+    phash: int | None = None,
+    fine_phash: int | None = None,
+    gray_grid: bytes | None = None,
+) -> PhotoFingerprint:
+    """Ein Fingerabdruck aus einem BILD: die Signaturen kommen aus den Produktionsfunktionen.
+
+    `phash`, `fine_phash` und `gray_grid` ueberschreiben nur dort, wo ein Test eine BIT-Grenze
+    exakt treffen muss - auf ein bestimmtes Bit laesst sich kein Bild zielen."""
+    return PhotoFingerprint(
+        photo_id=photo_id,
+        phash=int(compute_dhash(image), 16) if phash is None else phash,
+        fine_phash=compute_fine_dhash(image) if fine_phash is None else fine_phash,
+        gray_grid=compute_gray_grid(image) if gray_grid is None else gray_grid,
+        sharpness=compute_sharpness(image) if sharpness is None else sharpness,
+        taken_at=taken_at,
+        taken_at_trusted=taken_at_trusted,
+    )
+
+
+def _signature(
+    photo_id: int,
+    *,
+    phash: int,
+    fine_phash: int,
+    sharpness: float,
+    taken_at: datetime | None,
+    taken_at_trusted: bool = True,
+) -> PhotoFingerprint:
+    """Ein Fingerabdruck mit GESETZTEN Bits - fuer den Stern und die Stufen, deren Gegenstand die
+    Bit-Lage ist. Das flache Gitter macht nie "praktisch identisch"; die Pixel-Pruefung deckt die
+    Bildstufe ab."""
+    return PhotoFingerprint(
+        photo_id=photo_id,
+        phash=phash,
+        fine_phash=fine_phash,
+        gray_grid=bytes(1024),
+        sharpness=sharpness,
+        taken_at=taken_at,
+        taken_at_trusted=taken_at_trusted,
+    )
+
+
 class TestComputeDhash:
     def test_identical_images_have_zero_hamming_distance(self) -> None:
         image = _checkerboard()
-        hash_a = compute_dhash(image)
-        hash_b = compute_dhash(image.copy())
 
-        assert hamming_distance(hash_a, hash_b) == 0
+        assert _hamming(compute_dhash(image), compute_dhash(image.copy())) == 0
 
-    def test_slightly_modified_image_has_small_hamming_distance(self) -> None:
+    def test_slightly_modified_image_stays_in_the_candidate_net(self) -> None:
         original = _photo_like()
-        buffer = io.BytesIO()
-        original.save(buffer, format="JPEG", quality=90)
-        recompressed = Image.open(io.BytesIO(buffer.getvalue()))
 
-        distance = hamming_distance(compute_dhash(original), compute_dhash(recompressed))
+        distance = _hamming(compute_dhash(original), compute_dhash(_resaved(original)))
 
-        assert distance <= DUPLICATE_HAMMING_THRESHOLD
+        assert distance <= DUPLICATE_CANDIDATE_HAMMING
 
-    def test_different_motif_has_large_hamming_distance(self) -> None:
+    def test_different_motif_lies_outside_the_candidate_net(self) -> None:
         checkerboard = compute_dhash(_checkerboard())
         solid = compute_dhash(_solid())
 
-        assert hamming_distance(checkerboard, solid) > DUPLICATE_HAMMING_THRESHOLD
+        assert _hamming(checkerboard, solid) > DUPLICATE_CANDIDATE_HAMMING
 
     def test_dhash_is_64_bit_hex_string(self) -> None:
         digest = compute_dhash(_checkerboard())
@@ -113,49 +227,339 @@ class TestComputeDhash:
         int(digest, 16)  # must be parseable as hex
 
 
-class TestAssignDuplicateClusters:
-    def test_no_duplicates_when_hashes_are_far_apart(self) -> None:
-        candidates = [
-            DuplicateCandidate(photo_id=1, phash="0" * 16, sharpness=10.0),
-            DuplicateCandidate(photo_id=2, phash="f" * 16, sharpness=20.0),
+class TestTheFineSignature:
+    def test_the_fine_dhash_uses_256_bits(self) -> None:
+        fine = compute_fine_dhash(_checkerboard())
+
+        assert fine.bit_length() <= 256
+        assert compute_fine_dhash(_checkerboard()) == fine
+
+    def test_the_gray_grid_is_a_32_by_32_byte_raster(self) -> None:
+        assert len(compute_gray_grid(_photo_like())) == 32 * 32
+
+
+class TestPracticallyIdenticalCopies:
+    @pytest.mark.parametrize(
+        "copy_form", ["bytegleich", "neu gespeichert", "verkleinert", "anderes Format"]
+    )
+    def test_a_copy_in_every_form_is_grouped_without_any_time(self, copy_form: str) -> None:
+        # AK2: zeitunabhaengig, und ohne Aufnahmezeit erst recht. Die vier Kopieformen sind die
+        # vier Wege, auf denen dasselbe Bild zweimal im Bestand landet.
+        original = _photo_like()
+        copies = {
+            "bytegleich": original.copy(),
+            "neu gespeichert": _resaved(original),
+            "verkleinert": _resized(original),
+            "anderes Format": _as_png(original),
+        }
+        base = _fingerprint(1, original, sharpness=10.0, taken_at=None, taken_at_trusted=False)
+        copy = _fingerprint(
+            2, copies[copy_form], sharpness=50.0, taken_at=None, taken_at_trusted=False
+        )
+
+        assert is_practically_identical(base, copy)
+        assert assign_duplicate_groups([base, copy]) == {1: 2}
+
+    def test_a_shifted_crop_is_a_candidate_but_not_identical(self) -> None:
+        # AK3: eine Serienaufnahme mit leicht verschobenem Ausschnitt ist Kandidat der Stufe 1,
+        # aber keine Kopie - die z-Normierung entfernt keine geometrische Verschiebung.
+        original = _photo_like()
+        base = _fingerprint(1, original)
+        crop = _fingerprint(2, _shifted_crop(original))
+
+        assert (base.phash ^ crop.phash).bit_count() <= DUPLICATE_CANDIDATE_HAMMING
+        assert (base.fine_phash ^ crop.fine_phash).bit_count() > IDENTICAL_FINE_HAMMING
+        assert not is_practically_identical(base, crop)
+
+
+class TestSimilarImagesOnlyInsideTheWindow:
+    def test_exactly_on_the_window_is_similar_and_one_second_beyond_is_not(self) -> None:
+        original = _photo_like()
+        shifted = _shifted_crop(original)
+        base = _fingerprint(1, original, taken_at=_BASE_TIME)
+        on_window = _fingerprint(2, shifted, taken_at=_BASE_TIME + DUPLICATE_SIMILAR_TIME_WINDOW)
+        beyond = _fingerprint(
+            3, shifted, taken_at=_BASE_TIME + DUPLICATE_SIMILAR_TIME_WINDOW + timedelta(seconds=1)
+        )
+
+        assert is_similar(base, on_window)
+        assert not is_similar(base, beyond)
+        assert len(assign_duplicate_groups([base, on_window])) == 1
+        assert assign_duplicate_groups([base, beyond]) == {}
+
+    def test_the_similar_thresholds_are_the_module_constants(self) -> None:
+        # Jede Grenze kommt aus der Konstanten: ein Bit ueber der groben Grenze traegt nicht mehr.
+        base = _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
+        on_coarse = _signature(
+            2,
+            phash=_mask(DUPLICATE_SIMILAR_HAMMING),
+            fine_phash=DUPLICATE_SIMILAR_FINE_HAMMING,
+            sharpness=10.0,
+            taken_at=_BASE_TIME + _MINUTE,
+        )
+        beyond = _signature(
+            3,
+            phash=_mask(DUPLICATE_SIMILAR_HAMMING + 1),
+            fine_phash=0,
+            sharpness=10.0,
+            taken_at=_BASE_TIME + _MINUTE,
+        )
+
+        assert is_similar(base, on_coarse)
+        assert not is_similar(base, beyond)
+
+
+class TestATimeWithoutProvenance:
+    def test_an_untrusted_time_never_connects_similar_images(self) -> None:
+        # S10/AK5: ohne verlaessliche Aufnahmezeit ist nur "praktisch identisch" eine Kante.
+        base = _fingerprint(1, _photo_like(), taken_at=_BASE_TIME)
+        other = _fingerprint(
+            2,
+            _shifted_crop(_photo_like()),
+            taken_at=_BASE_TIME + _MINUTE,
+            taken_at_trusted=False,
+        )
+
+        assert not is_similar(base, other)
+        assert assign_duplicate_groups([base, other]) == {}
+
+    def test_an_identical_copy_is_grouped_without_a_trusted_time(self) -> None:
+        original = _photo_like()
+        base = _fingerprint(1, original, sharpness=10.0, taken_at=None, taken_at_trusted=False)
+        copy = _fingerprint(
+            2, _resaved(original), sharpness=50.0, taken_at=None, taken_at_trusted=False
+        )
+
+        assert assign_duplicate_groups([base, copy]) == {1: 2}
+
+
+class TestTakenAtIsTrusted:
+    def test_a_derived_time_is_recognised_by_exact_equality(self) -> None:
+        moment = datetime(2023, 1, 1, 10, 0, 0)
+
+        assert not taken_at_is_trusted(moment, moment)
+        assert taken_at_is_trusted(moment, moment + timedelta(seconds=1))
+
+
+class TestTheCandidateStageIsExact:
+    @pytest.mark.parametrize("distance", list(range(DUPLICATE_CANDIDATE_HAMMING + 2)))
+    def test_every_pair_on_and_below_the_boundary_is_found_and_none_above(
+        self, distance: int
+    ) -> None:
+        base = _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
+        other = _signature(
+            2, phash=_mask(distance), fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME
+        )
+
+        pairs = candidate_pairs([base, other])
+
+        assert ((1, 2) in pairs) is (distance <= DUPLICATE_CANDIDATE_HAMMING)
+
+    def test_the_pigeonhole_guarantee_holds_across_all_bands(self) -> None:
+        # 13 disjunkte Baender ueber 64 Bit: ein gesetztes Bit JE Band (hier alle fuenf
+        # Bit-Schritte) laesst bei zwoelf gesetzten Bits genau ein Band frei und muss gefunden
+        # werden; bei dreizehn stimmt kein Band mehr exakt ueberein.
+        band_bits = list(range(0, 64, 5))
+        base = _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
+        twelve = _signature(
+            2,
+            phash=sum(1 << offset for offset in band_bits[: DUPLICATE_CANDIDATE_BANDS - 1]),
+            fine_phash=0,
+            sharpness=10.0,
+            taken_at=_BASE_TIME,
+        )
+        thirteen = _signature(
+            3,
+            phash=sum(1 << offset for offset in band_bits[:DUPLICATE_CANDIDATE_BANDS]),
+            fine_phash=0,
+            sharpness=10.0,
+            taken_at=_BASE_TIME,
+        )
+
+        assert (1, 2) in candidate_pairs([base, twelve])
+        assert (1, 3) not in candidate_pairs([base, thirteen])
+
+    def test_a_pair_found_in_several_bands_is_reported_once(self) -> None:
+        base = _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
+        same = _signature(2, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
+
+        assert candidate_pairs([base, same]) == {(1, 2)}
+
+
+class TestAssignDuplicateGroups:
+    def test_an_empty_input_and_a_single_photo_yield_no_group(self) -> None:
+        single = _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
+
+        assert assign_duplicate_groups([]) == {}
+        assert assign_duplicate_groups([single]) == {}
+
+    def test_the_sharpest_photo_wins_and_equal_sharpness_falls_to_the_lower_id(self) -> None:
+        sharp = _signature(1, phash=0, fine_phash=0, sharpness=50.0, taken_at=_BASE_TIME)
+        soft = _signature(2, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
+
+        assert assign_duplicate_groups([soft, sharp]) == {2: 1}
+
+        left = _signature(5, phash=0, fine_phash=0, sharpness=30.0, taken_at=_BASE_TIME)
+        right = _signature(2, phash=0, fine_phash=0, sharpness=30.0, taken_at=_BASE_TIME)
+
+        assert assign_duplicate_groups([left, right]) == {5: 2}
+
+    def test_the_result_is_independent_of_the_input_order(self) -> None:
+        photos = [
+            _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME),
+            _signature(
+                2, phash=_mask(8), fine_phash=_mask(20), sharpness=20.0, taken_at=_BASE_TIME
+            ),
+            _signature(
+                3, phash=_mask(16), fine_phash=_mask(40), sharpness=30.0, taken_at=_BASE_TIME
+            ),
         ]
 
-        assert assign_duplicate_clusters(candidates) == {}
+        assert all(assign_duplicate_groups(list(order)) == {2: 3} for order in permutations(photos))
 
-    def test_sharper_photo_wins_within_a_cluster(self) -> None:
-        candidates = [
-            DuplicateCandidate(photo_id=1, phash="0000000000000000", sharpness=10.0),
-            DuplicateCandidate(photo_id=2, phash="0000000000000000", sharpness=50.0),
+    def test_a_chain_member_without_a_direct_edge_to_the_winner_stays_ungrouped(self) -> None:
+        # AK4/S4: A~B und B~C, aber A~C nicht - B haengt am Gewinner C, A nur an B. A bleibt
+        # Einzelfoto; die Kette verbindet nichts.
+        first = _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
+        middle = _signature(
+            2, phash=_mask(8), fine_phash=_mask(20), sharpness=20.0, taken_at=_BASE_TIME + _MINUTE
+        )
+        last = _signature(
+            3,
+            phash=_mask(16),
+            fine_phash=_mask(40),
+            sharpness=30.0,
+            taken_at=_BASE_TIME + 2 * _MINUTE,
+        )
+
+        assert is_similar(first, middle)
+        assert is_similar(middle, last)
+        assert not is_similar(first, last)
+        assert assign_duplicate_groups([first, middle, last]) == {2: 3}
+
+    def test_every_member_of_a_star_has_a_direct_edge_to_its_winner(self) -> None:
+        winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
+        members = [
+            _signature(
+                11,
+                phash=_mask(8),
+                fine_phash=_mask(20),
+                sharpness=90.0,
+                taken_at=_BASE_TIME + _MINUTE,
+            ),
+            _signature(
+                12,
+                phash=_mask(4),
+                fine_phash=_mask(30),
+                sharpness=80.0,
+                taken_at=_BASE_TIME + 2 * _MINUTE,
+            ),
         ]
+        by_id = {photo.photo_id: photo for photo in [winner, *members]}
 
-        result = assign_duplicate_clusters(candidates)
+        result = assign_duplicate_groups([winner, *members])
 
-        assert result == {1: 2}
+        assert result == {11: 10, 12: 10}
+        for loser, winner_id in result.items():
+            assert is_similar(by_id[winner_id], by_id[loser])
 
-    def test_tie_break_by_lower_photo_id(self) -> None:
-        candidates = [
-            DuplicateCandidate(photo_id=5, phash="0000000000000000", sharpness=30.0),
-            DuplicateCandidate(photo_id=2, phash="0000000000000000", sharpness=30.0),
+    def test_two_similar_members_must_lie_within_the_window_of_each_other(self) -> None:
+        winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
+        near = _signature(
+            11,
+            phash=_mask(8),
+            fine_phash=_mask(20),
+            sharpness=90.0,
+            taken_at=_BASE_TIME + 14 * _MINUTE,
+        )
+        far = _signature(
+            12,
+            phash=_mask(8),
+            fine_phash=_mask(20),
+            sharpness=80.0,
+            taken_at=_BASE_TIME - 14 * _MINUTE,
+        )
+
+        # Beide haben eine direkte Kante zum Gewinner (14 min), liegen aber 28 min auseinander.
+        assert is_similar(winner, near)
+        assert is_similar(winner, far)
+        assert not is_similar(near, far)
+        assert assign_duplicate_groups([winner, near, far]) == {11: 10}
+
+    def test_members_inside_the_pairwise_window_all_join(self) -> None:
+        winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
+        earlier = _signature(
+            11,
+            phash=_mask(8),
+            fine_phash=_mask(20),
+            sharpness=90.0,
+            taken_at=_BASE_TIME - 7 * _MINUTE,
+        )
+        later = _signature(
+            12,
+            phash=_mask(4),
+            fine_phash=_mask(30),
+            sharpness=80.0,
+            taken_at=_BASE_TIME + 7 * _MINUTE,
+        )
+
+        assert assign_duplicate_groups([winner, earlier, later]) == {11: 10, 12: 10}
+
+    def test_a_pair_outside_the_candidate_net_is_never_checked(self) -> None:
+        """Harte Stufe-1-Grenze (ADR 0145): gleiche feine Signatur und gleiches Gitter, aber
+        grober Hamming ueber `DUPLICATE_CANDIDATE_HAMMING` - das Paar ist kein Kandidat und wird
+        nicht gruppiert, obwohl die spaeteren Stufen es als identisch ansaehen."""
+        winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
+        lookalike = _signature(
+            11,
+            phash=_mask(DUPLICATE_CANDIDATE_HAMMING + 1),
+            fine_phash=0,
+            sharpness=90.0,
+            taken_at=_BASE_TIME,
+        )
+
+        assert (winner.phash ^ lookalike.phash).bit_count() > DUPLICATE_CANDIDATE_HAMMING
+        assert is_practically_identical(winner, lookalike)
+        assert assign_duplicate_groups([winner, lookalike]) == {}
+
+
+class TestTheTriggerRegression:
+    """Der ausloesende Bestand: 13 Aufnahmen ueber rund 392 Stunden, hoechstens zwei echte Paare
+    (AK8). Das alte Verfahren verband einen solchen Bestand transitiv zu EINER Gruppe; hier darf
+    keine Gruppe ueber das Zeitfenster hinausreichen, und die beiden echten Paare muessen
+    erkannt werden."""
+
+    def test_thirteen_photos_over_392_hours_yield_exactly_the_two_real_pairs(self) -> None:
+        span = timedelta(hours=392)
+        moments = [_BASE_TIME + span * index / 12 for index in range(13)]
+        images = [_motif(index) for index in range(11)]
+        # Paar 1: eine Kopie eines anderen Zeitpunkts - zeitunabhaengig identisch.
+        images.append(_resaved(_motif(3)))
+        # Paar 2: derselbe Ausschnitt, vier Minuten auseinander.
+        images.append(_shifted_crop(_motif(6)))
+        moments[12] = moments[6] + 4 * _MINUTE
+        photos = [
+            _fingerprint(index + 1, image, taken_at=moment)
+            for index, (image, moment) in enumerate(zip(images, moments, strict=True))
         ]
+        by_id = {photo.photo_id: photo for photo in photos}
 
-        result = assign_duplicate_clusters(candidates)
+        assert is_practically_identical(by_id[4], by_id[12])
+        assert is_similar(by_id[7], by_id[13])
+        assert not is_practically_identical(by_id[7], by_id[13])
 
-        assert result == {5: 2}
+        groups = assign_duplicate_groups(photos)
 
-    def test_transitively_close_hashes_form_a_single_cluster(self) -> None:
-        # a<->b within threshold, b<->c within threshold, a<->c NOT within threshold directly -
-        # still one cluster via transitivity (burst sequence drifting slowly).
-        hash_b_value = 1 << DUPLICATE_HAMMING_THRESHOLD
-        hash_c_value = hash_b_value | (1 << (DUPLICATE_HAMMING_THRESHOLD + 5))
-        candidates = [
-            DuplicateCandidate(photo_id=1, phash="0000000000000000", sharpness=10.0),
-            DuplicateCandidate(photo_id=2, phash=f"{hash_b_value:016x}", sharpness=20.0),
-            DuplicateCandidate(photo_id=3, phash=f"{hash_c_value:016x}", sharpness=30.0),
-        ]
-
-        result = assign_duplicate_clusters(candidates)
-
-        assert result == {1: 3, 2: 3}
+        assert len(groups) == 2
+        assert len(set(groups.values())) == 2
+        pairs = {frozenset((loser, winner)) for loser, winner in groups.items()}
+        assert frozenset((4, 12)) in pairs
+        assert frozenset((7, 13)) in pairs
+        for loser, winner in groups.items():
+            span_seconds = abs((by_id[loser].taken_at - by_id[winner].taken_at).total_seconds())
+            assert is_practically_identical(by_id[loser], by_id[winner]) or (
+                span_seconds <= DUPLICATE_SIMILAR_TIME_WINDOW.total_seconds()
+            )
 
 
 class TestAssignClustersByTime:

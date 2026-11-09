@@ -67,6 +67,29 @@ function entscheidungswort(decision: DuplicateDecision | null): string {
   return decision === null ? AUSSCHUSS_OPEN_LABEL : DUPLICATE_ZUSTAENDE[decision].text
 }
 
+/** Die Zusaetze an der Entscheidungszeile. `Aus früherem Lauf` gehoert zum dritten Grund und
+ * tritt an die Stelle des Grund-Kennzeichens; `wirkt nicht mehr` markiert ein gespeichertes
+ * `keep`, das den Zustand nicht mehr bestimmt. Beide Texte sind Anzeige des SERVERWERTS, keine
+ * Ableitung aus `reason` oder `decision` — und sie schliessen einander aus: Wo kein aktueller
+ * Grund steht, gibt es auch keinen, auf den sich `wirkt nicht mehr` beziehen koennte. */
+function Entscheidungshinweise({ eintrag }: { eintrag: AusschussPhotoEntry }) {
+  const ausFrueheremLauf = eintrag.reason === 'earlier_decision'
+  const wirktNichtMehr =
+    !ausFrueheremLauf &&
+    eintrag.decision === 'keep' &&
+    eintrag.decision_effective === false &&
+    !eintrag.keep_possible
+  if (!ausFrueheremLauf && !wirktNichtMehr) {
+    return null
+  }
+  return (
+    <>
+      {ausFrueheremLauf && <span className="text-xs text-text-muted">Aus früherem Lauf</span>}
+      {wirktNichtMehr && <span className="text-xs text-text-muted">wirkt nicht mehr</span>}
+    </>
+  )
+}
+
 /** Der `photo`-Parameter der Schritt-Route. Alles ausserhalb einer positiven ganzen Zahl ist
  * KEIN Fehler, sondern die Uebersicht: Ein Deep-Link ohne gueltige Aufnahme ist ein regulaerer
  * Zustand mit definierter Antwort, kein leerer Screen. */
@@ -359,17 +382,23 @@ export function AusschussStepPage() {
                           Angaben - der Fokusring des Buttons bleibt unbeschnitten, und sehr
                           schmale Kacheln halten Zeile und Kennzeichen in ihren Grenzen. */}
                       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-md">
-                        <span className="absolute left-1 top-1 rounded-sm bg-overlay p-1">
-                          <GrundKennzeichen reason={eintrag.reason} />
-                        </span>
+                        {eintrag.reason !== 'earlier_decision' && (
+                          <span className="absolute left-1 top-1 rounded-sm bg-overlay p-1">
+                            <GrundKennzeichen reason={eintrag.reason} />
+                          </span>
+                        )}
                         <span
                           className={cn(
                             'absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-overlay px-2 py-1 text-xs',
                             ENTSCHEIDUNG_SCHRIFT[eintrag.decision ?? 'offen'],
                           )}
                         >
-                          <span data-testid="ausschuss-decision">
+                          <span
+                            data-testid="ausschuss-decision"
+                            className="flex min-w-0 items-center gap-1"
+                          >
                             {entscheidungswort(eintrag.decision)}
+                            <Entscheidungshinweise eintrag={eintrag} />
                           </span>
                           <span className="min-w-6 truncate font-mono text-text-muted">
                             {eintrag.photo.relative_path.split('/').pop()}
@@ -545,13 +574,14 @@ function AusschussDetail({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <GrundKennzeichen reason={eintrag.reason} />
+            {eintrag.reason !== 'earlier_decision' && <GrundKennzeichen reason={eintrag.reason} />}
             <span
               data-testid="detail-decision"
               className={ENTSCHEIDUNG_SCHRIFT[eintrag.decision ?? 'offen']}
             >
               {entscheidungswort(eintrag.decision)}
             </span>
+            <Entscheidungshinweise eintrag={eintrag} />
             <span className="font-mono text-xs text-text-muted">{eintrag.photo.relative_path}</span>
           </div>
 

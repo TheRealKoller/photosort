@@ -402,12 +402,13 @@ async def test_keep_possible_comes_from_the_server_and_not_from_the_reason(
 ) -> None:
     """D1: Grund und Wirksamkeit sind zwei verschiedene Aussagen ueber dieselbe Aufnahme.
 
-    `reason` ist `low_quality` genau dann, wenn `duplicate_of IS NULL`. `keep_possible` ist die
-    Wirksamkeit eines hypothetischen `keep` (`duplicates.py::keep_possible_for`). Beides faellt
-    auseinander, wenn eine Entscheidungszeile einen Lauf ueberlebt, in dem `suggested_status` UND
-    `duplicate_of` zurueckgesetzt wurden: Der Eintrag traegt dann `low_quality` und trotzdem
-    `keep_possible`. Wer das Feld aus dem Grund ableitet, naehme dem Nutzer dort die einzige
-    Handlung, die die Aufnahme zurueckholt - und die Ansicht widerspraeche dem Schreibweg."""
+    Eine Entscheidungszeile, die einen Lauf ueberlebt hat, in dem `suggested_status` UND
+    `duplicate_of` zurueckgesetzt wurden, traegt den eigenen Grund `earlier_decision` - weder
+    "Duplikat" noch "geringe Bildqualitaet", denn der Lauf hat sie nicht abgelehnt. `keep_possible`
+    bleibt davon unabhaengig die Wirksamkeit eines hypothetischen `keep`
+    (`duplicates.py::keep_possible_for`). Wer das Feld aus dem Grund ableitet, naehme dem Nutzer
+    dort die einzige Handlung, die die Aufnahme zurueckholt - und die Ansicht widerspraeche dem
+    Schreibweg."""
     project = await _project(db_session)
     zeile_ohne_vorschlag = await _photo(
         db_session,
@@ -425,10 +426,89 @@ async def test_keep_possible_comes_from_the_server_and_not_from_the_reason(
 
     body = (await authenticated_api_client.get(_url(project.id))).json()
 
-    assert _entry(body, zeile_ohne_vorschlag.id)["reason"] == "low_quality"
+    assert _entry(body, zeile_ohne_vorschlag.id)["reason"] == "earlier_decision"
     assert _entry(body, zeile_ohne_vorschlag.id)["keep_possible"] is True
     assert _entry(body, unscharf.id)["reason"] == "low_quality"
     assert _entry(body, unscharf.id)["keep_possible"] is False
+
+
+async def test_decision_effective_is_the_stored_row_and_says_whether_it_still_bites(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`decision_effective` kommt aus `duplicates.py::decision_effective_for`: `null` ohne Zeile,
+    `true` fuer ein `discard`, fuer ein `keep` nur, solange `duplicate_of IS NOT NULL`. Ein
+    veraltetes `keep` ist `false` - aus `decision` und `keep_possible` allein ist das nicht
+    ablesbar."""
+    project = await _project(db_session)
+    offen = await _photo(
+        db_session, project, "offen.jpg", seconds=0, suggested_status=RatingStatus.REJECTED
+    )
+    verworfen = await _photo(
+        db_session,
+        project,
+        "verworfen.jpg",
+        seconds=1,
+        suggested_status=RatingStatus.REJECTED,
+        decision=DuplicateDecision.DISCARD,
+    )
+    gewinner = await _photo(db_session, project, "gewinner.jpg", seconds=2)
+    behalten = await _photo(
+        db_session,
+        project,
+        "behalten.jpg",
+        seconds=3,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=gewinner.id,
+        decision=DuplicateDecision.KEEP,
+    )
+    veraltet = await _photo(
+        db_session,
+        project,
+        "veraltet.jpg",
+        seconds=4,
+        suggested_status=RatingStatus.REJECTED,
+        decision=DuplicateDecision.KEEP,
+    )
+    await db_session.commit()
+
+    body = (await authenticated_api_client.get(_url(project.id))).json()
+    detail = (await authenticated_api_client.get(_url(project.id, photo_id=behalten.id))).json()
+
+    assert _entry(body, offen.id)["decision_effective"] is None
+    assert _entry(body, verworfen.id)["decision_effective"] is True
+    assert _entry(detail, behalten.id)["decision_effective"] is True
+    assert _entry(body, veraltet.id)["decision_effective"] is False
+
+
+async def test_a_stale_decision_without_a_suggestion_carries_earlier_decision(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Der dritte Grund: `suggested_status IS NULL AND duplicate_of IS NULL`, aber eine
+    Entscheidungszeile existiert. Ohne eigenen Wert stuende die Aufnahme als "geringe
+    Bildqualitaet" da, obwohl der Lauf sie gar nicht abgelehnt hat."""
+    project = await _project(db_session)
+    verworfen = await _photo(
+        db_session,
+        project,
+        "verworfen.jpg",
+        seconds=0,
+        decision=DuplicateDecision.DISCARD,
+    )
+    behalten = await _photo(
+        db_session,
+        project,
+        "behalten.jpg",
+        seconds=1,
+        decision=DuplicateDecision.KEEP,
+    )
+    await db_session.commit()
+
+    body = (await authenticated_api_client.get(_url(project.id))).json()
+
+    assert _entry(body, verworfen.id)["reason"] == "earlier_decision"
+    assert _entry(body, verworfen.id)["decision_effective"] is True
+    assert _entry(body, behalten.id)["reason"] == "earlier_decision"
+    assert _entry(body, behalten.id)["decision_effective"] is False
 
 
 async def test_a_vanished_group_leaves_the_entry_with_a_null_anchor(
@@ -967,6 +1047,7 @@ async def test_the_answer_carries_exactly_the_agreed_fields(
         "decision",
         "group_anchor_photo_id",
         "keep_possible",
+        "decision_effective",
     }
     assert set(stapel) == {
         "kind",

@@ -984,6 +984,14 @@ Drei Muster, die über dieses Feature hinaus gelten; sie schärfen Muster 1 der 
 
 **Drei weitere Muster kündigt Spec 0506 an; sie entstehen erst mit den Schritten 4–7 und gehören deshalb in den zweiten Pull Request dieser Story:** eine Stufe nach dem Durchlauf samt Idempotenz als maschinenprüfbarer Form des Stillstands; ein Terminierungsargument, das nicht mehr trägt, sobald eine Runde nichts tun darf; und: steht eine Kalibrierung an, ist jede aus einem Zahlwert gebaute Testlage eine Zeitbombe, auch wenn sie die Konvention formal einhält.
 
+### Ein drittes Messkommando erbt die Dreiteilung und bekommt seinen eigenen Formwächter (`duplicate_probe.py`) — neu für Spec [`0637`](../features/0637-duplikatgruppen-nur-echte-duplikate.md) / ADR [`0145`](../decisions/0145-mehrstufige-duplikaterkennung-zeitfenster-und-stern-ohne-bruecken.md)
+
+Drei Punkte, die für jedes weitere Messkommando gelten; die Zusage aus der Sektion zu ADR 0102 wird **je Modul** neu aufgespannt, nie geerbt:
+
+1. **Die Abwesenheit wird für jeden Namen einzeln gepinnt.** Import-Graph, Compose-`command` und Endpunkt werden für `duplicate_probe` geprüft; der Compose-Wächter nennt den neuen Namen ausdrücklich, sonst bliebe er nach einer Umbenennung vakuum-grün.
+2. **Der `main()`-Lauf vergleicht JEDE Tabelle vorher/nachher und die Ausgabe gegen sentinel-hafte Testdaten.** Projektname, Pfad, Dateiname und ein einprägsamer Zeitstempel stehen in der Testlage; keiner darf im Bericht auftauchen, Projekt-Id und Lauf-Id müssen es. Ein fehlender Cache wird als „übersprungen" geprüft und darf nicht als Null zählen — der Bericht sagt bei leerer Messlage „NICHT GEMESSEN".
+3. **Eine eingefrorene Referenzschwelle wird als Literal gepinnt und gegen die heutige Gruppierung geprüft.** `OLD_REFERENCE_HAMMING` steht nicht mehr in `scoring.py`; ohne eigenen Fall wäre ein stillschweigend mitgezogener Wert nicht als Abweichung erkennbar, und der Vorher/Nachher-Vergleich verglich sich mit sich selbst.
+
 ### Ein zweiwertiges Prädikat bekommt einen dritten Zustand, und seine Verneinung ist nicht mehr sein Komplement (`duplicates.py`/`worker.py`/`api/projects.py`/`api/photos.py`) — neu für ADR [`0104`](../decisions/0104-ausschuss-entscheidung-uebersteuert-den-automaten.md) / Spec [`0374`](../features/0374-duplikate-vergleichen.md)
 
 **Teststrategie-Konsultation zur Spec 0374** („Duplikate im Ausschuss vergleichen und einzeln entscheiden"). Vier projektweit wiederverwendbare Muster, jedes aus einer Fehlerklasse, die keinen Fehlercode und keine Anzeige hat:

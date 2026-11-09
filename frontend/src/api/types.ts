@@ -362,6 +362,11 @@ export interface RatingWriteOut {
 
 export type SuggestionReason = 'duplicate' | 'low_quality'
 
+// Der Grund eines Ausschuss-Eintrags. Der dritte Wert steht NUR hier, nicht an `SuggestionOut`:
+// Ein Lauf, der `suggested_status` und `duplicate_of` zuruecksetzt, laesst die Entscheidungszeile
+// stehen - die Aufnahme bleibt im Bestand, ist aber weder Duplikat noch Qualitaetsablehnung.
+export type AusschussReason = SuggestionReason | 'earlier_decision'
+
 // Automatischer Vorschlag aus PhotoScore, bewusst getrennt von RatingOut/ratings[] - ein
 // Vorschlag ist strukturell nie eine Bewertung, sondern wird erst durch aktive Bestätigung
 // (PUT /photos/{id}/rating) zu einer. Der Kontext der Rangfolge lebt im eigenständigen
@@ -462,9 +467,11 @@ export interface DuplicateGroupIndexOut {
  * Bestands, auch für ein Gruppenmitglied; nur dort trägt er einen Gruppenanker.
  *
  * `reason` ist der Grund der Markierung und kommt vom Server, nicht aus einer TypeScript-Ableitung
- * (Auflage S7): `duplicate` genau dann, wenn das Foto ein Duplikat ist, sonst `low_quality`. Der
- * Grund ist damit unterscheidbar, statt ein Sammelzustand zu sein (AK4) — Grund und Entscheidung
- * sind zwei verschiedene Aussagen über dieselbe Aufnahme.
+ * (Auflage S7): `duplicate` genau dann, wenn das Foto ein Duplikat ist, `low_quality`, wenn der
+ * Lauf es abgelehnt hat, sonst `earlier_decision` — die Entscheidungszeile hat den Lauf ueberlebt,
+ * waehrend `suggested_status` und `duplicate_of` zurueckgesetzt wurden. Der Grund ist damit
+ * unterscheidbar, statt ein Sammelzustand zu sein (AK4) — Grund und Entscheidung sind zwei
+ * verschiedene Aussagen ueber dieselbe Aufnahme.
  *
  * `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdrücklich NICHT
  * die Auswertung des Überlebens-Prädikats (ADR 0111 Punkt 1): Diese Übersicht zeigt den
@@ -484,10 +491,15 @@ export interface DuplicateGroupIndexOut {
 export interface AusschussPhotoEntry {
   kind: 'photo'
   photo: PhotoOut
-  reason: SuggestionReason
+  reason: AusschussReason
   decision: DuplicateDecision | null
   group_anchor_photo_id: number | null
   keep_possible: boolean
+  /** Wirksamkeit der GESPEICHERTEN Zeile: `null` ohne Zeile, `true` solange sie den Zustand
+   *  bestimmt, `false` bei einem veralteten `keep` ohne Gruppe. Serverwert
+   *  (`duplicates.py::decision_effective_for`), keine Ableitung im Client: `decision` sagt, was
+   *  gespeichert ist, `decision_effective`, ob es noch wirkt. */
+  decision_effective: boolean | null
 }
 
 /**

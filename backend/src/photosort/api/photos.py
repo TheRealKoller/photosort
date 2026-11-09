@@ -28,6 +28,8 @@ from photosort.duplicates import (
     GroupSlot,
     SingleSlot,
     all_group_representative_ids,
+    decision_effective_for,
+    decision_without_suggestion_for,
     effective_decision_for,
     group_ausschuss_stock,
     group_span_seconds,
@@ -719,6 +721,20 @@ async def _photos_by_id(session: AsyncSession, ids: list[int]) -> dict[int, Phot
 
 def _suggestion_reason(score: PhotoScore) -> Literal["duplicate", "low_quality"]:
     return "duplicate" if score.duplicate_of is not None else "low_quality"
+
+
+def _ausschuss_reason(photo: Photo) -> Literal["duplicate", "low_quality", "earlier_decision"]:
+    """Der Grund der Markierung im Ausschuss - `_suggestion_reason` plus den dritten Fall.
+
+    `earlier_decision`: Der Lauf hat `suggested_status` UND `duplicate_of` zurueckgesetzt, die
+    Entscheidungszeile steht aber noch. Die Praesenzgrenze bleibt in `duplicates.py`
+    (`decision_without_suggestion_for`); ohne eigenen Wert stuende die Aufnahme als "geringe
+    Bildqualitaet" da, obwohl der Lauf sie gar nicht abgelehnt hat."""
+    score = photo.score
+    assert score is not None
+    if decision_without_suggestion_for(photo):
+        return "earlier_decision"
+    return _suggestion_reason(score)
 
 
 def _to_suggestion_out(score: PhotoScore) -> SuggestionOut:
@@ -2202,9 +2218,11 @@ class AusschussPhotoEntryOut(BaseModel):
     `?photo=<id>` steht er fuer jede Bestandsaufnahme, auch fuer ein Gruppenmitglied.
 
     `reason` ist der GRUND der Markierung und kommt vom Server, nicht aus einer TypeScript-Ableitung
-    (Auflage S7): `duplicate` genau dann, wenn `PhotoScore.duplicate_of IS NOT NULL`, sonst
-    `low_quality` - dieselbe Ableitung wie `_suggestion_reason`, keine zweite. Der Grund ist damit
-    unterscheidbar, statt ein Sammelzustand zu sein (AK4).
+    (Auflage S7): `duplicate` genau dann, wenn `PhotoScore.duplicate_of IS NOT NULL`,
+    `earlier_decision`, wenn `suggested_status` UND `duplicate_of` leer sind, aber eine
+    Entscheidungszeile existiert, sonst `low_quality` (`_ausschuss_reason`, dieselbe Ableitung wie
+    `_suggestion_reason`). Der Grund ist damit unterscheidbar, statt ein Sammelzustand zu sein
+    (AK4); `SuggestionOut.reason` bleibt zweiwertig.
 
     `decision` ist der GESPEICHERTE Zeilenwert aus `photo_duplicate_decisions`, ausdruecklich NICHT
     `duplicates.py::effective_decision_for` (ADR 0111 Punkt 1): Die Uebersicht zeigt den
@@ -2222,17 +2240,22 @@ class AusschussPhotoEntryOut(BaseModel):
     `keep_possible` ist die WIRKSAMKEIT des angebotenen "behalten" und kommt vom Server
     (`duplicates.py::keep_possible_for`, Auflage S7): Ein `keep` wirkt nur ueber eine Gruppe
     (`duplicate_of IS NOT NULL`), sonst hebt es eine Ablehnung nicht auf. Aus `reason` ist das
-    AUSDRUECKLICH NICHT ableitbar - ein Eintrag, dessen Entscheidungszeile einen Lauf ueberlebt hat,
-    in dem `suggested_status` UND `duplicate_of` zurueckgesetzt wurden, traegt `low_quality` und
-    trotzdem `true`. Eine zweite Ableitung im Client naehme dem Nutzer dort die einzige Handlung,
-    die die Aufnahme zurueckholt."""
+    AUSDRUECKLICH NICHT ableitbar - ein Eintrag aus einem frueheren Lauf traegt `earlier_decision`
+    und trotzdem `true`. Eine zweite Ableitung im Client naehme dem Nutzer dort die einzige
+    Handlung, die die Aufnahme zurueckholt.
+
+    `decision_effective` ist die WIRKSAMKEIT der gespeicherten Zeile
+    (`duplicates.py::decision_effective_for`, Auflage S7): `null` ohne Zeile, `true` fuer ein
+    `discard`, fuer ein `keep` nur, solange `duplicate_of IS NOT NULL`. Ein veraltetes `keep` ist
+    `false` - der Client markiert es dann als "wirkt nicht mehr", statt es abzuleiten."""
 
     kind: Literal["photo"]
     photo: PhotoOut
-    reason: Literal["duplicate", "low_quality"]
+    reason: Literal["duplicate", "low_quality", "earlier_decision"]
     decision: DuplicateDecision | None
     group_anchor_photo_id: int | None
     keep_possible: bool
+    decision_effective: bool | None
 
 
 class DecisionCountsOut(BaseModel):
@@ -2356,14 +2379,16 @@ def _ausschuss_photo_entry_out(
     return AusschussPhotoEntryOut(
         kind="photo",
         photo=photo_out,
-        # SICHERHEIT (S7): die vorhandene Ableitung, nicht eine zweite Fassung davon.
-        reason=_suggestion_reason(score),
+        # SICHERHEIT (S7): die vorhandene Ableitung plus den dritten Fall, nicht eine zweite
+        # Fassung davon.
+        reason=_ausschuss_reason(photo),
         decision=None if entscheidung is None else entscheidung.decision,
         group_anchor_photo_id=representative_of(photo.id, links),
-        # SICHERHEIT (S7), zweite Aussage: die Wirksamkeit des angebotenen "behalten" stammt aus
-        # derselben Regel wie im Schreibweg. Aus `reason` ist sie nicht ableitbar (siehe
-        # `AusschussPhotoEntryOut`).
+        # SICHERHEIT (S7), zwei Unabhaengige Aussagen: die Wirksamkeit des angebotenen "behalten"
+        # und die der gespeicherten Zeile. Beide stammen aus `duplicates.py`, keine Ableitung im
+        # Client (siehe `AusschussPhotoEntryOut`).
         keep_possible=keep_possible_for(photo),
+        decision_effective=decision_effective_for(photo),
     )
 
 

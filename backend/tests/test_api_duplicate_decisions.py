@@ -760,6 +760,37 @@ async def test_a_stale_keep_becomes_ineffective_while_a_stale_discard_keeps_work
     assert await _stored(db_session, verworfen_id) == DuplicateDecision.DISCARD
 
 
+async def test_an_old_discard_can_be_revoked_on_the_single_path_after_the_group_vanished(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Die Vorbedingung des Einzelwegs ist der Ausschuss-BESTAND, nicht der offene Vorschlag: Eine
+    Entscheidungszeile haelt den Eintrag im Bestand. Ohne sie waere der Widerruf eines alten
+    `discard` nach einem Neulauf ohne Gruppe unmoeglich - die Aufnahme ist dann weder Vorschlag
+    noch Gruppenmitglied, und ihr alter Ausschuss bliebe unumkehrbar."""
+    project = await _project(db_session)
+    _, losers = await _star(db_session, project, 2)
+    verworfen = losers[0]
+    await authenticated_api_client.put(
+        _single_url(project.id, verworfen.id), json={"decision": "discard"}
+    )
+
+    # Der Neulauf erkennt kein Duplikat mehr: `duplicate_of` und `suggested_status` fallen weg.
+    for score in (await db_session.execute(select(PhotoScore))).scalars():
+        score.duplicate_of = None
+        score.suggested_status = None
+    await db_session.commit()
+    verworfen_id, projekt_id = verworfen.id, project.id
+    db_session.expire_all()
+
+    response = await authenticated_api_client.put(
+        _single_url(projekt_id, verworfen_id), json={"decision": "keep"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert await _stored(db_session, verworfen_id) == DuplicateDecision.KEEP
+
+
 # ------------------------------------------------------------------------------------------
 # Der Gruppenabschluss (Spec 0533, A9/A14, Auflagen S1-S7)
 # ------------------------------------------------------------------------------------------

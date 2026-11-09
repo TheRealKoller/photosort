@@ -460,6 +460,32 @@ def effective_decision_for(photo: Photo) -> DuplicateDecision:
     )
 
 
+def decision_effective_for(photo: Photo) -> bool | None:
+    """Ob die GESPEICHERTE Entscheidung dieses Fotos noch wirkt - `None` ohne Zeile.
+
+    Bewusst nicht der angezeigte Zustand (`effective_decision_for` ist nie leer und faellt auf
+    `discard` zurueck): Ein `discard` wirkt immer; ein `keep` nur, solange `duplicate_of IS NOT
+    NULL`. Nach einem neuen Scoring-Lauf ohne Gruppe bleibt eine alte `keep`-Zeile stehen und ist
+    dann wirkungslos."""
+    entscheidung = photo.duplicate_decision
+    if entscheidung is None:
+        return None
+    if entscheidung.decision is DuplicateDecision.DISCARD:
+        return True
+    _, duplicate_of, _ = _score_und_entscheidung(photo)
+    return duplicate_of is not None
+
+
+def decision_without_suggestion_for(photo: Photo) -> bool:
+    """Ob allein die Entscheidungszeile den Eintrag traegt (Spec 0637).
+
+    `suggested_status` UND `duplicate_of` sind leer, eine Zeile existiert: Der Lauf hat die
+    Aufnahme nicht abgelehnt, die Handlung stammt aus einem frueheren Lauf. Der Ausschuss nennt
+    dafuer den eigenen Grund `earlier_decision`, statt "geringe Bildqualitaet" zu behaupten."""
+    suggested_status, duplicate_of, decision = _score_und_entscheidung(photo)
+    return suggested_status is None and duplicate_of is None and decision is not None
+
+
 def keep_possible_for(photo: Photo) -> bool:
     """Ob "behalten" fuer dieses Mitglied ueberhaupt etwas bewirken kann (ADR 0111 Punkt 2).
 

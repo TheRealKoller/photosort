@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import atan2, cos, radians, sin, sqrt
@@ -15,10 +16,31 @@ from PIL import Image, ImageFilter, ImageStat
 # Wert liegt bewusst niedrig: erfasst werden soll nur eindeutiges Verwackeln/Fehlfokus.
 SHARPNESS_REJECT_THRESHOLD = 15.0
 
-# Hamming-Distanz (von 64 moeglichen Bits), unterhalb/gleich derer zwei dHashes als "nahezu
-# identisch" gelten. 6 von 64 Bit ist strenger als die uebliche 10-%-Faustregel, um Fehlalarme
-# zwischen aehnlichen, aber eigenstaendigen Motiven zu vermeiden.
-DUPLICATE_HAMMING_THRESHOLD = 6
+# --- Duplikaterkennung: drei Stufen, alle Vergleiche inklusiv (ADR 0145) -----------------------
+#
+# Die Zahlen sind Startwerte; ein Kalibrierlauf bestaetigt oder verschiebt sie. Bewusst eigene
+# Namen je Zahl und kein Settings-/Env-Wert: ein Laufzeithebel waere ein Schalter an der Grenze,
+# die mitbestimmt, welche Fotos den Homeserver Richtung Cloud-Anbieter verlassen.
+
+# Stufe 1: grober 64-Bit-dHash, grosszuegiges Netz. Ein Paar darueber ist kein Kandidat.
+DUPLICATE_CANDIDATE_HAMMING = 12
+
+# Bandzahl der exakten Kandidatensuche = Grenze + 1. Bei Hamming <= der Grenze stimmt nach dem
+# Schubfachprinzip mindestens eines der disjunkten Baender exakt ueberein.
+DUPLICATE_CANDIDATE_BANDS = 13
+
+# "Aehnlich": grober und feiner dHash.
+DUPLICATE_SIMILAR_HAMMING = 8
+DUPLICATE_SIMILAR_FINE_HAMMING = 64
+
+# Zeitfenster fuer "aehnlich", paarweise geprueft - nicht nur gegen den Gewinner.
+DUPLICATE_SIMILAR_TIME_WINDOW = timedelta(minutes=15)
+
+# "Praktisch identisch": feiner dHash UND z-normiertes 32x32-Grauwertgitter. Sind beide Gitter
+# varianzfrei, entscheidet die rohe mittlere Grauwertdifferenz.
+IDENTICAL_FINE_HAMMING = 16
+IDENTICAL_GRID_MAD = 0.06
+IDENTICAL_FLAT_MAD = 1.0
 
 # Zeitliche Luecke, ab der ein neues Zeitfenster-Cluster beginnt (cluster_key) - trennt
 # unterschiedliche Aufnahme-Anlaesse/Situationen innerhalb eines Projekts. Reine
@@ -51,6 +73,14 @@ _LAPLACE_KERNEL = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale
 # -> 64 Bit.
 _DHASH_WIDTH = 9
 _DHASH_HEIGHT = 8
+
+# Feiner dHash: 17x16 Graustufen-Pixel liefern 16x16=256 Vergleiche -> 256 Bit.
+_FINE_DHASH_WIDTH = 17
+_FINE_DHASH_HEIGHT = 16
+
+# Grauwertgitter der dritten Stufe: 32x32 Pixel als `bytes`.
+_GRID_WIDTH = 32
+_GRID_HEIGHT = 32
 
 
 def compute_sharpness(image: Image.Image) -> float:
@@ -91,57 +121,231 @@ def compute_dhash(image: Image.Image) -> str:
     return f"{value:016x}"
 
 
-def hamming_distance(hash_a: str, hash_b: str) -> int:
-    return bin(int(hash_a, 16) ^ int(hash_b, 16)).count("1")
+def compute_fine_dhash(image: Image.Image) -> int:
+    """Feiner Difference Hash: 17x16-Graustufenraster, 256 Bit als `int`.
+
+    Dieselbe Form wie `compute_dhash`, nur feiner: er trennt eine neu gespeicherte Kopie von einer
+    Serienaufnahme mit verschobenem Ausschnitt, die der grobe 64-Bit-Hash nicht trennt."""
+    grayscale = image.convert("L").resize(
+        (_FINE_DHASH_WIDTH, _FINE_DHASH_HEIGHT), Image.Resampling.LANCZOS
+    )
+    pixels = list(grayscale.getdata())
+
+    value = 0
+    for row in range(_FINE_DHASH_HEIGHT):
+        row_pixels = pixels[row * _FINE_DHASH_WIDTH : (row + 1) * _FINE_DHASH_WIDTH]
+        for col in range(_FINE_DHASH_WIDTH - 1):
+            value = (value << 1) | (1 if row_pixels[col] > row_pixels[col + 1] else 0)
+    return value
+
+
+def compute_gray_grid(image: Image.Image) -> bytes:
+    """Das Grauwertgitter der dritten Stufe: 32x32 Pixel, row-major, ein Byte je Pixel."""
+    grayscale = image.convert("L").resize((_GRID_WIDTH, _GRID_HEIGHT), Image.Resampling.LANCZOS)
+    return grayscale.tobytes()
 
 
 @dataclass(frozen=True)
-class DuplicateCandidate:
+class PhotoFingerprint:
+    """Die vollstaendige Duplikat-Signatur eines Fotos fuer EINEN Scoring-Lauf.
+
+    Die feine Signatur und das Grauwertgitter leben nur im Speicher; persistiert wird weiterhin
+    allein `PhotoScore.phash` (der grobe 64-Bit-dHash).
+
+    `taken_at_trusted` ist falsch, wenn die Aufnahmezeit aus `last_modified` abgeleitet wurde.
+    `taken_at` bleibt dann gefuellt (der Scan schreibt beide Spalten NOT NULL), wird fuer
+    "aehnlich" aber nicht gelesen."""
+
     photo_id: int
-    phash: str
+    phash: int
+    fine_phash: int
+    gray_grid: bytes
     sharpness: float
+    taken_at: datetime | None
+    taken_at_trusted: bool
 
 
-def assign_duplicate_clusters(
-    candidates: list[DuplicateCandidate], threshold: int = DUPLICATE_HAMMING_THRESHOLD
-) -> dict[int, int]:
-    """Gruppiert Fotos anhand der Hamming-Distanz ihrer dHashes (Union-Find, transitiv) und
-    bestimmt je Cluster mit mehr als einem Mitglied den Gewinner (hoechste sharpness, bei
-    Gleichstand niedrigere photo_id).
+def taken_at_is_trusted(taken_at_original: datetime, last_modified: datetime) -> bool:
+    """Ob die Aufnahmezeit aus dem Bild stammt statt aus dem Dateidatum.
 
-    Rueckgabe: photo_id -> duplicate_of, NUR fuer die Verlierer eines Clusters. Fotos ohne
-    Duplikat (Cluster-Groesse 1) oder der Cluster-Gewinner selbst tauchen im Ergebnis nicht auf.
-    """
-    parent: dict[int, int] = {c.photo_id: c.photo_id for c in candidates}
+    Der Scan schreibt bei fehlendem EXIF `taken_at` UND `taken_at_original` aus `last_modified`;
+    dann sind beide gleich. Exakte Ungleichheit, keine Toleranz: eine gerundete Gleichheit
+    erklaerte eine abgeleitete Zeit zur Messung."""
+    return taken_at_original != last_modified
 
-    def find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
 
-    def union(a: int, b: int) -> None:
-        root_a, root_b = find(a), find(b)
-        if root_a != root_b:
-            parent[root_a] = root_b
+def _band_ranges(total_bits: int, count: int) -> tuple[tuple[int, int], ...]:
+    """`count` disjunkte Bit-Baender ueber `total_bits` Bits als `(offset, breite)`."""
+    width, extra = divmod(total_bits, count)
+    ranges: list[tuple[int, int]] = []
+    offset = 0
+    for index in range(count):
+        size = width + (1 if index < extra else 0)
+        ranges.append((offset, size))
+        offset += size
+    return tuple(ranges)
 
-    for i in range(len(candidates)):
-        for j in range(i + 1, len(candidates)):
-            if hamming_distance(candidates[i].phash, candidates[j].phash) <= threshold:
-                union(candidates[i].photo_id, candidates[j].photo_id)
 
-    groups: dict[int, list[DuplicateCandidate]] = {}
-    for candidate in candidates:
-        groups.setdefault(find(candidate.photo_id), []).append(candidate)
+_BAND_RANGES = _band_ranges(64, DUPLICATE_CANDIDATE_BANDS)
 
+
+def candidate_pairs(fingerprints: Sequence[PhotoFingerprint]) -> set[tuple[int, int]]:
+    """Stufe 1: alle Kandidatenpaare als `(kleinere id, groessere id)` per Band-Bucketing.
+
+    EXAKT, nicht ungefaehr: Bei Hamming `<= DUPLICATE_CANDIDATE_HAMMING` stimmt nach dem
+    Schubfachprinzip mindestens eines der `DUPLICATE_CANDIDATE_BANDS` disjunkten Baender exakt
+    ueberein, weil es mehr Baender als erlaubte Abweichungen gibt. Innerhalb eines Buckets wird
+    die volle Distanz geprueft; ein Paar, das in mehreren Baendern liegt, steht einmal im
+    Ergebnis. Ein Paar, das nur Stufe 1 besteht, ist damit noch KEIN Duplikat.
+
+    Die `photo_id`s eines Laufs sind eindeutig (Datenbank-Primaerschluessel); ein doppeltes Foto
+    waere kein Fehler dieser Funktion, sondern ein Fehler des Aufrufers."""
+    buckets: dict[tuple[int, int], list[PhotoFingerprint]] = {}
+    for fingerprint in fingerprints:
+        for index, (offset, width) in enumerate(_BAND_RANGES):
+            band = (fingerprint.phash >> offset) & ((1 << width) - 1)
+            buckets.setdefault((index, band), []).append(fingerprint)
+
+    pairs: set[tuple[int, int]] = set()
+    for bucket in buckets.values():
+        for position, left in enumerate(bucket):
+            for right in bucket[position + 1 :]:
+                distance = (left.phash ^ right.phash).bit_count()
+                if distance <= DUPLICATE_CANDIDATE_HAMMING:
+                    pairs.add(
+                        (min(left.photo_id, right.photo_id), max(left.photo_id, right.photo_id))
+                    )
+    return pairs
+
+
+def _moments(grid: bytes) -> tuple[float, float]:
+    """Mittelwert und Standardabweichung eines Grauwertgitters."""
+    mean = sum(grid) / len(grid)
+    variance = sum((value - mean) ** 2 for value in grid) / len(grid)
+    return mean, sqrt(variance)
+
+
+def _raw_mad(left: bytes, right: bytes) -> float:
+    return sum(abs(a - b) for a, b in zip(left, right, strict=True)) / len(left)
+
+
+def _normalised_mad(
+    left: bytes,
+    left_mean: float,
+    left_spread: float,
+    right: bytes,
+    right_mean: float,
+    right_spread: float,
+) -> float:
+    """Mittlere absolute Differenz der z-Werte: entfernt globale Helligkeits- und
+    Kontrastaenderungen, aber keine geometrische Verschiebung."""
+    return sum(
+        abs((a - left_mean) / left_spread - (b - right_mean) / right_spread)
+        for a, b in zip(left, right, strict=True)
+    ) / len(left)
+
+
+def is_practically_identical(left: PhotoFingerprint, right: PhotoFingerprint) -> bool:
+    """Stufe 2+3: `fine_hamming <= IDENTICAL_FINE_HAMMING` UND normalisierte Gitter-Differenz
+    `<= IDENTICAL_GRID_MAD`.
+
+    Sind BEIDE Gitter varianzfrei, entscheidet die rohe mittlere Grauwertdifferenz
+    `<= IDENTICAL_FLAT_MAD`; ist nur eines varianzfrei, ist das Paar nicht identisch. Die Zeit
+    spielt hier keine Rolle."""
+    if (left.fine_phash ^ right.fine_phash).bit_count() > IDENTICAL_FINE_HAMMING:
+        return False
+    left_mean, left_spread = _moments(left.gray_grid)
+    right_mean, right_spread = _moments(right.gray_grid)
+    if left_spread == 0.0 and right_spread == 0.0:
+        return _raw_mad(left.gray_grid, right.gray_grid) <= IDENTICAL_FLAT_MAD
+    if left_spread == 0.0 or right_spread == 0.0:
+        return False
+    return (
+        _normalised_mad(
+            left.gray_grid, left_mean, left_spread, right.gray_grid, right_mean, right_spread
+        )
+        <= IDENTICAL_GRID_MAD
+    )
+
+
+def _within_window(left: PhotoFingerprint, right: PhotoFingerprint) -> bool:
+    """Beide Zeiten verlaesslich und hoechstens ein Fenster auseinander (inklusive)."""
+    if not (left.taken_at_trusted and right.taken_at_trusted):
+        return False
+    left_moment, right_moment = left.taken_at, right.taken_at
+    if left_moment is None or right_moment is None:
+        return False
+    return abs(left_moment - right_moment) <= DUPLICATE_SIMILAR_TIME_WINDOW
+
+
+def is_similar(left: PhotoFingerprint, right: PhotoFingerprint) -> bool:
+    """Stufe 2+3 fuer "aehnlich": grober und feiner dHash innerhalb ihrer Grenzen UND beide
+    Zeiten verlaesslich UND `|dt| <= DUPLICATE_SIMILAR_TIME_WINDOW`."""
+    if not _within_window(left, right):
+        return False
+    if (left.phash ^ right.phash).bit_count() > DUPLICATE_SIMILAR_HAMMING:
+        return False
+    return (left.fine_phash ^ right.fine_phash).bit_count() <= DUPLICATE_SIMILAR_FINE_HAMMING
+
+
+_IDENTICAL = "identical"
+_SIMILAR = "similar"
+
+
+def _edge_kind(left: PhotoFingerprint, right: PhotoFingerprint) -> str | None:
+    """Erst "praktisch identisch", dann "aehnlich" - identische Paare sind zeitunabhaengig."""
+    if is_practically_identical(left, right):
+        return _IDENTICAL
+    if is_similar(left, right):
+        return _SIMILAR
+    return None
+
+
+def assign_duplicate_groups(fingerprints: Sequence[PhotoFingerprint]) -> dict[int, int]:
+    """Die Duplikatgruppen als STERN um je einen Gewinner: `loser -> winner`.
+
+    Sortiert absteigend nach `(-sharpness, photo_id)`; das erste freie Foto wird Gewinner.
+    HARTE STUFE-1-GRENZE: Nur Paare aus `candidate_pairs` werden geprueft - ein Paar mit grober
+    Hamming-Distanz ueber `DUPLICATE_CANDIDATE_HAMMING` ist kein Kandidat und wird nicht einmal
+    angesehen (ADR 0145).
+
+    Aufgenommen werden nur FREIE Fotos mit einer DIREKTEN Kante zum Gewinner (identisch oder
+    aehnlich im Fenster) - ein Kettenmitglied, das nur ueber ein anderes Mitglied haengt, bleibt
+    ungruppiert. Fuer zwei aehnliche (nicht identische) Mitglieder gilt zusaetzlich paarweise das
+    Zeitfenster; ein Kandidat, der es gegen ein bereits aufgenommenes Mitglied verletzt, wird
+    nicht aufgenommen. Jedes Foto wird hoechstens einmal zugeordnet, der Gewinner steht nirgends
+    im Ergebnis."""
+    pairs = candidate_pairs(fingerprints)
+    ordered = sorted(
+        fingerprints, key=lambda fingerprint: (-fingerprint.sharpness, fingerprint.photo_id)
+    )
+    assigned: set[int] = set()
     result: dict[int, int] = {}
-    for members in groups.values():
-        if len(members) < 2:
+    for winner in ordered:
+        if winner.photo_id in assigned:
             continue
-        winner = min(members, key=lambda c: (-c.sharpness, c.photo_id))
-        for member in members:
-            if member.photo_id != winner.photo_id:
-                result[member.photo_id] = winner.photo_id
+        assigned.add(winner.photo_id)
+        similar_members: list[PhotoFingerprint] = []
+        for candidate in ordered:
+            if candidate.photo_id in assigned:
+                continue
+            key = (
+                min(winner.photo_id, candidate.photo_id),
+                max(winner.photo_id, candidate.photo_id),
+            )
+            if key not in pairs:
+                continue
+            edge = _edge_kind(winner, candidate)
+            if edge is None:
+                continue
+            if edge == _SIMILAR and any(
+                not _within_window(candidate, member) for member in similar_members
+            ):
+                continue
+            assigned.add(candidate.photo_id)
+            result[candidate.photo_id] = winner.photo_id
+            if edge == _SIMILAR:
+                similar_members.append(candidate)
     return result
 
 

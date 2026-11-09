@@ -192,12 +192,15 @@ from photosort.remote_classification import (
 from photosort.scoring import (
     SHARPNESS_REJECT_THRESHOLD,
     ClusterCandidate,
-    DuplicateCandidate,
+    PhotoFingerprint,
     assign_clusters,
-    assign_duplicate_clusters,
+    assign_duplicate_groups,
     compute_dhash,
     compute_exposure,
+    compute_fine_dhash,
+    compute_gray_grid,
     compute_sharpness,
+    taken_at_is_trusted,
 )
 from photosort.selection import (
     SelectionCandidate,
@@ -1226,7 +1229,21 @@ async def export_project(ctx: dict[str, Any], project_id: int) -> int | None:
         return run.id if run is not None else None
 
 
-def _compute_photo_metrics(path: Path) -> tuple[float, float, str] | None:
+@dataclass(frozen=True)
+class PhotoMetrics:
+    """Alle Metriken EINES dekodierten `display`-Bildes - ein Oeffnen, keine zweite Dekodierung.
+
+    `phash` bleibt der hex-codierte grobe dHash fuer `PhotoScore.phash`; die feinen Signaturen
+    und das Grauwertgitter leben nur im Scoring-Lauf und werden nie persistiert."""
+
+    sharpness: float
+    exposure: float
+    phash: str
+    fine_phash: int
+    gray_grid: bytes
+
+
+def _compute_photo_metrics(path: Path) -> PhotoMetrics | None:
     """Best-effort wie thumbnails.py::generate_variants: ein nicht (mehr) dekodierbares oder
     ungewoehnliches Bild darf den ScoringRun nicht abbrechen, sondern wird fuer die Metrik-
     Berechnung übersprungen. SICHERHEIT: das deckt insbesondere den
@@ -1237,10 +1254,13 @@ def _compute_photo_metrics(path: Path) -> tuple[float, float, str] | None:
             image: Image.Image = opened
             if image.mode not in ("RGB", "L"):
                 image = image.convert("RGB")
-            sharpness = compute_sharpness(image)
-            exposure = compute_exposure(image)
-            phash = compute_dhash(image)
-        return sharpness, exposure, phash
+            return PhotoMetrics(
+                sharpness=compute_sharpness(image),
+                exposure=compute_exposure(image),
+                phash=compute_dhash(image),
+                fine_phash=compute_fine_dhash(image),
+                gray_grid=compute_gray_grid(image),
+            )
     except Exception:
         return None
 
@@ -1287,8 +1307,8 @@ async def run_project_scoring(
             }
 
         now = datetime.now(UTC).replace(tzinfo=None)
-        # photo_id -> (sharpness, exposure, phash) fuer alle erfolgreich vermessenen Fotos.
-        computed: dict[int, tuple[float, float, str]] = {}
+        # Aus den Metriken EINER Dekodierung je Foto - inklusive der feinen Signatur.
+        computed: dict[int, PhotoMetrics] = {}
         processed = 0
         for photo in photos:
             path = variant_path(cache_dir, photo.id, photo.etag, "display")
@@ -1300,7 +1320,6 @@ async def run_project_scoring(
             # unwahrscheinlich (persistentes Cache-Volume ohne Eviction), aber relevant fuer
             # Phase B, die auf phash/cluster_key aufbaut.
             if metrics is not None:
-                sharpness, exposure, phash = metrics
                 computed[photo.id] = metrics
                 score = existing_scores.get(photo.id)
                 if score is None:
@@ -1310,9 +1329,9 @@ async def run_project_scoring(
                 # Vollstaendig ueberschreiben statt nur einzelner Felder: alte
                 # duplicate_of/cluster_key/suggested_status-Werte aus einem frueheren Lauf duerfen
                 # nicht stehen bleiben, bevor der neue Cluster-Pass unten sie ggf. neu setzt.
-                score.sharpness = sharpness
-                score.exposure = exposure
-                score.phash = phash
+                score.sharpness = metrics.sharpness
+                score.exposure = metrics.exposure
+                score.phash = metrics.phash
                 score.duplicate_of = None
                 score.cluster_key = None
                 score.suggested_status = None
@@ -1334,16 +1353,31 @@ async def run_project_scoring(
             photo.id: (photo.taken_at, photo.gps_lat, photo.gps_lon) for photo in photos
         }
 
-        duplicate_of_map = assign_duplicate_clusters(
-            [
-                DuplicateCandidate(photo_id=photo_id, phash=phash, sharpness=sharpness)
-                for photo_id, (sharpness, exposure, phash) in computed.items()
-            ]
-        )
+        fingerprints: list[PhotoFingerprint] = []
+        for photo in photos:
+            metrics = computed.get(photo.id)
+            if metrics is None:
+                continue
+            # Die Fensterpruefung liest `taken_at` (kamerakorrigiert), die Herkunft entscheidet
+            # nur, ob eine Zeit als Messung gilt: exakte Gleichheit, keine Toleranz.
+            trusted = taken_at_is_trusted(photo.taken_at_original, photo.last_modified)
+            fingerprints.append(
+                PhotoFingerprint(
+                    photo_id=photo.id,
+                    phash=int(metrics.phash, 16),
+                    fine_phash=metrics.fine_phash,
+                    gray_grid=metrics.gray_grid,
+                    sharpness=metrics.sharpness,
+                    taken_at=photo.taken_at if trusted else None,
+                    taken_at_trusted=trusted,
+                )
+            )
+
+        duplicate_of_map = assign_duplicate_groups(fingerprints)
 
         rejected_ids = set(duplicate_of_map.keys())
-        for photo_id, (sharpness, _exposure, _phash) in computed.items():
-            if sharpness < SHARPNESS_REJECT_THRESHOLD:
+        for photo_id, metrics in computed.items():
+            if metrics.sharpness < SHARPNESS_REJECT_THRESHOLD:
                 rejected_ids.add(photo_id)
 
         remaining_ids = [photo_id for photo_id in computed if photo_id not in rejected_ids]
