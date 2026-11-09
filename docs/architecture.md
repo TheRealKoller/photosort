@@ -327,8 +327,11 @@ Verarbeitungs-Cache (Thumbnails).
   - `GET /projects/{id}/ausschuss` (`api/photos.py`; **seit Spec
     [`0525`](../specs/features/0525-ausschuss-ein-schritt.md)**) — der Bestand des
     Ausschuss-Schritts: „offener Vorschlag" **und** „Entscheidungszeile" zusammen (ausdrücklich
-    **nicht** `NOT ueberlebt`), je Eintrag der Grund (`duplicate`/`low_quality`), die
-    **gespeicherte** Entscheidung, der Gruppenanker und die Wirksamkeit des angebotenen
+    **nicht** `NOT ueberlebt`), je Eintrag der Grund
+    (`duplicate`/`low_quality`/`earlier_decision` — der dritte Grund genau dann, wenn
+    `suggested_status` und `duplicate_of` leer sind, aber eine Entscheidungszeile existiert), die
+    **gespeicherte** Entscheidung, deren **Wirksamkeit** (`decision_effective`: `null` ohne Zeile,
+    `false` fuer ein `keep` ohne Gruppe), den Gruppenanker und die Wirksamkeit des angebotenen
     „behalten" (`keep_possible` aus derselben Regel wie der Schreibweg — ausdrücklich nicht im
     Client aus dem Grund abgeleitet, weil beide bei einer überlebenden Entscheidungszeile
     auseinanderfallen), dazu `total` und die projektweite
@@ -1268,7 +1271,9 @@ Verarbeitungs-Cache (Thumbnails).
     DB-Feld).
   - `score_project`-Job (`worker.py::run_project_scoring`, analog zu `scan_project`), reine
     Heuristik-Funktionen in `scoring.py` (analog zu `thumbnails.py`:
-    Schärfe/Belichtung/dHash+Hamming-Distanz, Duplikat-/Zeitfenster-Clustering), operiert auf der
+    Schärfe/Belichtung, dreistufige Duplikaterkennung (grober 64-Bit-dHash als Kandidatenfilter,
+    feiner 256-Bit-dHash und 32×32-Graugitter für „praktisch identisch", Zeitfenster und
+    Stern ohne Brücken für „ähnlich"), Zeitfenster-Clustering), operiert auf der
     bereits vom Scan gecachten `display`-Variante — kein erneuter OpenCloud-Download für Phase A.
     Details siehe
     [`decisions/0006-local-scoring-datamodel.md`](../specs/decisions/0006-local-scoring-datamodel.md).
@@ -1857,7 +1862,13 @@ direkt vor dem jeweils bestehenden best-effort-`continue`.
   [`decisions/0006-local-scoring-datamodel.md`](../specs/decisions/0006-local-scoring-datamodel.md))*:
   1:1 zu `Photo` (`photo_id` als Primary Key). Ergebnis der lokalen Heuristiken aus Phase A:
   `sharpness`, `exposure`, `phash` (dHash, ohne neue Abhängigkeit direkt mit Pillow berechnet),
-  `duplicate_of` (selbstreferenzierender FK auf `photos.id`), `cluster_key`, `suggested_status`
+  `duplicate_of` (selbstreferenzierender FK auf `photos.id`; seit Spec
+  [`0637`](../specs/features/0637-duplikatgruppen-nur-echte-duplikate.md) aus der dreistufigen
+  Duplikaterkennung — grober 64-Bit-dHash als Kandidatenfilter, feiner 256-Bit-dHash und
+  32×32-Graugitter für „praktisch identisch" zeitunabhängig; „ähnlich" zusätzlich nur bei
+  vertrauter Aufnahmezeit beider Fotos und höchstens 15 Minuten Abstand; die Gruppe ist ein Stern
+  um den schärfsten freien Vertreter mit direkter Kante, nie eine Brücke über eine Kette —,
+  `cluster_key`, `suggested_status`
   (wiederverwendet `RatingStatus`, praktisch nur noch `REJECTED`), `computed_at`. Der geteilte
   Wertevorrat ist eine **Kopplung ohne Fremdschlüsselbeziehung**: Verliert `RatingStatus` einen
   Wert, muss diese Spalte in derselben Migration mitgeführt werden, sonst wirft eine Bestandszeile

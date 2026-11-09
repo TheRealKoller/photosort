@@ -326,5 +326,26 @@ als Produktentscheidung „Ableitung oder Merker“ vorgelegt, nicht still ausge
 
 ## Messergebnis
 
-Wird nach dem Kalibrierlauf ergänzt (Gruppenzahl und Gruppengrößen vorher/nachher, größte Gruppe,
-Stufenzahlen, Anteil unsicherer Zeiten, Stichprobe der echten Paare).
+Gemessen am 2026-11-09 gegen den privaten Bildbestand eines Projekts (3051 Fotos, alle mit
+lesbarer `display`-Variante, alle Aufnahmezeiten aus dem Bild); Werkzeug: `duplicate_probe.py`,
+alle drei Läufe über dieselbe Teilmenge.
+
+| Kennzahl | vorher (transitiv, dHash ≤ 6) | nachher (dreistufig) | Gegenlauf ohne Zeit-Herkunft |
+|---|---:|---:|---:|
+| Gruppen | 172 | 187 | 187 |
+| Verlierer | 297 | 286 | 286 |
+| größte Gruppe | 29 | 6 | 6 |
+| Größenverteilung | 2:121, 3:26, 4:11, 5:2, 6:11, 29:1 | 2:135, 3:30, 4:9, 5:1, 6:12 | 2:135, 3:30, 4:9, 5:1, 6:12 |
+| größte Zeitspanne einer Gruppe | 10722 min | 14 min (nur ähnliche Kanten) | 14 min |
+
+Stufe 1 fand 2174 Kandidatenpaare, davon 228 praktisch identisch und 256 ähnlich im Zeitfenster.
+Die Kettenauflösung ist der sichtbare Effekt: Die 29er-Gruppe verschwindet, die größte Gruppe
+hat sechs Mitglieder, und die Spanne fällt von rund 7,4 Tagen auf 14 Minuten.
+
+**Der Gegenlauf ist auf diesem Bestand ununterscheidbar**, weil kein Foto eine abgeleitete
+Aufnahmezeit trägt (0,0 % unsicher): Er zeigt damit, dass der Bestand den unsicheren Pfad nicht
+ausübt — nicht, dass der Pfad wirkungslos wäre. Die Startwerte der Konstanten bleiben unverändert.
+
+Die fünf größten neuen Gruppen (je sechs Fotos) wurden stichprobenartig geprüft: Vier liegen im
+selben Auslösemoment, die fünfte umfasst 13 Sekunden; keine überschreitet das Zeitfenster. Die
+frühere 29er-Gruppe ist vollständig zerlegt.
