@@ -399,6 +399,9 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
   const consentMissing = categoryMethod === 'cloud' && !cloudConsentGiven
   const target = projectQuery.data?.effective_selection_target ?? null
   const ready = query.isSuccess && projectQuery.isSuccess && !consentMissing && !loading
+  // Der Freigabe-Hinweis steht nur an der Stelle eines geladenen, leeren Entwurfs; sonst
+  // erschiene er neben Skeleton oder Fehler-Alert und laese sich als deren Ursache.
+  const showConsent = consentMissing && query.isSuccess && projectQuery.isSuccess && !loading
   const hasEyeStage = items.some((photo) => photo.album_suitability?.source === 'eye')
 
   function renderTile(photo: PhotoOut, tile: JustifiedTile) {
@@ -514,7 +517,7 @@ export function AlbumDraftPage({ createPositionObserver }: AlbumDraftPageProps =
         </Alert>
       )}
 
-      {consentMissing && (
+      {showConsent && (
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-text">{DRAFT_CLOUD_CONSENT_TEXT}</p>
           <Button asChild variant="secondary" size="sm">

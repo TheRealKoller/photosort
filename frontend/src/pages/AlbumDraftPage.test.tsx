@@ -1611,6 +1611,37 @@ describe('AlbumDraftPage: Leerzustände in Vorrang-Reihenfolge', () => {
     expect(screen.queryByText(DRAFT_CLOUD_CONSENT_TEXT)).toBeNull()
   })
 
+  it('3a. zeigt den Freigabe-Hinweis nicht, solange der Entwurf lädt', async () => {
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      projectOut({ cloud_vision_detection_enabled: false }),
+    )
+    vi.mocked(photosApi.getAlbumDraft).mockReturnValue(new Promise(() => {}))
+
+    renderPage(null, noObserver)
+    expect(await screen.findByRole('status', { name: 'Fotos werden geladen…' })).toBeInTheDocument()
+
+    // Die Projektdaten eintreffen lassen: sonst wäre die Abwesenheit des Hinweises nur die
+    // Abwesenheit der Projektdaten und bewiese nichts.
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(screen.getByRole('status', { name: 'Fotos werden geladen…' })).toBeInTheDocument()
+    expect(screen.queryByText(DRAFT_CLOUD_CONSENT_TEXT)).toBeNull()
+  })
+
+  it('3b. zeigt den Freigabe-Hinweis nicht, wenn die Entwurf-Abfrage scheitert', async () => {
+    vi.mocked(projectsApi.getProject).mockResolvedValue(
+      projectOut({ cloud_vision_detection_enabled: false }),
+    )
+    vi.mocked(photosApi.getAlbumDraft).mockRejectedValue(new ApiError(500, 'Entwurf weg.'))
+
+    renderPage(null, noObserver)
+
+    expect(await screen.findByText('Entwurf weg.')).toBeInTheDocument()
+    expect(screen.queryByText(DRAFT_CLOUD_CONSENT_TEXT)).toBeNull()
+  })
+
   it('4. nennt im Eye-Projekt den abgeschalteten Dienst statt eines leeren Entwurfs', async () => {
     vi.mocked(projectsApi.getProject).mockResolvedValue(eyeProject())
     vi.mocked(projectsApi.getModelChoice).mockResolvedValue(
