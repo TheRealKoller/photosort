@@ -11,10 +11,6 @@ const EYE_RESULT = {
 }
 
 describe('eyeVerdict', () => {
-  it('takes the level from Eye and claims no reason', () => {
-    expect(eyeVerdict(EYE_RESULT).albumSuitability).toEqual({ level: 4, reason: null })
-  })
-
   it('keeps the Eye labels in their order as display text', () => {
     expect(eyeVerdict(EYE_RESULT).fineLabels.map((label) => label.display_name)).toEqual([
       'beach',

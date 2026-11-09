@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
+from photosort.album_stage import load_album_levels
 from photosort.api.deps import get_current_user, get_session
 from photosort.api.persons import PhotoPersonOut, photo_person_outs
 from photosort.api.ratings import RatingWriteOut, write_own_rating
@@ -50,6 +51,7 @@ from photosort.events import (
 from photosort.feedback_log import load_frozen_context, record_exchange, record_motif_correction
 from photosort.final_selection import selection_state_of as _selection_state_of
 from photosort.models import (
+    CategoryMethod,
     CloudVisionPhase,
     CriterionScoringRun,
     CriterionSource,
@@ -59,7 +61,6 @@ from photosort.models import (
     FinalSelectionDecision,
     MotifAssessmentSource,
     Photo,
-    PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoDuplicateDecision,
     PhotoEyeResult,
@@ -372,9 +373,10 @@ class EyeResultOut(BaseModel):
     """Die Eye-Auswertung eines Fotos - gesetzt GENAU dann, wenn die Motiv-Kopfzeile
     `source="eye"` traegt (Spec 0609).
 
-    Nicht gesetzt allein deshalb, weil `photo_eye_results` existiert: Eye schreibt bei jedem Lauf
-    einen Schatten, auch neben einer gueltigen Cloud-Kopfzeile. Der Schatten ist Vergleichsmaterial
-    fuer das CLI, keine Anzeige - gezeigt wird er nur, wenn er auch gilt.
+    Nicht gesetzt allein deshalb, weil `photo_eye_results` existiert: Die Zeile steht auch neben
+    einer gueltigen Cloud-Kopfzeile. Dieses Feld zeigt sie nur, wenn sie auch gilt; die ZAHLENDE
+    Albumstufe steht unabhaengig davon in `album_suitability`, sobald der Lauf Eye als Quelle
+    eingefroren hat (ADR 0144).
 
     `fine_labels` sind die ROHEn Eye-Tags ab Konfidenz 0.5, beim Schreiben zeichensaniert und
     laengenbegrenzt (S12) - deshalb hier als reine Textknoten, ohne weitere Umformung. Die
@@ -390,22 +392,31 @@ class EyeResultOut(BaseModel):
 
 
 class AlbumSuitabilityOut(BaseModel):
-    """Die fuenfstufige Modellaussage ueber die ALBUMTAUGLICHKEIT eines Fotos samt Begruendung.
+    """Die ZAEHLENDE fuenfstufige Albumstufe eines Fotos samt Herkunft und - nur bei Cloud -
+    Begruendung.
 
-    `null` am Foto heisst "noch nicht bewertet" und ist damit von der niedrigsten Stufe
-    unterscheidbar - die Oberflaeche zeigt an dieser Stelle einen Satz statt einer Stufe.
+    `null` am Foto heisst "noch nicht eingestuft" und ist damit von der niedrigsten Stufe
+    unterscheidbar - die Oberflaeche zeigt an dieser Stelle einen Satz statt einer Stufe. Es gilt
+    auch fuer ein Foto, das nur eine Stufe des ANDEREN Verfahrens traegt: es gibt keinen Rueckfall.
 
-    `reason` ist FREIER MODELLTEXT. Er ist bereits am Parser saniert und gekappt
-    (`album_suitability.py`, Sicherheitsauflage S2) und wird hier unveraendert durchgereicht; eine
-    zweite Fassung derselben Regel gibt es nicht. In der Oberflaeche gehoert er ausschliesslich
-    als regulaerer Textknoten gerendert - nie ueber `dangerouslySetInnerHTML`, nie in ein `href`,
-    `src` oder `style` (S12).
+    SICHERHEIT (S2): `source` ist das am Lauf eingefrorene Verfahren (`album_level_source`) bzw.
+    ohne Lauf die Projekteinstellung - festgelegt allein vom Server, nie aus Query, Body,
+    Motiv-Kopfzeile oder `eye_result`. Der geschlossene `Literal` bricht die Antwortvalidierung bei
+    jedem anderen Wert.
+
+    `reason` ist FREIER MODELLTEXT und nur bei `source="cloud"` gesetzt; bei `eye` ist es
+    serverseitig `None` (S4) - Eye liefert keinen Text. Der Cloud-Text ist bereits am Parser
+    saniert und gekappt (`album_suitability.py`, Sicherheitsauflage S2) und wird hier unveraendert
+    durchgereicht; eine zweite Fassung derselben Regel gibt es nicht. In der Oberflaeche gehoert er
+    ausschliesslich als regulaerer Textknoten gerendert - nie ueber `dangerouslySetInnerHTML`, nie
+    in ein `href`, `src` oder `style` (S12).
 
     Die Aussage ist erkennbar die des MODELLS, nicht die von PhotoSort: sie stammt aus einem Bild,
     das Text enthalten kann."""
 
     level: int
     reason: str | None
+    source: Literal["cloud", "eye"]
 
 
 class MotifStrengthOut(BaseModel):
@@ -1002,14 +1013,25 @@ async def _event_and_location_by_photo_id(
     }
 
 
-def _album_suitability_out(photo: Photo) -> AlbumSuitabilityOut | None:
-    """Die Modellaussage UNVERAENDERT aus der Zeile - kein erneutes Sanieren, kein erneutes
-    Kappen, keine Umformulierung. Beides geschah EINMAL am Parser; eine zweite Fassung hier waere
-    die zweite Pflegestelle, die auseinanderlaeuft."""
+def _album_suitability_out(photo: Photo, source: CategoryMethod) -> AlbumSuitabilityOut | None:
+    """Die zaehlende Stufe aus der Tabelle des Verfahrens `source` - unabhaengig von der Herkunft
+    der Motiv-Kopfzeile. Fehlt die Zeile dieses Verfahrens, ist das Ergebnis `None`, auch wenn das
+    andere Verfahren eine Stufe hat (kein Rueckfall, ADR 0144).
+
+    Der Cloud-Text wird UNVERAENDERT aus der Zeile uebernommen - kein erneutes Sanieren, kein
+    erneutes Kappen. Beides geschah EINMAL am Parser; eine zweite Fassung hier waere die zweite
+    Pflegestelle, die auseinanderlaeuft."""
+    if source is CategoryMethod.EYE:
+        result = photo.eye_result
+        if result is None:
+            return None
+        # S4: Eye hat keinen Modelltext; eine daneben liegende Cloud-Begruendung gehoert nicht zu
+        # dieser Stufe und bleibt hier aussen vor.
+        return AlbumSuitabilityOut(level=result.album_level, reason=None, source="eye")
     suitability = photo.album_suitability
     if suitability is None:
         return None
-    return AlbumSuitabilityOut(level=suitability.level, reason=suitability.reason)
+    return AlbumSuitabilityOut(level=suitability.level, reason=suitability.reason, source="cloud")
 
 
 def _eye_result_out(photo: Photo) -> EyeResultOut | None:
@@ -1140,6 +1162,7 @@ def _to_photo_out(
     decisions: Mapping[int, bool],
     user_count: int,
     persons: list[PhotoPersonOut],
+    album_level_source: CategoryMethod,
 ) -> PhotoOut:
     """Baut die Antwortdarstellung EINES Fotos.
 
@@ -1182,6 +1205,11 @@ def _to_photo_out(
     Menge, die als Album gilt und die der Export nimmt; der Fehler zeigte sich erst an einem
     leeren Album, nicht an der Stelle, an der er entsteht. `mypy --strict` ist die einzige
     Pruefung, die ihn vor der Laufzeit faengt.
+
+    `album_level_source` ist ebenfalls PFLICHTIGES Schluesselwort (S9) und kommt aus
+    `_album_level_source`, EINMAL je Anfrage berechnet. Er kommt nie aus einem Query- oder
+    Body-Parameter und nie aus einem anderen Feld derselben Antwort (S2): Ein vergessener Aufrufer
+    scheiterte an `mypy --strict`, statt still die Tabelle des anderen Verfahrens zu lesen.
 
     Die drei Felder sind PROJEKTAUSSAGEN und tragen die Cache-Auflage ausdruecklich NICHT - genau
     wie `ratings[]` und `RankingOut.proposed`."""
@@ -1260,7 +1288,7 @@ def _to_photo_out(
         event=place.event,
         motif_assessment=_motif_assessment_out(photo),
         motifs=_motifs_out(photo, motifs),
-        album_suitability=_album_suitability_out(photo),
+        album_suitability=_album_suitability_out(photo, album_level_source),
         eye_result=_eye_result_out(photo),
         final_selection_decision=decision,
         in_final_selection=state.included,
@@ -1283,6 +1311,30 @@ async def _latest_successful_criterion_scoring_run_id(
             .limit(1)
         )
     ).scalar_one_or_none()
+
+
+async def _album_level_source(session: AsyncSession, project: Project) -> CategoryMethod:
+    """Das Verfahren, dessen Stufe in DIESEM Projekt zaehlt: die am juengsten erfolgreichen Lauf
+    eingefrorene Quelle, ohne erfolgreichen Lauf die Projekteinstellung (ADR 0144).
+
+    SICHERHEIT (S3): Gelesen wird ausschliesslich der juengste erfolgreiche Lauf DIESES Projekts
+    (`project_id`), nie der global juengste - sonst zeigte ein Projekt die Herkunft eines fremden
+    Laufs. Der Livewert der Einstellung gilt nur, solange es keinen Lauf gibt: sonst wirkte ein
+    Wechsel sofort, und der bestehende Entwurf wechselte still seine Grundlage.
+
+    EINMAL je Anfrage aufgerufen; der Lauf-Id-Lesepfad daneben bleibt unveraendert."""
+    source = (
+        await session.execute(
+            select(CriterionScoringRun.album_level_source)
+            .where(
+                CriterionScoringRun.project_id == project.id,
+                CriterionScoringRun.status == ScanStatus.SUCCESS,
+            )
+            .order_by(CriterionScoringRun.started_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return project.category_method if source is None else source
 
 
 @dataclass(frozen=True)
@@ -1557,6 +1609,7 @@ async def album_draft(
     Ohne erfolgreichen Lauf sind `events` und `items` leer, auch wenn der Nutzer bereits Fotos
     aufgenommen hat - es gibt dann weder Vorschlag noch Events, in die einzuordnen waere."""
     project = await _get_project_or_404(project_id, session)
+    album_level_source = await _album_level_source(session, project)
 
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
@@ -1598,6 +1651,7 @@ async def album_draft(
             decisions=decisions,
             user_count=user_count,
             persons=photo_person_outs(persons_by_id.get(photo_id, [])),
+            album_level_source=album_level_source,
         )
         for photo_id in ids
     ]
@@ -1665,6 +1719,7 @@ async def list_photos(
     current_user: User = Depends(get_current_user),
 ) -> PhotoListOut:
     project = await _get_project_or_404(project_id, session)
+    album_level_source = await _album_level_source(session, project)
 
     ids, total = await _filtered_photo_ids(
         session,
@@ -1709,6 +1764,7 @@ async def list_photos(
             decisions=decisions,
             user_count=user_count,
             persons=photo_person_outs(persons_by_id.get(photo_id, [])),
+            album_level_source=album_level_source,
         )
         for photo_id in ids
     ]
@@ -1763,6 +1819,7 @@ async def album_selection(
     beide auseinander, behauptete die Ansicht Einigkeit ueber zwei Teilnehmer, waehrend die Regel
     ueber drei rechnet - kein Feld der Antwort saehe dabei widerspruechlich aus."""
     project = await _get_project_or_404(project_id, session)
+    album_level_source = await _album_level_source(session, project)
 
     # (1) Teilnehmer UND Nenner aus EINER Leseoperation (S8).
     participants = await _participants(session)
@@ -1870,6 +1927,7 @@ async def album_selection(
             decisions=decisions,
             user_count=user_count,
             persons=photo_person_outs(persons_by_id.get(photo_id, [])),
+            album_level_source=album_level_source,
         )
         for photo_id in ids
     ]
@@ -1977,6 +2035,7 @@ async def build_duplicate_group_out(
     persons_by_id = await load_effective_persons(session, ids)
     final_decisions = await _final_selection_decisions(session, ids)
     user_count = await _user_count(session)
+    album_level_source = await _album_level_source(session, project)
     return DuplicateGroupOut(
         items=[
             DuplicateGroupPhotoOut(
@@ -1993,6 +2052,7 @@ async def build_duplicate_group_out(
                     decisions=final_decisions,
                     user_count=user_count,
                     persons=photo_person_outs(persons_by_id.get(member_id, [])),
+                    album_level_source=album_level_source,
                 ),
                 # BEIDE WERTE KOMMEN AUS `duplicates.py`, nie als ausgeschriebene Bedingung hier
                 # (Auflage S2): Sie ziehen dasselbe Praedikat, das bestimmt, welche Bilder den
@@ -2264,6 +2324,7 @@ async def _ausschuss_photo_outs(
     persons_by_id = await load_effective_persons(session, ids)
     decisions = await _final_selection_decisions(session, ids)
     user_count = await _user_count(session)
+    album_level_source = await _album_level_source(session, project)
     return photos_by_id, {
         photo_id: _to_photo_out(
             photos_by_id[photo_id],
@@ -2278,6 +2339,7 @@ async def _ausschuss_photo_outs(
             decisions=decisions,
             user_count=user_count,
             persons=photo_person_outs(persons_by_id.get(photo_id, [])),
+            album_level_source=album_level_source,
         )
         for photo_id in ids
     }
@@ -2543,6 +2605,7 @@ async def draft_alternatives(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_SERIES_WITHOUT_REFERENCE
         )
     project = await _get_project_or_404(project_id, session)
+    album_level_source = await _album_level_source(session, project)
 
     latest_run_id = await _latest_successful_criterion_scoring_run_id(session, project_id)
     if latest_run_id is None:
@@ -2668,6 +2731,7 @@ async def draft_alternatives(
             decisions=decisions,
             user_count=user_count,
             persons=photo_person_outs(persons_by_id.get(alternative_id, [])),
+            album_level_source=album_level_source,
         )
         # Eigener Name, nicht `photo_id`: der Query-Parameter gleichen Namens ist das BEZUGSBILD
         # und wird oben gebraucht; eine Ueberdeckung hier waere an keiner Stelle sichtbar.
@@ -2734,7 +2798,10 @@ _EXCHANGE_REFUSAL = (
 
 
 async def _exchange_sides(
-    session: AsyncSession, criterion_scoring_run_id: int, photo_ids: tuple[int, int]
+    session: AsyncSession,
+    criterion_scoring_run_id: int,
+    album_level_source: CategoryMethod,
+    photo_ids: tuple[int, int],
 ) -> dict[int, _ExchangeSide]:
     """Loest beide Foto-Ids UEBER EINE RANGZEILE des uebergebenen Laufs auf.
 
@@ -2749,31 +2816,30 @@ async def _exchange_sides(
     Alternative ist die nachgelagerte Pruefung auf `Photo.project_id`; sie ist keine zweite
     Verteidigungslinie, sondern der Ersatz der richtigen Bedingung durch eine schwaechere.
 
-    Die Modellstufe kommt ueber einen OUTER JOIN mit: Ein Foto ohne Modellbewertung haelt den
-    Austausch nicht auf (L4), sein Paar ist in der Diagnose spaeter nur `unbestimmt`."""
+    Die Modellstufe kommt aus dem EINEN Lesepunkt (`album_stage.load_album_levels`) mit dem am Lauf
+    eingefrorenen Verfahren - und ausschliesslich fuer die Foto-Ids, die eine Rangzeile gestellt
+    haben (S3): `load_album_levels` loest nichts auf, die Projektbindung traegt das Laufpraedikat.
+    Ein Foto ohne Stufe dieses Verfahrens haelt den Austausch nicht auf (L4), sein Paar ist in der
+    Diagnose spaeter nur `unbestimmt`."""
     rows = (
         await session.execute(
-            select(
-                PhotoRanking.photo_id,
-                PhotoRanking.event_id,
-                PhotoAlbumSuitability.level,
-                PhotoRanking.rank_score,
-            )
-            .outerjoin(
-                PhotoAlbumSuitability,
-                PhotoAlbumSuitability.photo_id == PhotoRanking.photo_id,
-            )
-            .where(
+            select(PhotoRanking.photo_id, PhotoRanking.event_id, PhotoRanking.rank_score).where(
                 PhotoRanking.criterion_scoring_run_id == criterion_scoring_run_id,
                 PhotoRanking.photo_id.in_(photo_ids),
             )
         )
     ).all()
+    levels = await load_album_levels(
+        session, album_level_source, [photo_id for photo_id, _event_id, _score in rows]
+    )
     return {
         photo_id: _ExchangeSide(
-            photo_id=photo_id, event_id=event_id, level=level, quality=rank_score
+            photo_id=photo_id,
+            event_id=event_id,
+            level=levels.get(photo_id),
+            quality=rank_score,
         )
-        for photo_id, event_id, level, rank_score in rows
+        for photo_id, event_id, rank_score in rows
     }
 
 
@@ -2811,7 +2877,7 @@ async def exchange_draft_photo(
 
     Die Antwort traegt BEIDE geschriebenen Zeilenzustaende, damit die Oberflaeche fortschreibt
     statt neu zu laden."""
-    await _get_project_or_404(project_id, session)
+    project = await _get_project_or_404(project_id, session)
 
     if payload.photo_id == payload.replaced_photo_id:
         raise HTTPException(
@@ -2826,7 +2892,14 @@ async def exchange_draft_photo(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
         )
 
-    sides = await _exchange_sides(session, run_id, (payload.photo_id, payload.replaced_photo_id))
+    # Der Lauf existiert hier bereits - die Quelle stammt damit aus ihm selbst (S2). Ein Foto, das
+    # nur die Stufe des anderen Verfahrens traegt, bleibt "unbestimmt".
+    sides = await _exchange_sides(
+        session,
+        run_id,
+        await _album_level_source(session, project),
+        (payload.photo_id, payload.replaced_photo_id),
+    )
     taken = sides.get(payload.photo_id)
     struck = sides.get(payload.replaced_photo_id)
     # EINE Bedingung fuer alle drei Ablehnungsgruende: unbekannt, projektfremd, verschiedene
@@ -2939,7 +3012,7 @@ async def undo_draft_exchange(
     unberuehrt, die Zeileninvariante setzt die Schreibstelle durch -, dazu genau EIN
     `record_exchange` in Gegenrichtung (ADR 0100 Punkt 3: die Umkehr ist ein weiterer Tausch) und
     genau EIN Commit."""
-    await _get_project_or_404(project_id, session)
+    project = await _get_project_or_404(project_id, session)
 
     if payload.photo_id == payload.replaced_photo_id:
         raise HTTPException(
@@ -2950,7 +3023,12 @@ async def undo_draft_exchange(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_EXCHANGE_REFUSAL
         )
-    sides = await _exchange_sides(session, run_id, (payload.photo_id, payload.replaced_photo_id))
+    sides = await _exchange_sides(
+        session,
+        run_id,
+        await _album_level_source(session, project),
+        (payload.photo_id, payload.replaced_photo_id),
+    )
     taken = sides.get(payload.photo_id)
     struck = sides.get(payload.replaced_photo_id)
     if taken is None or struck is None or taken.event_id != struck.event_id:

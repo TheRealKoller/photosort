@@ -50,12 +50,15 @@ function OverviewEntry({
   item,
   number,
   projectId,
+  cloudStep,
   onOpenEntry,
 }: {
   item: WorkflowOverviewEntry
   /** Die Schrittnummer - nur die vier Schritte tragen eine Marke. */
   number: number | null
   projectId: number
+  /** Klassifiziert das Projekt per Cloud: nur dann gibt es eine Freigabe zu erteilen. */
+  cloudStep: boolean
   onOpenEntry: () => void
 }) {
   const label = overviewEntryLabel(item.id)
@@ -95,15 +98,18 @@ function OverviewEntry({
         {text.prerequisite !== null && <Pair term="Vorher">{text.prerequisite.text}</Pair>}
       </dl>
 
-      {item.id === 'album' && <p className="text-sm text-text">{DRAFT_CLOUD_CONSENT_TEXT}</p>}
+      {item.id === 'album' && cloudStep && (
+        <p className="text-sm text-text">{DRAFT_CLOUD_CONSENT_TEXT}</p>
+      )}
 
       {isBlocked && <p className="text-sm text-text">{item.blockedReason}</p>}
 
       {/* Zeilenabstand 16 px: Brechen die beiden Schaltflaechen des Album-Entwurfs bei 360 px um,
           ueberlappten sich ihre aufgespannten 44-px-Trefferflaechen bei 12 px. Der Weg zu den
-          Einstellungen steht am Album-Entwurf in JEDEM Zustand - die Freigabe ist immer
-          erteilbar, auch solange der Entwurf selbst noch gesperrt ist. */}
-      {(!isBlocked || item.id === 'album') && (
+          Einstellungen steht am Album-Entwurf eines Cloud-Projekts in JEDEM Zustand - die Freigabe
+          ist immer erteilbar, auch solange der Entwurf selbst noch gesperrt ist. Bleibt keine
+          Schaltflaeche uebrig, faellt die Zeile ganz weg statt leer zu stehen. */}
+      {(!isBlocked || (item.id === 'album' && cloudStep)) && (
         <div className="flex flex-wrap gap-x-3 gap-y-4">
           {!isBlocked && (
             <Button asChild size="sm" variant={item.state === 'aktuell' ? 'default' : 'secondary'}>
@@ -112,7 +118,7 @@ function OverviewEntry({
               </Link>
             </Button>
           )}
-          {item.id === 'album' && (
+          {item.id === 'album' && cloudStep && (
             <Button asChild size="sm" variant="secondary">
               <Link to={`/projects/${projectId}/settings`} onClick={onOpenEntry}>
                 {SETTINGS_LINK_LABEL}
@@ -164,6 +170,7 @@ export function WorkflowOverviewDialog({
             item={item}
             number={index + 1}
             projectId={project.id}
+            cloudStep={project.model_choice.category_method === 'cloud'}
             onOpenEntry={onOpenEntry}
           />
         ))}
@@ -178,6 +185,7 @@ export function WorkflowOverviewDialog({
             item={item}
             number={null}
             projectId={project.id}
+            cloudStep={project.model_choice.category_method === 'cloud'}
             onOpenEntry={onOpenEntry}
           />
         ))}

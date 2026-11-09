@@ -21,6 +21,7 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCriterionScore,
     PhotoDuplicateDecision,
+    PhotoEyeResult,
     PhotoMotifAssessment,
     PhotoScore,
     Project,
@@ -922,6 +923,39 @@ class TestTheEstimatePerMode:
         assert body["landmark"] is None
         assert body["candidate_count"] == 1
         assert body["estimated_cost_usd"] == 0.0
+
+    async def test_the_eye_estimate_counts_only_the_gap_of_the_eye_phase(
+        self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+    ) -> None:
+        """Mengengleich zur Nachhol-Menge des Laufs: Ein Foto mit Eye-Zeile wird nicht mehr
+        geschickt, ein aussortiertes nie. Sonst nennte die Schaetzung Kosten fuer Fotos, die der
+        Lauf gar nicht mehr anfasst (Spec 0621)."""
+        project_id = await _create_project(authenticated_api_client)
+        done = await _add_photo_candidate(db_session, project_id, "bewertet.jpg")
+        await _add_photo_candidate(db_session, project_id, "offen.jpg")
+        await _add_photo_candidate(
+            db_session, project_id, "raus.jpg", decision=DuplicateDecision.DISCARD
+        )
+        db_session.add(
+            PhotoEyeResult(
+                photo_id=done.id,
+                excluded_document=False,
+                album_level=3,
+                model_revision="v1.0.0",
+                mapping_version="eye-4.2.3/v3",
+                computed_at=datetime(2026, 9, 14, 9, 0, 0),
+            )
+        )
+        await db_session.commit()
+        await _set_model_choice(db_session, project_id, method=CategoryMethod.EYE)
+
+        body = (
+            await authenticated_api_client.get(f"/projects/{project_id}/classify/estimate")
+        ).json()
+
+        assert body["categorization"]["kind"] == "eye"
+        assert body["categorization"]["candidate_count"] == 1
+        assert body["candidate_count"] == 1
 
     async def test_an_eye_choice_with_consent_reports_the_landmark_part_too(
         self, authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession

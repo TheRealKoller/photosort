@@ -1634,3 +1634,26 @@ def test_the_personen_downgrade_renders_for_postgres_too() -> None:
         assert f"DROP TABLE {table}" in rendered
     assert "DROP TABLE PERSONS" in rendered
     assert "DROP COLUMN PERSONS_PHOTOS_TOTAL" in rendered
+
+
+# --- Migration `6299223059c8`: Albumstufen-Quelle am Lauf --------------------------------
+
+_ALBUM_LEVEL_SOURCE_REVISION = "6299223059c8_album_level_source.py"
+
+
+def test_the_album_level_source_renders_as_not_null_varchar_with_a_cloud_default() -> None:
+    """Ohne `native_enum=False` im Modell bzw. `sa.String` hier legte Postgres einen echten
+    Enum-Typ an; der Default muss ein Textliteral sein, sonst bricht `alembic upgrade head`."""
+    statement = _add_column_statement(
+        _render_postgres_ddl(_ALBUM_LEVEL_SOURCE_REVISION), "album_level_source"
+    )
+
+    assert "VARCHAR(20) DEFAULT 'cloud' NOT NULL" in statement
+
+
+def test_the_album_level_source_downgrade_renders_for_postgres_too() -> None:
+    rendered = " ".join(
+        _render_postgres_ddl(_ALBUM_LEVEL_SOURCE_REVISION, direction="downgrade")
+    ).upper()
+
+    assert "DROP COLUMN ALBUM_LEVEL_SOURCE" in rendered

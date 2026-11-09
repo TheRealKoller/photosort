@@ -20,3 +20,12 @@ export const DRAFT_CLOUD_CONSENT_TEXT =
 
 /** Die Schaltfläche zur Cloud-Freigabe neben `DRAFT_CLOUD_CONSENT_TEXT`. */
 export const SETTINGS_LINK_LABEL = 'Zu den Projekteinstellungen'
+
+/**
+ * Der Leerzustand eines Eye-Projekts, in dem der Eye-Dienst abgeschaltet ist: ohne Eye-Lauf
+ * entsteht kein Entwurf, und der Weg führt zu den Einstellungen. Ein eigener Satz statt des
+ * allgemeinen Leertexts, weil hier nicht ein Lauf fehlt, sondern die Voraussetzung dafür.
+ */
+export const DRAFT_EYE_DISABLED_TEXT =
+  'Eye ist in dieser Installation abgeschaltet — ohne Eye-Lauf entsteht kein Album-Entwurf. Die ' +
+  'Kategorisierung stellst du in den Projekteinstellungen um.'

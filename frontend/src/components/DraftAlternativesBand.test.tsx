@@ -659,6 +659,20 @@ describe('DraftAlternativesBand: die Kandidaten als Kuratierungskachel', () => {
 
     expect(strip).toHaveAttribute('data-visible', 'true')
   })
+
+  it('carries the origin line for an eye candidate, without a reason line', async () => {
+    vi.mocked(photosApi.listDraftAlternatives).mockResolvedValue({
+      ...answer([2]),
+      items: [photo(2, { album_suitability: { level: 4, reason: null, source: 'eye' } })],
+    })
+
+    renderBand()
+
+    const exchange = await screen.findByRole('button', { name: 'Tauschen: dir/2.jpg' })
+    const strip = exchange.closest('li')!.querySelector('[data-tile-details]')!
+    expect(strip.querySelector('[data-album-suitability-origin]')).not.toBeNull()
+    expect(strip.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
+  })
 })
 
 describe('DraftAddPanel', () => {

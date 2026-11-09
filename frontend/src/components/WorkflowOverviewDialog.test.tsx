@@ -131,6 +131,35 @@ describe('WorkflowOverviewDialog: Inhalt', () => {
     expect(within(album).queryByRole('link', { name: /öffnen$/ })).toBeNull()
   })
 
+  /** Dasselbe Projekt, aber Eye klassifiziert - dann führt kein Weg zu einer Cloud-Freigabe. */
+  const eyeReachable: ProjectOut = {
+    ...ALL_REACHABLE,
+    model_choice: { ...ALL_REACHABLE.model_choice, category_method: 'eye' },
+  }
+
+  it('lässt im Eye-Projekt Freigabe-Hinweis und Einstellungslink weg', () => {
+    renderDialog(eyeReachable)
+
+    const album = entry('album')
+    expect(within(album).queryByText(DRAFT_CLOUD_CONSENT_TEXT)).toBeNull()
+    expect(within(album).queryByRole('link', { name: SETTINGS_LINK_LABEL })).toBeNull()
+    const links = within(album).getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAccessibleName(/öffnen$/)
+  })
+
+  it('lässt im gesperrten Eye-Projekt auch keine leere Schaltflächenzeile stehen', () => {
+    renderDialog({
+      ...projectFixture({ id: 4 }),
+      model_choice: { ...eyeReachable.model_choice },
+    })
+
+    const album = entry('album')
+    expect(within(album).getByText('gesperrt')).toBeInTheDocument()
+    expect(within(album).queryAllByRole('link')).toHaveLength(0)
+    expect(album.querySelector('[class*="gap-y-4"]')).toBeNull()
+  })
+
   it('kündigt nichts über aria-live an - jeder Poll würde sonst vorgelesen', () => {
     renderDialog(ALL_REACHABLE)
 

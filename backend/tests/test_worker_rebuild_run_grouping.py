@@ -23,10 +23,12 @@ from photosort import events as events_module
 from photosort import worker
 from photosort.cameras import shifted
 from photosort.models import (
+    CategoryMethod,
     CriterionScoringRun,
     Event,
     Photo,
     PhotoAlbumSuitability,
+    PhotoEyeResult,
     PhotoRanking,
     PhotoScore,
     PlaceLookup,
@@ -621,3 +623,206 @@ class TestTheRebuildLoadsNoEmbeddingModel:
         assert "build_embedder" not in mentioned
         # Gegenprobe: ohne sie bestuende der Fall auch dann, wenn der Walker nichts findet.
         assert "_build_grouping_and_rankings" in mentioned
+
+
+async def _run_with_levels(
+    session: AsyncSession,
+    cache_dir: Path,
+    *,
+    name: str,
+    source: CategoryMethod,
+    levels: dict[str, int],
+) -> tuple[Project, CriterionScoringRun, dict[str, Photo]]:
+    """Zwei Fotos, EIN Kriterien-Lauf, und je Pfad eine Stufe: `levels` bildet Dateinamen auf die
+    Stufe ab, die in der Tabelle des Verfahrens `source` liegt. Die andere Tabelle bleibt leer -
+    so kann nur das eingefrorene Verfahren die Stufe liefern."""
+    project = await _make_project(session, name)
+    photos = {
+        path: await _add_photo(
+            session, project, path, _BASE + timedelta(minutes=5 * index), cache_dir=cache_dir
+        )
+        for index, path in enumerate(levels)
+    }
+    for path, level in levels.items():
+        photo_id = photos[path].id
+        if source is CategoryMethod.EYE:
+            session.add(
+                PhotoEyeResult(
+                    photo_id=photo_id,
+                    excluded_document=False,
+                    album_level=level,
+                    model_revision="v1.0.0",
+                    mapping_version="eye-4.2.3/v3",
+                    computed_at=datetime(2026, 9, 14, 9, 0, 0),
+                )
+            )
+        else:
+            session.add(
+                PhotoAlbumSuitability(
+                    photo_id=photo_id,
+                    level=level,
+                    reason="Modellbegruendung",
+                    provider="anthropic",
+                    computed_at=datetime(2026, 9, 13, 10, 0, 0),
+                )
+            )
+    await session.commit()
+    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+    session.add(scoring_run)
+    await session.commit()
+    await session.refresh(scoring_run)
+    run = CriterionScoringRun(
+        project_id=project.id,
+        scoring_run_id=scoring_run.id,
+        status=ScanStatus.SUCCESS,
+        album_level_source=source,
+    )
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    await run_criterion_scoring(
+        session,
+        project,
+        scoring_run_id=scoring_run.id,
+        cache_dir=cache_dir,
+        build_detector=_no_model,
+        build_animal_detector=_no_model,
+        build_classifier=_no_model,
+        build_aesthetics=_no_aesthetics,
+        build_landmarker=_no_landmarker,
+        run=run,
+    )
+    return project, run, photos
+
+
+async def _scores_by_photo(session: AsyncSession, run_id: int) -> dict[int, float | None]:
+    rows = (
+        await session.execute(
+            select(PhotoRanking.photo_id, PhotoRanking.rank_score).where(
+                PhotoRanking.criterion_scoring_run_id == run_id
+            )
+        )
+    ).all()
+    return {photo_id: score for photo_id, score in rows}
+
+
+async def test_a_switch_without_a_new_run_leaves_the_rank_scores_alone(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """ADR 0144: Der Neuaufbau rechnet mit der QUELLE DES LAUFS. Die Eye-Stufen widersprechen den
+    Cloud-Stufen hier absichtlich - ein Lesepfad, der die Projekteinstellung nimmt, aenderte die
+    Rangfolge nach dem Umschalten."""
+    project, run, photos = await _run_with_levels(
+        db_session,
+        tmp_path,
+        name="Umschalten",
+        source=CategoryMethod.CLOUD,
+        levels={"a.jpg": 5, "b.jpg": 1},
+    )
+    before = await _scores_by_photo(db_session, run.id)
+    for path, level in (("a.jpg", 1), ("b.jpg", 5)):
+        db_session.add(
+            PhotoEyeResult(
+                photo_id=photos[path].id,
+                excluded_document=False,
+                album_level=level,
+                model_revision="v1.0.0",
+                mapping_version="eye-4.2.3/v3",
+                computed_at=datetime(2026, 9, 14, 9, 0, 0),
+            )
+        )
+    project.category_method = CategoryMethod.EYE
+    await db_session.commit()
+
+    await rebuild_run_grouping(db_session, project.id)
+
+    assert await _scores_by_photo(db_session, run.id) == before
+
+
+async def test_the_same_levels_in_the_eye_table_give_the_same_rank_scores(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die Zwillingsprobe: dieselben Zahlen, einmal als Cloud- und einmal als Eye-Stufe eines
+    Laufs, der Eye als Quelle traegt. Gleiche Rangfolge heisst, dass die Stufe aus der richtigen
+    Tabelle kommt - und ungleiche Werte, dass sie ueberhaupt ankommt."""
+    _, cloud_run, cloud_photos = await _run_with_levels(
+        db_session,
+        tmp_path,
+        name="Zwillings-Cloud",
+        source=CategoryMethod.CLOUD,
+        levels={"a.jpg": 5, "b.jpg": 1},
+    )
+    _, eye_run, eye_photos = await _run_with_levels(
+        db_session,
+        tmp_path,
+        name="Zwillings-Eye",
+        source=CategoryMethod.EYE,
+        levels={"a.jpg": 5, "b.jpg": 1},
+    )
+
+    cloud = await _scores_by_photo(db_session, cloud_run.id)
+    eye = await _scores_by_photo(db_session, eye_run.id)
+
+    # Vorbedingung: Die Stufe kommt an - ohne sie waeren beide Werte `NULL` oder gleich.
+    assert cloud[cloud_photos["a.jpg"].id] > cloud[cloud_photos["b.jpg"].id]
+    # Die Aussage: dieselben Zahlen in der jeweils anderen Tabelle ordnen gleich.
+    assert eye[eye_photos["a.jpg"].id] > eye[eye_photos["b.jpg"].id]
+    assert cloud[cloud_photos["a.jpg"].id] == pytest.approx(eye[eye_photos["a.jpg"].id])
+    assert cloud[cloud_photos["b.jpg"].id] == pytest.approx(eye[eye_photos["b.jpg"].id])
+
+
+class TestTheRebuildNeverCallsTheEyeService:
+    """Spec 0621 S5 (ADR 0144): Der Neuaufbau laeuft IN EINEM REQUEST (Versatz-Endpunkt). Er
+    liest die Eye-Stufe ausschliesslich aus `photo_eye_results`; ein Sidecar-Aufruf entsteht nur
+    in `_run_eye_phase` eines bewusst gestarteten Laufs. Ein gestohlenes JWT darf damit keine
+    Modellarbeit und keinen Netzverkehr ausloesen."""
+
+    async def test_the_rebuild_with_an_eye_source_never_builds_the_eye_client(
+        self, db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Der Verhaltensnachweis: der Bau des Clients bringt den Test zum Scheitern, statt nur
+        einen Zaehler stehen zu lassen."""
+        project, run, _photos = await _run_with_levels(
+            db_session,
+            tmp_path,
+            name="Eye-Quelle",
+            source=CategoryMethod.EYE,
+            levels={"a.jpg": 5, "b.jpg": 1},
+        )
+        before = await _scores_by_photo(db_session, run.id)
+
+        def _explode() -> NoReturn:
+            pytest.fail("rebuild_run_grouping darf keinen Eye-Client bauen (S5)")
+
+        monkeypatch.setattr(worker, "build_eye_client", _explode)
+
+        await rebuild_run_grouping(db_session, project.id)
+
+        # Antileerlauf: der Neuaufbau ist gelaufen, nicht nur nicht geworfen.
+        assert await _scores_by_photo(db_session, run.id) == before
+
+    def test_the_rebuild_mentions_no_eye_phase_at_all(self) -> None:
+        """Dazu ein struktureller Waechter: Der Verhaltensnachweis oben haengt daran, dass ein Bau
+        ueber den Modulnamen laeuft. Ein Weg ueber einen Default-Parameter (`_run_eye_phase`
+        bindet `build_eye_client` beim Import) roetete ihn nicht."""
+        path = module_file("photosort.worker")
+        assert path is not None
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        functions = {
+            node.name: node for node in ast.walk(tree) if isinstance(node, ast.AsyncFunctionDef)
+        }
+        mentioned = {
+            node.id
+            for node in ast.walk(functions["rebuild_run_grouping"])
+            if isinstance(node, ast.Name)
+        }
+
+        assert "build_eye_client" not in mentioned
+        assert "_run_eye_phase" not in mentioned
+        # Gegenprobe: ohne sie bestuende der Fall auch dann, wenn der Walker nichts findet.
+        assert "_build_grouping_and_rankings" in mentioned
+        assert "_run_eye_phase" in {
+            node.id
+            for node in ast.walk(functions["run_classification"])
+            if isinstance(node, ast.Name)
+        }

@@ -1,7 +1,11 @@
 import { render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-
 import type { FineLabelOut, RankingOut } from '../api/types'
+import {
+  ALBUM_SUITABILITY_EYE_ORIGIN_TEXT,
+  ALBUM_SUITABILITY_NOT_RATED_TEXT,
+  ALBUM_SUITABILITY_ORIGIN_LABEL,
+} from '../utils/albumSuitability'
 import { PhotoVerdict } from './PhotoVerdict'
 
 function ranking(overrides: Partial<RankingOut> = {}): RankingOut {
@@ -36,7 +40,7 @@ describe('PhotoVerdict: der Regelfall', () => {
   it('zeigt Stufe, Begründung, Rang und Feinlabel ohne jede Bedienhandlung', () => {
     render(
       <PhotoVerdict
-        albumSuitability={{ level: 4, reason: 'Alle schauen in die Kamera.' }}
+        albumSuitability={{ level: 4, reason: 'Alle schauen in die Kamera.', source: 'cloud' }}
         ranking={ranking()}
         fineLabels={[fineLabel()]}
       />,
@@ -56,7 +60,7 @@ describe('PhotoVerdict: der Regelfall', () => {
   it('beschriftet Albumtauglichkeit und Rang wie der Entwurf', () => {
     render(
       <PhotoVerdict
-        albumSuitability={{ level: 4, reason: 'Alle schauen in die Kamera.' }}
+        albumSuitability={{ level: 4, reason: 'Alle schauen in die Kamera.', source: 'cloud' }}
         ranking={ranking()}
         fineLabels={[]}
       />,
@@ -70,7 +74,7 @@ describe('PhotoVerdict: der Regelfall', () => {
   it('lässt das Rang-Label ohne Rangposition weg', () => {
     render(
       <PhotoVerdict
-        albumSuitability={{ level: 4, reason: null }}
+        albumSuitability={{ level: 4, reason: null, source: 'cloud' }}
         ranking={ranking({ rank_position: null })}
         fineLabels={[]}
       />,
@@ -83,7 +87,11 @@ describe('PhotoVerdict: der Regelfall', () => {
      Schriftgröße messen kann, ohne sie über einen Text zu suchen. */
   it('trägt genau einen Handle an der Albumtauglichkeits-Zeile', () => {
     const { container } = render(
-      <PhotoVerdict albumSuitability={{ level: 3, reason: null }} ranking={null} fineLabels={[]} />,
+      <PhotoVerdict
+        albumSuitability={{ level: 3, reason: null, source: 'cloud' }}
+        ranking={null}
+        fineLabels={[]}
+      />,
     )
 
     expect(container.querySelectorAll('[data-album-suitability-level]')).toHaveLength(1)
@@ -94,7 +102,7 @@ describe('PhotoVerdict: der Regelfall', () => {
   it('weist die Begründung erkennbar als Modellaussage aus', () => {
     render(
       <PhotoVerdict
-        albumSuitability={{ level: 4, reason: 'Alle schauen in die Kamera.' }}
+        albumSuitability={{ level: 4, reason: 'Alle schauen in die Kamera.', source: 'cloud' }}
         ranking={null}
         fineLabels={[]}
       />,
@@ -116,7 +124,11 @@ describe('PhotoVerdict: der Regelfall', () => {
     const lang = 'Sehr ausführlich. '.repeat(40).trim()
 
     render(
-      <PhotoVerdict albumSuitability={{ level: 2, reason: lang }} ranking={null} fineLabels={[]} />,
+      <PhotoVerdict
+        albumSuitability={{ level: 2, reason: lang, source: 'cloud' }}
+        ranking={null}
+        fineLabels={[]}
+      />,
     )
 
     expect(screen.getByText(lang)).toBeInTheDocument()
@@ -125,7 +137,7 @@ describe('PhotoVerdict: der Regelfall', () => {
   it('trägt weder aufklappbares Element noch Auslöser', () => {
     const { container } = render(
       <PhotoVerdict
-        albumSuitability={{ level: 4, reason: 'Gut.' }}
+        albumSuitability={{ level: 4, reason: 'Gut.', source: 'cloud' }}
         ranking={ranking()}
         fineLabels={[fineLabel()]}
       />,
@@ -147,13 +159,17 @@ describe('PhotoVerdict: leer und fehlend', () => {
       <PhotoVerdict albumSuitability={null} ranking={null} fineLabels={[]} />,
     )
 
-    expect(screen.getByText('Noch nicht bewertet')).toBeInTheDocument()
+    expect(screen.getByText(ALBUM_SUITABILITY_NOT_RATED_TEXT)).toBeInTheDocument()
     expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
   })
 
   it('lässt die Begründungszeile ohne Begründung ersatzlos weg', () => {
     const { container } = render(
-      <PhotoVerdict albumSuitability={{ level: 3, reason: null }} ranking={null} fineLabels={[]} />,
+      <PhotoVerdict
+        albumSuitability={{ level: 3, reason: null, source: 'cloud' }}
+        ranking={null}
+        fineLabels={[]}
+      />,
     )
 
     expect(screen.getByText('Stufe 3 von 5')).toBeInTheDocument()
@@ -188,7 +204,7 @@ describe('PhotoVerdict: Sicherheit (S1/S4/S5)', () => {
 
     render(
       <PhotoVerdict
-        albumSuitability={{ level: 1, reason: payload }}
+        albumSuitability={{ level: 1, reason: payload, source: 'cloud' }}
         ranking={null}
         fineLabels={[]}
       />,
@@ -204,7 +220,7 @@ describe('PhotoVerdict: Sicherheit (S1/S4/S5)', () => {
 
     const { container } = render(
       <PhotoVerdict
-        albumSuitability={{ level: 1, reason: payload }}
+        albumSuitability={{ level: 1, reason: payload, source: 'cloud' }}
         ranking={null}
         fineLabels={[]}
       />,
@@ -238,7 +254,7 @@ describe('PhotoVerdict: Sicherheit (S1/S4/S5)', () => {
 
     const { container } = render(
       <PhotoVerdict
-        albumSuitability={{ level: 2, reason: payload }}
+        albumSuitability={{ level: 2, reason: payload, source: 'cloud' }}
         ranking={null}
         fineLabels={[fineLabel({ display_name: payload, raw_label: payload })]}
       />,
@@ -247,5 +263,72 @@ describe('PhotoVerdict: Sicherheit (S1/S4/S5)', () => {
     expect(container.querySelector('script')).toBeNull()
     expect(container.querySelector('[style]')).toBeNull()
     expect((window as unknown as Record<string, unknown>)[PWN_FLAG]).toBeUndefined()
+  })
+})
+
+describe('PhotoVerdict: die Herkunft der Stufe', () => {
+  it('setzt bei Eye-Stufe die Herkunftszeile direkt unter die Stufe', () => {
+    const { container } = render(
+      <PhotoVerdict
+        albumSuitability={{ level: 4, reason: null, source: 'eye' }}
+        ranking={null}
+        fineLabels={[]}
+      />,
+    )
+
+    const origin = container.querySelector('[data-album-suitability-origin]')
+    expect(origin).not.toBeNull()
+    expect(origin).toHaveTextContent(
+      `${ALBUM_SUITABILITY_ORIGIN_LABEL} ${ALBUM_SUITABILITY_EYE_ORIGIN_TEXT}`,
+    )
+    /* Der Platz ist der der Begründung: unmittelbar hinter der Stufenzeile und vor dem Rang. */
+    expect(container.querySelector('[data-album-suitability-level]')?.nextElementSibling).toBe(
+      origin,
+    )
+    expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
+  })
+
+  it('gibt der Herkunft den Vorrang, auch wenn eine Begründung gesetzt ist', () => {
+    const { container } = render(
+      <PhotoVerdict
+        albumSuitability={{ level: 4, reason: 'Unerwarteter Modelltext.', source: 'eye' }}
+        ranking={null}
+        fineLabels={[]}
+      />,
+    )
+
+    expect(container.querySelectorAll('[data-album-suitability-origin]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
+    expect(screen.queryByText('Unerwarteter Modelltext.')).toBeNull()
+  })
+
+  it('rendert bei Cloud-Stufe keine Herkunftszeile', () => {
+    const { container } = render(
+      <PhotoVerdict
+        albumSuitability={{ level: 4, reason: 'Gut.', source: 'cloud' }}
+        ranking={null}
+        fineLabels={[]}
+      />,
+    )
+
+    expect(container.querySelectorAll('[data-album-suitability-origin]')).toHaveLength(0)
+  })
+
+  it('bleibt bei Wörtern: kein role, kein aria-label, kein Badge oder Symbol', () => {
+    const { container } = render(
+      <PhotoVerdict
+        albumSuitability={{ level: 4, reason: null, source: 'eye' }}
+        ranking={null}
+        fineLabels={[]}
+      />,
+    )
+
+    const origin = container.querySelector<HTMLElement>('[data-album-suitability-origin]')!
+    expect(origin.closest('[role]')).toBeNull()
+    expect(origin.querySelector('[role]')).toBeNull()
+    expect(origin.querySelector('[data-icon], [data-badge-tone], svg')).toBeNull()
+    for (const element of [origin, ...origin.querySelectorAll('*')]) {
+      expect(element.hasAttribute('aria-label')).toBe(false)
+    }
   })
 })

@@ -43,6 +43,8 @@ from photosort.landmark import (
     PlaceHint,
 )
 from photosort.models import (
+    CategoryMethod,
+    ClassificationMode,
     ClassificationPhase,
     CloudVisionPhase,
     CriterionScoringRun,
@@ -7216,3 +7218,24 @@ async def test_without_a_landmark_model_argument_the_phase_resolves_the_installa
     assert run.status == ScanStatus.SUCCESS
     assert built_models == [worker.settings.resolved_landmark_model()]
     assert run.landmark_model == worker.settings.resolved_landmark_model()
+
+
+@pytest.mark.parametrize("category_method", list(CategoryMethod))
+@pytest.mark.parametrize("mode", [None, *ClassificationMode])
+async def test_the_run_freezes_the_project_category_method_as_its_album_level_source(
+    db_session: AsyncSession,
+    mode: ClassificationMode | None,
+    category_method: CategoryMethod,
+) -> None:
+    """ADR 0144 Punkt 1: die Quelle der zaehlenden Stufe folgt der Projekteinstellung beim
+    Laufstart - fuer JEDEN Weg, auch `local`, weil auch ein lokaler Lauf Rangwerte bildet."""
+    project = await _make_project(db_session)
+    project.category_method = category_method
+    await db_session.commit()
+    scoring_run = await _add_successful_scoring_run(db_session, project)
+
+    run = await worker._start_criterion_scoring_run(
+        db_session, project, scoring_run.id, cloud_requested=False, mode=mode
+    )
+
+    assert run.album_level_source is category_method

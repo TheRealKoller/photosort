@@ -187,11 +187,16 @@ export function modelChoiceQueryKey(id: number) {
  * Katalog und gespeicherte Wahl des Projekts (Spec 0383). Eigene Query statt eines Feldes an
  * `ProjectOut`: der Katalog ist statisch je Installation und aendert sich nie durch einen Lauf -
  * er wuerde bei jedem `useProjectQuery`-Poll mitgeladen und die Projektliste unnoetig vergroessern.
+ *
+ * `enabled` schaltet sie ab: Die Entwurfsseite braucht sie nur in einem Eye-Projekt ohne Events -
+ * dort entscheidet `eye_disabled` ueber den Leerzustand. In jedem anderen Fall waere eine
+ * zusaetzliche Anfrage ein Poll ohne Leser.
  */
-export function useModelChoiceQuery(id: number) {
+export function useModelChoiceQuery(id: number, options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: modelChoiceQueryKey(id),
     queryFn: () => getModelChoice(id),
+    enabled: options.enabled ?? true,
   })
 }
 

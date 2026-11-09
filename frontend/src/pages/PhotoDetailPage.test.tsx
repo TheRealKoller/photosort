@@ -21,7 +21,11 @@ import type {
 } from '../api/types'
 import { setToken } from '../auth/token'
 import { MOTIF_KEYS, MOTIF_SET } from '../test/motifSetFixture'
-import { formatAlbumSuitabilityLevel } from '../utils/albumSuitability'
+import {
+  ALBUM_SUITABILITY_NOT_RATED_TEXT,
+  ALBUM_SUITABILITY_ORIGIN_LABEL,
+  formatAlbumSuitabilityLevel,
+} from '../utils/albumSuitability'
 import { formatDateTime } from '../utils/formatStats'
 import { PhotoDetailPage } from './PhotoDetailPage'
 
@@ -1376,6 +1380,9 @@ describe('PhotoDetailPage', () => {
             id: 1,
             motif_assessment: EYE_ASSESSMENT_LOCAL,
             motifs: motifStrengths(),
+            // Die zaehlende Stufe kommt aus Eye - nur dann nennt das Band auch die
+            // Albumtauglichkeit (0621).
+            album_suitability: { level: 3, reason: null, source: 'eye' },
             eye_result: EYE_RESULT,
           }),
         ],
@@ -1451,7 +1458,9 @@ describe('PhotoDetailPage', () => {
             id: 1,
             motif_assessment: EYE_ASSESSMENT_LOCAL,
             motifs: motifStrengths(),
-            album_suitability: null,
+            // Die Stufe reist seit 0621 mit ihrer Herkunft in `album_suitability`; die
+            // Eye-Kopfzeile traegt nur noch die Feinlabels.
+            album_suitability: { level: 4, reason: null, source: 'eye' },
             fine_labels: [],
             eye_result: { ...EYE_RESULT, album_level: 4, fine_labels: ['beach', 'sunset'] },
           }),
@@ -1463,11 +1472,47 @@ describe('PhotoDetailPage', () => {
 
       const verdict = await screen.findByTestId('photo-verdict')
       expect(within(verdict).getByText(formatAlbumSuitabilityLevel(4))).toBeInTheDocument()
-      expect(within(verdict).queryByText('Noch nicht bewertet')).toBeNull()
+      expect(within(verdict).queryByText(ALBUM_SUITABILITY_NOT_RATED_TEXT)).toBeNull()
       expect(verdict.querySelector('[data-album-suitability-reason]')).toBeNull()
+      expect(within(verdict).getByText(ALBUM_SUITABILITY_ORIGIN_LABEL)).toBeInTheDocument()
       const labels = within(verdict).getByRole('list', { name: 'Feinlabels' })
       expect(within(labels).getByText('beach')).toBeInTheDocument()
       expect(within(labels).getByText('sunset')).toBeInTheDocument()
+
+      // Bandtext: die Stufe zaehlt aus Eye, also erklaert das Band beide Angaben.
+      const band = screen.getByTestId('eye-band')
+      expect(band).toHaveTextContent(
+        /Albumtauglichkeit und Feinlabels stammen aus der Eye-Auswertung/,
+      )
+    })
+
+    it('nennt ohne zaehlende Eye-Stufe nur die Feinlabels als Eye-Auswertung', async () => {
+      vi.mocked(photosApi.listPhotos).mockResolvedValue({
+        items: [
+          photo({
+            id: 1,
+            motif_assessment: EYE_ASSESSMENT_LOCAL,
+            motifs: motifStrengths(),
+            // Eye lief, aber diesem Foto fehlt die zaehlende Stufe (z. B. Eye-Lauf mit
+            // gescheitertem Aufruf): kein Rueckfall auf die Eye-Kopfzeile.
+            album_suitability: null,
+            eye_result: EYE_RESULT,
+          }),
+        ],
+        total: 1,
+      })
+
+      renderPage('/projects/1/photos/1')
+
+      const verdict = await screen.findByTestId('photo-verdict')
+      expect(within(verdict).getByText(ALBUM_SUITABILITY_NOT_RATED_TEXT)).toBeInTheDocument()
+      expect(
+        within(verdict).queryByText(formatAlbumSuitabilityLevel(EYE_RESULT.album_level)),
+      ).toBeNull()
+
+      const band = await screen.findByTestId('eye-band')
+      expect(band).toHaveTextContent(/^Feinlabels stammen aus der Eye-Auswertung/)
+      expect(band).not.toHaveTextContent(/Albumtauglichkeit und Feinlabels stammen/)
     })
 
     it('zeigt ohne Eye-Ergebnis weiter die Cloud-Werte im Urteil', async () => {
@@ -1477,7 +1522,7 @@ describe('PhotoDetailPage', () => {
             id: 1,
             motif_assessment: CLOUD_ASSESSMENT,
             motifs: motifStrengths(),
-            album_suitability: { level: 2, reason: 'Unscharf.' },
+            album_suitability: { level: 2, reason: 'Unscharf.', source: 'cloud' },
             fine_labels: [
               {
                 canonical_key: 'urlaub',
@@ -1768,7 +1813,7 @@ describe('PhotoDetailPage: die Maximal-Fixture (AK4)', () => {
           provider: 'anthropic',
         },
       ],
-      album_suitability: { level: 4, reason: 'Alle schauen in die Kamera.' },
+      album_suitability: { level: 4, reason: 'Alle schauen in die Kamera.', source: 'cloud' },
       cloud_vision_status: [
         cloudVisionStatusEntry({ phase: 'landmark', status: 'result' }),
         cloudVisionStatusEntry({ phase: 'remote_category', status: 'result' }),

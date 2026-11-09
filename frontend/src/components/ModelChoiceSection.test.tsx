@@ -184,7 +184,7 @@ describe('ModelChoiceSection: zwei Gruppen', () => {
     expect(eyeCard).toHaveTextContent('kostenfrei')
     expect(eyeCard).toHaveTextContent(/desert ant labs/i)
     expect(eyeCard).toHaveTextContent(/lässt sich nicht abschalten/i)
-    expect(eyeCard).toHaveTextContent(/solange #621 nicht umgesetzt ist/i)
+    expect(eyeCard).not.toHaveTextContent(/solange #621 nicht umgesetzt ist/i)
     expect(eyeCard).toHaveTextContent(
       'Nicht möglich — Eye liefert keine Namen von Sehenswürdigkeiten.',
     )

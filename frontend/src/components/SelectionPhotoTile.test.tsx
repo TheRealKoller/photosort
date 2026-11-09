@@ -6,6 +6,10 @@ import type { AlbumParticipantOut, PhotoOut, RankingOut, RatingOut } from '../ap
 import { LONG_PRESS_MS } from '../hooks/useRevealOnDemand'
 import { stubFocusVisible } from '../test/focusVisible'
 import { ALBUM_STATE_LABELS, NOT_IN_DRAFT_LABEL } from '../utils/albumStateLabels'
+import {
+  ALBUM_SUITABILITY_EYE_ORIGIN_TEXT,
+  ALBUM_SUITABILITY_ORIGIN_LABEL,
+} from '../utils/albumSuitability'
 import { HANDLES_FULL_WIDTH_PX } from '../utils/curationLayout'
 import { SELECTION_DECIDED_BADGE_TEXT, SelectionPhotoTile } from './SelectionPhotoTile'
 
@@ -455,7 +459,7 @@ describe('SelectionPhotoTile - Haltungszeichen und Leiste', () => {
   it('carries reason, suitability and file name in the strip, in that order', () => {
     const { container } = renderTile({
       contested: true,
-      album_suitability: { level: 4, reason: 'Schönes Licht.' },
+      album_suitability: { level: 4, reason: 'Schönes Licht.', source: 'cloud' },
     })
 
     const strip = container.querySelector<HTMLElement>('[data-tile-details]')!
@@ -467,6 +471,20 @@ describe('SelectionPhotoTile - Haltungszeichen und Leiste', () => {
 
     const strip = container.querySelector<HTMLElement>('[data-tile-details]')!
     expect(within(strip).getByText('a.jpg')).toHaveAttribute('data-struck', 'true')
+  })
+
+  it('carries the origin line instead of the reason for an eye step', () => {
+    const { container } = renderTile({
+      contested: true,
+      album_suitability: { level: 4, reason: null, source: 'eye' },
+    })
+
+    const strip = container.querySelector<HTMLElement>('[data-tile-details]')!
+    const origin = strip.querySelector('[data-album-suitability-origin]')
+    expect(origin).toHaveTextContent(
+      `${ALBUM_SUITABILITY_ORIGIN_LABEL} ${ALBUM_SUITABILITY_EYE_ORIGIN_TEXT}`,
+    )
+    expect(strip.querySelectorAll('[data-album-suitability-reason]')).toHaveLength(0)
   })
 })
 

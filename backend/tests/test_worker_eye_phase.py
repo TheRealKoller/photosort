@@ -25,11 +25,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort.worker as worker
+from photosort.eye_client import EyeImageUnreadableError
 from photosort.eye_mapping import MAPPING_VERSION, MAPPING_VERSION_V1
 from photosort.models import (
     ClassificationMode,
     ClassificationPhase,
     CriterionScoringRun,
+    FineLabel,
     MotifAssessmentSource,
     Photo,
     PhotoAlbumSuitability,
@@ -70,8 +72,17 @@ async def _make_project(session: AsyncSession, *, consent: bool = False) -> Proj
     return project
 
 
-async def _add_run(session: AsyncSession, project: Project) -> ScoringRun:
-    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.SUCCESS)
+async def _add_run(
+    session: AsyncSession, project: Project, *, started_at: datetime | None = None
+) -> ScoringRun:
+    """`started_at` ist ausdruecklich zu setzen, sobald ein Test ZWEI Laeufe braucht: unter SQLite
+    hat `CURRENT_TIMESTAMP` Sekundenaufloesung, und zwei Laeufe derselben Sekunde liessen "der
+    neueste" unbestimmt - der Lauf braeche dann an seiner eigenen Bindung ab."""
+    scoring_run = ScoringRun(
+        project_id=project.id,
+        status=ScanStatus.SUCCESS,
+        **({} if started_at is None else {"started_at": started_at}),
+    )
     session.add(scoring_run)
     await session.commit()
     await session.refresh(scoring_run)
@@ -286,11 +297,11 @@ async def test_every_readable_photo_gets_the_full_shadow_set(
     assert [label for label, _ in labels] == ["mountain", "sky", "dog"]
 
 
-async def test_a_new_run_replaces_a_v1_row_with_the_run_mapping(
+async def test_a_v1_row_stays_v1_and_is_not_sent_again(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """Eine bestehende Zeile behaelt v1, bis ein neuer Lauf sie ersetzt - danach traegt sie die
-    Lauf-Fassung und deren Werte."""
+    """Nachholen, nicht Neubewerten: Eine bestehende Zeile wird NICHT ersetzt. Sie behaelt Fassung,
+    Zeitstempel und Werte, und der Dienst sieht das Foto kein zweites Mal."""
     project = await _make_project(db_session)
     scoring_run = await _add_run(db_session, project)
     photo = await _add_photo(db_session, project, "a.jpg", tmp_path)
@@ -307,19 +318,93 @@ async def test_a_new_run_replaces_a_v1_row_with_the_run_mapping(
     await db_session.commit()
     client = FakeEyeClient({photo.id: _payload(kind="map", tags={"dog": 0.8})})
 
-    await _run(db_session, project, scoring_run, tmp_path, client=client)
+    run = await _run(db_session, project, scoring_run, tmp_path, client=client)
 
-    result, _ = await _eye_rows(db_session, photo.id)
-    assert result.mapping_version == MAPPING_VERSION
-    assert result.excluded_document is False
-    assert result.album_level == 3
-    tiere = await db_session.scalar(
-        select(PhotoEyeMotifStrength.strength).where(
-            PhotoEyeMotifStrength.photo_id == photo.id,
-            PhotoEyeMotifStrength.motif_key == "tiere",
-        )
+    assert run.status is ScanStatus.SUCCESS
+    assert run.eye_photos_total == 0
+    assert client.health_calls == 1
+    assert client.analyze_calls == 0
+    result, strengths = await _eye_rows(db_session, photo.id)
+    assert result.mapping_version == MAPPING_VERSION_V1
+    assert result.excluded_document is True
+    assert result.album_level == 1
+    assert result.computed_at == datetime(2026, 1, 1)
+    # Keine Staerkereihe entsteht: Der Nachhol-Lauf fasst die bestehende Zeile nicht an.
+    assert strengths == []
+    assert (
+        await db_session.execute(select(func.count()).select_from(PhotoEyeFineLabel))
+    ).scalar_one() == 0
+
+
+async def test_the_second_run_sends_only_the_failed_and_the_new_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Die Nachhol-Menge ist genau die Luecke: Das in Lauf 1 gescheiterte Foto und ein neu
+    hinzugekommenes gehen hinaus, das bereits bewertete nicht - seine Kopfzeile bleibt."""
+    project = await _make_project(db_session)
+    first_scoring_run = await _add_run(
+        db_session, project, started_at=datetime(2023, 2, 1, 12, 0, 1)
     )
-    assert tiere == pytest.approx(0.8)
+    evaluated = await _add_photo(db_session, project, "bewertet.jpg", tmp_path)
+    failed = await _add_photo(db_session, project, "gescheitert.jpg", tmp_path)
+    failing_client = FakeEyeClient(
+        {evaluated.id: _payload(), failed.id: _payload()},
+        fail_at=2,
+        fail_with=EyeImageUnreadableError("nicht dekodierbar"),
+    )
+
+    await _run(db_session, project, first_scoring_run, tmp_path, client=failing_client)
+
+    before, _ = await _eye_rows(db_session, evaluated.id)
+    assert await db_session.get(PhotoEyeResult, failed.id) is None
+    second_scoring_run = await _add_run(
+        db_session, project, started_at=datetime(2023, 2, 1, 12, 0, 2)
+    )
+    new_photo = await _add_photo(db_session, project, "neu.jpg", tmp_path)
+    client = FakeEyeClient(
+        {failed.id: _payload(kind="map"), new_photo.id: _payload(kind="receipt")}
+    )
+
+    second = await _run(db_session, project, second_scoring_run, tmp_path, client=client)
+
+    assert second.status is ScanStatus.SUCCESS
+    assert second.eye_photos_total == 2
+    assert second.eye_photos_processed == 2
+    assert client.health_calls == 1
+    assert client.analyze_calls == 2
+    after, _ = await _eye_rows(db_session, evaluated.id)
+    assert (after.computed_at, after.mapping_version, after.album_level) == (
+        before.computed_at,
+        before.mapping_version,
+        before.album_level,
+    )
+    assert (await _eye_rows(db_session, failed.id))[0].excluded_document is False
+    assert (await _eye_rows(db_session, new_photo.id))[0].excluded_document is True
+
+
+async def test_the_health_check_runs_even_with_zero_candidates(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ohne Kandidaten meldete ein Lauf sonst Erfolg, ohne den Dienst je gefragt zu haben."""
+    project = await _make_project(db_session)
+    scoring_run = await _add_run(db_session, project, started_at=datetime(2023, 2, 1, 12, 0, 1))
+    await _add_photo(db_session, project, "a.jpg", tmp_path)
+    first = await _run(
+        db_session, project, scoring_run, tmp_path, client=FakeEyeClient({"only": _payload()})
+    )
+    assert first.eye_photos_total == 1
+    second_scoring_run = await _add_run(
+        db_session, project, started_at=datetime(2023, 2, 1, 12, 0, 2)
+    )
+    client = FakeEyeClient()
+
+    run = await _run(db_session, project, second_scoring_run, tmp_path, client=client)
+
+    assert run.status is ScanStatus.SUCCESS, run.error_message
+    assert run.eye_photos_total == 0
+    assert run.eye_photos_processed == 0
+    assert client.health_calls == 1
+    assert client.analyze_calls == 0
 
 
 @pytest.mark.parametrize(("kind", "excluded"), [("map", False), ("receipt", True)])
@@ -606,6 +691,8 @@ async def test_the_eye_phase_leaves_album_suitability_and_cloud_labels_untouched
     assert (
         await db_session.execute(select(func.count()).select_from(PhotoFineLabel))
     ).scalar_one() == 0
+    # Die CLI-Tabelle neben der Schatten-Tabelle: auch sie bleibt leer (Spec 0621).
+    assert (await db_session.execute(select(func.count()).select_from(FineLabel))).scalar_one() == 0
 
 
 async def test_the_eye_phase_runs_before_the_criteria_phase(

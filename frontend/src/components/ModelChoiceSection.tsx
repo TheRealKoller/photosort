@@ -423,9 +423,6 @@ function EyeCard({
       <div className="flex flex-col gap-1">
         <EyeAttribution />
         <p className="text-xs text-text-muted">{MODEL_CHOICE_TEXTS.eyeLicenceNotice}</p>
-        <p className="text-xs text-text-muted">
-          Eye liefert keine Grundlage für den Album-Entwurf, solange #621 nicht umgesetzt ist.
-        </p>
       </div>
     </div>
   )

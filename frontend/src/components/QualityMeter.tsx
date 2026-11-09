@@ -19,7 +19,7 @@ interface QualityMeterProps {
  * kein Stern-Symbol (Kollision mit dem `favorite`-★) und keine Prozess-Status-Farbe. Das
  * Drei-Punkte-Meter ist rein dekorativ (`aria-hidden`), der ausgeschriebene Stufenname daneben
  * ist der eigentliche, screenreader-sichtbare Text (Barrierefreiheits-Grundsatz "Information nie
- * nur ueber Farbe/Form"). Das gilt auch fuer den Satz „Noch nicht bewertet".
+ * nur ueber Farbe/Form"). Das gilt auch fuer den Satz, der die fehlende Stufe nennt.
  *
  * OHNE STUFE ERSCHEINT KEIN GLYPH. `●○○` oder `○○○` hiesse "schlechteste Stufe" statt "nicht
  * beurteilt" - und das Foto ist weder aussortiert noch fehlerhaft, sondern schlicht noch nicht
