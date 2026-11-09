@@ -1,6 +1,6 @@
 # 0637 - Duplikatgruppen enthalten nur echte Duplikate
 
-**Status:** Accepted
+**Status:** Implemented ([PR #640](https://github.com/TheRealKoller/photosort/pull/640))
 **Erstellt:** 2026-11-09
 **Bezug:** Issue [#637](https://github.com/TheRealKoller/photosort/issues/637); ADR
 [`0145`](../decisions/0145-mehrstufige-duplikaterkennung-zeitfenster-und-stern-ohne-bruecken.md)
