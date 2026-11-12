@@ -1,6 +1,6 @@
 # 0639 - Automatisch entschiedene Duplikatgruppen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #642](https://github.com/TheRealKoller/photosort/pull/642))
 **Erstellt:** 2026-11-12
 **Bezug:** Issue [#639](https://github.com/TheRealKoller/photosort/issues/639); ADR
 [`0146`](../decisions/0146-automatisch-entschiedene-duplikatgruppen.md); Voraussetzung Spec
