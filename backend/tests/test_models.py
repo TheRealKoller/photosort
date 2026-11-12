@@ -1355,6 +1355,79 @@ async def test_the_probed_marker_carries_the_same_server_default_as_the_migratio
     assert probed is False
 
 
+async def test_resolution_stays_unknown_until_a_scan_reads_it(db_session: AsyncSession) -> None:
+    """Spec 0639: `pixel_count` ist additiv und nullable, OHNE Backfill - ein Bestandsfoto traegt
+    den Wert erst nach einem Scan mit Nachhol-Posten. Die Schaetzung einer Zahl verschoebe die
+    Gewinnerregel stillschweigend. `pixel_count_probed` dagegen faellt auf `false`, damit das
+    Foto beim naechsten Scan nachgeholt wird."""
+    assert Photo.__table__.c.pixel_count.nullable is True
+    assert Photo.__table__.c.pixel_count.server_default is None
+    assert Photo.__table__.c.pixel_count_probed.server_default is not None
+
+    project = await _project(db_session)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    await db_session.execute(
+        Photo.__table__.insert().values(
+            project_id=project.id,
+            relative_path="img001.jpg",
+            etag="etag-1",
+            content_length=100,
+            taken_at=now,
+            taken_at_original=now,
+            last_modified=now,
+        )
+    )
+
+    pixel_count, probed = (
+        await db_session.execute(
+            select(Photo.pixel_count, Photo.pixel_count_probed).where(
+                Photo.project_id == project.id
+            )
+        )
+    ).one()
+
+    assert pixel_count is None
+    assert probed is False
+
+
+async def test_the_auto_decided_mark_starts_false_per_server_default(
+    db_session: AsyncSession,
+) -> None:
+    """Der Merker steht an Verlierern einer automatisch entschiedenen Gruppe. Bestandszeilen ohne
+    Lauf duerfen NICHT als entschieden gelten - deshalb birgt der `server_default` die Zusage und
+    nicht nur der Python-Default."""
+    assert PhotoScore.__table__.c.auto_decided.server_default is not None
+    assert not PhotoScore.__table__.c.auto_decided.nullable
+
+    project = await _project(db_session)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    await db_session.execute(
+        Photo.__table__.insert().values(
+            id=987_654,
+            project_id=project.id,
+            relative_path="img001.jpg",
+            etag="etag-1",
+            content_length=100,
+            taken_at=now,
+            taken_at_original=now,
+            last_modified=now,
+        )
+    )
+    await db_session.execute(
+        PhotoScore.__table__.insert().values(
+            photo_id=987_654, sharpness=10.0, exposure=0.0, computed_at=now
+        )
+    )
+
+    decided = (
+        await db_session.execute(
+            select(PhotoScore.auto_decided).where(PhotoScore.photo_id == 987_654)
+        )
+    ).scalar_one()
+
+    assert decided is False
+
+
 async def test_the_recorded_time_has_no_default_and_must_be_written_explicitly(
     db_session: AsyncSession,
 ) -> None:
