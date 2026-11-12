@@ -421,10 +421,11 @@ berührte Grenze ist die Cloud-Abflussgrenze aus ADR 0104 — sie wird gelesen, 
   Attributzugriff `auto_decided` im Syntaxbaum von `survives_ausschuss*`/`decision_effective*` (die
   Aufrufstellenzahl sieht den Inhalt des Prädikats nicht).
 - **S3 — Das Gate-Autoset zählt offene Vorschläge, nicht Abgelehnte, und ist keine Einwilligung.**
-  Bedingung ist `len(rejected_ids − auto_decided_ids) == 0`, gebildet im SUCCESS-Commit aus dessen
-  Id-Mengen, nicht aus einem späteren Lesevorgang; `suggestions_found` bleibt die Zahl aller
-  Ablehnungen. Der Zeitstempel ist Arbeitsfluss-Voraussetzung (`409` an den Cloud-Endpunkten ohne
-  ihn), der Datenabfluss hängt allein am projektweiten Einwilligungsschalter
+  Bedingung ist `len(rejected_ids − auto_decided_ids) == 0`, gebildet im SUCCESS-Commit in
+  derselben Transaktion aus den Id-Mengen des Laufs, nicht aus einem vor dem Schreiben gelesenen
+  Stand; `suggestions_found` bleibt die Zahl aller Ablehnungen. Der Zeitstempel ist
+  Arbeitsfluss-Voraussetzung (`409` an den Cloud-Endpunkten ohne ihn), der Datenabfluss hängt
+  allein am projektweiten Einwilligungsschalter
   (`cloud_vision_consent_at`/`cloud_vision_detection_enabled`), der unberührt bleibt, ohne Zutun
   `False` ist und ohne den jeder Cloud-Aufruf `403` ergibt.
 - **S4 — Setzen und Zurücksetzen sind projektgebunden und gegen die Nutzerentscheidung

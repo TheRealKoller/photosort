@@ -1112,9 +1112,10 @@ Verarbeitungs-Cache (Thumbnails).
       gewinnt). `photo_duplicate_decisions` bleibt allein Nutzerentscheidung; kein Lauf schreibt
       oder löscht dort.
     - **Das Gate-Autoset zählt offene Vorschläge, nicht Ablehnungen:** Bedingung ist
-      `rejected_ids − auto_decided_ids == ∅` im SUCCESS-Commit; `suggestions_found` bleibt die Zahl
-      **aller** Ablehnungen. Der Autoset ist keine Einwilligung — der Cloud-Abfluss hängt
-      unverändert am projektweiten Schalter.
+      `rejected_ids − auto_decided_ids == ∅` im SUCCESS-Commit, in derselben Transaktion aus den
+      Id-Mengen des Laufs gebildet — nicht aus einem vor dem Schreiben gelesenen Stand.
+      `suggestions_found` bleibt die Zahl **aller** Ablehnungen. Der Autoset ist keine
+      Einwilligung — der Cloud-Abfluss hängt unverändert am projektweiten Schalter.
     - **Nur das Offen-Prädikat kennt den Merker:** `duplicates.py::has_open_suggestion`/
       `has_open_suggestion_for` nehmen `auto_decided` auf; `survives_ausschuss`,
       `survives_ausschuss_for` und die vier cloud-bestimmenden Abfragen bleiben wörtlich
