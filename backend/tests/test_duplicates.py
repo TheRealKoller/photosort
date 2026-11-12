@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,8 @@ from photosort.duplicates import (
     GroupStanding,
     SingleSlot,
     all_group_representative_ids,
+    auto_decided_for,
+    auto_decided_representatives,
     group_ausschuss_stock,
     group_span_seconds,
     group_standing,
@@ -495,3 +498,35 @@ def test_photos_without_a_group_are_never_collected_under_a_none_key() -> None:
     slots = group_ausschuss_stock(rows, links)
 
     assert slots == [SingleSlot(photo_id=1), SingleSlot(photo_id=2), SingleSlot(photo_id=7)]
+
+
+def test_the_auto_decided_representatives_are_the_winners_of_marked_losers() -> None:
+    links = _star(4, representative_id=10)
+
+    assert auto_decided_representatives(links, {11, 12, 13}) == {10}
+    assert auto_decided_representatives(links, {11}) == {10}
+    assert auto_decided_representatives(links, set()) == set()
+
+
+def test_a_marker_on_a_representative_does_not_make_it_an_auto_representative() -> None:
+    # Der Merker steht invariant nur an Verlierern; ein Marker an der Kante des Repraesentanten
+    # darf deshalb keinen Stern erzeugen.
+    assert auto_decided_representatives(_star(2), {10}) == set()
+
+
+def test_auto_decided_for_recognises_the_loser_by_its_marker() -> None:
+    links = _star(3)
+    loser = SimpleNamespace(id=11, score=SimpleNamespace(auto_decided=True))
+    representative = SimpleNamespace(id=10, score=SimpleNamespace(auto_decided=False))
+
+    assert auto_decided_for(loser, links) is True
+    # Ohne automatische Kante bleibt der Repraesentant ein gewoehnlicher Stern.
+    assert auto_decided_for(representative, []) is False
+
+
+def test_auto_decided_for_recognises_the_representative_by_its_auto_edge() -> None:
+    links = _star(3)
+    auto_links = [link for link in links if link.photo_id == 11]
+    representative = SimpleNamespace(id=10, score=SimpleNamespace(auto_decided=False))
+
+    assert auto_decided_for(representative, auto_links) is True

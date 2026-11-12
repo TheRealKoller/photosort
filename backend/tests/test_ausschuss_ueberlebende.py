@@ -499,3 +499,40 @@ def test_the_six_replaced_occurrences_and_the_written_call_sites_are_held_side_b
     assert sum(gemessen.values()) == 14
     assert sql == 12
     assert sum(gemessen.values()) - sql == 2
+
+
+async def test_an_auto_decided_loser_is_not_an_open_suggestion_in_either_fassung(
+    db_session: AsyncSession,
+) -> None:
+    """Spec 0639: Der Automatik-Merker schliesst den Vorschlag aus, ohne die gespeicherte
+    Entscheidung anzufassen. Ueberleben bleibt unberuehrt (S2)."""
+    project = await _project(db_session)
+    representative = await _photo(db_session, project, "rep.jpg")
+    auto = await _photo(
+        db_session,
+        project,
+        "auto.jpg",
+        minutes=1,
+        suggested_status=RatingStatus.REJECTED,
+        duplicate_of=representative.id,
+    )
+    score = (
+        await db_session.execute(select(PhotoScore).where(PhotoScore.photo_id == auto.id))
+    ).scalar_one()
+    score.auto_decided = True
+    await db_session.commit()
+
+    sql_ids = set(
+        (
+            await db_session.execute(
+                select(Photo.id)
+                .join(PhotoScore, PhotoScore.photo_id == Photo.id)
+                .where(has_open_suggestion())
+            )
+        ).scalars()
+    )
+    loaded = {photo.id: photo for photo in await _loaded_photos(db_session, project.id)}
+
+    assert auto.id not in sql_ids
+    assert not has_open_suggestion_for(loaded[auto.id])
+    assert survives_ausschuss_for(loaded[auto.id]) is False
