@@ -1034,6 +1034,88 @@ async def test_a_missing_resolution_is_caught_up_from_the_range_window(
     assert photo.aspect_ratio is None
 
 
+async def test_a_png_with_open_camera_and_resolution_probe_catches_up_only_the_resolution(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Spec 0639, Review M1: Die Endung ausserhalb der EXIF-Kandidaten darf die Nachholung der
+    Aufloesung nicht an einer offenen Kamera-Pruefung vorbeifuehren.
+
+    `img.png` braucht keinen EXIF-Leseweg fuer Zeit/Ort/Kamera; der Range-Read entsteht allein aus
+    dem offenen Aufloesungs-Merkmal. Deshalb bleibt die Kamera-Pruefung in DIESEM Posten offen -
+    sie hat nichts gelesen und darf ihren Merker nicht setzen.
+    """
+    project = await _make_project(db_session)
+    moment = datetime(2023, 8, 15, 10, 0)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="CostaRica/grafik.png",
+        etag="same-etag",
+        content_length=10,
+        taken_at=moment,
+        taken_at_original=moment,
+        camera_probed=False,
+        pixel_count_probed=False,
+        gps_lat=41.9,
+        gps_lon=12.5,
+        last_modified=moment,
+    )
+    db_session.add(photo)
+    await db_session.commit()
+    client = FakeOpenCloudClient(
+        entries=_unchanged_entries("CostaRica/grafik.png"),
+        file_contents={"CostaRica/grafik.png": _png_bytes(64, 48)},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    assert client.range_requests == ["CostaRica/grafik.png"]
+    assert client.download_requests == []
+    await db_session.refresh(photo)
+    assert photo.pixel_count == 64 * 48
+    assert photo.pixel_count_probed is True
+    # Unberuehrt: dieser Posten hat ausschliesslich die Masse gelesen.
+    assert photo.taken_at == moment
+    assert photo.taken_at_original == moment
+    assert (photo.gps_lat, photo.gps_lon) == (41.9, 12.5)
+    assert photo.camera_id is None
+    assert photo.camera_probed is False
+
+
+async def test_a_png_camera_probe_without_a_read_keeps_the_known_resolution(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Gegenprobe zu M1: Ein Kamera-Nachhol-Posten ohne Range-Read (PNG ausserhalb der
+    EXIF-Kandidaten, Aufloesung bereits gelesen) schreibt die Aufloesung nicht auf `None`."""
+    project = await _make_project(db_session)
+    moment = datetime(2023, 8, 15, 10, 0)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="CostaRica/grafik.png",
+        etag="same-etag",
+        content_length=10,
+        taken_at=moment,
+        taken_at_original=moment,
+        camera_probed=False,
+        pixel_count=64 * 48,
+        pixel_count_probed=True,
+        last_modified=moment,
+    )
+    db_session.add(photo)
+    await db_session.commit()
+    client = FakeOpenCloudClient(entries=_unchanged_entries("CostaRica/grafik.png"))
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    assert client.range_requests == []
+    await db_session.refresh(photo)
+    assert photo.pixel_count == 64 * 48
+    assert photo.pixel_count_probed is True
+    assert photo.camera_probed is True
+
+
 async def test_the_camera_probe_reads_the_resolution_from_the_same_window(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

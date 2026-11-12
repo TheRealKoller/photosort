@@ -327,16 +327,23 @@ class ScanWorkItem:
     Kamera-Angabe nachzutragen. Die Thumbnails existieren bereits und waeren identisch - ihre
     Neuerzeugung waere ein Voll-Download je Bestandsfoto.
 
-    `dimensions_only` heisst: die Datei ist UNVERAENDERT und es fehlt NUR die Aufloesung. Dann
-    wird ausschliesslich `extract_pixel_count` auf demselben Range-Fenster ausgefuehrt; Zeit, Ort
-    und Kamera bleiben unberuehrt (Spec 0639, ADR 0146 Punkt 2). Ein Kamera-Nachhol-Posten ist
-    ausdruecklich KEIN `dimensions_only`-Posten: er liest die Masse aus demselben Fenster mit."""
+    `probe_dimensions` heisst: der Range-Read entsteht (auch) aus der offenen Aufloesung. Das ist
+    unabhaengig von der Endung - `extract_pixel_count` liest nur den Kopf, waehrend der EXIF-Teil
+    weiterhin an `_EXIF_CANDIDATE_EXTENSIONS` gebunden bleibt.
+
+    `dimensions_only` heisst: dieser Posten liest AUSSCHLIESSLICH die Aufloesung. Dann wird
+    `extract_pixel_count` auf dem Range-Fenster ausgefuehrt; Zeit, Ort und Kamera bleiben
+    unberuehrt (Spec 0639, ADR 0146 Punkt 2). Ein Kamera-Nachhol-Posten an einer EXIF-Endung ist
+    ausdruecklich KEIN `dimensions_only`-Posten: er liest die Masse aus demselben Fenster mit.
+    Eine Nicht-EXIF-Endung mit offener Kamera UND offener Auflosung ist dagegen
+    `dimensions_only` - es gibt fuer sie nichts auszulesen ausser der Masse."""
 
     relative_path: str
     entry: DavEntry
     existing_photo: Photo | None
     probe_only: bool = False
     dimensions_only: bool = False
+    probe_dimensions: bool = False
 
 
 @dataclass
@@ -414,7 +421,15 @@ def _classify_scan_entries(
             entry,
             existing_photo,
             probe_only=unchanged,
-            dimensions_only=unchanged and not needs_camera_probe,
+            # Eine offene Kamera-Pruefung deckt Zeit/Ort/Kamera nur fuer EXIF-Endungen ab. Bei
+            # PNG/WebP entsteht der Range-Read allein aus der Aufloesung, und der Posten darf
+            # deshalb auch nur die Aufloesung schreiben.
+            dimensions_only=(
+                unchanged
+                and needs_dimensions_probe
+                and (not needs_camera_probe or extension not in _EXIF_CANDIDATE_EXTENSIONS)
+            ),
+            probe_dimensions=needs_dimensions_probe,
         )
         classification.decisions.append(ScanEntryDecision(relative_path, None, work_item))
         classification.work_items.append(work_item)
@@ -552,6 +567,9 @@ class ScanExifResult:
     camera: CameraIdentity | None
     aspect_ratio: float | None = None
     pixel_count: int | None = None
+    # Nur ein Posten an einer EXIF-Endung und ohne `dimensions_only` hat das Fenster geparst.
+    # Fuer einen `probe_only`-Posten an PNG/WebP heisst `False`: Zeit und Ort NICHT schreiben.
+    exif_read: bool = False
 
 
 async def _fetch_and_thumbnail(
@@ -566,10 +584,12 @@ async def _fetch_and_thumbnail(
     *,
     probe_only: bool = False,
     dimensions_only: bool = False,
+    probe_dimensions: bool = False,
 ) -> ScanExifResult:
-    """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b: EXIF-Range-Read
-    (nur für JPEG-Kandidaten) für `taken_at`, die
-    GPS-Koordinate UND die Kamera-Angabe, danach best-effort Download + Thumbnail-Erzeugung -
+    """Der reine I/O-/CPU-Teil eines einzelnen Arbeitspostens aus Phase 2b: ein Range-Fenster fuer
+    `taken_at`, die GPS-Koordinate UND die Kamera-Angabe (nur EXIF-Kandidaten), zusaetzlich die
+    Aufloesung fuer jeden Dimensions-Nachhol-Posten; danach best-effort Download +
+    Thumbnail-Erzeugung -
     bewusst OHNE jeglichen Session-Zugriff, damit mehrere Aufrufe sicher parallel per
     asyncio.gather laufen koennen (_process_scan_block unten). Ein EXIF-Lesefehler wird NICHT
     abgefangen: ein einzelner OpenCloud-Fehler hier laesst den gesamten Scan fehlschlagen.
@@ -583,16 +603,20 @@ async def _fetch_and_thumbnail(
     Kamera-Angabe an einer unveraenderten Datei - die Thumbnails existieren und waeren identisch).
     Das EXIF-Fenster wird weiterhin gelesen; genau darum geht es.
 
+    `probe_dimensions` loest den Range-Read unabhaengig von der Endung aus: `extract_pixel_count`
+    liest nur den Kopf, das ist kein zweiter Lesevorgang fuer den vollen Posten.
+
     `dimensions_only` liest dasselbe Fenster, aber ausschliesslich fuer die Aufloesung. Zeit, Ort
     und Kamera bleiben dann unberuehrt: Es ist die Nachhol-Runde fuer `pixel_count`, und ein
     Schreibzugriff auf die anderen Werte uebernaehme einen Stand, den dieser Posten gar nicht
-    geprueft hat. Die Bedingung fuer den Range-Read deckt ALLE Bildendungen ab - `extract_pixel_count`
-    liest nur den Kopf, das ist kein zweiter Lesevorgang fuer den vollen Posten."""
+    geprueft hat. `exif_read` sagt dem Schreibteil, ob ueberhaupt ein EXIF-Fenster geparst wurde -
+    ein Kamera-Nachhol-Posten an einer Nicht-EXIF-Endung setzt nur den Kamera-Merker."""
     taken_at = fallback_taken_at
     gps: tuple[float, float] | None = None
     camera: CameraIdentity | None = None
     pixel_count: int | None = None
-    if extension in _EXIF_CANDIDATE_EXTENSIONS or dimensions_only:
+    exif_read = False
+    if extension in _EXIF_CANDIDATE_EXTENSIONS or probe_dimensions:
         content = await client.get_range(webdav_url, relative_path, _EXIF_RANGE_BYTES)
         if not dimensions_only:
             exif_taken_at = extract_taken_at(content)
@@ -600,6 +624,7 @@ async def _fetch_and_thumbnail(
                 taken_at = exif_taken_at
             gps = extract_gps(content, photo_id=photo_id)
             camera = extract_camera(content, photo_id=photo_id)
+            exif_read = extension in _EXIF_CANDIDATE_EXTENSIONS
         pixel_count = extract_pixel_count(content)
 
     aspect_ratio: float | None = None
@@ -618,6 +643,7 @@ async def _fetch_and_thumbnail(
         camera=camera,
         aspect_ratio=aspect_ratio,
         pixel_count=pixel_count,
+        exif_read=exif_read,
     )
 
 
@@ -725,6 +751,7 @@ async def _process_scan_block(
                 cache_dir,
                 probe_only=item.probe_only,
                 dimensions_only=item.dimensions_only,
+                probe_dimensions=item.probe_dimensions,
             )
             for index, item in enumerate(block)
         ],
@@ -769,33 +796,37 @@ async def _process_scan_block(
             photo.camera_id = None if camera is None else camera.id
             photo.camera_probed = True
 
-            # DIE ERSTE der zwei Schreibstellen der Invariante (ADR 0090, Punkt 1; die zweite ist
-            # `api/cameras.py`), und beide rechnen ueber `cameras.py::shifted` aus
-            # `taken_at_original` - NIE aus dem bestehenden `taken_at`. Eine Differenz auf den
-            # bestehenden Wert zu addieren kumulierte bei jedem weiteren Lauf.
-            photo.taken_at_original = exif_result.taken_at
-            offset_minutes = 0 if camera is None else camera.offset_minutes
-            corrected = shifted(exif_result.taken_at, offset_minutes)
-            if corrected is None:
-                # Ausfallrichtung fuer dieses EINE Foto: die unkorrigierte Zeit plus eine
-                # Warnzeile mit festem Token - kein Laufabbruch und kein Datum ausserhalb des
-                # darstellbaren Bereichs. Die Invariante ist fuer dieses Foto damit bewusst
-                # verletzt; ein Versatz, der das ausloest, ist am Endpunkt gar nicht setzbar
-                # (dort 422).
-                logger.warning(
-                    "_process_scan_block: Versatz nicht anwendbar photo_id=%s grund=%s",
-                    photo.id,
-                    _OFFSET_REASON_OUT_OF_RANGE,
-                )
-            photo.taken_at = exif_result.taken_at if corrected is None else corrected
-            # SICHERHEIT: UNBEDINGT beide Felder schreiben, auch zurueck auf None. Das ist eine
-            # DATENSCHUTZBEDINGUNG, keine Aufraeum-Kosmetik - dies ist der einzige Pfad, ueber den
-            # das ENTFERNEN von GPS aus einer Quelldatei in PhotoSort ankommt, also genau die
-            # Handlung, die eine datenschutzbewusste Person vornimmt. Ein bedingtes Schreiben
-            # (`if gps is not None`) hielte die alte Koordinate unbegrenzt fest, und die
-            # Anwendung zeigte weiter einen Ort an, den die Datei nachweislich nicht mehr
-            # enthaelt. Abgedeckt durch test_worker_scan_project.py.
-            photo.gps_lat, photo.gps_lon = exif_result.gps or (None, None)
+            # Eine Nicht-EXIF-Endung hat fuer Zeit und Ort nichts gelesen. Ein Voll-Posten
+            # schreibt den Rueckfall weiterhin, ein Nachhol-Posten uebernaehme sonst den
+            # WebDAV-Zeitstempel und loeschte die vorhandene Koordinate.
+            if exif_result.exif_read or not item.probe_only:
+                # DIE ERSTE der zwei Schreibstellen der Invariante (ADR 0090, Punkt 1; die zweite
+                # ist `api/cameras.py`), und beide rechnen ueber `cameras.py::shifted` aus
+                # `taken_at_original` - NIE aus dem bestehenden `taken_at`. Eine Differenz auf den
+                # bestehenden Wert zu addieren kumulierte bei jedem weiteren Lauf.
+                photo.taken_at_original = exif_result.taken_at
+                offset_minutes = 0 if camera is None else camera.offset_minutes
+                corrected = shifted(exif_result.taken_at, offset_minutes)
+                if corrected is None:
+                    # Ausfallrichtung fuer dieses EINE Foto: die unkorrigierte Zeit plus eine
+                    # Warnzeile mit festem Token - kein Laufabbruch und kein Datum ausserhalb des
+                    # darstellbaren Bereichs. Die Invariante ist fuer dieses Foto damit bewusst
+                    # verletzt; ein Versatz, der das ausloest, ist am Endpunkt gar nicht setzbar
+                    # (dort 422).
+                    logger.warning(
+                        "_process_scan_block: Versatz nicht anwendbar photo_id=%s grund=%s",
+                        photo.id,
+                        _OFFSET_REASON_OUT_OF_RANGE,
+                    )
+                photo.taken_at = exif_result.taken_at if corrected is None else corrected
+                # SICHERHEIT: UNBEDINGT beide Felder schreiben, auch zurueck auf None. Das ist
+                # eine DATENSCHUTZBEDINGUNG, keine Aufraeum-Kosmetik - dies ist der einzige Pfad,
+                # ueber den das ENTFERNEN von GPS aus einer Quelldatei in PhotoSort ankommt, also
+                # genau die Handlung, die eine datenschutzbewusste Person vornimmt. Ein bedingtes
+                # Schreiben (`if gps is not None`) hielte die alte Koordinate unbegrenzt fest, und
+                # die Anwendung zeigte weiter einen Ort an, den die Datei nachweislich nicht mehr
+                # enthaelt. Abgedeckt durch test_worker_scan_project.py.
+                photo.gps_lat, photo.gps_lon = exif_result.gps or (None, None)
 
         # ERSTER der zwei Schreibwege der Spalte (ADR 0110 Punkt 3). Fuer einen Posten, der die
         # Datei tatsaechlich gelesen hat, wird UNBEDINGT geschrieben - auch zurueck auf `None`:
@@ -811,13 +842,15 @@ async def _process_scan_block(
         if not item.probe_only:
             photo.aspect_ratio = exif_result.aspect_ratio
 
-        # ZWEITER Schreibweg der Aufloesung (neben `generate_variants`): Jeder Posten, der das
-        # Kopfffenster gelesen hat, schreibt Wert und Merker - der volle Posten aus der einen
-        # Dekodierung, der Nachhol-Posten aus demselben Fenster wie Zeit/Ort/Kamera. Der Merker
-        # faellt AUCH OHNE FUND, sonst laese jeder Scan denselben Bestand erneut ueber das Netz;
-        # ein `None` ist dann ehrlich "nicht lesbar" und keine Schaetzung.
-        photo.pixel_count = exif_result.pixel_count
-        photo.pixel_count_probed = True
+        # ZWEITER Schreibweg der Aufloesung (neben `generate_variants`): Jeder Posten, der die
+        # Aufloesung prueft, schreibt Wert und Merker - der volle Posten aus der einen Dekodierung,
+        # der Nachhol-Posten aus dem Range-Fenster. Ein Kamera-Nachhol-Posten an einer
+        # Nicht-EXIF-Endung hat kein Fenster gelesen und laesst den bekannten Wert stehen. Der
+        # Merker faellt AUCH OHNE FUND, sonst laese jeder Scan denselben Bestand erneut ueber das
+        # Netz; ein `None` ist dann ehrlich "nicht lesbar" und keine Schaetzung.
+        if not item.probe_only or item.probe_dimensions:
+            photo.pixel_count = exif_result.pixel_count
+            photo.pixel_count_probed = True
     return added, updated
 
 

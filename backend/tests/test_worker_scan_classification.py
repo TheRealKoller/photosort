@@ -254,6 +254,47 @@ def test_an_unchanged_photo_without_dimensions_becomes_a_dimensions_only_item() 
     assert classification.work_items == [decision.work_item]
 
 
+def test_a_png_with_open_camera_and_dimensions_probe_reads_the_range_for_the_dimensions() -> None:
+    """M1: Der Range-Read folgt aus dem offenen Aufloesungs-Merkmal, nicht aus der EXIF-Endung.
+    Weil der Posten nur die Masse will, bleibt `dimensions_only` gesetzt und die Kamera-Pruefung
+    wird in diesem Lauf nicht mitgeschrieben."""
+    entries = [("CostaRica/img.png", _entry("img.png", "same-etag"))]
+    existing = {
+        "CostaRica/img.png": _existing_photo(
+            "CostaRica/img.png",
+            "same-etag",
+            camera_probed=False,
+            pixel_count_probed=False,
+        )
+    }
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    decision = classification.decisions[0]
+    assert decision.work_item is not None
+    assert decision.work_item.probe_only is True
+    assert decision.work_item.dimensions_only is True
+    assert decision.work_item.probe_dimensions is True
+
+
+def test_a_png_camera_probe_with_known_dimensions_does_not_read_the_range() -> None:
+    """Gegenprobe: Ist nur die Kamera offen, gibt es fuer PNG nichts zu lesen. Der Posten setzt
+    allein den Kamera-Merker und laesst die bekannte Aufloesung stehen."""
+    entries = [("CostaRica/img.png", _entry("img.png", "same-etag"))]
+    existing = {
+        "CostaRica/img.png": _existing_photo(
+            "CostaRica/img.png", "same-etag", camera_probed=False, pixel_count_probed=True
+        )
+    }
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    decision = classification.decisions[0]
+    assert decision.work_item is not None
+    assert decision.work_item.dimensions_only is False
+    assert decision.work_item.probe_dimensions is False
+
+
 def test_an_unprobed_camera_reads_the_dimensions_in_the_same_window() -> None:
     """Ein bestehender Kamera-Nachhol-Posten liest die Masse aus DEMSELBEN Range-Fenster. Er ist
     deshalb KEIN `dimensions_only`-Posten: Zeit, Ort und Kamera werden weiterhin geschrieben."""
