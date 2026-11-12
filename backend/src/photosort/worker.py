@@ -1437,12 +1437,14 @@ async def run_project_scoring(
                     sharpness=metrics.sharpness,
                     taken_at=photo.taken_at if trusted else None,
                     taken_at_trusted=trusted,
+                    pixel_count=photo.pixel_count,
                 )
             )
 
-        duplicate_of_map = assign_duplicate_groups(fingerprints)
+        assignment = assign_duplicate_groups(fingerprints)
+        duplicate_of_map = assignment.duplicate_of
 
-        rejected_ids = set(duplicate_of_map.keys())
+        rejected_ids = set(duplicate_of_map)
         for photo_id, metrics in computed.items():
             if metrics.sharpness < SHARPNESS_REJECT_THRESHOLD:
                 rejected_ids.add(photo_id)
