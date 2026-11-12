@@ -1094,8 +1094,10 @@ Verarbeitungs-Cache (Thumbnails).
     - **Die Auflösung kommt aus dem Scan, nicht aus einer Schätzung.** `Photo.pixel_count` und
       `Photo.pixel_count_probed` entstehen im Scan aus derselben Dekodierung, die schon das
       Seitenverhältnis liefert (`opencloud/exif.py::extract_pixel_count`,
-      `thumbnails.py::VariantResult.pixel_count`). Ein unlesbarer Kopf ergibt `None` und setzt den
-      Merker trotzdem — kein Endlos-Abruf je Scan. `pixel_count` verlässt die Datenbank nicht.
+      `thumbnails.py::VariantResult.pixel_count`). Ein unlesbarer Kopf und eine Kopfangabe über
+      100 Megapixel ergeben `None` und setzen den Merker trotzdem — kein Endlos-Abruf je Scan, und
+      keine Fremdzahl, die den `INTEGER`-Bereich der Spalte reißt. `pixel_count` verlässt die
+      Datenbank nicht.
     - **Gewinnerregel nur für praktisch identische Gruppen:** Auflösung, dann ältere **verlässliche**
       Aufnahmezeit, dann kleinere `photo_id`. In ähnlichen Serien bleibt die Schärfe der Vorschlag
       (Produktentscheidung Daniel, 2026-11-12); eine aus dem Dateidatum abgeleitete Zeit zählt

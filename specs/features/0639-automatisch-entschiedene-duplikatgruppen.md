@@ -159,9 +159,11 @@ nicht. `duplicate_probe.py` zieht die Rückgabeform nach.
 - Voller Arbeitsposten: `thumbnails.py::generate_variants` gibt `VariantResult(aspect_ratio,
 pixel_count)` zurück, aus derselben Dekodierung; unbedingt geschrieben, auch zurück auf `None`.
 - Nachhol-Posten für unveränderte Dateien ohne Merker: liest **nur** die Maße aus dem bestehenden
-Range-Fenster (`opencloud/exif.py::extract_pixel_count`, neues `ScanWorkItem.dimensions_only`),
-deckt alle `IMAGE_EXTENSIONS` ab, lässt Zeit, Ort und Kamera unberührt und setzt den Merker auch
-ohne Fund. Ein bestehender Kamera-Nachhol-Posten liest die Maße aus demselben Fenster mit.
+Range-Fenster (`opencloud/exif.py::extract_pixel_count`). Das neue
+`ScanWorkItem.probe_dimensions` löst den Range-Read endungsunabhängig aus, `dimensions_only` hält
+Zeit, Ort und Kamera aus dem Schreibweg; zusammen deckt das alle `IMAGE_EXTENSIONS` ab. Der
+Merker fällt auch ohne Fund. Ein bestehender Kamera-Nachhol-Posten an einer EXIF-Endung liest
+die Maße aus demselben Fenster mit; eine Nicht-EXIF-Endung setzt allein den Kamera-Merker.
 
 ### Merker und Laufbindung
 
@@ -465,7 +467,9 @@ berührte Grenze ist die Cloud-Abflussgrenze aus ADR 0104 — sie wird gelesen, 
   den HEIF-Opener registriert (`image_codecs.py`) — ein neues Modul mit eigenem `from PIL import
   Image` umginge die Registrierung. Gelesen werden nur Maße, keine Pixeldaten; ein unlesbarer oder
   entarteter Kopf ergibt `None` und setzt trotzdem `pixel_count_probed` (kein Endlos-Abruf je Scan).
-  Eine geschätzte Zahl ist untersagt — sie verschöbe die Gewinnerregel stillschweigend.
+  Eine Kopfangabe über 100 Megapixel wird als `None` verworfen: Sie ist keine gemessene Auflösung
+  und risse sonst den `INTEGER`-Bereich der Spalte. Eine geschätzte Zahl ist untersagt — sie
+  verschöbe die Gewinnerregel stillschweigend.
   `pixel_count` verlässt die Datenbank nicht: kein Antwortfeld trägt es.
 
 **Restrisiko (von der Story getragen, hier nicht neu entschieden):** Eine fälschlich als praktisch
