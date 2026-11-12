@@ -162,7 +162,9 @@ export function DuplicateComparePage() {
       { photoId: decidedPhotoId, decision },
       {
         onSuccess: () => {
-          if (decision === 'keep') {
+          // Nur eine AUTOMATISCH entschiedene Gruppe wird zurückgenommen; in einer offenen
+          // Gruppe ist „Behalten“ eine gewöhnliche Entscheidung ohne Ansage.
+          if (decision === 'keep' && query.data?.auto_decided === true) {
             setAutoUndone(true)
           }
         },

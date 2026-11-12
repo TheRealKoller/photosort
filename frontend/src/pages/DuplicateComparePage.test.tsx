@@ -621,6 +621,21 @@ describe('DuplicateComparePage - automatisch entschieden (Spec 0639)', () => {
     expect(confirmButton()).toBeTruthy()
   })
 
+  it('meldet in einer offenen Gruppe keine Rücknahme', async () => {
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(group([11, 12]))
+    vi.mocked(duplicatesApi.setDuplicateDecision).mockResolvedValue(group([11, 12]))
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Behalten: Reise/serie-11.jpg' }))
+
+    await waitFor(() => expect(duplicatesApi.setDuplicateDecision).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Behalten: Reise/serie-11.jpg' })).toBeEnabled(),
+    )
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
   it('behaelt die Kennzeichnung, wenn der Schreibweg scheitert', async () => {
     vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
       group([11, 12], { autoDecided: true }),
