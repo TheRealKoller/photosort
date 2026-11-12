@@ -11,6 +11,11 @@ export interface ListAusschussParams {
    * eine Aufnahme außerhalb der geladenen Seite eine definierte Antwort statt einer Lücke.
    */
   photoId?: number
+  /**
+   * Nur automatisch entschiedene Stapel (Spec 0639). `false` wirkt wie weggelassen; zusammen mit
+   * `photoId` antwortet der Server mit `422`.
+   */
+  autoDecided?: boolean
 }
 
 /**
@@ -36,6 +41,9 @@ export function listAusschuss(
   }
   if (params.photoId !== undefined) {
     query.set('photo_id', String(params.photoId))
+  }
+  if (params.autoDecided) {
+    query.set('auto_decided', 'true')
   }
   const queryString = query.toString()
   return apiFetch<AusschussOut>(

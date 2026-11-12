@@ -40,9 +40,11 @@ function stand(ids: number[], total: number): AusschussOut {
       group_anchor_photo_id: null,
       keep_possible: false,
       decision_effective: null,
+      auto_decided: false,
     })),
     total,
     open_count: 0,
+    auto_decided_group_count: 0,
   }
 }
 
@@ -71,8 +73,9 @@ describe('useAusschussQuery', () => {
     expect(ausschussApi.listAusschuss).toHaveBeenCalledWith(7, {
       limit: AUSSCHUSS_PAGE_SIZE,
       offset: 0,
+      autoDecided: false,
     })
-    expect(queryClient.getQueryData(['photos', 7, 'ausschuss', 'liste'])).toEqual({
+    expect(queryClient.getQueryData(['photos', 7, 'ausschuss', 'liste', false])).toEqual({
       pages: [stand([42], 1)],
       pageParams: [0],
     })
@@ -92,6 +95,7 @@ describe('useAusschussQuery', () => {
     expect(ausschussApi.listAusschuss).toHaveBeenLastCalledWith(7, {
       limit: AUSSCHUSS_PAGE_SIZE,
       offset: 1,
+      autoDecided: false,
     })
   })
 
@@ -105,6 +109,7 @@ describe('useAusschussQuery', () => {
       member_count: 5,
       group_size: 6,
       decision_counts: { undecided: 5, keep: 0, discard: 0 },
+      auto_decided: false,
     }
     const ersteSeite = stand([42], 3)
     vi.mocked(ausschussApi.listAusschuss)
@@ -120,7 +125,28 @@ describe('useAusschussQuery', () => {
     expect(ausschussApi.listAusschuss).toHaveBeenLastCalledWith(7, {
       limit: AUSSCHUSS_PAGE_SIZE,
       offset: 2,
+      autoDecided: false,
     })
+  })
+
+  it('traegt den Automatik-Filter im Schluessel und in der Anfrage (Spec 0639)', async () => {
+    // Zwei Sichten auf denselben Bestand duerfen sich nicht denselben Zwischenspeicher teilen.
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([42], 1))
+    const { queryClient, wrapper } = sharedClient()
+
+    const { result } = renderHook(
+      () => useAusschussQuery(7, { enabled: true, autoDecided: true }),
+      { wrapper },
+    )
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(ausschussApi.listAusschuss).toHaveBeenCalledWith(7, {
+      limit: AUSSCHUSS_PAGE_SIZE,
+      offset: 0,
+      autoDecided: true,
+    })
+    expect(queryClient.getQueryData(['photos', 7, 'ausschuss', 'liste', true])).toBeDefined()
+    expect(queryClient.getQueryData(['photos', 7, 'ausschuss', 'liste', false])).toBeUndefined()
   })
 
   it('fragt gar nicht, solange der Aufrufer es nicht freigibt', async () => {

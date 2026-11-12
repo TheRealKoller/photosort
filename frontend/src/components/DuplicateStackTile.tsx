@@ -38,14 +38,18 @@ export function DuplicateStackTile({
   height: number
 }) {
   const { undecided, keep, discard } = entry.decision_counts
-  const teile = [
-    { anzahl: undecided, text: `${undecided} vorgeschlagen`, schrift: 'text-text-muted' },
-    { anzahl: discard, text: `${discard} Ausschuss`, schrift: 'text-danger-text' },
-    { anzahl: keep, text: `${keep} behalten`, schrift: 'text-accent' },
-  ].filter((teil) => teil.anzahl > 0)
-  const name =
-    `Duplikat-Gruppe mit ${entry.group_size} Aufnahmen vergleichen ` +
-    `(${teile.map((teil) => teil.text).join(', ')}): ${entry.cover.relative_path}`
+  const teile = entry.auto_decided
+    ? []
+    : [
+        { anzahl: undecided, text: `${undecided} vorgeschlagen`, schrift: 'text-text-muted' },
+        { anzahl: discard, text: `${discard} Ausschuss`, schrift: 'text-danger-text' },
+        { anzahl: keep, text: `${keep} behalten`, schrift: 'text-accent' },
+      ].filter((teil) => teil.anzahl > 0)
+  const name = entry.auto_decided
+    ? `Duplikat-Gruppe mit ${entry.group_size} Aufnahmen, automatisch entschieden: ` +
+      entry.cover.relative_path
+    : `Duplikat-Gruppe mit ${entry.group_size} Aufnahmen vergleichen ` +
+      `(${teile.map((teil) => teil.text).join(', ')}): ${entry.cover.relative_path}`
 
   return (
     <li className="relative" style={{ width, height }}>
@@ -76,6 +80,14 @@ export function DuplicateStackTile({
           </span>
           <span className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-x-2 bg-overlay px-2 py-1 text-xs">
             <span className="text-text-h">{entry.group_size} Aufnahmen</span>
+            {entry.auto_decided && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span data-stack-summary className="hyphens-auto text-text-h">
+                  Automatisch entschieden
+                </span>
+              </>
+            )}
             {teile.map((teil, index) => (
               <Fragment key={teil.text}>
                 {index > 0 && <span aria-hidden="true">·</span>}

@@ -21,6 +21,7 @@ import type {
   ScoringRunSummary,
 } from '../../api/types'
 import {
+  AUSSCHUSS_AUTO_EMPTY_TEXT,
   AUSSCHUSS_EMPTY_TEXT,
   AUSSCHUSS_MISSING_ENTRY_TEXT,
   AusschussStepPage,
@@ -102,6 +103,7 @@ function entry(
     group_anchor_photo_id: groupAnchorPhotoId,
     keep_possible: keepPossible,
     decision_effective: decisionEffective,
+    auto_decided: false,
   }
 }
 
@@ -113,16 +115,22 @@ function stapel(anchor: number, cover: number, groupSize = 3): AusschussGroupEnt
     member_count: 2,
     group_size: groupSize,
     decision_counts: { undecided: 2, keep: 0, discard: 0 },
+    auto_decided: false,
   }
 }
 
 function stand(
   items: AusschussOut['items'],
-  { total, openCount }: { total?: number; openCount?: number } = {},
+  {
+    total,
+    openCount,
+    autoDecidedGroupCount = 0,
+  }: { total?: number; openCount?: number; autoDecidedGroupCount?: number } = {},
 ): AusschussOut {
   return {
     items,
     total: total ?? items.length,
+    auto_decided_group_count: autoDecidedGroupCount,
     open_count:
       openCount ??
       items.filter((eintrag) => eintrag.kind === 'photo' && eintrag.decision === null).length,
@@ -143,6 +151,7 @@ function group(ids: number[], decisions: DuplicateDecision[] = []): DuplicateGro
     previous_photo_id: null,
     next_photo_id: null,
     span_seconds: 0,
+    auto_decided: false,
   }
 }
 
@@ -757,8 +766,103 @@ describe('AusschussStepPage - Uebersicht', () => {
       expect(ausschussApi.listAusschuss).toHaveBeenLastCalledWith(1, {
         limit: 60,
         offset: 60,
+        autoDecided: false,
       }),
     )
+  })
+})
+
+describe('AusschussStepPage - automatisch entschiedene Gruppen (Spec 0639)', () => {
+  it('verlinkt den Zaehler mit der Zahl des Servers in die gefilterte Ansicht', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
+      stand([stapel(50, 51)], { autoDecidedGroupCount: 2 }),
+    )
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    const link = await screen.findByRole('link', { name: '2 Gruppen automatisch entschieden' })
+    expect(link.getAttribute('href')).toBe('/projects/1/pipeline/ausschuss?auto=1')
+  })
+
+  it('nennt bei genau einer Gruppe den Singular', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([], { autoDecidedGroupCount: 1 }))
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    expect(
+      await screen.findByRole('link', { name: '1 Gruppe automatisch entschieden' }),
+    ).toBeTruthy()
+  })
+
+  it('zeigt bei 0 keine Zeile - auch keinen Platzhalter', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([], { autoDecidedGroupCount: 0 }))
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    await screen.findByText(AUSSCHUSS_EMPTY_TEXT)
+    expect(screen.queryByRole('link', { name: /automatisch entschieden$/ })).toBeNull()
+  })
+
+  it('zeigt waehrend des Ladens und im Fehler weder Zaehler noch 0', async () => {
+    const haengt = zurueckgehalten<AusschussOut>()
+    vi.mocked(ausschussApi.listAusschuss).mockReturnValue(haengt.promise)
+    const { unmount } = renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    await screen.findByLabelText('Ausschnitt wird geladen…')
+    expect(screen.queryByRole('link', { name: /automatisch entschieden$/ })).toBeNull()
+    unmount()
+
+    vi.mocked(ausschussApi.listAusschuss).mockRejectedValue(new ApiError(500, 'Serverfehler'))
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }))
+
+    await screen.findByText('Serverfehler')
+    expect(screen.queryByRole('link', { name: /automatisch entschieden$/ })).toBeNull()
+  })
+
+  it('liest mit `?auto=1` nur die gefilterte Sicht und bietet den Rueckweg an', async () => {
+    // Der Filter steht in der ADRESSE - der Zurueck-Knopf des Browsers traegt ihn mit.
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(
+      stand([stapel(50, 51)], { autoDecidedGroupCount: 1 }),
+    )
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }), '/x?auto=1')
+
+    expect(ausschussApi.listAusschuss).toHaveBeenCalledWith(1, {
+      limit: 60,
+      offset: 0,
+      autoDecided: true,
+    })
+    expect(await screen.findByTestId('ausschuss-auto-filter')).toHaveTextContent(
+      'Nur automatisch entschiedene Gruppen',
+    )
+    expect(screen.getByRole('link', { name: 'Alle Gruppen anzeigen' }).getAttribute('href')).toBe(
+      '/projects/1/pipeline/ausschuss',
+    )
+    // Der Zaehler selbst steht nur in der ungefilterten Ansicht.
+    expect(screen.queryByRole('link', { name: /automatisch entschieden$/ })).toBeNull()
+  })
+
+  it('zeigt in der gefilterten Ansicht den eigenen Leertext statt des allgemeinen', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockResolvedValue(stand([]))
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }), '/x?auto=1')
+
+    expect(await screen.findByText(AUSSCHUSS_AUTO_EMPTY_TEXT)).toBeTruthy()
+    expect(screen.queryByText(AUSSCHUSS_EMPTY_TEXT)).toBeNull()
+  })
+
+  it('traegt den Filter beim Schliessen der Detailansicht weiter', async () => {
+    vi.mocked(ausschussApi.listAusschuss).mockImplementation((_projectId, params) =>
+      Promise.resolve(
+        params?.photoId === undefined
+          ? stand([entry(51, { reason: 'duplicate', groupAnchorPhotoId: 50 })])
+          : stand([entry(51, { reason: 'duplicate', groupAnchorPhotoId: 50 })]),
+      ),
+    )
+    const user = userEvent.setup()
+    renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }), '/x?auto=1')
+
+    await user.click(await screen.findByRole('button', { name: /serie-51\.jpg öffnen/ }))
+    expect(abfrage()).toContain('photo=51')
+    expect(abfrage()).toContain('auto=1')
+
+    await user.click(screen.getByRole('button', { name: 'Detailansicht schließen' }))
+    expect(abfrage()).toBe('auto=1')
   })
 })
 
@@ -920,7 +1024,11 @@ describe('AusschussStepPage - Detailansicht', () => {
     renderPage(project({ last_scoring_run: ERFOLGREICHER_LAUF }), '/x?photo=abc')
 
     expect(await screen.findByRole('button', { name: /serie-42\.jpg öffnen/i })).toBeInTheDocument()
-    expect(ausschussApi.listAusschuss).toHaveBeenCalledWith(1, { limit: 60, offset: 0 })
+    expect(ausschussApi.listAusschuss).toHaveBeenCalledWith(1, {
+      limit: 60,
+      offset: 0,
+      autoDecided: false,
+    })
   })
 
   it('zeigt die Detailansicht nur nach einem erfolgreichen Erkennungslauf', () => {

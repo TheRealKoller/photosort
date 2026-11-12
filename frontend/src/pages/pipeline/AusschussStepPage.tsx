@@ -29,7 +29,7 @@ import {
   naturalTiles,
 } from '../../utils/justifiedRows'
 import type { JustifiedTile } from '../../utils/justifiedRows'
-import { duplicateComparePath } from '../../utils/projectRoutes'
+import { ausschussStepPath, duplicateComparePath } from '../../utils/projectRoutes'
 import { deriveStepAction } from '../../utils/stepActions'
 import { AUSSCHUSS_NOTHING_SORTED_TEXT } from '../../utils/stepActionTexts'
 import type { PipelineOutletContext } from './ProjectPipelineLayout'
@@ -46,6 +46,14 @@ export const AUSSCHUSS_EMPTY_TEXT = 'Kein Ausschuss gefunden — es gibt derzeit
 /** Der benannte Zustand der Detailansicht, wenn die Aufnahme nicht (mehr) im Bestand liegt: Die
  * Antwort des `photo_id`-Filters ist leer, weil ein neuer Lauf die Entscheidung aufgeloest hat -
  * kein Fehler, sondern ein definierter Zustand mit Rueckweg. */
+/** Der eigene Leertext der gefilterten Ansicht (Spec 0639): Der allgemeine Leertext erscheint
+ * dann NICHT zusätzlich — zwei getrennte Leerzustände, nie zugleich. */
+export const AUSSCHUSS_AUTO_EMPTY_TEXT = 'Keine automatisch entschiedenen Gruppen.'
+
+/** Der Rückweg aus der gefilterten Ansicht steht an derselben Stelle wie sonst der Zähler und
+ * hängt an der ADRESSE, nicht an der Antwort — er ist auch beim Laden und im Fehler bedienbar. */
+const AUSSCHUSS_AUTO_FILTER_TEXT = 'Nur automatisch entschiedene Gruppen'
+
 export const AUSSCHUSS_MISSING_ENTRY_TEXT =
   'Diese Aufnahme gehört nicht mehr zum Ausschuss. Möglicherweise hat ein neuer Lauf sie aufgelöst.'
 
@@ -134,11 +142,15 @@ export function AusschussStepPage() {
   )
 
   const detailPhotoId = parsePhotoParam(searchParams.get('photo'))
+  const autoFilter = searchParams.get('auto') === '1'
   // Nur nach einem erfolgreichen Lauf: Ohne ihn gibt es keine Vorschlaege und damit keinen
   // Bestand - jeder Aufruf dieses Schritts setzte sonst eine Anfrage ab, die nichts beantworten
   // kann. Die Abfrage bleibt auch in der Detailansicht geladen, damit die Rueckkehr in die
   // Uebersicht die bereits geholten Seiten behaelt.
-  const ausschussQuery = useAusschussQuery(project.id, { enabled: scoringStatus === 'success' })
+  const ausschussQuery = useAusschussQuery(project.id, {
+    enabled: scoringStatus === 'success',
+    autoDecided: autoFilter,
+  })
 
   const { ref: gridRef, width: containerWidth } = useElementWidth<HTMLUListElement>()
 
@@ -150,6 +162,8 @@ export function AusschussStepPage() {
   const total = ausschussQuery.data?.pages[0]?.total ?? 0
   // `null`, solange der Bestand nicht geladen ist - die Abschluss-Aktion steht dann ohne Anzahl.
   const openCount = ausschussQuery.data?.pages[0]?.open_count ?? null
+  // Projektweit und damit auch in der gefilterten Ansicht dieselbe Zahl (Architektur).
+  const autoDecidedGroupCount = ausschussQuery.data?.pages[0]?.auto_decided_group_count ?? null
 
   const tiles = useMemo(() => {
     const ratios = entries.map(
@@ -291,6 +305,23 @@ export function AusschussStepPage() {
 
       {scoringStatus === 'success' && <p className="text-sm text-text">{suggestionsFoundText}</p>}
 
+      {/* Zähler als Link in die gefilterte Ansicht. Bei 0 entfällt die Zeile ganz; solange
+          geladen wird oder ein Fehler vorliegt, gibt es keine 0 und keinen Platzhalter. */}
+      {!autoFilter &&
+        ausschussQuery.isSuccess &&
+        autoDecidedGroupCount !== null &&
+        autoDecidedGroupCount > 0 && (
+          <div className="flex flex-wrap">
+            <Button asChild variant="outline" size="sm" className="h-11 sm:h-8">
+              <Link to={ausschussStepPath(project.id, { auto: true })}>
+                {autoDecidedGroupCount === 1
+                  ? '1 Gruppe automatisch entschieden'
+                  : `${autoDecidedGroupCount} Gruppen automatisch entschieden`}
+              </Link>
+            </Button>
+          </div>
+        )}
+
       {/* Nach der Bestaetigung bleibt der Schritt aufrufbar - weitere Anpassungen sind moeglich,
           und es kann erneut bestaetigt werden. */}
       {gateConfirmedAt !== null && (
@@ -307,6 +338,17 @@ export function AusschussStepPage() {
       ) : (
         scoringStatus === 'success' && (
           <div className="flex w-full flex-col items-start gap-3">
+            {autoFilter && (
+              <div className="flex flex-wrap items-center gap-3">
+                <p data-testid="ausschuss-auto-filter" className="text-sm text-text">
+                  {AUSSCHUSS_AUTO_FILTER_TEXT}
+                </p>
+                <Button asChild variant="ghost" size="sm" className="h-11 sm:h-8">
+                  <Link to={ausschussStepPath(project.id)}>Alle Gruppen anzeigen</Link>
+                </Button>
+              </div>
+            )}
+
             {ausschussQuery.isLoading && (
               <ul
                 role="status"
@@ -333,7 +375,9 @@ export function AusschussStepPage() {
             )}
 
             {ausschussQuery.isSuccess && entries.length === 0 && (
-              <p className="text-sm text-text">{AUSSCHUSS_EMPTY_TEXT}</p>
+              <p className="text-sm text-text">
+                {autoFilter ? AUSSCHUSS_AUTO_EMPTY_TEXT : AUSSCHUSS_EMPTY_TEXT}
+              </p>
             )}
 
             {entries.length > 0 && (
