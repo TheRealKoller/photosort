@@ -2841,6 +2841,62 @@ die grün bleibt, während das Produkt falsch ist:
 nicht die Prozentzahl; der neue Code könnte weitgehend ungetestet bleiben, ohne `--cov-fail-under=80`
 zu röten.
 
+## Ein Merker, der im selben Commit wie der Laufstart fällt, ein Rückgabetyp mit zwei Aussagen und ein Filter, der einen anderen ausschließt (`worker.py`/`scoring.py`/`duplicates.py`/`api/photos.py`/`demo_state.py`) — neu für ADR [`0146`](../decisions/0146-automatisch-entschiedene-duplikatgruppen.md) / Story [`#639`](https://github.com/TheRealKoller/photosort/issues/639)
+
+Fünf Punkte, jeder aus einer Fehlerklasse, die grün bleibt, während das Produkt falsch ist:
+
+1. **Eine Bindung an den laufenden Lauf wird an den ABBRUCHPFADEN geprüft, nicht am Erfolg.** Der
+   Merker fällt projektweit im selben Commit, der den `RUNNING`-Lauf anlegt; gesetzt wird er nur im
+   SUCCESS-Commit. Drei Fälle nach den etablierten Mustern (`monkeypatch` auf
+   `assign_duplicate_groups`, ein gezielt fehlschlagender vierter Commit, abgebrochene Coroutine):
+   Nach einem Lauf, der zuvor einen Merker trug, ist er an **jeder** Aufnahme des Projekts `false`,
+   und der Ausschuss-Lesepfad bewertet die Gruppe nach dem neuen Stand. Der Gegenfall (erfolgreicher
+   Lauf setzt denselben Zustand erneut, ohne doppelte oder widersprüchliche Einträge) steht daneben
+   — ein Test, der nur den Erfolg kennt, besteht auch gegen einen nie zurückgesetzten Merker. Die
+   Zusage ist damit der **Zustand nach dem Lauf**, nicht der Zeitpunkt der `UPDATE`-Anweisung; ein
+   Test auf die Commit-Reihenfolge prüfte die Umsetzung statt der Zusage.
+2. **Ein Wettlauf, dessen Verlierer plausibel aussieht, wird mit der Fremdzeile zwischen Lesen und
+   Erfolgs-Commit gebaut.** Die Bedingung „kein Mitglied trägt eine Entscheidung“ steht als
+   `NOT EXISTS` in derselben `UPDATE`-Anweisung. Der Test hängt einen Wrapper um
+   `assign_duplicate_groups`, der die echte Funktion aufruft und danach die Nutzerzeile schreibt;
+   der Erfolgs-Commit darf den Merker dann nicht setzen, die Zeile bleibt, die Gruppe ist offen.
+   Ohne die Gegenprobe (derselbe Wrapper ohne Fremdzeile → Merker gesetzt) bestünde der Fall auch
+   gegen eine Umsetzung, die nie setzt. Ein zweiter Verbindungsweg ist weder nötig noch mit
+   `aiosqlite`/In-Memory ehrlich herstellbar: Geprüft wird, dass die Bedingung aus dem AKTUELLEN
+   Stand gelesen wird, nicht aus einem früheren Snapshot.
+3. **Zwei Filter, die sich ausschließen, bekommen ihren `422`-Fall; die projektweiten Zähler einen
+   Aufruf, der beide Zahlen NEBENEINANDER zeigt.** `auto_decided=true` zusammen mit `photo_id` ist
+   `422` mit festem `detail`; `auto_decided=false` wirkt wie weggelassen und bekommt den Gegenfall.
+   Der tragende Aufruf setzt `limit` kleiner als den Bestand und `auto_decided=true`: `total` zählt
+   dann die gefilterten Einträge, `open_count` und `auto_decided_group_count` bleiben projektweit
+   und müssen den Werten des ungefilterten Aufrufs entsprechen. Ein eigener Fall mit `offset` belegt,
+   dass der Zähler nicht mitblättert — sonst bestünde der Test gegen einen Zähler über der geladenen
+   Seite.
+4. **Ein Rückgabetyp, der von `dict` auf eine Dataklasse wechselt, macht jede bestehende
+   Gleichheits-Assertion zu einer benannten Erwartungsänderung.** `assign_duplicate_groups` liefert
+   künftig `DuplicateAssignment`; die vorhandenen `== {2: 1}`-Zusicherungen wandern auf
+   `.duplicate_of`, und die neue Menge `.identical_winners` wird gegen eine **Relation** geprüft
+   (jeder Gewinner aus Durchgang 1 steht nirgends als Verlierer; jedes Mitglied seines Sterns hat
+   eine identische Kante zu ihm), nicht gegen eine abgeschriebene Id-Liste. Die alte Signatur bleibt
+   nicht als zweiter Rückgabeweg stehen; die Teständerung wird im Pull Request als abgelöste Zusage
+   benannt, nicht als Regression.
+5. **Eine Demo-Zusage über eine Gruppenmenge hält die alte Menge als Konstante und führt die neue
+   Gruppe als EIGENE Konstante.** `_DEMO_DUPLICATE_GROUP_SIZES` bleibt `(7, 3)`; die automatisch
+   entschiedene Gruppe kommt als dritte Konstante hinzu, `photo_count` ist die Summe über alle drei,
+   `suggestions_found` zählt weiter alle Abgelehnten. Ein Zusammenlegen in ein einziges Tupel nähme
+   der bestehenden Zusicherung ihre Aussage („die beiden offenen Gruppen bleiben offen, einschließlich
+   des unveränderlich abgelehnten Gewinners“). Die neue Gruppe wird über ihre prüfrelevante
+   Eigenschaft assertiert: Merker an genau den Verlierern, keine Entscheidungszeile, höhere Auflösung
+   und Schärfe über der Schwelle beim Gewinner — bei unveränderter Zahl der Demo-Projekte.
+
+**Zum Coverage-Gate und zu den Ebenen:** kein neues Werkzeug, keine neue Ebene. Unit: Gewinnerregel
+und Rückgabeform (`test_scoring.py`), Maße-Extraktion (`test_exif.py`). Integration: Scan-Schreibwege
+und Laufbindung (`test_worker_scan_*`, `test_worker_score_project.py`), Lesepfade/Filter/Schreibwege
+(`test_api_*`), Migration und Demo. `vitest`: Wort, Zähler, Linkziel, Filterparameter. **Kein neuer
+E2E-Fall** — die neue Fläche ist jsdom-fähig; `e2e/tests/ausschuss-stapel.spec.ts` erwartet künftig
+**drei** Stapel statt zwei (der automatisch entschiedene ist ein Eintrag der Übersicht), und diese
+Zahl ist eine benannte Erwartungsänderung.
+
 ## Was bewusst nicht getestet wird
 
 - Reine UI-Kosmetik (Pixelmaße, Layout, visuelle Wirkung, CSS-Feinheiten) — Design-System-Konformität ist Aufgabe des `ux-ui-designer`-Agenten bei Review/Umsetzung, dafür nicht automatisiert testbar mit sinnvollem Aufwand. **Teil-Rücknahme seit Spec [`0320`](../features/0320-dark-utility-register.md) (2026-09-05):** Für **exakte Farbwerte** gilt dieser Eintrag nicht mehr. Sobald ein Farbwert eine *ausgerechnete Zusage* trägt (eine Kontrastschwelle) oder eine *Streichung belegen* soll, ist er sehr wohl prüfbar und wird geprüft — siehe die neue Frontend-Sektion „Design-Vertrag“ unten. Pixelmaße, Layout und visuelle Wirkung bleiben ungeprüft; die Grenze verläuft zwischen einer nachrechenbaren Zusage und einem gestalterischen Urteil. Gleiches Prinzip gilt analog für die subjektive visuelle Qualität eines Diagramms (ADR 0013, "optisch weniger generisch"/"kompakter beim Rendern") — kein `ux-ui-designer`-Zuständigkeitsbereich (kein UI-Code), aber ebenso keine Assertion-fähige Eigenschaft. Ersatzverfahren: Vorher/Nachher-Screenshot-Vergleich (gleiche Browserbreite/Zoom) plus explizite Abnahme durch Daniel, der die ursprüngliche Beschwerde formuliert hat — kein selbst gewählter Pixel-/Prozent-Schwellenwert, siehe Teststrategie-Notiz zur Diagramm-Tooling-Richtlinie.
