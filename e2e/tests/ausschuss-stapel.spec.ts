@@ -13,7 +13,7 @@ import { DEMO_PROJECTS, demoProjectId } from '../lib/demo.ts'
 import { expect, test } from '../lib/fixtures.ts'
 
 const TOLERANCE = 1
-const STAPEL_NAME = /^Duplikat-Gruppe mit \d+ Aufnahmen vergleichen/
+const STAPEL_NAME = /^Duplikat-Gruppe mit \d+ Aufnahmen(?: vergleichen|, automatisch entschieden)/
 
 async function openStacks(page: Page): Promise<Locator> {
   const projectId = await demoProjectId(page, DEMO_PROJECTS.duplicates)
@@ -21,9 +21,10 @@ async function openStacks(page: Page): Promise<Locator> {
   const stapel = page
     .getByRole('listitem')
     .filter({ has: page.getByRole('link', { name: STAPEL_NAME }) })
-  // Vorbedingung: GENAU zwei Stapel - der Demo-Bestand fuehrt zwei Gruppen. Weniger hiesse, dass
-  // die Uebersicht nicht gruppiert; mehr, dass eine Gruppe ueber zwei Eintraege zerfaellt.
-  await expect(stapel, 'Stapel der Demo-Duplikate').toHaveCount(2)
+  // Vorbedingung: GENAU drei Stapel - der Demo-Bestand fuehrt zwei offene Gruppen und eine
+  // automatisch entschiedene (Spec 0639). Weniger hiesse, dass die Uebersicht nicht gruppiert;
+  // mehr, dass eine Gruppe ueber zwei Eintraege zerfaellt.
+  await expect(stapel, 'Stapel der Demo-Duplikate').toHaveCount(3)
   return stapel
 }
 

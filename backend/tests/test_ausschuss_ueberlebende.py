@@ -501,6 +501,35 @@ def test_the_six_replaced_occurrences_and_the_written_call_sites_are_held_side_b
     assert sum(gemessen.values()) - sql == 2
 
 
+def test_the_lauf_marker_never_appears_in_the_survival_or_effect_predicates() -> None:
+    """Spec 0639, Security S2: Die Aufrufstellenzaehlung sieht den INHALT des Praedikats nicht.
+
+    Deshalb zusaetzlich strukturell: In `survives_ausschuss*` und `decision_effective*` darf kein
+    Attributzugriff `auto_decided` stehen. Ein laufabhaengiger, maschinengeschriebener Wert im
+    Ueberlebens-Praedikat machte die Cloud-Kandidatenmenge davon abhaengig, ob ein Lauf erfolgreich
+    war - derselbe Fehlgriff, den ADR 0104 Punkt 3 mit dem Offen-Praedikat bereits abgrenzt.
+    """
+    quelle = (_SRC / "duplicates.py").read_text(encoding="utf-8")
+    praedikate = {
+        "survives_ausschuss",
+        "survives_ausschuss_for",
+        "decision_effective",
+        "decision_effective_for",
+    }
+
+    treffer: list[str] = []
+    for knoten in ast.walk(ast.parse(quelle)):
+        if not isinstance(knoten, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if knoten.name not in praedikate:
+            continue
+        for inner in ast.walk(knoten):
+            if isinstance(inner, ast.Attribute) and inner.attr == "auto_decided":
+                treffer.append(knoten.name)
+
+    assert treffer == []
+
+
 async def test_an_auto_decided_loser_is_not_an_open_suggestion_in_either_fassung(
     db_session: AsyncSession,
 ) -> None:

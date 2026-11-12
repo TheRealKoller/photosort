@@ -21,6 +21,14 @@ der bleibt.
 
 ### 1. Der angezeigte Zustand ist die Auswertung des Prädikats
 
+**Teilweise abgelöst:** Seit Spec
+[`0639`](../features/0639-automatisch-entschiedene-duplikatgruppen.md)/ADR
+[`0146`](./0146-automatisch-entschiedene-duplikatgruppen.md) unterscheidet die Ansicht zusätzlich,
+ob eine **ganze Gruppe** automatisch entschieden wurde (`DuplicateGroupOut.auto_decided` samt
+Wortkennzeichnung und Rücknahmehinweis). Der je Aufnahme angezeigte Zustand bleibt weiterhin die
+Auswertung des Prädikats, nie die Entscheidungszeile; die automatische Entscheidung ist ein
+Lauf-Merker neben der Zeile, keine zweite Anzeigeform derselben.
+
 `DuplicateGroupPhotoOut` trägt `effective_decision: DuplicateDecision` — `KEEP`, wenn das Foto den
 Ausschuss-Schritt überlebt, sonst `DISCARD`, berechnet durch
 `duplicates.py::effective_decision_for` über demselben `_survives`, das auch die beiden

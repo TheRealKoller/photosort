@@ -51,7 +51,7 @@ Danach existieren sechs Projekte, jedes für einen anderen Zweck:
 | `Demo — Große Sammlung` | Scrollen, Grid-Zeilen, Listendichte (~70 Fotos) |
 | `Demo — Bewertet` | alle Bewertungsstatus, Kriterien-Lauf, alle Kategorie-Schlüssel |
 | `Demo — Fehlerzustand` | fehlgeschlagener Lauf, Foto ohne Cache-Datei, Cloud-Vision-Fehlerzeile |
-| `Demo — Duplikate` | zwei Duplikat-Gruppen (7 und 3 Aufnahmen), beide unentschieden |
+| `Demo — Duplikate` | zwei offene Duplikat-Gruppen (7 und 3 Aufnahmen) und eine automatisch entschiedene aus 2 Aufnahmen |
 | `Demo — Langer Ausschuss` | unbestätigter Ausschuss über mehr als eine Seite (64 Einzelvorschläge, „Mehr laden“) |
 
 **Die Projekt-IDs sind nicht stabil.** Ein zweiter Seed-Lauf gegen dieselbe Datenbank vergibt neue IDs (Postgres setzt die Sequenz nicht zurück). Die IDs deshalb immer aus der Projektliste (`http://localhost:8080/`) ablesen, statt sie aus einem früheren Lauf zu übernehmen.

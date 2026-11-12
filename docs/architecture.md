@@ -1085,6 +1085,63 @@ Verarbeitungs-Cache (Thumbnails).
       durchgehen`, und der Prüfstack wählt ihn über genau dieses Präfixmuster. Ein Doppelpunkt
       bliebe dem entfallenen kachelgenauen Namen vorbehalten — ein Test hält fest, dass kein Link
       mehr mit `Duplikate vergleichen:` existiert.
+  - **Automatisch entschiedene Duplikatgruppen** *(Spec
+    [`0639`](../specs/features/0639-automatisch-entschiedene-duplikatgruppen.md), ADR
+    [`decisions/0146-automatisch-entschiedene-duplikatgruppen.md`](../specs/decisions/0146-automatisch-entschiedene-duplikatgruppen.md))*:
+    Der Lauf entscheidet **praktisch identische** Gruppen selbst und kennzeichnet das sichtbar.
+    Ein Nutzer-Schreibweg nimmt die Entscheidung jederzeit zurück; die Nutzerentscheidung gewinnt
+    immer.
+    - **Die Auflösung kommt aus dem Scan, nicht aus einer Schätzung.** `Photo.pixel_count` und
+      `Photo.pixel_count_probed` entstehen im Scan aus derselben Dekodierung, die schon das
+      Seitenverhältnis liefert (`opencloud/exif.py::extract_pixel_count`,
+      `thumbnails.py::VariantResult.pixel_count`). Ein unlesbarer Kopf ergibt `None` und setzt den
+      Merker trotzdem — kein Endlos-Abruf je Scan. `pixel_count` verlässt die Datenbank nicht.
+    - **Gewinnerregel nur für praktisch identische Gruppen:** Auflösung, dann ältere **verlässliche**
+      Aufnahmezeit, dann kleinere `photo_id`. In ähnlichen Serien bleibt die Schärfe der Vorschlag
+      (Produktentscheidung Daniel, 2026-11-12); eine aus dem Dateidatum abgeleitete Zeit zählt
+      nicht. Unbekannte Auflösung heißt **keine** automatische Entscheidung.
+    - **Zwei Durchgänge in `scoring.py`:** Pass 1 baut Sterne über identische Kanten in der neuen
+      Reihenfolge; deren Gewinner sind für Pass 2 vergeben, damit ein ähnliches Kettenmitglied eine
+      identische Gruppe nie nachträglich erweitert. `assign_duplicate_groups` liefert deshalb
+      `DuplicateAssignment(duplicate_of, identical_winners)` statt einer bloßen Abbildung.
+    - **Der Merker ist Laufzustand, keine Entscheidungszeile:** `PhotoScore.auto_decided` wird im
+      RUNNING-Commit projektweit zurückgesetzt und im SUCCESS-Commit nur an Pass-1-Verlierern
+      gesetzt, deren Gewinner über `SHARPNESS_REJECT_THRESHOLD` liegt, deren Auflösungen alle
+      bekannt sind und an denen **kein** Mitglied eine `photo_duplicate_decisions`-Zeile trägt
+      (`NOT EXISTS` in derselben `UPDATE`-Anweisung — ein Nutzer-Schreiben während des Laufs
+      gewinnt). `photo_duplicate_decisions` bleibt allein Nutzerentscheidung; kein Lauf schreibt
+      oder löscht dort.
+    - **Das Gate-Autoset zählt offene Vorschläge, nicht Ablehnungen:** Bedingung ist
+      `rejected_ids − auto_decided_ids == ∅` im SUCCESS-Commit; `suggestions_found` bleibt die Zahl
+      **aller** Ablehnungen. Der Autoset ist keine Einwilligung — der Cloud-Abfluss hängt
+      unverändert am projektweiten Schalter.
+    - **Nur das Offen-Prädikat kennt den Merker:** `duplicates.py::has_open_suggestion`/
+      `has_open_suggestion_for` nehmen `auto_decided` auf; `survives_ausschuss`,
+      `survives_ausschuss_for` und die vier cloud-bestimmenden Abfragen bleiben wörtlich
+      unverändert. Ein laufabhängiger Wert im Überlebens-Prädikat machte die Cloud-Kandidatenmenge
+      davon abhängig, ob ein Lauf erfolgreich war.
+    - **Antwortfelder und Filter:** `DuplicateGroupOut.auto_decided`,
+      `AusschussPhotoEntryOut.auto_decided` und `AusschussGroupEntryOut.auto_decided` benennen den
+      Zustand; `AusschussOut.auto_decided_group_count` ist projektweit und unabhängig von
+      `limit`/`offset`. `list_ausschuss` bekommt `auto_decided: bool`; zusammen mit `photo_id`
+      ergibt das `422` **vor** jeder Abfrage. Der gefilterte Zweig baut seine Einträge weiter aus
+      `load_duplicate_links(session, project.id)`; `total` zählt die gefilterten Einträge,
+      `open_count` und der Automatikzähler bleiben projektweit.
+    - **Rücknahme über den bestehenden Schreibweg:** Jeder Nutzer-Schreibweg (`set` je Foto wie je
+      Gruppe) setzt den Merker über die Mitglieder des Sterns zurück, die aus derselben
+      projektgebundenen `links`-Liste stammen, die den Repräsentanten aufgelöst hat;
+      `representative_of(None)` ist die leere Menge, nie „alle Fotos ohne `duplicate_of`“. Zeile
+      und Reset liegen in einer Transaktion.
+    - **Oberfläche:** Der Stapel ersetzt die Vorschlagszahl durch das Wort „Automatisch entschieden“
+      in `--text-h`; die Vergleichsansicht kennzeichnet die Gruppe und blendet „Gruppe
+      abschließen“ aus, statt es zu deaktivieren; die Rücknahme ist ein gewöhnliches „Behalten“ mit
+      Live-Meldung. Der Ausschuss-Schritt zeigt den Zähler als Link nur bei Zahl > 0, der Filter
+      `?auto=1` liegt ausschließlich in der Adresse und hat an derselben Stelle einen sichtbaren
+      Rückweg. `?auto=1` ist ein Filter und kein Umleitungsziel — Linkziele entstehen aus der
+      numerischen Projekt-Id.
+    - **Demo:** „Demo — Duplikate“ trägt drei Gruppen — die beiden offenen Größen `(7, 3)` und eine
+      automatisch entschiedene aus zwei Aufnahmen (eigene Konstante, höhere Auflösung und Schärfe
+      über der Schwelle beim Gewinner, Merker nur am Verlierer, keine Entscheidungszeile).
   - **Die laufende Diagnose der Modellfehler** *(Spec
     [`0432`](../specs/features/0432-diagnose-und-gewichte-aus-der-nacharbeit.md), ADR
     [`decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md`](../specs/decisions/0100-nacharbeit-als-ereignis-log-gewichte-persistiert-und-versioniert.md))*:
