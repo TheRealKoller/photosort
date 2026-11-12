@@ -320,8 +320,8 @@ class SkipReason(enum.Enum):
 @dataclass
 class ScanWorkItem:
     """Ein Eintrag aus Phase 1, der in Phase 2b tatsaechlich verarbeitet werden muss (neue Datei,
-    geaenderter Etag, oder die einmalige Kamera-Nachhol-Runde) - `existing_photo` ist `None` fuer
-    neue Dateien, sonst die zu aktualisierende Zeile.
+    geaenderter Etag, oder eine der einmaligen Nachhol-Runden fuer Kamera/Aufloesung) -
+    `existing_photo` ist `None` fuer neue Dateien, sonst die zu aktualisierende Zeile.
 
     `probe_only` heisst: die Datei ist UNVERAENDERT, gelesen wird nur ihr EXIF-Fenster, um die
     Kamera-Angabe nachzutragen. Die Thumbnails existieren bereits und waeren identisch - ihre
