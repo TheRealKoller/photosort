@@ -126,6 +126,9 @@ _ORIENTATION_TAG = 274
 _ORIENTATIONS_WITH_SWAPPED_AXES = frozenset({5, 6, 7, 8})
 
 
+_MAX_PIXEL_COUNT = 100_000_000
+
+
 def extract_pixel_count(content: bytes) -> int | None:
     """Breite x Hoehe des GEZEIGTEN Bildes aus einem (womoeglich abgeschnittenen) Kopfffenster.
 
@@ -139,6 +142,12 @@ def extract_pixel_count(content: bytes) -> int | None:
     entartete Masse ergeben `None`. Der Aufrufer setzt den Merker TROTZDEM, sonst laese jeder Scan
     denselben Bestand erneut ueber das Netz.
 
+    Mehr als `_MAX_PIXEL_COUNT` (100 Megapixel) sind eine Kopfangabe ohne jeden dekodierten Pixel
+    und deshalb kein Messwert: Sie ergeben `None`, statt den Wert in eine `INTEGER`-Spalte zu
+    schreiben, deren Bereich dann reisst. Die Schranke liegt in der Groessenordnung von Pillows
+    eigener Dekompressionsbombe, ist aber eine feste Zahl und haengt damit nicht an einer global
+    veraenderbaren Einstellung.
+
     Der Modulimport registriert den HEIF-Opener (`image_codecs.py`) - eine eigene Datei mit
     eigenem `from PIL import Image` umginge diese Registrierung und saehe jedes HEIC als
     unlesbar."""
@@ -149,6 +158,8 @@ def extract_pixel_count(content: bytes) -> int | None:
     except Exception:
         return None
     if width <= 0 or height <= 0:
+        return None
+    if width * height > _MAX_PIXEL_COUNT:
         return None
     if isinstance(orientation, int) and orientation in _ORIENTATIONS_WITH_SWAPPED_AXES:
         width, height = height, width

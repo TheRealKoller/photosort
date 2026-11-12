@@ -626,6 +626,31 @@ def test_extract_pixel_count_returns_none_for_foreign_bytes() -> None:
     assert extract_pixel_count(b"kein Bild, nur Text") is None
 
 
+def _jpeg_with_declared_size(width: int, height: int) -> bytes:
+    """Ein 8x8-JPEG, dessen SOF-Kopf auf beliebige Masse umgeschrieben ist. Es wird nichts
+    dekodiert - genau der Fall einer Kopfangabe ohne Pixelflaeche."""
+    import struct
+
+    content = bytearray(_jpeg_with_size(8, 8))
+    sof = content.find(b"\xff\xc0")
+    assert sof > 0, "SOF0-Marker fehlt"
+    struct.pack_into(">HH", content, sof + 5, height, width)
+    return bytes(content)
+
+
+def test_extract_pixel_count_rejects_a_header_above_the_safety_cap() -> None:
+    """Security: Ein Kopf, der 120 Megapixel deklariert, ist keine gemessene Aufloesung. Ohne
+    Schranke landete die Fremdzahl in der `INTEGER`-Spalte; ein noch groesserer Kopf risse das
+    Insert ab. `None` setzt den Merker und beendet die Nachholung ehrlich."""
+    assert extract_pixel_count(_jpeg_with_declared_size(20_000, 6_000)) is None
+
+
+def test_extract_pixel_count_accepts_exactly_the_safety_cap() -> None:
+    content = _jpeg_with_declared_size(10_000, 10_000)
+    with pytest.warns(Image.DecompressionBombWarning):
+        assert extract_pixel_count(content) == 100_000_000
+
+
 def test_extract_pixel_count_reads_only_the_header_not_the_pixels() -> None:
     """S9: Der Leser darf die Pixelflaeche nicht dekodieren. Ein Bild, dessen Pixel-Strom
     absichtlich kaputt ist, behaelt einen lesbaren Kopf und liefert deshalb seine Masse."""
