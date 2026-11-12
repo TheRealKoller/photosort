@@ -17,6 +17,7 @@ from PIL import Image
 from sqlalchemy import delete, exists, select, tuple_, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from photosort.aesthetics import AestheticsModelLike, build_aesthetics_model, compute_aesthetics
 from photosort.album_stage import load_album_levels
@@ -141,6 +142,7 @@ from photosort.models import (
     PhotoAlbumSuitability,
     PhotoCloudVisionError,
     PhotoCriterionScore,
+    PhotoDuplicateDecision,
     PhotoEyeFineLabel,
     PhotoEyeMotifStrength,
     PhotoEyeResult,
@@ -1347,6 +1349,14 @@ async def run_project_scoring(
     """
     scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.RUNNING)
     session.add(scoring_run)
+    # Ein neuer Lauf beginnt ohne automatische Entscheidung (ADR 0146 Punkt 3): Der Merker ist
+    # eine Aussage UEBER DIESEN Lauf, keine Historie. Der projektweite Reset laeuft in derselben
+    # Anweisung wie die Projektbindung - ein Foto eines anderen Projekts bleibt unberuehrt.
+    await session.execute(
+        update(PhotoScore)
+        .where(PhotoScore.photo_id.in_(select(Photo.id).where(Photo.project_id == project.id)))
+        .values(auto_decided=False)
+    )
     await session.commit()
     await session.refresh(scoring_run)
 
@@ -1470,13 +1480,69 @@ async def run_project_scoring(
             else:
                 score.cluster_key = cluster_map[photo_id]
 
+        # --- Automatische Entscheidung der praktisch identischen Sterne (ADR 0146) ----------
+        # Kandidaten sind die VERLIERER eines Durchgang-1-Sterns, wenn der Gewinner die
+        # Schaerfeschwelle erreicht und die Aufloesung JEDES Mitglieds bekannt ist. Unbekannt
+        # heisst unbekannt: keine Schaetzung, keine automatische Entscheidung.
+        photos_by_id = {photo.id: photo for photo in photos}
+        auto_candidate_losers: set[int] = set()
+        for winner_id in assignment.identical_winners:
+            winner_metrics = computed.get(winner_id)
+            if winner_metrics is None or winner_metrics.sharpness < SHARPNESS_REJECT_THRESHOLD:
+                continue
+            losers = {
+                loser for loser, star_winner in duplicate_of_map.items() if star_winner == winner_id
+            }
+            members = {winner_id, *losers}
+            if any(photos_by_id[member_id].pixel_count is None for member_id in members):
+                continue
+            auto_candidate_losers.update(losers)
+
+        auto_decided_ids: set[int] = set()
+        if auto_candidate_losers:
+            # Der NOT-EXISTS steht in DERSELBEN Anweisung wie das Setzen (Auflage S4): Eine
+            # Nutzerentscheidung, die waehrend des Laufs entsteht, gewinnt gegen den Automaten.
+            # Geprueft wird der Gewinner UND jedes Mitglied des Sterns; die Mitglieder sind ueber
+            # den soeben gesetzten `duplicate_of`-Stern erreichbar, ohne eine zweite Liste.
+            await session.flush()
+            member_score = aliased(PhotoScore)
+            await session.execute(
+                update(PhotoScore)
+                .where(PhotoScore.photo_id.in_(auto_candidate_losers))
+                .where(
+                    ~exists(
+                        select(PhotoDuplicateDecision.photo_id).where(
+                            (PhotoDuplicateDecision.photo_id == PhotoScore.duplicate_of)
+                            | PhotoDuplicateDecision.photo_id.in_(
+                                select(member_score.photo_id).where(
+                                    member_score.duplicate_of == PhotoScore.duplicate_of
+                                )
+                            )
+                        )
+                    )
+                )
+                .values(auto_decided=True)
+            )
+            auto_decided_ids = set(
+                (
+                    await session.execute(
+                        select(PhotoScore.photo_id).where(
+                            PhotoScore.photo_id.in_(auto_candidate_losers),
+                            PhotoScore.auto_decided.is_(True),
+                        )
+                    )
+                ).scalars()
+            )
+
         scoring_run.suggestions_found = len(rejected_ids)
         scoring_run.status = ScanStatus.SUCCESS
         scoring_run.finished_at = datetime.now(UTC).replace(tzinfo=None)
-        # Ausschuss-Gate-Autoset: kein Ausschuss gefunden -> nichts zu sichten, das Gate blockiert
-        # dann nicht mit einer leeren Liste. Ein nachfolgender expliziter confirm-ausschuss-gate-
-        # Aufruf bleibt trotzdem fehlerfrei moeglich (Idempotenz, siehe api/projects.py).
-        if scoring_run.suggestions_found == 0:
+        # Ausschuss-Gate-Autoset: kein OFFENER Ausschuss -> nichts zu sichten, das Gate blockiert
+        # dann nicht mit einer leeren Liste. Automatisch entschiedene Gruppen sind keine offene
+        # Sichtung; erst wenn jede uebrige Empfehlung automatisch entschieden ist, oeffnet sich
+        # das Gate. Ein nachfolgender expliziter confirm-ausschuss-gate-Aufruf bleibt trotzdem
+        # fehlerfrei moeglich (Idempotenz, siehe api/projects.py).
+        if len(rejected_ids - auto_decided_ids) == 0:
             scoring_run.gate_confirmed_at = _now_utc()
         await session.commit()
         return scoring_run

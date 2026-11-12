@@ -11,7 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.models import (
+    DuplicateDecision,
     Photo,
+    PhotoDuplicateDecision,
     PhotoScore,
     Project,
     Rating,
@@ -41,6 +43,7 @@ async def _add_photo(
     etag: str,
     taken_at: datetime,
     last_modified: datetime | None = None,
+    pixel_count: int | None = None,
 ) -> Photo:
     # Der Versatz haelt `taken_at_original != last_modified`: die Zeit gilt als aus dem Bild
     # gelesen. Ein Negativfall setzt `last_modified=taken_at` - dann ist sie abgeleitet.
@@ -52,6 +55,7 @@ async def _add_photo(
         taken_at=taken_at,
         taken_at_original=taken_at,
         last_modified=taken_at + timedelta(hours=1) if last_modified is None else last_modified,
+        pixel_count=pixel_count,
     )
     session.add(photo)
     await session.commit()
@@ -699,3 +703,168 @@ async def test_the_trigger_regression_yields_exactly_two_groups(
     assert set(grouped) == {photos[11].id, photos[12].id}
     assert grouped[photos[11].id] == photos[3].id
     assert grouped[photos[12].id] == photos[6].id
+
+
+async def _scored_pair(
+    db_session: AsyncSession,
+    tmp_path: Path,
+    *,
+    winner_pixel_count: int | None = 40_000,
+    loser_pixel_count: int | None = 10_000,
+    winner_image: Image.Image | None = None,
+    loser_image: Image.Image | None = None,
+) -> tuple[Project, Photo, Photo]:
+    """Ein praktisch identisches Paar mit gesetzter Aufloesung - Gewinner zuerst."""
+    project = await _make_project(db_session)
+    image = _sharp_photo_image() if winner_image is None else winner_image
+    base = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    winner = await _add_photo(
+        db_session,
+        project,
+        "winner.jpg",
+        "etag-winner",
+        base,
+        pixel_count=winner_pixel_count,
+    )
+    loser = await _add_photo(
+        db_session,
+        project,
+        "loser.jpg",
+        "etag-loser",
+        base + timedelta(minutes=1),
+        pixel_count=loser_pixel_count,
+    )
+    _write_display_variant(tmp_path, winner, image)
+    _write_display_variant(
+        tmp_path,
+        loser,
+        image.resize((100, 100), Image.Resampling.LANCZOS) if loser_image is None else loser_image,
+    )
+    return project, winner, loser
+
+
+async def _scores_by_id(session: AsyncSession) -> dict[int, PhotoScore]:
+    return {
+        score.photo_id: score for score in (await session.execute(select(PhotoScore))).scalars()
+    }
+
+
+async def test_an_identical_group_is_decided_automatically_and_opens_the_gate(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project, winner, loser = await _scored_pair(db_session, tmp_path)
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    scores = await _scores_by_id(db_session)
+    assert scores[loser.id].duplicate_of == winner.id
+    assert scores[loser.id].auto_decided is True
+    assert scores[winner.id].auto_decided is False
+    assert scoring_run.suggestions_found == 1
+    assert scoring_run.gate_confirmed_at is not None
+
+
+async def test_a_member_with_a_decision_keeps_the_group_open(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project, winner, loser = await _scored_pair(db_session, tmp_path)
+    db_session.add(PhotoDuplicateDecision(photo_id=loser.id, decision=DuplicateDecision.DISCARD))
+    await db_session.commit()
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    scores = await _scores_by_id(db_session)
+    assert scores[loser.id].duplicate_of == winner.id
+    assert scores[loser.id].auto_decided is False
+    assert scores[winner.id].auto_decided is False
+    assert scoring_run.gate_confirmed_at is None
+
+
+async def test_a_decision_on_the_winner_keeps_the_group_open(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project, winner, loser = await _scored_pair(db_session, tmp_path)
+    db_session.add(PhotoDuplicateDecision(photo_id=winner.id, decision=DuplicateDecision.KEEP))
+    await db_session.commit()
+
+    await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    scores = await _scores_by_id(db_session)
+    assert scores[loser.id].auto_decided is False
+    assert scores[winner.id].auto_decided is False
+
+
+async def test_an_unknown_resolution_blocks_the_automatic_decision(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project, winner, loser = await _scored_pair(
+        db_session, tmp_path, winner_pixel_count=None, loser_pixel_count=None
+    )
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    scores = await _scores_by_id(db_session)
+    assert scores[loser.id].duplicate_of == winner.id
+    assert scores[loser.id].auto_decided is False
+    assert scoring_run.gate_confirmed_at is None
+
+
+async def test_a_soft_identical_winner_does_not_decide_automatically(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    blurry = _blurry_photo_image()
+    project, _, _ = await _scored_pair(
+        db_session, tmp_path, winner_image=blurry, loser_image=blurry.resize((100, 100))
+    )
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    scores = await _scores_by_id(db_session)
+    assert all(score.auto_decided is False for score in scores.values())
+    assert scoring_run.gate_confirmed_at is None
+
+
+async def test_a_similar_group_is_never_decided_automatically(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    image = _sharp_photo_image()
+    project, winner, loser = await _scored_pair(
+        db_session, tmp_path, loser_image=image.filter(ImageFilter.GaussianBlur(radius=3.0))
+    )
+
+    scoring_run = await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    scores = await _scores_by_id(db_session)
+    assert scores[loser.id].duplicate_of == winner.id
+    assert scores[loser.id].auto_decided is False
+    assert scoring_run.gate_confirmed_at is None
+
+
+async def test_the_reset_touches_only_the_own_project(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    project = await _make_project(db_session)
+    other = Project(name="Anderes", opencloud_drive_id="drive-2", opencloud_path="Other")
+    db_session.add(other)
+    await db_session.commit()
+    await db_session.refresh(other)
+    moment = datetime(2023, 1, 1, 10, 0, tzinfo=UTC)
+    own_photo = await _add_photo(db_session, project, "a.jpg", "etag-a", moment)
+    other_photo = await _add_photo(db_session, other, "b.jpg", "etag-b", moment)
+    for photo in (own_photo, other_photo):
+        db_session.add(
+            PhotoScore(
+                photo_id=photo.id,
+                sharpness=50.0,
+                exposure=0.5,
+                computed_at=moment.replace(tzinfo=None),
+                auto_decided=True,
+            )
+        )
+    await db_session.commit()
+
+    await run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    scores = await _scores_by_id(db_session)
+    assert scores[own_photo.id].auto_decided is False
+    assert scores[other_photo.id].auto_decided is True
