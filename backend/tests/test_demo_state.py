@@ -243,9 +243,10 @@ class TestDemoProjectSpecs:
         ]
         assert all(is_demo_project_name(spec.name) for spec in specs)
 
-    def test_the_duplicate_project_holds_exactly_the_two_group_sizes(self) -> None:
-        """specs/features/0374-duplikate-vergleichen.md: ZWEI Gruppen verschiedener Groesse, und
-        die Fotoanzahl ist ihre Summe - kein Foto steht daneben.
+    def test_the_duplicate_project_holds_the_two_open_sizes_and_the_auto_group(self) -> None:
+        """specs/features/0374-duplikate-vergleichen.md und Spec 0639: ZWEI offene Gruppen
+        verschiedener Groesse, dazu eine automatisch entschiedene; die Fotoanzahl ist die Summe
+        ueber alle drei - kein Foto steht daneben.
 
         Die zweite Gruppe ist keine Zugabe: AK3 sichert zu, dass eine Gruppe mit sieben
         Mitgliedern UMBRICHT, statt die Bilder zu verkleinern, und diese Zusage ist nur pruefbar,
@@ -254,7 +255,10 @@ class TestDemoProjectSpecs:
         duplicates = demo_project_specs()[4]
 
         assert demo_state._DEMO_DUPLICATE_GROUP_SIZES == (7, 3)
-        assert duplicates.photo_count == sum(demo_state._DEMO_DUPLICATE_GROUP_SIZES)
+        assert demo_state._DEMO_AUTO_DECIDED_GROUP_SIZE == 2
+        assert duplicates.photo_count == (
+            sum(demo_state._DEMO_DUPLICATE_GROUP_SIZES) + demo_state._DEMO_AUTO_DECIDED_GROUP_SIZE
+        )
         assert len(set(demo_state._DEMO_DUPLICATE_GROUP_SIZES)) == len(
             demo_state._DEMO_DUPLICATE_GROUP_SIZES
         )
@@ -632,7 +636,7 @@ class TestRebuildDemoStateProducesTheSixStates:
             gruppen.setdefault(representative, []).append(photo_id)
 
         assert sorted(len(members) for members in gruppen.values()) == sorted(
-            demo_state._DEMO_DUPLICATE_GROUP_SIZES
+            (*demo_state._DEMO_DUPLICATE_GROUP_SIZES, demo_state._DEMO_AUTO_DECIDED_GROUP_SIZE)
         )
         for representative, members in gruppen.items():
             repraesentant = scores[representative]
@@ -668,12 +672,58 @@ class TestRebuildDemoStateProducesTheSixStates:
             score for score in repraesentanten if score.suggested_status == RatingStatus.REJECTED
         ]
 
-        assert len(repraesentanten) == len(demo_state._DEMO_DUPLICATE_GROUP_SIZES)
+        assert len(repraesentanten) == (len(demo_state._DEMO_DUPLICATE_GROUP_SIZES) + 1)
         assert len(abgelehnt) == 1
         assert abgelehnt[0].sharpness < SHARPNESS_REJECT_THRESHOLD
         # Der Zeit-/Ortscluster wird nur fuer die NICHT aussortierten Fotos gesetzt - dieselbe
         # Regel wie im Lauf.
         assert abgelehnt[0].cluster_key is None
+
+    async def test_the_auto_decided_group_has_one_marked_loser_and_no_decision_row(
+        self, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        """Spec 0639: Die dritte Gruppe ist VOM LAUF entschieden, nicht von Hand.
+
+        Genau ein Merker (der Verlierer), keine Entscheidungszeile, ein Gewinner ueber der
+        Schaerfeschwelle mit hoeherer Aufloesung als der Verlierer - so saehe der Bestand nach
+        einem echten Lauf aus. Alle Demo-Fotos tragen die Aufloesung samt Merker (Scan-Zustand).
+        """
+        await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
+        photos = await _photos_of(db_session, DUPLICATE_PROJECT_NAME)
+        scores = {photo.id: await db_session.get(PhotoScore, photo.id) for photo in photos}
+
+        assert all(photo.pixel_count is not None for photo in photos)
+        assert all(photo.pixel_count_probed for photo in photos)
+
+        markiert = [score for score in scores.values() if score is not None and score.auto_decided]
+        assert len(markiert) == 1
+        verlierer = markiert[0]
+        assert verlierer.duplicate_of is not None
+        assert verlierer.suggested_status == RatingStatus.REJECTED
+        gewinner = scores[verlierer.duplicate_of]
+        assert gewinner is not None
+        assert gewinner.auto_decided is False
+        assert gewinner.duplicate_of is None
+        assert gewinner.sharpness >= SHARPNESS_REJECT_THRESHOLD
+        assert (gewinner_photo := await db_session.get(Photo, gewinner.photo_id)) is not None
+        verlierer_photo = await db_session.get(Photo, verlierer.photo_id)
+        assert verlierer_photo is not None
+        assert gewinner_photo.pixel_count is not None
+        assert verlierer_photo.pixel_count is not None
+        assert gewinner_photo.pixel_count > verlierer_photo.pixel_count
+
+        zeilen = (
+            (
+                await db_session.execute(
+                    select(PhotoDuplicateDecision).where(
+                        PhotoDuplicateDecision.photo_id.in_([gewinner.photo_id, verlierer.photo_id])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert zeilen == []
 
     async def test_the_run_counts_the_rejected_representative_among_its_suggestions(
         self, db_session: AsyncSession, tmp_path: Path
@@ -700,9 +750,11 @@ class TestRebuildDemoStateProducesTheSixStates:
     async def test_the_duplicate_project_leaves_every_group_undecided(
         self, db_session: AsyncSession, tmp_path: Path
     ) -> None:
-        """Der Demo-Bestand zeigt die Ansicht in ihrem ANFANGSZUSTAND: nichts entschieden, beide
-        Gruppen offen. Eine mitgelieferte Entscheidung naehme der Sichtpruefung genau den Zustand,
-        den sie zeigen soll - und der Gruppenzaehler stuende nicht auf "1 von 2"."""
+        """Der Demo-Bestand zeigt die Ansicht in ihrem ANFANGSZUSTAND: keine gespeicherte
+        Entscheidung, die beiden grossen Gruppen offen. Eine mitgelieferte Entscheidung naehme
+        der Sichtpruefung genau den Zustand, den sie zeigen soll - und der Gruppenzaehler der
+        offenen Gruppen stuende nicht auf "1 von 2". Die automatische Gruppe steht daneben und
+        braucht dafuer keine Zeile."""
         await rebuild_demo_state(db_session, tmp_path, large_collection_photo_count=3)
         photos = await _photos_of(db_session, DUPLICATE_PROJECT_NAME)
 
@@ -1197,6 +1249,7 @@ class TestRebuildDemoStateAtProductionSize:
             + len(MOTIF_REGISTRY)
             + ERROR_STATE_PHOTO_COUNT
             + sum(demo_state._DEMO_DUPLICATE_GROUP_SIZES)
+            + demo_state._DEMO_AUTO_DECIDED_GROUP_SIZE
             + demo_state.LONG_AUSSCHUSS_PHOTO_COUNT
         )
 
