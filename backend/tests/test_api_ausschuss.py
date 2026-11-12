@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort.api.photos import MAX_QUERY_POSITION
@@ -241,7 +241,7 @@ async def test_a_photo_without_a_score_is_never_an_entry(
 
     body = (await authenticated_api_client.get(_url(project.id))).json()
 
-    assert body == {"items": [], "total": 0, "open_count": 0}
+    assert body == {"items": [], "total": 0, "open_count": 0, "auto_decided_group_count": 0}
     assert foto.id not in _ids(body)
 
 
@@ -971,7 +971,7 @@ async def test_an_empty_project_answers_200_with_empty_lists(
     await db_session.commit()
     mit_lauf = (await authenticated_api_client.get(_url(project.id))).json()
 
-    leer = {"items": [], "total": 0, "open_count": 0}
+    leer = {"items": [], "total": 0, "open_count": 0, "auto_decided_group_count": 0}
     assert ohne_lauf == mit_lauf == leer
 
 
@@ -1038,7 +1038,7 @@ async def test_the_answer_carries_exactly_the_agreed_fields(
     body = (await authenticated_api_client.get(_url(project.id))).json()
     liste = (await authenticated_api_client.get(f"/projects/{project.id}/photos")).json()
 
-    assert set(body) == {"items", "total", "open_count"}
+    assert set(body) == {"items", "total", "open_count", "auto_decided_group_count"}
     einzel, stapel = body["items"]
     assert set(einzel) == {
         "kind",
@@ -1048,6 +1048,7 @@ async def test_the_answer_carries_exactly_the_agreed_fields(
         "group_anchor_photo_id",
         "keep_possible",
         "decision_effective",
+        "auto_decided",
     }
     assert set(stapel) == {
         "kind",
@@ -1056,6 +1057,132 @@ async def test_the_answer_carries_exactly_the_agreed_fields(
         "member_count",
         "group_size",
         "decision_counts",
+        "auto_decided",
     }
     assert set(stapel["decision_counts"]) == {"undecided", "keep", "discard"}
     assert set(stapel["cover"]) == set(liste["items"][0])
+
+
+# ------------------------------------------------------------------------------------------
+# Automatisch entschiedene Gruppen (Spec 0639)
+# ------------------------------------------------------------------------------------------
+
+
+async def _mark_auto(session: AsyncSession, *photos: Photo) -> None:
+    await session.execute(
+        update(PhotoScore)
+        .where(PhotoScore.photo_id.in_([photo.id for photo in photos]))
+        .values(auto_decided=True)
+    )
+    await session.commit()
+
+
+def _auto_url(project_id: int, value: str = "true", **params: int) -> str:
+    query = "&".join(f"{key}={val}" for key, val in params.items())
+    return f"/projects/{project_id}/ausschuss?auto_decided={value}" + (f"&{query}" if query else "")
+
+
+async def test_an_auto_decided_group_leaves_open_count_but_stays_in_the_stock(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    auto_winner, [auto_loser] = await _group_with_losers(db_session, project, 1, first_second=0)
+    await _mark_auto(db_session, auto_loser)
+    await _group_with_losers(db_session, project, 2, first_second=10)
+    await _photo(
+        db_session, project, "unscharf.jpg", seconds=100, suggested_status=RatingStatus.REJECTED
+    )
+    await db_session.commit()
+
+    body = (await authenticated_api_client.get(_url(project.id))).json()
+
+    assert body["total"] == 3
+    assert body["open_count"] == 3
+    assert body["auto_decided_group_count"] == 1
+    by_anchor = {
+        entry["group_anchor_photo_id"]: entry for entry in body["items"] if entry["kind"] == "group"
+    }
+    assert by_anchor[auto_winner.id]["auto_decided"] is True
+    # `decision_counts` bleibt die ZAHL DER GESPEICHERTEN ZEILEN: keine Zeile, also `undecided`
+    # fuer das eine Bestandsmitglied - der Merker ist keine Entscheidung.
+    assert by_anchor[auto_winner.id]["decision_counts"] == {
+        "undecided": 1,
+        "keep": 0,
+        "discard": 0,
+    }
+
+    detail = (await authenticated_api_client.get(_url(project.id, photo_id=auto_loser.id))).json()
+    assert detail["items"][0]["auto_decided"] is True
+    assert detail["items"][0]["decision"] is None
+    assert detail["open_count"] == 3
+    assert detail["auto_decided_group_count"] == 1
+
+
+async def test_the_auto_filter_returns_only_auto_stacks_with_projectwide_counts(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    first_winner, [first_loser] = await _group_with_losers(db_session, project, 1, first_second=0)
+    second_winner, [second_loser] = await _group_with_losers(
+        db_session, project, 1, first_second=10
+    )
+    await _group_with_losers(db_session, project, 2, first_second=20)
+    await _mark_auto(db_session, first_loser, second_loser)
+    await db_session.commit()
+
+    full = (await authenticated_api_client.get(_url(project.id))).json()
+    filtered = (await authenticated_api_client.get(_auto_url(project.id))).json()
+
+    assert filtered["total"] == 2
+    assert len(filtered["items"]) == 2
+    assert all(entry["kind"] == "group" and entry["auto_decided"] for entry in filtered["items"])
+    assert {entry["group_anchor_photo_id"] for entry in filtered["items"]} == {
+        first_winner.id,
+        second_winner.id,
+    }
+    assert filtered["open_count"] == full["open_count"] == 2
+    assert filtered["auto_decided_group_count"] == full["auto_decided_group_count"] == 2
+
+    page = (await authenticated_api_client.get(_auto_url(project.id, limit=1))).json()
+    assert page["total"] == 2
+    assert len(page["items"]) == 1
+    rest = (await authenticated_api_client.get(_auto_url(project.id, limit=1, offset=1))).json()
+    assert len(rest["items"]) == 1
+    assert rest["items"][0]["group_anchor_photo_id"] != page["items"][0]["group_anchor_photo_id"]
+
+    off = (await authenticated_api_client.get(_auto_url(project.id, "false"))).json()
+    assert off == full
+
+
+async def test_auto_decided_together_with_photo_id_is_422_before_any_query(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    await db_session.commit()
+
+    response = await authenticated_api_client.get(
+        f"/projects/{project.id}/ausschuss?auto_decided=true&photo_id=1"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "auto_decided=true ist nicht mit photo_id kombinierbar."
+
+
+async def test_the_suggested_filter_and_photo_suggestion_exclude_auto_decided_photos(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    winner, [loser] = await _group_with_losers(db_session, project, 1)
+    await _mark_auto(db_session, loser)
+
+    listed = (
+        await authenticated_api_client.get(
+            f"/projects/{project.id}/photos", params={"rating_status": "suggested"}
+        )
+    ).json()
+    all_photos = (await authenticated_api_client.get(f"/projects/{project.id}/photos")).json()
+    loser_out = next(item for item in all_photos["items"] if item["id"] == loser.id)
+
+    assert listed["total"] == 0
+    assert listed["items"] == []
+    assert loser_out["suggestion"] is None
