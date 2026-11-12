@@ -895,13 +895,17 @@ async def _create_photos(
             #
             # Ein Foto OHNE Cache-Dateien behaelt `None`: genau der Zustand, den ein echter Scan
             # hinterlaesst, wenn die Vorschau nicht geschrieben werden konnte.
-            ratio = generate_variants(cache_dir, photo.id, photo.etag, image_bytes)
-            if ratio is None:
+            variants = generate_variants(cache_dir, photo.id, photo.etag, image_bytes)
+            if variants is None:
                 raise DemoStateError(
                     "Die Thumbnail-Erzeugung im Cache-Verzeichnis ist fehlgeschlagen (Pfad "
                     "nicht beschreibbar?). Abbruch."
                 )
-            photo.aspect_ratio = ratio
+            photo.aspect_ratio = variants.aspect_ratio
+            # Dieselbe Dekodierung traegt die Aufloesung (ADR 0146 Punkt 2); der Demo-Bestand
+            # bildet den Zustand NACH dem Scan ab, also steht auch der Merker.
+            photo.pixel_count = variants.pixel_count
+            photo.pixel_count_probed = True
         photos.append(photo)
     return photos
 

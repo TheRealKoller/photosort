@@ -278,8 +278,10 @@ async def test_scan_skips_photo_with_unchanged_etag(
             taken_at_original=modified,
             # Seit specs/features/0426 ist der Merker Teil der Skip-Bedingung: nur ein bereits
             # auf die Kamera GEPRUEFTES Foto wird uebersprungen. Ohne ihn greift die einmalige
-            # Nachhol-Runde (eigene Faelle weiter unten).
+            # Nachhol-Runde (eigene Faelle weiter unten). Seit Spec 0639 gilt dasselbe fuer die
+            # Aufloesung - sonst entstuende hier ein Nachhol-Posten statt eines Skips.
             camera_probed=True,
+            pixel_count_probed=True,
             last_modified=modified,
         )
     )
@@ -900,6 +902,196 @@ async def test_a_probe_only_item_triggers_no_download(
     assert client.download_requests == []
     photo = (await db_session.execute(select(Photo))).scalar_one()
     assert photo.aspect_ratio is None
+
+
+# --- Aufloesung, Schreibweg 1: der Scan --------------------------------------------------------
+# specs/features/0639-automatisch-entschiedene-duplikatgruppen.md, ADR 0146 Punkt 2.
+
+
+async def test_scan_stores_the_resolution_of_a_new_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der Wert entsteht aus derselben Dekodierung wie das Seitenverhaeltnis und wird mit seinem
+    Merker geschrieben. `_jpeg_bytes()` liefert 20x10."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/img.jpg", _entry("img.jpg", "etag-jpg", modified))],
+        file_contents={"CostaRica/img.jpg": _jpeg_bytes()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.pixel_count == 20 * 10
+    assert photo.pixel_count_probed is True
+
+
+async def test_scan_stores_the_shown_resolution_of_an_exif_rotated_photo(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Gespeichert 20x10, Orientierung 6 - gezeigt 10x20. Die Zahl folgt derselben gedrehten
+    Ansicht wie `aspect_ratio`."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/hoch.jpg", _entry("hoch.jpg", "etag-rot", modified))],
+        file_contents={"CostaRica/hoch.jpg": _rotated_jpeg_bytes()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.pixel_count == 10 * 20
+
+
+async def test_an_undecodable_photo_is_marked_as_probed_although_the_resolution_is_none(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Der Merker faellt AUCH OHNE FUND: Sonst laese jeder Scan denselben Bestand erneut ueber
+    das Netz. `None` heisst dann ehrlich "nicht lesbar" und ist keine Schaetzung."""
+    project = await _make_project(db_session)
+    modified = datetime(2023, 8, 15, 10, 0, tzinfo=UTC)
+    client = FakeOpenCloudClient(
+        entries=[("CostaRica/broken.jpg", _entry("broken.jpg", "etag-broken", modified))],
+        file_contents={"CostaRica/broken.jpg": b"not a real jpeg"},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    photo = (await db_session.execute(select(Photo))).scalar_one()
+    assert photo.pixel_count is None
+    assert photo.pixel_count_probed is True
+
+
+async def _existing_photo_without_dimensions(
+    session: AsyncSession, project: Project, path: str
+) -> Photo:
+    """Unveraendertes Bestandsfoto, dessen Aufloesung noch niemand gelesen hat. Zeit und Ort
+    stehen bewusst auf WERTEN, die ein faelschlich schreibender `dimensions_only`-Posten sofort
+    veraendern wuerde - der Fallback des Postens ist der WebDAV-Zeitstempel."""
+    taken_at = datetime(2023, 8, 15, 10, 0)
+    photo = Photo(
+        project_id=project.id,
+        relative_path=path,
+        etag="same-etag",
+        content_length=10,
+        taken_at=taken_at,
+        taken_at_original=taken_at,
+        camera_probed=True,
+        pixel_count_probed=False,
+        gps_lat=41.9,
+        gps_lon=12.5,
+        last_modified=taken_at,
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return photo
+
+
+def _png_bytes(width: int, height: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), color="blue").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+async def test_a_missing_resolution_is_caught_up_from_the_range_window(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Auch eine Endung ausserhalb der EXIF-Kandidaten: `extract_pixel_count` liest nur den Kopf.
+    Kein Voll-Download, keine Thumbnail-Neuerzeugung - und Zeit, Ort und Kamera bleiben
+    unberuehrt, weil der Posten sie nicht geprueft hat."""
+    project = await _make_project(db_session)
+    photo = await _existing_photo_without_dimensions(db_session, project, "CostaRica/grafik.png")
+    client = FakeOpenCloudClient(
+        entries=_unchanged_entries("CostaRica/grafik.png"),
+        file_contents={"CostaRica/grafik.png": _png_bytes(64, 48)},
+    )
+
+    scan_run = await run_project_scan(
+        db_session, client, project, drive_name=None, cache_dir=tmp_path
+    )
+
+    assert scan_run.status == ScanStatus.SUCCESS
+    assert client.range_requests == ["CostaRica/grafik.png"]
+    assert client.download_requests == []
+    await db_session.refresh(photo)
+    assert photo.pixel_count == 64 * 48
+    assert photo.pixel_count_probed is True
+    # Unberuehrt: der Posten hat nur die Masse gelesen.
+    assert photo.taken_at == datetime(2023, 8, 15, 10, 0)
+    assert photo.taken_at_original == datetime(2023, 8, 15, 10, 0)
+    assert (photo.gps_lat, photo.gps_lon) == (41.9, 12.5)
+    assert photo.camera_id is None
+    assert photo.aspect_ratio is None
+
+
+async def test_the_camera_probe_reads_the_resolution_from_the_same_window(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Ein bestehender Kamera-Nachhol-Posten liest die Masse mit - EIN Range-Read fuer beides."""
+    project = await _make_project(db_session)
+    moment = datetime(2023, 8, 15, 10, 0)
+    photo = Photo(
+        project_id=project.id,
+        relative_path="CostaRica/img001.jpg",
+        etag="same-etag",
+        content_length=10,
+        taken_at=moment,
+        taken_at_original=moment,
+        camera_probed=False,
+        pixel_count_probed=False,
+        last_modified=moment,
+    )
+    db_session.add(photo)
+    await db_session.commit()
+    client = FakeOpenCloudClient(
+        entries=_unchanged_entries("CostaRica/img001.jpg"),
+        file_contents={"CostaRica/img001.jpg": _jpeg_with_camera()},
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    assert client.range_requests == ["CostaRica/img001.jpg"]
+    assert client.download_requests == []
+    await db_session.refresh(photo)
+    assert photo.pixel_count == 20 * 10
+    assert photo.pixel_count_probed is True
+    assert photo.camera_probed is True
+    assert photo.camera_id is not None
+
+
+async def test_a_missing_resolution_on_an_unreadable_header_is_marked_and_not_retried(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """Kein Endlos-Abruf je Scan: Der Merker faellt auch hier, `pixel_count` bleibt `None`."""
+    project = await _make_project(db_session)
+    photo = await _existing_photo_without_dimensions(db_session, project, "CostaRica/kaputt.png")
+    entries = _unchanged_entries("CostaRica/kaputt.png")
+    client = FakeOpenCloudClient(
+        entries=entries, file_contents={"CostaRica/kaputt.png": b"kein Bild"}
+    )
+
+    await run_project_scan(db_session, client, project, drive_name=None, cache_dir=tmp_path)
+
+    await db_session.refresh(photo)
+    assert photo.pixel_count is None
+    assert photo.pixel_count_probed is True
+
+    second_client = FakeOpenCloudClient(
+        entries=entries, file_contents={"CostaRica/kaputt.png": b"kein Bild"}
+    )
+    await run_project_scan(db_session, second_client, project, drive_name=None, cache_dir=tmp_path)
+
+    assert second_client.range_requests == []
 
 
 async def test_scan_survives_thumbnail_download_failure_without_failing(
@@ -2001,6 +2193,9 @@ async def _existing_unprobed_photo(session: AsyncSession, project: Project, path
         taken_at=moment,
         taken_at_original=moment,
         camera_probed=False,
+        # Die Aufloesung ist hier NICHT der Gegenstand: der Posten soll die Kamera nachholen,
+        # nicht die Masse. Der gemeinsame Fenster-Leseweg hat eigene Faelle weiter unten.
+        pixel_count_probed=True,
         last_modified=moment,
     )
     session.add(photo)
@@ -2178,8 +2373,11 @@ async def _existing_photo_without_ratio(
         taken_at=moment,
         taken_at_original=moment,
         # Bereits geprueft: so entsteht KEIN `probe_only`-Arbeitsposten, und die Nachhol-Runde
-        # steht allein im Blickfeld.
+        # steht allein im Blickfeld. Die Aufloesung ist ebenfalls geprueft - sonst entstuende
+        # seit Spec 0639 ein `dimensions_only`-Posten und die Runde bekaeme einen Netzzugriff,
+        # den diese Tests ausdruecklich ausschliessen.
         camera_probed=True,
+        pixel_count_probed=True,
         last_modified=moment,
         aspect_ratio=aspect_ratio,
     )

@@ -25,10 +25,19 @@ def _entry(name: str, etag: str, content_length: int = 100) -> DavEntry:
     )
 
 
-def _existing_photo(relative_path: str, etag: str, *, camera_probed: bool = True) -> Photo:
-    """`camera_probed` steht AUSDRUECKLICH da, nie als Vorgabewert des Modells: ein transientes
-    `Photo` traegt den Python-Default noch nicht (der greift erst beim `flush`), und die
-    Entscheidung unten haengt genau an diesem Wert."""
+def _existing_photo(
+    relative_path: str,
+    etag: str,
+    *,
+    camera_probed: bool = True,
+    pixel_count_probed: bool = True,
+) -> Photo:
+    """`camera_probed`/`pixel_count_probed` stehen AUSDRUECKLICH da, nie als Vorgabewert des
+    Modells: ein transientes `Photo` traegt den Python-Default noch nicht (der greift erst beim
+    `flush`), und die Entscheidung unten haengt genau an diesen Werten.
+
+    `pixel_count_probed=True` als Vorgabe haelt die bestehenden Faelle auf ihrem bisherigen
+    Gegenstand (Kamera-Nachhol-Runde, Skip); die Aufloesungs-Nachholung bekommt eigene Faelle."""
     return Photo(
         id=1,
         project_id=1,
@@ -38,6 +47,7 @@ def _existing_photo(relative_path: str, etag: str, *, camera_probed: bool = True
         taken_at=MODIFIED,
         taken_at_original=MODIFIED,
         camera_probed=camera_probed,
+        pixel_count_probed=pixel_count_probed,
         last_modified=MODIFIED,
     )
 
@@ -220,3 +230,76 @@ def test_empty_entries_produce_empty_classification() -> None:
     assert classification.decisions == []
     assert classification.work_items == []
     assert classification.seen_paths == set()
+
+
+def test_an_unchanged_photo_without_dimensions_becomes_a_dimensions_only_item() -> None:
+    """Spec 0639: Die Aufloesung fehlt an einem unveraenderten Bestandsfoto - es wird EINMAL
+    ueber das Range-Fenster nachgeholt, ohne Voll-Download und ohne Thumbnail-Neuerzeugung.
+    Deckt alle Bildendungen ab, nicht nur die EXIF-Kandidaten: `img.png` ist hier der Fall, der
+    frueher nie gelesen worden waere."""
+    entries = [("CostaRica/img.png", _entry("img.png", "same-etag"))]
+    existing = {
+        "CostaRica/img.png": _existing_photo(
+            "CostaRica/img.png", "same-etag", pixel_count_probed=False
+        )
+    }
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    decision = classification.decisions[0]
+    assert decision.skip_reason is None
+    assert decision.work_item is not None
+    assert decision.work_item.probe_only is True
+    assert decision.work_item.dimensions_only is True
+    assert classification.work_items == [decision.work_item]
+
+
+def test_an_unprobed_camera_reads_the_dimensions_in_the_same_window() -> None:
+    """Ein bestehender Kamera-Nachhol-Posten liest die Masse aus DEMSELBEN Range-Fenster. Er ist
+    deshalb KEIN `dimensions_only`-Posten: Zeit, Ort und Kamera werden weiterhin geschrieben."""
+    entries = [("CostaRica/img.jpg", _entry("img.jpg", "same-etag"))]
+    existing = {
+        "CostaRica/img.jpg": _existing_photo(
+            "CostaRica/img.jpg", "same-etag", camera_probed=False, pixel_count_probed=False
+        )
+    }
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    decision = classification.decisions[0]
+    assert decision.work_item is not None
+    assert decision.work_item.probe_only is True
+    assert decision.work_item.dimensions_only is False
+
+
+def test_a_fully_probed_photo_stays_skipped() -> None:
+    """Beide Merker gesetzt: kein Netzzugriff mehr - die Nachhol-Runde laeuft genau einmal."""
+    entries = [("CostaRica/img.png", _entry("img.png", "same-etag"))]
+    existing = {
+        "CostaRica/img.png": _existing_photo(
+            "CostaRica/img.png", "same-etag", camera_probed=True, pixel_count_probed=True
+        )
+    }
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    assert classification.decisions[0].skip_reason == SkipReason.UNCHANGED_ETAG
+    assert classification.work_items == []
+
+
+def test_a_changed_photo_without_dimensions_stays_a_full_item() -> None:
+    """Eine geaenderte Datei wird ohnehin voll gelesen; `dimensions_only` gilt nur fuer
+    unveraenderte Posten."""
+    entries = [("CostaRica/img.png", _entry("img.png", "new-etag"))]
+    existing = {
+        "CostaRica/img.png": _existing_photo(
+            "CostaRica/img.png", "old-etag", pixel_count_probed=False
+        )
+    }
+
+    classification = _classify_scan_entries(entries, existing_photos=existing)
+
+    decision = classification.decisions[0]
+    assert decision.work_item is not None
+    assert decision.work_item.probe_only is False
+    assert decision.work_item.dimensions_only is False
