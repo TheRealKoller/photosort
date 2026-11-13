@@ -129,9 +129,25 @@ def variant_path(cache_dir: Path, photo_id: int, etag: str, variant: Variant) ->
     return display_path(cache_dir, photo_id, etag)
 
 
+@dataclass(frozen=True)
+class VariantResult:
+    """Was EINE Dekodierung ueber das Bild aussagt: gezeigtes Seitenverhaeltnis und Aufloesung.
+
+    Beide Werte entstehen an derselben Stelle und reisen zusammen (ADR 0146 Punkt 2): Der
+    Aufrufer kann nicht versehentlich den einen schreiben und den anderen vergessen, und es gibt
+    keine zweite Erfolgsmeldung, die zu `None` passen muesste.
+
+    `aspect_ratio` bleibt `None` im Gueltigkeitsband-Fall - die Vorschau wurde trotzdem
+    geschrieben. `pixel_count` ist dann trotzdem bekannt; `0`/negative Masse erreichen den Wert
+    nie, ein entartetes Bild scheitert an `_ratio_within_band` nicht, aber an der Dekodierung."""
+
+    aspect_ratio: float | None
+    pixel_count: int
+
+
 def generate_variants(
     cache_dir: Path, photo_id: int, etag: str, image_bytes: bytes
-) -> float | None:
+) -> VariantResult | None:
     """Erzeugt Thumbnail- und Display-Auflösung im lokalen Cache.
 
     Best-effort wie opencloud/exif.py::extract_taken_at: ein nicht dekodierbares Bild (z.B.
@@ -140,19 +156,21 @@ def generate_variants(
     verarbeitet"-Platzhalter im Frontend), bis eine neue etag-Version erfolgreich verarbeitet
     werden kann.
 
-    Returns das Seitenverhaeltnis des GEZEIGTEN Bildes, wenn beide Varianten geschrieben wurden -
-    sonst `None`. Der Rueckgabewert ist damit zugleich die Erfolgsmeldung UND der erste
-    Schreibweg der Spalte `Photo.aspect_ratio` (ADR 0110 Punkt 3): Das Bild liegt nach
-    `exif_transpose` ohnehin dekodiert vor, es entsteht also kein zusaetzlicher Abruf und kein
-    zweites Dekodieren. `None` heisst deshalb NICHT nur "nicht erzeugt", sondern deckt auch den
-    Fall eines erfolgreich geschriebenen Bildes mit entartetem Verhaeltnis ab (siehe
-    `aspect_ratio_of`) - fuer den Aufrufer ist beides dasselbe: kein Wert zum Schreiben.
+    Returns `VariantResult` mit dem Seitenverhaeltnis des GEZEIGTEN Bildes und seiner Aufloesung,
+    wenn beide Varianten geschrieben wurden - sonst `None`. Der Rueckgabewert ist damit zugleich
+    die Erfolgsmeldung UND der erste Schreibweg der Spalten `Photo.aspect_ratio` (ADR 0110
+    Punkt 3) und `Photo.pixel_count` (ADR 0146 Punkt 2): Das Bild liegt nach `exif_transpose`
+    ohnehin dekodiert vor, es entsteht also kein zusaetzlicher Abruf und kein zweites Dekodieren.
+    `None` heisst "nicht erzeugt"; ein erfolgreich geschriebenes Bild mit entartetem Verhaeltnis
+    traegt dagegen `aspect_ratio=None` IM Ergebnis - fuer den Aufrufer bleiben das zwei
+    verschiedene Aussagen.
     """
     try:
         opened = Image.open(io.BytesIO(image_bytes))
         opened.load()
         image: Image.Image = ImageOps.exif_transpose(opened) or opened
         ratio = aspect_ratio_of(image)
+        pixel_count = image.size[0] * image.size[1]
         if image.mode not in ("RGB", "L"):
             image = image.convert("RGB")
 
@@ -181,7 +199,7 @@ def generate_variants(
         # dauerhaft auf RUNNING haengen lassen, statt nur dieses eine Thumbnail best-effort zu
         # ueberspringen. Gleiches Best-effort-Muster wie opencloud/exif.py::extract_taken_at.
         return None
-    return ratio
+    return VariantResult(aspect_ratio=ratio, pixel_count=pixel_count)
 
 
 # Speicherbedarf ab hier.

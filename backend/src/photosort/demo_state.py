@@ -182,6 +182,14 @@ ERROR_STATE_PHOTO_COUNT = 6
 # selbst und nicht bloss eine volle Zeile.
 _DEMO_DUPLICATE_GROUP_SIZES = (7, 3)
 
+# Die dritte Gruppe desselben Projekts (Spec 0639): ZWEI praktisch identische Aufnahmen, vom Lauf
+# automatisch entschieden. Eigene Konstante, weil `_DEMO_DUPLICATE_GROUP_SIZES` die beiden OFFENEN
+# Gruppen bleibt - ein Eintrag dort naehme der Sichtpruefung den Anfangszustand und machte den
+# Gruppenzaehler falsch. Der Gewinner traegt die hoehere Aufloesung und liegt ueber der
+# Schaerfeschwelle; der Verlierer ist das einzige Mitglied mit `auto_decided=True` und hat keine
+# Entscheidungszeile.
+_DEMO_AUTO_DECIDED_GROUP_SIZE = 2
+
 # Der Bestand ist ABSICHTLICH unentschieden: Die Sichtpruefung soll den Anfangszustand beider
 # Gruppen sehen, und der Gruppenzaehler soll "1 von 2" nennen. Eine mitgelieferte Entscheidung
 # naehme genau das weg.
@@ -659,7 +667,7 @@ def demo_project_specs(
         DemoProjectSpec(
             name=DUPLICATE_PROJECT_NAME,
             slug="duplikate",
-            photo_count=sum(_DEMO_DUPLICATE_GROUP_SIZES),
+            photo_count=sum(_DEMO_DUPLICATE_GROUP_SIZES) + _DEMO_AUTO_DECIDED_GROUP_SIZE,
         ),
         # EIGENES Projekt statt eines Ausschuss-Laufs in der grossen Sammlung: Deren Fotoliste und
         # Pipeline-Startpunkt tragen die Raster- und Navigationspruefungen, ein Vorschlag an jedem
@@ -895,13 +903,17 @@ async def _create_photos(
             #
             # Ein Foto OHNE Cache-Dateien behaelt `None`: genau der Zustand, den ein echter Scan
             # hinterlaesst, wenn die Vorschau nicht geschrieben werden konnte.
-            ratio = generate_variants(cache_dir, photo.id, photo.etag, image_bytes)
-            if ratio is None:
+            variants = generate_variants(cache_dir, photo.id, photo.etag, image_bytes)
+            if variants is None:
                 raise DemoStateError(
                     "Die Thumbnail-Erzeugung im Cache-Verzeichnis ist fehlgeschlagen (Pfad "
                     "nicht beschreibbar?). Abbruch."
                 )
-            photo.aspect_ratio = ratio
+            photo.aspect_ratio = variants.aspect_ratio
+            # Dieselbe Dekodierung traegt die Aufloesung (ADR 0146 Punkt 2); der Demo-Bestand
+            # bildet den Zustand NACH dem Scan ab, also steht auch der Merker.
+            photo.pixel_count = variants.pixel_count
+            photo.pixel_count_probed = True
         photos.append(photo)
     return photos
 
@@ -2028,7 +2040,8 @@ async def _seed_error_project(
 async def _seed_duplicate_project(
     session: AsyncSession, spec: DemoProjectSpec, cache_dir: Path
 ) -> list[Photo]:
-    """Zustand 5: zwei Duplikat-Gruppen verschiedener Groesse, beide unentschieden.
+    """Zustand 5: drei Duplikat-Gruppen - zwei offene verschiedener Groesse und eine automatisch
+    entschiedene aus zwei praktisch identischen Aufnahmen (Spec 0639).
 
     Ohne diesen Bestand ist die Vergleichsansicht weder vorfuehrbar noch im Browser pruefbar, und
     kein Test wuerde rot (ADR 0104).
@@ -2043,6 +2056,12 @@ async def _seed_duplicate_project(
     Duplikat (`duplicate_of` bleibt `None`), und kein Wert der Entscheidungszeile aendert ihn: Er
     ist das UNVERAENDERLICHE Mitglied, an dem die Kachel ohne Wahlschaltflaechen vorfuehrbar wird.
     Ohne ihn ist AK3 der Spec 0486 im Browser nicht pruefbar.
+
+    Die DRITTE Gruppe steht hinter den beiden offenen: Der Lauf hat sie als praktisch identisch
+    erkannt, deshalb traegt der Verlierer den Merker `auto_decided` und es gibt KEINE
+    Entscheidungszeile. Der Gewinner ist die Aufnahme mit der hoeheren Aufloesung und liegt ueber
+    `SHARPNESS_REJECT_THRESHOLD` - ein echter Lauf entschiede nur dann automatisch. Beide Fotos
+    tragen `pixel_count` samt Merker, wie nach einem Scan.
 
     KEINE Entscheidungszeile: Die Ansicht soll ihren Anfangszustand zeigen."""
     project = await _create_project(session, spec)
@@ -2091,6 +2110,34 @@ async def _seed_duplicate_project(
             if abgelehnt:
                 mit_vorschlag += 1
         erste += size
+
+    # Die automatisch entschiedene Gruppe. Der Gewinner ist die Aufnahme mit der hoeheren
+    # Aufloesung - die Regel des Laufs (ADR 0146 Punkt 4), nicht eine abgeschriebene Id.
+    automatisch = photos[erste : erste + _DEMO_AUTO_DECIDED_GROUP_SIZE]
+    assert len(automatisch) == _DEMO_AUTO_DECIDED_GROUP_SIZE
+    gewinner = max(automatisch, key=lambda photo: (photo.pixel_count or 0, -photo.id))
+    for photo in automatisch:
+        ist_gewinner = photo is gewinner
+        session.add(
+            PhotoScore(
+                photo_id=photo.id,
+                sharpness=(
+                    SHARPNESS_REJECT_THRESHOLD * 2
+                    if ist_gewinner
+                    else SHARPNESS_REJECT_THRESHOLD / 2
+                ),
+                exposure=_deterministic_unit_value(spec.slug, erste, "exposure"),
+                cluster_key=f"{spec.slug}-cluster-1" if ist_gewinner else None,
+                duplicate_of=None if ist_gewinner else gewinner.id,
+                suggested_status=None if ist_gewinner else RatingStatus.REJECTED,
+                # Der Merker sitzt NUR am Verlierer; der Gewinner ist ueber den Stern
+                # Repraesentant und traegt keine eigene automatische Entscheidung.
+                auto_decided=not ist_gewinner,
+                computed_at=_BASE_SCORING_AT,
+            )
+        )
+        if not ist_gewinner:
+            mit_vorschlag += 1
 
     session.add(
         ScoringRun(

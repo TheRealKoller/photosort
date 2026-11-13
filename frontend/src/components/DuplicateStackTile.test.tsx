@@ -40,6 +40,7 @@ function stack(overrides: Partial<AusschussGroupEntry> = {}): AusschussGroupEntr
     member_count: 5,
     group_size: 6,
     decision_counts: { undecided: 3, keep: 1, discard: 1 },
+    auto_decided: false,
     ...overrides,
   }
 }
@@ -132,5 +133,42 @@ describe('DuplicateStackTile - Zahlen (B7)', () => {
       (teil) => teil.textContent,
     )
     expect(teile).toEqual(erwartet)
+  })
+})
+
+describe('DuplicateStackTile - automatisch entschieden (Spec 0639)', () => {
+  const automatisch = () =>
+    stack({
+      group_size: 2,
+      member_count: 1,
+      decision_counts: { undecided: 0, keep: 0, discard: 0 },
+      auto_decided: true,
+    })
+
+  it('nennt die automatische Entscheidung im zugaenglichen Namen, statt Entscheidungszahlen', () => {
+    renderStack(automatisch())
+
+    expect(screen.getByRole('link').getAttribute('aria-label')).toBe(
+      'Duplikat-Gruppe mit 2 Aufnahmen, automatisch entschieden: Reise/serie-41.jpg',
+    )
+  })
+
+  it('traegt das Wort in der Zusammenfassung und NUR dort - keine Vorschlagszahlen', () => {
+    const kachel = renderStack(automatisch())
+
+    expect(within(kachel).getByText('2 Aufnahmen')).toBeTruthy()
+    expect(within(kachel).getByText('Automatisch entschieden')).toBeTruthy()
+    expect(
+      Array.from(kachel.querySelectorAll('[data-stack-summary]')).map((teil) => teil.textContent),
+    ).toEqual(['Automatisch entschieden'])
+    expect(within(kachel).queryByText(/vorgeschlagen|Ausschuss|behalten/)).toBeNull()
+  })
+
+  it('bietet weiterhin genau EIN fokussierbares Ziel und keinen Abschluss', () => {
+    const kachel = renderStack(automatisch())
+
+    const fokussierbar = kachel.querySelectorAll('a[href], button, input, [tabindex]')
+    expect(fokussierbar).toHaveLength(1)
+    expect(within(kachel).queryByText(/abschließen/i)).toBeNull()
   })
 })

@@ -105,6 +105,10 @@ export function DuplicateComparePage() {
    * unabhängig voneinander, eine seitenweite Sperre blockierte den zügigen Durchlauf. */
   const [decidingIds, setDecidingIds] = useState<ReadonlySet<number>>(new Set())
   const [lastGroupSaved, setLastGroupSaved] = useState(false)
+  /** Lokal gemerkt: Nach einem erfolgreichen `keep` liefert die Antwort `auto_decided: false`,
+   *  und die Rücknahme wird angesagt, statt nur sichtbar zu verschwinden. Beim Gruppenwechsel
+   *  zurückgesetzt wie die übrigen Seitenzustände. */
+  const [autoUndone, setAutoUndone] = useState(false)
   const confirmRunning = useRef(false)
 
   /* DIE SEITE BLEIBT BEIM GRUPPENWECHSEL MONTIERT — gleiche Route, anderer Parameter. Alle diese
@@ -118,6 +122,7 @@ export function DuplicateComparePage() {
     setReturnFocusId(null)
     setDecidingIds(new Set())
     setLastGroupSaved(false)
+    setAutoUndone(false)
     resetConfirm()
     resetGroupDecision()
   }, [anchorId, resetConfirm, resetGroupDecision])
@@ -156,6 +161,13 @@ export function DuplicateComparePage() {
     decisionMutation.mutate(
       { photoId: decidedPhotoId, decision },
       {
+        onSuccess: () => {
+          // Nur eine AUTOMATISCH entschiedene Gruppe wird zurückgenommen; in einer offenen
+          // Gruppe ist „Behalten“ eine gewöhnliche Entscheidung ohne Ansage.
+          if (decision === 'keep' && query.data?.auto_decided === true) {
+            setAutoUndone(true)
+          }
+        },
         onSettled: () => {
           setDecidingIds((current) => {
             const next = new Set(current)
@@ -175,6 +187,9 @@ export function DuplicateComparePage() {
     // Push, kein `replace`: Der Zurück-Knopf des Browsers ist damit „vorherige Gruppe".
     navigate(duplicateComparePath(id, zielId, { fromAusschuss }))
   }
+
+  const autoDecided = query.data?.auto_decided === true && !autoUndone
+  const autoUndoneAndOpen = query.data?.auto_decided === false && autoUndone
 
   const confirmBlocked =
     confirmMutation.isPending || groupMutation.isPending || decidingIds.size > 0
@@ -295,6 +310,18 @@ export function DuplicateComparePage() {
         </ul>
       )}
 
+      {istGefuellt && autoDecided && (
+        <div className="flex max-w-3xl flex-col gap-2">
+          <p data-testid="duplicate-auto-decided" className="text-sm text-text">
+            Automatisch entschieden – praktisch identische Aufnahmen
+          </p>
+          <p className="text-sm text-text">
+            Zurücknehmen: „Behalten“ auf einer Aufnahme wählen. Die Gruppe ist danach offen, und ein
+            späterer Lauf entscheidet sie nicht erneut automatisch.
+          </p>
+        </div>
+      )}
+
       {istLeer && <p className="text-sm text-text">{DUPLICATE_EMPTY_TEXT}</p>}
 
       {query.isError && !istLeer && (
@@ -307,6 +334,12 @@ export function DuplicateComparePage() {
 
       {istGefuellt && (
         <>
+          {autoUndoneAndOpen && (
+            <p role="status" className="text-sm text-text">
+              Automatische Entscheidung zurückgenommen — die Gruppe ist jetzt offen.
+            </p>
+          )}
+
           {/* Immer sichtbar, nie eingeklappt, kein `Alert` - und unmittelbar an der Handlung. */}
           <div className="flex max-w-3xl flex-col gap-2">
             <p className="text-sm text-text">{DUPLICATE_HINT_TEXT}</p>
@@ -383,15 +416,19 @@ export function DuplicateComparePage() {
               entsteht kein Gruppenzustand „erledigt". Gesperrt, solange eine Einzel- oder
               Gruppenentscheidung läuft: Er schriebe sonst gegen einen Stand, der gerade wechselt.
               Die Schaltfläche selbst ist die Wiederholung nach einem Fehler. */}
+          {/* In einer automatisch entschiedenen Gruppe entfällt der Abschluss ganz (nicht
+              `disabled`): Er schriebe einen Stand fest, der schon festgeschrieben ist. */}
           <div className="flex flex-col items-start gap-3">
-            <Button
-              type="button"
-              disabled={confirmBlocked}
-              busy={confirmMutation.isPending}
-              onClick={handleConfirm}
-            >
-              {confirmLabel}
-            </Button>
+            {!autoDecided && (
+              <Button
+                type="button"
+                disabled={confirmBlocked}
+                busy={confirmMutation.isPending}
+                onClick={handleConfirm}
+              >
+                {confirmLabel}
+              </Button>
+            )}
             {/* Die Live-Region steht im gefüllten Zustand IMMER da, nur ihr Text wechselt: Eine
                 Region, die erst zusammen mit ihrem Text erscheint, sagen Screenreader oft nicht an. */}
             <p aria-live="polite" data-testid="duplicate-last-group" className="text-sm text-text">

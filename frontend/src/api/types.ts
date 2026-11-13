@@ -446,6 +446,9 @@ export interface DuplicateGroupOut {
   previous_photo_id: number | null
   next_photo_id: number | null
   span_seconds: number
+  /** Ganz automatisch entschieden oder gar nicht (Spec 0639). `decision` bleibt `null`; die
+   *  Rücknahme läuft über die bestehende Handlung „Behalten" und setzt den Merker zurück. */
+  auto_decided: boolean
 }
 
 /**
@@ -500,6 +503,9 @@ export interface AusschussPhotoEntry {
    *  (`duplicates.py::decision_effective_for`), keine Ableitung im Client: `decision` sagt, was
    *  gespeichert ist, `decision_effective`, ob es noch wirkt. */
   decision_effective: boolean | null
+  /** Gehört die Aufnahme zu einem automatisch entschiedenen Stern (Verlierer über den Merker,
+   *  Repräsentant über die automatische Kante)? Reine Leseauskunft, keine Entscheidungszeile. */
+  auto_decided: boolean
 }
 
 /**
@@ -518,6 +524,9 @@ export interface AusschussGroupEntry {
   member_count: number
   group_size: number
   decision_counts: { undecided: number; keep: number; discard: number }
+  /** Der Stapel ist ganz automatisch entschieden; dann entfällt in der Kachel die
+   *  Vorschlagszahl, die gespeicherten `decision_counts` bleiben die Zahl der Zeilen (0). */
+  auto_decided: boolean
 }
 
 export type AusschussEntryOut = AusschussPhotoEntry | AusschussGroupEntry
@@ -536,6 +545,9 @@ export interface AusschussOut {
   items: AusschussEntryOut[]
   total: number
   open_count: number
+  /** Gruppen mit automatischer Entscheidung, projektweit und unabhängig von `limit`/`offset`
+   *  und Filter — dieselbe Einheit wie der Zähler im Schritt. */
+  auto_decided_group_count: number
 }
 
 // Das Motivset (specs/features/0427-motive-mit-staerke.md). Die Menge ist fachlich

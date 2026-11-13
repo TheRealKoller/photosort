@@ -21,6 +21,7 @@ const GROUP: DuplicateGroupOut = {
   previous_photo_id: null,
   next_photo_id: 43,
   span_seconds: 0,
+  auto_decided: false,
 }
 
 const INDEX: DuplicateGroupIndexOut = {

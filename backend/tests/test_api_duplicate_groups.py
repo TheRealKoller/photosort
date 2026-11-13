@@ -513,6 +513,7 @@ async def test_the_item_carries_an_unextended_photo_out(
         "previous_photo_id",
         "next_photo_id",
         "span_seconds",
+        "auto_decided",
     }
 
 

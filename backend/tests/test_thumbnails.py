@@ -16,6 +16,7 @@ from photosort.thumbnails import (
     THUMBNAIL_MAX_SIZE,
     CacheSweepResult,
     CacheUsage,
+    VariantResult,
     aspect_ratio_of,
     aspect_ratio_of_cached_thumbnail,
     cache_key,
@@ -192,9 +193,10 @@ class TestAspectRatioOfCachedThumbnail:
 def test_generate_variants_writes_both_files_downsized(tmp_path: Path) -> None:
     content = _jpeg_bytes(4000, 3000)
 
-    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=content)
+    result = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=content)
 
-    assert ratio == pytest.approx(4 / 3)
+    assert result is not None
+    assert result.aspect_ratio == pytest.approx(4 / 3)
     thumb = thumbnail_path(tmp_path, 1, "etag-a")
     display = display_path(tmp_path, 1, "etag-a")
     assert thumb.is_file()
@@ -213,9 +215,12 @@ def test_generate_variants_converts_non_rgb_images(tmp_path: Path) -> None:
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
 
-    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-rgba", image_bytes=buffer.getvalue())
+    result = generate_variants(
+        tmp_path, photo_id=1, etag="etag-rgba", image_bytes=buffer.getvalue()
+    )
 
-    assert ratio == pytest.approx(1.5)
+    assert result is not None
+    assert result.aspect_ratio == pytest.approx(1.5)
     with Image.open(thumbnail_path(tmp_path, 1, "etag-rgba")) as saved:
         assert saved.mode == "RGB"
 
@@ -230,9 +235,9 @@ def test_generate_variants_does_not_upscale_small_images(tmp_path: Path) -> None
 
 
 def test_generate_variants_returns_none_for_undecodable_bytes(tmp_path: Path) -> None:
-    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=b"not an image")
+    result = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=b"not an image")
 
-    assert ratio is None
+    assert result is None
     assert not thumbnail_path(tmp_path, 1, "etag-a").exists()
     assert not display_path(tmp_path, 1, "etag-a").exists()
 
@@ -244,9 +249,10 @@ def test_generate_variants_returns_the_shown_ratio_of_an_exif_rotated_image(
     # zeigt und das die Thumbnail-Datei traegt.
     content = _jpeg_bytes_with_orientation(600, 400, 6)
 
-    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-rot", image_bytes=content)
+    result = generate_variants(tmp_path, photo_id=1, etag="etag-rot", image_bytes=content)
 
-    assert ratio == pytest.approx(2 / 3)
+    assert result is not None
+    assert result.aspect_ratio == pytest.approx(2 / 3)
     with Image.open(thumbnail_path(tmp_path, 1, "etag-rot")) as saved:
         assert saved.size[0] < saved.size[1]
 
@@ -256,9 +262,10 @@ def test_generate_variants_returns_the_shown_ratio_of_an_exif_rotated_image(
 def test_generate_variants_writes_both_jpeg_variants_for_heic(tmp_path: Path) -> None:
     content = _heic_bytes(4000, 3000)
 
-    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-heic", image_bytes=content)
+    result = generate_variants(tmp_path, photo_id=1, etag="etag-heic", image_bytes=content)
 
-    assert ratio == pytest.approx(4 / 3)
+    assert result is not None
+    assert result.aspect_ratio == pytest.approx(4 / 3)
     thumb = thumbnail_path(tmp_path, 1, "etag-heic")
     display = display_path(tmp_path, 1, "etag-heic")
     assert thumb.is_file()
@@ -279,9 +286,9 @@ def test_generate_variants_returns_none_for_broken_heic_without_writing(
     # Scan nicht abbrechen, liefert `None` und hinterlaesst keine Cache-Datei.
     content = b"\x00\x00\x00\x1cftypheic\x00\x00\x00\x00" + b"broken"
 
-    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-heic-broken", image_bytes=content)
+    result = generate_variants(tmp_path, photo_id=1, etag="etag-heic-broken", image_bytes=content)
 
-    assert ratio is None
+    assert result is None
     assert not thumbnail_path(tmp_path, 1, "etag-heic-broken").exists()
     assert not display_path(tmp_path, 1, "etag-heic-broken").exists()
 
@@ -299,9 +306,9 @@ def test_generate_variants_returns_none_instead_of_crashing_on_write_failure(
     blocked_cache_dir = tmp_path / "blocked"
     blocked_cache_dir.write_text("occupies the path generate_variants tries to mkdir into")
 
-    ratio = generate_variants(blocked_cache_dir, photo_id=1, etag="etag-a", image_bytes=content)
+    result = generate_variants(blocked_cache_dir, photo_id=1, etag="etag-a", image_bytes=content)
 
-    assert ratio is None
+    assert result is None
 
 
 def test_generate_variants_returns_none_instead_of_crashing_on_decompression_bomb(
@@ -318,9 +325,9 @@ def test_generate_variants_returns_none_instead_of_crashing_on_decompression_bom
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
     content = _jpeg_bytes(100, 100)
 
-    ratio = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=content)
+    result = generate_variants(tmp_path, photo_id=1, etag="etag-a", image_bytes=content)
 
-    assert ratio is None
+    assert result is None
     assert not thumbnail_path(tmp_path, 1, "etag-a").exists()
 
 
@@ -448,6 +455,33 @@ class TestMeasureCacheUsage:
 # specs/features/0044-projekte-loeschen.md, Punkt 2 "Cache-Cleanup" ab hier: eine benannte, rein
 # synchrone Mengenfunktion in der Form von measure_cache_usage - der Aufrufer fuehrt sie ueber
 # asyncio.to_thread aus, damit die Event-Loop bei mehreren tausend unlink-Aufrufen nicht blockiert.
+
+
+def test_generate_variants_returns_ratio_and_pixel_count_from_one_decode(tmp_path: Path) -> None:
+    """Spec 0639: Die Aufloesung entsteht aus DERSELBEN Dekodierung wie das Seitenverhaeltnis -
+    kein zusaetzlicher Abruf, kein zweites Oeffnen. Beide Werte reisen zusammen, damit der
+    Aufrufer nicht zwei Erfolgsmeldungen gegeneinander abgleichen muss."""
+    result = generate_variants(
+        tmp_path, photo_id=1, etag="etag-a", image_bytes=_jpeg_bytes(4000, 3000)
+    )
+
+    assert isinstance(result, VariantResult)
+    assert result.aspect_ratio == pytest.approx(4 / 3)
+    assert result.pixel_count == 4000 * 3000
+    with pytest.raises(AttributeError):
+        result.pixel_count = 1  # type: ignore[misc]
+
+
+def test_generate_variants_counts_the_shown_orientation_for_the_resolution(tmp_path: Path) -> None:
+    """Gespeichert 600x400, Orientierung 6 - gezeigt 400x600. Dieselbe gedrehte Ansicht wie
+    `aspect_ratio`; sonst stuende die Aufloesung quer zum Verhaeltnis."""
+    result = generate_variants(
+        tmp_path, photo_id=1, etag="etag-rot", image_bytes=_jpeg_bytes_with_orientation(600, 400, 6)
+    )
+
+    assert result is not None
+    assert result.aspect_ratio == pytest.approx(2 / 3)
+    assert result.pixel_count == 400 * 600
 
 
 def test_delete_cached_variants_accepts_an_empty_set(tmp_path: Path) -> None:

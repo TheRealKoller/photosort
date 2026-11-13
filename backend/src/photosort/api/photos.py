@@ -28,6 +28,8 @@ from photosort.duplicates import (
     GroupSlot,
     SingleSlot,
     all_group_representative_ids,
+    auto_decided_for,
+    auto_decided_representatives,
     decision_effective_for,
     decision_without_suggestion_for,
     effective_decision_for,
@@ -2004,6 +2006,9 @@ class DuplicateGroupOut(BaseModel):
     previous_photo_id: int | None
     next_photo_id: int | None
     span_seconds: int
+    # Spec 0639: Die Gruppe ist ganz automatisch entschieden oder gar nicht. Das Feld ist reine
+    # Leseauskunft; die Entscheidungszeile bleibt unberuehrt und `decision` bleibt `null`."""
+    auto_decided: bool
 
 
 async def build_duplicate_group_out(
@@ -2030,6 +2035,8 @@ async def build_duplicate_group_out(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
         )
+    auto_ids = await _auto_decided_ids(session, project.id)
+    auto_representatives = auto_decided_representatives(links, auto_ids)
     stellung = group_standing(representative_id, links)
     # `representative_of` hat die Gruppe soeben aufgeloest - `group_standing` kann sie nicht mehr
     # verfehlen. Der Zweig steht trotzdem, weil `mypy --strict` sonst das `None` durchliesse.
@@ -2091,6 +2098,7 @@ async def build_duplicate_group_out(
         previous_photo_id=stellung.previous_id,
         next_photo_id=stellung.next_id,
         span_seconds=group_span_seconds(representative_id, links),
+        auto_decided=representative_id in auto_representatives,
     )
 
 
@@ -2119,6 +2127,7 @@ def empty_duplicate_group_out() -> DuplicateGroupOut:
         previous_photo_id=None,
         next_photo_id=None,
         span_seconds=0,
+        auto_decided=False,
     )
 
 
@@ -2256,6 +2265,9 @@ class AusschussPhotoEntryOut(BaseModel):
     group_anchor_photo_id: int | None
     keep_possible: bool
     decision_effective: bool | None
+    # Spec 0639: Der Merker selbst (Verlierer) bzw. die Zugehoerigkeit zu einem automatisch
+    # entschiedenen Stern (Repraesentant ueber die automatischen Kanten).
+    auto_decided: bool
 
 
 class DecisionCountsOut(BaseModel):
@@ -2289,6 +2301,9 @@ class AusschussGroupEntryOut(BaseModel):
     member_count: int
     group_size: int
     decision_counts: DecisionCountsOut
+    # Spec 0639: ganz automatisch entschieden oder gar nicht; `decision_counts` bleibt die Zahl
+    # der GESPEICHERTEN Zeilen (dort null) und behaelt damit seine Bedeutung.
+    auto_decided: bool
 
 
 AusschussEntryOut = Annotated[
@@ -2318,6 +2333,9 @@ class AusschussOut(BaseModel):
     items: list[AusschussEntryOut]
     total: int
     open_count: int
+    # Spec 0639: Zahl der automatisch entschiedenen GRUPPEN, projektweit und unabhaengig von
+    # `limit`/`offset`/Filter - wie `open_count` eine Aussage ueber den ganzen Bestand.
+    auto_decided_group_count: int
 
 
 async def _ausschuss_photo_outs(
@@ -2368,8 +2386,27 @@ async def _ausschuss_photo_outs(
     }
 
 
+async def _auto_decided_ids(session: AsyncSession, project_id: int) -> set[int]:
+    """Die Fotos DIESES Projekts, deren `PhotoScore.auto_decided` steht (Spec 0639).
+
+    Projektbindung ausgeschrieben in derselben Anweisung, wie alle Zaehlungen dieses Moduls: Der
+    Merker ist Lauf-Zustand EINES Projekts und darf eine fremde Antwort nicht veraendern."""
+    return set(
+        (
+            await session.execute(
+                select(PhotoScore.photo_id)
+                .join(Photo, Photo.id == PhotoScore.photo_id)
+                .where(Photo.project_id == project_id, PhotoScore.auto_decided.is_(True))
+            )
+        ).scalars()
+    )
+
+
 def _ausschuss_photo_entry_out(
-    photo: Photo, photo_out: PhotoOut, links: list[DuplicateLink]
+    photo: Photo,
+    photo_out: PhotoOut,
+    links: list[DuplicateLink],
+    auto_links: list[DuplicateLink],
 ) -> AusschussPhotoEntryOut:
     score = photo.score
     # Der Bestand ist ueber den inneren Join auf `PhotoScore` gebildet - hier kann die Zeile
@@ -2389,10 +2426,13 @@ def _ausschuss_photo_entry_out(
         # Client (siehe `AusschussPhotoEntryOut`).
         keep_possible=keep_possible_for(photo),
         decision_effective=decision_effective_for(photo),
+        auto_decided=auto_decided_for(photo, auto_links),
     )
 
 
-def _ausschuss_group_entry_out(slot: GroupSlot, cover: PhotoOut) -> AusschussGroupEntryOut:
+def _ausschuss_group_entry_out(
+    slot: GroupSlot, cover: PhotoOut, auto_representatives: set[int]
+) -> AusschussGroupEntryOut:
     return AusschussGroupEntryOut(
         kind="group",
         group_anchor_photo_id=slot.anchor_id,
@@ -2404,6 +2444,7 @@ def _ausschuss_group_entry_out(slot: GroupSlot, cover: PhotoOut) -> AusschussGro
             keep=slot.decision_counts.keep,
             discard=slot.decision_counts.discard,
         ),
+        auto_decided=slot.anchor_id in auto_representatives,
     )
 
 
@@ -2421,6 +2462,10 @@ async def list_ausschuss(
     # SICHERHEIT (S5): deklarativ begrenzt, BEVOR der Wert die Datenbank erreicht - ein
     # unbeschraenkter Pydantic-`int` wird jenseits von 2^63 zu `500` statt einer leeren Liste.
     photo_id: int | None = Query(None, ge=1, le=MAX_QUERY_POSITION),
+    # Spec 0639: Der Filter liegt nur in der Adresse (`?auto_decided=true`); `false` wirkt wie
+    # weggelassen. Zusammen mit `photo_id` ist er widerspruechlich und wird VOR jeder Abfrage
+    # abgewiesen (422) - der Detailzweig liefert immer genau einen Eintrag.
+    auto_decided: bool = Query(False),
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
@@ -2459,6 +2504,12 @@ async def list_ausschuss(
     SQL-`LIMIT` davor zerlegte eine Gruppe ueber zwei Seiten in zwei Stapel. `open_count` ist
     davon unabhaengig und nennt die Zahl der Aufnahmen, die der Bestaetigungsbutton traegt
     (AK9)."""
+    if auto_decided and photo_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=("auto_decided=true ist nicht mit photo_id kombinierbar."),
+        )
+
     project = await _get_project_or_404(project_id, session)
 
     # Eine Anweisung, zwei UND-Glieder: die Projektbindung und der Bestand. `has_ausschuss_entry`
@@ -2485,6 +2536,10 @@ async def list_ausschuss(
     # projektbegrenzten Bestand und diesen Kanten - nie aus einem eigenen SQL-Stern.
     links = await load_duplicate_links(session, project.id)
     slots = group_ausschuss_stock(bestand, links)
+    auto_ids = await _auto_decided_ids(session, project.id)
+    auto_representatives = auto_decided_representatives(links, auto_ids)
+    auto_links = [link for link in links if link.photo_id in auto_ids]
+    auto_decided_group_count = len(auto_representatives)
 
     # SICHERHEIT (S1): dieselbe ausgeschriebene Projektbindung wie der Bestand - eine Zaehlung ohne
     # sie gaebe dem Button eine Zahl, die auf dieser Seite niemand einloesen kann.
@@ -2505,20 +2560,39 @@ async def list_ausschuss(
         ids = [photo_id] if any(row[0] == photo_id for row in bestand) else []
         photos_by_id, outs = await _ausschuss_photo_outs(session, project, ids, current_user.id)
         detail: list[AusschussEntryOut] = [
-            _ausschuss_photo_entry_out(photos_by_id[pid], outs[pid], links) for pid in ids
+            _ausschuss_photo_entry_out(photos_by_id[pid], outs[pid], links, auto_links)
+            for pid in ids
         ]
-        return AusschussOut(items=detail, total=len(slots), open_count=open_count)
+        return AusschussOut(
+            items=detail,
+            total=len(slots),
+            open_count=open_count,
+            auto_decided_group_count=auto_decided_group_count,
+        )
 
+    if auto_decided:
+        slots = [
+            slot
+            for slot in slots
+            if isinstance(slot, GroupSlot) and slot.anchor_id in auto_representatives
+        ]
     seite = slots[offset : offset + limit]
     ids = [slot.photo_id if isinstance(slot, SingleSlot) else slot.cover_id for slot in seite]
     photos_by_id, outs = await _ausschuss_photo_outs(session, project, ids, current_user.id)
     items: list[AusschussEntryOut] = [
-        _ausschuss_photo_entry_out(photos_by_id[slot.photo_id], outs[slot.photo_id], links)
+        _ausschuss_photo_entry_out(
+            photos_by_id[slot.photo_id], outs[slot.photo_id], links, auto_links
+        )
         if isinstance(slot, SingleSlot)
-        else _ausschuss_group_entry_out(slot, outs[slot.cover_id])
+        else _ausschuss_group_entry_out(slot, outs[slot.cover_id], auto_representatives)
         for slot in seite
     ]
-    return AusschussOut(items=items, total=len(slots), open_count=open_count)
+    return AusschussOut(
+        items=items,
+        total=len(slots),
+        open_count=open_count,
+        auto_decided_group_count=auto_decided_group_count,
+    )
 
 
 class DraftAlternativesOut(BaseModel):

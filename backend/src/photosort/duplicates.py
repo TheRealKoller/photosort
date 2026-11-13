@@ -371,8 +371,16 @@ def has_open_suggestion() -> ColumnElement[bool]:
 
     AUSDRUECKLICH NICHT die Negation von `survives_ausschuss()` (AK5): Eine mit `Ausschuss`
     entschiedene Aufnahme ist weder Ueberlebende noch offener Vorschlag. Eine Umsetzung, die die
-    eine Menge als Verneinung der anderen bildet, liefert plausible, falsche Listen."""
-    return and_(PhotoScore.suggested_status.is_not(None), _decision_subquery().is_(None))
+    eine Menge als Verneinung der anderen bildet, liefert plausible, falsche Listen.
+
+    DER AUTOMATIK-MERKER GEHOERT NUR HIERHER (Spec 0639, S2): Eine automatisch entschiedene
+    Aufnahme ist keine offene Sichtung. `survives_ausschuss()` bleibt unveraendert, weil der
+    Merker die Cloud-Kandidatenmenge nie beeinflussen darf."""
+    return and_(
+        PhotoScore.suggested_status.is_not(None),
+        PhotoScore.auto_decided.is_(False),
+        _decision_subquery().is_(None),
+    )
 
 
 def has_ausschuss_entry() -> ColumnElement[bool]:
@@ -500,11 +508,44 @@ def keep_possible_for(photo: Photo) -> bool:
 
 
 def has_open_suggestion_for(photo: Photo) -> bool:
-    """Die Objektfassung von "offener Vorschlag" - siehe `has_open_suggestion()`."""
+    """Die Objektfassung von "offener Vorschlag" - siehe `has_open_suggestion()`.
+
+    Dasselbe dritte UND-Glied wie die SQL-Fassung: Ein Automatik-Merker schliesst den Vorschlag
+    aus, ohne die gespeicherte Entscheidung anzufassen."""
     score = photo.score
     if score is None:
         return False
-    return score.suggested_status is not None and photo.duplicate_decision is None
+    return (
+        score.suggested_status is not None
+        and not score.auto_decided
+        and photo.duplicate_decision is None
+    )
+
+
+def auto_decided_representatives(links: Sequence[DuplicateLink], auto_ids: set[int]) -> set[int]:
+    """Die Repraesentanten der automatisch entschiedenen Sterne (Spec 0639).
+
+    Der Merker steht nur an Verlierern; ein Stern ist ganz automatisch entschieden oder gar
+    nicht. Ein Repraesentant gilt deshalb genau dann als automatisch entschieden, wenn
+    mindestens einer seiner Verlierer den Merker traegt. `auto_ids` kommt aus der projektgebundenen
+    Abfrage des Lesepfads - die Kante selbst traegt keine Entscheidungsauskunft (AK6)."""
+    return {
+        link.duplicate_of
+        for link in links
+        if link.duplicate_of is not None and link.photo_id in auto_ids
+    }
+
+
+def auto_decided_for(photo: Photo, auto_links: Sequence[DuplicateLink]) -> bool:
+    """Ob dieses Foto zu einem automatisch entschiedenen Stern gehoert (Spec 0639).
+
+    `auto_links` sind die Kanten, deren VERLIERER den Merker traegt, also die Ausgabe von
+    `auto_decided_representatives` als Kantenmenge. Der Verlierer traegt den Merker selbst; der
+    Repraesentant wird ueber die Kante erkannt, weil an ihm kein Merker stehen darf."""
+    score = photo.score
+    if score is not None and score.auto_decided:
+        return True
+    return any(link.duplicate_of == photo.id for link in auto_links)
 
 
 def _project_member_condition(project_id: int) -> ColumnElement[bool]:

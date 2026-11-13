@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import event, func, select
+from sqlalchemy import event, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -585,6 +585,7 @@ async def test_a_low_quality_suggestion_is_decidable_on_the_single_path(
         "previous_photo_id": None,
         "next_photo_id": None,
         "span_seconds": 0,
+        "auto_decided": False,
     }
     assert await _stored(db_session, unscharf.id) == DuplicateDecision.DISCARD
 
@@ -1202,3 +1203,105 @@ async def test_the_group_confirm_has_the_effect_the_gate_confirm_would_have_had(
     assert [abschluss.status_code, gate_p1.status_code, gate_p2.status_code] == [200, 200, 200]
     assert await _decided_paths(db_session, p1) == await _decided_paths(db_session, p2)
     assert len(await _decided_paths(db_session, p1)) == 4
+
+
+async def _mark_auto(session: AsyncSession, *photos: Photo) -> None:
+    await session.execute(
+        update(PhotoScore)
+        .where(PhotoScore.photo_id.in_([photo.id for photo in photos]))
+        .values(auto_decided=True)
+    )
+    await session.commit()
+
+
+async def _auto_flags(session: AsyncSession, project: Project) -> dict[int, bool]:
+    rows = await session.execute(
+        select(PhotoScore.photo_id, PhotoScore.auto_decided)
+        .join(Photo, Photo.id == PhotoScore.photo_id)
+        .where(Photo.project_id == project.id)
+    )
+    return {photo_id: flag for photo_id, flag in rows.tuples()}
+
+
+async def test_a_single_decision_clears_the_marker_of_the_whole_star(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    winner, [first, second] = await _star(db_session, project, 3)
+    await _mark_auto(db_session, first, second)
+
+    response = await authenticated_api_client.put(
+        _single_url(project.id, first.id), json={"decision": "keep"}
+    )
+
+    assert response.status_code == 200
+    flags = await _auto_flags(db_session, project)
+    assert flags == {winner.id: False, first.id: False, second.id: False}
+    assert await _all_rows(db_session) == {first.id: DuplicateDecision.KEEP}
+
+
+async def test_a_keep_on_the_representative_clears_the_markers_of_the_losers(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    winner, [first, second] = await _star(db_session, project, 3)
+    await _mark_auto(db_session, first, second)
+
+    response = await authenticated_api_client.put(
+        _single_url(project.id, winner.id), json={"decision": "keep"}
+    )
+
+    assert response.status_code == 200
+    flags = await _auto_flags(db_session, project)
+    assert flags == {winner.id: False, first.id: False, second.id: False}
+
+
+async def test_a_group_decision_clears_the_marker_of_the_whole_star(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    winner, [first, second] = await _star(db_session, project, 3)
+    await _mark_auto(db_session, first, second)
+
+    response = await authenticated_api_client.put(
+        _group_url(project.id, winner.id), json={"decision": "discard"}
+    )
+
+    assert response.status_code == 200
+    flags = await _auto_flags(db_session, project)
+    assert flags == {winner.id: False, first.id: False, second.id: False}
+    assert set(await _all_rows(db_session)) == {winner.id, first.id, second.id}
+
+
+async def test_a_decision_never_clears_a_marker_of_another_project(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    own = await _project(db_session, "Costa Rica")
+    other = await _project(db_session, "Island")
+    _, [own_loser, _] = await _star(db_session, own, 3)
+    _, [other_loser, _] = await _star(db_session, other, 3)
+    await _mark_auto(db_session, own_loser, other_loser)
+
+    response = await authenticated_api_client.put(
+        _single_url(own.id, own_loser.id), json={"decision": "keep"}
+    )
+
+    assert response.status_code == 200
+    assert (await _auto_flags(db_session, own))[own_loser.id] is False
+    assert (await _auto_flags(db_session, other))[other_loser.id] is True
+
+
+async def test_the_group_confirm_does_not_touch_an_auto_decided_group(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    project = await _project(db_session)
+    winner, [first, second] = await _star(db_session, project, 3)
+    await _mark_auto(db_session, first, second)
+
+    response = await authenticated_api_client.post(_confirm_url(project.id, winner.id))
+
+    assert response.status_code == 200
+    # Kein offener Vorschlag, also keine Auswahl: keine Zeile und kein Zuruecksetzen.
+    assert await _all_rows(db_session) == {}
+    flags = await _auto_flags(db_session, project)
+    assert flags == {winner.id: False, first.id: True, second.id: True}

@@ -58,8 +58,11 @@ export function duplicateComparePath(
 
 /** Das feste Ziel von „Zurück zum Ausschuss" — gebildet aus der numerischen Projekt-Id, nie aus
  * einem Parameterwert, `document.referrer` oder dem Browserverlauf. */
-export function ausschussStepPath(projectId: number): string {
-  return `/projects/${projectId}/pipeline/ausschuss`
+export function ausschussStepPath(
+  projectId: number,
+  { auto = false }: { auto?: boolean } = {},
+): string {
+  return `/projects/${projectId}/pipeline/ausschuss${auto ? '?auto=1' : ''}`
 }
 
 /** Das Ziel EINER Pruefung - die einzige Stelle, die diesen Pfad baut. */

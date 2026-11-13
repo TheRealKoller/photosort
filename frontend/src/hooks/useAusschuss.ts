@@ -20,8 +20,8 @@ export const AUSSCHUSS_PAGE_SIZE = 60
  * (`…, 'photo', <id>`), und ein Eintrag an derselben Stelle ließe eine Detailabfrage den
  * Seitenstapel der Übersicht als ihren Eintrag lesen — die beiden haben verschiedene Formen.
  */
-function ausschussQueryKey(projectId: number) {
-  return ['photos', projectId, 'ausschuss', 'liste'] as const
+function ausschussQueryKey(projectId: number, autoDecided: boolean) {
+  return ['photos', projectId, 'ausschuss', 'liste', autoDecided] as const
 }
 
 /**
@@ -41,11 +41,19 @@ function ausschussEntryQueryKey(projectId: number, photoId: number) {
  * Der nächste Offset ist die Zahl der bereits GELADENEN Einträge und `total` die Größe des ganzen
  * Bestands — dieselbe Ableitung wie in der Fotoliste, nicht die Seitengröße.
  */
-export function useAusschussQuery(projectId: number, options: { enabled: boolean }) {
+export function useAusschussQuery(
+  projectId: number,
+  options: { enabled: boolean; autoDecided?: boolean },
+) {
+  const autoDecided = options.autoDecided ?? false
   return useInfiniteQuery({
-    queryKey: ausschussQueryKey(projectId),
+    queryKey: ausschussQueryKey(projectId, autoDecided),
     queryFn: ({ pageParam }: { pageParam: number }) =>
-      listAusschuss(projectId, { limit: AUSSCHUSS_PAGE_SIZE, offset: pageParam }),
+      listAusschuss(projectId, {
+        limit: AUSSCHUSS_PAGE_SIZE,
+        offset: pageParam,
+        autoDecided,
+      }),
     initialPageParam: 0,
     getNextPageParam: (lastPage: AusschussOut, allPages: AusschussOut[]) => {
       const loaded = allPages.reduce((sum, page) => sum + page.items.length, 0)

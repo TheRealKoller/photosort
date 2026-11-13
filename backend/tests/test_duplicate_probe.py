@@ -115,7 +115,7 @@ class TestTheNewGroupingSplitsTheChain:
         ]
 
         old = _summarise(old_transitive_groups(photos), {p.photo_id: p.taken_at for p in photos})
-        mapping = assign_duplicate_groups(fingerprints)
+        mapping = assign_duplicate_groups(fingerprints).duplicate_of
         new = _summarise(_groups_of(mapping), {p.photo_id: p.taken_at for p in photos})
 
         assert old.groups == 1

@@ -22,6 +22,7 @@ const GROUP: DuplicateGroupOut = {
   previous_photo_id: null,
   next_photo_id: 43,
   span_seconds: 0,
+  auto_decided: false,
 }
 
 function sharedClient() {
@@ -103,6 +104,7 @@ describe('useDuplicateDecisionMutation', () => {
       previous_photo_id: null,
       next_photo_id: null,
       span_seconds: 0,
+      auto_decided: false,
     }
     vi.mocked(duplicatesApi.setDuplicateDecision).mockResolvedValue(written)
     const { queryClient, wrapper } = sharedClient()

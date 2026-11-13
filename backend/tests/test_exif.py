@@ -10,7 +10,12 @@ from PIL.ExifTags import IFD
 from PIL.TiffImagePlugin import IFDRational
 
 from photosort.cameras import CameraIdentity
-from photosort.opencloud.exif import extract_camera, extract_gps, extract_taken_at
+from photosort.opencloud.exif import (
+    extract_camera,
+    extract_gps,
+    extract_pixel_count,
+    extract_taken_at,
+)
 
 _DATETIME_ORIGINAL_TAG = 36867
 
@@ -571,6 +576,90 @@ def test_a_heic_without_exif_falls_back_to_no_value_for_all_three() -> None:
     assert extract_taken_at(content) is None
     assert extract_gps(content) is None
     assert extract_camera(content) is None
+
+
+# --- Aufloesung aus dem Range-Fenster (Spec 0639, Security S9) --------------------------------
+
+_ORIENTATION_TAG = 274
+
+
+def _jpeg_with_size(width: int, height: int, orientation: int | None = None) -> bytes:
+    image = Image.new("RGB", (width, height), color="green")
+    buffer = io.BytesIO()
+    if orientation is None:
+        image.save(buffer, format="JPEG")
+    else:
+        exif = image.getexif()
+        exif[_ORIENTATION_TAG] = orientation
+        image.save(buffer, format="JPEG", exif=exif)
+    return buffer.getvalue()
+
+
+def test_extract_pixel_count_reads_a_jpeg() -> None:
+    assert extract_pixel_count(_jpeg_with_size(640, 480)) == 640 * 480
+
+
+def test_extract_pixel_count_reads_a_png_without_exif() -> None:
+    assert extract_pixel_count(_make_png()) == 4 * 4
+
+
+def test_extract_pixel_count_reads_a_heic() -> None:
+    assert extract_pixel_count(_make_heic(with_exif=False)) == 16 * 12
+
+
+def test_extract_pixel_count_counts_the_shown_orientation() -> None:
+    """Gespeichert 20x10, Orientierung 6 - gezeigt 10x20. Die Zahl folgt der gedrehten Ansicht
+    wie `aspect_ratio`; sonst vergliche die Gewinnerregel eine gedrehte Kopie gegen ihre
+    ungedrehte Quelle mit vertauschten Kanten."""
+    assert extract_pixel_count(_jpeg_with_size(20, 10, orientation=6)) == 10 * 20
+
+
+def test_extract_pixel_count_returns_none_for_a_truncated_window() -> None:
+    """Das Range-Fenster ist abgeschnitten, nicht das ganze Original: ein unlesbarer Kopf ergibt
+    `None` und keinen Fehler - der Aufrufer setzt trotzdem den Merker."""
+    content = _jpeg_with_size(640, 480)
+
+    assert extract_pixel_count(content[:40]) is None
+
+
+def test_extract_pixel_count_returns_none_for_foreign_bytes() -> None:
+    assert extract_pixel_count(b"kein Bild, nur Text") is None
+
+
+def _jpeg_with_declared_size(width: int, height: int) -> bytes:
+    """Ein 8x8-JPEG, dessen SOF-Kopf auf beliebige Masse umgeschrieben ist. Es wird nichts
+    dekodiert - genau der Fall einer Kopfangabe ohne Pixelflaeche."""
+    import struct
+
+    content = bytearray(_jpeg_with_size(8, 8))
+    sof = content.find(b"\xff\xc0")
+    assert sof > 0, "SOF0-Marker fehlt"
+    struct.pack_into(">HH", content, sof + 5, height, width)
+    return bytes(content)
+
+
+def test_extract_pixel_count_rejects_a_header_above_the_safety_cap() -> None:
+    """Security: Ein Kopf, der 120 Megapixel deklariert, ist keine gemessene Aufloesung. Ohne
+    Schranke landete die Fremdzahl in der `INTEGER`-Spalte; ein noch groesserer Kopf risse das
+    Insert ab. `None` setzt den Merker und beendet die Nachholung ehrlich."""
+    assert extract_pixel_count(_jpeg_with_declared_size(20_000, 6_000)) is None
+
+
+def test_extract_pixel_count_accepts_exactly_the_safety_cap() -> None:
+    content = _jpeg_with_declared_size(10_000, 10_000)
+    with pytest.warns(Image.DecompressionBombWarning):
+        assert extract_pixel_count(content) == 100_000_000
+
+
+def test_extract_pixel_count_reads_only_the_header_not_the_pixels() -> None:
+    """S9: Der Leser darf die Pixelflaeche nicht dekodieren. Ein Bild, dessen Pixel-Strom
+    absichtlich kaputt ist, behaelt einen lesbaren Kopf und liefert deshalb seine Masse."""
+    content = _jpeg_with_size(320, 200)
+    # Das SOF-Segment steht im Kopf; alles ab der Haelfte ist hier Muell, inklusive der
+    # Bilddaten. `Image.open` liest den Kopf, ein `load()` scheiterte an denselben Bytes.
+    truncated = content[: len(content) // 2]
+
+    assert extract_pixel_count(truncated) == 320 * 200
 
 
 def test_a_fresh_worker_process_gets_heif_registration_from_the_exif_module() -> None:

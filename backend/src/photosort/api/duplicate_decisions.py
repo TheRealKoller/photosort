@@ -12,7 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,9 +85,23 @@ async def _project_or_404(project_id: int, session: AsyncSession) -> Project:
     return project
 
 
-async def _write(session: AsyncSession, photo_ids: list[int], decision: DuplicateDecision) -> None:
+async def _write(
+    session: AsyncSession,
+    photo_ids: list[int],
+    decision: DuplicateDecision,
+    *,
+    project_id: int,
+    star_photo_ids: list[int],
+) -> None:
     """Setzt die Entscheidung fuer genau diese Fotos - OHNE `commit`, die Transaktionsgrenze
     gehoert dem Endpunkt (S9).
+
+    RAeumt ZUSAETZLICH den Automatik-Merker ALLER Mitglieder des Sterns in derselben Transaktion
+    ab (Spec 0639): Eine Nutzerentscheidung gewinnt immer gegen die automatische, auch wenn sie
+    nur ein Mitglied betrifft - der Stern ist ganz automatisch oder gar nicht. Die Menge kommt
+    vom Endpunkt aus den projektgebundenen `links`; `Photo.project_id` steht in DERSELBEN
+    Anweisung, damit ein fremdes Projekt unberuehrt bleibt. Die Entscheidungszeile selbst bleibt
+    unangetastet.
 
     Loeschen und neu einfuegen statt Zeile-fuer-Zeile-Abgleich: Der Primaerschluessel ist
     `photo_id`, ein naives `INSERT` liefe bei einer bestehenden Zeile in einen `IntegrityError`
@@ -107,6 +121,15 @@ async def _write(session: AsyncSession, photo_ids: list[int], decision: Duplicat
     `409` gilt allein fuer das schmale Fenster dazwischen, und die Wiederholung loest ihn auf."""
     await session.execute(
         delete(PhotoDuplicateDecision).where(PhotoDuplicateDecision.photo_id.in_(photo_ids))
+    )
+    await session.execute(
+        update(PhotoScore)
+        .where(
+            PhotoScore.photo_id.in_(
+                select(Photo.id).where(Photo.id.in_(star_photo_ids), Photo.project_id == project_id)
+            )
+        )
+        .values(auto_decided=False)
     )
     session.add_all(
         [PhotoDuplicateDecision(photo_id=photo_id, decision=decision) for photo_id in photo_ids]
@@ -207,7 +230,16 @@ async def set_duplicate_decision(
             status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
         )
 
-    await _write(session, [photo_id], payload.decision)
+    star_photo_ids = (
+        member_ids_of(representative_id, links) if representative_id is not None else [photo_id]
+    )
+    await _write(
+        session,
+        [photo_id],
+        payload.decision,
+        project_id=project.id,
+        star_photo_ids=star_photo_ids,
+    )
     await session.commit()
     if representative_id is None:
         return empty_duplicate_group_out()
@@ -258,7 +290,14 @@ async def set_duplicate_group_decision(
             status_code=status.HTTP_404_NOT_FOUND, detail="Keine Duplikat-Gruppe zu diesem Foto."
         )
 
-    await _write(session, member_ids_of(representative_id, links), payload.decision)
+    members = member_ids_of(representative_id, links)
+    await _write(
+        session,
+        members,
+        payload.decision,
+        project_id=project.id,
+        star_photo_ids=members,
+    )
     await session.commit()
     return await build_duplicate_group_out(session, project, photo_id, current_user.id)
 

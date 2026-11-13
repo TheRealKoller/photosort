@@ -266,6 +266,7 @@ async def read_duplicate_probe_input(session: AsyncSession, project_id: int) -> 
                 sharpness=score.sharpness,
                 taken_at=photo.taken_at,
                 taken_at_trusted=trusted,
+                pixel_count=photo.pixel_count,
             )
         )
 
@@ -286,7 +287,7 @@ def measure(probe: ProbeInput) -> DuplicateMeasurement:
     by_id = {fingerprint.photo_id: fingerprint for fingerprint in probe.fingerprints}
     old = _summarise(old_transitive_groups(probe.photos), moments)
     mapping = assign_duplicate_groups(probe.fingerprints)
-    new = _summarise(_groups_of(mapping), moments)
+    new = _summarise(_groups_of(mapping.duplicate_of), moments)
     counter_fingerprints = tuple(
         PhotoFingerprint(
             photo_id=fingerprint.photo_id,
@@ -296,10 +297,13 @@ def measure(probe: ProbeInput) -> DuplicateMeasurement:
             sharpness=fingerprint.sharpness,
             taken_at=fingerprint.taken_at,
             taken_at_trusted=fingerprint.taken_at is not None,
+            pixel_count=fingerprint.pixel_count,
         )
         for fingerprint in probe.fingerprints
     )
-    counter = _summarise(_groups_of(assign_duplicate_groups(counter_fingerprints)), moments)
+    counter = _summarise(
+        _groups_of(assign_duplicate_groups(counter_fingerprints).duplicate_of), moments
+    )
     candidates, identical, similar = pair_counts(probe.fingerprints)
     return DuplicateMeasurement(
         project_id=probe.project_id,
@@ -313,7 +317,7 @@ def measure(probe: ProbeInput) -> DuplicateMeasurement:
         similar_pairs=similar,
         old=old,
         new=new,
-        similar_span=largest_similar_span(mapping, by_id),
+        similar_span=largest_similar_span(mapping.duplicate_of, by_id),
         counter=counter,
     )
 

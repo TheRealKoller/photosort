@@ -8,7 +8,7 @@ vi.mock('./client', () => ({
   apiFetch: vi.fn(),
 }))
 
-const STAND: AusschussOut = { items: [], total: 0, open_count: 0 }
+const STAND: AusschussOut = { items: [], total: 0, open_count: 0, auto_decided_group_count: 0 }
 
 describe('api/ausschuss', () => {
   it('liest den Bestand seitenweise, mit Seitengroesse und Versatz', async () => {
@@ -29,6 +29,20 @@ describe('api/ausschuss', () => {
     await listAusschuss(7, { limit: 60, offset: 0, photoId: 42 })
 
     expect(apiFetch).toHaveBeenCalledWith('/projects/7/ausschuss?limit=60&offset=0&photo_id=42')
+  })
+
+  it('setzt den Automatik-Filter nur bei true, dann als eigenes Feld', async () => {
+    // Spec 0639: Der Filter ist eine Sicht auf denselben Bestand. `false` wirkt wie
+    // weggelassen - die Adresse nennt nur, was gilt.
+    vi.mocked(apiFetch).mockResolvedValue(STAND)
+
+    await listAusschuss(7, { limit: 60, offset: 0, autoDecided: true })
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/projects/7/ausschuss?limit=60&offset=0&auto_decided=true',
+    )
+
+    await listAusschuss(7, { limit: 60, offset: 0, autoDecided: false })
+    expect(apiFetch).toHaveBeenLastCalledWith('/projects/7/ausschuss?limit=60&offset=0')
   })
 
   it('haengt ohne Parameter gar kein Fragezeichen an', async () => {

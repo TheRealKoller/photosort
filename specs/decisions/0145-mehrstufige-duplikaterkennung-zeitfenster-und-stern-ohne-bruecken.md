@@ -94,6 +94,13 @@ Gewinner (zwei Mitglieder könnten 2× Fenster auseinanderliegen); Union-Find ü
 
 ### 4. Der Stern wird gierig um den Gewinner gebaut, nicht transitiv
 
+**Teilweise abgelöst:** Für **praktisch identische** Gruppen gilt seit Spec
+[`0639`](../features/0639-automatisch-entschiedene-duplikatgruppen.md)/ADR
+[`0146`](./0146-automatisch-entschiedene-duplikatgruppen.md) eine andere Gewinnerreihenfolge —
+Auflösung (`pixel_count`) vor älterer verlässlicher Aufnahmezeit vor kleinerer `photo_id`. Die
+Schärfe bleibt der Vorschlag für **ähnliche** Serien; die verkleinerte `display`-Variante macht sie
+bei Kopien unzuverlässig. Sternform und direkte Kante gelten unverändert.
+
 `assign_duplicate_groups` sortiert absteigend nach `(-sharpness, photo_id)`. Das erste freie Foto
 wird Gewinner; aufgenommen werden nur freie Fotos mit **direkter** Kante zum Gewinner. Für zwei
 ähnliche (nicht identische) Mitglieder gilt zusätzlich paarweise das Zeitfenster. Jedes Mitglied

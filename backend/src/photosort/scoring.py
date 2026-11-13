@@ -163,6 +163,10 @@ class PhotoFingerprint:
     sharpness: float
     taken_at: datetime | None
     taken_at_trusted: bool
+    # Aufloesung des Originals in Pixeln (`Photo.pixel_count`). `None` heisst "unbekannt" und ist
+    # ein regulaerer Zustand: Der Fingerabdruck sortiert dann in Durchgang 1 zuletzt, und der Lauf
+    # entscheidet die Gruppe nicht automatisch (ADR 0146 Punkt 1). Eine Schaetzung ist untersagt.
+    pixel_count: int | None = None
 
 
 def taken_at_is_trusted(taken_at_original: datetime, last_modified: datetime) -> bool:
@@ -301,26 +305,87 @@ def _edge_kind(left: PhotoFingerprint, right: PhotoFingerprint) -> str | None:
     return None
 
 
-def assign_duplicate_groups(fingerprints: Sequence[PhotoFingerprint]) -> dict[int, int]:
+@dataclass(frozen=True)
+class DuplicateAssignment:
+    """Das Ergebnis EINES Duplikat-Durchlaufs in zwei Aussagen.
+
+    `duplicate_of` ist der Stern `verlierer -> gewinner` wie bisher. `identical_winners` nennt die
+    Gewinner der Sterne, die Durchgang 1 ueber AUSSCHLIESSLICH identische Kanten gebaut hat -
+    genau deren Verlierer darf der Lauf automatisch entscheiden (ADR 0146 Punkt 1/3). Die Menge
+    ist bewusst nicht aus `duplicate_of` ableitbar: Ein aehnlicher Stern hat auch einen Gewinner,
+    aber keinen automatischen Anspruch."""
+
+    duplicate_of: dict[int, int]
+    identical_winners: frozenset[int]
+
+
+def _identical_winner_order(fingerprint: PhotoFingerprint) -> tuple[object, ...]:
+    """Sortierschluessel von Durchgang 1: hoechste Aufloesung, dann aeltere VERLAESSLICHE
+    Aufnahmezeit, zuletzt kleinere Id. Unbekannte Aufloesung sortiert zuletzt, nicht als 0 -
+    sonst bevorzugte die Regel eine Aufnahme, ueber die nichts bekannt ist.
+
+    Pfad und Dateiname sind nie Eingabe; der Fingerabdruck traegt sie nicht einmal."""
+    return (
+        fingerprint.pixel_count is None,
+        -(fingerprint.pixel_count or 0),
+        not fingerprint.taken_at_trusted,
+        fingerprint.taken_at or datetime.max,
+        fingerprint.photo_id,
+    )
+
+
+def assign_duplicate_groups(fingerprints: Sequence[PhotoFingerprint]) -> DuplicateAssignment:
     """Die Duplikatgruppen als STERN um je einen Gewinner: `loser -> winner`.
 
-    Sortiert absteigend nach `(-sharpness, photo_id)`; das erste freie Foto wird Gewinner.
-    HARTE STUFE-1-GRENZE: Nur Paare aus `candidate_pairs` werden geprueft - ein Paar mit grober
-    Hamming-Distanz ueber `DUPLICATE_CANDIDATE_HAMMING` ist kein Kandidat und wird nicht einmal
-    angesehen (ADR 0145).
+    ZWEI DURCHGAENGE (ADR 0146 Punkt 1):
+    * Durchgang 1 baut Sterne ausschliesslich ueber identische Kanten, sortiert nach
+      `_identical_winner_order`. Diese Sterne sind bauartbedingt vollstaendig identisch; ihre
+      Gewinner stehen in `identical_winners` und sind fuer Durchgang 2 verbraucht, damit ein
+      aehnliches Kettenmitglied den Stern nicht nachtraeglich erweitert (keine teilweise
+      automatische Gruppe).
+    * Durchgang 2 ist der bisherige Stern ueber die verbliebenen freien Fotos nach
+      `(-sharpness, photo_id)`; hier mischen sich identische und aehnliche Kanten wie zuvor,
+      aber ein Stern aus Durchgang 1 waechst nicht mehr.
 
-    Aufgenommen werden nur FREIE Fotos mit einer DIREKTEN Kante zum Gewinner (identisch oder
-    aehnlich im Fenster) - ein Kettenmitglied, das nur ueber ein anderes Mitglied haengt, bleibt
-    ungruppiert. Fuer zwei aehnliche (nicht identische) Mitglieder gilt zusaetzlich paarweise das
-    Zeitfenster; ein Kandidat, der es gegen ein bereits aufgenommenes Mitglied verletzt, wird
-    nicht aufgenommen. Jedes Foto wird hoechstens einmal zugeordnet, der Gewinner steht nirgends
-    im Ergebnis."""
+    HARTE STUFE-1-GRENZE in beiden Durchgaengen: Nur Paare aus `candidate_pairs` werden geprueft
+    - ein Paar mit grober Hamming-Distanz ueber `DUPLICATE_CANDIDATE_HAMMING` ist kein Kandidat
+    und wird nicht einmal angesehen (ADR 0145).
+
+    Aufgenommen werden nur FREIE Fotos mit einer DIREKTEN Kante zum Gewinner - ein Kettenmitglied,
+    das nur ueber ein anderes Mitglied haengt, bleibt ungruppiert. Fuer zwei aehnliche (nicht
+    identische) Mitglieder gilt zusaetzlich paarweise das Zeitfenster; ein Kandidat, der es gegen
+    ein bereits aufgenommenes Mitglied verletzt, wird nicht aufgenommen. Jedes Foto wird
+    hoechstens einmal zugeordnet, der Gewinner steht nirgends im Ergebnis."""
     pairs = candidate_pairs(fingerprints)
+    assigned: set[int] = set()
+    result: dict[int, int] = {}
+    identical_winners: set[int] = set()
+
+    # --- Durchgang 1: praktisch identische Sterne ------------------------------------------
+    for winner in sorted(fingerprints, key=_identical_winner_order):
+        if winner.photo_id in assigned:
+            continue
+        members = [
+            candidate
+            for candidate in fingerprints
+            if candidate.photo_id not in assigned
+            and _is_identical_candidate(winner, candidate, pairs)
+        ]
+        if not members:
+            # Ohne identisches Mitglied bleibt das Foto fuer Durchgang 2 frei - ein Gewinner ohne
+            # Stern darf nicht als "verbraucht" gelten, sonst verloere es seinen Platz im
+            # Aehnlichkeitsstern.
+            continue
+        assigned.add(winner.photo_id)
+        for member in members:
+            assigned.add(member.photo_id)
+            result[member.photo_id] = winner.photo_id
+        identical_winners.add(winner.photo_id)
+
+    # --- Durchgang 2: der bisherige Stern ueber die verbliebenen freien Fotos ----------------
     ordered = sorted(
         fingerprints, key=lambda fingerprint: (-fingerprint.sharpness, fingerprint.photo_id)
     )
-    assigned: set[int] = set()
-    result: dict[int, int] = {}
     for winner in ordered:
         if winner.photo_id in assigned:
             continue
@@ -346,7 +411,18 @@ def assign_duplicate_groups(fingerprints: Sequence[PhotoFingerprint]) -> dict[in
             result[candidate.photo_id] = winner.photo_id
             if edge == _SIMILAR:
                 similar_members.append(candidate)
-    return result
+    return DuplicateAssignment(duplicate_of=result, identical_winners=frozenset(identical_winners))
+
+
+def _is_identical_candidate(
+    winner: PhotoFingerprint,
+    candidate: PhotoFingerprint,
+    pairs: set[tuple[int, int]],
+) -> bool:
+    """Direkte identische Kante UND Kandidat der harten Stufe 1 - in dieser Reihenfolge, damit
+    die teurere Pixel-Pruefung nur fuer Paare aus dem Netz laeuft."""
+    key = (min(winner.photo_id, candidate.photo_id), max(winner.photo_id, candidate.photo_id))
+    return key in pairs and is_practically_identical(winner, candidate)
 
 
 def haversine_meters(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> float:

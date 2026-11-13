@@ -270,6 +270,22 @@ class Photo(Base):
     # Gespeichert wird das Verhaeltnis, nicht Breite UND Hoehe: die Nachhol-Runde liest aus dem
     # Vorschaubild und kennt die Masse des Originals nicht, nur sein Verhaeltnis.
     aspect_ratio: Mapped[float | None] = mapped_column(default=None)
+    # Aufloesung des ORIGINALS: Breite x Hoehe nach EXIF-Orientierung, geschrieben vom Scan aus
+    # derselben Dekodierung wie das Seitenverhaeltnis (ADR 0146 Punkt 2). `None` heisst
+    # "unbekannt" und ist ein REGULAERER Zustand: Eine unbekannte Aufloesung sortiert in
+    # Durchgang 1 zuletzt und schliesst die automatische Entscheidung aus - eine geschaetzte Zahl
+    # verschoebe die Gewinnerregel stillschweigend.
+    #
+    # KEIN server_default und kein Backfill: Bestandsfotos tragen den Wert erst nach einem Scan
+    # mit Nachhol-Posten.
+    pixel_count: Mapped[int | None] = mapped_column(default=None)
+    # Der Merker "die Masse dieses Fotos wurden geprueft". Ein Foto ohne ihn wird beim naechsten
+    # Scan ueber das bestehende Range-Fenster erneut gelesen - nur die Kopfdaten, ohne
+    # Voll-Download und ohne Thumbnail-Neuerzeugung. Gesetzt wird er AUCH OHNE FUND, sonst laese
+    # jeder Scan den Bestand erneut ueber das Netz.
+    #
+    # `server_default` in Migration UND Modell, damit beide dieselbe DDL lesen.
+    pixel_count_probed: Mapped[bool] = mapped_column(default=False, server_default="false")
     last_modified: Mapped[datetime]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
@@ -505,6 +521,14 @@ class PhotoScore(Base):
         SQLEnum(RatingStatus, native_enum=False, length=20), default=None
     )
     computed_at: Mapped[datetime]
+    # Der Lauf-Merker der automatisch entschiedenen Duplikatgruppen (ADR 0146 Punkt 3): steht nur
+    # an Verlierern eines identischen Sterns, den der SUCCESS-Commit desselben Laufs entschieden
+    # hat. `photo_duplicate_decisions` bleibt allein Nutzerentscheidung - dieser Merker traegt
+    # nicht die Autoritaet eines Klicks und ist jederzeit ueber `keep` zuruecknehmbar.
+    #
+    # NICHT Teil des Ueberlebens-Praedikats: Die Cloud-Kandidatenmenge darf nicht davon abhaengen,
+    # ob ein Lauf erfolgreich war.
+    auto_decided: Mapped[bool] = mapped_column(default=False, server_default="false")
 
     photo: Mapped[Photo] = relationship(back_populates="score", foreign_keys=[photo_id])
 

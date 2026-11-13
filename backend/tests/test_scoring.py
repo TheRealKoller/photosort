@@ -18,6 +18,7 @@ from photosort.scoring import (
     IDENTICAL_FINE_HAMMING,
     TIME_CLUSTER_GAP,
     ClusterCandidate,
+    DuplicateAssignment,
     PhotoFingerprint,
     assign_clusters,
     assign_duplicate_groups,
@@ -162,6 +163,7 @@ def _fingerprint(
     phash: int | None = None,
     fine_phash: int | None = None,
     gray_grid: bytes | None = None,
+    pixel_count: int | None = -1,
 ) -> PhotoFingerprint:
     """Ein Fingerabdruck aus einem BILD: die Signaturen kommen aus den Produktionsfunktionen.
 
@@ -175,6 +177,10 @@ def _fingerprint(
         sharpness=compute_sharpness(image) if sharpness is None else sharpness,
         taken_at=taken_at,
         taken_at_trusted=taken_at_trusted,
+        # Ohne Angabe die Groesse des Testbildes: der haeufigste Fall ist eine echte Kopie
+        # gleicher Aufloesung. `-1` heisst "nicht angegeben"; `None` bleibt der echte
+        # Unbekannt-Zustand.
+        pixel_count=(image.width * image.height if pixel_count == -1 else pixel_count),
     )
 
 
@@ -186,18 +192,25 @@ def _signature(
     sharpness: float,
     taken_at: datetime | None,
     taken_at_trusted: bool = True,
+    pixel_count: int | None = None,
+    gray_grid: bytes | None = None,
 ) -> PhotoFingerprint:
     """Ein Fingerabdruck mit GESETZTEN Bits - fuer den Stern und die Stufen, deren Gegenstand die
-    Bit-Lage ist. Das flache Gitter macht nie "praktisch identisch"; die Pixel-Pruefung deckt die
-    Bildstufe ab."""
+    Bit-Lage ist.
+
+    Das Gitter unterscheidet sich standardmaessig JE ID (`bytes([photo_id])`), damit die Paare
+    "aehnlich" und nicht "praktisch identisch" sind: Der Stern-Gegenstand ist die Bit-Lage, und
+    seit Druchgang 1 (Spec 0639) entscheidet bei identischen Paaren die Aufloesung statt der
+    Schaerfe. Wer ein identisches Paar braucht, gibt `gray_grid=bytes(1024)` explizit an."""
     return PhotoFingerprint(
         photo_id=photo_id,
         phash=phash,
         fine_phash=fine_phash,
-        gray_grid=bytes(1024),
+        gray_grid=bytes(((photo_id * 37) % 256,)) * 1024 if gray_grid is None else gray_grid,
         sharpness=sharpness,
         taken_at=taken_at,
         taken_at_trusted=taken_at_trusted,
+        pixel_count=pixel_count,
     )
 
 
@@ -258,7 +271,12 @@ class TestPracticallyIdenticalCopies:
         )
 
         assert is_practically_identical(base, copy)
-        assert assign_duplicate_groups([base, copy]) == {1: 2}
+        # Die RICHTUNG ist seit Druchgang 1 eine Frage der Aufloesung/Zeit/Id, nicht der
+        # Schaerfe. Der Gegenstand dieses Falls ist allein, DASS die Kopie gruppiert wird - und
+        # zwar ohne jede Aufnahmezeit.
+        assignment = assign_duplicate_groups([base, copy])
+        assert len(assignment.duplicate_of) == 1
+        assert {frozenset(pair) for pair in assignment.duplicate_of.items()} == {frozenset((1, 2))}
 
     def test_a_shifted_crop_is_a_candidate_but_not_identical(self) -> None:
         # AK3: eine Serienaufnahme mit leicht verschobenem Ausschnitt ist Kandidat der Stufe 1,
@@ -284,8 +302,8 @@ class TestSimilarImagesOnlyInsideTheWindow:
 
         assert is_similar(base, on_window)
         assert not is_similar(base, beyond)
-        assert len(assign_duplicate_groups([base, on_window])) == 1
-        assert assign_duplicate_groups([base, beyond]) == {}
+        assert len(assign_duplicate_groups([base, on_window]).duplicate_of) == 1
+        assert assign_duplicate_groups([base, beyond]).duplicate_of == {}
 
     def test_the_similar_thresholds_are_the_module_constants(self) -> None:
         # Jede Grenze kommt aus der Konstanten: ein Bit ueber der groben Grenze traegt nicht mehr.
@@ -321,7 +339,7 @@ class TestATimeWithoutProvenance:
         )
 
         assert not is_similar(base, other)
-        assert assign_duplicate_groups([base, other]) == {}
+        assert assign_duplicate_groups([base, other]).duplicate_of == {}
 
     def test_an_identical_copy_is_grouped_without_a_trusted_time(self) -> None:
         original = _photo_like()
@@ -330,7 +348,9 @@ class TestATimeWithoutProvenance:
             2, _resaved(original), sharpness=50.0, taken_at=None, taken_at_trusted=False
         )
 
-        assert assign_duplicate_groups([base, copy]) == {1: 2}
+        assignment = assign_duplicate_groups([base, copy])
+        assert len(assignment.duplicate_of) == 1
+        assert {frozenset(pair) for pair in assignment.duplicate_of.items()} == {frozenset((1, 2))}
 
 
 class TestTakenAtIsTrusted:
@@ -390,19 +410,19 @@ class TestAssignDuplicateGroups:
     def test_an_empty_input_and_a_single_photo_yield_no_group(self) -> None:
         single = _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
 
-        assert assign_duplicate_groups([]) == {}
-        assert assign_duplicate_groups([single]) == {}
+        assert assign_duplicate_groups([]).duplicate_of == {}
+        assert assign_duplicate_groups([single]).duplicate_of == {}
 
     def test_the_sharpest_photo_wins_and_equal_sharpness_falls_to_the_lower_id(self) -> None:
         sharp = _signature(1, phash=0, fine_phash=0, sharpness=50.0, taken_at=_BASE_TIME)
         soft = _signature(2, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
 
-        assert assign_duplicate_groups([soft, sharp]) == {2: 1}
+        assert assign_duplicate_groups([soft, sharp]).duplicate_of == {2: 1}
 
         left = _signature(5, phash=0, fine_phash=0, sharpness=30.0, taken_at=_BASE_TIME)
         right = _signature(2, phash=0, fine_phash=0, sharpness=30.0, taken_at=_BASE_TIME)
 
-        assert assign_duplicate_groups([left, right]) == {5: 2}
+        assert assign_duplicate_groups([left, right]).duplicate_of == {5: 2}
 
     def test_the_result_is_independent_of_the_input_order(self) -> None:
         photos = [
@@ -415,7 +435,10 @@ class TestAssignDuplicateGroups:
             ),
         ]
 
-        assert all(assign_duplicate_groups(list(order)) == {2: 3} for order in permutations(photos))
+        assert all(
+            assign_duplicate_groups(list(order)).duplicate_of == {2: 3}
+            for order in permutations(photos)
+        )
 
     def test_a_chain_member_without_a_direct_edge_to_the_winner_stays_ungrouped(self) -> None:
         # AK4/S4: A~B und B~C, aber A~C nicht - B haengt am Gewinner C, A nur an B. A bleibt
@@ -435,7 +458,7 @@ class TestAssignDuplicateGroups:
         assert is_similar(first, middle)
         assert is_similar(middle, last)
         assert not is_similar(first, last)
-        assert assign_duplicate_groups([first, middle, last]) == {2: 3}
+        assert assign_duplicate_groups([first, middle, last]).duplicate_of == {2: 3}
 
     def test_every_member_of_a_star_has_a_direct_edge_to_its_winner(self) -> None:
         winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
@@ -459,8 +482,8 @@ class TestAssignDuplicateGroups:
 
         result = assign_duplicate_groups([winner, *members])
 
-        assert result == {11: 10, 12: 10}
-        for loser, winner_id in result.items():
+        assert result.duplicate_of == {11: 10, 12: 10}
+        for loser, winner_id in result.duplicate_of.items():
             assert is_similar(by_id[winner_id], by_id[loser])
 
     def test_two_similar_members_must_lie_within_the_window_of_each_other(self) -> None:
@@ -484,7 +507,7 @@ class TestAssignDuplicateGroups:
         assert is_similar(winner, near)
         assert is_similar(winner, far)
         assert not is_similar(near, far)
-        assert assign_duplicate_groups([winner, near, far]) == {11: 10}
+        assert assign_duplicate_groups([winner, near, far]).duplicate_of == {11: 10}
 
     def test_members_inside_the_pairwise_window_all_join(self) -> None:
         winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
@@ -503,24 +526,162 @@ class TestAssignDuplicateGroups:
             taken_at=_BASE_TIME + 7 * _MINUTE,
         )
 
-        assert assign_duplicate_groups([winner, earlier, later]) == {11: 10, 12: 10}
+        assert assign_duplicate_groups([winner, earlier, later]).duplicate_of == {11: 10, 12: 10}
 
     def test_a_pair_outside_the_candidate_net_is_never_checked(self) -> None:
         """Harte Stufe-1-Grenze (ADR 0145): gleiche feine Signatur und gleiches Gitter, aber
         grober Hamming ueber `DUPLICATE_CANDIDATE_HAMMING` - das Paar ist kein Kandidat und wird
         nicht gruppiert, obwohl die spaeteren Stufen es als identisch ansaehen."""
-        winner = _signature(10, phash=0, fine_phash=0, sharpness=100.0, taken_at=_BASE_TIME)
+        winner = _signature(
+            10,
+            phash=0,
+            fine_phash=0,
+            sharpness=100.0,
+            taken_at=_BASE_TIME,
+            gray_grid=bytes(1024),
+        )
         lookalike = _signature(
             11,
             phash=_mask(DUPLICATE_CANDIDATE_HAMMING + 1),
             fine_phash=0,
             sharpness=90.0,
             taken_at=_BASE_TIME,
+            gray_grid=bytes(1024),
         )
 
         assert (winner.phash ^ lookalike.phash).bit_count() > DUPLICATE_CANDIDATE_HAMMING
         assert is_practically_identical(winner, lookalike)
-        assert assign_duplicate_groups([winner, lookalike]) == {}
+        assert assign_duplicate_groups([winner, lookalike]).duplicate_of == {}
+
+
+class TestTheIdenticalWinnerRule:
+    """Durchgang 1 (Spec 0639, ADR 0146): Fuer praktisch identische Aufnahmen entscheidet die
+    Aufloesung, dann die aeltere VERLAESSLICHE Aufnahmezeit, zuletzt die kleinere Id - die
+    Schaerfe ist hier kein Kriterium mehr, weil sie auf der verkleinerten `display`-Variante
+    irrefuehrt."""
+
+    def test_higher_resolution_wins_against_sharpness(self) -> None:
+        original = _photo_like()
+        loser = _fingerprint(
+            1,
+            original,
+            sharpness=99.0,
+            pixel_count=400,
+            taken_at=None,
+            taken_at_trusted=False,
+        )
+        winner = _fingerprint(
+            2,
+            original.copy(),
+            sharpness=1.0,
+            pixel_count=1600,
+            taken_at=None,
+            taken_at_trusted=False,
+        )
+
+        assignment = assign_duplicate_groups([loser, winner])
+
+        assert assignment.duplicate_of == {1: 2}
+        assert assignment.identical_winners == frozenset({2})
+
+    def test_a_derived_time_loses_against_a_trusted_one_at_equal_resolution(self) -> None:
+        original = _photo_like()
+        earlier_but_derived = _fingerprint(
+            1,
+            original,
+            sharpness=99.0,
+            pixel_count=400,
+            taken_at=_BASE_TIME - timedelta(hours=2),
+            taken_at_trusted=False,
+        )
+        trusted = _fingerprint(
+            2,
+            original.copy(),
+            sharpness=1.0,
+            pixel_count=400,
+            taken_at=_BASE_TIME,
+            taken_at_trusted=True,
+        )
+
+        assert assign_duplicate_groups([earlier_but_derived, trusted]).duplicate_of == {1: 2}
+
+    def test_equal_resolution_and_time_fall_to_the_lower_id(self) -> None:
+        original = _photo_like()
+        higher_id = _fingerprint(5, original, sharpness=100.0, pixel_count=400, taken_at=_BASE_TIME)
+        lower_id = _fingerprint(
+            2, original.copy(), sharpness=1.0, pixel_count=400, taken_at=_BASE_TIME
+        )
+
+        assert assign_duplicate_groups([higher_id, lower_id]).duplicate_of == {5: 2}
+
+    def test_an_unknown_resolution_sorts_last(self) -> None:
+        original = _photo_like()
+        unknown = _fingerprint(1, original, sharpness=100.0, pixel_count=None, taken_at=_BASE_TIME)
+        known = _fingerprint(
+            2, original.copy(), sharpness=1.0, pixel_count=400, taken_at=_BASE_TIME
+        )
+
+        assert assign_duplicate_groups([unknown, known]).duplicate_of == {1: 2}
+
+    def test_a_three_member_star_with_mixed_resolution_has_one_identical_winner(self) -> None:
+        original = _photo_like()
+        fingerprints = [
+            _fingerprint(10, original, sharpness=1.0, pixel_count=1600, taken_at=_BASE_TIME),
+            _fingerprint(11, original.copy(), sharpness=99.0, pixel_count=400, taken_at=_BASE_TIME),
+            _fingerprint(
+                12, original.copy(), sharpness=98.0, pixel_count=None, taken_at=_BASE_TIME
+            ),
+            _fingerprint(13, original.copy(), sharpness=97.0, pixel_count=800, taken_at=_BASE_TIME),
+        ]
+        by_id = {fingerprint.photo_id: fingerprint for fingerprint in fingerprints}
+
+        assignment = assign_duplicate_groups(fingerprints)
+
+        assert assignment.duplicate_of == {11: 10, 12: 10, 13: 10}
+        assert assignment.identical_winners == frozenset({10})
+        for winner_id in assignment.identical_winners:
+            assert winner_id not in assignment.duplicate_of
+            members = [
+                loser for loser, winner in assignment.duplicate_of.items() if winner == winner_id
+            ]
+            assert members
+            for member_id in members:
+                assert is_practically_identical(by_id[winner_id], by_id[member_id])
+
+    def test_a_second_pass_does_not_extend_an_identical_group(self) -> None:
+        """Ein aehnliches Kettenmitglied bleibt offen: Die Gruppe aus Durchgang 1 ist
+        bauartbedingt vollstaendig identisch - eine teilweise automatische Gruppe entsteht
+        nicht."""
+        original = _photo_like()
+        base = _fingerprint(1, original, sharpness=10.0, pixel_count=400, taken_at=_BASE_TIME)
+        winner = _fingerprint(
+            2, original.copy(), sharpness=20.0, pixel_count=1600, taken_at=_BASE_TIME
+        )
+        similar = _fingerprint(
+            3,
+            _shifted_crop(original),
+            sharpness=30.0,
+            pixel_count=100,
+            taken_at=_BASE_TIME + _MINUTE,
+        )
+
+        assert is_practically_identical(base, winner)
+        assert is_similar(winner, similar)
+        assignment = assign_duplicate_groups([base, winner, similar])
+
+        assert assignment.duplicate_of == {1: 2}
+        assert assignment.identical_winners == frozenset({2})
+
+    def test_the_assignment_is_a_frozen_value_with_both_answers(self) -> None:
+        single = _signature(1, phash=0, fine_phash=0, sharpness=10.0, taken_at=_BASE_TIME)
+
+        assignment = assign_duplicate_groups([single])
+
+        assert isinstance(assignment, DuplicateAssignment)
+        assert assignment.duplicate_of == {}
+        assert assignment.identical_winners == frozenset()
+        with pytest.raises(AttributeError):
+            assignment.duplicate_of = {}  # type: ignore[misc]
 
 
 class TestTheTriggerRegression:
@@ -548,7 +709,7 @@ class TestTheTriggerRegression:
         assert is_similar(by_id[7], by_id[13])
         assert not is_practically_identical(by_id[7], by_id[13])
 
-        groups = assign_duplicate_groups(photos)
+        groups = assign_duplicate_groups(photos).duplicate_of
 
         assert len(groups) == 2
         assert len(set(groups.values())) == 2

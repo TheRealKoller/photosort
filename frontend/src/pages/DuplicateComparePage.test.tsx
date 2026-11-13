@@ -52,6 +52,7 @@ function group(
     previousPhotoId?: number | null
     nextPhotoId?: number | null
     spanSeconds?: number
+    autoDecided?: boolean
   } = {},
 ): DuplicateGroupOut {
   return {
@@ -67,6 +68,7 @@ function group(
     previous_photo_id: overrides.previousPhotoId ?? null,
     next_photo_id: overrides.nextPhotoId ?? null,
     span_seconds: overrides.spanSeconds ?? 0,
+    auto_decided: overrides.autoDecided ?? false,
   }
 }
 
@@ -577,6 +579,81 @@ describe('DuplicateComparePage - die Einzelentscheidung', () => {
       expect(screen.getByRole('button', { name: 'Behalten: Reise/serie-11.jpg' })).toBeDisabled(),
     )
     expect(screen.getByRole('button', { name: 'Behalten: Reise/serie-12.jpg' })).toBeEnabled()
+  })
+})
+
+describe('DuplicateComparePage - automatisch entschieden (Spec 0639)', () => {
+  it('kennzeichnet die Gruppe und nennt den Weg zurueck, ohne Abschluss', async () => {
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      group([11, 12], { autoDecided: true }),
+    )
+    renderPage()
+
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+    expect(await screen.findByTestId('duplicate-auto-decided')).toHaveTextContent(
+      'Automatisch entschieden – praktisch identische Aufnahmen',
+    )
+    expect(screen.getByText(/Zurücknehmen: „Behalten“ auf einer Aufnahme wählen/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Gruppe abschließen/ })).toBeNull()
+    // Beide Einzelentscheidungen bleiben je Aufnahme erreichbar - die Ruecknahme ist eine
+    // gewoehnliche Nutzerentscheidung, kein eigener Schreibweg.
+    for (const kachel of tiles()) {
+      expect(within(kachel).getAllByRole('button')).toHaveLength(3)
+    }
+  })
+
+  it('meldet die Ruecknahme nach einem erfolgreichen "Behalten" und gibt den Abschluss frei', async () => {
+    vi.mocked(duplicatesApi.getDuplicateGroup)
+      .mockResolvedValueOnce(group([11, 12], { autoDecided: true }))
+      .mockResolvedValue(group([11, 12], { autoDecided: false }))
+    vi.mocked(duplicatesApi.setDuplicateDecision).mockResolvedValue(
+      group([11, 12], { autoDecided: false }),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Behalten: Reise/serie-11.jpg' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Automatische Entscheidung zurückgenommen — die Gruppe ist jetzt offen.',
+    )
+    expect(screen.queryByTestId('duplicate-auto-decided')).toBeNull()
+    expect(confirmButton()).toBeTruthy()
+  })
+
+  it('meldet in einer offenen Gruppe keine Rücknahme', async () => {
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(group([11, 12]))
+    vi.mocked(duplicatesApi.setDuplicateDecision).mockResolvedValue(group([11, 12]))
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Behalten: Reise/serie-11.jpg' }))
+
+    await waitFor(() => expect(duplicatesApi.setDuplicateDecision).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Behalten: Reise/serie-11.jpg' })).toBeEnabled(),
+    )
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('behaelt die Kennzeichnung, wenn der Schreibweg scheitert', async () => {
+    vi.mocked(duplicatesApi.getDuplicateGroup).mockResolvedValue(
+      group([11, 12], { autoDecided: true }),
+    )
+    vi.mocked(duplicatesApi.setDuplicateDecision).mockRejectedValue(
+      new ApiError(500, 'Serverfehler'),
+    )
+    renderPage()
+    await waitFor(() => expect(tiles()).toHaveLength(2))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Behalten: Reise/serie-11.jpg' }))
+
+    await waitFor(() => expect(duplicatesApi.setDuplicateDecision).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Behalten: Reise/serie-11.jpg' })).toBeEnabled(),
+    )
+    expect(screen.getByTestId('duplicate-auto-decided')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Gruppe abschließen/ })).toBeNull()
   })
 })
 
