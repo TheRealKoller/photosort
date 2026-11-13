@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.55.0](https://github.com/TheRealKoller/photosort/compare/v0.54.0...v0.55.0) (2026-11-13)
+
+
+### Features
+
+* Automatisch entschiedene Duplikatgruppen (Spec 0639) ([#642](https://github.com/TheRealKoller/photosort/issues/642)) ([5e563c2](https://github.com/TheRealKoller/photosort/commit/5e563c2b74ad4b098d82b86d99a74867abd7f7f5))
+* **duplikate:** Duplikatgruppen nur aus echten Duplikaten ([#640](https://github.com/TheRealKoller/photosort/issues/640)) ([8ecd796](https://github.com/TheRealKoller/photosort/commit/8ecd7960bc428ff52dcca3a840ddd4e034490cee))
+* Eyes Albumtauglichkeit im Album-Entwurf (Spec 0621) ([#634](https://github.com/TheRealKoller/photosort/issues/634)) ([644ed26](https://github.com/TheRealKoller/photosort/commit/644ed26fe48c771dd8589eb95271bd01c74c49c5))
+
 ## [0.54.0](https://github.com/TheRealKoller/photosort/compare/v0.53.0...v0.54.0) (2026-11-08)
 
 
