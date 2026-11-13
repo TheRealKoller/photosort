@@ -381,7 +381,11 @@ export function AusschussStepPage() {
             )}
 
             {entries.length > 0 && (
-              <ul data-ausschuss-grid ref={gridRef} className="flex flex-wrap gap-3">
+              // `w-full`: Die Spalte darüber steht auf `items-start`, ohne volle Breite mäße
+              // `useElementWidth` die Breite des INHALTS statt des Containers - eine einzelne
+              // Panoramakachel der letzten Zeile hielte das Raster dann auf ihrer eigenen Breite
+              // fest und die Übersicht scrollte bei 360px waagerecht.
+              <ul data-ausschuss-grid ref={gridRef} className="flex w-full flex-wrap gap-3">
                 {entries.map((eintrag, index) => {
                   const tile = tiles.get(index)
                   if (eintrag.kind === 'group') {
