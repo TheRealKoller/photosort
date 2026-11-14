@@ -190,7 +190,7 @@ describe('ExportSection: Abbrechen (Spec 0641)', () => {
     render(<ExportSection projectId={1} />)
 
     expect(screen.getByText('Export wird abgebrochen…')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Export wird abgebrochen…' })).toBeDisabled()
   })
 
   it('nennt beim abgebrochenen Export Zielpfad, Anzahl und den dauerhaften Hinweis', () => {

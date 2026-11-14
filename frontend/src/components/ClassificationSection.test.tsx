@@ -998,6 +998,8 @@ describe('Abbrechen (Spec 0641)', () => {
     expect(leiste().querySelector('[aria-live]')).toHaveTextContent(
       'Klassifizierung wird abgebrochen…',
     )
-    expect(within(leiste()).getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
+    expect(
+      within(leiste()).getByRole('button', { name: 'Klassifizierung wird abgebrochen…' }),
+    ).toBeDisabled()
   })
 })

@@ -57,7 +57,10 @@ describe('OperationCancelButton', () => {
     const user = userEvent.setup()
     render(<OperationCancelButton operation="classification" cancelRequested onCancel={onCancel} />)
 
-    const button = screen.getByRole('button', { name: 'Wird abgebrochen…' })
+    const button = screen.getByRole('button', { name: 'Klassifizierung wird abgebrochen…' })
+    // Der sichtbare Text bleibt kurz und steckt im Namen (WCAG 2.5.3); ohne den Vorgang hiessen
+    // drei gesperrte Knoepfe auf einer Seite gleich.
+    expect(button).toHaveTextContent('Wird abgebrochen…')
     expect(button).toBeDisabled()
     expect(screen.getByTestId('button-spinner')).toBeInTheDocument()
     await user.click(button)
@@ -69,6 +72,6 @@ describe('OperationCancelButton', () => {
       <OperationCancelButton operation="scan" cancelRequested={false} pending onCancel={vi.fn()} />,
     )
 
-    expect(screen.getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Scan wird abgebrochen…' })).toBeDisabled()
   })
 })

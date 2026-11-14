@@ -466,7 +466,7 @@ describe('ClassificationReviewDetailPage - Abbrechen (Spec 0641)', () => {
     renderPage()
 
     expect(await screen.findByText('Prüfung wird abgebrochen…')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Prüfung wird abgebrochen…' })).toBeDisabled()
   })
 
   it('zeigt eine abgebrochene Prüfung ohne Alert, ohne Urteile und mit gesperrtem Export', async () => {

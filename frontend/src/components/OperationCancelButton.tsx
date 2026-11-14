@@ -1,6 +1,6 @@
 import type { OperationKind } from '../api/types'
 import { cn } from '../lib/utils'
-import { CANCEL_TEXTS, cancelAriaLabel } from '../utils/operationTexts'
+import { CANCEL_TEXTS, cancelAriaLabel, cancelRequestedText } from '../utils/operationTexts'
 import { Button } from './ui/button'
 
 interface OperationCancelButtonProps {
@@ -37,9 +37,10 @@ export function OperationCancelButton({
       onClick={onCancel}
       disabled={isRequested}
       busy={isRequested}
-      // Im gesperrten Zustand ist der sichtbare Text der Name: „Wird abgebrochen…" statt eines
-      // zweiten, abweichenden Wortlauts daneben.
-      aria-label={isRequested ? undefined : cancelAriaLabel(operation)}
+      // Der Name nennt in BEIDEN Zustaenden den Vorgang: im gesperrten Zustand sonst drei
+      // gleichnamige Knoepfe auf einer Seite mit drei Vorgaengen. Der sichtbare Text steckt
+      // case-insensitiv im Namen (WCAG 2.5.3).
+      aria-label={isRequested ? cancelRequestedText(operation) : cancelAriaLabel(operation)}
     >
       {isRequested ? CANCEL_TEXTS.requested : CANCEL_TEXTS.button}
     </Button>

@@ -330,7 +330,7 @@ describe('ScanStepPage', () => {
     renderPage(project({ last_scan: scan({ status: 'running', cancel_requested_at: GESTERN }) }))
 
     expect(within(leiste()).getByText('Scan wird abgebrochen…')).toBeInTheDocument()
-    expect(within(leiste()).getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
+    expect(within(leiste()).getByRole('button', { name: 'Scan wird abgebrochen…' })).toBeDisabled()
   })
 
   it('zeigt "abgebrochen" ohne Alert, friert den Fortschritt ein und gibt den Auslöser frei', () => {

@@ -28,6 +28,11 @@ export function cancelAriaLabel(kind: OperationKind): string {
   return `${OPERATION_LABELS[kind]} abbrechen`
 }
 
+/**
+ * „Scan wird abgebrochen…" ist zugleich der zugaengliche Name des GESPERRTEN Knopfs (der sichtbare
+ * Text lautet nur „Wird abgebrochen…"). Ohne den Vorgang im Namen hiessen drei gesperrte Knoepfe
+ * auf einer Seite gleich; der sichtbare Text steckt case-insensitiv im Namen (WCAG 2.5.3).
+ */
 export function cancelRequestedText(kind: OperationKind): string {
   return `${OPERATION_LABELS[kind]} wird abgebrochen…`
 }

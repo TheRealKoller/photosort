@@ -177,7 +177,7 @@ describe('StepActionBar: Abbrechen (Spec 0641)', () => {
       </MemoryRouter>,
     )
 
-    expect(within(bar()).getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
+    expect(within(bar()).getByRole('button', { name: 'Scan wird abgebrochen…' })).toBeDisabled()
     const live = bar().querySelector('[aria-live]')
     expect(live).toHaveFocus()
     expect(live).toHaveTextContent('Scan wird abgebrochen…')

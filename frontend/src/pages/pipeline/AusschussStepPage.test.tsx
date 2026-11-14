@@ -1318,6 +1318,8 @@ describe('AusschussStepPage - Abbrechen (Spec 0641)', () => {
     )
 
     expect(within(leiste()).getByText('Ausschuss wird abgebrochen…')).toBeInTheDocument()
-    expect(within(leiste()).getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
+    expect(
+      within(leiste()).getByRole('button', { name: 'Ausschuss wird abgebrochen…' }),
+    ).toBeDisabled()
   })
 })
