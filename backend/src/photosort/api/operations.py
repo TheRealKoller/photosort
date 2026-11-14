@@ -200,7 +200,9 @@ async def _request_cancel(
             await _mark_linked_remote_run(session, run_id)
         await session.commit()
         logger.info(
-            "Abbruch eines wartenden Laufs: kind=%s run_id=%s outcome=cancel_requested",
+            "Abbruch eines wartenden Laufs: project_id=%s kind=%s run_id=%s "
+            "outcome=cancel_requested",
+            project_id,
             kind.value,
             run_id,
         )
@@ -227,7 +229,9 @@ async def _request_cancel(
             await _mark_linked_remote_run(session, run_id)
         await session.commit()
         logger.info(
-            "Abbruch eines laufenden Laufs angefordert: kind=%s run_id=%s outcome=cancel_requested",
+            "Abbruch eines laufenden Laufs angefordert: project_id=%s kind=%s run_id=%s "
+            "outcome=cancel_requested",
+            project_id,
             kind.value,
             run_id,
         )
@@ -247,7 +251,10 @@ async def _request_cancel(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lauf nicht gefunden.")
     await session.commit()
     logger.info(
-        "Abbruch ohne Wirkung: kind=%s run_id=%s outcome=already_finished", kind.value, run_id
+        "Abbruch ohne Wirkung: project_id=%s kind=%s run_id=%s outcome=already_finished",
+        project_id,
+        kind.value,
+        run_id,
     )
     return CancelOut(kind=kind, run_id=run_id, status=current, outcome="already_finished")
 

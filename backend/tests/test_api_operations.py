@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -386,3 +387,24 @@ async def test_cancelling_in_an_unknown_project_is_a_404(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Projekt nicht gefunden."
+
+
+async def test_the_cancel_log_names_the_project(
+    authenticated_api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Ankersatz S12: jede Abbruch-Zeile nennt Projekt, Art, Lauf und Ergebnis."""
+    project = await _project(db_session)
+    waiting = await _add_run(db_session, ScanRun, project_id=project.id, status=ScanStatus.QUEUED)
+
+    with caplog.at_level(logging.INFO, logger="photosort.api.operations"):
+        await authenticated_api_client.post(f"{_url(project.id)}/scan/{waiting.id}/cancel")
+
+    line = next(
+        record.getMessage() for record in caplog.records if "wartenden Laufs" in record.getMessage()
+    )
+    assert f"project_id={project.id}" in line
+    assert "kind=scan" in line
+    assert f"run_id={waiting.id}" in line
+    assert "outcome=cancel_requested" in line
