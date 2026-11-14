@@ -197,7 +197,10 @@ async def _reject_while_a_run_is_active(session: AsyncSession, project_id: int) 
         .first()
     )
 
-    if any(run_status == ScanStatus.RUNNING for run_status in (latest_scan, latest_criterion_run)):
+    if any(
+        run_status in (ScanStatus.RUNNING, ScanStatus.QUEUED)
+        for run_status in (latest_scan, latest_criterion_run)
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Fuer dieses Projekt laeuft gerade ein Vorgang. Der Versatz kann danach "

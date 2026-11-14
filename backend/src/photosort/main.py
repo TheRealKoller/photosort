@@ -15,6 +15,7 @@ from photosort.api import (
     model_choice,
     motifs,
     opencloud,
+    operations,
     persons,
     photos,
     project_overview,
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     app.include_router(model_choice.router)
     app.include_router(motifs.router)
     app.include_router(opencloud.router)
+    app.include_router(operations.router)
     app.include_router(projects.router)
     app.include_router(project_overview.router)
     app.include_router(persons.router)

@@ -269,6 +269,7 @@ class ReviewListItemOut(BaseModel):
     created_by: ReviewUserOut
     status: ScanStatus
     phase: ReviewPhase | None
+    cancel_requested_at: datetime | None
     sides: ReviewSidesOut
     photo_count: int
     unclassifiable_photo_count: int
@@ -295,6 +296,7 @@ class ReviewDetailOut(BaseModel):
     unclassifiable_photo_count: int
     finished_at: datetime | None
     error_message: str | None
+    cancel_requested_at: datetime | None
     sides: ReviewSidesOut
     counts_by_purpose: dict[ClassificationReviewPurpose, ReviewPurposeCountsOut]
     verdict_counts: ReviewVerdictCountsOut
@@ -553,10 +555,11 @@ async def _latest_scoring_run(session: AsyncSession, project_id: int) -> Scoring
 
 
 async def _reject_while_a_review_runs(session: AsyncSession, project_id: int) -> None:
-    """`409`, solange die NEUESTE Pruefung des Projekts laeuft.
+    """`409`, solange die NEUESTE Pruefung des Projekts laeuft oder wartet.
 
     Nur der neueste Lauf zaehlt (Muster `delete_project`): ein haengengebliebener Altlauf blockiert
-    nicht dauerhaft, der Watchdog setzt ihn ohnehin auf `FAILED`."""
+    nicht dauerhaft, der Watchdog setzt ihn ohnehin auf `FAILED`. Ein abgebrochener Lauf blockiert
+    nicht - die naechste Pruefung ist sofort anlegbar."""
     latest = (
         await session.execute(
             select(ClassificationReview.status)
@@ -565,7 +568,7 @@ async def _reject_while_a_review_runs(session: AsyncSession, project_id: int) ->
             .limit(1)
         )
     ).first()
-    if latest is not None and latest[0] == ScanStatus.RUNNING:
+    if latest is not None and latest[0] in (ScanStatus.RUNNING, ScanStatus.QUEUED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Es laeuft bereits eine Pruefung. Warte, bis sie beendet ist.",
@@ -652,7 +655,8 @@ async def create_review(
        1…200) - erst hier, weil die Spec diese Ablehnung ans Ende stellt.
 
     Danach: Schaetzung je Seite serverseitig berechnen, an der Seite EINFRIEREN, Zeile und Job
-    schreiben (S8). Kein Client-Feld traegt einen Betrag."""
+    schreiben (S8). Kein Client-Feld traegt einen Betrag. Die Pruefung entsteht mit `QUEUED`:
+    sie ist damit sofort sichtbar und abbrechbar, und der Job uebernimmt genau diese Zeile."""
     if not settings.category_selection_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -716,7 +720,7 @@ async def create_review(
     review = ClassificationReview(
         project_id=project_id,
         created_by_user_id=current_user.id,
-        status=ScanStatus.RUNNING,
+        status=ScanStatus.QUEUED,
         phase=None,
         sample_size=payload.sample_size,
         seed=random.randrange(2**31),
@@ -745,7 +749,7 @@ async def create_review(
 
     # NACH dem Commit: ein Job, der die Zeile nicht faende, scheiterte sofort.
     await enqueuer.enqueue_job("run_classification_review", review.id)
-    return ReviewCreatedOut(id=review.id, status=ScanStatus.RUNNING)
+    return ReviewCreatedOut(id=review.id, status=ScanStatus.QUEUED)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1093,6 +1097,7 @@ async def list_reviews(
                 ClassificationReview.unclassifiable_photo_count,
                 User.id,
                 User.username,
+                ClassificationReview.cancel_requested_at,
             )
             .join(User, User.id == ClassificationReview.created_by_user_id)
             .where(ClassificationReview.project_id == project_id)
@@ -1127,6 +1132,7 @@ async def list_reviews(
             created_by=ReviewUserOut(user_id=user_id, username=username),
             status=review_status,
             phase=phase,
+            cancel_requested_at=cancel_requested_at,
             sides=_sides_out(sides[review_id]),
             photo_count=photo_count,
             unclassifiable_photo_count=unclassifiable_photo_count,
@@ -1142,6 +1148,7 @@ async def list_reviews(
             unclassifiable_photo_count,
             user_id,
             username,
+            cancel_requested_at,
         ) in review_rows
     ]
 
@@ -1183,6 +1190,7 @@ async def get_review(
         unclassifiable_photo_count=review.unclassifiable_photo_count,
         finished_at=review.finished_at,
         error_message=review.error_message,
+        cancel_requested_at=review.cancel_requested_at,
         sides=_sides_out(await _sides_for_review(session, review_id)),
         counts_by_purpose={
             ClassificationReviewPurpose(purpose): ReviewPurposeCountsOut(

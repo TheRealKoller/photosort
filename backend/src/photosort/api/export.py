@@ -83,10 +83,17 @@ async def trigger_export(
     session: Annotated[AsyncSession, Depends(get_session)],
     enqueuer: Annotated[JobEnqueuer, Depends(get_job_enqueuer)],
 ) -> dict[str, str]:
-    """Reiht den Export-Job ein und antwortet 202 - der Lauf selbst ist ein Hintergrund-Job
-    (Muster `trigger_scan`). Kein `current_user`: das Ergebnis gehoert dem Projekt."""
+    """Legt den wartenden Lauf VOR dem Einreihen an (Muster `trigger_scan`) und antwortet 202.
+    Ohne Endauswahl entsteht kein Lauf - die Antwort bleibt dieselbe. Kein `current_user`: das
+    Ergebnis gehoert dem Projekt."""
     await _ensure_project(session, project_id)
-    await enqueuer.enqueue_job("export_project", project_id)
+    if not await included_photos(session, project_id):
+        return {"status": "queued"}
+    run = ExportRun(project_id=project_id, status=ExportRunStatus.QUEUED)
+    session.add(run)
+    await session.commit()
+    await session.refresh(run)
+    await enqueuer.enqueue_job("export_project", project_id, run_id=run.id)
     return {"status": "queued"}
 
 

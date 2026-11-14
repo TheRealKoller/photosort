@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import ANY
 
 import httpx
 import pytest
@@ -1423,6 +1424,9 @@ async def test_the_response_carries_no_further_configuration_fields(
         # Die beiden Zaehler der Phase `persons` - Anzahlen, keine Namen.
         "persons_photos_total",
         "persons_photos_processed",
+        # Spec 0641: die Lauf-Id adressiert den Abbruch, der Merker traegt den Abbruchwunsch.
+        "id",
+        "cancel_requested_at",
     }
     assert set(run["cloud_phases"][0]) == {
         "purpose",
@@ -1533,6 +1537,8 @@ class TestTheRunEstimateReachesTheJob:
                 "mode": "cloud",
                 "category_model": settings.resolved_landmark_model(),
                 "landmark_model": settings.resolved_landmark_model(),
+                # Spec 0641: die Id der wartenden Zeile, die die API gerade angelegt hat.
+                "run_id": ANY,
             }
         ]
 
@@ -1566,6 +1572,7 @@ class TestTheRunEstimateReachesTheJob:
                 "mode": "local",
                 "category_model": settings.resolved_landmark_model(),
                 "landmark_model": settings.resolved_landmark_model(),
+                "run_id": ANY,
             }
         ]
 
@@ -1604,6 +1611,7 @@ class TestTheRunEstimateReachesTheJob:
                 "mode": "cloud",
                 "category_model": settings.resolved_landmark_model(),
                 "landmark_model": settings.resolved_landmark_model(),
+                "run_id": ANY,
             }
         ]
 

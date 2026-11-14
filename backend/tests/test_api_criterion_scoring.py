@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import ANY
 
 import httpx
 import pytest
@@ -479,8 +480,14 @@ async def _set_choice(
 
 
 def _keywords(mode: str, category_model: str | None, landmark_model: str) -> dict[str, Any]:
-    """Die drei Schluesselwoerter des Jobs (Spec 0383): Weg plus aufgeloeste Modelle."""
-    return {"mode": mode, "category_model": category_model, "landmark_model": landmark_model}
+    """Die Schluesselwoerter des Jobs: Weg, aufgeloeste Modelle und die Id der von der API
+    angelegten, wartenden Lauf-Zeile (`ANY`, weil die Id von der Testreihenfolge abhaengt)."""
+    return {
+        "mode": mode,
+        "category_model": category_model,
+        "landmark_model": landmark_model,
+        "run_id": ANY,
+    }
 
 
 class TestClassify:

@@ -464,11 +464,12 @@ class TestCreate:
 
         assert response.status_code == 201
         review_id = response.json()["id"]
-        assert response.json()["status"] == "running"
+        # Spec 0641: die Pruefung entsteht wartend; den Start vermerkt der Worker.
+        assert response.json()["status"] == "queued"
         assert fake.calls == [("run_classification_review", (review_id,))]
         review = await db_session.get(ClassificationReview, review_id)
         assert review is not None
-        assert review.status == ScanStatus.RUNNING
+        assert review.status == ScanStatus.QUEUED
         assert review.phase is None
         assert review.sample_size == 17
         assert review.photo_count == 2
