@@ -14,6 +14,8 @@ from typing import Any
 
 import httpx
 
+from photosort.run_cancel import sleep_unless_cancelled
+
 # Providerneutrale HTTP-/Parsing-Bausteine, gemeinsam genutzt von landmark.py und
 # remote_classification.py. KEINE feature-spezifische Logik hier - kein Prompt, kein
 # Antwortschema-Parsing über die rohe JSON-Hülle hinaus; das bleibt in den beiden Feature-Modulen.
@@ -382,8 +384,9 @@ class CloudRequestThrottle:
             self._delayed_requests += 1
             self._total_delay_seconds += wait
             # SICHERHEIT: KEIN Abfangen von BaseException hier oder beim Aufrufer - ein
-            # verschlucktes CancelledError machte den Job unabbrechbar.
-            await self._sleep(wait)
+            # verschlucktes CancelledError machte den Job unabbrechbar. Ein Abbruchwunsch des
+            # Laufs beendet die Wartezeit mit `RunCancelled`.
+            await sleep_unless_cancelled(self._sleep, wait)
 
     def record_retry_wait(self, seconds: float) -> None:
         """Bucht eine Wiederholungs-Wartezeit von `post_vision_request` ein. Die beiden
@@ -646,7 +649,9 @@ async def post_vision_request(
             source,
         )
         throttle.record_retry_wait(wait)
-        await throttle.sleep(wait)
+        # Ein Abbruchwunsch des Laufs beendet die Wartezeit mit `RunCancelled`; die Anfrage
+        # wird dann nicht erneut gestellt.
+        await sleep_unless_cancelled(throttle.sleep, wait)
 
     raise_for_vision_api_status(response, endpoint.status_label, error_class)
     return response
