@@ -196,7 +196,7 @@ from photosort.remote_classification import (
     build_category_classification_client,
     resolve_canonical_label,
 )
-from photosort.run_cancel import RunCancelled, cancel_requested
+from photosort.run_cancel import RunCancelled, cancel_requested, watch_cancel_requests
 from photosort.scoring import (
     SHARPNESS_REJECT_THRESHOLD,
     ClusterCandidate,
@@ -590,6 +590,15 @@ async def _raise_if_cancel_requested(
     `RunCancelled`. Steht nur an Commit-Raendern - was davor committet wurde, bleibt erhalten."""
     if await cancel_requested(session, run):
         raise RunCancelled
+
+
+async def _finish_if_cancel_requested(session: AsyncSession, run: Any) -> bool:
+    """Pruefpunkt an einer Phasengrenze: fordert der Lauf den Abbruch an, wird er hier beendet und
+    die Phasenfolge endet. `True` heisst "der Lauf ist zu Ende"."""
+    if not await cancel_requested(session, run):
+        return False
+    await _finish_cancelled(session, run)
+    return True
 
 
 async def _generate_thumbnails(
@@ -3427,6 +3436,9 @@ async def run_criterion_scoring(
         area_fractions_by_photo_id: dict[int, dict[str, float]] = {}
         processed = 0
         for photo, score in rows:
+            if processed % CRITERION_SCORING_COMMIT_BATCH_SIZE == 0:
+                # Pruefpunkt je Batch: was bis hier committet ist, bleibt; der Rest entfaellt.
+                await _raise_if_cancel_requested(session, run)
             values: dict[str, float] = {}
 
             sharpness_value = normalize_sharpness(score.sharpness)
@@ -3638,6 +3650,7 @@ async def run_criterion_scoring(
                         ]
 
                     for start in range(0, len(landmark_candidate_ids), landmark_concurrency):
+                        await _raise_if_cancel_requested(session, run)
                         block_ids = landmark_candidate_ids[start : start + landmark_concurrency]
                         results = await asyncio.gather(
                             *[
@@ -3657,7 +3670,15 @@ async def run_criterion_scoring(
                         for result in results:
                             if isinstance(result, asyncio.CancelledError):
                                 raise result
+                        landmark_handled = 0
+                        landmark_cancelled = False
                         for photo_id, result in zip(block_ids, results, strict=True):
+                            if isinstance(result, RunCancelled):
+                                # Der Abbruch hat die Wartezeit dieses Aufrufs beendet: weder
+                                # Aufruf noch Fehlschlag, und der Block beginnt nichts Neues mehr.
+                                landmark_cancelled = True
+                                break
+                            landmark_handled += 1
                             if isinstance(result, BaseException):
                                 # Best-effort: ein einzelner fehlgeschlagener Cloud-Aufruf
                                 # (Timeout, 4xx/5xx, fehlender Cache-Eintrag) laesst fuer dieses
@@ -3769,11 +3790,13 @@ async def run_criterion_scoring(
                         # kostenpflichtig beim Anbieter an, waehrend die Oberflaeche
                         # "fehlgeschlagen" sagt, und die Kostenerfassung des `finally` schreibt
                         # ihren Betrag auf eine bereits als gescheitert ausgewiesene Zeile.
-                        landmark_processed += len(block_ids)
+                        landmark_processed += landmark_handled
                         run.landmark_photos_processed = landmark_processed
                         run.landmark_failed_calls = landmark_failures
                         run.last_progress_at = _now_utc()
                         await session.commit()
+                        if landmark_cancelled:
+                            raise RunCancelled
                 finally:
                     aclose = getattr(landmark_client, "aclose", None)
                     if aclose is not None:
@@ -3844,6 +3867,9 @@ async def run_criterion_scoring(
         # Landmark-Phase und braucht deshalb einen eigenen Namen: sonst bliebe `phase` hier auf
         # `landmark` bei 100 % Fortschritt stehen ("haengt oder laeuft?") oder muesste auf
         # `criteria` zurueckspringen. Der vierte Wert macht die Abfolge monoton.
+        # Pruefpunkt vor der Rangfolge: ein Abbruch nach dem letzten Kriterium ueberspringt
+        # Rangfolge, Personenangabe und Auswahlvorschlag - der Lauf bleibt ein Teilstand.
+        await _raise_if_cancel_requested(session, run)
         _set_phase(run, ClassificationPhase.RANKING)
         await session.commit()
 
@@ -3877,6 +3903,9 @@ async def run_criterion_scoring(
         run.finished_at = _now_utc()
         await session.commit()
         return run
+    except RunCancelled:
+        await _finish_cancelled(session, run)
+        return run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan/run_project_scoring oben.
         await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
@@ -3894,6 +3923,7 @@ async def run_classification(
     scoring_run_id: int,
     cache_dir: Path,
     *,
+    run_id: int | None = None,
     mode: ClassificationMode | None = None,
     use_cloud: bool | None = None,
     estimated_cost_usd: float | None = None,
@@ -3911,7 +3941,8 @@ async def run_classification(
     build_embedder: Callable[[], LabelEmbedderLike] = build_label_embedder,
     build_face_analyzer: Callable[[], FaceAnalyzerLike] = build_face_analyzer,
     build_eye_client: Callable[[], EyeClientLike] = build_eye_client,
-) -> CriterionScoringRun:
+    session_factory: async_sessionmaker[AsyncSession] = async_session_factory,
+) -> CriterionScoringRun | None:
     """Der EINE, verkettete Klassifizierungslauf:
 
         Phase "remote_categories" (nur bei mode=cloud und aktiver Cloud-Nutzung)
@@ -3961,6 +3992,11 @@ async def run_classification(
     `category_model`/`landmark_model` sind die im Ausloeser aufgeloesten Modelle der beiden
     Taetigkeiten. Sie werden unveraendert an die jeweilige Phase weitergereicht; `None` heisst
     "Job aus der Zeit vor dem Update" und laesst die Phase die Installationsvorgabe aufloesen.
+
+    Mit `run_id` uebernimmt der Lauf die von der API angelegte, wartende Zeile (None, wenn sie in
+    der Warteschlange abgebrochen wurde). `session_factory` speist den Abbruch-Beobachter, der die
+    Wartezeiten der Cloud-Drosselung unterbricht; sie ist injizierbar, damit ein Test denselben
+    Datenbestand beobachtet.
     """
     if mode is None:
         mode = ClassificationMode.CLOUD if use_cloud else ClassificationMode.LOCAL
@@ -3975,14 +4011,20 @@ async def run_classification(
         mode is ClassificationMode.EYE and project.cloud_vision_detection_enabled
     )
 
-    run = await _start_criterion_scoring_run(
-        session,
-        project,
-        scoring_run_id,
-        cloud_requested=cloud_requested,
-        estimated_cost_usd=estimated_cost_usd,
-        mode=mode,
-    )
+    if run_id is not None:
+        taken_over = await _take_over_queued_run(session, CriterionScoringRun, run_id)
+        if taken_over is None:
+            return None
+        run = taken_over
+    else:
+        run = await _start_criterion_scoring_run(
+            session,
+            project,
+            scoring_run_id,
+            cloud_requested=cloud_requested,
+            estimated_cost_usd=estimated_cost_usd,
+            mode=mode,
+        )
     # Die ERSTE Phase geht ueber denselben Weg wie jede spaetere, statt als
     # Konstruktor-Schluesselwort mitzulaufen. Sonst entkaeme genau sie der Bindung aus ADR 0116
     # Punkt 1, und die erste Phase JEDES Laufs - bei einem Lauf ohne Cloud die laengste - zeigte
@@ -3997,6 +4039,10 @@ async def run_classification(
         initial_phase = ClassificationPhase.CRITERIA
     _set_phase(run, initial_phase)
     await session.commit()
+    # Phasengrenzen sind Pruefpunkte: ein Abbruch zwischen zwei Phasen beginnt die naechste nicht
+    # mehr. Innerhalb einer Phase pruefen deren Bloecke selbst.
+    if await _finish_if_cancel_requested(session, run):
+        return run
 
     if cloud_active:
         # Die Remote-Zeile entsteht hier, und der Fremdschluessel wird VOR dem ersten Cloud-Aufruf
@@ -4012,16 +4058,17 @@ async def run_classification(
         await session.commit()
 
         try:
-            remote_run = await run_remote_category_classification(
-                session,
-                project,
-                cache_dir,
-                build_client=build_category_client,
-                build_embedder=build_embedder,
-                run=remote_run,
-                parent_run=run,
-                model=category_model,
-            )
+            async with watch_cancel_requests(session_factory, CriterionScoringRun, run.id):
+                remote_run = await run_remote_category_classification(
+                    session,
+                    project,
+                    cache_dir,
+                    build_client=build_category_client,
+                    build_embedder=build_embedder,
+                    run=remote_run,
+                    parent_run=run,
+                    model=category_model,
+                )
         except asyncio.CancelledError:
             # Schicht 1 des Fortschritts-Watchdogs: run_remote_category_classification faellt seine
             # EIGENE Zeile bereits ab und wirft weiter - ohne diesen Zweig bliebe der uebergeordnete
@@ -4029,6 +4076,11 @@ async def run_classification(
             # Cron-Tick auf RUNNING stehen.
             await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
             raise
+        if remote_run.status == ScanStatus.CANCELLED:
+            # Die Remote-Phase hat den Abbruchwunsch bemerkt und ihren Teilstand committet; dieser
+            # Lauf endet mit, statt in die Kriterien-Phase zu starten.
+            await _finish_cancelled(session, run)
+            return run
         if remote_run.status == ScanStatus.FAILED:
             # _fail_run hat die Session zurueckgerollt und damit JEDES Objekt darin expired -
             # anders als ein commit() (die Session laeuft mit expire_on_commit=False, siehe
@@ -4044,6 +4096,9 @@ async def run_classification(
             )
             await session.commit()
 
+    if await _finish_if_cancel_requested(session, run):
+        return run
+
     if mode is ClassificationMode.EYE:
         # Die Eye-Phase liegt VOR der Kriterien-Phase, damit Rangfolge, Events und
         # Auswahlvorschlag desselben Laufs den WIRKSAMEN Vektor lesen. Ein Fehlschlag beendet den
@@ -4051,6 +4106,9 @@ async def run_classification(
         # nichts (die Phase committet ihre Ergebnisse erst am Ende).
         try:
             await _run_eye_phase(session, run, project, cache_dir, build_client=build_eye_client)
+        except RunCancelled:
+            await _finish_cancelled(session, run)
+            return run
         except asyncio.CancelledError:
             await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
             raise
@@ -4062,26 +4120,29 @@ async def run_classification(
             )
             return run
 
-    return await run_criterion_scoring(
-        session,
-        project,
-        scoring_run_id,
-        cache_dir,
-        build_detector,
-        build_animal_detector,
-        build_classifier,
-        build_aesthetics,
-        build_landmarker,
-        build_landmark_client,
-        build_embedder=build_embedder,
-        run=run,
-        # Die Landmark-Phase haengt an der Cloud-FREIGABE, nicht am Weg: bei mode=eye MIT
-        # Einwilligung laeuft sie (dann kostet der Lauf genau die Sehenswuerdigkeits-Erkennung),
-        # ohne Einwilligung nie.
-        use_cloud=cloud_requested,
-        landmark_model=landmark_model,
-        build_face_analyzer=build_face_analyzer,
-    )
+    if await _finish_if_cancel_requested(session, run):
+        return run
+    async with watch_cancel_requests(session_factory, CriterionScoringRun, run.id):
+        return await run_criterion_scoring(
+            session,
+            project,
+            scoring_run_id,
+            cache_dir,
+            build_detector,
+            build_animal_detector,
+            build_classifier,
+            build_aesthetics,
+            build_landmarker,
+            build_landmark_client,
+            build_embedder=build_embedder,
+            run=run,
+            # Die Landmark-Phase haengt an der Cloud-FREIGABE, nicht am Weg: bei mode=eye MIT
+            # Einwilligung laeuft sie (dann kostet der Lauf genau die Sehenswuerdigkeits-Erkennung),
+            # ohne Einwilligung nie.
+            use_cloud=cloud_requested,
+            landmark_model=landmark_model,
+            build_face_analyzer=build_face_analyzer,
+        )
 
 
 async def classify(
@@ -4091,10 +4152,11 @@ async def classify(
     use_cloud: bool | None,
     estimated_cost_usd: float | None = None,
     *,
+    run_id: int | None = None,
     mode: str | None = None,
     category_model: str | None = None,
     landmark_model: str | None = None,
-) -> int:
+) -> int | None:
     """Der einzige Klassifizierungs-Job.
 
     `estimated_cost_usd` ist die im Ausloese-Endpunkt berechnete Schaetzung. Der Default `None` ist
@@ -4110,7 +4172,11 @@ async def classify(
     (Job aus der Zeit vor dem Update), loest der Job selbst ueber `resolve_model_choice` auf -
     derselbe Weg wie im Ausloeser, kein Rueckfall auf einen geratenen Wert. Ein nicht mehr
     waehlbares Modell wirft dort `UnknownModelChoiceError` und laesst den Lauf sichtbar
-    scheitern (ADR 0143 Punkt 2)."""
+    scheitern (ADR 0143 Punkt 2).
+
+    `run_id` ist die von der API angelegte, wartende Zeile; ohne sie (Altjob) legt der Lauf sie
+    selbst an. Ist die Zeile in der Warteschlange abgebrochen worden, endet der Job ohne jede
+    Arbeit."""
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
@@ -4142,6 +4208,7 @@ async def classify(
             project,
             scoring_run_id,
             cache_dir=Path(settings.photo_cache_dir),
+            run_id=run_id,
             # `mode` ist die genauere Aussage: liegt er vor, wird `use_cloud` NICHT mitgegeben -
             # sonst meldete der Widerspruchs-Check einen Konflikt, den nur die Ableitung erzeugt.
             mode=ClassificationMode(mode) if mode is not None else None,
@@ -4150,7 +4217,7 @@ async def classify(
             category_model=category_model,
             landmark_model=landmark_model,
         )
-        return run.id
+        return run.id if run is not None else None
 
 
 async def _classify_photo_for_remote_category(
@@ -4351,6 +4418,7 @@ async def run_remote_category_classification(
             concurrency = settings.remote_category_classification_concurrency
             processed = 0
             for start in range(0, len(candidates), concurrency):
+                await _raise_if_cancel_requested(session, run)
                 block = candidates[start : start + concurrency]
                 results = await asyncio.gather(
                     *[
@@ -4364,7 +4432,16 @@ async def run_remote_category_classification(
                     if isinstance(result, asyncio.CancelledError):
                         raise result
 
+                handled = 0
+                cancelled = False
                 for photo, result in zip(block, results, strict=True):
+                    if isinstance(result, RunCancelled):
+                        # Der Abbruch hat die Wartezeit dieses Aufrufs beendet: das Element ist
+                        # weder Ergebnis noch Fehlschlag, und der Block beginnt nichts Neues mehr.
+                        # Was vor ihm fertig wurde, wird unten noch committet.
+                        cancelled = True
+                        break
+                    handled += 1
                     if isinstance(result, BaseException):
                         # Best-effort: ein einzelner fehlgeschlagener Cloud-Aufruf laesst fuer
                         # dieses Foto keine Zeile entstehen, das Foto bleibt beim naechsten Lauf
@@ -4489,7 +4566,7 @@ async def run_remote_category_classification(
                         session, photo.id, CloudVisionPhase.REMOTE_CATEGORY
                     )
 
-                processed += len(block)
+                processed += handled
                 run.photos_processed = processed
                 # Der Live-Zähler wird am Block-Commit-Punkt mitgeschrieben - am Blockende, nie
                 # beim Betreten des Blocks (sonst stuende nach einem Abbruch mitten im Block ein
@@ -4504,6 +4581,8 @@ async def run_remote_category_classification(
                 if parent_run is not None:
                     parent_run.last_progress_at = progress_at
                 await session.commit()
+                if cancelled:
+                    raise RunCancelled
         finally:
             aclose = getattr(client, "aclose", None)
             if aclose is not None:
@@ -4533,6 +4612,9 @@ async def run_remote_category_classification(
         run.status = ScanStatus.SUCCESS
         run.finished_at = _now_utc()
         await session.commit()
+        return run
+    except RunCancelled:
+        await _finish_cancelled(session, run)
         return run
     except asyncio.CancelledError:
         await _fail_run(session, run, "Lauf abgebrochen (Job-Timeout oder Worker-Shutdown).")
