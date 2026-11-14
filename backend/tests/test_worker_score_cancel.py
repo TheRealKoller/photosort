@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import photosort.worker as worker_module
 from photosort.db import make_session_factory
-from photosort.models import PhotoScore, Project, ScanStatus, ScoringRun
+from photosort.models import PhotoScore, Project, ScanRun, ScanStatus, ScoringRun
 from tests.test_worker_score_project import (
     _add_photo,
     _blurry_photo_image,
@@ -159,3 +159,68 @@ async def test_a_scoring_run_cancelled_while_waiting_resets_nothing(
     assert score.auto_decided is True
     await db_session.refresh(queued)
     assert queued.status == ScanStatus.CANCELLED
+
+
+async def test_a_cancel_of_one_run_leaves_the_other_of_the_same_project_running(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AK „Einzeln": zwei Laeufe desselben Projekts - hier Scan und Ausschuss. Abgebrochen wird
+    NUR der Scan (ueber eine zweite Session, wie die API es tut); der Ausschuss laeuft zu Ende,
+    und sein Zaehler endet ueber dem Stand zum Abbruchzeitpunkt."""
+    project = await _make_project(db_session)
+    await _blurry_photos(db_session, project, tmp_path, 4)
+    scan = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
+    scoring = ScoringRun(project_id=project.id, status=ScanStatus.RUNNING)
+    db_session.add_all([scan, scoring])
+    await db_session.commit()
+
+    stand_at_abort: list[int] = []
+    factory = make_session_factory(db_session.bind)
+    original = worker_module.compute_sharpness
+    calls: list[float] = []
+    pending: list[int] = []
+
+    def _counting(image: Image.Image) -> float:
+        value = original(image)
+        calls.append(value)
+        if len(calls) == 1:
+            pending.append(1)
+        return value
+
+    original_check = worker_module._raise_if_cancel_requested
+
+    async def _check(check_session: AsyncSession, run: object) -> None:
+        if pending:
+            pending.clear()
+            async with factory() as other:
+                await other.execute(
+                    update(ScanRun)
+                    .where(ScanRun.id == scan.id)
+                    .values(cancel_requested_at=datetime(2030, 1, 1))
+                )
+                stand_at_abort.append(
+                    (
+                        await other.execute(
+                            select(ScoringRun.photos_processed).where(ScoringRun.id == scoring.id)
+                        )
+                    ).scalar_one()
+                )
+                await other.commit()
+        await original_check(check_session, run)
+
+    monkeypatch.setattr(worker_module, "compute_sharpness", _counting)
+    monkeypatch.setattr(worker_module, "_raise_if_cancel_requested", _check)
+
+    result = await worker_module.run_project_scoring(db_session, project, cache_dir=tmp_path)
+
+    assert result is not None
+    assert stand_at_abort, "der Abbruch des Scans muss waehrend des Ausschusslaufs passiert sein"
+    assert result.status == ScanStatus.SUCCESS
+    assert result.cancel_requested_at is None
+    assert len(calls) == 4
+    assert result.photos_processed == 4
+    # Der andere Lauf endet UEBER dem Stand zum Abbruchzeitpunkt - er wurde nicht mitbeendet.
+    assert result.photos_processed > stand_at_abort[0]
+    await db_session.refresh(scan)
+    assert scan.cancel_requested_at is not None
+    assert scan.status == ScanStatus.RUNNING

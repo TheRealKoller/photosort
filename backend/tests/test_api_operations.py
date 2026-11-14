@@ -14,11 +14,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from photosort.api.deps import get_job_enqueuer
 from photosort.main import app
 from photosort.models import (
+    Base,
     ClassificationReview,
+    ClassificationReviewCase,
+    ClassificationReviewPurpose,
+    ClassificationReviewVerdict,
+    ClassificationVerdict,
     CriterionScoringRun,
+    DuplicateDecision,
     ExportRun,
     ExportRunStatus,
+    FinalSelectionDecision,
+    Photo,
+    PhotoAlbumSuitability,
+    PhotoDuplicateDecision,
     Project,
+    Rating,
+    RatingStatus,
     RemoteCategoryClassificationRun,
     ScanRun,
     ScanStatus,
@@ -62,6 +74,24 @@ async def _add_run(session: AsyncSession, model: type[Any], **fields: Any) -> An
     await session.commit()
     await session.refresh(run)
     return run
+
+
+async def _add_photo(
+    session: AsyncSession, project: Project, path: str, etag: str, taken_at: datetime
+) -> Photo:
+    photo = Photo(
+        project_id=project.id,
+        relative_path=path,
+        etag=etag,
+        content_length=100,
+        taken_at=taken_at,
+        taken_at_original=taken_at,
+        last_modified=taken_at,
+    )
+    session.add(photo)
+    await session.commit()
+    await session.refresh(photo)
+    return photo
 
 
 def _url(project_id: int) -> str:
@@ -289,6 +319,108 @@ async def test_cancel_all_without_open_operations_returns_an_empty_list(
 
     assert response.status_code == 200
     assert response.json() == {"cancelled": []}
+
+
+# Die Tabellen der manuellen Entscheidungen (Spec 0641, AK „Keine fremden Daten" und der Satz im
+# Testkonzept, Punkt 5). GEMESSEN wird gegen `Base.metadata.tables`, damit keine Zeile wegen eines
+# falsch abgetippten Namens still aus der Pruefung faellt.
+_DECISION_TABLES = (
+    "photo_duplicate_decisions",
+    "ratings",
+    "photo_album_suitability",
+    "final_selection_decisions",
+    "classification_review_verdicts",
+)
+
+
+async def _decision_rows(session: AsyncSession) -> dict[str, list[tuple[Any, ...]]]:
+    taken: dict[str, list[tuple[Any, ...]]] = {}
+    for name in _DECISION_TABLES:
+        table = Base.metadata.tables[name]
+        taken[name] = [tuple(row) for row in (await session.execute(select(table))).all()]
+    return taken
+
+
+async def test_cancelling_changes_no_manual_decision(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """AK „Keine fremden Daten": vor dem Abbruch gesetzt sind Einzelentscheidungen im Ausschuss,
+    `Rating`, Album-Entwurf, Endauswahl und Pruefurteile - nach dem Abbruch zeilengleich. Ein
+    Cancel-Endpunkt loescht nichts, er setzt einen Merker."""
+    project = await _project(db_session)
+    user = await _user(db_session)
+    photo = await _add_photo(db_session, project, "CostaRica/a.jpg", "etag-a", _NOW)
+    await _add_photo(db_session, project, "CostaRica/b.jpg", "etag-b", _NOW)
+    db_session.add(Rating(photo_id=photo.id, user_id=user.id, status=RatingStatus.ALBUM_WORTHY))
+    db_session.add(
+        PhotoAlbumSuitability(photo_id=photo.id, level=4, provider="anthropic", computed_at=_NOW)
+    )
+    db_session.add(FinalSelectionDecision(photo_id=photo.id, included=True, updated_at=_NOW))
+    db_session.add(PhotoDuplicateDecision(photo_id=photo.id, decision=DuplicateDecision.KEEP))
+    review = ClassificationReview(
+        project_id=project.id,
+        created_by_user_id=user.id,
+        status=ScanStatus.SUCCESS,
+        sample_size=1,
+        seed=7,
+    )
+    db_session.add(review)
+    await db_session.flush()
+    case = ClassificationReviewCase(
+        review_id=review.id,
+        photo_id=photo.id,
+        photo_position=1,
+        purpose=ClassificationReviewPurpose.MOTIFS,
+    )
+    db_session.add(case)
+    await db_session.flush()
+    db_session.add(
+        ClassificationReviewVerdict(
+            case_id=case.id,
+            verdict=ClassificationVerdict.BOTH_OK,
+            updated_by_user_id=user.id,
+            updated_at=_NOW,
+        )
+    )
+    await db_session.commit()
+
+    # Je ein offener Vorgang jeder Art, damit der Abbruch wirklich etwas zu tun hat.
+    await _add_run(db_session, ScanRun, project_id=project.id, status=ScanStatus.RUNNING)
+    scoring_run = await _add_run(
+        db_session, ScoringRun, project_id=project.id, status=ScanStatus.SUCCESS
+    )
+    # Der Ausschusslauf selbst steht offen; der erfolgreiche Lauf darueber ist nur der Anker der
+    # Klassifizierung (`scoring_run_id`).
+    await _add_run(db_session, ScoringRun, project_id=project.id, status=ScanStatus.RUNNING)
+    await _add_run(
+        db_session,
+        CriterionScoringRun,
+        project_id=project.id,
+        scoring_run_id=scoring_run.id,
+        status=ScanStatus.RUNNING,
+    )
+    await _add_run(db_session, ExportRun, project_id=project.id, status=ExportRunStatus.RUNNING)
+    open_review = await _add_run(
+        db_session,
+        ClassificationReview,
+        project_id=project.id,
+        created_by_user_id=user.id,
+        status=ScanStatus.RUNNING,
+        sample_size=1,
+        seed=8,
+    )
+    assert open_review.id != review.id
+
+    before = await _decision_rows(db_session)
+    response = await authenticated_api_client.post(f"{_url(project.id)}/cancel-all")
+    await db_session.commit()
+    after = await _decision_rows(db_session)
+
+    assert response.status_code == 200
+    assert len(response.json()["cancelled"]) == 5
+    assert after == before
+    # Gegenprobe: ohne diese Zusicherung bestuende der Vergleich auch gegen lauter leere Tabellen.
+    assert [len(rows) for rows in before.values()] == [1, 1, 1, 1, 1]
 
 
 async def test_the_scan_trigger_creates_the_waiting_row_and_names_it_to_the_job(
