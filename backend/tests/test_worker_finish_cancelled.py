@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+from sqlalchemy import event, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from photosort import classification_review
@@ -118,6 +119,76 @@ async def test_finish_cancelled_handles_the_export_enum(db_session: AsyncSession
     assert run.status == ExportRunStatus.CANCELLED
     assert run.target_path == "X"
     assert run.exported_count == 4
+
+
+async def test_finish_cancelled_writes_the_end_state_in_one_conditional_statement(
+    db_session: AsyncSession,
+) -> None:
+    """Spec 0641 S7: Jeder Uebergang in einen Endzustand ist ein bedingtes UPDATE. Der hier
+    geprueft hat GENAU EINE Anweisung auf `scan_runs` zur Folge - mit der Bedingung in der
+    WHERE-Klausel, nicht mit einem vorher gelesenen Zustand im Python-Code. Nur so kann der
+    Watchdog nicht dazwischenkommen und den Lauf nachtraeglich `FAILED` schreiben."""
+    project = await _project(db_session)
+    run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
+    db_session.add(run)
+    await db_session.commit()
+
+    statements: list[str] = []
+
+    def record(
+        conn: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    engine = db_session.bind.sync_engine  # type: ignore[union-attr]
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        await _finish_cancelled(db_session, run)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    updates = [s for s in statements if s.lstrip().upper().startswith("UPDATE SCAN_RUNS")]
+    assert len(updates) == 1, updates
+    (statement,) = updates
+    where = statement.split(" WHERE ", 1)[1]
+    assert "status IN" in where
+    assert "error_message" in statement
+    assert "finished_at" in statement
+    # `phase` bleibt unberuehrt: der Teilschritt gehoert dem abgebrochenen Lauf.
+    assert "phase" not in statement
+
+
+async def test_a_second_completion_never_turns_cancelled_into_failed(
+    db_session: AsyncSession,
+) -> None:
+    """Zwei Abschluesse derselben Zeile: der erste gewinnt. Der zweite - hier der bedingte
+    Endzustand des Watchdogs - trifft keine Zeile mehr, weil `cancelled` kein aktiver Zustand
+    ist."""
+    project = await _project(db_session)
+    run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
+    db_session.add(run)
+    await db_session.commit()
+
+    await _finish_cancelled(db_session, run)
+    finished_at = run.finished_at
+
+    await _finish_cancelled(db_session, run)
+    await db_session.execute(
+        update(ScanRun)
+        .where(ScanRun.id == run.id, ScanRun.status.in_((ScanStatus.QUEUED, ScanStatus.RUNNING)))
+        .values(status=ScanStatus.FAILED, error_message="Lauf haengt")
+    )
+    await db_session.commit()
+    await db_session.refresh(run)
+
+    assert run.status == ScanStatus.CANCELLED
+    assert run.error_message is None
+    assert run.finished_at == finished_at
 
 
 @pytest.mark.parametrize("model", [ScanRun, ScoringRun, RemoteCategoryClassificationRun])

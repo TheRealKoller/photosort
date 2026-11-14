@@ -532,16 +532,36 @@ async def _finish_cancelled(
     ueberschrieben."""
     await session.rollback()
     await session.refresh(run)
+    # Spec 0641 S7: EIN bedingtes UPDATE statt "lesen, pruefen, zuweisen". Der Watchdog
+    # (reap_stalled_runs -> _fail_if_stalled) schliesst dieselbe Zeile ueber _fail_run ab; mit
+    # einem ORM-Schreibvorgang entschied die Commit-Reihenfolge, und ein abgebrochener Lauf
+    # konnte nachtraeglich als `failed` erscheinen. Hier gewinnt, wer den Endzustand zuerst
+    # schreibt: `cancelled` und `failed` sind beide keine aktiven Zustaende, die Bedingung trifft
+    # nach dem ersten Abschluss keine Zeile mehr. `phase` bleibt ausgespart - der Teilschritt
+    # gehoert dem abgebrochenen Lauf.
     if isinstance(run, ExportRun):
-        if run.status not in (ExportRunStatus.QUEUED, ExportRunStatus.RUNNING):
-            return
-        run.status = ExportRunStatus.CANCELLED
+        model: type[
+            ScanRun
+            | ScoringRun
+            | CriterionScoringRun
+            | RemoteCategoryClassificationRun
+            | ClassificationReview
+            | ExportRun
+        ] = ExportRun
+        active: tuple[ExportRunStatus | ScanStatus, ...] = (
+            ExportRunStatus.QUEUED,
+            ExportRunStatus.RUNNING,
+        )
+        cancelled: ExportRunStatus | ScanStatus = ExportRunStatus.CANCELLED
     else:
-        if run.status not in (ScanStatus.QUEUED, ScanStatus.RUNNING):
-            return
-        run.status = ScanStatus.CANCELLED
-    run.error_message = None
-    run.finished_at = _now_utc()
+        model = type(run)
+        active = (ScanStatus.QUEUED, ScanStatus.RUNNING)
+        cancelled = ScanStatus.CANCELLED
+    await session.execute(
+        update(model)
+        .where(model.id == run.id, model.status.in_(active))
+        .values(status=cancelled, error_message=None, finished_at=_now_utc())
+    )
     await session.commit()
     await session.refresh(run)
 
