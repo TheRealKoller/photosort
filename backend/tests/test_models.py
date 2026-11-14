@@ -2913,10 +2913,17 @@ class TestTheExportRunCarriesNoUserReference:
             "failed_count",
             "error_message",
             "last_progress_at",
+            "cancel_requested_at",
         }
 
-    def test_the_export_run_status_vocabulary_is_running_success_failed(self) -> None:
-        assert {status.value for status in ExportRunStatus} == {"running", "success", "failed"}
+    def test_the_export_run_status_vocabulary_includes_waiting_and_cancelled(self) -> None:
+        assert {status.value for status in ExportRunStatus} == {
+            "queued",
+            "running",
+            "success",
+            "failed",
+            "cancelled",
+        }
 
 
 async def test_an_export_run_starts_with_zero_counters(db_session: AsyncSession) -> None:

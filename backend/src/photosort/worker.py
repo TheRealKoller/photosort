@@ -8,13 +8,13 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
-from sqlalchemy import delete, exists, select, tuple_, update
+from sqlalchemy import CursorResult, delete, exists, select, tuple_, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
@@ -196,6 +196,7 @@ from photosort.remote_classification import (
     build_category_classification_client,
     resolve_canonical_label,
 )
+from photosort.run_cancel import RunCancelled, cancel_requested
 from photosort.scoring import (
     SHARPNESS_REJECT_THRESHOLD,
     ClusterCandidate,
@@ -476,9 +477,17 @@ async def _fail_run(
     ),
     error_message: str,
 ) -> None:
-    """Gemeinsame "Lauf auf FAILED setzen"-Logik für die run_*-Funktionen. KEIN Kontrollfluss
-    (kein raise/return) hier drin - der bleibt an jeder Call-Site sichtbar."""
+    """Gemeinsame "Lauf auf FAILED setzen"-Logik für die run_*-Funktionen. Kein raise hier drin -
+    der Kontrollfluss des Laufs bleibt an jeder Call-Site sichtbar.
+
+    Ist ein Abbruch angefordert, endet der Lauf stattdessen `CANCELLED`: der Wunsch des Nutzers
+    schlaegt jeden Fehler, der danach auftritt, einschliesslich Timeout und Worker-Shutdown. Der
+    Merker wird nach dem Rollback frisch gelesen, nie aus dem geladenen Objekt."""
     await session.rollback()
+    await session.refresh(run)
+    if run.cancel_requested_at is not None:
+        await _finish_cancelled(session, run)
+        return
     run.status = ScanStatus.FAILED
     run.error_message = error_message
     run.finished_at = _now_utc()
@@ -504,6 +513,83 @@ async def _fail_run(
     # weiterverwenden) einen impliziten Lazy-Load ausserhalb eines aktiven greenlet-Kontexts
     # ausloesen (sqlalchemy.exc.MissingGreenlet) - siehe test_worker_fail_run.py.
     await session.refresh(run)
+
+
+async def _finish_cancelled(
+    session: AsyncSession,
+    run: (
+        ScanRun
+        | ScoringRun
+        | CriterionScoringRun
+        | RemoteCategoryClassificationRun
+        | ClassificationReview
+        | ExportRun
+    ),
+) -> None:
+    """Der Abbruch-Endzustand eines Laufs. Nicht Committetes wird verworfen; was bis zum letzten
+    Commit geschrieben wurde, bleibt - Zaehler, Teilergebnisse und `phase` (der Teilschritt, in dem
+    der Lauf endete). Ein bereits beendeter Lauf bleibt unberuehrt: ein Endzustand wird nie
+    ueberschrieben."""
+    await session.rollback()
+    await session.refresh(run)
+    if isinstance(run, ExportRun):
+        if run.status not in (ExportRunStatus.QUEUED, ExportRunStatus.RUNNING):
+            return
+        run.status = ExportRunStatus.CANCELLED
+    else:
+        if run.status not in (ScanStatus.QUEUED, ScanStatus.RUNNING):
+            return
+        run.status = ScanStatus.CANCELLED
+    run.error_message = None
+    run.finished_at = _now_utc()
+    await session.commit()
+    await session.refresh(run)
+
+
+async def _take_over_queued_run[
+    RunT: (
+        ScanRun,
+        ScoringRun,
+        CriterionScoringRun,
+        ClassificationReview,
+        ExportRun,
+    )
+](session: AsyncSession, model: type[RunT], run_id: int) -> RunT | None:
+    """Uebernimmt einen von der API angelegten, wartenden Lauf: `QUEUED` -> `RUNNING` in EINER
+    bedingten Anweisung. Wurde der Lauf in der Warteschlange abgebrochen (oder gibt es ihn nicht),
+    trifft sie keine Zeile - dann `None`, und der Job endet ohne jede Arbeit. Die Bedingung macht
+    das Rennen zwischen Abbruch und Jobstart atomar."""
+    if model is ExportRun:
+        queued: ExportRunStatus | ScanStatus = ExportRunStatus.QUEUED
+        running: ExportRunStatus | ScanStatus = ExportRunStatus.RUNNING
+    else:
+        queued, running = ScanStatus.QUEUED, ScanStatus.RUNNING
+    result = await session.execute(
+        update(model)
+        .where(model.id == run_id, model.status == queued, model.cancel_requested_at.is_(None))
+        .values(status=running, last_progress_at=_now_utc())
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+    if cast("CursorResult[Any]", result).rowcount != 1:
+        return None
+    return await session.get(model, run_id, populate_existing=True)
+
+
+async def _raise_if_cancel_requested(
+    session: AsyncSession,
+    run: (
+        ScanRun
+        | ScoringRun
+        | CriterionScoringRun
+        | RemoteCategoryClassificationRun
+        | ClassificationReview
+    ),
+) -> None:
+    """Pruefpunkt eines Laufs: ist ein Abbruch angefordert, endet die Arbeit hier mit
+    `RunCancelled`. Steht nur an Commit-Raendern - was davor committet wurde, bleibt erhalten."""
+    if await cancel_requested(session, run):
+        raise RunCancelled
 
 
 async def _generate_thumbnails(
@@ -967,6 +1053,7 @@ async def _catch_up_aspect_ratios(
     )
     filled = 0
     for start in range(0, len(rows), ASPECT_RATIO_CATCH_UP_BATCH_SIZE):
+        await _raise_if_cancel_requested(session, run)
         block = list(rows[start : start + ASPECT_RATIO_CATCH_UP_BATCH_SIZE])
         ratios = await asyncio.to_thread(_read_cached_aspect_ratios, cache_dir, block)
         for photo_id, ratio in ratios:
@@ -985,11 +1072,25 @@ async def run_project_scan(
     project: Project,
     drive_name: str | None,
     cache_dir: Path,
-) -> ScanRun:
-    scan_run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
-    session.add(scan_run)
-    await session.commit()
-    await session.refresh(scan_run)
+    *,
+    run_id: int | None = None,
+) -> ScanRun | None:
+    """Der Scan-Lauf. Mit `run_id` uebernimmt er den von der API angelegten, wartenden Lauf und
+    endet ohne jede Arbeit (None), wenn der in der Warteschlange abgebrochen wurde; ohne `run_id`
+    legt er die Zeile selbst an.
+
+    Ein Abbruchwunsch wird vor jedem Block gelesen. Was bis dahin committet ist - Fotos,
+    Vorschaubilder, Zaehler -, bleibt; verschwundene Fotos werden dann NICHT entfernt und der
+    Bild-Cache nicht aufgeraeumt, weil der Lauf den Ordnerbaum nicht vollstaendig gesehen hat."""
+    if run_id is not None:
+        scan_run = await _take_over_queued_run(session, ScanRun, run_id)
+        if scan_run is None:
+            return None
+    else:
+        scan_run = ScanRun(project_id=project.id, status=ScanStatus.RUNNING)
+        session.add(scan_run)
+        await session.commit()
+        await session.refresh(scan_run)
 
     try:
         # Nachhol-Runde fuer den Bestand, VOR Phase 1 und vor jedem Netzzugriff dieses Laufs
@@ -1023,6 +1124,7 @@ async def run_project_scan(
         await session.commit()
 
         # Phase 2a (Klassifikation, reine Funktion) - siehe _classify_scan_entries.
+        await _raise_if_cancel_requested(session, scan_run)
         classification = _classify_scan_entries(entries, existing_photos)
 
         files_found = 0
@@ -1050,6 +1152,7 @@ async def run_project_scan(
         # benutzt.
         camera_cache: dict[tuple[str, str], ProjectCamera] = {}
         for start in range(0, len(work_items), concurrency):
+            await _raise_if_cancel_requested(session, scan_run)
             block = work_items[start : start + concurrency]
             added, updated = await _process_scan_block(
                 session, client, drive.webdav_url, cache_dir, project.id, block, camera_cache
@@ -1061,6 +1164,9 @@ async def run_project_scan(
             scan_run.last_progress_at = _now_utc()
             await session.commit()
 
+        # Letzter Pruefpunkt VOR dem Entfernen: ein Abbruch nach dem letzten Block endet
+        # ebenfalls `cancelled`, und ein abgebrochener Lauf entfernt nichts.
+        await _raise_if_cancel_requested(session, scan_run)
         removed_paths = set(existing_photos) - classification.seen_paths
         for path in removed_paths:
             await session.delete(existing_photos[path])
@@ -1073,6 +1179,9 @@ async def run_project_scan(
         scan_run.photos_removed = len(removed_paths)
         scan_run.files_skipped = files_skipped
         await session.commit()
+    except RunCancelled:
+        await _finish_cancelled(session, scan_run)
+        return scan_run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs: ein arq job_timeout-Ablauf, ein geplanter
         # Worker-Shutdown und ein künftiger Job.abort() lösen alle denselben
@@ -1114,7 +1223,9 @@ async def run_project_scan(
     return scan_run
 
 
-async def scan_project(ctx: dict[str, Any], project_id: int) -> int:
+async def scan_project(
+    ctx: dict[str, Any], project_id: int, run_id: int | None = None
+) -> int | None:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
@@ -1129,8 +1240,9 @@ async def scan_project(ctx: dict[str, Any], project_id: int) -> int:
                 project,
                 settings.opencloud_drive_name or None,
                 cache_dir=Path(settings.photo_cache_dir),
+                run_id=run_id,
             )
-        return scan_run.id
+        return scan_run.id if scan_run is not None else None
 
 
 # Der feste Wurzelordner des Exports - eine Modulkonstante, KEIN Env-Parameter. Er begrenzt den
@@ -1199,8 +1311,13 @@ def _export_overlaps_scan_root(opencloud_path: str) -> bool:
 
 
 async def _fail_export_run(session: AsyncSession, run: ExportRun, error_message: str) -> None:
-    """ "ExportRun auf FAILED setzen" - das Pendant zu `_fail_run` fuer den eigenen Status-Enum."""
+    """ "ExportRun auf FAILED setzen" - das Pendant zu `_fail_run` fuer den eigenen Status-Enum,
+    mit demselben Vorrang eines angeforderten Abbruchs."""
     await session.rollback()
+    await session.refresh(run)
+    if run.cancel_requested_at is not None:
+        await _finish_cancelled(session, run)
+        return
     run.status = ExportRunStatus.FAILED
     run.error_message = error_message
     run.finished_at = _now_utc()
@@ -1209,22 +1326,38 @@ async def _fail_export_run(session: AsyncSession, run: ExportRun, error_message:
 
 
 async def run_export(
-    session: AsyncSession, client: ExportClient, project: Project
+    session: AsyncSession,
+    client: ExportClient,
+    project: Project,
+    *,
+    run_id: int | None = None,
 ) -> ExportRun | None:
     """Der Export-Lauf: Menge ableiten -> Lauf + Schnappschuss -> MKCOL Wurzel/Unterordner -> je
     Foto COPY. Ein leeres Projekt erzeugt KEINEN Lauf (None).
 
+    Mit `run_id` uebernimmt er den von der API angelegten, wartenden Lauf; wurde der in der
+    Warteschlange abgebrochen, endet er ohne jede Arbeit (None). Ohne `run_id` (ein vor dem
+    Wartezustand eingereihter Job) legt er die Zeile selbst an.
+
     Einzelfehler je `COPY` schreiben in die Schnappschusszeile (`export_photos.error`) und lassen
     den Lauf weiterlaufen - er endet trotz Teilfehlern `success`. Nur ein fataler Fehler
-    (Zielordner nicht anlegbar, OpenCloud nicht erreichbar) endet `failed` (ADR 0136 Punkt 3)."""
-    included = await included_photos(session, project.id)
-    if not included:
-        return None
-
-    run = ExportRun(project_id=project.id, status=ExportRunStatus.RUNNING)
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
+    (Zielordner nicht anlegbar, OpenCloud nicht erreichbar) endet `failed` (ADR 0136 Punkt 3).
+    Ein Abbruchwunsch wird vor jedem COPY gelesen: der Ordner und die bereits kopierten Fotos
+    bleiben auf OpenCloud, der Lauf endet `cancelled`."""
+    if run_id is not None:
+        taken_over = await _take_over_queued_run(session, ExportRun, run_id)
+        if taken_over is None:
+            return None
+        run = taken_over
+        included = await included_photos(session, project.id)
+    else:
+        included = await included_photos(session, project.id)
+        if not included:
+            return None
+        run = ExportRun(project_id=project.id, status=ExportRunStatus.RUNNING)
+        session.add(run)
+        await session.commit()
+        await session.refresh(run)
 
     # Der Zeitstempel wird HIER genommen - im nacheinander arbeitenden Worker -, damit zwei Laeufe
     # nicht in derselben Mikrosekunde beginnen (ADR 0136 Punkt 2: ein erneuter Export erzeugt immer
@@ -1278,6 +1411,8 @@ async def run_export(
             await client.mkcol(webdav_url, f"{target_path}/{folder}")
 
         for index, entry in enumerate(included):
+            if await cancel_requested(session, run):
+                break
             try:
                 # Das Ziel laeuft AUSSCHLIESSLICH ueber `_join` - nie manuelle Konkatenation roher
                 # Namen (Security Muss gegen Header-Injection und `..`-Ausbruch). Der `_join`
@@ -1296,6 +1431,12 @@ async def run_export(
             if (index + 1) % EXPORT_COMMIT_BATCH_SIZE == 0:
                 await session.commit()
 
+        if await cancel_requested(session, run):
+            # Der bis hierher erzielte Stand wird committet, BEVOR _finish_cancelled zurueckrollt -
+            # Zielpfad und Kopierzahl bleiben sichtbar, damit der Ordner auffindbar ist.
+            await session.commit()
+            await _finish_cancelled(session, run)
+            return run
         run.status = ExportRunStatus.SUCCESS
         run.finished_at = _now_utc()
         await session.commit()
@@ -1318,7 +1459,9 @@ async def run_export(
     return run
 
 
-async def export_project(ctx: dict[str, Any], project_id: int) -> int | None:
+async def export_project(
+    ctx: dict[str, Any], project_id: int, run_id: int | None = None
+) -> int | None:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
@@ -1327,7 +1470,7 @@ async def export_project(ctx: dict[str, Any], project_id: int) -> int | None:
         async with OpenCloudClient(
             settings.opencloud_base_url, settings.opencloud_username, settings.opencloud_app_token
         ) as client:
-            run = await run_export(session, client, project)
+            run = await run_export(session, client, project, run_id=run_id)
         return run.id if run is not None else None
 
 

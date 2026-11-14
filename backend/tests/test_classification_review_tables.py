@@ -64,6 +64,7 @@ def test_the_review_header_names_status_phase_sample_size_seed_and_photocounts()
         "started_at",
         "finished_at",
         "last_progress_at",
+        "cancel_requested_at",
         "error_message",
     }
     # Der Teilschritt ist NULL, sobald der Lauf beendet ist - deshalb nullable.

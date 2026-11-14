@@ -53,11 +53,15 @@ current_cancel_token: ContextVar[CancelToken | None] = ContextVar(
 
 async def cancel_requested(session: AsyncSession, run: Any) -> bool:
     """Ist fuer diesen Lauf ein Abbruch angefordert? Eine Primaerschluessel-Lesung je Aufruf, frisch
-    aus der Datenbank - der Stand im geladenen Objekt kann veraltet sein."""
+    aus der Datenbank - der Stand im geladenen Objekt kann veraltet sein.
+
+    Ohne Autoflush: ein Flush schriebe die noch nicht committeten Zaehler der Laufzeile und hielte
+    deren Zeilensperre bis zum naechsten Commit - das bedingte `UPDATE` der API wartete so lange."""
     model = type(run)
-    value = (
-        await session.execute(select(model.cancel_requested_at).where(model.id == run.id))
-    ).scalar_one_or_none()
+    with session.no_autoflush:
+        value = (
+            await session.execute(select(model.cancel_requested_at).where(model.id == run.id))
+        ).scalar_one_or_none()
     return value is not None
 
 

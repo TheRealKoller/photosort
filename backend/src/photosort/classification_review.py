@@ -644,11 +644,19 @@ async def execute_classification_review(
 
 async def _fail(session: AsyncSession, review: ClassificationReview, message: str) -> None:
     """Setzt den Lauf auf `FAILED` mit einem Satz aus der geschlossenen Menge und raeumt den
-    Teilschritt. Scheitert der Commit, bleibt die urspruengliche Ursache sichtbar (derselbe
-    Grundsatz wie `worker.py::_commit_phase_costs`)."""
+    Teilschritt. Ist ein Abbruch angefordert, endet er stattdessen `CANCELLED` ohne Meldung und
+    behaelt den Teilschritt, in dem er endete. Scheitert der Commit, bleibt die urspruengliche
+    Ursache sichtbar (derselbe Grundsatz wie `worker.py::_commit_phase_costs`)."""
+    # Zyklus wie in `execute_classification_review`: der Endzustand steht genau einmal in worker.py.
+    from photosort.worker import _finish_cancelled  # noqa: PLC0415
+
     assert message in ERROR_MESSAGES
     try:
         await session.rollback()
+        await session.refresh(review)
+        if review.cancel_requested_at is not None:
+            await _finish_cancelled(session, review)
+            return
         review.status = ScanStatus.FAILED
         review.phase = None
         review.error_message = message
