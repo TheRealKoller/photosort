@@ -1,6 +1,6 @@
 # 0641 - Laufende und wartende Vorgänge einzeln oder gesammelt abbrechen
 
-**Status:** Accepted
+**Status:** Implemented ([PR #643](https://github.com/TheRealKoller/photosort/pull/643))
 **Erstellt:** 2026-11-14
 **Bezug:** Issue [#641](https://github.com/TheRealKoller/photosort/issues/641)
 
