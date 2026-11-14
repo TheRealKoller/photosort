@@ -267,6 +267,7 @@ export function ClassificationReviewDetailPage() {
           caseTotal={caseTotal}
           onCancel={handleCancelReview}
           cancelPending={cancelMutation.isPending}
+          cancelFocusToken={cancelMutation.data ?? null}
         />
         {reviewData.status === 'failed' && (
           <Alert>{reviewData.error_message ?? REVIEW_DETAIL_TEXTS.failedFallback}</Alert>
@@ -424,11 +425,14 @@ function ReviewStand({
   caseTotal,
   onCancel,
   cancelPending,
+  cancelFocusToken,
 }: {
   review: ClassificationReviewDetailOut
   caseTotal: number
   onCancel: () => void
   cancelPending: boolean
+  /** Die Antwort der EIGENEN erfolgreichen Abbruch-Anfrage - nur sie bewegt den Fokus. */
+  cancelFocusToken: unknown
 }) {
   const open = review.verdict_counts.open
   // "stimmen auf allen Fotos ueberein" ist eine Aussage UEBER verglichene Fotos. Ohne ein einziges
@@ -440,9 +444,7 @@ function ReviewStand({
   )
   const nothingCompared = review.status === 'success' && caseTotal === 0 && compared === 0
   const isCancelRequested = review.cancel_requested_at != null
-  const statusRef = useCancelRequestFocus<HTMLDivElement>(
-    isCancelRequested || review.status === 'cancelled',
-  )
+  const statusRef = useCancelRequestFocus<HTMLDivElement>(cancelFocusToken)
   return (
     <div
       ref={statusRef}

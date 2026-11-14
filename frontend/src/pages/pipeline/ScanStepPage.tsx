@@ -220,6 +220,7 @@ export function ScanStepPage() {
         onCancel={handleCancelScan}
         cancelRequested={isCancelRequested}
         cancelPending={cancelMutation.isPending}
+        cancelFocusToken={cancelMutation.data ?? null}
         operation="scan"
       />
     </section>

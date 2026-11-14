@@ -526,6 +526,7 @@ export function ClassificationSection({ project, refetchProject }: Classificatio
         onCancel={handleCancelClassification}
         cancelRequested={isCancelRequested}
         cancelPending={cancelMutation.isPending}
+        cancelFocusToken={cancelMutation.data ?? null}
         operation="classification"
       />
     </section>

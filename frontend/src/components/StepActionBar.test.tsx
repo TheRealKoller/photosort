@@ -162,10 +162,36 @@ describe('StepActionBar: Abbrechen (Spec 0641)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('sperrt den Knopf bei angefordertem Abbruch und gibt der Statuszeile den Fokus', () => {
+  it('gibt bei eigener Anfrage der Statuszeile den Fokus', () => {
     const action = { kind: 'running', label: 'Fotos werden eingelesen…' } as const
+    // Die Antwort der eigenen Mutation - nur sie darf den Fokus bewegen.
+    const ownRequest = { kind: 'scan', run_id: 1, status: 'running', outcome: 'cancel_requested' }
     const { rerender } = renderBar(action, CANCEL)
 
+    rerender(
+      <MemoryRouter>
+        <StepActionBar
+          action={action}
+          status="Scan wird abgebrochen…"
+          {...CANCEL}
+          cancelRequested
+          cancelFocusToken={ownRequest}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(within(bar()).getByRole('button', { name: 'Scan wird abgebrochen…' })).toBeDisabled()
+    const live = bar().querySelector('[aria-live]')
+    expect(live).toHaveFocus()
+    expect(live).toHaveTextContent('Scan wird abgebrochen…')
+  })
+
+  it('zieht den Fokus nicht, wenn ein fremder Abbruch per Poll eintrifft', () => {
+    const action = { kind: 'running', label: 'Fotos werden eingelesen…' } as const
+    const { rerender } = renderBar(action, CANCEL)
+    within(bar()).getByRole('button', { name: 'Scan abbrechen' }).focus()
+
+    // Kein `cancelFocusToken`: der Zustandswechsel kam aus einem Poll, nicht aus einer Bedienung.
     rerender(
       <MemoryRouter>
         <StepActionBar
@@ -177,10 +203,7 @@ describe('StepActionBar: Abbrechen (Spec 0641)', () => {
       </MemoryRouter>,
     )
 
-    expect(within(bar()).getByRole('button', { name: 'Scan wird abgebrochen…' })).toBeDisabled()
-    const live = bar().querySelector('[aria-live]')
-    expect(live).toHaveFocus()
-    expect(live).toHaveTextContent('Scan wird abgebrochen…')
+    expect(bar().querySelector('[aria-live]')).not.toHaveFocus()
   })
 
   it('zieht den Fokus nicht, wenn die Seite schon mit angefordertem Abbruch geladen wird', () => {

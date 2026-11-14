@@ -563,6 +563,7 @@ export function AusschussStepPage() {
         onCancel={handleCancelScoring}
         cancelRequested={isCancelRequested}
         cancelPending={cancelMutation.isPending}
+        cancelFocusToken={cancelMutation.data ?? null}
         operation="ausschuss"
       />
     </section>

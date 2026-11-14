@@ -44,7 +44,7 @@ export function ExportSection({ projectId }: { projectId: number }) {
   // Spec 0641: Der Abbruch adressiert GENAU diesen Lauf.
   const isCancelRequested = lastRun?.cancel_requested_at != null
   const isCancelled = runStatus === 'cancelled'
-  const statusRef = useCancelRequestFocus<HTMLDivElement>(isCancelRequested || isCancelled)
+  const statusRef = useCancelRequestFocus<HTMLDivElement>(cancelMutation.data ?? null)
   const failedPhotos = runDetail.data?.failed_photos ?? []
 
   const triggerError =

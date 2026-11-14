@@ -22,10 +22,14 @@ interface StepActionBarProps {
   busy?: boolean
   /** Bittet um den Abbruch des laufenden Vorgangs (Spec 0641). Fehlt ohne eigenen Lauf. */
   onCancel?: () => void
-  /** Der Abbruch ist angefordert - Knopf gesperrt, Fokus auf der Statuszeile. */
+  /** Der Abbruch ist angefordert - Knopf gesperrt. Der Fokus geht nur bei eigener Anfrage auf die
+   * Statuszeile (`cancelFocusToken`). */
   cancelRequested?: boolean
   /** Die Abbruch-Anfrage laeuft gerade. */
   cancelPending?: boolean
+  /** Die Antwort der EIGENEN erfolgreichen Abbruch-Anfrage (`cancelMutation.data`). Fehlt sie,
+   * bewegt sich der Fokus nicht - ein fremder Abbruch aus einem Poll ist keine Bedienung. */
+  cancelFocusToken?: unknown
   /** Welcher Vorgang hier laeuft - traegt den zugaenglichen Namen des Abbruch-Knopfs. */
   operation?: OperationKind
 }
@@ -52,9 +56,10 @@ export function StepActionBar({
   onCancel,
   cancelRequested = false,
   cancelPending = false,
+  cancelFocusToken,
   operation,
 }: StepActionBarProps) {
-  const statusRef = useCancelRequestFocus<HTMLParagraphElement>(cancelRequested)
+  const statusRef = useCancelRequestFocus<HTMLParagraphElement>(cancelFocusToken ?? null)
   let control: ReactNode
   switch (action.kind) {
     case 'start':
