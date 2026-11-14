@@ -358,3 +358,31 @@ async def test_a_waiting_classification_run_has_no_remaining_time(
     summary = response.json()["last_criterion_scoring_run"]
     assert summary["status"] == status
     assert summary["phase_remaining_seconds"] is None
+
+
+@pytest.mark.parametrize(
+    ("method", "url"),
+    [
+        ("GET", "/projects/0/operations"),
+        ("GET", f"/projects/{2**63}/operations"),
+        ("POST", f"/projects/{2**63}/operations/cancel-all"),
+        ("POST", f"/projects/{2**63}/operations/scan/1/cancel"),
+    ],
+)
+async def test_the_path_ids_are_bounded_before_they_reach_the_database(
+    authenticated_api_client: httpx.AsyncClient, method: str, url: str
+) -> None:
+    """Jenseits von 2^63 antwortete die Datenbank mit `500`; die Grenze steht deshalb deklarativ im
+    Pfad, nicht als Pruefung im Rumpf."""
+    response = await authenticated_api_client.request(method, url)
+
+    assert response.status_code == 422
+
+
+async def test_cancelling_in_an_unknown_project_is_a_404(
+    authenticated_api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    response = await authenticated_api_client.post("/projects/999/operations/scan/1/cancel")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Projekt nicht gefunden."

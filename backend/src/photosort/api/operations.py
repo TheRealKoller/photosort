@@ -75,9 +75,9 @@ _MODELS: dict[OperationKind, tuple[type[Any], type[ScanStatus] | type[ExportRunS
 # Die Pruefung ist der einzige Vorgang, von dem mehrere gleichzeitig offen sein koennen.
 _ALL_OPEN_KINDS = (OperationKind.REVIEW,)
 
-# Deklarative Obergrenze der fremdgesteuerten Pfad-Id, VOR jeder Verwendung: ein Pydantic-`int`
+# Deklarative Obergrenze der fremdgesteuerten Pfad-Ids, VOR jeder Verwendung: ein Pydantic-`int`
 # ist unbeschraenkt, und jenseits von 2^63 antwortete SQLite mit `500` statt `404`.
-_MAX_RUN_ID = 1_000_000_000
+_MAX_ID = 1_000_000_000
 
 
 class OperationOut(BaseModel):
@@ -254,7 +254,7 @@ async def _request_cancel(
 
 @router.get("", response_model=OperationsOut)
 async def list_operations(
-    project_id: int,
+    project_id: Annotated[int, Path(ge=1, le=_MAX_ID)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> OperationsOut:
     """Was gerade laeuft oder wartet - die Vorschau der Aktion „Alle abbrechen“. Eine leere Liste
@@ -265,7 +265,7 @@ async def list_operations(
 
 @router.post("/cancel-all", response_model=CancelAllOut)
 async def cancel_all_operations(
-    project_id: int,
+    project_id: Annotated[int, Path(ge=1, le=_MAX_ID)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CancelAllOut:
     """Bricht jeden offenen Vorgang DIESES Projekts ab. Die Menge stammt aus derselben Abfrage wie
@@ -280,9 +280,10 @@ async def cancel_all_operations(
 
 @router.post("/{kind}/{run_id}/cancel", response_model=CancelOut)
 async def cancel_operation(
-    project_id: int,
+    project_id: Annotated[int, Path(ge=1, le=_MAX_ID)],
     kind: OperationKind,
-    run_id: Annotated[int, Path(ge=1, le=_MAX_RUN_ID)],
+    run_id: Annotated[int, Path(ge=1, le=_MAX_ID)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CancelOut:
+    await _ensure_project(session, project_id)
     return await _request_cancel(session, project_id, kind, run_id)
