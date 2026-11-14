@@ -43,13 +43,6 @@ const TAP_TARGET_SIZE = 44
  */
 const EXPECTED_CONTROL_COUNT = 51
 
-/**
- * Das Demo-Projekt mit wartendem Scan und abgebrochener Klassifizierung (Spec 0641). Muss zu
- * `demo_state.OPERATIONS_PROJECT_NAME` passen; ein Auseinanderlaufen faellt sofort als fehlender
- * Projektlink in `demoProjectId` auf.
- */
-const OPERATIONS_PROJECT = 'Demo — Vorgänge'
-
 async function assertTappable(
   control: Locator,
   label: string,
@@ -447,7 +440,7 @@ test('Bedienelemente des heissen Pfads sind auf 44 x 44 px treffbar', async ({ p
   // Knopf der Aktionsleiste steht direkt neben dem gesperrten Ausloeser, "Alle abbrechen" in der
   // Projektleiste darueber - beide also in Nachbarschaft weiterer Flaechen. Das Projekt traegt
   // einen wartenden Scan OHNE Abbruchwunsch, beide Knoepfe sind deshalb bedienbar.
-  const operationsProjectId = await demoProjectId(page, OPERATIONS_PROJECT)
+  const operationsProjectId = await demoProjectId(page, DEMO_PROJECTS.operations)
   await page.goto(`/projects/${operationsProjectId}/pipeline/scan`)
   await assertTappable(
     page.getByRole('button', { name: 'Alle abbrechen' }),
