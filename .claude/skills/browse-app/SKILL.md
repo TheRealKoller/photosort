@@ -43,7 +43,7 @@ docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T \
 
 Der Seeder ist zielzustands-idempotent: er löscht seine eigenen Demo-Projekte und legt sie neu an. Er **bricht ab**, wenn die Datenbank irgendein Projekt ohne den Präfix `Demo — ` enthält oder eine echte OpenCloud-Adresse konfiguriert ist. Läuft er nicht an, ist das kein Hindernis, das man beiseiteräumt — dann zeigt der Aufruf auf die falsche Datenbank.
 
-Danach existieren sechs Projekte, jedes für einen anderen Zweck:
+Danach existieren sieben Projekte, jedes für einen anderen Zweck:
 
 | Projekt | wofür es da ist |
 |---|---|
@@ -53,6 +53,7 @@ Danach existieren sechs Projekte, jedes für einen anderen Zweck:
 | `Demo — Fehlerzustand` | fehlgeschlagener Lauf, Foto ohne Cache-Datei, Cloud-Vision-Fehlerzeile |
 | `Demo — Duplikate` | zwei offene Duplikat-Gruppen (7 und 3 Aufnahmen) und eine automatisch entschiedene aus 2 Aufnahmen |
 | `Demo — Langer Ausschuss` | unbestätigter Ausschuss über mehr als eine Seite (64 Einzelvorschläge, „Mehr laden“) |
+| `Demo — Vorgänge` | wartender Scan (Abbrechen-Knopf, „Alle abbrechen“) und abgebrochene Klassifizierung bei 2 von 4 Fotos |
 
 **Die Projekt-IDs sind nicht stabil.** Ein zweiter Seed-Lauf gegen dieselbe Datenbank vergibt neue IDs (Postgres setzt die Sequenz nicht zurück). Die IDs deshalb immer aus der Projektliste (`http://localhost:8080/`) ablesen, statt sie aus einem früheren Lauf zu übernehmen.
 
