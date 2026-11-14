@@ -224,10 +224,10 @@ Sichtbare Oberfläche: **ja** — an den fünf bestehenden Bedienstellen und an 
 - **Ein Vorgang, ein Knopf.** Es gibt kein Symbol `x-circle`, weil das Symbol „Aussortiert“ bedeutet.
 
 ### Zustand „Abbruch angefordert“ (läuft bis zum nächsten Prüfpunkt)
-- Der Knopf bleibt an seiner Stelle, ist `disabled busy` und trägt die Beschriftung `Wird abgebrochen…`.
+- Der Knopf bleibt an seiner Stelle, ist `disabled busy`, trägt sichtbar die Beschriftung `Wird abgebrochen…` und als zugänglichen Namen `{Vorgang} wird abgebrochen…` — sonst hießen drei gesperrte Knöpfe auf einer Seite gleich; der sichtbare Text steckt im Namen (WCAG 2.5.3, Groß-/Kleinschreibung ausgenommen).
 - Die Statuszeile zeigt `{Vorgang} wird abgebrochen…`; `StatusDot` läuft weiter.
 - Der Fortschritt bleibt auf dem zuletzt gemeldeten Wert. Die Restdauer entfällt sofort: `EtaLine` wird in `ClassificationProgress` nicht gerendert.
-- **Fokus:** Der deaktivierte Knopf kann keinen Fokus halten. Nach erfolgreicher Anforderung erhält deshalb die Statuszeile des Vorgangs den Fokus (`tabIndex={-1}`, bleibt `aria-live="polite"`).
+- **Fokus:** Der deaktivierte Knopf kann keinen Fokus halten. Nach erfolgreicher Anforderung erhält deshalb die Statuszeile des Vorgangs den Fokus (`tabIndex={-1}`, bleibt `aria-live="polite"`). Ausgelöst wird der Sprung allein von der **eigenen** Anfrage: ein Poll, der einen fremden Abbruch nachträgt, und eine Seite, die mit bereits angefordertem Abbruch geladen wird, bewegen keinen Fokus.
 
 ### Endzustände und „wartet“
 | Zustand | Statuszeile / `StatusTag` | Punkt / Ton | Auslöser |
@@ -268,7 +268,7 @@ Sichtbare Oberfläche: **ja** — an den fünf bestehenden Bedienstellen und an 
 Neues Muster **„Vorgang abbrechen“**:
 - Die Ausprägung ist `secondary`, nicht `destructive`; Begründung: nichts wird entfernt.
 - Der Auslöser sitzt am Fortschritt.
-- Zum Zustand „angefordert“ gehören `Wird abgebrochen…`, der deaktivierte Knopf und der Fokus auf der Statuszeile.
+- Zum Zustand „angefordert“ gehören `Wird abgebrochen…` (sichtbar) mit `{Vorgang} wird abgebrochen…` als zugänglichem Namen, der deaktivierte Knopf und, nach eigener Anfrage, der Fokus auf der Statuszeile.
 - „wartet“/„abgebrochen“ tragen den neutralen Ton `never` und ein Wort, ohne `Alert`.
 - Im Dialog trägt der Ausweg die Beschriftung `Weiterlaufen lassen`.
 - Die Leiste `ProjectOperationsBar` erscheint nur bei Bedarf.
