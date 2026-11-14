@@ -316,6 +316,47 @@ describe('ClassificationProgress: die Restdauer', () => {
     expect(etaLines(container)).toHaveLength(0)
   })
 
+  it('zeigt ab dem angeforderten Abbruch keine Zeitzeile mehr (Spec 0641)', () => {
+    const { container } = render(
+      <ClassificationProgress
+        run={run({
+          phase: 'criteria',
+          phase_remaining_seconds: 240,
+          cancel_requested_at: '2026-09-09T10:05:00Z',
+        })}
+      />,
+    )
+
+    expect(etaLines(container)).toHaveLength(0)
+    expect(stepRow('criteria')).toHaveAttribute('data-step-state', 'running')
+  })
+
+  it('friert einen abgebrochenen Lauf ohne Restdauer und ohne unbestimmten Balken ein (Spec 0641)', () => {
+    const { container } = render(
+      <ClassificationProgress
+        run={run({
+          status: 'cancelled',
+          finished_at: '2026-09-09T10:05:00Z',
+          phase: 'criteria',
+          photos_total: 300,
+          photos_processed: 120,
+          phase_remaining_seconds: 240,
+        })}
+      />,
+    )
+
+    expect(etaLines(container)).toHaveLength(0)
+    const row = stepRow('criteria')
+    expect(row).toHaveAttribute('data-step-state', 'cancelled')
+    expect(row).toHaveTextContent('abgebrochen')
+    const progress = row.querySelector('progress') as HTMLProgressElement
+    expect(progress.value).toBe(120)
+    expect(progress.max).toBe(300)
+    expect(stepRow('ranking')).toHaveAttribute('data-step-state', 'not_started')
+    expect(stepRow('ranking')).toHaveTextContent('nicht begonnen')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('lässt die Zeile in der höflich angekündigten Liste mitlaufen', () => {
     // Eine visuell sichtbare, für Screenreader stumme Restdauer wäre eine Barriere gegen genau
     // den Zweck der Story.

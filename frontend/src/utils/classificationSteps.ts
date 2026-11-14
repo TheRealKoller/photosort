@@ -188,7 +188,9 @@ function etaOf(
   isFinished: boolean,
   run: CriterionScoringRunSummary,
 ): { etaKind: EtaKind | null; etaSeconds: number | null } {
-  if (isFinished || state !== 'running') {
+  // Spec 0641: Ab dem angeforderten Abbruch entfaellt die Restdauer sofort - der Lauf endet am
+  // naechsten Pruefpunkt, eine Schaetzung bis zum Phasenende waere falsch.
+  if (isFinished || state !== 'running' || run.cancel_requested_at != null) {
     return { etaKind: null, etaSeconds: null }
   }
   if (id === 'ranking') {
