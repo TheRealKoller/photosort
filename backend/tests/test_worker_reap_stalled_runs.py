@@ -651,3 +651,143 @@ async def test_error_selecting_reviews_does_not_block_the_other_tables(
     await db_session.refresh(stalled_review)
     assert stalled_scan.status == ScanStatus.FAILED
     assert stalled_review.status == ScanStatus.RUNNING
+
+
+async def test_a_queued_run_is_not_a_stall_after_fifteen_minutes(
+    db_session: AsyncSession,
+) -> None:
+    """Ein wartender Lauf hat keinen Fortschritt, an dem man ihn messen koennte: seine
+    last_progress_at steht auf dem Anlegezeitpunkt. Er wartet legitim hinter vollen Plaetzen."""
+    project = await _make_project(db_session)
+    waiting = ScanRun(
+        project_id=project.id,
+        status=ScanStatus.QUEUED,
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=30),
+    )
+    db_session.add(waiting)
+    await db_session.commit()
+    await db_session.refresh(waiting)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    assert reaped == 0
+    await db_session.refresh(waiting)
+    assert waiting.status == ScanStatus.QUEUED
+
+
+async def test_reaps_a_queued_run_that_never_started(db_session: AsyncSession) -> None:
+    """Ein Job, der die Job-Obergrenze lang nicht begonnen hat, kommt nicht mehr - er wird
+    mit dem Stillstandstext als fehlgeschlagen abgeraeumt."""
+    project = await _make_project(db_session)
+    lost = ScanRun(
+        project_id=project.id,
+        status=ScanStatus.QUEUED,
+        last_progress_at=_SENTINEL_NOW
+        - worker_module.QUEUED_STALL_THRESHOLD
+        - timedelta(minutes=1),
+    )
+    db_session.add(lost)
+    await db_session.commit()
+    await db_session.refresh(lost)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    assert reaped == 1
+    await db_session.refresh(lost)
+    assert lost.status == ScanStatus.FAILED
+    assert lost.error_message
+    assert "15 Minuten" in lost.error_message
+
+
+async def test_reaps_a_queued_run_of_every_table(db_session: AsyncSession) -> None:
+    project = await _make_project(db_session)
+    user = await get_or_create_user(db_session, "watchdog-user")
+    scoring_run = await _make_scoring_run(db_session, project)
+    aged = _SENTINEL_NOW - worker_module.QUEUED_STALL_THRESHOLD - timedelta(minutes=1)
+    runs = [
+        ScanRun(project_id=project.id, status=ScanStatus.QUEUED, last_progress_at=aged),
+        ScoringRun(project_id=project.id, status=ScanStatus.QUEUED, last_progress_at=aged),
+        CriterionScoringRun(
+            project_id=project.id,
+            scoring_run_id=scoring_run.id,
+            status=ScanStatus.QUEUED,
+            last_progress_at=aged,
+        ),
+        RemoteCategoryClassificationRun(
+            project_id=project.id, status=ScanStatus.QUEUED, last_progress_at=aged
+        ),
+        ClassificationReview(
+            project_id=project.id,
+            created_by_user_id=user.id,
+            status=ScanStatus.QUEUED,
+            sample_size=30,
+            seed=4711,
+            last_progress_at=aged,
+        ),
+        ExportRun(project_id=project.id, status=ExportRunStatus.QUEUED, last_progress_at=aged),
+    ]
+    db_session.add_all(runs)
+    await db_session.commit()
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    assert reaped == len(runs)
+    for run in runs:
+        await db_session.refresh(run)
+        assert run.status == "failed"
+
+
+async def test_a_cancel_request_wins_over_a_stalled_queued_run(
+    db_session: AsyncSession,
+) -> None:
+    """Der Reaper darf einen abgebrochenen Vorgang nie nachtraeglich als fehlgeschlagen
+    ausweisen."""
+    project = await _make_project(db_session)
+    waiting = ExportRun(
+        project_id=project.id,
+        status=ExportRunStatus.QUEUED,
+        cancel_requested_at=_SENTINEL_NOW - timedelta(minutes=5),
+        last_progress_at=_SENTINEL_NOW
+        - worker_module.QUEUED_STALL_THRESHOLD
+        - timedelta(minutes=1),
+    )
+    db_session.add(waiting)
+    await db_session.commit()
+    await db_session.refresh(waiting)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    assert reaped == 1
+    await db_session.refresh(waiting)
+    assert waiting.status == ExportRunStatus.CANCELLED
+    assert waiting.error_message is None
+
+
+async def test_a_cancel_request_wins_over_a_running_stall(db_session: AsyncSession) -> None:
+    project = await _make_project(db_session)
+    user = await get_or_create_user(db_session, "watchdog-user")
+    stalled = ClassificationReview(
+        project_id=project.id,
+        created_by_user_id=user.id,
+        status=ScanStatus.RUNNING,
+        phase=ReviewPhase.SIDE_B,
+        sample_size=30,
+        seed=4711,
+        cancel_requested_at=_SENTINEL_NOW - timedelta(minutes=2),
+        last_progress_at=_SENTINEL_NOW - timedelta(minutes=20),
+    )
+    db_session.add(stalled)
+    await db_session.commit()
+    await db_session.refresh(stalled)
+
+    session_factory = make_session_factory(db_session.bind)
+    reaped = await reap_stalled_runs({}, session_factory=session_factory)
+
+    assert reaped == 1
+    await db_session.refresh(stalled)
+    assert stalled.status == ScanStatus.CANCELLED
+    assert stalled.error_message is None

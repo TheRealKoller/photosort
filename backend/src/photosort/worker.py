@@ -14,7 +14,7 @@ from arq.connections import RedisSettings
 from arq.cron import cron
 from arq.worker import func as arq_func
 from PIL import Image
-from sqlalchemy import CursorResult, delete, exists, select, tuple_, update
+from sqlalchemy import CursorResult, and_, delete, exists, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
@@ -4637,6 +4637,29 @@ JOB_TIMEOUT_SECONDS = 86400
 # "nur ein echter Stillstand ist ein Fehler, keine feste Obergrenze").
 STALL_THRESHOLD = timedelta(minutes=15)
 
+# Wartende Laeufe haben keinen Fortschritt, an dem man sie messen koennte: ihre `last_progress_at`
+# steht auf dem Anlegezeitpunkt. Sie gelten deshalb erst nach der Job-Obergrenze als haengend -
+# ein Job, der so lange nicht begonnen hat, kommt nicht mehr.
+QUEUED_STALL_THRESHOLD = timedelta(seconds=JOB_TIMEOUT_SECONDS)
+
+
+def _stalled_run_filter(
+    status_column: Any,
+    progress_column: Any,
+    running_status: Any,
+    queued_status: Any,
+    *,
+    running_threshold: datetime,
+    queued_threshold: datetime,
+) -> Any:
+    """Eine Zeile gilt als haengend, wenn ein laufender Lauf den Fortschritts-Schwellwert reisst
+    oder ein wartender den Warte-Schwellwert. Beide Bedingungen stehen in EINER Abfrage, damit
+    die sechs Bloecke des Watchdogs gleich bleiben."""
+    return or_(
+        and_(status_column == running_status, progress_column < running_threshold),
+        and_(status_column == queued_status, progress_column < queued_threshold),
+    )
+
 
 def _stall_message() -> str:
     # Die Minutenzahl wird aus STALL_THRESHOLD abgeleitet, NIE hart codiert - sonst veraltet die
@@ -4692,20 +4715,30 @@ async def reap_stalled_runs(
     anknuepfen liesse). session_factory ist injizierbar (Default: die echte, produktive
     async_session_factory) - Tests uebergeben stattdessen eine an eine In-Memory-SQLite-
     Testdatenbank gebundene Factory, analog zu run_criterion_scoring's build_detector-Parameter.
+    Jeder Block erfasst laufende Zeilen ueber STALL_THRESHOLD und wartende ueber
+    QUEUED_STALL_THRESHOLD; ein gesetzter Abbruchwunsch gewinnt in beiden Faellen und endet
+    `CANCELLED` (siehe _fail_run).
     Die sechs Tabellen werden bewusst nacheinander in sechs eigenstaendigen Bloecken behandelt
     statt ueber eine generische Schleife (konsistent mit dem Rest dieser Datei: ScanRun/
     ScoringRun/CriterionScoringRun/RemoteCategoryClassificationRun/ClassificationReview/ExportRun
     bleiben sechs eigenstaendige Modelle ohne gemeinsame Basisklasse)."""
     reaped = 0
     threshold = _now_utc() - STALL_THRESHOLD
+    queued_threshold = _now_utc() - QUEUED_STALL_THRESHOLD
     async with session_factory() as session:
         try:
             stalled_scan_runs = (
                 (
                     await session.execute(
                         select(ScanRun).where(
-                            ScanRun.status == ScanStatus.RUNNING,
-                            ScanRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                ScanRun.status,
+                                ScanRun.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4731,8 +4764,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(ScoringRun).where(
-                            ScoringRun.status == ScanStatus.RUNNING,
-                            ScoringRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                ScoringRun.status,
+                                ScoringRun.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4751,8 +4790,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(CriterionScoringRun).where(
-                            CriterionScoringRun.status == ScanStatus.RUNNING,
-                            CriterionScoringRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                CriterionScoringRun.status,
+                                CriterionScoringRun.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4771,8 +4816,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(RemoteCategoryClassificationRun).where(
-                            RemoteCategoryClassificationRun.status == ScanStatus.RUNNING,
-                            RemoteCategoryClassificationRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                RemoteCategoryClassificationRun.status,
+                                RemoteCategoryClassificationRun.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4791,8 +4842,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(ClassificationReview).where(
-                            ClassificationReview.status == ScanStatus.RUNNING,
-                            ClassificationReview.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                ClassificationReview.status,
+                                ClassificationReview.last_progress_at,
+                                ScanStatus.RUNNING,
+                                ScanStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
@@ -4811,8 +4868,14 @@ async def reap_stalled_runs(
                 (
                     await session.execute(
                         select(ExportRun).where(
-                            ExportRun.status == ExportRunStatus.RUNNING,
-                            ExportRun.last_progress_at < threshold,
+                            _stalled_run_filter(
+                                ExportRun.status,
+                                ExportRun.last_progress_at,
+                                ExportRunStatus.RUNNING,
+                                ExportRunStatus.QUEUED,
+                                running_threshold=threshold,
+                                queued_threshold=queued_threshold,
+                            )
                         )
                     )
                 )
