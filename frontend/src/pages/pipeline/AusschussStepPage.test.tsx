@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as ausschussApi from '../../api/ausschuss'
 import { ApiError } from '../../api/client'
 import * as duplicatesApi from '../../api/duplicates'
+import * as operationsApi from '../../api/operations'
 import * as projectsApi from '../../api/projects'
 import type {
   AusschussGroupEntry,
@@ -50,6 +51,7 @@ function zurueckgehalten<T>(): { promise: Promise<T>; resolve: (value: T) => voi
 vi.mock('../../api/projects')
 vi.mock('../../api/duplicates')
 vi.mock('../../api/ausschuss')
+vi.mock('../../api/operations')
 vi.mock('../../components/PhotoImage', () => ({
   PhotoImage: ({ alt }: { alt: string }) => <img alt={alt} />,
 }))
@@ -1249,5 +1251,73 @@ describe('AusschussStepPage - Abschluss und Weiterführung', () => {
       expect(vi.mocked(ausschussApi.listAusschuss).mock.calls.length).toBeGreaterThan(1),
     )
     expect(abfrage()).toBe('')
+  })
+})
+
+describe('AusschussStepPage - Abbrechen (Spec 0641)', () => {
+  beforeEach(() => {
+    vi.mocked(operationsApi.cancelOperation).mockReset()
+  })
+
+  it.each(['running', 'queued'] as const)(
+    'zeigt bei "%s" genau einen Abbrechen-Knopf, der ohne Rückfrage GENAU diesen Lauf abbricht',
+    async (status) => {
+      vi.mocked(operationsApi.cancelOperation).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+      renderPage(project({ last_scoring_run: scoringRun({ id: 17, status }) }))
+
+      expect(screen.getAllByRole('button', { name: /abbrechen$/i })).toHaveLength(1)
+      await user.click(within(leiste()).getByRole('button', { name: 'Ausschuss abbrechen' }))
+
+      expect(operationsApi.cancelOperation).toHaveBeenCalledWith(1, 'ausschuss', 17)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    },
+  )
+
+  it.each([
+    ['kein Lauf', null],
+    ['failed', scoringRun({ status: 'failed', error_message: 'x' })],
+    ['cancelled', scoringRun({ status: 'cancelled', finished_at: BESTAETIGT })],
+    ['success', ERFOLGREICHER_LAUF],
+  ] as const)('zeigt bei "%s" keinen Abbrechen-Knopf', (_, run) => {
+    renderPage(project({ last_scoring_run: run }))
+
+    expect(within(leiste()).queryByRole('button', { name: /abbrechen/i })).not.toBeInTheDocument()
+  })
+
+  it('zeigt "abgebrochen" ohne Alert mit eingefrorenem Stand; Ausschuss bleibt unbestätigt', () => {
+    renderPage(
+      project({
+        last_scoring_run: scoringRun({
+          status: 'cancelled',
+          finished_at: BESTAETIGT,
+          photos_total: 40,
+          photos_processed: 13,
+        }),
+      }),
+    )
+
+    expect(within(leiste()).getByText('Ausschuss abgebrochen')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(within(leiste()).getByText('Abgebrochen bei 13 von 40 Fotos')).toBeInTheDocument()
+    const progress = leiste().querySelector('progress') as HTMLProgressElement
+    expect(progress.value).toBe(13)
+    expect(progress.max).toBe(40)
+    // Wieder bedienbar mit der Startbeschriftung - kein Abschluss, kein Weiter.
+    expect(within(leiste()).getByRole('button', { name: START })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /abschließen/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /weiter/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /verwerfen|löschen/i })).not.toBeInTheDocument()
+  })
+
+  it('nennt bei angefordertem Abbruch den Zustand und sperrt den Knopf', () => {
+    renderPage(
+      project({
+        last_scoring_run: scoringRun({ status: 'running', cancel_requested_at: BESTAETIGT }),
+      }),
+    )
+
+    expect(within(leiste()).getByText('Ausschuss wird abgebrochen…')).toBeInTheDocument()
+    expect(within(leiste()).getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
   })
 })

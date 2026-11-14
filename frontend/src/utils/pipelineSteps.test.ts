@@ -708,6 +708,50 @@ describe('deriveProjectStand', () => {
     expect(stand).toEqual({ kind: 'lauf', status, label })
   })
 
+  // Spec 0641: „wartet" und „abgebrochen" tragen nie den Fehlerton, und ein abgebrochener Lauf
+  // schaltet den naechsten Schritt nicht frei.
+  it.each([
+    ['queued', 'Scan wartet'],
+    ['cancelled', 'Scan abgebrochen'],
+  ] as const)('zeigt bei einem %s Scan "%s" ohne Fehlerton', (status, label) => {
+    const stand = deriveProjectStand(project({ last_scan: scanSummary(status) }))
+
+    expect(stand).toEqual({ kind: 'lauf', status, label })
+  })
+
+  it('nennt einen abgebrochenen Ausschuss "abgebrochen" und laesst die Klassifizierung gesperrt', () => {
+    const input = project({
+      last_scan: scanSummary('success'),
+      last_scoring_run: scoringRunSummary('cancelled', null),
+    })
+
+    expect(deriveProjectStand(input)).toEqual({
+      kind: 'lauf',
+      status: 'cancelled',
+      label: 'Ausschuss abgebrochen',
+    })
+    const states = computeStepStates(input)
+    expect(states.find((s) => s.id === 'ausschuss')?.isDone).toBe(false)
+    expect(states.find((s) => s.id === 'kriterien')?.isReachable).toBe(false)
+  })
+
+  it('nennt eine abgebrochene Klassifizierung "abgebrochen" und laesst die Kuratierung gesperrt', () => {
+    const input = project({
+      last_scan: scanSummary('success'),
+      last_scoring_run: scoringRunSummary('success', '2026-07-20T10:05:00Z'),
+      last_criterion_scoring_run: criterionRunSummary('cancelled'),
+    })
+
+    expect(deriveProjectStand(input)).toEqual({
+      kind: 'lauf',
+      status: 'cancelled',
+      label: 'Klassifizierung abgebrochen',
+    })
+    const states = computeStepStates(input)
+    expect(states.find((s) => s.id === 'kriterien')?.isDone).toBe(false)
+    expect(states.find((s) => s.id === 'kuratierung')?.isReachable).toBe(false)
+  })
+
   it('zeigt Randfall A, solange nie gescannt wurde', () => {
     expect(deriveProjectStand(project({ last_scan: null }))).toEqual({
       kind: 'hinweis',

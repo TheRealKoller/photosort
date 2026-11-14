@@ -78,7 +78,7 @@ export function criterionRunSummary(status: ScanStatus): ProjectOut['last_criter
 
 /**
  * Der vollständig aufgezählte Eingaberaum: 6 Scan-Zustände x 6 Ausschuss-Zustände x 2
- * Gate-Zustände x 6 Kriterien-Zustände x 2 Feature-Flag-Zustände = 1296 Projekte. Neu seit
+ * Gate-Zustände x 6 Kriterien-Zustände x 2 Feature-Flag-Zustände = 864 Projekte. Neu seit
  * Spec 0641: `queued` und `cancelled` sind eigene Zustände, keine Variante von `running` bzw.
  * `failed`.
  */

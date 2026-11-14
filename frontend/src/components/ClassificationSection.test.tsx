@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
+import * as operationsApi from '../api/operations'
 import * as projectsApi from '../api/projects'
 import type {
   CriterionScoringRunSummary,
@@ -22,6 +23,7 @@ import { RUN_STEP_TEXTS } from '../utils/stepActionTexts'
 // (Remote-Kategorisierung, samt Komponente geloescht) ab.
 
 vi.mock('../api/projects')
+vi.mock('../api/operations')
 
 function project(overrides: Partial<ProjectOut> = {}): ProjectOut {
   return {
@@ -925,5 +927,77 @@ describe('Richtwert vor der Klassifizierung', () => {
     expect(
       screen.getByText('Während die Klassifizierung läuft, lässt sich der Richtwert nicht ändern.'),
     ).toBeInTheDocument()
+  })
+})
+
+describe('Abbrechen (Spec 0641)', () => {
+  beforeEach(() => {
+    vi.mocked(operationsApi.cancelOperation).mockReset()
+  })
+
+  it.each(['running', 'queued'] as const)(
+    'zeigt bei "%s" genau einen Abbrechen-Knopf, der ohne Rückfrage GENAU diesen Lauf abbricht',
+    async (status) => {
+      vi.mocked(operationsApi.cancelOperation).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+      renderSection(project({ last_criterion_scoring_run: classificationRun({ id: 33, status }) }))
+
+      expect(screen.getAllByRole('button', { name: /abbrechen$/i })).toHaveLength(1)
+      await user.click(within(leiste()).getByRole('button', { name: 'Klassifizierung abbrechen' }))
+
+      expect(operationsApi.cancelOperation).toHaveBeenCalledWith(1, 'classification', 33)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    },
+  )
+
+  it.each([
+    ['kein Lauf', null],
+    ['success', classificationRun(ERFOLG)],
+    ['failed', classificationRun({ status: 'failed', phase: null, error_message: 'x' })],
+    ['cancelled', classificationRun({ status: 'cancelled', finished_at: ERFOLG.finished_at })],
+  ] as const)('zeigt bei "%s" keinen Abbrechen-Knopf', (_, run) => {
+    renderSection(project({ last_criterion_scoring_run: run }))
+
+    expect(within(leiste()).queryByRole('button', { name: /abbrechen/i })).not.toBeInTheDocument()
+  })
+
+  it('zeigt "abgebrochen" ohne Alert, behält die Teilschrittliste und bietet wieder den Start an', () => {
+    renderSection(
+      project({
+        last_criterion_scoring_run: classificationRun({
+          status: 'cancelled',
+          phase: 'criteria',
+          finished_at: ERFOLG.finished_at,
+          photos_total: 10,
+          photos_processed: 4,
+        }),
+      }),
+    )
+
+    expect(leiste().querySelector('[aria-live]')).toHaveTextContent('Klassifizierung abgebrochen')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('list', { name: /teilschritte der klassifizierung/i }),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('classification-balance')).not.toBeInTheDocument()
+    expect(within(leiste()).getByRole('button', TRIGGER)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Weiter zur Kuratierung' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /verwerfen|löschen/i })).not.toBeInTheDocument()
+  })
+
+  it('nennt bei angefordertem Abbruch den Zustand und sperrt den Knopf', () => {
+    renderSection(
+      project({
+        last_criterion_scoring_run: classificationRun({
+          status: 'running',
+          cancel_requested_at: ERFOLG.finished_at,
+        }),
+      }),
+    )
+
+    expect(leiste().querySelector('[aria-live]')).toHaveTextContent(
+      'Klassifizierung wird abgebrochen…',
+    )
+    expect(within(leiste()).getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
   })
 })

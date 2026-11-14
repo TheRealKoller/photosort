@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as reviewApi from '../api/classificationReviews'
 import * as motifsApi from '../api/motifs'
+import * as operationsApi from '../api/operations'
 import * as photosApi from '../api/photos'
 import type {
   ClassificationReviewCaseOut,
@@ -21,6 +22,7 @@ import { ClassificationReviewDetailPage } from './ClassificationReviewDetailPage
 vi.mock('../api/classificationReviews')
 vi.mock('../api/motifs')
 vi.mock('../api/photos')
+vi.mock('../api/operations')
 
 /*
  * Seite 2 der Pruefung (Spec 0616, UI/UX und Edge Case 8): Kopf, Fallansicht mit Urteilen und
@@ -414,6 +416,93 @@ describe('ClassificationReviewDetailPage - gesperrte Urteile', () => {
     expect(
       screen.getByText('Eine fehlgeschlagene Prüfung lässt sich nicht exportieren.'),
     ).toBeInTheDocument()
+  })
+})
+
+describe('ClassificationReviewDetailPage - Abbrechen (Spec 0641)', () => {
+  beforeEach(() => {
+    vi.mocked(operationsApi.cancelOperation).mockReset()
+  })
+
+  it.each(['running', 'queued'] as const)(
+    'zeigt bei "%s" im Stand genau einen Abbrechen-Knopf, der GENAU diese Prüfung abbricht',
+    async (status) => {
+      vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(
+        detailOut({ status, phase: status === 'running' ? 'side_b' : null, finished_at: null }),
+      )
+      vi.mocked(operationsApi.cancelOperation).mockReturnValue(new Promise(() => {}))
+      const user = userEvent.setup()
+      renderPage()
+
+      const button = await screen.findByRole('button', { name: 'Prüfung abbrechen' })
+      expect(screen.getAllByRole('button', { name: /abbrechen$/i })).toHaveLength(1)
+      expect(button.closest('[aria-live]')).not.toBeNull()
+      await user.click(button)
+
+      expect(operationsApi.cancelOperation).toHaveBeenCalledWith(7, 'review', 99)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    },
+  )
+
+  it('nennt eine wartende Prüfung "wartet" und lädt noch keine Fälle', async () => {
+    vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(
+      detailOut({ status: 'queued', phase: null, photos_processed: 0, finished_at: null }),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Prüfung wartet')).toBeInTheDocument()
+    expect(reviewApi.listClassificationReviewCases).not.toHaveBeenCalled()
+  })
+
+  it('nennt bei angefordertem Abbruch den Zustand und sperrt den Knopf', async () => {
+    vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(
+      detailOut({
+        status: 'running',
+        phase: 'side_b',
+        finished_at: null,
+        cancel_requested_at: '2026-11-07T10:40:00',
+      }),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Prüfung wird abgebrochen…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Wird abgebrochen…' })).toBeDisabled()
+  })
+
+  it('zeigt eine abgebrochene Prüfung ohne Alert, ohne Urteile und mit gesperrtem Export', async () => {
+    vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(
+      detailOut({ status: 'cancelled', phase: 'side_b', photos_processed: 1 }),
+    )
+    vi.mocked(reviewApi.listClassificationReviewCases).mockResolvedValue({ cases: [] })
+    renderPage()
+
+    const tag = await screen.findByText('abgebrochen')
+    expect(tag.className).toContain('status-idle')
+    expect(
+      screen.getByText('Abgebrochen bei: Seite B wird klassifiziert, 1 von 3 Fotos'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /abbrechen$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: /^Urteil zu/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Übersicht' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Für die KI exportieren' })).toBeDisabled()
+    expect(
+      screen.getByText('Eine abgebrochene Prüfung lässt sich nicht exportieren.'),
+    ).toBeInTheDocument()
+  })
+
+  it('meldet einen gescheiterten Abbruch mit erneutem Versuch', async () => {
+    vi.mocked(reviewApi.getClassificationReview).mockResolvedValue(
+      detailOut({ status: 'running', phase: 'side_a', finished_at: null }),
+    )
+    vi.mocked(operationsApi.cancelOperation).mockRejectedValue(new Error('netz'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Prüfung abbrechen' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByRole('button', { name: 'Erneut versuchen' })).toBeInTheDocument()
   })
 })
 
