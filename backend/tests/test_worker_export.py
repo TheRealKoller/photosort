@@ -11,9 +11,10 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from photosort.db import make_session_factory
 from photosort.models import (
     CriterionScoringRun,
     ExportPhoto,
@@ -450,3 +451,110 @@ def test_build_export_folder_name_has_no_colon_and_keeps_microseconds() -> None:
 
     assert name == "Costa Rica 2026-11-01 12-00-00.123456"
     assert ":" not in name
+
+
+class CancelRequestingClient(RecordingExportClient):
+    """Setzt nach dem n-ten COPY ueber eine ZWEITE Session den Abbruchmerker des Laufs - wie
+    die API es tut. Der COPY selbst wird fertig (angefangenes Element)."""
+
+    def __init__(self, session: AsyncSession, after: int) -> None:
+        super().__init__()
+        self._factory = make_session_factory(session.bind)
+        self._after = after
+
+    async def copy(self, webdav_url: str, source_path: str, dest_url: str) -> None:
+        await super().copy(webdav_url, source_path, dest_url)
+        if len(self.copy_calls) == self._after:
+            async with self._factory() as other:
+                await other.execute(
+                    update(ExportRun).values(cancel_requested_at=datetime(2030, 1, 1))
+                )
+                await other.commit()
+
+
+async def _three_included(session: AsyncSession) -> Project:
+    await _two_users(session)
+    project = await _project(session)
+    run = await _successful_run(session, project)
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        await _propose(session, run, await _photo(session, project, name))
+    await session.commit()
+    return project
+
+
+async def _queued_export(session: AsyncSession, project: Project) -> ExportRun:
+    run = ExportRun(project_id=project.id, status=ExportRunStatus.QUEUED)
+    session.add(run)
+    await session.commit()
+    return run
+
+
+async def test_a_cancel_stops_before_the_next_copy_and_keeps_the_folder(
+    db_session: AsyncSession,
+) -> None:
+    project = await _three_included(db_session)
+    client = CancelRequestingClient(db_session, after=2)
+
+    export_run = await run_export(db_session, client, project)
+
+    assert export_run is not None
+    assert export_run.status == ExportRunStatus.CANCELLED
+    assert export_run.error_message is None
+    assert len(client.copy_calls) == 2
+    assert export_run.exported_count == 2
+    assert export_run.photo_count == 3
+    assert export_run.target_path is not None
+    assert client.mkcol_calls[1] == export_run.target_path
+
+
+async def test_a_queued_run_is_taken_over_and_runs(db_session: AsyncSession) -> None:
+    project = await _three_included(db_session)
+    queued = await _queued_export(db_session, project)
+
+    export_run = await run_export(db_session, RecordingExportClient(), project, run_id=queued.id)
+
+    assert export_run is not None
+    assert export_run.id == queued.id
+    assert export_run.status == ExportRunStatus.SUCCESS
+    assert export_run.exported_count == 3
+    assert len((await db_session.execute(select(ExportRun))).scalars().all()) == 1
+
+
+async def test_a_run_cancelled_while_waiting_does_no_work(db_session: AsyncSession) -> None:
+    project = await _three_included(db_session)
+    queued = await _queued_export(db_session, project)
+    queued.status = ExportRunStatus.CANCELLED
+    queued.cancel_requested_at = datetime(2030, 1, 1)
+    await db_session.commit()
+    client = RecordingExportClient()
+
+    result = await run_export(db_session, client, project, run_id=queued.id)
+
+    assert result is None
+    assert client.mkcol_calls == []
+    assert client.copy_calls == []
+    await db_session.refresh(queued)
+    assert queued.status == ExportRunStatus.CANCELLED
+    assert queued.target_path is None
+
+
+async def test_a_worker_abort_after_a_cancel_request_ends_cancelled(
+    db_session: AsyncSession,
+) -> None:
+    """Timeout oder Shutdown nach dem Abbruchwunsch: der Wunsch schlaegt den Fehlerpfad, der
+    `CancelledError` laeuft trotzdem weiter."""
+    project = await _three_included(db_session)
+
+    class _CancelThenAbort(CancelRequestingClient):
+        async def copy(self, webdav_url: str, source_path: str, dest_url: str) -> None:
+            await super().copy(webdav_url, source_path, dest_url)
+            raise asyncio.CancelledError()
+
+    client = _CancelThenAbort(db_session, after=1)
+    with pytest.raises(asyncio.CancelledError):
+        await run_export(db_session, client, project)
+
+    stored = (await db_session.execute(select(ExportRun))).scalar_one()
+    assert stored.status == ExportRunStatus.CANCELLED
+    assert stored.error_message is None
+    assert len(client.copy_calls) == 1
