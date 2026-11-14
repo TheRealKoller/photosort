@@ -1514,7 +1514,9 @@ async def run_project_scoring(
     session: AsyncSession,
     project: Project,
     cache_dir: Path,
-) -> ScoringRun:
+    *,
+    run_id: int | None = None,
+) -> ScoringRun | None:
     """Scort alle Fotos eines Projekts neu (kein inkrementelles Scoring) auf Basis der bereits vom
     Scan gecachten display-Variante - kein erneuter OpenCloud-Download.
 
@@ -1522,12 +1524,25 @@ async def run_project_scoring(
     PhotoScore upserten, photos_processed periodisch committen -> projektweite
     Duplikat-/Cluster-Erkennung -> suggested_status setzen -> ScoringRun auf success/failed
     setzen. Ranking-Grundlage ist die Kriterien-/Rangfolgen-Schicht (criteria.py/ranking.py).
+
+    Mit `run_id` uebernimmt er den von der API angelegten, wartenden Lauf (None, wenn der in der
+    Warteschlange abgebrochen wurde). Ein Abbruchwunsch wird vor jedem Commit-Batch und vor dem
+    Clustering gelesen: die geschriebenen `PhotoScore`-Zeilen bleiben, Clustering, automatische
+    Entscheidung, Vorschlagszahl und Gate entfallen - ein abgebrochener Lauf bestaetigt den
+    Ausschuss nie.
     """
-    scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.RUNNING)
-    session.add(scoring_run)
+    if run_id is not None:
+        taken_over = await _take_over_queued_run(session, ScoringRun, run_id)
+        if taken_over is None:
+            return None
+        scoring_run = taken_over
+    else:
+        scoring_run = ScoringRun(project_id=project.id, status=ScanStatus.RUNNING)
+        session.add(scoring_run)
     # Ein neuer Lauf beginnt ohne automatische Entscheidung (ADR 0146 Punkt 3): Der Merker ist
     # eine Aussage UEBER DIESEN Lauf, keine Historie. Der projektweite Reset laeuft in derselben
-    # Anweisung wie die Projektbindung - ein Foto eines anderen Projekts bleibt unberuehrt.
+    # Anweisung wie die Projektbindung - ein Foto eines anderen Projekts bleibt unberuehrt. Er
+    # steht hinter der Uebernahme: ein in der Warteschlange abgebrochener Lauf setzt nichts zurueck.
     await session.execute(
         update(PhotoScore)
         .where(PhotoScore.photo_id.in_(select(Photo.id).where(Photo.project_id == project.id)))
@@ -1564,6 +1579,8 @@ async def run_project_scoring(
         computed: dict[int, PhotoMetrics] = {}
         processed = 0
         for photo in photos:
+            if processed % SCORE_COMMIT_BATCH_SIZE == 0:
+                await _raise_if_cancel_requested(session, scoring_run)
             path = variant_path(cache_dir, photo.id, photo.etag, "display")
             metrics = _compute_photo_metrics(path) if path.is_file() else None
             # Bekannte, akzeptierte Lücke: wird die display-Cache-Datei eines
@@ -1599,6 +1616,8 @@ async def run_project_scoring(
 
         scoring_run.photos_processed = processed
         await session.commit()
+        # Letzter Pruefpunkt vor dem Clustering: danach ist der Lauf in einem Zug fertig.
+        await _raise_if_cancel_requested(session, scoring_run)
 
         # Um die Koordinate erweitert - KEIN zusaetzlicher Query, die `photos` liegen an dieser
         # Stelle bereits vollstaendig vor.
@@ -1722,6 +1741,9 @@ async def run_project_scoring(
             scoring_run.gate_confirmed_at = _now_utc()
         await session.commit()
         return scoring_run
+    except RunCancelled:
+        await _finish_cancelled(session, scoring_run)
+        return scoring_run
     except asyncio.CancelledError:
         # Schicht 1 des Fortschritts-Watchdogs - analog run_project_scan oben.
         await _fail_run(
@@ -1737,16 +1759,18 @@ async def run_project_scoring(
         return scoring_run
 
 
-async def score_project(ctx: dict[str, Any], project_id: int) -> int:
+async def score_project(
+    ctx: dict[str, Any], project_id: int, run_id: int | None = None
+) -> int | None:
     async with async_session_factory() as session:
         project = await session.get(Project, project_id)
         if project is None:
             raise ValueError(f"Project {project_id} not found")
 
         scoring_run = await run_project_scoring(
-            session, project, cache_dir=Path(settings.photo_cache_dir)
+            session, project, cache_dir=Path(settings.photo_cache_dir), run_id=run_id
         )
-        return scoring_run.id
+        return scoring_run.id if scoring_run is not None else None
 
 
 class CriterionScoringGuardError(Exception):
